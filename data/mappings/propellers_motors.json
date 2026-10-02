@@ -1,0 +1,6 @@
+{
+  "description": "Propellers&Motors.xlsx: Motores_Data (cabeçalho na linha 1), Propellers_coefficients (cabeçalho na linha 2). Colunas reconhecidas por apelidos; use 'columns' para nomes diferentes.",
+  "motors": {"sheet": "Motores_Data", "header_row": 1, "columns": {}},
+  "propellers": {"sheet": "Propellers_coefficients", "header_row": 2, "columns": {}},
+  "prop_table": {"sheet": "Propellers_JCTCP", "header_row": 1}
+}

@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Zig
+core/zig-out/
+core/.zig-cache/
+
+# simulador original (build)
+legacy/*.o
+legacy/missao6gdl

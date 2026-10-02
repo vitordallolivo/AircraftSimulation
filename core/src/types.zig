@@ -1,0 +1,494 @@
+//! Estruturas trocadas com o Python (C ABI, `extern struct`).
+//!
+//! Tudo em SI e ângulos em RADIANOS. O Python não precisa copiar estas definições:
+//! `abi.zig` gera em comptime um esquema (nome, tipo, offset) que o lado Python lê
+//! para montar as estruturas ctypes. Campos marcados "derivado" são calculados em
+//! `init` a partir dos demais e podem ser lidos de volta.
+const L = @import("limits.zig");
+
+/// Painel sustentador (faixa de meia asa, EH, EV...). A deflexão vista pelo painel é
+///   δ = tau · (mix[0] δe + mix[1] δa + mix[2] δr)
+/// o que cobre profundor, aileron, leme, elevon, ruddervator, flaperon etc.
+pub const Surface = extern struct {
+    r: [3]f64 = .{ 0, 0, 0 }, // centro aerodinâmico no corpo (m)
+    S: f64 = 0,
+    c: f64 = 0,
+    AR: f64 = 5, // alongamento da superfície inteira (arrasto induzido)
+    e: f64 = 0.8,
+    dihedral: f64 = 0,
+    incidence: f64 = 0,
+    CLa: f64 = 4.5,
+    CL0: f64 = 0,
+    CLmax: f64 = 1.2,
+    CD0: f64 = 0.01,
+    Cmac: f64 = 0,
+    tau: f64 = 0,
+    mix: [3]f64 = .{ 0, 0, 0 },
+    eta: f64 = 1,
+    eps0: f64 = 0,
+    depsda: f64 = 0,
+    group: i32 = 0, // limits.group_*
+    vertical: i32 = 0, // normal para +y
+    side: i32 = 0, // +1 direita, -1 esquerda, 0 centro
+    downwash: i32 = 0, // sente o downwash da asa
+    // derivados
+    a0: f64 = 0,
+    ex: [3]f64 = .{ 0, 0, 0 },
+    ey: [3]f64 = .{ 0, 0, 0 },
+    ez: [3]f64 = .{ 0, 0, 0 },
+};
+
+/// Motor BLDC + hélice (tabela) + bateria. Cada unidade é independente.
+pub const PropUnit = extern struct {
+    r: [3]f64 = .{ 0, 0, 0 }, // cubo da hélice (m)
+    tilt: f64 = 0, // inclinação do eixo (+ nariz para cima), rad
+    toe: f64 = 0, // desvio em guinada, rad
+    sense: f64 = 1, // +1 horário visto de trás
+    D: f64 = 0.3,
+    Ip: f64 = 1e-4,
+    Jm: f64 = 1e-4,
+    Kv: f64 = 1000,
+    Rm: f64 = 0.05,
+    B: f64 = 0,
+    tauc: f64 = 0,
+    Imax: f64 = 50,
+    Voc: f64 = 11.1,
+    Rint: f64 = 0.02,
+    yaw_mix: f64 = 0, // acelerador diferencial: thr_i = thr + yaw_mix δr
+    n_pts: i32 = 0,
+    _pad: i32 = 0,
+    J: [L.max_prop_pts]f64 = [_]f64{0} ** L.max_prop_pts,
+    CT: [L.max_prop_pts]f64 = [_]f64{0} ** L.max_prop_pts,
+    CP: [L.max_prop_pts]f64 = [_]f64{0} ** L.max_prop_pts,
+    // derivados
+    eT: [3]f64 = .{ 1, 0, 0 },
+    D4: f64 = 0,
+    D5: f64 = 0,
+    Ke: f64 = 0,
+};
+
+pub const gear_steer = 0; // direcionável (bequilha do triciclo ou do convencional)
+pub const gear_main = 1; // principal (com freio)
+pub const gear_skid = 2; // patim/ponto de cauda
+
+pub const Gear = extern struct {
+    r: [3]f64 = .{ 0, 0, 0 },
+    k: f64 = 3000,
+    c: f64 = 80,
+    kind: i32 = gear_main,
+    _pad: i32 = 0,
+};
+
+pub const tank_square = 0;
+pub const tank_cylinder = 1;
+
+/// Tanque de base quadrada (lado `side`) ou cilíndrico (diâmetro `side`), líquido com
+/// altura `fill`. Pêndulo equivalente do 1º modo (Abramson, NASA SP-106):
+///   quadrado:  ω² = (π g / a) tanh(π h / a),     m1 = m 8 tanh(π h/a) / (π³ h/a)
+///   cilindro:  ω² = (ξ g / R) tanh(ξ h / R),     m1 = m 2 tanh(ξ h/R) / (ξ (ξ²−1) h/R), ξ = 1,841
+///   l = g / ω²,  m0 = m − m1
+pub const Tank = extern struct {
+    r: [3]f64 = .{ 0, 0, 0 }, // centro do líquido em repouso
+    shape: i32 = tank_square,
+    _pad: i32 = 0,
+    side: f64 = 0.1,
+    fill: f64 = 0.05,
+    rho: f64 = 1000,
+    zeta: f64 = 0.03,
+    // derivados
+    m_liq: f64 = 0,
+    m0: f64 = 0,
+    m1: f64 = 0,
+    l1: f64 = 0,
+    w1: f64 = 0,
+};
+
+pub const Segment = extern struct {
+    arc: i32 = 0,
+    takeoff: i32 = 0,
+    landing: i32 = 0,
+    _pad: i32 = 0,
+    n0: f64 = 0,
+    e0: f64 = 0,
+    chi0: f64 = 0,
+    L: f64 = 0,
+    cn: f64 = 0,
+    ce: f64 = 0,
+    R: f64 = 0,
+    lam: f64 = 1,
+    h0: f64 = 0,
+    h1: f64 = 0,
+    V0: f64 = 0,
+    V1: f64 = 0,
+    clearance: f64 = 0,
+};
+
+pub const event_drop = 0;
+pub const event_gust = 1;
+pub const Event = extern struct { kind: i32 = 0, seg: i32 = 0, s: f64 = 0 };
+
+pub const Payload = extern struct {
+    enabled: i32 = 0,
+    _pad: i32 = 0,
+    m: f64 = 0,
+    r: [3]f64 = .{ 0, 0, 0 },
+    bay: f64 = 0.3,
+    Fext_g: f64 = 2,
+    mu_b: f64 = 0.3,
+    CdS_chute: f64 = 0.45,
+};
+
+pub const Environment = extern struct {
+    rho: f64 = 1.225,
+    Vw10: f64 = 0,
+    wind_from: f64 = 0, // de onde o vento vem (rad, 0 = norte)
+    wind_elev: f64 = 0, // + sobe
+    h_ref: f64 = 10,
+    gust_T: f64 = 1,
+    gust_U: [3]f64 = .{ 0, 0, 0 },
+    gust_on: i32 = 0,
+    _pad: i32 = 0,
+};
+
+pub const Takeoff = extern struct {
+    VR: f64 = 12, // puxa o profundor em VR (m/s) ...
+    sR: f64 = 0, // ... ou, se sR > 0, na distância sR (m)
+    de0: f64 = 0,
+    de1: f64 = -0.1,
+    rate_de: f64 = 1.0,
+    ht: f64 = 2, // altura em que o piloto automático assume
+    rate_thr: f64 = 2,
+    h_end: f64 = 6, // fim da simulação "só decolagem"
+};
+
+pub const Autopilot = extern struct {
+    CL0: f64 = 0.45,
+    CLa: f64 = 4.5,
+    alpha_max: f64 = 0.19,
+    g_up: f64 = 0.08,
+    g_down: f64 = 0.10,
+    Khr: f64 = 0.5,
+    Kvs: f64 = 0.5,
+    Kn_h: f64 = 0.065,
+    Kn_hd: f64 = 0.13,
+    Kn_ih: f64 = 0.01,
+    Kae: f64 = 4.0,
+    KIa: f64 = 4.0,
+    Kfn: f64 = 1.2,
+    Lorb: f64 = 50,
+    tlead: f64 = 0.8,
+    Kthe: f64 = 1.5,
+    Kqe: f64 = 0.25,
+    KV: f64 = 0.25,
+    KIV: f64 = 0.08,
+    KHT: f64 = 0.10,
+    Dtrim: f64 = 0.55,
+    Kchi: f64 = 0.8,
+    kvf: f64 = 0.05,
+    chi_inf: f64 = 1.047,
+    korb: f64 = 0.5,
+    phimax: f64 = 0.52,
+    Kphia: f64 = 2.0,
+    Kpa: f64 = 0.10,
+    Kbeta: f64 = 1.0,
+    tau_phi: f64 = 0.3,
+    pmax_cmd: f64 = 1.047,
+    Ky: f64 = 0.15,
+    Ki: f64 = 0.02,
+    Kpsi: f64 = 1.5,
+    Kr: f64 = 0.3,
+    Kbeq: f64 = 0.5,
+    hflare: f64 = 2.5,
+    tau_flare: f64 = 1.0,
+    kCL: f64 = 0.95,
+    de_max: f64 = 0.349,
+    da_max: f64 = 0.349,
+    dr_max: f64 = 0.436,
+};
+
+pub const Params = extern struct {
+    // massa seca: inércia no CG dela, posição desse CG
+    m_dry: f64 = 1,
+    Ixx: f64 = 0.1,
+    Iyy: f64 = 0.1,
+    Izz: f64 = 0.1,
+    Ixz: f64 = 0,
+    r_dry: [3]f64 = .{ 0, 0, 0 },
+    // referências aerodinâmicas
+    Sref: f64 = 1,
+    cref: f64 = 0.3,
+    bref: f64 = 2,
+    Mst: f64 = 50, // transição linear/placa plana (Beard e McLain)
+    // fuselagem
+    fus_CDS: f64 = 0,
+    fus_Cma: f64 = 0,
+    fus_Cnb: f64 = 0,
+    fus_CYb: f64 = 0,
+    fus_r: [3]f64 = .{ 0, 0, 0 },
+    // componentes
+    n_surf: i32 = 0,
+    n_prop: i32 = 0,
+    n_gear: i32 = 0,
+    n_tank: i32 = 0,
+    n_seg: i32 = 0,
+    n_event: i32 = 0,
+    slosh_on: i32 = 1,
+    _pad0: i32 = 0,
+    surf: [L.max_surfaces]Surface = [_]Surface{.{}} ** L.max_surfaces,
+    prop: [L.max_props]PropUnit = [_]PropUnit{.{}} ** L.max_props,
+    gear: [L.max_gear]Gear = [_]Gear{.{}} ** L.max_gear,
+    tank: [L.max_tanks]Tank = [_]Tank{.{}} ** L.max_tanks,
+    seg: [L.max_segments]Segment = [_]Segment{.{}} ** L.max_segments,
+    event: [L.max_events]Event = [_]Event{.{}} ** L.max_events,
+    // atrito no solo
+    mu_roll: f64 = 0.04,
+    mu_lat: f64 = 0.6,
+    mu_brake: f64 = 1.0,
+    mu_skid: f64 = 0.35,
+    mu_landing: f64 = 0.4,
+    payload: Payload = .{},
+    env: Environment = .{},
+    takeoff: Takeoff = .{},
+    ap: Autopilot = .{},
+    // integração
+    dt: f64 = 1e-3,
+    tmax: f64 = 400,
+    dtlog: f64 = 0.02,
+    // paradas (para checkpoint)
+    stop_t: f64 = -1, // para em t
+    stop_seg: i32 = -1, // para ao entrar no segmento k
+    stop_autop: i32 = 0, // para quando o piloto automático liga
+    stop_takeoff: i32 = 0, // para em takeoff.h_end acima do chão
+    no_payload: i32 = 0, // começa sem a carga
+    _pad1: i32 = 0,
+    // derivados
+    steer_sign: f64 = 1, // −1 se a roda direcionável está atrás das principais (convencional)
+};
+
+/// medidas acumuladas de uma corrida (o "relatório" de eventos)
+pub const Events = extern struct {
+    tR: f64 = -1,
+    tRot: f64 = -1,
+    nRot: f64 = 0,
+    tLO: f64 = -1,
+    nLO: f64 = 0,
+    VLO: f64 = 0,
+    thLO: f64 = 0,
+    tHt: f64 = -1,
+    nHt: f64 = 0,
+    VHt: f64 = 0,
+    gHt: f64 = 0,
+    hcmin: f64 = 1e9,
+    ratio_to: f64 = 0,
+    ratio_mission: f64 = 0,
+    qpeak_to: f64 = 0,
+    Ipeak: f64 = 0,
+    E: f64 = 0,
+    E_to: f64 = 0,
+    tdrop: f64 = -1,
+    ndrop: f64 = 0,
+    hdrop: f64 = 0,
+    trel: f64 = -1,
+    pk_n: f64 = 0,
+    pk_e: f64 = 0,
+    pk_t: f64 = 0,
+    tg: f64 = -1,
+    tTD: f64 = -1,
+    nTD: f64 = 0,
+    nStop: f64 = 0,
+    tend: f64 = 0,
+    bounced: f64 = 0,
+    completed: f64 = 0,
+    stopped: f64 = 0,
+};
+
+/// uma linha do registro (ângulos em rad, o Python converte)
+pub const LogRow = extern struct {
+    t: f64,
+    seg: f64,
+    n: f64,
+    e: f64,
+    h: f64,
+    phi: f64,
+    theta: f64,
+    psi: f64,
+    p: f64,
+    q: f64,
+    r: f64,
+    Va: f64,
+    Vg: f64,
+    alpha: f64,
+    beta: f64,
+    gamma: f64,
+    chi: f64,
+    s: f64,
+    ect: f64,
+    hseg: f64,
+    href: f64,
+    Vref: f64,
+    thc: f64,
+    alc: f64,
+    phic: f64,
+    CL: f64,
+    CD: f64,
+    CDi: f64,
+    CY: f64,
+    CL_wing: f64,
+    CL_ht: f64,
+    CY_vt: f64,
+    CL_fus: f64,
+    ratioCL: f64,
+    T: f64,
+    Q: f64,
+    P: f64,
+    Ibat: f64,
+    Vbus: f64,
+    E: f64, // Wh
+    thr: f64,
+    de: f64,
+    da: f64,
+    dr: f64,
+    dw: f64,
+    N_steer: f64,
+    N_main: f64,
+    N_skid: f64,
+    htail: f64,
+    RN: f64,
+    Rnw: f64,
+    Rmw: f64,
+    hdot: f64,
+    nz: f64,
+    alim: f64,
+    m: f64,
+    xcg: f64,
+    ycg: f64,
+    zcg: f64,
+    Ixx: f64,
+    Iyy: f64,
+    Izz: f64,
+    Fslx: f64,
+    Fsly: f64,
+    sL: f64,
+    L_wing: f64,
+    L_ht: f64,
+    L_vt: f64,
+    L_fus: f64,
+    L_prop: f64,
+    L_gyro: f64,
+    L_gear: f64,
+    L_liq: f64,
+    L_pay: f64,
+    L_tot: f64,
+    M_wing: f64,
+    M_ht: f64,
+    M_vt: f64,
+    M_fus: f64,
+    M_prop: f64,
+    M_gyro: f64,
+    M_gear: f64,
+    M_liq: f64,
+    M_pay: f64,
+    M_tot: f64,
+    N_wing: f64,
+    N_ht: f64,
+    N_vt: f64,
+    N_fus: f64,
+    N_prop: f64,
+    N_gyro: f64,
+    N_gear: f64,
+    N_liq: f64,
+    N_pay: f64,
+    N_tot: f64,
+    Wn: f64,
+    We: f64,
+    Wd: f64,
+    pk_n: f64,
+    pk_e: f64,
+    pk_h: f64,
+    rpm: [L.max_props]f64,
+    thrust: [L.max_props]f64,
+    current: [L.max_props]f64,
+    Ngear: [L.max_gear]f64,
+    slosh_x: [L.max_tanks]f64,
+    slosh_y: [L.max_tanks]f64,
+};
+
+/// coeficientes estáticos (polar)
+pub const AeroCoeffs = extern struct {
+    CL: f64 = 0,
+    CD: f64 = 0,
+    CY: f64 = 0,
+    Cl: f64 = 0,
+    Cm: f64 = 0,
+    Cn: f64 = 0,
+    CL_wing: f64 = 0,
+    CL_ht: f64 = 0,
+    ratioCL: f64 = 0,
+};
+
+/// ponto de operação de uma unidade propulsora em equilíbrio de rotação
+pub const PropPoint = extern struct {
+    V: f64 = 0,
+    rpm: f64 = 0,
+    J: f64 = 0,
+    T: f64 = 0,
+    Q: f64 = 0,
+    P_shaft: f64 = 0,
+    P_elec: f64 = 0,
+    I: f64 = 0,
+    eta_prop: f64 = 0,
+};
+
+pub const MassProps = extern struct {
+    m: f64 = 0,
+    cg: [3]f64 = .{ 0, 0, 0 },
+    I: [9]f64 = [_]f64{0} ** 9,
+    m_liq: f64 = 0,
+};
+
+pub const trim_level = 0; // α, δe, acelerador   (γ = 0, n = 1)
+pub const trim_climb = 1; // α, δe, γ            (acelerador = 1)
+pub const trim_glide = 2; // α, δe, γ            (acelerador = 0)
+pub const trim_turn = 3; // α, δe, acelerador   (γ = 0, n dado)
+
+pub const TrimPoint = extern struct {
+    ok: i32 = 0,
+    _pad: i32 = 0,
+    V: f64 = 0,
+    alpha: f64 = 0,
+    de: f64 = 0,
+    thr: f64 = 0,
+    gamma: f64 = 0,
+    n: f64 = 1,
+    ratioCL: f64 = 0,
+    CL: f64 = 0,
+    D: f64 = 0,
+    T: f64 = 0,
+    P: f64 = 0,
+};
+
+/// uma linha da tabela de desempenho por velocidade
+pub const PerfRow = extern struct {
+    V: f64 = 0,
+    ok_level: f64 = 0,
+    alpha_level: f64 = 0,
+    de_level: f64 = 0,
+    thr_level: f64 = 0,
+    ratio_level: f64 = 0,
+    CL_level: f64 = 0,
+    D_level: f64 = 0,
+    T_level: f64 = 0,
+    P_level: f64 = 0,
+    ok_climb: f64 = 0,
+    gamma_max: f64 = 0,
+    roc_max: f64 = 0,
+    ok_glide: f64 = 0,
+    gamma_idle: f64 = 0,
+    roc_idle: f64 = 0,
+    n_stall: f64 = 0,
+    R_stall: f64 = 0,
+    phi_stall: f64 = 0,
+    n_sust: f64 = 0,
+    R_sust: f64 = 0,
+    phi_sust: f64 = 0,
+};

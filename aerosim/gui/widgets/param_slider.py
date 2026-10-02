@@ -1,0 +1,236 @@
+"""Slider + campo numérico sincronizados, e um formulário automático para dataclasses."""
+from __future__ import annotations
+
+import dataclasses
+import typing
+
+from PyQt6 import QtCore, QtWidgets
+
+# faixas dos sliders por nome de campo: (mín, máx, passo, unidade)
+RANGES: dict[str, tuple[float, float, float, str]] = {
+    "x": (-2.5, 2.5, 0.005, "m"), "y": (-2.5, 2.5, 0.005, "m"), "z": (-1.0, 1.0, 0.005, "m"),
+    "x_nose": (-1.0, 2.5, 0.005, "m"), "x_start": (-2.0, 1.0, 0.005, "m"), "length": (0.05, 3.0, 0.005, "m"),
+    "width": (0.02, 1.0, 0.005, "m"), "height": (0.02, 1.0, 0.005, "m"), "diameter": (0.005, 0.2, 0.001, "m"),
+    "dihedral": (-45, 60, 0.5, "°"), "incidence": (-10, 10, 0.1, "°"), "tilt": (-20, 20, 0.5, "°"),
+    "toe": (-20, 20, 0.5, "°"), "oswald": (0.3, 1.0, 0.01, ""), "eta": (0.3, 1.2, 0.01, ""),
+    "mass": (0.0, 20.0, 0.01, "kg"), "base_mass": (0.1, 50.0, 0.01, "kg"),
+    "Ixx": (0.0, 10.0, 0.01, "kg m²"), "Iyy": (0.0, 10.0, 0.01, "kg m²"), "Izz": (0.0, 10.0, 0.01, "kg m²"),
+    "Ixz": (-2.0, 2.0, 0.005, "kg m²"), "side": (0.02, 0.5, 0.002, "m"), "fill": (0.0, 0.5, 0.002, "m"),
+    "rho": (0.5, 1500.0, 1.0, "kg/m³"), "zeta": (0.0, 0.5, 0.005, ""), "bay": (0.05, 1.0, 0.01, "m"),
+    "main_x": (-1.0, 1.0, 0.005, "m"), "main_track": (0.05, 2.0, 0.005, "m"), "main_z": (0.01, 0.6, 0.002, "m"),
+    "steer_x": (-2.5, 2.0, 0.005, "m"), "steer_z": (0.0, 0.6, 0.002, "m"), "skid_x": (-2.5, 0.0, 0.005, "m"),
+    "skid_z": (-0.2, 0.4, 0.002, "m"), "yaw_mix": (-1.0, 1.0, 0.01, ""), "chord": (0.02, 2.0, 0.005, "m"),
+    "x_offset": (-1.0, 2.0, 0.005, "m"), "twist": (-15, 15, 0.1, "°"), "span_start": (0.0, 1.0, 0.01, ""),
+    "span_end": (0.0, 1.0, 0.01, ""), "chord_frac": (0.05, 0.6, 0.01, ""), "deflection": (-40, 40, 0.5, "°"),
+    "cl_alpha": (2.0, 7.0, 0.05, "1/rad"), "cl_max": (0.5, 2.5, 0.01, ""), "cd0": (0.0, 0.1, 0.001, ""),
+    "wind_speed": (0.0, 20.0, 0.1, "m/s"), "wind_from": (-180, 180, 1, "°"), "wind_elev": (-20, 20, 0.5, "°"),
+    "VR": (0.0, 40.0, 0.1, "m/s"), "sR": (0.0, 200.0, 0.5, "m"), "de0": (-25, 25, 0.5, "°"),
+    "de1": (-25, 25, 0.5, "°"), "ht": (0.5, 20, 0.1, "m"), "h_end": (1, 50, 0.5, "m"),
+    "alpha_max": (2, 25, 0.5, "°"), "phimax": (5, 80, 1, "°"), "dt": (1e-4, 1e-2, 1e-4, "s"),
+    "tmax": (5, 2000, 5, "s"), "dtlog": (1e-3, 0.5, 1e-3, "s"), "CDS": (0.0, 0.2, 0.001, "m²"),
+}
+
+
+def _decimals(step: float) -> int:
+    s = f"{step:.10f}".rstrip("0")
+    return max(0, len(s.split(".")[1]) if "." in s else 0)
+
+
+class ParamSlider(QtWidgets.QWidget):
+    """rótulo | slider | campo — arrastar ou digitar"""
+    valueChanged = QtCore.pyqtSignal(float)
+    RES = 1000
+
+    def __init__(self, label: str, value: float, minimum: float = 0.0, maximum: float = 1.0, step: float = 0.01,
+                 unit: str = "", parent=None):
+        super().__init__(parent)
+        self._lo, self._hi = minimum, maximum
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.label = QtWidgets.QLabel(label)
+        self.label.setMinimumWidth(90)
+        self.label.setToolTip(label)
+        self.slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.slider.setRange(0, self.RES)
+        self.spin = QtWidgets.QDoubleSpinBox()
+        self.spin.setDecimals(min(_decimals(step) + 1, 6))
+        self.spin.setRange(-1e9, 1e9)
+        self.spin.setSingleStep(step)
+        self.spin.setSuffix(f" {unit}" if unit else "")
+        self.spin.setKeyboardTracking(False)
+        self.spin.setMinimumWidth(92)
+        lay.addWidget(self.label, 3)
+        lay.addWidget(self.slider, 4)
+        lay.addWidget(self.spin, 3)
+        self._block = False
+        self.setValue(value)
+        self.slider.valueChanged.connect(self._from_slider)
+        self.spin.valueChanged.connect(self._from_spin)
+
+    def value(self) -> float:
+        return self.spin.value()
+
+    def setValue(self, v: float) -> None:
+        self._block = True
+        if v < self._lo:
+            self._lo = v
+        if v > self._hi:
+            self._hi = v
+        self.spin.setValue(v)
+        self.slider.setValue(self._to_pos(v))
+        self._block = False
+
+    def _to_pos(self, v):
+        span = self._hi - self._lo
+        return int(round((v - self._lo) / span * self.RES)) if span > 0 else 0
+
+    def _from_slider(self, pos):
+        if self._block:
+            return
+        v = self._lo + (self._hi - self._lo) * pos / self.RES
+        self._block = True
+        self.spin.setValue(v)
+        self._block = False
+        self.valueChanged.emit(self.spin.value())
+
+    def _from_spin(self, v):
+        if self._block:
+            return
+        self._block = True
+        if v < self._lo or v > self._hi:
+            self._lo, self._hi = min(self._lo, v), max(self._hi, v)
+        self.slider.setValue(self._to_pos(v))
+        self._block = False
+        self.valueChanged.emit(v)
+
+
+CHOICES = {
+    "role": ("wing", "htail", "vtail"),
+    "kind": None,      # depende do contexto (ver DataclassForm.choices)
+    "layout": ("tricycle", "conventional", "custom"),
+    "shape": ("square", "cylinder"),
+}
+CONTROL_KINDS = ("aileron", "elevator", "rudder", "elevon", "ruddervator", "flap")
+GEAR_KINDS = ("steer", "main", "skid")
+LEG_KINDS = ("straight", "turn")
+EVENT_KINDS = ("drop", "gust")
+
+LABELS = {
+    "x": "x", "y": "y", "z": "z", "name": "nome", "role": "papel", "dihedral": "diedro", "incidence": "incidência",
+    "symmetric": "simétrica", "vertical": "vertical", "oswald": "Oswald e", "eta": "η (q local)",
+    "downwash": "sente downwash", "enabled": "ativo", "mass": "massa", "tilt": "inclinação do eixo",
+    "toe": "desvio do eixo", "sense": "sentido (±1)", "yaw_mix": "acel. diferencial", "side": "lado/diâmetro",
+    "fill": "altura do líquido", "height": "altura", "rho": "densidade", "zeta": "amortecimento",
+    "shape": "forma", "layout": "tipo", "main_x": "principal x", "main_track": "bitola", "main_z": "principal z",
+    "steer_x": "direcionável x", "steer_z": "direcionável z", "tail_skid": "patim de cauda", "skid_x": "patim x",
+    "skid_z": "patim z", "x_nose": "nariz x", "length": "comprimento", "width": "largura",
+    "x_start": "início x", "diameter": "diâmetro", "attach_tail": "cauda na ponta", "bay": "baia",
+    "span_start": "início (fração)", "span_end": "fim (fração)", "chord_frac": "corda (fração)",
+    "deflection": "deflexão fixa", "chord": "corda", "x_offset": "recuo do BA", "twist": "torção",
+}
+
+
+class DataclassForm(QtWidgets.QWidget):
+    """formulário gerado a partir dos campos de uma dataclass (edita o objeto no lugar)"""
+    changed = QtCore.pyqtSignal(str)
+
+    def __init__(self, obj, exclude: tuple = (), choices: dict | None = None, parent=None):
+        super().__init__(parent)
+        self.obj = obj
+        self.choices = dict(CHOICES)
+        self.choices.update(choices or {})
+        self.widgets: dict[str, QtWidgets.QWidget] = {}
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(2)
+        hints = typing.get_type_hints(type(obj))
+        for f in dataclasses.fields(obj):
+            if f.name in exclude:
+                continue
+            tp = hints[f.name]
+            v = getattr(obj, f.name)
+            w = self._make(f.name, tp, v)
+            if w is not None:
+                lay.addWidget(w)
+                self.widgets[f.name] = w
+
+    def _make(self, name, tp, v):
+        label = LABELS.get(name, name)
+        opt = typing.get_origin(tp) in (typing.Union, getattr(__import__("types"), "UnionType", None))
+        base = [a for a in typing.get_args(tp) if a is not type(None)][0] if opt else tp
+        if dataclasses.is_dataclass(base):
+            box = QtWidgets.QGroupBox(label)
+            inner = DataclassForm(v, exclude=("coords",), choices=self.choices)
+            inner.changed.connect(lambda k, n=name: self.changed.emit(f"{n}.{k}"))
+            QtWidgets.QVBoxLayout(box).addWidget(inner)
+            return box
+        if base is bool:
+            w = QtWidgets.QCheckBox(label)
+            w.setChecked(bool(v))
+            w.toggled.connect(lambda val, n=name: self._set(n, bool(val)))
+            return w
+        if base is str:
+            ch = self.choices.get(name)
+            if ch:
+                w = QtWidgets.QComboBox()
+                w.addItems(ch)
+                if v in ch:
+                    w.setCurrentText(v)
+                w.currentTextChanged.connect(lambda val, n=name: self._set(n, val))
+            else:
+                w = QtWidgets.QLineEdit(v)
+                w.editingFinished.connect(lambda n=name, ww=w: self._set(n, ww.text()))
+            return self._row(label, w)
+        if base is int:
+            w = QtWidgets.QSpinBox()
+            w.setRange(-1000000, 1000000)
+            w.setValue(int(v))
+            w.valueChanged.connect(lambda val, n=name: self._set(n, int(val)))
+            return self._row(label, w)
+        if base is float:
+            if opt:      # sobrescrita opcional: caixa "auto" + campo
+                return self._optional(name, label, v)
+            lo, hi, st, un = RANGES.get(name, (min(0.0, v * 2) if v else -1.0, max(1.0, v * 2) if v else 1.0, 0.001, ""))
+            w = ParamSlider(label, float(v), lo, hi, st, un)
+            w.valueChanged.connect(lambda val, n=name: self._set(n, float(val)))
+            return w
+        return None          # listas: editores próprios
+
+    def _optional(self, name, label, v):
+        box = QtWidgets.QWidget()
+        h = QtWidgets.QHBoxLayout(box)
+        h.setContentsMargins(0, 0, 0, 0)
+        auto = QtWidgets.QCheckBox(f"{label}: auto")
+        spin = QtWidgets.QDoubleSpinBox()
+        spin.setDecimals(5)
+        spin.setRange(-1e6, 1e6)
+        spin.setSingleStep(0.01)
+        auto.setChecked(v is None)
+        spin.setEnabled(v is not None)
+        spin.setValue(0.0 if v is None else float(v))
+        auto.toggled.connect(lambda on: (spin.setEnabled(not on), self._set(name, None if on else spin.value())))
+        spin.valueChanged.connect(lambda val: self._set(name, float(val)) if not auto.isChecked() else None)
+        h.addWidget(auto, 3)
+        h.addWidget(spin, 2)
+        return box
+
+    def _row(self, label, w):
+        box = QtWidgets.QWidget()
+        h = QtWidgets.QHBoxLayout(box)
+        h.setContentsMargins(0, 0, 0, 0)
+        lb = QtWidgets.QLabel(label)
+        lb.setMinimumWidth(90)
+        h.addWidget(lb, 3)
+        h.addWidget(w, 7)
+        return box
+
+    def _set(self, name, value):
+        setattr(self.obj, name, value)
+        self.changed.emit(name)
+
+    def refresh(self) -> None:
+        """relê os valores do objeto (depois de um arraste no 3D, por exemplo)"""
+        for name, w in self.widgets.items():
+            v = getattr(self.obj, name)
+            if isinstance(w, ParamSlider) and isinstance(v, (int, float)):
+                w.setValue(float(v))

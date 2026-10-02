@@ -1,0 +1,270 @@
+"""Implementação de ISimBackend com o núcleo em Zig (libaerosim, via ctypes).
+
+As chamadas ctypes soltam o GIL, então sessões diferentes rodam em paralelo em threads.
+"""
+from __future__ import annotations
+
+import ctypes
+import math
+import os
+import subprocess
+import sys
+import threading
+
+import numpy as np
+
+from aerosim.interfaces.backend import ISimBackend, ISimSession, LogChunk, RunStatus, SimSpec, TrimKind
+from . import abi
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+CORE = os.path.join(ROOT, "core")
+LIB_NAMES = {"linux": "libaerosim.so", "darwin": "libaerosim.dylib", "win32": "aerosim.dll"}
+
+
+def lib_path() -> str:
+    name = LIB_NAMES.get(sys.platform, "libaerosim.so")
+    sub = "bin" if sys.platform == "win32" else "lib"
+    return os.path.join(CORE, "zig-out", sub, name)
+
+
+def _zig_cmd() -> list[str]:
+    try:
+        import ziglang  # noqa: F401  (pip install ziglang)
+        return [sys.executable, "-m", "ziglang"]
+    except ImportError:
+        return ["zig"]
+
+
+def _sources_mtime() -> float:
+    m = os.path.getmtime(os.path.join(CORE, "build.zig"))
+    for d, _, fs in os.walk(os.path.join(CORE, "src")):
+        for f in fs:
+            if f.endswith(".zig"):
+                m = max(m, os.path.getmtime(os.path.join(d, f)))
+    return m
+
+
+def build(fast_math: bool = True, force: bool = False) -> str:
+    """compila o núcleo se a biblioteca não existir ou estiver desatualizada"""
+    path = lib_path()
+    if force or not os.path.exists(path) or os.path.getmtime(path) < _sources_mtime():
+        cmd = _zig_cmd() + ["build", "--release=fast", f"-Dfast_math={'true' if fast_math else 'false'}"]
+        subprocess.run(cmd, cwd=CORE, check=True)
+    return path
+
+
+_ERRORS = {-1: "slot inválido", -2: "não configurado", -3: "segmento inválido", -4: "trimagem não convergiu",
+           -5: "índice inválido", -10: "superfícies demais", -11: "motores demais", -12: "pontos de trem demais",
+           -13: "tanques demais", -14: "segmentos demais", -15: "eventos demais", -16: "dt inválido",
+           -17: "massa inválida", -18: "pontos de hélice demais"}
+
+
+class CoreError(RuntimeError):
+    def __init__(self, code: int, where: str):
+        super().__init__(f"{where}: {_ERRORS.get(code, 'erro')} ({code})")
+        self.code = code
+
+
+def _check(code: int, where: str) -> int:
+    if code < 0:
+        raise CoreError(code, where)
+    return code
+
+
+class _Lib:
+    """a biblioteca carregada + esquema (uma por processo)"""
+    _inst: "_Lib | None" = None
+    _lock = threading.Lock()
+
+    @classmethod
+    def get(cls, path: str | None = None) -> "_Lib":
+        with cls._lock:
+            if cls._inst is None:
+                cls._inst = _Lib(path or build())
+            return cls._inst
+
+    def __init__(self, path: str):
+        L = self.dll = ctypes.CDLL(path)
+        c_int, c_double, c_size, vp = ctypes.c_int32, ctypes.c_double, ctypes.c_size_t, ctypes.c_void_p
+        L.aerosim_schema.restype = ctypes.c_char_p
+        self.schema = abi.parse(L.aerosim_schema().decode())
+        T = self.schema.types
+        sig = {
+            "aerosim_abi_version": (ctypes.c_uint32, []),
+            "aerosim_acquire": (c_int, []),
+            "aerosim_release": (None, [c_int]),
+            "aerosim_params": (ctypes.POINTER(T["Params"]), [c_int]),
+            "aerosim_params_reset": (c_int, [c_int]),
+            "aerosim_configure": (c_int, [c_int]),
+            "aerosim_reset_ground": (c_int, [c_int]),
+            "aerosim_reset_air": (c_int, [c_int, c_int]),
+            "aerosim_run": (c_int, [c_int, c_double, vp, c_size, ctypes.POINTER(c_size)]),
+            "aerosim_events": (ctypes.POINTER(T["Events"]), [c_int]),
+            "aerosim_time": (c_double, [c_int]),
+            "aerosim_snapshot_size": (c_size, []),
+            "aerosim_snapshot_save": (c_int, [c_int, ctypes.c_char_p]),
+            "aerosim_snapshot_load": (c_int, [c_int, ctypes.c_char_p]),
+            "aerosim_mass_props": (c_int, [c_int, ctypes.POINTER(T["MassProps"])]),
+            "aerosim_aero_coeffs": (c_int, [c_int] + [c_double] * 6 + [ctypes.POINTER(T["AeroCoeffs"])]),
+            "aerosim_prop_point": (c_int, [c_int, c_int, c_double, c_double, ctypes.POINTER(T["PropPoint"])]),
+            "aerosim_trim": (c_int, [c_int, c_int, c_double, c_double, ctypes.POINTER(T["TrimPoint"])]),
+            "aerosim_performance": (c_int, [c_int, c_double, c_double, c_double, vp, c_size]),
+        }
+        for name, (res, args) in sig.items():
+            fn = getattr(L, name)
+            fn.restype = res
+            fn.argtypes = args
+        if L.aerosim_abi_version() != self.schema.abi:
+            raise RuntimeError("versão do ABI não confere")
+        if L.aerosim_snapshot_size() != self.schema.snapshot_size:
+            raise RuntimeError("tamanho do snapshot não confere")
+        self.log_dtype = self.schema.dtypes["LogRow"]
+        self.perf_dtype = self.schema.dtypes["PerfRow"]
+
+
+def _struct_dict(obj) -> dict[str, float]:
+    return {k: getattr(obj, k) for k, _ in obj._fields_ if not k.startswith("_")}
+
+
+class ZigSession(ISimSession):
+    def __init__(self, lib: _Lib):
+        self._lib = lib
+        self._slot = _check(lib.dll.aerosim_acquire(), "acquire")
+        self._spec: SimSpec = {}
+        self._counts: dict[str, int] = {}
+
+    # ------------------------------------------------------------------ configuração
+    def configure(self, spec: SimSpec) -> None:
+        L = self._lib.dll
+        _check(L.aerosim_params_reset(self._slot), "params_reset")
+        p = L.aerosim_params(self._slot).contents
+        spec = dict(spec)
+        for arr, cnt in (("surf", "n_surf"), ("prop", "n_prop"), ("gear", "n_gear"), ("tank", "n_tank"),
+                         ("seg", "n_seg"), ("event", "n_event")):
+            if arr in spec:
+                spec[cnt] = len(spec[arr])
+        for u in spec.get("prop", []):
+            if "J" in u:
+                u.setdefault("n_pts", len(u["J"]))
+        abi.write(p, spec)
+        _check(L.aerosim_configure(self._slot), "configure")
+        self._spec = spec
+        self._counts = {k: int(spec.get(k, 0)) for k in ("n_prop", "n_gear", "n_tank")}
+
+    def derived(self) -> SimSpec:
+        return abi.read(self._lib.dll.aerosim_params(self._slot).contents)
+
+    def set(self, **overrides) -> None:
+        """muda escalares sem refazer tudo (ex.: stop_t, stop_seg) — chama configure de novo"""
+        p = self._lib.dll.aerosim_params(self._slot).contents
+        abi.write(p, overrides)
+        _check(self._lib.dll.aerosim_configure(self._slot), "configure")
+
+    # ------------------------------------------------------------------ corrida
+    def reset_ground(self) -> None:
+        _check(self._lib.dll.aerosim_reset_ground(self._slot), "reset_ground")
+
+    def reset_air(self, segment: int) -> None:
+        _check(self._lib.dll.aerosim_reset_air(self._slot, int(segment)), "reset_air")
+
+    def run(self, t_limit: float = float("inf"), max_rows: int = 200_000) -> tuple[RunStatus, LogChunk]:
+        n = ctypes.c_size_t(0)
+        tl = t_limit if math.isfinite(t_limit) else 1e300
+        if max_rows <= 0:          # sem registro: o núcleo roda direto até parar
+            buf = np.zeros(0, dtype=self._lib.log_dtype)
+            st = self._lib.dll.aerosim_run(self._slot, tl, None, 0, ctypes.byref(n))
+        else:
+            buf = np.zeros(int(max_rows), dtype=self._lib.log_dtype)
+            st = self._lib.dll.aerosim_run(self._slot, tl, buf.ctypes.data, len(buf), ctypes.byref(n))
+        _check(st if st != -1 else -2, "run")
+        return RunStatus(st), self._to_chunk(buf[: n.value])
+
+    def _to_chunk(self, rows: np.ndarray) -> LogChunk:
+        cols: dict[str, np.ndarray] = {}
+        active = {"rpm": "n_prop", "thrust": "n_prop", "current": "n_prop", "Ngear": "n_gear",
+                  "slosh_x": "n_tank", "slosh_y": "n_tank"}
+        for name in rows.dtype.names:
+            v = rows[name]
+            if v.ndim == 1:
+                cols[name] = np.array(v)
+            else:
+                for i in range(self._counts.get(active.get(name, ""), v.shape[1])):
+                    cols[f"{name}_{i}"] = np.array(v[:, i])
+        return LogChunk(cols)
+
+    def events(self) -> dict[str, float]:
+        return _struct_dict(self._lib.dll.aerosim_events(self._slot).contents)
+
+    @property
+    def time(self) -> float:
+        return float(self._lib.dll.aerosim_time(self._slot))
+
+    def snapshot(self) -> bytes:
+        buf = ctypes.create_string_buffer(self._lib.schema.snapshot_size)
+        _check(self._lib.dll.aerosim_snapshot_save(self._slot, buf), "snapshot")
+        return buf.raw
+
+    def restore(self, snap: bytes) -> None:
+        if len(snap) != self._lib.schema.snapshot_size:
+            raise ValueError("snapshot de outra versão do núcleo")
+        _check(self._lib.dll.aerosim_snapshot_load(self._slot, snap), "restore")
+
+    # ------------------------------------------------------------------ análises estáticas
+    def aero_coeffs(self, V, alpha, beta=0.0, de=0.0, da=0.0, dr=0.0):
+        o = self._lib.schema.types["AeroCoeffs"]()
+        _check(self._lib.dll.aerosim_aero_coeffs(self._slot, V, alpha, beta, de, da, dr, ctypes.byref(o)), "aero")
+        return _struct_dict(o)
+
+    def prop_point(self, index, V, thr=1.0):
+        o = self._lib.schema.types["PropPoint"]()
+        _check(self._lib.dll.aerosim_prop_point(self._slot, int(index), V, thr, ctypes.byref(o)), "prop_point")
+        return _struct_dict(o)
+
+    def mass_props(self):
+        o = self._lib.schema.types["MassProps"]()
+        _check(self._lib.dll.aerosim_mass_props(self._slot, ctypes.byref(o)), "mass_props")
+        return {"m": o.m, "cg": list(o.cg), "I": np.array(list(o.I)).reshape(3, 3), "m_liq": o.m_liq}
+
+    def trim(self, kind: TrimKind, V: float, n: float = 1.0):
+        o = self._lib.schema.types["TrimPoint"]()
+        self._lib.dll.aerosim_trim(self._slot, int(kind), V, n, ctypes.byref(o))
+        d = _struct_dict(o)
+        d["ok"] = bool(d["ok"])
+        return d
+
+    def performance(self, V_hi, V_lo, dV):
+        cap = int((V_hi - V_lo) / dV) + 2
+        buf = np.zeros(cap, dtype=self._lib.perf_dtype)
+        n = _check(self._lib.dll.aerosim_performance(self._slot, V_hi, V_lo, dV, buf.ctypes.data, cap), "performance")
+        return {k: np.array(buf[k][:n]) for k in buf.dtype.names}
+
+    def close(self) -> None:
+        if self._slot >= 0:
+            self._lib.dll.aerosim_release(self._slot)
+            self._slot = -1
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
+class ZigBackend(ISimBackend):
+    name = "zig"
+
+    def __init__(self, lib_path: str | None = None):
+        self._lib = _Lib.get(lib_path)
+
+    def open_session(self) -> ZigSession:
+        return ZigSession(self._lib)
+
+    def limits(self) -> dict[str, int]:
+        return dict(self._lib.schema.limits)
+
+    def log_channels(self) -> list[str]:
+        return list(self._lib.log_dtype.names)
+
+    @property
+    def schema(self) -> abi.Schema:
+        return self._lib.schema
