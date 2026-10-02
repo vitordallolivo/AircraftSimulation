@@ -52,6 +52,9 @@ pub const schema: [:0]const u8 = blk: {
         "abi {d}\nlimit surfaces {d}\nlimit props {d}\nlimit prop_pts {d}\nlimit gear {d}\nlimit tanks {d}\nlimit segments {d}\nlimit events {d}\nlimit instances {d}\nlimit nx {d}\nsnapshot {d}\n",
         .{ version, L.max_surfaces, L.max_props, L.max_prop_pts, L.max_gear, L.max_tanks, L.max_segments, L.max_events, L.max_instances, S.nx, @sizeOf(S.Run) },
     );
+    s = s ++ std.fmt.comptimePrint("limit poly_coef {d}\npoly_terms", .{T.ThrustPoly.n_coef});
+    for (0..T.ThrustPoly.n_coef) |k| s = s ++ " " ++ T.ThrustPoly.name(k);
+    s = s ++ "\n";
     for (exported) |Ty| s = s ++ describe(Ty);
     const z = s ++ "\x00";
     break :blk z[0..s.len :0];

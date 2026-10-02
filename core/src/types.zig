@@ -5,6 +5,20 @@
 //! para montar as estruturas ctypes. Campos marcados "derivado" são calculados em
 //! `init` a partir dos demais e podem ser lidos de volta.
 const L = @import("limits.zig");
+const poly = @import("math/poly.zig");
+
+/// polinômio de tração (gerado em comptime a partir do grau em limits.zig)
+pub const ThrustPoly = poly.Poly2(L.thrust_poly_deg);
+
+pub const prop_motor = 0; // motor BLDC + hélice por tabela J, C_T, C_P (com dinâmica de rotação)
+pub const prop_poly = 1; // tração por polinômio T(x, y) ajustado (sem motor/bateria)
+
+/// variáveis do polinômio de tração
+pub const pvar_none = 0;
+pub const pvar_V = 1; // velocidade do ar no eixo do motor (m/s)
+pub const pvar_throttle = 2; // acelerador 0..1
+pub const pvar_h = 3; // altura (m)
+pub const pvar_rho = 4; // densidade (kg/m³)
 
 /// Painel sustentador (faixa de meia asa, EH, EV...). A deflexão vista pelo painel é
 ///   δ = tau · (mix[0] δe + mix[1] δa + mix[2] δr)
@@ -55,8 +69,17 @@ pub const PropUnit = extern struct {
     Voc: f64 = 11.1,
     Rint: f64 = 0.02,
     yaw_mix: f64 = 0, // acelerador diferencial: thr_i = thr + yaw_mix δr
+    model: i32 = prop_motor,
     n_pts: i32 = 0,
-    _pad: i32 = 0,
+    // tração polinomial: T = gain · P(x, y) · (ρ/ρ0)^rho_exp  (× acelerador se nem x nem y for o acelerador)
+    poly_x: i32 = pvar_V,
+    poly_y: i32 = pvar_none,
+    poly_gain: f64 = 1,
+    poly_rho_exp: f64 = 0,
+    poly_rho0: f64 = 1.225,
+    poly_xmax: f64 = 0, // > 0: x limitado a [0, xmax] (faixa do ajuste)
+    poly_ymax: f64 = 0,
+    poly: [ThrustPoly.n_coef]f64 = [_]f64{0} ** ThrustPoly.n_coef,
     J: [L.max_prop_pts]f64 = [_]f64{0} ** L.max_prop_pts,
     CT: [L.max_prop_pts]f64 = [_]f64{0} ** L.max_prop_pts,
     CP: [L.max_prop_pts]f64 = [_]f64{0} ** L.max_prop_pts,

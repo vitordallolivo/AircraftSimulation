@@ -4,7 +4,7 @@ import math
 import os
 import sys
 
-LEGACY_PY = os.path.join(os.path.dirname(__file__), "..", "legacy", "py")
+LEGACY_PY = os.path.join(os.path.dirname(__file__), "..", "..", "legacy", "py")
 D2R = math.pi / 180
 
 

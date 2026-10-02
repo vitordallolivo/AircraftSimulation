@@ -49,7 +49,7 @@ fn residual(c: Ctx, cs: Case, u: [3]f64, r: *[3]f64, e: ?*T.TrimPoint) void {
     const ae = aero.compute(p, Vr, vec.zero, c.rcg, 100.0, .{ de, 0, 0 });
     var rps = [_]f64{1} ** L.max_props;
     for (p.prop[0..@intCast(p.n_prop)], 0..) |*pu, i| rps[i] = prop.equilibriumRps(p, pu, Vr, thr);
-    const pr = prop.compute(p, Vr, vec.zero, c.rcg, &rps, thr, 0, 0);
+    const pr = prop.compute(p, Vr, vec.zero, c.rcg, &rps, thr, 0, 0, 0);
     const W = c.m * L.g0;
     const g = fm.sincos(gam);
     const Fx = ae.F[0] + pr.F[0];
@@ -143,12 +143,21 @@ pub fn performance(c: Ctx, V_hi: f64, V_lo: f64, dV: f64, rows: []T.PerfRow) usi
         const en = solve(c, T.trim_level, V, 1, &un);
         const ec = solve(c, T.trim_climb, V, 1, &uc);
         const eg = solve(c, T.trim_glide, V, 1, &ug);
+        // ponto que não convergiu não serve de chute para o próximo
+        const un_used = un;
+        const uc_used = uc;
+        const ug_used = ug;
+        defer {
+            if (en.ok == 0) un = .{ 0.1, -0.05, 0.5 };
+            if (ec.ok == 0) uc = .{ 0.1, -0.05, 0.1 };
+            if (eg.ok == 0) ug = .{ 0.1, -0.05, -0.1 };
+        }
         // curvas: bisseção no fator de carga
         var nlim = [2]f64{ 1, 1 };
         for (0..2) |tipo| {
             var lo: f64 = 1.0;
             var hi: f64 = 6.0;
-            var u = un;
+            var u = un_used;
             for (0..40) |_| {
                 const nm = 0.5 * (lo + hi);
                 var ut = u;
@@ -169,20 +178,20 @@ pub fn performance(c: Ctx, V_hi: f64, V_lo: f64, dV: f64, rows: []T.PerfRow) usi
         rows[k] = .{
             .V = V,
             .ok_level = if (en.ok != 0 and en.ratioCL <= 1.0) 1 else 0,
-            .alpha_level = un[0],
-            .de_level = un[1],
-            .thr_level = un[2],
+            .alpha_level = un_used[0],
+            .de_level = un_used[1],
+            .thr_level = un_used[2],
             .ratio_level = en.ratioCL,
             .CL_level = en.CL,
             .D_level = en.D,
             .T_level = en.T,
             .P_level = en.P,
             .ok_climb = if (ec.ok != 0 and ec.ratioCL <= 1.0) 1 else 0,
-            .gamma_max = uc[2],
-            .roc_max = V * fm.sin(uc[2]),
+            .gamma_max = uc_used[2],
+            .roc_max = V * fm.sin(uc_used[2]),
             .ok_glide = @floatFromInt(eg.ok),
-            .gamma_idle = ug[2],
-            .roc_idle = V * fm.sin(ug[2]),
+            .gamma_idle = ug_used[2],
+            .roc_idle = V * fm.sin(ug_used[2]),
             .n_stall = nlim[0],
             .R_stall = radius(V, nlim[0]),
             .phi_stall = fm.acos(1.0 / nlim[0]),

@@ -4,6 +4,7 @@
 pub const max_surfaces = 48; // painéis sustentadores (meias asas em faixas, EH, EV, ...)
 pub const max_props = 8; // unidades propulsoras (motor + hélice + bateria)
 pub const max_prop_pts = 64; // pontos da tabela J, C_T, C_P de cada hélice
+pub const thrust_poly_deg = 5; // grau do polinômio de tração T(x, y) (poly55: 21 coeficientes)
 pub const max_gear = 8; // pontos de contato com o solo
 pub const max_tanks = 8; // tanques com sloshing
 pub const max_segments = 32; // pernas do percurso

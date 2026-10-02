@@ -60,9 +60,9 @@ pub const Out = struct {
 
 pub fn f(c: S.Ctx, t: f64, x: []const f64, dx: []f64, out: ?*Out) void {
     const p = c.p;
-    var oo: Out = .{};
+    var oo: Out = undefined; // sem saída: só g e c são escritos (evita zerar ~2 KB por chamada)
     const o: *Out = out orelse &oo;
-    @memset(dx, 0);
+    dx[0..S.nx].* = @as([S.nx]f64, @splat(0.0)); // tamanho em comptime: stores vetoriais, sem chamar memset
     const R = vec.rotation(x[S.PHI], x[S.THE], x[S.PSI]);
     const VB = V3{ x[S.U], x[S.V], x[S.W] };
     const w = V3{ x[S.P], x[S.Q], x[S.R] };
@@ -89,7 +89,7 @@ pub fn f(c: S.Ctx, t: f64, x: []const f64, dx: []f64, out: ?*Out) void {
 
     // forças e momentos
     const ae = aero.compute(p, Vr, w, ms.rcg, h, .{ cmd.de, cmd.da, cmd.dr });
-    const pr = prop.compute(p, Vr, w, ms.rcg, x[S.RPS0 .. S.RPS0 + L.max_props], cmd.thr, cmd.dr, x[S.THE]);
+    const pr = prop.compute(p, Vr, w, ms.rcg, x[S.RPS0 .. S.RPS0 + L.max_props], cmd.thr, cmd.dr, x[S.THE], h);
     const gr = gear.compute(c, x, R, ms.rcg, cmd.dw);
     var F = ae.F + pr.F + gr.F;
     var M = ae.M + pr.M + pr.Mgyro + gr.M;

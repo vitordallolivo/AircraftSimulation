@@ -509,8 +509,95 @@ class ConfigTab(QtWidgets.QWidget):
         return box
 
     def _propulsion_choice(self, u: PropulsionUnit):
-        box = QtWidgets.QGroupBox("Motor, hélice e bateria (catálogo)")
+        box = QtWidgets.QGroupBox("Tração")
+        v = QtWidgets.QVBoxLayout(box)
+        model = QtWidgets.QComboBox()
+        model.addItems(["motor + hélice (catálogo)", "polinômio de tração (conjunto)"])
+        model.setCurrentIndex(1 if u.thrust_model == "poly" else 0)
+        v.addWidget(model)
+        holder = QtWidgets.QVBoxLayout()
+        v.addLayout(holder)
+
+        def fill():
+            while holder.count():
+                w = holder.takeAt(0).widget()
+                if w:
+                    w.deleteLater()
+            holder.addWidget(self._poly_editor(u) if u.thrust_model == "poly" else self._motor_editor(u))
+
+        def change(i):
+            u.thrust_model = "poly" if i == 1 else "motor"
+            fill()
+            self.state.notify("geometry")
+        model.currentIndexChanged.connect(change)
+        bt = QtWidgets.QPushButton("Curva de tração × velocidade…")
+        bt.clicked.connect(self._thrust_dialog)
+        v.addWidget(bt)
+        fill()
+        return box
+
+    def _poly_editor(self, u: PropulsionUnit):
+        from aerosim.model.catalog import POLY_TERMS, POLY_VARS
+        w = QtWidgets.QWidget()
+        v = QtWidgets.QVBoxLayout(w)
+        v.setContentsMargins(0, 0, 0, 0)
+        sets = self.state.catalog.thrust_sets
+        cb = QtWidgets.QComboBox()
+        names = [t.name for t in sets]
+        if u.thrust_poly.name not in names:
+            names.insert(0, u.thrust_poly.name)
+        cb.addItems(names)
+        cb.setCurrentText(u.thrust_poly.name)
+        v.addWidget(QtWidgets.QLabel(f"conjunto ({len(sets)} no catálogo; importe a planilha para trazer os da aba Tracao)"))
+        v.addWidget(cb)
+        form_holder = QtWidgets.QVBoxLayout()
+        v.addLayout(form_holder)
+        table = QtWidgets.QTableWidget(len(POLY_TERMS), 1)
+        table.setVerticalHeaderLabels(POLY_TERMS)
+        table.setHorizontalHeaderLabels(["coeficiente"])
+        table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
+        table.setMaximumHeight(200)
+        v.addWidget(table)
+
+        def fill():
+            while form_holder.count():
+                x = form_holder.takeAt(0).widget()
+                if x:
+                    x.deleteLater()
+            f = DataclassForm(u.thrust_poly, exclude=("coefs", "name"), choices={"x_var": POLY_VARS, "y_var": POLY_VARS})
+            f.changed.connect(lambda *_: self.state.notify("geometry"))
+            form_holder.addWidget(f)
+            table.blockSignals(True)
+            for k in range(len(POLY_TERMS)):
+                c = u.thrust_poly.coefs[k] if k < len(u.thrust_poly.coefs) else 0.0
+                table.setItem(k, 0, QtWidgets.QTableWidgetItem(f"{c:.8g}"))
+            table.blockSignals(False)
+
+        def edited(item):
+            try:
+                val = float(item.text().replace(",", "."))
+            except ValueError:
+                return
+            while len(u.thrust_poly.coefs) < len(POLY_TERMS):
+                u.thrust_poly.coefs.append(0.0)
+            u.thrust_poly.coefs[item.row()] = val
+            self.state.notify("geometry")
+
+        def pick(name):
+            t = next((x for x in sets if x.name == name), None)
+            if t is not None:
+                u.thrust_poly = copy.deepcopy(t)
+                fill()
+                self.state.notify("geometry")
+        cb.currentTextChanged.connect(pick)
+        table.itemChanged.connect(edited)
+        fill()
+        return w
+
+    def _motor_editor(self, u: PropulsionUnit):
+        box = QtWidgets.QWidget()
         g = QtWidgets.QFormLayout(box)
+        g.setContentsMargins(0, 0, 0, 0)
         cat = self.state.catalog
         combos = {}
         for attr, items, label in (("motor", cat.motors, "motor"), ("propeller", cat.propellers, "hélice"),
@@ -543,9 +630,6 @@ class ConfigTab(QtWidgets.QWidget):
         for attr in combos:
             combos[attr][0].currentTextChanged.connect(lambda _t, a=attr: pick(a))
         g.addRow(info)
-        bt = QtWidgets.QPushButton("Curva de tração × velocidade…")
-        bt.clicked.connect(self._thrust_dialog)
-        g.addRow(bt)
         describe()
         return box
 

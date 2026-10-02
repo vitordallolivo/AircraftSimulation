@@ -191,15 +191,29 @@ export fn aerosim_performance(slot: i32, V_hi: f64, V_lo: f64, dV: f64, rows: [*
     return @intCast(n);
 }
 
+// ---------------------------------------------------------------- benchmarks
+const bench = @import("bench.zig");
+
+/// n chamadas de uma função matemática (ver bench.Kind); devolve a soma (o Python cronometra)
+export fn aerosim_bench_math(kind: i32, n: u64, random: i32) f64 {
+    const k = std.enums.fromInt(bench.Kind, kind) orelse return std.math.nan(f64);
+    return bench.math(k, n, random != 0);
+}
+
+/// n avaliações da dinâmica f(t, x) no estado atual
+export fn aerosim_bench_dynamics(slot: i32, n: u64) f64 {
+    const inst = getConfigured(slot) orelse return std.math.nan(f64);
+    return bench.dynamics(inst, n);
+}
+
+/// 1 se compilado com tabelas/polinômios (-Dfast_math=true)
+export fn aerosim_fast_math() i32 {
+    return if (@import("math/fmath.zig").fast) 1 else 0;
+}
+
 test {
-    _ = @import("math/fmath.zig");
-    _ = @import("math/vec.zig");
-    _ = @import("physics/atmosphere.zig");
-    _ = @import("physics/aero.zig");
-    _ = @import("physics/propulsion.zig");
-    _ = @import("physics/gear.zig");
-    _ = @import("physics/mass.zig");
-    _ = @import("control/guidance.zig");
-    _ = abi;
-    _ = @import("sim/tests.zig");
+    _ = @import("tests_math.zig");
+    _ = @import("tests_physics.zig");
+    _ = @import("tests_control.zig");
+    _ = @import("tests_sim.zig");
 }

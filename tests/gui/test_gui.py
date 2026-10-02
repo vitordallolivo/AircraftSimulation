@@ -55,3 +55,29 @@ def test_simulation_tab_runs(app, manager):
         pump(app, 0.05)
     assert tab.result is not None and tab.result.status == "COMPLETED"
     assert tab.table.rowCount() > 5
+
+
+def test_propulsion_poly_editor(app, manager, desempenho_xlsx, mapping_path):
+    """importar a planilha traz os conjuntos de tração; o editor troca motor <-> polinômio"""
+    from PyQt6 import QtCore
+    from aerosim.data.cellmap import CellMapAircraftSource
+    from aerosim.gui.main_window import MainWindow
+    from aerosim.gui.state import AppState
+    src = CellMapAircraftSource(mapping_path)
+    ac = src.load(desempenho_xlsx)
+    st = AppState(manager, ac)
+    st.catalog = st.catalog.merge(src.catalog)
+    w = MainWindow(st)
+    cfg = w.config
+    for i in range(cfg.comp_list.count()):
+        if cfg.comp_list.item(i).data(QtCore.Qt.ItemDataRole.UserRole) == "prop:0":
+            cfg.comp_list.setCurrentRow(i)
+    pump(app)
+    combos = cfg.editor_area.widget().findChildren(QtWidgets.QComboBox)
+    model = next(c for c in combos if c.count() == 2 and "polinômio" in c.itemText(1))
+    assert model.currentIndex() == 1
+    sets = next(c for c in combos if c.findText("conjunto A") >= 0)
+    sets.setCurrentText("conjunto A")
+    assert st.aircraft.propulsion[0].thrust_poly.name == "conjunto A"
+    model.setCurrentIndex(0)
+    assert st.aircraft.propulsion[0].thrust_model == "motor"

@@ -45,11 +45,52 @@ class Battery:
         return self.cells * self.V_cell
 
 
+POLY_TERMS = ["p00", "p10", "p01", "p20", "p11", "p02", "p30", "p21", "p12", "p03", "p40", "p31", "p22", "p13",
+              "p04", "p50", "p41", "p32", "p23", "p14", "p05"]
+POLY_VARS = ("none", "V", "throttle", "h", "rho")
+
+
+@dataclass
+class ThrustPoly:
+    """conjunto motor+hélice descrito por um polinômio de tração ajustado (poly55 do MATLAB):
+        T = gain · P(x, y) · (ρ/ρ0)^rho_exp      (× acelerador se nem x nem y for o acelerador)
+        P(x, y) = p00 + p10 x + p01 y + p20 x² + p11 x y + p02 y² + ... (grau 5, 21 termos)"""
+    name: str = "conjunto"
+    coefs: list[float] = field(default_factory=lambda: [0.0] * 21)
+    x_var: str = "V"
+    y_var: str = "none"
+    gain: float = 1.0
+    rho_exp: float = 0.0
+    rho0: float = 1.225
+    xmax: float = 0.0          # > 0: x limitado à faixa do ajuste
+    ymax: float = 0.0
+    T0: float = 0.0            # informativo (tração estática da planilha)
+    n: float = 0.0             # informativo (coluna n da planilha)
+    source: str = ""
+
+    def thrust(self, V: float, thr: float = 1.0, h: float = 0.0, rho: float = 1.225) -> float:
+        """mesma conta do núcleo (para conferir e desenhar sem abrir uma sessão)"""
+        vals = {"none": 0.0, "V": V, "throttle": thr, "h": h, "rho": rho}
+        x, y = vals[self.x_var], vals[self.y_var]
+        if self.xmax > 0:
+            x = min(max(x, 0.0), self.xmax)
+        if self.ymax > 0:
+            y = min(max(y, 0.0), self.ymax)
+        P = 0.0
+        for c, term in zip(self.coefs, POLY_TERMS):
+            P += c * x ** int(term[1]) * y ** int(term[2])
+        T = self.gain * P * ((rho / self.rho0) ** self.rho_exp if self.rho_exp else 1.0)
+        if "throttle" not in (self.x_var, self.y_var):
+            T *= thr
+        return max(T, 0.0)
+
+
 @dataclass
 class Catalog:
     motors: list[Motor] = field(default_factory=list)
     propellers: list[Propeller] = field(default_factory=list)
     batteries: list[Battery] = field(default_factory=list)
+    thrust_sets: list[ThrustPoly] = field(default_factory=list)
 
     def motor(self, name: str) -> Motor:
         return next(m for m in self.motors if m.name == name)
@@ -60,12 +101,15 @@ class Catalog:
     def battery(self, name: str) -> Battery:
         return next(b for b in self.batteries if b.name == name)
 
+    def thrust_set(self, name: str) -> ThrustPoly:
+        return next(t for t in self.thrust_sets if t.name == name)
+
     def merge(self, other: "Catalog") -> "Catalog":
         def un(a, b):
             seen = {x.name for x in a}
             return a + [x for x in b if x.name not in seen]
         return Catalog(un(self.motors, other.motors), un(self.propellers, other.propellers),
-                       un(self.batteries, other.batteries))
+                       un(self.batteries, other.batteries), un(self.thrust_sets, other.thrust_sets))
 
 
 # APC 15x8E a 6000 rpm (tabela J, C_T, C_P do fabricante, vinda do código original)

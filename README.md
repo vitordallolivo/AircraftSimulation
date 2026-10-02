@@ -1,123 +1,160 @@
 # aerosim — simulador 6GDL de aeronaves em camadas
 
-```
-GUI (PyQt6 + pyqtgraph)          aerosim/gui        aba de configuração 3D + uma aba por simulação
-   │  ISimulationManager
-Simulation Manager (Python)      aerosim/manager    o que roda, até onde, de onde retoma, o que itera
-   │  ISimBackend / ISimSession
-Sim (núcleo em Zig)              core/              dinâmica 6GDL, RK4, trimagem — memória estática
-                                                    
-Aircraft Data                    aerosim/data       .cfg, .json, .xlsx, planilha por mapa de células
-   │  IAircraftSource / ICatalogSource
-Modelo                           aerosim/model      aeronave, perfis .dat, catálogo, missão, geometria
+Simulador de voo de 6 graus de liberdade para aeronaves pequenas (asa, cauda, K motores, trem de
+pouso, líquido com sloshing, carga com soltura), com GUI em PyQt6, um orquestrador de simulações em
+Python e o núcleo numérico em Zig.
+
+```mermaid
+flowchart LR
+    subgraph IF["aerosim/interfaces (contratos)"]
+        direction TB
+        I1["ISimulationManager / ISimulation"]
+        I2["ISimBackend / ISimSession"]
+        I3["IAircraftSource / ICatalogSource"]
+    end
+    GUI["GUI<br/>aerosim/gui"] --> I1
+    I1 --> MAN["Simulation Manager<br/>aerosim/manager"]
+    MAN --> I2
+    I2 --> BK["Backend Zig (ctypes)<br/>aerosim/backend"]
+    BK --> CORE["Núcleo Sim<br/>core/ (Zig)"]
+    GUI --> I3
+    I3 --> DATA["Aircraft Data<br/>aerosim/data"]
+    DATA --> MOD["Modelo<br/>aerosim/model"]
+    MAN --> MOD
+    classDef iface fill:#cfe3ff,stroke:#1f4e8c,stroke-width:2px,color:#0b2545
+    classDef layer fill:#f4f4f4,stroke:#888,color:#222
+    class I1,I2,I3 iface
+    class GUI,MAN,BK,CORE,DATA,MOD layer
+    style IF fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
-Cada camada só conhece a **interface** da camada de baixo (`aerosim/interfaces`). Trocar o núcleo,
-a origem dos dados ou a GUI é trocar o objeto passado; `tests/test_manager.py` roda o manager com um
-backend falso para provar isso.
+Cada camada só conhece a **interface** (em azul) da camada de baixo. Trocar o núcleo, a origem dos
+dados ou a GUI é trocar o objeto passado — `tests/manager/test_orchestration.py` roda o manager com um
+núcleo falso para provar isso.
 
-## Instalar e usar
+| pasta | o que é | leia |
+|---|---|---|
+| `core/` | núcleo em Zig: dinâmica, RK4, trimagem, LUTs, polinômio de tração em comptime | [core/README.md](core/README.md) |
+| `aerosim/interfaces/` | contratos entre as camadas | [README](aerosim/interfaces/README.md) |
+| `aerosim/model/` | modelo de dados da aeronave, perfis, geometria, massa, missão | [README](aerosim/model/README.md) |
+| `aerosim/data/` | leitura/gravação: `.cfg`, `.json`, `.xlsx`, planilha por mapa de células | [README](aerosim/data/README.md) |
+| `aerosim/backend/` | ponte Python ↔ núcleo (ctypes, esquema gerado em comptime) | [README](aerosim/backend/README.md) |
+| `aerosim/manager/` | Simulation Manager e as simulações | [README](aerosim/manager/README.md) |
+| `aerosim/gui/` | interface gráfica | [README](aerosim/gui/README.md) |
+| `tests/` | testes por camada | [README](tests/README.md) |
+| `data/` | aeronaves, perfis `.dat`, catálogo, mapas de planilha | [README](data/README.md) |
+| `legacy/` | simulador original (C + Python), usado como referência nos testes | — |
+
+---
+
+## 1. O que baixar
+
+| item | versão | para quê | como |
+|---|---|---|---|
+| Git | qualquer | clonar o repositório | <https://git-scm.com> |
+| Python | **3.10 ou mais novo** (testado no 3.11) | GUI, manager, dados | <https://www.python.org/downloads/> (no Windows marque "Add python.exe to PATH") |
+| Zig | **0.16.0** | compilar o núcleo | já vem pelo `pip` (pacote `ziglang`, no `requirements.txt`); ou baixe de <https://ziglang.org/download/> e deixe `zig` no PATH |
+| pacotes Python | ver `requirements.txt` | numpy, openpyxl, PyQt6, pyqtgraph, PyOpenGL, pytest | `pip install -r requirements.txt` |
+| gcc + make | opcional | só para o teste que compara com o simulador C original | Linux: `sudo apt install build-essential` |
+
+**Linux:** o PyQt6 precisa de algumas bibliotecas de sistema (OpenGL e X11). No Ubuntu/Debian:
 
 ```sh
-pip install -r requirements.txt        # inclui o compilador Zig 0.16 (pacote ziglang)
-python -m aerosim.gui                  # GUI (compila o núcleo na primeira vez)
-python -m aerosim.gui data/aircraft/twin_boom.cfg
-python -m pytest tests                 # 45 testes: núcleo, ABI, C original, dados, manager, GUI
+sudo apt install libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 \
+                 libxcb-shape0 libxcb-xinerama0 libxcb-randr0 libxcb-render-util0 libxcb-image0 \
+                 libfontconfig1 libdbus-1-3
 ```
 
-O núcleo é compilado sozinho quando falta ou está desatualizado
-(`cd core && python -m ziglang build --release=fast`). Testes do Zig: `python -m ziglang build test`.
+Windows e macOS não precisam de nada além do Python.
 
-## GUI
+## 2. Configurar o repositório
 
-**Configuração** — a aeronave em 3D ocupa ~80 % da tela; o painel à direita tem:
+```sh
+git clone https://github.com/vitordallolivo/AircraftSimulation.git
+cd AircraftSimulation
 
-- vento: velocidade (slider) e direção (dial + botões ⟲ 15° / 15° ⟳), seta azul no 3D;
-- lista de componentes com **+ Asa, + EH, + EV, + Motor, + Tanque, Remover** e as opções tubo de cauda,
-  fuselagem, carga e trem **triciclo / convencional / custom**;
-- editor do componente selecionado: cada número é um **slider + campo digitável**
-  (posições x, y, z do motor, diedro, incidência, massa…); seções da asa (y, corda, recuo do bordo de
-  ataque, torção) em tabela; comandos (aileron, profundor, leme, **elevon**, **ruddervator**, flape) com
-  início/fim na envergadura e fração de corda; perfil por nome NACA ou **arquivo .dat** (desenhado e
-  usado na malha 3D, com α_L0 e C_m,ac pela teoria de perfil fino);
-- motor, hélice e bateria escolhidos do catálogo e o botão **curva de tração × velocidade**;
-- **clique e arraste** qualquer componente no 3D (motor, superfície, tanque, carga, trem…), no plano da
-  tela ou travado em x, y ou z; os sliders acompanham;
-- resumo ao vivo: massa, CG (ponto vermelho), ponto neutro (linha verde), margem estática, C_Lα, V_estol.
+python -m venv .venv                      # ambiente isolado (recomendado)
+source .venv/bin/activate                 # Linux/macOS
+.venv\Scripts\activate                    # Windows (PowerShell: .venv\Scripts\Activate.ps1)
 
-**Uma aba por simulação**, gerada pelo que a simulação declara (`parameters()` e `plots()`): formulário,
-rodar/parar, progresso, gráficos em tempo real (o núcleo devolve fatias do registro) e exportar CSV.
+pip install -r requirements.txt
 
-| aba | o que faz |
+cd core
+python -m ziglang build --release=fast    # gera core/zig-out/lib/libaerosim.so (.dll no Windows, .dylib no macOS)
+cd ..
+
+python -m pytest                          # ~110 testes, ~30 s
+```
+
+O passo do `zig build` é opcional: o Python compila o núcleo sozinho na primeira vez que precisar (e
+de novo sempre que um `.zig` for mais novo que a biblioteca). Se o `zig` estiver no PATH em vez do
+pacote pip, troque `python -m ziglang` por `zig`.
+
+## 3. Rodar
+
+### GUI
+
+```sh
+python -m aerosim.gui                               # começa com a aeronave convencional
+python -m aerosim.gui data/aircraft/twin_boom.cfg   # abre um arquivo (.cfg, .json ou .xlsx)
+```
+
+- **Configuração:** a aeronave em 3D. Clique num componente e arraste para mover; use o painel da
+  direita para adicionar/remover asa, EH, EV, motor, tanque, tubo de cauda, trocar o trem, editar
+  seções, comandos, perfil `.dat`, motor ou conjunto de tração, e o vento (botões ⟲ / ⟳).
+- **Uma aba por simulação:** Decolagem, Curvas, Envelope de voo, Missão, Subida, Polar, Tração.
+  Preencha os campos e clique em **▶ Rodar**; os gráficos atualizam em tempo real.
+- **Arquivo → Importar planilha por mapa de células…:** escolha o `Dados_Desempenho.xlsx` e depois o
+  mapa `data/mappings/dados_desempenho.json`. Os conjuntos de tração da aba `Tracao` entram no
+  catálogo e o da linha `nhelice` vai para o motor. Detalhes em [aerosim/data/README.md](aerosim/data/README.md).
+
+### Pelo Python (sem GUI)
+
+```python
+from aerosim.manager import SimulationManager
+from aerosim.data import load_aircraft
+from aerosim.data.cellmap import CellMapAircraftSource
+
+m = SimulationManager()
+ac = load_aircraft("data/aircraft/conventional.cfg")
+# ou a planilha:
+# ac = CellMapAircraftSource("data/mappings/dados_desempenho.json").load("Dados_Desempenho.xlsx")
+
+r = m.run("takeoff", ac, {"sweep": True})          # nomes: takeoff, turn, envelope, mission, climb, polar, thrust
+print(r.summary)                                    # números
+print(r.series.keys())                              # tabelas (mapa da decolagem, ...)
+print(r.log["t"], r.log["h"])                       # registro no tempo (SI, ângulos em rad)
+
+r = m.run("mission", ac, {"until": "B (início da perna 1)"})   # roda até o checkpoint B
+r = m.run("mission", ac, {"start": "B"})                        # retoma de B até o fim
+```
+
+### Testes e medições
+
+```sh
+python -m pytest                    # tudo (menos medições de tempo)
+python -m pytest tests/core         # uma camada: core, model, data, manager, gui
+python -m pytest -m lut             # só as LUTs e aproximações
+python -m pytest -m bench -s        # medições de tempo (LUT x std, custo de f(t,x))
+
+cd core
+python -m ziglang build test        # testes do Zig (todos)
+python -m ziglang build test-math   # só LUTs, polinômios e vetores (também test-physics, test-control, test-sim)
+```
+
+## 4. Problemas comuns
+
+| sintoma | solução |
 |---|---|
-| Decolagem | corrida até `h_end`; opcional: mapa s_R × δe1 com as restrições (cauda, estol, q, V em h_t) |
-| Curvas | raio mínimo por V: nivela, salva checkpoint no início da curva e reroda só a curva para cada raio |
-| Envelope de voo | só equilíbrios (Newton), sem integrar: potência, subida máx., planeio, raios, V-n |
-| Missão | circuito completo com checkpoints A/B/C; escolhe de onde começar e até onde ir; bisseção do ponto de soltura da carga |
-| Subida | γ máximo por V a partir de checkpoint nivelado, comparado com a trimagem |
-| Polar | C_L, C_D, C_m (α) e C_Y, C_l, C_n (β), margem estática, C_nβ, C_lβ |
-| Tração | T, P, I e η da hélice × V para cada motor e acelerador |
+| `ImportError: libEGL.so.1` / `could not load the Qt platform plugin "xcb"` | instale as bibliotecas de sistema da seção 1 |
+| `FileNotFoundError: zig` | `pip install ziglang==0.16.0` ou ponha o `zig` 0.16 no PATH |
+| erro de compilação do Zig com outra versão | o código usa a API do Zig **0.16**; use exatamente essa versão |
+| GUI sem 3D numa máquina remota | o 3D precisa de OpenGL; sem tela, use `QT_QPA_PLATFORM=offscreen` (as simulações funcionam) |
+| núcleo lento num Xeon com AVX-512 | o padrão já é `x86_64_v3`; não compile com `-Dcpu=native` (ver [core/README.md](core/README.md)) |
 
-Nova simulação: uma classe `ISimulation` em `aerosim/manager/simulations/` adicionada a `BUILTIN` —
-a aba aparece sozinha.
+## 5. Validação e desempenho
 
-## Aeronave (modelo de dados)
-
-`aerosim/model/aircraft.py` (ângulos em graus, SI, eixos do corpo x frente, y direita, z baixo):
-superfícies sustentadoras com N seções e comandos, fuselagem, tubo de cauda (a cauda pode ficar presa na
-ponta), **K unidades propulsoras** (cada uma com motor, hélice e bateria próprios, posição e eixo),
-trem por tipo (triciclo, convencional ou pontos livres), **N tanques de base quadrada** (ou cilíndricos)
-com sloshing, carga com soltura, modelo de massa (base + massas pontuais + opcionalmente motores,
-baterias e estrutura), ambiente, decolagem, ganhos do piloto, missão.
-
-Modelos prontos (`aerosim/model/templates.py`, `data/aircraft/*.cfg`): o convencional do código original,
-uma **asa voadora** com elevons e winglets, e um **bimotor com trem convencional, tubo de cauda e cauda
-em V**. As três decolam e completam a missão inteira (testado).
-
-Geometria → núcleo (`geometry.py`): cada superfície é cortada nas seções e nas bordas dos comandos;
-cada faixa de cada lado vira um painel com centro aerodinâmico a 25 % da corda, enflechamento, diedro,
-torção; C_Lα por Helmbold com o alongamento da superfície; τ do comando pela teoria de perfil fino.
-A deflexão de cada painel é `τ · (mix · [δe, δa, δr])`, o que cobre elevon e ruddervator.
-
-## Dados (Aircraft Data)
-
-| origem | leitura/gravação |
-|---|---|
-| `.json` | completo |
-| `.cfg` | INI legível, uma seção por componente (`[surfaces.0]`, `[surfaces.0.sections.1]`, `[propulsion.0]`…) |
-| `.xlsx` | aba `geral` (seção, chave, valor) + uma aba-tabela por lista (superfícies, seções, motores…) |
-| planilha por células | `aerosim/data/cellmap.py` + um mapa `.json` (campo → `Aba!Célula`, escala, offset) |
-| catálogo | `.cfg`, `.json`, `.xlsx` (motores, hélices, tabela J/C_T/C_P, baterias) ou tabela com cabeçalhos livres (`TableCatalogSource`) |
-
-`data/mappings/dados_desempenho.json` mapeia o formato `Dados_Desempenho.xlsx` (abas Geral e Superficies,
-com as conversões 1/grau → 1/rad etc.); `data/mappings/propellers_motors.json` o `Propellers&Motors.xlsx`.
-O que não tem correspondência no modelo está listado no próprio mapa (`unmapped`): as derivadas de
-estabilidade e os polinômios de arrasto (o núcleo calcula pelos painéis) e o polinômio de tração p00..p05
-(o núcleo usa motor + hélice por tabela J, C_T, C_P). Conferir os eixos (x para frente, z para baixo).
-
-## Núcleo em Zig (`core/`)
-
-| arquivo | conteúdo |
-|---|---|
-| `limits.zig` | limites de compilação (painéis, motores, tanques, segmentos, instâncias) — tudo estático |
-| `types.zig` | structs do C ABI (`Params`, `LogRow`, `Events`…) |
-| `abi.zig` | **esquema gerado em comptime por reflexão**: o Python monta as structs ctypes sozinho |
-| `root.zig` | funções exportadas; erros internos são error unions, viram códigos só na fronteira |
-| `math/fmath.zig` | sin/cos por tabela (4096 pts) + correção de Taylor, atan por tabela + 2ª ordem, exp/log por polinômio, tabelas geradas em comptime |
-| `math/vec.zig` | vetores em `@Vector` (SIMD) |
-| `physics/` | aerodinâmica por painéis, propulsão (K unidades), trem, massa/sloshing/carga, vento |
-| `control/` | guiamento e piloto automático |
-| `sim/` | estado, dinâmica, RK4 vetorizado, executor (eventos, paradas, fatias, checkpoint), trimagem |
-
-- Memória: um conjunto fixo de `max_instances` simulações (sem alocação); `aerosim_acquire` pega uma.
-- Checkpoint = bytes do estado da corrida; os parâmetros vêm sempre da configuração nova.
-- `-Dfast_math=false` troca as tabelas/polinômios pelas funções da std (referência).
-- **Validação:** com a aeronave do código original, a decolagem do Zig bate com o simulador em C
-  (`legacy/`) em todos os dígitos impressos (n_LO = 46,3922 m nos dois); `tests/test_core.py` compara.
-- Desempenho medido (missão completa, 165 s simulados, dt = 1 ms): ≈ 1,1–1,2 s (~140× tempo real).
-  Nesta máquina a versão com tabelas **não** ficou mais rápida que a da std (1,22 s × 1,07 s): o tempo
-  está na montagem das forças, não nas funções trigonométricas. As duas dão o mesmo resultado.
-
-## Código original
-
-`legacy/` guarda o simulador anterior (C + Python) sem mudanças; serve de referência para os testes.
+- Com a aeronave do código original, a decolagem do núcleo Zig bate com o simulador em C (`legacy/`)
+  em todos os dígitos impressos (n_LO = 46,3922 m nos dois): `tests/core/test_legacy.py`.
+- Missão completa (165 s simulados, dt = 1 ms): ≈ 1 s, ~170× o tempo real; uma avaliação de
+  f(t, x) ≈ 1 µs. Medições e a investigação das LUTs em [core/README.md](core/README.md).

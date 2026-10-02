@@ -1,5 +1,5 @@
-"""Planilhas "por endereço de célula" (ex.: Dados_Desempenho.xlsx) e catálogos por cabeçalho
-(ex.: Propellers&Motors.xlsx).
+"""Planilhas "por endereço de célula" (ex.: Dados_Desempenho.xlsx), incluindo os conjuntos de
+tração por polinômio da aba Tracao.
 
 Em vez de código com `sheet["C4"].value` espalhado, um ARQUIVO DE MAPA (.json) diz qual
 campo do modelo vem de qual célula, com escala. Trocar a planilha = trocar o mapa.
@@ -19,6 +19,15 @@ Caminhos: `a.b.c`, listas por índice `propulsion[0]` ou por papel `surfaces[win
 vetores `mass.base_cg[0]`. Chaves com `@papel.` ajustam a geometria da superfície:
 area, span, xac (centro aerodinâmico), chord, K (fator de arrasto induzido -> Oswald).
 "set": {"tanks": [], ...} aplica valores constantes antes de ler as células.
+
+Conjuntos de tração (uma linha por conjunto motor+hélice, coeficientes p00..p05 do poly55):
+
+    "thrust_sets": {"sheet": "Tracao", "first_row": 3, "name_col": 1, "coef_first_col": 2,
+                    "n_col": 23, "T0_col": 25, "select_cell": "Geral!C28", "row_offset": 2,
+                    "x": "V", "y": "none", "gain": "1"}
+
+Todas as linhas viram o catálogo `self.catalog.thrust_sets`; a linha `select_cell + row_offset`
+(o `nhelice` da planilha) vai para todas as unidades propulsoras da aeronave.
 """
 from __future__ import annotations
 
@@ -29,7 +38,7 @@ import re
 
 from aerosim.interfaces.aircraft_source import IAircraftSource, ICatalogSource
 from aerosim.model.aircraft import Aircraft, LiftingSurface, WingSection
-from aerosim.model.catalog import Battery, Catalog, Motor, Propeller
+from aerosim.model.catalog import Catalog, ThrustPoly
 
 _TOK = re.compile(r"([A-Za-z_][A-Za-z_0-9]*)(?:\[([^\]]+)\])?")
 
@@ -122,6 +131,100 @@ class CellMapAircraftSource(IAircraftSource):
         self.mapping = mapping
         self.base = base
         self.warnings: list[str] = []
+        self.catalog = Catalog()          # conjuntos de tração lidos da planilha
+        self._sel_row: int | None = None
+
+    # ------------------------------------------------------------------ conjuntos de tração
+    @staticmethod
+    def _cell_value(wb, ref):
+        sheet, cell = _split_cell(ref)
+        return wb[sheet][cell].value if sheet in wb.sheetnames else None
+
+    def _selected_row(self, wb, ts) -> int | None:
+        if "select_cell" not in ts:
+            return None
+        v = self._cell_value(wb, ts["select_cell"])
+        return int(v) + int(ts.get("row_offset", 0)) if isinstance(v, (int, float)) else None
+
+    def _gain(self, wb, ts, T0) -> float:
+        g = str(ts.get("gain", "1"))
+        if g == "T0":
+            return T0
+        if g == "T0*PT0":
+            pt0 = self._cell_value(wb, ts.get("pt0_cell", "Geral!C29"))
+            return T0 * (float(pt0) if isinstance(pt0, (int, float)) else 1.0)
+        return float(g)
+
+    def _write_thrust_sets(self, wb, ts, aircraft: Aircraft) -> None:
+        """grava os conjuntos (o da aeronave na linha selecionada) e a célula de seleção"""
+        sel = self._selected_row(wb, ts) or self._sel_row
+        u = next((x for x in aircraft.propulsion if x.thrust_model == "poly"), None)
+        if u is None:
+            return
+        first = int(ts.get("first_row", 3))
+        if sel is None:
+            sel = first
+        if ts["sheet"] not in wb.sheetnames:
+            wb.create_sheet(ts["sheet"])
+        sh = wb[ts["sheet"]]
+        sets = {first + i: t for i, t in enumerate(self.catalog.thrust_sets)}
+        sets[sel] = u.thrust_poly
+        c0 = int(ts.get("coef_first_col", 2))
+        for row, t in sets.items():
+            sh.cell(row=row, column=int(ts.get("name_col", 1)), value=t.name)
+            for k, c in enumerate((list(t.coefs) + [0.0] * 21)[:21]):
+                sh.cell(row=row, column=c0 + k, value=c)
+            if "n_col" in ts:
+                sh.cell(row=row, column=int(ts["n_col"]), value=t.n)
+            if "T0_col" in ts:
+                sh.cell(row=row, column=int(ts["T0_col"]), value=t.T0)
+        if "select_cell" in ts:
+            sheet, cell = _split_cell(ts["select_cell"])
+            if sheet not in wb.sheetnames:
+                wb.create_sheet(sheet)
+            wb[sheet][cell] = sel - int(ts.get("row_offset", 0))
+
+    def _read_thrust_sets(self, wb, ac: Aircraft) -> None:
+        ts = self.mapping.get("thrust_sets")
+        if not ts:
+            return
+        if ts["sheet"] not in wb.sheetnames:
+            self.warnings.append(f"thrust_sets: aba '{ts['sheet']}' não existe")
+            return
+        sh = wb[ts["sheet"]]
+        c0, ncoef = int(ts.get("coef_first_col", 2)), 21
+        rows = {}
+        r = int(ts.get("first_row", 3))
+        while True:
+            coefs = [sh.cell(row=r, column=c0 + k).value for k in range(ncoef)]
+            if all(v is None for v in coefs):
+                break
+            name = sh.cell(row=r, column=int(ts.get("name_col", 1))).value
+            T0 = sh.cell(row=r, column=int(ts["T0_col"])).value if "T0_col" in ts else None
+            n = sh.cell(row=r, column=int(ts["n_col"])).value if "n_col" in ts else None
+            T0 = float(T0) if isinstance(T0, (int, float)) else 0.0
+            tp = ThrustPoly(name=str(name) if name not in (None, "") else f"conjunto {r - int(ts.get('row_offset', 0))}",
+                            coefs=[float(v) if isinstance(v, (int, float)) else 0.0 for v in coefs],
+                            x_var=ts.get("x", "V"), y_var=ts.get("y", "none"), gain=self._gain(wb, ts, T0),
+                            rho_exp=float(ts.get("rho_exp", 0.0)), xmax=float(ts.get("xmax", 0.0)),
+                            ymax=float(ts.get("ymax", 0.0)), T0=T0, n=float(n) if isinstance(n, (int, float)) else 0.0,
+                            source=f"{ts['sheet']}!linha {r}")
+            rows[r] = tp
+            self.catalog.thrust_sets.append(tp)
+            r += 1
+        sel = self._selected_row(wb, ts)
+        self._sel_row = sel
+        if sel is None:
+            return
+        if sel not in rows:
+            self.warnings.append(f"thrust_sets: linha {sel} (nhelice) não tem coeficientes")
+            return
+        import copy as _copy
+        for u in ac.propulsion:
+            u.thrust_model = "poly"
+            u.thrust_poly = _copy.deepcopy(rows[sel])
+        if not ac.propulsion:
+            self.warnings.append("thrust_sets: a aeronave base não tem motor para receber o conjunto")
 
     def _base(self) -> Aircraft:
         if self.base is not None:
@@ -180,6 +283,8 @@ class CellMapAircraftSource(IAircraftSource):
                 s.x = g["xac"] + 0.25 * s.mac
             if "K" in g and g["K"] > 0:          # C_Di = K C_L²  ->  e = 1 / (π AR K)
                 s.oswald = 1.0 / (math.pi * s.aspect_ratio * g["K"])
+        self.catalog = Catalog()
+        self._read_thrust_sets(wb, ac)
         wb.close()
         ac.apply_constraints()
         return ac
@@ -208,99 +313,9 @@ class CellMapAircraftSource(IAircraftSource):
             if v is None:
                 continue
             wb[sheet][cell] = v
+        ts = self.mapping.get("thrust_sets")
+        if ts:
+            self._write_thrust_sets(wb, ts, aircraft)
         if "Sheet" in wb.sheetnames and len(wb.sheetnames) > 1 and wb["Sheet"].max_row == 1:
             del wb["Sheet"]
         wb.save(path)
-
-
-# ================================================================== catálogo por cabeçalhos
-ALIASES = {
-    "motors": {"name": ("name", "nome", "motor", "modelo", "model"), "Kv": ("kv", "kv (rpm/v)", "kv_rpm_v"),
-               "Rm": ("rm", "r", "resistencia", "resistência", "rm (ohm)", "r (ohm)"),
-               "Imax": ("imax", "i_max", "corrente max", "corrente máxima", "imax (a)"),
-               "mass": ("mass", "massa", "peso", "massa (kg)"), "B": ("b",), "tauc": ("tauc", "torque_atrito"),
-               "Jm": ("jm",)},
-    "propellers": {"name": ("name", "nome", "helice", "hélice", "propeller", "modelo"),
-                   "D": ("d", "diametro", "diâmetro", "d (m)"), "pitch": ("pitch", "passo"),
-                   "Ip": ("ip",), "mass": ("mass", "massa")},
-    "batteries": {"name": ("name", "nome", "bateria"), "cells": ("cells", "celulas", "células", "s"),
-                  "Rint": ("rint", "r_int", "resistencia"), "capacity_mAh": ("capacity_mah", "capacidade", "mah"),
-                  "mass": ("mass", "massa"), "V_cell": ("v_cell", "v_celula")},
-}
-CLASSES = {"motors": Motor, "propellers": Propeller, "batteries": Battery}
-
-
-class TableCatalogSource(ICatalogSource):
-    """Lê abas em forma de tabela (uma linha por item) com nomes de coluna livres.
-
-        layout = {"motors": {"sheet": "Motores_Data", "header_row": 1},
-                  "propellers": {"sheet": "Propellers_coefficients", "header_row": 2},
-                  "prop_table": {"sheet": "...", "header_row": 1}}     # opcional: helice, J, CT, CP
-
-    As colunas são reconhecidas por apelidos (ALIASES) ou por "columns": {"Kv": "KV [rpm/V]"}.
-    Colunas sem correspondência ficam em `warnings` (ex.: coeficientes polinomiais p00..p05 de
-    tração, que o núcleo não usa: ele precisa da tabela J, C_T, C_P).
-    """
-    extensions = (".xlsx",)
-
-    def __init__(self, layout: dict | str):
-        if isinstance(layout, str):
-            with open(layout, encoding="utf-8") as f:
-                layout = json.load(f)
-        self.layout = layout
-        self.warnings: list[str] = []
-
-    def _rows(self, wb, cfg):
-        sh = wb[cfg["sheet"]]
-        hr = int(cfg.get("header_row", 1))
-        head = [str(c.value).strip() if c.value is not None else "" for c in sh[hr]]
-        return head, [dict(zip(head, r)) for r in sh.iter_rows(min_row=hr + 1, values_only=True)
-                      if r and any(v is not None for v in r)]
-
-    def load_catalog(self, path: str) -> Catalog:
-        from openpyxl import load_workbook
-        from aerosim.model.serialize import from_dict
-        wb = load_workbook(path, data_only=True)
-        cat = Catalog()
-        self.warnings = []
-        for kind in ("motors", "propellers", "batteries"):
-            cfg = self.layout.get(kind)
-            if not cfg or cfg["sheet"] not in wb.sheetnames:
-                continue
-            head, rows = self._rows(wb, cfg)
-            colmap = {}
-            for field, aliases in ALIASES[kind].items():
-                explicit = cfg.get("columns", {}).get(field)
-                hit = explicit if explicit in head else next((h for h in head if h.lower() in aliases), None)
-                if hit:
-                    colmap[field] = hit
-            unused = [h for h in head if h and h not in colmap.values()]
-            if unused:
-                self.warnings.append(f"{cfg['sheet']}: colunas não usadas: {', '.join(unused)}")
-            for i, r in enumerate(rows):
-                d = {f: r[h] for f, h in colmap.items() if r.get(h) is not None}
-                d.setdefault("name", f"{kind} {i + 1}")
-                d["source"] = f"{os.path.basename(path)}:{cfg['sheet']}"
-                getattr(cat, kind).append(from_dict(CLASSES[kind], d))
-        pt = self.layout.get("prop_table")
-        if pt and pt["sheet"] in wb.sheetnames:
-            head, rows = self._rows(wb, pt)
-            low = {h.lower(): h for h in head}
-            pcol = low.get("helice") or low.get("hélice") or low.get("propeller") or low.get("name") or head[0]
-            tab: dict[str, list] = {}
-            for r in rows:
-                tab.setdefault(str(r[pcol]), []).append((float(r[low["j"]]), float(r[low["ct"]]), float(r[low["cp"]])))
-            for p in cat.propellers:
-                pts = sorted(tab.get(p.name, []))
-                if pts:
-                    p.J, p.CT, p.CP = [a[0] for a in pts], [a[1] for a in pts], [a[2] for a in pts]
-        for p in cat.propellers:
-            if len(p.J) < 2:
-                self.warnings.append(f"hélice '{p.name}' sem tabela J, C_T, C_P: o núcleo não consegue usá-la")
-        wb.close()
-        return cat
-
-    def save_catalog(self, catalog: Catalog, path: str) -> None:
-        from .sources import ExcelCatalogSource
-        ExcelCatalogSource().save_catalog(catalog, path)
-

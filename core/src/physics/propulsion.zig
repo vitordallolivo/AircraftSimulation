@@ -33,7 +33,7 @@ pub const Out = struct {
     Ibat: f64 = 0,
     Vbus: f64 = 0,
     T_sin: f64 = 0, // Σ T_i sin(θ + tilt_i), para as reações do artigo
-    u: [L.max_props]Unit = [_]Unit{.{}} ** L.max_props,
+    u: [L.max_props]Unit = undefined, // só as n_prop primeiras são escritas e lidas
 };
 
 pub fn init(p: *T.Params) void {
@@ -75,7 +75,34 @@ fn coef(u: *const T.PropUnit, J: f64, CT: *f64, CP: *f64) void {
     CP.* = @max(0.002, u.CP[i - 1] + f * (u.CP[i] - u.CP[i - 1]));
 }
 
-pub fn unit(p: *const T.Params, u: *const T.PropUnit, Vr: V3, w: V3, rps: f64, thr: f64) Unit {
+fn polyVar(code: i32, V: f64, thr: f64, h: f64, rho: f64) f64 {
+    return switch (code) {
+        T.pvar_V => V,
+        T.pvar_throttle => thr,
+        T.pvar_h => h,
+        T.pvar_rho => rho,
+        else => 0.0,
+    };
+}
+
+inline fn clampRange(v: f64, vmax: f64) f64 {
+    return if (vmax > 0) fm.lim(v, 0.0, vmax) else v;
+}
+
+/// tração polinomial (sem motor, bateria nem rotação)
+fn polyUnit(p: *const T.Params, u: *const T.PropUnit, Vr: V3, w: V3, thr: f64, h: f64) Unit {
+    const V = vec.dot(Vr + vec.cross(w, vec.v3(u.r)), vec.v3(u.eT));
+    const rho = p.env.rho;
+    const x = clampRange(polyVar(u.poly_x, V, thr, h, rho), u.poly_xmax);
+    const y = clampRange(polyVar(u.poly_y, V, thr, h, rho), u.poly_ymax);
+    var Tp = u.poly_gain * T.ThrustPoly.eval(&u.poly, x, y);
+    if (u.poly_rho_exp != 0) Tp *= fm.pow(rho / u.poly_rho0, u.poly_rho_exp);
+    if (u.poly_x != T.pvar_throttle and u.poly_y != T.pvar_throttle) Tp *= thr;
+    return .{ .T = @max(Tp, 0.0) };
+}
+
+pub fn unit(p: *const T.Params, u: *const T.PropUnit, Vr: V3, w: V3, rps: f64, thr: f64, h: f64) Unit {
+    if (u.model == T.prop_poly) return polyUnit(p, u, Vr, w, thr, h);
     var o = Unit{};
     const eT = vec.v3(u.eT);
     const n = if (rps > 1.0) rps else 1.0;
@@ -97,12 +124,24 @@ pub fn unit(p: *const T.Params, u: *const T.PropUnit, Vr: V3, w: V3, rps: f64, t
 }
 
 /// rps: rotação de cada unidade (vem do vetor de estados); dr: leme (acelerador diferencial)
-pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, rps: []const f64, thr: f64, dr: f64, theta: f64) Out {
-    var o = Out{};
+pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, rps: []const f64, thr: f64, dr: f64, theta: f64, h: f64) Out {
+    // campo a campo: `Out{}` zeraria as 8 unidades (~600 B) a cada chamada
+    var o: Out = undefined;
+    o.F = vec.zero;
+    o.M = vec.zero;
+    o.Mgyro = vec.zero;
+    o.T = 0;
+    o.Q = 0;
+    o.P = 0;
+    o.Ibat = 0;
+    o.Vbus = 0;
+    o.T_sin = 0;
     const n: usize = @intCast(p.n_prop);
     for (p.prop[0..n], 0..) |*u, i| {
-        const th = fm.lim(thr + u.yaw_mix * dr, 0.0, 1.0);
-        const r = unit(p, u, Vr, w, rps[i], th);
+        // o piloto já limita thr a [0, 1]; aqui só a mistura de guinada é limitada. A trimagem pode
+        // pedir thr > 1 ("precisa de mais que o máximo"), como no simulador original.
+        const th = fm.lim(thr + u.yaw_mix * dr, 0.0, @max(1.0, thr));
+        const r = unit(p, u, Vr, w, rps[i], th, h);
         o.u[i] = r;
         const eT = vec.v3(u.eT);
         const F = eT * vec.splat(r.T);
@@ -125,10 +164,11 @@ pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, rps: []const f64, thr
 pub fn equilibriumRps(p: *const T.Params, u: *const T.PropUnit, Vr: V3, thr: f64) f64 {
     var lo: f64 = 1.0;
     var hi: f64 = 600.0;
-    if (unit(p, u, Vr, vec.zero, lo, thr).drps <= 0.0) return lo;
+    if (u.model == T.prop_poly) return 1.0;
+    if (unit(p, u, Vr, vec.zero, lo, thr, 0).drps <= 0.0) return lo;
     for (0..60) |_| {
         const mid = 0.5 * (lo + hi);
-        if (unit(p, u, Vr, vec.zero, mid, thr).drps > 0.0) lo = mid else hi = mid;
+        if (unit(p, u, Vr, vec.zero, mid, thr, 0).drps > 0.0) lo = mid else hi = mid;
     }
     return 0.5 * (lo + hi);
 }
@@ -137,7 +177,7 @@ pub fn equilibriumRps(p: *const T.Params, u: *const T.PropUnit, Vr: V3, thr: f64
 pub fn point(p: *const T.Params, u: *const T.PropUnit, V: f64, thr: f64) T.PropPoint {
     const Vr = vec.v3(u.eT) * vec.splat(V);
     const n = equilibriumRps(p, u, Vr, thr);
-    const r = unit(p, u, Vr, vec.zero, n, thr);
+    const r = unit(p, u, Vr, vec.zero, n, thr, 0);
     const Ps = r.Q * 2.0 * fm.pi * n;
     return .{
         .V = V,
@@ -173,4 +213,34 @@ test "tração estática e queda com V" {
     const b = point(&p, &p.prop[0], 15.0, 1.0);
     try testing.expect(a.T > 20 and a.T < 80);
     try testing.expect(b.T < a.T);
+}
+
+test "tração polinomial: T(V) com acelerador e correção de densidade" {
+    var p = T.Params{};
+    p.n_prop = 1;
+    var u = &p.prop[0];
+    u.* = .{ .model = T.prop_poly, .poly_x = T.pvar_V, .poly_y = T.pvar_none };
+    u.poly[0] = 30; // p00
+    u.poly[1] = -1; // p10 · V
+    u.poly[3] = -0.02; // p20 · V²
+    init(&p);
+    const a = point(&p, &p.prop[0], 10.0, 1.0);
+    try testing.expectApproxEqAbs(@as(f64, 30 - 10 - 2), a.T, 1e-9);
+    const b = point(&p, &p.prop[0], 10.0, 0.5);
+    try testing.expectApproxEqAbs(a.T * 0.5, b.T, 1e-9);
+    u.poly_rho_exp = 1.0;
+    p.env.rho = 0.6125;
+    try testing.expectApproxEqAbs(a.T * 0.5, point(&p, &p.prop[0], 10.0, 1.0).T, 1e-9);
+    // fora da faixa do ajuste não fica negativa
+    try testing.expectEqual(@as(f64, 0), point(&p, &p.prop[0], 100.0, 1.0).T);
+}
+
+test "tração polinomial com o acelerador como variável y" {
+    var p = T.Params{};
+    p.n_prop = 1;
+    var u = &p.prop[0];
+    u.* = .{ .model = T.prop_poly, .poly_x = T.pvar_V, .poly_y = T.pvar_throttle };
+    u.poly[2] = 20; // p01 · thr
+    init(&p);
+    try testing.expectApproxEqAbs(@as(f64, 14), point(&p, &p.prop[0], 5.0, 0.7).T, 1e-9);
 }

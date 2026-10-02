@@ -13,7 +13,7 @@ import copy
 from dataclasses import dataclass, field
 
 from .airfoil import Airfoil
-from .catalog import Battery, Motor, Propeller
+from .catalog import Battery, Motor, Propeller, ThrustPoly
 from .mission import Mission, circuit
 
 
@@ -168,6 +168,8 @@ class PropulsionUnit:
     toe: float = 0.0           # graus
     sense: int = 1             # +1 horário visto de trás, −1 anti-horário
     yaw_mix: float = 0.0       # acelerador diferencial por leme
+    thrust_model: str = "motor"   # motor (motor + hélice por tabela J) | poly (polinômio de tração)
+    thrust_poly: ThrustPoly = field(default_factory=ThrustPoly)
     motor: Motor = field(default_factory=Motor)
     propeller: Propeller = field(default_factory=Propeller)
     battery: Battery = field(default_factory=Battery)

@@ -13,7 +13,7 @@ from collections import defaultdict
 
 from aerosim.interfaces.aircraft_source import IAircraftSource, ICatalogSource
 from aerosim.model.aircraft import Aircraft
-from aerosim.model.catalog import Battery, Catalog, Motor, Propeller
+from aerosim.model.catalog import POLY_TERMS, Battery, Catalog, Motor, Propeller, ThrustPoly
 from aerosim.model.serialize import from_dict, to_dict
 
 from .flat import decode, encode, flatten, unflatten
@@ -158,9 +158,10 @@ class JsonCatalogSource(ICatalogSource):
 
 
 class CfgCatalogSource(ICatalogSource):
-    """[motor: nome] / [helice: nome] (J, CT, CP em listas) / [bateria: nome]"""
+    """[motor: nome] / [helice: nome] (J, CT, CP em listas) / [bateria: nome] / [tracao: nome] (coefs)"""
     extensions = (".cfg", ".ini")
-    KINDS = (("motor", Motor, "motors"), ("helice", Propeller, "propellers"), ("bateria", Battery, "batteries"))
+    KINDS = (("motor", Motor, "motors"), ("helice", Propeller, "propellers"), ("bateria", Battery, "batteries"),
+             ("tracao", ThrustPoly, "thrust_sets"))
 
     def load_catalog(self, path):
         cp = configparser.ConfigParser(interpolation=None)
@@ -190,7 +191,8 @@ class CfgCatalogSource(ICatalogSource):
 
 
 class ExcelCatalogSource(ICatalogSource):
-    """abas: motores, helices (dados gerais), helices_tabela (helice, J, CT, CP), baterias"""
+    """abas: motores, helices (dados gerais), helices_tabela (helice, J, CT, CP), baterias,
+    tracao (um conjunto por linha: nome, variáveis, ganho..., p00..p05)"""
     extensions = (".xlsx",)
     SIMPLE = (("motores", Motor, "motors"), ("baterias", Battery, "batteries"))
 
@@ -215,6 +217,11 @@ class ExcelCatalogSource(ICatalogSource):
         for p in catalog.propellers:
             for j, ct, cpw in zip(p.J, p.CT, p.CP):
                 sh.append([p.name, j, ct, cpw])
+        sh = wb.create_sheet("tracao")
+        cols = [f.name for f in dc.fields(ThrustPoly) if f.name != "coefs"]
+        sh.append(cols + POLY_TERMS)
+        for t in catalog.thrust_sets:
+            sh.append([getattr(t, c) for c in cols] + list(t.coefs))
         wb.save(path)
 
     def load_catalog(self, path):
@@ -237,6 +244,10 @@ class ExcelCatalogSource(ICatalogSource):
             pts = sorted(tab.get(p.name, []))
             p.J, p.CT, p.CP = [a[0] for a in pts], [a[1] for a in pts], [a[2] for a in pts]
             cat.propellers.append(p)
+        for r in table("tracao"):
+            d = {k: v for k, v in r.items() if v is not None and k not in POLY_TERMS}
+            d["coefs"] = [float(r.get(t) or 0.0) for t in POLY_TERMS]
+            cat.thrust_sets.append(from_dict(ThrustPoly, d))
         return cat
 
 

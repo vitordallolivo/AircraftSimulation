@@ -1,53 +1,185 @@
 {
-  "description": "Dados_Desempenho.xlsx (abas Geral e Superficies), endereços tirados do AircraftData() original. Confira as notas: sinais/eixos dependem de como a planilha mede x e z.",
+  "description": "Dados_Desempenho.xlsx: abas Geral, Superficies e Tracao (conjuntos motor+hélice por polinômio poly55), endereços do AircraftData() original. Confira as notas: sinais/eixos dependem de como a planilha mede x e z.",
   "base": "conventional",
-  "set": {"tanks": [], "payload.enabled": false, "mass.include_propulsion": false},
+  "set": {
+    "tanks": [],
+    "payload.enabled": false,
+    "mass.include_propulsion": false
+  },
   "fields": {
-    "mass.base_mass":            {"cell": "Geral!C8", "note": "massa total (kg)"},
-    "mission.V0":                {"cell": "Geral!C5", "note": "V_0 (m/s)"},
-    "mission.h0":                {"cell": "Geral!C9", "note": "h0 (m)"},
-    "environment.rho":           {"cell": "Geral!C19"},
-    "gear.mu_roll":              {"cell": "Geral!C21", "note": "mi (atrito de rolamento)"},
-    "mass.Ixx":                  {"cell": "Geral!G9"},
-    "mass.Iyy":                  {"cell": "Geral!H10"},
-    "mass.Izz":                  {"cell": "Geral!I11"},
-    "mass.Ixz":                  {"cell": "Geral!I9", "scale": -1.0, "note": "a planilha guarda o elemento da matriz (−Ixz); se for o produto de inércia positivo use scale 1"},
-    "mass.base_cg[0]":           {"cell": "Superficies!M3", "note": "xcg; o modelo usa x para FRENTE. Se a planilha mede x para trás a partir do nariz, use scale −1 e offset = x do nariz"},
-    "mass.base_cg[2]":           {"cell": "Geral!G7", "note": "zcg; o modelo usa z para BAIXO"},
-    "propulsion[0].x":           {"cell": "Geral!G6", "note": "lp (posição x da hélice)"},
-    "propulsion[0].y":           {"cell": "Geral!G4", "note": "yp"},
-    "propulsion[0].z":           {"cell": "Geral!G5", "note": "zp"},
-    "surfaces[htail].z":         {"cell": "Geral!G8", "note": "zh"},
-    "gear.main_x":               {"cell": "Geral!G12", "note": "x_tdp"},
-    "gear.steer_x":              {"cell": "Geral!G13", "note": "x_tdn"},
-    "Sref":                      {"cell": "Superficies!C14"},
-    "bref":                      {"cell": "Superficies!C15"},
-    "cref":                      {"cell": "Superficies!C16"},
-    "@wing.area":                {"cell": "Superficies!C3", "note": "Sw"},
-    "@wing.span":                {"cell": "Superficies!C15", "note": "bref = envergadura da asa"},
-    "@wing.xac":                 {"cell": "Superficies!C12", "note": "xac da asa"},
-    "@wing.K":                   {"cell": "Superficies!C17", "note": "K de C_Di = K C_L² -> Oswald"},
-    "surfaces[wing].CLa":        {"cell": "Superficies!C4", "scale": 57.29577951308232, "note": "planilha em 1/grau"},
-    "surfaces[wing].CL0":        {"cell": "Superficies!C5"},
-    "surfaces[wing].Cmac":       {"cell": "Superficies!C6"},
-    "surfaces[wing].incidence":  {"cell": "Superficies!C9", "note": "iw em graus"},
-    "surfaces[wing].CLmax":      {"cell": "Superficies!C13"},
-    "surfaces[htail].eps0":      {"cell": "Superficies!C11", "note": "epsilon0 em graus"},
-    "surfaces[htail].depsda":    {"cell": "Superficies!C10"},
-    "@htail.area":               {"cell": "Superficies!G3", "note": "Sh"},
-    "surfaces[htail].CLa":       {"cell": "Superficies!G4", "scale": 57.29577951308232, "note": "1/grau"},
-    "surfaces[htail].CL0":       {"cell": "Superficies!G5"},
-    "surfaces[htail].Cmac":      {"cell": "Superficies!G6"},
-    "surfaces[htail].incidence": {"cell": "Superficies!G9", "note": "ih em graus"},
-    "surfaces[htail].CLmax":     {"cell": "Superficies!G11"},
-    "autopilot.da_max":          {"cell": "Superficies!C8", "scale": 57.29577951308232, "note": "damax (rad na planilha)"},
-    "autopilot.de_max":          {"cell": "Superficies!G8", "scale": 57.29577951308232, "note": "demax (rad)"},
-    "autopilot.dr_max":          {"cell": "Superficies!J7", "scale": 57.29577951308232, "note": "drmax (rad)"}
+    "mass.base_mass": {
+      "cell": "Geral!C8",
+      "note": "massa total (kg)"
+    },
+    "mission.V0": {
+      "cell": "Geral!C5",
+      "note": "V_0 (m/s)"
+    },
+    "mission.h0": {
+      "cell": "Geral!C9",
+      "note": "h0 (m)"
+    },
+    "environment.rho": {
+      "cell": "Geral!C19"
+    },
+    "gear.mu_roll": {
+      "cell": "Geral!C21",
+      "note": "mi (atrito de rolamento)"
+    },
+    "mass.Ixx": {
+      "cell": "Geral!G9"
+    },
+    "mass.Iyy": {
+      "cell": "Geral!H10"
+    },
+    "mass.Izz": {
+      "cell": "Geral!I11"
+    },
+    "mass.Ixz": {
+      "cell": "Geral!I9",
+      "scale": -1.0,
+      "note": "a planilha guarda o elemento da matriz (−Ixz); se for o produto de inércia positivo use scale 1"
+    },
+    "mass.base_cg[0]": {
+      "cell": "Superficies!M3",
+      "note": "xcg; o modelo usa x para FRENTE. Se a planilha mede x para trás a partir do nariz, use scale −1 e offset = x do nariz"
+    },
+    "mass.base_cg[2]": {
+      "cell": "Geral!G7",
+      "note": "zcg; o modelo usa z para BAIXO"
+    },
+    "propulsion[0].x": {
+      "cell": "Geral!G6",
+      "note": "lp (posição x da hélice)"
+    },
+    "propulsion[0].y": {
+      "cell": "Geral!G4",
+      "note": "yp"
+    },
+    "propulsion[0].z": {
+      "cell": "Geral!G5",
+      "note": "zp"
+    },
+    "surfaces[htail].z": {
+      "cell": "Geral!G8",
+      "note": "zh"
+    },
+    "gear.main_x": {
+      "cell": "Geral!G12",
+      "note": "x_tdp"
+    },
+    "gear.steer_x": {
+      "cell": "Geral!G13",
+      "note": "x_tdn"
+    },
+    "Sref": {
+      "cell": "Superficies!C14"
+    },
+    "bref": {
+      "cell": "Superficies!C15"
+    },
+    "cref": {
+      "cell": "Superficies!C16"
+    },
+    "@wing.area": {
+      "cell": "Superficies!C3",
+      "note": "Sw"
+    },
+    "@wing.span": {
+      "cell": "Superficies!C15",
+      "note": "bref = envergadura da asa"
+    },
+    "@wing.xac": {
+      "cell": "Superficies!C12",
+      "note": "xac da asa"
+    },
+    "@wing.K": {
+      "cell": "Superficies!C17",
+      "note": "K de C_Di = K C_L² -> Oswald"
+    },
+    "surfaces[wing].CLa": {
+      "cell": "Superficies!C4",
+      "scale": 57.29577951308232,
+      "note": "planilha em 1/grau"
+    },
+    "surfaces[wing].CL0": {
+      "cell": "Superficies!C5"
+    },
+    "surfaces[wing].Cmac": {
+      "cell": "Superficies!C6"
+    },
+    "surfaces[wing].incidence": {
+      "cell": "Superficies!C9",
+      "note": "iw em graus"
+    },
+    "surfaces[wing].CLmax": {
+      "cell": "Superficies!C13"
+    },
+    "surfaces[htail].eps0": {
+      "cell": "Superficies!C11",
+      "note": "epsilon0 em graus"
+    },
+    "surfaces[htail].depsda": {
+      "cell": "Superficies!C10"
+    },
+    "@htail.area": {
+      "cell": "Superficies!G3",
+      "note": "Sh"
+    },
+    "surfaces[htail].CLa": {
+      "cell": "Superficies!G4",
+      "scale": 57.29577951308232,
+      "note": "1/grau"
+    },
+    "surfaces[htail].CL0": {
+      "cell": "Superficies!G5"
+    },
+    "surfaces[htail].Cmac": {
+      "cell": "Superficies!G6"
+    },
+    "surfaces[htail].incidence": {
+      "cell": "Superficies!G9",
+      "note": "ih em graus"
+    },
+    "surfaces[htail].CLmax": {
+      "cell": "Superficies!G11"
+    },
+    "autopilot.da_max": {
+      "cell": "Superficies!C8",
+      "scale": 57.29577951308232,
+      "note": "damax (rad na planilha)"
+    },
+    "autopilot.de_max": {
+      "cell": "Superficies!G8",
+      "scale": 57.29577951308232,
+      "note": "demax (rad)"
+    },
+    "autopilot.dr_max": {
+      "cell": "Superficies!J7",
+      "scale": 57.29577951308232,
+      "note": "drmax (rad)"
+    }
   },
   "unmapped": {
     "Derivadas (M4:M22)": "o núcleo calcula as derivadas pelos painéis (V + ω×r); use a aba Polar para comparar",
     "Arrastos polinomiais (G31:J41)": "o arrasto vem de CD0 + CL²/(π e AR) por painel e da área de arrasto da fuselagem",
-    "Tracao (linha nhelice, p00..p05)": "o núcleo usa motor + hélice por tabela J, C_T, C_P; o polinômio de tração não é convertido",
-    "Vh (G10), dtmin/dtmax, PT0, n, gama, AnguloCruzeiro": "sem campo correspondente"
+    "Vh (G10), dtmin/dtmax, PT0, n, gama, AnguloCruzeiro": "sem campo correspondente",
+    "Tracao: colunas n (W) e T0 (Y)": "lidas e guardadas no conjunto (n, T0); só entram na conta se 'gain' ou 'rho_exp' pedirem"
+  },
+  "thrust_sets": {
+    "sheet": "Tracao",
+    "first_row": 3,
+    "name_col": 1,
+    "coef_first_col": 2,
+    "n_col": 23,
+    "T0_col": 25,
+    "select_cell": "Geral!C28",
+    "row_offset": 2,
+    "x": "V",
+    "y": "none",
+    "gain": "1",
+    "rho_exp": 0.0,
+    "xmax": 0.0,
+    "note": "linha = nhelice + 2 (como no AircraftData). Colunas B..V = p00..p05 na ordem do poly55. x/y: none | V | throttle | h | rho; se nenhuma for 'throttle', T é multiplicada pelo acelerador. gain: '1' | 'T0' | 'T0*PT0' (PT0 em pt0_cell, padrão Geral!C29). rho_exp: T·(ρ/ρ0)^rho_exp (use a coluna n se ela for esse expoente). xmax: limita V à faixa do ajuste."
   }
 }

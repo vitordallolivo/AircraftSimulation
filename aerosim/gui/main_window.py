@@ -43,7 +43,7 @@ class MainWindow(QtWidgets.QMainWindow):
         m.addAction("Salvar", QtGui.QKeySequence.StandardKey.Save, self.save)
         m.addAction("Salvar como…", self.save_as)
         m.addSeparator()
-        m.addAction("Importar catálogo (motores/hélices/baterias)…", self.import_catalog)
+        m.addAction("Importar catálogo (motores/hélices/baterias/conjuntos de tração)…", self.import_catalog)
         m.addAction("Importar planilha por mapa de células…", self.import_cellmap)
         m.addSeparator()
         m.addAction("Sair", self.close)
@@ -84,7 +84,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.information(self, "Catálogo",
                                                   f"{len(self.state.catalog.motors)} motores, "
                                                   f"{len(self.state.catalog.propellers)} hélices, "
-                                                  f"{len(self.state.catalog.batteries)} baterias")
+                                                  f"{len(self.state.catalog.batteries)} baterias, "
+                                                  f"{len(self.state.catalog.thrust_sets)} conjuntos de tração")
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Erro", str(e))
 
@@ -99,7 +100,9 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         try:
             src = CellMapAircraftSource(mp, base=self.state.aircraft)
-            self.state.set_aircraft(src.load(xlsx), None)
+            ac = src.load(xlsx)
+            self.state.catalog = self.state.catalog.merge(src.catalog)     # conjuntos de tração da planilha
+            self.state.set_aircraft(ac, None)
             if src.warnings:
                 QtWidgets.QMessageBox.warning(self, "Mapa de células", "\n".join(src.warnings[:30]))
         except Exception as e:

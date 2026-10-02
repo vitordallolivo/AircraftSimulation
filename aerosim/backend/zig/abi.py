@@ -36,6 +36,7 @@ class Schema:
     abi: int = 0
     limits: dict[str, int] = field(default_factory=dict)
     snapshot_size: int = 0
+    poly_terms: list[str] = field(default_factory=list)   # ordem dos coeficientes do polinômio de tração
     structs: dict[str, StructInfo] = field(default_factory=dict)
     types: dict[str, type] = field(default_factory=dict)       # ctypes
     dtypes: dict[str, np.dtype] = field(default_factory=dict)  # numpy (structs planas)
@@ -52,6 +53,8 @@ def parse(text: str) -> Schema:
             sc.abi = int(tok[1])
         elif tok[0] == "limit":
             sc.limits[tok[1]] = int(tok[2])
+        elif tok[0] == "poly_terms":
+            sc.poly_terms = tok[1:]
         elif tok[0] == "snapshot":
             sc.snapshot_size = int(tok[1])
         elif tok[0] == "struct":
