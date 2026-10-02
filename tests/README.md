@@ -38,4 +38,5 @@ python -m pytest -m legacy             # comparação com o simulador C original
 | `model/*` | perfil fino, `.dat`, painéis, sinais dos comandos, malhas, massa, tanque quadrado |
 | `data/*` | ida e volta `.json/.cfg/.xlsx`, catálogo, planilha Dados_Desempenho (campos e aba Tracao) |
 | `manager/*` | todas as simulações, missão das três aeronaves, retomar de checkpoint, cancelar, backend falso |
+| `manager/test_envelope.py` | envelope "como na planilha" = `Envelope_main` original transcrito (`helpers/envelope_reference.py`), altitude por altitude; caso que quebra o original; modelo completo |
 | `gui/*` | janela, edição, aba de simulação, editor de tração polinomial |

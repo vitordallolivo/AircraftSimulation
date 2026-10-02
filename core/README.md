@@ -16,6 +16,7 @@ flowchart LR
         RUN["runner.zig<br/>eventos, paradas, fatias, checkpoint"]
         DYN["dynamics.zig<br/>f(t,x) e RK4 em SIMD"]
         TRIM["trim.zig<br/>Newton, desempenho"]
+        ENV["envelope.zig<br/>envelope por altitude"]
         ST["state.zig<br/>vetor de estados"]
         BENCH["bench.zig<br/>medições"]
     end
@@ -74,6 +75,7 @@ Opções: `-Dfast_math` (padrão `true`), `-Dstrip` (padrão: sim fora do Debug)
 | `aerosim_run(slot, t_limit, buf, cap, &n)` | avança até parar, até `t_limit` ou até encher `buf` |
 | `aerosim_snapshot_save/load` | checkpoint = bytes do estado (os parâmetros vêm da configuração nova) |
 | `aerosim_trim`, `aerosim_performance` | equilíbrio e tabela de desempenho por V |
+| `aerosim_envelope`, `aerosim_envelope_curve` | envelope por altitude (V_min, V_max, V_e, V*, V_cru, teto) e as curvas T_d, T_r |
 | `aerosim_aero_coeffs`, `aerosim_prop_point`, `aerosim_mass_props` | polar, curva de tração, massa/CG/inércia |
 | `aerosim_bench_math`, `aerosim_bench_dynamics` | medições (ver abaixo) |
 
@@ -90,11 +92,12 @@ unidade propulsora escolhe `model = prop_motor` (motor BLDC + hélice J/C_T/C_P,
 estado) ou `prop_poly`:
 
 ```
-T = gain · P(x, y) · (ρ/ρ0)^rho_exp        x, y ∈ {nenhuma, V, acelerador, h, ρ}
+T = gain · P(x, y) · (ρ/ρ0)^rho_exp        x, y ∈ {nenhuma, V, acelerador, h, ρ, constante}
 T × acelerador, se nem x nem y for o acelerador;   T ≥ 0;   x, y limitados a [0, xmax] se xmax > 0
 ```
 
-A ordem dos termos sai no esquema (`poly_terms`) e o teste `tests/core/test_abi.py` confere que é a
+Com x = constante n, y = V, gain = g, rho_exp = 1 e T0 em p00, é exatamente a tração do
+`Envelope_main` original. A ordem dos termos sai no esquema (`poly_terms`) e o teste `tests/core/test_abi.py` confere que é a
 mesma do Python.
 
 ## LUTs e desempenho — o que foi medido
@@ -123,3 +126,7 @@ aleatórias) e a avaliação de f(t, x). Nesta máquina (Xeon 2,1 GHz, L1d 48 KB
   laço dos painéis em `aero.zig`, não as funções matemáticas.
 
 Para reproduzir: `python -m pytest -m bench -s`.
+
+Rotação de equilíbrio do motor (trimagem, curva de tração, envelope): `dn/dt` cai com n, então a
+raiz é única em [1, 600] rps; *regula falsi* com a modificação de Illinois em vez de bisseção (≈10
+avaliações em vez de 60) — o envelope "modelo completo" ficou ~2× mais rápido.

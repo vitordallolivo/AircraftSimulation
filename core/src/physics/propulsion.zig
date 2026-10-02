@@ -75,12 +75,13 @@ fn coef(u: *const T.PropUnit, J: f64, CT: *f64, CP: *f64) void {
     CP.* = @max(0.002, u.CP[i - 1] + f * (u.CP[i] - u.CP[i - 1]));
 }
 
-fn polyVar(code: i32, V: f64, thr: f64, h: f64, rho: f64) f64 {
+fn polyVar(code: i32, c: f64, V: f64, thr: f64, h: f64, rho: f64) f64 {
     return switch (code) {
         T.pvar_V => V,
         T.pvar_throttle => thr,
         T.pvar_h => h,
         T.pvar_rho => rho,
+        T.pvar_const => c,
         else => 0.0,
     };
 }
@@ -89,16 +90,21 @@ inline fn clampRange(v: f64, vmax: f64) f64 {
     return if (vmax > 0) fm.lim(v, 0.0, vmax) else v;
 }
 
-/// tração polinomial (sem motor, bateria nem rotação)
-fn polyUnit(p: *const T.Params, u: *const T.PropUnit, Vr: V3, w: V3, thr: f64, h: f64) Unit {
-    const V = vec.dot(Vr + vec.cross(w, vec.v3(u.r)), vec.v3(u.eT));
+/// valor do polinômio sem o corte em T ≥ 0 (o envelope "como na planilha" usa assim)
+pub fn polyRaw(p: *const T.Params, u: *const T.PropUnit, V: f64, thr: f64, h: f64) f64 {
     const rho = p.env.rho;
-    const x = clampRange(polyVar(u.poly_x, V, thr, h, rho), u.poly_xmax);
-    const y = clampRange(polyVar(u.poly_y, V, thr, h, rho), u.poly_ymax);
+    const x = clampRange(polyVar(u.poly_x, u.poly_xc, V, thr, h, rho), u.poly_xmax);
+    const y = clampRange(polyVar(u.poly_y, u.poly_yc, V, thr, h, rho), u.poly_ymax);
     var Tp = u.poly_gain * T.ThrustPoly.eval(&u.poly, x, y);
     if (u.poly_rho_exp != 0) Tp *= fm.pow(rho / u.poly_rho0, u.poly_rho_exp);
     if (u.poly_x != T.pvar_throttle and u.poly_y != T.pvar_throttle) Tp *= thr;
-    return .{ .T = @max(Tp, 0.0) };
+    return Tp;
+}
+
+/// tração polinomial (sem motor, bateria nem rotação)
+fn polyUnit(p: *const T.Params, u: *const T.PropUnit, Vr: V3, w: V3, thr: f64, h: f64) Unit {
+    const V = vec.dot(Vr + vec.cross(w, vec.v3(u.r)), vec.v3(u.eT));
+    return .{ .T = @max(polyRaw(p, u, V, thr, h), 0.0) };
 }
 
 pub fn unit(p: *const T.Params, u: *const T.PropUnit, Vr: V3, w: V3, rps: f64, thr: f64, h: f64) Unit {
@@ -160,17 +166,34 @@ pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, rps: []const f64, thr
     return o;
 }
 
-/// rotação de equilíbrio (dn/dt = 0) por bisseção, sem rotação do avião
+/// rotação de equilíbrio (dn/dt = 0), sem rotação do avião. dn/dt cai com n, então a raiz é
+/// única em [1, 600] rps: regula falsi com a modificação de Illinois (converge em ~10 passos).
 pub fn equilibriumRps(p: *const T.Params, u: *const T.PropUnit, Vr: V3, thr: f64) f64 {
-    var lo: f64 = 1.0;
-    var hi: f64 = 600.0;
     if (u.model == T.prop_poly) return 1.0;
-    if (unit(p, u, Vr, vec.zero, lo, thr, 0).drps <= 0.0) return lo;
-    for (0..60) |_| {
-        const mid = 0.5 * (lo + hi);
-        if (unit(p, u, Vr, vec.zero, mid, thr, 0).drps > 0.0) lo = mid else hi = mid;
+    var a: f64 = 1.0;
+    var b: f64 = 600.0;
+    var fa = unit(p, u, Vr, vec.zero, a, thr, 0).drps;
+    if (fa <= 0.0) return a;
+    var fb = unit(p, u, Vr, vec.zero, b, thr, 0).drps;
+    if (fb >= 0.0) return b;
+    var side: i32 = 0;
+    for (0..80) |_| {
+        const c = (a * fb - b * fa) / (fb - fa);
+        const fc = unit(p, u, Vr, vec.zero, c, thr, 0).drps;
+        if (@abs(fc) < 1e-9 or b - a < 1e-10 * b) return c;
+        if ((fc > 0) == (fa > 0)) {
+            a = c;
+            fa = fc;
+            if (side == -1) fb *= 0.5;
+            side = -1;
+        } else {
+            b = c;
+            fb = fc;
+            if (side == 1) fa *= 0.5;
+            side = 1;
+        }
     }
-    return 0.5 * (lo + hi);
+    return 0.5 * (a + b);
 }
 
 /// ponto de operação em voo axial a V (curva de tração)
@@ -193,6 +216,22 @@ pub fn point(p: *const T.Params, u: *const T.PropUnit, V: f64, thr: f64) T.PropP
 }
 
 const testing = std.testing;
+
+test "rotação de equilíbrio: dn/dt ≈ 0" {
+    var p = T.Params{};
+    p.n_prop = 1;
+    var u = &p.prop[0];
+    u.* = .{ .D = 0.381, .Ip = 5.4e-4, .Jm = 1e-4, .Kv = 310, .Rm = 0.0204, .B = 32.4e-6, .tauc = 0.0155, .Imax = 80, .Voc = 22.2, .Rint = 0.035, .n_pts = 2 };
+    u.J[1] = 0.68;
+    u.CT[0] = 0.09;
+    u.CP[0] = 0.03;
+    u.CP[1] = 0.006;
+    init(&p);
+    inline for (.{ 0.3, 0.7, 1.0 }) |thr| {
+        const n = equilibriumRps(&p, &p.prop[0], .{ 12, 0, 0 }, thr);
+        try testing.expect(@abs(unit(&p, &p.prop[0], .{ 12, 0, 0 }, vec.zero, n, thr, 0).drps) < 1e-6);
+    }
+}
 
 test "tração estática e queda com V" {
     var p = T.Params{};
@@ -233,6 +272,22 @@ test "tração polinomial: T(V) com acelerador e correção de densidade" {
     try testing.expectApproxEqAbs(a.T * 0.5, point(&p, &p.prop[0], 10.0, 1.0).T, 1e-9);
     // fora da faixa do ajuste não fica negativa
     try testing.expectEqual(@as(f64, 0), point(&p, &p.prop[0], 100.0, 1.0).T);
+}
+
+test "tração como na planilha: x = n constante, y = V, T0 no lugar de p00, g·ρ/ρ0" {
+    var p = T.Params{};
+    p.n_prop = 1;
+    var u = &p.prop[0];
+    u.* = .{ .model = T.prop_poly, .poly_x = T.pvar_const, .poly_xc = 2.0, .poly_y = T.pvar_V, .poly_gain = L.g0, .poly_rho_exp = 1.0, .poly_rho0 = 1.225 };
+    u.poly[0] = 3.0; // T0
+    u.poly[1] = 0.1; // p10 · n
+    u.poly[2] = -0.05; // p01 · V
+    u.poly[4] = 0.01; // p11 · n V
+    init(&p);
+    p.env.rho = 1.1;
+    const V = 8.0;
+    const want = L.g0 * (1.1 / 1.225) * (3.0 + 0.1 * 2.0 - 0.05 * V + 0.01 * 2.0 * V);
+    try testing.expectApproxEqAbs(want, point(&p, &p.prop[0], V, 1.0).T, 1e-9);
 }
 
 test "tração polinomial com o acelerador como variável y" {

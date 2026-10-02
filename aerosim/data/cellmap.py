@@ -147,13 +147,13 @@ class CellMapAircraftSource(IAircraftSource):
         return int(v) + int(ts.get("row_offset", 0)) if isinstance(v, (int, float)) else None
 
     def _gain(self, wb, ts, T0) -> float:
-        g = str(ts.get("gain", "1"))
-        if g == "T0":
-            return T0
-        if g == "T0*PT0":
-            pt0 = self._cell_value(wb, ts.get("pt0_cell", "Geral!C29"))
-            return T0 * (float(pt0) if isinstance(pt0, (int, float)) else 1.0)
-        return float(g)
+        """'1', 'g' (polinômio em kgf), 'T0', 'T0*PT0', 'g*PT0' ou um número"""
+        G = 9.80665
+        pt0 = self._cell_value(wb, ts.get("pt0_cell", "Geral!C29"))
+        pt0 = float(pt0) if isinstance(pt0, (int, float)) else 1.0
+        g = str(ts.get("gain", "1")).replace(" ", "")
+        table = {"1": 1.0, "g": G, "T0": T0, "T0*PT0": T0 * pt0, "g*PT0": G * pt0}
+        return table[g] if g in table else float(g)
 
     def _write_thrust_sets(self, wb, ts, aircraft: Aircraft) -> None:
         """grava os conjuntos (o da aeronave na linha selecionada) e a célula de seleção"""
@@ -172,7 +172,11 @@ class CellMapAircraftSource(IAircraftSource):
         c0 = int(ts.get("coef_first_col", 2))
         for row, t in sets.items():
             sh.cell(row=row, column=int(ts.get("name_col", 1)), value=t.name)
-            for k, c in enumerate((list(t.coefs) + [0.0] * 21)[:21]):
+            coefs = (list(t.coefs) + [0.0] * 21)[:21]
+            if ts.get("p00_from_T0"):          # p00 ficou no T0; a coluna p00 da planilha não é usada
+                coefs[0] = sh.cell(row=row, column=c0).value or 0.0
+                t.T0 = t.coefs[0]
+            for k, c in enumerate(coefs):
                 sh.cell(row=row, column=c0 + k, value=c)
             if "n_col" in ts:
                 sh.cell(row=row, column=int(ts["n_col"]), value=t.n)
@@ -203,12 +207,19 @@ class CellMapAircraftSource(IAircraftSource):
             T0 = sh.cell(row=r, column=int(ts["T0_col"])).value if "T0_col" in ts else None
             n = sh.cell(row=r, column=int(ts["n_col"])).value if "n_col" in ts else None
             T0 = float(T0) if isinstance(T0, (int, float)) else 0.0
+            n = float(n) if isinstance(n, (int, float)) else 0.0
+            c = [float(v) if isinstance(v, (int, float)) else 0.0 for v in coefs]
+            if ts.get("p00_from_T0"):          # o original soma T0 no lugar de p00
+                c[0] = T0
+            consts = {"n": n, "T0": T0}
+            rho0 = self._cell_value(wb, ts["rho0_cell"]) if "rho0_cell" in ts else None
             tp = ThrustPoly(name=str(name) if name not in (None, "") else f"conjunto {r - int(ts.get('row_offset', 0))}",
-                            coefs=[float(v) if isinstance(v, (int, float)) else 0.0 for v in coefs],
-                            x_var=ts.get("x", "V"), y_var=ts.get("y", "none"), gain=self._gain(wb, ts, T0),
-                            rho_exp=float(ts.get("rho_exp", 0.0)), xmax=float(ts.get("xmax", 0.0)),
-                            ymax=float(ts.get("ymax", 0.0)), T0=T0, n=float(n) if isinstance(n, (int, float)) else 0.0,
-                            source=f"{ts['sheet']}!linha {r}")
+                            coefs=c, x_var=ts.get("x", "V"), y_var=ts.get("y", "none"), gain=self._gain(wb, ts, T0),
+                            rho_exp=float(ts.get("rho_exp", 0.0)),
+                            rho0=float(rho0) if isinstance(rho0, (int, float)) else 1.225,
+                            xmax=float(ts.get("xmax", 0.0)), ymax=float(ts.get("ymax", 0.0)),
+                            x_const=consts.get(ts.get("x_const", ""), 0.0), y_const=consts.get(ts.get("y_const", ""), 0.0),
+                            T0=T0, n=n, source=f"{ts['sheet']}!linha {r}")
             rows[r] = tp
             self.catalog.thrust_sets.append(tp)
             r += 1

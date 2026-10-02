@@ -1,5 +1,5 @@
 {
-  "description": "Dados_Desempenho.xlsx: abas Geral, Superficies e Tracao (conjuntos motor+hélice por polinômio poly55), endereços do AircraftData() original. Confira as notas: sinais/eixos dependem de como a planilha mede x e z.",
+  "description": "Dados_Desempenho.xlsx: abas Geral, Superficies e Tracao, endereços do AircraftData() original. Tração como no Envelope_main: T = g·(ρ/ρ0)·(T0 + p10·n + p01·V + p20·n² + ... + p05·V⁵). Confira as notas de eixos (x, z).",
   "base": "conventional",
   "set": {
     "tanks": [],
@@ -158,13 +158,44 @@
       "cell": "Superficies!J7",
       "scale": 57.29577951308232,
       "note": "drmax (rad)"
+    },
+    "performance.alpha_cruise": {
+      "cell": "Geral!C14",
+      "note": "AnguloCruzeiro (graus)"
+    },
+    "performance.load_factor": {
+      "cell": "Geral!C13",
+      "note": "n (fator de carga): V* = Ve·√n"
+    },
+    "performance.rho0": {
+      "cell": "Geral!C18",
+      "note": "rho0"
+    },
+    "performance.cdp_wing[0]": {
+      "cell": "Superficies!G36",
+      "note": "Cdpw_c1"
+    },
+    "performance.cdp_wing[1]": {
+      "cell": "Superficies!G37",
+      "note": "Cdpw_c2"
+    },
+    "performance.cdp_htail[0]": {
+      "cell": "Superficies!J36",
+      "note": "Cdph_c1"
+    },
+    "performance.cdp_htail[1]": {
+      "cell": "Superficies!J37",
+      "note": "Cdph_c2"
+    },
+    "performance.K": {
+      "cell": "Superficies!C17",
+      "note": "K (CDi = K·CL²) do envelope"
     }
   },
   "unmapped": {
     "Derivadas (M4:M22)": "o núcleo calcula as derivadas pelos painéis (V + ω×r); use a aba Polar para comparar",
-    "Arrastos polinomiais (G31:J41)": "o arrasto vem de CD0 + CL²/(π e AR) por painel e da área de arrasto da fuselagem",
-    "Vh (G10), dtmin/dtmax, PT0, n, gama, AnguloCruzeiro": "sem campo correspondente",
-    "Tracao: colunas n (W) e T0 (Y)": "lidas e guardadas no conjunto (n, T0); só entram na conta se 'gain' ou 'rho_exp' pedirem"
+    "Arrastos: Cdiw/Cdih (G39:J41), Cdpv/Cdpf (G31:J32)": "não entram no envelope original; na simulação o arrasto vem dos painéis (CD0 + CL²/(π e AR)) e da fuselagem",
+    "Vh (G10), dtmin/dtmax, PT0, gama, alfa_0, beta_0, z_inicial, Sd, mi, g": "sem campo correspondente (g é a constante padrão 9,80665)"
   },
   "thrust_sets": {
     "sheet": "Tracao",
@@ -175,11 +206,13 @@
     "T0_col": 25,
     "select_cell": "Geral!C28",
     "row_offset": 2,
-    "x": "V",
-    "y": "none",
-    "gain": "1",
-    "rho_exp": 0.0,
-    "xmax": 0.0,
-    "note": "linha = nhelice + 2 (como no AircraftData). Colunas B..V = p00..p05 na ordem do poly55. x/y: none | V | throttle | h | rho; se nenhuma for 'throttle', T é multiplicada pelo acelerador. gain: '1' | 'T0' | 'T0*PT0' (PT0 em pt0_cell, padrão Geral!C29). rho_exp: T·(ρ/ρ0)^rho_exp (use a coluna n se ela for esse expoente). xmax: limita V à faixa do ajuste."
+    "x": "const",
+    "x_const": "n",
+    "y": "V",
+    "gain": "g",
+    "rho_exp": 1.0,
+    "rho0_cell": "Geral!C18",
+    "p00_from_T0": true,
+    "note": "igual ao Envelope_main: x = n (coluna W, constante do conjunto), y = V, T0 (coluna Y) no lugar de p00, gain = g (polinômio em kgf -> N), (ρ/ρ0)^1 com ρ0 = Geral!C18. Linha = nhelice + 2 (Geral!C28). Para T0·PT0 use gain 'g*PT0' (PT0 em Geral!C29)."
   }
 }

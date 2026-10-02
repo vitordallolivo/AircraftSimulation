@@ -46,7 +46,8 @@ flowchart LR
   },
   "thrust_sets": {"sheet": "Tracao", "first_row": 3, "name_col": 1, "coef_first_col": 2,
                   "n_col": 23, "T0_col": 25, "select_cell": "Geral!C28", "row_offset": 2,
-                  "x": "V", "y": "none", "gain": "1"}
+                  "x": "const", "x_const": "n", "y": "V", "gain": "g", "rho_exp": 1.0,
+                  "rho0_cell": "Geral!C18", "p00_from_T0": true}
 }
 ```
 
@@ -56,9 +57,13 @@ flowchart LR
   `K` (C_Di = K C_L²) vira o Oswald.
 - `thrust_sets`: cada linha da aba `Tracao` (colunas B..V = p00..p05) vira um conjunto no catálogo
   (`src.catalog.thrust_sets`); a linha `nhelice + 2` (célula `Geral!C28`) vai para todos os motores
-  da aeronave com `thrust_model = "poly"`. `x`/`y` dizem o que são as variáveis do polinômio (padrão:
-  x = V, sem y, tração × acelerador); `gain` pode ser `"1"`, `"T0"` ou `"T0*PT0"`; `rho_exp` corrige
-  pela densidade. **Ajuste `x`, `y` e `gain` ao que o ajuste da sua planilha realmente usa.**
+  da aeronave com `thrust_model = "poly"`. A tração fica igual à do `Envelope_main`:
+  `T = g·(ρ/ρ0)·(T0 + p10·n + p01·V + p20·n² + p11·n·V + … + p05·V⁵)` — x = n (coluna W, constante
+  do conjunto), y = V, T0 (coluna Y) no lugar de p00, ganho g (polinômio em kgf), ρ0 de `Geral!C18`.
+  Em voo a tração ainda é multiplicada pelo acelerador. `gain` aceita `"1"`, `"g"`, `"T0"`, `"T0*PT0"`,
+  `"g*PT0"` (PT0 em `Geral!C29`) ou um número.
+- `performance.*`: dados do envelope — `AnguloCruzeiro` (C14), `n` (C13), `rho0` (C18), C_Dp da asa e
+  do EH (G36, G37, J36, J37) e `K` (C17).
 - O que não tem correspondência (derivadas de estabilidade, polinômios de arrasto) está listado em
   `unmapped` no próprio mapa: o núcleo calcula esses efeitos pelos painéis.
 - Eixos do modelo: x para frente, z para baixo. Se a planilha mede x a partir do nariz para trás, use

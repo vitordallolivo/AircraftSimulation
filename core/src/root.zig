@@ -191,6 +191,22 @@ export fn aerosim_performance(slot: i32, V_hi: f64, V_lo: f64, dV: f64, rows: [*
     return @intCast(n);
 }
 
+// ---------------------------------------------------------------- envelope por altitude
+const envelope = @import("sim/envelope.zig");
+
+/// linhas por altitude (h, ρ, V_min, V_max, V_e, V*, V_cru); devolve quantas (< 0: erro)
+export fn aerosim_envelope(slot: i32, cfg: *const envelope.EnvCfg, rows: [*]envelope.EnvRow, cap: usize, ceiling: *f64) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    if (!(cfg.h_step > 0) or !(cfg.dV > 0) or !(cfg.V_hi > cfg.V_lo)) return E_BAD_INDEX;
+    return @intCast(envelope.compute(&inst.p, cfg, rows[0..cap], ceiling));
+}
+
+/// T_d(V) e T_r(V) numa altitude
+export fn aerosim_envelope_curve(slot: i32, cfg: *const envelope.EnvCfg, h: f64, V: [*]f64, Td: [*]f64, Tr: [*]f64, n: usize) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    return @intCast(envelope.curve(&inst.p, cfg, h, V[0..n], Td[0..n], Tr[0..n]));
+}
+
 // ---------------------------------------------------------------- benchmarks
 const bench = @import("bench.zig");
 

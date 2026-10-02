@@ -66,7 +66,7 @@ class SimulationTab(QtWidgets.QWidget):
         h = QtWidgets.QHBoxLayout()
         self.run_b = QtWidgets.QPushButton("▶ Rodar")
         self.stop_b = QtWidgets.QPushButton("■ Parar")
-        self.save_b = QtWidgets.QPushButton("Exportar CSV…")
+        self.save_b = QtWidgets.QPushButton("Exportar (xlsx/csv)…")
         self.stop_b.setEnabled(False)
         self.save_b.setEnabled(False)
         for b in (self.run_b, self.stop_b, self.save_b):
@@ -114,7 +114,9 @@ class SimulationTab(QtWidgets.QWidget):
             w = QtWidgets.QLineEdit(str(p.default))
         else:
             w = QtWidgets.QDoubleSpinBox()
-            w.setDecimals(4)
+            # casas suficientes para o padrão e o mínimo (ex.: tolerância 1e-5)
+            small = [abs(v) for v in (p.default, p.minimum, p.step) if isinstance(v, (int, float)) and v]
+            w.setDecimals(max(4, min(10, max((-int(np.floor(np.log10(v))) + 2 for v in small), default=4))))
             w.setRange(p.minimum if p.minimum is not None else -1e9, p.maximum if p.maximum is not None else 1e9)
             w.setSingleStep(p.step or 0.1)
             w.setValue(float(p.default))
@@ -192,20 +194,59 @@ class SimulationTab(QtWidgets.QWidget):
     def export(self):
         if self.result is None:
             return
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Exportar", f"{self.sim.name}.csv", "CSV (*.csv)")
-        if not path:
-            return
-        base = path[:-4] if path.endswith(".csv") else path
-        tables = dict(self.result.series)
-        if self.result.log is not None and len(self.result.log):
-            tables["registro"] = self.result.log.columns
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Exportar", f"{self.sim.name}.xlsx",
+                                                        "Excel (*.xlsx);;CSV (*.csv)")
+        if path:
+            self.msg.setText(export_result(self.result, path))
+
+
+def _tables(res: SimResult) -> dict:
+    tables = {}
+    if res.summary:
+        tables["resumo"] = {"grandeza": list(res.summary), "valor": [format_value(v) for v in res.summary.values()]}
+    tables.update(res.series)
+    if res.log is not None and len(res.log):
+        tables["registro"] = res.log.columns
+    return tables
+
+
+def export_result(res: SimResult, path: str) -> str:
+    """.xlsx: uma aba por tabela (resumo, envelope, curvas, registro...); .csv: um arquivo por tabela"""
+    tables = _tables(res)
+    if path.lower().endswith(".xlsx"):
+        from openpyxl import Workbook
+        wb = Workbook()
+        wb.remove(wb.active)
+        used = set()
         for name, tab in tables.items():
+            title = "".join(ch for ch in name if ch not in "[]:*?/\\")[:31] or "tabela"
+            while title in used:
+                title = title[:28] + f"_{len(used)}"
+            used.add(title)
+            sh = wb.create_sheet(title)
             keys = list(tab)
-            n = max(len(np.atleast_1d(tab[k])) for k in keys)
-            with open(f"{base}_{name.replace(' ', '_').replace('@', '')}.csv", "w", newline="") as f:
-                w = csv.writer(f, delimiter=";")
-                w.writerow(keys)
-                for i in range(n):
-                    w.writerow([format_value(np.atleast_1d(tab[k])[i]) if i < len(np.atleast_1d(tab[k])) else ""
-                                for k in keys])
-        self.msg.setText(f"exportado em {base}_*.csv")
+            sh.append(keys)
+            cols = [np.atleast_1d(tab[k]) for k in keys]
+            for i in range(max(len(c) for c in cols)):
+                sh.append([_cell(c[i]) if i < len(c) else None for c in cols])
+        wb.save(path)
+        return f"exportado em {path}"
+    base = path[:-4] if path.lower().endswith(".csv") else path
+    for name, tab in tables.items():
+        keys = list(tab)
+        cols = [np.atleast_1d(tab[k]) for k in keys]
+        safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in name)
+        with open(f"{base}_{safe}.csv", "w", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(keys)
+            for i in range(max(len(c) for c in cols)):
+                w.writerow([format_value(c[i]) if i < len(c) else "" for c in cols])
+    return f"exportado em {base}_*.csv"
+
+
+def _cell(v):
+    if isinstance(v, (np.floating, float)):
+        return None if not np.isfinite(v) else float(v)
+    if isinstance(v, (np.integer, int)):
+        return int(v)
+    return str(v)

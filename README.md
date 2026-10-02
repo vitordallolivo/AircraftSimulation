@@ -103,7 +103,11 @@ python -m aerosim.gui data/aircraft/twin_boom.cfg   # abre um arquivo (.cfg, .js
   direita para adicionar/remover asa, EH, EV, motor, tanque, tubo de cauda, trocar o trem, editar
   seções, comandos, perfil `.dat`, motor ou conjunto de tração, e o vento (botões ⟲ / ⟳).
 - **Uma aba por simulação:** Decolagem, Curvas, Envelope de voo, Missão, Subida, Polar, Tração.
-  Preencha os campos e clique em **▶ Rodar**; os gráficos atualizam em tempo real.
+  Preencha os campos e clique em **▶ Rodar**; os gráficos atualizam em tempo real. **Exportar** grava
+  `.xlsx` (uma aba por tabela, como o `Envelope.xlsx` antigo) ou `.csv`.
+- **Envelope de voo:** por altitude, V_min e V_max (P_d = P_r), V_e, V* = V_e√n, V_cru e o teto
+  absoluto — pelo método da planilha (o `Envelope_main` original, que pode ser reproduzido exatamente)
+  e/ou pela trimagem da aeronave completa. Detalhes em [aerosim/manager/README.md](aerosim/manager/README.md).
 - **Arquivo → Importar planilha por mapa de células…:** escolha o `Dados_Desempenho.xlsx` e depois o
   mapa `data/mappings/dados_desempenho.json`. Os conjuntos de tração da aba `Tracao` entram no
   catálogo e o da linha `nhelice` vai para o motor. Detalhes em [aerosim/data/README.md](aerosim/data/README.md).
@@ -121,6 +125,8 @@ ac = load_aircraft("data/aircraft/conventional.cfg")
 # ac = CellMapAircraftSource("data/mappings/dados_desempenho.json").load("Dados_Desempenho.xlsx")
 
 r = m.run("takeoff", ac, {"sweep": True})          # nomes: takeoff, turn, envelope, mission, climb, polar, thrust
+r = m.run("envelope", ac, {"method": "planilha", "faithful": True})   # o Envelope_main original
+print(r.summary["[planilha] teto absoluto (m)"], r.series["envelope_planilha"]["Vmax"])
 print(r.summary)                                    # números
 print(r.series.keys())                              # tabelas (mapa da decolagem, ...)
 print(r.log["t"], r.log["h"])                       # registro no tempo (SI, ângulos em rad)

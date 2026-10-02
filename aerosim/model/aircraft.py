@@ -356,6 +356,19 @@ ANGLE_KEYS_AP = ("alpha_max", "chi_inf", "phimax", "pmax_cmd", "de_max", "da_max
 
 
 @dataclass
+class PerformanceData:
+    """dados do envelope de voo "como na planilha" (Envelope_main original)"""
+    alpha_cruise: float = 2.0          # ângulo de cruzeiro (graus) — AnguloCruzeiro
+    load_factor: float = 2.0           # n de projeto: V* = V_e √n
+    rho0: float = 1.225                # densidade de referência (nível do mar)
+    cdp_x: float = 12.0                # C_Dp = c1 · cdp_x + c2 (como no código original)
+    cdp_wing: list[float] = field(default_factory=lambda: [0.0, 0.012])     # c1, c2 da asa
+    cdp_htail: list[float] = field(default_factory=lambda: [0.0, 0.012])    # c1, c2 do EH
+    K: float | None = None             # C_Di = K C_L²; None: 1/(π e AR) da asa
+    ceiling_min: float = 500.0         # teto mínimo exigido (o original devolve True/False)
+
+
+@dataclass
 class SimSettings:
     dt: float = 1e-3
     tmax: float = 400.0
@@ -380,6 +393,7 @@ class Aircraft:
     autopilot: Autopilot = field(default_factory=Autopilot)
     sim: SimSettings = field(default_factory=SimSettings)
     mission: Mission = field(default_factory=circuit)
+    performance: PerformanceData = field(default_factory=PerformanceData)
     shared_battery: bool = False   # True: um pacote para todos os motores (R_int vezes K)
     Sref: float | None = None      # None: da asa principal
     cref: float | None = None

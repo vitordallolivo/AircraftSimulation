@@ -47,14 +47,16 @@ class Battery:
 
 POLY_TERMS = ["p00", "p10", "p01", "p20", "p11", "p02", "p30", "p21", "p12", "p03", "p40", "p31", "p22", "p13",
               "p04", "p50", "p41", "p32", "p23", "p14", "p05"]
-POLY_VARS = ("none", "V", "throttle", "h", "rho")
+POLY_VARS = ("none", "V", "throttle", "h", "rho", "const")
 
 
 @dataclass
 class ThrustPoly:
     """conjunto motor+hélice descrito por um polinômio de tração ajustado (poly55 do MATLAB):
         T = gain · P(x, y) · (ρ/ρ0)^rho_exp      (× acelerador se nem x nem y for o acelerador)
-        P(x, y) = p00 + p10 x + p01 y + p20 x² + p11 x y + p02 y² + ... (grau 5, 21 termos)"""
+        P(x, y) = p00 + p10 x + p01 y + p20 x² + p11 x y + p02 y² + ... (grau 5, 21 termos)
+    Na planilha Dados_Desempenho: x = n (constante do conjunto), y = V, p00 = T0, gain = g,
+    rho_exp = 1  ->  T = g (ρ/ρ0) (T0 + p10 n + p01 V + p20 n² + ...), como no Envelope_main."""
     name: str = "conjunto"
     coefs: list[float] = field(default_factory=lambda: [0.0] * 21)
     x_var: str = "V"
@@ -64,6 +66,8 @@ class ThrustPoly:
     rho0: float = 1.225
     xmax: float = 0.0          # > 0: x limitado à faixa do ajuste
     ymax: float = 0.0
+    x_const: float = 0.0       # valor de x se x_var = "const" (ex.: a rotação n do conjunto)
+    y_const: float = 0.0
     T0: float = 0.0            # informativo (tração estática da planilha)
     n: float = 0.0             # informativo (coluna n da planilha)
     source: str = ""
@@ -71,7 +75,8 @@ class ThrustPoly:
     def thrust(self, V: float, thr: float = 1.0, h: float = 0.0, rho: float = 1.225) -> float:
         """mesma conta do núcleo (para conferir e desenhar sem abrir uma sessão)"""
         vals = {"none": 0.0, "V": V, "throttle": thr, "h": h, "rho": rho}
-        x, y = vals[self.x_var], vals[self.y_var]
+        x = self.x_const if self.x_var == "const" else vals[self.x_var]
+        y = self.y_const if self.y_var == "const" else vals[self.y_var]
         if self.xmax > 0:
             x = min(max(x, 0.0), self.xmax)
         if self.ymax > 0:

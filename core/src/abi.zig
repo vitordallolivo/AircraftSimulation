@@ -17,7 +17,9 @@ pub const exported = .{
     T.Surface,  T.PropUnit,   T.Gear,      T.Tank,      T.Segment, T.Event,
     T.Payload,  T.Environment, T.Takeoff,  T.Autopilot, T.Params,  T.Events,
     T.LogRow,   T.AeroCoeffs, T.PropPoint, T.MassProps, T.TrimPoint, T.PerfRow,
+    env.EnvCfg, env.EnvRow,
 };
+const env = @import("sim/envelope.zig");
 
 fn shortName(comptime Ty: type) []const u8 {
     const full = @typeName(Ty);

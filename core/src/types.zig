@@ -19,6 +19,7 @@ pub const pvar_V = 1; // velocidade do ar no eixo do motor (m/s)
 pub const pvar_throttle = 2; // acelerador 0..1
 pub const pvar_h = 3; // altura (m)
 pub const pvar_rho = 4; // densidade (kg/m³)
+pub const pvar_const = 5; // constante (poly_xc / poly_yc), ex.: a rotação n do conjunto
 
 /// Painel sustentador (faixa de meia asa, EH, EV...). A deflexão vista pelo painel é
 ///   δ = tau · (mix[0] δe + mix[1] δa + mix[2] δr)
@@ -79,6 +80,8 @@ pub const PropUnit = extern struct {
     poly_rho0: f64 = 1.225,
     poly_xmax: f64 = 0, // > 0: x limitado a [0, xmax] (faixa do ajuste)
     poly_ymax: f64 = 0,
+    poly_xc: f64 = 0, // valor de x quando poly_x = pvar_const
+    poly_yc: f64 = 0,
     poly: [ThrustPoly.n_coef]f64 = [_]f64{0} ** ThrustPoly.n_coef,
     J: [L.max_prop_pts]f64 = [_]f64{0} ** L.max_prop_pts,
     CT: [L.max_prop_pts]f64 = [_]f64{0} ** L.max_prop_pts,

@@ -101,7 +101,11 @@ class LivePlots(QtWidgets.QWidget):
             p = self.plots[s.key]
             p.clear()
             name = s.source.split(":", 1)[1]
-            tables = res.series.items() if name == "*" else [(name, res.series.get(name))]
+            if name.endswith("*"):
+                tables = [(k, v) for k, v in res.series.items() if k.startswith(name[:-1])]
+            else:
+                tables = [(name, res.series.get(name))]
+            many = len(tables) > 1 or name.endswith("*")
             k = 0
             for tname, tab in tables:
                 if not tab or s.x not in tab:
@@ -111,7 +115,9 @@ class LivePlots(QtWidgets.QWidget):
                         continue
                     xs = np.asarray(tab[s.x], float)
                     ys = np.asarray(tab[y], float)
-                    lab = f"{tname}: {y}" if name == "*" else y
+                    lab = f"{tname}: {y}" if many else y
+                    if s.swap:
+                        xs, ys = ys, xs
                     color = PALETTE[k % len(PALETTE)]
                     k += 1
                     if s.scatter:

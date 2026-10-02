@@ -2,6 +2,7 @@
 
 test {
     _ = @import("sim/tests.zig");
+    _ = @import("sim/envelope.zig");
     _ = @import("abi.zig");
     _ = @import("bench.zig");
 }

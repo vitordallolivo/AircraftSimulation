@@ -47,7 +47,8 @@ def compile_aircraft(ac: Aircraft, mission: Mission | None = None, overrides: di
         tp = u.thrust_poly
         poly = dict(model=1 if u.thrust_model == "poly" else 0, poly=(list(tp.coefs) + [0.0] * 21)[:21],
                     poly_x=POLY_VARS.index(tp.x_var), poly_y=POLY_VARS.index(tp.y_var), poly_gain=tp.gain,
-                    poly_rho_exp=tp.rho_exp, poly_rho0=tp.rho0, poly_xmax=tp.xmax, poly_ymax=tp.ymax)
+                    poly_rho_exp=tp.rho_exp, poly_rho0=tp.rho0, poly_xmax=tp.xmax, poly_ymax=tp.ymax,
+                    poly_xc=tp.x_const, poly_yc=tp.y_const)
         props.append(dict(**poly,
             r=[u.x, u.y, u.z], tilt=u.tilt * D2R, toe=u.toe * D2R, sense=float(u.sense), D=pr.D, Ip=pr.Ip,
             Jm=mo.Jm, Kv=mo.Kv, Rm=mo.Rm, B=mo.B, tauc=mo.tauc, Imax=mo.Imax, Voc=ba.Voc,

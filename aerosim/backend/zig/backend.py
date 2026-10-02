@@ -109,6 +109,8 @@ class _Lib:
             "aerosim_prop_point": (c_int, [c_int, c_int, c_double, c_double, ctypes.POINTER(T["PropPoint"])]),
             "aerosim_trim": (c_int, [c_int, c_int, c_double, c_double, ctypes.POINTER(T["TrimPoint"])]),
             "aerosim_performance": (c_int, [c_int, c_double, c_double, c_double, vp, c_size]),
+            "aerosim_envelope": (c_int, [c_int, ctypes.POINTER(T["EnvCfg"]), vp, c_size, ctypes.POINTER(c_double)]),
+            "aerosim_envelope_curve": (c_int, [c_int, ctypes.POINTER(T["EnvCfg"]), c_double, vp, vp, vp, c_size]),
         }
         for name, (res, args) in sig.items():
             fn = getattr(L, name)
@@ -120,6 +122,7 @@ class _Lib:
             raise RuntimeError("tamanho do snapshot não confere")
         self.log_dtype = self.schema.dtypes["LogRow"]
         self.perf_dtype = self.schema.dtypes["PerfRow"]
+        self.env_dtype = self.schema.dtypes["EnvRow"]
 
 
 def _struct_dict(obj) -> dict[str, float]:
@@ -237,6 +240,27 @@ class ZigSession(ISimSession):
         buf = np.zeros(cap, dtype=self._lib.perf_dtype)
         n = _check(self._lib.dll.aerosim_performance(self._slot, V_hi, V_lo, dV, buf.ctypes.data, cap), "performance")
         return {k: np.array(buf[k][:n]) for k in buf.dtype.names}
+
+    def _env_cfg(self, cfg: dict):
+        c = self._lib.schema.types["EnvCfg"]()
+        abi.write(c, cfg)
+        return c
+
+    def envelope(self, cfg):
+        c = self._env_cfg(cfg)
+        cap = int(c.h_max / c.h_step) + 2
+        buf = np.zeros(cap, dtype=self._lib.env_dtype)
+        ceil = ctypes.c_double(0)
+        n = _check(self._lib.dll.aerosim_envelope(self._slot, ctypes.byref(c), buf.ctypes.data, cap,
+                                                  ctypes.byref(ceil)), "envelope")
+        return {k: np.array(buf[k][:n]) for k in buf.dtype.names}, float(ceil.value)
+
+    def envelope_curve(self, cfg, h, n=200):
+        c = self._env_cfg(cfg)
+        V, Td, Tr = (np.zeros(n) for _ in range(3))
+        _check(self._lib.dll.aerosim_envelope_curve(self._slot, ctypes.byref(c), h, V.ctypes.data, Td.ctypes.data,
+                                                    Tr.ctypes.data, n), "envelope_curve")
+        return {"V": V, "Td": Td, "Tr": Tr, "Pd": Td * V, "Pr": Tr * V}
 
     def close(self) -> None:
         if self._slot >= 0:

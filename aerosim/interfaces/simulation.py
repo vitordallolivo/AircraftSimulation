@@ -44,8 +44,9 @@ class PlotSpec:
     xlabel: str = ""
     ylabel: str = ""
     live: bool = True              # atualiza enquanto roda (canais do registro)
-    source: str = "log"            # log | series:<nome>  (séries do resultado final)
+    source: str = "log"            # log | series:<nome> | series:<prefixo>* | series:* (séries do resultado)
     scatter: bool = False
+    swap: bool = False             # desenha as ys na horizontal e x na vertical (ex.: V × altitude)
 
 
 @dataclass

@@ -112,6 +112,14 @@ class ISimSession(ABC):
     @abstractmethod
     def performance(self, V_hi: float, V_lo: float, dV: float) -> dict[str, np.ndarray]: ...
 
+    def envelope(self, cfg: dict) -> tuple[dict[str, np.ndarray], float]:
+        """envelope por altitude: colunas (h, rho, Vmin, Vmax, Ve, Vman, Vcru, Td_max) e o teto"""
+        raise NotImplementedError
+
+    def envelope_curve(self, cfg: dict, h: float, n: int = 200) -> dict[str, np.ndarray]:
+        """T_d(V) e T_r(V) numa altitude"""
+        raise NotImplementedError
+
     @abstractmethod
     def derived(self) -> SimSpec:
         """parâmetros como o núcleo os vê depois de `configure` (com os derivados)"""
