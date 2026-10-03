@@ -64,7 +64,10 @@ def draw(ax, spec, res):
             if spec.swap:
                 xs, ys = ys, xs
             lab = (f"{tname}: {y}" if len(spec.ys) > 1 else tname) if many else y
-            if t.get("_dash"):
+            if t.get("_marker"):
+                ax.plot(xs, ys, ls="none", marker="o", ms=9, color=C[k % 8], markeredgecolor=SURF, label=lab)
+                k += 1
+            elif t.get("_dash"):
                 ax.plot(xs, ys, color=INK2 if len(xs) == 2 else C[k % 8], ls="--", lw=1.2, label=lab)
                 if len(xs) != 2:
                     k += 1

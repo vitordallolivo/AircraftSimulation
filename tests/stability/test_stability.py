@@ -124,3 +124,14 @@ def test_no_pitch_control_is_reported(manager):
     r = manager.run("stability", ac, {"Vs_list": "14", "whatif": False, "size_elevon": False, "washout": False})
     c = next(c for c in r.checks if c.item == "comando de arfagem")
     assert c.status == "falha" and "elevon" in c.fix
+
+
+def test_norm_can_be_disabled(manager):
+    from aerosim.model.templates import conventional
+    r = manager.run("stability", conventional(), {"norm": "nenhuma (só valores)", "Vs_list": "15", "size_tail": False})
+    dyn = [c for c in r.checks if c.group == "dinâmica" and c.item != "líquido livre"]
+    assert dyn and all(c.status == "info" for c in dyn)
+    r = manager.run("stability", conventional(), {"norm": "personalizado", "use_spiral": False, "Vs_list": "15",
+                                                  "size_tail": False})
+    sp = next(c for c in r.checks if c.item.startswith("espiral: tempo"))
+    assert sp.status == "info"

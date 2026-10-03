@@ -88,13 +88,21 @@ class StabilitySimulation(SimulationBase):
         # ---- critérios
         norm = values.get("norm", "MIL-F-8785C")
         ps.append(ParamSpec("norm", "critérios dos modos e da rolagem", "MIL-F-8785C", kind="choice",
-                            choices=("MIL-F-8785C", "personalizado"), group=C_, rebuild=True,
-                            help="MIL-F-8785C: limites do nível 1 pela classe e fase; personalizado: digite cada limite"))
+                            choices=NORMS, group=C_, rebuild=True,
+                            help="MIL-F-8785C: nível 1 pela classe e fase; personalizado: ligue e digite cada critério; "
+                                 "nenhuma: só mostra os valores (a norma pode não valer para o tipo de aeronave)"))
         if norm == "personalizado":
-            from aerosim.stability.criteria import FIELDS, mil_8785c
+            from aerosim.stability.criteria import FIELDS, GROUPS, mil_8785c
             base = mil_8785c("I", "B")
-            for k, lab, unit in FIELDS:
-                ps.append(ParamSpec(f"crit_{k}", lab, getattr(base, k), minimum=0, unit=unit, group=C_))
+            lab_of = {k: (lab, unit) for k, lab, unit in FIELDS}
+            for g, glab, fields in GROUPS:
+                ps.append(ParamSpec(f"use_{g}", f"verificar {glab}", True, kind="bool", group=C_, rebuild=True))
+                if values.get(f"use_{g}", True):
+                    for k in fields:
+                        lab, unit = lab_of[k]
+                        ps.append(ParamSpec(f"crit_{k}", lab, getattr(base, k), minimum=0, unit=unit, group=C_))
+        elif norm.startswith("nenhuma"):
+            pass
         else:
             ps += [ParamSpec("cls", "classe do avião", "I", kind="choice", choices=("I", "II", "III", "IV"), group=C_,
                              help="I: pequeno e leve; II: médio; III: grande; IV: alta manobrabilidade"),
@@ -474,7 +482,10 @@ class StabilitySimulation(SimulationBase):
                 S_["ail_requisito"] = {"eta_i": s_["eta_i"], "t": s_["requisito"], "_dash": 1}
                 Pss, tb = o.get("aileron atual: P_ss (°/s), t (s)", [float("nan"), float("nan")])
                 crit_r = f"{phi_req:g}° em ≤ {t_req:g} s (δa {math.degrees(da_max):g}°)"
-                if tb <= t_req:
+                if not crit.on("roll"):
+                    add("info", f"aileron: tempo para inclinar {phi_req:g}°", f"{tb:.2f} s (p = {Pss:.0f} °/s)", "—",
+                        group=G)
+                elif tb <= t_req:
                     add("ok", "aileron: rolagem", f"{tb:.2f} s (p = {Pss:.0f} °/s a {Vroll:.1f} m/s)", crit_r, group=G,
                         source=crit.source)
                 else:
@@ -512,7 +523,10 @@ class StabilitySimulation(SimulationBase):
                 S_["elv_máximo"] = {"V": Vl, "δ": np.full(len(Vl), math.degrees(da_max)), "_dash": 1}
                 bad = Vl[np.isfinite(tot) & (tot > math.degrees(da_max))]
                 crit_e = f"equilíbrio + rolagem ({phi_req:g}° em {t_req:g} s) ≤ {math.degrees(da_max):g}°"
-                if len(bad):
+                if not crit.on("roll"):
+                    add("info", "elevon: curso usado no equilíbrio", f"máx. {np.nanmax(trim_d):.1f}° de "
+                        f"{math.degrees(da_max):g}°", "—", group=G)
+                elif len(bad):
                     add("falha", "elevon: curso para arfagem + rolagem", f"excede de {bad.min():.1f} a {bad.max():.1f} m/s",
                         crit_e, "nessas velocidades o equilíbrio come o curso que a rolagem precisa",
                         "elevon com mais corda/envergadura, CG mais para trás (menos δ de equilíbrio) ou C_m0 maior "
@@ -631,12 +645,14 @@ class StabilitySimulation(SimulationBase):
         else:
             for row in evaluate(md, crit):
                 lvl = row["nivel"]
-                if row["ok"]:
+                if row["ok"] is None:
+                    st = "info"
+                elif row["ok"]:
                     st = "ok"
                 else:
                     st = "atencao" if lvl == 2 else "falha"
-                why, fix = _mode_advice(row["criterio"], st, f, fin_word)
-                if st != "ok" and P("whatif"):
+                why, fix = _mode_advice(row["criterio"], st, f, fin_word) if st in ("falha", "atencao") else ("", "")
+                if st in ("falha", "atencao") and P("whatif"):
                     fix = _whatif(ctx, ac, f, V, row["criterio"], crit, fins) or fix
                 val = _fmt(row["valor"]) + (f" (nível {lvl if lvl < 4 else '>3'})" if lvl else "")
                 add(st, row["criterio"], val, row["limite"], why, fix, G, source=crit.source)
@@ -736,13 +752,20 @@ def _mode_advice(crit: str, st: str, f, fin_word: str) -> tuple[str, str]:
     return "", ""
 
 
+NORMS = ("MIL-F-8785C", "personalizado", "nenhuma (só valores)")
+
+
 def _criteria(params: dict):
-    from aerosim.stability.criteria import FIELDS, Criteria, mil_8785c
-    if params.get("norm", "MIL-F-8785C") == "personalizado":
+    from aerosim.stability.criteria import FIELDS, GROUPS, Criteria, mil_8785c, none
+    norm = params.get("norm", "MIL-F-8785C")
+    if norm == "personalizado":
         base = mil_8785c("I", "B")
         c = Criteria(**{k: float(params.get(f"crit_{k}", getattr(base, k))) for k, _, _ in FIELDS})
+        c.use = tuple(g for g, _, _ in GROUPS if params.get(f"use_{g}", True))
         c.source = "definido na aba"
         return c
+    if norm.startswith("nenhuma"):
+        return none()
     return mil_8785c(params.get("cls", "I"), params.get("cat", "B"))
 
 

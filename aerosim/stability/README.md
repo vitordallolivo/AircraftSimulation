@@ -16,6 +16,10 @@ A aba se monta pela configuração (`aerosim/model/features.py`):
 | carga lançável / líquido | faixa de CG calculada (com/sem carga, com/sem líquido); senão, a variação é informada |
 | trem de pouso | rotação na decolagem (e onde pôr o trem principal se não roda) |
 
+**Critérios** (seção "Critérios de aprovação" da aba): MIL-F-8785C (classe e fase), **personalizado**
+(cada critério ligado/desligado e com o limite digitado) ou **nenhuma** (só mostra os valores — a norma
+pode não valer para o tipo de aeronave). Margens, cursos máximos e vento cruzado são sempre entradas.
+
 Gráficos principais: **margem estática × posição do CG** e **deflexão de arfagem para equilibrar × posição
 do CG**, com os limites dianteiro e traseiro marcados.
 

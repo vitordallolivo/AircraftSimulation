@@ -29,10 +29,19 @@ class Criteria:
     norm: str = ""                     # "MIL-F-8785C" quando vier da norma (com níveis 2 e 3)
     cls: str = "I"
     cat: str = "B"
+    use: tuple = ("sp", "ph", "dr", "roll_tau", "spiral", "roll")   # critérios ligados; os outros só informam
+
+    def on(self, key: str) -> bool:
+        return key in self.use
 
     def as_dict(self) -> dict:
         return asdict(self)
 
+
+# grupos de critérios que podem ser ligados/desligados: (chave, rótulo, campos)
+GROUPS = [("sp", "curto período", ("sp_zeta_min", "sp_zeta_max")), ("ph", "fugóide", ("ph_zeta_min",)),
+          ("dr", "dutch roll", ("dr_zeta_min", "dr_zw_min", "dr_wn_min")), ("roll_tau", "rolamento", ("roll_tau_max",)),
+          ("spiral", "espiral", ("spiral_t2_min",)), ("roll", "tempo de rolagem", ("roll_phi", "roll_t"))]
 
 FIELDS = [  # (campo, rótulo, unidade)
     ("sp_zeta_min", "curto período: ζ mínimo", ""), ("sp_zeta_max", "curto período: ζ máximo", ""),
@@ -62,8 +71,14 @@ def mil_8785c(cls: str = "I", cat: str = "B") -> Criteria:
                     source=f"MIL-F-8785C, classe {cls}, fase {cat}, nível 1", norm="MIL-F-8785C", cls=cls, cat=cat)
 
 
+def none() -> Criteria:
+    """sem norma: todos os critérios desligados (a aba só informa os valores)"""
+    return Criteria(source="nenhum critério (só valores)", use=())
+
+
 def evaluate(m: dict, c: Criteria) -> list[dict]:
-    """[{criterio, valor, limite, ok, nivel}] — nível só quando o critério é a MIL-F-8785C"""
+    """[{criterio, valor, limite, ok, nivel}] — nível só quando o critério é a MIL-F-8785C;
+    ok = None quando o critério está desligado"""
     from .dynamic import mil_check
     levels = {r["criterio"]: r["nivel"] for r in mil_check(m, c.cls, c.cat)} if c.norm else {}
     rows = []
@@ -92,6 +107,10 @@ def evaluate(m: dict, c: Criteria) -> list[dict]:
         t2 = float("inf") if not math.isfinite(t2) else t2
         rows.append(dict(criterio="espiral: tempo para dobrar (s)", valor=t2, limite=f"≥ {c.spiral_t2_min:g} s",
                          ok=t2 >= c.spiral_t2_min))
+    keys = {"ζ curto período": "sp", "ζ fugóide": "ph", "dutch roll ζ / ζω_n / ω_n": "dr",
+            "τ_R rolamento (s)": "roll_tau", "espiral: tempo para dobrar (s)": "spiral"}
     for r in rows:
         r["nivel"] = levels.get(r["criterio"])
+        if not c.on(keys[r["criterio"]]):
+            r["ok"], r["limite"], r["nivel"] = None, "—", None
     return rows

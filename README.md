@@ -41,6 +41,7 @@ núcleo falso para provar isso.
 | `aerosim/backend/` | ponte Python ↔ núcleo (ctypes, esquema gerado em comptime) | [README](aerosim/backend/README.md) |
 | `aerosim/manager/` | Simulation Manager e as simulações | [README](aerosim/manager/README.md) |
 | `aerosim/aero/` | aerodinâmica pela geometria: núcleo × lltdrek × AeroSandbox, pontas de asa (Trefftz) | [README](aerosim/aero/README.md) |
+| `aerosim/sizing/` | dimensionamento inicial (diagrama de restrições) | [README](aerosim/sizing/README.md) |
 | `aerosim/stability/` | estabilidade estática, tesoura, modos (MIL-F-8785C), aileron/profundor/leme | [README](aerosim/stability/README.md) |
 | `aerosim/gui/` | interface gráfica | [README](aerosim/gui/README.md) |
 | `tests/` | testes por camada | [README](tests/README.md) |
@@ -106,8 +107,17 @@ python -m aerosim.gui data/aircraft/twin_boom.cfg   # abre um arquivo (.cfg, .js
 - **Configuração:** a aeronave em 3D. Clique num componente e arraste para mover; use o painel da
   direita para adicionar/remover asa, EH, EV, motor, tanque, tubo de cauda, trocar o trem, editar
   seções, comandos, perfil `.dat`, motor ou conjunto de tração, e o vento (botões ⟲ / ⟳).
-- **Uma aba por simulação:** Decolagem, Curvas, Envelope de voo, Missão, Subida, Polar, Tração,
-  Aerodinâmica e Estabilidade.
+- **Uma aba por simulação:** Dimensionamento inicial, Decolagem, Curvas, Envelope de voo, Missão, Subida,
+  Polar, Tração, Aerodinâmica e Estabilidade. As abas se montam pela configuração (sem EH não há
+  dimensionamento de EH; com elevon, o elevon é dimensionado; etc.) e trazem um **diagnóstico** no fim:
+  cada verificação com estado, valor e limite (clique para ver o porquê e o que mudar).
+- **💾 Salvar avião / 📂 Meus aviões** (barra no topo): grava a configuração em JSON, um arquivo por avião
+  com o nome que você der, numa pasta sua (padrão `~/aerosim_aeronaves`, ou `AEROSIM_PROJETOS`).
+- **Dispositivos de asa:** na Configuração, selecione a asa → *Dispositivos* → *+ adicionar*: winglet,
+  winglet para baixo, placa de ponta ou cerca, em qualquer posição da envergadura (η), com altura, cordas,
+  enflechamento, cant e toe.
+- **Dimensionamento inicial:** diagrama T/W × W/S com os requisitos que você digita, o ponto da aeronave e
+  o ponto de projeto (área de asa e tração). Detalhes em [aerosim/sizing/README.md](aerosim/sizing/README.md).
   Preencha os campos e clique em **▶ Rodar**; os gráficos atualizam em tempo real. **Exportar** grava
   `.xlsx` (uma aba por tabela, como o `Envelope.xlsx` antigo) ou `.csv`.
 - **Envelope de voo:** por altitude, V_min e V_max (P_d = P_r), V_e, V* = V_e√n, V_cru e o teto
@@ -158,6 +168,12 @@ python tools/plot_comparativo.py saida/ data/aircraft/twin_boom.cfg
 
 Para cada aeronave: o diagnóstico e os gráficos de cada aba, iguais aos da GUI (só o que existe
 naquela configuração). Precisa de `matplotlib`.
+
+### Fotos de todas as abas
+
+```sh
+xvfb-run -a python tools/capturas.py capturas/       # Linux sem tela; com tela: python tools/capturas.py capturas/
+```
 
 ### Testes e medições
 

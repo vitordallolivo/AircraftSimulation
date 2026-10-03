@@ -137,7 +137,9 @@ class LivePlots(QtWidgets.QWidget):
                     color = PALETTE[k % len(PALETTE)]
                     k += 1
                     dash = tab.get("_dash") if isinstance(tab, dict) else None
-                    if dash:
+                    if isinstance(tab, dict) and tab.get("_marker"):
+                        it = p.plot(xs, ys, pen=None, symbol="o", symbolSize=11, symbolBrush=color)
+                    elif dash:
                         it = p.plot(xs, ys, pen=pg.mkPen(color, width=1.4, style=pg.QtCore.Qt.PenStyle.DashLine))
                     elif s.scatter:
                         it = p.plot(xs, ys, pen=pg.mkPen(color, width=1, style=pg.QtCore.Qt.PenStyle.DashLine),
