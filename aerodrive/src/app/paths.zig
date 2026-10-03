@@ -1,5 +1,6 @@
 //! Onde ficam as coisas no disco, a partir das variáveis de ambiente:
 //!   config      $XDG_CONFIG_HOME/aerodrive/config.json (ou ~/.config/…, ou %APPDATA%\aerodrive\…)
+//!   aviões      …/aerodrive/avioes/<avião>-<hash>.json (o que cada avião lembra)
 //!   voos        $AERODRIVE_VOOS, ou ~/aerodrive_voos (gravações: vídeo + dados)
 //!   meus aviões $AEROSIM_PROJETOS, ou ~/aerosim_aeronaves (os da GUI)
 //!   exemplos    ../data/aircraft e data/aircraft (rodando de aerodrive/ ou da raiz)
@@ -8,6 +9,7 @@ const fz = @import("../util/fuzz.zig");
 
 pub const Paths = struct {
     config: []const u8,
+    planes: []const u8, // configurações por avião (ao lado do config: …/aerodrive/avioes)
     recordings: []const u8,
     mine: []const u8,
     examples: [2][]const u8 = .{ "../data/aircraft", "data/aircraft" },
@@ -24,7 +26,8 @@ pub fn resolve(a: std.mem.Allocator, env: anytype) !Paths {
         try std.fs.path.join(a, &.{ home, ".config", "aerodrive", "config.json" });
     const rec = if (nonEmpty(env.get("AERODRIVE_VOOS"))) |x| try a.dupe(u8, x) else try std.fs.path.join(a, &.{ home, "aerodrive_voos" });
     const mine = if (nonEmpty(env.get("AEROSIM_PROJETOS"))) |x| try a.dupe(u8, x) else try std.fs.path.join(a, &.{ home, "aerosim_aeronaves" });
-    return .{ .config = config, .recordings = rec, .mine = mine };
+    const planes = try std.fs.path.join(a, &.{ std.fs.path.dirname(config) orelse ".", "avioes" });
+    return .{ .config = config, .planes = planes, .recordings = rec, .mine = mine };
 }
 
 fn nonEmpty(s: ?[]const u8) ?[]const u8 {
@@ -48,6 +51,7 @@ test "HOME, XDG e variáveis do projeto" {
     defer arena.deinit();
     const p = try resolve(arena.allocator(), FakeEnv{ .kv = &.{ .{ "HOME", "/h" }, .{ "AEROSIM_PROJETOS", "/proj" } } });
     try testing.expectEqualStrings("/h/.config/aerodrive/config.json", p.config);
+    try testing.expectEqualStrings("/h/.config/aerodrive/avioes", p.planes);
     try testing.expectEqualStrings("/h/aerodrive_voos", p.recordings);
     try testing.expectEqualStrings("/proj", p.mine);
     const q = try resolve(arena.allocator(), FakeEnv{ .kv = &.{.{ "XDG_CONFIG_HOME", "/x" }} });

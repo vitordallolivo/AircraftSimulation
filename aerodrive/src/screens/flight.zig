@@ -1,7 +1,8 @@
 //! Voo: o drive_manager avança a física em tempo real; no manual, o controle (com as curvas do
 //! menu Controle) vai direto às superfícies; no automático, o piloto do núcleo segue o percurso.
 //! Desenha céu, campo, setas fracas do vento, rastro, a aeronave, HUD, minimapa e o aviso de
-//! gravação. Botões: Start pausa · Y manual ⇄ automático · X solta o LAPES · Back grava · B câmera.
+//! gravação. Botões (remapeáveis no menu Controle): pausa, manual ⇄ automático, LAPES, gravar,
+//! câmera, recomeçar.
 const std = @import("std");
 const rl = @import("raylib");
 const v3 = @import("../math/vec3.zig");
@@ -14,6 +15,19 @@ const field = @import("../world/field.zig");
 const theme = @import("../ui/theme.zig");
 const minimap = @import("../ui/minimap_view.zig");
 const dm_mod = @import("../sim/drive_manager.zig");
+const ch = @import("../input/channels.zig");
+const glyphs = @import("../ui/glyphs.zig");
+
+fn short(a: ch.Action) [:0]const u8 {
+    return switch (a) {
+        .pause => "pausa",
+        .mode => "modo",
+        .drop => "LAPES",
+        .record => "gravar",
+        .camera => "câmera",
+        .restart => "recomeçar",
+    };
+}
 
 const App = app_mod.App;
 const Next = app_mod.Next;
@@ -45,7 +59,7 @@ pub const Flight = struct {
             .{ .ground = .{ .eye = .{ 0.5 * app.flight_ac.airfield.x_warning, 14, -1.7 }, .size = span } },
             .{ .orbit = orbit },
         };
-        fl.cam_kind = app.settings.camera.start;
+        fl.cam_kind = app.camera().start;
         fl.applyCamera(app);
         fl.n_trail = 0;
         fl.trail_t = 0;
@@ -55,7 +69,7 @@ pub const Flight = struct {
     /// distância/altura/fov da perseguição vindos das configurações
     fn applyCamera(fl: *Flight, app: *App) void {
         const span = if (app.plane) |pl| pl.span else 2;
-        const c = app.settings.camera;
+        const c = app.camera();
         fl.cams[0].chase.distance = @max(c.chase_distance * span, 0.5);
         fl.cams[0].chase.height = c.chase_height * span;
         fl.cams[0].chase.fov_deg = c.fov;
@@ -68,7 +82,7 @@ pub const Flight = struct {
     pub fn restart(fl: *Flight, app: *App) void {
         const dm = &(app.dm orelse return);
         app.stopRecording();
-        dm.mode = app.settings.session.start_mode;
+        dm.mode = app.session().start_mode;
         dm.restart() catch {};
         app.channel_state = .{};
         fl.n_trail = 0;
@@ -102,8 +116,13 @@ pub const Flight = struct {
     pub fn frame(fl: *Flight, app: *App, dt_in: f64) Next {
         const dm = &(app.dm orelse return .home);
         const dt = if (std.math.isFinite(dt_in)) std.math.clamp(dt_in, 0, 0.05) else 0;
-        const act = app.reader.actions();
+        const prof = app.profile();
+        const act = app.reader.actions(prof.buttons);
         if (act.pause) return .{ .open = .pause };
+        if (act.restart) {
+            fl.restart(app);
+            return .stay;
+        }
         if (act.toggle_mode) dm.toggleMode();
         if (act.drop) dm.dropPayload();
         if (act.camera) {
@@ -114,19 +133,23 @@ pub const Flight = struct {
         }
 
         // comandos do piloto (no automático o controle fica parado, mas a rampa acompanha)
-        const cmd = app.channel_state.step(app.settings.profile, app.reader.raw(dt), dt);
+        const cmd = app.channel_state.step(prof.*, app.reader.raw(dt), dt);
         if (dm.mode == .manual) dm.setCommands(.{ .de = cmd.de, .da = cmd.da, .dr = cmd.dr, .thr = cmd.thr });
         const f = dm.step(dt);
         fl.record(f);
         if (app.rec) |*r| if (dm.last) |row| r.addRow(&row);
         app.audio.update(if (f.phase == .landed or f.phase == .crashed) 0 else f.thr, app.settings.volume, dt);
+        app.audio.updateWind(f.Va, app.settings.volume);
 
         var in: cam.Input = .{ .target = f.pos_ned, .heading = f.psi, .zoom = rl.getMouseWheelMove() };
         if (rl.isMouseButtonDown(.left)) {
             const d = rl.getMouseDelta();
             in.drag = .{ -d.x, d.y };
         }
-        if (rl.isGamepadAvailable(0)) {
+        const right_free = for ([_]@TypeOf(prof.src_elev){ prof.src_elev, prof.src_ail, prof.src_rud, prof.src_thr }) |sv| {
+            if (sv == .rx or sv == .ry) break false;
+        } else true;
+        if (right_free and rl.isGamepadAvailable(0)) { // analógico direito livre: gira a câmera
             const x = rl.getGamepadAxisMovement(0, .right_x);
             const y = rl.getGamepadAxisMovement(0, .right_y);
             if (@abs(x) > 0.15 or @abs(y) > 0.15) in.drag = .{ -x * 600 * dt, y * 400 * dt };
@@ -178,7 +201,7 @@ pub const Flight = struct {
         const badge: rl.Rectangle = .{ .x = 24, .y = 22, .width = if (manual) 110 else 190, .height = 30 };
         rl.drawRectangleRounded(badge, 0.5, 6, if (manual) theme.accent else theme.title);
         ft.draw(if (manual) "MANUAL" else "AUTOMÁTICO", badge.x + 12, badge.y + 5, 19, .white);
-        ft.draw("Y: trocar", badge.x + badge.width + 10, badge.y + 7, 15, theme.muted);
+        _ = glyphs.hints(ft, badge.x + badge.width + 10, badge.y + 4, &.{.{ .btn = glyphs.fromPad(app.profile().buttons.mode), .key = "M", .label = "trocar" }}, theme.muted);
         const legs = app.flight_ac.mission.legs;
         const stage: []const u8 = if (f.phase == .ground_run) "na pista" else if (manual) "voo livre" else if (f.seg < legs.len) legs[f.seg].name else "rolagem";
         ft.draw(std.fmt.bufPrintZ(&buf, "{s} · t = {d:.1} s", .{ stage, f.t }) catch "", 26, 60, 18, theme.text);
@@ -190,7 +213,7 @@ pub const Flight = struct {
             .ground_run => .{ "na pista", theme.muted },
             .flying => .{ "voando", theme.ok },
             .landed => .{ "pousou e parou", theme.ok },
-            .crashed => .{ "caiu — Start → Recomeçar", theme.danger },
+            .crashed => .{ "caiu — recomece", theme.danger },
             .timeout => .{ "tempo máximo", theme.muted },
         };
         ft.draw(ph[0], 26, 136, 18, ph[1]);
@@ -198,7 +221,7 @@ pub const Flight = struct {
         // canto inferior esquerdo: o que vai para as superfícies
         rl.drawRectangleRounded(.{ .x = 12, .y = H - 150, .width = 340, .height = 138 }, 0.08, 6, theme.panel_glass);
         const ap = &dm.inst.p.ap;
-        const pr = app.settings.profile;
+        const pr = app.profile().*;
         const de_max = if (manual) pr.de_max else ap.de_max;
         const da_max = if (manual) pr.da_max else ap.da_max;
         const dr_max = if (manual) pr.dr_max else ap.dr_max;
@@ -233,14 +256,17 @@ pub const Flight = struct {
             ry += 26;
         }
         if (feats.payload and dm.hasPayload() and f.payload_ned == null) {
-            ft.draw("X / L: soltar o LAPES", W - ms - 14, ry, 16, theme.text);
+            _ = glyphs.hints(ft, W - ms - 14, ry, &.{.{ .btn = glyphs.fromPad(app.profile().buttons.drop), .key = "L", .label = "soltar o LAPES" }}, theme.text);
             ry += 22;
         }
         if (app.message()) |msg| {
             const s = std.fmt.bufPrintZ(&buf, "{s}", .{msg[0..@min(msg.len, 120)]}) catch "";
             ft.draw(s, W - ft.width(s, 15) - 16, H - 52, 15, theme.text);
         }
-        const keys: [:0]const u8 = "Start/Esc pausa · Y/M modo · X/L LAPES · Back/G grava · B/C câmera";
-        ft.draw(keys, W - ft.width(keys, 14) - 16, H - 28, 14, theme.text);
+        // dicas: os botões configurados (símbolo do controle, ou a tecla)
+        const b = app.profile().buttons;
+        var items: [ch.Action.all.len]glyphs.Hint = undefined;
+        for (ch.Action.all, 0..) |a, i| items[i] = .{ .btn = glyphs.fromPad(b.get(a)), .key = a.key(), .label = short(a) };
+        _ = glyphs.hints(ft, W - glyphs.hintsWidth(ft, &items) - 4, H - 34, &items, theme.text);
     }
 };

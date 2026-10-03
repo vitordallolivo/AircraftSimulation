@@ -99,7 +99,7 @@ pub const AircraftMenu = struct {
         }
 
         var col: widgets.Column = .{ .x = x, .y = r3.y + r3.height + 16, .w = rw - 190, .gap = 6 };
-        const s = &app.settings.session;
+        const s = app.session();
         const feats = if (app.plane) |p| p.feats else @import("../model/features.zig").Features{};
         if (feats.tanks > 0) {
             _ = app.ui.toggle(col.next(40), "Sloshing (líquido mexendo nos tanques)", &s.slosh);
@@ -111,7 +111,7 @@ pub const AircraftMenu = struct {
         _ = app.ui.slider(col.next(40), "Vem de", &s.wind_from, 0, 355, 5, "{d:.0}°", 1);
         compass(&app.fonts, .{ .x = x + rw - 90, .y = r3.y + r3.height + 100 }, 70, s.wind_from, s.wind_speed);
 
-        widgets.footer(&app.fonts, "↑↓: escolher · Enter / A / clique: abrir o avião · ← →: mudar valor · Esc / B: voltar");
+        widgets.footer(&app.fonts, &.{ widgets.nav, .{ .btn = .a, .key = "Enter", .label = "abrir o avião" }, widgets.change, widgets.back_hint });
         return if (app.ui.back()) .back else .stay;
     }
 };

@@ -1,5 +1,6 @@
 //! Biblioteca de aviões: os `.json` das pastas de exemplos e de "meus aviões" (os salvos pela
-//! GUI), em ordem de nome. Pasta que não existe é pulada; nada aqui abre os arquivos.
+//! GUI), em ordem de nome. Pasta que não existe é pulada. Arquivos que são o MESMO avião e só
+//! mudam o campo (decola da mesa, pousa na plataforma — escolhas do menu Voar) aparecem uma vez.
 const std = @import("std");
 const fz = @import("../util/fuzz.zig");
 
@@ -49,8 +50,48 @@ pub fn scan(io: std.Io, gpa: std.mem.Allocator, examples: []const []const u8, mi
         if (list.items.len > before) break; // a mesma pasta vista de dois lugares: só uma vez
     }
     try addDir(io, a, &list, mine, .mine);
-    lib.entries = list.items;
+    // o mesmo avião em dois arquivos (só o campo muda): fica o de nome mais curto
+    var keep: std.ArrayList(Entry) = .empty;
+    var prints: std.ArrayList(u64) = .empty;
+    for (list.items) |e| {
+        const bytes = std.Io.Dir.cwd().readFileAlloc(io, e.path, gpa, .limited(16 << 20)) catch {
+            try keep.append(a, e);
+            try prints.append(a, 0);
+            continue;
+        };
+        defer gpa.free(bytes);
+        const fp = fingerprint(gpa, bytes) orelse 0;
+        var dup = false;
+        if (fp != 0) for (prints.items, 0..) |q, i| if (q == fp) {
+            if (e.name.len < keep.items[i].name.len) keep.items[i] = e;
+            dup = true;
+            break;
+        };
+        if (!dup) {
+            try keep.append(a, e);
+            try prints.append(a, fp);
+        }
+    }
+    lib.entries = keep.items;
     return lib;
+}
+
+/// impressão digital do avião: o JSON sem o nome e sem o campo (airfield); null se não for JSON
+pub fn fingerprint(gpa: std.mem.Allocator, bytes: []const u8) ?u64 {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const aa = arena.allocator();
+    var v = std.json.parseFromSliceLeaky(std.json.Value, aa, bytes, .{}) catch return null;
+    if (v != .object) return null;
+    _ = v.object.orderedRemove("nome");
+    if (v.object.getPtr("aeronave")) |ac| if (ac.* == .object) {
+        _ = ac.object.orderedRemove("name");
+        _ = ac.object.orderedRemove("airfield");
+    };
+    _ = v.object.orderedRemove("name");
+    _ = v.object.orderedRemove("airfield");
+    const txt = std.json.Stringify.valueAlloc(aa, v, .{}) catch return null;
+    return std.hash.Wyhash.hash(1, txt) | 1;
 }
 
 fn addDir(io: std.Io, a: std.mem.Allocator, list: *std.ArrayList(Entry), dir_path: []const u8, g: Group) !void {
@@ -89,6 +130,18 @@ test "acha os exemplos do repositório em ordem" {
     try testing.expect(lib.entries.len >= 3);
     for (lib.entries[1..], lib.entries[0 .. lib.entries.len - 1]) |b, a| try testing.expect(!std.ascii.lessThanIgnoreCase(b.name, a.name));
     try testing.expect(lib.find("../data/aircraft/Asa_voadora.json") != null);
+    // "decola da mesa, pousa na plataforma" é o Convencional: aparece uma vez só
+    try testing.expect(lib.find("../data/aircraft/Convencional_original.json") != null);
+    try testing.expect(lib.find("../data/aircraft/Convencional_decola_da_mesa_pousa_na_plataforma.json") == null);
+}
+
+test "impressão digital ignora nome e campo" {
+    const a = "{\"nome\":\"A\",\"aeronave\":{\"name\":\"A\",\"x\":1,\"airfield\":{\"takeoff_from\":\"chão\"}}}";
+    const b = "{\"nome\":\"B\",\"aeronave\":{\"name\":\"B\",\"x\":1,\"airfield\":{\"takeoff_from\":\"mesa\"}}}";
+    const c = "{\"aeronave\":{\"x\":2}}";
+    try testing.expectEqual(fingerprint(testing.allocator, a).?, fingerprint(testing.allocator, b).?);
+    try testing.expect(fingerprint(testing.allocator, a).? != fingerprint(testing.allocator, c).?);
+    try testing.expect(fingerprint(testing.allocator, "não é json") == null);
 }
 
 fn fuzzName(_: void, src: *fz.Src) anyerror!void {
@@ -105,4 +158,17 @@ fn fuzzName(_: void, src: *fz.Src) anyerror!void {
 
 test "fuzz: nomes de arquivo" {
     try fz.check({}, fuzzName, .{});
+}
+
+fn fuzzPrint(_: void, src: *fz.Src) anyerror!void {
+    var buf: [256]u8 = undefined;
+    const n = src.bytes(&buf);
+    if (src.boolean()) for (buf[0..n]) |*c| {
+        c.* = "{}[]:,\"aeronvm 01"[c.* % 17];
+    };
+    _ = fingerprint(testing.allocator, buf[0..n]);
+}
+
+test "fuzz: impressão digital" {
+    try fz.check({}, fuzzPrint, .{});
 }

@@ -70,7 +70,9 @@ pub const RecordingView = struct {
         if (app.ui.nav.left) v.page = (v.page + v.n - 1) % v.n;
         const r: rl.Rectangle = .{ .x = 28 + lw + 24, .y = 110, .width = W - (28 + lw + 24) - 30, .height = H - 160 };
         plot.draw(&app.fonts, r, &pages.all[v.avail[v.page]], t);
-        widgets.footer(&app.fonts, std.fmt.bufPrintZ(&buf, "{d} linhas · ↑↓ ou ← →: gráfico · mouse sobre o gráfico: valores · Esc / B: voltar", .{t.rows()}) catch "");
+        widgets.footer(&app.fonts, &.{ .{ .btn = .dpad, .key = "↑↓", .label = "gráfico" }, .{ .btn = .rs, .key = "mouse", .label = "valores sob o mouse" }, widgets.back_hint });
+        const nr = std.fmt.bufPrintZ(&buf, "{d} linhas", .{t.rows()}) catch "";
+        app.fonts.draw(nr, W - app.fonts.width(nr, 15) - 30, H - 34, 15, theme.muted);
         return if (app.ui.back()) .back else .stay;
     }
 };

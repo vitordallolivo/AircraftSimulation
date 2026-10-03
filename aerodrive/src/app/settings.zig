@@ -106,13 +106,13 @@ fn sanitizeCurve(k: *ch.Curve) void {
     k.trim = fix(k.trim, -0.25, 0.25, 0);
 }
 
-fn sanitizeProfile(p: *ch.Profile) void {
+pub fn sanitizeProfile(p: *ch.Profile) void {
     inline for (.{ "elevator", "aileron", "rudder", "throttle" }) |f| sanitizeCurve(&@field(p, f));
     const lim = std.math.degreesToRadians(45.0);
     p.de_max = fix(p.de_max, 0.01, lim, std.math.degreesToRadians(20.0));
     p.da_max = fix(p.da_max, 0.01, lim, std.math.degreesToRadians(20.0));
     p.dr_max = fix(p.dr_max, 0.01, lim, std.math.degreesToRadians(25.0));
-    p.aileron_rate = fix(p.aileron_rate, 0.2, 20, 4);
+    p.button_rate = fix(p.button_rate, 0.2, 20, 4);
 }
 
 // ------------------------------------------------------------------ testes

@@ -16,7 +16,9 @@ Missão. Feito em Zig com [raylib-zig](https://github.com/raylib-zig/raylib-zig)
 
 ![Aeronave: arquivo, sloshing, LAPES e vento](docs/img/menu_aeronave.png)
 
-![Controle: curva de cada canal com o ponto ao vivo e zoom na peça](docs/img/menu_controle.png)
+![Voar: campo, pouso, quem pilota e os botões do voo](docs/img/menu_voar.png)
+
+![Controle: esquema, entrada e curva de cada canal, ponto ao vivo e zoom na peça](docs/img/menu_controle.png)
 
 ![Câmera: distância e altura da perseguição com prévia](docs/img/menu_camera.png)
 
@@ -72,24 +74,48 @@ zig build run                                                   # abre o último
 zig build run -- ../data/aircraft/Asa_voadora.json              # ou um avião salvo pela GUI
 ```
 
-No **menu inicial**: Voar, Aeronave (arquivo, sloshing, LAPES, vento), Controle (curvas), Câmera, Som
-(teste), Voos gravados. Mouse, teclado ou controle: passar o mouse destaca, ↑↓ / direcional escolhe,
-Enter / A abre, Esc / B volta. As escolhas ficam salvas (`~/.config/aerodrive/config.json`).
+No **menu inicial**: Voar, Aeronave (arquivo, sloshing, LAPES, vento), Controle, Câmera, Som (teste),
+Voos gravados. Mouse, teclado ou controle: passar o mouse destaca, ↑↓ / direcional escolhe, Enter / A
+abre, Esc / B volta, e cada tela mostra os símbolos dos botões do Xbox (ou as teclas, sem controle).
+Os menus fazem um clique ao apertar.
 
-**Voo** — começa no **manual**; o botão Y passa para o piloto automático (e volta) a qualquer momento.
+**Cada avião lembra o seu jeito**: decola do chão ou da mesa, pousa no chão ou na plataforma, quem
+pilota, vento, sloshing, LAPES — e, se você ligar "Só para este avião" nos menus Controle e Câmera,
+também as curvas, os botões e a câmera. Ficam em `~/.config/aerodrive/avioes/` (um arquivo por avião);
+o geral (último avião, som, fps) em `~/.config/aerodrive/config.json`. O mesmo avião em dois arquivos
+que só mudam o campo (ex.: "decola da mesa, pousa na plataforma") aparece uma vez na lista: o campo é
+escolha do menu Voar.
 
-| | controle | teclado |
+**Voo** — começa no **manual**; um botão passa para o piloto automático (e volta) a qualquer momento.
+O piloto automático ajusta os próprios ganhos para cada avião (modelo linear do núcleo), e assume do
+jeito que o avião estiver: no ar, retoma o percurso pela perna de cruzeiro mais perto.
+
+Comandos (menu Controle → Comandos: escolha o esquema, ou "Personalizado" para pôr cada canal em
+qualquer eixo, gatilho ou LB/RB):
+
+| | Controle (Xbox) — padrão | Rádio modo 2 | Rádio modo 1 | teclado |
+|---|---|---|---|---|
+| aileron | analógico esq. ← → | direito ← → | direito ← → | setas ← → |
+| profundor | analógico esq. ↑↓ | direito ↑↓ | esquerdo ↑↓ | setas ↑↓ |
+| leme | LB / RB (em rampa) | esquerdo ← → | esquerdo ← → | A / D |
+| motor | gatilho RT | esquerdo ↑↓ | direito ↑↓ | W / S |
+
+Botões do voo (menu Controle → Botões: escolha a ação e aperte o botão novo; se ele já era de outra
+ação, as duas trocam):
+
+| ação | botão (padrão) | teclado |
 |---|---|---|
-| profundor e leme | analógico esquerdo | setas ↑↓, A / D |
-| aileron | LB / RB | setas ← → |
-| motor | gatilho direito (RT) | W / S |
+| pausa (continuar, controle, câmera, gravar, recomeçar, menu) | Start | Esc ou P |
 | manual ⇄ automático | Y | M |
 | soltar o LAPES | X | L |
 | gravar / parar (vídeo + dados) | Back (View) | G |
 | trocar a câmera | B | C |
-| girar a câmera livre | analógico direito | arrastar o mouse |
-| pausa (continuar, controle, câmera, recomeçar, menu) | Start | Esc ou P |
+| recomeçar | direcional ↑ | R |
+| girar a câmera livre | analógico direito (se livre) | arrastar o mouse |
 | painel de desempenho (fps, RAM, CPU) | — | F3 |
+
+Som: a hélice fica mais aguda e mais alta com o motor, e o vento cresce com a velocidade (menu Som
+tem os dois testes).
 
 As gravações vão para `~/aerodrive_voos/voo_<data>/` (`video.mp4`, `dados.csv`, `info.json`); a pasta
 muda com a variável `AERODRIVE_VOOS`. "Meus aviões" vem de `~/aerosim_aeronaves` (ou
@@ -103,7 +129,8 @@ xvfb-run -a zig build shot -- menu.png tela=controle
 ```
 
 `tela=` inicio, aeronave, voar, controle, camera, som, voos, dados, voo, pausa · `voo=SEG` voa antes da
-foto · `modo=manual|auto` · `cam=seguir|chao|livre` · `mesa` · `f3` · `gravar` · `dados=PASTA`.
+foto · `modo=manual|auto` · `cam=seguir|chao|livre` · `mesa` · `f3` · `gravar` · `dados=PASTA` ·
+`controle` (mostra os símbolos do Xbox mesmo sem controle ligado).
 
 ### Testes
 

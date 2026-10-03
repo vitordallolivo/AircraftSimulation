@@ -45,6 +45,29 @@ Uma tela é um arquivo em `screens/` com `frame(s, app, dt) → Next` e, se quis
 andamento (`startFlight`, `endFlight`), a gravação (`startRecording`, `stopRecording`,
 `captureFrame` a 30 quadros por segundo) e recados curtos (`note`).
 
+## app/store.zig — interface de armazenamento
+
+```zig
+var fs: FileStore = .{ .io = io, .root = paths.planes };   // ou MemStore (testes), ou outra implementação
+const st = fs.store();                                      // Store { ptr, vtable: load/save }
+_ = st.saveJson(gpa, chave, valor);
+const v = st.loadJson(T, gpa, chave) orelse padrão;          // quebrado/ausente = null
+const chave = store.keyFor(&buf, caminho_do_aviao);         // "Asa_voadora-1a2b3c4d"
+```
+
+Quem guarda configurações não sabe onde ficam: outro destino (nuvem, banco) é só outro `VTable`.
+
+## app/plane_settings.zig — o que cada avião lembra
+
+```zig
+app.plane_cfg = PlaneSettings.load(store, gpa, caminho, .{ .session = ultima_sessao });
+_ = app.plane_cfg.save(store, gpa, caminho);
+```
+
+Sessão sempre; controle e câmera só com `own_controls` / `own_camera` ("Só para este avião"). As telas
+nunca leem os campos direto: usam `app.session()`, `app.profile()` e `app.camera()` (o do avião ou
+o geral, conforme a escolha).
+
 ## app/settings.zig · app/paths.zig · app/library.zig
 
 ```zig
@@ -54,8 +77,9 @@ const paths = try paths_mod.resolve(arena, env);  // config, voos, meus aviões,
 var lib = try library.scan(io, gpa, &paths.examples, paths.mine);   // lib.entries: nome, caminho, grupo
 ```
 
-Configurações = avião, sessão, curvas, câmera, volume, fps, F3; valores fora da faixa voltam para
-dentro (`sanitize`).
+Configurações gerais = último avião, última sessão (ponto de partida de avião novo), controle e câmera
+gerais, volume, fps, F3; valores fora da faixa voltam para dentro (`sanitize`). A biblioteca junta
+arquivos que são o mesmo avião (`fingerprint`: o JSON sem nome e sem campo).
 
 ## screens/ — um arquivo por tela
 
@@ -63,8 +87,8 @@ dentro (`sanitize`).
 |---|---|
 | `main_menu.zig` | logo, "AeroDrive", itens e a aeronave viva (o controle mexe nas superfícies) |
 | `aircraft_menu.zig` | lista de arquivos (troca o 3D na hora), sloshing, LAPES, vento com a rosa dos ventos |
-| `fly_menu.zig` | chão/mesa, quem pilota, câmera, fps, "Decolar" |
-| `control_menu.zig` | curva do canal escolhido (só os que o avião tem), ponto ao vivo, zoom na peça |
+| `fly_menu.zig` | decola do chão/mesa, pousa no chão/plataforma, quem pilota, câmera, fps, "Decolar" |
+| `control_menu.zig` | Comandos: esquema, entrada e curva de cada canal (só os que o avião tem), ponto ao vivo, zoom na peça · Botões: remapear as ações do voo |
 | `camera_menu.zig` | distância/altura/fov da perseguição com prévia |
 | `sound_menu.zig` | volume e teste do som do motor |
 | `recordings_menu.zig` | gravações; abrir vídeo, dados ou a pasta |
@@ -86,6 +110,8 @@ if (lista.draw(&app.ui, area, 38, n, ctx, linha)) |i| ...   // ScrollList: rolag
 - `widgets.zig`: menus, botões, deslizadores, opções, liga/desliga e listas; o mesmo menu anda pelo
   mouse, setas/Enter/Esc e direcional/A/B (segurar repete).
 - `showcase.zig`: a aeronave girando num retângulo (`frame`, `input`, `focusOn` para o zoom, `draw`).
+- `glyphs.zig`: símbolos dos botões do Xbox (branco em fundo escuro) ou teclas, e a linha de dicas
+  (`hints`); `widgets.footer` e `menuItemKey` usam.
 - `preview.zig`: 3D numa textura (prévia da câmera). `plot.zig`: gráfico com marcas redondas e valores
   sob o mouse. `minimap_view.zig`: plano XY. `dev_overlay.zig`: painel F3. `theme.zig`: cores e fonte.
 
@@ -125,8 +151,11 @@ Formas e cores iguais às da GUI; cada comando é uma peça com dobradiça (`mix
 ## sim/session.zig — escolhas antes de voar
 
 ```zig
-const voo_ac = app.settings.session.apply(ac);   // cópia com vento, sloshing, LAPES e chão/mesa
+const voo_ac = app.session().apply(ac);   // cópia com vento, sloshing, LAPES, chão/mesa e pouso
 ```
+
+Na mesa, a mesa cresce para caber o trem do avião (roda de cauda atrás, bitola) — vale para qualquer
+avião.
 
 ## sim/drive_manager.zig — a simulação durante o voo
 
@@ -150,12 +179,17 @@ percurso em pernas (reta/arco), mesa e plataforma.
 ## input/gamepad.zig · input/channels.zig
 
 ```zig
-const raw = app.reader.raw(dt);                 // eixos e botões (controle + teclado)
-const acts = app.reader.actions();              // pausa, modo, LAPES, gravar, câmera
-const cmd = estado.step(perfil, raw, dt);       // δe, δa, δr (rad), acelerador 0..1
+const raw = app.reader.raw(dt);                       // eixos, gatilhos, LB/RB + teclado
+const acts = app.reader.actions(perfil.buttons);      // pausa, modo, LAPES, gravar, câmera, recomeçar
+const cmd = estado.step(perfil, raw, dt);             // δe, δa, δr (rad), acelerador 0..1
+perfil.applyScheme(.radio2);                          // esquema pronto (ou .custom)
+perfil.buttons.set(.drop, .start);                    // remapear (troca se o botão já era de outra ação)
+const b = gamepad.pressedButton();                    // o botão apertado agora (para remapear)
 ```
 
-Cada canal tem uma `Curve` (zona morta, expo, curso, trim, inverter); LB/RB fazem o aileron em rampa.
+Cada canal lê de uma `Source` (eixo, gatilho ou LB/RB em rampa) e tem uma `Curve` (zona morta, expo,
+curso, trim, inverter). Esquemas: Xbox (aileron e profundor no analógico esquerdo, leme no LB/RB,
+motor no RT), rádio modo 2 e modo 1. O teclado vale em qualquer esquema.
 
 ## camera/camera.zig
 
@@ -188,8 +222,10 @@ para o ffmpeg (H.264); sem ffmpeg → `error.NoFfmpeg`. `pages`: planos XY/XZ/ZY
 ## audio/engine_sound.zig · audio/player.zig
 
 ```zig
-var som = Player.init();               // o mp3 da hélice vai dentro do programa
-som.update(acelerador, volume, dt);    // altura e volume pelo motor, com atraso suave
+var som = Player.init();               // hélice, vento e clique vão dentro do programa (assets/)
+som.update(acelerador, volume, dt);    // hélice: altura e volume pelo motor, com atraso suave
+som.updateWind(V_ar, volume);          // vento: cresce com a velocidade
+som.click(volume);                     // menus (o App toca quando `ui.feedback`)
 som.silence();
 ```
 
