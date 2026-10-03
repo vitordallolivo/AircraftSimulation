@@ -68,7 +68,7 @@ class Runner:
         """roda até a parada; com `live`, manda cada fatia para ctx.on_chunk"""
         stop = stop or Stop()
         spec = dict(self.spec, **stop.overrides())
-        self.session.configure(spec)
+        self.session.set(**stop.overrides())          # só as condições de parada (o resto já está lá)
         parts = []
         t_end_hint = stop.t if stop.t is not None else spec.get("tmax", 400.0)
         while True:

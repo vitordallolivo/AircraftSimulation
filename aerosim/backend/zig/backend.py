@@ -165,7 +165,8 @@ class ZigSession(ISimSession):
         """muda escalares sem refazer tudo (ex.: stop_t, stop_seg) — chama configure de novo"""
         p = self._lib.dll.aerosim_params(self._slot).contents
         abi.write(p, overrides)
-        _check(self._lib.dll.aerosim_configure(self._slot), "configure")
+        if any(not k.startswith("stop_") for k in overrides):   # paradas não mudam nada derivado
+            _check(self._lib.dll.aerosim_configure(self._slot), "configure")
 
     # ------------------------------------------------------------------ corrida
     def reset_ground(self) -> None:

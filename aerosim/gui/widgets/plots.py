@@ -125,10 +125,13 @@ class _Plot2D(QtWidgets.QWidget):
                 k += 1
                 fill = tab.get("_fill")
                 sym = tab.get("_symbol") or ("o" if tab.get("_marker") else None)
-                if fill and fill in tab:          # região sombreada entre y e a coluna `_fill`
-                    y2 = np.asarray(tab[fill], float)
+                fillx = tab.get("_fillx")
+                if (fill and fill in tab) or (fillx and fillx in tab):   # região sombreada entre duas curvas
+                    if fill and fill in tab:
+                        c2 = pg.PlotDataItem(xs, np.asarray(tab[fill], float), pen=pg.mkPen(None))
+                    else:                         # mesma y, outro x (ex.: envelope V_min(h) a V_max(h))
+                        c2 = pg.PlotDataItem(np.asarray(tab[fillx], float), ys, pen=pg.mkPen(None))
                     c1 = pg.PlotDataItem(xs, ys, pen=pg.mkPen(col_, width=1))
-                    c2 = pg.PlotDataItem(xs, y2, pen=pg.mkPen(None))
                     cc = pg.mkColor(col_)
                     cc.setAlpha(110 if tab.get("_strong") else 45)
                     for it in (c1, c2, pg.FillBetweenItem(c1, c2, brush=pg.mkBrush(cc))):

@@ -57,7 +57,7 @@ def test_simulation_tab_runs(app, manager):
     tab.inputs["mode"].setCurrentText("só decolagem")
     pump(app, 0.1)
     tab.reconfigure()
-    assert "elev" in tab.inputs and "start" not in tab.inputs        # o formulário mudou com o modo
+    assert "x_warning" in tab.inputs and "start" not in tab.inputs   # o formulário mudou com o modo
     tab.start()
     t0 = time.time()
     while tab._thread is not None and time.time() - t0 < 60:

@@ -120,22 +120,3 @@ def columns(rows: list[dict]) -> dict[str, list]:
         return {}
     return {k: [r.get(k) for r in rows] for k in rows[0]}
 
-
-def warnings(ev: dict, airfield, runway_max: float | None = None, landing: bool = True) -> dict:
-    """avisos de pista (0 = ok; > 0 = quanto passou, em metros)
-      x_warning: saiu do chão (ou da mesa) depois da distância de decolagem exigida
-                 (inf se nem saiu do chão)
-      z_warning_decolagem: só decolando de mesa — quanto o CG afundou abaixo da altura de repouso
-                 sobre a mesa depois de sair dela (o avião caiu da mesa)
-      z_warning_pouso: só pousando em plataforma — quanto o terreno no ponto do toque ficou abaixo
-                 do topo da plataforma (tocou antes/depois dela ou no chão)
-      z_warning: o maior dos dois"""
-    L = airfield.runway_max if runway_max is None else runway_max
-    x = (max(0.0, ev["nLO"] - L) if L > 0 else 0.0) if ev.get("tLO", -1) > 0 else math.inf
-    z_to = max(0.0, ev.get("sink", 0.0)) if airfield.takeoff_from == "mesa" and ev.get("tLO", -1) > 0 else 0.0
-    if airfield.takeoff_from == "mesa" and ev.get("tLO", -1) <= 0:
-        z_to = math.inf
-    z_ld = 0.0
-    if landing and airfield.landing_on == "plataforma":
-        z_ld = max(0.0, airfield.platform_height - ev["hgnd_td"]) if ev.get("tTD", -1) > 0 else math.inf
-    return dict(x_warning=x, z_warning_decolagem=z_to, z_warning_pouso=z_ld, z_warning=max(z_to, z_ld))

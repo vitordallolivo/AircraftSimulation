@@ -76,6 +76,10 @@ class ISimSession(ABC):
     @abstractmethod
     def configure(self, spec: SimSpec) -> None: ...
 
+    def set(self, **fields) -> None:
+        """muda só alguns escalares (ex.: condições de parada) mantendo o resto da configuração"""
+        raise NotImplementedError
+
     @abstractmethod
     def reset_ground(self) -> None: ...
 

@@ -113,28 +113,28 @@ python -m aerosim.gui data/aircraft/twin_boom.cfg   # abre um arquivo (.cfg, .js
 
 - **Configuração (três colunas):** à esquerda o vento, a lista de componentes (asa, caudas, motores,
   tanques, fuselagem, tubo, trem, **LAPES**, **pista: chão, mesa e plataforma**, massa, ambiente, decolagem,
-  piloto, percurso), os botões de adicionar/remover e o editor (campos numéricos, sem sliders); no meio a
-  aeronave em 3D (clique para selecionar, arraste para mover); à direita as informações completas (massa,
-  CG, inércias, aerodinâmica, W/S, T/W, propulsão, trem, pista, LAPES, percurso e avisos). **↺ Restaurar**
-  volta ao que foi aberto ou a um modelo padrão.
-- **Abas:** Dimensionamento inicial, **Missão** (voo simulado 6GDL), **Desempenho** (cálculo, sem
-  simulação), Tração, Aerodinâmica (com a polar da aeronave completa) e Estabilidade. As abas se montam
-  pela configuração e pelas escolhas do formulário, e trazem um **diagnóstico** no fim: cada verificação
-  com estado, valor e limite (clique para ver o porquê e o que mudar).
-- **Missão**, separada por etapa do voo (corrida no chão, cada perna, rolagem), com os gráficos no estilo
-  do código original (cor por etapa, fundo por etapa, ★ nos eventos): 3D, planos XY/XZ/ZY, velocidades,
-  ângulos, um gráfico por momento (rolamento, arfagem, guinada, parcela por parcela), comandos, C_L, C_D,
-  motor, energia, sloshing, a decolagem na posição da pista com a **distância máxima** como linha, reações e
-  momentos do trem na decolagem e no pouso, e o zoom da soltura LAPES. Modos:
-  - *missão por etapas*: roda tudo ou **para no fim de qualquer etapa**; começa do chão ou do checkpoint
-    salvo no início de uma etapa (mude a configuração e rode só dali em diante);
-  - *só decolagem* (com o mapa s_R × δe1 e o melhor ponto ★); *curvas: raio mínimo*; *subida simulada*;
-  - *MTOW*: bisseção na massa até a maior que decola com **x_warning = 0** (sai do chão dentro da distância
-    exigida) e **z_warning = 0** (não cai abaixo da mesa na decolagem; toca em cima da plataforma no pouso),
-    iterando o acionamento do profundor (s_R ou V_R, δe1) junto com o xCG de decolagem.
-- **Desempenho:** envelope de voo por altitude + os cálculos da planilha (potências, subida, descida em
-  planeio, raio de curva × V por inclinação, limites de estol e de tração, autonomia e alcance da bateria
-  por Peukert), feitos no núcleo Zig (`core/src/sim/simple_perf.zig`).
+  piloto, percurso), os botões de adicionar/remover e as informações (massa, CG, inércias, aerodinâmica,
+  W/S, T/W, propulsão, trem, pista, LAPES, percurso e avisos); no meio a aeronave em 3D (clique para
+  selecionar, arraste para mover) e **↺ Restaurar**; à direita, largo, o editor do componente escolhido.
+- **Abas:** Dimensionamento inicial, **Missão** (voo simulado 6GDL), **Desempenho** (contas da planilha,
+  sem simulação), Tração, Aerodinâmica (com a polar da aeronave completa) e Estabilidade. Em cada aba: os
+  gráficos, o **diagnóstico** (estado, valor, limite; clique para ver o porquê e o que mudar) e, no fim da
+  rolagem, a tabela de resultados.
+- **Missão**, por etapa do voo (corrida no chão, cada perna, rolagem), com gráficos no estilo do código
+  original (cor e fundo por etapa, ★ nos eventos, 3D, planos XY/XZ/ZY, momentos por parcela, comandos,
+  trem na decolagem e no pouso, zoom do LAPES). A decolagem só tem os critérios da pista:
+  **x_warning** (comprimento de pista: tem de decolar antes dele) e **z_warning** (altura sobre a superfície
+  de partida que conta como decolado; ≤ 0 na mesa: quanto pode afundar abaixo dela). O ponto de
+  acionamento do profundor (ou do elevon; sem comando de arfagem, nada a otimizar) é otimizado, com a maior
+  deflexão que funciona. Modos:
+  - *missão*: decolagem otimizada e o resto do voo dali, etapa por etapa; para no fim de qualquer etapa e
+    recomeça do início de qualquer etapa (se ainda não houver checkpoint, voa até lá e salva);
+  - *só decolagem*; *curvas: raio mínimo*;
+  - *MTOW*: bisseção na massa até a maior que ainda atende x_warning e z_warning, reotimizando o
+    acionamento (e o xCG, se pedido) em cada massa.
+- **Desempenho:** em ~0,1 s, as contas da planilha (núcleo Zig, `core/src/sim/simple_perf.zig`): envelope
+  de voo por altitude, potências, subida, planeio, raio de curva × V, V-n e bateria (Peukert), com a área
+  segura de operação sombreada em verde em cada gráfico.
 - **💾 Salvar avião / 📂 Meus aviões** (barra no topo): grava a configuração em JSON, um arquivo por avião
   com o nome que você der, numa pasta sua (padrão `~/aerosim_aeronaves`, ou `AEROSIM_PROJETOS`).
 - **Dispositivos de asa:** na Configuração, selecione a asa → *Dispositivos* → *+ adicionar*: winglet,
