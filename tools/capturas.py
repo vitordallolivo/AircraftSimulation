@@ -8,7 +8,8 @@ import sys
 import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+if not os.environ.get("DISPLAY"):           # sem tela: sem o 3D
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6 import QtWidgets, QtCore
 app = QtWidgets.QApplication(sys.argv)
 from aerosim.manager import SimulationManager
