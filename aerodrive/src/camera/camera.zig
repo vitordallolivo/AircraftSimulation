@@ -1,8 +1,7 @@
 //! Câmeras: cada uma é um objeto com a mesma interface (`update` + `view`); a tela só pede a vista.
 //! Coordenadas do mundo em NED (n, e, d), como o núcleo; o desenho converte para a tela.
 //!
-//! Por enquanto: `orbit` (hangar e telas de configuração). Próximas (mesma interface): piloto no
-//! chão (parado, só os "olhos" seguem; zoom automático), perseguição, cabine, de cima, zoom em peça.
+//! `orbit` (livre e menus), `chase` (perseguição) e `ground` (piloto parado no chão, zoom automático).
 const std = @import("std");
 const fz = @import("../util/fuzz.zig");
 const v3 = @import("../math/vec3.zig");

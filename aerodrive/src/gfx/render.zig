@@ -159,7 +159,7 @@ fn upload(m: sk.Mesh) rl.Mesh {
     return mesh;
 }
 
-/// chão do hangar: a grade da GUI (6 m, de 25 em 25 cm), na altura `y` da tela
+/// chão da exposição nos menus: a grade da GUI (6 m, de 25 em 25 cm), na altura `y` da tela
 pub fn hangarGrid(center: V3, below: f64) void {
     const col: rl.Color = .{ .r = 0, .g = 0, .b = 0, .a = 40 };
     const c = toScreen(center);

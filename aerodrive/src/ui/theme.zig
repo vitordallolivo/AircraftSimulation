@@ -4,8 +4,14 @@ const std = @import("std");
 const rl = @import("raylib");
 
 pub const bg: rl.Color = .{ .r = 245, .g = 246, .b = 250, .a = 255 }; // fundo do 3D (o da GUI)
-pub const sky: rl.Color = .{ .r = 206, .g = 222, .b = 240, .a = 255 };
+pub const sky: rl.Color = .{ .r = 112, .g = 172, .b = 236, .a = 255 }; // céu do voo (saturado)
+pub const sky_low: rl.Color = .{ .r = 196, .g = 226, .b = 250, .a = 255 }; // perto do horizonte
 pub const panel: rl.Color = .{ .r = 232, .g = 236, .b = 243, .a = 255 };
+pub const panel_alt: rl.Color = .{ .r = 220, .g = 226, .b = 236, .a = 255 };
+pub const hover: rl.Color = .{ .r = 218, .g = 228, .b = 244, .a = 255 };
+pub const muted_light: rl.Color = .{ .r = 196, .g = 202, .b = 214, .a = 255 };
+pub const title_hi: rl.Color = .{ .r = 46, .g = 110, .b = 196, .a = 255 };
+pub const shade: rl.Color = .{ .r = 10, .g = 20, .b = 40, .a = 150 }; // escurece o fundo (pausa)
 pub const panel_glass: rl.Color = .{ .r = 245, .g = 247, .b = 250, .a = 215 };
 pub const title: rl.Color = .{ .r = 31, .g = 78, .b = 140, .a = 255 }; // #1f4e8c
 pub const text: rl.Color = .{ .r = 40, .g = 40, .b = 46, .a = 255 };
@@ -32,12 +38,10 @@ pub const Fonts = struct {
     owned: bool,
 
     pub fn load() Fonts {
-        var cps: [224 + 4]i32 = undefined; // ASCII + Latin-1 (acentos) + símbolos usados
+        const extra = [_]i32{ 0x2022, 0x2190, 0x2191, 0x2192, 0x2193, 0x03B4, 0x24D8, 0x2039, 0x203A, 0x03B8, 0x03B1, 0x03B3, 0x03C6, 0x03B2, 0x03C8, 0x03C7, 0x25CF, 0x25B6, 0x2016, 0x2605, 0x2014, 0x2013, 0x2082, 0x00B2 };
+        var cps: [224 + extra.len]i32 = undefined; // ASCII + Latin-1 (acentos) + símbolos usados
         for (0..224) |i| cps[i] = @intCast(32 + i);
-        cps[224] = 0x2022; // •
-        cps[225] = 0x2192; // →
-        cps[226] = 0x03B4; // δ
-        cps[227] = 0x24D8; // ⓘ
+        @memcpy(cps[224..], &extra);
         for (candidates) |p| {
             if (rl.fileExists(p)) {
                 const f = rl.loadFontEx(p, 40, &cps) catch continue;

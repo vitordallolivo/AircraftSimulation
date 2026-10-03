@@ -14,4 +14,14 @@ test {
     _ = @import("world/field.zig");
     _ = @import("model/features.zig");
     _ = @import("sim/session.zig");
+    _ = @import("app/settings.zig");
+    _ = @import("app/paths.zig");
+    _ = @import("app/library.zig");
+    _ = @import("audio/engine_sound.zig");
+    _ = @import("sys/stats.zig");
+    _ = @import("record/datalog.zig");
+    _ = @import("record/pages.zig");
+    _ = @import("record/video.zig");
+    _ = @import("record/recorder.zig");
+    _ = @import("world/minimap.zig");
 }

@@ -1,61 +1,87 @@
-//! Voo: o drive_manager avança a física em tempo real (30 ou 60 quadros por segundo) e a tela
-//! desenha o campo, o rastro, a aeronave com as superfícies que o piloto automático comanda, e um
-//! HUD mínimo. Teclas: C troca a câmera, Espaço pausa, R recomeça, Esc volta ao hangar.
+//! Voo: o drive_manager avança a física em tempo real; no manual, o controle (com as curvas do
+//! menu Controle) vai direto às superfícies; no automático, o piloto do núcleo segue o percurso.
+//! Desenha céu, campo, setas fracas do vento, rastro, a aeronave, HUD, minimapa e o aviso de
+//! gravação. Botões: Start pausa · Y manual ⇄ automático · X solta o LAPES · Back grava · B câmera.
 const std = @import("std");
 const rl = @import("raylib");
 const v3 = @import("../math/vec3.zig");
-const model = @import("../model/aircraft.zig");
+const app_mod = @import("../app/app.zig");
+const settings = @import("../app/settings.zig");
 const pose = @import("../gfx/pose.zig");
 const render = @import("../gfx/render.zig");
 const cam = @import("../camera/camera.zig");
 const field = @import("../world/field.zig");
 const theme = @import("../ui/theme.zig");
+const minimap = @import("../ui/minimap_view.zig");
 const dm_mod = @import("../sim/drive_manager.zig");
 
-pub const Action = enum { none, back };
+const App = app_mod.App;
+const Next = app_mod.Next;
 
-pub const CameraKind = enum { ground, chase, orbit };
-
-const max_trail = 4000;
+const max_trail = 6000;
+const kinds = [_]settings.CameraKind{ .chase, .ground, .orbit };
 
 pub const Flight = struct {
-    dm: *dm_mod.DriveManager,
-    scene: *const render.Scene,
-    ac: *const model.Aircraft,
-    field: field.Field,
-    cam_kind: CameraKind = .ground,
-    cams: [3]cam.Camera,
-    paused: bool = false,
-    fps: u32,
+    fld: field.Field = .{},
+    cam_kind: settings.CameraKind = .chase,
+    cams: [3]cam.Camera = .{ .{ .chase = .{} }, .{ .ground = .{} }, .{ .orbit = .{} } },
     trail: [max_trail]v3.V3 = undefined,
     n_trail: usize = 0,
     trail_t: f64 = 0,
+    wind_t: f64 = 0,
+    wind_lines: [600]field.Line = undefined,
 
-    pub fn init(dm: *dm_mod.DriveManager, scene: *const render.Scene, ac: *const model.Aircraft, fps: u32, start_cam: CameraKind, span: f64) Flight {
+    /// novo voo (o drive_manager já foi montado)
+    pub fn begin(fl: *Flight, app: *App) void {
+        const dm = &(app.dm orelse return);
         const p = &dm.inst.p;
-        const f = field.build(ac.airfield.x_warning, p.seg[0..@intCast(p.n_seg)], p.pads[0..@intCast(p.n_pad)]);
+        fl.fld = field.build(app.flight_ac.airfield.x_warning, p.seg[0..@intCast(p.n_seg)], p.pads[0..@intCast(p.n_pad)]);
+        const span = if (app.plane) |pl| pl.span else 2;
         var orbit = cam.Orbit.framing(span);
         orbit.distance = 4 * span;
-        return .{
-            .dm = dm,
-            .scene = scene,
-            .ac = ac,
-            .field = f,
-            .cam_kind = start_cam,
+        fl.cams = .{
+            .{ .chase = .{} },
             // piloto no chão: à direita da pista, perto do meio da corrida de decolagem
-            .cams = .{ .{ .ground = .{ .eye = .{ 0.5 * ac.airfield.x_warning, 14, -1.7 }, .size = span } }, .{ .chase = .{ .distance = 3.5 * span, .height = 0.8 * span } }, .{ .orbit = orbit } },
-            .fps = fps,
+            .{ .ground = .{ .eye = .{ 0.5 * app.flight_ac.airfield.x_warning, 14, -1.7 }, .size = span } },
+            .{ .orbit = orbit },
         };
+        fl.cam_kind = app.settings.camera.start;
+        fl.applyCamera(app);
+        fl.n_trail = 0;
+        fl.trail_t = 0;
+        _ = dm.step(0);
     }
 
-    fn camera(fl: *Flight) *cam.Camera {
-        return &fl.cams[@intFromEnum(fl.cam_kind)];
+    /// distância/altura/fov da perseguição vindos das configurações
+    fn applyCamera(fl: *Flight, app: *App) void {
+        const span = if (app.plane) |pl| pl.span else 2;
+        const c = app.settings.camera;
+        fl.cams[0].chase.distance = @max(c.chase_distance * span, 0.5);
+        fl.cams[0].chase.height = c.chase_height * span;
+        fl.cams[0].chase.fov_deg = c.fov;
     }
 
-    /// só avança a física (sem desenhar) e guarda o rastro — para pular para um instante
-    pub fn advance(fl: *Flight, dt: f64) void {
-        const f = fl.dm.step(dt);
-        fl.record(f);
+    pub fn enter(fl: *Flight, app: *App) void {
+        fl.applyCamera(app); // voltando da pausa (talvez da tela de câmera)
+    }
+
+    pub fn restart(fl: *Flight, app: *App) void {
+        const dm = &(app.dm orelse return);
+        app.stopRecording();
+        dm.mode = app.settings.session.start_mode;
+        dm.restart() catch {};
+        app.channel_state = .{};
+        fl.n_trail = 0;
+        fl.trail_t = 0;
+        _ = dm.step(0);
+    }
+
+    fn camIndex(fl: *const Flight) usize {
+        return switch (fl.cam_kind) {
+            .chase => 0,
+            .ground => 1,
+            .orbit => 2,
+        };
     }
 
     fn record(fl: *Flight, f: *const dm_mod.Frame) void {
@@ -66,83 +92,155 @@ pub const Flight = struct {
         }
     }
 
-    /// avança e desenha um quadro; `dt` = tempo de simulação deste quadro
-    pub fn frame(fl: *Flight, fonts: *const theme.Fonts, dt: f64) Action {
-        if (rl.isKeyPressed(.escape) or rl.isKeyPressed(.backspace)) return .back;
-        if (rl.isKeyPressed(.space)) fl.paused = !fl.paused;
-        if (rl.isKeyPressed(.c)) fl.cam_kind = @enumFromInt((@intFromEnum(fl.cam_kind) + 1) % 3);
-        if (rl.isKeyPressed(.r)) {
-            fl.dm.restart() catch {};
-            fl.n_trail = 0;
-            fl.trail_t = 0;
+    /// só avança (sem desenhar) — para pular para um instante (fotos)
+    pub fn advance(fl: *Flight, app: *App, dt: f64) void {
+        const dm = &(app.dm orelse return);
+        fl.record(dm.step(dt));
+        if (app.rec) |*r| if (dm.last) |row| r.addRow(&row);
+    }
+
+    pub fn frame(fl: *Flight, app: *App, dt_in: f64) Next {
+        const dm = &(app.dm orelse return .home);
+        const dt = if (std.math.isFinite(dt_in)) std.math.clamp(dt_in, 0, 0.05) else 0;
+        const act = app.reader.actions();
+        if (act.pause) return .{ .open = .pause };
+        if (act.toggle_mode) dm.toggleMode();
+        if (act.drop) dm.dropPayload();
+        if (act.camera) {
+            fl.cam_kind = kinds[(fl.camIndex() + 1) % kinds.len];
         }
-        const f = fl.dm.step(if (fl.paused) 0 else dt);
-        if (!fl.paused) fl.record(f);
+        if (act.record) {
+            if (app.recording()) app.stopRecording() else app.startRecording();
+        }
+
+        // comandos do piloto (no automático o controle fica parado, mas a rampa acompanha)
+        const cmd = app.channel_state.step(app.settings.profile, app.reader.raw(dt), dt);
+        if (dm.mode == .manual) dm.setCommands(.{ .de = cmd.de, .da = cmd.da, .dr = cmd.dr, .thr = cmd.thr });
+        const f = dm.step(dt);
+        fl.record(f);
+        if (app.rec) |*r| if (dm.last) |row| r.addRow(&row);
+        app.audio.update(if (f.phase == .landed or f.phase == .crashed) 0 else f.thr, app.settings.volume, dt);
+
         var in: cam.Input = .{ .target = f.pos_ned, .heading = f.psi, .zoom = rl.getMouseWheelMove() };
         if (rl.isMouseButtonDown(.left)) {
             const d = rl.getMouseDelta();
             in.drag = .{ -d.x, d.y };
         }
-        fl.camera().update(in, dt);
+        if (rl.isGamepadAvailable(0)) {
+            const x = rl.getGamepadAxisMovement(0, .right_x);
+            const y = rl.getGamepadAxisMovement(0, .right_y);
+            if (@abs(x) > 0.15 or @abs(y) > 0.15) in.drag = .{ -x * 600 * dt, y * 400 * dt };
+        }
+        fl.cams[fl.camIndex()].update(in, dt);
+        fl.wind_t += dt;
+        fl.draw(app, f);
+        return .stay;
+    }
 
-        const body = pose.body(f.pos_ned, f.phi, f.theta, f.psi);
+    /// o último quadro, sem avançar (atrás da pausa)
+    pub fn drawFrozen(fl: *Flight, app: *App) void {
+        const dm = &(app.dm orelse return);
+        fl.draw(app, &dm.frame);
+    }
+
+    fn draw(fl: *Flight, app: *App, f: *const dm_mod.Frame) void {
+        const plane = &(app.plane orelse return);
+        const W = rl.getScreenWidth();
+        const H = rl.getScreenHeight();
+        rl.clearBackground(theme.sky);
+        rl.drawRectangleGradientV(0, 0, W, H, theme.sky, theme.sky_low);
+        rl.beginMode3D(render.camera3d(fl.cams[fl.camIndex()].view()));
+        render.drawField(&fl.fld);
+        const env = app.flight_ac.environment;
+        for (field.windArrows(f.pos_ned[0], f.pos_ned[1], env.wind_from, env.wind_speed, fl.wind_t, &fl.wind_lines)) |l| rl.drawLine3D(render.toScreen(l.a), render.toScreen(l.b), .{ .r = l.color[0], .g = l.color[1], .b = l.color[2], .a = l.color[3] });
+        render.drawTrail(fl.trail[0..fl.n_trail], .{ .r = 230, .g = 40, .b = 40, .a = 220 });
         var payload: ?pose.Rigid = null;
         if (f.payload_ned) |pk| { // a carga solta: mesma proa, na posição dela
             const R = v3.bodyToNed(0, 0, f.psi);
-            const r = fl.ac.payload;
+            const r = app.flight_ac.payload;
             payload = .{ .R = R, .t = v3.sub(pk, v3.apply(R, .{ r.x, r.y, r.z })) };
         }
-
-        rl.beginDrawing();
-        rl.clearBackground(theme.sky);
-        rl.beginMode3D(render.camera3d(fl.camera().view()));
-        render.drawField(&fl.field);
-        render.drawTrail(fl.trail[0..fl.n_trail], .{ .r = 214, .g = 39, .b = 40, .a = 200 });
-        fl.scene.draw(body, f.drive, payload);
+        plane.scene.draw(pose.body(f.pos_ned, f.phi, f.theta, f.psi), f.drive, payload);
         rl.endMode3D();
-        fl.hud(fonts, f);
-        rl.endDrawing();
-        return .none;
+        fl.hud(app, f);
     }
 
-    fn hud(fl: *const Flight, ft: *const theme.Fonts, f: *const dm_mod.Frame) void {
-        const H: f32 = @floatFromInt(rl.getScreenHeight());
+    fn hud(fl: *const Flight, app: *App, f: *const dm_mod.Frame) void {
+        const ft = &app.fonts;
         const W: f32 = @floatFromInt(rl.getScreenWidth());
-        var buf: [96]u8 = undefined;
-        // canto superior esquerdo: modo, tempo, etapa, V e h
-        rl.drawRectangleRounded(.{ .x = 12, .y = 12, .width = 330, .height = 150 }, 0.08, 6, theme.panel_glass);
-        ft.draw("piloto automático", 26, 22, 22, theme.title);
-        const legs = fl.ac.mission.legs;
-        const stage: []const u8 = if (f.phase == .ground_run) "corrida no chão" else if (f.seg < legs.len) legs[f.seg].name else "rolagem";
-        ft.draw(std.fmt.bufPrintZ(&buf, "{s}", .{stage}) catch "", 26, 52, 18, theme.text);
-        ft.draw(std.fmt.bufPrintZ(&buf, "t = {d:.1} s", .{f.t}) catch "", 26, 80, 18, theme.text);
-        ft.draw(std.fmt.bufPrintZ(&buf, "V = {d:.1} m/s", .{f.Va}) catch "", 26, 104, 18, theme.text);
-        ft.draw(std.fmt.bufPrintZ(&buf, "h = {d:.1} m", .{-f.pos_ned[2]}) catch "", 176, 104, 18, theme.text);
+        const H: f32 = @floatFromInt(rl.getScreenHeight());
+        const dm = &app.dm.?;
+        var buf: [128]u8 = undefined;
+
+        // canto superior esquerdo: quem pilota, etapa, t, V, h
+        rl.drawRectangleRounded(.{ .x = 12, .y = 12, .width = 340, .height = 156 }, 0.08, 6, theme.panel_glass);
+        const manual = f.mode == .manual;
+        const badge: rl.Rectangle = .{ .x = 24, .y = 22, .width = if (manual) 110 else 190, .height = 30 };
+        rl.drawRectangleRounded(badge, 0.5, 6, if (manual) theme.accent else theme.title);
+        ft.draw(if (manual) "MANUAL" else "AUTOMÁTICO", badge.x + 12, badge.y + 5, 19, .white);
+        ft.draw("Y: trocar", badge.x + badge.width + 10, badge.y + 7, 15, theme.muted);
+        const legs = app.flight_ac.mission.legs;
+        const stage: []const u8 = if (f.phase == .ground_run) "na pista" else if (manual) "voo livre" else if (f.seg < legs.len) legs[f.seg].name else "rolagem";
+        ft.draw(std.fmt.bufPrintZ(&buf, "{s} · t = {d:.1} s", .{ stage, f.t }) catch "", 26, 60, 18, theme.text);
+        ft.draw(std.fmt.bufPrintZ(&buf, "V = {d:.1} m/s", .{f.Va}) catch "", 26, 86, 18, theme.text);
+        ft.draw(std.fmt.bufPrintZ(&buf, "h = {d:.1} m", .{-f.pos_ned[2]}) catch "", 186, 86, 18, theme.text);
+        ft.draw(std.fmt.bufPrintZ(&buf, "α = {d:.1}°", .{std.math.radiansToDegrees(f.alpha)}) catch "", 26, 110, 18, theme.text);
+        ft.draw(std.fmt.bufPrintZ(&buf, "n = {d:.2}", .{f.nz}) catch "", 186, 110, 18, theme.text);
         const ph: struct { [:0]const u8, rl.Color } = switch (f.phase) {
             .ground_run => .{ "na pista", theme.muted },
             .flying => .{ "voando", theme.ok },
             .landed => .{ "pousou e parou", theme.ok },
-            .crashed => .{ "caiu", theme.danger },
+            .crashed => .{ "caiu — Start → Recomeçar", theme.danger },
             .timeout => .{ "tempo máximo", theme.muted },
         };
-        ft.draw(ph[0], 26, 130, 18, ph[1]);
-        if (fl.paused) ft.draw("pausado", 176, 130, 18, theme.danger);
-        // canto inferior esquerdo: o que o piloto manda nas superfícies
-        rl.drawRectangleRounded(.{ .x = 12, .y = H - 150, .width = 330, .height = 138 }, 0.08, 6, theme.panel_glass);
-        const ap = &fl.dm.inst.p.ap;
-        theme.commandBar(ft, "profundor", f.drive.de, ap.de_max, true, 26, H - 140, 300);
-        theme.commandBar(ft, "aileron", f.drive.da, ap.da_max, true, 26, H - 110, 300);
-        theme.commandBar(ft, "leme", f.drive.dr, ap.dr_max, true, 26, H - 80, 300);
-        theme.commandBar(ft, "motor", f.thr, 1, false, 26, H - 50, 300);
-        // canto superior direito: câmera e teclas
-        const cname: [:0]const u8 = switch (fl.cam_kind) {
-            .ground => "câmera: piloto no chão",
-            .chase => "câmera: perseguição",
-            .orbit => "câmera: livre",
-        };
-        ft.draw(cname, W - ft.width(cname, 18) - 20, 18, 18, theme.text);
-        const keys: [:0]const u8 = "C: câmera · Espaço: pausa · R: recomeça · Esc: hangar";
-        ft.draw(keys, W - ft.width(keys, 15) - 20, 44, 15, theme.muted);
-        ft.draw(std.fmt.bufPrintZ(&buf, "{d} fps", .{rl.getFPS()}) catch "", W - 80, H - 30, 15, theme.muted);
+        ft.draw(ph[0], 26, 136, 18, ph[1]);
+
+        // canto inferior esquerdo: o que vai para as superfícies
+        rl.drawRectangleRounded(.{ .x = 12, .y = H - 150, .width = 340, .height = 138 }, 0.08, 6, theme.panel_glass);
+        const ap = &dm.inst.p.ap;
+        const pr = app.settings.profile;
+        const de_max = if (manual) pr.de_max else ap.de_max;
+        const da_max = if (manual) pr.da_max else ap.da_max;
+        const dr_max = if (manual) pr.dr_max else ap.dr_max;
+        var y = H - 140;
+        const feats = if (app.plane) |p| p.feats else @import("../model/features.zig").Features{};
+        if (feats.has(.elevator)) {
+            theme.commandBar(ft, "profundor", f.drive.de, de_max, true, 26, y, 310);
+            y += 30;
+        }
+        if (feats.has(.aileron)) {
+            theme.commandBar(ft, "aileron", f.drive.da, da_max, true, 26, y, 310);
+            y += 30;
+        }
+        if (feats.has(.rudder)) {
+            theme.commandBar(ft, "leme", f.drive.dr, dr_max, true, 26, y, 310);
+            y += 30;
+        }
+        if (feats.has(.throttle)) theme.commandBar(ft, "motor", f.thr, 1, false, 26, y, 310);
+
+        // canto superior direito: minimapa
+        const ms: f32 = @min(240, @min(W, H) * 0.32);
+        const env = app.flight_ac.environment;
+        minimap.draw(ft, .{ .x = W - ms - 14, .y = 14, .width = ms, .height = ms }, .{ .fld = &fl.fld, .trail = fl.trail[0..fl.n_trail], .pos = f.pos_ned, .psi = f.psi, .payload = f.payload_ned, .wind_from_deg = env.wind_from, .wind_speed = env.wind_speed });
+
+        // gravação, LAPES e recados
+        var ry = 14 + ms + 12;
+        if (app.rec) |r| {
+            const blink = @mod(app.time, 1.0) < 0.6;
+            if (blink) rl.drawCircleV(.{ .x = W - ms, .y = ry + 10 }, 7, theme.danger);
+            const dur = r.t_last - (r.t0 orelse r.t_last);
+            ft.draw(std.fmt.bufPrintZ(&buf, "gravando {d:.0} s{s}", .{ dur, if (r.video == null) " (só dados)" else "" }) catch "", W - ms + 14, ry, 17, theme.danger);
+            ry += 26;
+        }
+        if (feats.payload and dm.hasPayload() and f.payload_ned == null) {
+            ft.draw("X / L: soltar o LAPES", W - ms - 14, ry, 16, theme.text);
+            ry += 22;
+        }
+        if (app.message()) |msg| {
+            const s = std.fmt.bufPrintZ(&buf, "{s}", .{msg[0..@min(msg.len, 120)]}) catch "";
+            ft.draw(s, W - ft.width(s, 15) - 16, H - 52, 15, theme.text);
+        }
+        const keys: [:0]const u8 = "Start/Esc pausa · Y/M modo · X/L LAPES · Back/G grava · B/C câmera";
+        ft.draw(keys, W - ft.width(keys, 14) - 16, H - 28, 14, theme.text);
     }
 };

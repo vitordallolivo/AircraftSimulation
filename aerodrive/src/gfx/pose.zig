@@ -14,7 +14,7 @@ pub const max_units = 8;
 pub const max_tanks = 8;
 pub const max_deflection = std.math.degreesToRadians(60.0); // satura comandos absurdos
 
-/// o que move as peças (vem da fonte do estado: voo ao vivo, replay ou o controle no hangar)
+/// o que move as peças (vem da fonte do estado: voo ao vivo ou o controle nos menus)
 pub const DriveState = struct {
     de: f64 = 0, // rad
     da: f64 = 0,

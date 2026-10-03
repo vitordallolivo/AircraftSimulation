@@ -3,6 +3,8 @@
 //! tanques com líquido. Nada aqui conhece a tela.
 const std = @import("std");
 const model = @import("aircraft.zig");
+const sk = @import("skeleton.zig");
+const v3 = @import("../math/vec3.zig");
 const fz = @import("../util/fuzz.zig");
 
 /// os canais de comando que um piloto pode ter
@@ -86,8 +88,58 @@ pub fn detect(ac: *const model.Aircraft) Features {
     return f;
 }
 
+/// onde olhar para ver um canal funcionando (zoom na peça): ponto no corpo e tamanho da peça.
+/// Superfícies: a do lado direito (y ≥ 0) quando houver duas; motor: o primeiro cubo da hélice.
+pub const Focus = struct { p: v3.V3, size: f64 };
+
+pub fn focus(skel: *const sk.Skeleton, c: Channel) ?Focus {
+    var best: ?Focus = null;
+    var best_y: f64 = -1e9;
+    for (skel.pieces) |pc| {
+        const p: v3.V3, const hit = switch (pc.driver) {
+            .hinge => |h| .{ h.p, switch (c) {
+                .elevator => h.mix[0] != 0,
+                .aileron => h.mix[1] != 0,
+                .rudder => h.mix[2] != 0,
+                .throttle => false,
+            } },
+            .spin => |sp| .{ sp.p, c == .throttle },
+            else => .{ v3.V3{ 0, 0, 0 }, false },
+        };
+        if (!hit or !v3.finite(p)) continue;
+        var lo: v3.V3 = .{ 1e9, 1e9, 1e9 };
+        var hi: v3.V3 = .{ -1e9, -1e9, -1e9 };
+        for (pc.mesh.v) |q| for (0..3) |k| {
+            lo[k] = @min(lo[k], q[k]);
+            hi[k] = @max(hi[k], q[k]);
+        };
+        const size = if (pc.mesh.v.len > 0) std.math.clamp(v3.norm(v3.sub(hi, lo)), 0.05, 20) else 0.3;
+        const mid = if (pc.mesh.v.len > 0) v3.scale(v3.add(lo, hi), 0.5) else p;
+        if (best == null or mid[1] > best_y + 1e-6) { // o da direita
+            best = .{ .p = mid, .size = size };
+            best_y = mid[1];
+        }
+    }
+    return best;
+}
+
 // ------------------------------------------------------------------ testes
 const testing = std.testing;
+
+test "zoom: acha o profundor e o aileron direito do Convencional" {
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", testing.allocator, .limited(1 << 24));
+    defer testing.allocator.free(bytes);
+    var d: model.Diag = .{};
+    var l = try model.parse(testing.allocator, bytes, &d);
+    defer l.deinit();
+    var s = try sk.build(testing.allocator, &l.ac, &d);
+    defer s.deinit();
+    const e = focus(&s, .elevator).?;
+    const a = focus(&s, .aileron).?;
+    try testing.expect(e.p[0] < a.p[0]); // profundor atrás da asa
+    try testing.expect(a.p[1] > 0); // o da direita
+    try testing.expect(focus(&s, .throttle) != null);
+}
 
 test "convencional: os quatro canais; asa voadora: elevon faz arfagem e rolagem" {
     const secs = [_]model.Section{ .{ .y = 0, .chord = 0.3 }, .{ .y = 1, .chord = 0.3 } };

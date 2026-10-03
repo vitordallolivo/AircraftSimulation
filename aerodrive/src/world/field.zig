@@ -11,10 +11,11 @@ const V3 = v3.V3;
 
 pub const Rgba = [4]u8;
 pub const colors = struct {
-    pub const ground: Rgba = .{ 214, 226, 204, 255 };
-    pub const grid: Rgba = .{ 0, 0, 0, 28 };
-    pub const grid_major: Rgba = .{ 0, 0, 0, 55 };
-    pub const runway: Rgba = .{ 120, 124, 130, 255 };
+    pub const ground: Rgba = .{ 86, 168, 62, 255 }; // grama
+    pub const grid: Rgba = .{ 20, 70, 10, 40 };
+    pub const grid_major: Rgba = .{ 20, 70, 10, 80 };
+    pub const runway: Rgba = .{ 72, 76, 84, 255 };
+    pub const wind: Rgba = .{ 255, 255, 255, 90 };
     pub const mark: Rgba = .{ 250, 250, 250, 255 };
     pub const warning: Rgba = .{ 214, 39, 40, 255 };
     pub const table: Rgba = .{ 150, 110, 70, 255 };
@@ -113,8 +114,60 @@ pub fn build(x_warning: f64, segs: []const T.Segment, pads: []const T.Pad) Field
     return f;
 }
 
+/// setas fracas do vento em volta de (n, e): grade de `spacing` m em três alturas, andando com o
+/// vento (`t` em s) para dar a ideia de fluxo. `from_deg`: de onde vem (0 = norte, 90 = leste).
+pub fn windArrows(n: f64, e: f64, from_deg: f64, speed: f64, t: f64, out: []Line) []Line {
+    var k: usize = 0;
+    const v = if (std.math.isFinite(speed)) std.math.clamp(speed, 0, 30) else 0;
+    if (v < 0.2 or !std.math.isFinite(n) or !std.math.isFinite(e) or @abs(n) > 1e6 or @abs(e) > 1e6) return out[0..0];
+    const to = std.math.degreesToRadians(if (std.math.isFinite(from_deg)) from_deg else 0) + std.math.pi; // para onde sopra
+    const dir: [2]f64 = .{ @cos(to), @sin(to) };
+    const side: [2]f64 = .{ -dir[1], dir[0] };
+    const spacing = 14.0;
+    const len = 1.5 + 0.35 * v;
+    const shift = @mod(if (std.math.isFinite(t)) t * v else 0, spacing);
+    const n0 = @floor(n / spacing) * spacing;
+    const e0 = @floor(e / spacing) * spacing;
+    const heights = [_]f64{ 1.5, 7, 15 };
+    var i: i32 = -3;
+    while (i <= 3) : (i += 1) {
+        var j: i32 = -3;
+        while (j <= 3) : (j += 1) for (heights) |h| {
+            if (k + 3 > out.len) return out[0..k];
+            const pn = n0 + @as(f64, @floatFromInt(i)) * spacing + dir[0] * shift;
+            const pe = e0 + @as(f64, @floatFromInt(j)) * spacing + dir[1] * shift;
+            const a: V3 = .{ pn, pe, -h };
+            const b: V3 = .{ pn + dir[0] * len, pe + dir[1] * len, -h };
+            const hl = 0.3 * len;
+            out[k] = .{ .a = a, .b = b, .color = colors.wind };
+            out[k + 1] = .{ .a = b, .b = .{ b[0] - dir[0] * hl + side[0] * 0.5 * hl, b[1] - dir[1] * hl + side[1] * 0.5 * hl, -h }, .color = colors.wind };
+            out[k + 2] = .{ .a = b, .b = .{ b[0] - dir[0] * hl - side[0] * 0.5 * hl, b[1] - dir[1] * hl - side[1] * 0.5 * hl, -h }, .color = colors.wind };
+            k += 3;
+        };
+    }
+    return out[0..k];
+}
+
 // ------------------------------------------------------------------ testes
 const testing = std.testing;
+
+test "vento de norte sopra para o sul" {
+    var buf: [600]Line = undefined;
+    const l = windArrows(0, 0, 0, 5, 0, &buf);
+    try testing.expect(l.len > 0);
+    try testing.expect(l[0].b[0] < l[0].a[0]); // aponta para −n
+    try testing.expectEqual(@as(usize, 0), windArrows(0, 0, 0, 0, 0, &buf).len);
+}
+
+fn fuzzWind(_: void, src: *fz.Src) anyerror!void {
+    var buf: [700]Line = undefined;
+    const l = windArrows(src.mostly(-500, 500), src.mostly(-500, 500), src.any(), src.any(), src.any(), buf[0..src.int(u16, 0, 700)]);
+    for (l) |x| try testing.expect(v3.finite(x.a) and v3.finite(x.b));
+}
+
+test "fuzz: setas do vento" {
+    try fz.check({}, fuzzWind, .{});
+}
 
 test "pista até depois do x_warning, com a linha vermelha nele; mesa vira caixa" {
     const pads = [_]T.Pad{.{ .n0 = -1, .e0 = 0, .chi = 0, .L = 16, .W = 2, .h = 1 }};
