@@ -35,7 +35,8 @@ class SimulationManager(ISimulationManager):
         self._sims[sim.name] = sim
 
     def simulations(self) -> list[ISimulation]:
-        return list(self._sims.values())
+        """as que têm aba (as outras continuam em `get`)"""
+        return [s for s in self._sims.values() if getattr(s, "tab", True)]
 
     def get(self, name: str) -> ISimulation:
         return self._sims[name]

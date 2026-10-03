@@ -104,11 +104,59 @@ class ParamSlider(QtWidgets.QWidget):
         self.valueChanged.emit(v)
 
 
+class NumberField(QtWidgets.QWidget):
+    """rótulo | campo numérico (digitar, setas ou roda do mouse com o campo em foco) — sem slider"""
+    valueChanged = QtCore.pyqtSignal(float)
+
+    def __init__(self, label: str, value: float, minimum: float = -1e9, maximum: float = 1e9, step: float = 0.01,
+                 unit: str = "", parent=None):
+        super().__init__(parent)
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.label = QtWidgets.QLabel(label)
+        self.label.setMinimumWidth(110)
+        self.label.setToolTip(label)
+        self.spin = _Spin()
+        self.spin.setDecimals(min(_decimals(step) + 1, 6))
+        self.spin.setRange(-1e9, 1e9)
+        self.spin.setSingleStep(step)
+        self.spin.setSuffix(f" {unit}" if unit else "")
+        self.spin.setKeyboardTracking(False)
+        self.spin.setValue(value)
+        lay.addWidget(self.label, 5)
+        lay.addWidget(self.spin, 4)
+        self.spin.valueChanged.connect(self.valueChanged.emit)
+
+    def value(self) -> float:
+        return self.spin.value()
+
+    def setValue(self, v: float) -> None:
+        self.spin.blockSignals(True)
+        self.spin.setValue(v)
+        self.spin.blockSignals(False)
+
+
+class _Spin(QtWidgets.QDoubleSpinBox):
+    """não rouba a roda do mouse da rolagem do painel: só muda o valor se estiver em foco"""
+
+    def __init__(self):
+        super().__init__()
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
+
+    def wheelEvent(self, e):
+        if self.hasFocus():
+            super().wheelEvent(e)
+        else:
+            e.ignore()
+
+
 CHOICES = {
     "role": ("wing", "htail", "vtail"),
     "kind": None,      # depende do contexto (ver DataclassForm.choices)
     "layout": ("tricycle", "conventional", "custom"),
     "shape": ("square", "cylinder"),
+    "takeoff_from": ("chão", "mesa"),
+    "landing_on": ("chão", "plataforma"),
 }
 CONTROL_KINDS = ("aileron", "elevator", "rudder", "elevon", "ruddervator", "flap")
 GEAR_KINDS = ("steer", "main", "skid")
@@ -127,7 +175,18 @@ LABELS = {
     "x_start": "início x", "diameter": "diâmetro", "attach_tail": "cauda na ponta", "bay": "baia",
     "span_start": "início (fração)", "span_end": "fim (fração)", "chord_frac": "corda (fração)",
     "deflection": "deflexão fixa", "chord": "corda", "x_offset": "recuo do BA", "twist": "torção",
+    "takeoff_from": "decola de", "table_height": "altura da mesa", "table_length": "mesa à frente da partida",
+    "table_back": "mesa atrás da partida", "table_width": "largura da mesa", "landing_on": "pousa em",
+    "platform_height": "altura da plataforma", "platform_length": "comprimento da plataforma",
+    "platform_width": "largura da plataforma", "platform_start": "plataforma começa antes do fim da perna",
+    "runway_max": "distância máx. de decolagem", "landing_max": "distância máx. de pouso (0 = não verifica)",
+    "Fext_g": "paraquedas extrator (g)", "mu_b": "atrito na baia", "CdS_chute": "C_D·S do paraquedas",
+    "target_n": "alvo: norte", "target_e": "alvo: leste", "aim": "procurar onde soltar para acertar o alvo",
+    "wind_speed": "vento a 10 m", "wind_from": "vento vem de", "wind_elev": "elevação do vento",
 }
+UNITS = {"table_height": "m", "table_length": "m", "table_back": "m", "table_width": "m", "platform_height": "m",
+         "platform_length": "m", "platform_width": "m", "platform_start": "m", "runway_max": "m", "landing_max": "m",
+         "target_n": "m", "target_e": "m", "CdS_chute": "m²"}
 
 
 class DataclassForm(QtWidgets.QWidget):
@@ -190,8 +249,9 @@ class DataclassForm(QtWidgets.QWidget):
         if base is float:
             if opt:      # sobrescrita opcional: caixa "auto" + campo
                 return self._optional(name, label, v)
-            lo, hi, st, un = RANGES.get(name, (min(0.0, v * 2) if v else -1.0, max(1.0, v * 2) if v else 1.0, 0.001, ""))
-            w = ParamSlider(label, float(v), lo, hi, st, un)
+            lo, hi, st, un = RANGES.get(name, (min(0.0, v * 2) if v else -1.0, max(1.0, v * 2) if v else 1.0, 0.01,
+                                               UNITS.get(name, "")))
+            w = NumberField(label, float(v), step=st, unit=un)
             w.valueChanged.connect(lambda val, n=name: self._set(n, float(val)))
             return w
         return None          # listas: editores próprios
@@ -232,5 +292,5 @@ class DataclassForm(QtWidgets.QWidget):
         """relê os valores do objeto (depois de um arraste no 3D, por exemplo)"""
         for name, w in self.widgets.items():
             v = getattr(self.obj, name)
-            if isinstance(w, ParamSlider) and isinstance(v, (int, float)):
+            if isinstance(w, (ParamSlider, NumberField)) and isinstance(v, (int, float)):
                 w.setValue(float(v))

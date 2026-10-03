@@ -113,6 +113,7 @@ class _Lib:
             "aerosim_performance": (c_int, [c_int, c_double, c_double, c_double, vp, c_size]),
             "aerosim_envelope": (c_int, [c_int, ctypes.POINTER(T["EnvCfg"]), vp, c_size, ctypes.POINTER(c_double)]),
             "aerosim_envelope_curve": (c_int, [c_int, ctypes.POINTER(T["EnvCfg"]), c_double, vp, vp, vp, c_size]),
+            "aerosim_simple_perf": (c_int, [ctypes.POINTER(T["SimpleCfg"]), vp, c_size, ctypes.POINTER(T["SimpleSummary"])]),
         }
         for name, (res, args) in sig.items():
             fn = getattr(L, name)
@@ -125,6 +126,7 @@ class _Lib:
         self.log_dtype = self.schema.dtypes["LogRow"]
         self.perf_dtype = self.schema.dtypes["PerfRow"]
         self.env_dtype = self.schema.dtypes["EnvRow"]
+        self.simple_dtype = self.schema.dtypes["SimpleRow"]
 
 
 def _struct_dict(obj) -> dict[str, float]:
@@ -145,7 +147,7 @@ class ZigSession(ISimSession):
         p = L.aerosim_params(self._slot).contents
         spec = dict(spec)
         for arr, cnt in (("surf", "n_surf"), ("prop", "n_prop"), ("gear", "n_gear"), ("tank", "n_tank"),
-                         ("seg", "n_seg"), ("event", "n_event")):
+                         ("seg", "n_seg"), ("event", "n_event"), ("pads", "n_pad")):
             if arr in spec:
                 spec[cnt] = len(spec[arr])
         for u in spec.get("prop", []):
@@ -316,6 +318,34 @@ class ZigBackend(ISimBackend):
 
     def log_channels(self) -> list[str]:
         return list(self._lib.log_dtype.names)
+
+    def simple_performance(self, cfg: dict) -> tuple[dict, dict]:
+        T = self._lib.schema.types
+        c = T["SimpleCfg"]()
+        # a struct ctypes nasce zerada: os padrões do núcleo (simple_perf.zig) vêm daqui
+        cfg = dict(dict(W=100.0, S=1.0, CD0=0.03, K=0.06, CLmax=1.4, rho0=1.225, h=0.0, T0=288.15, lapse=-0.0065,
+                        Rgas=287.053, phi_T=0.0, rho_exp=1.0, V_lo=1.0, V_hi=30.0, dV=0.5, n_load=2.0, bat_Rt=1.0,
+                        bat_C=5.0, bat_n=1.05, bat_V=22.2, bat_eta=0.6), **cfg)
+        if "thr_V" in cfg:
+            cfg["n_thr"] = len(cfg["thr_V"])
+        if "bank" in cfg:
+            cfg["bank"] = list(cfg["bank"])[:8]
+            cfg["n_bank"] = len(cfg["bank"])
+        abi.write(c, cfg)
+        cap = int((c.V_hi - c.V_lo) / c.dV) + 2
+        buf = np.zeros(cap, dtype=self._lib.simple_dtype)
+        s = T["SimpleSummary"]()
+        n = _check(self._lib.dll.aerosim_simple_perf(ctypes.byref(c), buf.ctypes.data, cap, ctypes.byref(s)),
+                   "simple_perf")
+        rows = {}
+        for k in buf.dtype.names:
+            v = np.array(buf[k][:n])
+            if v.ndim == 1:
+                rows[k] = v
+            else:
+                for i in range(c.n_bank):
+                    rows[f"{k}_{i}"] = v[:, i]
+        return rows, _struct_dict(s)
 
     @property
     def schema(self) -> abi.Schema:

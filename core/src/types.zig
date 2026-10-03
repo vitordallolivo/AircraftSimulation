@@ -153,6 +153,17 @@ pub const event_drop = 0;
 pub const event_gust = 1;
 pub const Event = extern struct { kind: i32 = 0, seg: i32 = 0, s: f64 = 0 };
 
+/// mesa/plataforma: retângulo elevado. Começa em (n0, e0) na linha de centro, vai L metros
+/// no rumo chi, largura W centrada, topo a h metros do chão.
+pub const Pad = extern struct {
+    n0: f64 = 0,
+    e0: f64 = 0,
+    chi: f64 = 0,
+    L: f64 = 0,
+    W: f64 = 0,
+    h: f64 = 0,
+};
+
 pub const Payload = extern struct {
     enabled: i32 = 0,
     _pad: i32 = 0,
@@ -286,7 +297,8 @@ pub const Params = extern struct {
     stop_autop: i32 = 0, // para quando o piloto automático liga
     stop_takeoff: i32 = 0, // para em takeoff.h_end acima do chão
     no_payload: i32 = 0, // começa sem a carga
-    _pad1: i32 = 0,
+    n_pad: i32 = 0, // mesas/plataformas
+    pads: [L.max_pads]Pad = [_]Pad{.{}} ** L.max_pads,
     // derivados
     steer_sign: f64 = 1, // −1 se a roda direcionável está atrás das principais (convencional)
 };
@@ -323,6 +335,9 @@ pub const Events = extern struct {
     nTD: f64 = 0,
     nStop: f64 = 0,
     tend: f64 = 0,
+    sink: f64 = 0, // quanto o CG desceu abaixo da altura de repouso depois de sair do chão (mesa)
+    hgnd_td: f64 = -1, // altura do terreno no ponto do toque (plataforma ou chão)
+    hw_min_air: f64 = 1e9, // menor altura das rodas sobre o terreno, no ar, antes do piloto automático
     bounced: f64 = 0,
     completed: f64 = 0,
     stopped: f64 = 0,
@@ -431,6 +446,8 @@ pub const LogRow = extern struct {
     pk_n: f64,
     pk_e: f64,
     pk_h: f64,
+    hgnd: f64, // altura do terreno (chão, mesa ou plataforma) sob o CG
+    hw: f64, // altura das rodas sobre o terreno
     rpm: [L.max_props]f64,
     thrust: [L.max_props]f64,
     current: [L.max_props]f64,

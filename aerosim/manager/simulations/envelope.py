@@ -48,6 +48,7 @@ def sheet_config(ac: Aircraft) -> dict:
 
 
 class EnvelopeSimulation(SimulationBase):
+    tab = False
     name = "envelope"
     title = "Envelope de voo"
     description = ("Por altitude: V_min e V_max (P_d = P_r), V_e, V* = V_e√n, V_cru e o teto absoluto. "

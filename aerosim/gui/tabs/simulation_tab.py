@@ -181,13 +181,13 @@ class SimulationTab(QtWidgets.QWidget):
                     if sig_ is not None:
                         sig_.connect(lambda *_: QtCore.QTimer.singleShot(0, self.reconfigure))
             self._specs_sig = sig
-        self._set_plots(self.sim.plots_for(ac))
+        self._set_plots(self.sim.plots_for(ac, self.params()))
 
     def _set_plots(self, specs) -> None:
-        sig = tuple((s.key, s.title, s.ys, s.source) for s in specs)
+        sig = tuple((s.key, s.title, s.ys, s.source, s.kind, s.live_ys) for s in specs)
         if sig == self._plots_sig:
             return
-        new = LivePlots(specs, columns=1, row_height=440)
+        new = LivePlots(specs, columns=1, row_height=560)
         self.right.replaceWidget(self.plots, new)
         self.plots.deleteLater()
         self.plots = new
@@ -256,7 +256,7 @@ class SimulationTab(QtWidgets.QWidget):
         self._cancel = threading.Event()
         self.stop_b.clicked.disconnect()
         self.stop_b.clicked.connect(self._cancel.set)
-        self._set_plots(self.sim.plots_for(self.state.aircraft))
+        self._set_plots(self.sim.plots_for(self.state.aircraft, self.params()))
         self.plots.clear()
         for w in (self.diag_title, self.diag, self.diag_detail):
             w.hide()
@@ -265,7 +265,8 @@ class SimulationTab(QtWidgets.QWidget):
         self.run_b.setEnabled(False)
         self.stop_b.setEnabled(True)
         self._thread = QtCore.QThread(self)
-        self._worker = _Worker(self.state, self.sim, self.params(), self._cancel)
+        self._run_params = self.params()
+        self._worker = _Worker(self.state, self.sim, self._run_params, self._cancel)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.chunk.connect(self.plots.append)
@@ -297,7 +298,7 @@ class SimulationTab(QtWidgets.QWidget):
         tail = f" — {nf} falha(s), {na} atenção" if res.checks else ""
         self.msg.setText(f"terminado: {res.status}{tail}")
         # só os gráficos que têm dado nesta aeronave/neste caso
-        specs = [s for s in self.sim.plots_for(self.state.aircraft) if _has_data(s, res)]
+        specs = [s for s in self.sim.plots_for(self.state.aircraft, self._run_params) if _has_data(s, res)]
         self._set_plots(specs)
         self.plots.show_result(res)
         self._show_checks(res.checks)

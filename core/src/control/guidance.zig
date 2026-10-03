@@ -9,6 +9,7 @@ const L = @import("../limits.zig");
 const T = @import("../types.zig");
 const S = @import("../sim/state.zig");
 const fm = @import("../math/fmath.zig");
+const terrain = @import("../physics/terrain.zig");
 
 pub const Guide = struct {
     s: f64 = 0,
@@ -63,8 +64,13 @@ pub fn guide(c: S.Ctx, n: f64, e: f64, Vg: f64) Guide {
     const xs = g.s / sg.L;
     g.hseg = sg.h0 + (sg.h1 - sg.h0) * smooth(xs);
     g.Vseg = sg.V0 + (sg.V1 - sg.V0) * smooth(xs);
-    if (sg.landing != 0)
-        g.hseg = sg.h0 + (c.h_ground + 0.1 - sg.h0) * fm.lim(g.s / (sg.L - sg.clearance), 0.0, 1.0);
+    if (sg.landing != 0) {
+        // mira o terreno no ponto de toque (chão ou plataforma) com as rodas a 10 cm
+        const st = sg.L - sg.clearance;
+        const sc = fm.sincos(sg.chi0);
+        const htd = if (sg.arc == 0) terrain.height(p, sg.n0 + st * sc.c, sg.e0 + st * sc.s) else 0.0;
+        g.hseg = sg.h0 + (htd + c.h_rest + 0.1 - sg.h0) * fm.lim(g.s / st, 0.0, 1.0);
+    }
     return g;
 }
 

@@ -6,8 +6,10 @@ from aerosim.model import TEMPLATES
 
 
 def test_registry(manager):
-    names = {s.name for s in manager.simulations()}
-    assert {"takeoff", "turn", "envelope", "mission", "climb", "polar", "thrust"} <= names
+    names = {s.name for s in manager.simulations()}          # as que têm aba
+    assert {"sizing", "mission", "performance", "thrust", "aerodynamics", "stability"} == names
+    for n in ("takeoff", "turn", "envelope", "climb", "polar"):    # sem aba, mas ainda chamáveis
+        assert manager.get(n).tab is False
     for s in manager.simulations():
         assert s.parameters() and s.plots()
 

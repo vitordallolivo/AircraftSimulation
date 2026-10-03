@@ -173,3 +173,8 @@ class ISimBackend(ABC):
 
     @abstractmethod
     def log_channels(self) -> list[str]: ...
+
+    def simple_performance(self, cfg: dict) -> tuple[dict, dict]:
+        """desempenho por cálculo simples (sem simulação): `cfg` com W, S, C_D0, K, C_Lmax, h,
+        tabela de tração (thr_V, thr_T), inclinações (bank, rad), bateria... -> (colunas por V, resumo)"""
+        raise NotImplementedError(f"{self.name}: desempenho simples não implementado")

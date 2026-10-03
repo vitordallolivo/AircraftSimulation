@@ -10,6 +10,11 @@ para arfagem e rolagem juntos); a GUI refaz a aba quando a aeronave muda.
 O resultado pode trazer um diagnóstico (`checks`): cada critério com estado, valor, critério,
 causa e o que mudar — é isso que diz se a configuração serve e por quê.
 A GUI cria uma aba por simulação registrada, sem conhecer nenhuma delas.
+
+Estilo das séries (chaves opcionais começando com "_" em cada tabela): `_color`, `_width`, `_dash`,
+`_fill` (coluna do outro lado da faixa) e `_strong`, `_marker`/`_symbol` ("o", "star", "s", "t", "d",
+"+", "x") e `_size`, `_label` (texto da legenda), `_nolegend`; linhas e faixas de referência sem
+colunas: `_vline` (x), `_hline` (y), `_vspan` ([x0, x1], ex.: fundo de cada etapa do voo).
 """
 from __future__ import annotations
 
@@ -54,6 +59,13 @@ class PlotSpec:
     source: str = "log"            # log | series:<nome> | series:<prefixo>* | series:* (séries do resultado)
     scatter: bool = False
     swap: bool = False             # desenha as ys na horizontal e x na vertical (ex.: V × altitude)
+    kind: str = "2d"               # 2d | 3d (trajetória: x, ys[0], z)
+    z: str = ""                    # 3d: canal/coluna vertical
+    live_ys: tuple[str, ...] = ()  # gráfico de séries: canais do registro desenhados enquanto roda
+    live_x: str = ""               # eixo x desses canais (padrão: x)
+    aspect: bool = False           # escalas iguais nos dois eixos (planos da trajetória)
+    invert_y: bool = False
+    height: int = 0                # altura do gráfico (px); 0: padrão da aba
 
 
 @dataclass
@@ -103,6 +115,7 @@ class RunContext:
 
 class ISimulation(ABC):
     name: str = ""          # identificador (chave no registro)
+    tab: bool = True        # False: registrada (scripts, testes, outras abas a usam) mas sem aba própria
     title: str = ""         # nome na aba
     description: str = ""
 
@@ -120,7 +133,8 @@ class ISimulation(ABC):
         (`values`, ex.: norma escolhida); padrão: os mesmos sempre"""
         return self.parameters()
 
-    def plots_for(self, aircraft: "Aircraft | None") -> list[PlotSpec]:
+    def plots_for(self, aircraft: "Aircraft | None", values: dict | None = None) -> list[PlotSpec]:
+        """gráficos para esta aeronave e para as escolhas do formulário (ex.: o modo da análise)"""
         return self.plots()
 
     def defaults(self, aircraft: "Aircraft | None" = None, values: dict | None = None) -> dict[str, Any]:

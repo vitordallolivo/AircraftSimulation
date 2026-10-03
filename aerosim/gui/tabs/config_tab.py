@@ -1,14 +1,19 @@
-"""Aba de configuração: aeronave em 3D (80 %) e painel de componentes (20 %).
+"""Aba de configuração em três colunas:
 
-No painel: lista de componentes com botões de adicionar/remover, editor do componente
-selecionado (sliders + campos), seções e comandos das superfícies, perfil .dat, escolha
-de motor/hélice/bateria do catálogo, curva de tração, vento com botões de direção, e o
-resumo de massa, CG e margem estática.
+  esquerda   vento, lista de componentes (asa, caudas, motores, tanques, fuselagem, tubo, trem,
+             LAPES, pista/mesa/plataforma, massa, ambiente, decolagem, piloto, percurso...), botões de
+             adicionar/remover e o editor do componente escolhido (campos numéricos, sem sliders)
+  centro     a aeronave em 3D (clicar seleciona, arrastar move) e o botão Restaurar
+  direita    informações completas: massa e CG, inércias, aerodinâmica, cargas (W/S, T/W), propulsão,
+             trem, pista, LAPES, percurso e avisos
 """
 from __future__ import annotations
 
 import copy
+import math
+from html import escape
 
+import numpy as np
 import pyqtgraph as pg
 from PyQt6 import QtCore, QtWidgets
 
@@ -18,11 +23,12 @@ from aerosim.model.airfoil import Airfoil, read_dat
 from aerosim.model.mission import Leg, MissionEvent
 
 from ..state import AppState
-from ..widgets.param_slider import CONTROL_KINDS, EVENT_KINDS, LEG_KINDS, DataclassForm, ParamSlider
+from ..widgets.param_slider import CONTROL_KINDS, EVENT_KINDS, LEG_KINDS, DataclassForm, NumberField
 from ..widgets.view3d import AircraftView
 
-NONGEOM = [("mass", "Massa e inércia"), ("environment", "Ambiente"), ("takeoff", "Decolagem"),
-           ("autopilot", "Piloto automático"), ("sim", "Integração"), ("mission", "Percurso")]
+NONGEOM = [("airfield", "🛫 Pista: chão, mesa e plataforma"), ("mass", "Massa e inércia"), ("environment", "Ambiente"),
+           ("takeoff", "Decolagem (comando do profundor)"), ("autopilot", "Piloto automático"), ("sim", "Integração"),
+           ("mission", "Percurso (pernas e eventos)")]
 
 
 class ConfigTab(QtWidgets.QWidget):
@@ -30,24 +36,52 @@ class ConfigTab(QtWidgets.QWidget):
         super().__init__(parent)
         self.state = state
         self.form: DataclassForm | None = None
+        self._tank_info = None
         split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         QtWidgets.QHBoxLayout(self).addWidget(split)
 
-        # ---------------- 3D ----------------
-        left = QtWidgets.QWidget()
-        lv = QtWidgets.QVBoxLayout(left)
+        # ---------------- esquerda: componentes, vento e editor ----------------
+        panel = QtWidgets.QWidget()
+        pv = QtWidgets.QVBoxLayout(panel)
+        pv.setContentsMargins(4, 4, 4, 4)
+        pv.addWidget(self._wind_box())
+        pv.addWidget(QtWidgets.QLabel("<b>Componentes</b>"))
+        self.comp_list = QtWidgets.QListWidget()
+        self.comp_list.setMinimumHeight(220)
+        pv.addWidget(self.comp_list, 2)
+        pv.addLayout(self._add_buttons())
+        self.editor_area = QtWidgets.QScrollArea()
+        self.editor_area.setWidgetResizable(True)
+        pv.addWidget(self.editor_area, 5)
+        split.addWidget(panel)
+
+        # ---------------- centro: 3D ----------------
+        mid = QtWidgets.QWidget()
+        lv = QtWidgets.QVBoxLayout(mid)
         lv.setContentsMargins(0, 0, 0, 0)
         bar = QtWidgets.QHBoxLayout()
         self.move_chk = QtWidgets.QCheckBox("mover com o mouse")
         self.move_chk.setChecked(True)
         self.lock = QtWidgets.QComboBox()
         self.lock.addItems(["plano da tela", "só x", "só y", "só z"])
+        self.restore_b = QtWidgets.QToolButton()
+        self.restore_b.setText("↺ Restaurar")
+        self.restore_b.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.restore_b.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        menu = QtWidgets.QMenu(self.restore_b)
+        menu.addAction("como estava ao abrir/carregar", self.restore)
+        from aerosim.model.templates import TEMPLATES
+        for k, f in TEMPLATES.items():
+            menu.addAction(f"modelo padrão: {f().name}", lambda k=k: self.restore(k))
+        self.restore_b.setMenu(menu)
+        self.restore_b.setToolTip("desfaz as mudanças: volta ao estado aberto/carregado ou a um modelo padrão")
         self.info = QtWidgets.QLabel()
         bar.addWidget(self.move_chk)
         bar.addWidget(QtWidgets.QLabel("arraste:"))
         bar.addWidget(self.lock)
         bar.addStretch(1)
         bar.addWidget(self.info)
+        bar.addWidget(self.restore_b)
         lv.addLayout(bar)
         self.view = AircraftView()
         lv.addWidget(self.view, 1)
@@ -55,29 +89,17 @@ class ConfigTab(QtWidgets.QWidget):
                                   "(clique num componente para selecionar e arraste para mover)")
         legend.setStyleSheet("color: #555; font-size: 10px")
         lv.addWidget(legend)
-        split.addWidget(left)
+        split.addWidget(mid)
 
-        # ---------------- painel ----------------
-        panel = QtWidgets.QWidget()
-        pv = QtWidgets.QVBoxLayout(panel)
-        pv.setContentsMargins(4, 4, 4, 4)
-        pv.addWidget(self._wind_box())
-        self.comp_list = QtWidgets.QListWidget()
-        self.comp_list.setMaximumHeight(190)
-        pv.addWidget(QtWidgets.QLabel("<b>Componentes</b>"))
-        pv.addWidget(self.comp_list)
-        pv.addLayout(self._add_buttons())
-        self.editor_area = QtWidgets.QScrollArea()
-        self.editor_area.setWidgetResizable(True)
-        pv.addWidget(self.editor_area, 1)
-        self.summary = QtWidgets.QLabel()
-        self.summary.setWordWrap(True)
-        self.summary.setStyleSheet("background:#f0f3f8; padding:4px")
-        pv.addWidget(self.summary)
-        split.addWidget(panel)
-        split.setStretchFactor(0, 8)
-        split.setStretchFactor(1, 2)
-        split.setSizes([1100, 330])
+        # ---------------- direita: informações ----------------
+        self.summary = QtWidgets.QTextBrowser()
+        self.summary.setOpenExternalLinks(False)
+        self.summary.setStyleSheet("QTextBrowser { background: #f7f9fc; }")
+        split.addWidget(self.summary)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 6)
+        split.setStretchFactor(2, 3)
+        split.setSizes([400, 900, 400])
 
         self.comp_list.currentItemChanged.connect(self._on_list)
         self.view.componentSelected.connect(self._on_pick)
@@ -94,12 +116,22 @@ class ConfigTab(QtWidgets.QWidget):
         self._geo_timer.timeout.connect(self.view.rebuild)
         self._reload()
 
+    # ------------------------------------------------------------------ restaurar
+    def restore(self, template: str | None = None):
+        if template is None:
+            ac = copy.deepcopy(self.state.original)
+        else:
+            from aerosim.model.templates import TEMPLATES
+            ac = TEMPLATES[template]()
+        self.view.selected = None
+        self.state.set_aircraft(ac, self.state.path if template is None else None, keep_original=template is None)
+
     # ------------------------------------------------------------------ vento
     def _wind_box(self):
         box = QtWidgets.QGroupBox("Vento")
         g = QtWidgets.QGridLayout(box)
         env = self.state.aircraft.environment
-        self.wind_speed = ParamSlider("velocidade", env.wind_speed, 0, 20, 0.1, "m/s")
+        self.wind_speed = NumberField("velocidade a 10 m", env.wind_speed, 0, 40, 0.5, "m/s")
         self.wind_dir = QtWidgets.QDial()
         self.wind_dir.setRange(-180, 180)
         self.wind_dir.setWrapping(True)
@@ -142,7 +174,7 @@ class ConfigTab(QtWidgets.QWidget):
             g.addWidget(b, i // 3, i % 3)
         self.chk_boom = QtWidgets.QCheckBox("tubo de cauda")
         self.chk_fus = QtWidgets.QCheckBox("fuselagem")
-        self.chk_pay = QtWidgets.QCheckBox("carga")
+        self.chk_pay = QtWidgets.QCheckBox("carga LAPES")
         self.gear_combo = QtWidgets.QComboBox()
         self.gear_combo.addItems(["tricycle", "conventional", "custom"])
         for w in (self.chk_boom, self.chk_fus, self.chk_pay):
@@ -279,8 +311,7 @@ class ConfigTab(QtWidgets.QWidget):
             items.append(("fuselage", "fuselagem"))
         if ac.boom.enabled:
             items.append(("boom", "tubo de cauda"))
-        if ac.payload.enabled:
-            items.append(("payload", "carga"))
+        items.append(("payload", "📦 LAPES: carga e soltura" + ("" if ac.payload.enabled else " (desligado)")))
         items.append(("gear", f"trem de pouso ({ac.gear.layout})"))
         items += [(k, t) for k, t in NONGEOM]
         sel_row = 0
@@ -350,9 +381,23 @@ class ConfigTab(QtWidgets.QWidget):
             v.addWidget(self.form)
             self._tank_info = QtWidgets.QLabel()
             v.addWidget(self._tank_info)
-        elif kind in ("fuselage", "boom", "payload"):
-            self.form = DataclassForm(getattr(ac, {"boom": "boom"}.get(kind, kind)))
+        elif kind == "payload":
+            self.form = DataclassForm(ac.payload)
             v.addWidget(self.form)
+            v.addWidget(self._drop_editor())
+        elif kind in ("fuselage", "boom"):
+            self.form = DataclassForm(getattr(ac, kind))
+            v.addWidget(self.form)
+        elif kind == "airfield":
+            self.form = DataclassForm(ac.airfield)
+            v.addWidget(self.form)
+            hint = QtWidgets.QLabel("A aeronave parte de n = 0 rumo ao norte. A mesa vai de −'atrás' a +'à frente'; "
+                                    "a plataforma fica na última perna de pouso, começando o tanto pedido antes do "
+                                    "fim dela. Na Missão: x_warning (saiu do chão depois da distância máxima) e "
+                                    "z_warning (caiu abaixo da mesa / tocou fora da plataforma).")
+            hint.setWordWrap(True)
+            hint.setStyleSheet("color:#555")
+            v.addWidget(hint)
         elif kind == "gear":
             self.form = DataclassForm(ac.gear, exclude=("custom",))
             v.addWidget(self.form)
@@ -376,6 +421,35 @@ class ConfigTab(QtWidgets.QWidget):
             self.form.changed.connect(self._changed)
         v.addStretch(1)
         self.editor_area.setWidget(w)
+
+    def _drop_editor(self):
+        """onde soltar a carga: perna do percurso e distância dentro dela (evento 'drop')"""
+        ac = self.state.aircraft
+        box = QtWidgets.QGroupBox("Soltura (evento do percurso)")
+        f = QtWidgets.QFormLayout(box)
+        legs = QtWidgets.QComboBox()
+        legs.addItems([f"{i}: {n}" for i, n in enumerate(ac.mission.names())])
+        sx = NumberField("distância na perna", 0.0, 0, 1e5, 1.0, "m")
+        ev = next((e for e in ac.mission.events if e.kind == "drop"), None)
+        on = QtWidgets.QCheckBox("soltar a carga nesta missão")
+        on.setChecked(ev is not None)
+        if ev is not None:
+            legs.setCurrentIndex(min(ev.leg, legs.count() - 1))
+            sx.setValue(ev.s)
+
+        def apply(*_):
+            evs = [e for e in ac.mission.events if e.kind != "drop"]
+            if on.isChecked():
+                evs.append(MissionEvent("drop", max(legs.currentIndex(), 0), sx.value()))
+            ac.mission.events = evs
+            self.state.notify("geometry")
+        on.toggled.connect(apply)
+        legs.currentIndexChanged.connect(apply)
+        sx.valueChanged.connect(apply)
+        f.addRow(on)
+        f.addRow("perna", legs)
+        f.addRow(sx)
+        return box
 
     def _sections_editor(self, s: LiftingSurface):
         box = QtWidgets.QGroupBox("Seções (raiz → ponta)")
@@ -686,20 +760,14 @@ class ConfigTab(QtWidgets.QWidget):
             from aerosim.manager.calibration import static_characteristics
             info = static_characteristics(self.state.manager.backend, ac)
         except Exception as e:      # configuração inválida no meio da edição
-            self.summary.setText(f"<span style='color:#b00'>{e}</span>")
+            self.summary.setHtml(f"<span style='color:#b00'>{escape(str(e))}</span>")
             return
         cg = info["cg"]
         self.view.set_markers(cg=cg, np_x=info["x_np"])
-        sm = info["static_margin"] * 100
-        cor = "#080" if 5 <= sm <= 30 else "#b00"
-        self.summary.setText(
-            f"<b>m</b> = {info['mass']:.3f} kg   <b>CG</b> = ({cg[0]:.3f}, {cg[1]:.3f}, {cg[2]:.3f}) m<br>"
-            f"<b>margem estática</b> = <span style='color:{cor}'>{sm:.1f} %</span>   x_NP = {info['x_np']:.3f} m<br>"
-            f"C_Lα = {info['CLa']:.2f}/rad   C_L0 = {info['CL0']:.3f}   C_Lmax = {info['CLmax']:.2f}<br>"
-            f"V_estol = {info['Vs']:.2f} m/s   S = {info['Sref']:.3f} m²   b = {info['bref']:.2f} m")
+        self.summary.setHtml(info_html(self.state.manager.backend, ac, info))
         self.info.setText(f"{ac.name}  —  {len(ac.surfaces)} superfícies, {len(ac.propulsion)} motores, "
                           f"{len(ac.tanks)} tanques")
-        if hasattr(self, "_tank_info") and self._tank_info is not None:
+        if self._tank_info is not None:
             try:
                 key = self.comp_list.currentItem().data(QtCore.Qt.ItemDataRole.UserRole)
                 t = ac.tanks[int(key.split(":")[1])]
@@ -707,3 +775,115 @@ class ConfigTab(QtWidgets.QWidget):
             except Exception:
                 pass
 
+
+def _tbl(title: str, rows: list[tuple[str, str]]) -> str:
+    tr = "".join(f"<tr><td style='color:#444;padding-right:8px'>{escape(k)}</td><td><b>{v}</b></td></tr>"
+                 for k, v in rows)
+    return f"<h4 style='margin:10px 0 2px 0;color:#1f4e8c'>{escape(title)}</h4><table cellspacing=0>{tr}</table>"
+
+
+def info_html(backend, ac, info) -> str:
+    """painel da direita: tudo o que dá para saber da configuração sem simular"""
+    from aerosim.model.features import features
+    from aerosim.model.universal import build_model
+    G = 9.80665
+    model = build_model(ac)
+    f = features(ac)
+    S, c, b = model.S, model.c, model.b
+    AR = b * b / S if S else float("nan")
+    m, cg = info["mass"], info["cg"]
+    sm = info["static_margin"] * 100
+    warn = []
+    out = [f"<h3 style='margin:0'>{escape(ac.name)}</h3><div style='color:#555'>{escape(f.summary())}</div>"]
+    mp = None
+    try:
+        with backend.session_for(model) as s:
+            mp = s.mass_props()
+            units = [u for u in ac.propulsion if u.enabled]
+            T0 = sum(s.prop_point(i, 0.0, 1.0)["T"] for i in range(len(units)))
+    except Exception:
+        units, T0 = [], float("nan")
+    dry = model.mass["m"]
+    liq = sum(t.liquid_mass for t in ac.tanks)
+    pay = ac.payload.mass if ac.payload.enabled else 0.0
+    rows = [("massa total", f"{m:.3f} kg"), ("aeronave seca", f"{dry:.3f} kg"), ("líquido nos tanques", f"{liq:.3f} kg"),
+            ("carga LAPES", f"{pay:.3f} kg"),
+            ("CG (x, y, z)", f"({cg[0]:.3f}, {cg[1]:.3f}, {cg[2]:.3f}) m"),
+            ("CG em % da CMA", f"{100 * model.mac_frac(cg[0]):.1f} %")]
+    if mp is not None and "I" in mp:
+        I = np.asarray(mp["I"])
+        rows.append(("Ixx, Iyy, Izz", f"{I[0, 0]:.3f}, {I[1, 1]:.3f}, {I[2, 2]:.3f} kg·m²"))
+    out.append(_tbl("Massa e CG", rows))
+    cor = "#080" if 5 <= sm <= 30 else "#b00"
+    if not 5 <= sm <= 30:
+        warn.append(f"margem estática {sm:.1f} % fora de 5–30 %")
+    rows = [("S, b, AR", f"{S:.3f} m², {b:.2f} m, {AR:.2f}"), ("CMA (c̄)", f"{c:.3f} m"),
+            ("C_L0, C_Lα", f"{info['CL0']:.3f}, {info['CLa']:.2f} /rad"),
+            ("C_Lmax (α de estol)", f"{info['CLmax']:.2f} ({info['alpha_stall']:.1f}°)"),
+            ("margem estática", f"<span style='color:{cor}'>{sm:.1f} %</span>"),
+            ("ponto neutro x_NP", f"{info['x_np']:.3f} m"), ("V de estol", f"{info['Vs']:.2f} m/s")]
+    try:
+        tv = model.tail_volumes(cg[0])
+        if tv["Sh"] > 0:
+            rows.append(("volume de cauda horizontal V_H", f"{tv['VH']:.3f} (braço {tv['lh']:.2f} m)"))
+        if tv["Sv"] > 0:
+            rows.append(("volume de cauda vertical V_V", f"{tv['VV']:.4f} (braço {tv['lv']:.2f} m)"))
+    except Exception:
+        pass
+    out.append(_tbl("Aerodinâmica (núcleo)", rows))
+    W = m * G
+    rows = [("carga alar W/S", f"{W / S:.1f} N/m² ({m / S:.2f} kg/m²)"),
+            ("tração estática total", f"{T0:.1f} N"), ("T/W estático", f"{T0 / W:.3f}" if W else "—")]
+    out.append(_tbl("Cargas", rows))
+    if T0 / W < 0.25:
+        warn.append(f"T/W estático baixo ({T0 / W:.2f})")
+    rows = []
+    for u in units:
+        bt = u.battery
+        rows.append((u.name, (f"polinômio '{escape(u.thrust_poly.name)}'" if u.thrust_model == "poly" else
+                              f"{u.motor.Kv:.0f} Kv, hélice {u.propeller.D * 39.37:.1f}\"") +
+                     f"; bateria {bt.cells}S {bt.capacity_mAh:.0f} mAh ({bt.Voc * bt.capacity_mAh / 1000:.0f} Wh)"))
+    if rows:
+        out.append(_tbl("Propulsão", rows))
+    g = ac.gear
+    legs = g.legs()
+    mains = [q for q in legs if q.kind == "main"]
+    steer = [q for q in legs if q.kind == "steer"]
+    rows = [("tipo", g.layout)]
+    if mains and steer:
+        rows.append(("distância entre eixos", f"{abs(steer[0].x - mains[0].x):.3f} m"))
+        if g.layout == "tricycle":
+            frac = (steer[0].x - cg[0]) / (steer[0].x - mains[0].x) if steer[0].x != mains[0].x else float("nan")
+            rows.append(("peso na bequilha (estático)", f"{100 * (1 - frac):.1f} %"))
+            if not 0.05 <= 1 - frac <= 0.25:
+                warn.append(f"peso na bequilha {100 * (1 - frac):.0f} % (usual 5–20 %)")
+    if len(mains) >= 2:
+        rows.append(("bitola", f"{abs(mains[0].y - mains[-1].y):.3f} m"))
+    skids = [q for q in legs if q.kind == "skid"]
+    if mains and skids and mains[0].x > skids[0].x:
+        rows.append(("θ que encosta a cauda", f"{math.degrees(math.atan2(mains[0].z - skids[0].z, mains[0].x - skids[0].x)):.1f}°"))
+    out.append(_tbl("Trem de pouso", rows))
+    af = ac.airfield
+    rows = [("decolagem", "do chão" if af.takeoff_from == "chão" else
+             f"de uma mesa de {af.table_height:g} m de altura, {af.table_length:g} m à frente"),
+            ("pouso", "no chão" if af.landing_on == "chão" else
+             f"numa plataforma de {af.platform_height:g} m × {af.platform_length:g} m"),
+            ("distância máxima de decolagem", f"{af.runway_max:g} m")]
+    if af.landing_max > 0:
+        rows.append(("distância máxima de pouso", f"{af.landing_max:g} m"))
+    out.append(_tbl("Pista", rows))
+    P = ac.payload
+    drop = next((e for e in ac.mission.events if e.kind == "drop"), None)
+    if P.enabled:
+        rows = [("massa", f"{P.mass:.2f} kg"), ("posição", f"({P.x:.3f}, {P.y:.3f}, {P.z:.3f}) m"),
+                ("soltura", f"perna {drop.leg} ({escape(ac.mission.names()[drop.leg]) if drop.leg < len(ac.mission.legs) else '?'}), "
+                 f"s = {drop.s:.0f} m" if drop else "sem evento de soltura"),
+                ("alvo", f"n = {P.target_n:g} m, e = {P.target_e:g} m" + (" (procura o ponto)" if P.aim else ""))]
+        out.append(_tbl("LAPES", rows))
+    segs = ac.mission.segments()
+    out.append(_tbl("Percurso", [("pernas", str(len(segs))), ("comprimento", f"{sum(q['L'] for q in segs):.0f} m"),
+                                 ("altura máx.", f"{max((q['h1'] for q in segs), default=0):.0f} m")]))
+    if warn:
+        out.append("<h4 style='color:#b00;margin:10px 0 2px 0'>Avisos</h4><ul style='margin:0'>" +
+                   "".join(f"<li>{escape(w)}</li>" for w in warn) + "</ul>")
+    return "".join(out)

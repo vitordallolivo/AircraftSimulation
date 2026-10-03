@@ -13,6 +13,7 @@ const vec = @import("../math/vec.zig");
 const aero = @import("../physics/aero.zig");
 const prop = @import("../physics/propulsion.zig");
 const gear = @import("../physics/gear.zig");
+const terrain = @import("../physics/terrain.zig");
 const mass = @import("../physics/mass.zig");
 const atm = @import("../physics/atmosphere.zig");
 const G = @import("../control/guidance.zig");
@@ -88,7 +89,8 @@ pub fn f(c: S.Ctx, t: f64, x: []const f64, dx: []f64, out: ?*Out) void {
     const cmd = &o.c;
 
     // forças e momentos
-    const ae = aero.compute(p, Vr, w, ms.rcg, h, .{ cmd.de, cmd.da, cmd.dr });
+    const hgnd = terrain.height(p, x[S.N], x[S.E]);
+    const ae = aero.compute(p, Vr, w, ms.rcg, h - hgnd, .{ cmd.de, cmd.da, cmd.dr });
     const pr = prop.compute(p, Vr, w, ms.rcg, x[S.RPS0 .. S.RPS0 + L.max_props], cmd.thr, cmd.dr, x[S.THE], h);
     const gr = gear.compute(c, x, R, ms.rcg, cmd.dw);
     var F = ae.F + pr.F + gr.F;
@@ -172,7 +174,10 @@ pub fn f(c: S.Ctx, t: f64, x: []const f64, dx: []f64, out: ?*Out) void {
     var xn: f64 = 0;
     const ng: usize = @intCast(p.n_gear);
     for (p.gear[0..ng]) |*g| {
-        if (g.kind == T.gear_skid) o.htail = @min(o.htail, -(x[S.D] + vec.mul(R, vec.v3(g.r))[2]));
+        if (g.kind == T.gear_skid) {
+            const pc = vec.mul(R, vec.v3(g.r));
+            o.htail = @min(o.htail, -(x[S.D] + pc[2]) - terrain.height(p, x[S.N] + pc[0], x[S.E] + pc[1]));
+        }
         if (g.kind == T.gear_main) {
             xm += g.r[0];
             nm += 1;

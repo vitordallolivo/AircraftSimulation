@@ -68,6 +68,11 @@ class AerodynamicsSimulation(SimulationBase):
               ParamSpec("use_asb_ll", "comparar: AeroSandbox LiftingLine", False, kind="bool")]
         for p_ in ps:
             p_.group = "Caso" if p_.key in ("V", "a0", "a1", "da", "alpha_d", "xcg") else "Métodos"
+        A = "Polar da aeronave completa (núcleo 6GDL)"
+        ps += [ParamSpec("full", "curvas da aeronave inteira com profundor e β (o que a simulação usa)", True,
+                         kind="bool", group=A),
+               ParamSpec("de", "δe para comparar", 10.0, minimum=0, maximum=30, unit="°", group=A),
+               ParamSpec("alpha_beta", "α da varredura em β", 4.0, minimum=-5, maximum=15, unit="°", group=A)]
         D = "Dispositivos de asa"
         if f is not None and f.has_tip_devices:
             ps.append(ParamSpec("tips", "avaliar os dispositivos da asa", True, kind="bool", group=D))
@@ -92,7 +97,7 @@ class AerodynamicsSimulation(SimulationBase):
     def plots(self):
         return self.plots_for(None)
 
-    def plots_for(self, ac):
+    def plots_for(self, ac, values=None):
         return [PlotSpec("CL", "Sustentação × ângulo de ataque", "alpha", ("CL",), "α (°)", "C_L", live=False,
                          source="series:polar_*"),
                 PlotSpec("CD", "Polar de arrasto (arrasto total)", "CD", ("CL",), "C_D", "C_L", live=False,
@@ -104,6 +109,14 @@ class AerodynamicsSimulation(SimulationBase):
                 PlotSpec("span", "Sustentação ao longo da envergadura (no α das derivadas)", "eta",
                          ("lltdrek", "elíptica (ideal)", "Schrenk (estimativa clássica)"), "posição na semiasa (2y/b)",
                          "c·c_l / c_ref", live=False, source="series:span"),
+                PlotSpec("pa_CL", "Aeronave completa (núcleo 6GDL): C_L × α com o profundor", "alpha", ("y",), "α (°)",
+                         "C_L", live=False, source="series:paL_*"),
+                PlotSpec("pa_Cm", "Aeronave completa: C_m no CG × α com o profundor (controle e estabilidade)", "alpha",
+                         ("y",), "α (°)", "C_m", live=False, source="series:paM_*"),
+                PlotSpec("pa_CD", "Aeronave completa: polar de arrasto", "CD", ("CL",), "C_D", "C_L", live=False,
+                         source="series:paD_*"),
+                PlotSpec("pa_b", "Aeronave completa: látero-direcional estático × β", "beta", ("y",), "β (°)",
+                         "coeficiente (—)", live=False, source="series:paB_*"),
                 PlotSpec("tip_e", "Dispositivos de asa: ganho de eficiência de envergadura × altura", "h_b", ("e",),
                          "altura do dispositivo / envergadura (h/b)", "e / e sem dispositivo", live=False,
                          source="series:tipe_*"),
@@ -178,10 +191,50 @@ class AerodynamicsSimulation(SimulationBase):
             add("info", "método principal", LABEL[main], "lltdrek indisponível", "usando o próximo disponível", "",
                 "métodos")
         self._diagnose(ac, f, res, metrics, main, CL_cru, V, rho, mass, S, AR, add, P)
+        if P("full"):
+            ctx.on_progress(0.85, "curvas da aeronave completa (núcleo)")
+            self._full(ctx, ac, V, S_, summ, add, P)
         if P("tips"):
             ctx.on_progress(0.9, "dispositivos de ponta (Trefftz)")
             self._tips(model, f, S_, summ, add, P, CL_cru, metrics[main].get("e", raymer_oswald(AR)), res, main)
         return SimResult(series=S_, summary=summ, checks=checks)
+
+    def _full(self, ctx, ac, V, S_, summ, add, P):
+        from .polar import aircraft_curves
+        A, B = aircraft_curves(ctx.backend, ac, V, P("a0") - 4, P("a1") + 10, 0.5, P("de"), P("alpha_beta"))
+        de = P("de")
+        S_["paL_C_L total (δe = 0)"] = dict(alpha=A["alpha"], y=A["CL"], _color="#000000", _width=2.4)
+        S_["paL_C_L da asa"] = dict(alpha=A["alpha"], y=A["CL_wing"], _color="#1f77b4")
+        if np.nanmax(np.abs(A["CL_ht"])) > 1e-6:
+            S_["paL_C_L da EH"] = dict(alpha=A["alpha"], y=A["CL_ht"], _color="#2ca02c")
+        S_[f"paL_δe = −{de:g}°"] = dict(alpha=A["alpha"], y=A["CL_de_m"], _color="#2ca02c", _dash="dash")
+        S_[f"paL_δe = +{de:g}°"] = dict(alpha=A["alpha"], y=A["CL_de_p"], _color="#d62728", _dash="dash")
+        S_[f"paM_δe = −{de:g}° (cabra)"] = dict(alpha=A["alpha"], y=A["Cm_de_m"], _color="#2ca02c")
+        S_["paM_δe = 0"] = dict(alpha=A["alpha"], y=A["Cm"], _color="#000000", _width=2.4)
+        S_[f"paM_δe = +{de:g}° (pica)"] = dict(alpha=A["alpha"], y=A["Cm_de_p"], _color="#d62728")
+        S_["paM_C_m = 0 (equilíbrio)"] = dict(_hline=0.0, _color="#7f7f7f", _dash="dot")
+        S_["paD_aeronave completa"] = dict(CD=A["CD"], CL=A["CL"], _color="#000000", _width=2.2)
+        for k, lab, c in (("CY", "C_Y", "#9467bd"), ("Cl", "C_l (rolamento)", "#1f77b4"), ("Cn", "C_n (guinada)", "#d62728")):
+            S_[f"paB_{lab}"] = dict(beta=B["beta"], y=B[k], _color=c, _width=2)
+        S_["polar_aeronave_completa"] = A
+        S_["polar_beta"] = B
+        sb = np.abs(B["beta"]) <= 5
+        Cnb = float(np.polyfit(np.radians(B["beta"][sb]), B["Cn"][sb], 1)[0])
+        Clb = float(np.polyfit(np.radians(B["beta"][sb]), B["Cl"][sb], 1)[0])
+        summ["aeronave completa: C_nβ, C_lβ (1/rad)"] = [Cnb, Clb]
+        G = "aeronave completa (núcleo)"
+        add("ok" if Cnb > 0 else "falha", "estabilidade direcional C_nβ", f"{Cnb:.4f} /rad", "> 0",
+            "" if Cnb > 0 else "a aeronave não volta o nariz para o vento", "" if Cnb > 0 else
+            "aumente a EV ou o braço dela", G)
+        add("ok" if Clb < 0 else "atencao", "efeito diedro C_lβ", f"{Clb:.4f} /rad", "< 0",
+            "" if Clb < 0 else "sem efeito diedro estabilizante", "" if Clb < 0 else "aumente o diedro", G)
+        # o profundor consegue equilibrar no C_L máximo?
+        i = int(np.nanargmax(A["CL"]))
+        cm_up = A["Cm_de_m"][i]
+        add("ok" if cm_up >= 0 else "atencao", f"profundor equilibra no C_L máximo com δe = −{de:g}°",
+            f"C_m = {cm_up:+.3f}", "≥ 0 (consegue cabrar até o estol)",
+            "" if cm_up >= 0 else "com esse δe o nariz não sobe até o C_L máximo", "" if cm_up >= 0 else
+            "mais área/braço de profundor ou CG mais para trás", G)
 
     # ------------------------------------------------------------------ diagnóstico
     def _diagnose(self, ac, f, res, metrics, main, CL_cru, V, rho, mass, S, AR, add, P):

@@ -11,16 +11,23 @@ flowchart LR
         ISI["ISimulation<br/>parameters · plots · run"]
     end
     REG["simulations/__init__.py<br/>BUILTIN"]
-    subgraph SIMS["simulations/"]
+    subgraph SIMS["simulations/ (abas)"]
+        SZ["sizing.py"]
+        MI["mission.py<br/>missão por etapas, decolagem,<br/>curvas, MTOW, subida"]
+        PF["performance.py<br/>envelope + cálculo simples"]
+        TH["thrust.py"]
+        AE["aerodynamics.py<br/>+ polar da aeronave"]
+        ST["stability.py"]
+        BASE["base.py<br/>prepare, parallel"]
+    end
+    subgraph SUB["sem aba (usadas pelas abas, scripts e testes)"]
         TO["takeoff.py"]
         TU["turn.py"]
         EN["envelope.py"]
-        MI["mission.py"]
         CL["climb.py"]
         PO["polar.py"]
-        TH["thrust.py"]
-        BASE["base.py<br/>prepare, parallel"]
     end
+    FP["flightplots.py<br/>séries no estilo do legacy"]
     RUN["runner.py<br/>Runner, Stop: corrida em fatias"]
     CK["checkpoints.py<br/>CheckpointStore"]
     CAL["calibration.py<br/>polar → piloto"]
@@ -28,7 +35,8 @@ flowchart LR
     BE[["ISimSession (núcleo)"]]
     ISM --> REG --> SIMS
     ISI --> SIMS
-    SIMS --> RUN & CAL & ANA
+    SIMS --> SUB
+    SIMS --> RUN & CAL & ANA & FP
     RUN --> CK
     RUN --> BE
     classDef iface fill:#cfe3ff,stroke:#1f4e8c,stroke-width:2px,color:#0b2545
@@ -36,12 +44,16 @@ flowchart LR
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
+Abas (`tab = True`): `sizing`, `mission`, `performance`, `thrust`, `aerodynamics`, `stability`. As outras
+continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram modos ou partes de outra.
+
 | simulação | orientação |
 |---|---|
+| `mission` | **modo missão por etapas**: para ao entrar em cada etapa e salva o checkpoint "missão: início de <etapa>"; começa do chão ou de um desses; para no fim da etapa pedida; bisseção do ponto de soltura LAPES no início da perna da soltura. **só decolagem** (mapa s_R × δe1, ★ melhor). **curvas**: raio mínimo por V. **MTOW**: bisseção na massa extra; em cada massa testa (s_R ou V_R) × δe1 × ΔxCG em paralelo; passa se x_warning = 0, z_warning = 0 (e, se pedido, sem estol, cauda e V em h_t); com pouso em plataforma, roda a missão para o z_warning do pouso. **subida simulada** |
+| `performance` | envelope por altitude + `ISimBackend.simple_performance` (núcleo: potências, subida, planeio, curva × V, Peukert) com a polar do módulo de aerodinâmica |
 | `takeoff` | uma corrida até `h_end` (tempo real); opcional: varredura s_R × δe1 em paralelo |
 | `turn` | por V: reta até o início da curva → **checkpoint**; para cada raio troca só a curva e retoma |
 | `envelope` | por altitude (sem integrar no tempo): V_min, V_max, V_e, V*, V_cru, teto — método da planilha e/ou modelo completo; mais a tabela ao nível do mar (subida, planeio, raios, V-n) |
-| `mission` | checkpoints A (piloto liga), B (perna 1), C (perna da soltura); começa do chão ou de um checkpoint, para onde pedir; bisseção do ponto de soltura a partir de C |
 | `climb` | por V: nivela → checkpoint; gradientes crescentes a partir dele |
 | `polar` | coeficientes estáticos, margem estática |
 | `thrust` | tração/potência/corrente × V de cada motor (motor+hélice ou polinômio) |
@@ -51,6 +63,17 @@ flowchart LR
 `Runner` é a ferramenta comum: `start_ground()`, `start_air(seg)`, `start_from(checkpoint)`,
 `run(Stop(t=…, segment=…, autopilot=…, takeoff=…), chunk=…)`, `checkpoint(nome)`,
 `reconfigure(missão nova)`. Os checkpoints guardam só o estado; os parâmetros vêm da configuração atual.
+
+## Avisos de pista (`analysis.warnings`)
+
+| aviso | quando conta | valor |
+|---|---|---|
+| `x_warning` | sempre | n_LO − distância máxima de decolagem (0 se dentro; ∞ se não decolou) |
+| `z_warning` (decolagem) | só decolando de **mesa** | quanto o CG afundou abaixo da altura de repouso sobre a mesa depois de sair dela |
+| `z_warning` (pouso) | só pousando em **plataforma** | altura da plataforma − terreno no ponto do toque (tocou fora dela) |
+
+O terreno (mesas e plataformas) fica no núcleo (`core/src/physics/terrain.zig`): o trem, o efeito solo, o
+arredondamento e o alvo do pouso usam a altura do terreno sob cada ponto.
 
 ## Envelope de voo (adaptado do `Envelope_main`)
 

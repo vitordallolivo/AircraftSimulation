@@ -14,13 +14,14 @@ pub const version: u32 = 1;
 
 /// em ordem de dependência (as de dentro primeiro)
 pub const exported = .{
-    T.Surface,  T.PropUnit,   T.Gear,      T.Tank,      T.Segment, T.Event,
+    T.Surface,  T.PropUnit,   T.Gear,      T.Tank,      T.Segment, T.Event, T.Pad,
     T.Payload,  T.Environment, T.Takeoff,  T.Autopilot, T.Params,  T.Events,
     T.LogRow,   T.AeroCoeffs, T.PropPoint, T.MassProps, T.TrimPoint, T.PerfRow,
-    env.EnvCfg, env.EnvRow,     lin.LinModel,
+    env.EnvCfg, env.EnvRow,     lin.LinModel, sp.SimpleCfg, sp.SimpleRow, sp.SimpleSummary,
 };
 const env = @import("sim/envelope.zig");
 const lin = @import("sim/linear.zig");
+const sp = @import("sim/simple_perf.zig");
 
 fn shortName(comptime Ty: type) []const u8 {
     const full = @typeName(Ty);
