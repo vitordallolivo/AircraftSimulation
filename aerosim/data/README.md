@@ -3,6 +3,25 @@
 Implementa `IAircraftSource` e `ICatalogSource`. A GUI e os scripts chamam `load_aircraft(path)` /
 `save_aircraft(ac, path)` (o formato sai da extensão) ou usam `CellMapAircraftSource` para a planilha.
 
+## Como chamar
+
+```python
+from aerosim.data import load_aircraft, save_aircraft, JsonProjectStore
+from aerosim.data.cellmap import CellMapAircraftSource
+
+ac = load_aircraft("data/aircraft/Asa_voadora.json")      # .json, .cfg ou .xlsx (pela extensão)
+save_aircraft(ac, "meu.cfg")
+
+store = JsonProjectStore()                     # "meus aviões" (~/aerosim_aeronaves ou AEROSIM_PROJETOS)
+store.save(ac, "asa nova"); store.list(); store.load("asa nova")
+
+src = CellMapAircraftSource("data/mappings/dados_desempenho.json")
+ac = src.load("Dados_Desempenho.xlsx")         # planilha por endereço de célula
+src.catalog.thrust_sets                        # conjuntos de tração da aba Tracao
+```
+
+## Como funciona
+
 ```mermaid
 flowchart LR
     subgraph API["interface (aerosim/interfaces)"]
@@ -29,7 +48,7 @@ flowchart LR
 | `.cfg` | INI: `[aircraft]`, `[surfaces.0]`, `[surfaces.0.sections.1]`, `[propulsion.0]`… listas em `[ ]` | `[motor: nome]`, `[helice: nome]`, `[bateria: nome]`, `[tracao: nome]` |
 | `.xlsx` | aba `geral` (seção, chave, valor) + uma aba-tabela por lista | abas `motores`, `helices`, `helices_tabela`, `baterias`, `tracao` |
 
-## Planilha Dados_Desempenho.xlsx (mapa de células)
+### Planilha Dados_Desempenho.xlsx (mapa de células)
 
 `CellMapAircraftSource(mapa)` lê e grava as mesmas células. O mapa
 `data/mappings/dados_desempenho.json` foi tirado do `AircraftData()` original:

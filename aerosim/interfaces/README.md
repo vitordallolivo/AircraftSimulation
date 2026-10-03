@@ -3,6 +3,24 @@
 Só classes abstratas e tipos de dados; nenhuma implementação. Quem usa uma camada depende daqui, nunca
 do módulo concreto.
 
+## Como chamar
+
+Ninguém instancia estas classes: elas dizem o que cada camada precisa ter. Trocar uma camada é
+passar outro objeto que cumpra a interface — por exemplo um núcleo falso nos testes:
+
+```python
+from aerosim.interfaces import ISimBackend
+from aerosim.manager import SimulationManager
+
+class MeuNucleo(ISimBackend):
+    ...                                        # open_session, limits, log_channels, translator
+m = SimulationManager(MeuNucleo())             # o manager e a GUI funcionam iguais
+```
+
+`tests/manager/test_orchestration.py` faz isso com um `FakeBackend`.
+
+## Como funciona
+
 ```mermaid
 flowchart LR
     subgraph IF["interfaces"]

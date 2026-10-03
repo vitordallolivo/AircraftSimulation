@@ -31,6 +31,10 @@ pub fn build(b: *std.Build) void {
     mod.addOptions("build_options", opts);
 
     const lib = b.addLibrary(.{ .linkage = .dynamic, .name = "aerosim", .root_module = mod });
+
+    // o mesmo núcleo como módulo Zig (`@import("aerosim")`): usado pelo aerodrive
+    const zmod = b.addModule("aerosim", .{ .root_source_file = b.path("src/lib.zig"), .target = target, .optimize = optimize });
+    zmod.addOptions("build_options", opts);
     b.installArtifact(lib);
 
     // testes: tudo (`zig build test`) ou por grupo (`zig build test-math`, ...)

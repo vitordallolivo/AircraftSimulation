@@ -3,6 +3,41 @@
 Escolhe qual simulação roda, com que parâmetros, até onde, de onde retoma e o que itera. Fala com o
 núcleo só pela `ISimSession`; a GUI fala com ele só pela `ISimulationManager`.
 
+## Como chamar
+
+Rode da raiz do repositório:
+
+```python
+from aerosim.manager import SimulationManager, Runner, Stop
+from aerosim.data import load_aircraft
+
+m = SimulationManager()                       # usa o núcleo Zig; SimulationManager(backend) troca o núcleo
+ac = load_aircraft("data/aircraft/Convencional_original.json")
+
+r = m.run("mission", ac)                                         # missão inteira
+r = m.run("mission", ac, {"until": "fim: manobra 1"})            # para no fim de uma etapa (salva checkpoint)
+r = m.run("mission", ac, {"start": "início: cruzeiro 1"})        # recomeça dali
+r = m.run("mission", ac, {"mode": "só decolagem"})               # otimiza o acionamento do profundor
+r = m.run("mission", ac, {"mode": "curvas: raio mínimo", "V_list": "13, 15"})
+r = m.run("performance", ac)                                     # contas da planilha (sem simulação)
+
+r.status, r.summary, r.series, r.log, r.checks                   # estado, números, tabelas, registro, diagnóstico
+m.run("mission", ac, on_chunk=print, on_progress=lambda f, txt: None, cancel=evento)   # ao vivo / cancelável
+```
+
+`Runner` para montar uma corrida à mão (é o que as simulações usam):
+
+```python
+from aerosim.backend.zig import ZigBackend
+with Runner(ZigBackend(), ac) as r:
+    r.start_ground()                          # ou start_air(perna), start_from(checkpoint)
+    out = r.run(Stop(t=10.0), live=False)     # Stop(t, segment, autopilot, takeoff)
+    ck = r.checkpoint("t = 10 s")
+out.status, out.log["h"]
+```
+
+## Como funciona
+
 ```mermaid
 flowchart LR
     subgraph API["interface"]
@@ -64,7 +99,7 @@ continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram m
 `run(Stop(t=…, segment=…, autopilot=…, takeoff=…), chunk=…)`, `checkpoint(nome)`,
 `reconfigure(missão nova)`. Os checkpoints guardam só o estado; os parâmetros vêm da configuração atual.
 
-## Decolagem: x_warning e z_warning (`takeoff_opt.py`)
+### Decolagem: x_warning e z_warning (`takeoff_opt.py`)
 
 | | |
 |---|---|
@@ -78,7 +113,7 @@ usando uma menor se nenhum ponto passar.
 O terreno (mesas e plataformas) fica no núcleo (`core/src/physics/terrain.zig`): o trem, o efeito solo, o
 arredondamento e o alvo do pouso usam a altura do terreno sob cada ponto.
 
-## Envelope de voo (adaptado do `Envelope_main`)
+### Envelope de voo (adaptado do `Envelope_main`)
 
 O cálculo está no núcleo (`core/src/sim/envelope.zig`); a simulação só monta os dados e os gráficos.
 Para cada altitude (passo `h_step`) calcula ρ(h) e acha V_min e V_max onde a tração disponível cruza a
