@@ -3,7 +3,7 @@
 //!   aerodrive [avião.json] [fps=30|60]
 //!   aerodrive --shot <saída.png> [avião.json] [LxA] [tela=NOME] [voo=SEG] [modo=manual|auto]
 //!             [cam=seguir|chao|livre] [mesa] [dados=PASTA] [gravar] [f3] [controle]
-//!     tela: inicio, aeronave, voar, controle, camera, som, voos, dados, voo, pausa
+//!     tela: inicio, aeronave, voar, opcoes, controle, camera, som, voos, dados, video, voo, pausa
 //!
 //! No modo --shot nada é lido nem gravado nas configurações (fotos sempre iguais).
 const std = @import("std");
@@ -26,6 +26,7 @@ const Args = struct {
     data_dir: ?[]const u8 = null,
     record: bool = false,
     dev: bool = false,
+    channel: usize = 0, // tela=controle: qual canal mostrar
 };
 
 fn parseArgs(argv: []const [:0]const u8) !Args {
@@ -38,7 +39,7 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
             if (i >= argv.len) return error.BadArgs;
             a.shot = argv[i];
         } else if (std.mem.startsWith(u8, s, "tela=")) {
-            const names = .{ .{ "inicio", .main }, .{ "aeronave", .aircraft }, .{ "voar", .fly }, .{ "controle", .control }, .{ "camera", .camera }, .{ "som", .sound }, .{ "voos", .recordings }, .{ "dados", .viewer }, .{ "voo", .flight }, .{ "pausa", .pause } };
+            const names = .{ .{ "inicio", .main }, .{ "aeronave", .aircraft }, .{ "voar", .fly }, .{ "controle", .control }, .{ "camera", .camera }, .{ "som", .sound }, .{ "voos", .recordings }, .{ "dados", .viewer }, .{ "video", .video }, .{ "opcoes", .options }, .{ "voo", .flight }, .{ "pausa", .pause } };
             var ok = false;
             inline for (names) |n| if (std.mem.eql(u8, s[5..], n[0])) {
                 a.screen = n[1];
@@ -53,6 +54,8 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
         } else if (std.mem.startsWith(u8, s, "cam=")) {
             const c = s[4..];
             a.cam = if (std.mem.eql(u8, c, "chao")) .ground else if (std.mem.eql(u8, c, "seguir")) .chase else if (std.mem.eql(u8, c, "livre")) .orbit else return error.BadArgs;
+        } else if (std.mem.startsWith(u8, s, "canal=")) {
+            a.channel = std.fmt.parseInt(usize, s[6..], 10) catch return error.BadArgs;
         } else if (std.mem.eql(u8, s, "controle")) {
             @import("ui/glyphs.zig").force_pad = true;
         } else if (std.mem.eql(u8, s, "f3")) {
@@ -84,7 +87,7 @@ pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
     const argv = try init.minimal.args.toSlice(arena);
     const args = parseArgs(argv) catch {
-        std.debug.print("uso: aerodrive [avião.json] [fps=30|60]\n     aerodrive --shot <saída.png> [avião.json] [LxA] [tela=inicio|aeronave|voar|controle|camera|som|voos|dados|voo|pausa] [voo=SEG] [modo=manual|auto] [cam=seguir|chao|livre] [mesa] [dados=PASTA] [gravar] [f3] [controle]\n", .{});
+        std.debug.print("uso: aerodrive [avião.json] [fps=30|60]\n     aerodrive --shot <saída.png> [avião.json] [LxA] [tela=inicio|aeronave|voar|opcoes|controle|camera|som|voos|dados|video|voo|pausa] [voo=SEG] [modo=manual|auto] [cam=seguir|chao|livre] [mesa] [dados=PASTA] [gravar] [f3] [controle]\n", .{});
         std.process.exit(2);
     };
     var paths = try paths_mod.resolve(arena, init.environ_map);
@@ -121,6 +124,7 @@ pub fn main(init: std.process.Init) !void {
     }
     if (args.table) app.session().scenario = .table;
     app.settings.dev_overlay = args.dev;
+    app.screens.control.channel = args.channel;
     app.session().start_mode = if (args.mode_auto) .autopilot else .manual;
     if (args.cam) |c| app.camera().start = c;
     if (args.data_dir) |d| {

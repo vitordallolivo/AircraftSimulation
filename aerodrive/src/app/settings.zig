@@ -32,6 +32,7 @@ pub const Settings = struct {
     volume: f64 = 0.7, // 0..1
     fps: u32 = 60,
     dev_overlay: bool = false,
+    fullscreen: bool = false,
 
     pub fn aircraft(s: *const Settings) []const u8 {
         return s.aircraft_buf[0..s.aircraft_len];
@@ -57,7 +58,7 @@ pub const Settings = struct {
         var arena = std.heap.ArenaAllocator.init(gpa);
         defer arena.deinit();
         const d = std.json.parseFromSliceLeaky(Disk, arena.allocator(), bytes, .{ .ignore_unknown_fields = true }) catch return error.BadSettings;
-        var s: Settings = .{ .session = d.session, .profile = d.profile, .camera = d.camera, .volume = d.volume, .fps = d.fps, .dev_overlay = d.dev_overlay };
+        var s: Settings = .{ .session = d.session, .profile = d.profile, .camera = d.camera, .volume = d.volume, .fps = d.fps, .dev_overlay = d.dev_overlay, .fullscreen = d.fullscreen };
         s.setAircraft(d.aircraft);
         s.sanitize();
         return s;
@@ -65,7 +66,7 @@ pub const Settings = struct {
 
     /// configurações → JSON (o chamador libera)
     pub fn toJson(s: *const Settings, gpa: std.mem.Allocator) ![]u8 {
-        const d: Disk = .{ .aircraft = s.aircraft(), .session = s.session, .profile = s.profile, .camera = s.camera, .volume = s.volume, .fps = s.fps, .dev_overlay = s.dev_overlay };
+        const d: Disk = .{ .aircraft = s.aircraft(), .session = s.session, .profile = s.profile, .camera = s.camera, .volume = s.volume, .fps = s.fps, .dev_overlay = s.dev_overlay, .fullscreen = s.fullscreen };
         return std.json.Stringify.valueAlloc(gpa, d, .{ .whitespace = .indent_2 });
     }
 
@@ -93,6 +94,7 @@ const Disk = struct {
     volume: f64 = 0.7,
     fps: u32 = 60,
     dev_overlay: bool = false,
+    fullscreen: bool = false,
 };
 
 fn fix(v: f64, lo: f64, hi: f64, d: f64) f64 {

@@ -24,6 +24,8 @@ Missão. Feito em Zig com [raylib-zig](https://github.com/raylib-zig/raylib-zig)
 
 ![Pausa](docs/img/pausa.png)
 
+![Vídeo do voo gravado, assistido dentro do jogo](docs/img/video_no_jogo.png)
+
 ![Voo gravado: gráficos com os valores sob o mouse](docs/img/voo_gravado_dados.png)
 
 ![Painel F3](docs/img/painel_f3.png)
@@ -74,8 +76,9 @@ zig build run                                                   # abre o último
 zig build run -- ../data/aircraft/Asa_voadora.json              # ou um avião salvo pela GUI
 ```
 
-No **menu inicial**: Voar, Aeronave (arquivo, sloshing, LAPES, vento), Controle, Câmera, Som (teste),
-Voos gravados. Mouse, teclado ou controle: passar o mouse destaca, ↑↓ / direcional escolhe, Enter / A
+No **menu inicial**: Voar, Aeronave (arquivo, sloshing, LAPES, vento) e **Opções** (Controle, Câmera,
+Som, Voos gravados, tela cheia, painel F3). Na **pausa** do voo (Start) estão todos eles também, menos
+Voar e Aeronave. Mouse, teclado ou controle: passar o mouse destaca, ↑↓ / direcional escolhe, Enter / A
 abre, Esc / B volta, e cada tela mostra os símbolos dos botões do Xbox (ou as teclas, sem controle).
 Os menus fazem um clique ao apertar.
 
@@ -114,6 +117,18 @@ ação, as duas trocam):
 | girar a câmera livre | analógico direito (se livre) | arrastar o mouse |
 | painel de desempenho (fps, RAM, CPU) | — | F3 |
 
+**Deflexão das superfícies**: cada comando vai só até o ângulo em que a superfície estola (calculado
+pela corda do comando — linha vermelha suave no gráfico do menu Controle, "estol ±X°"). Por padrão
+vai até esse máximo; "Deflexão máxima ±" restringe mais (fica tracejado no gráfico).
+
+**Tela**: F11 (ou Opções → Tela cheia) alterna janela e tela cheia na resolução do monitor. Com o jogo
+aberto a tela não escurece nem apaga (jogar só com o controle não conta como atividade para o
+sistema): o jogo segura um bloqueio de ociosidade (`gnome-session-inhibit` ou `systemd-inhibit`) e
+avisa o protetor de tela a cada 30 s.
+
+**Voos gravados**: assistir o vídeo dentro do jogo (pausa, ← → pula 5 s, clicar na barra), abrir no
+tocador do sistema, ver os dados, apagar só o vídeo ou a gravação inteira (aperta duas vezes).
+
 Som: a hélice fica mais aguda e mais alta com o motor, e o vento cresce com a velocidade (menu Som
 tem os dois testes).
 
@@ -128,7 +143,7 @@ xvfb-run -a zig build shot -- voo.png ../data/aircraft/Convencional_original.jso
 xvfb-run -a zig build shot -- menu.png tela=controle
 ```
 
-`tela=` inicio, aeronave, voar, controle, camera, som, voos, dados, voo, pausa · `voo=SEG` voa antes da
+`tela=` inicio, aeronave, voar, opcoes, controle, camera, som, voos, dados, video, voo, pausa · `canal=N` · `voo=SEG` voa antes da
 foto · `modo=manual|auto` · `cam=seguir|chao|livre` · `mesa` · `f3` · `gravar` · `dados=PASTA` ·
 `controle` (mostra os símbolos do Xbox mesmo sem controle ligado).
 

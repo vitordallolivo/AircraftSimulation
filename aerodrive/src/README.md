@@ -87,14 +87,16 @@ arquivos que são o mesmo avião (`fingerprint`: o JSON sem nome e sem campo).
 |---|---|
 | `main_menu.zig` | logo, "AeroDrive", itens e a aeronave viva (o controle mexe nas superfícies) |
 | `aircraft_menu.zig` | lista de arquivos (troca o 3D na hora), sloshing, LAPES, vento com a rosa dos ventos |
+| `options_menu.zig` | Controle, Câmera, Som, Voos gravados, tela cheia, painel F3 |
+| `video_view.zig` | assistir o vídeo de um voo gravado (pausa, pular 5 s, barra de tempo) |
 | `fly_menu.zig` | decola do chão/mesa, pousa no chão/plataforma, quem pilota, câmera, fps, "Decolar" |
 | `control_menu.zig` | Comandos: esquema, entrada e curva de cada canal (só os que o avião tem), ponto ao vivo, zoom na peça · Botões: remapear as ações do voo |
 | `camera_menu.zig` | distância/altura/fov da perseguição com prévia |
 | `sound_menu.zig` | volume e teste do som do motor |
-| `recordings_menu.zig` | gravações; abrir vídeo, dados ou a pasta |
+| `recordings_menu.zig` | gravações; assistir aqui, abrir no tocador, dados, pasta, apagar vídeo/gravação |
 | `recording_view.zig` | os gráficos disponíveis do voo gravado |
 | `flight.zig` | o voo (HUD, minimapa, vento, LAPES, gravação) |
-| `pause_menu.zig` | continuar, controle, câmera, gravar, recomeçar, menu |
+| `pause_menu.zig` | continuar, controle, câmera, som, voos gravados, gravar, recomeçar, tela cheia, menu |
 
 ## ui/ — o que as telas usam
 
@@ -132,6 +134,9 @@ positivas, até ±50 m, limites de quantidade).
 const f = features.detect(ac);          // f.has(.rudder), f.channels(&buf), f.payload, f.tanks
 const z = features.focus(&skel, .aileron);   // ponto e tamanho da peça (zoom do menu Controle)
 ```
+
+`features.stallLimit(ac, canal)`: deflexão de estol do comando (12° / τ, τ pela corda do comando;
+no máximo 30°). O `App.effectiveProfile()` nunca deixa o controle passar dela.
 
 Canais pelos comandos das superfícies: aileron/elevon → rolagem; profundor/elevon/ruddervator →
 arfagem; leme/ruddervator → guinada; motor se houver hélice.
@@ -228,6 +233,21 @@ som.updateWind(V_ar, volume);          // vento: cresce com a velocidade
 som.click(volume);                     // menus (o App toca quando `ui.feedback`)
 som.silence();
 ```
+
+## record/video_player.zig — vídeo dentro do jogo
+
+```zig
+const info = try video_player.probe(io, gpa, "voo/video.mp4");     // ffprobe: tamanho, fps, duração
+var d = try Decoder.start(io, gpa, "voo/video.mp4", info, t0, 1280); // ffmpeg → quadros RGBA por um cano
+while (d.next()) rl.updateTexture(tex, d.frame.ptr);
+d.stop(io);                                                        // fecha o cano e encerra o ffmpeg
+```
+
+## sys/keep_awake.zig — a tela não escurece
+
+`KeepAwake.start(io)` segura um bloqueio de ociosidade (processo `gnome-session-inhibit` ou
+`systemd-inhibit` rodando até o jogo fechar); `tick(io, dt)` avisa o protetor de tela a cada 30 s;
+`stop(io)` solta.
 
 ## sys/stats.zig
 

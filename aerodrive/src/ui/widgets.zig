@@ -87,7 +87,6 @@ pub const Ui = struct {
         } else u.repeat_t = 0;
         u.held = dir;
         u.nav = n;
-        if (n.back) u.feedback = true;
         if (u.last_count > 0) {
             if (n.up) u.focus = (u.focus + u.last_count - 1) % u.last_count;
             if (n.down) u.focus = (u.focus + 1) % u.last_count;
