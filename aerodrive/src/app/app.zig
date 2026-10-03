@@ -14,6 +14,8 @@ const render = @import("../gfx/render.zig");
 const theme = @import("../ui/theme.zig");
 const widgets = @import("../ui/widgets.zig");
 const settings_mod = @import("settings.zig");
+const store_mod = @import("store.zig");
+const PlaneSettings = @import("plane_settings.zig").PlaneSettings;
 const paths_mod = @import("paths.zig");
 const library = @import("library.zig");
 const Player = @import("../audio/player.zig").Player;
@@ -85,8 +87,10 @@ pub const App = struct {
     gpa: std.mem.Allocator,
     fonts: theme.Fonts,
     ui: widgets.Ui,
-    settings: settings_mod.Settings,
+    settings: settings_mod.Settings, // gerais (último avião, controle e câmera gerais, som, fps)
     paths: paths_mod.Paths,
+    plane_files: store_mod.FileStore, // configurações por avião (uma por arquivo)
+    plane_cfg: PlaneSettings = .{}, // as do avião aberto
     lib: library.Library,
     plane: ?Plane = null,
     plane_error: [256]u8 = undefined,
@@ -124,6 +128,7 @@ pub const App = struct {
             .ui = undefined,
             .settings = settings_mod.Settings.load(io, gpa, paths.config),
             .paths = paths,
+            .plane_files = .{ .io = io, .root = paths.planes },
             .lib = library.scan(io, gpa, &paths.examples, paths.mine) catch .{ .arena = .init(gpa) },
             .audio = Player.init(),
         };
@@ -139,6 +144,7 @@ pub const App = struct {
     pub fn deinit(app: *App) void {
         app.stopRecording();
         app.endFlight();
+        app.saveSettings();
         inline for (@typeInfo(Screens).@"struct".fields) |f| {
             if (@hasDecl(f.type, "deinit")) @field(app.screens, f.name).deinit(app);
         }
@@ -147,12 +153,42 @@ pub const App = struct {
         app.audio.deinit();
         app.lib.deinit();
         app.fonts.deinit();
-        app.settings.save(app.io, app.gpa, app.paths.config);
         app.gpa.destroy(app);
     }
 
+    /// grava as gerais e as do avião aberto (a sessão do avião vira o ponto de partida do próximo)
     pub fn saveSettings(app: *App) void {
+        if (app.plane) |p| {
+            app.settings.session = app.plane_cfg.session;
+            _ = app.plane_cfg.save(app.plane_files.store(), app.gpa, p.path);
+        }
         app.settings.save(app.io, app.gpa, app.paths.config);
+    }
+
+    // ---------------------------------------------------------------- o que vale agora
+    /// sessão (cenário, pouso, modo, vento...) do avião aberto
+    pub fn session(app: *App) *@import("../sim/session.zig").Session {
+        return &app.plane_cfg.session;
+    }
+
+    /// controle: o próprio do avião, se ele tiver; senão o geral
+    pub fn profile(app: *App) *ch.Profile {
+        return if (app.plane_cfg.own_controls) &app.plane_cfg.profile else &app.settings.profile;
+    }
+
+    pub fn camera(app: *App) *settings_mod.CameraSettings {
+        return if (app.plane_cfg.own_camera) &app.plane_cfg.camera else &app.settings.camera;
+    }
+
+    /// liga/desliga controle próprio do avião (ao ligar, começa igual ao geral)
+    pub fn setOwnControls(app: *App, on: bool) void {
+        if (on and !app.plane_cfg.own_controls) app.plane_cfg.profile = app.settings.profile;
+        app.plane_cfg.own_controls = on;
+    }
+
+    pub fn setOwnCamera(app: *App, on: bool) void {
+        if (on and !app.plane_cfg.own_camera) app.plane_cfg.camera = app.settings.camera;
+        app.plane_cfg.own_camera = on;
     }
 
     // ---------------------------------------------------------------- avião
@@ -169,10 +205,13 @@ pub const App = struct {
             return false;
         };
         app.endFlight();
+        app.saveSettings(); // guarda as do avião que sai
         if (app.plane) |*old| old.deinit(app.gpa);
         app.plane = p;
         app.plane_error_len = 0;
         app.settings.setAircraft(path);
+        // as do avião que entra; nunca aberto antes: começa da última sessão usada e do controle geral
+        app.plane_cfg = PlaneSettings.load(app.plane_files.store(), app.gpa, p.path, .{ .session = app.settings.session });
         inline for (@typeInfo(Screens).@"struct".fields) |f| {
             if (@hasDecl(f.type, "planeChanged")) @field(app.screens, f.name).planeChanged(app);
         }
@@ -201,9 +240,9 @@ pub const App = struct {
     pub fn startFlight(app: *App) bool {
         const p = &(app.plane orelse return false);
         app.endFlight();
-        app.flight_ac = app.settings.session.apply(p.loaded.ac);
+        app.flight_ac = app.session().apply(p.loaded.ac);
         var diag: model.Diag = .{};
-        app.dm = dm_mod.DriveManager.init(app.gpa, &app.flight_ac, &diag, app.settings.session.start_mode) catch {
+        app.dm = dm_mod.DriveManager.init(app.gpa, &app.flight_ac, &diag, app.session().start_mode) catch {
             const msg = std.fmt.bufPrint(&app.plane_error, "{s}", .{diag.text()}) catch app.plane_error[0..0];
             app.plane_error_len = msg.len;
             return false;
@@ -348,6 +387,7 @@ pub const App = struct {
         const next = app.frameOf(app.top(), dt);
         if (app.top() == .flight) app.captureFrame(dt);
         if (app.settings.dev_overlay) dev_overlay.draw(app);
+        if (app.ui.feedback) app.audio.click(app.settings.volume);
         app.ui.end();
         rl.endDrawing();
         app.go(next);

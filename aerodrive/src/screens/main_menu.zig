@@ -48,7 +48,7 @@ pub const MainMenu = struct {
         rl.clearBackground(theme.panel);
 
         // aeronave viva à direita
-        const cmd = m.input.step(app.settings.profile, app.reader.raw(dt), dt);
+        const cmd = m.input.step(app.profile().*, app.reader.raw(dt), dt);
         m.prop += cmd.thr * 60 * dt;
         if (app.plane) |*p| {
             m.show.input(r3, dt);
@@ -86,7 +86,7 @@ pub const MainMenu = struct {
             var buf: [300]u8 = undefined;
             app.fonts.draw(std.fmt.bufPrintZ(&buf, "{s}", .{e[0..@min(e.len, 280)]}) catch "", x, H - 56, 15, theme.danger);
         }
-        widgets.footer(&app.fonts, "↑↓ / direcional: escolher · Enter / A: abrir · mouse: girar o avião · F3: desempenho");
+        widgets.footer(&app.fonts, &.{ widgets.nav, widgets.accept, .{ .btn = .rs, .key = "mouse", .label = "girar o avião" } });
         return next;
     }
 };

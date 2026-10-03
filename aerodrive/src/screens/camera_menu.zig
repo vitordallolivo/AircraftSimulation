@@ -32,9 +32,12 @@ pub const CameraMenu = struct {
         m.t += dt;
         rl.clearBackground(theme.panel);
         widgets.header(&app.fonts, "Câmera", "perseguição: atrás e acima do avião, seguindo a proa");
-        const c = &app.settings.camera;
+        var own = app.plane_cfg.own_camera;
+        var col0: widgets.Column = .{ .x = 40, .y = 120, .w = @min(560, W * 0.4), .gap = 8 };
+        if (app.plane != null and app.ui.toggle(col0.next(40), "Só para este avião", &own)) app.setOwnCamera(own);
+        const c = app.camera();
         const lw = @min(560, W * 0.4);
-        var col: widgets.Column = .{ .x = 40, .y = 120, .w = lw, .gap = 8 };
+        var col: widgets.Column = .{ .x = 40, .y = col0.y, .w = lw, .gap = 8 };
         var ck: usize = switch (c.start) {
             .chase => 0,
             .ground => 1,
@@ -68,7 +71,7 @@ pub const CameraMenu = struct {
             m.preview.blit(r);
             rl.drawRectangleLinesEx(r, 1, theme.muted_light);
         };
-        widgets.footer(&app.fonts, "↑↓: escolher · ← →: mudar · Esc / B: voltar");
+        widgets.footer(&app.fonts, &.{ widgets.nav, widgets.change, widgets.back_hint });
         return if (app.ui.back()) .back else .stay;
     }
 };

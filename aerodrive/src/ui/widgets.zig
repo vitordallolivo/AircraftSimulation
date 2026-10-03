@@ -6,6 +6,8 @@
 const std = @import("std");
 const rl = @import("raylib");
 const theme = @import("theme.zig");
+const glyphs = @import("glyphs.zig");
+pub const Hint = glyphs.Hint;
 
 pub const Rect = rl.Rectangle;
 
@@ -33,10 +35,12 @@ pub const Ui = struct {
     held: u8 = 0,
     dragging: ?usize = null,
     hovering: bool = false,
+    feedback: bool = false, // algo foi apertado neste quadro (o App toca o clique)
 
     pub fn begin(u: *Ui, dt: f64) void {
         u.count = 0;
         u.hovering = false;
+        u.feedback = false;
         const m = rl.getMousePosition();
         u.mouse_moved = @abs(m.x - u.mouse.x) + @abs(m.y - u.mouse.y) > 0.5;
         u.mouse = m;
@@ -83,6 +87,7 @@ pub const Ui = struct {
         } else u.repeat_t = 0;
         u.held = dir;
         u.nav = n;
+        if (n.back) u.feedback = true;
         if (u.last_count > 0) {
             if (n.up) u.focus = (u.focus + u.last_count - 1) % u.last_count;
             if (n.down) u.focus = (u.focus + 1) % u.last_count;
@@ -110,7 +115,9 @@ pub const Ui = struct {
         if (hovered) u.hovering = true;
         if (hovered and (u.mouse_moved or u.clicked)) u.focus = id;
         const focused = u.focus == id;
-        return .{ .id = id, .focused = focused, .hovered = hovered, .activated = (focused and u.nav.accept) or (hovered and u.clicked) };
+        const activated = (focused and u.nav.accept) or (hovered and u.clicked);
+        if (activated or (focused and (u.nav.left or u.nav.right))) u.feedback = true;
+        return .{ .id = id, .focused = focused, .hovered = hovered, .activated = activated };
     }
 
     fn highlight(r: Rect, it: Item) void {
@@ -128,6 +135,16 @@ pub const Ui = struct {
         u.fonts.draw(label, r.x + 18, r.y + (r.height - size) / 2, size, if (it.focused) theme.title else theme.text);
         if (hint) |h| u.fonts.draw(h, r.x + r.width - u.fonts.width(h, 15) - 14, r.y + (r.height - 15) / 2, 15, theme.muted);
         return it.activated;
+    }
+
+    /// item de menu com o botão/tecla do atalho à direita (ex.: "Recomeçar" … ↑)
+    pub fn menuItemKey(u: *Ui, r: Rect, label: [:0]const u8, g: Hint) bool {
+        const act = u.menuItem(r, label, null);
+        const h: f32 = 24;
+        const w = glyphs.hintsWidth(u.fonts, &.{.{ .btn = g.btn, .key = g.key, .label = "" }}) - 24;
+        const x = r.x + r.width - w - 14;
+        if (glyphs.padShown()) _ = glyphs.button(u.fonts, g.btn, x, r.y + (r.height - h) / 2, h) else _ = glyphs.key(u.fonts, g.key, x, r.y + (r.height - h) / 2, h);
+        return act;
     }
 
     pub fn button(u: *Ui, r: Rect, label: [:0]const u8, primary: bool) bool {
@@ -316,7 +333,14 @@ pub fn header(f: *const theme.Fonts, title: [:0]const u8, sub: ?[:0]const u8) vo
     if (sub) |s| f.draw(s, 42, 76, 17, theme.muted);
 }
 
-pub fn footer(f: *const theme.Fonts, text: [:0]const u8) void {
+/// dicas no rodapé, com o símbolo do botão do controle (ou a tecla, sem controle)
+pub fn footer(f: *const theme.Fonts, items: []const Hint) void {
     const H: f32 = @floatFromInt(rl.getScreenHeight());
-    f.draw(text, 40, H - 32, 15, theme.muted);
+    _ = glyphs.hints(f, 40, H - 38, items, theme.muted);
 }
+
+/// as dicas de sempre dos menus
+pub const nav: Hint = .{ .btn = .up, .key = "↑↓", .label = "escolher" };
+pub const change: Hint = .{ .btn = .left, .key = "← →", .label = "mudar" };
+pub const accept: Hint = .{ .btn = .a, .key = "Enter", .label = "abrir" };
+pub const back_hint: Hint = .{ .btn = .b, .key = "Esc", .label = "voltar" };

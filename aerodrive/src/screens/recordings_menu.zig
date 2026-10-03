@@ -65,7 +65,7 @@ pub const RecordingsMenu = struct {
                 if (p.len > 0) rl.openURL(p);
             }
         };
-        widgets.footer(&app.fonts, "↑↓: escolher · Enter / A: selecionar · Esc / B: voltar");
+        widgets.footer(&app.fonts, &.{ widgets.nav, .{ .btn = .a, .key = "Enter", .label = "selecionar" }, widgets.back_hint });
         if (app.ui.back()) return .back;
         return next;
     }

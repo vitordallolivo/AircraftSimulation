@@ -23,5 +23,7 @@ test {
     _ = @import("record/pages.zig");
     _ = @import("record/video.zig");
     _ = @import("record/recorder.zig");
+    _ = @import("app/store.zig");
+    _ = @import("app/plane_settings.zig");
     _ = @import("world/minimap.zig");
 }

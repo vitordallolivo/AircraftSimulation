@@ -2,7 +2,7 @@
 //!
 //!   aerodrive [avião.json] [fps=30|60]
 //!   aerodrive --shot <saída.png> [avião.json] [LxA] [tela=NOME] [voo=SEG] [modo=manual|auto]
-//!             [cam=seguir|chao|livre] [mesa] [dados=PASTA] [gravar] [f3]
+//!             [cam=seguir|chao|livre] [mesa] [dados=PASTA] [gravar] [f3] [controle]
 //!     tela: inicio, aeronave, voar, controle, camera, som, voos, dados, voo, pausa
 //!
 //! No modo --shot nada é lido nem gravado nas configurações (fotos sempre iguais).
@@ -53,6 +53,8 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
         } else if (std.mem.startsWith(u8, s, "cam=")) {
             const c = s[4..];
             a.cam = if (std.mem.eql(u8, c, "chao")) .ground else if (std.mem.eql(u8, c, "seguir")) .chase else if (std.mem.eql(u8, c, "livre")) .orbit else return error.BadArgs;
+        } else if (std.mem.eql(u8, s, "controle")) {
+            @import("ui/glyphs.zig").force_pad = true;
         } else if (std.mem.eql(u8, s, "f3")) {
             a.dev = true;
         } else if (std.mem.eql(u8, s, "gravar")) {
@@ -82,12 +84,15 @@ pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
     const argv = try init.minimal.args.toSlice(arena);
     const args = parseArgs(argv) catch {
-        std.debug.print("uso: aerodrive [avião.json] [fps=30|60]\n     aerodrive --shot <saída.png> [avião.json] [LxA] [tela=inicio|aeronave|voar|controle|camera|som|voos|dados|voo|pausa] [voo=SEG] [modo=manual|auto] [cam=seguir|chao|livre] [mesa] [dados=PASTA] [gravar] [f3]\n", .{});
+        std.debug.print("uso: aerodrive [avião.json] [fps=30|60]\n     aerodrive --shot <saída.png> [avião.json] [LxA] [tela=inicio|aeronave|voar|controle|camera|som|voos|dados|voo|pausa] [voo=SEG] [modo=manual|auto] [cam=seguir|chao|livre] [mesa] [dados=PASTA] [gravar] [f3] [controle]\n", .{});
         std.process.exit(2);
     };
     var paths = try paths_mod.resolve(arena, init.environ_map);
     const shot = args.shot != null;
-    if (shot) paths.config = "/dev/null/aerodrive-sem-config"; // não lê nem grava
+    if (shot) { // não lê nem grava configurações
+        paths.config = "/dev/null/aerodrive-sem-config";
+        paths.planes = "/dev/null/aerodrive-sem-avioes";
+    }
 
     rl.setTraceLogLevel(.warning);
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .window_resizable = true, .vsync_hint = !shot });
@@ -114,10 +119,10 @@ pub fn main(init: std.process.Init) !void {
         }
         return;
     }
-    if (args.table) app.settings.session.scenario = .table;
+    if (args.table) app.session().scenario = .table;
     app.settings.dev_overlay = args.dev;
-    app.settings.session.start_mode = if (args.mode_auto) .autopilot else .manual;
-    if (args.cam) |c| app.settings.camera.start = c;
+    app.session().start_mode = if (args.mode_auto) .autopilot else .manual;
+    if (args.cam) |c| app.camera().start = c;
     if (args.data_dir) |d| {
         const n = @min(d.len, app.viewer_dir.len);
         @memcpy(app.viewer_dir[0..n], d[0..n]);

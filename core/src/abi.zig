@@ -17,10 +17,11 @@ pub const exported = .{
     T.Surface,  T.PropUnit,   T.Gear,      T.Tank,      T.Segment, T.Event, T.Pad,
     T.Payload,  T.Environment, T.Takeoff,  T.Autopilot, T.Pilot, T.Params,  T.Events,
     T.LogRow,   T.AeroCoeffs, T.PropPoint, T.MassProps, T.TrimPoint, T.PerfRow,
-    env.EnvCfg, env.EnvRow,     lin.LinModel, sp.SimpleCfg, sp.SimpleRow, sp.SimpleSummary,
+    env.EnvCfg, env.EnvRow,     lin.LinModel, at.Result, sp.SimpleCfg, sp.SimpleRow, sp.SimpleSummary,
 };
 const env = @import("sim/envelope.zig");
 const lin = @import("sim/linear.zig");
+const at = @import("control/autotune.zig");
 const sp = @import("sim/simple_perf.zig");
 
 fn shortName(comptime Ty: type) []const u8 {

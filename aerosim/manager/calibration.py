@@ -2,7 +2,9 @@
 
 O piloto usa um modelo interno C_L = CL0 + CLa α. Para qualquer aeronave nova, os dois
 são ajustados pela polar do próprio núcleo (−2° a 8°), e o acelerador de equilíbrio
-(Dtrim) pela trimagem em voo nivelado na velocidade de cruzeiro.
+(Dtrim) pela trimagem em voo nivelado na velocidade de cruzeiro. Os ganhos das malhas internas
+(arfagem, rolagem, guinada, velocidade) saem do modelo linear do próprio avião (`autotune` do
+núcleo): a mesma resposta para qualquer aeronave, sem ganho escrito à mão por avião.
 """
 from __future__ import annotations
 
@@ -46,7 +48,19 @@ def calibrate(backend: ISimBackend, ac: Aircraft) -> dict:
     Vc = max((sg["V1"] for sg in ac.mission.segments()), default=15.0)
     with backend.session_for(build_model(ac)) as s:
         tp = s.trim(TrimKind.LEVEL, Vc)
+        try:
+            tuned = s.autotune(Vc)
+        except NotImplementedError:
+            tuned = None
     if tp["ok"] and 0.05 < tp["thr"] < 1.0:
         ac.autopilot.Dtrim = float(tp["thr"])
+    if tuned and tuned.get("ok"):
+        g = tuned["gains"]
+        for flag, keys in (("pitch", ("Kae", "Kqe", "KIa", "Kthe")), ("roll", ("Kphia", "Kpa")),
+                           ("yaw", ("Kbeta",)), ("speed", ("KV", "KIV", "KHT"))):
+            if tuned.get(flag):
+                for k in keys:
+                    setattr(ac.autopilot, k, float(g[k]))
+        info["autotune"] = {k: tuned[k] for k in ("pitch", "roll", "yaw", "speed", "w_sp_open", "w_sp")}
     info["Dtrim"] = ac.autopilot.Dtrim
     return info

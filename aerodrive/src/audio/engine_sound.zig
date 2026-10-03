@@ -1,4 +1,5 @@
-//! Som do motor: acelerador (ou rpm) → altura (pitch) e volume do som da hélice. Só as contas
+//! Som do motor e do vento: acelerador → altura (pitch) e volume da hélice; velocidade do ar →
+//! altura e volume do vento. Só as contas
 //! (testáveis); quem toca é `audio/player.zig`. Mais motor = som mais agudo e mais alto, e a
 //! mudança é suave (o motor não muda de rotação num quadro).
 const std = @import("std");
@@ -36,6 +37,25 @@ pub fn map(k: Tuning, level_in: f64, master_in: f64) Out {
     return .{ .pitch = @floatCast(pitch), .volume = @floatCast(vol * clamp01(master_in)) };
 }
 
+/// vento passando: velocidade do ar (m/s) → altura e volume. Parado = silêncio; mais rápido =
+/// mais alto e um pouco mais agudo (satura em `v_full`).
+pub const WindTuning = struct {
+    v_start: f64 = 3, // abaixo disto, nada
+    v_full: f64 = 28, // daqui para cima, volume e altura máximos
+    pitch_lo: f64 = 0.7,
+    pitch_hi: f64 = 1.35,
+    volume_max: f64 = 0.8,
+};
+
+pub fn wind(k: WindTuning, Va: f64, master_in: f64) Out {
+    const span = @max(sane(k.v_full, 1, 200, 28) - sane(k.v_start, 0, 100, 3), 0.5);
+    const v = if (std.math.isFinite(Va)) Va else 0;
+    const x = clamp01((v - sane(k.v_start, 0, 100, 3)) / span);
+    const pitch = lerp(sane(k.pitch_lo, 0.1, 4, 0.7), sane(k.pitch_hi, 0.1, 4, 1.35), x);
+    const vol = sane(k.volume_max, 0, 1, 0.8) * x * x; // cresce devagar no começo
+    return .{ .pitch = @floatCast(pitch), .volume = @floatCast(vol * clamp01(master_in)) };
+}
+
 fn lerp(a: f64, b: f64, x: f64) f64 {
     return a + (b - a) * x;
 }
@@ -62,6 +82,14 @@ test "mais motor = mais agudo e mais alto; muda suave" {
     try testing.expectEqual(@as(f32, 0), map(k, 1, 0).volume); // mudo
 }
 
+test "vento: parado é silêncio, mais rápido é mais alto e mais agudo" {
+    const k: WindTuning = .{};
+    try testing.expectEqual(@as(f32, 0), wind(k, 2, 1).volume);
+    const a = wind(k, 12, 1);
+    const b = wind(k, 25, 1);
+    try testing.expect(b.volume > a.volume and b.pitch > a.pitch);
+}
+
 fn fuzzEngine(_: void, src: *fz.Src) anyerror!void {
     var e: Engine = .{ .level = src.any() };
     const k: Tuning = .{ .pitch_idle = src.mostly(0.3, 1), .pitch_full = src.mostly(1, 2), .response = src.any() };
@@ -69,6 +97,8 @@ fn fuzzEngine(_: void, src: *fz.Src) anyerror!void {
         const o = e.step(k, src.any(), src.any(), src.any());
         try testing.expect(std.math.isFinite(o.pitch) and o.pitch >= 0.1 and o.pitch <= 4);
         try testing.expect(std.math.isFinite(o.volume) and o.volume >= 0 and o.volume <= 1);
+        const w = wind(.{ .v_start = src.any(), .v_full = src.any() }, src.any(), src.any());
+        try testing.expect(std.math.isFinite(w.pitch) and w.volume >= 0 and w.volume <= 1);
     }
 }
 
