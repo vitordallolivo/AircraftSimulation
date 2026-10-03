@@ -14,7 +14,8 @@ A GUI cria uma aba por simulação registrada, sem conhecer nenhuma delas.
 Estilo das séries (chaves opcionais começando com "_" em cada tabela): `_color`, `_width`, `_dash`,
 `_fill` (coluna do outro lado da faixa) e `_strong`, `_marker`/`_symbol` ("o", "star", "s", "t", "d",
 "+", "x") e `_size`, `_label` (texto da legenda), `_nolegend`; linhas e faixas de referência sem
-colunas: `_vline` (x), `_hline` (y), `_vspan` ([x0, x1], ex.: fundo de cada etapa do voo).
+colunas: `_vline` (x), `_hline` (y), `_vspan` ([x0, x1], ex.: fundo de cada etapa do voo); escala:
+`_xlim`, `_ylim` ([mín, máx]: as curvas ficam inteiras, só a janela do gráfico é limitada).
 """
 from __future__ import annotations
 
@@ -35,7 +36,7 @@ class ParamSpec:
     key: str
     label: str
     default: Any
-    kind: str = "float"            # float | int | bool | choice | floats (lista "a, b, c")
+    kind: str = "float"            # float | int | bool | choice | floats (lista "a, b, c") | table
     minimum: float | None = None
     maximum: float | None = None
     step: float | None = None
@@ -44,6 +45,7 @@ class ParamSpec:
     help: str = ""
     group: str = ""                # seção do formulário (ex.: "Critérios")
     rebuild: bool = False          # mudar este campo refaz o formulário (ex.: escolher a norma)
+    columns: tuple = ()            # table: ((chave, rótulo, "float" | "str" | (opções...)), ...); valor: lista de dicts
 
 
 @dataclass
@@ -136,6 +138,11 @@ class ISimulation(ABC):
     def plots_for(self, aircraft: "Aircraft | None", values: dict | None = None) -> list[PlotSpec]:
         """gráficos para esta aeronave e para as escolhas do formulário (ex.: o modo da análise)"""
         return self.plots()
+
+    def commit(self, aircraft: "Aircraft", values: dict) -> bool:
+        """grava na aeronave o que do formulário pertence a ela (ex.: a trajetória editada na aba Missão);
+        True se mudou algo"""
+        return False
 
     def defaults(self, aircraft: "Aircraft | None" = None, values: dict | None = None) -> dict[str, Any]:
         ps = self.parameters_for(aircraft, values) if aircraft is not None else self.parameters()

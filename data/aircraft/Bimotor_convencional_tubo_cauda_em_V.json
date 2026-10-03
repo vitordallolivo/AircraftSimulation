@@ -2,7 +2,7 @@
  "formato": "aerosim-aeronave",
  "versao": 1,
  "nome": "Bimotor, convencional, tubo + cauda em V",
- "salvo_em": "2026-10-03T04:01:24",
+ "salvo_em": "2026-10-03T11:12:47",
  "resumo": "S = 0.857 m², b = 2.80 m, massa seca 6.30 kg; EH: cauda em V; arfagem por ruddervator; rolagem por aileron; guinada por ruddervator; líquido livre (sloshing)",
  "aeronave": {
   "name": "Bimotor, convencional, tubo + cauda em V",
@@ -1704,7 +1704,7 @@
     {
      "kind": "turn",
      "length": 100.0,
-     "radius": 79.57747154594767,
+     "radius": 69.57747154594767,
      "angle": 180.0,
      "side": 1,
      "h": 15.0,

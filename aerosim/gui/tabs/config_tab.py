@@ -37,7 +37,10 @@ class ConfigTab(QtWidgets.QWidget):
         self.state = state
         self.form: DataclassForm | None = None
         self._tank_info = None
-        split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        self.split = split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        split.setHandleWidth(10)                     # divisórias largas: fáceis de pegar (notebook, Wayland)
+        split.setChildrenCollapsible(False)
+        split.setStyleSheet("QSplitter::handle { background: #c9d3e0; } QSplitter::handle:hover { background: #7f9cc4; }")
         QtWidgets.QHBoxLayout(self).addWidget(split)
 
         # ---------------- esquerda: componentes, vento e editor ----------------
@@ -60,7 +63,8 @@ class ConfigTab(QtWidgets.QWidget):
         lv = QtWidgets.QVBoxLayout(mid)
         lv.setContentsMargins(0, 0, 0, 0)
         bar = QtWidgets.QHBoxLayout()
-        self.move_chk = QtWidgets.QCheckBox("mover com o mouse")
+        self.move_chk = QtWidgets.QCheckBox("mover")
+        self.move_chk.setToolTip("mover componentes arrastando com o mouse")
         self.move_chk.setChecked(True)
         self.lock = QtWidgets.QComboBox()
         self.lock.addItems(["plano da tela", "só x", "só y", "só z"])
@@ -76,11 +80,13 @@ class ConfigTab(QtWidgets.QWidget):
         self.restore_b.setMenu(menu)
         self.restore_b.setToolTip("desfaz as mudanças: volta ao estado aberto/carregado ou a um modelo padrão")
         self.info = QtWidgets.QLabel()
+        self.info.setWordWrap(True)
+        self.info.setMinimumWidth(10)
+        self.info.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Preferred)
         bar.addWidget(self.move_chk)
         bar.addWidget(QtWidgets.QLabel("arraste:"))
         bar.addWidget(self.lock)
         bar.addStretch(1)
-        bar.addWidget(self.info)
         bar.addWidget(self.restore_b)
         lv.addLayout(bar)
         self.view = AircraftView()
@@ -88,11 +94,13 @@ class ConfigTab(QtWidgets.QWidget):
         legend = QtWidgets.QLabel("● vermelho: CG   | verde: ponto neutro   → azul: vento   "
                                   "(clique num componente para selecionar e arraste para mover)")
         legend.setStyleSheet("color: #555; font-size: 10px")
+        legend.setWordWrap(True)
         lv.addWidget(legend)
         split.addWidget(mid)
 
         # ---------------- direita: editor do componente escolhido (largo, legível em tela pequena) ----------------
         right = QtWidgets.QWidget()
+        right.setMinimumWidth(340)
         rv = QtWidgets.QVBoxLayout(right)
         rv.setContentsMargins(4, 4, 4, 4)
         self.editor_title = QtWidgets.QLabel()
@@ -100,12 +108,13 @@ class ConfigTab(QtWidgets.QWidget):
         rv.addWidget(self.editor_title)
         self.editor_area = QtWidgets.QScrollArea()
         self.editor_area.setWidgetResizable(True)
+        self.editor_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         rv.addWidget(self.editor_area, 1)
         split.addWidget(right)
         split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 5)
+        split.setStretchFactor(1, 3)
         split.setStretchFactor(2, 4)
-        split.setSizes([380, 820, 560])
+        self._sized = False
 
         self.comp_list.currentItemChanged.connect(self._on_list)
         self.view.componentSelected.connect(self._on_pick)
@@ -121,6 +130,17 @@ class ConfigTab(QtWidgets.QWidget):
         self._geo_timer.setSingleShot(True)
         self._geo_timer.timeout.connect(self.view.rebuild)
         self._reload()
+
+    def showEvent(self, e):
+        """na primeira vez que aparece: 3D menor, editor da direita largo (proporcional à tela)"""
+        super().showEvent(e)
+        if not self._sized:
+            self._sized = True
+            QtCore.QTimer.singleShot(0, self._apply_sizes)
+
+    def _apply_sizes(self):
+        w = max(self.split.width(), 900)
+        self.split.setSizes([int(0.25 * w), int(0.30 * w), int(0.45 * w)])
 
     # ------------------------------------------------------------------ restaurar
     def restore(self, template: str | None = None):
@@ -506,6 +526,7 @@ class ConfigTab(QtWidgets.QWidget):
                 fill()
                 self.state.notify("geometry")
         info = QtWidgets.QLabel()
+        info.setWordWrap(True)
         table.itemChanged.connect(edited)
         v.addWidget(table)
         h = QtWidgets.QHBoxLayout()
@@ -520,8 +541,14 @@ class ConfigTab(QtWidgets.QWidget):
 
     def _list_editor(self, title, items: list, factory, choices: dict):
         """lista de dataclasses: um formulário por item, + / −"""
-        box = QtWidgets.QGroupBox(title)
+        short, _, rest = title.partition(" — ")
+        box = QtWidgets.QGroupBox(short)            # título curto: o grupo não força largura mínima
         v = QtWidgets.QVBoxLayout(box)
+        if rest:
+            note = QtWidgets.QLabel(rest)
+            note.setWordWrap(True)
+            note.setStyleSheet("color:#555")
+            v.addWidget(note)
         holder = QtWidgets.QVBoxLayout()
         v.addLayout(holder)
 

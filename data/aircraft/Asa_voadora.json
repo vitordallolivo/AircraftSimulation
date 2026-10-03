@@ -2,7 +2,7 @@
  "formato": "aerosim-aeronave",
  "versao": 1,
  "nome": "Asa voadora",
- "salvo_em": "2026-10-03T04:01:24",
+ "salvo_em": "2026-10-03T11:12:47",
  "resumo": "S = 0.660 m², b = 2.00 m, massa seca 3.00 kg; asa voadora (sem EH); arfagem por elevon; rolagem por elevon; sem leme; 2 deriva(s) na ponta da asa",
  "aeronave": {
   "name": "Asa voadora",
@@ -2050,7 +2050,7 @@
     {
      "kind": "turn",
      "length": 100.0,
-     "radius": 79.57747154594767,
+     "radius": 69.57747154594767,
      "angle": 180.0,
      "side": 1,
      "h": 15.0,
