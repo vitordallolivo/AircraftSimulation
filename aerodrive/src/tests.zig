@@ -12,4 +12,6 @@ test {
     _ = @import("sim/params.zig");
     _ = @import("sim/drive_manager.zig");
     _ = @import("world/field.zig");
+    _ = @import("model/features.zig");
+    _ = @import("sim/session.zig");
 }

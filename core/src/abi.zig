@@ -15,7 +15,7 @@ pub const version: u32 = 1;
 /// em ordem de dependência (as de dentro primeiro)
 pub const exported = .{
     T.Surface,  T.PropUnit,   T.Gear,      T.Tank,      T.Segment, T.Event, T.Pad,
-    T.Payload,  T.Environment, T.Takeoff,  T.Autopilot, T.Params,  T.Events,
+    T.Payload,  T.Environment, T.Takeoff,  T.Autopilot, T.Pilot, T.Params,  T.Events,
     T.LogRow,   T.AeroCoeffs, T.PropPoint, T.MassProps, T.TrimPoint, T.PerfRow,
     env.EnvCfg, env.EnvRow,     lin.LinModel, sp.SimpleCfg, sp.SimpleRow, sp.SimpleSummary,
 };

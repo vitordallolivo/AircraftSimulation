@@ -131,7 +131,7 @@ pub fn main(init: std.process.Init) !void {
 
     if (args.shot) |out| { // foto: hangar, ou voa `voo=` segundos e fotografa
         if (args.fly_s) |secs| {
-            dm = DriveManager.init(gpa, ac, &diag) catch {
+            dm = DriveManager.init(gpa, ac, &diag, .autopilot) catch {
                 std.debug.print("erro: {s}\n", .{diag.text()});
                 std.process.exit(1);
             };
@@ -154,7 +154,7 @@ pub fn main(init: std.process.Init) !void {
     while (!rl.windowShouldClose()) {
         switch (screen) {
             .hangar => if (hangar.frame(&fonts, @floatCast(rl.getFrameTime())) == .fly) {
-                if (dm == null) dm = DriveManager.init(gpa, ac, &diag) catch null;
+                if (dm == null) dm = DriveManager.init(gpa, ac, &diag, .autopilot) catch null;
                 if (dm) |*d| {
                     d.restart() catch {};
                     flight = flight_mod.Flight.init(d, &scene, ac, args.fps, args.cam, span);

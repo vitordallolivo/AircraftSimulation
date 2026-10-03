@@ -198,6 +198,17 @@ pub const Takeoff = extern struct {
     h_end: f64 = 6, // fim da simulação "só decolagem"
 };
 
+/// comandos de quem pilota de fora (controle, simulador): com `manual` = 1 substituem os do piloto
+/// automático; com 0 (padrão) nada muda. `drop` = 1 solta a carga LAPES agora.
+pub const Pilot = extern struct {
+    manual: i32 = 0,
+    drop: i32 = 0,
+    de: f64 = 0, // rad
+    da: f64 = 0,
+    dr: f64 = 0,
+    thr: f64 = 0, // 0..1
+};
+
 pub const Autopilot = extern struct {
     CL0: f64 = 0.45,
     CLa: f64 = 4.5,
@@ -287,6 +298,7 @@ pub const Params = extern struct {
     env: Environment = .{},
     takeoff: Takeoff = .{},
     ap: Autopilot = .{},
+    pilot: Pilot = .{},
     // integração
     dt: f64 = 1e-3,
     tmax: f64 = 400,
