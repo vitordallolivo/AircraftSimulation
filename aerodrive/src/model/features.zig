@@ -4,6 +4,7 @@
 const std = @import("std");
 const model = @import("aircraft.zig");
 const sk = @import("skeleton.zig");
+const airfoil = @import("airfoil.zig");
 const v3 = @import("../math/vec3.zig");
 const fz = @import("../util/fuzz.zig");
 
@@ -88,6 +89,36 @@ pub fn detect(ac: *const model.Aircraft) Features {
     return f;
 }
 
+/// deflexão máxima útil de um canal (rad), por causa do estol da superfície: o comando muda o
+/// ângulo efetivo da seção em τ·δ (τ = efetividade do comando: do arquivo, ou pelo perfil fino
+/// com a corda do comando); a seção estola perto de 12°. δ_estol = 12° / τ, no máximo 30°, e vale
+/// a superfície que estola primeiro. Motor (ou canal sem superfície): null.
+pub const section_stall_deg: f64 = 12;
+pub const max_deflection_deg: f64 = 30;
+
+pub fn stallLimit(ac: *const model.Aircraft, c: Channel) ?f64 {
+    if (c == .throttle) return null;
+    var best: ?f64 = null;
+    for (ac.surfaces) |s| {
+        if (!s.enabled) continue;
+        for (s.controls) |ct| {
+            const k = ct.kind;
+            const hit = switch (c) {
+                .aileron => eq(k, "aileron") or eq(k, "elevon"),
+                .elevator => eq(k, "elevator") or eq(k, "elevon") or eq(k, "ruddervator"),
+                .rudder => eq(k, "rudder") or eq(k, "ruddervator"),
+                .throttle => false,
+            };
+            if (!hit) continue;
+            const tau_raw = ct.tau orelse airfoil.flapEffectiveness(if (std.math.isFinite(ct.chord_frac)) ct.chord_frac else 0.25);
+            const tau = if (std.math.isFinite(tau_raw)) std.math.clamp(tau_raw, 0.05, 1) else 0.5;
+            const lim = std.math.degreesToRadians(@min(section_stall_deg / tau, max_deflection_deg));
+            best = if (best) |b| @min(b, lim) else lim;
+        }
+    }
+    return best;
+}
+
 /// onde olhar para ver um canal funcionando (zoom na peça): ponto no corpo e tamanho da peça.
 /// Superfícies: a do lado direito (y ≥ 0) quando houver duas; motor: o primeiro cubo da hélice.
 pub const Focus = struct { p: v3.V3, size: f64 };
@@ -159,16 +190,31 @@ test "convencional: os quatro canais; asa voadora: elevon faz arfagem e rolagem"
     try testing.expect(!g.has(.rudder) and !g.has(.throttle));
 }
 
+test "estol do comando: corda maior estola antes; motor não tem" {
+    const secs = [_]model.Section{ .{ .y = 0, .chord = 0.3 }, .{ .y = 1, .chord = 0.3 } };
+    const small = [_]model.Control{.{ .kind = "elevator", .chord_frac = 0.15 }};
+    const big = [_]model.Control{.{ .kind = "elevator", .chord_frac = 0.45 }};
+    const a = stallLimit(&.{ .surfaces = &.{.{ .sections = &secs, .controls = &small }} }, .elevator).?;
+    const b = stallLimit(&.{ .surfaces = &.{.{ .sections = &secs, .controls = &big }} }, .elevator).?;
+    try testing.expect(b < a);
+    try testing.expect(a <= std.math.degreesToRadians(30.0) + 1e-12);
+    try testing.expect(stallLimit(&.{ .surfaces = &.{.{ .sections = &secs, .controls = &small }} }, .throttle) == null);
+    try testing.expect(stallLimit(&.{ .surfaces = &.{.{ .sections = &secs, .controls = &small }} }, .aileron) == null);
+}
+
 fn fuzzDetect(_: void, src: *fz.Src) anyerror!void {
     const kinds = [_][]const u8{ "aileron", "elevator", "rudder", "elevon", "ruddervator", "flap", "", "x" };
     var ctl: [6]model.Control = undefined;
-    for (&ctl) |*c| c.* = .{ .kind = kinds[src.index(kinds.len)] };
+    for (&ctl) |*c| c.* = .{ .kind = kinds[src.index(kinds.len)], .chord_frac = src.any(), .tau = if (src.boolean()) src.any() else null };
     const secs = [_]model.Section{ .{ .y = 0 }, .{ .y = 1 } };
     var surfs: [3]model.Surface = undefined;
     for (&surfs, 0..) |*s, i| s.* = .{ .sections = &secs, .controls = ctl[i * 2 .. i * 2 + src.int(u8, 0, 2)], .enabled = src.boolean() };
     const f = detect(&.{ .surfaces = surfs[0..src.int(u8, 0, 3)] });
     var buf: [4]Channel = undefined;
     for (f.channels(&buf)) |c| try testing.expect(f.has(c));
+    inline for (.{ Channel.aileron, Channel.elevator, Channel.rudder }) |c| if (stallLimit(&.{ .surfaces = surfs[0..3] }, c)) |l| {
+        try testing.expect(std.math.isFinite(l) and l > 0 and l <= std.math.degreesToRadians(30.0) + 1e-12);
+    };
 }
 
 test "fuzz: recursos do avião" {

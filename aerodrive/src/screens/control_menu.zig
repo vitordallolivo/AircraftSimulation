@@ -38,7 +38,7 @@ pub const ControlMenu = struct {
     capture_t: f64 = 0,
 
     pub fn enter(m: *ControlMenu, app: *App) void {
-        m.planeChanged(app);
+        if (app.plane) |*p| m.show.frame(&p.skel);
         m.capturing = null;
     }
 
@@ -107,12 +107,18 @@ pub const ControlMenu = struct {
         _ = app.ui.slider(col.next(38), "Trim", &curve.trim, -0.25, 0.25, 0.01, "{d:.0} %", 100);
         _ = app.ui.toggle(col.next(38), "Inverter", &curve.invert);
         const deg: f64 = 180.0 / std.math.pi;
-        const lim = 45.0 / deg;
-        switch (c) {
-            .elevator => _ = app.ui.slider(col.next(38), "Deflexão máxima", &p.de_max, 2 / deg, lim, 1 / deg, "{d:.0}°", deg),
-            .aileron => _ = app.ui.slider(col.next(38), "Deflexão máxima", &p.da_max, 2 / deg, lim, 1 / deg, "{d:.0}°", deg),
-            .rudder => _ = app.ui.slider(col.next(38), "Deflexão máxima", &p.dr_max, 2 / deg, lim, 1 / deg, "{d:.0}°", deg),
-            .throttle => {},
+        const lim = 30.0 / deg;
+        // deflexão máxima: até o estol da superfície (linha vermelha no gráfico); pode restringir mais
+        const max_ptr: ?*f64 = switch (c) {
+            .elevator => &p.de_max,
+            .aileron => &p.da_max,
+            .rudder => &p.dr_max,
+            .throttle => null,
+        };
+        const stall = app.stallLimit(c) orelse lim;
+        if (max_ptr) |mp| {
+            var v = @min(mp.*, stall);
+            if (app.ui.slider(col.next(38), "Deflexão máxima ±", &v, 2 / deg, stall, 1 / deg, "{d:.0}°", deg)) mp.* = v;
         }
         if (src.* == .buttons) _ = app.ui.slider(col.next(38), "Velocidade LB/RB", &p.button_rate, 0.5, 15, 0.5, "{d:.1}/s", 1);
         if (app.ui.button(col.next(40), "Restaurar padrão deste canal", false)) {
@@ -138,7 +144,7 @@ pub const ControlMenu = struct {
         // entrada ao vivo
         const raw = app.reader.raw(dt);
         const in = m.state.inputs(p.*, raw, dt);
-        const cmd = m.state.step(p.*, raw, 0);
+        const cmd = m.state.step(app.effectiveProfile(), raw, 0);
         const x_in: f64 = switch (c) {
             .throttle => in.thr,
             .aileron => in.ail,
@@ -147,7 +153,8 @@ pub const ControlMenu = struct {
         };
         const gx = col.x + col.w + 40;
         const gsize = @min(W - gx - 40, H * 0.4);
-        curveGraph(&app.fonts, .{ .x = gx, .y = 112, .width = gsize, .height = gsize }, curve.*, x_in, c == .throttle);
+        const defl: ?Defl = if (max_ptr) |mp| .{ .max = @min(mp.*, stall), .stall = stall } else null;
+        curveGraph(&app.fonts, .{ .x = gx, .y = 112, .width = gsize, .height = gsize }, curve.*, x_in, defl);
 
         // zoom na peça
         m.prop += cmd.thr * 60 * dt;
@@ -203,30 +210,57 @@ pub const ControlMenu = struct {
     }
 };
 
-/// a curva (entrada −1..1 → saída) e o ponto atual
-fn curveGraph(f: *const theme.Fonts, r: rl.Rectangle, k: ch.Curve, x_in: f64, throttle: bool) void {
+/// deflexão: a escolhida (±max) e a de estol da superfície (±stall), em rad
+const Defl = struct { max: f64, stall: f64 };
+
+/// a curva (entrada −1..1 → saída) e o ponto atual. Superfície: o eixo vertical vai em graus até o
+/// estol (linhas vermelhas suaves), com o máximo escolhido tracejado; motor: 0..100 %.
+fn curveGraph(f: *const theme.Fonts, r: rl.Rectangle, k: ch.Curve, x_in: f64, defl: ?Defl) void {
     rl.drawRectangleRec(r, theme.bg);
     const cx = r.x + r.width / 2;
     const cy = r.y + r.height / 2;
+    const red_soft: rl.Color = .{ .r = 214, .g = 39, .b = 40, .a = 110 };
+    const red_band: rl.Color = .{ .r = 214, .g = 39, .b = 40, .a = 22 };
+    // escala vertical: fração do estol (superfície) ou −1..1 (motor)
+    const ys: f64 = if (defl) |d| (if (d.stall > 0) d.max / d.stall else 1) else 1;
+    var buf: [48]u8 = undefined;
+    if (defl) |d| {
+        const yl = @as(f32, @floatCast(ys)) * r.height / 2;
+        // faixa proibida (além do máximo escolhido, até o estol) e as linhas
+        rl.drawRectangleRec(.{ .x = r.x, .y = r.y, .width = r.width, .height = r.height / 2 - yl }, red_band);
+        rl.drawRectangleRec(.{ .x = r.x, .y = cy + yl, .width = r.width, .height = r.height / 2 - yl }, red_band);
+        rl.drawLineEx(.{ .x = r.x, .y = r.y + 1 }, .{ .x = r.x + r.width, .y = r.y + 1 }, 2, red_soft);
+        rl.drawLineEx(.{ .x = r.x, .y = r.y + r.height - 1 }, .{ .x = r.x + r.width, .y = r.y + r.height - 1 }, 2, red_soft);
+        const deg = std.math.radiansToDegrees(d.stall);
+        const t = std.fmt.bufPrintZ(&buf, "estol ±{d:.0}°", .{deg}) catch "";
+        f.draw(t, r.x + 10, r.y + r.height - 22, 14, .{ .r = 190, .g = 40, .b = 40, .a = 230 });
+        if (d.max < d.stall - 1e-6) {
+            var x: f32 = r.x;
+            while (x < r.x + r.width) : (x += 12) { // tracejado no máximo escolhido
+                rl.drawLineEx(.{ .x = x, .y = cy - yl }, .{ .x = @min(x + 6, r.x + r.width), .y = cy - yl }, 1.5, theme.muted);
+                rl.drawLineEx(.{ .x = x, .y = cy + yl }, .{ .x = @min(x + 6, r.x + r.width), .y = cy + yl }, 1.5, theme.muted);
+            }
+            const tm = std.fmt.bufPrintZ(&buf, "máx ±{d:.0}°", .{std.math.radiansToDegrees(d.max)}) catch "";
+            f.draw(tm, r.x + 10, cy - yl + 4, 14, theme.muted);
+        }
+    }
     rl.drawLineEx(.{ .x = r.x, .y = cy }, .{ .x = r.x + r.width, .y = cy }, 1, theme.muted_light);
     rl.drawLineEx(.{ .x = cx, .y = r.y }, .{ .x = cx, .y = r.y + r.height }, 1, theme.muted_light);
-    rl.drawLineEx(.{ .x = r.x, .y = r.y + r.height }, .{ .x = r.x + r.width, .y = r.y }, 1, .{ .r = 0, .g = 0, .b = 0, .a = 30 }); // linear
     var prev: ?rl.Vector2 = null;
     var i: usize = 0;
     while (i <= 120) : (i += 1) {
         const x = -1 + 2 * @as(f64, @floatFromInt(i)) / 120;
-        const v = k.apply(x);
+        const v = k.apply(x) * ys;
         const pt: rl.Vector2 = .{ .x = cx + @as(f32, @floatCast(x)) * r.width / 2, .y = cy - @as(f32, @floatCast(v)) * r.height / 2 };
         if (prev) |q| rl.drawLineEx(q, pt, 3, theme.title);
         prev = pt;
     }
     const xi = if (std.math.isFinite(x_in)) std.math.clamp(x_in, -1, 1) else 0;
     const v = k.apply(xi);
-    const dot: rl.Vector2 = .{ .x = cx + @as(f32, @floatCast(xi)) * r.width / 2, .y = cy - @as(f32, @floatCast(v)) * r.height / 2 };
+    const dot: rl.Vector2 = .{ .x = cx + @as(f32, @floatCast(xi)) * r.width / 2, .y = cy - @as(f32, @floatCast(v * ys)) * r.height / 2 };
     rl.drawCircleV(dot, 9, theme.accent);
     rl.drawRing(dot, 9, 11, 0, 360, 24, .white);
-    var buf: [48]u8 = undefined;
-    const out = if (throttle) std.fmt.bufPrintZ(&buf, "saída {d:.0} %", .{50 * (v + 1)}) catch "" else std.fmt.bufPrintZ(&buf, "saída {d:.0} %", .{100 * v}) catch "";
+    const out = if (defl) |d| std.fmt.bufPrintZ(&buf, "saída {d:.1}°", .{std.math.radiansToDegrees(v * d.max)}) catch "" else std.fmt.bufPrintZ(&buf, "saída {d:.0} %", .{50 * (v + 1)}) catch "";
     f.draw(out, r.x + 10, r.y + 8, 17, theme.text);
     f.draw("entrada", r.x + r.width - 70, cy + 6, 14, theme.muted);
 }

@@ -35,12 +35,15 @@ const recordings_menu = @import("../screens/recordings_menu.zig");
 const recording_view = @import("../screens/recording_view.zig");
 const flight_screen = @import("../screens/flight.zig");
 const pause_menu = @import("../screens/pause_menu.zig");
+const options_menu = @import("../screens/options_menu.zig");
+const video_view = @import("../screens/video_view.zig");
+const KeepAwake = @import("../sys/keep_awake.zig").KeepAwake;
 const dev_overlay = @import("../ui/dev_overlay.zig");
 
 const logo_png = @embedFile("../assets/albatroz.png");
 const video_fps = 30;
 
-pub const Id = enum { main, aircraft, fly, control, camera, sound, recordings, viewer, flight, pause };
+pub const Id = enum { main, aircraft, fly, options, control, camera, sound, recordings, viewer, video, flight, pause };
 
 pub const Next = union(enum) {
     stay,
@@ -59,6 +62,7 @@ pub const Plane = struct {
     name: [:0]u8,
     path: []u8,
     span: f64,
+    stall: [4]?f64 = .{ null, null, null, null }, // deflexão de estol de cada canal (features.Channel)
 
     pub fn deinit(p: *Plane, gpa: std.mem.Allocator) void {
         p.scene.deinit();
@@ -73,11 +77,13 @@ pub const Screens = struct {
     main: main_menu.MainMenu = .{},
     aircraft: aircraft_menu.AircraftMenu = .{},
     fly: fly_menu.FlyMenu = .{},
+    options: options_menu.OptionsMenu = .{},
     control: control_menu.ControlMenu = .{},
     camera: camera_menu.CameraMenu = .{},
     sound: sound_menu.SoundMenu = .{},
     recordings: recordings_menu.RecordingsMenu = .{},
     viewer: recording_view.RecordingView = .{},
+    video: video_view.VideoView = .{},
     flight: flight_screen.Flight = .{},
     pause: pause_menu.PauseMenu = .{},
 };
@@ -98,6 +104,7 @@ pub const App = struct {
     audio: Player,
     logo: ?rl.Texture2D = null,
     sampler: stats.Sampler = .{},
+    keep_awake: KeepAwake = .{}, // a tela não escurece com o jogo aberto
     reader: gamepad.Reader = .{},
     channel_state: ch.State = .{},
     // voo em andamento
@@ -133,6 +140,11 @@ pub const App = struct {
             .audio = Player.init(),
         };
         app.ui = .{ .fonts = &app.fonts };
+        app.keep_awake = KeepAwake.start(io);
+        if (app.settings.fullscreen) {
+            app.settings.fullscreen = false;
+            app.setFullscreen(true);
+        }
         if (rl.loadImageFromMemory(".png", logo_png)) |img| {
             defer rl.unloadImage(img);
             app.logo = rl.loadTextureFromImage(img) catch null;
@@ -151,6 +163,7 @@ pub const App = struct {
         if (app.plane) |*p| p.deinit(app.gpa);
         if (app.logo) |t| rl.unloadTexture(t);
         app.audio.deinit();
+        app.keep_awake.stop(app.io);
         app.lib.deinit();
         app.fonts.deinit();
         app.gpa.destroy(app);
@@ -174,6 +187,38 @@ pub const App = struct {
     /// controle: o próprio do avião, se ele tiver; senão o geral
     pub fn profile(app: *App) *ch.Profile {
         return if (app.plane_cfg.own_controls) &app.plane_cfg.profile else &app.settings.profile;
+    }
+
+    /// tela cheia na resolução do monitor (o sistema reconhece como jogo em tela cheia) ou janela
+    pub fn setFullscreen(app: *App, on: bool) void {
+        if (on == rl.isWindowFullscreen()) {
+            app.settings.fullscreen = on;
+            return;
+        }
+        if (on) {
+            const m = rl.getCurrentMonitor();
+            rl.setWindowSize(rl.getMonitorWidth(m), rl.getMonitorHeight(m));
+            rl.toggleFullscreen();
+        } else {
+            rl.toggleFullscreen();
+            rl.setWindowSize(1280, 720);
+        }
+        app.settings.fullscreen = on;
+    }
+
+    /// deflexão de estol do canal no avião aberto (rad), se tiver
+    pub fn stallLimit(app: *const App, c: features.Channel) ?f64 {
+        const p = app.plane orelse return null;
+        return p.stall[@intFromEnum(c)];
+    }
+
+    /// o controle como vai para as superfícies: a deflexão máxima escolhida, nunca além do estol
+    pub fn effectiveProfile(app: *App) ch.Profile {
+        var p = app.profile().*;
+        if (app.stallLimit(.elevator)) |l| p.de_max = @min(p.de_max, l);
+        if (app.stallLimit(.aileron)) |l| p.da_max = @min(p.da_max, l);
+        if (app.stallLimit(.rudder)) |l| p.dr_max = @min(p.dr_max, l);
+        return p;
     }
 
     pub fn camera(app: *App) *settings_mod.CameraSettings {
@@ -232,7 +277,9 @@ pub const App = struct {
         errdefer scene.deinit();
         const name = try app.gpa.dupeZ(u8, loaded.ac.name);
         errdefer app.gpa.free(name);
-        return .{ .loaded = loaded, .skel = skel, .scene = scene, .feats = features.detect(&loaded.ac), .name = name, .path = try app.gpa.dupe(u8, path), .span = 2 * skel.radius() };
+        var pl: Plane = .{ .loaded = loaded, .skel = skel, .scene = scene, .feats = features.detect(&loaded.ac), .name = name, .path = try app.gpa.dupe(u8, path), .span = 2 * skel.radius() };
+        inline for (@typeInfo(features.Channel).@"enum".fields) |f| pl.stall[f.value] = features.stallLimit(&pl.loaded.ac, @enumFromInt(f.value));
+        return pl;
     }
 
     // ---------------------------------------------------------------- voo
@@ -381,6 +428,8 @@ pub const App = struct {
         app.time += dt;
         app.sampler.update(app.io, dt);
         if (rl.isKeyPressed(.f3)) app.settings.dev_overlay = !app.settings.dev_overlay;
+        if (rl.isKeyPressed(.f11)) app.setFullscreen(!app.settings.fullscreen);
+        app.keep_awake.tick(app.io, dt);
         app.ui.stick_nav = app.top() != .control; // no menu de controle o analógico mexe o ponto
         app.ui.begin(dt);
         rl.beginDrawing();

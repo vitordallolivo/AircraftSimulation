@@ -158,6 +158,21 @@ pub fn list(io: std.Io, gpa: std.mem.Allocator, root: []const u8) !Catalog {
     return c;
 }
 
+/// apaga só o vídeo da gravação (os dados ficam)
+pub fn deleteVideo(io: std.Io, dir: []const u8) bool {
+    var pb: [1100]u8 = undefined;
+    const p = std.fmt.bufPrint(&pb, "{s}/video.mp4", .{dir}) catch return false;
+    std.Io.Dir.cwd().deleteFile(io, p) catch return false;
+    return true;
+}
+
+/// apaga a gravação inteira — só pastas de gravação (`voo_…`), por segurança
+pub fn deleteRecording(io: std.Io, dir: []const u8) bool {
+    if (!std.mem.startsWith(u8, std.fs.path.basename(dir), "voo_")) return false;
+    std.Io.Dir.cwd().deleteTree(io, dir) catch return false;
+    return true;
+}
+
 fn exists(io: std.Io, d: std.Io.Dir, sub: []const u8, file: []const u8) bool {
     var pb: [512]u8 = undefined;
     const p = std.fmt.bufPrint(&pb, "{s}/{s}", .{ sub, file }) catch return false;
@@ -206,6 +221,28 @@ test "grava só dados e acha de volta no catálogo" {
     try testing.expectEqual(@as(usize, 1), cat.entries.len);
     try testing.expect(cat.entries[0].has_data and !cat.entries[0].has_video);
     try testing.expectEqualStrings("2026-10-03 14:22:05 · Convencional · 4 s", cat.entries[0].name);
+}
+
+test "apagar o vídeo deixa os dados; apagar a gravação some com ela; pasta estranha não apaga" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var buf: [512]u8 = undefined;
+    const root = buf[0..try tmp.dir.realPath(testing.io, &buf)];
+    var r = try Recorder.start(testing.io, testing.allocator, root, 1791037325, 0, 0, 30);
+    var row: core.types.LogRow = std.mem.zeroes(core.types.LogRow);
+    r.addRow(&row);
+    try r.finish(testing.io, "X");
+    var vb: [1100]u8 = undefined;
+    try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = try std.fmt.bufPrint(&vb, "{s}/video.mp4", .{r.dir()}), .data = "x" });
+    try testing.expect(deleteVideo(testing.io, r.dir()));
+    var cat = try list(testing.io, testing.allocator, root);
+    try testing.expect(cat.entries.len == 1 and !cat.entries[0].has_video and cat.entries[0].has_data);
+    cat.deinit();
+    try testing.expect(!deleteRecording(testing.io, root)); // não é voo_…
+    try testing.expect(deleteRecording(testing.io, r.dir()));
+    var cat2 = try list(testing.io, testing.allocator, root);
+    defer cat2.deinit();
+    try testing.expectEqual(@as(usize, 0), cat2.entries.len);
 }
 
 fn fuzzLabel(_: void, src: *fz.Src) anyerror!void {

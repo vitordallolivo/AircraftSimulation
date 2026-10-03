@@ -133,7 +133,7 @@ pub const Flight = struct {
         }
 
         // comandos do piloto (no automático o controle fica parado, mas a rampa acompanha)
-        const cmd = app.channel_state.step(prof.*, app.reader.raw(dt), dt);
+        const cmd = app.channel_state.step(app.effectiveProfile(), app.reader.raw(dt), dt);
         if (dm.mode == .manual) dm.setCommands(.{ .de = cmd.de, .da = cmd.da, .dr = cmd.dr, .thr = cmd.thr });
         const f = dm.step(dt);
         fl.record(f);
@@ -221,7 +221,7 @@ pub const Flight = struct {
         // canto inferior esquerdo: o que vai para as superfícies
         rl.drawRectangleRounded(.{ .x = 12, .y = H - 150, .width = 340, .height = 138 }, 0.08, 6, theme.panel_glass);
         const ap = &dm.inst.p.ap;
-        const pr = app.profile().*;
+        const pr = app.effectiveProfile();
         const de_max = if (manual) pr.de_max else ap.de_max;
         const da_max = if (manual) pr.da_max else ap.da_max;
         const dr_max = if (manual) pr.dr_max else ap.dr_max;

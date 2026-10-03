@@ -202,9 +202,10 @@ pub const Profile = struct {
     aileron: Curve = .{ .expo = 0.2 },
     rudder: Curve = .{ .expo = 0 },
     throttle: Curve = .{ .deadzone = 0.02, .expo = 0 },
-    de_max: f64 = std.math.degreesToRadians(20.0),
-    da_max: f64 = std.math.degreesToRadians(20.0),
-    dr_max: f64 = std.math.degreesToRadians(25.0),
+    // deflexão máxima pedida; o jogo nunca passa do estol da superfície (padrão: até o estol)
+    de_max: f64 = std.math.degreesToRadians(30.0),
+    da_max: f64 = std.math.degreesToRadians(30.0),
+    dr_max: f64 = std.math.degreesToRadians(30.0),
     button_rate: f64 = 4.0, // LB/RB: quanto o leme anda por segundo (fração do curso)
     buttons: Bindings = .{},
 

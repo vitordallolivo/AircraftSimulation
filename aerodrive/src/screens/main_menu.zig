@@ -16,10 +16,7 @@ const Item = struct { label: [:0]const u8, hint: ?[:0]const u8, next: Next };
 const items = [_]Item{
     .{ .label = "Voar", .hint = null, .next = .{ .open = .fly } },
     .{ .label = "Aeronave", .hint = "arquivo, vento, LAPES", .next = .{ .open = .aircraft } },
-    .{ .label = "Controle", .hint = "curvas", .next = .{ .open = .control } },
-    .{ .label = "Câmera", .hint = null, .next = .{ .open = .camera } },
-    .{ .label = "Som", .hint = "teste", .next = .{ .open = .sound } },
-    .{ .label = "Voos gravados", .hint = null, .next = .{ .open = .recordings } },
+    .{ .label = "Opções", .hint = "controle, câmera, som, voos gravados", .next = .{ .open = .options } },
     .{ .label = "Sair", .hint = null, .next = .quit },
 };
 
@@ -48,7 +45,7 @@ pub const MainMenu = struct {
         rl.clearBackground(theme.panel);
 
         // aeronave viva à direita
-        const cmd = m.input.step(app.profile().*, app.reader.raw(dt), dt);
+        const cmd = m.input.step(app.effectiveProfile(), app.reader.raw(dt), dt);
         m.prop += cmd.thr * 60 * dt;
         if (app.plane) |*p| {
             m.show.input(r3, dt);
