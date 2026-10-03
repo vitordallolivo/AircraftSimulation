@@ -8,7 +8,7 @@ import csv
 import threading
 
 import numpy as np
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 from aerosim.interfaces.simulation import CancelledError, ISimulation, SimResult
 
@@ -39,7 +39,14 @@ class _Worker(QtCore.QObject):
             self.failed.emit(f"{e}\n{traceback.format_exc(limit=4)}")
 
 
+STATUS = {"ok": ("✔ OK", "#d9f2e6"), "atencao": ("⚠ ATENÇÃO", "#fff1cc"), "falha": ("✖ FALHA", "#fbdada"),
+          "info": ("ℹ INFO", "#e8eef8")}
+
+
 class SimulationTab(QtWidgets.QWidget):
+    """formulário e gráficos vêm de `sim.parameters_for(aeronave)` e `sim.plots_for(aeronave)`
+    e são refeitos quando a configuração muda (ex.: tirar a EH tira o dimensionamento da EH)"""
+
     def __init__(self, state: AppState, sim: ISimulation, parent=None):
         super().__init__(parent)
         self.state, self.sim = state, sim
@@ -47,7 +54,9 @@ class SimulationTab(QtWidgets.QWidget):
         self.result: SimResult | None = None
         self._thread: QtCore.QThread | None = None
         self._cancel = threading.Event()
-        split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        self._specs_sig = None
+        self._plots_sig = None
+        self.split = split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         QtWidgets.QHBoxLayout(self).addWidget(split)
 
         side = QtWidgets.QWidget()
@@ -55,14 +64,12 @@ class SimulationTab(QtWidgets.QWidget):
         d = QtWidgets.QLabel(f"<b>{sim.title}</b><br>{sim.description}")
         d.setWordWrap(True)
         sv.addWidget(d)
-        form = QtWidgets.QFormLayout()
-        for p in sim.parameters():
-            w = self._input(p)
-            self.inputs[p.key] = w
-            lab = QtWidgets.QLabel(p.label + (f" ({p.unit})" if p.unit else ""))
-            lab.setToolTip(p.help or p.key)
-            form.addRow(lab, w)
-        sv.addLayout(form)
+        self.form_box = QtWidgets.QWidget()
+        self.form = QtWidgets.QFormLayout(self.form_box)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(self.form_box)
+        sv.addWidget(scroll, 3)
         h = QtWidgets.QHBoxLayout()
         self.run_b = QtWidgets.QPushButton("▶ Rodar")
         self.stop_b = QtWidgets.QPushButton("■ Parar")
@@ -82,21 +89,94 @@ class SimulationTab(QtWidgets.QWidget):
         self.table.setHorizontalHeaderLabels(["grandeza", "valor"])
         self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
         self.table.verticalHeader().setVisible(False)
-        sv.addWidget(self.table, 1)
+        sv.addWidget(self.table, 4)
         split.addWidget(side)
 
-        self.plots = LivePlots(sim.plots())
-        split.addWidget(self.plots)
+        # direita: diagnóstico em cima (quando houver), gráficos embaixo
+        self.right = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        self.diag = QtWidgets.QTableWidget(0, 6)
+        self.diag.setHorizontalHeaderLabels(["estado", "verificação", "valor", "critério", "por quê", "o que fazer"])
+        hh = self.diag.horizontalHeader()
+        # tudo cabe na largura (as colunas quebram linha): nada de rolar para o lado para ler o motivo
+        hh.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        for i in range(1, 6):
+            hh.setSectionResizeMode(i, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.diag.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.diag.verticalHeader().setVisible(False)
+        self.diag.setWordWrap(True)
+        self.diag.hide()
+        self.right.addWidget(self.diag)
+        self.plots = LivePlots([])
+        self.right.addWidget(self.plots)
+        split.addWidget(self.right)
         split.setStretchFactor(0, 2)
         split.setStretchFactor(1, 8)
-        split.setSizes([330, 1100])
+        split.setSizes([360, 1100])
 
         self.run_b.clicked.connect(self.start)
         self.stop_b.clicked.connect(self._cancel.set)
         self.save_b.clicked.connect(self.export)
         self._timer = QtCore.QTimer(self)
         self._timer.setInterval(66)
-        self._timer.timeout.connect(self.plots.redraw)
+        self._timer.timeout.connect(lambda: self.plots.redraw())
+        self._debounce = QtCore.QTimer(self)
+        self._debounce.setSingleShot(True)
+        self._debounce.setInterval(300)
+        self._debounce.timeout.connect(self.reconfigure)
+        state.changed.connect(lambda r: self._debounce.start() if r != "catalog" else None)
+        self.reconfigure()
+
+    # ------------------------------------------------------------------ montagem pela aeronave
+    def reconfigure(self) -> None:
+        """refaz o formulário e os gráficos se a aeronave pede outros (mantém os valores digitados)"""
+        if self._thread is not None:
+            return
+        ac = self.state.aircraft
+        specs = self.sim.parameters_for(ac)
+        sig = tuple((p.key, p.label, p.kind, tuple(p.choices)) for p in specs)
+        if sig != self._specs_sig:
+            old = self.params() if self.inputs else {}
+            while self.form.rowCount():
+                self.form.removeRow(0)
+            self.inputs = {}
+            for p in specs:
+                w = self._input(p)
+                if p.key in old:
+                    self._set(w, old[p.key])
+                self.inputs[p.key] = w
+                lab = QtWidgets.QLabel(p.label + (f" ({p.unit})" if p.unit else ""))
+                lab.setToolTip(p.help or p.key)
+                w.setToolTip(p.help or p.key)
+                self.form.addRow(lab, w)
+            self._specs_sig = sig
+        self._set_plots(self.sim.plots_for(ac))
+
+    def _set_plots(self, specs) -> None:
+        sig = tuple((s.key, s.title, s.ys, s.source) for s in specs)
+        if sig == self._plots_sig:
+            return
+        new = LivePlots(specs)
+        self.right.replaceWidget(1, new)
+        self.plots.deleteLater()
+        self.plots = new
+        self._plots_sig = sig
+
+    @staticmethod
+    def _set(w, v):
+        try:
+            if isinstance(w, QtWidgets.QCheckBox):
+                w.setChecked(bool(v))
+            elif isinstance(w, QtWidgets.QComboBox):
+                if w.findText(str(v)) >= 0:
+                    w.setCurrentText(str(v))
+            elif isinstance(w, QtWidgets.QSpinBox):
+                w.setValue(int(v))
+            elif isinstance(w, QtWidgets.QLineEdit):
+                w.setText(str(v))
+            else:
+                w.setValue(float(v))
+        except (TypeError, ValueError):
+            pass
 
     def _input(self, p):
         if p.kind == "bool":
@@ -144,7 +224,9 @@ class SimulationTab(QtWidgets.QWidget):
         self._cancel = threading.Event()
         self.stop_b.clicked.disconnect()
         self.stop_b.clicked.connect(self._cancel.set)
+        self._set_plots(self.sim.plots_for(self.state.aircraft))
         self.plots.clear()
+        self.diag.hide()
         self.table.setRowCount(0)
         self.msg.setText("rodando…")
         self.run_b.setEnabled(False)
@@ -177,14 +259,38 @@ class SimulationTab(QtWidgets.QWidget):
         self._finish()
         self.result = res
         self.bar.setValue(1000)
-        self.msg.setText(f"terminado: {res.status}")
+        nf = sum(c.status == "falha" for c in res.checks)
+        na = sum(c.status == "atencao" for c in res.checks)
+        tail = f" — {nf} falha(s), {na} atenção" if res.checks else ""
+        self.msg.setText(f"terminado: {res.status}{tail}")
+        # só os gráficos que têm dado nesta aeronave/neste caso
+        specs = [s for s in self.sim.plots_for(self.state.aircraft) if _has_data(s, res)]
+        self._set_plots(specs)
         self.plots.show_result(res)
+        self._show_checks(res.checks)
         rows = list(res.summary.items())
         self.table.setRowCount(len(rows))
         for i, (k, v) in enumerate(rows):
             self.table.setItem(i, 0, QtWidgets.QTableWidgetItem(str(k)))
             self.table.setItem(i, 1, QtWidgets.QTableWidgetItem(format_value(v)))
         self.save_b.setEnabled(True)
+
+    def _show_checks(self, checks):
+        self.diag.setVisible(bool(checks))
+        self.diag.setRowCount(len(checks))
+        order = {"falha": 0, "atencao": 1, "ok": 2, "info": 3}
+        for i, c in enumerate(sorted(checks, key=lambda c: order.get(c.status, 9))):
+            txt, color = STATUS.get(c.status, (c.status, "#ffffff"))
+            vals = [txt, (f"[{c.group}] " if c.group else "") + c.item, c.value, c.criterion, c.why, c.fix]
+            for j, v in enumerate(vals):
+                it = QtWidgets.QTableWidgetItem(v)
+                it.setToolTip(v)
+                if j == 0:
+                    it.setBackground(QtGui.QColor(color))
+                self.diag.setItem(i, j, it)
+        self.diag.resizeRowsToContents()
+        if checks:
+            self.right.setSizes([330, 700])
 
     def _failed(self, text):
         self._finish()
@@ -200,8 +306,23 @@ class SimulationTab(QtWidgets.QWidget):
             self.msg.setText(export_result(self.result, path))
 
 
+def _has_data(spec, res: SimResult) -> bool:
+    if spec.source == "log":
+        return res.log is not None and len(res.log) > 0
+    name = spec.source.split(":", 1)[1]
+    if name.endswith("*"):
+        tabs = [v for k, v in res.series.items() if k.startswith(name[:-1])]
+    else:
+        tabs = [res.series.get(name)]
+    return any(t and spec.x in t and any(y in t for y in spec.ys) for t in tabs)
+
+
 def _tables(res: SimResult) -> dict:
     tables = {}
+    if res.checks:
+        tables["diagnostico"] = {k: [getattr(c, a) for c in res.checks] for k, a in
+                                 (("estado", "status"), ("grupo", "group"), ("verificação", "item"), ("valor", "value"),
+                                  ("critério", "criterion"), ("por quê", "why"), ("o que fazer", "fix"))}
     if res.summary:
         tables["resumo"] = {"grandeza": list(res.summary), "valor": [format_value(v) for v in res.summary.values()]}
     tables.update(res.series)

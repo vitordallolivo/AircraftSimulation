@@ -115,12 +115,17 @@ class LivePlots(QtWidgets.QWidget):
                         continue
                     xs = np.asarray(tab[s.x], float)
                     ys = np.asarray(tab[y], float)
-                    lab = f"{tname}: {y}" if many else y
+                    # tabelas por prefixo ("me_CG atual"): o nome depois do prefixo é o rótulo
+                    rest = tname[len(name) - 1:] if name.endswith("*") else tname
+                    lab = (f"{rest}: {y}" if len(s.ys) > 1 else rest) if many else y
                     if s.swap:
                         xs, ys = ys, xs
                     color = PALETTE[k % len(PALETTE)]
                     k += 1
-                    if s.scatter:
+                    dash = tab.get("_dash") if isinstance(tab, dict) else None
+                    if dash:
+                        p.plot(xs, ys, pen=pg.mkPen(color, width=1.4, style=pg.QtCore.Qt.PenStyle.DashLine), name=lab)
+                    elif s.scatter:
                         p.plot(xs, ys, pen=pg.mkPen(color, width=1, style=pg.QtCore.Qt.PenStyle.DashLine),
                                symbol="o", symbolSize=7, symbolBrush=color, name=lab)
                     else:
@@ -134,4 +139,8 @@ def format_value(v) -> str:
         return f"{v:.4g}"
     if isinstance(v, (list, tuple)):
         return ", ".join(format_value(x) for x in v)
+    if isinstance(v, dict):
+        return "; ".join(f"{k}: {format_value(x)}" for k, x in v.items())
+    if isinstance(v, (np.floating, np.integer)):
+        return format_value(float(v))
     return str(v)

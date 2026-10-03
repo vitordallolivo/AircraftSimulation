@@ -66,15 +66,38 @@ def test_aero_and_stability_tabs_registered(manager):
 
 def test_stability_simulation(manager):
     from aerosim.model.templates import conventional
-    r = manager.run("stability", conventional(), {"scissor": False, "Vs_list": "13, 17"})
-    assert any("MIL-F-8785C" in k for k in r.summary)
-    assert "resp_lon" in r.series and "aileron" in r.series and "modos_V" in r.series
+    r = manager.run("stability", conventional(), {"size_tail": False, "Vs_list": "13, 17", "resp": True})
+    assert any(c.group == "dinâmica" for c in r.checks)
+    assert any("margem estática" in c.item for c in r.checks)
+    assert all(c.status in ("ok", "atencao", "falha", "info") for c in r.checks)
+    assert "resp_lon" in r.series and "me_margem estática" in r.series and any(k.startswith("ail_") for k in r.series)
 
 
-def test_aerodynamics_simulation_zig_only(manager):
-    from aerosim.model.templates import conventional
-    p = {"use_lltdrek": False, "use_asb_vlm": False, "use_asb_buildup": False, "use_asb_ll": False,
-         "a0": -2.0, "a1": 8.0, "da": 2.0}
+def test_stability_adapts_to_configuration(manager):
+    """sem EH não há área de EH; elevon é dimensionado para arfagem + rolagem; sem leme, sem leme"""
+    from aerosim.model.templates import conventional, flying_wing
+    sim = manager.get("stability")
+    keys_fw = {p.key for p in sim.parameters_for(flying_wing())}
+    keys_cv = {p.key for p in sim.parameters_for(conventional())}
+    assert "size_tail" not in keys_fw and "Vw" not in keys_fw and "size_tail" in keys_cv and "Vw" in keys_cv
+    assert "cg_var" in keys_fw and "cg_margin" in keys_cv          # sem carga/líquido o CG é informado
+    plots_fw = {p.key for p in sim.plots_for(flying_wing())}
+    assert "elv" in plots_fw and "eh" not in plots_fw and "ail" not in plots_fw
+    r = manager.run("stability", flying_wing(), {"Vs_list": "14", "whatif": False})
+    assert not any(k.startswith("eh_") for k in r.series)
+    assert any("elevon" in c.item for c in r.checks)
+    assert any("C_m0" in c.item for c in r.checks)
+
+
+def test_aerodynamics_simulation(manager):
+    from aerosim.model.templates import conventional, flying_wing
+    sim = manager.get("aerodynamics")
+    d = sim.defaults(conventional())
+    assert d["use_lltdrek"] and not d["use_asb_vlm"] and not d["tips"]      # sem dispositivo: não estuda pontas
+    assert sim.defaults(flying_wing())["tips"]                              # tem winglets: avalia
+    p = {"use_lltdrek": False, "a0": -2.0, "a1": 8.0, "da": 2.0}
     r = manager.run("aerodynamics", conventional(), p)
-    assert "polar_Zig" in r.series and "tips" in r.series and "derivadas" in r.series
-    assert r.summary["[Zig] SM"] > 0
+    assert "polar_núcleo Zig" in r.series and not any(k.startswith("tip") for k in r.series)
+    assert r.summary["[núcleo Zig] SM"] > 0
+    r = manager.run("aerodynamics", flying_wing(), p)
+    assert any(c.group == "dispositivos de ponta" for c in r.checks)

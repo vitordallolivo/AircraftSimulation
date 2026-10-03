@@ -1,5 +1,24 @@
 # aerosim/stability — estabilidade estática, dinâmica e superfícies de comando
 
+A aba **Estabilidade** não entrega só gráficos: entrega um **diagnóstico** — cada verificação com
+estado (OK / ATENÇÃO / FALHA / INFO), valor, critério e fonte, a causa física e o que mudar, com números
+(mm de CG, % de área, graus de diedro). Quando um modo dinâmico falha, a análise é refeita com a deriva
+maior / mais diedro / EH maior para dizer quanto mudar (`sizing.search`).
+
+A aba se monta pela configuração (`aerosim/model/features.py`):
+
+| a aeronave tem | a aba mostra |
+|---|---|
+| EH (ou cauda em V) | área de EH × faixa de CG, volume de cauda, corda do profundor |
+| sem EH (asa voadora) | C_m0 > 0, C_L máximo equilibrado pelo elevon, divisão do curso do elevon entre arfagem e rolagem |
+| aileron | tempo de rolagem × tamanho do aileron |
+| leme / ruddervator | leme em vento cruzado (e motor parado, se multimotor) |
+| carga lançável / líquido | faixa de CG calculada (com/sem carga, com/sem líquido); senão, a variação é informada |
+| trem de pouso | rotação na decolagem (e onde pôr o trem principal se não roda) |
+
+Gráficos principais: **margem estática × posição do CG** e **deflexão de arfagem para equilibrar × posição
+do CG**, com os limites dianteiro e traseiro marcados.
+
 Usado pela aba **Estabilidade** (`manager/simulations/stability.py`). Tudo vem do núcleo: os
 coeficientes com momento em qualquer ponto (`aero_coeffs_ex`) e o modelo linear (`linearize`).
 
@@ -35,7 +54,7 @@ flowchart LR
 - Manche fixo: δe de equilíbrio × V com dδe/dV > 0.
 - Faixa de CG: atual, sem carga, sem líquido.
 
-## Margem estática e tamanho da EH — gráfico tesoura (`scissor.py`)
+## Área da EH × faixa de CG (`scissor.py`, o \"scissor plot\" de Torenbeek)
 
 Para cada S_h/S (EH escalada com a mesma razão de aspecto) o núcleo dá três limites de CG:
 
@@ -68,8 +87,8 @@ compara com a **MIL-F-8785C** por classe (I–IV) e categoria (A, B, C):
 
 Mais: raízes × V, Lanchester para o fugóide, respostas lineares a doublet de profundor e pulso de aileron.
 
-![Estabilidade](../../docs/img/comparativo/5_estabilidade.png)
-![Aeronaves-modelo](../../docs/img/comparativo/7_aeronaves.png)
+![Estabilidade](../../docs/img/comparativo/conventional_estab_diagnostico.png)
+![Aeronaves-modelo](../../docs/img/comparativo/conventional_estab_graficos.png)
 
 ## Superfícies de comando (`controls.py`)
 
@@ -79,6 +98,6 @@ Mais: raízes × V, Lanchester para o fugóide, respostas lineares a doublet de 
 | profundor | δe para o C_L de pouso no CG dianteiro e para θ̈ pedido na rotação; varre c_e/c (τ por perfil fino) |
 | leme | vento cruzado de 0,2 V_S (FAR 23.233): `δr = C_nβ β / C_nδr`; multimotor: motor crítico parado em 1,2 V_S |
 
-![Comandos](../../docs/img/comparativo/6_comandos.png)
+![Comandos](../../docs/img/comparativo/flying_wing_estab_diagnostico.png)
 
 Figuras: `python tools/plot_comparativo.py docs/img/comparativo`.

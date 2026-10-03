@@ -28,7 +28,7 @@ flowchart LR
 | `ISimBackend` | `open_session()`, `limits()`, `log_channels()` |
 | `ISimSession` | `configure(spec)`, `reset_ground()`, `reset_air(seg)`, `run(t_limit, max_rows)`, `events()`, `snapshot()`/`restore()`, `trim()`, `performance()`, `aero_coeffs()`, `aero_coeffs_ex()` (rotação e ponto de referência), `linearize(V)` (A, B), `prop_point()`, `mass_props()` |
 | `IAeroSolver` (`aero.py`) | `available()`, `solve(aeronave, AeroCase) → AeroPolar` (polar + derivadas nos eixos do simulador) |
-| `ISimulation` | `parameters()` → campos da aba, `plots()` → gráficos, `run(ctx)` → `SimResult` |
+| `ISimulation` | `parameters_for(aeronave)` → campos da aba, `plots_for(aeronave)` → gráficos (dependem da configuração; a GUI refaz a aba quando ela muda), `run(ctx)` → `SimResult` (registro, tabelas, resumo e `checks`: diagnóstico com estado, valor, critério, causa e correção) |
 | `ISimulationManager` | `simulations()`, `get(nome)`, `run(nome, aeronave, params, on_chunk, on_progress, cancel)` |
 | `IAircraftSource` / `ICatalogSource` | `load(path)` / `save(obj, path)` |
 

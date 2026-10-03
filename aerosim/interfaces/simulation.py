@@ -4,6 +4,11 @@ Cada simulação declara:
   - `parameters()`: o que a GUI deve mostrar para configurá-la (gera o formulário);
   - `plots()`: o que desenhar em tempo real e no fim;
   - `run(ctx)`: como roda (que etapas, de onde reroda, o que itera).
+`parameters_for(aeronave)` e `plots_for(aeronave)` deixam o formulário e os gráficos dependerem
+da configuração (ex.: sem EH não há dimensionamento de EH; com elevon, o elevon é dimensionado
+para arfagem e rolagem juntos); a GUI refaz a aba quando a aeronave muda.
+O resultado pode trazer um diagnóstico (`checks`): cada critério com estado, valor, critério,
+causa e o que mudar — é isso que diz se a configuração serve e por quê.
 A GUI cria uma aba por simulação registrada, sem conhecer nenhuma delas.
 """
 from __future__ import annotations
@@ -50,6 +55,18 @@ class PlotSpec:
 
 
 @dataclass
+class Check:
+    """um item do diagnóstico"""
+    status: str                     # "ok" | "atencao" | "falha" | "info"
+    item: str                       # o que foi verificado
+    value: str                      # valor obtido (texto já formatado)
+    criterion: str                  # o critério usado e a fonte
+    why: str = ""                   # por que deu esse resultado (causa física)
+    fix: str = ""                   # o que mudar, com números quando possível
+    group: str = ""                 # seção (ex.: "estática longitudinal")
+
+
+@dataclass
 class SimResult:
     """saída de uma simulação"""
     log: "LogChunk | None" = None                         # registro no tempo (se houver)
@@ -57,6 +74,7 @@ class SimResult:
     summary: dict[str, Any] = field(default_factory=dict)            # números para mostrar
     events: dict[str, float] = field(default_factory=dict)
     status: str = "ok"
+    checks: list[Check] = field(default_factory=list)                 # diagnóstico
 
 
 class CancelledError(Exception):
@@ -93,8 +111,16 @@ class ISimulation(ABC):
     @abstractmethod
     def run(self, ctx: RunContext) -> SimResult: ...
 
-    def defaults(self) -> dict[str, Any]:
-        return {p.key: p.default for p in self.parameters()}
+    def parameters_for(self, aircraft: "Aircraft | None") -> list[ParamSpec]:
+        """campos que fazem sentido para esta aeronave (padrão: os mesmos sempre)"""
+        return self.parameters()
+
+    def plots_for(self, aircraft: "Aircraft | None") -> list[PlotSpec]:
+        return self.plots()
+
+    def defaults(self, aircraft: "Aircraft | None" = None) -> dict[str, Any]:
+        ps = self.parameters_for(aircraft) if aircraft is not None else self.parameters()
+        return {p.key: p.default for p in ps}
 
 
 class ISimulationManager(ABC):

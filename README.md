@@ -152,12 +152,12 @@ r = m.run("mission", ac, {"start": "B"})                        # retoma de B at
 ### Figuras de comparação
 
 ```sh
-python tools/plot_comparativo.py docs/img/comparativo            # aeronave convencional
+python tools/plot_comparativo.py docs/img/comparativo            # convencional e asa voadora
 python tools/plot_comparativo.py saida/ data/aircraft/twin_boom.cfg
 ```
 
-Gera 7 PNG (polares, derivadas e métricas por método, pontas de asa, estabilidade, comandos e as três
-aeronaves-modelo). Precisa de `matplotlib`.
+Para cada aeronave: o diagnóstico e os gráficos de cada aba, iguais aos da GUI (só o que existe
+naquela configuração). Precisa de `matplotlib`.
 
 ### Testes e medições
 

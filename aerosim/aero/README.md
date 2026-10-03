@@ -1,5 +1,11 @@
 # aerosim/aero — aerodinâmica a partir da geometria
 
+Na aba **Aerodinâmica** o método principal é o **lltdrek**; o núcleo Zig entra para comparar (é o que
+a simulação usa) e o AeroSandbox é opcional. O diagnóstico diz se os métodos concordam (e por que não),
+se o cruzeiro está perto do L/D máximo, a margem até o estol e — **só se a aeronave tiver dispositivos
+de ponta** (superfícies verticais na ponta da asa) — se eles compensam o atrito. Sem dispositivo, o estudo
+de pontas só roda se marcado.
+
 Calcula polares e derivadas de estabilidade da aeronave por **vários métodos** sobre a mesma
 geometria (o modelo de `aerosim/model`) e estuda **dispositivos de ponta de asa**. É usado pela aba
 **Aerodinâmica** (`manager/simulations/aerodynamics.py`) e pode ser chamado direto do Python.
@@ -51,9 +57,9 @@ Notas sobre o lltdrek 1.2: (1) o corretor de Newton só monta a matriz certa qua
 superfícies têm o mesmo número de painéis — o adaptador sempre usa o mesmo N; (2) `np.cross` em
 vetores soltos domina o tempo — o adaptador troca por uma versão de 3 componentes (~4× mais rápido).
 
-![Polares por método](../../docs/img/comparativo/1_polares.png)
-![Derivadas por método](../../docs/img/comparativo/2_derivadas.png)
-![Métricas por método](../../docs/img/comparativo/3_metricas.png)
+![Polares por método](../../docs/img/comparativo/conventional_aero_graficos.png)
+![Derivadas por método](../../docs/img/comparativo/conventional_aero_diagnostico.png)
+![Métricas por método](../../docs/img/comparativo/flying_wing_aero_diagnostico.png)
 
 ## Dispositivos de ponta de asa (`tipdevices.py`)
 
@@ -82,7 +88,7 @@ extensão de ponta: com a mesma área molhada e com o mesmo momento fletor na ra
 Whitcomb/Jones). Com carregamento ótimo a extensão ganha; o winglet compensa quando o vão é limitado
 (regulamento, hangar).
 
-![Pontas de asa](../../docs/img/comparativo/4_pontas.png)
+![Pontas de asa](../../docs/img/comparativo/flying_wing_aero_graficos.png)
 
 ## Uso direto
 

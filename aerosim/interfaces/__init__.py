@@ -7,10 +7,10 @@
 from .aircraft_source import IAircraftSource, ICatalogSource
 from .backend import ISimBackend, ISimSession, LogChunk, RunStatus, SimSpec, TrimKind
 from .simulation import (CancelledError, ISimulation, ISimulationManager, ParamSpec, PlotSpec,
-                         RunContext, SimResult)
+                         RunContext, SimResult, Check)
 
 __all__ = [
     "IAircraftSource", "ICatalogSource", "ISimBackend", "ISimSession", "LogChunk", "RunStatus",
     "SimSpec", "TrimKind", "CancelledError", "ISimulation", "ISimulationManager", "ParamSpec",
-    "PlotSpec", "RunContext", "SimResult",
+    "PlotSpec", "RunContext", "SimResult", "Check",
 ]
