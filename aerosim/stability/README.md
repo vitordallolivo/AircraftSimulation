@@ -26,6 +26,26 @@ do CG**, com os limites dianteiro e traseiro marcados.
 Usado pela aba **Estabilidade** (`manager/simulations/stability.py`). Tudo vem do núcleo: os
 coeficientes com momento em qualquer ponto (`aero_coeffs_ex`) e o modelo linear (`linearize`).
 
+## Como chamar
+
+```python
+import numpy as np
+from aerosim.backend.zig import ZigBackend
+from aerosim.model.universal import build_model
+from aerosim.stability import Probe, static_analysis, scissor, min_tail, modes, mil_check
+
+be = ZigBackend()
+estatica, comandos = static_analysis(Probe(be, ac), V=15.0)   # C_Lα, C_mα, C_nβ, ponto neutro, margem...
+sc = scissor(be, ac, V=15.0)                   # limites de CG (% CMA) × S_h/S
+min_tail(sc, cg_fwd=20, cg_aft=30)             # menor S_h/S para essa faixa de CG
+with be.session_for(build_model(ac)) as s:
+    lin = s.linearize(15.0)                    # A, B do corpo rígido
+m = modes(np.asarray(lin["A"]))                # curto período, fugóide, dutch roll, rolamento, espiral
+mil_check(m, "I", "B")                         # MIL-F-8785C
+```
+
+## Como funciona
+
 ```mermaid
 flowchart LR
     subgraph IF["ISimSession (núcleo)"]
@@ -49,7 +69,7 @@ flowchart LR
     style IF fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
-## Estática (`static.py`)
+### Estática (`static.py`)
 
 - Ponto neutro numérico x_np = x_ref + c C_mα/C_Lα; margem MS = (x_CG − x_np)/c (x à frente).
 - Ponto neutro analítico (Etkin & Reid; Nelson):
@@ -58,7 +78,7 @@ flowchart LR
 - Manche fixo: δe de equilíbrio × V com dδe/dV > 0.
 - Faixa de CG: atual, sem carga, sem líquido.
 
-## Área da EH × faixa de CG (`scissor.py`, o \"scissor plot\" de Torenbeek)
+### Área da EH × faixa de CG (`scissor.py`, o \"scissor plot\" de Torenbeek)
 
 Para cada S_h/S (EH escalada com a mesma razão de aspecto) o núcleo dá três limites de CG:
 
@@ -73,7 +93,7 @@ O menor S_h/S em que a faixa de CG desejada cabe entre os limites é o dimension
 Approach*, cap. 6; Raymer, cap. 16). MS mínima usual: 5 % da CMA; 5–15 % para aviação geral e VANTs.
 Sem EH (asa voadora) a tesoura não se aplica.
 
-## Dinâmica (`dynamic.py`)
+### Dinâmica (`dynamic.py`)
 
 `linearize(V)` trima o avião nivelado (longitudinal exato; δa, δr e φ pequenos equilibram o torque dos
 motores) e deriva A (8×8 em u, v, w, p, q, r, φ, θ) e B (8×4 em δe, δa, δr, acelerador) por diferenças
@@ -94,7 +114,7 @@ Mais: raízes × V, Lanchester para o fugóide, respostas lineares a doublet de 
 ![Estabilidade](../../docs/img/comparativo/conventional_estab_diagnostico.png)
 ![Aeronaves-modelo](../../docs/img/comparativo/conventional_estab_graficos.png)
 
-## Superfícies de comando (`controls.py`)
+### Superfícies de comando (`controls.py`)
 
 | comando | critério |
 |---|---|

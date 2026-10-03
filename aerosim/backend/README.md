@@ -7,6 +7,26 @@ pelo mesmo tradutor no formato universal. `backend.session_for(modelo)` entrega 
 Nenhuma struct é copiada à mão: `abi.py` lê o esquema que o núcleo gera em comptime, monta as classes ctypes e confere
 tamanho e offset de cada campo.
 
+## Como chamar
+
+```python
+import math
+from aerosim.backend.zig import ZigBackend
+from aerosim.model.universal import build_model
+
+be = ZigBackend()                              # compila core/ se a biblioteca estiver velha
+with be.session_for(build_model(ac)) as s:     # sessão já configurada
+    s.aero_coeffs(15.0, math.radians(4))       # {"CL": ..., "CD": ..., "Cm": ...}
+    s.mass_props()                             # m, cg, I
+    s.trim(0, 15.0)                            # TrimKind.LEVEL
+    s.reset_ground()
+    status, log = s.run(5.0, 10000)            # até t = 5 s, no máximo 10 000 linhas
+    log["t"], log["n"], log["h"]               # numpy, uma coluna por canal
+    data = s.snapshot(); s.restore(data)       # checkpoint
+```
+
+## Como funciona
+
 ```mermaid
 flowchart LR
     subgraph API["interface (aerosim/interfaces/backend.py)"]

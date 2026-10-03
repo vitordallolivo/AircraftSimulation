@@ -5,6 +5,19 @@ Equações do diagrama de restrições (T/W exigido × carga alar W/S), sem núc
 modelo universal da aeronave) ou de `estimate_polar` (estimativa estatística, quando ainda não há
 geometria). A tração do motor vem do núcleo pela interface `ISimSession`.
 
+## Como chamar
+
+```python
+from aerosim.sizing import Requirements, estimate_polar, design_point, constraint_curves
+
+req = Requirements(V_stall=11, S_G=50, roc=2.0, V_cruise=16, n_turn=2.0)   # 0 desliga um requisito
+polar = estimate_polar(Swet_S=4.0, AR=7.0)       # ou a polar da aba Aerodinâmica
+dp = design_point(req, polar)                    # {"ws": W/S, "tw": T/W, "active": requisito que manda, ...}
+curvas = constraint_curves(req, polar, ws=range(20, 120))   # T/W exigido por requisito
+```
+
+## Como funciona
+
 ```mermaid
 flowchart LR
     subgraph AERO["aerodinâmica (módulo aero)"]

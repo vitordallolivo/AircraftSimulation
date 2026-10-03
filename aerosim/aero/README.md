@@ -10,6 +10,25 @@ Calcula polares e derivadas de estabilidade da aeronave por **vários métodos**
 geometria (o modelo de `aerosim/model`) e estuda **dispositivos de ponta de asa**. É usado pela aba
 **Aerodinâmica** (`manager/simulations/aerodynamics.py`) e pode ser chamado direto do Python.
 
+## Como chamar
+
+```python
+import numpy as np
+from aerosim.aero import AeroCase, ZigPanelSolver, LltdrekSolver, AsbVLMSolver, polar_metrics
+from aerosim.backend.zig import ZigBackend
+from aerosim.model.universal import build_model
+
+model = build_model(ac)
+case = AeroCase(V=15, alphas=np.arange(-4, 14, 1.0), ref=(0.02, 0, 0.0))   # ref: ponto dos momentos
+pol = ZigPanelSolver(ZigBackend()).solve(model, case)      # ou LltdrekSolver(), AsbVLMSolver() se instalados
+pol.CL, pol.CD, pol.derivs                                  # polar e derivadas (C_mα, C_nβ, C_lp, ...)
+polar_metrics(pol, model, case)                             # C_Lmax, α de estol, (L/D)máx, ponto neutro...
+```
+
+`lltdrek` e `aerosandbox` são opcionais (`pip install -r requirements-aero.txt`).
+
+## Como funciona
+
 ```mermaid
 flowchart LR
     subgraph IF["aerosim/interfaces/aero.py"]
@@ -31,7 +50,7 @@ flowchart LR
     style IF fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
-## Métodos comparados
+### Métodos comparados
 
 | solver | o que entra | como |
 |---|---|---|
@@ -64,7 +83,7 @@ vetores soltos domina o tempo — o adaptador troca por uma versão de 3 compone
 ![Derivadas por método](../../docs/img/comparativo/conventional_aero_diagnostico.png)
 ![Métricas por método](../../docs/img/comparativo/flying_wing_aero_diagnostico.png)
 
-## Dispositivos de ponta de asa (`tipdevices.py`)
+### Dispositivos de ponta de asa (`tipdevices.py`)
 
 Arrasto induzido mínimo no plano de Trefftz (Munk; Kroo, *Drag due to lift*, Annu. Rev. Fluid Mech.
 2001; Kroo, McMasters e Smith, *Highly nonplanar lifting systems*, 1995):
@@ -92,16 +111,6 @@ Whitcomb/Jones). Com carregamento ótimo a extensão ganha; o winglet compensa q
 (regulamento, hangar).
 
 ![Pontas de asa](../../docs/img/comparativo/flying_wing_aero_graficos.png)
-
-## Uso direto
-
-```python
-from aerosim.aero import AeroCase, ZigPanelSolver, LltdrekSolver, AsbVLMSolver, polar_metrics
-from aerosim.backend.zig import ZigBackend
-case = AeroCase(V=15, alphas=np.arange(-4, 14, 1.0), ref=(0.02, 0, 0.0))
-pol = LltdrekSolver().solve(ac, case)
-print(pol.derivs, polar_metrics(pol, ac, case))
-```
 
 `lltdrek` e `aerosandbox` são opcionais: sem eles o solver aparece como indisponível na aba.
 

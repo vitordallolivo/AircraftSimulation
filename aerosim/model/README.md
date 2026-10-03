@@ -14,6 +14,24 @@ Ninguém fora de `universal.py` deriva geometria da configuração: o núcleo Zi
 recebem o `AircraftModel` pelos **tradutores** (`IModelTranslator`), que levam ao formato de cada um e
 trazem o resultado de volta em formato universal. Um teste (`tests/test_architecture.py`) garante isso.
 
+## Como chamar
+
+```python
+from aerosim.model import TEMPLATES, Aircraft, LiftingSurface, ControlSurface
+from aerosim.model.aircraft import rect_sections
+from aerosim.model.universal import build_model
+
+ac = TEMPLATES["conventional"]()               # ou "flying_wing", "twin_boom"; ou load_aircraft(arquivo)
+ac.surfaces.append(LiftingSurface(name="canard", role="htail", x=0.8, sections=rect_sections(0.3, 0.15),
+                                  controls=[ControlSurface("elevator", 0.0, 1.0, 0.3)]))
+model = build_model(ac)                        # modelo universal: o que todo solver recebe
+model.S, model.c, model.b, model.mass["m"], model.mass["cg"]
+[ (s.name, len(s.stations)) for s in model.surfaces ]
+ac.mission.segments()                          # percurso → segmentos do núcleo
+```
+
+## Como funciona
+
 ```mermaid
 flowchart LR
     subgraph API["interface do módulo"]
@@ -40,7 +58,7 @@ flowchart LR
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
-## Aeronave
+### Aeronave
 
 | componente | campos principais |
 |---|---|
@@ -52,7 +70,7 @@ flowchart LR
 | `MassModel` | massa base + inércia própria + massas pontuais (+ motores/baterias/estrutura, se ligado) |
 | `Fuselage`, `TailBoom`, `Payload`, `Environment`, `Takeoff`, `Autopilot`, `SimSettings`, `Mission` | — |
 
-## Geometria → núcleo
+### Geometria → núcleo
 
 `geometry.surface_panels` corta cada superfície nas seções e nas bordas dos comandos; cada faixa de
 cada lado vira um painel com centro aerodinâmico a 25 % da corda média (com enflechamento e diedro).
@@ -60,7 +78,7 @@ C_Lα vem de Helmbold com o alongamento da superfície; α_L0 e C_m,ac do perfil
 sobre o `.dat`); τ do comando pela fração de corda. A deflexão de cada painel é
 `τ · (mix · [δe, δa, δr])` — o mesmo esquema cobre elevon e ruddervator.
 
-## Tração polinomial
+### Tração polinomial
 
 `ThrustPoly` guarda os 21 coeficientes na ordem do `poly55` (`POLY_TERMS`), as variáveis `x_var`,
 `y_var` (`none`, `V`, `throttle`, `h`, `rho`), `gain`, `rho_exp`, `xmax`, `ymax` e, informativos,

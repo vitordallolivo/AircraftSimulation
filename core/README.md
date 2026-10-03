@@ -3,6 +3,64 @@
 Integra a dinâmica 6GDL com RK4 (dt = 1 ms), calcula equilíbrios (trimagem) e entrega o registro em
 fatias. Toda a memória é estática (`src/limits.zig`); nada é alocado em tempo de execução.
 
+## Como chamar
+
+### Compilar e testar
+
+```sh
+python -m ziglang build --release=fast        # zig-out/lib/libaerosim.so (dll/dylib)
+python -m ziglang build --release=fast -Dfast_math=false   # funções da std no lugar das LUTs
+python -m ziglang build test                  # todos os testes
+python -m ziglang build test-math             # só math/: LUTs, polinômio, vetores
+python -m ziglang build test-physics          # physics/
+python -m ziglang build test-control          # control/
+python -m ziglang build test-sim              # sim/, abi, bench (decolagem, checkpoint, trimagem...)
+```
+
+Opções: `-Dfast_math` (padrão `true`), `-Dstrip` (padrão: sim fora do Debug), `-Dcpu` (padrão
+`x86_64_v3` em x86, ver abaixo).
+
+### Pelo Zig (módulo)
+
+Programas em Zig importam o núcleo direto (é o que o `aerodrive` faz), sem passar pela ABI C:
+
+```zig
+// build.zig.zon: .aerosim = .{ .path = "../core" }
+// build.zig:     .imports = &.{ .{ .name = "aerosim", .module = b.dependency("aerosim", .{ .target = target, .release = true }).module("aerosim") } }
+const core = @import("aerosim");
+var inst: core.runner.Instance = .{};         // grande: prefira gpa.create
+inst.p = parametros;                          // core.types.Params
+try core.runner.configure(&inst);
+try core.runner.resetGround(&inst);
+var buf: [256]core.types.LogRow = undefined;
+var n: usize = 0;
+const status = core.runner.run(&inst, 10.0, &buf, &n);
+```
+
+### Pela ABI C (o que o Python chama)
+
+| função | faz |
+|---|---|
+| `aerosim_schema()` | texto com o layout de todas as structs (gerado por reflexão em comptime) e os limites |
+| `aerosim_acquire()` / `aerosim_release(slot)` | pega/devolve uma das `max_instances` simulações estáticas |
+| `aerosim_params(slot)` / `aerosim_params_reset` / `aerosim_configure` | escreve os parâmetros direto na struct e calcula os derivados |
+| `aerosim_reset_ground` / `aerosim_reset_air(seg)` | começa parado na pista ou em voo equilibrado |
+| `aerosim_run(slot, t_limit, buf, cap, &n)` | avança até parar, até `t_limit` ou até encher `buf` |
+| `aerosim_snapshot_save/load` | checkpoint = bytes do estado (os parâmetros vêm da configuração nova) |
+| `aerosim_trim`, `aerosim_performance` | equilíbrio e tabela de desempenho por V |
+| `aerosim_envelope`, `aerosim_envelope_curve` | envelope por altitude (V_min, V_max, V_e, V*, V_cru, teto) e as curvas T_d, T_r |
+| `aerosim_simple_perf` | desempenho por cálculo (sem instância): por V, C_L, C_D, T_d/T_r, P_d/P_r, RC, γ, planeio, R(φ), limites de estol e de tração, autonomia e alcance (Peukert); resumo com V_min/V_max, RC máx., E máx., R mín. |
+| `aerosim_aero_coeffs`, `aerosim_prop_point`, `aerosim_mass_props` | polar, curva de tração, massa/CG/inércia |
+| `aerosim_aero_coeffs_ex` | coeficientes com rotação (p, q, r) e momentos em qualquer ponto (derivadas de amortecimento, ponto neutro, momento no trem) |
+| `aerosim_linearize(slot, V, &LinModel)` | trima nivelado (Levenberg-Marquardt em α, δe, acelerador, φ, δa, δr; longitudinal com peso maior) e devolve A (8×8) e B (8×4) do corpo rígido com comandos congelados |
+| `aerosim_bench_math`, `aerosim_bench_dynamics` | medições (ver abaixo) |
+
+Erros: dentro do núcleo são *error unions* do Zig (`ConfigError`, `StateError`); só na fronteira viram
+códigos negativos (`configCode`, `stateCode` em `root.zig`). Para acrescentar um campo: ponha em
+`types.zig` — o esquema e o Python se ajustam sozinhos.
+
+## Como funciona
+
 ```mermaid
 flowchart LR
     subgraph API["Interface (C ABI)"]
@@ -52,44 +110,8 @@ flowchart LR
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
-## Compilar e testar
 
-```sh
-python -m ziglang build --release=fast        # zig-out/lib/libaerosim.so (dll/dylib)
-python -m ziglang build --release=fast -Dfast_math=false   # funções da std no lugar das LUTs
-python -m ziglang build test                  # todos os testes
-python -m ziglang build test-math             # só math/: LUTs, polinômio, vetores
-python -m ziglang build test-physics          # physics/
-python -m ziglang build test-control          # control/
-python -m ziglang build test-sim              # sim/, abi, bench (decolagem, checkpoint, trimagem...)
-```
-
-Opções: `-Dfast_math` (padrão `true`), `-Dstrip` (padrão: sim fora do Debug), `-Dcpu` (padrão
-`x86_64_v3` em x86, ver abaixo).
-
-## Interface (o que o Python chama)
-
-| função | faz |
-|---|---|
-| `aerosim_schema()` | texto com o layout de todas as structs (gerado por reflexão em comptime) e os limites |
-| `aerosim_acquire()` / `aerosim_release(slot)` | pega/devolve uma das `max_instances` simulações estáticas |
-| `aerosim_params(slot)` / `aerosim_params_reset` / `aerosim_configure` | escreve os parâmetros direto na struct e calcula os derivados |
-| `aerosim_reset_ground` / `aerosim_reset_air(seg)` | começa parado na pista ou em voo equilibrado |
-| `aerosim_run(slot, t_limit, buf, cap, &n)` | avança até parar, até `t_limit` ou até encher `buf` |
-| `aerosim_snapshot_save/load` | checkpoint = bytes do estado (os parâmetros vêm da configuração nova) |
-| `aerosim_trim`, `aerosim_performance` | equilíbrio e tabela de desempenho por V |
-| `aerosim_envelope`, `aerosim_envelope_curve` | envelope por altitude (V_min, V_max, V_e, V*, V_cru, teto) e as curvas T_d, T_r |
-| `aerosim_simple_perf` | desempenho por cálculo (sem instância): por V, C_L, C_D, T_d/T_r, P_d/P_r, RC, γ, planeio, R(φ), limites de estol e de tração, autonomia e alcance (Peukert); resumo com V_min/V_max, RC máx., E máx., R mín. |
-| `aerosim_aero_coeffs`, `aerosim_prop_point`, `aerosim_mass_props` | polar, curva de tração, massa/CG/inércia |
-| `aerosim_aero_coeffs_ex` | coeficientes com rotação (p, q, r) e momentos em qualquer ponto (derivadas de amortecimento, ponto neutro, momento no trem) |
-| `aerosim_linearize(slot, V, &LinModel)` | trima nivelado (Levenberg-Marquardt em α, δe, acelerador, φ, δa, δr; longitudinal com peso maior) e devolve A (8×8) e B (8×4) do corpo rígido com comandos congelados |
-| `aerosim_bench_math`, `aerosim_bench_dynamics` | medições (ver abaixo) |
-
-Erros: dentro do núcleo são *error unions* do Zig (`ConfigError`, `StateError`); só na fronteira viram
-códigos negativos (`configCode`, `stateCode` em `root.zig`). Para acrescentar um campo: ponha em
-`types.zig` — o esquema e o Python se ajustam sozinhos.
-
-## Tração polinomial (comptime)
+### Tração polinomial (comptime)
 
 `math/poly.zig` define `Poly2(grau)`: a tabela de expoentes (p00, p10, p01, p20, p11, p02, …, na ordem
 do `poly55` do MATLAB) e o laço de avaliação são resolvidos pelo compilador; em execução sobra uma
@@ -106,7 +128,7 @@ Com x = constante n, y = V, gain = g, rho_exp = 1 e T0 em p00, é exatamente a t
 `Envelope_main` original. A ordem dos termos sai no esquema (`poly_terms`) e o teste `tests/core/test_abi.py` confere que é a
 mesma do Python.
 
-## LUTs e desempenho — o que foi medido
+### LUTs e desempenho — o que foi medido
 
 `math/fmath.zig` tem as duas implementações lado a lado (`lut` e `ref`), e `SinLut(bits)` gera tabelas
 de qualquer tamanho em comptime. `bench.zig` mede cada função isolada (entradas sequenciais ou
