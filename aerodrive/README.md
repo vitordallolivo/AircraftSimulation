@@ -4,12 +4,40 @@ Simulador pilotado (controle de Xbox ou rádio de aeromodelo em modo joystick US
 físico do aerosim (`core/`, Zig). Visual simples, só para teste: a física é a do núcleo e o desenho é o
 mesmo da GUI. Feito em Zig + raylib (compilado pelo próprio `zig build`, sem instalador).
 
-> Estado: **projeto** (este documento). Ainda não há código; primeiro as camadas e as interfaces.
+> Estado: **frente B (desenho da aeronave) funcionando** — o hangar abre qualquer avião salvo pela
+> GUI e desenha igual a ela, com as superfícies defletindo pelo controle. Tutorial do raylib:
+> [`docs/raylib.md`](docs/raylib.md).
+
+```sh
+cd aerodrive
+zig build test                                              # testes + fuzzing (sem janela)
+zig build run -- ../data/aircraft/Convencional_original.json
+```
+
+## Frentes
+
+| frente | o quê | estado |
+|---|---|---|
+| **A. Contrato** | ler o avião salvo pela GUI (`model/aircraft.zig`) e o perfil (`model/airfoil.zig`), com validação e mensagens | ✅ |
+| **B. Desenho da aeronave** | esqueleto (`model/skeleton.zig`), poses (`gfx/pose.zig`), raylib (`gfx/render.zig`), hangar | ✅ |
+| C. Núcleo pilotado | comandos externos e modos manual/assistido no `core/`, ler `params` do avião em Zig | a fazer |
+| D. Controle | perfil em arquivo, tela "Controle" (zoom na peça + curva ao vivo); as contas já estão em `input/channels.zig` | começada |
+| E. Câmeras | piloto no chão, perseguição, cabine, de cima, zoom em peça (`camera/camera.zig` já tem a interface e a órbita) | começada |
+| F. Mapa | chão legível, pista, mesa/plataforma, objetos simples | a fazer |
+| G. Voo | laço em tempo real 30/60 fps, HUD | a fazer |
+| H. Gravação | `.adr` opcional, replay, "Voos gravados" na GUI | a fazer |
+| I. Pele | .glb do Blender/SolidWorks sobre o esqueleto | a fazer |
+
+**Regras de todo módulo Zig:** teste próprio + **fuzzing** (`fz.check`, `src/util/fuzz.zig`):
+entradas quaisquer (NaN, ±inf, enormes, listas vazias, bytes aleatórios) só podem dar um **erro
+previsto, com mensagem** — nunca travar, vazar memória ou desenhar lixo. `zig build test` roda 2000
+casos por módulo; `zig build test -Dfuzz=200000 -Dseed=7` para uma rodada longa.
 
 Princípios:
 
-- **uma fonte só**: a aeronave é configurada na GUI do aerosim. O aerodrive não calcula geometria nem
-  traduz modelo; ele recebe um arquivo já pronto.
+- **tudo em Zig, sem Python**: o aerodrive lê direto o arquivo do avião que a GUI salva
+  (`data/aircraft/*.json`, "meus aviões") e monta a geometria sozinho, com as mesmas contas da GUI
+  (portadas para Zig). A configuração continua sendo feita na GUI.
 - **física ≠ aparência**: a dinâmica acontece só no modelo do núcleo. O que se vê é um *esqueleto*
   (gerado da mesma geometria da GUI) e, por cima e opcional, uma *pele* (Blender, SolidWorks). A pele
   nunca entra na física.
@@ -22,11 +50,12 @@ Princípios:
 ## 1. Camadas
 
 ```
- aerosim (Python, GUI)                               aerodrive (Zig)
- ─────────────────────                               ──────────────────────────────────────────────
- Configuração ─► build_model ─► tradutor ─► params ┐
-             └─► geometry   ─► esqueleto ──────────┼─► modelo.aerodrive.json ─► [0] Contrato
- Mapa (editor futuro) ─────────────────────────────┘    mapa.json, pele.glb
+ GUI do aerosim                    aerodrive (tudo em Zig)
+ ──────────────                    ──────────────────────────────────────────────────────────────
+ Configuração ─► avião.json ─────► [0] Contrato   model/aircraft.zig (lê e valida)
+                                                  model/skeleton.zig (peças, malhas, drivers)
+                                                  params do núcleo (frente C)
+                 mapa.json, pele.glb (frentes F e I)
                                                                                     │
             [1] Fonte do estado  (IStateSource)   VooAoVivo (núcleo) │ Replay (arquivo)
             [2] Entrada          (IInputDevice → Perfil → Controls)
@@ -43,23 +72,22 @@ ou de uma gravação: o replay é o mesmo desenho alimentado por outra fonte.
 
 ---
 
-## 2. [0] Contrato com o aerosim: `modelo.aerodrive.json`
+## 2. [0] Contrato com o aerosim: o arquivo do avião
 
-Gerado pela GUI (botão "Exportar para o aerodrive" / "Voar"). Campos:
+O aerodrive lê o mesmo `.json` que a GUI grava (`{"aeronave": {...}}`), só os campos que usa
+(`model/aircraft.zig`; o resto é ignorado). `validate` confere tudo o que pode quebrar o desenho e
+devolve um erro com o componente ("asa: 'chord' tem de ser > 0"). Limites: 16 superfícies, 32 seções,
+8 comandos/dispositivos por superfície, 8 motores, 8 tanques, coordenadas até ±50 m.
 
-| campo | o que é | de onde vem |
-|---|---|---|
-| `abi_version` | versão das structs do núcleo | `aerosim_abi_version()` |
-| `params` | o SimSpec: os campos de `T.Params` com os mesmos nomes | `backend/zig/translator.py` (já existe) |
-| `skeleton` | peças para desenhar (abaixo) | `model/geometry.py` (o mesmo da GUI) |
-| `info` | nome, V de estol, nomes das etapas, x/z_warning | modelo universal / Configuração |
-
-O Zig lê `params` com `std.json` direto para `T.Params` (sem tradução). Versão diferente → "recompile o
-modelo na GUI" (nunca voa errado).
+As contas da geometria são as da GUI, portadas: estações nas quebras (seções + início/fim dos comandos),
+cauda presa na ponta do tubo, perfil NACA pelo nome (ou as coordenadas do arquivo, reamostradas para
+80 pontos), dispositivos de ponta, trem pelo tipo. Para a física (frente C) os `params` do núcleo
+também serão montados em Zig a partir do mesmo arquivo.
 
 ### Esqueleto (a aparência obrigatória)
 
-Lista de **peças**. Cada peça tem um sistema de coordenadas e um *driver* que diz como ela se move:
+Lista de **peças** (`model/skeleton.zig`). Cada peça tem malha, cor (a paleta da GUI) e um
+*driver* que diz como ela se move:
 
 ```
 Peça {
@@ -81,8 +109,8 @@ Peça {
   ruddervator, leme). Assim o aileron desenhado deflete exatamente como o núcleo aplica.
 - Hoje `control_meshes` desenha uma placa por cima da superfície. No esqueleto o comando vira **peça
   separada com dobradiça** (e a superfície fica sem aquele pedaço), para poder girar.
-- **A GUI passa a desenhar a partir do mesmo esqueleto** (`view3d.py` consome o esqueleto em vez de chamar
-  `aircraft_meshes` direto). Garantia de que os dois mostram o mesmo avião, com as mesmas cores.
+- As formas e cores são as de `aerosim/model/geometry.py` e `gui/widgets/view3d.py`; o teste
+  "os aviões de exemplo da pasta data/aircraft montam" confere os quatro exemplos.
 
 ### Pele (opcional, "maquiagem")
 
@@ -226,32 +254,24 @@ Arquivo `.adr`:
 
 ---
 
-## 10. Pastas (quando houver código)
+## 10. Pastas
 
 ```
 aerodrive/
-  build.zig, build.zig.zon     núcleo (../core) como módulo + raylib
+  build.zig, build.zig.zon     raylib pelo gerenciador de pacotes do Zig
+  docs/raylib.md               tutorial
   src/
-    main.zig
-    contract/   leitura do modelo.aerodrive.json, mapa.json, pele.json, perfil.json
-    source/     IStateSource: live.zig (núcleo), replay.zig
-    input/      IInputDevice, perfil, curvas
-    world/      cena estática + estado de render (LogRow)
-    gfx/        IGfx (raylib), esqueleto, pele, mapa
-    camera/     ICamera e as câmeras
-    hud/        IWidget e os instrumentos
-    screens/    hangar, controle, voo, replay
-    rec/        gravação .adr
-  perfis/  mapas/  peles/
+    main.zig                   argumentos, leitura do avião, janela
+    tests.zig                  todos os testes sem janela
+    util/fuzz.zig              fuzzing (Smith do Zig ou gerador aleatório)
+    math/vec3.zig              vetores, rotações, corpo -> NED
+    model/aircraft.zig         [A] arquivo do avião: esquema, leitura, validação
+    model/airfoil.zig          [A] perfil NACA / coordenadas, corte do comando
+    model/skeleton.zig         [B] peças, malhas e drivers
+    gfx/pose.zig               [B] driver + estado -> transformação (sem gráficos)
+    gfx/render.zig             [B] raylib: malhas na GPU, sombreamento da GUI, grade
+    camera/camera.zig          [E] interface de câmera + órbita
+    input/channels.zig         [D] curvas dos canais (zona morta, expo, rate, trim)
+    ui/theme.zig               cores e fonte com acentos
+    screens/hangar.zig         menu inicial com a aeronave viva
 ```
-
-## 11. Ordem
-
-1. Contrato: esqueleto em Python (comandos como peças com dobradiça), GUI desenhando pelo esqueleto,
-   exportação do `modelo.aerodrive.json`.
-2. Núcleo: `Controls` + modos manual/assistido; atitude da carga.
-3. aerodrive: leitura do contrato, `IGfx`, esqueleto, chão e pads, câmera órbita → Hangar vivo.
-4. Entrada + perfil + tela Controle (zoom na peça e curva).
-5. Voo: `VooAoVivo`, piloto no chão, perseguição, HUD mínimo, 30/60 fps.
-6. Gravação `.adr`, Replay e "Voos gravados" na GUI.
-7. Pele (.glb + `pele.json`), mapa por arquivo, instrumentos extras.

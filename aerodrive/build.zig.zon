@@ -1,0 +1,16 @@
+.{
+    .name = .aerodrive,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .fingerprint = 0x1970518957f7a103,
+    .dependencies = .{
+        // raylib (master de 2026-10-03, já compatível com Zig 0.16). Para atualizar:
+        //   zig fetch --save=raylib https://github.com/raysan5/raylib/archive/<commit>.tar.gz
+        .raylib = .{
+            .url = "https://github.com/raysan5/raylib/archive/d8ddc8a0a6b89f79aa26ec99c20c9a8a129de9d9.tar.gz",
+            .hash = "raylib-6.0.0-whq8uIRvNwXmX0FLGBpURkriOr1hO58vtAvdXgXRebYU",
+            .lazy = true,
+        },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "docs", "README.md" },
+}
