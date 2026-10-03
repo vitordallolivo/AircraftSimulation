@@ -39,7 +39,8 @@ pub const Settings = struct {
 
     pub fn setAircraft(s: *Settings, path: []const u8) void {
         const n = @min(path.len, max_path);
-        @memcpy(s.aircraft_buf[0..n], path[0..n]);
+        // `path` pode ser o próprio `aircraft()` (reabrir o último avião): cópia que aceita sobreposição
+        std.mem.copyForwards(u8, s.aircraft_buf[0..n], path[0..n]);
         s.aircraft_len = n;
     }
 
@@ -116,6 +117,15 @@ fn sanitizeProfile(p: *ch.Profile) void {
 
 // ------------------------------------------------------------------ testes
 const testing = std.testing;
+
+test "reabrir o último avião: o caminho vem do próprio buffer" {
+    var s: Settings = .{};
+    s.setAircraft("../data/aircraft/Asa_voadora.json");
+    s.setAircraft(s.aircraft());
+    try testing.expectEqualStrings("../data/aircraft/Asa_voadora.json", s.aircraft());
+    s.setAircraft(s.aircraft()[3..]);
+    try testing.expectEqualStrings("data/aircraft/Asa_voadora.json", s.aircraft());
+}
 
 test "ida e volta pelo JSON; campos faltando ficam no padrão" {
     var s: Settings = .{ .volume = 0.3, .fps = 30 };
