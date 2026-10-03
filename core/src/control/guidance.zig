@@ -74,6 +74,63 @@ pub fn guide(c: S.Ctx, n: f64, e: f64, Vg: f64) Guide {
     return g;
 }
 
+/// ponto da perna na fração `fr` (0..1): n, e, h
+fn segPoint(sg: *const T.Segment, fr: f64) [3]f64 {
+    const h = sg.h0 + (sg.h1 - sg.h0) * smooth(fr);
+    if (sg.arc != 0 and sg.R > 0.0) {
+        const fi0 = fm.atan2(sg.e0 - sg.ce, sg.n0 - sg.cn);
+        const fi = fi0 + sg.lam * fr * sg.L / sg.R;
+        return .{ sg.cn + sg.R * fm.cos(fi), sg.ce + sg.R * fm.sin(fi), h };
+    }
+    const sc = fm.sincos(sg.chi0);
+    return .{ sg.n0 + fr * sg.L * sc.c, sg.e0 + fr * sg.L * sc.s, h };
+}
+
+/// perna para retomar o percurso de onde a aeronave está (troca do manual para o automático):
+/// a de cruzeiro mais perto (distância + 2 × diferença de altura). Cruzeiro = nem decolagem, nem
+/// pouso, nem perna baixa (abaixo de 60 % da altura do circuito). null se não houver.
+pub fn rejoinSegment(p: *const T.Params, n: f64, e: f64, h: f64) ?i32 {
+    const ns: usize = @intCast(std.math.clamp(p.n_seg, 0, L.max_segments));
+    if (ns == 0 or !std.math.isFinite(n + e + h)) return null;
+    var hmax: f64 = 0;
+    for (p.seg[0..ns]) |sg| hmax = @max(hmax, @max(sg.h0, sg.h1));
+    var best: ?i32 = null;
+    var bd: f64 = std.math.inf(f64);
+    for (p.seg[0..ns], 0..) |*sg, k| {
+        if (sg.takeoff != 0 or sg.landing != 0 or !(sg.L > 0)) continue;
+        if (@min(sg.h0, sg.h1) < 0.6 * hmax) continue;
+        for (0..21) |i| {
+            const q = segPoint(sg, @as(f64, @floatFromInt(i)) / 20.0);
+            const d = fm.hypot(q[0] - n, q[1] - e) + 2.0 * @abs(q[2] - h);
+            if (d < bd) {
+                bd = d;
+                best = @intCast(k);
+            }
+        }
+    }
+    return best;
+}
+
+test "retomada: perna de cruzeiro mais perto, nunca a baixa" {
+    var p = T.Params{};
+    p.n_seg = 4;
+    p.seg[0] = .{ .takeoff = 1, .L = 60, .chi0 = 0, .h0 = 0, .h1 = 15 };
+    p.seg[1] = .{ .L = 100, .n0 = 60, .chi0 = 0, .h0 = 15, .h1 = 15 };
+    p.seg[2] = .{ .L = 100, .n0 = 160, .e0 = 100, .chi0 = std.math.pi, .h0 = 15, .h1 = 15 };
+    p.seg[3] = .{ .L = 100, .n0 = 160, .e0 = 0, .chi0 = 0, .h0 = 2, .h1 = 2 }; // passagem baixa
+    try std.testing.expectEqual(@as(?i32, 2), rejoinSegment(&p, 120, 95, 20));
+    try std.testing.expectEqual(@as(?i32, 1), rejoinSegment(&p, 200, 0, 3)); // ao lado da baixa: não ela
+    try std.testing.expectEqual(@as(?i32, null), rejoinSegment(&p, std.math.nan(f64), 0, 3));
+    var prng = std.Random.DefaultPrng.init(3);
+    const r = prng.random();
+    for (0..3000) |_| { // percursos e posições quaisquer: índice válido ou null, sem travar
+        p.n_seg = r.intRangeAtMost(i32, -2, 6);
+        for (&p.seg) |*sg| sg.* = .{ .arc = @intFromBool(r.boolean()), .takeoff = @intFromBool(r.uintLessThan(u8, 5) == 0), .L = r.float(f64) * 300 - 10, .R = r.float(f64) * 80 - 5, .h0 = r.float(f64) * 30, .h1 = r.float(f64) * 30, .lam = 1 };
+        const k = rejoinSegment(&p, r.float(f64) * 1e3, r.float(f64) * 1e3, @floatCast(@as(f32, @bitCast(r.int(u32)))));
+        if (k) |i| try std.testing.expect(i >= 0 and i < p.n_seg);
+    }
+}
+
 test "reta: erro lateral e distância" {
     var p = T.Params{};
     p.n_seg = 1;

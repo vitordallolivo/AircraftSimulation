@@ -5,6 +5,7 @@
 //! continuar de onde parou. O estado inteiro está em `Run` (POD): copiar seus bytes é
 //! o checkpoint.
 const std = @import("std");
+const guidance = @import("../control/guidance.zig");
 const L = @import("../limits.zig");
 const T = @import("../types.zig");
 const S = @import("state.zig");
@@ -105,14 +106,21 @@ fn syncIntegrators(inst: *Instance, de_before: f64, thr_before: f64) void {
 }
 
 /// passa do comando de fora para o piloto automático sem tranco: altura de referência = altura
-/// atual e integradores ajustados para continuar com o profundor e o acelerador de agora
+/// atual e integradores ajustados para continuar com o profundor e o acelerador de agora.
+/// No ar, o piloto assume já em voo (não volta à lei de decolagem) e retoma o percurso pela perna
+/// de cruzeiro mais próxima — nunca por uma perna baixa (passagem LAPES, descida, pouso).
 pub fn handover(inst: *Instance) void {
     if (!inst.configured or inst.r.valid == 0) return;
     const de = inst.p.pilot.de;
     const thr = inst.p.pilot.thr;
+    const x = &inst.r.x;
     inst.p.pilot.manual = 0;
-    inst.r.x[S.HR] = -inst.r.x[S.D];
-    inst.r.x[S.IE] = 0.0;
+    x[S.HR] = -x[S.D];
+    x[S.IE] = 0.0;
+    if (inst.r.f.airborne != 0 and inst.r.f.landed == 0) {
+        inst.r.f.autop = 1;
+        if (guidance.rejoinSegment(&inst.p, x[S.N], x[S.E], -x[S.D])) |k| inst.r.f.seg = k;
+    }
     if (inst.r.f.autop != 0) syncIntegrators(inst, de, thr);
 }
 
@@ -396,6 +404,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []T.LogRow, nrows: *usize) Status
         if (!switched) {
             for (p.event[0..@intCast(p.n_event)], 0..) |*e, k| {
                 if (r.f.ev_done[k] != 0 or r.f.seg != e.seg or o.g.s < e.s) continue;
+                if (p.pilot.manual != 0 and e.kind != T.event_gust) continue; // no manual, quem solta é o piloto
                 r.f.ev_done[k] = 1;
                 if (e.kind == T.event_gust) {
                     r.tg = t;

@@ -118,6 +118,11 @@ class ISimSession(ABC):
         B (8×4) sobre (δe, δa, δr, acelerador), mais o ponto (alpha, de, thr, phi, da, dr, m, I, cg, ok)"""
         raise NotImplementedError
 
+    def autotune(self, V: float) -> dict[str, Any]:
+        """ganhos do piloto automático pelo modelo linear em V, iguais para qualquer avião
+        (núcleo: control/autotune.zig); devolve as flags (ok, pitch, roll, yaw, speed) e `gains`"""
+        raise NotImplementedError
+
     @abstractmethod
     def prop_point(self, index: int, V: float, thr: float = 1.0) -> dict[str, float]: ...
 

@@ -18,6 +18,7 @@ const prop = @import("physics/propulsion.zig");
 const mass = @import("physics/mass.zig");
 const vec = @import("math/vec.zig");
 const linear = @import("sim/linear.zig");
+const autotune = @import("control/autotune.zig");
 
 var slots: [L.max_instances]runner.Instance = [_]runner.Instance{.{}} ** L.max_instances;
 var used: [L.max_instances]std.atomic.Value(bool) = [_]std.atomic.Value(bool){std.atomic.Value(bool).init(false)} ** L.max_instances;
@@ -183,6 +184,13 @@ export fn aerosim_aero_coeffs_ex(slot: i32, V: f64, alpha: f64, beta: f64, pr: f
 export fn aerosim_linearize(slot: i32, V: f64, out: *linear.LinModel) i32 {
     const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
     out.* = linear.linearize(&inst.p, &inst.r.f, V);
+    return if (out.ok != 0) 0 else E_TRIM;
+}
+
+/// ajusta os ganhos do piloto automático pelo modelo linear em V (control/autotune.zig); -4 se a trimagem falhar
+export fn aerosim_autotune(slot: i32, V: f64, out: *autotune.Result) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    out.* = autotune.tune(&inst.p, &inst.r.f, V);
     return if (out.ok != 0) 0 else E_TRIM;
 }
 

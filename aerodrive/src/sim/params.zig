@@ -488,6 +488,8 @@ pub fn setup(ac: *const Aircraft, inst: *core.runner.Instance, diag: *model.Diag
         }
         const tp = core.trim.solve(core.trim.Ctx.init(&inst.p, &inst.r.f), T.trim_level, Vc, 1.0, null);
         if (tp.ok != 0 and tp.thr > 0.05 and tp.thr < 1.0) inst.p.ap.Dtrim = tp.thr;
+        // ganhos das malhas internas pelo modelo linear do próprio avião (iguais para qualquer um)
+        _ = core.autotune.tune(&inst.p, &inst.r.f, Vc);
         core.runner.configure(inst) catch return error.CoreConfig;
     }
     info.Dtrim = inst.p.ap.Dtrim;

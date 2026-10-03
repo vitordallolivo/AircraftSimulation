@@ -2,4 +2,5 @@
 
 test {
     _ = @import("control/guidance.zig");
+    _ = @import("control/autotune.zig");
 }

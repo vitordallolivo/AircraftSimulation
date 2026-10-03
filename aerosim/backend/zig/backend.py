@@ -108,6 +108,7 @@ class _Lib:
             "aerosim_aero_coeffs": (c_int, [c_int] + [c_double] * 6 + [ctypes.POINTER(T["AeroCoeffs"])]),
             "aerosim_aero_coeffs_ex": (c_int, [c_int] + [c_double] * 9 + [vp, ctypes.POINTER(T["AeroCoeffs"])]),
             "aerosim_linearize": (c_int, [c_int, c_double, ctypes.POINTER(T["LinModel"])]),
+            "aerosim_autotune": (c_int, [c_int, c_double, ctypes.POINTER(T["Result"])]),
             "aerosim_prop_point": (c_int, [c_int, c_int, c_double, c_double, ctypes.POINTER(T["PropPoint"])]),
             "aerosim_trim": (c_int, [c_int, c_int, c_double, c_double, ctypes.POINTER(T["TrimPoint"])]),
             "aerosim_performance": (c_int, [c_int, c_double, c_double, c_double, vp, c_size]),
@@ -241,6 +242,13 @@ class ZigSession(ISimSession):
         d["cg"] = list(o.cg)
         d["A"] = np.array(list(o.A)).reshape(8, 8)
         d["B"] = np.array(list(o.B)).reshape(8, 4)
+        return d
+
+    def autotune(self, V):
+        o = self._lib.schema.types["Result"]()
+        self._lib.dll.aerosim_autotune(self._slot, V, ctypes.byref(o))
+        d = {k: getattr(o, k) for k, _ in o._fields_ if not k.startswith("_")}
+        d["gains"] = dict(abi.read(self._lib.dll.aerosim_params(self._slot).contents)["ap"])
         return d
 
     def prop_point(self, index, V, thr=1.0):
