@@ -1,14 +1,17 @@
 """Geometria: painéis (áreas, cortes nos comandos, sinais dos comandos), malhas, arraste."""
 import pytest
 
-from aerosim.model import TEMPLATES, compile_aircraft
-from aerosim.model.geometry import aircraft_meshes, all_panels, component_position, move_component, surface_panels
+from aerosim.model import TEMPLATES
+from aerosim.backend.zig.translator import native_spec
+from aerosim.backend.zig.translator import surface_panels
+from aerosim.model.geometry import aircraft_meshes, component_position, move_component
+from aerosim.model.universal import build_model
 
 
 @pytest.mark.parametrize("name", list(TEMPLATES))
 def test_panel_area_matches_surfaces(name):
     ac = TEMPLATES[name]()
-    panels = all_panels(ac)
+    panels = native_spec(ac)["surf"]
     for g, role in ((0, "wing"), (1, "htail"), (2, "vtail")):
         S_p = sum(p["S"] for p in panels if p["group"] == g)
         S_s = sum(s.area for s in ac.surfaces if s.role == role and s.enabled)
@@ -16,7 +19,7 @@ def test_panel_area_matches_surfaces(name):
 
 
 def test_panels_split_at_control_edges():
-    w = TEMPLATES["conventional"]().wing
+    w = build_model(TEMPLATES["conventional"]()).wing
     ps = [p for p in surface_panels(w) if p["side"] == 1]
     assert len(ps) == 2 and ps[0]["tau"] == 0 and ps[1]["tau"] == 0.5
 
@@ -25,7 +28,7 @@ def test_panels_split_at_control_edges():
 def test_control_and_stability_signs(backend, name):
     """mesma convenção para leme, cauda em V, elevon; estável em guinada"""
     with backend.open_session() as s:
-        s.configure(compile_aircraft(TEMPLATES[name]()))
+        s.configure(native_spec(TEMPLATES[name]()))
         c0 = s.aero_coeffs(14, 0.05)
         f = lambda **kw: s.aero_coeffs(14, 0.05, **kw)
         assert f(da=0.1)["Cl"] - c0["Cl"] > 0

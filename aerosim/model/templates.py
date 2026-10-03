@@ -59,11 +59,16 @@ def conventional() -> Aircraft:
 
 
 def _np_x(wing: LiftingSurface) -> float:
-    """ponto neutro aproximado de uma asa sozinha: CA da corda média (25 %)"""
-    from .geometry import surface_panels
-    ps = [p for p in surface_panels(wing) if p["side"] >= 0]
-    S = sum(p["S"] for p in ps)
-    return sum(p["r"][0] * p["S"] for p in ps) / S
+    """ponto neutro aproximado de uma asa sozinha: x do quarto de corda médio das faixas (por área)"""
+    from .universal import _surface
+    sm = _surface(wing, 0, (0.0, 0.0))
+    num = den = 0.0
+    for a, b, _ in sm.strips():
+        S = 0.5 * (a.chord + b.chord) * (b.s - a.s)
+        cm = S / (b.s - a.s)
+        num += S * (0.5 * (a.le[0] + b.le[0]) - 0.25 * cm)
+        den += S
+    return num / den
 
 
 def flying_wing() -> Aircraft:

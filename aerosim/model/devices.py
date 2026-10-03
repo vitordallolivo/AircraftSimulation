@@ -2,8 +2,8 @@
 
 Cada dispositivo vira "pernas" (uma por lado e, na placa, uma para cima e outra para baixo):
 ponto de fixação no bordo de ataque local da asa, direção ao longo da altura (no plano y-z) e
-estações (bordo de ataque, corda). Daí saem os painéis do núcleo, a malha 3D, as superfícies do
-AeroSandbox e o traço no plano de Trefftz — uma única descrição para todos.
+estações (bordo de ataque, corda). `aerosim.model.universal` transforma cada perna numa superfície
+do modelo universal; painéis, malha 3D, AeroSandbox e Trefftz saem de lá.
 
 Direção (lado direito; z para baixo): para cima u = (0, sen c, −cos c), com c = cant a partir da
 vertical (c = 90° continua no plano da asa); para baixo u = (0, sen c, +cos c). Lado esquerdo: y espelhado.
@@ -16,7 +16,6 @@ from dataclasses import dataclass
 import numpy as np
 
 from .aircraft import LiftingSurface, WingDevice
-from .airfoil import helmbold
 
 
 @dataclass
@@ -78,49 +77,3 @@ def legs(s: LiftingSurface, d: WingDevice) -> list[Leg]:
 def device_area(s: LiftingSurface, d: WingDevice) -> float:
     """área de um lado (todas as pernas de um lado)"""
     return sum(0.5 * (l.c_root + l.c_tip) * l.height for l in legs(s, d) if l.side >= 0)
-
-
-def device_panels(s: LiftingSurface, d: WingDevice, n: int = 3) -> list[dict]:
-    """painéis do núcleo (SI/rad): faixas ao longo da altura, grupo EV (não entram no C_Lmax da asa)"""
-    out = []
-    A = device_area(s, d)
-    for l in legs(s, d):
-        AR = max(l.height ** 2 / max(0.5 * (l.c_root + l.c_tip) * l.height, 1e-9), 0.3)
-        CLa = helmbold(d.cl_alpha, AR)
-        dih = l.dihedral
-        for k in range(n):
-            h0, h1 = l.height * k / n, l.height * (k + 1) / n
-            hm = 0.5 * (h0 + h1)
-            le, cm = l.station(hm)
-            r = le - np.array([0.25 * cm, 0, 0])
-            out.append(dict(r=list(map(float, r)), S=cm * (h1 - h0), c=cm, AR=AR, e=d.oswald, dihedral=dih,
-                            incidence=math.radians(d.toe) * (1 if l.up else -1), CLa=CLa, CL0=0.0, CLmax=1.0,
-                            CD0=d.cd0, Cmac=0.0, tau=0.0, mix=[0.0, 0.0, 0.0], eta=1.0, eps0=0.0, depsda=0.0,
-                            group=2, vertical=0, side=l.side if l.side else 1, downwash=0))
-    del A
-    return out
-
-
-def device_meshes(s: LiftingSurface, d: WingDevice, outline: np.ndarray) -> list:
-    from .geometry import _loft
-    out = []
-    for l in legs(s, d):
-        n = np.array([0.0, l.u[2], -l.u[1]])          # normal ao dispositivo no plano y-z
-        rings = []
-        for h in (0.0, l.height):
-            le, c = l.station(h)
-            rings.append(np.column_stack([le[0] - outline[:, 0] * c,
-                                          le[1] + outline[:, 1] * c * n[1],
-                                          le[2] + outline[:, 1] * c * n[2]]))
-        out.append(_loft(rings))
-    return out
-
-
-def trace_points(s: LiftingSurface, d: WingDevice) -> list[np.ndarray]:
-    """segmentos (y, z para cima) do dispositivo no plano de Trefftz"""
-    segs = []
-    for l in legs(s, d):
-        a = l.root[[1, 2]] * np.array([1, -1])
-        b = (l.root + l.u * l.height)[[1, 2]] * np.array([1, -1])
-        segs.append((a, b))
-    return segs

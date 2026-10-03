@@ -22,9 +22,9 @@ import re
 
 import numpy as np
 
-from aerosim.aero.geometry import RAYMER_TAIL_VOLUME, tail_volumes
+from aerosim.aero.geometry import RAYMER_TAIL_VOLUME
 from aerosim.interfaces.simulation import Check, ParamSpec, PlotSpec, RunContext, SimResult
-from aerosim.model.compile import compile_aircraft
+from aerosim.model.universal import build_model
 from aerosim.model.features import features
 from aerosim.stability import Probe, aileron_sizing, mil_check, modes, response, rudder_sizing, scissor
 from aerosim.stability.controls import ROLL_REQ, elevator_sizing, time_to_bank
@@ -227,7 +227,8 @@ class StabilitySimulation(SimulationBase):
 
         # ============ 1. estática longitudinal
         ctx.on_progress(0.02, "estática longitudinal")
-        with Probe(ctx.backend, ac) as pr:
+        model = build_model(ac)          # o modelo universal (as variações abaixo criam outros)
+        with Probe(ctx.backend, model) as pr:
             c = pr.c
             mm = lambda pct: abs(pct) / 100 * c * 1000
             CLmax, Vs = stall_speed(pr)
@@ -262,7 +263,7 @@ class StabilitySimulation(SimulationBase):
 
             x_np = pr.neutral_point(V)
             np_pct = pr.frac(x_np)
-            an = analytic_np(ac)
+            an = analytic_np(model)
             SM = np_pct - cg_now
             summ["ponto neutro: núcleo, analítico (% CMA)"] = [np_pct, pr.frac(an["x_np"])]
             summ["margem estática no CG atual (% CMA)"] = SM
@@ -426,7 +427,7 @@ class StabilitySimulation(SimulationBase):
                     "come curso de rolagem",
                     "" if Cm0 > 0 else "perfil reflexo, mais torção negativa na ponta (washout) ou mais enflechamento", G)
             else:
-                tv = tail_volumes(ac, pr.cg[0])
+                tv = pr.model.tail_volumes(pr.cg[0])
                 vh_t, vv_t = RAYMER_TAIL_VOLUME["experimental (homebuilt)"]
                 summ["volumes de cauda V_H, V_V"] = [tv["VH"], tv["VV"]]
                 add("info", "volume de cauda horizontal V_H", f"{tv['VH']:.3f}",

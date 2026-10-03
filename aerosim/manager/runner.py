@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from aerosim.interfaces.backend import ISimBackend, ISimSession, LogChunk, RunStatus
 from aerosim.interfaces.simulation import RunContext
 from aerosim.model.aircraft import Aircraft
-from aerosim.model.compile import compile_aircraft
+from aerosim.model.universal import build_model
 from aerosim.model.mission import Mission
 
 from .checkpoints import Checkpoint, CheckpointStore
@@ -47,8 +47,9 @@ class Runner:
         self.mission = mission if mission is not None else aircraft.mission
         self.overrides = dict(overrides or {})
         self.ctx = ctx
+        self.model = build_model(aircraft, self.mission)       # o modelo universal; o tradutor faz o resto
         self.session: ISimSession = backend.open_session()
-        self.spec = compile_aircraft(aircraft, self.mission, self.overrides)
+        self.spec = backend.translator.to_native(self.model, mission=self.mission, overrides=self.overrides)
         self.session.configure(self.spec)
 
     # ------------------------------------------------------------------ início
@@ -99,7 +100,7 @@ class Runner:
             self.mission = mission
         if overrides is not None:
             self.overrides.update(overrides)
-        self.spec = compile_aircraft(self.aircraft, self.mission, self.overrides)
+        self.spec = self.backend.translator.to_native(self.model, mission=self.mission, overrides=self.overrides)
         self.session.configure(self.spec)
 
     def close(self) -> None:

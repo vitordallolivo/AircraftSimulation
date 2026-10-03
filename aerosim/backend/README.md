@@ -1,16 +1,21 @@
 # aerosim/backend — ponte para o núcleo (camada Sim)
 
-`ZigBackend` implementa `ISimBackend`/`ISimSession` sobre `libaerosim` via ctypes. Nenhuma struct é
-copiada à mão: `abi.py` lê o esquema que o núcleo gera em comptime, monta as classes ctypes e confere
+`ZigBackend` implementa `ISimBackend`/`ISimSession` sobre `libaerosim` via ctypes. O avião chega como
+**modelo universal** (`AircraftModel`) e o `ZigTranslator` (`zig/translator.py`) o traduz para o SimSpec do
+núcleo (painéis por faixa entre estações, motores, trem, tanques, piloto, missão); os coeficientes voltam
+pelo mesmo tradutor no formato universal. `backend.session_for(modelo)` entrega a sessão já configurada.
+Nenhuma struct é copiada à mão: `abi.py` lê o esquema que o núcleo gera em comptime, monta as classes ctypes e confere
 tamanho e offset de cada campo.
 
 ```mermaid
 flowchart LR
     subgraph API["interface (aerosim/interfaces/backend.py)"]
         direction TB
-        IB["ISimBackend"]
+        IB["ISimBackend<br/>translator · session_for"]
         IS["ISimSession"]
     end
+    UM["modelo universal"] --> TR["zig/translator.py<br/>ZigTranslator: modelo → SimSpec,<br/>coeficientes → universais"]
+    IB --> TR
     ZB["zig/backend.py<br/>ZigBackend · ZigSession<br/>build() compila se preciso"]
     ABI["zig/abi.py<br/>esquema → ctypes / numpy dtype<br/>write(dict → struct), read()"]
     LIB[("core/zig-out/lib/libaerosim")]

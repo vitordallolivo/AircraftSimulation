@@ -163,63 +163,50 @@ def device_study(span: float, S: float, CL: float, c_tip: float, e_planform: flo
     return out
 
 
-# ------------------------------------------------------------------ a partir da aeronave
-def aircraft_trace(ac, with_devices: bool = True, n: int = 80, height_scale: float = 1.0) -> list[np.ndarray]:
-    """traço da asa principal (com diedro) e dos dispositivos dela no plano de Trefftz (y, z para cima).
-    Entram os `WingDevice` da asa e as derivas soltas na ponta (superfícies verticais em |y| ≈ b/2)."""
-    import math as _m
-    from aerosim.model.devices import legs
-    from aerosim.model.features import features
-    f = features(ac)
-    w = f.wing
+# ------------------------------------------------------------------ a partir do modelo universal
+def model_trace(model, with_devices: bool = True, n: int = 80, height_scale: float = 1.0) -> list[np.ndarray]:
+    """traço da asa principal (com diedro) e dos dispositivos dela no plano de Trefftz (y, z para cima),
+    a partir das estações do modelo universal: dispositivos presos à asa e derivas soltas na ponta"""
+    w = model.wing
     if w is None:
         return []
-    s = w.semispan
-    dih = _m.radians(w.dihedral)
-    b = 2 * s
+    yz = lambda p: np.array([p[1], -p[2]])
+    root, tip = yz(w.stations[0].le), yz(w.tip.le)
+    b = 2 * abs(tip[0])
     ds = b / n
-    tip = np.array([w.y + s * _m.cos(dih), -w.z + s * _m.sin(dih)])
-    root = np.array([w.y, -w.z])
     segs = [_seg(root * [-1, 1], tip * [-1, 1], ds), _seg(root, tip, ds)]
     tips = [tip, tip * [-1, 1]]
 
     def snap(p):
-        """base de dispositivo a menos de 2 % do vão da ponta = presa na ponta (sem fresta: dois vórtices
-        quase coincidentes estragam a solução)"""
+        """base a menos de 2 % do vão da ponta = presa na ponta (dois vórtices quase coincidentes estragam
+        a solução)"""
         for t in tips:
             if np.hypot(*(p - t)) < 0.02 * b:
                 return t.copy()
         return p
     if with_devices:
-        for d in [d for sw, d in f.wing_devices]:
-            for l in legs(w, d):
-                a = snap(np.array([l.root[1], -l.root[2]]))
-                du = np.array([l.u[1], -l.u[2]]) * l.height * height_scale
-                segs.append(_seg(a, a + du, ds))
-        for fin in f.tip_devices:
-            for sy in ((1, -1) if fin.symmetric else (1,)):
-                a = snap(np.array([sy * fin.y, -fin.z]))
-                segs.append(_seg(a, a + np.array([0.0, fin.semispan * height_scale]), ds))
+        for s in model.devices_of(w.name) + model.tip_fins():
+            a0, a1 = yz(s.stations[0].le), yz(s.tip.le)
+            for sy in ((1, -1) if s.mirror else (1,)):
+                a = snap(a0 * [sy, 1])
+                segs.append(_seg(a, a + (a1 - a0) * [sy, 1] * height_scale, ds))
     return segs
 
 
-def aircraft_efficiency(ac, with_devices: bool = True, n: int = 80, height_scale: float = 1.0) -> float:
+def model_efficiency(model, with_devices: bool = True, n: int = 80, height_scale: float = 1.0) -> float:
     """e ótimo da asa (+ dispositivos), com Richardson; vão de referência = envergadura projetada da asa"""
-    w = ac.wing
+    w = model.wing
     if w is None:
         return float("nan")
-    import math as _m
-    b = 2 * (w.y + w.semispan * _m.cos(_m.radians(w.dihedral)))
-    e1 = optimal_loading(aircraft_trace(ac, with_devices, n, height_scale), b)["e"]
-    e2 = optimal_loading(aircraft_trace(ac, with_devices, 2 * n, height_scale), b)["e"]
+    b = 2 * abs(w.tip.le[1])
+    e1 = optimal_loading(model_trace(model, with_devices, n, height_scale), b)["e"]
+    e2 = optimal_loading(model_trace(model, with_devices, 2 * n, height_scale), b)["e"]
     return 2 * e2 - e1
 
 
-def devices_wetted_area(ac, height_scale: float = 1.0) -> float:
-    """área molhada (2 × planta) dos dispositivos da asa, dos dois lados"""
-    from aerosim.model.devices import device_area
-    from aerosim.model.features import features
-    f = features(ac)
-    A = sum(device_area(f.wing, d) for _, d in f.wing_devices) * (2 if f.wing.symmetric else 1)
-    A += sum(s.area * (2 if s.symmetric else 1) for s in f.tip_devices)
-    return 2 * A * height_scale
+def devices_wetted_area(model, height_scale: float = 1.0) -> float:
+    """área molhada (2 × planta) dos dispositivos da asa e das derivas de ponta, dos dois lados"""
+    w = model.wing
+    if w is None:
+        return 0.0
+    return 2 * height_scale * sum(s.total_area for s in model.devices_of(w.name) + model.tip_fins())

@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 
 from aerosim.interfaces.simulation import ParamSpec, PlotSpec, RunContext, SimResult
-from aerosim.model.compile import compile_aircraft
+from aerosim.model.universal import build_model
 
 from .base import SimulationBase, floats
 
@@ -12,8 +12,7 @@ from .base import SimulationBase, floats
 def thrust_curves(backend, aircraft, V_max: float = 30.0, dV: float = 0.5, throttles=(1.0,)) -> dict:
     """{unidade: {thr: colunas}} — usado também pelo botão da aba de configuração"""
     out = {}
-    with backend.open_session() as s:
-        s.configure(compile_aircraft(aircraft))
+    with backend.session_for(build_model(aircraft)) as s:
         units = [u for u in aircraft.propulsion if u.enabled]
         for i, u in enumerate(units):
             out[u.name] = {}

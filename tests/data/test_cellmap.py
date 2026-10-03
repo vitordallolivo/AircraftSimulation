@@ -4,7 +4,7 @@ import math
 import pytest
 
 from aerosim.data.cellmap import CellMapAircraftSource
-from aerosim.model import compile_aircraft
+from aerosim.backend.zig.translator import native_spec
 
 
 def test_reads_fields(desempenho_xlsx, mapping_path):
@@ -34,7 +34,7 @@ def test_thrust_in_core_matches_sheet_formula(backend, desempenho_xlsx, mapping_
     from sheet_fixtures import thrust
     ac = CellMapAircraftSource(mapping_path).load(desempenho_xlsx)
     with backend.open_session() as s:
-        s.configure(compile_aircraft(ac))
+        s.configure(native_spec(ac))
         for V in (0.0, 8.0, 15.0):
             assert s.prop_point(0, V, 1.0)["T"] == pytest.approx(thrust("conjunto B", V, ac.environment.rho), rel=1e-12)
 
@@ -54,7 +54,7 @@ def test_roundtrip_same_cells(desempenho_xlsx, mapping_path, tmp_path):
     src.save(ac, out)
     back = src.load(out)
     assert back.propulsion[0].thrust_poly.coefs[1] == 0.33
-    assert compile_aircraft(back)["Sref"] == compile_aircraft(ac)["Sref"]
+    assert native_spec(back)["Sref"] == native_spec(ac)["Sref"]
 
 
 def test_gain_options(desempenho_xlsx, mapping_path):

@@ -17,8 +17,7 @@ import numpy as np
 
 from aerosim.interfaces.simulation import ParamSpec, PlotSpec, RunContext, SimResult
 from aerosim.model.aircraft import Aircraft
-from aerosim.model.compile import compile_aircraft
-from aerosim.model.geometry import aero_coefficients, wing_downwash
+from aerosim.model.universal import build_model
 
 from .base import SimulationBase
 
@@ -27,20 +26,22 @@ ATMOS = ("ISA", "fórmula da planilha")
 
 
 def sheet_config(ac: Aircraft) -> dict:
-    """dados do método da planilha a partir do modelo (as superfícies e ac.performance)"""
-    perf = ac.performance
-    w, h = ac.wing, ac.surface("htail")
-    cw = aero_coefficients(w)
-    ch = aero_coefficients(h) if h is not None else dict(CLa=0.0, CL0=0.0, CLmax=0.0)
-    e0, de = wing_downwash(ac)
-    if h is not None:
-        e0 = math.radians(h.eps0) if h.eps0 is not None else e0
-        de = h.depsda if h.depsda is not None else de
-    K = perf.K if perf.K is not None else 1.0 / (math.pi * w.oswald * w.aspect_ratio)
+    """dados do método da planilha a partir do modelo universal (asa, EH) e de ac.performance"""
+    model = build_model(ac)
+    perf = model.aircraft.performance
+    w, h = model.wing, model.htail
+    wa, ha = model.aircraft.surfaces[w.index], (model.aircraft.surfaces[h.index] if h is not None else None)
+    e0, de = model.downwash
+    if h is not None and h.downwash:
+        e0, de = h.eps0, h.depsda
+    elif ha is not None:
+        e0 = math.radians(ha.eps0) if ha.eps0 is not None else e0
+        de = ha.depsda if ha.depsda is not None else de
+    K = perf.K if perf.K is not None else 1.0 / (math.pi * w.oswald * w.AR)
     return dict(
-        Sw=w.area, CLa_w=cw["CLa"], CL0_w=cw["CL0"], CLmax_w=cw["CLmax"], iw=math.radians(w.incidence),
-        Sh=h.area if h is not None else 0.0, CLa_h=ch["CLa"], CL0_h=ch["CL0"], CLmax_h=ch["CLmax"],
-        ih=math.radians(h.incidence) if h is not None else 0.0, depsda=de, eps0=e0,
+        Sw=w.total_area, CLa_w=w.CLa, CL0_w=w.CL0, CLmax_w=w.CLmax, iw=math.radians(wa.incidence),
+        Sh=h.total_area if h is not None else 0.0, CLa_h=h.CLa if h else 0.0, CL0_h=h.CL0 if h else 0.0,
+        CLmax_h=h.CLmax if h else 0.0, ih=math.radians(ha.incidence) if ha is not None else 0.0, depsda=de, eps0=e0,
         cdp_x=perf.cdp_x, cdpw_c1=perf.cdp_wing[0], cdpw_c2=perf.cdp_wing[1],
         cdph_c1=perf.cdp_htail[0], cdph_c2=perf.cdp_htail[1], K=K,
         rho0=perf.rho0, n_load=perf.load_factor, alpha_cruise=math.radians(perf.alpha_cruise))
@@ -109,14 +110,13 @@ class EnvelopeSimulation(SimulationBase):
         todo = ["planilha", "modelo completo"] if method == "os dois" else [method]
         series: dict = {}
         summary: dict = {}
-        spec = compile_aircraft(ac)
+        model = build_model(ac)
         for i, m in enumerate(todo):
             ctx.check()
             ctx.on_progress(i / (len(todo) + 1), f"envelope: {m}")
             key = "planilha" if m == "planilha" else "modelo"
             cfg = self._cfg(ctx, ac, m)
-            with ctx.backend.open_session() as s:
-                s.configure(spec)
+            with ctx.backend.session_for(model) as s:
                 rows, ceiling = s.envelope(cfg)
                 c0 = s.envelope_curve(cfg, 0.0, 300)
                 cT = s.envelope_curve(cfg, max(ceiling - cfg["h_step"], 0.0), 300)
@@ -134,8 +134,7 @@ class EnvelopeSimulation(SimulationBase):
                                                "densidade (1 + λh/T0)^(−g/λR − 1)")
         if self.param(ctx, "table"):
             ctx.on_progress(len(todo) / (len(todo) + 1), "tabela de desempenho (h = 0)")
-            with ctx.backend.open_session() as s:
-                s.configure(spec)
+            with ctx.backend.session_for(model) as s:
                 P = s.performance(self.param(ctx, "V_hi"), max(self.param(ctx, "V_lo"), 2.0), 0.5)
             for k in ("alpha_level", "de_level", "gamma_max", "gamma_idle", "phi_stall", "phi_sust"):
                 P[k] = np.degrees(P[k])

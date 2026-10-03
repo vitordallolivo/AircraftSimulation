@@ -4,13 +4,13 @@ import math
 import numpy as np
 import pytest
 
-from aerosim.sizing import AeroModel, Requirements, design_point, required_tw
+from aerosim.sizing import ParabolicPolar, Requirements, design_point, required_tw
 from aerosim.sizing.constraints import stall_ws
 
 
 def test_cruise_minimum_drag_point():
     # T/W de cruzeiro é mínimo em W/S = q √(C_D0/k) e vale 2 √(C_D0 k)
-    r, a = Requirements(V_cruise=20.0), AeroModel(CD0=0.03, k=0.05)
+    r, a = Requirements(V_cruise=20.0), ParabolicPolar(CD0=0.03, k=0.05)
     q = 0.5 * r.rho * 400
     ws = np.linspace(20, 600, 20001)
     tw = required_tw("cruzeiro", ws, r, a)
@@ -19,7 +19,7 @@ def test_cruise_minimum_drag_point():
 
 
 def test_design_point_feasible():
-    r, a = Requirements(), AeroModel()
+    r, a = Requirements(), ParabolicPolar()
     dp = design_point(r, a)
     assert dp["ws"] <= stall_ws(r, a) + 1e-9
     for k in ("decolagem", "subida", "cruzeiro", "curva"):

@@ -9,8 +9,9 @@ import math
 import numpy as np
 
 from aerosim.interfaces.simulation import Check, ParamSpec, PlotSpec, RunContext, SimResult
-from aerosim.model.compile import compile_aircraft
-from aerosim.sizing import AeroModel, Requirements, constraint_curves, design_point, required_tw
+from aerosim.aero import AeroCase, parabolic_polar, solver_by_name
+from aerosim.model.universal import build_model
+from aerosim.sizing import ParabolicPolar, Requirements, constraint_curves, design_point, required_tw
 from aerosim.sizing.constraints import KINDS, isa_rho, stall_ws
 
 from .base import SimulationBase
@@ -19,23 +20,22 @@ G0 = 9.80665
 LAB = dict(KINDS)
 
 
-def _aircraft_aero(backend, ac):
-    """C_D0, k, C_Lmax, massa e tração disponível T(V) pela polar e pelos motores do núcleo"""
-    S, c, b = ac.references()
-    with backend.open_session() as s:
-        s.configure(compile_aircraft(ac))
-        al = np.radians(np.arange(-4, 25.01, 0.5))
-        rows = [s.aero_coeffs(15.0, a) for a in al]
-        CL = np.array([r["CL"] for r in rows])
-        CD = np.array([r["CD"] for r in rows])
+def _aircraft_aero(backend, ac, method: str, V: float):
+    """polar universal do método escolhido (pelo modelo universal) + tração disponível T(V) do núcleo"""
+    model = build_model(ac)
+    so = solver_by_name(backend, method)
+    if so.available():
+        so = solver_by_name(backend, "zig")
+    case = AeroCase(V=V, alphas=np.arange(-4.0, 20.01, 1.0), ref=tuple(model.mass["cg"]), rho=ac.environment.rho)
+    pol = so.solve(model, case)
+    fit = parabolic_polar(pol)
+    with backend.session_for(model) as s:
         m = s.mass_props()["m"]
         n = sum(1 for u in ac.propulsion if u.enabled)
         Vs = np.linspace(0, 40, 41)
         T = np.array([sum(s.prop_point(i, v, 1.0)["T"] for i in range(n)) for v in Vs])
-    sel = (al > math.radians(-2)) & (al < math.radians(8))
-    k, CD0 = np.polyfit(CL[sel] ** 2, CD[sel], 1)
-    return dict(CD0=float(CD0), k=float(k), CLmax=float(CL.max()), CL_TO=float(np.interp(0.0, al, CL)),
-                m=m, S=S, AR=b * b / S, V=Vs, T=T)
+    return dict(CD0=fit["CD0"], k=fit["k"], CLmax=fit["CLmax"], CL_TO=fit["CL_a0"], m=m, S=model.S,
+                AR=model.b ** 2 / model.S, V=Vs, T=T, method=so.title)
 
 
 class SizingSimulation(SimulationBase):
@@ -66,7 +66,11 @@ class SizingSimulation(SimulationBase):
               ParamSpec("rho", "densidade no campo", ac.environment.rho if ac is not None else 1.225, minimum=0.3,
                         maximum=1.4, unit="kg/m³", group=R),
               ParamSpec("polar", "polar e C_Lmax", "da aeronave", kind="choice", choices=("da aeronave", "manual"),
-                        group=A, rebuild=True, help="da aeronave: núcleo Zig; manual: valores de partida (sem geometria)")]
+                        group=A, rebuild=True, help="da aeronave: pelo método escolhido; manual: valores de partida")]
+        if values.get("polar", "da aeronave") == "da aeronave":
+            ps.append(ParamSpec("method", "método da polar", "zig", kind="choice",
+                                choices=("zig", "lltdrek", "asb_vlm", "asb_buildup", "asb_ll"), group=A,
+                                help="qualquer solver: o modelo universal vai pelo tradutor dele e a polar volta universal"))
         if values.get("polar") == "manual":
             ps += [ParamSpec("CD0", "C_D0", 0.03, minimum=0.001, maximum=0.5, group=A),
                    ParamSpec("AR", "alongamento", 7.0, minimum=1, maximum=40, group=A),
@@ -95,19 +99,21 @@ class SizingSimulation(SimulationBase):
         S_, summ, checks = {}, {}, []
         add = lambda *a, **k: checks.append(Check(*a, **k))
         ctx.on_progress(0.1, "polar e motores da aeronave")
-        aa = _aircraft_aero(ctx.backend, ac)
+        aa = _aircraft_aero(ctx.backend, ac, self.param(ctx, "method") if P("polar") != "manual" else "zig",
+                            P("V_cruise"))
         if P("polar") == "manual":
             k = 1 / (math.pi * P("AR") * P("e"))
-            aero = AeroModel(P("CD0"), k, P("CLmax"), P("CL_TO"), P("CD0") + k * P("CL_TO") ** 2 + P("CD_TO_extra"),
+            aero = ParabolicPolar(P("CD0"), k, P("CLmax"), P("CL_TO"), P("CD0") + k * P("CL_TO") ** 2 + P("CD_TO_extra"),
                              P("mu"))
         else:
-            aero = AeroModel(aa["CD0"], aa["k"], aa["CLmax"], aa["CL_TO"],
+            aero = ParabolicPolar(aa["CD0"], aa["k"], aa["CLmax"], aa["CL_TO"],
                              aa["CD0"] + aa["k"] * aa["CL_TO"] ** 2 + P("CD_TO_extra"), P("mu"))
         req = Requirements(P("rho"), P("V_stall"), P("S_G"), P("V_cruise"), P("V_climb"), P("roc"), P("n_turn"),
                            P("V_turn"), P("h_ceiling"))
         W = aa["m"] * G0
         ws_ac = W / aa["S"]
         summ["polar usada: C_D0, k, C_Lmax"] = [aero.CD0, aero.k, aero.CLmax]
+        summ["método da polar"] = aa["method"] if P("polar") != "manual" else "manual"
         summ["aeronave: W (N), S (m²), W/S (N/m²)"] = [W, aa["S"], ws_ac]
         ws_st = stall_ws(req, aero)
         top = max(1.4 * ws_st, 1.2 * ws_ac)

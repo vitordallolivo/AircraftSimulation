@@ -9,7 +9,6 @@ import numpy as np
 from aerosim.interfaces.aero import DERIVATIVES, AeroCase, AeroPolar, IAeroSolver
 
 from .asb_solver import AsbBuildupSolver, AsbLiftingLineSolver, AsbVLMSolver
-from .geometry import mac_frac, mac_info, mac_ref, parasite_cd, tail_volumes, x_at_mac
 from .lltdrek_solver import LltdrekSolver
 from .zig_solver import ZigPanelSolver
 
@@ -18,10 +17,23 @@ def all_solvers(backend) -> list[IAeroSolver]:
     return [ZigPanelSolver(backend), LltdrekSolver(), AsbVLMSolver(), AsbBuildupSolver(), AsbLiftingLineSolver()]
 
 
-def polar_metrics(pol: AeroPolar, ac, case: AeroCase) -> dict[str, float]:
+def parabolic_polar(pol: AeroPolar, a_lo: float = -2.0, a_hi: float = 8.0) -> dict[str, float]:
+    """ajuste C_D = C_D0 + k C_L² no trecho linear de qualquer polar universal; C_Lmax; C_L em α = 0"""
+    ok = np.isfinite(pol.CL) & np.isfinite(pol.CD)
+    sel = ok & (pol.alpha >= a_lo) & (pol.alpha <= a_hi)
+    k, CD0 = np.polyfit(pol.CL[sel] ** 2, pol.CD[sel], 1)
+    return dict(CD0=float(CD0), k=float(k), CLmax=float(np.nanmax(pol.CL[ok])),
+                CL_a0=float(np.interp(0.0, pol.alpha[ok], pol.CL[ok])))
+
+
+def solver_by_name(backend, name: str) -> IAeroSolver:
+    return next(s for s in all_solvers(backend) if s.name == name or s.title == name)
+
+
+def polar_metrics(pol: AeroPolar, model, case: AeroCase) -> dict[str, float]:
     """C_L0, C_Lα, C_Lmax, α_estol, C_D mín., (L/D)máx., e (ajuste C_Di = C_L²/(π AR e)),
     ponto neutro x_np = x_ref + c C_mα / C_Lα e margem estática (x_ref − x_np)/c"""
-    S, c, b = ac.references()
+    S, c, b = model.S, model.c, model.b
     AR = b * b / S
     a, CL, CD, CDi = pol.alpha, pol.CL, pol.CD, pol.CDi
     ok = np.isfinite(CL)
@@ -47,11 +59,11 @@ def polar_metrics(pol: AeroPolar, ac, case: AeroCase) -> dict[str, float]:
     if math.isfinite(CLa) and math.isfinite(Cma) and abs(CLa) > 1e-9:
         x_np = case.ref[0] + c * Cma / CLa
         out["x_np"] = x_np
-        out["x_np_mac"] = 100 * mac_frac(ac, x_np)
+        out["x_np_mac"] = 100 * model.mac_frac(x_np)
         out["SM"] = 100 * (case.ref[0] - x_np) / c
     return out
 
 
 __all__ = ["DERIVATIVES", "AeroCase", "AeroPolar", "AsbBuildupSolver", "AsbLiftingLineSolver", "AsbVLMSolver",
-           "IAeroSolver", "LltdrekSolver", "ZigPanelSolver", "all_solvers", "mac_frac", "mac_info", "mac_ref",
-           "parasite_cd", "polar_metrics", "tail_volumes", "x_at_mac"]
+           "IAeroSolver", "LltdrekSolver", "ZigPanelSolver", "all_solvers", "parabolic_polar", "polar_metrics",
+           "solver_by_name"]

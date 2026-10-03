@@ -19,6 +19,19 @@ DERIVATIVES = ("CLa", "Cma", "CYb", "Clb", "Cnb", "CLq", "Cmq", "CYp", "Clp", "C
                "CLde", "Cmde", "Clda", "Cnda", "CYdr", "Cldr", "Cndr")
 
 
+@dataclass(frozen=True)
+class FlightPoint:
+    """ponto de voo universal: α, β (rad); p̂ = p b/2V, q̂ = q c/2V, r̂ = r b/2V; δe, δa, δr (rad)"""
+    alpha: float
+    beta: float = 0.0
+    p: float = 0.0
+    q: float = 0.0
+    r: float = 0.0
+    de: float = 0.0
+    da: float = 0.0
+    dr: float = 0.0
+
+
 @dataclass
 class AeroCase:
     V: float = 15.0
@@ -48,13 +61,23 @@ class AeroPolar:
 
 
 class IAeroSolver(ABC):
+    """um método aerodinâmico. Recebe o modelo universal (`AircraftModel`), nunca a configuração;
+    o tradutor do solver faz a ida e a volta"""
     name: str = ""
     title: str = ""
     description: str = ""
+    # o que o método sabe calcular (o resto sai NaN nas derivadas)
+    supports_beta: bool = True
+    supports_rates: bool = True
+    supports_controls: bool = False
 
     def available(self) -> str | None:
         """None se pode rodar; senão o motivo (ex.: pacote não instalado)"""
         return None
 
     @abstractmethod
-    def solve(self, ac, case: AeroCase) -> AeroPolar: ...
+    def evaluate(self, model, case: AeroCase, points: list[FlightPoint]) -> list[dict[str, float]]:
+        """coeficientes universais (CL, CD, CY, Cl, Cm, Cn, CDi) em cada ponto"""
+
+    @abstractmethod
+    def solve(self, model, case: AeroCase) -> AeroPolar: ...

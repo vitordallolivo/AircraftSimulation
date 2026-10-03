@@ -13,7 +13,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .translator import IModelTranslator
 
 import numpy as np
 
@@ -146,9 +149,21 @@ class ISimSession(ABC):
 
 
 class ISimBackend(ABC):
-    """fábrica de sessões + descrição do núcleo"""
+    """fábrica de sessões + descrição do núcleo. `translator` leva o modelo universal
+    (`aerosim.model.universal.AircraftModel`) ao SimSpec deste núcleo: as camadas de cima nunca
+    montam o SimSpec à mão"""
 
     name: str = "backend"
+
+    @property
+    @abstractmethod
+    def translator(self) -> "IModelTranslator": ...
+
+    def session_for(self, model, mission=None, overrides: dict | None = None) -> "ISimSession":
+        """sessão já configurada com o modelo universal (use com `with`)"""
+        s = self.open_session()
+        s.configure(self.translator.to_native(model, mission=mission, overrides=overrides))
+        return s
 
     @abstractmethod
     def open_session(self) -> ISimSession: ...

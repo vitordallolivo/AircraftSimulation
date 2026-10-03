@@ -82,7 +82,8 @@ def test_aileron_strip_theory_vs_core(probe):
 
 
 def test_analytic_np_exists():
-    assert math.isfinite(analytic_np(conventional())["x_np"])
+    from aerosim.model.universal import build_model
+    assert math.isfinite(analytic_np(build_model(conventional()))["x_np"])
 
 
 def test_criteria_from_norm_and_custom():

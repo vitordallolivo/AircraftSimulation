@@ -17,28 +17,27 @@ import math
 
 import numpy as np
 
-from aerosim.aero.geometry import RAYMER_TAIL_VOLUME, mac_info, tail_volumes
+from aerosim.aero.geometry import RAYMER_TAIL_VOLUME
 from aerosim.interfaces.backend import TrimKind
-from aerosim.model.geometry import aero_coefficients, wing_downwash
 
 from .probe import Probe
 
 
-def analytic_np(ac) -> dict[str, float]:
-    S, c, b = ac.references()
-    _, depsda = wing_downwash(ac)
+def analytic_np(model) -> dict[str, float]:
+    """ponto neutro pela soma das superfícies horizontais do modelo universal"""
     num = den = 0.0
-    for s in ac.surfaces:
-        if not s.enabled or s.vertical or len(s.sections) < 2:
+    depsda = 0.0
+    for s in model.surfaces:
+        if s.vertical or s.role not in ("wing", "htail"):
             continue
-        co = aero_coefficients(s)
-        de = (s.depsda if s.depsda is not None else depsda) if s.downwash else 0.0
-        k = co["CLa"] * (1 - de) * s.eta * s.area / S
-        num += k * mac_info(s)["x_ac"]
+        de = s.depsda if s.downwash else 0.0
+        depsda = max(depsda, de)
+        k = s.CLa * (1 - de) * s.eta * s.total_area / model.S
+        num += k * s.mac()["x_ac"]
         den += k
-    f = ac.fuselage
+    f = model.aircraft.fuselage
     Cma_f = f.Cma if f.enabled else 0.0
-    x_np = num / den + c * Cma_f / den if den > 0 else float("nan")
+    x_np = num / den + model.c * Cma_f / den if den > 0 else float("nan")
     return dict(x_np=x_np, CLa=den, depsda=depsda, Cma_fus=Cma_f)
 
 
@@ -51,7 +50,7 @@ def static_analysis(probe: Probe, V: float, alpha_deg: float = 2.0, de_max_deg: 
     lat = probe.deriv(V, a, "beta", ("CY", "Cl", "Cn"))
     ctl = probe.deriv(V, a, "de", ("CL", "Cm"))
     x_np = probe.neutral_point(V, a)
-    an = analytic_np(ac)
+    an = analytic_np(probe.model)
     out.update({"C_Lα (1/rad)": lon["CL"], "C_mα (1/rad)": lon["Cm"], "C_Lδe (1/rad)": ctl["CL"],
                 "C_mδe (1/rad)": ctl["Cm"], "C_Yβ (1/rad)": lat["CY"], "C_lβ (1/rad)": lat["Cl"],
                 "C_nβ (1/rad)": lat["Cn"]})
@@ -65,7 +64,7 @@ def static_analysis(probe: Probe, V: float, alpha_deg: float = 2.0, de_max_deg: 
     out["longitudinal"] = "estável" if lon["Cm"] < 0 else "INSTÁVEL (C_mα ≥ 0)"
     out["direcional"] = "estável" if lat["Cn"] > 0 else "INSTÁVEL (C_nβ ≤ 0)"
     out["lateral (diedro)"] = "estável" if lat["Cl"] < 0 else "INSTÁVEL (C_lβ ≥ 0)"
-    tv = tail_volumes(ac, probe.cg[0])
+    tv = probe.model.tail_volumes(probe.cg[0])
     out["V_H"] = tv["VH"]
     out["V_V"] = tv["VV"]
     out["braço l_h, l_v (m)"] = [tv["lh"], tv["lv"]]

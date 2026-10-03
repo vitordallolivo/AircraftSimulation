@@ -4,11 +4,12 @@ import math
 import numpy as np
 
 from aerosim.interfaces.backend import LogChunk, RunStatus, TrimKind
-from aerosim.model import TEMPLATES, compile_aircraft
+from aerosim.model import TEMPLATES
+from aerosim.backend.zig.translator import native_spec
 
 
 def spec(name="conventional", **kw):
-    return dict(compile_aircraft(TEMPLATES[name]()), **kw)
+    return dict(native_spec(TEMPLATES[name]()), **kw)
 
 
 def test_snapshot_resume_is_exact(backend):
@@ -58,7 +59,7 @@ def test_trim_level(backend):
 def test_reset_air_holds_altitude(backend):
     from aerosim.model.mission import level_turn
     with backend.open_session() as s:
-        s.configure(compile_aircraft(TEMPLATES["conventional"](), level_turn(15, 40), dict(stop_seg=1, env=dict(Vw10=0))))
+        s.configure(native_spec(TEMPLATES["conventional"](), level_turn(15, 40), dict(stop_seg=1, env=dict(Vw10=0))))
         s.reset_air(0)
         _, log = s.run()
         assert abs(log["h"][-1] - 30.0) < 1.0

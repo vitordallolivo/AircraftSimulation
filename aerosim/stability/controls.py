@@ -21,7 +21,6 @@ import numpy as np
 
 from aerosim.aero.geometry import _trapz
 from aerosim.model.airfoil import flap_effectiveness
-from aerosim.model.geometry import aero_coefficients
 
 from .probe import Probe
 
@@ -34,13 +33,10 @@ ROLL_REQ = {
 }
 
 
-def _control(ac, role, kinds):
-    for s in ac.surfaces:
-        if (s.role == role or role is None) and s.enabled:
-            for c in s.controls:
-                if c.kind in kinds:
-                    return s, c
-    return None, None
+def _control(probe, role, kinds):
+    """(superfície, comando, s0, s1) pelo modelo universal (o τ já resolvido lá)"""
+    r = probe.model.find_control(kinds, role)
+    return r if r is not None else (None, None, 0.0, 0.0)
 
 
 def time_to_bank(Pss: float, tau: float, phi: float) -> float:
@@ -64,10 +60,10 @@ def aileron_sizing(probe: Probe, V: float, cls="I", cat="B", da_max=math.radians
                    chords=(0.15, 0.20, 0.25, 0.30), etas=np.linspace(0.30, 0.90, 13), req=None) -> tuple[dict, dict]:
     """req = (φ °, t s): requisito de rolagem; None: MIL-F-8785C da classe/fase"""
     ac = probe.ac
-    w = ac.wing
+    w = probe.model.wing                  # geometria e C_Lα do modelo universal
     S, c, b = probe.S, probe.c, probe.b
-    s = w.semispan
-    CLaw = aero_coefficients(w)["CLa"]
+    s = w.length
+    CLaw = w.CLa
     Clp = probe.deriv(V, math.radians(2), "p", ("Cl",), step=0.01 * 2 * V / b)["Cl"] * (2 * V / b)
     q = 0.5 * probe.rho * V * V
     Ixx = probe.I[0, 0]
@@ -94,18 +90,18 @@ def aileron_sizing(probe: Probe, V: float, cls="I", cat="B", da_max=math.radians
         best[key] = float(etas[okm][-1]) if okm.any() else float("nan")   # η_i mais externo que ainda cumpre
     series["requisito"] = np.full(len(etas), t_req)
     # conferência com o núcleo (geometria atual)
-    sw, ctl = _control(ac, "wing", ("aileron", "elevon"))
+    sw, ctl, c_s0, c_s1 = _control(probe, "wing", ("aileron", "elevon"))
     out = {"C_lp (núcleo)": Clp, "τ_R (s)": tau_R, "requisito MIL": f"{phi_req}° em {t_req} s (classe {cls}, cat. {cat})",
            "V de rolamento (m/s)": V}
     if ctl is not None:
         Clda_core = probe.deriv(V, math.radians(2), "da", ("Cl",))["Cl"]
         P_core = -(Clda_core / Clp) * da_max * (2 * V / b)
         out["C_lδa atual (núcleo)"] = Clda_core
-        out["aileron atual: η, c_a/c"] = [ctl.span_start, ctl.span_end, ctl.chord_frac]
+        out["aileron atual: η, c_a/c"] = [c_s0, c_s1, ctl.chord_frac]
         out["aileron atual: P_ss (°/s), t (s)"] = [math.degrees(P_core), time_to_bank(P_core, tau_R, math.radians(phi_req))]
-        m = (ys >= ctl.span_start * s) & (ys <= ctl.span_end * s)
+        m = (ys >= c_s0 * s - 1e-9) & (ys <= c_s1 * s + 1e-9)
         I1 = _trapz(cy[m] * ys[m], ys[m])
-        out["C_lδa atual (faixas)"] = 2 * CLaw * flap_effectiveness(ctl.chord_frac) / (S * b) * I1
+        out["C_lδa atual (faixas)"] = 2 * CLaw * ctl.tau / (S * b) * I1
     for k, v in best.items():
         out[f"η_i máximo que cumpre ({k}, η_o={eta_o:.2f})"] = v
     return out, series
@@ -114,12 +110,12 @@ def aileron_sizing(probe: Probe, V: float, cls="I", cat="B", da_max=math.radians
 def elevator_sizing(probe: Probe, V_land: float, VR: float, cg_fwd_pct: float, CL_land: float,
                     de_max=math.radians(20), theta_dd=10.0, ratios=np.linspace(0.15, 0.5, 15)) -> tuple[dict, dict]:
     ac = probe.ac
-    sh, ctl = _control(ac, "htail", ("elevator", "elevon", "ruddervator"))
+    sh, ctl, _, _ = _control(probe, "htail", ("elevator", "elevon", "ruddervator"))
     if ctl is None:
-        sh, ctl = _control(ac, None, ("elevon", "ruddervator", "elevator"))
+        sh, ctl, _, _ = _control(probe, None, ("elevon", "ruddervator", "elevator"))
     if ctl is None:
         return {"profundor": "nenhum comando de arfagem na aeronave"}, {}
-    tau0 = ctl.tau if ctl.tau is not None else flap_effectiveness(ctl.chord_frac)
+    tau0 = ctl.tau
     c = probe.c
     x_fwd = probe.x_of(cg_fwd_pct)
     ref = [x_fwd, 0.0, float(probe.cg[2])]
@@ -159,12 +155,12 @@ def elevator_sizing(probe: Probe, V_land: float, VR: float, cg_fwd_pct: float, C
 def rudder_sizing(probe: Probe, V_ap: float, Vw: float, V_mc: float, dr_max=math.radians(25),
                   ratios=np.linspace(0.15, 0.5, 15)) -> tuple[dict, dict]:
     ac = probe.ac
-    sv, ctl = _control(ac, "vtail", ("rudder", "ruddervator"))
+    sv, ctl, _, _ = _control(probe, "vtail", ("rudder", "ruddervator"))
     if ctl is None:
-        sv, ctl = _control(ac, None, ("rudder", "ruddervator"))
+        sv, ctl, _, _ = _control(probe, None, ("rudder", "ruddervator"))
     if ctl is None:
         return {"leme": "nenhum leme na aeronave"}, {}
-    tau0 = ctl.tau if ctl.tau is not None else flap_effectiveness(ctl.chord_frac)
+    tau0 = ctl.tau
     a = math.radians(2)
     Cnb = probe.deriv(V_ap, a, "beta", ("Cn",))["Cn"]
     Cndr = probe.deriv(V_ap, a, "dr", ("Cn",))["Cn"]

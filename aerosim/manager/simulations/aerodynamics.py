@@ -10,13 +10,13 @@ import math
 
 import numpy as np
 
-from aerosim.aero import AeroCase, all_solvers, mac_frac, polar_metrics, x_at_mac
+from aerosim.aero import AeroCase, all_solvers, polar_metrics
 from aerosim.aero import tipdevices as td
 from aerosim.aero.geometry import _trapz
 from aerosim.aero.tipdevices import raymer_oswald
 from aerosim.interfaces.aero import DERIVATIVES
 from aerosim.interfaces.simulation import Check, ParamSpec, PlotSpec, RunContext, SimResult
-from aerosim.model.compile import compile_aircraft
+from aerosim.model.universal import build_model
 from aerosim.model.features import features
 
 from .base import SimulationBase
@@ -26,13 +26,12 @@ LABEL = {"zig": "núcleo Zig", "lltdrek": "lltdrek", "asb_vlm": "ASB VLM", "asb_
 G0 = 9.80665
 
 
-def resolve_cg(backend, ac, xcg_mac: float) -> tuple[tuple[float, float, float], float]:
+def resolve_cg(backend, model, xcg_mac: float) -> tuple[tuple[float, float, float], float]:
     """(ponto dos momentos, massa): x_CG em % da CMA (< 0: CG da aeronave pelo modelo de massa)"""
-    with backend.open_session() as s:
-        s.configure(compile_aircraft(ac))
+    with backend.session_for(model) as s:
         mp = s.mass_props()
     cg = mp["cg"]
-    x = x_at_mac(ac, xcg_mac / 100) if xcg_mac >= 0 else cg[0]
+    x = model.x_at_mac(xcg_mac / 100) if xcg_mac >= 0 else cg[0]
     return (x, 0.0, cg[2]), mp["m"]
 
 
@@ -115,12 +114,13 @@ class AerodynamicsSimulation(SimulationBase):
     # ------------------------------------------------------------------ análise
     def run(self, ctx: RunContext) -> SimResult:
         ac = ctx.aircraft.copy()
-        ac.apply_constraints()
+        model = build_model(ac)          # o modelo universal: todos os solvers recebem este
+        ac = model.aircraft
         P = lambda k: self.param(ctx, k)
-        f = features(ac)
-        S, c, b = ac.references()
+        f = model.features
+        S, c, b = model.S, model.c, model.b
         AR = b * b / S
-        ref, mass = resolve_cg(ctx.backend, ac, P("xcg"))
+        ref, mass = resolve_cg(ctx.backend, model, P("xcg"))
         V = P("V")
         rho = ac.environment.rho
         CL_cru = mass * G0 / (0.5 * rho * V * V * S)
@@ -130,7 +130,7 @@ class AerodynamicsSimulation(SimulationBase):
         S_, summ, checks = {}, {}, []
         add = lambda *a, **k: checks.append(Check(*a, **k))
         summ["configuração"] = f.summary()
-        summ["CG dos momentos (m, % CMA)"] = [ref[0], 100 * mac_frac(ac, ref[0])]
+        summ["CG dos momentos (m, % CMA)"] = [ref[0], 100 * model.mac_frac(ref[0])]
         summ["S, c, b de referência; AR"] = [S, c, b, AR]
         summ["C_L de cruzeiro (W/qS)"] = CL_cru
         chosen = [s for s in all_solvers(ctx.backend) if P("use_" + s.name)]
@@ -146,7 +146,7 @@ class AerodynamicsSimulation(SimulationBase):
                 add("info", f"{lab} indisponível", "—", "", why, "", "métodos")
                 continue
             try:
-                pol = so.solve(ac, case)
+                pol = so.solve(model, case)
             except Exception as e:      # um método que falha não derruba a comparação
                 add("atencao", f"{lab} falhou", f"{type(e).__name__}", "", str(e)[:200], "", "métodos")
                 continue
@@ -155,7 +155,7 @@ class AerodynamicsSimulation(SimulationBase):
                 LD = np.where(pol.CD > 0, pol.CL / pol.CD, np.nan)
             S_[f"polar_{lab}"] = dict(alpha=pol.alpha, CL=pol.CL, CD=pol.CD, Cm=pol.Cm, CDi=pol.CDi, LD=LD)
             S_[f"ld_{lab}"] = dict(CL=pol.CL, LD=LD)
-            metrics[so.name] = polar_metrics(pol, ac, case)
+            metrics[so.name] = polar_metrics(pol, model, case)
             for key, v in metrics[so.name].items():
                 summ[f"[{lab}] {key}"] = v
             summ[f"[{lab}] tempo (s)"] = pol.elapsed
@@ -166,7 +166,7 @@ class AerodynamicsSimulation(SimulationBase):
             hi = max(np.nanmax(t["LD"]) for k, t in S_.items() if k.startswith("ld_"))
             S_["ld_C_L de cruzeiro"] = {"CL": np.array([CL_cru, CL_cru]), "LD": np.array([0.0, hi]), "_dash": 1}
         S_["derivadas"] = deriv_table
-        S_["span"] = self._span(ac, span)
+        S_["span"] = self._span(model, span)
         main = "lltdrek" if "lltdrek" in res else ("zig" if "zig" in res else next(iter(res), None))
         if main is None:
             add("falha", "nenhum método rodou", "—", "", "", "marque o lltdrek ou o núcleo Zig", "métodos")
@@ -177,7 +177,7 @@ class AerodynamicsSimulation(SimulationBase):
         self._diagnose(ac, f, res, metrics, main, CL_cru, V, rho, mass, S, AR, add, P)
         if P("tips"):
             ctx.on_progress(0.9, "dispositivos de ponta (Trefftz)")
-            self._tips(ac, f, S_, summ, add, P, CL_cru, metrics[main].get("e", raymer_oswald(AR)), res, main)
+            self._tips(model, f, S_, summ, add, P, CL_cru, metrics[main].get("e", raymer_oswald(AR)), res, main)
         return SimResult(series=S_, summary=summ, checks=checks)
 
     # ------------------------------------------------------------------ diagnóstico
@@ -234,11 +234,11 @@ class AerodynamicsSimulation(SimulationBase):
                                          "C_Lα/dε/dα/C_mα da fuselagem no modelo") if bad and o == "zig" else "", G)
 
     @staticmethod
-    def _tips(ac, f, S_, summ, add, P, CL_cru, e_pl, res, main):
+    def _tips(model, f, S_, summ, add, P, CL_cru, e_pl, res, main):
         """dispositivos da asa pela geometria real (plano de Trefftz): e com e sem, atrito da área molhada,
         e a altura que daria o menor arrasto; mais os tipos genéricos para comparar"""
-        S, c, b = ac.references()
-        w = ac.wing
+        S, c, b = model.S, model.c, model.b
+        w = model.wing
         G = "dispositivos de asa"
         e_pl = min(e_pl, 1.0)
         CD0 = float(np.nanmin(res[main].CD)) if main in res else 0.03
@@ -247,22 +247,22 @@ class AerodynamicsSimulation(SimulationBase):
         CD_tot = CD0 + CDi0
         Cf = P("Cf")
         gain = P("dev_gain")
-        ctip = w.chord_at(w.semispan) if w is not None else c
+        ctip = w.tip.chord if w is not None else c
         if f.has_tip_devices:
-            e_base = td.aircraft_efficiency(ac, False)
+            e_base = td.model_efficiency(model, False)
             ks = np.linspace(0.0, 2.0, 11)
             hb_now = f.tip_h_over_b
             dD = []
             for kh in ks:
-                e_k = td.aircraft_efficiency(ac, True, height_scale=max(kh, 1e-6)) if kh > 0 else e_base
-                wet = td.devices_wetted_area(ac, kh)
+                e_k = td.model_efficiency(model, True, height_scale=max(kh, 1e-6)) if kh > 0 else e_base
+                wet = td.devices_wetted_area(model, kh)
                 CDi = CL_cru ** 2 / (math.pi * AR * e_pl * e_k / e_base)
                 dD.append(100 * (CDi - CDi0 + Cf * wet / S) / CD_tot)
             dD = np.array(dD)
             S_["tipd_dispositivos atuais (altura escalada)"] = {"h_b": ks * hb_now, "ΔD": dD}
-            e_now = td.aircraft_efficiency(ac, True)
+            e_now = td.model_efficiency(model, True)
             S_["tipe_dispositivos atuais (altura escalada)"] = {
-                "h_b": ks * hb_now, "e": np.array([td.aircraft_efficiency(ac, True, height_scale=max(k_, 1e-6))
+                "h_b": ks * hb_now, "e": np.array([td.model_efficiency(model, True, height_scale=max(k_, 1e-6))
                                                    / e_base if k_ > 0 else 1.0 for k_ in ks])}
             d_now = float(np.interp(1.0, ks, dD))
             iopt = int(np.argmin(dD))
@@ -302,15 +302,15 @@ class AerodynamicsSimulation(SimulationBase):
                 "para testar: Configuração → asa → dispositivos → + adicionar", G)
 
     @staticmethod
-    def _span(ac, span) -> dict:
+    def _span(model, span) -> dict:
         """c c_l / c_ref: lltdrek, elíptico e Schrenk (média da corda real e da elíptica)"""
-        w = ac.wing
-        S, c, b = ac.references()
+        w = model.wing
+        S, c, b = model.S, model.c, model.b
         eta = np.linspace(0, 0.995, 60)
         out = {"eta": eta}
         if w is None:
             return out
-        s = w.semispan
+        s = w.length
         CL = None
         if span is not None:
             yy = np.asarray(span["y"]) / s
@@ -319,7 +319,7 @@ class AerodynamicsSimulation(SimulationBase):
             CL = 2 * _trapz(np.r_[ccl[0], ccl, 0.0] * c, np.r_[0.0, span["y"], s]) / S
         if CL is None:
             return out
-        ell = 4 * S * CL / (math.pi * w.span) * np.sqrt(1 - eta ** 2) / c
+        ell = 4 * S * CL / (math.pi * 2 * s) * np.sqrt(1 - eta ** 2) / c
         chord = np.array([w.chord_at(e * s) for e in eta])
         out["elíptica (ideal)"] = ell
         out["Schrenk (estimativa clássica)"] = 0.5 * (ell + chord * CL / c)

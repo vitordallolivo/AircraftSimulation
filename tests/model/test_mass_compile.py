@@ -2,7 +2,8 @@
 import numpy as np
 import pytest
 
-from aerosim.model import TEMPLATES, compile_aircraft
+from aerosim.model import TEMPLATES
+from aerosim.backend.zig.translator import native_spec
 from aerosim.model.aircraft import PointMass
 from aerosim.model.massprops import dry_mass
 
@@ -28,7 +29,7 @@ def test_motor_mass_follows_motor():
 def test_core_mass_includes_liquid_and_payload(backend):
     ac = TEMPLATES["conventional"]()
     with backend.open_session() as s:
-        s.configure(compile_aircraft(ac))
+        s.configure(native_spec(ac))
         mp = s.mass_props()
     liq = sum(t.liquid_mass for t in ac.tanks)
     assert mp["m"] == pytest.approx(ac.mass.base_mass + liq + ac.payload.mass, rel=1e-9)
@@ -44,5 +45,5 @@ def test_square_tank_parameters(backend):
 
 
 def test_overrides_reach_the_core():
-    spec = compile_aircraft(TEMPLATES["conventional"](), overrides={"env": {"Vw10": 0.0}, "stop_t": 3.0})
+    spec = native_spec(TEMPLATES["conventional"](), overrides={"env": {"Vw10": 0.0}, "stop_t": 3.0})
     assert spec["env"]["Vw10"] == 0.0 and spec["env"]["rho"] == 1.225 and spec["stop_t"] == 3.0

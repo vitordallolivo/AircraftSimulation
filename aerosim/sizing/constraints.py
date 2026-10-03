@@ -24,7 +24,7 @@ G0 = 9.80665
 
 
 @dataclass
-class AeroModel:
+class ParabolicPolar:
     CD0: float = 0.03
     k: float = 0.06            # 1/(π AR e)
     CLmax: float = 1.4
@@ -56,7 +56,7 @@ def isa_rho(h: float) -> float:
     return 1.225 * (1 - 2.25577e-5 * h) ** 4.2559
 
 
-def required_tw(kind: str, ws, r: Requirements, a: AeroModel):
+def required_tw(kind: str, ws, r: Requirements, a: ParabolicPolar):
     ws = np.asarray(ws, float)
     if kind == "curva":
         q = _q(r.rho, r.V_turn)
@@ -81,7 +81,7 @@ def required_tw(kind: str, ws, r: Requirements, a: AeroModel):
     raise ValueError(kind)
 
 
-def stall_ws(r: Requirements, a: AeroModel) -> float:
+def stall_ws(r: Requirements, a: ParabolicPolar) -> float:
     return 0.5 * r.rho * r.V_stall ** 2 * a.CLmax
 
 
@@ -89,7 +89,7 @@ KINDS = (("decolagem", "corrida de decolagem"), ("subida", "razão de subida"), 
          ("curva", "curva sustentada"), ("teto", "teto"))
 
 
-def constraint_curves(r: Requirements, a: AeroModel, ws) -> dict[str, np.ndarray]:
+def constraint_curves(r: Requirements, a: ParabolicPolar, ws) -> dict[str, np.ndarray]:
     out = {"ws": np.asarray(ws, float)}
     for k, _ in KINDS:
         if k == "teto" and r.h_ceiling <= 0:
@@ -98,7 +98,7 @@ def constraint_curves(r: Requirements, a: AeroModel, ws) -> dict[str, np.ndarray
     return out
 
 
-def design_point(r: Requirements, a: AeroModel, ws=None) -> dict:
+def design_point(r: Requirements, a: ParabolicPolar, ws=None) -> dict:
     """menor T/W viável e a W/S correspondente (respeitando o estol)"""
     ws_max = stall_ws(r, a)
     ws = np.linspace(0.05 * ws_max, ws_max, 400) if ws is None else np.asarray(ws, float)

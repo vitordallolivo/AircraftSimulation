@@ -13,7 +13,7 @@ import math
 
 import numpy as np
 
-from aerosim.model.compile import compile_aircraft
+from aerosim.model.universal import AircraftModel, build_model
 
 from .dynamic import modes
 from .probe import G0, Probe
@@ -161,8 +161,9 @@ def with_dihedral(ac, wing_name: str, delta_deg: float):
 
 
 def modes_at(backend, ac, V: float):
-    with backend.open_session() as s:
-        s.configure(compile_aircraft(ac))
+    """modos do modelo linear; `ac` pode ser a configuração (vira modelo universal aqui) ou o modelo"""
+    model = ac if isinstance(ac, AircraftModel) else build_model(ac)
+    with backend.session_for(model) as s:
         lm = s.linearize(V)
     return (modes(lm["A"]) if lm["ok"] else None), lm
 

@@ -72,8 +72,15 @@ class FakeSession(ISimSession):
     def close(self): pass
 
 
+class FakeTranslator:
+    name = "fake"
+    def to_native(self, model, **kw): return {"name": model.name}
+    def from_native(self, raw, model=None, **kw): return dict(raw)
+
+
 class FakeBackend(ISimBackend):
     name = "fake"
+    translator = FakeTranslator()
     def open_session(self): return FakeSession()
     def limits(self): return {}
     def log_channels(self): return []

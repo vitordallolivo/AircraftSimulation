@@ -10,25 +10,32 @@ flowchart LR
         direction TB
         I1["ISimulationManager / ISimulation"]
         I2["ISimBackend / ISimSession"]
-        I3["IAircraftSource / ICatalogSource"]
+        I3["IAircraftSource / IProjectStore"]
+        I4["IModelTranslator / IAeroSolver"]
     end
     GUI["GUI<br/>aerosim/gui"] --> I1
     I1 --> MAN["Simulation Manager<br/>aerosim/manager"]
-    MAN --> I2
-    I2 --> BK["Backend Zig (ctypes)<br/>aerosim/backend"]
+    MAN --> UM["Modelo universal<br/>build_model(configuração)"]
+    UM --> I4
+    UM --> I2
+    I4 --> TR["tradutores<br/>lltdrek · AeroSandbox"]
+    I2 --> BK["Backend Zig + tradutor<br/>aerosim/backend"]
     BK --> CORE["Núcleo Sim<br/>core/ (Zig)"]
     GUI --> I3
-    I3 --> DATA["Aircraft Data<br/>aerosim/data"]
-    DATA --> MOD["Modelo<br/>aerosim/model"]
-    MAN --> MOD
+    I3 --> DATA["Aircraft Data / meus aviões<br/>aerosim/data"]
+    DATA --> MOD["Configuração (Aircraft)<br/>aerosim/model"]
+    MOD --> UM
     classDef iface fill:#cfe3ff,stroke:#1f4e8c,stroke-width:2px,color:#0b2545
     classDef layer fill:#f4f4f4,stroke:#888,color:#222
-    class I1,I2,I3 iface
-    class GUI,MAN,BK,CORE,DATA,MOD layer
+    class I1,I2,I3,I4 iface
+    class GUI,MAN,BK,CORE,DATA,MOD,UM,TR layer
     style IF fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
-Cada camada só conhece a **interface** (em azul) da camada de baixo. Trocar o núcleo, a origem dos
+Cada camada só conhece a **interface** (em azul) da camada de baixo. O avião é descrito **uma vez**:
+a configuração (`Aircraft`) vira o **modelo universal** (`AircraftModel`), e cada núcleo/solver (Zig,
+lltdrek, AeroSandbox...) tem um **tradutor** que leva o modelo ao formato dele e traz o resultado de volta
+no formato universal — nenhuma camada conhece o formato de um solver. Trocar o núcleo, a origem dos
 dados ou a GUI é trocar o objeto passado — `tests/manager/test_orchestration.py` roda o manager com um
 núcleo falso para provar isso.
 

@@ -4,14 +4,14 @@ import math
 import numpy as np
 import pytest
 
-from aerosim.model.compile import compile_aircraft
+from aerosim.backend.zig.translator import native_spec
 from aerosim.model.templates import conventional
 
 
 @pytest.fixture(scope="module")
 def sess(backend):
     s = backend.open_session()
-    s.configure(compile_aircraft(conventional()))
+    s.configure(native_spec(conventional()))
     yield s
     s.close()
 

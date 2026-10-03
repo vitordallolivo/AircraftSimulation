@@ -66,8 +66,10 @@ def limits(probe: Probe, V: float, SM_min: float, CL_frac: float, de_max: float,
 
 def scissor(backend, ac, V, SM_min=0.05, CL_frac=0.9, de_max=math.radians(20), VR=12.0, theta_dd=10.0,
             ks=np.linspace(0.3, 2.0, 18)) -> dict[str, np.ndarray]:
-    S, _, _ = ac.references()
-    Sh0 = sum(s.area for s in ac.surfaces if s.role == "htail" and s.enabled)
+    from aerosim.model.universal import build_model
+    m0 = build_model(ac)
+    S = m0.S
+    Sh0 = sum(s.total_area for s in m0.by_role("htail"))
     rows = []
     for k in ks:
         a = scale_htail(ac, k)

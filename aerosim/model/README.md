@@ -1,28 +1,42 @@
-# aerosim/model — modelo de dados da aeronave
+# aerosim/model — configuração e modelo universal da aeronave
 
-Dataclasses simples (SI, ângulos em graus), independentes do núcleo. A interface para o resto do
-programa é a classe `Aircraft` e a função `compile_aircraft` (Aircraft → SimSpec para o núcleo).
+Duas coisas, nesta ordem:
+
+1. **`Aircraft`** (`aircraft.py`): a configuração que o usuário edita (dataclasses em SI, ângulos em graus) —
+   superfícies por seções, comandos, dispositivos, motores, trem, tanques...
+2. **`AircraftModel`** (`universal.py`, `build_model(ac)`): o **modelo universal**, construído uma única vez
+   a partir da configuração. É o que todo núcleo e todo solver recebe. Superfícies viram estações 3D
+   (bordo de ataque, corda, torção total, coordenada de envergadura), com espelho, comandos por faixa e
+   coeficientes do perfil já resolvidos; dispositivos (winglet, placa, cerca) já chegam como superfícies;
+   referências S, c, b e a CMA; massa seca, CG e inércia; downwash.
+
+Ninguém fora de `universal.py` deriva geometria da configuração: o núcleo Zig, o lltdrek e o AeroSandbox
+recebem o `AircraftModel` pelos **tradutores** (`IModelTranslator`), que levam ao formato de cada um e
+trazem o resultado de volta em formato universal. Um teste (`tests/test_architecture.py`) garante isso.
 
 ```mermaid
 flowchart LR
     subgraph API["interface do módulo"]
         direction TB
-        AC["aircraft.py<br/>Aircraft e componentes"]
-        CMP["compile.py<br/>compile_aircraft → SimSpec"]
+        AC["aircraft.py<br/>Aircraft (configuração)"]
+        UM["universal.py<br/>build_model → AircraftModel"]
     end
     AF["airfoil.py<br/>.dat, NACA, perfil fino"]
     CAT["catalog.py<br/>Motor, Propeller, Battery,<br/>ThrustPoly (poly55), Catalog"]
     MIS["mission.py<br/>pernas → segmentos"]
-    GEO["geometry.py<br/>painéis, malhas 3D, arraste"]
+    DEV["devices.py<br/>pernas de winglet/placa/cerca"]
+    FT["features.py<br/>o que a aeronave tem"]
+    GEO["geometry.py<br/>malhas 3D (do modelo), arraste"]
     MP["massprops.py<br/>massa seca, Steiner"]
     TPL["templates.py<br/>convencional, asa voadora, bimotor"]
     SER["serialize.py<br/>dataclass ⇄ dict"]
     AC --> AF & CAT & MIS
-    CMP --> GEO & MP & MIS
-    GEO --> AF
+    UM --> AC & DEV & MP & FT
+    GEO --> UM
     TPL --> AC
+    UM --> T["tradutores<br/>(backend/zig, aero/*)"]
     classDef iface fill:#cfe3ff,stroke:#1f4e8c,stroke-width:2px,color:#0b2545
-    class AC,CMP iface
+    class AC,UM iface
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 

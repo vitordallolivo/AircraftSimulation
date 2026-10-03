@@ -3,7 +3,8 @@ import numpy as np
 import pytest
 
 from aerosim.data import load_aircraft, load_catalog, save_aircraft, save_catalog
-from aerosim.model import TEMPLATES, builtin_catalog, compile_aircraft
+from aerosim.backend.zig.translator import native_spec
+from aerosim.model import TEMPLATES, builtin_catalog
 from aerosim.model.catalog import ThrustPoly
 
 
@@ -31,7 +32,7 @@ def test_aircraft_roundtrip(tmp_path, name, ext):
     ac = TEMPLATES[name]()
     p = str(tmp_path / f"a.{ext}")
     save_aircraft(ac, p)
-    same_spec(compile_aircraft(ac), compile_aircraft(load_aircraft(p)))
+    same_spec(native_spec(ac), native_spec(load_aircraft(p)))
 
 
 @pytest.mark.parametrize("ext", ["json", "cfg", "xlsx"])

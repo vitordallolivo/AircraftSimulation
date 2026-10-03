@@ -18,13 +18,13 @@ flowchart LR
         I2["AeroCase / AeroPolar<br/>DERIVATIVES"]
     end
     TAB["aba Aerodinâmica"] --> IF
-    IF --> Z["zig_solver.py<br/>núcleo Zig (faixas)"]
-    IF --> LL["lltdrek_solver.py<br/>LLT não linear"]
-    IF --> ASB["asb_solver.py<br/>VLM · AeroBuildup · LiftingLine"]
-    Z --> CORE["ISimSession.aero_coeffs_ex"]
+    UM["modelo universal<br/>AircraftModel"] --> IF
+    IF --> BASE["base.py<br/>polar e derivadas comuns"]
+    BASE --> Z["zig_solver.py<br/>tradutor do backend"]
+    BASE --> LL["lltdrek_solver.py<br/>LltdrekTranslator"]
+    BASE --> ASB["asb_solver.py<br/>AsbTranslator"]
+    Z --> CORE["ISimBackend.session_for"]
     LL --> SEC["sections.py<br/>polar 2D: modelo ou NeuralFoil"]
-    LL --> GEO["geometry.py<br/>CMA, % CMA, C_D0, eixos"]
-    ASB --> GEO
     TAB --> TD["tipdevices.py<br/>plano de Trefftz"]
     classDef iface fill:#cfe3ff,stroke:#1f4e8c,stroke-width:2px,color:#0b2545
     class I1,I2 iface
@@ -41,7 +41,10 @@ flowchart LR
 | `asb_buildup` — AeroSandbox AeroBuildup | asa, EH, EV, fuselagem | soma por componentes com NeuralFoil; arrasto completo |
 | `asb_ll` — AeroSandbox LiftingLine | asa, EH, EV | linha sustentadora com NeuralFoil; só derivadas em α e β |
 
-Todos devolvem nos eixos do simulador (x à frente, z para baixo) com momentos no ponto `ref` do caso
+Cada solver só implementa `evaluate(modelo, caso, pontos)` — pontos de voo universais (α, β, p̂, q̂, r̂,
+comandos) → coeficientes universais —, com o seu tradutor fazendo a ida (modelo universal → formato
+dele) e a volta (resultado → eixos e adimensionalização universais). A varredura em α e as diferenças
+centrais das derivadas são o mesmo código para todos (`base.py`). Todos devolvem nos eixos do simulador (x à frente, z para baixo) com momentos no ponto `ref` do caso
 (o x_CG escolhido na aba, em % da CMA, ou o CG do modelo de massa): p̂ = p b/2V, q̂ = q c/2V,
 r̂ = r b/2V. Os externos usam x para trás e z para cima (`geometry.to_xz_up`); o lltdrek usa
 velocidade livre unitária (ω entra dividido por V) e normaliza C_l e C_n por S c — o adaptador converte.

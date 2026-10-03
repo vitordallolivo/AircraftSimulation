@@ -6,23 +6,22 @@ import math
 
 import numpy as np
 
-from aerosim.aero.geometry import mac_frac, x_at_mac
 from aerosim.interfaces.backend import ISimBackend
-from aerosim.model.compile import compile_aircraft
+from aerosim.model.universal import AircraftModel, build_model
 
 G0 = 9.80665
 D = math.radians(0.5)
 
 
 class Probe:
-    def __init__(self, backend: ISimBackend, ac, rho: float | None = None):
-        self.ac = ac
-        self.S, self.c, self.b = ac.references()
-        self.rho = rho if rho is not None else ac.environment.rho
-        self.s = backend.open_session()
-        spec = compile_aircraft(ac)
-        spec["env"]["rho"] = self.rho
-        self.s.configure(spec)
+    def __init__(self, backend: ISimBackend, model, rho: float | None = None):
+        """model: o modelo universal (uma configuração `Aircraft` é convertida aqui, uma vez)"""
+        self.model = model if isinstance(model, AircraftModel) else build_model(model)
+        self.ac = self.model.aircraft
+        self.S, self.c, self.b = self.model.S, self.model.c, self.model.b
+        self.rho = rho if rho is not None else self.ac.environment.rho
+        self.translator = backend.translator
+        self.s = backend.session_for(self.model, overrides={"env": {"rho": self.rho}})
         mp = self.s.mass_props()
         self.m, self.cg, self.I = mp["m"], np.array(mp["cg"]), mp["I"]
         self.W = self.m * G0
@@ -39,7 +38,8 @@ class Probe:
     # ------------------------------------------------------------------ coeficientes
     def C(self, V, alpha=0.0, beta=0.0, ref=None, p=0.0, q=0.0, r=0.0, de=0.0, da=0.0, dr=0.0):
         ref = list(self.cg) if ref is None else list(ref)
-        return self.s.aero_coeffs_ex(V, alpha, beta, p, q, r, de, da, dr, ref=ref)
+        raw = self.s.aero_coeffs_ex(V, alpha, beta, p, q, r, de, da, dr, ref=ref)
+        return self.translator.from_native(raw, self.model)
 
     def deriv(self, V, alpha, key_in, outs, ref=None, step=D, **kw):
         """derivadas centrais de `outs` em relação a α, β, p, q, r ou a um comando (rad, rad/s)"""
@@ -100,7 +100,7 @@ class Probe:
         return T, (zT / T if T > 0 else 0.0), Ty
 
     def frac(self, x) -> float:
-        return 100 * mac_frac(self.ac, x)
+        return 100 * self.model.mac_frac(x)
 
     def x_of(self, pct) -> float:
-        return x_at_mac(self.ac, pct / 100)
+        return self.model.x_at_mac(pct / 100)

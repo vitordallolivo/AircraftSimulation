@@ -300,7 +300,13 @@ class ZigBackend(ISimBackend):
     name = "zig"
 
     def __init__(self, lib_path: str | None = None):
+        from .translator import ZigTranslator
         self._lib = _Lib.get(lib_path)
+        self._translator = ZigTranslator()
+
+    @property
+    def translator(self):
+        return self._translator
 
     def open_session(self) -> ZigSession:
         return ZigSession(self._lib)

@@ -59,12 +59,13 @@ def test_lut_timing(bench):
 @pytest.mark.bench
 def test_dynamics_timing(backend):
     """custo de uma avaliação de f(t, x) no estado de voo"""
-    from aerosim.model import TEMPLATES, compile_aircraft
+    from aerosim.model import TEMPLATES
+    from aerosim.backend.zig.translator import native_spec
     f = backend._lib.dll.aerosim_bench_dynamics
     f.restype = ctypes.c_double
     f.argtypes = [ctypes.c_int32, ctypes.c_uint64]
     with backend.open_session() as s:
-        s.configure(dict(compile_aircraft(TEMPLATES["conventional"]()), stop_t=10))
+        s.configure(dict(native_spec(TEMPLATES["conventional"]()), stop_t=10))
         s.reset_ground()
         s.run(max_rows=0)
         n = 100_000
