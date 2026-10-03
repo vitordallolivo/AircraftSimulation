@@ -286,6 +286,16 @@ class Payload:
 
 
 @dataclass
+class Ballast:
+    """lastro: massa sólida presa na aeronave (para acertar o CG / a estabilidade)"""
+    enabled: bool = False
+    mass: float = 0.3
+    x: float = 0.4
+    y: float = 0.0
+    z: float = 0.0
+
+
+@dataclass
 class PointMass:
     name: str = "item"
     mass: float = 0.1
@@ -462,6 +472,7 @@ class Aircraft:
     sim: SimSettings = field(default_factory=SimSettings)
     mission: Mission = field(default_factory=circuit)
     airfield: Airfield = field(default_factory=Airfield)
+    ballast: Ballast = field(default_factory=Ballast)
     performance: PerformanceData = field(default_factory=PerformanceData)
     shared_battery: bool = False   # True: um pacote para todos os motores (R_int vezes K)
     Sref: float | None = None      # None: da asa principal

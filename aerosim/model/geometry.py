@@ -158,6 +158,10 @@ def aircraft_meshes(ac: Aircraft) -> dict[str, list[tuple[Mesh, str]]]:
     if ac.payload.enabled:
         P = ac.payload
         out["payload"] = [(box([P.x, P.y, P.z], [0.18, 0.12, 0.08]), "payload")]
+    b = ac.ballast
+    if b.enabled:
+        sz = max(0.03, min(0.12, (b.mass / 7800.0) ** (1 / 3) * 1.6))     # cubo de aço com a massa do lastro
+        out["ballast"] = [(box([b.x, b.y, b.z], [sz, sz, sz]), "ballast")]
     legs = []
     for g in ac.gear.legs():
         legs.append((box([g.x, g.y, g.z], [0.06, 0.025, 0.06]), "wheel"))
@@ -179,6 +183,8 @@ def component_position(ac: Aircraft, key: str) -> np.ndarray | None:
         return np.array([t.x, t.y, t.z])
     if kind == "payload":
         return np.array([ac.payload.x, ac.payload.y, ac.payload.z])
+    if kind == "ballast":
+        return np.array([ac.ballast.x, ac.ballast.y, ac.ballast.z])
     if kind == "fuselage":
         return np.array([ac.fuselage.x_nose, 0, ac.fuselage.z])
     if kind == "boom":
@@ -203,6 +209,8 @@ def move_component(ac: Aircraft, key: str, pos) -> None:
         t.x, t.y, t.z = x, y, z
     elif kind == "payload":
         ac.payload.x, ac.payload.y, ac.payload.z = x, y, z
+    elif kind == "ballast":
+        ac.ballast.x, ac.ballast.y, ac.ballast.z = x, y, z
     elif kind == "fuselage":
         ac.fuselage.x_nose, ac.fuselage.z = x, z
     elif kind == "boom":

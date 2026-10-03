@@ -81,10 +81,21 @@ def test_start_from_stage_without_checkpoint(backend, tmp_path):
 
 
 def test_mtow_bisection(manager):
+    """MTOW: carga LAPES, líquido e lastro variam juntos nas faixas pedidas"""
+    from aerosim.manager.simulations.mission import mass_items
     ac = TEMPLATES["conventional"]()
-    r = manager.run("mission", ac, {"mode": MODES[3], "dm_hi": 3.0, "dx": 0.0})
-    mt = r.summary["MTOW"]
-    assert np.isfinite(mt) and r.summary["massa_atual"] <= mt <= r.summary["massa_atual"] + 3.0
+    ac.ballast.enabled, ac.ballast.mass, ac.ballast.x = True, 0.3, 0.3
+    keys = [k for k, *_ in mass_items(ac)]
+    assert keys == ["pay", "liq", "bal", "ext"]
+    r = manager.run("mission", ac, {"mode": MODES[3], "dx": 0.0, "m_pay_dn": 0.0, "m_pay_up": 2.0, "m_liq_dn": 1.0,
+                                    "m_liq_up": 0.0, "m_bal_dn": 0.0, "m_bal_up": 0.0, "m_ext_up": 0.0})
+    mt = r.summary["MTOW (kg)"]
+    assert r.summary["faixa: carga LAPES (kg)"] == [2.0, 4.0]
+    assert np.isfinite(mt)
+    pay = r.summary["no MTOW: carga LAPES (kg)"]
+    liq = r.summary["no MTOW: líquido nos tanques (kg)"]
+    assert 2.0 <= pay <= 4.0 and liq <= 1.61
+    assert r.summary["no MTOW: lastro (kg)"] == pytest.approx(0.3)
     c = r.series["mtow_casos"]
     ok, m = c["ok"] > 0, c["m"]
     assert m[ok].max() == pytest.approx(mt) and (m[~ok] > mt).all()
@@ -134,3 +145,17 @@ def test_mission_battery_glyphs_and_editable_trajectory(manager):
     assert c["etapa"][-1] == "total" and c["consumo_mAh"][-1] > 0
     assert any(k.startswith("dt_ângulo da asa") for k in r.series)    # θ e θ + incidência na decolagem
     assert ac.mission.segments()[-1]["e0"] == pytest.approx(20.0)     # pouso 20 m a leste da decolagem
+
+
+def test_ballast_changes_mass_cg_and_inertia(backend):
+    """lastro: massa pontual — muda massa, CG e inércias (Steiner), e o núcleo vê isso"""
+    from aerosim.model.universal import build_model
+    ac = TEMPLATES["conventional"]()
+    a = build_model(ac).mass
+    ac.ballast.enabled, ac.ballast.mass, ac.ballast.x = True, 0.5, 0.6
+    b = build_model(ac).mass
+    assert b["m"] == pytest.approx(a["m"] + 0.5)
+    assert b["cg"][0] == pytest.approx((a["m"] * a["cg"][0] + 0.5 * 0.6) / (a["m"] + 0.5))
+    assert b["I"][1, 1] > a["I"][1, 1]
+    with backend.session_for(build_model(ac)) as s:
+        assert s.mass_props()["cg"][0] > 0.0 and s.mass_props()["m"] > a["m"]

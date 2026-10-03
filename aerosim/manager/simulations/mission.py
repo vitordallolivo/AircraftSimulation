@@ -66,6 +66,60 @@ def rows_to_legs(rows, old) -> list:
     return out
 
 
+GM = "Massas no MTOW (valor atual; quanto pode ir para menos e para mais)"
+
+
+def mass_items(ac) -> list[tuple[str, str, float, float, float]]:
+    """(chave, nome, atual, −padrão, +padrão) das massas que o MTOW pode variar nesta configuração"""
+    out = []
+    if ac is not None and ac.payload.enabled:
+        out.append(("pay", "carga LAPES", ac.payload.mass, ac.payload.mass, 3.0))
+    liq = sum(t.liquid_mass for t in ac.tanks) if ac is not None else 0.0
+    if ac is not None and ac.tanks:
+        cap = sum(t.rho * (t.side * t.side if t.shape == "square" else math.pi * t.side ** 2 / 4) * t.height
+                  for t in ac.tanks)
+        out.append(("liq", f"líquido nos tanques (máx. {cap:.2f})", liq, liq, max(cap - liq, 0.0)))
+    if ac is not None and ac.ballast.enabled:
+        out.append(("bal", "lastro", ac.ballast.mass, ac.ballast.mass, 1.0))
+    extra_plus = 0.0 if out else 8.0
+    out.append(("ext", "massa extra no CG", 0.0, 0.0, extra_plus))
+    return out
+
+
+def mass_params(ac) -> list:
+    P = []
+    for key, name, cur, dn, up in mass_items(ac):
+        P.append(ParamSpec(f"m_{key}_dn", f"{name} — atual {cur:.2f} kg: para menos", round(dn, 3), minimum=0,
+                           maximum=max(cur, 0.0) if key != "ext" else 0.0, unit="kg", group=GM,
+                           help=f"o MTOW pode reduzir {name} até (atual − este valor)"))
+        P.append(ParamSpec(f"m_{key}_up", f"{name}: para mais", round(up, 3), minimum=0, maximum=500, unit="kg",
+                           group=GM, help=f"o MTOW pode aumentar {name} até (atual + este valor)"))
+    return P
+
+
+def mass_variant(ac, ranges: dict, t: float, cg_extra):
+    """cópia da aeronave com cada massa em mín + t (máx − mín); devolve (cópia, massas por item)"""
+    from aerosim.model.aircraft import PointMass
+    v = ac.copy()
+    got = {}
+    for key, (lo, hi) in ranges.items():
+        m = lo + t * (hi - lo)
+        got[key] = m
+        if key == "pay":
+            v.payload.mass = m
+        elif key == "liq":
+            liq0 = sum(q.liquid_mass for q in ac.tanks)
+            f = m / liq0 if liq0 > 1e-9 else 0.0
+            for q, q0 in zip(v.tanks, ac.tanks):
+                q.fill = min(q0.fill * f if liq0 > 1e-9 else m / max(len(ac.tanks), 1) / (q0.rho * q0.side ** 2), q0.height)
+        elif key == "bal":
+            v.ballast.mass = m
+        elif key == "ext" and m > 0:
+            v.mass.items.append(PointMass("massa extra (MTOW)", m, float(cg_extra[0]), float(cg_extra[1]),
+                                          float(cg_extra[2])))
+    return v, got
+
+
 def _wing_inc(ac) -> float:
     w = ac.wing
     return float(w.incidence) if w is not None else 0.0
@@ -139,9 +193,9 @@ class MissionSimulation(SimulationBase):
                   ParamSpec("wind", "Com vento", True, kind="bool", group="Ambiente")]
         else:
             P += pista + [
-                ParamSpec("dm_hi", "Massa extra máxima a testar", 8.0, minimum=0.1, maximum=200, unit="kg", group="MTOW"),
-                ParamSpec("dx", "Variar o xCG de decolagem em ± (0 = só o atual)", 2.0, minimum=0, maximum=30, unit="cm",
-                          group="MTOW"),
+            ] + mass_params(ac) + [
+                ParamSpec("dx", "xCG de decolagem: testar também ± (0 = só o atual)", 2.0, minimum=0, maximum=30,
+                          unit="cm", group="MTOW"),
                 ParamSpec("wind", "Com vento", True, kind="bool", group="Ambiente")]
         return P
 
@@ -204,8 +258,10 @@ class MissionSimulation(SimulationBase):
         if mode == M_MTOW:
             return [PlotSpec("mt", "MTOW: onde decolou (n_dec) × massa de decolagem (★ MTOW)", "m", ("y",),
                              "massa de decolagem (kg)", "n_dec (m)", live=False, source="series:mt_*"),
-                    PlotSpec("mc", "Melhor acionamento do profundor em cada massa", "m", ("y",), "massa (kg)",
-                             "acionamento (m) / deflexão (°) / ΔxCG (cm)", live=False, source="series:mc_*"),
+                    PlotSpec("mc", "Massa de cada item × massa de decolagem", "m", ("y",), "massa de decolagem (kg)",
+                             "kg", live=False, source="series:mc_*"),
+                    PlotSpec("ma", "Melhor acionamento do profundor em cada massa", "m", ("y",), "massa (kg)",
+                             "acionamento (m) / deflexão (°) / ΔxCG (cm)", live=False, source="series:ma_*"),
                     opt] + takeoff + traj[:2]
         has_pay = ac is None or ac.payload.enabled
         has_tank = ac is None or bool(ac.tanks)
@@ -612,65 +668,67 @@ class MissionSimulation(SimulationBase):
 
     # ------------------------------------------------------------------ MTOW
     def _mtow(self, ctx, ac, info, refs) -> SimResult:
-        model = build_model(ac)
-        m0, cg0 = float(model.mass["m"]), np.asarray(model.mass["cg"], float)
-        m_tot0 = info["mass"]
+        """bisseção em t ∈ [0, 1]: cada massa vai junto do mínimo ao máximo da sua faixa"""
+        items = mass_items(ac)
+        ranges, names = {}, {}
+        for key, name, cur, dn, up in items:
+            lo = max(cur - float(ctx.params.get(f"m_{key}_dn", dn)), 0.0)
+            hi = cur + float(ctx.params.get(f"m_{key}_up", up))
+            ranges[key], names[key] = (lo, hi), name.split(" (")[0]
         dx = self.param(ctx, "dx")
         dxs = [0.0] if dx <= 0 else [0.0, -dx, dx]
-        rows, saved = [], {}
         ctrl = TO.pitch_control(ac)
+        rows, saved = [], {}
+        cg_all = info["cg"]
 
-        def over(dm, x):
-            return dict(m_dry=m0 + dm, r_dry=[float(cg0[0] + x / 100.0), float(cg0[1]), float(cg0[2])])
+        def total(v):
+            mp = build_model(v).mass
+            return float(mp["m"]) + (v.payload.mass if v.payload.enabled else 0.0) + sum(q.liquid_mass for q in v.tanks)
 
-        def evaluate(dm):
+        def evaluate(t):
             ctx.check()
+            v, got = mass_variant(ac, ranges, t, cg_all)
+            cg = np.asarray(build_model(v).mass["cg"], float)
             best_all = None
             for x in dxs:
-                b, tried = self._optimize(ctx, ac, refs, over(dm, x))
+                b, tried = self._optimize(ctx, v, refs, dict(r_dry=[float(cg[0] + x / 100.0), float(cg[1]),
+                                                                    float(cg[2])]))
                 b.dx = x
-                if best_all is None or (b.ok, b.x_warning_margin if b.ok else -(b.x_excess + b.z_short)) > \
-                        (best_all.ok, best_all.x_warning_margin if best_all.ok else -(best_all.x_excess + best_all.z_short)):
-                    best_all, saved[dm] = b, tried
-            rows.append(dict(m=m_tot0 + dm, dm=dm, ok=float(best_all.ok), n_dec=best_all.n_dec, s=best_all.s,
-                             de=best_all.de, dx=best_all.dx, x=best_all.x_excess, z=best_all.z_short))
+                key = lambda r: (r.ok, r.x_warning_margin if r.ok else -(r.x_excess + r.z_short))
+                if best_all is None or key(b) > key(best_all):
+                    best_all, saved[t] = b, tried
+            best_all.variant, best_all.masses = v, got
+            rows.append(dict(t=t, m=total(v), ok=float(best_all.ok), n_dec=best_all.n_dec, s=best_all.s,
+                             de=best_all.de, dx=best_all.dx, x=best_all.x_excess, z=best_all.z_short,
+                             **{f"m_{k}": got[k] for k in got}))
             return best_all
 
-        hi = self.param(ctx, "dm_hi")
-        lo = 0.0
-        ctx.on_progress(0.0, "MTOW: massa atual")
-        b_lo = evaluate(lo)
         checks = []
-        if not b_lo.ok:                               # nem a atual decola: procura para baixo
-            lo2 = -0.5 * m0
-            b2 = evaluate(lo2)
-            if not b2.ok:
-                mt, best = float("nan"), b_lo
-            else:
-                lo, hi, b_lo = lo2, lo, b2
-        b_hi = evaluate(hi) if b_lo.ok else None
-        if b_lo.ok and b_hi is not None and b_hi.ok:
-            mt, best = hi, b_hi
-            checks.append(Check("atencao", "MTOW acima da faixa testada", f"> {m_tot0 + hi:.2f} kg", "dentro",
-                                "a maior massa testada ainda decola", "aumente a massa extra máxima", "MTOW"))
-        elif b_lo.ok:
-            best, it = b_lo, 0
-            while hi - lo > 0.1 * max(1.0, m0 / 10) and it < 30:
+        ctx.on_progress(0.0, "MTOW: todas as massas no mínimo")
+        b_lo = evaluate(0.0)
+        b_hi = evaluate(1.0) if b_lo.ok else None
+        if not b_lo.ok:
+            tm, best = float("nan"), b_lo
+            checks.append(Check("falha", "não decola nem com as massas no mínimo", "x_warning ou z_warning",
+                                f"x ≤ {refs['x_warning']:g} m, z = {refs['z_warning']:g} m",
+                                "com cada massa no menor valor da faixa a aeronave não decola dentro da pista",
+                                "aumente o 'para menos' de alguma massa, a tração, a área de asa ou a pista", "MTOW"))
+        elif b_hi.ok:
+            tm, best = 1.0, b_hi
+            checks.append(Check("atencao", "MTOW acima das faixas", "decola com todas as massas no máximo", "dentro",
+                                "a aeronave ainda decola no topo de todas as faixas", "aumente o 'para mais'", "MTOW"))
+        else:
+            lo, hi, best, it = 0.0, 1.0, b_lo, 0
+            while it < 9:
                 it += 1
                 mid = 0.5 * (lo + hi)
-                ctx.on_progress(min(it / 8, 0.95), f"MTOW: entre {m_tot0 + lo:.2f} e {m_tot0 + hi:.2f} kg")
+                ctx.on_progress(it / 9, f"MTOW: bisseção {it}/9")
                 b = evaluate(mid)
                 if b.ok:
                     lo, best = mid, b
                 else:
                     hi = mid
-            mt = lo
-        else:
-            mt, best = float("nan"), b_lo
-            checks.append(Check("falha", "nenhuma massa decola", "x_warning ou z_warning não atendidos",
-                                f"x ≤ {refs['x_warning']:g} m, z = {refs['z_warning']:g} m",
-                                "nem com metade da massa a aeronave decola dentro da pista",
-                                "mais tração, mais área de asa ou mais pista", "MTOW"))
+            tm = lo
         rows.sort(key=lambda r: r["m"])
         M = {k: np.array([r[k] for r in rows], float) for k in rows[0]}
         ok = M["ok"] > 0
@@ -678,42 +736,50 @@ class MissionSimulation(SimulationBase):
              "mt_não decola": dict(m=M["m"][~ok], y=np.where(np.isfinite(M["n_dec"][~ok]), M["n_dec"][~ok], np.nan),
                                    _symbol="x", _color="#d62728", _size=12),
              f"mt_x_warning ({refs['x_warning']:g} m)": dict(_hline=refs["x_warning"], _color="#d62728", _width=3),
-             "mc_acionamento (m)": dict(m=M["m"][ok], y=M["s"][ok], _symbol="o", _line=1, _color="#2ca02c"),
-             "mc_deflexão (°)": dict(m=M["m"][ok], y=M["de"][ok], _symbol="s", _line=1, _color="#1f77b4"),
              "mtow_casos": M}
+        colors = {"pay": "#6a0dad", "liq": "#17becf", "bal": "#444444", "ext": "#ff7f0e"}
+        for k in ranges:
+            if ranges[k][1] > ranges[k][0] or ranges[k][0] > 0:
+                S[f"mc_{names[k]} (kg)"] = dict(m=M["m"], y=M[f"m_{k}"], _symbol="o", _line=1, _color=colors[k])
+        S["ma_acionamento do profundor (m)"] = dict(m=M["m"][ok], y=M["s"][ok], _symbol="o", _line=1, _color="#2ca02c")
+        S["ma_deflexão (°)"] = dict(m=M["m"][ok], y=M["de"][ok], _symbol="s", _line=1, _color="#1f77b4")
         if len(dxs) > 1:
-            S["mc_ΔxCG (cm)"] = dict(m=M["m"][ok], y=M["dx"][ok], _symbol="d", _line=1, _color="#9467bd")
-        summary = dict(massa_atual=m_tot0, MTOW=m_tot0 + mt if np.isfinite(mt) else float("nan"),
-                       carga_extra_max=mt, x_warning=refs["x_warning"], z_warning=refs["z_warning"])
+            S["ma_ΔxCG (cm)"] = dict(m=M["m"][ok], y=M["dx"][ok], _symbol="d", _line=1, _color="#9467bd")
+        summary = dict(massa_atual=info["mass"], x_warning=refs["x_warning"], z_warning=refs["z_warning"])
+        for k, (lo, hi) in ranges.items():
+            summary[f"faixa: {names[k]} (kg)"] = [lo, hi]
         log = None
-        if np.isfinite(mt):
-            for pre in ("mt_", "mc_"):
-                S[f"{pre}MTOW = {m_tot0 + mt:.2f} kg"] = dict(_vline=m_tot0 + mt, _color="#ffcc00", _width=3)
-            S["mt_★ MTOW"] = dict(m=np.array([m_tot0 + mt]), y=np.array([best.n_dec]), _symbol="star",
-                                  _color="#ffcc00", _size=24)
+        if np.isfinite(tm):
+            mt = total(best.variant)
+            summary["MTOW (kg)"] = mt
+            for k, m in best.masses.items():
+                summary[f"no MTOW: {names[k]} (kg)"] = m
             summary.update(acionamento_m=best.s, deflexao_graus=best.de, dxCG_cm=getattr(best, "dx", 0.0),
                            n_dec_no_MTOW=best.n_dec)
-            above = [r for r in rows if r["m"] > m_tot0 + mt + 1e-9 and not r["ok"]]
+            for pre in ("mt_", "mc_", "ma_"):
+                S[f"{pre}MTOW = {mt:.2f} kg"] = dict(_vline=mt, _color="#ffcc00", _width=3)
+            S["mt_★ MTOW"] = dict(m=np.array([mt]), y=np.array([best.n_dec]), _symbol="star", _color="#ffcc00", _size=24)
+            parts = ", ".join(f"{names[k]} {m:.2f} kg" for k, m in best.masses.items() if m > 0 or k != "ext")
+            above = [r for r in rows if r["m"] > mt + 1e-9 and not r["ok"]]
             why = ""
             if above:
                 r = min(above, key=lambda r: r["m"])
-                why = f"com {r['m']:.2f} kg: " + ("não decolou" if not np.isfinite(r["n_dec"]) else
+                why = f"; com {r['m']:.2f} kg: " + ("não decolou" if not np.isfinite(r["n_dec"]) else
                                                    f"passou {r['x']:.1f} m do x_warning") + \
                       (f", faltaram {r['z']:.2f} m de altura" if r["z"] > 0 else "")
-            checks.append(Check("info", "MTOW", f"{m_tot0 + mt:.2f} kg (+{mt:.2f} kg)", "x e z atendidos",
-                                f"acionamento em {best.s:.1f} m, δe = {best.de:g}°"
-                                + (f", ΔxCG = {getattr(best, 'dx', 0):+g} cm" if len(dxs) > 1 else "")
-                                + (f"; acima disso, {why}" if why else ""),
-                                "para subir o MTOW: mais tração, mais área de asa ou mais C_Lmax", "MTOW"))
-            S.update(self._opt_series(saved.get(mt, []), best, refs))
-            x = getattr(best, "dx", 0.0)
-            ac2 = ac
-            res, log = TO.evaluate(ctx.backend, ac2, best.s if ctrl else None, best.de, refs["x_warning"],
-                                   refs["z_warning"], over(mt, x), dtlog=0.005, log=True)
+            checks.append(Check("info", "MTOW", f"{mt:.2f} kg", "x e z atendidos", f"{parts}; acionamento em {best.s:.1f} m, "
+                                f"δe = {best.de:g}°" + (f", ΔxCG = {getattr(best, 'dx', 0):+g} cm" if len(dxs) > 1 else "")
+                                + why, "para subir o MTOW: mais tração, mais área de asa ou mais C_Lmax", "MTOW"))
+            S.update(self._opt_series(saved.get(tm, []), best, refs))
+            v = best.variant
+            cg = np.asarray(build_model(v).mass["cg"], float)
+            res, log = TO.evaluate(ctx.backend, v, best.s if ctrl else None, best.de, refs["x_warning"], refs["z_warning"],
+                                   dict(r_dry=[float(cg[0] + getattr(best, "dx", 0.0) / 100.0), float(cg[1]), float(cg[2])]),
+                                   dtlog=0.005, log=True)
             if len(log):
-                S.update(FP.takeoff_window(log, res.events, refs, ac.airfield))
-                S.update(_angles(log, res.events, ac, refs))
-                S.update({k: v for k, v in FP.trajectory(log, res.events, ["decolagem", "cruzeiro"]).items()
+                S.update(FP.takeoff_window(log, res.events, refs, v.airfield))
+                S.update(_angles(log, res.events, v, refs))
+                S.update({k: v_ for k, v_ in FP.trajectory(log, res.events, ["decolagem", "cruzeiro"]).items()
                           if k.startswith(("t3_", "xz_"))})
-            checks += self._takeoff_checks(ac, best, refs, ctrl)
+            checks += self._takeoff_checks(v, best, refs, ctrl)
         return SimResult(log=log, series=S, summary=summary, checks=checks)

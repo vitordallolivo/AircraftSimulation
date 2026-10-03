@@ -2,7 +2,7 @@
  "formato": "aerosim-aeronave",
  "versao": 1,
  "nome": "Convencional — decola da mesa, pousa na plataforma",
- "salvo_em": "2026-10-03T11:12:47",
+ "salvo_em": "2026-10-03T11:35:04",
  "resumo": "S = 1.000 m², b = 2.50 m, massa seca 8.39 kg; EH: EH; arfagem por elevator; rolagem por aileron; guinada por rudder; líquido livre (sloshing); carga lançável",
  "aeronave": {
   "name": "Convencional — decola da mesa, pousa na plataforma",
@@ -2135,6 +2135,13 @@
    "x_warning": 60.0,
    "z_warning": -0.5,
    "landing_max": 0.0
+  },
+  "ballast": {
+   "enabled": false,
+   "mass": 0.3,
+   "x": 0.4,
+   "y": 0.0,
+   "z": 0.0
   },
   "performance": {
    "alpha_cruise": 2.0,

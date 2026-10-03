@@ -12,6 +12,9 @@ from .aircraft import Aircraft
 def point_items(ac: Aircraft) -> list[tuple[str, float, np.ndarray]]:
     mm = ac.mass
     out = [(it.name, it.mass, np.array([it.x, it.y, it.z])) for it in mm.items]
+    b = getattr(ac, "ballast", None)
+    if b is not None and b.enabled and b.mass > 0:
+        out.append(("lastro", b.mass, np.array([b.x, b.y, b.z])))
     if mm.include_propulsion:
         for u in ac.propulsion:
             if u.enabled:
