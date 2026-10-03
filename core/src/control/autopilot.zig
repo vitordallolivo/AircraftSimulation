@@ -12,6 +12,7 @@ const T = @import("../types.zig");
 const S = @import("../sim/state.zig");
 const G = @import("guidance.zig");
 const fm = @import("../math/fmath.zig");
+const terrain = @import("../physics/terrain.zig");
 
 pub const Cmd = struct {
     thr: f64 = 0,
@@ -93,7 +94,7 @@ pub fn commands(c: S.Ctx, t: f64, x: []const f64, in: Input, g: *const G.Guide, 
         var nv = fm.cos(gref) + a.Kn_h * eh + a.Kn_hd * ehd + a.Kn_ih * x[S.IH];
         cmd.thr = fm.lim(a.Dtrim + a.KV * (g.Vseg - in.Va) + a.KIV * x[S.IV] + a.KHT * eh, 0.0, 1.0);
         if (f.flare != 0) { // arredondamento exponencial: dh/dt = −h_rodas / τ
-            const hw = h - c.h_ground;
+            const hw = h - terrain.height(p, x[S.N], x[S.E]) - c.h_rest;
             cmd.hdref = -fm.lim(hw / a.tau_flare, 0.2, @max(-in.hdot, 0.2));
             nv = 1.0 + a.Kfn * (cmd.hdref - in.hdot);
             if (hw < 0.3) cmd.thr = 0.0;

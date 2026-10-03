@@ -10,6 +10,7 @@ const S = @import("../sim/state.zig");
 const fm = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
 const V3 = vec.V3;
+const terrain = @import("terrain.zig");
 
 pub const Out = struct {
     F: V3 = vec.zero,
@@ -26,7 +27,7 @@ pub fn compute(c: S.Ctx, x: []const f64, R: vec.M3, rcg: V3, dw: f64) Out {
     for (p.gear[0..n], 0..) |*g, i| {
         const r = vec.v3(g.r);
         const pc = vec.mul(R, r);
-        const pen = x[S.D] + pc[2]; // > 0: comprimido
+        const pen = x[S.D] + pc[2] + terrain.height(p, x[S.N] + pc[0], x[S.E] + pc[1]); // > 0: comprimido
         if (pen <= 0.0) continue;
         const vn = vec.mul(R, VB + vec.cross(w, r));
         const Nn = @max(0.0, g.k * pen + g.c * vn[2]);
@@ -62,7 +63,8 @@ pub fn compute(c: S.Ctx, x: []const f64, R: vec.M3, rcg: V3, dw: f64) Out {
 pub fn touching(p: *const T.Params, x: []const f64, R: vec.M3) bool {
     const n: usize = @intCast(p.n_gear);
     for (p.gear[0..n]) |*g| {
-        if (x[S.D] + vec.mul(R, vec.v3(g.r))[2] > 0.0) return true;
+        const pc = vec.mul(R, vec.v3(g.r));
+        if (x[S.D] + pc[2] + terrain.height(p, x[S.N] + pc[0], x[S.E] + pc[1]) > 0.0) return true;
     }
     return false;
 }

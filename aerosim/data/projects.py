@@ -42,6 +42,44 @@ def summary(ac: Aircraft) -> str:
     return f"S = {S:.3f} m², b = {b:.2f} m, massa seca {m:.2f} kg; {features(ac).summary()}"
 
 
+EXTS = (".json", ".cfg", ".xlsx")
+
+
+def load_file(path: str) -> Aircraft:
+    """qualquer aeronave: .json do projeto ou do serializador, .cfg, .xlsx"""
+    if path.endswith(".json"):
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+        return from_dict(Aircraft, d["aeronave"] if d.get("formato") == FORMAT else d)
+    from aerosim.data.sources import load_aircraft
+    return load_aircraft(path)
+
+
+def list_folder(root: str) -> list[ProjectInfo]:
+    """todas as aeronaves que abrem numa pasta (.json salvos aqui, e também .cfg/.xlsx/.json de
+    outras origens, como os exemplos de data/aircraft); o que não abre fica de fora"""
+    if not os.path.isdir(root):
+        return []
+    out = []
+    for fn in sorted(os.listdir(root)):
+        p = os.path.join(root, fn)
+        if not fn.endswith(EXTS) or fn.startswith("~$"):
+            continue
+        try:
+            if fn.endswith(".json"):
+                with open(p, encoding="utf-8") as f:
+                    d = json.load(f)
+                if d.get("formato") == FORMAT:
+                    out.append(ProjectInfo(d.get("nome", fn[:-5]), p, d.get("salvo_em", ""), d.get("resumo", "")))
+                    continue
+            ac = load_file(p)
+        except Exception:
+            continue
+        saved = dt.datetime.fromtimestamp(os.path.getmtime(p)).isoformat(timespec="seconds")
+        out.append(ProjectInfo(ac.name or fn, p, saved, f"[{fn}] " + summary(ac)))
+    return sorted(out, key=lambda i: i.saved, reverse=True)
+
+
 class JsonProjectStore(IProjectStore):
     def __init__(self, root: str | None = None):
         self.root = root or default_root()
@@ -50,22 +88,7 @@ class JsonProjectStore(IProjectStore):
         return os.path.join(self.root, slug(name) + ".json")
 
     def list(self) -> list[ProjectInfo]:
-        if not os.path.isdir(self.root):
-            return []
-        out = []
-        for fn in sorted(os.listdir(self.root)):
-            if not fn.endswith(".json"):
-                continue
-            p = os.path.join(self.root, fn)
-            try:
-                with open(p, encoding="utf-8") as f:
-                    d = json.load(f)
-            except (OSError, json.JSONDecodeError):
-                continue
-            if d.get("formato") != FORMAT:
-                continue
-            out.append(ProjectInfo(d.get("nome", fn[:-5]), p, d.get("salvo_em", ""), d.get("resumo", "")))
-        return sorted(out, key=lambda i: i.saved, reverse=True)
+        return list_folder(self.root)
 
     def exists(self, name: str) -> bool:
         return os.path.exists(self._path(name))
@@ -87,10 +110,7 @@ class JsonProjectStore(IProjectStore):
         return info
 
     def load(self, name: str) -> Aircraft:
-        p = name if os.path.exists(name) else self._path(name)
-        with open(p, encoding="utf-8") as f:
-            d = json.load(f)
-        return from_dict(Aircraft, d["aeronave"] if d.get("formato") == FORMAT else d)
+        return load_file(name if os.path.exists(name) else self._path(name))
 
     def delete(self, name: str) -> None:
         p = self._path(name)

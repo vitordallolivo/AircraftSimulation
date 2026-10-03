@@ -87,7 +87,7 @@ class MainWindow(QtWidgets.QMainWindow):
         dlg = ProjectsDialog(self.state, self)
         if dlg.exec() and dlg.chosen:
             try:
-                self.state.set_aircraft(self.state.projects.load(dlg.chosen.name), dlg.chosen.path)
+                self.state.set_aircraft(self.state.projects.load(dlg.chosen.path), dlg.chosen.path)
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Erro", str(e))
         self._root_label.setText(f"  pasta: {self.state.projects.root}")
@@ -162,6 +162,13 @@ class ProjectsDialog(QtWidgets.QDialog):
         self.setWindowTitle("Meus aviões")
         self.resize(900, 480)
         v = QtWidgets.QVBoxLayout(self)
+        src = QtWidgets.QHBoxLayout()
+        self.which = QtWidgets.QComboBox()
+        self.which.addItems(["meus aviões", "exemplos do programa (data/aircraft)"])
+        self.which.currentIndexChanged.connect(lambda *_: self._fill())
+        src.addWidget(QtWidgets.QLabel("Mostrar:"))
+        src.addWidget(self.which, 1)
+        v.addLayout(src)
         self.where = QtWidgets.QLabel()
         v.addWidget(self.where)
         self.table = QtWidgets.QTableWidget(0, 3)
@@ -184,9 +191,16 @@ class ProjectsDialog(QtWidgets.QDialog):
         v.addLayout(hb)
         self._fill()
 
+    def _folder_now(self) -> str:
+        return self.state.projects.root if self.which.currentIndex() == 0 else os.path.join(ROOT, "data", "aircraft")
+
     def _fill(self):
-        self.items = self.state.projects.list()
-        self.where.setText(f"pasta: {self.state.projects.root}  —  {len(self.items)} avião(ões)")
+        from aerosim.data.projects import list_folder
+        folder = self._folder_now()
+        self.items = list_folder(folder)
+        self.where.setText(f"pasta: {folder}  —  {len(self.items)} avião(ões)"
+                           + ("" if self.items or self.which.currentIndex() else
+                              "  (vazia: veja os exemplos do programa no seletor acima)"))
         self.table.setRowCount(len(self.items))
         for r, it in enumerate(self.items):
             for c, txt in enumerate((it.name, it.saved.replace("T", " "), it.summary)):
@@ -204,9 +218,12 @@ class ProjectsDialog(QtWidgets.QDialog):
 
     def _delete(self):
         it = self._row()
+        if self.which.currentIndex() != 0:
+            QtWidgets.QMessageBox.information(self, "Apagar", "Os exemplos do programa não são apagados daqui.")
+            return
         if it and QtWidgets.QMessageBox.question(self, "Apagar", f"Apagar '{it.name}'?") == \
                 QtWidgets.QMessageBox.StandardButton.Yes:
-            self.state.projects.delete(it.name)
+            os.remove(it.path)
             self._fill()
 
     def _folder(self):
@@ -215,4 +232,5 @@ class ProjectsDialog(QtWidgets.QDialog):
             from PyQt6 import QtCore
             self.state.projects.root = d
             QtCore.QSettings("aerosim", "aerosim").setValue("projects_root", d)
+            self.which.setCurrentIndex(0)
             self._fill()

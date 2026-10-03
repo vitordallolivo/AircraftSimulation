@@ -16,6 +16,7 @@ const aero = @import("../physics/aero.zig");
 const prop = @import("../physics/propulsion.zig");
 const mass = @import("../physics/mass.zig");
 const trim = @import("trim.zig");
+const terrain = @import("../physics/terrain.zig");
 
 pub const Status = enum(i32) {
     not_ready = -1,
@@ -33,7 +34,7 @@ pub const Instance = struct {
     configured: bool = false,
 
     pub fn ctx(self: *const Instance) S.Ctx {
-        return .{ .p = &self.p, .f = &self.r.f, .tR = self.r.tR, .h_ground = self.r.h_ground, .tg = self.r.tg };
+        return .{ .p = &self.p, .f = &self.r.f, .tR = self.r.tR, .h_ground = self.r.h_ground, .tg = self.r.tg, .h_rest = self.r.h_rest };
     }
 };
 
@@ -119,7 +120,8 @@ pub fn resetGround(inst: *Instance) StateError!void {
     for (p.gear[0..@intCast(p.n_gear)]) |*g| if (g.kind == T.gear_main) {
         zr = g.r[2];
     };
-    r.x[S.D] = -zr;
+    const h0 = terrain.height(p, 0, 0); // mesa: começa em cima dela
+    r.x[S.D] = -zr - h0;
     for (0..L.max_props) |i| r.x[S.rps(i)] = 1.0;
     var t: f64 = -3.0;
     while (t < -1e-9) : (t += p.dt) dyn.rk4(inst.ctx(), t, &r.x, p.dt);
@@ -132,6 +134,7 @@ pub fn resetGround(inst: *Instance) StateError!void {
     r.x[S.R] = 0;
     inline for (.{ S.IH, S.IV, S.ITH, S.IE, S.HR, S.PHC, S.EN }) |k| r.x[k] = 0;
     r.h_ground = -r.x[S.D];
+    r.h_rest = r.h_ground - h0;
     r.x[S.HR] = r.h_ground;
     r.f.brakes = 0;
     r.t = 0;
@@ -153,6 +156,9 @@ pub fn resetAir(inst: *Instance, seg: i32) StateError!void {
     r.f.airborne = 1;
     r.f.autop = 1;
     r.h_ground = 0;
+    for (p.gear[0..@intCast(p.n_gear)]) |*g| if (g.kind == T.gear_main) {
+        r.h_rest = g.r[2];
+    };
     r.x[S.N] = sg.n0;
     r.x[S.E] = sg.e0;
     r.x[S.D] = -sg.h0;
@@ -272,6 +278,8 @@ fn writeRow(inst: *const Instance, row: *T.LogRow, o: *const dyn.Out) void {
         row.pk_e = if (r.f.pk_flying != 0) r.pk[1] else r.ev.pk_e;
         row.pk_h = if (r.f.pk_flying != 0) -r.pk[2] else 0;
     }
+    row.hgnd = terrain.height(p, x[S.N], x[S.E]);
+    row.hw = -x[S.D] - row.hgnd - r.h_rest;
     for (0..@intCast(p.n_prop)) |i| {
         row.rpm[i] = x[S.rps(i)] * 60.0;
         row.thrust[i] = o.pr.u[i].T;
@@ -314,6 +322,8 @@ pub fn run(inst: *Instance, t_limit: f64, log: []T.LogRow, nrows: *usize) Status
             }
         }
         const sg = &p.seg[@intCast(r.f.seg)];
+        const hgnd = terrain.height(p, x[S.N], x[S.E]);
+        const hw = h - hgnd - r.h_rest; // rodas sobre o terreno local (chão, mesa ou plataforma)
 
         // ---- decolagem: profundor por velocidade (VR) ou distância (sR) ----
         const pull = if (p.takeoff.sR > 0.0) x[S.N] >= p.takeoff.sR else o.Va >= p.takeoff.VR;
@@ -325,7 +335,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []T.LogRow, nrows: *usize) Status
             v.tRot = t;
             v.nRot = x[S.N];
         }
-        if (r.f.airborne == 0 and !contact and h > r.h_ground + 0.005) {
+        if (r.f.airborne == 0 and !contact and hw > 0.005) {
             r.f.airborne = 1;
             v.tLO = t;
             v.nLO = x[S.N];
@@ -337,7 +347,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []T.LogRow, nrows: *usize) Status
             if (o.g.hseg > x[S.HR] and h > x[S.HR]) x[S.HR] = @min(h, o.g.hseg) else if (o.g.hseg < x[S.HR] and h < x[S.HR]) x[S.HR] = @max(h, o.g.hseg);
         }
         var switched_on = false;
-        if (r.f.airborne != 0 and r.f.autop == 0 and h >= r.h_ground + p.takeoff.ht) {
+        if (r.f.airborne != 0 and r.f.autop == 0 and hw >= p.takeoff.ht) {
             r.f.autop = 1;
             x[S.HR] = h;
             switched_on = true;
@@ -347,6 +357,8 @@ pub fn run(inst: *Instance, t_limit: f64, log: []T.LogRow, nrows: *usize) Status
             v.VHt = o.Va;
             v.gHt = o.gama;
         }
+        if (r.f.airborne != 0 and sg.takeoff != 0) v.sink = @max(v.sink, r.h_ground - h); // z da decolagem
+        if (r.f.airborne != 0 and r.f.autop == 0) v.hw_min_air = @min(v.hw_min_air, hw);
         if (sg.takeoff != 0) {
             v.hcmin = @min(v.hcmin, o.htail);
             if (o.Va > 4.0) v.ratio_to = @max(v.ratio_to, o.ratioCL);
@@ -407,11 +419,12 @@ pub fn run(inst: *Instance, t_limit: f64, log: []T.LogRow, nrows: *usize) Status
                 v.pk_t = t;
             }
         }
-        if (sg.landing != 0 and h - r.h_ground < p.ap.hflare) r.f.flare = 1;
+        if (sg.landing != 0 and hw < p.ap.hflare) r.f.flare = 1;
         if (sg.landing != 0 and r.f.landed == 0 and main) {
             r.f.landed = 1;
             v.tTD = t;
             v.nTD = x[S.N];
+            v.hgnd_td = hgnd;
         }
 
         // ---- registro ----
@@ -438,7 +451,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []T.LogRow, nrows: *usize) Status
             status = .completed;
             break;
         }
-        if (p.stop_takeoff != 0 and r.f.autop != 0 and h >= r.h_ground + p.takeoff.h_end) {
+        if (p.stop_takeoff != 0 and r.f.autop != 0 and hw >= p.takeoff.h_end) {
             v.completed = 1;
             status = .completed;
             break;
@@ -448,7 +461,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []T.LogRow, nrows: *usize) Status
             break;
         }
         // abaixo do chão, divergiu ou capotou (tocando o chão com mais de 80° de inclinação)
-        if (h < -1.0 or !std.math.isFinite(x[S.U]) or (contact and @abs(fm.wrap(x[S.PHI])) > 1.4)) {
+        if (h < hgnd - 1.0 or !std.math.isFinite(x[S.U]) or (contact and @abs(fm.wrap(x[S.PHI])) > 1.4)) {
             status = .crashed;
             break;
         }

@@ -17,6 +17,7 @@ from .base import SimulationBase, floats
 
 
 class ClimbSimulation(SimulationBase):
+    tab = False
     name = "climb"
     title = "Subida"
     description = "Ângulo de subida máximo por velocidade: simulação a partir de checkpoint nivelado e trimagem."

@@ -144,7 +144,7 @@ class StabilitySimulation(SimulationBase):
     def plots(self):
         return self.plots_for(None)
 
-    def plots_for(self, ac):
+    def plots_for(self, ac, values=None):
         f = features(ac) if ac is not None else None
         pitch = {"elevator": "profundor", "elevon": "elevon", "ruddervator": "cauda em V"}.get(
             f.pitch_kind if f else "elevator", "comando de arfagem")

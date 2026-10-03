@@ -69,6 +69,7 @@ pub const Run = extern struct {
     tR: f64 = -1,
     h_ground: f64 = 0,
     tg: f64 = -1,
+    h_rest: f64 = 0, // altura do CG sobre o terreno com a aeronave parada no trem
     next_log: f64 = 0,
     pk: [6]f64 = [_]f64{0} ** 6,
     f: Flags = .{},
@@ -84,4 +85,5 @@ pub const Ctx = struct {
     tR: f64,
     h_ground: f64,
     tg: f64,
+    h_rest: f64 = 0,
 };

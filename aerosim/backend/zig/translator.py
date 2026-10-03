@@ -115,6 +115,8 @@ class ZigTranslator(IModelTranslator):
             dt=ac.sim.dt, tmax=ac.sim.tmax, dtlog=ac.sim.dtlog,
             seg=m.segments(), event=m.core_events(),
         )
+        pads = ac.airfield.pads(m)
+        spec.update(pads=pads, n_pad=len(pads))
         if overrides:
             _deep_update(spec, copy.deepcopy(overrides))
         return spec

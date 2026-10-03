@@ -29,7 +29,8 @@ def test_window_tabs_and_edit(app, manager):
     w.show()
     pump(app)
     titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
-    assert titles[0] == "Configuração" and "Decolagem" in titles and "Envelope de voo" in titles
+    assert titles[0] == "Configuração" and "Missão" in titles and "Desempenho" in titles
+    assert "Decolagem" not in titles and "Polar" not in titles      # viraram modos/partes de outras abas
     cfg = w.config
     n0 = len(st.aircraft.propulsion)
     cfg._add_motor()
@@ -48,7 +49,11 @@ def test_simulation_tab_runs(app, manager):
     from aerosim.gui.tabs.simulation_tab import SimulationTab
     from aerosim.model.templates import conventional
     st = AppState(manager, conventional())
-    tab = SimulationTab(st, manager.get("takeoff"))
+    tab = SimulationTab(st, manager.get("mission"))
+    tab.inputs["mode"].setCurrentText("só decolagem")
+    pump(app, 0.1)
+    tab.reconfigure()
+    assert "elev" in tab.inputs and "start" not in tab.inputs        # o formulário mudou com o modo
     tab.start()
     t0 = time.time()
     while tab._thread is not None and time.time() - t0 < 60:

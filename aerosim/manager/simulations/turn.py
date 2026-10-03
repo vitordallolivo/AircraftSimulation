@@ -19,6 +19,7 @@ from .base import SimulationBase, floats
 
 
 class TurnSimulation(SimulationBase):
+    tab = False
     name = "turn"
     title = "Curvas"
     description = "Raio mínimo em curva nivelada (estol da asa, limite de α, seguimento e altura)."

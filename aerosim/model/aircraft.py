@@ -10,6 +10,7 @@ independente do núcleo de simulação.
 from __future__ import annotations
 
 import copy
+import math
 from dataclasses import dataclass, field
 
 from .airfoil import Airfoil
@@ -279,6 +280,9 @@ class Payload:
     Fext_g: float = 2.0        # força do paraquedas extrator (em g da carga)
     mu_b: float = 0.3
     CdS_chute: float = 0.45
+    target_n: float = 0.0      # alvo da carga no chão (m, norte)
+    target_e: float = 0.0
+    aim: bool = True           # procura onde soltar para a carga cair no alvo
 
 
 @dataclass
@@ -303,6 +307,41 @@ class MassModel:
     items: list[PointMass] = field(default_factory=list)
     include_propulsion: bool = False
     include_structure: bool = False   # massas das superfícies/fuselagem/tubo
+
+
+# ------------------------------------------------------------------ pista, mesa e plataforma
+@dataclass
+class Airfield:
+    """onde a aeronave decola e pousa: no chão, em cima de uma mesa ou numa plataforma
+    (cada uma com o seu tamanho). A aeronave parte de n = 0 rumo ao norte."""
+    takeoff_from: str = "chão"         # chão | mesa
+    table_height: float = 1.0          # altura da mesa (m)
+    table_length: float = 8.0          # comprimento da mesa à frente do ponto de partida (m)
+    table_back: float = 1.0            # mesa atrás do ponto de partida (m)
+    table_width: float = 2.0
+    landing_on: str = "chão"           # chão | plataforma
+    platform_height: float = 0.5
+    platform_length: float = 80.0
+    platform_width: float = 6.0
+    platform_start: float = 50.0       # a plataforma começa este tanto antes do fim da perna de pouso (m)
+    runway_max: float = 60.0           # distância máxima de decolagem permitida (m) — linha nos gráficos
+    landing_max: float = 0.0           # distância máxima de pouso (m); 0: não verifica
+
+    def pads(self, mission) -> list[dict]:
+        """mesas/plataformas no referencial do percurso (n, e, rumo em rad) para o núcleo"""
+        out = []
+        if self.takeoff_from == "mesa" and self.table_height > 0:
+            out.append(dict(n0=-self.table_back, e0=0.0, chi=0.0, L=self.table_back + self.table_length,
+                            W=self.table_width, h=self.table_height))
+        if self.landing_on == "plataforma" and self.platform_height > 0 and mission is not None:
+            segs = mission.segments()
+            ld = next((s for s in reversed(segs) if s.get("landing") and not s.get("arc")), None)
+            if ld is not None:
+                st = max(ld["L"] - self.platform_start, 0.0)
+                c, s_ = math.cos(ld["chi0"]), math.sin(ld["chi0"])
+                out.append(dict(n0=ld["n0"] + st * c, e0=ld["e0"] + st * s_, chi=ld["chi0"], L=self.platform_length,
+                                W=self.platform_width, h=self.platform_height))
+        return out
 
 
 # ------------------------------------------------------------------ ambiente e pilotagem
@@ -418,6 +457,7 @@ class Aircraft:
     autopilot: Autopilot = field(default_factory=Autopilot)
     sim: SimSettings = field(default_factory=SimSettings)
     mission: Mission = field(default_factory=circuit)
+    airfield: Airfield = field(default_factory=Airfield)
     performance: PerformanceData = field(default_factory=PerformanceData)
     shared_battery: bool = False   # True: um pacote para todos os motores (R_int vezes K)
     Sref: float | None = None      # None: da asa principal

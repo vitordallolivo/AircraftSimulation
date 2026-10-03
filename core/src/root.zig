@@ -223,6 +223,14 @@ export fn aerosim_envelope_curve(slot: i32, cfg: *const envelope.EnvCfg, h: f64,
     return @intCast(envelope.curve(&inst.p, cfg, h, V[0..n], Td[0..n], Tr[0..n]));
 }
 
+const simple_perf = @import("sim/simple_perf.zig");
+
+/// desempenho por cálculo simples (sem simulação): uma linha por V e o resumo; não usa instância
+export fn aerosim_simple_perf(cfg: *const simple_perf.SimpleCfg, rows: [*]simple_perf.SimpleRow, cap: usize, sum: *simple_perf.SimpleSummary) i32 {
+    if (!(cfg.dV > 0) or !(cfg.V_hi > cfg.V_lo) or !(cfg.W > 0) or !(cfg.S > 0)) return E_BAD_INDEX;
+    return @intCast(simple_perf.compute(cfg, rows[0..cap], sum));
+}
+
 // ---------------------------------------------------------------- benchmarks
 const bench = @import("bench.zig");
 

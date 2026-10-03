@@ -11,7 +11,29 @@ from aerosim.model.universal import build_model
 from .base import SimulationBase
 
 
+def aircraft_curves(backend, ac, V: float, a0: float, a1: float, da: float, de_deg: float, alpha_beta: float):
+    """curvas estáticas da aeronave inteira no núcleo 6GDL (painéis + fuselagem): C_L, C_D, C_m em α
+    com δe = 0 e ±δe, e C_Y, C_l, C_n em β; devolve (colunas em α, colunas em β)"""
+    de = math.radians(de_deg)
+    al = np.arange(a0, a1 + 1e-9, da)
+    rows = []
+    with backend.session_for(build_model(ac)) as s:
+        for a in al:
+            c = s.aero_coeffs(V, math.radians(a))
+            cm = s.aero_coeffs(V, math.radians(a), de=-de)
+            cp = s.aero_coeffs(V, math.radians(a), de=de)
+            rows.append(dict(alpha=a, CL=c["CL"], CD=c["CD"], Cm=c["Cm"], CL_wing=c["CL_wing"], CL_ht=c["CL_ht"],
+                             CL_de_m=cm["CL"], CL_de_p=cp["CL"], Cm_de_m=cm["Cm"], Cm_de_p=cp["Cm"]))
+        ab = math.radians(alpha_beta)
+        brow = []
+        for b in np.arange(-20, 20.01, 0.5):
+            c = s.aero_coeffs(V, ab, math.radians(b))
+            brow.append(dict(beta=b, CY=c["CY"], Cl=c["Cl"], Cn=c["Cn"]))
+    return ({k: np.array([r[k] for r in rows]) for k in rows[0]}, {k: np.array([r[k] for r in brow]) for k in brow[0]})
+
+
 class PolarSimulation(SimulationBase):
+    tab = False
     name = "polar"
     title = "Polar"
     description = "Curvas estáticas da aeronave inteira (painéis + fuselagem), margem estática e V de estol."
