@@ -2,7 +2,7 @@
  "formato": "aerosim-aeronave",
  "versao": 1,
  "nome": "Convencional (original)",
- "salvo_em": "2026-10-03T11:12:47",
+ "salvo_em": "2026-10-03T11:55:44",
  "resumo": "S = 1.000 m², b = 2.50 m, massa seca 8.39 kg; EH: EH; arfagem por elevator; rolagem por aileron; guinada por rudder; líquido livre (sloshing); carga lançável",
  "aeronave": {
   "name": "Convencional (original)",
@@ -1870,7 +1870,7 @@
     "y": 0.0,
     "z": 0.05,
     "side": 0.14179630807244128,
-    "fill": 0.08,
+    "volume": 2.0,
     "height": 0.12,
     "rho": 1000.0,
     "zeta": 0.03,
@@ -2135,6 +2135,13 @@
    "x_warning": 60.0,
    "z_warning": 1.0,
    "landing_max": 0.0
+  },
+  "ballast": {
+   "enabled": false,
+   "mass": 0.3,
+   "x": 0.4,
+   "y": 0.0,
+   "z": 0.0
   },
   "performance": {
    "alpha_cruise": 2.0,

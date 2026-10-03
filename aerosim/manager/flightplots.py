@@ -22,8 +22,8 @@ STAGE_COLORS = ["#7f7f7f", "#d62728", "#ff7f0e", "#1f77b4", "#2ca02c", "#9467bd"
 PAYLOAD = "#6a0dad"
 # parcelas dos momentos (canal do registro, rótulo, cor)
 COMPONENTS = [("wing", "asa", "#1f77b4"), ("ht", "EH", "#2ca02c"), ("vt", "EV", "#9467bd"), ("fus", "fuselagem", "#8c564b"),
-              ("prop", "hélice (tração + torque)", "#d62728"), ("gyro", "giroscópico", "#e377c2"),
-              ("gear", "trem", "#7f7f7f"), ("liq", "líquido (sloshing)", "#17becf"), ("pay", "carga LAPES", PAYLOAD)]
+              ("prop", "hélice", "#d62728"), ("gyro", "giroscópico", "#e377c2"),
+              ("gear", "trem", "#7f7f7f"), ("liq", "líquido", "#17becf"), ("pay", "LAPES", PAYLOAD)]
 EVENT_STYLE = {"decolou": "#1f77b4", "piloto automático": "#000000", "soltura da carga": PAYLOAD,
                "impacto da carga": PAYLOAD, "toque no pouso": "#2ca02c", "parada": "#d62728"}
 DEG = 180.0 / math.pi
@@ -117,7 +117,7 @@ def payload_path(T: LogChunk, prefix: str, cols: dict[str, str]) -> dict:
     if s.sum() < 2:
         return {}
     m = {"n": "pk_n", "e": "pk_e", "h": "pk_h"}
-    return {f"{prefix}carga LAPES (paraquedas)": {c: np.asarray(T[m.get(ch, ch)], float)[s] for c, ch in cols.items()}
+    return {f"{prefix}carga LAPES": {c: np.asarray(T[m.get(ch, ch)], float)[s] for c, ch in cols.items()}
             | {"_color": PAYLOAD, "_width": 3.0}}
 
 
@@ -125,7 +125,7 @@ def terrain_profile(T: LogChunk, prefix: str, x: str = "n") -> dict:
     """chão/mesa/plataforma sob a aeronave"""
     if "hgnd" not in T.columns or not np.any(np.asarray(T["hgnd"]) > 0):
         return {}
-    return {f"{prefix}terreno (mesa/plataforma)": {x: _col(T, x), "h": np.asarray(T["hgnd"], float),
+    return {f"{prefix}terreno": {x: _col(T, x), "h": np.asarray(T["hgnd"], float),
                                                     "_color": "#5b3a1a", "_width": 3.0}}
 
 
@@ -136,7 +136,7 @@ def trajectory(T: LogChunk, ev: dict, legs: list[str], target: tuple[float, floa
     c3 = {"e": "e", "n": "n", "h": "h"}
     S.update(by_stage(T, ev, legs, "t3_", c3))
     S.update(payload_path(T, "t3_", c3))
-    S["t3_sombra no chão"] = {"e": _col(T, "e"), "n": _col(T, "n"), "h": np.asarray(T["hgnd"], float)
+    S["t3_sombra"] = {"e": _col(T, "e"), "n": _col(T, "n"), "h": np.asarray(T["hgnd"], float)
                               if "hgnd" in T.columns else 0 * _col(T, "h"), "_color": "#b0b0b0", "_width": 1.0}
     S.update(event_stars(T, ev, "t3_", c3))
     for pre, cols in (("xy_", {"n": "n", "e": "e"}), ("xz_", {"n": "n", "h": "h"}), ("zy_", {"e": "e", "h": "h"})):
@@ -167,26 +167,26 @@ def time_series(T: LogChunk, ev: dict, legs: list[str], refs: dict) -> dict:
             S[f"{prefix}{lab}"] = {"_hline": v, "_color": color, "_dash": dash}
 
     nan = lambda k: np.where(fly, _col(T, k), np.nan)
-    add("ang_", [("θ arfagem", _col(T, "theta"), "#1f77b4", 1.4), ("α ataque", nan("alpha"), "#d62728", 1.4),
-                 ("γ trajetória", _col(T, "gamma"), "#2ca02c", 1.2), ("φ rolagem", _col(T, "phi"), "#ff7f0e", 1.2),
-                 ("β derrapagem", nan("beta"), "#9467bd", 1.0)],
+    add("ang_", [("θ", _col(T, "theta"), "#1f77b4", 1.4), ("α", nan("alpha"), "#d62728", 1.4),
+                 ("γ", _col(T, "gamma"), "#2ca02c", 1.2), ("φ", _col(T, "phi"), "#ff7f0e", 1.2),
+                 ("β", nan("beta"), "#9467bd", 1.0)],
         [("α de estol", refs.get("alpha_stall", 14.0), "#000000", "dot")])
-    add("rumo_", [("ψ proa", np.degrees(np.unwrap(np.asarray(T["psi"], float))), "#1f77b4", 1.4),
-                  ("χ curso", np.degrees(np.unwrap(np.asarray(T["chi"], float))), "#2ca02c", 1.0)])
+    add("rumo_", [("ψ", np.degrees(np.unwrap(np.asarray(T["psi"], float))), "#1f77b4", 1.4),
+                  ("χ", np.degrees(np.unwrap(np.asarray(T["chi"], float))), "#2ca02c", 1.0)])
     Vs = refs.get("Vs", 0.0)
-    add("vel_", [("V_a (em relação ao ar)", _col(T, "Va"), "#d62728", 1.6),
-                 ("V_g (em relação ao solo)", _col(T, "Vg"), "#1f77b4", 1.0), ("V pedida", _col(T, "Vref"), "#000000", 0.8)],
+    add("vel_", [("V_a", _col(T, "Va"), "#d62728", 1.6),
+                 ("V_g", _col(T, "Vg"), "#1f77b4", 1.0), ("V_ref", _col(T, "Vref"), "#000000", 0.8)],
         [("V_s", Vs, "#7f7f7f", "dot"), ("1,2 V_s", 1.2 * Vs, "#7f7f7f", "dash")] if Vs else ())
     href = np.where(t >= ev.get("tHt", 1e9) if ev.get("tHt", -1) >= 0 else False, _col(T, "href"), np.nan)
-    add("alt_", [("h do CG", _col(T, "h"), "#d62728", 1.6), ("h de referência", href, "#000000", 0.8)]
+    add("alt_", [("h", _col(T, "h"), "#d62728", 1.6), ("h_ref", href, "#000000", 0.8)]
         + ([("terreno", np.asarray(T["hgnd"], float), "#5b3a1a", 1.5)] if "hgnd" in T.columns and
            np.any(np.asarray(T["hgnd"]) > 0) else []))
-    add("cl_", [("C_L total", nan("CL"), "#000000", 1.6), ("C_L da asa", nan("CL_wing"), "#1f77b4", 1.0),
-                ("C_L da EH", nan("CL_ht"), "#2ca02c", 1.0),
-                ("C_L/C_Lmax da meia asa mais carregada", nan("ratioCL"), "#d62728", 0.9)],
-        [("limite de C_L/C_Lmax", refs.get("kCL", 0.95), "#d62728", "dash")])
-    add("cd_", [("C_D total", nan("CD"), "#000000", 1.6), ("C_Di induzido (com efeito solo)", nan("CDi"), "#1f77b4", 1.0),
-                ("C_D parasita (+ pós-estol)", nan("CD") - nan("CDi"), "#7f7f7f", 1.0)])
+    add("cl_", [("C_L", nan("CL"), "#000000", 1.6), ("C_L asa", nan("CL_wing"), "#1f77b4", 1.0),
+                ("C_L EH", nan("CL_ht"), "#2ca02c", 1.0),
+                ("C_L/C_Lmax", nan("ratioCL"), "#d62728", 0.9)],
+        [("limite", refs.get("kCL", 0.95), "#d62728", "dash")])
+    add("cd_", [("C_D", nan("CD"), "#000000", 1.6), ("C_Di", nan("CDi"), "#1f77b4", 1.0),
+                ("C_D0", nan("CD") - nan("CDi"), "#7f7f7f", 1.0)])
     for ax, label in (("L", "rolamento"), ("M", "arfagem"), ("N", "guinada")):
         cur = []
         for k, lab, c in COMPONENTS:
@@ -195,20 +195,20 @@ def time_series(T: LogChunk, ev: dict, legs: list[str], refs: dict) -> dict:
                 cur.append((lab, y, c, 0.9))
         cur.append(("total", np.asarray(T[f"{ax}_tot"], float), "#000000", 1.6))
         add(f"mom{ax}_", cur)
-    cmd = [("profundor δe", _col(T, "de"), "#2ca02c", 1.2), ("aileron δa", _col(T, "da"), "#1f77b4", 1.2),
-           ("leme δr", _col(T, "dr"), "#ff7f0e", 1.2), ("bequilha δw", _col(T, "dw"), "#7f7f7f", 1.0)]
+    cmd = [("$\\delta_e$", _col(T, "de"), "#2ca02c", 1.2), ("$\\delta_a$", _col(T, "da"), "#1f77b4", 1.2),
+           ("$\\delta_r$", _col(T, "dr"), "#ff7f0e", 1.2), ("$\\delta_w$", _col(T, "dw"), "#7f7f7f", 1.0)]
     add("cmd_", [c for c in cmd if np.nanmax(np.abs(c[1])) > 1e-6] or cmd[:1])
     add("thr_", [("acelerador", _col(T, "thr"), "#d62728", 1.4)])
     add("roc_", [("dh/dt", _col(T, "hdot"), "#2ca02c", 1.4)], [("zero", 0.0, "#000000", "dot")])
     add("nz_", [("n_z", _col(T, "nz"), "#d62728", 1.4)], [("1 g", 1.0, "#000000", "dot")])
     rpm = np.asarray(T["rpm_0"], float) if "rpm_0" in T.columns else np.full(len(t), np.nan)
-    add("motor_", [("rotação do motor 1 (rpm / 100)", rpm / 100.0, "#d62728", 1.2),
-                   ("corrente da bateria (A)", _col(T, "Ibat"), "#1f77b4", 1.2),
-                   ("tração total (N)", _col(T, "T"), "#2ca02c", 1.2)])
-    add("ene_", [("energia gasta (Wh)", _col(T, "E"), "#2ca02c", 1.6)])
+    add("motor_", [("rpm/100", rpm / 100.0, "#d62728", 1.2),
+                   ("$I$ (A)", _col(T, "Ibat"), "#1f77b4", 1.2),
+                   ("$T$ (N)", _col(T, "T"), "#2ca02c", 1.2)])
+    add("ene_", [("$E$ (Wh)", _col(T, "E"), "#2ca02c", 1.6)])
     if "slosh_x_0" in T.columns and np.nanmax(np.abs(T["slosh_x_0"])) > 1e-9:
-        add("slosh_", [("η_x (frente/trás)", np.degrees(np.asarray(T["slosh_x_0"], float)), "#1f77b4", 1.0),
-                       ("η_y (lados)", np.degrees(np.asarray(T["slosh_y_0"], float)), "#d62728", 1.0)])
+        add("slosh_", [("η_x", np.degrees(np.asarray(T["slosh_x_0"], float)), "#1f77b4", 1.0),
+                       ("η_y", np.degrees(np.asarray(T["slosh_y_0"], float)), "#d62728", 1.0)])
     return S
 
 
@@ -232,11 +232,11 @@ def takeoff_window(T: LogChunk, ev: dict, refs: dict, airfield=None) -> dict:
     if ev.get("tR", -1) >= 0:
         marks.append(("aciona o profundor", float(np.interp(ev["tR"], t, T["n"])), "#2ca02c", "dashdot"))
     if ev.get("tRot", -1) > 0:
-        marks.append(("bequilha/roda sai do chão", float(ev["nRot"]), "#ff7f0e", "dot"))
+        marks.append(("bequilha sai do chão", float(ev["nRot"]), "#ff7f0e", "dot"))
     if ev.get("tLO", -1) > 0:
-        marks.append(("decolou (principais saem do chão)", float(ev["nLO"]), "#1f77b4", "dot"))
+        marks.append(("decolou", float(ev["nLO"]), "#1f77b4", "dot"))
     if ev.get("tHt", -1) > 0:
-        marks.append(("h_t: piloto automático", float(ev["nHt"]), "#000000", "dot"))
+        marks.append(("h_t", float(ev["nHt"]), "#000000", "dot"))
     lim = refs.get("x_warning", 0.0)
     if airfield is not None and airfield.takeoff_from == "mesa":
         marks.append(("borda da mesa", float(airfield.table_length), "#5b3a1a", "dash"))
@@ -249,35 +249,35 @@ def takeoff_window(T: LogChunk, ev: dict, refs: dict, airfield=None) -> dict:
         for lab, v, c, d in marks:
             S[f"{prefix}{lab}"] = {"_vline": v, "_color": c, "_dash": d}
         if lim > 0:
-            S[f"{prefix}x_warning: pista exigida ({lim:g} m)"] = {"_vline": lim, "_color": "#d62728", "_width": 3,
+            S[f"{prefix}x_warning = {lim:g} m"] = {"_vline": lim, "_color": "#d62728", "_width": 3,
                                                                     "_dash": None}
     h0 = D["h"][0]
-    hcur = [("subida do CG (desde o repouso)", D["h"] - h0, "#d62728", 1.6),
+    hcur = [("h do CG", D["h"] - h0, "#d62728", 1.6),
             ("folga da cauda", np.where(D["htail"] < 1e6, D["htail"], np.nan), "#7f7f7f", 1.2)]
     if np.any(D["hgnd"] > 0):
-        hcur.append(("terreno (mesa) − altura inicial", D["hgnd"] - D["hgnd"][0], "#5b3a1a", 2.0))
+        hcur.append(("mesa", D["hgnd"] - D["hgnd"][0], "#5b3a1a", 2.0))
     zw = refs.get("z_warning")
-    fig("dh_", hcur, [("h_t: piloto automático assume", refs.get("ht", 2.0), "#000000", "dot")]
-        + ([(f"z_warning: altura que conta como decolado ({zw:g} m)", zw, "#d62728", None)] if zw is not None else []))
+    fig("dh_", hcur, [("h_t", refs.get("ht", 2.0), "#000000", "dot")]
+        + ([(f"z_warning = {zw:g} m", zw, "#d62728", None)] if zw is not None else []))
     Vs = refs.get("Vs", 0.0)
     fig("dv_", [("V_a", D["Va"], "#d62728", 1.6), ("V_g", D["Vg"], "#1f77b4", 1.2)],
         [("V_s", Vs, "#000000", "dot"), ("1,2 V_s", 1.2 * Vs, "#000000", "dash")] if Vs else ())
     fig("da_", [("θ", D["theta"], "#1f77b4", 1.4), ("α", D["alpha"], "#d62728", 1.4), ("γ", D["gamma"], "#2ca02c", 1.2)],
         [("α de estol", refs.get("alpha_stall", 14.0), "#d62728", "dot")]
-        + ([("θ que encosta a cauda", refs["theta_tail"], "#7f7f7f", "dash")] if refs.get("theta_tail") else []))
-    cmd = [("profundor δe", D["de"], "#2ca02c", 1.4), ("bequilha δw", D["dw"], "#7f7f7f", 1.0),
-           ("leme δr", D["dr"], "#ff7f0e", 1.0), ("aileron δa", D["da"], "#1f77b4", 1.0),
-           ("acelerador × 10", 10 * D["thr"], "#d62728", 1.0)]
+        + ([("θ cauda", refs["theta_tail"], "#7f7f7f", "dash")] if refs.get("theta_tail") else []))
+    cmd = [("$\\delta_e$", D["de"], "#2ca02c", 1.4), ("$\\delta_w$", D["dw"], "#7f7f7f", 1.0),
+           ("$\\delta_r$", D["dr"], "#ff7f0e", 1.0), ("$\\delta_a$", D["da"], "#1f77b4", 1.0),
+           ("acel. × 10", 10 * D["thr"], "#d62728", 1.0)]
     fig("dc_", [c for c in cmd if np.nanmax(np.abs(c[1])) > 1e-6])
     Rn, Rm, i2 = _article(D)
-    fig("dr_", [("bequilha (TDN) — molas", D["N_steer"], "#ff7f0e", 2.0), ("principais (TDP) — molas", D["N_main"], "#1f77b4", 2.0)]
-        + ([("cauda — molas", D["N_skid"], "#7f7f7f", 1.2)] if np.nanmax(D["N_skid"]) > 0 else [])
-        + [("TDN — artigo, eqs. (5)–(6)", np.r_[Rn[:i2 + 1], np.full(len(Rn) - i2 - 1, np.nan)], "#ff7f0e", 1.0),
-           ("TDP — artigo, eqs. (5)–(6)", np.r_[Rm[:i2 + 1], np.full(len(Rm) - i2 - 1, np.nan)], "#1f77b4", 1.0)])
-    for k in ("dr_TDN — artigo, eqs. (5)–(6)", "dr_TDP — artigo, eqs. (5)–(6)"):
+    fig("dr_", [("TDN", D["N_steer"], "#ff7f0e", 2.0), ("TDP", D["N_main"], "#1f77b4", 2.0)]
+        + ([("cauda", D["N_skid"], "#7f7f7f", 1.2)] if np.nanmax(D["N_skid"]) > 0 else [])
+        + [("TDN artigo", np.r_[Rn[:i2 + 1], np.full(len(Rn) - i2 - 1, np.nan)], "#ff7f0e", 1.0),
+           ("TDP artigo", np.r_[Rm[:i2 + 1], np.full(len(Rm) - i2 - 1, np.nan)], "#1f77b4", 1.0)])
+    for k in ("dr_TDN artigo", "dr_TDP artigo"):
         S[k]["_dash"] = "dash"
-    fig("dm_", [("rolamento L do trem", D["L_gear"], "#1f77b4", 1.4), ("arfagem M do trem", D["M_gear"], "#d62728", 1.6),
-                ("guinada N do trem", D["N_gear"], "#2ca02c", 1.4)])
+    fig("dm_", [("$L$", D["L_gear"], "#1f77b4", 1.4), ("$M$", D["M_gear"], "#d62728", 1.6),
+                ("$N$", D["N_gear"], "#2ca02c", 1.4)])
     return S
 
 
@@ -321,12 +321,12 @@ def landing_window(T: LogChunk, ev: dict, refs: dict, airfield=None, pads=()) ->
         if refs.get("landing_max", 0) > 0:
             S[f"{prefix}distância máxima de pouso"] = {"_vline": ev["nTD"] + refs["landing_max"], "_color": "#d62728",
                                                        "_width": 3}
-    fig("pr_", [("bequilha (TDN) — molas", T["N_steer"], "#ff7f0e", 2.0, None),
-                ("principais (TDP) — molas", T["N_main"], "#1f77b4", 2.0, None),
-                ("TDN — artigo, eq. (5)", np.where((T["N_steer"] > 0) | (T["N_main"] > 0), T["Rnw"], np.nan), "#ff7f0e", 1.0, "dash"),
-                ("TDP — artigo, eq. (5)", np.where((T["N_steer"] > 0) | (T["N_main"] > 0), T["Rmw"], np.nan), "#1f77b4", 1.0, "dash")])
-    fig("pm_", [("rolamento L do trem", T["L_gear"], "#1f77b4", 1.4, None), ("arfagem M do trem", T["M_gear"], "#d62728", 1.6, None),
-                ("guinada N do trem", T["N_gear"], "#2ca02c", 1.4, None)])
+    fig("pr_", [("TDN", T["N_steer"], "#ff7f0e", 2.0, None),
+                ("TDP", T["N_main"], "#1f77b4", 2.0, None),
+                ("TDN artigo", np.where((T["N_steer"] > 0) | (T["N_main"] > 0), T["Rnw"], np.nan), "#ff7f0e", 1.0, "dash"),
+                ("TDP artigo", np.where((T["N_steer"] > 0) | (T["N_main"] > 0), T["Rmw"], np.nan), "#1f77b4", 1.0, "dash")])
+    fig("pm_", [("$L$", T["L_gear"], "#1f77b4", 1.4, None), ("$M$", T["M_gear"], "#d62728", 1.6, None),
+                ("$N$", T["N_gear"], "#2ca02c", 1.4, None)])
     return S
 
 
@@ -343,26 +343,26 @@ def lapes_window(T: LogChunk, ev: dict, target_n: float | None = None, before: f
     tt = t[s] - t0
     S = {}
     ext = {"_vspan": [0.0, (ev["trel"] - t0) if ev.get("trel", -1) > 0 else 0.0], "_color": PAYLOAD, "_alpha": 35,
-           "_label": "extração (carga correndo na baia)"}
+           "_label": "extração"}
     S["lc_▮ extração"] = dict(ext)
-    S["lc_x do CG (cm)"] = {"t": tt, "y": 100 * np.asarray(T["xcg"], float)[s], "_color": "#1f77b4"}
-    S["lc_carga na baia (cm)"] = {"t": tt, "y": 100 * np.asarray(T["sL"], float)[s], "_color": PAYLOAD}
+    S["lc_x_CG"] = {"t": tt, "y": 100 * np.asarray(T["xcg"], float)[s], "_color": "#1f77b4"}
+    S["lc_carga na baia"] = {"t": tt, "y": 100 * np.asarray(T["sL"], float)[s], "_color": PAYLOAD}
     S["lm_▮ extração"] = dict(ext)
-    S["lm_massa (kg)"] = {"t": tt, "y": np.asarray(T["m"], float)[s], "_color": "#d62728"}
+    S["lm_m"] = {"t": tt, "y": np.asarray(T["m"], float)[s], "_color": "#d62728"}
     S["lp_▮ extração"] = dict(ext)
     for k, lab, c in (("theta", "θ (°)", "#1f77b4"), ("alpha", "α (°)", "#d62728"), ("q", "q (°/s)", "#ff7f0e"),
                       ("de", "δe (°)", "#2ca02c")):
         S[f"lp_{lab}"] = {"t": tt, "y": _col(T, k)[s], "_color": c}
-    S["lp_M_pay"] = {"t": tt, "y": np.asarray(T["M_pay"], float)[s], "_color": PAYLOAD, "_label": "momento da carga (N·m)"}
+    S["lp_M_pay"] = {"t": tt, "y": np.asarray(T["M_pay"], float)[s], "_color": PAYLOAD, "_label": "M_LAPES (N·m)"}
     w = (t >= t0 - before) & (t <= t0 + after + 4)
-    S["lx_aeronave (CG)"] = {"n": np.asarray(T["n"], float)[w], "h": np.asarray(T["h"], float)[w], "_color": "#9467bd",
+    S["lx_aeronave"] = {"n": np.asarray(T["n"], float)[w], "h": np.asarray(T["h"], float)[w], "_color": "#9467bd",
                              "_width": 2.0}
     pk = np.asarray(T["pk_h"], float) > 0
     if pk.any():
-        S["lx_carga com paraquedas"] = {"n": np.asarray(T["pk_n"], float)[pk], "h": np.asarray(T["pk_h"], float)[pk],
+        S["lx_carga"] = {"n": np.asarray(T["pk_n"], float)[pk], "h": np.asarray(T["pk_h"], float)[pk],
                                         "_color": PAYLOAD, "_width": 3.0}
     i = _idx(T, t0)
-    S["lx_★ início da extração"] = {"n": np.array([T["n"][i]]), "h": np.array([T["h"][i]]), "_symbol": "star",
+    S["lx_★ extração"] = {"n": np.array([T["n"][i]]), "h": np.array([T["h"][i]]), "_symbol": "star",
                                     "_color": PAYLOAD}
     if ev.get("pk_t", 0) > 0:
         S["lx_★ impacto da carga"] = {"n": np.array([ev["pk_n"]]), "h": np.array([0.0]), "_symbol": "star",
@@ -447,12 +447,12 @@ def battery_by_stage(T: LogChunk, ev: dict, leg_names: list[str], capacity_mAh: 
     rows.append(dict(etapa="total", tempo_s=float(dt.sum()), corrente_media_A=float((I * dt).sum() / max(dt.sum(), 1e-9)),
                      consumo_mAh=float(mAh[-1]), descarga_peukert_pct=float(pk[-1])))
     S = stage_spans(T, ev, leg_names, "bat_")
-    S["bat_consumo acumulado (mAh)"] = {"t": t, "y": mAh, "_color": "#1f77b4", "_width": 2.2}
+    S["bat_consumo"] = {"t": t, "y": mAh, "_color": "#1f77b4", "_width": 2.2}
     S[f"bat_capacidade ({capacity_mAh:.0f} mAh)"] = {"_hline": capacity_mAh, "_color": "#d62728", "_width": 2}
     S2 = stage_spans(T, ev, leg_names, "batp_")
-    S2["batp_descarga estimada: Coulomb (%)"] = {"t": t, "y": mAh / capacity_mAh * 100, "_color": "#1f77b4", "_width": 2}
-    S2["batp_descarga estimada: Peukert (%)"] = {"t": t, "y": pk, "_color": "#d62728", "_width": 2}
-    S2["batp_corrente da bateria (A)"] = {"t": t, "y": I, "_color": "#7f7f7f", "_width": 1}
+    S2["batp_Coulomb"] = {"t": t, "y": mAh / capacity_mAh * 100, "_color": "#1f77b4", "_width": 2}
+    S2["batp_Peukert"] = {"t": t, "y": pk, "_color": "#d62728", "_width": 2}
+    S2["batp_$I$ (A)"] = {"t": t, "y": I, "_color": "#7f7f7f", "_width": 1}
     S.update(S2)
     return rows, S
 
@@ -463,13 +463,42 @@ def takeoff_angles(T: LogChunk, ev: dict, wing_incidence_deg: float, alpha_stall
     t1 = ev["tHt"] + 4.0 if ev.get("tHt", -1) > 0 else t[-1]
     s = t <= t1
     th = np.degrees(np.asarray(T["theta"], float))[s]
-    S = {f"{prefix}ângulo da aeronave θ": {"t": t[s], "y": th, "_color": "#1f77b4", "_width": 2.2},
-         f"{prefix}ângulo da asa θ + {wing_incidence_deg:g}°": {"t": t[s], "y": th + wing_incidence_deg,
+    S = {f"{prefix}θ": {"t": t[s], "y": th, "_color": "#1f77b4", "_width": 2.2},
+         f"{prefix}θ + i_w": {"t": t[s], "y": th + wing_incidence_deg,
                                                                 "_color": "#ff7f0e", "_width": 2.2},
-         f"{prefix}α da asa (ar)": {"t": t[s], "y": np.degrees(np.asarray(T["alpha"], float))[s] + wing_incidence_deg,
+         f"{prefix}α asa": {"t": t[s], "y": np.degrees(np.asarray(T["alpha"], float))[s] + wing_incidence_deg,
                                     "_color": "#2ca02c", "_width": 1.0, "_dash": "dash"},
-         f"{prefix}estol da asa ({alpha_stall_deg:.0f}°)": {"_hline": alpha_stall_deg, "_color": "#d62728", "_dash": "dot"}}
+         f"{prefix}estol ({alpha_stall_deg:.0f}°)": {"_hline": alpha_stall_deg, "_color": "#d62728", "_dash": "dot"}}
     for name, key in (("aciona o profundor", "tR"), ("decolou", "tLO"), ("piloto automático", "tHt")):
         if ev.get(key, -1) > 0:
             S[f"{prefix}{name}"] = {"_vline": float(ev[key]), "_color": "#7f7f7f", "_dash": "dot"}
     return S
+
+
+def takeoff_time(T: LogChunk, ev: dict, rho: float, S: float) -> dict:
+    """decolagem no tempo: C_L, C_D, sustentação e arrasto, e cada momento junto do comando daquele eixo"""
+    t = np.asarray(T["t"], float)
+    t1 = ev["tHt"] + 4.0 if ev.get("tHt", -1) > 0 else t[-1]
+    s = t <= t1
+    t = t[s]
+    g = lambda k: np.asarray(T[k], float)[s]
+    qS = 0.5 * rho * g("Va") ** 2 * S
+    out = {"tcl_C_L": {"t": t, "y": g("CL"), "_color": "#000000", "_width": 2},
+           "tcl_C_L asa": {"t": t, "y": g("CL_wing"), "_color": "#1f77b4"},
+           "tcd_C_D": {"t": t, "y": g("CD"), "_color": "#000000", "_width": 2},
+           "tcd_C_Di": {"t": t, "y": g("CDi"), "_color": "#1f77b4"},
+           "tld_L": {"t": t, "y": g("CL") * qS, "_color": "#1f77b4", "_width": 2},
+           "tld_D": {"t": t, "y": g("CD") * qS, "_color": "#d62728", "_width": 2},
+           "tld_W": {"_hline": float(np.asarray(T["m"], float)[0]) * 9.80665, "_color": "#7f7f7f", "_dash": "dot"}}
+    if np.nanmax(np.abs(g("CL_ht"))) > 1e-6:
+        out["tcl_C_L EH"] = {"t": t, "y": g("CL_ht"), "_color": "#2ca02c"}
+    for ax, ctl, lab in (("L", "da", "δ_a"), ("M", "de", "δ_e"), ("N", "dr", "δ_r")):
+        out[f"tm{ax}_{ax} (N·m)"] = {"t": t, "y": g(f"{ax}_tot"), "_color": "#000000", "_width": 2}
+        d = np.degrees(g(ctl))
+        if np.nanmax(np.abs(d)) > 1e-6:
+            out[f"tm{ax}_{lab} (°)"] = {"t": t, "y": d, "_color": "#2ca02c" if ax == "M" else "#1f77b4", "_dash": "dash"}
+    for name, key in (("aciona", "tR"), ("decolou", "tLO"), ("h_t", "tHt")):
+        if ev.get(key, -1) > 0:
+            for p in ("tcl_", "tcd_", "tld_", "tmL_", "tmM_", "tmN_"):
+                out[f"{p}{name}"] = {"_vline": float(ev[key]), "_color": "#7f7f7f", "_dash": "dot", "_nolegend": 1}
+    return out

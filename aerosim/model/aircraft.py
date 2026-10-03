@@ -256,17 +256,25 @@ class SloshTank:
     y: float = 0.0
     z: float = 0.05
     side: float = 0.14         # lado da base quadrada (ou diâmetro, se cilindro) (m)
-    fill: float = 0.08         # altura do líquido (m)
+    volume: float = 2.0        # volume de líquido (L)
     height: float = 0.12       # altura do tanque (só para desenhar)
-    rho: float = 1000.0
+    rho: float = 1000.0        # densidade do líquido (kg/m³; água = 1000)
     zeta: float = 0.03
     shape: str = "square"      # square | cylinder
 
     @property
-    def liquid_mass(self) -> float:
-        import math
+    def base_area(self) -> float:
         a = self.side
-        return self.rho * self.fill * (a * a if self.shape == "square" else math.pi * a * a / 4)
+        return a * a if self.shape == "square" else math.pi * a * a / 4
+
+    @property
+    def fill(self) -> float:
+        """altura do líquido (m), pelo volume"""
+        return self.volume / 1000.0 / self.base_area
+
+    @property
+    def liquid_mass(self) -> float:
+        return self.rho * self.volume / 1000.0
 
 
 @dataclass
@@ -283,6 +291,16 @@ class Payload:
     target_n: float = 0.0      # alvo da carga no chão (m, norte)
     target_e: float = 0.0
     aim: bool = True           # procura onde soltar para a carga cair no alvo
+
+
+@dataclass
+class Ballast:
+    """lastro: massa sólida presa na aeronave (para acertar o CG / a estabilidade)"""
+    enabled: bool = False
+    mass: float = 0.3
+    x: float = 0.4
+    y: float = 0.0
+    z: float = 0.0
 
 
 @dataclass
@@ -462,6 +480,7 @@ class Aircraft:
     sim: SimSettings = field(default_factory=SimSettings)
     mission: Mission = field(default_factory=circuit)
     airfield: Airfield = field(default_factory=Airfield)
+    ballast: Ballast = field(default_factory=Ballast)
     performance: PerformanceData = field(default_factory=PerformanceData)
     shared_battery: bool = False   # True: um pacote para todos os motores (R_int vezes K)
     Sref: float | None = None      # None: da asa principal

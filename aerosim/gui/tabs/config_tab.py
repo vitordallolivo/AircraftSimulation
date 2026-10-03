@@ -270,7 +270,7 @@ class ConfigTab(QtWidgets.QWidget):
 
     def _add_tank(self):
         ac = self.state.aircraft
-        ac.tanks.append(SloshTank(name=f"tanque {len(ac.tanks) + 1}", x=0.05, y=0.0, z=0.0, side=0.1, fill=0.05,
+        ac.tanks.append(SloshTank(name=f"tanque {len(ac.tanks) + 1}", x=0.05, y=0.0, z=0.0, side=0.1, volume=2.0,
                                   height=0.08))
         self._added(f"tank:{len(ac.tanks) - 1}")
 
@@ -338,6 +338,7 @@ class ConfigTab(QtWidgets.QWidget):
         if ac.boom.enabled:
             items.append(("boom", "tubo de cauda"))
         items.append(("payload", "📦 LAPES: carga e soltura" + ("" if ac.payload.enabled else " (desligado)")))
+        items.append(("ballast", "⚖ Lastro" + (f" ({ac.ballast.mass:g} kg)" if ac.ballast.enabled else " (desligado)")))
         items.append(("gear", f"trem de pouso ({ac.gear.layout})"))
         items += [(k, t) for k, t in NONGEOM]
         sel_row = 0
@@ -355,7 +356,7 @@ class ConfigTab(QtWidgets.QWidget):
             return
         key = cur.data(QtCore.Qt.ItemDataRole.UserRole)
         self.editor_title.setText(cur.text())
-        self.view.select(key if ":" in key or key in ("fuselage", "boom", "payload", "gear") else None)
+        self.view.select(key if ":" in key or key in ("fuselage", "boom", "payload", "gear", "ballast") else None)
         self._edit(key)
 
     def _on_pick(self, key):
@@ -378,7 +379,7 @@ class ConfigTab(QtWidgets.QWidget):
 
     # ------------------------------------------------------------------ editores
     def _changed(self, field=""):
-        if field == "name":
+        if field in ("name", "enabled"):
             self._fill_list()
         self.state.notify("geometry")
 
@@ -412,6 +413,15 @@ class ConfigTab(QtWidgets.QWidget):
             self.form = DataclassForm(ac.payload)
             v.addWidget(self.form)
             v.addWidget(self._drop_editor())
+        elif kind == "ballast":
+            self.form = DataclassForm(ac.ballast)
+            v.addWidget(self.form)
+            hint = QtWidgets.QLabel("Massa sólida presa na aeronave para acertar o CG (estabilidade). Entra na massa "
+                                    "seca, no CG e nas inércias. Arraste no 3D para mudar a posição. Na Missão → MTOW "
+                                    "dá para variar a massa dele junto com a carga LAPES e o líquido.")
+            hint.setWordWrap(True)
+            hint.setStyleSheet("color:#555")
+            v.addWidget(hint)
         elif kind in ("fuselage", "boom"):
             self.form = DataclassForm(getattr(ac, kind))
             v.addWidget(self.form)
@@ -852,6 +862,7 @@ def info_html(backend, ac, info) -> str:
     pay = ac.payload.mass if ac.payload.enabled else 0.0
     rows = [("massa total", f"{m:.3f} kg"), ("aeronave seca", f"{dry:.3f} kg"), ("líquido nos tanques", f"{liq:.3f} kg"),
             ("carga LAPES", f"{pay:.3f} kg"),
+            ("lastro", f"{ac.ballast.mass:.3f} kg em x = {ac.ballast.x:.3f} m" if ac.ballast.enabled else "—"),
             ("CG (x, y, z)", f"({cg[0]:.3f}, {cg[1]:.3f}, {cg[2]:.3f}) m"),
             ("CG em % da CMA", f"{100 * model.mac_frac(cg[0]):.1f} %")]
     if mp is not None and "I" in mp:

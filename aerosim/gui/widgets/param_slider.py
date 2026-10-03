@@ -169,7 +169,7 @@ LABELS = {
     "symmetric": "simétrica", "vertical": "vertical", "oswald": "Oswald e", "eta": "η (q local)",
     "downwash": "sente downwash", "enabled": "ativo", "mass": "massa", "tilt": "inclinação do eixo",
     "toe": "desvio do eixo", "sense": "sentido (±1)", "yaw_mix": "acel. diferencial", "side": "lado/diâmetro",
-    "fill": "altura do líquido", "height": "altura", "rho": "densidade", "zeta": "amortecimento",
+    "fill": "altura do líquido", "volume": "volume de líquido (L)", "height": "altura", "rho": "densidade do líquido (água 1000)", "zeta": "amortecimento",
     "shape": "forma", "layout": "tipo", "main_x": "principal x", "main_track": "bitola", "main_z": "principal z",
     "steer_x": "direcionável x", "steer_z": "direcionável z", "tail_skid": "patim de cauda", "skid_x": "patim x",
     "skid_z": "patim z", "x_nose": "nariz x", "length": "comprimento", "width": "largura",

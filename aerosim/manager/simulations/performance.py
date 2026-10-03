@@ -65,20 +65,18 @@ class PerformanceSimulation(SimulationBase):
     def plots(self):
         s = lambda key, title, xl, yl, x="V": PlotSpec(key, title, x, ("y",), xl, yl, live=False,
                                                        source=f"series:{key}_*")
-        return [PlotSpec("env", "Envelope de voo (área segura em verde)", "V", ("h",), "velocidade (m/s)",
-                         "altitude (m)", live=False, source="series:env_*"),
-                s("spot", "Potência disponível × requerida (verde: sobra de potência)", "V (m/s)", "potência (W)"),
-                s("stra", "Tração disponível × requerida", "V (m/s)", "tração (N)"),
-                s("ssub", "Razão de subida (negativa: não sustenta o voo nivelado; ★ máxima)", "V (m/s)", "RC (m/s)"),
-                s("sgam", "Ângulo de subida (★ máximo)", "V (m/s)", "γ (°)"),
-                s("sdes", "Planeio: razão de descida × V (tangente: alcance máximo; tracejado: autonomia máxima)",
-                  "V de planeio (m/s)", "razão de descida (m/s)"),
-                PlotSpec("scur", "Envelope de curvas: velocidade × raio por inclinação (área segura em verde)", "R",
-                         ("V",), "raio de curvatura (m)", "velocidade (m/s)", live=False, source="series:scur_*"),
-                s("snv", "Diagrama V-n (verde: dentro dos limites)", "V (m/s)", "n (g)"),
-                s("sbat", "Autonomia da bateria na potência requerida (verde: V de voo nivelado)", "V (m/s)",
-                  "autonomia (min)"),
-                s("sran", "Alcance com a bateria (★ máximo)", "V (m/s)", "alcance (km)")]
+        return [PlotSpec("env", "Envelope de voo", "V", ("h",), "$V$ (m/s)",
+                         "$h$ (m)", live=False, source="series:env_*"),
+                s("spot", "Potência", "$V$ (m/s)", "$P$ (W)"),
+                s("stra", "Tração", "$V$ (m/s)", "$T$ (N)"),
+                s("ssub", "Razão de subida", "$V$ (m/s)", "$RC$ (m/s)"),
+                s("sgam", "Ângulo de subida", "$V$ (m/s)", "$\\gamma$ (°)"),
+                s("sdes", "Planeio", "$V_{planeio}$ (m/s)", "$R_s$ (m/s)"),
+                PlotSpec("scur", "Envelope de curvas", "R",
+                         ("V",), "$R$ (m)", "$V$ (m/s)", live=False, source="series:scur_*"),
+                s("snv", "Diagrama V-n", "$V$ (m/s)", "$n$"),
+                s("sbat", "Autonomia da bateria", "$V$ (m/s)", "$t$ (min)"),
+                s("sran", "Alcance da bateria", "$V$ (m/s)", "alcance (km)")]
 
     def run(self, ctx: RunContext) -> SimResult:
         ac = ctx.aircraft.copy()
@@ -173,9 +171,9 @@ class PerformanceSimulation(SimulationBase):
                               _width=2.2)
         S["env_V_max"] = dict(V=np.r_[Vmax, 0.5 * (Vmin[-1] + Vmax[-1])], h=np.r_[H, H[-1] + 25], _color="#c0504d",
                               _width=2.2)
-        S["env_V_e (estol)"] = dict(V=Ve, h=H, _color="#9bbb59", _width=2)
-        S["env_V* = V_e √n (manobra)"] = dict(V=Vman, h=H, _color="#8064a2", _width=2)
-        S["env_V_cru (L/D máximo)"] = dict(V=Vcru, h=H, _color="#4bacc6", _width=2)
+        S["env_V_e"] = dict(V=Ve, h=H, _color="#9bbb59", _width=2)
+        S["env_V*"] = dict(V=Vman, h=H, _color="#8064a2", _width=2)
+        S["env_V_cru"] = dict(V=Vcru, h=H, _color="#4bacc6", _width=2)
         if ceiling is not None:
             S[f"env_teto absoluto ≈ {ceiling:.0f} m"] = dict(_hline=ceiling, _color="#000000", _dash="dash")
         summ["teto absoluto (m)"] = ceiling if ceiling is not None else "> 9000"
@@ -185,7 +183,7 @@ class PerformanceSimulation(SimulationBase):
     @staticmethod
     def _by_altitude(S, rows, sm, j, h):
         c = ALT_COLORS[j % len(ALT_COLORS)]
-        lab = f"h = {h:g} m"
+        lab = f"{h:g} m"
         V = rows["V"]
         ok = rows["ok"] > 0                       # C_L ≤ C_Lmax
         fly = ok & (rows["Pd"] >= rows["Pr"])
@@ -195,15 +193,15 @@ class PerformanceSimulation(SimulationBase):
         if len(idx):
             band = slice(idx[0], idx[-1] + 1)
             Vf = V[band]
-            S[f"spot_{lab}: sobra de potência"] = dict(V=Vf, y=rows["Pr"][band], _fill="y2", y2=rows["Pd"][band],
+            S[f"spot_sobra ({lab})"] = dict(V=Vf, y=rows["Pr"][band], _fill="y2", y2=rows["Pd"][band],
                                                       _color=SAFE, _nolegend=j > 0)
-            S[f"ssub_{lab}: sobe"] = dict(V=Vf, y=np.zeros(len(Vf)), _fill="y2", y2=rows["RC"][band], _color=SAFE,
+            S[f"ssub_sobe ({lab})"] = dict(V=Vf, y=np.zeros(len(Vf)), _fill="y2", y2=rows["RC"][band], _color=SAFE,
                                          _nolegend=j > 0)
-            S[f"sbat_{lab}: V de voo nivelado"] = dict(_vspan=[float(Vf[0]), float(Vf[-1])], _color=c, _alpha=25)
-        S[f"spot_{lab}: disponível P_d"] = dict(V=V, y=rows["Pd"], _color=c, _width=2)
-        S[f"spot_{lab}: requerida P_r"] = dict(V=V, y=Pr, _color=c, _dash="dash")
-        S[f"stra_{lab}: disponível T_d"] = dict(V=V, y=rows["Td"], _color=c, _width=2)
-        S[f"stra_{lab}: requerida T_r"] = dict(V=V, y=np.where(show, rows["Tr"], np.nan), _color=c, _dash="dash")
+            S[f"sbat_voo nivelado ({lab})"] = dict(_vspan=[float(Vf[0]), float(Vf[-1])], _color=c, _alpha=25)
+        S[f"spot_P_d ({lab})"] = dict(V=V, y=rows["Pd"], _color=c, _width=2)
+        S[f"spot_P_r ({lab})"] = dict(V=V, y=Pr, _color=c, _dash="dash")
+        S[f"stra_T_d ({lab})"] = dict(V=V, y=rows["Td"], _color=c, _width=2)
+        S[f"stra_T_r ({lab})"] = dict(V=V, y=np.where(show, rows["Tr"], np.nan), _color=c, _dash="dash")
         rc = np.where(show, rows["RC"], np.nan)
         if j == 0:                                 # janela dos gráficos (as curvas ficam inteiras, fora dela também)
             S["spot__escala"] = dict(_ylim=[0.0, 1.8 * float(rows["Pd"].max())], _xlim=[0.0, float(V[-1])])
@@ -215,29 +213,29 @@ class PerformanceSimulation(SimulationBase):
             S["sdes__escala"] = dict(_ylim=[-4 * (sm["sink_min"] + 0.5), 0.3], _xlim=[0.0, float(V[-1])])
             S["sbat__escala"] = dict(_ylim=[0.0, 1.5 * 60 * sm["t_max"]], _xlim=[0.0, float(V[-1])])
             S["sran__escala"] = dict(_ylim=[0.0, 1.5 * sm["range_max"] / 1000], _xlim=[0.0, float(V[-1])])
-        S[f"ssub_{lab}"] = dict(V=V, y=rc, _color=c, _width=2)
-        S[f"sgam_{lab}"] = dict(V=V, y=np.where(np.isfinite(rc), np.degrees(rows["gam"]), np.nan), _color=c, _width=2)
+        S[f"ssub_RC ({lab})"] = dict(V=V, y=rc, _color=c, _width=2)
+        S[f"sgam_γ ({lab})"] = dict(V=V, y=np.where(np.isfinite(rc), np.degrees(rows["gam"]), np.nan), _color=c, _width=2)
         S["ssub_zero"] = dict(_hline=0.0, _color="#000000", _dash="dot", _nolegend=1)
         for k in ("ssub", "sgam", "spot", "stra"):
             S[f"{k}_V_e ({lab})"] = dict(_vline=sm["Vs"], _color=c, _dash="dot", _nolegend=1)
         star = lambda x, y: dict(V=np.array([x]), y=np.array([y]), _symbol="star", _color=c)
-        S[f"ssub_★ {sm['RCmax']:.2f} m/s a {sm['V_RCmax']:.1f} m/s ({lab})"] = star(sm["V_RCmax"], sm["RCmax"])
+        S[f"ssub_★ {sm['RCmax']:.2f} m/s ({lab})"] = star(sm["V_RCmax"], sm["RCmax"])
         S[f"sgam_★ {math.degrees(sm['gmax']):.1f}° ({lab})"] = star(sm["V_gmax"], math.degrees(sm["gmax"]))
         # planeio (Figura 4.8): razão de descida negativa × V de planeio, curva inteira
         Vg, sink = rows["V_glide"], -rows["sink"]
         gl = show & (Vg > 0)
-        S[f"sdes_Rs ({lab})"] = dict(V=np.where(gl, Vg, np.nan), y=np.where(gl, sink, np.nan), _color=c, _width=2)
-        S[f"sdes_máxima autonomia ({lab}): {sm['sink_min']:.2f} m/s"] = dict(_hline=-sm["sink_min"], _color=c,
+        S[f"sdes_R_s ({lab})"] = dict(V=np.where(gl, Vg, np.nan), y=np.where(gl, sink, np.nan), _color=c, _width=2)
+        S[f"sdes_autonomia máx. ({lab})"] = dict(_hline=-sm["sink_min"], _color=c,
                                                                             _dash="dash")
         g = sm["glide_min"]
         Vt = np.array([0.0, 1.3 * sm["V_glide_min"]])
-        S[f"sdes_máximo alcance ({lab}): E = {sm['Emax']:.1f}"] = dict(V=Vt, y=-np.tan(g) * Vt, _color="#000000",
+        S[f"sdes_alcance máx. ({lab})"] = dict(V=Vt, y=-np.tan(g) * Vt, _color="#000000",
                                                                        _width=1.4)
-        S[f"sdes_★ V de maior alcance {sm['V_glide_min']:.1f} m/s ({lab})"] = dict(
+        S[f"sdes_★ {sm['V_glide_min']:.1f} m/s ({lab})"] = dict(
             V=np.array([sm["V_glide_min"]]), y=np.array([-sm["V_glide_min"] * math.tan(g)]), _symbol="star", _color=c)
-        S[f"sbat_{lab}"] = dict(V=V, y=np.where(show, 60 * rows["t_bat"], np.nan), _color=c, _width=2)
-        S[f"sran_{lab}"] = dict(V=V, y=np.where(show, rows["range_bat"] / 1000, np.nan), _color=c, _width=2)
-        S[f"sbat_★ {60 * sm['t_max']:.1f} min a {sm['V_tmax']:.1f} m/s ({lab})"] = star(sm["V_tmax"], 60 * sm["t_max"])
+        S[f"sbat_autonomia ({lab})"] = dict(V=V, y=np.where(show, 60 * rows["t_bat"], np.nan), _color=c, _width=2)
+        S[f"sran_alcance ({lab})"] = dict(V=V, y=np.where(show, rows["range_bat"] / 1000, np.nan), _color=c, _width=2)
+        S[f"sbat_★ {60 * sm['t_max']:.1f} min ({lab})"] = star(sm["V_tmax"], 60 * sm["t_max"])
         S[f"sran_★ {sm['range_max'] / 1000:.2f} km ({lab})"] = star(sm["V_range_max"], sm["range_max"] / 1000)
         S[f"simples_{lab}"] = rows
 
@@ -259,8 +257,8 @@ class PerformanceSimulation(SimulationBase):
         S["scur_V_min"] = dict(_hline=Vmin, _color="#7f7f7f", _width=2)
         S["scur_V_e"] = dict(_hline=Ve, _color="#9c8b00", _width=2)
         S["scur_V*"] = dict(_hline=Vman, _color="#2f5597", _width=2)
-        S[f"scur_limite inferior: R(V*, φ = {phimax_deg:g}°) = {r_lo:.0f} m"] = dict(_vline=r_lo, _color=SAFE, _width=2.5)
-        S[f"scur_limite superior: R(V*, φ = 10°) = {r_hi:.0f} m"] = dict(_vline=r_hi, _color=SAFE, _width=2.5)
+        S[f"scur_R = {r_lo:.0f} m (φ = {phimax_deg:g}°)"] = dict(_vline=r_lo, _color=SAFE, _width=2.5)
+        S[f"scur_R = {r_hi:.0f} m (φ = 10°)"] = dict(_vline=r_hi, _color=SAFE, _width=2.5)
 
     @staticmethod
     def _vn(S, rows, sm, n_load):
@@ -269,10 +267,10 @@ class PerformanceSimulation(SimulationBase):
         sel = V <= 1.15 * vmax
         nlim = np.minimum(rows["n_stall"], n_load)
         inside = V <= vmax
-        S["snv_dentro dos limites (estol e n de projeto, até V_max)"] = dict(V=V[inside], y=np.zeros(inside.sum()),
+        S["snv_seguro"] = dict(V=V[inside], y=np.zeros(inside.sum()),
                                                                           _fill="y2", y2=nlim[inside], _color=SAFE)
-        S["snv_limite de estol n = q S C_Lmax / W"] = dict(V=V[sel], y=rows["n_stall"][sel], _color="#d62728", _width=2)
-        S["snv_limite de tração (curva sustentada)"] = dict(V=V[sel], y=rows["n_sust"][sel], _color="#ff7f0e", _width=2)
-        S[f"snv_n de projeto = {n_load:g}"] = dict(_hline=n_load, _color="#000000", _dash="dash")
+        S["snv_estol"] = dict(V=V[sel], y=rows["n_stall"][sel], _color="#d62728", _width=2)
+        S["snv_tração"] = dict(V=V[sel], y=rows["n_sust"][sel], _color="#ff7f0e", _width=2)
+        S[f"snv_n = {n_load:g}"] = dict(_hline=n_load, _color="#000000", _dash="dash")
         S[f"snv_V* = {sm['Vman']:.1f} m/s"] = dict(_vline=sm["Vman"], _color="#000000", _dash="dot")
         S[f"snv_V_max = {vmax:.1f} m/s"] = dict(_vline=vmax, _color="#d62728", _dash="dot")

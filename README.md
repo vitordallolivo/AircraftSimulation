@@ -135,8 +135,12 @@ python -m aerosim.gui data/aircraft/twin_boom.cfg   # abre um arquivo (.cfg, .js
     decolagem. **Consumo de bateria por etapa** (tempo, corrente média, mAh e descarga estimada por
     Coulomb e por Peukert) e o ângulo da aeronave e da asa no tempo na decolagem;
   - *só decolagem*; *curvas: raio mínimo*;
-  - *MTOW*: bisseção na massa até a maior que ainda atende x_warning e z_warning, reotimizando o
-    acionamento (e o xCG, se pedido) em cada massa.
+  - *MTOW*: uma tabela com mínimo, nominal e máximo de lastro, LAPES, líquido (L) e xCG (só as linhas que
+    existem na configuração); as massas vão do mínimo ao máximo juntas e o xCG é testado nos três
+    valores; o resultado diz a massa de decolagem e o valor de cada linha no MTOW.
+- **Tanques:** o líquido é dado por volume (L) e densidade (água = 1000 kg/m³ por padrão; 2 L).
+- **Lastro** (Configuração): massa sólida com posição, para acertar o CG; entra na massa, no CG e nas
+  inércias (é uma massa pontual: o peso dela gera momento onde ela estiver).
 - **Desempenho:** em ~0,1 s, as contas da planilha (núcleo Zig, `core/src/sim/simple_perf.zig`), com as
   curvas inteiras (também fora do envelope) e a área segura em verde: envelope de voo (V_min e V_max
   fechando no teto, V_e, V*, V de cruzeiro), potências e trações disponível × requerida, subida, planeio
