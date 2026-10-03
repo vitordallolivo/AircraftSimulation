@@ -30,6 +30,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for sim in state.manager.simulations():
             self.tabs.addTab(SimulationTab(state, sim), sim.title)
         self._menus()
+        self._toolbar()
         state.changed.connect(lambda r: self._title() if r == "load" else None)
         self._title()
 
@@ -39,7 +40,10 @@ class MainWindow(QtWidgets.QMainWindow):
         for k, f in TEMPLATES.items():
             a = new.addAction(TEMPLATE_NAMES.get(k, k))
             a.triggered.connect(lambda _=False, f=f: self.state.set_aircraft(f()))
-        m.addAction("Abrir…", QtGui.QKeySequence.StandardKey.Open, self.open)
+        m.addAction("Salvar avião (meus aviões)…", self.save_project)
+        m.addAction("Meus aviões…", self.open_project)
+        m.addSeparator()
+        m.addAction("Abrir arquivo…", QtGui.QKeySequence.StandardKey.Open, self.open)
         m.addAction("Salvar", QtGui.QKeySequence.StandardKey.Save, self.save)
         m.addAction("Salvar como…", self.save_as)
         m.addSeparator()
@@ -47,6 +51,46 @@ class MainWindow(QtWidgets.QMainWindow):
         m.addAction("Importar planilha por mapa de células…", self.import_cellmap)
         m.addSeparator()
         m.addAction("Sair", self.close)
+
+    # ------------------------------------------------------------------ meus aviões
+    def _toolbar(self):
+        tb = self.addToolBar("Aeronaves")
+        tb.setMovable(False)
+        tb.addAction("💾 Salvar avião…", self.save_project).setToolTip(
+            "grava a configuração na pasta 'meus aviões' com o nome que você der (mesmo nome: atualiza)")
+        tb.addAction("📂 Meus aviões…", self.open_project)
+        self._root_label = QtWidgets.QLabel()
+        tb.addWidget(self._root_label)
+        self._root_label.setText(f"  pasta: {self.state.projects.root}")
+
+    def save_project(self):
+        st = self.state.projects
+        name, ok = QtWidgets.QInputDialog.getText(self, "Salvar avião", "Nome do avião:",
+                                                  text=self.state.aircraft.name)
+        name = name.strip()
+        if not ok or not name:
+            return
+        if st.exists(name) and QtWidgets.QMessageBox.question(
+                self, "Salvar avião", f"Já existe '{name}'. Substituir?") != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        try:
+            info = st.save(self.state.aircraft, name)
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Erro", str(e))
+            return
+        self.state.path = info.path
+        self.state.changed.emit("name")
+        self._title()
+        self.statusBar().showMessage(f"salvo em {info.path}", 6000)
+
+    def open_project(self):
+        dlg = ProjectsDialog(self.state, self)
+        if dlg.exec() and dlg.chosen:
+            try:
+                self.state.set_aircraft(self.state.projects.load(dlg.chosen.name), dlg.chosen.path)
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(self, "Erro", str(e))
+        self._root_label.setText(f"  pasta: {self.state.projects.root}")
 
     def _title(self):
         p = self.state.path
@@ -107,3 +151,68 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.warning(self, "Mapa de células", "\n".join(src.warnings[:30]))
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Erro", str(e))
+
+
+class ProjectsDialog(QtWidgets.QDialog):
+    """lista os aviões salvos (via IProjectStore): abrir, apagar, trocar a pasta"""
+
+    def __init__(self, state: AppState, parent=None):
+        super().__init__(parent)
+        self.state, self.chosen = state, None
+        self.setWindowTitle("Meus aviões")
+        self.resize(900, 480)
+        v = QtWidgets.QVBoxLayout(self)
+        self.where = QtWidgets.QLabel()
+        v.addWidget(self.where)
+        self.table = QtWidgets.QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["nome", "salvo em", "resumo"])
+        h = self.table.horizontalHeader()
+        h.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        h.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        h.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setWordWrap(True)
+        self.table.doubleClicked.connect(self._open)
+        v.addWidget(self.table)
+        hb = QtWidgets.QHBoxLayout()
+        for txt, fn in (("Abrir", self._open), ("Apagar", self._delete), ("Trocar pasta…", self._folder),
+                        ("Fechar", self.reject)):
+            b = QtWidgets.QPushButton(txt)
+            b.clicked.connect(fn)
+            hb.addWidget(b)
+        v.addLayout(hb)
+        self._fill()
+
+    def _fill(self):
+        self.items = self.state.projects.list()
+        self.where.setText(f"pasta: {self.state.projects.root}  —  {len(self.items)} avião(ões)")
+        self.table.setRowCount(len(self.items))
+        for r, it in enumerate(self.items):
+            for c, txt in enumerate((it.name, it.saved.replace("T", " "), it.summary)):
+                self.table.setItem(r, c, QtWidgets.QTableWidgetItem(txt))
+        self.table.resizeRowsToContents()
+
+    def _row(self):
+        r = self.table.currentRow()
+        return self.items[r] if 0 <= r < len(self.items) else None
+
+    def _open(self, *_):
+        self.chosen = self._row()
+        if self.chosen:
+            self.accept()
+
+    def _delete(self):
+        it = self._row()
+        if it and QtWidgets.QMessageBox.question(self, "Apagar", f"Apagar '{it.name}'?") == \
+                QtWidgets.QMessageBox.StandardButton.Yes:
+            self.state.projects.delete(it.name)
+            self._fill()
+
+    def _folder(self):
+        d = QtWidgets.QFileDialog.getExistingDirectory(self, "Pasta dos aviões", self.state.projects.root)
+        if d:
+            from PyQt6 import QtCore
+            self.state.projects.root = d
+            QtCore.QSettings("aerosim", "aerosim").setValue("projects_root", d)
+            self._fill()

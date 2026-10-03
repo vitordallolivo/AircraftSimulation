@@ -37,6 +37,8 @@ class ParamSpec:
     unit: str = ""
     choices: tuple = ()
     help: str = ""
+    group: str = ""                # seção do formulário (ex.: "Critérios")
+    rebuild: bool = False          # mudar este campo refaz o formulário (ex.: escolher a norma)
 
 
 @dataclass
@@ -60,10 +62,11 @@ class Check:
     status: str                     # "ok" | "atencao" | "falha" | "info"
     item: str                       # o que foi verificado
     value: str                      # valor obtido (texto já formatado)
-    criterion: str                  # o critério usado e a fonte
+    criterion: str                  # o limite usado (curto)
     why: str = ""                   # por que deu esse resultado (causa física)
     fix: str = ""                   # o que mudar, com números quando possível
     group: str = ""                 # seção (ex.: "estática longitudinal")
+    source: str = ""                # de onde vem o critério (norma, livro) ou "definido na aba"
 
 
 @dataclass
@@ -111,15 +114,16 @@ class ISimulation(ABC):
     @abstractmethod
     def run(self, ctx: RunContext) -> SimResult: ...
 
-    def parameters_for(self, aircraft: "Aircraft | None") -> list[ParamSpec]:
-        """campos que fazem sentido para esta aeronave (padrão: os mesmos sempre)"""
+    def parameters_for(self, aircraft: "Aircraft | None", values: dict | None = None) -> list[ParamSpec]:
+        """campos que fazem sentido para esta aeronave e para as escolhas já feitas no formulário
+        (`values`, ex.: norma escolhida); padrão: os mesmos sempre"""
         return self.parameters()
 
     def plots_for(self, aircraft: "Aircraft | None") -> list[PlotSpec]:
         return self.plots()
 
-    def defaults(self, aircraft: "Aircraft | None" = None) -> dict[str, Any]:
-        ps = self.parameters_for(aircraft) if aircraft is not None else self.parameters()
+    def defaults(self, aircraft: "Aircraft | None" = None, values: dict | None = None) -> dict[str, Any]:
+        ps = self.parameters_for(aircraft, values) if aircraft is not None else self.parameters()
         return {p.key: p.default for p in ps}
 
 

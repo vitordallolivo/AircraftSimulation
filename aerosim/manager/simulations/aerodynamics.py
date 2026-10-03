@@ -47,7 +47,7 @@ class AerodynamicsSimulation(SimulationBase):
     def parameters(self):
         return self.parameters_for(None)
 
-    def parameters_for(self, ac):
+    def parameters_for(self, ac, values=None):
         f = features(ac) if ac is not None else None
         from .stability import _cruise_speed
         Vc = _cruise_speed(ac) if ac is not None else 15.0
@@ -67,15 +67,27 @@ class AerodynamicsSimulation(SimulationBase):
               ParamSpec("use_asb_vlm", "comparar: AeroSandbox VLM", False, kind="bool"),
               ParamSpec("use_asb_buildup", "comparar: AeroSandbox AeroBuildup", False, kind="bool"),
               ParamSpec("use_asb_ll", "comparar: AeroSandbox LiftingLine", False, kind="bool")]
-        if f is not None and f.tip_devices:
-            ps.append(ParamSpec("tips", f"avaliar os {len(f.tip_devices)} dispositivos de ponta da aeronave", True,
-                                kind="bool"))
+        for p_ in ps:
+            p_.group = "Caso" if p_.key in ("V", "a0", "a1", "da", "alpha_d", "xcg") else "Métodos"
+        D = "Dispositivos de asa"
+        if f is not None and f.has_tip_devices:
+            ps.append(ParamSpec("tips", "avaliar os dispositivos da asa", True, kind="bool", group=D))
         else:
-            ps.append(ParamSpec("tips", "explorar dispositivos de ponta (a aeronave não tem)", False, kind="bool",
+            ps.append(ParamSpec("tips", "explorar dispositivos de ponta (a aeronave não tem)", False, kind="bool", group=D,
                                 help="winglet, placa, caixa e asa em C pelo plano de Trefftz, com o atrito descontado"))
-        ps += [ParamSpec("hb_max", "pontas: altura máxima estudada (h/b)", 0.25, minimum=0.05, maximum=1.0),
-               ParamSpec("Cf", "pontas: coeficiente de atrito do dispositivo", 0.006, minimum=0.0, maximum=0.05,
-                         step=0.001)]
+        ps += [ParamSpec("hb_max", "altura máxima estudada (h/b)", 0.25, minimum=0.05, maximum=1.0, group=D),
+               ParamSpec("Cf", "coeficiente de atrito do dispositivo", 0.006, minimum=0.0, maximum=0.05, step=0.001,
+                         group=D)]
+        C = "Critérios de aprovação"
+        ps += [ParamSpec("tol_CLa", "concordância entre métodos: C_Lα e C_Lmax", 12.0, minimum=1, maximum=100, unit="%",
+                         group=C),
+               ParamSpec("tol_np", "concordância entre métodos: ponto neutro", 5.0, minimum=0.5, maximum=50,
+                         unit="% CMA", group=C),
+               ParamSpec("Vs_ratio", "V de cruzeiro / V de estol mínima", 1.3, minimum=1.0, maximum=3.0, group=C),
+               ParamSpec("LD_frac", "L/D no cruzeiro mínimo (fração do máximo)", 90.0, minimum=10, maximum=100,
+                         unit="%", group=C),
+               ParamSpec("dev_gain", "dispositivo compensa se reduzir o arrasto em pelo menos", 0.5, minimum=0, maximum=20,
+                         unit="%", group=C)]
         return ps
 
     def plots(self):
@@ -93,8 +105,8 @@ class AerodynamicsSimulation(SimulationBase):
                 PlotSpec("span", "Sustentação ao longo da envergadura (no α das derivadas)", "eta",
                          ("lltdrek", "elíptica (ideal)", "Schrenk (estimativa clássica)"), "posição na semiasa (2y/b)",
                          "c·c_l / c_ref", live=False, source="series:span"),
-                PlotSpec("tip_e", "Dispositivo de ponta: eficiência de envergadura ideal × altura", "h_b", ("e",),
-                         "altura do dispositivo / envergadura (h/b)", "e (1 = asa plana elíptica)", live=False,
+                PlotSpec("tip_e", "Dispositivos de asa: ganho de eficiência de envergadura × altura", "h_b", ("e",),
+                         "altura do dispositivo / envergadura (h/b)", "e / e sem dispositivo", live=False,
                          source="series:tipe_*"),
                 PlotSpec("tip_d", "Dispositivo de ponta: variação do arrasto total no cruzeiro × altura (com atrito)",
                          "h_b", ("ΔD",), "altura do dispositivo / envergadura (h/b)", "ΔD (% do arrasto total)",
@@ -162,25 +174,25 @@ class AerodynamicsSimulation(SimulationBase):
         if main != "lltdrek" and P("use_lltdrek"):
             add("info", "método principal", LABEL[main], "lltdrek indisponível", "usando o próximo disponível", "",
                 "métodos")
-        self._diagnose(ac, f, res, metrics, main, CL_cru, V, rho, mass, S, AR, add)
+        self._diagnose(ac, f, res, metrics, main, CL_cru, V, rho, mass, S, AR, add, P)
         if P("tips"):
             ctx.on_progress(0.9, "dispositivos de ponta (Trefftz)")
             self._tips(ac, f, S_, summ, add, P, CL_cru, metrics[main].get("e", raymer_oswald(AR)), res, main)
         return SimResult(series=S_, summary=summ, checks=checks)
 
     # ------------------------------------------------------------------ diagnóstico
-    def _diagnose(self, ac, f, res, metrics, main, CL_cru, V, rho, mass, S, AR, add):
+    def _diagnose(self, ac, f, res, metrics, main, CL_cru, V, rho, mass, S, AR, add, P):
         mlab = LABEL[main]
         M = metrics[main]
         G = "desempenho aerodinâmico"
         # estol
         if "CLmax" in M:
             Vs = math.sqrt(2 * mass * G0 / (rho * S * M["CLmax"]))
-            st = "ok" if V >= 1.3 * Vs else "falha"
-            add(st, "velocidade de estol × cruzeiro", f"V_S = {Vs:.1f} m/s (C_Lmax {M['CLmax']:.2f}, {mlab}); "
-                f"cruzeiro {V:g} m/s", "V_cruzeiro ≥ 1,3 V_S",
+            kv = P("Vs_ratio")
+            st = "ok" if V >= kv * Vs else "falha"
+            add(st, "cruzeiro acima do estol", f"V_S = {Vs:.1f} m/s; cruzeiro {V:g} m/s", f"V ≥ {kv:g} V_S",
                 "" if st == "ok" else "o cruzeiro está perto do estol: pouca margem para rajada e curva",
-                "" if st == "ok" else f"cruzar a ≥ {1.3 * Vs:.1f} m/s ou aumentar a área/C_Lmax da asa", G)
+                "" if st == "ok" else f"cruzar a ≥ {kv * Vs:.1f} m/s ou aumentar a área/C_Lmax da asa", G)
         # cruzeiro × L/D máx.
         p = res[main]
         ok = np.isfinite(p.CL) & (p.CD > 0)
@@ -191,16 +203,16 @@ class AerodynamicsSimulation(SimulationBase):
             LD_cru = float(np.interp(CL_cru, p.CL[ok], LD)) if p.CL[ok].min() <= CL_cru <= p.CL[ok].max() else float("nan")
             V_ld = math.sqrt(2 * mass * G0 / (rho * S * CLs))
             rel = LD_cru / LD[i] if np.isfinite(LD_cru) else float("nan")
-            st = "ok" if rel >= 0.9 else "atencao"
-            add(st, "cruzeiro perto do L/D máximo", f"L/D no cruzeiro {LD_cru:.1f} de {LD[i]:.1f} ({100 * rel:.0f} %)",
-                "≥ 90 % do (L/D) máx. (alcance/autonomia)",
+            fr = P("LD_frac") / 100
+            st = "ok" if rel >= fr else "atencao"
+            add(st, "cruzeiro perto do L/D máximo", f"{LD_cru:.1f} de {LD[i]:.1f} ({100 * rel:.0f} %)",
+                f"≥ {100 * fr:.0f} % do L/D máx.",
                 "" if st == "ok" else (f"o C_L de cruzeiro ({CL_cru:.2f}) está longe do C_L de L/D máx. ({CLs:.2f})"),
                 "" if st == "ok" else (f"V de L/D máx. = {V_ld:.1f} m/s; para cruzar a {V:g} m/s com L/D máx. a área da "
                                        f"asa seria ≈ {S * CL_cru / CLs:.2f} m²"), G)
         if "e" in M:
             e_r = raymer_oswald(AR)
-            add("info", "fator de Oswald (ajuste de C_Di)", f"{M['e']:.3f} ({mlab}); estimativa de Raymer {e_r:.3f}",
-                "e ≤ 1 numa asa plana", "e > 1 sai quando o ajuste pega a interação asa-EH ou o C_Di inclui torção; "
+            add("info", "fator de Oswald", f"{M['e']:.3f} ({mlab}); Raymer {e_r:.3f}", "—", "e > 1 sai quando o ajuste pega a interação asa-EH ou o C_Di inclui torção; "
                 "e baixo indica carregamento longe do elíptico (afilamento/torção)", "", G)
         # concordância entre métodos
         G = "métodos"
@@ -208,8 +220,9 @@ class AerodynamicsSimulation(SimulationBase):
         for o in others:
             Mo = metrics[o]
             olab = LABEL[o]
-            for key, lab, tol, unit in (("CLa_fit", "C_Lα", 0.12, ""), ("x_np_mac", "ponto neutro", 5.0, " % CMA"),
-                                        ("CLmax", "C_Lmax", 0.12, "")):
+            tc = P("tol_CLa") / 100
+            for key, lab, tol, unit in (("CLa_fit", "C_Lα", tc, ""), ("x_np_mac", "ponto neutro", P("tol_np"), " % CMA"),
+                                        ("CLmax", "C_Lmax", tc, "")):
                 if key not in M or key not in Mo:
                     continue
                 a, b_ = M[key], Mo[key]
@@ -222,62 +235,71 @@ class AerodynamicsSimulation(SimulationBase):
 
     @staticmethod
     def _tips(ac, f, S_, summ, add, P, CL_cru, e_pl, res, main):
+        """dispositivos da asa pela geometria real (plano de Trefftz): e com e sem, atrito da área molhada,
+        e a altura que daria o menor arrasto; mais os tipos genéricos para comparar"""
         S, c, b = ac.references()
         w = ac.wing
-        G = "dispositivos de ponta"
-        ctip = w.chord_at(w.semispan) if w is not None else c
-        hb = np.linspace(0.0, P("hb_max"), 11)
-        if f.tip_devices:
-            hb_now = f.tip_h_over_b
-            hb = np.unique(np.r_[hb, hb_now])
-            dev_area = sum(s.area for s in f.tip_devices)
-            ctip = dev_area / max(sum(s.semispan for s in f.tip_devices), 1e-9)   # corda média do dispositivo
-        t = td.device_study(b, S, CL_cru, ctip, e_planform=min(e_pl, 1.0), Cf=P("Cf"), hb=hb)
-        # ΔD em % do arrasto TOTAL de cruzeiro (o estudo dá em % do induzido)
+        G = "dispositivos de asa"
+        e_pl = min(e_pl, 1.0)
         CD0 = float(np.nanmin(res[main].CD)) if main in res else 0.03
-        CDi0 = CL_cru ** 2 / (math.pi * (b * b / S) * min(e_pl, 1.0))
-        k = CDi0 / (CD0 + CDi0)
-        kinds = (("winglet", "winglet"), ("placa", "placa de ponta"), ("caixa", "asa em caixa"), ("asa_c", "asa em C"))
-        for key, lab in kinds:
-            S_[f"tipe_{lab}"] = {"h_b": t["h_b"], "e": t[f"e_{key}"]}
-            S_[f"tipd_{lab}"] = {"h_b": t["h_b"], "ΔD": t[f"dD_{key}"] * k}
-        S_["tipe_Raymer: placa 1 + 1,9 h/b"] = {"h_b": t["h_b"], "e": t["e_raymer_placa"], "_dash": 1}
+        AR = b * b / S
+        CDi0 = CL_cru ** 2 / (math.pi * AR * e_pl)
+        CD_tot = CD0 + CDi0
+        Cf = P("Cf")
+        gain = P("dev_gain")
+        ctip = w.chord_at(w.semispan) if w is not None else c
+        if f.has_tip_devices:
+            e_base = td.aircraft_efficiency(ac, False)
+            ks = np.linspace(0.0, 2.0, 11)
+            hb_now = f.tip_h_over_b
+            dD = []
+            for kh in ks:
+                e_k = td.aircraft_efficiency(ac, True, height_scale=max(kh, 1e-6)) if kh > 0 else e_base
+                wet = td.devices_wetted_area(ac, kh)
+                CDi = CL_cru ** 2 / (math.pi * AR * e_pl * e_k / e_base)
+                dD.append(100 * (CDi - CDi0 + Cf * wet / S) / CD_tot)
+            dD = np.array(dD)
+            S_["tipd_dispositivos atuais (altura escalada)"] = {"h_b": ks * hb_now, "ΔD": dD}
+            e_now = td.aircraft_efficiency(ac, True)
+            S_["tipe_dispositivos atuais (altura escalada)"] = {
+                "h_b": ks * hb_now, "e": np.array([td.aircraft_efficiency(ac, True, height_scale=max(k_, 1e-6))
+                                                   / e_base if k_ > 0 else 1.0 for k_ in ks])}
+            d_now = float(np.interp(1.0, ks, dD))
+            iopt = int(np.argmin(dD))
+            summ["dispositivos atuais: e/e_sem, ΔD total (%)"] = [e_now / e_base, d_now]
+            fins = f.tailless and not f.vtail and f.tip_devices
+            note = " Também fazem o papel de deriva: tirar exige outra fonte de C_nβ." if fins else ""
+            opt = (f"altura × {ks[iopt]:.1f} dá {dD[iopt]:.1f} %." if dD[iopt] < d_now - 0.3 else "")
+            if d_now <= -gain:
+                add("ok", "os dispositivos da asa compensam?", f"ΔD = {d_now:.1f} % (e × {e_now / e_base:.3f})",
+                    f"ΔD ≤ −{gain:g} %", "", (opt + note).strip(), G, source="Trefftz (Munk; Kroo 2001)")
+            else:
+                add("atencao", "os dispositivos da asa compensam?", f"ΔD = {d_now:+.1f} % (e × {e_now / e_base:.3f})",
+                    f"ΔD ≤ −{gain:g} %",
+                    f"no C_L de cruzeiro ({CL_cru:.2f}) o induzido é {100 * CDi0 / CD_tot:.0f} % do arrasto: "
+                    "o atrito da área molhada pesa mais que o ganho",
+                    ((opt or "sem ganho em nenhuma altura: retirar ou reduzir") + note).strip(), G,
+                    source="Trefftz (Munk; Kroo 2001)")
+            add("info", "limite do modelo", "carregamento ótimo", "—",
+                "o plano de Trefftz dá o melhor caso; o núcleo Zig trata o dispositivo por faixas e o lltdrek não o "
+                "inclui (só superfícies horizontais)", "", G)
+        hb = np.linspace(0.0, P("hb_max"), 11)
+        t = td.device_study(b, S, CL_cru, ctip, e_planform=e_pl, Cf=Cf, hb=hb)
+        k = CDi0 / CD_tot
+        for key, lab in (("winglet", "winglet"), ("placa", "placa de ponta"), ("caixa", "asa em caixa"),
+                         ("asa_c", "asa em C")):
+            S_[f"tipe_{lab} (genérico)"] = {"h_b": t["h_b"], "e": t[f"e_{key}"]}
+            S_[f"tipd_{lab} (genérico)"] = {"h_b": t["h_b"], "ΔD": t[f"dD_{key}"] * k}
         S_["tipd_extensão de ponta (mesmo momento na raiz)"] = {"h_b": t["h_b"], "ΔD": t["dD_extensao_mesmo_M"] * k,
                                                                 "_dash": 1}
         S_["tipd_sem dispositivo"] = {"h_b": t["h_b"][[0, -1]], "ΔD": np.zeros(2), "_dash": 1}
-        i = int(np.argmin(t["dD_winglet"]))
-        best_hb, best_d = float(t["h_b"][i]), float(t["dD_winglet"][i] * k)
-        if f.tip_devices:
-            j = int(np.argmin(np.abs(t["h_b"] - f.tip_h_over_b)))
-            d_now = float(t["dD_winglet"][j] * k)
-            e_now = float(t["e_winglet"][j])
-            summ["dispositivo atual: h/b, e ideal, ΔD total (%)"] = [f.tip_h_over_b, e_now, d_now]
-            fins = f.tailless and not f.vtail
-            note = (" Eles também são a deriva desta aeronave: tirar exige outra fonte de C_nβ." if fins else "")
-            if d_now < -0.5:
-                add("ok", "os dispositivos de ponta atuais compensam?", f"ΔD = {d_now:.1f} % no cruzeiro (h/b = "
-                    f"{f.tip_h_over_b:.3f}, e ideal {e_now:.3f})", "ganho no induzido > atrito da área molhada",
-                    "", ((f"o ótimo está em h/b ≈ {best_hb:.2f} ({best_d:.1f} %)." if best_d < d_now - 0.5 else "")
-                         + note).strip(), G)
-            else:
-                add("atencao", "os dispositivos de ponta atuais compensam?", f"ΔD = {d_now:+.1f} % no cruzeiro",
-                    "ganho no induzido > atrito da área molhada",
-                    f"no C_L de cruzeiro ({CL_cru:.2f}) o induzido é só {100 * k:.0f} % do arrasto: o atrito do dispositivo "
-                    "pesa mais que o ganho",
-                    (f"altura h/b ≈ {best_hb:.2f} dá {best_d:.1f} %" if best_d < -0.5 else
-                     "sem ganho em nenhuma altura neste C_L: retirar ou reduzir") + note, G)
-            add("info", "limite do modelo", "carregamento ótimo (Trefftz)", "Munk; Kroo 2001",
-                "o plano de Trefftz dá o melhor caso; o núcleo Zig trata o dispositivo como uma superfície vertical "
-                "por faixas e não reproduz o ganho no induzido", "", G)
-        else:
-            if best_d < -0.5:
-                add("info", "vale a pena pôr winglet?", f"melhor: h/b ≈ {best_hb:.2f} → ΔD = {best_d:.1f} % no cruzeiro",
-                    "ganho no induzido > atrito", f"induzido = {100 * k:.0f} % do arrasto de cruzeiro",
-                    "se a envergadura não é limitada, uma extensão de ponta com o mesmo momento fletor ganha mais "
-                    f"({float(np.min(t['dD_extensao_mesmo_M'])) * k:.1f} %)", G)
-            else:
-                add("info", "vale a pena pôr winglet?", "não neste C_L de cruzeiro",
-                    "ganho no induzido > atrito", f"induzido = {100 * k:.0f} % do arrasto de cruzeiro", "", G)
+        if not f.has_tip_devices:
+            i = int(np.argmin(t["dD_winglet"]))
+            best_hb, best_d = float(t["h_b"][i]), float(t["dD_winglet"][i] * k)
+            add("info", "vale a pena pôr winglet?",
+                f"melhor h/b ≈ {best_hb:.2f} → ΔD = {best_d:.1f} %" if best_d < -gain else "não neste C_L de cruzeiro",
+                f"ΔD ≤ −{gain:g} %", f"induzido = {100 * k:.0f} % do arrasto de cruzeiro",
+                "para testar: Configuração → asa → dispositivos → + adicionar", G)
 
     @staticmethod
     def _span(ac, span) -> dict:

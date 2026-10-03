@@ -29,6 +29,17 @@ def build_airplane(ac, ref, with_fuselage: bool = False):
         xs = [asb.WingXSec(xyz_le=to_xz_up(q["le"]), chord=q["chord"], twist=q["twist"], airfoil=af)
               for q in surface_stations(s)]
         wings.append(asb.Wing(name=s.name, symmetric=bool(s.symmetric and not s.vertical), xsecs=xs))
+        # dispositivos (winglet, placa, cerca): uma asa por perna do lado direito, espelhada
+        from aerosim.model.devices import legs
+        for k, d in enumerate(s.devices):
+            from aerosim.model.airfoil import naca4
+            daf = asb.Airfoil(name=d.profile, coordinates=naca4(d.profile))
+            for j, l in enumerate(x for x in legs(s, d) if x.side >= 0):
+                xs = []
+                for h in (0.0, l.height):
+                    le, c_ = l.station(h)
+                    xs.append(asb.WingXSec(xyz_le=to_xz_up(le), chord=c_, twist=0.0, airfoil=daf))
+                wings.append(asb.Wing(name=f"{s.name} {d.kind} {k}.{j}", symmetric=bool(s.symmetric), xsecs=xs))
     fus = []
     f = ac.fuselage
     if with_fuselage and f.enabled:

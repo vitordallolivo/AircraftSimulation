@@ -83,3 +83,44 @@ def test_aileron_strip_theory_vs_core(probe):
 
 def test_analytic_np_exists():
     assert math.isfinite(analytic_np(conventional())["x_np"])
+
+
+def test_criteria_from_norm_and_custom():
+    from aerosim.stability.criteria import evaluate, mil_8785c
+    c = mil_8785c("I", "A")
+    assert c.sp_zeta_min == 0.35 and c.dr_zeta_min == 0.19 and c.roll_t == 1.3
+    m = {"espiral": {"re": 0.05, "im": 0.0, "t_double": math.log(2) / 0.05}}
+    c.spiral_t2_min = 10.0
+    assert next(r for r in evaluate(m, c) if "espiral" in r["criterio"])["ok"]
+    c.spiral_t2_min = 20.0
+    assert not next(r for r in evaluate(m, c) if "espiral" in r["criterio"])["ok"]
+
+
+def test_custom_criteria_change_verdict(manager):
+    from aerosim.model.templates import conventional
+    sim = manager.get("stability")
+    keys = {p.key for p in sim.parameters_for(conventional(), {"norm": "personalizado"})}
+    assert "crit_spiral_t2_min" in keys and "cls" not in keys
+    r = manager.run("stability", conventional(), {"norm": "personalizado", "crit_spiral_t2_min": 3.0,
+                                                  "Vs_list": "15", "size_tail": False})
+    sp = next(c for c in r.checks if c.item.startswith("espiral: tempo"))
+    assert sp.status == "ok" and sp.source == "definido na aba"
+
+
+def test_tailless_sizing(manager):
+    from aerosim.model.templates import flying_wing
+    r = manager.run("stability", flying_wing(), {"Vs_list": "14", "whatif": False, "CL_frac": 0.5})
+    items = {c.item: c for c in r.checks}
+    assert "torção na ponta (washout) para C_m0 > 0" in items
+    assert "menor elevon que equilibra o pouso" in items
+    assert any(k.startswith("wo_") for k in r.series) and any(k.startswith("es_") for k in r.series)
+
+
+def test_no_pitch_control_is_reported(manager):
+    from aerosim.model.templates import flying_wing
+    ac = flying_wing()
+    for s in ac.surfaces:
+        s.controls = [c for c in s.controls if c.kind != "elevon"]
+    r = manager.run("stability", ac, {"Vs_list": "14", "whatif": False, "size_elevon": False, "washout": False})
+    c = next(c for c in r.checks if c.item == "comando de arfagem")
+    assert c.status == "falha" and "elevon" in c.fix

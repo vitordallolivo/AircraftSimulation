@@ -100,4 +100,4 @@ def test_aerodynamics_simulation(manager):
     assert "polar_núcleo Zig" in r.series and not any(k.startswith("tip") for k in r.series)
     assert r.summary["[núcleo Zig] SM"] > 0
     r = manager.run("aerodynamics", flying_wing(), p)
-    assert any(c.group == "dispositivos de ponta" for c in r.checks)
+    assert any(c.group == "dispositivos de asa" for c in r.checks)

@@ -43,7 +43,7 @@ class SimulationManager(ISimulationManager):
             on_chunk: Callable | None = None, on_progress: Callable | None = None,
             cancel: threading.Event | None = None) -> SimResult:
         sim = self.get(name)
-        p = sim.defaults(aircraft)
+        p = sim.defaults(aircraft, params or {})
         p.update(params or {})
         ctx = RunContext(backend=self.backend, aircraft=aircraft, params=p, checkpoints=self.checkpoints,
                          on_chunk=on_chunk or (lambda c: None), on_progress=on_progress or (lambda f, m: None),

@@ -179,3 +179,39 @@ def search(backend, make, values, V, ok_fn):
 def stall_speed(probe: Probe) -> tuple[float, float]:
     CLm = probe.CLmax(15.0)
     return CLm, math.sqrt(2 * probe.m * G0 / (probe.rho * probe.S * CLm))
+
+
+# ------------------------------------------------------------------ asa voadora
+def with_washout(ac, wing_name: str, delta_deg: float):
+    """cópia com torção extra linear na envergadura: 0 na raiz, delta na ponta (negativo = washout)"""
+    a = ac.copy()
+    for s in a.surfaces:
+        if s.name == wing_name and s.semispan > 0:
+            for q in s.sections:
+                q.twist += delta_deg * q.y / s.semispan
+    return a
+
+
+def with_elevon(ac, wing_name: str, chord_frac: float, eta_start: float):
+    """cópia com o elevon da asa com outra corda e outro início (o fim fica)"""
+    a = ac.copy()
+    for s in a.surfaces:
+        if s.name == wing_name:
+            for c in s.controls:
+                if c.kind == "elevon":
+                    c.chord_frac = chord_frac
+                    c.span_start = eta_start
+                    c.tau = None
+    return a
+
+
+def cm0(probe: Probe, V: float) -> float:
+    """C_m no CG com C_L = 0 e comando neutro"""
+    lo, hi = math.radians(-15), math.radians(10)
+    for _ in range(50):
+        m = 0.5 * (lo + hi)
+        if probe.C(V, m)["CL"] < 0:
+            lo = m
+        else:
+            hi = m
+    return probe.C(V, 0.5 * (lo + hi))["Cm"]

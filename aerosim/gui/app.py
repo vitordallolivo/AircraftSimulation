@@ -19,7 +19,10 @@ def main(argv: list[str] | None = None) -> int:
     ac, path = conventional(), None
     if len(argv) > 1:
         ac, path = load_aircraft(argv[1]), argv[1]
-    state = AppState(SimulationManager(), ac)
+    from PyQt6 import QtCore
+    from aerosim.data.projects import JsonProjectStore, default_root
+    root = QtCore.QSettings("aerosim", "aerosim").value("projects_root", default_root())
+    state = AppState(SimulationManager(), ac, projects=JsonProjectStore(str(root)))
     state.path = path
     win = MainWindow(state)
     win.show()

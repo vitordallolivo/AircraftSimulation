@@ -33,7 +33,7 @@ class SimulationBase(ISimulation):
     def param(self, ctx: RunContext, key: str) -> Any:
         if key in ctx.params:
             return ctx.params[key]
-        return self.defaults(ctx.aircraft)[key]
+        return self.defaults(ctx.aircraft, ctx.params)[key]
 
     def parallel(self, ctx: RunContext, fn: Callable, items: list, label: str = "") -> list:
         """roda fn(item) em threads (cada uma com sua sessão no núcleo)"""

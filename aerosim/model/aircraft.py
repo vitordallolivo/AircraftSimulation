@@ -36,6 +36,30 @@ class ControlSurface:
     deflection: float = 0.0    # flape: deflexão fixa (graus)
 
 
+DEVICE_KINDS = ("winglet", "winglet_baixo", "placa", "cerca")
+
+
+@dataclass
+class WingDevice:
+    """dispositivo preso a uma superfície (dos dois lados, se ela for simétrica)
+    winglet: para cima; winglet_baixo: para baixo; placa: metade para cima e metade para baixo;
+    cerca: placa fina sobre o extradorso (fence), em qualquer ponto da envergadura"""
+    kind: str = "winglet"
+    eta: float = 1.0           # onde, na semienvergadura (0 = raiz, 1 = ponta)
+    dx: float = 0.0            # recuo do bordo de ataque do dispositivo em relação ao BA local (m, + para trás)
+    height: float = 0.15       # altura (m) — na placa, a soma das duas metades
+    root_chord: float = 0.0    # corda na raiz do dispositivo (m); 0: a corda local da asa
+    taper: float = 0.6         # corda da ponta / corda da raiz
+    sweep: float = 30.0        # enflechamento do bordo de ataque (graus)
+    cant: float = 10.0         # inclinação a partir da vertical (graus): 0 = vertical, 90 = no plano da asa
+    toe: float = 0.0           # calagem (graus, + bordo de ataque para fora)
+    profile: str = "NACA 0010"
+    cl_alpha: float = 5.9
+    cd0: float = 0.012
+    oswald: float = 0.8
+    enabled: bool = True
+
+
 @dataclass
 class LiftingSurface:
     name: str = "asa"
@@ -50,6 +74,7 @@ class LiftingSurface:
     symmetric: bool = True     # espelha em y (meia asa direita e esquerda)
     vertical: bool = False     # EV: seções crescem para cima (−z)
     controls: list[ControlSurface] = field(default_factory=list)
+    devices: list[WingDevice] = field(default_factory=list)   # winglets, placas, cercas
     oswald: float = 0.85
     eta: float = 1.0           # razão de pressão dinâmica
     downwash: bool = False     # sente o downwash da asa principal

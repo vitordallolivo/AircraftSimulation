@@ -15,7 +15,8 @@ class Features:
     wing: LiftingSurface | None = None
     htail: LiftingSurface | None = None           # EH (ou cauda em V)
     vtail: list[LiftingSurface] = field(default_factory=list)   # derivas (sem os dispositivos de ponta)
-    tip_devices: list[LiftingSurface] = field(default_factory=list)
+    tip_devices: list[LiftingSurface] = field(default_factory=list)   # derivas soltas na ponta da asa
+    devices: list = field(default_factory=list)   # (superfície, WingDevice) presos às superfícies
     pitch: tuple[LiftingSurface, ControlSurface] | None = None   # comando de arfagem
     roll: tuple[LiftingSurface, ControlSurface] | None = None
     yaw: tuple[LiftingSurface, ControlSurface] | None = None
@@ -42,11 +43,20 @@ class Features:
         return self.yaw[1].kind if self.yaw else ""
 
     @property
+    def has_tip_devices(self) -> bool:
+        return bool(self.tip_devices or self.wing_devices)
+
+    @property
+    def wing_devices(self) -> list:
+        return [(s, d) for s, d in self.devices if s is self.wing]
+
+    @property
     def tip_h_over_b(self) -> float:
-        """altura média dos dispositivos de ponta / envergadura"""
-        if not self.tip_devices or self.wing is None or self.wing.span <= 0:
+        """altura média dos dispositivos da asa / envergadura"""
+        if self.wing is None or self.wing.span <= 0:
             return 0.0
-        return sum(s.semispan for s in self.tip_devices) / len(self.tip_devices) / self.wing.span
+        hs = [s.semispan for s in self.tip_devices] + [d.height for _, d in self.wing_devices]
+        return sum(hs) / len(hs) / self.wing.span if hs else 0.0
 
     def summary(self) -> str:
         parts = ["asa voadora (sem EH)" if self.tailless else f"EH: {self.htail.name}"]
@@ -56,7 +66,9 @@ class Features:
             parts.append(f"rolagem por {self.roll_kind}")
         parts.append(f"guinada por {self.yaw_kind}" if self.yaw else "sem leme")
         if self.tip_devices:
-            parts.append(f"{len(self.tip_devices)} dispositivo(s) de ponta (h/b = {self.tip_h_over_b:.3f})")
+            parts.append(f"{len(self.tip_devices)} deriva(s) na ponta da asa")
+        for s, d in self.devices:
+            parts.append(f"{d.kind} em {s.name} (η = {d.eta:.2f}, h = {d.height:.3f} m, cant {d.cant:g}°)")
         if self.liquid:
             parts.append("líquido " + ("livre (sloshing)" if self.slosh else "travado"))
         if self.payload:
@@ -86,6 +98,7 @@ def features(ac: Aircraft) -> Features:
                 if c.kind in kinds:
                     return (s, c)
         return None
+    f.devices = [(s, d) for s in surfs if not s.vertical for d in s.devices if d.enabled and d.height > 0]
     f.pitch = find(("elevator",)) or find(("elevon", "ruddervator"))
     f.roll = find(("aileron",)) or find(("elevon",))
     f.yaw = find(("rudder",)) or find(("ruddervator",))

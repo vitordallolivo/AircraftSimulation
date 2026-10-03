@@ -115,10 +115,14 @@ def wing_downwash(ac: Aircraft) -> tuple[float, float]:
 
 
 def all_panels(ac: Aircraft) -> list[dict]:
+    from .devices import device_panels
     dw = wing_downwash(ac)
     out = []
     for s in ac.surfaces:
         out += surface_panels(s, dw)
+        if s.enabled:
+            for d in s.devices:
+                out += device_panels(s, d)
     return out
 
 
@@ -255,6 +259,11 @@ def aircraft_meshes(ac: Aircraft) -> dict[str, list[tuple[Mesh, str]]]:
         if not s.enabled:
             continue
         out[f"surface:{i}"] = [(m, s.role) for m in surface_mesh(s)] + [(m, "control") for m in control_meshes(s)]
+        if s.devices:
+            from .devices import device_meshes
+            from .airfoil import naca4
+            for d in s.devices:
+                out[f"surface:{i}"] += [(m, "device") for m in device_meshes(s, d, naca4(d.profile, 25))]
     f = ac.fuselage
     if f.enabled:
         out["fuselage"] = [(ellipsoid_body(f.x_nose, f.length, f.width, f.height, f.z), "fuselage")]

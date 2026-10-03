@@ -61,7 +61,8 @@ def time_to_bank(Pss: float, tau: float, phi: float) -> float:
 
 
 def aileron_sizing(probe: Probe, V: float, cls="I", cat="B", da_max=math.radians(20), eta_o=0.95,
-                   chords=(0.15, 0.20, 0.25, 0.30), etas=np.linspace(0.30, 0.90, 13)) -> tuple[dict, dict]:
+                   chords=(0.15, 0.20, 0.25, 0.30), etas=np.linspace(0.30, 0.90, 13), req=None) -> tuple[dict, dict]:
+    """req = (φ °, t s): requisito de rolagem; None: MIL-F-8785C da classe/fase"""
     ac = probe.ac
     w = ac.wing
     S, c, b = probe.S, probe.c, probe.b
@@ -71,7 +72,7 @@ def aileron_sizing(probe: Probe, V: float, cls="I", cat="B", da_max=math.radians
     q = 0.5 * probe.rho * V * V
     Ixx = probe.I[0, 0]
     tau_R = -2 * V * Ixx / (q * S * b * b * Clp) if Clp < 0 else float("inf")
-    phi_req, t_req = ROLL_REQ[cls][cat]
+    phi_req, t_req = req if req is not None else ROLL_REQ[cls][cat]
     ys = np.linspace(0, s, 400)
     cy = np.array([w.chord_at(y) for y in ys])
     series = {"eta_i": np.asarray(etas)}

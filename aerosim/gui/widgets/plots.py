@@ -22,27 +22,38 @@ def is_angle(ch: str) -> bool:
 
 
 class LivePlots(QtWidgets.QWidget):
-    def __init__(self, specs: list[PlotSpec], columns: int = 2, parent=None):
+    def __init__(self, specs: list[PlotSpec], columns: int = 2, row_height: int = 0, parent=None):
+        """row_height > 0: altura fixa por linha de gráficos (a aba rola); a legenda fica embaixo de
+        cada gráfico, fora da área das curvas"""
         super().__init__(parent)
         self.specs = specs
         self.lay = pg.GraphicsLayoutWidget()
         v = QtWidgets.QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
         v.addWidget(self.lay)
+        rows = max(1, math.ceil(len(specs) / columns))
+        if row_height > 0:
+            self.lay.setMinimumHeight(rows * row_height)
         self.plots: dict[str, pg.PlotItem] = {}
+        self.legends: dict[str, pg.LegendItem] = {}
         self.curves: dict[tuple[str, str], pg.PlotDataItem] = {}
         self._buf: dict[str, list[np.ndarray]] = {}
         for i, s in enumerate(specs):
-            p = self.lay.addPlot(row=i // columns, col=i % columns, title=s.title)
+            cell = self.lay.addLayout(row=i // columns, col=i % columns)
+            p = cell.addPlot(row=0, col=0, title=f"<b>{s.title}</b>")
             p.showGrid(x=True, y=True, alpha=0.3)
             p.setLabel("bottom", s.xlabel)
             p.setLabel("left", s.ylabel)
-            p.addLegend(offset=(5, 5), labelTextSize="8pt")
+            leg = pg.LegendItem(colCount=3, labelTextSize="8pt", horSpacing=14, verSpacing=-4)
+            cell.addItem(leg, row=1, col=0)
+            cell.layout.setRowStretchFactor(0, 10)
             self.plots[s.key] = p
+            self.legends[s.key] = leg
             if s.source == "log":
                 for j, y in enumerate(s.ys):
-                    self.curves[(s.key, y)] = p.plot([], [], pen=pg.mkPen(PALETTE[j % len(PALETTE)], width=1.6), name=y,
-                                                     connect="finite")
+                    c = p.plot([], [], pen=pg.mkPen(PALETTE[j % len(PALETTE)], width=1.6), connect="finite")
+                    leg.addItem(c, y)
+                    self.curves[(s.key, y)] = c
             if s.key == "xy" or (s.x == "e" and "n" in s.ys):
                 p.setAspectLocked(True)
 
@@ -53,6 +64,7 @@ class LivePlots(QtWidgets.QWidget):
             p = self.plots[s.key]
             if s.source != "log":
                 p.clear()
+                self.legends[s.key].clear()
         for c in self.curves.values():
             c.setData([], [])
 
@@ -100,6 +112,8 @@ class LivePlots(QtWidgets.QWidget):
                 continue
             p = self.plots[s.key]
             p.clear()
+            leg = self.legends[s.key]
+            leg.clear()
             name = s.source.split(":", 1)[1]
             if name.endswith("*"):
                 tables = [(k, v) for k, v in res.series.items() if k.startswith(name[:-1])]
@@ -124,12 +138,13 @@ class LivePlots(QtWidgets.QWidget):
                     k += 1
                     dash = tab.get("_dash") if isinstance(tab, dict) else None
                     if dash:
-                        p.plot(xs, ys, pen=pg.mkPen(color, width=1.4, style=pg.QtCore.Qt.PenStyle.DashLine), name=lab)
+                        it = p.plot(xs, ys, pen=pg.mkPen(color, width=1.4, style=pg.QtCore.Qt.PenStyle.DashLine))
                     elif s.scatter:
-                        p.plot(xs, ys, pen=pg.mkPen(color, width=1, style=pg.QtCore.Qt.PenStyle.DashLine),
-                               symbol="o", symbolSize=7, symbolBrush=color, name=lab)
+                        it = p.plot(xs, ys, pen=pg.mkPen(color, width=1, style=pg.QtCore.Qt.PenStyle.DashLine),
+                                    symbol="o", symbolSize=7, symbolBrush=color)
                     else:
-                        p.plot(xs, ys, pen=pg.mkPen(color, width=1.8), name=lab)
+                        it = p.plot(xs, ys, pen=pg.mkPen(color, width=1.8))
+                    leg.addItem(it, lab)
 
 
 def format_value(v) -> str:

@@ -18,6 +18,7 @@ Cada passo gera itens de diagnóstico (estado, valor, critério, causa, o que fa
 from __future__ import annotations
 
 import math
+import re
 
 import numpy as np
 
@@ -27,9 +28,10 @@ from aerosim.model.compile import compile_aircraft
 from aerosim.model.features import features
 from aerosim.stability import Probe, aileron_sizing, mil_check, modes, response, rudder_sizing, scissor
 from aerosim.stability.controls import ROLL_REQ, elevator_sizing, time_to_bank
+from aerosim.stability.criteria import evaluate
 from aerosim.stability.dynamic import doublet, pulse
 from aerosim.stability.scissor import min_tail
-from aerosim.stability.sizing import (cg_sweep, gear_x_for_rotation, limit_crossing, modes_at, rotation_de,
+from aerosim.stability.sizing import (cg_sweep, cm0, gear_x_for_rotation, with_elevon, with_washout, limit_crossing, modes_at, rotation_de,
                                       scale_surfaces, search, stall_speed, trimmed_CLmax, with_dihedral)
 from aerosim.stability.static import analytic_np
 
@@ -65,42 +67,70 @@ class StabilitySimulation(SimulationBase):
     def parameters(self):
         return self.parameters_for(None)
 
-    def parameters_for(self, ac):
+    def parameters_for(self, ac, values=None):
+        values = values or {}
         f = features(ac) if ac is not None else None
         Vc = _cruise_speed(ac) if ac is not None else 15.0
         vl = ", ".join(f"{v:g}" for v in np.round(np.linspace(0.75 * Vc, 1.5 * Vc, 7)))
-        ps = [ParamSpec("V", "velocidade de cruzeiro", round(Vc, 1), minimum=3, maximum=80, unit="m/s"),
-              ParamSpec("cls", "classe do avião (MIL-F-8785C)", "I", kind="choice", choices=("I", "II", "III", "IV"),
-                        help="I: pequeno e leve; II: médio; III: grande; IV: alta manobrabilidade"),
-              ParamSpec("cat", "fase de voo", "B", kind="choice", choices=("A", "B", "C"),
-                        help="A: manobras e precisão; B: subida, cruzeiro, descida; C: decolagem, aproximação, pouso"),
-              ParamSpec("SM_min", "margem estática mínima", 5.0, minimum=0, maximum=40, unit="% CMA",
-                        help="limite traseiro do CG (Raymer cap. 16, Sadraey cap. 6: ~5 % para aviação geral/VANT)"),
-              ParamSpec("SM_max", "margem estática máxima recomendada", 15.0, minimum=1, maximum=60, unit="% CMA",
-                        help="acima disso o avião fica pesado no comando e gasta curso de profundor para equilibrar"),
-              ParamSpec("CL_frac", "C_L a equilibrar no pouso (fração do C_Lmax)", 0.9, minimum=0.3, maximum=1.0)]
+        apl = ac.autopilot if ac is not None else None
+        V_, C_, G_, A_ = "Voo", "Critérios de aprovação", "Faixa de CG", "Análises"
+        ps = [ParamSpec("V", "velocidade de cruzeiro", round(Vc, 1), minimum=3, maximum=80, unit="m/s", group=V_),
+              ParamSpec("CL_frac", "C_L a equilibrar no pouso (fração do C_Lmax)", 0.9, minimum=0.3, maximum=1.0,
+                        group=V_)]
+        if f is None or (f.gear and f.pitch):
+            ps.append(ParamSpec("roll_takeoff", "decola rodando sobre o trem", True, kind="bool", group=V_,
+                                help="desmarque se a aeronave é lançada à mão/catapulta: a rotação deixa de limitar o CG"))
+            ps.append(ParamSpec("theta_dd", "aceleração de arfagem na rotação", 10.0, minimum=1, maximum=40,
+                                unit="°/s²", group=V_, help="aceleração angular pedida no trem principal em V_R"))
+        if f is None or f.yaw:
+            ps.append(ParamSpec("Vw", "vento cruzado (−1: 0,2 V_S)", -1.0, minimum=-1, maximum=20, unit="m/s",
+                                group=V_, help="−1 usa 0,2 V_S (FAR 23.233)"))
+        # ---- critérios
+        norm = values.get("norm", "MIL-F-8785C")
+        ps.append(ParamSpec("norm", "critérios dos modos e da rolagem", "MIL-F-8785C", kind="choice",
+                            choices=("MIL-F-8785C", "personalizado"), group=C_, rebuild=True,
+                            help="MIL-F-8785C: limites do nível 1 pela classe e fase; personalizado: digite cada limite"))
+        if norm == "personalizado":
+            from aerosim.stability.criteria import FIELDS, mil_8785c
+            base = mil_8785c("I", "B")
+            for k, lab, unit in FIELDS:
+                ps.append(ParamSpec(f"crit_{k}", lab, getattr(base, k), minimum=0, unit=unit, group=C_))
+        else:
+            ps += [ParamSpec("cls", "classe do avião", "I", kind="choice", choices=("I", "II", "III", "IV"), group=C_,
+                             help="I: pequeno e leve; II: médio; III: grande; IV: alta manobrabilidade"),
+                   ParamSpec("cat", "fase de voo", "B", kind="choice", choices=("A", "B", "C"), group=C_,
+                             help="A: manobras e precisão; B: subida, cruzeiro, descida; C: decolagem, aproximação, pouso")]
+        ps += [ParamSpec("SM_min", "margem estática mínima", 5.0, minimum=0, maximum=40, unit="% CMA", group=C_,
+                         help="limite traseiro do CG (Raymer cap. 16; Sadraey cap. 6)"),
+               ParamSpec("SM_max", "margem estática máxima", 15.0, minimum=1, maximum=60, unit="% CMA", group=C_),
+               ParamSpec("de_max", "curso máximo de arfagem", apl.de_max if apl else 20.0, minimum=1, maximum=60,
+                         unit="°", group=C_)]
+        if f is None or f.roll:
+            ps.append(ParamSpec("da_max", "curso máximo de rolagem", apl.da_max if apl else 20.0, minimum=1, maximum=60,
+                                unit="°", group=C_))
+        if f is None or f.yaw:
+            ps.append(ParamSpec("dr_max", "curso máximo do leme", apl.dr_max if apl else 25.0, minimum=1, maximum=60,
+                                unit="°", group=C_))
+        # ---- CG
         if f is None or not (f.payload or f.liquid):
             ps.append(ParamSpec("cg_var", "variação prevista do CG (±)", 2.0, minimum=0, maximum=30, unit="% CMA",
-                                help="sem carga lançável nem líquido, a variação do CG precisa ser informada"))
+                                group=G_, help="sem carga lançável nem líquido, a variação do CG é informada"))
         else:
             ps.append(ParamSpec("cg_margin", "folga além da variação calculada (±)", 2.0, minimum=0, maximum=20,
-                                unit="% CMA", help="a variação com/sem carga e líquido é calculada; isto é folga extra"))
-        if f is None or (f.gear and f.pitch):
-            ps.append(ParamSpec("theta_dd", "aceleração de arfagem na rotação", 10.0, minimum=1, maximum=40,
-                                unit="°/s²", help="aceleração angular pedida no trem principal em V_R"))
-            ps.append(ParamSpec("roll_takeoff", "decola rodando sobre o trem (limita o CG)", True, kind="bool",
-                                help="desmarque se a aeronave é lançada à mão/catapulta: a rotação deixa de limitar o CG"))
+                                unit="% CMA", group=G_, help="a variação com/sem carga e líquido é calculada"))
+        # ---- análises que dependem da configuração
         if f is None or f.htail is not None:
-            ps.append(ParamSpec("size_tail", "dimensionar a área do EH pela faixa de CG", True, kind="bool"))
+            ps.append(ParamSpec("size_tail", "dimensionar a área do EH pela faixa de CG", True, kind="bool", group=A_))
+        if f is not None and f.tailless:
+            ps.append(ParamSpec("size_elevon", "dimensionar o elevon (corda × envergadura)", True, kind="bool",
+                                group=A_))
+            ps.append(ParamSpec("washout", "calcular a torção na ponta para C_m0 > 0", True, kind="bool", group=A_))
         if f is None or f.roll_kind == "aileron":
-            ps.append(ParamSpec("eta_o", "aileron: fim (fração da semiasa)", 0.95, minimum=0.5, maximum=1.0))
-        if f is None or f.yaw:
-            ps.append(ParamSpec("Vw", "vento cruzado (−1: 0,2 V_S, FAR 23.233)", -1.0, minimum=-1, maximum=20,
-                                unit="m/s"))
-        ps += [ParamSpec("Vs_list", "velocidades da análise dinâmica", vl, kind="floats", unit="m/s"),
-               ParamSpec("whatif", "procurar a correção quando um modo falha", True, kind="bool",
-                         help="refaz a análise com deriva maior / mais diedro para dizer quanto mudar"),
-               ParamSpec("resp", "mostrar respostas no tempo", False, kind="bool")]
+            ps.append(ParamSpec("eta_o", "aileron: fim (fração da semiasa)", 0.95, minimum=0.5, maximum=1.0, group=A_))
+        ps += [ParamSpec("Vs_list", "velocidades da análise dinâmica", vl, kind="floats", unit="m/s", group=A_),
+               ParamSpec("whatif", "procurar a correção quando um modo falha", True, kind="bool", group=A_,
+                         help="refaz a análise com deriva maior / mais diedro / EH maior para dizer quanto mudar"),
+               ParamSpec("resp", "mostrar respostas no tempo", False, kind="bool", group=A_)]
         return ps
 
     def plots(self):
@@ -129,6 +159,14 @@ class StabilitySimulation(SimulationBase):
             ps.append(PlotSpec("eh", "Área do EH × posição do CG — a faixa de CG prevista tem de caber entre os limites",
                                "Sh_S", ("cg",), "área do EH / área da asa (S_h/S)", cg_x, live=False,
                                source="series:eh_*"))
+        if f is None or f.tailless:
+            ps += [PlotSpec("wo", "Asa voadora: C_m0 × torção na ponta — precisa ficar acima de zero", "tw", ("v",),
+                            "torção extra na ponta (°, negativo = washout)", "C_m0", live=False, source="series:wo_*"),
+                   PlotSpec("wc", "Asa voadora: C_L máximo equilibrado × torção na ponta", "tw", ("v",),
+                            "torção extra na ponta (°)", "C_L equilibrado", live=False, source="series:wc_*"),
+                   PlotSpec("es", "Asa voadora: C_L máximo equilibrado × tamanho do elevon", "eta", ("v",),
+                            "início do elevon (fração da semiasa)", "C_L equilibrado", live=False,
+                            source="series:es_*")]
         ps += [PlotSpec("zeta", "Amortecimento dos modos oscilatórios × V (tracejado: mínimo do nível 1)", "V", ("ζ",),
                         "V (m/s)", "ζ", live=False, source="series:z_*"),
                PlotSpec("tempo", "Rolamento (constante de tempo) e espiral (tempo para dobrar) × V", "V", ("t",),
@@ -161,11 +199,19 @@ class StabilitySimulation(SimulationBase):
         f = features(ac)
         V = P("V")
         S_, summ, checks = {}, {}, []
-        add = lambda *a, **k: checks.append(Check(*a, **k))
-        de_max = math.radians(ac.autopilot.de_max)
-        da_max = math.radians(ac.autopilot.da_max)
-        dr_max = math.radians(ac.autopilot.dr_max)
+        add = lambda *a, **k: checks.append(_short(Check(*a, **k)))
+        pk = lambda k, d: ctx.params.get(k, d)
+        de_max = math.radians(pk("de_max", ac.autopilot.de_max))
+        da_max = math.radians(pk("da_max", ac.autopilot.da_max))
+        dr_max = math.radians(pk("dr_max", ac.autopilot.dr_max))
         SM_min, SM_max = P("SM_min"), P("SM_max")
+        crit = _criteria(ctx.params)
+        summ["critérios"] = crit.source
+        if not f.pitch:
+            checks.append(Check("falha", "comando de arfagem", "nenhum", "profundor, elevon ou cauda em V",
+                                "sem EH e sem elevon não há como equilibrar nem controlar em arfagem",
+                                "transformar os ailerons em elevons (Configuração → asa → comandos → tipo 'elevon') "
+                                "ou adicionar uma EH", "estática longitudinal"))
         summ["configuração"] = f.summary()
         if f.wing is None:
             return SimResult(summary=summ, checks=[Check("falha", "asa", "nenhuma", "a aeronave precisa de uma asa")])
@@ -236,7 +282,8 @@ class StabilitySimulation(SimulationBase):
                 S_[f"de_rotação (V_R = {VR:.1f} m/s)"] = {"cg": sw["cg"], "δ": sw["de_rotacao"]}
             S_["de_fim do curso"] = {"cg": np.array(lo_hi), "δ": np.full(2, -dmax), "_dash": 1}
             S_["de_fim do curso (picar)"] = {"cg": np.array(lo_hi), "δ": np.full(2, dmax), "_dash": 1}
-            dr_ = (float(np.nanmin([np.nanmin(sw["de_pouso"]), -dmax])), float(np.nanmax([np.nanmax(sw["de_cruzeiro"]), dmax])))
+            allv = np.concatenate([sw["de_pouso"], sw["de_cruzeiro"], [-dmax, dmax]])
+            dr_ = (float(np.nanmin(allv)), float(np.nanmax(allv)))
             S_["de_CG atual"] = {"cg": np.array([cg_now, cg_now]), "δ": np.array(dr_)}
 
             for lab, v in (("limite dianteiro", fwd), ("limite traseiro", aft)):
@@ -245,24 +292,24 @@ class StabilitySimulation(SimulationBase):
                     S_[f"de_{lab} ({v:.1f} %)"] = {"cg": np.array([v, v]), "δ": np.array(dr_), "_dash": 1}
             # --- diagnóstico: margem no CG atual
             G = "estática longitudinal"
-            crit = f"{SM_min:g} % ≤ ME ≤ {SM_max:g} % da CMA (Raymer cap. 16; Sadraey cap. 6)"
+            crit_sm = f"{SM_min:g} % ≤ ME ≤ {SM_max:g} % da CMA (Raymer cap. 16; Sadraey cap. 6)"
             val = f"{SM:.1f} % (CG {cg_now:.1f} %, ponto neutro {np_pct:.1f} %)"
             if SM < 0:
-                add("falha", "margem estática no CG atual", val, crit,
+                add("falha", "margem estática no CG atual", val, crit_sm,
                     f"o CG está {mm(SM):.0f} mm atrás do ponto neutro: um aumento de α gera momento cabrador e o "
                     "avião diverge em arfagem",
                     f"levar o CG {mm(SM - SM_min):.0f} mm para frente (até {aft:.1f} % da CMA) ou aumentar o "
                     + ("EH/braço da cauda (ver área do EH abaixo)" if f.htail else "enflechamento/torção da ponta"), G)
             elif SM < SM_min:
-                add("atencao", "margem estática no CG atual", val, crit,
+                add("atencao", "margem estática no CG atual", val, crit_sm,
                     "estável, mas pouca margem: rajadas e erro de CG podem deixá-lo neutro",
                     f"levar o CG {mm(SM_min - SM):.0f} mm para frente (até {aft:.1f} %)", G)
             elif SM > SM_max:
-                add("atencao", "margem estática no CG atual", val, crit,
+                add("atencao", "margem estática no CG atual", val, crit_sm,
                     f"estável demais: o {pitch_name} gasta curso para equilibrar e o avião fica pesado no comando",
                     f"o CG pode ir {mm(SM - SM_max):.0f} mm para trás (até {np_pct - SM_max:.1f} %)", G)
             else:
-                add("ok", "margem estática no CG atual", val, crit, group=G)
+                add("ok", "margem estática no CG atual", val, crit_sm, group=G)
             dn = abs(np_pct - pr.frac(an["x_np"]))
             if dn > 8:
                 add("info", "ponto neutro: núcleo × fórmula clássica", f"{np_pct:.1f} % × {pr.frac(an['x_np']):.1f} %",
@@ -418,24 +465,24 @@ class StabilitySimulation(SimulationBase):
             # ============ 5a. comandos (rolagem, profundor, leme) — usam a sonda
             ctx.on_progress(0.35, "comandos")
             G = "comandos"
-            cls, cat = P("cls"), P("cat")
-            phi_req, t_req = ROLL_REQ[cls][cat]
-            Vroll = V_land if cat == "C" else V
+            phi_req, t_req = crit.roll_phi, crit.roll_t
+            Vroll = V_land if crit.cat == "C" else V
             if f.roll_kind == "aileron":
-                o, s_ = aileron_sizing(pr, Vroll, cls, cat, da_max, P("eta_o"))
+                o, s_ = aileron_sizing(pr, Vroll, crit.cls, crit.cat, da_max, P("eta_o"), req=(phi_req, t_req))
                 for k in [k for k in s_ if k.startswith("t_")]:
                     S_[f"ail_{k[2:]}"] = {"eta_i": s_["eta_i"], "t": s_[k]}
                 S_["ail_requisito"] = {"eta_i": s_["eta_i"], "t": s_["requisito"], "_dash": 1}
                 Pss, tb = o.get("aileron atual: P_ss (°/s), t (s)", [float("nan"), float("nan")])
-                crit = f"{phi_req}° em {t_req} s com δa = {math.degrees(da_max):g}° (MIL-F-8785C classe {cls}, fase {cat})"
+                crit_r = f"{phi_req:g}° em ≤ {t_req:g} s (δa {math.degrees(da_max):g}°)"
                 if tb <= t_req:
-                    add("ok", "aileron: rolagem", f"{tb:.2f} s (p = {Pss:.0f} °/s a {Vroll:.1f} m/s)", crit, group=G)
+                    add("ok", "aileron: rolagem", f"{tb:.2f} s (p = {Pss:.0f} °/s a {Vroll:.1f} m/s)", crit_r, group=G,
+                        source=crit.source)
                 else:
                     best = [(k, v) for k, v in o.items() if k.startswith("η_i máximo") and np.isfinite(v)]
                     fx = "; ".join(f"{k.split('(')[1].split(',')[0]}: começar em {v:.2f} da semiasa" for k, v in best)
-                    add("falha", "aileron: rolagem", f"{tb:.2f} s", crit,
+                    add("falha", "aileron: rolagem", f"{tb:.2f} s", crit_r,
                         "C_lδa pequeno diante do amortecimento C_lp (aileron curto, perto da raiz ou corda pequena)",
-                        fx or "aumentar corda/envergadura do aileron ou o curso", G)
+                        fx or "aumentar corda/envergadura do aileron ou o curso", G, source=crit.source)
             elif f.roll_kind == "elevon":
                 # elevon: o curso é dividido entre equilibrar (arfagem) e rolar
                 surf, ctl = f.roll
@@ -464,16 +511,15 @@ class StabilitySimulation(SimulationBase):
                 S_["elv_soma"] = {"V": Vl, "δ": tot}
                 S_["elv_máximo"] = {"V": Vl, "δ": np.full(len(Vl), math.degrees(da_max)), "_dash": 1}
                 bad = Vl[np.isfinite(tot) & (tot > math.degrees(da_max))]
-                crit = (f"|δ equilíbrio| + δ para {phi_req}° em {t_req} s ≤ {math.degrees(da_max):g}° "
-                        f"(MIL-F-8785C classe {cls}, fase {cat})")
+                crit_e = f"equilíbrio + rolagem ({phi_req:g}° em {t_req:g} s) ≤ {math.degrees(da_max):g}°"
                 if len(bad):
                     add("falha", "elevon: curso para arfagem + rolagem", f"excede de {bad.min():.1f} a {bad.max():.1f} m/s",
-                        crit, "nessas velocidades o equilíbrio come o curso que a rolagem precisa",
+                        crit_e, "nessas velocidades o equilíbrio come o curso que a rolagem precisa",
                         "elevon com mais corda/envergadura, CG mais para trás (menos δ de equilíbrio) ou C_m0 maior "
                         "(reflexo/washout)", G)
                 else:
                     add("ok", "elevon: curso para arfagem + rolagem", f"máx. {np.nanmax(tot):.1f}° de "
-                        f"{math.degrees(da_max):g}°", crit, group=G)
+                        f"{math.degrees(da_max):g}°", crit_e, group=G)
             else:
                 add("falha", "comando de rolagem", "nenhum", "aileron ou elevon", "", "adicionar ailerons", G)
             if f.pitch_kind in ("elevator", "ruddervator") and VR:
@@ -507,6 +553,10 @@ class StabilitySimulation(SimulationBase):
             elif not f.tailless or f.tip_devices:
                 add("info", "leme", "nenhum", "", "sem leme a guinada é corrigida só pela rolagem; vento cruzado no pouso "
                     "fica por conta do piloto (caranguejo)", "", "comandos")
+
+        # ============ 2b. asa voadora: torção na ponta e tamanho do elevon
+        if f.tailless and f.wing is not None:
+            self._tailless(ctx, ac, f, P, S_, summ, add, V, V_land, CL_land, cg_lo, de_max, da_max, crit)
 
         # ============ 2. área do EH
         if f.htail is not None and P("size_tail"):
@@ -565,27 +615,31 @@ class StabilitySimulation(SimulationBase):
             rows.append(r)
         if rows:
             Vv = np.array([r["V"] for r in rows])
-            for nm, lim in (("curto_periodo", 0.35 if P("cat") in "AC" else 0.30), ("fugoide", 0.04),
-                            ("dutch_roll", 0.19 if P("cat") == "A" else 0.08)):
+            for nm, lim in (("curto_periodo", crit.sp_zeta_min), ("fugoide", crit.ph_zeta_min),
+                            ("dutch_roll", crit.dr_zeta_min)):
                 S_[f"z_{MODE_LAB[nm]}"] = {"V": Vv, "ζ": np.array([r[f"z_{nm}"] for r in rows])}
                 S_[f"z_mínimo {MODE_LAB[nm]}"] = {"V": Vv[[0, -1]], "ζ": np.full(2, lim), "_dash": 1}
             S_["t_rolamento τ"] = {"V": Vv, "t": np.array([r["tau_r"] for r in rows])}
             S_["t_espiral: tempo para dobrar"] = {"V": Vv, "t": np.array([r["t2"] for r in rows])}
-            S_["t_espiral mínimo"] = {"V": Vv[[0, -1]], "t": np.full(2, 12.0 if P("cat") in "AC" else 20.0), "_dash": 1}
+            S_["t_espiral mínimo"] = {"V": Vv[[0, -1]], "t": np.full(2, crit.spiral_t2_min), "_dash": 1}
+            S_["t_rolamento máximo"] = {"V": Vv[[0, -1]], "t": np.full(2, crit.roll_tau_max), "_dash": 1}
         md, lm = modes_at(ctx.backend, ac, V)
         if md is None:
             add("falha", "equilíbrio em voo nivelado", f"não convergiu em {V:g} m/s", "trimagem do núcleo",
                 "sem equilíbrio não há modelo linear: falta tração, ou o comando de arfagem satura",
                 "ver a faixa de CG e a curva de equilíbrio acima; testar outra velocidade", G)
         else:
-            for row in mil_check(md, P("cls"), P("cat")):
+            for row in evaluate(md, crit):
                 lvl = row["nivel"]
-                st = "ok" if lvl == 1 else ("atencao" if lvl == 2 else "falha")
+                if row["ok"]:
+                    st = "ok"
+                else:
+                    st = "atencao" if lvl == 2 else "falha"
                 why, fix = _mode_advice(row["criterio"], st, f, fin_word)
                 if st != "ok" and P("whatif"):
-                    fix = _whatif(ctx, ac, f, V, row["criterio"], P("cls"), P("cat"), fins) or fix
-                add(st, row["criterio"], f"{_fmt(row['valor'])} (nível {lvl if lvl < 4 else '>3'})",
-                    f"nível 1: {row['exigido']} (MIL-F-8785C classe {P('cls')}, fase {P('cat')})", why, fix, G)
+                    fix = _whatif(ctx, ac, f, V, row["criterio"], crit, fins) or fix
+                val = _fmt(row["valor"]) + (f" (nível {lvl if lvl < 4 else '>3'})" if lvl else "")
+                add(st, row["criterio"], val, row["limite"], why, fix, G, source=crit.source)
             for nm, m_ in md.items():
                 if m_ and m_.get("im", 0) > 0:
                     summ[f"{MODE_LAB[nm]} a {V:g} m/s: ω_n (rad/s), ζ, período (s)"] = [m_["wn"], m_["zeta"], m_["period"]]
@@ -597,6 +651,68 @@ class StabilitySimulation(SimulationBase):
                 "estática e modelo linear tratam o líquido parado no CG (faixa de CG acima inclui sem líquido); o "
                 "acoplamento dinâmico do sloshing só aparece nas simulações no tempo (Missão, Curvas)", "", G)
         return SimResult(series=S_, summary=summ, checks=checks)
+
+
+def _tailless_impl(self, ctx, ac, f, P, S_, summ, add, V, V_land, CL_land, cg_lo, de_max, da_max, crit):
+    G = "asa voadora"
+    w = f.wing
+    if P("washout"):
+        ctx.on_progress(0.42, "asa voadora: torção na ponta")
+        deltas = np.arange(0.0, -10.01, -1.0)
+        c0, cl = [], []
+        for d in deltas:
+            with Probe(ctx.backend, with_washout(ac, w.name, d)) as p:
+                c0.append(cm0(p, V))
+                cl.append(trimmed_CLmax(p, V_land, p.x_of(cg_lo), de_max))
+        c0, cl = np.array(c0), np.array(cl)
+        S_["wo_C_m0"] = {"tw": deltas, "v": c0}
+        S_["wo_zero"] = {"tw": deltas[[0, -1]], "v": np.zeros(2), "_dash": 1}
+        S_["wc_C_L máximo equilibrado"] = {"tw": deltas, "v": cl}
+        S_["wc_C_L de pouso pedido"] = {"tw": deltas[[0, -1]], "v": np.full(2, CL_land), "_dash": 1}
+        need = next((d for d, v in zip(deltas, c0) if v > 0), None)
+        if c0[0] > 0:
+            add("ok", "torção na ponta (washout) para C_m0 > 0", f"atual já dá C_m0 = {c0[0]:.4f}",
+                "C_m0 > 0", "", "", G, source="Nickel & Wohlfahrt, Tailless Aircraft")
+        elif need is not None:
+            add("falha", "torção na ponta (washout) para C_m0 > 0", f"C_m0 = {c0[0]:.4f}; precisa {need:g}°", "C_m0 > 0",
+                "a ponta enflechada atrás do CG precisa voar com menos α para dar momento cabrador",
+                f"adicionar {need:g}° de torção na ponta (linear da raiz à ponta) ou usar perfil reflexo", G,
+                source="Nickel & Wohlfahrt, Tailless Aircraft")
+        else:
+            add("falha", "torção na ponta (washout) para C_m0 > 0", "nem −10° resolve", "C_m0 > 0",
+                "enflechamento pequeno: a torção na ponta tem braço curto", "aumentar o enflechamento ou usar perfil reflexo",
+                G)
+    if P("size_elevon") and f.pitch_kind == "elevon":
+        ctx.on_progress(0.45, "asa voadora: tamanho do elevon")
+        ctl = f.pitch[1]
+        cfs = (0.20, 0.25, 0.30, 0.35, 0.40)
+        etas = np.array([0.2, 0.35, 0.5, 0.65])
+        best = None
+        for cf in cfs:
+            vals = []
+            for ei in etas:
+                if ei >= ctl.span_end - 0.05:
+                    vals.append(np.nan)
+                    continue
+                with Probe(ctx.backend, with_elevon(ac, w.name, cf, ei)) as p:
+                    v = trimmed_CLmax(p, V_land, p.x_of(cg_lo), de_max)
+                vals.append(v)
+                area = cf * (ctl.span_end - ei)
+                if np.isfinite(v) and v >= CL_land and (best is None or area < best[0]):
+                    best = (area, cf, ei, v)
+            S_[f"es_c_e/c = {cf:.2f}"] = {"eta": etas, "v": np.array(vals)}
+        S_["es_C_L de pouso pedido"] = {"eta": etas[[0, -1]], "v": np.full(2, CL_land), "_dash": 1}
+        cur = f"c_e/c {ctl.chord_frac:.2f}, de {ctl.span_start:.2f} a {ctl.span_end:.2f} da semiasa"
+        if best:
+            add("ok" if ctl.chord_frac * (ctl.span_end - ctl.span_start) >= best[0] - 1e-9 else "info",
+                "menor elevon que equilibra o pouso", f"c_e/c {best[1]:.2f}, início {best[2]:.2f} (atual: {cur})",
+                f"C_L equilibrado ≥ {CL_land:.2f} no CG dianteiro", "", "", G)
+        else:
+            add("falha", "menor elevon que equilibra o pouso", f"nenhum até c_e/c 0,40 (atual: {cur})",
+                f"C_L equilibrado ≥ {CL_land:.2f} no CG dianteiro",
+                "sem cauda, cabrar o elevon tira sustentação da própria asa: o C_L equilibrado fica limitado",
+                "pousar com C_L menor (reduzir 'C_L a equilibrar no pouso'), CG mais para trás, ou washout/reflexo "
+                "(ver a curva × torção)", G)
 
 
 def _mode_advice(crit: str, st: str, f, fin_word: str) -> tuple[str, str]:
@@ -620,9 +736,31 @@ def _mode_advice(crit: str, st: str, f, fin_word: str) -> tuple[str, str]:
     return "", ""
 
 
-def _whatif(ctx, ac, f, V, crit, cls, cat, fins) -> str:
-    """quanto mudar para o modo passar ao nível 1 (refaz o modelo linear)"""
-    lvl1 = lambda m, key: next((r["nivel"] == 1 for r in mil_check(m, cls, cat) if key in r["criterio"]), False)
+def _criteria(params: dict):
+    from aerosim.stability.criteria import FIELDS, Criteria, mil_8785c
+    if params.get("norm", "MIL-F-8785C") == "personalizado":
+        base = mil_8785c("I", "B")
+        c = Criteria(**{k: float(params.get(f"crit_{k}", getattr(base, k))) for k, _, _ in FIELDS})
+        c.source = "definido na aba"
+        return c
+    return mil_8785c(params.get("cls", "I"), params.get("cat", "B"))
+
+
+_SRC = re.compile(r"^(.*?)\s*\(([^()]*(?:MIL|Raymer|Sadraey|Etkin|Nelson|FAR|Torenbeek|Nickel|Munk|Kroo)[^()]*)\)\s*$")
+
+
+def _short(c: Check) -> Check:
+    """critério curto na tabela; a fonte vai para `source`"""
+    m = _SRC.match(c.criterion or "")
+    if m and not c.source:
+        c.criterion, c.source = m.group(1), m.group(2)
+    return c
+
+
+def _whatif(ctx, ac, f, V, crit_name, criteria, fins) -> str:
+    """quanto mudar para o modo passar no critério (refaz o modelo linear)"""
+    lvl1 = lambda m, key: next((r["ok"] for r in evaluate(m, criteria) if key in r["criterio"]), False)
+    crit = crit_name
     if "espiral" in crit and f.wing is not None:
         d, m = search(ctx.backend, lambda x: with_dihedral(ac, f.wing.name, x), (1, 2, 3, 4, 5, 6, 8, 10), V,
                       lambda m: lvl1(m, "espiral") and lvl1(m, "dutch"))
@@ -641,3 +779,6 @@ def _whatif(ctx, ac, f, V, crit, cls, cat, fins) -> str:
         if k is not None:
             return f"área do EH × {k:g} leva o curto período ao nível 1"
     return ""
+
+
+StabilitySimulation._tailless = _tailless_impl
