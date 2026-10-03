@@ -8,6 +8,7 @@ no fim, desenha as séries do resultado com o estilo que a simulação pediu (`_
 from __future__ import annotations
 
 import math
+from html import escape
 
 import numpy as np
 import pyqtgraph as pg
@@ -197,7 +198,7 @@ class _Plot3D(QtWidgets.QWidget):
         self.live = None
 
     def set_live(self, x, y, z):
-        pts = np.column_stack([x, y, z])
+        pts = np.column_stack([x, y, np.asarray(z) * getattr(self, "zscale", 10.0)])
         pts = pts[np.isfinite(pts).all(axis=1)]
         if not len(pts):
             return
@@ -210,35 +211,44 @@ class _Plot3D(QtWidgets.QWidget):
         s = self.spec
         self.clear_final()
         tables, _, name = _tables(s, res)
-        allp, legend = [], []
+        items, legend = [], []
         for tname, tab in tables:
             if not isinstance(tab, dict) or s.x not in tab or not s.ys or s.ys[0] not in tab or s.z not in tab:
                 continue
             pts = np.column_stack([np.asarray(tab[s.x], float), np.asarray(tab[s.ys[0]], float),
                                    np.asarray(tab[s.z], float)])
             color = tab.get("_color", PALETTE[len(legend) % len(PALETTE)])
+            items.append((pts, color, tab))
+            if not tab.get("_nolegend"):
+                rest = tname[len(name) - 1:] if name.endswith("*") else tname
+                mark = "●" if tab.get("_symbol") else "━━"         # no 3D os eventos são pontos
+                lab = str(tab.get("_label", rest)).lstrip("★ ")
+                legend.append(f"<span style='color:{color}'>{mark}</span> {escape(lab)}")
+        if not items:
+            return
+        P = np.vstack([q[0][np.isfinite(q[0]).all(axis=1)] for q in items])
+        lo, hi = P.min(axis=0), P.max(axis=0)
+        span = float(max(hi[0] - lo[0], hi[1] - lo[1], 20.0))
+        # altura exagerada: a trajetória de um circuito tem centenas de metros e poucos de altura
+        k = max(1.0, round(0.25 * span / max(hi[2] - lo[2], 1.0)))
+        self.zscale = k
+        for pts, color, tab in items:
+            q = pts * np.array([1.0, 1.0, k])
             if tab.get("_symbol"):
                 c = pg.mkColor(color)
-                it = self.gl.GLScatterPlotItem(pos=pts, color=(c.redF(), c.greenF(), c.blueF(), 1.0),
-                                               size=float(tab.get("_size", 12)), pxMode=True)
+                it = self.gl.GLScatterPlotItem(pos=q, color=(c.redF(), c.greenF(), c.blueF(), 1.0),
+                                               size=float(tab.get("_size", 14)), pxMode=True)
+                it.setGLOptions("translucent")
                 self.view.addItem(it)
                 self.items.append(it)
             else:
-                self._add(pts, color, float(tab.get("_width", 2.5)))
-            allp.append(pts[np.isfinite(pts).all(axis=1)])
-            if not tab.get("_nolegend"):
-                rest = tname[len(name) - 1:] if name.endswith("*") else tname
-                mark = "★" if tab.get("_symbol") else "━━"
-                legend.append(f"<span style='color:{color}'>{mark}</span> {tab.get('_label', rest)}")
-        if allp:
-            P = np.vstack([q for q in allp if len(q)])
-            lo, hi = P.min(axis=0), P.max(axis=0)
-            span = float(max(hi[0] - lo[0], hi[1] - lo[1], 20.0))
-            self._grid(span * 1.3, max(5.0, round(span / 10, -1) or 5.0))
-            ctr = 0.5 * (lo + hi)
-            self.view.opts["center"] = pg.Vector(ctr[0], ctr[1], ctr[2])
-            self.view.setCameraPosition(distance=1.6 * span, elevation=28, azimuth=-60)
-        self.leg.setText("&nbsp;&nbsp;".join(legend) + f"<br><i>eixos: {s.xlabel}, {s.ylabel}, {s.z}</i>")
+                self._add(q, color, float(tab.get("_width", 2.5)))
+        self._grid(span * 1.3, max(5.0, round(span / 10, -1) or 5.0))
+        ctr = 0.5 * (lo + hi) * np.array([1.0, 1.0, k])
+        self.view.opts["center"] = pg.Vector(ctr[0], ctr[1], ctr[2])
+        self.view.setCameraPosition(distance=1.5 * span, elevation=25, azimuth=-60)
+        self.leg.setText("&nbsp;&nbsp;".join(legend) +
+                         f"<br><i>eixos: {escape(s.xlabel)}, {escape(s.ylabel)}, {escape(s.z)} (altura exagerada ×{k:g})</i>")
 
 
 class LivePlots(QtWidgets.QWidget):

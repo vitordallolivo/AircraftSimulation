@@ -41,7 +41,11 @@ def test_window_tabs_and_edit(app, manager):
     cfg.chk_boom.setChecked(True)
     assert st.aircraft.boom.enabled
     pump(app, 0.5)
-    assert "margem" in cfg.summary.text()
+    txt = cfg.summary.toPlainText()
+    assert "margem" in txt and "Pista" in txt and "T/W" in txt
+    cfg.restore()                                         # volta ao que foi aberto
+    pump(app, 0.3)
+    assert len(st.aircraft.propulsion) == n0 and len(st.aircraft.tanks) == 1
 
 
 def test_simulation_tab_runs(app, manager):

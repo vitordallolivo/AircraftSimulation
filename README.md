@@ -111,20 +111,37 @@ python -m aerosim.gui                               # começa com a aeronave con
 python -m aerosim.gui data/aircraft/twin_boom.cfg   # abre um arquivo (.cfg, .json ou .xlsx)
 ```
 
-- **Configuração:** a aeronave em 3D. Clique num componente e arraste para mover; use o painel da
-  direita para adicionar/remover asa, EH, EV, motor, tanque, tubo de cauda, trocar o trem, editar
-  seções, comandos, perfil `.dat`, motor ou conjunto de tração, e o vento (botões ⟲ / ⟳).
-- **Uma aba por simulação:** Dimensionamento inicial, Decolagem, Curvas, Envelope de voo, Missão, Subida,
-  Polar, Tração, Aerodinâmica e Estabilidade. As abas se montam pela configuração (sem EH não há
-  dimensionamento de EH; com elevon, o elevon é dimensionado; etc.) e trazem um **diagnóstico** no fim:
-  cada verificação com estado, valor e limite (clique para ver o porquê e o que mudar).
+- **Configuração (três colunas):** à esquerda o vento, a lista de componentes (asa, caudas, motores,
+  tanques, fuselagem, tubo, trem, **LAPES**, **pista: chão, mesa e plataforma**, massa, ambiente, decolagem,
+  piloto, percurso), os botões de adicionar/remover e o editor (campos numéricos, sem sliders); no meio a
+  aeronave em 3D (clique para selecionar, arraste para mover); à direita as informações completas (massa,
+  CG, inércias, aerodinâmica, W/S, T/W, propulsão, trem, pista, LAPES, percurso e avisos). **↺ Restaurar**
+  volta ao que foi aberto ou a um modelo padrão.
+- **Abas:** Dimensionamento inicial, **Missão** (voo simulado 6GDL), **Desempenho** (cálculo, sem
+  simulação), Tração, Aerodinâmica (com a polar da aeronave completa) e Estabilidade. As abas se montam
+  pela configuração e pelas escolhas do formulário, e trazem um **diagnóstico** no fim: cada verificação
+  com estado, valor e limite (clique para ver o porquê e o que mudar).
+- **Missão**, separada por etapa do voo (corrida no chão, cada perna, rolagem), com os gráficos no estilo
+  do código original (cor por etapa, fundo por etapa, ★ nos eventos): 3D, planos XY/XZ/ZY, velocidades,
+  ângulos, um gráfico por momento (rolamento, arfagem, guinada, parcela por parcela), comandos, C_L, C_D,
+  motor, energia, sloshing, a decolagem na posição da pista com a **distância máxima** como linha, reações e
+  momentos do trem na decolagem e no pouso, e o zoom da soltura LAPES. Modos:
+  - *missão por etapas*: roda tudo ou **para no fim de qualquer etapa**; começa do chão ou do checkpoint
+    salvo no início de uma etapa (mude a configuração e rode só dali em diante);
+  - *só decolagem* (com o mapa s_R × δe1 e o melhor ponto ★); *curvas: raio mínimo*; *subida simulada*;
+  - *MTOW*: bisseção na massa até a maior que decola com **x_warning = 0** (sai do chão dentro da distância
+    exigida) e **z_warning = 0** (não cai abaixo da mesa na decolagem; toca em cima da plataforma no pouso),
+    iterando o acionamento do profundor (s_R ou V_R, δe1) junto com o xCG de decolagem.
+- **Desempenho:** envelope de voo por altitude + os cálculos da planilha (potências, subida, descida em
+  planeio, raio de curva × V por inclinação, limites de estol e de tração, autonomia e alcance da bateria
+  por Peukert), feitos no núcleo Zig (`core/src/sim/simple_perf.zig`).
 - **💾 Salvar avião / 📂 Meus aviões** (barra no topo): grava a configuração em JSON, um arquivo por avião
   com o nome que você der, numa pasta sua (padrão `~/aerosim_aeronaves`, ou `AEROSIM_PROJETOS`).
 - **Dispositivos de asa:** na Configuração, selecione a asa → *Dispositivos* → *+ adicionar*: winglet,
   winglet para baixo, placa de ponta ou cerca, em qualquer posição da envergadura (η), com altura, cordas,
   enflechamento, cant e toe.
-- **Dimensionamento inicial:** diagrama T/W × W/S com os requisitos que você digita, o ponto da aeronave e
-  o ponto de projeto (área de asa e tração). Detalhes em [aerosim/sizing/README.md](aerosim/sizing/README.md).
+- **Dimensionamento inicial:** diagrama T/W × W/S com os requisitos que você digita, a região viável, a
+  faixa ótima, o ponto da aeronave e o ponto de projeto (área de asa e tração). Detalhes em [aerosim/sizing/README.md](aerosim/sizing/README.md).
   Preencha os campos e clique em **▶ Rodar**; os gráficos atualizam em tempo real. **Exportar** grava
   `.xlsx` (uma aba por tabela, como o `Envelope.xlsx` antigo) ou `.csv`.
 - **Envelope de voo:** por altitude, V_min e V_max (P_d = P_r), V_e, V* = V_e√n, V_cru e o teto

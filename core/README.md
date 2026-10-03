@@ -17,6 +17,7 @@ flowchart LR
         DYN["dynamics.zig<br/>f(t,x) e RK4 em SIMD"]
         TRIM["trim.zig<br/>Newton, desempenho"]
         ENV["envelope.zig<br/>envelope por altitude"]
+        SP["simple_perf.zig<br/>potências, subida, planeio,<br/>curva × V, bateria (Peukert)"]
         LIN["linear.zig<br/>modelo linear A, B"]
         ST["state.zig<br/>vetor de estados"]
         BENCH["bench.zig<br/>medições"]
@@ -31,6 +32,7 @@ flowchart LR
         AERO["aero.zig<br/>painéis + fuselagem"]
         PROP["propulsion.zig<br/>motor+hélice ou polinômio"]
         GEAR["gear.zig<br/>trem"]
+        TER["terrain.zig<br/>chão, mesa, plataforma"]
         MASS["mass.zig<br/>massa, sloshing, carga"]
         ATM["atmosphere.zig<br/>vento, rajada"]
     end
@@ -77,6 +79,7 @@ Opções: `-Dfast_math` (padrão `true`), `-Dstrip` (padrão: sim fora do Debug)
 | `aerosim_snapshot_save/load` | checkpoint = bytes do estado (os parâmetros vêm da configuração nova) |
 | `aerosim_trim`, `aerosim_performance` | equilíbrio e tabela de desempenho por V |
 | `aerosim_envelope`, `aerosim_envelope_curve` | envelope por altitude (V_min, V_max, V_e, V*, V_cru, teto) e as curvas T_d, T_r |
+| `aerosim_simple_perf` | desempenho por cálculo (sem instância): por V, C_L, C_D, T_d/T_r, P_d/P_r, RC, γ, planeio, R(φ), limites de estol e de tração, autonomia e alcance (Peukert); resumo com V_min/V_max, RC máx., E máx., R mín. |
 | `aerosim_aero_coeffs`, `aerosim_prop_point`, `aerosim_mass_props` | polar, curva de tração, massa/CG/inércia |
 | `aerosim_aero_coeffs_ex` | coeficientes com rotação (p, q, r) e momentos em qualquer ponto (derivadas de amortecimento, ponto neutro, momento no trem) |
 | `aerosim_linearize(slot, V, &LinModel)` | trima nivelado (Levenberg-Marquardt em α, δe, acelerador, φ, δa, δr; longitudinal com peso maior) e devolve A (8×8) e B (8×4) do corpo rígido com comandos congelados |

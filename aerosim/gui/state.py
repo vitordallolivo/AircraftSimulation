@@ -4,6 +4,7 @@ As abas não se falam diretamente: mudam o estado e emitem `changed`.
 """
 from __future__ import annotations
 
+import copy
 import os
 
 from PyQt6 import QtCore
@@ -29,6 +30,7 @@ class AppState(QtCore.QObject):
             projects = JsonProjectStore()
         self.projects = projects          # biblioteca "meus aviões" (só pela interface)
         self.aircraft = aircraft
+        self.original = copy.deepcopy(aircraft)      # para o botão Restaurar
         self.catalog = catalog or builtin_catalog()
         self.path: str | None = None
         cat_file = os.path.join(ROOT, "data", "catalog", "catalog.cfg")
@@ -39,9 +41,11 @@ class AppState(QtCore.QObject):
             except Exception:
                 pass
 
-    def set_aircraft(self, ac: Aircraft, path: str | None = None) -> None:
+    def set_aircraft(self, ac: Aircraft, path: str | None = None, keep_original: bool = False) -> None:
         self.aircraft = ac
         self.path = path
+        if not keep_original:
+            self.original = copy.deepcopy(ac)
         self.changed.emit("load")
 
     def notify(self, reason: str = "geometry") -> None:
