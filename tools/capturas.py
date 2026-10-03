@@ -29,7 +29,8 @@ ac.wing.devices.append(WingDevice("winglet", height=0.18, cant=15, sweep=35))
 store = JsonProjectStore(os.path.join(OUT, "meus_avioes"))
 store.save(flying_wing(), "Asa voadora 2 m"); store.save(conventional(), "Treinador original")
 st = AppState(SimulationManager(), ac, projects=store)
-win = MainWindow(st); win.resize(1800, 1100); win.show(); pump(1.0)
+W, H = (int(x) for x in os.environ.get("CAPTURAS_TELA", "1800x1100").split("x"))
+win = MainWindow(st); win.resize(W, H); win.show(); pump(1.0)
 win.grab().save(os.path.join(OUT, "00_configuracao.png"))
 cfg = win.config
 for i in range(cfg.comp_list.count()):

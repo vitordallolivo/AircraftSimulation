@@ -127,14 +127,21 @@ python -m aerosim.gui data/aircraft/twin_boom.cfg   # abre um arquivo (.cfg, .js
   de partida que conta como decolado; ≤ 0 na mesa: quanto pode afundar abaixo dela). O ponto de
   acionamento do profundor (ou do elevon; sem comando de arfagem, nada a otimizar) é otimizado, com a maior
   deflexão que funciona. Modos:
-  - *missão*: decolagem otimizada e o resto do voo dali, etapa por etapa; para no fim de qualquer etapa e
-    recomeça do início de qualquer etapa (se ainda não houver checkpoint, voa até lá e salva);
+  - *missão*: a **trajetória por partes** é uma tabela na própria aba (cada linha uma etapa: reta com
+    comprimento, curva com raio, ângulo e lado, altura e velocidade no fim; grava na aeronave). Decolagem
+    otimizada e o resto do voo dali, etapa por etapa; para no fim de qualquer etapa e recomeça do início de
+    qualquer etapa (se ainda não houver checkpoint, voa até lá e salva). O avião é desenhado no 3D a cada
+    N metros (cor da etapa, na atitude daquele instante). O circuito padrão pousa 20 m a leste da pista de
+    decolagem. **Consumo de bateria por etapa** (tempo, corrente média, mAh e descarga estimada por
+    Coulomb e por Peukert) e o ângulo da aeronave e da asa no tempo na decolagem;
   - *só decolagem*; *curvas: raio mínimo*;
   - *MTOW*: bisseção na massa até a maior que ainda atende x_warning e z_warning, reotimizando o
     acionamento (e o xCG, se pedido) em cada massa.
-- **Desempenho:** em ~0,1 s, as contas da planilha (núcleo Zig, `core/src/sim/simple_perf.zig`): envelope
-  de voo por altitude, potências, subida, planeio, raio de curva × V, V-n e bateria (Peukert), com a área
-  segura de operação sombreada em verde em cada gráfico.
+- **Desempenho:** em ~0,1 s, as contas da planilha (núcleo Zig, `core/src/sim/simple_perf.zig`), com as
+  curvas inteiras (também fora do envelope) e a área segura em verde: envelope de voo (V_min e V_max
+  fechando no teto, V_e, V*, V de cruzeiro), potências e trações disponível × requerida, subida, planeio
+  (tangente de alcance máximo e linha de autonomia máxima), envelope de curvas (V × raio por inclinação),
+  V-n e bateria (Peukert).
 - **💾 Salvar avião / 📂 Meus aviões** (barra no topo): grava a configuração em JSON, um arquivo por avião
   com o nome que você der, numa pasta sua (padrão `~/aerosim_aeronaves`, ou `AEROSIM_PROJETOS`).
 - **Dispositivos de asa:** na Configuração, selecione a asa → *Dispositivos* → *+ adicionar*: winglet,

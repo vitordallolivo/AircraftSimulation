@@ -57,6 +57,9 @@ class SimulationTab(QtWidgets.QWidget):
         self._specs_sig = None
         self._plots_sig = None
         self.split = split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        split.setHandleWidth(10)
+        split.setChildrenCollapsible(False)
+        split.setStyleSheet("QSplitter::handle { background: #c9d3e0; } QSplitter::handle:hover { background: #7f9cc4; }")
         QtWidgets.QHBoxLayout(self).addWidget(split)
 
         side = QtWidgets.QWidget()
@@ -171,13 +174,19 @@ class SimulationTab(QtWidgets.QWidget):
                     self.form.addRow(h)
                     group = p.group
                 w = self._input(p)
-                if p.key in old:
+                if p.key in old and p.kind != "table":       # tabela: vem sempre da aeronave
                     self._set(w, old[p.key])
                 self.inputs[p.key] = w
                 w.setToolTip(p.help or p.key)
                 if isinstance(w, QtWidgets.QCheckBox):        # o texto vai na própria caixa: linha inteira
                     w.setText(p.label)
                     self.form.addRow(w)
+                elif isinstance(w, TableInput):
+                    lab = QtWidgets.QLabel(p.label)
+                    lab.setWordWrap(True)
+                    self.form.addRow(lab)
+                    self.form.addRow(w)
+                    w.edited.connect(self._commit)
                 else:
                     lab = QtWidgets.QLabel(p.label + (f" ({p.unit})" if p.unit else ""))
                     lab.setWordWrap(True)
@@ -189,6 +198,10 @@ class SimulationTab(QtWidgets.QWidget):
                     if sig_ is not None:
                         sig_.connect(lambda *_: QtCore.QTimer.singleShot(0, self.reconfigure))
             self._specs_sig = sig
+        for p in specs:                     # tabelas ligadas à aeronave (ex.: trajetória): seguem a configuração
+            w = self.inputs.get(p.key)
+            if isinstance(w, TableInput) and _norm(w.rows()) != _norm(p.default):
+                w.set_rows(p.default)
         self._set_plots(self.sim.plots_for(ac, self.params()))
 
     def _set_plots(self, specs) -> None:
@@ -201,10 +214,17 @@ class SimulationTab(QtWidgets.QWidget):
         self.plots = new
         self._plots_sig = sig
 
+    def _commit(self):
+        """o que o formulário edita da aeronave (ex.: trajetória) vai para a configuração"""
+        if self.sim.commit(self.state.aircraft, self.params()):
+            self.state.notify("mission")
+
     @staticmethod
     def _set(w, v):
         try:
-            if isinstance(w, QtWidgets.QCheckBox):
+            if isinstance(w, TableInput):
+                w.set_rows(v)
+            elif isinstance(w, QtWidgets.QCheckBox):
                 w.setChecked(bool(v))
             elif isinstance(w, QtWidgets.QComboBox):
                 if w.findText(str(v)) >= 0:
@@ -219,7 +239,10 @@ class SimulationTab(QtWidgets.QWidget):
             pass
 
     def _input(self, p):
-        if p.kind == "bool":
+        if p.kind == "table":
+            w = TableInput(p.columns)
+            w.set_rows(p.default)
+        elif p.kind == "bool":
             w = QtWidgets.QCheckBox()
             w.setChecked(bool(p.default))
         elif p.kind == "choice":
@@ -245,7 +268,9 @@ class SimulationTab(QtWidgets.QWidget):
     def params(self) -> dict:
         out = {}
         for k, w in self.inputs.items():
-            if isinstance(w, QtWidgets.QCheckBox):
+            if isinstance(w, TableInput):
+                out[k] = w.rows()
+            elif isinstance(w, QtWidgets.QCheckBox):
                 out[k] = w.isChecked()
             elif isinstance(w, QtWidgets.QComboBox):
                 out[k] = w.currentText()
@@ -370,6 +395,104 @@ class SimulationTab(QtWidgets.QWidget):
                                                         "Excel (*.xlsx);;CSV (*.csv)")
         if path:
             self.msg.setText(export_result(self.result, path))
+
+
+def _norm(rows) -> list:
+    return [{k: (round(float(v), 6) if isinstance(v, (int, float)) else ("" if v is None else str(v)))
+             for k, v in r.items()} for r in rows or []]
+
+
+class TableInput(QtWidgets.QWidget):
+    """tabela editável (uma linha por item; colunas numéricas, texto ou listas de opções) + / −"""
+    edited = QtCore.pyqtSignal()
+
+    def __init__(self, columns):
+        super().__init__()
+        self.columns = list(columns)
+        v = QtWidgets.QVBoxLayout(self)
+        v.setContentsMargins(0, 0, 0, 0)
+        self.t = QtWidgets.QTableWidget(0, len(self.columns))
+        self.t.setHorizontalHeaderLabels([c[1] for c in self.columns])
+        self.t.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.t.horizontalHeader().setStretchLastSection(True)
+        self.t.setMinimumHeight(240)
+        self.t.itemChanged.connect(lambda *_: self.edited.emit())
+        v.addWidget(self.t)
+        h = QtWidgets.QHBoxLayout()
+        for txt, fn in (("+ adicionar linha", self._add), ("− remover a selecionada", self._rem),
+                        ("↑", lambda: self._move(-1)), ("↓", lambda: self._move(1))):
+            b = QtWidgets.QPushButton(txt)
+            b.clicked.connect(fn)
+            h.addWidget(b)
+        v.addLayout(h)
+
+    def _cell(self, r, c, val):
+        key, _, kind = self.columns[c]
+        if isinstance(kind, (tuple, list)):
+            cb = QtWidgets.QComboBox()
+            cb.addItems([str(o) for o in kind])
+            cb.setCurrentText(str(val))
+            cb.currentTextChanged.connect(lambda *_: self.edited.emit())
+            self.t.setCellWidget(r, c, cb)
+        else:
+            txt = "" if val is None else (f"{val:g}" if isinstance(val, (int, float)) else str(val))
+            self.t.setItem(r, c, QtWidgets.QTableWidgetItem(txt))
+
+    def set_rows(self, rows):
+        self.t.blockSignals(True)
+        self.t.setRowCount(0)
+        for row in rows or []:
+            r = self.t.rowCount()
+            self.t.insertRow(r)
+            for c, (key, _, _) in enumerate(self.columns):
+                self._cell(r, c, row.get(key, ""))
+        self.t.blockSignals(False)
+
+    def rows(self) -> list[dict]:
+        out = []
+        for r in range(self.t.rowCount()):
+            row = {}
+            for c, (key, _, kind) in enumerate(self.columns):
+                w = self.t.cellWidget(r, c)
+                if w is not None:
+                    row[key] = w.currentText()
+                    continue
+                it = self.t.item(r, c)
+                txt = it.text().strip() if it else ""
+                if kind == "float":
+                    try:
+                        row[key] = float(txt.replace(",", ".")) if txt else None
+                    except ValueError:
+                        row[key] = None
+                else:
+                    row[key] = txt
+            out.append(row)
+        return out
+
+    def _add(self):
+        rows = self.rows()
+        r = self.t.currentRow()
+        new = dict(rows[r]) if 0 <= r < len(rows) else (dict(rows[-1]) if rows else {})
+        rows.insert((r + 1) if r >= 0 else len(rows), new)
+        self.set_rows(rows)
+        self.edited.emit()
+
+    def _rem(self):
+        r = self.t.currentRow()
+        rows = self.rows()
+        if 0 <= r < len(rows) and len(rows) > 1:
+            rows.pop(r)
+            self.set_rows(rows)
+            self.edited.emit()
+
+    def _move(self, d):
+        r = self.t.currentRow()
+        rows = self.rows()
+        if 0 <= r < len(rows) and 0 <= r + d < len(rows):
+            rows[r], rows[r + d] = rows[r + d], rows[r]
+            self.set_rows(rows)
+            self.t.setCurrentCell(r + d, 0)
+            self.edited.emit()
 
 
 def _has_data(spec, res: SimResult) -> bool:

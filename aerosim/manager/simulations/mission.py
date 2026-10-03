@@ -20,7 +20,7 @@ import numpy as np
 
 from aerosim.interfaces.backend import LogChunk
 from aerosim.interfaces.simulation import Check, ParamSpec, PlotSpec, RunContext, SimResult
-from aerosim.model.mission import MissionEvent, level_turn, takeoff_runway
+from aerosim.model.mission import Leg, MissionEvent, level_turn, takeoff_runway
 from aerosim.model.universal import build_model
 
 from .. import flightplots as FP
@@ -35,6 +35,45 @@ END = "fim da missão (parada na pista)"
 TO_MODES = ("otimizar o acionamento (x_warning e z_warning)", "como está na Configuração")
 GP = "Pista (padrão: Configuração → Pista)"
 CHUNK = 0.5
+
+
+LEG_COLS = (("name", "etapa", "str"), ("kind", "tipo", ("reta", "curva")),
+            ("length", "reta: comprimento (m)", "float"), ("radius", "curva: raio (m)", "float"),
+            ("angle", "curva: ângulo (°)", "float"), ("side", "curva: lado", ("direita", "esquerda")),
+            ("h", "altura no fim (m; vazio: mantém)", "float"), ("V", "V no fim (m/s; vazio: mantém)", "float"),
+            ("role", "papel", ("—", "decolagem", "pouso")))
+
+
+def legs_to_rows(legs) -> list[dict]:
+    st = lambda l: l.kind == "straight"
+    return [dict(name=l.name, kind="reta" if st(l) else "curva", length=l.length if st(l) else None,
+                 radius=None if st(l) else l.radius, angle=None if st(l) else l.angle,
+                 side="direita" if l.side >= 0 else "esquerda", h=l.h, V=l.V,
+                 role="decolagem" if l.takeoff else ("pouso" if l.landing else "—")) for l in legs]
+
+
+def rows_to_legs(rows, old) -> list:
+    out = []
+    for i, r in enumerate(rows):
+        base = old[i] if i < len(old) else Leg()
+        f = lambda k, d: float(r[k]) if r.get(k) not in (None, "") else d
+        out.append(Leg("straight" if r.get("kind") == "reta" else "turn", length=f("length", base.length),
+                       radius=f("radius", base.radius), angle=f("angle", base.angle),
+                       side=1 if r.get("side", "direita") == "direita" else -1,
+                       h=f("h", None), V=f("V", None), name=str(r.get("name") or f"perna {i}"),
+                       takeoff=r.get("role") == "decolagem", landing=r.get("role") == "pouso",
+                       clearance=base.clearance if base.landing or r.get("role") != "pouso" else 50.0))
+    return out
+
+
+def _wing_inc(ac) -> float:
+    w = ac.wing
+    return float(w.incidence) if w is not None else 0.0
+
+
+def _angles(log, ev, ac, refs) -> dict:
+    i = _wing_inc(ac)
+    return FP.takeoff_angles(log, ev, i, refs["alpha_stall"] + i)
 
 
 def _refs(ac, info, xw, zw) -> dict:
@@ -72,7 +111,12 @@ class MissionSimulation(SimulationBase):
                            help="altura sobre a superfície de partida que conta como decolado; ≤ 0 na mesa: quanto pode "
                                 "afundar abaixo dela")]
         if mode == M_MIS:
-            P += [ParamSpec("takeoff", "Decolagem", TO_MODES[0], kind="choice", choices=TO_MODES, group="Decolagem")]
+            P += [ParamSpec("legs", "Trajetória por partes (cada linha é uma etapa; grava na aeronave)",
+                            legs_to_rows(ac.mission.legs) if ac is not None else [], kind="table", columns=LEG_COLS,
+                            group="Trajetória"),
+                  ParamSpec("glyph", "Desenhar o avião no 3D a cada (0 = não)", 10.0, minimum=0, maximum=500, unit="m",
+                            group="Trajetória"),
+                  ParamSpec("takeoff", "Decolagem", TO_MODES[0], kind="choice", choices=TO_MODES, group="Decolagem")]
             P += pista
             P += [ParamSpec("start", "Começar de", "chão", kind="choice",
                             choices=("chão",) + tuple(f"início: {n}" for n in legs[1:]), group="Etapas",
@@ -101,6 +145,18 @@ class MissionSimulation(SimulationBase):
                 ParamSpec("wind", "Com vento", True, kind="bool", group="Ambiente")]
         return P
 
+    def commit(self, aircraft, values) -> bool:
+        rows = values.get("legs")
+        if not rows:
+            return False
+        new = rows_to_legs(rows, aircraft.mission.legs)
+        if new == aircraft.mission.legs:
+            return False
+        n = len(new)
+        aircraft.mission.legs = new
+        aircraft.mission.events = [e for e in aircraft.mission.events if e.leg < n]
+        return True
+
     # ------------------------------------------------------------------ gráficos
     def plots(self):
         return self.plots_for(None, {})
@@ -116,6 +172,8 @@ class MissionSimulation(SimulationBase):
                 PlotSpec("zy", "Plano ZY — vista de frente", "e", ("h",), "e (m) — leste", "h (m)", source="series:zy_*",
                          live_ys=("h",))]
         takeoff = [
+            PlotSpec("dt", "Decolagem: ângulo da aeronave (θ) e da asa (θ + incidência) no tempo", "t", ("y",), "t (s)",
+                     "ângulo (°)", live=False, source="series:dt_*"),
             PlotSpec("dh", "Decolagem: altura sobre a pista × posição (z_warning e x_warning em vermelho)", "n", ("y",),
                      "n (m) — posição na pista", "altura (m)", source="series:dh_*"),
             PlotSpec("dv", "Decolagem: velocidades × posição na pista", "n", ("y",), "n (m)", "V (m/s)",
@@ -168,7 +226,9 @@ class MissionSimulation(SimulationBase):
             t("roc", "Razão de subida e descida", "dh/dt (m/s)"),
             t("nz", "Fator de carga", "n_z (g)", ("nz",)),
             t("motor", "Motor: rotação, corrente e tração", "rpm/100, A, N"),
-            t("ene", "Energia gasta", "Wh")]
+            t("ene", "Energia gasta", "Wh"),
+            t("bat", "Consumo de bateria acumulado por etapa (fundo: etapa)", "mAh"),
+            t("batp", "Descarga estimada da bateria (Coulomb e Peukert) e corrente", "% da capacidade / A")]
         if has_tank:
             out.append(t("slosh", "Sloshing: pêndulo equivalente do 1º modo", "ângulo (°)"))
         out += [opt] + takeoff
@@ -192,6 +252,8 @@ class MissionSimulation(SimulationBase):
     # ------------------------------------------------------------------ execução
     def run(self, ctx: RunContext) -> SimResult:
         mode = self.param(ctx, "mode")
+        if mode == M_MIS and ctx.params.get("legs"):
+            self.commit(ctx.aircraft, ctx.params)            # a trajetória da tabela
         ac, info = self.prepare(ctx)
         p = ctx.params
         if "slosh" in p:
@@ -275,6 +337,7 @@ class MissionSimulation(SimulationBase):
         S = self._opt_series(tried, best, refs)
         if len(log):
             S.update(FP.takeoff_window(log, ev, refs, ac.airfield))
+            S.update(_angles(log, ev, ac, refs))
             S.update({k: v for k, v in FP.trajectory(log, ev, ["decolagem", "cruzeiro"]).items()
                       if k.startswith(("t3_", "xz_"))})
             S.update(FP.terrain_profile(log, "xz_"))
@@ -354,12 +417,24 @@ class MissionSimulation(SimulationBase):
         target = (ac.payload.target_n, ac.payload.target_e) if k_drop is not None else None
         pl = ac.airfield.pads(mission)
         pads = [dict(q, landing=i == len(pl) - 1 and ac.airfield.landing_on == "plataforma") for i, q in enumerate(pl)]
-        table = []
+        table, brows = [], []
         if len(log):
             series.update(FP.trajectory(log, ev, legs, target))
             series.update(FP.time_series(log, ev, legs, refs))
+            step = float(ctx.params.get("glyph", 10.0) or 0.0)
+            if step > 0:
+                ext = float(max(np.ptp(log["n"]), np.ptp(log["e"]), 10.0))
+                series.update(FP.aircraft_glyphs(log, ev, legs, step, max(build_model(ac).b, ext / 35)))
+            cap = sum(u.battery.capacity_mAh for u in ac.propulsion if u.enabled)
+            if ac.shared_battery and ac.propulsion:
+                cap = ac.propulsion[0].battery.capacity_mAh
+            brows, bS = FP.battery_by_stage(log, ev, legs, cap)
+            series.update(bS)
+            if brows:
+                series["consumo_por_etapa"] = columns(brows)
             if k0 == 0:
                 series.update(FP.takeoff_window(log, ev, refs, ac.airfield))
+                series.update(_angles(log, ev, ac, refs))
                 if best is None:                  # decolagem da Configuração: julga pelo registro
                     n_dec, h_min, xe, zs, ok = TO.judge(log, ev, refs["x_warning"], refs["z_warning"])
                     r_ = TO.TakeoffResult(ac.takeoff.sR, ac.takeoff.de1, n_dec, h_min, xe, zs, ok, "")
@@ -377,6 +452,16 @@ class MissionSimulation(SimulationBase):
                        I_pico=ev["Ipeak"], checkpoints=", ".join(store.names()))
         if best is not None:
             summary.update(acionamento_profundor_m=best.s, deflexao_graus=best.de, n_dec=best.n_dec)
+        if len(log) and brows:
+            for r_ in brows:          # como a Tabela 5.1: tempo, corrente, consumo
+                summary[f"consumo — {r_['etapa']}"] = (f"{r_['tempo_s']:.1f} s, {r_['corrente_media_A']:.1f} A, "
+                                                       f"{r_['consumo_mAh']:.1f} mAh ({r_['descarga_peukert_pct']:.1f} % Peukert)")
+            tot = brows[-1]
+            checks.append(Check("ok" if tot["descarga_peukert_pct"] < 80 else "falha", "bateria ao fim do trecho",
+                                f"{tot['consumo_mAh']:.0f} mAh = {tot['descarga_peukert_pct']:.0f} % (Peukert)",
+                                "< 80 % da capacidade", "" if tot["descarga_peukert_pct"] < 80 else
+                                "a missão gasta quase toda a bateria", "" if tot["descarga_peukert_pct"] < 80 else
+                                "bateria maior, menos tempo de voo ou menos corrente", "Bateria"))
         if notes:
             summary["observação"] = "; ".join(notes)
         return SimResult(log=log, series=series, summary=summary, events=ev, status=st, checks=checks)
@@ -627,6 +712,7 @@ class MissionSimulation(SimulationBase):
                                    refs["z_warning"], over(mt, x), dtlog=0.005, log=True)
             if len(log):
                 S.update(FP.takeoff_window(log, res.events, refs, ac.airfield))
+                S.update(_angles(log, res.events, ac, refs))
                 S.update({k: v for k, v in FP.trajectory(log, res.events, ["decolagem", "cruzeiro"]).items()
                           if k.startswith(("t3_", "xz_"))})
             checks += self._takeoff_checks(ac, best, refs, ctrl)

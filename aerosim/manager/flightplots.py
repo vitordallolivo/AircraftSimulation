@@ -371,3 +371,105 @@ def lapes_window(T: LogChunk, ev: dict, target_n: float | None = None, before: f
         S["lx_alvo"] = {"n": np.array([target_n]), "h": np.array([0.0]), "_symbol": "t", "_color": "#000000",
                         "_size": 14}
     return S
+
+
+# ------------------------------------------------------------------ avião ao longo da trajetória
+# silhueta no corpo (x frente, y direita, z baixo), em semienvergaduras: fuselagem, asa, EH e EV
+_SHAPE = np.array([[0.45, 0, 0], [-0.75, 0, 0], [0.05, -1, 0], [0.05, 1, 0], [-0.05, -1, 0], [-0.05, 1, 0],
+                   [0.05, -1, 0], [-0.05, -1, 0], [0.05, 1, 0], [-0.05, 1, 0],
+                   [-0.7, -0.35, 0], [-0.7, 0.35, 0], [-0.7, 0, 0], [-0.78, 0, -0.32]], float)
+
+
+def _rot(phi, th, psi):
+    cf, sf, ct, st, cp, sp = np.cos(phi), np.sin(phi), np.cos(th), np.sin(th), np.cos(psi), np.sin(psi)
+    return np.array([[ct * cp, sf * st * cp - cf * sp, cf * st * cp + sf * sp],
+                     [ct * sp, sf * st * sp + cf * cp, cf * st * sp - sf * cp],
+                     [-st, sf * ct, cf * ct]])
+
+
+def aircraft_glyphs(T: LogChunk, ev: dict, leg_names: list[str], step: float, span: float, prefix="t3_") -> dict:
+    """o avião desenhado a cada `step` metros de trajetória, na atitude daquele instante (cor da etapa).
+    Cada tabela traz o centro (e, n, h) e o deslocamento da silhueta (oe, on, oh) de cada ponta de segmento;
+    o 3D estica só a altura do centro, não a silhueta. `span`: envergadura desenhada (m)."""
+    if step <= 0 or not len(T):
+        return {}
+    n, e, h = (np.asarray(T[k], float) for k in ("n", "e", "h"))
+    ds = np.r_[0.0, np.hypot(np.diff(n), np.diff(e))]
+    s = np.cumsum(ds)
+    marks = np.arange(0.0, s[-1], step)
+    idx = np.unique(np.searchsorted(s, marks).clip(0, len(s) - 1))
+    et = stages(T, ev)
+    names = stage_names(leg_names)
+    shape = _SHAPE * (span / 2)
+    out = {}
+    for k in np.unique(et[idx]):
+        sel = idx[et[idx] == k]
+        C, O = [], []
+        for i in sel:
+            R = _rot(T["phi"][i], T["theta"][i], T["psi"][i])
+            p = shape @ R.T                                   # NED
+            O.append(np.column_stack([p[:, 1], p[:, 0], -p[:, 2]]))
+            C.append(np.repeat([[e[i], n[i], h[i]]], len(shape), axis=0))
+        C, O = np.vstack(C), np.vstack(O)
+        out[f"{prefix}✈ {names[k]}"] = {"e": C[:, 0], "n": C[:, 1], "h": C[:, 2], "oe": O[:, 0], "on": O[:, 1],
+                                        "oh": O[:, 2], "_segments": 1, "_color": stage_color(int(k)), "_nolegend": 1,
+                                        "_width": 1.6}
+    return out
+
+
+# ------------------------------------------------------------------ bateria por etapa
+def battery_by_stage(T: LogChunk, ev: dict, leg_names: list[str], capacity_mAh: float, peukert_n: float = 1.05,
+                     Rt_h: float = 1.0) -> tuple[list[dict], dict]:
+    """tempo, corrente média, consumo (mAh) e descarga estimada por etapa (Coulomb e Peukert, Traub 2011);
+    devolve (linhas da tabela, séries do gráfico de consumo acumulado)"""
+    if not len(T) or "Ibat" not in T.columns:
+        return [], {}
+    t = np.asarray(T["t"], float)
+    I = np.clip(np.asarray(T["Ibat"], float), 0, None)
+    dt = np.r_[np.diff(t), 0.0]
+    dt = np.where(dt > 0, dt, 0.0)
+    C_Ah = max(capacity_mAh / 1000.0, 1e-9)
+    # Peukert: com corrente I o pacote dura t(I) = R_t (C / (I R_t))^n -> fração gasta = Σ dt / t(I)
+    tI = Rt_h * 3600.0 * np.where(I > 1e-6, (C_Ah / np.maximum(I * Rt_h, 1e-9)) ** peukert_n, np.inf)
+    mAh = np.cumsum(I * dt) / 3.6
+    pk = np.cumsum(np.where(np.isfinite(tI), dt / tI, 0.0)) * 100
+    et = stages(T, ev)
+    names = stage_names(leg_names)
+    rows = []
+    for k in range(len(names)):
+        s = et == k
+        if s.sum() < 2:
+            continue
+        dur = float(dt[s].sum())
+        q = float((I[s] * dt[s]).sum() / 3.6)
+        rows.append(dict(etapa=names[k], tempo_s=dur, corrente_media_A=q * 3.6 / dur if dur > 0 else 0.0,
+                         consumo_mAh=q, descarga_peukert_pct=float(np.sum(np.where(np.isfinite(tI[s]), dt[s] / tI[s], 0)) * 100)))
+    rows.append(dict(etapa="total", tempo_s=float(dt.sum()), corrente_media_A=float((I * dt).sum() / max(dt.sum(), 1e-9)),
+                     consumo_mAh=float(mAh[-1]), descarga_peukert_pct=float(pk[-1])))
+    S = stage_spans(T, ev, leg_names, "bat_")
+    S["bat_consumo acumulado (mAh)"] = {"t": t, "y": mAh, "_color": "#1f77b4", "_width": 2.2}
+    S[f"bat_capacidade ({capacity_mAh:.0f} mAh)"] = {"_hline": capacity_mAh, "_color": "#d62728", "_width": 2}
+    S2 = stage_spans(T, ev, leg_names, "batp_")
+    S2["batp_descarga estimada: Coulomb (%)"] = {"t": t, "y": mAh / capacity_mAh * 100, "_color": "#1f77b4", "_width": 2}
+    S2["batp_descarga estimada: Peukert (%)"] = {"t": t, "y": pk, "_color": "#d62728", "_width": 2}
+    S2["batp_corrente da bateria (A)"] = {"t": t, "y": I, "_color": "#7f7f7f", "_width": 1}
+    S.update(S2)
+    return rows, S
+
+
+def takeoff_angles(T: LogChunk, ev: dict, wing_incidence_deg: float, alpha_stall_deg: float, prefix="dt_") -> dict:
+    """ângulo da aeronave (θ) e da asa (θ + incidência) no tempo, na decolagem, com o estol da asa"""
+    t = np.asarray(T["t"], float)
+    t1 = ev["tHt"] + 4.0 if ev.get("tHt", -1) > 0 else t[-1]
+    s = t <= t1
+    th = np.degrees(np.asarray(T["theta"], float))[s]
+    S = {f"{prefix}ângulo da aeronave θ": {"t": t[s], "y": th, "_color": "#1f77b4", "_width": 2.2},
+         f"{prefix}ângulo da asa θ + {wing_incidence_deg:g}°": {"t": t[s], "y": th + wing_incidence_deg,
+                                                                "_color": "#ff7f0e", "_width": 2.2},
+         f"{prefix}α da asa (ar)": {"t": t[s], "y": np.degrees(np.asarray(T["alpha"], float))[s] + wing_incidence_deg,
+                                    "_color": "#2ca02c", "_width": 1.0, "_dash": "dash"},
+         f"{prefix}estol da asa ({alpha_stall_deg:.0f}°)": {"_hline": alpha_stall_deg, "_color": "#d62728", "_dash": "dot"}}
+    for name, key in (("aciona o profundor", "tR"), ("decolou", "tLO"), ("piloto automático", "tHt")):
+        if ev.get(key, -1) > 0:
+            S[f"{prefix}{name}"] = {"_vline": float(ev[key]), "_color": "#7f7f7f", "_dash": "dot"}
+    return S

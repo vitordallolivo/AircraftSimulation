@@ -114,9 +114,10 @@ class NumberField(QtWidgets.QWidget):
         lay = QtWidgets.QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         self.label = QtWidgets.QLabel(label)
-        self.label.setMinimumWidth(110)
+        self.label.setWordWrap(True)
         self.label.setToolTip(label)
         self.spin = _Spin()
+        self.spin.setMinimumWidth(105)
         self.spin.setDecimals(min(_decimals(step) + 1, 6))
         self.spin.setRange(-1e9, 1e9)
         self.spin.setSingleStep(step)
@@ -264,6 +265,7 @@ class DataclassForm(QtWidgets.QWidget):
         h.setContentsMargins(0, 0, 0, 0)
         auto = QtWidgets.QCheckBox(f"{label}: auto")
         spin = QtWidgets.QDoubleSpinBox()
+        spin.setMinimumWidth(105)
         spin.setDecimals(5)
         spin.setRange(-1e6, 1e6)
         spin.setSingleStep(0.01)
@@ -281,9 +283,10 @@ class DataclassForm(QtWidgets.QWidget):
         h = QtWidgets.QHBoxLayout(box)
         h.setContentsMargins(0, 0, 0, 0)
         lb = QtWidgets.QLabel(label)
-        lb.setMinimumWidth(90)
-        h.addWidget(lb, 3)
-        h.addWidget(w, 7)
+        lb.setWordWrap(True)
+        w.setMinimumWidth(105)
+        h.addWidget(lb, 4)
+        h.addWidget(w, 6)
         return box
 
     def _set(self, name, value):

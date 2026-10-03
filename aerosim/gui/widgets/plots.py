@@ -91,6 +91,14 @@ class _Plot2D(QtWidgets.QWidget):
             width = float(tab.get("_width", 1.8))
             dash = tab.get("_dash")
             label = tab.get("_label", rest)
+            if "_ylim" in tab or "_xlim" in tab:      # escala do gráfico (as curvas continuam inteiras)
+                if "_ylim" in tab:
+                    p.vb.enableAutoRange(axis="y", enable=False)
+                    p.setYRange(*tab["_ylim"], padding=0.02)
+                if "_xlim" in tab:
+                    p.vb.enableAutoRange(axis="x", enable=False)
+                    p.setXRange(*tab["_xlim"], padding=0.02)
+                continue
             # linhas e faixas de referência
             if "_vline" in tab or "_hline" in tab:
                 vert = "_vline" in tab
@@ -237,6 +245,15 @@ class _Plot3D(QtWidgets.QWidget):
         self.zscale = k
         for pts, color, tab in items:
             q = pts * np.array([1.0, 1.0, k])
+            if tab.get("_segments"):                 # silhuetas: centro esticado, desenho em escala real
+                off = np.column_stack([np.asarray(tab["oe"], float), np.asarray(tab["on"], float),
+                                       np.asarray(tab["oh"], float)])
+                c = pg.mkColor(color)
+                it = self.gl.GLLinePlotItem(pos=q + off, color=(c.redF(), c.greenF(), c.blueF(), 1.0),
+                                            width=float(tab.get("_width", 1.5)), antialias=True, mode="lines")
+                self.view.addItem(it)
+                self.items.append(it)
+                continue
             if tab.get("_symbol"):
                 c = pg.mkColor(color)
                 it = self.gl.GLScatterPlotItem(pos=q, color=(c.redF(), c.greenF(), c.blueF(), 1.0),

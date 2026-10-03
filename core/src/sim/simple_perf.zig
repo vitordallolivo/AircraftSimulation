@@ -101,6 +101,7 @@ pub const SimpleSummary = extern struct {
     V_range_max: f64 = 0,
     t_max_formula: f64 = 0, // autonomia máxima pela fórmula fechada de Traub (h)
     ceiling_ok: f64 = 0, // 1: há V com P_d ≥ P_r
+    V_LDmax: f64 = 0, // V de L/D máximo (cruzeiro de maior alcance): C_L = √(C_D0/K)
 };
 
 pub fn density(c: *const SimpleCfg) f64 {
@@ -176,14 +177,17 @@ pub fn compute(c: *const SimpleCfg, rows: []SimpleRow, sum: *SimpleSummary) usiz
         const Pel = r.Pr / c.bat_eta;
         r.t_bat = std.math.pow(f64, c.bat_Rt, 1.0 - c.bat_n) * std.math.pow(f64, c.bat_V * c.bat_C / Pel, c.bat_n);
         r.range_bat = r.t_bat * 3600.0 * V;
-        if (r.ok > 0) {
+        // V_min e V_max onde P_d = P_r em toda a faixa (como na planilha: sem cortar no C_Lmax)
+        if (CL > 0) {
             const ex = r.Pd - r.Pr;
             if (ex >= 0) sum.ceiling_ok = 1;
             if (!std.math.isNan(prev_ex)) {
-                if (prev_ex < 0 and ex >= 0) sum.Vmin = V;
+                if (prev_ex < 0 and ex >= 0 and sum.Vmin == 0) sum.Vmin = V;
                 if (prev_ex >= 0 and ex < 0) sum.Vmax = V;
             } else if (ex >= 0) sum.Vmin = V;
             prev_ex = ex;
+        }
+        if (r.ok > 0) {
             if (r.RC > sum.RCmax) {
                 sum.RCmax = r.RC;
                 sum.V_RCmax = V;
@@ -217,7 +221,7 @@ pub fn compute(c: *const SimpleCfg, rows: []SimpleRow, sum: *SimpleSummary) usiz
         n += 1;
     }
     if (sum.ceiling_ok > 0 and sum.Vmax == 0) sum.Vmax = c.V_hi; // ainda sobra potência no fim da faixa
-    sum.Vmin = @max(sum.Vmin, sum.Vs);
+    sum.V_LDmax = @sqrt(2.0 * WS / (rho * @sqrt(c.CD0 / c.K)));
     // raio mínimo (curva sustentada no T/W máximo), como na planilha
     sum.TW_max = TWmax;
     const d = 1.0 - 4.0 * c.K * c.CD0 / (TWmax * TWmax);

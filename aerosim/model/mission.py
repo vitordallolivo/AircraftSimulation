@@ -108,9 +108,12 @@ class Mission:
 
 def circuit(radius: float = 250.0 / math.pi, straight: float = 270.0, front: float = 100.0, hc: float = 15.0,
             hL: float = 3.0, Vc: float = 15.0, VL: float = 13.5, Vap: float = 13.0, s_drop: float | None = None,
-            s_gust: float = 135.0, clearance: float = 50.0, radii: list[float] | None = None) -> Mission:
-    """o circuito do código original: decolagem, 4 curvas, passagem LAPES, pouso"""
-    R = radii or [radius] * 4
+            s_gust: float = 135.0, clearance: float = 50.0, radii: list[float] | None = None,
+            landing_offset: float = 20.0) -> Mission:
+    """o circuito do código original: decolagem, 4 curvas, passagem LAPES, pouso. O pouso fica
+    `landing_offset` m a leste da pista de decolagem (a última curva é um pouco mais fechada), para
+    ver o pouso separado da decolagem"""
+    R = radii or [radius] * 3 + [radius - landing_offset / 2]
     back = straight - front
     legs = [
         Leg("straight", length=front, h=hc, V=Vc, name="decolagem + subida", takeoff=True),

@@ -107,8 +107,9 @@ def test_performance_tab_is_fast_and_shaded(manager):
     t = time.time()
     r = manager.run("performance", TEMPLATES["conventional"](), {"h_list": "0, 1000"})
     assert time.time() - t < 5.0                               # só contas, sem piloto
-    assert "env_região de voo nivelado (P_d ≥ P_r e V ≥ V_e)" in r.series
-    assert any(k.startswith("scur_★") for k in r.series) and "spot_h = 0 m: sobra de potência" in r.series
+    assert {"env_área segura", "env_V_min", "env_V_max", "scur_área segura", "spot_h = 0 m: sobra de potência"} <= set(r.series)
+    # curvas inteiras, também fora do envelope (como na planilha)
+    assert np.isfinite(r.series["spot_h = 0 m: requerida P_r"]["y"]).sum() > 0.9 * len(r.series["spot_h = 0 m: requerida P_r"]["y"])
 
 
 def test_example_aircraft_folder_lists_everything():
@@ -119,3 +120,17 @@ def test_example_aircraft_folder_lists_everything():
     assert len(items) >= 7
     for it in items:
         assert load_file(it.path).surfaces
+
+
+def test_mission_battery_glyphs_and_editable_trajectory(manager):
+    ac = TEMPLATES["conventional"]()
+    sim = manager.get("mission")
+    rows = sim.parameters_for(ac, {})[1].default                     # tabela da trajetória
+    rows[2]["length"] = 150.0                                         # encurta o cruzeiro 1
+    assert sim.commit(ac, {"legs": rows}) and ac.mission.legs[2].length == 150.0
+    r = manager.run("mission", ac, {"until": f"fim: {ac.mission.names()[3]}", "glyph": 10.0})
+    assert any(k.startswith("t3_✈") for k in r.series)               # avião desenhado na trajetória
+    c = r.series["consumo_por_etapa"]
+    assert c["etapa"][-1] == "total" and c["consumo_mAh"][-1] > 0
+    assert any(k.startswith("dt_ângulo da asa") for k in r.series)    # θ e θ + incidência na decolagem
+    assert ac.mission.segments()[-1]["e0"] == pytest.approx(20.0)     # pouso 20 m a leste da decolagem
