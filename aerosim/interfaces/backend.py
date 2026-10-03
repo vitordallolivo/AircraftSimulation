@@ -13,7 +13,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .translator import IModelTranslator
 
 import numpy as np
 
@@ -100,6 +103,17 @@ class ISimSession(ABC):
     def aero_coeffs(self, V: float, alpha: float, beta: float = 0.0,
                     de: float = 0.0, da: float = 0.0, dr: float = 0.0) -> dict[str, float]: ...
 
+    def aero_coeffs_ex(self, V: float, alpha: float, beta: float = 0.0, p: float = 0.0, q: float = 0.0,
+                       r: float = 0.0, de: float = 0.0, da: float = 0.0, dr: float = 0.0,
+                       ref: list[float] | None = None) -> dict[str, float]:
+        """coeficientes com rotação (rad/s) e momentos no ponto `ref` do corpo (None: CG)"""
+        raise NotImplementedError
+
+    def linearize(self, V: float) -> dict[str, Any]:
+        """equilíbrio nivelado em V e modelo linear: A (8×8) sobre (u, v, w, p, q, r, φ, θ),
+        B (8×4) sobre (δe, δa, δr, acelerador), mais o ponto (alpha, de, thr, phi, da, dr, m, I, cg, ok)"""
+        raise NotImplementedError
+
     @abstractmethod
     def prop_point(self, index: int, V: float, thr: float = 1.0) -> dict[str, float]: ...
 
@@ -135,9 +149,21 @@ class ISimSession(ABC):
 
 
 class ISimBackend(ABC):
-    """fábrica de sessões + descrição do núcleo"""
+    """fábrica de sessões + descrição do núcleo. `translator` leva o modelo universal
+    (`aerosim.model.universal.AircraftModel`) ao SimSpec deste núcleo: as camadas de cima nunca
+    montam o SimSpec à mão"""
 
     name: str = "backend"
+
+    @property
+    @abstractmethod
+    def translator(self) -> "IModelTranslator": ...
+
+    def session_for(self, model, mission=None, overrides: dict | None = None) -> "ISimSession":
+        """sessão já configurada com o modelo universal (use com `with`)"""
+        s = self.open_session()
+        s.configure(self.translator.to_native(model, mission=mission, overrides=overrides))
+        return s
 
     @abstractmethod
     def open_session(self) -> ISimSession: ...

@@ -6,7 +6,7 @@ import math
 import numpy as np
 
 from aerosim.interfaces.simulation import ParamSpec, PlotSpec, RunContext, SimResult
-from aerosim.model.compile import compile_aircraft
+from aerosim.model.universal import build_model
 
 from .base import SimulationBase
 
@@ -39,8 +39,7 @@ class PolarSimulation(SimulationBase):
         de = math.radians(self.param(ctx, "de"))
         al = np.arange(self.param(ctx, "a0"), self.param(ctx, "a1") + 1e-9, self.param(ctx, "da"))
         rows = []
-        with ctx.backend.open_session() as s:
-            s.configure(compile_aircraft(ac))
+        with ctx.backend.session_for(build_model(ac)) as s:
             for a in al:
                 c = s.aero_coeffs(V, math.radians(a))
                 cm = s.aero_coeffs(V, math.radians(a), de=-de)

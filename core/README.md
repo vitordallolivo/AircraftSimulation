@@ -17,6 +17,7 @@ flowchart LR
         DYN["dynamics.zig<br/>f(t,x) e RK4 em SIMD"]
         TRIM["trim.zig<br/>Newton, desempenho"]
         ENV["envelope.zig<br/>envelope por altitude"]
+        LIN["linear.zig<br/>modelo linear A, B"]
         ST["state.zig<br/>vetor de estados"]
         BENCH["bench.zig<br/>medições"]
     end
@@ -77,6 +78,8 @@ Opções: `-Dfast_math` (padrão `true`), `-Dstrip` (padrão: sim fora do Debug)
 | `aerosim_trim`, `aerosim_performance` | equilíbrio e tabela de desempenho por V |
 | `aerosim_envelope`, `aerosim_envelope_curve` | envelope por altitude (V_min, V_max, V_e, V*, V_cru, teto) e as curvas T_d, T_r |
 | `aerosim_aero_coeffs`, `aerosim_prop_point`, `aerosim_mass_props` | polar, curva de tração, massa/CG/inércia |
+| `aerosim_aero_coeffs_ex` | coeficientes com rotação (p, q, r) e momentos em qualquer ponto (derivadas de amortecimento, ponto neutro, momento no trem) |
+| `aerosim_linearize(slot, V, &LinModel)` | trima nivelado (Levenberg-Marquardt em α, δe, acelerador, φ, δa, δr; longitudinal com peso maior) e devolve A (8×8) e B (8×4) do corpo rígido com comandos congelados |
 | `aerosim_bench_math`, `aerosim_bench_dynamics` | medições (ver abaixo) |
 
 Erros: dentro do núcleo são *error unions* do Zig (`ConfigError`, `StateError`); só na fronteira viram

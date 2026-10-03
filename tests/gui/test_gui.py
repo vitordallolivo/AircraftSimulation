@@ -98,3 +98,27 @@ def test_envelope_export_xlsx(app, manager, tmp_path, desempenho_xlsx, mapping_p
     assert head[:7] == ["h", "rho", "Vmin", "Vmax", "Ve", "Vman", "Vcru"]
     assert sh.max_row == len(res.series["envelope_planilha"]["h"]) + 1
     assert "resumo" in wb.sheetnames
+
+
+def test_stability_and_aero_tabs(app, manager):
+    from aerosim.gui.state import AppState
+    from aerosim.gui.tabs.simulation_tab import SimulationTab
+    from aerosim.model.templates import conventional
+    st = AppState(manager, conventional())
+    for name, over in (("stability", {"size_tail": False}), ("aerodynamics", {"use_lltdrek": False})):
+        tab = SimulationTab(st, manager.get(name))
+        for k, v in over.items():
+            tab.inputs[k].setChecked(v)
+        tab.start()
+        t0 = time.time()
+        while tab._thread is not None and time.time() - t0 < 120:
+            pump(app, 0.05)
+        assert tab.result is not None, tab.msg.text()
+        assert tab.table.rowCount() > 3 and tab.diag.rowCount() >= 3
+    # a aba se refaz quando a configuração muda (tirar a EH tira a área de EH)
+    tab = SimulationTab(st, manager.get("stability"))
+    assert "size_tail" in tab.inputs
+    st.aircraft.surfaces = [s for s in st.aircraft.surfaces if s.role != "htail"]
+    st.notify("geometry")
+    tab.reconfigure()
+    assert "size_tail" not in tab.inputs

@@ -44,7 +44,10 @@ class JsonAircraftSource(IAircraftSource):
 
     def load(self, path):
         with open(path, encoding="utf-8") as f:
-            return _resolve_paths(from_dict(Aircraft, json.load(f)), os.path.dirname(path))
+            d = json.load(f)
+        if d.get("formato") == "aerosim-aeronave":       # arquivo da biblioteca "meus aviões"
+            d = d["aeronave"]
+        return _resolve_paths(from_dict(Aircraft, d), os.path.dirname(path))
 
     def save(self, aircraft, path):
         with open(path, "w", encoding="utf-8") as f:

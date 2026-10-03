@@ -12,7 +12,7 @@ import copy
 import pyqtgraph as pg
 from PyQt6 import QtCore, QtWidgets
 
-from aerosim.model.aircraft import (ControlSurface, LiftingSurface, PropulsionUnit, SloshTank, WingSection,
+from aerosim.model.aircraft import (DEVICE_KINDS, WingDevice, ControlSurface, LiftingSurface, PropulsionUnit, SloshTank, WingSection,
                                     rect_sections)
 from aerosim.model.airfoil import Airfoil, read_dat
 from aerosim.model.mission import Leg, MissionEvent
@@ -333,10 +333,12 @@ class ConfigTab(QtWidgets.QWidget):
         self.form = None
         if kind == "surface":
             s = ac.surfaces[int(idx)]
-            self.form = DataclassForm(s, exclude=("sections", "controls", "airfoil"))
+            self.form = DataclassForm(s, exclude=("sections", "controls", "airfoil", "devices"))
             v.addWidget(self.form)
             v.addWidget(self._sections_editor(s))
             v.addWidget(self._controls_editor(s))
+            if not s.vertical:
+                v.addWidget(self._devices_editor(s))
             v.addWidget(self._airfoil_editor(s))
         elif kind == "prop":
             u = ac.propulsion[int(idx)]
@@ -463,8 +465,32 @@ class ConfigTab(QtWidgets.QWidget):
 
     def _controls_editor(self, s: LiftingSurface):
         default = {"wing": "aileron", "htail": "elevator", "vtail": "rudder"}.get(s.role, "aileron")
-        return self._list_editor("Comandos (aileron, profundor, leme, elevon...)", s.controls,
-                                 lambda: ControlSurface(default, 0.6, 1.0, 0.25), {"kind": CONTROL_KINDS})
+        box = self._list_editor("Comandos (aileron, profundor, leme, elevon...)", s.controls,
+                                lambda: ControlSurface(default, 0.6, 1.0, 0.25), {"kind": CONTROL_KINDS})
+        if s.role == "wing" and any(c.kind == "aileron" for c in s.controls):
+            b = QtWidgets.QPushButton("converter ailerons em elevons (asa voadora)")
+            b.setToolTip("sem EH, o elevon faz arfagem e rolagem com a mesma superfície")
+
+            def conv():
+                for c in s.controls:
+                    if c.kind == "aileron":
+                        c.kind = "elevon"
+                self.state.notify("geometry")
+                self._edit(self._current_key())
+            b.clicked.connect(conv)
+            box.layout().addWidget(b)
+        return box
+
+    def _devices_editor(self, s: LiftingSurface):
+        """winglet, winglet para baixo, placa de ponta, cerca: geometria e posição livres"""
+        box = self._list_editor("Dispositivos (winglet, placa de ponta, cerca…) — η: posição na semiasa, 1 = ponta",
+                                s.devices, lambda: WingDevice("winglet", height=round(0.1 * max(s.span, 0.5), 3)),
+                                {"kind": DEVICE_KINDS})
+        return box
+
+    def _current_key(self) -> str:
+        it = self.comp_list.currentItem()
+        return it.data(QtCore.Qt.ItemDataRole.UserRole) if it is not None else "surface:0"
 
     def _airfoil_editor(self, s: LiftingSurface):
         box = QtWidgets.QGroupBox("Perfil")

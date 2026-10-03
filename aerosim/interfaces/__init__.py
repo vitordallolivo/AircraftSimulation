@@ -5,12 +5,13 @@
     ISimulation / ISimulationManager   simulações e o orquestrador (simulation.py)
 """
 from .aircraft_source import IAircraftSource, ICatalogSource
+from .project_store import IProjectStore, ProjectInfo
 from .backend import ISimBackend, ISimSession, LogChunk, RunStatus, SimSpec, TrimKind
 from .simulation import (CancelledError, ISimulation, ISimulationManager, ParamSpec, PlotSpec,
-                         RunContext, SimResult)
+                         RunContext, SimResult, Check)
 
 __all__ = [
     "IAircraftSource", "ICatalogSource", "ISimBackend", "ISimSession", "LogChunk", "RunStatus",
     "SimSpec", "TrimKind", "CancelledError", "ISimulation", "ISimulationManager", "ParamSpec",
-    "PlotSpec", "RunContext", "SimResult",
+    "PlotSpec", "RunContext", "SimResult", "Check", "IProjectStore", "ProjectInfo",
 ]

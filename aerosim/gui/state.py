@@ -8,6 +8,7 @@ import os
 
 from PyQt6 import QtCore
 
+from aerosim.interfaces.project_store import IProjectStore
 from aerosim.interfaces.simulation import ISimulationManager
 from aerosim.model.aircraft import Aircraft
 from aerosim.model.catalog import Catalog, builtin_catalog
@@ -19,9 +20,14 @@ class AppState(QtCore.QObject):
     changed = QtCore.pyqtSignal(str)          # motivo: "geometry", "mass", "wind", "load", ...
     selected = QtCore.pyqtSignal(str)         # componente selecionado (chave da geometria)
 
-    def __init__(self, manager: ISimulationManager, aircraft: Aircraft, catalog: Catalog | None = None):
+    def __init__(self, manager: ISimulationManager, aircraft: Aircraft, catalog: Catalog | None = None,
+                 projects: "IProjectStore | None" = None):
         super().__init__()
         self.manager = manager
+        if projects is None:
+            from aerosim.data.projects import JsonProjectStore
+            projects = JsonProjectStore()
+        self.projects = projects          # biblioteca "meus aviões" (só pela interface)
         self.aircraft = aircraft
         self.catalog = catalog or builtin_catalog()
         self.path: str | None = None

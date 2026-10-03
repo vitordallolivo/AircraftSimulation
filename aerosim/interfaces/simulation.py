@@ -4,6 +4,11 @@ Cada simulação declara:
   - `parameters()`: o que a GUI deve mostrar para configurá-la (gera o formulário);
   - `plots()`: o que desenhar em tempo real e no fim;
   - `run(ctx)`: como roda (que etapas, de onde reroda, o que itera).
+`parameters_for(aeronave)` e `plots_for(aeronave)` deixam o formulário e os gráficos dependerem
+da configuração (ex.: sem EH não há dimensionamento de EH; com elevon, o elevon é dimensionado
+para arfagem e rolagem juntos); a GUI refaz a aba quando a aeronave muda.
+O resultado pode trazer um diagnóstico (`checks`): cada critério com estado, valor, critério,
+causa e o que mudar — é isso que diz se a configuração serve e por quê.
 A GUI cria uma aba por simulação registrada, sem conhecer nenhuma delas.
 """
 from __future__ import annotations
@@ -32,6 +37,8 @@ class ParamSpec:
     unit: str = ""
     choices: tuple = ()
     help: str = ""
+    group: str = ""                # seção do formulário (ex.: "Critérios")
+    rebuild: bool = False          # mudar este campo refaz o formulário (ex.: escolher a norma)
 
 
 @dataclass
@@ -50,6 +57,19 @@ class PlotSpec:
 
 
 @dataclass
+class Check:
+    """um item do diagnóstico"""
+    status: str                     # "ok" | "atencao" | "falha" | "info"
+    item: str                       # o que foi verificado
+    value: str                      # valor obtido (texto já formatado)
+    criterion: str                  # o limite usado (curto)
+    why: str = ""                   # por que deu esse resultado (causa física)
+    fix: str = ""                   # o que mudar, com números quando possível
+    group: str = ""                 # seção (ex.: "estática longitudinal")
+    source: str = ""                # de onde vem o critério (norma, livro) ou "definido na aba"
+
+
+@dataclass
 class SimResult:
     """saída de uma simulação"""
     log: "LogChunk | None" = None                         # registro no tempo (se houver)
@@ -57,6 +77,7 @@ class SimResult:
     summary: dict[str, Any] = field(default_factory=dict)            # números para mostrar
     events: dict[str, float] = field(default_factory=dict)
     status: str = "ok"
+    checks: list[Check] = field(default_factory=list)                 # diagnóstico
 
 
 class CancelledError(Exception):
@@ -73,6 +94,7 @@ class RunContext:
     on_chunk: Callable[["LogChunk"], None] = lambda c: None       # pedaço novo do registro (tempo real)
     on_progress: Callable[[float, str], None] = lambda f, msg: None
     cancel: threading.Event = field(default_factory=threading.Event)
+    shared: dict = field(default_factory=dict)     # resultados que uma aba deixa para outra (ex.: a polar)
 
     def check(self) -> None:
         if self.cancel.is_set():
@@ -93,8 +115,17 @@ class ISimulation(ABC):
     @abstractmethod
     def run(self, ctx: RunContext) -> SimResult: ...
 
-    def defaults(self) -> dict[str, Any]:
-        return {p.key: p.default for p in self.parameters()}
+    def parameters_for(self, aircraft: "Aircraft | None", values: dict | None = None) -> list[ParamSpec]:
+        """campos que fazem sentido para esta aeronave e para as escolhas já feitas no formulário
+        (`values`, ex.: norma escolhida); padrão: os mesmos sempre"""
+        return self.parameters()
+
+    def plots_for(self, aircraft: "Aircraft | None") -> list[PlotSpec]:
+        return self.plots()
+
+    def defaults(self, aircraft: "Aircraft | None" = None, values: dict | None = None) -> dict[str, Any]:
+        ps = self.parameters_for(aircraft, values) if aircraft is not None else self.parameters()
+        return {p.key: p.default for p in ps}
 
 
 class ISimulationManager(ABC):

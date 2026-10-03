@@ -1,8 +1,6 @@
-"""Geometria: superfícies -> painéis do núcleo, e malhas 3D para a GUI.
-
-Painéis: cada superfície é cortada em faixas nas seções e nas bordas dos comandos
-(aileron, profundor, elevon...). Cada faixa de cada lado vira um painel com centro
-aerodinâmico a 25 % da corda média da faixa, já com enflechamento e diedro.
+"""Malhas 3D para a GUI (a partir do modelo universal) e posição/arraste dos componentes na
+configuração. Os painéis do núcleo NÃO são feitos aqui: o modelo universal
+(`aerosim.model.universal`) é traduzido pelo tradutor de cada núcleo/solver.
 """
 from __future__ import annotations
 
@@ -10,119 +8,9 @@ import math
 
 import numpy as np
 
-from .aircraft import Aircraft, ControlSurface, LiftingSurface
-from .airfoil import flap_effectiveness, helmbold
+from .aircraft import Aircraft
+from .universal import SurfaceModel, build_model
 
-GROUP = {"wing": 0, "htail": 1, "vtail": 2}
-
-
-def _breaks(s: LiftingSurface) -> list[float]:
-    """posições ao longo da envergadura onde a superfície é cortada (seções e bordas de comandos)"""
-    b = s.semispan
-    ys = [sec.y for sec in s.sections]
-    for c in s.controls:
-        ys += [min(max(c.span_start, 0.0), 1.0) * b, min(max(c.span_end, 0.0), 1.0) * b]
-    out: list[float] = []
-    for y in sorted(min(max(y, 0.0), b) for y in ys):
-        if not out or y - out[-1] > 1e-9:
-            out.append(y)
-    return out
-
-
-def control_at(s: LiftingSurface, y: float) -> ControlSurface | None:
-    b = s.semispan
-    for c in s.controls:
-        if c.span_start * b - 1e-9 <= y <= c.span_end * b + 1e-9:
-            return c
-    return None
-
-
-def _mix(kind: str, side: int, vertical: bool) -> list[float]:
-    if kind == "elevator":
-        return [1.0, 0.0, 0.0]
-    if kind == "aileron":
-        return [0.0, -float(side), 0.0]
-    if kind == "elevon":
-        return [1.0, -float(side), 0.0]
-    if kind == "rudder":
-        return [0.0, 0.0, -1.0]
-    if kind == "ruddervator":
-        return [1.0, 0.0, -float(side)]
-    return [0.0, 0.0, 0.0]          # flape: deflexão fixa
-
-
-def aero_coefficients(s: LiftingSurface) -> dict[str, float]:
-    AR = s.aspect_ratio or 5.0
-    CLa = s.CLa if s.CLa is not None else helmbold(s.airfoil.cl_alpha, AR)
-    CL0 = s.CL0 if s.CL0 is not None else -CLa * math.radians(s.airfoil.zero_lift_angle())
-    return dict(AR=AR, CLa=CLa, CL0=CL0,
-                CLmax=s.CLmax if s.CLmax is not None else 0.9 * s.airfoil.cl_max,
-                CD0=s.CD0 if s.CD0 is not None else s.airfoil.cd0,
-                Cmac=s.Cmac if s.Cmac is not None else s.airfoil.moment_ac())
-
-
-def surface_panels(s: LiftingSurface, downwash: tuple[float, float] = (0.0, 0.0)) -> list[dict]:
-    """painéis (dicionários no formato do núcleo, SI/rad)"""
-    if not s.enabled or len(s.sections) < 2:
-        return []
-    co = aero_coefficients(s)
-    ys = _breaks(s)
-    dih = math.radians(s.dihedral)
-    sides = (0,) if (s.vertical or not s.symmetric) else (1, -1)
-    out = []
-    for y0, y1 in zip(ys, ys[1:]):
-        if y1 - y0 < 1e-6:
-            continue
-        ym = 0.5 * (y0 + y1)
-        c0, c1 = s.chord_at(y0), s.chord_at(y1)
-        S = 0.5 * (c0 + c1) * (y1 - y0)
-        cm = S / (y1 - y0)
-        xac = s.x - s.xoff_at(ym) - 0.25 * cm
-        ctl = control_at(s, ym)
-        tau = 0.0
-        inc = s.incidence + s.twist_at(ym)
-        if ctl is not None:
-            tau = ctl.tau if ctl.tau is not None else flap_effectiveness(ctl.chord_frac)
-            if ctl.kind == "flap":
-                inc += tau * ctl.deflection
-        e0 = math.radians(s.eps0) if s.eps0 is not None else downwash[0]
-        ed = s.depsda if s.depsda is not None else downwash[1]
-        for side in sides:
-            if s.vertical:
-                r = [xac, s.y, s.z - ym]
-            else:
-                sd = side if side else 1
-                r = [xac, s.y + sd * ym * math.cos(dih), s.z - ym * math.sin(dih)]
-            mix = _mix(ctl.kind, side, s.vertical) if ctl is not None else [0.0, 0.0, 0.0]
-            out.append(dict(
-                r=r, S=S, c=cm, AR=co["AR"], e=s.oswald, dihedral=dih, incidence=math.radians(inc),
-                CLa=co["CLa"], CL0=co["CL0"], CLmax=co["CLmax"], CD0=co["CD0"], Cmac=co["Cmac"],
-                tau=tau if ctl is not None and ctl.kind != "flap" else 0.0, mix=mix, eta=s.eta,
-                eps0=e0 if s.downwash else 0.0, depsda=ed if s.downwash else 0.0,
-                group=GROUP.get(s.role, 0), vertical=int(s.vertical), side=side, downwash=int(s.downwash),
-            ))
-    return out
-
-
-def wing_downwash(ac: Aircraft) -> tuple[float, float]:
-    """ε = ε0 + dε/dα α  da asa principal (rad)"""
-    w = ac.wing
-    if w is None:
-        return 0.0, 0.0
-    co = aero_coefficients(w)
-    CLw0 = co["CL0"] + co["CLa"] * math.radians(w.incidence)
-    return 2 * CLw0 / (math.pi * co["AR"]), 2 * co["CLa"] / (math.pi * co["AR"])
-
-
-def all_panels(ac: Aircraft) -> list[dict]:
-    dw = wing_downwash(ac)
-    out = []
-    for s in ac.surfaces:
-        out += surface_panels(s, dw)
-    return out
-
-
-# ================================================================== malhas 3D
 Mesh = tuple[np.ndarray, np.ndarray]     # vértices (N, 3) no corpo, faces (M, 3)
 
 
@@ -142,64 +30,57 @@ def _loft(rings: list[np.ndarray], cap: bool = True) -> Mesh:
     return V, np.array(F, dtype=np.int32)
 
 
-def surface_mesh(s: LiftingSurface, n_span: int = 2) -> list[Mesh]:
-    """uma malha por lado (meia asa); perfil do .dat ou NACA"""
-    if not s.enabled or len(s.sections) < 2:
-        return []
+def _frame(s: SurfaceModel) -> np.ndarray:
+    """direção da espessura (perpendicular à envergadura, no plano y-z)"""
+    if s.vertical:
+        return np.array([0.0, 1.0, 0.0])
+    d = s.tip.le - s.stations[0].le
+    u = np.array([0.0, d[1], d[2]])
+    u /= max(np.linalg.norm(u), 1e-12)
+    return np.array([0.0, u[2], -u[1]])
+
+
+def _sides(s: SurfaceModel):
+    return (1, -1) if s.mirror else (1,)
+
+
+def surface_mesh(s: SurfaceModel) -> list[Mesh]:
+    """uma malha por lado; perfil do .dat ou NACA, torção em torno do bordo de ataque"""
     af = s.airfoil.outline()
     if len(af) > 80:
         af = af[np.linspace(0, len(af) - 1, 80).astype(int)]
-    dih = math.radians(s.dihedral)
-    ys = sorted({sec.y for sec in s.sections} | set(_breaks(s)))
-    sides = (0,) if (s.vertical or not s.symmetric) else (1, -1)
+    n = _frame(s)
     meshes = []
-    for side in sides:
+    for sy in _sides(s):
+        mir = np.array([1.0, sy, 1.0])
         rings = []
-        for y in ys:
-            c = s.chord_at(y)
-            tw = math.radians(s.incidence + s.twist_at(y))
-            xle = s.x - s.xoff_at(y)
-            xs = -af[:, 0] * c
-            th = af[:, 1] * c
-            # torção/incidência em torno do bordo de ataque
+        for q in s.stations:
+            tw = math.radians(q.twist) if not s.vertical else 0.0
+            xs, th = -af[:, 0] * q.chord, af[:, 1] * q.chord
             xr = xs * math.cos(tw) - th * math.sin(tw)
             tr = xs * math.sin(tw) + th * math.cos(tw)
-            if s.vertical:
-                P = np.column_stack([xle + xr, s.y + tr, np.full_like(xr, s.z - y)])
-            else:
-                sd = side if side else 1
-                yy = s.y + sd * (y * math.cos(dih)) + 0 * tr
-                zz = s.z - y * math.sin(dih) - tr
-                P = np.column_stack([xle + xr, np.full_like(xr, 0) + yy, zz])
-            rings.append(P)
+            P = q.le[None, :] + np.outer(xr, [1.0, 0.0, 0.0]) + np.outer(tr, n)
+            rings.append(P * mir)
         meshes.append(_loft(rings))
     return meshes
 
 
-def control_meshes(s: LiftingSurface) -> list[Mesh]:
+def control_meshes(s: SurfaceModel) -> list[Mesh]:
     """placas finas sobre a parte móvel (destaque visual dos comandos)"""
     out = []
-    if not s.enabled:
-        return out
-    dih = math.radians(s.dihedral)
-    sides = (0,) if (s.vertical or not s.symmetric) else (1, -1)
-    b = s.semispan
-    for ctl in s.controls:
-        y0, y1 = ctl.span_start * b, ctl.span_end * b
-        for side in sides:
+    n = _frame(s) * 0.004
+    for a, b, ctl in s.strips():
+        if ctl is None:
+            continue
+        for sy in _sides(s):
+            mir = np.array([1.0, sy, 1.0])
             quad = []
-            for y in (y0, y1):
-                c = s.chord_at(y)
-                xte = s.x - s.xoff_at(y) - c
-                for xx in (xte + ctl.chord_frac * c, xte):
-                    if s.vertical:
-                        quad.append([xx, s.y, s.z - y])
-                    else:
-                        sd = side if side else 1
-                        quad.append([xx, s.y + sd * y * math.cos(dih), s.z - y * math.sin(dih)])
-            q = np.array(quad)
-            off = np.array([0, 0.004, 0]) if s.vertical else np.array([0, 0, -0.004])
-            V = np.vstack([q + off, q - off])
+            for q in (a, b):
+                xte = q.le[0] - q.chord
+                for xx in (xte + ctl.chord_frac * q.chord, xte):
+                    quad.append(np.array([xx, q.le[1], q.le[2]]) * mir)
+            Q = np.array(quad)
+            V = np.vstack([Q + n * mir, Q - n * mir])
             F = np.array([[0, 1, 3], [0, 3, 2], [4, 7, 5], [4, 6, 7]], dtype=np.int32)
             out.append((V, F))
     return out
@@ -251,10 +132,10 @@ def aircraft_meshes(ac: Aircraft) -> dict[str, list[tuple[Mesh, str]]]:
     """componente -> [(malha, tipo de cor)]. A chave é o identificador usado na GUI
     para escolher/arrastar ('surface:0', 'prop:1', 'tank:0', 'payload', 'gear', ...)."""
     out: dict[str, list] = {}
-    for i, s in enumerate(ac.surfaces):
-        if not s.enabled:
-            continue
-        out[f"surface:{i}"] = [(m, s.role) for m in surface_mesh(s)] + [(m, "control") for m in control_meshes(s)]
+    for s in build_model(ac).surfaces:      # o mesmo modelo universal que os solvers recebem
+        key = f"surface:{s.index}"
+        out.setdefault(key, [])
+        out[key] += [(m, s.role) for m in surface_mesh(s)] + [(m, "control") for m in control_meshes(s)]
     f = ac.fuselage
     if f.enabled:
         out["fuselage"] = [(ellipsoid_body(f.x_nose, f.length, f.width, f.height, f.z), "fuselage")]

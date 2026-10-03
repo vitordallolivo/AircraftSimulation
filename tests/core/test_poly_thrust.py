@@ -1,7 +1,8 @@
 """Tração por polinômio (poly55) no núcleo: mesma conta do Python, acelerador, densidade."""
 import pytest
 
-from aerosim.model import TEMPLATES, compile_aircraft
+from aerosim.model import TEMPLATES
+from aerosim.backend.zig.translator import native_spec
 from aerosim.model.catalog import ThrustPoly
 
 
@@ -20,7 +21,7 @@ def poly_aircraft(**kw):
 def test_core_matches_python(backend, x, y, V, thr):
     ac = poly_aircraft(x_var=x, y_var=y)
     with backend.open_session() as s:
-        s.configure(compile_aircraft(ac))
+        s.configure(native_spec(ac))
         Tc = s.prop_point(0, V, thr)["T"]
     assert Tc == pytest.approx(ac.propulsion[0].thrust_poly.thrust(V, thr, 0.0, ac.environment.rho), rel=1e-12,
                                abs=1e-12)
@@ -30,7 +31,7 @@ def test_density_exponent(backend):
     ac = poly_aircraft(rho_exp=1.0)
     ac.environment.rho = 1.0
     with backend.open_session() as s:
-        s.configure(compile_aircraft(ac))
+        s.configure(native_spec(ac))
         T = s.prop_point(0, 5.0, 1.0)["T"]
     assert T == pytest.approx(ac.propulsion[0].thrust_poly.thrust(5.0, 1.0, 0, 1.0))
     assert T == pytest.approx((30 - 2.5 - 0.75) / 1.225)
@@ -39,7 +40,7 @@ def test_density_exponent(backend):
 def test_flies_with_poly(backend):
     ac = poly_aircraft()
     with backend.open_session() as s:
-        s.configure(dict(compile_aircraft(ac), stop_takeoff=1))
+        s.configure(dict(native_spec(ac), stop_takeoff=1))
         s.reset_ground()
         s.run(max_rows=0)
         assert s.events()["completed"] == 1

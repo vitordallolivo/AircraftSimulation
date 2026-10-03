@@ -17,6 +17,7 @@ const aero = @import("physics/aero.zig");
 const prop = @import("physics/propulsion.zig");
 const mass = @import("physics/mass.zig");
 const vec = @import("math/vec.zig");
+const linear = @import("sim/linear.zig");
 
 var slots: [L.max_instances]runner.Instance = [_]runner.Instance{.{}} ** L.max_instances;
 var used: [L.max_instances]std.atomic.Value(bool) = [_]std.atomic.Value(bool){std.atomic.Value(bool).init(false)} ** L.max_instances;
@@ -168,6 +169,21 @@ export fn aerosim_aero_coeffs(slot: i32, V: f64, alpha: f64, beta: f64, de: f64,
     const tc = trim.Ctx.init(&inst.p, &inst.r.f);
     out.* = aero.coeffs(&inst.p, V, alpha, beta, tc.rcg, .{ de, da, dr });
     return 0;
+}
+
+/// com rotação (p, q, r em rad/s) e momentos no ponto ref (corpo); ref nulo: CG
+export fn aerosim_aero_coeffs_ex(slot: i32, V: f64, alpha: f64, beta: f64, pr: f64, qr: f64, rr: f64, de: f64, da: f64, dr: f64, ref: ?*const [3]f64, out: *T.AeroCoeffs) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    const r = if (ref) |x| vec.v3(x.*) else trim.Ctx.init(&inst.p, &inst.r.f).rcg;
+    out.* = aero.coeffsEx(&inst.p, V, alpha, beta, .{ pr, qr, rr }, r, .{ de, da, dr });
+    return 0;
+}
+
+/// trima nivelado em V e devolve o modelo linear A, B (ver sim/linear.zig); -4 se a trimagem falhar
+export fn aerosim_linearize(slot: i32, V: f64, out: *linear.LinModel) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    out.* = linear.linearize(&inst.p, &inst.r.f, V);
+    return if (out.ok != 0) 0 else E_TRIM;
 }
 
 export fn aerosim_prop_point(slot: i32, i: i32, V: f64, thr: f64, out: *T.PropPoint) i32 {

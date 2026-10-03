@@ -9,7 +9,7 @@ import numpy as np
 
 from aerosim.interfaces.backend import TrimKind
 from aerosim.interfaces.simulation import ParamSpec, PlotSpec, RunContext, SimResult
-from aerosim.model.compile import compile_aircraft
+from aerosim.model.universal import build_model
 from aerosim.model.mission import Leg, Mission
 
 from ..runner import Runner, Stop
@@ -40,8 +40,7 @@ class ClimbSimulation(SimulationBase):
         win = self.param(ctx, "window")
         over = dict(env=dict(Vw10=0.0), tmax=1e6)
         cases, res = [], []
-        with ctx.backend.open_session() as s:
-            s.configure(compile_aircraft(ac))
+        with ctx.backend.session_for(build_model(ac)) as s:
             trims = {V: s.trim(TrimKind.CLIMB, V) for V in floats(self.param(ctx, "V_list"))}
         for V in floats(self.param(ctx, "V_list")):
             m = Mission("subida", [Leg("straight", length=200.0, h=h0, V=V, name="nivelado"),

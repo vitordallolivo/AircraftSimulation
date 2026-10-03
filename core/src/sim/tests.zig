@@ -131,3 +131,26 @@ test "trimagem nivelada e começo em voo" {
     _ = runner.run(&inst, 1e9, &log, &n);
     try std.testing.expectApproxEqAbs(@as(f64, 15), -inst.r.x[S.D], 1.0);
 }
+
+const linear = @import("linear.zig");
+
+test "linearização: equilíbrio, amortecimentos e acoplamentos" {
+    aircraft(&inst.p);
+    try runner.configure(&inst);
+    const lm = linear.linearize(&inst.p, &inst.r.f, 16);
+    try std.testing.expect(lm.ok == 1);
+    try std.testing.expect(linear.residual(&inst.p, &inst.r.f, &lm) < 1e-4);
+    const A = lm.A;
+    const n = linear.nl;
+    // u v w p q r φ θ
+    try std.testing.expect(A[4 * n + 4] < 0); // M_q
+    try std.testing.expect(A[3 * n + 3] < 0); // L_p
+    try std.testing.expect(A[5 * n + 5] < 0); // N_r
+    try std.testing.expect(A[2 * n + 2] < 0); // Z_w
+    try std.testing.expect(A[4 * n + 2] < 0); // M_w: estável em arfagem
+    try std.testing.expect(A[5 * n + 1] > 0); // N_v: estável em guinada
+    // quase simétrico (só δa, δr de equilíbrio do torque acoplam): v ~ não mexe em q, w em p
+    try std.testing.expect(@abs(A[4 * n + 1]) < 0.05 * @abs(A[4 * n + 2]));
+    try std.testing.expect(@abs(A[3 * n + 2]) < 0.05 * @abs(A[3 * n + 1]));
+    try std.testing.expect(lm.B[4 * linear.nu + 0] < 0); // M_δe: δe > 0 baixa o nariz
+}
