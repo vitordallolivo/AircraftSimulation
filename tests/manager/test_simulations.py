@@ -57,3 +57,24 @@ def test_sheet_aircraft_with_poly_thrust(manager, desempenho_xlsx, mapping_path)
     e = manager.run("envelope", ac, {"dV": 2.0})
     assert e.summary["V_max_nivelado"] > e.summary["Vs"]
     assert manager.run("mission", ac, {"iters": 2}).status == "COMPLETED"
+
+
+def test_aero_and_stability_tabs_registered(manager):
+    names = [s.name for s in manager.simulations()]
+    assert "aerodynamics" in names and "stability" in names
+
+
+def test_stability_simulation(manager):
+    from aerosim.model.templates import conventional
+    r = manager.run("stability", conventional(), {"scissor": False, "Vs_list": "13, 17"})
+    assert any("MIL-F-8785C" in k for k in r.summary)
+    assert "resp_lon" in r.series and "aileron" in r.series and "modos_V" in r.series
+
+
+def test_aerodynamics_simulation_zig_only(manager):
+    from aerosim.model.templates import conventional
+    p = {"use_lltdrek": False, "use_asb_vlm": False, "use_asb_buildup": False, "use_asb_ll": False,
+         "a0": -2.0, "a1": 8.0, "da": 2.0}
+    r = manager.run("aerodynamics", conventional(), p)
+    assert "polar_Zig" in r.series and "tips" in r.series and "derivadas" in r.series
+    assert r.summary["[Zig] SM"] > 0

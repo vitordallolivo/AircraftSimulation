@@ -1,0 +1,3 @@
+# opcionais: comparação de métodos na aba Aerodinâmica (sem eles a aba usa só o núcleo)
+aerosandbox>=4.2
+lltdrek @ git+https://github.com/kuodrek/lltdrek.git

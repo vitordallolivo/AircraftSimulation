@@ -106,6 +106,8 @@ class _Lib:
             "aerosim_snapshot_load": (c_int, [c_int, ctypes.c_char_p]),
             "aerosim_mass_props": (c_int, [c_int, ctypes.POINTER(T["MassProps"])]),
             "aerosim_aero_coeffs": (c_int, [c_int] + [c_double] * 6 + [ctypes.POINTER(T["AeroCoeffs"])]),
+            "aerosim_aero_coeffs_ex": (c_int, [c_int] + [c_double] * 9 + [vp, ctypes.POINTER(T["AeroCoeffs"])]),
+            "aerosim_linearize": (c_int, [c_int, c_double, ctypes.POINTER(T["LinModel"])]),
             "aerosim_prop_point": (c_int, [c_int, c_int, c_double, c_double, ctypes.POINTER(T["PropPoint"])]),
             "aerosim_trim": (c_int, [c_int, c_int, c_double, c_double, ctypes.POINTER(T["TrimPoint"])]),
             "aerosim_performance": (c_int, [c_int, c_double, c_double, c_double, vp, c_size]),
@@ -217,6 +219,26 @@ class ZigSession(ISimSession):
         o = self._lib.schema.types["AeroCoeffs"]()
         _check(self._lib.dll.aerosim_aero_coeffs(self._slot, V, alpha, beta, de, da, dr, ctypes.byref(o)), "aero")
         return _struct_dict(o)
+
+    def aero_coeffs_ex(self, V, alpha, beta=0.0, p=0.0, q=0.0, r=0.0, de=0.0, da=0.0, dr=0.0, ref=None):
+        o = self._lib.schema.types["AeroCoeffs"]()
+        rb = (ctypes.c_double * 3)(*ref) if ref is not None else None
+        _check(self._lib.dll.aerosim_aero_coeffs_ex(self._slot, V, alpha, beta, p, q, r, de, da, dr,
+                                                    ctypes.cast(rb, ctypes.c_void_p) if rb is not None else None,
+                                                    ctypes.byref(o)), "aero_ex")
+        return _struct_dict(o)
+
+    def linearize(self, V):
+        o = self._lib.schema.types["LinModel"]()
+        st = self._lib.dll.aerosim_linearize(self._slot, V, ctypes.byref(o))
+        if st not in (0, -4):
+            _check(st, "linearize")
+        d = {k: getattr(o, k) for k, _ in o._fields_ if not k.startswith("_") and k not in ("A", "B", "cg")}
+        d["ok"] = bool(o.ok)
+        d["cg"] = list(o.cg)
+        d["A"] = np.array(list(o.A)).reshape(8, 8)
+        d["B"] = np.array(list(o.B)).reshape(8, 4)
+        return d
 
     def prop_point(self, index, V, thr=1.0):
         o = self._lib.schema.types["PropPoint"]()

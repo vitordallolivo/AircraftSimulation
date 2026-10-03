@@ -40,6 +40,8 @@ núcleo falso para provar isso.
 | `aerosim/data/` | leitura/gravação: `.cfg`, `.json`, `.xlsx`, planilha por mapa de células | [README](aerosim/data/README.md) |
 | `aerosim/backend/` | ponte Python ↔ núcleo (ctypes, esquema gerado em comptime) | [README](aerosim/backend/README.md) |
 | `aerosim/manager/` | Simulation Manager e as simulações | [README](aerosim/manager/README.md) |
+| `aerosim/aero/` | aerodinâmica pela geometria: núcleo × lltdrek × AeroSandbox, pontas de asa (Trefftz) | [README](aerosim/aero/README.md) |
+| `aerosim/stability/` | estabilidade estática, tesoura, modos (MIL-F-8785C), aileron/profundor/leme | [README](aerosim/stability/README.md) |
 | `aerosim/gui/` | interface gráfica | [README](aerosim/gui/README.md) |
 | `tests/` | testes por camada | [README](tests/README.md) |
 | `data/` | aeronaves, perfis `.dat`, catálogo, mapas de planilha | [README](data/README.md) |
@@ -55,6 +57,7 @@ núcleo falso para provar isso.
 | Python | **3.10 ou mais novo** (testado no 3.11) | GUI, manager, dados | <https://www.python.org/downloads/> (no Windows marque "Add python.exe to PATH") |
 | Zig | **0.16.0** | compilar o núcleo | já vem pelo `pip` (pacote `ziglang`, no `requirements.txt`); ou baixe de <https://ziglang.org/download/> e deixe `zig` no PATH |
 | pacotes Python | ver `requirements.txt` | numpy, openpyxl, PyQt6, pyqtgraph, PyOpenGL, pytest | `pip install -r requirements.txt` |
+| AeroSandbox e lltdrek | opcionais | comparação de métodos na aba Aerodinâmica | `pip install -r requirements-aero.txt` (sem eles a aba usa só o núcleo) |
 | gcc + make | opcional | só para o teste que compara com o simulador C original | Linux: `sudo apt install build-essential` |
 
 **Linux:** o PyQt6 precisa de algumas bibliotecas de sistema (OpenGL e X11). No Ubuntu/Debian:
@@ -78,12 +81,13 @@ source .venv/bin/activate                 # Linux/macOS
 .venv\Scripts\activate                    # Windows (PowerShell: .venv\Scripts\Activate.ps1)
 
 pip install -r requirements.txt
+pip install -r requirements-aero.txt       # opcional: AeroSandbox + lltdrek (aba Aerodinâmica)
 
 cd core
 python -m ziglang build --release=fast    # gera core/zig-out/lib/libaerosim.so (.dll no Windows, .dylib no macOS)
 cd ..
 
-python -m pytest                          # ~110 testes, ~30 s
+python -m pytest                          # ~150 testes, ~1 min
 ```
 
 O passo do `zig build` é opcional: o Python compila o núcleo sozinho na primeira vez que precisar (e
@@ -102,12 +106,20 @@ python -m aerosim.gui data/aircraft/twin_boom.cfg   # abre um arquivo (.cfg, .js
 - **Configuração:** a aeronave em 3D. Clique num componente e arraste para mover; use o painel da
   direita para adicionar/remover asa, EH, EV, motor, tanque, tubo de cauda, trocar o trem, editar
   seções, comandos, perfil `.dat`, motor ou conjunto de tração, e o vento (botões ⟲ / ⟳).
-- **Uma aba por simulação:** Decolagem, Curvas, Envelope de voo, Missão, Subida, Polar, Tração.
+- **Uma aba por simulação:** Decolagem, Curvas, Envelope de voo, Missão, Subida, Polar, Tração,
+  Aerodinâmica e Estabilidade.
   Preencha os campos e clique em **▶ Rodar**; os gráficos atualizam em tempo real. **Exportar** grava
   `.xlsx` (uma aba por tabela, como o `Envelope.xlsx` antigo) ou `.csv`.
 - **Envelope de voo:** por altitude, V_min e V_max (P_d = P_r), V_e, V* = V_e√n, V_cru e o teto
   absoluto — pelo método da planilha (o `Envelope_main` original, que pode ser reproduzido exatamente)
   e/ou pela trimagem da aeronave completa. Detalhes em [aerosim/manager/README.md](aerosim/manager/README.md).
+- **Aerodinâmica:** polares e derivadas (momentos no x_CG escolhido) pelo núcleo Zig, pelo
+  [lltdrek](https://github.com/kuodrek/lltdrek) e pelo AeroSandbox (VLM, AeroBuildup, LiftingLine), lado
+  a lado; ponto neutro e margem de cada um; carregamento na envergadura; winglet, placa de ponta, asa
+  em caixa e asa em C pelo plano de Trefftz. Detalhes em [aerosim/aero/README.md](aerosim/aero/README.md).
+- **Estabilidade:** ponto neutro, margem estática e volumes de cauda; gráfico tesoura para dimensionar a
+  EH e a faixa de CG; modos dinâmicos × V com a MIL-F-8785C; dimensionamento de aileron, profundor e
+  leme. Detalhes em [aerosim/stability/README.md](aerosim/stability/README.md).
 - **Arquivo → Importar planilha por mapa de células…:** escolha o `Dados_Desempenho.xlsx` e depois o
   mapa `data/mappings/dados_desempenho.json`. Os conjuntos de tração da aba `Tracao` entram no
   catálogo e o da linha `nhelice` vai para o motor. Detalhes em [aerosim/data/README.md](aerosim/data/README.md).
@@ -124,7 +136,9 @@ ac = load_aircraft("data/aircraft/conventional.cfg")
 # ou a planilha:
 # ac = CellMapAircraftSource("data/mappings/dados_desempenho.json").load("Dados_Desempenho.xlsx")
 
-r = m.run("takeoff", ac, {"sweep": True})          # nomes: takeoff, turn, envelope, mission, climb, polar, thrust
+r = m.run("takeoff", ac, {"sweep": True})          # nomes: takeoff, turn, envelope, mission, climb, polar, thrust,
+                                                    #        aerodynamics, stability
+r = m.run("stability", ac, {"cls": "I", "cat": "B", "SM_min": 5})   # tesoura, modos, comandos
 r = m.run("envelope", ac, {"method": "planilha", "faithful": True})   # o Envelope_main original
 print(r.summary["[planilha] teto absoluto (m)"], r.series["envelope_planilha"]["Vmax"])
 print(r.summary)                                    # números

@@ -39,4 +39,8 @@ python -m pytest -m legacy             # comparação com o simulador C original
 | `data/*` | ida e volta `.json/.cfg/.xlsx`, catálogo, planilha Dados_Desempenho (campos e aba Tracao) |
 | `manager/*` | todas as simulações, missão das três aeronaves, retomar de checkpoint, cancelar, backend falso |
 | `manager/test_envelope.py` | envelope "como na planilha" = `Envelope_main` original transcrito (`helpers/envelope_reference.py`), altitude por altitude; caso que quebra o original; modelo completo |
-| `gui/*` | janela, edição, aba de simulação, editor de tração polinomial |
+| `core/test_linearize.py` | coeficientes com rotação e transporte de momento; modelo linear (cinemática, estabilidade, trimagem) |
+| `aero/test_tipdevices.py` | plano de Trefftz: elíptica e = 1, caixa h/b = 0,2 (Kroo), placa de ponta = Raymer, momento na raiz |
+| `aero/test_solvers.py` | sinais das derivadas do núcleo; lltdrek e VLM concordam com o núcleo em C_Lα e C_mq (pulados se não instalados) |
+| `stability/test_stability.py` | ponto neutro numérico × analítico, tesoura (EH maior → limite traseiro para trás), classificação de modos e MIL-F-8785C numa matriz conhecida, tempo de inclinação, aileron por faixas × núcleo |
+| `gui/*` | janela, edição, abas de simulação (incl. Aerodinâmica e Estabilidade), editor de tração polinomial |

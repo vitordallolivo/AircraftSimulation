@@ -450,6 +450,8 @@ pub const AeroCoeffs = extern struct {
     CL_wing: f64 = 0,
     CL_ht: f64 = 0,
     ratioCL: f64 = 0,
+    CDi: f64 = 0, // parte induzida
+    CN: f64 = 0, // força normal (−Z/qS), para transportar momentos
 };
 
 /// ponto de operação de uma unidade propulsora em equilíbrio de rotação

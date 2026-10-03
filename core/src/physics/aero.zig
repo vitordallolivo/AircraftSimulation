@@ -138,10 +138,15 @@ pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3) Out {
 
 /// coeficientes estáticos a α, β (sem rotação), momentos no CG dado
 pub fn coeffs(p: *const T.Params, V: f64, alpha: f64, beta: f64, rcg: V3, d: V3) T.AeroCoeffs {
+    return coeffsEx(p, V, alpha, beta, vec.zero, rcg, d);
+}
+
+/// coeficientes com rotação w = (p, q, r) em rad/s e momentos no ponto `ref` (eixos do corpo)
+pub fn coeffsEx(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V3, d: V3) T.AeroCoeffs {
     const a = fm.sincos(alpha);
     const b = fm.sincos(beta);
     const Vr = V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
-    const o = compute(p, Vr, vec.zero, rcg, 50.0, d);
+    const o = compute(p, Vr, w, ref, 50.0, d);
     const qS = 0.5 * p.env.rho * V * V * p.Sref;
     return .{
         .CL = (-o.F[2] * a.c + o.F[0] * a.s) / qS,
@@ -153,6 +158,8 @@ pub fn coeffs(p: *const T.Params, V: f64, alpha: f64, beta: f64, rcg: V3, d: V3)
         .CL_wing = (-o.Fg[L.group_wing][2] * a.c + o.Fg[L.group_wing][0] * a.s) / qS,
         .CL_ht = (-o.Fg[L.group_htail][2] * a.c + o.Fg[L.group_htail][0] * a.s) / qS,
         .ratioCL = o.ratioCL,
+        .CDi = -(o.Fi[0] * a.c * b.c + o.Fi[1] * b.s + o.Fi[2] * a.s * b.c) / qS,
+        .CN = -o.F[2] / qS,
     };
 }
 
@@ -179,4 +186,18 @@ test "deflexão por mix: elevon" {
     const c = coeffs(&p, 15, 0.0, 0, vec.zero, .{ 0, 0.1, 0 });
     try testing.expect(@abs(c.Cl) > 1e-3);
     try testing.expectApproxEqAbs(@as(f64, 0), c.CL, 1e-9);
+}
+
+test "rolamento amortecido e transporte de momento" {
+    var p = T.Params{};
+    p.n_surf = 2;
+    p.surf[0] = .{ .r = .{ 0, 0.5, 0 }, .S = 0.5, .c = 0.3, .side = 1, .CLa = 4.5, .CLmax = 1.4 };
+    p.surf[1] = .{ .r = .{ 0, -0.5, 0 }, .S = 0.5, .c = 0.3, .side = -1, .CLa = 4.5, .CLmax = 1.4 };
+    init(&p);
+    const c0 = coeffsEx(&p, 15, 0.05, 0, vec.zero, vec.zero, vec.zero);
+    const cp = coeffsEx(&p, 15, 0.05, 0, .{ 0.5, 0, 0 }, vec.zero, vec.zero);
+    try testing.expect(cp.Cl < c0.Cl - 1e-3); // C_lp < 0
+    // momento num ponto 0,1 m atrás: Cm' = Cm + CN · 0,1 / c
+    const cr = coeffsEx(&p, 15, 0.05, 0, vec.zero, .{ -0.1, 0, 0 }, vec.zero);
+    try testing.expectApproxEqAbs(c0.Cm + c0.CN * (-0.1 - 0.0) / p.cref * -1.0, cr.Cm, 1e-9);
 }

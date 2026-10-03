@@ -98,3 +98,21 @@ def test_envelope_export_xlsx(app, manager, tmp_path, desempenho_xlsx, mapping_p
     assert head[:7] == ["h", "rho", "Vmin", "Vmax", "Ve", "Vman", "Vcru"]
     assert sh.max_row == len(res.series["envelope_planilha"]["h"]) + 1
     assert "resumo" in wb.sheetnames
+
+
+def test_stability_and_aero_tabs(app, manager):
+    from aerosim.gui.state import AppState
+    from aerosim.gui.tabs.simulation_tab import SimulationTab
+    from aerosim.model.templates import conventional
+    st = AppState(manager, conventional())
+    for name, over in (("stability", {}), ("aerodynamics", {"use_lltdrek": False, "use_asb_vlm": False,
+                                                            "use_asb_buildup": False, "use_asb_ll": False})):
+        tab = SimulationTab(st, manager.get(name))
+        for k, v in over.items():
+            tab.inputs[k].setChecked(v)
+        tab.start()
+        t0 = time.time()
+        while tab._thread is not None and time.time() - t0 < 120:
+            pump(app, 0.05)
+        assert tab.result is not None, tab.msg.text()
+        assert tab.table.rowCount() > 10
