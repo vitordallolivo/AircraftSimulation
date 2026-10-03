@@ -168,6 +168,9 @@ class AerodynamicsSimulation(SimulationBase):
         S_["derivadas"] = deriv_table
         S_["span"] = self._span(model, span)
         main = "lltdrek" if "lltdrek" in res else ("zig" if "zig" in res else next(iter(res), None))
+        if main is not None:          # a polar fica disponível para as outras abas (dimensionamento...)
+            from aerosim.aero.service import remember
+            remember(ctx.shared, model, res[main], LABEL[main], V)
         if main is None:
             add("falha", "nenhum método rodou", "—", "", "", "marque o lltdrek ou o núcleo Zig", "métodos")
             return SimResult(series=S_, summary=summ, checks=checks)

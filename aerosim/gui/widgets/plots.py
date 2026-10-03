@@ -44,6 +44,8 @@ class LivePlots(QtWidgets.QWidget):
             p.showGrid(x=True, y=True, alpha=0.3)
             p.setLabel("bottom", s.xlabel)
             p.setLabel("left", s.ylabel)
+            for ax in ("bottom", "left"):
+                p.getAxis(ax).enableAutoSIPrefix(False)
             leg = pg.LegendItem(colCount=3, labelTextSize="8pt", horSpacing=14, verSpacing=-4)
             cell.addItem(leg, row=1, col=0)
             cell.layout.setRowStretchFactor(0, 10)
@@ -134,9 +136,22 @@ class LivePlots(QtWidgets.QWidget):
                     lab = (f"{rest}: {y}" if len(s.ys) > 1 else rest) if many else y
                     if s.swap:
                         xs, ys = ys, xs
-                    color = PALETTE[k % len(PALETTE)]
+                    color = tab.get("_color") if isinstance(tab, dict) and tab.get("_color") else PALETTE[k % len(PALETTE)]
                     k += 1
                     dash = tab.get("_dash") if isinstance(tab, dict) else None
+                    fill = tab.get("_fill") if isinstance(tab, dict) else None
+                    if fill and fill in tab:          # região sombreada entre y e a coluna `_fill`
+                        y2 = np.asarray(tab[fill], float)
+                        c1 = pg.PlotDataItem(xs, ys, pen=pg.mkPen(color, width=1))
+                        c2 = pg.PlotDataItem(xs, y2, pen=pg.mkPen(None))
+                        col = pg.mkColor(color)
+                        col.setAlpha(110 if tab.get("_strong") else 45)
+                        it = pg.FillBetweenItem(c1, c2, brush=pg.mkBrush(col))
+                        p.addItem(c1)
+                        p.addItem(c2)
+                        p.addItem(it)
+                        leg.addItem(c1, lab)
+                        continue
                     if isinstance(tab, dict) and tab.get("_marker"):
                         it = p.plot(xs, ys, pen=None, symbol="o", symbolSize=11, symbolBrush=color)
                     elif dash:

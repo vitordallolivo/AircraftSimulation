@@ -64,8 +64,13 @@ def draw(ax, spec, res):
             if spec.swap:
                 xs, ys = ys, xs
             lab = (f"{tname}: {y}" if len(spec.ys) > 1 else tname) if many else y
-            if t.get("_marker"):
-                ax.plot(xs, ys, ls="none", marker="o", ms=9, color=C[k % 8], markeredgecolor=SURF, label=lab)
+            col = t.get("_color") or C[k % 8]
+            if t.get("_fill") and t["_fill"] in t:
+                ax.fill_between(xs, ys, np.asarray(t[t["_fill"]], float), color=col,
+                                alpha=0.35 if t.get("_strong") else 0.12, lw=0, label=lab)
+                k += 1
+            elif t.get("_marker"):
+                ax.plot(xs, ys, ls="none", marker="o", ms=9, color=col, markeredgecolor=SURF, label=lab)
                 k += 1
             elif t.get("_dash"):
                 ax.plot(xs, ys, color=INK2 if len(xs) == 2 else C[k % 8], ls="--", lw=1.2, label=lab)

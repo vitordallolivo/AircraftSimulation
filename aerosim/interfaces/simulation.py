@@ -94,6 +94,7 @@ class RunContext:
     on_chunk: Callable[["LogChunk"], None] = lambda c: None       # pedaço novo do registro (tempo real)
     on_progress: Callable[[float, str], None] = lambda f, msg: None
     cancel: threading.Event = field(default_factory=threading.Event)
+    shared: dict = field(default_factory=dict)     # resultados que uma aba deixa para outra (ex.: a polar)
 
     def check(self) -> None:
         if self.cancel.is_set():

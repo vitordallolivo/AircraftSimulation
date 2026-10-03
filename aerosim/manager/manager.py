@@ -23,6 +23,7 @@ class SimulationManager(ISimulationManager):
             from aerosim.backend import default_backend
             backend = default_backend()
         self.backend = backend
+        self.shared: dict = {}          # o que uma simulação deixa para outra (ex.: a polar da aba Aerodinâmica)
         self._sims: dict[str, ISimulation] = {}
         for s in simulations if simulations is not None else [cls() for cls in BUILTIN]:
             self.register(s)
@@ -46,6 +47,7 @@ class SimulationManager(ISimulationManager):
         p = sim.defaults(aircraft, params or {})
         p.update(params or {})
         ctx = RunContext(backend=self.backend, aircraft=aircraft, params=p, checkpoints=self.checkpoints,
+                         shared=self.shared,
                          on_chunk=on_chunk or (lambda c: None), on_progress=on_progress or (lambda f, m: None),
                          cancel=cancel or threading.Event())
         return sim.run(ctx)
