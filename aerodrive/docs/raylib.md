@@ -1,7 +1,26 @@
 # Tutorial: raylib com Zig (aerodrive)
 
-O raylib não é instalado: o `zig build` baixa o código-fonte dele (pelo `build.zig.zon`) e compila
-junto com o aerodrive. No Linux só faltam os cabeçalhos do sistema de janelas e do OpenGL.
+Usamos o [raylib-zig](https://github.com/raylib-zig/raylib-zig) (raylib 6.0 com API em Zig, para
+Zig 0.16): `const rl = @import("raylib");`, `rl.initWindow(...)`, cores `.white` etc. Os exemplos
+dele (`examples/` no repositório: áudio, raygui, gamepad, shaders, modelos) servem de referência.
+
+Nada é instalado: o `zig build` baixa o código-fonte (pelo `build.zig.zon`) e compila junto.
+No Linux só faltam os cabeçalhos do sistema de janelas e do OpenGL.
+
+Como foi adicionado (já está feito no `build.zig.zon`):
+
+```sh
+zig fetch --save=raylib_zig git+https://github.com/raylib-zig/raylib-zig#devel
+```
+
+e no `build.zig`:
+
+```zig
+const rlz = b.lazyDependency("raylib_zig", .{ .target = target, .optimize = .ReleaseFast }) orelse return;
+exe.root_module.addImport("raylib", rlz.module("raylib")); // rl.gl = rlgl, rl.math = raymath
+exe.root_module.addImport("raygui", rlz.module("raygui"));
+exe.root_module.linkLibrary(rlz.artifact("raylib"));
+```
 
 ## 1. Zig 0.16
 
@@ -38,7 +57,9 @@ zig build run -- ../data/aircraft/Convencional_original.json
 A primeira compilação baixa e compila o raylib (1 a 2 min); as seguintes usam o cache.
 
 Comandos no hangar: analógico esquerdo = profundor e leme, LB/RB = aileron, RT = motor;
-teclado: setas, A/D, W/S; mouse: arrastar gira, roda aproxima.
+teclado: setas, A/D, W/S; mouse: arrastar gira, roda aproxima; **Enter = voar** (piloto automático).
+No voo: C troca a câmera (piloto no chão, perseguição, livre), Espaço pausa, R recomeça, Esc volta.
+`fps=30` ou `fps=60` (padrão) escolhe a taxa de quadros; a física roda em tempo real.
 
 ## 4. Foto sem abrir janela (servidor, CI)
 
@@ -46,6 +67,8 @@ teclado: setas, A/D, W/S; mouse: arrastar gira, roda aproxima.
 xvfb-run -a zig build shot -- ../data/aircraft/Asa_voadora.json asa.png 1280x720 demo
 #                                  avião                        saída   tamanho  comandos se mexendo
 # vista=az,el,zoom: azimute (° a partir do nariz, para a direita), elevação (°), zoom (× enquadramento)
+xvfb-run -a zig build shot -- ../data/aircraft/Convencional_original.json voo.png voo=40 cam=seguir
+# voo=SEG: voa SEG segundos pelo piloto automático e fotografa; cam=chao|seguir|livre
 ```
 
 ## 5. Problemas comuns
@@ -57,17 +80,17 @@ xvfb-run -a zig build shot -- ../data/aircraft/Asa_voadora.json asa.png 1280x720
 | `bad HTTP response code: '405'` ou `ReadFailed` ao baixar | rede com proxy que o Zig não atravessa: baixe o raylib com git e registre no cache (abaixo) |
 | janela preta / `GLFW: Failed to create window` | sem OpenGL 3.3: atualize o driver de vídeo (no Linux, `mesa`) |
 
-Sem acesso direto à internet pelo Zig (proxy corporativo):
+Sem acesso direto à internet pelo Zig (proxy corporativo): baixe cada dependência com git e
+registre no cache do Zig (o hash tem de sair igual ao do `build.zig.zon`):
 
 ```sh
-git clone https://github.com/raysan5/raylib && cd raylib && git checkout d8ddc8a0a6b89f79aa26ec99c20c9a8a129de9d9
-git archive --format=tar.gz --prefix=raylib/ -o ../raylib.tar.gz HEAD && cd ..
-zig fetch raylib.tar.gz     # o hash tem de sair igual ao do build.zig.zon
-# o raylib também pede emsdk 4.0.9 e zemscripten (git), registrados do mesmo jeito
+git clone https://github.com/raylib-zig/raylib-zig && cd raylib-zig && git checkout 8758f4cd
+git archive --format=tar.gz --prefix=raylib-zig/ -o ../rlz.tar.gz HEAD && cd .. && zig fetch rlz.tar.gz
+# idem para o que o raylib-zig pede no build.zig.zon dele: raylib#6.0, raygui, emsdk 4.0.9, zemscripten
 ```
 
 ## 6. Atualizar o raylib
 
 ```sh
-zig fetch --save=raylib https://github.com/raysan5/raylib/archive/<commit>.tar.gz
+zig fetch --save=raylib_zig git+https://github.com/raylib-zig/raylib-zig#devel
 ```

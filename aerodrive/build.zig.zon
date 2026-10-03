@@ -4,11 +4,13 @@
     .minimum_zig_version = "0.16.0",
     .fingerprint = 0x1970518957f7a103,
     .dependencies = .{
-        // raylib (master de 2026-10-03, já compatível com Zig 0.16). Para atualizar:
-        //   zig fetch --save=raylib https://github.com/raysan5/raylib/archive/<commit>.tar.gz
-        .raylib = .{
-            .url = "https://github.com/raysan5/raylib/archive/d8ddc8a0a6b89f79aa26ec99c20c9a8a129de9d9.tar.gz",
-            .hash = "raylib-6.0.0-whq8uIRvNwXmX0FLGBpURkriOr1hO58vtAvdXgXRebYU",
+        // o núcleo de física do aerosim (mesmo repositório)
+        .aerosim = .{ .path = "../core" },
+        // raylib-zig (raylib 6.0 com API em Zig, para Zig 0.16). Para atualizar:
+        //   zig fetch --save=raylib_zig git+https://github.com/raylib-zig/raylib-zig#devel
+        .raylib_zig = .{
+            .url = "git+https://github.com/raylib-zig/raylib-zig#8758f4cd3a5ae0df6941c4715257223d34c5ad3e",
+            .hash = "raylib_zig-6.0.0-KE8RECZ8BQDm-txuospkpZHbJ6DNpacUF7D88RWQ_qAe",
             .lazy = true,
         },
     },

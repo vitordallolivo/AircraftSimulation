@@ -128,10 +128,10 @@ pub fn build(gpa: std.mem.Allocator, ac: *const Aircraft, diag: *model.Diag) Err
     return .{ .arena = arena, .pieces = try b.list.toOwnedSlice(b.a) };
 }
 
-const Station = struct { s: f64, le: V3, chord: f64, twist: f64 };
+pub const Station = struct { s: f64, le: V3, chord: f64, twist: f64 };
 
 /// estações nas quebras (seções + início/fim dos comandos), como `universal._surface`
-fn stations(ac: *const Aircraft, s: *const Surface, out: *[model.limits.sections * 3]Station) []Station {
+pub fn stations(ac: *const Aircraft, s: *const Surface, out: *[model.limits.sections * 3]Station) []Station {
     var sbuf: [model.limits.sections]model.Section = undefined;
     const ss = model.sortedSections(s, &sbuf);
     const bspan = model.semispan(s);
@@ -161,7 +161,7 @@ fn stations(ac: *const Aircraft, s: *const Surface, out: *[model.limits.sections
     return out[0..k];
 }
 
-fn controlAt(s: *const Surface, y: f64) ?model.Control {
+pub fn controlAt(s: *const Surface, y: f64) ?model.Control {
     const bspan = model.semispan(s);
     for (s.controls) |c| {
         if (c.span_start * bspan - 1e-9 <= y and y <= c.span_end * bspan + 1e-9) return c;
@@ -170,7 +170,7 @@ fn controlAt(s: *const Surface, y: f64) ?model.Control {
 }
 
 /// normal do lado direito (direção da espessura; para cima, ou +y na vertical)
-fn frame(vertical: bool, root: V3, tip: V3) V3 {
+pub fn frame(vertical: bool, root: V3, tip: V3) V3 {
     if (vertical) return .{ 0, 1, 0 };
     const d = v3.sub(tip, root);
     const u = v3.unit(.{ 0, d[1], d[2] }, .{ 0, 1, 0 });

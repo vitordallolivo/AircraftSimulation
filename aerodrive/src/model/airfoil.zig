@@ -77,28 +77,104 @@ pub fn naca4(name: []const u8, out: *Profile) void {
 
 /// perfil para desenhar: coordenadas do arquivo (se houver) ou NACA pelo nome; no máximo 80 pontos
 pub fn forDrawing(name: []const u8, coords: []const [2]f64, out: *Profile) Error!void {
-    var full: Profile = .{};
-    if (coords.len == 0) {
-        naca4(name, &full);
-    } else {
-        if (coords.len < 3) return error.InvalidAirfoil;
-        if (coords.len > max_input) return error.TooManyPoints;
-        for (coords, 0..) |q, k| {
-            if (!std.math.isFinite(q[0]) or !std.math.isFinite(q[1]) or @abs(q[0]) > 2 or @abs(q[1]) > 2)
-                return error.InvalidAirfoil;
-            full.pts[k] = q;
-        }
-        full.n = coords.len;
-    }
-    if (full.n > max_points) { // np.linspace(0, n − 1, 80).astype(int)
+    var whole: Profile = .{};
+    try full(name, coords, &whole);
+    if (whole.n > max_points) { // np.linspace(0, n − 1, 80).astype(int)
         for (0..max_points) |k| {
-            const f = @as(f64, @floatFromInt(k)) * @as(f64, @floatFromInt(full.n - 1)) / @as(f64, @floatFromInt(max_points - 1));
-            out.pts[k] = full.pts[@min(@as(usize, @intFromFloat(@floor(f))), full.n - 1)];
+            const f = @as(f64, @floatFromInt(k)) * @as(f64, @floatFromInt(whole.n - 1)) / @as(f64, @floatFromInt(max_points - 1));
+            out.pts[k] = whole.pts[@min(@as(usize, @intFromFloat(@floor(f))), whole.n - 1)];
         }
         out.n = max_points;
     } else {
-        out.* = full;
+        out.* = whole;
     }
+}
+
+/// contorno completo (sem reamostrar): coordenadas do arquivo ou NACA pelo nome — para as contas
+pub fn full(name: []const u8, coords: []const [2]f64, out: *Profile) Error!void {
+    if (coords.len == 0) return naca4(name, out);
+    if (coords.len < 3) return error.InvalidAirfoil;
+    if (coords.len > max_input) return error.TooManyPoints;
+    for (coords, 0..) |q, k| {
+        if (!std.math.isFinite(q[0]) or !std.math.isFinite(q[1]) or @abs(q[0]) > 2 or @abs(q[1]) > 2) return error.InvalidAirfoil;
+        out.pts[k] = q;
+    }
+    out.n = coords.len;
+}
+
+fn lessX(_: void, a: [2]f64, b: [2]f64) bool {
+    return a[0] < b[0];
+}
+
+fn interpSorted(xs: []const [2]f64, x: f64) f64 { // np.interp (satura nas pontas)
+    if (x <= xs[0][0]) return xs[0][1];
+    for (xs[0 .. xs.len - 1], xs[1..]) |a, b| {
+        if (x <= b[0]) return if (b[0] > a[0]) a[1] + (x - a[0]) / (b[0] - a[0]) * (b[1] - a[1]) else a[1];
+    }
+    return xs[xs.len - 1][1];
+}
+
+/// (α_L0 em graus, C_m,ac) pela teoria de perfil fino — igual a `thin_airfoil` da GUI
+pub fn thinAirfoil(af: []const [2]f64) [2]f64 {
+    const n = 200;
+    var ile: usize = 0;
+    var x0: f64 = af[0][0];
+    var x1: f64 = af[0][0];
+    for (af, 0..) |q, k| {
+        if (q[0] < af[ile][0]) ile = k;
+        x0 = @min(x0, q[0]);
+        x1 = @max(x1, q[0]);
+    }
+    if (!(x1 - x0 > 1e-9)) return .{ 0, 0 };
+    var up: [max_input][2]f64 = undefined;
+    var lo: [max_input][2]f64 = undefined;
+    const nu = ile + 1;
+    const nl = af.len - ile;
+    @memcpy(up[0..nu], af[0..nu]);
+    @memcpy(lo[0..nl], af[ile..]);
+    std.mem.sort([2]f64, up[0..nu], {}, lessX);
+    std.mem.sort([2]f64, lo[0..nl], {}, lessX);
+    var x: [n]f64 = undefined;
+    var zc: [n]f64 = undefined;
+    for (0..n) |i| {
+        x[i] = 0.5 * (1 - @cos(std.math.pi * @as(f64, @floatFromInt(i)) / (n - 1)));
+        const xs = x0 + (x1 - x0) * x[i];
+        zc[i] = 0.5 * (interpSorted(up[0..nu], xs) + interpSorted(lo[0..nl], xs)) / (x1 - x0);
+    }
+    var dz: [n]f64 = undefined; // np.gradient (2ª ordem por dentro, 1ª nas pontas)
+    for (1..n - 1) |i| {
+        const hs = x[i] - x[i - 1];
+        const hd = x[i + 1] - x[i];
+        dz[i] = (hs * hs * zc[i + 1] + (hd * hd - hs * hs) * zc[i] - hd * hd * zc[i - 1]) / (hs * hd * (hd + hs));
+    }
+    dz[0] = dz[1];
+    dz[n - 1] = dz[n - 2];
+    var a0: f64 = 0;
+    var A1: f64 = 0;
+    var A2: f64 = 0;
+    for (1..n) |i| { // trapézio em θ = acos(1 − 2x)
+        const ta = std.math.acos(1 - 2 * x[i - 1]);
+        const tb = std.math.acos(1 - 2 * x[i]);
+        const h = 0.5 * (tb - ta);
+        a0 += h * (dz[i - 1] * (@cos(ta) - 1) + dz[i] * (@cos(tb) - 1));
+        A1 += h * (dz[i - 1] * @cos(ta) + dz[i] * @cos(tb));
+        A2 += h * (dz[i - 1] * @cos(2 * ta) + dz[i] * @cos(2 * tb));
+    }
+    const alpha0 = -a0 / std.math.pi;
+    return .{ std.math.radiansToDegrees(alpha0), -std.math.pi / 4.0 * (2.0 / std.math.pi * A1 - 2.0 / std.math.pi * A2) };
+}
+
+/// τ = dα/dδ de um flape simples (perfil fino) com fator empírico 0,85
+pub fn flapEffectiveness(chord_frac: f64) f64 {
+    const cf = std.math.clamp(chord_frac, 0.01, 0.99);
+    const th = std.math.acos(2 * cf - 1);
+    return 0.85 * (1 - (th - @sin(th)) / std.math.pi);
+}
+
+/// C_Lα de uma asa finita (por rad) a partir do a0 do perfil
+pub fn helmbold(a0: f64, AR: f64) f64 {
+    const k = a0 / (std.math.pi * AR);
+    return a0 / (@sqrt(1.0 + k * k) + k);
 }
 
 /// corta o contorno em x/c = xh: parte fixa (frente), parte móvel (comando) e o ponto médio da
@@ -172,6 +248,16 @@ test "nome sem 4 dígitos vira 0012; coordenadas ruins dão erro" {
     try testing.expectError(error.InvalidAirfoil, forDrawing("x", &.{ .{ 0, 0 }, .{ 1, std.math.nan(f64) }, .{ 0.5, 0.1 } }, &d));
 }
 
+test "perfil fino: NACA 2412: α_L0 e C_m,ac iguais aos da GUI" {
+    var p: Profile = .{};
+    naca4("NACA 2412", &p);
+    const r = thinAirfoil(p.slice());
+    try testing.expectApproxEqAbs(@as(f64, -2.114661308661674), r[0], 1e-6);
+    try testing.expectApproxEqAbs(@as(f64, -0.05281661064824909), r[1], 1e-6);
+    naca4("0012", &p);
+    try testing.expectApproxEqAbs(@as(f64, 0), thinAirfoil(p.slice())[0], 1e-9);
+}
+
 test "corte do comando: as duas partes fecham na articulação" {
     var af: Profile = .{};
     try forDrawing("NACA 0012", &.{}, &af);
@@ -191,6 +277,11 @@ fn fuzzAirfoil(_: void, src: *fz.Src) anyerror!void {
     var coords: [300][2]f64 = undefined;
     const nc = src.int(u16, 0, 300);
     for (coords[0..nc]) |*q| q.* = .{ src.any(), src.any() };
+    var whole: Profile = .{};
+    if (full(name_buf[0..nl], coords[0..nc], &whole)) |_| {
+        const r = thinAirfoil(whole.slice());
+        try testing.expect(std.math.isFinite(r[0]) and std.math.isFinite(r[1]));
+    } else |_| {}
     var out: Profile = .{};
     forDrawing(name_buf[0..nl], coords[0..nc], &out) catch return;
     try testing.expect(out.n >= 3 and out.n <= max_points);

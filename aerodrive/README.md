@@ -4,9 +4,10 @@ Simulador pilotado (controle de Xbox ou rádio de aeromodelo em modo joystick US
 físico do aerosim (`core/`, Zig). Visual simples, só para teste: a física é a do núcleo e o desenho é o
 mesmo da GUI. Feito em Zig + raylib (compilado pelo próprio `zig build`, sem instalador).
 
-> Estado: **frente B (desenho da aeronave) funcionando** — o hangar abre qualquer avião salvo pela
-> GUI e desenha igual a ela, com as superfícies defletindo pelo controle. Tutorial do raylib:
-> [`docs/raylib.md`](docs/raylib.md).
+> Estado: o hangar abre qualquer avião salvo pela GUI e desenha igual a ela (superfícies defletindo
+> pelo controle); **Enter voa pelo piloto automático** o percurso do avião (decolagem, circuito,
+> passagem LAPES e pouso), em tempo real, com o núcleo de física em Zig e a mesma calibração da GUI.
+> Tutorial do raylib (raylib-zig): [`docs/raylib.md`](docs/raylib.md).
 
 ```sh
 cd aerodrive
@@ -20,11 +21,11 @@ zig build run -- ../data/aircraft/Convencional_original.json
 |---|---|---|
 | **A. Contrato** | ler o avião salvo pela GUI (`model/aircraft.zig`) e o perfil (`model/airfoil.zig`), com validação e mensagens | ✅ |
 | **B. Desenho da aeronave** | esqueleto (`model/skeleton.zig`), poses (`gfx/pose.zig`), raylib (`gfx/render.zig`), hangar | ✅ |
-| C. Núcleo pilotado | comandos externos e modos manual/assistido no `core/`, ler `params` do avião em Zig | a fazer |
+| C. Núcleo pilotado | `sim/params.zig` monta os parâmetros do núcleo em Zig (iguais aos da GUI até 10⁻⁶, com a calibração); `sim/drive_manager.zig` roda o núcleo e manda os comandos às superfícies (piloto automático). Falta: comandos do controle entrando no núcleo (manual/assistido) | começada |
 | D. Controle | perfil em arquivo, tela "Controle" (zoom na peça + curva ao vivo); as contas já estão em `input/channels.zig` | começada |
-| E. Câmeras | piloto no chão, perseguição, cabine, de cima, zoom em peça (`camera/camera.zig` já tem a interface e a órbita) | começada |
-| F. Mapa | chão legível, pista, mesa/plataforma, objetos simples | a fazer |
-| G. Voo | laço em tempo real 30/60 fps, HUD | a fazer |
+| E. Câmeras | `camera/camera.zig`: órbita, perseguição e piloto no chão (zoom automático). Falta: cabine, de cima, zoom em peça | começada |
+| F. Mapa | `world/field.zig`: chão com grade, pista com marcas a cada 10 m, x_warning, mesa/plataforma (os pads da física), percurso planejado. Falta: mapa por arquivo, objetos | começada |
+| G. Voo | `screens/flight.zig`: tempo real 30/60 fps, rastro, HUD mínimo (etapa, V, h, comandos) | começada |
 | H. Gravação | `.adr` opcional, replay, "Voos gravados" na GUI | a fazer |
 | I. Pele | .glb do Blender/SolidWorks sobre o esqueleto | a fazer |
 
@@ -269,8 +270,13 @@ aerodrive/
     model/airfoil.zig          [A] perfil NACA / coordenadas, corte do comando
     model/skeleton.zig         [B] peças, malhas e drivers
     gfx/pose.zig               [B] driver + estado -> transformação (sem gráficos)
-    gfx/render.zig             [B] raylib: malhas na GPU, sombreamento da GUI, grade
-    camera/camera.zig          [E] interface de câmera + órbita
+    gfx/render.zig             [B] raylib-zig: malhas na GPU, sombreamento da GUI, campo, rastro
+    camera/camera.zig          [E] interface de câmera: órbita, perseguição, piloto no chão
+    sim/mission.zig            [C] percurso -> segmentos, eventos, mesas/plataformas do núcleo
+    sim/params.zig             [C] avião -> parâmetros do núcleo + calibração do piloto
+    sim/drive_manager.zig      [C] dono da simulação: avança o núcleo e entrega pose e comandos
+    world/field.zig            [F] chão, pista, marcas, x_warning, pads, percurso
+    screens/flight.zig         [G] tela de voo
     input/channels.zig         [D] curvas dos canais (zona morta, expo, rate, trim)
     ui/theme.zig               cores e fonte com acentos
     screens/hangar.zig         menu inicial com a aeronave viva

@@ -5,13 +5,16 @@
 //!   zig build test                                                     testes (sem janela)
 //!   zig build test -Dfuzz=200000 -Dseed=7                             fuzzing mais longo (padrão: 2000 por teste)
 //!
-//! O raylib vem pelo gerenciador de pacotes do Zig (build.zig.zon) e é compilado junto: nada a
-//! instalar além dos cabeçalhos do sistema de janelas no Linux (ver docs/raylib.md).
+//! O raylib vem pelo raylib-zig (build.zig.zon), compilado junto: nada a instalar além dos
+//! cabeçalhos do sistema de janelas no Linux (ver docs/raylib.md).
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+
+    // ---- o núcleo de física (core/) como módulo Zig
+    const core = b.dependency("aerosim", .{ .target = target, .release = true }).module("aerosim"); // física sempre otimizada
 
     // ---- testes: só os módulos sem janela (modelo, esqueleto, poses, câmeras)
     const fopts = b.addOptions();
@@ -21,34 +24,31 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{.{ .name = "aerosim", .module = core }},
     }) });
     tests.root_module.addOptions("build_options", fopts);
     const run_tests = b.addRunArtifact(tests);
     run_tests.setCwd(b.path(".")); // os testes leem ../data/aircraft
     b.step("test", "Testes e fuzzing (sem janela)").dependOn(&run_tests.step);
 
-    // ---- o programa (com raylib)
-    const rl = b.lazyDependency("raylib", .{
+    // ---- o programa (com raylib, pelo raylib-zig)
+    const rlz = b.lazyDependency("raylib_zig", .{
         .target = target,
         .optimize = .ReleaseFast,
         .linux_display_backend = b.option(enum { X11, Wayland, Both }, "display", "Linux: X11 (padrão), Wayland ou Both") orelse .X11,
     }) orelse return;
-    const raylib = rl.artifact("raylib");
-    const c = b.addTranslateC(.{
-        .root_source_file = b.path("src/gfx/c.h"),
-        .target = target,
-        .optimize = optimize,
-    });
-    c.addIncludePath(rl.path("src"));
-    const c_mod = c.createModule();
 
     const exe = b.addExecutable(.{ .name = "aerodrive", .root_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "c", .module = c_mod }},
+        .imports = &.{
+            .{ .name = "raylib", .module = rlz.module("raylib") },
+            .{ .name = "raygui", .module = rlz.module("raygui") },
+            .{ .name = "aerosim", .module = core },
+        },
     }) });
-    exe.root_module.linkLibrary(raylib);
+    exe.root_module.linkLibrary(rlz.artifact("raylib"));
     b.installArtifact(exe);
 
     const run = b.addRunArtifact(exe);

@@ -58,6 +58,16 @@ pub fn check(
     comptime testOne: fn (@TypeOf(context), *Src) anyerror!void,
     options: std.testing.FuzzInputOptions,
 ) !void {
+    return checkScaled(context, testOne, options, 1);
+}
+
+/// para casos caros (ex.: cada caso monta e calibra uma simulação): N / `divide` entradas
+pub fn checkScaled(
+    context: anytype,
+    comptime testOne: fn (@TypeOf(context), *Src) anyerror!void,
+    options: std.testing.FuzzInputOptions,
+    divide: usize,
+) !void {
     const W = struct {
         fn f(c: @TypeOf(context), m: *Smith) anyerror!void {
             var src: Src = .{ .smith = m };
@@ -66,7 +76,7 @@ pub fn check(
     };
     try std.testing.fuzz(context, W.f, options);
     var prng = std.Random.DefaultPrng.init(opts.fuzz_seed);
-    for (0..opts.fuzz_iterations) |it| {
+    for (0..@max(opts.fuzz_iterations / @max(divide, 1), 1)) |it| {
         var src: Src = .{ .rnd = prng.random() };
         testOne(context, &src) catch |e| {
             std.debug.print("fuzz: falhou na iteração {d} (semente {d}): {s}\n", .{ it, opts.fuzz_seed, @errorName(e) });

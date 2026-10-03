@@ -21,6 +21,7 @@ pub const Input = struct {
     drag: [2]f64 = .{ 0, 0 }, // px (girar)
     zoom: f64 = 0, // passos da roda (+ aproxima)
     target: ?V3 = null, // o que seguir (ex.: a aeronave)
+    heading: ?f64 = null, // proa da aeronave (rad) — a perseguição usa
 };
 
 pub const Orbit = struct {
@@ -59,9 +60,63 @@ pub const Orbit = struct {
     }
 };
 
+/// atrás da aeronave, a uma distância fixa, com atraso suave (segue a proa)
+pub const Chase = struct {
+    target: V3 = .{ 0, 0, 0 },
+    heading: f64 = 0, // rad (proa seguida, suavizada)
+    distance: f64 = 6,
+    height: f64 = 1.8,
+    fov_deg: f64 = 55,
+    lag: f64 = 1.5, // s (constante do atraso da proa)
+
+    pub fn update(c: *Chase, in: Input, dt: f64) void {
+        if (in.target) |t| if (v3.finite(t) and v3.norm(t) < 1e7) {
+            c.target = t;
+        };
+        if (in.heading) |h| if (std.math.isFinite(h)) {
+            const d = std.math.atan2(@sin(h - c.heading), @cos(h - c.heading)); // menor ângulo
+            const k = if (std.math.isFinite(dt) and dt > 0) std.math.clamp(dt / c.lag, 0, 1) else 0;
+            c.heading = @mod(c.heading + k * d + std.math.pi, 2 * std.math.pi) - std.math.pi;
+        };
+        if (std.math.isFinite(in.zoom)) c.distance = std.math.clamp(c.distance * std.math.pow(f64, 0.9, std.math.clamp(in.zoom, -20, 20)), 1.5, 60);
+    }
+
+    pub fn view(c: *const Chase) View {
+        const back: V3 = .{ -@cos(c.heading) * c.distance, -@sin(c.heading) * c.distance, -c.height };
+        return .{ .eye = v3.add(c.target, back), .target = c.target, .fov_deg = c.fov_deg };
+    }
+};
+
+/// o piloto parado no chão: só os "olhos" seguem a aeronave; o zoom (fov) mantém o avião num
+/// tamanho visível na tela até longe (como no SeligSIM/RealFlight)
+pub const Ground = struct {
+    eye: V3 = .{ -8, 12, -1.7 }, // atrás e à direita da cabeceira, na altura dos olhos
+    target: V3 = .{ 0, 0, 0 },
+    size: f64 = 2.5, // envergadura (m)
+    screen_frac: f64 = 0.18, // fração da tela que o avião ocupa (de longe)
+    max_fov: f64 = 70,
+    min_fov: f64 = 6,
+
+    pub fn update(g: *Ground, in: Input, dt: f64) void {
+        _ = dt;
+        if (in.target) |t| if (v3.finite(t) and v3.norm(t) < 1e7) {
+            g.target = t;
+        };
+        if (std.math.isFinite(in.zoom)) g.screen_frac = std.math.clamp(g.screen_frac * std.math.pow(f64, 1.1, std.math.clamp(in.zoom, -20, 20)), 0.03, 0.6);
+    }
+
+    pub fn view(g: *const Ground) View {
+        const dist = @max(v3.norm(v3.sub(g.target, g.eye)), 0.5);
+        const fov = 2 * std.math.atan(g.size / (2 * dist * g.screen_frac));
+        return .{ .eye = g.eye, .target = if (dist > 0.5) g.target else v3.add(g.eye, .{ 1, 0, 0 }), .fov_deg = std.math.clamp(std.math.radiansToDegrees(fov), g.min_fov, g.max_fov) };
+    }
+};
+
 /// a interface: uma câmera é qualquer um destes
 pub const Camera = union(enum) {
     orbit: Orbit,
+    chase: Chase,
+    ground: Ground,
 
     pub fn update(c: *Camera, in: Input, dt: f64) void {
         switch (c.*) {
@@ -86,16 +141,22 @@ test "órbita inicial: atrás, à direita e acima do alvo (como a GUI)" {
 
 fn fuzzCamera(_: void, src: *fz.Src) anyerror!void {
     // entradas quaisquer em sequência: a vista continua finita, com o olho fora do alvo
-    var c: Camera = .{ .orbit = Orbit.framing(src.any()) };
+    var c: Camera = switch (src.int(u8, 0, 2)) {
+        0 => .{ .orbit = Orbit.framing(src.any()) },
+        1 => .{ .chase = .{} },
+        else => .{ .ground = .{} },
+    };
     while (!src.chance(8)) {
         const f = struct {
             fn f(s: *fz.Src) f64 {
                 return s.any();
             }
         }.f;
-        c.update(.{ .drag = .{ f(src), f(src) }, .zoom = f(src), .target = if (src.boolean()) .{ f(src), f(src), f(src) } else null }, 1.0 / 60.0);
+        c.update(.{ .drag = .{ f(src), f(src) }, .zoom = f(src), .target = if (src.boolean()) .{ f(src), f(src), f(src) } else null, .heading = if (src.boolean()) f(src) else null }, if (src.chance(5)) f(src) else 1.0 / 60.0);
         const v = c.view();
         try testing.expect(v3.finite(v.eye) and v3.finite(v.target));
+        try testing.expect(v.fov_deg > 1 and v.fov_deg < 120);
+        if (c != .orbit) continue;
         // olho na distância pedida (até a precisão do f64 na posição do alvo) e dentro dos limites
         const o = c.orbit;
         try testing.expect(o.distance >= o.min_distance and o.distance <= o.max_distance);

@@ -14,6 +14,7 @@ pub const Control = struct {
     span_start: f64 = 0.6,
     span_end: f64 = 1.0,
     chord_frac: f64 = 0.25,
+    tau: ?f64 = null, // efetividade; null: perfil fino
     deflection: f64 = 0,
 };
 
@@ -28,10 +29,21 @@ pub const Device = struct {
     cant: f64 = 10,
     toe: f64 = 0,
     profile: []const u8 = "NACA 0010",
+    cl_alpha: f64 = 5.9,
+    cd0: f64 = 0.012,
+    oswald: f64 = 0.8,
     enabled: bool = true,
 };
 
-pub const Airfoil = struct { name: []const u8 = "NACA 0012", coords: []const [2]f64 = &.{} };
+pub const Airfoil = struct {
+    name: []const u8 = "NACA 0012",
+    coords: []const [2]f64 = &.{},
+    cl_alpha: f64 = 5.9, // 1/rad (2D)
+    alpha0: ?f64 = null, // graus; null: perfil fino
+    cl_max: f64 = 1.4,
+    cd0: f64 = 0.01,
+    cm_ac: ?f64 = null, // null: perfil fino
+};
 
 pub const Surface = struct {
     name: []const u8 = "asa",
@@ -47,10 +59,35 @@ pub const Surface = struct {
     vertical: bool = false,
     controls: []const Control = &.{},
     devices: []const Device = &.{},
+    oswald: f64 = 0.85,
+    eta: f64 = 1.0,
+    downwash: bool = false,
     enabled: bool = true,
+    // sobrescritas (null: do perfil e da geometria)
+    CLa: ?f64 = null,
+    CL0: ?f64 = null,
+    CLmax: ?f64 = null,
+    CD0: ?f64 = null,
+    Cmac: ?f64 = null,
+    eps0: ?f64 = null, // graus
+    depsda: ?f64 = null,
+    mass: f64 = 0,
 };
 
-pub const Fuselage = struct { enabled: bool = false, x_nose: f64 = 0.6, length: f64 = 1.2, width: f64 = 0.15, height: f64 = 0.15, z: f64 = 0 };
+pub const Fuselage = struct {
+    enabled: bool = false,
+    x_nose: f64 = 0.6,
+    length: f64 = 1.2,
+    width: f64 = 0.15,
+    height: f64 = 0.15,
+    z: f64 = 0,
+    CDS: f64 = 0.03,
+    Cma: f64 = 0.1,
+    Cnb: f64 = -0.03,
+    CYb: f64 = -0.15,
+    aero_point: ?[3]f64 = null,
+    mass: f64 = 0,
+};
 pub const Boom = struct {
     enabled: bool = false,
     x_start: f64 = -0.3,
@@ -58,12 +95,37 @@ pub const Boom = struct {
     diameter: f64 = 0.025,
     z: f64 = 0,
     attach_tail: bool = true,
+    mass: f64 = 0,
 
     pub fn xEnd(b: Boom) f64 {
         return b.x_start - b.length;
     }
 };
-pub const Propeller = struct { D: f64 = 0.381 };
+pub const Propeller = struct { D: f64 = 0.381, Ip: f64 = 5.4e-4, mass: f64 = 0.05, J: []const f64 = &.{}, CT: []const f64 = &.{}, CP: []const f64 = &.{} };
+pub const Motor = struct { Kv: f64 = 310, Rm: f64 = 0.02, B: f64 = 3e-5, tauc: f64 = 0.015, Imax: f64 = 80, Jm: f64 = 1e-4, mass: f64 = 0.5 };
+pub const Battery = struct {
+    cells: f64 = 6,
+    V_cell: f64 = 3.7,
+    Rint: f64 = 0.035,
+    capacity_mAh: f64 = 5000,
+    mass: f64 = 0.8,
+
+    pub fn voc(b: Battery) f64 {
+        return b.cells * b.V_cell;
+    }
+};
+pub const ThrustPoly = struct {
+    coefs: []const f64 = &.{},
+    x_var: []const u8 = "V",
+    y_var: []const u8 = "none",
+    gain: f64 = 1,
+    rho_exp: f64 = 0,
+    rho0: f64 = 1.225,
+    xmax: f64 = 0,
+    ymax: f64 = 0,
+    x_const: f64 = 0,
+    y_const: f64 = 0,
+};
 pub const Propulsion = struct {
     name: []const u8 = "motor",
     x: f64 = 0.55,
@@ -72,21 +134,37 @@ pub const Propulsion = struct {
     tilt: f64 = 0,
     toe: f64 = 0,
     sense: f64 = 1,
-    enabled: bool = true,
+    yaw_mix: f64 = 0,
+    thrust_model: []const u8 = "motor",
+    thrust_poly: ThrustPoly = .{},
+    motor: Motor = .{},
     propeller: Propeller = .{},
+    battery: Battery = .{},
+    enabled: bool = true,
 };
-pub const GearLeg = struct { kind: []const u8 = "main", x: f64 = 0, y: f64 = 0, z: f64 = 0.2 };
+pub const GearLeg = struct { kind: []const u8 = "main", x: f64 = 0, y: f64 = 0, z: f64 = 0.2, k: f64 = 4000, c: f64 = 120 };
 pub const Gear = struct {
     layout: []const u8 = "tricycle",
     main_x: f64 = -0.05,
     main_track: f64 = 0.6,
     main_z: f64 = 0.22,
+    main_k: f64 = 4000,
+    main_c: f64 = 120,
     steer_x: f64 = 0.45,
     steer_z: f64 = 0.22,
+    steer_k: f64 = 2000,
+    steer_c: f64 = 60,
     tail_skid: bool = true,
     skid_x: f64 = -1.1,
     skid_z: f64 = 0,
+    skid_k: f64 = 6000,
+    skid_c: f64 = 150,
     custom: []const GearLeg = &.{},
+    mu_roll: f64 = 0.04,
+    mu_lat: f64 = 0.6,
+    mu_brake: f64 = 1.0,
+    mu_skid: f64 = 0.35,
+    mu_landing: f64 = 0.4,
 };
 pub const Tank = struct {
     name: []const u8 = "tanque",
@@ -96,6 +174,8 @@ pub const Tank = struct {
     side: f64 = 0.14,
     volume: f64 = 2.0, // L
     height: f64 = 0.12,
+    rho: f64 = 1000,
+    zeta: f64 = 0.03,
     shape: []const u8 = "square",
 
     pub fn baseArea(t: Tank) f64 {
@@ -106,7 +186,111 @@ pub const Tank = struct {
         return t.volume / 1000.0 / t.baseArea();
     }
 };
-pub const Payload = struct { enabled: bool = false, mass: f64 = 2, x: f64 = 0, y: f64 = 0, z: f64 = 0.08 };
+pub const Payload = struct {
+    enabled: bool = false,
+    mass: f64 = 2,
+    x: f64 = 0,
+    y: f64 = 0,
+    z: f64 = 0.08,
+    bay: f64 = 0.35,
+    Fext_g: f64 = 2,
+    mu_b: f64 = 0.3,
+    CdS_chute: f64 = 0.45,
+};
+pub const PointMass = struct { mass: f64 = 0.1, x: f64 = 0, y: f64 = 0, z: f64 = 0 };
+pub const Mass = struct {
+    base_mass: f64 = 8.39,
+    base_cg: [3]f64 = .{ 0, 0, 0 },
+    Ixx: f64 = 0.9,
+    Iyy: f64 = 1.2,
+    Izz: f64 = 1.9,
+    Ixz: f64 = 0.04,
+    items: []const PointMass = &.{},
+    include_propulsion: bool = false,
+    include_structure: bool = false,
+};
+pub const Environment = struct {
+    rho: f64 = 1.225,
+    wind_speed: f64 = 4,
+    wind_from: f64 = 30,
+    wind_elev: f64 = 3,
+    h_ref: f64 = 10,
+    gust: bool = false,
+    gust_T: f64 = 1,
+    gust_U: []const f64 = &.{ -1, -2, -1 },
+};
+pub const Takeoff = struct { VR: f64 = 12.5, sR: f64 = 37.5, de0: f64 = 0, de1: f64 = -6, rate_de: f64 = 60, ht: f64 = 2, rate_thr: f64 = 2, h_end: f64 = 6 };
+pub const SimSettings = struct { dt: f64 = 1e-3, tmax: f64 = 400, dtlog: f64 = 0.02, Mst: f64 = 50, slosh: bool = true };
+/// os mesmos nomes do núcleo (`types.Autopilot`); ângulos em graus no arquivo
+pub const Autopilot = struct {
+    auto_calibrate: bool = true,
+    CL0: f64 = 0.45,
+    CLa: f64 = 4.5,
+    alpha_max: f64 = 11,
+    g_up: f64 = 0.08,
+    g_down: f64 = 0.10,
+    Khr: f64 = 0.5,
+    Kvs: f64 = 0.5,
+    Kn_h: f64 = 0.065,
+    Kn_hd: f64 = 0.13,
+    Kn_ih: f64 = 0.01,
+    Kae: f64 = 4,
+    KIa: f64 = 4,
+    Kfn: f64 = 1.2,
+    Lorb: f64 = 50,
+    tlead: f64 = 0.8,
+    Kthe: f64 = 1.5,
+    Kqe: f64 = 0.25,
+    KV: f64 = 0.25,
+    KIV: f64 = 0.08,
+    KHT: f64 = 0.10,
+    Dtrim: f64 = 0.55,
+    Kchi: f64 = 0.8,
+    kvf: f64 = 0.05,
+    chi_inf: f64 = 60,
+    korb: f64 = 0.5,
+    phimax: f64 = 30,
+    Kphia: f64 = 2,
+    Kpa: f64 = 0.10,
+    Kbeta: f64 = 1,
+    tau_phi: f64 = 0.3,
+    pmax_cmd: f64 = 60,
+    Ky: f64 = 0.15,
+    Ki: f64 = 0.02,
+    Kpsi: f64 = 1.5,
+    Kr: f64 = 0.3,
+    Kbeq: f64 = 0.5,
+    hflare: f64 = 2.5,
+    tau_flare: f64 = 1,
+    kCL: f64 = 0.95,
+    de_max: f64 = 20,
+    da_max: f64 = 20,
+    dr_max: f64 = 25,
+};
+pub const Leg = struct {
+    kind: []const u8 = "straight", // straight | turn
+    length: f64 = 100,
+    radius: f64 = 50, // 0 = automático
+    angle: f64 = 180,
+    side: f64 = 1,
+    h: ?f64 = null,
+    V: ?f64 = null,
+    name: []const u8 = "perna",
+    takeoff: bool = false,
+    landing: bool = false,
+    clearance: f64 = 0,
+};
+pub const MissionEvent = struct { kind: []const u8 = "drop", leg: i64 = 0, s: f64 = 0 };
+pub const Mission = struct {
+    name: []const u8 = "missão",
+    legs: []const Leg = &.{},
+    events: []const MissionEvent = &.{},
+    n0: f64 = 0,
+    e0: f64 = 0,
+    chi0: f64 = 0,
+    h0: f64 = 0,
+    V0: f64 = 14,
+};
 pub const Ballast = struct { enabled: bool = false, mass: f64 = 0.3, x: f64 = 0.4, y: f64 = 0, z: f64 = 0 };
 pub const Airfield = struct {
     takeoff_from: []const u8 = "chão",
@@ -134,6 +318,16 @@ pub const Aircraft = struct {
     payload: Payload = .{},
     ballast: Ballast = .{},
     airfield: Airfield = .{},
+    mass: Mass = .{},
+    environment: Environment = .{},
+    takeoff: Takeoff = .{},
+    autopilot: Autopilot = .{},
+    sim: SimSettings = .{},
+    mission: Mission = .{},
+    shared_battery: bool = false,
+    Sref: ?f64 = null, // null ou 0: da asa
+    cref: ?f64 = null,
+    bref: ?f64 = null,
 };
 
 // ------------------------------------------------------------------ limites e erros
