@@ -64,7 +64,7 @@ def test_mission_optimized_takeoff_then_stages(manager):
     legs = ac.mission.names()
     r = manager.run("mission", ac, {"until": f"fim: {legs[2]}"})
     assert r.status == "STOPPED" and np.isfinite(r.summary["acionamento_profundor_m"])
-    assert {f"xz_{legs[0]}", f"t3_{legs[1]}", "vel_V_a (em relação ao ar)"} <= set(r.series)
+    assert {f"xz_{legs[0]}", f"t3_{legs[1]}", "vel_V_a"} <= set(r.series)
     assert any(k.startswith("op_★") for k in r.series)        # ponto de acionamento escolhido
     assert any(c.item.startswith("x_warning") and c.status == "ok" for c in r.checks)
 
@@ -81,21 +81,23 @@ def test_start_from_stage_without_checkpoint(backend, tmp_path):
 
 
 def test_mtow_bisection(manager):
-    """MTOW: carga LAPES, líquido e lastro variam juntos nas faixas pedidas"""
-    from aerosim.manager.simulations.mission import mass_items
+    """MTOW pela tabela (mínimo, nominal, máximo): lastro, LAPES e líquido juntos; xCG nos três valores"""
+    from aerosim.manager.simulations.mission import mtow_rows
     ac = TEMPLATES["conventional"]()
     ac.ballast.enabled, ac.ballast.mass, ac.ballast.x = True, 0.3, 0.3
-    keys = [k for k, *_ in mass_items(ac)]
-    assert keys == ["pay", "liq", "bal", "ext"]
-    r = manager.run("mission", ac, {"mode": MODES[3], "dx": 0.0, "m_pay_dn": 0.0, "m_pay_up": 2.0, "m_liq_dn": 1.0,
-                                    "m_liq_up": 0.0, "m_bal_dn": 0.0, "m_bal_up": 0.0, "m_ext_up": 0.0})
+    rows = mtow_rows(ac)
+    assert [r["item"] for r in rows] == ["Lastro (kg)", "LAPES (kg)", "Líquido (L)", "xCG (m)"]
+    rows[1].update(min=2.0, max=4.0)                         # LAPES de 2 a 4 kg
+    rows[2].update(min=1.0, max=2.0)                         # líquido de 1 a 2 L
+    x = rows[3]["nom"]
+    rows[3].update(min=x, max=x)                             # xCG fixo
+    r = manager.run("mission", ac, {"mode": MODES[3], "masses": rows})
     mt = r.summary["MTOW (kg)"]
-    assert r.summary["faixa: carga LAPES (kg)"] == [2.0, 4.0]
-    assert np.isfinite(mt)
-    pay = r.summary["no MTOW: carga LAPES (kg)"]
-    liq = r.summary["no MTOW: líquido nos tanques (kg)"]
-    assert 2.0 <= pay <= 4.0 and liq <= 1.61
-    assert r.summary["no MTOW: lastro (kg)"] == pytest.approx(0.3)
+    pay, liq = r.summary["MTOW: LAPES (kg)"], r.summary["MTOW: Líquido (L)"]
+    assert np.isfinite(mt) and 2.0 <= pay <= 4.0 and 1.0 <= liq <= 2.0
+    assert (pay - 2.0) / 2.0 == pytest.approx(liq - 1.0, abs=1e-9)     # vão juntos
+    assert r.summary["MTOW: Lastro (kg)"] == pytest.approx(0.3)
+    assert r.summary["MTOW: xCG (m)"] == pytest.approx(x)
     c = r.series["mtow_casos"]
     ok, m = c["ok"] > 0, c["m"]
     assert m[ok].max() == pytest.approx(mt) and (m[~ok] > mt).all()
@@ -118,9 +120,9 @@ def test_performance_tab_is_fast_and_shaded(manager):
     t = time.time()
     r = manager.run("performance", TEMPLATES["conventional"](), {"h_list": "0, 1000"})
     assert time.time() - t < 5.0                               # só contas, sem piloto
-    assert {"env_área segura", "env_V_min", "env_V_max", "scur_área segura", "spot_h = 0 m: sobra de potência"} <= set(r.series)
+    assert {"env_área segura", "env_V_min", "env_V_max", "scur_área segura", "spot_sobra (0 m)"} <= set(r.series)
     # curvas inteiras, também fora do envelope (como na planilha)
-    assert np.isfinite(r.series["spot_h = 0 m: requerida P_r"]["y"]).sum() > 0.9 * len(r.series["spot_h = 0 m: requerida P_r"]["y"])
+    assert np.isfinite(r.series["spot_P_r (0 m)"]["y"]).sum() > 0.9 * len(r.series["spot_P_r (0 m)"]["y"])
 
 
 def test_example_aircraft_folder_lists_everything():
@@ -143,7 +145,7 @@ def test_mission_battery_glyphs_and_editable_trajectory(manager):
     assert any(k.startswith("t3_✈") for k in r.series)               # avião desenhado na trajetória
     c = r.series["consumo_por_etapa"]
     assert c["etapa"][-1] == "total" and c["consumo_mAh"][-1] > 0
-    assert any(k.startswith("dt_ângulo da asa") for k in r.series)    # θ e θ + incidência na decolagem
+    assert any(k.startswith("dt_θ + i_w") for k in r.series)    # θ e θ + incidência na decolagem
     assert ac.mission.segments()[-1]["e0"] == pytest.approx(20.0)     # pouso 20 m a leste da decolagem
 
 

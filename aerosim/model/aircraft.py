@@ -256,17 +256,25 @@ class SloshTank:
     y: float = 0.0
     z: float = 0.05
     side: float = 0.14         # lado da base quadrada (ou diâmetro, se cilindro) (m)
-    fill: float = 0.08         # altura do líquido (m)
+    volume: float = 2.0        # volume de líquido (L)
     height: float = 0.12       # altura do tanque (só para desenhar)
-    rho: float = 1000.0
+    rho: float = 1000.0        # densidade do líquido (kg/m³; água = 1000)
     zeta: float = 0.03
     shape: str = "square"      # square | cylinder
 
     @property
-    def liquid_mass(self) -> float:
-        import math
+    def base_area(self) -> float:
         a = self.side
-        return self.rho * self.fill * (a * a if self.shape == "square" else math.pi * a * a / 4)
+        return a * a if self.shape == "square" else math.pi * a * a / 4
+
+    @property
+    def fill(self) -> float:
+        """altura do líquido (m), pelo volume"""
+        return self.volume / 1000.0 / self.base_area
+
+    @property
+    def liquid_mass(self) -> float:
+        return self.rho * self.volume / 1000.0
 
 
 @dataclass

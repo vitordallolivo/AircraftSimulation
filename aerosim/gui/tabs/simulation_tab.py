@@ -161,7 +161,9 @@ class SimulationTab(QtWidgets.QWidget):
         ac = self.state.aircraft
         old = self.params() if self.inputs else {}
         specs = self.sim.parameters_for(ac, old)
-        sig = tuple((p.key, p.label, p.kind, tuple(p.choices), p.group) for p in specs)
+        sig = tuple((p.key, p.label, p.kind, tuple(p.choices), p.group,
+                     tuple(r.get("item") for r in p.default) if p.kind == "table" and not p.bound else ())
+                    for p in specs)
         if sig != self._specs_sig:
             while self.form.rowCount():
                 self.form.removeRow(0)
@@ -174,7 +176,7 @@ class SimulationTab(QtWidgets.QWidget):
                     self.form.addRow(h)
                     group = p.group
                 w = self._input(p)
-                if p.key in old and p.kind != "table":       # tabela: vem sempre da aeronave
+                if p.key in old and not p.bound:             # tabela ligada à aeronave: vem dela
                     self._set(w, old[p.key])
                 self.inputs[p.key] = w
                 w.setToolTip(p.help or p.key)
@@ -200,7 +202,7 @@ class SimulationTab(QtWidgets.QWidget):
             self._specs_sig = sig
         for p in specs:                     # tabelas ligadas à aeronave (ex.: trajetória): seguem a configuração
             w = self.inputs.get(p.key)
-            if isinstance(w, TableInput) and _norm(w.rows()) != _norm(p.default):
+            if isinstance(w, TableInput) and p.bound and _norm(w.rows()) != _norm(p.default):
                 w.set_rows(p.default)
         self._set_plots(self.sim.plots_for(ac, self.params()))
 
@@ -418,6 +420,13 @@ class TableInput(QtWidgets.QWidget):
         self.t.setMinimumHeight(240)
         self.t.itemChanged.connect(lambda *_: self.edited.emit())
         v.addWidget(self.t)
+        self.fixed = any(c[2] == "label" for c in self.columns)      # linhas fixas: sem + / −
+        if self.fixed:
+            self.t.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
+            self.t.verticalHeader().setVisible(False)
+            self.t.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
+            return
         h = QtWidgets.QHBoxLayout()
         for txt, fn in (("+ adicionar linha", self._add), ("− remover a selecionada", self._rem),
                         ("↑", lambda: self._move(-1)), ("↓", lambda: self._move(1))):
@@ -436,7 +445,13 @@ class TableInput(QtWidgets.QWidget):
             self.t.setCellWidget(r, c, cb)
         else:
             txt = "" if val is None else (f"{val:g}" if isinstance(val, (int, float)) else str(val))
-            self.t.setItem(r, c, QtWidgets.QTableWidgetItem(txt))
+            it = QtWidgets.QTableWidgetItem(txt)
+            if kind == "label":
+                it.setFlags(it.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+                f = it.font()
+                f.setBold(True)
+                it.setFont(f)
+            self.t.setItem(r, c, it)
 
     def set_rows(self, rows):
         self.t.blockSignals(True)
@@ -447,6 +462,10 @@ class TableInput(QtWidgets.QWidget):
             for c, (key, _, _) in enumerate(self.columns):
                 self._cell(r, c, row.get(key, ""))
         self.t.blockSignals(False)
+        if self.fixed:                       # altura justa para as linhas
+            self.t.setMinimumHeight(0)
+            self.t.setFixedHeight(self.t.horizontalHeader().height() + 6 +
+                                  sum(self.t.rowHeight(i) for i in range(self.t.rowCount())))
 
     def rows(self) -> list[dict]:
         out = []

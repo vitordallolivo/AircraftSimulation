@@ -152,7 +152,7 @@ def aircraft_meshes(ac: Aircraft) -> dict[str, list[tuple[Mesh, str]]]:
         out[f"prop:{i}"] = [(cylinder(p + k * 0.12 * e, p + k * 0.01 * e, 0.035), "motor"),
                             (cylinder(p, p + 0.004 * e, D / 2, 32), "propdisk")]
     for i, t in enumerate(ac.tanks):
-        out[f"tank:{i}"] = [(box([t.x, t.y, t.z], [t.side, t.side, t.height]), "tank"),
+        out[f"tank:{i}"] = [(box([t.x, t.y, t.z], [t.side, t.side, max(t.height, t.fill)]), "tank"),
                             (box([t.x, t.y, t.z + t.height / 2 - t.fill / 2], [t.side * 0.96, t.side * 0.96, t.fill]),
                              "liquid")]
     if ac.payload.enabled:

@@ -270,7 +270,7 @@ class ConfigTab(QtWidgets.QWidget):
 
     def _add_tank(self):
         ac = self.state.aircraft
-        ac.tanks.append(SloshTank(name=f"tanque {len(ac.tanks) + 1}", x=0.05, y=0.0, z=0.0, side=0.1, fill=0.05,
+        ac.tanks.append(SloshTank(name=f"tanque {len(ac.tanks) + 1}", x=0.05, y=0.0, z=0.0, side=0.1, volume=2.0,
                                   height=0.08))
         self._added(f"tank:{len(ac.tanks) - 1}")
 

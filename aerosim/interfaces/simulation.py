@@ -45,7 +45,8 @@ class ParamSpec:
     help: str = ""
     group: str = ""                # seção do formulário (ex.: "Critérios")
     rebuild: bool = False          # mudar este campo refaz o formulário (ex.: escolher a norma)
-    columns: tuple = ()            # table: ((chave, rótulo, "float" | "str" | (opções...)), ...); valor: lista de dicts
+    columns: tuple = ()            # table: ((chave, rótulo, "float" | "str" | "label" | (opções...)), ...); valor: lista de dicts
+    bound: bool = False            # table: espelha a aeronave (muda quando ela muda; edição volta por `commit`)
 
 
 @dataclass

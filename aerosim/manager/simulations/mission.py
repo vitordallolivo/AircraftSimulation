@@ -66,40 +66,36 @@ def rows_to_legs(rows, old) -> list:
     return out
 
 
-GM = "Massas no MTOW (valor atual; quanto pode ir para menos e para mais)"
+MCOLS = (("item", "", "label"), ("min", "mínimo", "float"), ("nom", "nominal", "float"), ("max", "máximo", "float"))
+ROWS = {"bal": "Lastro (kg)", "pay": "LAPES (kg)", "liq": "Líquido (L)", "xcg": "xCG (m)"}
 
 
-def mass_items(ac) -> list[tuple[str, str, float, float, float]]:
-    """(chave, nome, atual, −padrão, +padrão) das massas que o MTOW pode variar nesta configuração"""
-    out = []
-    if ac is not None and ac.payload.enabled:
-        out.append(("pay", "carga LAPES", ac.payload.mass, ac.payload.mass, 3.0))
-    liq = sum(t.liquid_mass for t in ac.tanks) if ac is not None else 0.0
-    if ac is not None and ac.tanks:
-        cap = sum(t.rho * (t.side * t.side if t.shape == "square" else math.pi * t.side ** 2 / 4) * t.height
-                  for t in ac.tanks)
-        out.append(("liq", f"líquido nos tanques (máx. {cap:.2f})", liq, liq, max(cap - liq, 0.0)))
-    if ac is not None and ac.ballast.enabled:
-        out.append(("bal", "lastro", ac.ballast.mass, ac.ballast.mass, 1.0))
-    extra_plus = 0.0 if out else 8.0
-    out.append(("ext", "massa extra no CG", 0.0, 0.0, extra_plus))
-    return out
+def mtow_rows(ac) -> list[dict]:
+    """linhas da tabela do MTOW que existem nesta configuração (mínimo, nominal, máximo)"""
+    rows = []
+    if ac is None:
+        return rows
+    if ac.ballast.enabled:
+        m = ac.ballast.mass
+        rows.append(dict(item=ROWS["bal"], min=m, nom=m, max=m))
+    if ac.payload.enabled:
+        m = ac.payload.mass
+        rows.append(dict(item=ROWS["pay"], min=m, nom=m, max=round(m + 3.0, 3)))
+    if ac.tanks:
+        v = sum(t.volume for t in ac.tanks)
+        cap = sum(t.base_area * t.height * 1000.0 for t in ac.tanks)
+        rows.append(dict(item=ROWS["liq"], min=round(v, 3), nom=round(v, 3), max=round(max(cap, v), 3)))
+    try:
+        from aerosim.model.universal import build_model
+        x = float(build_model(ac).mass["cg"][0])
+    except Exception:
+        x = 0.0
+    rows.append(dict(item=ROWS["xcg"], min=round(x - 0.02, 4), nom=round(x, 4), max=round(x + 0.02, 4)))
+    return rows
 
 
-def mass_params(ac) -> list:
-    P = []
-    for key, name, cur, dn, up in mass_items(ac):
-        P.append(ParamSpec(f"m_{key}_dn", f"{name} — atual {cur:.2f} kg: para menos", round(dn, 3), minimum=0,
-                           maximum=max(cur, 0.0) if key != "ext" else 0.0, unit="kg", group=GM,
-                           help=f"o MTOW pode reduzir {name} até (atual − este valor)"))
-        P.append(ParamSpec(f"m_{key}_up", f"{name}: para mais", round(up, 3), minimum=0, maximum=500, unit="kg",
-                           group=GM, help=f"o MTOW pode aumentar {name} até (atual + este valor)"))
-    return P
-
-
-def mass_variant(ac, ranges: dict, t: float, cg_extra):
-    """cópia da aeronave com cada massa em mín + t (máx − mín); devolve (cópia, massas por item)"""
-    from aerosim.model.aircraft import PointMass
+def mass_variant(ac, ranges: dict, t: float):
+    """cópia com cada massa em mín + t (máx − mín); devolve (cópia, valores por item)"""
     v = ac.copy()
     got = {}
     for key, (lo, hi) in ranges.items():
@@ -107,16 +103,12 @@ def mass_variant(ac, ranges: dict, t: float, cg_extra):
         got[key] = m
         if key == "pay":
             v.payload.mass = m
-        elif key == "liq":
-            liq0 = sum(q.liquid_mass for q in ac.tanks)
-            f = m / liq0 if liq0 > 1e-9 else 0.0
-            for q, q0 in zip(v.tanks, ac.tanks):
-                q.fill = min(q0.fill * f if liq0 > 1e-9 else m / max(len(ac.tanks), 1) / (q0.rho * q0.side ** 2), q0.height)
         elif key == "bal":
             v.ballast.mass = m
-        elif key == "ext" and m > 0:
-            v.mass.items.append(PointMass("massa extra (MTOW)", m, float(cg_extra[0]), float(cg_extra[1]),
-                                          float(cg_extra[2])))
+        elif key == "liq":
+            v0 = sum(q.volume for q in ac.tanks)
+            for q, q0 in zip(v.tanks, ac.tanks):
+                q.volume = m * (q0.volume / v0 if v0 > 1e-9 else 1.0 / len(ac.tanks))
     return v, got
 
 
@@ -165,8 +157,8 @@ class MissionSimulation(SimulationBase):
                            help="altura sobre a superfície de partida que conta como decolado; ≤ 0 na mesa: quanto pode "
                                 "afundar abaixo dela")]
         if mode == M_MIS:
-            P += [ParamSpec("legs", "Trajetória por partes (cada linha é uma etapa; grava na aeronave)",
-                            legs_to_rows(ac.mission.legs) if ac is not None else [], kind="table", columns=LEG_COLS,
+            P += [ParamSpec("legs", "Trajetória (uma linha por etapa)",
+                            legs_to_rows(ac.mission.legs) if ac is not None else [], kind="table", columns=LEG_COLS, bound=True,
                             group="Trajetória"),
                   ParamSpec("glyph", "Desenhar o avião no 3D a cada (0 = não)", 10.0, minimum=0, maximum=500, unit="m",
                             group="Trajetória"),
@@ -193,9 +185,8 @@ class MissionSimulation(SimulationBase):
                   ParamSpec("wind", "Com vento", True, kind="bool", group="Ambiente")]
         else:
             P += pista + [
-            ] + mass_params(ac) + [
-                ParamSpec("dx", "xCG de decolagem: testar também ± (0 = só o atual)", 2.0, minimum=0, maximum=30,
-                          unit="cm", group="MTOW"),
+                ParamSpec("masses", "Lastro, LAPES e líquido vão do mínimo ao máximo juntos; o xCG é testado nos três "
+                          "valores.", mtow_rows(ac), kind="table", columns=MCOLS, group="MTOW"),
                 ParamSpec("wind", "Com vento", True, kind="bool", group="Ambiente")]
         return P
 
@@ -217,91 +208,99 @@ class MissionSimulation(SimulationBase):
 
     def plots_for(self, ac, values=None):
         mode = (values or {}).get("mode", M_MIS)
-        traj = [PlotSpec("t3", "Trajetória 3D (cores: etapas do voo; ● eventos)", "e", ("n",), "e (m) — leste",
+        traj = [PlotSpec("t3", "Trajetória 3D", "e", ("n",), "e (m) — leste",
                          "n (m) — eixo da pista", source="series:t3_*", kind="3d", z="h", height=720),
-                PlotSpec("xz", "Plano XZ — perfil: posição na pista × altura", "n", ("h",), "n (m) — eixo da pista",
-                         "h (m)", source="series:xz_*", live_ys=("h",)),
-                PlotSpec("xy", "Plano XY — vista de cima", "n", ("e",), "n (m) — eixo da pista", "e (m) — leste",
+                PlotSpec("xz", "Plano XZ", "n", ("h",), "$x$ (m)",
+                         "$z$ (m)", source="series:xz_*", live_ys=("h",)),
+                PlotSpec("xy", "Plano XY", "n", ("e",), "$x$ (m)", "$y$ (m)",
                          source="series:xy_*", live_ys=("e",), aspect=True, invert_y=True),
-                PlotSpec("zy", "Plano ZY — vista de frente", "e", ("h",), "e (m) — leste", "h (m)", source="series:zy_*",
+                PlotSpec("zy", "Plano ZY", "e", ("h",), "$y$ (m)", "$z$ (m)", source="series:zy_*",
                          live_ys=("h",))]
         takeoff = [
-            PlotSpec("dt", "Decolagem: ângulo da aeronave (θ) e da asa (θ + incidência) no tempo", "t", ("y",), "t (s)",
+            PlotSpec("dt", "Decolagem: ângulo da aeronave e da asa", "t", ("y",), "$t$ (s)",
                      "ângulo (°)", live=False, source="series:dt_*"),
-            PlotSpec("dh", "Decolagem: altura sobre a pista × posição (z_warning e x_warning em vermelho)", "n", ("y",),
-                     "n (m) — posição na pista", "altura (m)", source="series:dh_*"),
-            PlotSpec("dv", "Decolagem: velocidades × posição na pista", "n", ("y",), "n (m)", "V (m/s)",
+            PlotSpec("dh", "Decolagem: altura", "n", ("y",),
+                     "$x$ (m)", "$h$ (m)", source="series:dh_*"),
+            PlotSpec("dv", "Decolagem: velocidades", "n", ("y",), "$x$ (m)", "$V$ (m/s)",
                      source="series:dv_*", live_ys=("Va", "Vg")),
-            PlotSpec("da", "Decolagem: θ, α, γ × posição na pista", "n", ("y",), "n (m)", "ângulo (°)",
+            PlotSpec("da", "Decolagem: θ, α, γ", "n", ("y",), "$x$ (m)", "ângulo (°)",
                      source="series:da_*"),
-            PlotSpec("dc", "Decolagem: comandos (superfícies em °, acelerador × 10)", "n", ("y",), "n (m)", "°",
+            PlotSpec("dc", "Decolagem: comandos", "n", ("y",), "$x$ (m)", "°",
                      source="series:dc_*"),
-            PlotSpec("dr", "Decolagem: reações normais no trem (molas e artigo)", "n", ("y",), "n (m)", "N",
+            PlotSpec("dr", "Decolagem: reações no trem", "n", ("y",), "$x$ (m)", "N",
                      source="series:dr_*", live_ys=("N_steer", "N_main")),
-            PlotSpec("dm", "Decolagem: momentos do trem no CG", "n", ("y",), "n (m)", "N·m", source="series:dm_*")]
-        opt = PlotSpec("op", "Otimização: onde decolou (n_dec) × ponto de acionamento do profundor (★ escolhido)", "s",
-                       ("y",), "ponto de acionamento do profundor na pista (m)", "n_dec (m)", live=False,
-                       source="series:op_*")
+            PlotSpec("dm", "Decolagem: momentos do trem", "n", ("y",), "$x$ (m)", "N·m", source="series:dm_*")]
+        opt = PlotSpec("op", "Acionamento do profundor × n_dec (★ escolhido)", "s", ("y",), "$s$ (m)", "$n_{dec}$ (m)",
+                       live=False, source="series:op_*")
+        tt = lambda key, title, ylab: PlotSpec(key, title, "t", ("y",), "$t$ (s)", ylab, live=False,
+                                               source=f"series:{key}_*")
+        first = [traj[1], takeoff[0], takeoff[5],
+                 tt("tcl", "Decolagem: $C_L$", "$C_L$"), tt("tcd", "Decolagem: $C_D$", "$C_D$"),
+                 tt("tld", "Decolagem: sustentação e arrasto", "N"),
+                 tt("tmL", "Decolagem: rolamento $L$ e $\\delta_a$", "N·m / °"),
+                 tt("tmM", "Decolagem: arfagem $M$ e $\\delta_e$", "N·m / °"),
+                 tt("tmN", "Decolagem: guinada $N$ e $\\delta_r$", "N·m / °")]
+        rest = [takeoff[1], takeoff[2], takeoff[3], takeoff[4], takeoff[6], traj[0]]
         if mode == M_TO:
-            return [opt] + takeoff + traj[:2]
-        if mode == M_TURN:
-            return [PlotSpec("cv", "Curvas: trajetórias (vista de cima; tracejado = falha)", "e", ("n",), "e (m)", "n (m)",
-                             source="series:cv_*", live_ys=("n",), aspect=True),
-                    PlotSpec("cr", "C_L/C_Lmax máximo da meia asa × raio pedido (x = falha)", "R", ("y",), "R (m)", "—",
-                             live=False, source="series:cr_*"),
-                    PlotSpec("cp", "Inclinação em regime × raio pedido", "R", ("y",), "R (m)", "|φ| (°)", live=False,
-                             source="series:cp_*"),
-                    PlotSpec("ch", "Altura perdida na curva × raio pedido", "R", ("y",), "R (m)", "m", live=False,
-                             source="series:ch_*"),
-                    PlotSpec("rmin", "Raio mínimo por velocidade (★)", "V", ("R",), "V (m/s)", "R mínimo (m)", live=False,
-                             source="series:rm_*")]
+            return first + [opt] + rest
         if mode == M_MTOW:
-            return [PlotSpec("mt", "MTOW: onde decolou (n_dec) × massa de decolagem (★ MTOW)", "m", ("y",),
-                             "massa de decolagem (kg)", "n_dec (m)", live=False, source="series:mt_*"),
-                    PlotSpec("mc", "Massa de cada item × massa de decolagem", "m", ("y",), "massa de decolagem (kg)",
-                             "kg", live=False, source="series:mc_*"),
-                    PlotSpec("ma", "Melhor acionamento do profundor em cada massa", "m", ("y",), "massa (kg)",
-                             "acionamento (m) / deflexão (°) / ΔxCG (cm)", live=False, source="series:ma_*"),
-                    opt] + takeoff + traj[:2]
+            return first + [PlotSpec("mt", "MTOW: $n_{dec}$ × massa (★ MTOW)", "m", ("y",), "$m$ (kg)", "$n_{dec}$ (m)",
+                                     live=False, source="series:mt_*"),
+                            PlotSpec("mc", "Massas × massa de decolagem", "m", ("y",), "$m$ (kg)", "kg ou L",
+                                     live=False, source="series:mc_*"),
+                            PlotSpec("ma", "Acionamento, $\\delta_e$ e xCG × massa", "m", ("y",), "$m$ (kg)",
+                                     "m / ° / cm", live=False, source="series:ma_*"),
+                            opt] + rest
+        if mode == M_TURN:
+            return [PlotSpec("cv", "Curvas: trajetórias", "e", ("n",), "e (m)", "n (m)",
+                             source="series:cv_*", live_ys=("n",), aspect=True),
+                    PlotSpec("cr", "$C_L/C_{Lmax}$ × raio", "R", ("y",), "R (m)", "—",
+                             live=False, source="series:cr_*"),
+                    PlotSpec("cp", "Inclinação × raio", "R", ("y",), "R (m)", "|φ| (°)", live=False,
+                             source="series:cp_*"),
+                    PlotSpec("ch", "Altura perdida × raio", "R", ("y",), "R (m)", "m", live=False,
+                             source="series:ch_*"),
+                    PlotSpec("rmin", "Raio mínimo", "V", ("R",), "V (m/s)", "R mínimo (m)", live=False,
+                             source="series:rm_*")]
         has_pay = ac is None or ac.payload.enabled
         has_tank = ac is None or bool(ac.tanks)
         t = lambda key, title, ylab, live=(): PlotSpec(key, title, "t", ("y",), "t (s)", ylab,
                                                        source=f"series:{key}_*", live_ys=live)
         out = traj + [
-            t("vel", "Velocidades (fundo: etapa do voo)", "V (m/s)", ("Va", "Vg")),
-            t("alt", "Altura", "h (m)", ("h",)),
-            t("ang", "Ângulos de atitude e aerodinâmicos", "ângulo (°)", ("theta", "alpha", "phi")),
-            t("rumo", "Proa e curso (a diferença é o caranguejo contra o vento)", "ângulo (°)"),
-            t("momL", "Momento de rolamento L no CG, parcela por parcela", "N·m"),
-            t("momM", "Momento de arfagem M no CG, parcela por parcela", "N·m"),
-            t("momN", "Momento de guinada N no CG, parcela por parcela", "N·m"),
-            t("cmd", "Comandos das superfícies", "deflexão (°)", ("de", "da", "dr")),
+            t("vel", "Velocidades", "$V$ (m/s)", ("Va", "Vg")),
+            t("alt", "Altura", "$h$ (m)", ("h",)),
+            t("ang", "Ângulos", "ângulo (°)", ("theta", "alpha", "phi")),
+            t("rumo", "Proa e curso", "ângulo (°)"),
+            t("momL", "Rolamento $L$", "N·m"),
+            t("momM", "Arfagem $M$", "N·m"),
+            t("momN", "Guinada $N$", "N·m"),
+            t("cmd", "Comandos", "$\\delta$ (°)", ("de", "da", "dr")),
             t("thr", "Acelerador", "0–1", ("thr",)),
-            t("cl", "Coeficiente de sustentação", "C_L (—)"),
-            t("cd", "Coeficiente de arrasto", "C_D (—)"),
-            t("roc", "Razão de subida e descida", "dh/dt (m/s)"),
-            t("nz", "Fator de carga", "n_z (g)", ("nz",)),
-            t("motor", "Motor: rotação, corrente e tração", "rpm/100, A, N"),
-            t("ene", "Energia gasta", "Wh"),
-            t("bat", "Consumo de bateria acumulado por etapa (fundo: etapa)", "mAh"),
-            t("batp", "Descarga estimada da bateria (Coulomb e Peukert) e corrente", "% da capacidade / A")]
+            t("cl", "$C_L$", "$C_L$"),
+            t("cd", "$C_D$", "$C_D$"),
+            t("roc", "Razão de subida", "$\\dot{h}$ (m/s)"),
+            t("nz", "Fator de carga", "$n_z$", ("nz",)),
+            t("motor", "Motor", "rpm/100, A, N"),
+            t("ene", "Energia", "Wh"),
+            t("bat", "Consumo de bateria", "mAh"),
+            t("batp", "Descarga da bateria", "% / A")]
         if has_tank:
-            out.append(t("slosh", "Sloshing: pêndulo equivalente do 1º modo", "ângulo (°)"))
+            out.append(t("slosh", "Sloshing", "ângulo (°)"))
         out += [opt] + takeoff
-        out += [PlotSpec("pr", "Pouso: reações normais no trem (molas e artigo)", "n", ("y",), "n (m) — posição na pista",
+        out += [PlotSpec("pr", "Pouso: reações no trem", "n", ("y",), "$x$ (m)",
                          "N", live=False, source="series:pr_*"),
-                PlotSpec("pm", "Pouso: momentos do trem no CG", "n", ("y",), "n (m)", "N·m", live=False,
+                PlotSpec("pm", "Pouso: momentos do trem", "n", ("y",), "$x$ (m)", "N·m", live=False,
                          source="series:pm_*")]
         if has_pay:
-            out += [PlotSpec("lx", "LAPES (zoom): aeronave e carga no plano XZ", "n", ("h",), "n (m)", "h (m)",
+            out += [PlotSpec("lx", "LAPES: plano XZ", "n", ("h",), "n (m)", "h (m)",
                              live=False, source="series:lx_*"),
-                    PlotSpec("lc", "LAPES (zoom): o CG anda para trás com a carga", "t", ("y",), "t − t_soltura (s)",
+                    PlotSpec("lc", "LAPES: CG e carga", "t", ("y",), "t − t_soltura (s)",
                              "cm", live=False, source="series:lc_*"),
-                    PlotSpec("lm", "LAPES (zoom): massa da aeronave", "t", ("y",), "t − t_soltura (s)", "kg", live=False,
+                    PlotSpec("lm", "LAPES: massa", "t", ("y",), "t − t_soltura (s)", "kg", live=False,
                              source="series:lm_*"),
-                    PlotSpec("lp", "LAPES (zoom): resposta em arfagem", "t", ("y",), "t − t_soltura (s)",
+                    PlotSpec("lp", "LAPES: arfagem", "t", ("y",), "t − t_soltura (s)",
                              "° , °/s , N·m", live=False, source="series:lp_*"),
-                    PlotSpec("lapes", "LAPES: ponto de soltura × impacto da carga (★ escolhido)", "s", ("y",),
+                    PlotSpec("lapes", "LAPES: soltura × impacto", "s", ("y",),
                              "s de soltura na perna (m)", "impacto n (m)", live=False, source="series:ls_*")]
         return out
 
@@ -392,17 +391,24 @@ class MissionSimulation(SimulationBase):
         ev = res.events
         S = self._opt_series(tried, best, refs)
         if len(log):
-            S.update(FP.takeoff_window(log, ev, refs, ac.airfield))
-            S.update(_angles(log, ev, ac, refs))
-            S.update({k: v for k, v in FP.trajectory(log, ev, ["decolagem", "cruzeiro"]).items()
-                      if k.startswith(("t3_", "xz_"))})
-            S.update(FP.terrain_profile(log, "xz_"))
+            S.update(self._takeoff_series(log, ev, ac, refs))
         summary = dict(status=res.status, x_warning=refs["x_warning"], z_warning=refs["z_warning"],
                        n_dec=res.n_dec, folga_de_pista=refs["x_warning"] - res.n_dec,
                        acionamento_m=best.s, deflexao_graus=best.de, V_ao_sair_do_chao=ev["VLO"],
                        n_saiu_do_chao=ev["nLO"], massa=info["mass"])
         return SimResult(log=log, series=S, summary=summary, events=ev, status=res.status,
                          checks=self._takeoff_checks(ac, best, refs, ctrl))
+
+    @staticmethod
+    def _takeoff_series(log, ev, ac, refs) -> dict:
+        S = {}
+        S.update(FP.takeoff_window(log, ev, refs, ac.airfield))
+        S.update(_angles(log, ev, ac, refs))
+        S.update(FP.takeoff_time(log, ev, ac.environment.rho, build_model(ac).S))
+        S.update({k: v for k, v in FP.trajectory(log, ev, ["decolagem", "cruzeiro"]).items()
+                  if k.startswith(("t3_", "xz_"))})
+        S.update(FP.terrain_profile(log, "xz_"))
+        return S
 
     # ------------------------------------------------------------------ missão
     def _mission(self, ctx, ac, info, refs) -> SimResult:
@@ -667,119 +673,118 @@ class MissionSimulation(SimulationBase):
         return SimResult(series=series, summary=summary, checks=checks)
 
     # ------------------------------------------------------------------ MTOW
+    def _xcg_over(self, ctx, v, xcg: float) -> dict:
+        """r_dry que põe o CG da aeronave inteira (com carga e líquido) em xcg"""
+        model = build_model(v)
+        with ctx.backend.session_for(model) as s:
+            mp = s.mass_props()
+        cg = np.asarray(model.mass["cg"], float)
+        d = (xcg - float(mp["cg"][0])) * float(mp["m"]) / float(model.mass["m"])
+        return dict(r_dry=[float(cg[0] + d), float(cg[1]), float(cg[2])]), float(mp["m"])
+
     def _mtow(self, ctx, ac, info, refs) -> SimResult:
-        """bisseção em t ∈ [0, 1]: cada massa vai junto do mínimo ao máximo da sua faixa"""
-        items = mass_items(ac)
+        """bisseção em t ∈ [0, 1]: lastro, LAPES e líquido vão juntos do mínimo ao máximo; em cada t o
+        xCG é testado no mínimo, nominal e máximo e o acionamento do profundor é otimizado"""
+        table = {r["item"]: r for r in (ctx.params.get("masses") or mtow_rows(ac))}
+        keys = {v_: k for k, v_ in ROWS.items()}
         ranges, names = {}, {}
-        for key, name, cur, dn, up in items:
-            lo = max(cur - float(ctx.params.get(f"m_{key}_dn", dn)), 0.0)
-            hi = cur + float(ctx.params.get(f"m_{key}_up", up))
-            ranges[key], names[key] = (lo, hi), name.split(" (")[0]
-        dx = self.param(ctx, "dx")
-        dxs = [0.0] if dx <= 0 else [0.0, -dx, dx]
+        xcgs = None
+        for item, r in table.items():
+            k = keys.get(item)
+            if k is None:
+                continue
+            lo, nom, hi = (float(r[c]) if r.get(c) not in (None, "") else None for c in ("min", "nom", "max"))
+            nom = nom if nom is not None else (lo if lo is not None else 0.0)
+            lo = nom if lo is None else lo
+            hi = nom if hi is None else hi
+            if k == "xcg":
+                xcgs = sorted({lo, nom, hi})
+            else:
+                ranges[k], names[k] = (lo, hi), item
+        if xcgs is None:
+            xcgs = [float(info["cg"][0])]
         ctrl = TO.pitch_control(ac)
         rows, saved = [], {}
-        cg_all = info["cg"]
-
-        def total(v):
-            mp = build_model(v).mass
-            return float(mp["m"]) + (v.payload.mass if v.payload.enabled else 0.0) + sum(q.liquid_mass for q in v.tanks)
 
         def evaluate(t):
             ctx.check()
-            v, got = mass_variant(ac, ranges, t, cg_all)
-            cg = np.asarray(build_model(v).mass["cg"], float)
-            best_all = None
-            for x in dxs:
-                b, tried = self._optimize(ctx, v, refs, dict(r_dry=[float(cg[0] + x / 100.0), float(cg[1]),
-                                                                    float(cg[2])]))
-                b.dx = x
+            v, got = mass_variant(ac, ranges, t)
+            best_all, m_tot = None, 0.0
+            for x in xcgs:
+                over, m_tot = self._xcg_over(ctx, v, x)
+                b, tried = self._optimize(ctx, v, refs, over)
+                b.xcg, b.over = x, over
                 key = lambda r: (r.ok, r.x_warning_margin if r.ok else -(r.x_excess + r.z_short))
                 if best_all is None or key(b) > key(best_all):
                     best_all, saved[t] = b, tried
-            best_all.variant, best_all.masses = v, got
-            rows.append(dict(t=t, m=total(v), ok=float(best_all.ok), n_dec=best_all.n_dec, s=best_all.s,
-                             de=best_all.de, dx=best_all.dx, x=best_all.x_excess, z=best_all.z_short,
+            best_all.variant, best_all.masses, best_all.m_tot = v, got, m_tot
+            rows.append(dict(t=t, m=m_tot, ok=float(best_all.ok), n_dec=best_all.n_dec, s=best_all.s, de=best_all.de,
+                             xcg=best_all.xcg, x=best_all.x_excess, z=best_all.z_short,
                              **{f"m_{k}": got[k] for k in got}))
             return best_all
 
         checks = []
-        ctx.on_progress(0.0, "MTOW: todas as massas no mínimo")
         b_lo = evaluate(0.0)
-        b_hi = evaluate(1.0) if b_lo.ok else None
-        if not b_lo.ok:
-            tm, best = float("nan"), b_lo
-            checks.append(Check("falha", "não decola nem com as massas no mínimo", "x_warning ou z_warning",
-                                f"x ≤ {refs['x_warning']:g} m, z = {refs['z_warning']:g} m",
-                                "com cada massa no menor valor da faixa a aeronave não decola dentro da pista",
-                                "aumente o 'para menos' de alguma massa, a tração, a área de asa ou a pista", "MTOW"))
-        elif b_hi.ok:
-            tm, best = 1.0, b_hi
-            checks.append(Check("atencao", "MTOW acima das faixas", "decola com todas as massas no máximo", "dentro",
-                                "a aeronave ainda decola no topo de todas as faixas", "aumente o 'para mais'", "MTOW"))
+        if not ranges or all(lo == hi for lo, hi in ranges.values()):
+            b_hi, tm, best = None, (0.0 if b_lo.ok else float("nan")), b_lo
         else:
-            lo, hi, best, it = 0.0, 1.0, b_lo, 0
-            while it < 9:
-                it += 1
-                mid = 0.5 * (lo + hi)
-                ctx.on_progress(it / 9, f"MTOW: bisseção {it}/9")
-                b = evaluate(mid)
-                if b.ok:
-                    lo, best = mid, b
-                else:
-                    hi = mid
-            tm = lo
+            b_hi = evaluate(1.0) if b_lo.ok else None
+            if not b_lo.ok:
+                tm, best = float("nan"), b_lo
+            elif b_hi.ok:
+                tm, best = 1.0, b_hi
+                checks.append(Check("atencao", "MTOW acima da tabela", "decola com tudo no máximo", "dentro", "",
+                                    "aumente os máximos", "MTOW"))
+            else:
+                lo, hi, best = 0.0, 1.0, b_lo
+                for it in range(9):
+                    ctx.on_progress((it + 1) / 9, f"MTOW: bisseção {it + 1}/9")
+                    mid = 0.5 * (lo + hi)
+                    b = evaluate(mid)
+                    if b.ok:
+                        lo, best = mid, b
+                    else:
+                        hi = mid
+                tm = lo
+        if not np.isfinite(tm):
+            checks.append(Check("falha", "não decola nem com tudo no mínimo", "x_warning ou z_warning",
+                                f"x ≤ {refs['x_warning']:g} m, z = {refs['z_warning']:g} m", "",
+                                "baixe os mínimos, aumente a tração, a área de asa ou a pista", "MTOW"))
         rows.sort(key=lambda r: r["m"])
         M = {k: np.array([r[k] for r in rows], float) for k in rows[0]}
         ok = M["ok"] > 0
-        S = {"mt_decola (x e z atendidos)": dict(m=M["m"][ok], y=M["n_dec"][ok], _symbol="o", _color="#2ca02c", _size=10),
+        S = {"mt_decola": dict(m=M["m"][ok], y=M["n_dec"][ok], _symbol="o", _color="#2ca02c", _size=10),
              "mt_não decola": dict(m=M["m"][~ok], y=np.where(np.isfinite(M["n_dec"][~ok]), M["n_dec"][~ok], np.nan),
                                    _symbol="x", _color="#d62728", _size=12),
-             f"mt_x_warning ({refs['x_warning']:g} m)": dict(_hline=refs["x_warning"], _color="#d62728", _width=3),
+             f"mt_x_warning = {refs['x_warning']:g} m": dict(_hline=refs["x_warning"], _color="#d62728", _width=3),
              "mtow_casos": M}
-        colors = {"pay": "#6a0dad", "liq": "#17becf", "bal": "#444444", "ext": "#ff7f0e"}
+        colors = {"pay": "#6a0dad", "liq": "#17becf", "bal": "#444444"}
         for k in ranges:
-            if ranges[k][1] > ranges[k][0] or ranges[k][0] > 0:
-                S[f"mc_{names[k]} (kg)"] = dict(m=M["m"], y=M[f"m_{k}"], _symbol="o", _line=1, _color=colors[k])
-        S["ma_acionamento do profundor (m)"] = dict(m=M["m"][ok], y=M["s"][ok], _symbol="o", _line=1, _color="#2ca02c")
-        S["ma_deflexão (°)"] = dict(m=M["m"][ok], y=M["de"][ok], _symbol="s", _line=1, _color="#1f77b4")
-        if len(dxs) > 1:
-            S["ma_ΔxCG (cm)"] = dict(m=M["m"][ok], y=M["dx"][ok], _symbol="d", _line=1, _color="#9467bd")
+            S[f"mc_{names[k]}"] = dict(m=M["m"], y=M[f"m_{k}"], _symbol="o", _line=1, _color=colors[k])
+        S["ma_acionamento (m)"] = dict(m=M["m"][ok], y=M["s"][ok], _symbol="o", _line=1, _color="#2ca02c")
+        S["ma_δe (°)"] = dict(m=M["m"][ok], y=M["de"][ok], _symbol="s", _line=1, _color="#1f77b4")
+        S["ma_xCG (cm)"] = dict(m=M["m"][ok], y=100 * M["xcg"][ok], _symbol="d", _line=1, _color="#9467bd")
         summary = dict(massa_atual=info["mass"], x_warning=refs["x_warning"], z_warning=refs["z_warning"])
-        for k, (lo, hi) in ranges.items():
-            summary[f"faixa: {names[k]} (kg)"] = [lo, hi]
         log = None
         if np.isfinite(tm):
-            mt = total(best.variant)
+            mt = best.m_tot
             summary["MTOW (kg)"] = mt
             for k, m in best.masses.items():
-                summary[f"no MTOW: {names[k]} (kg)"] = m
-            summary.update(acionamento_m=best.s, deflexao_graus=best.de, dxCG_cm=getattr(best, "dx", 0.0),
-                           n_dec_no_MTOW=best.n_dec)
+                summary[f"MTOW: {names[k]}"] = m
+            summary.update({"MTOW: xCG (m)": best.xcg, "acionamento (m)": best.s, "δe (°)": best.de,
+                            "n_dec (m)": best.n_dec})
             for pre in ("mt_", "mc_", "ma_"):
                 S[f"{pre}MTOW = {mt:.2f} kg"] = dict(_vline=mt, _color="#ffcc00", _width=3)
             S["mt_★ MTOW"] = dict(m=np.array([mt]), y=np.array([best.n_dec]), _symbol="star", _color="#ffcc00", _size=24)
-            parts = ", ".join(f"{names[k]} {m:.2f} kg" for k, m in best.masses.items() if m > 0 or k != "ext")
-            above = [r for r in rows if r["m"] > mt + 1e-9 and not r["ok"]]
-            why = ""
-            if above:
-                r = min(above, key=lambda r: r["m"])
-                why = f"; com {r['m']:.2f} kg: " + ("não decolou" if not np.isfinite(r["n_dec"]) else
-                                                   f"passou {r['x']:.1f} m do x_warning") + \
-                      (f", faltaram {r['z']:.2f} m de altura" if r["z"] > 0 else "")
-            checks.append(Check("info", "MTOW", f"{mt:.2f} kg", "x e z atendidos", f"{parts}; acionamento em {best.s:.1f} m, "
-                                f"δe = {best.de:g}°" + (f", ΔxCG = {getattr(best, 'dx', 0):+g} cm" if len(dxs) > 1 else "")
-                                + why, "para subir o MTOW: mais tração, mais área de asa ou mais C_Lmax", "MTOW"))
+            parts = ", ".join(f"{names[k]} = {m:.2f}" for k, m in best.masses.items())
+            checks.append(Check("info", "MTOW", f"{mt:.2f} kg", "x e z atendidos",
+                                f"{parts}; xCG = {best.xcg:.3f} m; acionamento em {best.s:.1f} m, δe = {best.de:g}°",
+                                "", "MTOW"))
             S.update(self._opt_series(saved.get(tm, []), best, refs))
             v = best.variant
-            cg = np.asarray(build_model(v).mass["cg"], float)
             res, log = TO.evaluate(ctx.backend, v, best.s if ctrl else None, best.de, refs["x_warning"], refs["z_warning"],
-                                   dict(r_dry=[float(cg[0] + getattr(best, "dx", 0.0) / 100.0), float(cg[1]), float(cg[2])]),
-                                   dtlog=0.005, log=True)
+                                   best.over, dtlog=0.005, log=True)
             if len(log):
-                S.update(FP.takeoff_window(log, res.events, refs, v.airfield))
-                S.update(_angles(log, res.events, v, refs))
-                S.update({k: v_ for k, v_ in FP.trajectory(log, res.events, ["decolagem", "cruzeiro"]).items()
-                          if k.startswith(("t3_", "xz_"))})
+                S.update(self._takeoff_series(log, res.events, v, refs))
             checks += self._takeoff_checks(v, best, refs, ctrl)
         return SimResult(log=log, series=S, summary=summary, checks=checks)

@@ -8,6 +8,7 @@ no fim, desenha as séries do resultado com o estilo que a simulação pediu (`_
 from __future__ import annotations
 
 import math
+import re
 from html import escape
 
 import numpy as np
@@ -25,6 +26,31 @@ DASH = {1: QtCore.Qt.PenStyle.DashLine, "dash": QtCore.Qt.PenStyle.DashLine, "do
         "dashdot": QtCore.Qt.PenStyle.DashDotLine}
 
 pg.setConfigOptions(antialias=True, background="w", foreground="k")
+
+
+GREEK = {"alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ", "epsilon": "ε", "eta": "η", "theta": "θ", "mu": "μ",
+         "rho": "ρ", "sigma": "σ", "tau": "τ", "phi": "φ", "chi": "χ", "psi": "ψ", "omega": "ω", "Delta": "Δ",
+         "pi": "π", "lambda": "λ"}
+_SUB = re.compile(r"([A-Za-zα-ωΑ-Ω])_(\{[^}]*\}|[A-Za-z0-9α-ω]+)")
+_SUP = re.compile(r"\^(\{[^}]*\}|[0-9A-Za-z+\-]+)")
+
+
+def tex(s: str) -> str:
+    """notação LaTeX simples -> HTML do Qt: $...$ em itálico, \\delta -> δ, x_{ab} e x^2 em sub/sobrescrito;
+    fora de $...$ também converte índices como C_L, V_e, n_dec"""
+    if not s:
+        return s
+
+    def conv(t: str) -> str:
+        t = re.sub(r"\\([A-Za-z]+)", lambda m: GREEK.get(m.group(1), m.group(1)), t)
+        t = _SUB.sub(lambda m: f"{m.group(1)}<sub>{m.group(2).strip('{}')}</sub>", t)
+        t = _SUP.sub(lambda m: f"<sup>{m.group(1).strip('{}')}</sup>", t)
+        return t
+    parts = s.split("$")
+    out = []
+    for i, part in enumerate(parts):
+        out.append(f"<i>{conv(part)}</i>" if i % 2 else conv(part))
+    return "".join(out)
 
 
 def is_angle(ch: str) -> bool:
@@ -54,10 +80,10 @@ class _Plot2D(QtWidgets.QWidget):
         v.setContentsMargins(0, 0, 0, 0)
         v.addWidget(self.lay)
         self.setMinimumHeight(spec.height or height)
-        p = self.plot = self.lay.addPlot(row=0, col=0, title=f"<b>{spec.title}</b>")
+        p = self.plot = self.lay.addPlot(row=0, col=0, title=f"<b>{tex(spec.title)}</b>")
         p.showGrid(x=True, y=True, alpha=0.3)
-        p.setLabel("bottom", spec.xlabel)
-        p.setLabel("left", spec.ylabel)
+        p.setLabel("bottom", tex(spec.xlabel))
+        p.setLabel("left", tex(spec.ylabel))
         for ax in ("bottom", "left"):
             p.getAxis(ax).enableAutoSIPrefix(False)
         if spec.aspect:
@@ -71,7 +97,7 @@ class _Plot2D(QtWidgets.QWidget):
         ys = spec.ys if spec.source == "log" else spec.live_ys
         for j, y in enumerate(ys):
             c = p.plot([], [], pen=_pen(PALETTE[j % len(PALETTE)], 1.6), connect="finite")
-            self.legend.addItem(c, y)
+            self.legend.addItem(c, tex(y))
             self.live[y] = c
 
     def clear_final(self):
@@ -106,7 +132,7 @@ class _Plot2D(QtWidgets.QWidget):
                                      pen=_pen(color, width if "_width" in tab else 1.2, dash or "dash"))
                 p.addItem(ln)
                 if not tab.get("_nolegend"):
-                    leg.addItem(pg.PlotDataItem([], [], pen=_pen(color, 1.4, dash or "dash")), label)
+                    leg.addItem(pg.PlotDataItem([], [], pen=_pen(color, 1.4, dash or "dash")), tex(label))
                 k += 1
                 continue
             if "_vspan" in tab:
@@ -117,7 +143,7 @@ class _Plot2D(QtWidgets.QWidget):
                 reg.setZValue(-20)
                 p.addItem(reg)
                 if not tab.get("_nolegend"):
-                    leg.addItem(pg.BarGraphItem(x=[0], height=[0], width=0, brush=pg.mkBrush(color)), label)
+                    leg.addItem(pg.BarGraphItem(x=[0], height=[0], width=0, brush=pg.mkBrush(color)), tex(label))
                 continue
             if s.x not in tab:
                 continue
@@ -145,7 +171,7 @@ class _Plot2D(QtWidgets.QWidget):
                     for it in (c1, c2, pg.FillBetweenItem(c1, c2, brush=pg.mkBrush(cc))):
                         p.addItem(it)
                     if not tab.get("_nolegend"):
-                        leg.addItem(c1, lab)
+                        leg.addItem(c1, tex(lab))
                     continue
                 if sym:
                     size = float(tab.get("_size", 18 if sym == "star" else 11))
@@ -158,7 +184,7 @@ class _Plot2D(QtWidgets.QWidget):
                 else:
                     it = p.plot(xs, ys, pen=_pen(col_, width, dash), connect="finite")
                 if not tab.get("_nolegend"):
-                    leg.addItem(it, lab)
+                    leg.addItem(it, tex(lab))
 
 
 class _Plot3D(QtWidgets.QWidget):
@@ -171,7 +197,8 @@ class _Plot3D(QtWidgets.QWidget):
         self.spec = spec
         v = QtWidgets.QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
-        t = QtWidgets.QLabel(f"<b>{spec.title}</b> — arraste para girar, roda do mouse para aproximar")
+        t = QtWidgets.QLabel(f"<b>{tex(spec.title)}</b>")
+        t.setToolTip("arraste para girar, roda do mouse para aproximar")
         t.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         v.addWidget(t)
         self.view = gl.GLViewWidget()
@@ -234,7 +261,7 @@ class _Plot3D(QtWidgets.QWidget):
                 rest = tname[len(name) - 1:] if name.endswith("*") else tname
                 mark = "●" if tab.get("_symbol") else "━━"         # no 3D os eventos são pontos
                 lab = str(tab.get("_label", rest)).lstrip("★ ")
-                legend.append(f"<span style='color:{color}'>{mark}</span> {escape(lab)}")
+                legend.append(f"<span style='color:{color}'>{mark}</span> {tex(escape(lab))}")
         if not items:
             return
         P = np.vstack([q[0][np.isfinite(q[0]).all(axis=1)] for q in items])
@@ -312,7 +339,7 @@ class LivePlots(QtWidgets.QWidget):
                 w.clear_final()
                 for j, y in enumerate(ys):
                     c = w.plot.plot([], [], pen=_pen(PALETTE[j % len(PALETTE)], 1.6), connect="finite")
-                    w.legend.addItem(c, y)
+                    w.legend.addItem(c, tex(y))
                     w.live[y] = c
         for c in self.curves.values():
             c.setData([], [])
