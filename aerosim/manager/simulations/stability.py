@@ -75,8 +75,8 @@ class StabilitySimulation(SimulationBase):
         apl = ac.autopilot if ac is not None else None
         V_, C_, G_, A_ = "Voo", "Critérios de aprovação", "Faixa de CG", "Análises"
         ps = [ParamSpec("V", "velocidade de cruzeiro", round(Vc, 1), minimum=3, maximum=80, unit="m/s", group=V_),
-              ParamSpec("CL_frac", "C_L a equilibrar no pouso (fração do C_Lmax)", 0.9, minimum=0.3, maximum=1.0,
-                        group=V_)]
+              ParamSpec("CL_frac", "C_L no pouso", 0.9, minimum=0.3, maximum=1.0,
+                        group=V_, help="fração do C_Lmax que o profundor tem de equilibrar no pouso")]
         if f is None or (f.gear and f.pitch):
             ps.append(ParamSpec("roll_takeoff", "decola rodando sobre o trem", True, kind="bool", group=V_,
                                 help="desmarque se a aeronave é lançada à mão/catapulta: a rotação deixa de limitar o CG"))
@@ -124,19 +124,19 @@ class StabilitySimulation(SimulationBase):
             ps.append(ParamSpec("cg_var", "variação prevista do CG (±)", 2.0, minimum=0, maximum=30, unit="% CMA",
                                 group=G_, help="sem carga lançável nem líquido, a variação do CG é informada"))
         else:
-            ps.append(ParamSpec("cg_margin", "folga além da variação calculada (±)", 2.0, minimum=0, maximum=20,
+            ps.append(ParamSpec("cg_margin", "folga de CG (±)", 2.0, minimum=0, maximum=20,
                                 unit="% CMA", group=G_, help="a variação com/sem carga e líquido é calculada"))
         # ---- análises que dependem da configuração
         if f is None or f.htail is not None:
-            ps.append(ParamSpec("size_tail", "dimensionar a área do EH pela faixa de CG", True, kind="bool", group=A_))
+            ps.append(ParamSpec("size_tail", "dimensionar o EH", True, kind="bool", group=A_, help="área do EH pela faixa de CG"))
         if f is not None and f.tailless:
-            ps.append(ParamSpec("size_elevon", "dimensionar o elevon (corda × envergadura)", True, kind="bool",
-                                group=A_))
-            ps.append(ParamSpec("washout", "calcular a torção na ponta para C_m0 > 0", True, kind="bool", group=A_))
+            ps.append(ParamSpec("size_elevon", "dimensionar o elevon", True, kind="bool",
+                                group=A_, help="corda × envergadura"))
+            ps.append(ParamSpec("washout", "calcular a torção", True, kind="bool", group=A_, help="torção na ponta para C_m0 > 0"))
         if f is None or f.roll_kind == "aileron":
             ps.append(ParamSpec("eta_o", "aileron: fim (fração da semiasa)", 0.95, minimum=0.5, maximum=1.0, group=A_))
         ps += [ParamSpec("Vs_list", "velocidades da análise dinâmica", vl, kind="floats", unit="m/s", group=A_),
-               ParamSpec("whatif", "procurar a correção quando um modo falha", True, kind="bool", group=A_,
+               ParamSpec("whatif", "procurar a correção", True, kind="bool", group=A_,
                          help="refaz a análise com deriva maior / mais diedro / EH maior para dizer quanto mudar"),
                ParamSpec("resp", "mostrar respostas no tempo", False, kind="bool", group=A_)]
         return ps

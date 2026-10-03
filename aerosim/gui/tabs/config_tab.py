@@ -20,15 +20,30 @@ from PyQt6 import QtCore, QtWidgets
 from aerosim.model.aircraft import (DEVICE_KINDS, WingDevice, ControlSurface, LiftingSurface, PropulsionUnit, SloshTank, WingSection,
                                     rect_sections)
 from aerosim.model.airfoil import Airfoil, read_dat
-from aerosim.model.mission import Leg, MissionEvent
+from aerosim.model.mission import MissionEvent
 
 from ..state import AppState
-from ..widgets.param_slider import CONTROL_KINDS, EVENT_KINDS, LEG_KINDS, DataclassForm, NumberField
+from ..widgets.param_slider import CONTROL_KINDS, EVENT_KINDS, HELP_MARK, DataclassForm, NumberField
 from ..widgets.view3d import AircraftView
+
+# explicação de cada editor: ⓘ no título (passe o mouse)
+EDIT_HELP = {
+    "ballast": "massa sólida presa na aeronave para acertar o CG; entra na massa, no CG e nas inércias. "
+               "Arraste no 3D para mover. Na Missão → MTOW a massa dele varia junto com a LAPES e o líquido",
+    "takeoff": "na corrida o acelerador vai a cheio; no ponto de acionamento o profundor (ou elevon) vai para a "
+               "deflexão de decolagem até o piloto automático assumir. A Missão otimiza esse ponto",
+    "airfield": "a aeronave parte de n = 0 rumo ao norte. x_warning: tem de decolar antes desta distância; "
+                "z_warning: altura que conta como decolado (na mesa, ≤ 0 = quanto pode afundar)",
+    "gear": "tipo: triciclo, convencional (bequilha na cauda) ou custom (pernas livres); trocar o tipo reposiciona "
+            "as pernas",
+    "mission": "a trajetória (etapas) se edita na aba Missão; aqui ficam o ponto de partida e os eventos",
+    "payload": "carga LAPES: massa, posição, baia e paraquedas; a soltura é um evento do percurso",
+    "fuselage": "ligue/desligue em 'ativo'", "boom": "ligue/desligue em 'ativo'",
+}
 
 NONGEOM = [("airfield", "🛫 Pista: chão, mesa e plataforma"), ("mass", "Massa e inércia"), ("environment", "Ambiente"),
            ("takeoff", "Decolagem (acionamento do profundor)"), ("autopilot", "Piloto automático"), ("sim", "Integração"),
-           ("mission", "Percurso (pernas e eventos)")]
+           ("mission", "Percurso: partida e eventos")]
 
 
 class ConfigTab(QtWidgets.QWidget):
@@ -91,8 +106,8 @@ class ConfigTab(QtWidgets.QWidget):
         lv.addLayout(bar)
         self.view = AircraftView()
         lv.addWidget(self.view, 1)
-        legend = QtWidgets.QLabel("● vermelho: CG   | verde: ponto neutro   → azul: vento   "
-                                  "(clique num componente para selecionar e arraste para mover)")
+        legend = QtWidgets.QLabel("● CG (vermelho)   ● ponto neutro (verde)   → vento (azul)" + HELP_MARK)
+        legend.setToolTip("clique num componente para selecionar; arraste para mover")
         legend.setStyleSheet("color: #555; font-size: 10px")
         legend.setWordWrap(True)
         lv.addWidget(legend)
@@ -183,9 +198,12 @@ class ConfigTab(QtWidgets.QWidget):
 
     def _wind_changed(self, *_):
         env = self.state.aircraft.environment
-        env.wind_speed = self.wind_speed.value()
-        env.wind_from = float(self.wind_dir.value())
-        self.wind_lbl.setText(f"vem de {env.wind_from:.0f}° (0 = de frente, 90 = da direita)")
+        new = (self.wind_speed.value(), float(self.wind_dir.value()))
+        if new != (env.wind_speed, env.wind_from):
+            self.state.touch()
+        env.wind_speed, env.wind_from = new
+        self.wind_lbl.setText(f"vem de {env.wind_from:.0f}°")
+        self.wind_lbl.setToolTip("0 = de frente, 90 = da direita")
         self.view.set_markers(wind=(env.wind_speed, env.wind_from))
 
     # ------------------------------------------------------------------ adicionar / remover
@@ -198,41 +216,22 @@ class ConfigTab(QtWidgets.QWidget):
             b = QtWidgets.QPushButton(txt)
             b.clicked.connect(fn)
             g.addWidget(b, i // 3, i % 3)
-        self.chk_boom = QtWidgets.QCheckBox("tubo de cauda")
-        self.chk_fus = QtWidgets.QCheckBox("fuselagem")
-        self.chk_pay = QtWidgets.QCheckBox("carga LAPES")
-        self.gear_combo = QtWidgets.QComboBox()
-        self.gear_combo.addItems(["tricycle", "conventional", "custom"])
-        for w in (self.chk_boom, self.chk_fus, self.chk_pay):
-            w.toggled.connect(self._toggles)
-        self.gear_combo.currentTextChanged.connect(self._gear_layout)
-        g.addWidget(self.chk_boom, 2, 0)
-        g.addWidget(self.chk_fus, 2, 1)
-        g.addWidget(self.chk_pay, 2, 2)
-        g.addWidget(QtWidgets.QLabel("trem:"), 3, 0)
-        g.addWidget(self.gear_combo, 3, 1, 1, 2)
         return g
 
-    def _toggles(self, *_):
-        ac = self.state.aircraft
-        ac.boom.enabled = self.chk_boom.isChecked()
-        ac.fuselage.enabled = self.chk_fus.isChecked()
-        ac.payload.enabled = self.chk_pay.isChecked()
-        self.state.notify("geometry")
-        self._fill_list()
-
-    def _gear_layout(self, layout):
-        g = self.state.aircraft.gear
-        if g.layout == layout:
+    @staticmethod
+    def _gear_layout(g, old):
+        """trocou o tipo do trem no editor: reposiciona as pernas (bequilha ↔ cauda)"""
+        new = g.layout
+        if new == old:
             return
-        if layout == "conventional" and g.steer_x > g.main_x:       # bequilha vai para a cauda
+        if new == "conventional" and g.steer_x > g.main_x:       # bequilha vai para a cauda
             g.steer_x, g.steer_z, g.main_x = g.skid_x, 0.05, g.main_x + 0.15
-        elif layout == "tricycle" and g.steer_x < g.main_x:
+        elif new == "tricycle" and g.steer_x < g.main_x:
             g.steer_x, g.steer_z, g.main_x = 0.45, g.main_z, g.main_x - 0.15
-        if layout == "custom" and not g.custom:
+        if new == "custom" and not g.custom:
+            g.layout = old
             g.custom = copy.deepcopy(g.legs())
-        g.layout = layout
-        self.state.notify("geometry")
+            g.layout = new
 
     def _add_wing(self):
         ac = self.state.aircraft
@@ -306,14 +305,6 @@ class ConfigTab(QtWidgets.QWidget):
     # ------------------------------------------------------------------ lista e seleção
     def _reload(self):
         ac = self.state.aircraft
-        for w, v in ((self.chk_boom, ac.boom.enabled), (self.chk_fus, ac.fuselage.enabled),
-                     (self.chk_pay, ac.payload.enabled)):
-            w.blockSignals(True)
-            w.setChecked(v)
-            w.blockSignals(False)
-        self.gear_combo.blockSignals(True)
-        self.gear_combo.setCurrentText(ac.gear.layout)
-        self.gear_combo.blockSignals(False)
         env = ac.environment
         self.wind_speed.setValue(env.wind_speed)
         self.wind_dir.blockSignals(True)
@@ -333,10 +324,9 @@ class ConfigTab(QtWidgets.QWidget):
         items = [(f"surface:{i}", f"✈ {s.name} ({s.role})") for i, s in enumerate(ac.surfaces)]
         items += [(f"prop:{i}", f"⚙ {u.name}") for i, u in enumerate(ac.propulsion)]
         items += [(f"tank:{i}", f"▣ {t.name}") for i, t in enumerate(ac.tanks)]
-        if ac.fuselage.enabled:
-            items.append(("fuselage", "fuselagem"))
-        if ac.boom.enabled:
-            items.append(("boom", "tubo de cauda"))
+        off = lambda on: "" if on else " (desligado)"
+        items.append(("fuselage", "fuselagem" + off(ac.fuselage.enabled)))
+        items.append(("boom", "tubo de cauda" + off(ac.boom.enabled)))
         items.append(("payload", "📦 LAPES: carga e soltura" + ("" if ac.payload.enabled else " (desligado)")))
         items.append(("ballast", "⚖ Lastro" + (f" ({ac.ballast.mass:g} kg)" if ac.ballast.enabled else " (desligado)")))
         items.append(("gear", f"trem de pouso ({ac.gear.layout})"))
@@ -355,7 +345,9 @@ class ConfigTab(QtWidgets.QWidget):
         if cur is None:
             return
         key = cur.data(QtCore.Qt.ItemDataRole.UserRole)
-        self.editor_title.setText(cur.text())
+        hp = EDIT_HELP.get(key.partition(":")[0], "")
+        self.editor_title.setText(escape(cur.text()) + (HELP_MARK if hp else ""))
+        self.editor_title.setToolTip(hp)
         self.view.select(key if ":" in key or key in ("fuselage", "boom", "payload", "gear", "ballast") else None)
         self._edit(key)
 
@@ -379,6 +371,13 @@ class ConfigTab(QtWidgets.QWidget):
 
     # ------------------------------------------------------------------ editores
     def _changed(self, field=""):
+        if field == "layout":
+            g = self.state.aircraft.gear
+            self._gear_layout(g, self._gear_prev)
+            self._gear_prev = g.layout
+            self.state.notify("geometry")
+            self._fill_list()          # reabre o editor (pernas custom aparecem/somem)
+            return
         if field in ("name", "enabled"):
             self._fill_list()
         self.state.notify("geometry")
@@ -416,36 +415,17 @@ class ConfigTab(QtWidgets.QWidget):
         elif kind == "ballast":
             self.form = DataclassForm(ac.ballast)
             v.addWidget(self.form)
-            hint = QtWidgets.QLabel("Massa sólida presa na aeronave para acertar o CG (estabilidade). Entra na massa "
-                                    "seca, no CG e nas inércias. Arraste no 3D para mudar a posição. Na Missão → MTOW "
-                                    "dá para variar a massa dele junto com a carga LAPES e o líquido.")
-            hint.setWordWrap(True)
-            hint.setStyleSheet("color:#555")
-            v.addWidget(hint)
         elif kind in ("fuselage", "boom"):
             self.form = DataclassForm(getattr(ac, kind))
             v.addWidget(self.form)
         elif kind == "takeoff":
             self.form = DataclassForm(ac.takeoff, exclude=("VR", "de0", "rate_de", "rate_thr"))
             v.addWidget(self.form)
-            hint = QtWidgets.QLabel("Na corrida o acelerador vai a cheio; no ponto de acionamento o profundor (ou o "
-                                    "elevon) vai para a deflexão de decolagem e fica lá até a altura em que o piloto "
-                                    "automático assume. A aba Missão acha o melhor ponto para o x_warning e o "
-                                    "z_warning (Configuração → Pista).")
-            hint.setWordWrap(True)
-            hint.setStyleSheet("color:#555")
-            v.addWidget(hint)
         elif kind == "airfield":
             self.form = DataclassForm(ac.airfield)
             v.addWidget(self.form)
-            hint = QtWidgets.QLabel("A aeronave parte de n = 0 rumo ao norte. A mesa vai de −'atrás' a +'à frente'; "
-                                    "a plataforma fica na última perna de pouso, começando o tanto pedido antes do "
-                                    "fim dela. Na Missão: x_warning (saiu do chão depois da distância máxima) e "
-                                    "z_warning (caiu abaixo da mesa / tocou fora da plataforma).")
-            hint.setWordWrap(True)
-            hint.setStyleSheet("color:#555")
-            v.addWidget(hint)
         elif kind == "gear":
+            self._gear_prev = ac.gear.layout
             self.form = DataclassForm(ac.gear, exclude=("custom",))
             v.addWidget(self.form)
             if ac.gear.layout == "custom":
@@ -459,7 +439,6 @@ class ConfigTab(QtWidgets.QWidget):
         elif kind == "mission":
             self.form = DataclassForm(ac.mission, exclude=("legs", "events"))
             v.addWidget(self.form)
-            v.addWidget(self._list_editor("pernas", ac.mission.legs, Leg, {"kind": LEG_KINDS}))
             v.addWidget(self._list_editor("eventos", ac.mission.events, MissionEvent, {"kind": EVENT_KINDS}))
         else:
             self.form = DataclassForm(getattr(ac, kind))
@@ -702,7 +681,9 @@ class ConfigTab(QtWidgets.QWidget):
             names.insert(0, u.thrust_poly.name)
         cb.addItems(names)
         cb.setCurrentText(u.thrust_poly.name)
-        v.addWidget(QtWidgets.QLabel(f"conjunto ({len(sets)} no catálogo; importe a planilha para trazer os da aba Tracao)"))
+        lb = QtWidgets.QLabel(f"conjunto ({len(sets)} no catálogo)" + HELP_MARK)
+        lb.setToolTip("importe a planilha (Arquivo → Importar catálogo) para trazer os conjuntos da aba Tracao")
+        v.addWidget(lb)
         v.addWidget(cb)
         form_holder = QtWidgets.QVBoxLayout()
         v.addLayout(form_holder)

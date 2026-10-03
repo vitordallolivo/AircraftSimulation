@@ -141,10 +141,12 @@ def test_mission_battery_glyphs_and_editable_trajectory(manager):
     rows = sim.parameters_for(ac, {})[1].default                     # tabela da trajetória
     rows[2]["length"] = 150.0                                         # encurta o cruzeiro 1
     assert sim.commit(ac, {"legs": rows}) and ac.mission.legs[2].length == 150.0
-    r = manager.run("mission", ac, {"until": f"fim: {ac.mission.names()[3]}", "glyph": 10.0})
+    r = manager.run("mission", ac, {"until": f"fim: {ac.mission.names()[3]}"})
     assert any(k.startswith("t3_✈") for k in r.series)               # avião desenhado na trajetória
     c = r.series["consumo_por_etapa"]
     assert c["etapa"][-1] == "total" and c["consumo_mAh"][-1] > 0
+    soc = r.series["batp_SOC Peukert"]["y"]                           # SOC: começa em 100 % e cai
+    assert soc[0] == pytest.approx(100.0, abs=0.5) and soc[-1] < soc[0] and c["soc_fim_pct"][-1] < 100
     assert any(k.startswith("dt_θ + i_w") for k in r.series)    # θ e θ + incidência na decolagem
     assert ac.mission.segments()[-1]["e0"] == pytest.approx(20.0)     # pouso 20 m a leste da decolagem
 
@@ -161,3 +163,21 @@ def test_ballast_changes_mass_cg_and_inertia(backend):
     assert b["I"][1, 1] > a["I"][1, 1]
     with backend.session_for(build_model(ac)) as s:
         assert s.mass_props()["cg"][0] > 0.0 and s.mass_props()["m"] > a["m"]
+
+
+def test_mission_table_turn_angle_and_auto_radius(manager):
+    """tabela simples: 'virar (°)' com sinal (− esquerda) e raio vazio = automático (procura o menor que passa)"""
+    from aerosim.manager.simulations.mission import legs_to_rows, rows_to_legs
+    ac = TEMPLATES["conventional"]()
+    rows = legs_to_rows(ac.mission.legs)
+    assert rows[0]["kind"] == "decolagem" and rows[-1]["kind"] == "pouso" and rows[1]["kind"] == "curva"
+    rows[1]["turn"], rows[1]["radius"] = -90.0, None
+    legs = rows_to_legs(rows, ac.mission.legs)
+    assert legs[1].side == -1 and legs[1].angle == 90.0 and legs[1].radius == 0.0
+    assert legs[0].takeoff and legs[-1].landing
+    ac.mission.legs = legs
+    assert ac.mission.segments()[1]["R"] > 3.0                        # raio provisório para desenhar
+    r = manager.run("mission", ac, {"until": f"fim: {ac.mission.names()[1]}"})
+    R = r.summary[f"raio automático — {ac.mission.names()[1]}"]
+    assert 3.0 < R < 80.0
+    assert any(c.item.startswith("raio automático") for c in r.checks)

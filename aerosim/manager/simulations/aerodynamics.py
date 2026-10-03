@@ -55,43 +55,43 @@ class AerodynamicsSimulation(SimulationBase):
               ParamSpec("a1", "α final", 18.0, minimum=2, maximum=30, unit="°"),
               ParamSpec("da", "passo de α", 1.0, minimum=0.25, maximum=5, unit="°"),
               ParamSpec("alpha_d", "α das derivadas", 2.0, minimum=-5, maximum=12, unit="°"),
-              ParamSpec("xcg", "posição do CG para os momentos (−1: a da aeronave)", -1.0, minimum=-1, maximum=100,
-                        unit="% CMA", help="em % da CMA a partir do bordo de ataque"),
+              ParamSpec("xcg", "CG dos momentos", -1.0, minimum=-1, maximum=100,
+                        unit="% CMA", help="−1: o da aeronave; em % da CMA a partir do bordo de ataque; em % da CMA a partir do bordo de ataque"),
               ParamSpec("section", "polar 2D dos perfis no lltdrek", "modelo", kind="choice",
                         choices=("modelo", "neuralfoil"),
                         help="modelo: a mesma polar do simulador; neuralfoil: a rede neural sobre o contorno .dat"),
               ParamSpec("n_span", "painéis por semiasa", 12, kind="int", minimum=4, maximum=40),
               ParamSpec("use_lltdrek", "lltdrek (método principal)", True, kind="bool"),
-              ParamSpec("use_zig", "comparar: núcleo Zig (o que a simulação usa)", True, kind="bool"),
+              ParamSpec("use_zig", "comparar: núcleo Zig", True, kind="bool", help="o modelo que a simulação usa"),
               ParamSpec("use_asb_vlm", "comparar: AeroSandbox VLM", False, kind="bool"),
               ParamSpec("use_asb_buildup", "comparar: AeroSandbox AeroBuildup", False, kind="bool"),
               ParamSpec("use_asb_ll", "comparar: AeroSandbox LiftingLine", False, kind="bool")]
         for p_ in ps:
             p_.group = "Caso" if p_.key in ("V", "a0", "a1", "da", "alpha_d", "xcg") else "Métodos"
         A = "Polar da aeronave completa (núcleo 6GDL)"
-        ps += [ParamSpec("full", "curvas da aeronave inteira com profundor e β (o que a simulação usa)", True,
-                         kind="bool", group=A),
+        ps += [ParamSpec("full", "aeronave inteira (δe e β)", True,
+                         kind="bool", group=A, help="curvas da aeronave inteira com profundor e derrapagem, como a simulação usa"),
                ParamSpec("de", "δe para comparar", 10.0, minimum=0, maximum=30, unit="°", group=A),
                ParamSpec("alpha_beta", "α da varredura em β", 4.0, minimum=-5, maximum=15, unit="°", group=A)]
         D = "Dispositivos de asa"
         if f is not None and f.has_tip_devices:
             ps.append(ParamSpec("tips", "avaliar os dispositivos da asa", True, kind="bool", group=D))
         else:
-            ps.append(ParamSpec("tips", "explorar dispositivos de ponta (a aeronave não tem)", False, kind="bool", group=D,
+            ps.append(ParamSpec("tips", "explorar pontas de asa", False, kind="bool", group=D,
                                 help="winglet, placa, caixa e asa em C pelo plano de Trefftz, com o atrito descontado"))
         ps += [ParamSpec("hb_max", "altura máxima estudada (h/b)", 0.25, minimum=0.05, maximum=1.0, group=D),
                ParamSpec("Cf", "coeficiente de atrito do dispositivo", 0.006, minimum=0.0, maximum=0.05, step=0.001,
                          group=D)]
         C = "Critérios de aprovação"
-        ps += [ParamSpec("tol_CLa", "concordância entre métodos: C_Lα e C_Lmax", 12.0, minimum=1, maximum=100, unit="%",
-                         group=C),
-               ParamSpec("tol_np", "concordância entre métodos: ponto neutro", 5.0, minimum=0.5, maximum=50,
-                         unit="% CMA", group=C),
+        ps += [ParamSpec("tol_CLa", "tolerância C_Lα e C_Lmax", 12.0, minimum=1, maximum=100, unit="%",
+                         group=C, help="diferença aceita entre os métodos"),
+               ParamSpec("tol_np", "tolerância ponto neutro", 5.0, minimum=0.5, maximum=50,
+                         unit="% CMA", group=C, help="diferença aceita entre os métodos"),
                ParamSpec("Vs_ratio", "V de cruzeiro / V de estol mínima", 1.3, minimum=1.0, maximum=3.0, group=C),
-               ParamSpec("LD_frac", "L/D no cruzeiro mínimo (fração do máximo)", 90.0, minimum=10, maximum=100,
-                         unit="%", group=C),
-               ParamSpec("dev_gain", "dispositivo compensa se reduzir o arrasto em pelo menos", 0.5, minimum=0, maximum=20,
-                         unit="%", group=C)]
+               ParamSpec("LD_frac", "L/D mín. no cruzeiro", 90.0, minimum=10, maximum=100,
+                         unit="%", group=C, help="fração do L/D máximo"),
+               ParamSpec("dev_gain", "ganho mín. do dispositivo", 0.5, minimum=0, maximum=20,
+                         unit="%", group=C, help="o dispositivo de ponta compensa se reduzir o arrasto ao menos isto")]
         return ps
 
     def plots(self):

@@ -116,6 +116,10 @@ python -m aerosim.gui data/aircraft/twin_boom.cfg   # abre um arquivo (.cfg, .js
   piloto, percurso), os botões de adicionar/remover e as informações (massa, CG, inércias, aerodinâmica,
   W/S, T/W, propulsão, trem, pista, LAPES, percurso e avisos); no meio a aeronave em 3D (clique para
   selecionar, arraste para mover) e **↺ Restaurar**; à direita, largo, o editor do componente escolhido.
+  Tudo se muda no editor do componente (ex.: o tipo do trem e ligar a fuselagem/tubo ficam no editor
+  deles). Textos longos viram **ⓘ**: passe o mouse para ler.
+- **Desfazer/Refazer** (Ctrl+Z / Ctrl+Y ou Ctrl+Shift+Z, menu Editar): vale para a configuração e para
+  os formulários e tabelas das abas; mudanças seguidas em menos de 0,6 s viram um passo só.
 - **Abas:** Dimensionamento inicial, **Missão** (voo simulado 6GDL), **Desempenho** (contas da planilha,
   sem simulação), Tração, Aerodinâmica (com a polar da aeronave completa) e Estabilidade. Em cada aba: os
   gráficos, o **diagnóstico** (estado, valor, limite; clique para ver o porquê e o que mudar) e, no fim da
@@ -127,14 +131,15 @@ python -m aerosim.gui data/aircraft/twin_boom.cfg   # abre um arquivo (.cfg, .js
   de partida que conta como decolado; ≤ 0 na mesa: quanto pode afundar abaixo dela). O ponto de
   acionamento do profundor (ou do elevon; sem comando de arfagem, nada a otimizar) é otimizado, com a maior
   deflexão que funciona. Modos:
-  - *missão*: a **trajetória por partes** é uma tabela na própria aba (cada linha uma etapa: reta com
-    comprimento, curva com raio, ângulo e lado, altura e velocidade no fim; grava na aeronave). Decolagem
-    otimizada e o resto do voo dali, etapa por etapa; para no fim de qualquer etapa e recomeça do início de
-    qualquer etapa (se ainda não houver checkpoint, voa até lá e salva). O avião é desenhado no 3D a cada
-    N metros (cor da etapa, na atitude daquele instante). O circuito padrão pousa 20 m a leste da pista de
-    decolagem. **Consumo de bateria por etapa** (tempo, corrente média, mAh e descarga estimada por
-    Coulomb e por Peukert) e o ângulo da aeronave e da asa no tempo na decolagem;
-  - *só decolagem*; *curvas: raio mínimo*;
+  - *missão*: só três campos — a **trajetória** (tabela: etapa | tipo decolagem/reta/curva/pouso |
+    distância | **virar (°)**, + direita e − esquerda, a próxima etapa segue na direção nova | raio, vazio =
+    **automático** | altura | velocidade; vazio = mantém), *começar de* e *parar em*. Curva sem raio: do
+    checkpoint do início dela, o manager testa raios do φ máx. do piloto para baixo e fica com o menor que
+    a aeronave faz. Decolagem sempre otimizada (x/z_warning da Configuração → Pista); sloshing, rajada e
+    mira da LAPES vêm da Configuração. O avião é desenhado no 3D a cada 10 m. O circuito padrão pousa
+    20 m a leste da pista de decolagem. **Bateria por etapa** (tempo, corrente média, mAh e **SOC**, que
+    começa em 100 % e cai, por Coulomb e por Peukert; aviso abaixo de 20 %);
+  - *só decolagem*; *curvas: raio mínimo* (só as velocidades; os raios vêm das inclinações 70° a 14°);
   - *MTOW*: uma tabela com mínimo, nominal e máximo de lastro, LAPES, líquido (L) e xCG (só as linhas que
     existem na configuração); as massas vão do mínimo ao máximo juntas e o xCG é testado nos três
     valores; o resultado diz a massa de decolagem e o valor de cada linha no MTOW.

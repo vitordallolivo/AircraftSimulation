@@ -38,8 +38,18 @@ def test_window_tabs_and_edit(app, manager):
     assert len(st.aircraft.propulsion) == n0 + 1 and len(st.aircraft.tanks) == 2
     cfg._rotate_wind(15)
     assert st.aircraft.environment.wind_from == 45
-    cfg.chk_boom.setChecked(True)
+    cfg._on_pick("boom")                                  # liga o tubo pelo editor da direita
+    cfg.form.widgets["enabled"].setChecked(True)
     assert st.aircraft.boom.enabled
+    cfg._on_pick("gear")                                  # tipo do trem também só pelo editor
+    cfg.form.widgets["layout"].findChild(QtWidgets.QComboBox).setCurrentText("conventional")
+    g = st.aircraft.gear
+    assert g.layout == "conventional" and g.steer_x < g.main_x
+    pump(app, 0.7)
+    st.undo()                                             # Ctrl-Z volta o trem
+    assert st.aircraft.gear.layout == "tricycle"
+    st.redo()
+    assert st.aircraft.gear.layout == "conventional"
     pump(app, 0.5)
     txt = cfg.summary.toPlainText()
     assert "margem" in txt and "Pista" in txt and "T/W" in txt
@@ -131,3 +141,21 @@ def test_stability_and_aero_tabs(app, manager):
     st.notify("geometry")
     tab.reconfigure()
     assert "size_tail" not in tab.inputs
+
+
+def test_undo_restores_tab_values(app, manager):
+    """Ctrl+Z também volta o que se escolheu nos formulários e tabelas das abas"""
+    from aerosim.gui.state import AppState
+    from aerosim.gui.tabs.simulation_tab import SimulationTab
+    from aerosim.model.templates import conventional
+    st = AppState(manager, conventional())
+    tab = SimulationTab(st, manager.get("mission"))
+    tab.inputs["mode"].setCurrentText("só decolagem")
+    pump(app, 0.1)
+    assert "start" not in tab.inputs
+    assert st.undo()
+    pump(app, 0.1)
+    assert tab.inputs["mode"].currentText() == "missão" and "start" in tab.inputs
+    assert st.redo()
+    pump(app, 0.1)
+    assert tab.inputs["mode"].currentText() == "só decolagem"

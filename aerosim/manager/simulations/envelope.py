@@ -57,7 +57,7 @@ class EnvelopeSimulation(SimulationBase):
     def parameters(self):
         return [ParamSpec("method", "Método", "os dois", kind="choice", choices=METHODS),
                 ParamSpec("atmos", "Atmosfera", "ISA", kind="choice", choices=ATMOS),
-                ParamSpec("faithful", "Reproduzir o original (ρ/ρ0 no arrasto)", False, kind="bool",
+                ParamSpec("faithful", "igual ao original", False, kind="bool",
                           help="liga: mesmas contas do Envelope_main, para comparar com resultados antigos"),
                 ParamSpec("h_step", "Passo de altitude", 50.0, minimum=1, maximum=1000, unit="m"),
                 ParamSpec("h_max", "Altitude máxima", 6000.0, minimum=50, maximum=20000, unit="m"),
@@ -66,7 +66,7 @@ class EnvelopeSimulation(SimulationBase):
                 ParamSpec("dV", "Grade de V (depois bisseção)", 0.05, minimum=0.001, maximum=2, unit="m/s"),
                 ParamSpec("tol", "Tolerância de V", 1e-5, minimum=1e-8, maximum=0.1, unit="m/s"),
                 ParamSpec("n_load", "Fator de carga n (0 = da aeronave)", 0.0, minimum=0, maximum=10),
-                ParamSpec("alpha_cruise", "Ângulo de cruzeiro (vazio = da aeronave)", "", kind="floats", unit="°"),
+                ParamSpec("alpha_cruise", "ângulo de cruzeiro", "", kind="floats", unit="°", help="vazio = o da aeronave"),
                 ParamSpec("table", "Tabela de desempenho ao nível do mar", True, kind="bool")]
 
     def plots(self):
