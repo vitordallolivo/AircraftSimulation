@@ -149,6 +149,16 @@ r = m.run("mission", ac, {"until": "B (início da perna 1)"})   # roda até o ch
 r = m.run("mission", ac, {"start": "B"})                        # retoma de B até o fim
 ```
 
+### Figuras de comparação
+
+```sh
+python tools/plot_comparativo.py docs/img/comparativo            # aeronave convencional
+python tools/plot_comparativo.py saida/ data/aircraft/twin_boom.cfg
+```
+
+Gera 7 PNG (polares, derivadas e métricas por método, pontas de asa, estabilidade, comandos e as três
+aeronaves-modelo). Precisa de `matplotlib`.
+
 ### Testes e medições
 
 ```sh

@@ -68,6 +68,9 @@ compara com a **MIL-F-8785C** por classe (I–IV) e categoria (A, B, C):
 
 Mais: raízes × V, Lanchester para o fugóide, respostas lineares a doublet de profundor e pulso de aileron.
 
+![Estabilidade](../../docs/img/comparativo/5_estabilidade.png)
+![Aeronaves-modelo](../../docs/img/comparativo/7_aeronaves.png)
+
 ## Superfícies de comando (`controls.py`)
 
 | comando | critério |
@@ -75,3 +78,7 @@ Mais: raízes × V, Lanchester para o fugóide, respostas lineares a doublet de 
 | aileron | teoria das faixas (Sadraey cap. 12): `C_lδa = 2 C_Lα τ/(S b) ∫ c y dy`, `P_ss = −C_lδa δa (2V/b)/C_lp`, `φ(t) = P_ss (t − τ_R (1 − e^{−t/τ_R}))`; requisito MIL-F-8785C (classe I: 60° em 1,3 s (A), 1,7 s (B); 30° em 1,3 s (C)). Varre início do aileron e c_a/c; confere C_lδa das faixas com o do núcleo |
 | profundor | δe para o C_L de pouso no CG dianteiro e para θ̈ pedido na rotação; varre c_e/c (τ por perfil fino) |
 | leme | vento cruzado de 0,2 V_S (FAR 23.233): `δr = C_nβ β / C_nδr`; multimotor: motor crítico parado em 1,2 V_S |
+
+![Comandos](../../docs/img/comparativo/6_comandos.png)
+
+Figuras: `python tools/plot_comparativo.py docs/img/comparativo`.

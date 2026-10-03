@@ -51,6 +51,10 @@ Notas sobre o lltdrek 1.2: (1) o corretor de Newton só monta a matriz certa qua
 superfícies têm o mesmo número de painéis — o adaptador sempre usa o mesmo N; (2) `np.cross` em
 vetores soltos domina o tempo — o adaptador troca por uma versão de 3 componentes (~4× mais rápido).
 
+![Polares por método](../../docs/img/comparativo/1_polares.png)
+![Derivadas por método](../../docs/img/comparativo/2_derivadas.png)
+![Métricas por método](../../docs/img/comparativo/3_metricas.png)
+
 ## Dispositivos de ponta de asa (`tipdevices.py`)
 
 Arrasto induzido mínimo no plano de Trefftz (Munk; Kroo, *Drag due to lift*, Annu. Rev. Fluid Mech.
@@ -78,6 +82,8 @@ extensão de ponta: com a mesma área molhada e com o mesmo momento fletor na ra
 Whitcomb/Jones). Com carregamento ótimo a extensão ganha; o winglet compensa quando o vão é limitado
 (regulamento, hangar).
 
+![Pontas de asa](../../docs/img/comparativo/4_pontas.png)
+
 ## Uso direto
 
 ```python
@@ -89,3 +95,5 @@ print(pol.derivs, polar_metrics(pol, ac, case))
 ```
 
 `lltdrek` e `aerosandbox` são opcionais: sem eles o solver aparece como indisponível na aba.
+
+Figuras: `python tools/plot_comparativo.py docs/img/comparativo [conventional|twin_boom|flying_wing|arquivo.cfg]`.
