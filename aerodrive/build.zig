@@ -1,7 +1,7 @@
-//! aerodrive — simulador pilotado com o núcleo do aerosim.
+//! AeroDrive — simulador pilotado com o núcleo do aerosim.
 //!
-//!   zig build run -- ../data/aircraft/Convencional_original.json      abre o hangar com o avião
-//!   zig build shot -- <avião.json> <saída.png> [WxH] [demo]            só tira uma foto (sem interação)
+//!   zig build run -- ../data/aircraft/Convencional_original.json      abre o menu inicial com o avião
+//!   zig build shot -- <saída.png> [avião.json] [WxH] [tela=...]        só tira uma foto (sem interação)
 //!   zig build test                                                     testes (sem janela)
 //!   zig build test -Dfuzz=200000 -Dseed=7                             fuzzing mais longo (padrão: 2000 por teste)
 //!
@@ -53,10 +53,10 @@ pub fn build(b: *std.Build) void {
 
     const run = b.addRunArtifact(exe);
     if (b.args) |args| run.addArgs(args);
-    b.step("run", "Abre o aerodrive").dependOn(&run.step);
+    b.step("run", "Abre o AeroDrive").dependOn(&run.step);
 
     const shot = b.addRunArtifact(exe);
     shot.addArg("--shot");
     if (b.args) |args| shot.addArgs(args);
-    b.step("shot", "Desenha o avião e salva uma imagem").dependOn(&shot.step);
+    b.step("shot", "Desenha uma tela e salva uma imagem").dependOn(&shot.step);
 }

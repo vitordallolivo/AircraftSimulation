@@ -9,8 +9,8 @@ mudar.
 - **GUI** (Python + PyQt6): configuração em 3D, dimensionamento inicial, missão, desempenho, tração,
   aerodinâmica e estabilidade, com diagnóstico em cada aba e Ctrl+Z.
 - **Núcleo de física em Zig**: a missão completa (165 s de voo) roda em cerca de 1 s.
-- **[aerodrive](aerodrive/README.md)**: o mesmo avião num simulador em tempo real (raylib), com
-  piloto automático ou controle.
+- **[AeroDrive](aerodrive/README.md)**: o mesmo avião num simulador em tempo real (raylib), pilotado
+  com controle de Xbox ou pelo piloto automático; grava vídeo e dados do voo.
 
 ![Configuração](docs/img/gui_configuracao.png)
 
@@ -20,7 +20,7 @@ mudar.
 
 ![Desempenho: envelope de voo](docs/img/gui_desempenho.png)
 
-![aerodrive: voo pelo piloto automático](aerodrive/docs/img/voo_cruzeiro.png)
+![AeroDrive: voo em perseguição com minimapa e vento](aerodrive/docs/img/voo_cruzeiro.png)
 
 ---
 
@@ -85,7 +85,7 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   mudar) e a tabela de resultados; **Exportar** grava `.xlsx` ou `.csv`.
 - **Ctrl+Z / Ctrl+Y** desfaz e refaz qualquer mudança, na configuração e nas abas.
 
-### Simulador pilotado (aerodrive)
+### Simulador pilotado (AeroDrive)
 
 ```sh
 cd aerodrive

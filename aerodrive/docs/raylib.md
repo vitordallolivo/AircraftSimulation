@@ -56,19 +56,16 @@ zig build run -- ../data/aircraft/Convencional_original.json
 
 A primeira compilação baixa e compila o raylib (1 a 2 min); as seguintes usam o cache.
 
-Comandos no hangar: analógico esquerdo = profundor e leme, LB/RB = aileron, RT = motor;
-teclado: setas, A/D, W/S; mouse: arrastar gira, roda aproxima; **Enter = voar** (piloto automático).
-No voo: C troca a câmera (piloto no chão, perseguição, livre), Espaço pausa, R recomeça, Esc volta.
-`fps=30` ou `fps=60` (padrão) escolhe a taxa de quadros; a física roda em tempo real.
+Os comandos de cada tela estão no [README](../README.md#jogar). `fps=30` ou `fps=60` (padrão) escolhe
+a taxa de quadros; a física roda em tempo real.
 
 ## 4. Foto sem abrir janela (servidor, CI)
 
 ```sh
-xvfb-run -a zig build shot -- ../data/aircraft/Asa_voadora.json asa.png 1280x720 demo
-#                                  avião                        saída   tamanho  comandos se mexendo
-# vista=az,el,zoom: azimute (° a partir do nariz, para a direita), elevação (°), zoom (× enquadramento)
-xvfb-run -a zig build shot -- ../data/aircraft/Convencional_original.json voo.png voo=40 cam=seguir
-# voo=SEG: voa SEG segundos pelo piloto automático e fotografa; cam=chao|seguir|livre
+xvfb-run -a zig build shot -- menu.png ../data/aircraft/Asa_voadora.json tela=inicio
+xvfb-run -a zig build shot -- voo.png ../data/aircraft/Convencional_original.json tela=voo voo=40 cam=seguir
+# tela=inicio|aeronave|voar|controle|camera|som|voos|dados|voo|pausa · voo=SEG voa antes da foto
+# modo=manual|auto · cam=chao|seguir|livre · mesa · f3 · gravar · dados=PASTA · 1280x720
 ```
 
 ## 5. Problemas comuns

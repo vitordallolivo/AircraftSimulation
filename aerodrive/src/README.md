@@ -1,187 +1,209 @@
 # aerodrive/src — módulos
 
 Cada módulo é um arquivo `.zig` com os próprios testes e um teste de **fuzzing** (`fz.check`): entradas
-quaisquer só podem dar um erro previsto com mensagem, nunca travar. Só `gfx/render.zig`, `ui/` e
-`screens/` conhecem o raylib; o resto roda (e é testado) sem janela.
-
-Ordem de uma execução:
+quaisquer só podem dar um erro previsto, nunca travar. As contas ficam em módulos sem raylib (testados
+por `zig build test`); só `gfx/render`, `ui/`, `screens/`, `audio/player`, `input/gamepad` e
+`app/app` falam com o raylib.
 
 ```mermaid
 flowchart LR
     F[("avião .json<br/>(salvo pela GUI)")] --> P["model/aircraft<br/>parse + validate"]
+    P --> FE["model/features<br/>canais, LAPES, tanques"]
     P --> SK["model/skeleton<br/>peças + drivers"]
     SK --> SC["gfx/render<br/>Scene (GPU)"]
-    P --> PA["sim/params<br/>parâmetros + calibração"]
-    PA --> DM["sim/drive_manager<br/>step(dt) → Frame"]
+    P --> SE["sim/session<br/>cenário, vento, LAPES"]
+    SE --> PA["sim/params<br/>parâmetros + calibração"]
+    PA --> DM["sim/drive_manager<br/>manual | automático"]
     CORE["core/ (física)"] --> DM
-    IN["input/channels<br/>controle → comandos"] -.-> DM
-    DM --> PO["gfx/pose<br/>driver + atitude"]
+    GP["input/gamepad"] --> CH["input/channels<br/>curvas"]
+    CH --> DM
+    DM --> PO["gfx/pose"]
     PO --> SC
     CAM["camera/camera"] --> SC
-    W["world/field<br/>pista, x_warning, mesa"] --> SC
-    SC --> T["screens/<br/>hangar · voo"]
+    W["world/field · minimap"] --> SC
+    DM --> REC["record/*<br/>CSV + mp4"]
+    DM --> AU["audio/*"]
+    SC --> T["screens/*<br/>via app/app"]
     classDef iface fill:#cfe3ff,stroke:#1f4e8c,stroke-width:2px,color:#0b2545
-    class DM,SC iface
+    class DM,SC,T iface
 ```
 
 ---
 
-## model/aircraft.zig — ler o avião
+## app/app.zig — o jogo e a pilha de telas
 
-Lê o `.json` que a GUI grava (`{"aeronave": {...}}` ou a aeronave direto), só os campos usados, e valida.
+```zig
+const app = try App.init(io, gpa, paths);   // fontes, configurações, biblioteca, som, logo
+defer app.deinit();                          // grava as configurações
+_ = app.loadPlane("../data/aircraft/Asa_voadora.json");   // falhou? app.planeError()
+app.run();                                   // laço até fechar
+```
+
+Uma tela é um arquivo em `screens/` com `frame(s, app, dt) → Next` e, se quiser, `enter(s, app)`,
+`planeChanged(s, app)` e `deinit(s, app)`. `Next` = `.stay`, `.{ .open = .camera }`, `.back`, `.home`,
+`.quit`. Tela nova: um arquivo + uma linha em `Id` e `Screens`. O `App` também guarda o voo em
+andamento (`startFlight`, `endFlight`), a gravação (`startRecording`, `stopRecording`,
+`captureFrame` a 30 quadros por segundo) e recados curtos (`note`).
+
+## app/settings.zig · app/paths.zig · app/library.zig
+
+```zig
+var s = Settings.load(io, gpa, paths.config);    // ausente/quebrado = padrões
+s.save(io, gpa, paths.config);
+const paths = try paths_mod.resolve(arena, env);  // config, voos, meus aviões, exemplos
+var lib = try library.scan(io, gpa, &paths.examples, paths.mine);   // lib.entries: nome, caminho, grupo
+```
+
+Configurações = avião, sessão, curvas, câmera, volume, fps, F3; valores fora da faixa voltam para
+dentro (`sanitize`).
+
+## screens/ — um arquivo por tela
+
+| arquivo | tela |
+|---|---|
+| `main_menu.zig` | logo, "AeroDrive", itens e a aeronave viva (o controle mexe nas superfícies) |
+| `aircraft_menu.zig` | lista de arquivos (troca o 3D na hora), sloshing, LAPES, vento com a rosa dos ventos |
+| `fly_menu.zig` | chão/mesa, quem pilota, câmera, fps, "Decolar" |
+| `control_menu.zig` | curva do canal escolhido (só os que o avião tem), ponto ao vivo, zoom na peça |
+| `camera_menu.zig` | distância/altura/fov da perseguição com prévia |
+| `sound_menu.zig` | volume e teste do som do motor |
+| `recordings_menu.zig` | gravações; abrir vídeo, dados ou a pasta |
+| `recording_view.zig` | os gráficos disponíveis do voo gravado |
+| `flight.zig` | o voo (HUD, minimapa, vento, LAPES, gravação) |
+| `pause_menu.zig` | continuar, controle, câmera, gravar, recomeçar, menu |
+
+## ui/ — o que as telas usam
+
+```zig
+app.ui.begin(dt);                                   // (o App faz) mouse, teclado e controle
+if (app.ui.menuItem(rect, "Voar", null)) ...         // destaque ao passar o mouse / ↑↓
+_ = app.ui.slider(rect, "Vento", &v, 0, 15, 0.5, "{d:.1} m/s", 1);
+_ = app.ui.toggle(rect, "LAPES", &on);
+_ = app.ui.choice(rect, "Começar", &idx, &.{ "Chão", "Mesa" });
+if (lista.draw(&app.ui, area, 38, n, ctx, linha)) |i| ...   // ScrollList: rolagem + cabeçalhos
+```
+
+- `widgets.zig`: menus, botões, deslizadores, opções, liga/desliga e listas; o mesmo menu anda pelo
+  mouse, setas/Enter/Esc e direcional/A/B (segurar repete).
+- `showcase.zig`: a aeronave girando num retângulo (`frame`, `input`, `focusOn` para o zoom, `draw`).
+- `preview.zig`: 3D numa textura (prévia da câmera). `plot.zig`: gráfico com marcas redondas e valores
+  sob o mouse. `minimap_view.zig`: plano XY. `dev_overlay.zig`: painel F3. `theme.zig`: cores e fonte.
+
+## model/aircraft.zig — ler o avião
 
 ```zig
 var diag: aircraft.Diag = .{};
 var loaded = try aircraft.parse(gpa, bytes, &diag);   // erro: diag.text() = "asa: 'chord' tem de ser > 0 (está -1)"
 defer loaded.deinit();
-const ac = &loaded.ac;                                // aircraft.Aircraft
 ```
 
-- `parse` = JSON → `std.json.Value` → `Aircraft` (campos desconhecidos ignorados) → `validate`.
-- `validate` confere números finitos, medidas positivas, até ±50 m, frações de comando em 0..1, limites
-  (16 superfícies, 32 seções, 8 motores, 8 tanques). Erros: `NotJson`, `NoAircraft`, `BadField`,
-  `TooMany`, `NonFinite`, `TooLarge`, `NotPositive`, `TooFewSections`, `BadFraction`.
-- Ajudas da geometria da GUI: `semispan`, `sortedSections` + `sectionAt` (interpolação das seções),
-  `tailOnBoom` (cauda presa na ponta do tubo).
+`parse` = JSON → `Aircraft` (campos desconhecidos ignorados) → `validate` (números finitos, medidas
+positivas, até ±50 m, limites de quantidade).
 
-## model/airfoil.zig — perfil
+## model/features.zig — o que o avião tem
 
 ```zig
-var p: airfoil.Profile = .{};
-try airfoil.full("NACA 2412", &.{}, &p);              // ou as coordenadas do arquivo
-const r = airfoil.thinAirfoil(p.slice());             // .{ α_L0 (graus), C_m,ac } — perfil fino
-try airfoil.forDrawing(name, coords, &p);             // ≤ 80 pontos (para desenhar)
-const h = airfoil.split(p.slice(), 0.75, &frente, &comando);   // corta na articulação
+const f = features.detect(ac);          // f.has(.rudder), f.channels(&buf), f.payload, f.tanks
+const z = features.focus(&skel, .aileron);   // ponto e tamanho da peça (zoom do menu Controle)
 ```
 
-`naca4` com espaçamento cosseno (121 pontos), `helmbold(a0, AR)`, `flapEffectiveness(c_f/c)` — as
-mesmas contas de `aerosim/model/airfoil.py` (testado igual até 10⁻⁶).
+Canais pelos comandos das superfícies: aileron/elevon → rolagem; profundor/elevon/ruddervator →
+arfagem; leme/ruddervator → guinada; motor se houver hélice.
 
-## model/skeleton.zig — peças desenháveis
+## model/airfoil.zig · model/skeleton.zig · gfx/pose.zig · gfx/render.zig
 
 ```zig
-var sk = try skeleton.build(gpa, ac, &diag);
-defer sk.deinit();
-for (sk.pieces) |p| { p.mesh.v; p.mesh.f; p.color; p.driver; }
+var sk = try skeleton.build(gpa, ac, &diag);      // peças: malha, cor, driver (hinge, spin, liquid, payload)
+var scene = try render.Scene.init(gpa, &sk);       // malhas na GPU (uma vez)
+scene.draw(pose.body(pos_ned, phi, theta, psi), drive_state, carga_solta);
+render.drawField(&campo);
 ```
 
-Mesmas formas e cores da GUI: superfícies pelo perfil (estações nas seções e nas bordas dos comandos),
-dispositivos de ponta, fuselagem, tubo, motor, disco e pá da hélice, tanque e líquido, LAPES, lastro,
-trem. Cada **comando é uma peça separada** com `driver = .hinge` (ponto e eixo da articulação, `mix`
-igual ao do núcleo: δ = mix·(δe, δa, δr), δ > 0 leva o bordo de fuga para o lado oposto à normal). Outros
-drivers: `.spin` (pá: gira com o rpm), `.liquid` (inclina com o sloshing), `.payload` (sai na soltura).
+Formas e cores iguais às da GUI; cada comando é uma peça com dobradiça (`mix` igual ao do núcleo). A
+única conversão de eixos: NED → tela `(e, −d, −n)`.
 
-## gfx/pose.zig — onde cada peça está
+## sim/session.zig — escolhas antes de voar
 
 ```zig
-const st: pose.DriveState = .{ .de = de, .da = da, .dr = dr, .prop_angle = ang };
-const r = pose.piece(peca.driver, st).then(pose.body(pos_ned, phi, theta, psi));
-const v_mundo = r.apply(v_corpo);
+const voo_ac = app.settings.session.apply(ac);   // cópia com vento, sloshing, LAPES e chão/mesa
 ```
-
-Transformação rígida = rotação do driver em torno do eixo + atitude (3-2-1) + posição NED. Comandos
-saturam em ±60°; valores não finitos viram 0.
-
-## gfx/render.zig — desenho (raylib)
-
-```zig
-var scene = try render.Scene.init(gpa, &sk);     // sobe as malhas para a GPU (uma vez)
-rl.beginMode3D(render.camera3d(camera.view()));
-render.drawField(&campo);                         // chão, pista, x_warning, mesa
-scene.draw(body, drive_state, carga_solta);       // a aeronave
-rl.endMode3D();
-```
-
-A única conversão de eixos do programa: NED → tela `(e, −d, −n)`. Sombreamento igual ao da GUI (duas
-faces, luz presa à câmera). Transparentes (disco da hélice, tanque) depois das opacas.
-
-## camera/camera.zig — câmeras
-
-```zig
-var c: camera.Camera = .{ .ground = .{ .eye = .{ 30, 14, -1.7 }, .size = envergadura } };
-c.update(.{ .target = pos_ned, .heading = psi, .zoom = roda }, dt);
-const v = c.view();                               // eye, target, up, fov (NED)
-```
-
-Uma união com a mesma interface: `orbit` (hangar, arrastar e roda), `chase` (atrás, com atraso na proa),
-`ground` (piloto parado; o fov fecha com a distância para o avião ocupar uma fração fixa da tela).
-
-## input/channels.zig — controle → comandos
-
-```zig
-var st: channels.State = .{};
-const cmd = st.step(perfil, .{ .stick_x = x, .stick_y = y, .lb = lb, .rb = rb, .rt = rt }, dt);
-// cmd.de, cmd.da, cmd.dr (rad), cmd.thr (0..1)
-```
-
-Cada canal tem uma `Curve` (zona morta, expo, rate, trim, inverter). LB/RB fazem o aileron andar em
-rampa (`aileron_rate`). Puxar o analógico = cabrar (δe < 0, convenção do núcleo).
-
-## sim/mission.zig — percurso
-
-```zig
-const n = try mission.segments(&ac.mission, &params.seg, &diag);
-const ne = try mission.events(&ac.mission, &params.event, &diag);
-const np = mission.pads(&ac.airfield, params.seg[0..n], &params.pads);
-```
-
-Cada perna começa onde a anterior terminou (reta ou arco; raio 0 = automático `V²/(g tan 45°)`).
-Mesa na partida; plataforma na última perna de pouso reta.
-
-## sim/params.zig — avião → parâmetros do núcleo
-
-```zig
-const inst = try gpa.create(core.runner.Instance);
-inst.* = .{};
-const info = try params.setup(ac, inst, &diag);   // preenche, configura e calibra
-// info.Vs, info.CLmax, info.CL0, info.CLa, info.Dtrim
-```
-
-Porta do caminho da GUI (`build_model` → tradutor do núcleo → `calibrate`): cada faixa de cada lado
-vira um painel (CA a 25 % da corda média; C_Lα de Helmbold; α_L0 e C_m,ac por perfil fino; τ do
-comando), downwash da asa, dispositivos, massa seca (base + itens, Steiner), propulsão, trem, tanques,
-carga, ambiente, decolagem, piloto, percurso. Depois a polar do núcleo calibra o modelo do piloto
-(C_L0, C_Lα de −2° a 8°) e a trimagem dá o acelerador de equilíbrio. Testado igual à GUI até 10⁻⁶.
 
 ## sim/drive_manager.zig — a simulação durante o voo
 
 ```zig
-var dm = try DriveManager.init(gpa, ac, &diag);   // parâmetros + calibração + pista
-defer dm.deinit();
-const f = dm.step(1.0 / 60.0);                    // avança um quadro
-// f.pos_ned, f.phi/theta/psi, f.Va, f.seg, f.phase, f.drive (comandos das superfícies), f.payload_ned
-try dm.restart();
+var dm = try DriveManager.init(gpa, &voo_ac, &diag, .manual);
+dm.setCommands(.{ .de = de, .da = da, .dr = dr, .thr = thr });   // só vale no manual
+const f = dm.step(dt);           // pose, comandos, rpm, carga, fase, modo
+dm.toggleMode();                 // manual ⇄ automático (o núcleo assume sem tranco)
+dm.dropPayload();                // LAPES
 ```
 
-Avança o núcleo até o tempo do quadro (passo interno de 1 ms), pega o último estado e monta o `Frame`:
-pose, comandos que o piloto automático mandou às superfícies, ângulo das pás (integrado do rpm),
-inclinação do líquido, carga solta e a fase (`ground_run`, `flying`, `landed`, `crashed`, `timeout`).
-Passos inválidos (NaN, negativos, enormes) viram 0 ou 0,25 s.
+Avança o núcleo até o tempo do quadro (passo de 1 ms). No manual o núcleo usa os comandos do piloto;
+no automático, o piloto do núcleo segue o percurso da GUI. `dm.last` é a última linha do registro
+(o que a gravação guarda).
 
-## world/field.zig — o campo
+## sim/params.zig · sim/mission.zig
+
+Porta do caminho da GUI (avião → parâmetros do núcleo → calibração), testado igual à GUI até 10⁻⁶;
+percurso em pernas (reta/arco), mesa e plataforma.
+
+## input/gamepad.zig · input/channels.zig
 
 ```zig
-const campo = field.build(ac.airfield.x_warning, segmentos, pads);
-for (campo.lineSlice()) |l| { l.a; l.b; l.color; }
-for (campo.boxSlice()) |b| { b.n; b.e; b.chi; b.L; b.W; b.h; }
+const raw = app.reader.raw(dt);                 // eixos e botões (controle + teclado)
+const acts = app.reader.actions();              // pausa, modo, LAPES, gravar, câmera
+const cmd = estado.step(perfil, raw, dt);       // δe, δa, δr (rad), acelerador 0..1
 ```
 
-Só dados (NED): grade de 10 m e 50 m, pista com eixo e marcas a cada 10 m até depois do x_warning, linha
-vermelha do x_warning, mesa e plataforma (os mesmos pads da física) e o percurso planejado.
+Cada canal tem uma `Curve` (zona morta, expo, curso, trim, inverter); LB/RB fazem o aileron em rampa.
 
-## screens/ — telas
+## camera/camera.zig
 
-- `hangar.zig`: `Hangar.init(nome, &sk, &scene, opções)`, `frame(&fontes, dt) → .none | .fly`.
-- `flight.zig`: `Flight.init(&dm, &scene, ac, fps, câmera, envergadura)`, `frame(&fontes, dt) → .none | .back`,
-  `advance(dt)` (avança sem desenhar).
-- `main.zig` alterna entre as duas (como o `basic_screen_manager` do raylib-zig).
+`orbit` (livre), `chase` (perseguição: `distance`, `height`, `fov_deg`), `ground` (piloto parado; o fov
+fecha com a distância). Mesma interface: `update(input, dt)` e `view()`.
+
+## world/field.zig · world/minimap.zig
+
+```zig
+const campo = field.build(x_warning, segmentos, pads);   // linhas e caixas em NED
+const setas = field.windArrows(n, e, vem_de, v, t, &buf);  // vento: grade de setas andando
+const mapa = bounds.map(cx, cy, lado);  mapa.toScreen(n, e);  // minimapa, norte para cima
+```
+
+## record/ — gravação e gráficos
+
+```zig
+var r = try Recorder.start(io, gpa, pasta, agora_s, w, h, 30);   // cria voo_<data>/ e liga o ffmpeg
+r.addRow(&linha);  r.addFrame(io, rgba, w, h);
+try r.finish(io, nome_do_aviao);                                   // dados.csv + info.json (+ video.mp4)
+var cat = try recorder.list(io, gpa, pasta);                       // gravações, mais novas primeiro
+var t = try datalog.Table.parse(gpa, csv);  t.col("h");            // colunas para os gráficos
+pages.list(&t, &buf);                                              // páginas disponíveis (as da Missão)
+```
+
+`datalog`: todas as grandezas escalares do registro do núcleo a 20 Hz. `video`: quadros RGBA por um cano
+para o ffmpeg (H.264); sem ffmpeg → `error.NoFfmpeg`. `pages`: planos XY/XZ/ZY, altura, velocidades,
+ângulos, comandos, motor, bateria, coeficientes, trem, momentos, vento, sloshing, massa.
+
+## audio/engine_sound.zig · audio/player.zig
+
+```zig
+var som = Player.init();               // o mp3 da hélice vai dentro do programa
+som.update(acelerador, volume, dt);    // altura e volume pelo motor, com atraso suave
+som.silence();
+```
+
+## sys/stats.zig
+
+`Sampler.update(io, dt)` lê `/proc/self/statm` e `/proc/self/stat` a cada 0,5 s: RAM residente e CPU
+do processo (Linux; nos outros, "—").
 
 ## util/fuzz.zig — fuzzing
 
 ```zig
 fn fuzzX(_: void, src: *fz.Src) anyerror!void {
     const x = src.mostly(0, 1);    // quase sempre em [0, 1]; às vezes NaN/inf/enorme
-    _ = src.any(); src.range(a, b); src.int(u8, 0, 4); src.boolean(); src.chance(10);
+    _ = src.any(); src.range(a, b); src.int(u8, 0, 4); src.boolean(); src.chance(10); src.bytes(&buf);
 }
 test "fuzz: X" { try fz.check({}, fuzzX, .{}); }
 ```

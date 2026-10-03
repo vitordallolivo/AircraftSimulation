@@ -59,6 +59,26 @@ pub const Out = struct {
     nz: f64 = 0,
 };
 
+/// comandos de fora no lugar dos do piloto; os integradores do piloto ficam parados (sem acumular
+/// erro enquanto ele não manda) — ao voltar para o automático, `runner.handover` sincroniza
+fn manual(p: *const T.Params, cmd: *AP.Cmd, dx: []f64) void {
+    const a = &p.ap;
+    const u = &p.pilot;
+    const ok = struct {
+        fn f(v: f64, lim: f64) f64 {
+            return if (std.math.isFinite(v)) fm.sat(v, lim) else 0.0;
+        }
+    }.f;
+    cmd.de = ok(u.de, a.de_max);
+    cmd.da = ok(u.da, a.da_max);
+    cmd.dr = ok(u.dr, a.dr_max);
+    cmd.thr = if (std.math.isFinite(u.thr)) fm.lim(u.thr, 0.0, 1.0) else 0.0;
+    cmd.dw = fm.sat(-cmd.dr * p.steer_sign, 20.0 * std.math.rad_per_deg); // roda direcionável segue o leme
+    dx[S.IH] = 0.0;
+    dx[S.IV] = 0.0;
+    dx[S.ITH] = 0.0;
+}
+
 pub fn f(c: S.Ctx, t: f64, x: []const f64, dx: []f64, out: ?*Out) void {
     const p = c.p;
     var oo: Out = undefined; // sem saída: só g e c são escritos (evita zerar ~2 KB por chamada)
@@ -86,6 +106,7 @@ pub fn f(c: S.Ctx, t: f64, x: []const f64, dx: []f64, out: ?*Out) void {
     // guiamento e piloto
     o.g = G.guide(c, x[S.N], x[S.E], Vg);
     o.c = AP.commands(c, t, x, .{ .Va = Va, .Vg = Vg, .al = al, .be = be, .chi = chi, .hdot = -vn[2], .qb = qb, .m = ms.m, .on_ground = on_ground }, &o.g, dx);
+    if (p.pilot.manual != 0) manual(p, &o.c, dx);
     const cmd = &o.c;
 
     // forças e momentos

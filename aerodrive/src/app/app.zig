@@ -1,0 +1,370 @@
+//! O jogo inteiro: o que as telas dividem (fontes, widgets, configurações, o avião carregado, som,
+//! voo em andamento, gravação) e o gerenciador de telas (uma pilha: abrir, voltar, ir ao início).
+//!
+//! Cada tela é um arquivo em `screens/` com o mesmo contrato:
+//!   pub fn frame(s: *Tela, app: *App, dt: f64) Next     // desenha um quadro e diz o próximo passo
+//!   pub fn enter(s: *Tela, app: *App) void              // (opcional) ao abrir a tela
+//! Nenhuma tela conhece as outras: elas pedem `.{ .open = .aircraft }`, `.back`, `.home`, `.quit`.
+const std = @import("std");
+const rl = @import("raylib");
+const model = @import("../model/aircraft.zig");
+const sk = @import("../model/skeleton.zig");
+const features = @import("../model/features.zig");
+const render = @import("../gfx/render.zig");
+const theme = @import("../ui/theme.zig");
+const widgets = @import("../ui/widgets.zig");
+const settings_mod = @import("settings.zig");
+const paths_mod = @import("paths.zig");
+const library = @import("library.zig");
+const Player = @import("../audio/player.zig").Player;
+const stats = @import("../sys/stats.zig");
+const gamepad = @import("../input/gamepad.zig");
+const ch = @import("../input/channels.zig");
+const dm_mod = @import("../sim/drive_manager.zig");
+const recorder = @import("../record/recorder.zig");
+
+const main_menu = @import("../screens/main_menu.zig");
+const aircraft_menu = @import("../screens/aircraft_menu.zig");
+const fly_menu = @import("../screens/fly_menu.zig");
+const control_menu = @import("../screens/control_menu.zig");
+const camera_menu = @import("../screens/camera_menu.zig");
+const sound_menu = @import("../screens/sound_menu.zig");
+const recordings_menu = @import("../screens/recordings_menu.zig");
+const recording_view = @import("../screens/recording_view.zig");
+const flight_screen = @import("../screens/flight.zig");
+const pause_menu = @import("../screens/pause_menu.zig");
+const dev_overlay = @import("../ui/dev_overlay.zig");
+
+const logo_png = @embedFile("../assets/albatroz.png");
+const video_fps = 30;
+
+pub const Id = enum { main, aircraft, fly, control, camera, sound, recordings, viewer, flight, pause };
+
+pub const Next = union(enum) {
+    stay,
+    open: Id, // empilha
+    back, // volta à anterior
+    home, // menu inicial (encerra o voo)
+    quit,
+};
+
+/// o avião carregado: arquivo lido, esqueleto, malhas na GPU e o que ele tem
+pub const Plane = struct {
+    loaded: model.Loaded,
+    skel: sk.Skeleton,
+    scene: render.Scene,
+    feats: features.Features,
+    name: [:0]u8,
+    path: []u8,
+    span: f64,
+
+    pub fn deinit(p: *Plane, gpa: std.mem.Allocator) void {
+        p.scene.deinit();
+        p.skel.deinit();
+        p.loaded.deinit();
+        gpa.free(p.name);
+        gpa.free(p.path);
+    }
+};
+
+pub const Screens = struct {
+    main: main_menu.MainMenu = .{},
+    aircraft: aircraft_menu.AircraftMenu = .{},
+    fly: fly_menu.FlyMenu = .{},
+    control: control_menu.ControlMenu = .{},
+    camera: camera_menu.CameraMenu = .{},
+    sound: sound_menu.SoundMenu = .{},
+    recordings: recordings_menu.RecordingsMenu = .{},
+    viewer: recording_view.RecordingView = .{},
+    flight: flight_screen.Flight = .{},
+    pause: pause_menu.PauseMenu = .{},
+};
+
+pub const App = struct {
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    fonts: theme.Fonts,
+    ui: widgets.Ui,
+    settings: settings_mod.Settings,
+    paths: paths_mod.Paths,
+    lib: library.Library,
+    plane: ?Plane = null,
+    plane_error: [256]u8 = undefined,
+    plane_error_len: usize = 0,
+    audio: Player,
+    logo: ?rl.Texture2D = null,
+    sampler: stats.Sampler = .{},
+    reader: gamepad.Reader = .{},
+    channel_state: ch.State = .{},
+    // voo em andamento
+    dm: ?dm_mod.DriveManager = null,
+    flight_ac: model.Aircraft = .{},
+    rec: ?recorder.Recorder = null,
+    rec_message: [160]u8 = undefined,
+    rec_message_len: usize = 0,
+    rec_message_t: f64 = 0,
+    video_acc: f64 = 0, // tempo acumulado para o vídeo (30 quadros por segundo de tempo real)
+    // recurso escolhido em "Voos gravados"
+    viewer_dir: [1024]u8 = undefined,
+    viewer_dir_len: usize = 0,
+    // telas
+    stack: [8]Id = .{.main} ** 8,
+    focus: [8]usize = .{0} ** 8, // item em destaque de cada tela da pilha (volta igual)
+    depth: usize = 1,
+    screens: Screens = .{},
+    quit: bool = false,
+    time: f64 = 0,
+
+    pub fn init(io: std.Io, gpa: std.mem.Allocator, paths: paths_mod.Paths) !*App {
+        const app = try gpa.create(App);
+        app.* = .{
+            .io = io,
+            .gpa = gpa,
+            .fonts = theme.Fonts.load(),
+            .ui = undefined,
+            .settings = settings_mod.Settings.load(io, gpa, paths.config),
+            .paths = paths,
+            .lib = library.scan(io, gpa, &paths.examples, paths.mine) catch .{ .arena = .init(gpa) },
+            .audio = Player.init(),
+        };
+        app.ui = .{ .fonts = &app.fonts };
+        if (rl.loadImageFromMemory(".png", logo_png)) |img| {
+            defer rl.unloadImage(img);
+            app.logo = rl.loadTextureFromImage(img) catch null;
+            if (app.logo) |t| rl.setTextureFilter(t, .bilinear);
+        } else |_| {}
+        return app;
+    }
+
+    pub fn deinit(app: *App) void {
+        app.stopRecording();
+        app.endFlight();
+        inline for (@typeInfo(Screens).@"struct".fields) |f| {
+            if (@hasDecl(f.type, "deinit")) @field(app.screens, f.name).deinit(app);
+        }
+        if (app.plane) |*p| p.deinit(app.gpa);
+        if (app.logo) |t| rl.unloadTexture(t);
+        app.audio.deinit();
+        app.lib.deinit();
+        app.fonts.deinit();
+        app.settings.save(app.io, app.gpa, app.paths.config);
+        app.gpa.destroy(app);
+    }
+
+    pub fn saveSettings(app: *App) void {
+        app.settings.save(app.io, app.gpa, app.paths.config);
+    }
+
+    // ---------------------------------------------------------------- avião
+    pub fn planeError(app: *const App) ?[]const u8 {
+        return if (app.plane_error_len > 0) app.plane_error[0..app.plane_error_len] else null;
+    }
+
+    /// lê e monta o avião; se falhar, o anterior continua e o erro fica em `planeError`
+    pub fn loadPlane(app: *App, path: []const u8) bool {
+        var diag: model.Diag = .{};
+        const p = app.buildPlane(path, &diag) catch {
+            const msg = std.fmt.bufPrint(&app.plane_error, "{s}", .{diag.text()}) catch app.plane_error[0..0];
+            app.plane_error_len = msg.len;
+            return false;
+        };
+        app.endFlight();
+        if (app.plane) |*old| old.deinit(app.gpa);
+        app.plane = p;
+        app.plane_error_len = 0;
+        app.settings.setAircraft(path);
+        inline for (@typeInfo(Screens).@"struct".fields) |f| {
+            if (@hasDecl(f.type, "planeChanged")) @field(app.screens, f.name).planeChanged(app);
+        }
+        return true;
+    }
+
+    fn buildPlane(app: *App, path: []const u8, diag: *model.Diag) !Plane {
+        const bytes = std.Io.Dir.cwd().readFileAlloc(app.io, path, app.gpa, .limited(64 << 20)) catch |e| {
+            diag.set("não consegui abrir '{s}' ({s})", .{ path, @errorName(e) });
+            return error.Open;
+        };
+        defer app.gpa.free(bytes);
+        var loaded = try model.parse(app.gpa, bytes, diag);
+        errdefer loaded.deinit();
+        var skel = try sk.build(app.gpa, &loaded.ac, diag);
+        errdefer skel.deinit();
+        var scene = try render.Scene.init(app.gpa, &skel);
+        errdefer scene.deinit();
+        const name = try app.gpa.dupeZ(u8, loaded.ac.name);
+        errdefer app.gpa.free(name);
+        return .{ .loaded = loaded, .skel = skel, .scene = scene, .feats = features.detect(&loaded.ac), .name = name, .path = try app.gpa.dupe(u8, path), .span = 2 * skel.radius() };
+    }
+
+    // ---------------------------------------------------------------- voo
+    /// monta a simulação com as escolhas da sessão e abre a tela de voo
+    pub fn startFlight(app: *App) bool {
+        const p = &(app.plane orelse return false);
+        app.endFlight();
+        app.flight_ac = app.settings.session.apply(p.loaded.ac);
+        var diag: model.Diag = .{};
+        app.dm = dm_mod.DriveManager.init(app.gpa, &app.flight_ac, &diag, app.settings.session.start_mode) catch {
+            const msg = std.fmt.bufPrint(&app.plane_error, "{s}", .{diag.text()}) catch app.plane_error[0..0];
+            app.plane_error_len = msg.len;
+            return false;
+        };
+        app.channel_state = .{};
+        app.screens.flight.begin(app);
+        return true;
+    }
+
+    pub fn endFlight(app: *App) void {
+        app.stopRecording();
+        if (app.dm) |*d| d.deinit();
+        app.dm = null;
+        app.audio.silence();
+    }
+
+    // ---------------------------------------------------------------- gravação
+    pub fn recording(app: *const App) bool {
+        return app.rec != null;
+    }
+
+    pub fn startRecording(app: *App) void {
+        if (app.rec != null) return;
+        const now = std.Io.Clock.real.now(app.io);
+        const secs: i64 = @intCast(@divFloor(now.nanoseconds, std.time.ns_per_s));
+        const w: u32 = @intCast(@max(rl.getRenderWidth(), 0));
+        const h: u32 = @intCast(@max(rl.getRenderHeight(), 0));
+        app.video_acc = 0;
+        app.rec = recorder.Recorder.start(app.io, app.gpa, app.paths.recordings, secs, w, h, video_fps) catch |e| {
+            app.note("não consegui gravar: {s}", .{@errorName(e)});
+            return;
+        };
+        if (app.rec.?.video_error) |e| {
+            app.note("gravando só os dados (vídeo: {s})", .{if (e == error.NoFfmpeg) "instale o ffmpeg" else @errorName(e)});
+        } else app.note("gravando vídeo e dados", .{});
+    }
+
+    pub fn stopRecording(app: *App) void {
+        var r = app.rec orelse return;
+        app.rec = null;
+        const name = if (app.plane) |p| p.loaded.ac.name else "";
+        r.finish(app.io, name) catch |e| {
+            app.note("erro ao salvar: {s}", .{@errorName(e)});
+            return;
+        };
+        app.note("salvo em {s}", .{r.dir()});
+    }
+
+    /// recado curto no canto da tela (some depois de alguns segundos)
+    pub fn note(app: *App, comptime fmt: []const u8, args: anytype) void {
+        const m = std.fmt.bufPrint(&app.rec_message, fmt, args) catch app.rec_message[0..0];
+        app.rec_message_len = m.len;
+        app.rec_message_t = app.time;
+    }
+
+    pub fn message(app: *const App) ?[]const u8 {
+        if (app.rec_message_len == 0 or app.time - app.rec_message_t > 5) return null;
+        return app.rec_message[0..app.rec_message_len];
+    }
+
+    /// quadro da tela para o vídeo (depois de desenhar o voo, antes de trocar o buffer). O vídeo
+    /// tem 30 quadros por segundo de tempo real: a 60 fps vai um quadro sim, outro não; se o jogo
+    /// engasgar, o quadro se repete para o vídeo não acelerar.
+    pub fn captureFrame(app: *App, dt: f64) void {
+        const r = &(app.rec orelse return);
+        if (r.video == null) return;
+        app.video_acc += if (std.math.isFinite(dt)) std.math.clamp(dt, 0, 0.5) else 0;
+        const period = 1.0 / @as(f64, video_fps);
+        if (app.video_acc < period) return;
+        var copies: usize = 0;
+        while (app.video_acc >= period and copies < 15) : (copies += 1) app.video_acc -= period;
+        const img = rl.loadImageFromScreen() catch return;
+        defer rl.unloadImage(img);
+        const w: u32 = @intCast(@max(img.width, 0));
+        const h: u32 = @intCast(@max(img.height, 0));
+        if (img.format != .uncompressed_r8g8b8a8) return;
+        const bytes: [*]const u8 = @ptrCast(img.data);
+        for (0..copies) |_| r.addFrame(app.io, bytes[0 .. @as(usize, w) * h * 4], w, h);
+    }
+
+    // ---------------------------------------------------------------- telas
+    pub fn top(app: *const App) Id {
+        return app.stack[app.depth - 1];
+    }
+
+    /// a tela de baixo (a pausa desenha o voo congelado por trás)
+    pub fn below(app: *const App) ?Id {
+        return if (app.depth >= 2) app.stack[app.depth - 2] else null;
+    }
+
+    pub fn go(app: *App, next: Next) void {
+        switch (next) {
+            .stay => return,
+            .open => |id| {
+                if (app.depth < app.stack.len) {
+                    app.focus[app.depth - 1] = app.ui.focus;
+                    app.stack[app.depth] = id;
+                    app.depth += 1;
+                }
+                app.ui.reset();
+            },
+            .back => if (app.depth > 1) {
+                app.depth -= 1;
+                app.ui.reset();
+                app.ui.focus = app.focus[app.depth - 1];
+            },
+            .home => {
+                app.endFlight();
+                app.depth = 1;
+                app.stack[0] = .main;
+                app.ui.reset();
+            },
+            .quit => app.quit = true,
+        }
+        app.saveSettings();
+        app.enter(app.top());
+    }
+
+    fn enter(app: *App, id: Id) void {
+        switch (id) {
+            inline else => |t| {
+                const S = @TypeOf(@field(app.screens, @tagName(t)));
+                if (@hasDecl(S, "enter")) @field(app.screens, @tagName(t)).enter(app);
+            },
+        }
+    }
+
+    pub fn frameOf(app: *App, id: Id, dt: f64) Next {
+        return switch (id) {
+            inline else => |t| @field(app.screens, @tagName(t)).frame(app, dt),
+        };
+    }
+
+    /// um quadro do jogo inteiro
+    pub fn step(app: *App, dt: f64) void {
+        app.time += dt;
+        app.sampler.update(app.io, dt);
+        if (rl.isKeyPressed(.f3)) app.settings.dev_overlay = !app.settings.dev_overlay;
+        app.ui.stick_nav = app.top() != .control; // no menu de controle o analógico mexe o ponto
+        app.ui.begin(dt);
+        rl.beginDrawing();
+        const next = app.frameOf(app.top(), dt);
+        if (app.top() == .flight) app.captureFrame(dt);
+        if (app.settings.dev_overlay) dev_overlay.draw(app);
+        app.ui.end();
+        rl.endDrawing();
+        app.go(next);
+    }
+
+    pub fn run(app: *App) void {
+        if (app.settings.aircraft().len > 0) _ = app.loadPlane(app.settings.aircraft());
+        if (app.plane == null and app.lib.entries.len > 0) {
+            // o Convencional, se existir; senão o primeiro da lista
+            var pick: usize = 0;
+            for (app.lib.entries, 0..) |e, i| if (std.mem.indexOf(u8, e.path, "Convencional") != null) {
+                pick = i;
+                break;
+            };
+            _ = app.loadPlane(app.lib.entries[pick].path);
+        }
+        app.enter(.main);
+        while (!rl.windowShouldClose() and !app.quit) app.step(@floatCast(rl.getFrameTime()));
+    }
+};

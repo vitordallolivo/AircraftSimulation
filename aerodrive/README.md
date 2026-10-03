@@ -1,20 +1,30 @@
-# aerodrive
+# AeroDrive
 
-Simulador em tempo real do avião que você monta no aerosim. Abre o mesmo arquivo salvo pela GUI,
-desenha a aeronave igual a ela e voa com o mesmo núcleo de física em Zig: hoje pelo **piloto
-automático**, seguindo o percurso do avião (decolagem do chão ou da mesa, circuito, passagem LAPES e
-pouso). No hangar, o controle (Xbox ou rádio em modo joystick) mexe nas superfícies ao vivo. Feito em
-Zig com [raylib-zig](https://github.com/raylib-zig/raylib-zig); nada de Python.
+Simulador de voo do avião que você monta no aerosim, para pilotar com controle de Xbox (ou rádio em
+modo joystick) ou deixar o piloto automático voar o percurso. Abre o mesmo arquivo salvo pela GUI,
+desenha a aeronave igual a ela e voa com o mesmo núcleo de física em Zig: decolagem do chão ou da mesa,
+LAPES, sloshing nos tanques, vento. Grava vídeo e dados do voo e mostra os mesmos gráficos da aba
+Missão. Feito em Zig com [raylib-zig](https://github.com/raylib-zig/raylib-zig).
 
-![Hangar: comandos defletindo](docs/img/hangar.png)
+![Menu inicial](docs/img/menu_inicial.png)
 
-![Decolagem de cima da mesa](docs/img/decolagem_mesa.png)
+![Cruzeiro em perseguição: rastro em vermelho, percurso em azul, setas do vento, minimapa](docs/img/voo_cruzeiro.png)
 
-![Cruzeiro: vermelho = voado, azul = planejado](docs/img/voo_cruzeiro.png)
+![Decolagem de cima da mesa, vista do piloto no chão](docs/img/decolagem_mesa.png)
 
-![Asa voadora, câmera de perseguição](docs/img/voo_asa_voadora.png)
+![Asa voadora](docs/img/voo_asa_voadora.png)
 
-![Pouso concluído, visto pelo piloto no chão](docs/img/pouso.png)
+![Aeronave: arquivo, sloshing, LAPES e vento](docs/img/menu_aeronave.png)
+
+![Controle: curva de cada canal com o ponto ao vivo e zoom na peça](docs/img/menu_controle.png)
+
+![Câmera: distância e altura da perseguição com prévia](docs/img/menu_camera.png)
+
+![Pausa](docs/img/pausa.png)
+
+![Voo gravado: gráficos com os valores sob o mouse](docs/img/voo_gravado_dados.png)
+
+![Painel F3](docs/img/painel_f3.png)
 
 ---
 
@@ -40,6 +50,9 @@ se você instalou pelo pip.
 Wayland sem XWayland: também `libwayland-dev libxkbcommon-dev` e compile com `-Ddisplay=Wayland`.
 Windows e macOS: nada.
 
+Para gravar **vídeo** dos voos: `ffmpeg` no PATH (`sudo apt install ffmpeg`, `winget install ffmpeg`,
+`brew install ffmpeg`). Sem ele a gravação guarda só os dados.
+
 ### 3. Compilar
 
 ```sh
@@ -52,45 +65,45 @@ compilação e como atualizar o raylib: [docs/raylib.md](docs/raylib.md).
 
 ---
 
-## Rodar
+## Jogar
 
 ```sh
-zig build run -- ../data/aircraft/Convencional_original.json          # qualquer avião salvo pela GUI
-zig build run -- ~/aerosim_aeronaves/meu_aviao.json fps=30            # 30 ou 60 quadros por segundo
+zig build run                                                   # abre o último avião escolhido
+zig build run -- ../data/aircraft/Asa_voadora.json              # ou um avião salvo pela GUI
 ```
 
-**Hangar** (tela inicial)
+No **menu inicial**: Voar, Aeronave (arquivo, sloshing, LAPES, vento), Controle (curvas), Câmera, Som
+(teste), Voos gravados. Mouse, teclado ou controle: passar o mouse destaca, ↑↓ / direcional escolhe,
+Enter / A abre, Esc / B volta. As escolhas ficam salvas (`~/.config/aerodrive/config.json`).
 
-| | controle | teclado / mouse |
+**Voo** — começa no **manual**; o botão Y passa para o piloto automático (e volta) a qualquer momento.
+
+| | controle | teclado |
 |---|---|---|
-| profundor e leme | analógico esquerdo | setas ↑↓, A/D |
-| aileron | LB / RB | setas ←→ |
+| profundor e leme | analógico esquerdo | setas ↑↓, A / D |
+| aileron | LB / RB | setas ← → |
 | motor | gatilho direito (RT) | W / S |
-| girar e aproximar o avião | — | arrastar / roda do mouse |
-| **voar (piloto automático)** | Start | Enter, ou clicar em "Voar" |
+| manual ⇄ automático | Y | M |
+| soltar o LAPES | X | L |
+| gravar / parar (vídeo + dados) | Back (View) | G |
+| trocar a câmera | B | C |
+| girar a câmera livre | analógico direito | arrastar o mouse |
+| pausa (continuar, controle, câmera, recomeçar, menu) | Start | Esc ou P |
+| painel de desempenho (fps, RAM, CPU) | — | F3 |
 
-**Voo**
-
-| tecla | faz |
-|---|---|
-| C | troca a câmera: piloto no chão (zoom automático), perseguição, livre |
-| Espaço | pausa |
-| R | recomeça na pista |
-| Esc | volta ao hangar |
-| roda do mouse / arrastar | zoom / girar (câmera livre) |
-
-Avião com erro no arquivo (seção sem corda, número inválido...): a janela mostra o que está errado e
-em qual componente.
+As gravações vão para `~/aerodrive_voos/voo_<data>/` (`video.mp4`, `dados.csv`, `info.json`); a pasta
+muda com a variável `AERODRIVE_VOOS`. "Meus aviões" vem de `~/aerosim_aeronaves` (ou
+`AEROSIM_PROJETOS`), a mesma pasta da GUI.
 
 ### Foto sem abrir janela
 
 ```sh
-xvfb-run -a zig build shot -- ../data/aircraft/Asa_voadora.json asa.png 1280x720 demo
-xvfb-run -a zig build shot -- ../data/aircraft/Convencional_original.json voo.png voo=40 cam=seguir
+xvfb-run -a zig build shot -- voo.png ../data/aircraft/Convencional_original.json tela=voo voo=40
+xvfb-run -a zig build shot -- menu.png tela=controle
 ```
 
-`demo`: superfícies se mexendo no hangar · `vista=az,el,zoom`: ângulo da câmera do hangar ·
-`voo=SEG`: voa SEG segundos e fotografa · `cam=chao|seguir|livre`.
+`tela=` inicio, aeronave, voar, controle, camera, som, voos, dados, voo, pausa · `voo=SEG` voa antes da
+foto · `modo=manual|auto` · `cam=seguir|chao|livre` · `mesa` · `f3` · `gravar` · `dados=PASTA`.
 
 ### Testes
 
@@ -101,5 +114,5 @@ zig build test -Dfuzz=200000 -Dseed=7   # fuzzing mais longo
 
 ---
 
-O que cada módulo faz e como chamar: [src/README.md](src/README.md). O plano (o que falta, interfaces):
+Cada módulo e como chamar: [src/README.md](src/README.md). Camadas, interfaces e o que falta:
 [docs/projeto.md](docs/projeto.md).

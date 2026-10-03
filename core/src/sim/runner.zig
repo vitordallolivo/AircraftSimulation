@@ -104,6 +104,18 @@ fn syncIntegrators(inst: *Instance, de_before: f64, thr_before: f64) void {
     x[S.IV] = if (a.KIV != 0.0) (thr_before - a.Dtrim - a.KV * (o.g.Vseg - o.Va) - a.KHT * (o.c.href + x[S.D])) / a.KIV else 0.0;
 }
 
+/// passa do comando de fora para o piloto automático sem tranco: altura de referência = altura
+/// atual e integradores ajustados para continuar com o profundor e o acelerador de agora
+pub fn handover(inst: *Instance) void {
+    if (!inst.configured or inst.r.valid == 0) return;
+    const de = inst.p.pilot.de;
+    const thr = inst.p.pilot.thr;
+    inst.p.pilot.manual = 0;
+    inst.r.x[S.HR] = -inst.r.x[S.D];
+    inst.r.x[S.IE] = 0.0;
+    if (inst.r.f.autop != 0) syncIntegrators(inst, de, thr);
+}
+
 fn resetCommon(inst: *Instance) void {
     inst.r = .{};
     inst.r.f.released = if (inst.p.no_payload != 0 or inst.p.payload.enabled == 0) 1 else 0;
@@ -374,6 +386,12 @@ pub fn run(inst: *Instance, t_limit: f64, log: []T.LogRow, nrows: *usize) Status
             if (sg.takeoff != 0) v.E_to = x[S.EN] / 3600.0;
             r.f.seg += 1;
             switched = true;
+        }
+        if (p.pilot.drop != 0 and r.f.released == 0 and r.f.extracting == 0) { // soltura pedida de fora
+            r.f.extracting = 1;
+            v.tdrop = t;
+            v.ndrop = x[S.N];
+            v.hdrop = h;
         }
         if (!switched) {
             for (p.event[0..@intCast(p.n_event)], 0..) |*e, k| {
