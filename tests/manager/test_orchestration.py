@@ -12,10 +12,11 @@ from aerosim.model import TEMPLATES
 
 def test_mission_resume_from_checkpoint(manager):
     ac = TEMPLATES["conventional"]()
+    ac.payload.aim = False
     legs = ac.mission.names()
     r1 = manager.run("mission", ac, {"until": f"fim: {legs[0]}"})
     assert r1.status == "STOPPED" and manager.checkpoints.has(f"missão: início de {legs[1]}")
-    r2 = manager.run("mission", ac, {"start": f"início: {legs[1]}", "aim": False})
+    r2 = manager.run("mission", ac, {"start": f"início: {legs[1]}"})
     assert r2.status == "COMPLETED" and r2.log["t"][0] >= r1.log["t"][-1] - 1e-9
 
 

@@ -14,6 +14,7 @@ from aerosim.interfaces.simulation import CancelledError, ISimulation, SimResult
 
 from ..state import AppState
 from ..widgets.plots import LivePlots, format_value
+from ..widgets.param_slider import HELP_MARK
 
 
 class _Worker(QtCore.QObject):
@@ -64,8 +65,8 @@ class SimulationTab(QtWidgets.QWidget):
 
         side = QtWidgets.QWidget()
         sv = QtWidgets.QVBoxLayout(side)
-        d = QtWidgets.QLabel(f"<b>{sim.title}</b><br>{sim.description}")
-        d.setWordWrap(True)
+        d = QtWidgets.QLabel(f"<b>{sim.title}</b>" + (HELP_MARK if sim.description else ""))
+        d.setToolTip(sim.description)                     # texto longo: só no passar do mouse
         sv.addWidget(d)
         self.form_box = QtWidgets.QWidget()
         self.form = QtWidgets.QFormLayout(self.form_box)
@@ -99,8 +100,8 @@ class SimulationTab(QtWidgets.QWidget):
         self.right = QtWidgets.QVBoxLayout(inner)
         self.plots = LivePlots([])
         self.right.addWidget(self.plots)
-        self.diag_title = QtWidgets.QLabel("<b>Diagnóstico</b> — passe o mouse ou clique numa linha para ver o "
-                                           "porquê e o que mudar")
+        self.diag_title = QtWidgets.QLabel("<b>Diagnóstico</b>" + HELP_MARK)
+        self.diag_title.setToolTip("clique numa linha para ver o porquê e o que mudar")
         self.diag = QtWidgets.QTableWidget(0, 4)
         self.diag.setHorizontalHeaderLabels(["estado", "verificação", "valor", "limite"])
         hh = self.diag.horizontalHeader()
@@ -150,7 +151,28 @@ class SimulationTab(QtWidgets.QWidget):
         self._debounce.setInterval(300)
         self._debounce.timeout.connect(self.reconfigure)
         state.changed.connect(lambda r: self._debounce.start() if r != "catalog" else None)
+        self._loading = False
         self.reconfigure()
+        state.register(f"aba:{sim.name}", self.params, self._put)       # entra no Ctrl+Z
+
+    def _touched(self, *_):
+        if not self._loading:
+            self.state.touch()
+
+    def _put(self, values: dict) -> None:
+        """desfazer: recoloca os valores (primeiro os que refazem o formulário, ex.: modo)"""
+        self._loading = True
+        try:
+            first = [k for k in values if k in self.inputs and isinstance(self.inputs[k], QtWidgets.QComboBox)]
+            for k in first:
+                self._set(self.inputs[k], values[k])
+            self._specs_sig = None if first else self._specs_sig
+            self.reconfigure()
+            for k, v in values.items():
+                if k in self.inputs:
+                    self._set(self.inputs[k], v)
+        finally:
+            self._loading = False
 
     # ------------------------------------------------------------------ montagem pela aeronave
     def reconfigure(self) -> None:
@@ -158,6 +180,13 @@ class SimulationTab(QtWidgets.QWidget):
         mantendo os valores digitados"""
         if self._thread is not None:
             return
+        loading, self._loading = self._loading, True
+        try:
+            self._reconfigure()
+        finally:
+            self._loading = loading
+
+    def _reconfigure(self) -> None:
         ac = self.state.aircraft
         old = self.params() if self.inputs else {}
         specs = self.sim.parameters_for(ac, old)
@@ -179,21 +208,25 @@ class SimulationTab(QtWidgets.QWidget):
                 if p.key in old and not p.bound:             # tabela ligada à aeronave: vem dela
                     self._set(w, old[p.key])
                 self.inputs[p.key] = w
-                w.setToolTip(p.help or p.key)
+                if p.help:
+                    w.setToolTip(p.help)
                 if isinstance(w, QtWidgets.QCheckBox):        # o texto vai na própria caixa: linha inteira
-                    w.setText(p.label)
+                    w.setText(p.label + (" ⓘ" if p.help else ""))
                     self.form.addRow(w)
-                elif isinstance(w, TableInput):
-                    lab = QtWidgets.QLabel(p.label)
-                    lab.setWordWrap(True)
-                    self.form.addRow(lab)
-                    self.form.addRow(w)
-                    w.edited.connect(self._commit)
                 else:
-                    lab = QtWidgets.QLabel(p.label + (f" ({p.unit})" if p.unit else ""))
+                    lab = QtWidgets.QLabel(p.label + (f" ({p.unit})" if p.unit else "") + (HELP_MARK if p.help else ""))
                     lab.setWordWrap(True)
-                    lab.setToolTip(p.help or p.key)
-                    self.form.addRow(lab, w)
+                    lab.setToolTip(p.help)
+                    if isinstance(w, TableInput):
+                        self.form.addRow(lab)
+                        self.form.addRow(w)
+                        w.edited.connect(self._commit)
+                    else:
+                        self.form.addRow(lab, w)
+                for sg in ("currentTextChanged", "toggled", "valueChanged", "textEdited", "edited"):
+                    if hasattr(w, sg):
+                        getattr(w, sg).connect(self._touched)
+                        break
                 if p.rebuild:
                     sig_ = w.currentTextChanged if isinstance(w, QtWidgets.QComboBox) else (
                         w.toggled if isinstance(w, QtWidgets.QCheckBox) else None)
@@ -410,11 +443,16 @@ class TableInput(QtWidgets.QWidget):
 
     def __init__(self, columns):
         super().__init__()
-        self.columns = list(columns)
+        helps = [c[3] if len(c) > 3 else "" for c in columns]        # 4º item: dica do cabeçalho
+        self.columns = [tuple(c[:3]) for c in columns]
         v = QtWidgets.QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
         self.t = QtWidgets.QTableWidget(0, len(self.columns))
-        self.t.setHorizontalHeaderLabels([c[1] for c in self.columns])
+        for i, (c, hp) in enumerate(zip(self.columns, helps)):
+            it = QtWidgets.QTableWidgetItem(c[1] + (" ⓘ" if hp else ""))
+            if hp:
+                it.setToolTip(hp)
+            self.t.setHorizontalHeaderItem(i, it)
         self.t.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.t.horizontalHeader().setStretchLastSection(True)
         self.t.setMinimumHeight(240)

@@ -3,6 +3,9 @@
 Cada perna começa onde a anterior terminou: mudar o raio de uma curva só altera as
 pernas seguintes, e um checkpoint salvo antes dela continua válido. Altura e velocidade
 de cada perna vão do valor da anterior ao pedido nela (curva cosseno no núcleo).
+
+Curva com raio 0 = automático: o percurso usa `auto_radius(V)` (inclinação de AUTO_PHI) e a
+aba Missão procura, do checkpoint da curva, o menor raio que a aeronave faz de verdade.
 """
 from __future__ import annotations
 
@@ -11,11 +14,19 @@ import math
 from dataclasses import dataclass, field
 
 
+AUTO_PHI = 45.0                       # inclinação usada para o raio automático (graus)
+
+
+def auto_radius(V: float, phi: float = AUTO_PHI) -> float:
+    """raio de uma curva nivelada a V com inclinação phi: R = V² / (g tan φ)"""
+    return max(V * V / (9.80665 * math.tan(math.radians(phi))), 3.0)
+
+
 @dataclass
 class Leg:
     kind: str = "straight"            # straight | turn
     length: float = 100.0             # reta (m)
-    radius: float = 50.0              # curva (m)
+    radius: float = 50.0              # curva (m); 0 = automático
     angle: float = 180.0              # curva (graus)
     side: int = 1                     # +1 direita, -1 esquerda
     h: float | None = None            # altura no fim (None: mantém)
@@ -58,7 +69,8 @@ class Mission:
                 n += p.length * math.cos(chi)
                 e += p.length * math.sin(chi)
             else:
-                lam, R, a = p.side, p.radius, math.radians(p.angle)
+                lam, a = p.side, math.radians(p.angle)
+                R = p.radius if p.radius > 0 else auto_radius(max(V, V1))
                 cn, ce = n + R * math.cos(chi + lam * math.pi / 2), e + R * math.sin(chi + lam * math.pi / 2)
                 sg.update(arc=1, n0=n, e0=e, cn=cn, ce=ce, R=R, lam=float(lam), L=R * a, chi0=chi)
                 fi = math.atan2(e - ce, n - cn) + lam * a

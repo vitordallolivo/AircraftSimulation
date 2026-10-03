@@ -169,7 +169,7 @@ LABELS = {
     "symmetric": "simétrica", "vertical": "vertical", "oswald": "Oswald e", "eta": "η (q local)",
     "downwash": "sente downwash", "enabled": "ativo", "mass": "massa", "tilt": "inclinação do eixo",
     "toe": "desvio do eixo", "sense": "sentido (±1)", "yaw_mix": "acel. diferencial", "side": "lado/diâmetro",
-    "fill": "altura do líquido", "volume": "volume de líquido (L)", "height": "altura", "rho": "densidade do líquido (água 1000)", "zeta": "amortecimento",
+    "fill": "altura do líquido", "height": "altura", "zeta": "amortecimento",
     "shape": "forma", "layout": "tipo", "main_x": "principal x", "main_track": "bitola", "main_z": "principal z",
     "steer_x": "direcionável x", "steer_z": "direcionável z", "tail_skid": "patim de cauda", "skid_x": "patim x",
     "skid_z": "patim z", "x_nose": "nariz x", "length": "comprimento", "width": "largura",
@@ -179,17 +179,86 @@ LABELS = {
     "takeoff_from": "decola de", "table_height": "altura da mesa", "table_length": "mesa à frente da partida",
     "table_back": "mesa atrás da partida", "table_width": "largura da mesa", "landing_on": "pousa em",
     "platform_height": "altura da plataforma", "platform_length": "comprimento da plataforma",
-    "platform_width": "largura da plataforma", "platform_start": "plataforma começa antes do fim da perna",
-    "sR": "ponto de acionamento do profundor na pista", "de1": "deflexão de decolagem (− cabra)",
-    "ht": "altura em que o piloto automático assume", "h_end": "altura final da decolagem",
-    "x_warning": "x_warning: comprimento de pista", "z_warning": "z_warning: altura mínima", "landing_max": "distância máx. de pouso (0 = não verifica)",
-    "Fext_g": "paraquedas extrator (g)", "mu_b": "atrito na baia", "CdS_chute": "C_D·S do paraquedas",
-    "target_n": "alvo: norte", "target_e": "alvo: leste", "aim": "procurar onde soltar para acertar o alvo",
+    "platform_width": "largura da plataforma", "h_end": "altura final da decolagem",
+    "mu_b": "atrito na baia", "CdS_chute": "C_D·S do paraquedas",
+    "target_n": "alvo: norte", "target_e": "alvo: leste",
     "wind_speed": "vento a 10 m", "wind_from": "vento vem de", "wind_elev": "elevação do vento",
+    "gust": "rajada", "slosh": "sloshing", "auto_calibrate": "calibrar antes de voar",
+    "x_warning": "x_warning (pista)", "z_warning": "z_warning (altura)", "sR": "acionamento do profundor",
+    "de1": "deflexão de decolagem", "ht": "piloto assume em", "platform_start": "plataforma: início antes do fim",
+    "landing_max": "distância máx. de pouso", "aim": "mirar no alvo", "Fext_g": "paraquedas extrator",
+    "volume": "volume de líquido", "rho": "densidade do líquido",
 }
+# dicas (passe o mouse no ⓘ): o rótulo fica curto, a explicação vai aqui
+HELP = {
+    "x_warning": "comprimento de pista: tem de passar do z_warning antes desta distância",
+    "z_warning": "altura sobre a superfície de partida que conta como decolado; ≤ 0 na mesa: quanto pode afundar",
+    "sR": "distância na pista em que o profundor (ou elevon) vai para a deflexão de decolagem; a Missão otimiza",
+    "de1": "deflexão do profundor na rotação (negativo = cabra); a Missão usa a maior que funciona",
+    "ht": "abaixo desta altura o profundor fica na deflexão de decolagem; acima, o piloto automático assume",
+    "h_end": "altura em que a etapa de decolagem termina",
+    "platform_start": "a plataforma começa este tanto antes do fim da última perna (pouso)",
+    "landing_max": "do toque até parar; 0 = não verifica",
+    "aim": "na Missão, procura o ponto de soltura para a carga cair no alvo",
+    "Fext_g": "força do paraquedas extrator, em vezes o peso da carga",
+    "mu_b": "atrito da carga deslizando na baia",
+    "CdS_chute": "área de arrasto do paraquedas da carga",
+    "bay": "comprimento da baia por onde a carga desliza",
+    "eta": "pressão dinâmica local / a do voo livre (cauda na esteira < 1)",
+    "oswald": "eficiência de envergadura (arrasto induzido)",
+    "downwash": "a superfície sente o downwash da asa (cauda atrás da asa)",
+    "yaw_mix": "diferença de acelerador entre motores para ajudar a guinada",
+    "sense": "+1 ou −1: sentido de rotação da hélice (torque)",
+    "zeta": "amortecimento do líquido (sloshing)",
+    "volume": "litros de líquido no tanque",
+    "rho": "densidade: água 1000 kg/m³",
+    "layout": "triciclo: bequilha na frente; convencional: bequilha na cauda; custom: pernas livres",
+    "tail_skid": "patim que protege a cauda na rotação",
+    "attach_tail": "a cauda fica presa na ponta do tubo",
+    "wind_from": "0 = de frente (norte), 90 = da direita (leste)",
+    "wind_elev": "inclinação do vento (+ sobe)",
+    "gust": "rajada no evento 'gust' do percurso",
+    "slosh": "o líquido dos tanques mexe e empurra a aeronave",
+    "auto_calibrate": "recalcula C_L0, C_Lα e acelerador de trimagem antes de cada voo",
+    "CL0": "modelo do piloto: C_L em α = 0", "CLa": "modelo do piloto: inclinação de C_L (1/rad)",
+    "alpha_max": "o piloto não pede α acima disto", "g_up": "subida máx. (fração de V)",
+    "g_down": "descida máx. (fração de V)", "Khr": "ganho altura → razão de subida",
+    "Kvs": "corta a subida quando falta velocidade", "Kn_h": "ganho do erro de altura no fator de carga",
+    "Kn_hd": "ganho do erro de razão de subida", "Kn_ih": "integral do erro de altura",
+    "Kae": "profundor: ganho do erro de α", "KIa": "profundor: integral", "Kqe": "profundor: amortecimento de q",
+    "Kthe": "profundor no chão: ganho de θ", "Kfn": "arredondamento: ganho de ḣ",
+    "KV": "acelerador: erro de V", "KIV": "acelerador: integral de V", "KHT": "acelerador: erro de altura",
+    "Dtrim": "acelerador de equilíbrio (calibrado)", "Kchi": "curso → inclinação",
+    "kvf": "reta: quanto corrige o desvio lateral", "chi_inf": "reta: ângulo máx. de aproximação da linha",
+    "korb": "curva: quanto corrige o desvio do raio", "Lorb": "curva: escala do desvio (m)",
+    "tlead": "antecipa a próxima perna (s)", "phimax": "inclinação máx. que o piloto usa",
+    "Kphia": "aileron: erro de φ", "Kpa": "aileron: amortecimento de p", "Kbeta": "leme: ganho do derrapagem β",
+    "tau_phi": "atraso do comando de φ (s)", "pmax_cmd": "taxa máx. do comando de φ (°/s)",
+    "Ky": "chão: desvio lateral → proa", "Ki": "chão: integral do desvio", "Kpsi": "chão: erro de proa",
+    "Kr": "chão: amortecimento de r", "Kbeq": "chão: bequilha", "hflare": "altura do arredondamento",
+    "tau_flare": "constante do arredondamento (s)", "kCL": "limite de C_L/C_Lmax usado nas verificações",
+    "de_max": "deflexão máx. do profundor", "da_max": "deflexão máx. do aileron", "dr_max": "deflexão máx. do leme",
+    "Mst": "suavidade da transição para o estol", "dtlog": "intervalo de gravação", "tmax": "tempo máx. de voo",
+    "dt": "passo de integração",
+}
+HELP_MARK = " <span style='color:#1f77b4'>ⓘ</span>"
+
 UNITS = {"table_height": "m", "table_length": "m", "table_back": "m", "table_width": "m", "platform_height": "m",
          "platform_length": "m", "platform_width": "m", "platform_start": "m", "x_warning": "m", "z_warning": "m", "landing_max": "m",
          "target_n": "m", "target_e": "m", "CdS_chute": "m²"}
+
+
+def _hint(w, text: str) -> None:
+    """ⓘ no rótulo, explicação no passar do mouse"""
+    w.setToolTip(text)
+    if isinstance(w, QtWidgets.QCheckBox):
+        w.setText(w.text() + " ⓘ")
+        return
+    lb = getattr(w, "label", None) or w.findChild(QtWidgets.QLabel)
+    if lb is not None:
+        lb.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        lb.setText(lb.text() + HELP_MARK)
+        lb.setToolTip(text)
 
 
 class DataclassForm(QtWidgets.QWidget):
@@ -213,6 +282,8 @@ class DataclassForm(QtWidgets.QWidget):
             v = getattr(obj, f.name)
             w = self._make(f.name, tp, v)
             if w is not None:
+                if f.name in HELP:
+                    _hint(w, HELP[f.name])
                 lay.addWidget(w)
                 self.widgets[f.name] = w
 

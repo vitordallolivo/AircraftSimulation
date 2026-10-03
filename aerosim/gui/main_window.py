@@ -51,6 +51,10 @@ class MainWindow(QtWidgets.QMainWindow):
         m.addAction("Importar planilha por mapa de células…", self.import_cellmap)
         m.addSeparator()
         m.addAction("Sair", self.close)
+        e = self.menuBar().addMenu("&Editar")
+        self.undo_a = e.addAction("Desfazer", QtGui.QKeySequence.StandardKey.Undo, self.state.undo)
+        self.redo_a = e.addAction("Refazer", self.state.redo)
+        self.redo_a.setShortcuts([QtGui.QKeySequence("Ctrl+Y"), QtGui.QKeySequence("Ctrl+Shift+Z")])
 
     # ------------------------------------------------------------------ meus aviões
     def _toolbar(self):

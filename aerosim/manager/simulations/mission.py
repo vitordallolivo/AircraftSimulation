@@ -1,8 +1,9 @@
 """Missão (simulação 6GDL) por etapa do voo (corrida no chão, cada perna do percurso, rolagem).
 
 Modos:
-  missão                decolagem (otimizada para o x_warning e o z_warning, ou a da Configuração) e
-                        depois o resto, etapa por etapa. Cada etapa salva um checkpoint no início dela:
+  missão                decolagem otimizada para o x_warning e o z_warning (Configuração → Pista) e
+                        depois o resto, etapa por etapa. Curva sem raio: procura o menor que a
+                        aeronave faz, do checkpoint do início da curva. Cada etapa salva um checkpoint no início dela:
                         dá para parar no fim de qualquer etapa, mudar o percurso dali para frente na
                         Configuração e continuar do início daquela etapa
   só decolagem          otimiza o ponto de acionamento do profundor (ou elevon) e mostra a decolagem
@@ -20,7 +21,7 @@ import numpy as np
 
 from aerosim.interfaces.backend import LogChunk
 from aerosim.interfaces.simulation import Check, ParamSpec, PlotSpec, RunContext, SimResult
-from aerosim.model.mission import Leg, MissionEvent, level_turn, takeoff_runway
+from aerosim.model.mission import Leg, MissionEvent, auto_radius, level_turn, takeoff_runway
 from aerosim.model.universal import build_model
 
 from .. import flightplots as FP
@@ -32,24 +33,37 @@ from .base import SimulationBase, floats
 MODES = ("missão", "só decolagem", "curvas: raio mínimo", "MTOW (x_warning e z_warning)")
 M_MIS, M_TO, M_TURN, M_MTOW = MODES
 END = "fim da missão (parada na pista)"
-TO_MODES = ("otimizar o acionamento (x_warning e z_warning)", "como está na Configuração")
-GP = "Pista (padrão: Configuração → Pista)"
+GP = "Pista"
 CHUNK = 0.5
+GLYPH = 10.0                      # avião desenhado no 3D a cada 10 m
+AUTO_PHIS = (65.0, 55.0, 45.0, 37.0, 30.0, 24.0, 18.0)     # inclinações testadas na análise de curvas
+AUTO_FRAC = (1.0, 0.85, 0.7, 0.55, 0.42, 0.32)              # raio automático: frações do φ máx. do piloto
 
 
-LEG_COLS = (("name", "etapa", "str"), ("kind", "tipo", ("reta", "curva")),
-            ("length", "reta: comprimento (m)", "float"), ("radius", "curva: raio (m)", "float"),
-            ("angle", "curva: ângulo (°)", "float"), ("side", "curva: lado", ("direita", "esquerda")),
-            ("h", "altura no fim (m; vazio: mantém)", "float"), ("V", "V no fim (m/s; vazio: mantém)", "float"),
-            ("role", "papel", ("—", "decolagem", "pouso")))
+KINDS = ("decolagem", "reta", "curva", "pouso")
+LEG_COLS = (("name", "etapa", "str"),
+            ("kind", "tipo", KINDS),
+            ("length", "distância (m)", "float", "comprimento da reta (decolagem, reta, pouso)"),
+            ("turn", "virar (°)", "float", "quanto a aeronave gira na curva: + direita, − esquerda. "
+                                         "A próxima etapa segue na direção nova"),
+            ("radius", "raio (m)", "float", "raio da curva; vazio = automático (procura o menor que a aeronave faz)"),
+            ("h", "altura (m)", "float", "altura ao fim da etapa; vazio = mantém a anterior"),
+            ("V", "velocidade (m/s)", "float", "velocidade ao fim da etapa; vazio = mantém a anterior"))
+
+
+def _kind(l) -> str:
+    return "curva" if l.kind == "turn" else "decolagem" if l.takeoff else "pouso" if l.landing else "reta"
 
 
 def legs_to_rows(legs) -> list[dict]:
-    st = lambda l: l.kind == "straight"
-    return [dict(name=l.name, kind="reta" if st(l) else "curva", length=l.length if st(l) else None,
-                 radius=None if st(l) else l.radius, angle=None if st(l) else l.angle,
-                 side="direita" if l.side >= 0 else "esquerda", h=l.h, V=l.V,
-                 role="decolagem" if l.takeoff else ("pouso" if l.landing else "—")) for l in legs]
+    rows = []
+    for l in legs:
+        k = _kind(l)
+        turn = k == "curva"
+        rows.append(dict(name=l.name, kind=k, length=None if turn else l.length,
+                         turn=(l.side if l.side else 1) * l.angle if turn else None,
+                         radius=(l.radius if l.radius > 0 else None) if turn else None, h=l.h, V=l.V))
+    return rows
 
 
 def rows_to_legs(rows, old) -> list:
@@ -57,12 +71,13 @@ def rows_to_legs(rows, old) -> list:
     for i, r in enumerate(rows):
         base = old[i] if i < len(old) else Leg()
         f = lambda k, d: float(r[k]) if r.get(k) not in (None, "") else d
-        out.append(Leg("straight" if r.get("kind") == "reta" else "turn", length=f("length", base.length),
-                       radius=f("radius", base.radius), angle=f("angle", base.angle),
-                       side=1 if r.get("side", "direita") == "direita" else -1,
-                       h=f("h", None), V=f("V", None), name=str(r.get("name") or f"perna {i}"),
-                       takeoff=r.get("role") == "decolagem", landing=r.get("role") == "pouso",
-                       clearance=base.clearance if base.landing or r.get("role") != "pouso" else 50.0))
+        k = r.get("kind") if r.get("kind") in KINDS else "reta"
+        turn = f("turn", (base.side or 1) * base.angle if base.kind == "turn" else 90.0)
+        out.append(Leg("turn" if k == "curva" else "straight", length=f("length", base.length),
+                       radius=f("radius", 0.0), angle=abs(turn), side=1 if turn >= 0 else -1,
+                       h=f("h", None), V=f("V", None), name=str(r.get("name") or f"etapa {i}"),
+                       takeoff=k == "decolagem", landing=k == "pouso",
+                       clearance=base.clearance if base.landing or k != "pouso" else 50.0))
     return out
 
 
@@ -157,37 +172,24 @@ class MissionSimulation(SimulationBase):
                            help="altura sobre a superfície de partida que conta como decolado; ≤ 0 na mesa: quanto pode "
                                 "afundar abaixo dela")]
         if mode == M_MIS:
-            P += [ParamSpec("legs", "Trajetória (uma linha por etapa)",
-                            legs_to_rows(ac.mission.legs) if ac is not None else [], kind="table", columns=LEG_COLS, bound=True,
-                            group="Trajetória"),
-                  ParamSpec("glyph", "Desenhar o avião no 3D a cada (0 = não)", 10.0, minimum=0, maximum=500, unit="m",
-                            group="Trajetória"),
-                  ParamSpec("takeoff", "Decolagem", TO_MODES[0], kind="choice", choices=TO_MODES, group="Decolagem")]
-            P += pista
-            P += [ParamSpec("start", "Começar de", "chão", kind="choice",
-                            choices=("chão",) + tuple(f"início: {n}" for n in legs[1:]), group="Etapas",
+            P += [ParamSpec("legs", "Trajetória", legs_to_rows(ac.mission.legs) if ac is not None else [],
+                            kind="table", columns=LEG_COLS, bound=True,
+                            help="uma linha por etapa; passe o mouse no cabeçalho para ver cada coluna"),
+                  ParamSpec("start", "Começar de", "chão", kind="choice",
+                            choices=("chão",) + tuple(f"início: {n}" for n in legs[1:]),
                             help="do checkpoint salvo no início da etapa; se ainda não houver, voa até lá e salva"),
                   ParamSpec("until", "Parar em", END, kind="choice", choices=(END,) + tuple(f"fim: {n}" for n in legs[:-1]),
-                            group="Etapas")]
-            if ac is not None and ac.payload.enabled:
-                P.append(ParamSpec("aim", "LAPES: procurar onde soltar para acertar o alvo", ac.payload.aim,
-                                   kind="bool", group="Etapas"))
-            P += [ParamSpec("slosh", "Sloshing", True, kind="bool", group="Ambiente"),
-                  ParamSpec("gust", "Rajada", False, kind="bool", group="Ambiente")]
+                            help="para no fim da etapa (salva o checkpoint para continuar dali)")]
         elif mode == M_TO:
-            P += pista + [ParamSpec("wind", "Com vento", True, kind="bool", group="Ambiente")]
+            P += pista
         elif mode == M_TURN:
-            P += [ParamSpec("V_list", "Velocidades", "13, 15, 17", kind="floats", unit="m/s", group="Curvas"),
-                  ParamSpec("R_list", "Raios a testar (a 15 m/s; escalam com V²)", "12, 16, 20, 25, 30, 40, 50, 70",
-                            kind="floats", unit="m", group="Curvas"),
-                  ParamSpec("h", "Altura", 30.0, minimum=5, maximum=500, unit="m", group="Curvas"),
-                  ParamSpec("hloss", "Perda de altura máxima", 3.0, minimum=0.2, maximum=50, unit="m", group="Curvas"),
-                  ParamSpec("wind", "Com vento", True, kind="bool", group="Ambiente")]
+            P += [ParamSpec("V_list", "Velocidades", "13, 15, 17", kind="floats", unit="m/s",
+                            help="para cada V testa raios de inclinação 70° a 20° (R = V²/(g tan φ)) e acha o menor que "
+                                 "a aeronave faz sem estolar, sem perder mais de 3 m e seguindo o raio")]
         else:
             P += pista + [
-                ParamSpec("masses", "Lastro, LAPES e líquido vão do mínimo ao máximo juntos; o xCG é testado nos três "
-                          "valores.", mtow_rows(ac), kind="table", columns=MCOLS, group="MTOW"),
-                ParamSpec("wind", "Com vento", True, kind="bool", group="Ambiente")]
+                ParamSpec("masses", "Massas", mtow_rows(ac), kind="table", columns=MCOLS, group="MTOW",
+                          help="lastro, LAPES e líquido vão do mínimo ao máximo juntos; o xCG é testado nos três valores")]
         return P
 
     def commit(self, aircraft, values) -> bool:
@@ -283,7 +285,7 @@ class MissionSimulation(SimulationBase):
             t("motor", "Motor", "rpm/100, A, N"),
             t("ene", "Energia", "Wh"),
             t("bat", "Consumo de bateria", "mAh"),
-            t("batp", "Descarga da bateria", "% / A")]
+            t("batp", "Bateria: SOC", "SOC (%) / $I$ (A)")]
         if has_tank:
             out.append(t("slosh", "Sloshing", "ângulo (°)"))
         out += [opt] + takeoff
@@ -311,12 +313,6 @@ class MissionSimulation(SimulationBase):
             self.commit(ctx.aircraft, ctx.params)            # a trajetória da tabela
         ac, info = self.prepare(ctx)
         p = ctx.params
-        if "slosh" in p:
-            ac.sim.slosh = bool(p["slosh"])
-        if "gust" in p:
-            ac.environment.gust = bool(p["gust"])
-        if not p.get("wind", True):
-            ac.environment.wind_speed = 0.0
         xw = float(p.get("x_warning", ac.airfield.x_warning))
         zw = float(p.get("z_warning", ac.airfield.z_warning))
         refs = _refs(ac, info, xw, zw)
@@ -425,10 +421,11 @@ class MissionSimulation(SimulationBase):
         store = ctx.checkpoints
         key = lambda k: f"missão: início de {legs[k]}"
         series, notes, checks = {}, [], []
-        aim = bool(ctx.params.get("aim", ac.payload.aim)) and k_drop is not None
+        aim = bool(ac.payload.aim) and k_drop is not None
         best = None
+        radii = {}
         need_takeoff = k0 == 0 or not store.has(key(k0))
-        if need_takeoff and self.param(ctx, "takeoff") == TO_MODES[0]:
+        if need_takeoff:
             best, tried = self._optimize(ctx, ac, refs)
             series.update(self._opt_series(tried, best, refs))
             if TO.pitch_control(ac) and np.isfinite(best.s):
@@ -450,15 +447,33 @@ class MissionSimulation(SimulationBase):
                             raise RuntimeError(f"o voo terminou ({o.status.name}) em '{legs[k]}', antes de "
                                                f"chegar em '{legs[k0]}'")
                         r.checkpoint(key(k + 1), store)
+            def prepare(k):
+                """antes da etapa k: raio automático da curva e ponto de soltura da LAPES (do checkpoint)"""
+                nonlocal mission, aim
+                if not store.has(key(k)):
+                    return
+                ck = store.get(key(k))
+                leg = mission.legs[k]
+                if leg.kind == "turn" and leg.radius <= 0:
+                    mission, R, why = self._auto_turn(ctx, ac, mission, ck, k, info)
+                    checks.append(Check("info" if why == "ok" else "atencao", f"raio automático — {legs[k]}",
+                                        f"R = {R:.1f} m", "menor raio que a aeronave faz",
+                                        "" if why == "ok" else f"nenhum raio testado passou ({why}); usou o maior",
+                                        "" if why == "ok" else "mais velocidade nessa curva", "Curvas"))
+                    radii[legs[k]] = R
+                    r.reconfigure(mission)
+                    r.start_from(ck)
+                if aim and k == k_drop:
+                    mission, hist = self._aim(ctx, ac, mission, ck, k)
+                    series.update(hist)
+                    r.reconfigure(mission)
+                    r.start_from(ck)
+                    aim = False
+
             k = k0
             while k + 1 <= min(stop_at, nseg - 1):
                 ctx.on_progress(k / max(nseg, 1), f"etapa: {legs[k]}")
-                if aim and k == k_drop and store.has(key(k)):
-                    mission, hist = self._aim(ctx, ac, mission, store.get(key(k)), k)
-                    series.update(hist)
-                    r.reconfigure(mission)
-                    r.start_from(store.get(key(k)))
-                    aim = False
+                prepare(k)
                 out = r.run(Stop(segment=k + 1), chunk=CHUNK)
                 parts.append(out.log)
                 if out.status.name != "STOPPED":
@@ -466,11 +481,7 @@ class MissionSimulation(SimulationBase):
                 r.checkpoint(key(k + 1), store)
                 k += 1
             if stop_at == nseg and (out is None or out.status.name == "STOPPED"):
-                if aim and k == k_drop and store.has(key(k)):
-                    mission, hist = self._aim(ctx, ac, mission, store.get(key(k)), k)
-                    series.update(hist)
-                    r.reconfigure(mission)
-                    r.start_from(store.get(key(k)))
+                prepare(k)
                 ctx.on_progress(0.95, f"etapa: {legs[-1]}")
                 out = r.run(Stop(), chunk=CHUNK)
                 parts.append(out.log)
@@ -483,7 +494,7 @@ class MissionSimulation(SimulationBase):
         if len(log):
             series.update(FP.trajectory(log, ev, legs, target))
             series.update(FP.time_series(log, ev, legs, refs))
-            step = float(ctx.params.get("glyph", 10.0) or 0.0)
+            step = GLYPH
             if step > 0:
                 ext = float(max(np.ptp(log["n"]), np.ptp(log["e"]), 10.0))
                 series.update(FP.aircraft_glyphs(log, ev, legs, step, max(build_model(ac).b, ext / 35)))
@@ -517,16 +528,43 @@ class MissionSimulation(SimulationBase):
         if len(log) and brows:
             for r_ in brows:          # como a Tabela 5.1: tempo, corrente, consumo
                 summary[f"consumo — {r_['etapa']}"] = (f"{r_['tempo_s']:.1f} s, {r_['corrente_media_A']:.1f} A, "
-                                                       f"{r_['consumo_mAh']:.1f} mAh ({r_['descarga_peukert_pct']:.1f} % Peukert)")
+                                                       f"{r_['consumo_mAh']:.1f} mAh, SOC no fim {r_['soc_fim_pct']:.0f} %")
             tot = brows[-1]
-            checks.append(Check("ok" if tot["descarga_peukert_pct"] < 80 else "falha", "bateria ao fim do trecho",
-                                f"{tot['consumo_mAh']:.0f} mAh = {tot['descarga_peukert_pct']:.0f} % (Peukert)",
-                                "< 80 % da capacidade", "" if tot["descarga_peukert_pct"] < 80 else
-                                "a missão gasta quase toda a bateria", "" if tot["descarga_peukert_pct"] < 80 else
+            okb = tot["soc_fim_pct"] > 20
+            checks.append(Check("ok" if okb else "falha", "bateria ao fim do trecho",
+                                f"SOC = {tot['soc_fim_pct']:.0f} % ({tot['consumo_mAh']:.0f} mAh)",
+                                "> 20 % (Peukert)", "" if okb else
+                                "a missão gasta quase toda a bateria", "" if okb else
                                 "bateria maior, menos tempo de voo ou menos corrente", "Bateria"))
+        for nm, R in radii.items():
+            summary[f"raio automático — {nm}"] = R
         if notes:
             summary["observação"] = "; ".join(notes)
         return SimResult(log=log, series=series, summary=summary, events=ev, status=st, checks=checks)
+
+    def _auto_turn(self, ctx, ac, mission, ck, k, info):
+        """curva sem raio: do checkpoint, testa raios do φ máx. do piloto automático para baixo e fica com o
+        menor que passa"""
+        seg = mission.segments()[k]
+        V = max(seg["V0"], seg["V1"])
+        Rs = [round(auto_radius(V, ac.autopilot.phimax * f), 1) for f in AUTO_FRAC]
+        climbs = abs(seg["h1"] - seg["h0"]) > 0.5
+
+        def one(R):
+            m = mission.with_leg(k, radius=R)
+            sg = m.segments()[k]
+            with Runner(ctx.backend, ac, m, None) as rr:
+                rr.start_from(ck)
+                o = rr.run(Stop(segment=k + 1, t=ck.t + 20 + 3 * sg["L"] / max(V, 1.0)), live=False)
+            res = evaluate_turn(o.log, sg, k, R, info["Vs"], ac.autopilot.kCL)
+            if climbs and res.get("motivo") == "perde altura":      # curva que sobe/desce: altura não conta
+                res["ok"], res["motivo"] = True, "ok"
+            return res
+        outs = self.parallel(ctx, one, Rs, f"raio automático: {mission.legs[k].name}")
+        ok = [o["R"] for o in outs if o["ok"]]
+        R = min(ok) if ok else max(Rs)
+        why = "ok" if ok else outs[-1].get("motivo", "falha")
+        return mission.with_leg(k, radius=R), R, why
 
     def _aim(self, ctx, ac, mission, ck, k):
         """bisseção no ponto de soltura s (perna k) para a carga cair no alvo (n)"""
@@ -605,15 +643,15 @@ class MissionSimulation(SimulationBase):
     # ------------------------------------------------------------------ curvas
     def _turns(self, ctx, ac, info, refs) -> SimResult:
         side, ang, phimax = 1, 240.0, 75.0
-        h, hloss = self.param(ctx, "h"), self.param(ctx, "hloss")
+        h, hloss = 30.0, 3.0
         over = dict(tmax=1e6, ap=dict(phimax=math.radians(phimax)))
         Vs_list = floats(self.param(ctx, "V_list"))
-        R_base = floats(self.param(ctx, "R_list"))
+
         series, checks, rmin_rows, all_cases = {}, [], [], []
         styles = [("#2ca02c", "o"), ("#d62728", "s"), ("#9467bd", "t"), ("#1f77b4", "d"), ("#ff7f0e", "o")]
         for iv, V in enumerate(Vs_list):
             ctx.check()
-            Rs = sorted({round(R * (V / 15.0) ** 2, 1) for R in R_base})
+            Rs = sorted({round(auto_radius(V, phi), 1) for phi in (70.0,) + AUTO_PHIS + (14.0,)})
             m0 = level_turn(V, Rs[-1], ang, h, side=side)
             with Runner(ctx.backend, ac, m0, over, ctx) as r:
                 r.start_air(0)

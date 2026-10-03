@@ -420,8 +420,8 @@ def aircraft_glyphs(T: LogChunk, ev: dict, leg_names: list[str], step: float, sp
 # ------------------------------------------------------------------ bateria por etapa
 def battery_by_stage(T: LogChunk, ev: dict, leg_names: list[str], capacity_mAh: float, peukert_n: float = 1.05,
                      Rt_h: float = 1.0) -> tuple[list[dict], dict]:
-    """tempo, corrente média, consumo (mAh) e descarga estimada por etapa (Coulomb e Peukert, Traub 2011);
-    devolve (linhas da tabela, séries do gráfico de consumo acumulado)"""
+    """tempo, corrente média, consumo (mAh), descarga e SOC por etapa (Coulomb e Peukert, Traub 2011);
+    o SOC começa em 100 % e cai. Devolve (linhas da tabela, séries dos gráficos)"""
     if not len(T) or "Ibat" not in T.columns:
         return [], {}
     t = np.asarray(T["t"], float)
@@ -443,15 +443,17 @@ def battery_by_stage(T: LogChunk, ev: dict, leg_names: list[str], capacity_mAh: 
         dur = float(dt[s].sum())
         q = float((I[s] * dt[s]).sum() / 3.6)
         rows.append(dict(etapa=names[k], tempo_s=dur, corrente_media_A=q * 3.6 / dur if dur > 0 else 0.0,
-                         consumo_mAh=q, descarga_peukert_pct=float(np.sum(np.where(np.isfinite(tI[s]), dt[s] / tI[s], 0)) * 100)))
+                         consumo_mAh=q, descarga_peukert_pct=float(np.sum(np.where(np.isfinite(tI[s]), dt[s] / tI[s], 0)) * 100),
+                         soc_fim_pct=float(100.0 - pk[np.flatnonzero(s)[-1]])))
     rows.append(dict(etapa="total", tempo_s=float(dt.sum()), corrente_media_A=float((I * dt).sum() / max(dt.sum(), 1e-9)),
-                     consumo_mAh=float(mAh[-1]), descarga_peukert_pct=float(pk[-1])))
+                     consumo_mAh=float(mAh[-1]), descarga_peukert_pct=float(pk[-1]), soc_fim_pct=float(100.0 - pk[-1])))
     S = stage_spans(T, ev, leg_names, "bat_")
     S["bat_consumo"] = {"t": t, "y": mAh, "_color": "#1f77b4", "_width": 2.2}
     S[f"bat_capacidade ({capacity_mAh:.0f} mAh)"] = {"_hline": capacity_mAh, "_color": "#d62728", "_width": 2}
     S2 = stage_spans(T, ev, leg_names, "batp_")
-    S2["batp_Coulomb"] = {"t": t, "y": mAh / capacity_mAh * 100, "_color": "#1f77b4", "_width": 2}
-    S2["batp_Peukert"] = {"t": t, "y": pk, "_color": "#d62728", "_width": 2}
+    S2["batp_SOC Coulomb"] = {"t": t, "y": 100.0 - mAh / capacity_mAh * 100, "_color": "#1f77b4", "_width": 2}
+    S2["batp_SOC Peukert"] = {"t": t, "y": 100.0 - pk, "_color": "#d62728", "_width": 2.4}
+    S2["batp_reserva 20 %"] = {"_hline": 20.0, "_color": "#d62728", "_dash": "dot"}
     S2["batp_$I$ (A)"] = {"t": t, "y": I, "_color": "#7f7f7f", "_width": 1}
     S.update(S2)
     return rows, S
