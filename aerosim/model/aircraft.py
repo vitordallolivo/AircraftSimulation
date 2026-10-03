@@ -324,7 +324,9 @@ class Airfield:
     platform_length: float = 80.0
     platform_width: float = 6.0
     platform_start: float = 50.0       # a plataforma começa este tanto antes do fim da perna de pouso (m)
-    runway_max: float = 60.0           # distância máxima de decolagem permitida (m) — linha nos gráficos
+    x_warning: float = 60.0            # comprimento de pista exigido (m): tem de "decolar" antes disso
+    z_warning: float = 1.0             # altura (m) sobre a superfície de partida que conta como decolado
+                                       # (≤ 0 na mesa: quanto pode afundar abaixo dela depois da borda)
     landing_max: float = 0.0           # distância máxima de pouso (m); 0: não verifica
 
     def pads(self, mission) -> list[dict]:
@@ -359,10 +361,12 @@ class Environment:
 
 @dataclass
 class Takeoff:
-    VR: float = 12.5           # m/s
-    sR: float = 0.0            # m (> 0: usa distância em vez de VR)
-    de0: float = 0.0           # graus
-    de1: float = -6.0
+    """corrida: acelerador cheio; no ponto de acionamento sR o profundor (ou elevon) vai para de1.
+    A aba Missão otimiza sR (e usa a maior deflexão que funciona) para o x_warning e o z_warning."""
+    VR: float = 12.5           # m/s (só se sR = 0: aciona por velocidade)
+    sR: float = 37.5           # ponto de acionamento do profundor na pista (m)
+    de0: float = 0.0           # graus (profundor durante a corrida)
+    de1: float = -6.0          # deflexão de decolagem (graus, − cabra)
     rate_de: float = 60.0      # graus/s
     ht: float = 2.0            # altura em que o piloto automático assume
     rate_thr: float = 2.0

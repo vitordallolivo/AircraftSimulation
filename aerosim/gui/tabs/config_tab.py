@@ -2,10 +2,10 @@
 
   esquerda   vento, lista de componentes (asa, caudas, motores, tanques, fuselagem, tubo, trem,
              LAPES, pista/mesa/plataforma, massa, ambiente, decolagem, piloto, percurso...), botões de
-             adicionar/remover e o editor do componente escolhido (campos numéricos, sem sliders)
+             adicionar/remover e as informações (massa e CG, inércias, aerodinâmica, W/S, T/W,
+             propulsão, trem, pista, LAPES, percurso e avisos)
   centro     a aeronave em 3D (clicar seleciona, arrastar move) e o botão Restaurar
-  direita    informações completas: massa e CG, inércias, aerodinâmica, cargas (W/S, T/W), propulsão,
-             trem, pista, LAPES, percurso e avisos
+  direita    o editor do componente escolhido (campos numéricos, sem sliders), largo
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from ..widgets.param_slider import CONTROL_KINDS, EVENT_KINDS, LEG_KINDS, Datacl
 from ..widgets.view3d import AircraftView
 
 NONGEOM = [("airfield", "🛫 Pista: chão, mesa e plataforma"), ("mass", "Massa e inércia"), ("environment", "Ambiente"),
-           ("takeoff", "Decolagem (comando do profundor)"), ("autopilot", "Piloto automático"), ("sim", "Integração"),
+           ("takeoff", "Decolagem (acionamento do profundor)"), ("autopilot", "Piloto automático"), ("sim", "Integração"),
            ("mission", "Percurso (pernas e eventos)")]
 
 
@@ -50,9 +50,9 @@ class ConfigTab(QtWidgets.QWidget):
         self.comp_list.setMinimumHeight(220)
         pv.addWidget(self.comp_list, 2)
         pv.addLayout(self._add_buttons())
-        self.editor_area = QtWidgets.QScrollArea()
-        self.editor_area.setWidgetResizable(True)
-        pv.addWidget(self.editor_area, 5)
+        self.summary = QtWidgets.QTextBrowser()
+        self.summary.setStyleSheet("QTextBrowser { background: #f7f9fc; }")
+        pv.addWidget(self.summary, 4)
         split.addWidget(panel)
 
         # ---------------- centro: 3D ----------------
@@ -91,15 +91,21 @@ class ConfigTab(QtWidgets.QWidget):
         lv.addWidget(legend)
         split.addWidget(mid)
 
-        # ---------------- direita: informações ----------------
-        self.summary = QtWidgets.QTextBrowser()
-        self.summary.setOpenExternalLinks(False)
-        self.summary.setStyleSheet("QTextBrowser { background: #f7f9fc; }")
-        split.addWidget(self.summary)
+        # ---------------- direita: editor do componente escolhido (largo, legível em tela pequena) ----------------
+        right = QtWidgets.QWidget()
+        rv = QtWidgets.QVBoxLayout(right)
+        rv.setContentsMargins(4, 4, 4, 4)
+        self.editor_title = QtWidgets.QLabel()
+        self.editor_title.setStyleSheet("font-weight: bold; font-size: 13px; color: #1f4e8c")
+        rv.addWidget(self.editor_title)
+        self.editor_area = QtWidgets.QScrollArea()
+        self.editor_area.setWidgetResizable(True)
+        rv.addWidget(self.editor_area, 1)
+        split.addWidget(right)
         split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 6)
-        split.setStretchFactor(2, 3)
-        split.setSizes([400, 900, 400])
+        split.setStretchFactor(1, 5)
+        split.setStretchFactor(2, 4)
+        split.setSizes([380, 820, 560])
 
         self.comp_list.currentItemChanged.connect(self._on_list)
         self.view.componentSelected.connect(self._on_pick)
@@ -328,6 +334,7 @@ class ConfigTab(QtWidgets.QWidget):
         if cur is None:
             return
         key = cur.data(QtCore.Qt.ItemDataRole.UserRole)
+        self.editor_title.setText(cur.text())
         self.view.select(key if ":" in key or key in ("fuselage", "boom", "payload", "gear") else None)
         self._edit(key)
 
@@ -388,6 +395,16 @@ class ConfigTab(QtWidgets.QWidget):
         elif kind in ("fuselage", "boom"):
             self.form = DataclassForm(getattr(ac, kind))
             v.addWidget(self.form)
+        elif kind == "takeoff":
+            self.form = DataclassForm(ac.takeoff, exclude=("VR", "de0", "rate_de", "rate_thr"))
+            v.addWidget(self.form)
+            hint = QtWidgets.QLabel("Na corrida o acelerador vai a cheio; no ponto de acionamento o profundor (ou o "
+                                    "elevon) vai para a deflexão de decolagem e fica lá até a altura em que o piloto "
+                                    "automático assume. A aba Missão acha o melhor ponto para o x_warning e o "
+                                    "z_warning (Configuração → Pista).")
+            hint.setWordWrap(True)
+            hint.setStyleSheet("color:#555")
+            v.addWidget(hint)
         elif kind == "airfield":
             self.form = DataclassForm(ac.airfield)
             v.addWidget(self.form)
@@ -868,7 +885,8 @@ def info_html(backend, ac, info) -> str:
              f"de uma mesa de {af.table_height:g} m de altura, {af.table_length:g} m à frente"),
             ("pouso", "no chão" if af.landing_on == "chão" else
              f"numa plataforma de {af.platform_height:g} m × {af.platform_length:g} m"),
-            ("distância máxima de decolagem", f"{af.runway_max:g} m")]
+            ("comprimento de pista exigido (x_warning)", f"{af.x_warning:g} m"),
+            ("altura mínima (z_warning)", f"{af.z_warning:g} m")]
     if af.landing_max > 0:
         rows.append(("distância máxima de pouso", f"{af.landing_max:g} m"))
     out.append(_tbl("Pista", rows))

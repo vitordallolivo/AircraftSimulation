@@ -179,13 +179,15 @@ LABELS = {
     "table_back": "mesa atrás da partida", "table_width": "largura da mesa", "landing_on": "pousa em",
     "platform_height": "altura da plataforma", "platform_length": "comprimento da plataforma",
     "platform_width": "largura da plataforma", "platform_start": "plataforma começa antes do fim da perna",
-    "runway_max": "distância máx. de decolagem", "landing_max": "distância máx. de pouso (0 = não verifica)",
+    "sR": "ponto de acionamento do profundor na pista", "de1": "deflexão de decolagem (− cabra)",
+    "ht": "altura em que o piloto automático assume", "h_end": "altura final da decolagem",
+    "x_warning": "x_warning: comprimento de pista", "z_warning": "z_warning: altura mínima", "landing_max": "distância máx. de pouso (0 = não verifica)",
     "Fext_g": "paraquedas extrator (g)", "mu_b": "atrito na baia", "CdS_chute": "C_D·S do paraquedas",
     "target_n": "alvo: norte", "target_e": "alvo: leste", "aim": "procurar onde soltar para acertar o alvo",
     "wind_speed": "vento a 10 m", "wind_from": "vento vem de", "wind_elev": "elevação do vento",
 }
 UNITS = {"table_height": "m", "table_length": "m", "table_back": "m", "table_width": "m", "platform_height": "m",
-         "platform_length": "m", "platform_width": "m", "platform_start": "m", "runway_max": "m", "landing_max": "m",
+         "platform_length": "m", "platform_width": "m", "platform_start": "m", "x_warning": "m", "z_warning": "m", "landing_max": "m",
          "target_n": "m", "target_e": "m", "CdS_chute": "m²"}
 
 

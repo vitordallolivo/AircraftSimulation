@@ -230,14 +230,14 @@ def takeoff_window(T: LogChunk, ev: dict, refs: dict, airfield=None) -> dict:
     S = {}
     marks = []
     if ev.get("tR", -1) >= 0:
-        marks.append(("profundor aciona (s_R / V_R)", float(np.interp(ev["tR"], t, T["n"])), "#2ca02c", "dashdot"))
+        marks.append(("aciona o profundor", float(np.interp(ev["tR"], t, T["n"])), "#2ca02c", "dashdot"))
     if ev.get("tRot", -1) > 0:
         marks.append(("bequilha/roda sai do chão", float(ev["nRot"]), "#ff7f0e", "dot"))
     if ev.get("tLO", -1) > 0:
         marks.append(("decolou (principais saem do chão)", float(ev["nLO"]), "#1f77b4", "dot"))
     if ev.get("tHt", -1) > 0:
         marks.append(("h_t: piloto automático", float(ev["nHt"]), "#000000", "dot"))
-    lim = refs.get("runway_max", 0.0)
+    lim = refs.get("x_warning", 0.0)
     if airfield is not None and airfield.takeoff_from == "mesa":
         marks.append(("borda da mesa", float(airfield.table_length), "#5b3a1a", "dash"))
 
@@ -249,14 +249,16 @@ def takeoff_window(T: LogChunk, ev: dict, refs: dict, airfield=None) -> dict:
         for lab, v, c, d in marks:
             S[f"{prefix}{lab}"] = {"_vline": v, "_color": c, "_dash": d}
         if lim > 0:
-            S[f"{prefix}distância máxima de decolagem ({lim:g} m)"] = {"_vline": lim, "_color": "#d62728", "_width": 3,
-                                                                        "_dash": None}
+            S[f"{prefix}x_warning: pista exigida ({lim:g} m)"] = {"_vline": lim, "_color": "#d62728", "_width": 3,
+                                                                    "_dash": None}
     h0 = D["h"][0]
     hcur = [("subida do CG (desde o repouso)", D["h"] - h0, "#d62728", 1.6),
             ("folga da cauda", np.where(D["htail"] < 1e6, D["htail"], np.nan), "#7f7f7f", 1.2)]
     if np.any(D["hgnd"] > 0):
         hcur.append(("terreno (mesa) − altura inicial", D["hgnd"] - D["hgnd"][0], "#5b3a1a", 2.0))
-    fig("dh_", hcur, [("h_t", refs.get("ht", 2.0), "#000000", "dot")])
+    zw = refs.get("z_warning")
+    fig("dh_", hcur, [("h_t: piloto automático assume", refs.get("ht", 2.0), "#000000", "dot")]
+        + ([(f"z_warning: altura que conta como decolado ({zw:g} m)", zw, "#d62728", None)] if zw is not None else []))
     Vs = refs.get("Vs", 0.0)
     fig("dv_", [("V_a", D["Va"], "#d62728", 1.6), ("V_g", D["Vg"], "#1f77b4", 1.2)],
         [("V_s", Vs, "#000000", "dot"), ("1,2 V_s", 1.2 * Vs, "#000000", "dash")] if Vs else ())

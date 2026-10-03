@@ -49,8 +49,8 @@ continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram m
 
 | simulação | orientação |
 |---|---|
-| `mission` | **modo missão por etapas**: para ao entrar em cada etapa e salva o checkpoint "missão: início de <etapa>"; começa do chão ou de um desses; para no fim da etapa pedida; bisseção do ponto de soltura LAPES no início da perna da soltura. **só decolagem** (mapa s_R × δe1, ★ melhor). **curvas**: raio mínimo por V. **MTOW**: bisseção na massa extra; em cada massa testa (s_R ou V_R) × δe1 × ΔxCG em paralelo; passa se x_warning = 0, z_warning = 0 (e, se pedido, sem estol, cauda e V em h_t); com pouso em plataforma, roda a missão para o z_warning do pouso. **subida simulada** |
-| `performance` | envelope por altitude + `ISimBackend.simple_performance` (núcleo: potências, subida, planeio, curva × V, Peukert) com a polar do módulo de aerodinâmica |
+| `mission` | **missão**: decolagem otimizada (`takeoff_opt.py`) e o resto, etapa por etapa, com checkpoint "missão: início de <etapa>" em cada uma; começa de qualquer etapa (sem checkpoint: voa até lá e salva). **só decolagem**. **curvas**: raio mínimo por V. **MTOW**: bisseção na massa; em cada massa reotimiza o acionamento (e o xCG) |
+| `performance` | só contas (sem piloto): `ISimBackend.simple_performance` por altitude → envelope, potências, subida, planeio, curva × V, V-n, bateria; polar da aba Aerodinâmica se houver, senão a do núcleo |
 | `takeoff` | uma corrida até `h_end` (tempo real); opcional: varredura s_R × δe1 em paralelo |
 | `turn` | por V: reta até o início da curva → **checkpoint**; para cada raio troca só a curva e retoma |
 | `envelope` | por altitude (sem integrar no tempo): V_min, V_max, V_e, V*, V_cru, teto — método da planilha e/ou modelo completo; mais a tabela ao nível do mar (subida, planeio, raios, V-n) |
@@ -64,13 +64,16 @@ continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram m
 `run(Stop(t=…, segment=…, autopilot=…, takeoff=…), chunk=…)`, `checkpoint(nome)`,
 `reconfigure(missão nova)`. Os checkpoints guardam só o estado; os parâmetros vêm da configuração atual.
 
-## Avisos de pista (`analysis.warnings`)
+## Decolagem: x_warning e z_warning (`takeoff_opt.py`)
 
-| aviso | quando conta | valor |
-|---|---|---|
-| `x_warning` | sempre | n_LO − distância máxima de decolagem (0 se dentro; ∞ se não decolou) |
-| `z_warning` (decolagem) | só decolando de **mesa** | quanto o CG afundou abaixo da altura de repouso sobre a mesa depois de sair dela |
-| `z_warning` (pouso) | só pousando em **plataforma** | altura da plataforma − terreno no ponto do toque (tocou fora dela) |
+| | |
+|---|---|
+| `x_warning` | comprimento de pista: n_dec (onde "decolou") tem de ser ≤ x_warning |
+| `z_warning` | z > 0: decolou quando as rodas passam essa altura sobre a superfície de partida; z ≤ 0 (mesa): decolou ao sair da borda e não pode afundar mais que \|z\| |
+
+Depois de decolar, mais 4 s de voo: se cair ou voltar abaixo do z_warning, não decolou. O otimizador testa
+o ponto de acionamento em grade e refina por seção áurea, começando pela deflexão máxima (`de_max`) e só
+usando uma menor se nenhum ponto passar.
 
 O terreno (mesas e plataformas) fica no núcleo (`core/src/physics/terrain.zig`): o trem, o efeito solo, o
 arredondamento e o alvo do pouso usam a altura do terreno sob cada ponto.

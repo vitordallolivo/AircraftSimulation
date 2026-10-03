@@ -85,11 +85,7 @@ class SimulationTab(QtWidgets.QWidget):
         self.msg.setWordWrap(True)
         sv.addWidget(self.bar)
         sv.addWidget(self.msg)
-        self.table = QtWidgets.QTableWidget(0, 2)
-        self.table.setHorizontalHeaderLabels(["grandeza", "valor"])
-        self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
-        self.table.verticalHeader().setVisible(False)
-        sv.addWidget(self.table, 4)
+        sv.addStretch(1)
         split.addWidget(side)
 
         # direita: uma rolagem só — gráficos grandes (legenda embaixo de cada um) e, no fim, o diagnóstico
@@ -118,6 +114,18 @@ class SimulationTab(QtWidgets.QWidget):
         self.diag_detail.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
         self.diag.currentCellChanged.connect(lambda r, *_: self._detail(r))
         for w in (self.diag_title, self.diag, self.diag_detail):
+            w.hide()
+            self.right.addWidget(w)
+        # resumo (grandeza, valor): no fim da rolagem, embaixo do diagnóstico
+        self.table_title = QtWidgets.QLabel("<b>Resultados</b>")
+        self.table = QtWidgets.QTableWidget(0, 2)
+        self.table.setHorizontalHeaderLabels(["grandeza", "valor"])
+        self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setWordWrap(True)
+        self.table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        for w in (self.table_title, self.table):
             w.hide()
             self.right.addWidget(w)
         self.right.addStretch(1)
@@ -307,6 +315,11 @@ class SimulationTab(QtWidgets.QWidget):
         for i, (k, v) in enumerate(rows):
             self.table.setItem(i, 0, QtWidgets.QTableWidgetItem(str(k)))
             self.table.setItem(i, 1, QtWidgets.QTableWidgetItem(format_value(v)))
+        self.table.resizeRowsToContents()
+        self.table.setFixedHeight(self.table.horizontalHeader().height() + 4 +
+                                  sum(self.table.rowHeight(i) for i in range(len(rows))))
+        for w in (self.table_title, self.table):
+            w.setVisible(bool(rows))
         self.save_b.setEnabled(True)
 
     def _show_checks(self, checks):

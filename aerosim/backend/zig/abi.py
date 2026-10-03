@@ -117,8 +117,7 @@ def write(obj: ctypes.Structure, spec: dict, path: str = "") -> None:
                 vals = list(v) if hasattr(v, "__len__") else [v]
                 if len(vals) > len(cur):
                     raise ValueError(f"{path}{k}: {len(vals)} valores, limite {len(cur)}")
-                for i, x in enumerate(vals):
-                    cur[i] = x
+                cur[:len(vals)] = [float(x) if isinstance(cur[0], float) else int(x) for x in vals]
         else:
             setattr(obj, k, type(cur)(v) if isinstance(cur, int) else float(v))
 
