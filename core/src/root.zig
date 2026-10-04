@@ -265,3 +265,38 @@ test {
     _ = @import("tests_control.zig");
     _ = @import("tests_sim.zig");
 }
+
+// ------------------------------------------------------------------ dimensionamento inicial (mini-MDO)
+const sizing = @import("sizing/sizing.zig");
+const SZ = sizing.types;
+
+fn workParams() ?*T.Params {
+    const p = std.heap.page_allocator.create(T.Params) catch return null;
+    p.* = .{};
+    return p;
+}
+
+export fn aerosim_sizing_eval(cfg: *const SZ.SizingCfg, x: [*]const f64, out: *SZ.SizingOut) i32 {
+    const p = workParams() orelse return -1;
+    defer std.heap.page_allocator.destroy(p);
+    out.* = sizing.eval(cfg, p, x[0..SZ.n_vars]);
+    return 0;
+}
+
+/// `progress(ctx, iteração, avaliações no buffer)` ao fim de cada iteração (≠ 0 para parar); pode ser nulo
+export fn aerosim_sizing_optimize(cfg: *const SZ.SizingCfg, opts: *const SZ.OptOpts, buf: [*]SZ.Individual, cap: usize, n: *usize, best: *SZ.SizingOut, progress: ?*const fn (?*anyopaque, i32, usize) callconv(.c) i32, pctx: ?*anyopaque) i32 {
+    const p = workParams() orelse return -1;
+    defer std.heap.page_allocator.destroy(p);
+    sizing.optimize(cfg, opts, p, buf[0..cap], n, best, progress, pctx);
+    return 0;
+}
+
+export fn aerosim_sizing_name(what: i32, i: i32) ?[*:0]const u8 {
+    return sizing.name(what, i);
+}
+
+/// os padrões do núcleo (as structs ctypes do Python nascem zeradas)
+export fn aerosim_sizing_defaults(cfg: *SZ.SizingCfg, opts: *SZ.OptOpts) void {
+    cfg.* = .{};
+    opts.* = .{};
+}

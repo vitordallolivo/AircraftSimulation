@@ -657,7 +657,8 @@ class WingPage(StagePage):
         self.state.design.wing_draft = params
 
     def choices(self):
-        return {"airfoil": tuple(a.name for a in self.state.design.airfoils)}
+        names = tuple(a.name for a in self.state.design.airfoils)
+        return {"airfoil": names, "airfoil_tip": ("",) + names}
 
     def kept_items(self):
         return self.state.design.wings

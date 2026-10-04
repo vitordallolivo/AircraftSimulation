@@ -341,6 +341,33 @@ rascunhos: envergadura, área, perfil, motor, hélice, inclinação, cargas, V d
 
 Os campos usam `fields.F`, que leva rótulo, unidade, dica e faixa. A GUI (`DataclassForm`) monta o formulário a partir disso.
 
+## Dimensionamento inicial — mini-MDO (`mdo.py`)
+
+As contas e o otimizador estão no núcleo (`core/src/sizing`); aqui se monta a configuração a partir do projeto
+e se leem os resultados.
+
+```python
+from aerosim.design import mdo
+p.mdo.kind, p.mdo.objective = "biplano", "EE"          # MdoParams: tipo, objetivo, otimizador, população...
+rows, best, names = mdo.run(p, catalog, backend, progress=lambda it, rows: ...)   # tempo real
+hist = mdo.history(rows)                                 # o melhor até cada iteração (o slider)
+ev = mdo.evaluate(p, rows[k])                            # grandezas, curva T × D no MTOW
+mdo.apply(p, rows[k])                                    # vira o rascunho da Asa e de Motores e montagem
+mdo.check_6dof(p, rows[k], catalog, manager)             # guarda asa/conjunto/avião, ponto de projeto, MTOW 6GDL
+```
+
+- **Variáveis** (Condições e restrições → Variáveis): envergadura, área, afilamento, perfil da raiz e da ponta
+  (listas), motor e hélice (listas: os conjuntos são motor × hélice com a bateria do rascunho), inclinação; o
+  número de motores e o tipo de aeronave ficam em `MdoParams`. Fixo = o valor do rascunho.
+- **Restrições**: as ativas que o núcleo calcula (S, b, V_S, potência, nº de motores, corrida, V_max, subida,
+  T/W, PV, CP, EE, MTOW); as outras (comprimento, margem estática...) ficam para as etapas e aparecem listadas.
+- **Limites**: `registry.check_bounds` recusa variável física sem mín. < máx. (ou lista sem opções);
+  `registry.bounds_from_constraints` leva as restrições ativas para os limites (b → envergadura, S → área,
+  n_motor → motores mín./máx.).
+- **Empenagem** não é dimensionada: entra como fração da área da asa na massa e no arrasto.
+- **Perfil da ponta** também na etapa Asa (`WingParams.airfoil_tip`): a linha sustentadora usa a1(y) e α_L0(y)
+  interpolados da raiz (e do trecho retangular) à ponta; o estol, o c_l,max local; o arrasto, o c_d local.
+
 ## Nível
 
 Tudo aqui é **sprint**: contas rápidas, para comparar muitas variantes. O estudo detalhado do avião montado fica nas simulações do manager, que aparecem na subaba "Avião montado" e nas abas Missão e Tração.

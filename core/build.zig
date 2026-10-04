@@ -2,7 +2,9 @@
 //!
 //!   zig build --release=fast       -> zig-out/lib/libaerosim.so (C ABI, usada pelo Python)
 //!   zig build test                 -> todos os testes
-//!   zig build test-math            -> só LUTs/polinômios e vetores (também test-physics, test-control, test-sim)
+//!   zig build test-math            -> só LUTs/polinômios e vetores (também test-physics, test-control, test-sim,
+//!                                     test-sizing)
+//!   zig build test -Dfuzz=N -Dseed=S -> fuzzing mais longo das interfaces (padrão 2000 entradas por teste)
 //!   zig build -Dfast_math=false    -> troca LUT/polinômios por std.math (referência)
 const std = @import("std");
 
@@ -20,6 +22,8 @@ pub fn build(b: *std.Build) void {
 
     const opts = b.addOptions();
     opts.addOption(bool, "fast_math", fast_math);
+    opts.addOption(usize, "fuzz_iterations", b.option(usize, "fuzz", "entradas aleatórias por teste de fuzzing (padrão 2000)") orelse 2000);
+    opts.addOption(u64, "fuzz_seed", b.option(u64, "seed", "semente do fuzzing (padrão 1)") orelse 1);
 
     const mod = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),
@@ -39,7 +43,7 @@ pub fn build(b: *std.Build) void {
 
     // testes: tudo (`zig build test`) ou por grupo (`zig build test-math`, ...)
     const all = b.step("test", "Roda todos os testes do núcleo");
-    inline for (.{ "math", "physics", "control", "sim" }) |group| {
+    inline for (.{ "math", "physics", "control", "sim", "sizing" }) |group| {
         const m = b.createModule(.{
             .root_source_file = b.path("src/tests_" ++ group ++ ".zig"),
             .target = target,

@@ -69,6 +69,9 @@ flowchart LR
 - **Projeto inteiro num `.json`:** `state.save_design()` grava as etapas, `fleet` (os aviões abertos), `current`
   e `ui` (aba e subaba, de `MainWindow.ui_state`); `MainWindow.open_path(caminho)` descobre se é projeto
   (`design.project.is_project_file`) ou avião e chama `state.open_design(projeto)` ou `set_aircraft`.
+- **Mini-MDO** (`design/mdo_page.py`, Dimensionamento inicial): o otimizador do núcleo roda numa `QThread`; o
+  aviso por iteração (`progress`) redesenha os indivíduos (`pg.ScatterPlotItem` clicável) e o histórico das asas
+  (slider sobre `mdo.history`). O clique refaz o indivíduo (`mdo.evaluate`) para o envelope, a tabela e o 3D.
 - **Etapas da sprint (projeto do zero):** Aerodinâmica, Estabilidade e Desempenho são subabas — primeiro
   as etapas que criam o avião (`design/pages.py`: **Perfil → Asa** em Aerodinâmica, **Empenagem e comandos**
   em Estabilidade, **Motores e montagem** em Desempenho), por último **Avião montado** (a simulação de
