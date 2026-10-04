@@ -153,6 +153,13 @@ def feasibility(d: dict) -> tuple[bool, str]:
         why.append("EH estola no C_L,max")
     if not asm["battery_fits"]:
         why.append(f"precisa de {asm['ballast']:.2f} kg de lastro de equilíbrio")
+    req = d.get("req")
+    if req is not None and "ac" in d:                 # as restrições ativas (a corrida já define o MTOW)
+        from . import registry as rg
+        vals = rg.aircraft_values(d["ac"], asm, d["pf"], d["cand"].params)
+        for c, ok, txt in rg.checks(req.constraints, vals):
+            if not ok and c.key not in ("s_to", "mtow"):
+                why.append(f"{c.quantity.label}: {txt}")
     return not why, "; ".join(why)
 
 

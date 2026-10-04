@@ -16,6 +16,7 @@ from aerosim.interfaces.simulation import Check, PlotSpec, SimResult
 
 from . import airfoils as afm
 from . import power as pw
+from . import registry as rg
 from . import tail as tl
 from . import wing as wg
 
@@ -24,6 +25,17 @@ OK, ATT, FAIL, INFO = "ok", "atencao", "falha", "info"
 
 def _chk(status, item, value, crit, why="", fix="", group="", source=""):
     return Check(status, item, value, crit, why, fix, group, source=source)
+
+
+def constraint_checks(req, values: dict, stage: str, group: str, fixes: dict | None = None) -> list[Check]:
+    """uma linha por restrição ativa que esta etapa responde (o resto fica para a etapa que calcula)"""
+    out = []
+    for c, ok, txt in rg.checks(req.constraints, values, stage):
+        q = c.quantity
+        out.append(_chk(OK if ok else FAIL, f"restrição: {q.label}", txt.split(f" {c.op} ")[0] + f" {q.unit}".rstrip(),
+                        f"{c.op} {rg.fmt(c.value)} {q.unit}".strip(), "" if ok else "não cumpre a restrição ativa",
+                        "" if ok else (fixes or {}).get(c.key, q.fix), group, source="restrições (Condições e restrições…)"))
+    return out
 
 
 # ------------------------------------------------------------------ Perfil
@@ -121,21 +133,14 @@ def wing_stage(cand: wg.WingCandidate, req, rules, others: list | None = None) -
     summ["(L/D) máx., C_L nele"] = [r["LD_max"], r["CL_LD"]]
     summ["cruzeiro: C_L, α da asa (°), L/D"] = [r["CL_cruise"], r["alpha_cruise_w"], r["LD_cruise"]]
     summ["incidência da asa (°)"] = r["incidence"]
-    summ["V de estol (massa dos requisitos)"] = r["V_stall"]
+    summ["V de estol (massa estimada)"] = r["V_stall"]
     summ["carga alar (kg/m²)"] = r["wing_loading"]
     summ["massa estimada da asa (kg)"] = r["mass"]
     summ["Re na raiz, na ponta"] = [r["Re_root"], r["Re_tip"]]
     G = "asa"
-    if req.span_max > 0:
-        ok = r["b"] <= req.span_max + 1e-9
-        checks.append(_chk(OK if ok else FAIL, "envergadura", f"{r['b']:.2f} m", f"≤ {req.span_max:g} m",
-                           "" if ok else "passa do limite dos requisitos", "" if ok else
-                           "menos envergadura (mais corda para manter a área)", G))
-    ok = r["V_stall"] <= req.V_stall_max
-    checks.append(_chk(OK if ok else FAIL, "velocidade de estol", f"{r['V_stall']:.1f} m/s", f"≤ {req.V_stall_max:g} m/s",
-                       "" if ok else "a asa não sustenta a massa dos requisitos devagar o bastante",
-                       "" if ok else (f"área ≥ {r['S'] * (r['V_stall'] / req.V_stall_max) ** 2:.2f} m² ou perfil de "
-                                      "c_l,max maior"), G))
+    vs = rg.active(req.constraints, "V_S", "≤")
+    checks += constraint_checks(req, rg.wing_values(r), "asa", G, {"V_S": (
+        f"área ≥ {r['S'] * (r['V_stall'] / vs.value) ** 2:.2f} m² ou perfil de c_l,max maior") if vs else ""})
     e_st = r["eta_stall"]
     st = OK if e_st <= 0.5 else (ATT if e_st <= 0.8 else FAIL)
     checks.append(_chk(st, "onde o estol começa", f"2y/b = {e_st:.2f}", "≤ 0,5 (perto da raiz)",
@@ -287,7 +292,8 @@ def aircraft_stage(cand: pw.AircraftCandidate, req, rules, catalog=None, backend
     S["rc_0"] = dict(_hline=0.0, _color="#7f7f7f", _dash="dot", _nolegend=1)
     s = np.where(np.isfinite(pf["s_curve"]), pf["s_curve"], np.nan)
     S["to_corrida"] = dict(m=pf["masses"], s=s, _width=2.4)
-    S["to_pista"] = dict(_hline=req.takeoff_run, _color="#d62728")
+    if rg.active(req.constraints, "s_to", "≤"):
+        S["to_corrida restrita"] = dict(_hline=req.takeoff_run, _color="#d62728")
     S["to_massa do avião montado"] = dict(_vline=asm["mass"], _color="#000000")
     if math.isfinite(pf["mtow_runway"]):
         S["to_MTOW pela pista"] = dict(_vline=pf["mtow_runway"], _color="#2ca02c")
@@ -337,21 +343,19 @@ def aircraft_stage(cand: pw.AircraftCandidate, req, rules, catalog=None, backend
             tr["T_cruise"], tr["Cm_T"], tr["dih"], tr["hold"]]
     dm = asm["mass"] - req.mass
     st = OK if abs(dm) <= 0.1 * req.mass else ATT
-    checks.append(_chk(st, "massa montada × requisitos", f"{asm['mass']:.2f} kg", f"{req.mass:g} kg ± 10 %",
-                       "" if st == OK else "a asa foi dimensionada para outra massa",
-                       "" if st == OK else "acerte a massa dos requisitos e refaça a asa (ou aceite a diferença)", G))
+    checks.append(_chk(st, "massa montada × massa estimada", f"{asm['mass']:.2f} kg", f"{req.mass:g} kg ± 10 %",
+                       "" if st == OK else "a asa foi dimensionada para outra massa (o ponto de partida)",
+                       "" if st == OK else "o Estudo e ponto de projeto acerta a massa sozinho; ou mude a massa estimada "
+                       "em Condições e restrições", G))
     if asm["boom_hits_prop"]:
         checks.append(_chk(FAIL, "hélice propulsora × tubo de cauda", "atravessa", "livre",
                            "a hélice gira onde passa o tubo", "tratora, dois motores na asa, ou cauda sem tubo", G))
-    if req.length_max > 0:
-        ok = asm["length"] <= req.length_max
-        checks.append(_chk(OK if ok else FAIL, "comprimento", f"{asm['length']:.2f} m", f"≤ {req.length_max:g} m",
-                           "" if ok else "passa do limite", "" if ok else "braço da cauda menor (V_H com mais área)", G))
+    vals = rg.aircraft_values(ac, asm, pf, cand.params)
+    checks += constraint_checks(req, vals, "montagem", "restrições", {"s_to": (
+        f"MTOW pela corrida restrita = {pf['mtow_runway']:.2f} kg" if math.isfinite(pf["mtow_runway"]) else
+        "tração/área não bastam para essa massa")})
+    summ["saídas: MTOW (kg), PV (kg), CP (kg), EE = CP/PV"] = [vals["mtow"], vals["pv"], vals["cp"], vals["ee"]]
     G = "desempenho"
-    ok = pf["s_to"] <= req.takeoff_run
-    checks.append(_chk(OK if ok else FAIL, "decola na pista", f"{pf['s_to']:.0f} m", f"≤ {req.takeoff_run:g} m",
-                       "" if ok else "tração/área não bastam para essa massa", "" if ok else
-                       f"MTOW pela pista = {pf['mtow_runway']:.2f} kg" if math.isfinite(pf["mtow_runway"]) else "", G))
     ok = math.isfinite(pf["Vmax"]) and pf["Vmax"] >= 1.15 * req.V_cruise
     checks.append(_chk(OK if ok else ATT, "folga de tração no cruzeiro", f"V máx. = {pf['Vmax']:.1f} m/s",
                        f"≥ 1,15 × {req.V_cruise:g} m/s", "" if ok else "pouca tração sobrando em cruzeiro",

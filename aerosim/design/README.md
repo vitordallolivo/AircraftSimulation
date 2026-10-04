@@ -85,7 +85,7 @@ Cada `*_stage` devolve gráficos (`PlotSpec`), resultado (`SimResult`: séries, 
 flowchart LR
     subgraph P["project.py — DesignProject"]
         direction TB
-        RQ["spec.py<br/>Requirements · DesignRules"]
+        RQ["spec.py · registry.py<br/>condições · restrições · variáveis · regras"]
         AF["airfoils<br/>AirfoilEntry"]
         WC["wings<br/>WingCandidate"]
         SC["sets<br/>SetCandidate"]
@@ -296,15 +296,39 @@ As altitudes-densidade vêm de uma tarde quente típica, que eu assumi; você po
 | Joinville | 4 m | 30 °C | 75 % | 655 m |
 | São José dos Campos | 646 m | 28 °C | 60 % | 1320 m |
 
-## Requisitos e regras (`spec.py`)
+## Condições, restrições e variáveis (`spec.py`, `registry.py`)
 
-**Requisitos:**
+**Condições** (`Requirements`): o ponto de partida.
 
-- massa total estimada;
-- V de cruzeiro e V de estol máxima;
+- massa estimada (o ponto de projeto acerta a massa; o MTOW é saída);
+- V de cruzeiro;
 - altitude-densidade (AD);
-- envergadura e comprimento máximos;
-- pista e atrito de rolamento.
+- atrito de rolamento.
+
+**Restrições** (`registry.Constraint`, lista `Requirements.constraints`): grandeza, operador (≤, ≥, =), valor e
+se está ativa. Desligar não perde o valor. As grandezas estão em `registry.QUANTITIES`:
+
+- da asa: área, envergadura, alongamento, V de estol;
+- da montagem: número de superfícies e de motores, comprimento, potência dos motores, margem estática, massas de
+  líquido, LAPES e lastro;
+- do desempenho: corrida de decolagem, V máx., subida, T/W;
+- saídas: massa montada, PV, CP, EE = CP/PV, MTOW.
+
+As etapas devolvem as grandezas (`registry.wing_values`, `registry.aircraft_values`); `results.constraint_checks`
+põe uma linha por restrição ativa no diagnóstico, e o estudo marca o ponto como inviável quando uma falha.
+`span_max`, `V_stall_max`, `length_max` e `takeoff_run` continuam como leitura das restrições (desligada = sem
+limite). Projetos antigos (esses quatro como campos) viram restrições ao abrir.
+
+```python
+from aerosim.design import registry as rg
+req.constraints.append(rg.Constraint("s_to", "≤", 3.0))     # decolar em 3 m
+rg.checks(req.constraints, rg.aircraft_values(ac, asm, pf, params))   # [(restrição, cumpre, texto)]
+```
+
+**Variáveis** (`registry.Variable`, lista `DesignProject.variables`): cada entrada de `registry.INPUTS` (um campo dos
+rascunhos: envergadura, área, perfil, motor, hélice, inclinação, cargas, V de cruzeiro, massa estimada) fica
+**fixa** (vale o rascunho), **variável** (mín./máx. ou lista de opções: é o que o otimizador da etapa 3 mexe) ou
+**calculada**. `registry.get_input` / `set_input` leem e escrevem no projeto.
 
 **Regras de projeto:**
 

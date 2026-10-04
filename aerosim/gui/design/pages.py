@@ -18,6 +18,7 @@ import traceback
 from PyQt6 import QtCore, QtWidgets
 
 from aerosim.design import airfoils as afm
+from aerosim.design import registry as rg
 from aerosim.design import results as R
 from aerosim.design import wing as wg
 from aerosim.model.aircraft import Aircraft
@@ -43,22 +44,195 @@ def _only_wing(surfaces, boom=None) -> Aircraft:
     return ac
 
 
-class RequirementsDialog(QtWidgets.QDialog):
-    """requisitos e regras do projeto (editados no lugar; cada mudança refaz as etapas)"""
+def _last_values(state) -> dict:
+    """as grandezas calculadas pela última etapa que rodou (asa, avião montado)"""
+    return getattr(state, "design_values", {})
+
+
+class ConstraintsTable(QtWidgets.QWidget):
+    """restrições: ativa | grandeza | operador | valor | unidade | último calculado | situação"""
+    COLS = ["ativa", "grandeza", "op.", "valor", "unid.", "calculado", "situação"]
 
     def __init__(self, state: AppState, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Requisitos e regras de projeto")
-        self.resize(560, 640)
+        self.state = state
         v = QtWidgets.QVBoxLayout(self)
-        tabs = QtWidgets.QTabWidget()
-        for obj, title in ((state.design.requirements, "Requisitos"), (state.design.rules, "Regras de projeto")):
+        note = QtWidgets.QLabel("Restrições de projeto: ligue/desligue sem perder o valor. As etapas conferem as "
+                                "ativas no diagnóstico; o estudo marca como inviável o ponto que não cumpre. "
+                                "'calculado' é o valor da última etapa que rodou.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color:#555")
+        v.addWidget(note)
+        self.table = QtWidgets.QTableWidget(0, len(self.COLS))
+        self.table.setHorizontalHeaderLabels(self.COLS)
+        hh = self.table.horizontalHeader()
+        hh.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        v.addWidget(self.table)
+        h = QtWidgets.QHBoxLayout()
+        for txt, fn in (("+ restrição", self.add), ("− restrição", self.remove)):
+            b = QtWidgets.QPushButton(txt)
+            b.clicked.connect(fn)
+            h.addWidget(b)
+        v.addLayout(h)
+        self.fill()
+
+    @property
+    def items(self) -> list:
+        return self.state.design.requirements.constraints
+
+    def edited(self):
+        self.state.design_edited("requisitos")
+        self.fill()
+
+    def fill(self):
+        t = self.table
+        vals = _last_values(self.state)
+        keys = list(rg.QUANTITIES)
+        t.setRowCount(len(self.items))
+        for r, c in enumerate(self.items):
+            ck = QtWidgets.QCheckBox()
+            ck.setChecked(c.active)
+            ck.toggled.connect(lambda on, c=c: (setattr(c, "active", on), self.edited()))
+            t.setCellWidget(r, 0, ck)
+            q = QtWidgets.QComboBox()
+            q.addItems([rg.QUANTITIES[k].label for k in keys])
+            q.setCurrentIndex(keys.index(c.key) if c.key in keys else 0)
+            q.setToolTip(c.quantity.help)
+            q.currentIndexChanged.connect(lambda i, c=c: (setattr(c, "key", keys[i]), self.edited()))
+            t.setCellWidget(r, 1, q)
+            op = QtWidgets.QComboBox()
+            op.addItems(rg.OPS)
+            op.setCurrentText(c.op)
+            op.currentTextChanged.connect(lambda s, c=c: (setattr(c, "op", s), self.edited()))
+            t.setCellWidget(r, 2, op)
+            sp = QtWidgets.QDoubleSpinBox()
+            sp.setRange(-1e6, 1e6)
+            sp.setDecimals(3)
+            sp.setValue(c.value)
+            sp.setKeyboardTracking(False)
+            sp.valueChanged.connect(lambda x, c=c: (setattr(c, "value", x), self.edited()))
+            t.setCellWidget(r, 3, sp)
+            t.setItem(r, 4, QtWidgets.QTableWidgetItem(c.quantity.unit))
+            x = vals.get(c.key)
+            t.setItem(r, 5, QtWidgets.QTableWidgetItem(rg.fmt(x) if x is not None else "—"))
+            st = "desligada" if not c.active else ("—" if x is None else ("✔ cumpre" if c.holds(x) else "✖ não cumpre"))
+            it = QtWidgets.QTableWidgetItem(st)
+            if st.startswith("✖"):
+                it.setForeground(QtCore.Qt.GlobalColor.red)
+            t.setItem(r, 6, it)
+            for col in (4, 5, 6):
+                t.item(r, col).setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)
+
+    def add(self):
+        self.items.append(rg.Constraint("S", "≤", 1.0))
+        self.edited()
+
+    def remove(self):
+        r = self.table.currentRow()
+        if 0 <= r < len(self.items):
+            del self.items[r]
+            self.edited()
+
+
+class VariablesTable(QtWidgets.QWidget):
+    """variáveis: fixo (vale o valor do rascunho), variável (faixa para o otimizador) ou calculado"""
+    COLS = ["entrada", "modo", "valor (fixo)", "mín.", "máx.", "opções (listas)"]
+
+    def __init__(self, state: AppState, parent=None):
+        super().__init__(parent)
+        self.state = state
+        v = QtWidgets.QVBoxLayout(self)
+        note = QtWidgets.QLabel("Entradas de projeto: fixo = o valor do rascunho da etapa; variável = o otimizador "
+                                "procura entre mín. e máx. (listas: entre as opções); calculado = sai das contas "
+                                "(ex.: a massa, que o ponto de projeto acerta). PV e MTOW são saídas.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color:#555")
+        v.addWidget(note)
+        self.table = QtWidgets.QTableWidget(0, len(self.COLS))
+        self.table.setHorizontalHeaderLabels(self.COLS)
+        hh = self.table.horizontalHeader()
+        hh.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        v.addWidget(self.table)
+        self.fill()
+
+    def edited(self):
+        self.state.design_edited("variaveis")
+
+    def fill(self):
+        d = self.state.design
+        known = {v.key for v in d.variables}
+        d.variables += [rg.Variable(k, "fixo", i.lo, i.hi) for k, i in rg.INPUTS.items() if k not in known]
+        t = self.table
+        t.setRowCount(len(d.variables))
+        for r, var in enumerate(d.variables):
+            inp = var.input
+            lst = inp.unit == "lista"
+            it = QtWidgets.QTableWidgetItem(inp.label + ("" if lst or not inp.unit else f" ({inp.unit})"))
+            it.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)
+            t.setItem(r, 0, it)
+            m = QtWidgets.QComboBox()
+            m.addItems(rg.MODES)
+            m.setCurrentText(var.mode)
+            m.currentTextChanged.connect(lambda s, var=var: (setattr(var, "mode", s), self.edited()))
+            t.setCellWidget(r, 1, m)
+            try:
+                cur = rg.get_input(d, var.key)
+            except AttributeError:
+                cur = ""
+            if lst or isinstance(cur, str):
+                val = QtWidgets.QLineEdit(str(cur))
+                val.editingFinished.connect(lambda var=var, w=val: (rg.set_input(d, var.key, w.text()), self.edited()))
+            else:
+                val = QtWidgets.QDoubleSpinBox()
+                val.setRange(-1e6, 1e6)
+                val.setDecimals(3)
+                val.setValue(float(cur))
+                val.setKeyboardTracking(False)
+                val.valueChanged.connect(lambda x, var=var: (rg.set_input(d, var.key, x), self.edited()))
+            t.setCellWidget(r, 2, val)
+            for col, attr in ((3, "lo"), (4, "hi")):
+                sp = QtWidgets.QDoubleSpinBox()
+                sp.setRange(-1e6, 1e6)
+                sp.setDecimals(3)
+                sp.setValue(getattr(var, attr))
+                sp.setEnabled(not lst)
+                sp.setKeyboardTracking(False)
+                sp.valueChanged.connect(lambda x, var=var, a=attr: (setattr(var, a, x), self.edited()))
+                t.setCellWidget(r, col, sp)
+            op = QtWidgets.QLineEdit(", ".join(var.options))
+            op.setEnabled(lst)
+            op.setPlaceholderText("nomes separados por vírgula" if lst else "")
+            op.editingFinished.connect(lambda var=var, w=op: (setattr(var, "options", [s.strip() for s in
+                                                                                  w.text().split(",") if s.strip()]),
+                                                              self.edited()))
+            t.setCellWidget(r, 5, op)
+
+
+class RequirementsDialog(QtWidgets.QDialog):
+    """condições, restrições, variáveis e regras do projeto (editados no lugar; cada mudança refaz as etapas)"""
+
+    def __init__(self, state: AppState, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Condições, restrições e variáveis de projeto")
+        self.resize(900, 600)
+        v = QtWidgets.QVBoxLayout(self)
+        self.tabs = tabs = QtWidgets.QTabWidget()
+
+        def form(obj):
             sc = QtWidgets.QScrollArea()
             sc.setWidgetResizable(True)
             f = DataclassForm(obj)
             f.changed.connect(lambda *_: state.design_edited("requisitos"))
             sc.setWidget(f)
-            tabs.addTab(sc, title)
+            return sc
+        tabs.addTab(form(state.design.requirements), "Condições")
+        self.constraints = ConstraintsTable(state)
+        tabs.addTab(self.constraints, "Restrições")
+        self.variables = VariablesTable(state)
+        tabs.addTab(self.variables, "Variáveis")
+        tabs.addTab(form(state.design.rules), "Regras de projeto")
         v.addWidget(tabs)
         b = QtWidgets.QPushButton("Fechar")
         b.clicked.connect(self.accept)
@@ -76,8 +250,9 @@ class ReqBar(QtWidgets.QWidget):
         self.text = QtWidgets.QLabel()
         self.text.setWordWrap(True)
         self.text.setStyleSheet("color:#334; font-size:11px; background:#eef3fa; padding:3px; border-radius:3px")
-        b = QtWidgets.QPushButton("Requisitos…")
-        b.setToolTip("requisitos (massa, velocidades, AD, envergadura, pista) e regras de projeto (massas, fuselagem, trem)")
+        b = QtWidgets.QPushButton("Condições e restrições…")
+        b.setToolTip("condições (massa de partida, velocidade, AD, pista), restrições ligáveis (≤, ≥, =), variáveis de "
+                     "projeto (fixo, variável, calculado) e regras (massas, fuselagem, trem)")
         b.clicked.connect(lambda: RequirementsDialog(state, self).exec())
         h.addWidget(self.text, 1)
         h.addWidget(b)
@@ -492,6 +667,7 @@ class WingPage(StagePage):
         cand = d.draft_wing()
         others = [w for w in d.wings if w.name != cand.name]
         specs, res, r = R.wing_stage(cand, d.requirements, d.rules, others)
+        self.state.design_values = {**_last_values(self.state), **rg.wing_values(r)}
         return specs, res, _only_wing([r["surface"]]), dict(np_x=r["planform"]["x_ac"])
 
     def keep(self):
@@ -630,6 +806,7 @@ class PowerPage(StagePage):
         specs, res, ac, asm, pf = R.aircraft_stage(cand, d.requirements, d.rules, self.state.catalog,
                                                    self.state.manager.backend, d.airfoil_map())
         self.ac = ac
+        self.state.design_values = {**_last_values(self.state), **rg.aircraft_values(ac, asm, pf, cand.params)}
         self.fill_mass(asm, pf)
         return specs, res, ac, dict(cg=[asm["x_cg_target"], 0.0, 0.0])
 

@@ -20,6 +20,7 @@ from aerosim.model.serialize import from_dict, to_dict
 
 from . import airfoils as afm
 from .power import AircraftCandidate, PowerParams
+from .registry import Variable, default_variables
 from .spec import DesignRules, Requirements
 from .study import StudyParams, StudyRun
 from .tail import SetCandidate, TailParams
@@ -43,6 +44,7 @@ class DesignProject:
     power_draft: PowerParams = field(default_factory=PowerParams)
     study: StudyParams = field(default_factory=StudyParams)
     studies: list[StudyRun] = field(default_factory=list)       # os estudos rodados (dados de simulação)
+    variables: list[Variable] = field(default_factory=default_variables)   # fixo / variável (faixa) / calculado
     fleet: list[Aircraft] = field(default_factory=list)         # os aviões abertos na Montagem (vazio: começa vazia)
     current: int = 0                                            # qual deles estava na tela
     ui: dict = field(default_factory=dict)                      # onde a interface estava (aba, subaba)

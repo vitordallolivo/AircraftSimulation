@@ -124,7 +124,15 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   pedida, faixa de CG, rotação na decolagem) → **Motores e montagem** (motores, distribuição de massa com PV
   e carga paga = lastro + líquido + LAPES, bateria no ponto do CG, trem, desempenho e o MTOW pela pista) →
   **Mandar para a Montagem**; **Estudo e ponto de projeto** (Desempenho) acopla as áreas e varre uma variável (ex.: inclinação do motor) nas altitudes-densidade pedidas (exemplos prontos: `data/aircraft/S1223_*.json` e `data/sprint/projeto_s1223.json`). Cada etapa guarda candidatos com nome; o programa compara,
-  não escolhe. Requisitos (massa, velocidades, AD, envergadura, pista) e regras no botão **Requisitos…**.
+  não escolhe. **Condições e restrições…** (em toda etapa): condições de partida (massa estimada, velocidade, AD,
+  atrito), **restrições** que se ligam e desligam com operador ≤ ≥ = (envergadura, área, estol, corrida — decolar
+  em 3 m é só `corrida ≤ 3` —, potência, número de superfícies e de motores, EE, massa de líquido e de LAPES,
+  subida...), **variáveis** (fixo, variável com mín./máx. ou lista de opções, calculado) e regras. PV, CP, EE e
+  MTOW são saídas.
+
+  ![Restrições](docs/img/condicoes_restricoes.png)
+  ![Variáveis](docs/img/variaveis.png)
+
   Detalhes em [aerosim/design](aerosim/design/README.md).
 - **Montagem** (última aba): componentes, 3D editável, ambiente (altitude-densidade, vento) e envelope
   de voo (ângulo de cruzeiro, fator de carga). As subabas "Avião montado" e a Missão mostram o avião

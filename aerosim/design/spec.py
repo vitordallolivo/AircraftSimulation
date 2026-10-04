@@ -1,17 +1,24 @@
-"""Requisitos (o que o avião tem de cumprir) e regras de projeto (como as peças se montam).
+"""Condições e restrições (o que o avião tem de cumprir) e regras de projeto (como as peças se montam).
 
-Os requisitos dão o C_L de cruzeiro, o Re, a velocidade de estol máxima, a envergadura máxima e a
-pista; as regras dão massas por área/comprimento, o tamanho da fuselagem (pod), onde ficam o motor e
-o trem. Todas as etapas leem daqui — mudar um requisito muda o que as etapas mostram.
+As condições dão o ponto de partida: massa estimada (o ponto de projeto a acerta), velocidade de cruzeiro,
+altitude-densidade e atrito da pista. Os limites são restrições (`registry.Constraint`) que se ligam e
+desligam, com operador: envergadura ≤, estol ≤, corrida ≤ (a pista), EE ≥, LAPES ≥... As regras dão
+massas por área/comprimento, o tamanho da fuselagem (pod), onde ficam o motor e o trem.
+
+`span_max`, `V_stall_max`, `length_max` e `takeoff_run` continuam existindo como leitura das restrições
+(desligada = sem limite) para as contas das etapas.
 """
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from aerosim.model.atmosphere import isa_density
 
 from .fields import F
+from .registry import Constraint, active, default_constraints
+
+NO_RUNWAY = 1000.0      # corrida sem restrição (m): o MTOW passa a vir das outras restrições
 
 G0 = 9.80665
 MU_AIR = 1.81e-5
@@ -19,16 +26,46 @@ MU_AIR = 1.81e-5
 
 @dataclass
 class Requirements:
-    mass: float = F(10.0, "massa total estimada", "kg", "MTOW esperado: dá o C_L de cruzeiro e a carga alar", 0.2, 60, 0.1)
+    mass: float = F(10.0, "massa estimada (ponto de partida)", "kg", "dá o C_L de cruzeiro e a carga alar das primeiras "
+                    "etapas; o ponto de projeto acerta a massa de verdade (o MTOW é saída, não requisito)", 0.2, 60, 0.1)
     V_cruise: float = F(15.0, "velocidade de cruzeiro", "m/s", "", 3, 60, 0.5)
-    V_stall_max: float = F(11.0, "estol máximo", "m/s", "a velocidade de estol (massa total) não pode passar disto",
-                           3, 40, 0.5)
     density_altitude: float = F(600.0, "altitude-densidade (AD)", "m", "atmosfera padrão com a densidade do dia",
                                 -500, 4000, 50)
-    span_max: float = F(2.5, "envergadura máxima", "m", "0 = sem limite (regulamento, hangar, caixa)", 0, 8, 0.05)
-    length_max: float = F(0.0, "comprimento máximo", "m", "0 = sem limite", 0, 6, 0.05)
-    takeoff_run: float = F(50.0, "pista disponível", "m", "a corrida de decolagem tem de caber nela", 5, 300, 1)
     mu_roll: float = F(0.04, "atrito de rolamento", "", "pista: grama ≈ 0,08, asfalto ≈ 0,03", 0, 0.3, 0.005)
+    constraints: list[Constraint] = field(default_factory=default_constraints)
+
+    # ---- os limites que as contas usam, lidos das restrições ativas (desligada = sem limite)
+    def _limit(self, key: str, op: str, off: float) -> float:
+        c = active(self.constraints, key, op)
+        return c.value if c is not None else off
+
+    def _set_limit(self, key: str, op: str, v: float) -> None:
+        c = next((c for c in self.constraints if c.key == key and c.op == op), None)
+        if c is None:
+            self.constraints.append(Constraint(key, op, v))
+        else:
+            c.value, c.active = v, True
+
+    span_max = property(lambda s: s._limit("b", "≤", 0.0), lambda s, v: s._set_limit("b", "≤", v))
+    V_stall_max = property(lambda s: s._limit("V_S", "≤", math.inf), lambda s, v: s._set_limit("V_S", "≤", v))
+    length_max = property(lambda s: s._limit("length", "≤", 0.0), lambda s, v: s._set_limit("length", "≤", v))
+    takeoff_run = property(lambda s: s._limit("s_to", "≤", NO_RUNWAY), lambda s, v: s._set_limit("s_to", "≤", v))
+
+    @staticmethod
+    def migrate(data: dict) -> dict:
+        """projetos antigos: envergadura/estol/comprimento/pista eram campos — viram restrições"""
+        old = {k: data.pop(k) for k in ("span_max", "V_stall_max", "length_max", "takeoff_run") if k in data}
+        if old and "constraints" not in data:
+            cs = default_constraints()
+            for key, (q, op) in {"span_max": ("b", "≤"), "V_stall_max": ("V_S", "≤"), "length_max": ("length", "≤"),
+                                 "takeoff_run": ("s_to", "≤")}.items():
+                if key in old:
+                    c = next(c for c in cs if c.key == q and c.op == op)
+                    v = float(old[key])
+                    c.value, c.active = (v, v > 0) if key in ("span_max", "length_max") else (v, True)
+            from aerosim.model.serialize import to_dict
+            data["constraints"] = [to_dict(c) for c in cs]
+        return data
 
     @property
     def rho(self) -> float:
@@ -47,9 +84,9 @@ class Requirements:
         return self.rho * V * chord / MU_AIR
 
     def summary(self) -> str:
-        b = f"b ≤ {self.span_max:g} m" if self.span_max > 0 else "b livre"
-        return (f"m = {self.mass:g} kg · V = {self.V_cruise:g} m/s · V_S ≤ {self.V_stall_max:g} m/s · {b} · "
-                f"AD {self.density_altitude:.0f} m (ρ = {self.rho:.3f}) · pista {self.takeoff_run:g} m")
+        on = [c.text() for c in self.constraints if c.active]
+        return (f"partida m = {self.mass:g} kg · V = {self.V_cruise:g} m/s · AD {self.density_altitude:.0f} m "
+                f"(ρ = {self.rho:.3f}) · restrições: " + ("; ".join(on) if on else "nenhuma"))
 
 
 @dataclass
