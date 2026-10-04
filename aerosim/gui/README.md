@@ -76,7 +76,8 @@ flowchart LR
   em 3D (asa sozinha; asa + cauda + tubo com CG e ponto neutro; o avião inteiro), gráficos e diagnóstico;
   "Guardar" cria um candidato com nome que a etapa seguinte escolhe. "Mandar para a Montagem" abre o avião
   como mais um avião aberto e o salva em "meus aviões". Requisitos e regras ficam no botão
-  **Requisitos…** de cada etapa. O projeto (`state.design`) se grava sozinho em
+  **Condições e restrições…** de cada etapa (`ConstraintsTable`, `VariablesTable`; os valores "calculado" vêm de
+  `state.design_values`, gravado pela última etapa que rodou). O projeto (`state.design`) se grava sozinho em
   `<meus aviões>/sprint/projeto.json`; menu **Projeto da sprint** para novo, abrir e salvar como.
   Em Motores e montagem, embaixo do 3D, a **distribuição de massa**: cada item com x e % do total, PV (vazio)
   e CP (carga paga = lastro + líquido + LAPES, digitados), e a CP possível pelo MTOW da pista.

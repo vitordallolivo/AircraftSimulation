@@ -205,6 +205,7 @@ def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypa
                                                             "Avião montado"]
     estudo = des.widget(1)                                 # retroalimentação: ponto de projeto acoplado
     st.design.study.n, st.design.study.places = 2, "A=600"
+    st.design.requirements.V_stall_max = 13.0            # estol no MTOW que este avião cumpre (restrição ativa)
     estudo.start()
     t0 = time.time()
     while estudo._thread is not None and time.time() - t0 < 120:
@@ -272,3 +273,26 @@ def test_control_mix_row(app, manager):
     spins[0].setValue(1.0)                                # aileron + arfagem = elevon
     assert ail.mix == [1.0, 1.0, 0.0] and ail.role == "elevon"
     w.close()
+
+
+def test_constraints_dialog(app, manager, tmp_path):
+    """restrições ligam/desligam e mudam as contas; variáveis escrevem no rascunho da etapa"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.gui.design.pages import RequirementsDialog
+    from aerosim.gui.state import AppState
+    from aerosim.model.templates import empty
+    st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)))
+    dlg = RequirementsDialog(st)
+    req = st.design.requirements
+    t = dlg.constraints.table
+    row = next(i for i, c in enumerate(req.constraints) if c.key == "s_to")
+    t.cellWidget(row, 3).setValue(3.0)                       # decolar em 3 m
+    assert req.takeoff_run == 3.0
+    dlg.constraints.table.cellWidget(row, 0).setChecked(False)
+    assert req.takeoff_run > 100                             # desligada: sem limite
+    vt = dlg.variables.table
+    r = next(i for i, v in enumerate(st.design.variables) if v.key == "wing.span")
+    vt.cellWidget(r, 2).setValue(1.8)
+    vt.cellWidget(r, 1).setCurrentText("variável")
+    assert st.design.wing_draft.span == 1.8 and st.design.variables[r].mode == "variável"
+    dlg.close()

@@ -209,6 +209,7 @@ def test_design_point_converges_and_study_marks_best():
     from aerosim.design import study as sd
     p = DesignProject()
     p.wing_draft.area, p.wing_draft.alpha_cruise = 1.0, 3.0
+    p.requirements.V_stall_max = 13.0                      # restrição de estol no MTOW que este avião cumpre
     w = p.keep_wing()
     p.tail_draft.wing = w.name
     p.power_draft.set = p.keep_set().name
@@ -222,3 +223,27 @@ def test_design_point_converges_and_study_marks_best():
     plots, res = sd.result(rows, sp)
     assert any(c.item.startswith("A: maior MTOW") for c in res.checks)
     assert sd.parse_places("", 600.0) == [("AD 600 m", 600.0)]
+
+
+def test_constraints_registry_and_old_requirements():
+    """restrições ligáveis com operador; os limites antigos viram restrições; PV/MTOW são saídas"""
+    from aerosim.design import registry as rg
+    from aerosim.design.spec import Requirements
+    from aerosim.model.serialize import from_dict, to_dict
+    old = from_dict(Requirements, {"mass": 8, "span_max": 0, "takeoff_run": 3, "V_stall_max": 9})
+    assert old.takeoff_run == 3 and old.V_stall_max == 9 and old.span_max == 0      # b ≤ 0 desligada
+    assert from_dict(Requirements, to_dict(old)).takeoff_run == 3
+    c = rg.Constraint("ee", "≥", 1.0)
+    assert c.holds(1.2) and not c.holds(0.8)
+    off = rg.Constraint("b", "≤", 2.0, active=False)
+    assert [(x[0], x[1]) for x in rg.checks([c, off], {"ee": 0.5, "b": 3.0})] == [(c, False)]   # a desligada não conta
+    req = Requirements()
+    req.constraints = [rg.Constraint("s_to", "≤", 3.0)]
+    assert req.takeoff_run == 3.0 and req.span_max == 0.0
+    req.constraints[0].active = False
+    assert req.takeoff_run > 100                                                    # desligada: sem limite
+    p = DesignProject()
+    rg.set_input(p, "wing.span", 2.0)
+    assert rg.get_input(p, "wing.span") == 2.0 and p.wing_draft.span == 2.0
+    assert {v.key: v.mode for v in p.variables}["req.mass"] == "calculado"
+    assert all(rg.QUANTITIES[k].label for k in ("mtow", "pv", "ee"))
