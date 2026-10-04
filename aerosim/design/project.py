@@ -20,7 +20,7 @@ from aerosim.model.serialize import from_dict, to_dict
 from . import airfoils as afm
 from .power import AircraftCandidate, PowerParams
 from .spec import DesignRules, Requirements
-from .study import StudyParams
+from .study import StudyParams, StudyRun
 from .tail import SetCandidate, TailParams
 from .wing import WingCandidate, WingParams
 
@@ -41,6 +41,11 @@ class DesignProject:
     tail_draft: TailParams = field(default_factory=TailParams)
     power_draft: PowerParams = field(default_factory=PowerParams)
     study: StudyParams = field(default_factory=StudyParams)
+    studies: list[StudyRun] = field(default_factory=list)       # os estudos rodados (dados de simulação)
+
+    def keep_study(self, run: StudyRun) -> None:
+        """guarda um estudo rodado (o mesmo estudo — modo, avião, variável, lugares — é substituído)"""
+        self.studies = [r for r in self.studies if r.key() != run.key()] + [run]
 
     # ------------------------------------------------------------------ busca
     def airfoil(self, name: str) -> afm.AirfoilEntry | None:

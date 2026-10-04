@@ -648,8 +648,21 @@ class PowerPage(StagePage):
         send_to_assembly(self.state, ac, self)
 
 
-def send_to_assembly(state: AppState, ac, widget) -> None:
-    """o avião vira mais um avião aberto (Montagem) e fica salvo em 'meus aviões' (nome livre: acrescenta (2)...)"""
+def send_to_assembly(state: AppState, ac, widget) -> bool:
+    """o avião vira mais um avião aberto (Montagem) e fica salvo em 'meus aviões' (nome livre: acrescenta (2)...)
+    — só se voar: antes, a decolagem 6GDL acha e grava no avião o acionamento do profundor; se não decolar,
+    nada é salvo nem aberto"""
+    from aerosim.design.flight import tune_takeoff
+    QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
+    try:
+        ok, why = tune_takeoff(ac, state.manager.backend)
+    finally:
+        QtWidgets.QApplication.restoreOverrideCursor()
+    if not ok:
+        QtWidgets.QMessageBox.warning(widget, "Não foi para a Montagem", f"'{ac.name}' {why}. Não foi salvo.")
+        return False
+    if hasattr(widget, "msg"):
+        widget.msg.setText(f"{ac.name}: {why}")
     st = state.projects
     name = ac.name
     k = 2
@@ -666,6 +679,7 @@ def send_to_assembly(state: AppState, ac, widget) -> None:
     win = widget.window()
     if hasattr(win, "show_assembly"):
         win.show_assembly()
+    return True
 
 
 # ====================================================================== Estudo e ponto de projeto
@@ -729,6 +743,10 @@ class StudyPage(QtWidgets.QWidget):
         for i, b in enumerate((self.run_b, self.stop_b, self.six_b, self.six_all_b, self.use_b)):
             g.addWidget(b, i // 2, i % 2)
         g.addWidget(self.send_b, 3, 0, 1, 2)
+        self.exp_b = QtWidgets.QPushButton("Exportar o estudo (xlsx/csv)…")
+        self.exp_b.setEnabled(False)
+        self.exp_b.clicked.connect(self.export)
+        g.addWidget(self.exp_b, 4, 0, 1, 2)
         lv.addLayout(g)
         self.bar = QtWidgets.QProgressBar()
         self.bar.setRange(0, 1000)
@@ -783,8 +801,16 @@ class StudyPage(QtWidgets.QWidget):
         self.six_all_b.clicked.connect(lambda: self.check_6dof(marked=False))
         self.use_b.clicked.connect(self.use_marked)
         self.send_b.clicked.connect(self.send_selected)
-        state.designChanged.connect(lambda st: self.build() if st in ("load", "guardou", "apagou") else None)
+        state.designChanged.connect(self._on_design)
         self.build()
+        self.show_saved()
+
+    def _on_design(self, st):
+        if st in ("load", "guardou", "apagou"):
+            self.build()
+        if st == "load":
+            self.rows = []
+            self.show_saved()
 
     def build(self):
         d = self.state.design
@@ -805,7 +831,7 @@ class StudyPage(QtWidgets.QWidget):
         if self._thread is not None:
             return
         self._cancel = False
-        for b in (self.run_b, self.six_b, self.six_all_b, self.use_b, self.send_b):
+        for b in (self.run_b, self.six_b, self.six_all_b, self.use_b, self.send_b, self.exp_b):
             b.setEnabled(False)
         self.stop_b.setEnabled(True)
         self.bar.setValue(0)
@@ -827,7 +853,7 @@ class StudyPage(QtWidgets.QWidget):
         self.stop_b.setEnabled(False)
         self.run_b.setEnabled(True)
         has = bool(self.rows)
-        for b in (self.six_b, self.six_all_b, self.use_b, self.send_b):
+        for b in (self.six_b, self.six_all_b, self.use_b, self.send_b, self.exp_b):
             b.setEnabled(has)
         self.bar.setValue(1000)
 
@@ -841,7 +867,42 @@ class StudyPage(QtWidgets.QWidget):
         self.rows = rows or []
         self.msg.setText(f"{len(self.rows)} pontos de projeto" if self.rows else "nada para estudar: guarde um avião "
                          "na etapa Motores (ou monte o rascunho dela)")
+        self._keep_run()
         self.redraw()
+
+    def _keep_run(self):
+        """os dados de simulação ficam no projeto (e se gravam com ele)"""
+        if self.rows:
+            sp = getattr(self, "_sp", self.state.design.study)
+            self.state.design.keep_study(self.sd.to_run(sp, self.rows))
+            self.state.design_edited("estudo")
+
+    def show_saved(self):
+        """o último estudo guardado no projeto (ao abrir o projeto ou a página)"""
+        runs = self.state.design.studies
+        if self._thread is not None or not runs:
+            return
+        self._sp, self.rows = self.sd.from_run(runs[-1])
+        self.msg.setText(f"estudo guardado no projeto: {self._sp.mode}"
+                         + (f" — {self._sp.variable}" if self._sp.mode == self.sd.MODES[0] else ""))
+        for b in (self.six_b, self.six_all_b, self.use_b, self.send_b, self.exp_b):
+            b.setEnabled(True)
+        self.redraw()
+
+    def export(self):
+        from ..tabs.simulation_tab import export_result
+        sp = getattr(self, "_sp", self.state.design.study)
+        if not self.rows:
+            return
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Exportar o estudo", "estudo.xlsx", "Excel (*.xlsx);;CSV (*.csv)")
+        if path:
+            _, res = self.sd.result(self.rows, sp)
+            res.series["estudo"] = self.sd.table(self.rows)
+            self.msg.setText(export_result(res, path))
+
+    def _ensure(self, r):
+        sp = getattr(self, "_sp", self.state.design.study)
+        return self.sd.ensure(r, self.state.design, sp, self.state.catalog, self.state.manager.backend)
 
     def check_6dof(self, marked: bool):
         best = self.sd.best_rows(self.rows)
@@ -849,15 +910,18 @@ class StudyPage(QtWidgets.QWidget):
         d, man, cat = self.state.design, self.state.manager, self.state.catalog
 
         def fn(prog):
+            for r in todo:
+                self._ensure(r)
             self.sd.check_many(todo, d, man, cat, prog, lambda: self._cancel)
             return self.rows
-        self._go(fn, lambda _rows: (self.msg.setText("conferido no 6GDL (estrelas no gráfico)"), self.redraw()))
+        self._go(fn, lambda _rows: (self.msg.setText("conferido no 6GDL (estrelas no gráfico)"), self._keep_run(),
+                                    self.redraw()))
 
     def use_marked(self):
         best = self.sd.best_rows(self.rows)
         if not best:
             return
-        r = next(iter(best.values()))
+        r = self._ensure(next(iter(best.values())))
         d = self.state.design
         sp = getattr(self, "_sp", d.study)
         if sp.mode == self.sd.MODES[1]:
@@ -878,7 +942,7 @@ class StudyPage(QtWidgets.QWidget):
         i = self.table.currentRow()
         if not (0 <= i < len(self.rows)):
             return
-        r = self.rows[i]
+        r = self._ensure(self.rows[i])
         d = self.state.design
         sp = getattr(self, "_sp", d.study)
         ac, _ = pw.assemble(r["_cand"], r["_req"], d.rules, self.state.catalog, d.airfoil_map())
@@ -930,6 +994,12 @@ class StudyPage(QtWidgets.QWidget):
         if not (0 <= i < len(self.rows)):
             return
         r = self.rows[i]
+        if "_cand" not in r:
+            try:
+                self._ensure(r)
+            except Exception as ex:
+                self.view_label.setText(str(ex))
+                return
         from aerosim.design import power as pw
         d = self.state.design
         try:

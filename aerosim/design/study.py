@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import copy
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -51,6 +51,64 @@ class StudyParams:
     n: int = F(7, "pontos", "", "")
     places: str = F("", "altitudes-densidade", "", "lugar=AD em metros, separados por vírgula (ex.: Joinville=655, "
                     "São José dos Campos=1320); vazio: a dos requisitos")
+
+
+@dataclass
+class StudyRun:
+    """um estudo rodado, guardado no projeto (os dados de simulação): os parâmetros e uma linha por ponto
+    (sem os objetos — o avião de cada linha se refaz quando precisa)"""
+    mode: str = MODES[0]
+    aircraft: str = DRAFT
+    variable: str = "inclinação do motor (°)"
+    places: str = ""
+    rows: list[dict] = field(default_factory=list)
+
+    def key(self) -> tuple:
+        return (self.mode, self.aircraft, self.variable if self.mode == MODES[0] else "", self.places)
+
+
+ROW_KEYS = ("place", "ad", "x", "name", "mtow", "mtow6", "converged", "ok", "why", "limit", "pv", "v_rot", "v_lof",
+            "hold", "dih", "cd_trim", "incidence", "i_h")
+
+
+def to_run(sp: StudyParams, rows: list[dict]) -> StudyRun:
+    clean = []
+    for r in rows:
+        c = {}
+        for k in ROW_KEYS:
+            v = r.get(k)
+            c[k] = bool(v) if isinstance(v, (bool, np.bool_)) else (float(v) if isinstance(v, (int, float, np.floating))
+                                                                    and not isinstance(v, bool) else v)
+        clean.append(c)
+    return StudyRun(sp.mode, sp.aircraft, sp.variable, sp.places, clean)
+
+
+def from_run(run: StudyRun) -> tuple[StudyParams, list[dict]]:
+    sp = StudyParams(mode=run.mode, aircraft=run.aircraft, variable=run.variable, places=run.places)
+    return sp, [dict(r) for r in run.rows]
+
+
+def ensure(row: dict, project, sp: StudyParams, catalog=None, backend=None) -> dict:
+    """refaz o ponto de projeto de uma linha guardada (para o 3D, o 6GDL e mandar para a Montagem)"""
+    if "_cand" in row:
+        return row
+    if sp.mode == MODES[1]:
+        base = next((a for a in project.aircraft if a.name == row["name"]), None)
+    else:
+        b0 = next((a for a in project.aircraft if a.name == sp.aircraft), None) or project.draft_aircraft()
+        base = with_value(b0, sp.variable, row["x"]) if b0 is not None else None
+    if base is None:
+        raise ValueError(f"o avião '{row['name']}' não está mais no projeto")
+    rq = copy.deepcopy(project.requirements)
+    rq.density_altitude = row["ad"]
+    d = pw.design_point(base, rq, project.rules, catalog, project.airfoil_map(), backend)
+    row["_cand"], row["_req"] = d["cand"], d["req"]
+    return row
+
+
+def table(rows: list[dict]) -> dict:
+    """as linhas como tabela (para exportar xlsx/csv)"""
+    return {k: [r.get(k) for r in rows] for k in ROW_KEYS}
 
 
 def parse_places(text: str, ad_default: float) -> list[tuple[str, float]]:

@@ -230,6 +230,7 @@ fn surfacePieces(b: *Builder, ac: *const Aircraft, s: *const Surface, index: usi
         diag.set("{s}: perfil inválido", .{s.name});
         return e;
     };
+    if (s.airfoil.inverted) airfoil.invert(&prof);
     var sbuf: [model.limits.sections * 3]Station = undefined;
     const st = stations(ac, s, &sbuf);
     if (st.len < 2) return;

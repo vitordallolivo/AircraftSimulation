@@ -43,6 +43,7 @@ pub const Airfoil = struct {
     cl_max: f64 = 1.4,
     cd0: f64 = 0.01,
     cm_ac: ?f64 = null, // null: perfil fino
+    inverted: bool = false, // montado de cabeça para baixo: o contorno do arquivo espelhado em y
 };
 
 pub const Surface = struct {

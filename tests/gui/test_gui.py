@@ -206,6 +206,12 @@ def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypa
     while estudo._thread is not None and time.time() - t0 < 120:
         pump(app, 0.1)
     assert len(estudo.rows) == 2 and estudo.table.rowCount() == 2
+    assert len(st.design.studies) == 1 and len(st.design.studies[0].rows) == 2     # dados de simulação no projeto
+    from aerosim.gui.design.pages import StudyPage
+    reaberto = StudyPage(st)                               # reabrir: o estudo guardado volta sem rodar
+    assert reaberto.table.rowCount() == 2 and "_cand" not in reaberto.rows[0]
+    reaberto._show_row(0)                                  # refaz o ponto de projeto só quando precisa
+    assert "_cand" in reaberto.rows[0]
     n = len(st.fleet)
     motores.send()
     assert len(st.fleet) == n + 1 and w.tabs.currentWidget() is w.config

@@ -26,19 +26,18 @@ save_catalog(builtin_catalog(), "data/catalog/catalog.cfg")
 
 ### Aviões do estudo S1223 (`aircraft/S1223_*.json`)
 
-Montados na interface: Aerodinâmica → Perfil e Asa, Estabilidade → Empenagem, Desempenho → Motores e Estudo. Cada
-um está no **ponto de projeto** do estudo: a massa convergida pela conta rápida, com a asa e a EH recalibradas e a
-altitude-densidade do lugar. Foram mandados à Montagem pelo botão "Mandar o ponto selecionado para a Montagem" e
-salvos com Salvar como. Carga paga: lastro + 1 L de líquido + 1 kg de LAPES, tudo no CG.
+Montados na interface: Aerodinâmica → Perfil e Asa, Estabilidade → Empenagem, Desempenho → Motores e Estudo. Só
+estão aqui os que **voam** e que são projetos distintos. Cada um está no ponto de projeto do estudo, em Joinville
+(AD 655 m). Foi mandado à Montagem pelo botão "Mandar o ponto selecionado para a Montagem", que primeiro acha a
+decolagem no núcleo 6GDL e a grava no avião (acionamento e deflexão do profundor), e depois salvo com Salvar como.
+A Missão e o AeroDrive decolam com esses números.
 
-| avião | Joinville (AD 655 m): massa / MTOW 6GDL | São José dos Campos (AD 1320 m): massa / MTOW 6GDL |
-|---|---|---|
-| monomotor (EH MH 113 invertida, EV HT 14) | 11,68 / 11,76 | 10,96 / 11,05 |
-| motor inclinado 6° | 11,76 / 12,25 | 11,04 / 11,52 |
-| bimotor | 10,92 / 10,41 | 10,27 / 9,83 |
-| EH convencional (HT 14) + EV | 9,32 / 10,76 | 8,78 / 10,06 |
-| EH NACA 0012 + EV NACA 0012 | 10,41 / 11,64 | 9,81 / 10,73 |
-| cauda em V (MH 113 invertida) | 11,67 / 9,56 | 10,95 / 8,98 |
+| avião | o que é |
+|---|---|
+| `S1223_motor_inclinado_6_Joinville.json` | EH MH 113 invertida, EV HT 14, motor inclinado 6° — o ponto ótimo do estudo |
+| `S1223_monomotor_EH_convencional_Joinville.json` | EH convencional (HT 14, simétrica) com EV HT 14 |
 
-Onde o MTOW 6GDL fica abaixo da massa salva (bimotor e cauda em V), o avião não cabe na pista de 50 m com essa
-massa: tire lastro na Montagem até o MTOW 6GDL.
+As variantes (o mesmo avião em São José dos Campos, o motor a 0°, 3°, 9° e 12°, a EH NACA 0012) não viraram
+arquivo: estão como **dados de simulação** no projeto `sprint/projeto_s1223.json` (varredura da inclinação e
+comparação dos guardados, com o MTOW rápido e o 6GDL). Ficaram de fora porque não decolam na pista com a massa do
+ponto de projeto: o bimotor e a cauda em V. Os resultados deles também estão nesses dados.

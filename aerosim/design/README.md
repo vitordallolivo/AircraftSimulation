@@ -255,8 +255,12 @@ A página tem dois modos:
 
 Ela marca o maior MTOW viável de cada altitude, confere os pontos no 6GDL (aba Missão, modo MTOW) e leva o ponto
 marcado para o rascunho da etapa certa. Ela indica, não escolhe. **Mandar o ponto selecionado para a Montagem** abre
-o avião daquela linha no ponto de projeto, como mais um avião aberto. Os exemplos `data/aircraft/S1223_*.json`
-foram feitos assim.
+o avião daquela linha no ponto de projeto, como mais um avião aberto. Antes, a decolagem 6GDL (`flight.py`)
+acha o acionamento e a deflexão do profundor (e o trim de corrida, se precisar) e grava no avião, que é com o
+que a Missão e o AeroDrive decolam. Se não decolar, o avião não é salvo nem aberto. Os exemplos
+`data/aircraft/S1223_*.json` foram feitos assim. Cada estudo rodado (com o 6GDL) fica **guardado no projeto**
+como dado de simulação: volta ao abrir o projeto, e a linha refaz o avião só quando precisa (3D, Montagem, 6GDL).
+Também dá para exportar em xlsx/csv.
 
 Com a asa S1223 (MTOW em kg, conta rápida / 6GDL):
 

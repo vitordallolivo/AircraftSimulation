@@ -90,6 +90,14 @@ pub fn forDrawing(name: []const u8, coords: []const [2]f64, out: *Profile) Error
     }
 }
 
+/// perfil montado de cabeça para baixo (EH com sustentação para baixo): espelho em y, na mesma ordem de
+/// percurso (bordo de fuga -> extradorso -> ...) — igual a `Airfoil.outline` com `inverted` na GUI
+pub fn invert(p: *Profile) void {
+    const pts = p.pts[0..p.n];
+    std.mem.reverse([2]f64, pts);
+    for (pts) |*q| q[1] = -q[1];
+}
+
 /// contorno completo (sem reamostrar): coordenadas do arquivo ou NACA pelo nome — para as contas
 pub fn full(name: []const u8, coords: []const [2]f64, out: *Profile) Error!void {
     if (coords.len == 0) return naca4(name, out);
@@ -268,6 +276,20 @@ test "corte do comando: as duas partes fecham na articulação" {
     try testing.expectApproxEqAbs(@as(f64, 0), h[1], 1e-4); // simétrico (a menos do reamostrar)
     for (m.slice()) |q| try testing.expect(q[0] <= 0.75 + 1e-12);
     for (f.slice()) |q| try testing.expect(q[0] >= 0.75 - 1e-12);
+}
+
+test "perfil invertido: α_L0 e C_m,ac trocam de sinal; inverter duas vezes volta ao original" {
+    var p: Profile = .{};
+    naca4("NACA 4412", &p);
+    const a = thinAirfoil(p.slice());
+    var q = p;
+    invert(&q);
+    const b = thinAirfoil(q.slice());
+    try std.testing.expectApproxEqAbs(-a[0], b[0], 1e-9);
+    try std.testing.expectApproxEqAbs(-a[1], b[1], 1e-9);
+    try std.testing.expect(q.pts[0][0] > 0.99 and q.pts[q.n / 2][0] < 0.01); // ainda começa no bordo de fuga
+    invert(&q);
+    for (p.slice(), q.slice()) |u, v| try std.testing.expectEqual(u, v);
 }
 
 fn fuzzAirfoil(_: void, src: *fz.Src) anyerror!void {
