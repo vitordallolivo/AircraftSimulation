@@ -89,6 +89,7 @@ class LiftingSurface:
     eps0: float | None = None      # downwash ε0 (graus); None: da asa principal
     depsda: float | None = None    # dε/dα; None: da asa principal
     mass: float = 0.0          # massa estrutural (entra no modelo de massa por componentes)
+    mount: str = ""            # "" solta | "tubo:i" na ponta do tubo i | "ponta:j" na ponta da superfície j
 
     @property
     def semispan(self) -> float:
@@ -170,17 +171,37 @@ class Fuselage:
 
 @dataclass
 class TailBoom:
-    enabled: bool = False
+    """tubo (de cauda ou qualquer outro): sai de (x_start, y, z) para trás, com inclinação e guinada livres.
+    Tubo duplo = dois tubos (y = ±d). As superfícies se prendem nele pela `mount` delas ("tubo:0")."""
+    name: str = "tubo"
+    enabled: bool = True
     x_start: float = -0.3      # onde sai da fuselagem/asa
+    y: float = 0.0
+    z: float = 0.0
     length: float = 0.8
     diameter: float = 0.025
-    z: float = 0.0
-    attach_tail: bool = True   # EH/EV ficam presos na ponta do tubo
+    pitch: float = 0.0         # graus (+ ponta de trás para cima)
+    yaw: float = 0.0           # graus (+ ponta de trás para a direita, +y)
     mass: float = 0.0
 
     @property
+    def start(self) -> tuple[float, float, float]:
+        return self.x_start, self.y, self.z
+
+    @property
+    def end(self) -> tuple[float, float, float]:
+        t, p = math.radians(self.pitch), math.radians(self.yaw)
+        L = self.length
+        return (self.x_start - L * math.cos(t) * math.cos(p), self.y + L * math.cos(t) * math.sin(p),
+                self.z - L * math.sin(t))
+
+    @property
     def x_end(self) -> float:
-        return self.x_start - self.length
+        return self.end[0]
+
+    @property
+    def middle(self) -> tuple[float, float, float]:
+        return tuple(0.5 * (a + b) for a, b in zip(self.start, self.end))
 
 
 # ------------------------------------------------------------------ propulsão
@@ -483,7 +504,7 @@ class Aircraft:
     name: str = "aeronave"
     surfaces: list[LiftingSurface] = field(default_factory=list)
     fuselage: Fuselage = field(default_factory=Fuselage)
-    boom: TailBoom = field(default_factory=TailBoom)
+    booms: list[TailBoom] = field(default_factory=list)
     propulsion: list[PropulsionUnit] = field(default_factory=list)
     gear: LandingGear = field(default_factory=LandingGear)
     tanks: list[SloshTank] = field(default_factory=list)
@@ -520,11 +541,59 @@ class Aircraft:
     def copy(self) -> "Aircraft":
         return copy.deepcopy(self)
 
+    @property
+    def boom(self) -> TailBoom:
+        """o primeiro tubo ligado (compatibilidade: projetos de um tubo só); sem tubo, um desligado"""
+        return next((b for b in self.booms if b.enabled), TailBoom(enabled=False))
+
+    @boom.setter
+    def boom(self, b: TailBoom) -> None:
+        self.booms = [b] if b.enabled else []
+
+    @staticmethod
+    def migrate(data: dict) -> dict:
+        """arquivos antigos: `boom` único com `attach_tail` → lista `booms` e `mount` nas superfícies de cauda"""
+        if "boom" in data and "booms" not in data:
+            b = dict(data.pop("boom") or {})
+            attach = b.pop("attach_tail", True)
+            data["booms"] = [b] if b.get("enabled") else []
+            if b.get("enabled") and attach:
+                for s in data.get("surfaces", []):
+                    if s.get("role") in ("htail", "vtail") and not s.get("mount"):
+                        s["mount"] = "tubo:0"
+        return data
+
+    def mount_point(self, s: LiftingSurface) -> tuple[float, float, float] | None:
+        """onde a raiz de `s` fica presa: 'tubo:i' (bordo de fuga da raiz na ponta do tubo) ou
+        'ponta:j' (bordo de ataque da raiz no da ponta da superfície j — cauda em T, winglet...)"""
+        kind, _, idx = (s.mount or "").partition(":")
+        if not idx.lstrip("-").isdigit() or not s.sections:
+            return None
+        i = int(idx)
+        root = min(s.sections, key=lambda q: q.y)
+        if kind == "tubo" and 0 <= i < len(self.booms) and self.booms[i].enabled:
+            b = self.booms[i]
+            x, y, z = b.end
+            return x + root.chord, y, (z - b.diameter / 2 if s.vertical else z)
+        if kind == "ponta" and 0 <= i < len(self.surfaces) and self.surfaces[i] is not s:
+            t = self.surfaces[i]
+            if not t.sections:
+                return None
+            ys = t.semispan
+            if t.vertical:
+                return t.x - t.xoff_at(ys), t.y, t.z - ys
+            d = math.radians(t.dihedral)
+            return t.x - t.xoff_at(ys), (t.y if t.symmetric else t.y + ys * math.cos(d)), t.z - ys * math.sin(d)
+        return None
+
     def apply_constraints(self) -> None:
-        """amarrações geométricas (ex.: cauda na ponta do tubo)"""
-        if self.boom.enabled and self.boom.attach_tail:
+        """amarrações geométricas: cada superfície com `mount` vai para o ponto dela (na ordem da
+        lista, então uma EH em T presa numa EV presa num tubo segue os dois)"""
+        for _ in range(2):
             for s in self.surfaces:
-                if s.role in ("htail", "vtail") and s.sections:
-                    root = min(s.sections, key=lambda q: q.y)
-                    s.x = self.boom.x_end + root.chord
-                    s.z = self.boom.z if s.role == "htail" else self.boom.z - self.boom.diameter / 2
+                p = self.mount_point(s)
+                if p is None:
+                    continue
+                s.x, s.z = p[0], p[2]
+                if s.vertical or not s.symmetric:
+                    s.y = p[1]

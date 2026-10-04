@@ -52,6 +52,8 @@ def _convert(tp, v):
 def from_dict(cls, data: dict):
     """cria `cls` a partir de um dicionário; chaves ausentes ficam com o padrão"""
     hints = get_type_hints(cls)
+    if callable(getattr(cls, "migrate", None)):          # arquivos de versões anteriores
+        data = cls.migrate(dict(data))
     kw = {}
     for f in dataclasses.fields(cls):
         if f.name in data:

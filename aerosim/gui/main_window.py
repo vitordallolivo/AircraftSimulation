@@ -12,14 +12,14 @@ import os
 from PyQt6 import QtGui, QtWidgets
 
 from aerosim.data import load_aircraft, load_catalog, save_aircraft
-from aerosim.model.templates import TEMPLATES
+from aerosim.model.templates import TEMPLATES, empty
 
 from .state import ROOT, AppState
 from .tabs.config_tab import ConfigTab
 from .tabs.simulation_tab import SimulationTab
 
-FILTER = "Aeronave (*.cfg *.json *.xlsx)"
-TEMPLATE_NAMES = {"conventional": "Convencional (original)", "flying_wing": "Asa voadora",
+FILTER = "Avião ou projeto (*.cfg *.json *.xlsx)"
+TEMPLATE_NAMES = {"empty": "Vazio (montar do zero)", "conventional": "Convencional (original)", "flying_wing": "Asa voadora",
                   "twin_boom": "Bimotor, convencional, tubo + cauda em V"}
 
 
@@ -55,7 +55,57 @@ class MainWindow(QtWidgets.QMainWindow):
         self._design_label()
         self._toolbar()
         state.changed.connect(lambda r: self._title() if r == "load" else None)
+        state.ui_get, state.ui_put = self.ui_state, self.set_ui_state
+        self.setAcceptDrops(True)                    # soltar um .json de projeto ou de avião abre ele
         self._title()
+
+    # ------------------------------------------------------------------ onde a interface está (vai no projeto)
+    def ui_state(self) -> dict:
+        sub = self.tabs.currentWidget()
+        return dict(tab=self.tabs.tabText(self.tabs.currentIndex()),
+                    sub=sub.currentIndex() if isinstance(sub, QtWidgets.QTabWidget) else 0)
+
+    def set_ui_state(self, ui: dict) -> None:
+        titles = [self.tabs.tabText(i) for i in range(self.tabs.count())]
+        if ui.get("tab") in titles:
+            self.tabs.setCurrentIndex(titles.index(ui["tab"]))
+            sub = self.tabs.currentWidget()
+            if isinstance(sub, QtWidgets.QTabWidget) and 0 <= int(ui.get("sub", 0)) < sub.count():
+                sub.setCurrentIndex(int(ui.get("sub", 0)))
+
+    def dragEnterEvent(self, ev):
+        if ev.mimeData().hasUrls():
+            ev.acceptProposedAction()
+
+    def dropEvent(self, ev):
+        for u in ev.mimeData().urls():
+            if u.isLocalFile():
+                self.open_path(u.toLocalFile())
+                break
+
+    def open_path(self, path: str, quiet: bool = False) -> None:
+        """abre um arquivo: projeto (.json com etapas/estudos/Montagem) volta de onde parou; avião vai para a Montagem"""
+        from aerosim.design.project import DesignProject, is_project_file
+        try:
+            if is_project_file(path):
+                self.state.save_design()
+                p = DesignProject.load(path)
+                self.state.open_design(p, path)
+                self._design_label()
+                if not quiet:
+                    self.show_design_summary()
+            else:
+                self.state.set_aircraft(load_aircraft(path), path)
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Erro", str(e))
+
+    def show_design_summary(self) -> None:
+        """o que está guardado no projeto aberto"""
+        from html import escape
+        rows = "".join(f"<tr><td><b>{escape(k)}</b></td><td>{escape(v)}</td></tr>"
+                       for k, v in self.state.design.summary())
+        QtWidgets.QMessageBox.information(
+            self, "Projeto aberto", f"<p>{escape(self.state.design_path)}</p><table cellspacing=6>{rows}</table>")
 
     def show_assembly(self):
         self.tabs.setCurrentWidget(self.config)
@@ -63,6 +113,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _menus(self):
         m = self.menuBar().addMenu("&Arquivo")
         new = m.addMenu("Novo a partir de")
+        new.addAction(TEMPLATE_NAMES["empty"]).triggered.connect(lambda: self.state.set_aircraft(empty()))
         for k, f in TEMPLATES.items():
             a = new.addAction(TEMPLATE_NAMES.get(k, k))
             a.triggered.connect(lambda _=False, f=f: self.state.set_aircraft(f()))
@@ -83,6 +134,7 @@ class MainWindow(QtWidgets.QMainWindow):
         pj.addAction("Novo projeto (do zero)", self.design_new)
         pj.addAction("Abrir projeto…", self.design_open)
         pj.addAction("Salvar projeto como…", self.design_save_as)
+        pj.addAction("O que está guardado…", self.show_design_summary)
         self._design_where = pj.addAction("")
         self._design_where.setEnabled(False)
         e = self.menuBar().addMenu("&Editar")
@@ -104,7 +156,7 @@ class MainWindow(QtWidgets.QMainWindow):
         k = 2
         while os.path.exists(f"{base}_{k}{ext}"):
             k += 1
-        self.state.set_design(DesignProject(), f"{base}_{k}{ext}")
+        self.state.open_design(DesignProject(), f"{base}_{k}{ext}")     # do zero: Montagem vazia também
         self._design_label()
 
     def design_open(self):
@@ -112,10 +164,7 @@ class MainWindow(QtWidgets.QMainWindow):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Projeto da sprint", os.path.dirname(self.state.design_path),
                                                         "Projeto (*.json)")
         if path:
-            try:
-                self.state.set_design(DesignProject.load(path), path)
-            except Exception as e:
-                QtWidgets.QMessageBox.critical(self, "Erro", str(e))
+            self.open_path(path)
         self._design_label()
 
     def design_save_as(self):
@@ -173,13 +222,10 @@ class MainWindow(QtWidgets.QMainWindow):
                             + (f"  [{os.path.basename(p)}]" if p else ""))
 
     def open(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Abrir aeronave", os.path.join(ROOT, "data", "aircraft"),
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Abrir avião ou projeto", os.path.join(ROOT, "data"),
                                                         FILTER)
         if path:
-            try:
-                self.state.set_aircraft(load_aircraft(path), path)
-            except Exception as e:
-                QtWidgets.QMessageBox.critical(self, "Erro", str(e))
+            self.open_path(path)
 
     def open_beside(self):
         """abre outro arquivo sem fechar o atual: os dois ficam na troca de aviões (◀ ▶) de todas as abas"""

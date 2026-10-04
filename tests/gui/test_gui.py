@@ -38,9 +38,13 @@ def test_window_tabs_and_edit(app, manager):
     assert len(st.aircraft.propulsion) == n0 + 1 and len(st.aircraft.tanks) == 2
     cfg._rotate_wind(15)
     assert st.aircraft.environment.wind_from == 45
-    cfg._on_pick("boom")                                  # liga o tubo pelo editor da direita
-    cfg.form.widgets["enabled"].setChecked(True)
-    assert st.aircraft.boom.enabled
+    from aerosim.model.geometry import aircraft_meshes
+    cfg._add_boom()                                       # + Tubo, duas vezes: tubo duplo
+    cfg._add_boom()
+    b0, b1 = st.aircraft.booms
+    assert b1.y == pytest.approx(b0.y + 0.3) and {"boom:0", "boom:1"} <= set(aircraft_meshes(st.aircraft))
+    cfg._on_pick("boom:1")                                # o editor da direita é o do tubo escolhido
+    assert cfg.form.obj is b1 and "pitch" in cfg.form.widgets
     cfg._on_pick("gear")                                  # tipo do trem também só pelo editor
     cfg.form.widgets["layout"].findChild(QtWidgets.QComboBox).setCurrentText("conventional")
     g = st.aircraft.gear
@@ -218,3 +222,35 @@ def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypa
     assert st.aircraft.name.startswith("avião 1") and st.path and os.path.exists(st.path)
     pump(app, 1.2)
     assert os.path.exists(st.design_path)                 # o projeto da sprint se grava sozinho
+
+
+def test_open_project_resumes_where_it_stopped(app, manager, tmp_path):
+    """abrir o .json do projeto volta de onde parou: Montagem (aviões abertos) e aba; sem avião guardado, vazia"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.design.project import DesignProject
+    from aerosim.gui.main_window import MainWindow
+    from aerosim.gui.state import AppState
+    from aerosim.model.templates import empty, is_empty, twin_boom
+    st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)))
+    w = MainWindow(st)
+    w.show()
+    pump(app)
+    assert is_empty(st.aircraft)
+    w.tabs.setCurrentIndex(w.tabs.count() - 1)
+    w.config._add_boom()                                  # vazio → as peças entram uma a uma
+    assert len(st.aircraft.booms) == 1
+    p = DesignProject()
+    p.fleet, p.current, p.ui = [empty(), twin_boom()], 1, {"tab": "Desempenho", "sub": 1}
+    path = str(tmp_path / "meu_projeto.json")
+    p.save(path)
+    w.open_path(path, quiet=True)
+    pump(app)
+    assert st.names() == [a.name for a in p.fleet] and st.current == 1 and st.design_path == path
+    assert w.ui_state() == {"tab": "Desempenho", "sub": 1}
+    st.save_design()                                      # grava de volta o que está na tela
+    assert DesignProject.load(path).current == 1
+    empty_path = str(tmp_path / "sem_avioes.json")
+    DesignProject().save(empty_path)
+    w.open_path(empty_path, quiet=True)
+    assert len(st.fleet) == 1 and is_empty(st.aircraft)
+    w.close()

@@ -154,8 +154,7 @@ class AircraftModel:
         ac = self.aircraft
         if ac.fuselage.enabled:
             tot += ac.fuselage.CDS
-        if ac.boom.enabled:
-            tot += 0.006 * math.pi * ac.boom.diameter * ac.boom.length
+        tot += sum(0.006 * math.pi * b.diameter * b.length for b in ac.booms if b.enabled)
         return tot / self.S
 
     def tail_volumes(self, x_cg: float) -> dict[str, float]:

@@ -63,8 +63,7 @@ class ZigTranslator(IModelTranslator):
         I = model.mass["I"]
         f = ac.fuselage
         CDS = f.CDS if f.enabled else 0.0
-        if ac.boom.enabled:
-            CDS += 0.006 * math.pi * ac.boom.diameter * ac.boom.length    # atrito do tubo
+        CDS += sum(0.006 * math.pi * b.diameter * b.length for b in ac.booms if b.enabled)   # atrito dos tubos
         fus_r = f.aero_point if f.aero_point is not None else [f.x_nose - 0.4 * f.length, 0.0, f.z]
         units = [u for u in ac.propulsion if u.enabled]
         K = max(len(units), 1)

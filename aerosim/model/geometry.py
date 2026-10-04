@@ -139,9 +139,9 @@ def aircraft_meshes(ac: Aircraft) -> dict[str, list[tuple[Mesh, str]]]:
     f = ac.fuselage
     if f.enabled:
         out["fuselage"] = [(ellipsoid_body(f.x_nose, f.length, f.width, f.height, f.z), "fuselage")]
-    if ac.boom.enabled:
-        b = ac.boom
-        out["boom"] = [(cylinder([b.x_start, 0, b.z], [b.x_end, 0, b.z], b.diameter / 2), "boom")]
+    for i, b in enumerate(ac.booms):
+        if b.enabled:
+            out[f"boom:{i}"] = [(cylinder(list(b.start), list(b.end), b.diameter / 2), "boom")]
     for i, u in enumerate(ac.propulsion):
         if not u.enabled:
             continue
@@ -188,7 +188,7 @@ def component_position(ac: Aircraft, key: str) -> np.ndarray | None:
     if kind == "fuselage":
         return np.array([ac.fuselage.x_nose, 0, ac.fuselage.z])
     if kind == "boom":
-        return np.array([ac.boom.x_start, 0, ac.boom.z])
+        return np.array(ac.booms[int(idx)].start)
     if kind == "gear":
         return np.array([ac.gear.main_x, 0, ac.gear.main_z])
     return None
@@ -214,7 +214,8 @@ def move_component(ac: Aircraft, key: str, pos) -> None:
     elif kind == "fuselage":
         ac.fuselage.x_nose, ac.fuselage.z = x, z
     elif kind == "boom":
-        ac.boom.x_start, ac.boom.z = x, z
+        b = ac.booms[int(idx)]
+        b.x_start, b.y, b.z = x, y, z
     elif kind == "gear":
         ac.gear.main_x, ac.gear.main_z = x, max(z, 0.01)
     ac.apply_constraints()

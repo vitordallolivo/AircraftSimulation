@@ -3,6 +3,7 @@
     conventional()   monomotor triciclo, asa + EH + EV (a aeronave do código original)
     flying_wing()    asa voadora enflechada com elevons, hélice propulsora, winglets
     twin_boom()      bimotor, trem convencional (bequilha na cauda), tubo de cauda e cauda em V
+    empty()          nada: a Montagem começa vazia e o avião aparece no 3D peça por peça
 """
 from __future__ import annotations
 
@@ -117,12 +118,12 @@ def twin_boom() -> Aircraft:
         name="cauda em V", role="htail", x=-1.0, z=-0.06, sections=rect_sections(0.42, 0.20, taper=0.8),
         dihedral=35.0, incidence=-1.5, airfoil=Airfoil("NACA 0012", cl_alpha=5.9, cl_max=1.1, cd0=0.012),
         controls=[ControlSurface("ruddervator", 0.0, 1.0, 0.35)], oswald=0.8, eta=0.9, downwash=True,
-        CL0=0.0, Cmac=0.0)
+        CL0=0.0, Cmac=0.0, mount="tubo:0")
     ac = Aircraft(
         name="Bimotor, convencional, tubo + cauda em V",
         surfaces=[wing, vt],
         fuselage=Fuselage(x_nose=0.55, length=0.85, width=0.16, height=0.17, z=0.0),
-        boom=TailBoom(enabled=True, x_start=-0.25, length=0.95, diameter=0.03, z=-0.04, attach_tail=True),
+        booms=[TailBoom(x_start=-0.25, length=0.95, diameter=0.03, z=-0.04)],
         propulsion=[_unit("motor esq", 0.30, -0.55, -0.06, tilt=2.0, sense=1, prop="Genérica 13x6.5",
                           motor="Genérico 500Kv", bat="LiPo 4S 4000"),
                     _unit("motor dir", 0.30, 0.55, -0.06, tilt=2.0, sense=-1, prop="Genérica 13x6.5",
@@ -140,6 +141,34 @@ def twin_boom() -> Aircraft:
     ac.mission.events = [e for e in ac.mission.events if e.kind != "drop"]
     ac.apply_constraints()
     return ac
+
+
+def empty() -> Aircraft:
+    """a Montagem sem nada: sem asa, sem fuselagem, sem trem; vai montando peça por peça"""
+    ac = Aircraft(name="novo avião", fuselage=Fuselage(enabled=False), payload=Payload(enabled=False),
+                  gear=LandingGear("custom"), mass=MassModel(base_mass=0.0, Ixx=0.0, Iyy=0.0, Izz=0.0, Ixz=0.0,
+                                                             include_propulsion=True, include_structure=True))
+    ac.mission.events = [e for e in ac.mission.events if e.kind != "drop"]
+    return ac
+
+
+EMPTY_MSG = "o avião ainda está vazio: na Montagem, adicione uma asa (+ Asa) e um motor (+ Motor)"
+
+
+def is_empty(ac: Aircraft) -> bool:
+    """sem superfície e sem motor: nada para analisar ainda"""
+    return not any(s.enabled for s in ac.surfaces) and not any(u.enabled for u in ac.propulsion)
+
+
+def not_ready(ac: Aircraft) -> str | None:
+    """o que falta para dar para analisar o avião (None: nada falta)"""
+    from .massprops import dry_mass
+    if is_empty(ac):
+        return EMPTY_MSG
+    if dry_mass(ac)["m"] <= 0:
+        return ("o avião ainda não tem massa: dê massa às peças (campo massa de cada uma) ou em "
+                "'Massa e inércia' (massa base)")
+    return None
 
 
 TEMPLATES = {"conventional": conventional, "flying_wing": flying_wing, "twin_boom": twin_boom}
