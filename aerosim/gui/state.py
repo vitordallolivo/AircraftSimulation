@@ -47,13 +47,16 @@ class AppState(QtCore.QObject):
         self.original = copy.deepcopy(aircraft)      # para o botão Restaurar
         self.catalog = catalog or builtin_catalog()
         self.path: str | None = None
-        cat_file = os.path.join(ROOT, "data", "catalog", "catalog.cfg")
-        if catalog is None and os.path.exists(cat_file):
-            try:
-                from aerosim.data import load_catalog
-                self.catalog = builtin_catalog().merge(load_catalog(cat_file))
-            except Exception:
-                pass
+        cat_dir = os.path.join(ROOT, "data", "catalog")
+        if catalog is None and os.path.isdir(cat_dir):     # catalog.cfg e os .json (ex.: tracao_equipe.json)
+            from aerosim.data import load_catalog
+            for f in ["catalog.cfg"] + sorted(x for x in os.listdir(cat_dir) if x.endswith(".json")):
+                path = os.path.join(cat_dir, f)
+                if os.path.exists(path):
+                    try:
+                        self.catalog = self.catalog.merge(load_catalog(path))
+                    except Exception:
+                        pass
         self._undo: list = []
         self._redo: list = []
         self._views: dict = {}            # chave → (ler, escrever) valores de uma aba

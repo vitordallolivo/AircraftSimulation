@@ -64,11 +64,12 @@ pub fn blendAirfoils(root: S.AirfoilData, tip: S.AirfoilData, taper: f64) S.Airf
 // ------------------------------------------------------------------ polar
 pub const Polar = struct { CD0: f64, K: f64, CLmax: f64, CLg: f64 };
 
-pub fn polar(comptime K: type, cfg: *const S.SizingCfg, geo: Geo, af: S.AirfoilData) Polar {
+/// `extra_CDS`: C_D·S que o arranjo acrescenta (naceles)
+pub fn polar(comptime K: type, cfg: *const S.SizingCfg, geo: Geo, af: S.AirfoilData, extra_CDS: f64) Polar {
     const tail = if (K.tail) cfg.tail_area_frac * cfg.tail_drag_frac else 0.0;
     const CLmax = @max(K.clmaxFactor(cfg) * af.clmax, 0.1);
     return .{
-        .CD0 = @max(af.cd0, 0.0) * (1.0 + tail) + @max(cfg.fuselage_CDS, 0.0) / geo.S,
+        .CD0 = @max(af.cd0, 0.0) * (1.0 + tail) + (@max(cfg.fuselage_CDS, 0.0) + @max(extra_CDS, 0.0)) / geo.S,
         .K = K.inducedFactor(cfg) / (std.math.pi * geo.AR_eq * std.math.clamp(cfg.oswald, 0.3, 1.0)),
         .CLmax = CLmax,
         .CLg = std.math.clamp(cfg.cl_ground, 0.0, 1.0) * CLmax,
@@ -209,7 +210,7 @@ fn fuzzStages(_: void, src: *fz.Src) !void {
     const af: S.AirfoilData = .{ .clmax = src.range(0.8, 2.4), .cd0 = src.range(0.005, 0.03) };
     inline for (kinds.all) |K| {
         const geo = geometry(K, src.range(0.3, 5), src.range(0.05, 3));
-        const p = polar(K, &cfg, geo, af);
+        const p = polar(K, &cfg, geo, af, src.range(0, 0.02));
         try testing.expect(p.CD0 > 0 and p.K > 0 and p.CLmax > 0 and p.CLg <= p.CLmax);
         const c = linearCurve(src.range(0, 200), src.range(5, 80));
         const m = src.range(0.2, 40);

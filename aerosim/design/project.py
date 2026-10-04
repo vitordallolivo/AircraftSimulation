@@ -28,19 +28,24 @@ from .tail import SetCandidate, TailParams
 from .wing import WingCandidate, WingParams
 
 
+def rg_sae():
+    from .registry import sae_constraints
+    return sae_constraints()
+
+
 def _default_airfoils() -> list[afm.AirfoilEntry]:
     return [afm.entry(afm.from_naca("NACA 2412")), afm.entry(afm.from_naca("NACA 4412"))]
 
 
 @dataclass
 class DesignProject:
-    requirements: Requirements = field(default_factory=Requirements)
+    requirements: Requirements = field(default_factory=lambda: Requirements(constraints=rg_sae()))
     rules: DesignRules = field(default_factory=DesignRules)
     airfoils: list[afm.AirfoilEntry] = field(default_factory=_default_airfoils)
     wings: list[WingCandidate] = field(default_factory=list)
     sets: list[SetCandidate] = field(default_factory=list)
     aircraft: list[AircraftCandidate] = field(default_factory=list)
-    wing_draft: WingParams = field(default_factory=WingParams)
+    wing_draft: WingParams = field(default_factory=lambda: WingParams(taper=1.0, rect_frac=1.0))   # retangular
     tail_draft: TailParams = field(default_factory=TailParams)
     power_draft: PowerParams = field(default_factory=PowerParams)
     study: StudyParams = field(default_factory=StudyParams)

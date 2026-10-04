@@ -5,8 +5,8 @@
 const std = @import("std");
 const T = @import("../types.zig");
 
-pub const max_airfoils = 16;
-pub const max_sets = 32; // conjuntos motor + hélice + bateria
+pub const max_airfoils = 64;
+pub const max_sets = 64; // conjuntos motor + hélice + bateria
 pub const max_cons = 24;
 pub const n_curve = 40; // pontos da curva de tração/arrasto
 
@@ -19,8 +19,9 @@ pub const v_set = 4; // índice na lista de conjuntos de tração
 pub const v_motors = 5; // número de motores
 pub const v_tilt = 6; // inclinação do motor (graus)
 pub const v_airfoil_tip = 7; // perfil da ponta (a mesma asa com dois perfis; entre eles, interpolado)
-pub const n_vars = 8;
-pub const var_names = [n_vars][:0]const u8{ "span", "area", "taper", "airfoil", "set", "motors", "tilt", "airfoil_tip" };
+pub const v_layout = 8; // arranjo dos motores: índice na lista de arranjos
+pub const n_vars = 9;
+pub const var_names = [n_vars][:0]const u8{ "span", "area", "taper", "airfoil", "set", "motors", "tilt", "airfoil_tip", "layout" };
 
 pub const var_continuous = 0;
 pub const var_integer = 1;
@@ -51,9 +52,10 @@ pub const q_ee = 14;
 pub const q_mtow = 15;
 pub const q_V_LD = 16; // V de (L/D) máx.
 pub const q_LD = 17;
-pub const n_q = 18;
+pub const q_c_root = 18; // corda da raiz (a maior): a asa cabe num retângulo b × c
+pub const n_q = 19;
 /// os mesmos nomes do registro do aerosim (`design/registry.QUANTITIES`)
-pub const q_names = [n_q][:0]const u8{ "S", "b", "AR", "V_S", "n_surf", "P_motor", "n_motor", "s_to", "V_max", "RC", "TW", "mass", "pv", "cp", "ee", "mtow", "V_LD", "LD" };
+pub const q_names = [n_q][:0]const u8{ "S", "b", "AR", "V_S", "n_surf", "P_motor", "n_motor", "s_to", "V_max", "RC", "TW", "mass", "pv", "cp", "ee", "mtow", "V_LD", "LD", "c_root" };
 
 /// a grandeza depende da massa (entra na busca do MTOW) ou é só da geometria/carga
 pub fn massDependent(q: usize) bool {
@@ -91,6 +93,18 @@ pub const AirfoilData = extern struct {
     clmax: f64 = 1.4,
     cd0: f64 = 0.011,
     cm: f64 = -0.05,
+};
+
+pub const max_layouts = 8;
+
+/// arranjo dos motores (tratora no nariz, na asa, propulsora...): o que ele muda nas contas
+pub const LayoutData = extern struct {
+    thrust_factor: f64 = 1.0, // instalação: tração disponível × fator (propulsora na esteira da asa < 1)
+    nacelle_CDS: f64 = 0.0, // C_D·S de cada nacele (m²), somado ao arrasto parasita
+    mass_per_motor: f64 = 0.0, // suporte de cada motor (kg), no PV
+    n_min: f64 = 1, // quantos motores o arranjo aceita
+    n_max: f64 = 1,
+    n_step: f64 = 1, // 2: aos pares (simétricos na asa)
 };
 
 /// conjunto de tração: a unidade do núcleo (motor + hélice + bateria) e a massa dela
@@ -140,6 +154,8 @@ pub const SizingCfg = extern struct {
     tip_same: i32 = 1, // 1: a ponta usa o perfil da raiz (um perfil só na asa)
     sets: [max_sets]PropSet = [_]PropSet{.{}} ** max_sets,
     n_sets: i32 = 1,
+    layouts: [max_layouts]LayoutData = [_]LayoutData{.{ .n_max = 8 }} ** max_layouts,
+    n_layouts: i32 = 1,
     cons: [max_cons]Constraint = [_]Constraint{.{}} ** max_cons,
     n_cons: i32 = 0,
 };
@@ -151,6 +167,10 @@ pub const SizingOut = extern struct {
     violation: f64 = 0,
     score: f64 = 0, // o objetivo (MTOW ou EE); o PSO maximiza score − penalidade
     hover: i32 = 0, // decola na vertical
+    CD0: f64 = 0, // a polar do indivíduo (para o envelope completo e o diagrama de restrições)
+    K: f64 = 0,
+    CLmax: f64 = 0,
+    CLg: f64 = 0, // C_L na corrida
     V: [n_curve]f64 = [_]f64{0} ** n_curve, // curva no MTOW
     T: [n_curve]f64 = [_]f64{0} ** n_curve,
     D: [n_curve]f64 = [_]f64{0} ** n_curve,

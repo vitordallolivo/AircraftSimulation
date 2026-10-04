@@ -142,6 +142,17 @@ def circuit(radius: float = 250.0 / math.pi, straight: float = 270.0, front: flo
     return Mission("circuito", legs, ev, h0=hc, V0=Vc)
 
 
+def short_circuit(Vc: float = 13.0, VL: float = 12.0, Vap: float = 11.5, hc: float = 10.0, radius: float = 25.0,
+                  straight: float = 60.0, front: float = 40.0) -> Mission:
+    """missão curta (padrão do projeto novo): decolagem + subida, uma volta curta com a passagem LAPES e pouso.
+    A pista exigida é a do campo (`Airfield.x_warning`, 6 m no padrão SAE); sem rajada"""
+    m = circuit(radius=radius, straight=straight, front=front, hc=hc, hL=3.0, Vc=Vc, VL=VL, Vap=Vap,
+                landing_offset=10.0, clearance=20.0)
+    m.name = "curta"
+    m.events = [e for e in m.events if e.kind != "gust"]
+    return m
+
+
 def takeoff_runway(length: float = 300.0, h: float = 15.0, V: float = 15.0) -> Mission:
     return Mission("pista", [Leg("straight", length=length, h=h, V=V, name="decolagem", takeoff=True),
                              Leg("straight", length=2000.0, h=h, V=V, name="cruzeiro")], h0=h, V0=V)

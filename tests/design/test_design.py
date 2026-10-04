@@ -210,6 +210,7 @@ def test_design_point_converges_and_study_marks_best():
     p = DesignProject()
     p.wing_draft.area, p.wing_draft.alpha_cruise = 1.0, 3.0
     p.requirements.V_stall_max = 13.0                      # restrição de estol no MTOW que este avião cumpre
+    p.requirements.takeoff_run = 50.0                      # cenário com pista longa (o padrão SAE é 6 m)
     w = p.keep_wing()
     p.tail_draft.wing = w.name
     p.power_draft.set = p.keep_set().name
@@ -267,13 +268,24 @@ def test_wing_with_root_and_tip_airfoils():
     assert max(s.sections, key=lambda q: q.y).airfoil.name == "NACA 0012" and s.mixed_airfoils
 
 
+def _var(p, key, mode, lo=None, hi=None):
+    v = next(v for v in p.variables if v.key == key)
+    v.mode = mode
+    if lo is not None:
+        v.lo, v.hi = lo, hi
+    return v
+
+
 def test_mdo_core_chain_kinds_and_3m_runway():
     """mini-MDO no núcleo: corrida ≤ 3 m — o monoplano não cumpre, o VTOL paira; o melhor respeita as restrições"""
     from aerosim.design import mdo, registry as rg
     p = DesignProject()
     p.requirements.constraints = [rg.Constraint("s_to", "≤", 3.0)]
     p.mdo.particles, p.mdo.iterations = 6, 3
-    p.mdo.motors_min = p.mdo.motors_max = 8                 # ~26 N por conjunto de 1,25 kg: 8 pairam com margem 1,3
+    _var(p, "power.motors", "fixo")
+    p.power_draft.wing_motors = 8                           # ~26 N por conjunto de 1,25 kg: 8 pairam com margem 1,3
+    p.power_draft.layout = "dois motores na asa"            # o nariz só aceita 1 motor; na asa, aos pares
+    p.power_draft.layout = "dois motores na asa"            # o nariz só aceita 1 motor; na asa, aos pares
     row = mdo.run(p)[0][0]
     p.mdo.kind = "monoplano"
     mono = mdo.evaluate(p, row)
@@ -285,8 +297,48 @@ def test_mdo_core_chain_kinds_and_3m_runway():
         if v.key in ("wing.span", "wing.area"):
             v.mode = "variável"
     p.mdo.kind = "biplano"
-    p.mdo.motors_min = p.mdo.motors_max = 1
+    p.power_draft.layout = "tratora no nariz"
     rows, best, names = mdo.run(p)
     q = dict(zip(names["quantities"], best["q"]))
     assert best["feasible"] and q["b"] <= 2.0 + 1e-9 and q["s_to"] <= 60.0 + 1e-6
     assert q["mtow"] == pytest.approx(max(r["mtow"] for r in rows if r["feasible"]), rel=1e-9)
+
+
+def test_mdo_layout_and_lists_default_to_all():
+    """arranjo é variável: na asa os motores vão aos pares; listas variáveis sem escolha = tudo (pasta de perfis)"""
+    from aerosim.design import mdo
+    from aerosim.design.power import LAYOUTS
+    p = DesignProject()
+    for v in p.variables:
+        if v.key in ("power.layout", "wing.airfoil"):
+            v.mode = "variável"
+    _var(p, "power.motors", "variável", 1, 4)
+    p.mdo.particles, p.mdo.iterations = 12, 4
+    rows, best, names = mdo.run(p)
+    assert names["layouts"] == list(LAYOUTS) and len(names["airfoils"]) >= 9
+    for r in rows:
+        if r["layout"] == LAYOUTS[1]:
+            assert r["motors"] % 2 == 0
+        else:
+            assert r["motors"] == 1
+    wing = next(r for r in rows if r["layout"] == LAYOUTS[1])
+    mdo.apply(p, wing)
+    assert p.power_draft.layout == LAYOUTS[1] and p.power_draft.wing_motors == wing["motors"]
+    assert p.airfoil(wing["airfoil"]) is not None              # perfil da pasta entrou no projeto
+
+
+def test_mdo_full_envelope_and_constraint_diagram():
+    """o indivíduo por inteiro: todas as velocidades do desempenho do núcleo e o diagrama com as curvas escolhidas"""
+    from aerosim.design import mdo
+    p = DesignProject()
+    p.mdo.particles, p.mdo.iterations = 6, 2
+    rows, best, names = mdo.run(p)
+    h = mdo.history(rows)[-1]
+    ev = mdo.evaluate(p, h)
+    env = mdo.full_envelope(p, h, ev)
+    s = env["summary"]
+    assert s["Vs"] == pytest.approx(ev["q"]["V_S"], rel=0.02) and s["Vmax"] > s["V_LDmax"] > s["Vs"]
+    assert len(env["rows"]["V"]) > 40 and np.all(np.isfinite(env["rows"]["Tr"]))      # a curva inteira
+    d = mdo.constraint_diagram(p, h, ev, env, ("estol", "decolagem", "curva"))
+    assert set(d["curves"]) == {"ws", "decolagem", "curva"} and "estol" in d["limits"]
+    assert d["point"][0] == pytest.approx(h["mtow"] * 9.80665 / h["area"], rel=1e-6)
