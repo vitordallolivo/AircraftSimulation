@@ -1,5 +1,5 @@
 """Aba Aerodinâmica — polares e derivadas a partir da geometria, com o lltdrek (linha
-sustentadora não linear) como método principal; o núcleo Zig e o AeroSandbox entram para
+sustentadora não linear) como método principal; o modelo interno e o AeroSandbox entram para
 comparar. O diagnóstico diz se os métodos concordam (e por que não), onde fica o cruzeiro em
 relação ao L/D máximo e, se a aeronave TEM dispositivos de ponta, se eles valem o atrito que
 custam. Sem dispositivo na configuração, o estudo de pontas só roda se for pedido.
@@ -21,7 +21,7 @@ from aerosim.model.features import features
 
 from .base import SimulationBase
 
-LABEL = {"zig": "núcleo Zig", "lltdrek": "lltdrek", "asb_vlm": "ASB VLM", "asb_buildup": "ASB AeroBuildup",
+LABEL = {"zig": "modelo interno", "lltdrek": "lltdrek", "asb_vlm": "ASB VLM", "asb_buildup": "ASB AeroBuildup",
          "asb_ll": "ASB LiftingLine"}
 G0 = 9.80665
 
@@ -38,8 +38,13 @@ def resolve_cg(backend, model, xcg_mac: float) -> tuple[tuple[float, float, floa
 class AerodynamicsSimulation(SimulationBase):
     name = "aerodynamics"
     title = "Aerodinâmica"
+    area = "aerodinamica"
+    show_aircraft = True
+    # comparações entre métodos, aeronave inteira e pontas de asa: estudo detalhado
+    detailed = ("use_zig", "use_asb_vlm", "use_asb_buildup", "use_asb_ll", "full", "de", "alpha_beta", "tips", "hb_max",
+                "Cf", "dev_gain")
     description = ("Polares e derivadas a partir da geometria pelo lltdrek (linha sustentadora não linear), "
-                   "comparadas com o núcleo Zig e, se quiser, com o AeroSandbox. Diz se os métodos concordam e "
+                   "comparadas com o modelo interno e, se quiser, com o AeroSandbox. Diz se os métodos concordam e "
                    "por quê, onde o cruzeiro fica em relação ao L/D máximo e se os dispositivos de ponta "
                    "(quando existem) compensam.")
 
@@ -62,7 +67,7 @@ class AerodynamicsSimulation(SimulationBase):
                         help="modelo: a mesma polar do simulador; neuralfoil: a rede neural sobre o contorno .dat"),
               ParamSpec("n_span", "painéis por semiasa", 12, kind="int", minimum=4, maximum=40),
               ParamSpec("use_lltdrek", "lltdrek (método principal)", True, kind="bool"),
-              ParamSpec("use_zig", "comparar: núcleo Zig", True, kind="bool", help="o modelo que a simulação usa"),
+              ParamSpec("use_zig", "comparar: modelo interno", True, kind="bool", help="o modelo que a simulação usa"),
               ParamSpec("use_asb_vlm", "comparar: AeroSandbox VLM", False, kind="bool"),
               ParamSpec("use_asb_buildup", "comparar: AeroSandbox AeroBuildup", False, kind="bool"),
               ParamSpec("use_asb_ll", "comparar: AeroSandbox LiftingLine", False, kind="bool")]
@@ -185,7 +190,7 @@ class AerodynamicsSimulation(SimulationBase):
             from aerosim.aero.service import remember
             remember(ctx.shared, model, res[main], LABEL[main], V)
         if main is None:
-            add("falha", "nenhum método rodou", "—", "", "", "marque o lltdrek ou o núcleo Zig", "métodos")
+            add("falha", "nenhum método rodou", "—", "", "", "marque o lltdrek ou o modelo interno", "métodos")
             return SimResult(series=S_, summary=summ, checks=checks)
         if main != "lltdrek" and P("use_lltdrek"):
             add("info", "método principal", LABEL[main], "lltdrek indisponível", "usando o próximo disponível", "",
@@ -286,7 +291,7 @@ class AerodynamicsSimulation(SimulationBase):
                 why = _why_differ(main, o, key)
                 add("atencao" if bad else "ok", f"{lab}: {LABEL[main]} × {olab}", f"{a:.3g} × {b_:.3g}{unit}",
                     f"diferença ≤ {tol:g}{unit}" if unit else f"diferença ≤ {100 * tol:.0f} %",
-                    why if bad else "", ("o núcleo Zig é o que a simulação usa: se a diferença importa, ajuste "
+                    why if bad else "", ("o modelo interno é o que a simulação usa: se a diferença importa, ajuste "
                                          "C_Lα/dε/dα/C_mα da fuselagem no modelo") if bad and o == "zig" else "", G)
 
     @staticmethod
@@ -337,7 +342,7 @@ class AerodynamicsSimulation(SimulationBase):
                     ((opt or "sem ganho em nenhuma altura: retirar ou reduzir") + note).strip(), G,
                     source="Trefftz (Munk; Kroo 2001)")
             add("info", "limite do modelo", "carregamento ótimo", "—",
-                "o plano de Trefftz dá o melhor caso; o núcleo Zig trata o dispositivo por faixas e o lltdrek não o "
+                "o plano de Trefftz dá o melhor caso; o modelo interno trata o dispositivo por faixas e o lltdrek não o "
                 "inclui (só superfícies horizontais)", "", G)
         hb = np.linspace(0.0, P("hb_max"), 11)
         t = td.device_study(b, S, CL_cru, ctip, e_planform=e_pl, Cf=Cf, hb=hb)

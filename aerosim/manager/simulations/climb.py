@@ -20,6 +20,7 @@ class ClimbSimulation(SimulationBase):
     tab = False
     name = "climb"
     title = "Subida"
+    area = "desempenho"
     description = "Ângulo de subida máximo por velocidade: simulação a partir de checkpoint nivelado e trimagem."
 
     def parameters(self):

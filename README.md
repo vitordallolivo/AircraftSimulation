@@ -6,8 +6,9 @@ estabilidade, desempenho e simula a missão inteira em 6 graus de liberdade — 
 uma mesa, curvas, soltura da carga e pouso numa plataforma — dizendo o que passou, o que falhou e o que
 mudar.
 
-- **GUI** (Python + PyQt6): configuração em 3D, dimensionamento inicial, missão, desempenho, tração,
-  aerodinâmica e estabilidade, com diagnóstico em cada aba e Ctrl+Z.
+- **GUI** (Python + PyQt6): dimensionamento inicial, missão, desempenho, tração, aerodinâmica e
+  estabilidade, com diagnóstico em cada aba e Ctrl+Z; a montagem do avião em 3D fica na última aba.
+  Vários aviões (ou variantes do mesmo) abertos ao mesmo tempo, trocados com ◀ ▶.
 - **Núcleo de física em Zig**: a missão completa (165 s de voo) roda em cerca de 1 s.
 - **[AeroDrive](aerodrive/README.md)**: o mesmo avião num simulador em tempo real (raylib), pilotado
   com controle de Xbox ou pelo piloto automático; grava vídeo e dados do voo.
@@ -83,7 +84,12 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
 - Em cada aba: preencha os campos (o **ⓘ** explica cada um), clique em **▶ Rodar**; os gráficos
   atualizam enquanto roda; no fim vêm o **diagnóstico** (clique numa linha para ver o porquê e o que
   mudar) e a tabela de resultados; **Exportar** grava `.xlsx` ou `.csv`.
-- **Ctrl+Z / Ctrl+Y** desfaz e refaz qualquer mudança, na configuração e nas abas.
+- **Montagem** (última aba): componentes, 3D editável, ambiente (altitude-densidade, vento) e envelope
+  de voo (ângulo de cruzeiro, fator de carga). Aerodinâmica, Estabilidade, Desempenho e Missão mostram o
+  avião atual em 3D acima dos gráficos.
+- **Vários aviões:** **Arquivo → Abrir ao lado** ou **＋ variante** abre mais um; ◀ ▶ troca, e todas
+  as abas rodam o escolhido.
+- **Ctrl+Z / Ctrl+Y** desfaz e refaz qualquer mudança, na montagem e nas abas.
 
 ### Simulador pilotado (AeroDrive)
 

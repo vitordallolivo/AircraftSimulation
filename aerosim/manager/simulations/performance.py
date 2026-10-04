@@ -1,6 +1,6 @@
 """Desempenho por cálculo (como na planilha de desempenho): nada é simulado e não há piloto.
 
-Tudo vem de `ISimBackend.simple_performance` (núcleo Zig, `core/src/sim/simple_perf.zig`) com a polar
+Tudo vem de `ISimBackend.simple_performance` (núcleo interno, `core/src/sim/simple_perf.zig`) com a polar
 parabólica C_D = C_D0 + K C_L² e a tração disponível T(V) da propulsão, por altitude (ISA). As curvas
 saem inteiras, como na planilha (também onde não dá para voar), e a área segura fica sombreada:
   envelope de voo     altitude × V: V_min e V_max (P_d = P_r) fechando no teto, V_e, V* = V_e √n e V de
@@ -52,8 +52,18 @@ class PerformanceSimulation(SimulationBase):
     tab = True
     name = "performance"
     title = "Desempenho"
+    area = "desempenho"
+    show_aircraft = True
     description = ("Cálculos da planilha (sem simulação, sem piloto): envelope de voo, potências, subida, planeio, "
                    "envelope de curvas, V-n e bateria — curvas inteiras e a área segura sombreada.")
+
+    def parameters_for(self, aircraft, values=None):
+        ps = self.parameters()
+        if aircraft is not None:          # primeira altitude = a AD da aeronave (o ar do dia)
+            ad = round(float(aircraft.environment.density_altitude))
+            ps[0] = ParamSpec("h_list", "Altitudes dos gráficos (a 1ª = AD)", f"{ad:g}, {ad + 900:g}", kind="floats",
+                              unit="m", help="a primeira é a altitude-densidade da aeronave (Montagem → Ambiente)")
+        return ps
 
     def parameters(self):
         return [ParamSpec("h_list", "Altitudes dos gráficos", "0, 900", kind="floats", unit="m"),

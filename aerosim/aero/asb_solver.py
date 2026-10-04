@@ -73,6 +73,7 @@ class AsbTranslator(IModelTranslator):
 
 
 class _AsbBase(AeroSolverBase):
+    level = "detalhado"          # comparação com outro método (VLM, AeroBuildup, linha sustentadora)
     method = "vlm"
     induced_only = True
     translator = AsbTranslator()

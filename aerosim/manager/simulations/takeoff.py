@@ -18,6 +18,7 @@ class TakeoffSimulation(SimulationBase):
     tab = False
     name = "takeoff"
     title = "Decolagem"
+    area = "desempenho"
     description = "Só a decolagem, até h_end acima da pista. A varredura procura (s_R, δe1) de menor pista."
 
     def parameters(self):

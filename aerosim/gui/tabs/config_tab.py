@@ -41,7 +41,9 @@ EDIT_HELP = {
     "fuselage": "ligue/desligue em 'ativo'", "boom": "ligue/desligue em 'ativo'",
 }
 
-NONGEOM = [("airfield", "🛫 Pista: chão, mesa e plataforma"), ("mass", "Massa e inércia"), ("environment", "Ambiente"),
+NONGEOM = [("airfield", "🛫 Pista: chão, mesa e plataforma"), ("mass", "Massa e inércia"),
+           ("environment", "Ambiente: altitude-densidade (AD) e vento"),
+           ("performance", "Envelope de voo: ângulo de cruzeiro, fator de carga"),
            ("takeoff", "Decolagem (acionamento do profundor)"), ("autopilot", "Piloto automático"), ("sim", "Integração"),
            ("mission", "Percurso: partida e eventos")]
 
@@ -98,6 +100,8 @@ class ConfigTab(QtWidgets.QWidget):
         self.info.setWordWrap(True)
         self.info.setMinimumWidth(10)
         self.info.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Preferred)
+        from ..widgets.aircraft_panel import FleetBar
+        lv.addWidget(FleetBar(state))
         bar.addWidget(self.move_chk)
         bar.addWidget(QtWidgets.QLabel("arraste:"))
         bar.addWidget(self.lock)
@@ -378,6 +382,10 @@ class ConfigTab(QtWidgets.QWidget):
             self.state.notify("geometry")
             self._fill_list()          # reabre o editor (pernas custom aparecem/somem)
             return
+        if field == "density_altitude":
+            env = self.state.aircraft.environment
+            env.set_density_altitude(env.density_altitude)
+            self._show_rho()
         if field in ("name", "enabled"):
             self._fill_list()
         self.state.notify("geometry")
@@ -440,6 +448,14 @@ class ConfigTab(QtWidgets.QWidget):
             self.form = DataclassForm(ac.mission, exclude=("legs", "events"))
             v.addWidget(self.form)
             v.addWidget(self._list_editor("eventos", ac.mission.events, MissionEvent, {"kind": EVENT_KINDS}))
+        elif kind == "environment":
+            # a densidade sai da altitude-densidade (atmosfera padrão): edita a AD, mostra o ρ
+            self.form = DataclassForm(ac.environment, exclude=("rho",))
+            v.addWidget(self.form)
+            self._rho_info = QtWidgets.QLabel()
+            self._rho_info.setStyleSheet("color: #555")
+            v.addWidget(self._rho_info)
+            self._show_rho()
         else:
             self.form = DataclassForm(getattr(ac, kind))
             v.addWidget(self.form)
@@ -447,6 +463,14 @@ class ConfigTab(QtWidgets.QWidget):
             self.form.changed.connect(self._changed)
         v.addStretch(1)
         self.editor_area.setWidget(w)
+
+    def _show_rho(self):
+        env = self.state.aircraft.environment
+        if getattr(self, "_rho_info", None) is not None:
+            try:
+                self._rho_info.setText(f"ρ = {env.rho:.4f} kg/m³ (atmosfera padrão na AD de {env.density_altitude:.0f} m)")
+            except RuntimeError:          # o editor já foi trocado
+                self._rho_info = None
 
     def _drop_editor(self):
         """onde soltar a carga: perna do percurso e distância dentro dela (evento 'drop')"""
@@ -591,7 +615,7 @@ class ConfigTab(QtWidgets.QWidget):
     def _devices_editor(self, s: LiftingSurface):
         """winglet, winglet para baixo, placa de ponta, cerca: geometria e posição livres"""
         box = self._list_editor("Dispositivos (winglet, placa de ponta, cerca…) — η: posição na semiasa, 1 = ponta",
-                                s.devices, lambda: WingDevice("winglet", height=round(0.1 * max(s.span, 0.5), 3)),
+                                s.devices, lambda: WingDevice("winglet", height=round(0.1 * max(s.span, 0.5), 3), enabled=False),
                                 {"kind": DEVICE_KINDS})
         return box
 

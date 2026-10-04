@@ -1,5 +1,8 @@
 """Estado compartilhado da GUI: a aeronave em edição, o catálogo e o Simulation Manager.
 
+Vários aviões podem ficar abertos ao mesmo tempo (as variantes da sprint): `fleet` guarda todos e
+`aircraft` é o atual — toda aba roda e mostra o atual; trocar (`select`) emite "load".
+
 As abas não se falam diretamente: mudam o estado e emitem `changed`.
 
 Desfazer/refazer (Ctrl+Z / Ctrl+Y): cada mudança (`notify` ou `touch`) guarda o estado de antes —
@@ -34,6 +37,9 @@ class AppState(QtCore.QObject):
             projects = JsonProjectStore()
         self.projects = projects          # biblioteca "meus aviões" (só pela interface)
         self.aircraft = aircraft
+        self.fleet: list[Aircraft] = [aircraft]       # aviões abertos (o atual é fleet[current])
+        self.fleet_paths: list[str | None] = [None]
+        self.current = 0
         self.original = copy.deepcopy(aircraft)      # para o botão Restaurar
         self.catalog = catalog or builtin_catalog()
         self.path: str | None = None
@@ -57,9 +63,56 @@ class AppState(QtCore.QObject):
     def set_aircraft(self, ac: Aircraft, path: str | None = None, keep_original: bool = False) -> None:
         self.aircraft = ac
         self.path = path
+        self.fleet[self.current] = ac
+        self.fleet_paths[self.current] = path
         if not keep_original:
             self.original = copy.deepcopy(ac)
         self.touch()
+        self.changed.emit("load")
+
+    # ------------------------------------------------------------------ vários aviões abertos
+    def names(self) -> list[str]:
+        return [a.name for a in self.fleet]
+
+    def select(self, i: int) -> None:
+        """troca o avião atual (todas as abas passam a mostrar e rodar este)"""
+        if not 0 <= i < len(self.fleet) or i == self.current:
+            return
+        self.current = i
+        self.aircraft = self.fleet[i]
+        self.path = self.fleet_paths[i]
+        self.original = copy.deepcopy(self.aircraft)
+        self._undo.clear()
+        self._redo.clear()
+        self._settle()
+        self.changed.emit("load")
+
+    def add(self, ac: Aircraft | None = None, path: str | None = None) -> int:
+        """abre mais um avião (sem `ac`: uma cópia do atual, para variar a partir dele) e passa para ele"""
+        if ac is None:
+            ac = copy.deepcopy(self.aircraft)
+            ac.name = f"{ac.name} (variante {len(self.fleet) + 1})"
+        self.fleet.append(ac)
+        self.fleet_paths.append(path)
+        self.select(len(self.fleet) - 1)
+        return self.current
+
+    def close(self, i: int | None = None) -> None:
+        """fecha um avião (o último que sobra não fecha)"""
+        i = self.current if i is None else i
+        if len(self.fleet) <= 1 or not 0 <= i < len(self.fleet):
+            return
+        del self.fleet[i]
+        del self.fleet_paths[i]
+        if i < self.current or (i == self.current and i > 0):
+            self.current -= 1
+        self.current = min(self.current, len(self.fleet) - 1)
+        self.aircraft = self.fleet[self.current]
+        self.path = self.fleet_paths[self.current]
+        self.original = copy.deepcopy(self.aircraft)
+        self._undo.clear()
+        self._redo.clear()
+        self._settle()
         self.changed.emit("load")
 
     def notify(self, reason: str = "geometry") -> None:
@@ -109,6 +162,7 @@ class AppState(QtCore.QObject):
         self._busy = True
         try:
             self.aircraft = copy.deepcopy(ac)
+            self.fleet[self.current] = self.aircraft
             self.changed.emit("load")
             for k, (_, put) in self._views.items():
                 if k in views:

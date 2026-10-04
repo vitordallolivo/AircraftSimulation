@@ -29,7 +29,7 @@ def test_window_tabs_and_edit(app, manager):
     w.show()
     pump(app)
     titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
-    assert titles[0] == "Configuração" and "Missão" in titles and "Desempenho" in titles
+    assert titles[-1] == "Montagem" and "Missão" in titles and "Desempenho" in titles
     assert "Decolagem" not in titles and "Polar" not in titles      # viraram modos/partes de outras abas
     cfg = w.config
     n0 = len(st.aircraft.propulsion)

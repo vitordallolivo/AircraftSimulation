@@ -36,6 +36,7 @@ class PolarSimulation(SimulationBase):
     tab = False
     name = "polar"
     title = "Polar"
+    area = "aerodinamica"
     description = "Curvas estáticas da aeronave inteira (painéis + fuselagem), margem estática e V de estol."
 
     def parameters(self):

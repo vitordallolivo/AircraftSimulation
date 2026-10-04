@@ -367,7 +367,10 @@ class Airfield:
 # ------------------------------------------------------------------ ambiente e pilotagem
 @dataclass
 class Environment:
+    """ar e vento. A densidade se escolhe pela altitude-densidade (AD, atmosfera padrão): mudar a AD
+    muda ρ (`set_density_altitude`); arquivo antigo sem AD: a AD sai do ρ gravado."""
     rho: float = 1.225
+    density_altitude: float = float("nan")  # AD (m); sem valor (arquivo antigo): calculada do ρ
     wind_speed: float = 4.0    # a 10 m (m/s)
     wind_from: float = 30.0    # graus (de onde vem; 0 = norte, 90 = leste)
     wind_elev: float = 3.0     # graus
@@ -375,6 +378,18 @@ class Environment:
     gust: bool = False
     gust_T: float = 1.0
     gust_U: list[float] = field(default_factory=lambda: [-1.0, -2.0, -1.0])
+
+    def __post_init__(self):
+        from .atmosphere import density_altitude, isa_density
+        if self.density_altitude is None or not math.isfinite(self.density_altitude):
+            self.density_altitude = density_altitude(self.rho)
+        else:
+            self.rho = isa_density(self.density_altitude)
+
+    def set_density_altitude(self, h: float) -> None:
+        from .atmosphere import isa_density
+        self.density_altitude = float(h)
+        self.rho = isa_density(h)
 
 
 @dataclass

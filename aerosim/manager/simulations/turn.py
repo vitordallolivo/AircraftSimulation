@@ -22,6 +22,7 @@ class TurnSimulation(SimulationBase):
     tab = False
     name = "turn"
     title = "Curvas"
+    area = "desempenho"
     description = "Raio mínimo em curva nivelada (estol da asa, limite de α, seguimento e altura)."
 
     def parameters(self):

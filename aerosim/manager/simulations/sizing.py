@@ -34,6 +34,7 @@ SOURCES = ("estimativa (sem geometria)", "aba Aerodinâmica (da aeronave)")
 class SizingSimulation(SimulationBase):
     name = "sizing"
     title = "Dimensionamento inicial"
+    area = "dimensionamento"
     description = ("Diagrama de restrições: tração (e potência) por peso exigida por cada requisito em função da carga "
                    "alar. Mostra a região viável, a faixa ótima e o ponto de projeto (área de asa e motor), e onde a "
                    "aeronave atual está. A polar vem de uma estimativa ou da aba Aerodinâmica.")

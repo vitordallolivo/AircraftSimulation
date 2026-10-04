@@ -151,6 +151,9 @@ def _refs(ac, info, xw, zw) -> dict:
 class MissionSimulation(SimulationBase):
     name = "mission"
     title = "Missão"
+    area = "missao"
+    level = "detalhado"    # simulação 6GDL da missão inteira
+    show_aircraft = True
     description = ("Voo simulado (6GDL) por etapa. A decolagem é otimizada para a pista (x_warning: comprimento, "
                    "z_warning: altura que conta como decolado) e o resto do voo continua dali, etapa por etapa.")
 
