@@ -7,7 +7,14 @@ const std = @import("std");
 const fz = @import("../util/fuzz.zig");
 
 // ------------------------------------------------------------------ esquema (nomes iguais aos do JSON)
-pub const Section = struct { y: f64 = 0, chord: f64 = 0.3, x_offset: f64 = 0, twist: f64 = 0 };
+/// seção da superfície; `airfoil` null: o perfil da superfície (entre seções as propriedades são interpoladas)
+pub const Section = struct { y: f64 = 0, chord: f64 = 0.3, x_offset: f64 = 0, twist: f64 = 0, airfoil: ?Airfoil = null };
+
+/// alguma seção tem perfil próprio
+pub fn mixedAirfoils(s: *const Surface) bool {
+    for (s.sections) |q| if (q.airfoil != null) return true;
+    return false;
+}
 
 pub const Control = struct {
     kind: []const u8 = "aileron",
@@ -15,8 +22,38 @@ pub const Control = struct {
     span_end: f64 = 1.0,
     chord_frac: f64 = 0.25,
     tau: ?f64 = null, // efetividade; null: perfil fino
-    deflection: f64 = 0,
+    deflection: f64 = 0, // deflexão fixa (flape, flaperon baixado)
+    mix: ?[3]f64 = null, // [arfagem, rolagem, guinada]; null: a do tipo (kindGains)
+
+    pub fn gains(c: Control) [3]f64 {
+        return c.mix orelse kindGains(c.kind);
+    }
+    /// o que o comando faz, pela mistura (o nome é só nome)
+    pub fn role(c: Control) []const u8 {
+        const g = c.gains();
+        const p = g[0] != 0;
+        const r = g[1] != 0;
+        const y = g[2] != 0;
+        if (p and !r and !y) return "elevator";
+        if (!p and r and !y) return "aileron";
+        if (!p and !r and y) return "rudder";
+        if (p and r and !y) return "elevon";
+        if (p and !r and y) return "ruddervator";
+        if (!p and !r and !y) return "flap";
+        return "mixed";
+    }
 };
+
+/// a mistura de cada tipo (igual a `KIND_MIX` do aerosim)
+pub fn kindGains(kind: []const u8) [3]f64 {
+    const eq = std.mem.eql;
+    if (eq(u8, kind, "elevator")) return .{ 1, 0, 0 };
+    if (eq(u8, kind, "aileron") or eq(u8, kind, "flaperon")) return .{ 0, 1, 0 };
+    if (eq(u8, kind, "elevon")) return .{ 1, 1, 0 };
+    if (eq(u8, kind, "rudder")) return .{ 0, 0, 1 };
+    if (eq(u8, kind, "ruddervator")) return .{ 1, 0, 1 };
+    return .{ 0, 0, 0 };
+}
 
 pub const Device = struct {
     kind: []const u8 = "winglet",
@@ -152,6 +189,7 @@ pub const Propulsion = struct {
     y: f64 = 0,
     z: f64 = 0,
     tilt: f64 = 0,
+    tilt_range: f64 = 0, // eixo móvel (graus): tilt + comando·faixa; 0 = fixo
     toe: f64 = 0,
     sense: f64 = 1,
     yaw_mix: f64 = 0,

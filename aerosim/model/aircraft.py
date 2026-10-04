@@ -25,16 +25,50 @@ class WingSection:
     chord: float = 0.3
     x_offset: float = 0.0      # recuo do bordo de ataque em relação à raiz (m, + para trás)
     twist: float = 0.0         # torção (graus, + cabra)
+    airfoil: Airfoil | None = None   # perfil desta seção (None: o da superfície); entre seções, interpolado
+
+
+# mistura de cada tipo: ganho de [arfagem, rolagem, guinada]; a rolagem já é antissimétrica (direita sobe com
+# o manche à esquerda) e a guinada, em superfície espelhada, também (ruddervator). O tipo é só o nome: com
+# `mix` preenchido manda a mistura (ex.: elevon com mais rolagem que arfagem, flaperon, leme-aileron...)
+KIND_MIX = {"aileron": (0.0, 1.0, 0.0), "elevator": (1.0, 0.0, 0.0), "rudder": (0.0, 0.0, 1.0),
+            "elevon": (1.0, 1.0, 0.0), "ruddervator": (1.0, 0.0, 1.0), "flaperon": (0.0, 1.0, 0.0),
+            "flap": (0.0, 0.0, 0.0)}
 
 
 @dataclass
 class ControlSurface:
-    kind: str = "aileron"      # aileron | elevator | rudder | elevon | ruddervator | flap
+    kind: str = "aileron"      # nome: aileron | elevator | rudder | elevon | ruddervator | flaperon | flap | o que quiser
     span_start: float = 0.6    # fração da semi-envergadura
     span_end: float = 1.0
     chord_frac: float = 0.25   # fração da corda
     tau: float | None = None   # efetividade (None: perfil fino)
-    deflection: float = 0.0    # flape: deflexão fixa (graus)
+    deflection: float = 0.0    # deflexão fixa (graus): flape, flaperon baixado, compensação
+    mix: list[float] | None = None   # [arfagem, rolagem, guinada]; None: a do tipo (KIND_MIX)
+
+    @property
+    def gains(self) -> tuple[float, float, float]:
+        if self.mix is not None and len(self.mix) == 3:
+            return tuple(float(v) for v in self.mix)
+        return KIND_MIX.get(self.kind, (0.0, 0.0, 0.0))
+
+    @property
+    def role(self) -> str:
+        """o que o comando faz, pela mistura (o nome não importa): elevator, aileron, rudder, elevon,
+        ruddervator, flap (só deflexão fixa) ou mixed (rolagem + guinada)"""
+        return mix_role(self.gains)
+
+
+def mix_role(g) -> str:
+    p, r, y = (abs(v) > 1e-12 for v in g)
+    return {(1, 0, 0): "elevator", (0, 1, 0): "aileron", (0, 0, 1): "rudder", (1, 1, 0): "elevon",
+            (1, 0, 1): "ruddervator", (0, 0, 0): "flap"}.get((p, r, y), "mixed")
+
+
+def panel_mix(g, side: int) -> list[float]:
+    """ganhos → (δe, δa, δr) da faixa; side = +1 direita, −1 esquerda, 0 no plano de simetria"""
+    p, r, y = g
+    return [float(p), -float(side) * r, -float(side if side else 1) * y]
 
 
 DEVICE_KINDS = ("winglet", "winglet_baixo", "placa", "cerca")
@@ -90,6 +124,14 @@ class LiftingSurface:
     depsda: float | None = None    # dε/dα; None: da asa principal
     mass: float = 0.0          # massa estrutural (entra no modelo de massa por componentes)
     mount: str = ""            # "" solta | "tubo:i" na ponta do tubo i | "ponta:j" na ponta da superfície j
+
+    def section_airfoil(self, sec: WingSection) -> Airfoil:
+        return sec.airfoil if sec.airfoil is not None else self.airfoil
+
+    @property
+    def mixed_airfoils(self) -> bool:
+        """alguma seção tem perfil próprio"""
+        return any(q.airfoil is not None for q in self.sections)
 
     @property
     def semispan(self) -> float:
@@ -213,6 +255,7 @@ class PropulsionUnit:
     z: float = 0.0
     tilt: float = 3.0          # graus (+ eixo apontando para cima)
     toe: float = 0.0           # graus
+    tilt_range: float = 0.0    # eixo móvel (tilt-rotor), graus: inclinação = tilt + comando (0..1) × faixa; 0 = fixo
     sense: int = 1             # +1 horário visto de trás, −1 anti-horário
     yaw_mix: float = 0.0       # acelerador diferencial por leme
     thrust_model: str = "motor"   # motor (motor + hélice por tabela J) | poly (polinômio de tração)

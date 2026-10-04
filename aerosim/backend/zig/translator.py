@@ -14,7 +14,7 @@ from dataclasses import asdict
 import numpy as np
 
 from aerosim.interfaces.translator import COEFFS, IModelTranslator
-from aerosim.model.aircraft import ANGLE_KEYS_AP
+from aerosim.model.aircraft import ANGLE_KEYS_AP, panel_mix
 from aerosim.model.catalog import POLY_VARS
 from aerosim.model.universal import GROUP, AircraftModel, SurfaceModel, build_model
 
@@ -22,15 +22,11 @@ GEAR_KIND = {"steer": 0, "main": 1, "skid": 2}
 D2R = math.pi / 180.0
 
 
-def _mix(kind: str, side: int) -> list[float]:
-    return {"elevator": [1.0, 0.0, 0.0], "aileron": [0.0, -float(side), 0.0], "elevon": [1.0, -float(side), 0.0],
-            "rudder": [0.0, 0.0, -1.0], "ruddervator": [1.0, 0.0, -float(side)]}.get(kind, [0.0, 0.0, 0.0])
-
-
 def surface_panels(s: SurfaceModel) -> list[dict]:
     out = []
     sides = (1, -1) if s.mirror else (s.side if s.role == "device" else 0,)
-    for a, b, ctl in s.strips():
+    for k, (a, b, ctl) in enumerate(s.strips()):
+        co = s.strip_coeffs[k] if s.strip_coeffs else dict(CLa=s.CLa, CL0=s.CL0, CLmax=s.CLmax, CD0=s.CD0, Cmac=s.Cmac)
         ds = b.s - a.s
         if ds < 1e-6:
             continue
@@ -41,15 +37,15 @@ def surface_panels(s: SurfaceModel) -> list[dict]:
         tau = 0.0
         if ctl is not None:
             tau = ctl.tau
+            inc += tau * ctl.deflection             # deflexão fixa (flape, flaperon baixado)
             if ctl.kind == "flap":
-                inc += tau * ctl.deflection
                 tau = 0.0
         for side in sides:
             r = [float(mid[0] - 0.25 * cm), float(mid[1] * (1 if side >= 0 else -1)), float(mid[2])]
             out.append(dict(
                 r=r, S=S, c=cm, AR=s.AR, e=s.oswald, dihedral=math.radians(s.dihedral), incidence=math.radians(inc),
-                CLa=s.CLa, CL0=s.CL0, CLmax=s.CLmax, CD0=s.CD0, Cmac=s.Cmac, tau=tau,
-                mix=_mix(ctl.kind, side) if ctl is not None else [0.0, 0.0, 0.0], eta=s.eta,
+                CLa=co["CLa"], CL0=co["CL0"], CLmax=co["CLmax"], CD0=co["CD0"], Cmac=co["Cmac"], tau=tau,
+                mix=panel_mix(ctl.gains, side) if ctl is not None else [0.0, 0.0, 0.0], eta=s.eta,
                 eps0=s.eps0, depsda=s.depsda, group=GROUP.get(s.role, 0), vertical=int(s.vertical), side=side,
                 downwash=int(s.downwash)))
     return out
@@ -77,7 +73,7 @@ class ZigTranslator(IModelTranslator):
                 poly_x=POLY_VARS.index(tp.x_var), poly_y=POLY_VARS.index(tp.y_var), poly_gain=tp.gain,
                 poly_rho_exp=tp.rho_exp, poly_rho0=tp.rho0, poly_xmax=tp.xmax, poly_ymax=tp.ymax,
                 poly_xc=tp.x_const, poly_yc=tp.y_const,
-                r=[u.x, u.y, u.z], tilt=u.tilt * D2R, toe=u.toe * D2R, sense=float(u.sense), D=pr.D, Ip=pr.Ip,
+                r=[u.x, u.y, u.z], tilt=u.tilt * D2R, toe=u.toe * D2R, tilt_range=u.tilt_range * D2R, sense=float(u.sense), D=pr.D, Ip=pr.Ip,
                 Jm=mo.Jm, Kv=mo.Kv, Rm=mo.Rm, B=mo.B, tauc=mo.tauc, Imax=mo.Imax, Voc=ba.Voc,
                 Rint=ba.Rint * (K if ac.shared_battery else 1), yaw_mix=u.yaw_mix,
                 J=pr.J[:n], CT=pr.CT[:n], CP=pr.CP[:n], n_pts=n))

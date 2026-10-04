@@ -89,15 +89,22 @@ pub const Skeleton = struct {
 
 pub const Error = model.Error || airfoil.Error || std.mem.Allocator.Error;
 
-/// deflexão por comando: (δe, δa, δr) -> δ da faixa; side = +1 direita, −1 esquerda (igual ao tradutor)
-pub fn controlMix(kind: []const u8, side: f64) [3]f64 {
-    const eq = std.mem.eql;
-    if (eq(u8, kind, "elevator")) return .{ 1, 0, 0 };
-    if (eq(u8, kind, "aileron")) return .{ 0, -side, 0 };
-    if (eq(u8, kind, "elevon")) return .{ 1, -side, 0 };
-    if (eq(u8, kind, "rudder")) return .{ 0, 0, -1 };
-    if (eq(u8, kind, "ruddervator")) return .{ 1, 0, -side };
-    return .{ 0, 0, 0 };
+/// deflexão por comando: (δe, δa, δr) -> δ da faixa; side = +1 direita, −1 esquerda, 0 no plano de
+/// simetria (igual a `panel_mix` do tradutor): rolagem antissimétrica, guinada também quando espelhada
+pub fn controlMix(c: model.Control, side: f64) [3]f64 {
+    const g = c.gains();
+    return .{ g[0], -side * g[1], -(if (side != 0) side else 1) * g[2] };
+}
+
+test "mistura de comandos: o tipo é nome; a mistura manda (igual a panel_mix)" {
+    const elevon: model.Control = .{ .kind = "elevon" };
+    const livre: model.Control = .{ .kind = "meu comando", .mix = .{ 0.5, 1, 0 } };
+    const leme: model.Control = .{ .kind = "rudder" };
+    try std.testing.expectEqual([3]f64{ 1, -1, 0 }, controlMix(elevon, 1));
+    try std.testing.expectEqual([3]f64{ 0.5, 1, 0 }, controlMix(livre, -1));
+    try std.testing.expectEqual([3]f64{ 0, 0, -1 }, controlMix(leme, 0));
+    try std.testing.expectEqualStrings("elevon", livre.role());
+    try std.testing.expectEqualStrings("aileron", (model.Control{ .kind = "flaperon" }).role());
 }
 
 // ------------------------------------------------------------------ construção
@@ -224,13 +231,21 @@ fn roleColor(role: []const u8) Color {
     return .wing;
 }
 
-fn surfacePieces(b: *Builder, ac: *const Aircraft, s: *const Surface, index: usize, diag: *model.Diag) Error!void {
-    var prof: airfoil.Profile = .{};
-    airfoil.forDrawing(s.airfoil.name, s.airfoil.coords, &prof) catch |e| {
+fn drawingProfile(s: *const Surface, af: model.Airfoil, out: *airfoil.Profile, diag: *model.Diag) Error!void {
+    airfoil.forDrawing(af.name, af.coords, out) catch |e| {
         diag.set("{s}: perfil inválido", .{s.name});
         return e;
     };
-    if (s.airfoil.inverted) airfoil.invert(&prof);
+    if (af.inverted) airfoil.invert(out);
+}
+
+fn surfacePieces(b: *Builder, ac: *const Aircraft, s: *const Surface, index: usize, diag: *model.Diag) Error!void {
+    var prof0: airfoil.Profile = .{};
+    try drawingProfile(s, s.airfoil, &prof0, diag);
+    const mixed = model.mixedAirfoils(s) and s.sections.len > 1;
+    var secbuf: [model.limits.sections]model.Section = undefined;
+    const ss = model.sortedSections(s, &secbuf);
+    var strip_prof: airfoil.Profile = .{};
     var sbuf: [model.limits.sections * 3]Station = undefined;
     const st = stations(ac, s, &sbuf);
     if (st.len < 2) return;
@@ -243,6 +258,16 @@ fn surfacePieces(b: *Builder, ac: *const Aircraft, s: *const Surface, index: usi
         const tag = if (sy > 0) "D" else "E";
         for (st[0 .. st.len - 1], st[1..], 0..) |qa, qb, k| {
             const ctl = controlAt(s, 0.5 * (qa.s + qb.s));
+            var prof = &prof0;
+            if (mixed) { // perfil por seção: a faixa com o perfil da seção mais perto do meio dela
+                const ym = 0.5 * (qa.s + qb.s);
+                var near = ss[0];
+                for (ss) |q| if (@abs(q.y - ym) < @abs(near.y - ym)) {
+                    near = q;
+                };
+                try drawingProfile(s, near.airfoil orelse s.airfoil, &strip_prof, diag);
+                prof = &strip_prof;
+            }
             if (ctl == null) {
                 const m = try loft(b.a, &.{ try ring(b.a, qa, prof.slice(), n0, s.vertical, mir), try ring(b.a, qb, prof.slice(), n0, s.vertical, mir) }, true);
                 try b.add(try b.fmt("{s}/{d}/{s}", .{ s.name, k, tag }), comp, roleColor(s.role), m, .fixed);
@@ -261,8 +286,7 @@ fn surfacePieces(b: *Builder, ac: *const Aircraft, s: *const Surface, index: usi
             var d = v3.unit(v3.sub(pb, pa), .{ 0, 1, 0 });
             // δ > 0: bordo de fuga para −normal -> eixo no sentido de normal × (−x)
             if (v3.dot(d, v3.cross(v3.mul(n0, mir), .{ -1, 0, 0 })) < 0) d = v3.scale(d, -1);
-            const flap_deg = if (std.mem.eql(u8, c.kind, "flap")) c.deflection else 0.0;
-            try b.add(try b.fmt("{s}/{s}/{d}/{s}", .{ s.name, c.kind, k, tag }), comp, .control, fm, .{ .hinge = .{ .p = pa, .d = d, .mix = controlMix(c.kind, sy), .angle_deg = flap_deg } });
+            try b.add(try b.fmt("{s}/{s}/{d}/{s}", .{ s.name, c.kind, k, tag }), comp, .control, fm, .{ .hinge = .{ .p = pa, .d = d, .mix = controlMix(c, sy), .angle_deg = c.deflection } });
         }
     }
 }

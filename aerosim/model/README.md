@@ -63,8 +63,9 @@ flowchart LR
 | componente | campos principais |
 |---|---|
 | `LiftingSurface` | papel (`wing`, `htail`, `vtail`), posição do bordo de ataque da raiz, `sections` (y, corda, recuo, torção), diedro, incidência, `airfoil`, `controls`, sobrescritas `CLa`, `CL0`, `CLmax`, `CD0`, `Cmac`, `eps0`, `depsda`; `mount` (`""` solta, `"tubo:i"` na ponta do tubo i, `"ponta:j"` na ponta da superfície j: cauda em T) |
-| `ControlSurface` | `aileron`, `elevator`, `rudder`, `elevon`, `ruddervator`, `flap`; início/fim (fração da semi-envergadura), fração da corda |
-| `PropulsionUnit` | posição, inclinação do eixo, sentido; `thrust_model = "motor"` (motor + hélice + bateria) ou `"poly"` (`ThrustPoly`) |
+| `WingSection` | y, corda, recuo, torção e `airfoil` (None: o da superfície); entre seções as propriedades 2D (c_lα, α_L0, c_l máx, c_d0, c_m) são interpoladas e cada faixa leva as suas (`universal.strip_coeffs`) |
+| `ControlSurface` | `kind` é o nome; `mix` = [arfagem, rolagem, guinada] (None: a do tipo em `KIND_MIX`: aileron, elevator, rudder, elevon, ruddervator, flaperon, flap); `role` diz o que faz pela mistura; `deflection` = deflexão fixa; início/fim (fração da semi-envergadura), fração da corda |
+| `PropulsionUnit` | posição, inclinação do eixo, `tilt_range` (eixo móvel: inclinação = tilt + comando·faixa, comando `pilot.tilt` 0..1 no núcleo), sentido; `thrust_model = "motor"` (motor + hélice + bateria) ou `"poly"` (`ThrustPoly`) |
 | `LandingGear` | `tricycle`, `conventional` ou `custom` (pontos livres) |
 | `SloshTank` | base quadrada (lado) ou cilíndrica, altura do líquido |
 | `MassModel` | massa base + inércia própria + massas pontuais (+ motores/baterias/estrutura, se ligado) |

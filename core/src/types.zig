@@ -58,6 +58,7 @@ pub const PropUnit = extern struct {
     r: [3]f64 = .{ 0, 0, 0 }, // cubo da hélice (m)
     tilt: f64 = 0, // inclinação do eixo (+ nariz para cima), rad
     toe: f64 = 0, // desvio em guinada, rad
+    tilt_range: f64 = 0, // eixo móvel (tilt-rotor): inclinação = tilt + comando·tilt_range, rad; 0 = fixo
     sense: f64 = 1, // +1 horário visto de trás
     D: f64 = 0.3,
     Ip: f64 = 1e-4,
@@ -207,6 +208,7 @@ pub const Pilot = extern struct {
     da: f64 = 0,
     dr: f64 = 0,
     thr: f64 = 0, // 0..1
+    tilt: f64 = 0, // comando dos eixos móveis, 0..1 (vale também no automático; 0 = posição de `tilt`)
 };
 
 pub const Autopilot = extern struct {

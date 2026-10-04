@@ -11,7 +11,7 @@ RANGES: dict[str, tuple[float, float, float, str]] = {
     "x": (-2.5, 2.5, 0.005, "m"), "y": (-2.5, 2.5, 0.005, "m"), "z": (-1.0, 1.0, 0.005, "m"),
     "x_nose": (-1.0, 2.5, 0.005, "m"), "x_start": (-2.0, 1.0, 0.005, "m"), "length": (0.05, 3.0, 0.005, "m"),
     "width": (0.02, 1.0, 0.005, "m"), "height": (0.02, 1.0, 0.005, "m"), "diameter": (0.005, 0.2, 0.001, "m"),
-    "dihedral": (-90, 90, 0.5, "°"), "pitch": (-30, 30, 0.5, "°"), "yaw": (-30, 30, 0.5, "°"), "incidence": (-10, 10, 0.1, "°"), "tilt": (-20, 20, 0.5, "°"),
+    "dihedral": (-90, 90, 0.5, "°"), "pitch": (-30, 30, 0.5, "°"), "yaw": (-30, 30, 0.5, "°"), "incidence": (-10, 10, 0.1, "°"), "tilt": (-20, 100, 0.5, "°"), "tilt_range": (0, 120, 0.5, "°"),
     "toe": (-20, 20, 0.5, "°"), "oswald": (0.3, 1.0, 0.01, ""), "eta": (0.3, 1.2, 0.01, ""),
     "mass": (0.0, 20.0, 0.01, "kg"), "base_mass": (0.1, 50.0, 0.01, "kg"),
     "Ixx": (0.0, 10.0, 0.01, "kg m²"), "Iyy": (0.0, 10.0, 0.01, "kg m²"), "Izz": (0.0, 10.0, 0.01, "kg m²"),
@@ -161,7 +161,7 @@ CHOICES = {
     "takeoff_from": ("chão", "mesa"),
     "landing_on": ("chão", "plataforma"),
 }
-CONTROL_KINDS = ("aileron", "elevator", "rudder", "elevon", "ruddervator", "flap")
+CONTROL_KINDS = ("aileron", "elevator", "rudder", "elevon", "ruddervator", "flaperon", "flap")
 GEAR_KINDS = ("steer", "main", "skid")
 LEG_KINDS = ("straight", "turn")
 EVENT_KINDS = ("drop", "gust")
@@ -169,7 +169,7 @@ EVENT_KINDS = ("drop", "gust")
 LABELS = {
     "x": "x", "y": "y", "z": "z", "name": "nome", "role": "papel", "dihedral": "diedro", "incidence": "incidência",
     "symmetric": "simétrica", "vertical": "vertical", "oswald": "Oswald e", "eta": "η (q local)",
-    "downwash": "sente downwash", "enabled": "ativo", "mass": "massa", "tilt": "inclinação do eixo",
+    "downwash": "sente downwash", "enabled": "ativo", "mass": "massa", "tilt": "inclinação do eixo", "kind": "tipo", "tilt_range": "eixo móvel: faixa",
     "toe": "desvio do eixo", "sense": "sentido (±1)", "yaw_mix": "acel. diferencial", "side": "lado/diâmetro",
     "fill": "altura do líquido", "height": "altura", "zeta": "amortecimento",
     "shape": "forma", "layout": "tipo", "main_x": "principal x", "main_track": "bitola", "main_z": "principal z",
@@ -222,6 +222,8 @@ HELP = {
     "rho": "densidade: água 1000 kg/m³",
     "layout": "triciclo: bequilha na frente; convencional: bequilha na cauda; custom: pernas livres",
     "tail_skid": "patim que protege a cauda na rotação",
+    "tilt_range": "tilt-rotor: o eixo gira de 'inclinação' até 'inclinação' + faixa pelo comando de inclinação "
+                  "(0 a 1); 0 = eixo fixo. Ex.: inclinação 0 e faixa 90 = do voo horizontal ao pairado",
     "pitch": "graus; + a ponta de trás sobe (tubo inclinado)",
     "yaw": "graus; + a ponta de trás vai para a direita (+y): tubos em V vistos de cima",
     "mount": "onde a raiz fica presa: solta (x, y, z livres), na ponta de um tubo (o bordo de fuga da raiz "

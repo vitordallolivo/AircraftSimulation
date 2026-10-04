@@ -199,7 +199,7 @@ def with_elevon(ac, wing_name: str, chord_frac: float, eta_start: float):
     for s in a.surfaces:
         if s.name == wing_name:
             for c in s.controls:
-                if c.kind == "elevon":
+                if c.role == "elevon":
                     c.chord_frac = chord_frac
                     c.span_start = eta_start
                     c.tau = None

@@ -70,7 +70,7 @@ pub fn detect(ac: *const model.Aircraft) Features {
     for (ac.surfaces) |s| {
         if (!s.enabled) continue;
         for (s.controls) |c| {
-            const k = c.kind;
+            const k = c.role(); // pela mistura: o nome do comando é livre
             if (eq(k, "aileron") and f.roll_by.len == 0) f.roll_by = "aileron";
             if (eq(k, "elevon")) {
                 if (f.roll_by.len == 0 or eq(f.roll_by, "aileron") == false) f.roll_by = "elevon";
@@ -82,6 +82,10 @@ pub fn detect(ac: *const model.Aircraft) Features {
                 if (f.pitch_by.len == 0) f.pitch_by = "ruddervator";
                 if (f.yaw_by.len == 0) f.yaw_by = "ruddervator";
             }
+            const g = c.gains(); // mistura livre (ex.: leme-aileron): o canal vem pelo nome que o projetista deu
+            if (g[0] != 0 and f.pitch_by.len == 0) f.pitch_by = c.kind;
+            if (g[1] != 0 and f.roll_by.len == 0) f.roll_by = c.kind;
+            if (g[2] != 0 and f.yaw_by.len == 0) f.yaw_by = c.kind;
         }
     }
     f.payload = ac.payload.enabled;
@@ -102,11 +106,11 @@ pub fn stallLimit(ac: *const model.Aircraft, c: Channel) ?f64 {
     for (ac.surfaces) |s| {
         if (!s.enabled) continue;
         for (s.controls) |ct| {
-            const k = ct.kind;
+            const g = ct.gains();
             const hit = switch (c) {
-                .aileron => eq(k, "aileron") or eq(k, "elevon"),
-                .elevator => eq(k, "elevator") or eq(k, "elevon") or eq(k, "ruddervator"),
-                .rudder => eq(k, "rudder") or eq(k, "ruddervator"),
+                .aileron => g[1] != 0,
+                .elevator => g[0] != 0,
+                .rudder => g[2] != 0,
                 .throttle => false,
             };
             if (!hit) continue;
