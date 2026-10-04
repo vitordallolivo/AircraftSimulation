@@ -8,11 +8,12 @@ import csv
 import threading
 
 import numpy as np
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 from aerosim.interfaces.simulation import CancelledError, ISimulation, SimResult
 
 from ..state import AppState
+from ..widgets.checks_panel import STATUS, ChecksPanel  # noqa: F401  (STATUS: compatibilidade)
 from ..widgets.plots import LivePlots, format_value
 from ..widgets.param_slider import HELP_MARK
 
@@ -40,8 +41,6 @@ class _Worker(QtCore.QObject):
             self.failed.emit(f"{e}\n{traceback.format_exc(limit=4)}")
 
 
-STATUS = {"ok": ("✔ OK", "#d9f2e6"), "atencao": ("⚠ ATENÇÃO", "#fff1cc"), "falha": ("✖ FALHA", "#fbdada"),
-          "info": ("ℹ INFO", "#e8eef8")}
 
 
 class SimulationTab(QtWidgets.QWidget):
@@ -105,45 +104,15 @@ class SimulationTab(QtWidgets.QWidget):
             self.right.addWidget(self.aircraft_panel)
         self.plots = LivePlots([])
         self.right.addWidget(self.plots)
-        self.diag_title = QtWidgets.QLabel("<b>Diagnóstico</b>" + HELP_MARK)
-        self.diag_title.setToolTip("clique numa linha para ver o porquê e o que mudar")
-        self.diag = QtWidgets.QTableWidget(0, 4)
-        self.diag.setHorizontalHeaderLabels(["estado", "verificação", "valor", "limite"])
-        hh = self.diag.horizontalHeader()
-        hh.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        for i in range(1, 4):
-            hh.setSectionResizeMode(i, QtWidgets.QHeaderView.ResizeMode.Stretch)
-        self.diag.verticalHeader().setVisible(False)
-        self.diag.setWordWrap(True)
-        self.diag.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.diag.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.diag.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.diag_detail = QtWidgets.QLabel()
-        self.diag_detail.setWordWrap(True)
-        self.diag_detail.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.diag.currentCellChanged.connect(lambda r, *_: self._detail(r))
-        for w in (self.diag_title, self.diag, self.diag_detail):
-            w.hide()
-            self.right.addWidget(w)
-        # resumo (grandeza, valor): no fim da rolagem, embaixo do diagnóstico
-        self.table_title = QtWidgets.QLabel("<b>Resultados</b>")
-        self.table = QtWidgets.QTableWidget(0, 2)
-        self.table.setHorizontalHeaderLabels(["grandeza", "valor"])
-        self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setWordWrap(True)
-        self.table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
-        for w in (self.table_title, self.table):
-            w.hide()
-            self.right.addWidget(w)
+        self.checks_panel = ChecksPanel()        # diagnóstico e resumo: no fim da rolagem
+        self.diag, self.table = self.checks_panel.diag, self.checks_panel.table
+        self.right.addWidget(self.checks_panel)
         self.right.addStretch(1)
         self.right_scroll.setWidget(inner)
         split.addWidget(self.right_scroll)
         split.setStretchFactor(0, 2)
         split.setStretchFactor(1, 8)
         split.setSizes([340, 1000])          # cabe em 1366 × 768
-        self._checks = []
 
         self.run_b.clicked.connect(self.start)
         self.stop_b.clicked.connect(self._cancel.set)
@@ -331,9 +300,8 @@ class SimulationTab(QtWidgets.QWidget):
         self.stop_b.clicked.connect(self._cancel.set)
         self._set_plots(self.sim.plots_for(self.state.aircraft, self.params()))
         self.plots.clear()
-        for w in (self.diag_title, self.diag, self.diag_detail):
-            w.hide()
-        self.table.setRowCount(0)
+        self.checks_panel.show_checks([])
+        self.checks_panel.show_summary({})
         self.msg.setText("rodando…")
         self.run_b.setEnabled(False)
         self.stop_b.setEnabled(True)
@@ -374,54 +342,9 @@ class SimulationTab(QtWidgets.QWidget):
         specs = [s for s in self.sim.plots_for(self.state.aircraft, self._run_params) if _has_data(s, res)]
         self._set_plots(specs)
         self.plots.show_result(res)
-        self._show_checks(res.checks)
-        rows = list(res.summary.items())
-        self.table.setRowCount(len(rows))
-        for i, (k, v) in enumerate(rows):
-            self.table.setItem(i, 0, QtWidgets.QTableWidgetItem(str(k)))
-            self.table.setItem(i, 1, QtWidgets.QTableWidgetItem(format_value(v)))
-        self.table.resizeRowsToContents()
-        self.table.setFixedHeight(self.table.horizontalHeader().height() + 4 +
-                                  sum(self.table.rowHeight(i) for i in range(len(rows))))
-        for w in (self.table_title, self.table):
-            w.setVisible(bool(rows))
+        self.checks_panel.show_checks(res.checks)
+        self.checks_panel.show_summary(res.summary)
         self.save_b.setEnabled(True)
-
-    def _show_checks(self, checks):
-        order = {"falha": 0, "atencao": 1, "ok": 2, "info": 3}
-        self._checks = sorted(checks, key=lambda c: order.get(c.status, 9))
-        for w in (self.diag_title, self.diag, self.diag_detail):
-            w.setVisible(bool(checks))
-        self.diag.setRowCount(len(self._checks))
-        for i, c in enumerate(self._checks):
-            txt, color = STATUS.get(c.status, (c.status, "#ffffff"))
-            tip = "\n".join(x for x in (f"por quê: {c.why}" if c.why else "", f"o que fazer: {c.fix}" if c.fix else "",
-                                         f"critério: {c.source}" if c.source else "") if x)
-            for j, v in enumerate((txt, c.item, c.value, c.criterion)):
-                it = QtWidgets.QTableWidgetItem(v)
-                it.setToolTip(tip or v)
-                if j == 0:
-                    it.setBackground(QtGui.QColor(color))
-                self.diag.setItem(i, j, it)
-        self.diag.resizeRowsToContents()
-        h = self.diag.horizontalHeader().height() + sum(self.diag.rowHeight(i) for i in range(len(self._checks))) + 4
-        self.diag.setFixedHeight(h)
-        self._detail(0 if self._checks else -1)
-
-    def _detail(self, row):
-        if not (0 <= row < len(self._checks)):
-            self.diag_detail.setText("")
-            return
-        from html import escape as e
-        c = self._checks[row]
-        parts = [f"<b>{e(c.item)}</b>"]
-        if c.why:
-            parts.append(f"<b>por quê:</b> {e(c.why)}")
-        if c.fix:
-            parts.append(f"<b>o que fazer:</b> {e(c.fix)}")
-        if c.source:
-            parts.append(f"<b>critério:</b> {e(c.criterion)} — {e(c.source)}")
-        self.diag_detail.setText("<br>".join(parts))
 
     def _failed(self, text):
         self._finish()

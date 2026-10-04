@@ -6,12 +6,21 @@ estabilidade, desempenho e simula a missão inteira em 6 graus de liberdade — 
 uma mesa, curvas, soltura da carga e pouso numa plataforma — dizendo o que passou, o que falhou e o que
 mudar.
 
-- **GUI** (Python + PyQt6): dimensionamento inicial, missão, desempenho, tração, aerodinâmica e
-  estabilidade, com diagnóstico em cada aba e Ctrl+Z; a montagem do avião em 3D fica na última aba.
-  Vários aviões (ou variantes do mesmo) abertos ao mesmo tempo, trocados com ◀ ▶.
+- **GUI** (Python + PyQt6): projeto do zero em etapas — perfil → asa → empenagem → motores → avião
+  inteiro — e a análise detalhada do avião montado (aerodinâmica, estabilidade, tração, desempenho, missão),
+  com diagnóstico em cada aba e Ctrl+Z; a montagem do avião em 3D fica na última aba. Vários aviões (ou
+  variantes do mesmo) abertos ao mesmo tempo, trocados com ◀ ▶.
 - **Núcleo de física em Zig**: a missão completa (165 s de voo) roda em cerca de 1 s.
 - **[AeroDrive](aerodrive/README.md)**: o mesmo avião num simulador em tempo real (raylib), pilotado
   com controle de Xbox ou pelo piloto automático; grava vídeo e dados do voo.
+
+![Projeto do zero: perfil](docs/img/sprint_perfil.png)
+
+![Projeto do zero: asa](docs/img/sprint_asa.png)
+
+![Projeto do zero: empenagem e comandos](docs/img/sprint_empenagem.png)
+
+![Projeto do zero: motores e o avião inteiro](docs/img/sprint_motores.png)
 
 ![Configuração](docs/img/gui_configuracao.png)
 
@@ -84,9 +93,16 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
 - Em cada aba: preencha os campos (o **ⓘ** explica cada um), clique em **▶ Rodar**; os gráficos
   atualizam enquanto roda; no fim vêm o **diagnóstico** (clique numa linha para ver o porquê e o que
   mudar) e a tabela de resultados; **Exportar** grava `.xlsx` ou `.csv`.
+- **Projeto do zero** (subabas de Aerodinâmica, Estabilidade e Desempenho): **Perfil** (candidatos e polar
+  2D: NACA, .dat, só parâmetros ou polar do XFLR5) → **Asa** (planta, linha sustentadora, onde estola,
+  incidência pelo ângulo de cruzeiro) → **Empenagem e comandos** (cauda por volume, tubo, CG na margem
+  pedida, faixa de CG) → **Motores e montagem** (motores, bateria no ponto do CG, trem, desempenho e o
+  MTOW pela pista) → **Mandar para a Montagem**. Cada etapa guarda candidatos com nome; o programa compara,
+  não escolhe. Requisitos (massa, velocidades, AD, envergadura, pista) e regras no botão **Requisitos…**.
+  Detalhes em [aerosim/design](aerosim/design/README.md).
 - **Montagem** (última aba): componentes, 3D editável, ambiente (altitude-densidade, vento) e envelope
-  de voo (ângulo de cruzeiro, fator de carga). Aerodinâmica, Estabilidade, Desempenho e Missão mostram o
-  avião atual em 3D acima dos gráficos.
+  de voo (ângulo de cruzeiro, fator de carga). As subabas "Avião montado" e a Missão mostram o avião
+  atual em 3D acima dos gráficos.
 - **Vários aviões:** **Arquivo → Abrir ao lado** ou **＋ variante** abre mais um; ◀ ▶ troca, e todas
   as abas rodam o escolhido.
 - **Ctrl+Z / Ctrl+Y** desfaz e refaz qualquer mudança, na montagem e nas abas.

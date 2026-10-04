@@ -8,6 +8,9 @@ As abas não se falam diretamente: mudam o estado e emitem `changed`.
 Desfazer/refazer (Ctrl+Z / Ctrl+Y): cada mudança (`notify` ou `touch`) guarda o estado de antes —
 a aeronave e os valores das abas registradas em `register` (formulários e tabelas das simulações).
 Mudanças seguidas em menos de 0,6 s viram um passo só.
+
+O projeto da sprint (`design`: requisitos, regras, perfis, asas, conjuntos e aviões guardados nas etapas)
+também fica aqui; mudar emite `designChanged` e ele se grava sozinho em `design_path` (1 s depois).
 """
 from __future__ import annotations
 
@@ -27,6 +30,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 class AppState(QtCore.QObject):
     changed = QtCore.pyqtSignal(str)          # motivo: "geometry", "mass", "wind", "load", ...
     selected = QtCore.pyqtSignal(str)         # componente selecionado (chave da geometria)
+    designChanged = QtCore.pyqtSignal(str)    # o projeto da sprint mudou (etapa que mudou)
 
     def __init__(self, manager: ISimulationManager, aircraft: Aircraft, catalog: Catalog | None = None,
                  projects: "IProjectStore | None" = None):
@@ -59,6 +63,39 @@ class AppState(QtCore.QObject):
         self._burst.setInterval(600)
         self._burst.timeout.connect(self._settle)
         self._snap = self._capture()
+        self._init_design()
+
+    # ------------------------------------------------------------------ projeto da sprint
+    def _init_design(self) -> None:
+        from aerosim.design.project import DesignProject
+        root = getattr(self.projects, "root", None) or os.path.expanduser("~")
+        self.design_path = os.path.join(root, "sprint", "projeto.json")
+        self.design = DesignProject()
+        if os.path.exists(self.design_path):
+            try:
+                self.design = DesignProject.load(self.design_path)
+            except Exception:
+                pass
+        self._design_save = QtCore.QTimer(self)
+        self._design_save.setSingleShot(True)
+        self._design_save.setInterval(1000)
+        self._design_save.timeout.connect(self.save_design)
+
+    def design_edited(self, stage: str = "design") -> None:
+        self._design_save.start()
+        self.designChanged.emit(stage)
+
+    def set_design(self, project, path: str | None = None) -> None:
+        self.design = project
+        if path:
+            self.design_path = path
+        self.design_edited("load")
+
+    def save_design(self) -> None:
+        try:
+            self.design.save(self.design_path)
+        except Exception:
+            pass
 
     def set_aircraft(self, ac: Aircraft, path: str | None = None, keep_original: bool = False) -> None:
         self.aircraft = ac

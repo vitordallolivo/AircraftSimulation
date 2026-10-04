@@ -56,7 +56,7 @@ class ParamSlider(QtWidgets.QWidget):
         self.slider.setRange(0, self.RES)
         self.spin = QtWidgets.QDoubleSpinBox()
         self.spin.setDecimals(min(_decimals(step) + 1, 6))
-        self.spin.setRange(-1e9, 1e9)
+        self.spin.setRange(minimum, maximum)
         self.spin.setSingleStep(step)
         self.spin.setSuffix(f" {unit}" if unit else "")
         self.spin.setKeyboardTracking(False)
@@ -194,6 +194,8 @@ LABELS = {
     "de1": "deflexão de decolagem", "ht": "piloto assume em", "platform_start": "plataforma: início antes do fim",
     "landing_max": "distância máx. de pouso", "aim": "mirar no alvo", "Fext_g": "paraquedas extrator",
     "volume": "volume de líquido", "rho": "densidade do líquido",
+    "airfoil": "perfil", "path": "arquivo .dat", "cl_alpha": "a1 (inclinação 2D)", "alpha0": "α de sustentação nula",
+    "cl_max": "c_l,max", "cd0": "c_d mín.", "cm_ac": "c_m,ac",
 }
 # dicas (passe o mouse no ⓘ): o rótulo fica curto, a explicação vai aqui
 HELP = {
@@ -274,11 +276,16 @@ class DataclassForm(QtWidgets.QWidget):
     """formulário gerado a partir dos campos de uma dataclass (edita o objeto no lugar)"""
     changed = QtCore.pyqtSignal(str)
 
-    def __init__(self, obj, exclude: tuple = (), choices: dict | None = None, parent=None):
+    def __init__(self, obj, exclude: tuple = (), choices: dict | None = None, parent=None, editable: tuple = ()):
+        """rótulo, unidade, dica, opções e passo vêm dos metadados do campo (`aerosim.design.fields.F`) ou,
+        sem eles, dos dicionários deste módulo; `choices` (por campo) manda sobre os dois; em `editable` a
+        lista de opções aceita texto livre"""
         super().__init__(parent)
         self.obj = obj
         self.choices = dict(CHOICES)
         self.choices.update(choices or {})
+        self._given = dict(choices or {})
+        self._editable = set(editable)
         self.widgets: dict[str, QtWidgets.QWidget] = {}
         lay = QtWidgets.QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -289,20 +296,23 @@ class DataclassForm(QtWidgets.QWidget):
                 continue
             tp = hints[f.name]
             v = getattr(obj, f.name)
-            w = self._make(f.name, tp, v)
+            meta = dict(f.metadata)
+            w = self._make(f.name, tp, v, meta)
             if w is not None:
-                if f.name in HELP:
-                    _hint(w, HELP[f.name])
+                tip = meta.get("help") or HELP.get(f.name)
+                if tip:
+                    _hint(w, tip)
                 lay.addWidget(w)
                 self.widgets[f.name] = w
 
-    def _make(self, name, tp, v):
-        label = LABELS.get(name, name)
+    def _make(self, name, tp, v, meta=None):
+        meta = meta or {}
+        label = meta.get("label") or LABELS.get(name, name)
         opt = typing.get_origin(tp) in (typing.Union, getattr(__import__("types"), "UnionType", None))
         base = [a for a in typing.get_args(tp) if a is not type(None)][0] if opt else tp
         if dataclasses.is_dataclass(base):
             box = QtWidgets.QGroupBox(label)
-            inner = DataclassForm(v, exclude=("coords",), choices=self.choices)
+            inner = DataclassForm(v, exclude=("coords",), choices=self._given)
             inner.changed.connect(lambda k, n=name: self.changed.emit(f"{n}.{k}"))
             QtWidgets.QVBoxLayout(box).addWidget(inner)
             return box
@@ -312,11 +322,14 @@ class DataclassForm(QtWidgets.QWidget):
             w.toggled.connect(lambda val, n=name: self._set(n, bool(val)))
             return w
         if base is str:
-            ch = self.choices.get(name)
+            ch = self._given.get(name) or meta.get("choices") or self.choices.get(name)
             if ch:
                 w = QtWidgets.QComboBox()
-                w.addItems(ch)
-                if v in ch:
+                w.addItems(list(ch))
+                if name in self._editable:
+                    w.setEditable(True)
+                    w.setCurrentText(v)
+                elif v in ch:
                     w.setCurrentText(v)
                 w.currentTextChanged.connect(lambda val, n=name: self._set(n, val))
             else:
@@ -334,7 +347,13 @@ class DataclassForm(QtWidgets.QWidget):
                 return self._optional(name, label, v)
             lo, hi, st, un = RANGES.get(name, (min(0.0, v * 2) if v else -1.0, max(1.0, v * 2) if v else 1.0, 0.01,
                                                UNITS.get(name, "")))
-            w = NumberField(label, float(v), step=st, unit=un)
+            mn, mx = -1e9, 1e9
+            if "range" in meta:
+                r0, r1, r2 = meta["range"]
+                mn, mx, st = (r0 if r0 is not None else mn), (r1 if r1 is not None else mx), (r2 or st)
+            if "label" in meta:
+                un = meta.get("unit", "")
+            w = NumberField(label, float(v), minimum=mn, maximum=mx, step=st, unit=un)
             w.valueChanged.connect(lambda val, n=name: self._set(n, float(val)))
             return w
         return None          # listas: editores próprios
