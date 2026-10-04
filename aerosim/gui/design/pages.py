@@ -645,22 +645,27 @@ class PowerPage(StagePage):
         if cand is None:
             return
         ac, _ = pw.assemble(cand, d.requirements, d.rules, self.state.catalog, d.airfoil_map())
-        st = self.state.projects
-        name = ac.name
-        k = 2
-        while st.exists(name):
-            name = f"{ac.name} ({k})"
-            k += 1
-        ac.name = name
-        path = None
-        try:
-            path = st.save(ac, name).path
-        except Exception as ex:
-            QtWidgets.QMessageBox.warning(self, "Salvar", f"não salvei em 'meus aviões': {ex}")
-        self.state.add(ac, path)
-        win = self.window()
-        if hasattr(win, "show_assembly"):
-            win.show_assembly()
+        send_to_assembly(self.state, ac, self)
+
+
+def send_to_assembly(state: AppState, ac, widget) -> None:
+    """o avião vira mais um avião aberto (Montagem) e fica salvo em 'meus aviões' (nome livre: acrescenta (2)...)"""
+    st = state.projects
+    name = ac.name
+    k = 2
+    while st.exists(name):
+        name = f"{ac.name} ({k})"
+        k += 1
+    ac.name = name
+    path = None
+    try:
+        path = st.save(ac, name).path
+    except Exception as ex:
+        QtWidgets.QMessageBox.warning(widget, "Salvar", f"não salvei em 'meus aviões': {ex}")
+    state.add(ac, path)
+    win = widget.window()
+    if hasattr(win, "show_assembly"):
+        win.show_assembly()
 
 
 # ====================================================================== Estudo e ponto de projeto
@@ -715,11 +720,15 @@ class StudyPage(QtWidgets.QWidget):
         self.six_b = QtWidgets.QPushButton("★ Conferir os marcados no 6GDL")
         self.six_all_b = QtWidgets.QPushButton("★ Conferir todos no 6GDL")
         self.use_b = QtWidgets.QPushButton("Usar o ponto marcado no rascunho")
-        for b in (self.six_b, self.six_all_b, self.use_b):
+        self.send_b = QtWidgets.QPushButton("Mandar o ponto selecionado para a Montagem →")
+        self.send_b.setToolTip("o avião da linha selecionada na tabela, no ponto de projeto (massa convergida, asa e EH "
+                               "recalibradas, altitude-densidade daquela linha), como mais um avião aberto")
+        for b in (self.six_b, self.six_all_b, self.use_b, self.send_b):
             b.setEnabled(False)
         g = QtWidgets.QGridLayout()
         for i, b in enumerate((self.run_b, self.stop_b, self.six_b, self.six_all_b, self.use_b)):
             g.addWidget(b, i // 2, i % 2)
+        g.addWidget(self.send_b, 3, 0, 1, 2)
         lv.addLayout(g)
         self.bar = QtWidgets.QProgressBar()
         self.bar.setRange(0, 1000)
@@ -773,6 +782,7 @@ class StudyPage(QtWidgets.QWidget):
         self.six_b.clicked.connect(lambda: self.check_6dof(marked=True))
         self.six_all_b.clicked.connect(lambda: self.check_6dof(marked=False))
         self.use_b.clicked.connect(self.use_marked)
+        self.send_b.clicked.connect(self.send_selected)
         state.designChanged.connect(lambda st: self.build() if st in ("load", "guardou", "apagou") else None)
         self.build()
 
@@ -795,7 +805,7 @@ class StudyPage(QtWidgets.QWidget):
         if self._thread is not None:
             return
         self._cancel = False
-        for b in (self.run_b, self.six_b, self.six_all_b, self.use_b):
+        for b in (self.run_b, self.six_b, self.six_all_b, self.use_b, self.send_b):
             b.setEnabled(False)
         self.stop_b.setEnabled(True)
         self.bar.setValue(0)
@@ -817,7 +827,7 @@ class StudyPage(QtWidgets.QWidget):
         self.stop_b.setEnabled(False)
         self.run_b.setEnabled(True)
         has = bool(self.rows)
-        for b in (self.six_b, self.six_all_b, self.use_b):
+        for b in (self.six_b, self.six_all_b, self.use_b, self.send_b):
             b.setEnabled(has)
         self.bar.setValue(1000)
 
@@ -861,6 +871,22 @@ class StudyPage(QtWidgets.QWidget):
             self.msg.setText(f"{sp.variable} = {r['x']:g} no rascunho da etapa {where}"
                              + ("" if stage == "power" else " — guarde de novo lá para seguir"))
         self.state.design_edited("ponto")
+
+    def send_selected(self):
+        """o ponto de projeto da linha selecionada vai para a Montagem (e para 'meus aviões')"""
+        from aerosim.design import power as pw
+        i = self.table.currentRow()
+        if not (0 <= i < len(self.rows)):
+            return
+        r = self.rows[i]
+        d = self.state.design
+        sp = getattr(self, "_sp", d.study)
+        ac, _ = pw.assemble(r["_cand"], r["_req"], d.rules, self.state.catalog, d.airfoil_map())
+        base = r["_cand"].params.name
+        if sp.mode == self.sd.MODES[0]:
+            base += f", {sp.variable.split(' (')[0]} {r['x']:g}"
+        ac.name = f"{base} ({r['place']})"
+        send_to_assembly(self.state, ac, self)
 
     # ------------------------------------------------------------------ mostrar
     def redraw(self):

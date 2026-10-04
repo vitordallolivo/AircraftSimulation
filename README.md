@@ -100,7 +100,7 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   incidência pelo ângulo de cruzeiro) → **Empenagem e comandos** (cauda por volume, tubo, CG na margem
   pedida, faixa de CG, rotação na decolagem) → **Motores e montagem** (motores, distribuição de massa com PV
   e carga paga = lastro + líquido + LAPES, bateria no ponto do CG, trem, desempenho e o MTOW pela pista) →
-  **Mandar para a Montagem**; **Estudo e ponto de projeto** (Desempenho) acopla as áreas e varre uma variável (ex.: inclinação do motor) nas altitudes-densidade pedidas. Cada etapa guarda candidatos com nome; o programa compara,
+  **Mandar para a Montagem**; **Estudo e ponto de projeto** (Desempenho) acopla as áreas e varre uma variável (ex.: inclinação do motor) nas altitudes-densidade pedidas (exemplos prontos: `data/aircraft/S1223_*.json` e `data/sprint/projeto_s1223.json`). Cada etapa guarda candidatos com nome; o programa compara,
   não escolhe. Requisitos (massa, velocidades, AD, envergadura, pista) e regras no botão **Requisitos…**.
   Detalhes em [aerosim/design](aerosim/design/README.md).
 - **Montagem** (última aba): componentes, 3D editável, ambiente (altitude-densidade, vento) e envelope

@@ -254,7 +254,9 @@ A página tem dois modos:
 - **comparar os aviões guardados**.
 
 Ela marca o maior MTOW viável de cada altitude, confere os pontos no 6GDL (aba Missão, modo MTOW) e leva o ponto
-marcado para o rascunho da etapa certa. Ela indica, não escolhe.
+marcado para o rascunho da etapa certa. Ela indica, não escolhe. **Mandar o ponto selecionado para a Montagem** abre
+o avião daquela linha no ponto de projeto, como mais um avião aberto. Os exemplos `data/aircraft/S1223_*.json`
+foram feitos assim.
 
 Com a asa S1223 (MTOW em kg, conta rápida / 6GDL):
 
