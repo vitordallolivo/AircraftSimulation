@@ -14,13 +14,15 @@ mudar.
 - **[AeroDrive](aerodrive/README.md)**: o mesmo avião num simulador em tempo real (raylib), pilotado
   com controle de Xbox ou pelo piloto automático; grava vídeo e dados do voo.
 
-![Projeto do zero: perfil](docs/img/sprint_perfil.png)
+![Projeto do zero — perfil: S1223 e perfis de cauda](docs/img/estudo_perfil.png)
 
-![Projeto do zero: asa](docs/img/sprint_asa.png)
+![Projeto do zero — asa S1223](docs/img/estudo_asa.png)
 
-![Projeto do zero: empenagem e comandos](docs/img/sprint_empenagem.png)
+![Projeto do zero — empenagem com EH MH 113 invertido](docs/img/estudo_empenagem.png)
 
-![Projeto do zero: motores e o avião inteiro](docs/img/sprint_motores.png)
+![Projeto do zero — motores e distribuição de massa](docs/img/estudo_motores.png)
+
+![Missão 6GDL — MTOW](docs/img/estudo_missao_mtow.png)
 
 ![Configuração](docs/img/gui_configuracao.png)
 
@@ -96,8 +98,9 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
 - **Projeto do zero** (subabas de Aerodinâmica, Estabilidade e Desempenho): **Perfil** (candidatos e polar
   2D: NACA, .dat, só parâmetros ou polar do XFLR5) → **Asa** (planta, linha sustentadora, onde estola,
   incidência pelo ângulo de cruzeiro) → **Empenagem e comandos** (cauda por volume, tubo, CG na margem
-  pedida, faixa de CG) → **Motores e montagem** (motores, bateria no ponto do CG, trem, desempenho e o
-  MTOW pela pista) → **Mandar para a Montagem**. Cada etapa guarda candidatos com nome; o programa compara,
+  pedida, faixa de CG, rotação na decolagem) → **Motores e montagem** (motores, distribuição de massa com PV
+  e carga paga = lastro + líquido + LAPES, bateria no ponto do CG, trem, desempenho e o MTOW pela pista) →
+  **Mandar para a Montagem**. Exemplo: [estudo S1223](data/sprint/estudo_s1223.md). Cada etapa guarda candidatos com nome; o programa compara,
   não escolhe. Requisitos (massa, velocidades, AD, envergadura, pista) e regras no botão **Requisitos…**.
   Detalhes em [aerosim/design](aerosim/design/README.md).
 - **Montagem** (última aba): componentes, 3D editável, ambiente (altitude-densidade, vento) e envelope

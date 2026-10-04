@@ -365,6 +365,10 @@ class AirfoilPage(StagePage):
         if e is None:
             return
         self.form = DataclassForm(e, exclude=("polar_file",), choices={"source": tuple(afm.sources(e))})
+        box = self.form.widgets.get("airfoil")
+        if isinstance(box, QtWidgets.QGroupBox) and e.source != "modelo":
+            box.setTitle("perfil — os números abaixo só valem na polar 'modelo'; com "
+                         f"{e.source} eles saem ajustados da polar (veja os resultados)")
         self.form.changed.connect(self._edited)
         self.form_box.addWidget(self.form)
 
@@ -507,10 +511,11 @@ class TailPage(StagePage):
     def choices(self):
         d = self.state.design
         return {"wing": tuple(w.name for w in d.wings),
-                "tail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + tuple(a.name for a in d.airfoils)))}
+                "tail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + tuple(a.name for a in d.airfoils))),
+                "vtail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + tuple(a.name for a in d.airfoils)))}
 
     def editable(self):
-        return ("tail_airfoil",)
+        return ("tail_airfoil", "vtail_airfoil")
 
     def kept_items(self):
         return self.state.design.sets
@@ -550,6 +555,48 @@ class PowerPage(StagePage):
         self.send_b.clicked.connect(self.send)
         self.actions.addWidget(self.send_b)
         self.ac = None
+        # distribuição de massa (PV e CP), logo abaixo do 3D
+        self.mass_title = QtWidgets.QLabel("<b>Distribuição de massa</b>" + HELP_MARK)
+        self.mass_title.setToolTip("PV: peso vazio (estrutura, motores, bateria, sistemas). CP: carga paga = lastro + "
+                                   "líquido + LAPES (digite quanto de cada à esquerda), tudo no CG. MTOW pela pista − PV "
+                                   "= a carga paga que dá para levar")
+        self.mass = QtWidgets.QTableWidget(0, 5)
+        self.mass.setHorizontalHeaderLabels(["grupo", "item", "massa (kg)", "x (m)", "% do total"])
+        self.mass.verticalHeader().setVisible(False)
+        self.mass.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.mass.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        hh = self.mass.horizontalHeader()
+        hh.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.right.insertWidget(1, self.mass_title)
+        self.right.insertWidget(2, self.mass)
+
+    def fill_mass(self, asm: dict, pf: dict) -> None:
+        from PyQt6 import QtGui
+        M = asm["mass"]
+        rows = [(g, n, m, f"{x:.3f}", f"{100 * m / M:.1f}") for g, n, m, x in asm["mass_table"]]
+        rows += [("PV", "peso vazio", asm["empty"], "", f"{100 * asm['empty'] / M:.1f}"),
+                 ("CP", "carga paga", asm["payload"], "", f"{100 * asm['payload'] / M:.1f}"),
+                 ("", "total", M, f"{asm['x_cg_target']:.3f} (CG)", "100")]
+        mt = pf.get("mtow_runway", float("nan"))
+        if mt == mt:
+            rows.append(("", "MTOW pela pista → CP possível = MTOW − PV", mt, "", f"CP {mt - asm['empty']:.2f} kg"))
+        self.mass.setRowCount(len(rows))
+        bold = QtGui.QFont()
+        bold.setBold(True)
+        color = {"PV": "#eef3fa", "CP": "#eaf7ee"}
+        for r, row in enumerate(rows):
+            total = row[1] in ("peso vazio", "carga paga", "total") or row[1].startswith("MTOW")
+            for c, v in enumerate(row):
+                it = QtWidgets.QTableWidgetItem(f"{v:.3f}" if isinstance(v, float) else str(v))
+                if row[0] in color:
+                    it.setBackground(QtGui.QColor(color[row[0]]))
+                if total:
+                    it.setFont(bold)
+                self.mass.setItem(r, c, it)
+        self.mass.resizeRowsToContents()
+        self.mass.setFixedHeight(self.mass.horizontalHeader().height() + 4 +
+                                 sum(self.mass.rowHeight(i) for i in range(len(rows))))
 
     def draft(self):
         return self.state.design.power_draft
@@ -576,6 +623,7 @@ class PowerPage(StagePage):
         specs, res, ac, asm, pf = R.aircraft_stage(cand, d.requirements, d.rules, self.state.catalog,
                                                    self.state.manager.backend, d.airfoil_map())
         self.ac = ac
+        self.fill_mass(asm, pf)
         return specs, res, ac, dict(cg=[asm["x_cg_target"], 0.0, 0.0])
 
     def keep(self):

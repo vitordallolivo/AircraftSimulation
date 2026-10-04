@@ -72,6 +72,8 @@ flowchart LR
   como mais um avião aberto e o salva em "meus aviões". Requisitos e regras ficam no botão
   **Requisitos…** de cada etapa. O projeto (`state.design`) se grava sozinho em
   `<meus aviões>/sprint/projeto.json`; menu **Projeto da sprint** para novo, abrir e salvar como.
+  Em Motores e montagem, embaixo do 3D, a **distribuição de massa**: cada item com x e % do total, PV (vazio)
+  e CP (carga paga = lastro + líquido + LAPES, digitados), e a CP possível pelo MTOW da pista.
   As contas estão em [`aerosim/design`](../design/README.md).
 - **Formulários com metadados:** `DataclassForm` usa rótulo, unidade, dica, opções e faixa dos metadados do
   campo (`aerosim.design.fields.F`); `choices` e `editable` por campo para listas que dependem do projeto.

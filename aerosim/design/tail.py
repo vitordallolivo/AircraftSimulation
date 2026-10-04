@@ -26,6 +26,7 @@ import numpy as np
 from aerosim.model.aircraft import Aircraft, ControlSurface, LiftingSurface, TailBoom, WingSection
 from aerosim.model.airfoil import Airfoil, flap_effectiveness, helmbold
 
+from . import airfoils as afm
 from .fields import F
 from .spec import DesignRules, Requirements
 from .wing import WingCandidate, analyze as analyze_wing, planform
@@ -46,7 +47,9 @@ class TailParams:
     AR_v: float = F(1.6, "alongamento da EV", "", "altura² / área", 0.5, 5, 0.1)
     taper_h: float = F(1.0, "afilamento da EH", "", "", 0.3, 1.0, 0.05)
     taper_v: float = F(0.7, "afilamento da EV", "", "", 0.3, 1.0, 0.05)
-    tail_airfoil: str = F("NACA 0012", "perfil da cauda", "", "NACA de 4 dígitos ou um da etapa Perfil")
+    tail_airfoil: str = F("NACA 0012", "perfil da EH", "", "NACA de 4 dígitos ou um da etapa Perfil (arqueado e "
+                          "invertido também: a incidência compensa)")
+    vtail_airfoil: str = F("NACA 0012", "perfil da EV", "", "simétrico (arqueado empurra para o lado sem derrapar)")
     elevator: float = F(0.35, "profundor (fração da corda)", "", "", 0.1, 0.6, 0.01)
     rudder: float = F(0.35, "leme (fração da corda)", "", "", 0.1, 0.6, 0.01)
     aileron_start: float = F(0.55, "aileron: início", "", "fração da semienvergadura", 0.0, 0.95, 0.01)
@@ -80,14 +83,32 @@ def _surface(name, role, b_or_h, area, taper, af, vertical=False, symmetric=True
     return LiftingSurface(name=name, role=role, sections=[WingSection(0.0, cr, 0.0, 0.0),
                                                           WingSection(s, ct, (cr - ct) / 4, 0.0)],
                           airfoil=copy.deepcopy(af), vertical=vertical, symmetric=symmetric, dihedral=dihedral,
-                          oswald=0.8, eta=0.9, downwash=not vertical, CL0=0.0, Cmac=0.0)
+                          oswald=0.8, eta=0.9, downwash=not vertical)
 
 
-def tail_airfoil(name: str, known: dict | None = None) -> Airfoil:
-    if known and name in known:
-        return copy.deepcopy(known[name])
-    digits = "".join(ch for ch in name if ch.isdigit())
-    return Airfoil(f"NACA {digits if len(digits) == 4 else '0012'}", cl_alpha=5.9, cl_max=1.1, cd0=0.012)
+def tail_airfoil(name: str, known: dict | None = None, Re: float | None = None) -> Airfoil:
+    """o perfil da cauda: um da etapa Perfil ou NACA de 4 dígitos, ajustado na polar dele no Re da cauda"""
+    return tail_entry(name, known, Re)[0]
+
+
+def tail_entry(name: str, known: dict | None = None, Re: float | None = None) -> tuple[Airfoil, tuple[float, float]]:
+    """(perfil ajustado, (c_l mín., c_l máx.) 2D da polar) — os dois lados importam na cauda: a EH trabalha com
+    sustentação para baixo, e é o c_l negativo que limita o quanto ela consegue cabrar (perfil invertido ganha)"""
+    k = known.get(name) if known else None
+    if isinstance(k, Airfoil):
+        return copy.deepcopy(k), (-k.cl_max, k.cl_max)
+    if k is None:
+        digits = "".join(ch for ch in name if ch.isdigit())
+        k = afm.entry(afm.from_naca(f"NACA {digits if len(digits) == 4 else '0012'}"))
+    try:
+        p = afm.polar(k, Re or 2e5)
+        if afm.metrics(p):
+            cl = np.asarray(p["cl"], float)
+            return afm.fitted(k.airfoil, p), (float(np.nanmin(cl)), float(np.nanmax(cl)))
+    except Exception:
+        pass
+    af = copy.deepcopy(k.airfoil)
+    return af, (-af.cl_max, af.cl_max)
 
 
 def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None = None, wing_res: dict | None = None,
@@ -104,7 +125,6 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
     a0, a1 = tp.aileron_start, max(tp.aileron_end, tp.aileron_start + 0.05)
     kind = "elevon" if tp.layout == "sem cauda" else "aileron"
     w.controls = [ControlSurface(kind, a0, min(a1, 1.0), tp.aileron_chord)]
-    af_t = tail_airfoil(tp.tail_airfoil, airfoils)
     ac = Aircraft(name=tp.name, surfaces=[w])
     ac.fuselage.enabled = False
     ac.gear.layout = "custom"
@@ -120,16 +140,19 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
     x_ac_t = pf["x_ac"] - l
     if tp.layout == "convencional":
         bh = math.sqrt(tp.AR_h * Sh)
+        af_t, lim = tail_entry(tp.tail_airfoil, airfoils, req.reynolds(Sh / bh))
         eh = _surface("EH", "htail", bh, Sh, tp.taper_h, af_t)
         eh.controls = [ControlSurface("elevator", 0.0, 1.0, tp.elevator)]
         hv = math.sqrt(tp.AR_v * Sv)
-        ev = _surface("EV", "vtail", hv, Sv, tp.taper_v, af_t, vertical=True, symmetric=False)
+        af_v = tail_airfoil(tp.vtail_airfoil, airfoils, req.reynolds(Sv / hv))
+        ev = _surface("EV", "vtail", hv, Sv, tp.taper_v, af_v, vertical=True, symmetric=False)
         ev.controls = [ControlSurface("rudder", 0.0, 1.0, tp.rudder)]
         tails = [eh, ev]
     else:
         St = Sh + Sv
         gam = math.degrees(math.atan(math.sqrt(Sv / Sh)))
         bv = math.sqrt(tp.AR_h * St)
+        af_t, lim = tail_entry(tp.tail_airfoil, airfoils, req.reynolds(St / bv))
         vt = _surface("cauda em V", "htail", bv, St, tp.taper_h, af_t, dihedral=gam)
         vt.controls = [ControlSurface("ruddervator", 0.0, 1.0, tp.elevator)]
         tails = [vt]
@@ -146,7 +169,7 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
                        z=0.0, attach_tail=True)
     ac.surfaces += tails
     ac.apply_constraints()
-    info.update(Sh=Sh, Sv=Sv, bh=bh, hv=hv, arm=l, x_ac_t=x_ac_t,
+    info.update(Sh=Sh, Sv=Sv, bh=bh, hv=hv, arm=l, x_ac_t=x_ac_t, cl_lim_h=lim,
                 boom=ac.boom.length, mass_tail=(Sh + Sv) * rules.tail_density, mass_boom=ac.boom.length * rules.boom_density)
     return ac, info
 
@@ -172,7 +195,8 @@ def analyze(cand: SetCandidate, req: Requirements, rules: DesignRules | None = N
     Clda = 2 * a * tau_a / (S * b) * np.trapezoid(np.array([w.chord_at(y) for y in yy]) * yy, yy)
     lam = w.sections[-1].chord / w.sections[0].chord
     Clp = -a / 12 * (1 + 3 * lam) / (1 + lam)
-    pb2V = -Clda * math.radians(rules.da_max) / Clp
+    da_eff = 0.5 * (rules.da_max + rules.da_down)         # diferencial: média dos dois lados
+    pb2V = -Clda * math.radians(da_eff) / Clp
     out.update(Clda=Clda, Clp=Clp, pb2V=pb2V, tau_a=tau_a)
     CLmax = wr["CLmax"]
     CLc = wr["CL_cruise"]
@@ -186,6 +210,9 @@ def analyze(cand: SetCandidate, req: Requirements, rules: DesignRules | None = N
         Cm0 = wr["Cm_ac"]
         de_cru = -(Cm0 + CLc * (h_cg - h_ac)) / Cmd
         de_max_cl = -(Cm0 + CLmax * (h_cg - h_ac)) / Cmd
+        tw = lambda CL, de, x_mg, dih=0.0: Cmd * (de + dih)
+        out.update(rotation(wr, req, rules, x_c, info["x_ac_w"], c, S, tw))
+        out["tail_cm_mg"] = tw
         out.update(h_n=h_n, h_cg=h_cg, x_cg=x_c, x_np=info["x_le_mac"] - h_n * c, Cmde=Cmd, i_h=0.0,
                    de_cruise=math.degrees(de_cru), de_CLmax=math.degrees(de_max_cl), VH=0.0, VV=0.0, Cnb=float("nan"))
         out.update(_curves(out, wr, req, None))
@@ -198,28 +225,45 @@ def analyze(cand: SetCandidate, req: Requirements, rules: DesignRules | None = N
         a_h *= math.cos(math.radians(info.get("gamma", 0.0))) ** 2
     eta = tp.tail_eta
     Sh = info["Sh"] if tp.layout == "convencional" else info["Sh"] + info["Sv"]
-    VH_ac = info["Sh"] * info["arm"] / (S * c) if tp.layout == "convencional" else \
-        Sh * math.cos(math.radians(info.get("gamma", 0.0))) ** 2 * info["arm"] / (S * c)
+    # cauda em V: tudo no plano de arfagem — a_h já tem cos²γ (uma vez só); α_L0, incidência e comando são da
+    # superfície (α_n = α cos γ + i): equivalem a α_L0/cos γ, i/cos γ e τ/cos γ em arfagem
+    cg = math.cos(math.radians(info.get("gamma", 0.0))) if tp.layout == "em V" else 1.0
+    VH_ac = Sh * info["arm"] / (S * c)
     h_n = h_ac + eta * VH_ac * (a_h / a) * (1 - deda)
     h_cg = h_n - tp.sm_target / 100
     x_cg = info["x_le_mac"] - h_cg * c
-    tau_e = flap_effectiveness(tp.elevator)
+    tau_e = flap_effectiveness(tp.elevator) / cg
     Cmde = -eta * VH_ac * a_h * tau_e
     # incidência da EH: C_m = 0 no cruzeiro com δe = 0
     eps = lambda CL: 2 * CL / (math.pi * AR)
     a_w = lambda CL: (CL - wr["CL0"]) / a
+    a0_t = math.radians(af.zero_lift_angle()) / cg     # perfil arqueado (ou invertido) na EH
+
+    lo3, hi3 = (0.9 * cg * v for v in info["cl_lim_h"])   # C_L da cauda limitado pelo estol dela (os dois lados)
+
+    def CLh(CL, de, ih):
+        return min(max(a_h * (a_w(CL) - eps(CL) + ih - a0_t + tau_e * de), lo3), hi3)
+
     def cm(CL, de, ih, h):
-        ah = a_w(CL) - eps(CL) + ih
-        return wr["Cm_ac"] + CL * (h - h_ac) - eta * VH_ac * a_h * (ah + tau_e * de)
-    ih = (wr["Cm_ac"] + CLc * (h_cg - h_ac)) / (eta * VH_ac * a_h) - (a_w(CLc) - eps(CLc))
-    de_for = lambda CL, h: -cm(CL, 0.0, ih, h) / Cmde
+        return wr["Cm_ac"] + CL * (h - h_ac) - eta * VH_ac * CLh(CL, de, ih)
+    ih = (wr["Cm_ac"] + CLc * (h_cg - h_ac)) / (eta * VH_ac * a_h) - (a_w(CLc) - eps(CLc)) + a0_t
+    de_for = lambda CL, h: -(wr["Cm_ac"] + CL * (h - h_ac) - eta * VH_ac * a_h * (a_w(CL) - eps(CL) + ih - a0_t)) / Cmde
     de_cru = de_for(CLc, h_cg)
     de_CLmax = de_for(CLmax, h_cg)
+    CLh_need = (wr["Cm_ac"] + CLmax * (h_cg - h_ac)) / (eta * VH_ac)     # C_L da EH para equilibrar o C_L,max
     # CG mais à frente em que o profundor ainda equilibra o C_L,max (δe = −δmáx)
     dm = -math.radians(rules.de_max)
     # cm(CLmax, dm, ih, h) = 0 → linear em h
     c0 = cm(CLmax, dm, ih, 0.0)
     h_fwd = -c0 / CLmax
+    # rotação na decolagem: a cauda (com o perfil dela, invertido ou não) no braço até o trem principal
+    x_act = info["x_ac_t"]
+    Sh_S = VH_ac * c / info["arm"]
+
+    def tail_rot(CL, de, x_mg, dih=0.0):
+        return eta * Sh_S * CLh(CL, de, ih + dih) * (x_act - x_mg) / c
+    out.update(rotation(wr, req, rules, x_cg, info["x_ac_w"], c, S, tail_rot))
+    out["tail_cm_mg"] = tail_rot           # a etapa Motores retrima a EH com o momento da tração
     h_aft = h_n - tp.sm_min / 100
     # direcional: C_nβ da EV
     if tp.layout == "convencional":
@@ -228,17 +272,34 @@ def analyze(cand: SetCandidate, req: Requirements, rules: DesignRules | None = N
         VV = info["Sv"] * info["arm"] / (S * b)
     else:
         g = math.radians(info.get("gamma", 0.0))
-        a_v = a_h / max(math.cos(g) ** 2, 1e-3) * math.sin(g) ** 2
+        a_v = a_h / max(math.cos(g) ** 2, 1e-3)               # sem projeção: o sen²γ fica no volume
         VV = Sh * math.sin(g) ** 2 * info["arm"] / (S * b)
     Cnb = eta * VV * a_v
     out.update(h_n=h_n, h_cg=h_cg, x_cg=x_cg, x_np=info["x_le_mac"] - h_n * c, a_h=a_h, VH=VH_ac, VV=VV, Cmde=Cmde,
                i_h=math.degrees(ih), de_cruise=math.degrees(de_cru), de_CLmax=math.degrees(de_CLmax),
                h_fwd=h_fwd, h_aft=h_aft, x_cg_fwd=info["x_le_mac"] - h_fwd * c, x_cg_aft=info["x_le_mac"] - h_aft * c,
-               Cnb=Cnb, tau_e=tau_e)
+               Cnb=Cnb, tau_e=tau_e, CLh_CLmax=CLh_need, CLh_lim=(lo3, hi3))
     for su in ac.surfaces[1:]:
         if su.role == "htail":
-            su.incidence = math.degrees(ih)
+            su.incidence = math.degrees(ih) * cg
     out.update(_curves(out, wr, req, (cm, ih)))
+    return out
+
+
+def rotation(wr, req, rules, x_cg, x_ac_w, c, S, tail_term) -> dict:
+    """velocidade a partir da qual o comando de arfagem roda o avião em torno do trem principal (corrida com a
+    fuselagem nivelada; a asa no ângulo de incidência). Momentos cabradores no ponto de contato do trem:
+        q S c [C_m,ac + C_L,asa (x_ca − x_tp)/c + cauda(δ)] ≥ W (x_CG − x_tp)
+    A EH invertida (ou qualquer EH com sustentação para baixo) soma momento cabrador já com δe = 0."""
+    x_mg = x_cg - rules.main_gear_aft
+    CLg = wr["CL0"] + wr["CLa"] * math.radians(wr["incidence"])
+    d = x_cg - x_mg
+    out = {"x_mg": x_mg, "CL_ground": CLg}
+    for key, de in (("V_rot", -math.radians(rules.de_max)), ("V_rot0", 0.0)):
+        Cm = wr["Cm_ac"] + CLg * (x_ac_w - x_mg) / c + tail_term(CLg, de, x_mg)
+        out[key] = math.sqrt(2 * req.weight * d / (req.rho * S * c * Cm)) if Cm > 0 else float("inf")
+        out["Cm_mg" if de else "Cm_mg0"] = Cm
+    out["V_lof"] = 1.1 * wr["V_stall"]
     return out
 
 

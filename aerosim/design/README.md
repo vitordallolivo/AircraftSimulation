@@ -10,13 +10,27 @@ Cria o avião do zero, e cada etapa parte do que a anterior guardou:
 
 O programa não escolhe por você. Ele guarda candidatos com nome, compara esses candidatos e mostra o diagnóstico de cada etapa.
 
-![Perfil: candidatos e polar 2D](../../docs/img/sprint_perfil.png)
+Exemplo (o estudo [S1223](../../data/sprint/estudo_s1223.md), Joinville):
 
-![Asa: 3D da asa, C_L × α, polar, onde o estol começa](../../docs/img/sprint_asa.png)
+![Perfil: S1223, MH 113 (normal e invertido), HT 14 e SD8020 pelo NeuralFoil](../../docs/img/estudo_perfil.png)
 
-![Empenagem e comandos: conjunto em 3D com CG e ponto neutro, C_m × α, profundor de equilíbrio](../../docs/img/sprint_empenagem.png)
+![Asa S1223: 3D da asa, C_L × α e polar](../../docs/img/estudo_asa.png)
 
-![Motores e montagem: avião inteiro, tração × arrasto, subida, corrida × massa](../../docs/img/sprint_motores.png)
+![Asa: L/D × C_L e c_l na envergadura — o estol começa na raiz](../../docs/img/estudo_asa_estol.png)
+
+![Empenagem: EH MH 113 invertido, EV HT 14 — conjunto com CG e ponto neutro, C_m × α, profundor × V](../../docs/img/estudo_empenagem.png)
+
+![Empenagem: diagnóstico — faixa de CG, EH sem estolar, rotação na decolagem](../../docs/img/estudo_empenagem_diagnostico.png)
+
+![Motores e montagem: o avião inteiro e a distribuição de massa (PV e CP)](../../docs/img/estudo_motores.png)
+
+![Distribuição de massa: lastro + líquido + LAPES no CG, MTOW pela pista e CP possível](../../docs/img/estudo_massas.png)
+
+![Motores e montagem: diagnóstico — rotação com a tração, trim da EH, decolagem](../../docs/img/estudo_motores_diagnostico.png)
+
+![Mandado para a Montagem: mais um avião aberto, com tanque, LAPES e lastro](../../docs/img/estudo_montagem.png)
+
+![Missão (6GDL), modo MTOW: 11,99 kg (a conta rápida deu 11,64 kg)](../../docs/img/estudo_missao_mtow.png)
 
 Na GUI, as etapas ficam nas subabas de cada área. A última subaba, **Avião montado**, faz a análise detalhada do avião aberto (lltdrek ou AeroSandbox, núcleo 6GDL).
 
@@ -132,7 +146,10 @@ As áreas saem do volume de cauda: S_h = V_H S c̄ / l e S_v = V_V S b / l. O br
 | cauda em V | a mesma área total S_h + S_v, com diedro atan √(S_v/S_h) e ruddervators |
 | sem cauda | elevons na asa |
 
-Em todos os casos o tubo termina no bordo de fuga da cauda, e os ailerons ficam na asa.
+Em todos os casos o tubo termina no bordo de fuga da cauda, e os ailerons ficam na asa. EH e EV têm perfis
+separados. A EH aceita perfil arqueado, inclusive **invertido** (o α_L0 dele entra na incidência); a EV deve ser
+simétrica. O perfil da cauda é ajustado na polar dele, no Re da cauda, e o C_L da EH fica limitado pelos **dois
+lados** da polar.
 
 A estática longitudinal segue a forma clássica (Etkin; Nelson): h_n = h_ac + η V_H (a_h/a)(1 − dε/dα), com dε/dα = 2a/(πAR). A partir dela:
 
@@ -141,6 +158,11 @@ A estática longitudinal segue a forma clássica (Etkin; Nelson): h_n = h_ac + �
 - A **faixa de CG** fica entre dois limites: o dianteiro, onde o profundor deixa de equilibrar o C_L,max no curso máximo, e o traseiro, na margem mínima.
 - A **rolagem** é medida por p b/2V com o aileron todo (C_lδa por faixas e C_lp de asa trapezoidal).
 - O **direcional** é medido por C_nβ da cauda.
+- A **rotação na decolagem** é a velocidade a partir da qual o profundor todo levanta o nariz em torno do trem
+  principal. Ela entra nos momentos no ponto de contato: C_m,ac da asa, sustentação da asa na incidência, peso
+  e cauda. A EH com sustentação para baixo cabra, e o perfil invertido tem c_l negativo maior. Por isso roda mais
+  cedo: com a asa S1223, roda a 8,6 m/s com MH 113 invertido contra 11,6 m/s com NACA 0012, e sai do chão a
+  11,7 m/s. O diagnóstico pede rotação até 0,9 × a velocidade de sair do chão.
 
 ### Motores e montagem (`power.py`)
 
@@ -155,10 +177,14 @@ O motor, a hélice, a bateria e o conjunto de tração (polinômio) vêm do cat�
 A montagem segue esta ordem:
 
 1. **Fuselagem (pod).** Vai do nariz até o bordo de fuga da asa, com largura e altura das regras. Ela desestabiliza pelo efeito de Munk, C_mα ≈ 2(k2 − k1) Vol/(S c̄), e por isso o CG é recalculado com ela.
-2. **Massas.**
-   - A estrutura é estimada por área e por comprimento (regras).
-   - A carga paga vai no CG.
-   - A bateria vai onde o CG cai no alvo. Se ela não couber na fuselagem, entra **lastro** e o diagnóstico avisa.
+2. **Massas.** A **tabela de distribuição de massa** mostra cada item com x e % do total.
+   - **PV** (peso vazio): a estrutura (estimada por área e por comprimento, das regras), os motores, as hélices,
+     a bateria e os sistemas.
+   - **CP** (carga paga) = lastro + líquido + LAPES. Você digita quanto de cada, e tudo vai no CG. No avião
+     montado vira o lastro, o tanque (com sloshing) e a carga LAPES, os mesmos que o MTOW da aba Missão varia.
+   - A bateria vai onde o CG cai no alvo. Se ela não couber na fuselagem, entra **lastro de equilíbrio**, que
+     conta no PV, e o diagnóstico avisa.
+   - Com o MTOW pela pista, a **CP possível = MTOW − PV**.
 3. **Trem.** O principal fica atrás do CG, e a altura dá folga para a hélice.
 
 O desempenho rápido junta duas partes:
@@ -166,13 +192,33 @@ O desempenho rápido junta duas partes:
 - **Arrasto:** o C_D0 das superfícies, da fuselagem e do tubo, mais o C_Di da linha sustentadora.
 - **Tração:** a do núcleo, com acelerador cheio. Sem backend, o equilíbrio motor + hélice é feito aqui, com o mesmo resultado (teste a 3 %).
 
-Com isso saem a V máx., a subida, a corrida até 1,1 V_S e a **massa máxima que a pista permite**.
+**Superfícies já trimadas para o motor.** O eixo do motor dá momento de arfagem: pela inclinação e pela altura
+em relação ao CG. No cruzeiro (tração = arrasto) a etapa recalcula a **incidência da EH** para o avião voar com o
+profundor neutro (Δi_h no diagnóstico). Na corrida, com os momentos no apoio do trem principal, ela calcula o
+**trim de decolagem**: quanto o profundor fica picando para o avião não sair do chão antes da velocidade de voo.
+Esse trim vai para `takeoff.de0` do avião montado. Ela também diz a partir de que velocidade o profundor todo
+consegue rodar com a tração. A tração acima do apoio pica o nariz, e é aí que a EH invertida ajuda.
+
+**Cursos assimétricos** ficam nas regras:
+
+- profundor: curso para cabrar ≠ curso para picar;
+- aileron diferencial: sobe mais do que desce, o que dá menos guinada adversa. A rolagem usa a média dos dois.
+
+O otimizador da decolagem da Missão (6GDL) também tenta segurar o profundor picando na corrida quando, com ele
+neutro, nenhuma posição de acionamento funciona. Com o motor inclinado 6° o avião saía do chão a 9,9 m/s antes
+do comando e afundava. Com +5° na corrida decola aos 29 m.
+
+Com isso saem a V máx., a subida, a corrida até 1,1 V_S e a **massa máxima que a pista permite**. Com o motor
+inclinado, a parte vertical da tração alivia o peso na corrida, e o avião sai do chão mais devagar.
+
+O MTOW detalhado é o da aba **Missão**, modo MTOW: a decolagem simulada no núcleo 6GDL, com o acionamento do
+profundor otimizado. O estudo `tools/estudo_s1223.py` faz os dois MTOW para várias configurações.
 
 ## Requisitos e regras (`spec.py`)
 
 **Requisitos:**
 
-- massa total estimada e carga paga;
+- massa total estimada;
 - V de cruzeiro e V de estol máxima;
 - altitude-densidade (AD);
 - envergadura e comprimento máximos;

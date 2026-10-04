@@ -9,7 +9,10 @@
 O comando de decolagem é o profundor (ou o elevon, numa asa voadora): no ponto de acionamento s
 (posição na pista) ele vai para a deflexão de cabrar. O otimizador procura o s que deixa a maior folga
 x_warning − n_dec, começando pela deflexão máxima (autopilot.de_max) e só usando uma menor se nenhuma
-posição funcionar com a máxima. Sem comando de arfagem não há o que otimizar: a aeronave decola sozinha.
+posição funcionar com a máxima. Se nada funcionar com o profundor como está na corrida (takeoff.de0),
+tenta segurá-lo picando na corrida (25 % e 50 % do curso) — o que o piloto faz quando o avião quer sair
+do chão antes da hora (motor inclinado, EH que cabra muito). Sem comando de arfagem não há o que
+otimizar: a aeronave decola sozinha.
 """
 from __future__ import annotations
 
@@ -37,6 +40,7 @@ class TakeoffResult:
     ok: bool
     status: str
     events: dict = field(default_factory=dict)
+    de0: float = float("nan")   # profundor na corrida até o acionamento (graus, + pica); nan: o do avião
 
     @property
     def margin(self) -> float:
@@ -77,10 +81,13 @@ def judge(log, ev, x_warning: float, z_warning: float) -> tuple[float, float, fl
 
 
 def evaluate(backend, ac, s: float | None, de: float, x_warning: float, z_warning: float,
-             overrides: dict | None = None, dtlog: float = 0.01, log: bool = False):
-    """uma decolagem com acionamento em s (None: sem comando) e deflexão de (graus)"""
+             overrides: dict | None = None, dtlog: float = 0.01, log: bool = False, de0: float | None = None):
+    """uma decolagem com acionamento em s (None: sem comando), deflexão de (graus) e, se dado, o profundor
+    de0 (graus) durante a corrida"""
     to = dict(sR=max(s, 1e-6) if s is not None else 1e9, VR=1e9, de1=math.radians(de),
               h_end=max(ac.takeoff.h_end, z_warning + 1.0))
+    if de0 is not None and math.isfinite(de0):
+        to["de0"] = math.radians(de0)
     over = dict(overrides or {})
     over.update(takeoff=dict(over.get("takeoff", {}), **to), tmax=over.get("tmax", 60.0), dtlog=dtlog)
     with Runner(backend, ac, takeoff_runway(h=max(15.0, to["h_end"] + 5), V=ac.mission.V0), over) as r:
@@ -94,7 +101,8 @@ def evaluate(backend, ac, s: float | None, de: float, x_warning: float, z_warnin
                 status = "CAIU DEPOIS DE DECOLAR"
     n_dec, h_min, xe, zs, ok = judge(o.log, o.events, x_warning, z_warning)
     ok = ok and status == "COMPLETED"
-    res = TakeoffResult(float("nan") if s is None else s, de, n_dec, h_min, xe, zs, ok, status, o.events)
+    res = TakeoffResult(float("nan") if s is None else s, de, n_dec, h_min, xe, zs, ok, status, o.events,
+                        float("nan") if de0 is None else de0)
     res.x_warning_margin = x_warning - n_dec if ok else -math.inf
     return (res, o.log) if log else res
 
@@ -109,12 +117,16 @@ def optimize(backend, ac, x_warning: float, z_warning: float, parallel=None, ove
     dmax = ac.autopilot.de_max
     grid = np.linspace(0.0, max(x_warning, 5.0) * 0.95, n_grid)
     tried, best = [], None
-    for lv in LEVELS:                                 # da deflexão máxima para baixo: para na 1ª que passa
-        rs = run(lambda s: evaluate(backend, ac, float(s), -lv * dmax, x_warning, z_warning, overrides), list(grid))
-        tried += rs
-        good = [r for r in rs if r.ok]
-        if good:
-            best = max(good, key=lambda r: r.x_warning_margin)
+    for hold in (None, 0.25 * dmax, 0.5 * dmax):     # profundor na corrida: o do avião; depois picando
+        for lv in LEVELS:                             # da deflexão máxima para baixo: para na 1ª que passa
+            rs = run(lambda s: evaluate(backend, ac, float(s), -lv * dmax, x_warning, z_warning, overrides,
+                                        de0=hold), list(grid))
+            tried += rs
+            good = [r for r in rs if r.ok]
+            if good:
+                best = max(good, key=lambda r: r.x_warning_margin)
+                break
+        if best is not None:
             break
     if best is None:                                  # ninguém passa: o "menos ruim" (para o diagnóstico)
         best = min(tried, key=lambda r: (r.x_excess + 10 * r.z_short, r.n_dec))
@@ -123,7 +135,8 @@ def optimize(backend, ac, x_warning: float, z_warning: float, parallel=None, ove
     h = grid[1] - grid[0]
     a, b = max(0.0, best.s - h), best.s + h
     g = (math.sqrt(5) - 1) / 2
-    f = lambda s: evaluate(backend, ac, s, best.de, x_warning, z_warning, overrides)
+    hold = None if not math.isfinite(best.de0) else best.de0
+    f = lambda s: evaluate(backend, ac, s, best.de, x_warning, z_warning, overrides, de0=hold)
     c, d = b - g * (b - a), a + g * (b - a)
     rc, rd = f(c), f(d)
     tried += [rc, rd]

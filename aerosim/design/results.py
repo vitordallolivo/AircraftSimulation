@@ -183,7 +183,7 @@ def set_stage(cand: tl.SetCandidate, req, rules, airfoils=None) -> tuple[list[Pl
             S[f"de_{lab}"] = dict(V=cv["V"], de=v, _color=colors.get(lab), _width=2.4 if "alvo" in lab else 1.6)
     S["cm_C_m = 0"] = dict(_hline=0.0, _color="#7f7f7f", _dash="dot")
     S["de_curso"] = dict(_hline=-rules.de_max, _color="#d62728", _dash="dot")
-    S["de_curso "] = dict(_hline=rules.de_max, _color="#d62728", _dash="dot", _nolegend=1)
+    S["de_curso "] = dict(_hline=rules.de_down, _color="#d62728", _dash="dot", _nolegend=1)
     S["de_cruzeiro"] = dict(_vline=req.V_cruise, _color="#7f7f7f")
     pct = lambda h: 100 * h
     if "h_fwd" in r:
@@ -209,6 +209,7 @@ def set_stage(cand: tl.SetCandidate, req, rules, airfoils=None) -> tuple[list[Pl
         summ["faixa do CG (% CMA)"] = [pct(r["h_fwd"]), pct(r["h_aft"])]
     summ["δe no cruzeiro, no C_L,max (°)"] = [r["de_cruise"], r["de_CLmax"]]
     summ["rolagem: p b/2V com o aileron todo"] = r["pb2V"]
+    summ["rotação: V com profundor todo, V com δe = 0, V de sair do chão (m/s)"] = [r["V_rot"], r["V_rot0"], r["V_lof"]]
     G = "empenagem e comandos"
     if tp.layout != "sem cauda":
         width = pct(r["h_aft"] - r["h_fwd"])
@@ -236,10 +237,26 @@ def set_stage(cand: tl.SetCandidate, req, rules, airfoils=None) -> tuple[list[Pl
                            "margem menor", G))
         checks.append(_chk(ATT, "direcional", "sem deriva", "—", "asa voadora precisa de outra fonte de C_nβ",
                            "winglets / derivas nas pontas (na Montagem: dispositivos da asa)", G))
+    if "CLh_lim" in r:
+        lo3, hi3 = r["CLh_lim"]
+        ok = lo3 <= r["CLh_CLmax"] <= hi3
+        checks.append(_chk(OK if ok else FAIL, "EH sem estolar no C_L,max", f"C_L da EH = {r['CLh_CLmax']:+.2f}",
+                           f"entre {lo3:+.2f} e {hi3:+.2f} (polar do perfil)", "" if ok else
+                           "a EH precisaria de mais sustentação (para baixo) do que o perfil dá",
+                           "" if ok else "perfil invertido na EH, mais área (V_H) ou CG mais para trás", G))
     ok = abs(r["de_CLmax"]) <= rules.de_max
     checks.append(_chk(OK if ok else FAIL, "profundor equilibra o C_L,max", f"δe = {r['de_CLmax']:.1f}°",
                        f"|δe| ≤ {rules.de_max:g}°", "" if ok else "não dá para pousar devagar com o CG no alvo",
                        "" if ok else "mais profundor/área de EH ou CG mais para trás", G))
+    ok = r["V_rot"] <= 0.9 * r["V_lof"]
+    vr = "não roda" if not math.isfinite(r["V_rot"]) else f"{r['V_rot']:.1f} m/s"
+    checks.append(_chk(OK if ok else (ATT if math.isfinite(r["V_rot"]) and r["V_rot"] <= r["V_lof"] else FAIL),
+                       "rotação na decolagem", f"roda a partir de {vr}", f"≤ 0,9 × V de sair do chão ({r['V_lof']:.1f})",
+                       "" if ok else "o profundor só levanta o nariz perto (ou depois) da velocidade de sair do chão: "
+                       "a corrida cresce e a rotação fica brusca",
+                       "" if ok else "EH com perfil invertido (momento cabrador já com δe = 0), mais área de profundor, "
+                       "trem principal mais perto do CG ou CG mais para trás", G,
+                       source="momentos no trem principal"))
     ok = r["pb2V"] >= 0.07
     checks.append(_chk(OK if ok else ATT, "efetividade do aileron", f"p b/2V = {r['pb2V']:.3f}", "≥ 0,07",
                        "" if ok else "rola devagar", "" if ok else "aileron mais longo ou de corda maior", G))
@@ -274,13 +291,10 @@ def aircraft_stage(cand: pw.AircraftCandidate, req, rules, catalog=None, backend
     S["to_massa do avião montado"] = dict(_vline=asm["mass"], _color="#000000")
     if math.isfinite(pf["mtow_runway"]):
         S["to_MTOW pela pista"] = dict(_vline=pf["mtow_runway"], _color="#2ca02c")
-    summ["massa: estrutura, vazio, total (kg)"] = [asm["structure"], asm["empty"], asm["mass"]]
-    for name, m, x, _ in asm["masses"]:
-        summ[f"  {name} (kg; x m)"] = [m, x]
-    for it in asm["items"]:
-        summ[f"  {it.name} (kg; x m)"] = [it.mass, it.x]
+    summ["PV (vazio), CP (carga paga), total (kg)"] = [asm["empty"], asm["payload"], asm["mass"]]
+    summ["fração de carga paga CP/total"] = asm["payload"] / asm["mass"]
     if asm["ballast"] > 0:
-        summ["  lastro (kg)"] = asm["ballast"]
+        summ["lastro de equilíbrio (kg, entra no PV)"] = asm["ballast"]
     summ["CG (x m), margem estática com a fuselagem (% CMA)"] = [asm["x_cg_target"], asm["sm"]]
     summ["comprimento total (m)"] = asm["length"]
     summ["V de estol, V máx. (m/s)"] = [pf["Vs"], pf["Vmax"]]
@@ -288,15 +302,39 @@ def aircraft_stage(cand: pw.AircraftCandidate, req, rules, catalog=None, backend
     summ["C_D0, (L/D) máx., V de L/D máx."] = [pf["CD0"], pf["LD_max"], pf["V_LDmax"]]
     summ["tração estática (N), T/W"] = [pf["T0"], pf["TW"]]
     summ["corrida de decolagem (m)"] = pf["s_to"]
-    summ["MTOW pela pista (kg), carga paga possível (kg)"] = [pf["mtow_runway"], pf["payload_runway"]]
+    summ["MTOW pela pista (kg); CP possível = MTOW − PV (kg)"] = [pf["mtow_runway"], pf["payload_runway"]]
     G = "montagem"
     if asm["battery_fits"]:
         checks.append(_chk(OK, "CG no alvo pela bateria", f"bateria em x = {asm['x_bat_used']:.2f} m", "dentro da fuselagem",
                            "", "", G))
     else:
-        checks.append(_chk(ATT, "CG no alvo pela bateria", f"precisa de {asm['ballast']:.2f} kg de lastro",
+        checks.append(_chk(ATT, "CG no alvo pela bateria", f"precisa de {asm['ballast']:.2f} kg de lastro de equilíbrio",
                            "sem lastro", "a bateria não alcança o ponto que põe o CG no alvo (ficaria em x = "
                            f"{asm['x_bat']:.2f} m)", "nariz mais longo/curto, motores noutro lugar ou outra margem", G))
+    tr = asm.get("trim") or {}
+    if tr:
+        if abs(tr["dih"]) > 0.05:
+            checks.append(_chk(INFO, "EH trimada com a tração", f"Δi_h = {tr['dih']:+.2f}° (C_m da tração {tr['Cm_T']:+.3f})",
+                               "—", "o eixo do motor (inclinação e altura em relação ao CG) dá momento no cruzeiro; a "
+                               "incidência da EH já o compensa: voa com o profundor neutro", "", G))
+        if tr["hold"] > 0:
+            st_ = OK if tr["hold_ok"] else FAIL
+            checks.append(_chk(st_, "trim de decolagem (motor inclinado)", f"profundor {tr['hold']:+.1f}° picando na "
+                               "corrida", f"≤ curso de picar {rules.de_down:g}°",
+                               "com o profundor neutro o nariz sobe e o avião sai do chão antes da velocidade de voo",
+                               "" if tr["hold_ok"] else "menos inclinação, EH com menos momento cabrador ou curso de picar "
+                               "maior", G, source="momentos no trem principal"))
+        if "V_rot" in tr:
+            vr, vl = tr["V_rot"], tr["V_lof"]
+            st_ = OK if vr <= vl else (ATT if vr <= 1.3 * vl else FAIL)
+            checks.append(_chk(st_, "rotação com a tração (trem principal)", "não roda" if not math.isfinite(vr) else
+                               f"a partir de {vr:.1f} m/s", f"≤ V de sair do chão ({vl:.1f} m/s)",
+                               "" if st_ == OK else "a tração passa acima do apoio do trem e pica o nariz: a rotação "
+                               "fica para depois da velocidade de sair do chão (a corrida cresce)", "" if st_ == OK else
+                               "EH invertida/maior, trem principal mais perto do CG, motor mais baixo ou inclinado", G,
+                               source="momentos no trem principal"))
+        summ["tração no cruzeiro (N), C_m dela, Δi_h (°), profundor na corrida (°)"] = [
+            tr["T_cruise"], tr["Cm_T"], tr["dih"], tr["hold"]]
     dm = asm["mass"] - req.mass
     st = OK if abs(dm) <= 0.1 * req.mass else ATT
     checks.append(_chk(st, "massa montada × requisitos", f"{asm['mass']:.2f} kg", f"{req.mass:g} kg ± 10 %",

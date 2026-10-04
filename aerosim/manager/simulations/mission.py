@@ -375,6 +375,10 @@ class MissionSimulation(SimulationBase):
                            "a maior deflexão que funciona; ponto com a maior folga até o x_warning" if best.ok else
                            "nenhum ponto passou: este é o menos ruim",
                            "copie para Configuração → Decolagem (sR, de1)" if best.ok else "", G))
+            if np.isfinite(getattr(best, "de0", float("nan"))):
+                C.append(Check("info", "profundor segurado na corrida", f"{best.de0:+g}° (pica) até o acionamento",
+                               "—", "com o profundor neutro o avião saía do chão antes de ter velocidade de voo "
+                               "(motor inclinado ou EH que cabra muito)", "Configuração → Decolagem (de0)", G))
         else:
             C.append(Check("info", "sem comando de arfagem", "decola sozinha", "—",
                            "a aeronave não tem profundor/elevon: não há acionamento a otimizar", "", G))
@@ -385,7 +389,7 @@ class MissionSimulation(SimulationBase):
         ctrl = TO.pitch_control(ac)
         ctx.on_progress(0.9, "decolagem escolhida")
         res, log = TO.evaluate(ctx.backend, ac, best.s if ctrl else None, best.de, refs["x_warning"],
-                               refs["z_warning"], dtlog=0.005, log=True)
+                               refs["z_warning"], dtlog=0.005, log=True, de0=best.de0)
         ctx.on_chunk(log)
         ev = res.events
         S = self._opt_series(tried, best, refs)
@@ -433,6 +437,8 @@ class MissionSimulation(SimulationBase):
             series.update(self._opt_series(tried, best, refs))
             if TO.pitch_control(ac) and np.isfinite(best.s):
                 ac.takeoff.sR, ac.takeoff.de1 = best.s, best.de
+                if np.isfinite(best.de0):                 # segurar o profundor picando na corrida
+                    ac.takeoff.de0 = best.de0
             checks += self._takeoff_checks(ac, best, refs, TO.pitch_control(ac))
         parts: list[LogChunk] = []
         out = None
@@ -824,7 +830,7 @@ class MissionSimulation(SimulationBase):
             S.update(self._opt_series(saved.get(tm, []), best, refs))
             v = best.variant
             res, log = TO.evaluate(ctx.backend, v, best.s if ctrl else None, best.de, refs["x_warning"], refs["z_warning"],
-                                   best.over, dtlog=0.005, log=True)
+                                   best.over, dtlog=0.005, log=True, de0=best.de0)
             if len(log):
                 S.update(self._takeoff_series(log, res.events, v, refs))
             checks += self._takeoff_checks(v, best, refs, ctrl)

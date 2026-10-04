@@ -26,7 +26,7 @@ from aerosim.model.airfoil import Airfoil, read_dat
 
 from .fields import F
 
-ALPHAS = np.arange(-8.0, 20.01, 0.5)
+ALPHAS = np.arange(-16.0, 20.01, 0.5)
 SOURCES = ("modelo", "neuralfoil", "arquivo")
 
 
@@ -155,24 +155,37 @@ def _polar(entry: AirfoilEntry, Re: float, a: np.ndarray, source: str | None) ->
 
 
 def metrics(p: dict) -> dict:
-    """c_l,max e α de estol, (c_l/c_d) máx. e onde, c_d mín., a1 e α_L0 (trecho linear), c_m"""
+    """c_l,max e α de estol, (c_l/c_d) máx. e onde, c_d mín., a1 e α_L0 (trecho linear), c_m.
+    Perfil invertido (arqueado para baixo, como na EH): o lado útil é o do c_l negativo — c_l,max é o maior
+    |c_l| e `inverted` fica True"""
     a, cl, cd, cm = (np.asarray(p[k], float) for k in ("alpha", "cl", "cd", "cm"))
     ok = np.isfinite(cl) & np.isfinite(cd)
     a, cl, cd, cm = a[ok], cl[ok], cd[ok], cm[ok]
     if len(a) < 4:
         return {}
     i = int(np.argmax(cl))
-    lin = (a >= -3) & (a <= 5) & (np.arange(len(a)) < i)
+    j0 = int(np.argmin(cl[: i + 1])) if i > 0 else 0
+    lo, hi = cl[j0], cl[i]
+    mid = (np.arange(len(a)) >= j0) & (np.arange(len(a)) <= i)
+    inverted = -lo > hi
+    # trecho colado: c_l entre 15 % e 70 % do máximo do lado útil; a1 e α_L0 pela inclinação de Theil-Sen e
+    # intercepto mediano (robusta a saltos de bolha/descolamento, como o do S1223 em Re baixo)
+    lin = mid & ((cl <= 0.15 * lo) & (cl >= 0.7 * lo) if inverted else (cl >= 0.15 * hi) & (cl <= 0.7 * hi))
     if lin.sum() < 3:
-        lin = np.arange(len(a)) <= max(i - 1, 2)
-    k, b = np.polyfit(np.radians(a[lin]), cl[lin], 1)
+        lin = mid if mid.sum() >= 3 else np.ones(len(a), bool)
+    ar, cr = np.radians(a[lin]), cl[lin]
+    ii, jj = np.triu_indices(len(ar), 1)              # Theil-Sen: mediana das inclinações de todos os pares
+    k = float(np.median((cr[jj] - cr[ii]) / (ar[jj] - ar[ii])))
+    b = float(np.median(cr - k * ar))
     with np.errstate(divide="ignore", invalid="ignore"):
-        ld = np.where(cd > 0, cl / cd, np.nan)
-    j = int(np.nanargmax(ld))
-    cd_const = float(np.ptp(cd[: i + 1])) < 1e-6
-    return dict(cl_max=float(cl[i]), alpha_stall=float(a[i]), ld_max=float(ld[j]), cl_ld=float(cl[j]),
-                alpha_ld=float(a[j]), cd_min=float(np.min(cd[: i + 1])), cl_alpha=float(k),
-                alpha0=float(-math.degrees(b / k)) if k else 0.0, cm=float(np.mean(cm[lin])), cd_const=cd_const)
+        ld = np.where(cd > 0, (-cl if inverted else cl) / cd, np.nan)
+    jl = int(np.nanargmax(ld))
+    cd_const = float(np.ptp(cd[j0: i + 1])) < 1e-6
+    ist = j0 if inverted else i
+    return dict(cl_max=float(-lo if inverted else hi), alpha_stall=float(a[ist]), ld_max=float(ld[jl]),
+                cl_ld=float(cl[jl]), alpha_ld=float(a[jl]), cd_min=float(np.min(cd[j0: i + 1])), cl_alpha=float(k),
+                alpha0=float(-math.degrees(b / k)) if k else 0.0, cm=float(np.mean(cm[lin])), cd_const=cd_const,
+                inverted=bool(inverted))
 
 
 def fitted(af: Airfoil, p: dict) -> Airfoil:
@@ -182,7 +195,19 @@ def fitted(af: Airfoil, p: dict) -> Airfoil:
     if m:
         out.cl_alpha, out.alpha0, out.cl_max = m["cl_alpha"], m["alpha0"], m["cl_max"]
         out.cd0, out.cm_ac = m["cd_min"], m["cm"]
+        if symmetric(af):           # em Re baixo a bolha desloca o ajuste; perfil simétrico tem α_L0 = c_m = 0
+            out.alpha0, out.cm_ac = 0.0, 0.0
     return out
+
+
+def symmetric(af: Airfoil) -> bool:
+    if kind(af) == "parâmetros":
+        return False
+    from aerosim.model.airfoil import camber_line
+    try:
+        return float(np.max(np.abs(camber_line(af.outline())[1]))) < 0.003
+    except Exception:
+        return False
 
 
 def drag_at(p: dict, cl) -> np.ndarray:

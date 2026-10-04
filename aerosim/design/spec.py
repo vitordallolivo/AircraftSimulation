@@ -20,7 +20,6 @@ MU_AIR = 1.81e-5
 @dataclass
 class Requirements:
     mass: float = F(10.0, "massa total estimada", "kg", "MTOW esperado: dá o C_L de cruzeiro e a carga alar", 0.2, 60, 0.1)
-    payload: float = F(4.0, "carga paga", "kg", "vai no CG (não mexe no equilíbrio quando muda)", 0, 40, 0.1)
     V_cruise: float = F(15.0, "velocidade de cruzeiro", "m/s", "", 3, 60, 0.5)
     V_stall_max: float = F(11.0, "estol máximo", "m/s", "a velocidade de estol (massa total) não pode passar disto",
                            3, 40, 0.5)
@@ -71,8 +70,12 @@ class DesignRules:
     prop_clearance: float = F(0.05, "folga da hélice ao chão", "m", "", 0.0, 0.5, 0.01)
     main_gear_aft: float = F(0.06, "trem principal atrás do CG", "m", "≈ 15° de tombamento", 0.0, 0.5, 0.01)
     track: float = F(0.45, "bitola do trem", "m", "", 0.1, 2, 0.01)
-    de_max: float = F(20.0, "curso do profundor", "°", "deflexão máxima usada no equilíbrio", 5, 40, 1)
-    da_max: float = F(20.0, "curso do aileron", "°", "", 5, 40, 1)
+    de_max: float = F(20.0, "profundor: curso para cabrar", "°", "bordo de fuga para cima (rotação, C_L,max)", 5, 40, 1)
+    de_down: float = F(15.0, "profundor: curso para picar", "°", "cursos assimétricos: picar costuma ser menor; segura "
+                       "o nariz na corrida do motor inclinado", 2, 40, 1)
+    da_max: float = F(20.0, "aileron: curso para cima", "°", "", 5, 40, 1)
+    da_down: float = F(12.0, "aileron: curso para baixo", "°", "aileron diferencial: desce menos do que sobe (menos "
+                       "guinada adversa)", 2, 40, 1)
 
 
 def cruise_CL(req: Requirements, S: float) -> float:

@@ -86,7 +86,11 @@ def test_assembly_puts_cg_on_target_and_flies_in_the_core(manager, tmp_path):
     ac, asm = pw.assemble(cand, req)
     dm = dry_mass(ac)
     assert asm["battery_fits"] and dm["cg"][0] == pytest.approx(asm["x_cg_target"], abs=1e-6)
-    assert dm["m"] == pytest.approx(asm["mass"]) and asm["sm"] == pytest.approx(12.0)
+    pp = cand.params                                   # o núcleo soma líquido e LAPES à massa seca
+    assert dm["m"] + pp.liquid + pp.lapes == pytest.approx(asm["mass"]) and asm["sm"] == pytest.approx(12.0)
+    assert asm["payload"] == pytest.approx(pp.ballast + pp.liquid + pp.lapes)
+    assert asm["empty"] + asm["payload"] == pytest.approx(sum(r[2] for r in asm["mass_table"]))
+    assert ac.ballast.mass == pp.ballast and ac.tanks[0].volume == pp.liquid and ac.payload.mass == pp.lapes
     assert ac.gear.main_x < asm["x_cg_target"] < ac.gear.steer_x       # triciclo: principal atrás do CG
     f = str(tmp_path / "a.json")
     save_aircraft(ac, f)
@@ -155,3 +159,53 @@ def test_project_roundtrip_and_names(tmp_path):
     q = DesignProject.load(f)
     assert [x.name for x in q.wings] == ["asa 1"] and q.aircraft[0].set.wing.params.area == 1.0
     assert next_name("conjunto 1", ["conjunto 1", "conjunto 2"]) == "conjunto 3"
+
+
+def test_tilted_motor_shortens_the_run():
+    req = Requirements()
+    st = tl.SetCandidate(tl.TailParams(), _wing(area=1.0))
+    out = []
+    for tilt in (0.0, 8.0):
+        ac, asm = pw.assemble(pw.AircraftCandidate(pw.PowerParams(tilt=tilt), st), req)
+        out.append(pw.performance(ac, asm, req, None)["s_to"])
+    assert out[1] < out[0]
+
+
+def test_cambered_inverted_tail_needs_other_incidence():
+    from aerosim.model.airfoil import Airfoil, naca4
+    c = naca4("4412")
+    inv = afm.AirfoilEntry(Airfoil(name="4412 invertido", coords=np.column_stack([c[::-1, 0], -c[::-1, 1]]).tolist()))
+    req = Requirements()
+    r0 = tl.analyze(tl.SetCandidate(tl.TailParams(), _wing(area=1.0)), req)
+    r1 = tl.analyze(tl.SetCandidate(tl.TailParams(tail_airfoil=inv.name), _wing(area=1.0)), req, airfoils={inv.name: inv})
+    assert r1["set"].surfaces[1].airfoil.zero_lift_angle() > 2          # invertido: α_L0 positivo
+    assert r1["i_h"] > r0["i_h"] + 2 and abs(r1["de_cruise"]) < 1e-6
+
+
+def test_inverted_tail_rotates_earlier():
+    """EH com perfil arqueado invertido: c_l negativo maior → roda o avião mais cedo na corrida"""
+    from aerosim.model.airfoil import Airfoil, naca4
+    c = naca4("6412")
+    inv = afm.AirfoilEntry(Airfoil(name="6412 invertido", coords=np.column_stack([c[::-1, 0], -c[::-1, 1]]).tolist()),
+                           source="neuralfoil")
+    req = Requirements()
+    w = _wing(area=1.0, alpha_cruise=3.0)
+    sym = tl.analyze(tl.SetCandidate(tl.TailParams(), w), req)
+    up = tl.analyze(tl.SetCandidate(tl.TailParams(tail_airfoil=inv.name), w), req, airfoils={inv.name: inv})
+    assert up["CLh_lim"][0] < sym["CLh_lim"][0]            # mais c_l para baixo
+    assert up["V_rot"] < sym["V_rot"]
+
+
+def test_tilted_motor_retrims_tail_and_differential_aileron():
+    req = Requirements()
+    st = tl.SetCandidate(tl.TailParams(), _wing(area=1.0, alpha_cruise=3.0))
+    ih = []
+    for tilt in (0.0, 8.0):
+        ac, asm = pw.assemble(pw.AircraftCandidate(pw.PowerParams(tilt=tilt), st), req)
+        ih.append(ac.surfaces[1].incidence)
+        assert set(asm["trim"]) >= {"Cm_T", "dih", "hold", "V_rot", "V_lof"}
+    assert ih[1] > ih[0]                       # inclinado para cima cabra no cruzeiro: a EH compensa
+    from aerosim.design.spec import DesignRules
+    sym = tl.analyze(st, req, DesignRules(da_max=20, da_down=20))["pb2V"]
+    dif = tl.analyze(st, req, DesignRules(da_max=20, da_down=10))["pb2V"]
+    assert dif == pytest.approx(0.75 * sym)

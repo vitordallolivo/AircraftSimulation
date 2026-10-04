@@ -51,7 +51,8 @@ class DesignProject:
         return next((s for s in self.sets if s.name == name), None)
 
     def airfoil_map(self) -> dict:
-        return {a.name: a.airfoil for a in self.airfoils}
+        """nome → candidato da etapa Perfil (a cauda ajusta o perfil na polar dele, no Re dela)"""
+        return {a.name: a for a in self.airfoils}
 
     # ------------------------------------------------------------------ guardar (mesmo nome: substitui)
     @staticmethod

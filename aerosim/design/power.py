@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from aerosim.model.aircraft import (Aircraft, Ballast, Fuselage, LandingGear, MassModel, PointMass,
-                                    PropulsionUnit)
+from aerosim.model.aircraft import (Aircraft, Ballast, Fuselage, LandingGear, MassModel, Payload, PointMass,
+                                    PropulsionUnit, SloshTank)
 from aerosim.model.catalog import Catalog, builtin_catalog
 
 from .fields import F
@@ -42,7 +42,14 @@ class PowerParams:
     propeller: str = F("APC 15x8E", "hélice")
     battery: str = F("LiPo 6S 5000", "bateria", "", "uma por motor")
     thrust_set: str = F("", "conjunto de tração")
-    tilt: float = F(0.0, "inclinação do eixo", "°", "+ eixo apontando para cima", -10, 10, 0.5)
+    tilt: float = F(0.0, "inclinação do motor", "°", "+ eixo apontando para cima: parte da tração sustenta na corrida",
+                    -10, 15, 0.5)
+    motor_y: float = F(0.0, "afastamento dos motores", "m", "dois motores: do centro ao eixo; 0 = o mínimo para a "
+                       "hélice livrar a fuselagem", 0, 1.5, 0.01)
+    ballast: float = F(2.0, "carga paga: lastro", "kg", "massa sólida no CG", 0, 40, 0.05)
+    liquid: float = F(1.0, "carga paga: líquido", "L", "água (1 kg/L) num tanque no CG — mexe na curva (sloshing)", 0, 20,
+                      0.05)
+    lapes: float = F(1.0, "carga paga: LAPES", "kg", "carga lançada pela baia, no CG", 0, 20, 0.05)
     gear: str = F("triciclo", "trem", "", "triciclo: bequilha no nariz; convencional: bequilha na cauda", choices=GEARS)
 
 
@@ -96,7 +103,8 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     ac.Sref = ac.cref = ac.bref = None
     ac.tanks = []
     ac.payload.enabled = False
-    ac.mission.events = [e for e in ac.mission.events if e.kind != "drop"]
+    if pp.lapes <= 0:
+        ac.mission.events = [e for e in ac.mission.events if e.kind != "drop"]
     ac.environment.set_density_altitude(req.density_altitude)
     ac.performance.alpha_cruise = cand.set.wing.params.alpha_cruise
     ac.airfield.x_warning = req.takeoff_run
@@ -116,7 +124,7 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
         units = [_unit(pp, cat, "motor 1", x_nose, 0.0, 0.0, 1)]
     elif pp.layout == LAYOUTS[1]:
         D0 = _unit(pp, cat, "m", 0, 0, 0, 1).propeller.D
-        y = max(D0 / 2 + fw / 2 + 0.05, 0.15)
+        y = pp.motor_y if pp.motor_y > 0 else max(D0 / 2 + fw / 2 + 0.05, 0.15)
         xm = 0.15 + 0.02
         units = [_unit(pp, cat, "motor esq", xm, -y, w.z, 1), _unit(pp, cat, "motor dir", xm, y, w.z, -1)]
     else:
@@ -153,23 +161,32 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
         items.append(PointMass(f"{u.name}: motor", u.motor.mass, u.x + k * 0.06, u.y, u.z))
         items.append(PointMass(f"{u.name}: hélice", u.propeller.mass, u.x, u.y, u.z))
     items.append(PointMass("sistemas", rules.systems_mass, 0.5 * x_nose, 0.0, 0.0))
-    items.append(PointMass("carga paga", req.payload, x_t, 0.0, 0.03))
+    # carga paga: lastro + líquido + LAPES, tudo no CG (soltar ou gastar não mexe no equilíbrio)
+    cp = [("lastro", pp.ballast), ("líquido", pp.liquid * 1.0), ("LAPES", pp.lapes)]
+    m_cp = sum(m for _, m in cp)
     m_bat = sum(u.battery.mass for u in units)
-    M = m_s + sum(i.mass for i in items) + m_bat
-    Mx = m_s * xs + sum(i.mass * i.x for i in items)
+    M = m_s + sum(i.mass for i in items) + m_bat + m_cp
+    Mx = m_s * xs + sum(i.mass * i.x for i in items) + m_cp * x_t
     x_bat = (M * x_t - Mx) / m_bat if m_bat > 0 else x_t
     lo, hi = x_nose - length + 0.08, x_nose - 0.12
     x_bat_c = min(max(x_bat, lo), hi)
     items.append(PointMass("bateria", m_bat, x_bat_c, 0.0, 0.02))
     Mx += m_bat * x_bat_c
-    ballast = Ballast(enabled=False, mass=0.0)
-    if abs(x_bat_c - x_bat) > 1e-6:
+    m_eq = 0.0
+    if abs(x_bat_c - x_bat) > 1e-6:          # a bateria não alcança: lastro de equilíbrio (não é carga paga)
         xb = x_nose - 0.04 if x_bat > x_bat_c else (ac.boom.x_end + 0.05 if ac.boom.enabled else lo)
         mb = (M * x_t - Mx) / (xb - x_t)
         if mb > 0:
-            ballast = Ballast(enabled=True, mass=float(mb), x=float(xb), y=0.0, z=0.0)
+            items.append(PointMass("lastro de equilíbrio", float(mb), float(xb), 0.0, 0.0))
+            m_eq = float(mb)
             M += mb
-    ac.ballast = ballast
+    ac.ballast = Ballast(enabled=pp.ballast > 0, mass=pp.ballast, x=x_t, y=0.0, z=0.0)
+    if pp.liquid > 0:
+        side = 0.12
+        ac.tanks = [SloshTank("tanque", x_t, 0.0, 0.03, side=side, volume=pp.liquid,
+                              height=max(1.15 * pp.liquid / 1000 / (side * side), 0.04))]
+    if pp.lapes > 0:
+        ac.payload = Payload(enabled=True, mass=pp.lapes, x=x_t, y=0.0, z=0.06)
     ac.mass = MassModel(base_mass=m_s, base_cg=[xs, 0.0, zs], Ixx=I[0], Iyy=I[1], Izz=I[2], Ixz=0.0, items=items,
                         include_propulsion=False, include_structure=False)
     # ---- trem
@@ -189,13 +206,97 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     ac.autopilot.CL0 = float(wr["CL0"] + wr["CLa"] * math.radians(wr["incidence"]))
     ac.autopilot.CLa = float(wr["CLa"])
     ac.apply_constraints()
+    trim = thrust_trim(ac, st, wr, req, rules, x_t, info, M, cand.set.params)
     xs_all = [x_nose] + [u.x for u in units] + [s_.x - s_.sections[0].chord for s_ in ac.surfaces]
     total_len = max(xs_all) - min(xs_all + ([ac.boom.x_end] if ac.boom.enabled else []))
-    out = dict(set=st, x_cg_target=x_t, h_n=h_n, sm=100 * (h_n - h_t), mass=M, empty=M - req.payload,
-               x_bat=x_bat, x_bat_used=x_bat_c, battery_fits=abs(x_bat_c - x_bat) < 1e-6, ballast=ballast.mass,
+    table = [("PV", n, m, x) for n, m, x, _ in pf_mass] + [("PV", i.name, i.mass, i.x) for i in items] + \
+        [("CP", n, m, x_t) for n, m in cp if m > 0]
+    out = dict(set=st, x_cg_target=x_t, h_n=h_n, sm=100 * (h_n - h_t), mass=M, empty=M - m_cp, payload=m_cp,
+               mass_table=table, x_bat=x_bat, x_bat_used=x_bat_c, battery_fits=abs(x_bat_c - x_bat) < 1e-6, ballast=m_eq,
                length=total_len, structure=m_s, masses=pf_mass, items=items, Vs=Vs, D=D,
-               boom_hits_prop=pp.layout == LAYOUTS[2] and ac.boom.enabled)
+               boom_hits_prop=pp.layout == LAYOUTS[2] and ac.boom.enabled, trim=trim)
     return ac, out
+
+
+def _thrust_moment(units, T_each, px, pz) -> float:
+    """momento de arfagem (+ cabra) da tração em torno do ponto (px, pz): eixo inclinado e fora do ponto"""
+    M = 0.0
+    for u in units:
+        t = math.radians(u.tilt)
+        Fx, Fz = T_each * math.cos(t), -T_each * math.sin(t)
+        M += (u.z - pz) * Fx - (u.x - px) * Fz
+    return M
+
+
+def thrust_trim(ac, st, wr, req, rules, x_t, info, mass, tp) -> dict:
+    """a EH trimada para o voo COM o momento da tração (motor inclinado ou fora do CG) e o trim de decolagem:
+    quanto o profundor fica picando na corrida para o avião não sair do chão antes da hora — dentro do curso
+    de picar (cursos assimétricos). Vira `takeoff.de0` do avião montado."""
+    from aerosim.model.massprops import dry_mass
+    from aerosim.model.universal import build_model
+    us = [u for u in ac.propulsion if u.enabled]
+    if not us:
+        return {}
+    S, c = info["S"], info["c"]
+    rho = req.rho
+    W = mass * G0
+    z_cg = float(dry_mass(ac)["cg"][2])
+    # ---- voo: no cruzeiro a tração = arrasto
+    q = req.q()
+    K = 1 / (math.pi * wr["AR"] * min(max(wr["e"], 0.5), 1.0))
+    CL = W / (q * S)
+    Tc = q * S * (build_model(ac).parasite_cd() + K * CL * CL)
+    Cm_T = _thrust_moment(us, Tc / len(us), x_t, z_cg) / (q * S * c)
+    dih = 0.0
+    if tp.layout != "sem cauda" and st.get("a_h"):
+        dih = Cm_T / (tp.tail_eta * st["VH"] * st["a_h"])
+        for s_ in ac.surfaces[1:]:
+            if s_.role == "htail":
+                s_.incidence += math.degrees(dih) * math.cos(math.radians(s_.dihedral))
+    out = dict(Cm_T=Cm_T, T_cruise=Tc, dih=math.degrees(dih), hold=0.0, hold_ok=True, rot_ok=True)
+    tail = st.get("tail_cm_mg")
+    if tail is None or ac.gear.layout != "tricycle":
+        return out
+    # ---- corrida: momentos no trem principal (+ cabra), com a tração do motor inclinado
+    x_mg, gz = ac.gear.main_x, ac.gear.main_z
+    CLg = st["CL_ground"]
+    Vlof = 1.1 * stall_speed(req, S, wr["CLmax"], mass)
+    Vs_ = np.linspace(0.5, 1.6 * Vlof, 64)
+    Tv = thrust_of(ac, Vs_, rho, None) / len(us)
+
+    def nose_up(i, de):
+        qq = 0.5 * rho * Vs_[i] ** 2
+        aero = qq * S * c * (wr["Cm_ac"] + CLg * (info["x_ac_w"] - x_mg) / c + tail(CLg, de, x_mg, dih))
+        return aero + _thrust_moment(us, Tv[i], x_mg, gz) - W * (x_t - x_mg)
+    early = [i for i in range(len(Vs_)) if Vs_[i] <= 0.95 * Vlof]
+    lifts = lambda de: any(nose_up(i, de) > 0 for i in early)
+    if lifts(0.0):
+        lo, hi = 0.0, math.radians(rules.de_down)
+        if lifts(hi):
+            out.update(hold=rules.de_down, hold_ok=False)
+        else:
+            for _ in range(30):
+                mid = 0.5 * (lo + hi)
+                lo, hi = (mid, hi) if lifts(mid) else (lo, mid)
+            out["hold"] = math.degrees(hi)
+        ac.takeoff.de0 = round(out["hold"], 2)
+    up = [Vs_[i] for i in range(len(Vs_)) if nose_up(i, -math.radians(rules.de_max)) > 0]
+    out["V_rot"] = float(up[0]) if up else float("inf")      # com a tração e o profundor todo cabrando
+    aero_u = lambda de: wr["Cm_ac"] + CLg * (info["x_ac_w"] - x_mg) / c + tail(CLg, de, x_mg, dih)
+    Vgrid = np.linspace(0.5, 40.0, 160)
+    Tgrid = thrust_of(ac, Vgrid, rho, None) / len(us)
+    Mth = np.array([_thrust_moment(us, t, x_mg, gz) for t in Tgrid])
+    cm_full = aero_u(-math.radians(rules.de_max))
+
+    def rot_speed(m: float) -> float:
+        """V a partir da qual o profundor todo roda o avião com massa m (a corrida rápida espera por ela)"""
+        f = 0.5 * rho * Vgrid ** 2 * S * c * cm_full + Mth - m * G0 * (x_t - x_mg)
+        k = np.nonzero(f > 0)[0]
+        return float(Vgrid[k[0]]) if len(k) else float("inf")
+    out["rot_speed"] = rot_speed
+    out["V_lof"] = Vlof
+    out["rot_ok"] = out["V_rot"] <= Vlof
+    return out
 
 
 def _base_inertia(parts, xs, zs, b, c, ac) -> tuple[float, float, float]:
@@ -292,24 +393,34 @@ def performance(ac: Aircraft, asm: dict, req: Requirements, backend=None) -> dic
     Vmax = float(V[ok][-1]) if ok.any() else float("nan")
     i = int(np.argmax(RC))
     CLg = wr["CL0"] + wr["CLa"] * math.radians(wr["incidence"])
+    us = [u for u in ac.propulsion if u.enabled]
+    tl = math.radians(sum(u.tilt for u in us) / len(us)) if us else 0.0       # motor inclinado
     T0 = float(thrust_of(ac, np.array([0.0]), rho, backend)[0])
     Vg = np.r_[0.0, V]
     Tgv = np.r_[T0, T]
 
+    rs = (asm.get("trim") or {}).get("rot_speed")
+
     def run(mass):
-        Vlof = 1.1 * stall_speed(req, S, wr["CLmax"], mass)
+        v_rot = rs(mass) if rs else 0.0
+        if not math.isfinite(v_rot):
+            return float("inf")
         x = v = 0.0
         dt = 0.02
         for _ in range(20000):
             qq = 0.5 * rho * v * v
-            L = qq * S * CLg
+            Tv = np.interp(v, Vg, Tgv)
+            L = qq * S * CLg + Tv * math.sin(tl)
             Dd = qq * S * (CD0 + K * CLg * CLg)
-            a = (np.interp(v, Vg, Tgv) - Dd - req.mu_roll * max(mass * G0 - L, 0.0)) / mass
+            a = (Tv * math.cos(tl) - Dd - req.mu_roll * max(mass * G0 - L, 0.0)) / mass
             if a <= 0:
                 return float("inf")
             v += a * dt
             x += v * dt
-            if v >= Vlof:
+            # sai do chão com 1,1 V_S — a parte vertical da tração do motor inclinado alivia o peso — e só
+            # depois que o profundor consegue rodar o avião (EH que cabra pouco alonga a corrida)
+            if v >= v_rot and 0.5 * rho * v * v * S * wr["CLmax"] >= 1.21 * (mass * G0 - np.interp(v, Vg, Tgv) *
+                                                                            math.sin(tl)):
                 return x
         return float("inf")
     s_to = run(M)
@@ -327,6 +438,6 @@ def performance(ac: Aircraft, asm: dict, req: Requirements, backend=None) -> dic
     masses = np.linspace(max(asm["empty"], 0.5), max(2.2 * M, mtow if math.isfinite(mtow) else 0) * 1.05, 25)
     s_curve = np.array([run(m) for m in masses])
     return dict(V=V, T=T, D=Dg, RC=RC, P_req=Dg * V, P_av=T * V, Vs=Vs, Vmax=Vmax, RC_max=float(RC[i]), V_y=float(V[i]),
-                CD0=CD0, K=K, s_to=s_to, mtow_runway=mtow, payload_runway=mtow - (M - req.payload) if math.isfinite(mtow)
+                CD0=CD0, K=K, s_to=s_to, mtow_runway=mtow, payload_runway=mtow - asm["empty"] if math.isfinite(mtow)
                 else float("nan"), T0=T0, TW=T0 / W, masses=masses, s_curve=s_curve, V_LDmax=math.sqrt(
                     2 * W / (rho * S) * math.sqrt(K / CD0)), LD_max=0.5 / math.sqrt(K * CD0))
