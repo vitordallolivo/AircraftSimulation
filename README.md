@@ -22,7 +22,7 @@ mudar.
 
 ![Projeto do zero — motores e distribuição de massa](docs/img/estudo_motores.png)
 
-![Missão 6GDL — MTOW](docs/img/estudo_missao_mtow.png)
+![Estudo e ponto de projeto — inclinação do motor em Joinville e São José dos Campos, conferido no 6GDL](docs/img/estudo_ponto_de_projeto_graficos.png)
 
 ![Configuração](docs/img/gui_configuracao.png)
 
@@ -100,7 +100,7 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   incidência pelo ângulo de cruzeiro) → **Empenagem e comandos** (cauda por volume, tubo, CG na margem
   pedida, faixa de CG, rotação na decolagem) → **Motores e montagem** (motores, distribuição de massa com PV
   e carga paga = lastro + líquido + LAPES, bateria no ponto do CG, trem, desempenho e o MTOW pela pista) →
-  **Mandar para a Montagem**. Exemplo: [estudo S1223](data/sprint/estudo_s1223.md). Cada etapa guarda candidatos com nome; o programa compara,
+  **Mandar para a Montagem**; **Estudo e ponto de projeto** (Desempenho) acopla as áreas e varre uma variável (ex.: inclinação do motor) nas altitudes-densidade pedidas. Cada etapa guarda candidatos com nome; o programa compara,
   não escolhe. Requisitos (massa, velocidades, AD, envergadura, pista) e regras no botão **Requisitos…**.
   Detalhes em [aerosim/design](aerosim/design/README.md).
 - **Montagem** (última aba): componentes, 3D editável, ambiente (altitude-densidade, vento) e envelope

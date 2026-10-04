@@ -20,6 +20,7 @@ from aerosim.model.serialize import from_dict, to_dict
 from . import airfoils as afm
 from .power import AircraftCandidate, PowerParams
 from .spec import DesignRules, Requirements
+from .study import StudyParams
 from .tail import SetCandidate, TailParams
 from .wing import WingCandidate, WingParams
 
@@ -39,6 +40,7 @@ class DesignProject:
     wing_draft: WingParams = field(default_factory=WingParams)
     tail_draft: TailParams = field(default_factory=TailParams)
     power_draft: PowerParams = field(default_factory=PowerParams)
+    study: StudyParams = field(default_factory=StudyParams)
 
     # ------------------------------------------------------------------ busca
     def airfoil(self, name: str) -> afm.AirfoilEntry | None:

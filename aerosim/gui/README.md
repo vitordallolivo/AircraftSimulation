@@ -74,6 +74,9 @@ flowchart LR
   `<meus aviões>/sprint/projeto.json`; menu **Projeto da sprint** para novo, abrir e salvar como.
   Em Motores e montagem, embaixo do 3D, a **distribuição de massa**: cada item com x e % do total, PV (vazio)
   e CP (carga paga = lastro + líquido + LAPES, digitados), e a CP possível pelo MTOW da pista.
+  **Estudo e ponto de projeto** (Desempenho): roda o estudo numa `QThread` (ponto de projeto acoplado por valor ×
+  altitude), mostra a tabela, os gráficos e o 3D do ponto selecionado, confere no 6GDL e leva o ponto marcado para
+  o rascunho.
   As contas estão em [`aerosim/design`](../design/README.md).
 - **Formulários com metadados:** `DataclassForm` usa rótulo, unidade, dica, opções e faixa dos metadados do
   campo (`aerosim.design.fields.F`); `choices` e `editable` por campo para listas que dependem do projeto.

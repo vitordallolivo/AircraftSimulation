@@ -197,6 +197,15 @@ def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypa
     pump(app, 1.0)
     motores = des.widget(0)
     assert motores.ac is not None and motores.checks.diag.rowCount() >= 3
+    assert [des.tabText(i) for i in range(des.count())] == ["Motores e montagem", "Estudo e ponto de projeto",
+                                                            "Avião montado"]
+    estudo = des.widget(1)                                 # retroalimentação: ponto de projeto acoplado
+    st.design.study.n, st.design.study.places = 2, "A=600"
+    estudo.start()
+    t0 = time.time()
+    while estudo._thread is not None and time.time() - t0 < 120:
+        pump(app, 0.1)
+    assert len(estudo.rows) == 2 and estudo.table.rowCount() == 2
     n = len(st.fleet)
     motores.send()
     assert len(st.fleet) == n + 1 and w.tabs.currentWidget() is w.config

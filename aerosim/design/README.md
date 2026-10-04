@@ -10,17 +10,20 @@ Cria o avião do zero, e cada etapa parte do que a anterior guardou:
 
 O programa não escolhe por você. Ele guarda candidatos com nome, compara esses candidatos e mostra o diagnóstico de cada etapa.
 
-Exemplo (o estudo [S1223](../../data/sprint/estudo_s1223.md), Joinville):
+Exemplo montado na interface (asa S1223; EH MH 113 invertida, EH simétrica e cauda em V; Joinville e São José
+dos Campos):
 
-![Perfil: S1223, MH 113 (normal e invertido), HT 14 e SD8020 pelo NeuralFoil](../../docs/img/estudo_perfil.png)
+![Perfil: S1223, MH 113, HT 14 e SD8020 pelo NeuralFoil](../../docs/img/estudo_perfil.png)
 
 ![Asa S1223: 3D da asa, C_L × α e polar](../../docs/img/estudo_asa.png)
 
 ![Asa: L/D × C_L e c_l na envergadura — o estol começa na raiz](../../docs/img/estudo_asa_estol.png)
 
-![Empenagem: EH MH 113 invertido, EV HT 14 — conjunto com CG e ponto neutro, C_m × α, profundor × V](../../docs/img/estudo_empenagem.png)
+![Empenagem: EH MH 113 invertida, EV HT 14 — conjunto com CG e ponto neutro](../../docs/img/estudo_empenagem.png)
 
-![Empenagem: diagnóstico — faixa de CG, EH sem estolar, rotação na decolagem](../../docs/img/estudo_empenagem_diagnostico.png)
+![Empenagem invertida: diagnóstico — faixa de CG, EH sem estolar, rotação na decolagem](../../docs/img/estudo_empenagem_diagnostico.png)
+
+![EH convencional (HT 14, simétrica) com EV: roda mais tarde](../../docs/img/estudo_empenagem_convencional.png)
 
 ![Motores e montagem: o avião inteiro e a distribuição de massa (PV e CP)](../../docs/img/estudo_motores.png)
 
@@ -30,7 +33,15 @@ Exemplo (o estudo [S1223](../../data/sprint/estudo_s1223.md), Joinville):
 
 ![Mandado para a Montagem: mais um avião aberto, com tanque, LAPES e lastro](../../docs/img/estudo_montagem.png)
 
-![Missão (6GDL), modo MTOW: 11,99 kg (a conta rápida deu 11,64 kg)](../../docs/img/estudo_missao_mtow.png)
+![Estudo e ponto de projeto: inclinação do motor nas duas altitudes-densidade, conferido no 6GDL — o ponto marcado é o de 6°](../../docs/img/estudo_ponto_de_projeto.png)
+
+![MTOW × inclinação do motor: ● conta rápida, ★ 6GDL — o ótimo fica perto de 6° nos dois lugares](../../docs/img/estudo_ponto_de_projeto_graficos.png)
+
+![O ponto marcado (maior MTOW viável, pelo 6GDL) e o que limita](../../docs/img/estudo_ponto_de_projeto_diagnostico.png)
+
+![Comparação dos aviões guardados (EH invertida, EH convencional, NACA 0012, cauda em V, bimotor, motor inclinado)](../../docs/img/estudo_comparacao.png)
+
+![Comparação: MTOW de cada avião, rápido e 6GDL](../../docs/img/estudo_comparacao_graficos.png)
 
 Na GUI, as etapas ficam nas subabas de cada área. A última subaba, **Avião montado**, faz a análise detalhada do avião aberto (lltdrek ou AeroSandbox, núcleo 6GDL).
 
@@ -38,7 +49,7 @@ Na GUI, as etapas ficam nas subabas de cada área. A última subaba, **Avião mo
 |---|---|
 | Aerodinâmica | Perfil, Asa, Avião montado |
 | Estabilidade | Empenagem e comandos, Avião montado |
-| Desempenho | Motores e montagem, Avião montado |
+| Desempenho | Motores e montagem, Estudo e ponto de projeto, Avião montado |
 
 ## Como chamar
 
@@ -149,7 +160,7 @@ As áreas saem do volume de cauda: S_h = V_H S c̄ / l e S_v = V_V S b / l. O br
 Em todos os casos o tubo termina no bordo de fuga da cauda, e os ailerons ficam na asa. EH e EV têm perfis
 separados. A EH aceita perfil arqueado, inclusive **invertido** (o α_L0 dele entra na incidência); a EV deve ser
 simétrica. O perfil da cauda é ajustado na polar dele, no Re da cauda, e o C_L da EH fica limitado pelos **dois
-lados** da polar.
+lados** da polar, com o ganho de c_l,max do profundor defletido (flape simples, Raymer cap. 12).
 
 A estática longitudinal segue a forma clássica (Etkin; Nelson): h_n = h_ac + η V_H (a_h/a)(1 − dε/dα), com dε/dα = 2a/(πAR). A partir dela:
 
@@ -161,8 +172,8 @@ A estática longitudinal segue a forma clássica (Etkin; Nelson): h_n = h_ac + �
 - A **rotação na decolagem** é a velocidade a partir da qual o profundor todo levanta o nariz em torno do trem
   principal. Ela entra nos momentos no ponto de contato: C_m,ac da asa, sustentação da asa na incidência, peso
   e cauda. A EH com sustentação para baixo cabra, e o perfil invertido tem c_l negativo maior. Por isso roda mais
-  cedo: com a asa S1223, roda a 8,6 m/s com MH 113 invertido contra 11,6 m/s com NACA 0012, e sai do chão a
-  11,7 m/s. O diagnóstico pede rotação até 0,9 × a velocidade de sair do chão.
+  cedo: com a asa S1223 (sem a tração), roda a 8,5 m/s com MH 113 invertido contra 9,4 m/s com NACA 0012 e
+  10,0 m/s com HT 14.
 
 ### Motores e montagem (`power.py`)
 
@@ -212,7 +223,72 @@ Com isso saem a V máx., a subida, a corrida até 1,1 V_S e a **massa máxima qu
 inclinado, a parte vertical da tração alivia o peso na corrida, e o avião sai do chão mais devagar.
 
 O MTOW detalhado é o da aba **Missão**, modo MTOW: a decolagem simulada no núcleo 6GDL, com o acionamento do
-profundor otimizado. O estudo `tools/estudo_s1223.py` faz os dois MTOW para várias configurações.
+profundor otimizado. A página **Estudo e ponto de projeto** confere os pontos no 6GDL.
+
+### Estudo e ponto de projeto (`study.py`, `power.design_point`)
+
+As áreas se retroalimentam, sem seguir uma ordem fixa. É assim que desempenho e estabilidade chegam juntos a um
+ponto de projeto. Cada ponto é **acoplado**:
+
+1. Começa com uma massa de projeto.
+2. A asa é calada para o cruzeiro nessa massa.
+3. A EH é retrimada com o momento da tração.
+4. A bateria põe o CG na margem, e a carga paga é completada até essa massa.
+5. O desempenho dá o MTOW. O arrasto de trim da EH entra aqui, então a estabilidade custa desempenho.
+6. O MTOW vira a nova massa de projeto, e o laço repete até convergir.
+
+No ponto convergido o estudo verifica a estabilidade nessa massa:
+
+- o profundor consegue rodar o avião (com a tração);
+- o trim de decolagem cabe no curso de picar;
+- a EH não estola no C_L,max;
+- a bateria alcança o CG.
+
+Ele também diz **o que limita** o MTOW: a pista ou a rotação. Se o avião só roda depois de poder sair do chão,
+a corrida espera.
+
+A página tem dois modos:
+
+- **varrer uma variável** (inclinação do motor, margem estática, V_H, braço da cauda, área, envergadura, ângulo de
+  cruzeiro) nas altitudes-densidade pedidas (`Joinville=655, São José dos Campos=1320`);
+- **comparar os aviões guardados**.
+
+Ela marca o maior MTOW viável de cada altitude, confere os pontos no 6GDL (aba Missão, modo MTOW) e leva o ponto
+marcado para o rascunho da etapa certa. Ela indica, não escolhe.
+
+Com a asa S1223 (MTOW em kg, conta rápida / 6GDL):
+
+| inclinação do motor | Joinville (AD 655 m) | São José dos Campos (AD 1320 m) |
+|---|---|---|
+| 0° | 11,66 / 11,76 | 10,95 / 11,05 |
+| 3° | 11,71 / 12,02 | 10,99 / 11,32 |
+| **6°** | 11,75 / **12,25** | 11,03 / **11,52** |
+| 9° | 11,76 / 11,35 | 11,05 / 10,53 |
+| 12° | 11,76 / 11,35 | 11,06 / 10,67 |
+
+- **Inclinação do motor.** O ótimo fica perto de **6°** nos dois lugares. Até ali, a parte vertical da tração e
+  o momento cabrador ajudam a rodar e a sair do chão, e o arrasto de trim cai. Depois, o 6GDL mostra a
+  decolagem piorando. A conta rápida não vê essa queda (só cresce), por isso a conferência 6GDL faz parte do
+  estudo.
+- **Empenagem** (monomotor, 6GDL, Joinville / São José dos Campos):
+
+  | empenagem | MTOW 6GDL (kg) | o que limita |
+  |---|---|---|
+  | EH MH 113 invertida | 11,76 / 11,05 | a pista |
+  | EH NACA 0012 | 11,64 / 10,73 | a rotação |
+  | EH convencional HT 14 (simétrica) com EV | 10,76 / 10,06 | a rotação |
+  | cauda em V MH 113 invertida | 9,56 / 8,98 | — |
+
+  As simétricas só rodam depois de poder sair do chão.
+- **Bimotor:** 10,41 / 9,83 kg. É mais pesado no PV, e a tração de dois motores menores não compensa.
+- **MH 113 sem inverter:** o profundor não consegue rodar o avião.
+
+As altitudes-densidade vêm de uma tarde quente típica, que eu assumi; você pode trocar na página:
+
+| lugar | elevação | temperatura | umidade | AD |
+|---|---|---|---|---|
+| Joinville | 4 m | 30 °C | 75 % | 655 m |
+| São José dos Campos | 646 m | 28 °C | 60 % | 1320 m |
 
 ## Requisitos e regras (`spec.py`)
 

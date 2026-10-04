@@ -130,7 +130,7 @@ def polar(entry: AirfoilEntry, Re: float, alphas=ALPHAS, source: str | None = No
     """a polar no Re pedido (guardada: a mesma pergunta não recalcula — as etapas refazem a cada mudança)"""
     af = entry.airfoil
     a = np.asarray(alphas, float)
-    key = (af.name, af.path, len(af.coords), af.cl_alpha, af.alpha0, af.cl_max, af.cd0, af.cm_ac, source or entry.source,
+    key = (af.name, af.path, len(af.coords), af.inverted, af.cl_alpha, af.alpha0, af.cl_max, af.cd0, af.cm_ac, source or entry.source,
            entry.polar_file, os.path.getmtime(entry.polar_file) if entry.polar_file and os.path.exists(entry.polar_file)
            else 0, round(Re, -3), a.tobytes())
     if key not in _CACHE:

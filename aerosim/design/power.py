@@ -385,16 +385,17 @@ def performance(ac: Aircraft, asm: dict, req: Requirements, backend=None) -> dic
     Vs = stall_speed(req, S, wr["CLmax"], M)
     V = np.linspace(max(0.8 * Vs, 2.0), max(3.0 * Vs, req.V_cruise * 1.8), 120)
     T = thrust_of(ac, V, rho, backend)
+    us = [u for u in ac.propulsion if u.enabled]
+    tl = math.radians(sum(u.tilt for u in us) / len(us)) if us else 0.0       # motor inclinado
     q = 0.5 * rho * V * V
     CL = W / (q * S)
-    Dg = q * S * (CD0 + K * CL * CL)
-    RC = (T - Dg) * V / W
-    ok = T >= Dg
+    CDt = trim_drag(asm, CL, CD0 + K * CL * CL)
+    Dg = q * S * (CD0 + K * CL * CL + CDt)
+    RC = (T * math.cos(tl) - Dg) * V / W
+    ok = T * math.cos(tl) >= Dg
     Vmax = float(V[ok][-1]) if ok.any() else float("nan")
     i = int(np.argmax(RC))
     CLg = wr["CL0"] + wr["CLa"] * math.radians(wr["incidence"])
-    us = [u for u in ac.propulsion if u.enabled]
-    tl = math.radians(sum(u.tilt for u in us) / len(us)) if us else 0.0       # motor inclinado
     T0 = float(thrust_of(ac, np.array([0.0]), rho, backend)[0])
     Vg = np.r_[0.0, V]
     Tgv = np.r_[T0, T]
@@ -437,7 +438,64 @@ def performance(ac: Aircraft, asm: dict, req: Requirements, backend=None) -> dic
         mtow = lo
     masses = np.linspace(max(asm["empty"], 0.5), max(2.2 * M, mtow if math.isfinite(mtow) else 0) * 1.05, 25)
     s_curve = np.array([run(m) for m in masses])
-    return dict(V=V, T=T, D=Dg, RC=RC, P_req=Dg * V, P_av=T * V, Vs=Vs, Vmax=Vmax, RC_max=float(RC[i]), V_y=float(V[i]),
+    jc = int(np.argmin(np.abs(V - req.V_cruise)))
+    return dict(CD_trim_cruise=float(CDt[jc]), V=V, T=T, D=Dg, RC=RC, P_req=Dg * V, P_av=T * V, Vs=Vs, Vmax=Vmax, RC_max=float(RC[i]), V_y=float(V[i]),
                 CD0=CD0, K=K, s_to=s_to, mtow_runway=mtow, payload_runway=mtow - asm["empty"] if math.isfinite(mtow)
                 else float("nan"), T0=T0, TW=T0 / W, masses=masses, s_curve=s_curve, V_LDmax=math.sqrt(
                     2 * W / (rho * S) * math.sqrt(K / CD0)), LD_max=0.5 / math.sqrt(K * CD0))
+
+
+def trim_drag(asm: dict, CL, CD_no_trim) -> np.ndarray:
+    """arrasto induzido da EH para equilibrar (estabilidade → desempenho): a EH carrega o que falta de C_m —
+    C_m,ac da asa, braço do C_L até o CG e o momento da tração (motor inclinado / fora do CG, que cresce com
+    a tração = arrasto)
+        C_L,h = (C_m,ac + C_L (h_CG − h_ca) + C_m,T) / (η V_H)      C_D,trim = (S_h/S) C_L,h² / (π e_h AR_h)"""
+    st = asm["set"]
+    CL = np.asarray(CL, float)
+    if "a_h" not in st:
+        return np.zeros_like(CL)
+    tr = asm.get("trim") or {}
+    wr = st["wing"]
+    tp_eta = st.get("eta", 0.9)
+    info = st["info"]
+    Sh_S = st["VH"] * info["c"] / info["arm"]
+    t = st["set"].surfaces[1]
+    AR_h = max(t.aspect_ratio, 1.0)
+    CDc = float(np.interp(wr["CL_cruise"], CL[::-1], np.asarray(CD_no_trim, float)[::-1])) if len(CL) > 1 else 0.03
+    CmT = tr.get("Cm_T", 0.0) * np.asarray(CD_no_trim, float) / max(CDc, 1e-6)
+    CLh = (wr["Cm_ac"] + CL * (st["h_cg"] - st["h_ac"]) + CmT) / (tp_eta * st["VH"])
+    return Sh_S * CLh * CLh / (math.pi * 0.8 * AR_h)
+
+
+def design_point(cand: AircraftCandidate, req: Requirements, rules: DesignRules | None = None,
+                 catalog: Catalog | None = None, airfoils: dict | None = None, backend=None, iters: int = 10,
+                 tol: float = 0.02) -> dict:
+    """ponto de projeto ACOPLADO (retroalimentação entre as áreas, não em ordem):
+        massa de projeto m → asa calada para o cruzeiro com m, EH retrimada com a tração, CG pela bateria,
+        carga paga completada até m (o lastro, no CG) → desempenho → MTOW → m ← MTOW ... até convergir.
+    No ponto convergido o avião é dimensionado para voar com a massa que a pista deixa levar, e a
+    estabilidade (trim, rotação, trim de decolagem) é verificada nessa massa."""
+    rules = rules or DesignRules()
+    m = req.mass
+    hist = []
+    out = None
+    for _ in range(iters):
+        rq = copy.deepcopy(req)
+        rq.mass = m
+        c = copy.deepcopy(cand)
+        ac, asm = assemble(c, rq, rules, catalog, airfoils)
+        fixed = asm["mass"] - c.params.ballast                 # tudo menos o lastro da carga paga
+        c.params.ballast = max(m - fixed, 0.0)
+        ac, asm = assemble(c, rq, rules, catalog, airfoils)
+        pf = performance(ac, asm, rq, backend)
+        mt = pf["mtow_runway"]
+        hist.append((m, mt))
+        out = dict(ac=ac, asm=asm, pf=pf, cand=c, req=rq)
+        if not math.isfinite(mt):
+            break
+        if abs(mt - m) < tol:
+            break
+        m = max(0.5 * (m + mt), fixed)
+    out.update(history=hist, mass=hist[-1][0], mtow=hist[-1][1],
+               converged=len(hist) > 1 and math.isfinite(hist[-1][1]) and abs(hist[-1][1] - hist[-1][0]) < tol)
+    return out

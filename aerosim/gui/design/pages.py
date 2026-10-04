@@ -11,6 +11,7 @@ As contas estão em `aerosim.design` (a GUI só mostra); o projeto fica em `stat
 from __future__ import annotations
 
 import copy
+import math
 import os
 import traceback
 
@@ -204,6 +205,8 @@ class StagePage(QtWidgets.QWidget):
         self.sanitize()
         if self.form is not None:
             self.form_box.removeWidget(self.form)
+            self.form.hide()
+            self.form.setParent(None)
             self.form.deleteLater()
         self.form = DataclassForm(self.draft(), choices=self.choices(), editable=self.editable())
         self.form.changed.connect(self._edited)
@@ -260,6 +263,8 @@ class StagePage(QtWidgets.QWidget):
         if sig != self._plots_sig:
             new = LivePlots(specs, columns=self.columns, row_height=300)
             self.right.replaceWidget(self.plots, new)
+            self.plots.hide()
+            self.plots.setParent(None)
             self.plots.deleteLater()
             self.plots = new
             self._plots_sig = sig
@@ -359,6 +364,8 @@ class AirfoilPage(StagePage):
     def build_editor(self):
         if self.form is not None:
             self.form_box.removeWidget(self.form)
+            self.form.hide()
+            self.form.setParent(None)
             self.form.deleteLater()
             self.form = None
         e = self.current()
@@ -654,3 +661,257 @@ class PowerPage(StagePage):
         win = self.window()
         if hasattr(win, "show_assembly"):
             win.show_assembly()
+
+
+# ====================================================================== Estudo e ponto de projeto
+class _StudyWorker(QtCore.QObject):
+    progress = QtCore.pyqtSignal(float, str)
+    done = QtCore.pyqtSignal(object)
+    failed = QtCore.pyqtSignal(str)
+
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
+
+    def run(self):
+        try:
+            self.done.emit(self.fn(lambda f, t: self.progress.emit(f, t)))
+        except Exception as ex:                # noqa: BLE001 — vai para a tela
+            traceback.print_exc()
+            self.failed.emit(f"{type(ex).__name__}: {ex}")
+
+
+class StudyPage(QtWidgets.QWidget):
+    """estudo das áreas juntas: cada ponto é o ponto de projeto acoplado (massa ↔ asa ↔ EH ↔ tração ↔ MTOW)
+    nas altitudes-densidade pedidas; marca o maior MTOW em que a estabilidade fecha e confere no 6GDL"""
+    title = "Estudo e ponto de projeto"
+    COLS = ("lugar", "valor / avião", "MTOW (kg)", "fecha?", "limita", "roda (m/s)", "sai do chão (m/s)",
+            "Δi_h (°)", "trim de decolagem (°)", "C_D trim", "MTOW 6GDL (kg)")
+
+    def __init__(self, state: AppState, parent=None):
+        super().__init__(parent)
+        from aerosim.design import study as sd
+        self.sd = sd
+        self.state = state
+        self.rows: list[dict] = []
+        self._thread = None
+        self._cancel = False
+        self._plots_sig = None
+        split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        split.setChildrenCollapsible(False)
+        QtWidgets.QHBoxLayout(self).addWidget(split)
+        left_in = QtWidgets.QWidget()
+        lv = QtWidgets.QVBoxLayout(left_in)
+        lv.addWidget(ReqBar(state))
+        t = QtWidgets.QLabel(f"<b>{self.title}</b>" + HELP_MARK)
+        t.setToolTip(sd.__doc__)
+        lv.addWidget(t)
+        self.form_box = QtWidgets.QVBoxLayout()
+        lv.addLayout(self.form_box)
+        self.form = None
+        self.run_b = QtWidgets.QPushButton("▶ Rodar estudo")
+        self.stop_b = QtWidgets.QPushButton("■ Parar")
+        self.stop_b.setEnabled(False)
+        self.six_b = QtWidgets.QPushButton("★ Conferir os marcados no 6GDL")
+        self.six_all_b = QtWidgets.QPushButton("★ Conferir todos no 6GDL")
+        self.use_b = QtWidgets.QPushButton("Usar o ponto marcado no rascunho")
+        for b in (self.six_b, self.six_all_b, self.use_b):
+            b.setEnabled(False)
+        g = QtWidgets.QGridLayout()
+        for i, b in enumerate((self.run_b, self.stop_b, self.six_b, self.six_all_b, self.use_b)):
+            g.addWidget(b, i // 2, i % 2)
+        lv.addLayout(g)
+        self.bar = QtWidgets.QProgressBar()
+        self.bar.setRange(0, 1000)
+        self.msg = QtWidgets.QLabel()
+        self.msg.setWordWrap(True)
+        lv.addWidget(self.bar)
+        lv.addWidget(self.msg)
+        lv.addStretch(1)
+        ls = QtWidgets.QScrollArea()
+        ls.setWidgetResizable(True)
+        ls.setWidget(left_in)
+        split.addWidget(ls)
+        rs = QtWidgets.QScrollArea()
+        rs.setWidgetResizable(True)
+        rs.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        right_in = QtWidgets.QWidget()
+        self.right = QtWidgets.QVBoxLayout(right_in)
+        from ..widgets.view3d import AircraftView
+        self.view = AircraftView()
+        self.view.move_mode = False
+        self.view.setMinimumHeight(230)
+        self.view.setMaximumHeight(260)
+        self.right.addWidget(self.view)
+        self.view_label = QtWidgets.QLabel()
+        self.view_label.setStyleSheet("color:#555")
+        self.view_label.setWordWrap(True)
+        self.right.addWidget(self.view_label)
+        self.table = QtWidgets.QTableWidget(0, len(self.COLS))
+        self.table.setHorizontalHeaderLabels(self.COLS)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.table.setWordWrap(False)
+        self.table.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored, QtWidgets.QSizePolicy.Policy.Fixed)
+        self.table.setMinimumWidth(300)          # a tabela rola de lado; não empurra a largura dos gráficos
+        self.table.currentCellChanged.connect(lambda r, *_: self._show_row(r))
+        self.right.addWidget(self.table)
+        self.plots = LivePlots([])
+        self.right.addWidget(self.plots)
+        self.checks = ChecksPanel()
+        self.right.addWidget(self.checks)
+        self.right.addStretch(1)
+        rs.setWidget(right_in)
+        split.addWidget(rs)
+        split.setSizes([360, 1000])
+        self.run_b.clicked.connect(self.start)
+        self.stop_b.clicked.connect(lambda: setattr(self, "_cancel", True))
+        self.six_b.clicked.connect(lambda: self.check_6dof(marked=True))
+        self.six_all_b.clicked.connect(lambda: self.check_6dof(marked=False))
+        self.use_b.clicked.connect(self.use_marked)
+        state.designChanged.connect(lambda st: self.build() if st in ("load", "guardou", "apagou") else None)
+        self.build()
+
+    def build(self):
+        d = self.state.design
+        names = (self.sd.DRAFT,) + tuple(a.name for a in d.aircraft)
+        if d.study.aircraft not in names:
+            d.study.aircraft = self.sd.DRAFT
+        if self.form is not None:
+            self.form_box.removeWidget(self.form)
+            self.form.hide()
+            self.form.setParent(None)
+            self.form.deleteLater()
+        self.form = DataclassForm(d.study, choices={"aircraft": names})
+        self.form.changed.connect(lambda *_: self.state.design_edited(self.title))
+        self.form_box.addWidget(self.form)
+
+    # ------------------------------------------------------------------ rodar em segundo plano
+    def _go(self, fn, after):
+        if self._thread is not None:
+            return
+        self._cancel = False
+        for b in (self.run_b, self.six_b, self.six_all_b, self.use_b):
+            b.setEnabled(False)
+        self.stop_b.setEnabled(True)
+        self.bar.setValue(0)
+        self._thread = QtCore.QThread(self)
+        self._worker = _StudyWorker(fn)
+        self._worker.moveToThread(self._thread)
+        self._thread.started.connect(self._worker.run)
+        self._worker.progress.connect(lambda f, t: (self.bar.setValue(int(1000 * f)), self.msg.setText(t)))
+        self._worker.done.connect(after)
+        self._worker.failed.connect(lambda t: self.msg.setText(f"<span style='color:#b00'>{t}</span>"))
+        for sig in (self._worker.done, self._worker.failed):
+            sig.connect(self._finish)
+        self._thread.start()
+
+    def _finish(self, *_):
+        self._thread.quit()
+        self._thread.wait()
+        self._thread = None
+        self.stop_b.setEnabled(False)
+        self.run_b.setEnabled(True)
+        has = bool(self.rows)
+        for b in (self.six_b, self.six_all_b, self.use_b):
+            b.setEnabled(has)
+        self.bar.setValue(1000)
+
+    def start(self):
+        d, sp = self.state.design, copy.deepcopy(self.state.design.study)
+        cat, be = self.state.catalog, self.state.manager.backend
+        self._sp = sp
+        self._go(lambda prog: self.sd.run(d, sp, cat, be, prog, lambda: self._cancel), self._done)
+
+    def _done(self, rows):
+        self.rows = rows or []
+        self.msg.setText(f"{len(self.rows)} pontos de projeto" if self.rows else "nada para estudar: guarde um avião "
+                         "na etapa Motores (ou monte o rascunho dela)")
+        self.redraw()
+
+    def check_6dof(self, marked: bool):
+        best = self.sd.best_rows(self.rows)
+        todo = list(best.values()) if marked else [r for r in self.rows if math.isfinite(r["mtow"])]
+        d, man, cat = self.state.design, self.state.manager, self.state.catalog
+
+        def fn(prog):
+            self.sd.check_many(todo, d, man, cat, prog, lambda: self._cancel)
+            return self.rows
+        self._go(fn, lambda _rows: (self.msg.setText("conferido no 6GDL (estrelas no gráfico)"), self.redraw()))
+
+    def use_marked(self):
+        best = self.sd.best_rows(self.rows)
+        if not best:
+            return
+        r = next(iter(best.values()))
+        d = self.state.design
+        sp = getattr(self, "_sp", d.study)
+        if sp.mode == self.sd.MODES[1]:
+            d.power_draft = copy.deepcopy(r["_cand"].params)
+            self.msg.setText(f"'{r['name']}' carregado no rascunho da etapa Motores")
+        else:
+            stage, field = self.sd.VARIABLES[sp.variable]
+            target = {"power": d.power_draft, "tail": d.tail_draft, "wing": d.wing_draft}[stage]
+            setattr(target, field, float(r["x"]))
+            where = {"power": "Motores e montagem", "tail": "Empenagem e comandos", "wing": "Asa"}[stage]
+            self.msg.setText(f"{sp.variable} = {r['x']:g} no rascunho da etapa {where}"
+                             + ("" if stage == "power" else " — guarde de novo lá para seguir"))
+        self.state.design_edited("ponto")
+
+    # ------------------------------------------------------------------ mostrar
+    def redraw(self):
+        sp = getattr(self, "_sp", self.state.design.study)
+        specs, res = self.sd.result(self.rows, sp)
+        sig = tuple(s.key for s in specs)
+        if sig != self._plots_sig:
+            new = LivePlots(specs, columns=2, row_height=290)
+            self.right.replaceWidget(self.plots, new)
+            self.plots.hide()
+            self.plots.setParent(None)
+            self.plots.deleteLater()
+            self.plots = new
+            self._plots_sig = sig
+        self.plots.show_result(res)
+        self.checks.show_checks(res.checks)
+        self.checks.show_summary(res.summary)
+        best = {id(r) for r in self.sd.best_rows(self.rows).values()}
+        from PyQt6 import QtGui
+        f = lambda v: "—" if not (isinstance(v, float) and math.isfinite(v)) else f"{v:.2f}"
+        self.table.setRowCount(len(self.rows))
+        for i, r in enumerate(self.rows):
+            vals = (r["place"], r["name"], f(r["mtow"]), "sim" if r["ok"] else "não", r["why"] or r["limit"], f(r["v_rot"]),
+                    f(r["v_lof"]), f(r["dih"]), f(r["hold"]), f"{r['cd_trim']:.4f}", f(r["mtow6"]))
+            for j, v in enumerate(vals):
+                it = QtWidgets.QTableWidgetItem(v)
+                if r["why"]:
+                    it.setToolTip(r["why"])
+                if id(r) in best:
+                    it.setBackground(QtGui.QColor("#fff3c4"))
+                elif not r["ok"]:
+                    it.setForeground(QtGui.QColor("#a33"))
+                self.table.setItem(i, j, it)
+        self.table.resizeRowsToContents()
+        self.table.setFixedHeight(self.table.horizontalHeader().height() + 22 +
+                                  sum(self.table.rowHeight(i) for i in range(len(self.rows))))
+        bi = next((i for i, r in enumerate(self.rows) if id(r) in best), 0 if self.rows else -1)
+        self._show_row(bi)
+
+    def _show_row(self, i):
+        if not (0 <= i < len(self.rows)):
+            return
+        r = self.rows[i]
+        from aerosim.design import power as pw
+        d = self.state.design
+        try:
+            ac, asm = pw.assemble(r["_cand"], r["_req"], d.rules, self.state.catalog, d.airfoil_map())
+        except Exception:
+            return
+        self.view.set_aircraft(ac)
+        self.view.clear_markers()
+        self.view.set_markers(cg=[asm["x_cg_target"], 0.0, 0.0])
+        self.view_label.setText(f"{r['place']} · {r['name']} · massa de projeto {r['mtow']:.2f} kg · PV {r['pv']:.2f} kg"
+                                f" · asa calada a {r['incidence']:.1f}°, EH a {r['i_h'] + r['dih']:.1f}°")

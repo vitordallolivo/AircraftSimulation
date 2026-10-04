@@ -172,26 +172,19 @@ def test_tilted_motor_shortens_the_run():
 
 
 def test_cambered_inverted_tail_needs_other_incidence():
-    from aerosim.model.airfoil import Airfoil, naca4
-    c = naca4("4412")
-    inv = afm.AirfoilEntry(Airfoil(name="4412 invertido", coords=np.column_stack([c[::-1, 0], -c[::-1, 1]]).tolist()))
     req = Requirements()
     r0 = tl.analyze(tl.SetCandidate(tl.TailParams(), _wing(area=1.0)), req)
-    r1 = tl.analyze(tl.SetCandidate(tl.TailParams(tail_airfoil=inv.name), _wing(area=1.0)), req, airfoils={inv.name: inv})
+    r1 = tl.analyze(tl.SetCandidate(tl.TailParams(tail_airfoil="NACA 4412", tail_inverted=True), _wing(area=1.0)), req)
     assert r1["set"].surfaces[1].airfoil.zero_lift_angle() > 2          # invertido: α_L0 positivo
     assert r1["i_h"] > r0["i_h"] + 2 and abs(r1["de_cruise"]) < 1e-6
 
 
 def test_inverted_tail_rotates_earlier():
     """EH com perfil arqueado invertido: c_l negativo maior → roda o avião mais cedo na corrida"""
-    from aerosim.model.airfoil import Airfoil, naca4
-    c = naca4("6412")
-    inv = afm.AirfoilEntry(Airfoil(name="6412 invertido", coords=np.column_stack([c[::-1, 0], -c[::-1, 1]]).tolist()),
-                           source="neuralfoil")
     req = Requirements()
     w = _wing(area=1.0, alpha_cruise=3.0)
     sym = tl.analyze(tl.SetCandidate(tl.TailParams(), w), req)
-    up = tl.analyze(tl.SetCandidate(tl.TailParams(tail_airfoil=inv.name), w), req, airfoils={inv.name: inv})
+    up = tl.analyze(tl.SetCandidate(tl.TailParams(tail_airfoil="NACA 6412", tail_inverted=True), w), req)
     assert up["CLh_lim"][0] < sym["CLh_lim"][0]            # mais c_l para baixo
     assert up["V_rot"] < sym["V_rot"]
 
@@ -209,3 +202,23 @@ def test_tilted_motor_retrims_tail_and_differential_aileron():
     sym = tl.analyze(st, req, DesignRules(da_max=20, da_down=20))["pb2V"]
     dif = tl.analyze(st, req, DesignRules(da_max=20, da_down=10))["pb2V"]
     assert dif == pytest.approx(0.75 * sym)
+
+
+def test_design_point_converges_and_study_marks_best():
+    """ponto de projeto acoplado: a massa de projeto converge no MTOW; o estudo marca o maior MTOW viável"""
+    from aerosim.design import study as sd
+    p = DesignProject()
+    p.wing_draft.area, p.wing_draft.alpha_cruise = 1.0, 3.0
+    w = p.keep_wing()
+    p.tail_draft.wing = w.name
+    p.power_draft.set = p.keep_set().name
+    d = pw.design_point(p.draft_aircraft(), p.requirements, p.rules, None, p.airfoil_map())
+    assert d["converged"] and d["asm"]["mass"] == pytest.approx(d["mtow"], abs=0.05)
+    sp = sd.StudyParams(start=0.0, stop=8.0, n=2, places="A=0, B=1500")
+    rows = sd.run(p, sp)
+    assert len(rows) == 4 and {r["place"] for r in rows} == {"A", "B"}
+    best = sd.best_rows(rows)
+    assert best["A"]["mtow"] > best["B"]["mtow"]           # ar mais rarefeito leva menos
+    plots, res = sd.result(rows, sp)
+    assert any(c.item.startswith("A: maior MTOW") for c in res.checks)
+    assert sd.parse_places("", 600.0) == [("AD 600 m", 600.0)]

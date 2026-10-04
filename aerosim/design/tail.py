@@ -47,8 +47,10 @@ class TailParams:
     AR_v: float = F(1.6, "alongamento da EV", "", "altura² / área", 0.5, 5, 0.1)
     taper_h: float = F(1.0, "afilamento da EH", "", "", 0.3, 1.0, 0.05)
     taper_v: float = F(0.7, "afilamento da EV", "", "", 0.3, 1.0, 0.05)
-    tail_airfoil: str = F("NACA 0012", "perfil da EH", "", "NACA de 4 dígitos ou um da etapa Perfil (arqueado e "
-                          "invertido também: a incidência compensa)")
+    tail_airfoil: str = F("NACA 0012", "perfil da EH", "", "NACA de 4 dígitos ou um da etapa Perfil (arqueado também: "
+                          "a incidência compensa)")
+    tail_inverted: bool = F(False, "EH invertida", "", "perfil montado de cabeça para baixo: sustentação para baixo e "
+                            "c_l negativo maior — momento cabrador para rodar na decolagem")
     vtail_airfoil: str = F("NACA 0012", "perfil da EV", "", "simétrico (arqueado empurra para o lado sem derrapar)")
     elevator: float = F(0.35, "profundor (fração da corda)", "", "", 0.1, 0.6, 0.01)
     rudder: float = F(0.35, "leme (fração da corda)", "", "", 0.1, 0.6, 0.01)
@@ -91,15 +93,19 @@ def tail_airfoil(name: str, known: dict | None = None, Re: float | None = None) 
     return tail_entry(name, known, Re)[0]
 
 
-def tail_entry(name: str, known: dict | None = None, Re: float | None = None) -> tuple[Airfoil, tuple[float, float]]:
+def tail_entry(name: str, known: dict | None = None, Re: float | None = None,
+               inverted: bool = False) -> tuple[Airfoil, tuple[float, float]]:
     """(perfil ajustado, (c_l mín., c_l máx.) 2D da polar) — os dois lados importam na cauda: a EH trabalha com
     sustentação para baixo, e é o c_l negativo que limita o quanto ela consegue cabrar (perfil invertido ganha)"""
     k = known.get(name) if known else None
     if isinstance(k, Airfoil):
-        return copy.deepcopy(k), (-k.cl_max, k.cl_max)
+        k = afm.AirfoilEntry(copy.deepcopy(k), source="modelo")
     if k is None:
         digits = "".join(ch for ch in name if ch.isdigit())
         k = afm.entry(afm.from_naca(f"NACA {digits if len(digits) == 4 else '0012'}"))
+    if inverted:                       # o mesmo perfil, montado de cabeça para baixo
+        k = copy.deepcopy(k)
+        k.airfoil.inverted = True
     try:
         p = afm.polar(k, Re or 2e5)
         if afm.metrics(p):
@@ -140,7 +146,7 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
     x_ac_t = pf["x_ac"] - l
     if tp.layout == "convencional":
         bh = math.sqrt(tp.AR_h * Sh)
-        af_t, lim = tail_entry(tp.tail_airfoil, airfoils, req.reynolds(Sh / bh))
+        af_t, lim = tail_entry(tp.tail_airfoil, airfoils, req.reynolds(Sh / bh), tp.tail_inverted)
         eh = _surface("EH", "htail", bh, Sh, tp.taper_h, af_t)
         eh.controls = [ControlSurface("elevator", 0.0, 1.0, tp.elevator)]
         hv = math.sqrt(tp.AR_v * Sv)
@@ -152,7 +158,7 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
         St = Sh + Sv
         gam = math.degrees(math.atan(math.sqrt(Sv / Sh)))
         bv = math.sqrt(tp.AR_h * St)
-        af_t, lim = tail_entry(tp.tail_airfoil, airfoils, req.reynolds(St / bv))
+        af_t, lim = tail_entry(tp.tail_airfoil, airfoils, req.reynolds(St / bv), tp.tail_inverted)
         vt = _surface("cauda em V", "htail", bv, St, tp.taper_h, af_t, dihedral=gam)
         vt.controls = [ControlSurface("ruddervator", 0.0, 1.0, tp.elevator)]
         tails = [vt]
@@ -242,7 +248,11 @@ def analyze(cand: SetCandidate, req: Requirements, rules: DesignRules | None = N
     lo3, hi3 = (0.9 * cg * v for v in info["cl_lim_h"])   # C_L da cauda limitado pelo estol dela (os dois lados)
 
     def CLh(CL, de, ih):
-        return min(max(a_h * (a_w(CL) - eps(CL) + ih - a0_t + tau_e * de), lo3), hi3)
+        # profundor defletido aumenta o c_l máximo da seção (flape simples: Δc_l,max ≈ 0,9 com deflexão total,
+        # ~45°; Raymer, cap. 12), do lado para onde ele defletiu
+        dcl = 0.9 * 0.9 * cg * min(abs(math.degrees(de)) / 45.0, 1.0)
+        lo, hi = (lo3 - dcl, hi3) if de < 0 else (lo3, hi3 + dcl)
+        return min(max(a_h * (a_w(CL) - eps(CL) + ih - a0_t + tau_e * de), lo), hi)
 
     def cm(CL, de, ih, h):
         return wr["Cm_ac"] + CL * (h - h_ac) - eta * VH_ac * CLh(CL, de, ih)
@@ -278,7 +288,7 @@ def analyze(cand: SetCandidate, req: Requirements, rules: DesignRules | None = N
     out.update(h_n=h_n, h_cg=h_cg, x_cg=x_cg, x_np=info["x_le_mac"] - h_n * c, a_h=a_h, VH=VH_ac, VV=VV, Cmde=Cmde,
                i_h=math.degrees(ih), de_cruise=math.degrees(de_cru), de_CLmax=math.degrees(de_CLmax),
                h_fwd=h_fwd, h_aft=h_aft, x_cg_fwd=info["x_le_mac"] - h_fwd * c, x_cg_aft=info["x_le_mac"] - h_aft * c,
-               Cnb=Cnb, tau_e=tau_e, CLh_CLmax=CLh_need, CLh_lim=(lo3, hi3))
+               Cnb=Cnb, tau_e=tau_e, CLh_CLmax=CLh_need, CLh_lim=(lo3, hi3), eta=eta)
     for su in ac.surfaces[1:]:
         if su.role == "htail":
             su.incidence = math.degrees(ih) * cg

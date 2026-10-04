@@ -72,10 +72,15 @@ def _tables(spec: PlotSpec, res: SimResult) -> tuple[list, bool, str]:
 
 
 class _Plot2D(QtWidgets.QWidget):
-    def __init__(self, spec: PlotSpec, height: int):
+    def __init__(self, spec: PlotSpec, height: int, legend_cols: int = 3):
         super().__init__()
         self.spec = spec
         self.lay = pg.GraphicsLayoutWidget()
+        # a largura vem do painel (legendas longas não alargam a aba e não escondem o fim do eixo)
+        ign = QtWidgets.QSizePolicy.Policy.Ignored
+        self.lay.setSizePolicy(ign, QtWidgets.QSizePolicy.Policy.Expanding)
+        self.setSizePolicy(ign, QtWidgets.QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(240)
         v = QtWidgets.QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
         v.addWidget(self.lay)
@@ -90,7 +95,7 @@ class _Plot2D(QtWidgets.QWidget):
             p.setAspectLocked(True)
         if spec.invert_y:
             p.invertY(True)
-        self.legend = pg.LegendItem(colCount=3, labelTextSize="8pt", horSpacing=14, verSpacing=-4)
+        self.legend = pg.LegendItem(colCount=legend_cols, labelTextSize="8pt", horSpacing=14, verSpacing=-4)
         self.lay.addItem(self.legend, row=1, col=0)
         self.lay.ci.layout.setRowStretchFactor(0, 10)
         self.live: dict[str, pg.PlotDataItem] = {}
@@ -312,7 +317,7 @@ class LivePlots(QtWidgets.QWidget):
         h = row_height or 560
         for i, s in enumerate(specs):
             try:
-                w = _Plot3D(s, max(h, 640)) if s.kind == "3d" else _Plot2D(s, h)
+                w = _Plot3D(s, max(h, 640)) if s.kind == "3d" else _Plot2D(s, h, 3 if columns == 1 else 2)
             except Exception:                     # sem OpenGL: a trajetória vira a vista de cima
                 w = _Plot2D(PlotSpec(s.key, s.title + " (vista de cima — sem OpenGL)", s.x, s.ys, s.xlabel,
                                      s.ylabel, s.live, s.source, aspect=True, live_ys=s.live_ys), h)

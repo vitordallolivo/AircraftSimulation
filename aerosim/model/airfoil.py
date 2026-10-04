@@ -19,16 +19,22 @@ class Airfoil:
     cl_max: float = 1.4
     cd0: float = 0.012
     cm_ac: float | None = None           # None: da linha média
-    coords: list[list[float]] = field(default_factory=list)   # contorno (x, y), cordas unitárias
+    coords: list[list[float]] = field(default_factory=list)   # contorno (x, y), cordas unitárias (como no arquivo)
+    inverted: bool = False               # montado de cabeça para baixo (EH com sustentação para baixo): o dado
+                                         # continua o do arquivo; só o contorno usado é espelhado
 
     def outline(self) -> np.ndarray:
-        """contorno fechado (N, 2): bordo de fuga -> extradorso -> bordo de ataque -> intradorso"""
+        """contorno fechado (N, 2): bordo de fuga -> extradorso -> bordo de ataque -> intradorso
+        (invertido: o espelho em y, na mesma ordem de percurso)"""
         if not self.coords:
             if self.path and os.path.exists(self.path):
                 self.coords = read_dat(self.path)[1].tolist()
             else:
                 self.coords = naca4(self.name).tolist()
-        return np.asarray(self.coords, dtype=float)
+        c = np.asarray(self.coords, dtype=float)
+        if self.inverted:
+            c = np.column_stack([c[::-1, 0], -c[::-1, 1]])
+        return c
 
     def zero_lift_angle(self) -> float:
         """graus"""
