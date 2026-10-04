@@ -3,7 +3,7 @@ envelope...). A polar é responsabilidade do módulo de aerodinâmica: aqui só 
 
 `aircraft_polar` devolve a última polar que a aba Aerodinâmica calculou para ESTA configuração
 (guardada em `shared["aero_polar"]` pelo manager) ou, se não houver, roda o método principal
-(lltdrek; núcleo Zig se o lltdrek não estiver instalado) sobre o modelo universal.
+(lltdrek; o modelo interno se o lltdrek não estiver instalado) sobre o modelo universal.
 """
 from __future__ import annotations
 

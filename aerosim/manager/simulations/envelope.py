@@ -3,7 +3,7 @@
 Para cada altitude: ρ(h), V_min e V_max onde a potência disponível cruza a requerida, V_e (estol),
 V* = V_e √n (manobra), V_cru, e o teto absoluto (V_min = V_max). Nada é integrado no tempo.
 
-Métodos (o cálculo fica no núcleo Zig, `core/src/sim/envelope.zig`):
+Métodos (o cálculo fica no núcleo interno, `core/src/sim/envelope.zig`):
   planilha        as fórmulas do original: polar parabólica C_D = C_Dpw + C_Dph S_h/S_w + K C_L², tração
                   do polinômio, ângulo de cruzeiro fixo. "Reproduzir o original" mantém ρ/ρ0 no arrasto e
                   a expressão de densidade do código; desligado usa ρ e a ISA.
@@ -51,6 +51,7 @@ class EnvelopeSimulation(SimulationBase):
     tab = False
     name = "envelope"
     title = "Envelope de voo"
+    area = "desempenho"
     description = ("Por altitude: V_min e V_max (P_d = P_r), V_e, V* = V_e√n, V_cru e o teto absoluto. "
                    "Método da planilha (Envelope_main) ou trimagem da aeronave completa.")
 

@@ -98,6 +98,11 @@ class SimulationTab(QtWidgets.QWidget):
         self.right_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         inner = QtWidgets.QWidget()
         self.right = QtWidgets.QVBoxLayout(inner)
+        if getattr(sim, "show_aircraft", False):
+            # o avião da sprint em cima (com a troca entre aviões abertos); os gráficos rolam embaixo
+            from ..widgets.aircraft_panel import AircraftPanel
+            self.aircraft_panel = AircraftPanel(state, height=230)
+            self.right.addWidget(self.aircraft_panel)
         self.plots = LivePlots([])
         self.right.addWidget(self.plots)
         self.diag_title = QtWidgets.QLabel("<b>Diagnóstico</b>" + HELP_MARK)
@@ -137,7 +142,7 @@ class SimulationTab(QtWidgets.QWidget):
         split.addWidget(self.right_scroll)
         split.setStretchFactor(0, 2)
         split.setStretchFactor(1, 8)
-        split.setSizes([400, 1100])
+        split.setSizes([340, 1000])          # cabe em 1366 × 768
         self._checks = []
 
         self.run_b.clicked.connect(self.start)

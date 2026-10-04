@@ -59,6 +59,10 @@ def _fmt(v, nd=3):
 class StabilitySimulation(SimulationBase):
     name = "stability"
     title = "Estabilidade"
+    area = "estabilidade"
+    show_aircraft = True
+    # análise dinâmica, procura de correção e respostas no tempo: detalhado
+    detailed = ("Vs_list", "whatif", "resp")
     description = ("Diz se a configuração é estável e controlável, por quê, e o que mudar: margem estática e "
                    "limites de CG, área de EH, estabilidade direcional e lateral, modos dinâmicos (MIL-F-8785C) e "
                    "tamanho dos comandos. Os campos e gráficos seguem a configuração da aeronave.")

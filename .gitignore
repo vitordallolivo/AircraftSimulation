@@ -224,3 +224,29 @@ core/.zig-cache/
 # simulador original (build)
 legacy/*.o
 legacy/missao6gdl
+
+# ---- gerado ao rodar (não versionar) ----
+# saídas do simulador original (legacy/missao6gdl grava aqui a cada rodada)
+legacy/saida/
+# exportações e fotos que a GUI e as ferramentas gravam na pasta de onde foram abertas
+/*.xlsx
+/*.csv
+/*.png
+/*.mp4
+capturas/
+exports/
+resultados/
+checkpoints/
+*.ckpt
+# Zig: pacotes baixados e caches (também do aerodrive)
+zig-pkg/
+.zig-cache/
+zig-out/
+# gravações e configurações locais do AeroDrive, se apontadas para dentro do repositório
+aerodrive_voos/
+# editores e sistema
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

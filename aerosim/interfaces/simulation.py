@@ -47,6 +47,7 @@ class ParamSpec:
     rebuild: bool = False          # mudar este campo refaz o formulário (ex.: escolher a norma)
     columns: tuple = ()            # table: ((chave, rótulo, "float" | "str" | "label" | (opções...)[, dica]), ...); valor: lista de dicts
     bound: bool = False            # table: espelha a aeronave (muda quando ela muda; edição volta por `commit`)
+    level: str = ""                # "sprint" (análise rápida do ciclo) ou "detalhado"; "" = o da simulação (`level_of`)
 
 
 @dataclass
@@ -116,11 +117,27 @@ class RunContext:
             raise CancelledError()
 
 
+# áreas do ciclo de projeto (quem é dono de cada análise) e os dois níveis de análise
+AREAS = ("dimensionamento", "aerodinamica", "estabilidade", "propulsao", "desempenho", "estruturas", "massas",
+         "pontuacao", "missao")
+LEVELS = ("sprint", "detalhado")
+
+
 class ISimulation(ABC):
     name: str = ""          # identificador (chave no registro)
     tab: bool = True        # False: registrada (scripts, testes, outras abas a usam) mas sem aba própria
     title: str = ""         # nome na aba
     description: str = ""
+    area: str = ""          # uma de AREAS: a área dona da análise
+    level: str = "sprint"   # "sprint": entra no ciclo rápido; "detalhado": estudo mais fundo (fica para depois)
+    detailed: tuple[str, ...] = ()   # campos do formulário que são do nível detalhado (o resto é sprint)
+    show_aircraft: bool = False      # a aba mostra o avião em 3D (com a troca entre aviões abertos)
+
+    def level_of(self, p: "ParamSpec") -> str:
+        """nível de um campo: o dele, se marcado; senão detalhado se estiver em `detailed`, senão o da simulação"""
+        if p.level:
+            return p.level
+        return "detalhado" if p.key in self.detailed else self.level
 
     @abstractmethod
     def parameters(self) -> list[ParamSpec]: ...

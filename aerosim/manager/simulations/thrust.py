@@ -25,6 +25,7 @@ def thrust_curves(backend, aircraft, V_max: float = 30.0, dV: float = 0.5, throt
 class ThrustSimulation(SimulationBase):
     name = "thrust"
     title = "Tração"
+    area = "propulsao"
     description = "Curvas de tração, potência, corrente e eficiência da hélice em função da velocidade."
 
     def parameters(self):

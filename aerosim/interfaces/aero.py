@@ -70,6 +70,8 @@ class IAeroSolver(ABC):
     supports_beta: bool = True
     supports_rates: bool = True
     supports_controls: bool = False
+    # "sprint": método rápido do ciclo; "detalhado": comparação/estudo (ex.: AeroSandbox)
+    level: str = "sprint"
 
     def available(self) -> str | None:
         """None se pode rodar; senão o motivo (ex.: pacote não instalado)"""

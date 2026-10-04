@@ -34,7 +34,8 @@ flowchart LR
     APP["app.py<br/>python -m aerosim.gui"]
     MW["main_window.py<br/>menus, abas"]
     ST["state.py<br/>AppState: aeronave, catálogo, sinais"]
-    CT["tabs/config_tab.py<br/>componentes | 3D | editor"]
+    CT["tabs/config_tab.py<br/>Montagem: componentes | 3D | editor"]
+    AP["widgets/aircraft_panel.py<br/>FleetBar ◀ ▶ + 3D só de ver"]
     STAB["tabs/simulation_tab.py<br/>formulário, QThread, tempo real"]
     V3D["widgets/view3d.py<br/>malhas, seleção, arraste"]
     PS["widgets/param_slider.py<br/>campos numéricos, DataclassForm, dicas ⓘ"]
@@ -42,7 +43,8 @@ flowchart LR
     APP --> MW --> ST
     MW --> CT & STAB
     CT --> V3D & PS
-    STAB --> PL
+    STAB --> PL & AP
+    CT --> AP
     STAB --> ISM
     CT --> ISM
     MW --> SRC
@@ -51,12 +53,23 @@ flowchart LR
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
-- **Configuração (três colunas):** à esquerda a lista de componentes e as informações (massa, CG,
+- **Montagem (última aba, três colunas):** à esquerda a lista de componentes e as informações (massa, CG,
   inércias, aerodinâmica, pista...); no meio `AircraftView`, que desenha as malhas de
   `model/geometry.py` (eixos do corpo → tela: `(x, −y, −z)`), escolhe o componente mais perto do clique
   e move no plano da câmera (ou travado em x, y, z); à direita o editor do componente, um `DataclassForm`
   (um campo por número da dataclass; rótulos curtos com a explicação no ⓘ). As informações são
   recalculadas 300 ms depois da última edição.
+- **Vários aviões abertos:** `AppState.fleet` guarda os aviões abertos e `current` o escolhido;
+  `FleetBar` (◀ nome ▶, ＋ variante, ×) troca entre eles e todas as abas acompanham. "Abrir ao lado"
+  (menu Arquivo) abre mais um arquivo sem fechar o atual; "＋ variante" abre uma cópia para variar.
+  O título mostra "(i/n aviões abertos)".
+- **3D nas análises:** as simulações com `show_aircraft = True` (Aerodinâmica, Estabilidade,
+  Desempenho, Missão) mostram no topo da coluna de gráficos um `AircraftPanel` — o avião atual em 3D,
+  só para ver, com massa, envergadura e área; os gráficos ficam embaixo, rolando.
+- **Ambiente e envelope na Montagem:** a altitude-densidade (AD) define ρ pela ISA
+  (`model/atmosphere.py`, ρ aparece ao lado só para leitura); "Envelope de voo" edita o ângulo de
+  cruzeiro, o fator de carga e o teto mínimo. Desempenho usa "AD, AD+900" como altitudes padrão.
+- **Tela:** tudo projetado para 1366×768 (a janela abre nesse tamanho ou no da tela, o menor).
 - **Desfazer:** `AppState` guarda o estado de antes de cada mudança (`notify`/`touch`) — a aeronave e os
   valores das abas registradas (`register`); Ctrl+Z/Ctrl+Y em `main_window.py`.
 - **Tração:** em cada motor, "motor + hélice" (catálogo) ou "polinômio de tração" (conjuntos do

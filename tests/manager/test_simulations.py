@@ -99,7 +99,7 @@ def test_aerodynamics_simulation(manager):
     assert sim.defaults(flying_wing())["tips"]                              # tem winglets: avalia
     p = {"use_lltdrek": False, "a0": -2.0, "a1": 8.0, "da": 2.0}
     r = manager.run("aerodynamics", conventional(), p)
-    assert "polar_núcleo Zig" in r.series and not any(k.startswith("tip") for k in r.series)
-    assert r.summary["[núcleo Zig] SM"] > 0
+    assert "polar_modelo interno" in r.series and not any(k.startswith("tip") for k in r.series)
+    assert r.summary["[modelo interno] SM"] > 0
     r = manager.run("aerodynamics", flying_wing(), p)
     assert any(c.group == "dispositivos de asa" for c in r.checks)

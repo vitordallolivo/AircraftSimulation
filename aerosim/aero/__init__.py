@@ -1,4 +1,4 @@
-"""Aerodinâmica a partir da geometria: comparação de métodos (núcleo Zig, lltdrek,
+"""Aerodinâmica a partir da geometria: comparação de métodos (modelo interno, lltdrek,
 AeroSandbox), métricas da polar e dispositivos de ponta de asa (plano de Trefftz)."""
 from __future__ import annotations
 

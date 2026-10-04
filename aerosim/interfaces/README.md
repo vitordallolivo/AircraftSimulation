@@ -50,6 +50,12 @@ flowchart LR
 | `IAeroSolver` (`aero.py`) | `available()`, `evaluate(modelo, caso, [FlightPoint])` → coeficientes universais; `solve(modelo, caso)` → `AeroPolar` (polar e derivadas pelo código comum `aero/base.py`) |
 | `ISimulation` | `parameters_for(aeronave)` → campos da aba, `plots_for(aeronave)` → gráficos (dependem da configuração; a GUI refaz a aba quando ela muda), `run(ctx)` → `SimResult` (registro, tabelas, resumo e `checks`: diagnóstico com estado, valor, critério, causa e correção) |
 | `ISimulationManager` | `simulations()`, `get(nome)`, `run(nome, aeronave, params, on_chunk, on_progress, cancel)` |
+
+Cada análise diz a área do projeto (`ISimulation.area`, uma de `AREAS`) e o nível: `level = "sprint"`
+(conta rápida, para comparar muitas variantes) ou `"detalhado"`; dentro de uma análise sprint,
+`detailed` lista os parâmetros que só valem no detalhado (`level_of(p)` responde; `ParamSpec.level`
+força um parâmetro). `IAeroSolver.level` faz o mesmo para os métodos de aerodinâmica (AeroSandbox é
+detalhado). É só para o código (filtros, otimização, testes) — a GUI não escreve isso.
 | `IAircraftSource` / `ICatalogSource` | `load(path)` / `save(obj, path)` |
 
 `SimSpec` é um dicionário aninhado em SI/radianos com os nomes dos campos do núcleo; quem o monta é

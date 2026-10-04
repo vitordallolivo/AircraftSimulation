@@ -1,4 +1,8 @@
-"""Janela principal: aba de configuração + uma aba por simulação do manager."""
+"""Janela principal: uma aba por simulação do manager e, no fim, a Montagem (onde o avião se monta e
+se edita peça por peça). Feita para caber em 1366 × 768.
+
+A Montagem fica por último: as áreas trabalham nas abas de análise e a montagem junta as escolhas
+num avião (o mesmo arquivo de sempre — o AeroDrive e o núcleo leem igual)."""
 from __future__ import annotations
 
 import os
@@ -22,13 +26,16 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.state = state
         self.setWindowTitle("aerosim — simulador 6GDL")
-        self.resize(1500, 920)
+        scr = QtGui.QGuiApplication.primaryScreen()
+        avail = scr.availableGeometry() if scr is not None else None
+        w, h = (1366, 768) if avail is None else (min(1366, avail.width()), min(768, avail.height()))
+        self.resize(w, h)
         self.tabs = QtWidgets.QTabWidget()
         self.setCentralWidget(self.tabs)
-        self.config = ConfigTab(state)
-        self.tabs.addTab(self.config, "Configuração")
         for sim in state.manager.simulations():
             self.tabs.addTab(SimulationTab(state, sim), sim.title)
+        self.config = ConfigTab(state)
+        self.tabs.addTab(self.config, "Montagem")
         self._menus()
         self._toolbar()
         state.changed.connect(lambda r: self._title() if r == "load" else None)
@@ -44,6 +51,8 @@ class MainWindow(QtWidgets.QMainWindow):
         m.addAction("Meus aviões…", self.open_project)
         m.addSeparator()
         m.addAction("Abrir arquivo…", QtGui.QKeySequence.StandardKey.Open, self.open)
+        m.addAction("Abrir ao lado (mais um avião aberto)…", self.open_beside)
+        m.addAction("Nova variante do avião atual", lambda: self.state.add())
         m.addAction("Salvar", QtGui.QKeySequence.StandardKey.Save, self.save)
         m.addAction("Salvar como…", self.save_as)
         m.addSeparator()
@@ -97,8 +106,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._root_label.setText(f"  pasta: {self.state.projects.root}")
 
     def _title(self):
-        p = self.state.path
-        self.setWindowTitle(f"aerosim — {self.state.aircraft.name}" + (f"  [{os.path.basename(p)}]" if p else ""))
+        p, st = self.state.path, self.state
+        n = len(st.fleet)
+        self.setWindowTitle(f"aerosim — {st.aircraft.name}" + (f"  ({st.current + 1}/{n} aviões abertos)" if n > 1 else "")
+                            + (f"  [{os.path.basename(p)}]" if p else ""))
 
     def open(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Abrir aeronave", os.path.join(ROOT, "data", "aircraft"),
@@ -106,6 +117,16 @@ class MainWindow(QtWidgets.QMainWindow):
         if path:
             try:
                 self.state.set_aircraft(load_aircraft(path), path)
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(self, "Erro", str(e))
+
+    def open_beside(self):
+        """abre outro arquivo sem fechar o atual: os dois ficam na troca de aviões (◀ ▶) de todas as abas"""
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Abrir ao lado", os.path.join(ROOT, "data", "aircraft"),
+                                                        FILTER)
+        if path:
+            try:
+                self.state.add(load_aircraft(path), path)
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Erro", str(e))
 
