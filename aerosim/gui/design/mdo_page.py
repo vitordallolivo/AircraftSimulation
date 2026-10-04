@@ -73,17 +73,11 @@ class MdoPage(QtWidgets.QWidget):
         self.form_box = QtWidgets.QVBoxLayout()
         lv.addLayout(self.form_box)
         self.form = None
-        from .pages import VariablesTable
-        self.bounds_w = QtWidgets.QWidget()                # vai para a primeira aba de baixo (larga)
-        bv = QtWidgets.QVBoxLayout(self.bounds_w)
-        bv.setContentsMargins(2, 2, 2, 2)
-        self.vtable = VariablesTable(state)
-        bv.addWidget(self.vtable)
-        self.bounds_b = QtWidgets.QPushButton("Limites a partir das restrições")
-        self.bounds_b.setToolTip("as restrições ativas viram limites: envergadura ≤ → máx. da envergadura, área ≥/≤ → "
-                                 "mín./máx. da área, nº de motores → motores mín./máx.")
-        self.bounds_b.clicked.connect(self.bounds_from_constraints)
-        bv.addWidget(self.bounds_b)
+        self.vars_b = QtWidgets.QPushButton("Variáveis e limites…")
+        self.vars_b.setToolTip("as variáveis (fixo, variável com mín./máx., listas de perfis, motores, hélices e arranjos) "
+                               "são as de Condições e restrições → Variáveis: as mesmas das etapas")
+        self.vars_b.clicked.connect(self.edit_variables)
+        lv.addWidget(self.vars_b)
         self.vars_lbl = QtWidgets.QLabel()
         self.vars_lbl.setWordWrap(True)
         self.vars_lbl.setStyleSheet("color:#555")
@@ -165,14 +159,31 @@ class MdoPage(QtWidgets.QWidget):
         top.addLayout(hist, 2)
         right.addWidget(top_w)
         self.tabs = QtWidgets.QTabWidget()
-        self.tabs.addTab(self.bounds_w, "Variáveis e limites")
-        self.env = pg.PlotWidget()
-        self.env.setBackground("w")
-        self.env.showGrid(x=True, y=True, alpha=0.3)
-        self.env.setLabel("bottom", "V (m/s)")
-        self.env.setLabel("left", "N")
-        self.env.addLegend(offset=(5, 5))
-        self.tabs.addTab(self.env, "Envelope (tração × arrasto no MTOW)")
+        envw = QtWidgets.QWidget()
+        eh = QtWidgets.QHBoxLayout(envw)
+        eh.setContentsMargins(0, 0, 0, 0)
+        self.env = self._plot("V (m/s)", "N")
+        self.rc = self._plot("V (m/s)", "razão de subida (m/s)")
+        eh.addWidget(self.env, 3)
+        eh.addWidget(self.rc, 2)
+        self.tabs.addTab(envw, "Envelope completo (no MTOW)")
+        dw = QtWidgets.QWidget()
+        dh = QtWidgets.QVBoxLayout(dw)
+        dh.setContentsMargins(0, 0, 0, 0)
+        cb = QtWidgets.QHBoxLayout()
+        cb.addWidget(QtWidgets.QLabel("curvas:"))
+        self.kind_cb = {}
+        for k in mdo.DIAGRAM_KINDS:
+            c = QtWidgets.QCheckBox(k)
+            c.setChecked(k in ("estol", "decolagem", "subida", "cruzeiro", "curva"))
+            c.toggled.connect(lambda *_: self._diagram())
+            self.kind_cb[k] = c
+            cb.addWidget(c)
+        cb.addStretch(1)
+        dh.addLayout(cb)
+        self.diag = self._plot("W/S (N/m²)", "T/W estático equivalente")
+        dh.addWidget(self.diag, 1)
+        self.tabs.addTab(dw, "Diagrama de restrições")
         self.table = QtWidgets.QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["grandeza", "valor", "restrição"])
         self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
@@ -192,6 +203,16 @@ class MdoPage(QtWidgets.QWidget):
         self.rebuild_form()
         self.show_saved()
 
+    @staticmethod
+    def _plot(xl, yl):
+        w = pg.PlotWidget()
+        w.setBackground("w")
+        w.showGrid(x=True, y=True, alpha=0.3)
+        w.setLabel("bottom", xl)
+        w.setLabel("left", yl)
+        w.addLegend(offset=(-10, 5))
+        return w
+
     # ------------------------------------------------------------------ formulário
     def rebuild_form(self):
         if self.form is not None:
@@ -206,7 +227,8 @@ class MdoPage(QtWidgets.QWidget):
 
     def _vars_text(self):
         d = self.state.design
-        var = [v.input.label + (f" [{v.lo:g}, {v.hi:g}]" if v.input.unit != "lista" else f" {{{', '.join(v.options)}}}")
+        var = [v.input.label + (f" [{v.lo:g}, {v.hi:g}]" if v.input.unit != "lista" else
+                                (f" {{{', '.join(v.options)}}}" if v.options else " {todos}"))
                for v in d.variables if v.mode == "variável"]
         on = [c.text() for c in d.requirements.constraints if c.active]
         self.vars_lbl.setText("<b>variáveis</b>: " + ("; ".join(var) if var else "nenhuma (todas fixas: marque em "
@@ -216,18 +238,17 @@ class MdoPage(QtWidgets.QWidget):
     def _design_changed(self, stage):
         if stage == "load":
             self.rebuild_form()
-            self.vtable.fill()
             self.show_saved()
         elif stage in ("requisitos", "variaveis"):
             self._vars_text()
 
-    def bounds_from_constraints(self):
-        changed = rg.bounds_from_constraints(self.state.design)
-        self.vtable.fill()
-        self.rebuild_form()
-        self.state.design_edited("variaveis")
-        self.msg.setText("limites das restrições: " + ("; ".join(changed) if changed else "nenhuma restrição ativa "
-                                                         "limita uma variável (envergadura, área, nº de motores)"))
+    def edit_variables(self):
+        """o diálogo de sempre (Condições e restrições), aberto na aba Variáveis"""
+        from .pages import RequirementsDialog
+        dlg = RequirementsDialog(self.state, self)
+        dlg.tabs.setCurrentWidget(dlg.variables)
+        dlg.exec()
+        self._vars_text()
 
     # ------------------------------------------------------------------ rodar
     def start(self):
@@ -288,7 +309,7 @@ class MdoPage(QtWidgets.QWidget):
                          (f". Fora do dimensionamento inicial (as etapas conferem): {'; '.join(skipped)}" if skipped else ""))
         if b:
             self.select(b)
-            self.tabs.setCurrentWidget(self.env)
+            self.tabs.setCurrentIndex(0)
 
     def _failed(self, txt):
         self.msg.setText("erro:\n" + txt)
@@ -333,18 +354,29 @@ class MdoPage(QtWidgets.QWidget):
         k = min(max(k, 0), len(self.hist) - 1)
         h = self.hist[k]
         wings = 2 if self.state.design.mdo.kind == "biplano" else 1
-        for r in (r for r in self.rows if r["iter"] == h["iter"]):      # o enxame da iteração, apagado
+        swarm = [r for r in self.rows if r["iter"] == h["iter"]]
+        for r in swarm:                                     # cada partícula da iteração: a asa que ela testou
             p = mdo.planform(r, wings)
-            self.plan.plot(p["x"], p["y"], pen=pg.mkPen(OK_C if r["feasible"] else BAD_C, width=1, style=QtCore.Qt.PenStyle.DotLine))
-        p = mdo.planform(h, wings)
-        self.plan.plot(p["x"], p["y"], pen=pg.mkPen(BEST_C, width=3))
+            c = pg.mkColor(OK_C if r["feasible"] else BAD_C)
+            c.setAlpha(150)
+            self.plan.plot(p["x"], p["y"], pen=pg.mkPen(c, width=1.3))
+        if swarm:                                           # o melhor desta iteração
+            bi = max(swarm, key=lambda r: (r["feasible"], r["fitness"]))
+            p = mdo.planform(bi, wings)
+            self.plan.plot(p["x"], p["y"], pen=pg.mkPen("#ff7f0e", width=2.2, style=QtCore.Qt.PenStyle.DashLine))
+        p = mdo.planform(h, wings)                           # o melhor até aqui
+        self.plan.plot(p["x"], p["y"], pen=pg.mkPen(BEST_C, width=3.5))
         self.iter_lbl.setText(f"{h['iter'] + 1} / {len(self.hist)}")
-        two = h["airfoil_tip"] != h["airfoil"] and self.state.design.mdo.tip_airfoil
+        two = h["airfoil_tip"] != h["airfoil"]
+        stuck = mdo.at_bounds(h, self.names.get("bounds", {}))
         self.plan_lbl.setText(
             f"melhor até a iteração {h['iter'] + 1}: b = {h['span']:.2f} m, S = {h['area']:.3f} m², λ = {h['taper']:.2f}, "
             f"perfil {h['airfoil']}" + (f" → {h['airfoil_tip']} na ponta" if two else "") +
             f"; {h['motors']}× {h['motor']} + {h['propeller']}; MTOW {h['mtow']:.2f} kg, PV {h['pv']:.2f} kg, "
-            f"EE {h['ee']:.2f}" + ("" if h["feasible"] else " — não cumpre as restrições"))
+            f"EE {h['ee']:.2f}" + ("" if h["feasible"] else " — não cumpre as restrições") +
+            (f"<br><b>no limite</b>: {', '.join(stuck)} (a asa não passa daí: abra a faixa em Variáveis e limites)"
+             if stuck else "") + "<br><span style='color:#777'>azul: melhor até aqui · laranja tracejado: melhor da "
+            "iteração · finas: o enxame da iteração</span>")
 
     def _clicked(self, item, points, *_):
         if points:
@@ -363,18 +395,20 @@ class MdoPage(QtWidgets.QWidget):
         except Exception:
             self.msg.setText("erro ao refazer o indivíduo:\n" + traceback.format_exc(limit=3))
             return
-        self.env.clear()
-        self.env.plot(ev["V"], ev["T"], pen=pg.mkPen("#1f77b4", width=2.4), name="tração disponível")
         q = ev["q"]
-        D = np.where(np.isfinite(ev["D"]), ev["D"], np.nan)                # só V = 0 (infinito) fica de fora
-        self.env.plot(ev["V"], D, pen=pg.mkPen(BAD_C, width=2.4), name="arrasto = tração requerida (voo nivelado)",
-                      connect="finite")
-        Dmin = float(np.nanmin(D)) if np.isfinite(D).any() else 1.0
-        self.env.setYRange(0, 3 * max(float(np.max(ev["T"])), Dmin), padding=0.02)   # enquadra; o zoom mostra o resto
-        if math.isfinite(q.get("V_S", float("nan"))):
-            self.env.addItem(pg.InfiniteLine(q["V_S"], angle=90, pen=pg.mkPen("#7f7f7f", style=QtCore.Qt.PenStyle.DashLine)))
+        try:
+            self._ev, self._envd = ev, mdo.full_envelope(self.state.design, r, ev, self.state.catalog,
+                                                          self.state.manager.backend)
+        except Exception:
+            self.msg.setText("erro no envelope:\n" + traceback.format_exc(limit=3))
+            return
+        self._envelope()
+        self._diagram()
         cons = self.state.design.requirements.constraints
         rows = []
+        s = self._envd["summary"]
+        for k, label in mdo.SPEEDS:                          # as velocidades do envelope completo
+            rows.append((f"{label} (m/s)", rg.fmt(s.get(k, float("nan"))), ""))
         for k, v in q.items():
             qq = rg.QUANTITIES.get(k)
             label = qq.label if qq else {"V_LD": "V de (L/D) máx.", "LD": "(L/D) máx."}.get(k, k)
@@ -394,6 +428,47 @@ class MdoPage(QtWidgets.QWidget):
                 self.view.set_aircraft(mdo.sketch(self.state.design, r, self.state.catalog))
             except Exception:
                 pass
+
+    def _envelope(self):
+        """tração disponível × requerida e subida, na grade inteira; as velocidades marcadas"""
+        rows, s = self._envd["rows"], self._envd["summary"]
+        V = np.asarray(rows["V"])
+        self.env.clear()
+        self.rc.clear()
+        self.env.plot(V, rows["Td"], pen=pg.mkPen("#1f77b4", width=2.4), name="tração disponível")
+        self.env.plot(V, rows["Tr"], pen=pg.mkPen(BAD_C, width=2.4), name="tração requerida (voo nivelado)")
+        self.rc.plot(V, rows["RC"], pen=pg.mkPen("#2ca02c", width=2.4), name="razão de subida")
+        self.rc.addItem(pg.InfiniteLine(0, angle=0, pen=pg.mkPen("#999")))
+        top = 2.5 * max(float(np.nanmax(rows["Td"])), float(np.nanmin(rows["Tr"])))
+        self.env.setYRange(0, top, padding=0.02)            # enquadra; o zoom mostra o resto da curva
+        marks = (("Vs", "V_S", "#7f7f7f"), ("V_RCmax", "V_y", "#2ca02c"), ("V_LDmax", "V (L/D)máx", "#9467bd"),
+                 ("Vmax", "V máx", "#d62728"))
+        for k, lab, col in marks:
+            v = s.get(k)
+            if v and math.isfinite(v):
+                for w in (self.env, self.rc):
+                    w.addItem(pg.InfiniteLine(v, angle=90, pen=pg.mkPen(col, style=QtCore.Qt.PenStyle.DashLine),
+                                              label=lab, labelOpts=dict(position=0.92, color=col)))
+
+    def _diagram(self):
+        if getattr(self, "_envd", None) is None or self.selected is None:
+            return
+        kinds = [k for k, c in self.kind_cb.items() if c.isChecked()]
+        d = mdo.constraint_diagram(self.state.design, self.selected, self._ev, self._envd, kinds)
+        self.diag.clear()
+        cols = ("#1f77b4", "#ff7f0e", "#2ca02c", "#9467bd", "#8c564b", "#e377c2", "#17becf")
+        ws = d["curves"]["ws"]
+        for i, (k, tw) in enumerate((k, v) for k, v in d["curves"].items() if k != "ws"):
+            self.diag.plot(ws, tw, pen=pg.mkPen(cols[i % len(cols)], width=2.2), name=d["labels"].get(k, k))
+        for k, x in d["limits"].items():
+            self.diag.addItem(pg.InfiniteLine(x, angle=90, pen=pg.mkPen("#7f7f7f", width=2,
+                                                                         style=QtCore.Qt.PenStyle.DashLine),
+                                              label=d["labels"].get(k, k), labelOpts=dict(position=0.9)))
+        x, y = d["point"]
+        self.diag.plot([x], [y], pen=None, symbol="o", symbolSize=12, symbolBrush=BEST_C, name="o indivíduo (T0/W, W/S)")
+        ys = [v for k, v in d["curves"].items() if k != "ws"]
+        top = max([y] + [float(np.nanmedian(v)) for v in ys]) * 2.2 if ys else 2 * y
+        self.diag.setYRange(0, top, padding=0.02)
 
     def apply(self):
         if self.selected is None:

@@ -364,6 +364,13 @@ mdo.check_6dof(p, rows[k], catalog, manager)             # guarda asa/conjunto/a
 - **Limites**: `registry.check_bounds` recusa variável física sem mín. < máx. (ou lista sem opções);
   `registry.bounds_from_constraints` leva as restrições ativas para os limites (b → envergadura, S → área,
   n_motor → motores mín./máx.).
+- **Arranjo dos motores** é variável (`LAYOUT_DATA`): motores aceitos (nariz e propulsora: 1; asa: aos pares),
+  instalação (propulsora na esteira: 0,9 da tração), arrasto das naceles e suporte por motor.
+- **Listas** (perfil da raiz e da ponta, motor, hélice, arranjo): `available(projeto, chave)` diz tudo o que existe
+  (perfis do projeto + `.dat` de `MdoParams.airfoil_dir`, padrão `data/airfoils`); variável sem nada marcado = todos.
+- **Envelope completo e diagrama do indivíduo**: `full_envelope` (o desempenho do núcleo, `simple_perf`, com a polar
+  e a curva de tração dele: todas as velocidades) e `constraint_diagram` (curvas de `aerosim.sizing.constraints`
+  com a polar e as velocidades dele; T/W estático equivalente pela queda da tração da hélice).
 - **Empenagem** não é dimensionada: entra como fração da área da asa na massa e no arrasto.
 - **Perfil da ponta** também na etapa Asa (`WingParams.airfoil_tip`): a linha sustentadora usa a1(y) e α_L0(y)
   interpolados da raiz (e do trecho retangular) à ponta; o estol, o c_l,max local; o arrasto, o c_d local.

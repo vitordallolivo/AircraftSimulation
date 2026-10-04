@@ -34,6 +34,8 @@ QUANTITIES: dict[str, Quantity] = {
     "S": Quantity("área da asa", "m²", "asa", "área em planta das duas semiasas", "envergadura/corda"),
     "b": Quantity("envergadura", "m", "asa", "de ponta a ponta", "menos envergadura (mais corda para manter a área)"),
     "AR": Quantity("alongamento", "", "asa", "b²/S"),
+    "c_root": Quantity("corda máxima (raiz)", "m", "asa", "com a envergadura máxima: a asa cabe num retângulo b × c "
+                       "(regulamento)", "mais envergadura para a mesma área, ou menos área"),
     "V_S": Quantity("velocidade de estol", "m/s", "asa", "com a massa estimada",
                     "mais área ou perfil de C_l máximo maior"),
     "n_surf": Quantity("número de superfícies", "", "montagem", "asa, empenagens e outras ligadas"),
@@ -145,6 +147,8 @@ INPUTS: dict[str, Input] = {
     "power.propeller": Input("power_draft.propeller", "hélice", "lista"),
     "power.layout": Input("power_draft.layout", "motores (arranjo)", "lista"),
     "power.tilt": Input("power_draft.tilt", "inclinação do motor", "°", 0.0, 12.0),
+    "power.motors": Input("power_draft.wing_motors", "nº de motores (o arranjo manda: nariz/propulsora 1, asa aos pares)",
+                          "", 1.0, 8.0, integer=True),
     "power.ballast": Input("power_draft.ballast", "lastro", "kg", 0.0, 10.0),
     "power.liquid": Input("power_draft.liquid", "líquido", "L", 0.0, 5.0),
     "power.lapes": Input("power_draft.lapes", "LAPES", "kg", 0.0, 5.0),
@@ -188,7 +192,9 @@ def set_input(project, key: str, value) -> None:
 
 # ------------------------------------------------------------------ valores que as etapas devolvem
 def wing_values(r: dict) -> dict:
-    return {"S": r.get("S"), "b": r.get("b"), "AR": r.get("AR"), "V_S": r.get("V_stall")}
+    c = r.get("chord")
+    return {"S": r.get("S"), "b": r.get("b"), "AR": r.get("AR"), "V_S": r.get("V_stall"),
+            "c_root": float(max(c)) if c is not None and len(c) else None}
 
 
 def aircraft_values(ac, asm: dict, pf: dict | None, pp=None) -> dict:
@@ -201,7 +207,8 @@ def aircraft_values(ac, asm: dict, pf: dict | None, pp=None) -> dict:
     d["ee"] = d["cp"] / d["pv"] if d.get("pv") else float("nan")
     w = ac.wing
     if w is not None:
-        d.update(S=w.area, b=w.span, AR=w.aspect_ratio, V_S=asm.get("Vs"))
+        d.update(S=w.area, b=w.span, AR=w.aspect_ratio, V_S=asm.get("Vs"),
+                 c_root=max((q.chord for q in w.sections), default=0.0))
     if pp is not None:
         d.update(m_liquid=pp.liquid * 1.0, m_lapes=pp.lapes, m_ballast=pp.ballast)
     if pf:
@@ -212,7 +219,18 @@ def aircraft_values(ac, asm: dict, pf: dict | None, pp=None) -> dict:
 
 # ------------------------------------------------------------------ limites das variáveis
 # restrição → entrada que ela limita (o otimizador não precisa procurar fora do que a restrição deixa)
-CONSTRAINT_INPUT = {"b": "wing.span", "S": "wing.area"}
+CONSTRAINT_INPUT = {"b": "wing.span", "S": "wing.area", "n_motor": "power.motors"}
+
+
+def sae_constraints(runway: float = 6.0) -> list[Constraint]:
+    """o padrão do projeto novo (SAE AeroDesign): decolar em `runway` m; a asa cabe num retângulo (envergadura e
+    corda máximas — os valores são do regulamento do ano: confira e ajuste em Condições e restrições)"""
+    cs = default_constraints()
+    for c in cs:
+        if c.key == "s_to":
+            c.value, c.active = runway, True
+    cs.insert(2, Constraint("c_root", "≤", 0.5, active=False))
+    return cs
 
 
 def bounds_from_constraints(project) -> list[str]:
@@ -221,16 +239,6 @@ def bounds_from_constraints(project) -> list[str]:
     out = []
     for c in project.requirements.constraints:
         if not c.active:
-            continue
-        if c.key == "n_motor":
-            mp = project.mdo
-            if c.op in ("≤", "="):
-                mp.motors_max = max(int(c.value), 1)
-                mp.motors_min = min(mp.motors_min, mp.motors_max)
-            if c.op in ("≥", "="):
-                mp.motors_min = max(int(math.ceil(c.value)), 1)
-                mp.motors_max = max(mp.motors_max, mp.motors_min)
-            out.append(f"motores: {mp.motors_min}…{mp.motors_max}")
             continue
         key = CONSTRAINT_INPUT.get(c.key)
         v = next((v for v in project.variables if v.key == key), None)
@@ -254,8 +262,7 @@ def check_bounds(project) -> list[str]:
         if v.mode != "variável":
             continue
         if v.input.unit == "lista":
-            if not v.options:
-                bad.append(f"{v.input.label}: sem opções na lista")
+            continue                                       # lista sem nada marcado = todos
         elif not (math.isfinite(v.lo) and math.isfinite(v.hi)) or v.lo >= v.hi:
             bad.append(f"{v.input.label}: limites [{v.lo:g}, {v.hi:g}] (precisa de mín. < máx.)")
     return bad

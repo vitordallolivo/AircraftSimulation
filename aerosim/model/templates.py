@@ -13,7 +13,7 @@ from .aircraft import (Aircraft, Autopilot, ControlSurface, Fuselage, LandingGea
                        Payload, PointMass, PropulsionUnit, SloshTank, TailBoom, Takeoff, WingSection, rect_sections)
 from .airfoil import Airfoil
 from .catalog import builtin_catalog
-from .mission import circuit
+from .mission import circuit, short_circuit
 
 
 def _unit(name, x, y, z, tilt=3.0, sense=1, prop="APC 15x8E", motor="Scorpion A-5025-310Kv",
@@ -143,12 +143,17 @@ def twin_boom() -> Aircraft:
     return ac
 
 
+SAE_RUNWAY = 6.0      # pista de decolagem do padrão (m): SAE AeroDesign
+
+
 def empty() -> Aircraft:
     """a Montagem sem nada: sem asa, sem fuselagem, sem trem; vai montando peça por peça"""
     ac = Aircraft(name="novo avião", fuselage=Fuselage(enabled=False), payload=Payload(enabled=False),
                   gear=LandingGear("custom"), mass=MassModel(base_mass=0.0, Ixx=0.0, Iyy=0.0, Izz=0.0, Ixz=0.0,
                                                              include_propulsion=True, include_structure=True))
+    ac.mission = short_circuit()                     # missão curta, decolagem em 6 m (padrão SAE)
     ac.mission.events = [e for e in ac.mission.events if e.kind != "drop"]
+    ac.airfield.x_warning = SAE_RUNWAY
     return ac
 
 

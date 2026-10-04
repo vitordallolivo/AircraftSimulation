@@ -134,6 +134,10 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   ![Variáveis](docs/img/variaveis.png)
 
   Detalhes em [aerosim/design](aerosim/design/README.md).
+- **Projeto novo no padrão SAE AeroDesign**: corrida de decolagem ≤ 6 m (restrição ativa), asa retangular
+  (afilamento 1) e a restrição "a asa cabe num retângulo" (envergadura e **corda máxima**, a ligar com os valores do
+  regulamento do ano); o avião novo e o montado pelas etapas voam a **missão curta** (decolagem, uma volta,
+  passagem LAPES, pouso), com x_warning = 6 m.
 - **Dimensionamento inicial → Mini-MDO**: geometria → motorização → envelope de voo → decolagem → MTOW, PV, CP
   e EE, no núcleo Zig, para monoplano, biplano, asa voadora, tailsitter e VTOL. O otimizador (PSO ou busca
   aleatória; a interface aceita outros) avisa a cada iteração: os indivíduos aparecem no gráfico em tempo real, e
@@ -141,14 +145,20 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   pode ter perfil diferente na ponta. Clique num indivíduo: envelope, grandezas e restrições, 3D; **Levar para as
   etapas** ou **Conferir no 6GDL**.
 
-  Os limites (bounds) ficam numa planilha na própria página (aba **Variáveis e limites**): fixo, variável (mín. e
-  máx. obrigatórios para grandeza física; listas para perfil, motor e hélice) ou calculado; **Limites a partir das
-  restrições** leva envergadura ≤, área ≤/≥ e nº de motores para os limites. O envelope é a curva inteira (tração
-  disponível × requerida); o estol é só uma linha de referência.
+  As variáveis e os limites são os de **Condições e restrições → Variáveis** (o botão **Variáveis e limites…** abre
+  lá; nada duplicado): fixo, variável (mín. e máx. obrigatórios para grandeza física) ou calculado. Perfil (raiz e
+  ponta), motor, hélice e **arranjo dos motores** (nariz, na asa aos pares, propulsora na esteira) são listas: o
+  botão abre um seletor com busca e marcar/desmarcar todos; nada marcado = todos. Os perfis vêm da **pasta
+  `data/airfoils`** (polar do NeuralFoil) e do projeto. **Limites a partir das restrições** leva envergadura ≤,
+  área ≤/≥ e nº de motores para os limites. Do indivíduo clicado: **envelope completo** (tração disponível ×
+  requerida e subida na grade inteira, com V_S, V_y, V de L/D máx., V máx.; todas as velocidades na tabela) e o
+  **diagrama de restrições** (T/W × W/S com as curvas que você marcar, T/W estático equivalente pela curva da
+  hélice dele, e o ponto dele). O histórico mostra o enxame de cada iteração e diz o que está **no limite**.
 
-  ![Limites](docs/img/mdo_limites.png)
-  ![Mini-MDO](docs/img/mdo_final.png)
-  ![Histórico das asas](docs/img/mdo_historico.png)
+  ![Envelope completo](docs/img/mdo2_envelope.png)
+  ![Diagrama de restrições do indivíduo](docs/img/mdo2_diagrama.png)
+  ![Histórico: o enxame da iteração 3](docs/img/mdo2_historico.png)
+  ![Seletor de perfis](docs/img/seletor_perfis.png)
 - **Montagem** (última aba): componentes, 3D editável, ambiente (altitude-densidade, vento) e envelope
   de voo (ângulo de cruzeiro, fator de carga). As subabas "Avião montado" e a Missão mostram o avião
   atual em 3D acima dos gráficos.

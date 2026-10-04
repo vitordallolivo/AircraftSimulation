@@ -69,7 +69,24 @@ pub fn decode(cfg: *const S.SizingCfg, x: []const f64, out: *[S.n_vars]f64) void
     out[S.v_airfoil] = std.math.clamp(out[S.v_airfoil], 0, @as(f64, @floatFromInt(@max(cfg.n_airfoils, 1) - 1)));
     out[S.v_airfoil_tip] = if (cfg.tip_same != 0) out[S.v_airfoil] else std.math.clamp(out[S.v_airfoil_tip], 0, @as(f64, @floatFromInt(@max(cfg.n_airfoils, 1) - 1)));
     out[S.v_set] = std.math.clamp(out[S.v_set], 0, @as(f64, @floatFromInt(@max(cfg.n_sets, 1) - 1)));
-    out[S.v_motors] = @max(@round(out[S.v_motors]), 1);
+    out[S.v_layout] = std.math.clamp(out[S.v_layout], 0, @as(f64, @floatFromInt(@max(cfg.n_layouts, 1) - 1)));
+    out[S.v_motors] = motorsFor(cfg.layouts[@intFromFloat(out[S.v_layout])], out[S.v_motors], cfg.vars[S.v_motors]);
+}
+
+/// número de motores que o arranjo aceita, o mais perto do pedido (dentro dos limites da variável quando dá)
+pub fn motorsFor(l: S.LayoutData, want: f64, v: S.VarSpec) f64 {
+    const step: f64 = if (l.n_step >= 2) 2.0 else 1.0;
+    const lmin = @max(@round(l.n_min), 1.0);
+    const lmax = @max(@round(l.n_max), lmin);
+    var lo = @max(lmin, @ceil(@min(v.lo, v.hi)));
+    var hi = @min(lmax, @floor(@max(v.lo, v.hi)));
+    if (lo > hi) { // os limites da variável não cabem no arranjo: vale o arranjo
+        lo = lmin;
+        hi = lmax;
+    }
+    var n = std.math.clamp(@round(if (std.math.isFinite(want)) want else lo), lo, hi);
+    if (step == 2 and @mod(n, 2) != 0) n = if (n + 1 <= hi) n + 1 else @max(n - 1, lmin);
+    return @max(n, 1);
 }
 
 pub fn Chain(comptime K: type, comptime Th: type) type {
@@ -122,11 +139,13 @@ pub fn Chain(comptime K: type, comptime Th: type) type {
             const af = st.blendAirfoils(cfg.airfoils[@intFromFloat(o.x[S.v_airfoil])], cfg.airfoils[@intFromFloat(o.x[S.v_airfoil_tip])], o.x[S.v_taper]);
             const set = &cfg.sets[@intFromFloat(o.x[S.v_set])];
             const n_motor = o.x[S.v_motors];
+            const lay = cfg.layouts[@intFromFloat(o.x[S.v_layout])];
             var md: Model = undefined;
             md.geo = st.geometry(K, o.x[S.v_span], o.x[S.v_area]);
-            md.pol = st.polar(K, cfg, md.geo, af);
+            md.pol = st.polar(K, cfg, md.geo, af, n_motor * lay.nacelle_CDS);
             md.curve = thrust.curve(set, n_motor);
-            md.ms = st.emptyMass(K, cfg, md.geo, set.mass, n_motor);
+            for (&md.curve.T) |*t| t.* *= std.math.clamp(lay.thrust_factor, 0.0, 1.5); // instalação do arranjo
+            md.ms = st.emptyMass(K, cfg, md.geo, set.mass + @max(lay.mass_per_motor, 0.0), n_motor);
             md.tilt = std.math.degreesToRadians(o.x[S.v_tilt]);
             const pv = md.ms.pv;
             // MTOW: bisseção na massa (as restrições de massa pioram com a massa)
@@ -151,9 +170,11 @@ pub fn Chain(comptime K: type, comptime Th: type) type {
             var hover = false;
             atMass(cfg, &md, mtow, &o.q, &hover, &env);
             o.hover = @intFromBool(hover);
+            o.CD0, o.K, o.CLmax, o.CLg = .{ md.pol.CD0, md.pol.K, md.pol.CLmax, md.pol.CLg };
             o.q[S.q_S] = md.geo.S;
             o.q[S.q_b] = md.geo.b;
             o.q[S.q_AR] = md.geo.AR;
+            o.q[S.q_c_root] = 2.0 * md.geo.c / (1.0 + std.math.clamp(o.x[S.v_taper], 0.05, 1.0)); // c média → raiz
             o.q[S.q_n_surf] = @floatFromInt(K.surfaces());
             o.q[S.q_P] = set.P_max * n_motor;
             o.q[S.q_n_motor] = n_motor;
@@ -200,7 +221,7 @@ fn baseCfg() S.SizingCfg {
 test "MTOW pela corrida: no MTOW a corrida bate a restrição" {
     var cfg = baseCfg();
     var th: LinearThrust = .{};
-    const o = Chain(kinds.Monoplane, LinearThrust).eval(&cfg, &th, &.{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0 });
+    const o = Chain(kinds.Monoplane, LinearThrust).eval(&cfg, &th, &.{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0, 0 });
     try testing.expect(o.feasible == 1);
     try testing.expectApproxEqRel(@as(f64, 40), o.q[S.q_s_to], 0.01);
     try testing.expectApproxEqAbs(o.q[S.q_mtow] - o.q[S.q_pv], o.q[S.q_cp], 1e-12);
@@ -211,7 +232,7 @@ test "corrida de 3 m: monoplano não cumpre; VTOL que paira decola na vertical" 
     cfg.cons[0].value = 3;
     cfg.sets[0].mass = 3; // tração estática de 75 N por motor no mock
     var th: LinearThrust = .{};
-    const x = [_]f64{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0 };
+    const x = [_]f64{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0, 0 };
     const mono = Chain(kinds.Monoplane, LinearThrust).eval(&cfg, &th, &x);
     const vtol = Chain(kinds.Vtol, LinearThrust).eval(&cfg, &th, &x);
     try testing.expect(mono.feasible == 0);
@@ -223,7 +244,7 @@ test "corrida de 3 m: monoplano não cumpre; VTOL que paira decola na vertical" 
 test "biplano: mesma envergadura e área, menos arrasto induzido → mais subida" {
     var cfg = baseCfg();
     var th: LinearThrust = .{};
-    const x = [_]f64{ 1.5, 0.9, 0.6, 0, 0, 1, 0, 0 };
+    const x = [_]f64{ 1.5, 0.9, 0.6, 0, 0, 1, 0, 0, 0 };
     const mono = Chain(kinds.Monoplane, LinearThrust).eval(&cfg, &th, &x);
     var c2 = cfg;
     c2.n_cons = 0;
@@ -253,6 +274,11 @@ fn fuzzChain(_: void, src: *fz.Src) !void {
     cfg.tip_same = @intFromBool(src.boolean());
     cfg.vars[S.v_airfoil] = .{ .lo = 0, .hi = 1, .kind = S.var_list };
     cfg.vars[S.v_airfoil_tip] = .{ .lo = 0, .hi = 1, .kind = S.var_list };
+    cfg.n_layouts = 3; // nariz (1), asa (pares), propulsora (1, esteira)
+    cfg.layouts[0] = .{ .n_min = 1, .n_max = 1 };
+    cfg.layouts[1] = .{ .n_min = 2, .n_max = 4, .n_step = 2, .nacelle_CDS = src.range(0, 0.01), .mass_per_motor = src.range(0, 0.3) };
+    cfg.layouts[2] = .{ .n_min = 1, .n_max = 1, .thrust_factor = src.range(0.7, 1) };
+    cfg.vars[S.v_layout] = .{ .lo = 0, .hi = 2, .kind = S.var_list };
     var th: LinearThrust = .{ .T0_per_kg = src.range(5, 60), .Vz = src.range(10, 60) };
     var x: [S.n_vars]f64 = undefined;
     for (&x) |*v| v.* = src.mostly(-2, 6);
@@ -264,6 +290,10 @@ fn fuzzChain(_: void, src: *fz.Src) !void {
         }
         try testing.expect(o.x[S.v_motors] == @round(o.x[S.v_motors]));
         if (cfg.tip_same != 0) try testing.expectEqual(o.x[S.v_airfoil], o.x[S.v_airfoil_tip]);
+        // o número de motores respeita o arranjo (na asa: pares)
+        const l = cfg.layouts[@intFromFloat(o.x[S.v_layout])];
+        try testing.expect(o.x[S.v_motors] >= l.n_min and o.x[S.v_motors] <= l.n_max);
+        if (l.n_step == 2) try testing.expect(@mod(o.x[S.v_motors], 2) == 0);
         try testing.expect(o.q[S.q_mtow] >= o.q[S.q_pv] - 1e-9 and o.violation >= 0);
         try testing.expect(std.math.isFinite(o.score));
         // no MTOW as restrições de massa cumprem; um pouco acima, alguma falha (se não bateu no teto)
@@ -279,6 +309,37 @@ fn fuzzChain(_: void, src: *fz.Src) !void {
 
 test "fuzz: cadeia inteira com tração mock, todos os tipos" {
     try fz.checkScaled({}, fuzzChain, .{}, 4);
+}
+
+test "corda da raiz: retangular = S/b; afilada é maior" {
+    var cfg = baseCfg();
+    var th: LinearThrust = .{};
+    const C = Chain(kinds.Monoplane, LinearThrust);
+    cfg.vars[S.v_taper] = .{ .lo = 1, .hi = 1 };
+    const r = C.eval(&cfg, &th, &.{ 2.0, 0.8, 1.0, 0, 0, 1, 0, 0, 0 });
+    try testing.expectApproxEqAbs(@as(f64, 0.4), r.q[S.q_c_root], 1e-12);
+    cfg.vars[S.v_taper] = .{ .lo = 0.5, .hi = 0.5 };
+    const t = C.eval(&cfg, &th, &.{ 2.0, 0.8, 0.5, 0, 0, 1, 0, 0, 0 });
+    try testing.expectApproxEqAbs(@as(f64, 0.4 * 2 / 1.5), t.q[S.q_c_root], 1e-12);
+}
+
+test "arranjo: propulsora na esteira perde tração; naceles somam arrasto e massa" {
+    var cfg = baseCfg();
+    cfg.n_layouts = 3;
+    cfg.layouts[0] = .{ .n_min = 1, .n_max = 1 };
+    cfg.layouts[1] = .{ .n_min = 2, .n_max = 2, .n_step = 2, .nacelle_CDS = 0.004, .mass_per_motor = 0.15 };
+    cfg.layouts[2] = .{ .n_min = 1, .n_max = 1, .thrust_factor = 0.85 };
+    cfg.vars[S.v_motors] = .{ .lo = 1, .hi = 4, .kind = S.var_integer };
+    cfg.vars[S.v_layout] = .{ .lo = 0, .hi = 2, .kind = S.var_list };
+    var th: LinearThrust = .{};
+    const C = Chain(kinds.Monoplane, LinearThrust);
+    const nose = C.eval(&cfg, &th, &.{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0, 0 });
+    const push = C.eval(&cfg, &th, &.{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0, 2 });
+    const wing = C.eval(&cfg, &th, &.{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0, 1 }); // pediu 1: na asa vira 2
+    try testing.expectApproxEqRel(0.85 * nose.T[0], push.T[0], 1e-12);
+    try testing.expect(push.q[S.q_mtow] < nose.q[S.q_mtow]);
+    try testing.expectEqual(@as(f64, 2), wing.x[S.v_motors]);
+    try testing.expectApproxEqAbs(nose.q[S.q_pv] + cfg.sets[0].mass + 2 * 0.15, wing.q[S.q_pv], 1e-9);
 }
 
 test "tração do núcleo: estática positiva e caindo com V" {

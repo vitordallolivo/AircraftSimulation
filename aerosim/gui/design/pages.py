@@ -155,7 +155,22 @@ class VariablesTable(QtWidgets.QWidget):
         hh.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         hh.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeMode.Stretch)
         v.addWidget(self.table)
+        self.bounds_b = QtWidgets.QPushButton("Limites a partir das restrições")
+        self.bounds_b.setToolTip("as restrições ativas viram limites: envergadura ≤ → máx. da envergadura, área ≥/≤ → "
+                                 "mín./máx. da área, nº de motores → mín./máx. de motores")
+        self.bounds_b.clicked.connect(self.bounds_from_constraints)
+        v.addWidget(self.bounds_b)
+        self.msg = QtWidgets.QLabel()
+        self.msg.setStyleSheet("color:#555")
+        v.addWidget(self.msg)
         self.fill()
+
+    def bounds_from_constraints(self):
+        changed = rg.bounds_from_constraints(self.state.design)
+        self.edited()
+        self.fill()
+        self.msg.setText("limites das restrições: " + ("; ".join(changed) if changed else "nenhuma restrição ativa "
+                                                         "limita uma variável (envergadura, área, nº de motores)"))
 
     def edited(self):
         self.state.design_edited("variaveis")
@@ -201,13 +216,95 @@ class VariablesTable(QtWidgets.QWidget):
                 sp.setKeyboardTracking(False)
                 sp.valueChanged.connect(lambda x, var=var, a=attr: (setattr(var, a, x), self.edited()))
                 t.setCellWidget(r, col, sp)
-            op = QtWidgets.QLineEdit(", ".join(var.options))
+            op = QtWidgets.QPushButton(self._options_text(var) if lst else "")
             op.setEnabled(lst)
-            op.setPlaceholderText("nomes separados por vírgula" if lst else "")
-            op.editingFinished.connect(lambda var=var, w=op: (setattr(var, "options", [s.strip() for s in
-                                                                                  w.text().split(",") if s.strip()]),
-                                                              self.edited()))
+            op.setToolTip("escolher na lista (com busca); nada marcado = todos")
+            op.clicked.connect(lambda _=False, var=var, b=op: self.pick(var, b))
             t.setCellWidget(r, 5, op)
+
+    def _available(self, var) -> list[str]:
+        from aerosim.design import mdo
+        return mdo.available(self.state.design, var.key, self.state.catalog)
+
+    def _options_text(self, var) -> str:
+        n = len(self._available(var))
+        if not var.options:
+            return f"todos ({n}) …"
+        txt = ", ".join(var.options)
+        return f"{len(var.options)} de {n}: " + (txt if len(txt) < 40 else txt[:37] + "…")
+
+    def pick(self, var, button=None) -> None:
+        dlg = ListPicker(var.input.label, self._available(var), var.options, self)
+        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            var.options = dlg.selected()
+            if var.mode == "fixo" and var.options:
+                var.mode = "variável"                      # escolheu opções: a busca vai variar entre elas
+            self.edited()
+            self.fill()
+
+
+class ListPicker(QtWidgets.QDialog):
+    """escolher itens de uma lista: busca por nome, marcar todos (os que a busca mostra), desmarcar todos"""
+
+    def __init__(self, title: str, items: list[str], chosen: list[str], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Escolher: {title}")
+        self.resize(420, 520)
+        v = QtWidgets.QVBoxLayout(self)
+        self.search = QtWidgets.QLineEdit()
+        self.search.setPlaceholderText("pesquisar…")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._filter)
+        v.addWidget(self.search)
+        self.list = QtWidgets.QListWidget()
+        on = set(chosen) if chosen else set(items)           # nada escolhido = todos
+        for name in items:
+            it = QtWidgets.QListWidgetItem(name)
+            it.setFlags(it.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+            it.setCheckState(QtCore.Qt.CheckState.Checked if name in on else QtCore.Qt.CheckState.Unchecked)
+            self.list.addItem(it)
+        self.list.itemChanged.connect(lambda *_: self._count())
+        v.addWidget(self.list, 1)
+        h = QtWidgets.QHBoxLayout()
+        self.all_b = QtWidgets.QPushButton("Marcar todos")
+        self.none_b = QtWidgets.QPushButton("Desmarcar todos")
+        self.all_b.clicked.connect(lambda: self._set_visible(True))
+        self.none_b.clicked.connect(lambda: self._set_visible(False))
+        h.addWidget(self.all_b)
+        h.addWidget(self.none_b)
+        v.addLayout(h)
+        self.count = QtWidgets.QLabel()
+        v.addWidget(self.count)
+        bb = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
+                                        QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        v.addWidget(bb)
+        self._count()
+
+    def _filter(self, text: str):
+        t = text.strip().lower()
+        for i in range(self.list.count()):
+            it = self.list.item(i)
+            it.setHidden(bool(t) and t not in it.text().lower())
+        self._count()
+
+    def _set_visible(self, on: bool):
+        st = QtCore.Qt.CheckState.Checked if on else QtCore.Qt.CheckState.Unchecked
+        for i in range(self.list.count()):
+            if not self.list.item(i).isHidden():
+                self.list.item(i).setCheckState(st)
+
+    def _count(self):
+        n = sum(1 for i in range(self.list.count()) if self.list.item(i).checkState() == QtCore.Qt.CheckState.Checked)
+        shown = sum(1 for i in range(self.list.count()) if not self.list.item(i).isHidden())
+        self.count.setText(f"{n} de {self.list.count()} marcados" + (f" · {shown} na busca" if shown < self.list.count() else ""))
+
+    def selected(self) -> list[str]:
+        """os marcados; todos marcados = lista vazia (= todos, inclusive os que entrarem depois na pasta)"""
+        out = [self.list.item(i).text() for i in range(self.list.count())
+               if self.list.item(i).checkState() == QtCore.Qt.CheckState.Checked]
+        return [] if len(out) == self.list.count() else out
 
 
 class RequirementsDialog(QtWidgets.QDialog):

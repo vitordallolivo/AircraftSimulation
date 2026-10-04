@@ -44,8 +44,10 @@ class PowerParams:
     thrust_set: str = F("", "conjunto de tração")
     tilt: float = F(0.0, "inclinação do motor", "°", "+ eixo apontando para cima: parte da tração sustenta na corrida",
                     -10, 15, 0.5)
-    motor_y: float = F(0.0, "afastamento dos motores", "m", "dois motores: do centro ao eixo; 0 = o mínimo para a "
-                       "hélice livrar a fuselagem", 0, 1.5, 0.01)
+    motor_y: float = F(0.0, "afastamento dos motores", "m", "motores na asa: do centro ao eixo do primeiro par; 0 = o "
+                       "mínimo para a hélice livrar a fuselagem", 0, 1.5, 0.01)
+    wing_motors: int = F(2, "motores na asa", "", "arranjo na asa: aos pares, espalhados na envergadura (uma hélice "
+                         "+ 5 cm de folga entre eles)", 2, 8, 2)
     ballast: float = F(2.0, "carga paga: lastro", "kg", "massa sólida no CG", 0, 40, 0.05)
     liquid: float = F(1.0, "carga paga: líquido", "L", "água (1 kg/L) num tanque no CG — mexe na curva (sloshing)", 0, 20,
                       0.05)
@@ -103,6 +105,8 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     ac.Sref = ac.cref = ac.bref = None
     ac.tanks = []
     ac.payload.enabled = False
+    from aerosim.model.mission import short_circuit
+    ac.mission = short_circuit(Vc=req.V_cruise, VL=0.92 * req.V_cruise, Vap=0.88 * req.V_cruise)   # missão curta
     if pp.lapes <= 0:
         ac.mission.events = [e for e in ac.mission.events if e.kind != "drop"]
     ac.environment.set_density_altitude(req.density_altitude)
@@ -126,7 +130,13 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
         D0 = _unit(pp, cat, "m", 0, 0, 0, 1).propeller.D
         y = pp.motor_y if pp.motor_y > 0 else max(D0 / 2 + fw / 2 + 0.05, 0.15)
         xm = 0.15 + 0.02
-        units = [_unit(pp, cat, "motor esq", xm, -y, w.z, 1), _unit(pp, cat, "motor dir", xm, y, w.z, -1)]
+        units = []
+        for k in range(max(int(pp.wing_motors) // 2, 1)):           # pares, de dentro para fora
+            yk = y + k * (D0 + 0.05)
+            units += [_unit(pp, cat, f"motor esq {k + 1}", xm, -yk, w.z, 1),
+                      _unit(pp, cat, f"motor dir {k + 1}", xm, yk, w.z, -1)]
+        if len(units) == 2:
+            units[0].name, units[1].name = "motor esq", "motor dir"
     else:
         units = [_unit(pp, cat, "motor 1", -cr - 0.06, 0.0, 0.0, 1)]
     ac.propulsion = units

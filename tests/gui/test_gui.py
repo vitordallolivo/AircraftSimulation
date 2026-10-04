@@ -206,6 +206,7 @@ def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypa
     estudo = des.widget(1)                                 # retroalimentação: ponto de projeto acoplado
     st.design.study.n, st.design.study.places = 2, "A=600"
     st.design.requirements.V_stall_max = 13.0            # estol no MTOW que este avião cumpre (restrição ativa)
+    st.design.requirements.takeoff_run = 50.0            # cenário com pista longa (o padrão SAE é 6 m)
     estudo.start()
     t0 = time.time()
     while estudo._thread is not None and time.time() - t0 < 120:
@@ -313,7 +314,7 @@ def test_mdo_page_realtime_history(app, manager, tmp_path):
             v.mode = "variável"
         if v.key == "wing.airfoil_tip":
             v.mode, v.options = "variável", ["NACA 4412", "NACA 0012"]
-    d.mdo.particles, d.mdo.iterations, d.mdo.tip_airfoil = 8, 6, True
+    d.mdo.particles, d.mdo.iterations = 8, 6
     page = MdoPage(st)
     seen = []
     redraw = page.redraw
@@ -337,22 +338,50 @@ def test_mdo_page_realtime_history(app, manager, tmp_path):
 
 
 def test_mdo_bounds_sheet(app, manager, tmp_path):
-    """a planilha de limites fica na página; restrições viram limites; limite inválido não roda"""
+    """sem duplicata: as variáveis do Mini-MDO são as de Condições e restrições; restrições viram limites; limite
+    inválido não roda"""
     from aerosim.data.projects import JsonProjectStore
     from aerosim.design import registry as rg
     from aerosim.gui.design.mdo_page import MdoPage
+    from aerosim.gui.design.pages import RequirementsDialog
     from aerosim.gui.state import AppState
     from aerosim.model.templates import empty
     st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)))
     d = st.design
     page = MdoPage(st)
-    assert page.vtable.table.rowCount() == len(d.variables)
+    assert not hasattr(page, "vtable")                       # a planilha mora no diálogo
+    dlg = RequirementsDialog(st)
     d.requirements.constraints = [rg.Constraint("b", "≤", 2.2), rg.Constraint("S", "≥", 0.6),
                                   rg.Constraint("n_motor", "≤", 2)]
-    page.bounds_b.click()
-    span = next(v for v in d.variables if v.key == "wing.span")
-    area = next(v for v in d.variables if v.key == "wing.area")
-    assert span.hi == 2.2 and area.lo == 0.6 and d.mdo.motors_max == 2
+    dlg.variables.bounds_b.click()
+    get = lambda k: next(v for v in d.variables if v.key == k)
+    assert get("wing.span").hi == 2.2 and get("wing.area").lo == 0.6 and get("power.motors").hi == 2
+    span = get("wing.span")
     span.mode, span.lo, span.hi = "variável", 2.0, 1.0
     page.start()
     assert page._thread is None and "limites inválidos" in page.msg.text()
+
+
+
+def test_list_picker_search_and_select_all(app, manager, tmp_path):
+    """perfil, motor, hélice, arranjo: escolher numa lista com busca; marcar todos marca só o que a busca mostra"""
+    from PyQt6 import QtCore
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.design import mdo
+    from aerosim.gui.design.pages import ListPicker, VariablesTable
+    from aerosim.gui.state import AppState
+    from aerosim.model.templates import empty
+    st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)))
+    items = mdo.available(st.design, "wing.airfoil")
+    assert any("S1223" in n for n in items) and any("NACA 0012" in n for n in items)   # a pasta de perfis
+    dlg = ListPicker("perfil", items, [])
+    assert dlg.selected() == []                                  # tudo marcado = todos
+    dlg.none_b.click()
+    dlg.search.setText("naca")
+    dlg.all_b.click()                                            # só os NACA
+    sel = dlg.selected()
+    assert sel and all("naca" in s.lower() for s in sel)
+    assert set(mdo.available(st.design, "power.motor")) == {m.name for m in st.catalog.motors}
+    vt = VariablesTable(st)
+    r = next(i for i, v in enumerate(st.design.variables) if v.key == "power.propeller")
+    assert vt.table.cellWidget(r, 5).text().startswith("todos (")
