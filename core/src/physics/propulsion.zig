@@ -102,15 +102,29 @@ pub fn polyRaw(p: *const T.Params, u: *const T.PropUnit, V: f64, thr: f64, h: f6
 }
 
 /// tração polinomial (sem motor, bateria nem rotação)
-fn polyUnit(p: *const T.Params, u: *const T.PropUnit, Vr: V3, w: V3, thr: f64, h: f64) Unit {
-    const V = vec.dot(Vr + vec.cross(w, vec.v3(u.r)), vec.v3(u.eT));
+fn polyUnit(p: *const T.Params, u: *const T.PropUnit, eT: V3, Vr: V3, w: V3, thr: f64, h: f64) Unit {
+    const V = vec.dot(Vr + vec.cross(w, vec.v3(u.r)), eT);
     return .{ .T = @max(polyRaw(p, u, V, thr, h), 0.0) };
 }
 
-pub fn unit(p: *const T.Params, u: *const T.PropUnit, Vr: V3, w: V3, rps: f64, thr: f64, h: f64) Unit {
-    if (u.model == T.prop_poly) return polyUnit(p, u, Vr, w, thr, h);
+/// inclinação atual do eixo (rad): fixa, ou tilt + comando·tilt_range no eixo móvel
+pub fn tiltNow(p: *const T.Params, u: *const T.PropUnit) f64 {
+    if (u.tilt_range == 0) return u.tilt;
+    const c = if (std.math.isFinite(p.pilot.tilt)) fm.lim(p.pilot.tilt, 0.0, 1.0) else 0.0;
+    return u.tilt + c * u.tilt_range;
+}
+
+/// eixo de tração atual (corpo)
+pub fn axis(p: *const T.Params, u: *const T.PropUnit) V3 {
+    if (u.tilt_range == 0) return vec.v3(u.eT);
+    const a = fm.sincos(tiltNow(p, u));
+    const b = fm.sincos(u.toe);
+    return .{ a.c * b.c, a.c * b.s, -a.s };
+}
+
+pub fn unit(p: *const T.Params, u: *const T.PropUnit, eT: V3, Vr: V3, w: V3, rps: f64, thr: f64, h: f64) Unit {
+    if (u.model == T.prop_poly) return polyUnit(p, u, eT, Vr, w, thr, h);
     var o = Unit{};
-    const eT = vec.v3(u.eT);
     const n = if (rps > 1.0) rps else 1.0;
     const wm = 2.0 * fm.pi * n;
     const v = Vr + vec.cross(w, vec.v3(u.r));
@@ -147,9 +161,9 @@ pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, rps: []const f64, thr
         // o piloto já limita thr a [0, 1]; aqui só a mistura de guinada é limitada. A trimagem pode
         // pedir thr > 1 ("precisa de mais que o máximo"), como no simulador original.
         const th = fm.lim(thr + u.yaw_mix * dr, 0.0, @max(1.0, thr));
-        const r = unit(p, u, Vr, w, rps[i], th, h);
+        const eT = axis(p, u);
+        const r = unit(p, u, eT, Vr, w, rps[i], th, h);
         o.u[i] = r;
-        const eT = vec.v3(u.eT);
         const F = eT * vec.splat(r.T);
         o.F += F;
         o.M += vec.cross(vec.v3(u.r) - rcg, F) - eT * vec.splat(u.sense * r.Q);
@@ -161,7 +175,7 @@ pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, rps: []const f64, thr
         o.P += r.P;
         o.Ibat += r.Ibat;
         o.Vbus = if (i == 0) r.Vbus else @min(o.Vbus, r.Vbus);
-        o.T_sin += r.T * fm.sin(theta + u.tilt);
+        o.T_sin += r.T * fm.sin(theta + tiltNow(p, u));
     }
     return o;
 }
@@ -172,14 +186,14 @@ pub fn equilibriumRps(p: *const T.Params, u: *const T.PropUnit, Vr: V3, thr: f64
     if (u.model == T.prop_poly) return 1.0;
     var a: f64 = 1.0;
     var b: f64 = 600.0;
-    var fa = unit(p, u, Vr, vec.zero, a, thr, 0).drps;
+    var fa = unit(p, u, vec.v3(u.eT), Vr, vec.zero, a, thr, 0).drps;
     if (fa <= 0.0) return a;
-    var fb = unit(p, u, Vr, vec.zero, b, thr, 0).drps;
+    var fb = unit(p, u, vec.v3(u.eT), Vr, vec.zero, b, thr, 0).drps;
     if (fb >= 0.0) return b;
     var side: i32 = 0;
     for (0..80) |_| {
         const c = (a * fb - b * fa) / (fb - fa);
-        const fc = unit(p, u, Vr, vec.zero, c, thr, 0).drps;
+        const fc = unit(p, u, vec.v3(u.eT), Vr, vec.zero, c, thr, 0).drps;
         if (@abs(fc) < 1e-9 or b - a < 1e-10 * b) return c;
         if ((fc > 0) == (fa > 0)) {
             a = c;
@@ -200,7 +214,7 @@ pub fn equilibriumRps(p: *const T.Params, u: *const T.PropUnit, Vr: V3, thr: f64
 pub fn point(p: *const T.Params, u: *const T.PropUnit, V: f64, thr: f64) T.PropPoint {
     const Vr = vec.v3(u.eT) * vec.splat(V);
     const n = equilibriumRps(p, u, Vr, thr);
-    const r = unit(p, u, Vr, vec.zero, n, thr, 0);
+    const r = unit(p, u, vec.v3(u.eT), Vr, vec.zero, n, thr, 0);
     const Ps = r.Q * 2.0 * fm.pi * n;
     return .{
         .V = V,
@@ -229,8 +243,26 @@ test "rotação de equilíbrio: dn/dt ≈ 0" {
     init(&p);
     inline for (.{ 0.3, 0.7, 1.0 }) |thr| {
         const n = equilibriumRps(&p, &p.prop[0], .{ 12, 0, 0 }, thr);
-        try testing.expect(@abs(unit(&p, &p.prop[0], .{ 12, 0, 0 }, vec.zero, n, thr, 0).drps) < 1e-6);
+        try testing.expect(@abs(unit(&p, &p.prop[0], vec.v3(p.prop[0].eT), .{ 12, 0, 0 }, vec.zero, n, thr, 0).drps) < 1e-6);
     }
+}
+
+test "eixo móvel: comando 0 = eixo fixo; comando 1 = tilt + faixa" {
+    var p = T.Params{};
+    p.n_prop = 1;
+    p.prop[0] = .{ .tilt = 0.05, .tilt_range = std.math.pi / 2.0 - 0.05, .model = T.prop_poly, .poly_x = T.pvar_const, .poly_gain = 1 };
+    p.prop[0].poly[0] = 10;
+    init(&p);
+    const fixed = axis(&p, &p.prop[0]);
+    try testing.expectApproxEqAbs(fm.cos(0.05), fixed[0], 1e-12);
+    p.pilot.tilt = 1; // eixo na vertical: a tração vira sustentação (−z)
+    const up = axis(&p, &p.prop[0]);
+    try testing.expectApproxEqAbs(@as(f64, 0), up[0], 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, -1), up[2], 1e-12);
+    var rps = [_]f64{0} ** L.max_props;
+    const o = compute(&p, .{ 0, 0, 0 }, vec.zero, vec.zero, &rps, 1.0, 0, 0, 0);
+    try testing.expectApproxEqAbs(@as(f64, -10), o.F[2], 1e-9);
+    try testing.expectApproxEqAbs(@as(f64, 0), o.F[0], 1e-9);
 }
 
 test "tração estática e queda com V" {

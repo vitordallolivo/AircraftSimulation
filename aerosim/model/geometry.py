@@ -46,22 +46,27 @@ def _sides(s: SurfaceModel):
 
 def surface_mesh(s: SurfaceModel) -> list[Mesh]:
     """uma malha por lado; perfil do .dat ou NACA, torção em torno do bordo de ataque"""
-    af = s.airfoil.outline()
-    if len(af) > 80:
-        af = af[np.linspace(0, len(af) - 1, 80).astype(int)]
+    def shape(a):
+        af = a.outline()
+        return af[np.linspace(0, len(af) - 1, 80).astype(int)] if len(af) > 80 else af
     n = _frame(s)
+
+    def ring(q, af, mir):
+        tw = math.radians(q.twist) if not s.vertical else 0.0
+        xs, th = -af[:, 0] * q.chord, af[:, 1] * q.chord
+        xr = xs * math.cos(tw) - th * math.sin(tw)
+        tr = xs * math.sin(tw) + th * math.cos(tw)
+        return (q.le[None, :] + np.outer(xr, [1.0, 0.0, 0.0]) + np.outer(tr, n)) * mir
     meshes = []
     for sy in _sides(s):
         mir = np.array([1.0, sy, 1.0])
-        rings = []
-        for q in s.stations:
-            tw = math.radians(q.twist) if not s.vertical else 0.0
-            xs, th = -af[:, 0] * q.chord, af[:, 1] * q.chord
-            xr = xs * math.cos(tw) - th * math.sin(tw)
-            tr = xs * math.sin(tw) + th * math.cos(tw)
-            P = q.le[None, :] + np.outer(xr, [1.0, 0.0, 0.0]) + np.outer(tr, n)
-            rings.append(P * mir)
-        meshes.append(_loft(rings))
+        if s.strip_airfoils:                         # perfil por seção: cada faixa com o perfil dela
+            for (a, b, _), af in zip(s.strips(), s.strip_airfoils):
+                p = shape(af)
+                meshes.append(_loft([ring(a, p, mir), ring(b, p, mir)]))
+            continue
+        af = shape(s.airfoil)
+        meshes.append(_loft([ring(q, af, mir) for q in s.stations]))
     return meshes
 
 

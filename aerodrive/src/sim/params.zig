@@ -89,11 +89,10 @@ pub fn references(ac: *const Aircraft) [3]f64 {
 
 const Coeffs = struct { AR: f64, CLa: f64, CL0: f64, CLmax: f64, CD0: f64, Cmac: f64 };
 
-fn coeffs(s: *const model.Surface) Error!Coeffs {
-    const S = area(s);
-    const b = span(s);
-    const AR = if (S > 0) b * b / S else 5.0;
-    const af = s.airfoil;
+/// (c_lα 1/rad, α_L0 graus, c_l máx, c_d0, c_m,ac) do perfil — `_props2d` da GUI
+const P2 = [5]f64;
+
+fn props2d(af: model.Airfoil) Error!P2 {
     var thin: ?[2]f64 = null;
     if (af.alpha0 == null or af.cm_ac == null) {
         var p: airfoil.Profile = .{};
@@ -101,16 +100,72 @@ fn coeffs(s: *const model.Surface) Error!Coeffs {
         if (af.inverted) airfoil.invert(&p);
         thin = airfoil.thinAirfoil(p.slice());
     }
-    const CLa = s.CLa orelse airfoil.helmbold(af.cl_alpha, if (AR > 0) AR else 5.0);
-    const a0 = af.alpha0 orelse thin.?[0];
+    return .{ af.cl_alpha, af.alpha0 orelse thin.?[0], af.cl_max, af.cd0, af.cm_ac orelse thin.?[1] };
+}
+
+/// 2D → 3D (Helmbold com o alongamento da superfície); as sobrescritas da superfície mandam
+fn coeffsFrom(s: *const model.Surface, AR: f64, p: P2) Coeffs {
+    const CLa = s.CLa orelse airfoil.helmbold(p[0], AR);
     return .{
-        .AR = if (AR > 0) AR else 5.0,
+        .AR = AR,
         .CLa = CLa,
-        .CL0 = s.CL0 orelse -CLa * a0 * D2R,
-        .CLmax = s.CLmax orelse 0.9 * af.cl_max,
-        .CD0 = s.CD0 orelse af.cd0,
-        .Cmac = s.Cmac orelse (af.cm_ac orelse thin.?[1]),
+        .CL0 = s.CL0 orelse -CLa * p[1] * D2R,
+        .CLmax = s.CLmax orelse 0.9 * p[2],
+        .CD0 = s.CD0 orelse p[3],
+        .Cmac = s.Cmac orelse p[4],
     };
+}
+
+fn aspect(s: *const model.Surface) f64 {
+    const S = area(s);
+    const b = span(s);
+    const AR = if (S > 0) b * b / S else 5.0;
+    return if (AR > 0) AR else 5.0;
+}
+
+const SecProps = struct { y: f64, p: P2 };
+
+/// propriedades 2D de cada seção, em ordem de y (perfil por seção)
+fn sectionProps(s: *const model.Surface, out: *[model.limits.sections]SecProps) Error![]SecProps {
+    var sbuf: [model.limits.sections]model.Section = undefined;
+    const ss = model.sortedSections(s, &sbuf);
+    for (ss, 0..) |q, k| out[k] = .{ .y = q.y, .p = try props2d(q.airfoil orelse s.airfoil) };
+    return out[0..ss.len];
+}
+
+/// interpolação linear entre as seções (igual a `_props_at`)
+fn propsAt(sp: []const SecProps, y: f64) P2 {
+    if (y <= sp[0].y) return sp[0].p;
+    for (sp[0 .. sp.len - 1], sp[1..]) |a, b| {
+        if (y <= b.y) {
+            const f = if (b.y > a.y) (y - a.y) / (b.y - a.y) else 0.0;
+            var r: P2 = undefined;
+            for (0..5) |i| r[i] = a.p[i] + f * (b.p[i] - a.p[i]);
+            return r;
+        }
+    }
+    return sp[sp.len - 1].p;
+}
+
+fn coeffs(s: *const model.Surface) Error!Coeffs {
+    const AR = aspect(s);
+    if (!model.mixedAirfoils(s) or s.sections.len < 2) return coeffsFrom(s, AR, try props2d(s.airfoil));
+    // perfil por seção: média pela área de cada trecho entre seções (no meio do trecho), como `_coeffs`
+    var pbuf: [model.limits.sections]SecProps = undefined;
+    const sp = try sectionProps(s, &pbuf);
+    var acc = [5]f64{ 0, 0, 0, 0, 0 };
+    var At: f64 = 0;
+    for (sp[0 .. sp.len - 1], sp[1..], 0..) |q0, q1, k| {
+        var sbuf: [model.limits.sections]model.Section = undefined;
+        const ss = model.sortedSections(s, &sbuf);
+        const A = 0.5 * (ss[k].chord + ss[k + 1].chord) * (q1.y - q0.y);
+        const c = coeffsFrom(s, AR, propsAt(sp, 0.5 * (q0.y + q1.y)));
+        const v = [5]f64{ c.CLa, c.CL0, c.CLmax, c.CD0, c.Cmac };
+        for (0..5) |i| acc[i] += v[i] * A;
+        At += A;
+    }
+    if (At <= 0) return coeffsFrom(s, AR, sp[0].p);
+    return .{ .AR = AR, .CLa = acc[0] / At, .CL0 = acc[1] / At, .CLmax = acc[2] / At, .CD0 = acc[3] / At, .Cmac = acc[4] / At };
 }
 
 /// ε0, dε/dα da asa principal (rad)
@@ -149,9 +204,13 @@ fn surfacePanels(out: Panels, ac: *const Aircraft, s: *const model.Surface, dw: 
     if (st.len < 2) return;
     const mirror = s.symmetric and !s.vertical;
     const sides: []const f64 = if (mirror) &.{ 1, -1 } else &.{0};
+    const mixed = model.mixedAirfoils(s) and s.sections.len > 1;
+    var pbuf: [model.limits.sections]SecProps = undefined;
+    const sp = if (mixed) try sectionProps(s, &pbuf) else pbuf[0..0];
     for (st[0 .. st.len - 1], st[1..]) |a, b| {
         const ds = b.s - a.s;
         if (ds < 1e-6) continue;
+        const cs = if (mixed) coeffsFrom(s, co.AR, propsAt(sp, 0.5 * (a.s + b.s))) else co; // perfil por seção
         const S = 0.5 * (a.chord + b.chord) * ds;
         const cm = S / ds;
         const mid = v3.scale(v3.add(a.le, b.le), 0.5);
@@ -160,10 +219,8 @@ fn surfacePanels(out: Panels, ac: *const Aircraft, s: *const model.Surface, dw: 
         const ctl = sk.controlAt(s, 0.5 * (a.s + b.s));
         if (ctl) |c| {
             tau = c.tau orelse airfoil.flapEffectiveness(c.chord_frac);
-            if (std.mem.eql(u8, c.kind, "flap")) {
-                inc += tau * c.deflection;
-                tau = 0;
-            }
+            inc += tau * c.deflection; // deflexão fixa (flape, flaperon baixado)
+            if (std.mem.eql(u8, c.role(), "flap")) tau = 0;
         }
         for (sides) |side| {
             try out.add(.{
@@ -174,13 +231,13 @@ fn surfacePanels(out: Panels, ac: *const Aircraft, s: *const model.Surface, dw: 
                 .e = s.oswald,
                 .dihedral = s.dihedral * D2R,
                 .incidence = inc * D2R,
-                .CLa = co.CLa,
-                .CL0 = co.CL0,
-                .CLmax = co.CLmax,
-                .CD0 = co.CD0,
-                .Cmac = co.Cmac,
+                .CLa = cs.CLa,
+                .CL0 = cs.CL0,
+                .CLmax = cs.CLmax,
+                .CD0 = cs.CD0,
+                .Cmac = cs.Cmac,
                 .tau = tau,
-                .mix = if (ctl) |c| sk.controlMix(c.kind, if (side == 0) 0 else side) else .{ 0, 0, 0 },
+                .mix = if (ctl) |c| sk.controlMix(c, side) else .{ 0, 0, 0 },
                 .eta = s.eta,
                 .eps0 = if (s.downwash) (if (s.eps0) |x| x * D2R else dw[0]) else 0,
                 .depsda = if (s.downwash) (s.depsda orelse dw[1]) else 0,
@@ -386,6 +443,7 @@ pub fn fill(ac: *const Aircraft, p: *T.Params, diag: *model.Diag) Error!void {
             .poly_yc = tp.y_const,
             .r = .{ u.x, u.y, u.z },
             .tilt = u.tilt * D2R,
+            .tilt_range = u.tilt_range * D2R,
             .toe = u.toe * D2R,
             .sense = u.sense,
             .D = pr.D,
@@ -614,6 +672,35 @@ test "tubos: o formato novo (booms, cauda já no lugar) voa igual ao antigo (boo
     try testing.expectApproxEqAbs(ia.Vs, ib.Vs, 1e-9);
     try testing.expectApproxEqAbs(ia.Dtrim, ib.Dtrim, 1e-9);
     try testing.expectApproxEqAbs(ia.CLa, ib.CLa, 1e-9);
+}
+
+test "perfil por seção: faixas iguais às do tradutor da GUI" {
+    var d: model.Diag = .{};
+    var l = try model.parse(testing.allocator,
+        \\{"aeronave": {"name": "perfis", "surfaces": [{"name": "asa", "airfoil": {"name": "NACA 4412", "cl_alpha": 6.0, "cl_max": 1.6, "cd0": 0.012},
+        \\ "sections": [{"y": 0, "chord": 0.3}, {"y": 0.5, "chord": 0.25}, {"y": 1.0, "chord": 0.2, "airfoil": {"name": "NACA 0012", "cl_alpha": 5.7, "cl_max": 1.2, "cd0": 0.009}}],
+        \\ "controls": [{"kind": "aileron", "span_start": 0.6, "span_end": 1.0}]}]}}
+    , &d);
+    defer l.deinit();
+    const p = try testing.allocator.create(T.Params);
+    defer testing.allocator.destroy(p);
+    p.* = .{};
+    try surfacePanels(.{ .p = p, .diag = &d }, &l.ac, &l.ac.surfaces[0], .{ 0, 0 });
+    // números do aerosim (universal + translator.surface_panels), um por faixa (direita e esquerda iguais)
+    const ref = [_][5]f64{
+        .{ 4.736215888000, 0.349680860090, 1.440, 0.0120, -0.105505584582 },
+        .{ 4.718010141184, 0.313503035923, 1.404, 0.0117, -0.094955026124 },
+        .{ 4.626270658837, 0.136625385434, 1.224, 0.0102, -0.042202233833 },
+    };
+    try testing.expectEqual(@as(i32, 6), p.n_surf);
+    for (ref, 0..) |r, k| for (0..2) |side| {
+        const q = p.surf[2 * k + side];
+        const got = [5]f64{ q.CLa, q.CL0, q.CLmax, q.CD0, q.Cmac };
+        for (0..5) |i| try testing.expectApproxEqAbs(r[i], got[i], 1e-9);
+    };
+    const co = try coeffs(&l.ac.surfaces[0]);
+    try testing.expectApproxEqAbs(@as(f64, 4.695039901319566), co.CLa, 1e-9);
+    try testing.expectApproxEqAbs(@as(f64, -0.08176682805099032), co.Cmac, 1e-9);
 }
 
 test "Convencional: painéis iguais aos do tradutor da GUI" {

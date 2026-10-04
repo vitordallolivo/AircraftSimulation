@@ -30,10 +30,12 @@ GROUP = {"wing": 0, "htail": 1, "vtail": 2, "device": 2}
 
 @dataclass
 class Control:
-    kind: str                  # aileron | elevator | rudder | elevon | ruddervator | flap
+    kind: str                  # o que faz, pela mistura: elevator | aileron | rudder | elevon | ruddervator | flap | mixed
     tau: float                 # efetividade dα/dδ
-    deflection: float = 0.0    # flape: deflexão fixa (graus)
+    deflection: float = 0.0    # deflexão fixa (graus)
     chord_frac: float = 0.25   # fração da corda (só para desenhar)
+    gains: tuple = (0.0, 0.0, 0.0)   # [arfagem, rolagem, guinada]
+    name: str = ""             # o nome dado pelo projetista
 
 
 @dataclass
@@ -69,6 +71,8 @@ class SurfaceModel:
     parent: str = ""           # dispositivo: superfície onde está preso
     up: bool = True            # dispositivo: perna para cima
     side: int = 0              # dispositivo não espelhado: +1/−1; superfícies: 0
+    strip_coeffs: list[dict] | None = None     # perfil por seção: coeficientes de cada faixa (None: os da superfície)
+    strip_airfoils: list[Airfoil] | None = None   # perfil de cada faixa (para desenhar)
 
     @property
     def area(self) -> float:
@@ -201,13 +205,64 @@ class AircraftModel:
 
 
 # ------------------------------------------------------------------ construção
+def _props2d(af) -> tuple[float, float, float, float, float]:
+    """(c_lα 1/rad, α_L0 graus, c_l máx, c_d0, c_m,ac) do perfil"""
+    return af.cl_alpha, af.zero_lift_angle(), af.cl_max, af.cd0, af.moment_ac()
+
+
+def _coeffs_from(s: LiftingSurface, AR: float, p2) -> dict:
+    """2D → 3D (Helmbold com o alongamento da superfície); as sobrescritas da superfície mandam"""
+    cla, a0, clmax, cd0, cm = p2
+    CLa = s.CLa if s.CLa is not None else helmbold(cla, AR)
+    return dict(AR=AR, CLa=CLa, CL0=s.CL0 if s.CL0 is not None else -CLa * math.radians(a0),
+                CLmax=s.CLmax if s.CLmax is not None else 0.9 * clmax, CD0=s.CD0 if s.CD0 is not None else cd0,
+                Cmac=s.Cmac if s.Cmac is not None else cm)
+
+
+def _section_props(s: LiftingSurface):
+    """[(y, propriedades 2D)] das seções, em ordem de y"""
+    cache = {}
+    out = []
+    for q in sorted(s.sections, key=lambda q: q.y):
+        af = s.section_airfoil(q)
+        if id(af) not in cache:
+            cache[id(af)] = _props2d(af)
+        out.append((q.y, cache[id(af)]))
+    return out
+
+
+def _props_at(props, y: float):
+    """propriedades 2D em y: interpolação linear entre as seções (igual a `sectionAt` do AeroDrive)"""
+    if y <= props[0][0]:
+        return props[0][1]
+    for (y0, p0), (y1, p1) in zip(props, props[1:]):
+        if y <= y1:
+            f = (y - y0) / (y1 - y0) if y1 > y0 else 0.0
+            return tuple(a + f * (b - a) for a, b in zip(p0, p1))
+    return props[-1][1]
+
+
+def strip_coeffs(s: LiftingSurface, y: float, props=None) -> dict:
+    """coeficientes 3D da faixa em y (perfil por seção)"""
+    return _coeffs_from(s, s.aspect_ratio or 5.0, _props_at(props or _section_props(s), y))
+
+
 def _coeffs(s: LiftingSurface) -> dict:
     AR = s.aspect_ratio or 5.0
-    CLa = s.CLa if s.CLa is not None else helmbold(s.airfoil.cl_alpha, AR)
-    CL0 = s.CL0 if s.CL0 is not None else -CLa * math.radians(s.airfoil.zero_lift_angle())
-    return dict(AR=AR, CLa=CLa, CL0=CL0, CLmax=s.CLmax if s.CLmax is not None else 0.9 * s.airfoil.cl_max,
-                CD0=s.CD0 if s.CD0 is not None else s.airfoil.cd0,
-                Cmac=s.Cmac if s.Cmac is not None else s.airfoil.moment_ac())
+    if not s.mixed_airfoils or len(s.sections) < 2:
+        return _coeffs_from(s, AR, _props2d(s.airfoil))
+    # perfil por seção: a média da superfície pesa cada trecho entre seções pela área (no meio do trecho)
+    props = _section_props(s)
+    ss = sorted(s.sections, key=lambda q: q.y)
+    acc, Atot = None, 0.0
+    for q0, q1 in zip(ss, ss[1:]):
+        A = 0.5 * (q0.chord + q1.chord) * (q1.y - q0.y)
+        c = _coeffs_from(s, AR, _props_at(props, 0.5 * (q0.y + q1.y)))
+        acc = {k: v * A for k, v in c.items()} if acc is None else {k: acc[k] + v * A for k, v in c.items()}
+        Atot += A
+    out = {k: v / Atot for k, v in acc.items()} if Atot > 0 else _coeffs_from(s, AR, props[0][1])
+    out["AR"] = AR
+    return out
 
 
 def _breaks(s: LiftingSurface) -> list[float]:
@@ -251,18 +306,28 @@ def _surface(s: LiftingSurface, index: int, dw: tuple[float, float]) -> SurfaceM
             le = np.array([s.x - s.xoff_at(y), s.y + y * math.cos(dih), s.z - y * math.sin(dih)])
         st.append(Station(y, le, s.chord_at(y), s.incidence + s.twist_at(y)))
     ctl = []
+    strip_co, strip_af = None, None
+    if s.mixed_airfoils and len(s.sections) > 1:
+        props = _section_props(s)
+        ss = sorted(s.sections, key=lambda q: q.y)
+        strip_co, strip_af = [], []
+        for a, b in zip(st, st[1:]):
+            ym = 0.5 * (a.s + b.s)
+            strip_co.append(strip_coeffs(s, ym, props))
+            strip_af.append(s.section_airfoil(min(ss, key=lambda q: abs(q.y - ym))))   # para desenhar
     for a, b in zip(st, st[1:]):
         c = _control_at(s, 0.5 * (a.s + b.s))
         ctl.append(None if c is None else
-                   Control(c.kind, c.tau if c.tau is not None else flap_effectiveness(c.chord_frac), c.deflection,
-                           c.chord_frac))
+                   Control(c.role, c.tau if c.tau is not None else flap_effectiveness(c.chord_frac), c.deflection,
+                           c.chord_frac, c.gains, c.kind))
     return SurfaceModel(
         name=s.name, role=s.role, index=index, stations=st, mirror=bool(s.symmetric and not s.vertical),
         vertical=bool(s.vertical), dihedral=s.dihedral, strip_controls=ctl, airfoil=s.airfoil,
         CLa=co["CLa"], CL0=co["CL0"], CLmax=co["CLmax"], CD0=co["CD0"], Cmac=co["Cmac"], AR=co["AR"],
         oswald=s.oswald, eta=s.eta, downwash=bool(s.downwash),
         eps0=(math.radians(s.eps0) if s.eps0 is not None else dw[0]) if s.downwash else 0.0,
-        depsda=(s.depsda if s.depsda is not None else dw[1]) if s.downwash else 0.0)
+        depsda=(s.depsda if s.depsda is not None else dw[1]) if s.downwash else 0.0,
+        strip_coeffs=strip_co, strip_airfoils=strip_af)
 
 
 def _devices(s: LiftingSurface, index: int) -> list[SurfaceModel]:

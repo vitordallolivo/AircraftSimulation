@@ -32,15 +32,15 @@ class Features:
 
     @property
     def pitch_kind(self) -> str:
-        return self.pitch[1].kind if self.pitch else ""
+        return self.pitch[1].role if self.pitch else ""
 
     @property
     def roll_kind(self) -> str:
-        return self.roll[1].kind if self.roll else ""
+        return self.roll[1].role if self.roll else ""
 
     @property
     def yaw_kind(self) -> str:
-        return self.yaw[1].kind if self.yaw else ""
+        return self.yaw[1].role if self.yaw else ""
 
     @property
     def has_tip_devices(self) -> bool:
@@ -95,7 +95,7 @@ def features(ac: Aircraft) -> Features:
     def find(kinds):
         for s in surfs:
             for c in s.controls:
-                if c.kind in kinds:
+                if c.role in kinds:
                     return (s, c)
         return None
     f.devices = [(s, d) for s in surfs if not s.vertical for d in s.devices if d.enabled and d.height > 0]

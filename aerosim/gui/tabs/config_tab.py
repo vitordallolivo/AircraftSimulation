@@ -17,7 +17,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6 import QtCore, QtWidgets
 
-from aerosim.model.aircraft import (DEVICE_KINDS, WingDevice, ControlSurface, LiftingSurface, PropulsionUnit, SloshTank, TailBoom, WingSection,
+from aerosim.model.aircraft import (DEVICE_KINDS, KIND_MIX, WingDevice, ControlSurface, LiftingSurface, PropulsionUnit, SloshTank, TailBoom, WingSection,
                                     rect_sections)
 from aerosim.model.airfoil import Airfoil, read_dat
 from aerosim.model.mission import MissionEvent
@@ -52,7 +52,7 @@ NONGEOM = [("airfield", "🛫 Pista: chão, mesa e plataforma"), ("mass", "Massa
 
 def mount_choices(ac, s) -> tuple[str, ...]:
     """onde a superfície `s` pode se prender: solta, na ponta de cada tubo, na ponta de cada outra superfície"""
-    return (("",) + tuple(f"tubo:{i}" for i in range(len(ac.booms)))
+    return (("solta",) + tuple(f"tubo:{i}" for i in range(len(ac.booms)))
             + tuple(f"ponta:{j}" for j, t in enumerate(ac.surfaces) if t is not s))
 
 
@@ -533,17 +533,53 @@ class ConfigTab(QtWidgets.QWidget):
     def _sections_editor(self, s: LiftingSurface):
         box = QtWidgets.QGroupBox("Seções (raiz → ponta)")
         v = QtWidgets.QVBoxLayout(box)
-        table = QtWidgets.QTableWidget(0, 4)
-        table.setHorizontalHeaderLabels(["y (m)", "corda (m)", "recuo BA (m)", "torção (°)"])
+        table = QtWidgets.QTableWidget(0, 5)
+        table.setHorizontalHeaderLabels(["y (m)", "corda (m)", "recuo BA (m)", "torção (°)", "perfil"])
         table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
-        table.setMaximumHeight(150)
+        table.setMaximumHeight(170)
+        table.setToolTip("perfil: cada seção pode ter o seu (entre seções as propriedades são interpoladas); "
+                         "'= superfície' usa o perfil da superfície; digite um NACA ou carregue um .dat")
+        SAME = "= superfície"
+        LOAD = "carregar .dat…"
+
+        def known() -> dict:
+            """perfis já usados neste avião (nome → perfil), para escolher numa seção"""
+            out = {}
+            for t in self.state.aircraft.surfaces:
+                for a in [t.airfoil] + [q.airfoil for q in t.sections if q.airfoil is not None]:
+                    out.setdefault(a.name, a)
+            return out
+
+        def pick(r, text):
+            sec = s.sections[r]
+            if text == SAME:
+                sec.airfoil = None
+            elif text == LOAD:
+                path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Perfil da seção", "", "Perfis (*.dat *.txt)")
+                if not path:
+                    fill()
+                    return
+                name, coords = read_dat(path)
+                sec.airfoil = Airfoil(name, path=path, coords=coords.tolist())
+            elif text.strip():
+                k = known()
+                sec.airfoil = copy.deepcopy(k[text]) if text in k else Airfoil(text.strip())
+            fill()
+            self.state.notify("geometry")
 
         def fill():
             table.blockSignals(True)
             table.setRowCount(len(s.sections))
+            names = list(known())
             for r, sec in enumerate(s.sections):
                 for c, a in enumerate(("y", "chord", "x_offset", "twist")):
                     table.setItem(r, c, QtWidgets.QTableWidgetItem(f"{getattr(sec, a):.4g}"))
+                cb = QtWidgets.QComboBox()
+                cb.setEditable(True)
+                cb.addItems([SAME] + names + [LOAD])
+                cb.setCurrentText(SAME if sec.airfoil is None else sec.airfoil.name)
+                cb.textActivated.connect(lambda t, r=r: pick(r, t))
+                table.setCellWidget(r, 4, cb)
             table.blockSignals(False)
             info.setText(f"S = {s.area:.4f} m²   b = {s.span:.3f} m   AR = {s.aspect_ratio:.2f}   c̄ = {s.mac:.3f} m")
 
@@ -552,13 +588,16 @@ class ConfigTab(QtWidgets.QWidget):
                 val = float(item.text().replace(",", "."))
             except ValueError:
                 return
+            if item.column() > 3:
+                return
             setattr(s.sections[item.row()], ("y", "chord", "x_offset", "twist")[item.column()], val)
             fill()
             self.state.notify("geometry")
 
         def add():
             last = s.sections[-1] if s.sections else WingSection()
-            s.sections.append(WingSection(last.y + 0.2, last.chord * 0.85, last.x_offset + 0.03, last.twist))
+            s.sections.append(WingSection(last.y + 0.2, last.chord * 0.85, last.x_offset + 0.03, last.twist,
+                                          copy.deepcopy(last.airfoil)))
             fill()
             self.state.notify("geometry")
 
@@ -581,8 +620,8 @@ class ConfigTab(QtWidgets.QWidget):
         fill()
         return box
 
-    def _list_editor(self, title, items: list, factory, choices: dict):
-        """lista de dataclasses: um formulário por item, + / −"""
+    def _list_editor(self, title, items: list, factory, choices: dict, editable: tuple = (), extra=None):
+        """lista de dataclasses: um formulário por item, + / −; `extra(item)` acrescenta um widget ao item"""
         short, _, rest = title.partition(" — ")
         box = QtWidgets.QGroupBox(short)            # título curto: o grupo não força largura mínima
         v = QtWidgets.QVBoxLayout(box)
@@ -602,9 +641,11 @@ class ConfigTab(QtWidgets.QWidget):
             for i, it in enumerate(items):
                 gb = QtWidgets.QGroupBox(f"{i}")
                 gl_ = QtWidgets.QVBoxLayout(gb)
-                f = DataclassForm(it, choices=choices)
+                f = DataclassForm(it, choices=choices, editable=editable)
                 f.changed.connect(lambda *_: self.state.notify("geometry"))
                 gl_.addWidget(f)
+                if extra is not None:
+                    gl_.addWidget(extra(it, f))
                 rb = QtWidgets.QPushButton("remover")
                 rb.clicked.connect(lambda _=False, k=i: (items.pop(k), fill(), self.state.notify("geometry")))
                 gl_.addWidget(rb)
@@ -625,8 +666,10 @@ class ConfigTab(QtWidgets.QWidget):
 
     def _controls_editor(self, s: LiftingSurface):
         default = {"wing": "aileron", "htail": "elevator", "vtail": "rudder"}.get(s.role, "aileron")
-        box = self._list_editor("Comandos (aileron, profundor, leme, elevon...)", s.controls,
-                                lambda: ControlSurface(default, 0.6, 1.0, 0.25), {"kind": CONTROL_KINDS})
+        box = self._list_editor("Comandos — o tipo é só o nome; o que o comando faz é a mistura (arfagem, rolagem, "
+                                "guinada): elevon = 1, 1, 0; ruddervator = 1, 0, 1; flaperon = 0, 1, 0 com deflexão fixa",
+                                s.controls, lambda: ControlSurface(default, 0.6, 1.0, 0.25), {"kind": CONTROL_KINDS},
+                                editable=("kind",), extra=self._mix_row)
         if s.role == "wing" and any(c.kind == "aileron" for c in s.controls):
             b = QtWidgets.QPushButton("converter ailerons em elevons (asa voadora)")
             b.setToolTip("sem EH, o elevon faz arfagem e rolagem com a mesma superfície")
@@ -640,6 +683,50 @@ class ConfigTab(QtWidgets.QWidget):
             b.clicked.connect(conv)
             box.layout().addWidget(b)
         return box
+
+    def _mix_row(self, c: ControlSurface, form) -> QtWidgets.QWidget:
+        """a linha da mistura de um comando: ganho de arfagem, rolagem e guinada; mostra o que ele faz"""
+        w = QtWidgets.QWidget()
+        g = QtWidgets.QGridLayout(w)
+        g.setContentsMargins(0, 0, 0, 0)
+        what = QtWidgets.QLabel()
+        what.setStyleSheet("color:#555")
+        spins = []
+
+        def show():
+            names = {"elevator": "arfagem (profundor)", "aileron": "rolagem (aileron)", "rudder": "guinada (leme)",
+                     "elevon": "arfagem + rolagem (elevon)", "ruddervator": "arfagem + guinada (cauda em V)",
+                     "flap": "só deflexão fixa (flape)", "mixed": "rolagem + guinada"}
+            what.setText("faz: " + names.get(c.role, c.role) + ("" if c.mix is not None else "  (do tipo)"))
+            for sp, v in zip(spins, c.gains):
+                sp.blockSignals(True)
+                sp.setValue(v)
+                sp.blockSignals(False)
+
+        def edited(_=None):
+            c.mix = [sp.value() for sp in spins]
+            show()
+            self.state.notify("geometry")
+        for k, name in enumerate(("arfagem", "rolagem", "guinada")):
+            sp = QtWidgets.QDoubleSpinBox()
+            sp.setRange(-2.0, 2.0)
+            sp.setSingleStep(0.1)
+            sp.setDecimals(2)
+            sp.setToolTip(f"ganho do canal de {name} neste comando (rolagem já é oposta nos dois lados)")
+            sp.valueChanged.connect(edited)
+            spins.append(sp)
+            g.addWidget(QtWidgets.QLabel(name), 0, k)
+            g.addWidget(sp, 1, k)
+        g.addWidget(what, 2, 0, 1, 3)
+
+        def kind_changed(field):
+            if field == "kind" and c.kind in KIND_MIX:
+                c.mix = None                             # escolheu um tipo conhecido: a mistura dele
+                show()
+                self.state.notify("geometry")
+        form.changed.connect(kind_changed)
+        show()
+        return w
 
     def _devices_editor(self, s: LiftingSurface):
         """winglet, winglet para baixo, placa de ponta, cerca: geometria e posição livres"""

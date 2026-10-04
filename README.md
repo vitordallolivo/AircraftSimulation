@@ -100,8 +100,18 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   inclinação e abertura (tubo duplo = dois tubos em y = ±d); cada superfície tem **presa em**: solta, na
   ponta de um tubo ou na ponta de outra superfície (cauda em T, winglet). Cauda em V = EH com diedro.
 
+- **Perfil por seção:** na tabela de seções de cada superfície, a coluna **perfil** ('= superfície', um NACA
+  digitado, um perfil já usado no avião ou um `.dat`); entre seções as propriedades do perfil são
+  interpoladas e cada faixa vai para o núcleo com as suas.
+- **Mistura de comandos:** o tipo do comando é só o nome; o que ele faz é a linha **arfagem, rolagem,
+  guinada** (elevon = 1, 1, 0; ruddervator = 1, 0, 1; flaperon = rolagem com deflexão fixa; qualquer
+  outra combinação, com ganhos fracionários).
+- **Eixo de motor móvel (tilt-rotor):** cada motor tem **eixo móvel: faixa**; a inclinação vai de
+  'inclinação' até 'inclinação + faixa' pelo comando de inclinação (0 a 1) do núcleo.
+
 ![Montagem vazia](docs/img/montagem_vazia.png)
 ![Tubo duplo inclinado, duas EV e EH em T, montados na interface](docs/img/montagem_tubo_duplo_cauda_em_T.png)
+![S1223 na raiz, NACA 0012 na ponta; aileron com mistura de arfagem (elevon 0,5 : 1)](docs/img/montagem_perfil_por_secao_mistura.png)
 
 - **💾 Salvar avião / 📂 Meus aviões** guardam seus aviões (pasta `~/aerosim_aeronaves`, ou a variável
   `AEROSIM_PROJETOS`). Exemplos prontos em `data/aircraft/`.

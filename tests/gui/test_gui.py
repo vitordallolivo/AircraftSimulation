@@ -254,3 +254,21 @@ def test_open_project_resumes_where_it_stopped(app, manager, tmp_path):
     w.open_path(empty_path, quiet=True)
     assert len(st.fleet) == 1 and is_empty(st.aircraft)
     w.close()
+
+
+def test_control_mix_row(app, manager):
+    """a mistura de um comando se edita na Montagem; escolher um tipo conhecido volta a mistura dele"""
+    from aerosim.gui.main_window import MainWindow
+    from aerosim.gui.state import AppState
+    from aerosim.model.templates import conventional
+    st = AppState(manager, conventional())
+    w = MainWindow(st)
+    cfg = w.config
+    ail = st.aircraft.wing.controls[0]
+    from aerosim.gui.widgets.param_slider import DataclassForm
+    row = cfg._mix_row(ail, DataclassForm(ail))
+    spins = row.findChildren(QtWidgets.QDoubleSpinBox)
+    assert [s.value() for s in spins] == [0.0, 1.0, 0.0]
+    spins[0].setValue(1.0)                                # aileron + arfagem = elevon
+    assert ail.mix == [1.0, 1.0, 0.0] and ail.role == "elevon"
+    w.close()
