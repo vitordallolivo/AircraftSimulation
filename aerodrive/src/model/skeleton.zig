@@ -382,10 +382,9 @@ fn bodyPieces(b: *Builder, ac: *const Aircraft) Error!void {
     const a = b.a;
     const f = ac.fuselage;
     if (f.enabled) try b.add("fuselagem", "fuselage", .fuselage, try ellipsoid(a, f.x_nose, f.length, f.width, f.height, f.z), .fixed);
-    if (ac.boom.enabled) {
-        const bm = ac.boom;
-        try b.add("tubo", "boom", .boom, try cylinder(a, .{ bm.x_start, 0, bm.z }, .{ bm.xEnd(), 0, bm.z }, bm.diameter / 2, 16), .fixed);
-    }
+    for (ac.allBooms()) |bm| if (bm.enabled) {
+        try b.add(bm.name, "boom", .boom, try cylinder(a, bm.start(), bm.end(), bm.diameter / 2, 16), .fixed);
+    };
     var unit: u8 = 0;
     for (ac.propulsion, 0..) |u, i| {
         if (!u.enabled) continue;

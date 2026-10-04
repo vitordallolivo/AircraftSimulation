@@ -89,17 +89,36 @@ pub const Fuselage = struct {
     aero_point: ?[3]f64 = null,
     mass: f64 = 0,
 };
+/// tubo: sai de (x_start, y, z) para trás, com inclinação (pitch, + ponta de trás sobe) e abertura
+/// (yaw, + ponta de trás para +y). `boom` (um só, com attach_tail) é o formato antigo; `booms` o novo,
+/// em que a GUI já grava as superfícies na posição em que ficam presas.
 pub const Boom = struct {
+    name: []const u8 = "tubo",
     enabled: bool = false,
     x_start: f64 = -0.3,
+    y: f64 = 0,
     length: f64 = 0.8,
     diameter: f64 = 0.025,
     z: f64 = 0,
+    pitch: f64 = 0,
+    yaw: f64 = 0,
     attach_tail: bool = true,
     mass: f64 = 0,
 
+    pub fn start(b: Boom) [3]f64 {
+        return .{ b.x_start, b.y, b.z };
+    }
+    pub fn end(b: Boom) [3]f64 {
+        const t = std.math.degreesToRadians(b.pitch);
+        const p = std.math.degreesToRadians(b.yaw);
+        return .{ b.x_start - b.length * @cos(t) * @cos(p), b.y + b.length * @cos(t) * @sin(p), b.z - b.length * @sin(t) };
+    }
     pub fn xEnd(b: Boom) f64 {
-        return b.x_start - b.length;
+        return b.end()[0];
+    }
+    pub fn middle(b: Boom) [3]f64 {
+        const e = b.end();
+        return .{ 0.5 * (b.x_start + e[0]), 0.5 * (b.y + e[1]), 0.5 * (b.z + e[2]) };
     }
 };
 pub const Propeller = struct { D: f64 = 0.381, Ip: f64 = 5.4e-4, mass: f64 = 0.05, J: []const f64 = &.{}, CT: []const f64 = &.{}, CP: []const f64 = &.{} };
@@ -312,7 +331,8 @@ pub const Aircraft = struct {
     name: []const u8 = "aeronave",
     surfaces: []const Surface = &.{},
     fuselage: Fuselage = .{},
-    boom: Boom = .{},
+    boom: Boom = .{}, // formato antigo (um tubo)
+    booms: []const Boom = &.{}, // formato novo (quantos quiser)
     propulsion: []const Propulsion = &.{},
     gear: Gear = .{},
     tanks: []const Tank = &.{},
@@ -329,6 +349,12 @@ pub const Aircraft = struct {
     Sref: ?f64 = null, // null ou 0: da asa
     cref: ?f64 = null,
     bref: ?f64 = null,
+
+    /// os tubos, dos dois formatos: `booms` (novo) ou o `boom` único (antigo)
+    pub fn allBooms(ac: *const Aircraft) []const Boom {
+        if (ac.booms.len > 0) return ac.booms;
+        return @as(*const [1]Boom, &ac.boom);
+    }
 };
 
 // ------------------------------------------------------------------ limites e erros
@@ -490,11 +516,10 @@ pub fn validate(ac: *const Aircraft, diag: *Diag) Error!void {
         inline for (.{ "x_nose", "z" }) |n| try num(diag, "fuselagem", n, @field(f, n));
         inline for (.{ "length", "width", "height" }) |n| try pos(diag, "fuselagem", n, @field(f, n));
     }
-    if (ac.boom.enabled) {
-        const b = ac.boom;
-        inline for (.{ "x_start", "z" }) |n| try num(diag, "tubo", n, @field(b, n));
+    for (ac.allBooms()) |b| if (b.enabled) {
+        inline for (.{ "x_start", "y", "z", "pitch", "yaw" }) |n| try num(diag, "tubo", n, @field(b, n));
         inline for (.{ "length", "diameter" }) |n| try pos(diag, "tubo", n, @field(b, n));
-    }
+    };
     try count(diag, "motores", ac.propulsion.len, limits.props);
     for (ac.propulsion) |u| {
         if (!u.enabled) continue;
@@ -585,6 +610,28 @@ test "lê o arquivo mínimo e ignora campos desconhecidos" {
     try testing.expectEqual(@as(f64, 1), semispan(&l.ac.surfaces[0]));
     var buf: [limits.sections]Section = undefined;
     try testing.expectApproxEqAbs(@as(f64, 0.25), sectionAt(sortedSections(&l.ac.surfaces[0], &buf), 0.5, "chord"), 1e-12);
+}
+
+test "tubos: formato novo (lista, inclinação, duplo) e o antigo (um só)" {
+    var d: Diag = .{};
+    var l = try parse(testing.allocator,
+        \\{"surfaces": [{"name": "asa", "sections": [{"y": 0, "chord": 0.3}, {"y": 1, "chord": 0.2}]}],
+        \\ "booms": [{"enabled": true, "x_start": -0.1, "y": -0.4, "length": 1, "pitch": 10},
+        \\           {"enabled": true, "x_start": -0.1, "y": 0.4, "length": 1}]}
+    , &d);
+    defer l.deinit();
+    try testing.expectEqual(@as(usize, 2), l.ac.allBooms().len);
+    const e = l.ac.allBooms()[0].end();
+    try testing.expectApproxEqAbs(-0.1 - @cos(std.math.degreesToRadians(10.0)), e[0], 1e-12);
+    try testing.expectApproxEqAbs(-@sin(std.math.degreesToRadians(10.0)), e[2], 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, 0.4), l.ac.allBooms()[1].end()[1], 1e-12);
+    var o = try parse(testing.allocator,
+        \\{"surfaces": [{"name": "asa", "sections": [{"y": 0, "chord": 0.3}, {"y": 1, "chord": 0.2}]}],
+        \\ "boom": {"enabled": true, "x_start": -0.2, "length": 0.9}}
+    , &d);
+    defer o.deinit();
+    try testing.expectEqual(@as(usize, 1), o.ac.allBooms().len);
+    try testing.expectApproxEqAbs(@as(f64, -1.1), o.ac.allBooms()[0].xEnd(), 1e-12);
 }
 
 test "erros esperados, com mensagem" {

@@ -30,9 +30,9 @@ def point_items(ac: Aircraft) -> list[tuple[str, float, np.ndarray]]:
         if ac.fuselage.enabled and ac.fuselage.mass > 0:
             f = ac.fuselage
             out.append(("fuselagem", f.mass, np.array([f.x_nose - 0.45 * f.length, 0, f.z])))
-        if ac.boom.enabled and ac.boom.mass > 0:
-            b = ac.boom
-            out.append(("tubo de cauda", b.mass, np.array([0.5 * (b.x_start + b.x_end), 0, b.z])))
+        for b in ac.booms:
+            if b.enabled and b.mass > 0:
+                out.append((b.name, b.mass, np.array(b.middle)))
     return out
 
 
@@ -44,6 +44,8 @@ def dry_mass(ac: Aircraft) -> dict:
     I_base = np.array([[mm.Ixx, 0, -mm.Ixz], [0, mm.Iyy, 0], [-mm.Ixz, 0, mm.Izz]], float)
     items = point_items(ac)
     M = m + sum(it[1] for it in items)
+    if M <= 0:                                       # avião vazio (Montagem começando do zero)
+        return dict(m=0.0, cg=cg0, I=I_base, items=items)
     cg = (m * cg0 + sum(it[1] * it[2] for it in items)) / M
     def steiner(mk, r):
         d = r - cg

@@ -91,9 +91,35 @@ class AppState(QtCore.QObject):
             self.design_path = path
         self.design_edited("load")
 
+    def open_design(self, project, path: str | None = None) -> None:
+        """abre um projeto inteiro e volta de onde parou: as etapas, os aviões da Montagem (sem nenhum
+        guardado, a Montagem começa vazia) e a aba em que estava"""
+        from aerosim.model.templates import empty
+        self.set_design(project, path)
+        fleet = copy.deepcopy(project.fleet) or [empty()]
+        self.fleet, self.fleet_paths = fleet, [None] * len(fleet)
+        self.current = min(max(project.current, 0), len(fleet) - 1)
+        self.aircraft = fleet[self.current]
+        self.path = None
+        self.original = copy.deepcopy(self.aircraft)
+        self._undo.clear()
+        self._redo.clear()
+        self._settle()
+        self.changed.emit("load")
+        if self.ui_put is not None and project.ui:
+            self.ui_put(project.ui)
+
+    ui_get = None          # a janela registra: () -> dict com a aba atual; (dict) -> volta para ela
+    ui_put = None
+
     def save_design(self) -> None:
+        d = self.design
+        d.fleet = copy.deepcopy(self.fleet)          # a Montagem e a tela também vão para o projeto
+        d.current = self.current
+        if self.ui_get is not None:
+            d.ui = self.ui_get()
         try:
-            self.design.save(self.design_path)
+            d.save(self.design_path)
         except Exception:
             pass
 
@@ -178,6 +204,8 @@ class AppState(QtCore.QObject):
             del self._undo[:-60]
             self._redo.clear()
         self._burst.start()
+        if hasattr(self, "_design_save"):
+            self._design_save.start()                # a Montagem mudou: o projeto se grava sozinho
 
     def can_undo(self) -> bool:
         return bool(self._undo)

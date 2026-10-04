@@ -45,6 +45,10 @@ class SimulationManager(ISimulationManager):
             on_chunk: Callable | None = None, on_progress: Callable | None = None,
             cancel: threading.Event | None = None) -> SimResult:
         sim = self.get(name)
+        from aerosim.model.templates import not_ready
+        msg = not_ready(aircraft)
+        if msg:
+            raise ValueError(msg)
         p = sim.defaults(aircraft, params or {})
         p.update(params or {})
         ctx = RunContext(backend=self.backend, aircraft=aircraft, params=p, checkpoints=self.checkpoints,

@@ -171,8 +171,10 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
     main.x = x_ac_t + cr / 4                    # c/4 reta: o CA fica a c_r/4 do bordo de ataque da raiz
     x_end = main.x - cr                          # o tubo acaba no bordo de fuga da cauda
     x_start = w.x - 0.25 * w.sections[0].chord
-    ac.boom = TailBoom(enabled=True, x_start=x_start, length=max(x_start - x_end, 0.05), diameter=tp.boom_diameter,
-                       z=0.0, attach_tail=True)
+    ac.booms = [TailBoom(name="tubo de cauda", x_start=x_start, length=max(x_start - x_end, 0.05),
+                         diameter=tp.boom_diameter)]
+    for t in tails:
+        t.mount = "tubo:0"
     ac.surfaces += tails
     ac.apply_constraints()
     info.update(Sh=Sh, Sv=Sv, bh=bh, hv=hv, arm=l, x_ac_t=x_ac_t, cl_lim_h=lim,

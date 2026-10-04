@@ -21,7 +21,7 @@ from aerosim.model import TEMPLATES, Aircraft, LiftingSurface, ControlSurface
 from aerosim.model.aircraft import rect_sections
 from aerosim.model.universal import build_model
 
-ac = TEMPLATES["conventional"]()               # ou "flying_wing", "twin_boom"; ou load_aircraft(arquivo)
+ac = TEMPLATES["conventional"]()               # ou "flying_wing", "twin_boom"; templates.empty(); ou load_aircraft(arquivo)
 ac.surfaces.append(LiftingSurface(name="canard", role="htail", x=0.8, sections=rect_sections(0.3, 0.15),
                                   controls=[ControlSurface("elevator", 0.0, 1.0, 0.3)]))
 model = build_model(ac)                        # modelo universal: o que todo solver recebe
@@ -62,13 +62,14 @@ flowchart LR
 
 | componente | campos principais |
 |---|---|
-| `LiftingSurface` | papel (`wing`, `htail`, `vtail`), posição do bordo de ataque da raiz, `sections` (y, corda, recuo, torção), diedro, incidência, `airfoil`, `controls`, sobrescritas `CLa`, `CL0`, `CLmax`, `CD0`, `Cmac`, `eps0`, `depsda` |
+| `LiftingSurface` | papel (`wing`, `htail`, `vtail`), posição do bordo de ataque da raiz, `sections` (y, corda, recuo, torção), diedro, incidência, `airfoil`, `controls`, sobrescritas `CLa`, `CL0`, `CLmax`, `CD0`, `Cmac`, `eps0`, `depsda`; `mount` (`""` solta, `"tubo:i"` na ponta do tubo i, `"ponta:j"` na ponta da superfície j: cauda em T) |
 | `ControlSurface` | `aileron`, `elevator`, `rudder`, `elevon`, `ruddervator`, `flap`; início/fim (fração da semi-envergadura), fração da corda |
 | `PropulsionUnit` | posição, inclinação do eixo, sentido; `thrust_model = "motor"` (motor + hélice + bateria) ou `"poly"` (`ThrustPoly`) |
 | `LandingGear` | `tricycle`, `conventional` ou `custom` (pontos livres) |
 | `SloshTank` | base quadrada (lado) ou cilíndrica, altura do líquido |
 | `MassModel` | massa base + inércia própria + massas pontuais (+ motores/baterias/estrutura, se ligado) |
-| `Fuselage`, `TailBoom`, `Payload`, `Environment`, `Takeoff`, `Autopilot`, `SimSettings`, `Mission` | — |
+| `TailBoom` (lista `booms`) | início (x, y, z), comprimento, diâmetro, `pitch` (+ ponta de trás sobe), `yaw` (abertura); tubo duplo = dois tubos. Arquivos antigos com `boom` único viram a lista ao abrir (`Aircraft.migrate`) |
+| `Fuselage`, `Payload`, `Environment`, `Takeoff`, `Autopilot`, `SimSettings`, `Mission` | — |
 
 ### Geometria → núcleo
 

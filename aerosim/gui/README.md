@@ -6,7 +6,8 @@ simulação é gerada pelo que a simulação declara em `parameters()` e `plots(
 ## Como chamar
 
 ```sh
-python -m aerosim.gui                          # aeronave convencional
+python -m aerosim.gui                          # último projeto (sem avião guardado: Montagem vazia)
+python -m aerosim.gui projeto.json             # abre o projeto e volta de onde parou
 python -m aerosim.gui data/aircraft/twin_boom.cfg
 QT_QPA_PLATFORM=offscreen python -m pytest tests/gui   # sem tela
 xvfb-run -a python tools/capturas.py capturas/         # foto de cada aba
@@ -62,7 +63,12 @@ flowchart LR
   `model/geometry.py` (eixos do corpo → tela: `(x, −y, −z)`), escolhe o componente mais perto do clique
   e move no plano da câmera (ou travado em x, y, z); à direita o editor do componente, um `DataclassForm`
   (um campo por número da dataclass; rótulos curtos com a explicação no ⓘ). As informações são
-  recalculadas 300 ms depois da última edição.
+  recalculadas 300 ms depois da última edição. Vazio (`templates.empty()`), o resumo diz o que falta
+  (`templates.not_ready`). Tubos são uma lista (`ac.booms`, chave `boom:i` no 3D); o campo **presa em** de
+  cada superfície (`mount`: `tubo:i` ou `ponta:j`) é resolvido por `Aircraft.apply_constraints`.
+- **Projeto inteiro num `.json`:** `state.save_design()` grava as etapas, `fleet` (os aviões abertos), `current`
+  e `ui` (aba e subaba, de `MainWindow.ui_state`); `MainWindow.open_path(caminho)` descobre se é projeto
+  (`design.project.is_project_file`) ou avião e chama `state.open_design(projeto)` ou `set_aircraft`.
 - **Etapas da sprint (projeto do zero):** Aerodinâmica, Estabilidade e Desempenho são subabas — primeiro
   as etapas que criam o avião (`design/pages.py`: **Perfil → Asa** em Aerodinâmica, **Empenagem e comandos**
   em Estabilidade, **Motores e montagem** em Desempenho), por último **Avião montado** (a simulação de

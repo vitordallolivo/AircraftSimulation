@@ -17,7 +17,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6 import QtCore, QtWidgets
 
-from aerosim.model.aircraft import (DEVICE_KINDS, WingDevice, ControlSurface, LiftingSurface, PropulsionUnit, SloshTank, WingSection,
+from aerosim.model.aircraft import (DEVICE_KINDS, WingDevice, ControlSurface, LiftingSurface, PropulsionUnit, SloshTank, TailBoom, WingSection,
                                     rect_sections)
 from aerosim.model.airfoil import Airfoil, read_dat
 from aerosim.model.mission import MissionEvent
@@ -38,7 +38,9 @@ EDIT_HELP = {
             "as pernas",
     "mission": "a trajetória (etapas) se edita na aba Missão; aqui ficam o ponto de partida e os eventos",
     "payload": "carga LAPES: massa, posição, baia e paraquedas; a soltura é um evento do percurso",
-    "fuselage": "ligue/desligue em 'ativo'", "boom": "ligue/desligue em 'ativo'",
+    "fuselage": "ligue/desligue em 'ativo'",
+    "boom": "tubo livre: início (x, y, z), comprimento, inclinação e abertura; tubo duplo = dois tubos (y = ±d). "
+            "As superfícies se prendem nele pelo campo 'presa em'",
 }
 
 NONGEOM = [("airfield", "🛫 Pista: chão, mesa e plataforma"), ("mass", "Massa e inércia"),
@@ -46,6 +48,12 @@ NONGEOM = [("airfield", "🛫 Pista: chão, mesa e plataforma"), ("mass", "Massa
            ("performance", "Envelope de voo: ângulo de cruzeiro, fator de carga"),
            ("takeoff", "Decolagem (acionamento do profundor)"), ("autopilot", "Piloto automático"), ("sim", "Integração"),
            ("mission", "Percurso: partida e eventos")]
+
+
+def mount_choices(ac, s) -> tuple[str, ...]:
+    """onde a superfície `s` pode se prender: solta, na ponta de cada tubo, na ponta de cada outra superfície"""
+    return (("",) + tuple(f"tubo:{i}" for i in range(len(ac.booms)))
+            + tuple(f"ponta:{j}" for j, t in enumerate(ac.surfaces) if t is not s))
 
 
 class ConfigTab(QtWidgets.QWidget):
@@ -215,7 +223,7 @@ class ConfigTab(QtWidgets.QWidget):
         g = QtWidgets.QGridLayout()
         defs = [("+ Asa", self._add_wing), ("+ EH", lambda: self._add_tail("htail")),
                 ("+ EV", lambda: self._add_tail("vtail")), ("+ Motor", self._add_motor),
-                ("+ Tanque", self._add_tank), ("Remover", self._remove)]
+                ("+ Tubo", self._add_boom), ("+ Tanque", self._add_tank), ("Remover", self._remove)]
         for i, (txt, fn) in enumerate(defs):
             b = QtWidgets.QPushButton(txt)
             b.clicked.connect(fn)
@@ -244,18 +252,30 @@ class ConfigTab(QtWidgets.QWidget):
                                           controls=[ControlSurface("aileron", 0.6, 0.95, 0.25)]))
         self._added(f"surface:{len(ac.surfaces) - 1}")
 
+    def _add_boom(self):
+        ac = self.state.aircraft
+        base = ac.booms[-1] if ac.booms else None
+        b = copy.deepcopy(base) if base else TailBoom(x_start=-0.2, length=0.8)
+        if base is not None:
+            b.y, b.yaw = (-base.y, -base.yaw) if base.y or base.yaw else (base.y + 0.3, base.yaw)   # o par do tubo duplo
+        b.name = f"tubo {len(ac.booms) + 1}"
+        ac.booms.append(b)
+        self._added(f"boom:{len(ac.booms) - 1}")
+
     def _add_tail(self, role):
         ac = self.state.aircraft
         x = ac.boom.x_end + 0.2 if ac.boom.enabled else -0.9
+        mount = "tubo:0" if ac.booms else ""         # com tubo, nasce presa na ponta dele (muda em 'presa em')
         if role == "htail":
-            s = LiftingSurface(name="EH", role="htail", x=x, sections=rect_sections(0.4, 0.2), incidence=-1.0,
-                               airfoil=Airfoil("NACA 0012"), controls=[ControlSurface("elevator", 0.0, 1.0, 0.35)],
+            s = LiftingSurface(name="EH", role="htail", x=x, mount=mount, sections=rect_sections(0.4, 0.2),
+                               incidence=-1.0, airfoil=Airfoil("NACA 0012"), controls=[ControlSurface("elevator", 0.0, 1.0, 0.35)],
                                eta=0.9, downwash=True)
         else:
-            s = LiftingSurface(name="EV", role="vtail", x=x, sections=rect_sections(0.3, 0.22), symmetric=False,
+            s = LiftingSurface(name="EV", role="vtail", x=x, mount=mount, sections=rect_sections(0.3, 0.22), symmetric=False,
                                vertical=True, airfoil=Airfoil("NACA 0012"),
                                controls=[ControlSurface("rudder", 0.0, 1.0, 0.35)], eta=0.9)
         ac.surfaces.append(s)
+        ac.apply_constraints()
         self._added(f"surface:{len(ac.surfaces) - 1}")
 
     def _add_motor(self):
@@ -295,7 +315,12 @@ class ConfigTab(QtWidgets.QWidget):
         elif kind == "tank":
             del ac.tanks[int(idx)]
         elif kind == "boom":
-            ac.boom.enabled = False
+            i = int(idx)
+            del ac.booms[i]
+            for s in ac.surfaces:                      # quem estava preso nele fica solto; os outros, renumerados
+                k, _, j = s.mount.partition(":")
+                if k == "tubo" and j.isdigit():
+                    s.mount = "" if int(j) == i else (f"tubo:{int(j) - 1}" if int(j) > i else s.mount)
         elif kind == "fuselage":
             ac.fuselage.enabled = False
         elif kind == "payload":
@@ -330,7 +355,7 @@ class ConfigTab(QtWidgets.QWidget):
         items += [(f"tank:{i}", f"▣ {t.name}") for i, t in enumerate(ac.tanks)]
         off = lambda on: "" if on else " (desligado)"
         items.append(("fuselage", "fuselagem" + off(ac.fuselage.enabled)))
-        items.append(("boom", "tubo de cauda" + off(ac.boom.enabled)))
+        items += [(f"boom:{i}", f"┃ {b.name}" + off(b.enabled)) for i, b in enumerate(ac.booms)]
         items.append(("payload", "📦 LAPES: carga e soltura" + ("" if ac.payload.enabled else " (desligado)")))
         items.append(("ballast", "⚖ Lastro" + (f" ({ac.ballast.mass:g} kg)" if ac.ballast.enabled else " (desligado)")))
         items.append(("gear", f"trem de pouso ({ac.gear.layout})"))
@@ -352,7 +377,7 @@ class ConfigTab(QtWidgets.QWidget):
         hp = EDIT_HELP.get(key.partition(":")[0], "")
         self.editor_title.setText(escape(cur.text()) + (HELP_MARK if hp else ""))
         self.editor_title.setToolTip(hp)
-        self.view.select(key if ":" in key or key in ("fuselage", "boom", "payload", "gear", "ballast") else None)
+        self.view.select(key if ":" in key or key in ("fuselage", "payload", "gear", "ballast") else None)
         self._edit(key)
 
     def _on_pick(self, key):
@@ -399,7 +424,8 @@ class ConfigTab(QtWidgets.QWidget):
         self.form = None
         if kind == "surface":
             s = ac.surfaces[int(idx)]
-            self.form = DataclassForm(s, exclude=("sections", "controls", "airfoil", "devices"))
+            self.form = DataclassForm(s, exclude=("sections", "controls", "airfoil", "devices"),
+                                      choices={"mount": mount_choices(ac, s)})
             v.addWidget(self.form)
             v.addWidget(self._sections_editor(s))
             v.addWidget(self._controls_editor(s))
@@ -423,8 +449,11 @@ class ConfigTab(QtWidgets.QWidget):
         elif kind == "ballast":
             self.form = DataclassForm(ac.ballast)
             v.addWidget(self.form)
-        elif kind in ("fuselage", "boom"):
-            self.form = DataclassForm(getattr(ac, kind))
+        elif kind == "boom":
+            self.form = DataclassForm(ac.booms[int(idx)])
+            v.addWidget(self.form)
+        elif kind == "fuselage":
+            self.form = DataclassForm(ac.fuselage)
             v.addWidget(self.form)
         elif kind == "takeoff":
             self.form = DataclassForm(ac.takeoff, exclude=("VR", "de0", "rate_de", "rate_thr"))
@@ -815,6 +844,14 @@ class ConfigTab(QtWidgets.QWidget):
     # ------------------------------------------------------------------ resumo
     def _update_summary(self):
         ac = self.state.aircraft
+        from aerosim.model.templates import is_empty, not_ready
+        msg = not_ready(ac)
+        if msg:
+            self.view.clear_markers()
+            self.summary.setHtml(f"<h3 style='margin:0'>{escape(ac.name)}</h3><p style='color:#555'>"
+                                 f"{escape(msg)}. Cada peça aparece no 3D assim que entra.</p>")
+            self.info.setText(f"{ac.name}  —  " + ("vazio" if is_empty(ac) else "faltando massa"))
+            return
         try:
             from aerosim.manager.calibration import static_characteristics
             info = static_characteristics(self.state.manager.backend, ac)

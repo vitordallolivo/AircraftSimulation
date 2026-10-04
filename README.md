@@ -86,9 +86,22 @@ um `.zig` mudar). Com o `zig` 0.16 no PATH, troque `python -m ziglang` por `zig`
 ### GUI
 
 ```sh
-python -m aerosim.gui                                              # aeronave convencional
+python -m aerosim.gui                                              # volta ao último projeto (ou Montagem vazia)
+python -m aerosim.gui data/sprint/projeto_s1223.json               # abre um projeto e volta de onde parou
 python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avião (.json, .cfg ou .xlsx)
 ```
+
+- **Projeto `.json`** (linha de comando, **Arquivo → Abrir**, **Projeto da sprint → Abrir projeto** ou
+  arrastar o arquivo para a janela): volta de onde parou — etapas (perfis, asas, conjuntos, aviões,
+  estudos), os aviões abertos na Montagem e a aba em que estava; mostra o que está guardado. Sem avião
+  guardado no projeto, a **Montagem começa vazia** e o avião aparece no 3D peça por peça
+  (**+ Asa, + EH, + EV, + Motor, + Tubo, + Tanque**); a massa vem das peças.
+- **Tubos e caudas sem tipo pronto:** quantos tubos quiser, cada um com início (x, y, z), comprimento,
+  inclinação e abertura (tubo duplo = dois tubos em y = ±d); cada superfície tem **presa em**: solta, na
+  ponta de um tubo ou na ponta de outra superfície (cauda em T, winglet). Cauda em V = EH com diedro.
+
+![Montagem vazia](docs/img/montagem_vazia.png)
+![Tubo duplo inclinado, duas EV e EH em T, montados na interface](docs/img/montagem_tubo_duplo_cauda_em_T.png)
 
 - **💾 Salvar avião / 📂 Meus aviões** guardam seus aviões (pasta `~/aerosim_aeronaves`, ou a variável
   `AEROSIM_PROJETOS`). Exemplos prontos em `data/aircraft/`.

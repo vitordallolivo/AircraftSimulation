@@ -15,6 +15,7 @@ import json
 import os
 from dataclasses import dataclass, field
 
+from aerosim.model.aircraft import Aircraft
 from aerosim.model.serialize import from_dict, to_dict
 
 from . import airfoils as afm
@@ -42,6 +43,17 @@ class DesignProject:
     power_draft: PowerParams = field(default_factory=PowerParams)
     study: StudyParams = field(default_factory=StudyParams)
     studies: list[StudyRun] = field(default_factory=list)       # os estudos rodados (dados de simulação)
+    fleet: list[Aircraft] = field(default_factory=list)         # os aviões abertos na Montagem (vazio: começa vazia)
+    current: int = 0                                            # qual deles estava na tela
+    ui: dict = field(default_factory=dict)                      # onde a interface estava (aba, subaba)
+
+    def summary(self) -> list[tuple[str, str]]:
+        """o que está guardado, etapa por etapa (para mostrar ao abrir)"""
+        names = lambda xs: ", ".join(x.name for x in xs) or "—"
+        return [("perfis", names(self.airfoils)), ("asas", names(self.wings)),
+                ("conjuntos asa + empenagem", names(self.sets)), ("aviões (motores e montagem)", names(self.aircraft)),
+                ("estudos", ", ".join(f"{r.mode} ({len(r.rows)} pontos)" for r in self.studies) or "—"),
+                ("Montagem", names(self.fleet) if self.fleet else "vazia")]
 
     def keep_study(self, run: StudyRun) -> None:
         """guarda um estudo rodado (o mesmo estudo — modo, avião, variável, lugares — é substituído)"""
@@ -115,6 +127,18 @@ class DesignProject:
     def load(cls, path: str) -> "DesignProject":
         with open(path, encoding="utf-8") as f:
             return from_dict(cls, json.load(f))
+
+
+def is_project_file(path: str) -> bool:
+    """um .json de projeto (etapas, estudos, Montagem) e não de um avião só"""
+    if not path.lower().endswith(".json"):
+        return False
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return False
+    return isinstance(d, dict) and any(k in d for k in ("requirements", "wings", "sets", "studies", "fleet"))
 
 
 def next_name(name: str, taken: list[str]) -> str:

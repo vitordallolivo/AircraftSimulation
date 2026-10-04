@@ -287,8 +287,7 @@ pub fn dryMass(ac: *const Aircraft) DryMass {
         };
         const f = ac.fuselage;
         if (f.enabled and f.mass > 0) push(&items, &n, f.mass, .{ f.x_nose - 0.45 * f.length, 0, f.z });
-        const b = ac.boom;
-        if (b.enabled and b.mass > 0) push(&items, &n, b.mass, .{ 0.5 * (b.x_start + b.xEnd()), 0, b.z });
+        for (ac.allBooms()) |b| if (b.enabled and b.mass > 0) push(&items, &n, b.mass, b.middle());
     }
     const m0 = mm.base_mass;
     const cg0: V3 = mm.base_cg;
@@ -344,7 +343,9 @@ pub fn fill(ac: *const Aircraft, p: *T.Params, diag: *model.Diag) Error!void {
     p.Mst = ac.sim.Mst;
     const f = ac.fuselage;
     p.fus_CDS = if (f.enabled) f.CDS else 0;
-    if (ac.boom.enabled) p.fus_CDS += 0.006 * std.math.pi * ac.boom.diameter * ac.boom.length; // atrito do tubo
+    for (ac.allBooms()) |b| if (b.enabled) {
+        p.fus_CDS += 0.006 * std.math.pi * b.diameter * b.length; // atrito dos tubos
+    };
     p.fus_Cma = if (f.enabled) f.Cma else 0;
     p.fus_Cnb = if (f.enabled) f.Cnb else 0;
     p.fus_CYb = if (f.enabled) f.CYb else 0;
@@ -578,6 +579,41 @@ test "exemplos: mesmos parâmetros e calibração da GUI" {
         try testing.expectApproxEqAbs(r.Vs, info.Vs, 1e-6);
         try testing.expectApproxEqAbs(r.Dtrim, info.Dtrim, 1e-6);
     }
+}
+
+test "tubos: o formato novo (booms, cauda já no lugar) voa igual ao antigo (boom único)" {
+    var d: model.Diag = .{};
+    var l = try loadExample("Bimotor_convencional_tubo_cauda_em_V", &d);
+    defer l.deinit();
+    const old = l.ac;
+    var surf: [8]model.Surface = undefined;
+    for (old.surfaces, 0..) |*s, i| {
+        surf[i] = s.*;
+        const pos = model.tailOnBoom(&old, s);
+        surf[i].x = pos.x;
+        surf[i].z = pos.z;
+    }
+    var nb = old.boom;
+    nb.attach_tail = false;
+    const booms = [_]model.Boom{nb};
+    var new = old;
+    new.surfaces = surf[0..old.surfaces.len];
+    new.boom = .{};
+    new.booms = &booms;
+    const a = try testing.allocator.create(core.runner.Instance);
+    defer testing.allocator.destroy(a);
+    const b = try testing.allocator.create(core.runner.Instance);
+    defer testing.allocator.destroy(b);
+    a.* = .{};
+    b.* = .{};
+    const ia = try setup(&old, a, &d);
+    const ib = try setup(&new, b, &d);
+    try testing.expectApproxEqAbs(a.p.fus_CDS, b.p.fus_CDS, 1e-12);
+    try testing.expectApproxEqAbs(a.p.m_dry, b.p.m_dry, 1e-12);
+    try testing.expectApproxEqAbs(a.p.Iyy, b.p.Iyy, 1e-12);
+    try testing.expectApproxEqAbs(ia.Vs, ib.Vs, 1e-9);
+    try testing.expectApproxEqAbs(ia.Dtrim, ib.Dtrim, 1e-9);
+    try testing.expectApproxEqAbs(ia.CLa, ib.CLa, 1e-9);
 }
 
 test "Convencional: painéis iguais aos do tradutor da GUI" {

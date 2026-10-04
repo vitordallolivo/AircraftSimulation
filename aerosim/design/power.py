@@ -99,7 +99,7 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     ac = conventional()                               # o resto (piloto, missão, pista, simulação) de partida
     ac.name = pp.name
     ac.surfaces = copy.deepcopy(part.surfaces)
-    ac.boom = copy.deepcopy(part.boom)
+    ac.booms = copy.deepcopy(part.booms)
     ac.Sref = ac.cref = ac.bref = None
     ac.tanks = []
     ac.payload.enabled = False
