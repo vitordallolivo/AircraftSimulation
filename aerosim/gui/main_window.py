@@ -1,8 +1,10 @@
-"""Janela principal: uma aba por simulação do manager e, no fim, a Montagem (onde o avião se monta e
-se edita peça por peça). Feita para caber em 1366 × 768.
+"""Janela principal: uma aba por área (na ordem do projeto: dimensionamento, aerodinâmica, estabilidade,
+propulsão, desempenho, missão) e, no fim, a Montagem (onde o avião se monta e se edita peça por peça).
+Feita para caber em 1366 × 768.
 
-A Montagem fica por último: as áreas trabalham nas abas de análise e a montagem junta as escolhas
-num avião (o mesmo arquivo de sempre — o AeroDrive e o núcleo leem igual)."""
+As áreas que têm etapas da sprint (gui/design) viram subabas: primeiro as etapas que criam o avião do
+zero (Perfil → Asa → Empenagem → Motores), por último "Avião montado" (a análise detalhada do avião
+aberto). A etapa Motores manda o avião para a Montagem."""
 from __future__ import annotations
 
 import os
@@ -32,14 +34,31 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resize(w, h)
         self.tabs = QtWidgets.QTabWidget()
         self.setCentralWidget(self.tabs)
-        for sim in state.manager.simulations():
-            self.tabs.addTab(SimulationTab(state, sim), sim.title)
+        from aerosim.interfaces.simulation import AREAS
+        from .design import STAGES
+        sims = sorted(state.manager.simulations(),
+                      key=lambda s: AREAS.index(s.area) if s.area in AREAS else len(AREAS))
+        for sim in sims:
+            stages = STAGES.get(sim.area)
+            if not stages:
+                self.tabs.addTab(SimulationTab(state, sim), sim.title)
+                continue
+            sub = QtWidgets.QTabWidget()
+            sub.setDocumentMode(True)
+            for title, cls in stages:
+                sub.addTab(cls(state), title)
+            sub.addTab(SimulationTab(state, sim), "Avião montado")
+            self.tabs.addTab(sub, sim.title)
         self.config = ConfigTab(state)
         self.tabs.addTab(self.config, "Montagem")
         self._menus()
+        self._design_label()
         self._toolbar()
         state.changed.connect(lambda r: self._title() if r == "load" else None)
         self._title()
+
+    def show_assembly(self):
+        self.tabs.setCurrentWidget(self.config)
 
     def _menus(self):
         m = self.menuBar().addMenu("&Arquivo")
@@ -60,10 +79,52 @@ class MainWindow(QtWidgets.QMainWindow):
         m.addAction("Importar planilha por mapa de células…", self.import_cellmap)
         m.addSeparator()
         m.addAction("Sair", self.close)
+        pj = self.menuBar().addMenu("&Projeto da sprint")
+        pj.addAction("Novo projeto (do zero)", self.design_new)
+        pj.addAction("Abrir projeto…", self.design_open)
+        pj.addAction("Salvar projeto como…", self.design_save_as)
+        self._design_where = pj.addAction("")
+        self._design_where.setEnabled(False)
         e = self.menuBar().addMenu("&Editar")
         self.undo_a = e.addAction("Desfazer", QtGui.QKeySequence.StandardKey.Undo, self.state.undo)
         self.redo_a = e.addAction("Refazer", self.state.redo)
         self.redo_a.setShortcuts([QtGui.QKeySequence("Ctrl+Y"), QtGui.QKeySequence("Ctrl+Shift+Z")])
+
+    # ------------------------------------------------------------------ projeto da sprint
+    def _design_label(self):
+        self._design_where.setText(f"gravado sozinho em {self.state.design_path}")
+
+    def design_new(self):
+        from aerosim.design.project import DesignProject
+        if QtWidgets.QMessageBox.question(self, "Projeto da sprint", "Começar um projeto novo? O atual fica no "
+                                          "arquivo dele.") != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        self.state.save_design()
+        base, ext = os.path.splitext(self.state.design_path)
+        k = 2
+        while os.path.exists(f"{base}_{k}{ext}"):
+            k += 1
+        self.state.set_design(DesignProject(), f"{base}_{k}{ext}")
+        self._design_label()
+
+    def design_open(self):
+        from aerosim.design.project import DesignProject
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Projeto da sprint", os.path.dirname(self.state.design_path),
+                                                        "Projeto (*.json)")
+        if path:
+            try:
+                self.state.set_design(DesignProject.load(path), path)
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(self, "Erro", str(e))
+        self._design_label()
+
+    def design_save_as(self):
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Projeto da sprint", self.state.design_path,
+                                                        "Projeto (*.json)")
+        if path:
+            self.state.design_path = path
+            self.state.save_design()
+        self._design_label()
 
     # ------------------------------------------------------------------ meus aviões
     def _toolbar(self):

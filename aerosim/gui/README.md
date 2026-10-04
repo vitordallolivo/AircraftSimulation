@@ -36,6 +36,8 @@ flowchart LR
     ST["state.py<br/>AppState: aeronave, catálogo, sinais"]
     CT["tabs/config_tab.py<br/>Montagem: componentes | 3D | editor"]
     AP["widgets/aircraft_panel.py<br/>FleetBar ◀ ▶ + 3D só de ver"]
+    DP["design/pages.py<br/>etapas da sprint: Perfil, Asa,<br/>Empenagem, Motores"]
+    DS["aerosim.design<br/>contas das etapas"]
     STAB["tabs/simulation_tab.py<br/>formulário, QThread, tempo real"]
     V3D["widgets/view3d.py<br/>malhas, seleção, arraste"]
     PS["widgets/param_slider.py<br/>campos numéricos, DataclassForm, dicas ⓘ"]
@@ -44,6 +46,8 @@ flowchart LR
     MW --> CT & STAB
     CT --> V3D & PS
     STAB --> PL & AP
+    MW --> DP --> DS
+    DP --> V3D & PL & PS
     CT --> AP
     STAB --> ISM
     CT --> ISM
@@ -59,12 +63,29 @@ flowchart LR
   e move no plano da câmera (ou travado em x, y, z); à direita o editor do componente, um `DataclassForm`
   (um campo por número da dataclass; rótulos curtos com a explicação no ⓘ). As informações são
   recalculadas 300 ms depois da última edição.
+- **Etapas da sprint (projeto do zero):** Aerodinâmica, Estabilidade e Desempenho são subabas — primeiro
+  as etapas que criam o avião (`design/pages.py`: **Perfil → Asa** em Aerodinâmica, **Empenagem e comandos**
+  em Estabilidade, **Motores e montagem** em Desempenho), por último **Avião montado** (a simulação de
+  sempre, sobre o avião aberto). Cada etapa edita um rascunho e mostra na hora o que vai ser feito: a peça
+  em 3D (asa sozinha; asa + cauda + tubo com CG e ponto neutro; o avião inteiro), gráficos e diagnóstico;
+  "Guardar" cria um candidato com nome que a etapa seguinte escolhe. "Mandar para a Montagem" abre o avião
+  como mais um avião aberto e o salva em "meus aviões". Requisitos e regras ficam no botão
+  **Requisitos…** de cada etapa. O projeto (`state.design`) se grava sozinho em
+  `<meus aviões>/sprint/projeto.json`; menu **Projeto da sprint** para novo, abrir e salvar como.
+  Em Motores e montagem, embaixo do 3D, a **distribuição de massa**: cada item com x e % do total, PV (vazio)
+  e CP (carga paga = lastro + líquido + LAPES, digitados), e a CP possível pelo MTOW da pista.
+  **Estudo e ponto de projeto** (Desempenho): roda o estudo numa `QThread` (ponto de projeto acoplado por valor ×
+  altitude), mostra a tabela, os gráficos e o 3D do ponto selecionado, confere no 6GDL e leva o ponto marcado para
+  o rascunho.
+  As contas estão em [`aerosim/design`](../design/README.md).
+- **Formulários com metadados:** `DataclassForm` usa rótulo, unidade, dica, opções e faixa dos metadados do
+  campo (`aerosim.design.fields.F`); `choices` e `editable` por campo para listas que dependem do projeto.
 - **Vários aviões abertos:** `AppState.fleet` guarda os aviões abertos e `current` o escolhido;
   `FleetBar` (◀ nome ▶, ＋ variante, ×) troca entre eles e todas as abas acompanham. "Abrir ao lado"
   (menu Arquivo) abre mais um arquivo sem fechar o atual; "＋ variante" abre uma cópia para variar.
   O título mostra "(i/n aviões abertos)".
-- **3D nas análises:** as simulações com `show_aircraft = True` (Aerodinâmica, Estabilidade,
-  Desempenho, Missão) mostram no topo da coluna de gráficos um `AircraftPanel` — o avião atual em 3D,
+- **3D nas análises do avião montado:** as simulações com `show_aircraft = True` (subabas "Avião montado"
+  e a Missão) mostram no topo da coluna de gráficos um `AircraftPanel` — o avião atual em 3D,
   só para ver, com massa, envergadura e área; os gráficos ficam embaixo, rolando.
 - **Ambiente e envelope na Montagem:** a altitude-densidade (AD) define ρ pela ISA
   (`model/atmosphere.py`, ρ aparece ao lado só para leitura); "Envelope de voo" edita o ângulo de

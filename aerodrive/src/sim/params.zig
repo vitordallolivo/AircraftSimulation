@@ -98,6 +98,7 @@ fn coeffs(s: *const model.Surface) Error!Coeffs {
     if (af.alpha0 == null or af.cm_ac == null) {
         var p: airfoil.Profile = .{};
         try airfoil.full(af.name, af.coords, &p);
+        if (af.inverted) airfoil.invert(&p);
         thin = airfoil.thinAirfoil(p.slice());
     }
     const CLa = s.CLa orelse airfoil.helmbold(af.cl_alpha, if (AR > 0) AR else 5.0);

@@ -113,6 +113,10 @@ class AircraftView(gl.GLViewWidget):
             self._markers["wind"] = wind
         self._draw_markers()
 
+    def clear_markers(self) -> None:
+        self._markers = {}
+        self._draw_markers()
+
     def _draw_markers(self) -> None:
         for it in getattr(self, "_marker_items", []):
             self.removeItem(it)

@@ -159,3 +159,62 @@ def test_undo_restores_tab_values(app, manager):
     assert st.redo()
     pump(app, 0.1)
     assert tab.inputs["mode"].currentText() == "só decolagem"
+
+
+def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypatch):
+    """Perfil → Asa → Empenagem → Motores: cada etapa guarda e a última manda o avião para a Montagem"""
+    monkeypatch.setenv("AEROSIM_PROJETOS", str(tmp_path))
+    from aerosim.gui.main_window import MainWindow
+    from aerosim.gui.state import AppState
+    from aerosim.model.templates import conventional
+    st = AppState(manager, conventional())
+    w = MainWindow(st)
+    w.show()
+    titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
+    assert titles.index("Aerodinâmica") < titles.index("Estabilidade") < titles.index("Desempenho") < titles.index("Missão")
+    aero = w.tabs.widget(titles.index("Aerodinâmica"))
+    assert [aero.tabText(i) for i in range(aero.count())] == ["Perfil", "Asa", "Avião montado"]
+    w.tabs.setCurrentWidget(aero)
+    perfil = aero.widget(0)
+    pump(app, 0.6)
+    assert perfil.checks.table.rowCount() > 3              # a polar de cada candidato
+    perfil._keep()                                         # "Usar na asa" vai para a etapa Asa
+    assert aero.currentIndex() == 1
+    asa = aero.widget(1)
+    asa.form.widgets["area"].setValue(1.0)
+    asa.form.widgets["area"].valueChanged.emit(1.0)
+    pump(app, 0.6)
+    assert st.design.wing_draft.area == 1.0 and asa.checks.diag.rowCount() >= 3
+    asa._keep()
+    assert [x.name for x in st.design.wings] == ["asa 1"]
+    est = w.tabs.widget(titles.index("Estabilidade"))
+    w.tabs.setCurrentWidget(est)
+    pump(app, 0.5)
+    est.widget(0)._keep()
+    assert st.design.sets[0].wing.name == "asa 1"
+    des = w.tabs.widget(titles.index("Desempenho"))
+    w.tabs.setCurrentWidget(des)
+    pump(app, 1.0)
+    motores = des.widget(0)
+    assert motores.ac is not None and motores.checks.diag.rowCount() >= 3
+    assert [des.tabText(i) for i in range(des.count())] == ["Motores e montagem", "Estudo e ponto de projeto",
+                                                            "Avião montado"]
+    estudo = des.widget(1)                                 # retroalimentação: ponto de projeto acoplado
+    st.design.study.n, st.design.study.places = 2, "A=600"
+    estudo.start()
+    t0 = time.time()
+    while estudo._thread is not None and time.time() - t0 < 120:
+        pump(app, 0.1)
+    assert len(estudo.rows) == 2 and estudo.table.rowCount() == 2
+    assert len(st.design.studies) == 1 and len(st.design.studies[0].rows) == 2     # dados de simulação no projeto
+    from aerosim.gui.design.pages import StudyPage
+    reaberto = StudyPage(st)                               # reabrir: o estudo guardado volta sem rodar
+    assert reaberto.table.rowCount() == 2 and "_cand" not in reaberto.rows[0]
+    reaberto._show_row(0)                                  # refaz o ponto de projeto só quando precisa
+    assert "_cand" in reaberto.rows[0]
+    n = len(st.fleet)
+    motores.send()
+    assert len(st.fleet) == n + 1 and w.tabs.currentWidget() is w.config
+    assert st.aircraft.name.startswith("avião 1") and st.path and os.path.exists(st.path)
+    pump(app, 1.2)
+    assert os.path.exists(st.design_path)                 # o projeto da sprint se grava sozinho
