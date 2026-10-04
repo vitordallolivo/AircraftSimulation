@@ -22,6 +22,22 @@ GEAR_KIND = {"steer": 0, "main": 1, "skid": 2}
 D2R = math.pi / 180.0
 
 
+def prop_native(u, rint_factor: float = 1.0) -> dict:
+    """uma unidade propulsora (motor + hélice + bateria, ou polinômio de tração) como `PropUnit` do núcleo;
+    usada pela simulação e pelo dimensionamento inicial"""
+    pr, mo, ba = u.propeller, u.motor, u.battery
+    n = min(len(pr.J), 64)
+    tp = u.thrust_poly
+    return dict(
+        model=1 if u.thrust_model == "poly" else 0, poly=(list(tp.coefs) + [0.0] * 21)[:21],
+        poly_x=POLY_VARS.index(tp.x_var), poly_y=POLY_VARS.index(tp.y_var), poly_gain=tp.gain,
+        poly_rho_exp=tp.rho_exp, poly_rho0=tp.rho0, poly_xmax=tp.xmax, poly_ymax=tp.ymax,
+        poly_xc=tp.x_const, poly_yc=tp.y_const,
+        r=[u.x, u.y, u.z], tilt=u.tilt * D2R, toe=u.toe * D2R, tilt_range=u.tilt_range * D2R, sense=float(u.sense),
+        D=pr.D, Ip=pr.Ip, Jm=mo.Jm, Kv=mo.Kv, Rm=mo.Rm, B=mo.B, tauc=mo.tauc, Imax=mo.Imax, Voc=ba.Voc,
+        Rint=ba.Rint * rint_factor, yaw_mix=u.yaw_mix, J=pr.J[:n], CT=pr.CT[:n], CP=pr.CP[:n], n_pts=n)
+
+
 def surface_panels(s: SurfaceModel) -> list[dict]:
     out = []
     sides = (1, -1) if s.mirror else (s.side if s.role == "device" else 0,)
@@ -63,20 +79,7 @@ class ZigTranslator(IModelTranslator):
         fus_r = f.aero_point if f.aero_point is not None else [f.x_nose - 0.4 * f.length, 0.0, f.z]
         units = [u for u in ac.propulsion if u.enabled]
         K = max(len(units), 1)
-        props = []
-        for u in units:
-            pr, mo, ba = u.propeller, u.motor, u.battery
-            n = min(len(pr.J), 64)
-            tp = u.thrust_poly
-            props.append(dict(
-                model=1 if u.thrust_model == "poly" else 0, poly=(list(tp.coefs) + [0.0] * 21)[:21],
-                poly_x=POLY_VARS.index(tp.x_var), poly_y=POLY_VARS.index(tp.y_var), poly_gain=tp.gain,
-                poly_rho_exp=tp.rho_exp, poly_rho0=tp.rho0, poly_xmax=tp.xmax, poly_ymax=tp.ymax,
-                poly_xc=tp.x_const, poly_yc=tp.y_const,
-                r=[u.x, u.y, u.z], tilt=u.tilt * D2R, toe=u.toe * D2R, tilt_range=u.tilt_range * D2R, sense=float(u.sense), D=pr.D, Ip=pr.Ip,
-                Jm=mo.Jm, Kv=mo.Kv, Rm=mo.Rm, B=mo.B, tauc=mo.tauc, Imax=mo.Imax, Voc=ba.Voc,
-                Rint=ba.Rint * (K if ac.shared_battery else 1), yaw_mix=u.yaw_mix,
-                J=pr.J[:n], CT=pr.CT[:n], CP=pr.CP[:n], n_pts=n))
+        props = [prop_native(u, K if ac.shared_battery else 1) for u in units]
         g = ac.gear
         e = ac.environment
         to = ac.takeoff

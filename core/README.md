@@ -15,6 +15,8 @@ python -m ziglang build test-math             # só math/: LUTs, polinômio, vet
 python -m ziglang build test-physics          # physics/
 python -m ziglang build test-control          # control/
 python -m ziglang build test-sim              # sim/, abi, bench (decolagem, checkpoint, trimagem...)
+python -m ziglang build test-sizing           # sizing/: estágios, tipos de aeronave, otimizadores, fuzzing
+python -m ziglang build test -Dfuzz=200000 -Dseed=7   # fuzzing mais longo das interfaces (padrão 2000)
 ```
 
 Opções: `-Dfast_math` (padrão `true`), `-Dstrip` (padrão: sim fora do Debug), `-Dcpu` (padrão
@@ -53,6 +55,10 @@ const status = core.runner.run(&inst, 10.0, &buf, &n);
 | `aerosim_aero_coeffs`, `aerosim_prop_point`, `aerosim_mass_props` | polar, curva de tração, massa/CG/inércia |
 | `aerosim_aero_coeffs_ex` | coeficientes com rotação (p, q, r) e momentos em qualquer ponto (derivadas de amortecimento, ponto neutro, momento no trem) |
 | `aerosim_linearize(slot, V, &LinModel)` | trima nivelado (Levenberg-Marquardt em α, δe, acelerador, φ, δa, δr; longitudinal com peso maior) e devolve A (8×8) e B (8×4) do corpo rígido com comandos congelados |
+| `aerosim_sizing_defaults(&cfg, &opts)` | os padrões de `SizingCfg` e `OptOpts` (as structs ctypes nascem zeradas) |
+| `aerosim_sizing_eval(&cfg, x, &out)` | dimensionamento inicial de um vetor de projeto: grandezas (S, b, V_S, corrida, V_max, subida, PV, CP, EE, MTOW...), violação das restrições, curva de tração e arrasto no MTOW |
+| `aerosim_sizing_optimize(&cfg, &opts, buf, cap, &n, &best, progress, ctx)` | otimiza (`opts.method`: PSO ou busca aleatória) e guarda cada avaliação em `buf`; `progress(ctx, iteração, n)` a cada iteração (≠ 0 para parar) |
+| `aerosim_sizing_name(o_que, i)` | nomes dos índices: 0 grandezas, 1 variáveis, 2 tipos de aeronave, 3 otimizadores |
 | `aerosim_bench_math`, `aerosim_bench_dynamics` | medições (ver abaixo) |
 
 Erros: dentro do núcleo são *error unions* do Zig (`ConfigError`, `StateError`); só na fronteira viram
@@ -110,6 +116,39 @@ flowchart LR
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
+
+### Dimensionamento inicial (`sizing/`)
+
+O mini-MDO inteiro roda aqui (o Python só monta a configuração e desenha): cada avaliação leva
+microssegundos a poucos milissegundos, então um PSO de 24 × 40 avaliações volta em menos de um segundo.
+
+```mermaid
+flowchart LR
+    X["x: envergadura, área, afilamento,<br/>perfil da raiz e da ponta, conjunto,<br/>n motores, inclinação"] --> G["geometry"] --> P["polar<br/>(tipo de aeronave)"]
+    X --> TH["Thrust.curve<br/>(motor + hélice do núcleo)"]
+    P --> MT["MTOW: bisseção na massa<br/>(restrições que dependem da massa)"]
+    TH --> MT
+    MT --> E["envelope · takeoff"] --> O["grandezas, violação,<br/>pontuação (MTOW ou EE)"]
+    X --> M["mass (PV)"] --> MT
+    O --> OPT["optimize.Problem"] --> PSO["Pso · RandomSearch · …"]
+```
+
+- **Tipos de aeronave em comptime** (`kinds.zig`): `Monoplane`, `Biplane` (duas asas de mesma envergadura;
+  arrasto induzido × (1 + σ)/2 de Prandtl), `FlyingWing`, `Tailsitter` (decola na vertical), `Vtol` (paira se
+  a tração deixar, senão corre). Cada um declara `wings`, `tail`, `hover`, `inducedFactor`, `clmaxFactor`,
+  `extraMass`, `surfaces`; `kinds.check` confere a interface em tempo de compilação. A cadeia
+  `chain.Chain(Tipo, Tração)` é gerada para cada tipo; a ABI escolhe pelo índice (`inline for`).
+- **Tração como interface**: `CoreThrust` (o motor + hélice + bateria de `physics/propulsion`) ou mocks
+  (`LinearThrust`) nos testes.
+- **Dois perfis na mesma asa**: raiz e ponta; as propriedades 2D entram pela média ao longo da envergadura
+  pesada pela corda, p_r + (p_t − p_r)(1 + 2λ)/(3(1 + λ)).
+- **Otimizador como interface** (`optimize.zig`): `Problem` (limites, tipo de cada variável e uma função de
+  avaliação) e `Recorder` (cada avaliação e o aviso por iteração). `Pso` e `RandomSearch` hoje; um método novo
+  é um struct com `name` e `run`, posto em `optimize.all`.
+- **Testes sem rodar o otimizador no avião**: cada estágio contra contas fechadas (corrida sem arrasto,
+  V_max com tração constante, MTOW no pairado = T0/(margem·g)); fuzzing das interfaces (`util/fuzz.zig`) com a
+  tração mock e entradas quaisquer em todos os tipos; os otimizadores em funções analíticas (esfera com
+  variáveis contínuas, inteira e de lista).
 
 ### Tração polinomial (comptime)
 

@@ -35,7 +35,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs = QtWidgets.QTabWidget()
         self.setCentralWidget(self.tabs)
         from aerosim.interfaces.simulation import AREAS
-        from .design import STAGES
+        from .design import LAST_TAB, STAGES
         sims = sorted(state.manager.simulations(),
                       key=lambda s: AREAS.index(s.area) if s.area in AREAS else len(AREAS))
         for sim in sims:
@@ -47,7 +47,7 @@ class MainWindow(QtWidgets.QMainWindow):
             sub.setDocumentMode(True)
             for title, cls in stages:
                 sub.addTab(cls(state), title)
-            sub.addTab(SimulationTab(state, sim), "Avião montado")
+            sub.addTab(SimulationTab(state, sim), LAST_TAB.get(sim.area, "Avião montado"))
             self.tabs.addTab(sub, sim.title)
         self.config = ConfigTab(state)
         self.tabs.addTab(self.config, "Montagem")

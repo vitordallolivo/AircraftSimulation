@@ -247,3 +247,46 @@ def test_constraints_registry_and_old_requirements():
     assert rg.get_input(p, "wing.span") == 2.0 and p.wing_draft.span == 2.0
     assert {v.key: v.mode for v in p.variables}["req.mass"] == "calculado"
     assert all(rg.QUANTITIES[k].label for k in ("mtow", "pv", "ee"))
+
+
+def test_wing_with_root_and_tip_airfoils():
+    """a mesma asa com dois perfis: a1, α_L0 e c_l,max locais interpolados; o mesmo perfil na ponta não muda nada"""
+    p = DesignProject()
+    p.airfoils.append(afm.entry(afm.from_naca("NACA 0012")))
+    p.wing_draft.rect_frac, p.wing_draft.airfoil = 0.4, "NACA 4412"
+    one = wg.analyze(p.draft_wing(), p.requirements)
+    p.wing_draft.airfoil_tip = "NACA 4412"
+    assert p.draft_wing().airfoil_tip is None                 # igual à raiz: um perfil só
+    p.wing_draft.airfoil_tip = "NACA 0012"
+    two = wg.analyze(p.draft_wing(), p.requirements)
+    assert two["airfoil_tip"] is not None and two["CL0"] < one["CL0"]       # ponta simétrica: menos C_L0
+    clm, eta = two["cl_max_local"], two["span_eta"]
+    rect = clm[eta < 0.39]                                    # trecho retangular: só o perfil da raiz
+    assert np.ptp(rect) < 1e-12 and clm[-1] < rect[0]
+    s = two["surface"]
+    assert max(s.sections, key=lambda q: q.y).airfoil.name == "NACA 0012" and s.mixed_airfoils
+
+
+def test_mdo_core_chain_kinds_and_3m_runway():
+    """mini-MDO no núcleo: corrida ≤ 3 m — o monoplano não cumpre, o VTOL paira; o melhor respeita as restrições"""
+    from aerosim.design import mdo, registry as rg
+    p = DesignProject()
+    p.requirements.constraints = [rg.Constraint("s_to", "≤", 3.0)]
+    p.mdo.particles, p.mdo.iterations = 6, 3
+    p.mdo.motors_min = p.mdo.motors_max = 8                 # ~26 N por conjunto de 1,25 kg: 8 pairam com margem 1,3
+    row = mdo.run(p)[0][0]
+    p.mdo.kind = "monoplano"
+    mono = mdo.evaluate(p, row)
+    p.mdo.kind = "VTOL"
+    vtol = mdo.evaluate(p, row)
+    assert not mono["feasible"] and vtol["hover"] and vtol["q"]["s_to"] == 0.0
+    p.requirements.constraints = [rg.Constraint("b", "≤", 2.0), rg.Constraint("s_to", "≤", 60.0)]
+    for v in p.variables:
+        if v.key in ("wing.span", "wing.area"):
+            v.mode = "variável"
+    p.mdo.kind = "biplano"
+    p.mdo.motors_min = p.mdo.motors_max = 1
+    rows, best, names = mdo.run(p)
+    q = dict(zip(names["quantities"], best["q"]))
+    assert best["feasible"] and q["b"] <= 2.0 + 1e-9 and q["s_to"] <= 60.0 + 1e-6
+    assert q["mtow"] == pytest.approx(max(r["mtow"] for r in rows if r["feasible"]), rel=1e-9)

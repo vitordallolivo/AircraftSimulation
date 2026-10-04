@@ -296,3 +296,63 @@ def test_constraints_dialog(app, manager, tmp_path):
     vt.cellWidget(r, 1).setCurrentText("variável")
     assert st.design.wing_draft.span == 1.8 and st.design.variables[r].mode == "variável"
     dlg.close()
+
+
+def test_mdo_page_realtime_history(app, manager, tmp_path):
+    """mini-MDO: o otimizador do núcleo avisa a cada iteração; slider do histórico; clique; levar para as etapas"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.gui.design.mdo_page import MdoPage
+    from aerosim.gui.state import AppState
+    from aerosim.model.templates import empty
+    st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)))
+    d = st.design
+    d.airfoils.append(__import__("aerosim.design.airfoils", fromlist=["entry"]).entry(
+        __import__("aerosim.design.airfoils", fromlist=["from_naca"]).from_naca("NACA 0012")))
+    for v in d.variables:
+        if v.key in ("wing.span", "wing.area", "wing.taper"):
+            v.mode = "variável"
+        if v.key == "wing.airfoil_tip":
+            v.mode, v.options = "variável", ["NACA 4412", "NACA 0012"]
+    d.mdo.particles, d.mdo.iterations, d.mdo.tip_airfoil = 8, 6, True
+    page = MdoPage(st)
+    seen = []
+    redraw = page.redraw
+    page.redraw = lambda: (seen.append(page.slider.maximum()), redraw())
+    page.start()
+    t0 = time.time()
+    while page._thread is not None and time.time() - t0 < 60:
+        pump(app, 0.05)
+    assert len(page.rows) == 48 and len(page.hist) == 6
+    assert len(seen) >= 6 and len(set(seen)) >= 3             # redesenhou a cada iteração (tempo real)
+    page.slider.setValue(0)
+    assert page.iter_lbl.text().startswith("1 /")
+    assert {r["airfoil_tip"] for r in page.rows} <= {"NACA 4412", "NACA 0012", "NACA 2412"}
+    page.select(page.hist[-1])
+    assert page.table.rowCount() > 10
+    page.apply()
+    assert d.wing_draft.span == pytest.approx(round(page.hist[-1]["span"], 3))
+    assert len(d.mdo_runs) == 1
+    again = MdoPage(st)                                        # reabrir: o resultado guardado volta
+    assert len(again.rows) == 48
+
+
+def test_mdo_bounds_sheet(app, manager, tmp_path):
+    """a planilha de limites fica na página; restrições viram limites; limite inválido não roda"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.design import registry as rg
+    from aerosim.gui.design.mdo_page import MdoPage
+    from aerosim.gui.state import AppState
+    from aerosim.model.templates import empty
+    st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)))
+    d = st.design
+    page = MdoPage(st)
+    assert page.vtable.table.rowCount() == len(d.variables)
+    d.requirements.constraints = [rg.Constraint("b", "≤", 2.2), rg.Constraint("S", "≥", 0.6),
+                                  rg.Constraint("n_motor", "≤", 2)]
+    page.bounds_b.click()
+    span = next(v for v in d.variables if v.key == "wing.span")
+    area = next(v for v in d.variables if v.key == "wing.area")
+    assert span.hi == 2.2 and area.lo == 0.6 and d.mdo.motors_max == 2
+    span.mode, span.lo, span.hi = "variável", 2.0, 1.0
+    page.start()
+    assert page._thread is None and "limites inválidos" in page.msg.text()

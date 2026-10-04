@@ -115,6 +115,11 @@ class _Lib:
             "aerosim_envelope": (c_int, [c_int, ctypes.POINTER(T["EnvCfg"]), vp, c_size, ctypes.POINTER(c_double)]),
             "aerosim_envelope_curve": (c_int, [c_int, ctypes.POINTER(T["EnvCfg"]), c_double, vp, vp, vp, c_size]),
             "aerosim_simple_perf": (c_int, [ctypes.POINTER(T["SimpleCfg"]), vp, c_size, ctypes.POINTER(T["SimpleSummary"])]),
+            "aerosim_sizing_defaults": (None, [ctypes.POINTER(T["SizingCfg"]), ctypes.POINTER(T["OptOpts"])]),
+            "aerosim_sizing_eval": (c_int, [ctypes.POINTER(T["SizingCfg"]), vp, ctypes.POINTER(T["SizingOut"])]),
+            "aerosim_sizing_optimize": (c_int, [ctypes.POINTER(T["SizingCfg"]), ctypes.POINTER(T["OptOpts"]), vp, c_size,
+                                                ctypes.POINTER(c_size), ctypes.POINTER(T["SizingOut"]), vp, vp]),
+            "aerosim_sizing_name": (ctypes.c_char_p, [c_int, c_int]),
         }
         for name, (res, args) in sig.items():
             fn = getattr(L, name)
@@ -327,6 +332,57 @@ class ZigBackend(ISimBackend):
 
     def log_channels(self) -> list[str]:
         return list(self._lib.log_dtype.names)
+
+    # ------------------------------------------------------------------ dimensionamento inicial (mini-MDO)
+    _SIZING_PROGRESS = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_void_p, ctypes.c_int32, ctypes.c_size_t)
+
+    def sizing_names(self) -> dict[str, list[str]]:
+        """os índices do núcleo: grandezas, variáveis, tipos de aeronave e otimizadores"""
+        out = {}
+        for what, key in enumerate(("quantities", "variables", "kinds", "methods")):
+            names, i = [], 0
+            while (s := self._lib.dll.aerosim_sizing_name(what, i)) is not None:
+                names.append(s.decode())
+                i += 1
+            out[key] = names
+        return out
+
+    def _sizing_structs(self, cfg: dict, opts: dict | None = None):
+        T = self._lib.schema.types
+        c, o = T["SizingCfg"](), T["OptOpts"]()
+        self._lib.dll.aerosim_sizing_defaults(ctypes.byref(c), ctypes.byref(o))   # padrões do núcleo
+        abi.write(c, cfg)
+        abi.write(o, opts or {})
+        return c, o
+
+    def sizing_eval(self, cfg: dict, x) -> dict:
+        c, _ = self._sizing_structs(cfg)
+        xs = (ctypes.c_double * len(x))(*[float(v) for v in x])
+        out = self._lib.schema.types["SizingOut"]()
+        _check(self._lib.dll.aerosim_sizing_eval(ctypes.byref(c), xs, ctypes.byref(out)), "sizing_eval")
+        return abi.read(out)
+
+    def sizing_optimize(self, cfg: dict, opts: dict | None = None, progress=None, cancel=None):
+        """(indivíduos: array estruturado, melhor: dict). `progress(iteração, indivíduos até agora)` é
+        chamado a cada iteração (do thread de quem chamou); `cancel` (threading.Event) para no fim dela"""
+        c, o = self._sizing_structs(cfg, opts)
+        cap = max(int(o.particles), 1) * max(int(o.iterations), 1)
+        buf = np.zeros(cap, dtype=self._lib.schema.dtypes["Individual"])
+        n = ctypes.c_size_t(0)
+        best = self._lib.schema.types["SizingOut"]()
+
+        def cb(_ctx, it, k):
+            try:
+                if progress is not None:
+                    progress(int(it), buf[:k].copy())
+            except Exception:
+                pass
+            return 1 if (cancel is not None and cancel.is_set()) else 0
+        fn = self._SIZING_PROGRESS(cb)
+        _check(self._lib.dll.aerosim_sizing_optimize(ctypes.byref(c), ctypes.byref(o), buf.ctypes.data, cap,
+                                                     ctypes.byref(n), ctypes.byref(best),
+                                                     ctypes.cast(fn, ctypes.c_void_p), None), "sizing_optimize")
+        return buf[:n.value].copy(), abi.read(best)
 
     def simple_performance(self, cfg: dict) -> tuple[dict, dict]:
         T = self._lib.schema.types

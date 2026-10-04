@@ -139,7 +139,8 @@ INPUTS: dict[str, Input] = {
     "wing.taper": Input("wing_draft.taper", "afilamento", "", 0.3, 1.0),
     "wing.rect_frac": Input("wing_draft.rect_frac", "trecho retangular", "", 0.0, 1.0),
     "wing.alpha_cruise": Input("wing_draft.alpha_cruise", "ângulo de cruzeiro", "°", -2.0, 6.0),
-    "wing.airfoil": Input("wing_draft.airfoil", "perfil da asa", "lista"),
+    "wing.airfoil": Input("wing_draft.airfoil", "perfil da asa (raiz)", "lista"),
+    "wing.airfoil_tip": Input("wing_draft.airfoil_tip", "perfil da ponta (vazio = o da raiz)", "lista"),
     "power.motor": Input("power_draft.motor", "motor", "lista"),
     "power.propeller": Input("power_draft.propeller", "hélice", "lista"),
     "power.layout": Input("power_draft.layout", "motores (arranjo)", "lista"),
@@ -207,3 +208,54 @@ def aircraft_values(ac, asm: dict, pf: dict | None, pp=None) -> dict:
         d.update(s_to=pf.get("s_to"), V_max=pf.get("Vmax"), RC=pf.get("RC_max"), TW=pf.get("TW"),
                  mtow=pf.get("mtow_runway"))
     return d
+
+
+# ------------------------------------------------------------------ limites das variáveis
+# restrição → entrada que ela limita (o otimizador não precisa procurar fora do que a restrição deixa)
+CONSTRAINT_INPUT = {"b": "wing.span", "S": "wing.area"}
+
+
+def bounds_from_constraints(project) -> list[str]:
+    """leva as restrições ativas para os limites das variáveis (≤ → máx., ≥ → mín., = → os dois); devolve o
+    que mudou"""
+    out = []
+    for c in project.requirements.constraints:
+        if not c.active:
+            continue
+        if c.key == "n_motor":
+            mp = project.mdo
+            if c.op in ("≤", "="):
+                mp.motors_max = max(int(c.value), 1)
+                mp.motors_min = min(mp.motors_min, mp.motors_max)
+            if c.op in ("≥", "="):
+                mp.motors_min = max(int(math.ceil(c.value)), 1)
+                mp.motors_max = max(mp.motors_max, mp.motors_min)
+            out.append(f"motores: {mp.motors_min}…{mp.motors_max}")
+            continue
+        key = CONSTRAINT_INPUT.get(c.key)
+        v = next((v for v in project.variables if v.key == key), None)
+        if v is None:
+            continue
+        if c.op in ("≤", "="):
+            v.hi = c.value
+        if c.op in ("≥", "="):
+            v.lo = c.value
+        if v.lo > v.hi:
+            v.lo = v.hi
+        out.append(f"{v.input.label}: {v.lo:g}…{v.hi:g}")
+    return out
+
+
+def check_bounds(project) -> list[str]:
+    """variável física (contínua) marcada como 'variável' precisa de mín. e máx. finitos, mín. < máx.; lista
+    precisa de opções"""
+    bad = []
+    for v in project.variables:
+        if v.mode != "variável":
+            continue
+        if v.input.unit == "lista":
+            if not v.options:
+                bad.append(f"{v.input.label}: sem opções na lista")
+        elif not (math.isfinite(v.lo) and math.isfinite(v.hi)) or v.lo >= v.hi:
+            bad.append(f"{v.input.label}: limites [{v.lo:g}, {v.hi:g}] (precisa de mín. < máx.)")
+    return bad

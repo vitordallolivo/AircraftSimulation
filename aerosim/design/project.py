@@ -20,6 +20,7 @@ from aerosim.model.serialize import from_dict, to_dict
 
 from . import airfoils as afm
 from .power import AircraftCandidate, PowerParams
+from .mdo import MdoParams, MdoRun
 from .registry import Variable, default_variables
 from .spec import DesignRules, Requirements
 from .study import StudyParams, StudyRun
@@ -45,6 +46,8 @@ class DesignProject:
     study: StudyParams = field(default_factory=StudyParams)
     studies: list[StudyRun] = field(default_factory=list)       # os estudos rodados (dados de simulação)
     variables: list[Variable] = field(default_factory=default_variables)   # fixo / variável (faixa) / calculado
+    mdo: MdoParams = field(default_factory=MdoParams)             # dimensionamento inicial (mini-MDO)
+    mdo_runs: list[MdoRun] = field(default_factory=list)          # os resultados guardados (dados de simulação)
     fleet: list[Aircraft] = field(default_factory=list)         # os aviões abertos na Montagem (vazio: começa vazia)
     current: int = 0                                            # qual deles estava na tela
     ui: dict = field(default_factory=dict)                      # onde a interface estava (aba, subaba)
@@ -84,16 +87,21 @@ class DesignProject:
                 return
         items.append(cand)
 
+    def _tip(self):
+        t = self.wing_draft.airfoil_tip
+        e = self.airfoil(t) if t and t != self.wing_draft.airfoil else None
+        return copy.deepcopy(e) if e is not None else None
+
     def keep_wing(self) -> WingCandidate:
         af = self.airfoil(self.wing_draft.airfoil) or (self.airfoils[0] if self.airfoils else afm.AirfoilEntry())
-        c = WingCandidate(copy.deepcopy(self.wing_draft), copy.deepcopy(af))
+        c = WingCandidate(copy.deepcopy(self.wing_draft), copy.deepcopy(af), airfoil_tip=self._tip())
         self._put(self.wings, c)
         self.wing_draft.name = next_name(self.wing_draft.name, [w.name for w in self.wings])
         return c
 
     def draft_wing(self) -> WingCandidate:
         af = self.airfoil(self.wing_draft.airfoil) or (self.airfoils[0] if self.airfoils else afm.AirfoilEntry())
-        return WingCandidate(copy.deepcopy(self.wing_draft), copy.deepcopy(af))
+        return WingCandidate(copy.deepcopy(self.wing_draft), copy.deepcopy(af), airfoil_tip=self._tip())
 
     def draft_set(self) -> SetCandidate | None:
         w = self.wing(self.tail_draft.wing) or (self.wings[-1] if self.wings else None)

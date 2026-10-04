@@ -8,6 +8,10 @@ ajustado na etapa Perfil:
     Σ A_n sen(nθ) (sen θ + n μ) = μ (α + ε(y) − α_L0) sen θ,   μ = a1 c / (4 b)
     C_L = π AR A_1      C_Di = π AR Σ n A_n²      c_l(y) = (4 b / c) Σ A_n sen(nθ)
 
+Perfil da ponta (`airfoil_tip`): a mesma asa com dois perfis. A raiz (e o trecho retangular) usa o perfil
+da raiz; do fim do trecho retangular até a ponta as propriedades (a1, α_L0, c_l,max, c_d, c_m) são
+interpoladas — a linha sustentadora usa a1(y) e α_L0(y), o estol o c_l,max local e o arrasto o c_d local.
+
 C_L,max pela seção crítica (o primeiro ponto da envergadura que chega ao c_l,max do perfil diz também
 ONDE o estol começa); arrasto de perfil integrando o c_d da polar 2D no c_l local. A incidência sai
 do ângulo de cruzeiro: a asa é calada para a fuselagem voar no ângulo pedido.
@@ -30,7 +34,9 @@ from .spec import DesignRules, Requirements, cruise_CL, stall_speed
 @dataclass
 class WingParams:
     name: str = F("asa 1", "nome")
-    airfoil: str = F("NACA 2412", "perfil", "", "um dos perfis da etapa Perfil")
+    airfoil: str = F("NACA 2412", "perfil (raiz)", "", "um dos perfis da etapa Perfil")
+    airfoil_tip: str = F("", "perfil da ponta", "", "vazio = o mesmo da raiz; outro perfil: a asa vai do perfil da "
+                         "raiz (e do trecho retangular) ao da ponta, interpolando")
     span: float = F(2.4, "envergadura", "m", "de ponta a ponta", 0.3, 8.0, 0.02)
     area: float = F(0.85, "área", "m²", "área em planta (as duas semiasas)", 0.05, 5.0, 0.01)
     taper: float = F(0.6, "afilamento", "", "corda da ponta / corda da raiz (no trecho trapezoidal)", 0.2, 1.0, 0.02)
@@ -49,6 +55,7 @@ class WingCandidate:
     params: WingParams = field(default_factory=WingParams)
     airfoil: afm.AirfoilEntry = field(default_factory=afm.AirfoilEntry)
     note: str = ""
+    airfoil_tip: afm.AirfoilEntry | None = None      # None: um perfil só
 
     @property
     def name(self) -> str:
@@ -65,14 +72,15 @@ def chords(p: WingParams) -> tuple[float, float, float, float]:
     return s, yb, cr, cr * lam
 
 
-def build_wing(p: WingParams, af, incidence: float = 0.0) -> LiftingSurface:
-    """a asa no modelo de sempre, com o bordo de ataque da raiz em x = 0"""
+def build_wing(p: WingParams, af, incidence: float = 0.0, af_tip=None) -> LiftingSurface:
+    """a asa no modelo de sempre, com o bordo de ataque da raiz em x = 0; `af_tip`: perfil da seção da ponta
+    (a raiz e a quebra ficam com o da superfície)"""
     s, yb, cr, ct = chords(p)
     xt = (cr - ct) / 4 + math.tan(math.radians(p.sweep)) * (s - yb)
     secs = [WingSection(0.0, cr, 0.0, 0.0)]
     if 1e-6 < yb < s - 1e-6:
         secs.append(WingSection(yb, cr, 0.0, p.twist * yb / s))
-    secs.append(WingSection(s, ct, xt, p.twist))
+    secs.append(WingSection(s, ct, xt, p.twist, copy.deepcopy(af_tip) if af_tip is not None else None))
     return LiftingSurface(name="asa", role="wing", x=0.0, z=0.0, sections=secs, dihedral=p.dihedral,
                           incidence=incidence, airfoil=copy.deepcopy(af), controls=[], oswald=0.85)
 
@@ -91,20 +99,38 @@ def planform(w: LiftingSurface) -> dict:
 
 
 # ------------------------------------------------------------------ linha sustentadora
+def tip_weight(w: LiftingSurface, y) -> np.ndarray:
+    """peso do perfil da ponta em y (0 = perfil da superfície, 1 = da seção da ponta), linear entre seções"""
+    ss = sorted(w.sections, key=lambda q: q.y)
+    tip = ss[-1].airfoil
+    ind = [1.0 if (tip is not None and q.airfoil is tip) else 0.0 for q in ss]
+    return np.interp(np.asarray(y, float), [q.y for q in ss], ind)
+
+
+def section_props(w: LiftingSurface, y) -> dict:
+    """a1 (1/rad), α_L0 (rad), c_l,max e c_m do perfil local em y (raiz → ponta)"""
+    ss = sorted(w.sections, key=lambda q: q.y)
+    r, t = w.airfoil, (ss[-1].airfoil or w.airfoil)
+    f = tip_weight(w, y)
+    mix = lambda a, b: a + (b - a) * f
+    return dict(a1=mix(r.cl_alpha, t.cl_alpha), a0=np.radians(mix(r.zero_lift_angle(), t.zero_lift_angle())),
+                clmax=mix(r.cl_max, t.cl_max), cm=mix(r.moment_ac(), t.moment_ac()), w=f)
+
+
 def lifting_line(w: LiftingSurface, n: int = 24) -> dict:
     """coeficientes lineares em α (α da corda da raiz, rad): A(α) = α A_α + A_t; c_l(y) = α g + h"""
     s = w.semispan
     b = 2 * s
     S = w.area
     AR = b * b / S
-    af = w.airfoil
     lam_c4 = math.radians(_sweep_c4(w))
-    a1 = af.cl_alpha * math.cos(lam_c4)
     th = (np.arange(1, n + 1)) * math.pi / (2 * n)           # 0 < θ ≤ π/2 (ponta → raiz)
     y = s * np.cos(th)
+    sp = section_props(w, y)                                  # perfil local (dois perfis: interpolado)
+    a1 = sp["a1"] * math.cos(lam_c4)
     c = np.array([w.chord_at(v) for v in y])
     eps = np.radians(np.array([w.twist_at(v) for v in y]))
-    a0 = math.radians(af.zero_lift_angle())
+    a0 = sp["a0"]
     mu = a1 * c / (4 * b)
     odd = 2 * np.arange(n) + 1
     M = np.sin(np.outer(th, odd)) * (np.sin(th)[:, None] + odd[None, :] * mu[:, None])
@@ -114,7 +140,8 @@ def lifting_line(w: LiftingSurface, n: int = 24) -> dict:
     sn = np.sin(np.outer(th, odd))
     g = 4 * b / c * (sn @ Aa)
     h = 4 * b / c * (sn @ At)
-    return dict(y=y, c=c, g=g, h=h, Aa=Aa, At=At, odd=odd, AR=AR, S=S, b=b, a1=a1)
+    return dict(y=y, c=c, g=g, h=h, Aa=Aa, At=At, odd=odd, AR=AR, S=S, b=b, a1=a1, clmax=sp["clmax"], w_tip=sp["w"],
+                cm=sp["cm"])
 
 
 def _sweep_c4(w: LiftingSurface) -> float:
@@ -134,11 +161,16 @@ def analyze(cand: WingCandidate, req: Requirements, rules: DesignRules | None = 
     Re = req.reynolds(pf0["mac"])
     pol2d = afm.polar(cand.airfoil, Re)
     af = afm.fitted(cand.airfoil.airfoil, pol2d) if afm.metrics(pol2d) else cand.airfoil.airfoil
-    w = build_wing(p, af)
+    af_t, pol_t = None, None
+    if cand.airfoil_tip is not None:                          # perfil da ponta, no Re da corda da ponta
+        Re_t = req.reynolds(chords(p)[3])
+        pol_t = afm.polar(cand.airfoil_tip, Re_t)
+        af_t = afm.fitted(cand.airfoil_tip.airfoil, pol_t) if afm.metrics(pol_t) else cand.airfoil_tip.airfoil
+    w = build_wing(p, af, af_tip=af_t)
     pf = planform(w)
     L = lifting_line(w)
     S, AR, odd = L["S"], L["AR"], L["odd"]
-    clmax = af.cl_max
+    clmax = L["clmax"]                                        # c_l,max local (dois perfis: interpolado)
     with np.errstate(divide="ignore", invalid="ignore"):
         a_st_i = np.where(L["g"] > 0, (clmax - L["h"]) / L["g"], np.inf)
     i_st = int(np.argmin(a_st_i))
@@ -155,7 +187,7 @@ def analyze(cand: WingCandidate, req: Requirements, rules: DesignRules | None = 
         A = a * L["Aa"] + L["At"]
         CL.append(math.pi * AR * A[0])
         CDi.append(math.pi * AR * float(np.sum(odd * A * A)))
-        CDp.append(_profile_drag(w, L, a, pol2d, S))
+        CDp.append(_profile_drag(w, L, a, pol2d, S, pol_t))
     CL, CDi, CDp = np.array(CL), np.array(CDi), np.array(CDp)
     CD = CDi + CDp
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -164,7 +196,7 @@ def analyze(cand: WingCandidate, req: Requirements, rules: DesignRules | None = 
     a_cru = (CLc - CL0) / CLa
     Ac = a_cru * L["Aa"] + L["At"]
     e = Ac[0] ** 2 / float(np.sum(odd * Ac * Ac)) if abs(Ac[0]) > 1e-12 else float("nan")
-    CDc = math.pi * AR * float(np.sum(odd * Ac * Ac)) + _profile_drag(w, L, a_cru, pol2d, S)
+    CDc = math.pi * AR * float(np.sum(odd * Ac * Ac)) + _profile_drag(w, L, a_cru, pol2d, S, pol_t)
     j = int(np.nanargmax(LD))
     Vs = stall_speed(req, S, CLmax)
     inc = math.degrees(a_cru) - p.alpha_cruise
@@ -173,20 +205,27 @@ def analyze(cand: WingCandidate, req: Requirements, rules: DesignRules | None = 
     eta = L["y"] / w.semispan
     o = np.argsort(eta)
     return dict(
-        surface=build_wing(p, af, incidence=inc), airfoil=af, polar2d=pol2d, Re=Re, planform=pf,
+        surface=build_wing(p, af, incidence=inc, af_tip=af_t), airfoil=af, airfoil_tip=af_t, polar2d=pol2d,
+        polar2d_tip=pol_t, Re=Re, planform=pf,
         alpha=np.degrees(alphas), CL=CL, CDi=CDi, CDp=CDp, CD=CD, LD=LD, CLa=CLa, CL0=CL0,
         alpha0=math.degrees(alpha0_w), CLmax=CLmax, alpha_stall=math.degrees(a_st),
         eta_stall=float(L["y"][i_st] / w.semispan), e=e, LD_max=float(LD[j]), CL_LD=float(CL[j]),
         CL_cruise=CLc, alpha_cruise_w=math.degrees(a_cru), CD_cruise=CDc, LD_cruise=CLc / CDc if CDc > 0 else np.nan,
         V_stall=Vs, incidence=inc, wing_loading=req.mass / S, mass=S * rules.wing_density,
-        span_eta=eta[o], cl_cruise=cl_cru[o], cl_stall=cl_st[o], cl_max_local=np.full(len(o), clmax),
+        span_eta=eta[o], cl_cruise=cl_cru[o], cl_stall=cl_st[o], cl_max_local=np.asarray(clmax)[o],
         chord=L["c"][o], Re_root=req.reynolds(w.chord_at(0)), Re_tip=req.reynolds(w.chord_at(w.semispan)),
-        AR=AR, S=S, b=L["b"], Cm_ac=af.moment_ac())
+        AR=AR, S=S, b=L["b"], Cm_ac=float(np.trapezoid(L["cm"][o] * L["c"][o] ** 2, eta[o]) /
+                                          np.trapezoid(L["c"][o] ** 2, eta[o])) if af_t is not None else af.moment_ac())
 
 
-def _profile_drag(w, L, a, pol2d, S) -> float:
-    """C_Dp = (2/S) ∫ c c_d(c_l local) dy — estações da raiz à ponta, a ponta com o c_d da última estação"""
-    cd = afm.drag_at(pol2d, a * L["g"] + L["h"])[::-1]
+def _profile_drag(w, L, a, pol2d, S, pol_t=None) -> float:
+    """C_Dp = (2/S) ∫ c c_d(c_l local) dy — estações da raiz à ponta, a ponta com o c_d da última estação;
+    com perfil da ponta, o c_d local interpola as duas polares"""
+    cl = a * L["g"] + L["h"]
+    cd = afm.drag_at(pol2d, cl)
+    if pol_t is not None:
+        cd = cd + (afm.drag_at(pol_t, cl) - cd) * L["w_tip"]
+    cd = cd[::-1]
     y, c = L["y"][::-1], L["c"][::-1]
     y, c, cd = np.r_[y, w.semispan], np.r_[c, w.chord_at(w.semispan)], np.r_[cd, cd[-1]]
     return float(2 * np.trapezoid(c * cd, y) / S)

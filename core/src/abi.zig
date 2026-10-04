@@ -18,7 +18,9 @@ pub const exported = .{
     T.Payload,  T.Environment, T.Takeoff,  T.Autopilot, T.Pilot, T.Params,  T.Events,
     T.LogRow,   T.AeroCoeffs, T.PropPoint, T.MassProps, T.TrimPoint, T.PerfRow,
     env.EnvCfg, env.EnvRow,     lin.LinModel, at.Result, sp.SimpleCfg, sp.SimpleRow, sp.SimpleSummary,
+    sz.VarSpec, sz.AirfoilData, sz.PropSet, sz.Constraint, sz.SizingCfg, sz.SizingOut, sz.OptOpts, sz.Individual,
 };
+const sz = @import("sizing/types.zig");
 const env = @import("sim/envelope.zig");
 const lin = @import("sim/linear.zig");
 const at = @import("control/autotune.zig");

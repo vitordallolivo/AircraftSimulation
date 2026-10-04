@@ -134,6 +134,21 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   ![Variáveis](docs/img/variaveis.png)
 
   Detalhes em [aerosim/design](aerosim/design/README.md).
+- **Dimensionamento inicial → Mini-MDO**: geometria → motorização → envelope de voo → decolagem → MTOW, PV, CP
+  e EE, no núcleo Zig, para monoplano, biplano, asa voadora, tailsitter e VTOL. O otimizador (PSO ou busca
+  aleatória; a interface aceita outros) avisa a cada iteração: os indivíduos aparecem no gráfico em tempo real, e
+  o **histórico das asas** tem um slider (a planta do melhor até cada iteração sobre o enxame dela). A mesma asa
+  pode ter perfil diferente na ponta. Clique num indivíduo: envelope, grandezas e restrições, 3D; **Levar para as
+  etapas** ou **Conferir no 6GDL**.
+
+  Os limites (bounds) ficam numa planilha na própria página (aba **Variáveis e limites**): fixo, variável (mín. e
+  máx. obrigatórios para grandeza física; listas para perfil, motor e hélice) ou calculado; **Limites a partir das
+  restrições** leva envergadura ≤, área ≤/≥ e nº de motores para os limites. O envelope é a curva inteira (tração
+  disponível × requerida); o estol é só uma linha de referência.
+
+  ![Limites](docs/img/mdo_limites.png)
+  ![Mini-MDO](docs/img/mdo_final.png)
+  ![Histórico das asas](docs/img/mdo_historico.png)
 - **Montagem** (última aba): componentes, 3D editável, ambiente (altitude-densidade, vento) e envelope
   de voo (ângulo de cruzeiro, fator de carga). As subabas "Avião montado" e a Missão mostram o avião
   atual em 3D acima dos gráficos.
