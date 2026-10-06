@@ -1,18 +1,8 @@
-# aerosim
+# Aircraft Simulation
 
-Simulador e ferramenta de projeto para aeronaves pequenas (AeroDesign): você monta o avião (asas,
-caudas, motores, trem, tanques com líquido, carga LAPES), e o programa calcula aerodinâmica,
-estabilidade, desempenho e simula a missão inteira em 6 graus de liberdade — decolagem do chão ou de
-uma mesa, curvas, soltura da carga e pouso numa plataforma — dizendo o que passou, o que falhou e o que
-mudar.
+O Aircraft Simulation nasceu para preencher uma lacuna clássica na engenharia aeronáutica: a distância entre o projeto conceitual em planilhas/papel e a validação em um simulador de voo real. É uma ferramenta completa que une o dimensionamento paramétrico avançado, a análise aerodinâmica e de estabilidade, e uma simulação de voo 3D interativa de alta performance.
 
-- **GUI** (Python + PyQt6): projeto do zero em etapas — perfil → asa → empenagem → motores → avião
-  inteiro — e a análise detalhada do avião montado (aerodinâmica, estabilidade, tração, desempenho, missão),
-  com diagnóstico em cada aba e Ctrl+Z; a montagem do avião em 3D fica na última aba. Vários aviões (ou
-  variantes do mesmo) abertos ao mesmo tempo, trocados com ◀ ▶.
-- **Núcleo de física em Zig**: a missão completa (165 s de voo) roda em cerca de 1 s.
-- **[AeroDrive](aerodrive/README.md)**: o mesmo avião num simulador em tempo real (raylib), pilotado
-  com controle de Xbox ou pelo piloto automático; grava vídeo e dados do voo.
+Seja para projetar uma aeronave do zero (como competições de Aerodesign, VANTs ou protótipos experimentais), otimizar o peso máximo de decolagem (MTOW) sob restrições severas de pista, ou testar o comportamento dinâmico em tempo real, este ecossistema coloca todo o controle na suas mãos de forma modular.
 
 ![Projeto do zero — perfil: S1223 e perfis de cauda](docs/img/estudo_perfil.png)
 
@@ -36,54 +26,41 @@ mudar.
 
 ---
 
+
+O programa é divido em dois modos, o aerodrive e o aerosim, o aerodrive é uma simulação de tempo real que permite controlar a aeronave que você acaba de projetar e o
+aerosim é justamente o local onde você irá projetar. Desenvolvido em duas linguagens de programação em python para as interfaces e zig para calculos mais proximos de tempo real
+possível.
+
+
 ## Instalar
 
-Precisa de **Git** e **Python 3.10 ou mais novo** (testado no 3.11). O compilador Zig 0.16 vem pelo
-`pip` (pacote `ziglang`).
+Precisa de **Git** e **Python 3.10 ou mais novo** (testado no 3.11). Basta então clonar o repositório e instalar os requerimentos.
 
-### 1. Bibliotecas do sistema (só Linux)
 
-A GUI (PyQt6) precisa de OpenGL e X11. Ubuntu / Debian / Mint:
-
-```sh
-sudo apt install libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 \
-                 libxcb-shape0 libxcb-xinerama0 libxcb-randr0 libxcb-render-util0 libxcb-image0 \
-                 libfontconfig1 libdbus-1-3
-```
-
-Fedora: `sudo dnf install mesa-libGL mesa-libEGL libxkbcommon-x11 xcb-util-cursor xcb-util-wm xcb-util-keysyms`.
-Windows e macOS: nada.
-
-### 2. Repositório e pacotes Python
 
 ```sh
 git clone https://github.com/vitordallolivo/AircraftSimulation.git
 cd AircraftSimulation
 
 python -m venv .venv
-source .venv/bin/activate              # Linux/macOS
-.venv\Scripts\activate                 # Windows (PowerShell: .venv\Scripts\Activate.ps1)
+.venv\Scripts\activate                 
 
 pip install -r requirements.txt
 pip install -r requirements-aero.txt   # opcional: lltdrek e AeroSandbox (comparação na aba Aerodinâmica)
 ```
 
-### 3. Núcleo em Zig
+## Rodar
+
+Para rodar o aerodrive:
 
 ```sh
-cd core
-python -m ziglang build --release=fast
+cd aerodrive
+python -m ziglang build run
 cd ..
 ```
 
-Esse passo é opcional: o Python compila o núcleo sozinho na primeira vez que precisar (e de novo quando
-um `.zig` mudar). Com o `zig` 0.16 no PATH, troque `python -m ziglang` por `zig`.
 
----
-
-## Rodar
-
-### GUI
+Já para o aerosim você pode:
 
 ```sh
 python -m aerosim.gui                                              # volta ao último projeto (ou Montagem vazia)
@@ -91,8 +68,18 @@ python -m aerosim.gui data/sprint/projeto_s1223.json               # abre um pro
 python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avião (.json, .cfg ou .xlsx)
 ```
 
+
+## Por que usar o Aircraft Simulation?
+
+  - Liberdade Geométrica Total: Esqueça modelos engessados. Aqui você posiciona quantos tubos, superfícies e motores quiser, definindo misturas de comandos customizadas (elevons, ruddervators, flaperons) com ganhos fracionários.
+  - Do Conceito ao Voo em um Clique: Você desenha e restringe os parâmetros no Aerosim (ex: "quero que decole em no máximo 3 metros" ou "preciso otimizar o MTOW para esta envergadura"), e com um comando manda direto para a Montagem 3D testar o voo.
+  - Performance de C(++) com a Flexibilidade de Python: A interface gráfica e os loops de otimização rodam em Python para máxima agilidade de desenvolvimento, enquanto o motor de física pesado roda puro em Zig, garantindo velocidade brutal.
+  - Autonomia Completa sem Dependências Comerciais Pesadas: Uma ferramenta aberta, com GUI, programável via linha de comando ou API Python, feita por engenheiros para engenheiros.
+
+
+## Possibilidades
 - **Projeto `.json`** (linha de comando, **Arquivo → Abrir**, **Projeto da sprint → Abrir projeto** ou
-  arrastar o arquivo para a janela): volta de onde parou — etapas (perfis, asas, conjuntos, aviões,
+  arrastar o arquivo para a janela): volta de onde parou de qualquer etapas (perfis, asas, conjuntos, aviões,
   estudos), os aviões abertos na Montagem e a aba em que estava; mostra o que está guardado. Sem avião
   guardado no projeto, a **Montagem começa vazia** e o avião aparece no 3D peça por peça
   (**+ Asa, + EH, + EV, + Motor, + Tubo, + Tanque**); a massa vem das peças.
@@ -134,26 +121,12 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   ![Variáveis](docs/img/variaveis.png)
 
   Detalhes em [aerosim/design](aerosim/design/README.md).
-- **Projeto novo no padrão SAE AeroDesign**: corrida de decolagem ≤ 6 m (restrição ativa), asa retangular
-  (afilamento 1) e a restrição "a asa cabe num retângulo" (envergadura e **corda máxima**, a ligar com os valores do
-  regulamento do ano); o avião novo e o montado pelas etapas voam a **missão curta** (decolagem, uma volta,
-  passagem LAPES, pouso), com x_warning = 6 m.
-- **Dimensionamento inicial → Mini-MDO**: geometria → motorização → envelope de voo → decolagem → MTOW, PV, CP
-  e EE, no núcleo Zig, para monoplano, biplano, asa voadora, tailsitter e VTOL. O otimizador (PSO ou busca
-  aleatória; a interface aceita outros) avisa a cada iteração: os indivíduos aparecem no gráfico em tempo real, e
-  o **histórico das asas** tem um slider (a planta do melhor até cada iteração sobre o enxame dela). A mesma asa
-  pode ter perfil diferente na ponta. Clique num indivíduo: envelope, grandezas e restrições, 3D; **Levar para as
-  etapas** ou **Conferir no 6GDL**.
 
-  As variáveis e os limites são os de **Condições e restrições → Variáveis** (o botão **Variáveis e limites…** abre
-  lá; nada duplicado): fixo, variável (mín. e máx. obrigatórios para grandeza física) ou calculado. Perfil (raiz e
-  ponta), motor, hélice e **arranjo dos motores** (nariz, na asa aos pares, propulsora na esteira) são listas: o
-  botão abre um seletor com busca e marcar/desmarcar todos; nada marcado = todos. Os perfis vêm da **pasta
-  `data/airfoils`** (polar do NeuralFoil) e do projeto. **Limites a partir das restrições** leva envergadura ≤,
-  área ≤/≥ e nº de motores para os limites. Do indivíduo clicado: **envelope completo** (tração disponível ×
-  requerida e subida na grade inteira, com V_S, V_y, V de L/D máx., V máx.; todas as velocidades na tabela) e o
-  **diagrama de restrições** (T/W × W/S com as curvas que você marcar, T/W estático equivalente pela curva da
-  hélice dele, e o ponto dele). O histórico mostra o enxame de cada iteração e diz o que está **no limite**.
+- **Dimensionamento inicial**: O aerosim conta com um módulo capaz de com base nas restrições usar as teorias de `initial sizing` definir
+  as dimensões de asa
+
+  Todo e qualquer projeto tem seus limites/restrições para isso temos uma aba somente com a capacidade de escolher as restrições, ligando ou
+  as desligando as tabelas de cada área de projeto são atualizados, bem como permite otimizar de uma forma mais consistente a aeronave com base nisso.
 
   ![Envelope completo](docs/img/mdo2_envelope.png)
   ![Diagrama de restrições do indivíduo](docs/img/mdo2_diagrama.png)
@@ -164,14 +137,8 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   atual em 3D acima dos gráficos.
 - **Vários aviões:** **Arquivo → Abrir ao lado** ou **＋ variante** abre mais um; ◀ ▶ troca, e todas
   as abas rodam o escolhido.
-- **Ctrl+Z / Ctrl+Y** desfaz e refaz qualquer mudança, na montagem e nas abas.
 
-### Simulador pilotado (AeroDrive)
 
-```sh
-cd aerodrive
-zig build run -- ../data/aircraft/Convencional_original.json
-```
 
 Instalação e comandos em [aerodrive/README.md](aerodrive/README.md).
 
@@ -207,11 +174,6 @@ python -m pytest tests/manager         # uma parte
 (cd aerodrive && python -m ziglang build test)   # testes e fuzzing do aerodrive
 ```
 
-### Fotos das abas (sem tela)
-
-```sh
-xvfb-run -a python tools/capturas.py capturas/
-```
 
 ---
 
