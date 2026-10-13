@@ -53,6 +53,13 @@ QUANTITIES: dict[str, Quantity] = {
     "V_max": Quantity("velocidade máxima", "m/s", "desempenho"),
     "RC": Quantity("razão de subida máxima", "m/s", "desempenho", "", "mais tração ou menos arrasto"),
     "TW": Quantity("tração/peso estática", "", "desempenho"),
+    "n_turn": Quantity("fator de carga sustentado", "", "desempenho", "na V da curva (Condições): o que a tração "
+                       "mantém, limitado pelo estol", "mais tração ou menos arrasto induzido (mais alongamento)"),
+    "grad": Quantity("gradiente de subida máx.", "%", "desempenho", "maior (T − D)/W", "mais tração ou menos arrasto"),
+    "ceiling": Quantity("teto", "m", "desempenho", "altitude-densidade em que a subida máxima cai a 0,5 m/s (tração "
+                        "proporcional a ρ)", "mais tração/potência ou menos carga alar"),
+    "s_land": Quantity("corrida de pouso", "m", "desempenho", "toque a 1,15 V_S, frenagem com o atrito das "
+                       "Condições, sem arrasto (conservador)", "mais área ou C_L,max maior"),
     "mass": Quantity("massa montada", "kg", "montagem", "saída: PV + CP"),
     "pv": Quantity("PV (peso vazio)", "kg", "montagem", "saída: tudo menos a carga paga"),
     "cp": Quantity("CP (carga paga)", "kg", "montagem", "saída: lastro + líquido + LAPES"),
@@ -103,7 +110,9 @@ def default_constraints() -> list[Constraint]:
             Constraint("P_motor", "≤", 700.0, active=False), Constraint("n_surf", "≤", 3, active=False),
             Constraint("n_motor", "≤", 1, active=False), Constraint("ee", "≥", 1.0, active=False),
             Constraint("m_liquid", "≥", 1.0, active=False), Constraint("m_lapes", "≥", 1.0, active=False),
-            Constraint("RC", "≥", 1.0, active=False)]
+            Constraint("RC", "≥", 1.0), Constraint("n_turn", "≥", 2.0, active=False),
+            Constraint("grad", "≥", 5.0, active=False), Constraint("ceiling", "≥", 1500.0, active=False),
+            Constraint("s_land", "≤", 60.0, active=False)]
 
 
 def active(constraints: list[Constraint], key: str, op: str | None = None) -> Constraint | None:

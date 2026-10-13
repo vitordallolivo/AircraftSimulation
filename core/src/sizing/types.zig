@@ -53,14 +53,18 @@ pub const q_mtow = 15;
 pub const q_V_LD = 16; // V de (L/D) máx.
 pub const q_LD = 17;
 pub const q_c_root = 18; // corda da raiz (a maior): a asa cabe num retângulo b × c
-pub const n_q = 19;
+pub const q_n_turn = 19; // fator de carga sustentado na V da curva (tração e estol)
+pub const q_grad = 20; // gradiente de subida máximo (%)
+pub const q_ceiling = 21; // teto: altitude-densidade em que a subida máxima cai a roc_ceiling (m)
+pub const q_s_land = 22; // corrida de pouso (m): toque a 1,15 V_S, frenagem μ_f
+pub const n_q = 23;
 /// os mesmos nomes do registro do aerosim (`design/registry.QUANTITIES`)
-pub const q_names = [n_q][:0]const u8{ "S", "b", "AR", "V_S", "n_surf", "P_motor", "n_motor", "s_to", "V_max", "RC", "TW", "mass", "pv", "cp", "ee", "mtow", "V_LD", "LD", "c_root" };
+pub const q_names = [n_q][:0]const u8{ "S", "b", "AR", "V_S", "n_surf", "P_motor", "n_motor", "s_to", "V_max", "RC", "TW", "mass", "pv", "cp", "ee", "mtow", "V_LD", "LD", "c_root", "n_turn", "grad", "ceiling", "s_land" };
 
 /// a grandeza depende da massa (entra na busca do MTOW) ou é só da geometria/carga
 pub fn massDependent(q: usize) bool {
     return switch (q) {
-        q_VS, q_s_to, q_Vmax, q_RC, q_TW => true,
+        q_VS, q_s_to, q_Vmax, q_RC, q_TW, q_n_turn, q_grad, q_ceiling, q_s_land => true,
         else => false,
     };
 }
@@ -147,6 +151,10 @@ pub const SizingCfg = extern struct {
     vtol_mass_frac: f64 = 0.15, // VTOL: estrutura dos motores de sustentação / massa dos conjuntos
     // pairado (tailsitter, VTOL)
     hover_margin: f64 = 1.3, // tração estática ≥ margem × peso
+    // curva, teto e pouso
+    V_turn: f64 = 0, // V da curva sustentada (m/s); 0: 1,5·V_S (√2·V_S cairia no limite de estol, n = 2 exato)
+    roc_ceiling: f64 = 0.5, // subida que define o teto (m/s)
+    mu_brake: f64 = 0.3, // atrito na frenagem do pouso
     // variáveis, listas e restrições
     vars: [n_vars]VarSpec = [_]VarSpec{.{}} ** n_vars,
     airfoils: [max_airfoils]AirfoilData = [_]AirfoilData{.{}} ** max_airfoils,

@@ -26,6 +26,32 @@ from ..widgets.param_slider import HELP_MARK, DataclassForm
 OK_C, BAD_C, BEST_C = "#2ca02c", "#d62728", "#1f4e8c"
 
 
+class LegendPlot(pg.GraphicsLayoutWidget):
+    """gráfico com a legenda numa faixa embaixo, fora da área do gráfico (não cobre as curvas); o resto da API é
+    a do PlotItem (plot, addItem, clear, setLabel, setYRange...)"""
+
+    def __init__(self, xlabel: str, ylabel: str, cols: int = 3, legend: bool = True):
+        super().__init__()
+        self.setBackground("w")
+        self.ci.setSpacing(4)
+        self.pi = self.addPlot(row=0, col=0)
+        self.pi.showGrid(x=True, y=True, alpha=0.3)
+        self.pi.setLabel("bottom", xlabel)
+        self.pi.setLabel("left", ylabel)
+        if legend:
+            self.legend = pg.LegendItem(colCount=cols, horSpacing=18, frame=False, labelTextSize="9pt")
+            self.ci.addItem(self.legend, row=1, col=0)
+            self.pi.legend = self.legend               # plot(name=...) entra na legenda daqui
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
+        # o GraphicsLayoutWidget grava addItem/clear do layout na instância: aqui eles passam a ser os do gráfico
+        self.addItem, self.clear, self.plot = self.pi.addItem, self.pi.clear, self.pi.plot
+        for n in ("setYRange", "setXRange", "setRange", "setAspectLocked", "setLabel", "showGrid", "autoRange"):
+            setattr(self, n, getattr(self.pi, n))     # GraphicsView também tem alguns: valem os do gráfico
+
+    def __getattr__(self, name):
+        return getattr(self.__dict__["pi"] if "pi" in self.__dict__ else super(), name)
+
+
 class _Worker(QtCore.QObject):
     progress = QtCore.pyqtSignal(int, object)     # iteração, indivíduos até agora
     done = QtCore.pyqtSignal(object)
@@ -110,18 +136,21 @@ class MdoPage(QtWidgets.QWidget):
         ls.setWidgetResizable(True)
         ls.setWidget(left)
         split.addWidget(ls)
-        # ---- direita
-        right = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)      # em cima a busca, embaixo o indivíduo
-        right.setChildrenCollapsible(False)
-        top_w = QtWidgets.QWidget()
-        top = QtWidgets.QHBoxLayout(top_w)
-        top.setContentsMargins(0, 0, 0, 0)
-        self.scatter = pg.PlotWidget()
-        self.scatter.setBackground("w")
-        self.scatter.showGrid(x=True, y=True, alpha=0.3)
-        self.scatter.setLabel("bottom", "iteração")
-        self.scatter.setMinimumHeight(230)
-        self.scatter.addLegend(offset=(-10, -10))      # embaixo à direita: os pontos sobem com a busca
+        # ---- direita: uma coluna com rolagem, seções com espaço e legendas fora das figuras
+        body = QtWidgets.QWidget()
+        rv = QtWidgets.QVBoxLayout(body)
+        rv.setSpacing(18)
+        rv.setContentsMargins(6, 6, 14, 18)
+
+        def section(title):
+            lab = QtWidgets.QLabel(f"<b>{title}</b>")
+            lab.setStyleSheet("font-size:13px; color:#1f2d3d; border-bottom:1px solid #c9d3e0; padding-bottom:2px")
+            rv.addWidget(lab)
+        section("Busca: indivíduos e histórico das asas")
+        top = QtWidgets.QHBoxLayout()
+        top.setSpacing(14)
+        self.scatter = LegendPlot("iteração", "MTOW (kg)", cols=3)
+        self.scatter.setMinimumHeight(380)
         self.pts_ok = pg.ScatterPlotItem(size=7, brush=pg.mkBrush(OK_C), pen=pg.mkPen(None), name="viável")
         self.pts_bad = pg.ScatterPlotItem(size=7, brush=pg.mkBrush(None), pen=pg.mkPen(BAD_C), name="não cumpre")
         self.best_line = pg.PlotDataItem(pen=pg.mkPen(BEST_C, width=2), name="melhor até a iteração")
@@ -132,13 +161,9 @@ class MdoPage(QtWidgets.QWidget):
         self.pts_bad.sigClicked.connect(self._clicked)
         top.addWidget(self.scatter, 3)
         hist = QtWidgets.QVBoxLayout()
-        self.plan = pg.PlotWidget()
-        self.plan.setBackground("w")
+        self.plan = LegendPlot("y (m)", "x (m)", legend=False)
         self.plan.setAspectLocked(True)
-        self.plan.showGrid(x=True, y=True, alpha=0.3)
-        self.plan.setLabel("bottom", "y (m)")
-        self.plan.setLabel("left", "x (m)")
-        self.plan.setMinimumHeight(200)
+        self.plan.setMinimumHeight(300)
         hist.addWidget(self.plan, 1)
         hs = QtWidgets.QHBoxLayout()
         self.slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
@@ -157,61 +182,57 @@ class MdoPage(QtWidgets.QWidget):
         self.plan_lbl.setStyleSheet("color:#334; font-size:11px")
         hist.addWidget(self.plan_lbl)
         top.addLayout(hist, 2)
-        right.addWidget(top_w)
-        self.tabs = QtWidgets.QTabWidget()
-        envw = QtWidgets.QWidget()
-        eh = QtWidgets.QHBoxLayout(envw)
-        eh.setContentsMargins(0, 0, 0, 0)
-        self.env = self._plot("V (m/s)", "N")
-        self.rc = self._plot("V (m/s)", "razão de subida (m/s)")
+        rv.addLayout(top)
+        section("Envelope completo do indivíduo selecionado (no MTOW)")
+        eh = QtWidgets.QHBoxLayout()
+        eh.setSpacing(14)
+        self.env = LegendPlot("V (m/s)", "N", cols=2)
+        self.rc = LegendPlot("V (m/s)", "razão de subida (m/s)", cols=1)
+        for w in (self.env, self.rc):
+            w.setMinimumHeight(340)
         eh.addWidget(self.env, 3)
         eh.addWidget(self.rc, 2)
-        self.tabs.addTab(envw, "Envelope completo (no MTOW)")
-        dw = QtWidgets.QWidget()
-        dh = QtWidgets.QVBoxLayout(dw)
-        dh.setContentsMargins(0, 0, 0, 0)
+        rv.addLayout(eh)
+        section("Diagrama de restrições do indivíduo")
         cb = QtWidgets.QHBoxLayout()
         cb.addWidget(QtWidgets.QLabel("curvas:"))
         self.kind_cb = {}
         for k in mdo.DIAGRAM_KINDS:
             c = QtWidgets.QCheckBox(k)
-            c.setChecked(k in ("estol", "decolagem", "subida", "cruzeiro", "curva"))
+            c.setChecked(k in ("estol", "pouso", "decolagem", "subida", "gradiente", "cruzeiro", "curva", "teto"))
             c.toggled.connect(lambda *_: self._diagram())
             self.kind_cb[k] = c
             cb.addWidget(c)
         cb.addStretch(1)
-        dh.addLayout(cb)
-        self.diag = self._plot("W/S (N/m²)", "T/W estático equivalente")
-        dh.addWidget(self.diag, 1)
-        self.tabs.addTab(dw, "Diagrama de restrições")
+        rv.addLayout(cb)
+        self.diag = LegendPlot("W/S (N/m²)", "T/W estático equivalente", cols=4)
+        self.diag.setMinimumHeight(400)
+        rv.addWidget(self.diag)
+        section("Grandezas e restrições · 3D")
+        gh = QtWidgets.QHBoxLayout()
+        gh.setSpacing(14)
         self.table = QtWidgets.QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["grandeza", "valor", "restrição"])
         self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
-        self.tabs.addTab(self.table, "Grandezas e restrições")
+        self.table.setMinimumHeight(360)
+        gh.addWidget(self.table, 3)
         try:
             from ..widgets.view3d import AircraftView
             self.view = AircraftView()
-            self.tabs.addTab(self.view, "3D")
+            self.view.setMinimumHeight(360)
+            gh.addWidget(self.view, 2)
         except Exception:
             self.view = None
-        right.addWidget(self.tabs)
-        right.setSizes([400, 260])
-        split.addWidget(right)
+        rv.addLayout(gh)
+        self.right_scroll = QtWidgets.QScrollArea()
+        self.right_scroll.setWidgetResizable(True)
+        self.right_scroll.setWidget(body)
+        split.addWidget(self.right_scroll)
         split.setSizes([360, 990])
         self.selected: dict | None = None
         state.designChanged.connect(self._design_changed)
         self.rebuild_form()
         self.show_saved()
-
-    @staticmethod
-    def _plot(xl, yl):
-        w = pg.PlotWidget()
-        w.setBackground("w")
-        w.showGrid(x=True, y=True, alpha=0.3)
-        w.setLabel("bottom", xl)
-        w.setLabel("left", yl)
-        w.addLegend(offset=(-10, 5))
-        return w
 
     # ------------------------------------------------------------------ formulário
     def rebuild_form(self):
@@ -309,7 +330,7 @@ class MdoPage(QtWidgets.QWidget):
                          (f". Fora do dimensionamento inicial (as etapas conferem): {'; '.join(skipped)}" if skipped else ""))
         if b:
             self.select(b)
-            self.tabs.setCurrentIndex(0)
+            self.right_scroll.ensureWidgetVisible(self.env)
 
     def _failed(self, txt):
         self.msg.setText("erro:\n" + txt)

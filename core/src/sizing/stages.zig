@@ -84,6 +84,7 @@ pub const Env = struct {
     TW: f64,
     V_LD: f64,
     LD: f64,
+    grad: f64, // gradiente de subida máximo, sen γ (adimensional)
     D: [S.n_curve]f64, // arrasto de voo nivelado (tração requerida, N) na grade inteira; V = 0: infinito
 };
 
@@ -92,7 +93,7 @@ pub fn stallSpeed(p: Polar, W: f64, Sw: f64, rho: f64) f64 {
 }
 
 pub fn envelope(p: Polar, c: *const Curve, W: f64, Sw: f64, rho: f64) Env {
-    var e: Env = .{ .Vs = stallSpeed(p, W, Sw, rho), .Vmax = std.math.nan(f64), .RC = -std.math.inf(f64), .TW = c.T[0] / W, .V_LD = @sqrt(2.0 * W / (rho * Sw) * @sqrt(p.K / @max(p.CD0, 1e-6))), .LD = 0.5 / @sqrt(p.K * @max(p.CD0, 1e-6)), .D = undefined };
+    var e: Env = .{ .Vs = stallSpeed(p, W, Sw, rho), .Vmax = std.math.nan(f64), .RC = -std.math.inf(f64), .TW = c.T[0] / W, .V_LD = @sqrt(2.0 * W / (rho * Sw) * @sqrt(p.K / @max(p.CD0, 1e-6))), .LD = 0.5 / @sqrt(p.K * @max(p.CD0, 1e-6)), .grad = -std.math.inf(f64), .D = undefined };
     var prev_ok = false;
     var prev_V: f64 = 0;
     var prev_m: f64 = 0;
@@ -105,6 +106,7 @@ pub fn envelope(p: Polar, c: *const Curve, W: f64, Sw: f64, rho: f64) Env {
         if (V < e.Vs) continue;
         const m = c.T[i] - D;
         e.RC = @max(e.RC, m * V / W);
+        e.grad = @max(e.grad, m / W);
         const ok = m >= 0;
         if (ok) {
             e.Vmax = V;
@@ -116,7 +118,58 @@ pub fn envelope(p: Polar, c: *const Curve, W: f64, Sw: f64, rho: f64) Env {
         prev_m = m;
     }
     if (!std.math.isFinite(e.RC)) e.RC = std.math.nan(f64);
+    if (!std.math.isFinite(e.grad)) e.grad = std.math.nan(f64);
     return e;
+}
+
+// ------------------------------------------------------------------ curva, teto, pouso
+/// fator de carga sustentado na velocidade V: o que a tração mantém, n = √(q/(K W/S) (T/W − q C_D0/(W/S))),
+/// limitado pelo estol, n = q C_L,max/(W/S) (Gudmundsson, cap. 3; como no diagrama de restrições)
+pub fn sustainedN(p: Polar, c: *const Curve, W: f64, Sw: f64, rho: f64, V: f64) f64 {
+    const q = 0.5 * rho * V * V;
+    const ws = W / Sw;
+    const tw = c.at(V) / W;
+    const n_thr = @sqrt(@max(q / (p.K * ws) * (tw - q * p.CD0 / ws), 0.0));
+    return @min(n_thr, q * p.CLmax / ws);
+}
+
+/// densidade ISA pela altitude-densidade (a mesma de `isa_density` do aerosim)
+pub fn isaRho(h: f64) f64 {
+    return 1.225 * std.math.pow(f64, @max(1.0 - 2.25577e-5 * h, 1e-6), 4.2559);
+}
+
+/// altitude-densidade de uma densidade (inversa de `isaRho`)
+pub fn isaAltitude(rho: f64) f64 {
+    return (1.0 - std.math.pow(f64, @max(rho, 1e-6) / 1.225, 1.0 / 4.2559)) / 2.25577e-5;
+}
+
+/// teto: a altitude-densidade em que a subida máxima cai a `roc` (tração ∝ ρ); NaN se não sobe nem no campo
+pub fn ceiling(p: Polar, c: *const Curve, W: f64, Sw: f64, rho: f64, roc: f64) f64 {
+    const h0 = isaAltitude(rho);
+    const rcAt = struct {
+        fn f(pp: Polar, cc: *const Curve, w: f64, s: f64, r0: f64, h: f64) f64 {
+            const rh = isaRho(h);
+            var ch = cc.*;
+            for (&ch.T) |*t| t.* *= rh / r0;
+            const e = envelope(pp, &ch, w, s, rh);
+            return if (std.math.isFinite(e.RC)) e.RC else -1e9;
+        }
+    }.f;
+    if (rcAt(p, c, W, Sw, rho, h0) < roc) return std.math.nan(f64);
+    var lo = h0;
+    var hi = h0 + 9000.0;
+    if (rcAt(p, c, W, Sw, rho, hi) >= roc) return hi;
+    for (0..30) |_| {
+        const mid = 0.5 * (lo + hi);
+        if (rcAt(p, c, W, Sw, rho, mid) >= roc) lo = mid else hi = mid;
+    }
+    return lo;
+}
+
+/// corrida de pouso: toque a 1,15 V_S, frenagem μ_f, sem arrasto nem sustentação (conservador; a mesma
+/// conta do limite de pouso do diagrama de restrições)
+pub fn landingRun(p: Polar, W: f64, Sw: f64, rho: f64, mu_brake: f64) f64 {
+    return 1.15 * 1.15 * (W / Sw) / (rho * p.CLmax * g0 * @max(mu_brake, 1e-3));
 }
 
 // ------------------------------------------------------------------ decolagem
@@ -183,6 +236,24 @@ test "dois perfis: retangular pesa meio a meio; perfil igual não muda nada" {
     try testing.expectEqual(a, blendAirfoils(a, a, 0.4));
 }
 
+test "curva sustentada e teto: contas fechadas" {
+    const p: Polar = .{ .CD0 = 0.04, .K = 0.05, .CLmax = 1.4, .CLg = 0.5 };
+    const T0 = 30.0;
+    const c = linearCurve(T0, 1e9); // tração constante
+    const W = 100.0;
+    const Sw = 1.0;
+    const rho = 1.2;
+    const V = 14.0;
+    const q = 0.5 * rho * V * V;
+    const n = @sqrt(q / (p.K * W) * (T0 / W - q * p.CD0 / W));
+    try testing.expectApproxEqRel(@min(n, q * p.CLmax / W), sustainedN(p, &c, W, Sw, rho, V), 1e-12);
+    // teto: com tração ∝ ρ, a subida cai com a altitude e o teto passa da altitude do campo
+    const h = ceiling(p, &c, W, Sw, rho, 0.5);
+    try testing.expect(h > isaAltitude(rho));
+    try testing.expectApproxEqAbs(@as(f64, 600), isaAltitude(isaRho(600)), 1e-6);
+    try testing.expectApproxEqRel(1.15 * 1.15 * W / (rho * p.CLmax * g0 * 0.3), landingRun(p, W, Sw, rho, 0.3), 1e-12);
+}
+
 test "decolagem sem arrasto nem atrito: x = v²·m/(2T)" {
     const p: Polar = .{ .CD0 = 0, .K = 0, .CLmax = 1.5, .CLg = 0 };
     const c = linearCurve(20, 1e9); // tração constante
@@ -220,6 +291,12 @@ fn fuzzStages(_: void, src: *fz.Src) !void {
         try testing.expect(e.Vs > 0 and std.math.isFinite(e.Vs));
         if (std.math.isFinite(e.Vmax)) try testing.expect(e.Vmax >= e.Vs - 1e-9);
         // corrida: não negativa e não diminui com a massa
+        // curva e teto: finitos ou NaN, nunca negativos; o pouso cresce com a massa
+        const nt = sustainedN(p, &c, m * g0, geo.S, rho, 1.4 * e.Vs);
+        try testing.expect(!(nt < 0));
+        const hc = ceiling(p, &c, m * g0, geo.S, rho, 0.5);
+        try testing.expect(std.math.isNan(hc) or hc >= isaAltitude(rho) - 1e-6);
+        try testing.expect(landingRun(p, 1.2 * m * g0, geo.S, rho, 0.3) > landingRun(p, m * g0, geo.S, rho, 0.3));
         const s1 = takeoffRun(p, &c, m, geo.S, rho, cfg.mu, 0);
         const s2 = takeoffRun(p, &c, m * 1.2, geo.S, rho, cfg.mu, 0);
         errdefer std.debug.print("s1={d} s2={d} m={d}\n", .{ s1, s2, m });
