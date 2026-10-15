@@ -617,8 +617,32 @@ def test_modifiers_editor(app, manager):
     box = cfg.editor_area.widget()
     on = box.findChild(QtWidgets.QCheckBox)
     on.setChecked(False)
+    pump(app, 0.05)
     assert native_spec(st.aircraft)["ground"] == 0
-    cfg._edit("modifiers")
     combo = cfg.editor_area.widget().findChild(QtWidgets.QComboBox)
     combo.setCurrentIndex(1)                                  # + efeito solo: McCormick
+    pump(app, 0.05)
     assert native_spec(st.aircraft)["ground"] == 1 and len(st.aircraft.modifiers) == 2
+
+
+def test_modifiers_editor_parameters(app, manager):
+    """esteira na Montagem: os parâmetros e os motores vão para o modificador e dele para o núcleo"""
+    from aerosim.backend.zig.translator import native_spec
+    from aerosim.gui.state import AppState
+    from aerosim.gui.tabs.config_tab import ConfigTab
+    from aerosim.model.templates import twin_boom
+    st = AppState(manager, twin_boom())
+    cfg = ConfigTab(st)
+    cfg._edit("modifiers")
+    combo = cfg.editor_area.widget().findChild(QtWidgets.QComboBox)
+    combo.setCurrentIndex([combo.itemData(i) for i in range(combo.count())].index("esteira.disco"))
+    pump(app, 0.05)
+    w = cfg.editor_area.widget()
+    w.findChild(QtWidgets.QDoubleSpinBox, "mod_1_giro").setValue(0.0)
+    props = [e for e in w.findChildren(QtWidgets.QLineEdit) if e.placeholderText() == "todos"][0]
+    props.setText("2")
+    props.editingFinished.emit()
+    m = st.aircraft.modifiers[1]
+    assert m.kind == "esteira.disco" and m.params["giro"] == 0.0 and m.props == [1]
+    sp = native_spec(st.aircraft)
+    assert sp["n_mod"] == 1 and sp["mods"][0]["prop_mask"] == 2 and sp["mods"][0]["params"][1] == 0.0

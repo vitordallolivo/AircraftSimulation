@@ -144,6 +144,8 @@ class _Lib:
                                                 ctypes.POINTER(c_size), ctypes.POINTER(T["SizingOut"]), vp, vp]),
             "aerosim_sizing_name": (ctypes.c_char_p, [c_int, c_int]),
             "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
+            "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
+            "aerosim_aero_coeffs_thrust": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, ctypes.POINTER(T["AeroCoeffs"])]),
         }
         absent = [n for n in sig if not hasattr(L, n)]
         if absent:
@@ -255,6 +257,17 @@ class ZigSession(ISimSession):
     def aero_coeffs(self, V, alpha, beta=0.0, de=0.0, da=0.0, dr=0.0):
         o = self._lib.schema.types["AeroCoeffs"]()
         _check(self._lib.dll.aerosim_aero_coeffs(self._slot, V, alpha, beta, de, da, dr, ctypes.byref(o)), "aero")
+        return _struct_dict(o)
+
+    def aero_coeffs_thrust(self, V, alpha, beta, T, Q, de=0.0, da=0.0, dr=0.0, ref=None):
+        """coeficientes com a tração T[i] e o torque Q[i] de cada motor (os modificadores, como a esteira, usam)"""
+        o = self._lib.schema.types["AeroCoeffs"]()
+        n = len(T)
+        Ta = (ctypes.c_double * max(n, 1))(*T)
+        Qa = (ctypes.c_double * max(n, 1))(*Q)
+        rb = (ctypes.c_double * 3)(*ref) if ref is not None else None
+        _check(self._lib.dll.aerosim_aero_coeffs_thrust(self._slot, V, alpha, beta, de, da, dr, Ta, Qa, n, rb,
+                                                         ctypes.byref(o)), "aero")
         return _struct_dict(o)
 
     def aero_coeffs_ex(self, V, alpha, beta=0.0, p=0.0, q=0.0, r=0.0, de=0.0, da=0.0, dr=0.0, ref=None):
@@ -444,6 +457,17 @@ class ZigBackend(ISimBackend):
         """fator do efeito solo do núcleo (core/src/modifiers/ground.zig) em cada altura `h` (sonda, sem simular)"""
         f = self._lib.dll.aerosim_probe_ground
         return np.array([f(int(method), float(x), float(b)) for x in np.atleast_1d(h)])
+
+    def probe_slipstream(self, T: float, Q: float, D: float, V: float, rho: float, sense: float, pts) -> np.ndarray:
+        """esteira de um motor (eixo +x) nos pontos (dx, dy, dz) em relação ao cubo (core/src/modifiers/slipstream.zig):
+        linhas [axial, giro_y, giro_z, raio do tubo, dentro]"""
+        f = self._lib.dll.aerosim_probe_slipstream
+        out = []
+        o = (ctypes.c_double * 4)()
+        for d in np.atleast_2d(pts):
+            ins = f(T, Q, D, V, rho, sense, float(d[0]), float(d[1]), float(d[2]), ctypes.byref(o))
+            out.append(list(o) + [float(ins)])
+        return np.array(out)
 
     @property
     def schema(self) -> abi.Schema:

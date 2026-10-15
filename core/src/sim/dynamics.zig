@@ -116,12 +116,13 @@ pub fn f(c: S.Ctx, t: f64, x: []const f64, dx: []f64, out: ?*Out) void {
     const pr = prop.compute(p, Vr, w, ms.rcg, x[S.RPS0 .. S.RPS0 + L.max_props], cmd.thr, cmd.dr, x[S.THE], h);
     var env = mods.Env{};
     if (p.n_mod > 0) {
-        env.n_prop = @intCast(p.n_prop);
-        for (0..env.n_prop) |i| {
-            env.T[i] = pr.u[i].T;
-            env.Q[i] = pr.u[i].Q;
-            env.rps[i] = x[S.RPS0 + i];
+        var Tn: [L.max_props]f64 = undefined;
+        var Qn: [L.max_props]f64 = undefined;
+        for (0..@as(usize, @intCast(p.n_prop))) |i| {
+            Tn[i] = pr.u[i].T;
+            Qn[i] = pr.u[i].Q;
         }
+        env = mods.envFrom(p, Vr, w, &Tn, &Qn);
     }
     const ae = aero.computeEnv(p, Vr, w, ms.rcg, h - hgnd, .{ cmd.de, cmd.da, cmd.dr }, &env);
     const gr = gear.compute(c, x, R, ms.rcg, cmd.dw);

@@ -1,7 +1,7 @@
 # core/src/modifiers — modificadores
 
-Metodologias da literatura que mudam a aerodinâmica do **avião inteiro** sem mexer no resto do núcleo:
-efeito solo hoje; depois a esteira da hélice e tabelas de correção (VSPAERO, CFD, túnel).
+Metodologias da literatura que mudam a aerodinâmica do **avião inteiro** sem mexer no resto do núcleo.
+Hoje: efeito solo e esteira da hélice. Depois: tabelas de correção (VSPAERO, CFD, túnel).
 
 - **O Python só monta dados.** A lista `Aircraft.modifiers` (`aerosim/model/modifiers.py`) vai pelo
   tradutor (`aerosim/backend/zig/translator.py`) para os campos `ground`, `n_mod` e `mods` de `Params`.
@@ -27,7 +27,8 @@ physics/aero.zig, em cada painel i (centro r):
 |---|---|
 | `types.zig` | `Modifier` (extern struct: `kind`, `enabled`, `surf_mask[2]`, `prop_mask`, `params[16]`), constantes `ground_*` e `kind_*` |
 | `ground.zig` | métodos do efeito solo (`factor`, `mccormick`) |
-| `mod.zig` | entrada do módulo: `Env` (tração, torque e rotação de cada motor no instante), `induced` (soma dos efeitos a mais por painel), `hits` (máscara de painéis) |
+| `slipstream.zig` | esteira por disco atuador (`diskInduced`, `axialAt`, `radiusAt`, `swirlRate`, `at`) |
+| `mod.zig` | entrada do módulo: `Env` (tração, torque, eixo e velocidade axial de cada motor no instante; `envFrom`), `induced` (soma dos efeitos a mais por painel, como média de `strip_samples` pontos ao longo da envergadura da faixa), `hits` / `hitsProp` (máscaras) |
 | `README.md` | este arquivo |
 
 ## Dois jeitos de entrar
@@ -35,7 +36,7 @@ physics/aero.zig, em cada painel i (centro r):
 | categoria | onde | padrão | exemplo |
 |---|---|---|---|
 | **solo**: método de um efeito que sempre existe; um por vez | `Params.ground` | `ground_mccormick` (o que o núcleo sempre fez) | `solo.mccormick`; sem nenhum na lista = desligado |
-| **aditivo**: efeito a mais, somado em cada painel | `Params.mods[0..n_mod]` | nenhum (`n_mod = 0`: o laço nem roda) | `esteira.disco` (próxima etapa), `tabela` |
+| **aditivo**: efeito a mais, somado em cada painel | `Params.mods[0..n_mod]` | nenhum (`n_mod = 0`: o laço nem roda) | `esteira.disco`, `tabela` (próxima etapa) |
 
 ## Compatibilidade (nada muda sem pedir)
 
@@ -57,6 +58,8 @@ physics/aero.zig, em cada painel i (centro r):
 |---|---|---|---|
 | `solo.mccormick` (padrão) | φ = (16 h/b)² / (1 + (16 h/b)²); C_Di ← φ C_Di em cada painel horizontal; h = altura do painel acima do chão no passo (`h − z_painel`), b = envergadura de referência; h ≤ 1 cm vira 1 cm | B. W. McCormick, *Aerodynamics, Aeronautics, and Flight Mechanics* (Wiley). A mesma expressão em J. D. Anderson, *Aircraft Performance and Design* (McGraw-Hill), que cita o McCormick. **Número da equação e página: a conferir no PDF** | `ground.zig` (h/b = 0,1 → 2,56/3,56; limites 0 e 1); `tests/model/test_modifiers.py` (desligar muda a decolagem) |
 
+| `esteira.disco` (aditivo, desligado por padrão) | por motor, com a tração T e o torque Q do instante: (1) w0 da teoria do momento, T = 2ρA w0 (V + w0); (2) w(x) = w0 (1 + x/√(x² + R²)) ao longo do eixo (x > 0 atrás do disco; à frente também, sem giro); (3) contração (V + w) R² = const; (4) giro de corpo rígido com fluxo de momento angular = Q: Ω0 = 2Q/(π ρ (V + w0) R⁴), Ω(x) = Ω0 (R/R(x))², no sentido da hélice. O painel soma `ganho_axial·w·eT − ganho_giro·v_giro`, média em 16 pontos ao longo da faixa (faixa só em parte dentro do tubo). N motores: superposição | (1) Rankine–Froude, em McCormick, *Aerodynamics, Aeronautics, and Flight Mechanics*, e Glauert, "Airplane Propellers", em Durand, *Aerodynamic Theory* IV (1935); (2) disco atuador com carga uniforme (cilindro de vórtices semi-infinito), em McCormick, *Aerodynamics of V/STOL Flight*, e Veldhuis (ICAS 2004; tese TU Delft 2005); (3) continuidade; (4) balanço de momento angular de Glauert, com a **hipótese de corpo rígido desta implementação**. **Equações e páginas: a conferir nos PDFs** | `slipstream.zig` (T = 2ρA w0(V+w0); estático; w(0) = w0, w(∞) = 2w0; contração; ∫ρ(V+w0) v_t r dA = Q; fora do tubo nada; sentido inverte o giro); `tests/model/test_slipstream.py` (tração zero = idêntico bit a bit; giro sozinho espelha C_l ao inverter o sentido; bimotor simétrico com sentidos opostos: C_l = C_n = C_Y = 0; superposição dos dois motores; máscara de motores; sonda = teoria do momento) |
+
 ### Limites conhecidos do `solo.mccormick`
 
 São as razões para ter outros métodos depois:
@@ -65,12 +68,23 @@ São as razões para ter outros métodos depois:
 - a altura do painel usa o z dele no corpo, sem girar pela arfagem e pelo rolamento;
 - usa o `b` de referência até para a EH.
 
+### Limites conhecidos do `esteira.disco`
+
+- velocidade axial do eixo aplicada igual em toda a seção do tubo (perfil "chapéu"; Conway 1995 dá a carga
+  não uniforme);
+- o tubo segue o eixo do motor: não é desviado pelo α nem pela asa;
+- sem interação hélice → hélice (tandem: a de trás não vê a esteira da da frente no J dela) e asa → hélice
+  (upwash, força normal na hélice);
+- só onde há tração do instante: na simulação (decolagem, missão) sim; trimagem, linearização e envelope
+  ainda chamam a aerodinâmica sem motores (`Env.none`), então não veem a esteira;
+- esteiras que se cruzam somam (a superposição deixa de ser exata).
+
 ### Próximos tipos (planejados; só entram com a fonte conferida)
 
 | tipo | ideia | fontes a conferir |
 |---|---|---|
 | `solo.imagem` (categoria solo) | método da imagem: sistema de vórtices espelhado abaixo do chão; mexe em C_L, C_Di e no downwash da cauda, e usa a altura de cada painel com a atitude | Katz e Plotkin, *Low-Speed Aerodynamics*; Phillips e Hunsaker, *Lift and Drag of Wings in Ground Effect* (J. Aircraft, 2013) |
-| `esteira.disco` (aditivo) | disco atuador por motor: velocidade axial (teoria do momento) e giro a partir do torque, sentido de rotação, contração do tubo; superposição para N motores, da frente para trás | Rankine–Froude (McCormick; Glauert em Durand, *Aerodynamic Theory*, 1935); Veldhuis (tese TU Delft, 2005); Conway (J. Fluid Mech., 1995) para carga não uniforme |
+| `esteira.conway` (aditivo) | o mesmo com carga não uniforme no disco | Conway (J. Fluid Mech., 1995) |
 | `tabela` (aditivo) | correção por painel (Δα, fator de pressão dinâmica, ΔC_L) em função de α, β, J e comandos, gerada fora da simulação (VSPAERO, CFD, túnel); o núcleo só interpola | a fonte é a de quem gerou a tabela (fica guardada no modificador) |
 
 ## Como testar sem GUI
@@ -79,10 +93,16 @@ São as razões para ter outros métodos depois:
 python tools/probe.py solo --b 2.2 --h 0.02:1.0:0.02                  # CSV na tela
 python tools/probe.py solo --b 2.2 --h 0.02:1.0:0.02 --png solo.png   # e o gráfico
 python tools/modcheck.py data/aircraft/Convencional_original.json --sem-solo
+python tools/probe.py esteira --T 30 --Q 1.2 --D 0.38 --V 10 --x=-0.3:1.5:0.02 --png esteira.png   # ao longo do eixo
+python tools/probe.py esteira --T 30 --Q 1.2 --D 0.38 --V 10 --x 0.5 --r 0:0.25:0.005               # corte radial
+python tools/modcheck.py data/aircraft/Convencional_original.json --com esteira.disco
 ```
 
-- O `probe` chama as funções de sonda do núcleo, sem simulação (`aerosim_probe_ground` em `root.zig`;
-  `ZigBackend.probe_ground` no Python). Nenhuma conta é feita em Python.
+- O `probe` chama as funções de sonda do núcleo, sem simulação (`aerosim_probe_ground` e
+  `aerosim_probe_slipstream` em `root.zig`; `ZigBackend.probe_ground`/`probe_slipstream` no Python). Nenhuma
+  conta é feita em Python.
+- `aerosim_aero_coeffs_thrust` (sessão: `aero_coeffs_thrust(V, α, β, T[], Q[])`) dá os coeficientes do avião com a
+  tração e o torque de cada motor, para estudar a esteira sem simular.
 - O `modcheck` roda a decolagem com os modificadores do avião, sem cada um e, com `--sem-solo`, sem efeito
   solo, e mostra a diferença.
 
@@ -92,6 +112,7 @@ Exemplo, com o `Convencional_original.json`:
 |---|---|---|
 | efeito solo de McCormick (padrão) | 51,381 | 39,679 |
 | sem efeito solo | 51,935 (+0,554) | 40,625 (+0,946) |
+| efeito solo + esteira | 49,497 (−1,884) | 37,404 (−2,275) |
 
 Testes do módulo: `zig build test-physics` (inclui `modifiers/`), `pytest tests/model/test_modifiers.py`.
 

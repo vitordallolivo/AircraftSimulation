@@ -3,6 +3,7 @@ Usa o simulador direto (manager → núcleo), sem GUI.
 
     python tools/modcheck.py data/aircraft/Convencional_original.json
     python tools/modcheck.py meu_aviao.json --sem-solo          # compara também com o efeito solo desligado
+    python tools/modcheck.py meu_aviao.json --com esteira.disco # acrescenta um modificador (só nesta rodada)
 """
 from __future__ import annotations
 
@@ -26,11 +27,16 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("aviao")
     ap.add_argument("--sem-solo", action="store_true", help="inclui o caso sem nenhum efeito solo")
+    ap.add_argument("--com", action="append", default=[], help="acrescenta este modificador (tipo, ex.: esteira.disco)")
     args = ap.parse_args(argv)
     from aerosim.data import load_aircraft
     from aerosim.manager import SimulationManager
     from aerosim.model import modifiers as mods
     ac = load_aircraft(args.aviao)
+    for k in args.com:
+        if k not in mods.KINDS:
+            raise SystemExit(f"tipo desconhecido: {k} (conhecidos: {', '.join(mods.KINDS)})")
+        ac.modifiers.append(mods.Modifier(k))
     man = SimulationManager()
     cases = [("como está: " + "; ".join(mods.describe(ac)), ac)]
     for i, m in enumerate(ac.modifiers):

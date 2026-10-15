@@ -13,6 +13,9 @@ pub const ground_mccormick = 1; // φ(h/b) de McCormick no arrasto induzido (o d
 
 // ---- efeitos a mais (`Modifier.kind`)
 pub const kind_none = 0; // item vazio (ignorado)
+/// esteira da hélice por disco atuador (slipstream.zig). params:
+///   [0] velocidade axial ligada (1/0)   [1] giro ligado (1/0)   [2] ganho da axial   [3] ganho do giro
+pub const kind_slipstream_disk = 1;
 
 pub const n_params = 16;
 

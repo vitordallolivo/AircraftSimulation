@@ -93,7 +93,7 @@ pub fn computeEnv(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env
         const ex = vec.v3(s.ex);
         const ez = vec.v3(s.ez);
         var v = Vr + vec.cross(w, r);
-        if (with_mods) v += mods.induced(p, env, i, r); // esteira, tabela... (modifiers/)
+        if (with_mods) v += mods.induced(p, env, i, s); // esteira, tabela... (modifiers/)
         const u = vec.dot(v, ex);
         const ww = vec.dot(v, ez);
         const V2 = u * u + ww * ww;
@@ -147,10 +147,16 @@ pub fn coeffs(p: *const T.Params, V: f64, alpha: f64, beta: f64, rcg: V3, d: V3)
 
 /// coeficientes com rotação w = (p, q, r) em rad/s e momentos no ponto `ref` (eixos do corpo)
 pub fn coeffsEx(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V3, d: V3) T.AeroCoeffs {
+    return coeffsEnv(p, V, alpha, beta, w, ref, d, null);
+}
+
+/// `coeffsEx` com a tração e o torque de cada motor (para os modificadores, ex.: esteira); null: sem motores
+pub fn coeffsEnv(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V3, d: V3, thrust: ?[2][]const f64) T.AeroCoeffs {
     const a = fm.sincos(alpha);
     const b = fm.sincos(beta);
     const Vr = V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
-    const o = compute(p, Vr, w, ref, 50.0, d);
+    const env = if (thrust) |tq| mods.envFrom(p, Vr, w, tq[0], tq[1]) else mods.Env.none;
+    const o = computeEnv(p, Vr, w, ref, 50.0, d, &env);
     const qS = 0.5 * p.env.rho * V * V * p.Sref;
     return .{
         .CL = (-o.F[2] * a.c + o.F[0] * a.s) / qS,

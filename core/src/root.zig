@@ -78,6 +78,26 @@ export fn aerosim_probe_ground(method: i32, h: f64, b: f64) f64 {
     return modifiers.ground.factor(method, h, b);
 }
 
+/// sonda da esteira (sem simulação): um motor de diâmetro D com tração T, torque Q e sentido `sense`, eixo +x,
+/// ar a V ao longo do eixo; no ponto (dx, dy, dz) em relação ao cubo (corpo) devolve
+/// out = [velocidade axial a mais (m/s, para trás), giro y, giro z (m/s), raio do tubo ali (m)]
+export fn aerosim_probe_slipstream(T_: f64, Q: f64, D: f64, V: f64, rho: f64, sense: f64, dx: f64, dy: f64, dz: f64, out: *[4]f64) i32 {
+    const s = modifiers.slipstream.at(T_, Q, V, 0.5 * D, rho, sense, .{ 1, 0, 0 }, .{ dx, dy, dz }, true, true);
+    out.* = .{ s.axial, s.swirl[1], s.swirl[2], s.R };
+    return if (s.inside) 1 else 0;
+}
+
+/// coeficientes como `aerosim_aero_coeffs_ex`, com a tração T[i] e o torque Q[i] de cada motor (n valores) para os
+/// modificadores (esteira); ref nulo: CG
+export fn aerosim_aero_coeffs_thrust(slot: i32, V: f64, alpha: f64, beta: f64, de: f64, da: f64, dr: f64, Tn: [*]const f64, Qn: [*]const f64, n: i32, ref: ?*const [3]f64, out: *T.AeroCoeffs) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    if (n != inst.p.n_prop) return E_BAD_INDEX;
+    const r = if (ref) |x| vec.v3(x.*) else trim.Ctx.init(&inst.p, &inst.r.f).rcg;
+    const k: usize = @intCast(n);
+    out.* = aero.coeffsEnv(&inst.p, V, alpha, beta, vec.zero, r, .{ de, da, dr }, .{ Tn[0..k], Qn[0..k] });
+    return 0;
+}
+
 /// hash (FNV-1a 64) do esquema: confere que o texto chegou inteiro e identifica a versão do layout
 export fn aerosim_schema_hash() u64 {
     return abi.schema_hash;

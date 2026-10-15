@@ -523,10 +523,14 @@ class ConfigTab(QtWidgets.QWidget):
         v = QtWidgets.QVBoxLayout(w)
         v.setContentsMargins(0, 0, 0, 0)
 
-        def changed():
-            self.state.notify("geometry")
+        def rebuild():
             self._fill_list("modifiers")
             self._edit("modifiers")
+
+        def changed():
+            # refaz o editor depois do sinal: apagar o botão/caixa que emitiu dentro do próprio sinal derruba o Qt
+            self.state.notify("geometry")
+            QtCore.QTimer.singleShot(0, rebuild)
 
         for i, m in enumerate(ac.modifiers):
             inf = m.info
@@ -547,6 +551,42 @@ class ConfigTab(QtWidgets.QWidget):
                 lbl.setWordWrap(True)
                 lbl.setStyleSheet("color: #444")
                 g.addWidget(lbl)
+                form = QtWidgets.QFormLayout()
+                for par in inf.params:
+                    sp = QtWidgets.QDoubleSpinBox()
+                    sp.setDecimals(3)
+                    sp.setRange(-1e3, 1e3)
+                    sp.setSingleStep(0.1)
+                    sp.setValue(m.value(par.key))
+                    sp.setToolTip(par.help)
+                    sp.setObjectName(f"mod_{i}_{par.key}")
+
+                    def put(val, m=m, k=par.key):
+                        m.params[k] = float(val)
+                        self.state.notify("geometry")
+                    sp.valueChanged.connect(put)
+                    form.addRow(par.label + (f" ({par.unit})" if par.unit else ""), sp)
+                if inf.category == "aditivo":
+                    props = QtWidgets.QLineEdit(", ".join(str(k + 1) for k in m.props))
+                    props.setPlaceholderText("todos")
+                    props.setToolTip("números dos motores (1, 2, ...) separados por vírgula; vazio = todos")
+
+                    def put_props(m=m, w=props):
+                        m.props = [int(x) - 1 for x in w.text().replace(";", ",").split(",") if x.strip().isdigit()]
+                        self.state.notify("geometry")
+                    props.editingFinished.connect(put_props)
+                    form.addRow("motores", props)
+                    names = [x.name for x in ac.surfaces]
+                    targ = QtWidgets.QLineEdit(", ".join(m.targets))
+                    targ.setPlaceholderText("todas")
+                    targ.setToolTip("nomes das superfícies separados por vírgula; vazio = todas. Existem: " + ", ".join(names))
+
+                    def put_targets(m=m, w=targ):
+                        m.targets = [x.strip() for x in w.text().split(",") if x.strip()]
+                        self.state.notify("geometry")
+                    targ.editingFinished.connect(put_targets)
+                    form.addRow("superfícies", targ)
+                g.addLayout(form)
             v.addWidget(box)
         for msg in mods.problems(ac):
             warn = QtWidgets.QLabel("⚠ " + msg)

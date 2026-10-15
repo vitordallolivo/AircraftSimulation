@@ -51,6 +51,18 @@ KINDS: dict[str, KindInfo] = {
         "J. D. Anderson, Aircraft Performance and Design (McGraw-Hill)",
         "φ = (16h/b)² / (1 + (16h/b)²) multiplica o arrasto induzido de cada painel horizontal, com h a altura "
         "do painel acima do chão a cada passo"),
+    "esteira.disco": KindInfo(
+        "esteira.disco", "esteira da hélice: disco atuador", "aditivo", 1,
+        "teoria do momento de Rankine–Froude (McCormick; Glauert em Durand, Aerodynamic Theory IV, 1935); "
+        "w(x) = w0 (1 + x/√(x² + R²)) do disco atuador (McCormick, Aerodynamics of V/STOL Flight; Veldhuis, "
+        "ICAS 2004 / tese TU Delft 2005); giro pelo balanço de momento angular (Glauert)",
+        "cada motor sopra um tubo atrás do disco: velocidade axial a mais (pela tração do instante) e giro no "
+        "sentido da hélice (pelo torque). As faixas da asa e da cauda dentro do tubo veem mais pressão dinâmica e "
+        "outro α. Desligado por padrão; N motores se somam",
+        (ParamInfo("axial", "velocidade axial", 1.0, "", "1 liga, 0 desliga"),
+         ParamInfo("giro", "giro da esteira", 1.0, "", "1 liga, 0 desliga"),
+         ParamInfo("ganho_axial", "ganho da axial", 1.0, "", "calibração (1 = a teoria)"),
+         ParamInfo("ganho_giro", "ganho do giro", 1.0, "", "calibração (1 = a teoria)"))),
 }
 
 
