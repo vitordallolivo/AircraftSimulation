@@ -9,4 +9,5 @@ test {
     _ = @import("physics/terrain.zig");
     _ = @import("modifiers/mod.zig");
     _ = @import("collision/collision.zig");
+    _ = @import("loads/llt.zig");
 }

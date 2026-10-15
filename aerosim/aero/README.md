@@ -84,6 +84,14 @@ asa.points, asa.force, asa.velocity, asa.induced              # (n, 3), corpo
 r.props[0].T, r.props[0].Q, r.props[0].J                      # motor naquela rotação
 ```
 
+**Método da carga** (`LoadCase(method=...)`):
+- `"llt"` (padrão): linha sustentadora do núcleo (`core/src/loads/llt.zig`, Phillips e Snyder 2000). A carga depende
+  do alongamento e da forma, cai na ponta, e o downwash da asa na cauda sai das pernas dos vórtices. A superfície é
+  refinada com faixas mais estreitas na ponta.
+- `"faixas"`: o C_Lα 3D uniforme de cada superfície, como a simulação usa. A carga sai plana: serve para comparar.
+
+Na linha de comando: `--metodo llt|faixas`. O `tools/span_load.py` também aceita `--sem-helice`.
+
 A conta é do núcleo, no mesmo laço da simulação (`aero.computeTrace` via `aerosim_panel_states`), e entra com os
 modificadores do avião (efeito solo, esteira). O estado do motor vem de `aerosim_prop_state`: hélice C_T(J), C_P(J)
 na rotação pedida, com o ar no eixo do motor.
@@ -131,14 +139,10 @@ O campo `imersao` mostra quanto de cada faixa está dentro do tubo de alguma hé
 **Sem hélice:** `LoadCase(props=False)` (ou `--sem-helice`) zera tração e torque. A distribuição sai a do avião
 limpo, para comparar ou para cargas sem motor.
 
-**Página interativa:** `load_export.scene(res, ac)` monta a cena (malhas, campos, setas, tubos, vento) em JSON.
-`load_export.page([(nome, cena), ...])` põe as cenas em `load_page.html` (plotly, girar e trocar campo no navegador).
-
 ```
 python tools/load_view.py data/aircraft/Convencional_original.json --com esteira.disco                 # janela 3D
 python tools/load_view.py data/aircraft/Convencional_original.json --campo alpha_ef --png vista.png
 python tools/load_view.py data/aircraft/Convencional_original.json --com esteira.disco --sem-helice --png limpo.png
-python tools/load_view.py data/aircraft/Convencional_original.json --com esteira.disco --html carga.html
 ```
 
 ### Colisão com o tubo da hélice (`collision.py`)

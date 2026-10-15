@@ -27,6 +27,9 @@ def main(argv=None) -> int:
     ap.add_argument("--beta", type=float, default=0.0, help="β (°)")
     ap.add_argument("--rpm", type=float, action="append", help="rotação (rpm): uma para todos ou uma por motor")
     ap.add_argument("--acelerador", type=float, default=1.0, help="sem --rpm: rotação de equilíbrio com este acelerador")
+    ap.add_argument("--metodo", default="llt", choices=("llt", "faixas"),
+                    help="llt: linha sustentadora (a carga depende do alongamento; padrão); faixas: C_Lα uniforme da simulação")
+    ap.add_argument("--sem-helice", action="store_true", help="sem a influência das hélices nas superfícies")
     ap.add_argument("--csv")
     ap.add_argument("--png")
     args = ap.parse_args(argv)
@@ -37,7 +40,8 @@ def main(argv=None) -> int:
     be = ZigBackend()
     base = load_aircraft(args.aviao)
     rpm = None if not args.rpm else (args.rpm[0] if len(args.rpm) == 1 else args.rpm)
-    case = LoadCase(V=args.V, alpha=args.alpha, n=args.n, beta=args.beta, rpm=rpm, throttle=args.acelerador)
+    case = LoadCase(V=args.V, alpha=args.alpha, n=args.n, beta=args.beta, rpm=rpm, throttle=args.acelerador,
+                    method=args.metodo, props=not args.sem_helice)
     runs = [("sem " + "+".join(args.com) if args.com else "como está", base)]
     if args.com:
         ac = copy.deepcopy(base)

@@ -20,7 +20,7 @@ import pyqtgraph.opengl as gl
 from pyqtgraph.opengl import shaders
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from aerosim.aero.load_export import arrow_meshes  # noqa: F401 (as setas: geometria sem Qt, compartilhada)
+from aerosim.aero.load_geometry import arrow_meshes  # noqa: F401 (as setas: geometria sem Qt, compartilhada)
 from aerosim.interfaces.loads import CAMPOS, LoadResult, label
 
 from .view3d import COLORS, to_gl

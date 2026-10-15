@@ -149,6 +149,7 @@ class _Lib:
             "aerosim_tube_panel_hits": (c_int, [c_int, c_int, c_double, c_double, c_double, vp, c_size]),
             "aerosim_tube_point_hits": (c_int, [c_int, c_int, c_double, c_double, c_double, vp, c_size, vp]),
             "aerosim_panel_states": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, c_size]),
+            "aerosim_panel_states_llt": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, c_size]),
             "aerosim_aero_coeffs_thrust": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, ctypes.POINTER(T["AeroCoeffs"])]),
         }
         absent = [n for n in sig if not hasattr(L, n)]
@@ -292,16 +293,18 @@ class ZigSession(ISimSession):
                                                          P.ctypes.data, len(P), out.ctypes.data), "colisão")
         return out.astype(bool)
 
-    def panel_states(self, V, alpha, beta=0.0, T=(), Q=(), de=0.0, da=0.0, dr=0.0) -> np.ndarray:
+    def panel_states(self, V, alpha, beta=0.0, T=(), Q=(), de=0.0, da=0.0, dr=0.0, llt=False) -> np.ndarray:
         """estado de cada painel (centro, área, corda, grupo, lado, α e V locais, C_L, C_D, sustentação e arrasto em N)
-        a V, α, β, com a tração T[i] e o torque Q[i] de cada motor (vazio: sem motores)"""
+        a V, α, β, com a tração T[i] e o torque Q[i] de cada motor (vazio: sem motores). llt=True: a carga sai da
+        linha sustentadora do núcleo (core/src/loads/llt.zig) em vez do C_Lα uniforme de cada painel"""
         dt = self._lib.schema.dtypes["PanelState"]
         cap = 256
         buf = np.zeros(cap, dtype=dt)
         n = len(T)
         Ta = (ctypes.c_double * max(n, 1))(*T)
         Qa = (ctypes.c_double * max(n, 1))(*Q)
-        k = _check(self._lib.dll.aerosim_panel_states(self._slot, V, alpha, beta, de, da, dr, Ta, Qa, n,
+        fn = self._lib.dll.aerosim_panel_states_llt if llt else self._lib.dll.aerosim_panel_states
+        k = _check(fn(self._slot, V, alpha, beta, de, da, dr, Ta, Qa, n,
                                                       buf.ctypes.data, cap), "painéis")
         return buf[:min(k, cap)].copy()
 

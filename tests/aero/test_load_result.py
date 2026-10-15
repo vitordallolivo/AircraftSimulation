@@ -96,20 +96,6 @@ def test_3d_view_takes_any_method(backend, tmp_path):
     app.processEvents()
 
 
-def test_scene_and_page(backend, tmp_path):
-    from aerosim.aero.load_export import page, scene
-    ac, _, res = core_result(backend)
-    sc = scene(res, ac)
-    n = len(sc["surfaces"]["x"])
-    assert n > 100 and all(len(f["values"]) == n for f in sc["surfaces"]["fields"].values())
-    assert {"força total", "sustentação (⟂ ao vento local)", "força normal à superfície"} <= set(sc["vectors"])
-    assert sc["tubes"] and sc["wind"] and sc["totals"]
-    html = page([("teste", sc)])
-    assert html.startswith("<!doctype html>") and "<title>" in html and "plotly" in html
-    frag = page([("teste", sc)], standalone=False)
-    assert not frag.lstrip().lower().startswith("<!doctype")
-
-
 def test_lift_vectors_are_perpendicular_to_the_local_wind(backend):
     """a seta de sustentação é ⟂ à velocidade local (no plano do perfil); a normal é ⟂ à superfície"""
     _, r, res = core_result(backend)

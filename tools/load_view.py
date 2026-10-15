@@ -28,10 +28,11 @@ def main(argv=None) -> int:
                     help="força total | sustentação (⟂ ao vento local) | força normal à superfície | "
                          "velocidade induzida | nenhuma")
     ap.add_argument("--escala", default="mín–máx", help="mín–máx | simétrica em 0 | por superfície")
+    ap.add_argument("--metodo", default="llt", choices=("llt", "faixas"),
+                    help="llt: linha sustentadora (a carga depende do alongamento; padrão); faixas: C_Lα uniforme da simulação")
     ap.add_argument("--sem-helice", action="store_true", help="cargas sem a influência das hélices nas superfícies")
     ap.add_argument("--malha", action="store_true", help="mostra a malha do método em vez do modelo da GUI")
     ap.add_argument("--png", help="grava a imagem aqui (não abre janela)")
-    ap.add_argument("--html", help="grava a vista 3D interativa (página web com plotly.js) aqui (não abre janela)")
     ap.add_argument("--azimute", type=float, default=-125)
     ap.add_argument("--elevacao", type=float, default=28)
     ap.add_argument("--distancia", type=float, default=None)
@@ -46,13 +47,7 @@ def main(argv=None) -> int:
     ac.modifiers += [mods.Modifier(k) for k in args.com]
     rpm = None if not args.rpm else (args.rpm[0] if len(args.rpm) == 1 else args.rpm)
     res = to_result(compute(be, ac, LoadCase(V=args.V, n=args.n, alpha=args.alpha, rpm=rpm,
-                                             props=not args.sem_helice)), be)
-    if args.html:
-        from aerosim.aero.load_export import page, scene
-        with open(args.html, "w", encoding="utf-8") as f:
-            f.write(page([(os.path.basename(args.aviao), scene(res, ac))]))
-        print(args.html)
-        return 0
+                                             props=not args.sem_helice, method=args.metodo)), be)
     from PyQt6 import QtWidgets
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     w = LoadView()

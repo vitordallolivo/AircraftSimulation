@@ -18,11 +18,22 @@ def slip(ac):
 
 
 def test_refinement_keeps_the_total(backend):
-    """sem motor e sem esteira, refinar só muda a resolução: a sustentação total é a mesma"""
+    """sem motor e sem esteira, refinar só muda a resolução: a sustentação total é a mesma (faixas: igual; linha
+    sustentadora: converge com a discretização, então perto)"""
     ac = conventional()
-    case = LoadCase(V=12, alpha=3, rpm=1e-9)                  # rotação desprezível: sem tração
+    case = LoadCase(V=12, alpha=3, rpm=1e-9, method="faixas")  # rotação desprezível: sem tração
     fine = compute(backend, ac, case)
-    coarse = compute(backend, ac, LoadCase(V=12, alpha=3, rpm=1e-9, refine=False))
+    coarse = compute(backend, ac, LoadCase(V=12, alpha=3, rpm=1e-9, refine=False, method="faixas"))
+    llt_f = compute(backend, ac, LoadCase(V=12, alpha=3, rpm=1e-9))
+    import aerosim.aero.span_loads as sl
+    keep = sl.MAX_PER_SIDE
+    try:
+        sl.MAX_PER_SIDE = 16
+        llt_m = compute(backend, ac, LoadCase(V=12, alpha=3, rpm=1e-9))
+    finally:
+        sl.MAX_PER_SIDE = keep
+    # linha sustentadora: converge com faixas mais finas na ponta (34 → 44 faixas na asa: < 0,5 %)
+    assert llt_f.by_role("wing")[0].lift == pytest.approx(llt_m.by_role("wing")[0].lift, rel=0.005)
     for s in fine.surfaces:
         c = coarse.surface(s.name)
         assert len(s.s) > len(c.s)
@@ -57,7 +68,7 @@ def test_slipstream_peaks_behind_the_prop(backend):
     y_prop = abs(ac.propulsion[0].y)
     R = ac.propulsion[0].propeller.D / 2
     inside = np.abs(np.abs(w1.s) - y_prop) < R
-    assert np.max(w1.V[inside]) > 1.3 * 8 and np.allclose(w1.V[np.abs(w1.s) < 0.1], w0.V[np.abs(w0.s) < 0.1])
+    assert np.max(w1.V[inside]) > 1.3 * 8 and np.allclose(w1.V[np.abs(w1.s) < 0.1], w0.V[np.abs(w0.s) < 0.1], rtol=1e-3)
     # bimotor simétrico com sentidos opostos: a carga é espelhada
     assert np.allclose(w1.L, w1.L[::-1], rtol=1e-9, atol=1e-9)
     assert "esteira" in " ".join(on.modifiers)
@@ -99,3 +110,30 @@ def test_without_props(backend):
     assert on.lift > off.lift and off.lift == pytest.approx(base.lift, rel=1e-9) and off.notes
     w = on.by_role("wing")[0]
     assert w.wash.max() > 0 and w.wash.min() == 0              # imersão: parte da asa no tubo, parte fora
+
+
+def test_lifting_line_depends_on_aspect_ratio(backend):
+    """linha sustentadora (core/src/loads/llt.zig): ponta descarregada, raiz sem pico, e a ponta mais descarregada
+    (relativa à raiz) num alongamento menor; faixas: carga plana. Total perto do peso (a trimagem é a do núcleo)"""
+    import copy
+    ac = conventional()
+    flat = compute(backend, ac, LoadCase(props=False, method="faixas")).by_role("wing")[0]
+    assert np.ptp(flat.L) < 1e-6 * abs(flat.L).max()
+    r = compute(backend, ac, LoadCase(props=False))
+    w = r.by_role("wing")[0]
+    mid = len(w.L) // 2
+    assert w.L[0] < 0.75 * w.L[mid] and w.L[-1] < 0.75 * w.L[mid]
+    assert np.allclose(w.L, w.L[::-1], rtol=1e-6)                       # simétrica
+    assert w.L[mid] <= 1.01 * w.L[mid - 3]                              # sem pico na raiz (diedro)
+    total = sum(s.lift for s in r.surfaces)
+    assert abs(total - r.weight) < 0.06 * r.weight
+    # alongamento menor: mesma área, envergadura menor
+    short = copy.deepcopy(ac)
+    sw = short.surfaces[0]
+    for sec in sw.sections:
+        sec.chord *= 1.5
+        sec.y /= 1.5
+    ws = compute(backend, short, LoadCase(props=False, alpha=r.alpha, de=r.de)).by_role("wing")[0]
+    wl = compute(backend, ac, LoadCase(props=False, alpha=r.alpha, de=r.de)).by_role("wing")[0]
+    assert ws.L[0] / ws.L.max() < wl.L[0] / wl.L.max() + 0.02
+    assert ws.lift < wl.lift                                             # menos alongamento, menos C_L

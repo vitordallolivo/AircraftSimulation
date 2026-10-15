@@ -44,6 +44,8 @@ class LoadCase:
     da: float = 0.0
     dr: float = 0.0
     refine: bool = True
+    method: str = "llt"                # "llt": linha sustentadora (a carga depende do alongamento e da forma);
+                                       # "faixas": o C_Lα uniforme de cada superfície, como a simulação usa
 
 
 @dataclass
@@ -141,8 +143,10 @@ def _rpm_list(case: LoadCase, n: int) -> list[float | None]:
     return [float(x) if x else None for x in r]
 
 
-def refine_surface(ac, index: int, per_side: int):
-    """cópia do avião com a superfície `index` em `per_side` faixas (mesma geometria)"""
+def refine_surface(ac, index: int, per_side: int, tip: bool = False):
+    """cópia do avião com a superfície `index` em `per_side` faixas (mesma geometria). tip=True: faixas mais estreitas
+    perto da ponta (y = y0 + (y1 − y0)·sen(π t/2)), o espaçamento que Phillips e Snyder (2000) recomendam para a linha
+    sustentadora convergir (a carga cai depressa na ponta); False: faixas iguais"""
     from aerosim.model.aircraft import WingSection
     a = copy.deepcopy(ac)
     s = a.surfaces[index]
@@ -150,7 +154,10 @@ def refine_surface(ac, index: int, per_side: int):
         return a
     ss = sorted(s.sections, key=lambda q: q.y)
     ys = []
-    for y in sorted(np.r_[np.linspace(ss[0].y, ss[-1].y, per_side + 1), [q.y for q in ss]]):
+    t = np.linspace(0.0, 1.0, per_side + 1)
+    if tip:
+        t = np.sin(0.5 * np.pi * t)
+    for y in sorted(np.r_[ss[0].y + (ss[-1].y - ss[0].y) * t, [q.y for q in ss]]):
         if not ys or y - ys[-1] > 1e-9:                     # as seções originais ficam exatas
             ys.append(float(y))
         elif any(abs(y - q.y) < 1e-12 for q in ss):
@@ -160,13 +167,13 @@ def refine_surface(ac, index: int, per_side: int):
     return a
 
 
-def _fit(ac, index: int, limit: int):
+def _fit(ac, index: int, limit: int, tip: bool = False):
     """a maior divisão da superfície que cabe no limite de painéis do núcleo"""
     from aerosim.backend.zig.translator import native_spec
     lo, hi, best = 1, MAX_PER_SIDE, ac
     while lo <= hi:                                   # busca binária no número de faixas por lado
         mid = (lo + hi) // 2
-        a = refine_surface(ac, index, mid)
+        a = refine_surface(ac, index, mid, tip)
         if len(native_spec(a)["surf"]) <= limit:
             best, lo = a, mid + 1
         else:
@@ -238,17 +245,22 @@ def compute(backend, ac, case: LoadCase | None = None) -> SpanLoads:
     if not case.props:                                  # sem influência das hélices: as superfícies não veem tração
         T, Q = [0.0] * len(props), [0.0] * len(props)
         notes.append("sem influência das hélices nas superfícies (props=False)")
+    if case.method not in ("llt", "faixas"):
+        raise ValueError(f"método de carga desconhecido: {case.method!r} (llt | faixas)")
+    if case.method == "llt":
+        notes.append("carga pela linha sustentadora (ferraduras, Phillips e Snyder 2000); α e profundor da trimagem "
+                     "do núcleo, então a soma pode diferir um pouco do peso")
     res = SpanLoads(case=case, props=props, modifiers=mods.describe(ac), rho=rho, alpha=run.alpha, de=run.de,
                     weight=weight, trim=trim, notes=notes)
     done = set()
     # cada superfície do avião refinada sozinha (os dispositivos de ponta saem com o avião sem refino)
     targets = [i for i, x in enumerate(ac.surfaces) if x.enabled] if case.refine else []
-    jobs = [(i, _fit(ac, i, limit)) for i in targets] + [(None, ac)]
+    jobs = [(i, _fit(ac, i, limit, case.method == "llt")) for i in targets] + [(None, ac)]
     for idx, a_ac in jobs:
         model = build_model(a_ac)
         owners = panel_owners(model)
         with backend.session_for(model) as s:
-            P = s.panel_states(run.V, a, b, T, Q, *d)
+            P = s.panel_states(run.V, a, b, T, Q, *d, llt=case.method == "llt")
             wash = np.zeros(len(P))
             for i, p in enumerate(props):               # colisão: quanto de cada faixa está no tubo de cada hélice
                 h = s.tube_panel_hits(i, T[i], p.V_axis)
@@ -320,7 +332,8 @@ def to_result(r: SpanLoads, backend=None) -> "LoadResult":
     mot = ", ".join(f"{p.name} {p.rpm:.0f} rpm {p.T:.1f} N" for p in r.props)
     a, b = np.radians(r.alpha), np.radians(r.case.beta)
     wind = -np.array([np.cos(a) * np.cos(b), np.sin(b), np.sin(a) * np.cos(b)])   # para onde o ar vai (corpo)
-    meta = dict(fonte="núcleo (faixas, aerosim/aero/span_loads.py)", fidelidade="modelo", V=V0, alpha=r.alpha,
+    meta = dict(fonte=("núcleo: linha sustentadora (core/src/loads/llt.zig)" if r.case.method == "llt"
+                       else "núcleo (faixas, aerosim/aero/span_loads.py)"), fidelidade="modelo", V=V0, alpha=r.alpha,
                 vento=wind, props_on=r.case.props,
                 de=r.de, peso=r.weight, n=r.case.n, motores=mot, modificadores=r.modifiers, avisos=r.notes,
                 caso=f"V = {V0:g} m/s, n = {r.case.n:g}, α = {r.alpha:.2f}°" + (" (trimagem)" if r.trim else "")

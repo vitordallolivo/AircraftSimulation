@@ -16,6 +16,7 @@ const trim = @import("sim/trim.zig");
 const aero = @import("physics/aero.zig");
 const modifiers = @import("modifiers/mod.zig");
 const collision = @import("collision/collision.zig");
+const llt = @import("loads/llt.zig");
 const fm = @import("math/fmath.zig");
 const prop = @import("physics/propulsion.zig");
 const mass = @import("physics/mass.zig");
@@ -169,6 +170,22 @@ export fn aerosim_panel_states(slot: i32, V: f64, alpha: f64, beta: f64, de: f64
     const rcg = trim.Ctx.init(&inst.p, &inst.r.f).rcg;
     _ = aero.computeTrace(&inst.p, Vr, vec.zero, rcg, 50.0, .{ de, da, dr }, &env, out[0..m]);
     return @intCast(np_);
+}
+
+/// `aerosim_panel_states` com a carga da linha sustentadora (loads/llt.zig: ferraduras, Phillips e Snyder 2000) no
+/// lugar do C_Lα uniforme de cada painel: a distribuição ao longo da envergadura depende do alongamento e da forma.
+/// Só para análise de cargas; a simulação não usa.
+export fn aerosim_panel_states_llt(slot: i32, V: f64, alpha: f64, beta: f64, de: f64, da: f64, dr: f64, Tn: [*]const f64, Qn: [*]const f64, n: i32, out: [*]T.PanelState, cap: usize) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    const np_: usize = @intCast(inst.p.n_surf);
+    if (cap < np_) return E_BAD_INDEX;
+    const k = aerosim_panel_states(slot, V, alpha, beta, de, da, dr, Tn, Qn, n, out, cap);
+    if (k < 0) return k;
+    const a = fm.sincos(alpha);
+    const b = fm.sincos(beta);
+    const Vr = vec.V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
+    _ = llt.apply(&inst.p, Vr, .{ de, da, dr }, out[0..np_]);
+    return k;
 }
 
 /// hash (FNV-1a 64) do esquema: confere que o texto chegou inteiro e identifica a versão do layout
