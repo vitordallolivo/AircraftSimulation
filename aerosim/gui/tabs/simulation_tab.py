@@ -125,9 +125,12 @@ class SimulationTab(QtWidgets.QWidget):
         self._debounce.setInterval(300)
         self._debounce.timeout.connect(self.reconfigure)
         state.changed.connect(lambda r: self._debounce.start() if r != "catalog" else None)
+        state.changed.connect(lambda r: self._show_cached() if r == "load" else None)
         self._loading = False
+        self._shown_sig = None               # de que avião é o resultado na tela
         self.reconfigure()
         state.register(f"aba:{sim.name}", self.params, self._put)       # entra no Ctrl+Z
+        self._show_cached()                  # o que já rodou com este avião (guardado no projeto)
 
     def _touched(self, *_):
         if not self._loading:
@@ -317,6 +320,48 @@ class SimulationTab(QtWidgets.QWidget):
         self._thread.start()
         self._timer.start()
 
+    def _show_cached(self) -> None:
+        """mostra o resultado guardado no projeto para o avião atual (com os parâmetros daquela rodada); sem
+        ele, e com o resultado de outro avião na tela, limpa"""
+        if self._thread is not None:
+            return
+        sig = self.state.aircraft_sig(self.state.aircraft)
+        if sig == self._shown_sig:
+            return
+        e = self.state.cached_run(self.sim.name, self.state.aircraft)
+        if e is None:
+            if self.result is not None:
+                self.result = None
+                self.plots.clear()
+                self.checks_panel.show_checks([])
+                self.checks_panel.show_summary({})
+                self.save_b.setEnabled(False)
+                self.bar.setValue(0)
+                self.msg.setText("")
+            self._shown_sig = sig
+            return
+        from aerosim.interfaces.result_io import _dec, result_from_dict
+        try:
+            res = result_from_dict(e["result"])
+            params = _dec(e.get("params") or {})
+        except Exception:
+            return
+        self._put(params)
+        self._run_params = self.params()
+        self._show_result(res)
+        self._shown_sig = sig
+        self.msg.setText(f"guardado no projeto (rodou em {e.get('when', '?').replace('T', ' ')}) — ▶ Rodar refaz")
+
+    def _show_result(self, res: SimResult) -> None:
+        self.result = res
+        self.bar.setValue(1000)
+        specs = [s for s in self.sim.plots_for(self.state.aircraft, self._run_params) if _has_data(s, res)]
+        self._set_plots(specs)
+        self.plots.show_result(res)
+        self.checks_panel.show_checks(res.checks)
+        self.checks_panel.show_summary(res.summary)
+        self.save_b.setEnabled(True)
+
     def _progress(self, f, text):
         self.bar.setValue(int(1000 * max(0.0, min(f, 1.0))))
         self.msg.setText(text)
@@ -332,19 +377,17 @@ class SimulationTab(QtWidgets.QWidget):
 
     def _done(self, res: SimResult):
         self._finish()
-        self.result = res
-        self.bar.setValue(1000)
         nf = sum(c.status == "falha" for c in res.checks)
         na = sum(c.status == "atencao" for c in res.checks)
         tail = f" — {nf} falha(s), {na} atenção" if res.checks else ""
+        self._show_result(res)               # só os gráficos que têm dado nesta aeronave/neste caso
         self.msg.setText(f"terminado: {res.status}{tail}")
-        # só os gráficos que têm dado nesta aeronave/neste caso
-        specs = [s for s in self.sim.plots_for(self.state.aircraft, self._run_params) if _has_data(s, res)]
-        self._set_plots(specs)
-        self.plots.show_result(res)
-        self.checks_panel.show_checks(res.checks)
-        self.checks_panel.show_summary(res.summary)
-        self.save_b.setEnabled(True)
+        try:                                 # guarda no projeto: ao abrir de novo, aparece sem rodar
+            # o avião como ficou depois de rodar (a Missão grava a trajetória nele): é ele que vai para o projeto
+            self._shown_sig = self.state.aircraft_sig(self.state.aircraft)
+            self.state.remember_run(self.sim.name, self.state.aircraft, self._run_params, res, self._shown_sig)
+        except Exception as ex:
+            self.msg.setText(self.msg.text() + f" (não guardei no projeto: {ex})")
 
     def _failed(self, text):
         self._finish()

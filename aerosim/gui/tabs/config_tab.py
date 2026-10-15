@@ -29,7 +29,7 @@ from ..widgets.view3d import AircraftView
 # explicação de cada editor: ⓘ no título (passe o mouse)
 EDIT_HELP = {
     "ballast": "massa sólida presa na aeronave para acertar o CG; entra na massa, no CG e nas inércias. "
-               "Arraste no 3D para mover. Na Missão → MTOW a massa dele varia junto com a LAPES e o líquido",
+               "Arraste no 3D para mover. Na Missão → MTOW a massa total do avião é que varia (o que passa da montada vai no CG)",
     "takeoff": "na corrida o acelerador vai a cheio; no ponto de acionamento o profundor (ou elevon) vai para a "
                "deflexão de decolagem até o piloto automático assumir. A Missão otimiza esse ponto",
     "airfield": "a aeronave parte de n = 0 rumo ao norte. x_warning: tem de decolar antes desta distância; "
@@ -115,6 +115,11 @@ class ConfigTab(QtWidgets.QWidget):
         bar.addWidget(self.lock)
         bar.addStretch(1)
         bar.addWidget(self.restore_b)
+        self.balance_b = QtWidgets.QPushButton("⚖ Acertar o CG")
+        self.balance_b.setToolTip("move a bateria (ou o lastro ligado) para o CG, com a LAPES e o líquido onde estão, "
+                                  "voltar ao CG de projeto (o da sprint)")
+        self.balance_b.clicked.connect(self.rebalance)
+        bar.addWidget(self.balance_b)
         lv.addLayout(bar)
         self.view = AircraftView()
         lv.addWidget(self.view, 1)
@@ -170,6 +175,15 @@ class ConfigTab(QtWidgets.QWidget):
         self.split.setSizes([int(0.25 * w), int(0.30 * w), int(0.45 * w)])
 
     # ------------------------------------------------------------------ restaurar
+    def rebalance(self) -> tuple[bool, str]:
+        from aerosim.design.balance import rebalance
+        ok, msg = rebalance(self.state.aircraft)
+        self.state.notify("mass")
+        win = self.window()
+        if hasattr(win, "statusBar"):
+            win.statusBar().showMessage(("✔ " if ok else "⚠ ") + msg, 10000)
+        return ok, msg
+
     def restore(self, template: str | None = None):
         if template is None:
             ac = copy.deepcopy(self.state.original)
@@ -994,10 +1008,33 @@ def info_html(backend, ac, info) -> str:
             ("lastro", f"{ac.ballast.mass:.3f} kg em x = {ac.ballast.x:.3f} m" if ac.ballast.enabled else "—"),
             ("CG (x, y, z)", f"({cg[0]:.3f}, {cg[1]:.3f}, {cg[2]:.3f}) m"),
             ("CG em % da CMA", f"{100 * model.mac_frac(cg[0]):.1f} %")]
+    if ac.payload.enabled and ac.payload.mass > 0:           # a LAPES sai na soltura: o CG anda
+        try:
+            from aerosim.design.balance import cg_after_drop
+            m2, cg2 = cg_after_drop(ac)
+            rows.append(("CG depois da soltura", f"x = {cg2[0]:.3f} m ({100 * model.mac_frac(cg2[0]):.1f} % CMA), "
+                                                 f"{m2:.3f} kg"))
+        except Exception:
+            pass
     if mp is not None and "I" in mp:
         I = np.asarray(mp["I"])
         rows.append(("Ixx, Iyy, Izz", f"{I[0, 0]:.3f}, {I[1, 1]:.3f}, {I[2, 2]:.3f} kg·m²"))
     out.append(_tbl("Massa e CG", rows))
+    try:                                        # dimensões a partir do CG de projeto (ou do atual, sem projeto)
+        from aerosim.design.dims import dimensions
+        f = lambda v: "" if v is None else f"{v:+.3f}"
+        drows = []
+        if ac.design_cg is not None:
+            d = [cg[k] - ac.design_cg[k] for k in range(3)]
+            drows.append(("CG atual − CG de projeto", f"({d[0]:+.3f}, {d[1]:+.3f}, {d[2]:+.3f}) m"))
+        for g, item, dx, dy, dz, val, note in dimensions(ac)[1:]:
+            pos = f"({f(dx)}, {f(dy)}, {f(dz)})" if dx is not None else ""
+            v = "" if val is None else f"{val:.3f}"
+            drows.append((item, f"{pos} {('= ' + v) if v else ''}".strip()))
+        title = "Dimensões a partir do CG de projeto" if ac.design_cg is not None else "Dimensões a partir do CG atual"
+        out.append(_tbl(title + " (Δx, Δy, Δz) m", drows))
+    except Exception:
+        pass
     cor = "#080" if 5 <= sm <= 30 else "#b00"
     if not 5 <= sm <= 30:
         warn.append(f"margem estática {sm:.1f} % fora de 5–30 %")

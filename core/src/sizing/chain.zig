@@ -104,7 +104,7 @@ pub fn Chain(comptime K: type, comptime Th: type) type {
         };
 
         /// grandezas que dependem da massa
-        fn atMass(cfg: *const S.SizingCfg, md: *const Model, m: f64, q: *[S.n_q]f64, hover: *bool, env: ?*st.Env) void {
+        fn atMass(cfg: *const S.SizingCfg, md: *const Model, m: f64, q: *[S.n_q]f64, hover: *bool, env: ?*st.Env, with_ceiling: bool) void {
             const W = m * st.g0;
             const e = st.envelope(md.pol, &md.curve, W, md.geo.S, cfg.rho);
             const h = K.hover != .none and st.canHover(&md.curve, m, cfg.hover_margin);
@@ -116,6 +116,12 @@ pub fn Chain(comptime K: type, comptime Th: type) type {
             q[S.q_V_LD] = e.V_LD;
             q[S.q_LD] = e.LD;
             q[S.q_s_to] = if (h) 0.0 else if (K.hover == .required) std.math.inf(f64) else st.takeoffRun(md.pol, &md.curve, m, md.geo.S, cfg.rho, cfg.mu, md.tilt);
+            const Vt = if (cfg.V_turn > 0) cfg.V_turn else 1.5 * e.Vs;
+            q[S.q_n_turn] = st.sustainedN(md.pol, &md.curve, W, md.geo.S, cfg.rho, Vt);
+            q[S.q_grad] = 100.0 * e.grad;
+            q[S.q_s_land] = if (h) 0.0 else st.landingRun(md.pol, W, md.geo.S, cfg.rho, cfg.mu_brake);
+            // o teto custa uma bisseção de envelopes: só quando alguém pede (restrição dele ou o resultado final)
+            q[S.q_ceiling] = if (with_ceiling) st.ceiling(md.pol, &md.curve, W, md.geo.S, cfg.rho, cfg.roc_ceiling) else std.math.nan(f64);
             if (env) |p| p.* = e;
         }
 
@@ -123,9 +129,11 @@ pub fn Chain(comptime K: type, comptime Th: type) type {
         fn massFeasible(cfg: *const S.SizingCfg, md: *const Model, m: f64) bool {
             var q: [S.n_q]f64 = undefined;
             var h = false;
-            atMass(cfg, md, m, &q, &h, null);
-            if (!std.math.isFinite(q[S.q_s_to])) return false;
             const n: usize = @intCast(std.math.clamp(cfg.n_cons, 0, S.max_cons));
+            var need_ceiling = false;
+            for (cfg.cons[0..n]) |c| need_ceiling = need_ceiling or c.q == S.q_ceiling;
+            atMass(cfg, md, m, &q, &h, null, need_ceiling);
+            if (!std.math.isFinite(q[S.q_s_to])) return false;
             for (cfg.cons[0..n]) |c| {
                 const k: usize = @intCast(std.math.clamp(c.q, 0, S.n_q - 1));
                 if (S.massDependent(k) and S.violation(c, q[k]) > 0) return false;
@@ -168,7 +176,7 @@ pub fn Chain(comptime K: type, comptime Th: type) type {
             }
             var env: st.Env = undefined;
             var hover = false;
-            atMass(cfg, &md, mtow, &o.q, &hover, &env);
+            atMass(cfg, &md, mtow, &o.q, &hover, &env, true);
             o.hover = @intFromBool(hover);
             o.CD0, o.K, o.CLmax, o.CLg = .{ md.pol.CD0, md.pol.K, md.pol.CLmax, md.pol.CLg };
             o.q[S.q_S] = md.geo.S;
@@ -309,6 +317,20 @@ fn fuzzChain(_: void, src: *fz.Src) !void {
 
 test "fuzz: cadeia inteira com tração mock, todos os tipos" {
     try fz.checkScaled({}, fuzzChain, .{}, 4);
+}
+
+test "curva sustentada como restrição: n ≥ 2 baixa o MTOW" {
+    var cfg = baseCfg();
+    var th: LinearThrust = .{};
+    const C = Chain(kinds.Monoplane, LinearThrust);
+    const x = [_]f64{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0, 0 };
+    const free = C.eval(&cfg, &th, &x);
+    cfg.cons[1] = .{ .q = S.q_n_turn, .op = S.op_ge, .value = 2.0 };
+    cfg.n_cons = 2;
+    const turn = C.eval(&cfg, &th, &x);
+    try testing.expect(turn.q[S.q_mtow] < free.q[S.q_mtow]);
+    try testing.expect(turn.feasible == 1 and turn.q[S.q_n_turn] >= 2.0 - 1e-6);
+    try testing.expect(std.math.isFinite(turn.q[S.q_ceiling]) or std.math.isNan(turn.q[S.q_ceiling]));
 }
 
 test "corda da raiz: retangular = S/b; afilada é maior" {

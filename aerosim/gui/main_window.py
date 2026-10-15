@@ -38,16 +38,20 @@ class MainWindow(QtWidgets.QMainWindow):
         from .design import LAST_TAB, STAGES
         sims = sorted(state.manager.simulations(),
                       key=lambda s: AREAS.index(s.area) if s.area in AREAS else len(AREAS))
+        self.area_tabs: dict = {}               # área → a aba dela (a primeira simulação da área)
         for sim in sims:
             stages = STAGES.get(sim.area)
             if not stages:
-                self.tabs.addTab(SimulationTab(state, sim), sim.title)
+                tab = SimulationTab(state, sim)
+                self.area_tabs.setdefault(sim.area, tab)
+                self.tabs.addTab(tab, sim.title)
                 continue
             sub = QtWidgets.QTabWidget()
             sub.setDocumentMode(True)
             for title, cls in stages:
                 sub.addTab(cls(state), title)
             sub.addTab(SimulationTab(state, sim), LAST_TAB.get(sim.area, "Avião montado"))
+            self.area_tabs.setdefault(sim.area, sub)
             self.tabs.addTab(sub, sim.title)
         self.config = ConfigTab(state)
         self.tabs.addTab(self.config, "Montagem")
@@ -81,16 +85,22 @@ class MainWindow(QtWidgets.QMainWindow):
         for u in ev.mimeData().urls():
             if u.isLocalFile():
                 self.open_path(u.toLocalFile())
+                self._remember_design_dir()
                 break
 
     def open_path(self, path: str, quiet: bool = False) -> None:
-        """abre um arquivo: projeto (.json com etapas/estudos/Montagem) volta de onde parou; avião vai para a Montagem"""
-        from aerosim.design.project import DesignProject, is_project_file
+        """abre uma pasta de sprint, um projeto antigo (.json com etapas/estudos/Montagem) ou um arquivo de asa:
+        volta de onde parou; um avião vai para a Montagem"""
+        from aerosim.design import store
         try:
-            if is_project_file(path):
+            if store.is_sprint_path(path):
                 self.state.save_design()
-                p = DesignProject.load(path)
-                self.state.open_design(p, path)
+                p, folder = store.open_path(path)
+                data = os.path.join(ROOT, "data") + os.sep
+                if os.path.abspath(folder).startswith(data):      # exemplo do repositório: grava fora de data/
+                    root = getattr(self.state.projects, "root", None) or os.path.expanduser("~")
+                    folder = os.path.join(root, "sprint", os.path.basename(folder.rstrip(os.sep)))
+                self.state.open_design(p, folder)
                 self._design_label()
                 if not quiet:
                     self.show_design_summary()
@@ -105,10 +115,19 @@ class MainWindow(QtWidgets.QMainWindow):
         rows = "".join(f"<tr><td><b>{escape(k)}</b></td><td>{escape(v)}</td></tr>"
                        for k, v in self.state.design.summary())
         QtWidgets.QMessageBox.information(
-            self, "Projeto aberto", f"<p>{escape(self.state.design_path)}</p><table cellspacing=6>{rows}</table>")
+            self, "Projeto aberto", f"<p>{escape(self.state.design_dir)}</p><table cellspacing=6>{rows}</table>")
 
     def show_assembly(self):
         self.tabs.setCurrentWidget(self.config)
+
+    def show_area(self, area: str):
+        """vai para a análise do avião montado de uma área (a última subaba: "Avião montado")"""
+        w = self.area_tabs.get(area)
+        if w is None:
+            return
+        self.tabs.setCurrentWidget(w)
+        if isinstance(w, QtWidgets.QTabWidget):
+            w.setCurrentIndex(w.count() - 1)
 
     def _menus(self):
         m = self.menuBar().addMenu("&Arquivo")
@@ -131,9 +150,11 @@ class MainWindow(QtWidgets.QMainWindow):
         m.addSeparator()
         m.addAction("Sair", self.close)
         pj = self.menuBar().addMenu("&Projeto da sprint")
-        pj.addAction("Novo projeto (do zero)", self.design_new)
-        pj.addAction("Abrir projeto…", self.design_open)
-        pj.addAction("Salvar projeto como…", self.design_save_as)
+        pj.addAction("Novo projeto (do zero) numa pasta…", self.design_new)
+        pj.addAction("Abrir pasta da sprint…", self.design_open)
+        pj.addAction("Abrir projeto antigo ou arquivo de asa (.json)…", self.design_open_file)
+        pj.addAction("Gravar em outra pasta…", self.design_save_as)
+        pj.addAction("Mostrar a pasta", self.design_show_dir)
         pj.addAction("O que está guardado…", self.show_design_summary)
         self._design_where = pj.addAction("")
         self._design_where.setEnabled(False)
@@ -144,36 +165,59 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ------------------------------------------------------------------ projeto da sprint
     def _design_label(self):
-        self._design_where.setText(f"gravado sozinho em {self.state.design_path}")
+        self._design_where.setText(f"gravado sozinho em {self.state.design_dir} (um arquivo por asa)")
+
+    def _remember_design_dir(self):
+        """a próxima vez o programa abre nesta pasta"""
+        from PyQt6 import QtCore
+        QtCore.QSettings("aerosim", "aerosim").setValue("sprint_dir", self.state.design_dir)
+
+    def _pick_dir(self, title: str) -> str:
+        return QtWidgets.QFileDialog.getExistingDirectory(self, title, os.path.dirname(self.state.design_dir))
 
     def design_new(self):
+        from aerosim.design import store
         from aerosim.design.project import DesignProject
-        if QtWidgets.QMessageBox.question(self, "Projeto da sprint", "Começar um projeto novo? O atual fica no "
-                                          "arquivo dele.") != QtWidgets.QMessageBox.StandardButton.Yes:
+        d = self._pick_dir("Pasta do projeto novo (cada asa vira um arquivo nela)")
+        if not d:
             return
         self.state.save_design()
-        base, ext = os.path.splitext(self.state.design_path)
-        k = 2
-        while os.path.exists(f"{base}_{k}{ext}"):
-            k += 1
-        self.state.open_design(DesignProject(), f"{base}_{k}{ext}")     # do zero: Montagem vazia também
+        if store.is_sprint_path(d):
+            QtWidgets.QMessageBox.information(self, "Projeto da sprint", "Esta pasta já tem um projeto: abri ele.")
+            self.open_path(d, quiet=True)
+        else:
+            self.state.open_design(DesignProject(), d)     # do zero: Montagem vazia também
+            self.state.save_design()
+        self._remember_design_dir()
         self._design_label()
 
     def design_open(self):
-        from aerosim.design.project import DesignProject
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Projeto da sprint", os.path.dirname(self.state.design_path),
-                                                        "Projeto (*.json)")
+        d = self._pick_dir("Pasta da sprint")
+        if d:
+            self.open_path(d)
+            self._remember_design_dir()
+        self._design_label()
+
+    def design_open_file(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Projeto da sprint", self.state.design_dir,
+                                                        "Projeto ou asa (*.json)")
         if path:
             self.open_path(path)
+            self._remember_design_dir()
         self._design_label()
 
     def design_save_as(self):
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Projeto da sprint", self.state.design_path,
-                                                        "Projeto (*.json)")
-        if path:
-            self.state.design_path = path
+        d = self._pick_dir("Gravar o projeto da sprint nesta pasta")
+        if d:
+            self.state.design_dir = d
             self.state.save_design()
+            self._remember_design_dir()
         self._design_label()
+
+    def design_show_dir(self):
+        from PyQt6 import QtCore, QtGui
+        self.state.save_design()
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.state.design_dir))
 
     # ------------------------------------------------------------------ meus aviões
     def _toolbar(self):
@@ -187,7 +231,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._root_label.setText(f"  pasta: {self.state.projects.root}")
 
     def save_project(self):
+        from .widgets import save_check
         st = self.state.projects
+        if not save_check.confirm_save(self, self.state.aircraft, self.state.design):   # o que falta: salvar mesmo assim?
+            return
         name, ok = QtWidgets.QInputDialog.getText(self, "Salvar avião", "Nome do avião:",
                                                   text=self.state.aircraft.name)
         name = name.strip()

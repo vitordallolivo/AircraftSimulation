@@ -53,9 +53,16 @@ QUANTITIES: dict[str, Quantity] = {
     "V_max": Quantity("velocidade máxima", "m/s", "desempenho"),
     "RC": Quantity("razão de subida máxima", "m/s", "desempenho", "", "mais tração ou menos arrasto"),
     "TW": Quantity("tração/peso estática", "", "desempenho"),
+    "n_turn": Quantity("fator de carga sustentado", "", "desempenho", "na V da curva (Condições): o que a tração "
+                       "mantém, limitado pelo estol", "mais tração ou menos arrasto induzido (mais alongamento)"),
+    "grad": Quantity("gradiente de subida máx.", "%", "desempenho", "maior (T − D)/W", "mais tração ou menos arrasto"),
+    "ceiling": Quantity("teto", "m", "desempenho", "altitude-densidade em que a subida máxima cai a 0,5 m/s (tração "
+                        "proporcional a ρ)", "mais tração/potência ou menos carga alar"),
+    "s_land": Quantity("corrida de pouso", "m", "desempenho", "toque a 1,15 V_S, frenagem com o atrito das "
+                       "Condições, sem arrasto (conservador)", "mais área ou C_L,max maior"),
     "mass": Quantity("massa montada", "kg", "montagem", "saída: PV + CP"),
     "pv": Quantity("PV (peso vazio)", "kg", "montagem", "saída: tudo menos a carga paga"),
-    "cp": Quantity("CP (carga paga)", "kg", "montagem", "saída: lastro + líquido + LAPES"),
+    "cp": Quantity("CP (carga paga)", "kg", "montagem", "saída: lastro + líquido + LAPES (na sprint: massa de projeto − PV)"),
     "ee": Quantity("EE (eficiência estrutural)", "", "montagem", "saída: CP / PV", "PV menor ou CP maior"),
     "mtow": Quantity("MTOW", "kg", "desempenho", "saída: a maior massa que decola na corrida restrita"),
 }
@@ -103,7 +110,9 @@ def default_constraints() -> list[Constraint]:
             Constraint("P_motor", "≤", 700.0, active=False), Constraint("n_surf", "≤", 3, active=False),
             Constraint("n_motor", "≤", 1, active=False), Constraint("ee", "≥", 1.0, active=False),
             Constraint("m_liquid", "≥", 1.0, active=False), Constraint("m_lapes", "≥", 1.0, active=False),
-            Constraint("RC", "≥", 1.0, active=False)]
+            Constraint("RC", "≥", 1.0), Constraint("n_turn", "≥", 2.0, active=False),
+            Constraint("grad", "≥", 5.0, active=False), Constraint("ceiling", "≥", 1500.0, active=False),
+            Constraint("s_land", "≤", 60.0, active=False)]
 
 
 def active(constraints: list[Constraint], key: str, op: str | None = None) -> Constraint | None:
@@ -149,9 +158,6 @@ INPUTS: dict[str, Input] = {
     "power.tilt": Input("power_draft.tilt", "inclinação do motor", "°", 0.0, 12.0),
     "power.motors": Input("power_draft.wing_motors", "nº de motores (o arranjo manda: nariz/propulsora 1, asa aos pares)",
                           "", 1.0, 8.0, integer=True),
-    "power.ballast": Input("power_draft.ballast", "lastro", "kg", 0.0, 10.0),
-    "power.liquid": Input("power_draft.liquid", "líquido", "L", 0.0, 5.0),
-    "power.lapes": Input("power_draft.lapes", "LAPES", "kg", 0.0, 5.0),
     "req.V_cruise": Input("requirements.V_cruise", "velocidade de cruzeiro", "m/s", 10.0, 25.0),
     "req.mass": Input("requirements.mass", "massa estimada (ponto de partida)", "kg", 2.0, 20.0),
 }
@@ -209,8 +215,9 @@ def aircraft_values(ac, asm: dict, pf: dict | None, pp=None) -> dict:
     if w is not None:
         d.update(S=w.area, b=w.span, AR=w.aspect_ratio, V_S=asm.get("Vs"),
                  c_root=max((q.chord for q in w.sections), default=0.0))
-    if pp is not None:
-        d.update(m_liquid=pp.liquid * 1.0, m_lapes=pp.lapes, m_ballast=pp.ballast)
+    d.update(m_lapes=ac.payload.mass if ac.payload.enabled else 0.0,          # 0 até a Montagem definir
+             m_liquid=sum(t.volume * t.rho / 1000.0 for t in ac.tanks),
+             m_ballast=ac.ballast.mass if ac.ballast.enabled else 0.0)
     if pf:
         d.update(s_to=pf.get("s_to"), V_max=pf.get("Vmax"), RC=pf.get("RC_max"), TW=pf.get("TW"),
                  mtow=pf.get("mtow_runway"))

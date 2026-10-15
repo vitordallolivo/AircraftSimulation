@@ -82,29 +82,31 @@ def rows_to_legs(rows, old) -> list:
 
 
 MCOLS = (("item", "", "label"), ("min", "mínimo", "float"), ("nom", "nominal", "float"), ("max", "máximo", "float"))
-ROWS = {"bal": "Lastro (kg)", "pay": "LAPES (kg)", "liq": "Líquido (L)", "xcg": "xCG (m)"}
+ROWS = {"tot": "Massa total (kg)", "bal": "Lastro (kg)", "pay": "LAPES (kg)", "liq": "Líquido (L)",
+        "xcg": "xCG (m)"}
+
+
+def total_mass(ac) -> float:
+    """massa do avião inteiro: seca (com o lastro) + LAPES + líquido"""
+    from aerosim.model.universal import build_model
+    m = float(build_model(ac).mass["m"])
+    return m + (ac.payload.mass if ac.payload.enabled else 0.0) + sum(t.volume * t.rho / 1000.0 for t in ac.tanks)
 
 
 def mtow_rows(ac) -> list[dict]:
-    """linhas da tabela do MTOW que existem nesta configuração (mínimo, nominal, máximo)"""
+    """linhas da tabela do MTOW (mínimo, nominal, máximo): a massa total e o xCG. A massa que passa da montada
+    entra como massa no CG; quanto é lastro, LAPES ou líquido se decide na Montagem. (As linhas antigas — lastro,
+    LAPES, líquido — continuam valendo se vierem na tabela.)"""
     rows = []
     if ac is None:
         return rows
-    if ac.ballast.enabled:
-        m = ac.ballast.mass
-        rows.append(dict(item=ROWS["bal"], min=m, nom=m, max=m))
-    if ac.payload.enabled:
-        m = ac.payload.mass
-        rows.append(dict(item=ROWS["pay"], min=m, nom=m, max=round(m + 3.0, 3)))
-    if ac.tanks:
-        v = sum(t.volume for t in ac.tanks)
-        cap = sum(t.base_area * t.height * 1000.0 for t in ac.tanks)
-        rows.append(dict(item=ROWS["liq"], min=round(v, 3), nom=round(v, 3), max=round(max(cap, v), 3)))
     try:
         from aerosim.model.universal import build_model
+        m = total_mass(ac)
         x = float(build_model(ac).mass["cg"][0])
     except Exception:
-        x = 0.0
+        m, x = 0.0, 0.0
+    rows.append(dict(item=ROWS["tot"], min=round(m, 3), nom=round(m, 3), max=round(m + 6.0, 3)))
     rows.append(dict(item=ROWS["xcg"], min=round(x - 0.02, 4), nom=round(x, 4), max=round(x + 0.02, 4)))
     return rows
 
@@ -116,6 +118,8 @@ def mass_variant(ac, ranges: dict, t: float):
     for key, (lo, hi) in ranges.items():
         m = lo + t * (hi - lo)
         got[key] = m
+        if key == "tot":
+            continue
         if key == "pay":
             v.payload.mass = m
         elif key == "bal":
@@ -124,6 +128,13 @@ def mass_variant(ac, ranges: dict, t: float):
             v0 = sum(q.volume for q in ac.tanks)
             for q, q0 in zip(v.tanks, ac.tanks):
                 q.volume = m * (q0.volume / v0 if v0 > 1e-9 else 1.0 / len(ac.tanks))
+    if "tot" in ranges:                       # o que falta para a massa total vai como massa no CG
+        from aerosim.model.universal import build_model
+        base = total_mass(v) - (v.ballast.mass if v.ballast.enabled else 0.0)
+        x = float(build_model(v).mass["cg"][0])
+        extra = max(got["tot"] - base, 0.0)
+        v.ballast.enabled, v.ballast.mass = extra > 0, extra
+        v.ballast.x, v.ballast.y, v.ballast.z = x, 0.0, 0.0
     return v, got
 
 
@@ -730,8 +741,9 @@ class MissionSimulation(SimulationBase):
         return dict(r_dry=[float(cg[0] + d), float(cg[1]), float(cg[2])]), float(mp["m"])
 
     def _mtow(self, ctx, ac, info, refs) -> SimResult:
-        """bisseção em t ∈ [0, 1]: lastro, LAPES e líquido vão juntos do mínimo ao máximo; em cada t o
-        xCG é testado no mínimo, nominal e máximo e o acionamento do profundor é otimizado"""
+        """bisseção em t ∈ [0, 1]: a massa total (ou, em tabelas antigas, lastro, LAPES e líquido juntos) vai do
+        mínimo ao máximo; em cada t o xCG é testado no mínimo, nominal e máximo e o acionamento do profundor é
+        otimizado"""
         table = {r["item"]: r for r in (ctx.params.get("masses") or mtow_rows(ac))}
         keys = {v_: k for k, v_ in ROWS.items()}
         ranges, names = {}, {}
@@ -805,7 +817,7 @@ class MissionSimulation(SimulationBase):
                                    _symbol="x", _color="#d62728", _size=12),
              f"mt_x_warning = {refs['x_warning']:g} m": dict(_hline=refs["x_warning"], _color="#d62728", _width=3),
              "mtow_casos": M}
-        colors = {"pay": "#6a0dad", "liq": "#17becf", "bal": "#444444"}
+        colors = {"pay": "#6a0dad", "liq": "#17becf", "bal": "#444444", "tot": "#ff7f0e"}
         for k in ranges:
             S[f"mc_{names[k]}"] = dict(m=M["m"], y=M[f"m_{k}"], _symbol="o", _line=1, _color=colors[k])
         S["ma_acionamento (m)"] = dict(m=M["m"][ok], y=M["s"][ok], _symbol="o", _line=1, _color="#2ca02c")

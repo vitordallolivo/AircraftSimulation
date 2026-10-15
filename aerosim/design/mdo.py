@@ -199,7 +199,7 @@ def build(project, mp: MdoParams | None = None, catalog=None, backend=None) -> t
     # restrições ativas que o dimensionamento inicial calcula
     qn = (backend.sizing_names()["quantities"] if backend is not None else
           ["S", "b", "AR", "V_S", "n_surf", "P_motor", "n_motor", "s_to", "V_max", "RC", "TW", "mass", "pv", "cp",
-           "ee", "mtow", "V_LD", "LD", "c_root"])
+           "ee", "mtow", "V_LD", "LD", "c_root", "n_turn", "grad", "ceiling", "s_land"])
     cons = []
     for c in req.constraints:
         if not c.active:
@@ -209,6 +209,7 @@ def build(project, mp: MdoParams | None = None, catalog=None, backend=None) -> t
         else:
             skipped.append(c.text())
     cfg = dict(kind=KINDS.index(mp.kind), objective=OBJECTIVES.index(mp.objective), rho=req.rho, mu=req.mu_roll,
+               V_turn=req.V_turn or req.V_cruise, mu_brake=req.mu_brake,
                m_max=mp.m_max, tail_area_frac=mp.tail_area_frac, fuselage_CDS=mp.fuselage_CDS,
                wing_density=project.rules.wing_density, tail_density=project.rules.tail_density,
                fuselage_mass=project.rules.fuselage_density * 0.8, systems_mass=project.rules.systems_mass,
@@ -424,7 +425,7 @@ def full_envelope(project, row: dict, ev: dict | None = None, catalog=None, back
     return dict(rows=rows, summary=summ, polar=dict(CD0=ev["CD0"], K=ev["K"], CLmax=ev["CLmax"], CLg=ev["CLg"]))
 
 
-DIAGRAM_KINDS = ("estol", "decolagem", "subida", "cruzeiro", "vmax", "curva", "teto")
+DIAGRAM_KINDS = ("estol", "pouso", "decolagem", "subida", "gradiente", "cruzeiro", "vmax", "curva", "teto")
 
 
 def constraint_diagram(project, row: dict, ev: dict, env: dict, kinds=DIAGRAM_KINDS, n: int = 120) -> dict:
@@ -438,8 +439,9 @@ def constraint_diagram(project, row: dict, ev: dict, env: dict, kinds=DIAGRAM_KI
     lim = lambda key, op, d: (rg.active(cs, key, op).value if rg.active(cs, key, op) else d)
     r = sc.Requirements(rho=req.rho, V_stall=lim("V_S", "≤", q["V_S"]), S_G=lim("s_to", "≤", max(q["s_to"], 1.0)),
                         V_cruise=req.V_cruise, V_max=lim("V_max", "≥", 0.0), V_climb=s.get("V_RCmax") or req.V_cruise,
-                        roc=lim("RC", "≥", 1.0), n_turn=2.0, V_turn=s.get("Vman") or 1.4 * q["V_S"],
-                        h_ceiling=0.0)
+                        roc=lim("RC", "≥", 1.0), n_turn=lim("n_turn", "≥", 2.0), V_turn=req.V_turn or req.V_cruise,
+                        climb_grad=lim("grad", "≥", 0.0), h_ceiling=lim("ceiling", "≥", 0.0),
+                        S_L=lim("s_land", "≤", 0.0), mu_brake=req.mu_brake)
     p = env["polar"]
     a = sc.ParabolicPolar(CD0=p["CD0"], k=p["K"], CLmax=p["CLmax"], CL_TO=p["CLg"],
                           CD_TO=p["CD0"] + p["K"] * p["CLg"] ** 2, mu=req.mu_roll)
@@ -456,10 +458,16 @@ def constraint_diagram(project, row: dict, ev: dict, env: dict, kinds=DIAGRAM_KI
             continue
         if k == "teto" and r.h_ceiling <= 0:
             continue
+        if k == "gradiente" and r.climb_grad <= 0:
+            continue
+        if k == "pouso":
+            continue
         tw = sc.required_tw(k, ws, r, a)
         Vc = np.array([sc.condition_speed(k, w, r, a) for w in ws])
         curves[k] = tw / lapse(Vc)
     limits = {}
     if "estol" in kinds:
         limits["estol"] = sc.stall_ws(r, a)
+    if "pouso" in kinds and r.S_L > 0:
+        limits["pouso"] = sc.landing_ws(r, a)
     return dict(curves=curves, limits=limits, point=(ws_pt, T0 / (q["mtow"] * G0)), labels=dict(sc.KINDS + sc.LIMITS))

@@ -10,7 +10,8 @@ a aeronave e os valores das abas registradas em `register` (formulários e tabel
 Mudanças seguidas em menos de 0,6 s viram um passo só.
 
 O projeto da sprint (`design`: requisitos, regras, perfis, asas, conjuntos e aviões guardados nas etapas)
-também fica aqui; mudar emite `designChanged` e ele se grava sozinho em `design_path` (1 s depois).
+também fica aqui; mudar emite `designChanged` e ele se grava sozinho na pasta `design_dir` (1 s depois),
+um arquivo por asa (`aerosim.design.store`).
 """
 from __future__ import annotations
 
@@ -33,7 +34,7 @@ class AppState(QtCore.QObject):
     designChanged = QtCore.pyqtSignal(str)    # o projeto da sprint mudou (etapa que mudou)
 
     def __init__(self, manager: ISimulationManager, aircraft: Aircraft, catalog: Catalog | None = None,
-                 projects: "IProjectStore | None" = None):
+                 projects: "IProjectStore | None" = None, design_dir: str | None = None):
         super().__init__()
         self.manager = manager
         if projects is None:
@@ -66,17 +67,18 @@ class AppState(QtCore.QObject):
         self._burst.setInterval(600)
         self._burst.timeout.connect(self._settle)
         self._snap = self._capture()
-        self._init_design()
+        self._init_design(design_dir)
 
     # ------------------------------------------------------------------ projeto da sprint
-    def _init_design(self) -> None:
+    def _init_design(self, folder: str | None = None) -> None:
+        from aerosim.design import store
         from aerosim.design.project import DesignProject
         root = getattr(self.projects, "root", None) or os.path.expanduser("~")
-        self.design_path = os.path.join(root, "sprint", "projeto.json")
+        self.design_dir = folder or os.path.join(root, "sprint")    # a pasta antiga com projeto.json também abre
         self.design = DesignProject()
-        if os.path.exists(self.design_path):
+        if os.path.isdir(self.design_dir):
             try:
-                self.design = DesignProject.load(self.design_path)
+                self.design = store.load(self.design_dir)
             except Exception:
                 pass
         self._design_save = QtCore.QTimer(self)
@@ -88,17 +90,17 @@ class AppState(QtCore.QObject):
         self._design_save.start()
         self.designChanged.emit(stage)
 
-    def set_design(self, project, path: str | None = None) -> None:
+    def set_design(self, project, folder: str | None = None) -> None:
         self.design = project
-        if path:
-            self.design_path = path
+        if folder:
+            self.design_dir = folder
         self.design_edited("load")
 
-    def open_design(self, project, path: str | None = None) -> None:
+    def open_design(self, project, folder: str | None = None) -> None:
         """abre um projeto inteiro e volta de onde parou: as etapas, os aviões da Montagem (sem nenhum
         guardado, a Montagem começa vazia) e a aba em que estava"""
         from aerosim.model.templates import empty
-        self.set_design(project, path)
+        self.set_design(project, folder)
         fleet = copy.deepcopy(project.fleet) or [empty()]
         self.fleet, self.fleet_paths = fleet, [None] * len(fleet)
         self.current = min(max(project.current, 0), len(fleet) - 1)
@@ -112,17 +114,57 @@ class AppState(QtCore.QObject):
         if self.ui_put is not None and project.ui:
             self.ui_put(project.ui)
 
+    # ------------------------------------------------------------------ o que já rodou (vai no projeto)
+    MAX_RUNS = 40
+
+    @staticmethod
+    def aircraft_sig(ac) -> str:
+        """identifica a configuração (o nome não conta): mudou qualquer coisa, é outro avião"""
+        import hashlib
+        import json
+        from aerosim.model.serialize import to_dict
+        def norm(v):                          # 5000 e 5000.0 são o mesmo (a ida e volta pelo .json troca)
+            if isinstance(v, bool) or v is None or isinstance(v, str):
+                return v
+            if isinstance(v, (int, float)):
+                return float(v)
+            if isinstance(v, dict):
+                return {k: norm(x) for k, x in v.items()}
+            if isinstance(v, (list, tuple)):
+                return [norm(x) for x in v]
+            return v
+        d = norm(to_dict(ac))
+        d.pop("name", None)
+        return hashlib.sha1(json.dumps(d, sort_keys=True, default=str).encode()).hexdigest()
+
+    def remember_run(self, sim: str, ac, params: dict, res, sig: str | None = None) -> None:
+        """guarda o resultado da aba `sim` para este avião (substitui o anterior da mesma aba e avião)"""
+        import datetime
+        from aerosim.interfaces.result_io import _enc, result_to_dict
+        sig = sig or self.aircraft_sig(ac)
+        e = dict(sim=sim, aircraft=ac.name, sig=sig, params=_enc(params),
+                 when=datetime.datetime.now().isoformat(timespec="seconds"), result=result_to_dict(res))
+        runs = [r for r in self.design.runs if not (r.get("sim") == sim and r.get("sig") == sig)] + [e]
+        self.design.runs = runs[-self.MAX_RUNS:]
+        self._design_save.start()            # grava sozinho (sem refazer as etapas)
+
+    def cached_run(self, sim: str, ac) -> dict | None:
+        sig = self.aircraft_sig(ac)
+        return next((r for r in reversed(self.design.runs)
+                     if r.get("sim") == sim and r.get("sig") == sig and "result" in r), None)
+
     ui_get = None          # a janela registra: () -> dict com a aba atual; (dict) -> volta para ela
     ui_put = None
 
     def save_design(self) -> None:
+        from aerosim.design import store
         d = self.design
         d.fleet = copy.deepcopy(self.fleet)          # a Montagem e a tela também vão para o projeto
         d.current = self.current
         if self.ui_get is not None:
             d.ui = self.ui_get()
         try:
-            d.save(self.design_path)
+            store.save(d, self.design_dir)
         except Exception:
             pass
 

@@ -55,7 +55,17 @@ class DesignProject:
     mdo_runs: list[MdoRun] = field(default_factory=list)          # os resultados guardados (dados de simulação)
     fleet: list[Aircraft] = field(default_factory=list)         # os aviões abertos na Montagem (vazio: começa vazia)
     current: int = 0                                            # qual deles estava na tela
+    runs: list[dict] = field(default_factory=list)              # o que já rodou nas abas (um por aba e avião)
     ui: dict = field(default_factory=dict)                      # onde a interface estava (aba, subaba)
+
+    @staticmethod
+    def migrate(data: dict) -> dict:
+        """projetos antigos: variáveis que não existem mais (lastro, líquido e LAPES em kg viraram opções da
+        etapa Motores; os kg se decidem na Montagem)"""
+        from .registry import INPUTS
+        if isinstance(data.get("variables"), list):
+            data["variables"] = [v for v in data["variables"] if not isinstance(v, dict) or v.get("key") in INPUTS]
+        return data
 
     def summary(self) -> list[tuple[str, str]]:
         """o que está guardado, etapa por etapa (para mostrar ao abrir)"""
@@ -97,16 +107,27 @@ class DesignProject:
         e = self.airfoil(t) if t and t != self.wing_draft.airfoil else None
         return copy.deepcopy(e) if e is not None else None
 
-    def keep_wing(self) -> WingCandidate:
+    def _section_airfoils(self) -> list:
+        """tabela de seções: cópias dos perfis das seções (fora o da raiz)"""
+        p = self.wing_draft
+        if not p.table():
+            return []
+        names = dict.fromkeys(q.airfoil for q in p.partitions if q.airfoil and q.airfoil != p.airfoil)
+        return [copy.deepcopy(e) for e in (self.airfoil(n) for n in names) if e is not None]
+
+    def draft_wing(self) -> WingCandidate:
+        from .wing import sync
+        sync(self.wing_draft)                     # área/corda/envergadura que saem dos outros campos
         af = self.airfoil(self.wing_draft.airfoil) or (self.airfoils[0] if self.airfoils else afm.AirfoilEntry())
-        c = WingCandidate(copy.deepcopy(self.wing_draft), copy.deepcopy(af), airfoil_tip=self._tip())
+        tip = None if self.wing_draft.table() else self._tip()
+        return WingCandidate(copy.deepcopy(self.wing_draft), copy.deepcopy(af), airfoil_tip=tip,
+                             section_airfoils=self._section_airfoils())
+
+    def keep_wing(self) -> WingCandidate:
+        c = self.draft_wing()
         self._put(self.wings, c)
         self.wing_draft.name = next_name(self.wing_draft.name, [w.name for w in self.wings])
         return c
-
-    def draft_wing(self) -> WingCandidate:
-        af = self.airfoil(self.wing_draft.airfoil) or (self.airfoils[0] if self.airfoils else afm.AirfoilEntry())
-        return WingCandidate(copy.deepcopy(self.wing_draft), copy.deepcopy(af), airfoil_tip=self._tip())
 
     def draft_set(self) -> SetCandidate | None:
         w = self.wing(self.tail_draft.wing) or (self.wings[-1] if self.wings else None)

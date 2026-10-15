@@ -223,7 +223,19 @@ def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypa
     assert len(st.fleet) == n + 1 and w.tabs.currentWidget() is w.config
     assert st.aircraft.name.startswith("avião 1") and st.path and os.path.exists(st.path)
     pump(app, 1.2)
-    assert os.path.exists(st.design_path)                 # o projeto da sprint se grava sozinho
+    assert os.path.exists(os.path.join(st.design_dir, "sprint.json"))   # o projeto da sprint se grava sozinho
+    asas = [n for n in os.listdir(st.design_dir) if n != "sprint.json"]
+    assert asas and all(n.endswith(".json") for n in asas)              # um arquivo por asa
+    import aerosim.design.flight as fl
+    real = fl.tune_takeoff
+    fl.tune_takeoff = lambda ac, backend: (False, "não decola na pista (teste)")
+    try:
+        motores.send(go="desempenho")                     # não decola: vai assim mesmo, com o aviso
+    finally:
+        fl.tune_takeoff = real
+    assert len(st.fleet) == n + 2 and "⚠" in motores.msg.text()
+    perf = w.area_tabs["desempenho"]
+    assert w.tabs.currentWidget() is perf and perf.currentIndex() == perf.count() - 1
 
 
 def test_open_project_resumes_where_it_stopped(app, manager, tmp_path):
@@ -245,12 +257,17 @@ def test_open_project_resumes_where_it_stopped(app, manager, tmp_path):
     p.fleet, p.current, p.ui = [empty(), twin_boom()], 1, {"tab": "Desempenho", "sub": 1}
     path = str(tmp_path / "meu_projeto.json")
     p.save(path)
+    before = open(path, "rb").read()
     w.open_path(path, quiet=True)
     pump(app)
-    assert st.names() == [a.name for a in p.fleet] and st.current == 1 and st.design_path == path
+    folder = str(tmp_path / "meu_projeto")                # o projeto antigo passa a ser gravado numa pasta ao lado
+    assert st.names() == [a.name for a in p.fleet] and st.current == 1 and st.design_dir == folder
     assert w.ui_state() == {"tab": "Desempenho", "sub": 1}
     st.save_design()                                      # grava de volta o que está na tela
-    assert DesignProject.load(path).current == 1
+    from aerosim.design import store
+    assert store.load(folder).current == 1 and open(path, "rb").read() == before
+    w.open_path(folder, quiet=True)                       # e a pasta abre do mesmo jeito
+    assert st.current == 1 and st.design_dir == folder
     empty_path = str(tmp_path / "sem_avioes.json")
     DesignProject().save(empty_path)
     w.open_path(empty_path, quiet=True)
@@ -385,3 +402,176 @@ def test_list_picker_search_and_select_all(app, manager, tmp_path):
     vt = VariablesTable(st)
     r = next(i for i, v in enumerate(st.design.variables) if v.key == "power.propeller")
     assert vt.table.cellWidget(r, 5).text().startswith("todos (")
+
+
+def test_repo_sample_project_saves_outside_data(app, manager, tmp_path):
+    """o exemplo de data/sprint abre, mas grava na pasta da sprint do usuário (nada em data/)"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.gui.main_window import MainWindow
+    from aerosim.gui.state import ROOT, AppState
+    from aerosim.model.templates import empty
+    sample = os.path.join(ROOT, "data", "sprint", "projeto_s1223.json")
+    before = sorted(os.listdir(os.path.dirname(sample)))
+    st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)))
+    w = MainWindow(st)
+    w.open_path(sample, quiet=True)
+    st.save_design()
+    assert st.design_dir == os.path.join(str(tmp_path), "sprint", "projeto_s1223")
+    assert "asa S1223.json" in os.listdir(st.design_dir)
+    assert sorted(os.listdir(os.path.dirname(sample))) == before
+    w.close()
+
+
+def test_save_checklist_dialog_and_refusal(app, manager, tmp_path):
+    """antes de salvar: a lista (caixas só de leitura) e 'salvar mesmo assim?'; recusar não salva nem abre"""
+    from PyQt6 import QtCore
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.design import checklist as ck
+    from aerosim.gui.design import pages
+    from aerosim.gui.state import AppState
+    from aerosim.gui.widgets import save_check
+    from aerosim.model.templates import conventional, empty
+    ac = conventional()
+    ac.payload.enabled, ac.payload.mass = True, 0.0
+    checks = ck.aircraft_checklist(ac, None)
+    dlg = save_check.SaveCheckDialog(ac, checks)
+    g = dlg.tree.topLevelItem(0)
+    states = {g.child(i).text(0)[2:]: g.child(i).checkState(0) for i in range(g.childCount())}
+    assert states["LAPES: massa"] == QtCore.Qt.CheckState.Unchecked and states["asa"] == QtCore.Qt.CheckState.Checked
+    assert not (g.child(0).flags() & QtCore.Qt.ItemFlag.ItemIsUserCheckable)       # só leitura
+    assert dlg.only.isChecked()                                                    # abre mostrando as pendências
+    hidden = [g.child(i).isHidden() for i in range(g.childCount())]
+    assert any(hidden) and not all(hidden)
+    dlg.save_b.click()
+    assert dlg.result() == 1
+    st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)))
+    n = len(st.fleet)
+    real = save_check.confirm_save
+    save_check.confirm_save = lambda parent, a, project=None: False
+    try:
+        w = QtWidgets.QWidget()
+        assert pages.send_to_assembly(st, ac, w) is False
+    finally:
+        save_check.confirm_save = real
+    assert len(st.fleet) == n and not st.projects.exists(ac.name)              # recusou: nada salvo nem aberto
+
+
+def test_wing_stage_by_chord_and_sections_table(app, manager, tmp_path):
+    """etapa Asa: dimensionar por corda (a área sai) e planta por tabela de seções, cada uma com o seu perfil"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.design import airfoils as afm
+    from aerosim.design import wing as wg
+    from aerosim.gui.design.pages import WingPage
+    from aerosim.gui.state import AppState
+    from aerosim.model.templates import empty
+    st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)))
+    st.design.airfoils = [afm.entry(afm.from_naca(n)) for n in ("NACA 4412", "NACA 2412", "NACA 0012")]
+    st.design.wing_draft.airfoil = "NACA 4412"
+    page = WingPage(st)
+    page.show()
+    pump(app, 0.5)
+    p = st.design.wing_draft
+    p.size_by = "corda"
+    p.chord = 0.4
+    page._mode_changed("size_by")
+    assert not page.form.widgets["area"].isEnabled() and page.form.widgets["chord"].isEnabled()
+    s, yb, cr, ct = wg.chords(p)
+    assert cr == pytest.approx(0.4) and p.area == pytest.approx(2 * (cr * yb + 0.5 * (cr + ct) * (s - yb)))
+    p.planform = "tabela de seções"
+    page._mode_changed("planform")
+    assert page.sec_box.isVisible() and page.sec.rowCount() >= 1 and not page.form.widgets["span"].isEnabled()
+    assert "envergadura total" in page.sec_total.text()
+    n = page.sec.rowCount()
+    page.sec.selectRow(n - 1)
+    page._sec_add()                                       # nova partição: começa com a corda em que a anterior acaba
+    assert page.sec.rowCount() == n + 1
+    a, b = p.partitions[-2], p.partitions[-1]
+    assert b.chord == pytest.approx(a.chord * a.taper, abs=1e-4)
+    page.sec.item(n, 0).setText("0.3")                    # envergadura da partição nova
+    page.sec.cellWidget(n, 3).setCurrentText("NACA 0012")  # a ponta com outro perfil
+    assert p.span == pytest.approx(sum(q.span for q in p.partitions))       # a soma é a envergadura total
+    assert f"{p.span:.3f}" in page.sec_total.text()
+    page.recompute()
+    assert "Error" not in page.msg.text()
+    c = st.design.draft_wing()
+    assert "NACA 0012" in [e.name for e in c.section_airfoils]
+    r = wg.analyze(c, st.design.requirements)
+    assert r["surface"].sections[-1].airfoil.name == "NACA 0012"
+    page.close()
+
+
+def test_dimensions_from_design_cg_in_stages(app, manager, tmp_path):
+    """Empenagem e Motores e montagem mostram as dimensões a partir do CG de projeto (x_TDP, x_TDN, braços)"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.gui.design.pages import PowerPage, TailPage
+    from aerosim.gui.state import AppState
+    from aerosim.model.templates import empty
+    st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)), design_dir=str(tmp_path / "sprint"))
+    d = st.design
+    d.keep_wing()
+    d.tail_draft.wing, d.tail_draft.arm, d.tail_draft.arm_from = d.wings[0].name, 0.9, "CG de projeto"
+    tail = TailPage(st)
+    tail.show()
+    pump(app, 0.3)
+    tail.recompute()
+    assert tail.dims.value("EH: CA") == pytest.approx(0.9, abs=1e-3)
+    d.keep_set()
+    d.power_draft.set, d.power_draft.x_tdp, d.power_draft.x_tdn = d.sets[0].name, 0.07, 0.3
+    power = PowerPage(st)
+    power.show()
+    pump(app, 0.3)
+    power.recompute()
+    assert power.dims.value("TDP (trem principal)") == pytest.approx(0.07)
+    assert power.dims.value("TDN (bequilha)") == pytest.approx(0.3)
+    assert power.dims.table.rowCount() > 8
+    tail.close()
+    power.close()
+
+
+def test_runs_are_kept_in_the_sprint_folder_and_shown_on_open(app, manager, tmp_path):
+    """o que já rodou vai para o projeto (resultados/*.json.gz) e, ao abrir de novo, a aba mostra sem rodar"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.design import store
+    from aerosim.gui.state import AppState
+    from aerosim.gui.tabs.simulation_tab import SimulationTab
+    from aerosim.model.templates import conventional
+    folder = str(tmp_path / "sprint")
+    st = AppState(manager, conventional(), projects=JsonProjectStore(str(tmp_path)), design_dir=folder)
+    tab = SimulationTab(st, manager.get("stability"))
+    tab.start()
+    t0 = time.time()
+    while tab._thread is not None and time.time() - t0 < 120:
+        pump(app, 0.1)
+    assert tab.result is not None and len(st.design.runs) == 1
+    st.design.fleet = [st.aircraft]
+    st.save_design()
+    files = os.listdir(os.path.join(folder, "resultados"))
+    assert len(files) == 1 and files[0].startswith("stability_") and files[0].endswith(".json.gz")
+    p = store.load(folder)
+    assert len(p.runs) == 1 and "result" in p.runs[0]
+    st2 = AppState(manager, conventional(), projects=JsonProjectStore(str(tmp_path)), design_dir=folder)
+    st2.open_design(p, folder)
+    tab2 = SimulationTab(st2, manager.get("stability"))
+    assert tab2.result is not None and "guardado no projeto" in tab2.msg.text()      # sem rodar
+    assert set(tab2.result.summary) == set(tab.result.summary)
+    st2.aircraft.wing.sections[0].chord *= 1.1           # mudou o avião: o guardado não vale para ele
+    st2.changed.emit("load")
+    assert tab2.result is None
+
+
+def test_montagem_rebalance_button(app, manager, tmp_path):
+    """Montagem: 'Acertar o CG' move a bateria para o CG (com a carga) voltar ao de projeto"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.design import balance as bl
+    from aerosim.gui.state import AppState
+    from aerosim.gui.tabs.config_tab import ConfigTab
+    from aerosim.model.aircraft import PointMass
+    from aerosim.model.templates import conventional
+    ac = conventional()
+    ac.design_cg = [0.0, 0.0, 0.0]
+    ac.mass.items.append(PointMass("bateria", 0.8, 0.0, 0.0, 0.0))
+    ac.payload.x = 0.06
+    st = AppState(manager, ac, projects=JsonProjectStore(str(tmp_path)), design_dir=str(tmp_path / "sprint"))
+    tab = ConfigTab(st)
+    ok, msg = tab.rebalance()
+    assert ok and bl.full_cg(st.aircraft)[1][0] == pytest.approx(0.0, abs=1e-9)

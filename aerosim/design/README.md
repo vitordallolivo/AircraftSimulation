@@ -3,7 +3,14 @@
 Cria o avião do zero, e cada etapa parte do que a anterior guardou:
 
 1. **Perfil.** Você escolhe os perfis e vê a polar 2D de cada um.
-2. **Asa.** A asa é feita a partir do perfil escolhido.
+2. **Asa.** A asa é feita a partir do perfil escolhido. A planta é um **trapézio** (envergadura, afilamento,
+   trecho retangular; **dimensionar por área ou por corda** da raiz — o outro sai) ou uma **tabela de partições**,
+   como na planilha: uma linha por partição com **envergadura** (o quanto ela soma na envergadura total, metade
+   de cada lado), **corda** (no começo dela), **afilamento**, **perfil** (no fim dela; ao longo dela passa do da
+   anterior para este), **recuo** (o bordo de ataque andando para trás: enflechamento, move o CA e o CG de
+   projeto) e **θ** (torção no fim, em relação à raiz; − = washout, a ponta estola depois). A envergadura total
+   é a soma das partições; asa reta = uma linha só. A linha sustentadora e o arrasto de perfil interpolam entre
+   as seções. "do trapézio" monta a tabela a partir do trapézio atual.
 3. **Empenagem.** Entram as superfícies que acompanham a asa: cauda, tubo e comandos.
 4. **Motores.** A etapa decide onde ficam os motores. Com isso saem a bateria, a carga, a fuselagem e o trem.
 5. **Montagem.** O avião inteiro vai para a aba Montagem.
@@ -191,8 +198,12 @@ A montagem segue esta ordem:
 2. **Massas.** A **tabela de distribuição de massa** mostra cada item com x e % do total.
    - **PV** (peso vazio): a estrutura (estimada por área e por comprimento, das regras), os motores, as hélices,
      a bateria e os sistemas.
-   - **CP** (carga paga) = lastro + líquido + LAPES. Você digita quanto de cada, e tudo vai no CG. No avião
-     montado vira o lastro, o tanque (com sloshing) e a carga LAPES, os mesmos que o MTOW da aba Missão varia.
+   - **CP** (carga paga): aqui só se marca **se tem LAPES** (e quantas cargas) e **se tem líquido** (e quantos
+     tanques). As contas da sprint usam a massa de projeto (Condições: massa estimada), e a CP estimada é a
+     diferença para o PV, no CG. O avião vai para a Montagem com a LAPES e os tanques no CG **sem kg**: o
+     Desempenho (Missão, modo MTOW) varre só a **massa total**, e na Montagem se decide quanto é lastro, LAPES e
+     líquido. Ao salvar, a **lista de verificação** (`checklist.py`) mostra o que falta definir — e também os
+     requisitos e as restrições ativas do projeto — e pergunta se quer salvar mesmo assim.
    - A bateria vai onde o CG cai no alvo. Se ela não couber na fuselagem, entra **lastro de equilíbrio**, que
      conta no PV, e o diagnóstico avisa.
    - Com o MTOW pela pista, a **CP possível = MTOW − PV**.
@@ -257,7 +268,8 @@ Ela marca o maior MTOW viável de cada altitude, confere os pontos no 6GDL (aba 
 marcado para o rascunho da etapa certa. Ela indica, não escolhe. **Mandar o ponto selecionado para a Montagem** abre
 o avião daquela linha no ponto de projeto, como mais um avião aberto. Antes, a decolagem 6GDL (`flight.py`)
 acha o acionamento e a deflexão do profundor (e o trim de corrida, se precisar) e grava no avião, que é com o
-que a Missão e o AeroDrive decolam. Se não decolar, o avião não é salvo nem aberto. Os exemplos
+que a Missão e o AeroDrive decolam. Se não decolar, o avião vai assim mesmo (com o profundor de antes) e o
+aviso fica na mensagem da etapa: decolar não é requisito para ir para a Montagem. Os exemplos
 `data/aircraft/S1223_*.json` foram feitos assim. Cada estudo rodado (com o 6GDL) fica **guardado no projeto**
 como dado de simulação: volta ao abrir o projeto, e a linha refaz o avião só quando precisa (3D, Montagem, 6GDL).
 Também dá para exportar em xlsx/csv.
@@ -295,6 +307,75 @@ As altitudes-densidade vêm de uma tarde quente típica, que eu assumi; você po
 |---|---|---|---|---|
 | Joinville | 4 m | 30 °C | 75 % | 655 m |
 | São José dos Campos | 646 m | 28 °C | 60 % | 1320 m |
+
+## Projeto numa pasta, um arquivo por asa (`store.py`)
+
+O projeto da sprint fica numa pasta que o usuário escolhe (**Projeto da sprint → Novo projeto numa pasta…**,
+**Abrir pasta da sprint…**, **Gravar em outra pasta…**). Cada asa é um arquivo, com o nome da asa: a asa é o
+projeto de sprint, e as superfícies (empenagem e comandos) são as opções dela.
+
+```text
+<pasta>/
+  sprint.json          requisitos, regras, perfis, rascunhos, estudos, mini-MDO, Montagem, aba em que estava
+  asa S1223.json       {asa, superficies: [cauda em V, convencional, ...], avioes: [...]}
+  asa SD8020.json
+```
+
+- Uma superfície guardada leva uma cópia da asa. Se a asa mudar depois, a cópia antiga vai para
+  `asa S1223 (2).json` e nada se perde. O avião que leva uma cópia antiga da superfície guarda essa cópia
+  (`superficie_copia`).
+- Um arquivo de asa copiado de outro projeto para a pasta entra no projeto ao abrir.
+- Ao gravar, os arquivos de asa que o projeto não usa mais são apagados (só os que têm a marca
+  `"format": "aerosim-sprint-asa"`).
+- O projeto antigo (um `.json` só, como `data/sprint/projeto_s1223.json`) continua abrindo, e o arquivo dele não
+  é alterado: a gravação vai para uma pasta com o nome dele, ao lado (os exemplos de `data/` gravam em
+  `<meus aviões>/sprint/<nome>/`, nunca dentro de `data/`). Uma pasta antiga com `projeto.json` abre e
+  passa a gravar no formato novo, na mesma pasta.
+
+Exemplo (converte o projeto S1223 da equipe e mostra o que foi para cada arquivo; não grava em `data/`):
+
+```sh
+python tools/sprint_pasta.py                                         # → ./sprint_s1223/
+python tools/sprint_pasta.py data/sprint/projeto_s1223.json ~/sprint # origem e destino
+```
+
+Outro exemplo: a mesma asa S1223 com três opções de superfícies num arquivo só: convencional (EH + EV + aileron,
+tubo de cauda inclinado 6° para cima), cauda em V (+ aileron) e sem cauda (elevon), com um avião para cada:
+
+```sh
+python tools/sprint_tres_caudas.py ~/sprint_tres_caudas
+```
+
+A **inclinação do tubo** (`TailParams.boom_pitch`, + ponta de trás para cima) sobe a cauda junto com a ponta do
+tubo (e a sapata de cauda); o braço da cauda continua medido na horizontal, então o tubo inclinado fica mais
+comprido.
+
+Outro exemplo: a mesma asa S1223 com três opções de superfícies num arquivo só: convencional (EH + EV + aileron,
+tubo de cauda inclinado 6° para cima), cauda em V (+ aileron) e sem cauda (elevon), com um avião para cada:
+
+```sh
+python tools/sprint_tres_caudas.py ~/sprint_tres_caudas
+```
+
+A **inclinação do tubo** (`TailParams.boom_pitch`, + ponta de trás para cima) sobe a cauda junto com a ponta do
+tubo; o braço da cauda continua medido na horizontal, então o tubo inclinado fica mais comprido.
+
+**Motores e montagem → Usar em Desempenho** abre o avião (rascunho ou guardado selecionado) e vai direto para as
+análises de Desempenho, sem passar pela Montagem.
+
+## Dimensões a partir do CG de projeto (`dims.py`)
+
+Tudo se mede do **CG de projeto** (o da margem estática pedida; a etapa Motores grava em `Aircraft.design_cg`):
+Δx + à frente, Δy + à direita, Δz + para baixo, e o valor "de planilha" de cada item — **x_TDP** (do CG ao trem
+principal, + atrás), **x_TDN** (do CG à bequilha, + à frente), altura do CG ao chão, ângulo de tombamento, braços
+da EH e da EV (do CG ao CA), alturas ao chão, cubo de cada hélice (e a folga dela ao chão), tubo, tanques, LAPES,
+lastro e bateria. A tabela aparece em **Empenagem e comandos** (o conjunto, sem trem: sem as alturas),
+**Motores e montagem** e no painel da **Montagem** (com o desvio do CG atual para o de projeto).
+
+Entradas medidas do CG: **x_TDP** e **x_TDN** em Motores e montagem (0 = regra/automático) e o **braço da cauda**
+medido do CA da asa (clássico) ou do **CG de projeto** (como l_h na planilha antiga). Medido do CG, a cauda é
+reposicionada num ponto fixo até a distância do CG ao CA dela ser o braço dado, e os volumes de cauda usam esse
+braço.
 
 ## Condições, restrições e variáveis (`spec.py`, `registry.py`)
 

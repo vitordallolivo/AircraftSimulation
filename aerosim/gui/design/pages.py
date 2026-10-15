@@ -774,6 +774,145 @@ class WingPage(StagePage):
         d.tail_draft.wing = c.name
         return c.name
 
+    # ------------------------------------------------------------------ tabela de partições
+    COLS = (("span", "envergadura (m)"), ("chord", "corda (m)"), ("taper", "afilamento"), ("airfoil", "perfil"),
+            ("offset", "recuo (m) ⓘ"), ("twist", "θ (°) ⓘ"))
+    COL_TIPS = ("quanto a partição soma na envergadura total (metade de cada lado)",
+                "corda no começo da partição (do lado do centro)", "corda no fim / corda no começo (1 = reta)",
+                "perfil no fim da partição (vazio = o da raiz); ao longo dela ele passa do da anterior para este",
+                "quanto o bordo de ataque anda para trás ao longo da partição (enflechamento): move o centro "
+                "aerodinâmico, e com ele o CG de projeto. 0 = bordo de ataque reto",
+                "torção no fim da partição, em relação à raiz: − = washout, a ponta estola depois (o aileron continua "
+                "mandando no estol), custa um pouco de sustentação")
+    TRAPEZOID_ONLY = ("span", "area", "chord", "size_by", "taper", "rect_frac", "sweep", "twist", "airfoil",
+                      "airfoil_tip")
+
+    def build(self) -> None:
+        super().build()
+        if getattr(self, "sec_box", None) is None:
+            self.sec_box = QtWidgets.QGroupBox("Partições (do centro para a ponta)")
+            self.sec_box.setToolTip("uma linha por partição, como na planilha: envergadura, corda, afilamento, perfil, "
+                                    "recuo e torção. A envergadura total é a soma das partições. Uma asa reta é uma "
+                                    "linha só (afilamento 1).")
+            v = QtWidgets.QVBoxLayout(self.sec_box)
+            self.sec = QtWidgets.QTableWidget(0, len(self.COLS))
+            self.sec.setHorizontalHeaderLabels([t for _, t in self.COLS])
+            for c, tip in enumerate(self.COL_TIPS):
+                self.sec.horizontalHeaderItem(c).setToolTip(tip)
+            self.sec.verticalHeader().setVisible(False)
+            hh = self.sec.horizontalHeader()
+            hh.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+            hh.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.Stretch)    # o perfil fica com o resto
+            self.sec.itemChanged.connect(self._sec_edited)
+            v.addWidget(self.sec)
+            self.sec_total = QtWidgets.QLabel()
+            v.addWidget(self.sec_total)
+            row = QtWidgets.QHBoxLayout()
+            for txt, fn, tip in (("+ partição", self._sec_add, "nova partição depois da selecionada (ou no fim), "
+                                  "começando com a corda em que a anterior termina"),
+                                 ("− partição", self._sec_del, "apaga a selecionada (fica pelo menos uma)"),
+                                 ("do trapézio", self._sec_from_trap, "refaz a tabela a partir do trapézio atual")):
+                b = QtWidgets.QPushButton(txt)
+                b.setToolTip(tip)
+                b.clicked.connect(fn)
+                row.addWidget(b)
+            v.addLayout(row)
+        self.form_box.removeWidget(self.sec_box)
+        self.form_box.addWidget(self.sec_box)              # logo abaixo do formulário
+        self.form.changed.connect(self._mode_changed)
+        self._mode_changed()
+
+    def _mode_changed(self, name: str = "") -> None:
+        p = self.draft()
+        table = p.planform == wg.PLANFORMS[1]
+        if table and not p.partitions:
+            p.partitions = wg.partitions_from_trapezoid(p)
+        if name in ("planform", "size_by", "") or table:
+            wg.sync(p)
+            self.form.refresh()
+        for k, w in self.form.widgets.items():
+            on = not (table and k in self.TRAPEZOID_ONLY)
+            if not table and k == "chord":
+                on = p.size_by == wg.SIZE_BY[1]
+            if not table and k == "area":
+                on = p.size_by == wg.SIZE_BY[0]
+            w.setEnabled(on)
+        self.sec_box.setVisible(table)
+        if table:
+            self._sec_fill()
+
+    def _sec_fill(self) -> None:
+        p = self.draft()
+        names = [""] + [a.name for a in self.state.design.airfoils]
+        self.sec.blockSignals(True)
+        self.sec.setRowCount(len(p.partitions))
+        for r, q in enumerate(p.partitions):
+            for c, (k, _) in enumerate(self.COLS):
+                if k == "airfoil":
+                    cb = QtWidgets.QComboBox()
+                    cb.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+                    cb.addItems(names if q.airfoil in names else names + [q.airfoil])
+                    cb.setCurrentText(q.airfoil)
+                    cb.currentTextChanged.connect(lambda t, r=r: self._sec_set(r, "airfoil", t))
+                    self.sec.setCellWidget(r, c, cb)
+                else:
+                    self.sec.setItem(r, c, QtWidgets.QTableWidgetItem(f"{getattr(q, k):g}"))
+        self.sec.blockSignals(False)
+        h = self.sec.horizontalHeader().height() + 6 + sum(self.sec.rowHeight(i) for i in range(len(p.partitions)))
+        self.sec.setFixedHeight(min(h, 260))
+        self._sec_totals()
+
+    def _sec_totals(self) -> None:
+        b, S = wg.totals(self.draft())
+        self.sec_total.setText(f"<b>envergadura total: {b:.3f} m</b> · área: {S:.4f} m² · alongamento: "
+                               f"{b * b / S if S > 0 else float('nan'):.2f}")
+
+    def _sec_set(self, r: int, key: str, value) -> None:
+        p = self.draft()
+        if 0 <= r < len(p.partitions):
+            setattr(p.partitions[r], key, value)
+            wg.sync(p)
+            self.form.refresh()
+            self._sec_totals()
+            self._edited()
+
+    def _sec_edited(self, item) -> None:
+        k = self.COLS[item.column()][0]
+        try:
+            val = float(item.text().replace(",", "."))
+        except ValueError:
+            self._sec_fill()
+            return
+        if k in ("span", "chord", "taper") and val < 0:
+            val = 0.0
+        self._sec_set(item.row(), k, val)
+
+    def _sec_add(self) -> None:
+        p = self.draft()
+        r = self.sec.currentRow()
+        r = r if 0 <= r < len(p.partitions) else len(p.partitions) - 1
+        a = p.partitions[r]
+        new = wg.WingPartition(0.2, round(a.chord * a.taper, 4), 1.0, a.airfoil, 0.0, a.twist)
+        p.partitions.insert(r + 1, new)
+        self._sec_fill()
+        self.sec.selectRow(r + 1)
+        self._sec_set(r + 1, "span", new.span)
+
+    def _sec_del(self) -> None:
+        p = self.draft()
+        if len(p.partitions) <= 1:
+            return
+        r = self.sec.currentRow()
+        p.partitions.pop(r if 0 <= r < len(p.partitions) else -1)
+        self._sec_fill()
+        self._sec_set(0, "span", p.partitions[0].span)
+
+    def _sec_from_trap(self) -> None:
+        p = self.draft()
+        p.partitions = wg.partitions_from_trapezoid(p)
+        self._sec_fill()
+        self._sec_set(0, "span", p.partitions[0].span)
+
 
 # ====================================================================== Empenagem
 class TailPage(StagePage):
@@ -782,6 +921,12 @@ class TailPage(StagePage):
             "profundor, leme e aileron, por volume de cauda. Põe o CG na margem pedida e diz a faixa de CG, a "
             "incidência da EH e se os comandos dão conta. Guarde conjuntos para a etapa Motores.")
     keep_label = "Guardar conjunto"
+
+    def __init__(self, state, parent=None):
+        super().__init__(state, parent)
+        from ..widgets.dims_table import DimsTable
+        self.dims = DimsTable()                      # braços e alturas medidos do CG de projeto (o da margem)
+        self.right.insertWidget(1, self.dims)
 
     def draft(self):
         return self.state.design.tail_draft
@@ -809,6 +954,7 @@ class TailPage(StagePage):
             return None
         specs, res, r = R.set_stage(cand, d.requirements, d.rules, d.airfoil_map())
         ac = r["set"]
+        self.dims.show_aircraft(ac, cg=(r["x_cg"], 0.0, 0.0))
         return specs, res, _only_wing(ac.surfaces, ac.boom), dict(cg=[r["x_cg"], 0.0, 0.0], np_x=r["x_np"])
 
     def keep(self):
@@ -825,7 +971,9 @@ class PowerPage(StagePage):
     title = "Motores e montagem"
     help = ("Onde ficam os motores, e com isso a bateria (posta onde o CG cai na margem), a carga paga (no CG), a "
             "fuselagem e o trem. Mostra o desempenho rápido do avião montado e a massa máxima que a pista permite. "
-            "'Mandar para a Montagem' abre o avião como mais um avião aberto e o salva em 'meus aviões'.")
+            "'Mandar para a Montagem' abre o avião como mais um avião aberto e o salva em 'meus aviões'; "
+            "'Usar em Desempenho' faz o mesmo e vai direto para as análises de Desempenho. A decolagem 6GDL só ajusta "
+            "o profundor: se o avião não decolar, ele vai assim mesmo, com o aviso.")
     keep_label = "Guardar avião"
 
     def __init__(self, state, parent=None):
@@ -834,13 +982,22 @@ class PowerPage(StagePage):
         self.send_b.setToolTip("abre o avião do rascunho (ou o guardado selecionado) como novo avião e salva em "
                                "'meus aviões'")
         self.send_b.clicked.connect(self.send)
-        self.actions.addWidget(self.send_b)
+        self.perf_b = QtWidgets.QPushButton("Usar em Desempenho →")
+        self.perf_b.setToolTip("abre o avião do rascunho (ou o guardado selecionado) e vai para as análises de "
+                               "Desempenho (decolagem, envelope, subida...)")
+        self.perf_b.clicked.connect(lambda: self.send(go="desempenho"))
+        send_row = QtWidgets.QHBoxLayout()            # numa linha só deles: na tela de 1366 px não cabem com "Guardar"
+        send_row.addWidget(self.send_b)
+        send_row.addWidget(self.perf_b)
+        at = next(i for i in range(self.left.count()) if self.left.itemAt(i).layout() is self.actions)
+        self.left.insertLayout(at + 1, send_row)
         self.ac = None
         # distribuição de massa (PV e CP), logo abaixo do 3D
         self.mass_title = QtWidgets.QLabel("<b>Distribuição de massa</b>" + HELP_MARK)
-        self.mass_title.setToolTip("PV: peso vazio (estrutura, motores, bateria, sistemas). CP: carga paga = lastro + "
-                                   "líquido + LAPES (digite quanto de cada à esquerda), tudo no CG. MTOW pela pista − PV "
-                                   "= a carga paga que dá para levar")
+        self.mass_title.setToolTip("PV: peso vazio (estrutura, motores, bateria, sistemas). CP estimada = massa de projeto "
+                                   "(Condições) − PV, no CG. Aqui só se marca se tem LAPES e líquido (e quantos); os kg "
+                                   "de lastro, LAPES e líquido se decidem na Montagem. MTOW pela pista − PV = a carga "
+                                   "paga que dá para levar")
         self.mass = QtWidgets.QTableWidget(0, 5)
         self.mass.setHorizontalHeaderLabels(["grupo", "item", "massa (kg)", "x (m)", "% do total"])
         self.mass.verticalHeader().setVisible(False)
@@ -851,6 +1008,9 @@ class PowerPage(StagePage):
         hh.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
         self.right.insertWidget(1, self.mass_title)
         self.right.insertWidget(2, self.mass)
+        from ..widgets.dims_table import DimsTable
+        self.dims = DimsTable()
+        self.right.insertWidget(3, self.dims)
 
     def fill_mass(self, asm: dict, pf: dict) -> None:
         from PyQt6 import QtGui
@@ -906,13 +1066,14 @@ class PowerPage(StagePage):
         self.ac = ac
         self.state.design_values = {**_last_values(self.state), **rg.aircraft_values(ac, asm, pf, cand.params)}
         self.fill_mass(asm, pf)
+        self.dims.show_aircraft(ac)
         return specs, res, ac, dict(cg=[asm["x_cg_target"], 0.0, 0.0])
 
     def keep(self):
         c = self.state.design.keep_aircraft()
         return None if c is None else c.name
 
-    def send(self):
+    def send(self, go: str = "montagem"):
         from aerosim.design import power as pw
         d = self.state.design
         it = self._sel() if self.kept.hasFocus() or self.kept.currentRow() >= 0 else None
@@ -920,24 +1081,30 @@ class PowerPage(StagePage):
         if cand is None:
             return
         ac, _ = pw.assemble(cand, d.requirements, d.rules, self.state.catalog, d.airfoil_map())
-        send_to_assembly(self.state, ac, self)
+        send_to_assembly(self.state, ac, self, go)
 
 
-def send_to_assembly(state: AppState, ac, widget) -> bool:
-    """o avião vira mais um avião aberto (Montagem) e fica salvo em 'meus aviões' (nome livre: acrescenta (2)...)
-    — só se voar: antes, a decolagem 6GDL acha e grava no avião o acionamento do profundor; se não decolar,
-    nada é salvo nem aberto"""
+def send_to_assembly(state: AppState, ac, widget, go: str = "montagem") -> bool:
+    """o avião vira mais um avião aberto e fica salvo em 'meus aviões' (nome livre: acrescenta (2)...); a janela
+    vai para a Montagem (go="montagem") ou para as análises de Desempenho (go="desempenho").
+    Antes, a decolagem 6GDL tenta achar e gravar no avião o acionamento do profundor; se não decolar, o avião vai
+    assim mesmo (com o profundor de antes) e o aviso fica na mensagem da etapa"""
     from aerosim.design.flight import tune_takeoff
     QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
     try:
         ok, why = tune_takeoff(ac, state.manager.backend)
+    except Exception as ex:
+        ok, why = False, f"a decolagem não rodou ({ex})"
     finally:
         QtWidgets.QApplication.restoreOverrideCursor()
-    if not ok:
-        QtWidgets.QMessageBox.warning(widget, "Não foi para a Montagem", f"'{ac.name}' {why}. Não foi salvo.")
-        return False
     if hasattr(widget, "msg"):
-        widget.msg.setText(f"{ac.name}: {why}")
+        widget.msg.setText(f"{ac.name}: {why}" if ok else
+                           f"⚠ {ac.name} foi sem a decolagem ajustada: {why}. Ajuste na aba Decolagem/Missão.")
+    from ..widgets import save_check
+    if not save_check.confirm_save(widget, ac, state.design):     # o que falta definir: salvar mesmo assim?
+        if hasattr(widget, "msg"):
+            widget.msg.setText(f"{ac.name}: não foi salvo (voltou para corrigir)")
+        return False
     st = state.projects
     name = ac.name
     k = 2
@@ -952,7 +1119,9 @@ def send_to_assembly(state: AppState, ac, widget) -> bool:
         QtWidgets.QMessageBox.warning(widget, "Salvar", f"não salvei em 'meus aviões': {ex}")
     state.add(ac, path)
     win = widget.window()
-    if hasattr(win, "show_assembly"):
+    if go == "desempenho" and hasattr(win, "show_area"):
+        win.show_area("desempenho")
+    elif hasattr(win, "show_assembly"):
         win.show_assembly()
     return True
 

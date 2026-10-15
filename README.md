@@ -64,22 +64,14 @@ Já para o aerosim você pode:
 
 ```sh
 python -m aerosim.gui                                              # volta ao último projeto (ou Montagem vazia)
-python -m aerosim.gui data/sprint/projeto_s1223.json               # abre um projeto e volta de onde parou
+python -m aerosim.gui ~/sprint                                     # abre a pasta da sprint (um arquivo por asa)
+python -m aerosim.gui data/sprint/projeto_s1223.json               # projeto antigo: abre e grava em <meus aviões>/sprint/
 python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avião (.json, .cfg ou .xlsx)
 ```
 
-
-## Por que usar o Aircraft Simulation?
-
-  - Liberdade Geométrica Total: Esqueça modelos engessados. Aqui você posiciona quantos tubos, superfícies e motores quiser, definindo misturas de comandos customizadas (elevons, ruddervators, flaperons) com ganhos fracionários.
-  - Do Conceito ao Voo em um Clique: Você desenha e restringe os parâmetros no Aerosim (ex: "quero que decole em no máximo 3 metros" ou "preciso otimizar o MTOW para esta envergadura"), e com um comando manda direto para a Montagem 3D testar o voo.
-  - Performance de C(++) com a Flexibilidade de Python: A interface gráfica e os loops de otimização rodam em Python para máxima agilidade de desenvolvimento, enquanto o motor de física pesado roda puro em Zig, garantindo velocidade brutal.
-  - Autonomia Completa sem Dependências Comerciais Pesadas: Uma ferramenta aberta, com GUI, programável via linha de comando ou API Python, feita por engenheiros para engenheiros.
-
-
-## Possibilidades
-- **Projeto `.json`** (linha de comando, **Arquivo → Abrir**, **Projeto da sprint → Abrir projeto** ou
-  arrastar o arquivo para a janela): volta de onde parou de qualquer etapas (perfis, asas, conjuntos, aviões,
+- **Projeto da sprint numa pasta** (linha de comando, **Projeto da sprint → Abrir pasta da sprint…** ou
+  arrastar a pasta para a janela): um arquivo por asa (a asa + as superfícies feitas para ela + os aviões) e
+  o `sprint.json` com o resto. Volta de onde parou — etapas (perfis, asas, conjuntos, aviões,
   estudos), os aviões abertos na Montagem e a aba em que estava; mostra o que está guardado. Sem avião
   guardado no projeto, a **Montagem começa vazia** e o avião aparece no 3D peça por peça
   (**+ Asa, + EH, + EV, + Motor, + Tubo, + Tanque**); a massa vem das peças.
@@ -109,8 +101,8 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   2D: NACA, .dat, só parâmetros ou polar do XFLR5) → **Asa** (planta, linha sustentadora, onde estola,
   incidência pelo ângulo de cruzeiro) → **Empenagem e comandos** (cauda por volume, tubo, CG na margem
   pedida, faixa de CG, rotação na decolagem) → **Motores e montagem** (motores, distribuição de massa com PV
-  e carga paga = lastro + líquido + LAPES, bateria no ponto do CG, trem, desempenho e o MTOW pela pista) →
-  **Mandar para a Montagem**; **Estudo e ponto de projeto** (Desempenho) acopla as áreas e varre uma variável (ex.: inclinação do motor) nas altitudes-densidade pedidas (exemplos prontos: `data/aircraft/S1223_*.json` e `data/sprint/projeto_s1223.json`). Cada etapa guarda candidatos com nome; o programa compara,
+  e carga paga só como opções — tem LAPES? quantas; tem líquido? quantos tanques; os kg se decidem na Montagem —, bateria no ponto do CG, trem, desempenho e o MTOW pela pista) →
+  **Mandar para a Montagem** ou **Usar em Desempenho** (sem exigir que decole: se não decolar, vai com o aviso); **Estudo e ponto de projeto** (Desempenho) acopla as áreas e varre uma variável (ex.: inclinação do motor) nas altitudes-densidade pedidas (exemplos prontos: `data/aircraft/S1223_*.json` e `data/sprint/projeto_s1223.json`). Cada etapa guarda candidatos com nome; o programa compara,
   não escolhe. **Condições e restrições…** (em toda etapa): condições de partida (massa estimada, velocidade, AD,
   atrito), **restrições** que se ligam e desligam com operador ≤ ≥ = (envergadura, área, estol, corrida — decolar
   em 3 m é só `corrida ≤ 3` —, potência, número de superfícies e de motores, EE, massa de líquido e de LAPES,

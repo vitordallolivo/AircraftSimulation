@@ -32,6 +32,9 @@ class Requirements:
     density_altitude: float = F(600.0, "altitude-densidade (AD)", "m", "atmosfera padrão com a densidade do dia",
                                 -500, 4000, 50)
     mu_roll: float = F(0.04, "atrito de rolamento", "", "pista: grama ≈ 0,08, asfalto ≈ 0,03", 0, 0.3, 0.005)
+    V_turn: float = F(0.0, "V da curva", "m/s", "a velocidade da curva sustentada (restrição de fator de carga); "
+                      "0 = a de cruzeiro", 0, 60, 0.5)
+    mu_brake: float = F(0.3, "atrito na frenagem", "", "pouso: rodas freando na pista", 0.05, 1.0, 0.05)
     constraints: list[Constraint] = field(default_factory=default_constraints)
 
     # ---- os limites que as contas usam, lidos das restrições ativas (desligada = sem limite)
