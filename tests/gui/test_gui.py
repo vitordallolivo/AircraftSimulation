@@ -454,3 +454,43 @@ def test_save_checklist_dialog_and_refusal(app, manager, tmp_path):
     finally:
         save_check.confirm_save = real
     assert len(st.fleet) == n and not st.projects.exists(ac.name)              # recusou: nada salvo nem aberto
+
+
+def test_wing_stage_by_chord_and_sections_table(app, manager, tmp_path):
+    """etapa Asa: dimensionar por corda (a área sai) e planta por tabela de seções, cada uma com o seu perfil"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.design import airfoils as afm
+    from aerosim.design import wing as wg
+    from aerosim.gui.design.pages import WingPage
+    from aerosim.gui.state import AppState
+    from aerosim.model.templates import empty
+    st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)))
+    st.design.airfoils = [afm.entry(afm.from_naca(n)) for n in ("NACA 4412", "NACA 2412", "NACA 0012")]
+    st.design.wing_draft.airfoil = "NACA 4412"
+    page = WingPage(st)
+    page.show()
+    pump(app, 0.5)
+    p = st.design.wing_draft
+    p.size_by = "corda"
+    p.chord = 0.4
+    page._mode_changed("size_by")
+    assert not page.form.widgets["area"].isEnabled() and page.form.widgets["chord"].isEnabled()
+    s, yb, cr, ct = wg.chords(p)
+    assert cr == pytest.approx(0.4) and p.area == pytest.approx(2 * (cr * yb + 0.5 * (cr + ct) * (s - yb)))
+    p.planform = "tabela de seções"
+    page._mode_changed("planform")
+    assert page.sec_box.isVisible() and page.sec.rowCount() >= 2 and not page.form.widgets["span"].isEnabled()
+    n = page.sec.rowCount()
+    page.sec.selectRow(0)
+    page._sec_add()                                       # no meio da primeira e da segunda
+    assert page.sec.rowCount() == n + 1 and p.stations[1].y == pytest.approx(0.5 * (p.stations[0].y + p.stations[2].y))
+    page.sec.cellWidget(n, 2).setCurrentText("NACA 0012")  # a ponta com outro perfil
+    page.sec.cellWidget(1, 2).setCurrentText("NACA 2412")
+    page.recompute()
+    assert "Error" not in page.msg.text()
+    c = st.design.draft_wing()
+    assert [e.name for e in c.section_airfoils] == ["NACA 2412", "NACA 0012"]
+    r = wg.analyze(c, st.design.requirements)
+    assert [s.airfoil.name if s.airfoil else None for s in r["surface"].sections][-1] == "NACA 0012"
+    assert p.span == pytest.approx(2 * p.stations[-1].y)
+    page.close()

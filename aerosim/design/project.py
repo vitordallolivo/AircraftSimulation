@@ -106,16 +106,27 @@ class DesignProject:
         e = self.airfoil(t) if t and t != self.wing_draft.airfoil else None
         return copy.deepcopy(e) if e is not None else None
 
-    def keep_wing(self) -> WingCandidate:
+    def _section_airfoils(self) -> list:
+        """tabela de seções: cópias dos perfis das seções (fora o da raiz)"""
+        p = self.wing_draft
+        if not p.table():
+            return []
+        names = dict.fromkeys(q.airfoil for q in p.stations if q.airfoil and q.airfoil != p.airfoil)
+        return [copy.deepcopy(e) for e in (self.airfoil(n) for n in names) if e is not None]
+
+    def draft_wing(self) -> WingCandidate:
+        from .wing import sync
+        sync(self.wing_draft)                     # área/corda/envergadura que saem dos outros campos
         af = self.airfoil(self.wing_draft.airfoil) or (self.airfoils[0] if self.airfoils else afm.AirfoilEntry())
-        c = WingCandidate(copy.deepcopy(self.wing_draft), copy.deepcopy(af), airfoil_tip=self._tip())
+        tip = None if self.wing_draft.table() else self._tip()
+        return WingCandidate(copy.deepcopy(self.wing_draft), copy.deepcopy(af), airfoil_tip=tip,
+                             section_airfoils=self._section_airfoils())
+
+    def keep_wing(self) -> WingCandidate:
+        c = self.draft_wing()
         self._put(self.wings, c)
         self.wing_draft.name = next_name(self.wing_draft.name, [w.name for w in self.wings])
         return c
-
-    def draft_wing(self) -> WingCandidate:
-        af = self.airfoil(self.wing_draft.airfoil) or (self.airfoils[0] if self.airfoils else afm.AirfoilEntry())
-        return WingCandidate(copy.deepcopy(self.wing_draft), copy.deepcopy(af), airfoil_tip=self._tip())
 
     def draft_set(self) -> SetCandidate | None:
         w = self.wing(self.tail_draft.wing) or (self.wings[-1] if self.wings else None)

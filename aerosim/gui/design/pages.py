@@ -760,6 +760,140 @@ class WingPage(StagePage):
     def kept_items(self):
         return self.state.design.wings
 
+    # ------------------------------------------------------------------ tabela de seções
+    COLS = (("y", "y (m)"), ("chord", "c (m)"), ("airfoil", "perfil"), ("offset", "recuo"), ("twist", "θ (°)"))
+    COL_TIPS = ("distância da raiz ao longo da semienvergadura (m)", "corda (m)", "perfil da seção (vazio = o da raiz)",
+                "recuo do bordo de ataque em relação ao da raiz (m, + para trás)", "torção (°, − = washout)")
+    TRAPEZOID_ONLY = ("span", "area", "chord", "size_by", "taper", "rect_frac", "sweep", "twist", "airfoil",
+                      "airfoil_tip")
+
+    def build(self) -> None:
+        super().build()
+        if getattr(self, "sec_box", None) is None:
+            self.sec_box = QtWidgets.QGroupBox("Seções (da raiz para a ponta)")
+            self.sec_box.setToolTip("uma linha por seção: y ao longo da semienvergadura, corda, perfil (vazio = o da "
+                                    "raiz), recuo do bordo de ataque e torção. Entre seções tudo é interpolado, "
+                                    "inclusive o perfil. Quantas seções quiser.")
+            v = QtWidgets.QVBoxLayout(self.sec_box)
+            self.sec = QtWidgets.QTableWidget(0, len(self.COLS))
+            self.sec.setHorizontalHeaderLabels([t for _, t in self.COLS])
+            for c, tip in enumerate(self.COL_TIPS):
+                self.sec.horizontalHeaderItem(c).setToolTip(tip)
+            self.sec.verticalHeader().setVisible(False)
+            hh = self.sec.horizontalHeader()
+            hh.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+            hh.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.Stretch)    # o perfil fica com o resto
+            self.sec.itemChanged.connect(self._sec_edited)
+            v.addWidget(self.sec)
+            row = QtWidgets.QHBoxLayout()
+            for txt, fn, tip in (("+ seção", self._sec_add, "nova seção depois da selecionada (ou no fim)"),
+                                 ("− seção", self._sec_del, "apaga a selecionada (ficam pelo menos duas)"),
+                                 ("do trapézio", self._sec_from_trap, "refaz a tabela a partir do trapézio atual")):
+                b = QtWidgets.QPushButton(txt)
+                b.setToolTip(tip)
+                b.clicked.connect(fn)
+                row.addWidget(b)
+            v.addLayout(row)
+        self.form_box.removeWidget(self.sec_box)
+        self.form_box.addWidget(self.sec_box)              # logo abaixo do formulário
+        self.form.changed.connect(self._mode_changed)
+        self._mode_changed()
+
+    def _mode_changed(self, name: str = "") -> None:
+        p = self.draft()
+        table = p.planform == wg.PLANFORMS[1]
+        if table and len(p.stations) < 2:
+            p.stations = wg.stations_from_trapezoid(p)
+        if name in ("planform", "size_by", "") or table:
+            wg.sync(p)
+            self.form.refresh()
+        for k, w in self.form.widgets.items():
+            on = not (table and k in self.TRAPEZOID_ONLY)
+            if not table and k == "chord":
+                on = p.size_by == wg.SIZE_BY[1]
+            if not table and k == "area":
+                on = p.size_by == wg.SIZE_BY[0]
+            w.setEnabled(on)
+        self.sec_box.setVisible(table)
+        if table:
+            self._sec_fill()
+
+    def _sec_fill(self) -> None:
+        p = self.draft()
+        names = [""] + [a.name for a in self.state.design.airfoils]
+        self.sec.blockSignals(True)
+        self.sec.setRowCount(len(p.stations))
+        for r, q in enumerate(p.stations):
+            for c, (k, _) in enumerate(self.COLS):
+                if k == "airfoil":
+                    cb = QtWidgets.QComboBox()
+                    cb.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+                    cb.addItems(names if q.airfoil in names else names + [q.airfoil])
+                    cb.setCurrentText(q.airfoil)
+                    cb.currentTextChanged.connect(lambda t, r=r: self._sec_set(r, "airfoil", t))
+                    self.sec.setCellWidget(r, c, cb)
+                else:
+                    self.sec.setItem(r, c, QtWidgets.QTableWidgetItem(f"{getattr(q, k):g}"))
+        self.sec.blockSignals(False)
+        h = self.sec.horizontalHeader().height() + 6 + sum(self.sec.rowHeight(i) for i in range(len(p.stations)))
+        self.sec.setFixedHeight(min(h, 260))
+
+    def _sec_set(self, r: int, key: str, value) -> None:
+        p = self.draft()
+        if 0 <= r < len(p.stations):
+            setattr(p.stations[r], key, value)
+            wg.sync(p)
+            self.form.refresh()
+            self._edited()
+
+    def _sec_edited(self, item) -> None:
+        k = self.COLS[item.column()][0]
+        try:
+            val = float(item.text().replace(",", "."))
+        except ValueError:
+            self._sec_fill()
+            return
+        if k in ("y", "chord") and val < 0:
+            val = 0.0
+        self._sec_set(item.row(), k, val)
+        if k == "y":                                       # a ordem segue o y
+            self.draft().stations.sort(key=lambda q: q.y)
+            self._sec_fill()
+
+    def _sec_add(self) -> None:
+        p = self.draft()
+        r = self.sec.currentRow()
+        r = r if 0 <= r < len(p.stations) else len(p.stations) - 1
+        a = p.stations[r]
+        if r + 1 < len(p.stations):                        # no meio: metade do caminho até a próxima
+            b = p.stations[r + 1]
+            new = wg.WingStation(round(0.5 * (a.y + b.y), 4), round(0.5 * (a.chord + b.chord), 4), "",
+                                 round(0.5 * (a.offset + b.offset), 4), round(0.5 * (a.twist + b.twist), 3))
+        else:                                              # no fim: estica 0,2 m
+            new = wg.WingStation(round(a.y + 0.2, 4), round(a.chord * 0.85, 4), "", round(a.offset + 0.03, 4), a.twist)
+        p.stations.insert(r + 1, new)
+        self._sec_fill()
+        self.sec.selectRow(r + 1)
+        self._sec_set(r + 1, "y", new.y)
+
+    def _sec_del(self) -> None:
+        p = self.draft()
+        if len(p.stations) <= 2:
+            return
+        r = self.sec.currentRow()
+        p.stations.pop(r if 0 <= r < len(p.stations) else -1)
+        self._sec_fill()
+        self._sec_set(0, "y", p.stations[0].y)
+
+    def _sec_from_trap(self) -> None:
+        p = self.draft()
+        planform = p.planform
+        p.planform = wg.PLANFORMS[0]
+        p.stations = wg.stations_from_trapezoid(p)
+        p.planform = planform
+        self._sec_fill()
+        self._sec_set(0, "y", 0.0)
+
     def compute(self):
         d = self.state.design
         cand = d.draft_wing()
