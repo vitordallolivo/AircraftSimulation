@@ -494,3 +494,31 @@ def test_wing_stage_by_chord_and_sections_table(app, manager, tmp_path):
     assert [s.airfoil.name if s.airfoil else None for s in r["surface"].sections][-1] == "NACA 0012"
     assert p.span == pytest.approx(2 * p.stations[-1].y)
     page.close()
+
+
+def test_dimensions_from_design_cg_in_stages(app, manager, tmp_path):
+    """Empenagem e Motores e montagem mostram as dimensões a partir do CG de projeto (x_TDP, x_TDN, braços)"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.gui.design.pages import PowerPage, TailPage
+    from aerosim.gui.state import AppState
+    from aerosim.model.templates import empty
+    st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)), design_dir=str(tmp_path / "sprint"))
+    d = st.design
+    d.keep_wing()
+    d.tail_draft.wing, d.tail_draft.arm, d.tail_draft.arm_from = d.wings[0].name, 0.9, "CG de projeto"
+    tail = TailPage(st)
+    tail.show()
+    pump(app, 0.3)
+    tail.recompute()
+    assert tail.dims.value("EH: CA") == pytest.approx(0.9, abs=1e-3)
+    d.keep_set()
+    d.power_draft.set, d.power_draft.x_tdp, d.power_draft.x_tdn = d.sets[0].name, 0.07, 0.3
+    power = PowerPage(st)
+    power.show()
+    pump(app, 0.3)
+    power.recompute()
+    assert power.dims.value("TDP (trem principal)") == pytest.approx(0.07)
+    assert power.dims.value("TDN (bequilha)") == pytest.approx(0.3)
+    assert power.dims.table.rowCount() > 8
+    tail.close()
+    power.close()

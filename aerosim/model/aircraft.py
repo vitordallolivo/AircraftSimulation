@@ -563,6 +563,7 @@ class Aircraft:
     ballast: Ballast = field(default_factory=Ballast)
     performance: PerformanceData = field(default_factory=PerformanceData)
     shared_battery: bool = False   # True: um pacote para todos os motores (R_int vezes K)
+    design_cg: list[float] | None = None   # CG de projeto (x, y, z): as dimensões se medem dele; None: o CG atual
     Sref: float | None = None      # None: da asa principal
     cref: float | None = None
     bref: float | None = None

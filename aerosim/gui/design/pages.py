@@ -917,6 +917,12 @@ class TailPage(StagePage):
             "incidência da EH e se os comandos dão conta. Guarde conjuntos para a etapa Motores.")
     keep_label = "Guardar conjunto"
 
+    def __init__(self, state, parent=None):
+        super().__init__(state, parent)
+        from ..widgets.dims_table import DimsTable
+        self.dims = DimsTable()                      # braços e alturas medidos do CG de projeto (o da margem)
+        self.right.insertWidget(1, self.dims)
+
     def draft(self):
         return self.state.design.tail_draft
 
@@ -943,6 +949,7 @@ class TailPage(StagePage):
             return None
         specs, res, r = R.set_stage(cand, d.requirements, d.rules, d.airfoil_map())
         ac = r["set"]
+        self.dims.show_aircraft(ac, cg=(r["x_cg"], 0.0, 0.0))
         return specs, res, _only_wing(ac.surfaces, ac.boom), dict(cg=[r["x_cg"], 0.0, 0.0], np_x=r["x_np"])
 
     def keep(self):
@@ -996,6 +1003,9 @@ class PowerPage(StagePage):
         hh.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
         self.right.insertWidget(1, self.mass_title)
         self.right.insertWidget(2, self.mass)
+        from ..widgets.dims_table import DimsTable
+        self.dims = DimsTable()
+        self.right.insertWidget(3, self.dims)
 
     def fill_mass(self, asm: dict, pf: dict) -> None:
         from PyQt6 import QtGui
@@ -1051,6 +1061,7 @@ class PowerPage(StagePage):
         self.ac = ac
         self.state.design_values = {**_last_values(self.state), **rg.aircraft_values(ac, asm, pf, cand.params)}
         self.fill_mass(asm, pf)
+        self.dims.show_aircraft(ac)
         return specs, res, ac, dict(cg=[asm["x_cg_target"], 0.0, 0.0])
 
     def keep(self):

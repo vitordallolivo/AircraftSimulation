@@ -32,6 +32,7 @@ from .spec import DesignRules, Requirements
 from .wing import WingCandidate, analyze as analyze_wing, planform
 
 LAYOUTS = ("convencional", "em V", "sem cauda")
+ARM_FROM = ("CA da asa", "CG de projeto")
 
 
 @dataclass
@@ -40,7 +41,11 @@ class TailParams:
     wing: str = F("asa 1", "asa", "", "uma das asas guardadas na etapa Asa")
     layout: str = F("convencional", "cauda", "", "convencional: EH + EV; em V: duas superfícies inclinadas; "
                     "sem cauda: elevons na asa", choices=LAYOUTS)
-    arm: float = F(0.95, "braço da cauda", "m", "do centro aerodinâmico da asa ao da cauda", 0.2, 3.0, 0.01)
+    arm: float = F(0.95, "braço da cauda", "m", "até o centro aerodinâmico da cauda, medido de onde diz 'braço medido "
+                   "do'", 0.2, 3.0, 0.01)
+    arm_from: str = F("CA da asa", "braço medido do", "", "CA da asa: do centro aerodinâmico da asa (clássico); CG de "
+                      "projeto: do CG (como l_h na planilha antiga) — os volumes de cauda usam este braço",
+                      choices=ARM_FROM)
     VH: float = F(0.45, "volume de cauda horizontal V_H", "", "0,35 a 0,6 é o usual", 0.1, 1.2, 0.01)
     VV: float = F(0.04, "volume de cauda vertical V_V", "", "0,02 a 0,05 é o usual", 0.005, 0.15, 0.002)
     AR_h: float = F(4.0, "alongamento da EH", "", "", 1.0, 10, 0.1)
@@ -121,9 +126,10 @@ def tail_entry(name: str, known: dict | None = None, Re: float | None = None,
 
 
 def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None = None, wing_res: dict | None = None,
-              airfoils: dict | None = None) -> tuple[Aircraft, dict]:
+              airfoils: dict | None = None, arm_shift: float = 0.0) -> tuple[Aircraft, dict]:
     """o conjunto como um avião parcial (asa + cauda + tubo, sem motor nem fuselagem) e os números do
-    dimensionamento: áreas, envergaduras, braço, posições"""
+    dimensionamento: áreas, envergaduras, braço, posições. As áreas saem do braço dado; a cauda fica a
+    `braço + arm_shift` do CA da asa (`analyze` acha o shift quando o braço é medido do CG)"""
     rules = rules or DesignRules()
     tp = cand.params
     wr = wing_res or analyze_wing(cand.wing, req, rules)
@@ -143,9 +149,9 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
     info = dict(S=S, c=c, b=b, x_ac_w=pf["x_ac"], x_le_mac=pf["x_le_mac"], Sh=0.0, Sv=0.0, bh=0.0, hv=0.0, arm=0.0)
     if tp.layout == "sem cauda":
         return ac, info
-    l = tp.arm
-    Sh = tp.VH * S * c / l
-    Sv = tp.VV * S * b / l
+    l = tp.arm + arm_shift                          # do CA da asa ao da cauda (posição)
+    Sh = tp.VH * S * c / tp.arm                     # volume de cauda com o braço como foi dado
+    Sv = tp.VV * S * b / tp.arm
     x_ac_t = pf["x_ac"] - l
     if tp.layout == "convencional":
         bh = math.sqrt(tp.AR_h * Sh)
@@ -187,11 +193,26 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
 
 
 def analyze(cand: SetCandidate, req: Requirements, rules: DesignRules | None = None, airfoils: dict | None = None) -> dict:
-    """estática longitudinal do conjunto, faixa de CG, incidência da EH, rolagem e direcional"""
+    """estática longitudinal do conjunto, faixa de CG, incidência da EH, rolagem e direcional. Com o braço
+    medido do CG de projeto, a cauda é reposicionada até a distância do CG ao CA dela ser o braço dado (o CG
+    depende da cauda: ponto fixo, converge em poucas voltas)"""
     rules = rules or DesignRules()
-    tp = cand.params
     wr = analyze_wing(cand.wing, req, rules)
-    ac, info = build_set(cand, req, rules, wr, airfoils)
+    if cand.params.layout == "sem cauda" or cand.params.arm_from != ARM_FROM[1]:
+        return _analyze(cand, req, rules, airfoils, wr, 0.0)
+    shift = 0.0
+    for _ in range(30):
+        out = _analyze(cand, req, rules, airfoils, wr, shift)
+        err = cand.params.arm - out["arm_cg"]
+        if abs(err) < 1e-6:
+            break
+        shift += err
+    return out
+
+
+def _analyze(cand, req, rules, airfoils, wr, arm_shift) -> dict:
+    tp = cand.params
+    ac, info = build_set(cand, req, rules, wr, airfoils, arm_shift)
     S, c, b = info["S"], info["c"], info["b"]
     a = wr["CLa"]
     AR = wr["AR"]
@@ -291,6 +312,7 @@ def analyze(cand: SetCandidate, req: Requirements, rules: DesignRules | None = N
         a_v = a_h / max(math.cos(g) ** 2, 1e-3)               # sem projeção: o sen²γ fica no volume
         VV = Sh * math.sin(g) ** 2 * info["arm"] / (S * b)
     Cnb = eta * VV * a_v
+    out["arm_cg"] = x_cg - info["x_ac_t"]                  # do CG de projeto ao CA da cauda
     out.update(h_n=h_n, h_cg=h_cg, x_cg=x_cg, x_np=info["x_le_mac"] - h_n * c, a_h=a_h, VH=VH_ac, VV=VV, Cmde=Cmde,
                i_h=math.degrees(ih), de_cruise=math.degrees(de_cru), de_CLmax=math.degrees(de_CLmax),
                h_fwd=h_fwd, h_aft=h_aft, x_cg_fwd=info["x_le_mac"] - h_fwd * c, x_cg_aft=info["x_le_mac"] - h_aft * c,

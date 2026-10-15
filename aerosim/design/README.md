@@ -360,6 +360,20 @@ tubo; o braço da cauda continua medido na horizontal, então o tubo inclinado f
 **Motores e montagem → Usar em Desempenho** abre o avião (rascunho ou guardado selecionado) e vai direto para as
 análises de Desempenho, sem passar pela Montagem.
 
+## Dimensões a partir do CG de projeto (`dims.py`)
+
+Tudo se mede do **CG de projeto** (o da margem estática pedida; a etapa Motores grava em `Aircraft.design_cg`):
+Δx + à frente, Δy + à direita, Δz + para baixo, e o valor "de planilha" de cada item — **x_TDP** (do CG ao trem
+principal, + atrás), **x_TDN** (do CG à bequilha, + à frente), altura do CG ao chão, ângulo de tombamento, braços
+da EH e da EV (do CG ao CA), alturas ao chão, cubo de cada hélice (e a folga dela ao chão), tubo, tanques, LAPES,
+lastro e bateria. A tabela aparece em **Empenagem e comandos** (o conjunto, sem trem: sem as alturas),
+**Motores e montagem** e no painel da **Montagem** (com o desvio do CG atual para o de projeto).
+
+Entradas medidas do CG: **x_TDP** e **x_TDN** em Motores e montagem (0 = regra/automático) e o **braço da cauda**
+medido do CA da asa (clássico) ou do **CG de projeto** (como l_h na planilha antiga). Medido do CG, a cauda é
+reposicionada num ponto fixo até a distância do CG ao CA dela ser o braço dado, e os volumes de cauda usam esse
+braço.
+
 ## Condições, restrições e variáveis (`spec.py`, `registry.py`)
 
 **Condições** (`Requirements`): o ponto de partida.

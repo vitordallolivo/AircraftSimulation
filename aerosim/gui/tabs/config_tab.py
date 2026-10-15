@@ -998,6 +998,21 @@ def info_html(backend, ac, info) -> str:
         I = np.asarray(mp["I"])
         rows.append(("Ixx, Iyy, Izz", f"{I[0, 0]:.3f}, {I[1, 1]:.3f}, {I[2, 2]:.3f} kg·m²"))
     out.append(_tbl("Massa e CG", rows))
+    try:                                        # dimensões a partir do CG de projeto (ou do atual, sem projeto)
+        from aerosim.design.dims import dimensions
+        f = lambda v: "" if v is None else f"{v:+.3f}"
+        drows = []
+        if ac.design_cg is not None:
+            d = [cg[k] - ac.design_cg[k] for k in range(3)]
+            drows.append(("CG atual − CG de projeto", f"({d[0]:+.3f}, {d[1]:+.3f}, {d[2]:+.3f}) m"))
+        for g, item, dx, dy, dz, val, note in dimensions(ac)[1:]:
+            pos = f"({f(dx)}, {f(dy)}, {f(dz)})" if dx is not None else ""
+            v = "" if val is None else f"{val:.3f}"
+            drows.append((item, f"{pos} {('= ' + v) if v else ''}".strip()))
+        title = "Dimensões a partir do CG de projeto" if ac.design_cg is not None else "Dimensões a partir do CG atual"
+        out.append(_tbl(title + " (Δx, Δy, Δz) m", drows))
+    except Exception:
+        pass
     cor = "#080" if 5 <= sm <= 30 else "#b00"
     if not 5 <= sm <= 30:
         warn.append(f"margem estática {sm:.1f} % fora de 5–30 %")

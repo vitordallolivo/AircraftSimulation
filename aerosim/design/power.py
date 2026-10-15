@@ -55,6 +55,11 @@ class PowerParams:
                      "decidem na Montagem")
     n_tanks: int = F(1, "quantos tanques", "", "lado a lado no CG", 1, 4, 1)
     gear: str = F("triciclo", "trem", "", "triciclo: bequilha no nariz; convencional: bequilha na cauda", choices=GEARS)
+    x_tdp: float = F(0.0, "x_TDP: trem principal ao CG", "m", "distância do CG de projeto ao trem principal: atrás "
+                     "dele no triciclo, à frente no convencional. 0 = a regra (triciclo) ou 10 cm (convencional)",
+                     0.0, 0.6, 0.005)
+    x_tdn: float = F(0.0, "x_TDN: bequilha à frente do CG", "m", "triciclo: distância do CG de projeto à bequilha "
+                     "(+ = à frente). 0 = automático (10 cm atrás do nariz)", 0.0, 1.5, 0.005)
 
 
 @dataclass
@@ -203,15 +208,20 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
         ac.payload = Payload(enabled=True, mass=0.0, count=max(int(pp.n_lapes), 1), x=x_t, y=0.0, z=0.06)
     ac.mass = MassModel(base_mass=m_s, base_cg=[xs, 0.0, zs], Ixx=I[0], Iyy=I[1], Izz=I[2], Ixz=0.0, items=items,
                         include_propulsion=False, include_structure=False)
+    z_cg = (m_s * zs + sum(i.mass * i.z for i in items)) / max(m_s + sum(i.mass for i in items), 1e-9)
+    ac.design_cg = [float(x_t), 0.0, float(z_cg)]        # CG de projeto: as dimensões se medem dele
     # ---- trem
     gz = (D / 2 + rules.prop_clearance) if pp.layout != LAYOUTS[1] else max(D / 2 + rules.prop_clearance + w.z, 0.12)
+    x_tdp = pp.x_tdp if pp.x_tdp > 0 else rules.main_gear_aft          # medidas do CG de projeto
     if pp.gear == GEARS[0]:
-        ac.gear = LandingGear("tricycle", main_x=x_t - rules.main_gear_aft, main_track=rules.track, main_z=gz,
-                              steer_x=x_nose - 0.10, steer_z=gz, tail_skid=ac.boom.enabled,
+        ac.gear = LandingGear("tricycle", main_x=x_t - x_tdp, main_track=rules.track, main_z=gz,
+                              steer_x=x_t + pp.x_tdn if pp.x_tdn > 0 else x_nose - 0.10, steer_z=gz,
+                              tail_skid=ac.boom.enabled,
                               skid_x=ac.boom.x_end if ac.boom.enabled else -1.0,
                               skid_z=ac.boom.end[2] if ac.boom.enabled else 0.0, mu_roll=req.mu_roll)   # na ponta do tubo
     else:
-        ac.gear = LandingGear("conventional", main_x=x_t + 0.10, main_track=rules.track, main_z=gz,
+        ac.gear = LandingGear("conventional", main_x=x_t + (pp.x_tdp if pp.x_tdp > 0 else 0.10), main_track=rules.track,
+                              main_z=gz,
                               steer_x=ac.boom.x_end if ac.boom.enabled else x_t - 0.6,
                               steer_z=(ac.boom.end[2] if ac.boom.enabled else 0.0) + 0.05, steer_k=1500,
                               steer_c=40, tail_skid=False, mu_roll=req.mu_roll)
