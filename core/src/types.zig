@@ -323,6 +323,21 @@ pub const Params = extern struct {
     steer_sign: f64 = 1, // −1 se a roda direcionável está atrás das principais (convencional)
 };
 
+/// estado de um painel num instante (saída de `aero.computeTrace`): para ver a carga ao longo da envergadura
+pub const PanelState = extern struct {
+    r: [3]f64 = .{ 0, 0, 0 }, // centro do painel (corpo, m)
+    S: f64 = 0,
+    c: f64 = 0,
+    group: i32 = -1, // limits.group_*; −1: painel sem escoamento
+    side: i32 = 0,
+    alpha: f64 = 0, // α local, já com downwash e comando (rad)
+    V: f64 = 0, // velocidade local no plano do perfil (m/s)
+    CL: f64 = 0,
+    CD: f64 = 0,
+    L: f64 = 0, // sustentação do painel (N)
+    D: f64 = 0, // arrasto do painel (N)
+};
+
 /// medidas acumuladas de uma corrida (o "relatório" de eventos)
 pub const Events = extern struct {
     tR: f64 = -1,

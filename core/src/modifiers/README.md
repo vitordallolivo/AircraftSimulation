@@ -103,6 +103,14 @@ python tools/modcheck.py data/aircraft/Convencional_original.json --com esteira.
   conta é feita em Python.
 - `aerosim_aero_coeffs_thrust` (sessão: `aero_coeffs_thrust(V, α, β, T[], Q[])`) dá os coeficientes do avião com a
   tração e o torque de cada motor, para estudar a esteira sem simular.
+- `aerosim_panel_states` (sessão: `panel_states(V, α, β, T[], Q[])`) dá o estado de cada faixa (`PanelState`: centro,
+  área, corda, grupo, α e velocidade locais, C_L, C_D, sustentação e arrasto em N), saído de `aero.computeTrace`, o
+  mesmo laço da simulação. Com ele, `tools/span_load.py` desenha a carga ao longo da envergadura (y em metros) da
+  asa e da EH com e sem um modificador:
+
+```
+python tools/span_load.py data/aircraft/Bimotor_convencional_tubo_cauda_em_V.json --com esteira.disco --png carga.png
+```
 - O `modcheck` roda a decolagem com os modificadores do avião, sem cada um e, com `--sem-solo`, sem efeito
   solo, e mostra a diferença.
 

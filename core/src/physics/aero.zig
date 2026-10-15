@@ -83,6 +83,16 @@ pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3) Out {
 
 /// `compute` com o que os modificadores precisam do instante (tração e torque de cada motor...)
 pub fn computeEnv(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env) Out {
+    return computeImpl(false, p, Vr, w, rcg, h, d, env, {});
+}
+
+/// `computeEnv` que também devolve o estado de cada painel em `out` (α e velocidade locais, C_L, sustentação)
+pub fn computeTrace(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env, out: []T.PanelState) Out {
+    for (out) |*q| q.* = .{};
+    return computeImpl(true, p, Vr, w, rcg, h, d, env, out);
+}
+
+fn computeImpl(comptime trace: bool, p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env, out: if (trace) []T.PanelState else void) Out {
     var o = Out{};
     const Va = vec.norm(Vr);
     const alfa = fm.atan2(Vr[2], Vr[0]);
@@ -115,6 +125,10 @@ pub fn computeEnv(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env
         const F = lift_dir * vec.splat(qS * CL) + drag_dir * vec.splat(qS * CD);
         const Fi = drag_dir * vec.splat(qS * CDi);
         const M = vec.cross(r - rcg, F) + vec.v3(s.ey) * vec.splat(qS * s.c * s.Cmac);
+        if (trace) {
+            if (i < out.len) out[i] = .{ .r = s.r, .S = s.S, .c = s.c, .group = s.group, .side = s.side, .alpha = al,
+                .V = Vp, .CL = CL, .CD = CD, .L = qS * CL, .D = qS * CD };
+        }
         const g: usize = @intCast(s.group);
         o.Fg[g] += F;
         o.Mg[g] += M;

@@ -16,7 +16,7 @@ pub const version: u32 = 1;
 pub const exported = .{
     T.Surface,  T.PropUnit,   T.Gear,      T.Tank,      T.Segment, T.Event, T.Pad,
     T.Payload,  T.Environment, T.Takeoff,  T.Autopilot, T.Pilot, T.Modifier, T.Params,  T.Events,
-    T.LogRow,   T.AeroCoeffs, T.PropPoint, T.MassProps, T.TrimPoint, T.PerfRow,
+    T.LogRow,   T.AeroCoeffs, T.PanelState, T.PropPoint, T.MassProps, T.TrimPoint, T.PerfRow,
     env.EnvCfg, env.EnvRow,     lin.LinModel, at.Result, sp.SimpleCfg, sp.SimpleRow, sp.SimpleSummary,
     sz.VarSpec, sz.AirfoilData, sz.PropSet, sz.Constraint, sz.LayoutData, sz.SizingCfg, sz.SizingOut, sz.OptOpts, sz.Individual,
 };

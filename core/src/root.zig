@@ -15,6 +15,7 @@ const runner = @import("sim/runner.zig");
 const trim = @import("sim/trim.zig");
 const aero = @import("physics/aero.zig");
 const modifiers = @import("modifiers/mod.zig");
+const fm = @import("math/fmath.zig");
 const prop = @import("physics/propulsion.zig");
 const mass = @import("physics/mass.zig");
 const vec = @import("math/vec.zig");
@@ -96,6 +97,23 @@ export fn aerosim_aero_coeffs_thrust(slot: i32, V: f64, alpha: f64, beta: f64, d
     const k: usize = @intCast(n);
     out.* = aero.coeffsEnv(&inst.p, V, alpha, beta, vec.zero, r, .{ de, da, dr }, .{ Tn[0..k], Qn[0..k] });
     return 0;
+}
+
+/// estado de cada painel a V, α, β (sem rotação, longe do chão), com a tração T[i] e o torque Q[i] de cada motor
+/// (n = número de motores; n = 0: sem motores). Escreve até `cap` painéis em `out`; devolve quantos há.
+export fn aerosim_panel_states(slot: i32, V: f64, alpha: f64, beta: f64, de: f64, da: f64, dr: f64, Tn: [*]const f64, Qn: [*]const f64, n: i32, out: [*]T.PanelState, cap: usize) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    if (n != 0 and n != inst.p.n_prop) return E_BAD_INDEX;
+    const a = fm.sincos(alpha);
+    const b = fm.sincos(beta);
+    const Vr = vec.V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
+    const k: usize = @intCast(n);
+    const env = if (n > 0) modifiers.envFrom(&inst.p, Vr, vec.zero, Tn[0..k], Qn[0..k]) else modifiers.Env.none;
+    const np_: usize = @intCast(inst.p.n_surf);
+    const m = @min(cap, np_);
+    const rcg = trim.Ctx.init(&inst.p, &inst.r.f).rcg;
+    _ = aero.computeTrace(&inst.p, Vr, vec.zero, rcg, 50.0, .{ de, da, dr }, &env, out[0..m]);
+    return @intCast(np_);
 }
 
 /// hash (FNV-1a 64) do esquema: confere que o texto chegou inteiro e identifica a versão do layout

@@ -101,3 +101,34 @@ def test_takeoff_with_slipstream_runs(manager):
     r1 = manager.run("mission", with_slip(ac), {"mode": "só decolagem"})
     assert np.isfinite(r1.summary["n_saiu_do_chao"]) and r1.summary["n_saiu_do_chao"] != r0.summary["n_saiu_do_chao"]
     assert "esteira" in r1.summary["modificadores"]
+
+
+def test_panel_states_show_the_slipstream(backend):
+    """estado por faixa (aerosim_panel_states): sem tração igual à aerodinâmica de sempre; com a esteira, faixas no tubo
+    veem mais velocidade, e a soma das sustentações das faixas bate com o C_L do avião (sem fuselagem)"""
+    ac = with_slip(twin_boom())
+    with backend.session_for(build_model(ac)) as s:
+        P0 = s.panel_states(10.0, A, 0.0, [0.0, 0.0], [0.0, 0.0])
+        P1 = s.panel_states(10.0, A, 0.0, [25.0, 25.0], [1.0, 1.0])
+        c1 = s.aero_coeffs_thrust(10.0, A, 0.0, [25.0, 25.0], [1.0, 1.0])
+    ok = P0["group"] >= 0
+    assert np.allclose(P0["V"][ok], 10.0 * np.ones(ok.sum()), rtol=0.05)      # só ω×r = 0: quase V∞ no plano
+    assert P1["V"].max() > 12.0
+    wing = P1["group"] == 0
+    assert P1["L"][wing].sum() > P0["L"][wing].sum()
+    qS = 0.5 * ac.environment.rho * 100.0 * build_model(ac).S
+    assert P1["L"].sum() == pytest.approx(c1["CL"] * qS, rel=0.05)
+
+
+def test_span_load_tool(tmp_path):
+    import subprocess
+    import sys
+    import os
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    out = tmp_path / "c.csv"
+    r = subprocess.run([sys.executable, os.path.join(root, "tools", "span_load.py"),
+                        os.path.join(root, "data", "aircraft", "Bimotor_convencional_tubo_cauda_em_V.json"),
+                        "--com", "esteira.disco", "--csv", str(out), "--png", str(tmp_path / "c.png")],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "sustentação total" in r.stdout and out.read_text().count("\n") > 20

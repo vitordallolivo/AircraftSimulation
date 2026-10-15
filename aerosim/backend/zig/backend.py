@@ -145,6 +145,7 @@ class _Lib:
             "aerosim_sizing_name": (ctypes.c_char_p, [c_int, c_int]),
             "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
             "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
+            "aerosim_panel_states": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, c_size]),
             "aerosim_aero_coeffs_thrust": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, ctypes.POINTER(T["AeroCoeffs"])]),
         }
         absent = [n for n in sig if not hasattr(L, n)]
@@ -269,6 +270,19 @@ class ZigSession(ISimSession):
         _check(self._lib.dll.aerosim_aero_coeffs_thrust(self._slot, V, alpha, beta, de, da, dr, Ta, Qa, n, rb,
                                                          ctypes.byref(o)), "aero")
         return _struct_dict(o)
+
+    def panel_states(self, V, alpha, beta=0.0, T=(), Q=(), de=0.0, da=0.0, dr=0.0) -> np.ndarray:
+        """estado de cada painel (centro, área, corda, grupo, lado, α e V locais, C_L, C_D, sustentação e arrasto em N)
+        a V, α, β, com a tração T[i] e o torque Q[i] de cada motor (vazio: sem motores)"""
+        dt = self._lib.schema.dtypes["PanelState"]
+        cap = 256
+        buf = np.zeros(cap, dtype=dt)
+        n = len(T)
+        Ta = (ctypes.c_double * max(n, 1))(*T)
+        Qa = (ctypes.c_double * max(n, 1))(*Q)
+        k = _check(self._lib.dll.aerosim_panel_states(self._slot, V, alpha, beta, de, da, dr, Ta, Qa, n,
+                                                      buf.ctypes.data, cap), "painéis")
+        return buf[:min(k, cap)].copy()
 
     def aero_coeffs_ex(self, V, alpha, beta=0.0, p=0.0, q=0.0, r=0.0, de=0.0, da=0.0, dr=0.0, ref=None):
         o = self._lib.schema.types["AeroCoeffs"]()
