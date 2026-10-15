@@ -146,6 +146,8 @@ class _Lib:
             "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
             "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
             "aerosim_prop_state": (c_int, [c_int, c_int] + [c_double] * 5 + [ctypes.POINTER(T["PropPoint"])]),
+            "aerosim_tube_panel_hits": (c_int, [c_int, c_int, c_double, c_double, c_double, vp, c_size]),
+            "aerosim_tube_point_hits": (c_int, [c_int, c_int, c_double, c_double, c_double, vp, c_size, vp]),
             "aerosim_panel_states": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, c_size]),
             "aerosim_aero_coeffs_thrust": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, ctypes.POINTER(T["AeroCoeffs"])]),
         }
@@ -271,6 +273,24 @@ class ZigSession(ISimSession):
         _check(self._lib.dll.aerosim_aero_coeffs_thrust(self._slot, V, alpha, beta, de, da, dr, Ta, Qa, n, rb,
                                                          ctypes.byref(o)), "aero")
         return _struct_dict(o)
+
+    def tube_panel_hits(self, index, T=0.0, V=0.0, length=10.0) -> np.ndarray:
+        """fração de cada painel dentro do tubo do motor `index` (core/src/collision): o tubo da esteira com tração T a
+        V, ou, com T = 0, o cilindro do raio da hélice; até `length` m atrás do disco"""
+        cap = 256
+        out = np.zeros(cap)
+        n = _check(self._lib.dll.aerosim_tube_panel_hits(self._slot, int(index), float(T), float(V), float(length),
+                                                         out.ctypes.data, cap), "colisão")
+        return out[:min(n, cap)].copy()
+
+    def tube_point_hits(self, index, pts, T=0.0, V=0.0, length=10.0) -> np.ndarray:
+        """quais pontos (n, 3; corpo) estão dentro do tubo do motor `index` (bool por ponto)"""
+        P = np.ascontiguousarray(np.asarray(pts, float).reshape(-1, 3))
+        out = np.zeros(len(P), dtype=np.int32)
+        if len(P):
+            _check(self._lib.dll.aerosim_tube_point_hits(self._slot, int(index), float(T), float(V), float(length),
+                                                         P.ctypes.data, len(P), out.ctypes.data), "colisão")
+        return out.astype(bool)
 
     def panel_states(self, V, alpha, beta=0.0, T=(), Q=(), de=0.0, da=0.0, dr=0.0) -> np.ndarray:
         """estado de cada painel (centro, área, corda, grupo, lado, α e V locais, C_L, C_D, sustentação e arrasto em N)

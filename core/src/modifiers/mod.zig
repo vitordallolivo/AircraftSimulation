@@ -55,9 +55,18 @@ pub inline fn hitsProp(mask: i32, j: usize) bool {
     return (w >> @intCast(j)) & 1 != 0;
 }
 
-/// pontos ao longo da envergadura de cada faixa onde a esteira é avaliada (a faixa pode estar só em parte
-/// dentro do tubo: a média dos pontos dá a fração imersa)
+/// grade de pontos em cada faixa onde a esteira é avaliada: na corda (do bordo de ataque ao de fuga) e na
+/// envergadura (a faixa pode estar só em parte dentro do tubo, acima ou abaixo da linha de tração: a média dá a
+/// parte imersa). A grade é a do modelo de colisão (collision/collision.zig)
+pub const chord_samples = 3;
 pub const strip_samples = 16;
+const collision = @import("../collision/collision.zig");
+
+/// a faixa do painel `s` como forma de colisão
+pub fn stripOf(s: *const T.Surface) collision.Strip {
+    return .{ .center = vec.v3(s.r), .ex = vec.v3(s.ex), .ey = vec.v3(s.ey), .chord = s.c,
+        .width = if (s.c > 0) s.S / s.c else 0.0 };
+}
 
 /// o que entra na velocidade relativa do painel `i`, somando os modificadores ligados.
 /// O painel vê v = V_ar + ω × r − v_ar_induzida; aqui sai −v_ar_induzida (média ao longo da faixa).
@@ -74,17 +83,14 @@ pub fn induced(p: *const T.Params, env: *const Env, i: usize, s: *const T.Surfac
     return v;
 }
 
-/// média da esteira ao longo da envergadura da faixa (de r − b/2 ey a r + b/2 ey, b = S/c)
+/// média da esteira na faixa, na grade chord_samples × strip_samples (corda × envergadura)
 fn slipstreamStrip(p: *const T.Params, env: *const Env, m: *const types.Modifier, s: *const T.Surface) V3 {
-    const r = vec.v3(s.r);
-    const half = if (s.c > 0) 0.5 * s.S / s.c else 0.0;
-    const ey = vec.v3(s.ey);
+    const st = stripOf(s);
     var v = vec.zero;
-    for (0..strip_samples) |k| {
-        const f = -1.0 + (2.0 * @as(f64, @floatFromInt(k)) + 1.0) / @as(f64, strip_samples);
-        v += slipstreamAt(p, env, m, r + ey * vec.splat(half * f));
+    for (0..chord_samples) |i| {
+        for (0..strip_samples) |j| v += slipstreamAt(p, env, m, st.sample(i, j, chord_samples, strip_samples));
     }
-    return v / vec.splat(@as(f64, strip_samples));
+    return v / vec.splat(@as(f64, chord_samples * strip_samples));
 }
 
 /// soma das esteiras dos motores da máscara no ponto r (superposição, slipstream.zig)

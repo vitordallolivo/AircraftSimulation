@@ -27,8 +27,8 @@ physics/aero.zig, em cada painel i (centro r):
 |---|---|
 | `types.zig` | `Modifier` (extern struct: `kind`, `enabled`, `surf_mask[2]`, `prop_mask`, `params[16]`), constantes `ground_*` e `kind_*` |
 | `ground.zig` | métodos do efeito solo (`factor`, `mccormick`) |
-| `slipstream.zig` | esteira por disco atuador (`diskInduced`, `axialAt`, `radiusAt`, `swirlRate`, `at`) |
-| `mod.zig` | entrada do módulo: `Env` (tração, torque, eixo e velocidade axial de cada motor no instante; `envFrom`), `induced` (soma dos efeitos a mais por painel, como média de `strip_samples` pontos ao longo da envergadura da faixa), `hits` / `hitsProp` (máscaras) |
+| `slipstream.zig` | esteira por disco atuador (`diskInduced`, `axialAt`, `radiusAt`, `swirlRate`, `at`); `shape`/`TubeShape.tube` montam o tubo que contrai para `collision/` |
+| `mod.zig` | entrada do módulo: `Env` (tração, torque, eixo e velocidade axial de cada motor no instante; `envFrom`), `induced` (soma dos efeitos a mais por painel, como média de uma grade `chord_samples × strip_samples` = 3 × 16 pontos da faixa; quem está dentro do tubo é dito por `collision/`), `hits` / `hitsProp` (máscaras) |
 | `README.md` | este arquivo |
 
 ## Dois jeitos de entrar
@@ -77,7 +77,9 @@ São as razões para ter outros métodos depois:
   (upwash, força normal na hélice);
 - só onde há tração do instante: na simulação (decolagem, missão) sim; trimagem, linearização e envelope
   ainda chamam a aerodinâmica sem motores (`Env.none`), então não veem a esteira;
-- esteiras que se cruzam somam (a superposição deixa de ser exata).
+- esteiras que se cruzam somam (a superposição deixa de ser exata);
+- a parte da faixa fora do tubo (acima ou abaixo da linha de tração, ou fora da envergadura do tubo) não recebe nada: a
+  faixa é amostrada numa grade 3 × 16 e só os pontos dentro do tubo (`collision.Tube.contains`) somam.
 
 ### Próximos tipos (planejados; só entram com a fonte conferida)
 

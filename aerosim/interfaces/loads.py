@@ -38,6 +38,7 @@ CAMPOS: dict[str, tuple[str, str, bool]] = {
     "cd": ("c_d local", "—", False),
     "q": ("pressão dinâmica local", "Pa", False),
     "D": ("arrasto por metro de envergadura", "N/m", False),
+    "imersao": ("fração dentro do tubo de alguma hélice", "—", False),
 }
 
 

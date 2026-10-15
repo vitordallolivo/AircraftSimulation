@@ -15,6 +15,7 @@ const runner = @import("sim/runner.zig");
 const trim = @import("sim/trim.zig");
 const aero = @import("physics/aero.zig");
 const modifiers = @import("modifiers/mod.zig");
+const collision = @import("collision/collision.zig");
 const fm = @import("math/fmath.zig");
 const prop = @import("physics/propulsion.zig");
 const mass = @import("physics/mass.zig");
@@ -97,6 +98,37 @@ export fn aerosim_aero_coeffs_thrust(slot: i32, V: f64, alpha: f64, beta: f64, d
     const k: usize = @intCast(n);
     out.* = aero.coeffsEnv(&inst.p, V, alpha, beta, vec.zero, r, .{ de, da, dr }, .{ Tn[0..k], Qn[0..k] });
     return 0;
+}
+
+/// colisão (collision/): fração de cada painel dentro do tubo do motor `idx` — o tubo da esteira com tração T a V
+/// (contrai), ou, com T ≤ 0, o cilindro do raio da hélice — até `length` m atrás do disco. Escreve até `cap` valores
+/// em `out` (grade 4 × 16 por painel); devolve o número de painéis
+export fn aerosim_tube_panel_hits(slot: i32, idx: i32, T_: f64, V: f64, length: f64, out: [*]f64, cap: usize) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    if (idx < 0 or idx >= inst.p.n_prop) return E_BAD_INDEX;
+    const u = &inst.p.prop[@intCast(idx)];
+    const sh = modifiers.slipstream.shape(T_, V, 0.5 * u.D, inst.p.env.rho);
+    const t = sh.tube(vec.v3(u.r), prop.axis(&inst.p, u), length);
+    const n: usize = @intCast(inst.p.n_surf);
+    for (inst.p.surf[0..@min(n, cap)], 0..) |*s, i| out[i] = collision.stripFraction(t, modifiers.stripOf(s), 4, 16);
+    return @intCast(n);
+}
+
+/// colisão: quais dos n pontos (x, y, z do corpo, em sequência) estão dentro do tubo do motor `idx` (ver acima);
+/// out[i] = 1 dentro, 0 fora; devolve quantos estão dentro
+export fn aerosim_tube_point_hits(slot: i32, idx: i32, T_: f64, V: f64, length: f64, pts: [*]const f64, n: usize, out: [*]i32) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    if (idx < 0 or idx >= inst.p.n_prop) return E_BAD_INDEX;
+    const u = &inst.p.prop[@intCast(idx)];
+    const sh = modifiers.slipstream.shape(T_, V, 0.5 * u.D, inst.p.env.rho);
+    const t = sh.tube(vec.v3(u.r), prop.axis(&inst.p, u), length);
+    var k: i32 = 0;
+    for (0..n) |i| {
+        const inside = t.contains(.{ pts[3 * i], pts[3 * i + 1], pts[3 * i + 2] });
+        out[i] = if (inside) 1 else 0;
+        if (inside) k += 1;
+    }
+    return k;
 }
 
 /// estado do motor `idx` com o avião a V, α, β (sem rotação): rotação `rps` imposta (> 0) ou, se ≤ 0, a de

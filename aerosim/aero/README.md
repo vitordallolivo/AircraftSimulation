@@ -108,9 +108,52 @@ Quem desenha só lê esse formato:
 Por isso outro método (VLM, painéis, CFD) entra montando um `LoadResult`, sem mexer nos gráficos nem no 3D. O teste
 `tests/aero/test_load_result.py` faz isso com um "CFD" de mentira em triângulos e com um campo próprio.
 
+A vista 3D pinta o **próprio modelo da GUI** (`aircraft_meshes`): cada vértice de superfície pega o valor da faixa
+mais próxima. As setas têm ponta. Camadas de setas:
+- **força total** da faixa;
+- **sustentação (⟂ ao vento local)**;
+- **força normal à superfície**;
+- **velocidade induzida**.
+
+A força total não é perpendicular à superfície. A sustentação é perpendicular ao vento local, e com α de uns 12° ela
+fica inclinada para a frente em relação à normal da asa. Por isso há as duas camadas separadas.
+
+Escalas do mapa:
+- mín–máx (padrão);
+- simétrica em 0;
+- por superfície: cada superfície com a sua faixa, para ver a variação na EH mesmo com a asa carregando muito mais.
+
+O campo `imersao` mostra quanto de cada faixa está dentro do tubo de alguma hélice.
+
+**Sem hélice:** `LoadCase(props=False)` (ou `--sem-helice`) zera tração e torque. A distribuição sai a do avião
+limpo, para comparar ou para cargas sem motor.
+
+**Página interativa:** `load_export.scene(res, ac)` monta a cena (malhas, campos, setas, tubos, vento) em JSON.
+`load_export.page([(nome, cena), ...])` põe as cenas em `load_page.html` (plotly, girar e trocar campo no navegador).
+
 ```
 python tools/load_view.py data/aircraft/Convencional_original.json --com esteira.disco                 # janela 3D
 python tools/load_view.py data/aircraft/Convencional_original.json --campo alpha_ef --png vista.png
+python tools/load_view.py data/aircraft/Convencional_original.json --com esteira.disco --sem-helice --png limpo.png
+python tools/load_view.py data/aircraft/Convencional_original.json --com esteira.disco --html carga.html
+```
+
+### Colisão com o tubo da hélice (`collision.py`)
+
+`tube_hits(backend, ac, V=0, thrust=None)` traça, a partir de cada hélice, um tubo ao longo do eixo de tração:
+- com `thrust` nulo, um cilindro do raio da hélice;
+- com tração, o tubo que contrai.
+
+O que o tubo pega vem como `Hit(prop, component, kind, fraction)`:
+- superfícies: fração da área (`aerosim_tube_panel_hits`);
+- objetos (fuselagem, trem, carga): fração dos vértices do modelo da GUI (`aerosim_tube_point_hits`).
+
+A geometria é do núcleo (`core/src/collision/`), e é a mesma que a esteira usa.
+
+```python
+from aerosim.aero.collision import tube_hits
+for h in tube_hits(backend, ac):
+    print(h.prop, h.component, h.kind, h.fraction)
 ```
 
 A trimagem ainda não vê a esteira (ela chama a aerodinâmica sem motores). Com a esteira ligada, α e profundor são

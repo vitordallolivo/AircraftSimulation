@@ -1,0 +1,210 @@
+<title>Carga Aerodinâmica 3D</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* layout: barra de controles em cima, a cena 3D ocupando a largura, o caso e os totais embaixo */
+  :root {
+    --bg: #f3f5f8;
+    --panel: #ffffff;
+    --fg: #17202c;
+    --muted: #5a6577;
+    --line: #d5dbe4;
+    --accent: #1d4fa3;
+    --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10151d; --panel: #171e29; --fg: #e4e9f1; --muted: #9aa6b8; --line: #2b3545; --accent: #7aa7f5;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10151d; --panel: #171e29; --fg: #e4e9f1; --muted: #9aa6b8; --line: #2b3545; --accent: #7aa7f5;
+    color-scheme: dark;
+  }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 16px 24px;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; text-wrap: balance; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: end;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
+  }
+  .ctl { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .ctl label, .checks span.t {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+  }
+  select {
+    font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 8px; max-width: 100%;
+  }
+  select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+  .checks label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; font-size: 13px; }
+  #plot { width: 100%; height: min(72vh, 760px); min-height: 380px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .below { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; }
+  @media (max-width: 760px) { .below { grid-template-columns: 1fr; } }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+  .box h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 6px; font-weight: 500; }
+  #info p { margin: 0 0 4px; overflow-wrap: anywhere; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  td { padding: 3px 0; border-bottom: 1px solid var(--line); }
+  td.n { text-align: right; font-family: var(--font-mono); }
+  .note { color: var(--muted); font-size: 12px; margin-top: 6px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Carga aerodinâmica em 3D</h1>
+    <span class="sub">voo nivelado a 12 m/s · modelo da GUI pintado pelo núcleo (faixas) · arraste para girar, role para aproximar</span>
+  </header>
+
+  <div class="controls">
+    <div class="ctl"><label for="aviao">Avião e caso</label><select id="aviao"></select></div>
+    <div class="ctl"><label for="mapa">Mapa de cores</label><select id="mapa"></select></div>
+    <div class="ctl"><label for="setas">Setas</label><select id="setas"></select></div>
+    <div class="ctl"><label for="escala">Escala</label>
+      <select id="escala">
+        <option value="minmax">mín–máx</option>
+        <option value="sim">simétrica em 0</option>
+        <option value="sup">por superfície</option>
+      </select>
+    </div>
+    <div class="checks">
+      <label><input type="checkbox" id="tubos" checked> tubos das hélices</label>
+      <label><input type="checkbox" id="resto" checked> resto do avião</label>
+      <label><input type="checkbox" id="vento" checked> vento relativo</label>
+    </div>
+  </div>
+
+  <div id="plot" role="img" aria-label="Vista 3D do avião com as superfícies coloridas pela carga"></div>
+
+  <div class="below">
+    <div class="box"><h2>Caso</h2><div id="info"></div></div>
+    <div class="box"><h2>Sustentação por superfície</h2><table id="totais"></table>
+      <div class="note" id="escalaseta"></div></div>
+  </div>
+</div>
+
+<script type="application/json" id="cenas">__CENAS__</script>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.27.0/plotly.min.js"></script>
+<script>
+(function () {
+  const CENAS = JSON.parse(document.getElementById("cenas").textContent);
+  const $ = (id) => document.getElementById(id);
+  const sel = { aviao: $("aviao"), mapa: $("mapa"), setas: $("setas"), escala: $("escala") };
+  const opts = { tubos: $("tubos"), resto: $("resto"), vento: $("vento") };
+  const names = Object.keys(CENAS);
+  names.forEach((n) => sel.aviao.add(new Option(n, n)));
+  let keepCamera = null;
+
+  function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+  function fillSelects(sc) {
+    const prevMapa = sel.mapa.value || "carga", prevSetas = sel.setas.value || "força total";
+    sel.mapa.innerHTML = "";
+    Object.entries(sc.surfaces.fields).forEach(([k, f]) => sel.mapa.add(new Option(f.label, k)));
+    sel.mapa.value = sc.surfaces.fields[prevMapa] ? prevMapa : Object.keys(sc.surfaces.fields)[0];
+    sel.setas.innerHTML = "";
+    Object.keys(sc.vectors).concat(["nenhuma"]).forEach((k) => sel.setas.add(new Option(k, k)));
+    sel.setas.value = sc.vectors[prevSetas] ? prevSetas : (Object.keys(sc.vectors)[0] || "nenhuma");
+  }
+
+  function intensity(sc, field, scale) {
+    const v = field.values, g = sc.surfaces.group;
+    if (scale === "sup") {
+      const lo = {}, hi = {};
+      v.forEach((x, i) => { const k = g[i]; lo[k] = Math.min(lo[k] ?? Infinity, x); hi[k] = Math.max(hi[k] ?? -Infinity, x); });
+      return { t: v.map((x, i) => { const k = g[i]; const d = hi[k] - lo[k]; return d > 1e-12 ? (x - lo[k]) / d : 0.5; }),
+               cmin: 0, cmax: 1, signed: false, ranges: Object.keys(lo).map((k) => `${k}: ${lo[k].toPrecision(3)} a ${hi[k].toPrecision(3)}`) };
+    }
+    if (scale === "sim") {
+      const m = Math.max(...v.map(Math.abs)) || 1;
+      return { t: v, cmin: -m, cmax: m, signed: true };
+    }
+    let lo = Math.min(...v), hi = Math.max(...v);
+    if (hi - lo < 1e-12) hi = lo + 1;
+    return { t: v, cmin: lo, cmax: hi, signed: false };
+  }
+
+  function mesh(m, extra) { return Object.assign({ type: "mesh3d", x: m.x, y: m.y, z: m.z, i: m.i, j: m.j, k: m.k,
+    hoverinfo: "skip", showscale: false }, extra); }
+
+  function render() {
+    const sc = CENAS[sel.aviao.value];
+    const fg = css("--fg"), muted = css("--muted"), line = css("--line"), panel = css("--panel");
+    const field = sc.surfaces.fields[sel.mapa.value];
+    const scale = sel.escala.value;
+    const I = intensity(sc, field, scale);
+    const title = scale === "sup" ? field.label + " — relativo por superfície" : field.label;
+    const traces = [];
+    traces.push(mesh(sc.surfaces, {
+      intensity: I.t, cmin: I.cmin, cmax: I.cmax,
+      colorscale: I.signed ? "RdBu" : "Turbo", reversescale: I.signed,
+      showscale: true, flatshading: false,
+      lighting: { ambient: 0.82, diffuse: 0.35, specular: 0.05, roughness: 0.9 },
+      colorbar: { title: { text: title, side: "right", font: { color: fg, size: 12 } }, tickfont: { color: fg },
+                  len: 0.75, thickness: 14, outlinecolor: line },
+      customdata: field.values, text: sc.surfaces.group,
+      hovertemplate: "%{text}<br>" + field.label + ": %{customdata:.3g}<extra></extra>", hoverinfo: undefined,
+      name: "superfícies",
+    }));
+    if (opts.resto.checked) sc.parts.forEach((p) => traces.push(mesh(p, { color: p.color, opacity: 0.22, name: p.kind })));
+    if (opts.tubos.checked) sc.tubes.forEach((t) => traces.push(mesh(t, { color: "#f08c2a", opacity: 0.13, name: "esteira" })));
+    const vec = sc.vectors[sel.setas.value];
+    if (vec) {
+      traces.push({ type: "scatter3d", mode: "lines", x: vec.line.x, y: vec.line.y, z: vec.line.z,
+                    line: { color: vec.color, width: 4 }, hoverinfo: "skip", showlegend: false });
+      traces.push(mesh(vec.head, { color: vec.color, opacity: 1, flatshading: true }));
+      $("escalaseta").textContent = `${sel.setas.value}: maior seta = ${vec.max.toPrecision(3)} ${vec.unit}`;
+    } else {
+      $("escalaseta").textContent = "";
+    }
+    if (opts.vento.checked && sc.wind) {
+      traces.push({ type: "scatter3d", mode: "lines", x: sc.wind.line.x, y: sc.wind.line.y, z: sc.wind.line.z,
+                    line: { color: muted, width: 7 }, hoverinfo: "skip", showlegend: false });
+      traces.push(mesh(sc.wind.head, { color: muted, opacity: 1, flatshading: true }));
+      traces.push({ type: "scatter3d", mode: "text", x: sc.wind.start.x, y: sc.wind.start.y, z: sc.wind.start.z,
+                    text: [sc.wind.text], textposition: "top center", textfont: { color: fg, size: 12 },
+                    hoverinfo: "skip", showlegend: false });
+    }
+    const ax = (t) => ({ title: { text: t, font: { color: muted, size: 11 } }, color: muted, gridcolor: line,
+                         zerolinecolor: line, backgroundcolor: panel, showbackground: false });
+    const layout = {
+      paper_bgcolor: panel, plot_bgcolor: panel, font: { family: css("--font-body"), color: fg },
+      margin: { l: 0, r: 0, t: 0, b: 0 }, showlegend: false,
+      scene: { aspectmode: "data", xaxis: ax("frente (m)"), yaxis: ax("esquerda (m)"), zaxis: ax("cima (m)"),
+               camera: keepCamera || { eye: { x: 1.35, y: 1.15, z: 0.75 } } },
+    };
+    Plotly.react("plot", traces, layout, { responsive: true, displaylogo: false });
+    $("info").innerHTML = sc.info.map((t) => `<p>${t}</p>`).join("") +
+      (I.ranges ? `<p class="note">${I.ranges.join(" · ")}</p>` : "");
+    $("totais").innerHTML = Object.entries(sc.totals).map(([k, v]) =>
+      `<tr><td>${k}</td><td class="n">${v.toFixed(2)} N</td></tr>`).join("");
+  }
+
+  const plot = $("plot");
+  function rememberCamera() {
+    if (plot._fullLayout && plot._fullLayout.scene) keepCamera = plot._fullLayout.scene.camera;
+  }
+  sel.aviao.addEventListener("change", () => { fillSelects(CENAS[sel.aviao.value]); render(); });
+  [sel.mapa, sel.setas, sel.escala].forEach((s) => s.addEventListener("change", () => { rememberCamera(); render(); }));
+  Object.values(opts).forEach((c) => c.addEventListener("change", () => { rememberCamera(); render(); }));
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  if (mq.addEventListener) mq.addEventListener("change", () => { rememberCamera(); render(); });
+  new MutationObserver(() => { rememberCamera(); render(); })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  fillSelects(CENAS[names[0]]);
+  render();
+})();
+</script>

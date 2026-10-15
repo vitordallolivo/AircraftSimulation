@@ -25,7 +25,30 @@
 const std = @import("std");
 const fm = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
+const collision = @import("../collision/collision.zig");
 const V3 = vec.V3;
+
+/// o tubo da esteira como forma de colisão: raio pela contração (sem tração: o cilindro do raio da hélice)
+pub const TubeShape = struct {
+    R: f64,
+    V: f64,
+    w0: f64,
+
+    fn radius(ctx: *const anyopaque, x: f64) f64 {
+        const self: *const TubeShape = @ptrCast(@alignCast(ctx));
+        return if (self.w0 > 0) radiusAt(self.R, self.V, self.w0, x) else self.R;
+    }
+
+    /// `shape` precisa viver enquanto o tubo for usado. axis_fwd: eixo de tração (o tubo vai no sentido oposto)
+    pub fn tube(self: *const TubeShape, hub: V3, axis_fwd: V3, length: f64) collision.Tube {
+        return .{ .origin = hub, .axis = -axis_fwd, .R = self.R, .length = length, .ctx = self, .radiusFn = radius };
+    }
+};
+
+/// a forma do tubo de um motor com tração T a V (w0 da teoria do momento; T ≤ 0: cilindro)
+pub fn shape(T: f64, V: f64, R: f64, rho: f64) TubeShape {
+    return .{ .R = R, .V = @max(V, 0.0), .w0 = diskInduced(T, V, R, rho) };
+}
 
 /// w0 da teoria do momento (m/s). V: velocidade axial através do disco (≥ 0); T ≤ 0: sem esteira
 pub fn diskInduced(T: f64, V: f64, R: f64, rho: f64) f64 {

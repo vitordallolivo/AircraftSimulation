@@ -88,3 +88,14 @@ def test_vectors_for_3d(backend):
     assert np.abs(w.induced).max() > 1.0 and np.allclose(w.span_dir[:, 1], 1.0, atol=0.05)
     t = r.tubes(backend)
     assert len(t) == 1 and t[0]["radius"][-1] < t[0]["radius"][0] and t[0]["centers"].shape == (40, 3)
+
+
+def test_without_props(backend):
+    """props=False: as superfícies não veem a hélice (mesmo com a esteira ligada no avião)"""
+    ac = slip(conventional())
+    on = compute(backend, ac, LoadCase(V=12))
+    off = compute(backend, ac, LoadCase(V=12, props=False))
+    base = compute(backend, conventional(), LoadCase(V=12))
+    assert on.lift > off.lift and off.lift == pytest.approx(base.lift, rel=1e-9) and off.notes
+    w = on.by_role("wing")[0]
+    assert w.wash.max() > 0 and w.wash.min() == 0              # imersão: parte da asa no tubo, parte fora
