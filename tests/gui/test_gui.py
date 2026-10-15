@@ -479,20 +479,24 @@ def test_wing_stage_by_chord_and_sections_table(app, manager, tmp_path):
     assert cr == pytest.approx(0.4) and p.area == pytest.approx(2 * (cr * yb + 0.5 * (cr + ct) * (s - yb)))
     p.planform = "tabela de seções"
     page._mode_changed("planform")
-    assert page.sec_box.isVisible() and page.sec.rowCount() >= 2 and not page.form.widgets["span"].isEnabled()
+    assert page.sec_box.isVisible() and page.sec.rowCount() >= 1 and not page.form.widgets["span"].isEnabled()
+    assert "envergadura total" in page.sec_total.text()
     n = page.sec.rowCount()
-    page.sec.selectRow(0)
-    page._sec_add()                                       # no meio da primeira e da segunda
-    assert page.sec.rowCount() == n + 1 and p.stations[1].y == pytest.approx(0.5 * (p.stations[0].y + p.stations[2].y))
-    page.sec.cellWidget(n, 2).setCurrentText("NACA 0012")  # a ponta com outro perfil
-    page.sec.cellWidget(1, 2).setCurrentText("NACA 2412")
+    page.sec.selectRow(n - 1)
+    page._sec_add()                                       # nova partição: começa com a corda em que a anterior acaba
+    assert page.sec.rowCount() == n + 1
+    a, b = p.partitions[-2], p.partitions[-1]
+    assert b.chord == pytest.approx(a.chord * a.taper, abs=1e-4)
+    page.sec.item(n, 0).setText("0.3")                    # envergadura da partição nova
+    page.sec.cellWidget(n, 3).setCurrentText("NACA 0012")  # a ponta com outro perfil
+    assert p.span == pytest.approx(sum(q.span for q in p.partitions))       # a soma é a envergadura total
+    assert f"{p.span:.3f}" in page.sec_total.text()
     page.recompute()
     assert "Error" not in page.msg.text()
     c = st.design.draft_wing()
-    assert [e.name for e in c.section_airfoils] == ["NACA 2412", "NACA 0012"]
+    assert "NACA 0012" in [e.name for e in c.section_airfoils]
     r = wg.analyze(c, st.design.requirements)
-    assert [s.airfoil.name if s.airfoil else None for s in r["surface"].sections][-1] == "NACA 0012"
-    assert p.span == pytest.approx(2 * p.stations[-1].y)
+    assert r["surface"].sections[-1].airfoil.name == "NACA 0012"
     page.close()
 
 

@@ -112,7 +112,7 @@ class DesignProject:
         p = self.wing_draft
         if not p.table():
             return []
-        names = dict.fromkeys(q.airfoil for q in p.stations if q.airfoil and q.airfoil != p.airfoil)
+        names = dict.fromkeys(q.airfoil for q in p.partitions if q.airfoil and q.airfoil != p.airfoil)
         return [copy.deepcopy(e) for e in (self.airfoil(n) for n in names) if e is not None]
 
     def draft_wing(self) -> WingCandidate:

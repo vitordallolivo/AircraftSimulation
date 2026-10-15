@@ -760,20 +760,40 @@ class WingPage(StagePage):
     def kept_items(self):
         return self.state.design.wings
 
-    # ------------------------------------------------------------------ tabela de seções
-    COLS = (("y", "y (m)"), ("chord", "c (m)"), ("airfoil", "perfil"), ("offset", "recuo"), ("twist", "θ (°)"))
-    COL_TIPS = ("distância da raiz ao longo da semienvergadura (m)", "corda (m)", "perfil da seção (vazio = o da raiz)",
-                "recuo do bordo de ataque em relação ao da raiz (m, + para trás)", "torção (°, − = washout)")
+    def compute(self):
+        d = self.state.design
+        cand = d.draft_wing()
+        others = [w for w in d.wings if w.name != cand.name]
+        specs, res, r = R.wing_stage(cand, d.requirements, d.rules, others)
+        self.state.design_values = {**_last_values(self.state), **rg.wing_values(r)}
+        return specs, res, _only_wing([r["surface"]]), dict(np_x=r["planform"]["x_ac"])
+
+    def keep(self):
+        d = self.state.design
+        c = d.keep_wing()
+        d.tail_draft.wing = c.name
+        return c.name
+
+    # ------------------------------------------------------------------ tabela de partições
+    COLS = (("span", "envergadura (m)"), ("chord", "corda (m)"), ("taper", "afilamento"), ("airfoil", "perfil"),
+            ("offset", "recuo (m) ⓘ"), ("twist", "θ (°) ⓘ"))
+    COL_TIPS = ("quanto a partição soma na envergadura total (metade de cada lado)",
+                "corda no começo da partição (do lado do centro)", "corda no fim / corda no começo (1 = reta)",
+                "perfil no fim da partição (vazio = o da raiz); ao longo dela ele passa do da anterior para este",
+                "quanto o bordo de ataque anda para trás ao longo da partição (enflechamento): move o centro "
+                "aerodinâmico, e com ele o CG de projeto. 0 = bordo de ataque reto",
+                "torção no fim da partição, em relação à raiz: − = washout, a ponta estola depois (o aileron continua "
+                "mandando no estol), custa um pouco de sustentação")
     TRAPEZOID_ONLY = ("span", "area", "chord", "size_by", "taper", "rect_frac", "sweep", "twist", "airfoil",
                       "airfoil_tip")
 
     def build(self) -> None:
         super().build()
         if getattr(self, "sec_box", None) is None:
-            self.sec_box = QtWidgets.QGroupBox("Seções (da raiz para a ponta)")
-            self.sec_box.setToolTip("uma linha por seção: y ao longo da semienvergadura, corda, perfil (vazio = o da "
-                                    "raiz), recuo do bordo de ataque e torção. Entre seções tudo é interpolado, "
-                                    "inclusive o perfil. Quantas seções quiser.")
+            self.sec_box = QtWidgets.QGroupBox("Partições (do centro para a ponta)")
+            self.sec_box.setToolTip("uma linha por partição, como na planilha: envergadura, corda, afilamento, perfil, "
+                                    "recuo e torção. A envergadura total é a soma das partições. Uma asa reta é uma "
+                                    "linha só (afilamento 1).")
             v = QtWidgets.QVBoxLayout(self.sec_box)
             self.sec = QtWidgets.QTableWidget(0, len(self.COLS))
             self.sec.setHorizontalHeaderLabels([t for _, t in self.COLS])
@@ -782,12 +802,15 @@ class WingPage(StagePage):
             self.sec.verticalHeader().setVisible(False)
             hh = self.sec.horizontalHeader()
             hh.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-            hh.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.Stretch)    # o perfil fica com o resto
+            hh.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.Stretch)    # o perfil fica com o resto
             self.sec.itemChanged.connect(self._sec_edited)
             v.addWidget(self.sec)
+            self.sec_total = QtWidgets.QLabel()
+            v.addWidget(self.sec_total)
             row = QtWidgets.QHBoxLayout()
-            for txt, fn, tip in (("+ seção", self._sec_add, "nova seção depois da selecionada (ou no fim)"),
-                                 ("− seção", self._sec_del, "apaga a selecionada (ficam pelo menos duas)"),
+            for txt, fn, tip in (("+ partição", self._sec_add, "nova partição depois da selecionada (ou no fim), "
+                                  "começando com a corda em que a anterior termina"),
+                                 ("− partição", self._sec_del, "apaga a selecionada (fica pelo menos uma)"),
                                  ("do trapézio", self._sec_from_trap, "refaz a tabela a partir do trapézio atual")):
                 b = QtWidgets.QPushButton(txt)
                 b.setToolTip(tip)
@@ -802,8 +825,8 @@ class WingPage(StagePage):
     def _mode_changed(self, name: str = "") -> None:
         p = self.draft()
         table = p.planform == wg.PLANFORMS[1]
-        if table and len(p.stations) < 2:
-            p.stations = wg.stations_from_trapezoid(p)
+        if table and not p.partitions:
+            p.partitions = wg.partitions_from_trapezoid(p)
         if name in ("planform", "size_by", "") or table:
             wg.sync(p)
             self.form.refresh()
@@ -822,8 +845,8 @@ class WingPage(StagePage):
         p = self.draft()
         names = [""] + [a.name for a in self.state.design.airfoils]
         self.sec.blockSignals(True)
-        self.sec.setRowCount(len(p.stations))
-        for r, q in enumerate(p.stations):
+        self.sec.setRowCount(len(p.partitions))
+        for r, q in enumerate(p.partitions):
             for c, (k, _) in enumerate(self.COLS):
                 if k == "airfoil":
                     cb = QtWidgets.QComboBox()
@@ -835,15 +858,22 @@ class WingPage(StagePage):
                 else:
                     self.sec.setItem(r, c, QtWidgets.QTableWidgetItem(f"{getattr(q, k):g}"))
         self.sec.blockSignals(False)
-        h = self.sec.horizontalHeader().height() + 6 + sum(self.sec.rowHeight(i) for i in range(len(p.stations)))
+        h = self.sec.horizontalHeader().height() + 6 + sum(self.sec.rowHeight(i) for i in range(len(p.partitions)))
         self.sec.setFixedHeight(min(h, 260))
+        self._sec_totals()
+
+    def _sec_totals(self) -> None:
+        b, S = wg.totals(self.draft())
+        self.sec_total.setText(f"<b>envergadura total: {b:.3f} m</b> · área: {S:.4f} m² · alongamento: "
+                               f"{b * b / S if S > 0 else float('nan'):.2f}")
 
     def _sec_set(self, r: int, key: str, value) -> None:
         p = self.draft()
-        if 0 <= r < len(p.stations):
-            setattr(p.stations[r], key, value)
+        if 0 <= r < len(p.partitions):
+            setattr(p.partitions[r], key, value)
             wg.sync(p)
             self.form.refresh()
+            self._sec_totals()
             self._edited()
 
     def _sec_edited(self, item) -> None:
@@ -853,60 +883,35 @@ class WingPage(StagePage):
         except ValueError:
             self._sec_fill()
             return
-        if k in ("y", "chord") and val < 0:
+        if k in ("span", "chord", "taper") and val < 0:
             val = 0.0
         self._sec_set(item.row(), k, val)
-        if k == "y":                                       # a ordem segue o y
-            self.draft().stations.sort(key=lambda q: q.y)
-            self._sec_fill()
 
     def _sec_add(self) -> None:
         p = self.draft()
         r = self.sec.currentRow()
-        r = r if 0 <= r < len(p.stations) else len(p.stations) - 1
-        a = p.stations[r]
-        if r + 1 < len(p.stations):                        # no meio: metade do caminho até a próxima
-            b = p.stations[r + 1]
-            new = wg.WingStation(round(0.5 * (a.y + b.y), 4), round(0.5 * (a.chord + b.chord), 4), "",
-                                 round(0.5 * (a.offset + b.offset), 4), round(0.5 * (a.twist + b.twist), 3))
-        else:                                              # no fim: estica 0,2 m
-            new = wg.WingStation(round(a.y + 0.2, 4), round(a.chord * 0.85, 4), "", round(a.offset + 0.03, 4), a.twist)
-        p.stations.insert(r + 1, new)
+        r = r if 0 <= r < len(p.partitions) else len(p.partitions) - 1
+        a = p.partitions[r]
+        new = wg.WingPartition(0.2, round(a.chord * a.taper, 4), 1.0, a.airfoil, 0.0, a.twist)
+        p.partitions.insert(r + 1, new)
         self._sec_fill()
         self.sec.selectRow(r + 1)
-        self._sec_set(r + 1, "y", new.y)
+        self._sec_set(r + 1, "span", new.span)
 
     def _sec_del(self) -> None:
         p = self.draft()
-        if len(p.stations) <= 2:
+        if len(p.partitions) <= 1:
             return
         r = self.sec.currentRow()
-        p.stations.pop(r if 0 <= r < len(p.stations) else -1)
+        p.partitions.pop(r if 0 <= r < len(p.partitions) else -1)
         self._sec_fill()
-        self._sec_set(0, "y", p.stations[0].y)
+        self._sec_set(0, "span", p.partitions[0].span)
 
     def _sec_from_trap(self) -> None:
         p = self.draft()
-        planform = p.planform
-        p.planform = wg.PLANFORMS[0]
-        p.stations = wg.stations_from_trapezoid(p)
-        p.planform = planform
+        p.partitions = wg.partitions_from_trapezoid(p)
         self._sec_fill()
-        self._sec_set(0, "y", 0.0)
-
-    def compute(self):
-        d = self.state.design
-        cand = d.draft_wing()
-        others = [w for w in d.wings if w.name != cand.name]
-        specs, res, r = R.wing_stage(cand, d.requirements, d.rules, others)
-        self.state.design_values = {**_last_values(self.state), **rg.wing_values(r)}
-        return specs, res, _only_wing([r["surface"]]), dict(np_x=r["planform"]["x_ac"])
-
-    def keep(self):
-        d = self.state.design
-        c = d.keep_wing()
-        d.tail_draft.wing = c.name
-        return c.name
+        self._sec_set(0, "span", p.partitions[0].span)
 
 
 # ====================================================================== Empenagem

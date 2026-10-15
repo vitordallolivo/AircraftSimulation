@@ -36,13 +36,29 @@ SIZE_BY = ("área", "corda")
 
 
 @dataclass
+class WingPartition:
+    """uma partição da asa na tabela (do centro para a ponta), como na planilha: envergadura, corda, afilamento,
+    perfil, recuo e torção. A envergadura total é a soma das partições (cada uma: metade de cada lado)."""
+    span: float = F(1.0, "envergadura", "m", "quanto esta partição soma na envergadura total (metade de cada lado)",
+                    0.0, 8.0, 0.01)
+    chord: float = F(0.3, "corda", "m", "no começo da partição (do lado do centro)", 0.01, 3.0, 0.005)
+    taper: float = F(1.0, "afilamento", "", "corda no fim / corda no começo (1 = reta)", 0.05, 2.0, 0.01)
+    airfoil: str = F("", "perfil", "", "o perfil no fim desta partição (vazio = o da raiz); ao longo dela ele passa do "
+                     "perfil da anterior para este (a primeira: o mesmo nas duas pontas)")
+    offset: float = F(0.0, "recuo", "m", "quanto o bordo de ataque anda para trás do começo ao fim da partição "
+                      "(enflechamento): move o centro aerodinâmico, e com ele o CG de projeto", -2.0, 2.0, 0.005)
+    twist: float = F(0.0, "torção θ", "°", "no fim da partição, em relação à raiz; − = washout: a ponta estola depois "
+                     "(o aileron continua mandando no estol), custa um pouco de sustentação", -10.0, 10.0, 0.25)
+
+
+@dataclass
 class WingStation:
-    """uma seção da asa na tabela (da raiz para a ponta); entre seções tudo é interpolado"""
-    y: float = F(0.0, "y", "m", "distância da raiz ao longo da semienvergadura", 0.0, 6.0, 0.01)
-    chord: float = F(0.3, "corda", "m", "", 0.01, 3.0, 0.005)
-    airfoil: str = F("", "perfil", "", "vazio = o perfil da raiz")
-    offset: float = F(0.0, "recuo do bordo de ataque", "m", "+ para trás, em relação ao da raiz", -2.0, 2.0, 0.005)
-    twist: float = F(0.0, "torção", "°", "− = washout", -10.0, 10.0, 0.25)
+    """seção da asa (de dentro: sai das partições); entre seções tudo é interpolado"""
+    y: float = 0.0                 # da raiz, na semienvergadura (m)
+    chord: float = 0.3
+    airfoil: str = ""
+    offset: float = 0.0            # recuo do bordo de ataque em relação ao da raiz (m)
+    twist: float = 0.0             # torção (°)
 
 
 @dataclass
@@ -66,10 +82,10 @@ class WingParams:
     dihedral: float = F(2.0, "diedro", "°", "", -5, 15, 0.5)
     alpha_cruise: float = F(0.0, "ângulo de cruzeiro (fuselagem)", "°",
                             "a asa é calada para a fuselagem voar neste ângulo no cruzeiro", -4, 8, 0.25)
-    stations: list[WingStation] = field(default_factory=list)   # planta "tabela de seções"
+    partitions: list[WingPartition] = field(default_factory=list)   # planta "tabela de seções"
 
     def table(self) -> bool:
-        return self.planform == PLANFORMS[1] and len(self.stations) >= 2
+        return self.planform == PLANFORMS[1] and any(q.span > 0 for q in self.partitions)
 
 
 @dataclass
@@ -88,15 +104,27 @@ class WingCandidate:
 
 
 # ------------------------------------------------------------------ geometria
+JUNCTION = 1e-4      # m: na junção de partições com cordas diferentes, a troca acontece nesse trecho
+
+
 def stations(p: WingParams) -> list[WingStation]:
-    """as seções da tabela, da raiz para a ponta (a primeira vai para y = 0)"""
-    st = sorted(p.stations, key=lambda q: q.y)
-    if st and st[0].y != 0.0:
-        st = copy.deepcopy(st)
-        y0 = st[0].y
-        for q in st:
-            q.y -= y0
-    return st
+    """as seções que saem das partições, da raiz (y = 0) para a ponta"""
+    root = (p.partitions[0].airfoil if p.partitions else "") or p.airfoil
+    out: list[WingStation] = []
+    y = x = tw = 0.0
+    for q in p.partitions:
+        if q.span <= 0:
+            continue
+        af = q.airfoil or root
+        if not out:
+            out.append(WingStation(y, q.chord, af, x, tw))
+        elif abs(out[-1].chord - q.chord) > 1e-9:                     # degrau de corda: num trecho curtinho
+            out.append(WingStation(y + min(JUNCTION, 0.25 * q.span / 2), q.chord, out[-1].airfoil, x, tw))
+        y += q.span / 2
+        x += q.offset
+        tw = q.twist
+        out.append(WingStation(y, q.chord * q.taper, af, x, tw))
+    return out
 
 
 def chords(p: WingParams) -> tuple[float, float, float, float]:
@@ -114,15 +142,20 @@ def chords(p: WingParams) -> tuple[float, float, float, float]:
     return s, yb, cr, cr * lam
 
 
+def totals(p: WingParams) -> tuple[float, float]:
+    """(envergadura total, área) da tabela de partições: a soma das partições"""
+    qs = [q for q in p.partitions if q.span > 0]
+    return sum(q.span for q in qs), sum(q.span * q.chord * (1 + q.taper) / 2 for q in qs)
+
+
 def sync(p: WingParams) -> WingParams:
     """acerta os campos que saem dos outros: área (por corda ou pela tabela), corda da raiz (por área) e
     envergadura (pela tabela) — quem lê `p.area` e `p.span` vê a asa de verdade"""
     if p.table():
-        st = stations(p)
-        p.span = round(2 * st[-1].y, 6)
-        p.area = round(2 * sum(0.5 * (a.chord + b.chord) * (b.y - a.y) for a, b in zip(st, st[1:])), 6)
-        p.chord = st[0].chord
-        p.airfoil = st[0].airfoil or p.airfoil
+        b, S = totals(p)
+        p.span, p.area = round(b, 6), round(S, 6)
+        p.chord = next(q.chord for q in p.partitions if q.span > 0)
+        p.airfoil = (p.partitions[0].airfoil if p.partitions else "") or p.airfoil
         return p
     s, yb, cr, ct = chords(p)
     if p.size_by == SIZE_BY[1]:
@@ -132,14 +165,22 @@ def sync(p: WingParams) -> WingParams:
     return p
 
 
-def stations_from_trapezoid(p: WingParams) -> list[WingStation]:
-    """a tabela que reproduz o trapézio atual (ponto de partida para editar)"""
-    s, yb, cr, ct = chords(p)
+def partitions_from_trapezoid(p: WingParams) -> list[WingPartition]:
+    """a tabela que reproduz o trapézio atual (ponto de partida para editar): o trecho reto e o afilado"""
+    was, p.planform = p.planform, PLANFORMS[0]
+    try:
+        s, yb, cr, ct = chords(p)
+    finally:
+        p.planform = was
     xt = (cr - ct) / 4 + math.tan(math.radians(p.sweep)) * (s - yb)
-    out = [WingStation(0.0, round(cr, 4), p.airfoil, 0.0, 0.0)]
-    if 1e-6 < yb < s - 1e-6:
-        out.append(WingStation(round(yb, 4), round(cr, 4), "", 0.0, round(p.twist * yb / s, 3)))
-    out.append(WingStation(round(s, 4), round(ct, 4), p.airfoil_tip or "", round(xt, 4), p.twist))
+    out = []
+    if yb > 1e-6:
+        out.append(WingPartition(round(2 * yb, 4), round(cr, 4), 1.0, p.airfoil, 0.0, round(p.twist * yb / s, 3)))
+    if s - yb > 1e-6:
+        out.append(WingPartition(round(2 * (s - yb), 4), round(cr, 4), round(ct / cr, 4), p.airfoil_tip or p.airfoil,
+                                 round(xt, 4), p.twist))
+    if p.airfoil_tip and len(out) == 1:      # só o trecho afilado: o perfil da raiz numa partição de largura ~0
+        out.insert(0, WingPartition(2 * JUNCTION, round(cr, 4), 1.0, p.airfoil, 0.0, 0.0))
     return out
 
 

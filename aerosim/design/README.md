@@ -4,10 +4,13 @@ Cria o avião do zero, e cada etapa parte do que a anterior guardou:
 
 1. **Perfil.** Você escolhe os perfis e vê a polar 2D de cada um.
 2. **Asa.** A asa é feita a partir do perfil escolhido. A planta é um **trapézio** (envergadura, afilamento,
-   trecho retangular; **dimensionar por área ou por corda** da raiz — o outro sai) ou uma **tabela de seções**:
-   uma linha por seção (y, corda, perfil, recuo do bordo de ataque, torção), quantas quiser. Cada seção tem o seu
-   perfil, e a linha sustentadora e o arrasto de perfil interpolam entre seções vizinhas. "do trapézio" monta a
-   tabela a partir do trapézio atual.
+   trecho retangular; **dimensionar por área ou por corda** da raiz — o outro sai) ou uma **tabela de partições**,
+   como na planilha: uma linha por partição com **envergadura** (o quanto ela soma na envergadura total, metade
+   de cada lado), **corda** (no começo dela), **afilamento**, **perfil** (no fim dela; ao longo dela passa do da
+   anterior para este), **recuo** (o bordo de ataque andando para trás: enflechamento, move o CA e o CG de
+   projeto) e **θ** (torção no fim, em relação à raiz; − = washout, a ponta estola depois). A envergadura total
+   é a soma das partições; asa reta = uma linha só. A linha sustentadora e o arrasto de perfil interpolam entre
+   as seções. "do trapézio" monta a tabela a partir do trapézio atual.
 3. **Empenagem.** Entram as superfícies que acompanham a asa: cauda, tubo e comandos.
 4. **Motores.** A etapa decide onde ficam os motores. Com isso saem a bateria, a carga, a fuselagem e o trem.
 5. **Montagem.** O avião inteiro vai para a aba Montagem.
