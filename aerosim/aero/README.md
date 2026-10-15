@@ -27,6 +27,40 @@ polar_metrics(pol, model, case)                             # C_Lmax, α de esto
 
 `lltdrek` e `aerosandbox` são opcionais (`pip install -r requirements-aero.txt`).
 
+## Asa por partições (etapa Asa da sprint)
+
+Na etapa **Aerodinâmica → Asa** a asa pode ser um trapézio ou uma **tabela de partições**, como na planilha:
+cada linha é uma partição com **envergadura** (o quanto ela soma na envergadura total, metade de cada lado),
+**corda** (no começo dela), **afilamento**, **perfil** (no fim dela; ao longo da partição ele passa do da
+anterior para este), **recuo** (o bordo de ataque andando para trás: enflechamento) e **θ** (torção no fim, em
+relação à raiz; − = washout). A envergadura total é a soma das partições; asa reta é uma linha só. A linha
+sustentadora (`aerosim/design/wing.py`) usa o perfil de cada seção no Re da corda dela.
+
+Dois exemplos com perfis NACA gerados (polar pelo NeuralFoil), V = 15 m/s, altitude-densidade 600 m,
+massa 6 kg:
+
+![Asa reta: uma partição](../../docs/img/asa_reta.png)
+
+![Asa trapezoidal: reta + afilada, outro perfil na ponta](../../docs/img/asa_trapezio.png)
+
+| | reta | trapezoidal |
+|---|---|---|
+| partições | 2,2 m · c 0,30 · λ 1 · NACA 4412 | 1,0 m · c 0,32 · λ 1 · NACA 4412 + 1,2 m · λ 0,5 · NACA 0012 · recuo 4 cm · θ −2° |
+| envergadura, área, alongamento | 2,20 m · 0,660 m² · 7,33 | 2,20 m · 0,608 m² · 7,96 |
+| C_Lα | 4,63 /rad (0,0809 /°) | 4,73 /rad (0,0826 /°) |
+| C_L0, α de sustentação nula | 0,369 · −4,6° | 0,275 · −3,3° |
+| C_L,máx, α de estol | 1,211 · 10,4° | 1,194 · 11,1° |
+| onde o estol começa (2y/b) | 0 (raiz) | 0 (raiz) |
+| e (Oswald, no cruzeiro) | 0,940 | 0,949 |
+| (L/D) máx., C_L nele | 24,4 · 0,45 | 23,6 · 0,52 |
+| C_m,ac | −0,103 | −0,086 |
+| cruzeiro: C_L, C_D, L/D | 0,686 · 0,0311 · 22,0 | 0,744 · 0,0343 · 21,7 |
+| V de estol | 11,3 m/s | 11,8 m/s |
+| Re na raiz | 2,87·10⁵ | 2,74·10⁵ |
+
+A trapezoidal tem mais alongamento com a mesma envergadura (menos área), e o perfil simétrico na ponta
+(com washout) tira arqueamento de onde o estol seria perigoso: C_L0 e C_m,ac menores, estol mais tarde.
+
 ## Como funciona
 
 ```mermaid
