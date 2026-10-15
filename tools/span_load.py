@@ -17,9 +17,6 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-ROLES = (("wing", "asa"), ("htail", "EH"), ("vtail", "EV"))
-
-
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("aviao")
@@ -67,34 +64,13 @@ def main(argv=None) -> int:
                         "V_local_m_s"])
             w.writerows(rows)
     if args.png:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        roles = [(role, nome) for role, nome in ROLES if any(r.by_role(role) for _, r in res)]
-        fig, ax = plt.subplots(3, len(roles), figsize=(5.2 * len(roles), 9.5), dpi=100, squeeze=False)
-        styles = (("#1f4e8c", "-"), ("#d95f02", "--"))
-        for col, (role, nome) in enumerate(roles):
-            for (lab, r), (c, ls) in zip(res, styles):
-                for s in r.by_role(role):
-                    tag = lab if len(r.by_role(role)) == 1 else f"{lab}: {s.name}"
-                    ax[0, col].plot(s.s, s.L, color=c, ls=ls, lw=2, label=tag)
-                    ax[1, col].plot(s.s, s.alpha, color=c, ls=ls, lw=2)
-                    ax[2, col].plot(s.s, s.V / args.V, color=c, ls=ls, lw=2)
-            xl = "altura (m, + para cima)" if role == "vtail" else "y (m) — envergadura (+ direita)"
-            for r_, t in enumerate(("sustentação (N/m)" if role != "vtail" else "força lateral (N/m)", "α local (°)",
-                                    "velocidade local / V∞")):
-                ax[r_, col].set_title(f"{nome}: {t}")
-                ax[r_, col].grid(alpha=0.3)
-            ax[2, col].set_xlabel(xl)
-            if role != "vtail":
-                for p in props:
-                    for a_ in ax[:, col]:
-                        a_.axvspan(p.hub[1] - p.D / 2, p.hub[1] + p.D / 2, color="#999999", alpha=0.15)
-            ax[0, col].legend(fontsize=8)
+        from aerosim.aero.load_plots import span_figure
+        from aerosim.aero.span_loads import to_result
         mot = ", ".join(f"{p.rpm:.0f} rpm / {p.T:.1f} N" for p in props)
-        fig.suptitle(f"{os.path.basename(args.aviao)} — V = {args.V:g} m/s, n = {args.n:g}, α = {r0.alpha:.2f}° ({how}), "
-                     f"δe = {r0.de:.1f}°, peso {r0.weight:.1f} N; motores: {mot}; cinza = disco da hélice", fontsize=10)
-        fig.tight_layout(rect=(0, 0, 1, 0.95))
+        title = (f"{os.path.basename(args.aviao)} — V = {args.V:g} m/s, n = {args.n:g}, α = {r0.alpha:.2f}° ({how}), "
+                 f"δe = {r0.de:.1f}°, peso {r0.weight:.1f} N; motores: {mot}; cinza = disco da hélice")
+        fig = span_figure([(lab, to_result(r)) for lab, r in res], fields=("carga", "L", "alpha_ef", "V_rel"),
+                          shade=[(p.hub[1] - p.D / 2, p.hub[1] + p.D / 2) for p in props], title=title)
         fig.savefig(args.png)
     return 0
 

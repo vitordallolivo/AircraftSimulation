@@ -93,6 +93,26 @@ interpolados, com as seções originais exatas), uma superfície por vez, até o
 a sustentação total refinada é a mesma da sem refino (teste). Superfícies com perfil próprio por seção e dispositivos
 de ponta saem com as faixas que já têm.
 
+**Entrada padrão, gráficos e 3D.** `to_result(r, backend)` leva o resultado para a entrada padrão
+`aerosim.interfaces.loads.LoadResult`:
+- distribuições ao longo da envergadura;
+- a malha 3D: uma face por faixa, do bordo de ataque ao de fuga, na largura da faixa;
+- os campos: carga alar local (N/m²), sustentação por metro, α efetivo, V local / V∞, c_l, c_d, q;
+- os vetores (força e velocidade induzida) e os tubos da esteira.
+
+Quem desenha só lê esse formato:
+- `load_plots.span_figure` faz os gráficos;
+- `gui/widgets/load_view.LoadView` faz o 3D, com mapa de cores do campo escolhido, setas, esteira e o avião em
+  transparência.
+
+Por isso outro método (VLM, painéis, CFD) entra montando um `LoadResult`, sem mexer nos gráficos nem no 3D. O teste
+`tests/aero/test_load_result.py` faz isso com um "CFD" de mentira em triângulos e com um campo próprio.
+
+```
+python tools/load_view.py data/aircraft/Convencional_original.json --com esteira.disco                 # janela 3D
+python tools/load_view.py data/aircraft/Convencional_original.json --campo alpha_ef --png vista.png
+```
+
 A trimagem ainda não vê a esteira (ela chama a aerodinâmica sem motores). Com a esteira ligada, α e profundor são
 os do avião sem esteira e a sobra de sustentação aparece no resultado.
 

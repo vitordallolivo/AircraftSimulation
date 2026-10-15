@@ -340,6 +340,7 @@ pub const PanelState = extern struct {
     v: [3]f64 = .{ 0, 0, 0 }, // velocidade do painel em relação ao ar, com os modificadores (corpo, m/s)
     vind: [3]f64 = .{ 0, 0, 0 }, // parte dos modificadores (esteira...) em `v` (corpo, m/s)
     ey: [3]f64 = .{ 0, 0, 0 }, // direção da envergadura do painel (corpo)
+    ex: [3]f64 = .{ 0, 0, 0 }, // direção da corda, para a frente (corpo; o centro `r` fica a 25 % da corda)
 };
 
 /// medidas acumuladas de uma corrida (o "relatório" de eventos)

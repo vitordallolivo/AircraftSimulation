@@ -131,7 +131,7 @@ fn computeImpl(comptime trace: bool, p: *const T.Params, Vr: V3, w: V3, rcg: V3,
         const M = vec.cross(r - rcg, F) + vec.v3(s.ey) * vec.splat(qS * s.c * s.Cmac);
         if (trace) {
             if (i < out.len) out[i] = .{ .r = s.r, .S = s.S, .c = s.c, .group = s.group, .side = s.side, .alpha = al,
-                .V = Vp, .CL = CL, .CD = CD, .L = qS * CL, .D = qS * CD, .F = F, .v = v, .vind = vind, .ey = s.ey };
+                .V = Vp, .CL = CL, .CD = CD, .L = qS * CL, .D = qS * CD, .F = F, .v = v, .vind = vind, .ey = s.ey, .ex = s.ex };
         }
         const g: usize = @intCast(s.group);
         o.Fg[g] += F;

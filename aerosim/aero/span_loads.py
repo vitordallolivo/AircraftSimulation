@@ -12,6 +12,7 @@ solo, esteira da hélice...); aqui só se monta o caso, refina a geometria para 
     w = r.surface("asa")          # SurfaceLoad: w.s (m), w.L (N/m), w.alpha (°), w.V (m/s), w.points, w.force...
     r.props                       # PropState de cada motor: rpm, T, Q, J, eixo e cubo
     r.tubes(backend)              # contorno da esteira de cada motor (para desenhar em 3D), pela sonda do núcleo
+    res = to_result(r, backend)   # a entrada padrão (aerosim/interfaces/loads.py) dos gráficos e da vista 3D
 
 Resolução: cada superfície é refinada (mais seções na mesma geometria: corda, recuo e torção interpolados) até o
 limite de painéis do núcleo, uma superfície por vez. Superfícies com perfil próprio por seção e dispositivos de ponta
@@ -64,6 +65,7 @@ class SurfaceLoad:
     velocity: np.ndarray               # (n, 3) velocidade da faixa em relação ao ar (corpo, m/s)
     induced: np.ndarray                # (n, 3) parte dos modificadores em `velocity`
     span_dir: np.ndarray               # (n, 3) direção da envergadura de cada faixa
+    chord_dir: np.ndarray = None       # (n, 3) direção da corda, para a frente (o centro fica a 25 % da corda)
 
     @property
     def lift(self) -> float:
@@ -198,7 +200,8 @@ def _collect(P: np.ndarray, rows: list[int], sm, rho: float) -> SurfaceLoad:
                        cl=np.asarray(Q["CL"], float), cd=np.asarray(Q["CD"], float),
                        L=np.asarray(Q["L"], float) / width, D=np.asarray(Q["D"], float) / width, points=pts,
                        force=np.asarray(Q["F"], float), velocity=np.asarray(Q["v"], float),
-                       induced=np.asarray(Q["vind"], float), span_dir=np.asarray(Q["ey"], float))
+                       induced=np.asarray(Q["vind"], float), span_dir=np.asarray(Q["ey"], float),
+                       chord_dir=np.asarray(Q["ex"], float))
 
 
 def compute(backend, ac, case: LoadCase | None = None) -> SpanLoads:
@@ -252,3 +255,46 @@ def compute(backend, ac, case: LoadCase | None = None) -> SpanLoads:
                 res.surfaces.append(_collect(P, rows, sm, rho))
                 done.add(sm.name)
     return res
+
+
+# ---------------------------------------------------------------------- entrada padrão (interfaces/loads.py)
+def to_result(r: SpanLoads, backend=None) -> "LoadResult":
+    """SpanLoads -> LoadResult: distribuições ao longo da envergadura, a malha (uma face por faixa: bordo de ataque a
+    25 % da corda à frente do centro, bordo de fuga a 75 % atrás, ± meia largura na envergadura), os campos por face,
+    os vetores (força, velocidade induzida) e as esteiras (`backend` para a sonda dos tubos; sem ele, sem tubos)"""
+    from aerosim.interfaces.loads import LoadResult, SpanDistribution, SurfaceField, VectorLayer
+    dists, verts, faces, owner = [], [], [], []
+    vals: dict[str, list] = {k: [] for k in ("carga", "L", "alpha_ef", "V_rel", "cl", "cd", "q", "D")}
+    V0 = r.case.V
+    for s in r.surfaces:
+        f = dict(carga=s.L / np.maximum(s.chord, 1e-12), L=s.L, alpha_ef=s.alpha, V_rel=s.V / V0, cl=s.cl, cd=s.cd,
+                 q=s.q, D=s.D)
+        dists.append(SpanDistribution(s.name, s.role, s.vertical, s.s, s.width, f))
+        ex = s.chord_dir if s.chord_dir is not None else np.tile([1.0, 0, 0], (len(s.s), 1))
+        for k in range(len(s.s)):
+            c, half = s.chord[k], 0.5 * s.width[k]
+            le, te = s.points[k] + 0.25 * c * ex[k], s.points[k] - 0.75 * c * ex[k]
+            dy = half * s.span_dir[k]
+            n0 = len(verts)
+            verts += [le - dy, le + dy, te + dy, te - dy]
+            faces.append([n0, n0 + 1, n0 + 2, n0 + 3])
+            owner.append(s.name)
+        for key in vals:
+            vals[key].append(f[key])
+    pts = np.vstack([s.points for s in r.surfaces]) if r.surfaces else np.zeros((0, 3))
+    vec = [VectorLayer("força", pts, np.vstack([s.force for s in r.surfaces]) if r.surfaces else pts, "N",
+                       (0.05, 0.15, 0.45, 1.0)),
+           VectorLayer("velocidade induzida", pts, np.vstack([s.induced for s in r.surfaces]) if r.surfaces else pts,
+                       "m/s", (0.85, 0.35, 0.05, 1.0))]
+    tubes = []
+    if backend is not None and any(p.T > 0 for p in r.props) and any("esteira" in m for m in r.modifiers):
+        tubes = r.tubes(backend)
+    fld = SurfaceField(vertices=np.array(verts, float).reshape(-1, 3), faces=np.array(faces, int).reshape(-1, 4),
+                       fields={k: np.concatenate(v) if v else np.zeros(0) for k, v in vals.items()},
+                       face_surface=np.array(owner), vectors=vec, tubes=tubes)
+    mot = ", ".join(f"{p.name} {p.rpm:.0f} rpm {p.T:.1f} N" for p in r.props)
+    meta = dict(fonte="núcleo (faixas, aerosim/aero/span_loads.py)", fidelidade="modelo", V=V0, alpha=r.alpha,
+                de=r.de, peso=r.weight, n=r.case.n, motores=mot, modificadores=r.modifiers, avisos=r.notes,
+                caso=f"V = {V0:g} m/s, n = {r.case.n:g}, α = {r.alpha:.2f}°" + (" (trimagem)" if r.trim else "")
+                + f", δe = {r.de:.1f}°" + (f"; {mot}" if mot else ""))
+    return LoadResult(dists, fld, meta)
