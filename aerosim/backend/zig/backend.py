@@ -143,6 +143,7 @@ class _Lib:
             "aerosim_sizing_optimize": (c_int, [ctypes.POINTER(T["SizingCfg"]), ctypes.POINTER(T["OptOpts"]), vp, c_size,
                                                 ctypes.POINTER(c_size), ctypes.POINTER(T["SizingOut"]), vp, vp]),
             "aerosim_sizing_name": (ctypes.c_char_p, [c_int, c_int]),
+            "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
         }
         absent = [n for n in sig if not hasattr(L, n)]
         if absent:
@@ -438,6 +439,11 @@ class ZigBackend(ISimBackend):
                 for i in range(c.n_bank):
                     rows[f"{k}_{i}"] = v[:, i]
         return rows, _struct_dict(s)
+
+    def probe_ground(self, method: int, h, b: float) -> np.ndarray:
+        """fator do efeito solo do núcleo (core/src/modifiers/ground.zig) em cada altura `h` (sonda, sem simular)"""
+        f = self._lib.dll.aerosim_probe_ground
+        return np.array([f(int(method), float(x), float(b)) for x in np.atleast_1d(h)])
 
     @property
     def schema(self) -> abi.Schema:

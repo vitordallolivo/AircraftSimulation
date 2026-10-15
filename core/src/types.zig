@@ -6,6 +6,8 @@
 //! `init` a partir dos demais e podem ser lidos de volta.
 const L = @import("limits.zig");
 const poly = @import("math/poly.zig");
+const MT = @import("modifiers/types.zig");
+pub const Modifier = MT.Modifier;
 
 /// polinômio de tração (gerado em comptime a partir do grau em limits.zig)
 pub const ThrustPoly = poly.Poly2(L.thrust_poly_deg);
@@ -313,6 +315,10 @@ pub const Params = extern struct {
     no_payload: i32 = 0, // começa sem a carga
     n_pad: i32 = 0, // mesas/plataformas
     pads: [L.max_pads]Pad = [_]Pad{.{}} ** L.max_pads,
+    // modificadores (modifiers/): método do efeito solo e efeitos a mais (desligados por padrão)
+    ground: i32 = MT.ground_mccormick,
+    n_mod: i32 = 0,
+    mods: [L.max_mods]Modifier = [_]Modifier{.{}} ** L.max_mods,
     // derivados
     steer_sign: f64 = 1, // −1 se a roda direcionável está atrás das principais (convencional)
 };

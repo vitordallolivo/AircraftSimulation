@@ -14,6 +14,7 @@ const abi = @import("abi.zig");
 const runner = @import("sim/runner.zig");
 const trim = @import("sim/trim.zig");
 const aero = @import("physics/aero.zig");
+const modifiers = @import("modifiers/mod.zig");
 const prop = @import("physics/propulsion.zig");
 const mass = @import("physics/mass.zig");
 const vec = @import("math/vec.zig");
@@ -70,6 +71,11 @@ export fn aerosim_abi_version() u32 {
 
 export fn aerosim_schema() [*:0]const u8 {
     return abi.schema.ptr;
+}
+
+/// sonda dos modificadores (sem simulação): fator do efeito solo do método `method` a `h` (m), envergadura `b` (m)
+export fn aerosim_probe_ground(method: i32, h: f64, b: f64) f64 {
+    return modifiers.ground.factor(method, h, b);
 }
 
 /// hash (FNV-1a 64) do esquema: confere que o texto chegou inteiro e identifica a versão do layout

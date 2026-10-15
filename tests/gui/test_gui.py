@@ -603,3 +603,22 @@ def test_performance_turns_show_load_factor(manager):
     from aerosim.model.templates import conventional
     r = manager.run("performance", conventional(), {"h_list": "0"})
     assert any(k.startswith("scur_30° (n = 1.15)") for k in r.series)
+
+
+def test_modifiers_editor(app, manager):
+    """Montagem → Modificadores: desligar o efeito solo muda o que vai ao núcleo; adicionar volta"""
+    from aerosim.backend.zig.translator import native_spec
+    from aerosim.gui.state import AppState
+    from aerosim.gui.tabs.config_tab import ConfigTab
+    from aerosim.model.templates import conventional
+    st = AppState(manager, conventional())
+    cfg = ConfigTab(st)
+    cfg._edit("modifiers")
+    box = cfg.editor_area.widget()
+    on = box.findChild(QtWidgets.QCheckBox)
+    on.setChecked(False)
+    assert native_spec(st.aircraft)["ground"] == 0
+    cfg._edit("modifiers")
+    combo = cfg.editor_area.widget().findChild(QtWidgets.QComboBox)
+    combo.setCurrentIndex(1)                                  # + efeito solo: McCormick
+    assert native_spec(st.aircraft)["ground"] == 1 and len(st.aircraft.modifiers) == 2

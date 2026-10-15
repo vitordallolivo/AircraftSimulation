@@ -39,6 +39,9 @@ EDIT_HELP = {
     "mission": "a trajetória (etapas) se edita em Desempenho → Missão; aqui ficam o ponto de partida e os eventos",
     "payload": "carga LAPES: massa, posição, baia e paraquedas; a soltura é um evento do percurso",
     "fuselage": "ligue/desligue em 'ativo'",
+    "modifiers": "metodologias da literatura que mudam a aerodinâmica do avião inteiro (efeito solo, esteira da "
+                 "hélice...). Quem calcula é o núcleo (core/src/modifiers); cada método mostra de onde vem a fórmula. "
+                 "Só o .json guarda a lista; o padrão é o efeito solo de McCormick",
     "boom": "tubo livre: início (x, y, z), comprimento, inclinação e abertura; tubo duplo = dois tubos (y = ±d). "
             "As superfícies se prendem nele pelo campo 'presa em'",
 }
@@ -373,6 +376,8 @@ class ConfigTab(QtWidgets.QWidget):
         items.append(("payload", "📦 LAPES: carga e soltura" + ("" if ac.payload.enabled else " (desligado)")))
         items.append(("ballast", "⚖ Lastro" + (f" ({ac.ballast.mass:g} kg)" if ac.ballast.enabled else " (desligado)")))
         items.append(("gear", f"trem de pouso ({ac.gear.layout})"))
+        from aerosim.model import modifiers as mods
+        items.append(("modifiers", f"🧪 Modificadores ({len(mods.active(ac))} ligado(s))"))
         items += [(k, t) for k, t in NONGEOM]
         sel_row = 0
         for i, (k, t) in enumerate(items):
@@ -488,6 +493,8 @@ class ConfigTab(QtWidgets.QWidget):
             v.addWidget(self.form)
             from aerosim.model.aircraft import PointMass
             v.addWidget(self._list_editor("massas pontuais", ac.mass.items, PointMass, {}))
+        elif kind == "modifiers":
+            v.addWidget(self._modifiers_editor())
         elif kind == "mission":
             self.form = DataclassForm(ac.mission, exclude=("legs", "events"))
             v.addWidget(self.form)
@@ -507,6 +514,59 @@ class ConfigTab(QtWidgets.QWidget):
             self.form.changed.connect(self._changed)
         v.addStretch(1)
         self.editor_area.setWidget(w)
+
+    def _modifiers_editor(self) -> QtWidgets.QWidget:
+        """lista de modificadores: liga/desliga, remove, adiciona; mostra de onde vem cada método"""
+        from aerosim.model import modifiers as mods
+        ac = self.state.aircraft
+        w = QtWidgets.QWidget()
+        v = QtWidgets.QVBoxLayout(w)
+        v.setContentsMargins(0, 0, 0, 0)
+
+        def changed():
+            self.state.notify("geometry")
+            self._fill_list("modifiers")
+            self._edit("modifiers")
+
+        for i, m in enumerate(ac.modifiers):
+            inf = m.info
+            box = QtWidgets.QGroupBox(inf.title if inf else f"desconhecido: {m.kind}")
+            g = QtWidgets.QVBoxLayout(box)
+            row = QtWidgets.QHBoxLayout()
+            on = QtWidgets.QCheckBox("ligado")
+            on.setChecked(bool(m.enabled))
+            on.toggled.connect(lambda c, m=m: (setattr(m, "enabled", bool(c)), changed()))
+            rm = QtWidgets.QPushButton("remover")
+            rm.clicked.connect(lambda _=False, i=i: (ac.modifiers.pop(i), changed()))
+            row.addWidget(on)
+            row.addStretch(1)
+            row.addWidget(rm)
+            g.addLayout(row)
+            if inf:
+                lbl = QtWidgets.QLabel(f"{inf.description}<br><i>fonte: {inf.reference}</i>")
+                lbl.setWordWrap(True)
+                lbl.setStyleSheet("color: #444")
+                g.addWidget(lbl)
+            v.addWidget(box)
+        for msg in mods.problems(ac):
+            warn = QtWidgets.QLabel("⚠ " + msg)
+            warn.setWordWrap(True)
+            v.addWidget(warn)
+        add = QtWidgets.QComboBox()
+        add.addItem("+ adicionar modificador…", None)
+        for k, inf in mods.KINDS.items():
+            add.addItem(inf.title, k)
+
+        def pick(ix):
+            k = add.itemData(ix)
+            if k:
+                ac.modifiers.append(mods.Modifier(k))
+                changed()
+        add.currentIndexChanged.connect(pick)
+        v.addWidget(add)
+        if not ac.modifiers:
+            v.addWidget(QtWidgets.QLabel("sem modificadores: efeito solo desligado"))
+        return w
 
     def _show_rho(self):
         env = self.state.aircraft.environment

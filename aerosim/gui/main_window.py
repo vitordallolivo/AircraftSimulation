@@ -301,16 +301,25 @@ class MainWindow(QtWidgets.QMainWindow):
             except Exception as e:
                 QtWidgets.QMessageBox.critical(self, "Erro", str(e))
 
+    def _warn_lost(self, path: str) -> None:
+        """.cfg e planilha não guardam os modificadores: avisa o que fica de fora"""
+        from aerosim.model.modifiers import not_exported
+        lost = not_exported(self.state.aircraft, path)
+        if lost:
+            QtWidgets.QMessageBox.information(self, "Modificadores não gravados", "\n".join(lost))
+
     def save(self):
         if not self.state.path:
             return self.save_as()
         save_aircraft(self.state.aircraft, self.state.path)
+        self._warn_lost(self.state.path)
 
     def save_as(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Salvar aeronave", os.path.join(ROOT, "data", "aircraft"),
                                                         FILTER)
         if path:
             save_aircraft(self.state.aircraft, path)
+            self._warn_lost(path)
             self.state.path = path
             self._title()
 

@@ -15,6 +15,7 @@ import numpy as np
 
 from aerosim.interfaces.translator import COEFFS, IModelTranslator
 from aerosim.model.aircraft import ANGLE_KEYS_AP, panel_mix
+from aerosim.model import modifiers
 from aerosim.model.catalog import POLY_VARS
 from aerosim.model.universal import GROUP, AircraftModel, SurfaceModel, build_model
 
@@ -89,9 +90,11 @@ class ZigTranslator(IModelTranslator):
             ap[k] = ap[k] * D2R
         m = mission if mission is not None else model.mission
         P = ac.payload
-        surf = []
+        surf, owner = [], []
         for s in model.surfaces:
-            surf += surface_panels(s)
+            pn = surface_panels(s)
+            surf += pn
+            owner += [s.name] * len(pn)
         spec = dict(
             m_dry=model.mass["m"], Ixx=I[0, 0], Iyy=I[1, 1], Izz=I[2, 2], Ixz=-I[0, 2], r_dry=list(model.mass["cg"]),
             Sref=model.S, cref=model.c, bref=model.b, Mst=ac.sim.Mst,
@@ -115,6 +118,7 @@ class ZigTranslator(IModelTranslator):
         )
         pads = ac.airfield.pads(m)
         spec.update(pads=pads, n_pad=len(pads))
+        spec.update(modifiers.native(ac, owner, len(props)))     # efeito solo e efeitos a mais
         if overrides:
             _deep_update(spec, copy.deepcopy(overrides))
         return spec

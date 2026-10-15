@@ -70,6 +70,7 @@ flowchart LR
 | `SloshTank` | base quadrada (lado) ou cilíndrica, altura do líquido |
 | `MassModel` | massa base + inércia própria + massas pontuais (+ motores/baterias/estrutura, se ligado) |
 | `TailBoom` (lista `booms`) | início (x, y, z), comprimento, diâmetro, `pitch` (+ ponta de trás sobe), `yaw` (abertura); tubo duplo = dois tubos. Arquivos antigos com `boom` único viram a lista ao abrir (`Aircraft.migrate`) |
+| `Modifier` (lista `modifiers`) | metodologias que mudam a aerodinâmica do avião inteiro (efeito solo, esteira...): só dados (`modifiers.py`); quem calcula é o núcleo, em [`core/src/modifiers`](../../core/src/modifiers/README.md). Padrão: `[solo.mccormick]` (o de sempre); `.json` antigo abre com ele |
 | `Fuselage`, `Payload`, `Environment`, `Takeoff`, `Autopilot`, `SimSettings`, `Mission` | — |
 
 ### Geometria → núcleo

@@ -15,7 +15,7 @@ pub const version: u32 = 1;
 /// em ordem de dependência (as de dentro primeiro)
 pub const exported = .{
     T.Surface,  T.PropUnit,   T.Gear,      T.Tank,      T.Segment, T.Event, T.Pad,
-    T.Payload,  T.Environment, T.Takeoff,  T.Autopilot, T.Pilot, T.Params,  T.Events,
+    T.Payload,  T.Environment, T.Takeoff,  T.Autopilot, T.Pilot, T.Modifier, T.Params,  T.Events,
     T.LogRow,   T.AeroCoeffs, T.PropPoint, T.MassProps, T.TrimPoint, T.PerfRow,
     env.EnvCfg, env.EnvRow,     lin.LinModel, at.Result, sp.SimpleCfg, sp.SimpleRow, sp.SimpleSummary,
     sz.VarSpec, sz.AirfoilData, sz.PropSet, sz.Constraint, sz.LayoutData, sz.SizingCfg, sz.SizingOut, sz.OptOpts, sz.Individual,
@@ -56,8 +56,8 @@ fn describe(comptime Ty: type) []const u8 {
 pub const schema: [:0]const u8 = blk: {
     @setEvalBranchQuota(1_000_000);
     var s: []const u8 = std.fmt.comptimePrint(
-        "abi {d}\nlimit surfaces {d}\nlimit props {d}\nlimit prop_pts {d}\nlimit gear {d}\nlimit tanks {d}\nlimit segments {d}\nlimit events {d}\nlimit instances {d}\nlimit nx {d}\nsnapshot {d}\n",
-        .{ version, L.max_surfaces, L.max_props, L.max_prop_pts, L.max_gear, L.max_tanks, L.max_segments, L.max_events, L.max_instances, S.nx, @sizeOf(S.Run) },
+        "abi {d}\nlimit surfaces {d}\nlimit props {d}\nlimit prop_pts {d}\nlimit gear {d}\nlimit tanks {d}\nlimit segments {d}\nlimit events {d}\nlimit instances {d}\nlimit mods {d}\nlimit nx {d}\nsnapshot {d}\n",
+        .{ version, L.max_surfaces, L.max_props, L.max_prop_pts, L.max_gear, L.max_tanks, L.max_segments, L.max_events, L.max_instances, L.max_mods, S.nx, @sizeOf(S.Run) },
     );
     s = s ++ std.fmt.comptimePrint("limit poly_coef {d}\npoly_terms", .{T.ThrustPoly.n_coef});
     for (0..T.ThrustPoly.n_coef) |k| s = s ++ " " ++ T.ThrustPoly.name(k);

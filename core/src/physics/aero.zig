@@ -11,6 +11,7 @@ const L = @import("../limits.zig");
 const T = @import("../types.zig");
 const fm = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
+const mods = @import("../modifiers/mod.zig");
 const V3 = vec.V3;
 
 pub const Out = struct {
@@ -77,15 +78,22 @@ pub fn init(p: *T.Params) void {
 /// Vr: velocidade do ponto O em relação ao ar (corpo); w: (p,q,r); rcg: CG atual;
 /// h: altura de O; δ = (δe, δa, δr). Momentos no CG.
 pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3) Out {
+    return computeEnv(p, Vr, w, rcg, h, d, &mods.Env.none);
+}
+
+/// `compute` com o que os modificadores precisam do instante (tração e torque de cada motor...)
+pub fn computeEnv(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env) Out {
     var o = Out{};
     const Va = vec.norm(Vr);
     const alfa = fm.atan2(Vr[2], Vr[0]);
     const n: usize = @intCast(p.n_surf);
-    for (p.surf[0..n]) |*s| {
+    const with_mods = p.n_mod > 0;
+    for (p.surf[0..n], 0..) |*s, i| {
         const r = vec.v3(s.r);
         const ex = vec.v3(s.ex);
         const ez = vec.v3(s.ez);
-        const v = Vr + vec.cross(w, r);
+        var v = Vr + vec.cross(w, r);
+        if (with_mods) v += mods.induced(p, env, i, r); // esteira, tabela... (modifiers/)
         const u = vec.dot(v, ex);
         const ww = vec.dot(v, ez);
         const V2 = u * u + ww * ww;
@@ -97,11 +105,7 @@ pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3) Out {
         const CL = clPanel(s, al, p.Mst);
         const sg = sigmaStall(al, s.a0, p.Mst);
         var fge: f64 = 1.0;
-        if (s.vertical == 0) { // efeito solo (McCormick)
-            const hp = h - s.r[2];
-            const r16 = 16.0 * @max(hp, 0.01) / p.bref;
-            fge = r16 * r16 / (1.0 + r16 * r16);
-        }
+        if (s.vertical == 0) fge = mods.ground.factor(p.ground, h - s.r[2], p.bref); // efeito solo (modifiers/ground.zig)
         const CDi = (1.0 - sg) * CL * CL / (fm.pi * s.e * s.AR) * fge;
         const sa = fm.sin(al);
         const CD = s.CD0 + CDi + sg * 1.2 * sa * sa;

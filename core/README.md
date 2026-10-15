@@ -3,6 +3,9 @@
 Integra a dinâmica 6GDL com RK4 (dt = 1 ms), calcula equilíbrios (trimagem) e entrega o registro em
 fatias. Toda a memória é estática (`src/limits.zig`); nada é alocado em tempo de execução.
 
+Metodologias que mudam a aerodinâmica do avião inteiro (efeito solo, esteira da hélice, tabelas de VSPAERO/CFD)
+ficam em [`src/modifiers/`](src/modifiers/README.md), cada uma com a fonte da fórmula.
+
 ## Como chamar
 
 ### Compilar e testar
@@ -100,6 +103,12 @@ flowchart LR
         MASS["mass.zig<br/>massa, sloshing, carga"]
         ATM["atmosphere.zig<br/>vento, rajada"]
     end
+    subgraph MOD["modifiers/"]
+        direction TB
+        GRD["ground.zig<br/>efeito solo (McCormick)"]
+        MODM["mod.zig<br/>efeitos a mais por painel"]
+    end
+    AERO --> MOD
     subgraph MATH["math/"]
         direction TB
         FM["fmath.zig<br/>LUT sin/cos/atan, exp/log"]

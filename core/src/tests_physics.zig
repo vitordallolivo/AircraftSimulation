@@ -7,4 +7,5 @@ test {
     _ = @import("physics/gear.zig");
     _ = @import("physics/mass.zig");
     _ = @import("physics/terrain.zig");
+    _ = @import("modifiers/mod.zig");
 }

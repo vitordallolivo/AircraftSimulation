@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from .airfoil import Airfoil
 from .catalog import Battery, Motor, Propeller, ThrustPoly
 from .mission import Mission, circuit
+from .modifiers import Modifier, default_modifiers
 
 
 # ------------------------------------------------------------------ superfícies
@@ -564,6 +565,8 @@ class Aircraft:
     performance: PerformanceData = field(default_factory=PerformanceData)
     shared_battery: bool = False   # True: um pacote para todos os motores (R_int vezes K)
     design_cg: list[float] | None = None   # CG de projeto (x, y, z): as dimensões se medem dele; None: o CG atual
+    # metodologias que mudam a aerodinâmica (efeito solo, esteira...; model/modifiers.py, core/src/modifiers/)
+    modifiers: list[Modifier] = field(default_factory=default_modifiers)
     Sref: float | None = None      # None: da asa principal
     cref: float | None = None
     bref: float | None = None
