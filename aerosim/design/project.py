@@ -57,6 +57,15 @@ class DesignProject:
     current: int = 0                                            # qual deles estava na tela
     ui: dict = field(default_factory=dict)                      # onde a interface estava (aba, subaba)
 
+    @staticmethod
+    def migrate(data: dict) -> dict:
+        """projetos antigos: variáveis que não existem mais (lastro, líquido e LAPES em kg viraram opções da
+        etapa Motores; os kg se decidem na Montagem)"""
+        from .registry import INPUTS
+        if isinstance(data.get("variables"), list):
+            data["variables"] = [v for v in data["variables"] if not isinstance(v, dict) or v.get("key") in INPUTS]
+        return data
+
     def summary(self) -> list[tuple[str, str]]:
         """o que está guardado, etapa por etapa (para mostrar ao abrir)"""
         names = lambda xs: ", ".join(x.name for x in xs) or "—"

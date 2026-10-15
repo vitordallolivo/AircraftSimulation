@@ -87,7 +87,8 @@ flowchart LR
   (`aerosim/design/store.py`); menu **Projeto da sprint** para novo numa pasta, abrir pasta, abrir projeto antigo
   ou arquivo de asa, gravar em outra pasta e mostrar a pasta.
   Em Motores e montagem, embaixo do 3D, a **distribuição de massa**: cada item com x e % do total, PV (vazio)
-  e CP (carga paga = lastro + líquido + LAPES, digitados), e a CP possível pelo MTOW da pista.
+  e CP estimada (massa de projeto − PV; aqui só se marca se tem LAPES e líquido, e quantos — os kg vão na
+  Montagem), e a CP possível pelo MTOW da pista.
   **Estudo e ponto de projeto** (Desempenho): roda o estudo numa `QThread` (ponto de projeto acoplado por valor ×
   altitude), mostra a tabela, os gráficos e o 3D do ponto selecionado, confere no 6GDL e leva o ponto marcado para
   o rascunho.

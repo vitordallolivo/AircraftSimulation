@@ -80,17 +80,35 @@ def test_start_from_stage_without_checkpoint(backend, tmp_path):
     assert r.log["seg"][0] == 4                                # o registro começa na etapa pedida
 
 
+def test_mtow_total_mass(manager):
+    """MTOW pela massa total (o padrão): o que passa da montada entra como massa no CG; a Montagem decide quanto
+    é lastro, LAPES e líquido"""
+    from aerosim.manager.simulations.mission import mtow_rows, total_mass
+    ac = TEMPLATES["conventional"]()
+    rows = mtow_rows(ac)
+    assert [r["item"] for r in rows] == ["Massa total (kg)", "xCG (m)"]
+    m0 = total_mass(ac)
+    assert rows[0]["min"] == pytest.approx(m0, abs=1e-3) and rows[0]["max"] > m0
+    x = rows[1]["nom"]
+    rows[1].update(min=x, max=x)
+    r = manager.run("mission", ac, {"mode": MODES[3], "masses": rows})
+    mt = r.summary["MTOW (kg)"]
+    assert np.isfinite(mt) and rows[0]["min"] - 1e-6 <= mt <= rows[0]["max"] + 1e-6
+    c = r.series["mtow_casos"]
+    ok, m = c["ok"] > 0, c["m"]
+    assert m[ok].max() == pytest.approx(mt, rel=1e-3) and (m[~ok] > mt).all()
+    assert ac.payload.mass == 2.0 and not ac.ballast.enabled          # o avião aberto não muda
+
+
 def test_mtow_bisection(manager):
-    """MTOW pela tabela (mínimo, nominal, máximo): lastro, LAPES e líquido juntos; xCG nos três valores"""
-    from aerosim.manager.simulations.mission import mtow_rows
+    """tabela antiga (mínimo, nominal, máximo): lastro, LAPES e líquido juntos; xCG nos três valores"""
+    from aerosim.manager.simulations.mission import ROWS, mtow_rows
     ac = TEMPLATES["conventional"]()
     ac.ballast.enabled, ac.ballast.mass, ac.ballast.x = True, 0.3, 0.3
-    rows = mtow_rows(ac)
-    assert [r["item"] for r in rows] == ["Lastro (kg)", "LAPES (kg)", "Líquido (L)", "xCG (m)"]
-    rows[1].update(min=2.0, max=4.0)                         # LAPES de 2 a 4 kg
-    rows[2].update(min=1.0, max=2.0)                         # líquido de 1 a 2 L
-    x = rows[3]["nom"]
-    rows[3].update(min=x, max=x)                             # xCG fixo
+    x = mtow_rows(ac)[-1]["nom"]
+    rows = [dict(item=ROWS["bal"], min=0.3, nom=0.3, max=0.3), dict(item=ROWS["pay"], min=2.0, nom=2.0, max=4.0),
+            dict(item=ROWS["liq"], min=1.0, nom=1.0, max=2.0),   # LAPES de 2 a 4 kg, líquido de 1 a 2 L
+            dict(item=ROWS["xcg"], min=x, nom=x, max=x)]           # xCG fixo
     r = manager.run("mission", ac, {"mode": MODES[3], "masses": rows})
     mt = r.summary["MTOW (kg)"]
     pay, liq = r.summary["MTOW: LAPES (kg)"], r.summary["MTOW: Líquido (L)"]

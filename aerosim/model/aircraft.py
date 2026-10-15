@@ -344,7 +344,8 @@ class SloshTank:
 @dataclass
 class Payload:
     enabled: bool = False
-    mass: float = 2.0
+    mass: float = 2.0          # massa total da carga (kg); 0 = ainda não definida (a lista de verificação avisa)
+    count: int = 1             # quantas cargas na baia (a massa é o total; o núcleo solta todas juntas)
     x: float = -0.05
     y: float = 0.0
     z: float = 0.08

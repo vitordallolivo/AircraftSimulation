@@ -44,3 +44,21 @@ def desempenho_xlsx(tmp_path):
 @pytest.fixture
 def mapping_path():
     return os.path.join(ROOT, "data", "mappings", "dados_desempenho.json")
+
+
+@pytest.fixture(autouse=True)
+def _save_check_accepts(monkeypatch):
+    """a pergunta 'salvar mesmo assim?' (lista de verificação) responde sim nos testes; quem quiser testar a
+    resposta troca `confirm_save` de novo. As chamadas ficam em `calls`"""
+    calls = []
+    try:
+        from aerosim.gui.widgets import save_check
+    except Exception:                       # sem PyQt
+        yield calls
+        return
+
+    def fake(parent, ac, project=None):
+        calls.append((ac.name, save_check.ck.aircraft_checklist(ac, project)))
+        return True
+    monkeypatch.setattr(save_check, "confirm_save", fake)
+    yield calls

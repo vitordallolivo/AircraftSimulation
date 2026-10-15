@@ -81,16 +81,20 @@ def test_v_tail_keeps_total_area_and_flying_wing_has_no_tail():
 def test_assembly_puts_cg_on_target_and_flies_in_the_core(manager, tmp_path):
     from aerosim.data import load_aircraft, save_aircraft
     from aerosim.model.massprops import dry_mass
-    req = Requirements()
+    req = Requirements(mass=8.0)                       # massa de projeto (a CP estimada é o que passa do PV)
     cand = pw.AircraftCandidate(pw.PowerParams(), tl.SetCandidate(tl.TailParams(), _wing(area=1.0)))
     ac, asm = pw.assemble(cand, req)
     dm = dry_mass(ac)
     assert asm["battery_fits"] and dm["cg"][0] == pytest.approx(asm["x_cg_target"], abs=1e-6)
-    pp = cand.params                                   # o núcleo soma líquido e LAPES à massa seca
-    assert dm["m"] + pp.liquid + pp.lapes == pytest.approx(asm["mass"]) and asm["sm"] == pytest.approx(12.0)
-    assert asm["payload"] == pytest.approx(pp.ballast + pp.liquid + pp.lapes)
+    pp = cand.params
+    # a sprint só diz se tem LAPES e líquido: o avião sai com eles no CG e sem kg (a Montagem decide); as contas
+    # usam a massa de projeto (massa estimada) e a CP estimada é o que passa do PV
+    assert dm["m"] == pytest.approx(asm["empty"]) and asm["mass"] == pytest.approx(req.mass)
+    assert asm["payload"] == pytest.approx(req.mass - asm["empty"]) and asm["sm"] == pytest.approx(12.0)
     assert asm["empty"] + asm["payload"] == pytest.approx(sum(r[2] for r in asm["mass_table"]))
-    assert ac.ballast.mass == pp.ballast and ac.tanks[0].volume == pp.liquid and ac.payload.mass == pp.lapes
+    assert pp.lapes and pp.liquid and ac.payload.enabled and ac.payload.mass == 0.0 and ac.payload.count == pp.n_lapes
+    assert len(ac.tanks) == pp.n_tanks and all(t.volume == 0.0 for t in ac.tanks) and not ac.ballast.enabled
+    assert all(t.x == pytest.approx(asm["x_cg_target"]) for t in ac.tanks) and ac.payload.x == pytest.approx(asm["x_cg_target"])
     assert ac.gear.main_x < asm["x_cg_target"] < ac.gear.steer_x       # triciclo: principal atrás do CG
     f = str(tmp_path / "a.json")
     save_aircraft(ac, f)
@@ -99,6 +103,21 @@ def test_assembly_puts_cg_on_target_and_flies_in_the_core(manager, tmp_path):
     assert pf["T0"] > 0 and pf["s_to"] < req.takeoff_run and math.isfinite(pf["mtow_runway"])
     assert pf["mtow_runway"] > asm["mass"]
     assert manager.run("performance", ac2, {}).status in ("ok", "COMPLETED")
+
+
+def test_payload_options_count_and_old_files():
+    """tem LAPES / líquido e quantos; sem nenhum, nada de carga no avião; projeto antigo (kg) vira opção"""
+    from aerosim.model.serialize import from_dict
+    set_ = tl.SetCandidate(tl.TailParams(), _wing(area=1.0))
+    ac, asm = pw.assemble(pw.AircraftCandidate(pw.PowerParams(lapes=True, n_lapes=3, liquid=True, n_tanks=2), set_),
+                          Requirements())
+    assert ac.payload.count == 3 and [t.name for t in ac.tanks] == ["tanque 1", "tanque 2"]
+    assert ac.tanks[0].y == pytest.approx(-ac.tanks[1].y) and ac.tanks[0].y != 0
+    ac, _ = pw.assemble(pw.AircraftCandidate(pw.PowerParams(lapes=False, liquid=False), set_), Requirements())
+    assert not ac.payload.enabled and not ac.tanks
+    assert not any(e.kind == "drop" for e in ac.mission.events)            # sem LAPES, sem soltura
+    old = from_dict(pw.PowerParams, dict(ballast=2.0, liquid=1.0, lapes=0.0))
+    assert old.liquid is True and old.lapes is False and not hasattr(old, "ballast")
 
 
 def test_python_thrust_matches_core(manager):

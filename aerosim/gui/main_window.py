@@ -231,7 +231,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._root_label.setText(f"  pasta: {self.state.projects.root}")
 
     def save_project(self):
+        from .widgets import save_check
         st = self.state.projects
+        if not save_check.confirm_save(self, self.state.aircraft, self.state.design):   # o que falta: salvar mesmo assim?
+            return
         name, ok = QtWidgets.QInputDialog.getText(self, "Salvar avião", "Nome do avião:",
                                                   text=self.state.aircraft.name)
         name = name.strip()

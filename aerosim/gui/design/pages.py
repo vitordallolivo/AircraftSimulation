@@ -848,9 +848,10 @@ class PowerPage(StagePage):
         self.ac = None
         # distribuição de massa (PV e CP), logo abaixo do 3D
         self.mass_title = QtWidgets.QLabel("<b>Distribuição de massa</b>" + HELP_MARK)
-        self.mass_title.setToolTip("PV: peso vazio (estrutura, motores, bateria, sistemas). CP: carga paga = lastro + "
-                                   "líquido + LAPES (digite quanto de cada à esquerda), tudo no CG. MTOW pela pista − PV "
-                                   "= a carga paga que dá para levar")
+        self.mass_title.setToolTip("PV: peso vazio (estrutura, motores, bateria, sistemas). CP estimada = massa de projeto "
+                                   "(Condições) − PV, no CG. Aqui só se marca se tem LAPES e líquido (e quantos); os kg "
+                                   "de lastro, LAPES e líquido se decidem na Montagem. MTOW pela pista − PV = a carga "
+                                   "paga que dá para levar")
         self.mass = QtWidgets.QTableWidget(0, 5)
         self.mass.setHorizontalHeaderLabels(["grupo", "item", "massa (kg)", "x (m)", "% do total"])
         self.mass.verticalHeader().setVisible(False)
@@ -949,6 +950,11 @@ def send_to_assembly(state: AppState, ac, widget, go: str = "montagem") -> bool:
     if hasattr(widget, "msg"):
         widget.msg.setText(f"{ac.name}: {why}" if ok else
                            f"⚠ {ac.name} foi sem a decolagem ajustada: {why}. Ajuste na aba Decolagem/Missão.")
+    from ..widgets import save_check
+    if not save_check.confirm_save(widget, ac, state.design):     # o que falta definir: salvar mesmo assim?
+        if hasattr(widget, "msg"):
+            widget.msg.setText(f"{ac.name}: não foi salvo (voltou para corrigir)")
+        return False
     st = state.projects
     name = ac.name
     k = 2

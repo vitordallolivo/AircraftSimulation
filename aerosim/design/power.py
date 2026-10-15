@@ -48,10 +48,12 @@ class PowerParams:
                        "mínimo para a hélice livrar a fuselagem", 0, 1.5, 0.01)
     wing_motors: int = F(2, "motores na asa", "", "arranjo na asa: aos pares, espalhados na envergadura (uma hélice "
                          "+ 5 cm de folga entre eles)", 2, 8, 2)
-    ballast: float = F(2.0, "carga paga: lastro", "kg", "massa sólida no CG", 0, 40, 0.05)
-    liquid: float = F(1.0, "carga paga: líquido", "L", "água (1 kg/L) num tanque no CG — mexe na curva (sloshing)", 0, 20,
-                      0.05)
-    lapes: float = F(1.0, "carga paga: LAPES", "kg", "carga lançada pela baia, no CG", 0, 20, 0.05)
+    lapes: bool = F(True, "tem LAPES", "", "carga lançada pela baia, no CG. Só diz se tem: os kg se decidem na "
+                    "Montagem (o Desempenho varre a massa total)")
+    n_lapes: int = F(1, "quantas cargas LAPES", "", "na mesma baia; a massa (o total) se define na Montagem", 1, 6, 1)
+    liquid: bool = F(True, "tem carga líquida", "", "água em tanque(s) no CG — mexe na curva (sloshing). Os litros se "
+                     "decidem na Montagem")
+    n_tanks: int = F(1, "quantos tanques", "", "lado a lado no CG", 1, 4, 1)
     gear: str = F("triciclo", "trem", "", "triciclo: bequilha no nariz; convencional: bequilha na cauda", choices=GEARS)
 
 
@@ -107,7 +109,7 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     ac.payload.enabled = False
     from aerosim.model.mission import short_circuit
     ac.mission = short_circuit(Vc=req.V_cruise, VL=0.92 * req.V_cruise, Vap=0.88 * req.V_cruise)   # missão curta
-    if pp.lapes <= 0:
+    if not pp.lapes:
         ac.mission.events = [e for e in ac.mission.events if e.kind != "drop"]
     ac.environment.set_density_altitude(req.density_altitude)
     ac.performance.alpha_cruise = cand.set.wing.params.alpha_cruise
@@ -170,11 +172,13 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
         items.append(PointMass(f"{u.name}: motor", u.motor.mass, u.x + k * 0.06, u.y, u.z))
         items.append(PointMass(f"{u.name}: hélice", u.propeller.mass, u.x, u.y, u.z))
     items.append(PointMass("sistemas", rules.systems_mass, 0.5 * x_nose, 0.0, 0.0))
-    # carga paga: lastro + líquido + LAPES, tudo no CG (soltar ou gastar não mexe no equilíbrio)
-    cp = [("lastro", pp.ballast), ("líquido", pp.liquid * 1.0), ("LAPES", pp.lapes)]
-    m_cp = sum(m for _, m in cp)
+    # carga paga: aqui só se diz se tem LAPES e líquido (e quantos). As contas da sprint usam a massa de projeto
+    # (Condições: massa estimada); a diferença para o PV é a CP estimada, no CG (soltar ou gastar não mexe no
+    # equilíbrio). Os kg de cada coisa (lastro, LAPES, líquido) se decidem na Montagem.
     m_bat = sum(u.battery.mass for u in units)
-    M = m_s + sum(i.mass for i in items) + m_bat + m_cp
+    m_pv = m_s + sum(i.mass for i in items) + m_bat
+    m_cp = max(req.mass - m_pv, 0.0)
+    M = m_pv + m_cp
     Mx = m_s * xs + sum(i.mass * i.x for i in items) + m_cp * x_t
     x_bat = (M * x_t - Mx) / m_bat if m_bat > 0 else x_t
     lo, hi = x_nose - length + 0.08, x_nose - 0.12
@@ -189,13 +193,14 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
             items.append(PointMass("lastro de equilíbrio", float(mb), float(xb), 0.0, 0.0))
             m_eq = float(mb)
             M += mb
-    ac.ballast = Ballast(enabled=pp.ballast > 0, mass=pp.ballast, x=x_t, y=0.0, z=0.0)
-    if pp.liquid > 0:
-        side = 0.12
-        ac.tanks = [SloshTank("tanque", x_t, 0.0, 0.03, side=side, volume=pp.liquid,
-                              height=max(1.15 * pp.liquid / 1000 / (side * side), 0.04))]
-    if pp.lapes > 0:
-        ac.payload = Payload(enabled=True, mass=pp.lapes, x=x_t, y=0.0, z=0.06)
+    ac.ballast = Ballast(enabled=False, mass=0.0, x=x_t, y=0.0, z=0.0)         # no CG; os kg, na Montagem
+    if pp.liquid:
+        side, n = 0.12, max(int(pp.n_tanks), 1)
+        ys = [(k - (n - 1) / 2) * (side + 0.01) for k in range(n)]
+        ac.tanks = [SloshTank(f"tanque {k + 1}" if n > 1 else "tanque", x_t, y, 0.03, side=side, volume=0.0, height=0.08)
+                    for k, y in enumerate(ys)]
+    if pp.lapes:
+        ac.payload = Payload(enabled=True, mass=0.0, count=max(int(pp.n_lapes), 1), x=x_t, y=0.0, z=0.06)
     ac.mass = MassModel(base_mass=m_s, base_cg=[xs, 0.0, zs], Ixx=I[0], Iyy=I[1], Izz=I[2], Ixz=0.0, items=items,
                         include_propulsion=False, include_structure=False)
     # ---- trem
@@ -220,8 +225,9 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     trim = thrust_trim(ac, st, wr, req, rules, x_t, info, M, cand.set.params)
     xs_all = [x_nose] + [u.x for u in units] + [s_.x - s_.sections[0].chord for s_ in ac.surfaces]
     total_len = max(xs_all) - min(xs_all + ([ac.boom.x_end] if ac.boom.enabled else []))
+    what = ", ".join(x for x, on in (("LAPES", pp.lapes), ("líquido", pp.liquid)) if on) or "lastro"
     table = [("PV", n, m, x) for n, m, x, _ in pf_mass] + [("PV", i.name, i.mass, i.x) for i in items] + \
-        [("CP", n, m, x_t) for n, m in cp if m > 0]
+        ([("CP", f"estimada = massa de projeto − PV ({what}: os kg na Montagem)", m_cp, x_t)] if m_cp > 0 else [])
     out = dict(set=st, x_cg_target=x_t, h_n=h_n, sm=100 * (h_n - h_t), mass=M, empty=M - m_cp, payload=m_cp,
                mass_table=table, x_bat=x_bat, x_bat_used=x_bat_c, battery_fits=abs(x_bat_c - x_bat) < 1e-6, ballast=m_eq,
                length=total_len, structure=m_s, masses=pf_mass, items=items, Vs=Vs, D=D,
@@ -483,7 +489,7 @@ def design_point(cand: AircraftCandidate, req: Requirements, rules: DesignRules 
                  tol: float = 0.02) -> dict:
     """ponto de projeto ACOPLADO (retroalimentação entre as áreas, não em ordem):
         massa de projeto m → asa calada para o cruzeiro com m, EH retrimada com a tração, CG pela bateria,
-        carga paga completada até m (o lastro, no CG) → desempenho → MTOW → m ← MTOW ... até convergir.
+        carga paga estimada = m − PV (no CG) → desempenho → MTOW → m ← MTOW ... até convergir.
     No ponto convergido o avião é dimensionado para voar com a massa que a pista deixa levar, e a
     estabilidade (trim, rotação, trim de decolagem) é verificada nessa massa."""
     rules = rules or DesignRules()
@@ -494,10 +500,8 @@ def design_point(cand: AircraftCandidate, req: Requirements, rules: DesignRules 
         rq = copy.deepcopy(req)
         rq.mass = m
         c = copy.deepcopy(cand)
-        ac, asm = assemble(c, rq, rules, catalog, airfoils)
-        fixed = asm["mass"] - c.params.ballast                 # tudo menos o lastro da carga paga
-        c.params.ballast = max(m - fixed, 0.0)
-        ac, asm = assemble(c, rq, rules, catalog, airfoils)
+        ac, asm = assemble(c, rq, rules, catalog, airfoils)    # a massa de projeto é m (o que passa do PV é a CP)
+        fixed = asm["empty"]
         pf = performance(ac, asm, rq, backend)
         mt = pf["mtow_runway"]
         hist.append((m, mt))

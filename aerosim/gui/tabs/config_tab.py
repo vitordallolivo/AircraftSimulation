@@ -29,7 +29,7 @@ from ..widgets.view3d import AircraftView
 # explicação de cada editor: ⓘ no título (passe o mouse)
 EDIT_HELP = {
     "ballast": "massa sólida presa na aeronave para acertar o CG; entra na massa, no CG e nas inércias. "
-               "Arraste no 3D para mover. Na Missão → MTOW a massa dele varia junto com a LAPES e o líquido",
+               "Arraste no 3D para mover. Na Missão → MTOW a massa total do avião é que varia (o que passa da montada vai no CG)",
     "takeoff": "na corrida o acelerador vai a cheio; no ponto de acionamento o profundor (ou elevon) vai para a "
                "deflexão de decolagem até o piloto automático assumir. A Missão otimiza esse ponto",
     "airfield": "a aeronave parte de n = 0 rumo ao norte. x_warning: tem de decolar antes desta distância; "

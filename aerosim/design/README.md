@@ -191,8 +191,12 @@ A montagem segue esta ordem:
 2. **Massas.** A **tabela de distribuição de massa** mostra cada item com x e % do total.
    - **PV** (peso vazio): a estrutura (estimada por área e por comprimento, das regras), os motores, as hélices,
      a bateria e os sistemas.
-   - **CP** (carga paga) = lastro + líquido + LAPES. Você digita quanto de cada, e tudo vai no CG. No avião
-     montado vira o lastro, o tanque (com sloshing) e a carga LAPES, os mesmos que o MTOW da aba Missão varia.
+   - **CP** (carga paga): aqui só se marca **se tem LAPES** (e quantas cargas) e **se tem líquido** (e quantos
+     tanques). As contas da sprint usam a massa de projeto (Condições: massa estimada), e a CP estimada é a
+     diferença para o PV, no CG. O avião vai para a Montagem com a LAPES e os tanques no CG **sem kg**: o
+     Desempenho (Missão, modo MTOW) varre só a **massa total**, e na Montagem se decide quanto é lastro, LAPES e
+     líquido. Ao salvar, a **lista de verificação** (`checklist.py`) mostra o que falta definir — e também os
+     requisitos e as restrições ativas do projeto — e pergunta se quer salvar mesmo assim.
    - A bateria vai onde o CG cai no alvo. Se ela não couber na fuselagem, entra **lastro de equilíbrio**, que
      conta no PV, e o diagnóstico avisa.
    - Com o MTOW pela pista, a **CP possível = MTOW − PV**.

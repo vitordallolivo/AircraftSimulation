@@ -420,3 +420,37 @@ def test_repo_sample_project_saves_outside_data(app, manager, tmp_path):
     assert "asa S1223.json" in os.listdir(st.design_dir)
     assert sorted(os.listdir(os.path.dirname(sample))) == before
     w.close()
+
+
+def test_save_checklist_dialog_and_refusal(app, manager, tmp_path):
+    """antes de salvar: a lista (caixas só de leitura) e 'salvar mesmo assim?'; recusar não salva nem abre"""
+    from PyQt6 import QtCore
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.design import checklist as ck
+    from aerosim.gui.design import pages
+    from aerosim.gui.state import AppState
+    from aerosim.gui.widgets import save_check
+    from aerosim.model.templates import conventional, empty
+    ac = conventional()
+    ac.payload.enabled, ac.payload.mass = True, 0.0
+    checks = ck.aircraft_checklist(ac, None)
+    dlg = save_check.SaveCheckDialog(ac, checks)
+    g = dlg.tree.topLevelItem(0)
+    states = {g.child(i).text(0)[2:]: g.child(i).checkState(0) for i in range(g.childCount())}
+    assert states["LAPES: massa"] == QtCore.Qt.CheckState.Unchecked and states["asa"] == QtCore.Qt.CheckState.Checked
+    assert not (g.child(0).flags() & QtCore.Qt.ItemFlag.ItemIsUserCheckable)       # só leitura
+    assert dlg.only.isChecked()                                                    # abre mostrando as pendências
+    hidden = [g.child(i).isHidden() for i in range(g.childCount())]
+    assert any(hidden) and not all(hidden)
+    dlg.save_b.click()
+    assert dlg.result() == 1
+    st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)))
+    n = len(st.fleet)
+    real = save_check.confirm_save
+    save_check.confirm_save = lambda parent, a, project=None: False
+    try:
+        w = QtWidgets.QWidget()
+        assert pages.send_to_assembly(st, ac, w) is False
+    finally:
+        save_check.confirm_save = real
+    assert len(st.fleet) == n and not st.projects.exists(ac.name)              # recusou: nada salvo nem aberto
