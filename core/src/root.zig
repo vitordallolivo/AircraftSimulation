@@ -99,6 +99,29 @@ export fn aerosim_aero_coeffs_thrust(slot: i32, V: f64, alpha: f64, beta: f64, d
     return 0;
 }
 
+/// estado do motor `idx` com o avião a V, α, β (sem rotação): rotação `rps` imposta (> 0) ou, se ≤ 0, a de
+/// equilíbrio com o acelerador `thr`. Tração e torque pela hélice (C_T(J), C_P(J)) com o ar no eixo do motor.
+/// Com a rotação imposta só a hélice conta: corrente e potência elétrica saem zeradas (o motor não está em
+/// equilíbrio). No polinômio de tração a rotação não entra (T do polinômio, Q = 0).
+export fn aerosim_prop_state(slot: i32, idx: i32, V: f64, alpha: f64, beta: f64, rps: f64, thr: f64, out: *T.PropPoint) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    if (idx < 0 or idx >= inst.p.n_prop) return E_BAD_INDEX;
+    const u = &inst.p.prop[@intCast(idx)];
+    const a = fm.sincos(alpha);
+    const b = fm.sincos(beta);
+    const Vr = vec.V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
+    const eT = prop.axis(&inst.p, u);
+    const imposed = rps > 0;
+    const n = if (imposed) rps else prop.equilibriumRps(&inst.p, u, Vr, thr);
+    const r = prop.unit(&inst.p, u, eT, Vr, vec.zero, n, if (imposed) 1.0 else thr, 0);
+    const Vax = vec.dot(Vr, eT);
+    const Ps = r.Q * 2.0 * fm.pi * n;
+    out.* = .{ .V = Vax, .rpm = n * 60.0, .J = r.J, .T = r.T, .Q = r.Q, .P_shaft = Ps,
+        .P_elec = if (imposed) 0 else r.P, .I = if (imposed) 0 else r.I,
+        .eta_prop = if (Ps > 1e-6) r.T * Vax / Ps else 0 };
+    return 0;
+}
+
 /// estado de cada painel a V, α, β (sem rotação, longe do chão), com a tração T[i] e o torque Q[i] de cada motor
 /// (n = número de motores; n = 0: sem motores). Escreve até `cap` painéis em `out`; devolve quantos há.
 export fn aerosim_panel_states(slot: i32, V: f64, alpha: f64, beta: f64, de: f64, da: f64, dr: f64, Tn: [*]const f64, Qn: [*]const f64, n: i32, out: [*]T.PanelState, cap: usize) i32 {

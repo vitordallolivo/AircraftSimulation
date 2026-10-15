@@ -68,6 +68,15 @@ def surface_panels(s: SurfaceModel) -> list[dict]:
     return out
 
 
+def panel_owners(model: AircraftModel) -> list[tuple[str, int]]:
+    """(nome da superfície do modelo universal, índice dela em model.surfaces) de cada painel do núcleo, na ordem
+    em que o tradutor os escreve"""
+    out = []
+    for k, s in enumerate(model.surfaces):
+        out += [(s.name, k)] * len(surface_panels(s))
+    return out
+
+
 class ZigTranslator(IModelTranslator):
     name = "zig"
 

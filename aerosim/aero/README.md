@@ -53,6 +53,57 @@ longo da semienvergadura no cruzeiro e no estol):
 A trapezoidal tem mais alongamento com a mesma envergadura (menos área), e o perfil simétrico na ponta
 (com washout) tira arqueamento de onde o estol seria perigoso: C_L0 e C_m,ac menores, estol mais tarde.
 
+## Carga ao longo das superfícies (`span_loads.py`)
+
+É a "análise de cargas" da aerodinâmica num ponto de operação.
+
+- **Padrão: voo nivelado a 12 m/s.** α, profundor e acelerador saem da trimagem do núcleo, então a distribuição é a
+  da carga real do avião (as superfícies sustentam o peso).
+- **Mudar a velocidade:** `V`.
+- **Curva:** `n` > 1 (fator de carga). Se o avião não segura aquele n naquela velocidade, a trimagem avisa em
+  `notes`.
+- **Impor tudo:** `alpha`, `de` e a **rotação de cada motor** (`rpm`). Para cada superfície (asa, EH, EV, cauda em V,
+dispositivos) devolve, ao longo da envergadura em metros:
+- sustentação e arrasto por metro (N/m);
+- α local, velocidade e pressão dinâmica locais;
+- C_l e C_d;
+- os **vetores** de cada faixa: centro, força, velocidade relativa e a parte dos modificadores. São o que a vista
+  3D vai desenhar.
+
+`tubes()` dá o contorno da esteira de cada motor, também para o 3D.
+
+```python
+from aerosim.aero.span_loads import LoadCase, compute
+r = compute(backend, ac)                                      # nivelado a 12 m/s (trimagem)
+r = compute(backend, ac, LoadCase(V=16, n=2))                 # curva com n = 2 a 16 m/s
+r = compute(backend, ac, LoadCase(V=8, alpha=2, rpm=6000))     # α e rotação impostos (rpm: um valor ou um por motor)
+r.alpha, r.de, r.weight, r.trim                               # o que foi usado
+asa = r.by_role("wing")[0]
+asa.s, asa.L, asa.alpha, asa.V                                # y (m), N/m, °, m/s
+asa.points, asa.force, asa.velocity, asa.induced              # (n, 3), corpo
+r.props[0].T, r.props[0].Q, r.props[0].J                      # motor naquela rotação
+```
+
+A conta é do núcleo, no mesmo laço da simulação (`aero.computeTrace` via `aerosim_panel_states`), e entra com os
+modificadores do avião (efeito solo, esteira). O estado do motor vem de `aerosim_prop_state`: hélice C_T(J), C_P(J)
+na rotação pedida, com o ar no eixo do motor.
+
+O módulo só refina a geometria para dar resolução: põe mais seções na mesma superfície (corda, recuo e torção
+interpolados, com as seções originais exatas), uma superfície por vez, até o limite de painéis do núcleo. Sem motor,
+a sustentação total refinada é a mesma da sem refino (teste). Superfícies com perfil próprio por seção e dispositivos
+de ponta saem com as faixas que já têm.
+
+A trimagem ainda não vê a esteira (ela chama a aerodinâmica sem motores). Com a esteira ligada, α e profundor são
+os do avião sem esteira e a sobra de sustentação aparece no resultado.
+
+Os testes estão em `tests/aero/test_span_loads.py`. Pela linha de comando:
+
+```
+python tools/span_load.py data/aircraft/Convencional_original.json --com esteira.disco --png carga.png   # 12 m/s
+python tools/span_load.py data/aircraft/Convencional_original.json --V 15 --n 2 --png curva.png
+python tools/span_load.py data/aircraft/Convencional_original.json --V 8 --alpha 2 --rpm 6000 --com esteira.disco
+```
+
 ## Como funciona
 
 ```mermaid

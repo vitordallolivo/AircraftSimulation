@@ -131,4 +131,4 @@ def test_span_load_tool(tmp_path):
                         "--com", "esteira.disco", "--csv", str(out), "--png", str(tmp_path / "c.png")],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
-    assert "sustentação total" in r.stdout and out.read_text().count("\n") > 20
+    assert "sustentação =" in r.stdout and "rpm" in r.stdout and out.read_text().count("\n") > 20

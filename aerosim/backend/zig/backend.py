@@ -145,6 +145,7 @@ class _Lib:
             "aerosim_sizing_name": (ctypes.c_char_p, [c_int, c_int]),
             "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
             "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
+            "aerosim_prop_state": (c_int, [c_int, c_int] + [c_double] * 5 + [ctypes.POINTER(T["PropPoint"])]),
             "aerosim_panel_states": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, c_size]),
             "aerosim_aero_coeffs_thrust": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, ctypes.POINTER(T["AeroCoeffs"])]),
         }
@@ -314,6 +315,15 @@ class ZigSession(ISimSession):
     def prop_point(self, index, V, thr=1.0):
         o = self._lib.schema.types["PropPoint"]()
         _check(self._lib.dll.aerosim_prop_point(self._slot, int(index), V, thr, ctypes.byref(o)), "prop_point")
+        return _struct_dict(o)
+
+    def prop_state(self, index, V, alpha=0.0, beta=0.0, rpm=None, thr=1.0):
+        """motor `index` com o avião a V, α, β (rad): rotação `rpm` imposta ou, sem ela, a de equilíbrio com o
+        acelerador `thr`. Devolve V (no eixo), rpm, J, T, Q, P_shaft, P_elec, I, eta_prop"""
+        o = self._lib.schema.types["PropPoint"]()
+        rps = float(rpm) / 60.0 if rpm else 0.0
+        _check(self._lib.dll.aerosim_prop_state(self._slot, int(index), V, alpha, beta, rps, thr, ctypes.byref(o)),
+               "prop_state")
         return _struct_dict(o)
 
     def mass_props(self):

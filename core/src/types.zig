@@ -336,6 +336,10 @@ pub const PanelState = extern struct {
     CD: f64 = 0,
     L: f64 = 0, // sustentação do painel (N)
     D: f64 = 0, // arrasto do painel (N)
+    F: [3]f64 = .{ 0, 0, 0 }, // força aerodinâmica do painel (corpo, N): sustentação + arrasto
+    v: [3]f64 = .{ 0, 0, 0 }, // velocidade do painel em relação ao ar, com os modificadores (corpo, m/s)
+    vind: [3]f64 = .{ 0, 0, 0 }, // parte dos modificadores (esteira...) em `v` (corpo, m/s)
+    ey: [3]f64 = .{ 0, 0, 0 }, // direção da envergadura do painel (corpo)
 };
 
 /// medidas acumuladas de uma corrida (o "relatório" de eventos)
