@@ -259,7 +259,8 @@ class PerformanceSimulation(SimulationBase):
         for k, b in enumerate(BANKS):
             R = V ** 2 / (G0 * math.tan(math.radians(b)))
             sel = R <= Rmax_plot
-            S[f"scur_{b:g}°"] = dict(R=R[sel], V=V[sel], _color=BANK_COLORS[k % len(BANK_COLORS)], _width=1.6)
+            n = 1.0 / math.cos(math.radians(b))          # curva nivelada: n = 1/cos φ
+            S[f"scur_{b:g}° (n = {n:.2f})"] = dict(R=R[sel], V=V[sel], _color=BANK_COLORS[k % len(BANK_COLORS)], _width=1.6)
         r_lo = Vman ** 2 / (G0 * math.tan(math.radians(phimax_deg)))     # φ máx. do piloto em V*
         r_hi = Vman ** 2 / (G0 * math.tan(math.radians(10.0)))           # φ = 10° em V*
         S["scur_área segura"] = dict(R=np.array([r_lo, r_hi]), V=np.array([Ve, Ve]), _fill="Vtop",
@@ -267,7 +268,7 @@ class PerformanceSimulation(SimulationBase):
         S["scur_V_min"] = dict(_hline=Vmin, _color="#7f7f7f", _width=2)
         S["scur_V_e"] = dict(_hline=Ve, _color="#9c8b00", _width=2)
         S["scur_V*"] = dict(_hline=Vman, _color="#2f5597", _width=2)
-        S[f"scur_R = {r_lo:.0f} m (φ = {phimax_deg:g}°)"] = dict(_vline=r_lo, _color=SAFE, _width=2.5)
+        S[f"scur_R = {r_lo:.0f} m (φ = {phimax_deg:g}°, n = {1 / math.cos(math.radians(phimax_deg)):.2f})"] = dict(_vline=r_lo, _color=SAFE, _width=2.5)
         S[f"scur_R = {r_hi:.0f} m (φ = 10°)"] = dict(_vline=r_hi, _color=SAFE, _width=2.5)
 
     @staticmethod

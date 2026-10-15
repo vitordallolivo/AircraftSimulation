@@ -39,3 +39,30 @@ def test_slots_are_released(backend):
     lim = backend.limits()["instances"]
     for _ in range(3 * lim):
         backend.open_session().close()
+
+
+def test_schema_hash_matches_the_core(backend):
+    """o hash FNV-1a que o núcleo calcula em comptime é o do texto que o Python recebeu"""
+    import ctypes
+    from aerosim.backend.zig import abi as zabi
+    from aerosim.backend.zig.backend import _Lib
+    lib = _Lib.get()
+    L = lib.dll
+    L.aerosim_schema_hash.restype = ctypes.c_uint64
+    assert int(L.aerosim_schema_hash()) == lib.schema.hash == zabi.fnv1a64(L.aerosim_schema())
+    assert set(zabi.REQUIRED) <= set(lib.schema.structs)
+
+
+def test_old_library_gives_a_clear_message():
+    """biblioteca de outra versão (sem uma struct que o Python usa, ou com o texto truncado): AbiMismatch dizendo
+    o que falta, não um KeyError lá na frente"""
+    import pytest
+    from aerosim.backend.zig import abi as zabi
+    from aerosim.backend.zig.backend import _Lib
+    text = _Lib.get().dll.aerosim_schema()
+    old = text.replace(b"struct SizingOut ", b"struct SizingOutVelha ")
+    with pytest.raises(zabi.AbiMismatch, match="SizingOut"):
+        zabi.check(zabi.parse(old.decode()), old, None)
+    with pytest.raises(zabi.AbiMismatch, match="corrompido"):
+        zabi.check(zabi.parse(text.decode()), text[:-10], zabi.fnv1a64(text))
+    assert zabi.fnv1a64(b"") == 0xcbf29ce484222325 and zabi.fnv1a64(b"a") == 0xaf63dc4c8601ec8c   # vetores do FNV

@@ -78,6 +78,35 @@ def from_dat(path: str) -> Airfoil:
     return Airfoil(name=name.strip() or os.path.splitext(os.path.basename(path))[0], path=path, coords=pts.tolist())
 
 
+# ------------------------------------------------------------------ biblioteca (data/airfoils)
+LIBRARY_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "airfoils"))
+_LIB: dict = {}
+
+
+def library(folder: str | None = None) -> dict[str, AirfoilEntry]:
+    """nome → candidato de cada .dat da pasta de perfis (data/airfoils): disponíveis desde o início em Asa e
+    Empenagem, sem passar pela etapa Perfil. Os NACA de 4 dígitos ficam de fora (já saem do código). Lida uma
+    vez por data da pasta; devolve cópias"""
+    d = folder or LIBRARY_DIR
+    if not os.path.isdir(d):
+        return {}
+    key = (d, os.path.getmtime(d), tuple(sorted(os.listdir(d))))
+    if _LIB.get("key") != key:
+        out = {}
+        for f in sorted(os.listdir(d)):
+            if not f.lower().endswith(".dat"):
+                continue
+            try:
+                e = entry(from_dat(os.path.join(d, f)))
+            except Exception:
+                continue
+            if kind(Airfoil(name=e.name)) == "naca":
+                continue
+            out.setdefault(e.name, e)
+        _LIB.update(key=key, items=out)
+    return {k: copy.deepcopy(v) for k, v in _LIB["items"].items()}
+
+
 def from_naca(code: str) -> Airfoil:
     digits = "".join(ch for ch in code if ch.isdigit())
     return Airfoil(name=f"NACA {digits}")

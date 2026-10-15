@@ -86,7 +86,7 @@ def test_mtow_total_mass(manager):
     from aerosim.manager.simulations.mission import mtow_rows, total_mass
     ac = TEMPLATES["conventional"]()
     rows = mtow_rows(ac)
-    assert [r["item"] for r in rows] == ["Massa total (kg)", "xCG (m)"]
+    assert [r["item"] for r in rows] == ["Massa total (kg)", "xCG (% CMA)"]
     m0 = total_mass(ac)
     assert rows[0]["min"] == pytest.approx(m0, abs=1e-3) and rows[0]["max"] > m0
     x = rows[1]["nom"]
@@ -98,6 +98,22 @@ def test_mtow_total_mass(manager):
     ok, m = c["ok"] > 0, c["m"]
     assert m[ok].max() == pytest.approx(mt, rel=1e-3) and (m[~ok] > mt).all()
     assert ac.payload.mass == 2.0 and not ac.ballast.enabled          # o avião aberto não muda
+    assert r.summary["MTOW: xCG (% CMA)"] == pytest.approx(x, abs=1e-6)   # a tabela é em % da CMA
+
+
+def test_mtow_xcg_old_table_in_meters(manager):
+    """tabela antiga com o xCG em metros continua valendo; o resumo dá os dois"""
+    from aerosim.manager.simulations.mission import ROWS, mtow_rows, xcg_pct
+    from aerosim.model.universal import build_model
+    ac = TEMPLATES["conventional"]()
+    model = build_model(ac)
+    p = mtow_rows(ac)[1]["nom"]
+    x = model.x_at_mac(p / 100.0)
+    assert xcg_pct(model, x) == pytest.approx(p) and xcg_pct(model, model.x_at_mac(0.25)) == pytest.approx(25.0)
+    m0 = mtow_rows(ac)[0]["min"]
+    rows = [dict(item=ROWS["tot"], min=m0, nom=m0, max=m0 + 3.0), dict(item="xCG (m)", min=x, nom=x, max=x)]
+    r = manager.run("mission", ac, {"mode": MODES[3], "masses": rows})
+    assert r.summary["MTOW: xCG (m)"] == pytest.approx(x) and r.summary["MTOW: xCG (% CMA)"] == pytest.approx(p)
 
 
 def test_mtow_bisection(manager):
@@ -108,14 +124,14 @@ def test_mtow_bisection(manager):
     x = mtow_rows(ac)[-1]["nom"]
     rows = [dict(item=ROWS["bal"], min=0.3, nom=0.3, max=0.3), dict(item=ROWS["pay"], min=2.0, nom=2.0, max=4.0),
             dict(item=ROWS["liq"], min=1.0, nom=1.0, max=2.0),   # LAPES de 2 a 4 kg, líquido de 1 a 2 L
-            dict(item=ROWS["xcg"], min=x, nom=x, max=x)]           # xCG fixo
+            dict(item=ROWS["xcg"], min=x, nom=x, max=x)]           # xCG fixo (% CMA)
     r = manager.run("mission", ac, {"mode": MODES[3], "masses": rows})
     mt = r.summary["MTOW (kg)"]
     pay, liq = r.summary["MTOW: LAPES (kg)"], r.summary["MTOW: Líquido (L)"]
     assert np.isfinite(mt) and 2.0 <= pay <= 4.0 and 1.0 <= liq <= 2.0
     assert (pay - 2.0) / 2.0 == pytest.approx(liq - 1.0, abs=1e-9)     # vão juntos
     assert r.summary["MTOW: Lastro (kg)"] == pytest.approx(0.3)
-    assert r.summary["MTOW: xCG (m)"] == pytest.approx(x)
+    assert r.summary["MTOW: xCG (% CMA)"] == pytest.approx(x)
     c = r.series["mtow_casos"]
     ok, m = c["ok"] > 0, c["m"]
     assert m[ok].max() == pytest.approx(mt) and (m[~ok] > mt).all()
@@ -199,3 +215,13 @@ def test_mission_table_turn_angle_and_auto_radius(manager):
     R = r.summary[f"raio automático — {ac.mission.names()[1]}"]
     assert 3.0 < R < 80.0
     assert any(c.item.startswith("raio automático") for c in r.checks)
+
+
+def test_turns_show_load_factor(manager):
+    """curvas: raio mínimo — o fator de carga em regime de cada raio e no raio mínimo, com o n de projeto"""
+    ac = TEMPLATES["conventional"]()
+    r = manager.run("mission", ac, {"mode": MODES[2], "V_list": "15"})
+    assert any(k.startswith("cn_V = 15") for k in r.series) and any(k.startswith("cn_n de projeto") for k in r.series)
+    n = r.summary["n no R_min @ 15 m/s"]
+    assert np.isfinite(n) and n > 1.0
+    assert any(c.item == "fator de carga no raio mínimo a 15 m/s" for c in r.checks)

@@ -72,6 +72,11 @@ export fn aerosim_schema() [*:0]const u8 {
     return abi.schema.ptr;
 }
 
+/// hash (FNV-1a 64) do esquema: confere que o texto chegou inteiro e identifica a versão do layout
+export fn aerosim_schema_hash() u64 {
+    return abi.schema_hash;
+}
+
 /// reserva uma simulação (thread-safe); -1 se todas estiverem em uso
 export fn aerosim_acquire() i32 {
     for (&used, 0..) |*u, i| {

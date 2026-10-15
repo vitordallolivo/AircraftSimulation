@@ -264,7 +264,7 @@ A página tem dois modos:
   cruzeiro) nas altitudes-densidade pedidas (`Joinville=655, São José dos Campos=1320`);
 - **comparar os aviões guardados**.
 
-Ela marca o maior MTOW viável de cada altitude, confere os pontos no 6GDL (aba Missão, modo MTOW) e leva o ponto
+Ela marca o maior MTOW viável de cada altitude, confere os pontos no 6GDL (Desempenho → Missão, modo MTOW) e leva o ponto
 marcado para o rascunho da etapa certa. Ela indica, não escolhe. **Mandar o ponto selecionado para a Montagem** abre
 o avião daquela linha no ponto de projeto, como mais um avião aberto. Antes, a decolagem 6GDL (`flight.py`)
 acha o acionamento e a deflexão do profundor (e o trim de corrida, se precisar) e grava no avião, que é com o

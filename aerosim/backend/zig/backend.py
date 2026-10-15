@@ -53,6 +53,16 @@ def build(fast_math: bool = True, force: bool = False) -> str:
     return path
 
 
+def _fresh_copy(path: str) -> str:
+    """cópia da biblioteca com outro nome (para carregar a recompilada no mesmo processo)"""
+    import shutil
+    import tempfile
+    d = tempfile.mkdtemp(prefix="aerosim_lib_")
+    dst = os.path.join(d, os.path.basename(path))
+    shutil.copy2(path, dst)
+    return dst
+
+
 _ERRORS = {-1: "slot inválido", -2: "não configurado", -3: "segmento inválido", -4: "trimagem não convergiu",
            -5: "índice inválido", -10: "superfícies demais", -11: "motores demais", -12: "pontos de trem demais",
            -13: "tanques demais", -14: "segmentos demais", -15: "eventos demais", -16: "dt inválido",
@@ -80,14 +90,27 @@ class _Lib:
     def get(cls, path: str | None = None) -> "_Lib":
         with cls._lock:
             if cls._inst is None:
-                cls._inst = _Lib(path or build())
+                try:
+                    cls._inst = _Lib(path or build())
+                except abi.AbiMismatch:
+                    if path:                      # biblioteca pedida explicitamente: não recompila
+                        raise
+                    # biblioteca velha (fontes mudaram sem a data mudar): recompila e carrega uma cópia nova
+                    # (o mesmo caminho devolveria a biblioteca já carregada no processo)
+                    cls._inst = _Lib(_fresh_copy(build(force=True)))
             return cls._inst
 
     def __init__(self, path: str):
         L = self.dll = ctypes.CDLL(path)
         c_int, c_double, c_size, vp = ctypes.c_int32, ctypes.c_double, ctypes.c_size_t, ctypes.c_void_p
         L.aerosim_schema.restype = ctypes.c_char_p
-        self.schema = abi.parse(L.aerosim_schema().decode())
+        text = L.aerosim_schema()
+        self.schema = abi.parse(text.decode())
+        lib_hash = None
+        if hasattr(L, "aerosim_schema_hash"):
+            L.aerosim_schema_hash.restype = ctypes.c_uint64
+            lib_hash = int(L.aerosim_schema_hash())
+        abi.check(self.schema, text, lib_hash)
         T = self.schema.types
         sig = {
             "aerosim_abi_version": (ctypes.c_uint32, []),
@@ -121,14 +144,18 @@ class _Lib:
                                                 ctypes.POINTER(c_size), ctypes.POINTER(T["SizingOut"]), vp, vp]),
             "aerosim_sizing_name": (ctypes.c_char_p, [c_int, c_int]),
         }
+        absent = [n for n in sig if not hasattr(L, n)]
+        if absent:
+            raise abi.AbiMismatch("a biblioteca do núcleo não exporta " + ", ".join(absent) +
+                                  ": ela é de outra versão dos fontes (apague core/zig-out e rode de novo)")
         for name, (res, args) in sig.items():
             fn = getattr(L, name)
             fn.restype = res
             fn.argtypes = args
         if L.aerosim_abi_version() != self.schema.abi:
-            raise RuntimeError("versão do ABI não confere")
+            raise abi.AbiMismatch("versão do ABI não confere")
         if L.aerosim_snapshot_size() != self.schema.snapshot_size:
-            raise RuntimeError("tamanho do snapshot não confere")
+            raise abi.AbiMismatch("tamanho do snapshot não confere")
         self.log_dtype = self.schema.dtypes["LogRow"]
         self.perf_dtype = self.schema.dtypes["PerfRow"]
         self.env_dtype = self.schema.dtypes["EnvRow"]

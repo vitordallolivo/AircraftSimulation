@@ -67,6 +67,17 @@ pub const schema: [:0]const u8 = blk: {
     break :blk z[0..s.len :0];
 };
 
+/// FNV-1a de 64 bits do esquema (comptime): o Python recalcula sobre o texto que recebeu e confere
+pub const schema_hash: u64 = blk: {
+    @setEvalBranchQuota(10_000_000);
+    var h: u64 = 0xcbf29ce484222325;
+    for (schema) |c| {
+        h ^= c;
+        h *%= 0x100000001b3;
+    }
+    break :blk h;
+};
+
 test "esquema tem todas as structs" {
     inline for (exported) |Ty| {
         try std.testing.expect(std.mem.indexOf(u8, schema, "struct " ++ comptime shortName(Ty) ++ " ") != null);

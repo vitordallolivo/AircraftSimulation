@@ -1,5 +1,5 @@
 """Janela principal: uma aba por área (na ordem do projeto: dimensionamento, aerodinâmica, estabilidade,
-propulsão, desempenho, missão) e, no fim, a Montagem (onde o avião se monta e se edita peça por peça).
+desempenho — com Tração e Missão como subabas dele) e, no fim, a Montagem (onde o avião se monta e se edita peça por peça).
 Feita para caber em 1366 × 768.
 
 As áreas que têm etapas da sprint (gui/design) viram subabas: primeiro as etapas que criam o avião do
@@ -19,6 +19,8 @@ from .tabs.config_tab import ConfigTab
 from .tabs.simulation_tab import SimulationTab
 
 FILTER = "Avião ou projeto (*.cfg *.json *.xlsx)"
+# áreas que viram subabas de outra (depois de "Avião montado"): Tração e Missão ficam dentro de Desempenho
+INSIDE = {"propulsao": "desempenho", "missao": "desempenho"}
 TEMPLATE_NAMES = {"empty": "Vazio (montar do zero)", "conventional": "Convencional (original)", "flying_wing": "Asa voadora",
                   "twin_boom": "Bimotor, convencional, tubo + cauda em V"}
 
@@ -39,7 +41,12 @@ class MainWindow(QtWidgets.QMainWindow):
         sims = sorted(state.manager.simulations(),
                       key=lambda s: AREAS.index(s.area) if s.area in AREAS else len(AREAS))
         self.area_tabs: dict = {}               # área → a aba dela (a primeira simulação da área)
+        self.area_index: dict = {}              # área → subaba da análise dela (quando a área é uma subaba)
+        later = []
         for sim in sims:
+            if sim.area in INSIDE:              # vai para dentro de outra área (depois que ela existir)
+                later.append(sim)
+                continue
             stages = STAGES.get(sim.area)
             if not stages:
                 tab = SimulationTab(state, sim)
@@ -50,9 +57,19 @@ class MainWindow(QtWidgets.QMainWindow):
             sub.setDocumentMode(True)
             for title, cls in stages:
                 sub.addTab(cls(state), title)
-            sub.addTab(SimulationTab(state, sim), LAST_TAB.get(sim.area, "Avião montado"))
+            i = sub.addTab(SimulationTab(state, sim), LAST_TAB.get(sim.area, "Avião montado"))
             self.area_tabs.setdefault(sim.area, sub)
+            self.area_index.setdefault(sim.area, i)
             self.tabs.addTab(sub, sim.title)
+        for sim in later:
+            host = self.area_tabs.get(INSIDE[sim.area])
+            tab = SimulationTab(state, sim)
+            if isinstance(host, QtWidgets.QTabWidget):
+                self.area_index[sim.area] = host.addTab(tab, sim.title)
+                self.area_tabs[sim.area] = host
+            else:                               # sem a área de destino: aba própria, como antes
+                self.area_tabs.setdefault(sim.area, tab)
+                self.tabs.addTab(tab, sim.title)
         self.config = ConfigTab(state)
         self.tabs.addTab(self.config, "Montagem")
         self._menus()
@@ -121,13 +138,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.setCurrentWidget(self.config)
 
     def show_area(self, area: str):
-        """vai para a análise do avião montado de uma área (a última subaba: "Avião montado")"""
+        """vai para a análise do avião montado de uma área (a subaba "Avião montado"; Tração e Missão: a delas)"""
         w = self.area_tabs.get(area)
         if w is None:
             return
         self.tabs.setCurrentWidget(w)
         if isinstance(w, QtWidgets.QTabWidget):
-            w.setCurrentIndex(w.count() - 1)
+            w.setCurrentIndex(self.area_index.get(area, w.count() - 1))
 
     def _menus(self):
         m = self.menuBar().addMenu("&Arquivo")

@@ -81,7 +81,13 @@ class DesignProject:
 
     # ------------------------------------------------------------------ busca
     def airfoil(self, name: str) -> afm.AirfoilEntry | None:
-        return next((a for a in self.airfoils if a.name == name), None)
+        """o candidato da etapa Perfil; senão o da biblioteca (data/airfoils)"""
+        a = next((a for a in self.airfoils if a.name == name), None)
+        return a if a is not None else afm.library().get(name)
+
+    def airfoil_names(self) -> tuple[str, ...]:
+        """os da etapa Perfil primeiro, depois os da biblioteca (data/airfoils)"""
+        return tuple(dict.fromkeys([a.name for a in self.airfoils] + list(afm.library())))
 
     def wing(self, name: str) -> WingCandidate | None:
         return next((w for w in self.wings if w.name == name), None)
@@ -90,8 +96,9 @@ class DesignProject:
         return next((s for s in self.sets if s.name == name), None)
 
     def airfoil_map(self) -> dict:
-        """nome → candidato da etapa Perfil (a cauda ajusta o perfil na polar dele, no Re dela)"""
-        return {a.name: a for a in self.airfoils}
+        """nome → candidato: os da biblioteca (data/airfoils) e os da etapa Perfil, que valem por cima (a cauda
+        ajusta o perfil na polar dele, no Re dela)"""
+        return {**afm.library(), **{a.name: a for a in self.airfoils}}
 
     # ------------------------------------------------------------------ guardar (mesmo nome: substitui)
     @staticmethod

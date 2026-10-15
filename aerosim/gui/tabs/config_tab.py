@@ -29,14 +29,14 @@ from ..widgets.view3d import AircraftView
 # explicação de cada editor: ⓘ no título (passe o mouse)
 EDIT_HELP = {
     "ballast": "massa sólida presa na aeronave para acertar o CG; entra na massa, no CG e nas inércias. "
-               "Arraste no 3D para mover. Na Missão → MTOW a massa total do avião é que varia (o que passa da montada vai no CG)",
+               "Arraste no 3D para mover. Em Desempenho → Missão → MTOW a massa total do avião é que varia (o que passa da montada vai no CG)",
     "takeoff": "na corrida o acelerador vai a cheio; no ponto de acionamento o profundor (ou elevon) vai para a "
                "deflexão de decolagem até o piloto automático assumir. A Missão otimiza esse ponto",
     "airfield": "a aeronave parte de n = 0 rumo ao norte. x_warning: tem de decolar antes desta distância; "
                 "z_warning: altura que conta como decolado (na mesa, ≤ 0 = quanto pode afundar)",
     "gear": "tipo: triciclo, convencional (bequilha na cauda) ou custom (pernas livres); trocar o tipo reposiciona "
             "as pernas",
-    "mission": "a trajetória (etapas) se edita na aba Missão; aqui ficam o ponto de partida e os eventos",
+    "mission": "a trajetória (etapas) se edita em Desempenho → Missão; aqui ficam o ponto de partida e os eventos",
     "payload": "carga LAPES: massa, posição, baia e paraquedas; a soltura é um evento do percurso",
     "fuselage": "ligue/desligue em 'ativo'",
     "boom": "tubo livre: início (x, y, z), comprimento, inclinação e abertura; tubo duplo = dois tubos (y = ±d). "
@@ -450,6 +450,7 @@ class ConfigTab(QtWidgets.QWidget):
             u = ac.propulsion[int(idx)]
             self.form = DataclassForm(u, exclude=("motor", "propeller", "battery"))
             v.addWidget(self.form)
+            v.addWidget(self._rotation_button(u))
             v.addWidget(self._propulsion_choice(u))
         elif kind == "tank":
             self.form = DataclassForm(ac.tanks[int(idx)])
@@ -794,6 +795,27 @@ class ConfigTab(QtWidgets.QWidget):
         v.addWidget(info)
         plot()
         return box
+
+    def _rotation_button(self, u: PropulsionUnit) -> QtWidgets.QPushButton:
+        """inverte o sentido de rotação da hélice (o torque e o efeito giroscópico trocam de lado)"""
+        b = QtWidgets.QPushButton()
+        b.setObjectName("rotation_b")
+        b.setToolTip("troca o sentido de rotação da hélice (sentido = +1 ↔ −1): o torque de reação e a esteira "
+                     "trocam de lado. Em bimotor, sentidos opostos cancelam o torque")
+
+        def label():
+            now = "horário" if u.sense >= 0 else "anti-horário"
+            b.setText(f"⟲⟳ Inverter rotação (agora: {now}, visto de trás)")
+
+        def flip():
+            u.sense = -u.sense if u.sense else -1
+            label()
+            if self.form is not None:
+                self.form.refresh()
+            self.state.notify("geometry")
+        b.clicked.connect(flip)
+        label()
+        return b
 
     def _propulsion_choice(self, u: PropulsionUnit):
         box = QtWidgets.QGroupBox("Tração")
