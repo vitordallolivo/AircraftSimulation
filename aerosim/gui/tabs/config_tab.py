@@ -115,6 +115,11 @@ class ConfigTab(QtWidgets.QWidget):
         bar.addWidget(self.lock)
         bar.addStretch(1)
         bar.addWidget(self.restore_b)
+        self.balance_b = QtWidgets.QPushButton("⚖ Acertar o CG")
+        self.balance_b.setToolTip("move a bateria (ou o lastro ligado) para o CG, com a LAPES e o líquido onde estão, "
+                                  "voltar ao CG de projeto (o da sprint)")
+        self.balance_b.clicked.connect(self.rebalance)
+        bar.addWidget(self.balance_b)
         lv.addLayout(bar)
         self.view = AircraftView()
         lv.addWidget(self.view, 1)
@@ -170,6 +175,15 @@ class ConfigTab(QtWidgets.QWidget):
         self.split.setSizes([int(0.25 * w), int(0.30 * w), int(0.45 * w)])
 
     # ------------------------------------------------------------------ restaurar
+    def rebalance(self) -> tuple[bool, str]:
+        from aerosim.design.balance import rebalance
+        ok, msg = rebalance(self.state.aircraft)
+        self.state.notify("mass")
+        win = self.window()
+        if hasattr(win, "statusBar"):
+            win.statusBar().showMessage(("✔ " if ok else "⚠ ") + msg, 10000)
+        return ok, msg
+
     def restore(self, template: str | None = None):
         if template is None:
             ac = copy.deepcopy(self.state.original)
@@ -994,6 +1008,14 @@ def info_html(backend, ac, info) -> str:
             ("lastro", f"{ac.ballast.mass:.3f} kg em x = {ac.ballast.x:.3f} m" if ac.ballast.enabled else "—"),
             ("CG (x, y, z)", f"({cg[0]:.3f}, {cg[1]:.3f}, {cg[2]:.3f}) m"),
             ("CG em % da CMA", f"{100 * model.mac_frac(cg[0]):.1f} %")]
+    if ac.payload.enabled and ac.payload.mass > 0:           # a LAPES sai na soltura: o CG anda
+        try:
+            from aerosim.design.balance import cg_after_drop
+            m2, cg2 = cg_after_drop(ac)
+            rows.append(("CG depois da soltura", f"x = {cg2[0]:.3f} m ({100 * model.mac_frac(cg2[0]):.1f} % CMA), "
+                                                 f"{m2:.3f} kg"))
+        except Exception:
+            pass
     if mp is not None and "I" in mp:
         I = np.asarray(mp["I"])
         rows.append(("Ixx, Iyy, Izz", f"{I[0, 0]:.3f}, {I[1, 1]:.3f}, {I[2, 2]:.3f} kg·m²"))

@@ -39,6 +39,7 @@ KIND = "aerosim-sprint"
 WING_KIND = "aerosim-sprint-asa"
 VERSION = 2
 SPLIT = ("wings", "sets", "aircraft")      # o que vai para os arquivos de asa
+RESULTS = "resultados"                      # <pasta>/resultados/<aba>_<avião>.json.gz: o que já rodou
 
 
 def _same(a, b) -> bool:
@@ -97,8 +98,10 @@ def _groups(p: DesignProject) -> tuple[list[_Group], dict]:
 def split(p: DesignProject) -> tuple[dict, dict[str, dict]]:
     """o projeto → (sprint.json, {arquivo da asa: conteúdo})"""
     groups, order = _groups(p)
-    main = {k: v for k, v in to_dict(p).items() if k not in SPLIT}
+    main = {k: v for k, v in to_dict(p).items() if k not in SPLIT and k != "runs"}
     main = dict(format=KIND, version=VERSION, order=order, **main)
+    main["runs"] = [{k: v for k, v in r.items() if k != "result"} | {"file": run_file(r)} for r in p.runs
+                    if "result" in r]
     files = {}
     for g in groups:
         planes = []
@@ -113,6 +116,11 @@ def split(p: DesignProject) -> tuple[dict, dict[str, dict]]:
                              superficies=[dict(params=to_dict(s.params), note=s.note) for s in g.sets],
                              avioes=planes)
     return main, files
+
+
+def run_file(r: dict) -> str:
+    sim = re.sub(r"[^\w.-]", "_", str(r.get("sim", "aba")))
+    return f"{RESULTS}/{sim}_{str(r.get('sig', ''))[:12]}.json.gz"
 
 
 def _write(path: str, data: dict) -> None:
@@ -148,6 +156,23 @@ def save(p: DesignProject, folder: str) -> list[str]:
     """grava o projeto na pasta; devolve os arquivos escritos"""
     os.makedirs(folder, exist_ok=True)
     main, files = split(p)
+    import gzip
+    rdir = os.path.join(folder, RESULTS)
+    keep = set()
+    for r in p.runs:                                 # o que já rodou: um .json.gz por aba e avião
+        if "result" not in r:
+            continue
+        f = run_file(r)
+        keep.add(os.path.basename(f))
+        os.makedirs(rdir, exist_ok=True)
+        tmp = os.path.join(folder, f) + ".tmp"
+        with gzip.open(tmp, "wt", encoding="utf-8") as fh:
+            json.dump(r["result"], fh, ensure_ascii=False)
+        os.replace(tmp, os.path.join(folder, f))
+    if os.path.isdir(rdir):                          # resultados que saíram do projeto
+        for n in os.listdir(rdir):
+            if n.endswith(".json.gz") and n not in keep:
+                os.remove(os.path.join(rdir, n))
     for n, d in files.items():
         _write(os.path.join(folder, n), d)
     for n in wing_files(folder):                     # asas que saíram do projeto
@@ -159,8 +184,9 @@ def save(p: DesignProject, folder: str) -> list[str]:
 
 def join(main: dict, files: dict[str, dict]) -> DesignProject:
     """(sprint.json, arquivos das asas) → o projeto"""
-    base = {k: v for k, v in main.items() if k not in ("format", "version", "order", *SPLIT)}
+    base = {k: v for k, v in main.items() if k not in ("format", "version", "order", "runs", *SPLIT)}
     p = from_dict(DesignProject, base)
+    p.runs = [dict(r) for r in main.get("runs", []) if isinstance(r, dict)]
     wing = {n: from_dict(WingCandidate, d["asa"]) for n, d in files.items() if "asa" in d}
     sets: dict[str, list[SetCandidate]] = {}
     planes: dict[str, list[AircraftCandidate]] = {}
@@ -206,6 +232,21 @@ def join(main: dict, files: dict[str, dict]) -> DesignProject:
     return p
 
 
+def _read_runs(p: DesignProject, folder: str) -> None:
+    """traz o resultado de cada coisa que já rodou (o que não achar fica de fora)"""
+    import gzip
+    runs = []
+    for r in p.runs:
+        f = os.path.join(folder, r.get("file") or run_file(r))
+        try:
+            with gzip.open(f, "rt", encoding="utf-8") as fh:
+                r = {k: v for k, v in r.items() if k != "file"} | {"result": json.load(fh)}
+        except (OSError, ValueError):
+            continue
+        runs.append(r)
+    p.runs = runs
+
+
 def is_folder(path: str) -> bool:
     """uma pasta de sprint (nova, com sprint.json; ou antiga, com projeto.json)"""
     return os.path.isdir(path) and (os.path.exists(os.path.join(path, MAIN)) or
@@ -217,7 +258,9 @@ def load(path: str) -> DesignProject:
     if os.path.isdir(path):
         main = _read(os.path.join(path, MAIN))
         if main is not None:
-            return join(main, wing_files(path))
+            p = join(main, wing_files(path))
+            _read_runs(p, path)
+            return p
         legacy = os.path.join(path, LEGACY)
         if os.path.exists(legacy):
             return DesignProject.load(legacy)

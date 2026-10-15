@@ -114,6 +114,45 @@ class AppState(QtCore.QObject):
         if self.ui_put is not None and project.ui:
             self.ui_put(project.ui)
 
+    # ------------------------------------------------------------------ o que já rodou (vai no projeto)
+    MAX_RUNS = 40
+
+    @staticmethod
+    def aircraft_sig(ac) -> str:
+        """identifica a configuração (o nome não conta): mudou qualquer coisa, é outro avião"""
+        import hashlib
+        import json
+        from aerosim.model.serialize import to_dict
+        def norm(v):                          # 5000 e 5000.0 são o mesmo (a ida e volta pelo .json troca)
+            if isinstance(v, bool) or v is None or isinstance(v, str):
+                return v
+            if isinstance(v, (int, float)):
+                return float(v)
+            if isinstance(v, dict):
+                return {k: norm(x) for k, x in v.items()}
+            if isinstance(v, (list, tuple)):
+                return [norm(x) for x in v]
+            return v
+        d = norm(to_dict(ac))
+        d.pop("name", None)
+        return hashlib.sha1(json.dumps(d, sort_keys=True, default=str).encode()).hexdigest()
+
+    def remember_run(self, sim: str, ac, params: dict, res, sig: str | None = None) -> None:
+        """guarda o resultado da aba `sim` para este avião (substitui o anterior da mesma aba e avião)"""
+        import datetime
+        from aerosim.interfaces.result_io import _enc, result_to_dict
+        sig = sig or self.aircraft_sig(ac)
+        e = dict(sim=sim, aircraft=ac.name, sig=sig, params=_enc(params),
+                 when=datetime.datetime.now().isoformat(timespec="seconds"), result=result_to_dict(res))
+        runs = [r for r in self.design.runs if not (r.get("sim") == sim and r.get("sig") == sig)] + [e]
+        self.design.runs = runs[-self.MAX_RUNS:]
+        self._design_save.start()            # grava sozinho (sem refazer as etapas)
+
+    def cached_run(self, sim: str, ac) -> dict | None:
+        sig = self.aircraft_sig(ac)
+        return next((r for r in reversed(self.design.runs)
+                     if r.get("sim") == sim and r.get("sig") == sig and "result" in r), None)
+
     ui_get = None          # a janela registra: () -> dict com a aba atual; (dict) -> volta para ela
     ui_put = None
 

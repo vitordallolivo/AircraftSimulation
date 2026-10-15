@@ -55,6 +55,7 @@ class DesignProject:
     mdo_runs: list[MdoRun] = field(default_factory=list)          # os resultados guardados (dados de simulação)
     fleet: list[Aircraft] = field(default_factory=list)         # os aviões abertos na Montagem (vazio: começa vazia)
     current: int = 0                                            # qual deles estava na tela
+    runs: list[dict] = field(default_factory=list)              # o que já rodou nas abas (um por aba e avião)
     ui: dict = field(default_factory=dict)                      # onde a interface estava (aba, subaba)
 
     @staticmethod

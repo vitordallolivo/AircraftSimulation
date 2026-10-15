@@ -111,3 +111,18 @@ def test_old_folder_with_projeto_json_opens_and_stays(tmp_path):
 def test_file_names_are_safe():
     assert store.file_name('asa S1223: v2/final?') == "asa S1223_ v2_final_.json"
     assert store.file_name("sprint") == "sprint (asa).json" and store.file_name("  ") == "asa.json"
+
+
+def test_runs_go_to_results_folder_and_come_back(tmp_path):
+    p = _project()
+    p.runs = [dict(sim="stability", aircraft="a", sig="abc123def4567890", params={"V": 12.0}, when="2026-01-01T10:00:00",
+                   result=dict(series={}, summary={"x": 1.0}, events={}, status="ok", checks=[], log=None))]
+    store.save(p, str(tmp_path))
+    assert os.listdir(tmp_path / "resultados") == ["stability_abc123def456.json.gz"]
+    main = json.load(open(tmp_path / "sprint.json", encoding="utf-8"))
+    assert "result" not in main["runs"][0] and main["runs"][0]["file"].endswith(".json.gz")    # só o índice
+    q = store.load(str(tmp_path))
+    assert q.runs[0]["result"]["summary"] == {"x": 1.0} and q.runs[0]["params"] == {"V": 12.0}
+    q.runs = []
+    store.save(q, str(tmp_path))
+    assert os.listdir(tmp_path / "resultados") == []                    # saiu do projeto: o arquivo some

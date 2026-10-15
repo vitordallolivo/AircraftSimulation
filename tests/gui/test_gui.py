@@ -522,3 +522,52 @@ def test_dimensions_from_design_cg_in_stages(app, manager, tmp_path):
     assert power.dims.table.rowCount() > 8
     tail.close()
     power.close()
+
+
+def test_runs_are_kept_in_the_sprint_folder_and_shown_on_open(app, manager, tmp_path):
+    """o que já rodou vai para o projeto (resultados/*.json.gz) e, ao abrir de novo, a aba mostra sem rodar"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.design import store
+    from aerosim.gui.state import AppState
+    from aerosim.gui.tabs.simulation_tab import SimulationTab
+    from aerosim.model.templates import conventional
+    folder = str(tmp_path / "sprint")
+    st = AppState(manager, conventional(), projects=JsonProjectStore(str(tmp_path)), design_dir=folder)
+    tab = SimulationTab(st, manager.get("stability"))
+    tab.start()
+    t0 = time.time()
+    while tab._thread is not None and time.time() - t0 < 120:
+        pump(app, 0.1)
+    assert tab.result is not None and len(st.design.runs) == 1
+    st.design.fleet = [st.aircraft]
+    st.save_design()
+    files = os.listdir(os.path.join(folder, "resultados"))
+    assert len(files) == 1 and files[0].startswith("stability_") and files[0].endswith(".json.gz")
+    p = store.load(folder)
+    assert len(p.runs) == 1 and "result" in p.runs[0]
+    st2 = AppState(manager, conventional(), projects=JsonProjectStore(str(tmp_path)), design_dir=folder)
+    st2.open_design(p, folder)
+    tab2 = SimulationTab(st2, manager.get("stability"))
+    assert tab2.result is not None and "guardado no projeto" in tab2.msg.text()      # sem rodar
+    assert set(tab2.result.summary) == set(tab.result.summary)
+    st2.aircraft.wing.sections[0].chord *= 1.1           # mudou o avião: o guardado não vale para ele
+    st2.changed.emit("load")
+    assert tab2.result is None
+
+
+def test_montagem_rebalance_button(app, manager, tmp_path):
+    """Montagem: 'Acertar o CG' move a bateria para o CG (com a carga) voltar ao de projeto"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.design import balance as bl
+    from aerosim.gui.state import AppState
+    from aerosim.gui.tabs.config_tab import ConfigTab
+    from aerosim.model.aircraft import PointMass
+    from aerosim.model.templates import conventional
+    ac = conventional()
+    ac.design_cg = [0.0, 0.0, 0.0]
+    ac.mass.items.append(PointMass("bateria", 0.8, 0.0, 0.0, 0.0))
+    ac.payload.x = 0.06
+    st = AppState(manager, ac, projects=JsonProjectStore(str(tmp_path)), design_dir=str(tmp_path / "sprint"))
+    tab = ConfigTab(st)
+    ok, msg = tab.rebalance()
+    assert ok and bl.full_cg(st.aircraft)[1][0] == pytest.approx(0.0, abs=1e-9)

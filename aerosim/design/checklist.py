@@ -94,10 +94,40 @@ def define_checks(ac) -> list[Check]:
             add(OK, "lastro: massa", f"{ac.ballast.mass:g} kg", "> 0")
         else:
             add(ATT, "lastro: massa", "0 kg", "> 0", "o lastro está ligado sem massa", "Montagem → Lastro")
+    out += _cg_checks(ac)
     if units and ac.takeoff.sR <= 0:
         add(ATT, "decolagem: acionamento do profundor", "não ajustado", "ajustado",
             "o avião ainda não achou quando puxar o profundor na corrida",
             "Missão (modo MTOW ou decolagem) ou 'Mandar para a Montagem' na sprint ajustam sozinhos")
+    return out
+
+
+def _cg_checks(ac) -> list[Check]:
+    """o CG com a carga em relação ao de projeto, e depois da soltura da LAPES"""
+    from .balance import cg_after_drop, full_cg, mac
+    out = []
+    try:
+        m, cg = full_cg(ac)
+        c = mac(ac)
+    except Exception:
+        return out
+    if not (c == c) or c <= 0:
+        return out
+    if ac.design_cg is not None:
+        d = (cg[0] - ac.design_cg[0]) / c * 100
+        st = OK if abs(d) <= 1.0 else ATT
+        out.append(Check(st, "CG com a carga × CG de projeto", f"{d:+.1f} % CMA", "±1 % CMA",
+                         "" if st == OK else "a carga (LAPES, líquido, lastro) tirou o CG do de projeto: a margem "
+                         f"estática muda {d:+.1f} % CMA (+ = mais estável)",
+                         "" if st == OK else "Montagem → 'Acertar o CG de projeto' (move a bateria) ou ponha a carga "
+                         "no CG de projeto", DEFINE))
+    if ac.payload.enabled and ac.payload.mass > 0:
+        _, cg2 = cg_after_drop(ac)
+        d = (cg2[0] - cg[0]) / c * 100
+        st = OK if abs(d) <= 3.0 else ATT
+        out.append(Check(st, "CG depois da soltura da LAPES", f"{d:+.1f} % CMA", "±3 % CMA",
+                         "a LAPES fora do CG faz o CG andar quando ela sai: a margem muda o mesmo tanto",
+                         "" if st == OK else "ponha a LAPES mais perto do CG de projeto", DEFINE))
     return out
 
 
