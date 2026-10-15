@@ -87,12 +87,14 @@ um `.zig` mudar). Com o `zig` 0.16 no PATH, troque `python -m ziglang` por `zig`
 
 ```sh
 python -m aerosim.gui                                              # volta ao último projeto (ou Montagem vazia)
-python -m aerosim.gui data/sprint/projeto_s1223.json               # abre um projeto e volta de onde parou
+python -m aerosim.gui ~/sprint                                     # abre a pasta da sprint (um arquivo por asa)
+python -m aerosim.gui data/sprint/projeto_s1223.json               # projeto antigo: abre e grava em <meus aviões>/sprint/
 python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avião (.json, .cfg ou .xlsx)
 ```
 
-- **Projeto `.json`** (linha de comando, **Arquivo → Abrir**, **Projeto da sprint → Abrir projeto** ou
-  arrastar o arquivo para a janela): volta de onde parou — etapas (perfis, asas, conjuntos, aviões,
+- **Projeto da sprint numa pasta** (linha de comando, **Projeto da sprint → Abrir pasta da sprint…** ou
+  arrastar a pasta para a janela): um arquivo por asa (a asa + as superfícies feitas para ela + os aviões) e
+  o `sprint.json` com o resto. Volta de onde parou — etapas (perfis, asas, conjuntos, aviões,
   estudos), os aviões abertos na Montagem e a aba em que estava; mostra o que está guardado. Sem avião
   guardado no projeto, a **Montagem começa vazia** e o avião aparece no 3D peça por peça
   (**+ Asa, + EH, + EV, + Motor, + Tubo, + Tanque**); a massa vem das peças.
@@ -123,7 +125,7 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   incidência pelo ângulo de cruzeiro) → **Empenagem e comandos** (cauda por volume, tubo, CG na margem
   pedida, faixa de CG, rotação na decolagem) → **Motores e montagem** (motores, distribuição de massa com PV
   e carga paga = lastro + líquido + LAPES, bateria no ponto do CG, trem, desempenho e o MTOW pela pista) →
-  **Mandar para a Montagem**; **Estudo e ponto de projeto** (Desempenho) acopla as áreas e varre uma variável (ex.: inclinação do motor) nas altitudes-densidade pedidas (exemplos prontos: `data/aircraft/S1223_*.json` e `data/sprint/projeto_s1223.json`). Cada etapa guarda candidatos com nome; o programa compara,
+  **Mandar para a Montagem** ou **Usar em Desempenho** (sem exigir que decole: se não decolar, vai com o aviso); **Estudo e ponto de projeto** (Desempenho) acopla as áreas e varre uma variável (ex.: inclinação do motor) nas altitudes-densidade pedidas (exemplos prontos: `data/aircraft/S1223_*.json` e `data/sprint/projeto_s1223.json`). Cada etapa guarda candidatos com nome; o programa compara,
   não escolhe. **Condições e restrições…** (em toda etapa): condições de partida (massa estimada, velocidade, AD,
   atrito), **restrições** que se ligam e desligam com operador ≤ ≥ = (envergadura, área, estol, corrida — decolar
   em 3 m é só `corrida ≤ 3` —, potência, número de superfícies e de motores, EE, massa de líquido e de LAPES,

@@ -223,7 +223,19 @@ def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypa
     assert len(st.fleet) == n + 1 and w.tabs.currentWidget() is w.config
     assert st.aircraft.name.startswith("avião 1") and st.path and os.path.exists(st.path)
     pump(app, 1.2)
-    assert os.path.exists(st.design_path)                 # o projeto da sprint se grava sozinho
+    assert os.path.exists(os.path.join(st.design_dir, "sprint.json"))   # o projeto da sprint se grava sozinho
+    asas = [n for n in os.listdir(st.design_dir) if n != "sprint.json"]
+    assert asas and all(n.endswith(".json") for n in asas)              # um arquivo por asa
+    import aerosim.design.flight as fl
+    real = fl.tune_takeoff
+    fl.tune_takeoff = lambda ac, backend: (False, "não decola na pista (teste)")
+    try:
+        motores.send(go="desempenho")                     # não decola: vai assim mesmo, com o aviso
+    finally:
+        fl.tune_takeoff = real
+    assert len(st.fleet) == n + 2 and "⚠" in motores.msg.text()
+    perf = w.area_tabs["desempenho"]
+    assert w.tabs.currentWidget() is perf and perf.currentIndex() == perf.count() - 1
 
 
 def test_open_project_resumes_where_it_stopped(app, manager, tmp_path):
@@ -245,12 +257,17 @@ def test_open_project_resumes_where_it_stopped(app, manager, tmp_path):
     p.fleet, p.current, p.ui = [empty(), twin_boom()], 1, {"tab": "Desempenho", "sub": 1}
     path = str(tmp_path / "meu_projeto.json")
     p.save(path)
+    before = open(path, "rb").read()
     w.open_path(path, quiet=True)
     pump(app)
-    assert st.names() == [a.name for a in p.fleet] and st.current == 1 and st.design_path == path
+    folder = str(tmp_path / "meu_projeto")                # o projeto antigo passa a ser gravado numa pasta ao lado
+    assert st.names() == [a.name for a in p.fleet] and st.current == 1 and st.design_dir == folder
     assert w.ui_state() == {"tab": "Desempenho", "sub": 1}
     st.save_design()                                      # grava de volta o que está na tela
-    assert DesignProject.load(path).current == 1
+    from aerosim.design import store
+    assert store.load(folder).current == 1 and open(path, "rb").read() == before
+    w.open_path(folder, quiet=True)                       # e a pasta abre do mesmo jeito
+    assert st.current == 1 and st.design_dir == folder
     empty_path = str(tmp_path / "sem_avioes.json")
     DesignProject().save(empty_path)
     w.open_path(empty_path, quiet=True)
@@ -385,3 +402,21 @@ def test_list_picker_search_and_select_all(app, manager, tmp_path):
     vt = VariablesTable(st)
     r = next(i for i, v in enumerate(st.design.variables) if v.key == "power.propeller")
     assert vt.table.cellWidget(r, 5).text().startswith("todos (")
+
+
+def test_repo_sample_project_saves_outside_data(app, manager, tmp_path):
+    """o exemplo de data/sprint abre, mas grava na pasta da sprint do usuário (nada em data/)"""
+    from aerosim.data.projects import JsonProjectStore
+    from aerosim.gui.main_window import MainWindow
+    from aerosim.gui.state import ROOT, AppState
+    from aerosim.model.templates import empty
+    sample = os.path.join(ROOT, "data", "sprint", "projeto_s1223.json")
+    before = sorted(os.listdir(os.path.dirname(sample)))
+    st = AppState(manager, empty(), projects=JsonProjectStore(str(tmp_path)))
+    w = MainWindow(st)
+    w.open_path(sample, quiet=True)
+    st.save_design()
+    assert st.design_dir == os.path.join(str(tmp_path), "sprint", "projeto_s1223")
+    assert "asa S1223.json" in os.listdir(st.design_dir)
+    assert sorted(os.listdir(os.path.dirname(sample))) == before
+    w.close()

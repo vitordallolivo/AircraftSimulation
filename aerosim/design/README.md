@@ -257,7 +257,8 @@ Ela marca o maior MTOW viável de cada altitude, confere os pontos no 6GDL (aba 
 marcado para o rascunho da etapa certa. Ela indica, não escolhe. **Mandar o ponto selecionado para a Montagem** abre
 o avião daquela linha no ponto de projeto, como mais um avião aberto. Antes, a decolagem 6GDL (`flight.py`)
 acha o acionamento e a deflexão do profundor (e o trim de corrida, se precisar) e grava no avião, que é com o
-que a Missão e o AeroDrive decolam. Se não decolar, o avião não é salvo nem aberto. Os exemplos
+que a Missão e o AeroDrive decolam. Se não decolar, o avião vai assim mesmo (com o profundor de antes) e o
+aviso fica na mensagem da etapa: decolar não é requisito para ir para a Montagem. Os exemplos
 `data/aircraft/S1223_*.json` foram feitos assim. Cada estudo rodado (com o 6GDL) fica **guardado no projeto**
 como dado de simulação: volta ao abrir o projeto, e a linha refaz o avião só quando precisa (3D, Montagem, 6GDL).
 Também dá para exportar em xlsx/csv.
@@ -295,6 +296,61 @@ As altitudes-densidade vêm de uma tarde quente típica, que eu assumi; você po
 |---|---|---|---|---|
 | Joinville | 4 m | 30 °C | 75 % | 655 m |
 | São José dos Campos | 646 m | 28 °C | 60 % | 1320 m |
+
+## Projeto numa pasta, um arquivo por asa (`store.py`)
+
+O projeto da sprint fica numa pasta que o usuário escolhe (**Projeto da sprint → Novo projeto numa pasta…**,
+**Abrir pasta da sprint…**, **Gravar em outra pasta…**). Cada asa é um arquivo, com o nome da asa: a asa é o
+projeto de sprint, e as superfícies (empenagem e comandos) são as opções dela.
+
+```text
+<pasta>/
+  sprint.json          requisitos, regras, perfis, rascunhos, estudos, mini-MDO, Montagem, aba em que estava
+  asa S1223.json       {asa, superficies: [cauda em V, convencional, ...], avioes: [...]}
+  asa SD8020.json
+```
+
+- Uma superfície guardada leva uma cópia da asa. Se a asa mudar depois, a cópia antiga vai para
+  `asa S1223 (2).json` e nada se perde. O avião que leva uma cópia antiga da superfície guarda essa cópia
+  (`superficie_copia`).
+- Um arquivo de asa copiado de outro projeto para a pasta entra no projeto ao abrir.
+- Ao gravar, os arquivos de asa que o projeto não usa mais são apagados (só os que têm a marca
+  `"format": "aerosim-sprint-asa"`).
+- O projeto antigo (um `.json` só, como `data/sprint/projeto_s1223.json`) continua abrindo, e o arquivo dele não
+  é alterado: a gravação vai para uma pasta com o nome dele, ao lado (os exemplos de `data/` gravam em
+  `<meus aviões>/sprint/<nome>/`, nunca dentro de `data/`). Uma pasta antiga com `projeto.json` abre e
+  passa a gravar no formato novo, na mesma pasta.
+
+Exemplo (converte o projeto S1223 da equipe e mostra o que foi para cada arquivo; não grava em `data/`):
+
+```sh
+python tools/sprint_pasta.py                                         # → ./sprint_s1223/
+python tools/sprint_pasta.py data/sprint/projeto_s1223.json ~/sprint # origem e destino
+```
+
+Outro exemplo: a mesma asa S1223 com três opções de superfícies num arquivo só: convencional (EH + EV + aileron,
+tubo de cauda inclinado 6° para cima), cauda em V (+ aileron) e sem cauda (elevon), com um avião para cada:
+
+```sh
+python tools/sprint_tres_caudas.py ~/sprint_tres_caudas
+```
+
+A **inclinação do tubo** (`TailParams.boom_pitch`, + ponta de trás para cima) sobe a cauda junto com a ponta do
+tubo (e a sapata de cauda); o braço da cauda continua medido na horizontal, então o tubo inclinado fica mais
+comprido.
+
+Outro exemplo: a mesma asa S1223 com três opções de superfícies num arquivo só: convencional (EH + EV + aileron,
+tubo de cauda inclinado 6° para cima), cauda em V (+ aileron) e sem cauda (elevon), com um avião para cada:
+
+```sh
+python tools/sprint_tres_caudas.py ~/sprint_tres_caudas
+```
+
+A **inclinação do tubo** (`TailParams.boom_pitch`, + ponta de trás para cima) sobe a cauda junto com a ponta do
+tubo; o braço da cauda continua medido na horizontal, então o tubo inclinado fica mais comprido.
+
+**Motores e montagem → Usar em Desempenho** abre o avião (rascunho ou guardado selecionado) e vai direto para as
+análises de Desempenho, sem passar pela Montagem.
 
 ## Condições, restrições e variáveis (`spec.py`, `registry.py`)
 

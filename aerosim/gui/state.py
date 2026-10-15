@@ -10,7 +10,8 @@ a aeronave e os valores das abas registradas em `register` (formulários e tabel
 Mudanças seguidas em menos de 0,6 s viram um passo só.
 
 O projeto da sprint (`design`: requisitos, regras, perfis, asas, conjuntos e aviões guardados nas etapas)
-também fica aqui; mudar emite `designChanged` e ele se grava sozinho em `design_path` (1 s depois).
+também fica aqui; mudar emite `designChanged` e ele se grava sozinho na pasta `design_dir` (1 s depois),
+um arquivo por asa (`aerosim.design.store`).
 """
 from __future__ import annotations
 
@@ -33,7 +34,7 @@ class AppState(QtCore.QObject):
     designChanged = QtCore.pyqtSignal(str)    # o projeto da sprint mudou (etapa que mudou)
 
     def __init__(self, manager: ISimulationManager, aircraft: Aircraft, catalog: Catalog | None = None,
-                 projects: "IProjectStore | None" = None):
+                 projects: "IProjectStore | None" = None, design_dir: str | None = None):
         super().__init__()
         self.manager = manager
         if projects is None:
@@ -66,17 +67,18 @@ class AppState(QtCore.QObject):
         self._burst.setInterval(600)
         self._burst.timeout.connect(self._settle)
         self._snap = self._capture()
-        self._init_design()
+        self._init_design(design_dir)
 
     # ------------------------------------------------------------------ projeto da sprint
-    def _init_design(self) -> None:
+    def _init_design(self, folder: str | None = None) -> None:
+        from aerosim.design import store
         from aerosim.design.project import DesignProject
         root = getattr(self.projects, "root", None) or os.path.expanduser("~")
-        self.design_path = os.path.join(root, "sprint", "projeto.json")
+        self.design_dir = folder or os.path.join(root, "sprint")    # a pasta antiga com projeto.json também abre
         self.design = DesignProject()
-        if os.path.exists(self.design_path):
+        if os.path.isdir(self.design_dir):
             try:
-                self.design = DesignProject.load(self.design_path)
+                self.design = store.load(self.design_dir)
             except Exception:
                 pass
         self._design_save = QtCore.QTimer(self)
@@ -88,17 +90,17 @@ class AppState(QtCore.QObject):
         self._design_save.start()
         self.designChanged.emit(stage)
 
-    def set_design(self, project, path: str | None = None) -> None:
+    def set_design(self, project, folder: str | None = None) -> None:
         self.design = project
-        if path:
-            self.design_path = path
+        if folder:
+            self.design_dir = folder
         self.design_edited("load")
 
-    def open_design(self, project, path: str | None = None) -> None:
+    def open_design(self, project, folder: str | None = None) -> None:
         """abre um projeto inteiro e volta de onde parou: as etapas, os aviões da Montagem (sem nenhum
         guardado, a Montagem começa vazia) e a aba em que estava"""
         from aerosim.model.templates import empty
-        self.set_design(project, path)
+        self.set_design(project, folder)
         fleet = copy.deepcopy(project.fleet) or [empty()]
         self.fleet, self.fleet_paths = fleet, [None] * len(fleet)
         self.current = min(max(project.current, 0), len(fleet) - 1)
@@ -116,13 +118,14 @@ class AppState(QtCore.QObject):
     ui_put = None
 
     def save_design(self) -> None:
+        from aerosim.design import store
         d = self.design
         d.fleet = copy.deepcopy(self.fleet)          # a Montagem e a tela também vão para o projeto
         d.current = self.current
         if self.ui_get is not None:
             d.ui = self.ui_get()
         try:
-            d.save(self.design_path)
+            store.save(d, self.design_dir)
         except Exception:
             pass
 

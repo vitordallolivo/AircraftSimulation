@@ -19,15 +19,17 @@ def main(argv: list[str] | None = None) -> int:
 
     argv = sys.argv if argv is None else argv
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(argv)
-    from aerosim.design.project import is_project_file
+    from aerosim.design.store import is_sprint_path
     ac, path = empty(), None
-    project = len(argv) > 1 and is_project_file(argv[1])
+    project = len(argv) > 1 and is_sprint_path(argv[1])
     if len(argv) > 1 and not project:
         ac, path = load_aircraft(argv[1]), argv[1]
     from PyQt6 import QtCore
     from aerosim.data.projects import JsonProjectStore, default_root
-    root = QtCore.QSettings("aerosim", "aerosim").value("projects_root", default_root())
-    state = AppState(SimulationManager(), ac, projects=JsonProjectStore(str(root)))
+    settings = QtCore.QSettings("aerosim", "aerosim")
+    root = settings.value("projects_root", default_root())
+    sprint = settings.value("sprint_dir", "") or None          # a pasta da sprint escolhida da última vez
+    state = AppState(SimulationManager(), ac, projects=JsonProjectStore(str(root)), design_dir=sprint)
     state.path = path
     win = MainWindow(state)
     if project:

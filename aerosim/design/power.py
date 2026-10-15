@@ -157,8 +157,7 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     for s_ in ac.surfaces[1:]:
         pf_mass.append((s_.name, s_.area * rules.tail_density, s_.x - 0.4 * s_.sections[0].chord, s_.z))
     if ac.boom.enabled:
-        pf_mass.append(("tubo de cauda", ac.boom.length * rules.boom_density, 0.5 * (ac.boom.x_start + ac.boom.x_end),
-                        ac.boom.z))
+        pf_mass.append(("tubo de cauda", ac.boom.length * rules.boom_density, ac.boom.middle[0], ac.boom.middle[2]))
     pf_mass.append(("fuselagem", length * rules.fuselage_density, x_nose - 0.45 * length, 0.0))
     pf_mass.append(("trem de pouso", rules.gear_mass, x_t, 0.1))
     m_s = sum(m for _, m, _, _ in pf_mass)
@@ -204,10 +203,12 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     if pp.gear == GEARS[0]:
         ac.gear = LandingGear("tricycle", main_x=x_t - rules.main_gear_aft, main_track=rules.track, main_z=gz,
                               steer_x=x_nose - 0.10, steer_z=gz, tail_skid=ac.boom.enabled,
-                              skid_x=ac.boom.x_end if ac.boom.enabled else -1.0, skid_z=0.0, mu_roll=req.mu_roll)
+                              skid_x=ac.boom.x_end if ac.boom.enabled else -1.0,
+                              skid_z=ac.boom.end[2] if ac.boom.enabled else 0.0, mu_roll=req.mu_roll)   # na ponta do tubo
     else:
         ac.gear = LandingGear("conventional", main_x=x_t + 0.10, main_track=rules.track, main_z=gz,
-                              steer_x=ac.boom.x_end if ac.boom.enabled else x_t - 0.6, steer_z=0.05, steer_k=1500,
+                              steer_x=ac.boom.x_end if ac.boom.enabled else x_t - 0.6,
+                              steer_z=(ac.boom.end[2] if ac.boom.enabled else 0.0) + 0.05, steer_k=1500,
                               steer_c=40, tail_skid=False, mu_roll=req.mu_roll)
     # ---- decolagem e piloto (o piloto ainda se calibra sozinho antes de voar)
     Vs = stall_speed(req, S, wr["CLmax"], M)

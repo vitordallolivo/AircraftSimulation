@@ -8,7 +8,7 @@ cd aerodrive && zig build run -- ../data/aircraft/Asa_voadora.json        # aero
 | pasta | conteúdo |
 |---|---|
 | `aircraft/` | aviões prontos para abrir na GUI e no aerodrive: `Convencional_original.json`, `Asa_voadora.json`, `Bimotor_convencional_tubo_cauda_em_V.json`, `Convencional_decola_da_mesa_pousa_na_plataforma.json`; e os modelos em `.cfg`/`.xlsx` (`conventional`, `flying_wing`, `twin_boom`); os doze `S1223_*.json` do estudo (abaixo) |
-| `sprint/` | `projeto_s1223.json`: o projeto da sprint montado na interface (perfis S1223, MH 113, HT 14, SD8020; asa S1223; quatro empenagens; seis aviões) — abre em **Projeto da sprint → Abrir projeto…** |
+| `sprint/` | `projeto_s1223.json`: o projeto da sprint montado na interface (perfis S1223, MH 113, HT 14, SD8020; asa S1223; quatro empenagens; seis aviões) — formato antigo (um .json só): abre em **Projeto da sprint → Abrir projeto antigo…** e passa a gravar em `<meus aviões>/sprint/projeto_s1223/`, um arquivo por asa (nada é gravado em `data/`) |
 | `airfoils/` | perfis em `.dat` (Selig): NACA, e S1223, MH 113, HT 14, SD8020 copiados sem mudança do banco de perfis do AeroSandbox; qualquer `.dat` Selig ou Lednicer funciona. Perfil invertido (EH) é uma opção da empenagem, não outro arquivo |
 | `catalog/` | `catalog.cfg` e `catalog.xlsx`: motores, hélices (J, C_T, C_P), baterias, conjuntos de tração |
 | `catalog/tracao_equipe.json` | polinômios de tração da equipe (poly55, x = n, y = V, P em kgf, T = g·(ρ/ρ0)·P), as linhas como vieram e os pendentes (o 16x4E 630kV não reproduz o T0: ajuste normalizado sem μ e σ). Todo `.json` de `catalog/` entra no catálogo da interface |

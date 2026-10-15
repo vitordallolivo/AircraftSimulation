@@ -7,7 +7,8 @@ simulação é gerada pelo que a simulação declara em `parameters()` e `plots(
 
 ```sh
 python -m aerosim.gui                          # último projeto (sem avião guardado: Montagem vazia)
-python -m aerosim.gui projeto.json             # abre o projeto e volta de onde parou
+python -m aerosim.gui ~/sprint                 # abre a pasta da sprint e volta de onde parou
+python -m aerosim.gui projeto.json             # projeto antigo (um .json só): grava numa pasta ao lado
 python -m aerosim.gui data/aircraft/twin_boom.cfg
 QT_QPA_PLATFORM=offscreen python -m pytest tests/gui   # sem tela
 xvfb-run -a python tools/capturas.py capturas/         # foto de cada aba
@@ -78,10 +79,13 @@ flowchart LR
   sempre, sobre o avião aberto). Cada etapa edita um rascunho e mostra na hora o que vai ser feito: a peça
   em 3D (asa sozinha; asa + cauda + tubo com CG e ponto neutro; o avião inteiro), gráficos e diagnóstico;
   "Guardar" cria um candidato com nome que a etapa seguinte escolhe. "Mandar para a Montagem" abre o avião
-  como mais um avião aberto e o salva em "meus aviões". Requisitos e regras ficam no botão
+  como mais um avião aberto e o salva em "meus aviões"; "Usar em Desempenho" faz o mesmo e vai para as análises
+  de Desempenho. Não decolar não impede: o avião vai com o aviso. Requisitos e regras ficam no botão
   **Condições e restrições…** de cada etapa (`ConstraintsTable`, `VariablesTable`; os valores "calculado" vêm de
-  `state.design_values`, gravado pela última etapa que rodou). O projeto (`state.design`) se grava sozinho em
-  `<meus aviões>/sprint/projeto.json`; menu **Projeto da sprint** para novo, abrir e salvar como.
+  `state.design_values`, gravado pela última etapa que rodou). O projeto (`state.design`) se grava sozinho na pasta
+  `state.design_dir` (padrão `<meus aviões>/sprint/`; a escolhida fica lembrada), **um arquivo por asa**
+  (`aerosim/design/store.py`); menu **Projeto da sprint** para novo numa pasta, abrir pasta, abrir projeto antigo
+  ou arquivo de asa, gravar em outra pasta e mostrar a pasta.
   Em Motores e montagem, embaixo do 3D, a **distribuição de massa**: cada item com x e % do total, PV (vazio)
   e CP (carga paga = lastro + líquido + LAPES, digitados), e a CP possível pelo MTOW da pista.
   **Estudo e ponto de projeto** (Desempenho): roda o estudo numa `QThread` (ponto de projeto acoplado por valor ×

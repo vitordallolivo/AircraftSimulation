@@ -825,7 +825,9 @@ class PowerPage(StagePage):
     title = "Motores e montagem"
     help = ("Onde ficam os motores, e com isso a bateria (posta onde o CG cai na margem), a carga paga (no CG), a "
             "fuselagem e o trem. Mostra o desempenho rápido do avião montado e a massa máxima que a pista permite. "
-            "'Mandar para a Montagem' abre o avião como mais um avião aberto e o salva em 'meus aviões'.")
+            "'Mandar para a Montagem' abre o avião como mais um avião aberto e o salva em 'meus aviões'; "
+            "'Usar em Desempenho' faz o mesmo e vai direto para as análises de Desempenho. A decolagem 6GDL só ajusta "
+            "o profundor: se o avião não decolar, ele vai assim mesmo, com o aviso.")
     keep_label = "Guardar avião"
 
     def __init__(self, state, parent=None):
@@ -834,7 +836,15 @@ class PowerPage(StagePage):
         self.send_b.setToolTip("abre o avião do rascunho (ou o guardado selecionado) como novo avião e salva em "
                                "'meus aviões'")
         self.send_b.clicked.connect(self.send)
-        self.actions.addWidget(self.send_b)
+        self.perf_b = QtWidgets.QPushButton("Usar em Desempenho →")
+        self.perf_b.setToolTip("abre o avião do rascunho (ou o guardado selecionado) e vai para as análises de "
+                               "Desempenho (decolagem, envelope, subida...)")
+        self.perf_b.clicked.connect(lambda: self.send(go="desempenho"))
+        send_row = QtWidgets.QHBoxLayout()            # numa linha só deles: na tela de 1366 px não cabem com "Guardar"
+        send_row.addWidget(self.send_b)
+        send_row.addWidget(self.perf_b)
+        at = next(i for i in range(self.left.count()) if self.left.itemAt(i).layout() is self.actions)
+        self.left.insertLayout(at + 1, send_row)
         self.ac = None
         # distribuição de massa (PV e CP), logo abaixo do 3D
         self.mass_title = QtWidgets.QLabel("<b>Distribuição de massa</b>" + HELP_MARK)
@@ -912,7 +922,7 @@ class PowerPage(StagePage):
         c = self.state.design.keep_aircraft()
         return None if c is None else c.name
 
-    def send(self):
+    def send(self, go: str = "montagem"):
         from aerosim.design import power as pw
         d = self.state.design
         it = self._sel() if self.kept.hasFocus() or self.kept.currentRow() >= 0 else None
@@ -920,24 +930,25 @@ class PowerPage(StagePage):
         if cand is None:
             return
         ac, _ = pw.assemble(cand, d.requirements, d.rules, self.state.catalog, d.airfoil_map())
-        send_to_assembly(self.state, ac, self)
+        send_to_assembly(self.state, ac, self, go)
 
 
-def send_to_assembly(state: AppState, ac, widget) -> bool:
-    """o avião vira mais um avião aberto (Montagem) e fica salvo em 'meus aviões' (nome livre: acrescenta (2)...)
-    — só se voar: antes, a decolagem 6GDL acha e grava no avião o acionamento do profundor; se não decolar,
-    nada é salvo nem aberto"""
+def send_to_assembly(state: AppState, ac, widget, go: str = "montagem") -> bool:
+    """o avião vira mais um avião aberto e fica salvo em 'meus aviões' (nome livre: acrescenta (2)...); a janela
+    vai para a Montagem (go="montagem") ou para as análises de Desempenho (go="desempenho").
+    Antes, a decolagem 6GDL tenta achar e gravar no avião o acionamento do profundor; se não decolar, o avião vai
+    assim mesmo (com o profundor de antes) e o aviso fica na mensagem da etapa"""
     from aerosim.design.flight import tune_takeoff
     QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
     try:
         ok, why = tune_takeoff(ac, state.manager.backend)
+    except Exception as ex:
+        ok, why = False, f"a decolagem não rodou ({ex})"
     finally:
         QtWidgets.QApplication.restoreOverrideCursor()
-    if not ok:
-        QtWidgets.QMessageBox.warning(widget, "Não foi para a Montagem", f"'{ac.name}' {why}. Não foi salvo.")
-        return False
     if hasattr(widget, "msg"):
-        widget.msg.setText(f"{ac.name}: {why}")
+        widget.msg.setText(f"{ac.name}: {why}" if ok else
+                           f"⚠ {ac.name} foi sem a decolagem ajustada: {why}. Ajuste na aba Decolagem/Missão.")
     st = state.projects
     name = ac.name
     k = 2
@@ -952,7 +963,9 @@ def send_to_assembly(state: AppState, ac, widget) -> bool:
         QtWidgets.QMessageBox.warning(widget, "Salvar", f"não salvei em 'meus aviões': {ex}")
     state.add(ac, path)
     win = widget.window()
-    if hasattr(win, "show_assembly"):
+    if go == "desempenho" and hasattr(win, "show_area"):
+        win.show_area("desempenho")
+    elif hasattr(win, "show_assembly"):
         win.show_assembly()
     return True
 

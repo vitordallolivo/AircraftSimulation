@@ -62,6 +62,9 @@ class TailParams:
     sm_min: float = F(5.0, "margem estática mínima", "% CMA", "limite traseiro do CG", 0, 20, 0.5)
     tail_eta: float = F(0.9, "η da cauda", "", "pressão dinâmica na cauda / a do voo livre", 0.5, 1.0, 0.01)
     boom_diameter: float = F(0.025, "diâmetro do tubo", "m", "", 0.005, 0.1, 0.001)
+    boom_pitch: float = F(0.0, "inclinação do tubo", "°", "+ ponta de trás para cima: a cauda sobe (sai da esteira da "
+                          "asa) e o tubo livra o chão na rotação; o braço da cauda continua medido na horizontal",
+                          -10, 20, 0.5)
 
 
 @dataclass
@@ -171,8 +174,9 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
     main.x = x_ac_t + cr / 4                    # c/4 reta: o CA fica a c_r/4 do bordo de ataque da raiz
     x_end = main.x - cr                          # o tubo acaba no bordo de fuga da cauda
     x_start = w.x - 0.25 * w.sections[0].chord
-    ac.booms = [TailBoom(name="tubo de cauda", x_start=x_start, length=max(x_start - x_end, 0.05),
-                         diameter=tp.boom_diameter)]
+    reach = max(x_start - x_end, 0.05)               # o braço é horizontal: inclinado, o tubo fica mais comprido
+    ac.booms = [TailBoom(name="tubo de cauda", x_start=x_start, length=reach / math.cos(math.radians(tp.boom_pitch)),
+                         diameter=tp.boom_diameter, pitch=tp.boom_pitch)]
     for t in tails:
         t.mount = "tubo:0"
     ac.surfaces += tails
