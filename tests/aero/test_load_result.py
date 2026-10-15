@@ -121,3 +121,24 @@ def test_lift_vectors_are_perpendicular_to_the_local_wind(backend):
     vp = v - np.sum(v * ey, axis=1)[:, None] * ey
     assert np.allclose(np.sum(lift * vp, axis=1), 0, atol=1e-9)
     assert np.allclose(np.sum(normal * ex, axis=1), 0, atol=1e-9) and np.allclose(np.sum(normal * ey, axis=1), 0, atol=1e-9)
+
+
+def test_force_arrows_are_per_meter_of_span(backend):
+    """a seta é a força por metro (N/m): as faixas mais estreitas do refino (nas quebras de seção) não aparecem como
+    uma queda de carga; a seta bate com L e D por metro da distribuição"""
+    ac = conventional()
+    r = compute(backend, ac, LoadCase(props=False))
+    res = to_result(r, backend)
+    F = next(v for v in res.field.vectors if v.name == "força total")
+    assert F.unit == "N/m"
+    n0 = 0
+    for s in r.surfaces:
+        f = F.vectors[n0:n0 + len(s.s)]
+        n0 += len(s.s)
+        assert np.allclose(f, s.force / s.width[:, None])
+    wing = r.by_role("wing")[0]
+    assert np.ptp(wing.width) > 0.01                        # faixas de larguras diferentes
+    k = np.abs(wing.L - wing.L[0]) < 1e-9 * abs(wing.L[0])
+    if k.all():                                             # L por metro igual: setas iguais
+        m = np.linalg.norm(wing.force / wing.width[:, None], axis=1)
+        assert np.ptp(m) < 1e-9 * m.max()

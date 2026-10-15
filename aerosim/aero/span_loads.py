@@ -292,7 +292,9 @@ def to_result(r: SpanLoads, backend=None) -> "LoadResult":
         for key in vals:
             vals[key].append(f[key])
     pts = np.vstack([s.points for s in r.surfaces]) if r.surfaces else np.zeros((0, 3))
-    F = np.vstack([s.force for s in r.surfaces]) if r.surfaces else pts
+    # força por metro de envergadura (N/m): a seta não depende da largura da faixa (o refino deixa faixas mais
+    # estreitas nas quebras de seção; em N por faixa elas apareciam como uma queda que não existe)
+    F = np.vstack([s.force / s.width[:, None] for s in r.surfaces]) if r.surfaces else pts
     v = np.vstack([s.velocity for s in r.surfaces]) if r.surfaces else pts
     ex = np.vstack([s.chord_dir for s in r.surfaces]) if r.surfaces else pts
     ey = np.vstack([s.span_dir for s in r.surfaces]) if r.surfaces else pts
@@ -305,9 +307,9 @@ def to_result(r: SpanLoads, backend=None) -> "LoadResult":
     ez /= np.maximum(np.linalg.norm(ez, axis=1), 1e-12)[:, None]
     normal = np.sum(F * ez, axis=1)[:, None] * ez
     ind = np.vstack([s.induced for s in r.surfaces]) if r.surfaces else pts
-    vec = [VectorLayer("força total", pts, F, "N", (0.05, 0.15, 0.45, 1.0)),
-           VectorLayer("sustentação (⟂ ao vento local)", pts, lift, "N", (0.05, 0.45, 0.15, 1.0)),
-           VectorLayer("força normal à superfície", pts, normal, "N", (0.45, 0.05, 0.40, 1.0)),
+    vec = [VectorLayer("força total", pts, F, "N/m", (0.05, 0.15, 0.45, 1.0)),
+           VectorLayer("sustentação (⟂ ao vento local)", pts, lift, "N/m", (0.05, 0.45, 0.15, 1.0)),
+           VectorLayer("força normal à superfície", pts, normal, "N/m", (0.45, 0.05, 0.40, 1.0)),
            VectorLayer("velocidade induzida", pts, ind, "m/s", (0.85, 0.35, 0.05, 1.0))]
     tubes = []
     if backend is not None and any(p.T > 0 for p in r.props) and any("esteira" in m for m in r.modifiers):

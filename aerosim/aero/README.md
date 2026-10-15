@@ -115,6 +115,9 @@ mais próxima. As setas têm ponta. Camadas de setas:
 - **força normal à superfície**;
 - **velocidade induzida**.
 
+As setas de força são **por metro de envergadura (N/m)**, como `L` e `D` da distribuição. O refino deixa faixas
+mais estreitas nas quebras de seção; em N por faixa, elas apareciam como uma queda de carga que não existe.
+
 A força total não é perpendicular à superfície. A sustentação é perpendicular ao vento local, e com α de uns 12° ela
 fica inclinada para a frente em relação à normal da asa. Por isso há as duas camadas separadas.
 
