@@ -74,6 +74,7 @@ class AsbTranslator(IModelTranslator):
 
 class _AsbBase(AeroSolverBase):
     level = "detalhado"          # comparação com outro método (VLM, AeroBuildup, linha sustentadora)
+    cost = "caro"
     method = "vlm"
     induced_only = True
     translator = AsbTranslator()
@@ -107,6 +108,7 @@ class _AsbBase(AeroSolverBase):
 
 class AsbVLMSolver(_AsbBase):
     name = "asb_vlm"
+    fidelity = "vlm"
     title = "AeroSandbox VLM"
     description = "malha de vórtices (asa, EH, EV, dispositivos); C_D = induzido + C_D0 do modelo"
     method = "vlm"

@@ -36,7 +36,7 @@ class ParamSpec:
     key: str
     label: str
     default: Any
-    kind: str = "float"            # float | int | bool | choice | floats (lista "a, b, c") | table
+    kind: str = "float"            # float | int | bool | choice | floats (lista "a, b, c") | file (caminho) | table
     minimum: float | None = None
     maximum: float | None = None
     step: float | None = None

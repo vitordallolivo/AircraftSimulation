@@ -61,18 +61,24 @@ flowchart LR
         direction TB
         I1["IAeroSolver<br/>solve(aeronave, caso) → AeroPolar"]
         I2["AeroCase / AeroPolar<br/>DERIVATIVES"]
+        I3["ISectionPolar<br/>polar 2D de perfil"]
     end
     TAB["aba Aerodinâmica"] --> IF
     UM["modelo universal<br/>AircraftModel"] --> IF
     IF --> BASE["base.py<br/>polar e derivadas comuns"]
+    TAB --> SV["service.py<br/>cache 3D: modelo + método + caso"]
+    SV --> BASE
     BASE --> Z["zig_solver.py<br/>tradutor do backend"]
     BASE --> LL["lltdrek_solver.py<br/>LltdrekTranslator"]
     BASE --> ASB["asb_solver.py<br/>AsbTranslator"]
+    BASE --> AVL["avl_solver.py<br/>AvlTranslator (programa avl)"]
+    TAB --> XF["xflr5_import.py<br/>polar do XFLR5 (arquivo)"]
     Z --> CORE["ISimBackend.session_for"]
-    LL --> SEC["sections.py<br/>polar 2D: modelo ou NeuralFoil"]
+    LL --> SEC["sections.py — ISectionPolar<br/>modelo · NeuralFoil · arquivo<br/>cache 2D"]
+    DS["design/airfoils.py<br/>etapa Perfil"] --> SEC
     TAB --> TD["tipdevices.py<br/>plano de Trefftz"]
     classDef iface fill:#cfe3ff,stroke:#1f4e8c,stroke-width:2px,color:#0b2545
-    class I1,I2 iface
+    class I1,I2,I3 iface
     style IF fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
@@ -85,6 +91,8 @@ flowchart LR
 | `asb_vlm` — AeroSandbox VLM | asa, EH, EV | malha de vórtices em ferradura; arrasto só induzido (+ C_D0 do modelo) |
 | `asb_buildup` — AeroSandbox AeroBuildup | asa, EH, EV, fuselagem | soma por componentes com NeuralFoil; arrasto completo |
 | `asb_ll` — AeroSandbox LiftingLine | asa, EH, EV | linha sustentadora com NeuralFoil; só derivadas em α e β |
+| `avl` — [AVL](https://web.mit.edu/drela/Public/web/avl/) (Drela e Youngren) | asa, EH, EV, dispositivos, comandos | malha de vórtices; o programa `avl` é externo (PATH ou `AVL_PATH`). O tradutor escreve o `.avl` (NACA pelo código, os outros perfis por AFILE, C_D0 do modelo como CDp, comandos `pitch`/`roll`/`yaw` pelos ganhos da mistura), roda a varredura numa sessão e lê o `ST` de cada ponto |
+| `xflr5` — polar importada | o que estava no XFLR5 | lê a polar de avião exportada (Polars → Export, texto ou CSV): α, C_L, C_D, C_Di, C_m (no CG de lá); C_Lα e C_mα pelo ajuste em α; não roda nada |
 
 Cada solver só implementa `evaluate(modelo, caso, pontos)` — pontos de voo universais (α, β, p̂, q̂, r̂,
 comandos) → coeficientes universais —, com o seu tradutor fazendo a ida (modelo universal → formato
@@ -97,9 +105,30 @@ velocidade livre unitária (ω entra dividido por V) e normaliza C_l e C_n por S
 `polar_metrics` tira de cada polar: C_L0, C_Lα, C_Lmax, α de estol, C_D mín., (L/D) máx., e (ajuste de
 C_Di = C_L²/(π AR e)), ponto neutro x_np = x_ref + c C_mα/C_Lα e margem estática.
 
-**Polar 2D (`sections.py`)** — `modelo`: c_l = a0 (α − α_L0) misturado à placa plana pela sigmoide de
-Beard e McLain com o pico no c_l,max do perfil (a mesma hipótese do núcleo, em 2D); `neuralfoil`: o
-contorno `.dat` real pela rede do NeuralFoil.
+**Polar 2D (`sections.py`)** — cada fonte é um `ISectionPolar` (`aerosim/interfaces/aero.py`) e a etapa
+Perfil da sprint e o lltdrek pedem pelo mesmo `section_polar(perfil, α, Re, fonte)`:
+
+| fonte | o que é |
+|---|---|
+| `modelo` | c_l = a0 (α − α_L0) misturado à placa plana pela sigmoide de Beard e McLain, pico no c_l,max do perfil (a hipótese do núcleo, em 2D) |
+| `neuralfoil` | o contorno real (.dat ou NACA) pela rede do NeuralFoil; sem contorno, cai no modelo |
+| `arquivo` | a polar exportada pelo XFLR5/XFOIL |
+
+**Perfil por seção no lltdrek** — cada estação do modelo universal carrega o perfil dela (asa por
+partições com outro perfil na ponta); o tradutor escreve uma polar por perfil diferente e o lltdrek
+mistura linearmente entre as estações, como a etapa Asa.
+
+**Cache** — a mesma pergunta não roda de novo:
+
+| | chave | onde |
+|---|---|---|
+| 2D (`sections.py`) | perfil (nome, contorno, números, invertido) + fonte + arquivo e data + Re (em mil) + α | memória; NeuralFoil também em disco |
+| 3D (`service.py`) | configuração inteira + método + versão dele + caso (V, α, ref, ρ, polar 2D, painéis) | memória; métodos caros (lltdrek, AeroSandbox, AVL) também em disco |
+
+O disco é `~/.cache/aerosim` (ou a pasta da variável `AEROSIM_CACHE`), nunca o repositório nem `data/`.
+Na aba, o resumo mostra `[método] de onde`: `calculado`, `cache` ou `arquivo …`. Cada `AeroPolar` sai
+também com `fidelity` (`modelo` < `llt` < `vlm` < `painel` < `cfd` < `ensaio`), para depois calibrar o
+método barato pelo caro.
 
 Notas sobre o lltdrek 1.2: (1) o corretor de Newton só monta a matriz certa quando todas as
 superfícies têm o mesmo número de painéis — o adaptador sempre usa o mesmo N; (2) `np.cross` em
@@ -138,6 +167,7 @@ Whitcomb/Jones). Com carregamento ótimo a extensão ganha; o winglet compensa q
 
 ![Pontas de asa](../../docs/img/comparativo/flying_wing_aero_graficos.png)
 
-`lltdrek` e `aerosandbox` são opcionais: sem eles o solver aparece como indisponível na aba.
+`lltdrek`, `aerosandbox` e o programa `avl` são opcionais: sem eles o solver aparece como indisponível
+na aba, com o motivo.
 
 Figuras: `python tools/plot_comparativo.py docs/img/comparativo [conventional|twin_boom|flying_wing|arquivo.cfg]`.

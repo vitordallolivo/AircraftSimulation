@@ -267,6 +267,19 @@ class SimulationTab(QtWidgets.QWidget):
             w.setValue(int(p.default))
         elif p.kind == "floats":
             w = QtWidgets.QLineEdit(str(p.default))
+        elif p.kind == "file":                      # caminho, com o botão de procurar dentro do campo
+            w = QtWidgets.QLineEdit(str(p.default))
+            w.setPlaceholderText("arquivo…")
+            act = w.addAction(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DirOpenIcon),
+                              QtWidgets.QLineEdit.ActionPosition.TrailingPosition)
+            act.setToolTip("procurar o arquivo")
+
+            def pick(_=False, w=w, p=p):
+                path, _f = QtWidgets.QFileDialog.getOpenFileName(self, p.label, w.text(),
+                                                                 "polar (*.txt *.csv *.dat);;todos (*)")
+                if path:
+                    w.setText(path)
+            act.triggered.connect(pick)
         else:
             w = QtWidgets.QDoubleSpinBox()
             # casas suficientes para o padrão e o mínimo (ex.: tolerância 1e-5)

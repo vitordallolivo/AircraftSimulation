@@ -62,3 +62,15 @@ def _save_check_accepts(monkeypatch):
         return True
     monkeypatch.setattr(save_check, "confirm_save", fake)
     yield calls
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _aero_cache_in_tmp(tmp_path_factory):
+    """o cache em disco das polares (aerosim.aero) numa pasta temporária, não em ~/.cache"""
+    old = os.environ.get("AEROSIM_CACHE")
+    os.environ["AEROSIM_CACHE"] = str(tmp_path_factory.mktemp("aerosim_cache"))
+    yield
+    if old is None:
+        os.environ.pop("AEROSIM_CACHE", None)
+    else:
+        os.environ["AEROSIM_CACHE"] = old

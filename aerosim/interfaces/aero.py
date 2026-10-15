@@ -6,6 +6,9 @@ derivadas de estabilidade, sempre nos eixos do corpo do simulador (x à frente,
 y à direita, z para baixo) e com as adimensionalizações usuais:
   p̂ = p b / 2V,  q̂ = q c / 2V,  r̂ = r b / 2V;  C_l, C_n por S b;  C_m por S c.
 Quem não calcula alguma derivada devolve NaN nela.
+
+Abaixo do 3D fica a polar 2D dos perfis (`ISectionPolar`): os métodos de linha sustentadora e a etapa Perfil
+pedem c_l, c_d, c_m de um perfil num Re, e quem responde é uma fonte (modelo, NeuralFoil, arquivo...).
 """
 from __future__ import annotations
 
@@ -43,6 +46,9 @@ class AeroCase:
     n_span: int = 20                      # painéis por semiasa (LLT/VLM)
 
 
+FIDELITY = {"modelo": 0, "llt": 1, "vlm": 2, "painel": 3, "cfd": 4, "ensaio": 5}
+
+
 @dataclass
 class AeroPolar:
     solver: str
@@ -55,6 +61,8 @@ class AeroPolar:
     span: dict[str, np.ndarray] | None = None    # carregamento da asa: y (m), cl, ccl (c·cl / c_ref)
     notes: str = ""
     elapsed: float = 0.0
+    source: str = ""                      # de onde veio: "calculado", "cache", "arquivo <nome>"...
+    fidelity: str = ""                    # uma chave de FIDELITY (para calibrar o barato pelo caro)
 
     def deriv(self, k: str) -> float:
         return float(self.derivs.get(k, float("nan")))
@@ -72,6 +80,9 @@ class IAeroSolver(ABC):
     supports_controls: bool = False
     # "sprint": método rápido do ciclo; "detalhado": comparação/estudo (ex.: AeroSandbox)
     level: str = "sprint"
+    fidelity: str = "llt"                 # chave de FIDELITY
+    cost: str = "barato"                  # "caro": o resultado vale ir para o disco (aerosim.aero.service)
+    version: int = 1                      # mude quando o método mudar o que calcula (invalida o cache)
 
     def available(self) -> str | None:
         """None se pode rodar; senão o motivo (ex.: pacote não instalado)"""
@@ -83,3 +94,19 @@ class IAeroSolver(ABC):
 
     @abstractmethod
     def solve(self, model, case: AeroCase) -> AeroPolar: ...
+
+
+class ISectionPolar(ABC):
+    """uma fonte de polar 2D de perfil. `polar` devolve {'alpha' (graus), 'cl', 'cd', 'cm'} nos α pedidos
+    (NaN fora do que a fonte cobre)"""
+    name: str = ""
+    title: str = ""
+    fidelity: str = "modelo"
+    cost: str = "barato"                  # "caro": vale guardar em disco (aerosim.aero.sections)
+
+    def available(self, af, polar_file: str = "") -> str | None:
+        """None se a fonte serve para este perfil; senão o motivo"""
+        return None
+
+    @abstractmethod
+    def polar(self, af, alphas_deg, Re: float, polar_file: str = "") -> dict[str, np.ndarray]: ...

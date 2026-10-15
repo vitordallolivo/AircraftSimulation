@@ -25,7 +25,7 @@ from aerosim.interfaces.translator import IModelTranslator
 
 from .base import AeroSolverBase
 from .geometry import nu_air, reynolds, to_xz_up
-from .sections import write_lltdrek_polar
+from .sections import airfoil_key, write_lltdrek_polar
 
 H = 0.01
 _patched = False
@@ -67,22 +67,28 @@ def _speedup() -> None:
 
 
 def _kinks(st):
-    """só as estações onde a geometria muda de inclinação (as outras são interpolação linear das
-    vizinhas): o lltdrek 1.2 divide os painéis por partição e quebra com partições demais"""
+    """só as estações onde a geometria muda de inclinação ou o perfil muda (as outras são interpolação
+    linear das vizinhas): o lltdrek 1.2 divide os painéis por partição e quebra com partições demais"""
     keep = [st[0]]
     for a, b, c in zip(st, st[1:], st[2:]):
         f = (b.s - a.s) / (c.s - a.s) if c.s > a.s else 0.0
         lin = lambda va, vc: va + f * (vc - va)
         same = (abs(lin(a.chord, c.chord) - b.chord) < 1e-9 and abs(lin(a.twist, c.twist) - b.twist) < 1e-9
-                and np.allclose(lin(a.le, c.le), b.le, atol=1e-9))
+                and np.allclose(lin(a.le, c.le), b.le, atol=1e-9)
+                and _af_id(a.airfoil) == _af_id(b.airfoil) == _af_id(c.airfoil))
         if not same:
             keep.append(b)
     keep.append(st[-1])
     return keep
 
 
+def _af_id(af) -> str:
+    return "" if af is None else airfoil_key(af)
+
+
 class LltdrekTranslator(IModelTranslator):
     name = "lltdrek"
+    fidelity, cost = "llt", "caro"
 
     @staticmethod
     def surfaces(model):
@@ -93,19 +99,26 @@ class LltdrekTranslator(IModelTranslator):
         from lltdrek import Wing
         wings = []
         n = max(4, int(case.n_span))      # o mesmo N em todas: o Newton do lltdrek 1.2 exige
+        files: dict[tuple, str] = {}     # (perfil, faixa de Re) -> nome do arquivo de polar
         for i, s in enumerate(self.surfaces(model)):
             st = _kinks(s.stations)
-            name = f"af{i}"
             cs = [q.chord for q in st]
             Res = sorted({reynolds(case.V * k, cc, case.rho) for k in (0.5, 1.0, 2.0) for cc in (min(cs), max(cs))})
-            write_lltdrek_polar(os.path.join(folder, name + ".txt"), s.airfoil, [Res[0], Res[len(Res) // 2], Res[-1]],
-                                case.section)
+            Res = [Res[0], Res[len(Res) // 2], Res[-1]]
+            names = []
+            for q in st:                     # um arquivo por perfil diferente (perfil por seção)
+                af = q.airfoil or s.airfoil
+                k = (airfoil_key(af), tuple(round(r, -3) for r in Res))
+                if k not in files:
+                    files[k] = f"af{len(files)}"
+                    write_lltdrek_polar(os.path.join(folder, files[k] + ".txt"), af, Res, case.section)
+                names.append(files[k])
             root = st[0].le
             spans = [b.s - a.s for a, b in zip(st, st[1:])]
             le = to_xz_up(root)
             wings.append(Wing(spans=spans, chords=cs, offsets=[float(root[0] - q.le[0]) for q in st],
                               twist_angles=[q.twist for q in st], dihedral_angles=[s.dihedral] * len(spans),
-                              airfoils=[name] * len(st), surface_name=s.name, N_panels=n, x_pos=le[0], z_pos=le[2],
+                              airfoils=names, surface_name=s.name, N_panels=n, x_pos=le[0], z_pos=le[2],
                               distribution_type="cosine"))
         return wings
 

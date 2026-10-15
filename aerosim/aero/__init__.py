@@ -1,5 +1,6 @@
 """Aerodinâmica a partir da geometria: comparação de métodos (modelo interno, lltdrek,
-AeroSandbox), métricas da polar e dispositivos de ponta de asa (plano de Trefftz)."""
+AeroSandbox, AVL, polar importada do XFLR5), métricas da polar e dispositivos de ponta de asa (plano de
+Trefftz). Polar 2D dos perfis em `sections`; cache das polares 3D em `service`."""
 from __future__ import annotations
 
 import math
@@ -9,12 +10,15 @@ import numpy as np
 from aerosim.interfaces.aero import DERIVATIVES, AeroCase, AeroPolar, IAeroSolver
 
 from .asb_solver import AsbBuildupSolver, AsbLiftingLineSolver, AsbVLMSolver
+from .avl_solver import AvlSolver
 from .lltdrek_solver import LltdrekSolver
+from .xflr5_import import Xflr5PolarFile
 from .zig_solver import ZigPanelSolver
 
 
 def all_solvers(backend) -> list[IAeroSolver]:
-    return [ZigPanelSolver(backend), LltdrekSolver(), AsbVLMSolver(), AsbBuildupSolver(), AsbLiftingLineSolver()]
+    return [ZigPanelSolver(backend), LltdrekSolver(), AsbVLMSolver(), AsbBuildupSolver(), AsbLiftingLineSolver(),
+            AvlSolver()]
 
 
 def parabolic_polar(pol: AeroPolar, a_lo: float = -2.0, a_hi: float = 8.0) -> dict[str, float]:
@@ -64,6 +68,6 @@ def polar_metrics(pol: AeroPolar, model, case: AeroCase) -> dict[str, float]:
     return out
 
 
-__all__ = ["DERIVATIVES", "AeroCase", "AeroPolar", "AsbBuildupSolver", "AsbLiftingLineSolver", "AsbVLMSolver",
+__all__ = ["DERIVATIVES", "AeroCase", "AeroPolar", "AsbBuildupSolver", "AsbLiftingLineSolver", "AsbVLMSolver", "AvlSolver",
            "IAeroSolver", "LltdrekSolver", "ZigPanelSolver", "all_solvers", "parabolic_polar", "polar_metrics",
-           "solver_by_name"]
+           "solver_by_name", "Xflr5PolarFile"]
