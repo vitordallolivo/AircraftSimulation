@@ -2,6 +2,15 @@
 
 Versões da `main`. Critério de versão e escopo da 1.0 em `docs/TRACKING.md`.
 
+## Não lançado
+
+### v0.2.0 — fecha o milestone 0.1 (branch `test/checks`)
+
+- `tools/checks`: checks de regressão (núcleo Zig, AeroDrive, exemplos bit a bit contra uma referência, testes por
+  área).
+- `docs/TRACKING.md`: castelo, milestones, quadro de tarefas com dependências; T01 conferido.
+
+## v0.1.x — pilha mesclada (PRs #21–#23)
 ## Não lançado (pilha de branches ainda fora da `main`)
 
 `feature/sprint` → `feature/gui` → `feature/aero` → `feature/modifiers` → `docs/tracking`

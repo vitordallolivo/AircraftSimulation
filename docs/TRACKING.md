@@ -37,7 +37,11 @@ Como usar:
 
 ## Versões
 
-- **`main` atual = `v0.1.0`** (`033bdc1`). A tag só será criada com o ok do dono do repositório.
+- **Regra:** enquanto o milestone 0.N está aberto, o trabalho fica na branch `0.N_dev` e a `main` está em
+  `v0.N.y`. Ao fechar o milestone, a `0.N_dev` vai para a `main` por PR e a `main` vira `v0.(N+1).0`.
+  - Ponto de partida: `v0.1.0` = `033bdc1`.
+  - Milestone 0.1 fechado (PRs #21–#25): a `main` está em `v0.2.0`.
+  - As tags só são criadas com o ok do dono do repositório.
 - **Minor (`0.x.0`):** fecha um milestone.
 - **Patch (`0.x.y`):** cada subversão do milestone (um bloco de tarefas mesclado na `main`) e correções.
 - **`1.0.0`:** todo o escopo 1.0 com ✅ na coluna **GUI**.
@@ -86,7 +90,7 @@ Tipos de tarefa:
 | T00 | Checks de regressão em `tools/checks` (comparação bit a bit contra uma ref, núcleo, AeroDrive, testes por área) | [novo] | — | 0.1.1 | Feito |
 | T01 | Conferir os ❓ | leitura | — | 0.1.3 | Feito |
 | T02 | Rodar os checks na pilha e corrigir | [ext] | T00 | 0.1.2 | Feito (tudo verde, nada a corrigir) |
-| T03 | PRs da pilha para a `main` | git | T02 | 0.1.4 | Pronto (espera o ok do dono) |
+| T03 | PRs da pilha para a `main` | git | T02 | 0.1.4 | Feito (PRs #21–#25) |
 | T04 | E&C: ME × xCG com ênfase, passeio do CG (o limite pela rotação já existe) | [ext] | — | 0.2.1 | Feito |
 | T05 | E&C: polos com vento e com sloshing (estender a linearização no Zig: hoje o líquido é congelado; vento constante não muda os polos, o efeito é a turbulência) | [ext] | T30 | 0.8.5 | Bloqueado |
 | T06 | Curvas com fator de carga (planeio e pouso já existem) | [ext] | — | 0.2.2 | Pronto |
@@ -144,6 +148,9 @@ Legenda das colunas **Código** e **GUI**:
 | AE-08 | Efeito solo (McCormick) | ✅ | ✅ | — | modifier `solo.mccormick`; Configuração → Modificadores |
 | AE-09 | Efeito solo por imagem (inclui a mesa) | ❌ | ❌ | — | modifier novo |
 | AE-10 | Esteira da hélice nas superfícies | 🟡 | 🟡 | T08 | `esteira.disco` (Configuração → Modificadores); tubo reto, trimagem sem esteira |
+| AE-08 | Efeito solo (McCormick) | ✅ | ❓ | T08 | modifier `solo.mccormick` |
+| AE-09 | Efeito solo por imagem (inclui a mesa) | ❌ | ❌ | — | modifier novo |
+| AE-10 | Esteira da hélice nas superfícies | 🟡 | ❌ | T08 | `esteira.disco`; tubo reto |
 | AE-11 | Reynolds no núcleo | ❌ | ❌ | T10 | |
 | AE-12 | Distribuição ao longo da envergadura a um α | ✅ | ❌ | T09 | `core/src/loads/llt.zig` |
 | AE-13 | Comparação com ensaio | ❌ | ❌ | T35 | |
@@ -181,15 +188,15 @@ pista) é ajuste de interface e está em "Fora da conta".
 | EC-05 | Diagrama tesoura | ✅ | ✅ | — | |
 | EC-06 | Trimagem | ✅ | ✅ | — | |
 | EC-07 | Dimensionamento de EH/EV e comandos | ✅ | ✅ | — | |
-| EC-08 | Vento de través no pouso | ✅ | ✅ | — | Estabilidade: leme em vento cruzado (FAR 23.233) |
-| EC-09 | Taxa de rolamento | ✅ | ✅ | — | Estabilidade: tempo para inclinar × aileron |
+| EC-08 | Vento de través no pouso | ❓ | ❓ | T01 | |
+| EC-09 | Taxa de rolamento (pb/2V) | ❓ | ❓ | T01 | |
 | EC-10 | Dinâmica: modos e respostas | ✅ | ✅ | — | |
 | EC-11 | Qualidades de voo (MIL-F-8785C) | ✅ | ✅ | — | |
 | EC-12 | Vento lateral/frontal nos polos | ❌ | ❌ | T05 | |
 | EC-13 | Polos com sloshing | ❌ | ❌ | T05 | |
 | EC-14 | Diedro elástico | ❌ | ❌ | T27 | |
 | EC-15 | Comparação com voo real | ❌ | ❌ | T35 | |
-| EC-16 | Inverter a rotação de qualquer motor | ✅ | ✅ | — | Configuração → motor: sentido de rotação |
+| EC-16 | Inverter a rotação de qualquer motor | ❓ | ❓ | T01 | |
 
 ### 4. Cargas
 
@@ -238,7 +245,7 @@ A Missão mostra só o que a simulação já calcula: a corrente média e a de p
 | IN-04 | Tração e Missão dentro de Desempenho | ✅ | ✅ | — | |
 | IN-05 | xCG em % CMA | ✅ | ✅ | — | |
 | IN-06 | Checklist do avião | ✅ | ✅ | — | |
-| IN-08 | Volume e arranjo da caixa | ❌ | ❌ | T34 | |
+| IN-08 | Volume e arranjo da caixa | ❓ | ❓ | T34 | |
 | IN-09 | Tempo de montagem e desmontagem | ❌ | ❌ | T34 | |
 
 ### 9. Controle
@@ -301,13 +308,20 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 ## Versionamento
 
 **Regras**
-- Nada direto na `main`. Cada trabalho tem a sua branch; a `main` só recebe por PR.
-- Uma branch por tema: `feature/<tema>`, `fix/<tema>`, `docs/<tema>`, `test/<tema>`.
-- Cada PR roda `python tools/checks/run.py`, atualiza este arquivo e o `CHANGELOG.md`.
+- Nada direto na `main`; a `main` só recebe por PR.
+- **Uma branch de desenvolvimento só, por milestone: `0.N_dev`** (hoje `0.2_dev`). Todo o trabalho do milestone
+  vai nela; não se abre branch por tarefa.
+- Ao fechar o milestone:
+  1. a `main` é mesclada na `0.N_dev`, para não levar a `main` para trás;
+  2. rodam os checks (`python tools/checks/run.py --tudo`);
+  3. abre-se o PR `0.N_dev` → `main` e o trabalho para até o review;
+  4. depois do merge, a próxima `0.(N+1)_dev` sai da `main`.
+- Cada PR atualiza este arquivo e o `CHANGELOG.md`.
 - Tag `vX.Y.Z` só na `main`, depois do merge.
 - Relatórios e dados de terceiros nunca entram no git.
 
-**Situação atual das branches** (em relação à `main`)
-- A pilha `feature/sprint` → `feature/gui` → `feature/aero` → `feature/modifiers` → `docs/tracking` →
-  `test/checks` → `feature/analises-simples` ainda não foi para a `main`.
-- `feature/aircraft-drive` e `claude/ecstatic-gates-u3lpoi` não têm nada a mais que a `main`.
+**Situação atual das branches**
+- `main`: milestone 0.1 fechado (PRs #21–#25).
+- `0.2_dev`: milestone 0.2 em andamento (T04 feito, T06 por fazer).
+- As branches antigas (`feature/*`, `docs/tracking`, `test/checks`) não recebem mais trabalho. Elas só serão
+  apagadas com o ok do dono.
