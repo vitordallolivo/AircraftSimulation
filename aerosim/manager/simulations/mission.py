@@ -83,7 +83,12 @@ def rows_to_legs(rows, old) -> list:
 
 MCOLS = (("item", "", "label"), ("min", "mínimo", "float"), ("nom", "nominal", "float"), ("max", "máximo", "float"))
 ROWS = {"tot": "Massa total (kg)", "bal": "Lastro (kg)", "pay": "LAPES (kg)", "liq": "Líquido (L)",
-        "xcg": "xCG (m)"}
+        "xcg": "xCG (% CMA)", "xcg_m": "xCG (m)"}     # xCG (m): tabelas antigas (por dentro tudo é em metros)
+
+
+def xcg_pct(model, x: float) -> float:
+    """x do CG (m, corpo) -> % da CMA a partir do bordo de ataque"""
+    return 100.0 * model.mac_frac(x)
 
 
 def total_mass(ac) -> float:
@@ -103,11 +108,12 @@ def mtow_rows(ac) -> list[dict]:
     try:
         from aerosim.model.universal import build_model
         m = total_mass(ac)
-        x = float(build_model(ac).mass["cg"][0])
+        model = build_model(ac)
+        p = xcg_pct(model, float(model.mass["cg"][0]))
     except Exception:
-        m, x = 0.0, 0.0
+        m, p = 0.0, 25.0
     rows.append(dict(item=ROWS["tot"], min=round(m, 3), nom=round(m, 3), max=round(m + 6.0, 3)))
-    rows.append(dict(item=ROWS["xcg"], min=round(x - 0.02, 4), nom=round(x, 4), max=round(x + 0.02, 4)))
+    rows.append(dict(item=ROWS["xcg"], min=round(p - 5.0, 2), nom=round(p, 2), max=round(p + 5.0, 2)))
     return rows
 
 
@@ -203,7 +209,8 @@ class MissionSimulation(SimulationBase):
         else:
             P += pista + [
                 ParamSpec("masses", "Massas", mtow_rows(ac), kind="table", columns=MCOLS, group="MTOW",
-                          help="lastro, LAPES e líquido vão do mínimo ao máximo juntos; o xCG é testado nos três valores")]
+                          help="a massa total vai do mínimo ao máximo (o que passa da montada entra no CG); o xCG, em % da "
+                               "CMA a partir do bordo de ataque, é testado nos três valores")]
         return P
 
     def commit(self, aircraft, values) -> bool:
@@ -265,7 +272,7 @@ class MissionSimulation(SimulationBase):
                             PlotSpec("mc", "Massas × massa de decolagem", "m", ("y",), "$m$ (kg)", "kg ou L",
                                      live=False, source="series:mc_*"),
                             PlotSpec("ma", "Acionamento, $\\delta_e$ e xCG × massa", "m", ("y",), "$m$ (kg)",
-                                     "m / ° / cm", live=False, source="series:ma_*"),
+                                     "m / ° / % CMA", live=False, source="series:ma_*"),
                             opt] + rest
         if mode == M_TURN:
             return [PlotSpec("cv", "Curvas: trajetórias", "e", ("n",), "e (m)", "n (m)",
@@ -274,6 +281,8 @@ class MissionSimulation(SimulationBase):
                              live=False, source="series:cr_*"),
                     PlotSpec("cp", "Inclinação × raio", "R", ("y",), "R (m)", "|φ| (°)", live=False,
                              source="series:cp_*"),
+                    PlotSpec("cn", "Fator de carga × raio (em regime)", "R", ("y",), "R (m)", "$n$", live=False,
+                             source="series:cn_*"),
                     PlotSpec("ch", "Altura perdida × raio", "R", ("y",), "R (m)", "m", live=False,
                              source="series:ch_*"),
                     PlotSpec("rmin", "Raio mínimo", "V", ("R",), "V (m/s)", "R mínimo (m)", live=False,
@@ -702,14 +711,22 @@ class MissionSimulation(SimulationBase):
                         _dash=None if o["ok"] else "dash")
             Rarr = np.array([o["R"] for o in L])
             okm = np.array([o["ok"] for o in L])
-            for pre, k in (("cr_", "razao_max"), ("cp_", "phi_perm"), ("ch_", "perda_h")):
+            for pre, k in (("cr_", "razao_max"), ("cp_", "phi_perm"), ("cn_", "nz_perm"), ("ch_", "perda_h")):
                 y = np.array([o.get(k, np.nan) for o in L], float)
                 if k == "phi_perm":
                     y = np.minimum(y, 89.0)
                 series[f"{pre}V = {V:g} m/s — passa"] = dict(R=Rarr[okm], y=y[okm], _symbol=sym, _color=c, _size=10)
                 series[f"{pre}V = {V:g} m/s — falha"] = dict(R=Rarr[~okm], y=y[~okm], _symbol="x", _color=c, _size=12)
                 series[f"{pre}V = {V:g} m/s"] = dict(R=Rarr, y=y, _color=c, _width=0.8, _nolegend=1)
-            rmin_rows.append(dict(V=V, R=Rm))
+            n_min = next((o.get("nz_perm", np.nan) for o in L if o["ok"] and o["R"] == Rm), np.nan)
+            rmin_rows.append(dict(V=V, R=Rm, n=n_min))
+            nlim = ac.performance.load_factor
+            if np.isfinite(n_min):
+                okn = n_min <= nlim
+                checks.append(Check("ok" if okn else "atencao", f"fator de carga no raio mínimo a {V:g} m/s",
+                                    f"n = {n_min:.2f}", f"≤ {nlim:g} (n de projeto)",
+                                    "" if okn else "a curva mais fechada passa do fator de carga de projeto da estrutura",
+                                    "" if okn else "abra a curva ou suba o n de projeto (Montagem → desempenho)", "Curvas"))
             fails = sorted([o for o in L if not o["ok"] and (not np.isfinite(Rm) or o["R"] < Rm)], key=lambda o: -o["R"])
             why = fails[0]["motivo"] if fails else ""
             checks.append(Check("info" if np.isfinite(Rm) else "falha", f"raio mínimo a {V:g} m/s",
@@ -718,6 +735,8 @@ class MissionSimulation(SimulationBase):
                                 "mais velocidade, mais área de asa ou mais tração" if why else "", "Curvas"))
         series["cr_limite C_L/C_Lmax"] = dict(_hline=ac.autopilot.kCL, _color="#d62728", _dash="dash")
         series["ch_limite"] = dict(_hline=hloss, _color="#d62728", _dash="dash")
+        series[f"cn_n de projeto = {ac.performance.load_factor:g}"] = dict(_hline=ac.performance.load_factor,
+                                                                          _color="#d62728", _dash="dash")
         V = np.array([r["V"] for r in rmin_rows])
         R = np.array([r["R"] for r in rmin_rows])
         series["rm_R mínimo simulado"] = dict(V=V, R=R, _symbol="o", _line=1, _color="#1f77b4")
@@ -727,6 +746,7 @@ class MissionSimulation(SimulationBase):
         series["casos"] = {k: np.array([c.get(k, np.nan) for c in all_cases], dtype=object if k == "motivo" else float)
                            for k in ("V", "R", "ok", "phi_perm", "nz_perm", "razao_max", "perda_h", "R_real", "motivo")}
         summary = {f"R_min @ {r['V']:g} m/s": r["R"] for r in rmin_rows}
+        summary.update({f"n no R_min @ {r['V']:g} m/s": r["n"] for r in rmin_rows})
         summary["Vs"] = info["Vs"]
         return SimResult(series=series, summary=summary, checks=checks)
 
@@ -746,6 +766,7 @@ class MissionSimulation(SimulationBase):
         otimizado"""
         table = {r["item"]: r for r in (ctx.params.get("masses") or mtow_rows(ac))}
         keys = {v_: k for k, v_ in ROWS.items()}
+        model = build_model(ac)
         ranges, names = {}, {}
         xcgs = None
         for item, r in table.items():
@@ -756,7 +777,9 @@ class MissionSimulation(SimulationBase):
             nom = nom if nom is not None else (lo if lo is not None else 0.0)
             lo = nom if lo is None else lo
             hi = nom if hi is None else hi
-            if k == "xcg":
+            if k == "xcg":                           # % CMA -> metros
+                xcgs = sorted({model.x_at_mac(v_ / 100.0) for v_ in (lo, nom, hi)})
+            elif k == "xcg_m":
                 xcgs = sorted({lo, nom, hi})
             else:
                 ranges[k], names[k] = (lo, hi), item
@@ -822,7 +845,8 @@ class MissionSimulation(SimulationBase):
             S[f"mc_{names[k]}"] = dict(m=M["m"], y=M[f"m_{k}"], _symbol="o", _line=1, _color=colors[k])
         S["ma_acionamento (m)"] = dict(m=M["m"][ok], y=M["s"][ok], _symbol="o", _line=1, _color="#2ca02c")
         S["ma_δe (°)"] = dict(m=M["m"][ok], y=M["de"][ok], _symbol="s", _line=1, _color="#1f77b4")
-        S["ma_xCG (cm)"] = dict(m=M["m"][ok], y=100 * M["xcg"][ok], _symbol="d", _line=1, _color="#9467bd")
+        S["ma_xCG (% CMA)"] = dict(m=M["m"][ok], y=np.array([xcg_pct(model, x) for x in M["xcg"][ok]]), _symbol="d",
+                                   _line=1, _color="#9467bd")
         summary = dict(massa_atual=info["mass"], x_warning=refs["x_warning"], z_warning=refs["z_warning"])
         log = None
         if np.isfinite(tm):
@@ -830,14 +854,14 @@ class MissionSimulation(SimulationBase):
             summary["MTOW (kg)"] = mt
             for k, m in best.masses.items():
                 summary[f"MTOW: {names[k]}"] = m
-            summary.update({"MTOW: xCG (m)": best.xcg, "acionamento (m)": best.s, "δe (°)": best.de,
+            summary.update({"MTOW: xCG (m)": best.xcg, "MTOW: xCG (% CMA)": xcg_pct(model, best.xcg), "acionamento (m)": best.s, "δe (°)": best.de,
                             "n_dec (m)": best.n_dec})
             for pre in ("mt_", "mc_", "ma_"):
                 S[f"{pre}MTOW = {mt:.2f} kg"] = dict(_vline=mt, _color="#ffcc00", _width=3)
             S["mt_★ MTOW"] = dict(m=np.array([mt]), y=np.array([best.n_dec]), _symbol="star", _color="#ffcc00", _size=24)
             parts = ", ".join(f"{names[k]} = {m:.2f}" for k, m in best.masses.items())
             checks.append(Check("info", "MTOW", f"{mt:.2f} kg", "x e z atendidos",
-                                f"{parts}; xCG = {best.xcg:.3f} m; acionamento em {best.s:.1f} m, δe = {best.de:g}°",
+                                f"{parts}; xCG = {xcg_pct(model, best.xcg):.1f} % CMA ({best.xcg:.3f} m); acionamento em {best.s:.1f} m, δe = {best.de:g}°",
                                 "", "MTOW"))
             S.update(self._opt_series(saved.get(tm, []), best, refs))
             v = best.variant

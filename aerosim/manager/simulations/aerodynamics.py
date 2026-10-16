@@ -11,6 +11,7 @@ import math
 import numpy as np
 
 from aerosim.aero import AeroCase, all_solvers, polar_metrics
+from aerosim.aero import service as aero_service
 from aerosim.aero import tipdevices as td
 from aerosim.aero.geometry import _trapz
 from aerosim.aero.tipdevices import raymer_oswald
@@ -22,7 +23,7 @@ from aerosim.model.features import features
 from .base import SimulationBase
 
 LABEL = {"zig": "modelo interno", "lltdrek": "lltdrek", "asb_vlm": "ASB VLM", "asb_buildup": "ASB AeroBuildup",
-         "asb_ll": "ASB LiftingLine"}
+         "asb_ll": "ASB LiftingLine", "avl": "AVL", "xflr5": "XFLR5 (arquivo)"}
 G0 = 9.80665
 
 
@@ -41,7 +42,7 @@ class AerodynamicsSimulation(SimulationBase):
     area = "aerodinamica"
     show_aircraft = True
     # comparações entre métodos, aeronave inteira e pontas de asa: estudo detalhado
-    detailed = ("use_zig", "use_asb_vlm", "use_asb_buildup", "use_asb_ll", "full", "de", "alpha_beta", "tips", "hb_max",
+    detailed = ("use_zig", "use_asb_vlm", "use_asb_buildup", "use_asb_ll", "use_avl", "use_xflr5", "xflr5_file", "full", "de", "alpha_beta", "tips", "hb_max",
                 "Cf", "dev_gain")
     description = ("Polares e derivadas a partir da geometria pelo lltdrek (linha sustentadora não linear), "
                    "comparadas com o modelo interno e, se quiser, com o AeroSandbox. Diz se os métodos concordam e "
@@ -70,7 +71,13 @@ class AerodynamicsSimulation(SimulationBase):
               ParamSpec("use_zig", "comparar: modelo interno", True, kind="bool", help="o modelo que a simulação usa"),
               ParamSpec("use_asb_vlm", "comparar: AeroSandbox VLM", False, kind="bool"),
               ParamSpec("use_asb_buildup", "comparar: AeroSandbox AeroBuildup", False, kind="bool"),
-              ParamSpec("use_asb_ll", "comparar: AeroSandbox LiftingLine", False, kind="bool")]
+              ParamSpec("use_asb_ll", "comparar: AeroSandbox LiftingLine", False, kind="bool"),
+              ParamSpec("use_avl", "comparar: AVL", False, kind="bool",
+                        help="malha de vórtices do Drela, com comandos; precisa do programa 'avl' no PATH"),
+              ParamSpec("use_xflr5", "comparar: polar do XFLR5 (arquivo)", False, kind="bool",
+                        help="a polar de avião exportada pelo XFLR5 (Polars → Export); C_m no CG de lá"),
+              ParamSpec("xflr5_file", "arquivo da polar do XFLR5", "", kind="file",
+                        help="texto ou CSV exportado pelo XFLR5")]
         for p_ in ps:
             p_.group = "Caso" if p_.key in ("V", "a0", "a1", "da", "alpha_d", "xcg") else "Métodos"
         A = "Polar da aeronave completa (núcleo 6GDL)"
@@ -152,6 +159,9 @@ class AerodynamicsSimulation(SimulationBase):
         summ["S, c, b de referência; AR"] = [S, c, b, AR]
         summ["C_L de cruzeiro (W/qS)"] = CL_cru
         chosen = [s for s in all_solvers(ctx.backend) if P("use_" + s.name)]
+        if P("use_xflr5"):
+            from aerosim.aero import Xflr5PolarFile
+            chosen.append(Xflr5PolarFile(str(P("xflr5_file") or "")))
         res, metrics = {}, {}
         deriv_table = {"derivada": list(DERIVATIVES)}
         span = None
@@ -164,7 +174,8 @@ class AerodynamicsSimulation(SimulationBase):
                 add("info", f"{lab} indisponível", "—", "", why, "", "métodos")
                 continue
             try:
-                pol = so.solve(model, case)
+                # o arquivo do XFLR5 é lido toda vez (o cache não sabe se ele mudou)
+                pol = so.solve(model, case) if so.name == "xflr5" else aero_service.solve(so, model, case)
             except Exception as e:      # um método que falha não derruba a comparação
                 add("atencao", f"{lab} falhou", f"{type(e).__name__}", "", str(e)[:200], "", "métodos")
                 continue
@@ -177,6 +188,7 @@ class AerodynamicsSimulation(SimulationBase):
             for key, v in metrics[so.name].items():
                 summ[f"[{lab}] {key}"] = v
             summ[f"[{lab}] tempo (s)"] = pol.elapsed
+            summ[f"[{lab}] de onde"] = pol.source
             deriv_table[lab] = [pol.deriv(d) for d in DERIVATIVES]
             if pol.span is not None and so.name == "lltdrek":
                 span = pol.span
@@ -187,8 +199,7 @@ class AerodynamicsSimulation(SimulationBase):
         S_["span"] = self._span(model, span)
         main = "lltdrek" if "lltdrek" in res else ("zig" if "zig" in res else next(iter(res), None))
         if main is not None:          # a polar fica disponível para as outras abas (dimensionamento...)
-            from aerosim.aero.service import remember
-            remember(ctx.shared, model, res[main], LABEL[main], V)
+            aero_service.remember(ctx.shared, model, res[main], LABEL[main], V)
         if main is None:
             add("falha", "nenhum método rodou", "—", "", "", "marque o lltdrek ou o modelo interno", "métodos")
             return SimResult(series=S_, summary=summ, checks=checks)
@@ -394,8 +405,10 @@ def _why_differ(a: str, b: str, key: str) -> str:
         "asb_vlm": "VLM: superfícies finas sem fuselagem e sem estol",
         "asb_buildup": "AeroBuildup: soma por componentes com NeuralFoil e fuselagem",
         "asb_ll": "LiftingLine do ASB: polar do NeuralFoil (perfil real)",
+        "avl": "AVL: malha de vórtices sem fuselagem e sem estol",
+        "xflr5": "XFLR5: a polar 2D e o CG de lá (podem não ser os daqui)",
     }
     extra = {"x_np_mac": " — o ponto neutro depende de dε/dα na cauda e do C_mα da fuselagem",
              "CLmax": " — o C_Lmax depende da polar 2D usada (modelo × NeuralFoil) e do estol na ponta",
              "CLa_fit": ""}[key]
-    return f"{notes[a]}; {notes[b]}{extra}"
+    return f"{notes.get(a, a)}; {notes.get(b, b)}{extra}"

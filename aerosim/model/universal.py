@@ -44,6 +44,7 @@ class Station:
     le: np.ndarray             # bordo de ataque (corpo, lado direito)
     chord: float
     twist: float               # incidência + torção (graus)
+    airfoil: Airfoil | None = None   # perfil próprio nesta estação (perfil por seção; None: o da superfície)
 
 
 @dataclass
@@ -306,6 +307,10 @@ def _surface(s: LiftingSurface, index: int, dw: tuple[float, float]) -> SurfaceM
             le = np.array([s.x - s.xoff_at(y), s.y + y * math.cos(dih), s.z - y * math.sin(dih)])
         st.append(Station(y, le, s.chord_at(y), s.incidence + s.twist_at(y)))
     ctl = []
+    if s.mixed_airfoils and len(s.sections) > 1:        # o perfil da seção mais perto de cada estação
+        ss = sorted(s.sections, key=lambda q: q.y)
+        for q in st:
+            q.airfoil = s.section_airfoil(min(ss, key=lambda w: abs(w.y - q.s)))
     strip_co, strip_af = None, None
     if s.mixed_airfoils and len(s.sections) > 1:
         props = _section_props(s)

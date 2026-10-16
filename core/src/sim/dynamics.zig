@@ -11,6 +11,7 @@ const S = @import("state.zig");
 const fm = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
 const aero = @import("../physics/aero.zig");
+const mods = @import("../modifiers/mod.zig");
 const prop = @import("../physics/propulsion.zig");
 const gear = @import("../physics/gear.zig");
 const terrain = @import("../physics/terrain.zig");
@@ -111,8 +112,19 @@ pub fn f(c: S.Ctx, t: f64, x: []const f64, dx: []f64, out: ?*Out) void {
 
     // forças e momentos
     const hgnd = terrain.height(p, x[S.N], x[S.E]);
-    const ae = aero.compute(p, Vr, w, ms.rcg, h - hgnd, .{ cmd.de, cmd.da, cmd.dr });
+    // a propulsão antes da aerodinâmica: os modificadores (esteira da hélice) olham a tração do instante
     const pr = prop.compute(p, Vr, w, ms.rcg, x[S.RPS0 .. S.RPS0 + L.max_props], cmd.thr, cmd.dr, x[S.THE], h);
+    var env = mods.Env{};
+    if (p.n_mod > 0) {
+        var Tn: [L.max_props]f64 = undefined;
+        var Qn: [L.max_props]f64 = undefined;
+        for (0..@as(usize, @intCast(p.n_prop))) |i| {
+            Tn[i] = pr.u[i].T;
+            Qn[i] = pr.u[i].Q;
+        }
+        env = mods.envFrom(p, Vr, w, &Tn, &Qn);
+    }
+    const ae = aero.computeEnv(p, Vr, w, ms.rcg, h - hgnd, .{ cmd.de, cmd.da, cmd.dr }, &env);
     const gr = gear.compute(c, x, R, ms.rcg, cmd.dw);
     var F = ae.F + pr.F + gr.F;
     var M = ae.M + pr.M + pr.Mgyro + gr.M;

@@ -10,6 +10,7 @@ pub const max_tanks = 8; // tanques com sloshing
 pub const max_segments = 32; // pernas do percurso
 pub const max_events = 16; // eventos (soltura de carga, rajada)
 pub const max_instances = 16;
+pub const max_mods = 8; // modificadores ligados ao mesmo tempo (esteira, tabela...; ver modifiers/)
 pub const max_pads = 4; // mesas e plataformas (decolagem/pouso) acima do chão // simulações simultâneas (uma por thread)
 
 /// grupos aerodinâmicos para separar forças e momentos

@@ -6,6 +6,8 @@
 //! `init` a partir dos demais e podem ser lidos de volta.
 const L = @import("limits.zig");
 const poly = @import("math/poly.zig");
+const MT = @import("modifiers/types.zig");
+pub const Modifier = MT.Modifier;
 
 /// polinômio de tração (gerado em comptime a partir do grau em limits.zig)
 pub const ThrustPoly = poly.Poly2(L.thrust_poly_deg);
@@ -313,8 +315,32 @@ pub const Params = extern struct {
     no_payload: i32 = 0, // começa sem a carga
     n_pad: i32 = 0, // mesas/plataformas
     pads: [L.max_pads]Pad = [_]Pad{.{}} ** L.max_pads,
+    // modificadores (modifiers/): método do efeito solo e efeitos a mais (desligados por padrão)
+    ground: i32 = MT.ground_mccormick,
+    n_mod: i32 = 0,
+    mods: [L.max_mods]Modifier = [_]Modifier{.{}} ** L.max_mods,
     // derivados
     steer_sign: f64 = 1, // −1 se a roda direcionável está atrás das principais (convencional)
+};
+
+/// estado de um painel num instante (saída de `aero.computeTrace`): para ver a carga ao longo da envergadura
+pub const PanelState = extern struct {
+    r: [3]f64 = .{ 0, 0, 0 }, // centro do painel (corpo, m)
+    S: f64 = 0,
+    c: f64 = 0,
+    group: i32 = -1, // limits.group_*; −1: painel sem escoamento
+    side: i32 = 0,
+    alpha: f64 = 0, // α local, já com downwash e comando (rad)
+    V: f64 = 0, // velocidade local no plano do perfil (m/s)
+    CL: f64 = 0,
+    CD: f64 = 0,
+    L: f64 = 0, // sustentação do painel (N)
+    D: f64 = 0, // arrasto do painel (N)
+    F: [3]f64 = .{ 0, 0, 0 }, // força aerodinâmica do painel (corpo, N): sustentação + arrasto
+    v: [3]f64 = .{ 0, 0, 0 }, // velocidade do painel em relação ao ar, com os modificadores (corpo, m/s)
+    vind: [3]f64 = .{ 0, 0, 0 }, // parte dos modificadores (esteira...) em `v` (corpo, m/s)
+    ey: [3]f64 = .{ 0, 0, 0 }, // direção da envergadura do painel (corpo)
+    ex: [3]f64 = .{ 0, 0, 0 }, // direção da corda, para a frente (corpo; o centro `r` fica a 25 % da corda)
 };
 
 /// medidas acumuladas de uma corrida (o "relatório" de eventos)

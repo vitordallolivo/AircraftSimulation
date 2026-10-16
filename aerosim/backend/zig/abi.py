@@ -12,6 +12,34 @@ from dataclasses import dataclass, field
 import numpy as np
 
 _PRIM = {"f64": ctypes.c_double, "i32": ctypes.c_int32}
+
+# as structs que o Python usa pelo nome: se faltar alguma, a biblioteca é de outra versão do núcleo
+REQUIRED = ("AeroCoeffs", "EnvCfg", "EnvRow", "Events", "Individual", "LinModel", "LogRow", "MassProps", "OptOpts",
+            "Params", "PerfRow", "PropPoint", "Result", "SimpleCfg", "SimpleRow", "SimpleSummary", "SizingCfg",
+            "SizingOut", "TrimPoint")
+
+
+class AbiMismatch(RuntimeError):
+    """a biblioteca carregada não é a dos fontes atuais do núcleo (recompile: python -m aerosim.backend.zig)"""
+
+
+def fnv1a64(data: bytes) -> int:
+    """o mesmo hash que o núcleo calcula em comptime (`abi.schema_hash`)"""
+    h = 0xcbf29ce484222325
+    for c in data:
+        h ^= c
+        h = (h * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
+def check(sc: "Schema", text: bytes, lib_hash: int | None, required=REQUIRED) -> None:
+    """o esquema chegou inteiro e tem tudo o que o Python usa; senão AbiMismatch com o que falta"""
+    if lib_hash is not None and fnv1a64(text) != lib_hash:
+        raise AbiMismatch(f"esquema do núcleo corrompido (hash {fnv1a64(text):016x} ≠ {lib_hash:016x})")
+    missing = [n for n in required if n not in sc.structs]
+    if missing:
+        raise AbiMismatch("a biblioteca do núcleo não tem " + ", ".join(missing) +
+                          ": ela é de outra versão dos fontes (apague core/zig-out e rode de novo)")
 _NP = {"f64": np.float64, "i32": np.int32}
 
 
@@ -34,6 +62,7 @@ class StructInfo:
 @dataclass
 class Schema:
     abi: int = 0
+    hash: int = 0                       # FNV-1a 64 do texto (o mesmo de aerosim_schema_hash)
     limits: dict[str, int] = field(default_factory=dict)
     snapshot_size: int = 0
     poly_terms: list[str] = field(default_factory=list)   # ordem dos coeficientes do polinômio de tração
@@ -43,7 +72,7 @@ class Schema:
 
 
 def parse(text: str) -> Schema:
-    sc = Schema()
+    sc = Schema(hash=fnv1a64(text.encode()))
     cur: StructInfo | None = None
     for line in text.splitlines():
         tok = line.split()

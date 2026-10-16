@@ -29,7 +29,8 @@ def test_window_tabs_and_edit(app, manager):
     w.show()
     pump(app)
     titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
-    assert titles[-1] == "Montagem" and "Missão" in titles and "Desempenho" in titles
+    assert titles[-1] == "Montagem" and "Desempenho" in titles
+    assert "Missão" not in titles and "Tração" not in titles         # subabas de Desempenho
     assert "Decolagem" not in titles and "Polar" not in titles      # viraram modos/partes de outras abas
     cfg = w.config
     n0 = len(st.aircraft.propulsion)
@@ -175,7 +176,7 @@ def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypa
     w = MainWindow(st)
     w.show()
     titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
-    assert titles.index("Aerodinâmica") < titles.index("Estabilidade") < titles.index("Desempenho") < titles.index("Missão")
+    assert titles.index("Aerodinâmica") < titles.index("Estabilidade") < titles.index("Desempenho")
     aero = w.tabs.widget(titles.index("Aerodinâmica"))
     assert [aero.tabText(i) for i in range(aero.count())] == ["Perfil", "Asa", "Avião montado"]
     w.tabs.setCurrentWidget(aero)
@@ -202,7 +203,7 @@ def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypa
     motores = des.widget(0)
     assert motores.ac is not None and motores.checks.diag.rowCount() >= 3
     assert [des.tabText(i) for i in range(des.count())] == ["Motores e montagem", "Estudo e ponto de projeto",
-                                                            "Avião montado"]
+                                                            "Avião montado", "Tração", "Missão"]
     estudo = des.widget(1)                                 # retroalimentação: ponto de projeto acoplado
     st.design.study.n, st.design.study.places = 2, "A=600"
     st.design.requirements.V_stall_max = 13.0            # estol no MTOW que este avião cumpre (restrição ativa)
@@ -235,7 +236,9 @@ def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypa
         fl.tune_takeoff = real
     assert len(st.fleet) == n + 2 and "⚠" in motores.msg.text()
     perf = w.area_tabs["desempenho"]
-    assert w.tabs.currentWidget() is perf and perf.currentIndex() == perf.count() - 1
+    assert w.tabs.currentWidget() is perf and perf.tabText(perf.currentIndex()) == "Avião montado"
+    w.show_area("missao")
+    assert w.tabs.currentWidget() is perf and perf.tabText(perf.currentIndex()) == "Missão"
 
 
 def test_open_project_resumes_where_it_stopped(app, manager, tmp_path):
@@ -575,3 +578,71 @@ def test_montagem_rebalance_button(app, manager, tmp_path):
     tab = ConfigTab(st)
     ok, msg = tab.rebalance()
     assert ok and bl.full_cg(st.aircraft)[1][0] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_rotation_button_flips_the_motor(app, manager):
+    """Montagem → motor: o botão inverte o sentido de rotação da hélice (e o formulário acompanha)"""
+    from aerosim.gui.state import AppState
+    from aerosim.gui.tabs.config_tab import ConfigTab
+    from aerosim.model.templates import conventional
+    st = AppState(manager, conventional())
+    cfg = ConfigTab(st)
+    cfg._edit("prop:0")
+    u = st.aircraft.propulsion[0]
+    s0 = u.sense
+    b = cfg.findChild(QtWidgets.QPushButton, "rotation_b")
+    assert b is not None and ("anti-horário" in b.text()) == (s0 < 0)
+    b.click()
+    assert u.sense == -s0
+    b.click()
+    assert u.sense == s0
+
+
+def test_performance_turns_show_load_factor(manager):
+    """envelope de curvas do Desempenho: cada inclinação com o seu n = 1/cos φ"""
+    from aerosim.model.templates import conventional
+    r = manager.run("performance", conventional(), {"h_list": "0"})
+    assert any(k.startswith("scur_30° (n = 1.15)") for k in r.series)
+
+
+def test_modifiers_editor(app, manager):
+    """Montagem → Modificadores: desligar o efeito solo muda o que vai ao núcleo; adicionar volta"""
+    from aerosim.backend.zig.translator import native_spec
+    from aerosim.gui.state import AppState
+    from aerosim.gui.tabs.config_tab import ConfigTab
+    from aerosim.model.templates import conventional
+    st = AppState(manager, conventional())
+    cfg = ConfigTab(st)
+    cfg._edit("modifiers")
+    box = cfg.editor_area.widget()
+    on = box.findChild(QtWidgets.QCheckBox)
+    on.setChecked(False)
+    pump(app, 0.05)
+    assert native_spec(st.aircraft)["ground"] == 0
+    combo = cfg.editor_area.widget().findChild(QtWidgets.QComboBox)
+    combo.setCurrentIndex(1)                                  # + efeito solo: McCormick
+    pump(app, 0.05)
+    assert native_spec(st.aircraft)["ground"] == 1 and len(st.aircraft.modifiers) == 2
+
+
+def test_modifiers_editor_parameters(app, manager):
+    """esteira na Montagem: os parâmetros e os motores vão para o modificador e dele para o núcleo"""
+    from aerosim.backend.zig.translator import native_spec
+    from aerosim.gui.state import AppState
+    from aerosim.gui.tabs.config_tab import ConfigTab
+    from aerosim.model.templates import twin_boom
+    st = AppState(manager, twin_boom())
+    cfg = ConfigTab(st)
+    cfg._edit("modifiers")
+    combo = cfg.editor_area.widget().findChild(QtWidgets.QComboBox)
+    combo.setCurrentIndex([combo.itemData(i) for i in range(combo.count())].index("esteira.disco"))
+    pump(app, 0.05)
+    w = cfg.editor_area.widget()
+    w.findChild(QtWidgets.QDoubleSpinBox, "mod_1_giro").setValue(0.0)
+    props = [e for e in w.findChildren(QtWidgets.QLineEdit) if e.placeholderText() == "todos"][0]
+    props.setText("2")
+    props.editingFinished.emit()
+    m = st.aircraft.modifiers[1]
+    assert m.kind == "esteira.disco" and m.params["giro"] == 0.0 and m.props == [1]
+    sp = native_spec(st.aircraft)
+    assert sp["n_mod"] == 1 and sp["mods"][0]["prop_mask"] == 2 and sp["mods"][0]["params"][1] == 0.0

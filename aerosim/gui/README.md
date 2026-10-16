@@ -108,6 +108,12 @@ flowchart LR
 - **Tela:** tudo projetado para 1366×768 (a janela abre nesse tamanho ou no da tela, o menor).
 - **Desfazer:** `AppState` guarda o estado de antes de cada mudança (`notify`/`touch`) — a aeronave e os
   valores das abas registradas (`register`); Ctrl+Z/Ctrl+Y em `main_window.py`.
+- **Desempenho agrupa Tração e Missão:** as subabas são Motores e montagem, Estudo e ponto de projeto, Avião
+  montado, Tração e Missão (`INSIDE` em `main_window.py`); `show_area("missao")` vai direto para a Missão.
+- **Perfis desde o início:** os `.dat` de `data/airfoils` (biblioteca, `design.airfoils.library`) aparecem nas
+  listas de perfil da Asa e da Empenagem sem passar pela etapa Perfil.
+- **xCG em % da CMA** na tela (tabela do MTOW, linha de informações do avião); por dentro tudo é em metros.
+- **Rotação do motor:** na Montagem, cada motor tem o botão "⟲⟳ Inverter rotação".
 - **Tração:** em cada motor, "motor + hélice" (catálogo) ou "polinômio de tração" (conjuntos do
   catálogo, vindos da aba `Tracao`); os 21 coeficientes são editáveis numa tabela.
 - **Simulações:** `SimulationTab` roda `manager.run` numa `QThread`; cada fatia do registro chega por

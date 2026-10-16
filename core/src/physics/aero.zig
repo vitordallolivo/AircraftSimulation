@@ -11,6 +11,7 @@ const L = @import("../limits.zig");
 const T = @import("../types.zig");
 const fm = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
+const mods = @import("../modifiers/mod.zig");
 const V3 = vec.V3;
 
 pub const Out = struct {
@@ -77,15 +78,36 @@ pub fn init(p: *T.Params) void {
 /// Vr: velocidade do ponto O em relação ao ar (corpo); w: (p,q,r); rcg: CG atual;
 /// h: altura de O; δ = (δe, δa, δr). Momentos no CG.
 pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3) Out {
+    return computeEnv(p, Vr, w, rcg, h, d, &mods.Env.none);
+}
+
+/// `compute` com o que os modificadores precisam do instante (tração e torque de cada motor...)
+pub fn computeEnv(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env) Out {
+    return computeImpl(false, p, Vr, w, rcg, h, d, env, {});
+}
+
+/// `computeEnv` que também devolve o estado de cada painel em `out` (α e velocidade locais, C_L, sustentação)
+pub fn computeTrace(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env, out: []T.PanelState) Out {
+    for (out) |*q| q.* = .{};
+    return computeImpl(true, p, Vr, w, rcg, h, d, env, out);
+}
+
+fn computeImpl(comptime trace: bool, p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env, out: if (trace) []T.PanelState else void) Out {
     var o = Out{};
     const Va = vec.norm(Vr);
     const alfa = fm.atan2(Vr[2], Vr[0]);
     const n: usize = @intCast(p.n_surf);
-    for (p.surf[0..n]) |*s| {
+    const with_mods = p.n_mod > 0;
+    for (p.surf[0..n], 0..) |*s, i| {
         const r = vec.v3(s.r);
         const ex = vec.v3(s.ex);
         const ez = vec.v3(s.ez);
-        const v = Vr + vec.cross(w, r);
+        var v = Vr + vec.cross(w, r);
+        var vind = vec.zero;
+        if (with_mods) {
+            vind = mods.induced(p, env, i, s); // esteira, tabela... (modifiers/)
+            v += vind;
+        }
         const u = vec.dot(v, ex);
         const ww = vec.dot(v, ez);
         const V2 = u * u + ww * ww;
@@ -97,11 +119,7 @@ pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3) Out {
         const CL = clPanel(s, al, p.Mst);
         const sg = sigmaStall(al, s.a0, p.Mst);
         var fge: f64 = 1.0;
-        if (s.vertical == 0) { // efeito solo (McCormick)
-            const hp = h - s.r[2];
-            const r16 = 16.0 * @max(hp, 0.01) / p.bref;
-            fge = r16 * r16 / (1.0 + r16 * r16);
-        }
+        if (s.vertical == 0) fge = mods.ground.factor(p.ground, h - s.r[2], p.bref); // efeito solo (modifiers/ground.zig)
         const CDi = (1.0 - sg) * CL * CL / (fm.pi * s.e * s.AR) * fge;
         const sa = fm.sin(al);
         const CD = s.CD0 + CDi + sg * 1.2 * sa * sa;
@@ -111,6 +129,10 @@ pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3) Out {
         const F = lift_dir * vec.splat(qS * CL) + drag_dir * vec.splat(qS * CD);
         const Fi = drag_dir * vec.splat(qS * CDi);
         const M = vec.cross(r - rcg, F) + vec.v3(s.ey) * vec.splat(qS * s.c * s.Cmac);
+        if (trace) {
+            if (i < out.len) out[i] = .{ .r = s.r, .S = s.S, .c = s.c, .group = s.group, .side = s.side, .alpha = al,
+                .V = Vp, .CL = CL, .CD = CD, .L = qS * CL, .D = qS * CD, .F = F, .v = v, .vind = vind, .ey = s.ey, .ex = s.ex };
+        }
         const g: usize = @intCast(s.group);
         o.Fg[g] += F;
         o.Mg[g] += M;
@@ -143,10 +165,16 @@ pub fn coeffs(p: *const T.Params, V: f64, alpha: f64, beta: f64, rcg: V3, d: V3)
 
 /// coeficientes com rotação w = (p, q, r) em rad/s e momentos no ponto `ref` (eixos do corpo)
 pub fn coeffsEx(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V3, d: V3) T.AeroCoeffs {
+    return coeffsEnv(p, V, alpha, beta, w, ref, d, null);
+}
+
+/// `coeffsEx` com a tração e o torque de cada motor (para os modificadores, ex.: esteira); null: sem motores
+pub fn coeffsEnv(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V3, d: V3, thrust: ?[2][]const f64) T.AeroCoeffs {
     const a = fm.sincos(alpha);
     const b = fm.sincos(beta);
     const Vr = V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
-    const o = compute(p, Vr, w, ref, 50.0, d);
+    const env = if (thrust) |tq| mods.envFrom(p, Vr, w, tq[0], tq[1]) else mods.Env.none;
+    const o = computeEnv(p, Vr, w, ref, 50.0, d, &env);
     const qS = 0.5 * p.env.rho * V * V * p.Sref;
     return .{
         .CL = (-o.F[2] * a.c + o.F[0] * a.s) / qS,

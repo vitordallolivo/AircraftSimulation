@@ -116,7 +116,7 @@ class MdoPage(QtWidgets.QWidget):
         self.apply_b.setToolTip("o indivíduo selecionado vira o rascunho da Asa e de Motores e montagem")
         self.six_b = QtWidgets.QPushButton("★ Conferir no 6GDL")
         self.six_b.setToolTip("leva para as etapas, guarda asa, conjunto e avião, fecha o ponto de projeto e mede o "
-                              "MTOW no simulador (aba Missão, modo MTOW)")
+                              "MTOW no simulador (Desempenho → Missão, modo MTOW)")
         for b in (self.apply_b, self.six_b):
             b.setEnabled(False)
         for i, b in enumerate((self.run_b, self.stop_b, self.apply_b, self.six_b)):

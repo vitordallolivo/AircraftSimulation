@@ -16,12 +16,11 @@ from __future__ import annotations
 import copy
 import math
 import os
-import re
 from dataclasses import dataclass, field
 
 import numpy as np
 
-from aerosim.aero.sections import section_polar
+from aerosim.aero.sections import read_polar_file, section_polar  # noqa: F401 (read_polar_file: quem importa daqui)
 from aerosim.model.airfoil import Airfoil, read_dat
 
 from .fields import F
@@ -79,78 +78,49 @@ def from_dat(path: str) -> Airfoil:
     return Airfoil(name=name.strip() or os.path.splitext(os.path.basename(path))[0], path=path, coords=pts.tolist())
 
 
+# ------------------------------------------------------------------ biblioteca (data/airfoils)
+LIBRARY_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "airfoils"))
+_LIB: dict = {}
+
+
+def library(folder: str | None = None) -> dict[str, AirfoilEntry]:
+    """nome → candidato de cada .dat da pasta de perfis (data/airfoils): disponíveis desde o início em Asa e
+    Empenagem, sem passar pela etapa Perfil. Os NACA de 4 dígitos ficam de fora (já saem do código). Lida uma
+    vez por data da pasta; devolve cópias"""
+    d = folder or LIBRARY_DIR
+    if not os.path.isdir(d):
+        return {}
+    key = (d, os.path.getmtime(d), tuple(sorted(os.listdir(d))))
+    if _LIB.get("key") != key:
+        out = {}
+        for f in sorted(os.listdir(d)):
+            if not f.lower().endswith(".dat"):
+                continue
+            try:
+                e = entry(from_dat(os.path.join(d, f)))
+            except Exception:
+                continue
+            if kind(Airfoil(name=e.name)) == "naca":
+                continue
+            out.setdefault(e.name, e)
+        _LIB.update(key=key, items=out)
+    return {k: copy.deepcopy(v) for k, v in _LIB["items"].items()}
+
+
 def from_naca(code: str) -> Airfoil:
     digits = "".join(ch for ch in code if ch.isdigit())
     return Airfoil(name=f"NACA {digits}")
 
 
-# ------------------------------------------------------------------ polar de arquivo (XFLR5 / XFOIL)
-def read_polar_file(path: str) -> dict:
-    """{'Re': Re, 'alpha', 'cl', 'cd', 'cm'} de uma polar exportada (texto do XFLR5/XFOIL ou CSV)"""
-    with open(path, encoding="utf-8", errors="replace") as f:
-        lines = f.read().splitlines()
-    Re = float("nan")
-    head = None
-    rows = []
-    for ln in lines:
-        m = re.search(r"Re\s*=\s*([\d.]+)\s*e\s*([+-]?\d+)", ln)
-        if m:
-            Re = float(m.group(1)) * 10 ** int(m.group(2))
-        else:
-            m = re.search(r"Re\s*=\s*([\d.]+)(?!\s*e)", ln)
-            if m and not math.isfinite(Re):
-                Re = float(m.group(1))
-        parts = [p for p in re.split(r"[,\s;]+", ln.strip()) if p]
-        low = [p.lower() for p in parts]
-        if head is None and "alpha" in low and "cl" in low:
-            head = low
-            continue
-        if head is None:
-            continue
-        try:
-            vals = [float(p) for p in parts]
-        except ValueError:
-            continue
-        if len(vals) >= len(head) or len(vals) >= 3:
-            rows.append(vals)
-    if head is None or not rows:
-        raise ValueError(f"não achei a tabela 'alpha CL CD ...' em {os.path.basename(path)}")
-    a = np.array([r[:len(head)] + [np.nan] * (len(head) - len(r[:len(head)])) for r in rows], float)
-    col = lambda k: a[:, head.index(k)] if k in head else np.full(len(a), np.nan)
-    order = np.argsort(col("alpha"))
-    return dict(Re=Re, alpha=col("alpha")[order], cl=col("cl")[order], cd=col("cd")[order],
-                cm=np.nan_to_num(col("cm")[order]))
-
-
 # ------------------------------------------------------------------ polar e números
-_CACHE: dict = {}
-
-
 def polar(entry: AirfoilEntry, Re: float, alphas=ALPHAS, source: str | None = None) -> dict:
-    """a polar no Re pedido (guardada: a mesma pergunta não recalcula — as etapas refazem a cada mudança)"""
-    af = entry.airfoil
-    a = np.asarray(alphas, float)
-    key = (af.name, af.path, len(af.coords), af.inverted, af.cl_alpha, af.alpha0, af.cl_max, af.cd0, af.cm_ac, source or entry.source,
-           entry.polar_file, os.path.getmtime(entry.polar_file) if entry.polar_file and os.path.exists(entry.polar_file)
-           else 0, round(Re, -3), a.tobytes())
-    if key not in _CACHE:
-        if len(_CACHE) > 256:
-            _CACHE.clear()
-        _CACHE[key] = _polar(entry, Re, a, source)
-    return {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in _CACHE[key].items()}
-
-
-def _polar(entry: AirfoilEntry, Re: float, a: np.ndarray, source: str | None) -> dict:
+    """a polar no Re pedido, pela fonte do candidato (ou a pedida); quem guarda é aerosim.aero.sections"""
     src = source or entry.source
     if src not in sources(entry):
         src = "modelo"
-    if src == "arquivo":
-        p = read_polar_file(entry.polar_file)
-        out = {k: np.interp(a, p["alpha"], p[k], left=np.nan, right=np.nan) for k in ("cl", "cd", "cm")}
-        out.update(alpha=a, source=src, Re=p["Re"])
-        return out
-    p = section_polar(entry.airfoil, a, Re, src)
-    p.update(source=src, Re=Re)
+    p = section_polar(entry.airfoil, np.asarray(alphas, float), Re, src, entry.polar_file if src == "arquivo" else "")
+    p["source"] = src
+    p.setdefault("Re", Re)
     return p
 
 

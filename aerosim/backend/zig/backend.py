@@ -53,6 +53,16 @@ def build(fast_math: bool = True, force: bool = False) -> str:
     return path
 
 
+def _fresh_copy(path: str) -> str:
+    """cópia da biblioteca com outro nome (para carregar a recompilada no mesmo processo)"""
+    import shutil
+    import tempfile
+    d = tempfile.mkdtemp(prefix="aerosim_lib_")
+    dst = os.path.join(d, os.path.basename(path))
+    shutil.copy2(path, dst)
+    return dst
+
+
 _ERRORS = {-1: "slot inválido", -2: "não configurado", -3: "segmento inválido", -4: "trimagem não convergiu",
            -5: "índice inválido", -10: "superfícies demais", -11: "motores demais", -12: "pontos de trem demais",
            -13: "tanques demais", -14: "segmentos demais", -15: "eventos demais", -16: "dt inválido",
@@ -80,14 +90,27 @@ class _Lib:
     def get(cls, path: str | None = None) -> "_Lib":
         with cls._lock:
             if cls._inst is None:
-                cls._inst = _Lib(path or build())
+                try:
+                    cls._inst = _Lib(path or build())
+                except abi.AbiMismatch:
+                    if path:                      # biblioteca pedida explicitamente: não recompila
+                        raise
+                    # biblioteca velha (fontes mudaram sem a data mudar): recompila e carrega uma cópia nova
+                    # (o mesmo caminho devolveria a biblioteca já carregada no processo)
+                    cls._inst = _Lib(_fresh_copy(build(force=True)))
             return cls._inst
 
     def __init__(self, path: str):
         L = self.dll = ctypes.CDLL(path)
         c_int, c_double, c_size, vp = ctypes.c_int32, ctypes.c_double, ctypes.c_size_t, ctypes.c_void_p
         L.aerosim_schema.restype = ctypes.c_char_p
-        self.schema = abi.parse(L.aerosim_schema().decode())
+        text = L.aerosim_schema()
+        self.schema = abi.parse(text.decode())
+        lib_hash = None
+        if hasattr(L, "aerosim_schema_hash"):
+            L.aerosim_schema_hash.restype = ctypes.c_uint64
+            lib_hash = int(L.aerosim_schema_hash())
+        abi.check(self.schema, text, lib_hash)
         T = self.schema.types
         sig = {
             "aerosim_abi_version": (ctypes.c_uint32, []),
@@ -120,15 +143,27 @@ class _Lib:
             "aerosim_sizing_optimize": (c_int, [ctypes.POINTER(T["SizingCfg"]), ctypes.POINTER(T["OptOpts"]), vp, c_size,
                                                 ctypes.POINTER(c_size), ctypes.POINTER(T["SizingOut"]), vp, vp]),
             "aerosim_sizing_name": (ctypes.c_char_p, [c_int, c_int]),
+            "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
+            "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
+            "aerosim_prop_state": (c_int, [c_int, c_int] + [c_double] * 5 + [ctypes.POINTER(T["PropPoint"])]),
+            "aerosim_tube_panel_hits": (c_int, [c_int, c_int, c_double, c_double, c_double, vp, c_size]),
+            "aerosim_tube_point_hits": (c_int, [c_int, c_int, c_double, c_double, c_double, vp, c_size, vp]),
+            "aerosim_panel_states": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, c_size]),
+            "aerosim_panel_states_llt": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, c_size]),
+            "aerosim_aero_coeffs_thrust": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, ctypes.POINTER(T["AeroCoeffs"])]),
         }
+        absent = [n for n in sig if not hasattr(L, n)]
+        if absent:
+            raise abi.AbiMismatch("a biblioteca do núcleo não exporta " + ", ".join(absent) +
+                                  ": ela é de outra versão dos fontes (apague core/zig-out e rode de novo)")
         for name, (res, args) in sig.items():
             fn = getattr(L, name)
             fn.restype = res
             fn.argtypes = args
         if L.aerosim_abi_version() != self.schema.abi:
-            raise RuntimeError("versão do ABI não confere")
+            raise abi.AbiMismatch("versão do ABI não confere")
         if L.aerosim_snapshot_size() != self.schema.snapshot_size:
-            raise RuntimeError("tamanho do snapshot não confere")
+            raise abi.AbiMismatch("tamanho do snapshot não confere")
         self.log_dtype = self.schema.dtypes["LogRow"]
         self.perf_dtype = self.schema.dtypes["PerfRow"]
         self.env_dtype = self.schema.dtypes["EnvRow"]
@@ -229,6 +264,50 @@ class ZigSession(ISimSession):
         _check(self._lib.dll.aerosim_aero_coeffs(self._slot, V, alpha, beta, de, da, dr, ctypes.byref(o)), "aero")
         return _struct_dict(o)
 
+    def aero_coeffs_thrust(self, V, alpha, beta, T, Q, de=0.0, da=0.0, dr=0.0, ref=None):
+        """coeficientes com a tração T[i] e o torque Q[i] de cada motor (os modificadores, como a esteira, usam)"""
+        o = self._lib.schema.types["AeroCoeffs"]()
+        n = len(T)
+        Ta = (ctypes.c_double * max(n, 1))(*T)
+        Qa = (ctypes.c_double * max(n, 1))(*Q)
+        rb = (ctypes.c_double * 3)(*ref) if ref is not None else None
+        _check(self._lib.dll.aerosim_aero_coeffs_thrust(self._slot, V, alpha, beta, de, da, dr, Ta, Qa, n, rb,
+                                                         ctypes.byref(o)), "aero")
+        return _struct_dict(o)
+
+    def tube_panel_hits(self, index, T=0.0, V=0.0, length=10.0) -> np.ndarray:
+        """fração de cada painel dentro do tubo do motor `index` (core/src/collision): o tubo da esteira com tração T a
+        V, ou, com T = 0, o cilindro do raio da hélice; até `length` m atrás do disco"""
+        cap = 256
+        out = np.zeros(cap)
+        n = _check(self._lib.dll.aerosim_tube_panel_hits(self._slot, int(index), float(T), float(V), float(length),
+                                                         out.ctypes.data, cap), "colisão")
+        return out[:min(n, cap)].copy()
+
+    def tube_point_hits(self, index, pts, T=0.0, V=0.0, length=10.0) -> np.ndarray:
+        """quais pontos (n, 3; corpo) estão dentro do tubo do motor `index` (bool por ponto)"""
+        P = np.ascontiguousarray(np.asarray(pts, float).reshape(-1, 3))
+        out = np.zeros(len(P), dtype=np.int32)
+        if len(P):
+            _check(self._lib.dll.aerosim_tube_point_hits(self._slot, int(index), float(T), float(V), float(length),
+                                                         P.ctypes.data, len(P), out.ctypes.data), "colisão")
+        return out.astype(bool)
+
+    def panel_states(self, V, alpha, beta=0.0, T=(), Q=(), de=0.0, da=0.0, dr=0.0, llt=False) -> np.ndarray:
+        """estado de cada painel (centro, área, corda, grupo, lado, α e V locais, C_L, C_D, sustentação e arrasto em N)
+        a V, α, β, com a tração T[i] e o torque Q[i] de cada motor (vazio: sem motores). llt=True: a carga sai da
+        linha sustentadora do núcleo (core/src/loads/llt.zig) em vez do C_Lα uniforme de cada painel"""
+        dt = self._lib.schema.dtypes["PanelState"]
+        cap = 256
+        buf = np.zeros(cap, dtype=dt)
+        n = len(T)
+        Ta = (ctypes.c_double * max(n, 1))(*T)
+        Qa = (ctypes.c_double * max(n, 1))(*Q)
+        fn = self._lib.dll.aerosim_panel_states_llt if llt else self._lib.dll.aerosim_panel_states
+        k = _check(fn(self._slot, V, alpha, beta, de, da, dr, Ta, Qa, n,
+                                                      buf.ctypes.data, cap), "painéis")
+        return buf[:min(k, cap)].copy()
+
     def aero_coeffs_ex(self, V, alpha, beta=0.0, p=0.0, q=0.0, r=0.0, de=0.0, da=0.0, dr=0.0, ref=None):
         o = self._lib.schema.types["AeroCoeffs"]()
         rb = (ctypes.c_double * 3)(*ref) if ref is not None else None
@@ -259,6 +338,15 @@ class ZigSession(ISimSession):
     def prop_point(self, index, V, thr=1.0):
         o = self._lib.schema.types["PropPoint"]()
         _check(self._lib.dll.aerosim_prop_point(self._slot, int(index), V, thr, ctypes.byref(o)), "prop_point")
+        return _struct_dict(o)
+
+    def prop_state(self, index, V, alpha=0.0, beta=0.0, rpm=None, thr=1.0):
+        """motor `index` com o avião a V, α, β (rad): rotação `rpm` imposta ou, sem ela, a de equilíbrio com o
+        acelerador `thr`. Devolve V (no eixo), rpm, J, T, Q, P_shaft, P_elec, I, eta_prop"""
+        o = self._lib.schema.types["PropPoint"]()
+        rps = float(rpm) / 60.0 if rpm else 0.0
+        _check(self._lib.dll.aerosim_prop_state(self._slot, int(index), V, alpha, beta, rps, thr, ctypes.byref(o)),
+               "prop_state")
         return _struct_dict(o)
 
     def mass_props(self):
@@ -411,6 +499,22 @@ class ZigBackend(ISimBackend):
                 for i in range(c.n_bank):
                     rows[f"{k}_{i}"] = v[:, i]
         return rows, _struct_dict(s)
+
+    def probe_ground(self, method: int, h, b: float) -> np.ndarray:
+        """fator do efeito solo do núcleo (core/src/modifiers/ground.zig) em cada altura `h` (sonda, sem simular)"""
+        f = self._lib.dll.aerosim_probe_ground
+        return np.array([f(int(method), float(x), float(b)) for x in np.atleast_1d(h)])
+
+    def probe_slipstream(self, T: float, Q: float, D: float, V: float, rho: float, sense: float, pts) -> np.ndarray:
+        """esteira de um motor (eixo +x) nos pontos (dx, dy, dz) em relação ao cubo (core/src/modifiers/slipstream.zig):
+        linhas [axial, giro_y, giro_z, raio do tubo, dentro]"""
+        f = self._lib.dll.aerosim_probe_slipstream
+        out = []
+        o = (ctypes.c_double * 4)()
+        for d in np.atleast_2d(pts):
+            ins = f(T, Q, D, V, rho, sense, float(d[0]), float(d[1]), float(d[2]), ctypes.byref(o))
+            out.append(list(o) + [float(ins)])
+        return np.array(out)
 
     @property
     def schema(self) -> abi.Schema:

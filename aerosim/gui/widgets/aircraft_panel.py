@@ -127,7 +127,13 @@ def summary_line(ac) -> str:
     try:
         from aerosim.model.massprops import dry_mass
         mp = dry_mass(ac)
-        parts.append(f"massa vazia = {mp['m']:.2f} kg · xCG = {mp['cg'][0]:.3f} m")
+        x = float(mp["cg"][0])
+        try:                                         # xCG em % da CMA (e em metros, o que o modelo usa)
+            from aerosim.model.universal import build_model
+            pc = f"{100 * build_model(ac).mac_frac(x):.1f} % CMA ({x:.3f} m)"
+        except Exception:
+            pc = f"{x:.3f} m"
+        parts.append(f"massa vazia = {mp['m']:.2f} kg · xCG = {pc}")
     except Exception:
         pass
     surf = [s.name for s in ac.surfaces if s.enabled]

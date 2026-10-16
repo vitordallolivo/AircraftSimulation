@@ -754,7 +754,7 @@ class WingPage(StagePage):
         self.state.design.wing_draft = params
 
     def choices(self):
-        names = tuple(a.name for a in self.state.design.airfoils)
+        names = self.state.design.airfoil_names()          # etapa Perfil + biblioteca (data/airfoils)
         return {"airfoil": names, "airfoil_tip": ("",) + names}
 
     def kept_items(self):
@@ -843,7 +843,7 @@ class WingPage(StagePage):
 
     def _sec_fill(self) -> None:
         p = self.draft()
-        names = [""] + [a.name for a in self.state.design.airfoils]
+        names = [""] + list(self.state.design.airfoil_names())
         self.sec.blockSignals(True)
         self.sec.setRowCount(len(p.partitions))
         for r, q in enumerate(p.partitions):
@@ -937,8 +937,8 @@ class TailPage(StagePage):
     def choices(self):
         d = self.state.design
         return {"wing": tuple(w.name for w in d.wings),
-                "tail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + tuple(a.name for a in d.airfoils))),
-                "vtail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + tuple(a.name for a in d.airfoils)))}
+                "tail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + d.airfoil_names())),
+                "vtail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + d.airfoil_names()))}
 
     def editable(self):
         return ("tail_airfoil", "vtail_airfoil")
@@ -1099,7 +1099,7 @@ def send_to_assembly(state: AppState, ac, widget, go: str = "montagem") -> bool:
         QtWidgets.QApplication.restoreOverrideCursor()
     if hasattr(widget, "msg"):
         widget.msg.setText(f"{ac.name}: {why}" if ok else
-                           f"⚠ {ac.name} foi sem a decolagem ajustada: {why}. Ajuste na aba Decolagem/Missão.")
+                           f"⚠ {ac.name} foi sem a decolagem ajustada: {why}. Ajuste em Desempenho → Missão.")
     from ..widgets import save_check
     if not save_check.confirm_save(widget, ac, state.design):     # o que falta definir: salvar mesmo assim?
         if hasattr(widget, "msg"):

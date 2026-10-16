@@ -55,4 +55,8 @@ class SimulationManager(ISimulationManager):
                          shared=self.shared,
                          on_chunk=on_chunk or (lambda c: None), on_progress=on_progress or (lambda f, m: None),
                          cancel=cancel or threading.Event())
-        return sim.run(ctx)
+        res = sim.run(ctx)
+        from aerosim.model import modifiers as mods
+        if not mods.is_default(aircraft) and isinstance(getattr(res, "summary", None), dict):
+            res.summary.setdefault("modificadores", "; ".join(mods.describe(aircraft)))   # fora do padrão: diz quais
+        return res

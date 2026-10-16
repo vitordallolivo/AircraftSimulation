@@ -11,6 +11,7 @@ from .base import AeroSolverBase
 
 class ZigPanelSolver(AeroSolverBase):
     name = "zig"
+    fidelity = "modelo"
     title = "Núcleo Zig (faixas)"
     description = "faixas por seção/comando, C_Lα de Helmbold, downwash ε0 + dε/dα α, fuselagem por coeficientes"
     supports_controls = True

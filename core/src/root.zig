@@ -14,6 +14,10 @@ const abi = @import("abi.zig");
 const runner = @import("sim/runner.zig");
 const trim = @import("sim/trim.zig");
 const aero = @import("physics/aero.zig");
+const modifiers = @import("modifiers/mod.zig");
+const collision = @import("collision/collision.zig");
+const llt = @import("loads/llt.zig");
+const fm = @import("math/fmath.zig");
 const prop = @import("physics/propulsion.zig");
 const mass = @import("physics/mass.zig");
 const vec = @import("math/vec.zig");
@@ -70,6 +74,123 @@ export fn aerosim_abi_version() u32 {
 
 export fn aerosim_schema() [*:0]const u8 {
     return abi.schema.ptr;
+}
+
+/// sonda dos modificadores (sem simulação): fator do efeito solo do método `method` a `h` (m), envergadura `b` (m)
+export fn aerosim_probe_ground(method: i32, h: f64, b: f64) f64 {
+    return modifiers.ground.factor(method, h, b);
+}
+
+/// sonda da esteira (sem simulação): um motor de diâmetro D com tração T, torque Q e sentido `sense`, eixo +x,
+/// ar a V ao longo do eixo; no ponto (dx, dy, dz) em relação ao cubo (corpo) devolve
+/// out = [velocidade axial a mais (m/s, para trás), giro y, giro z (m/s), raio do tubo ali (m)]
+export fn aerosim_probe_slipstream(T_: f64, Q: f64, D: f64, V: f64, rho: f64, sense: f64, dx: f64, dy: f64, dz: f64, out: *[4]f64) i32 {
+    const s = modifiers.slipstream.at(T_, Q, V, 0.5 * D, rho, sense, .{ 1, 0, 0 }, .{ dx, dy, dz }, true, true);
+    out.* = .{ s.axial, s.swirl[1], s.swirl[2], s.R };
+    return if (s.inside) 1 else 0;
+}
+
+/// coeficientes como `aerosim_aero_coeffs_ex`, com a tração T[i] e o torque Q[i] de cada motor (n valores) para os
+/// modificadores (esteira); ref nulo: CG
+export fn aerosim_aero_coeffs_thrust(slot: i32, V: f64, alpha: f64, beta: f64, de: f64, da: f64, dr: f64, Tn: [*]const f64, Qn: [*]const f64, n: i32, ref: ?*const [3]f64, out: *T.AeroCoeffs) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    if (n != inst.p.n_prop) return E_BAD_INDEX;
+    const r = if (ref) |x| vec.v3(x.*) else trim.Ctx.init(&inst.p, &inst.r.f).rcg;
+    const k: usize = @intCast(n);
+    out.* = aero.coeffsEnv(&inst.p, V, alpha, beta, vec.zero, r, .{ de, da, dr }, .{ Tn[0..k], Qn[0..k] });
+    return 0;
+}
+
+/// colisão (collision/): fração de cada painel dentro do tubo do motor `idx` — o tubo da esteira com tração T a V
+/// (contrai), ou, com T ≤ 0, o cilindro do raio da hélice — até `length` m atrás do disco. Escreve até `cap` valores
+/// em `out` (grade 4 × 16 por painel); devolve o número de painéis
+export fn aerosim_tube_panel_hits(slot: i32, idx: i32, T_: f64, V: f64, length: f64, out: [*]f64, cap: usize) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    if (idx < 0 or idx >= inst.p.n_prop) return E_BAD_INDEX;
+    const u = &inst.p.prop[@intCast(idx)];
+    const sh = modifiers.slipstream.shape(T_, V, 0.5 * u.D, inst.p.env.rho);
+    const t = sh.tube(vec.v3(u.r), prop.axis(&inst.p, u), length);
+    const n: usize = @intCast(inst.p.n_surf);
+    for (inst.p.surf[0..@min(n, cap)], 0..) |*s, i| out[i] = collision.stripFraction(t, modifiers.stripOf(s), 4, 16);
+    return @intCast(n);
+}
+
+/// colisão: quais dos n pontos (x, y, z do corpo, em sequência) estão dentro do tubo do motor `idx` (ver acima);
+/// out[i] = 1 dentro, 0 fora; devolve quantos estão dentro
+export fn aerosim_tube_point_hits(slot: i32, idx: i32, T_: f64, V: f64, length: f64, pts: [*]const f64, n: usize, out: [*]i32) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    if (idx < 0 or idx >= inst.p.n_prop) return E_BAD_INDEX;
+    const u = &inst.p.prop[@intCast(idx)];
+    const sh = modifiers.slipstream.shape(T_, V, 0.5 * u.D, inst.p.env.rho);
+    const t = sh.tube(vec.v3(u.r), prop.axis(&inst.p, u), length);
+    var k: i32 = 0;
+    for (0..n) |i| {
+        const inside = t.contains(.{ pts[3 * i], pts[3 * i + 1], pts[3 * i + 2] });
+        out[i] = if (inside) 1 else 0;
+        if (inside) k += 1;
+    }
+    return k;
+}
+
+/// estado do motor `idx` com o avião a V, α, β (sem rotação): rotação `rps` imposta (> 0) ou, se ≤ 0, a de
+/// equilíbrio com o acelerador `thr`. Tração e torque pela hélice (C_T(J), C_P(J)) com o ar no eixo do motor.
+/// Com a rotação imposta só a hélice conta: corrente e potência elétrica saem zeradas (o motor não está em
+/// equilíbrio). No polinômio de tração a rotação não entra (T do polinômio, Q = 0).
+export fn aerosim_prop_state(slot: i32, idx: i32, V: f64, alpha: f64, beta: f64, rps: f64, thr: f64, out: *T.PropPoint) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    if (idx < 0 or idx >= inst.p.n_prop) return E_BAD_INDEX;
+    const u = &inst.p.prop[@intCast(idx)];
+    const a = fm.sincos(alpha);
+    const b = fm.sincos(beta);
+    const Vr = vec.V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
+    const eT = prop.axis(&inst.p, u);
+    const imposed = rps > 0;
+    const n = if (imposed) rps else prop.equilibriumRps(&inst.p, u, Vr, thr);
+    const r = prop.unit(&inst.p, u, eT, Vr, vec.zero, n, if (imposed) 1.0 else thr, 0);
+    const Vax = vec.dot(Vr, eT);
+    const Ps = r.Q * 2.0 * fm.pi * n;
+    out.* = .{ .V = Vax, .rpm = n * 60.0, .J = r.J, .T = r.T, .Q = r.Q, .P_shaft = Ps,
+        .P_elec = if (imposed) 0 else r.P, .I = if (imposed) 0 else r.I,
+        .eta_prop = if (Ps > 1e-6) r.T * Vax / Ps else 0 };
+    return 0;
+}
+
+/// estado de cada painel a V, α, β (sem rotação, longe do chão), com a tração T[i] e o torque Q[i] de cada motor
+/// (n = número de motores; n = 0: sem motores). Escreve até `cap` painéis em `out`; devolve quantos há.
+export fn aerosim_panel_states(slot: i32, V: f64, alpha: f64, beta: f64, de: f64, da: f64, dr: f64, Tn: [*]const f64, Qn: [*]const f64, n: i32, out: [*]T.PanelState, cap: usize) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    if (n != 0 and n != inst.p.n_prop) return E_BAD_INDEX;
+    const a = fm.sincos(alpha);
+    const b = fm.sincos(beta);
+    const Vr = vec.V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
+    const k: usize = @intCast(n);
+    const env = if (n > 0) modifiers.envFrom(&inst.p, Vr, vec.zero, Tn[0..k], Qn[0..k]) else modifiers.Env.none;
+    const np_: usize = @intCast(inst.p.n_surf);
+    const m = @min(cap, np_);
+    const rcg = trim.Ctx.init(&inst.p, &inst.r.f).rcg;
+    _ = aero.computeTrace(&inst.p, Vr, vec.zero, rcg, 50.0, .{ de, da, dr }, &env, out[0..m]);
+    return @intCast(np_);
+}
+
+/// `aerosim_panel_states` com a carga da linha sustentadora (loads/llt.zig: ferraduras, Phillips e Snyder 2000) no
+/// lugar do C_Lα uniforme de cada painel: a distribuição ao longo da envergadura depende do alongamento e da forma.
+/// Só para análise de cargas; a simulação não usa.
+export fn aerosim_panel_states_llt(slot: i32, V: f64, alpha: f64, beta: f64, de: f64, da: f64, dr: f64, Tn: [*]const f64, Qn: [*]const f64, n: i32, out: [*]T.PanelState, cap: usize) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    const np_: usize = @intCast(inst.p.n_surf);
+    if (cap < np_) return E_BAD_INDEX;
+    const k = aerosim_panel_states(slot, V, alpha, beta, de, da, dr, Tn, Qn, n, out, cap);
+    if (k < 0) return k;
+    const a = fm.sincos(alpha);
+    const b = fm.sincos(beta);
+    const Vr = vec.V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
+    _ = llt.apply(&inst.p, Vr, .{ de, da, dr }, out[0..np_]);
+    return k;
+}
+
+/// hash (FNV-1a 64) do esquema: confere que o texto chegou inteiro e identifica a versão do layout
+export fn aerosim_schema_hash() u64 {
+    return abi.schema_hash;
 }
 
 /// reserva uma simulação (thread-safe); -1 se todas estiverem em uso

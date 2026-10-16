@@ -29,16 +29,19 @@ from ..widgets.view3d import AircraftView
 # explicação de cada editor: ⓘ no título (passe o mouse)
 EDIT_HELP = {
     "ballast": "massa sólida presa na aeronave para acertar o CG; entra na massa, no CG e nas inércias. "
-               "Arraste no 3D para mover. Na Missão → MTOW a massa total do avião é que varia (o que passa da montada vai no CG)",
+               "Arraste no 3D para mover. Em Desempenho → Missão → MTOW a massa total do avião é que varia (o que passa da montada vai no CG)",
     "takeoff": "na corrida o acelerador vai a cheio; no ponto de acionamento o profundor (ou elevon) vai para a "
                "deflexão de decolagem até o piloto automático assumir. A Missão otimiza esse ponto",
     "airfield": "a aeronave parte de n = 0 rumo ao norte. x_warning: tem de decolar antes desta distância; "
                 "z_warning: altura que conta como decolado (na mesa, ≤ 0 = quanto pode afundar)",
     "gear": "tipo: triciclo, convencional (bequilha na cauda) ou custom (pernas livres); trocar o tipo reposiciona "
             "as pernas",
-    "mission": "a trajetória (etapas) se edita na aba Missão; aqui ficam o ponto de partida e os eventos",
+    "mission": "a trajetória (etapas) se edita em Desempenho → Missão; aqui ficam o ponto de partida e os eventos",
     "payload": "carga LAPES: massa, posição, baia e paraquedas; a soltura é um evento do percurso",
     "fuselage": "ligue/desligue em 'ativo'",
+    "modifiers": "metodologias da literatura que mudam a aerodinâmica do avião inteiro (efeito solo, esteira da "
+                 "hélice...). Quem calcula é o núcleo (core/src/modifiers); cada método mostra de onde vem a fórmula. "
+                 "Só o .json guarda a lista; o padrão é o efeito solo de McCormick",
     "boom": "tubo livre: início (x, y, z), comprimento, inclinação e abertura; tubo duplo = dois tubos (y = ±d). "
             "As superfícies se prendem nele pelo campo 'presa em'",
 }
@@ -373,6 +376,8 @@ class ConfigTab(QtWidgets.QWidget):
         items.append(("payload", "📦 LAPES: carga e soltura" + ("" if ac.payload.enabled else " (desligado)")))
         items.append(("ballast", "⚖ Lastro" + (f" ({ac.ballast.mass:g} kg)" if ac.ballast.enabled else " (desligado)")))
         items.append(("gear", f"trem de pouso ({ac.gear.layout})"))
+        from aerosim.model import modifiers as mods
+        items.append(("modifiers", f"🧪 Modificadores ({len(mods.active(ac))} ligado(s))"))
         items += [(k, t) for k, t in NONGEOM]
         sel_row = 0
         for i, (k, t) in enumerate(items):
@@ -450,6 +455,7 @@ class ConfigTab(QtWidgets.QWidget):
             u = ac.propulsion[int(idx)]
             self.form = DataclassForm(u, exclude=("motor", "propeller", "battery"))
             v.addWidget(self.form)
+            v.addWidget(self._rotation_button(u))
             v.addWidget(self._propulsion_choice(u))
         elif kind == "tank":
             self.form = DataclassForm(ac.tanks[int(idx)])
@@ -487,6 +493,8 @@ class ConfigTab(QtWidgets.QWidget):
             v.addWidget(self.form)
             from aerosim.model.aircraft import PointMass
             v.addWidget(self._list_editor("massas pontuais", ac.mass.items, PointMass, {}))
+        elif kind == "modifiers":
+            v.addWidget(self._modifiers_editor())
         elif kind == "mission":
             self.form = DataclassForm(ac.mission, exclude=("legs", "events"))
             v.addWidget(self.form)
@@ -506,6 +514,99 @@ class ConfigTab(QtWidgets.QWidget):
             self.form.changed.connect(self._changed)
         v.addStretch(1)
         self.editor_area.setWidget(w)
+
+    def _modifiers_editor(self) -> QtWidgets.QWidget:
+        """lista de modificadores: liga/desliga, remove, adiciona; mostra de onde vem cada método"""
+        from aerosim.model import modifiers as mods
+        ac = self.state.aircraft
+        w = QtWidgets.QWidget()
+        v = QtWidgets.QVBoxLayout(w)
+        v.setContentsMargins(0, 0, 0, 0)
+
+        def rebuild():
+            self._fill_list("modifiers")
+            self._edit("modifiers")
+
+        def changed():
+            # refaz o editor depois do sinal: apagar o botão/caixa que emitiu dentro do próprio sinal derruba o Qt
+            self.state.notify("geometry")
+            QtCore.QTimer.singleShot(0, rebuild)
+
+        for i, m in enumerate(ac.modifiers):
+            inf = m.info
+            box = QtWidgets.QGroupBox(inf.title if inf else f"desconhecido: {m.kind}")
+            g = QtWidgets.QVBoxLayout(box)
+            row = QtWidgets.QHBoxLayout()
+            on = QtWidgets.QCheckBox("ligado")
+            on.setChecked(bool(m.enabled))
+            on.toggled.connect(lambda c, m=m: (setattr(m, "enabled", bool(c)), changed()))
+            rm = QtWidgets.QPushButton("remover")
+            rm.clicked.connect(lambda _=False, i=i: (ac.modifiers.pop(i), changed()))
+            row.addWidget(on)
+            row.addStretch(1)
+            row.addWidget(rm)
+            g.addLayout(row)
+            if inf:
+                lbl = QtWidgets.QLabel(f"{inf.description}<br><i>fonte: {inf.reference}</i>")
+                lbl.setWordWrap(True)
+                lbl.setStyleSheet("color: #444")
+                g.addWidget(lbl)
+                form = QtWidgets.QFormLayout()
+                for par in inf.params:
+                    sp = QtWidgets.QDoubleSpinBox()
+                    sp.setDecimals(3)
+                    sp.setRange(-1e3, 1e3)
+                    sp.setSingleStep(0.1)
+                    sp.setValue(m.value(par.key))
+                    sp.setToolTip(par.help)
+                    sp.setObjectName(f"mod_{i}_{par.key}")
+
+                    def put(val, m=m, k=par.key):
+                        m.params[k] = float(val)
+                        self.state.notify("geometry")
+                    sp.valueChanged.connect(put)
+                    form.addRow(par.label + (f" ({par.unit})" if par.unit else ""), sp)
+                if inf.category == "aditivo":
+                    props = QtWidgets.QLineEdit(", ".join(str(k + 1) for k in m.props))
+                    props.setPlaceholderText("todos")
+                    props.setToolTip("números dos motores (1, 2, ...) separados por vírgula; vazio = todos")
+
+                    def put_props(m=m, w=props):
+                        m.props = [int(x) - 1 for x in w.text().replace(";", ",").split(",") if x.strip().isdigit()]
+                        self.state.notify("geometry")
+                    props.editingFinished.connect(put_props)
+                    form.addRow("motores", props)
+                    names = [x.name for x in ac.surfaces]
+                    targ = QtWidgets.QLineEdit(", ".join(m.targets))
+                    targ.setPlaceholderText("todas")
+                    targ.setToolTip("nomes das superfícies separados por vírgula; vazio = todas. Existem: " + ", ".join(names))
+
+                    def put_targets(m=m, w=targ):
+                        m.targets = [x.strip() for x in w.text().split(",") if x.strip()]
+                        self.state.notify("geometry")
+                    targ.editingFinished.connect(put_targets)
+                    form.addRow("superfícies", targ)
+                g.addLayout(form)
+            v.addWidget(box)
+        for msg in mods.problems(ac):
+            warn = QtWidgets.QLabel("⚠ " + msg)
+            warn.setWordWrap(True)
+            v.addWidget(warn)
+        add = QtWidgets.QComboBox()
+        add.addItem("+ adicionar modificador…", None)
+        for k, inf in mods.KINDS.items():
+            add.addItem(inf.title, k)
+
+        def pick(ix):
+            k = add.itemData(ix)
+            if k:
+                ac.modifiers.append(mods.Modifier(k))
+                changed()
+        add.currentIndexChanged.connect(pick)
+        v.addWidget(add)
+        if not ac.modifiers:
+            v.addWidget(QtWidgets.QLabel("sem modificadores: efeito solo desligado"))
+        return w
 
     def _show_rho(self):
         env = self.state.aircraft.environment
@@ -794,6 +895,27 @@ class ConfigTab(QtWidgets.QWidget):
         v.addWidget(info)
         plot()
         return box
+
+    def _rotation_button(self, u: PropulsionUnit) -> QtWidgets.QPushButton:
+        """inverte o sentido de rotação da hélice (o torque e o efeito giroscópico trocam de lado)"""
+        b = QtWidgets.QPushButton()
+        b.setObjectName("rotation_b")
+        b.setToolTip("troca o sentido de rotação da hélice (sentido = +1 ↔ −1): o torque de reação e a esteira "
+                     "trocam de lado. Em bimotor, sentidos opostos cancelam o torque")
+
+        def label():
+            now = "horário" if u.sense >= 0 else "anti-horário"
+            b.setText(f"⟲⟳ Inverter rotação (agora: {now}, visto de trás)")
+
+        def flip():
+            u.sense = -u.sense if u.sense else -1
+            label()
+            if self.form is not None:
+                self.form.refresh()
+            self.state.notify("geometry")
+        b.clicked.connect(flip)
+        label()
+        return b
 
     def _propulsion_choice(self, u: PropulsionUnit):
         box = QtWidgets.QGroupBox("Tração")
