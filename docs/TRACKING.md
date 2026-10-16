@@ -37,7 +37,7 @@ Como usar:
 
 ## Versões
 
-- **A `main` está em `v0.2.0`** (milestone de fundação fechado, PRs #21–#25).
+- **A `main` está em `v0.2.2`** (PR #27). O milestone de fundação fechou na `v0.2.0` (PRs #21–#25).
 - **Cada tarefa concluída e mesclada sobe só o último número:** `0.2.1`, `0.2.2`, `0.2.3`…
 - **Quando toda a lista de tarefas abaixo estiver feita, vira `0.3.0`.** Não há data nem promessa de 1.0: nada vira
   release sem o dono testar pessoalmente cada componente.
@@ -145,9 +145,6 @@ Legenda das colunas **Código** e **GUI**:
 | AE-08 | Efeito solo (McCormick) | ✅ | ✅ | — | modifier `solo.mccormick`; Configuração → Modificadores |
 | AE-09 | Efeito solo por imagem (inclui a mesa) | ❌ | ❌ | — | modifier novo |
 | AE-10 | Esteira da hélice nas superfícies | 🟡 | 🟡 | T08 | `esteira.disco` (Configuração → Modificadores); tubo reto, trimagem sem esteira |
-| AE-08 | Efeito solo (McCormick) | ✅ | ❓ | T08 | modifier `solo.mccormick` |
-| AE-09 | Efeito solo por imagem (inclui a mesa) | ❌ | ❌ | — | modifier novo |
-| AE-10 | Esteira da hélice nas superfícies | 🟡 | ❌ | T08 | `esteira.disco`; tubo reto |
 | AE-11 | Reynolds no núcleo | ❌ | ❌ | T10 | |
 | AE-12 | Distribuição ao longo da envergadura a um α | ✅ | ❌ | T09 | `core/src/loads/llt.zig` |
 | AE-13 | Comparação com ensaio | ❌ | ❌ | T35 | |
@@ -157,7 +154,7 @@ Legenda das colunas **Código** e **GUI**:
 | ID | Tópico | Código | GUI | Tarefa | Onde / observação |
 |---|---|---|---|---|---|
 | DE-01 | Motor + hélice + bateria | ✅ | ✅ | — | Desempenho → Tração |
-| DE-02 | Biblioteca de motores e hélices de saída | 🟡 | 🟡 | T01 | |
+| DE-02 | Biblioteca de motores e hélices de saída | 🟡 | 🟡 | — | catálogo em `data/catalog` (cfg/xlsx) |
 | DE-03 | Comparação de conjuntos motopropulsores | 🟡 | 🟡 | — | sprint Motores |
 | DE-05 | Ajuste de ensaio dinâmico de hélice | ❌ | ❌ | T35 | |
 | DE-06 | Decolagem com pista limitada / mesa | ✅ | ✅ | — | |
@@ -185,15 +182,15 @@ pista) é ajuste de interface e está em "Fora da conta".
 | EC-05 | Diagrama tesoura | ✅ | ✅ | — | |
 | EC-06 | Trimagem | ✅ | ✅ | — | |
 | EC-07 | Dimensionamento de EH/EV e comandos | ✅ | ✅ | — | |
-| EC-08 | Vento de través no pouso | ❓ | ❓ | T01 | |
-| EC-09 | Taxa de rolamento (pb/2V) | ❓ | ❓ | T01 | |
+| EC-08 | Vento de través no pouso | ✅ | ✅ | — | Estabilidade: leme com 0,2 V_S de través (FAR 23.233) |
+| EC-09 | Taxa de rolamento (pb/2V) | ✅ | ✅ | — | Estabilidade: aileron por φ em t (MIL-F-8785C); pb/2V não é mostrado |
 | EC-10 | Dinâmica: modos e respostas | ✅ | ✅ | — | |
 | EC-11 | Qualidades de voo (MIL-F-8785C) | ✅ | ✅ | — | |
 | EC-12 | Vento lateral/frontal nos polos | ❌ | ❌ | T05 | |
 | EC-13 | Polos com sloshing | ❌ | ❌ | T05 | |
 | EC-14 | Diedro elástico | ❌ | ❌ | T27 | |
 | EC-15 | Comparação com voo real | ❌ | ❌ | T35 | |
-| EC-16 | Inverter a rotação de qualquer motor | ❓ | ❓ | T01 | |
+| EC-16 | Inverter a rotação de qualquer motor | ✅ | ✅ | — | Configuração: botão de sentido (±1) por motor |
 
 ### 4. Cargas
 
@@ -242,7 +239,7 @@ A Missão mostra só o que a simulação já calcula: a corrente média e a de p
 | IN-04 | Tração e Missão dentro de Desempenho | ✅ | ✅ | — | |
 | IN-05 | xCG em % CMA | ✅ | ✅ | — | |
 | IN-06 | Checklist do avião | ✅ | ✅ | — | |
-| IN-08 | Volume e arranjo da caixa | ❓ | ❓ | T34 | |
+| IN-08 | Volume e arranjo da caixa | ❌ | ❌ | T34 | |
 | IN-09 | Tempo de montagem e desmontagem | ❌ | ❌ | T34 | |
 
 ### 9. Controle
@@ -286,7 +283,7 @@ A Missão mostra só o que a simulação já calcula: a corrente média e a de p
 
 São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
-**Onde foi medido:** na ponta da pilha de branches, não na `main`. Parte do que está ✅ só chega à `main` com a pilha.
+**Onde foi medido:** na `main` (`v0.2.2`), com os ❓ do T01 já conferidos no código.
 
 | Seção | ✅ na GUI / itens |
 |---|---|
@@ -317,6 +314,6 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 - Relatórios e dados de terceiros nunca entram no git.
 
 **Situação atual das branches**
-- `main`: `v0.2.1` (PR #26).
-- `0.2_dev`: T36 feito (vira `0.2.2` com o merge); T06 por fazer.
+- `main`: `v0.2.2` (PR #27).
+- `0.2_dev`: correção do tracking (vira `0.2.3` com o merge); T06 por fazer.
 - As branches antigas foram apagadas aqui; no GitHub, o dono apaga (a sessão não tem permissão).
