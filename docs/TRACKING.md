@@ -50,8 +50,8 @@ Como usar:
 | Versão | Milestone | Subversões | Fecha quando |
 |---|---|---|---|
 | **0.1** | Fundação firme | 0.1.1 testes de regressão em `tools/checks` (comparação bit a bit, núcleo, AeroDrive, testes por área) · 0.1.2 rodar e corrigir o que quebrou · 0.1.3 conferir os ❓ · 0.1.4 pilha de branches mesclada | pilha na `main` com os checks verdes |
-| **0.2** | Análises simples (cálculos e plots) | 0.2.1 E&C: ME × xCG, passeio do CG, limite dianteiro pela rotação · 0.2.2 E&C: vento e sloshing nos polos · 0.2.3 Desempenho: curvas com fator de carga, planeio, pouso · 0.2.4 consumo por fase, C-rate da bateria | os itens na GUI |
-| **0.3** | Aero completo na GUI | 0.3.1 esteira e solo ligáveis por avião · 0.3.2 distribuição a α (início do estol) · 0.3.3 Reynolds no núcleo · 0.3.4 arrasto por componente | os itens na GUI |
+| **0.2** | Análises simples (cálculos e plots) | 0.2.1 E&C: ME × xCG com ênfase, passeio do CG · 0.2.2 E&C: vento e sloshing nos polos · 0.2.3 Desempenho: curvas com fator de carga · 0.2.4 consumo por fase, C-rate da bateria | os itens na GUI |
+| **0.3** | Aero completo na GUI | 0.3.1 trimagem com esteira, tubo desviado · 0.3.2 distribuição a α (início do estol) · 0.3.3 Reynolds no núcleo · 0.3.4 arrasto por componente | os itens na GUI |
 | **0.4** | Cargas I | 0.4.1 aba Cargas (3D + gráficos) · 0.4.2 casos do V-n · 0.4.3 rajada · 0.4.4 cortante, fletor e torsor | esforços por caso na GUI |
 | **0.5** | Cargas II + Elétrica | 0.5.1 manobras dinâmicas · 0.5.2 momentos de dobradiça · 0.5.3 cargas no solo · 0.5.4 servos e cabos | dobradiça → servo na GUI |
 | **0.6** | Estruturas (do zero) | 0.6.1 arquitetura + materiais · 0.6.2 longarina · 0.6.3 tubo de cauda · 0.6.4 trem | longarina na GUI |
@@ -84,14 +84,14 @@ Tipos de tarefa:
 | ID | Tarefa | Tipo | Depende de | Milestone | Estado |
 |---|---|---|---|---|---|
 | T00 | Checks de regressão em `tools/checks` (comparação bit a bit contra uma ref, núcleo, AeroDrive, testes por área) | [novo] | — | 0.1.1 | Fazendo |
-| T01 | Conferir os ❓ | leitura | — | 0.1.3 | Pronto |
+| T01 | Conferir os ❓ | leitura | — | 0.1.3 | Feito |
 | T02 | Rodar os checks na pilha e corrigir | [ext] | T00 | 0.1.2 | Bloqueado |
 | T03 | PRs da pilha para a `main` | git | T02 | 0.1.4 | Bloqueado |
-| T04 | E&C: ME × xCG com ênfase, passeio do CG, limite pela rotação | [ext] | — | 0.2.1 | Pronto |
+| T04 | E&C: ME × xCG com ênfase, passeio do CG (o limite pela rotação já existe) | [ext] | — | 0.2.1 | Pronto |
 | T05 | E&C: polos com vento e com sloshing | [ext] | — | 0.2.2 | Pronto |
-| T06 | Curvas com fator de carga, planeio, pouso | [ext] | — | 0.2.3 | Pronto |
+| T06 | Curvas com fator de carga (planeio e pouso já existem) | [ext] | — | 0.2.3 | Pronto |
 | T07 | Consumo por fase, C-rate × pico | [ext] | — | 0.2.4 | Pronto |
-| T08 | Esteira e efeito solo ligáveis na GUI | [GUI] | — | 0.3.1 | Pronto |
+| T08 | Esteira: trimagem com esteira e tubo desviado (ligar já existe na GUI) | [ext] | — | 0.3.1 | Pronto |
 | T09 | Distribuição a α na aba Aerodinâmica | [GUI] | — | 0.3.2 | Pronto |
 | T10 | Reynolds no núcleo (tabela por Re) | [ext] | — | 0.3.3 | Pronto |
 | T11 | Arrasto por componente | [ext] | — | 0.3.4 | Pronto |
@@ -143,9 +143,9 @@ Legenda das colunas **Código** e **GUI**:
 | AE-05 | Dispositivos de ponta de asa | ✅ | ✅ | — | `aero/tipdevices.py` |
 | AE-06 | Arrasto por componente | 🟡 | ❌ | T11 | só a área de arrasto da fuselagem |
 | AE-07 | Downwash na cauda | 🟡 | 🟡 | T09 | empírico na simulação; ferraduras nas cargas |
-| AE-08 | Efeito solo (McCormick) | ✅ | ❓ | T08 | modifier `solo.mccormick` |
+| AE-08 | Efeito solo (McCormick) | ✅ | ✅ | — | modifier `solo.mccormick`; Configuração → Modificadores |
 | AE-09 | Efeito solo por imagem (inclui a mesa) | ❌ | ❌ | — | modifier novo |
-| AE-10 | Esteira da hélice nas superfícies | 🟡 | ❌ | T08 | `esteira.disco`; tubo reto |
+| AE-10 | Esteira da hélice nas superfícies | 🟡 | 🟡 | T08 | `esteira.disco` (Configuração → Modificadores); tubo reto, trimagem sem esteira |
 | AE-11 | Reynolds no núcleo | ❌ | ❌ | T10 | |
 | AE-12 | Distribuição ao longo da envergadura a um α | ✅ | ❌ | T09 | `core/src/loads/llt.zig` |
 | AE-13 | Comparação com ensaio | ❌ | ❌ | T35 | |
@@ -163,8 +163,8 @@ Legenda das colunas **Código** e **GUI**:
 | DE-08 | MTOW × altitude-densidade | ✅ | ✅ | — | |
 | DE-09 | Subida, nivelado, envelope | ✅ | ✅ | — | |
 | DE-10 | Curvas com fator de carga | 🟡 | 🟡 | T06 | |
-| DE-11 | Planeio | ❓ | ❓ | T06 | |
-| DE-12 | Pouso | 🟡 | ❓ | T06 | `landingRun` |
+| DE-11 | Planeio | ✅ | ✅ | — | Desempenho → Planeio |
+| DE-12 | Pouso | ✅ | ✅ | — | etapa "pouso" da Missão; `landingRun` no sizing |
 | DE-13 | Consumo por fase de voo | 🟡 | 🟡 | T07 | |
 | DE-15 | Monte Carlo e sensibilidade | ❌ | ❌ | T29 | |
 | DE-16 | Turbulência contínua | ❌ | ❌ | T30 | |
@@ -179,19 +179,19 @@ pista) é ajuste de interface e está em "Fora da conta".
 | EC-01 | Estática longitudinal (PN, ME) | ✅ | ✅ | — | |
 | EC-02 | ME × xCG com ênfase | 🟡 | 🟡 | T04 | |
 | EC-03 | Passeio do CG (LAPES, líquido) | 🟡 | 🟡 | T04 | |
-| EC-04 | Limite dianteiro do CG pela rotação | ❓ | ❓ | T04 | |
+| EC-04 | Limite dianteiro do CG pela rotação | ✅ | ✅ | — | Estabilidade: "decola rodando sobre o trem" |
 | EC-05 | Diagrama tesoura | ✅ | ✅ | — | |
 | EC-06 | Trimagem | ✅ | ✅ | — | |
 | EC-07 | Dimensionamento de EH/EV e comandos | ✅ | ✅ | — | |
-| EC-08 | Vento de través no pouso | ❓ | ❓ | T01 | |
-| EC-09 | Taxa de rolamento (pb/2V) | ❓ | ❓ | T01 | |
+| EC-08 | Vento de través no pouso | ✅ | ✅ | — | Estabilidade: leme em vento cruzado (FAR 23.233) |
+| EC-09 | Taxa de rolamento | ✅ | ✅ | — | Estabilidade: tempo para inclinar × aileron |
 | EC-10 | Dinâmica: modos e respostas | ✅ | ✅ | — | |
 | EC-11 | Qualidades de voo (MIL-F-8785C) | ✅ | ✅ | — | |
 | EC-12 | Vento lateral/frontal nos polos | ❌ | ❌ | T05 | |
 | EC-13 | Polos com sloshing | ❌ | ❌ | T05 | |
 | EC-14 | Diedro elástico | ❌ | ❌ | T27 | |
 | EC-15 | Comparação com voo real | ❌ | ❌ | T35 | |
-| EC-16 | Inverter a rotação de qualquer motor | ❓ | ❓ | T01 | |
+| EC-16 | Inverter a rotação de qualquer motor | ✅ | ✅ | — | Configuração → motor: sentido de rotação |
 
 ### 4. Cargas
 
@@ -243,7 +243,7 @@ pista) é ajuste de interface e está em "Fora da conta".
 | IN-04 | Tração e Missão dentro de Desempenho | ✅ | ✅ | — | |
 | IN-05 | xCG em % CMA | ✅ | ✅ | — | |
 | IN-06 | Checklist do avião | ✅ | ✅ | — | |
-| IN-08 | Volume e arranjo da caixa | ❓ | ❓ | T34 | |
+| IN-08 | Volume e arranjo da caixa | ❌ | ❌ | T34 | |
 | IN-09 | Tempo de montagem e desmontagem | ❌ | ❌ | T34 | |
 
 ### 9. Controle
@@ -292,16 +292,16 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
 | Seção | ✅ na GUI / itens |
 |---|---|
-| 1. Aerodinâmica | 5 / 13 |
-| 2. Desempenho | 4 / 14 |
-| 3. Estabilidade e Controle | 6 / 16 |
+| 1. Aerodinâmica | 6 / 13 |
+| 2. Desempenho | 6 / 14 |
+| 3. Estabilidade e Controle | 10 / 16 |
 | 4. Cargas | 0 / 8 |
 | 5. Aeroelasticidade | 0 / 4 |
 | 6. Estruturas | 1 / 5 |
 | 7. Elétrica | 0 / 3 |
 | 8. Integração | 6 / 8 |
 | 9. Controle | 1 / 2 |
-| **Total** | **23 / 73 (32 %)** |
+| **Total** | **30 / 73 (41 %)** |
 
 ---
 
