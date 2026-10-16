@@ -203,7 +203,7 @@ def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypa
     motores = des.widget(0)
     assert motores.ac is not None and motores.checks.diag.rowCount() >= 3
     assert [des.tabText(i) for i in range(des.count())] == ["Motores e montagem", "Estudo e ponto de projeto",
-                                                            "Avião montado", "Tração", "Missão"]
+                                                            "Avião montado", "Voo nivelado e envelopes", "Tração", "Missão"]
     estudo = des.widget(1)                                 # retroalimentação: ponto de projeto acoplado
     st.design.study.n, st.design.study.places = 2, "A=600"
     st.design.requirements.V_stall_max = 13.0            # estol no MTOW que este avião cumpre (restrição ativa)

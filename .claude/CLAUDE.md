@@ -140,15 +140,30 @@ Depois de criar, mover ou renomear arquivos ou funções públicas, rodar `pytho
 
 O container começa sem as dependências, e tudo o que se instala some quando ele é reciclado.
 
-**Instalar:**
+**Instalar, por parte (o que cada coisa precisa para rodar):**
+
+| Para rodar | Instalar |
+|---|---|
+| Núcleo (`core`, `zig build test`) e o backend Python | `pip install ziglang` (0.16.0 = `minimum_zig_version`) |
+| Testes Python (`tests/`), `tools/checks`, a GUI | `pip install -r requirements.txt -r requirements-aero.txt pytest` |
+| Testes de GUI e de aero (Qt/pyqtgraph sem tela) | `apt-get install -y libegl1 libgl1 libxkbcommon0` |
+| AeroDrive (`zig build`: raylib) | `apt-get install -y libgl-dev libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libxext-dev`, mais as dependências do Zig (abaixo) |
+| Prints com 3D (`xvfb-run`) | `apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0 libgl1-mesa-dri` (o `xvfb-run` já vem no container) |
+
+**Dependências do AeroDrive pelo `git`** (o `zig fetch` não passa pelo proxy da sessão). Numa pasta fora do
+repositório (ex.: o scratchpad), um pacote por vez; o commit ou a tag de cada um está no `build.zig.zon` de quem pede:
 
 ```sh
-pip install -r requirements.txt -r requirements-aero.txt pytest ziglang      # ziglang 0.16.0 (= minimum_zig_version)
-apt-get install -y libegl1 libgl1 libxkbcommon0                               # Qt/pyqtgraph (testes de GUI e aero)
-apt-get install -y libgl-dev libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libxext-dev  # raylib (AeroDrive)
-apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 \
-                   libxcb-render-util0 libxcb-xinerama0 libxcb-shape0 libgl1-mesa-dri   # xvfb-run com OpenGL (prints com 3D)
+git clone -q --bare https://github.com/raylib-zig/raylib-zig raylib-zig.git
+git -C raylib-zig.git archive --prefix=raylib-zig/ -o raylib-zig.tar.gz <commit do aerodrive/build.zig.zon>
+cd /caminho/do/repo/aerodrive && python -m ziglang fetch /caminho/raylib-zig.tar.gz   # o hash tem que bater
 ```
+
+Pacotes: `raylib-zig` (`aerodrive/build.zig.zon`); `raylib` tag 6.0 (github.com/raysan5/raylib), `raygui`
+(github.com/raysan5/raygui), `emsdk` tag 4.0.9 (github.com/emscripten-core/emsdk) e `zemscripten`
+(github.com/zig-gamedev/zemscripten), estes no `build.zig.zon` do raylib-zig; o raylib pede um segundo commit do
+`zemscripten` (no `build.zig.zon` dele, que aparece em `aerodrive/zig-pkg/` depois do primeiro fetch). Ordem que
+funciona: raylib-zig → raylib → raygui → emsdk → os dois zemscripten.
 
 **Problemas conhecidos:**
 - **`zig build` do AeroDrive não baixa as dependências** (`unable to discover remote git server capabilities:

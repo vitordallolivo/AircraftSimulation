@@ -11,6 +11,12 @@
 //!   modelo    (method 1) — trimagem completa da aeronave (painéis, momentos, profundor) em cada
 //!             (h, V): o acelerador de equilíbrio cruza 1 em V_min e V_max.
 //! A tração disponível é a das unidades propulsoras (polinômio ou motor+hélice) com ρ(h).
+//!
+//! `below_stall = 1` (modelo, desligado por padrão): abaixo do estol a trimagem usa uma cópia dos parâmetros sem
+//! estol (C_L linear de cada painel, ângulo de estol a0 levado para longe), só para achar onde P_d = P_r e ver a
+//! curva de potência inteira, como a planilha faz com a polar parabólica. Esse trecho não é voável: o V_min de
+//! potência pode ficar abaixo do V_e, e o mínimo voável é max(V_min, V_e) (Anderson, Aircraft Performance and
+//! Design, cap. 5; a conferir no PDF).
 const std = @import("std");
 const L = @import("../limits.zig");
 const T = @import("../types.zig");
@@ -59,6 +65,8 @@ pub const EnvCfg = extern struct {
     cdph_c1: f64 = 0,
     cdph_c2: f64 = 0.012,
     K: f64 = 0.05,
+    below_stall: i32 = 0, // modelo: 1 = continua abaixo do estol com a polar sem estol (ver o topo)
+    _pad2: i32 = 0,
 };
 
 pub const EnvRow = extern struct {
@@ -93,6 +101,8 @@ const Alt = struct {
     rho: f64,
     Vstall: f64 = 0, // modelo: abaixo disso nem tenta trimar
     raw: bool = false, // "como na planilha": polinômio sem o corte em T ≥ 0
+    below: bool = false, // modelo com below_stall: abaixo do estol trima em `plin`
+    plin: T.Params = undefined, // cópia de `p` sem estol (só com `below`)
 
     fn thrust(self: *const Alt, V: f64) f64 {
         var Td: f64 = 0;
@@ -121,14 +131,32 @@ fn excess(cfg: *const EnvCfg, a: *const Alt, V: f64, guess: *[3]f64) f64 {
         return Td - sheetDrag(cfg, a, V, Td);
     }
     // modelo completo: 1 − acelerador de equilíbrio (fora do envelope se não trima ou estola)
-    if (V < 0.98 * a.Vstall) return -1.0;
+    if (V < 0.98 * a.Vstall) return if (a.below) excessBelow(a, V, guess) else -1.0;
     const tc = trim.Ctx.init(&a.p, &no_flags);
     const tp = trim.solve(tc, T.trim_level, V, 1.0, guess);
     if (tp.ok == 0 or tp.ratioCL > 1.0) {
         guess.* = .{ 0.1, -0.05, 0.5 };
+        return if (a.below) excessBelow(a, V, guess) else -1.0;
+    }
+    return 1.0 - tp.thr;
+}
+
+/// abaixo do estol (só com `below`): o mesmo equilíbrio na polar sem estol
+fn excessBelow(a: *const Alt, V: f64, guess: *[3]f64) f64 {
+    const tp = trim.solve(trim.Ctx.init(&a.plin, &no_flags), T.trim_level, V, 1.0, guess);
+    if (tp.ok == 0) {
+        guess.* = .{ 0.1, -0.05, 0.5 };
         return -1.0;
     }
     return 1.0 - tp.thr;
+}
+
+/// cópia dos parâmetros sem estol: o a0 de cada painel vai para longe e o C_L fica na reta (aero.clPanel)
+fn noStall(p: *const T.Params) T.Params {
+    var q = p.*;
+    const n: usize = @intCast(q.n_surf);
+    for (q.surf[0..n]) |*s| s.a0 = 10.0;
+    return q;
 }
 
 const no_flags = S.Flags{ .released = 0 };
@@ -192,6 +220,10 @@ fn altitude(p: *const T.Params, cfg: *const EnvCfg, h: f64, W: f64, CLmax_ac: f6
     var a = Alt{ .p = p.*, .W = W, .rho = density(cfg, h), .raw = cfg.method == method_sheet and cfg.faithful != 0 };
     a.p.env.rho = a.rho;
     if (cfg.method == method_model) a.Vstall = @sqrt(2.0 * W / (a.rho * p.Sref * CLmax_ac));
+    if (cfg.method == method_model and cfg.below_stall != 0) {
+        a.below = true;
+        a.plin = noStall(&a.p);
+    }
     return a;
 }
 
@@ -231,6 +263,12 @@ fn cruiseSpeed(cfg: *const EnvCfg, a: *const Alt, Vlo: f64, Vhi: f64) f64 {
     };
     var lo = Vlo + 1e-3;
     var hi = Vhi - 1e-3;
+    // com `below`, o V_min pode estar abaixo do estol, onde a trimagem normal não existe: a busca começa no
+    // primeiro V (a partir do V_e) em que ela converge
+    if (a.below and lo < a.Vstall) {
+        lo = a.Vstall;
+        while (lo < hi and Fn.da(tc, lo, cfg.alpha_cruise) == null) lo += 0.05;
+    }
     const alo = Fn.da(tc, lo, cfg.alpha_cruise) orelse return std.math.nan(f64);
     const ahi = Fn.da(tc, hi, cfg.alpha_cruise) orelse return std.math.nan(f64);
     if ((alo > 0) == (ahi > 0)) return std.math.nan(f64); // ângulo de cruzeiro fora do envelope
@@ -300,7 +338,11 @@ pub fn curve(p: *const T.Params, cfg: *const EnvCfg, h: f64, V: []f64, Td: []f64
             Tr[i] = sheetDrag(cfg, &alt, v, Td[i]);
         } else {
             // tração requerida = tração no equilíbrio nivelado
-            const tp = trim.solve(trim.Ctx.init(&alt.p, &no_flags), T.trim_level, v, 1.0, &g);
+            var tp = trim.solve(trim.Ctx.init(&alt.p, &no_flags), T.trim_level, v, 1.0, &g);
+            if (alt.below and (v < 0.98 * alt.Vstall or tp.ok == 0 or tp.ratioCL > 1.0)) {
+                if (tp.ok == 0) g = .{ 0.1, -0.05, 0.5 };
+                tp = trim.solve(trim.Ctx.init(&alt.plin, &no_flags), T.trim_level, v, 1.0, &g);
+            }
             Tr[i] = if (tp.ok != 0) tp.T else std.math.nan(f64);
             if (tp.ok == 0) g = .{ 0.1, -0.05, 0.5 };
         }
@@ -334,4 +376,19 @@ test "envelope da planilha: V_min < V_max, teto finito, ρ cai" {
     for (rows[0..n]) |r| try testing.expect(r.Vmin < r.Vmax);
     try testing.expect(rows[n - 1].rho < rows[0].rho);
     try testing.expect(rows[n - 1].Vmax - rows[n - 1].Vmin < rows[0].Vmax - rows[0].Vmin);
+}
+
+test "sem estol (below_stall): a cópia mantém o C_L na reta depois do estol do original" {
+    var p = T.Params{ .m_dry = 8.0, .Sref = 0.6 };
+    p.n_surf = 1;
+    p.surf[0].CL0 = 0.3;
+    p.surf[0].CLa = 5.0;
+    p.surf[0].a0 = 0.25; // estol do original em ~14°
+    const q = noStall(&p);
+    try testing.expectEqual(@as(f64, 0.25), p.surf[0].a0); // o original não muda
+    try testing.expectEqual(@as(f64, 10.0), q.surf[0].a0);
+    const al: f64 = 0.4; // depois do estol do original
+    const cl = aero.sigmaStall(al, q.surf[0].a0, 50.0);
+    try testing.expect(cl < 1e-6); // a mistura com a placa plana some: só a reta
+    try testing.expect(aero.sigmaStall(al, p.surf[0].a0, 50.0) > 0.99);
 }

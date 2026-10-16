@@ -108,7 +108,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/app.py` — Ponto de entrada da GUI:  python -m aerosim.gui [aeronave.cfg|.json|.xlsx | projeto.json]
   `main:10`
 - `aerosim/gui/main_window.py` — Janela principal: uma aba por área (na ordem do projeto: dimensionamento, aerodinâmica, estabilidade,
-  `class MainWindow:28`, `class ProjectsDialog:361`
+  `class MainWindow:28`, `class ProjectsDialog:365`
 - `aerosim/gui/state.py` — Estado compartilhado da GUI: a aeronave em edição, o catálogo e o Simulation Manager.
   `class AppState:31`
 - `aerosim/gui/design/__init__.py` — Etapas da sprint na GUI (projeto do zero): por área, as páginas que entram antes da análise do avião
@@ -120,7 +120,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/tabs/config_tab.py` — Aba de configuração em três colunas:
   `mount_choices:56`, `class ConfigTab:62`, `info_html:1104`
 - `aerosim/gui/tabs/simulation_tab.py` — Aba genérica de uma simulação: formulário gerado pelos ParamSpec, botões rodar/parar,
-  `class SimulationTab:46`, `class TableInput:424`, `export_result:565`
+  `class SimulationTab:46`, `class TableInput:424`, `export_result:566`
 - `aerosim/gui/widgets/__init__.py`
 - `aerosim/gui/widgets/aircraft_panel.py` — O avião da sprint nas abas: barra para trocar entre os aviões abertos (◀ nome ▶, + variante,
   `class FleetBar:14`, `class AircraftPanel:73`, `summary_line:119`
@@ -184,7 +184,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/manager/simulations/climb.py` — Subida em regime: para cada V, nivela (checkpoint) e pede gradientes crescentes a
   `class ClimbSimulation:19`
 - `aerosim/manager/simulations/envelope.py` — Envelope de voo por altitude (adaptado do Envelope_main original) + tabela de desempenho.
-  `sheet_config:28`, `class EnvelopeSimulation:50`
+  `sheet_config:39`, `class EnvelopeSimulation:61`
 - `aerosim/manager/simulations/loads.py` — Cargas: a carga aerodinâmica ao longo de cada superfície num ponto de operação (velocidade, fator de carga, α),
   `class LoadsSimulation:30`
 - `aerosim/manager/simulations/mission.py` — Missão (simulação 6GDL) por etapa do voo (corrida no chão, cada perna do percurso, rolagem).
@@ -350,8 +350,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Out:25`
   fn `f:83`, `rk4:231`
 - `core/src/sim/envelope.zig` — Envelope de voo por altitude (sem integrar no tempo).
-  tipos `EnvCfg:29`, `EnvRow:64`
-  fn `density:77`, `compute:255`, `curve:288`
+  tipos `EnvCfg:35`, `EnvRow:72`
+  fn `density:85`, `compute:293`, `curve:326`
 - `core/src/sim/linear.zig` — Modelo linear em torno do voo nivelado equilibrado (estabilidade dinâmica).
   tipos `LinModel:23`
   fn `rigid:50`, `linearize:160`, `residual:215`
@@ -603,7 +603,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 63 testes em 9 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 54 testes em 10 arquivo(s)
+- `tests/manager` — 56 testes em 10 arquivo(s)
 - `tests/model` — 47 testes em 8 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)
 - `tests/test_architecture.py` — 4 testes em 1 arquivo(s)
