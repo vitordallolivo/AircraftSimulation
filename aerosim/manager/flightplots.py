@@ -440,10 +440,9 @@ def aircraft_glyphs(T: LogChunk, ev: dict, leg_names: list[str], step: float, sp
 
 # ------------------------------------------------------------------ bateria por etapa
 def battery_by_stage(T: LogChunk, ev: dict, leg_names: list[str], capacity_mAh: float, peukert_n: float = 1.05,
-                     Rt_h: float = 1.0, I_max_A: float = 0.0) -> tuple[list[dict], dict]:
+                     Rt_h: float = 1.0) -> tuple[list[dict], dict]:
     """tempo, corrente média, consumo (mAh), descarga e SOC por etapa (Coulomb e Peukert, Traub 2011);
-    o SOC começa em 100 % e cai. I_max_A > 0: a corrente contínua máxima da bateria (C × capacidade) entra como
-    linha no gráfico da corrente e cada etapa ganha a corrente de pico. Devolve (linhas da tabela, séries)"""
+    o SOC começa em 100 % e cai; cada etapa tem a corrente média e a de pico. Devolve (linhas da tabela, séries)"""
     if not len(T) or "Ibat" not in T.columns:
         return [], {}
     t = np.asarray(T["t"], float)
@@ -479,8 +478,6 @@ def battery_by_stage(T: LogChunk, ev: dict, leg_names: list[str], capacity_mAh: 
     S2["batp_SOC Peukert"] = {"t": t, "y": 100.0 - pk, "_color": "#d62728", "_width": 2.4}
     S2["batp_reserva 20 %"] = {"_hline": 20.0, "_color": "#d62728", "_dash": "dot"}
     S2["batp_$I$ (A)"] = {"t": t, "y": I, "_color": "#7f7f7f", "_width": 1}
-    if I_max_A > 0:
-        S2[f"batp_$I$ máx. contínua ({I_max_A:.0f} A)"] = {"_hline": I_max_A, "_color": "#7f7f7f", "_dash": "dash"}
     S.update(S2)
     return rows, S
 

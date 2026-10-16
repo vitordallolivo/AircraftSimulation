@@ -1022,41 +1022,20 @@ class ConfigTab(QtWidgets.QWidget):
             cb.setCurrentText(cur)
             g.addRow(label, cb)
             combos[attr] = (cb, items)
-        crate = QtWidgets.QDoubleSpinBox()
-        crate.setRange(0.0, 300.0)
-        crate.setDecimals(0)
-        crate.setSuffix(" C")
-        crate.setSpecialValueText("não informado")
-        crate.setToolTip("descarga contínua máxima do fabricante; a Missão compara a corrente de pico com "
-                         "C × capacidade")
-        crate.setValue(u.battery.C_rating)
-        g.addRow("descarga da bateria", crate)
         info = QtWidgets.QLabel()
         info.setWordWrap(True)
 
         def describe():
             m, p, b = u.motor, u.propeller, u.battery
-            imax = f", até {b.I_max_A:.0f} A" if b.C_rating > 0 else ""
             info.setText(f"{m.Kv:.0f} Kv, {m.Imax:.0f} A, {m.mass * 1000:.0f} g<br>"
                          f"D = {p.D * 39.37:.1f}\", passo {p.pitch * 39.37:.1f}\", {len(p.J)} pontos J<br>"
-                         f"{b.cells}S, {b.Voc:.1f} V, {b.capacity_mAh:.0f} mAh{imax}<br><i>{p.source}</i>")
-
-        def set_crate(v):
-            u.battery.C_rating = float(v)
-            describe()
-            self.state.notify("geometry")
-
-        crate.valueChanged.connect(set_crate)
+                         f"{b.cells}S, {b.Voc:.1f} V, {b.capacity_mAh:.0f} mAh<br><i>{p.source}</i>")
 
         def pick(attr):
             cb, items = combos[attr]
             it = next((x for x in items if x.name == cb.currentText()), None)
             if it is not None:
                 setattr(u, attr, copy.deepcopy(it))
-                if attr == "battery":
-                    crate.blockSignals(True)
-                    crate.setValue(u.battery.C_rating)
-                    crate.blockSignals(False)
                 describe()
                 self.state.notify("geometry")
         for attr in combos:

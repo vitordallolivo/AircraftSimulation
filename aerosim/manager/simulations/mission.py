@@ -547,19 +547,10 @@ class MissionSimulation(SimulationBase):
             cap = sum(u.battery.capacity_mAh for u in ac.propulsion if u.enabled)
             if ac.shared_battery and ac.propulsion:
                 cap = ac.propulsion[0].battery.capacity_mAh
-            units = [u for u in ac.propulsion if u.enabled]
-            I_max = (units[0].battery.I_max_A if ac.shared_battery else sum(u.battery.I_max_A for u in units)) \
-                if units and all(u.battery.C_rating > 0 for u in units) else 0.0
-            brows, bS = FP.battery_by_stage(log, ev, legs, cap, I_max_A=I_max)
+            brows, bS = FP.battery_by_stage(log, ev, legs, cap)
             series.update(bS)
-            if I_max > 0:
-                pk = float(np.nanmax(np.asarray(log["Ibat"], float))) if "Ibat" in log.columns else 0.0
-                checks.append(Check("ok" if pk <= I_max else "falha", "corrente de pico × descarga da bateria",
-                                    f"pico {pk:.1f} A", f"≤ C × capacidade = {I_max:.0f} A",
-                                    "" if pk <= I_max else "o conjunto pede mais corrente do que a bateria entrega "
-                                    "continuamente: aquece, perde tensão e envelhece",
-                                    "" if pk <= I_max else "bateria de C maior ou mais capacidade, hélice menor ou "
-                                    "menos acelerador na decolagem", "Bateria", "C informado na bateria"))
+            if brows:
+                series["consumo_por_etapa"] = columns(brows)
             series.update(_cg_walk(ctx, ac, log, ev, legs))
             if brows:
                 series["consumo_por_etapa"] = columns(brows)

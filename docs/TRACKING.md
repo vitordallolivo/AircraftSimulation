@@ -21,7 +21,7 @@ Como usar:
 ```
         [Torres]   pós-1.0: CFD 3D, VTOL/tailsitter, controle não linear, CAD
    ┌──────────────────────────────────────────────────────┐
- 3 │ Andar 3: Estruturas · Aeroelasticidade · Elétrica      │ ← arquitetura nova (do zero)
+ 3 │ Andar 3: Estruturas · Aeroelasticidade                 │ ← arquitetura nova (do zero)
  2 │ Andar 2: Cargas (casos, esforços, dobradiça, solo)     │ ← apoia-se no Andar 1
  1 │ Andar 1: Aero · Desempenho · E&C · Integração          │ ← já está de pé
    ├──────────────────────────────────────────────────────┤
@@ -50,10 +50,10 @@ Como usar:
 | Versão | Milestone | Subversões | Fecha quando |
 |---|---|---|---|
 | **0.1** | Fundação firme | 0.1.1 testes de regressão em `tools/checks` (comparação bit a bit, núcleo, AeroDrive, testes por área) · 0.1.2 rodar e corrigir o que quebrou · 0.1.3 conferir os ❓ · 0.1.4 pilha de branches mesclada | pilha na `main` com os checks verdes |
-| **0.2** | Análises simples (cálculos e plots) | 0.2.1 passeio do CG e ME no tempo · 0.2.2 curvas com fator de carga · 0.2.3 C-rate × corrente de pico | os itens na GUI |
+| **0.2** | Análises simples (cálculos e plots) | 0.2.1 passeio do CG e ME no tempo · 0.2.2 curvas com fator de carga | os itens na GUI |
 | **0.3** | Aero completo na GUI | 0.3.1 trimagem com esteira, tubo desviado · 0.3.2 distribuição a α (início do estol) · 0.3.3 Reynolds no núcleo · 0.3.4 arrasto por componente | os itens na GUI |
 | **0.4** | Cargas I | 0.4.1 aba Cargas (3D + gráficos) · 0.4.2 casos do V-n · 0.4.3 rajada · 0.4.4 cortante, fletor e torsor | esforços por caso na GUI |
-| **0.5** | Cargas II + Elétrica | 0.5.1 manobras dinâmicas · 0.5.2 momentos de dobradiça · 0.5.3 cargas no solo · 0.5.4 servos e cabos | dobradiça → servo na GUI |
+| **0.5** | Cargas II | 0.5.1 manobras dinâmicas · 0.5.2 momentos de dobradiça · 0.5.3 cargas no solo | os itens na GUI |
 | **0.6** | Estruturas (do zero) | 0.6.1 arquitetura + materiais · 0.6.2 longarina · 0.6.3 tubo de cauda · 0.6.4 trem | longarina na GUI |
 | **0.7** | Aeroelasticidade estática | 0.7.1 rigidez e centro elástico · 0.7.2 divergência · 0.7.3 reversão · 0.7.4 diedro elástico em E&C | os itens na GUI |
 | **0.8** | Incerteza e atmosfera | 0.8.1 paralelismo no núcleo · 0.8.2 Monte Carlo e sensibilidade · 0.8.3 turbulência Dryden · 0.8.4 vento cruzado na decolagem · 0.8.5 polos com vento e sloshing | os itens na GUI |
@@ -90,7 +90,6 @@ Tipos de tarefa:
 | T04 | E&C: ME × xCG com ênfase, passeio do CG (o limite pela rotação já existe) | [ext] | — | 0.2.1 | Feito |
 | T05 | E&C: polos com vento e com sloshing (estender a linearização no Zig: hoje o líquido é congelado; vento constante não muda os polos, o efeito é a turbulência) | [ext] | T30 | 0.8.5 | Bloqueado |
 | T06 | Curvas com fator de carga (planeio e pouso já existem) | [ext] | — | 0.2.2 | Pronto |
-| T07 | C-rate × corrente de pico (o consumo por etapa já existia) | [ext] | — | 0.2.3 | Feito |
 | T08 | Esteira: trimagem com esteira e tubo desviado (ligar já existe na GUI) | [ext] | — | 0.3.1 | Pronto |
 | T09 | Distribuição a α na aba Aerodinâmica | [GUI] | — | 0.3.2 | Pronto |
 | T10 | Reynolds no núcleo (tabela por Re) | [ext] | — | 0.3.3 | Pronto |
@@ -102,7 +101,6 @@ Tipos de tarefa:
 | T16 | Manobras dinâmicas (o 6GDL monta os casos) | [ext] | T13 | 0.5.1 | Bloqueado |
 | T17 | Momento de dobradiça (distribuição na corda, método da literatura) | [novo] | — | 0.5.2 | Pronto |
 | T18 | Cargas no solo | [novo] | — | 0.5.3 | Pronto |
-| T19 | Torque de servos, bateria de servos, cabos | [novo] | T17 | 0.5.4 | Bloqueado |
 | T20 | Arquitetura de estruturas + banco de materiais (os dados vêm do usuário ou da literatura) | [zero] | — | 0.6.1 | Pronto |
 | T21 | Longarina | [zero] | T15, T20 | 0.6.2 | Bloqueado |
 | T22 | Tubo de cauda | [zero] | T15, T20 | 0.6.3 | Bloqueado |
@@ -225,13 +223,10 @@ pista) é ajuste de interface e está em "Fora da conta".
 | ES-04 | Materiais | ❌ | ❌ | T20 | nunca dos relatórios de referência |
 | ES-05 | Trem | ❌ | ❌ | T23 | |
 
-### 7. Elétrica
+### 7. Elétrica — fora do escopo
 
-| ID | Tópico | Código | GUI | Tarefa |
-|---|---|---|---|---|
-| EL-01 | C-rate × corrente de pico | ✅ | ✅ | — |
-| EL-02 | Torque de servos | ❌ | ❌ | T19 |
-| EL-03 | Bateria dos servos, cabos | ❌ | ❌ | T19 |
+O simulador dimensiona a aeronave. Escolher bateria, servos e cabos é trabalho da área de elétrica e não entra aqui.
+A Missão mostra só o que a simulação já calcula: a corrente média e a de pico por etapa e o consumo.
 
 ### 8. Integração / Projeto
 
@@ -267,7 +262,6 @@ pista) é ajuste de interface e está em "Fora da conta".
 - AE-15: CAD;
 - AL-05: aeroelasticidade dinâmica;
 - ES-06 e ES-07: otimização estrutural e FEM;
-- EL-04: FMEA;
 - CO-03: SMC e NN-MPC;
 - CO-04 e CO-05: VTOL/tailsitter e a pesquisa sobre helicóptero.
 
@@ -298,10 +292,9 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 | 4. Cargas | 0 / 8 |
 | 5. Aeroelasticidade | 0 / 4 |
 | 6. Estruturas | 1 / 5 |
-| 7. Elétrica | 1 / 3 |
 | 8. Integração | 6 / 8 |
 | 9. Controle | 1 / 2 |
-| **Total** | **34 / 73 (47 %)** |
+| **Total** | **33 / 70 (47 %)** |
 
 ---
 
