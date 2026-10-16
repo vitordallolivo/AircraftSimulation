@@ -1,7 +1,8 @@
 """Gráficos da aba (pyqtgraph) montados a partir das PlotSpec da simulação.
 
 Cada gráfico é um widget com altura própria (a aba rola), com a legenda embaixo, fora das curvas.
-Tipos: 2d (curvas, dispersão, faixas, linhas e marcadores) e 3d (trajetória no espaço).
+Tipos: 2d (curvas, dispersão, faixas, linhas e marcadores), 3d (trajetória no espaço) e loads3d (vista 3D de uma
+análise de carga: a série guarda o `LoadResult` em "_result" e o avião em "_aircraft"; quem desenha é o `LoadView`).
 Durante a corrida desenha os canais do registro (`ys` de gráficos "log" e `live_ys` dos de séries);
 no fim, desenha as séries do resultado com o estilo que a simulação pediu (`_color`, `_symbol`...).
 """
@@ -303,6 +304,38 @@ class _Plot3D(QtWidgets.QWidget):
                          f"<br><i>eixos: {escape(s.xlabel)}, {escape(s.ylabel)}, {escape(s.z)} (altura exagerada ×{k:g})</i>")
 
 
+class _PlotLoads3D(QtWidgets.QWidget):
+    """vista 3D de uma análise de carga (LoadView) dentro da aba: só desenha o LoadResult que a simulação entregou"""
+
+    def __init__(self, spec: PlotSpec, height: int):
+        super().__init__()
+        from .load_view import LoadView
+        self.spec = spec
+        v = QtWidgets.QVBoxLayout(self)
+        v.setContentsMargins(0, 0, 0, 0)
+        t = QtWidgets.QLabel(f"<b>{tex(spec.title)}</b>")
+        t.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(t)
+        self.view = LoadView()
+        v.addWidget(self.view, 1)
+        self.setMinimumHeight(spec.height or height)
+        self.live = {}                            # nada em tempo real: só o resultado final
+
+    def clear_final(self):
+        pass
+
+    def draw_tables(self, res: SimResult):
+        name = self.spec.source.split(":", 1)[1]
+        tab = res.series.get(name) or {}
+        r = tab.get("_result")
+        if r is None:
+            return
+        self.view.set_result(r, tab.get("_aircraft"))
+        if r.field is not None and len(r.field.vertices):
+            size = max(float(np.abs(r.field.vertices).max()) * 2.9, 2.0)
+            self.view.set_camera(distance=size, elevation=28, azimuth=-125)
+
+
 class LivePlots(QtWidgets.QWidget):
     def __init__(self, specs: list[PlotSpec], columns: int = 1, row_height: int = 560, parent=None):
         """um gráfico embaixo do outro (columns > 1: em grade), cada um com `row_height` px"""
@@ -317,7 +350,8 @@ class LivePlots(QtWidgets.QWidget):
         h = row_height or 560
         for i, s in enumerate(specs):
             try:
-                w = _Plot3D(s, max(h, 640)) if s.kind == "3d" else _Plot2D(s, h, 3 if columns == 1 else 2)
+                w = (_Plot3D(s, max(h, 640)) if s.kind == "3d" else _PlotLoads3D(s, max(h, 640))
+                     if s.kind == "loads3d" else _Plot2D(s, h, 3 if columns == 1 else 2))
             except Exception:                     # sem OpenGL: a trajetória vira a vista de cima
                 w = _Plot2D(PlotSpec(s.key, s.title + " (vista de cima — sem OpenGL)", s.x, s.ys, s.xlabel,
                                      s.ylabel, s.live, s.source, aspect=True, live_ys=s.live_ys), h)

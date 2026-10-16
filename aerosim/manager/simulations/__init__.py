@@ -3,6 +3,7 @@ ISimulation num arquivo aqui e coloque-a em BUILTIN (ou registre no manager)."""
 from .aerodynamics import AerodynamicsSimulation
 from .climb import ClimbSimulation
 from .envelope import EnvelopeSimulation
+from .loads import LoadsSimulation
 from .mission import MissionSimulation
 from .performance import PerformanceSimulation
 from .polar import PolarSimulation
@@ -16,7 +17,8 @@ from .turn import TurnSimulation
 # descida e curva por cálculo estão no Desempenho; a polar da aeronave está na Aerodinâmica.
 # As classes antigas continuam importáveis (scripts e testes).
 BUILTIN = [SizingSimulation, MissionSimulation, PerformanceSimulation, ThrustSimulation, AerodynamicsSimulation,
-           StabilitySimulation, TakeoffSimulation, TurnSimulation, EnvelopeSimulation, ClimbSimulation, PolarSimulation]
+           StabilitySimulation, LoadsSimulation, TakeoffSimulation, TurnSimulation, EnvelopeSimulation, ClimbSimulation,
+           PolarSimulation]
 
-__all__ = ["BUILTIN", "SizingSimulation", "AerodynamicsSimulation", "ClimbSimulation", "EnvelopeSimulation", "MissionSimulation", "PerformanceSimulation", "PolarSimulation",
+__all__ = ["BUILTIN", "SizingSimulation", "AerodynamicsSimulation", "ClimbSimulation", "EnvelopeSimulation", "LoadsSimulation", "MissionSimulation", "PerformanceSimulation", "PolarSimulation",
            "TakeoffSimulation", "ThrustSimulation", "TurnSimulation", "thrust_curves"]

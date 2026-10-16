@@ -556,7 +556,8 @@ def _tables(res: SimResult) -> dict:
                                   ("o que fazer", "fix"))}
     if res.summary:
         tables["resumo"] = {"grandeza": list(res.summary), "valor": [format_value(v) for v in res.summary.values()]}
-    tables.update(res.series)
+    # séries só de estilo (linhas e faixas de referência: _hline, _vline, _vspan) não têm coluna para exportar
+    tables.update({k: v for k, v in res.series.items() if any(not str(c).startswith("_") for c in v)})
     if res.log is not None and len(res.log):
         tables["registro"] = res.log.columns
     return tables

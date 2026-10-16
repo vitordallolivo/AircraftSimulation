@@ -108,7 +108,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/app.py` — Ponto de entrada da GUI:  python -m aerosim.gui [aeronave.cfg|.json|.xlsx | projeto.json]
   `main:10`
 - `aerosim/gui/main_window.py` — Janela principal: uma aba por área (na ordem do projeto: dimensionamento, aerodinâmica, estabilidade,
-  `class MainWindow:28`, `class ProjectsDialog:361`
+  `class MainWindow:28`, `class ProjectsDialog:365`
 - `aerosim/gui/state.py` — Estado compartilhado da GUI: a aeronave em edição, o catálogo e o Simulation Manager.
   `class AppState:31`
 - `aerosim/gui/design/__init__.py` — Etapas da sprint na GUI (projeto do zero): por área, as páginas que entram antes da análise do avião
@@ -120,7 +120,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/tabs/config_tab.py` — Aba de configuração em três colunas:
   `mount_choices:56`, `class ConfigTab:62`, `info_html:1104`
 - `aerosim/gui/tabs/simulation_tab.py` — Aba genérica de uma simulação: formulário gerado pelos ParamSpec, botões rodar/parar,
-  `class SimulationTab:46`, `class TableInput:424`, `export_result:565`
+  `class SimulationTab:46`, `class TableInput:424`, `export_result:566`
 - `aerosim/gui/widgets/__init__.py`
 - `aerosim/gui/widgets/aircraft_panel.py` — O avião da sprint nas abas: barra para trocar entre os aviões abertos (◀ nome ▶, + variante,
   `class FleetBar:14`, `class AircraftPanel:73`, `summary_line:119`
@@ -133,7 +133,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/widgets/param_slider.py` — Slider + campo numérico sincronizados, e um formulário automático para dataclasses.
   `class ParamSlider:41`, `class NumberField:109`, `class DataclassForm:280`
 - `aerosim/gui/widgets/plots.py` — Gráficos da aba (pyqtgraph) montados a partir das PlotSpec da simulação.
-  `tex:38`, `is_angle:56`, `class LivePlots:306`, `format_value:407`
+  `tex:39`, `is_angle:57`, `class LivePlots:339`, `format_value:441`
 - `aerosim/gui/widgets/save_check.py` — Antes de salvar um avião: a lista de verificação (`aerosim.design.checklist`) como caixas de seleção só de
   `class SaveCheckDialog:19`, `confirm_save:80`
 - `aerosim/gui/widgets/view3d.py` — Visualização 3D da aeronave (pyqtgraph.opengl) com seleção e arraste de componentes.
@@ -163,13 +163,13 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/manager/__init__.py` — Simulation Manager: orienta as simulações (o que roda, até onde, de onde retoma, o que itera).
 - `aerosim/manager/analysis.py` — Pós-processamento dos registros (independente do núcleo): etapas, curvas, decolagem.
-  `takeoff_violations:16`, `violation_text:35`, `stages:39`, `stage_table:49`, `evaluate_turn:76`, `min_radius:108`, `columns:117`
+  `takeoff_violations:16`, `violation_text:35`, `stages:39`, `stage_table:49`, `evaluate_turn:76`, `min_radius:111`, `columns:120`
 - `aerosim/manager/calibration.py` — Características estáticas e calibração do piloto automático.
   `static_characteristics:22`, `calibrate:41`
 - `aerosim/manager/checkpoints.py` — Checkpoints: o estado inteiro de uma corrida num ponto (bytes do núcleo + metadados).
   `class Checkpoint:16`, `class CheckpointStore:24`
 - `aerosim/manager/flightplots.py` — Séries de gráfico de um voo simulado, no estilo dos gráficos do código original (legacy/py/graficos.py):
-  `stage_names:32`, `stage_color:36`, `by_stage:50`, `stage_spans:71`, `events_points:86`, `event_stars:98`, `payload_path:112`, `terrain_profile:124`, `trajectory:133`, `time_series:155`, `cg_series:215`, `takeoff_window:236`, `landing_window:317`, `lapes_window:354`, `aircraft_glyphs:411`, `battery_by_stage:442`, `takeoff_angles:485`, `takeoff_time:503`
+  `stage_names:32`, `stage_color:36`, `by_stage:50`, `stage_spans:71`, `events_points:86`, `event_stars:98`, `payload_path:112`, `terrain_profile:124`, `trajectory:133`, `time_series:155`, `cg_series:233`, `takeoff_window:254`, `landing_window:335`, `lapes_window:372`, `aircraft_glyphs:429`, `battery_by_stage:460`, `takeoff_angles:503`, `takeoff_time:521`
 - `aerosim/manager/manager.py` — Simulation Manager: escolhe qual simulação roda, com que parâmetros, e entrega o
   `class SimulationManager:19`
 - `aerosim/manager/runner.py` — Corrida orientada: começa (no chão, em voo ou de um checkpoint), roda até uma parada
@@ -184,7 +184,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/manager/simulations/climb.py` — Subida em regime: para cada V, nivela (checkpoint) e pede gradientes crescentes a
   `class ClimbSimulation:19`
 - `aerosim/manager/simulations/envelope.py` — Envelope de voo por altitude (adaptado do Envelope_main original) + tabela de desempenho.
-  `sheet_config:28`, `class EnvelopeSimulation:50`
+  `sheet_config:39`, `class EnvelopeSimulation:61`
+- `aerosim/manager/simulations/loads.py` — Cargas: a carga aerodinâmica ao longo de cada superfície num ponto de operação (velocidade, fator de carga, α),
+  `class LoadsSimulation:30`
 - `aerosim/manager/simulations/mission.py` — Missão (simulação 6GDL) por etapa do voo (corrida no chão, cada perna do percurso, rolagem).
   `legs_to_rows:58`, `rows_to_legs:69`, `xcg_pct:89`, `total_mass:94`, `mtow_rows:101`, `mass_variant:120`, `class MissionSimulation:183`
 - `aerosim/manager/simulations/performance.py` — Desempenho por cálculo (como na planilha de desempenho): nada é simulado e não há piloto.
@@ -348,8 +350,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Out:25`
   fn `f:83`, `rk4:231`
 - `core/src/sim/envelope.zig` — Envelope de voo por altitude (sem integrar no tempo).
-  tipos `EnvCfg:29`, `EnvRow:64`
-  fn `density:77`, `compute:255`, `curve:288`
+  tipos `EnvCfg:35`, `EnvRow:72`
+  fn `density:85`, `compute:293`, `curve:326`
 - `core/src/sim/linear.zig` — Modelo linear em torno do voo nivelado equilibrado (estabilidade dinâmica).
   tipos `LinModel:23`
   fn `rigid:50`, `linearize:160`, `residual:215`
@@ -601,7 +603,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 63 testes em 9 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 47 testes em 8 arquivo(s)
+- `tests/manager` — 56 testes em 10 arquivo(s)
 - `tests/model` — 47 testes em 8 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)
 - `tests/test_architecture.py` — 4 testes em 1 arquivo(s)
@@ -611,31 +613,6 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `README.md`
 - `aerodrive/README.md`
 - `aerodrive/src/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/projects/CMake/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/amber/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/ashes/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/bluish/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/candy/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/cherry/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/cyber/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/dark/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/default/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/enefete/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/jungle/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/lavanda/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/sunny/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAHvybwBw1kyBGn0BW_s1RqIpycNjLf_XbE-fpLUF/styles/terminal/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAJl1DwBezhYo_VE6f53mPVm00R-Fk28NPW7P14EQ/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAJl1DwBezhYo_VE6f53mPVm00R-Fk28NPW7P14EQ/bazel/README.md`
-- `aerodrive/zig-pkg/N-V-__8AAJl1DwBezhYo_VE6f53mPVm00R-Fk28NPW7P14EQ/docker/README.md`
-- `aerodrive/zig-pkg/raylib-6.0.0-whq8uCSwLgWWeF3ec3dbG6Rr36SLFL-s2WJ1Q_2E22Bb/examples/README.md`
-- `aerodrive/zig-pkg/raylib-6.0.0-whq8uCSwLgWWeF3ec3dbG6Rr36SLFL-s2WJ1Q_2E22Bb/src/external/glfw/README.md`
-- `aerodrive/zig-pkg/raylib-6.0.0-whq8uIRvNwXmX0FLGBpURkriOr1hO58vtAvdXgXRebYU/examples/README.md`
-- `aerodrive/zig-pkg/raylib-6.0.0-whq8uIRvNwXmX0FLGBpURkriOr1hO58vtAvdXgXRebYU/src/external/glfw/README.md`
-- `aerodrive/zig-pkg/zemscripten-0.2.0-dev-sRlDqApRAACspTbAZnuNKWIzfWzSYgYkb2nWAXZ-tqqt/README.md`
-- `aerodrive/zig-pkg/zemscripten-0.2.0-dev-sRlDqEtQAAB_1tPdqJsxQIqXxvvklcFu6VN5p6ANy8hw/README.md`
 - `aerosim/aero/README.md`
 - `aerosim/backend/README.md`
 - `aerosim/data/README.md`

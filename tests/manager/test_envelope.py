@@ -37,12 +37,14 @@ def test_corrected_vs_faithful(manager, sheet_aircraft):
 
 @pytest.mark.parametrize("name", list(TEMPLATES))
 def test_model_method(manager, name):
-    r = manager.run("envelope", TEMPLATES[name](), {"method": "modelo completo", "table": False, "h_step": 200.0})
+    from aerosim.manager.simulations.envelope import BELOW
+    r = manager.run("envelope", TEMPLATES[name](), {"method": "modelo completo", "table": False, "h_step": 200.0,
+                                                    "below": BELOW[1]})
     env = r.series["envelope_modelo"]
     assert len(env["h"]) > 2
     assert np.all(env["Vmin"] < env["Vmax"])
     assert np.all(np.diff(env["rho"]) < 0)
-    assert np.all(env["Vmin"] >= 0.97 * env["Ve"])          # não voa abaixo do estol
+    assert np.all(env["Vmin"] >= 0.97 * env["Ve"])          # "corta no estol": não voa abaixo do estol
 
 
 def test_curves_and_table(manager, sheet_aircraft):
@@ -72,3 +74,39 @@ def test_handles_case_that_breaks_original(manager, sheet_aircraft):
                                                  "V_lo": 4.0, "h_max": 2000.0})
     env = r.series["envelope_planilha"]
     assert env["Vmin"][0] == 4.0 and 4.0 < env["Vmax"][0] < 30.0
+
+
+def test_model_below_stall_does_not_clip_vmin(manager):
+    """modelo completo com "continua": abaixo do estol a polar sem estol acha o V_min de potência (< V_e);
+    com "corta" fica como antes (V_min colado no V_e); o V_max e o teto não mudam"""
+    from aerosim.manager.simulations.envelope import BELOW
+    ac = TEMPLATES["conventional"]()
+    opts = {"method": "modelo completo", "table": False, "h_step": 500.0}
+    on = manager.run("envelope", ac, dict(opts, below=BELOW[0]))
+    off = manager.run("envelope", ac, dict(opts, below=BELOW[1]))
+    e1, e0 = on.series["envelope_modelo"], off.series["envelope_modelo"]
+    assert e1["Vmin"][0] < e1["Ve"][0] < e0["Vmin"][0] + 0.1
+    assert e0["Vmin"][0] >= 0.97 * e0["Ve"][0]
+    np.testing.assert_allclose(e1["Vmax"], e0["Vmax"], rtol=1e-6)
+    assert on.summary["[modelo] V mínimo voável em h = 0 = max(V_min, V_e) (m/s)"] == pytest.approx(e1["Ve"][0])
+
+
+def test_model_cruise_speed_same_with_or_without_below_stall(manager):
+    """V_cru do modelo: V em que o α de equilíbrio é o ângulo de cruzeiro; continuar abaixo do estol não muda ele.
+    Fora do envelope (α de cruzeiro pequeno demais para a tração), sai NaN e o resumo diz por quê"""
+    from aerosim.manager.simulations.envelope import BELOW
+    opts = {"method": "modelo completo", "table": False, "h_step": 1000.0}
+    v = []
+    for b in BELOW:
+        ac = TEMPLATES["conventional"]()
+        ac.performance.alpha_cruise = 6.0
+        v.append(manager.run("envelope", ac, dict(opts, below=b)).series["envelope_modelo"]["Vcru"][0])
+    assert np.isfinite(v[0]) and v[0] == pytest.approx(v[1], abs=1e-2)
+    ac = TEMPLATES["conventional"]()
+    ac.performance.alpha_cruise = 2.0
+    r = manager.run("envelope", ac, dict(opts, table=True))
+    assert not np.isfinite(r.series["envelope_modelo"]["Vcru"][0])
+    c = next(c for c in r.checks if c.item == "velocidade de cruzeiro (modelo completo)")
+    assert c.status == "atencao" and "2°" in c.why and "2°" in c.criterion   # o texto segue a entrada
+    lo, hi = (float(x.replace("°", "")) for x in c.fix.removeprefix("ângulo de cruzeiro entre ").split(" e "))
+    assert lo < hi and lo > 2.0                     # a faixa de α do envelope não inclui o pedido

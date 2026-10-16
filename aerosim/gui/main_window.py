@@ -47,6 +47,10 @@ class MainWindow(QtWidgets.QMainWindow):
             if sim.area in INSIDE:              # vai para dentro de outra área (depois que ela existir)
                 later.append(sim)
                 continue
+            host = self.area_tabs.get(sim.area)
+            if isinstance(host, QtWidgets.QTabWidget):  # a área já tem subabas: mais uma análise dela
+                host.addTab(SimulationTab(state, sim), sim.title)
+                continue
             stages = STAGES.get(sim.area)
             if not stages:
                 tab = SimulationTab(state, sim)

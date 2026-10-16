@@ -44,7 +44,12 @@ as configurações.
 2. **A GUI não faz conta.**
    - A GUI chama o manager.
    - O manager chama o backend.
-   - A conta pesada fica no Zig sempre que der; o Python orquestra e traduz.
+   - **Cálculo é em Zig, no núcleo**, exposto pela ABI, com teste em Zig e uma interface em `aerosim/interfaces`. O
+     Python orquestra e traduz.
+   - Exceções:
+     - um método que já vem de um módulo em Python (lltdrek, ASB solver) continua em Python, atrás da interface;
+     - conta trivial sobre valores que já existem (uma divisão de duas colunas do log para um gráfico) pode ficar
+       no Python do manager.
 3. **O modelo universal é construído uma vez.**
    - Formatos nativos (SimSpec do núcleo, Wing do lltdrek, Airplane do ASB) só aparecem nos tradutores.
    - `tests/test_architecture.py` fiscaliza isso.
@@ -90,7 +95,7 @@ as configurações.
   4. Atualizar `docs/TRACKING.md` e `CHANGELOG.md`.
   5. Abrir o PR `0.2_dev` → `main` e parar.
 - **Versão:**
-  - A `main` está em `v0.2.1`.
+  - A `main` está em `v0.2.2`.
   - Cada tarefa mesclada sobe o último número (`0.2.1`, `0.2.2`…).
   - A lista inteira do tracking feita vira `0.3.0`.
   - Não existe promessa de 1.0: nada vira release sem o dono testar cada componente.
@@ -130,3 +135,48 @@ O backend Python compila o núcleo sozinho quando o código Zig muda (`aerosim/b
 
 Depois de criar, mover ou renomear arquivos ou funções públicas, rodar `python tools/codemap.py`. O check
 `mapa do código em dia` acusa se ficou desatualizado.
+
+## 9. Ambiente (sessão na nuvem): o que instalar e problemas conhecidos
+
+O container começa sem as dependências, e tudo o que se instala some quando ele é reciclado.
+
+**Instalar, por parte (o que cada coisa precisa para rodar):**
+
+| Para rodar | Instalar |
+|---|---|
+| Núcleo (`core`, `zig build test`) e o backend Python | `pip install ziglang` (0.16.0 = `minimum_zig_version`) |
+| Testes Python (`tests/`), `tools/checks`, a GUI | `pip install -r requirements.txt -r requirements-aero.txt pytest` |
+| Testes de GUI e de aero (Qt/pyqtgraph sem tela) | `apt-get install -y libegl1 libgl1 libxkbcommon0` |
+| AeroDrive (`zig build`: raylib) | `apt-get install -y libgl-dev libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libxext-dev`, mais as dependências do Zig (abaixo) |
+| Prints com 3D (`xvfb-run`) | `apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0 libgl1-mesa-dri` (o `xvfb-run` já vem no container) |
+
+**Dependências do AeroDrive pelo `git`** (o `zig fetch` não passa pelo proxy da sessão). Numa pasta fora do
+repositório (ex.: o scratchpad), um pacote por vez; o commit ou a tag de cada um está no `build.zig.zon` de quem pede:
+
+```sh
+git clone -q --bare https://github.com/raylib-zig/raylib-zig raylib-zig.git
+git -C raylib-zig.git archive --prefix=raylib-zig/ -o raylib-zig.tar.gz <commit do aerodrive/build.zig.zon>
+cd /caminho/do/repo/aerodrive && python -m ziglang fetch /caminho/raylib-zig.tar.gz   # o hash tem que bater
+```
+
+Pacotes: `raylib-zig` (`aerodrive/build.zig.zon`); `raylib` tag 6.0 (github.com/raysan5/raylib), `raygui`
+(github.com/raysan5/raygui), `emsdk` tag 4.0.9 (github.com/emscripten-core/emsdk) e `zemscripten`
+(github.com/zig-gamedev/zemscripten), estes no `build.zig.zon` do raylib-zig; o raylib pede um segundo commit do
+`zemscripten` (no `build.zig.zon` dele, que aparece em `aerodrive/zig-pkg/` depois do primeiro fetch). Ordem que
+funciona: raylib-zig → raylib → raygui → emsdk → os dois zemscripten.
+
+**Problemas conhecidos:**
+- **`zig build` do AeroDrive não baixa as dependências** (`unable to discover remote git server capabilities:
+  ReadFailed`): o cliente HTTP do Zig não passa pelo proxy da sessão; o `git` passa. Contorno: baixar cada pacote com
+  `git`, empacotar com `git archive` e dar `python -m ziglang fetch <arquivo>.tar.gz` de dentro de `aerodrive/` (o hash
+  tem que sair igual ao do `build.zig.zon`). Pacotes: `raylib-zig` (commit do `aerodrive/build.zig.zon`), `raylib` 6.0,
+  `raygui`, `emsdk` 4.0.9 e os dois commits do `zemscripten` (um no `build.zig.zon` do raylib-zig, outro no do raylib).
+- **O Zig 0.16 guarda os pacotes em `aerodrive/zig-pkg/`** (ignorada pelo git). Tirar a pasta do lugar obriga a baixar
+  tudo de novo.
+- **Sem tela:** `QT_QPA_PLATFORM=offscreen` não tem OpenGL (vista 3D sai vazia). Para print com 3D:
+  `xvfb-run -a -s "-screen 0 1920x1200x24" python ...` (precisa das bibliotecas xcb acima).
+- **`tools/capturas.py` não entra em subabas** (Desempenho → Missão etc.): falha com `QTabWidget has no attribute
+  start`. Para essas, achar a aba pelo `sim.name` dentro do `QTabWidget`.
+- **`python -I` quebra o pyqtgraph** (`No module named 'colorama'`): rodar os scripts da GUI sem `-I`.
+- **`run.py --tudo` leva uns 10 min** (o `tests/manager` sozinho, uns 6): rodar em segundo plano, nunca dois ao mesmo
+  tempo, e não editar código no meio (o resultado deixa de valer).

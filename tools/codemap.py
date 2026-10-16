@@ -19,7 +19,7 @@ import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUT = os.path.join(ROOT, "docs", "MAP.md")
-SKIP = {"__pycache__", ".git", "zig-out", ".zig-cache", "legacy", "node_modules", ".venv"}
+SKIP = {"__pycache__", ".git", "zig-out", ".zig-cache", "zig-pkg", "legacy", "node_modules", ".venv"}   # zig-pkg: pacotes do Zig 0.16
 
 
 def _walk(base: str, ext: str):

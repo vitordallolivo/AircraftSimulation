@@ -93,6 +93,9 @@ def evaluate_turn(T: LogChunk, seg: dict, k: int, R: float, Vs: float, kCL: floa
              perda_h=float(T["h"][s][0] - T["h"][s].min()), hdot_perm=float(np.mean(T["hdot"][perm])),
              erro_p90=float(np.percentile(np.abs(T["ect"][perm]), 90)), R_real=float(np.median(d[perm])),
              t_estol=float(np.sum(dts[s & (T["ratioCL"] > kCL)])), t_alim=float(np.sum(dts[s & (T["alim"] > 0.5)])))
+    # n em que a asa estola na V do momento: n_z C_Lmax/C_L = n_z/ratioCL (Anderson, Introduction to Flight, §6.17)
+    pr = perm & (T["ratioCL"] > 0.05)
+    o["n_estol_perm"] = float(np.median(T["nz"][pr] / T["ratioCL"][pr])) if pr.any() else float("nan")
     tol = max(3.0, 0.15 * R)
     estol = o["t_estol"] > 0.3
     segue = o["erro_p90"] <= tol and abs(o["R_real"] - R) <= tol

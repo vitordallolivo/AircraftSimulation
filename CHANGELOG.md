@@ -4,7 +4,31 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## Não lançado
 
-### v0.2.2 (branch `0.2_dev`, PR aberto)
+### v0.2.3 (branch `0.2_dev`)
+
+- Desempenho → "Voo nivelado e envelopes" (T42): o envelope ganha aba; planilha e modelo completo sobrepostos
+  (só com "os dois") ou cada um sozinho; o V-n sai daqui (vai para Cargas). Modelo completo: opção "abaixo do
+  estol" (núcleo, desligada por padrão no `EnvCfg`) que continua a curva com a polar sem estol para achar o V_min
+  de potência; V mínimo voável = max(V_min, V_e). Ângulo de cruzeiro vem do avião e pode ser mudado na aba;
+  gráfico α de equilíbrio × V com o ângulo e o V_cru de cada método; diagnóstico do V_cru com o motivo e a faixa
+  de α do envelope. Exportar ignora séries só de estilo.
+- `docs/AREAS.md`: mapa das áreas e submódulos, com as duplicações encontradas; Desempenho por etapa de voo.
+- Aba Cargas (T12): a carga ao longo de cada superfície num ponto de voo (V, n, α da trimagem ou imposto), com e
+  sem a hélice do conjunto motopropulsor do avião, pela linha sustentadora (`core/src/loads/llt.zig`) ou pelas
+  faixas da simulação. Gráficos de L', α efetivo e V/V∞ por superfície e a vista 3D (`LoadView`) dentro da aba
+  (tipo de gráfico `loads3d`). Diagnóstico: trimagem, soma das cargas × n·peso e esteira desligada.
+- Tracking: regras (norma e restrição só por preset do usuário; conta no núcleo; cargas é análise tardia), o fluxo
+  de projeto e as tarefas T37 a T41.
+- `.claude/CLAUDE.md`: seção do ambiente (o que instalar e problemas conhecidos).
+- Missão: fator de carga nas curvas (T06). O gráfico "Fator de carga" mostra, junto do n_z, o n que a inclinação
+  pede (curva nivelada, 1/cos φ), o n em que a asa estola na V do momento (n_z C_Lmax/C_L) e o n estrutural; os
+  instantes com C_L = C_Lmax ficam marcados. Só em voo (Anderson, Introduction to Flight, §6.17).
+- Missão, análise "curvas: raio mínimo": gráfico novo "Curvas: fator de carga no tempo" (n_z e n no estol por raio)
+  e o n no estol em regime no "Fator de carga × raio"; coluna `n_estol_perm` nos casos.
+- `docs/TRACKING.md`: tira as linhas duplicadas AE-08 a AE-10; versão da `main` em dia (`v0.2.2`); os ❓ que
+  sobraram conferidos no código (EC-08, EC-09 e EC-16 ✅; IN-08 ❌; DE-02 sem tarefa); progresso medido na `main`.
+
+## v0.2.2 — PR #27
 
 - `.claude/CLAUDE.md`: guia de desenvolvimento (objetivo, conceitos, decisões de projeto, fluxo de git e versões,
   métricas, comandos).
