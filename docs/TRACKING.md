@@ -131,7 +131,7 @@ Tipos de tarefa:
 | T55 | Linha sustentadora (cargas): ferraduras com os nós no 1/4 de corda das bordas de cada faixa (Phillips e Snyder 2000; Hunsaker e Snyder), corrige superfície enflechada e winglet (carga crescendo para a ponta); depois a versão não linear com C_l(α) de cada perfil (Newton) | [ext] | — | B3 | Fazendo |
 | T56 | Hélice no chão: folga da ponta da pá a cada passo; folga < 0 encerra o voo ("hélice tocou o chão"); folga mínima por norma só como preset do usuário | [ext] | — | B2 | Pronto |
 | T59 | Otimização de perfis (futuro): forma do perfil por parâmetros (ex.: CST/Kulfan) com o polar do NeuralFoil (AeroSandbox, já instalado) ou do XFOIL (o motor do XFLR5), objetivo e restrições escolhidos pelo usuário (C_l máx, C_d no cruzeiro, C_m, espessura), atrás da interface de perfis; o perfil otimizado entra na biblioteca. Primeiro o plano com as fontes | [novo] | — | B3 | Pronto |
-| T58 | Cargas pelo AeroSandbox: o VLM do ASB como mais um método da aba Cargas, atrás da interface (`LoadResult`): distribuição por faixa, vista 3D e comparação lado a lado com a linha sustentadora do núcleo. Serve de referência independente para winglet, enflechamento e diedro | [ext] | — | B4 | Pronto |
+| T58 | Cargas pelo AeroSandbox: o VLM do ASB como mais um método da aba Cargas, atrás da interface (`ILoadMethod` → `LoadResult`): distribuição por faixa, vista 3D e comparação lado a lado com a linha sustentadora do núcleo, no mesmo ponto de voo. Serve de referência independente para winglet, enflechamento e diedro | [ext] | — | B4 | Feito (a revisar) |
 | T57 | Esteira desviada pelo escoamento e com perfil radial (Duivenvoorden et al. 2026; correção de Rethorst, Exalto et al. 2024; Goates 2018), validada contra Stuper (NACA TM 874) | [ext] | T55 | B3 | Bloqueado |
 | T11 | Arrasto por componente | [ext] | — | B3 | Pronto |
 | T12 | Aba Cargas (distribuição + 3D; hélice do conjunto motopropulsor do avião; só com modelo pronto) | [GUI] | — | B4 | Feito |
@@ -251,7 +251,7 @@ pista) é ajuste de interface e está em "Fora da conta".
 | CA-08 | Cargas no solo | ❌ | ❌ | T18 | |
 | CA-09 | Redistribuição das cargas para a estrutura | ❌ | ❌ | T39 | |
 | CA-10 | V-n com dados de voo | ❌ | ❌ | T40 | |
-| CA-11 | Método das cargas pelo VLM do AeroSandbox (comparação com a linha sustentadora) | ❌ | ❌ | T58 | `aero/asb_solver.py` já roda o VLM; falta entregar `LoadResult` |
+| CA-11 | Método das cargas pelo VLM do AeroSandbox (comparação com a linha sustentadora) | ✅ | ✅ | T58 | aba Cargas → Método / Comparar com; `aero/asb_solver.py` (`AsbVLMLoads`) |
 
 ### 5. Aeroelasticidade
 
@@ -340,12 +340,12 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 | 1. Aerodinâmica | 6 / 15 |
 | 2. Desempenho | 8 / 14 |
 | 3. Estabilidade e Controle | 12 / 16 |
-| 4. Cargas | 2 / 11 |
+| 4. Cargas | 3 / 11 |
 | 5. Aeroelasticidade | 0 / 4 |
 | 6. Estruturas | 1 / 5 |
 | 8. Integração | 6 / 10 |
 | 9. Controle | 1 / 2 |
-| **Total** | **36 / 77 (47 %)** |
+| **Total** | **37 / 77 (48 %)** |
 
 ---
 

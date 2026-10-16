@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from aerosim.interfaces.loads import ILoadMethod, LoadPoint
+
 MAX_PER_SIDE = 40
 
 
@@ -108,6 +110,7 @@ class SpanLoads:
     weight: float = 0.0                # peso do avião (N)
     trim: dict | None = None           # a trimagem do núcleo, se o α veio dela (ok, alpha, de, thr, n...)
     notes: list[str] = field(default_factory=list)
+    source: str = ""                   # o método que calculou (texto para a vista 3D e os relatórios)
 
     def surface(self, name: str) -> SurfaceLoad:
         return next(s for s in self.surfaces if s.name == name)
@@ -214,18 +217,14 @@ def _collect(P: np.ndarray, rows: list[int], sm, rho: float, wash=None) -> Surfa
                        wash=(np.asarray(wash, float)[rows][o] if wash is not None else np.zeros(len(rows))))
 
 
-def compute(backend, ac, case: LoadCase | None = None) -> SpanLoads:
-    """a carga de cada superfície do avião `ac` no caso `case` (com os modificadores do avião)"""
-    from aerosim.backend.zig.translator import panel_owners
-    from aerosim.model import modifiers as mods
-    from aerosim.model.universal import build_model
+def prepare(backend, ac, case: LoadCase | None = None) -> LoadPoint:
+    """o ponto de voo resolvido uma vez, para qualquer método: a trimagem do núcleo (se α não foi imposto) e o estado
+    de cada hélice (rotação de equilíbrio ou imposta, tração e torque)"""
     from aerosim.interfaces.backend import TrimKind
+    from aerosim.model.universal import build_model
     case = case or LoadCase()
-    limit = backend.schema.limits["surfaces"]
-    rho = ac.environment.rho
-    base = build_model(ac)
     notes, trim = [], None
-    with backend.session_for(base) as s:
+    with backend.session_for(build_model(ac)) as s:
         weight = float(s.mass_props()["m"]) * 9.80665
         run = copy.copy(case)
         if case.alpha is None:
@@ -238,45 +237,102 @@ def compute(backend, ac, case: LoadCase | None = None) -> SpanLoads:
                 run.throttle = float(trim["thr"])
         elif case.de is None:
             run.de = 0.0
-        props = _props(s, ac, base, run)
-    a, b = math.radians(run.alpha), math.radians(run.beta)
-    d = [math.radians(run.de), math.radians(run.da), math.radians(run.dr)]
-    T, Q = [p.T for p in props], [p.Q for p in props]
-    if not case.props:                                  # sem influência das hélices: as superfícies não veem tração
-        T, Q = [0.0] * len(props), [0.0] * len(props)
+        props = _props(s, ac, None, run)
+    if not case.props:
         notes.append("sem influência das hélices nas superfícies (props=False)")
-    if case.method not in ("llt", "faixas"):
-        raise ValueError(f"método de carga desconhecido: {case.method!r} (llt | faixas)")
-    if case.method == "llt":
-        notes.append("carga pela linha sustentadora (ferraduras, Phillips e Snyder 2000); α e profundor da trimagem "
-                     "do núcleo, então a soma pode diferir um pouco do peso")
-    res = SpanLoads(case=case, props=props, modifiers=mods.describe(ac), rho=rho, alpha=run.alpha, de=run.de,
-                    weight=weight, trim=trim, notes=notes)
-    done = set()
-    # cada superfície do avião refinada sozinha (os dispositivos de ponta saem com o avião sem refino)
-    targets = [i for i, x in enumerate(ac.surfaces) if x.enabled] if case.refine else []
-    jobs = [(i, _fit(ac, i, limit, case.method == "llt")) for i in targets] + [(None, ac)]
-    for idx, a_ac in jobs:
-        model = build_model(a_ac)
-        owners = panel_owners(model)
-        with backend.session_for(model) as s:
-            P = s.panel_states(run.V, a, b, T, Q, *d, llt=case.method == "llt")
-            wash = np.zeros(len(P))
-            for i, p in enumerate(props):               # colisão: quanto de cada faixa está no tubo de cada hélice
-                h = s.tube_panel_hits(i, T[i], p.V_axis)
-                wash[:len(h)] = np.maximum(wash[:len(h)], h[:len(wash)])
-        for k, sm in enumerate(model.surfaces):
-            if sm.name in done:
-                continue
-            if idx is not None and sm.index != idx:      # desta rodada só vale a superfície refinada (e os dispositivos dela não)
-                continue
-            if idx is not None and sm.role == "device":
-                continue
-            rows = [j for j, (_, kk) in enumerate(owners) if kk == k and j < len(P) and P["group"][j] >= 0]
-            if rows:
-                res.surfaces.append(_collect(P, rows, sm, rho, wash))
-                done.add(sm.name)
-    return res
+    return LoadPoint(V=run.V, alpha=run.alpha, beta=run.beta, de=run.de, da=run.da, dr=run.dr,
+                     rho=ac.environment.rho, n=case.n, weight=weight, props=props, props_on=case.props, trim=trim,
+                     notes=notes)
+
+
+class StripLoadMethod(ILoadMethod):
+    """base dos métodos que entregam faixas (`SurfaceLoad`): o `LoadResult` sai da conversão comum (`to_result`).
+    Quem herda implementa `strips`"""
+    backend = None                     # para os tubos da esteira na vista 3D (sonda do núcleo); sem ele, sem tubos
+
+    def strips(self, model, point: LoadPoint) -> tuple[list[SurfaceLoad], list[str]]:
+        """as faixas de cada superfície e as notas do método"""
+        raise NotImplementedError
+
+    def loads(self, model, point: LoadPoint, case: LoadCase | None = None) -> SpanLoads:
+        from aerosim.model import modifiers as mods
+        surfaces, notes = self.strips(model, point)
+        case = case or LoadCase(V=point.V, alpha=point.alpha, n=point.n, beta=point.beta, de=point.de, da=point.da,
+                                dr=point.dr, props=point.props_on, method=self.name)
+        return SpanLoads(case=case, surfaces=surfaces, props=point.props, modifiers=mods.describe(model.aircraft),
+                         rho=point.rho, alpha=point.alpha, de=point.de, weight=point.weight, trim=point.trim,
+                         notes=list(point.notes) + notes, source=self.source)
+
+    def compute(self, model, point: LoadPoint):
+        return to_result(self.loads(model, point), self.backend)
+
+
+class CoreLoadMethod(StripLoadMethod):
+    """o núcleo: a linha sustentadora (`core/src/loads/llt.zig`) ou as faixas da simulação (o C_Lα uniforme de cada
+    superfície). Cada superfície é refinada sozinha até o limite de painéis do núcleo (`refine`)"""
+
+    def __init__(self, backend, llt: bool = True, refine: bool = True):
+        self.backend, self.llt, self.refine = backend, llt, refine
+        if llt:
+            self.name, self.title = "llt", "linha sustentadora (Phillips e Snyder)"
+            self.source = "núcleo: linha sustentadora (core/src/loads/llt.zig; Phillips e Snyder 2000)"
+            self.supports = frozenset({"esteira", "solo", "comandos"})
+        else:
+            self.name, self.title = "faixas", "faixas (o C_Lα da simulação)"
+            self.source = "núcleo: faixas da simulação (core/src/physics/aero.zig)"
+            self.supports = frozenset({"esteira", "solo", "comandos", "estol"})
+
+    def strips(self, model, point: LoadPoint):
+        from aerosim.backend.zig.translator import panel_owners
+        from aerosim.model.universal import build_model
+        ac = model.aircraft
+        notes = []
+        if self.llt:
+            notes.append("carga pela linha sustentadora (ferraduras, Phillips e Snyder 2000); α e profundor da "
+                         "trimagem do núcleo, então a soma pode diferir um pouco do peso")
+        limit = self.backend.schema.limits["surfaces"]
+        props = point.props
+        a, b = math.radians(point.alpha), math.radians(point.beta)
+        d = [math.radians(point.de), math.radians(point.da), math.radians(point.dr)]
+        T = [p.T for p in props] if point.props_on else [0.0] * len(props)
+        Q = [p.Q for p in props] if point.props_on else [0.0] * len(props)
+        out, done = [], set()
+        # cada superfície do avião refinada sozinha (os dispositivos de ponta saem com o avião sem refino)
+        targets = [i for i, x in enumerate(ac.surfaces) if x.enabled] if self.refine else []
+        jobs = [(i, _fit(ac, i, limit, self.llt)) for i in targets] + [(None, ac)]
+        for idx, a_ac in jobs:
+            m = build_model(a_ac)
+            owners = panel_owners(m)
+            with self.backend.session_for(m) as s:
+                P = s.panel_states(point.V, a, b, T, Q, *d, llt=self.llt)
+                wash = np.zeros(len(P))
+                for i, p in enumerate(props):           # colisão: quanto de cada faixa está no tubo de cada hélice
+                    h = s.tube_panel_hits(i, T[i], p.V_axis)
+                    wash[:len(h)] = np.maximum(wash[:len(h)], h[:len(wash)])
+            for k, sm in enumerate(m.surfaces):
+                if sm.name in done:
+                    continue
+                if idx is not None and sm.index != idx:  # desta rodada só vale a superfície refinada
+                    continue
+                if idx is not None and sm.role == "device":
+                    continue
+                rows = [j for j, (_, kk) in enumerate(owners) if kk == k and j < len(P) and P["group"][j] >= 0]
+                if rows:
+                    out.append(_collect(P, rows, sm, point.rho, wash))
+                    done.add(sm.name)
+        return out, notes
+
+
+def compute(backend, ac, case: LoadCase | None = None) -> SpanLoads:
+    """a carga de cada superfície do avião `ac` no caso `case` (com os modificadores do avião), pelo método
+    `case.method` (nome de um método de `aerosim.aero.all_load_methods`)"""
+    from aerosim.aero import load_method
+    from aerosim.model.universal import build_model
+    case = case or LoadCase()
+    method = load_method(backend, case.method, refine=case.refine)
+    if not isinstance(method, StripLoadMethod):
+        raise ValueError(f"o método {case.method!r} não entrega faixas: use method.compute (LoadResult)")
+    return method.loads(build_model(ac), prepare(backend, ac, case), case)
 
 
 # ---------------------------------------------------------------------- entrada padrão (interfaces/loads.py)
@@ -332,8 +388,7 @@ def to_result(r: SpanLoads, backend=None) -> "LoadResult":
     mot = ", ".join(f"{p.name} {p.rpm:.0f} rpm {p.T:.1f} N" for p in r.props)
     a, b = np.radians(r.alpha), np.radians(r.case.beta)
     wind = -np.array([np.cos(a) * np.cos(b), np.sin(b), np.sin(a) * np.cos(b)])   # para onde o ar vai (corpo)
-    meta = dict(fonte=("núcleo: linha sustentadora (core/src/loads/llt.zig)" if r.case.method == "llt"
-                       else "núcleo (faixas, aerosim/aero/span_loads.py)"), fidelidade="modelo", V=V0, alpha=r.alpha,
+    meta = dict(fonte=r.source or r.case.method, fidelidade="modelo", V=V0, alpha=r.alpha,
                 vento=wind, props_on=r.case.props,
                 de=r.de, peso=r.weight, n=r.case.n, motores=mot, modificadores=r.modifiers, avisos=r.notes,
                 caso=f"V = {V0:g} m/s, n = {r.case.n:g}, α = {r.alpha:.2f}°" + (" (trimagem)" if r.trim else "")

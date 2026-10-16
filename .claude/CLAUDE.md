@@ -31,6 +31,7 @@ Ferramenta para **dimensionar uma aeronave** (AeroDesign, VANT, protótipo) e vo
 | Simulação (aba) | Uma `ISimulation` por análise: campos, gráficos, `run` → `SimResult` com `checks` | `aerosim/manager/simulations/` |
 | Modifier | Método da literatura ligável por avião (efeito solo, esteira), desligado por padrão | `core/src/modifiers/`, `aerosim/model/modifiers.py` |
 | `LoadResult` | Entrada padrão das análises de carga: qualquer método (núcleo, VLM, CFD) entrega isso e os gráficos e o 3D leem | `aerosim/interfaces/loads.py` |
+| Método de carga (`ILoadMethod`) | Recebe o modelo universal e o `LoadPoint` (trimagem e hélices, resolvido uma vez por `span_loads.prepare`) e devolve o `LoadResult`. Registro: `aerosim.aero.all_load_methods`; método novo = uma classe nova | `aerosim/interfaces/loads.py`, `aerosim/aero/span_loads.py`, `aerosim/aero/asb_solver.py` |
 | ABI do núcleo | Funções `export fn` de `core/src/root.zig`, chamadas por ctypes; esquema com hash conferido ao carregar | `core/src/root.zig`, `aerosim/backend/zig/` |
 
 **Camadas:** GUI → Simulation Manager → interface → backend/núcleo. **Aircraft Data** (`aerosim/data`) carrega e grava
