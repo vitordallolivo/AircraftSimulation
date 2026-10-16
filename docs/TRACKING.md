@@ -9,215 +9,299 @@ entra aqui; servem só como lista do que um projeto cobre.
 **Cuidado com estruturas:** os relatórios de referência têm valores inconsistentes nessa área. Servem como lista de
 tópicos, nunca como fonte de números.
 
-## Versões e escopo
-
-- **Versão atual da `main`: `v0.1.0`.** É a primeira versão rastreada (sem tag ainda; ver Versionamento).
-- **`1.0.0`:** todos os itens do **escopo 1.0** com ✅ na coluna **GUI**.
-  - Uma análise só conta quando dá para rodá-la e ver o resultado pela interface.
-  - Não contam o que só existe no código, numa ferramenta de linha de comando ou num teste.
-- **Minor (`0.x.0`):** a cada PR mesclado na `main` que leva pelo menos um item do escopo 1.0 para ✅ na GUI.
-- **Patch (`0.x.y`):** correção sem item novo.
-- **Escopo:**
-  - **1.0:** análises de projeto (seções 1 a 8) e itens de simulação que o usuário opera.
-  - **pós-1.0:** ideias grandes e infraestrutura. Não entram na conta do progresso, mas ficam rastreadas.
-
-**Legenda** (as duas colunas)
-- **Código**
-  - ✅ tem módulo e teste.
-  - 🟡 parcial.
-  - ❌ não existe.
-  - ❓ a conferir.
-- **GUI**
-  - ✅ roda e mostra na interface.
-  - 🟡 só parte.
-  - ❌ não aparece.
-  - ❓ a conferir.
-
-Atualizar a cada PR. O progresso fica no fim do arquivo.
+Como usar:
+1. Olhe a coluna **Pronto** do quadro.
+2. Pegue no máximo 2 tarefas.
+3. Ao fechar uma tarefa, atualize os itens que ela mexe e o progresso.
 
 ---
 
-## 1. Aerodinâmica
+## O castelo (mapa)
 
-| ID | Tópico | Código | GUI | Escopo | Onde / observação |
-|---|---|---|---|---|---|
-| AE-01 | Biblioteca de perfis, polares 2D por Reynolds, cache | ✅ | ✅ | 1.0 | `aero/sections.py`, `data/airfoils`, sprint Perfil |
-| AE-02 | Asa finita: LLT, AVL, ASB, importar XFLR5 | ✅ | ✅ | 1.0 | aba Aerodinâmica, comparação de métodos |
-| AE-03 | Asa por partições, perfil por seção | ✅ | ✅ | 1.0 | sprint Asa |
-| AE-04 | Polar do avião completo (CL, CD, Cm × α) | ✅ | ✅ | 1.0 | aba Aerodinâmica → Polar |
-| AE-05 | Dispositivos de ponta de asa | ✅ | ✅ | 1.0 | `aero/tipdevices.py` |
-| AE-06 | Arrasto por componente (fuselagem, trem, empenagens, carenagem) | 🟡 | ❌ | 1.0 | só a área de arrasto da fuselagem |
-| AE-07 | Downwash na cauda | 🟡 | 🟡 | 1.0 | empírico na simulação; nas cargas sai das ferraduras |
-| AE-08 | Efeito solo (McCormick) | ✅ | ❓ | 1.0 | modifier `solo.mccormick` |
-| AE-09 | Efeito solo por imagem e da mesa (só parte da asa sobre ela) | ❌ | ❌ | 1.0 | |
-| AE-10 | Esteira da hélice nas superfícies | 🟡 | ❌ | 1.0 | `esteira.disco`; tubo reto, sem desvio; ligar pela GUI |
-| AE-11 | Reynolds no núcleo (CLmax, CD0 por Re) | ❌ | ❌ | 1.0 | o núcleo usa valores fixos por superfície |
-| AE-12 | Distribuição ao longo da envergadura a um α (início do estol) | ✅ | ❌ | 1.0 | `core/src/loads/llt.zig` |
-| AE-13 | Comparação com ensaio (bancada / túnel) | ❌ | ❌ | 1.0 | entrada de dados de ensaio |
-| AE-14 | CFD / 3D completo (estilo OpenVSP/Ansys, GPU) | ❌ | ❌ | pós-1.0 | `LoadResult` já aceita uma malha de CFD |
-| AE-15 | Importar/exportar CAD (SolidWorks), rugosidade, arrasto parasita | ❌ | ❌ | pós-1.0 | |
+```
+        [Torres]   pós-1.0: CFD 3D, VTOL/tailsitter, controle não linear, CAD
+   ┌──────────────────────────────────────────────────────┐
+ 3 │ Andar 3: Estruturas · Aeroelasticidade · Elétrica      │ ← arquitetura nova (do zero)
+ 2 │ Andar 2: Cargas (casos, esforços, dobradiça, solo)     │ ← apoia-se no Andar 1
+ 1 │ Andar 1: Aero · Desempenho · E&C · Integração          │ ← já está de pé
+   ├──────────────────────────────────────────────────────┤
+ 0 │ Fundação: núcleo Zig, ABI, modelo universal, testes    │
+   └──────────────────────────────────────────────────────┘
+              [Portão] = GUI: só conta quando passa por ele
+```
 
-## 2. Desempenho
+- Uma tarefa nunca depende de um andar acima do dela.
+- O Andar 3 só começa quando o Andar 2 entrega cargas por caso.
 
-| ID | Tópico | Código | GUI | Escopo | Onde / observação |
-|---|---|---|---|---|---|
-| DE-01 | Motor + hélice (tabela) + bateria | ✅ | ✅ | 1.0 | `physics/propulsion.zig`, Desempenho → Tração |
-| DE-02 | Biblioteca de motores e hélices disponível de saída | 🟡 | 🟡 | 1.0 | perfis já estão; motores a conferir |
-| DE-03 | Comparação de conjuntos motopropulsores (limites de corrente) | 🟡 | 🟡 | 1.0 | sprint Motores |
-| DE-04 | Perda de tração por corpos atrás da hélice | ❌ | ❌ | 1.0 | |
-| DE-05 | Ajuste de dados de ensaio dinâmico de hélice | ❌ | ❌ | 1.0 | a tabela aceita dados; falta o ajuste |
-| DE-06 | Decolagem com pista limitada / mesa (6GDL) | ✅ | ✅ | 1.0 | Missão "só decolagem" |
-| DE-07 | Decolagem com vento cruzado (controle no chão, tombamento) | ❌ | ❌ | 1.0 | |
-| DE-08 | MTOW × altitude-densidade | ✅ | ✅ | 1.0 | envelope por altitude |
-| DE-09 | Subida, voo nivelado, envelope | ✅ | ✅ | 1.0 | Desempenho |
-| DE-10 | Curvas com fator de carga, dinâmicas | 🟡 | 🟡 | 1.0 | estático feito; falta o dinâmico com n |
-| DE-11 | Planeio | ❓ | ❓ | 1.0 | |
-| DE-12 | Pouso (distância, trajetória) | 🟡 | ❓ | 1.0 | `landingRun` no sizing |
-| DE-13 | Consumo por fase de voo | 🟡 | 🟡 | 1.0 | bateria na missão |
-| DE-14 | Massa total controlada na pista (não por LAPES/líquido) | ❓ | ❓ | 1.0 | `ideias.md` |
-| DE-15 | Incerteza: Monte Carlo e sensibilidade ("chance de decolar em 6 m") | ❌ | ❌ | 1.0 | |
-| DE-16 | Turbulência contínua (Dryden / von Kármán) | ❌ | ❌ | 1.0 | hoje só a rajada 1−cos |
+---
 
-## 3. Estabilidade e Controle
+## Versões
 
-| ID | Tópico | Código | GUI | Escopo | Onde / observação |
-|---|---|---|---|---|---|
-| EC-01 | Estática longitudinal (PN, ME) | ✅ | ✅ | 1.0 | aba Estabilidade |
-| EC-02 | ME × xCG com ênfase, faixa de CG | 🟡 | 🟡 | 1.0 | "Margem estática × posição do CG" existe; falta ênfase |
-| EC-03 | Passeio do CG (soltura da LAPES, consumo do líquido) | 🟡 | 🟡 | 1.0 | "CG mais dianteiro/traseiro previsto" |
-| EC-04 | Limite dianteiro do CG pela rotação na pista | ❓ | ❓ | 1.0 | conferir se a tesoura usa |
-| EC-05 | Diagrama tesoura | ✅ | ✅ | 1.0 | |
-| EC-06 | Trimagem (profundor por V e n) | ✅ | ✅ | 1.0 | |
-| EC-07 | Dimensionamento de EH/EV e comandos | ✅ | ✅ | 1.0 | sprint Empenagem |
-| EC-08 | Vento de través no pouso (leme, aileron) | ❓ | ❓ | 1.0 | |
-| EC-09 | Taxa de rolamento (pb/2V) | ❓ | ❓ | 1.0 | |
-| EC-10 | Dinâmica: modos e respostas | ✅ | ✅ | 1.0 | doublet, pulso |
-| EC-11 | Qualidades de voo (MIL-F-8785C) | ✅ | ✅ | 1.0 | |
-| EC-12 | Efeito do vento lateral/frontal na estabilidade | ❌ | ❌ | 1.0 | `ideias.md` |
-| EC-13 | Polos com sloshing | ❌ | ❌ | 1.0 | `ideias.md` |
-| EC-14 | Diedro elástico (flexão da asa) em Clβ/Cnβ | ❌ | ❌ | 1.0 | depende de ES-02 |
-| EC-15 | Comparação com voo real (log de sensores) | ❌ | ❌ | 1.0 | |
-| EC-16 | Inverter a rotação de qualquer motor | ❓ | ❓ | 1.0 | o núcleo tem `sense`; GUI a conferir |
+- **`main` atual = `v0.1.0`** (`033bdc1`). A tag só será criada com o ok do dono do repositório.
+- **Minor (`0.x.0`):** fecha um milestone.
+- **Patch (`0.x.y`):** cada subversão do milestone (um bloco de tarefas mesclado na `main`) e correções.
+- **`1.0.0`:** todo o escopo 1.0 com ✅ na coluna **GUI**.
+  - Uma análise só conta quando roda e mostra o resultado na interface.
+  - Não contam o que só existe no código, numa ferramenta de linha de comando ou num teste.
+- As versões passam do 0.9 se precisar (0.10, 0.11…), o que é válido em semver.
 
-## 4. Cargas
+## Milestones
 
-| ID | Tópico | Código | GUI | Escopo | Onde / observação |
-|---|---|---|---|---|---|
-| CA-01 | Distribuição de sustentação por superfície (V, n, rpm, com/sem hélice) | ✅ | ❌ | 1.0 | `aero/span_loads.py` |
-| CA-02 | Vista 3D e gráficos das cargas | ✅ | ❌ | 1.0 | `LoadView`; ferramenta de linha de comando |
-| CA-03 | Diagrama V-n de manobra | 🟡 | 🟡 | 1.0 | no envelope; sem os casos de carga tirados dele |
-| CA-04 | Rajada por norma (fatores e V-n de rajada) | ❌ | ❌ | 1.0 | |
-| CA-05 | Casos de manobra (rolamento, cabrada/picada, leme) | ❌ | ❌ | 1.0 | o 6GDL simula; falta montar os casos |
-| CA-06 | Esforços internos: cortante, fletor, torsor | ❌ | ❌ | 1.0 | próximo passo a partir de CA-01 |
-| CA-07 | Momentos de dobradiça | ❌ | ❌ | 1.0 | |
-| CA-08 | Cargas no solo (pouso, taxiamento, uma roda) | ❌ | ❌ | 1.0 | |
-
-## 5. Aeroelasticidade
-
-| ID | Tópico | Código | GUI | Escopo | Onde / observação |
-|---|---|---|---|---|---|
-| AL-01 | Centro elástico e rigidez torcional | ❌ | ❌ | 1.0 | depende de ES-02 |
-| AL-02 | Divergência | ❌ | ❌ | 1.0 | |
-| AL-03 | Reversão de comando | ❌ | ❌ | 1.0 | |
-| AL-04 | Modos de vibração e flutter | ❌ | ❌ | 1.0 | |
-| AL-05 | Cargas dinâmicas (aeroelasticidade dinâmica) | ❌ | ❌ | pós-1.0 | `ideias.md` |
-
-## 6. Estruturas
-
-| ID | Tópico | Código | GUI | Escopo | Onde / observação |
-|---|---|---|---|---|---|
-| ES-01 | Massas e inércias | ✅ | ✅ | 1.0 | Montagem |
-| ES-02 | Longarina da asa (flexão, deflexão, margem) | ❌ | ❌ | 1.0 | `ideias.md` |
-| ES-03 | Tubo de cauda | ❌ | ❌ | 1.0 | `ideias.md` |
-| ES-04 | Banco de materiais (fonte própria) | ❌ | ❌ | 1.0 | nunca dos relatórios de referência |
-| ES-05 | Trem de pouso (eixo, garfo) | ❌ | ❌ | 1.0 | depende de CA-08 |
-| ES-06 | Otimização estrutural | ❌ | ❌ | pós-1.0 | `ideias.md` |
-| ES-07 | FEM / ensaio | ❌ | ❌ | pós-1.0 | caberia como importação de resultado |
-
-## 7. Elétrica
-
-| ID | Tópico | Código | GUI | Escopo | Onde / observação |
-|---|---|---|---|---|---|
-| EL-01 | Bateria de propulsão: C-rate × corrente de pico | 🟡 | ❌ | 1.0 | |
-| EL-02 | Torque de servos por superfície | ❌ | ❌ | 1.0 | depende de CA-07 |
-| EL-03 | Bateria dos servos, bitola dos cabos | ❌ | ❌ | 1.0 | |
-| EL-04 | FMEA | ❌ | ❌ | pós-1.0 | documento, não simulação |
-
-## 8. Integração / MDO / Projeto
-
-| ID | Tópico | Código | GUI | Escopo | Onde / observação |
-|---|---|---|---|---|---|
-| IN-01 | MDO (PSO, pontuação) | ✅ | ✅ | 1.0 | página MDO |
-| IN-02 | Projeto do zero em etapas (sprint por asa, em pasta) | ✅ | ✅ | 1.0 | `aerosim/design` |
-| IN-03 | Montagem sem exigir decolagem; sprint direto em Desempenho | ✅ | ✅ | 1.0 | `ideias.md` (feito) |
-| IN-04 | Tração e Missão dentro de Desempenho | ✅ | ✅ | 1.0 | `ideias.md` (feito) |
-| IN-05 | xCG em % CMA | ✅ | ✅ | 1.0 | `ideias.md` (feito) |
-| IN-06 | Checklist do avião | ✅ | ✅ | 1.0 | |
-| IN-07 | Estimativa de peso vazio (banco histórico) | 🟡 | 🟡 | 1.0 | |
-| IN-08 | Volume e arranjo da caixa | ❓ | ❓ | 1.0 | |
-| IN-09 | Tempo de montagem e desmontagem | ❌ | ❌ | 1.0 | |
-| IN-10 | Tempo de missão no circuito real | 🟡 | 🟡 | 1.0 | |
-
-## 9. Controle e configurações especiais
-
-| ID | Tópico | Código | GUI | Escopo | Onde / observação |
-|---|---|---|---|---|---|
-| CO-01 | Piloto automático genérico (autotune) | ✅ | ✅ | 1.0 | AeroDrive e simulação |
-| CO-02 | Aba de controle (controlador do simulador e um real) | ❌ | ❌ | 1.0 | `ideias.md` |
-| CO-03 | Controle não linear (SMC, NN-MPC) | ❌ | ❌ | pós-1.0 | `ideias.md` |
-| CO-04 | VTOL, tailsitter, eixos de motor que inclinam (análise não linear) | 🟡 | ❌ | pós-1.0 | o tilt existe no núcleo; falta a análise |
-| CO-05 | Estabilidade de helicóptero (referência para VTOL) | ❌ | ❌ | pós-1.0 | `ideias.md` (pesquisa) |
-
-## 10. Infraestrutura (não conta para a 1.0)
-
-| ID | Tópico | Estado | Observação |
+| Versão | Milestone | Subversões | Fecha quando |
 |---|---|---|---|
-| IF-01 | Hash da ABI conferido ao carregar | ✅ | |
-| IF-02 | Modifiers (métodos ligáveis sem mudar arquivos antigos) | ✅ | `core/src/modifiers` |
-| IF-03 | Colisão do tubo da hélice | ✅ | `core/src/collision` |
-| IF-04 | Integrador adaptativo (Dormand–Prince) com eventos | ❌ | |
-| IF-05 | Derivadas exatas com números duais (comptime) | ❌ | |
-| IF-06 | SIMD com painéis em estrutura de arrays | ❌ | medir antes com `bench.zig` |
-| IF-07 | Paralelismo (PSO, Monte Carlo) | ❌ | |
-| IF-08 | Testes de propriedade (energia, trimagem, linearização × diferenças finitas) | 🟡 | |
-| IF-09 | Comparação bit a bit dos exemplos dentro do repositório | ❌ | hoje é um script fora do repositório |
+| **0.1** | Fundação firme | 0.1.1 testes de regressão em `tools/checks` (comparação bit a bit, núcleo, AeroDrive, testes por área) · 0.1.2 rodar e corrigir o que quebrou · 0.1.3 conferir os ❓ · 0.1.4 pilha de branches mesclada | pilha na `main` com os checks verdes |
+| **0.2** | Análises simples (cálculos e plots) | 0.2.1 E&C: ME × xCG, passeio do CG, limite dianteiro pela rotação · 0.2.2 E&C: vento e sloshing nos polos · 0.2.3 Desempenho: curvas com fator de carga, planeio, pouso · 0.2.4 consumo por fase, C-rate da bateria | os itens na GUI |
+| **0.3** | Aero completo na GUI | 0.3.1 esteira e solo ligáveis por avião · 0.3.2 distribuição a α (início do estol) · 0.3.3 Reynolds no núcleo · 0.3.4 arrasto por componente | os itens na GUI |
+| **0.4** | Cargas I | 0.4.1 aba Cargas (3D + gráficos) · 0.4.2 casos do V-n · 0.4.3 rajada · 0.4.4 cortante, fletor e torsor | esforços por caso na GUI |
+| **0.5** | Cargas II + Elétrica | 0.5.1 manobras dinâmicas · 0.5.2 momentos de dobradiça · 0.5.3 cargas no solo · 0.5.4 servos e cabos | dobradiça → servo na GUI |
+| **0.6** | Estruturas (do zero) | 0.6.1 arquitetura + materiais · 0.6.2 longarina · 0.6.3 tubo de cauda · 0.6.4 trem | longarina na GUI |
+| **0.7** | Aeroelasticidade estática | 0.7.1 rigidez e centro elástico · 0.7.2 divergência · 0.7.3 reversão · 0.7.4 diedro elástico em E&C | os itens na GUI |
+| **0.8** | Incerteza e atmosfera | 0.8.1 paralelismo no núcleo · 0.8.2 Monte Carlo e sensibilidade · 0.8.3 turbulência Dryden · 0.8.4 vento cruzado na decolagem | os itens na GUI |
+| **0.9** | Fechamento | 0.9.1 modos e flutter · 0.9.2 aba de controle · 0.9.3 caixa, montagem e desmontagem · 0.9.4 comparação com ensaio e voo real | todo o escopo 1.0 ✅ |
+| **1.0** | Castelo pronto | — | — |
+
+**Torres (pós-1.0, menor prioridade):**
+- VTOL/tailsitter;
+- controle não linear;
+- CFD 3D (inclui a perda de tração por corpos atrás da hélice);
+- CAD;
+- aeroelasticidade dinâmica;
+- otimização estrutural e FEM;
+- FMEA.
+
+---
+
+## Quadro
+
+Uma tarefa só vai para **Pronto** quando as tarefas de que ela depende estão **Feito**. Máximo de 2 em **Fazendo**.
+
+Tipos de tarefa:
+- **[GUI]**: só ligar na interface.
+- **[ext]**: estende um módulo existente.
+- **[novo]**: módulo novo numa arquitetura existente.
+- **[zero]**: arquitetura nova.
+
+| ID | Tarefa | Tipo | Depende de | Milestone | Estado |
+|---|---|---|---|---|---|
+| T00 | Checks de regressão em `tools/checks` (comparação bit a bit contra uma ref, núcleo, AeroDrive, testes por área) | [novo] | — | 0.1.1 | Fazendo |
+| T01 | Conferir os ❓ | leitura | — | 0.1.3 | Pronto |
+| T02 | Rodar os checks na pilha e corrigir | [ext] | T00 | 0.1.2 | Bloqueado |
+| T03 | PRs da pilha para a `main` | git | T02 | 0.1.4 | Bloqueado |
+| T04 | E&C: ME × xCG com ênfase, passeio do CG, limite pela rotação | [ext] | — | 0.2.1 | Pronto |
+| T05 | E&C: polos com vento e com sloshing | [ext] | — | 0.2.2 | Pronto |
+| T06 | Curvas com fator de carga, planeio, pouso | [ext] | — | 0.2.3 | Pronto |
+| T07 | Consumo por fase, C-rate × pico | [ext] | — | 0.2.4 | Pronto |
+| T08 | Esteira e efeito solo ligáveis na GUI | [GUI] | — | 0.3.1 | Pronto |
+| T09 | Distribuição a α na aba Aerodinâmica | [GUI] | — | 0.3.2 | Pronto |
+| T10 | Reynolds no núcleo (tabela por Re) | [ext] | — | 0.3.3 | Pronto |
+| T11 | Arrasto por componente | [ext] | — | 0.3.4 | Pronto |
+| T12 | Aba Cargas (distribuição + 3D) | [GUI] | — | 0.4.1 | Pronto |
+| T13 | Casos de carga do V-n | [ext] | — | 0.4.2 | Pronto |
+| T14 | Rajada por norma | [novo] | — | 0.4.3 | Pronto |
+| T15 | Cortante, fletor e torsor | [novo] | T13, T14 | 0.4.4 | Bloqueado |
+| T16 | Manobras dinâmicas (o 6GDL monta os casos) | [ext] | T13 | 0.5.1 | Bloqueado |
+| T17 | Momento de dobradiça (distribuição na corda, método da literatura) | [novo] | — | 0.5.2 | Pronto |
+| T18 | Cargas no solo | [novo] | — | 0.5.3 | Pronto |
+| T19 | Torque de servos, bateria de servos, cabos | [novo] | T17 | 0.5.4 | Bloqueado |
+| T20 | Arquitetura de estruturas + banco de materiais (os dados vêm do usuário ou da literatura) | [zero] | — | 0.6.1 | Pronto |
+| T21 | Longarina | [zero] | T15, T20 | 0.6.2 | Bloqueado |
+| T22 | Tubo de cauda | [zero] | T15, T20 | 0.6.3 | Bloqueado |
+| T23 | Trem (eixo, garfo) | [zero] | T18, T20 | 0.6.4 | Bloqueado |
+| T24 | Rigidez e centro elástico | [novo] | T21 | 0.7.1 | Bloqueado |
+| T25 | Divergência | [novo] | T24 | 0.7.2 | Bloqueado |
+| T26 | Reversão de comando | [novo] | T24 | 0.7.3 | Bloqueado |
+| T27 | Diedro elástico em E&C | [ext] | T21 | 0.7.4 | Bloqueado |
+| T28 | Paralelismo no núcleo | [ext] | — | 0.8.1 | Pronto |
+| T29 | Monte Carlo e sensibilidade | [novo] | T28 | 0.8.2 | Bloqueado |
+| T30 | Turbulência Dryden | [novo] | — | 0.8.3 | Pronto |
+| T31 | Vento cruzado na decolagem | [ext] | — | 0.8.4 | Pronto |
+| T32 | Modos de vibração e flutter | [novo] | T21 | 0.9.1 | Bloqueado |
+| T33 | Aba de controle | [GUI] | — | 0.9.2 | Pronto |
+| T34 | Caixa, montagem e desmontagem | [novo] | — | 0.9.3 | Pronto |
+| T35 | Importador de dados medidos → comparação com ensaio e voo real | [novo] | — | 0.9.4 | Pronto |
+
+**Caminho crítico:** T13 → T15 → T21 → T24 → T25/T26 → T32. Estruturas e aeroelasticidade esperam por ele.
+
+---
+
+## Itens por área
+
+Legenda das colunas **Código** e **GUI**:
+- ✅ coberto (na GUI: roda e mostra);
+- 🟡 parcial;
+- ❌ não existe;
+- ❓ a conferir.
+
+### 1. Aerodinâmica
+
+| ID | Tópico | Código | GUI | Tarefa | Onde / observação |
+|---|---|---|---|---|---|
+| AE-01 | Biblioteca de perfis, polares 2D por Reynolds, cache | ✅ | ✅ | — | `aero/sections.py`, `data/airfoils` |
+| AE-02 | Asa finita: LLT, AVL, ASB, importar XFLR5 | ✅ | ✅ | — | comparação de métodos |
+| AE-03 | Asa por partições, perfil por seção | ✅ | ✅ | — | sprint Asa |
+| AE-04 | Polar do avião completo | ✅ | ✅ | — | aba Aerodinâmica → Polar |
+| AE-05 | Dispositivos de ponta de asa | ✅ | ✅ | — | `aero/tipdevices.py` |
+| AE-06 | Arrasto por componente | 🟡 | ❌ | T11 | só a área de arrasto da fuselagem |
+| AE-07 | Downwash na cauda | 🟡 | 🟡 | T09 | empírico na simulação; ferraduras nas cargas |
+| AE-08 | Efeito solo (McCormick) | ✅ | ❓ | T08 | modifier `solo.mccormick` |
+| AE-09 | Efeito solo por imagem (inclui a mesa) | ❌ | ❌ | — | modifier novo |
+| AE-10 | Esteira da hélice nas superfícies | 🟡 | ❌ | T08 | `esteira.disco`; tubo reto |
+| AE-11 | Reynolds no núcleo | ❌ | ❌ | T10 | |
+| AE-12 | Distribuição ao longo da envergadura a um α | ✅ | ❌ | T09 | `core/src/loads/llt.zig` |
+| AE-13 | Comparação com ensaio | ❌ | ❌ | T35 | |
+
+### 2. Desempenho
+
+| ID | Tópico | Código | GUI | Tarefa | Onde / observação |
+|---|---|---|---|---|---|
+| DE-01 | Motor + hélice + bateria | ✅ | ✅ | — | Desempenho → Tração |
+| DE-02 | Biblioteca de motores e hélices de saída | 🟡 | 🟡 | T01 | |
+| DE-03 | Comparação de conjuntos motopropulsores | 🟡 | 🟡 | — | sprint Motores |
+| DE-05 | Ajuste de ensaio dinâmico de hélice | ❌ | ❌ | T35 | |
+| DE-06 | Decolagem com pista limitada / mesa | ✅ | ✅ | — | |
+| DE-07 | Decolagem com vento cruzado | ❌ | ❌ | T31 | |
+| DE-08 | MTOW × altitude-densidade | ✅ | ✅ | — | |
+| DE-09 | Subida, nivelado, envelope | ✅ | ✅ | — | |
+| DE-10 | Curvas com fator de carga | 🟡 | 🟡 | T06 | |
+| DE-11 | Planeio | ❓ | ❓ | T06 | |
+| DE-12 | Pouso | 🟡 | ❓ | T06 | `landingRun` |
+| DE-13 | Consumo por fase de voo | 🟡 | 🟡 | T07 | |
+| DE-15 | Monte Carlo e sensibilidade | ❌ | ❌ | T29 | |
+| DE-16 | Turbulência contínua | ❌ | ❌ | T30 | |
+
+DE-04 (perda de tração por corpos atrás da hélice) foi para as Torres, com o CFD 3D. DE-14 (massa total controlada na
+pista) é ajuste de interface e está em "Fora da conta".
+
+### 3. Estabilidade e Controle
+
+| ID | Tópico | Código | GUI | Tarefa | Onde / observação |
+|---|---|---|---|---|---|
+| EC-01 | Estática longitudinal (PN, ME) | ✅ | ✅ | — | |
+| EC-02 | ME × xCG com ênfase | 🟡 | 🟡 | T04 | |
+| EC-03 | Passeio do CG (LAPES, líquido) | 🟡 | 🟡 | T04 | |
+| EC-04 | Limite dianteiro do CG pela rotação | ❓ | ❓ | T04 | |
+| EC-05 | Diagrama tesoura | ✅ | ✅ | — | |
+| EC-06 | Trimagem | ✅ | ✅ | — | |
+| EC-07 | Dimensionamento de EH/EV e comandos | ✅ | ✅ | — | |
+| EC-08 | Vento de través no pouso | ❓ | ❓ | T01 | |
+| EC-09 | Taxa de rolamento (pb/2V) | ❓ | ❓ | T01 | |
+| EC-10 | Dinâmica: modos e respostas | ✅ | ✅ | — | |
+| EC-11 | Qualidades de voo (MIL-F-8785C) | ✅ | ✅ | — | |
+| EC-12 | Vento lateral/frontal nos polos | ❌ | ❌ | T05 | |
+| EC-13 | Polos com sloshing | ❌ | ❌ | T05 | |
+| EC-14 | Diedro elástico | ❌ | ❌ | T27 | |
+| EC-15 | Comparação com voo real | ❌ | ❌ | T35 | |
+| EC-16 | Inverter a rotação de qualquer motor | ❓ | ❓ | T01 | |
+
+### 4. Cargas
+
+| ID | Tópico | Código | GUI | Tarefa | Onde / observação |
+|---|---|---|---|---|---|
+| CA-01 | Distribuição por superfície (V, n, rpm, com/sem hélice) | ✅ | ❌ | T12 | `aero/span_loads.py` |
+| CA-02 | Vista 3D e gráficos | ✅ | ❌ | T12 | `LoadView` |
+| CA-03 | Casos do V-n | 🟡 | 🟡 | T13 | |
+| CA-04 | Rajada por norma | ❌ | ❌ | T14 | |
+| CA-05 | Manobras dinâmicas | ❌ | ❌ | T16 | |
+| CA-06 | Cortante, fletor, torsor | ❌ | ❌ | T15 | |
+| CA-07 | Momentos de dobradiça | ❌ | ❌ | T17 | |
+| CA-08 | Cargas no solo | ❌ | ❌ | T18 | |
+
+### 5. Aeroelasticidade
+
+| ID | Tópico | Código | GUI | Tarefa |
+|---|---|---|---|---|
+| AL-01 | Rigidez e centro elástico | ❌ | ❌ | T24 |
+| AL-02 | Divergência | ❌ | ❌ | T25 |
+| AL-03 | Reversão de comando | ❌ | ❌ | T26 |
+| AL-04 | Modos e flutter | ❌ | ❌ | T32 |
+
+### 6. Estruturas
+
+| ID | Tópico | Código | GUI | Tarefa | Observação |
+|---|---|---|---|---|---|
+| ES-01 | Massas e inércias | ✅ | ✅ | — | Montagem |
+| ES-02 | Longarina | ❌ | ❌ | T21 | |
+| ES-03 | Tubo de cauda | ❌ | ❌ | T22 | |
+| ES-04 | Materiais | ❌ | ❌ | T20 | nunca dos relatórios de referência |
+| ES-05 | Trem | ❌ | ❌ | T23 | |
+
+### 7. Elétrica
+
+| ID | Tópico | Código | GUI | Tarefa |
+|---|---|---|---|---|
+| EL-01 | C-rate × corrente de pico | 🟡 | ❌ | T07 |
+| EL-02 | Torque de servos | ❌ | ❌ | T19 |
+| EL-03 | Bateria dos servos, cabos | ❌ | ❌ | T19 |
+
+### 8. Integração / Projeto
+
+| ID | Tópico | Código | GUI | Tarefa | Onde |
+|---|---|---|---|---|---|
+| IN-01 | MDO (PSO, pontuação) | ✅ | ✅ | — | página MDO |
+| IN-02 | Projeto do zero em etapas (sprint em pasta) | ✅ | ✅ | — | `aerosim/design` |
+| IN-03 | Montagem sem exigir decolagem | ✅ | ✅ | — | |
+| IN-04 | Tração e Missão dentro de Desempenho | ✅ | ✅ | — | |
+| IN-05 | xCG em % CMA | ✅ | ✅ | — | |
+| IN-06 | Checklist do avião | ✅ | ✅ | — | |
+| IN-08 | Volume e arranjo da caixa | ❓ | ❓ | T34 | |
+| IN-09 | Tempo de montagem e desmontagem | ❌ | ❌ | T34 | |
+
+### 9. Controle
+
+| ID | Tópico | Código | GUI | Tarefa |
+|---|---|---|---|---|
+| CO-01 | Piloto automático genérico (autotune) | ✅ | ✅ | — |
+| CO-02 | Aba de controle | ❌ | ❌ | T33 |
+
+### Fora da conta da 1.0
+
+**Opcionais** (dependem de dados de cada um):
+- IN-07: banco histórico de pesos;
+- IN-10: circuito real medido no mapa.
+
+**Ajuste de interface:**
+- DE-14: massa total controlada na pista.
+
+**Torres:**
+- AE-14: CFD 3D (inclui DE-04);
+- AE-15: CAD;
+- AL-05: aeroelasticidade dinâmica;
+- ES-06 e ES-07: otimização estrutural e FEM;
+- EL-04: FMEA;
+- CO-03: SMC e NN-MPC;
+- CO-04 e CO-05: VTOL/tailsitter e a pesquisa sobre helicóptero.
+
+**Infraestrutura:**
+- IF-01: hash da ABI ✅;
+- IF-02: modifiers ✅;
+- IF-03: colisão ✅;
+- IF-04: integrador adaptativo;
+- IF-05: números duais;
+- IF-06: SIMD;
+- IF-07: paralelismo (→ T28);
+- IF-08: testes de propriedade 🟡;
+- IF-09: checks de regressão no repositório (→ T00).
 
 ---
 
 ## Progresso para a 1.0
 
-Conta só os itens de escopo 1.0 das seções 1 a 9: ✅ na GUI / total. Os ❓ contam como não feitos até serem
-conferidos.
+São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
-**Onde foi medido:** na ponta da pilha (`docs/tracking`), não na `main`. Parte do que está ✅ aqui (sprint em
-pasta, Tração/Missão dentro de Desempenho, xCG em % CMA, biblioteca de perfis) só chega na `main` quando a pilha for
-mesclada.
+**Onde foi medido:** na ponta da pilha de branches, não na `main`. Parte do que está ✅ só chega à `main` com a pilha.
 
-| Seção | ✅ na GUI | Itens 1.0 |
-|---|---|---|
-| 1. Aerodinâmica | 5 | 13 |
-| 2. Desempenho | 4 | 16 |
-| 3. Estabilidade e Controle | 6 | 16 |
-| 4. Cargas | 0 | 8 |
-| 5. Aeroelasticidade | 0 | 4 |
-| 6. Estruturas | 1 | 5 |
-| 7. Elétrica | 0 | 3 |
-| 8. Integração | 6 | 10 |
-| 9. Controle | 1 | 2 |
-| **Total** | **23** | **77** (30 %) |
-
-## Próximos itens (ordem sugerida)
-
-1. Conferir os ❓: são baratos e mudam a conta.
-2. Fechar a pilha de branches na `main` (ver Versionamento) e criar a tag `v0.1.0` na `main` atual.
-3. CA-03 → CA-04/CA-05 → CA-06: casos do V-n e esforços internos.
-   - A conta da distribuição é da aerodinâmica (`aero` + `core/loads`).
-   - Os casos e os esforços são da área de cargas.
-4. CA-01/CA-02 na GUI: aba **Cargas**, com a vista 3D.
-5. AE-10 na GUI (ligar a esteira por avião) e trimagem com a esteira.
-6. CA-07 → EL-02: momentos de dobradiça → torque de servos.
-7. ES-02/ES-04: longarina com materiais de fonte própria.
-8. AE-11 (Reynolds no núcleo) e DE-15 (Monte Carlo).
+| Seção | ✅ na GUI / itens |
+|---|---|
+| 1. Aerodinâmica | 5 / 13 |
+| 2. Desempenho | 4 / 14 |
+| 3. Estabilidade e Controle | 6 / 16 |
+| 4. Cargas | 0 / 8 |
+| 5. Aeroelasticidade | 0 / 4 |
+| 6. Estruturas | 1 / 5 |
+| 7. Elétrica | 0 / 3 |
+| 8. Integração | 6 / 8 |
+| 9. Controle | 1 / 2 |
+| **Total** | **23 / 73 (32 %)** |
 
 ---
 
@@ -225,20 +309,12 @@ mesclada.
 
 **Regras**
 - Nada direto na `main`. Cada trabalho tem a sua branch; a `main` só recebe por PR.
-- Uma branch por tema: `feature/<tema>`, `fix/<tema>`, `docs/<tema>`.
-- Cada PR atualiza este arquivo (estado dos itens e progresso) e o `CHANGELOG.md`.
+- Uma branch por tema: `feature/<tema>`, `fix/<tema>`, `docs/<tema>`, `test/<tema>`.
+- Cada PR roda `python tools/checks/run.py`, atualiza este arquivo e o `CHANGELOG.md`.
 - Tag `vX.Y.Z` só na `main`, depois do merge.
 - Relatórios e dados de terceiros nunca entram no git.
 
 **Situação atual das branches** (em relação à `main`)
-- A pilha `feature/sprint` → `feature/gui` → `feature/aero` → `feature/modifiers` → `docs/tracking` ainda não foi para
-  a `main`.
-- `feature/sprint` está atrás da `main`, porque já teve um PR mesclado. As outras saíram dela, então seguem em cadeia.
+- A pilha `feature/sprint` → `feature/gui` → `feature/aero` → `feature/modifiers` → `docs/tracking` →
+  `test/checks` ainda não foi para a `main`.
 - `feature/aircraft-drive` e `claude/ecstatic-gates-u3lpoi` não têm nada a mais que a `main`.
-
-**Para melhorar**
-1. Tag `v0.1.0` na `main` atual, como ponto de partida.
-2. Fechar a pilha em ordem, com um PR por branch, cada um com a sua validação (testes + comparação bit a bit). Cada
-   PR que leva um item para ✅ na GUI sobe o minor.
-3. Levar a comparação bit a bit para `tools/` ou `tests/` (IF-09).
-4. Apagar as branches que já não têm nada a mais que a `main`, depois de confirmar.
