@@ -1,6 +1,6 @@
 # Changelog
 
-Versões da `main`. Critério de versão e escopo da 1.0 em `docs/TRACKING.md`.
+Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## Não lançado
 
@@ -12,16 +12,13 @@ Versões da `main`. Critério de versão e escopo da 1.0 em `docs/TRACKING.md`.
 - Missão: passeio do CG e margem estática ao longo do voo (T04).
 - Tracking: versão por tarefa (`0.2.x`) até a lista inteira virar `0.3.0`; elétrica fora do escopo.
 
-### v0.2.0 — fecha o milestone 0.1 (branch `test/checks`)
+## v0.2.0 — fundação fechada (PRs #24–#25)
 
 - `tools/checks`: checks de regressão (núcleo Zig, AeroDrive, exemplos bit a bit contra uma referência, testes por
   área).
 - `docs/TRACKING.md`: castelo, milestones, quadro de tarefas com dependências; T01 conferido.
 
-## v0.1.x — pilha mesclada (PRs #21–#23)
-## Não lançado (pilha de branches ainda fora da `main`)
-
-`feature/sprint` → `feature/gui` → `feature/aero` → `feature/modifiers` → `docs/tracking`
+## v0.1.x — pilha de branches mesclada (PRs #21–#23)
 
 **Projeto**
 - Sprint por asa, em pasta.
@@ -47,9 +44,6 @@ Versões da `main`. Critério de versão e escopo da 1.0 em `docs/TRACKING.md`.
 
 **Núcleo**
 - Hash da ABI conferido ao carregar.
-
-**Documentação**
-- `docs/TRACKING.md` e este arquivo.
 
 ## v0.1.0 — ponto de partida (`main` em `033bdc1`)
 
