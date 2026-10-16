@@ -19,7 +19,7 @@ Como usar:
 ## O castelo (mapa)
 
 ```
-        [Torres]   pós-1.0: CFD 3D, VTOL/tailsitter, controle não linear, CAD
+        [Torres]   fora da lista: CFD 3D, VTOL/tailsitter, controle não linear, CAD
    ┌──────────────────────────────────────────────────────┐
  3 │ Andar 3: Estruturas · Aeroelasticidade                 │ ← arquitetura nova (do zero)
  2 │ Andar 2: Cargas (casos, esforços, dobradiça, solo)     │ ← apoia-se no Andar 1
@@ -37,34 +37,30 @@ Como usar:
 
 ## Versões
 
-- **Regra:** enquanto o milestone 0.N está aberto, o trabalho fica na branch `0.N_dev` e a `main` está em
-  `v0.N.y`. Ao fechar o milestone, a `0.N_dev` vai para a `main` por PR e a `main` vira `v0.(N+1).0`.
-  - Ponto de partida: `v0.1.0` = `033bdc1`.
-  - Milestone 0.1 fechado (PRs #21–#25): a `main` está em `v0.2.0`.
-  - As tags só são criadas com o ok do dono do repositório.
-- **Minor (`0.x.0`):** fecha um milestone.
-- **Patch (`0.x.y`):** cada subversão do milestone (um bloco de tarefas mesclado na `main`) e correções.
-- **`1.0.0`:** todo o escopo 1.0 com ✅ na coluna **GUI**.
-  - Uma análise só conta quando roda e mostra o resultado na interface.
-  - Não contam o que só existe no código, numa ferramenta de linha de comando ou num teste.
-- As versões passam do 0.9 se precisar (0.10, 0.11…), o que é válido em semver.
+- **A `main` está em `v0.2.0`** (milestone de fundação fechado, PRs #21–#25).
+- **Cada tarefa concluída e mesclada sobe só o último número:** `0.2.1`, `0.2.2`, `0.2.3`…
+- **Quando toda a lista de tarefas abaixo estiver feita, vira `0.3.0`.** Não há data nem promessa de 1.0: nada vira
+  release sem o dono testar pessoalmente cada componente.
+- O trabalho fica numa branch só, `0.2_dev`. Cada tarefa fechada vai por PR para a `main` e para no review.
+- As tags só são criadas com o ok do dono do repositório.
 
-## Milestones
+## Blocos de trabalho (ordem)
 
-| Versão | Milestone | Subversões | Fecha quando |
-|---|---|---|---|
-| **0.1** | Fundação firme | 0.1.1 testes de regressão em `tools/checks` (comparação bit a bit, núcleo, AeroDrive, testes por área) · 0.1.2 rodar e corrigir o que quebrou · 0.1.3 conferir os ❓ · 0.1.4 pilha de branches mesclada | pilha na `main` com os checks verdes |
-| **0.2** | Análises simples (cálculos e plots) | 0.2.1 passeio do CG e ME no tempo · 0.2.2 curvas com fator de carga | os itens na GUI |
-| **0.3** | Aero completo na GUI | 0.3.1 trimagem com esteira, tubo desviado · 0.3.2 distribuição a α (início do estol) · 0.3.3 Reynolds no núcleo · 0.3.4 arrasto por componente | os itens na GUI |
-| **0.4** | Cargas I | 0.4.1 aba Cargas (3D + gráficos) · 0.4.2 casos do V-n · 0.4.3 rajada · 0.4.4 cortante, fletor e torsor | esforços por caso na GUI |
-| **0.5** | Cargas II | 0.5.1 manobras dinâmicas · 0.5.2 momentos de dobradiça · 0.5.3 cargas no solo | os itens na GUI |
-| **0.6** | Estruturas (do zero) | 0.6.1 arquitetura + materiais · 0.6.2 longarina · 0.6.3 tubo de cauda · 0.6.4 trem | longarina na GUI |
-| **0.7** | Aeroelasticidade estática | 0.7.1 rigidez e centro elástico · 0.7.2 divergência · 0.7.3 reversão · 0.7.4 diedro elástico em E&C | os itens na GUI |
-| **0.8** | Incerteza e atmosfera | 0.8.1 paralelismo no núcleo · 0.8.2 Monte Carlo e sensibilidade · 0.8.3 turbulência Dryden · 0.8.4 vento cruzado na decolagem · 0.8.5 polos com vento e sloshing | os itens na GUI |
-| **0.9** | Fechamento | 0.9.1 modos e flutter · 0.9.2 aba de controle · 0.9.3 caixa, montagem e desmontagem · 0.9.4 comparação com ensaio e voo real | todo o escopo 1.0 ✅ |
-| **1.0** | Castelo pronto | — | — |
+Os blocos só ordenam a lista; não são versões.
 
-**Torres (pós-1.0, menor prioridade):**
+| Bloco | O que | Tarefas |
+|---|---|---|
+| **B1** | Fundação (feito) | checks de regressão, conferir os ❓, pilha na `main` |
+| **B2** | Análises simples | passeio do CG e ME no tempo · curvas com fator de carga |
+| **B3** | Aero completo na GUI | trimagem com esteira e tubo desviado · distribuição a α · Reynolds no núcleo · arrasto por componente |
+| **B4** | Cargas I | aba Cargas · casos do V-n · rajada · cortante, fletor e torsor |
+| **B5** | Cargas II | manobras dinâmicas · momentos de dobradiça · cargas no solo |
+| **B6** | Estruturas (do zero) | arquitetura + materiais · longarina · tubo de cauda · trem |
+| **B7** | Aeroelasticidade estática | rigidez e centro elástico · divergência · reversão · diedro elástico |
+| **B8** | Incerteza e atmosfera | paralelismo · Monte Carlo · Dryden · vento cruzado · estabilidade não linear (Lyapunov, mapa da região de atração) |
+| **B9** | Fechamento | modos e flutter · aba de controle · caixa e montagem · comparação com ensaio e voo real |
+
+**Fora desta lista (menor prioridade):**
 - VTOL/tailsitter;
 - controle não linear;
 - CFD 3D (inclui a perda de tração por corpos atrás da hélice);
@@ -85,42 +81,42 @@ Tipos de tarefa:
 - **[novo]**: módulo novo numa arquitetura existente.
 - **[zero]**: arquitetura nova.
 
-| ID | Tarefa | Tipo | Depende de | Milestone | Estado |
+| ID | Tarefa | Tipo | Depende de | Bloco | Estado |
 |---|---|---|---|---|---|
-| T00 | Checks de regressão em `tools/checks` (comparação bit a bit contra uma ref, núcleo, AeroDrive, testes por área) | [novo] | — | 0.1.1 | Feito |
-| T01 | Conferir os ❓ | leitura | — | 0.1.3 | Feito |
-| T02 | Rodar os checks na pilha e corrigir | [ext] | T00 | 0.1.2 | Feito (tudo verde, nada a corrigir) |
-| T03 | PRs da pilha para a `main` | git | T02 | 0.1.4 | Feito (PRs #21–#25) |
-| T04 | E&C: ME × xCG com ênfase, passeio do CG (o limite pela rotação já existe) | [ext] | — | 0.2.1 | Feito |
-| T05 | E&C: polos com vento e com sloshing (estender a linearização no Zig: hoje o líquido é congelado; vento constante não muda os polos, o efeito é a turbulência) | [ext] | T30 | 0.8.5 | Bloqueado |
-| T06 | Curvas com fator de carga (planeio e pouso já existem) | [ext] | — | 0.2.2 | Pronto |
-| T08 | Esteira: trimagem com esteira e tubo desviado (ligar já existe na GUI) | [ext] | — | 0.3.1 | Pronto |
-| T09 | Distribuição a α na aba Aerodinâmica | [GUI] | — | 0.3.2 | Pronto |
-| T10 | Reynolds no núcleo (tabela por Re) | [ext] | — | 0.3.3 | Pronto |
-| T11 | Arrasto por componente | [ext] | — | 0.3.4 | Pronto |
-| T12 | Aba Cargas (distribuição + 3D) | [GUI] | — | 0.4.1 | Pronto |
-| T13 | Casos de carga do V-n | [ext] | — | 0.4.2 | Pronto |
-| T14 | Rajada por norma | [novo] | — | 0.4.3 | Pronto |
-| T15 | Cortante, fletor e torsor | [novo] | T13, T14 | 0.4.4 | Bloqueado |
-| T16 | Manobras dinâmicas (o 6GDL monta os casos) | [ext] | T13 | 0.5.1 | Bloqueado |
-| T17 | Momento de dobradiça (distribuição na corda, método da literatura) | [novo] | — | 0.5.2 | Pronto |
-| T18 | Cargas no solo | [novo] | — | 0.5.3 | Pronto |
-| T20 | Arquitetura de estruturas + banco de materiais (os dados vêm do usuário ou da literatura) | [zero] | — | 0.6.1 | Pronto |
-| T21 | Longarina | [zero] | T15, T20 | 0.6.2 | Bloqueado |
-| T22 | Tubo de cauda | [zero] | T15, T20 | 0.6.3 | Bloqueado |
-| T23 | Trem (eixo, garfo) | [zero] | T18, T20 | 0.6.4 | Bloqueado |
-| T24 | Rigidez e centro elástico | [novo] | T21 | 0.7.1 | Bloqueado |
-| T25 | Divergência | [novo] | T24 | 0.7.2 | Bloqueado |
-| T26 | Reversão de comando | [novo] | T24 | 0.7.3 | Bloqueado |
-| T27 | Diedro elástico em E&C | [ext] | T21 | 0.7.4 | Bloqueado |
-| T28 | Paralelismo no núcleo | [ext] | — | 0.8.1 | Pronto |
-| T29 | Monte Carlo e sensibilidade | [novo] | T28 | 0.8.2 | Bloqueado |
-| T30 | Turbulência Dryden | [novo] | — | 0.8.3 | Pronto |
-| T31 | Vento cruzado na decolagem | [ext] | — | 0.8.4 | Pronto |
-| T32 | Modos de vibração e flutter | [novo] | T21 | 0.9.1 | Bloqueado |
-| T33 | Aba de controle | [GUI] | — | 0.9.2 | Pronto |
-| T34 | Caixa, montagem e desmontagem | [novo] | — | 0.9.3 | Pronto |
-| T35 | Importador de dados medidos → comparação com ensaio e voo real | [novo] | — | 0.9.4 | Pronto |
+| T00 | Checks de regressão em `tools/checks` (comparação bit a bit contra uma ref, núcleo, AeroDrive, testes por área) | [novo] | — | B1 | Feito |
+| T01 | Conferir os ❓ | leitura | — | B1 | Feito |
+| T02 | Rodar os checks na pilha e corrigir | [ext] | T00 | B1 | Feito (tudo verde, nada a corrigir) |
+| T03 | PRs da pilha para a `main` | git | T02 | B1 | Feito (PRs #21–#25) |
+| T04 | E&C: ME × xCG com ênfase, passeio do CG (o limite pela rotação já existe) | [ext] | — | B2 | Feito |
+| T05 | E&C: estabilidade dinâmica não linear (funções de Lyapunov e de energia, região de atração vista em mapa de calor; inclui sloshing e vento). Primeiro o plano com as fontes, depois o código | [novo] | — | B8 | Pronto (plano) |
+| T06 | Curvas com fator de carga (planeio e pouso já existem) | [ext] | — | B2 | Pronto |
+| T08 | Esteira: trimagem com esteira e tubo desviado (ligar já existe na GUI) | [ext] | — | B3 | Pronto |
+| T09 | Distribuição a α na aba Aerodinâmica | [GUI] | — | B3 | Pronto |
+| T10 | Reynolds no núcleo (tabela por Re) | [ext] | — | B3 | Pronto |
+| T11 | Arrasto por componente | [ext] | — | B3 | Pronto |
+| T12 | Aba Cargas (distribuição + 3D) | [GUI] | — | B4 | Pronto |
+| T13 | Casos de carga do V-n | [ext] | — | B4 | Pronto |
+| T14 | Rajada por norma | [novo] | — | B4 | Pronto |
+| T15 | Cortante, fletor e torsor | [novo] | T13, T14 | B4 | Bloqueado |
+| T16 | Manobras dinâmicas (o 6GDL monta os casos) | [ext] | T13 | B5 | Bloqueado |
+| T17 | Momento de dobradiça (distribuição na corda, método da literatura) | [novo] | — | B5 | Pronto |
+| T18 | Cargas no solo | [novo] | — | B5 | Pronto |
+| T20 | Arquitetura de estruturas + banco de materiais (os dados vêm do usuário ou da literatura) | [zero] | — | B6 | Pronto |
+| T21 | Longarina | [zero] | T15, T20 | B6 | Bloqueado |
+| T22 | Tubo de cauda | [zero] | T15, T20 | B6 | Bloqueado |
+| T23 | Trem (eixo, garfo) | [zero] | T18, T20 | B6 | Bloqueado |
+| T24 | Rigidez e centro elástico | [novo] | T21 | B7 | Bloqueado |
+| T25 | Divergência | [novo] | T24 | B7 | Bloqueado |
+| T26 | Reversão de comando | [novo] | T24 | B7 | Bloqueado |
+| T27 | Diedro elástico em E&C | [ext] | T21 | B7 | Bloqueado |
+| T28 | Paralelismo no núcleo | [ext] | — | B8 | Pronto |
+| T29 | Monte Carlo e sensibilidade | [novo] | T28 | B8 | Bloqueado |
+| T30 | Turbulência Dryden | [novo] | — | B8 | Pronto |
+| T31 | Vento cruzado na decolagem | [ext] | — | B8 | Pronto |
+| T32 | Modos de vibração e flutter | [novo] | T21 | B9 | Bloqueado |
+| T33 | Aba de controle | [GUI] | — | B9 | Pronto |
+| T34 | Caixa, montagem e desmontagem | [novo] | — | B9 | Pronto |
+| T35 | Importador de dados medidos → comparação com ensaio e voo real | [novo] | — | B9 | Pronto |
 
 **Caminho crítico:** T13 → T15 → T21 → T24 → T25/T26 → T32. Estruturas e aeroelasticidade esperam por ele.
 
@@ -255,7 +251,7 @@ A Missão mostra só o que a simulação já calcula: a corrente média e a de p
 | CO-01 | Piloto automático genérico (autotune) | ✅ | ✅ | — |
 | CO-02 | Aba de controle | ❌ | ❌ | T33 |
 
-### Fora da conta da 1.0
+### Fora da lista
 
 **Opcionais** (dependem de dados de cada um):
 - IN-07: banco histórico de pesos;
@@ -285,7 +281,7 @@ A Missão mostra só o que a simulação já calcula: a corrente média e a de p
 
 ---
 
-## Progresso para a 1.0
+## Progresso da lista (0.3 quando chegar ao fim)
 
 São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
@@ -309,19 +305,17 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
 **Regras**
 - Nada direto na `main`; a `main` só recebe por PR.
-- **Uma branch de desenvolvimento só, por milestone: `0.N_dev`** (hoje `0.2_dev`). Todo o trabalho do milestone
-  vai nela; não se abre branch por tarefa.
-- Ao fechar o milestone:
-  1. a `main` é mesclada na `0.N_dev`, para não levar a `main` para trás;
+- **Uma branch de desenvolvimento só: `0.2_dev`.** Não se abre branch por tarefa.
+- Ao fechar uma tarefa:
+  1. a `main` é mesclada na `0.2_dev`, para não levar a `main` para trás;
   2. rodam os checks (`python tools/checks/run.py --tudo`);
-  3. abre-se o PR `0.N_dev` → `main` e o trabalho para até o review;
-  4. depois do merge, a próxima `0.(N+1)_dev` sai da `main`.
+  3. abre-se o PR `0.2_dev` → `main`, e o trabalho para até o review;
+  4. o merge sobe o último número da versão (`0.2.1`, `0.2.2`…).
 - Cada PR atualiza este arquivo e o `CHANGELOG.md`.
 - Tag `vX.Y.Z` só na `main`, depois do merge.
 - Relatórios e dados de terceiros nunca entram no git.
 
 **Situação atual das branches**
-- `main`: milestone 0.1 fechado (PRs #21–#25).
-- `0.2_dev`: milestone 0.2 em andamento (T04 feito, T06 por fazer).
-- As branches antigas (`feature/*`, `docs/tracking`, `test/checks`) não recebem mais trabalho. Elas só serão
-  apagadas com o ok do dono.
+- `main`: `v0.2.0` (PRs #21–#25).
+- `0.2_dev`: T04 feito (vira `0.2.1` com o merge); T06 por fazer.
+- As branches antigas foram apagadas aqui; no GitHub, o dono apaga (a sessão não tem permissão).
