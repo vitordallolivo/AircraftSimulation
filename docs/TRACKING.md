@@ -317,6 +317,6 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 - Relatórios e dados de terceiros nunca entram no git.
 
 **Situação atual das branches**
-- `main`: `v0.2.0` (PRs #21–#25).
-- `0.2_dev`: T04 e T36 feitos (viram `0.2.1` com o merge); T06 por fazer.
+- `main`: `v0.2.1` (PR #26).
+- `0.2_dev`: T36 feito (vira `0.2.2` com o merge); T06 por fazer.
 - As branches antigas foram apagadas aqui; no GitHub, o dono apaga (a sessão não tem permissão).

@@ -4,13 +4,17 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## Não lançado
 
-### v0.2.1 (branch `0.2_dev`, PR aberto)
+### v0.2.2 (branch `0.2_dev`, PR aberto)
 
 - `.claude/CLAUDE.md`: guia de desenvolvimento (objetivo, conceitos, decisões de projeto, fluxo de git e versões,
   métricas, comandos).
 - `tools/codemap.py` → `docs/MAP.md`: mapa do código gerado; check "mapa do código em dia" em `tools/checks`.
+
+## v0.2.1 — PR #26
+
 - Missão: passeio do CG e margem estática ao longo do voo (T04).
-- Tracking: versão por tarefa (`0.2.x`) até a lista inteira virar `0.3.0`; elétrica fora do escopo.
+- Tracking: versão por tarefa (`0.2.x`) até a lista inteira virar `0.3.0`; elétrica fora do escopo; branch única
+  `0.2_dev`.
 
 ## v0.2.0 — fundação fechada (PRs #24–#25)
 
