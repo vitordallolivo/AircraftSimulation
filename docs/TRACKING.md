@@ -9,6 +9,20 @@ entra aqui; servem só como lista do que um projeto cobre.
 **Cuidado com estruturas:** os relatórios de referência têm valores inconsistentes nessa área. Servem como lista de
 tópicos, nunca como fonte de números.
 
+**Regras para toda tarefa:**
+- **Restrição, norma e método nunca são padrão.** Regulamento de competição, norma (FAR, CS-VLA, MIL-F-8785C, STANAG)
+  e método da literatura só valem quando o usuário escolhe e preenche (um preset dentro do módulo). Sem preset, a
+  análise calcula e mostra, mas não aprova nem reprova nada.
+- **Conta no núcleo.** Módulo que calcula é escrito em Zig, em `core/`, de preferência; o Python monta o caso e
+  traduz.
+- **Cargas é análise tardia.** Só roda com um modelo pronto (conjunto escolhido, MTOW, polares e envelope). Sem isso, a
+  aba diz o que falta.
+
+**Fluxo de projeto que o programa segue** (iterativo: qualquer etapa pode mandar voltar):
+perfis → asas → E&C (estática, com o diâmetro da hélice vindo do Desempenho) → superfícies móveis → conjuntos
+(asa + superfícies; vários por asa) → Desempenho analítico (não descarta nenhum) → decolagem e MTOW por conjunto →
+envelopes (subida, descida, planeio, voo) → Cargas → Estruturas (fuselagem, longarina, tubo de cauda).
+
 Como usar:
 1. Olhe a coluna **Pronto** do quadro.
 2. Pegue no máximo 2 tarefas.
@@ -19,7 +33,7 @@ Como usar:
 ## O castelo (mapa)
 
 ```
-        [Torres]   fora da lista: CFD 3D, VTOL/tailsitter, controle não linear, CAD
+        [Torres]   fora da lista: CFD 3D, VTOL/tailsitter, controle não linear, CAD, hardware-in-the-loop
    ┌──────────────────────────────────────────────────────┐
  3 │ Andar 3: Estruturas · Aeroelasticidade                 │ ← arquitetura nova (do zero)
  2 │ Andar 2: Cargas (casos, esforços, dobradiça, solo)     │ ← apoia-se no Andar 1
@@ -51,20 +65,25 @@ Os blocos só ordenam a lista; não são versões.
 | Bloco | O que | Tarefas |
 |---|---|---|
 | **B1** | Fundação (feito) | checks de regressão, conferir os ❓, pilha na `main` |
-| **B2** | Análises simples | passeio do CG e ME no tempo · curvas com fator de carga |
+| **B2** | Análises simples | passeio do CG e ME no tempo · curvas com fator de carga · restrições e normas como preset do usuário |
 | **B3** | Aero completo na GUI | trimagem com esteira e tubo desviado · distribuição a α · Reynolds no núcleo · arrasto por componente |
-| **B4** | Cargas I | aba Cargas · casos do V-n · rajada · cortante, fletor e torsor |
+| **B4** | Cargas I | aba Cargas · arquitetura de cargas e aeroelasticidade · casos do V-n · rajada · cortante, fletor e torsor |
 | **B5** | Cargas II | manobras dinâmicas · momentos de dobradiça · cargas no solo |
-| **B6** | Estruturas (do zero) | arquitetura + materiais · longarina · tubo de cauda · trem |
+| **B6** | Estruturas (do zero) | arquitetura + materiais · longarina · tubo de cauda · trem · redistribuição de cargas |
 | **B7** | Aeroelasticidade estática | rigidez e centro elástico · divergência · reversão · diedro elástico |
 | **B8** | Incerteza e atmosfera | paralelismo · Monte Carlo · Dryden · vento cruzado · estabilidade não linear (Lyapunov, mapa da região de atração) |
-| **B9** | Fechamento | modos e flutter · aba de controle · caixa e montagem · comparação com ensaio e voo real |
+| **B9** | Fechamento | modos e flutter · aba de controle · caixa e montagem · comparação com ensaio e voo real · V-n com dados de voo · etapas desatualizadas |
 
 **Fora desta lista (menor prioridade):**
 - VTOL/tailsitter;
 - controle não linear;
 - CFD 3D (inclui a perda de tração por corpos atrás da hélice);
-- CAD;
+- CAD: exportar a geometria e a rugosidade (STEP, para SolidWorks);
+- configurações genéricas: tandem, biplano;
+- sloshing configurável (quanto líquido e onde);
+- hardware-in-the-loop no AeroDrive: placa ligada ao PC, pilotando o avião real e a simulação ao mesmo tempo (gêmeo
+  digital);
+- dividir o aerosim em programas separados;
 - aeroelasticidade dinâmica;
 - otimização estrutural e FEM;
 - FMEA.
@@ -90,22 +109,25 @@ Tipos de tarefa:
 | T03 | PRs da pilha para a `main` | git | T02 | B1 | Feito (PRs #21–#25) |
 | T04 | E&C: ME × xCG com ênfase, passeio do CG (o limite pela rotação já existe) | [ext] | — | B2 | Feito |
 | T05 | E&C: estabilidade dinâmica não linear (funções de Lyapunov e de energia, região de atração vista em mapa de calor; inclui sloshing e vento). Primeiro o plano com as fontes, depois o código | [novo] | — | B8 | Pronto (plano) |
-| T06 | Curvas com fator de carga (planeio e pouso já existem) | [ext] | — | B2 | Pronto |
+| T06 | Curvas com fator de carga na Missão e nas curvas (n_z, 1/cos φ, n no estol) | [ext] | — | B2 | Feito (vai no PR da T12) |
+| T37 | Restrições, normas e métodos como preset do usuário: tirar os padrões (MIL-F-8785C, FAR 23.233, RC > 0,5 m/s, 3 m nas curvas, φ 75°...); sem preset, só mostra | [ext] | — | B2 | Pronto |
 | T08 | Esteira: trimagem com esteira e tubo desviado (ligar já existe na GUI) | [ext] | — | B3 | Pronto |
 | T09 | Distribuição a α na aba Aerodinâmica | [GUI] | — | B3 | Pronto |
 | T10 | Reynolds no núcleo (tabela por Re) | [ext] | — | B3 | Pronto |
 | T11 | Arrasto por componente | [ext] | — | B3 | Pronto |
-| T12 | Aba Cargas (distribuição + 3D) | [GUI] | — | B4 | Pronto |
-| T13 | Casos de carga do V-n | [ext] | — | B4 | Pronto |
-| T14 | Rajada por norma | [novo] | — | B4 | Pronto |
+| T12 | Aba Cargas (distribuição + 3D; hélice do conjunto motopropulsor do avião; só com modelo pronto) | [GUI] | — | B4 | Feito |
+| T38 | Arquitetura de cargas e aeroelasticidade: interfaces (conjunto de casos de carga, viga estrutural EI/GJ, laço aeroelástico), conta no núcleo. Primeiro o plano | [zero] | — | B4 | Pronto (plano) |
+| T13 | Casos de carga do V-n (manobra; norma e n escolhidos pelo usuário) | [ext] | T38 | B4 | Bloqueado |
+| T14 | Rajada (fórmula e norma escolhidas pelo usuário) | [novo] | T38 | B4 | Bloqueado |
 | T15 | Cortante, fletor e torsor | [novo] | T13, T14 | B4 | Bloqueado |
 | T16 | Manobras dinâmicas (o 6GDL monta os casos) | [ext] | T13 | B5 | Bloqueado |
-| T17 | Momento de dobradiça (distribuição na corda, método da literatura) | [novo] | — | B5 | Pronto |
-| T18 | Cargas no solo | [novo] | — | B5 | Pronto |
+| T17 | Momento de dobradiça (distribuição na corda, método da literatura) | [novo] | T38 | B5 | Bloqueado |
+| T18 | Cargas no solo | [novo] | T38 | B5 | Bloqueado |
 | T20 | Arquitetura de estruturas + banco de materiais (os dados vêm do usuário ou da literatura) | [zero] | — | B6 | Pronto |
 | T21 | Longarina | [zero] | T15, T20 | B6 | Bloqueado |
 | T22 | Tubo de cauda | [zero] | T15, T20 | B6 | Bloqueado |
 | T23 | Trem (eixo, garfo) | [zero] | T18, T20 | B6 | Bloqueado |
+| T39 | Redistribuição das cargas para a malha da estrutura | [novo] | T15, T20 | B6 | Bloqueado |
 | T24 | Rigidez e centro elástico | [novo] | T21 | B7 | Bloqueado |
 | T25 | Divergência | [novo] | T24 | B7 | Bloqueado |
 | T26 | Reversão de comando | [novo] | T24 | B7 | Bloqueado |
@@ -118,8 +140,10 @@ Tipos de tarefa:
 | T33 | Aba de controle | [GUI] | — | B9 | Pronto |
 | T34 | Caixa, montagem e desmontagem | [novo] | — | B9 | Pronto |
 | T35 | Importador de dados medidos → comparação com ensaio e voo real | [novo] | — | B9 | Pronto |
+| T40 | V-n refinado com dados de voo (sensoriamento) | [ext] | T13, T35 | B9 | Bloqueado |
+| T41 | Etapas desatualizadas: cada etapa guarda a assinatura do modelo; mudou antes, as seguintes ficam marcadas | [ext] | — | B9 | Pronto |
 
-**Caminho crítico:** T13 → T15 → T21 → T24 → T25/T26 → T32. Estruturas e aeroelasticidade esperam por ele.
+**Caminho crítico:** T38 → T13 → T15 → T21 → T24 → T25/T26 → T32. Estruturas e aeroelasticidade esperam por ele.
 
 ---
 
@@ -161,7 +185,7 @@ Legenda das colunas **Código** e **GUI**:
 | DE-07 | Decolagem com vento cruzado | ❌ | ❌ | T31 | |
 | DE-08 | MTOW × altitude-densidade | ✅ | ✅ | — | |
 | DE-09 | Subida, nivelado, envelope | ✅ | ✅ | — | |
-| DE-10 | Curvas com fator de carga | 🟡 | 🟡 | T06 | |
+| DE-10 | Curvas com fator de carga | ✅ | ✅ | — | Missão → Fator de carga (n_z, 1/cos φ, n no estol); curvas: raio mínimo → fator de carga no tempo e × raio |
 | DE-11 | Planeio | ✅ | ✅ | — | Desempenho → Planeio |
 | DE-12 | Pouso | ✅ | ✅ | — | etapa "pouso" da Missão; `landingRun` no sizing |
 | DE-13 | Consumo por fase de voo | ✅ | ✅ | — | Missão: consumo por etapa (com corrente de pico) |
@@ -196,14 +220,16 @@ pista) é ajuste de interface e está em "Fora da conta".
 
 | ID | Tópico | Código | GUI | Tarefa | Onde / observação |
 |---|---|---|---|---|---|
-| CA-01 | Distribuição por superfície (V, n, rpm, com/sem hélice) | ✅ | ❌ | T12 | `aero/span_loads.py` |
-| CA-02 | Vista 3D e gráficos | ✅ | ❌ | T12 | `LoadView` |
+| CA-01 | Distribuição por superfície (V, n, rpm, com/sem hélice) | ✅ | ✅ | — | aba Cargas; `aero/span_loads.py` |
+| CA-02 | Vista 3D e gráficos | ✅ | ✅ | — | aba Cargas (`LoadView`, gráfico `loads3d`) |
 | CA-03 | Casos do V-n | 🟡 | 🟡 | T13 | |
-| CA-04 | Rajada por norma | ❌ | ❌ | T14 | |
+| CA-04 | Rajada (fórmula e norma escolhidas pelo usuário) | ❌ | ❌ | T14 | |
 | CA-05 | Manobras dinâmicas | ❌ | ❌ | T16 | |
 | CA-06 | Cortante, fletor, torsor | ❌ | ❌ | T15 | |
 | CA-07 | Momentos de dobradiça | ❌ | ❌ | T17 | |
 | CA-08 | Cargas no solo | ❌ | ❌ | T18 | |
+| CA-09 | Redistribuição das cargas para a estrutura | ❌ | ❌ | T39 | |
+| CA-10 | V-n com dados de voo | ❌ | ❌ | T40 | |
 
 ### 5. Aeroelasticidade
 
@@ -241,6 +267,8 @@ A Missão mostra só o que a simulação já calcula: a corrente média e a de p
 | IN-06 | Checklist do avião | ✅ | ✅ | — | |
 | IN-08 | Volume e arranjo da caixa | ❌ | ❌ | T34 | |
 | IN-09 | Tempo de montagem e desmontagem | ❌ | ❌ | T34 | |
+| IN-11 | Etapas desatualizadas (assinatura do modelo) | ❌ | ❌ | T41 | |
+| IN-12 | Restrições, normas e métodos só por preset do usuário | ❌ | ❌ | T37 | |
 
 ### 9. Controle
 
@@ -288,14 +316,14 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 | Seção | ✅ na GUI / itens |
 |---|---|
 | 1. Aerodinâmica | 6 / 13 |
-| 2. Desempenho | 7 / 14 |
+| 2. Desempenho | 8 / 14 |
 | 3. Estabilidade e Controle | 12 / 16 |
-| 4. Cargas | 0 / 8 |
+| 4. Cargas | 2 / 10 |
 | 5. Aeroelasticidade | 0 / 4 |
 | 6. Estruturas | 1 / 5 |
-| 8. Integração | 6 / 8 |
+| 8. Integração | 6 / 10 |
 | 9. Controle | 1 / 2 |
-| **Total** | **33 / 70 (47 %)** |
+| **Total** | **36 / 74 (49 %)** |
 
 ---
 
@@ -315,5 +343,5 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
 **Situação atual das branches**
 - `main`: `v0.2.2` (PR #27).
-- `0.2_dev`: correção do tracking (vira `0.2.3` com o merge); T06 por fazer.
+- `0.2_dev`: correção do tracking, T06 e T12, sem commit; vão juntos no mesmo PR (`0.2.3`).
 - As branches antigas foram apagadas aqui; no GitHub, o dono apaga (a sessão não tem permissão).

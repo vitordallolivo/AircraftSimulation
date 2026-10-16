@@ -171,7 +171,7 @@ def _cg_walk(ctx, ac, log, ev, legs) -> dict:
 
 def _refs(ac, info, xw, zw) -> dict:
     r = dict(Vs=info["Vs"], alpha_stall=info["alpha_stall"], kCL=ac.autopilot.kCL, ht=ac.takeoff.ht,
-             x_warning=xw, z_warning=zw, landing_max=ac.airfield.landing_max)
+             x_warning=xw, z_warning=zw, landing_max=ac.airfield.landing_max, n_lim=ac.performance.load_factor)
     legs = ac.gear.legs()
     mains = [g for g in legs if g.kind == "main"]
     skids = [g for g in legs if g.kind == "skid"]
@@ -298,6 +298,8 @@ class MissionSimulation(SimulationBase):
                              source="series:cp_*"),
                     PlotSpec("cn", "Fator de carga × raio (em regime)", "R", ("y",), "R (m)", "$n$", live=False,
                              source="series:cn_*"),
+                    PlotSpec("ct", "Curvas: fator de carga no tempo (— $n_z$, ··· $n$ no estol)", "t", ("y",),
+                             "t desde o início da curva (s)", "$n$", live=False, source="series:ct_*"),
                     PlotSpec("ch", "Altura perdida × raio", "R", ("y",), "R (m)", "m", live=False,
                              source="series:ch_*"),
                     PlotSpec("rmin", "Raio mínimo", "V", ("R",), "V (m/s)", "R mínimo (m)", live=False,
@@ -720,17 +722,30 @@ class MissionSimulation(SimulationBase):
             c, sym = styles[iv % len(styles)]
             L = [o for o, _ in outs]
             Rm = min_radius(L)
-            for o, log in outs:
+            for io, (o, log) in enumerate(outs):
                 o["V"] = V
                 all_cases.append(o)
                 ctx.on_chunk(log)
                 if iv == len(Vs_list) // 2 and len(log):
+                    cc = FP.STAGE_COLORS[1 + (io % 9)]
                     series[f"cv_V = {V:g} m/s, R = {o['R']:g} m — {o['motivo']}"] = dict(
                         e=np.asarray(log["e"], float), n=np.asarray(log["n"], float),
-                        _color=FP.STAGE_COLORS[1 + (len(series) % 9)], _width=1.8 if o["ok"] else 1.0,
-                        _dash=None if o["ok"] else "dash")
+                        _color=cc, _width=1.8 if o["ok"] else 1.0, _dash=None if o["ok"] else "dash")
+                    # n_z e o n em que a asa estola na V do momento (n_z/ratioCL), na perna da curva
+                    sc = np.asarray(log["seg"]) == 1
+                    if sc.sum() > 5:
+                        tc = np.asarray(log["t"], float)[sc]
+                        nzc = np.asarray(log["nz"], float)[sc]
+                        rc = np.asarray(log["ratioCL"], float)[sc]
+                        lab = f"R = {o['R']:g} m — {o['motivo']}"
+                        series[f"ct_{lab}"] = dict(t=tc - tc[0], y=nzc, _color=cc, _width=1.6)
+                        series[f"ct_{lab} (estol)"] = dict(t=tc - tc[0], y=np.where(rc > 0.05, nzc / np.maximum(rc, 1e-9),
+                                                                                    np.nan),
+                                                           _color=cc, _dash="dot", _width=1.0, _nolegend=1)
             Rarr = np.array([o["R"] for o in L])
             okm = np.array([o["ok"] for o in L])
+            ne = np.array([o.get("n_estol_perm", np.nan) for o in L], float)
+            series[f"cn_V = {V:g} m/s — n no estol"] = dict(R=Rarr, y=ne, _color=c, _dash="dot", _width=1.2)
             for pre, k in (("cr_", "razao_max"), ("cp_", "phi_perm"), ("cn_", "nz_perm"), ("ch_", "perda_h")):
                 y = np.array([o.get(k, np.nan) for o in L], float)
                 if k == "phi_perm":
@@ -757,6 +772,8 @@ class MissionSimulation(SimulationBase):
         series["ch_limite"] = dict(_hline=hloss, _color="#d62728", _dash="dash")
         series[f"cn_n de projeto = {ac.performance.load_factor:g}"] = dict(_hline=ac.performance.load_factor,
                                                                           _color="#d62728", _dash="dash")
+        series[f"ct_n de projeto = {ac.performance.load_factor:g}"] = dict(_hline=ac.performance.load_factor,
+                                                                          _color="#d62728", _dash="dash")
         V = np.array([r["V"] for r in rmin_rows])
         R = np.array([r["R"] for r in rmin_rows])
         series["rm_R mínimo simulado"] = dict(V=V, R=R, _symbol="o", _line=1, _color="#1f77b4")
@@ -764,7 +781,8 @@ class MissionSimulation(SimulationBase):
             i = int(np.nanargmin(R))
             series["rm_★ menor raio"] = dict(V=V[i:i + 1], R=R[i:i + 1], _symbol="star", _color="#ffcc00")
         series["casos"] = {k: np.array([c.get(k, np.nan) for c in all_cases], dtype=object if k == "motivo" else float)
-                           for k in ("V", "R", "ok", "phi_perm", "nz_perm", "razao_max", "perda_h", "R_real", "motivo")}
+                           for k in ("V", "R", "ok", "phi_perm", "nz_perm", "n_estol_perm", "razao_max", "perda_h",
+                                     "R_real", "motivo")}
         summary = {f"R_min @ {r['V']:g} m/s": r["R"] for r in rmin_rows}
         summary.update({f"n no R_min @ {r['V']:g} m/s": r["n"] for r in rmin_rows})
         summary["Vs"] = info["Vs"]

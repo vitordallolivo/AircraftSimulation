@@ -154,7 +154,8 @@ def trajectory(T: LogChunk, ev: dict, legs: list[str], target: tuple[float, floa
 
 def time_series(T: LogChunk, ev: dict, legs: list[str], refs: dict) -> dict:
     """gráficos no tempo com o fundo por etapa: ângulos, rumo, velocidades, altura, C_L, C_D,
-    momentos por parcela, comandos, acelerador, subida, fator de carga, motor, energia, sloshing"""
+    momentos por parcela, comandos, acelerador, subida, fator de carga (com 1/cos φ e o n de estol), motor,
+    energia, sloshing"""
     S = {}
     t = _col(T, "t")
     fly = T["Va"] > 6
@@ -200,7 +201,24 @@ def time_series(T: LogChunk, ev: dict, legs: list[str], refs: dict) -> dict:
     add("cmd_", [c for c in cmd if np.nanmax(np.abs(c[1])) > 1e-6] or cmd[:1])
     add("thr_", [("acelerador", _col(T, "thr"), "#d62728", 1.4)])
     add("roc_", [("dh/dt", _col(T, "hdot"), "#2ca02c", 1.4)], [("zero", 0.0, "#000000", "dot")])
-    add("nz_", [("n_z", _col(T, "nz"), "#d62728", 1.4)], [("1 g", 1.0, "#000000", "dot")])
+    # fator de carga na curva: o n que a inclinação pede (curva nivelada, n = 1/cos φ) e o n em que a seção mais
+    # carregada da asa chega ao C_Lmax na V do momento (n = q S C_L/W com q fixo: n_estol = n_z C_Lmax/C_L =
+    # n_z/ratioCL). Quando n_z encosta em n_estol, a asa estola. Anderson, Introduction to Flight, §6.17
+    # (curva nivelada e a linha de estol do V-n; número das equações a conferir no PDF)
+    nz = _col(T, "nz")
+    ratio = np.asarray(T["ratioCL"], float)
+    hg = np.asarray(T["hgnd"], float) if "hgnd" in T.columns else 0.0
+    air = fly & (_col(T, "h") - hg > 0.3)          # no chão o trem sustenta: n_z/ratioCL não diz nada
+    n_turn = np.where(air, 1.0 / np.maximum(np.cos(np.asarray(T["phi"], float)), 1e-3), np.nan)
+    n_stall = np.where(air & (ratio > 0.05), nz / np.maximum(ratio, 1e-9), np.nan)
+    lines = [("1 g", 1.0, "#000000", "dot")]
+    if refs.get("n_lim"):
+        lines.append((f"n estrutural = {refs['n_lim']:g}", refs["n_lim"], "#7f7f7f", "dash"))
+    add("nz_", [("n_z", nz, "#d62728", 1.4), ("n p/ curva nivelada (1/cos φ)", n_turn, "#1f77b4", 1.0),
+                ("n no estol (na V do momento)", n_stall, "#000000", 1.2)], lines)
+    st = air & (ratio >= 1.0)
+    if st.any():
+        S["nz_estol (C_L = C_Lmax)"] = {"t": t[st], "y": nz[st], "_symbol": "x", "_color": "#d62728", "_size": 7}
     rpm = np.asarray(T["rpm_0"], float) if "rpm_0" in T.columns else np.full(len(t), np.nan)
     add("motor_", [("rpm/100", rpm / 100.0, "#d62728", 1.2),
                    ("$I$ (A)", _col(T, "Ibat"), "#1f77b4", 1.2),

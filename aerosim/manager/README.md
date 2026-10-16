@@ -79,13 +79,14 @@ flowchart LR
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
-Abas (`tab = True`): `sizing`, `mission`, `performance`, `thrust`, `aerodynamics`, `stability`. As outras
+Abas (`tab = True`): `sizing`, `mission`, `performance`, `thrust`, `aerodynamics`, `stability`, `loads`. As outras
 continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram modos ou partes de outra.
 
 | simulação | orientação |
 |---|---|
 | `mission` | **missão**: decolagem otimizada (`takeoff_opt.py`) e o resto, etapa por etapa, com checkpoint "missão: início de <etapa>" em cada uma; começa de qualquer etapa (sem checkpoint: voa até lá e salva); curva com raio 0 = automático (testa raios do checkpoint dela e usa o menor que passa em `evaluate_turn`). **só decolagem**. **curvas**: raio mínimo por V. **MTOW**: bisseção na massa; em cada massa reotimiza o acionamento (e o xCG) |
 | `performance` | só contas (sem piloto): `ISimBackend.simple_performance` por altitude → envelope, potências, subida, planeio, curva × V, V-n, bateria; polar da aba Aerodinâmica se houver, senão a do núcleo |
+| `loads` | aba Cargas: `aero.span_loads` (linha sustentadora do núcleo ou faixas) num ponto de voo, com e sem hélice → `LoadResult` → gráficos por superfície e vista 3D (`loads3d`) |
 | `takeoff` | uma corrida até `h_end` (tempo real); opcional: varredura s_R × δe1 em paralelo |
 | `turn` | por V: reta até o início da curva → **checkpoint**; para cada raio troca só a curva e retoma |
 | `envelope` | por altitude (sem integrar no tempo): V_min, V_max, V_e, V*, V_cru, teto — método da planilha e/ou modelo completo; mais a tabela ao nível do mar (subida, planeio, raios, V-n) |

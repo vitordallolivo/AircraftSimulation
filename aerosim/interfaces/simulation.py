@@ -63,7 +63,7 @@ class PlotSpec:
     source: str = "log"            # log | series:<nome> | series:<prefixo>* | series:* (séries do resultado)
     scatter: bool = False
     swap: bool = False             # desenha as ys na horizontal e x na vertical (ex.: V × altitude)
-    kind: str = "2d"               # 2d | 3d (trajetória: x, ys[0], z)
+    kind: str = "2d"               # 2d | 3d (trajetória: x, ys[0], z) | loads3d (LoadResult em "_result" da série)
     z: str = ""                    # 3d: canal/coluna vertical
     live_ys: tuple[str, ...] = ()  # gráfico de séries: canais do registro desenhados enquanto roda
     live_x: str = ""               # eixo x desses canais (padrão: x)
@@ -118,7 +118,7 @@ class RunContext:
 
 
 # áreas do ciclo de projeto (quem é dono de cada análise) e os dois níveis de análise
-AREAS = ("dimensionamento", "aerodinamica", "estabilidade", "propulsao", "desempenho", "estruturas", "massas",
+AREAS = ("dimensionamento", "aerodinamica", "estabilidade", "propulsao", "desempenho", "cargas", "estruturas", "massas",
          "pontuacao", "missao")
 LEVELS = ("sprint", "detalhado")
 
