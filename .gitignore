@@ -250,3 +250,8 @@ aerodrive_voos/
 *.swp
 .DS_Store
 Thumbs.db
+
+# relatórios e dados de terceiros: nunca no git (ver docs/TRACKING.md)
+relatorios/
+Entrega de relatórios/
+*.zip
