@@ -265,6 +265,7 @@ fn writeRow(inst: *const Instance, row: *T.LogRow, o: *const dyn.Out) void {
         }
     }
     row.htail = o.htail;
+    row.hprop = o.hprop;
     row.RN = o.RN;
     row.Rnw = o.Rnw;
     row.Rmw = o.Rmw;
@@ -485,6 +486,13 @@ pub fn run(inst: *Instance, t_limit: f64, log: []T.LogRow, nrows: *usize) Status
         }
         if (t >= p.tmax) {
             status = .timeout;
+            break;
+        }
+        v.hpmin = @min(v.hpmin, o.hprop);
+        // a ponta da pá tocou o chão: o voo falha
+        if (p.prop_strike != 0 and o.hprop < 0) {
+            v.tprop = t;
+            status = .crashed;
             break;
         }
         // abaixo do chão, divergiu ou capotou (tocando o chão com mais de 80° de inclinação)

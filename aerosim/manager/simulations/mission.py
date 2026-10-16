@@ -334,7 +334,9 @@ class MissionSimulation(SimulationBase):
         out += [PlotSpec("pr", "Pouso: reações no trem", "n", ("y",), "$x$ (m)",
                          "N", live=False, source="series:pr_*"),
                 PlotSpec("pm", "Pouso: momentos do trem", "n", ("y",), "$x$ (m)", "N·m", live=False,
-                         source="series:pm_*")]
+                         source="series:pm_*"),
+                PlotSpec("fg", "Folga da pá e da cauda sobre o chão", "t", ("y",), "$t$ (s)", "folga (m)",
+                         live=False, source="series:fg_*")]
         if has_pay:
             out += [PlotSpec("lx", "LAPES: plano XZ", "n", ("h",), "n (m)", "h (m)",
                              live=False, source="series:lx_*"),
@@ -564,6 +566,7 @@ class MissionSimulation(SimulationBase):
                     r_ = TO.TakeoffResult(ac.takeoff.sR, ac.takeoff.de1, n_dec, h_min, xe, zs, ok, "")
                     checks += self._takeoff_checks(ac, r_, refs, TO.pitch_control(ac))
             series.update(FP.landing_window(log, ev, refs, ac.airfield, pads))
+            series.update(FP.ground_clearance(log, ev))
             series.update(FP.lapes_window(log, ev, target[0] if target else None))
             table = stage_table(log, ev, legs, info["Vs"])
             if table:
@@ -658,7 +661,13 @@ class MissionSimulation(SimulationBase):
     def _mission_checks(self, ac, info, ev, table, status, full, target) -> list[Check]:
         C = []
         kCL = ac.autopilot.kCL
-        if status == "CRASHED":
+        if status == "CRASHED" and ev.get("tprop", -1) >= 0:
+            D = max((u.propeller.D for u in ac.propulsion if u.enabled), default=0.0)
+            C.append(Check("falha", "a hélice tocou o chão",
+                           f"t = {ev['tprop']:.2f} s, folga {ev['hpmin'] * 100:.1f} cm", "folga da ponta da pá > 0",
+                           f"a ponta da pá (hélice de {D / 0.0254:.0f}\") encostou no terreno",
+                           "suba o motor, alongue o trem ou use uma hélice menor; veja a folga da pá no gráfico", "Voo"))
+        elif status == "CRASHED":
             C.append(Check("falha", "a aeronave caiu ou divergiu", f"t = {ev['tend']:.1f} s", "terminar o voo",
                            "a simulação parou abaixo do terreno, capotada ou com estado não finito",
                            "veja a etapa em que o voo terminou nos gráficos (fundo colorido) e o C_L/C_Lmax dela",

@@ -48,6 +48,11 @@ pub const Surface = extern struct {
     vertical: i32 = 0, // normal para +y
     side: i32 = 0, // +1 direita, -1 esquerda, 0 centro
     downwash: i32 = 0, // sente o downwash da asa
+    // pontos de 1/4 de corda nas duas bordas da faixa (corpo, m): os nós da ferradura na linha sustentadora das
+    // cargas (loads/llt.zig). Zero nos dois: a ferradura sai do centro r ± (S/c)/2 ao longo da envergadura.
+    // A simulação (aero.zig) não usa
+    qa: [3]f64 = .{ 0, 0, 0 },
+    qb: [3]f64 = .{ 0, 0, 0 },
     // derivados
     a0: f64 = 0,
     ex: [3]f64 = .{ 0, 0, 0 },
@@ -312,6 +317,7 @@ pub const Params = extern struct {
     stop_seg: i32 = -1, // para ao entrar no segmento k
     stop_autop: i32 = 0, // para quando o piloto automático liga
     stop_takeoff: i32 = 0, // para em takeoff.h_end acima do chão
+    prop_strike: i32 = 1, // 1: a ponta da pá tocar o chão encerra o voo (`crashed`, Events.tprop); 0: só registra
     no_payload: i32 = 0, // começa sem a carga
     n_pad: i32 = 0, // mesas/plataformas
     pads: [L.max_pads]Pad = [_]Pad{.{}} ** L.max_pads,
@@ -381,6 +387,8 @@ pub const Events = extern struct {
     bounced: f64 = 0,
     completed: f64 = 0,
     stopped: f64 = 0,
+    hpmin: f64 = 1e9, // menor folga da ponta da pá sobre o terreno (todos os motores), no voo inteiro (m)
+    tprop: f64 = -1, // instante em que a ponta da pá tocou o chão (o voo termina como `crashed`)
 };
 
 /// uma linha do registro (ângulos em rad, o Python converte)
@@ -434,6 +442,7 @@ pub const LogRow = extern struct {
     N_main: f64,
     N_skid: f64,
     htail: f64,
+    hprop: f64, // folga da ponta da pá mais baixa sobre o terreno (m)
     RN: f64,
     Rnw: f64,
     Rmw: f64,

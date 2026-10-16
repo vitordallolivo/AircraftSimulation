@@ -67,7 +67,7 @@ Os blocos só ordenam a lista; não são versões.
 | **B1** | Fundação (feito) | checks de regressão, conferir os ❓, pilha na `main` |
 | **B1+** | Proteção e medição (local, sem CI pago) | perfil (flame graph) · snapshot das abas · smoke das abas · lint + hook de pre-push · tempo como regressão · propriedades · avisos de documentação |
 | **B2** | Análises simples | passeio do CG e ME no tempo · curvas com fator de carga · restrições e normas como preset do usuário · Desempenho por etapa de voo (envelopes, decolagem com MTOW, subida, curva, descida e pouso) |
-| **B3** | Aero completo na GUI | trimagem com esteira e tubo desviado · distribuição a α · Reynolds no núcleo · arrasto por componente |
+| **B3** | Aero completo na GUI | **flape (prioridade)** · linha sustentadora corrigida e não linear · esteira desviada · trimagem com esteira e tubo desviado · distribuição a α · Reynolds no núcleo · arrasto por componente |
 | **B4** | Cargas I | aba Cargas · arquitetura de cargas e aeroelasticidade · casos do V-n · rajada · cortante, fletor e torsor |
 | **B5** | Cargas II | manobras dinâmicas · momentos de dobradiça · cargas no solo |
 | **B6** | Estruturas (do zero) | arquitetura + materiais · longarina · tubo de cauda · trem · redistribuição de cargas |
@@ -106,7 +106,7 @@ Tipos de tarefa:
 | T00 | Checks de regressão em `tools/checks` (comparação bit a bit contra uma ref, núcleo, AeroDrive, testes por área) | [novo] | — | B1 | Feito |
 | T01 | Conferir os ❓ | leitura | — | B1 | Feito |
 | T36 | Guia de desenvolvimento: `.claude/CLAUDE.md` (objetivo, conceitos, decisões, fluxo, métricas) e mapa do código gerado (`tools/codemap.py` → `docs/MAP.md`, com check) | [novo] | — | B1 | Feito |
-| T47 | Ferramenta de perfil `tools/profile.py`: flame graph (py-spy `--native`, Python + Zig) e tabela por função (tempo próprio, total, chamadas, %); `--exato` pelo Callgrind; núcleo com símbolos (`-Dstrip=false`) | [novo] | — | B1+ | Pronto |
+| T47 | Ferramenta de perfil `tools/time_profile.py`: flame graph (py-spy `--native`, Python + Zig) e tabela por função (tempo próprio, total, chamadas, %); `--exato` pelo Callgrind; núcleo com símbolos (`-Dstrip=false`) | [novo] | — | B1+ | Pronto |
 | T48 | Snapshot do resultado de cada aba (resumo + diagnóstico por template, valores padrão) em `tools/checks`, com `--aceitar` para mudança intencional | [ext] | — | B1+ | Pronto |
 | T49 | Smoke test de todas as abas e subabas: abre sem tela, roda com os padrões, todo gráfico declarado tem dado | [ext] | — | B1+ | Pronto |
 | T50 | Lint (`ruff`, `zig fmt --check`) em `tools/checks` e hook de `pre-push` com os checks rápidos (`tools/hooks/`, `core.hooksPath`) | [ext] | — | B1+ | Pronto |
@@ -127,6 +127,12 @@ Tipos de tarefa:
 | T08 | Esteira: trimagem com esteira e tubo desviado (ligar já existe na GUI) | [ext] | — | B3 | Pronto |
 | T09 | Distribuição a α na aba Aerodinâmica | [GUI] | — | B3 | Pronto |
 | T10 | Reynolds no núcleo (tabela por Re) | [ext] | — | B3 | Pronto |
+| T54 | **Prioridade da aerodinâmica.** Flape de verdade: hoje o flape é só uma deflexão fixa somada à incidência (`tau · deflexão`), sem ΔC_l máx, sem ΔC_d, sem ΔC_m, sem comando na simulação. Por tipo (simples, ventral, fendido, Fowler), com método da literatura escolhido pelo usuário; comandável na decolagem e no pouso; entra na linha sustentadora (corda e α0 por faixa) e na esteira. Primeiro o plano com as fontes | [ext] | — | B3 | Pronto |
+| T55 | Linha sustentadora (cargas): ferraduras com os nós no 1/4 de corda das bordas de cada faixa (Phillips e Snyder 2000; Hunsaker e Snyder), corrige superfície enflechada e winglet (carga crescendo para a ponta); depois a versão não linear com C_l(α) de cada perfil (Newton) | [ext] | — | B3 | Fazendo |
+| T56 | Hélice no chão: folga da ponta da pá a cada passo; folga < 0 encerra o voo ("hélice tocou o chão"); folga mínima por norma só como preset do usuário | [ext] | — | B2 | Pronto |
+| T59 | Otimização de perfis (futuro): forma do perfil por parâmetros (ex.: CST/Kulfan) com o polar do NeuralFoil (AeroSandbox, já instalado) ou do XFOIL (o motor do XFLR5), objetivo e restrições escolhidos pelo usuário (C_l máx, C_d no cruzeiro, C_m, espessura), atrás da interface de perfis; o perfil otimizado entra na biblioteca. Primeiro o plano com as fontes | [novo] | — | B3 | Pronto |
+| T58 | Cargas pelo AeroSandbox: o VLM do ASB como mais um método da aba Cargas, atrás da interface (`LoadResult`): distribuição por faixa, vista 3D e comparação lado a lado com a linha sustentadora do núcleo. Serve de referência independente para winglet, enflechamento e diedro | [ext] | — | B4 | Pronto |
+| T57 | Esteira desviada pelo escoamento e com perfil radial (Duivenvoorden et al. 2026; correção de Rethorst, Exalto et al. 2024; Goates 2018), validada contra Stuper (NACA TM 874) | [ext] | T55 | B3 | Bloqueado |
 | T11 | Arrasto por componente | [ext] | — | B3 | Pronto |
 | T12 | Aba Cargas (distribuição + 3D; hélice do conjunto motopropulsor do avião; só com modelo pronto) | [GUI] | — | B4 | Feito |
 | T38 | Arquitetura de cargas e aeroelasticidade: interfaces (conjunto de casos de carga, viga estrutural EI/GJ, laço aeroelástico), conta no núcleo. Primeiro o plano | [zero] | — | B4 | Pronto (plano) |
@@ -173,7 +179,7 @@ Legenda das colunas **Código** e **GUI**:
 | ID | Tópico | Código | GUI | Tarefa | Onde / observação |
 |---|---|---|---|---|---|
 | AE-01 | Biblioteca de perfis, polares 2D por Reynolds, cache | ✅ | ✅ | — | `aero/sections.py`, `data/airfoils` |
-| AE-02 | Asa finita: LLT, AVL, ASB, importar XFLR5 | ✅ | ✅ | — | comparação de métodos |
+| AE-02 | Asa finita: LLT, AVL, ASB, importar XFLR5 | ✅ | ✅ | T55 | comparação de métodos; a linha sustentadora do núcleo erra em superfície enflechada (T55) |
 | AE-03 | Asa por partições, perfil por seção | ✅ | ✅ | — | sprint Asa |
 | AE-04 | Polar do avião completo | ✅ | ✅ | — | aba Aerodinâmica → Polar |
 | AE-05 | Dispositivos de ponta de asa | ✅ | ✅ | — | `aero/tipdevices.py` |
@@ -185,6 +191,8 @@ Legenda das colunas **Código** e **GUI**:
 | AE-11 | Reynolds no núcleo | ❌ | ❌ | T10 | |
 | AE-12 | Distribuição ao longo da envergadura a um α | ✅ | ❌ | T09 | `core/src/loads/llt.zig` |
 | AE-13 | Comparação com ensaio | ❌ | ❌ | T35 | |
+| AE-17 | Flape (ΔC_l, ΔC_l máx, ΔC_d, ΔC_m; comando na decolagem e no pouso) | 🟡 | ❌ | T54 | hoje só deflexão fixa na incidência da faixa |
+| AE-18 | Otimização de perfis (NeuralFoil ou XFOIL) | ❌ | ❌ | T59 | futuro |
 
 ### 2. Desempenho
 
@@ -243,6 +251,7 @@ pista) é ajuste de interface e está em "Fora da conta".
 | CA-08 | Cargas no solo | ❌ | ❌ | T18 | |
 | CA-09 | Redistribuição das cargas para a estrutura | ❌ | ❌ | T39 | |
 | CA-10 | V-n com dados de voo | ❌ | ❌ | T40 | |
+| CA-11 | Método das cargas pelo VLM do AeroSandbox (comparação com a linha sustentadora) | ❌ | ❌ | T58 | `aero/asb_solver.py` já roda o VLM; falta entregar `LoadResult` |
 
 ### 5. Aeroelasticidade
 
@@ -328,15 +337,15 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
 | Seção | ✅ na GUI / itens |
 |---|---|
-| 1. Aerodinâmica | 6 / 13 |
+| 1. Aerodinâmica | 6 / 15 |
 | 2. Desempenho | 8 / 14 |
 | 3. Estabilidade e Controle | 12 / 16 |
-| 4. Cargas | 2 / 10 |
+| 4. Cargas | 2 / 11 |
 | 5. Aeroelasticidade | 0 / 4 |
 | 6. Estruturas | 1 / 5 |
 | 8. Integração | 6 / 10 |
 | 9. Controle | 1 / 2 |
-| **Total** | **36 / 74 (49 %)** |
+| **Total** | **36 / 77 (47 %)** |
 
 ---
 

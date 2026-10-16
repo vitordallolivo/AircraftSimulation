@@ -51,7 +51,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/backend/zig/backend.py` — Implementação de ISimBackend com o núcleo em Zig (libaerosim, via ctypes).
   `lib_path:24`, `build:47`, `class CoreError:72`, `class ZigSession:177`, `class ZigBackend:403`
 - `aerosim/backend/zig/translator.py` — Tradutor modelo universal -> núcleo Zig (SimSpec: dicionário com os campos das structs extern).
-  `prop_native:26`, `surface_panels:42`, `panel_owners:71`, `class ZigTranslator:80`, `native_spec:148`
+  `prop_native:26`, `surface_panels:42`, `panel_owners:75`, `class ZigTranslator:84`, `native_spec:152`
 
 ## Python · `aerosim/data`
 
@@ -169,7 +169,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/manager/checkpoints.py` — Checkpoints: o estado inteiro de uma corrida num ponto (bytes do núcleo + metadados).
   `class Checkpoint:16`, `class CheckpointStore:24`
 - `aerosim/manager/flightplots.py` — Séries de gráfico de um voo simulado, no estilo dos gráficos do código original (legacy/py/graficos.py):
-  `stage_names:32`, `stage_color:36`, `by_stage:50`, `stage_spans:71`, `events_points:86`, `event_stars:98`, `payload_path:112`, `terrain_profile:124`, `trajectory:133`, `time_series:155`, `cg_series:233`, `takeoff_window:254`, `landing_window:335`, `lapes_window:372`, `aircraft_glyphs:429`, `battery_by_stage:460`, `takeoff_angles:503`, `takeoff_time:521`
+  `stage_names:32`, `stage_color:36`, `by_stage:50`, `stage_spans:71`, `events_points:86`, `event_stars:98`, `payload_path:112`, `terrain_profile:124`, `trajectory:133`, `time_series:155`, `cg_series:233`, `takeoff_window:254`, `ground_clearance:323`, `landing_window:354`, `lapes_window:391`, `aircraft_glyphs:448`, `battery_by_stage:479`, `takeoff_angles:522`, `takeoff_time:540`
 - `aerosim/manager/manager.py` — Simulation Manager: escolhe qual simulação roda, com que parâmetros, e entrega o
   `class SimulationManager:19`
 - `aerosim/manager/runner.py` — Corrida orientada: começa (no chão, em voo ou de um checkpoint), roda até uma parada
@@ -208,7 +208,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/model/__init__.py` — Modelo de dados (independente do núcleo): aeronave, perfis, catálogo, missão, geometria.
 - `aerosim/model/aircraft.py` — Modelo de dados da aeronave (a "Aircraft Data").
-  `class WingSection:24`, `class ControlSurface:41`, `mix_role:63`, `panel_mix:69`, `class WingDevice:79`, `class LiftingSurface:100`, `rect_sections:192`, `class Fuselage:200`, `class TailBoom:216`, `class PropulsionUnit:252`, `class GearLeg:272`, `class LandingGear:282`, `class SloshTank:318`, `class Payload:346`, `class Ballast:363`, `class PointMass:373`, `class MassModel:382`, `class Airfield:398`, `class Environment:435`, `class Takeoff:462`, `class Autopilot:476`, `class PerformanceData:526`, `class SimSettings:539`, `class Aircraft:548`
+  `class WingSection:24`, `class ControlSurface:41`, `mix_role:63`, `panel_mix:69`, `class WingDevice:79`, `class LiftingSurface:100`, `rect_sections:192`, `class Fuselage:200`, `class TailBoom:216`, `class PropulsionUnit:252`, `class GearLeg:272`, `class LandingGear:282`, `class SloshTank:318`, `class Payload:346`, `class Ballast:363`, `class PointMass:373`, `class MassModel:382`, `class Airfield:398`, `class Environment:435`, `class Takeoff:462`, `class Autopilot:476`, `class PerformanceData:526`, `class SimSettings:539`, `class Aircraft:549`
 - `aerosim/model/airfoil.py` — Perfis: leitura de .dat (Selig ou Lednicer), gerador NACA 4 dígitos e teoria de
   `class Airfoil:14`, `naca4:51`, `read_dat:73`, `write_dat:93`, `camber_line:100`, `thin_airfoil:114`, `flap_effectiveness:126`, `helmbold:133`
 - `aerosim/model/atmosphere.py` — Atmosfera padrão (ISA, troposfera) para a altitude-densidade (AD).
@@ -276,7 +276,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/tests_sim.zig` — testes do grupo "sim" (zig build test-sim)
 - `core/src/tests_sizing.zig` — testes do grupo "sizing" (zig build test-sizing): estágios, tipos de aeronave, otimizadores,
 - `core/src/types.zig` — Estruturas trocadas com o Python (C ABI, `extern struct`).
-  tipos `Surface:29`, `PropUnit:59`, `Gear:103`, `Tank:119`, `Segment:135`, `Event:157`, `Pad:161`, `Payload:170`, `Environment:181`, `Takeoff:193`, `Pilot:206`, `Autopilot:216`, `Params:261`, `PanelState:327`, `Events:347`, `LogRow:387`, `AeroCoeffs:500`, `PropPoint:515`, `MassProps:527`, `TrimPoint:539`, `PerfRow:556`
+  tipos `Surface:29`, `PropUnit:64`, `Gear:108`, `Tank:124`, `Segment:140`, `Event:162`, `Pad:166`, `Payload:175`, `Environment:186`, `Takeoff:198`, `Pilot:211`, `Autopilot:221`, `Params:266`, `PanelState:333`, `Events:353`, `LogRow:395`, `AeroCoeffs:509`, `PropPoint:524`, `MassProps:536`, `TrimPoint:548`, `PerfRow:565`
 
 **core/src/collision/**
 
@@ -299,7 +299,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/loads/**
 
 - `core/src/loads/llt.zig` — Linha sustentadora numérica (vórtices em ferradura) para a distribuição de carga ao longo da envergadura.
-  fn `sectionSlope:44`, `segment:51`, `horseshoe:67`, `apply:86`
+  fn `sectionSlope:45`, `segment:52`, `horseshoe:68`, `apply:100`
 
 **core/src/math/**
 
@@ -348,7 +348,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/sim/dynamics.zig` — Equação mestre f(t, x) e integração RK4.
   tipos `Out:25`
-  fn `f:83`, `rk4:231`
+  fn `f:84`, `rk4:245`
 - `core/src/sim/envelope.zig` — Envelope de voo por altitude (sem integrar no tempo).
   tipos `EnvCfg:35`, `EnvRow:72`
   fn `density:85`, `compute:293`, `curve:326`
@@ -357,7 +357,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `rigid:50`, `linearize:160`, `residual:215`
 - `core/src/sim/runner.zig` — Executor de uma corrida: eventos discretos, paradas, registro e checkpoints.
   tipos `Status:22`, `Instance:32`
-  fn `configure:62`, `handover:112`, `resetGround:133`, `resetAir:165`, `run:314`
+  fn `configure:62`, `handover:112`, `resetGround:133`, `resetAir:165`, `run:315`
 - `core/src/sim/simple_perf.zig` — Desempenho por cálculo simples (sem simulação no tempo), como na "planilha suprema":
   tipos `SimpleCfg:23`, `SimpleRow:52`, `SimpleSummary:76`
   fn `density:107`, `compute:130`
@@ -600,8 +600,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 ## Testes (`tests/`)
 
-- `tests/aero` — 50 testes em 8 arquivo(s)
-- `tests/core` — 31 testes em 8 arquivo(s)
+- `tests/aero` — 53 testes em 8 arquivo(s)
+- `tests/core` — 34 testes em 9 arquivo(s)
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 63 testes em 9 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)

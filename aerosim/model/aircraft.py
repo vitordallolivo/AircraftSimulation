@@ -542,6 +542,7 @@ class SimSettings:
     dtlog: float = 0.02
     Mst: float = 50.0          # transição linear/estol (Beard e McLain)
     slosh: bool = True
+    prop_strike: bool = True   # a ponta da pá tocar o chão encerra o voo (False: só registra a folga)
 
 
 @dataclass

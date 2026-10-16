@@ -3,9 +3,10 @@
 //! Só para análise de cargas: a simulação (aero.zig) não chama este arquivo; o AeroDrive e as corridas ficam iguais.
 //!
 //! Fonte: Phillips, W. F. e Snyder, D. O., "Modern Adaptation of Prandtl's Classic Lifting-Line Theory",
-//! Journal of Aircraft 37(4), 662–670, 2000 — vórtice em ferradura por painel, ligado a 1/4 da corda, pernas
-//! livres ao longo do escoamento livre, ponto de controle no meio do segmento ligado, superfícies sem restrição de
-//! enflechamento ou diedro, várias superfícies juntas. Biot–Savart de um segmento reto: Katz, J. e Plotkin, A.,
+//! Journal of Aircraft 37(4), 662–670, 2000 (também Hunsaker e Snyder, "A Lifting-Line Approach to Estimating
+//! Propeller/Wing Interactions", eq. 6) — vórtice em ferradura por painel, com os nós nos pontos de 1/4 de corda das
+//! bordas da faixa, pernas livres ao longo do escoamento livre, ponto de controle no meio do segmento ligado,
+//! superfícies sem restrição de enflechamento ou diedro, várias superfícies juntas. Biot–Savart de um segmento reto: Katz, J. e Plotkin, A.,
 //! "Low-Speed Aerodynamics", 2ª ed., Cambridge, 2001, cap. 10 (segmento de vórtice reto) — números das equações a
 //! conferir no PDF.
 //!
@@ -16,11 +17,11 @@
 //!
 //! w_ij: velocidade induzida no ponto de controle i pela ferradura j com Γ = 1; α_g: α do painel sem o downwash
 //! empírico do núcleo (aqui quem dá o downwash na cauda são as pernas da asa) e com os comandos e modificadores.
-//! Segmentos ligados: como na teoria de Prandtl, a linha sustentadora não induz velocidade nela mesma; entre painéis
-//! da mesma superfície (mesmo grupo: as duas meias asas, por exemplo) entram só as pernas livres. Phillips e Snyder
-//! somam também os segmentos ligados das outras ferraduras; numa quebra de diedro o segmento da outra meia asa passa a
-//! milímetros do ponto de controle e dá um pico na raiz que depende da discretização (3° de diedro: +3 % na raiz).
-//! Entre superfícies diferentes (asa → EH) entram as ferraduras inteiras.
+//! Segmentos ligados: entram os de todas as ferraduras menos o do próprio painel (Phillips e Snyder). Com eles o
+//! enflechamento tira sustentação; sem eles (e com a ferradura no centro da faixa) uma superfície enflechada ganhava
+//! sustentação e o winglet carregava cada vez mais até a ponta. Limite: na quina da raiz (diedro, enflechamento) o
+//! segmento da outra meia asa passa perto do ponto de controle e o valor ali depende da malha (singularidade; a
+//! correção é a de Reid e Hunsaker, J. Aircraft 2020 — a conferir no PDF). Ver README.md.
 //! Entre superfícies diferentes os vórtices têm núcleo de Scully (raio 0,1 c de quem solta; ver `core_frac`).
 //! a_i: inclinação 2D tirada do C_Lα 3D do núcleo invertendo Helmbold (o tradutor fez C_Lα = helmbold(a, AR)):
 //!     C_Lα = a/(√(1+k²)+k), k = a/(πAR)   ⇒   a = C_Lα / √(1 − 2 C_Lα/(πAR))
@@ -80,6 +81,19 @@ fn span(ps: *const T.PanelState, ez: V3) struct { A: V3, B: V3, d: V3 } {
     return .{ .A = r - d * vec.splat(hw), .B = r + d * vec.splat(hw), .d = d };
 }
 
+/// os nós da ferradura do painel: os pontos de 1/4 de corda nas bordas da faixa (`qa`, `qb` do tradutor), como em
+/// Phillips e Snyder (2000): ferraduras vizinhas dividem o nó e as pernas livres se cancelam onde Γ é igual, também
+/// com enflechamento. A ordem segue `d` (Γ > 0 sustenta). Sem os nós (qa = qb = 0): o segmento perpendicular à
+/// corda pelo centro (`span`), que só fecha as ferraduras sem enflechamento
+fn nodes(s: *const T.Surface, ps: *const T.PanelState) struct { A: V3, B: V3, d: V3 } {
+    const g = span(ps, vec.v3(s.ez));
+    const qa = vec.v3(s.qa);
+    const qb = vec.v3(s.qb);
+    const dl = qb - qa;
+    if (vec.dot(dl, dl) < 1e-18) return .{ .A = g.A, .B = g.B, .d = g.d };
+    return if (vec.dot(dl, g.d) >= 0) .{ .A = qa, .B = qb, .d = g.d } else .{ .A = qb, .B = qa, .d = g.d };
+}
+
 /// Resolve as circulações e reescreve os painéis do núcleo (`ps`, de `aero.computeTrace`) com a carga da linha
 /// sustentadora: alpha (efetivo), CL (seção), CD, L, D, F e vind (+ a velocidade induzida pelas ferraduras).
 /// `Vr`: velocidade do avião em relação ao ar (corpo); `d`: comandos (de, da, dr). Devolve a soma de Γ (teste).
@@ -113,8 +127,8 @@ pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
         const P = vec.v3(q.r);
         for (0..n) |j| {
             if (!used_geom(ps, j)) continue;
-            const g = span(&ps[j], vec.v3(p.surf[j].ez));
-            A[i][j] += k_i[i] * vec.dot(horseshoe(P, g.A, g.B, u, ps[j].group != q.group, if (ps[j].group != q.group) core_frac * ps[j].c else 0), ez);
+            const g = nodes(&p.surf[j], &ps[j]);
+            A[i][j] += k_i[i] * vec.dot(horseshoe(P, g.A, g.B, u, withBound(i, j), coreOf(ps, i, j)), ez);
         }
     }
     var G: [n_max]f64 = undefined;
@@ -131,8 +145,8 @@ pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
         var w = vec.zero; // velocidade do ar induzida pelas ferraduras
         for (0..n) |j| {
             if (!used[j]) continue;
-            const g = span(&ps[j], vec.v3(p.surf[j].ez));
-            w += horseshoe(P, g.A, g.B, u, ps[j].group != q.group, if (ps[j].group != q.group) core_frac * ps[j].c else 0) * vec.splat(G[j]);
+            const g = nodes(&p.surf[j], &ps[j]);
+            w += horseshoe(P, g.A, g.B, u, withBound(i, j), coreOf(ps, i, j)) * vec.splat(G[j]);
         }
         const v = vec.v3(q.v) - w; // velocidade do painel em relação ao ar, com a induzida
         const uu = vec.dot(v, ex);
@@ -140,12 +154,11 @@ pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
         const V2 = uu * uu + ww * ww;
         const Vp = @sqrt(V2);
         const al = fm.atan2(ww, uu) + s.tau * vec.dot(vec.v3(s.mix), d);
-        const g = span(q, ez);
-        const width = q.S / @max(q.c, 1e-12);
+        const g = nodes(s, q);
         const rho = p.env.rho;
-        // Kutta–Joukowski no segmento ligado (ar = −v): F = ρ Γ (−v) × dl
-        const Fl = vec.cross(-v, g.d) * vec.splat(rho * G[i] * width);
-        const Lp = rho * Vp * G[i] * width;
+        // Kutta–Joukowski no segmento ligado (ar = −v): F = ρ Γ (−v) × dl, dl de nó a nó (com o enflechamento)
+        const Fl = vec.cross(-v, g.B - g.A) * vec.splat(rho * G[i]);
+        const Lp = std.math.sign(G[i]) * vec.norm(Fl);
         const qS = 0.5 * rho * V2 * s.eta * q.S;
         const drag_dir = -(ex * vec.splat(uu) + ez * vec.splat(ww)) / vec.splat(@max(Vp, 1e-12));
         const Dp = qS * s.CD0;
@@ -162,6 +175,16 @@ pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
         sum += G[i];
     }
     return sum;
+}
+
+/// segmento ligado de j no ponto de controle de i: todos menos o do próprio painel (Phillips e Snyder 2000)
+fn withBound(i: usize, j: usize) bool {
+    return i != j;
+}
+
+/// núcleo de Scully só entre superfícies diferentes (ver `core_frac`)
+fn coreOf(ps: []const T.PanelState, i: usize, j: usize) f64 {
+    return if (ps[j].group != ps[i].group) core_frac * ps[j].c else 0;
 }
 
 fn used_geom(ps: []const T.PanelState, j: usize) bool {
@@ -222,7 +245,8 @@ fn rectWing(p: *T.Params, ps: []T.PanelState, n: usize, b: f64, c: f64, a: f64, 
     for (0..n) |i| {
         const y = -0.5 * b + (@as(f64, @floatFromInt(i)) + 0.5) * w;
         p.surf[i] = .{ .S = w * c, .c = c, .AR = AR, .CLa = a / (@sqrt(1 + k * k) + k), .CL0 = 0, .CD0 = 0, .eta = 1,
-            .ex = .{ 1, 0, 0 }, .ey = .{ 0, 1, 0 }, .ez = .{ 0, 0, 1 } };
+            .ex = .{ 1, 0, 0 }, .ey = .{ 0, 1, 0 }, .ez = .{ 0, 0, 1 },
+            .qa = .{ 0, y - 0.5 * w, 0 }, .qb = .{ 0, y + 0.5 * w, 0 } };
         ps[i] = .{ .r = .{ 0, y, 0 }, .S = w * c, .c = c, .group = 0, .ex = .{ 1, 0, 0 }, .ey = .{ 0, 1, 0 },
             .v = .{ V * @cos(alpha), 0, V * @sin(alpha) } };
     }
@@ -251,7 +275,7 @@ test "asa retangular: carga cai na ponta, C_L perto de Helmbold e menor com alon
     try testing.expect(CLs[1] < CLs[0]);
 }
 
-test "diedro: sem pico na raiz (a linha não induz nela mesma)" {
+test "diedro: a raiz não salta mais que o VLM (1 %)" {
     var p = T.Params{};
     var ps: [40]T.PanelState = undefined;
     const al = 0.08;
@@ -263,10 +287,15 @@ test "diedro: sem pico na raiz (a linha não induz nela mesma)" {
         const sd: f64 = if (y > 0) 1 else -1;
         ps[i].r[2] = -@abs(y) * @tan(g);
         p.surf[i].ez = .{ 0, sd * @sin(g), @cos(g) };
+        p.surf[i].qa[2] = -@abs(p.surf[i].qa[1]) * @tan(g);
+        p.surf[i].qb[2] = -@abs(p.surf[i].qb[1]) * @tan(g);
     }
     _ = apply(&p, .{ V * @cos(al), 0, V * @sin(al) }, vec.zero, ps[0..40]);
     // a carga cresce da ponta até a raiz sem saltar no meio
-    try testing.expect(ps[19].L <= ps[18].L * 1.005);
+    // a carga não salta na raiz: no VLM do AeroSandbox (12 × 40 painéis por lado, asa plana AR 5) a faixa da raiz
+    // fica 0,25 % acima da vizinha a 3° de diedro e 0,9 % a 10°; aqui, com os segmentos ligados da outra meia asa
+    // (Phillips e Snyder), 0,7 %. A quina da raiz é singular na linha sustentadora (Reid e Hunsaker 2020)
+    try testing.expect(ps[19].L <= ps[18].L * 1.01);
 }
 
 test "núcleo de Scully: finito na linha, metade do valor sem núcleo a h = rc" {

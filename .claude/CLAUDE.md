@@ -83,7 +83,8 @@ as configurações.
 - **Ideia nova vai primeiro para o plano.** Quando o pedido é "pensar", não programar: mostrar o plano, com as fontes,
   e esperar o ok.
 - Não inventar escopo: o que não foi pedido vira proposta, não código.
-- Rodadas longas (suíte completa, regressão) avisando antes; não rodar várias ao mesmo tempo na mesma árvore.
+- Rodadas longas (suíte completa, regressão) **só quando o dono mandar commitar**. No meio do trabalho, rodar só os
+  testes da área mexida. Avisar antes e não rodar várias ao mesmo tempo na mesma árvore.
 
 ## 5. Git e versões
 
