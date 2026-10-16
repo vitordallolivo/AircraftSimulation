@@ -85,6 +85,7 @@ Tipos de tarefa:
 |---|---|---|---|---|---|
 | T00 | Checks de regressão em `tools/checks` (comparação bit a bit contra uma ref, núcleo, AeroDrive, testes por área) | [novo] | — | B1 | Feito |
 | T01 | Conferir os ❓ | leitura | — | B1 | Feito |
+| T36 | Guia de desenvolvimento: `.claude/CLAUDE.md` (objetivo, conceitos, decisões, fluxo, métricas) e mapa do código gerado (`tools/codemap.py` → `docs/MAP.md`, com check) | [novo] | — | B1 | Feito |
 | T02 | Rodar os checks na pilha e corrigir | [ext] | T00 | B1 | Feito (tudo verde, nada a corrigir) |
 | T03 | PRs da pilha para a `main` | git | T02 | B1 | Feito (PRs #21–#25) |
 | T04 | E&C: ME × xCG com ênfase, passeio do CG (o limite pela rotação já existe) | [ext] | — | B2 | Feito |
@@ -317,5 +318,5 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
 **Situação atual das branches**
 - `main`: `v0.2.0` (PRs #21–#25).
-- `0.2_dev`: T04 feito (vira `0.2.1` com o merge); T06 por fazer.
+- `0.2_dev`: T04 e T36 feitos (viram `0.2.1` com o merge); T06 por fazer.
 - As branches antigas foram apagadas aqui; no GitHub, o dono apaga (a sessão não tem permissão).

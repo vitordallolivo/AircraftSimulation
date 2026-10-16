@@ -4,6 +4,14 @@ Versões da `main`. Critério de versão e escopo da 1.0 em `docs/TRACKING.md`.
 
 ## Não lançado
 
+### v0.2.1 (branch `0.2_dev`, PR aberto)
+
+- `.claude/CLAUDE.md`: guia de desenvolvimento (objetivo, conceitos, decisões de projeto, fluxo de git e versões,
+  métricas, comandos).
+- `tools/codemap.py` → `docs/MAP.md`: mapa do código gerado; check "mapa do código em dia" em `tools/checks`.
+- Missão: passeio do CG e margem estática ao longo do voo (T04).
+- Tracking: versão por tarefa (`0.2.x`) até a lista inteira virar `0.3.0`; elétrica fora do escopo.
+
 ### v0.2.0 — fecha o milestone 0.1 (branch `test/checks`)
 
 - `tools/checks`: checks de regressão (núcleo Zig, AeroDrive, exemplos bit a bit contra uma referência, testes por
