@@ -65,6 +65,7 @@ Os blocos só ordenam a lista; não são versões.
 | Bloco | O que | Tarefas |
 |---|---|---|
 | **B1** | Fundação (feito) | checks de regressão, conferir os ❓, pilha na `main` |
+| **B1+** | Proteção e medição (local, sem CI pago) | perfil (flame graph) · snapshot das abas · smoke das abas · lint + hook de pre-push · tempo como regressão · propriedades · avisos de documentação |
 | **B2** | Análises simples | passeio do CG e ME no tempo · curvas com fator de carga · restrições e normas como preset do usuário · Desempenho por etapa de voo (envelopes, decolagem com MTOW, subida, curva, descida e pouso) |
 | **B3** | Aero completo na GUI | trimagem com esteira e tubo desviado · distribuição a α · Reynolds no núcleo · arrasto por componente |
 | **B4** | Cargas I | aba Cargas · arquitetura de cargas e aeroelasticidade · casos do V-n · rajada · cortante, fletor e torsor |
@@ -105,12 +106,19 @@ Tipos de tarefa:
 | T00 | Checks de regressão em `tools/checks` (comparação bit a bit contra uma ref, núcleo, AeroDrive, testes por área) | [novo] | — | B1 | Feito |
 | T01 | Conferir os ❓ | leitura | — | B1 | Feito |
 | T36 | Guia de desenvolvimento: `.claude/CLAUDE.md` (objetivo, conceitos, decisões, fluxo, métricas) e mapa do código gerado (`tools/codemap.py` → `docs/MAP.md`, com check) | [novo] | — | B1 | Feito |
+| T47 | Ferramenta de perfil `tools/profile.py`: flame graph (py-spy `--native`, Python + Zig) e tabela por função (tempo próprio, total, chamadas, %); `--exato` pelo Callgrind; núcleo com símbolos (`-Dstrip=false`) | [novo] | — | B1+ | Pronto |
+| T48 | Snapshot do resultado de cada aba (resumo + diagnóstico por template, valores padrão) em `tools/checks`, com `--aceitar` para mudança intencional | [ext] | — | B1+ | Pronto |
+| T49 | Smoke test de todas as abas e subabas: abre sem tela, roda com os padrões, todo gráfico declarado tem dado | [ext] | — | B1+ | Pronto |
+| T50 | Lint (`ruff`, `zig fmt --check`) em `tools/checks` e hook de `pre-push` com os checks rápidos (`tools/hooks/`, `core.hooksPath`) | [ext] | — | B1+ | Pronto |
+| T51 | Tempo como regressão: benchmarks e abas contra a `main`, só aviso | [ext] | T47 | B1+ | Bloqueado |
+| T52 | Testes de propriedade (simetria, soma das cargas, monotonicidade, R·ω = V…), cada lei com fonte | [novo] | — | B1+ | Pronto |
+| T53 | Avisos de documentação (README em pasta nova, fonte de fórmula no Zig, CHANGELOG no PR) | [ext] | — | B1+ | Pronto |
 | T02 | Rodar os checks na pilha e corrigir | [ext] | T00 | B1 | Feito (tudo verde, nada a corrigir) |
 | T03 | PRs da pilha para a `main` | git | T02 | B1 | Feito (PRs #21–#25) |
 | T04 | E&C: ME × xCG com ênfase, passeio do CG (o limite pela rotação já existe) | [ext] | — | B2 | Feito |
 | T05 | E&C: estabilidade dinâmica não linear (funções de Lyapunov e de energia, região de atração vista em mapa de calor; inclui sloshing e vento). Primeiro o plano com as fontes, depois o código | [novo] | — | B8 | Pronto (plano) |
 | T06 | Curvas com fator de carga na Missão e nas curvas (n_z, 1/cos φ, n no estol) | [ext] | — | B2 | Feito (vai no PR da T12) |
-| T42 | Desempenho por etapa de voo, 1: subaba "Voo nivelado e envelopes" com todos os envelopes (planilha e modelo completo, `envelope.py` ganha aba) | [GUI] | — | B2 | Pronto |
+| T42 | Desempenho por etapa de voo, 1: subaba "Voo nivelado e envelopes" com todos os envelopes (planilha e modelo completo, `envelope.py` ganha aba) | [GUI] | — | B2 | Feito |
 | T43 | Desempenho, 2: subaba Decolagem (analítica + 6GDL) com a caixa "MTOW para o comprimento de pista": varredura da massa total ou fragmentada (componentes ligáveis, cada um com mín., máx., inicial e passo do usuário); o modo MTOW avulso sai | [ext] | — | B2 | Pronto |
 | T44 | Desempenho, 3: subida (a simulada está errada: γ obtido não segue o pedido) junto com a analítica | [ext] | — | B2 | Pronto |
 | T45 | Desempenho, 4: subaba Curva única (`turn.py` + Missão "curvas"), analítica + numérica | [ext] | — | B2 | Pronto |
@@ -307,7 +315,7 @@ A Missão mostra só o que a simulação já calcula: a corrente média e a de p
 - IF-05: números duais;
 - IF-06: SIMD;
 - IF-07: paralelismo (→ T28);
-- IF-08: testes de propriedade 🟡;
+- IF-08: testes de propriedade 🟡 (→ T52);
 - IF-09: checks de regressão no repositório (→ T00).
 
 ---
@@ -348,5 +356,5 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
 **Situação atual das branches**
 - `main`: `v0.2.2` (PR #27).
-- `0.2_dev`: correção do tracking, T06 e T12, sem commit; vão juntos no mesmo PR (`0.2.3`).
+- `0.2_dev`: correção do tracking, T06, T12 e T42 (commits `4062360` e `bb06118`); vão juntos no mesmo PR (`0.2.3`).
 - As branches antigas foram apagadas aqui; no GitHub, o dono apaga (a sessão não tem permissão).

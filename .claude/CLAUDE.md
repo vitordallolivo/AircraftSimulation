@@ -173,8 +173,6 @@ funciona: raylib-zig → raylib → raygui → emsdk → os dois zemscripten.
   `raygui`, `emsdk` 4.0.9 e os dois commits do `zemscripten` (um no `build.zig.zon` do raylib-zig, outro no do raylib).
 - **O Zig 0.16 guarda os pacotes em `aerodrive/zig-pkg/`** (ignorada pelo git). Tirar a pasta do lugar obriga a baixar
   tudo de novo.
-- **`tools/codemap.py` lista a `aerodrive/zig-pkg/`** (falta `zig-pkg` no `SKIP`): com a pasta no disco, o check
-  "mapa do código em dia" falha. Até corrigir, regenerar o mapa com a pasta fora do lugar e devolver em seguida.
 - **Sem tela:** `QT_QPA_PLATFORM=offscreen` não tem OpenGL (vista 3D sai vazia). Para print com 3D:
   `xvfb-run -a -s "-screen 0 1920x1200x24" python ...` (precisa das bibliotecas xcb acima).
 - **`tools/capturas.py` não entra em subabas** (Desempenho → Missão etc.): falha com `QTabWidget has no attribute
