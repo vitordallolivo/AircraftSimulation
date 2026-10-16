@@ -37,7 +37,12 @@ Como usar:
 
 ## Versões
 
-- **`main` atual = `v0.1.0`** (`033bdc1`). A tag só será criada com o ok do dono do repositório.
+- **Regra:** enquanto o milestone 0.N está aberto, a `main` está em `v0.N.y`. Ao fechar o milestone 0.N, ela vira
+  `v0.(N+1).0`.
+  - Ponto de partida: `v0.1.0` = `033bdc1`.
+  - Com a pilha mesclada (PRs #21–#23), a `main` está em `v0.1.x`.
+  - O PR que fecha o milestone 0.1 leva a `main` a `v0.2.0`.
+  - As tags só são criadas com o ok do dono do repositório.
 - **Minor (`0.x.0`):** fecha um milestone.
 - **Patch (`0.x.y`):** cada subversão do milestone (um bloco de tarefas mesclado na `main`) e correções.
 - **`1.0.0`:** todo o escopo 1.0 com ✅ na coluna **GUI**.
@@ -86,7 +91,7 @@ Tipos de tarefa:
 | T00 | Checks de regressão em `tools/checks` (comparação bit a bit contra uma ref, núcleo, AeroDrive, testes por área) | [novo] | — | 0.1.1 | Fazendo |
 | T01 | Conferir os ❓ | leitura | — | 0.1.3 | Feito |
 | T02 | Rodar os checks na pilha e corrigir | [ext] | T00 | 0.1.2 | Bloqueado |
-| T03 | PRs da pilha para a `main` | git | T02 | 0.1.4 | Bloqueado |
+| T03 | PRs da pilha para a `main` | git | T02 | 0.1.4 | Feito (PRs #21–#23) |
 | T04 | E&C: ME × xCG com ênfase, passeio do CG (o limite pela rotação já existe) | [ext] | — | 0.2.1 | Pronto |
 | T05 | E&C: polos com vento e com sloshing | [ext] | — | 0.2.2 | Pronto |
 | T06 | Curvas com fator de carga (planeio e pouso já existem) | [ext] | — | 0.2.3 | Pronto |
@@ -312,9 +317,17 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 - Uma branch por tema: `feature/<tema>`, `fix/<tema>`, `docs/<tema>`, `test/<tema>`.
 - Cada PR roda `python tools/checks/run.py`, atualiza este arquivo e o `CHANGELOG.md`.
 - Tag `vX.Y.Z` só na `main`, depois do merge.
+- **Fluxo por milestone:**
+  - Ao fechar um milestone, o PR dele é aberto. Antes, a `main` é mesclada na branch, para que o PR nunca leve a
+    `main` para trás.
+  - O milestone seguinte continua numa branch nova em cima da do anterior, sem esperar o merge.
+  - Cada PR mostra só o próprio milestone: a base do PR é a branch do milestone anterior até ela ser mesclada.
+- **Sem dependências obrigatórias de detalhe:** nenhum módulo exige um componente opcional (ex.: dados da bateria).
+  Sem o dado, a análise que o usa é pulada, e o resto roda igual.
 - Relatórios e dados de terceiros nunca entram no git.
 
-**Situação atual das branches** (em relação à `main`)
-- A pilha `feature/sprint` → `feature/gui` → `feature/aero` → `feature/modifiers` → `docs/tracking` →
-  `test/checks` ainda não foi para a `main`.
+**Situação atual das branches**
+- Na `main`: a pilha até `docs/tracking` (PRs #21–#23).
+- `test/checks` (milestone 0.1, com a `main` mesclada): PR aberto para a `main`.
+- `feature/analises-simples` (milestone 0.2): em cima de `test/checks`.
 - `feature/aircraft-drive` e `claude/ecstatic-gates-u3lpoi` não têm nada a mais que a `main`.
