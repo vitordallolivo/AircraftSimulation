@@ -11,6 +11,9 @@ Versões da `main`. Critério de versão e escopo da 1.0 em `docs/TRACKING.md`.
 - `docs/TRACKING.md`: castelo, milestones, quadro de tarefas com dependências; T01 conferido.
 
 ## v0.1.x — pilha mesclada (PRs #21–#23)
+## Não lançado (pilha de branches ainda fora da `main`)
+
+`feature/sprint` → `feature/gui` → `feature/aero` → `feature/modifiers` → `docs/tracking`
 
 **Projeto**
 - Sprint por asa, em pasta.
@@ -36,6 +39,9 @@ Versões da `main`. Critério de versão e escopo da 1.0 em `docs/TRACKING.md`.
 
 **Núcleo**
 - Hash da ABI conferido ao carregar.
+
+**Documentação**
+- `docs/TRACKING.md` e este arquivo.
 
 ## v0.1.0 — ponto de partida (`main` em `033bdc1`)
 
