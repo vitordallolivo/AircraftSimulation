@@ -37,6 +37,12 @@ Como usar:
 
 ## Versões
 
+- **Regra:** enquanto o milestone 0.N está aberto, a `main` está em `v0.N.y`. Ao fechar o milestone 0.N, ela vira
+  `v0.(N+1).0`.
+  - Ponto de partida: `v0.1.0` = `033bdc1`.
+  - Com a pilha mesclada (PRs #21–#23), a `main` está em `v0.1.x`.
+  - O PR que fecha o milestone 0.1 leva a `main` a `v0.2.0`.
+  - As tags só são criadas com o ok do dono do repositório.
 - **`main` atual = `v0.1.0`** (`033bdc1`). A tag só será criada com o ok do dono do repositório.
 - **Minor (`0.x.0`):** fecha um milestone.
 - **Patch (`0.x.y`):** cada subversão do milestone (um bloco de tarefas mesclado na `main`) e correções.
@@ -143,6 +149,9 @@ Legenda das colunas **Código** e **GUI**:
 | AE-05 | Dispositivos de ponta de asa | ✅ | ✅ | — | `aero/tipdevices.py` |
 | AE-06 | Arrasto por componente | 🟡 | ❌ | T11 | só a área de arrasto da fuselagem |
 | AE-07 | Downwash na cauda | 🟡 | 🟡 | T09 | empírico na simulação; ferraduras nas cargas |
+| AE-08 | Efeito solo (McCormick) | ✅ | ✅ | — | modifier `solo.mccormick`; Configuração → Modificadores |
+| AE-09 | Efeito solo por imagem (inclui a mesa) | ❌ | ❌ | — | modifier novo |
+| AE-10 | Esteira da hélice nas superfícies | 🟡 | 🟡 | T08 | `esteira.disco` (Configuração → Modificadores); tubo reto, trimagem sem esteira |
 | AE-08 | Efeito solo (McCormick) | ✅ | ❓ | T08 | modifier `solo.mccormick` |
 | AE-09 | Efeito solo por imagem (inclui a mesa) | ❌ | ❌ | — | modifier novo |
 | AE-10 | Esteira da hélice nas superfícies | 🟡 | ❌ | T08 | `esteira.disco`; tubo reto |
