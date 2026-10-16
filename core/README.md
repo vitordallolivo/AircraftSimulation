@@ -23,7 +23,8 @@ python -m ziglang build test -Dfuzz=200000 -Dseed=7   # fuzzing mais longo das i
 ```
 
 Opções: `-Dfast_math` (padrão `true`), `-Dstrip` (padrão: sim fora do Debug), `-Dcpu` (padrão
-`x86_64_v3` em x86, ver abaixo).
+`x86_64_v3` em x86, ver abaixo), `-Dopt` (otimizações em avaliação, desligadas por padrão: `-Dopt=peak,cse`; o que
+cada uma faz e o que se mediu está em [`OTIMIZACOES.md`](OTIMIZACOES.md)).
 
 ### Pelo Zig (módulo)
 

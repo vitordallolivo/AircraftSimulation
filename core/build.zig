@@ -6,7 +6,35 @@
 //!                                     test-sizing)
 //!   zig build test -Dfuzz=N -Dseed=S -> fuzzing mais longo das interfaces (padrão 2000 entradas por teste)
 //!   zig build -Dfast_math=false    -> troca LUT/polinômios por std.math (referência)
+//!   zig build -Dopt=peak,cse       -> otimizações em avaliação (ver core/OTIMIZACOES.md)
 const std = @import("std");
+
+/// as otimizações de `-Dopt`: nome e bit (o código lê os bits em `math/fmath.zig`, `opt_*`)
+const opt_names = .{
+    .{ "noinline", 1 }, // sincos da tabela sem inline forçado
+    .{ "floatmode", 2 }, // float mode "optimized" nas funções quentes
+    .{ "logstd", 4 }, // log da std com as tabelas
+    .{ "peak", 8 }, // peakCL por seção áurea
+    .{ "cse", 16 }, // o painel calcula sigmaStall e sincos(α) uma vez só (hoje: duas)
+    .{ "minimax", 32 }, // sin/cos por polinômio minimax, sem tabela
+    .{ "estrin", 64 }, // o polinômio do exp por Estrin no lugar do Horner
+};
+const opt_list = "noinline, floatmode, logstd, peak, cse, minimax, estrin";
+
+/// "peak,cse" -> 24; "24" -> 24; nome desconhecido para o build com a lista
+fn optBits(text: []const u8) u8 {
+    if (std.fmt.parseInt(u8, text, 10)) |n| return n else |_| {}
+    var bits: u8 = 0;
+    var it = std.mem.tokenizeAny(u8, text, ", +");
+    next: while (it.next()) |name| {
+        inline for (opt_names) |o| if (std.mem.eql(u8, name, o[0])) {
+            bits |= o[1];
+            continue :next;
+        };
+        std.debug.panic("-Dopt: '{s}' não existe; use {s} (ou a soma dos bits)", .{ name, opt_list });
+    }
+    return bits;
+}
 
 pub fn build(b: *std.Build) void {
     // x86: padrão x86-64-v3 (AVX2 + FMA). Com AVX-512 (`-Dcpu=native` em Xeon) o LLVM gera
@@ -22,6 +50,10 @@ pub fn build(b: *std.Build) void {
 
     const opts = b.addOptions();
     opts.addOption(bool, "fast_math", fast_math);
+    // otimizações em avaliação (0 = o núcleo de sempre). Por nome ou por número (a soma dos bits):
+    //   -Dopt=peak,cse   ou   -Dopt=24          (tabela e resultados: core/OTIMIZACOES.md)
+    opts.addOption(u8, "opt", optBits(b.option([]const u8, "opt", "otimizações em avaliação: nomes separados por " ++
+        "vírgula (" ++ opt_list ++ ") ou a soma dos bits (padrão: nenhuma)") orelse "0"));
     opts.addOption(usize, "fuzz_iterations", b.option(usize, "fuzz", "entradas aleatórias por teste de fuzzing (padrão 2000)") orelse 2000);
     opts.addOption(u64, "fuzz_seed", b.option(u64, "seed", "semente do fuzzing (padrão 1)") orelse 1);
 

@@ -5,6 +5,8 @@
 //!   lut.atan     tabela de 256 pontos em [0,1] (2 KB) + correção de 2ª ordem (erro ~3e-9)
 //!   lut.exp      2^k · e^r, |r| <= ln2/2, Horner de grau 10 (erro relativo ~1e-13)
 //!   lut.log      expoente + série de atanh (erro ~1e-11)
+//!   minimax      sin/cos sem tabela: redução ao quadrante + polinômios minimax (Schlör), erro ~2e-16
+//!                (`-Dopt` bit 32 põe no lugar da tabela)
 //!   ref.*        as funções da std (para comparar)
 //! As funções públicas (`sin`, `atan2`, ...) usam `lut` ou `ref` conforme `-Dfast_math`.
 //! `SinLut(bits)` é genérico em comptime: o benchmark compara tamanhos de tabela.
@@ -12,6 +14,17 @@ const std = @import("std");
 const build_options = @import("build_options");
 
 pub const fast = build_options.fast_math;
+/// otimizações em avaliação (`-Dopt`, bits; 0 = como sempre). Ver core/build.zig
+pub const opt: u8 = build_options.opt;
+pub const opt_noinline = opt & 1 != 0;
+pub const opt_floatmode = opt & 2 != 0;
+pub const opt_log_std = opt & 4 != 0;
+pub const opt_peak = opt & 8 != 0;
+pub const opt_cse = opt & 16 != 0;
+pub const opt_minimax = opt & 32 != 0;
+pub const opt_estrin = opt & 64 != 0;
+/// modo de ponto flutuante das funções quentes (`@setFloatMode(fm.float_mode)`): strict é o de sempre
+pub const float_mode: std.builtin.FloatMode = if (opt_floatmode) .optimized else .strict;
 pub const pi = std.math.pi;
 const two_pi = 2.0 * pi;
 const half_pi = 0.5 * pi;
@@ -36,7 +49,12 @@ pub fn SinLut(comptime bits: u5) type {
         };
 
         /// x = i·h + d, |d| <= h/2:  sin(x) = sin(ih) cos(d) + cos(ih) sin(d)
+        /// (inline forçado, como sempre; com `opt_noinline` o compilador decide)
         pub inline fn sincos(x: f64) SinCos {
+            return @call(if (opt_noinline) .auto else .always_inline, body, .{x});
+        }
+
+        fn body(x: f64) SinCos {
             const k = @round(x * inv_step);
             const d = @mulAdd(f64, -k, step, x);
             const ki: i64 = @intFromFloat(k);
@@ -57,7 +75,7 @@ pub const lut = struct {
     pub const Sin = SinLut(8); // 256 pontos = 2 KB (ver bench: tabelas maiores não ajudam)
 
     pub inline fn sincos(x: f64) SinCos {
-        return Sin.sincos(x);
+        return if (opt_minimax) minimax.sincos(x) else Sin.sincos(x);
     }
 
     const atan_n = 256;
@@ -94,6 +112,11 @@ pub const lut = struct {
     }
 
     pub fn exp(x: f64) f64 {
+        return expWith(opt_estrin, x);
+    }
+
+    /// e^x = 2^k · e^r; o polinômio de e^r por Horner (o de sempre) ou por Estrin (`-Dopt` bit 64)
+    pub fn expWith(comptime estrin: bool, x: f64) f64 {
         const xc = std.math.clamp(x, -700.0, 700.0);
         const k = @round(xc * (1.0 / std.math.ln2));
         const r = @mulAdd(f64, -k, std.math.ln2, xc);
@@ -107,8 +130,7 @@ pub const lut = struct {
             }
             break :blk c;
         };
-        var p: f64 = coef[10];
-        inline for (1..11) |j| p = @mulAdd(f64, p, r, coef[10 - j]);
+        const p = if (estrin) estrin10(coef, r) else horner10(coef, r);
         const ki: i64 = @intFromFloat(k);
         const bits: u64 = @bitCast(ki + 1023);
         return p * @as(f64, @bitCast(bits << 52));
@@ -161,6 +183,78 @@ pub const ref = struct {
     }
 };
 
+/// Horner: p = c0 + r(c1 + r(c2 + ...)), 10 multiplicações-somas em cadeia (cada uma espera a anterior)
+inline fn horner10(c: [11]f64, r: f64) f64 {
+    var p: f64 = c[10];
+    inline for (1..11) |j| p = @mulAdd(f64, p, r, c[10 - j]);
+    return p;
+}
+
+/// Estrin (Knuth, TAOCP v. 2, 3ª ed., §4.6.4): agrupa os termos em pares (c_2i + c_2i+1·r) e soma os pares com
+/// r², r⁴, r⁸. Mesmo polinômio, mesmas contas em número, mas a cadeia de dependência cai de 10 para 4 passos: o
+/// processador faz os pares ao mesmo tempo. Os arredondamentos mudam (resultado não é bit a bit o do Horner).
+inline fn estrin10(c: [11]f64, r: f64) f64 {
+    const r2 = r * r;
+    const r4 = r2 * r2;
+    const r8 = r4 * r4;
+    const a0 = @mulAdd(f64, c[1], r, c[0]);
+    const a1 = @mulAdd(f64, c[3], r, c[2]);
+    const a2 = @mulAdd(f64, c[5], r, c[4]);
+    const a3 = @mulAdd(f64, c[7], r, c[6]);
+    const a4 = @mulAdd(f64, c[9], r, c[8]);
+    const b0 = @mulAdd(f64, a1, r2, a0);
+    const b1 = @mulAdd(f64, a3, r2, a2);
+    const b2 = @mulAdd(f64, c[10], r2, a4);
+    return @mulAdd(f64, b2, r8, @mulAdd(f64, b1, r4, b0));
+}
+
+/// seno e cosseno sem tabela. Fonte dos coeficientes: L. Schlör, "Fast MiniMax Polynomial Approximations of Sine
+/// and Cosine", https://gist.github.com/publik-void/067f7f2fef32dbe5c27d6e215f824c91 — "Sin, rel. error minimized,
+/// degree 15" (erro relativo máx. 1,42e-16) e "Cos, rel. error minimized, degree 16" (1,76e-17), válidos no
+/// primeiro quarto de período [0, π/2]. Como os polinômios são ímpar (sin) e par (cos), valem em [−π/4, π/4].
+/// Redução: x = k·π/2 + r, |r| <= π/4 (π/2 em duas partes, Cody e Waite, para não perder dígitos em r); o
+/// quadrante k mod 4 troca seno com cosseno e o sinal: 0 (s, c), 1 (c, −s), 2 (−s, −c), 3 (−c, s).
+pub const minimax = struct {
+    const sin_c = [8]f64{
+        0.99999999999999985783856947280351013,     -0.166666666666659653164780128859839316,
+        0.00833333333327592139676057538106745659,  -0.000198412698232225093689107237380802637,
+        2.75573164212929639596445204076151988e-6,  -2.5051870883490902518590017165648945e-8,
+        1.6047844633018114428263064708844387e-10, -7.37066278281678179293546235379257048e-13,
+    };
+    const cos_c = [9]f64{
+        0.99999999999999998243004448007448662,       -0.499999999999999105881272803474436268,
+        0.041666666666658914344068844317924505,      -0.00138888888886231429175747130897185107,
+        0.0000248015872549765577961155967511699095, -2.75573145508960795189972565635584642e-7,
+        2.08764776731016710219609723288490596e-9,    -1.14608862231521440480830153964369191e-11,
+        4.58927688754481747776178904291483144e-14,
+    };
+    // π/2 = hi + lo: hi é o f64 mais próximo, lo o resto (k·hi é exato para |k| < 2^20)
+    const half_pi_hi: f64 = half_pi;
+    const half_pi_lo: f64 = 6.123233995736766e-17;
+
+    pub fn sincos(x: f64) SinCos {
+        const k = @round(x * (2.0 / pi));
+        const r = @mulAdd(f64, -k, half_pi_lo, @mulAdd(f64, -k, half_pi_hi, x));
+        const r2 = r * r;
+        var ps: f64 = sin_c[7];
+        inline for (1..8) |j| ps = @mulAdd(f64, ps, r2, sin_c[7 - j]);
+        var pc: f64 = cos_c[8];
+        inline for (1..9) |j| pc = @mulAdd(f64, pc, r2, cos_c[8 - j]);
+        const s = r * ps;
+        // quadrante sem desvio (com entradas aleatórias o desvio erra a previsão): máscaras sobre os bits
+        const ki: i64 = @intFromFloat(k);
+        const q: u64 = @bitCast(ki);
+        const swap: u64 = 0 -% (q & 1); // quadrantes 1 e 3: seno ↔ cosseno (tudo 1 ou tudo 0)
+        const sb: u64 = @bitCast(s);
+        const cb: u64 = @bitCast(pc);
+        const a = (sb & ~swap) | (cb & swap);
+        const b = (cb & ~swap) | (sb & swap);
+        const neg_s = (q >> 1 & 1) << 63; // sinal do seno: negativo nos quadrantes 2 e 3
+        const neg_c = ((q ^ (q >> 1)) & 1) << 63; // sinal do cosseno: negativo nos quadrantes 1 e 2
+        return .{ .s = @bitCast(a ^ neg_s), .c = @bitCast(b ^ neg_c) };
+    }
+};
+
 const impl = if (fast) lut else ref;
 
 pub inline fn sincos(x: f64) SinCos {
@@ -194,11 +288,12 @@ pub fn exp(x: f64) f64 {
     return impl.exp(x);
 }
 pub fn log(x: f64) f64 {
+    if (opt_log_std) return ref.log(x); // no bench, o log da tabela é mais lento que o da std
     return impl.log(x);
 }
 pub fn pow(x: f64, y: f64) f64 {
     if (!fast) return std.math.pow(f64, x, y);
-    return lut.exp(y * lut.log(x));
+    return lut.exp(y * (if (opt_log_std) ref.log(x) else lut.log(x)));
 }
 pub fn tanh(x: f64) f64 {
     return impl.tanh(x);

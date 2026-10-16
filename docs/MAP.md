@@ -265,7 +265,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
-  fn `math:70`, `dynamics:86`
+  fn `math:80`, `dynamics:98`
 - `core/src/lib.zig` — O núcleo como módulo Zig (para programas em Zig, como o aerodrive): os mesmos tipos e funções
 - `core/src/limits.zig` — Limites de compilação. Toda a memória do núcleo é estática e dimensionada aqui:
 - `core/src/root.zig` — Interface C ABI do núcleo (o que o Python chama via ctypes).
@@ -304,8 +304,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/math/**
 
 - `core/src/math/fmath.zig` — Funções matemáticas: tabelas (LUT) + aproximações polinomiais, e a referência da std.
-  tipos `SinCos:19`, `lut:56`, `ref:143`
-  fn `SinLut:22`, `sincos:166`, `sin:169`, `cos:172`, `tan:175`, `atan:179`, `atan2:182`, `asin:185`, `acos:189`, `exp:193`, `log:196`, `pow:199`, `tanh:203`, `sqrt:206`, `hypot:209`, `sat:214`, `lim:217`, `sgn:220`, `wrap:223`
+  tipos `SinCos:32`, `lut:74`, `ref:165`, `minimax:217`
+  fn `SinLut:35`, `sincos:260`, `sin:263`, `cos:266`, `tan:269`, `atan:273`, `atan2:276`, `asin:279`, `acos:283`, `exp:287`, `log:290`, `pow:294`, `tanh:298`, `sqrt:301`, `hypot:304`, `sat:309`, `lim:312`, `sgn:315`, `wrap:318`
 - `core/src/math/fmath_test.zig` — Testes só das LUTs e aproximações (independentes de -Dfast_math: comparam `lut` com `ref`).
 - `core/src/math/poly.zig` — Polinômio em duas variáveis de grau N gerado em comptime, na ordem dos ajustes do MATLAB
   fn `Poly2:9`
@@ -329,7 +329,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/physics/aero.zig` — Aerodinâmica por componentes.
   tipos `Out:17`
-  fn `sigmaStall:27`, `init:47`, `compute:80`, `computeEnv:85`, `computeTrace:90`, `coeffs:162`, `coeffsEx:167`, `coeffsEnv:172`
+  fn `sigmaStall:27`, `init:90`, `compute:123`, `computeEnv:128`, `computeTrace:133`, `coeffs:208`, `coeffsEx:213`, `coeffsEnv:218`
 - `core/src/physics/atmosphere.zig` — Vento 3D numa direção (perfil 1/7 com a altura) e rajada 1-cos.
   fn `wind:8`
 - `core/src/physics/gear.zig` — Trem de pouso: N pontos de contato (triciclo, convencional, patins...).
@@ -340,7 +340,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `initTanks:16`, `compute:55`, `slosh:104`, `payload:133`
 - `core/src/physics/propulsion.zig` — K unidades propulsoras: hélice por tabela C_T(J), C_P(J) + motor BLDC + bateria.
   tipos `Unit:15`, `Out:26`
-  fn `init:39`, `polyRaw:94`, `tiltNow:111`, `axis:118`, `unit:125`, `compute:147`, `equilibriumRps:185`, `point:214`
+  fn `init:39`, `polyRaw:95`, `tiltNow:112`, `axis:119`, `unit:126`, `compute:149`, `equilibriumRps:187`, `point:217`
 - `core/src/physics/terrain.zig` — Terreno: chão plano (h = 0) com mesas/plataformas retangulares elevadas.
   fn `height:9`
 
@@ -583,11 +583,13 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tools/codemap.py` — Mapa do código: gera docs/MAP.md a partir do próprio código (nunca editar o MAP.md à mão).
 - `tools/load_view.py` — Vista 3D da carga aerodinâmica de um avião num ponto de operação: as superfícies pintadas pela carga alar local
 - `tools/modcheck.py` — Roda um avião com os modificadores dele e sem cada um (um de cada vez) e mostra a diferença na decolagem.
+- `tools/opt_matrix.py` — Mapa das otimizações em avaliação do núcleo (`-Dopt`): compila cada combinação, mede e compara os resultados
 - `tools/plot_comparativo.py` — Figuras das abas Aerodinâmica e Estabilidade (PNG), iguais ao que a GUI mostra.
 - `tools/probe.py` — Sonda dos modificadores pela linha de comando: chama o módulo do núcleo (core/src/modifiers/) direto, sem
 - `tools/span_load.py` — Carga ao longo das superfícies (asa, EH, EV) num ponto de operação — velocidade, α e rotação dos motores — com e
 - `tools/sprint_pasta.py` — Exemplo: converte um projeto da sprint antigo (um .json só) para a pasta nova, um arquivo por asa.
 - `tools/sprint_tres_caudas.py` — Exemplo: uma asa só com três opções de superfícies, no formato de pasta (um arquivo por asa).
+- `tools/time_profile.py` — Perfil de tempo: onde uma análise gasta o tempo, no Python e no núcleo Zig ao mesmo tempo.
 - `tools/checks/doc_checks.py` — Documentação: o mapa do código (docs/MAP.md) tem de estar em dia com o código.
 - `tools/checks/golden.py` — Regressão bit a bit: retrata os aviões de exemplo no código atual e numa referência (um commit, padrão a `main`)
 - `tools/checks/pytest_checks.py` — Os testes Python por área: uma pasta de `tests/` por check, para saber qual área quebrou e quanto cada uma demora.
@@ -607,6 +609,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/model` — 47 testes em 8 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)
 - `tests/test_architecture.py` — 4 testes em 1 arquivo(s)
+- `tests/tools` — 12 testes em 2 arquivo(s)
 
 ## README por pasta
 

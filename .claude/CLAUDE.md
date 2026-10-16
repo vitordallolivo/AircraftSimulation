@@ -120,6 +120,8 @@ python tools/checks/run.py                       # checks rápidos; --tudo inclu
 cd core && python -m ziglang build test          # testes do núcleo (test-math, test-physics, test-sim...)
 cd aerodrive && python -m ziglang build test     # testes do AeroDrive; build run abre o jogo
 QT_QPA_PLATFORM=offscreen python -m pytest -q tests/<área>
+python tools/time_profile.py loads --exato       # perfil: flame graph, tabela por função e por módulo (perfis/)
+python tools/opt_matrix.py --instrucoes          # combinações de -Dopt por instruções (Callgrind); sem a flag, tempo
 python -m aerosim.gui [arquivo ou pasta]         # a GUI
 xvfb-run -a python tools/load_view.py <avião> --png x.png   # imagem da vista 3D sem tela
 ```
@@ -148,6 +150,7 @@ O container começa sem as dependências, e tudo o que se instala some quando el
 | Testes Python (`tests/`), `tools/checks`, a GUI | `pip install -r requirements.txt -r requirements-aero.txt pytest` |
 | Testes de GUI e de aero (Qt/pyqtgraph sem tela) | `apt-get install -y libegl1 libgl1 libxkbcommon0` |
 | AeroDrive (`zig build`: raylib) | `apt-get install -y libgl-dev libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libxext-dev`, mais as dependências do Zig (abaixo) |
+| Perfil e mapa de otimizações (`tools/time_profile.py`, `tools/opt_matrix.py`) | `pip install py-spy`; `apt-get install -y valgrind` (o `--exato` e o `--instrucoes`) |
 | Prints com 3D (`xvfb-run`) | `apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0 libgl1-mesa-dri` (o `xvfb-run` já vem no container) |
 
 **Dependências do AeroDrive pelo `git`** (o `zig fetch` não passa pelo proxy da sessão). Numa pasta fora do

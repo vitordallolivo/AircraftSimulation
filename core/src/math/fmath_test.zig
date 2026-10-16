@@ -65,3 +65,35 @@ test "tanh" {
     var x: f64 = -25.0;
     while (x < 25.0) : (x += 0.0113) try testing.expectApproxEqAbs(std.math.tanh(x), fm.lut.tanh(x), 1e-12);
 }
+
+test "minimax sin/cos (Schlör, graus 15 e 16): erro < 1e-15 em ±50 rad, quadrantes e simetria" {
+    var x: f64 = -50.0;
+    while (x < 50.0) : (x += 0.00731) {
+        const a = fm.minimax.sincos(x);
+        try testing.expectApproxEqAbs(@sin(x), a.s, 1e-15);
+        try testing.expectApproxEqAbs(@cos(x), a.c, 1e-15);
+    }
+    // nos múltiplos de π/2 o quadrante troca seno e cosseno e o sinal
+    inline for (.{ 0.0, 1.0, 2.0, 3.0, 4.0, -1.0, -2.0, -3.0 }) |k| {
+        const v = k * std.math.pi / 2.0;
+        try testing.expectApproxEqAbs(@sin(v), fm.minimax.sincos(v).s, 1e-15);
+        try testing.expectApproxEqAbs(@cos(v), fm.minimax.sincos(v).c, 1e-15);
+    }
+    const y = 0.3712;
+    try testing.expectEqual(-fm.minimax.sincos(y).s, fm.minimax.sincos(-y).s);
+    try testing.expectEqual(fm.minimax.sincos(y).c, fm.minimax.sincos(-y).c);
+}
+
+test "minimax sin no primeiro quarto: erro relativo no limite do gist (1,42e-16, mais o arredondamento)" {
+    var x: f64 = 1e-6;
+    while (x < std.math.pi / 4.0) : (x += 0.000917) try testing.expectApproxEqRel(@sin(x), fm.minimax.sincos(x).s, 4e-16);
+}
+
+test "exp por Estrin: erro relativo < 1e-12 e perto do Horner (só o arredondamento muda)" {
+    var x: f64 = -200.0;
+    while (x < 200.0) : (x += 0.173) {
+        const e = fm.lut.expWith(true, x);
+        try testing.expectApproxEqRel(@exp(x), e, 1e-12);
+        try testing.expectApproxEqRel(fm.lut.expWith(false, x), e, 1e-15);
+    }
+}
