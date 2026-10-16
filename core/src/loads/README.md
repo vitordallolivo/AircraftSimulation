@@ -46,6 +46,15 @@ da mesma superfície (mesmo grupo, como as duas meias asas) entram só as pernas
 segmentos ligados das outras ferraduras. Numa quebra de diedro, o segmento da outra meia asa passa a milímetros do
 ponto de controle e cria um pico na raiz que depende da discretização: com 3° de diedro, +3 %. Esse pico tem teste.
 
+**Núcleo dos vórtices entre superfícies:** usa o modelo de Scully (Vatistas, Kozel e Mih, *A simpler model for
+concentrated vortices*, Experiments in Fluids 11, 1991, n = 1): `h² → h² + rc²`, com `rc = 0,1 c` de quem solta o
+vórtice.
+- Sem ele, a perna da raiz de uma EV que encosta na EH passa a milímetros dos pontos de controle da EH. No S1223 com
+  hélice, isso dava 108 m/s induzidos e α de −93° na EH; no Convencional, uma EV com 7,8 N de força lateral falsa.
+- Entre 0,05 e 0,25 da corda o resultado quase não muda.
+- Dentro da mesma superfície não há núcleo: a queda na ponta depende das pernas das faixas vizinhas, que são mais
+  estreitas que qualquer núcleo dessa ordem. Um núcleo de 0,05 c ali levava a ponta da asa de 9 para 54 N/m.
+
 ## Limites conhecidos
 
 - **Linear:** c_l = a(α − α0), sem estol. Perto do C_Lmax, a carga real é menor.
@@ -70,3 +79,6 @@ ponto de controle e cria um pico na raiz que depende da discretização: com 3°
 - Na asa retangular, a ponta fica descarregada, a carga é simétrica e o C_L fica a menos de 6 % de Helmbold. Com
   alongamento menor, o C_L também é menor.
 - Com diedro, não aparece pico na raiz.
+- Núcleo de Scully: finito em cima da linha e metade do valor sem núcleo a h = rc.
+- Cauda em T: o painel da EH ao lado da raiz da EV não salta. Sem o núcleo, esse painel dá 5 vezes a carga dos
+  vizinhos, e o teste falha.

@@ -21,6 +21,7 @@
 //! somam também os segmentos ligados das outras ferraduras; numa quebra de diedro o segmento da outra meia asa passa a
 //! milímetros do ponto de controle e dá um pico na raiz que depende da discretização (3° de diedro: +3 % na raiz).
 //! Entre superfícies diferentes (asa → EH) entram as ferraduras inteiras.
+//! Entre superfícies diferentes os vórtices têm núcleo de Scully (raio 0,1 c de quem solta; ver `core_frac`).
 //! a_i: inclinação 2D tirada do C_Lα 3D do núcleo invertendo Helmbold (o tradutor fez C_Lα = helmbold(a, AR)):
 //!     C_Lα = a/(√(1+k²)+k), k = a/(πAR)   ⇒   a = C_Lα / √(1 − 2 C_Lα/(πAR))
 const std = @import("std");
@@ -32,6 +33,12 @@ const V3 = vec.V3;
 
 const n_max = L.max_surfaces;
 const far = 1e3; // comprimento das pernas (m): "infinito" para aviões deste tamanho
+/// núcleo dos vórtices entre superfícies diferentes, em fração da corda de quem solta (Scully; Vatistas, Kozel e Mih,
+/// "A simpler model for concentrated vortices", Experiments in Fluids 11, 1991, n = 1). Sem ele, a perna da raiz de
+/// uma EV que encosta na EH passa a milímetros dos pontos de controle da EH e induz dezenas de m/s (1/h). Entre
+/// 0,05 e 0,25 da corda o resultado quase não muda; dentro da mesma superfície não há núcleo (a queda na ponta depende
+/// das pernas das faixas vizinhas, mais estreitas que qualquer núcleo dessa ordem)
+const core_frac = 0.1;
 
 /// inclinação 2D a partir do C_Lα 3D (Helmbold invertido); sem solução (asa muito curta): 2π
 pub fn sectionSlope(CLa: f64, AR: f64) f64 {
@@ -41,26 +48,27 @@ pub fn sectionSlope(CLa: f64, AR: f64) f64 {
 }
 
 /// velocidade induzida em P por um segmento de vórtice reto de A a B com Γ = 1 (Katz e Plotkin, cap. 10)
-pub fn segment(P: V3, A: V3, B: V3) V3 {
+pub fn segment(P: V3, A: V3, B: V3, rc: f64) V3 {
     const r1 = P - A;
     const r2 = P - B;
     const c = vec.cross(r1, r2);
-    const c2 = vec.dot(c, c);
+    const r0 = B - A;
+    // |r1 × r2| = h |r0| (h: distância à linha); núcleo de Scully: h² → h² + rc²
+    const c2 = vec.dot(c, c) + rc * rc * vec.dot(r0, r0);
     const n1 = vec.norm(r1);
     const n2 = vec.norm(r2);
     if (c2 < 1e-12 or n1 < 1e-9 or n2 < 1e-9) return vec.zero; // em cima da linha do vórtice
-    const r0 = B - A;
     const k = vec.dot(r0, r1 / vec.splat(n1) - r2 / vec.splat(n2)) / (4.0 * fm.pi * c2);
     return c * vec.splat(k);
 }
 
 /// ferradura: perna de longe até A, A → B, B até longe (pernas ao longo de `u`, para onde o ar vai).
 /// `bound` = false: só as pernas (painéis da mesma superfície; ver `apply`)
-pub fn horseshoe(P: V3, A: V3, B: V3, u: V3, bound: bool) V3 {
+pub fn horseshoe(P: V3, A: V3, B: V3, u: V3, bound: bool, rc: f64) V3 {
     const Af = A + u * vec.splat(far);
     const Bf = B + u * vec.splat(far);
-    const legs = segment(P, Af, A) + segment(P, B, Bf);
-    return if (bound) legs + segment(P, A, B) else legs;
+    const legs = segment(P, Af, A, rc) + segment(P, B, Bf, rc);
+    return if (bound) legs + segment(P, A, B, rc) else legs;
 }
 
 fn span(ps: *const T.PanelState, ez: V3) struct { A: V3, B: V3, d: V3 } {
@@ -106,7 +114,7 @@ pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
         for (0..n) |j| {
             if (!used_geom(ps, j)) continue;
             const g = span(&ps[j], vec.v3(p.surf[j].ez));
-            A[i][j] += k_i[i] * vec.dot(horseshoe(P, g.A, g.B, u, ps[j].group != q.group), ez);
+            A[i][j] += k_i[i] * vec.dot(horseshoe(P, g.A, g.B, u, ps[j].group != q.group, if (ps[j].group != q.group) core_frac * ps[j].c else 0), ez);
         }
     }
     var G: [n_max]f64 = undefined;
@@ -124,7 +132,7 @@ pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
         for (0..n) |j| {
             if (!used[j]) continue;
             const g = span(&ps[j], vec.v3(p.surf[j].ez));
-            w += horseshoe(P, g.A, g.B, u, ps[j].group != q.group) * vec.splat(G[j]);
+            w += horseshoe(P, g.A, g.B, u, ps[j].group != q.group, if (ps[j].group != q.group) core_frac * ps[j].c else 0) * vec.splat(G[j]);
         }
         const v = vec.v3(q.v) - w; // velocidade do painel em relação ao ar, com a induzida
         const uu = vec.dot(v, ex);
@@ -201,7 +209,7 @@ test "Helmbold invertido volta ao a do perfil" {
 }
 
 test "segmento: vórtice infinito dá Γ/(2πh)" {
-    const v = segment(.{ 0, 0, 1 }, .{ -1e5, 0, 0 }, .{ 1e5, 0, 0 });
+    const v = segment(.{ 0, 0, 1 }, .{ -1e5, 0, 0 }, .{ 1e5, 0, 0 }, 0);
     try testing.expectApproxEqRel(1.0 / (2.0 * fm.pi), vec.norm(v), 1e-6);
 }
 
@@ -259,4 +267,40 @@ test "diedro: sem pico na raiz (a linha não induz nela mesma)" {
     _ = apply(&p, .{ V * @cos(al), 0, V * @sin(al) }, vec.zero, ps[0..40]);
     // a carga cresce da ponta até a raiz sem saltar no meio
     try testing.expect(ps[19].L <= ps[18].L * 1.005);
+}
+
+test "núcleo de Scully: finito na linha, metade do valor sem núcleo a h = rc" {
+    const A = V3{ -1e5, 0, 0 };
+    const B = V3{ 1e5, 0, 0 };
+    const rc = 0.02;
+    try testing.expectApproxEqAbs(@as(f64, 0), vec.norm(segment(.{ 0, 0, 1e-9 }, A, B, rc)), 1e-3);
+    const free = vec.norm(segment(.{ 0, 0, rc }, A, B, 0));
+    try testing.expectApproxEqRel(0.5 * free, vec.norm(segment(.{ 0, 0, rc }, A, B, rc)), 1e-6);
+}
+
+test "cauda em T: a perna da raiz da EV não explode na EH" {
+    var p = T.Params{};
+    var ps: [30]T.PanelState = undefined;
+    const al = 0.05;
+    const V = 12.0;
+    rectWing(&p, &ps, 20, 0.8, 0.2, 2 * fm.pi, V, al); // EH em z = 0
+    for (0..20) |i| ps[i].group = 1;
+    // EV: 10 painéis de z = 0 até 0,3 m para cima, raiz em cima da EH, em x = 0, a 2 mm do ponto de controle de um
+    // painel da EH (como nos aviões com a EV encostada na EH); com β para ter carga
+    const h = 0.03;
+    for (20..30) |i| {
+        const k: f64 = @floatFromInt(i - 20);
+        p.surf[i] = p.surf[0];
+        p.surf[i].ez = .{ 0, 1, 0 };
+        p.surf[i].S = h * 0.2;
+        ps[i] = ps[0];
+        ps[i].group = 2;
+        ps[i].S = h * 0.2;
+        ps[i].r = .{ 0, ps[10].r[1] + 0.002, -(k + 0.5) * h };
+        ps[i].v = .{ V * @cos(al), V * 0.15, V * @sin(al) };
+    }
+    p.n_surf = 30;
+    _ = apply(&p, .{ V * @cos(al), 0, V * @sin(al) }, vec.zero, ps[0..30]);
+    // o painel da EH ao lado da raiz da EV não salta (sem núcleo: 5× os vizinhos)
+    try testing.expect(ps[10].L < 1.5 * @max(ps[9].L, ps[11].L));
 }
