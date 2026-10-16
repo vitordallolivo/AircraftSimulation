@@ -212,6 +212,27 @@ def time_series(T: LogChunk, ev: dict, legs: list[str], refs: dict) -> dict:
     return S
 
 
+def cg_series(T: LogChunk, ev: dict, legs: list[str], mac_le: float, mac_c: float, np_pct: float,
+              sm_min: float = 5.0, sm_max: float = 15.0) -> dict:
+    """passeio do CG ao longo do voo (soltura da carga, consumo do líquido) em % da CMA e a margem estática
+    ME = x_PN − x_CG (% CMA), com o ponto neutro de manche fixo fixo no voo. Faixa recomendada: ME entre sm_min e
+    sm_max (padrões da aba Estabilidade)"""
+    if not len(T) or "xcg" not in T.columns or mac_c <= 0:
+        return {}
+    t = _col(T, "t")
+    cg = 100.0 * (mac_le - np.asarray(T["xcg"], float)) / mac_c
+    S = stage_spans(T, ev, legs, "cgp_")
+    S["cgp_x_CG"] = {"t": t, "y": cg, "_color": "#d62728", "_width": 2}
+    S["cgp_ponto neutro"] = {"_hline": np_pct, "_color": "#000000", "_dash": "dash"}
+    S[f"cgp_limite traseiro (ME {sm_min:g} %)"] = {"_hline": np_pct - sm_min, "_color": "#d62728", "_dash": "dot"}
+    S[f"cgp_ME {sm_max:g} %"] = {"_hline": np_pct - sm_max, "_color": "#7f7f7f", "_dash": "dot"}
+    S.update(stage_spans(T, ev, legs, "mem_"))
+    S["mem_margem estática"] = {"t": t, "y": np_pct - cg, "_color": "#1f77b4", "_width": 2}
+    S[f"mem_mínima ({sm_min:g} %)"] = {"_hline": sm_min, "_color": "#d62728", "_dash": "dot"}
+    S[f"mem_máxima recomendada ({sm_max:g} %)"] = {"_hline": sm_max, "_color": "#7f7f7f", "_dash": "dot"}
+    return S
+
+
 def takeoff_window(T: LogChunk, ev: dict, refs: dict, airfield=None) -> dict:
     """decolagem com a posição na pista no eixo x: altura e folga da cauda, velocidades, ângulos,
     comandos, reações no trem (molas e o modelo do artigo), momentos do trem; com as marcas do
@@ -419,9 +440,10 @@ def aircraft_glyphs(T: LogChunk, ev: dict, leg_names: list[str], step: float, sp
 
 # ------------------------------------------------------------------ bateria por etapa
 def battery_by_stage(T: LogChunk, ev: dict, leg_names: list[str], capacity_mAh: float, peukert_n: float = 1.05,
-                     Rt_h: float = 1.0) -> tuple[list[dict], dict]:
+                     Rt_h: float = 1.0, I_max_A: float = 0.0) -> tuple[list[dict], dict]:
     """tempo, corrente média, consumo (mAh), descarga e SOC por etapa (Coulomb e Peukert, Traub 2011);
-    o SOC começa em 100 % e cai. Devolve (linhas da tabela, séries dos gráficos)"""
+    o SOC começa em 100 % e cai. I_max_A > 0: a corrente contínua máxima da bateria (C × capacidade) entra como
+    linha no gráfico da corrente e cada etapa ganha a corrente de pico. Devolve (linhas da tabela, séries)"""
     if not len(T) or "Ibat" not in T.columns:
         return [], {}
     t = np.asarray(T["t"], float)
@@ -443,9 +465,11 @@ def battery_by_stage(T: LogChunk, ev: dict, leg_names: list[str], capacity_mAh: 
         dur = float(dt[s].sum())
         q = float((I[s] * dt[s]).sum() / 3.6)
         rows.append(dict(etapa=names[k], tempo_s=dur, corrente_media_A=q * 3.6 / dur if dur > 0 else 0.0,
+                         corrente_pico_A=float(I[s].max()),
                          consumo_mAh=q, descarga_peukert_pct=float(np.sum(np.where(np.isfinite(tI[s]), dt[s] / tI[s], 0)) * 100),
                          soc_fim_pct=float(100.0 - pk[np.flatnonzero(s)[-1]])))
     rows.append(dict(etapa="total", tempo_s=float(dt.sum()), corrente_media_A=float((I * dt).sum() / max(dt.sum(), 1e-9)),
+                     corrente_pico_A=float(I.max()),
                      consumo_mAh=float(mAh[-1]), descarga_peukert_pct=float(pk[-1]), soc_fim_pct=float(100.0 - pk[-1])))
     S = stage_spans(T, ev, leg_names, "bat_")
     S["bat_consumo"] = {"t": t, "y": mAh, "_color": "#1f77b4", "_width": 2.2}
@@ -455,6 +479,8 @@ def battery_by_stage(T: LogChunk, ev: dict, leg_names: list[str], capacity_mAh: 
     S2["batp_SOC Peukert"] = {"t": t, "y": 100.0 - pk, "_color": "#d62728", "_width": 2.4}
     S2["batp_reserva 20 %"] = {"_hline": 20.0, "_color": "#d62728", "_dash": "dot"}
     S2["batp_$I$ (A)"] = {"t": t, "y": I, "_color": "#7f7f7f", "_width": 1}
+    if I_max_A > 0:
+        S2[f"batp_$I$ máx. contínua ({I_max_A:.0f} A)"] = {"_hline": I_max_A, "_color": "#7f7f7f", "_dash": "dash"}
     S.update(S2)
     return rows, S
 

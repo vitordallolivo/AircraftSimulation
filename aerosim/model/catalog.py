@@ -39,6 +39,12 @@ class Battery:
     capacity_mAh: float = 5000.0
     mass: float = 0.8
     source: str = ""
+    C_rating: float = 0.0          # descarga contínua máxima (C, do fabricante); 0: não informado
+
+    @property
+    def I_max_A(self) -> float:
+        """corrente contínua máxima = C × capacidade (A); 0 se o C não foi informado"""
+        return self.C_rating * self.capacity_mAh / 1000.0
 
     @property
     def Voc(self) -> float:

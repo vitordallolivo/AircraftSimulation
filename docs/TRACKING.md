@@ -50,13 +50,13 @@ Como usar:
 | Versão | Milestone | Subversões | Fecha quando |
 |---|---|---|---|
 | **0.1** | Fundação firme | 0.1.1 testes de regressão em `tools/checks` (comparação bit a bit, núcleo, AeroDrive, testes por área) · 0.1.2 rodar e corrigir o que quebrou · 0.1.3 conferir os ❓ · 0.1.4 pilha de branches mesclada | pilha na `main` com os checks verdes |
-| **0.2** | Análises simples (cálculos e plots) | 0.2.1 E&C: ME × xCG com ênfase, passeio do CG · 0.2.2 E&C: vento e sloshing nos polos · 0.2.3 Desempenho: curvas com fator de carga · 0.2.4 consumo por fase, C-rate da bateria | os itens na GUI |
+| **0.2** | Análises simples (cálculos e plots) | 0.2.1 passeio do CG e ME no tempo · 0.2.2 curvas com fator de carga · 0.2.3 C-rate × corrente de pico | os itens na GUI |
 | **0.3** | Aero completo na GUI | 0.3.1 trimagem com esteira, tubo desviado · 0.3.2 distribuição a α (início do estol) · 0.3.3 Reynolds no núcleo · 0.3.4 arrasto por componente | os itens na GUI |
 | **0.4** | Cargas I | 0.4.1 aba Cargas (3D + gráficos) · 0.4.2 casos do V-n · 0.4.3 rajada · 0.4.4 cortante, fletor e torsor | esforços por caso na GUI |
 | **0.5** | Cargas II + Elétrica | 0.5.1 manobras dinâmicas · 0.5.2 momentos de dobradiça · 0.5.3 cargas no solo · 0.5.4 servos e cabos | dobradiça → servo na GUI |
 | **0.6** | Estruturas (do zero) | 0.6.1 arquitetura + materiais · 0.6.2 longarina · 0.6.3 tubo de cauda · 0.6.4 trem | longarina na GUI |
 | **0.7** | Aeroelasticidade estática | 0.7.1 rigidez e centro elástico · 0.7.2 divergência · 0.7.3 reversão · 0.7.4 diedro elástico em E&C | os itens na GUI |
-| **0.8** | Incerteza e atmosfera | 0.8.1 paralelismo no núcleo · 0.8.2 Monte Carlo e sensibilidade · 0.8.3 turbulência Dryden · 0.8.4 vento cruzado na decolagem | os itens na GUI |
+| **0.8** | Incerteza e atmosfera | 0.8.1 paralelismo no núcleo · 0.8.2 Monte Carlo e sensibilidade · 0.8.3 turbulência Dryden · 0.8.4 vento cruzado na decolagem · 0.8.5 polos com vento e sloshing | os itens na GUI |
 | **0.9** | Fechamento | 0.9.1 modos e flutter · 0.9.2 aba de controle · 0.9.3 caixa, montagem e desmontagem · 0.9.4 comparação com ensaio e voo real | todo o escopo 1.0 ✅ |
 | **1.0** | Castelo pronto | — | — |
 
@@ -83,14 +83,14 @@ Tipos de tarefa:
 
 | ID | Tarefa | Tipo | Depende de | Milestone | Estado |
 |---|---|---|---|---|---|
-| T00 | Checks de regressão em `tools/checks` (comparação bit a bit contra uma ref, núcleo, AeroDrive, testes por área) | [novo] | — | 0.1.1 | Fazendo |
+| T00 | Checks de regressão em `tools/checks` (comparação bit a bit contra uma ref, núcleo, AeroDrive, testes por área) | [novo] | — | 0.1.1 | Feito |
 | T01 | Conferir os ❓ | leitura | — | 0.1.3 | Feito |
-| T02 | Rodar os checks na pilha e corrigir | [ext] | T00 | 0.1.2 | Bloqueado |
-| T03 | PRs da pilha para a `main` | git | T02 | 0.1.4 | Bloqueado |
-| T04 | E&C: ME × xCG com ênfase, passeio do CG (o limite pela rotação já existe) | [ext] | — | 0.2.1 | Pronto |
-| T05 | E&C: polos com vento e com sloshing | [ext] | — | 0.2.2 | Pronto |
-| T06 | Curvas com fator de carga (planeio e pouso já existem) | [ext] | — | 0.2.3 | Pronto |
-| T07 | Consumo por fase, C-rate × pico | [ext] | — | 0.2.4 | Pronto |
+| T02 | Rodar os checks na pilha e corrigir | [ext] | T00 | 0.1.2 | Feito (tudo verde, nada a corrigir) |
+| T03 | PRs da pilha para a `main` | git | T02 | 0.1.4 | Pronto (espera o ok do dono) |
+| T04 | E&C: ME × xCG com ênfase, passeio do CG (o limite pela rotação já existe) | [ext] | — | 0.2.1 | Feito |
+| T05 | E&C: polos com vento e com sloshing (estender a linearização no Zig: hoje o líquido é congelado; vento constante não muda os polos, o efeito é a turbulência) | [ext] | T30 | 0.8.5 | Bloqueado |
+| T06 | Curvas com fator de carga (planeio e pouso já existem) | [ext] | — | 0.2.2 | Pronto |
+| T07 | C-rate × corrente de pico (o consumo por etapa já existia) | [ext] | — | 0.2.3 | Feito |
 | T08 | Esteira: trimagem com esteira e tubo desviado (ligar já existe na GUI) | [ext] | — | 0.3.1 | Pronto |
 | T09 | Distribuição a α na aba Aerodinâmica | [GUI] | — | 0.3.2 | Pronto |
 | T10 | Reynolds no núcleo (tabela por Re) | [ext] | — | 0.3.3 | Pronto |
@@ -165,7 +165,7 @@ Legenda das colunas **Código** e **GUI**:
 | DE-10 | Curvas com fator de carga | 🟡 | 🟡 | T06 | |
 | DE-11 | Planeio | ✅ | ✅ | — | Desempenho → Planeio |
 | DE-12 | Pouso | ✅ | ✅ | — | etapa "pouso" da Missão; `landingRun` no sizing |
-| DE-13 | Consumo por fase de voo | 🟡 | 🟡 | T07 | |
+| DE-13 | Consumo por fase de voo | ✅ | ✅ | — | Missão: consumo por etapa (com corrente de pico) |
 | DE-15 | Monte Carlo e sensibilidade | ❌ | ❌ | T29 | |
 | DE-16 | Turbulência contínua | ❌ | ❌ | T30 | |
 
@@ -177,8 +177,8 @@ pista) é ajuste de interface e está em "Fora da conta".
 | ID | Tópico | Código | GUI | Tarefa | Onde / observação |
 |---|---|---|---|---|---|
 | EC-01 | Estática longitudinal (PN, ME) | ✅ | ✅ | — | |
-| EC-02 | ME × xCG com ênfase | 🟡 | 🟡 | T04 | |
-| EC-03 | Passeio do CG (LAPES, líquido) | 🟡 | 🟡 | T04 | |
+| EC-02 | ME × xCG com ênfase | ✅ | ✅ | — | Estabilidade (ME × xCG) + Missão (ME no tempo) |
+| EC-03 | Passeio do CG (LAPES, líquido) | ✅ | ✅ | — | Missão: passeio do CG e ME ao longo do voo |
 | EC-04 | Limite dianteiro do CG pela rotação | ✅ | ✅ | — | Estabilidade: "decola rodando sobre o trem" |
 | EC-05 | Diagrama tesoura | ✅ | ✅ | — | |
 | EC-06 | Trimagem | ✅ | ✅ | — | |
@@ -229,7 +229,7 @@ pista) é ajuste de interface e está em "Fora da conta".
 
 | ID | Tópico | Código | GUI | Tarefa |
 |---|---|---|---|---|
-| EL-01 | C-rate × corrente de pico | 🟡 | ❌ | T07 |
+| EL-01 | C-rate × corrente de pico | ✅ | ✅ | — |
 | EL-02 | Torque de servos | ❌ | ❌ | T19 |
 | EL-03 | Bateria dos servos, cabos | ❌ | ❌ | T19 |
 
@@ -293,15 +293,15 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 | Seção | ✅ na GUI / itens |
 |---|---|
 | 1. Aerodinâmica | 6 / 13 |
-| 2. Desempenho | 6 / 14 |
-| 3. Estabilidade e Controle | 10 / 16 |
+| 2. Desempenho | 7 / 14 |
+| 3. Estabilidade e Controle | 12 / 16 |
 | 4. Cargas | 0 / 8 |
 | 5. Aeroelasticidade | 0 / 4 |
 | 6. Estruturas | 1 / 5 |
-| 7. Elétrica | 0 / 3 |
+| 7. Elétrica | 1 / 3 |
 | 8. Integração | 6 / 8 |
 | 9. Controle | 1 / 2 |
-| **Total** | **30 / 73 (41 %)** |
+| **Total** | **34 / 73 (47 %)** |
 
 ---
 
@@ -316,5 +316,5 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
 **Situação atual das branches** (em relação à `main`)
 - A pilha `feature/sprint` → `feature/gui` → `feature/aero` → `feature/modifiers` → `docs/tracking` →
-  `test/checks` ainda não foi para a `main`.
+  `test/checks` → `feature/analises-simples` ainda não foi para a `main`.
 - `feature/aircraft-drive` e `claude/ecstatic-gates-u3lpoi` não têm nada a mais que a `main`.

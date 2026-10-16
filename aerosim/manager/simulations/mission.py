@@ -154,6 +154,21 @@ def _angles(log, ev, ac, refs) -> dict:
     return FP.takeoff_angles(log, ev, i, refs["alpha_stall"] + i)
 
 
+def _cg_walk(ctx, ac, log, ev, legs) -> dict:
+    """passeio do CG e margem estática no tempo (o ponto neutro de manche fixo vem do núcleo, na velocidade de
+    cruzeiro da aba Estabilidade)"""
+    if "xcg" not in log.columns:
+        return {}
+    from aerosim.stability.probe import Probe
+    from .stability import _cruise_speed
+    try:
+        with Probe(ctx.backend, ac) as pr:
+            np_pct = pr.frac(pr.neutral_point(_cruise_speed(ac)))
+            return FP.cg_series(log, ev, legs, pr.model.mac_le, pr.model.c, np_pct)
+    except Exception:                        # sem ponto neutro (ex.: configuração sem sustentação) não há o gráfico
+        return {}
+
+
 def _refs(ac, info, xw, zw) -> dict:
     r = dict(Vs=info["Vs"], alpha_stall=info["alpha_stall"], kCL=ac.autopilot.kCL, ht=ac.takeoff.ht,
              x_warning=xw, z_warning=zw, landing_max=ac.airfield.landing_max)
@@ -308,7 +323,9 @@ class MissionSimulation(SimulationBase):
             t("motor", "Motor", "rpm/100, A, N"),
             t("ene", "Energia", "Wh"),
             t("bat", "Consumo de bateria", "mAh"),
-            t("batp", "Bateria: SOC", "SOC (%) / $I$ (A)")]
+            t("batp", "Bateria: SOC", "SOC (%) / $I$ (A)"),
+            t("cgp", "Passeio do CG (% CMA, a partir do bordo de ataque)", "% CMA"),
+            t("mem", "Margem estática ao longo do voo", "ME (% CMA)")]
         if has_tank:
             out.append(t("slosh", "Sloshing", "ângulo (°)"))
         out += [opt] + takeoff
@@ -530,8 +547,20 @@ class MissionSimulation(SimulationBase):
             cap = sum(u.battery.capacity_mAh for u in ac.propulsion if u.enabled)
             if ac.shared_battery and ac.propulsion:
                 cap = ac.propulsion[0].battery.capacity_mAh
-            brows, bS = FP.battery_by_stage(log, ev, legs, cap)
+            units = [u for u in ac.propulsion if u.enabled]
+            I_max = (units[0].battery.I_max_A if ac.shared_battery else sum(u.battery.I_max_A for u in units)) \
+                if units and all(u.battery.C_rating > 0 for u in units) else 0.0
+            brows, bS = FP.battery_by_stage(log, ev, legs, cap, I_max_A=I_max)
             series.update(bS)
+            if I_max > 0:
+                pk = float(np.nanmax(np.asarray(log["Ibat"], float))) if "Ibat" in log.columns else 0.0
+                checks.append(Check("ok" if pk <= I_max else "falha", "corrente de pico × descarga da bateria",
+                                    f"pico {pk:.1f} A", f"≤ C × capacidade = {I_max:.0f} A",
+                                    "" if pk <= I_max else "o conjunto pede mais corrente do que a bateria entrega "
+                                    "continuamente: aquece, perde tensão e envelhece",
+                                    "" if pk <= I_max else "bateria de C maior ou mais capacidade, hélice menor ou "
+                                    "menos acelerador na decolagem", "Bateria", "C informado na bateria"))
+            series.update(_cg_walk(ctx, ac, log, ev, legs))
             if brows:
                 series["consumo_por_etapa"] = columns(brows)
             if k0 == 0:
