@@ -136,7 +136,16 @@ Tipos de tarefa:
 | T62 | Núcleo: efeito diedro (C_lβ −0,139 × AVL −0,079 × voo −0,070 no Navion) e C_Lq (4,8 × AVL 9,5 × voo 15,9). Achar a causa nas faixas do núcleo e corrigir com fonte | [ext] | T60 | B3 | Pronto |
 | T63 | Perfis de teste dos coeficientes (`tools/aero`): aviões só de superfícies (sem fuselagem e sem motor) a 12 m/s, todos os métodos e variantes do núcleo (malha, efeito solo, linha sustentadora), distância até qualquer método ou CSV de fora, matriz entre os métodos, varredura de malha e de V, perfil por .dat; figuras em `docs/img/aero_*.png` | [novo] | — | B3 | Feito (a revisar) |
 | T64 | Linha sustentadora de Goates e Hunsaker 2021 no núcleo (`Params.llt_joint`, `llt_blend`; desligada por padrão): junta das pernas, linha efetiva por ponto de controle e seção normal à linha. Converge em derrapagem e com enflechamento; C_Lα a 1,5 % e C_lβ a 3 % do MachUpX (teste em `tests/tools`, `zig build test`). Método novo na aba Cargas (`llt_gh`) e no `tools/aero` (`nucleo_gh`) | [ext] | T63 | B3 | Feito (a revisar) |
-| T65 | Voar com outro modelo aerodinâmico. Fase A (feita): `tools/aero/decolagem.py` reavalia cada ponto da decolagem com todos os métodos; `aerosim_aero_coeffs_llt`. Fase B (feita, a revisar): `Params.aero_model` (`physics/aeromodel.zig`; 0 = faixas, padrão, bit a bit igual; o AeroDrive fica no de sempre), linha sustentadora (1) e tabela de qualquer método (2, `aerotable.zig`, `aerosim/aero/flight_table.py`), `ac.sim.aero_model`; `tools/aero/missao.py` voa a decolagem e a missão com cada modelo. Fase C: efeito solo por imagens na linha sustentadora e nas tabelas (Katz e Plotkin, a conferir); deixar a linha sustentadora de Goates e Hunsaker mais rápida (53 min na missão) | [ext] | T64 | B3 | Fazendo |
+| T65 | Voar com outro modelo aerodinâmico. Fase A (feita): `tools/aero/decolagem.py` reavalia cada ponto da decolagem com todos os métodos; `aerosim_aero_coeffs_llt`. Fase B (feita, a revisar): `Params.aero_model` (`physics/aeromodel.zig`; 0 = faixas, padrão, bit a bit igual; o AeroDrive fica no de sempre), linha sustentadora (1) e tabela de qualquer método (2, `aerotable.zig`, `aerosim/aero/flight_table.py`), `ac.sim.aero_model`; `tools/aero/missao.py` voa a decolagem e a missão com cada modelo. Fase C: efeito solo por imagens na linha sustentadora e nas tabelas (Katz e Plotkin, a conferir). Velocidade (feita, a revisar): cache da geometria da linha sustentadora (`llt.prepare`, bit a bit igual; `llt_gh` 10,8× mais rápido na decolagem), voos em paralelo e cache das tabelas no `missao.py`; ainda possível: perna semi-infinita fechada, uma perna por nó, SIMD | [ext] | T64 | B3 | Fazendo |
+| T66 | GUI: escolher o modelo aerodinâmico do voo (`ac.sim.aero_model`: faixas, linha sustentadora de Phillips e Snyder ou de Goates e Hunsaker, tabela) em Configuração → Integração. Mostrar o custo esperado (a linha sustentadora é ~60× mais lenta que as faixas na missão), refinar a malha sozinho quando for a linha sustentadora (`tools/aero/coeficientes.refinar`) e avisar que o `.cfg` e a planilha não guardam o modelo nem a tabela (`not_exported`) | [GUI] | T65 | B3 | Pronto |
+| T67 | GUI: a linha sustentadora do núcleo (Phillips e Snyder e Goates e Hunsaker, com taxas pelo `aerosim_aero_coeffs_llt`) como métodos da aba Aerodinâmica. Hoje são `nucleo_llt` e `nucleo_gh` só em `tools/aero/coeficientes.py`: virar `IAeroSolver` em `aerosim/aero` e entrar em `all_solvers` | [ext] | T64 | B3 | Pronto |
+| T68 | GUI: Aerodinâmica → "tabela de voo": montar a tabela de um método (lltdrek, ASB, AVL; `aerosim/aero/flight_table.py`), ver C_L, C_D, C_m em α e as derivadas (e quais vieram do núcleo), escolher a V e usar no voo (`aero_model = tabela`). O cache em disco das polares já evita montar de novo | [GUI] | T65 | B3 | Pronto |
+| T69 | GUI: "comparar modelos aerodinâmicos" na Missão e na Decolagem: a mesma análise voada com cada modelo (`tools/aero/missao.py`): curvas sobrepostas, o resumo lado a lado, a tabela de erros ao longo do percurso contra a referência escolhida, o mapa de proximidade dos voos e o tempo de conta; voos em paralelo | [GUI] | T65 | B3 | Pronto |
+| T70 | GUI: Cargas → "linha sustentadora (Goates e Hunsaker)" já está no registro (`llt_gh`): conferir na aba (rótulo, fonte) e avisar, no método de Phillips e Snyder, quando a superfície é enflechada ou há β (ele não converge com a malha ali; Goates e Hunsaker 2021, §II.A) | [GUI] | T64 | B4 | Pronto |
+| T71 | GUI: a falha "hélice tocou o chão" (`ac.sim.prop_strike`, desligada por padrão desde a T56) como opção em Configuração → Integração, e a folga da pá (`hprop`) no gráfico de folgas da Missão | [GUI] | T56 | B2 | Pronto |
+| T72 | GUI: coeficientes perto do chão (`aerosim_aero_coeffs_at`, com a altura) na aba Aerodinâmica: a polar a uma h/b escolhida, com o modifier de efeito solo do avião | [GUI] | — | B3 | Pronto |
+| T73 | Simulação: a malha da simulação (uma faixa por trecho entre seções) põe a força de uma asa trapezoidal no meio da semienvergadura: na asa enflechada de 25° de `tools/aero`, o ponto neutro fica 10 % da CMA atrás (com a malha refinada, 0,9 %), e a torção sai pela metade. Propor a correção (faixas por CMA ou refino mínimo) com a regressão nova; muda os números da simulação, então só com o ok do dono | [ext] | T63 | B3 | Pronto |
+| T74 | Dados: avisar quando uma sobrescrita da superfície diverge do perfil (o `conventional` impõe C_L0 = 0,3 na asa; o NACA 2412 dá ~0,17). Só o núcleo usa a sobrescrita, então os métodos de fora (lltdrek, ASB, AVL) ficam 0,12–0,15 abaixo no C_L (`tools/aero/decolagem.py --puro` mostra) | [ext] | — | B3 | Pronto |
 | T58 | Cargas pelo AeroSandbox: o VLM do ASB como mais um método da aba Cargas, atrás da interface (`ILoadMethod` → `LoadResult`): distribuição por faixa, vista 3D e comparação lado a lado com a linha sustentadora do núcleo, no mesmo ponto de voo. Serve de referência independente para winglet, enflechamento e diedro | [ext] | — | B4 | Feito (a revisar) |
 | T57 | Esteira desviada pelo escoamento e com perfil radial (Duivenvoorden et al. 2026; correção de Rethorst, Exalto et al. 2024; Goates 2018), validada contra Stuper (NACA TM 874) | [ext] | T55 | B3 | Bloqueado |
 | T11 | Arrasto por componente | [ext] | — | B3 | Pronto |
@@ -185,7 +194,7 @@ Legenda das colunas **Código** e **GUI**:
 | ID | Tópico | Código | GUI | Tarefa | Onde / observação |
 |---|---|---|---|---|---|
 | AE-01 | Biblioteca de perfis, polares 2D por Reynolds, cache | ✅ | ✅ | — | `aero/sections.py`, `data/airfoils` |
-| AE-02 | Asa finita: LLT, AVL, ASB, importar XFLR5 | ✅ | ✅ | T55 | comparação de métodos; a linha sustentadora do núcleo erra em superfície enflechada (T55) |
+| AE-02 | Asa finita: LLT, AVL, ASB, importar XFLR5 | ✅ | ✅ | T55, T67 | comparação de métodos; a linha sustentadora de Phillips e Snyder não converge em superfície enflechada nem em β, a de Goates e Hunsaker sim (T64; falta na aba, T67) |
 | AE-03 | Asa por partições, perfil por seção | ✅ | ✅ | — | sprint Asa |
 | AE-04 | Polar do avião completo | ✅ | ✅ | — | aba Aerodinâmica → Polar |
 | AE-05 | Dispositivos de ponta de asa | ✅ | ✅ | — | `aero/tipdevices.py` |
@@ -199,6 +208,10 @@ Legenda das colunas **Código** e **GUI**:
 | AE-13 | Comparação com ensaio | ❌ | ❌ | T35 | |
 | AE-17 | Flape (ΔC_l, ΔC_l máx, ΔC_d, ΔC_m; comando na decolagem e no pouso) | 🟡 | ❌ | T54 | hoje só deflexão fixa na incidência da faixa |
 | AE-18 | Otimização de perfis (NeuralFoil ou XFOIL) | ❌ | ❌ | T59 | futuro |
+| AE-19 | Modelo aerodinâmico do voo selecionável (faixas, linha sustentadora, tabela) | ✅ | ❌ | T66 | `core/src/physics/aeromodel.zig`, `ac.sim.aero_model`; o padrão (faixas) e o AeroDrive não mudam |
+| AE-20 | Linha sustentadora de Goates e Hunsaker (derrapagem, enflechamento) | ✅ | 🟡 | T67, T70 | `core/src/loads/llt.zig`; na aba Cargas (`llt_gh`), não na Aerodinâmica |
+| AE-21 | Tabela de voo de qualquer método (lltdrek, ASB, AVL) | ✅ | ❌ | T68 | `aerosim/aero/flight_table.py`, `core/src/physics/aerotable.zig` |
+| AE-22 | Comparar modelos aerodinâmicos voando a missão | ✅ | ❌ | T69 | `tools/aero/missao.py` (erros ao longo do percurso, mapa de proximidade, tempo) |
 
 ### 2. Desempenho
 
@@ -339,11 +352,11 @@ A Missão mostra só o que a simulação já calcula: a corrente média e a de p
 
 São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
-**Onde foi medido:** na `main` (`v0.2.2`), com os ❓ do T01 já conferidos no código.
+**Onde foi medido:** na `main` (`v0.2.2`), com os ❓ do T01 já conferidos no código. Na `0.2_dev` entraram os itens AE-19 a AE-22 (código feito, GUI não), que só aumentam o total.
 
 | Seção | ✅ na GUI / itens |
 |---|---|
-| 1. Aerodinâmica | 6 / 15 |
+| 1. Aerodinâmica | 6 / 19 |
 | 2. Desempenho | 8 / 14 |
 | 3. Estabilidade e Controle | 12 / 16 |
 | 4. Cargas | 3 / 11 |
@@ -351,7 +364,7 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 | 6. Estruturas | 1 / 5 |
 | 8. Integração | 6 / 10 |
 | 9. Controle | 1 / 2 |
-| **Total** | **37 / 77 (48 %)** |
+| **Total** | **37 / 81 (46 %)** |
 
 ---
 

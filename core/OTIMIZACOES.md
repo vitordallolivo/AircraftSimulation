@@ -130,3 +130,75 @@ envelope, missão, cargas e desempenho, a menor de 5 rodadas. O ruído do tempo 
 2. Tornar `peak` o padrão: muda resultados em até 1,6e-6 (relativo), então pede aceitar a regressão nova.
 3. Tirar do código `noinline`, `logstd`, `minimax` e `estrin` (ficam aqui documentados), ou mantê-los como bits
    para medir de novo em outra máquina.
+
+## Linha sustentadora e voos com outro modelo (feito; não é bit de `-Dopt`)
+
+Estas não mudam nenhum resultado, então não são variantes em avaliação: entraram direto. A física do padrão (faixas)
+e o AeroDrive não passam por aqui.
+
+### Onde estava o tempo
+
+Perfil (`tools/time_profile.py`, py-spy) de uma decolagem voada com a linha sustentadora de Goates e Hunsaker
+(`aero_model = 1`, 44 painéis), antes do cache:
+
+| onde | % | depende do escoamento? |
+|---|---|---|
+| `llt.ghInfluence`: linha efetiva, tangentes e juntas refeitas para cada ponto de controle | 49 % | não |
+| Biot–Savart dos 5 segmentos de cada ferradura (`segment`) | 37 % | só as 2 pernas livres |
+| `reset_ground` (equilíbrio no chão antes de começar) | 13 % | — |
+| eliminação de Gauss (`solve`) | 2 % | — |
+
+### O que foi feito
+
+1. **Cache da geometria (`llt.prepare`, `Params.llt_cache`).** Monta, uma vez por configuração (`runner.configure`),
+   de onde saem as pernas livres e os segmentos fixos (as juntas e o segmento ligado) de cada par (i, j). A cada
+   avaliação, só as 2 pernas livres são calculadas, somadas na mesma ordem de antes: o resultado é **bit a bit
+   igual** (teste em Zig "cache da geometria", em derrapagem e com diedro, nos dois métodos). O MachUpX, dos autores,
+   faz o mesmo: a linha efetiva e as juntas são montadas com o avião (`machupX/airplane.py`).
+2. **Voos em paralelo** (`tools/aero/missao.py --jobs`, padrão: os núcleos). Cada voo tem a sua sessão no núcleo, e o
+   ctypes solta o GIL enquanto o núcleo integra. Preparar (refino, tabelas) fica em sequência, porque os métodos em
+   Python seguram o GIL e nem todos são seguros em threads.
+3. **Cache das tabelas de voo:** `aerosim/aero/flight_table.py` usa o cache de polares de `aerosim/aero/service.py`
+   (em disco para os métodos caros). Isso também corrigiu o lltdrek, que não ia para o disco: o `cost = "caro"` estava
+   no tradutor, não no solver.
+
+### Medido
+
+Os itens 1 e 3 na mesma máquina (Xeon 2,1 GHz, 4 núcleos); decolagem do `conventional --puro`, com os voos idênticos:
+
+| | antes | depois |
+|---|---|---|
+| decolagem com `llt_gh` | 106,7 s | 9,9 s (10,8×) |
+| decolagem com `llt` | 21,0 s | 12,1 s (1,7×) |
+| `panel_states` com 44 painéis, Phillips e Snyder | 500 µs | 322 µs |
+| `panel_states` com 44 painéis, Goates e Hunsaker | 535 µs | 325 µs |
+| decolagem com os 9 modelos, da segunda vez (cache das tabelas) | ~2 min | 24 s em sequência, 12,7 s em paralelo |
+| missão com os 9 modelos | > 1 h (o `llt_gh` sozinho: 52 min, numa máquina anterior) | 9 min 37 s em sequência, 5 min 15 s em paralelo |
+
+Os 9 voos da missão refeitos depois das mudanças ficaram idênticos aos gravados antes (desvio do percurso 0,0 m).
+
+**Por que o paralelo não divide por 4:** são 9 voos em 4 núcleos, e a parte em Python de cada análise (manager,
+calibrações, séries dos gráficos) roda um voo por vez, por causa do GIL. Os voos leves (as faixas: 4 s sozinhas,
+13 s em paralelo) são os que mais esticam no relógio. Processos em vez de threads evitariam o GIL, ao custo de ~1 s
+para subir cada um.
+
+### Próximos (mudam o último dígito; para o dono decidir)
+
+- **Perna livre como vórtice semi-infinito, por fórmula fechada** (o 1º termo da eq. 3 de Goates e Hunsaker 2021),
+  no lugar de um segmento até 1 km: uma raiz e uma divisão a menos por perna, e mais precisa.
+- **No Phillips e Snyder, uma perna por nó:** as ferraduras vizinhas dividem o nó, então são n + 1 pernas em vez de
+  2n, a metade.
+- **SIMD (`@Vector`) no Biot–Savart, com os nós em estrutura de vetores.** É portável: o compilador gera AVX no x86,
+  NEON no ARM, SIMD128 no WebAssembly, e um laço escalar onde não há SIMD. O núcleo já compila para
+  `aarch64-linux` sem mudança.
+- **Esteira no eixo x do corpo, como o AVL** (o *AVL User Primer* diz que as pernas são paralelas ao eixo x). A
+  matriz fica constante: fatora-se uma vez e cada avaliação vira uma substituição, O(n²). Muda o modelo (perde o
+  efeito da esteira inclinada em β), então seria uma opção desligada.
+
+**Não compensa agora:**
+- **Threads dentro de uma avaliação:** com ~44 painéis, uma avaliação depois do cache é curta demais. Acordar e
+  esperar as threads (5–20 µs, 4 vezes por passo) come o ganho, e os núcleos já estão ocupados com os voos em
+  paralelo.
+- **GPU:** um voo é uma sequência de avaliações pequenas e dependentes, e a GPU perderia no tempo de lançar o kernel e
+  de transferir os dados. Ela compensa com lotes grandes (Monte Carlo de milhares de voos, um VLM de milhares de
+  painéis), como um módulo do núcleo, "lote de voos", desligado por padrão.

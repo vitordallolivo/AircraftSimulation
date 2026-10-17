@@ -201,6 +201,20 @@ fn jointed(P: V3, A: V3, B: V3, jA: V3, jB: V3, u: V3, bound: bool, rc: f64) V3 
 fn ghInfluence(p: *const T.Params, ps: []const T.PanelState, n: usize, w: *const Wings, i: usize, u: V3, infl: []V3) void {
     var A: [n_max]V3 = undefined;
     var B: [n_max]V3 = undefined;
+    var jA: [n_max]V3 = undefined;
+    var jB: [n_max]V3 = undefined;
+    ghRow(p, ps, n, w, i, &A, &B, &jA, &jB);
+    const Pi = vec.v3(ps[i].r);
+    for (0..n) |j| {
+        infl[j] = vec.zero;
+        if (!used_geom(ps, j)) continue;
+        infl[j] = jointed(Pi, A[j], B[j], jA[j], jB[j], u, withBound(i, j), coreOf(ps, i, j));
+    }
+}
+
+/// a geometria que o ponto de controle i vê (Goates e Hunsaker): os nós efetivos A, B e as juntas jA, jB de cada
+/// painel j. Só depende da geometria: `prepare` guarda, `ghInfluence` recalcula quando não há cache
+fn ghRow(p: *const T.Params, ps: []const T.PanelState, n: usize, w: *const Wings, i: usize, A: *[n_max]V3, B: *[n_max]V3, jA: *[n_max]V3, jB: *[n_max]V3) void {
     var ua: [n_max]V3 = undefined;
     const Pi = vec.v3(ps[i].r);
     const di = w.g[i].B - w.g[i].A;
@@ -224,15 +238,98 @@ fn ghInfluence(p: *const T.Params, ps: []const T.PanelState, n: usize, w: *const
         ua[j] = unit(uai * vec.splat(bc) + ua[j] * vec.splat(1 - bc));
     }
     for (0..n) |j| {
-        infl[j] = vec.zero;
+        jA[j] = A[j];
+        jB[j] = B[j];
         if (!used_geom(ps, j)) continue;
         const dj = unit(B[j] - A[j]);
         const tA = if (w.prev[j]) |q| unit(dj + unit(B[q] - A[q])) else dj; // tangente nos nós (média dos vizinhos)
         const tB = if (w.next[j]) |q| unit(dj + unit(B[q] - A[q])) else dj;
-        const jA = A[j] + jointDir(ua[j], tA) * vec.splat(p.llt_joint * w.cA[j]);
-        const jB = B[j] + jointDir(ua[j], tB) * vec.splat(p.llt_joint * w.cB[j]);
-        infl[j] = jointed(Pi, A[j], B[j], jA, jB, u, withBound(i, j), coreOf(ps, i, j));
+        jA[j] = A[j] + jointDir(ua[j], tA) * vec.splat(p.llt_joint * w.cA[j]);
+        jB[j] = B[j] + jointDir(ua[j], tB) * vec.splat(p.llt_joint * w.cB[j]);
     }
+}
+
+/// os painéis como `aero.computeTrace` os escreve, só com a geometria (para `prepare`, antes de qualquer escoamento)
+fn geometryPanels(p: *const T.Params, n: usize, ps: []T.PanelState) void {
+    for (0..n) |k| {
+        const s = &p.surf[k];
+        ps[k] = .{ .r = s.r, .S = s.S, .c = s.c, .group = s.group, .side = s.side, .ey = s.ey, .ex = s.ex };
+    }
+}
+
+/// monta `Params.llt_cache` (chamado em `runner.configure`, depois de `aero.init`): de onde saem as pernas livres e
+/// os segmentos fixos de cada par (i, j), para Phillips e Snyder ou Goates e Hunsaker conforme `llt_joint`,
+/// `llt_blend`. Não muda nenhuma conta: `apply` com e sem o cache dá o mesmo resultado, bit a bit
+pub fn prepare(p: *T.Params) void {
+    const c = &p.llt_cache;
+    c.ok = 0;
+    const n: usize = @intCast(@min(@max(p.n_surf, 0), @as(i32, n_max)));
+    var ps: [n_max]T.PanelState = undefined;
+    geometryPanels(p, n, ps[0..n]);
+    const gh = p.llt_joint > 0 or p.llt_blend > 0;
+    const wings = if (gh) Wings.build(p, ps[0..n], n) else Wings{};
+    for (0..n) |j| c.used[j] = @intFromBool(used_geom(ps[0..n], j));
+    var A: [n_max]V3 = undefined;
+    var B: [n_max]V3 = undefined;
+    var jA: [n_max]V3 = undefined;
+    var jB: [n_max]V3 = undefined;
+    for (0..n) |i| {
+        if (!used_geom(ps[0..n], i)) continue;
+        if (gh) {
+            ghRow(p, ps[0..n], n, &wings, i, &A, &B, &jA, &jB);
+        } else {
+            for (0..n) |j| {
+                const g = nodes(&p.surf[j], &ps[j]);
+                A[j] = g.A;
+                B[j] = g.B;
+                jA[j] = g.A;
+                jB[j] = g.B;
+            }
+        }
+        const P = vec.v3(ps[i].r);
+        for (0..n) |j| {
+            if (!used_geom(ps[0..n], j)) continue;
+            const k = i * n_max + j;
+            const rc = coreOf(ps[0..n], i, j);
+            c.jA[k] = jA[j];
+            c.jB[k] = jB[j];
+            c.s2[k] = if (gh) segment(P, jA[j], A[j], rc) else vec.zero;
+            c.s3[k] = if (gh) segment(P, B[j], jB[j], rc) else vec.zero;
+            c.bound[k] = if (withBound(i, j)) segment(P, A[j], B[j], rc) else vec.zero;
+        }
+    }
+    c.n = @intCast(n);
+    c.gh = @intFromBool(gh);
+    c.ok = 1;
+}
+
+/// a influência de j em i (Γ = 1) com o cache: só as duas pernas livres, somadas na mesma ordem de `horseshoe`
+/// (Phillips e Snyder) ou de `jointed` (Goates e Hunsaker)
+fn cachedInfluence(c: *const T.LltCache, P: V3, i: usize, j: usize, u: V3, rc: f64) V3 {
+    const k = i * n_max + j;
+    const jA = vec.v3(c.jA[k]);
+    const jB = vec.v3(c.jB[k]);
+    const Af = jA + u * vec.splat(far);
+    const Bf = jB + u * vec.splat(far);
+    const bound = withBound(i, j);
+    if (c.gh != 0) {
+        var v = segment(P, Af, jA, rc) + vec.v3(c.s2[k]) + vec.v3(c.s3[k]) + segment(P, jB, Bf, rc);
+        if (bound) v += vec.v3(c.bound[k]);
+        return v;
+    }
+    const legs = segment(P, Af, jA, rc) + segment(P, jB, Bf, rc);
+    return if (bound) legs + vec.v3(c.bound[k]) else legs;
+}
+
+/// o cache serve para estes painéis: montado para a mesma configuração e com os mesmos painéis com geometria (um
+/// painel sem escoamento no instante muda as cadeias de Goates e Hunsaker: aí a conta inteira)
+fn cacheFits(p: *const T.Params, ps: []const T.PanelState, n: usize, gh: bool) bool {
+    const c = &p.llt_cache;
+    if (c.ok == 0 or c.n != @as(i32, @intCast(n)) or (c.gh != 0) != gh) return false;
+    for (0..n) |j| {
+        if ((c.used[j] != 0) != used_geom(ps, j)) return false;
+    }
+    return true;
 }
 
 /// a seção no plano normal à linha sustentadora (G-H §IV): eixos para a frente (−u_aΛ, eq. 12) e normal (−u_nΛ,
@@ -269,7 +366,8 @@ pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
     // guardada para a segunda volta. Com os dois em 0, as contas são as de Phillips e Snyder, como sempre
     const gh = p.llt_joint > 0 or p.llt_blend > 0;
     var infl: [n_max][n_max]V3 = undefined;
-    const wings = if (gh) Wings.build(p, ps, n) else Wings{};
+    const cached = cacheFits(p, ps, n, gh); // a geometria fixa já montada (prepare): só as pernas livres
+    const wings = if (gh and !cached) Wings.build(p, ps, n) else Wings{};
     for (0..n) |i| {
         const s = &p.surf[i];
         const q = &ps[i];
@@ -291,6 +389,15 @@ pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
         k_i[i] = 0.5 * q.c * sw.cosL * s.eta * a;
         rhs[i] = k_i[i] * Vp * (ag - a0);
         const P = vec.v3(q.r);
+        if (cached) {
+            for (0..n) |j| {
+                infl[i][j] = vec.zero;
+                if (!used_geom(ps, j)) continue;
+                infl[i][j] = cachedInfluence(&p.llt_cache, P, i, j, u, coreOf(ps, i, j));
+                A[i][j] += k_i[i] * vec.dot(infl[i][j], ez);
+            }
+            continue;
+        }
         if (gh) {
             ghInfluence(p, ps, n, &wings, i, u, infl[i][0..n]);
             for (0..n) |j| {
@@ -319,7 +426,7 @@ pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
         var w = vec.zero; // velocidade do ar induzida pelas ferraduras
         for (0..n) |j| {
             if (!used[j]) continue;
-            if (gh) {
+            if (gh or cached) {
                 w += infl[i][j] * vec.splat(G[j]);
                 continue;
             }
@@ -634,4 +741,45 @@ test "coeffs: o avião com a carga da linha sustentadora (asa retangular AR 8)" 
     // a simulação (faixas) na mesma asa: outro C_L, mesmo sinal e ordem
     const f = aero.coeffsAt(&p, 12.0, al, 0, vec.zero, vec.zero, vec.zero, 50.0, null);
     try testing.expect(o.CL != f.CL and @abs(o.CL - f.CL) < 0.1 * f.CL);
+}
+
+test "cache da geometria (prepare): o mesmo resultado, bit a bit, que a conta inteira" {
+    // asa retangular com diedro, em derrapagem, nos dois métodos: Phillips e Snyder e Goates e Hunsaker
+    inline for (.{ false, true }) |gh| {
+        var p = T.Params{};
+        var ps: [24]T.PanelState = undefined;
+        const al = 0.08;
+        const V = 12.0;
+        rectWing(&p, &ps, 24, 2.0, 0.25, 2 * fm.pi, V, al);
+        const g = 4.0 * fm.pi / 180.0;
+        for (0..24) |i| {
+            const y = ps[i].r[1];
+            const sd: f64 = if (y > 0) 1 else -1;
+            ps[i].r[2] = -@abs(y) * @tan(g);
+            p.surf[i].ez = .{ 0, sd * @sin(g), @cos(g) };
+            p.surf[i].qa[2] = -@abs(p.surf[i].qa[1]) * @tan(g);
+            p.surf[i].qb[2] = -@abs(p.surf[i].qb[1]) * @tan(g);
+            p.surf[i].r = ps[i].r;
+            p.surf[i].side = ps[i].side;
+        }
+        if (gh) {
+            p.llt_joint = 0.15;
+            p.llt_blend = 1.0;
+        }
+        const be = 0.06;
+        const Vr = V3{ V * @cos(al) * @cos(be), V * @sin(be), V * @sin(al) * @cos(be) };
+        for (ps[0..24]) |*q| q.v = Vr;
+        var a = ps;
+        var b = ps;
+        prepare(&p);
+        try testing.expect(p.llt_cache.ok == 1);
+        const ga = apply(&p, Vr, vec.zero, a[0..24]); // com o cache
+        p.llt_cache.ok = 0;
+        const gb = apply(&p, Vr, vec.zero, b[0..24]); // a conta inteira
+        try testing.expectEqual(gb, ga);
+        for (0..24) |i| {
+            try testing.expectEqual(b[i].L, a[i].L);
+            try testing.expectEqual(b[i].F, a[i].F);
+        }
+    }
 }

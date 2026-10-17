@@ -112,6 +112,44 @@ esteira no eixo x e dão 0.
 vai como `overrides` da sessão; a aba Cargas tem o método "linha sustentadora (Goates e Hunsaker)" (`llt_gh`). Com os
 dois em 0 (o padrão), a linha sustentadora é a de Phillips e Snyder, com as mesmas contas de antes.
 
+## Cache da geometria (`prepare`, `Params.llt_cache`)
+
+A cada avaliação, a linha sustentadora precisava da influência de cada ferradura j em cada ponto de controle i. No
+método de Goates e Hunsaker, também refazia para cada i a linha efetiva, as tangentes e as juntas. O perfil
+(`tools/time_profile.py`, uma decolagem com o `llt_gh`) mostrou para onde ia o tempo:
+- 49 % recalculando essa geometria;
+- 37 % no Biot–Savart dos 5 segmentos de cada ferradura;
+- 2 % na eliminação de Gauss.
+
+Mas só as duas pernas livres dependem do escoamento, porque seguem o vento: os nós, as juntas e o segmento ligado são
+fixos para uma configuração. O MachUpX, a implementação dos autores, também monta a linha efetiva e as juntas uma vez,
+ao montar o avião (`machupX/airplane.py`).
+
+- **`prepare(p)`:** chamado em `runner.configure`, logo depois de `aero.init`. Guarda, para cada par (i, j), de onde
+  saem as pernas livres (jA, jB) e os segmentos fixos: as juntas s2 = jA → A e s3 = B → jB, e o ligado A → B. São
+  276 KB estáticos no `Params`.
+- **`apply`:** com o cache, calcula só as duas pernas livres e soma na mesma ordem de antes. O resultado é o mesmo, bit
+  a bit, e o teste "cache da geometria" confere isso em derrapagem, com diedro, nos dois métodos.
+- **Sem o cache, a conta inteira de sempre:** é o que acontece com `ok = 0` (painéis montados à mão nos testes, ou o
+  AeroDrive) ou quando um painel fica sem escoamento no instante, o que muda as cadeias de Goates e Hunsaker.
+
+**Medido na mesma máquina** (decolagem do `conventional --puro`, voo idêntico, mesmo n_LO até a 6ª casa). Na
+missão inteira, em sequência: `llt_gh` 258 s e `llt` 261 s (antes, 52 min e 10 min numa máquina anterior). O resto
+das medidas e os próximos ganhos estão em `core/OTIMIZACOES.md`.
+
+| | sem o cache | com o cache |
+|---|---|---|
+| `llt_gh` | 106,7 s | 9,9 s (10,8×) |
+| `llt` | 21,0 s | 12,1 s (1,7×) |
+| uma chamada de `panel_states` (44 painéis), Phillips e Snyder | 500 µs | 322 µs |
+| uma chamada de `panel_states` (44 painéis), Goates e Hunsaker | 535 µs | 325 µs |
+
+**Próximos ganhos possíveis**, que trocam a ordem das somas e por isso mudam o último dígito:
+- a perna livre como vórtice semi-infinito por fórmula fechada (o 1º termo da eq. 3 de Goates e Hunsaker), no lugar
+  de um segmento até 1 km;
+- no Phillips e Snyder, uma perna por nó: as ferraduras vizinhas dividem o nó, o que dá n + 1 pernas em vez de 2n;
+- SIMD (`@Vector`) no Biot–Savart. É portátil: NEON no ARM, AVX no x86, laço escalar sem SIMD.
+
 ## Limites conhecidos
 
 - **Quinas (raiz de asa com diedro ou enflechamento):** ali a linha sustentadora de Phillips e Snyder é singular. O

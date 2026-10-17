@@ -215,16 +215,23 @@ python tools/aero/missao.py --aviao data/aircraft/Convencional_original.json --m
   - decolagem: perfil, V, θ, α, δe, trem, tração e C_L;
 - `resumo.csv`.
 
-**Tempo de conta** (`tempo.png` com `--pasta`; o das tabelas inclui montar a tabela, que no lltdrek é quase todo o
-tempo):
+**Tempo de conta** (`tempo.png` com `--pasta`, separado em preparar e voar). Os voos rodam em paralelo: preparar
+(refino, tabelas) é sequencial, porque os métodos em Python seguram o GIL, e depois os voos vão em `--jobs` threads (o
+padrão é o número de núcleos), cada um com a sua sessão no núcleo; o ctypes solta o GIL enquanto o núcleo integra. As
+tabelas passam pelo cache de polares (`aerosim/aero/service.py`, em disco para os métodos caros), então da segunda
+vez não são montadas de novo. A decolagem com os 9 modelos leva ~2 min da primeira vez (quase tudo a tabela do
+lltdrek) e 12,7 s da segunda. A missão inteira com os 9 modelos leva 5 min 15 s no total, com os voos idênticos aos de
+antes do cache e do paralelo (desvio do percurso 0,0 m em todos). Em paralelo, o tempo de cada voo no relógio cresce: os 4 núcleos
+são divididos e a parte em Python de cada análise (manager, calibrações, séries dos gráficos) roda um voo por vez, por
+causa do GIL. Por isso a figura é a medida em sequência.
 
 ![tempo de conta](../../docs/img/aero_tempo.png)
 
-Na missão de 165 s do `conventional`:
-- faixas: 5 s;
-- tabelas: 3–12 s, mais o tempo de montar a tabela (o lltdrek leva ~2 min);
-- `llt`: 11 min;
-- `llt_gh`: 53 min.
+Medido em sequência (`--jobs 1`, cada barra é o modelo sozinho), na missão de 165 s do `conventional` e com o cache
+das tabelas: faixas 4 s, faixas refinadas 17 s, `llt` 261 s, `llt_gh` 258 s, tabelas 3–9 s (9 min 37 s no total; em
+paralelo, 5 min 15 s). A decolagem com os 9 modelos leva 24 s em sequência. Antes do cache da geometria, o `llt_gh`
+levava 52 min na missão e o `llt`, 10 min (medidos numa máquina anterior; na mesma máquina, a decolagem caiu de 107 s
+para 10 s com o `llt_gh` e de 21 s para 12 s com o `llt`).
 
 ### Decolagem (`conventional --puro`; profundor e ponto de rotação da GUI, fixos)
 

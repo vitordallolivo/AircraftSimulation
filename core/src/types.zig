@@ -295,6 +295,23 @@ pub const AeroTable = extern struct {
     Cndr: f64 = 0,
 };
 
+/// o que a linha sustentadora (loads/llt.zig) monta uma vez por configuração (`llt.prepare`, chamado em
+/// `runner.configure`): para cada ponto de controle i e ferradura j (índice i·max_surfaces + j), de onde saem as pernas
+/// livres (jA, jB) e os segmentos que não dependem do escoamento (as juntas s2 = jA→A e s3 = B→jB de Goates e
+/// Hunsaker; o ligado A→B). A cada avaliação só as duas pernas livres são calculadas, na mesma ordem de soma: o
+/// resultado é o mesmo, bit a bit, que sem o cache. ok = 0 (painéis montados à mão, AeroDrive): a conta inteira
+pub const LltCache = extern struct {
+    ok: i32 = 0,
+    n: i32 = 0,
+    gh: i32 = 0, // montado com as correções de Goates e Hunsaker
+    used: [L.max_surfaces]i32 = [_]i32{0} ** L.max_surfaces, // o painel tinha geometria na montagem
+    jA: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
+    jB: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
+    s2: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
+    s3: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
+    bound: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
+};
+
 pub const Params = extern struct {
     // massa seca: inércia no CG dela, posição desse CG
     m_dry: f64 = 1,
@@ -357,6 +374,7 @@ pub const Params = extern struct {
     aero_tab: AeroTable = .{},
     llt_joint: f64 = 0, // comprimento da junta das pernas, fração da corda no nó (G-H eq. 17)
     llt_blend: f64 = 0, // distância de mistura da linha efetiva, fração da semienvergadura (G-H eq. 7; MachUpX)
+    llt_cache: LltCache = .{}, // montado por llt.prepare na configuração (não vem do Python)
     prop_strike: i32 = 0, // 1: a ponta da pá tocar o chão encerra o voo (`crashed`, Events.tprop); 0 (padrão): só registra
     no_payload: i32 = 0, // começa sem a carga
     n_pad: i32 = 0, // mesas/plataformas

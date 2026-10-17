@@ -73,25 +73,49 @@ def preparar(backend, ac, modelo: str, V: float):
     raise ValueError(f"modelo desconhecido: {modelo!r}")
 
 
-def voar(backend, ac, modelos, analise: str = "missao", V: float | None = None) -> dict:
-    """{modelo: {"res", "log", "nota", "tempo"}} ou {modelo: {"erro"}}"""
+def voar(backend, ac, modelos, analise: str = "missao", V: float | None = None, jobs: int | None = None) -> dict:
+    """{modelo: {"res", "log", "nota", "tempo", "tempo_prep", "tempo_voo"}} ou {modelo: {"erro"}}.
+
+    Duas etapas: preparar cada modelo (refino, tabela de voo) uma depois da outra, porque os métodos em Python
+    (lltdrek, ASB, AVL) seguram o GIL e não são todos seguros em threads; depois voar todos em paralelo, em `jobs`
+    threads (padrão: os núcleos da máquina). Cada voo tem a sua sessão no núcleo, e o ctypes solta o GIL enquanto o
+    núcleo integra, então os voos rodam de fato ao mesmo tempo"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     from aerosim.manager.manager import SimulationManager
-    mgr = SimulationManager(backend)
     V = V or float(ac.mission.V0)
-    out = {}
+    out, prontos = {}, []
     for mo in modelos:
         t0 = time.perf_counter()
         try:
             a, nota = preparar(backend, ac, mo, V)
-            res = mgr.run(ANALISES[analise], a)
         except Exception as e:                       # noqa: BLE001 — um modelo que falha não para os outros
             out[mo] = dict(erro=f"{type(e).__name__}: {e}")
-            print(f"  {mo}: falhou ({out[mo]['erro'][:120]})")
+            print(f"  {mo}: falhou ao preparar ({out[mo]['erro'][:120]})")
             continue
-        log = {k: np.asarray(res.log[k], float) for k in COLUNAS}
-        out[mo] = dict(res=res, log=log, nota=nota, tempo=time.perf_counter() - t0)
-        print(f"  {mo}: {res.status}, t até {log['t'][-1]:.1f} s ({out[mo]['tempo']:.0f} s de conta){' — ' + nota if nota else ''}")
-    return out
+        prontos.append((mo, a, nota, time.perf_counter() - t0))
+
+    def um(item):
+        mo, a, nota, tp = item
+        t0 = time.perf_counter()
+        res = SimulationManager(backend).run(ANALISES[analise], a)       # um manager por thread
+        return mo, res, nota, tp, time.perf_counter() - t0
+
+    with ThreadPoolExecutor(max_workers=max(1, jobs or os.cpu_count() or 1)) as ex:
+        futs = [ex.submit(um, it) for it in prontos]
+        for f in as_completed(futs):
+            try:
+                mo, res, nota, tp, tv = f.result()
+            except Exception as e:                   # noqa: BLE001
+                mo = prontos[futs.index(f)][0]
+                out[mo] = dict(erro=f"{type(e).__name__}: {e}")
+                print(f"  {mo}: falhou ({out[mo]['erro'][:120]})")
+                continue
+            log = {k: np.asarray(res.log[k], float) for k in COLUNAS}
+            out[mo] = dict(res=res, log=log, nota=nota, tempo=tp + tv, tempo_prep=tp, tempo_voo=tv)
+            print(f"  {mo}: {res.status}, t até {log['t'][-1]:.1f} s ({tp:.0f} s preparando + {tv:.0f} s voando)"
+                  f"{' — ' + nota if nota else ''}")
+    return {mo: out[mo] for mo in modelos if mo in out}                # na ordem pedida
 
 
 def _num(v):
@@ -276,20 +300,24 @@ def grafico_matriz(nomes: list[str], M: np.ndarray, png: str, titulo: str):
 
 
 def grafico_tempo(voos: dict, png: str, titulo: str):
-    """o tempo de conta de cada modelo (barras, escala log). O das tabelas inclui montar a tabela antes do voo"""
+    """o tempo de conta de cada modelo (barras, escala log): preparar (refino, tabela de voo) e voar"""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     nomes = [m for m, v in voos.items() if "tempo" in v]
     t = [voos[m]["tempo"] for m in nomes]
+    tp = [voos[m].get("tempo_prep", 0.0) for m in nomes]
     fig, ax = plt.subplots(figsize=(8, 0.45 * len(nomes) + 1.5))
-    bars = ax.barh(nomes, t, color=["k" if m == "faixas" else "C0" for m in nomes])
+    bars = ax.barh(nomes, t, color=["k" if m == "faixas" else "C0" for m in nomes], label="voando")
+    if any(x > 0 for x in tp):
+        ax.barh(nomes, tp, color="C1", label="preparando (refino, tabela)")
+        ax.legend(fontsize=7, loc="lower right")
     ax.set_xscale("log")
     for b, x in zip(bars, t):
         ax.text(x * 1.08, b.get_y() + b.get_height() / 2, f"{x:.0f} s" if x >= 1 else f"{x:.1f} s", va="center",
                 fontsize=8)
     ax.invert_yaxis()
-    ax.set_xlabel("tempo de conta (s, escala log; as tabelas incluem montá-las)")
+    ax.set_xlabel("tempo de conta (s, escala log; os voos rodam em paralelo)")
     ax.set_title(titulo, fontsize=10)
     ax.grid(axis="x", alpha=0.3, which="both")
     fig.tight_layout()
@@ -316,6 +344,7 @@ def gravar_voos(pasta: str, voos: dict, meta: dict):
             for k, x in v["log"].items():
                 arr[f"{m}|{k}"] = x
             resumo[m] = dict(status=v["res"].status, nota=v["nota"], tempo=v["tempo"],
+                             tempo_prep=v.get("tempo_prep", 0.0), tempo_voo=v.get("tempo_voo", v["tempo"]),
                              summary={k: (_num(x) if _num(x) is not None else str(x)) for k, x in v["res"].summary.items()})
         else:
             resumo[m] = dict(erro=v["erro"])
@@ -338,7 +367,7 @@ def ler_voos(pasta: str) -> tuple[dict, dict]:
             continue
         log = {k.split("|", 1)[1]: z[k] for k in z.files if k.split("|", 1)[0] == m}
         voos[m] = dict(res=SimpleNamespace(status=r["status"], summary=r["summary"]), log=log, nota=r["nota"],
-                       tempo=r["tempo"])
+                       tempo=r["tempo"], tempo_prep=r.get("tempo_prep", 0.0), tempo_voo=r.get("tempo_voo", r["tempo"]))
     return voos, d["meta"]
 
 
@@ -349,6 +378,7 @@ def main(argv=None) -> int:
     ap.add_argument("--modelos", help=f"separados por vírgula (padrão: {','.join(PADRAO)})")
     ap.add_argument("--analise", default="missao", choices=tuple(ANALISES), help="missão inteira ou só a decolagem")
     ap.add_argument("--V", type=float, help="velocidade das tabelas (padrão: a V0 da missão)")
+    ap.add_argument("--jobs", type=int, help="voos ao mesmo tempo (padrão: os núcleos da máquina)")
     ap.add_argument("--puro", action="store_true", help="sem as sobrescritas das superfícies e sem os coeficientes da "
                     "fuselagem (o mesmo avião para todos os métodos)")
     ap.add_argument("--ref", action="append", help="referência da tabela de erros (um modelo; pode repetir; "
@@ -369,7 +399,7 @@ def main(argv=None) -> int:
         modelos = [m.strip() for m in (args.modelos or ",".join(PADRAO)).split(",") if m.strip()]
         nome, analise = ac.name, args.analise
         print(f"{nome}: {analise} com {len(modelos)} modelos")
-        voos = voar(backend, ac, modelos, analise, args.V)
+        voos = voar(backend, ac, modelos, analise, args.V, args.jobs)
     print(tabela(voos))
     pasta = args.pasta or args.carregar
     for ref in args.ref or ["faixas"]:

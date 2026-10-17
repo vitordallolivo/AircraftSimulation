@@ -14,6 +14,7 @@ const vec = @import("../math/vec.zig");
 const dyn = @import("dynamics.zig");
 const atm = @import("../physics/atmosphere.zig");
 const aero = @import("../physics/aero.zig");
+const llt = @import("../loads/llt.zig");
 const prop = @import("../physics/propulsion.zig");
 const mass = @import("../physics/mass.zig");
 const trim = @import("trim.zig");
@@ -86,6 +87,7 @@ pub fn configure(inst: *Instance) ConfigError!void {
     }
     p.steer_sign = if (nm > 0 and ns > 0 and xs / ns < xm / nm) -1.0 else 1.0;
     aero.init(p);
+    llt.prepare(p); // a geometria fixa da linha sustentadora (cargas e aero_model = 1)
     prop.init(p);
     mass.initTanks(p);
     inst.configured = true;

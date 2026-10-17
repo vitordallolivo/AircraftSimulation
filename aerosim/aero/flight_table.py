@@ -4,7 +4,9 @@
 A tabela é universal (o tradutor do núcleo converte): C_L, C_D, C_m em α (graus, β = 0, sem taxas nem comandos,
 momentos em `ref`), mais as derivadas lineares de `aerosim.backend.zig.translator.TABLE_DERIVS` tomadas em `alpha_d`.
 As derivadas que o método não dá (NaN: o lltdrek sem β, um método sem comandos) vêm de `fill` (em geral o núcleo), e
-a tabela guarda quais foram completadas. Fora da faixa de α, o núcleo usa o valor da ponta.
+a tabela guarda quais foram completadas. Fora da faixa de α, o núcleo usa o valor da ponta. As polares passam pelo
+cache de `aerosim.aero.service` (memória; disco para os métodos caros, como o lltdrek): a mesma tabela não é calculada
+de novo.
 
     from aerosim.aero import solver_by_name
     from aerosim.aero.flight_table import table
@@ -27,13 +29,15 @@ DERIVS = ("CYb", "Clb", "Cnb", "CYp", "Clp", "Cnp", "CLq", "Cmq", "CYr", "Clr", 
 def table(solver: IAeroSolver, model, V: float, rho: float, ref=(0.0, 0.0, 0.0), alphas=ALPHAS,
           alpha_d: float = 2.0, fill: IAeroSolver | None = None) -> dict:
     """a tabela universal do método `solver` no modelo universal `model` a V (m/s)"""
+    from aerosim.aero import service              # cache da polar (memória; disco para os métodos caros)
     case = AeroCase(V=V, rho=rho, alphas=np.asarray(alphas, float), alpha_d=alpha_d, ref=tuple(float(x) for x in ref))
-    pol = solver.solve(model, case)
+    pol = service.solve(solver, model, case)
     derivs = {k: pol.deriv(k) for k in DERIVS}
     faltam = [k for k, v in derivs.items() if not math.isfinite(v)]
     completadas = []
     if faltam and fill is not None:
-        base = fill.solve(model, AeroCase(V=V, rho=rho, alphas=np.array([alpha_d]), alpha_d=alpha_d, ref=case.ref))
+        base = service.solve(fill, model, AeroCase(V=V, rho=rho, alphas=np.array([alpha_d]), alpha_d=alpha_d,
+                                                   ref=case.ref))
         for k in faltam:
             v = base.deriv(k)
             if math.isfinite(v):

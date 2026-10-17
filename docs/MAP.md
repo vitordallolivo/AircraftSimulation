@@ -21,7 +21,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/aero/collision.py` — Quem o tubo de cada hélice atinge: superfícies (fração da área de cada uma) e objetos (fuselagem, tubos de cauda,
   `class Hit:23`, `tube_hits:30`
 - `aerosim/aero/flight_table.py` — Tabela aerodinâmica de voo a partir de qualquer método (`IAeroSolver`): o avião voa com ela no núcleo
-  `table:27`
+  `table:29`
 - `aerosim/aero/geometry.py` — Utilidades dos tradutores: eixos dos solvers externos, viscosidade/Reynolds, tabela de volumes
   `nu_air:34`, `reynolds:38`, `to_xz_up:42`
 - `aerosim/aero/lltdrek_solver.py` — lltdrek (https://github.com/kuodrek/lltdrek, MIT): linha sustentadora não linear
@@ -278,7 +278,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/tests_sim.zig` — testes do grupo "sim" (zig build test-sim)
 - `core/src/tests_sizing.zig` — testes do grupo "sizing" (zig build test-sizing): estágios, tipos de aeronave, otimizadores,
 - `core/src/types.zig` — Estruturas trocadas com o Python (C ABI, `extern struct`).
-  tipos `Surface:29`, `PropUnit:64`, `Gear:108`, `Tank:124`, `Segment:140`, `Event:162`, `Pad:166`, `Payload:175`, `Environment:186`, `Takeoff:198`, `Pilot:211`, `Autopilot:221`, `AeroTable:270`, `Params:298`, `PanelState:373`, `Events:393`, `LogRow:435`, `AeroCoeffs:549`, `PropPoint:564`, `MassProps:576`, `TrimPoint:588`, `PerfRow:605`
+  tipos `Surface:29`, `PropUnit:64`, `Gear:108`, `Tank:124`, `Segment:140`, `Event:162`, `Pad:166`, `Payload:175`, `Environment:186`, `Takeoff:198`, `Pilot:211`, `Autopilot:221`, `AeroTable:270`, `LltCache:303`, `Params:315`, `PanelState:391`, `Events:411`, `LogRow:453`, `AeroCoeffs:567`, `PropPoint:582`, `MassProps:594`, `TrimPoint:606`, `PerfRow:623`
 
 **core/src/collision/**
 
@@ -301,7 +301,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/loads/**
 
 - `core/src/loads/llt.zig` — Linha sustentadora numérica (vórtices em ferradura) para a distribuição de carga ao longo da envergadura.
-  fn `sectionSlope:48`, `segment:55`, `horseshoe:71`, `apply:259`, `compute:361`, `coeffs:391`
+  fn `sectionSlope:48`, `segment:55`, `horseshoe:71`, `prepare:263`, `apply:356`, `compute:468`, `coeffs:498`
 
 **core/src/math/**
 
@@ -362,8 +362,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `LinModel:25`
   fn `rigid:52`, `linearize:162`, `residual:217`
 - `core/src/sim/runner.zig` — Executor de uma corrida: eventos discretos, paradas, registro e checkpoints.
-  tipos `Status:22`, `Instance:32`
-  fn `configure:62`, `handover:112`, `resetGround:133`, `resetAir:165`, `run:315`
+  tipos `Status:23`, `Instance:33`
+  fn `configure:63`, `handover:114`, `resetGround:135`, `resetAir:167`, `run:317`
 - `core/src/sim/simple_perf.zig` — Desempenho por cálculo simples (sem simulação no tempo), como na "planilha suprema":
   tipos `SimpleCfg:23`, `SimpleRow:52`, `SimpleSummary:76`
   fn `density:107`, `compute:130`
@@ -645,5 +645,6 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/modifiers/README.md`
 - `data/README.md`
 - `tests/README.md`
+- `tools/README.md`
 - `tools/aero/README.md`
 - `tools/checks/README.md`
