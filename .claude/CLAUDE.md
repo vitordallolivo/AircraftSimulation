@@ -149,7 +149,7 @@ O container começa sem as dependências, e tudo o que se instala some quando el
 | Para rodar | Instalar |
 |---|---|
 | Núcleo (`core`, `zig build test`) e o backend Python | `pip install ziglang` (0.16.0 = `minimum_zig_version`) |
-| Testes Python (`tests/`), `tools/checks`, a GUI | `pip install -r requirements.txt -r requirements-aero.txt pytest` |
+| Testes Python (`tests/`), `tools/checks`, a GUI | `pip install -r requirements.txt -r requirements-aero.txt pytest` (o `requirements-aero.txt` traz o `optvl`: o AVL sem executável) |
 | Testes de GUI e de aero (Qt/pyqtgraph sem tela) | `apt-get install -y libegl1 libgl1 libxkbcommon0` |
 | AeroDrive (`zig build`: raylib) | `apt-get install -y libgl-dev libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libxext-dev`, mais as dependências do Zig (abaixo) |
 | Perfil e mapa de otimizações (`tools/time_profile.py`, `tools/opt_matrix.py`) | `pip install py-spy`; `apt-get install -y valgrind` (o `--exato` e o `--instrucoes`) |

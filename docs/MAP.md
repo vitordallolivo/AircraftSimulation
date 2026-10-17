@@ -15,7 +15,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/aero/asb_solver.py` — AeroSandbox (Sharpe, MIT): três métodos sobre o mesmo modelo universal.
   `class AsbTranslator:32`, `class AsbVLMSolver:110`, `class AsbBuildupSolver:120`, `class AsbLiftingLineSolver:129`, `class AsbVLMLoads:175`
 - `aerosim/aero/avl_solver.py` — AVL (Drela e Youngren, MIT; GPL): malha de vórtices em ferradura com superfícies de comando.
-  `avl_exe:41`, `class AvlTranslator:57`, `class AvlSolver:118`
+  `avl_exe:42`, `has_optvl:49`, `class AvlTranslator:66`, `class AvlSolver:134`
 - `aerosim/aero/base.py` — Polar e derivadas comuns a todos os solvers: cada um só implementa `evaluate` (pontos de voo
   `class AeroSolverBase:23`
 - `aerosim/aero/collision.py` — Quem o tubo de cada hélice atinge: superfícies (fração da área de cada uma) e objetos (fuselagem, tubos de cauda,
@@ -597,10 +597,11 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tools/checks/run.py` — Checks de regressão: confere que nada quebrou antes de um PR.
 - `tools/checks/snapshot.py` — Retrato numérico dos aviões de exemplo, para comparar duas versões do código bit a bit.
 - `tools/checks/zig_checks.py` — Fundação e AeroDrive: os testes do núcleo Zig e a compilação + testes do AeroDrive (que importa o núcleo).
+- `tools/validacao/navion.py` — Validação contra um avião real: o Ryan Navion (monomotor a pistão, anos 1940) montado com os números publicados e as
 
 ## Testes (`tests/`)
 
-- `tests/aero` — 57 testes em 9 arquivo(s)
+- `tests/aero` — 58 testes em 9 arquivo(s)
 - `tests/core` — 34 testes em 9 arquivo(s)
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 63 testes em 9 arquivo(s)
@@ -610,6 +611,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/stability` — 12 testes em 1 arquivo(s)
 - `tests/test_architecture.py` — 5 testes em 1 arquivo(s)
 - `tests/tools` — 12 testes em 2 arquivo(s)
+- `tests/validation` — 2 testes em 1 arquivo(s)
 
 ## README por pasta
 
