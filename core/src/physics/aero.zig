@@ -216,11 +216,16 @@ pub fn coeffsEx(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V
 
 /// `coeffsEx` com a tração e o torque de cada motor (para os modificadores, ex.: esteira); null: sem motores
 pub fn coeffsEnv(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V3, d: V3, thrust: ?[2][]const f64) T.AeroCoeffs {
+    return coeffsAt(p, V, alpha, beta, w, ref, d, 50.0, thrust);
+}
+
+/// `coeffsEnv` com a altura `h` do avião sobre o chão (m) para o efeito solo (`coeffsEnv`: 50 m, longe do chão)
+pub fn coeffsAt(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V3, d: V3, h: f64, thrust: ?[2][]const f64) T.AeroCoeffs {
     const a = fm.sincos(alpha);
     const b = fm.sincos(beta);
     const Vr = V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
     const env = if (thrust) |tq| mods.envFrom(p, Vr, w, tq[0], tq[1]) else mods.Env.none;
-    const o = computeEnv(p, Vr, w, ref, 50.0, d, &env);
+    const o = computeEnv(p, Vr, w, ref, h, d, &env);
     const qS = 0.5 * p.env.rho * V * V * p.Sref;
     return .{
         .CL = (-o.F[2] * a.c + o.F[0] * a.s) / qS,

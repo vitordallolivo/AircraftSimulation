@@ -6,6 +6,17 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- `tools/aero` (T63): perfis de teste dos coeficientes, só superfícies, a 12 m/s. Métodos: núcleo (malha da simulação
+  e refinada), núcleo com efeito solo (McCormick a h/b = 0,25 e 0,10), linha sustentadora do núcleo, lltdrek, VLM e
+  buildup do ASB, AVL. Distância até qualquer método ou CSV de fora (`--ref`), matriz entre os métodos (`--matriz`),
+  coeficientes e superfícies escolhidos (`--coef`, `--so asa,eh,ev`), malha e varredura (`--paineis`,
+  `--varrer paineis=...` ou `V=...`), perfil por .dat (`--perfil`). Figuras em `docs/img/aero_*.png`, README com as
+  causas das diferenças (malha da simulação, Helmbold, Oswald fixo, faixas nas taxas, C_mq da linha sustentadora).
+- Núcleo: `aerosim_aero_coeffs_at` (coeficientes com a altura sobre o chão, para o efeito solo); o resto igual.
+- Tracking: T63, T64 (linha sustentadora do núcleo com β).
+- Hélice no chão (T56): a falha "hélice tocou o chão" fica desligada por padrão (`ac.sim.prop_strike = False`,
+  `Params.prop_strike = 0`): ligada, o exemplo `flying_wing` (pá 5,5 cm dentro do chão parado) não voava. A folga
+  (`hprop`, `hpmin`) continua no registro.
 - Desempenho → "Voo nivelado e envelopes" (T42): o envelope ganha aba; planilha e modelo completo sobrepostos
   (só com "os dois") ou cada um sozinho; o V-n sai daqui (vai para Cargas). Modelo completo: opção "abaixo do
   estol" (núcleo, desligada por padrão no `EnvCfg`) que continua a curva com a polar sem estol para achar o V_min

@@ -101,6 +101,18 @@ export fn aerosim_aero_coeffs_thrust(slot: i32, V: f64, alpha: f64, beta: f64, d
     return 0;
 }
 
+/// coeficientes com as taxas (p, q, r em rad/s), a altura `h` do avião sobre o chão (m; efeito solo) e a tração T[i] e
+/// o torque Q[i] de cada motor (n = 0: sem motores; senão n = número de motores) para os modificadores; ref nulo: CG
+export fn aerosim_aero_coeffs_at(slot: i32, V: f64, alpha: f64, beta: f64, pr: f64, qr: f64, rr: f64, de: f64, da: f64, dr: f64, h: f64, Tn: [*]const f64, Qn: [*]const f64, n: i32, ref: ?*const [3]f64, out: *T.AeroCoeffs) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    if (n != 0 and n != inst.p.n_prop) return E_BAD_INDEX;
+    const r = if (ref) |x| vec.v3(x.*) else trim.Ctx.init(&inst.p, &inst.r.f).rcg;
+    const k: usize = @intCast(n);
+    const tq: ?[2][]const f64 = if (n > 0) .{ Tn[0..k], Qn[0..k] } else null;
+    out.* = aero.coeffsAt(&inst.p, V, alpha, beta, .{ pr, qr, rr }, r, .{ de, da, dr }, h, tq);
+    return 0;
+}
+
 /// colisão (collision/): fração de cada painel dentro do tubo do motor `idx` — o tubo da esteira com tração T a V
 /// (contrai), ou, com T ≤ 0, o cilindro do raio da hélice — até `length` m atrás do disco. Escreve até `cap` valores
 /// em `out` (grade 4 × 16 por painel); devolve o número de painéis

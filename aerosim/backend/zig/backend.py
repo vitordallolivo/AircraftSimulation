@@ -151,6 +151,7 @@ class _Lib:
             "aerosim_panel_states": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, c_size]),
             "aerosim_panel_states_llt": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, c_size]),
             "aerosim_aero_coeffs_thrust": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, ctypes.POINTER(T["AeroCoeffs"])]),
+            "aerosim_aero_coeffs_at": (c_int, [c_int] + [c_double] * 10 + [vp, vp, c_int, vp, ctypes.POINTER(T["AeroCoeffs"])]),
         }
         absent = [n for n in sig if not hasattr(L, n)]
         if absent:
@@ -273,6 +274,20 @@ class ZigSession(ISimSession):
         rb = (ctypes.c_double * 3)(*ref) if ref is not None else None
         _check(self._lib.dll.aerosim_aero_coeffs_thrust(self._slot, V, alpha, beta, de, da, dr, Ta, Qa, n, rb,
                                                          ctypes.byref(o)), "aero")
+        return _struct_dict(o)
+
+    def aero_coeffs_at(self, V, alpha, beta=0.0, p=0.0, q=0.0, r=0.0, de=0.0, da=0.0, dr=0.0, h=50.0, T=(), Q=(),
+                       ref=None):
+        """coeficientes com as taxas (rad/s), a altura `h` sobre o chão (m; efeito solo) e a tração T[i] e o torque Q[i]
+        de cada motor (vazio: sem motores) para os modificadores; ref: ponto dos momentos (None: CG)"""
+        o = self._lib.schema.types["AeroCoeffs"]()
+        n = len(T)
+        Ta = (ctypes.c_double * max(n, 1))(*T)
+        Qa = (ctypes.c_double * max(n, 1))(*Q)
+        rb = (ctypes.c_double * 3)(*ref) if ref is not None else None
+        _check(self._lib.dll.aerosim_aero_coeffs_at(self._slot, V, alpha, beta, p, q, r, de, da, dr, h, Ta, Qa, n,
+                                                     ctypes.cast(rb, ctypes.c_void_p) if rb is not None else None,
+                                                     ctypes.byref(o)), "aero_at")
         return _struct_dict(o)
 
     def tube_panel_hits(self, index, T=0.0, V=0.0, length=10.0) -> np.ndarray:
