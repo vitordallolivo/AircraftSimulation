@@ -187,7 +187,8 @@ fn computeImpl(comptime trace: bool, p: *const T.Params, Vr: V3, w: V3, rcg: V3,
         o.Fi += Fi;
         if (s.group == L.group_wing and s.CLmax > 0) o.ratioCL = @max(o.ratioCL, CL / s.CLmax);
     }
-    // fuselagem
+    // fuselagem (a mesma conta de `fuselage`, escrita aqui para as faixas ficarem bit a bit iguais: fora da função
+    // o compilador reordena as somas no modo de ponto flutuante otimizado)
     if (Va > 0.1) {
         const qS = 0.5 * p.env.rho * Va * Va * p.Sref;
         const be = fm.asin(Vr[1] / Va);
@@ -202,6 +203,22 @@ fn computeImpl(comptime trace: bool, p: *const T.Params, Vr: V3, w: V3, rcg: V3,
         o.M += M;
     }
     return o;
+}
+
+/// a fuselagem por coeficientes (área de arrasto, C_Yβ, C_mα, C_nβ), momentos em `rcg`; para Va > 0,1 m/s. Para os
+/// modelos que não a têm (a tabela de um método de fora; physics/aeromodel.zig)
+pub fn fuselage(p: *const T.Params, Vr: V3, rcg: V3) struct { F: V3, M: V3 } {
+    @setFloatMode(fm.float_mode);
+    const Va = vec.norm(Vr);
+    const alfa = fm.atan2(Vr[2], Vr[0]);
+    const qS = 0.5 * p.env.rho * Va * Va * p.Sref;
+    const be = fm.asin(Vr[1] / Va);
+    var F = Vr * vec.splat(-0.5 * p.env.rho * Va * p.fus_CDS);
+    F[1] += qS * p.fus_CYb * be;
+    var M = vec.cross(vec.v3(p.fus_r) - rcg, F);
+    M[1] += qS * p.cref * p.fus_Cma * alfa;
+    M[2] += qS * p.bref * p.fus_Cnb * be;
+    return .{ .F = F, .M = M };
 }
 
 /// coeficientes estáticos a α, β (sem rotação), momentos no CG dado

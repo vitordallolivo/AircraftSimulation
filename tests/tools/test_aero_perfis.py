@@ -74,3 +74,79 @@ def test_varredura_paineis(backend):
     # faixas com C_Lα uniforme: o C_lp tende ao da teoria das faixas, −C_Lα/6 na asa retangular
     cla = res[("ret_ar8", "nucleo_fino")][1]["CLa"]
     assert abs(clp[1] + cla / 6) < abs(clp[0] + cla / 6) and clp[1] == pytest.approx(-cla / 6, rel=0.01)
+
+
+# MachUpX (Goates e Hunsaker 2021, implementação dos autores: github.com/usuaero/MachUpX), 80 painéis por semiasa,
+# perfil linear a = 5,9/rad e α0 = −2,1147° (o NACA 2412 do programa), α = 2°, V = 12 m/s; trapézio com o 1/4 de
+# corda a −2,39° e enflechada a 22,99° (os mesmos de casos.py)
+MACHUPX = {"ret_ar8": (4.5997, 0.01249), "diedro": (4.56792, -0.08379), "trapezio": (4.69971, 0.01925),
+           "enflechada": (4.53935, -0.0333)}
+
+
+@pytest.mark.parametrize("caso", list(MACHUPX))
+def test_goates_hunsaker_contra_machupx(backend, caso):
+    rows = {r["metodo"]: r for r in rodar(backend, CASOS[caso](), 12.0, {"nucleo_gh"})}
+    v = {**rows["nucleo_gh"]["resumo"], **rows["nucleo_gh"]["polar"].derivs}
+    CLa, Clb = MACHUPX[caso]
+    assert v["CLa"] == pytest.approx(CLa, rel=0.015)
+    assert v["Clb"] == pytest.approx(Clb, rel=0.03)
+
+
+def test_decolagem_replay_bate_com_o_registro(backend):
+    # o núcleo reavaliado no estado de cada ponto (altura, tração, CG do registro) dá o C_L que a simulação usou
+    import numpy as np
+    from aerosim.model.templates import conventional
+    from tools.aero.decolagem import avaliar, decolar, erros, pontos
+    ac = conventional()
+    res, log = decolar(backend, ac)
+    assert res.status == "COMPLETED" and "n_LO" in res.summary
+    idx = pontos(log, 6, 4.0)
+    res = avaliar(backend, ac, log, idx, {"nucleo_gh"})
+    assert np.nanmax(np.abs(res["simulacao"]["CL"] - log["CL"][idx])) < 1e-6
+    e = erros(res)["nucleo_gh"]
+    assert all(np.isfinite(e[k][0]) for k in ("CL", "CD", "Cm"))
+
+
+def test_modelo_do_voo_padrao_e_as_faixas():
+    # "faixas" não escreve nada nos Params: o núcleo fica no de sempre (o AeroDrive monta os Params com os padrões)
+    from aerosim.backend.zig.translator import aero_native
+    from aerosim.model.aircraft import SimSettings
+    s = SimSettings()
+    assert s.aero_model == "faixas" and aero_native(s) == {}
+    s.aero_model = "llt_gh"
+    assert aero_native(s)["aero_model"] == 1 and aero_native(s)["llt_joint"] > 0
+    s.aero_model = "xyz"
+    with pytest.raises(ValueError):
+        aero_native(s)
+
+
+def test_tabela_das_faixas_decola_como_as_faixas(backend):
+    # a tabela feita do próprio núcleo (sem efeito solo nem esteira, derivadas lineares) sai do chão a menos de 5 % da
+    # distância das faixas: o caminho da tabela (flight_table → tradutor → aerotable.zig) está certo
+    from aerosim.model.templates import conventional
+    from tools.aero.missao import voar
+    v = voar(backend, conventional(), ["faixas", "tabela:zig"], "decolagem")
+    a, b = v["faixas"]["res"].summary, v["tabela:zig"]["res"].summary
+    assert v["tabela:zig"]["res"].status == "COMPLETED"
+    assert b["n_LO"] == pytest.approx(a["n_LO"], rel=0.05)
+    assert b["V_LO"] == pytest.approx(a["V_LO"], rel=0.03)
+
+
+def test_erro_do_percurso():
+    # contra si mesmo: zero; o percurso é simétrico; um voo só atrasado não desvia do caminho (o RMS no tempo, sim)
+    import numpy as np
+    from types import SimpleNamespace
+    from tools.aero.missao import ESTADOS, desvio_percurso, erros
+    def voo(atraso=0.0, dh=0.0):
+        tt = np.linspace(0, 10 + atraso, 501)          # o atrasado voa o mesmo caminho até o fim
+        s = np.clip(tt - atraso, 0, None)
+        log = dict(t=tt, n=10 * s, e=0 * s, h=0.5 * s + dh, **{k: 0 * s for k, _, _ in ESTADOS if k != "h"})
+        return dict(res=SimpleNamespace(status="COMPLETED", summary={}), log=log)
+
+    voos = dict(ref=voo(), igual=voo(), atrasado=voo(atraso=1.0), acima=voo(dh=2.0))
+    e = erros(voos, "ref")
+    assert e["igual"]["perc_rms"] == 0 and e["igual"]["h"] == 0
+    assert e["atrasado"]["perc_med"] < 0.05 and e["atrasado"]["h"] > 0.3
+    assert e["acima"]["perc_med"] > 1.5
+    a, b = voos["ref"]["log"], voos["acima"]["log"]
+    assert np.allclose(np.sort(desvio_percurso(a, b)), np.sort(desvio_percurso(b, a)))

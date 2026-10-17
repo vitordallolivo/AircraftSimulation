@@ -11,6 +11,7 @@ const S = @import("state.zig");
 const fm = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
 const aero = @import("../physics/aero.zig");
+const aeromodel = @import("../physics/aeromodel.zig");
 const mods = @import("../modifiers/mod.zig");
 const prop = @import("../physics/propulsion.zig");
 const gear = @import("../physics/gear.zig");
@@ -125,7 +126,7 @@ pub fn f(c: S.Ctx, t: f64, x: []const f64, dx: []f64, out: ?*Out) void {
         }
         env = mods.envFrom(p, Vr, w, &Tn, &Qn);
     }
-    const ae = aero.computeEnv(p, Vr, w, ms.rcg, h - hgnd, .{ cmd.de, cmd.da, cmd.dr }, &env);
+    const ae = aeromodel.compute(p, Vr, w, ms.rcg, h - hgnd, .{ cmd.de, cmd.da, cmd.dr }, &env);
     const gr = gear.compute(c, x, R, ms.rcg, cmd.dw);
     var F = ae.F + pr.F + gr.F;
     var M = ae.M + pr.M + pr.Mgyro + gr.M;

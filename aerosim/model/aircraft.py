@@ -543,6 +543,10 @@ class SimSettings:
     Mst: float = 50.0          # transição linear/estol (Beard e McLain)
     slosh: bool = True
     prop_strike: bool = False  # True: a ponta da pá tocar o chão encerra o voo; False (padrão): só registra a folga
+    # modelo aerodinâmico do voo (core/src/physics/aeromodel.zig): "faixas" (o de sempre), "llt" (linha sustentadora de
+    # Phillips e Snyder), "llt_gh" (Goates e Hunsaker) ou "tabela" (`aero_table`, de aerosim/aero/flight_table.py)
+    aero_model: str = "faixas"
+    aero_table: dict | None = None
 
 
 @dataclass

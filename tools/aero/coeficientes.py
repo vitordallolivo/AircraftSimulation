@@ -3,11 +3,14 @@ distância de cada método até uma referência (qualquer método ou um CSV de f
 
     nucleo          núcleo, faixas da simulação (core/src/physics/aero.zig), longe do chão, com a malha da simulação
                     (uma faixa por trecho entre seções: a asa trapezoidal é UM painel por lado)
-    nucleo_fino     o mesmo com a asa dividida no máximo de faixas que o núcleo aceita (48 painéis)
+    nucleo_fino     o mesmo com as superfícies divididas no máximo de faixas que o núcleo aceita (48 painéis)
     nucleo_solo25   o núcleo com o efeito solo de McCormick (modifier padrão) a h/b = 0,25
     nucleo_solo10   idem a h/b = 0,10 (o McCormick só mexe no arrasto induzido: C_L e C_m iguais)
-    nucleo_llt      núcleo, linha sustentadora (core/src/loads/llt.zig), asa refinada: forças dos painéis somadas;
-                    sem taxas e sem o c_m do perfil (o C_m é só o das forças)
+    nucleo_llt      núcleo, linha sustentadora de Phillips e Snyder (core/src/loads/llt.zig, `coeffs`), superfícies
+                    refinadas: a conta da simulação com as forças dos painéis da linha sustentadora (taxas, c_m das
+                    seções, fuselagem e modificadores como na simulação)
+    nucleo_gh       o mesmo com as correções de Goates e Hunsaker 2021 (junta e linha efetiva): converge com a malha
+                    em derrapagem e com enflechamento
     lltdrek, asb_vlm, asb_buildup, avl   os outros métodos do programa (aerosim.aero.all_solvers)
 """
 from __future__ import annotations
@@ -45,24 +48,23 @@ MIN_REF = 0.02             # |referência| menor que isso (ex.: C_Yβ e C_nr da 
 
 # ---------------------------------------------------------------------- variantes do núcleo (mesma interface)
 def refinar(backend, ac, tip: bool = False, per_side: int | None = None):
-    """a asa principal em `per_side` faixas por lado (None: a maior divisão que cabe no limite de painéis do núcleo,
-    `span_loads._fit`, o mesmo refino da aba Cargas); tip=True: faixas mais estreitas na ponta (Phillips e Snyder, para
-    a linha sustentadora). Pedido acima do limite: fica no limite"""
-    from aerosim.aero.span_loads import _fit, refine_surface
+    """todas as superfícies em `per_side` faixas por lado (None: o maior número, igual em todas, que cabe no limite de
+    painéis do núcleo; pedido acima do limite fica no limite), com `span_loads.refine_surface` (o refino da aba
+    Cargas); tip=True: faixas mais estreitas na ponta (Phillips e Snyder, para a linha sustentadora)"""
+    from aerosim.aero.span_loads import MAX_PER_SIDE, refine_surface
     from aerosim.backend.zig.translator import native_spec
-    i = next((k for k, x in enumerate(ac.surfaces) if x.role == "wing"), None)
-    if i is None:
-        return ac
     limit = backend.schema.limits["surfaces"]
-    if per_side:
-        a = refine_surface(ac, i, per_side, tip)
+    for n in range(min(per_side or MAX_PER_SIDE, MAX_PER_SIDE), 0, -1):
+        a = ac
+        for i in range(len(ac.surfaces)):
+            a = refine_surface(a, i, n, tip)
         if len(native_spec(a)["surf"]) <= limit:
             return a
-    return _fit(ac, i, limit, tip)
+    return ac
 
 
 class NucleoFino(ZigPanelSolver):
-    """o núcleo (faixas) com a asa refinada: separa o efeito da malha da simulação (uma faixa por trecho entre seções)
+    """o núcleo (faixas) com as superfícies refinadas: separa o efeito da malha da simulação (uma faixa por trecho entre seções)
     do efeito do método"""
     name, title = "nucleo_fino", "núcleo, faixas refinadas"
 
@@ -96,10 +98,12 @@ class NucleoSolo(ZigPanelSolver):
 
 
 class NucleoLLT(ZigPanelSolver):
-    """o núcleo com a carga da linha sustentadora: soma das forças dos painéis (`panel_states(llt=True)`), com a asa
-    refinada (a linha sustentadora só converge com muitas faixas)"""
-    name, title = "nucleo_llt", "núcleo, linha sustentadora"
-    supports_rates = False
+    """o núcleo com a carga da linha sustentadora (`aerosim_aero_coeffs_llt`: as forças dos painéis da simulação
+    trocadas pelas da linha sustentadora; fuselagem, c_m das seções e modificadores ficam os da simulação), com as
+    superfícies refinadas (a linha sustentadora só converge com muitas faixas). `case.h`, `case.T`, `case.Q`
+    (opcionais): altura sobre o chão e tração e torque de cada motor"""
+    name, title = "nucleo_llt", "núcleo, linha sustentadora (Phillips e Snyder)"
+    overrides: dict = {}
 
     def __init__(self, backend, per_side: int | None = None):
         super().__init__(backend)
@@ -107,22 +111,31 @@ class NucleoLLT(ZigPanelSolver):
 
     def evaluate(self, model, case, points):
         from aerosim.model.universal import build_model
-        model = build_model(refinar(self.backend, model.aircraft, tip=True, per_side=self.per_side))
-        V, ref = case.V, np.asarray(case.ref, float)
-        qS = 0.5 * case.rho * V * V * model.S
+        key = id(model.aircraft)
+        if getattr(self, "_fino", (None,))[0] != key:     # a malha refinada, uma vez por avião
+            self._fino = (key, build_model(refinar(self.backend, model.aircraft, tip=True, per_side=self.per_side)))
+        model = self._fino[1]
+        V, ref, b, c = case.V, list(case.ref), model.b, model.c
+        h = getattr(case, "h", 50.0)
         out = []
-        with self.backend.session_for(model, overrides={"env": {"rho": case.rho}}) as s:
+        with self.backend.session_for(model, overrides={"env": {"rho": case.rho}, **self.overrides}) as s:
             for pt in points:
-                P = s.panel_states(V, pt.alpha, pt.beta, (), (), pt.de, pt.da, pt.dr, llt=True)
-                P = P[P["group"] >= 0]
-                F = P["F"].sum(axis=0)
-                M = np.cross(P["r"] - ref, P["F"]).sum(axis=0)
-                ca, sa, cb, sb = math.cos(pt.alpha), math.sin(pt.alpha), math.cos(pt.beta), math.sin(pt.beta)
-                out.append(dict(CL=(-F[2] * ca + F[0] * sa) / qS,
-                                CD=-(F[0] * ca * cb + F[1] * sb + F[2] * sa * cb) / qS, CY=F[1] / qS,
-                                Cl=M[0] / (qS * model.b), Cm=M[1] / (qS * model.c), Cn=M[2] / (qS * model.b),
-                                CDi=float("nan")))
+                raw = s.aero_coeffs_llt(V, pt.alpha, pt.beta, pt.p * 2 * V / b, pt.q * 2 * V / c, pt.r * 2 * V / b,
+                                        pt.de, pt.da, pt.dr, h=h, T=getattr(case, "T", ()), Q=getattr(case, "Q", ()),
+                                        ref=ref)
+                out.append(self.backend.translator.from_native(raw, model))
         return out
+
+
+class NucleoGH(NucleoLLT):
+    """a linha sustentadora do núcleo com as correções de Goates e Hunsaker (junta, linha efetiva e seção normal à
+    linha; `span_loads.GOATES_HUNSAKER`): converge com a malha em derrapagem e com enflechamento"""
+    name, title = "nucleo_gh", "núcleo, linha sustentadora (Goates e Hunsaker)"
+
+    @property
+    def overrides(self):
+        from aerosim.aero.span_loads import GOATES_HUNSAKER
+        return GOATES_HUNSAKER
 
 
 def metodos(backend, paineis: int | None = None) -> list:
@@ -131,7 +144,7 @@ def metodos(backend, paineis: int | None = None) -> list:
     from aerosim.aero import all_solvers
     outros = [s for s in all_solvers(backend) if s.name not in ("zig", "asb_ll")]   # LiftingLine do ASB: sem taxas
     return [ZigPanelSolver(backend), NucleoFino(backend, paineis), NucleoSolo(backend, 0.25),
-            NucleoSolo(backend, 0.10), NucleoLLT(backend, paineis), *outros]
+            NucleoSolo(backend, 0.10), NucleoLLT(backend, paineis), NucleoGH(backend, paineis), *outros]
 
 
 def _nome(s) -> str:
@@ -485,7 +498,7 @@ def main(argv=None) -> int:
         print("casos:")
         for k, f in CASOS.items():
             print(f"  {k:13s} {f.__doc__.strip().splitlines()[0]}")
-        print("métodos: nucleo, nucleo_fino, nucleo_solo25, nucleo_solo10, nucleo_llt, lltdrek, asb_vlm, asb_buildup, avl")
+        print("métodos: nucleo, nucleo_fino, nucleo_solo25, nucleo_solo10, nucleo_llt, nucleo_gh, lltdrek, asb_vlm, asb_buildup, avl")
         print("coeficientes: " + ", ".join(f"{k} ({v[0]})" for k, v in METRICAS.items()))
         return 0
     casos = _lista(args.caso) or list(CASOS)

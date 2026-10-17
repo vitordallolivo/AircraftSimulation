@@ -267,13 +267,25 @@ class StripLoadMethod(ILoadMethod):
         return to_result(self.loads(model, point), self.backend)
 
 
-class CoreLoadMethod(StripLoadMethod):
-    """o núcleo: a linha sustentadora (`core/src/loads/llt.zig`) ou as faixas da simulação (o C_Lα uniforme de cada
-    superfície). Cada superfície é refinada sozinha até o limite de painéis do núcleo (`refine`)"""
+# Goates e Hunsaker 2021: junta das pernas (fração da corda) e distância de mistura da linha efetiva (padrões do
+# MachUpX); com os dois em 0 a linha sustentadora do núcleo é a de Phillips e Snyder (core/src/loads/llt.zig)
+GOATES_HUNSAKER = {"llt_joint": 0.15, "llt_blend": 1.0}
 
-    def __init__(self, backend, llt: bool = True, refine: bool = True):
+
+class CoreLoadMethod(StripLoadMethod):
+    """o núcleo: a linha sustentadora (`core/src/loads/llt.zig`; de Phillips e Snyder ou, com `gh`, com as correções
+    de Goates e Hunsaker) ou as faixas da simulação (o C_Lα uniforme de cada superfície). Cada superfície é refinada
+    sozinha até o limite de painéis do núcleo (`refine`)"""
+
+    def __init__(self, backend, llt: bool = True, refine: bool = True, gh: bool = False):
         self.backend, self.llt, self.refine = backend, llt, refine
-        if llt:
+        self.overrides = dict(GOATES_HUNSAKER) if (llt and gh) else {}
+        if llt and gh:
+            self.name, self.title = "llt_gh", "linha sustentadora (Goates e Hunsaker)"
+            self.source = ("núcleo: linha sustentadora com junta e linha efetiva (core/src/loads/llt.zig; Goates e "
+                           "Hunsaker 2021): converge com a malha em derrapagem e com enflechamento")
+            self.supports = frozenset({"esteira", "solo", "comandos"})
+        elif llt:
             self.name, self.title = "llt", "linha sustentadora (Phillips e Snyder)"
             self.source = "núcleo: linha sustentadora (core/src/loads/llt.zig; Phillips e Snyder 2000)"
             self.supports = frozenset({"esteira", "solo", "comandos"})
@@ -288,8 +300,9 @@ class CoreLoadMethod(StripLoadMethod):
         ac = model.aircraft
         notes = []
         if self.llt:
-            notes.append("carga pela linha sustentadora (ferraduras, Phillips e Snyder 2000); α e profundor da "
-                         "trimagem do núcleo, então a soma pode diferir um pouco do peso")
+            notes.append(("carga pela linha sustentadora (ferraduras com junta e linha efetiva, Goates e Hunsaker "
+                          "2021)" if self.overrides else "carga pela linha sustentadora (ferraduras, Phillips e Snyder "
+                          "2000)") + "; α e profundor da trimagem do núcleo, então a soma pode diferir um pouco do peso")
         limit = self.backend.schema.limits["surfaces"]
         props = point.props
         a, b = math.radians(point.alpha), math.radians(point.beta)
@@ -303,7 +316,7 @@ class CoreLoadMethod(StripLoadMethod):
         for idx, a_ac in jobs:
             m = build_model(a_ac)
             owners = panel_owners(m)
-            with self.backend.session_for(m) as s:
+            with self.backend.session_for(m, overrides=self.overrides or None) as s:
                 P = s.panel_states(point.V, a, b, T, Q, *d, llt=self.llt)
                 wash = np.zeros(len(P))
                 for i, p in enumerate(props):           # colisão: quanto de cada faixa está no tubo de cada hélice

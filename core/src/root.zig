@@ -200,6 +200,19 @@ export fn aerosim_panel_states_llt(slot: i32, V: f64, alpha: f64, beta: f64, de:
     return k;
 }
 
+/// `aerosim_aero_coeffs_at` com a carga da linha sustentadora (loads/llt.zig, `coeffs`): as forças dos painéis
+/// trocadas pelas da linha sustentadora (Phillips e Snyder; Goates e Hunsaker com `llt_joint`, `llt_blend`); a
+/// fuselagem, o c_m das seções e os modificadores ficam os da simulação. Só para análise
+export fn aerosim_aero_coeffs_llt(slot: i32, V: f64, alpha: f64, beta: f64, pr: f64, qr: f64, rr: f64, de: f64, da: f64, dr: f64, h: f64, Tn: [*]const f64, Qn: [*]const f64, n: i32, ref: ?*const [3]f64, out: *T.AeroCoeffs) i32 {
+    const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
+    if (n != 0 and n != inst.p.n_prop) return E_BAD_INDEX;
+    const r = if (ref) |x| vec.v3(x.*) else trim.Ctx.init(&inst.p, &inst.r.f).rcg;
+    const k: usize = @intCast(n);
+    const tq: ?[2][]const f64 = if (n > 0) .{ Tn[0..k], Qn[0..k] } else null;
+    out.* = llt.coeffs(&inst.p, V, alpha, beta, .{ pr, qr, rr }, r, .{ de, da, dr }, h, tq);
+    return 0;
+}
+
 /// hash (FNV-1a 64) do esquema: confere que o texto chegou inteiro e identifica a versão do layout
 export fn aerosim_schema_hash() u64 {
     return abi.schema_hash;

@@ -263,6 +263,38 @@ pub const Autopilot = extern struct {
     dr_max: f64 = 0.436,
 };
 
+/// tabela aerodinâmica do avião inteiro (Params.aero_model = 2): C_L, C_D, C_m em α (β = 0, sem taxas nem comandos,
+/// momentos em `ref`) mais as derivadas lineares (por rad; taxas por p b/2V, q c/2V, r b/2V). Vem de qualquer método
+/// (VLM, AVL, lltdrek...: `aerosim/aero/flight_table.py`). `fus` = 0: o núcleo soma a fuselagem por cima (os métodos
+/// de fora não a têm); 1: a tabela já a inclui
+pub const AeroTable = extern struct {
+    n: i32 = 0,
+    fus: i32 = 0,
+    alpha: [L.max_tab]f64 = [_]f64{0} ** L.max_tab, // rad, crescente
+    CL: [L.max_tab]f64 = [_]f64{0} ** L.max_tab,
+    CD: [L.max_tab]f64 = [_]f64{0} ** L.max_tab,
+    Cm: [L.max_tab]f64 = [_]f64{0} ** L.max_tab,
+    ref: [3]f64 = .{ 0, 0, 0 }, // ponto dos momentos da tabela (corpo, m)
+    CYb: f64 = 0,
+    Clb: f64 = 0,
+    Cnb: f64 = 0,
+    CYp: f64 = 0,
+    Clp: f64 = 0,
+    Cnp: f64 = 0,
+    CLq: f64 = 0,
+    Cmq: f64 = 0,
+    CYr: f64 = 0,
+    Clr: f64 = 0,
+    Cnr: f64 = 0,
+    CLde: f64 = 0,
+    Cmde: f64 = 0,
+    Clda: f64 = 0,
+    Cnda: f64 = 0,
+    CYdr: f64 = 0,
+    Cldr: f64 = 0,
+    Cndr: f64 = 0,
+};
+
 pub const Params = extern struct {
     // massa seca: inércia no CG dela, posição desse CG
     m_dry: f64 = 1,
@@ -317,6 +349,14 @@ pub const Params = extern struct {
     stop_seg: i32 = -1, // para ao entrar no segmento k
     stop_autop: i32 = 0, // para quando o piloto automático liga
     stop_takeoff: i32 = 0, // para em takeoff.h_end acima do chão
+    // linha sustentadora das cargas (loads/llt.zig): 0 e 0 = Phillips e Snyder (o de sempre); llt_joint = 0,15 e
+    // llt_blend = 1 = Goates e Hunsaker (2021): ferraduras com junta e linha sustentadora efetiva por ponto de controle
+    // modelo aerodinâmico do voo (physics/aeromodel.zig): 0 = faixas (o de sempre; o AeroDrive usa este), 1 = linha
+    // sustentadora (loads/llt.zig, com llt_joint e llt_blend), 2 = tabela (aero_tab)
+    aero_model: i32 = 0,
+    aero_tab: AeroTable = .{},
+    llt_joint: f64 = 0, // comprimento da junta das pernas, fração da corda no nó (G-H eq. 17)
+    llt_blend: f64 = 0, // distância de mistura da linha efetiva, fração da semienvergadura (G-H eq. 7; MachUpX)
     prop_strike: i32 = 0, // 1: a ponta da pá tocar o chão encerra o voo (`crashed`, Events.tprop); 0 (padrão): só registra
     no_payload: i32 = 0, // começa sem a carga
     n_pad: i32 = 0, // mesas/plataformas

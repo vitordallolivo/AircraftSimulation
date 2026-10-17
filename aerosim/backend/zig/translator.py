@@ -131,6 +131,7 @@ class ZigTranslator(IModelTranslator):
         )
         pads = ac.airfield.pads(m)
         spec.update(pads=pads, n_pad=len(pads))
+        spec.update(aero_native(ac.sim))                       # modelo aerodinâmico do voo (faixas por padrão)
         spec.update(modifiers.native(ac, owner, len(props)))     # efeito solo e efeitos a mais
         if overrides:
             _deep_update(spec, copy.deepcopy(overrides))
@@ -138,6 +139,37 @@ class ZigTranslator(IModelTranslator):
 
     def from_native(self, raw, model=None, **_) -> dict[str, float]:
         return {k: float(raw[k]) for k in raw if k in COEFFS or k in ("CL_wing", "CL_ht", "ratioCL")}
+
+
+AERO_MODELS = {"faixas": 0, "llt": 1, "llt_gh": 1, "tabela": 2}     # core/src/physics/aeromodel.zig
+TABLE_DERIVS = ("CYb", "Clb", "Cnb", "CYp", "Clp", "Cnp", "CLq", "Cmq", "CYr", "Clr", "Cnr", "CLde", "Cmde", "Clda",
+                "Cnda", "CYdr", "Cldr", "Cndr")
+
+
+def aero_native(sim) -> dict:
+    """o modelo aerodinâmico do voo para os `Params` (`aero_model`, `llt_joint`, `llt_blend`, `aero_tab`). "faixas" não
+    escreve nada: os padrões do núcleo são as faixas de sempre"""
+    kind = getattr(sim, "aero_model", "faixas") or "faixas"
+    if kind not in AERO_MODELS:
+        raise ValueError(f"modelo aerodinâmico desconhecido: {kind!r} ({' | '.join(AERO_MODELS)})")
+    if kind == "faixas":
+        return {}
+    out = dict(aero_model=AERO_MODELS[kind])
+    if kind == "llt_gh":
+        from aerosim.aero.span_loads import GOATES_HUNSAKER
+        out.update(GOATES_HUNSAKER)
+    if kind == "tabela":
+        t = sim.aero_table
+        if not t:
+            raise ValueError("aero_model = 'tabela' sem aero_table (aerosim/aero/flight_table.py monta uma)")
+        a = np.radians(np.asarray(t["alpha"], float))
+        o = np.argsort(a)
+        tab = dict(n=len(a), fus=int(bool(t.get("fus", False))), alpha=a[o].tolist(), ref=list(t.get("ref", (0, 0, 0))),
+                   **{k: np.asarray(t[k], float)[o].tolist() for k in ("CL", "CD", "Cm")})
+        d = t.get("derivs", {})
+        tab.update({k: float(d.get(k, 0.0)) for k in TABLE_DERIVS})
+        out["aero_tab"] = tab
+    return out
 
 
 def _deep_update(base: dict, over: dict) -> dict:

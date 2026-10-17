@@ -6,6 +6,25 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- Voar com outro modelo aerodinâmico, fase B (T65): `Params.aero_model` escolhe o modelo da dinâmica, da trimagem e da
+  linearização (`core/src/physics/aeromodel.zig`): 0 = faixas (o padrão: bit a bit igual, o AeroDrive não muda),
+  1 = linha sustentadora (Phillips e Snyder ou Goates e Hunsaker), 2 = tabela do avião inteiro de qualquer método
+  (`physics/aerotable.zig`; montada por `aerosim/aero/flight_table.py` com AVL, VLM, lltdrek...). No Python,
+  `ac.sim.aero_model` e `ac.sim.aero_table`. `tools/aero/missao.py` voa a decolagem ou a missão com cada modelo e
+  sobrepõe as curvas e o resumo da GUI (figuras em `docs/img/aero_*_modelos.png`).
+- Decolagem com outro modelo, fase A (T65): `tools/aero/decolagem.py` roda a decolagem com o modelo de sempre e
+  reavalia cada ponto com todos os métodos (núcleo, linha sustentadora, lltdrek, ASB, AVL) no mesmo estado: erro de
+  cada coeficiente no tempo, RMS e máximo, em força (% do peso) e momento. `--puro` tira as sobrescritas e a fuselagem
+  para todos verem o mesmo avião. Núcleo: `aerosim_aero_coeffs_llt` (os coeficientes do avião com as forças dos
+  painéis pela linha sustentadora, com taxas, altura e tração); a simulação e o AeroDrive não mudam.
+- Linha sustentadora de Goates e Hunsaker (T64; Goates e Hunsaker, AIAA SciTech 2021): a de Phillips e Snyder não
+  converge com a malha em derrapagem nem com enflechamento (o C_lβ da asa plana crescia com o log da malha; o C_Lα da
+  enflechada não parava). Três correções no `core/src/loads/llt.zig`, ligadas por `Params.llt_joint` e `llt_blend`
+  (0 por padrão: tudo igual): junta das pernas, linha efetiva por ponto de controle e seção normal à linha. Contra o
+  MachUpX (a implementação dos autores): C_Lα a 1,5 % e C_lβ a 3 % em quatro asas. Método novo na aba Cargas
+  ("linha sustentadora (Goates e Hunsaker)", `llt_gh`) e no `tools/aero` (`nucleo_gh`).
+- `tools/aero`: todas as superfícies são refinadas (antes só a asa; a EV sozinha saía com 2× o C_Yβ); figuras e matriz
+  refeitas com o método novo.
 - `tools/aero` (T63): perfis de teste dos coeficientes, só superfícies, a 12 m/s. Métodos: núcleo (malha da simulação
   e refinada), núcleo com efeito solo (McCormick a h/b = 0,25 e 0,10), linha sustentadora do núcleo, lltdrek, VLM e
   buildup do ASB, AVL. Distância até qualquer método ou CSV de fora (`--ref`), matriz entre os métodos (`--matriz`),
