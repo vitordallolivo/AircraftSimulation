@@ -9,7 +9,7 @@ import numpy as np
 
 from aerosim.interfaces.aero import DERIVATIVES, AeroCase, AeroPolar, IAeroSolver
 
-from .asb_solver import AsbBuildupSolver, AsbLiftingLineSolver, AsbVLMSolver
+from .asb_solver import AsbBuildupSolver, AsbLiftingLineSolver, AsbVLMLoads, AsbVLMSolver
 from .avl_solver import AvlSolver
 from .lltdrek_solver import LltdrekSolver
 from .xflr5_import import Xflr5PolarFile
@@ -19,6 +19,22 @@ from .zig_solver import ZigPanelSolver
 def all_solvers(backend) -> list[IAeroSolver]:
     return [ZigPanelSolver(backend), LltdrekSolver(), AsbVLMSolver(), AsbBuildupSolver(), AsbLiftingLineSolver(),
             AvlSolver()]
+
+
+def all_load_methods(backend, refine: bool = True) -> list:
+    """os métodos de carga ao longo das superfícies (interfaces/loads.py: ILoadMethod), na ordem da aba Cargas"""
+    from .span_loads import CoreLoadMethod
+    return [CoreLoadMethod(backend, llt=True, refine=refine), CoreLoadMethod(backend, llt=True, refine=refine, gh=True),
+            CoreLoadMethod(backend, llt=False, refine=refine), AsbVLMLoads()]
+
+
+def load_method(backend, name: str, refine: bool = True):
+    """o método de carga pelo nome ou pelo título"""
+    ms = all_load_methods(backend, refine)
+    m = next((m for m in ms if name in (m.name, m.title)), None)
+    if m is None:
+        raise ValueError(f"método de carga desconhecido: {name!r} ({' | '.join(x.name for x in ms)})")
+    return m
 
 
 def parabolic_polar(pol: AeroPolar, a_lo: float = -2.0, a_hi: float = 8.0) -> dict[str, float]:

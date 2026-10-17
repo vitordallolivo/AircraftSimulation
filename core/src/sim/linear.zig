@@ -12,6 +12,8 @@ const S = @import("state.zig");
 const fm = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
 const aero = @import("../physics/aero.zig");
+const aeromodel = @import("../physics/aeromodel.zig");
+const mods = @import("../modifiers/mod.zig");
 const prop = @import("../physics/propulsion.zig");
 const mass = @import("../physics/mass.zig");
 const trim = @import("trim.zig");
@@ -51,7 +53,7 @@ pub fn rigid(b: *const Body, x: [nl]f64, u: [nu]f64) [nl]f64 {
     const p = b.c.p;
     const VB = V3{ x[0], x[1], x[2] };
     const w = V3{ x[3], x[4], x[5] };
-    const ae = aero.compute(p, VB, w, b.c.rcg, 100.0, .{ u[0], u[1], u[2] });
+    const ae = aeromodel.compute(p, VB, w, b.c.rcg, 100.0, .{ u[0], u[1], u[2] }, &mods.Env.none);
     var rps = [_]f64{1} ** L.max_props;
     for (p.prop[0..@intCast(p.n_prop)], 0..) |*pu, i| rps[i] = prop.equilibriumRps(p, pu, VB, u[3]);
     const pr = prop.compute(p, VB, w, b.c.rcg, &rps, u[3], u[2], x[7], 0.0); // h como na trimagem

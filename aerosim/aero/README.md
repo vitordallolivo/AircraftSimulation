@@ -53,6 +53,29 @@ longo da semienvergadura no cruzeiro e no estol):
 A trapezoidal tem mais alongamento com a mesma envergadura (menos área), e o perfil simétrico na ponta
 (com washout) tira arqueamento de onde o estol seria perigoso: C_L0 e C_m,ac menores, estol mais tarde.
 
+## Tabela de voo de qualquer método (`flight_table.py`)
+
+Para voar com um método que não roda no núcleo (lltdrek, ASB, AVL), ele gera uma tabela antes do voo, e o núcleo voa
+com ela (`ac.sim.aero_model = "tabela"`, `core/src/physics/aerotable.zig`). A tabela tem:
+- C_L, C_D, C_m em α (−10° a 20°), a uma V, com β = 0;
+- as derivadas lineares de β, de taxas e de comandos, tomadas a 2°.
+
+```python
+from aerosim.aero import solver_by_name
+from aerosim.aero.flight_table import table
+t = table(solver_by_name(backend, "avl"), model, V=15.0, rho=1.225, ref=cg, fill=solver_by_name(backend, "zig"))
+ac.sim.aero_model, ac.sim.aero_table = "tabela", t        # t["completadas"]: as derivadas que vieram do núcleo
+```
+
+- **Derivadas que faltam:** as que o método não dá (NaN) vêm de `fill` (em geral o núcleo), e a tabela guarda quais.
+- **Cache:** as polares passam por `service.solve` (memória; disco para os métodos caros, `cost = "caro"`), então a
+  mesma tabela não é montada de novo.
+- **Fuselagem:** os métodos de fora não a têm (`IAeroSolver.includes_fuselage = False`), e o núcleo soma a dele por
+  cima.
+- **O que a tabela não tem:** efeito solo, esteira, variação com V e estol nos métodos lineares.
+
+Para comparar os voos com cada modelo: `tools/aero/missao.py`.
+
 ## Carga ao longo das superfícies (`span_loads.py`)
 
 É a "análise de cargas" da aerodinâmica num ponto de operação.
@@ -88,9 +111,14 @@ r.props[0].T, r.props[0].Q, r.props[0].J                      # motor naquela ro
 - `"llt"` (padrão): linha sustentadora do núcleo (`core/src/loads/llt.zig`, Phillips e Snyder 2000). A carga depende
   do alongamento e da forma, cai na ponta, e o downwash da asa na cauda sai das pernas dos vórtices. A superfície é
   refinada com faixas mais estreitas na ponta.
+- `"llt_gh"`: a mesma linha sustentadora com as correções de Goates e Hunsaker (AIAA SciTech 2021): junta das
+  pernas, linha efetiva por ponto de controle e seção normal à linha. A de Phillips e Snyder não converge com a malha em
+  superfície enflechada nem em derrapagem; esta converge e fica a 1,5 % (C_Lα) e 3 % (C_lβ) do MachUpX
+  (`core/src/loads/README.md`). Com o cache da geometria (`llt.prepare`), custa o mesmo que a de Phillips e Snyder.
 - `"faixas"`: o C_Lα 3D uniforme de cada superfície, como a simulação usa. A carga sai plana: serve para comparar.
+- `"vlm_asb"`: o VLM do AeroSandbox (`asb_solver.AsbVLMLoads`), para a tendência.
 
-Na linha de comando: `--metodo llt|faixas`. O `tools/span_load.py` também aceita `--sem-helice`.
+Na linha de comando: `--metodo llt|llt_gh|faixas`. O `tools/span_load.py` também aceita `--sem-helice`.
 
 A conta é do núcleo, no mesmo laço da simulação (`aero.computeTrace` via `aerosim_panel_states`), e entra com os
 modificadores do avião (efeito solo, esteira). O estado do motor vem de `aerosim_prop_state`: hélice C_T(J), C_P(J)

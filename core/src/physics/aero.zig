@@ -25,22 +25,65 @@ pub const Out = struct {
 
 /// mistura linear / placa plana (Beard e McLain): 0 antes do estol, 1 depois
 pub fn sigmaStall(al: f64, a0: f64, M: f64) f64 {
+    @setFloatMode(fm.float_mode);
     const e1 = fm.exp(-M * (al - a0));
     const e2 = fm.exp(M * (al + a0));
     return (1.0 + e1 + e2) / ((1.0 + e1) * (1.0 + e2));
 }
 
 fn clPanel(s: *const T.Surface, al: f64, M: f64) f64 {
-    const sg = sigmaStall(al, s.a0, M);
-    const sc = fm.sincos(al);
+    @setFloatMode(fm.float_mode);
+    return clPanelWith(s, al, sigmaStall(al, s.a0, M), fm.sincos(al));
+}
+
+/// o C_L do painel com a mistura σ e o sincos(α) já calculados (quem chama reaproveita os dois)
+inline fn clPanelWith(s: *const T.Surface, al: f64, sg: f64, sc: fm.SinCos) f64 {
     return (1.0 - sg) * (s.CL0 + s.CLa * al) + sg * 2.0 * fm.sgn(al) * sc.s * sc.s * sc.c;
 }
 
 fn peakCL(s: *const T.Surface, M: f64) f64 {
+    if (fm.opt_peak) return peakGolden(s, M);
     var pk: f64 = -1e9;
     var al: f64 = 0.0;
     while (al < 0.9) : (al += 2e-4) pk = @max(pk, clPanel(s, al, M));
     return pk;
+}
+
+/// o mesmo pico por varredura grossa (passo 0,01) e seção áurea em volta do melhor ponto (só com `opt_peak`)
+fn peakGolden(s: *const T.Surface, M: f64) f64 {
+    var best: f64 = 0;
+    var pk: f64 = -1e9;
+    var al: f64 = 0.0;
+    while (al < 0.9) : (al += 0.01) {
+        const c = clPanel(s, al, M);
+        if (c > pk) {
+            pk = c;
+            best = al;
+        }
+    }
+    const gr = 0.6180339887498949;
+    var a = @max(best - 0.01, 0.0);
+    var b = @min(best + 0.01, 0.9);
+    var x1 = b - gr * (b - a);
+    var x2 = a + gr * (b - a);
+    var f1 = clPanel(s, x1, M);
+    var f2 = clPanel(s, x2, M);
+    for (0..40) |_| {
+        if (f1 < f2) {
+            a = x1;
+            x1 = x2;
+            f1 = f2;
+            x2 = a + gr * (b - a);
+            f2 = clPanel(s, x2, M);
+        } else {
+            b = x2;
+            x2 = x1;
+            f2 = f1;
+            x1 = b - gr * (b - a);
+            f1 = clPanel(s, x1, M);
+        }
+    }
+    return @max(pk, @max(f1, f2));
 }
 
 /// eixos de cada painel e ângulo de estol a0 que dá o CLmax pedido
@@ -93,6 +136,7 @@ pub fn computeTrace(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, e
 }
 
 fn computeImpl(comptime trace: bool, p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env, out: if (trace) []T.PanelState else void) Out {
+    @setFloatMode(fm.float_mode);
     var o = Out{};
     const Va = vec.norm(Vr);
     const alfa = fm.atan2(Vr[2], Vr[0]);
@@ -116,12 +160,14 @@ fn computeImpl(comptime trace: bool, p: *const T.Params, Vr: V3, w: V3, rcg: V3,
         var al = fm.atan2(ww, u);
         if (s.downwash != 0) al -= s.eps0 + s.depsda * alfa;
         al += s.tau * vec.dot(vec.v3(s.mix), d);
-        const CL = clPanel(s, al, p.Mst);
+        // opt_cse: σ e sincos(α) uma vez só (o mesmo valor; sem ele, o compilador não reaproveita as funções do fmath)
         const sg = sigmaStall(al, s.a0, p.Mst);
+        const scl = if (fm.opt_cse) fm.sincos(al) else undefined;
+        const CL = if (fm.opt_cse) clPanelWith(s, al, sg, scl) else clPanel(s, al, p.Mst);
         var fge: f64 = 1.0;
         if (s.vertical == 0) fge = mods.ground.factor(p.ground, h - s.r[2], p.bref); // efeito solo (modifiers/ground.zig)
         const CDi = (1.0 - sg) * CL * CL / (fm.pi * s.e * s.AR) * fge;
-        const sa = fm.sin(al);
+        const sa = if (fm.opt_cse) scl.s else fm.sin(al);
         const CD = s.CD0 + CDi + sg * 1.2 * sa * sa;
         const qS = 0.5 * p.env.rho * V2 * s.eta * s.S;
         const lift_dir = (ex * vec.splat(ww) - ez * vec.splat(u)) / vec.splat(Vp);
@@ -141,7 +187,8 @@ fn computeImpl(comptime trace: bool, p: *const T.Params, Vr: V3, w: V3, rcg: V3,
         o.Fi += Fi;
         if (s.group == L.group_wing and s.CLmax > 0) o.ratioCL = @max(o.ratioCL, CL / s.CLmax);
     }
-    // fuselagem
+    // fuselagem (a mesma conta de `fuselage`, escrita aqui para as faixas ficarem bit a bit iguais: fora da função
+    // o compilador reordena as somas no modo de ponto flutuante otimizado)
     if (Va > 0.1) {
         const qS = 0.5 * p.env.rho * Va * Va * p.Sref;
         const be = fm.asin(Vr[1] / Va);
@@ -158,6 +205,22 @@ fn computeImpl(comptime trace: bool, p: *const T.Params, Vr: V3, w: V3, rcg: V3,
     return o;
 }
 
+/// a fuselagem por coeficientes (área de arrasto, C_Yβ, C_mα, C_nβ), momentos em `rcg`; para Va > 0,1 m/s. Para os
+/// modelos que não a têm (a tabela de um método de fora; physics/aeromodel.zig)
+pub fn fuselage(p: *const T.Params, Vr: V3, rcg: V3) struct { F: V3, M: V3 } {
+    @setFloatMode(fm.float_mode);
+    const Va = vec.norm(Vr);
+    const alfa = fm.atan2(Vr[2], Vr[0]);
+    const qS = 0.5 * p.env.rho * Va * Va * p.Sref;
+    const be = fm.asin(Vr[1] / Va);
+    var F = Vr * vec.splat(-0.5 * p.env.rho * Va * p.fus_CDS);
+    F[1] += qS * p.fus_CYb * be;
+    var M = vec.cross(vec.v3(p.fus_r) - rcg, F);
+    M[1] += qS * p.cref * p.fus_Cma * alfa;
+    M[2] += qS * p.bref * p.fus_Cnb * be;
+    return .{ .F = F, .M = M };
+}
+
 /// coeficientes estáticos a α, β (sem rotação), momentos no CG dado
 pub fn coeffs(p: *const T.Params, V: f64, alpha: f64, beta: f64, rcg: V3, d: V3) T.AeroCoeffs {
     return coeffsEx(p, V, alpha, beta, vec.zero, rcg, d);
@@ -170,11 +233,16 @@ pub fn coeffsEx(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V
 
 /// `coeffsEx` com a tração e o torque de cada motor (para os modificadores, ex.: esteira); null: sem motores
 pub fn coeffsEnv(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V3, d: V3, thrust: ?[2][]const f64) T.AeroCoeffs {
+    return coeffsAt(p, V, alpha, beta, w, ref, d, 50.0, thrust);
+}
+
+/// `coeffsEnv` com a altura `h` do avião sobre o chão (m) para o efeito solo (`coeffsEnv`: 50 m, longe do chão)
+pub fn coeffsAt(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V3, d: V3, h: f64, thrust: ?[2][]const f64) T.AeroCoeffs {
     const a = fm.sincos(alpha);
     const b = fm.sincos(beta);
     const Vr = V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
     const env = if (thrust) |tq| mods.envFrom(p, Vr, w, tq[0], tq[1]) else mods.Env.none;
-    const o = computeEnv(p, Vr, w, ref, 50.0, d, &env);
+    const o = computeEnv(p, Vr, w, ref, h, d, &env);
     const qS = 0.5 * p.env.rho * V * V * p.Sref;
     return .{
         .CL = (-o.F[2] * a.c + o.F[0] * a.s) / qS,

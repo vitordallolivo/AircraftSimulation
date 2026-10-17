@@ -2,3 +2,4 @@
 aerosandbox>=4.2
 lltdrek @ git+https://github.com/kuodrek/lltdrek.git
 matplotlib>=3.5       # tools/plot_comparativo.py
+optvl   # AVL (Drela) compilado com interface em Python: o método AVL roda sem o executável

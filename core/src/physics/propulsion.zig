@@ -50,6 +50,7 @@ pub fn init(p: *T.Params) void {
 
 /// interpolação linear na tabela (busca binária: tabela monotônica em J)
 fn coef(u: *const T.PropUnit, J: f64, CT: *f64, CP: *f64) void {
+    @setFloatMode(fm.float_mode);
     const n: usize = @intCast(u.n_pts);
     if (n < 2) {
         CT.* = 0;
@@ -123,6 +124,7 @@ pub fn axis(p: *const T.Params, u: *const T.PropUnit) V3 {
 }
 
 pub fn unit(p: *const T.Params, u: *const T.PropUnit, eT: V3, Vr: V3, w: V3, rps: f64, thr: f64, h: f64) Unit {
+    @setFloatMode(fm.float_mode);
     if (u.model == T.prop_poly) return polyUnit(p, u, eT, Vr, w, thr, h);
     var o = Unit{};
     const n = if (rps > 1.0) rps else 1.0;
@@ -183,6 +185,7 @@ pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, rps: []const f64, thr
 /// rotação de equilíbrio (dn/dt = 0), sem rotação do avião. dn/dt cai com n, então a raiz é
 /// única em [1, 600] rps: regula falsi com a modificação de Illinois (converge em ~10 passos).
 pub fn equilibriumRps(p: *const T.Params, u: *const T.PropUnit, Vr: V3, thr: f64) f64 {
+    @setFloatMode(fm.float_mode);
     if (u.model == T.prop_poly) return 1.0;
     var a: f64 = 1.0;
     var b: f64 = 600.0;

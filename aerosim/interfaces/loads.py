@@ -1,8 +1,10 @@
 """Entrada padrão das análises de carga aerodinâmica: o que os gráficos de carga e a vista 3D aceitam.
 
-Qualquer método que produza um `LoadResult` alimenta os mesmos gráficos e a mesma vista 3D, sem mudar nada neles:
-hoje o núcleo por faixas (`aerosim/aero/span_loads.py`, `to_result`); amanhã um VLM, um método de painéis ou um CFD
-(lendo o arquivo de saída e montando a malha com os valores).
+Qualquer método que produza um `LoadResult` alimenta os mesmos gráficos e a mesma vista 3D, sem mudar nada neles.
+Um método implementa `ILoadMethod`: recebe o modelo universal e um `LoadPoint` (o ponto de voo já resolvido:
+trimagem e hélices, o mesmo para todos os métodos) e devolve o `LoadResult`. Hoje: o núcleo (linha sustentadora e
+faixas, `aerosim/aero/span_loads.py`) e o VLM do AeroSandbox (`aerosim/aero/asb_solver.py`); a lista fica em
+`aerosim.aero.all_load_methods`. Um método de painéis ou um CFD (lendo o arquivo de saída) entra do mesmo jeito.
 
 Duas partes:
 
@@ -23,6 +25,7 @@ Um método pode pôr campos a mais (ex.: "cp" de um CFD); quem desenha mostra o 
 """
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from dataclasses import field as _field
 
@@ -99,3 +102,53 @@ class LoadResult:
 
     def by_role(self, role: str) -> list[SpanDistribution]:
         return [d for d in self.distributions if d.role == role]
+
+
+# ---------------------------------------------------------------------- métodos de carga
+# o que um método pode modelar; o que ele não modela vira aviso na aba (ex.: "VLM: sem esteira da hélice")
+SUPPORTS: dict[str, str] = {
+    "esteira": "esteira da hélice nas superfícies",
+    "solo": "efeito solo",
+    "comandos": "deflexão dos comandos",
+    "corda": "distribuição na corda (malha na corda)",
+    "estol": "estol da seção",
+}
+
+
+@dataclass
+class LoadPoint:
+    """o ponto de voo já resolvido, igual para todos os métodos (quem resolve: `aerosim.aero.span_loads.prepare`).
+    Ângulos em graus, SI"""
+    V: float
+    alpha: float
+    beta: float = 0.0
+    de: float = 0.0
+    da: float = 0.0
+    dr: float = 0.0
+    rho: float = 1.225
+    n: float = 1.0
+    weight: float = 0.0                        # N
+    props: list = _field(default_factory=list)  # estado de cada motor (rotação, tração, torque, eixo, cubo)
+    props_on: bool = True                      # as superfícies veem a hélice (tração e esteira)
+    trim: dict | None = None                   # a trimagem do núcleo, se α veio dela
+    notes: list[str] = _field(default_factory=list)
+
+
+class ILoadMethod(ABC):
+    """um método de carga aerodinâmica ao longo das superfícies"""
+    name: str = ""
+    title: str = ""
+    source: str = ""                           # de onde vem o método (obra ou programa)
+    supports: frozenset = frozenset()          # chaves de SUPPORTS
+
+    def available(self) -> str | None:
+        """None se pode rodar; senão o motivo (ex.: pacote não instalado)"""
+        return None
+
+    def missing(self, wanted) -> list[str]:
+        """o que, de `wanted` (chaves de SUPPORTS), este método não modela, em texto"""
+        return [SUPPORTS[k] for k in wanted if k not in self.supports]
+
+    @abstractmethod
+    def compute(self, model, point: LoadPoint) -> LoadResult:
+        """a carga do modelo universal `model` no ponto `point`"""

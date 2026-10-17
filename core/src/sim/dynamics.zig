@@ -11,6 +11,7 @@ const S = @import("state.zig");
 const fm = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
 const aero = @import("../physics/aero.zig");
+const aeromodel = @import("../physics/aeromodel.zig");
 const mods = @import("../modifiers/mod.zig");
 const prop = @import("../physics/propulsion.zig");
 const gear = @import("../physics/gear.zig");
@@ -48,6 +49,7 @@ pub const Out = struct {
     pr: prop.Out = .{},
     N: [L.max_gear]f64 = [_]f64{0} ** L.max_gear,
     htail: f64 = 1e9,
+    hprop: f64 = 1e9, // folga da ponta da pá mais baixa sobre o terreno (m)
     RN: f64 = 0,
     Rnw: f64 = 0,
     Rmw: f64 = 0,
@@ -124,7 +126,7 @@ pub fn f(c: S.Ctx, t: f64, x: []const f64, dx: []f64, out: ?*Out) void {
         }
         env = mods.envFrom(p, Vr, w, &Tn, &Qn);
     }
-    const ae = aero.computeEnv(p, Vr, w, ms.rcg, h - hgnd, .{ cmd.de, cmd.da, cmd.dr }, &env);
+    const ae = aeromodel.compute(p, Vr, w, ms.rcg, h - hgnd, .{ cmd.de, cmd.da, cmd.dr }, &env);
     const gr = gear.compute(c, x, R, ms.rcg, cmd.dw);
     var F = ae.F + pr.F + gr.F;
     var M = ae.M + pr.M + pr.Mgyro + gr.M;
@@ -216,6 +218,19 @@ pub fn f(c: S.Ctx, t: f64, x: []const f64, dx: []f64, out: ?*Out) void {
             nm += 1;
         }
         if (g.kind == T.gear_steer) xn = g.r[0];
+    }
+    // folga da ponta da pá: o ponto mais baixo do disco de cada hélice. O disco (raio D/2) fica no plano normal ao
+    // eixo; o ponto mais baixo está na direção da vertical projetada nesse plano (geometria, sem fórmula de fonte)
+    o.hprop = 1e9;
+    const npr: usize = @intCast(p.n_prop);
+    for (p.prop[0..npr]) |*u| {
+        const ax = vec.mul(R, prop.axis(p, u));
+        const hub = vec.mul(R, vec.v3(u.r));
+        const down = V3{ 0, 0, 1 };
+        const kp = down - ax * vec.splat(vec.dot(down, ax));
+        const nk = vec.norm(kp);
+        const low = if (nk > 1e-9) hub + kp * vec.splat(0.5 * u.D / nk) else hub;
+        o.hprop = @min(o.hprop, -(x[S.D] + low[2]) - terrain.height(p, x[S.N] + low[0], x[S.E] + low[1]));
     }
     // reações no trem pelo artigo (Riboldi et al., eqs. 3-5): pista plana
     const Lift = o.CL * qS;

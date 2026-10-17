@@ -30,7 +30,9 @@ Ferramenta para **dimensionar uma aeronave** (AeroDesign, VANT, protótipo) e vo
 | Interfaces | Contratos entre as camadas (só classes abstratas e tipos) | `aerosim/interfaces/` |
 | Simulação (aba) | Uma `ISimulation` por análise: campos, gráficos, `run` → `SimResult` com `checks` | `aerosim/manager/simulations/` |
 | Modifier | Método da literatura ligável por avião (efeito solo, esteira), desligado por padrão | `core/src/modifiers/`, `aerosim/model/modifiers.py` |
+| Modelo aerodinâmico do voo | Quem dá as forças na dinâmica, na trimagem e na linearização: faixas (padrão; o AeroDrive usa este), linha sustentadora (Phillips e Snyder; Goates e Hunsaker) ou tabela de qualquer método. `ac.sim.aero_model` → `Params.aero_model` | `core/src/physics/aeromodel.zig`, `aerosim/aero/flight_table.py` |
 | `LoadResult` | Entrada padrão das análises de carga: qualquer método (núcleo, VLM, CFD) entrega isso e os gráficos e o 3D leem | `aerosim/interfaces/loads.py` |
+| Método de carga (`ILoadMethod`) | Recebe o modelo universal e o `LoadPoint` (trimagem e hélices, resolvido uma vez por `span_loads.prepare`) e devolve o `LoadResult`. Registro: `aerosim.aero.all_load_methods`; método novo = uma classe nova | `aerosim/interfaces/loads.py`, `aerosim/aero/span_loads.py`, `aerosim/aero/asb_solver.py` |
 | ABI do núcleo | Funções `export fn` de `core/src/root.zig`, chamadas por ctypes; esquema com hash conferido ao carregar | `core/src/root.zig`, `aerosim/backend/zig/` |
 
 **Camadas:** GUI → Simulation Manager → interface → backend/núcleo. **Aircraft Data** (`aerosim/data`) carrega e grava
@@ -83,7 +85,8 @@ as configurações.
 - **Ideia nova vai primeiro para o plano.** Quando o pedido é "pensar", não programar: mostrar o plano, com as fontes,
   e esperar o ok.
 - Não inventar escopo: o que não foi pedido vira proposta, não código.
-- Rodadas longas (suíte completa, regressão) avisando antes; não rodar várias ao mesmo tempo na mesma árvore.
+- Rodadas longas (suíte completa, regressão) **só quando o dono mandar commitar**. No meio do trabalho, rodar só os
+  testes da área mexida. Avisar antes e não rodar várias ao mesmo tempo na mesma árvore.
 
 ## 5. Git e versões
 
@@ -120,6 +123,8 @@ python tools/checks/run.py                       # checks rápidos; --tudo inclu
 cd core && python -m ziglang build test          # testes do núcleo (test-math, test-physics, test-sim...)
 cd aerodrive && python -m ziglang build test     # testes do AeroDrive; build run abre o jogo
 QT_QPA_PLATFORM=offscreen python -m pytest -q tests/<área>
+python tools/time_profile.py loads --exato       # perfil: flame graph, tabela por função e por módulo (perfis/)
+python tools/opt_matrix.py --instrucoes          # combinações de -Dopt por instruções (Callgrind); sem a flag, tempo
 python -m aerosim.gui [arquivo ou pasta]         # a GUI
 xvfb-run -a python tools/load_view.py <avião> --png x.png   # imagem da vista 3D sem tela
 ```
@@ -145,9 +150,10 @@ O container começa sem as dependências, e tudo o que se instala some quando el
 | Para rodar | Instalar |
 |---|---|
 | Núcleo (`core`, `zig build test`) e o backend Python | `pip install ziglang` (0.16.0 = `minimum_zig_version`) |
-| Testes Python (`tests/`), `tools/checks`, a GUI | `pip install -r requirements.txt -r requirements-aero.txt pytest` |
+| Testes Python (`tests/`), `tools/checks`, a GUI | `pip install -r requirements.txt -r requirements-aero.txt pytest` (o `requirements-aero.txt` traz o `optvl`: o AVL sem executável) |
 | Testes de GUI e de aero (Qt/pyqtgraph sem tela) | `apt-get install -y libegl1 libgl1 libxkbcommon0` |
 | AeroDrive (`zig build`: raylib) | `apt-get install -y libgl-dev libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libxext-dev`, mais as dependências do Zig (abaixo) |
+| Perfil e mapa de otimizações (`tools/time_profile.py`, `tools/opt_matrix.py`) | `pip install py-spy`; `apt-get install -y valgrind` (o `--exato` e o `--instrucoes`) |
 | Prints com 3D (`xvfb-run`) | `apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0 libgl1-mesa-dri` (o `xvfb-run` já vem no container) |
 
 **Dependências do AeroDrive pelo `git`** (o `zig fetch` não passa pelo proxy da sessão). Numa pasta fora do

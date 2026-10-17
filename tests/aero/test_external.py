@@ -75,8 +75,31 @@ def test_avl_flying_wing_without_naca_writes_contour(tmp_path):
 def test_avl_unavailable_says_why(monkeypatch):
     monkeypatch.delenv("AVL_PATH", raising=False)
     monkeypatch.setattr("shutil.which", lambda *_: None)
+    monkeypatch.setattr("aerosim.aero.avl_solver.has_optvl", lambda: False)
     assert "AVL" in AvlSolver().available()
     assert any(s.name == "avl" for s in all_solvers(None))
+
+
+def _optvl():
+    from aerosim.aero.avl_solver import has_optvl
+    return has_optvl()
+
+
+@pytest.mark.skipif(not _optvl(), reason="OptVL não instalado (pip install optvl)")
+def test_avl_through_optvl_signs_match_the_core(backend, monkeypatch):
+    """AVL pelo OptVL (sem o executável): sinais físicos (C_lβ < 0 com diedro, C_nβ > 0, C_lp < 0, C_nr < 0) e os
+    comandos com o mesmo sinal do núcleo (antes C_lβ, C_nβ, C_lδa e C_nδr saíam invertidos e o aileron que encosta
+    no flape sumia)"""
+    from aerosim.aero import solver_by_name
+    monkeypatch.delenv("AVL_PATH", raising=False)
+    monkeypatch.setattr("aerosim.aero.avl_solver.avl_exe", lambda: None)
+    m = build_model(conventional())
+    case = AeroCase(V=15, alphas=np.array([2.0]), alpha_d=2.0, n_span=10)
+    avl = AvlSolver().solve(m, case).derivs
+    core = solver_by_name(backend, "zig").solve(m, case).derivs
+    assert avl["Clb"] < 0 and avl["Cnb"] > 0 and avl["Clp"] < 0 and avl["Cnr"] < 0
+    for k in ("Clda", "Cndr", "Cmde", "CYdr"):
+        assert avl[k] * core[k] > 0, (k, avl[k], core[k])
 
 
 @pytest.mark.skipif(avl_exe() is None, reason="AVL não instalado")

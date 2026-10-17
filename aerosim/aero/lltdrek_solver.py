@@ -140,6 +140,7 @@ class LltdrekSolver(AeroSolverBase):
     title = "LLT não linear (lltdrek)"
     description = "linha sustentadora não linear com polar 2D por seção; asa + EH"
     supports_beta = False
+    fidelity, cost = "llt", "caro"        # caro: a polar vai para o cache em disco (aerosim/aero/service.py)
     notes = "asa + EH (sem EV, sem fuselagem; C_D = induzido + C_D0 do modelo)"
     translator = LltdrekTranslator()
 

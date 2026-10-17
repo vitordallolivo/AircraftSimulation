@@ -5,7 +5,7 @@ import time
 import pytest
 
 KINDS = {"sin_lut256": 0, "sin_ref": 1, "sin_lut4096": 2, "sin_lut65536": 3, "atan2_lut": 4, "atan2_ref": 5,
-         "exp_lut": 6, "exp_ref": 7, "log_lut": 8, "log_ref": 9}
+         "exp_lut": 6, "exp_ref": 7, "log_lut": 8, "log_ref": 9, "sin_minimax": 10, "exp_estrin": 11}
 
 
 @pytest.fixture(scope="module")
@@ -29,7 +29,8 @@ def timed(f, kind, n=2_000_000, random=1):
 @pytest.mark.lut
 @pytest.mark.parametrize("lut,ref", [("sin_lut256", "sin_ref"), ("sin_lut4096", "sin_ref"),
                                      ("sin_lut65536", "sin_ref"), ("atan2_lut", "atan2_ref"),
-                                     ("exp_lut", "exp_ref"), ("log_lut", "log_ref")])
+                                     ("exp_lut", "exp_ref"), ("log_lut", "log_ref"),
+                                     ("sin_minimax", "sin_ref"), ("exp_estrin", "exp_ref")])
 @pytest.mark.parametrize("random", [0, 1])
 def test_lut_same_result_as_std(bench, lut, ref, random):
     """somas de 100 mil chamadas iguais às da std (mesmas entradas)"""

@@ -48,6 +48,11 @@ pub const Surface = extern struct {
     vertical: i32 = 0, // normal para +y
     side: i32 = 0, // +1 direita, -1 esquerda, 0 centro
     downwash: i32 = 0, // sente o downwash da asa
+    // pontos de 1/4 de corda nas duas bordas da faixa (corpo, m): os nós da ferradura na linha sustentadora das
+    // cargas (loads/llt.zig). Zero nos dois: a ferradura sai do centro r ± (S/c)/2 ao longo da envergadura.
+    // A simulação (aero.zig) não usa
+    qa: [3]f64 = .{ 0, 0, 0 },
+    qb: [3]f64 = .{ 0, 0, 0 },
     // derivados
     a0: f64 = 0,
     ex: [3]f64 = .{ 0, 0, 0 },
@@ -258,6 +263,55 @@ pub const Autopilot = extern struct {
     dr_max: f64 = 0.436,
 };
 
+/// tabela aerodinâmica do avião inteiro (Params.aero_model = 2): C_L, C_D, C_m em α (β = 0, sem taxas nem comandos,
+/// momentos em `ref`) mais as derivadas lineares (por rad; taxas por p b/2V, q c/2V, r b/2V). Vem de qualquer método
+/// (VLM, AVL, lltdrek...: `aerosim/aero/flight_table.py`). `fus` = 0: o núcleo soma a fuselagem por cima (os métodos
+/// de fora não a têm); 1: a tabela já a inclui
+pub const AeroTable = extern struct {
+    n: i32 = 0,
+    fus: i32 = 0,
+    alpha: [L.max_tab]f64 = [_]f64{0} ** L.max_tab, // rad, crescente
+    CL: [L.max_tab]f64 = [_]f64{0} ** L.max_tab,
+    CD: [L.max_tab]f64 = [_]f64{0} ** L.max_tab,
+    Cm: [L.max_tab]f64 = [_]f64{0} ** L.max_tab,
+    ref: [3]f64 = .{ 0, 0, 0 }, // ponto dos momentos da tabela (corpo, m)
+    CYb: f64 = 0,
+    Clb: f64 = 0,
+    Cnb: f64 = 0,
+    CYp: f64 = 0,
+    Clp: f64 = 0,
+    Cnp: f64 = 0,
+    CLq: f64 = 0,
+    Cmq: f64 = 0,
+    CYr: f64 = 0,
+    Clr: f64 = 0,
+    Cnr: f64 = 0,
+    CLde: f64 = 0,
+    Cmde: f64 = 0,
+    Clda: f64 = 0,
+    Cnda: f64 = 0,
+    CYdr: f64 = 0,
+    Cldr: f64 = 0,
+    Cndr: f64 = 0,
+};
+
+/// o que a linha sustentadora (loads/llt.zig) monta uma vez por configuração (`llt.prepare`, chamado em
+/// `runner.configure`): para cada ponto de controle i e ferradura j (índice i·max_surfaces + j), de onde saem as pernas
+/// livres (jA, jB) e os segmentos que não dependem do escoamento (as juntas s2 = jA→A e s3 = B→jB de Goates e
+/// Hunsaker; o ligado A→B). A cada avaliação só as duas pernas livres são calculadas, na mesma ordem de soma: o
+/// resultado é o mesmo, bit a bit, que sem o cache. ok = 0 (painéis montados à mão, AeroDrive): a conta inteira
+pub const LltCache = extern struct {
+    ok: i32 = 0,
+    n: i32 = 0,
+    gh: i32 = 0, // montado com as correções de Goates e Hunsaker
+    used: [L.max_surfaces]i32 = [_]i32{0} ** L.max_surfaces, // o painel tinha geometria na montagem
+    jA: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
+    jB: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
+    s2: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
+    s3: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
+    bound: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
+};
+
 pub const Params = extern struct {
     // massa seca: inércia no CG dela, posição desse CG
     m_dry: f64 = 1,
@@ -312,6 +366,16 @@ pub const Params = extern struct {
     stop_seg: i32 = -1, // para ao entrar no segmento k
     stop_autop: i32 = 0, // para quando o piloto automático liga
     stop_takeoff: i32 = 0, // para em takeoff.h_end acima do chão
+    // linha sustentadora das cargas (loads/llt.zig): 0 e 0 = Phillips e Snyder (o de sempre); llt_joint = 0,15 e
+    // llt_blend = 1 = Goates e Hunsaker (2021): ferraduras com junta e linha sustentadora efetiva por ponto de controle
+    // modelo aerodinâmico do voo (physics/aeromodel.zig): 0 = faixas (o de sempre; o AeroDrive usa este), 1 = linha
+    // sustentadora (loads/llt.zig, com llt_joint e llt_blend), 2 = tabela (aero_tab)
+    aero_model: i32 = 0,
+    aero_tab: AeroTable = .{},
+    llt_joint: f64 = 0, // comprimento da junta das pernas, fração da corda no nó (G-H eq. 17)
+    llt_blend: f64 = 0, // distância de mistura da linha efetiva, fração da semienvergadura (G-H eq. 7; MachUpX)
+    llt_cache: LltCache = .{}, // montado por llt.prepare na configuração (não vem do Python)
+    prop_strike: i32 = 0, // 1: a ponta da pá tocar o chão encerra o voo (`crashed`, Events.tprop); 0 (padrão): só registra
     no_payload: i32 = 0, // começa sem a carga
     n_pad: i32 = 0, // mesas/plataformas
     pads: [L.max_pads]Pad = [_]Pad{.{}} ** L.max_pads,
@@ -381,6 +445,8 @@ pub const Events = extern struct {
     bounced: f64 = 0,
     completed: f64 = 0,
     stopped: f64 = 0,
+    hpmin: f64 = 1e9, // menor folga da ponta da pá sobre o terreno (todos os motores), no voo inteiro (m)
+    tprop: f64 = -1, // instante em que a ponta da pá tocou o chão (o voo termina como `crashed`)
 };
 
 /// uma linha do registro (ângulos em rad, o Python converte)
@@ -434,6 +500,7 @@ pub const LogRow = extern struct {
     N_main: f64,
     N_skid: f64,
     htail: f64,
+    hprop: f64, // folga da ponta da pá mais baixa sobre o terreno (m)
     RN: f64,
     Rnw: f64,
     Rmw: f64,

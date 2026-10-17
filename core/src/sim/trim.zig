@@ -15,6 +15,8 @@ const S = @import("state.zig");
 const fm = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
 const aero = @import("../physics/aero.zig");
+const aeromodel = @import("../physics/aeromodel.zig");
+const mods = @import("../modifiers/mod.zig");
 const prop = @import("../physics/propulsion.zig");
 const mass = @import("../physics/mass.zig");
 const V3 = vec.V3;
@@ -46,7 +48,7 @@ fn residual(c: Ctx, cs: Case, u: [3]f64, r: *[3]f64, e: ?*T.TrimPoint) void {
     if (thrFree(cs.kind)) thr = u[2] else gam = u[2];
     const sa = fm.sincos(al);
     const Vr = V3{ cs.V * sa.c, 0, cs.V * sa.s };
-    const ae = aero.compute(p, Vr, vec.zero, c.rcg, 100.0, .{ de, 0, 0 });
+    const ae = aeromodel.compute(p, Vr, vec.zero, c.rcg, 100.0, .{ de, 0, 0 }, &mods.Env.none);
     var rps = [_]f64{1} ** L.max_props;
     for (p.prop[0..@intCast(p.n_prop)], 0..) |*pu, i| rps[i] = prop.equilibriumRps(p, pu, Vr, thr);
     const pr = prop.compute(p, Vr, vec.zero, c.rcg, &rps, thr, 0, 0, 0);

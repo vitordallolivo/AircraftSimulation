@@ -23,7 +23,8 @@ python -m ziglang build test -Dfuzz=200000 -Dseed=7   # fuzzing mais longo das i
 ```
 
 Opções: `-Dfast_math` (padrão `true`), `-Dstrip` (padrão: sim fora do Debug), `-Dcpu` (padrão
-`x86_64_v3` em x86, ver abaixo).
+`x86_64_v3` em x86, ver abaixo), `-Dopt` (otimizações em avaliação, desligadas por padrão: `-Dopt=peak,cse`; o que
+cada uma faz e o que se mediu está em [`OTIMIZACOES.md`](OTIMIZACOES.md)).
 
 ### Pelo Zig (módulo)
 
@@ -96,7 +97,9 @@ flowchart LR
     end
     subgraph PHY["physics/"]
         direction TB
+        AEROM["aeromodel.zig<br/>modelo do voo: faixas (padrão),<br/>linha sustentadora, tabela"]
         AERO["aero.zig<br/>painéis + fuselagem"]
+        AEROT["aerotable.zig<br/>tabela de qualquer método"]
         PROP["propulsion.zig<br/>motor+hélice ou polinômio"]
         GEAR["gear.zig<br/>trem"]
         TER["terrain.zig<br/>chão, mesa, plataforma"]
@@ -108,6 +111,8 @@ flowchart LR
         GRD["ground.zig<br/>efeito solo (McCormick)"]
         MODM["mod.zig<br/>efeitos a mais por painel"]
     end
+    AEROM --> AERO
+    AEROM --> AEROT
     AERO --> MOD
     subgraph MATH["math/"]
         direction TB
@@ -125,6 +130,22 @@ flowchart LR
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
+
+### Modelo aerodinâmico do voo (`physics/aeromodel.zig`)
+
+A dinâmica, a trimagem e a linearização pedem as forças a `aeromodel.compute`, que escolhe por `Params.aero_model`:
+
+| `aero_model` | modelo | onde |
+|---|---|---|
+| 0 (padrão) | faixas: o C_Lα de Helmbold por painel, downwash ε0 + dε/dα α, estol, fuselagem por coeficientes | `physics/aero.zig` |
+| 1 | linha sustentadora: a conta das faixas com as forças dos painéis trocadas pelas da linha (Phillips e Snyder; Goates e Hunsaker com `llt_joint`, `llt_blend`) | `loads/llt.zig` (`compute`) |
+| 2 | tabela do avião inteiro (C_L, C_D, C_m em α e derivadas lineares) de qualquer método, mais a fuselagem do núcleo | `physics/aerotable.zig` |
+
+- **Com 0, as contas são as de sempre, bit a bit:** a regressão dos exemplos confere. O AeroDrive monta os `Params`
+  com os padrões e por isso continua nas faixas.
+- **No Python:** `ac.sim.aero_model` ("faixas", "llt", "llt_gh", "tabela") e `ac.sim.aero_table`, montada por
+  `aerosim/aero/flight_table.py`.
+- **Para comparar os voos:** `tools/aero/missao.py`.
 
 ### Dimensionamento inicial (`sizing/`)
 

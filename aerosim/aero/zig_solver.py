@@ -15,6 +15,7 @@ class ZigPanelSolver(AeroSolverBase):
     title = "Núcleo Zig (faixas)"
     description = "faixas por seção/comando, C_Lα de Helmbold, downwash ε0 + dε/dα α, fuselagem por coeficientes"
     supports_controls = True
+    includes_fuselage = True
     notes = "aeronave completa (asa, EH, EV, dispositivos, fuselagem)"
 
     def __init__(self, backend: ISimBackend):

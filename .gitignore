@@ -255,3 +255,6 @@ Thumbs.db
 relatorios/
 Entrega de relatórios/
 *.zip
+
+# perfis de tempo (tools/time_profile.py): saída local, fora do git
+perfis/

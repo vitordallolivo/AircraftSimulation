@@ -17,6 +17,8 @@ pub const Kind = enum(i32) {
     exp_ref = 7,
     log_lut = 8,
     log_ref = 9,
+    sin_minimax = 10, // sem tabela: redução ao quadrante + minimax (`-Dopt` bit 32)
+    exp_estrin = 11, // o polinômio do exp por Estrin (`-Dopt` bit 64)
 };
 
 const Big = fm.SinLut(16);
@@ -53,6 +55,14 @@ fn sinOf(comptime T: type) fn (f64) f64 {
     }.f;
 }
 
+// o exp da tabela com cada esquema, independente de -Dopt
+fn expHorner(x: f64) f64 {
+    return fm.lut.expWith(false, x);
+}
+fn expEstrin(x: f64) f64 {
+    return fm.lut.expWith(true, x);
+}
+
 fn atan2L(x: f64) f64 {
     return fm.lut.atan2(x, 0.7);
 }
@@ -75,7 +85,9 @@ pub fn math(kind: Kind, n: u64, random: bool) f64 {
         .sin_lut65536 => loop(sinOf(Big), n, random, 10.0),
         .atan2_lut => loop(atan2L, n, random, 30.0),
         .atan2_ref => loop(atan2R, n, random, 30.0),
-        .exp_lut => loop(fm.lut.exp, n, random, 50.0),
+        .exp_lut => loop(expHorner, n, random, 50.0),
+        .exp_estrin => loop(expEstrin, n, random, 50.0),
+        .sin_minimax => loop(sinOf(fm.minimax), n, random, 10.0),
         .exp_ref => loop(fm.ref.exp, n, random, 50.0),
         .log_lut => loop(logL, n, random, 1e3),
         .log_ref => loop(logR, n, random, 1e3),

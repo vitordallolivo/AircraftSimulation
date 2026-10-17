@@ -58,8 +58,12 @@ def surface_panels(s: SurfaceModel) -> list[dict]:
             if ctl.kind == "flap":
                 tau = 0.0
         for side in sides:
-            r = [float(mid[0] - 0.25 * cm), float(mid[1] * (1 if side >= 0 else -1)), float(mid[2])]
-            out.append(dict(
+            sg = 1 if side >= 0 else -1
+            r = [float(mid[0] - 0.25 * cm), float(mid[1] * sg), float(mid[2])]
+            # 1/4 de corda nas bordas: os nós da ferradura da linha sustentadora (Phillips e Snyder 2000)
+            qa = [float(a.le[0] - 0.25 * a.chord), float(a.le[1] * sg), float(a.le[2])]
+            qb = [float(b.le[0] - 0.25 * b.chord), float(b.le[1] * sg), float(b.le[2])]
+            out.append(dict(qa=qa, qb=qb,
                 r=r, S=S, c=cm, AR=s.AR, e=s.oswald, dihedral=math.radians(s.dihedral), incidence=math.radians(inc),
                 CLa=co["CLa"], CL0=co["CL0"], CLmax=co["CLmax"], CD0=co["CD0"], Cmac=co["Cmac"], tau=tau,
                 mix=panel_mix(ctl.gains, side) if ctl is not None else [0.0, 0.0, 0.0], eta=s.eta,
@@ -113,7 +117,7 @@ class ZigTranslator(IModelTranslator):
             gear=[dict(r=[q.x, q.y, q.z], k=q.k, c=q.c, kind=GEAR_KIND[q.kind]) for q in g.legs()],
             tank=[dict(r=[t.x, t.y, t.z], side=t.side, fill=t.fill, rho=t.rho, zeta=t.zeta,
                        shape=0 if t.shape == "square" else 1) for t in ac.tanks],
-            slosh_on=int(ac.sim.slosh),
+            slosh_on=int(ac.sim.slosh), prop_strike=int(ac.sim.prop_strike),
             mu_roll=g.mu_roll, mu_lat=g.mu_lat, mu_brake=g.mu_brake, mu_skid=g.mu_skid, mu_landing=g.mu_landing,
             payload=dict(enabled=int(P.enabled), m=P.mass, r=[P.x, P.y, P.z], bay=P.bay, Fext_g=P.Fext_g,
                          mu_b=P.mu_b, CdS_chute=P.CdS_chute),
@@ -127,6 +131,7 @@ class ZigTranslator(IModelTranslator):
         )
         pads = ac.airfield.pads(m)
         spec.update(pads=pads, n_pad=len(pads))
+        spec.update(aero_native(ac.sim))                       # modelo aerodinâmico do voo (faixas por padrão)
         spec.update(modifiers.native(ac, owner, len(props)))     # efeito solo e efeitos a mais
         if overrides:
             _deep_update(spec, copy.deepcopy(overrides))
@@ -134,6 +139,37 @@ class ZigTranslator(IModelTranslator):
 
     def from_native(self, raw, model=None, **_) -> dict[str, float]:
         return {k: float(raw[k]) for k in raw if k in COEFFS or k in ("CL_wing", "CL_ht", "ratioCL")}
+
+
+AERO_MODELS = {"faixas": 0, "llt": 1, "llt_gh": 1, "tabela": 2}     # core/src/physics/aeromodel.zig
+TABLE_DERIVS = ("CYb", "Clb", "Cnb", "CYp", "Clp", "Cnp", "CLq", "Cmq", "CYr", "Clr", "Cnr", "CLde", "Cmde", "Clda",
+                "Cnda", "CYdr", "Cldr", "Cndr")
+
+
+def aero_native(sim) -> dict:
+    """o modelo aerodinâmico do voo para os `Params` (`aero_model`, `llt_joint`, `llt_blend`, `aero_tab`). "faixas" não
+    escreve nada: os padrões do núcleo são as faixas de sempre"""
+    kind = getattr(sim, "aero_model", "faixas") or "faixas"
+    if kind not in AERO_MODELS:
+        raise ValueError(f"modelo aerodinâmico desconhecido: {kind!r} ({' | '.join(AERO_MODELS)})")
+    if kind == "faixas":
+        return {}
+    out = dict(aero_model=AERO_MODELS[kind])
+    if kind == "llt_gh":
+        from aerosim.aero.span_loads import GOATES_HUNSAKER
+        out.update(GOATES_HUNSAKER)
+    if kind == "tabela":
+        t = sim.aero_table
+        if not t:
+            raise ValueError("aero_model = 'tabela' sem aero_table (aerosim/aero/flight_table.py monta uma)")
+        a = np.radians(np.asarray(t["alpha"], float))
+        o = np.argsort(a)
+        tab = dict(n=len(a), fus=int(bool(t.get("fus", False))), alpha=a[o].tolist(), ref=list(t.get("ref", (0, 0, 0))),
+                   **{k: np.asarray(t[k], float)[o].tolist() for k in ("CL", "CD", "Cm")})
+        d = t.get("derivs", {})
+        tab.update({k: float(d.get(k, 0.0)) for k in TABLE_DERIVS})
+        out["aero_tab"] = tab
+    return out
 
 
 def _deep_update(base: dict, over: dict) -> dict:

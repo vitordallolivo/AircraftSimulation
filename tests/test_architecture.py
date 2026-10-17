@@ -41,6 +41,15 @@ def test_backends_and_solvers_take_the_universal_model(backend):
         assert args[1] == "model", (so.name, args)
 
 
+def test_load_methods_take_the_universal_model(backend):
+    """os métodos de carga (ILoadMethod) recebem o modelo universal e o ponto resolvido, nunca a configuração"""
+    from aerosim.aero import all_load_methods
+    from aerosim.interfaces.loads import ILoadMethod
+    for m in all_load_methods(backend):
+        assert isinstance(m, ILoadMethod)
+        assert list(m.compute.__code__.co_varnames[:3]) == ["self", "model", "point"], m.name
+
+
 def test_translators_return_universal_coefficients():
     from aerosim.aero.lltdrek_solver import LltdrekTranslator
     from aerosim.model.templates import conventional

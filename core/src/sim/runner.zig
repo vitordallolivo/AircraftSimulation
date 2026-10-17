@@ -14,6 +14,7 @@ const vec = @import("../math/vec.zig");
 const dyn = @import("dynamics.zig");
 const atm = @import("../physics/atmosphere.zig");
 const aero = @import("../physics/aero.zig");
+const llt = @import("../loads/llt.zig");
 const prop = @import("../physics/propulsion.zig");
 const mass = @import("../physics/mass.zig");
 const trim = @import("trim.zig");
@@ -86,6 +87,7 @@ pub fn configure(inst: *Instance) ConfigError!void {
     }
     p.steer_sign = if (nm > 0 and ns > 0 and xs / ns < xm / nm) -1.0 else 1.0;
     aero.init(p);
+    llt.prepare(p); // a geometria fixa da linha sustentadora (cargas e aero_model = 1)
     prop.init(p);
     mass.initTanks(p);
     inst.configured = true;
@@ -265,6 +267,7 @@ fn writeRow(inst: *const Instance, row: *T.LogRow, o: *const dyn.Out) void {
         }
     }
     row.htail = o.htail;
+    row.hprop = o.hprop;
     row.RN = o.RN;
     row.Rnw = o.Rnw;
     row.Rmw = o.Rmw;
@@ -485,6 +488,13 @@ pub fn run(inst: *Instance, t_limit: f64, log: []T.LogRow, nrows: *usize) Status
         }
         if (t >= p.tmax) {
             status = .timeout;
+            break;
+        }
+        v.hpmin = @min(v.hpmin, o.hprop);
+        // a ponta da pá tocou o chão: o voo falha
+        if (p.prop_strike != 0 and o.hprop < 0) {
+            v.tprop = t;
+            status = .crashed;
             break;
         }
         // abaixo do chão, divergiu ou capotou (tocando o chão com mais de 80° de inclinação)

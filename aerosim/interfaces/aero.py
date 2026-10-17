@@ -83,6 +83,7 @@ class IAeroSolver(ABC):
     fidelity: str = "llt"                 # chave de FIDELITY
     cost: str = "barato"                  # "caro": o resultado vale ir para o disco (aerosim.aero.service)
     version: int = 1                      # mude quando o método mudar o que calcula (invalida o cache)
+    includes_fuselage: bool = False       # os coeficientes já têm a fuselagem (o núcleo); os de fora, não
 
     def available(self) -> str | None:
         """None se pode rodar; senão o motivo (ex.: pacote não instalado)"""

@@ -320,6 +320,25 @@ def takeoff_window(T: LogChunk, ev: dict, refs: dict, airfield=None) -> dict:
     return S
 
 
+def ground_clearance(T: LogChunk, ev: dict, near: float = 1.0) -> dict:
+    """folga da ponta da pá (todas as hélices, a mais baixa) e da cauda sobre o terreno no tempo, só perto do chão
+    (folga < `near` m); uma linha no zero e a estrela da batida da pá (Events.tprop)"""
+    if not len(T) or "hprop" not in T:
+        return {}
+    t = np.asarray(T["t"], float)
+    hp = np.asarray(T["hprop"], float)
+    ht = np.asarray(T["htail"], float)
+    if not (hp < near).any() and not (ht < near).any():
+        return {}
+    S = {"fg_folga da pá": {"t": t, "y": np.where(hp < near, hp, np.nan), "_color": "#d62728", "_width": 1.6},
+         "fg_folga da cauda": {"t": t, "y": np.where(ht < near, ht, np.nan), "_color": "#7f7f7f", "_width": 1.2},
+         "fg_chão": {"_hline": 0.0, "_color": "#000000", "_dash": "dot"}}
+    if ev.get("tprop", -1) >= 0:
+        S["fg_★ a pá tocou o chão"] = {"t": np.array([ev["tprop"]]), "y": np.array([0.0]), "_symbol": "star",
+                                       "_color": "#d62728"}
+    return S
+
+
 def _article(D: dict):
     """fases do artigo (Riboldi et al.): corrida (eq. 5) até TDN = 0; rotação (eq. 6) até R_N = 0"""
     Rn, Rm, RN = D["Rnw"].copy(), D["Rmw"].copy(), D["RN"].copy()

@@ -71,7 +71,8 @@ flowchart LR
 | `MassModel` | massa base + inércia própria + massas pontuais (+ motores/baterias/estrutura, se ligado) |
 | `TailBoom` (lista `booms`) | início (x, y, z), comprimento, diâmetro, `pitch` (+ ponta de trás sobe), `yaw` (abertura); tubo duplo = dois tubos. Arquivos antigos com `boom` único viram a lista ao abrir (`Aircraft.migrate`) |
 | `Modifier` (lista `modifiers`) | metodologias que mudam a aerodinâmica do avião inteiro (efeito solo, esteira...): só dados (`modifiers.py`); quem calcula é o núcleo, em [`core/src/modifiers`](../../core/src/modifiers/README.md). Padrão: `[solo.mccormick]` (o de sempre); `.json` antigo abre com ele |
-| `Fuselage`, `Payload`, `Environment`, `Takeoff`, `Autopilot`, `SimSettings`, `Mission` | — |
+| `SimSettings` | passo, tempo máximo, registro, estol (`Mst`), sloshing; `prop_strike` (a pá no chão encerra o voo; desligado por padrão); `aero_model` ("faixas", o padrão e o do AeroDrive; "llt", "llt_gh", "tabela") e `aero_table` (a tabela de voo de `aerosim/aero/flight_table.py`): o modelo aerodinâmico do voo, em [`core/src/physics/aeromodel.zig`](../../core/README.md). O `.json` guarda os dois; o `.cfg` e a planilha, não |
+| `Fuselage`, `Payload`, `Environment`, `Takeoff`, `Autopilot`, `Mission` | — |
 
 ### Geometria → núcleo
 
