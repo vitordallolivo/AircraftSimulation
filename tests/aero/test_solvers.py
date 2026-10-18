@@ -63,3 +63,16 @@ def test_lltdrek_handles_control_breaks(backend, case):
         pytest.skip(so.available())
     p = so.solve(build_model(flying_wing()), case)
     assert np.isfinite(p.CL).all() and p.deriv("CLa") > 3
+
+
+def test_core_llt_registrado_e_perto_do_nucleo(backend, case):
+    """a linha sustentadora do núcleo (Goates e Hunsaker) está em `all_solvers` e, no avião completo, fica perto das
+    faixas no C_Lα e no C_mα (a validação contra o MachUpX está em tests/tools/test_aero_perfis.py)"""
+    from aerosim.aero import CoreLLTSolver, all_solvers
+    nomes = {s.name for s in all_solvers(backend)}
+    assert {"zig_llt", "zig_llt_gh"} <= nomes
+    m = build_model(conventional())
+    p = CoreLLTSolver(backend, gh=True).solve(m, case)
+    z = ZigPanelSolver(backend).solve(m, case)
+    assert p.deriv("CLa") == pytest.approx(z.deriv("CLa"), rel=0.15)
+    assert p.deriv("Cma") < 0 and p.deriv("Clb") < 0 and p.deriv("Cnb") > 0

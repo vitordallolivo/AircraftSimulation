@@ -218,6 +218,8 @@ flowchart LR
     TAB --> SV["service.py<br/>cache 3D: modelo + método + caso"]
     SV --> BASE
     BASE --> Z["zig_solver.py<br/>tradutor do backend"]
+    BASE --> LLT["llt_solver.py<br/>linha sustentadora do núcleo"]
+    LLT --> CORE
     BASE --> LL["lltdrek_solver.py<br/>LltdrekTranslator"]
     BASE --> ASB["asb_solver.py<br/>AsbTranslator"]
     BASE --> AVL["avl_solver.py<br/>AvlTranslator (programa avl)"]
@@ -237,6 +239,7 @@ flowchart LR
 |---|---|---|
 | `zig` — núcleo Zig | asa, EH, EV, fuselagem | o mesmo modelo da simulação: faixas por seção/comando, C_Lα de Helmbold, ε = ε0 + dε/dα α, estol de Beard e McLain. Derivadas por diferenças centrais em α, β, p̂, q̂, r̂ e nos comandos (`aerosim_aero_coeffs_ex`) |
 | `lltdrek` — [kuodrek/lltdrek](https://github.com/kuodrek/lltdrek) | asa + EH (com interação) | linha sustentadora não linear (Phillips–Snyder) com a polar 2D de cada perfil; sem derrapagem (derivadas em β = NaN), sem EV e sem fuselagem |
+| `zig_llt`, `zig_llt_gh` — linha sustentadora do núcleo (`llt_solver.py`) | asa, EH, EV, fuselagem | a conta da simulação com as forças dos painéis pela linha sustentadora (`aerosim_aero_coeffs_llt`), com as superfícies refinadas (`span_loads.refine_all`, `n_span` faixas por lado, mais estreitas na ponta). `zig_llt`: Phillips e Snyder (2000), não converge em β nem com enflechamento; `zig_llt_gh`: Goates e Hunsaker (2021), converge (C_Lα a 1,5 % e C_lβ a 3 % do MachUpX, `core/src/loads/README.md`). Sem estol |
 | `asb_vlm` — AeroSandbox VLM | asa, EH, EV | malha de vórtices em ferradura; arrasto só induzido (+ C_D0 do modelo) |
 | `asb_buildup` — AeroSandbox AeroBuildup | asa, EH, EV, fuselagem | soma por componentes com NeuralFoil; arrasto completo |
 | `asb_ll` — AeroSandbox LiftingLine | asa, EH, EV | linha sustentadora com NeuralFoil; só derivadas em α e β |

@@ -23,7 +23,8 @@ from aerosim.model.features import features
 from .base import SimulationBase
 
 LABEL = {"zig": "modelo interno", "lltdrek": "lltdrek", "asb_vlm": "ASB VLM", "asb_buildup": "ASB AeroBuildup",
-         "asb_ll": "ASB LiftingLine", "avl": "AVL", "xflr5": "XFLR5 (arquivo)"}
+         "asb_ll": "ASB LiftingLine", "avl": "AVL", "zig_llt": "LLT do núcleo (P-S)",
+         "zig_llt_gh": "LLT do núcleo (G-H)", "xflr5": "XFLR5 (arquivo)"}
 G0 = 9.80665
 
 
@@ -42,7 +43,7 @@ class AerodynamicsSimulation(SimulationBase):
     area = "aerodinamica"
     show_aircraft = True
     # comparações entre métodos, aeronave inteira e pontas de asa: estudo detalhado
-    detailed = ("use_zig", "use_asb_vlm", "use_asb_buildup", "use_asb_ll", "use_avl", "use_xflr5", "xflr5_file", "full", "de", "alpha_beta", "tips", "hb_max",
+    detailed = ("use_zig", "use_zig_llt_gh", "use_zig_llt", "use_asb_vlm", "use_asb_buildup", "use_asb_ll", "use_avl", "use_xflr5", "xflr5_file", "full", "de", "alpha_beta", "tips", "hb_max",
                 "Cf", "dev_gain")
     description = ("Polares e derivadas a partir da geometria pelo lltdrek (linha sustentadora não linear), "
                    "comparadas com o modelo interno e, se quiser, com o AeroSandbox. Diz se os métodos concordam e "
@@ -69,6 +70,11 @@ class AerodynamicsSimulation(SimulationBase):
               ParamSpec("n_span", "painéis por semiasa", 12, kind="int", minimum=4, maximum=40),
               ParamSpec("use_lltdrek", "lltdrek (método principal)", True, kind="bool"),
               ParamSpec("use_zig", "comparar: modelo interno", True, kind="bool", help="o modelo que a simulação usa"),
+              ParamSpec("use_zig_llt_gh", "comparar: linha sustentadora do núcleo (Goates e Hunsaker)", False,
+                        kind="bool", help="as faixas trocadas pela linha sustentadora (core/src/loads/llt.zig); converge "
+                        "em derrapagem e com enflechamento; usa os painéis por semiasa"),
+              ParamSpec("use_zig_llt", "comparar: linha sustentadora do núcleo (Phillips e Snyder)", False,
+                        kind="bool", help="a versão clássica; não converge com a malha em asa enflechada nem em β"),
               ParamSpec("use_asb_vlm", "comparar: AeroSandbox VLM", False, kind="bool"),
               ParamSpec("use_asb_buildup", "comparar: AeroSandbox AeroBuildup", False, kind="bool"),
               ParamSpec("use_asb_ll", "comparar: AeroSandbox LiftingLine", False, kind="bool"),
@@ -402,6 +408,8 @@ def _why_differ(a: str, b: str, key: str) -> str:
     notes = {
         "lltdrek": "lltdrek: só asa e EH (sem deriva e fuselagem), interação asa-EH calculada",
         "zig": "núcleo: faixas com C_Lα de Helmbold, downwash ε0 + dε/dα α, fuselagem por coeficientes",
+        "zig_llt": "linha sustentadora do núcleo (Phillips e Snyder): sem estol; não converge em β nem com enflechamento",
+        "zig_llt_gh": "linha sustentadora do núcleo (Goates e Hunsaker): sem estol; fuselagem como na simulação",
         "asb_vlm": "VLM: superfícies finas sem fuselagem e sem estol",
         "asb_buildup": "AeroBuildup: soma por componentes com NeuralFoil e fuselagem",
         "asb_ll": "LiftingLine do ASB: polar do NeuralFoil (perfil real)",

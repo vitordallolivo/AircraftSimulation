@@ -26,6 +26,7 @@ import numpy as np
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from aerosim.aero.zig_solver import ZigPanelSolver  # noqa: E402
+from aerosim.aero.llt_solver import CoreLLTSolver  # noqa: E402
 from aerosim.interfaces.aero import AeroCase  # noqa: E402
 
 V_PADRAO = 12.0
@@ -48,19 +49,9 @@ MIN_REF = 0.02             # |referência| menor que isso (ex.: C_Yβ e C_nr da 
 
 # ---------------------------------------------------------------------- variantes do núcleo (mesma interface)
 def refinar(backend, ac, tip: bool = False, per_side: int | None = None):
-    """todas as superfícies em `per_side` faixas por lado (None: o maior número, igual em todas, que cabe no limite de
-    painéis do núcleo; pedido acima do limite fica no limite), com `span_loads.refine_surface` (o refino da aba
-    Cargas); tip=True: faixas mais estreitas na ponta (Phillips e Snyder, para a linha sustentadora)"""
-    from aerosim.aero.span_loads import MAX_PER_SIDE, refine_surface
-    from aerosim.backend.zig.translator import native_spec
-    limit = backend.schema.limits["surfaces"]
-    for n in range(min(per_side or MAX_PER_SIDE, MAX_PER_SIDE), 0, -1):
-        a = ac
-        for i in range(len(ac.surfaces)):
-            a = refine_surface(a, i, n, tip)
-        if len(native_spec(a)["surf"]) <= limit:
-            return a
-    return ac
+    """todas as superfícies em `per_side` faixas por lado: `span_loads.refine_all` (o refino da aba Cargas)"""
+    from aerosim.aero.span_loads import refine_all
+    return refine_all(backend, ac, tip, per_side)
 
 
 class NucleoFino(ZigPanelSolver):
@@ -97,52 +88,28 @@ class NucleoSolo(ZigPanelSolver):
         return out
 
 
-class NucleoLLT(ZigPanelSolver):
-    """o núcleo com a carga da linha sustentadora (`aerosim_aero_coeffs_llt`: as forças dos painéis da simulação
-    trocadas pelas da linha sustentadora; fuselagem, c_m das seções e modificadores ficam os da simulação), com as
-    superfícies refinadas (a linha sustentadora só converge com muitas faixas). `case.h`, `case.T`, `case.Q`
-    (opcionais): altura sobre o chão e tração e torque de cada motor"""
-    name, title = "nucleo_llt", "núcleo, linha sustentadora (Phillips e Snyder)"
-    overrides: dict = {}
+class NucleoLLT(CoreLLTSolver):
+    """a linha sustentadora do núcleo (`aerosim/aero/llt_solver.py`, a mesma da aba Aerodinâmica) com o máximo de
+    faixas que cabe (ou `per_side`), para não depender do `n_span` do caso"""
+    gh = False
 
     def __init__(self, backend, per_side: int | None = None):
-        super().__init__(backend)
-        self.per_side = per_side
-
-    def evaluate(self, model, case, points):
-        from aerosim.model.universal import build_model
-        key = id(model.aircraft)
-        if getattr(self, "_fino", (None,))[0] != key:     # a malha refinada, uma vez por avião
-            self._fino = (key, build_model(refinar(self.backend, model.aircraft, tip=True, per_side=self.per_side)))
-        model = self._fino[1]
-        V, ref, b, c = case.V, list(case.ref), model.b, model.c
-        h = getattr(case, "h", 50.0)
-        out = []
-        with self.backend.session_for(model, overrides={"env": {"rho": case.rho}, **self.overrides}) as s:
-            for pt in points:
-                raw = s.aero_coeffs_llt(V, pt.alpha, pt.beta, pt.p * 2 * V / b, pt.q * 2 * V / c, pt.r * 2 * V / b,
-                                        pt.de, pt.da, pt.dr, h=h, T=getattr(case, "T", ()), Q=getattr(case, "Q", ()),
-                                        ref=ref)
-                out.append(self.backend.translator.from_native(raw, model))
-        return out
+        from aerosim.aero.span_loads import MAX_PER_SIDE
+        super().__init__(backend, gh=self.gh, per_side=per_side or MAX_PER_SIDE)
+        self.name = "nucleo_gh" if self.gh else "nucleo_llt"
+        self.title = f"núcleo, linha sustentadora ({'Goates e Hunsaker' if self.gh else 'Phillips e Snyder'})"
 
 
 class NucleoGH(NucleoLLT):
-    """a linha sustentadora do núcleo com as correções de Goates e Hunsaker (junta, linha efetiva e seção normal à
-    linha; `span_loads.GOATES_HUNSAKER`): converge com a malha em derrapagem e com enflechamento"""
-    name, title = "nucleo_gh", "núcleo, linha sustentadora (Goates e Hunsaker)"
-
-    @property
-    def overrides(self):
-        from aerosim.aero.span_loads import GOATES_HUNSAKER
-        return GOATES_HUNSAKER
+    """o mesmo com as correções de Goates e Hunsaker (`span_loads.GOATES_HUNSAKER`)"""
+    gh = True
 
 
 def metodos(backend, paineis: int | None = None) -> list:
     """paineis: faixas por lado da asa no `nucleo_fino` e no `nucleo_llt` (None: o máximo que cabe); os outros
     recebem o mesmo número como `AeroCase.n_span` (em `rodar`). O `nucleo` fica sempre com a malha da simulação"""
     from aerosim.aero import all_solvers
-    outros = [s for s in all_solvers(backend) if s.name not in ("zig", "asb_ll")]   # LiftingLine do ASB: sem taxas
+    outros = [s for s in all_solvers(backend) if s.name not in ("zig", "asb_ll", "zig_llt", "zig_llt_gh")]   # asb_ll: sem taxas; zig_llt*: os nucleo_*
     return [ZigPanelSolver(backend), NucleoFino(backend, paineis), NucleoSolo(backend, 0.25),
             NucleoSolo(backend, 0.10), NucleoLLT(backend, paineis), NucleoGH(backend, paineis), *outros]
 
