@@ -1,19 +1,22 @@
-# core/src/collision — colisão com o tubo da hélice
+# core/src/collision — o que fica dentro do tubo da hélice
 
-Só geometria. Responde: **este ponto está dentro do tubo da hélice?** e **quanto desta faixa aerodinâmica está
-dentro dele?** Quem diz o raio do tubo ao longo do eixo é quem chama (`modifiers/slipstream.zig`); sem isso, o tubo é
-um cilindro do raio da hélice.
+A hélice empurra o ar para trás num tubo, a esteira, e as partes do avião dentro desse tubo sentem um vento mais
+forte que o resto. Esta pasta responde a duas perguntas de geometria sobre isso: se um ponto está dentro do tubo e
+quanto de uma faixa da asa ou da cauda está dentro dele. Quem diz o raio do tubo ao longo do eixo é quem chama
+(`modifiers/slipstream.zig`); sem essa informação, o tubo é um cilindro do raio da hélice.
+
+O README segue as três peças do modelo: o tubo, a faixa aerodinâmica e a fração imersa, que junta as duas.
 
 ## Modelo
 
-- **Tubo** (`Tube`): começa no disco (`origin`) e segue `axis` (unitário, para onde o ar vai: para trás numa
-  tratora, para trás também numa pusher, saindo do disco). Raio `radius(x)` em cada distância `x` ao longo do eixo,
-  até `length`. À frente do disco (`x < 0`) não há tubo.
-  - `radiusFn = null`: cilindro de raio `R`;
-  - com `radiusFn`: o tubo que contrai da esteira (abaixo).
-- **Faixa** (`Strip`): quadrilátero com centro a 25 % da corda, direção da corda (`ex`, para a frente), da envergadura
-  (`ey`), corda e largura.
-- **Fração imersa** (`stripFraction`): pontos no meio de cada célula de uma grade `nc × ns` na faixa (abaixo).
+O **tubo** (`Tube`) começa no disco da hélice (`origin`) e segue o eixo `axis`, unitário e apontando para onde o ar
+vai, que é para trás tanto numa hélice tratora quanto numa propulsora. Em cada distância $x$ ao longo do eixo, até o
+comprimento `length`, ele tem um raio `radius(x)`. À frente do disco não há tubo. Sem `radiusFn`, o tubo é um
+cilindro de raio $R$; com ela, é o tubo que contrai da esteira, descrito abaixo.
+
+A **faixa** (`Strip`) é um quadrilátero com centro a 25 % da corda, a direção da corda (`ex`, para a frente), a da
+envergadura (`ey`), a corda e a largura. A **fração imersa** (`stripFraction`) é a parte da faixa dentro do tubo,
+contada em pontos no meio de cada célula de uma grade sobre a faixa.
 
 **Ponto dentro do tubo.** Para um ponto $\vec p$, a distância ao longo do eixo e a distância ao eixo são
 
@@ -45,18 +48,6 @@ $$
 Uma superfície acima ou abaixo da linha de tração fica fora do tubo, ou só com parte dentro. Por isso a esteira não
 pega numa asa alta de um avião com o motor baixo. A EH e a EV que ficam atrás, na linha do motor, ficam dentro.
 
-## Como chamar
-
-```python
-from aerosim.aero.collision import tube_hits
-from aerosim.backend.zig import ZigBackend
-from aerosim.model.templates import conventional
-
-ac = conventional()
-for h in tube_hits(ZigBackend(), ac):          # o que cada hélice pega: superfícies (fração da área) e objetos
-    print(h)
-```
-
 ## Quem usa
 
 | onde | para quê |
@@ -79,3 +70,15 @@ Em Python, os testes estão em `tests/aero/test_collision.py`:
 - numa pusher, só o que está atrás;
 - o tubo que contrai pega menos;
 - num bimotor, a colisão é simétrica.
+
+## Como chamar
+
+```python
+from aerosim.aero.collision import tube_hits
+from aerosim.backend.zig import ZigBackend
+from aerosim.model.templates import conventional
+
+ac = conventional()
+for h in tube_hits(ZigBackend(), ac):          # o que cada hélice pega: superfícies (fração da área) e objetos
+    print(h)
+```

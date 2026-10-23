@@ -1,12 +1,19 @@
 # core/src/modifiers — modificadores
 
-Metodologias da literatura que mudam a aerodinâmica do **avião inteiro** sem mexer no resto do núcleo.
-Hoje: efeito solo e esteira da hélice. Depois: tabelas de correção (VSPAERO, CFD, túnel).
+Os modificadores são métodos da literatura que mudam a aerodinâmica do avião inteiro e que se ligam ou desligam por
+avião, sem mexer no resto do núcleo. Hoje são dois. O primeiro é o efeito solo: perto do chão, a asa produz menos
+arrasto induzido, e isso muda a decolagem e o pouso. O segundo é a esteira da hélice: o ar que a hélice joga para trás
+passa mais rápido e girando sobre a asa e a cauda, o que muda a sustentação e o momento dessas superfícies com o
+motor ligado. Depois podem vir tabelas de correção (VSPAERO, CFD, túnel).
 
-- **O Python só monta dados.** A lista `Aircraft.modifiers` (`aerosim/model/modifiers.py`) vai pelo
-  tradutor (`aerosim/backend/zig/translator.py`) para os campos `ground`, `n_mod` e `mods` de `Params`.
-- **Quem calcula é este módulo,** com um `switch` por tipo conhecido, código estático e sem alocação.
-- **Toda fórmula tem a fonte** no comentário do código e na tabela de referências abaixo. Nada sem referência.
+O avião descreve os modificadores numa lista (`Aircraft.modifiers`, em `aerosim/model/modifiers.py`), que a GUI
+edita na Montagem. O tradutor (`aerosim/backend/zig/translator.py`) leva essa lista para os campos `ground`, `n_mod` e
+`mods` de `Params`, e quem calcula é este módulo, com um `switch` por tipo conhecido, código estático e sem alocação.
+Toda fórmula tem a fonte no comentário do código e na seção de equações abaixo.
+
+O README apresenta primeiro os arquivos e como os números da ABI viram nomes dentro do núcleo. Depois explica as duas
+categorias de modificador, o que garante que nada muda sem pedir e, no meio, as equações de cada método. No fim vêm o
+exemplo e como acrescentar um modificador novo.
 
 ```
 aerosim/model/modifiers.py   Modifier(kind, enabled, name, params, targets, props)    ← GUI (Montagem) só edita
@@ -58,17 +65,14 @@ As máscaras `surf_mask` e `prop_mask` são outra coisa: o bit $i$ é o painel (
 
 ## Compatibilidade (nada muda sem pedir)
 
-- **`.json` antigo** (sem `modifiers`) abre com `default_modifiers()` = `[solo.mccormick]`, que é o
-  comportamento de antes.
-- **Exemplos de `data/aircraft`:** conferidos bit a bit antes e depois (coeficientes em α × β × V, resumo e
-  registro completo da decolagem), sem diferença. Os testes `tests/model/test_modifiers.py` garantem que todos
-  continuam abrindo com o padrão.
-- **`.cfg` e planilha** não têm onde guardar modificadores: abrem com o padrão. Ao gravar nesses formatos
-  com uma lista fora do padrão, a GUI avisa o que fica de fora (`modifiers.not_exported`).
-- **AeroDrive** monta os `Params` dele com os padrões do Zig (`ground = Ground.mccormick`, `n_mod = 0`), então
-  não muda. O leitor de JSON dele ignora a chave `modifiers`.
-- **Tipo desconhecido** (arquivo de uma versão mais nova) fica guardado no `.json`, mas é ignorado, com
-  aviso (`modifiers.problems`).
+Um `.json` antigo, sem a chave `modifiers`, abre com `default_modifiers()`, que é `[solo.mccormick]`: o mesmo
+comportamento de antes. Os exemplos de `data/aircraft` foram conferidos bit a bit antes e depois (coeficientes em
+α × β × V, resumo e registro completo da decolagem), e os testes de `tests/model/test_modifiers.py` garantem que todos
+continuam abrindo com o padrão. O `.cfg` e a planilha não têm onde guardar modificadores, então abrem com o padrão;
+ao gravar nesses formatos com uma lista fora do padrão, a GUI avisa o que fica de fora (`modifiers.not_exported`). O
+AeroDrive monta os `Params` com os padrões do Zig (`ground = Ground.mccormick`, `n_mod = 0`) e o leitor de JSON dele
+ignora a chave `modifiers`, então ele não muda. Um tipo desconhecido, vindo de um arquivo de uma versão mais nova,
+fica guardado no `.json`, mas é ignorado com um aviso (`modifiers.problems`).
 
 ## Métodos e equações
 

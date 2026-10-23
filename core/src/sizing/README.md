@@ -1,7 +1,15 @@
 # core/src/sizing — dimensionamento inicial (mini-MDO)
 
-O dimensionamento inicial inteiro roda aqui; o Python (`aerosim/design/mdo.py`) só monta a configuração e desenha.
-Cada avaliação de um vetor de projeto é curta, então o otimizador volta em tempo real na GUI.
+Esta é a parte do núcleo que procura um avião bom antes de existir um avião. Dados os requisitos (pista, massa,
+velocidades) e as faixas de cada variável de projeto (envergadura, área, afilamento, perfis, motor), ela avalia cada
+combinação com contas rápidas e devolve as grandezas do avião resultante: área, velocidade de estol, corrida, peso
+máximo de decolagem (MTOW), carga paga. Um otimizador percorre essas combinações em busca da melhor. O Python
+(`aerosim/design/mdo.py`) só monta a configuração e desenha; como cada avaliação é curta, o otimizador volta em tempo
+real na GUI.
+
+O cálculo de um avião é uma cadeia de estágios, cada um uma função pura que parte do anterior: a geometria e o perfil
+médio, a polar, o envelope de voo, a curva, o teto e o pouso, a decolagem e, por fim, a massa e o MTOW. O README
+segue essa ordem e termina no otimizador, que trata a cadeia como uma caixa-preta.
 
 | arquivo | o que tem |
 |---|---|
@@ -22,21 +30,6 @@ flowchart LR
     X --> M["mass (PV)"] --> MT
     O --> OPT["optimize.Problem"] --> PSO["Pso · RandomSearch · …"]
 ```
-
-## Como chamar
-
-```python
-from aerosim.backend.zig import ZigBackend
-from aerosim.design import mdo
-from aerosim.design.project import DesignProject
-
-proj = DesignProject()                       # requisitos e restrições padrão
-proj.mdo.iterations = 5                      # poucas iterações, só para ver
-rows, best, names = mdo.run(proj, backend=ZigBackend())
-print(len(rows), best["score"], best["feasible"])   # cada avaliação e a melhor
-```
-
-Testes: `python -m ziglang build test-sizing` (dentro de `core/`), com fuzzing das interfaces (`-Dfuzz=N -Dseed=S`).
 
 ## Geometria e perfil (`stages.geometry`, `stages.blendAirfoils`)
 
@@ -180,6 +173,21 @@ $$
 
 A velocidade é limitada a meia faixa da variável e a posição aos limites. A **busca aleatória** sorteia vetores na
 faixa e serve de referência.
+
+## Como chamar
+
+```python
+from aerosim.backend.zig import ZigBackend
+from aerosim.design import mdo
+from aerosim.design.project import DesignProject
+
+proj = DesignProject()                       # requisitos e restrições padrão
+proj.mdo.iterations = 5                      # poucas iterações, só para ver
+rows, best, names = mdo.run(proj, backend=ZigBackend())
+print(len(rows), best["score"], best["feasible"])   # cada avaliação e a melhor
+```
+
+Testes: `python -m ziglang build test-sizing` (dentro de `core/`), com fuzzing das interfaces (`-Dfuzz=N -Dseed=S`).
 
 ## Como acrescentar
 

@@ -1,8 +1,14 @@
 # core/src/sim — integração no tempo, equilíbrio, modelo linear e desempenho
 
-Aqui as forças de `physics/` viram movimento (`dynamics.zig`, `runner.zig`) ou viram respostas sem integrar no tempo:
-o equilíbrio (`trim.zig`), o modelo linear (`linear.zig`), o envelope por altitude (`envelope.zig`) e o desempenho por
-cálculo simples (`simple_perf.zig`).
+Esta é a parte do núcleo que transforma forças em voo. As forças de `physics/` e os comandos de `control/` entram, e
+saem o movimento do avião ao longo do tempo, o equilíbrio em cada velocidade, o modelo linear para estudar a
+estabilidade, o envelope de voo por altitude e o desempenho por fórmula. É aqui que uma missão inteira, da corrida na
+pista ao pouso, é simulada.
+
+O README começa pelas equações do movimento e pelo integrador, que são a base de tudo. Depois vem a corrida, que
+organiza uma simulação em eventos, paradas e checkpoints. As seções seguintes respondem perguntas sem integrar no
+tempo: o equilíbrio (trimagem), o modelo linear, o envelope por altitude e, por último, o desempenho por fórmula,
+como numa planilha.
 
 | arquivo | o que faz |
 |---|---|
@@ -14,27 +20,6 @@ cálculo simples (`simple_perf.zig`).
 | `envelope.zig` | V_min, V_max, V_e, V*, V_cru e teto por altitude |
 | `simple_perf.zig` | polar parabólica, potências, subida, planeio, curva e bateria por fórmula |
 | `tests.zig` | testes do grupo "sim" (decolagem, checkpoint, trimagem) |
-
-## Como chamar
-
-```python
-from aerosim.backend.zig import ZigBackend
-from aerosim.interfaces.backend import TrimKind
-from aerosim.model.mission import takeoff_runway
-from aerosim.model.templates import conventional
-from aerosim.model.universal import build_model
-
-ac = conventional()
-be = ZigBackend()
-with be.session_for(build_model(ac), takeoff_runway()) as s:
-    s.reset_ground()                                   # parado na cabeceira
-    status, log = s.run(t_limit=20.0)                  # dynamics + runner: 20 s de corrida
-    print(status, len(log), log["Va"][-1])          # canais: ZigBackend().log_channels()
-    eq = s.trim(TrimKind.LEVEL, 14.0)                  # trim.zig: α, δe e acelerador a 14 m/s
-    lin = s.linearize(14.0)                            # linear.zig: A (8×8), B (8×4)
-```
-
-Testes: `python -m ziglang build test-sim` (dentro de `core/`).
 
 ## Equações do movimento (`dynamics.zig`)
 
@@ -192,3 +177,24 @@ $$
 
 O resumo junta $V_e$, $V^*$, $V_{min}$ e $V_{max}$, a subida máxima, o maior $E$, a menor razão de descida, o raio
 mínimo, a autonomia e o alcance.
+
+## Como chamar
+
+```python
+from aerosim.backend.zig import ZigBackend
+from aerosim.interfaces.backend import TrimKind
+from aerosim.model.mission import takeoff_runway
+from aerosim.model.templates import conventional
+from aerosim.model.universal import build_model
+
+ac = conventional()
+be = ZigBackend()
+with be.session_for(build_model(ac), takeoff_runway()) as s:
+    s.reset_ground()                                   # parado na cabeceira
+    status, log = s.run(t_limit=20.0)                  # dynamics + runner: 20 s de corrida
+    print(status, len(log), log["Va"][-1])          # canais: ZigBackend().log_channels()
+    eq = s.trim(TrimKind.LEVEL, 14.0)                  # trim.zig: α, δe e acelerador a 14 m/s
+    lin = s.linearize(14.0)                            # linear.zig: A (8×8), B (8×4)
+```
+
+Testes: `python -m ziglang build test-sim` (dentro de `core/`).

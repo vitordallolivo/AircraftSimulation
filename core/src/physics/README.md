@@ -1,8 +1,14 @@
 # core/src/physics — forças e massas do avião num instante
 
-Cada arquivo responde a uma pergunta: dado o estado do avião agora, quais são as forças e os momentos (aerodinâmica,
-motores, trem, vento) e onde estão a massa, o CG e a inércia. Nada aqui integra no tempo: quem soma tudo e avança é
-`sim/dynamics.zig`. Nada aqui aloca memória: os vetores têm o tamanho dos limites de `limits.zig`.
+Esta é a parte do núcleo que sabe quanto o avião é empurrado e puxado. Dado o estado agora (posição, velocidade,
+atitude, rotação, comandos), ela devolve as forças e os momentos da aerodinâmica, dos motores, do trem de pouso e do
+vento, e diz onde estão a massa, o CG e a inércia. Ela não avança no tempo: quem soma tudo e integra é
+`sim/dynamics.zig`. Também não aloca memória, porque os vetores têm o tamanho dos limites de `limits.zig`.
+
+O README segue a ordem das forças. Primeiro vem a aerodinâmica por faixas, que é o modelo padrão do voo, e logo
+depois a escolha do modelo aerodinâmico e a tabela de voo, as duas alternativas a ele. Em seguida vêm a propulsão
+(motor elétrico e hélice, ou um polinômio de tração), o trem de pouso, a massa (com o líquido que balança nos tanques
+e a carga lançada), o vento e, por último, o terreno sob o avião.
 
 | arquivo | o que calcula |
 |---|---|
@@ -14,34 +20,6 @@ motores, trem, vento) e onde estão a massa, o CG e a inércia. Nada aqui integr
 | `terrain.zig` | altura do chão (plano, com mesas e plataformas) |
 | `mass.zig` | massa, CG e inércia variáveis; sloshing dos tanques; carga lançada |
 | `atmosphere.zig` | vento com perfil de altura e rajada |
-
-## Como chamar
-
-Pelo Python, sempre por uma sessão do backend (a ABI chama estas funções):
-
-```python
-from aerosim.backend.zig import ZigBackend
-from aerosim.data import load_aircraft
-from aerosim.model.universal import build_model
-
-ac = load_aircraft("data/aircraft/conventional.cfg")
-be = ZigBackend()
-with be.session_for(build_model(ac)) as s:
-    c = s.aero_coeffs(12.0, 0.05, 0.0)       # aero.zig: C_L, C_D, C_m... a V = 12 m/s, α = 0,05 rad, β = 0
-    pt = s.prop_point(0, 12.0, thr=1.0)       # propulsion.zig: motor 0 a 12 m/s, acelerador cheio
-    mp = s.mass_props()                       # mass.zig: massa, CG, inércia
-```
-
-Pelo Zig, direto (é o que o AeroDrive faz):
-
-```zig
-const core = @import("aerosim");
-var p: core.types.Params = .{};               // painéis, motores, trem... preenchidos por quem chama
-core.aero.init(&p);                   // eixos de cada painel e ângulo de estol
-const o = core.aero.compute(&p, Vr, w, rcg, h, d);   // o.F, o.M (corpo, momentos no CG)
-```
-
-Testes: `python -m ziglang build test-physics` (dentro de `core/`).
 
 ## Aerodinâmica por faixas (`aero.zig`)
 
@@ -298,3 +276,31 @@ $$
 
 Chão plano em $h = 0$ com mesas e plataformas retangulares. O trem, o efeito solo e o arredondamento do pouso olham a
 altura do terreno sob cada ponto, então a decolagem pode sair de uma mesa e o pouso pode ser numa plataforma.
+
+## Como chamar
+
+Pelo Python, sempre por uma sessão do backend (a ABI chama estas funções):
+
+```python
+from aerosim.backend.zig import ZigBackend
+from aerosim.data import load_aircraft
+from aerosim.model.universal import build_model
+
+ac = load_aircraft("data/aircraft/conventional.cfg")
+be = ZigBackend()
+with be.session_for(build_model(ac)) as s:
+    c = s.aero_coeffs(12.0, 0.05, 0.0)       # aero.zig: C_L, C_D, C_m... a V = 12 m/s, α = 0,05 rad, β = 0
+    pt = s.prop_point(0, 12.0, thr=1.0)       # propulsion.zig: motor 0 a 12 m/s, acelerador cheio
+    mp = s.mass_props()                       # mass.zig: massa, CG, inércia
+```
+
+Pelo Zig, direto (é o que o AeroDrive faz):
+
+```zig
+const core = @import("aerosim");
+var p: core.types.Params = .{};               // painéis, motores, trem... preenchidos por quem chama
+core.aero.init(&p);                   // eixos de cada painel e ângulo de estol
+const o = core.aero.compute(&p, Vr, w, rcg, h, d);   // o.F, o.M (corpo, momentos no CG)
+```
+
+Testes: `python -m ziglang build test-physics` (dentro de `core/`).

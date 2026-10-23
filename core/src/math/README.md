@@ -1,6 +1,11 @@
 # core/src/math — funções matemáticas, vetores e polinômios
 
-A base de todas as contas do núcleo. Três arquivos e um de testes:
+Esta é a base de todas as contas do núcleo. A simulação chama seno, cosseno, exponencial e logaritmo milhões de vezes
+por missão, então aqui ficam versões rápidas dessas funções, os vetores 3D que cabem nos registradores do processador
+e o polinômio de tração, que o compilador monta antes de o programa rodar.
+
+O README começa pelas funções trigonométricas por tabela, segue para o arco tangente, a exponencial e o logaritmo, e
+mostra a alternativa sem tabela para o seno. Depois vêm o polinômio de tração e, por último, os vetores e as rotações.
 
 | arquivo | o que tem |
 |---|---|
@@ -12,21 +17,6 @@ A base de todas as contas do núcleo. Três arquivos e um de testes:
 As funções públicas usam `lut` ou `ref` conforme `-Dfast_math` (padrão: `lut`). As otimizações em avaliação
 (`-Dopt`) trocam partes daqui; os nomes e os bits estão no enum `Opt` de [`../opt.zig`](../opt.zig), e o código pergunta
 por nome, `optOn(.minimax)`. O que cada uma faz e o que se mediu está em [`core/OTIMIZACOES.md`](../../OTIMIZACOES.md).
-
-## Como chamar
-
-```zig
-const fm = @import("math/fmath.zig");
-const sc = fm.sincos(0.3);          // seno e cosseno de uma vez (sc.s, sc.c)
-const a = fm.atan2(1.0, 2.0);
-const vec = @import("math/vec.zig");
-const v = vec.V3{ 1, 0, 0 };
-const w = vec.cross(v, vec.V3{ 0, 1, 0 });   // (0, 0, 1)
-```
-
-Pelo Python, só as medições: `python -m pytest -m bench -s tests/core/test_lut.py`.
-
-Testes: `python -m ziglang build test-math` (dentro de `core/`).
 
 ## Seno e cosseno por tabela (`SinLut`)
 
@@ -144,3 +134,18 @@ produtos vetoriais das linhas $a_1, a_2, a_3$ de $A$:
 $$
 x = \frac{(a_2\times a_3)\,b_1 + (a_3\times a_1)\,b_2 + (a_1\times a_2)\,b_3}{a_1\cdot(a_2\times a_3)}
 $$
+
+## Como chamar
+
+```zig
+const fm = @import("math/fmath.zig");
+const sc = fm.sincos(0.3);          // seno e cosseno de uma vez (sc.s, sc.c)
+const a = fm.atan2(1.0, 2.0);
+const vec = @import("math/vec.zig");
+const v = vec.V3{ 1, 0, 0 };
+const w = vec.cross(v, vec.V3{ 0, 1, 0 });   // (0, 0, 1)
+```
+
+Pelo Python, só as medições: `python -m pytest -m bench -s tests/core/test_lut.py`.
+
+Testes: `python -m ziglang build test-math` (dentro de `core/`).

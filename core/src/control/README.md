@@ -1,34 +1,20 @@
 # core/src/control — piloto automático, guiamento e ajuste de ganhos
 
-O piloto que voa as missões da simulação. Ele não é um controlador de aeronave real: é o piloto de um simulador,
-pensado para que qualquer avião projetado complete a missão sem ganhos escritos à mão.
+Esta é a parte do núcleo que pilota o avião nas simulações. Ela recebe o percurso da missão (retas e curvas, com
+altura e velocidade) e decide, a cada instante, para onde o avião deve apontar e quanto mexer em cada comando. Não é
+um controlador para um avião real: é o piloto de um simulador, pensado para que qualquer avião projetado complete a
+missão sem que alguém precise escrever ganhos à mão.
+
+O trabalho se divide em três camadas, uma em cima da outra. O guiamento diz o que se quer (o rumo, a altura e a
+velocidade em cada ponto do percurso). O piloto automático transforma isso em comandos de profundor, aileron, leme,
+acelerador e roda. O ajuste dos ganhos calcula, a partir do modelo linear do próprio avião, quanto cada malha do
+piloto deve reagir.
 
 | arquivo | o que faz |
 |---|---|
 | `guidance.zig` | o percurso (retas e arcos) e o curso, a altura e a velocidade pedidos em cada ponto |
 | `autopilot.zig` | os comandos (profundor, aileron, leme, acelerador, roda) a partir do que o guiamento pede |
 | `autotune.zig` | os ganhos das malhas internas a partir do modelo linear do avião |
-
-## Como chamar
-
-O piloto roda dentro da simulação; pelo Python, o que se escolhe é a missão e se os ganhos são ajustados sozinhos:
-
-```python
-from aerosim.backend.zig import ZigBackend
-from aerosim.model.mission import circuit
-from aerosim.model.templates import conventional
-from aerosim.model.universal import build_model
-
-ac = conventional()
-be = ZigBackend()
-with be.session_for(build_model(ac), circuit()) as s:
-    g = s.autotune(14.0)            # autotune.zig: ganhos para 14 m/s (e o que não deu para ajustar)
-    s.reset_ground()
-    status, log = s.run(t_limit=30.0)
-    print(status, log["h"].max())
-```
-
-Testes: `python -m ziglang build test-control` (dentro de `core/`).
 
 ## Guiamento (`guidance.zig`)
 
@@ -151,3 +137,24 @@ proporção.
 
 As malhas de fora (altura → fator de carga, curso → inclinação) são cinemáticas e não dependem do avião. Uma derivada
 que não dá para usar (comando sem efeito, valor absurdo) deixa o ganho do arquivo como está, e o resultado diz qual.
+
+## Como chamar
+
+O piloto roda dentro da simulação; pelo Python, o que se escolhe é a missão e se os ganhos são ajustados sozinhos:
+
+```python
+from aerosim.backend.zig import ZigBackend
+from aerosim.model.mission import circuit
+from aerosim.model.templates import conventional
+from aerosim.model.universal import build_model
+
+ac = conventional()
+be = ZigBackend()
+with be.session_for(build_model(ac), circuit()) as s:
+    g = s.autotune(14.0)            # autotune.zig: ganhos para 14 m/s (e o que não deu para ajustar)
+    s.reset_ground()
+    status, log = s.run(t_limit=30.0)
+    print(status, log["h"].max())
+```
+
+Testes: `python -m ziglang build test-control` (dentro de `core/`).

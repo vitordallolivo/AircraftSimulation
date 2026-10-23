@@ -1,29 +1,36 @@
 # core/src/loads — distribuição de carga ao longo da envergadura
 
-Nasceu para a **análise de cargas**. O voo também pode usar com `Params.aero_model = 1` (`physics/aeromodel.zig`); com
-o padrão (faixas), a simulação não chama nada daqui, então as corridas, a trimagem e o AeroDrive ficam iguais.
+Esta é a parte do núcleo que diz como a sustentação se distribui ao longo da asa e da cauda, da raiz até a ponta. Essa
+distribuição é o que importa para a estrutura (o momento fletor na raiz, a carga em cada nervura) e para saber onde o
+estol começa. Ela nasceu para a aba Cargas, e o voo também pode usá-la, escolhendo `Params.aero_model = 1`
+(`physics/aeromodel.zig`). Com o padrão, que são as faixas, a simulação não chama nada daqui, e as corridas, a
+trimagem e o AeroDrive ficam iguais.
+
+O README começa explicando por que esta pasta existe. Depois apresenta o método de Phillips e Snyder, que é o padrão,
+e o de Goates e Hunsaker, uma correção ligável para asas enflechadas e para voo com derrapagem. Em seguida vêm o cache
+que deixa a conta rápida, os limites do método, os testes, como validar e as referências. No fim, como chamar.
 
 ## Por que existe
 
-A simulação dá a cada faixa o $C_{L\alpha}$ 3D da superfície inteira (Helmbold com o alongamento dela). Assim o alongamento
-muda o **total**, mas a carga sai **plana** ao longo da envergadura: a ponta carrega tanto quanto a raiz. Para cargas
-isso está errado. A ponta descarrega, e quanto menor o alongamento, mais a forma muda.
+A simulação por faixas dá a cada faixa a mesma inclinação de sustentação, a da superfície inteira (Helmbold com o
+alongamento dela). Assim o alongamento muda a sustentação total, mas a carga sai plana ao longo da envergadura: a
+ponta carrega tanto quanto a raiz. Para voar isso basta, porque o que importa é a soma. Para cargas está errado,
+porque a ponta de uma asa real descarrega, e quanto menor o alongamento, mais a forma da carga muda.
 
-## Método: linha sustentadora numérica (`llt.zig`)
+## Método de Phillips e Snyder (`llt.zig`)
 
-**Fonte:** Phillips, W. F. e Snyder, D. O., *Modern Adaptation of Prandtl's Classic Lifting-Line Theory*, Journal of
-Aircraft 37(4), 662–670, 2000.
+A linha sustentadora numérica de Phillips e Snyder (*Modern Adaptation of Prandtl's Classic Lifting-Line Theory*,
+Journal of Aircraft 37(4), 662–670, 2000) troca cada painel do núcleo por uma ferradura de vórtice: um segmento ligado
+ao longo do 1/4 de corda da faixa e duas pernas que seguem o escoamento até longe. A circulação de cada ferradura é a
+incógnita, e a carga de cada faixa sai dela.
 
-**Ferraduras:**
-- uma ferradura por painel do núcleo;
-- os dois nós ficam nos pontos de 1/4 de corda das **bordas** da faixa (`qa`, `qb` do painel, que o tradutor
-  preenche). Faixas vizinhas dividem o nó, então as pernas se cancelam onde a circulação é igual, também com
-  enflechamento e diedro. Sem os nós (`qa = qb = 0`, painéis montados à mão), o segmento sai do centro `r` com a
-  largura `S/c`, perpendicular à corda, e só fecha as ferraduras numa superfície sem enflechamento;
-- as pernas são retas e seguem o escoamento livre;
-- o ponto de controle fica no centro `r` do painel, no meio do segmento ligado;
-- a asa, a EH, a EV e os dispositivos entram juntos. Por isso o downwash da asa na cauda sai das pernas da asa, e não
-  do ε empírico da simulação.
+Os dois nós de cada ferradura ficam nos pontos de 1/4 de corda das bordas da faixa (`qa` e `qb` do painel, que o
+tradutor preenche). Faixas vizinhas dividem o nó, então as pernas se cancelam onde a circulação é igual, também com
+enflechamento e diedro. Sem os nós (`qa = qb = 0`, painéis montados à mão), o segmento sai do centro `r` com a largura
+`S/c`, perpendicular à corda, e só fecha as ferraduras numa superfície sem enflechamento. As pernas são retas e
+seguem o escoamento livre, e o ponto de controle fica no centro `r` do painel, no meio do segmento ligado. A asa, a
+EH, a EV e os dispositivos entram juntos, e por isso o downwash da asa na cauda sai das pernas da asa, e não do ε
+empírico da simulação.
 
 **Biot–Savart.** A velocidade induzida num ponto $P$ por um segmento reto de vórtice de $A$ a $B$, com circulação
 unitária, $\vec r_1 = P - A$, $\vec r_2 = P - B$ e $\vec r_0 = B - A$ (Katz e Plotkin, *Low-Speed Aerodynamics*, 2ª ed.,
@@ -46,10 +53,9 @@ $$
 \vec w_i = \sum_j \Gamma_j\,\vec w_{ij}
 $$
 
-- $\vec V_i$: velocidade local, já com os modificadores (esteira, solo);
-- $\alpha_{g,i}$: o ângulo do painel sem o downwash empírico, com os comandos;
-- $\alpha_{0,i} = -C_{L0}/C_{L\alpha}$;
-- $\vec w_{ij}$: a velocidade que a ferradura $j$ com $\Gamma_j = 1$ induz no ponto de controle $i$ (Biot–Savart acima).
+Aqui $\vec V_i$ é a velocidade local, já com os modificadores (esteira, solo); $\alpha_{g,i}$ é o ângulo do painel sem
+o downwash empírico, com os comandos; $\alpha_{0,i} = -C_{L0}/C_{L\alpha}$; e $\vec w_{ij}$ é a velocidade que a
+ferradura $j$ com $\Gamma_j = 1$ induz no ponto de controle $i$, pelo Biot–Savart acima.
 
 A inclinação 2D $a_i$ sai do $C_{L\alpha}$ 3D do núcleo invertendo Helmbold, que é o que o tradutor usou (com
 $1 - 2C_{L\alpha}/(\pi AR) \le 0$, usa $2\pi$):
@@ -85,24 +91,28 @@ $$
 r_c = k\,c
 $$
 
-- Sem ele, a perna da raiz de uma EV que encosta na EH passa a milímetros dos pontos de controle da EH e induz uma
-  velocidade absurda ($\propto 1/h$).
-- Numa faixa larga de $k$ o resultado quase não muda.
-- Dentro da mesma superfície não há núcleo: a queda na ponta depende das pernas das faixas vizinhas, mais estreitas
-  que qualquer núcleo dessa ordem.
+Sem ele, a perna da raiz de uma EV que encosta na EH passa a milímetros dos pontos de controle da EH e induz uma
+velocidade absurda, que cresce como $1/h$. Numa faixa larga de $k$ o resultado quase não muda. Dentro da mesma
+superfície não há núcleo, porque a queda na ponta depende das pernas das faixas vizinhas, mais estreitas que qualquer
+núcleo dessa ordem.
 
 ## Método de Goates e Hunsaker (ligável, `llt_joint` e `llt_blend`)
 
-**Fonte:** Goates, C. D. e Hunsaker, D. F., *Practical Implementation of a General Numerical Lifting-Line Method*, AIAA
-SciTech 2021 (a forma prática do método de Reid e Hunsaker 2020). Os autores o implementam no MachUpX
-(github.com/usuaero/MachUpX), que serviu de referência nos testes.
+O método de Phillips e Snyder tem um problema em duas situações comuns, e a correção de Goates e Hunsaker existe para
+elas. A primeira é o voo com derrapagem, quando o vento chega de lado no avião (o ângulo $\beta$), como numa curva mal
+coordenada ou com vento cruzado. A segunda é a asa com enflechamento ou diedro. Nas duas, o resultado de Phillips e
+Snyder muda cada vez que se refina a malha, em vez de se aproximar de um valor. Na prática, isso quer dizer que não dá
+para confiar no momento de rolagem que a derrapagem produz (o $C_{l\beta}$, que decide a estabilidade lateral) nem na
+carga perto da raiz de uma asa enflechada.
 
-**Por que:** o método de Phillips e Snyder "não converge com a malha para asas enflechadas ou em derrapagem" (G-H
-§II.A, p. 4). Duas singularidades:
-- **em derrapagem**, as pernas seguem o vento e saem inclinadas no plano da asa. Cada perna induz $(1 + \sin\beta)$ de
-  um lado e $(1 - \sin\beta)$ do outro, e a parte assimétrica soma $\Delta\Gamma/|\Delta y|$ sem trocar de sinal: o
-  $C_{l\beta}$ da asa plana cresce com o logaritmo da malha;
-- **com enflechamento ou diedro**, a quina da raiz (ver Limites abaixo).
+A causa está na geometria das ferraduras. Em derrapagem, as pernas seguem o vento e saem inclinadas no plano da asa;
+cada perna induz $(1 + \sin\beta)$ de um lado e $(1 - \sin\beta)$ do outro, e a parte assimétrica soma
+$\Delta\Gamma/|\Delta y|$ sem trocar de sinal, então o $C_{l\beta}$ da asa plana cresce com o logaritmo da malha. Com
+enflechamento ou diedro, o problema é a quina da raiz, descrita em Limites, abaixo.
+
+Goates e Hunsaker (*Practical Implementation of a General Numerical Lifting-Line Method*, AIAA SciTech 2021, a forma
+prática do método de Reid e Hunsaker 2020) resolvem isso com três correções, implementadas também pelos autores no
+MachUpX (github.com/usuaero/MachUpX), que serviu de referência nos testes.
 
 **As três correções** (só com `Params.llt_joint > 0` ou `Params.llt_blend > 0`):
 
@@ -148,40 +158,31 @@ Snyder em derrapagem não convergem. Os números esperados estão em `tests/tool
 positivo da asa plana é do modelo de esteira alinhada ao vento (o MachUpX dá o mesmo); o AVL e o VLM põem a esteira no
 eixo x e dão zero.
 
-**Como ligar:** `Params.llt_joint` e `Params.llt_blend` (os valores usados estão em
+Para ligar, use `Params.llt_joint` e `Params.llt_blend` (os valores usados estão em
 `aerosim.aero.span_loads.GOATES_HUNSAKER`, que vai como `overrides` da sessão); a aba Cargas tem o método "linha
 sustentadora (Goates e Hunsaker)" (`llt_gh`). Com os dois em 0 (o padrão), a linha sustentadora é a de Phillips e
 Snyder, com as mesmas contas de antes.
 
 ## Cache da geometria (`prepare`, `Params.llt_cache`)
 
-A cada avaliação, a linha sustentadora precisava da influência de cada ferradura j em cada ponto de controle i. No
-método de Goates e Hunsaker, também refazia para cada i a linha efetiva, as tangentes e as juntas. O perfil
-(`tools/time_profile.py`, uma decolagem com o `llt_gh`) mostrou para onde ia o tempo:
-- 49 % recalculando essa geometria;
-- 37 % no Biot–Savart dos 5 segmentos de cada ferradura;
-- 2 % na eliminação de Gauss.
+A cada avaliação, a linha sustentadora precisava da influência de cada ferradura $j$ em cada ponto de controle $i$, e
+no método de Goates e Hunsaker também refazia, para cada $i$, a linha efetiva, as tangentes e as juntas. O perfil de
+uma decolagem (`tools/time_profile.py`) mostrou que a maior parte do tempo ia em recalcular essa geometria, seguida
+pelo Biot–Savart, com a eliminação de Gauss quase de graça. Só as duas pernas livres dependem do escoamento, porque
+seguem o vento; os nós, as juntas e o segmento ligado são fixos para uma configuração. O MachUpX também monta a linha
+efetiva e as juntas uma vez, ao montar o avião (`machupX/airplane.py`).
 
-Mas só as duas pernas livres dependem do escoamento, porque seguem o vento: os nós, as juntas e o segmento ligado são
-fixos para uma configuração. O MachUpX, a implementação dos autores, também monta a linha efetiva e as juntas uma vez,
-ao montar o avião (`machupX/airplane.py`).
+Por isso `prepare(p)`, chamado em `runner.configure` logo depois de `aero.init`, guarda para cada par $(i, j)$ de onde
+saem as pernas livres e os segmentos fixos (as juntas e o ligado), em memória estática no `Params`. Com o cache,
+`apply` calcula só as duas pernas livres e soma na mesma ordem de antes, e o resultado é o mesmo, bit a bit; o teste
+"cache da geometria" confere isso em derrapagem e com diedro, nos dois métodos. Sem o cache, faz a conta inteira de
+sempre, o que acontece com painéis montados à mão nos testes, no AeroDrive ou quando um painel fica sem escoamento no
+instante (isso muda as cadeias de Goates e Hunsaker). Com o cache, o método de Goates e Hunsaker ficou da ordem do de
+Phillips e Snyder; as medidas estão em [`core/OTIMIZACOES.md`](../../OTIMIZACOES.md).
 
-- **`prepare(p)`:** chamado em `runner.configure`, logo depois de `aero.init`. Guarda, para cada par (i, j), de onde
-  saem as pernas livres (jA, jB) e os segmentos fixos: as juntas jA → A e B → jB, e o ligado A → B. É memória estática
-  no `Params`.
-- **`apply`:** com o cache, calcula só as duas pernas livres e soma na mesma ordem de antes. O resultado é o mesmo, bit
-  a bit, e o teste "cache da geometria" confere isso em derrapagem, com diedro, nos dois métodos.
-- **Sem o cache, a conta inteira de sempre:** é o que acontece com `ok = 0` (painéis montados à mão nos testes, ou o
-  AeroDrive) ou quando um painel fica sem escoamento no instante, o que muda as cadeias de Goates e Hunsaker.
-
-Com o cache, o método de Goates e Hunsaker ficou da ordem do de Phillips e Snyder; as medidas, com a máquina e a data, e
-os próximos ganhos estão em [`core/OTIMIZACOES.md`](../../OTIMIZACOES.md).
-
-**Próximos ganhos possíveis**, que trocam a ordem das somas e por isso mudam o último dígito:
-- a perna livre como vórtice semi-infinito por fórmula fechada (o 1º termo da eq. 3 de Goates e Hunsaker), no lugar
-  de um segmento muito longo;
-- no Phillips e Snyder, uma perna por nó: as ferraduras vizinhas dividem o nó, o que dá $n + 1$ pernas em vez de $2n$;
-- SIMD (`@Vector`) no Biot–Savart. É portátil: NEON no ARM, AVX no x86, laço escalar sem SIMD.
+Ainda dá para ganhar tempo trocando a ordem das somas, o que muda o último dígito: a perna livre como vórtice
+semi-infinito por fórmula fechada (o 1º termo da eq. 3 de Goates e Hunsaker), uma perna por nó no Phillips e Snyder
+($n + 1$ pernas em vez de $2n$) e SIMD no Biot–Savart.
 
 ## Limites conhecidos
 
@@ -201,33 +202,6 @@ os próximos ganhos estão em [`core/OTIMIZACOES.md`](../../OTIMIZACOES.md).
 $$
 y(t) = y_0 + (y_1 - y_0)\,\sin\frac{\pi t}{2}
 $$
-
-## Como chamar
-
-- **Export:** `aerosim_panel_states_llt` (em `root.zig`), com os mesmos argumentos de `aerosim_panel_states`. Devolve
-  os mesmos `PanelState`, com `alpha` (efetivo), `CL`, `L`, `D`, `F` e `v`/`vind` da linha sustentadora.
-- **Python:** `session.panel_states(..., llt=True)` e `aerosim.aero.span_loads.LoadCase(method="llt")`, que é o padrão:
-
-```python
-import numpy as np
-from aerosim.backend.zig import ZigBackend
-from aerosim.model.templates import conventional
-from aerosim.model.universal import build_model
-
-ac = conventional()
-with ZigBackend().session_for(build_model(ac)) as s:
-    faixas = s.panel_states(14.0, np.radians(4.0))             # carga plana da simulação
-    linha = s.panel_states(14.0, np.radians(4.0), llt=True)    # linha sustentadora de Phillips e Snyder
-    c = s.aero_coeffs_llt(14.0, np.radians(4.0))               # coeficientes do avião com a linha sustentadora
-print(faixas["L"].sum(), linha["L"].sum())
-```
-
-- **Coeficientes do avião com a linha sustentadora:** `aerosim_aero_coeffs_llt` (`llt.coeffs`), com os mesmos
-  argumentos de `aerosim_aero_coeffs_at` (taxas p, q, r; altura sobre o chão; tração e torque de cada motor; ponto dos
-  momentos). Faz a conta da simulação (`aero.computeTrace`) e troca só as forças dos painéis pelas de `apply`, então
-  a fuselagem, o c_m das seções, o efeito solo e a esteira continuam os da simulação. C_Di sai NaN. No Python:
-  `session.aero_coeffs_llt(...)`. A simulação e o AeroDrive não chamam (é a base da fase B de `tools/aero/decolagem.py`).
-  `method="faixas"` dá a carga plana da simulação.
 
 ## Testes (`zig build test-physics`)
 
@@ -285,3 +259,29 @@ Em Python (`tests/aero/test_span_loads.py`):
   1991. Núcleo de Scully.
 
 Os PDFs não ficam no repositório (regra 7 do `.claude/CLAUDE.md`): só a citação.
+
+## Como chamar
+
+O export é `aerosim_panel_states_llt` (em `root.zig`), com os mesmos argumentos de `aerosim_panel_states`; ele devolve
+os mesmos `PanelState`, com `alpha` (efetivo), `CL`, `L`, `D`, `F` e `v`/`vind` da linha sustentadora. No Python,
+`session.panel_states(..., llt=True)` e `aerosim.aero.span_loads.LoadCase(method="llt")`, que é o padrão da aba Cargas:
+
+```python
+import numpy as np
+from aerosim.backend.zig import ZigBackend
+from aerosim.model.templates import conventional
+from aerosim.model.universal import build_model
+
+ac = conventional()
+with ZigBackend().session_for(build_model(ac)) as s:
+    faixas = s.panel_states(14.0, np.radians(4.0))             # carga plana da simulação
+    linha = s.panel_states(14.0, np.radians(4.0), llt=True)    # linha sustentadora de Phillips e Snyder
+    c = s.aero_coeffs_llt(14.0, np.radians(4.0))               # coeficientes do avião com a linha sustentadora
+print(faixas["L"].sum(), linha["L"].sum())
+```
+
+Os coeficientes do avião inteiro com a linha sustentadora saem de `aerosim_aero_coeffs_llt` (`llt.coeffs`), com os
+mesmos argumentos de `aerosim_aero_coeffs_at` (taxas p, q, r; altura sobre o chão; tração e torque de cada motor; ponto
+dos momentos). Ele faz a conta da simulação (`aero.computeTrace`) e troca só as forças dos painéis pelas de `apply`,
+então a fuselagem, o c_m das seções, o efeito solo e a esteira continuam os da simulação; o C_Di sai NaN. No Python,
+`session.aero_coeffs_llt(...)`, e `method="faixas"` dá a carga plana da simulação.
