@@ -17,10 +17,16 @@ xvfb-run -a python tools/capturas.py capturas/         # foto de cada aba
 Por código (ex.: num script de teste):
 
 ```python
-from aerosim.gui.state import AppState
+from PyQt6 import QtWidgets
 from aerosim.gui.main_window import MainWindow
-st = AppState(manager, aeronave)
-w = MainWindow(st); w.show()
+from aerosim.gui.state import AppState
+from aerosim.manager import SimulationManager
+from aerosim.model.templates import conventional
+
+app = QtWidgets.QApplication([])
+st = AppState(SimulationManager(), conventional())
+w = MainWindow(st)
+w.show()                                       # app.exec() abre a janela de verdade
 st.notify("geometry"); st.undo(); st.redo()    # toda mudança passa por AppState (Ctrl+Z)
 ```
 
@@ -64,7 +70,7 @@ flowchart LR
   `model/geometry.py` (eixos do corpo → tela: `(x, −y, −z)`), escolhe o componente mais perto do clique
   e move no plano da câmera (ou travado em x, y, z); à direita o editor do componente, um `DataclassForm`
   (um campo por número da dataclass; rótulos curtos com a explicação no ⓘ). As informações são
-  recalculadas 300 ms depois da última edição. Vazio (`templates.empty()`), o resumo diz o que falta
+  recalculadas logo depois da última edição (um temporizador junta as edições seguidas). Vazio (`templates.empty()`), o resumo diz o que falta
   (`templates.not_ready`). Tubos são uma lista (`ac.booms`, chave `boom:i` no 3D); o campo **presa em** de
   cada superfície (`mount`: `tubo:i` ou `ponta:j`) é resolvido por `Aircraft.apply_constraints`.
 - **Projeto inteiro num `.json`:** `state.save_design()` grava as etapas, `fleet` (os aviões abertos), `current`
@@ -104,8 +110,8 @@ flowchart LR
   só para ver, com massa, envergadura e área; os gráficos ficam embaixo, rolando.
 - **Ambiente e envelope na Montagem:** a altitude-densidade (AD) define ρ pela ISA
   (`model/atmosphere.py`, ρ aparece ao lado só para leitura); "Envelope de voo" edita o ângulo de
-  cruzeiro, o fator de carga e o teto mínimo. Desempenho usa "AD, AD+900" como altitudes padrão.
-- **Tela:** tudo projetado para 1366×768 (a janela abre nesse tamanho ou no da tela, o menor).
+  cruzeiro, o fator de carga e o teto mínimo. Desempenho usa a AD e uma AD mais alta como altitudes padrão.
+- **Tela:** tudo projetado para caber num notebook comum (a janela abre nesse tamanho ou no da tela, o menor).
 - **Desfazer:** `AppState` guarda o estado de antes de cada mudança (`notify`/`touch`) — a aeronave e os
   valores das abas registradas (`register`); Ctrl+Z/Ctrl+Y em `main_window.py`.
 - **Desempenho agrupa Tração e Missão:** as subabas são Motores e montagem, Estudo e ponto de projeto, Avião
@@ -115,7 +121,79 @@ flowchart LR
 - **xCG em % da CMA** na tela (tabela do MTOW, linha de informações do avião); por dentro tudo é em metros.
 - **Rotação do motor:** na Montagem, cada motor tem o botão "⟲⟳ Inverter rotação".
 - **Tração:** em cada motor, "motor + hélice" (catálogo) ou "polinômio de tração" (conjuntos do
-  catálogo, vindos da aba `Tracao`); os 21 coeficientes são editáveis numa tabela.
+  catálogo, vindos da aba `Tracao`); os coeficientes do polinômio são editáveis numa tabela.
 - **Simulações:** `SimulationTab` roda `manager.run` numa `QThread`; cada fatia do registro chega por
-  sinal e é desenhada a ~15 Hz; ao terminar mostra o resumo e as séries; "Exportar CSV" grava tudo.
+  sinal e é desenhada em intervalos fixos (não a cada fatia); ao terminar mostra o resumo e as séries; "Exportar CSV" grava tudo.
 - Sem tela (servidor, CI): `QT_QPA_PLATFORM=offscreen` (o 3D não desenha, o resto funciona).
+
+## As poucas contas da GUI
+
+A GUI não calcula nada do avião (regra 2 do `CLAUDE.md`): ela só converte o que o manager e o modelo já entregam
+para a tela.
+
+**Eixos do corpo para o OpenGL** (`widgets/view3d.py`, `to_gl`). O modelo usa os eixos do corpo da mecânica de voo
+($x$ para a frente, $y$ para a direita, $z$ para baixo); a vista 3D usa $z$ para cima, então dois eixos trocam de
+sinal:
+
+$$
+\begin{pmatrix} x \\ y \\ z \end{pmatrix}_{GL} = \begin{pmatrix} x \\ -y \\ -z \end{pmatrix}_{corpo}
+$$
+
+**Cores das cargas** (`widgets/load_view.py`, `normalize`). Cada valor vira uma posição $t \in [0, 1]$ no mapa de
+cores. Na escala mín–máx, e na simétrica em zero (mapa divergente, para valores com sinal):
+
+$$
+t = \frac{v - v_{min}}{v_{max} - v_{min}}
+\qquad
+t = \frac{v + M}{2M}, \quad M = \max |v|
+$$
+
+Na escala "por superfície", $v_{min}$ e $v_{max}$ são os de cada superfície.
+
+**Rótulos** (`widgets/plots.py`, `tex`). Os títulos dos gráficos aceitam uma notação LaTeX simples ($...$, letras
+gregas como `\delta`, índices `C_L` e expoentes `x^2`), convertida para o HTML do Qt.
+
+## Um exemplo por arquivo
+
+```python
+from PyQt6 import QtWidgets
+from aerosim.design.project import DesignProject
+from aerosim.gui.main_window import MainWindow
+from aerosim.gui.state import AppState
+from aerosim.gui.widgets import load_view, plots, view3d
+from aerosim.gui.widgets.dims_table import DimsTable
+from aerosim.gui.widgets.param_slider import DataclassForm, ParamSlider
+from aerosim.interfaces.simulation import PlotSpec
+from aerosim.manager import SimulationManager
+from aerosim.model.templates import conventional
+
+app = QtWidgets.QApplication([])
+ac = conventional()
+
+# state.py + main_window.py: o estado compartilhado e a janela
+st = AppState(SimulationManager(), ac)
+w = MainWindow(st)
+print(w.windowTitle())
+
+# widgets/param_slider.py: um formulário gerado da dataclass (rótulo, unidade e dica dos metadados)
+form = DataclassForm(DesignProject().requirements)
+sl = ParamSlider("V", 14.0, 8.0, 25.0, 0.5)
+print(type(form).__name__, sl.value())
+
+# widgets/plots.py: gráficos montados das PlotSpec; tex() converte os rótulos
+lp = plots.LivePlots([PlotSpec("h", "Altura", "t", ("h",), "t (s)", "m")])
+print(plots.tex("$C_L$ × $\\alpha$"))
+
+# widgets/view3d.py e load_view.py: eixos do corpo -> OpenGL e cores das cargas
+print(view3d.to_gl([1.0, 2.0, 3.0]))
+print(load_view.normalize([-2.0, 0.0, 4.0], "simétrica em 0")[0])
+
+# widgets/dims_table.py: medidas a partir do CG de projeto
+dt = DimsTable()
+dt.show_aircraft(ac)
+print(dt.table.rowCount(), dt.rows[0][:2])
+```
+
+As abas (`tabs/config_tab.py`, `tabs/simulation_tab.py`), as etapas da sprint (`design/pages.py`,
+`design/mdo_page.py`) e os diálogos (`widgets/save_check.py`) são montados pela `MainWindow`; os testes em `tests/gui`
+mostram como abrir cada um sem tela.
