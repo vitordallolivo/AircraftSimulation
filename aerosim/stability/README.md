@@ -1,11 +1,20 @@
 # aerosim/stability — estabilidade estática, dinâmica e superfícies de comando
 
-A aba **Estabilidade** não entrega só gráficos: entrega um **diagnóstico** — cada verificação com
-estado (OK / ATENÇÃO / FALHA / INFO), valor, critério e fonte, a causa física e o que mudar, com quanto
-mudar (CG, área, diedro). Quando um modo dinâmico falha, a análise é refeita com a deriva
-maior / mais diedro / EH maior para dizer quanto mudar (`sizing.search`).
+Esta é a parte do projeto que responde se o avião é estável e controlável, e o que mudar quando não é. Aqui entra o
+avião já montado, e saem a margem estática e o ponto neutro, a faixa em que o CG pode ficar, os modos dinâmicos (como
+o avião oscila depois de uma perturbação) e o tamanho que os comandos precisam ter. Ela alimenta a aba
+**Estabilidade** (`manager/simulations/stability.py`), e tudo vem do núcleo: os coeficientes com o momento em qualquer
+ponto (`aero_coeffs_ex`) e o modelo linear (`linearize`).
 
-A aba se monta pela configuração (`aerosim/model/features.py`):
+A aba não entrega só gráficos, entrega um diagnóstico. Cada verificação tem um estado (OK, ATENÇÃO, FALHA ou INFO), o
+valor, o critério e a fonte, a causa física e o que mudar, com quanto mudar (CG, área, diedro). Quando um modo
+dinâmico falha, a análise é refeita com a deriva maior, mais diedro ou a EH maior, para dizer quanto mudar
+(`sizing.search`). Os critérios de aprovação podem ser os da norma MIL-F-8785C (por classe e fase de voo), um conjunto
+personalizado, com cada critério ligado ou desligado e o limite digitado, ou nenhum, só para ver os valores, porque a
+norma pode não valer para o tipo de avião. Os gráficos principais são a margem estática e a deflexão de arfagem para
+equilibrar, as duas em função da posição do CG, com os limites dianteiro e traseiro marcados.
+
+A aba se monta pelo que o avião tem (`aerosim/model/features.py`):
 
 | a aeronave tem | a aba mostra |
 |---|---|
@@ -16,36 +25,8 @@ A aba se monta pela configuração (`aerosim/model/features.py`):
 | carga lançável / líquido | faixa de CG calculada (com/sem carga, com/sem líquido); senão, a variação é informada |
 | trem de pouso | rotação na decolagem (e onde pôr o trem principal se não roda) |
 
-**Critérios** (seção "Critérios de aprovação" da aba): MIL-F-8785C (classe e fase), **personalizado**
-(cada critério ligado/desligado e com o limite digitado) ou **nenhuma** (só mostra os valores — a norma
-pode não valer para o tipo de aeronave). Margens, cursos máximos e vento cruzado são sempre entradas.
-
-Gráficos principais: **margem estática × posição do CG** e **deflexão de arfagem para equilibrar × posição
-do CG**, com os limites dianteiro e traseiro marcados.
-
-Usado pela aba **Estabilidade** (`manager/simulations/stability.py`). Tudo vem do núcleo: os
-coeficientes com momento em qualquer ponto (`aero_coeffs_ex`) e o modelo linear (`linearize`).
-
-## Como chamar
-
-```python
-import numpy as np
-from aerosim.backend.zig import ZigBackend
-from aerosim.model.universal import build_model
-from aerosim.stability import Probe, static_analysis, scissor, min_tail, modes, mil_check
-
-from aerosim.model.templates import conventional
-
-ac = conventional()
-be = ZigBackend()
-estatica, comandos = static_analysis(Probe(be, ac), V=15.0)   # C_Lα, C_mα, C_nβ, ponto neutro, margem...
-sc = scissor(be, ac, V=15.0)                   # limites de CG (% CMA) × S_h/S
-min_tail(sc, cg_fwd=20, cg_aft=30)             # menor S_h/S para essa faixa de CG
-with be.session_for(build_model(ac)) as s:
-    lin = s.linearize(15.0)                    # A, B do corpo rígido
-m = modes(np.asarray(lin["A"]))                # curto período, fugóide, dutch roll, rolamento, espiral
-mil_check(m, "I", "B")                         # MIL-F-8785C
-```
+O README segue a ordem da aba: a estabilidade estática, a área da EH contra a faixa de CG, a dinâmica e as
+superfícies de comando, cada uma com as suas equações. No fim, um exemplo por arquivo e como chamar.
 
 ## Como funciona
 
@@ -261,4 +242,25 @@ print(time_to_bank(Pss=1.5, tau=0.3, phi=math.radians(60)))
 from aerosim.stability.sizing import trimmed_CLmax, stall_speed, cm0
 print(stall_speed(pr), cm0(pr, 15.0))
 pr.close()
+```
+
+## Como chamar
+
+```python
+import numpy as np
+from aerosim.backend.zig import ZigBackend
+from aerosim.model.universal import build_model
+from aerosim.stability import Probe, static_analysis, scissor, min_tail, modes, mil_check
+
+from aerosim.model.templates import conventional
+
+ac = conventional()
+be = ZigBackend()
+estatica, comandos = static_analysis(Probe(be, ac), V=15.0)   # C_Lα, C_mα, C_nβ, ponto neutro, margem...
+sc = scissor(be, ac, V=15.0)                   # limites de CG (% CMA) × S_h/S
+min_tail(sc, cg_fwd=20, cg_aft=30)             # menor S_h/S para essa faixa de CG
+with be.session_for(build_model(ac)) as s:
+    lin = s.linearize(15.0)                    # A, B do corpo rígido
+m = modes(np.asarray(lin["A"]))                # curto período, fugóide, dutch roll, rolamento, espiral
+mil_check(m, "I", "B")                         # MIL-F-8785C
 ```

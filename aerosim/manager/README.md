@@ -1,55 +1,18 @@
-# aerosim/manager — Simulation Manager
+# aerosim/manager — gerenciador de simulações
 
-Escolhe qual simulação roda, com que parâmetros, até onde, de onde retoma e o que itera. Fala com o
-núcleo só pela `ISimSession`; a GUI fala com ele só pela `ISimulationManager`.
+Esta é a parte do projeto que organiza as análises. Cada aba da GUI que roda alguma coisa (a missão, o desempenho, a
+tração, a aerodinâmica, a estabilidade, as cargas, o dimensionamento) é uma simulação registrada aqui. O gerenciador
+escolhe qual roda, com que parâmetros, até onde vai, de onde retoma e o que varre. Ele fala com o núcleo só pela
+`ISimSession` e é chamado pela GUI só pela `ISimulationManager`, então nem a GUI conhece o núcleo, nem o núcleo
+conhece as abas.
 
-## Como chamar
+Uma simulação declara os campos que pede (`parameters`), os gráficos que entrega (`plots`) e o que faz (`run`), e a
+GUI monta a aba sozinha a partir disso. Para rodar no tempo, todas usam a mesma ferramenta, o `Runner`, que começa uma
+corrida no chão, em voo ou de um checkpoint (o estado inteiro salvo num instante) e a leva até uma parada.
 
-Rode da raiz do repositório:
-
-```python
-from aerosim.manager import SimulationManager
-from aerosim.model.templates import conventional
-
-m = SimulationManager()                       # usa o núcleo Zig; SimulationManager(backend) troca o núcleo
-ac = conventional()
-
-r = m.run("performance", ac)                  # contas da planilha (sem simulação)
-print(r.status, list(r.summary)[:5])          # estado e os primeiros números do resumo
-r = m.run("thrust", ac)                       # tração × V de cada motor
-print(list(r.series))                         # as tabelas que viram gráficos
-```
-
-As outras formas de rodar a missão (cada uma leva mais tempo):
-
-```python
-# não roda sozinho: precisa de m e ac do bloco acima, e cada missão leva segundos a minutos
-r = m.run("mission", ac)                                         # missão inteira
-r = m.run("mission", ac, {"until": "fim: manobra 1"})            # para no fim de uma etapa (salva checkpoint)
-r = m.run("mission", ac, {"start": "início: cruzeiro 1"})        # recomeça dali
-r = m.run("mission", ac, {"mode": "só decolagem"})               # otimiza o acionamento do profundor
-r = m.run("mission", ac, {"mode": "curvas: raio mínimo", "V_list": "13, 15"})
-r.status, r.summary, r.series, r.log, r.checks                   # estado, números, tabelas, registro, diagnóstico
-
-import threading
-evento = threading.Event()                                       # evento.set() cancela
-m.run("mission", ac, on_chunk=print, on_progress=lambda f, txt: None, cancel=evento)   # ao vivo / cancelável
-```
-
-`Runner` para montar uma corrida à mão (é o que as simulações usam):
-
-```python
-from aerosim.backend.zig import ZigBackend
-from aerosim.manager import Runner, Stop
-from aerosim.model.templates import conventional
-
-ac = conventional()
-with Runner(ZigBackend(), ac) as r:
-    r.start_ground()                          # ou start_air(perna), start_from(checkpoint)
-    out = r.run(Stop(t=5.0), live=False)      # Stop(t, segment, autopilot, takeoff)
-    ck = r.checkpoint("t = 5 s")
-print(out.status, float(out.log["h"][-1]), ck.t)
-```
+O README mostra primeiro como as peças se ligam e o que cada simulação faz. Depois entra nas contas mais específicas:
+como a decolagem é julgada e otimizada, como uma curva é avaliada, como o envelope de voo é calculado e como o piloto
+é calibrado para cada avião. No fim vêm um exemplo por arquivo, como chamar e como acrescentar uma simulação.
 
 ## Como funciona
 
@@ -116,6 +79,11 @@ continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram m
 `reconfigure(missão nova)`. Os checkpoints guardam só o estado; os parâmetros vêm da configuração atual.
 
 ### Decolagem: x_warning e z_warning (`takeoff_opt.py`)
+
+Na competição, a decolagem é julgada só pela pista: o avião tem de sair do chão antes de um comprimento e subir acima
+de uma altura (ou, decolando de uma mesa, não afundar demais depois da borda). O piloto controla isso escolhendo em
+que ponto da corrida puxa o profundor e quanto. Esta parte julga uma corrida por esses dois critérios e procura o
+ponto de acionamento que deixa a maior folga.
 
 | | |
 |---|---|
@@ -291,6 +259,54 @@ print(res.ok, res.status, round(res.n_dec, 1) if math.isfinite(res.n_dec) else r
 
 # simulations/: as simulações registradas (uma aba cada quando tab = True)
 print([cls().name for cls in BUILTIN if cls.tab])
+```
+
+## Como chamar
+
+Rode da raiz do repositório:
+
+```python
+from aerosim.manager import SimulationManager
+from aerosim.model.templates import conventional
+
+m = SimulationManager()                       # usa o núcleo Zig; SimulationManager(backend) troca o núcleo
+ac = conventional()
+
+r = m.run("performance", ac)                  # contas da planilha (sem simulação)
+print(r.status, list(r.summary)[:5])          # estado e os primeiros números do resumo
+r = m.run("thrust", ac)                       # tração × V de cada motor
+print(list(r.series))                         # as tabelas que viram gráficos
+```
+
+As outras formas de rodar a missão (cada uma leva mais tempo):
+
+```python
+# não roda sozinho: precisa de m e ac do bloco acima, e cada missão leva segundos a minutos
+r = m.run("mission", ac)                                         # missão inteira
+r = m.run("mission", ac, {"until": "fim: manobra 1"})            # para no fim de uma etapa (salva checkpoint)
+r = m.run("mission", ac, {"start": "início: cruzeiro 1"})        # recomeça dali
+r = m.run("mission", ac, {"mode": "só decolagem"})               # otimiza o acionamento do profundor
+r = m.run("mission", ac, {"mode": "curvas: raio mínimo", "V_list": "13, 15"})
+r.status, r.summary, r.series, r.log, r.checks                   # estado, números, tabelas, registro, diagnóstico
+
+import threading
+evento = threading.Event()                                       # evento.set() cancela
+m.run("mission", ac, on_chunk=print, on_progress=lambda f, txt: None, cancel=evento)   # ao vivo / cancelável
+```
+
+`Runner` para montar uma corrida à mão (é o que as simulações usam):
+
+```python
+from aerosim.backend.zig import ZigBackend
+from aerosim.manager import Runner, Stop
+from aerosim.model.templates import conventional
+
+ac = conventional()
+with Runner(ZigBackend(), ac) as r:
+    r.start_ground()                          # ou start_air(perna), start_from(checkpoint)
+    out = r.run(Stop(t=5.0), live=False)      # Stop(t, segment, autopilot, takeoff)
+    ck = r.checkpoint("t = 5 s")
+print(out.status, float(out.log["h"][-1]), ck.t)
 ```
 
 ## Nova simulação

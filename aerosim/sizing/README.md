@@ -1,22 +1,17 @@
 # aerosim/sizing — dimensionamento inicial
 
-Equações do diagrama de restrições (T/W exigido × carga alar W/S), sem núcleo e sem GUI. A polar
-**não é calculada aqui**: ela vem de fora, pela aba Aerodinâmica (`aero/service.py`, a partir do
-modelo universal da aeronave) ou de `estimate_polar` (estimativa estatística, quando ainda não há
-geometria). A tração do motor vem do núcleo pela interface `ISimSession`.
+Esta é a parte do projeto que ajuda a escolher o tamanho do avião antes de desenhá-lo. Dados os requisitos (pista de
+decolagem, velocidade de cruzeiro, subida, curva, teto, velocidade de estol), ela diz qual a razão entre tração e peso
+($T/W$) cada requisito exige para cada carga alar ($W/S$, o peso dividido pela área da asa). O resultado é o diagrama
+de restrições: as curvas de todos os requisitos juntas, e a região acima delas é onde o avião cumpre tudo. O ponto de
+projeto é escolhido nessa região.
 
-## Como chamar
+Aqui só há equações, sem núcleo e sem GUI. A polar não é calculada aqui: ela vem da aba Aerodinâmica
+(`aero/service.py`, a partir do modelo universal) ou de `estimate_polar`, uma estimativa estatística para quando
+ainda não há geometria. A tração do motor vem do núcleo pela interface `ISimSession`.
 
-```python
-from aerosim.sizing import Requirements, estimate_polar, design_point, constraint_curves
-from aerosim.sizing.constraints import active_kinds, required_tw, ws_limits, isa_rho
-
-req = Requirements(V_stall=11, S_G=50, roc=2.0, V_cruise=16, n_turn=2.0)   # 0 desliga um requisito
-polar = estimate_polar(Swet_S=4.0, AR=7.0)       # ou a polar da aba Aerodinâmica
-dp = design_point(req, polar)                    # {"ws": W/S, "tw": T/W, "active": requisito que manda, ...}
-curvas = constraint_curves(req, polar, ws=range(20, 120))   # T/W exigido por requisito
-print(active_kinds(req), ws_limits(req, polar), required_tw("cruzeiro", 60.0, req, polar), isa_rho(600.0))
-```
+O README mostra primeiro como as peças se ligam, depois as equações de cada requisito e como se lê o diagrama. No fim,
+como chamar.
 
 ## Como funciona
 
@@ -126,3 +121,16 @@ $$
 - **Potência (hélice)**: P/m = (T/W) g V / η_p na velocidade de cada requisito.
 - A aeronave atual é posta no diagrama e cada requisito é verificado com a tração do motor **na
   velocidade daquele requisito**, não com a estática; o diagnóstico diz qual falha e por quê.
+
+## Como chamar
+
+```python
+from aerosim.sizing import Requirements, estimate_polar, design_point, constraint_curves
+from aerosim.sizing.constraints import active_kinds, required_tw, ws_limits, isa_rho
+
+req = Requirements(V_stall=11, S_G=50, roc=2.0, V_cruise=16, n_turn=2.0)   # 0 desliga um requisito
+polar = estimate_polar(Swet_S=4.0, AR=7.0)       # ou a polar da aba Aerodinâmica
+dp = design_point(req, polar)                    # {"ws": W/S, "tw": T/W, "active": requisito que manda, ...}
+curvas = constraint_curves(req, polar, ws=range(20, 120))   # T/W exigido por requisito
+print(active_kinds(req), ws_limits(req, polar), required_tw("cruzeiro", 60.0, req, polar), isa_rho(600.0))
+```
