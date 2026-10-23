@@ -8,20 +8,31 @@ núcleo só pela `ISimSession`; a GUI fala com ele só pela `ISimulationManager`
 Rode da raiz do repositório:
 
 ```python
-from aerosim.manager import SimulationManager, Runner, Stop
-from aerosim.data import load_aircraft
+from aerosim.manager import SimulationManager
+from aerosim.model.templates import conventional
 
 m = SimulationManager()                       # usa o núcleo Zig; SimulationManager(backend) troca o núcleo
-ac = load_aircraft("data/aircraft/Convencional_original.json")
+ac = conventional()
 
+r = m.run("performance", ac)                  # contas da planilha (sem simulação)
+print(r.status, list(r.summary)[:5])          # estado e os primeiros números do resumo
+r = m.run("thrust", ac)                       # tração × V de cada motor
+print(list(r.series))                         # as tabelas que viram gráficos
+```
+
+As outras formas de rodar a missão (cada uma leva mais tempo):
+
+```python
+# não roda sozinho: precisa de m e ac do bloco acima, e cada missão leva segundos a minutos
 r = m.run("mission", ac)                                         # missão inteira
 r = m.run("mission", ac, {"until": "fim: manobra 1"})            # para no fim de uma etapa (salva checkpoint)
 r = m.run("mission", ac, {"start": "início: cruzeiro 1"})        # recomeça dali
 r = m.run("mission", ac, {"mode": "só decolagem"})               # otimiza o acionamento do profundor
 r = m.run("mission", ac, {"mode": "curvas: raio mínimo", "V_list": "13, 15"})
-r = m.run("performance", ac)                                     # contas da planilha (sem simulação)
-
 r.status, r.summary, r.series, r.log, r.checks                   # estado, números, tabelas, registro, diagnóstico
+
+import threading
+evento = threading.Event()                                       # evento.set() cancela
 m.run("mission", ac, on_chunk=print, on_progress=lambda f, txt: None, cancel=evento)   # ao vivo / cancelável
 ```
 
@@ -29,11 +40,15 @@ m.run("mission", ac, on_chunk=print, on_progress=lambda f, txt: None, cancel=eve
 
 ```python
 from aerosim.backend.zig import ZigBackend
+from aerosim.manager import Runner, Stop
+from aerosim.model.templates import conventional
+
+ac = conventional()
 with Runner(ZigBackend(), ac) as r:
     r.start_ground()                          # ou start_air(perna), start_from(checkpoint)
-    out = r.run(Stop(t=10.0), live=False)     # Stop(t, segment, autopilot, takeoff)
-    ck = r.checkpoint("t = 10 s")
-out.status, out.log["h"]
+    out = r.run(Stop(t=5.0), live=False)      # Stop(t, segment, autopilot, takeoff)
+    ck = r.checkpoint("t = 5 s")
+print(out.status, float(out.log["h"][-1]), ck.t)
 ```
 
 ## Como funciona
@@ -104,46 +119,179 @@ continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram m
 
 | | |
 |---|---|
-| `x_warning` | comprimento de pista: n_dec (onde "decolou") tem de ser ≤ x_warning |
-| `z_warning` | z > 0: decolou quando as rodas passam essa altura sobre a superfície de partida; z ≤ 0 (mesa): decolou ao sair da borda e não pode afundar mais que \|z\| |
+| `x_warning` | comprimento de pista: $n_{dec}$ (onde "decolou") tem de ser $\le$ x_warning |
+| `z_warning` | $z > 0$: decolou quando as rodas passam essa altura sobre a superfície de partida; $z \le 0$ (mesa): decolou ao sair da borda e não pode afundar mais que $\lvert z\rvert$ |
 
-Depois de decolar, mais 4 s de voo: se cair ou voltar abaixo do z_warning, não decolou. O otimizador testa
-o ponto de acionamento em grade e refina por seção áurea, começando pela deflexão máxima (`de_max`) e só
-usando uma menor se nenhum ponto passar.
+**Como se julga uma corrida (`judge`).** Com $h$ medido a partir da superfície de partida e $h_{min}$ a menor altura
+depois de sair do chão, a corrida passa quando decolou dentro da pista e não afundou abaixo do piso
+$\min(z_{warning}, 0)$:
+
+$$
+x_{exc} = \max(0,\ n_{dec} - x_{warning})
+\qquad
+z_{falta} = \max\big(0,\ \min(z_{warning}, 0) - h_{min}\big)
+\qquad
+\text{ok} \iff x_{exc} = 0 \ \text{e}\ z_{falta} = 0
+$$
+
+Depois de decolar, a corrida continua alguns segundos: se cair ou voltar abaixo do z_warning, não decolou.
+
+**Como se escolhe o acionamento (`optimize`).** O objetivo é a maior folga de pista
+$x_{warning} - n_{dec}$. O ponto de acionamento $s$ é testado numa grade ao longo da pista, começando pela deflexão
+máxima (`de_max`) e descendo para frações menores só se nenhum ponto passar. Em volta do melhor ponto, $s$ é refinado
+por seção áurea (Kiefer, *Sequential minimax search for a maximum*, Proc. AMS, 1953, a conferir no PDF): no
+intervalo $[a, b]$, com $g = (\sqrt5 - 1)/2$, os pontos testados são
+
+$$
+c = b - g\,(b - a) \qquad d = a + g\,(b - a)
+$$
+
+e o intervalo encolhe para $[a, d]$ ou $[c, b]$ conforme o lado com a folga maior; um dos pontos é reaproveitado na
+iteração seguinte.
 
 O terreno (mesas e plataformas) fica no núcleo (`core/src/physics/terrain.zig`): o trem, o efeito solo, o
 arredondamento e o alvo do pouso usam a altura do terreno sob cada ponto.
 
+### Curvas (`analysis.evaluate_turn`, `analysis.min_radius`)
+
+Cada curva é medida no transitório inteiro e no regime (depois de um quarto de volta, $s \ge \pi R/2$). O fator de
+carga em que a asa estola na velocidade do momento sai da razão $C_L/C_{L,max}$ registrada (Anderson, *Introduction
+to Flight*, §6.17, a conferir no PDF):
+
+$$
+n_{estol} = \frac{n_z\,C_{L,max}}{C_L} = \frac{n_z}{C_L/C_{L,max}}
+$$
+
+A curva passa quando segue o raio pedido (erro de trajetória e raio real dentro da tolerância), não estola, não perde
+altura e não perde o controle. O raio mínimo é o menor raio a partir do qual **todos** os maiores também passam.
+
 ### Envelope de voo (adaptado do `Envelope_main`)
 
 O cálculo está no núcleo (`core/src/sim/envelope.zig`); a simulação só monta os dados e os gráficos.
-Para cada altitude (passo `h_step`) calcula ρ(h) e acha V_min e V_max onde a tração disponível cruza a
-requerida: varre a grade `dV` de V_f para V_i e refina cada cruzamento por bisseção até `tol` (o
-original usava uma grade de 0,00005 m/s, ~520 mil pontos por altitude). O teto absoluto é refinado
-por bisseção em h (0,5 m).
+Para cada altitude (passo `h_step`) calcula $\rho(h)$ e acha $V_{min}$ e $V_{max}$ onde a tração disponível cruza a
+requerida: varre a grade `dV` de $V_f$ para $V_i$ e refina cada cruzamento por bisseção até `tol` (o original usava uma
+grade fina, sem bisseção). O teto absoluto é refinado por bisseção em $h$.
 
-| | método **planilha** | método **modelo completo** |
-|---|---|---|
-| tração disponível | unidades propulsoras com ρ(h): `g·(ρ/ρ0)·(T0 + p10·n + p01·V + …)` | a mesma |
-| tração requerida | `C_L = (W − T_d sin α)/(½ S_w ρ V²)`, `C_D = C_Dpw + C_Dph S_h/S_w + K C_L²`, `T_r = ρ V² S_w C_D / (2 cos α)` | trimagem completa (forças e momento, profundor): acelerador de equilíbrio = 1 |
-| V_e | `√(2W / (ρ (S_w C_Lmax,w + S_h C_Lmax,h)))` | `√(2W / (ρ S C_Lmax))` da polar da aeronave |
-| V_cru | `√|2(W − T_d(V_f) sin α) / (ρ (S_w C_Lw + S_h C_Lh))|` | V em que o α de equilíbrio é o ângulo de cruzeiro |
-| V* | `V_e √n` | `V_e √n` |
+**Tração disponível** (os dois métodos): as unidades propulsoras com o polinômio de tração corrigido pela densidade,
+$T_d = g\,(\rho/\rho_0)\,P(n, V)$, sem ficar negativa fora da faixa do ajuste.
+
+**Tração requerida, método planilha.** O $C_L$ sai do equilíbrio vertical com a tração inclinada do ângulo de cruzeiro
+$\alpha$; o arrasto soma o da asa, o da EH (pela razão de áreas) e o induzido (Anderson, *Aircraft Performance and
+Design*, cap. 5, a conferir no PDF):
+
+$$
+C_L = \frac{W - T_d \sin\alpha}{\tfrac12\,\rho V^2 S_w}
+\qquad
+C_D = C_{Dp,w} + C_{Dp,h}\,\frac{S_h}{S_w} + K\,C_L^2
+\qquad
+T_r = \frac{\rho V^2 S_w\,C_D}{2\cos\alpha}
+$$
+
+**Tração requerida, método modelo completo.** Trimagem completa (forças e momento, profundor): $V_{min}$ e $V_{max}$
+são as velocidades em que o acelerador de equilíbrio chega a 1.
+
+**Velocidades.** A de estol $V_e$ soma o $C_{L,max}$ de cada superfície (planilha) ou usa o da polar da aeronave
+(modelo completo); a de cruzeiro $V_{cru}$ é a do voo nivelado no ângulo de cruzeiro; a de manobra $V^*$ é a de estol
+no fator de carga limite $n$:
+
+$$
+V_e = \sqrt{\frac{2W}{\rho\,(S_w C_{Lmax,w} + S_h C_{Lmax,h})}}
+\qquad
+V_e = \sqrt{\frac{2W}{\rho\,S\,C_{L,max}}}
+$$
+
+$$
+V_{cru} = \sqrt{\left|\frac{2\,(W - T_d(V_f)\sin\alpha)}{\rho\,(S_w C_{L,w} + S_h C_{L,h})}\right|}
+\qquad
+V^* = V_e\sqrt{n}
+$$
+
+No método modelo completo, $V_{cru}$ é a velocidade em que o $\alpha$ de equilíbrio é o ângulo de cruzeiro.
+
+**Densidade.** A ISA na troposfera, com o gradiente térmico $\lambda$, $T_0$ ao nível do mar e a constante do ar $R$
+(ICAO Doc 7488, a conferir no PDF):
+
+$$
+\rho(h) = \rho_0\left(1 - \frac{\lambda h}{T_0}\right)^{\frac{g}{\lambda R} - 1}
+$$
 
 **"Reproduzir o original"** (só no método planilha) faz as mesmas contas do `Envelope_main`, para
-comparar com resultados antigos — `tests/manager/test_envelope.py` confere altitude por altitude contra
+comparar com resultados antigos; `tests/manager/test_envelope.py` confere altitude por altitude contra
 o código original transcrito (`tests/helpers/envelope_reference.py`). Desligado, corrige três pontos:
 
-1. o arrasto usa ρ; o original usa ρ/ρ0 em `Tr = (rho/rho0)·v²·Sw·Cd/(2 cos α)`, o que subestima a
-   potência requerida por um fator ρ0 ≈ 1,2;
-2. a densidade segue a ISA, `ρ0 (1 − λh/T0)^(g/λR − 1)`; o original usa `(1 + λh/T0)^(−g/λR − 1)`
-   (em 1000 m: 0,870 ρ0 contra 0,908 ρ0);
+1. o arrasto usa $\rho$; o original usa $\rho/\rho_0$ em $T_r$, o que subestima a potência requerida por um fator
+   $\rho_0$;
+2. a densidade segue a ISA acima; o original usa $(1 + \lambda h/T_0)^{-g/(\lambda R) - 1}$, que cai mais devagar com
+   a altitude;
 3. a tração não fica negativa fora da faixa do ajuste (o original usa o polinômio como está).
 
-Além disso, quando sobra tração já em V_i o original quebra (`intersections[1]` com um cruzamento só);
-aqui V_min fica em V_i e o cálculo segue. Dados usados: `ac.performance` (ângulo de cruzeiro, n, C_Dp,
+Além disso, quando sobra tração já em $V_i$ o original quebra (`intersections[1]` com um cruzamento só);
+aqui $V_{min}$ fica em $V_i$ e o cálculo segue. Dados usados: `ac.performance` (ângulo de cruzeiro, n, C_Dp,
 K, ρ0) e as superfícies (S, C_Lα, C_L0, C_Lmax, incidências, downwash), todos lidos da planilha pelo
 mapa `data/mappings/dados_desempenho.json`. "Exportar" grava um `.xlsx` com uma aba por tabela.
+
+### Calibração do piloto (`calibration.py`)
+
+O piloto usa um modelo interno linear da sustentação, ajustado por mínimos quadrados na polar do próprio núcleo, na
+faixa linear de $\alpha$; a margem estática sai da inclinação de $C_m$ com $C_L$ (Etkin e Reid, *Dynamics of Flight*,
+cap. 2, a conferir no PDF):
+
+$$
+C_L \approx C_{L0} + C_{L\alpha}\,\alpha
+\qquad
+MS = -\frac{dC_m}{dC_L}
+\qquad
+x_{np} = x_{cg} + MS\,\bar c
+\qquad
+V_s = \sqrt{\frac{2mg}{\rho\,S\,C_{L,max}}}
+$$
+
+O acelerador de equilíbrio vem da trimagem nivelada na velocidade de cruzeiro, e os ganhos das malhas internas do
+`autotune` do núcleo (ver [`core/src/control/README.md`](../../core/src/control/README.md)).
+
+## Um exemplo por arquivo
+
+```python
+import math
+from aerosim.backend.zig import ZigBackend
+from aerosim.manager import Runner, Stop, analysis, calibration, flightplots, takeoff_opt
+from aerosim.manager.checkpoints import CheckpointStore
+from aerosim.manager.simulations import BUILTIN
+from aerosim.model.templates import conventional
+
+be = ZigBackend()
+ac = conventional()
+
+# calibration.py: polar do núcleo -> C_L0, C_Lα, margem estática, V_s
+info = calibration.static_characteristics(be, ac)
+print(round(info["CLa"], 2), round(info["static_margin"], 3), round(info["Vs"], 1))
+
+# runner.py + checkpoints.py: corre, guarda o estado e retoma dali
+loja = CheckpointStore()                              # CheckpointStore("pasta") grava em disco
+with Runner(be, ac) as r:
+    r.start_ground()
+    o1 = r.run(Stop(t=3.0), live=False)
+    r.checkpoint("t3", loja)
+    r.start_from(loja.get("t3"))
+    o2 = r.run(Stop(t=4.0), live=False)
+print(loja.names(), o2.t_end)
+
+# analysis.py: etapas do voo e a tabela por etapa
+legs = [p.name for p in ac.mission.legs]
+tab = analysis.stage_table(o1.log, o1.events, legs, info["Vs"])
+print([linha["etapa"] for linha in tab])
+
+# flightplots.py: séries prontas para desenhar (função pura do registro)
+traj = flightplots.trajectory(o1.log, o1.events, legs)
+print(list(traj)[:3])
+
+# takeoff_opt.py: uma decolagem com acionamento em 10 m, profundor a −15°
+res = takeoff_opt.evaluate(be, ac, 10.0, -15.0, x_warning=50.0, z_warning=0.5)
+print(res.ok, res.status, round(res.n_dec, 1) if math.isfinite(res.n_dec) else res.n_dec)
+
+# simulations/: as simulações registradas (uma aba cada quando tab = True)
+print([cls().name for cls in BUILTIN if cls.tab])
+```
 
 ## Nova simulação
 

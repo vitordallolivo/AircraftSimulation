@@ -9,6 +9,7 @@ Ninguém instancia estas classes: elas dizem o que cada camada precisa ter. Troc
 passar outro objeto que cumpra a interface — por exemplo um núcleo falso nos testes:
 
 ```python
+# não roda sozinho: o esqueleto de um núcleo novo (os "..." são os métodos dele)
 from aerosim.interfaces import ISimBackend
 from aerosim.manager import SimulationManager
 
@@ -52,12 +53,75 @@ flowchart LR
 | `ISimulation` | `parameters_for(aeronave)` → campos da aba, `plots_for(aeronave)` → gráficos (dependem da configuração; a GUI refaz a aba quando ela muda), `run(ctx)` → `SimResult` (registro, tabelas, resumo e `checks`: diagnóstico com estado, valor, critério, causa e correção) |
 | `ISimulationManager` | `simulations()`, `get(nome)`, `run(nome, aeronave, params, on_chunk, on_progress, cancel)` |
 
+| `IAircraftSource` / `ICatalogSource` | `load(path)` / `save(obj, path)` |
+| `IProjectStore` (`project_store.py`) | a biblioteca de aviões do usuário: listar, abrir, salvar com um nome |
+| `result_io.py` | `SimResult` ⇄ dicionário de JSON (para guardar no projeto o que já rodou) |
+
 Cada análise diz a área do projeto (`ISimulation.area`, uma de `AREAS`) e o nível: `level = "sprint"`
 (conta rápida, para comparar muitas variantes) ou `"detalhado"`; dentro de uma análise sprint,
 `detailed` lista os parâmetros que só valem no detalhado (`level_of(p)` responde; `ParamSpec.level`
 força um parâmetro). `IAeroSolver.level` faz o mesmo para os métodos de aerodinâmica (AeroSandbox é
 detalhado). É só para o código (filtros, otimização, testes) — a GUI não escreve isso.
-| `IAircraftSource` / `ICatalogSource` | `load(path)` / `save(obj, path)` |
 
 `SimSpec` é um dicionário aninhado em SI/radianos com os nomes dos campos do núcleo; quem o monta é
 `aerosim/backend/zig/translator.py` (o tradutor do núcleo Zig, a partir do modelo universal).
+
+## Convenções que todas as camadas seguem
+
+Todo tradutor devolve os coeficientes no formato universal: eixos do corpo (x à frente, z para baixo), forças por
+$qS$, momentos de rolamento e guinada por $qSb$, de arfagem por $qSc$, e as rotações adimensionais. Com
+$q = \tfrac12\rho V^2$:
+
+$$
+C_L = \frac{L}{qS} \qquad C_D = \frac{D}{qS} \qquad C_Y = \frac{Y}{qS}
+\qquad
+C_l = \frac{\mathcal L}{qSb} \qquad C_m = \frac{M}{qSc} \qquad C_n = \frac{N}{qSb}
+$$
+
+$$
+\hat p = \frac{p\,b}{2V} \qquad \hat q = \frac{q\,c}{2V} \qquad \hat r = \frac{r\,b}{2V}
+$$
+
+As derivadas (`DERIVATIVES`) são as parciais desses coeficientes: $C_{L\alpha} = \partial C_L/\partial\alpha$,
+$C_{mq} = \partial C_m/\partial\hat q$ e assim por diante. Na carga ao longo da envergadura, a integral de um campo é a
+soma ponto a ponto vezes a largura de cada faixa (`SpanDistribution.integral`):
+
+$$
+\int f\,ds \approx \sum_k f_k\,\Delta s_k
+$$
+
+## Um exemplo por arquivo
+
+```python
+import numpy as np
+from aerosim.interfaces.aero import AeroCase, FlightPoint, DERIVATIVES           # aero.py
+from aerosim.interfaces.backend import RunStatus, TrimKind, LogChunk              # backend.py
+from aerosim.interfaces.loads import LoadResult, SpanDistribution                 # loads.py
+from aerosim.interfaces.simulation import ParamSpec, PlotSpec, Check, SimResult   # simulation.py
+from aerosim.interfaces.result_io import result_to_dict, result_from_dict         # result_io.py
+from aerosim.interfaces.translator import IModelTranslator, COEFFS                # translator.py
+from aerosim.interfaces.aircraft_source import IAircraftSource                    # aircraft_source.py
+from aerosim.interfaces.project_store import IProjectStore, ProjectInfo           # project_store.py
+
+caso = AeroCase(V=15.0, alphas=np.arange(0, 10, 2.0))
+ponto = FlightPoint(alpha=0.05, q=0.01)
+print(RunStatus.CHUNK.can_continue, TrimKind.LEVEL, len(DERIVATIVES), COEFFS)
+
+log = LogChunk({"t": np.linspace(0, 1, 5), "h": np.zeros(5)})
+d = SpanDistribution("asa", "wing", False, s=np.linspace(-1, 1, 5), width=np.full(5, 0.4),
+                     fields={"L": np.full(5, 10.0)})
+print(len(log), d.integral("L"), LoadResult([d]).by_role("wing")[0].surface)
+
+campo = ParamSpec("V", "velocidade", 14.0, unit="m/s", minimum=5, maximum=40)
+grafico = PlotSpec("h", "altura", "t", ("h",))
+res = SimResult(log=log, summary={"h máx.": 0.0}, checks=[Check("ok", "altura", "0 m", "> 0")])
+print(result_from_dict(result_to_dict(res)).summary)
+
+class FonteDeTeste(IAircraftSource):                       # uma fonte nova implementa a interface
+    def load(self, path):
+        from aerosim.model.templates import conventional
+        return conventional()
+    def save(self, obj, path):
+        pass
+print(FonteDeTeste().load("qualquer").name)
+```
