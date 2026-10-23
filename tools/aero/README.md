@@ -1,8 +1,17 @@
 # tools/aero — perfis de teste dos coeficientes
 
-Aviões simples, **só superfícies** (sem fuselagem e sem motor), para comparar os coeficientes de cada método numa
-velocidade típica (padrão 12 m/s). Os momentos são tomados no 1/4 da CMA da asa (a origem de cada caso). Tudo o que
-sai (tabelas no terminal, gráficos e `valores.csv` com `--pasta`) fica fora do git.
+Esta pasta serve para conferir os métodos aerodinâmicos uns contra os outros. Ela monta aviões simples, só com
+superfícies (sem fuselagem e sem motor), como uma asa retangular, uma asa enflechada ou uma cauda sozinha, e calcula
+os coeficientes de cada um por todos os métodos do projeto, numa velocidade típica. Assim se vê onde os métodos
+concordam, onde divergem e por quê, antes de confiar num deles para voar. Os momentos são tomados no 1/4 da CMA da asa
+(a origem de cada caso), e tudo o que sai (tabelas no terminal, gráficos e `valores.csv` com `--pasta`) fica fora do
+git.
+
+A pasta tem três usos, um em cima do outro. O primeiro compara os coeficientes parados, caso a caso e método a método.
+O segundo reavalia, com cada método, os pontos de uma mesma decolagem, para ver o erro de cada um ao longo do tempo. O
+terceiro voa a decolagem ou a missão inteira com cada modelo, para ver quanto o voo muda. O README segue essa ordem:
+os comandos, os casos, os métodos, como se mede a distância entre eles, os resultados, a decolagem e a missão, e, no
+fim, por que os métodos diferem.
 
 | arquivo | o que tem |
 |---|---|
