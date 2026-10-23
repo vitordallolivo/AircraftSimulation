@@ -220,7 +220,7 @@ python tools/aero/missao.py --aviao data/aircraft/Convencional_original.json --m
 padrão é o número de núcleos), cada um com a sua sessão no núcleo; o ctypes solta o GIL enquanto o núcleo integra. As
 tabelas passam pelo cache de polares (`aerosim/aero/service.py`, em disco para os métodos caros), então da segunda
 vez não são montadas de novo. A decolagem com os 9 modelos leva ~2 min da primeira vez (quase tudo a tabela do
-lltdrek) e 12,7 s da segunda. A missão inteira com os 9 modelos leva 5 min 15 s no total, com os voos idênticos aos de
+lltdrek) e 12,7 s da segunda. A missão inteira com os 9 modelos leva 5 min 15 s em paralelo (9 min 37 s em sequência), com os voos idênticos aos de
 antes do cache e do paralelo (desvio do percurso 0,0 m em todos). Em paralelo, o tempo de cada voo no relógio cresce: os 4 núcleos
 são divididos e a parte em Python de cada análise (manager, calibrações, séries dos gráficos) roda um voo por vez, por
 causa do GIL. Por isso a figura é a medida em sequência.

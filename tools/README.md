@@ -27,6 +27,13 @@ python tools/aero/missao.py --carregar perfis/missao --ref tabela:avl           
 
 Os três mapas medem o quanto cada método fica perto de cada outro, em três níveis.
 
+```sh
+python tools/aero/coeficientes.py --matriz --pasta perfis/aero                  # coeficientes (matriz.png)
+python tools/aero/missao.py --puro --pasta perfis/missao                         # missão voada (matriz.png)
+python tools/aero/missao.py --puro --analise decolagem --pasta perfis/decolagem  # decolagem voada
+python tools/aero/missao.py --carregar perfis/missao                             # refaz o mapa sem voar de novo
+```
+
 **Coeficientes** (`coeficientes.py --matriz`): a mediana de |erro| (%) da linha tomando a coluna como referência, em
 todos os casos e coeficientes. Não é simétrica, porque o erro relativo divide pelo valor da referência.
 
@@ -53,11 +60,19 @@ tempo.
 
 ![tempo de conta por modelo na missão](../docs/img/aero_tempo.png)
 
-Medido em sequência, na missão de 165 s do `conventional`:
-- faixas: 4 s;
-- faixas refinadas: 17 s;
-- linha sustentadora: ~260 s;
-- tabelas dos métodos de fora: 3–9 s (com o cache em disco).
+Medido em sequência (`missao.py --jobs 1`), na missão de 165 s do `conventional`, cada modelo sozinho:
+
+| modelo | tempo |
+|---|---|
+| faixas (`faixas`) | 4 s |
+| faixas refinadas (`faixas_fino`) | 17 s |
+| linha sustentadora de Phillips e Snyder (`llt`) | 261 s |
+| linha sustentadora de Goates e Hunsaker (`llt_gh`) | 258 s |
+| tabelas dos métodos de fora (`tabela:*`, com o cache em disco) | 3–9 s cada |
+| **os 9 modelos** | **9 min 37 s** em sequência; 5 min 15 s em paralelo (`--jobs`, 4 núcleos) |
+
+A linha sustentadora custa ~65× as faixas. Antes do cache da geometria, a missão levava 52 min com o `llt_gh` e
+10 min com o `llt` (numa máquina anterior).
 
 O que deixou a linha sustentadora rápida está em `core/OTIMIZACOES.md`.
 

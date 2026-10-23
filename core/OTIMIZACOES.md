@@ -7,7 +7,9 @@ regressão).
 
 ## Como ligar
 
-Por nome ou pela soma dos bits; nome errado para o build com a lista dos que existem.
+Por nome ou pela soma dos bits; nome errado para o build com a lista dos que existem. Os nomes e os bits são o enum
+`Opt` de [`src/opt.zig`](src/opt.zig) (o valor de cada campo é o bit dele): o `build.zig` traduz os nomes por ele, e o
+código pergunta por nome, `fmath.optOn(.peak)`. Otimização nova = um campo novo com o próximo bit.
 
 ```sh
 cd core
@@ -109,6 +111,37 @@ envelope, missão, cargas e desempenho, a menor de 5 rodadas. O ruído do tempo 
 | sin | 5,3 ns | 10–13 ns (17,9 ns com desvio na troca de quadrante) | 23,8 ns |
 | exp | 4,4–5,5 ns | 4,7–6,0 ns | 15,8 ns |
 
+### Tabelas (LUT) contra a std, f(t, x) e missão (medidas que estavam no `core/README.md`)
+
+`math/fmath.zig` tem as duas implementações lado a lado (`lut` e `ref`), e `SinLut(bits)` gera tabelas
+de qualquer tamanho em comptime. `bench.zig` mede cada função isolada (entradas sequenciais ou
+aleatórias) e a avaliação de f(t, x). Nesta máquina (Xeon 2,1 GHz, L1d 48 KB, L2 2 MB por núcleo):
+
+| função (entradas aleatórias) | LUT / polinômio | std |
+|---|---|---|
+| sin (tabela 2 KB) | 6,2 ns | 28,1 ns |
+| sin (tabela 32 KB / 512 KB) | 6,2 / 6,3 ns | — |
+| atan2 | 9,3 ns | 15,3 ns |
+| exp | 8,1 ns | 19,2 ns |
+| log | 13,6 ns | 8,7 ns |
+
+- **As tabelas estão no cache**: 2 KB, 32 KB e 512 KB dão o mesmo tempo. Por isso o seno usa 256
+  pontos (2 KB) com correção de Taylor de 6ª ordem (erro ~1e-15).
+- **O que deixava a simulação lenta não eram as LUTs:** com `-Dcpu=native` num Xeon com AVX-512 o
+  LLVM gera código pior para elas (f(t, x): 1478 ns com LUT contra 987 ns com `x86_64_v3`), por isso
+  o padrão em x86 é `x86_64_v3`. Além disso, um `memset` genérico (slice de tamanho em tempo de
+  execução e uma struct de saída zerada a cada chamada) custava ~1 000 instruções por avaliação; foi
+  trocado por stores de tamanho fixo.
+- Hoje: f(t, x) ≈ 1 µs; missão completa (165 s) ≈ 1 s. Pelo callgrind a versão LUT executa ~2,5× menos
+  instruções que a std, mas o tempo das duas fica parecido: o gargalo é a cadeia de dependências do
+  laço dos painéis em `aero.zig`, não as funções matemáticas.
+
+Para reproduzir: `python -m pytest -m bench -s`.
+
+Rotação de equilíbrio do motor (trimagem, curva de tração, envelope): `dn/dt` cai com n, então a
+raiz é única em [1, 600] rps; *regula falsi* com a modificação de Illinois em vez de bisseção (≈10
+avaliações em vez de 60) — o envelope "modelo completo" ficou ~2× mais rápido.
+
 ### O que se aprendeu
 
 - **O minimax perde para a tabela.** A tabela de 2 KB fica no L1 e só precisa de uma correção de 6ª ordem num
@@ -174,6 +207,10 @@ Os itens 1 e 3 na mesma máquina (Xeon 2,1 GHz, 4 núcleos); decolagem do `conve
 | `panel_states` com 44 painéis, Goates e Hunsaker | 535 µs | 325 µs |
 | decolagem com os 9 modelos, da segunda vez (cache das tabelas) | ~2 min | 24 s em sequência, 12,7 s em paralelo |
 | missão com os 9 modelos | > 1 h (o `llt_gh` sozinho: 52 min, numa máquina anterior) | 9 min 37 s em sequência, 5 min 15 s em paralelo |
+
+Na missão de 165 s, em sequência (`missao.py --jobs 1`), cada modelo sozinho: faixas 4 s, faixas refinadas
+(`faixas_fino`) 17 s, `llt` 261 s, `llt_gh` 258 s, tabelas dos métodos de fora 3–9 s cada (com o cache em disco).
+Antes do cache, `llt_gh` 52 min e `llt` 10 min (numa máquina anterior).
 
 Os 9 voos da missão refeitos depois das mudanças ficaram idênticos aos gravados antes (desvio do percurso 0,0 m).
 
