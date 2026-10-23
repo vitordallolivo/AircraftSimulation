@@ -126,6 +126,8 @@ z_{falta} = \max\big(0,\ \min(z_{warning}, 0) - h_{min}\big)
 
 Depois de decolar, a corrida continua alguns segundos: se cair ou voltar abaixo do $`z_{warning}`$, não decolou.
 
+![x_warning e z_warning na pista e na mesa](../../docs/img/fig/decolagem_warning.png)
+
 **Como se escolhe o acionamento (`optimize`).** O objetivo é a maior folga de pista
 $`x_{warning} - n_{dec}`$. O ponto de acionamento $`s`$ é testado numa grade ao longo da pista, começando pela deflexão
 máxima (`de_max`) e descendo para frações menores só se nenhum ponto passar. Em volta do melhor ponto, $`s`$ é refinado

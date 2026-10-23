@@ -62,6 +62,8 @@ Como $`\lVert\vec r_1\times\vec r_2\rVert = h\,\lVert\vec r_0\rVert`$, com $`h`$
 $`r_c^2\lVert\vec r_0\rVert^2`$ é o núcleo de Scully, $`h^2 \to h^2 + r_c^2`$ (abaixo). Sem núcleo, $`r_c = 0`$. Uma
 ferradura soma três segmentos: a perna que vem de longe até $`A`$, o ligado de $`A`$ a $`B`$ e a perna de $`B`$ para longe.
 
+![Ferraduras de vórtice na asa e o Biot–Savart de um segmento](../../../docs/img/fig/ferradura.png)
+
 **Equação, por painel.** A sustentação de Kutta–Joukowski no segmento ligado iguala a da seção, com o ângulo de ataque
 tirado do que todas as ferraduras induzem no ponto de controle (Phillips e Snyder 2000):
 
@@ -127,6 +129,8 @@ A causa está na geometria das ferraduras. Em derrapagem, as pernas seguem o ven
 cada perna induz $`(1 + \sin\beta)`$ de um lado e $`(1 - \sin\beta)`$ do outro, e a parte assimétrica soma
 $`\Delta\Gamma/|\Delta y|`$ sem trocar de sinal, então o $`C_{l\beta}`$ da asa plana cresce com o logaritmo da malha. Com
 enflechamento ou diedro, o problema é a quina da raiz, descrita em Limites, abaixo.
+
+![As pernas das ferraduras sem e com derrapagem](../../../docs/img/fig/derrapagem_pernas.png)
 
 Goates e Hunsaker (*Practical Implementation of a General Numerical Lifting-Line Method*, AIAA SciTech 2021, a forma
 prática do método de Reid e Hunsaker 2020) resolvem isso com três correções, implementadas também pelos autores no

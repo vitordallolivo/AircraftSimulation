@@ -55,6 +55,8 @@ $`d`$ é pequeno:
 \sin d \approx d\left(1 - \frac{d^2}{6} + \frac{d^4}{120}\right)
 ```
 
+![Seno por tabela: o ponto tabelado e o resto d](../../../docs/img/fig/seno_tabela.png)
+
 A tabela padrão é pequena o bastante para ficar no cache L1; aumentá-la não muda o tempo.
 
 ## Arco tangente

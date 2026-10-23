@@ -63,6 +63,8 @@ f = \frac{1}{n_c\,n_s}\sum_{i, j}\mathbb 1\left[\vec p_{ij}\ \text{dentro do tub
 Uma superfície acima ou abaixo da linha de tração fica fora do tubo, ou só com parte dentro. Por isso a esteira não
 pega numa asa alta de um avião com o motor baixo. A EH e a EV que ficam atrás, na linha do motor, ficam dentro.
 
+![Fração imersa: os pontos da faixa dentro e fora do tubo](../../../docs/img/fig/tubo_fracao.png)
+
 ## Quem usa
 
 | onde | para quê |

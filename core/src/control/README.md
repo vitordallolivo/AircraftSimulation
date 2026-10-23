@@ -55,6 +55,8 @@ sentido; o ganho da órbita é limitado em raio pequeno ($`L_{orb}`$):
 \chi_d = \varphi + \lambda\left(\frac{\pi}{2} + \arctan\frac{k_o\,(d - R)}{\max(R, L_{orb})}\right)
 ```
 
+![Campo vetorial do guiamento: reta e órbita](../../../docs/img/fig/campo_vetorial.png)
+
 A inclinação de antecipação de um arco de raio $`R`$ a uma velocidade $`V`$ é a da curva coordenada:
 
 ```math

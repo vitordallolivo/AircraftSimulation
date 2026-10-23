@@ -69,6 +69,8 @@ k_1 = f(t, x) \quad k_2 = f(t + \tfrac{\Delta t}{2}, x + \tfrac{\Delta t}{2}k_1)
 x_{n+1} = x_n + \frac{\Delta t}{6}\,(k_1 + 2k_2 + 2k_3 + k_4)
 ```
 
+![RK4: as quatro inclinações e o passo](../../../docs/img/fig/rk4_inclinacoes.png)
+
 ## Corrida (`runner.zig`)
 
 `run` avança até uma condição de parada (pousou, caiu, fim do segmento, tempo máximo), até `t_limit` (uma fatia para

@@ -128,6 +128,8 @@ c_l(y) = \frac{4b}{c(y)} \sum A_n \sin(n\theta)
 Como o sistema é linear em $`\alpha`$, ele é resolvido duas vezes (para $`\alpha`$ e para a torção) e
 $`c_l(y) = \alpha\,g(y) + h(y)`$ vale para qualquer ângulo.
 
+![Estações de Glauert: igualmente espaçadas em θ](../../docs/img/fig/glauert_estacoes.png)
+
 - **Estol:** o $`C_{L,max}`$ sai pela seção crítica, isto é, o primeiro ponto da envergadura que chega ao $`c_{l,max}`$ do
   perfil. Esse ponto também diz **onde** o estol começa.
 - **Arrasto de perfil:** é o $`c_d`$ da polar 2D no $`c_l`$ local, integrado na envergadura:
@@ -148,6 +150,8 @@ S_h = \frac{V_H\,S\,\bar c}{l_h}
 \qquad
 S_v = \frac{V_V\,S\,b}{l_v}
 ```
+
+![Volume de cauda: S_h, l_h, S e a corda média](../../docs/img/fig/volume_cauda.png)
 
 | tipo de cauda | superfícies e comandos |
 |---|---|
@@ -503,6 +507,14 @@ as etapas e aparecem listadas. `registry.check_bounds` recusa uma variável fís
 uma lista sem opções), e `registry.bounds_from_constraints` leva as restrições ativas para os limites das variáveis.
 Para o indivíduo escolhido, `full_envelope` dá o desempenho do núcleo em todas as velocidades, e `constraint_diagram`
 desenha o diagrama de restrições (`aerosim.sizing.constraints`) com a polar e as velocidades dele.
+
+![Mini-MDO: MTOW de cada avaliação por iteração](../../docs/img/fig/mdo_convergencia.png)
+
+![Mini-MDO: as asas do enxame na primeira e na última iteração](../../docs/img/fig/mdo_planformas.png)
+
+![Mini-MDO: envelope do melhor indivíduo](../../docs/img/fig/mdo_envelope.png)
+
+![Mini-MDO: diagrama de restrições do melhor indivíduo](../../docs/img/fig/mdo_diagrama.png)
 
 ```python
 # não roda sozinho: p, catalog, backend e manager vêm de fora (exemplo que roda em core/src/sizing/README.md)

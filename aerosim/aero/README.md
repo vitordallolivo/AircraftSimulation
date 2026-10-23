@@ -218,6 +218,8 @@ painéis tira o erro da malha:
 e = \frac{L^2}{\pi\,q\,b^2\,D_i}
 ```
 
+![Traços da esteira no plano de Trefftz](../../docs/img/fig/trefftz_tracos.png)
+
 A placa de ponta também é comparada com a correção empírica do Raymer (*Aircraft Design*, eq. 12.48):
 
 ```math

@@ -69,6 +69,8 @@ $`\varepsilon_0`$ e $`d\varepsilon/d\alpha`$ são o downwash da asa na cauda (da
 avião, $`\tau`$ a efetividade da superfície de comando e $`m_e, m_a, m_r`$ a mistura (profundor, aileron, leme; cobre
 elevon, ruddervator e flaperon).
 
+![Uma faixa: o vento local, o ângulo induzido e as forças L e D](../../../docs/img/fig/faixa_painel.png)
+
 **Estol.** O $`C_L`$ do painel mistura a reta e a placa plana por uma sigmoide, como em Beard e McLain, *Small Unmanned
 Aircraft: Theory and Practice* (Princeton, 2012), cap. 4 (número da equação a conferir no PDF):
 
@@ -83,6 +85,8 @@ C_L(\alpha) = (1 - \sigma)\,(C_{L0} + C_{L\alpha}\,\alpha) + \sigma\; 2\,\operat
 $`\sigma`$ vale 0 antes do estol e 1 depois; $`M`$ diz quão abrupta é a transição. O ângulo $`\alpha_0`$ não é dado: `init`
 procura, por bisseção, o $`\alpha_0`$ que faz o pico de $`C_L(\alpha)`$ ser o $`C_{L,max}`$ pedido. O $`C_{L\alpha}`$ 3D de cada
 superfície vem do Python (Helmbold; ver `aerosim/model`).
+
+![Estol: a reta, a placa plana e a mistura pela sigmoide](../../../docs/img/fig/estol_sigmoide.png)
 
 **Arrasto.** Polar parabólica antes do estol (Anderson, *Aircraft Performance and Design*, cap. 2, a conferir no PDF) e
 o arrasto de placa plana depois, com o efeito solo $`\varphi(h)`$ multiplicando o induzido nos painéis horizontais:

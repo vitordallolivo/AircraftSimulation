@@ -83,6 +83,8 @@ MS = \frac{x_{cg} - x_{np}}{c}
 C_{m\alpha} = -C_{L\alpha}\,MS
 ```
 
+![CG, ponto neutro e margem estática na CMA](../../docs/img/fig/margem_estatica.png)
+
 **Ponto neutro analítico** (Etkin e Reid, *Dynamics of Flight*, cap. 2; Nelson, *Flight Stability and Automatic
 Control*, cap. 2; a conferir no PDF). A média dos centros aerodinâmicos das superfícies horizontais, pesada pela
 sustentação que cada uma ganha com $`\alpha`$ (com o downwash na cauda), mais a fuselagem:
@@ -137,6 +139,8 @@ x_{cg} \le x_{tp} + \frac{q S c\,C_{m,tp} + T\,(z_T - z_{tp}) - I_{tp}\,\ddot\th
 O menor $`S_h/S`$ em que a faixa de CG desejada cabe entre os limites é o dimensionamento (Torenbeek, *Synthesis of
 Subsonic Airplane Design*, cap. 9; Sadraey, *Aircraft Design: A Systems Engineering Approach*, cap. 6; Raymer, cap.
 16). A margem mínima é uma entrada do usuário. Sem EH (asa voadora) a tesoura não se aplica.
+
+![Tesoura: limites de CG por área de EH (avião conventional a 15 m/s)](../../docs/img/fig/tesoura.png)
 
 ### Dinâmica (`dynamic.py`)
 

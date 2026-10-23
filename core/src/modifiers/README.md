@@ -111,6 +111,8 @@ C_{D_i} \leftarrow \varphi\,C_{D_i}
 Altura menor que 1 cm é tratada como 1 cm (o painel não atravessa o chão). Testes: `ground.zig` (o valor da fórmula em
 $`h/b = 0{,}1`$ e os limites 0 e 1); `tests/model/test_modifiers.py` (desligar muda a decolagem).
 
+![Fator de efeito solo de McCormick em função de h/b](../../../docs/img/fig/efeito_solo.png)
+
 ### `esteira.disco` (aditivo, desligado por padrão)
 
 Por motor, com a tração $`T`$ e o torque $`Q`$ do instante, carga uniforme num disco de raio $`R`$ e área $`A = \pi R^2`$, e
@@ -167,6 +169,8 @@ $`w(\infty) = 2w_0`$; a contração; a integral do momento angular igual a $`Q`$
 e `tests/model/test_slipstream.py` (tração zero é idêntico bit a bit; o giro sozinho espelha $`C_l`$ ao inverter o sentido;
 bimotor simétrico com sentidos opostos dá $`C_l = C_n = C_Y = 0`$; superposição; máscara de motores; a sonda bate com a
 teoria do momento).
+
+![Disco atuador: o tubo que contrai e as velocidades](../../../docs/img/fig/disco_atuador.png)
 
 ### Limites conhecidos do `solo.mccormick`
 

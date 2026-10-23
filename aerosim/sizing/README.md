@@ -138,6 +138,8 @@ k = \frac{1}{\pi\,AR\,e}
 - A aeronave atual é posta no diagrama e cada requisito é verificado com a tração do motor **na
   velocidade daquele requisito**, não com a estática; o diagnóstico diz qual falha e por quê.
 
+![Diagrama de restrições do exemplo de Como chamar](../../docs/img/fig/diagrama_restricoes.png)
+
 ## Como chamar
 
 ```python
