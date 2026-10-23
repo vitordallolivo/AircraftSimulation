@@ -74,8 +74,8 @@ plots, res, r = R.set_stage(p.draft_set(), p.requirements, p.rules, p.airfoil_ma
 conj = p.keep_set()
 p.power_draft.set = conj.name
 plots, res, ac, asm, pf = R.aircraft_stage(p.draft_aircraft(), p.requirements, p.rules)
-ac          # Aircraft: o mesmo arquivo da Montagem, do AeroDrive e do núcleo
-p.save("sprint.json")
+print(type(ac).__name__)   # Aircraft: o mesmo arquivo da Montagem, do AeroDrive e do núcleo
+# p.save("sprint.json")    # grava o projeto (ou store.save(p, pasta), um arquivo por asa)
 ```
 
 Cada `*_stage` devolve gráficos (`PlotSpec`), resultado (`SimResult`: séries, resumo, diagnóstico) e os números da etapa. Você também pode chamar direto:
@@ -120,7 +120,7 @@ O perfil pode vir de quatro lugares:
 
 - um código NACA de 4 dígitos;
 - um `.dat` (Selig ou Lednicer);
-- só parâmetros, sem contorno: a1, α_L0, c_l,max, c_d0 e c_m;
+- só parâmetros, sem contorno: $a_1$, $\alpha_{L0}$, $c_{l,max}$, $c_{d0}$ e $c_m$;
 - a polar do XFLR5/XFOIL (texto ou CSV).
 
 A polar sai por uma de três fontes, conforme o que o perfil permite:
@@ -131,37 +131,66 @@ A polar sai por uma de três fontes, conforme o que o perfil permite:
 | `neuralfoil` | quando há contorno e a rede está instalada | padrão de perfil novo com contorno |
 | `arquivo` | quando há uma polar importada | usa o Re do arquivo; avisa se estiver longe do Re de cruzeiro |
 
-`fitted` ajusta a1, α_L0, c_l,max, c_d mín. e c_m na polar escolhida. A asa usa esses números, então a fonte escolhida aqui vale para a etapa seguinte. O Re é o do cruzeiro, com a corda média da asa em rascunho.
+`fitted` ajusta $a_1$, $\alpha_{L0}$, $c_{l,max}$, $c_{d,min}$ e $c_m$ na polar escolhida: $a_1$ e $\alpha_{L0}$ pela reta $c_l = a_1(\alpha - \alpha_{L0})$ na faixa linear, $c_{l,max}$ no pico, $c_{d,min}$ no mínimo da polar. A asa usa esses números, então a fonte escolhida aqui vale para a etapa seguinte. O Re é o do cruzeiro, com a corda média da asa em rascunho:
+
+$$
+Re = \frac{\rho\,V_{cru}\,\bar c}{\mu}
+$$
 
 ### Asa (`wing.py`)
 
 A forma em planta tem trecho retangular, trecho trapezoidal com afilamento, enflechamento de c/4, torção linear até a ponta e diedro.
 
-A análise é a linha sustentadora de Prandtl pela série de Glauert (simétrica, 24 termos ímpares). Para a1 usa a1 · cos Λ:
+A análise é a linha sustentadora de Prandtl pela série de Glauert, simétrica (só os termos ímpares; Anderson,
+*Fundamentals of Aerodynamics*, §5.3, a conferir no PDF). A circulação na envergadura é escrita em
+$y = -\tfrac b2\cos\theta$, e cada estação $\theta$ dá uma equação para os coeficientes $A_n$. O enflechamento entra
+pela inclinação do perfil projetada, $a_1\cos\Lambda_{c/4}$:
 
-```
-Σ A_n sen(nθ)(sen θ + n μ) = μ (α + ε(y) − α_L0) sen θ,   μ = a1 c / (4 b)
-C_L = π AR A_1     C_Di = π AR Σ n A_n²     c_l(y) = (4b/c) Σ A_n sen(nθ)
-```
+$$
+\sum_{n\ \text{ímpar}} A_n \sin(n\theta)\,(\sin\theta + n\mu) = \mu\,\big(\alpha + \varepsilon(y) - \alpha_{L0}(y)\big)\sin\theta
+\qquad
+\mu = \frac{a_1\,c(y)}{4b}
+$$
 
-- **Estol:** o C_L,max sai pela seção crítica, isto é, o primeiro ponto da envergadura que chega ao c_l,max do perfil. Esse ponto também diz **onde** o estol começa.
-- **Arrasto de perfil:** é o c_d da polar 2D no c_l local, integrado na envergadura.
-- **Incidência:** a asa é calada para a fuselagem voar no **ângulo de cruzeiro** pedido, que vai para o envelope de voo do avião montado.
+Aqui $\varepsilon(y)$ é a torção local e $\alpha_{L0}(y)$ o ângulo de sustentação nula do perfil local (interpolado
+entre as seções). Com os $A_n$, os coeficientes da asa e a distribuição de sustentação ficam:
 
-Validação (`tests/design`):
+$$
+C_L = \pi\,AR\,A_1
+\qquad
+C_{Di} = \pi\,AR \sum n\,A_n^2
+\qquad
+c_l(y) = \frac{4b}{c(y)} \sum A_n \sin(n\theta)
+$$
 
-- asa retangular AR 8: C_Lα dentro de 3 % de Helmbold, com estol na raiz;
-- afilamento 0,35: estol na metade de fora; com washout, o estol volta para dentro;
-- afilamento 0,4: e > 0,97.
+Como o sistema é linear em $\alpha$, ele é resolvido duas vezes (para $\alpha$ e para a torção) e
+$c_l(y) = \alpha\,g(y) + h(y)$ vale para qualquer ângulo.
+
+- **Estol:** o $C_{L,max}$ sai pela seção crítica, isto é, o primeiro ponto da envergadura que chega ao $c_{l,max}$ do
+  perfil. Esse ponto também diz **onde** o estol começa.
+- **Arrasto de perfil:** é o $c_d$ da polar 2D no $c_l$ local, integrado na envergadura:
+  $C_{D0} = \frac1S\int c_d\big(c_l(y)\big)\,c(y)\,dy$.
+- **Incidência:** a asa é calada para a fuselagem voar no **ângulo de cruzeiro** pedido, que vai para o envelope de voo
+  do avião montado.
+
+A validação (asa retangular contra Helmbold, onde o estol começa com e sem washout, o fator de Oswald da asa
+afilada) está em `tests/design`, com o número esperado em cada teste.
 
 ### Empenagem e comandos (`tail.py`)
 
-As áreas saem do volume de cauda: S_h = V_H S c̄ / l e S_v = V_V S b / l. O braço l vai do centro aerodinâmico da asa ao da cauda.
+As áreas saem do volume de cauda (Raymer, *Aircraft Design: A Conceptual Approach*, §6.4, a conferir no PDF). O
+braço $l$ vai do centro aerodinâmico da asa ao da cauda:
+
+$$
+S_h = \frac{V_H\,S\,\bar c}{l_h}
+\qquad
+S_v = \frac{V_V\,S\,b}{l_v}
+$$
 
 | tipo de cauda | superfícies e comandos |
 |---|---|
 | convencional | EH com profundor e EV com leme |
-| cauda em V | a mesma área total S_h + S_v, com diedro atan √(S_v/S_h) e ruddervators |
+| cauda em V | a mesma área total $S_h + S_v$, com diedro $\Gamma = \arctan\sqrt{S_v/S_h}$ e ruddervators |
 | sem cauda | elevons na asa |
 
 Em todos os casos o tubo termina no bordo de fuga da cauda, e os ailerons ficam na asa. EH e EV têm perfis
@@ -169,18 +198,52 @@ separados. A EH aceita perfil arqueado, inclusive **invertido** (o α_L0 dele en
 simétrica. O perfil da cauda é ajustado na polar dele, no Re da cauda, e o C_L da EH fica limitado pelos **dois
 lados** da polar, com o ganho de c_l,max do profundor defletido (flape simples, Raymer cap. 12).
 
-A estática longitudinal segue a forma clássica (Etkin; Nelson): h_n = h_ac + η V_H (a_h/a)(1 − dε/dα), com dε/dα = 2a/(πAR). A partir dela:
+A estática longitudinal segue a forma clássica (Etkin e Reid, *Dynamics of Flight*, cap. 2; Nelson, *Flight
+Stability and Automatic Control*, cap. 2, a conferir no PDF). O ponto neutro, em frações da CMA, soma ao centro
+aerodinâmico da asa a contribuição da EH, reduzida pelo downwash; o momento em torno do CG $h$ inclui o profundor
+pela efetividade $\tau$:
+
+$$
+h_n = h_{ac} + \eta\,V_H\,\frac{a_h}{a}\left(1 - \frac{d\varepsilon}{d\alpha}\right)
+\qquad
+\frac{d\varepsilon}{d\alpha} = \frac{2a}{\pi\,AR}
+$$
+
+$$
+C_m = C_{m,ac} + C_L\,(h - h_{ac}) - \eta\,V_H\,a_h\,(\alpha_h + \tau\,\delta_e)
+\qquad
+\alpha_h = \alpha_w - \varepsilon + i_h
+$$
+
+A partir dela:
 
 - O **CG** vai para a margem estática pedida.
 - A **incidência da EH** equilibra o cruzeiro com o profundor neutro.
 - A **faixa de CG** fica entre dois limites: o dianteiro, onde o profundor deixa de equilibrar o C_L,max no curso máximo, e o traseiro, na margem mínima.
-- A **rolagem** é medida por p b/2V com o aileron todo (C_lδa por faixas e C_lp de asa trapezoidal).
-- O **direcional** é medido por C_nβ da cauda.
+- A **rolagem** é medida por $pb/2V$ com o aileron todo. $C_{l\delta a}$ vem por faixas, sobre o trecho do aileron, e
+  $C_{lp}$ é o da asa trapezoidal de afilamento $\lambda$ (Nelson, cap. 5, a conferir no PDF); o aileron diferencial
+  entra pela média dos dois cursos:
+
+$$
+C_{l\delta a} = \frac{2\,a\,\tau_a}{S\,b}\int_{y_1}^{y_2} c(y)\,y\,dy
+\qquad
+C_{lp} = -\frac{a}{12}\,\frac{1 + 3\lambda}{1 + \lambda}
+\qquad
+\frac{pb}{2V} = -\frac{C_{l\delta a}}{C_{lp}}\,\delta_a
+$$
+- O **direcional** é medido por $C_{n\beta} = \eta\,V_V\,a_v$ da cauda.
 - A **rotação na decolagem** é a velocidade a partir da qual o profundor todo levanta o nariz em torno do trem
-  principal. Ela entra nos momentos no ponto de contato: C_m,ac da asa, sustentação da asa na incidência, peso
-  e cauda. A EH com sustentação para baixo cabra, e o perfil invertido tem c_l negativo maior. Por isso roda mais
-  cedo: com a asa S1223 (sem a tração), roda a 8,5 m/s com MH 113 invertido contra 9,4 m/s com NACA 0012 e
-  10,0 m/s com HT 14.
+  principal. Os momentos cabradores no ponto de contato $x_{tp}$ (C_m,ac da asa, sustentação da asa na incidência,
+  cauda) têm de vencer o do peso:
+
+$$
+q\,S\,\bar c\left[C_{m,ac} + C_{L,asa}\,\frac{x_{ca} - x_{tp}}{\bar c} + C_{m,cauda}(\delta_e)\right] \ge W\,(x_{CG} - x_{tp})
+\quad\Rightarrow\quad
+V_{rot} = \sqrt{\frac{2\,W\,(x_{CG} - x_{tp})}{\rho\,S\,\bar c\,C_{m,tp}}}
+$$
+
+  A EH com sustentação para baixo cabra, e o perfil invertido tem $c_l$ negativo maior. Por isso o avião com EH
+  invertida roda mais cedo que com uma EH simétrica.
 
 ### Motores e montagem (`power.py`)
 
@@ -194,7 +257,16 @@ O motor, a hélice, a bateria e o conjunto de tração (polinômio) vêm do cat�
 
 A montagem segue esta ordem:
 
-1. **Fuselagem (pod).** Vai do nariz até o bordo de fuga da asa, com largura e altura das regras. Ela desestabiliza pelo efeito de Munk, C_mα ≈ 2(k2 − k1) Vol/(S c̄), e por isso o CG é recalculado com ela.
+1. **Fuselagem (pod).** Vai do nariz até o bordo de fuga da asa, com largura e altura das regras. Ela desestabiliza
+   pelo efeito de Munk (Munk, *The aerodynamic forces on airship hulls*, NACA Report 184, 1924, a conferir no PDF),
+   com $k_2 - k_1$ o fator de massa aparente de um corpo alongado e $\mathcal V$ o volume, e por isso o CG é
+   recalculado com ela:
+
+$$
+C_{m\alpha,fus} \approx \frac{2\,(k_2 - k_1)\,\mathcal V}{S\,\bar c}
+\qquad
+C_{n\beta,fus} \approx -\frac{2\,(k_2 - k_1)\,\mathcal V}{S\,b}
+$$
 2. **Massas.** A **tabela de distribuição de massa** mostra cada item com x e % do total.
    - **PV** (peso vazio): a estrutura (estimada por área e por comprimento, das regras), os motores, as hélices,
      a bateria e os sistemas.
@@ -206,13 +278,13 @@ A montagem segue esta ordem:
      requisitos e as restrições ativas do projeto — e pergunta se quer salvar mesmo assim.
    - A bateria vai onde o CG cai no alvo. Se ela não couber na fuselagem, entra **lastro de equilíbrio**, que
      conta no PV, e o diagnóstico avisa.
-   - Com o MTOW pela pista, a **CP possível = MTOW − PV**.
+   - Com o MTOW pela pista, a **CP possível** é $CP = MTOW - PV$, e a eficiência estrutural $EE = CP/PV$.
 3. **Trem.** O principal fica atrás do CG, e a altura dá folga para a hélice.
 
 O desempenho rápido junta duas partes:
 
-- **Arrasto:** o C_D0 das superfícies, da fuselagem e do tubo, mais o C_Di da linha sustentadora.
-- **Tração:** a do núcleo, com acelerador cheio. Sem backend, o equilíbrio motor + hélice é feito aqui, com o mesmo resultado (teste a 3 %).
+- **Arrasto:** o $C_{D0}$ das superfícies, da fuselagem e do tubo, mais o $C_{Di}$ da linha sustentadora, na forma $C_D = C_{D0} + K\,C_L^2$.
+- **Tração:** a do núcleo, com acelerador cheio. Sem backend, o equilíbrio motor + hélice é feito aqui, e um teste confere que dá o mesmo resultado.
 
 **Superfícies já trimadas para o motor.** O eixo do motor dá momento de arfagem: pela inclinação e pela altura
 em relação ao CG. No cruzeiro (tração = arrasto) a etapa recalcula a **incidência da EH** para o avião voar com o
@@ -227,11 +299,21 @@ consegue rodar com a tração. A tração acima do apoio pica o nariz, e é aí 
 - aileron diferencial: sobe mais do que desce, o que dá menos guinada adversa. A rolagem usa a média dos dois.
 
 O otimizador da decolagem da Missão (6GDL) também tenta segurar o profundor picando na corrida quando, com ele
-neutro, nenhuma posição de acionamento funciona. Com o motor inclinado 6° o avião saía do chão a 9,9 m/s antes
-do comando e afundava. Com +5° na corrida decola aos 29 m.
+neutro, nenhuma posição de acionamento funciona: é o caso do motor muito inclinado, em que o avião sai do chão antes
+do comando e afunda.
 
-Com isso saem a V máx., a subida, a corrida até 1,1 V_S e a **massa máxima que a pista permite**. Com o motor
-inclinado, a parte vertical da tração alivia o peso na corrida, e o avião sai do chão mais devagar.
+**Corrida e MTOW pela pista.** A corrida é integrada no tempo com a tração $T(V)$ inclinada de $\theta_T$; a parte
+vertical da tração alivia o peso nas rodas (Raymer, §17.8, a conferir no PDF):
+
+$$
+m\,\frac{dV}{dt} = T\cos\theta_T - qS\,(C_{D0} + K C_{L,g}^2) - \mu\,\max\big(mg - qS\,C_{L,g} - T\sin\theta_T,\ 0\big)
+$$
+
+O avião sai do chão quando passa de $V_{rot}$ e a asa sustenta o peso com folga, $qS\,C_{L,max} \ge 1{,}1^2\,(mg - T\sin\theta_T)$
+(o mesmo que $V \ge 1{,}1\,V_S$). A massa máxima que a pista permite é achada por bisseção na massa: a maior em que a
+corrida cabe na pista.
+
+Com isso saem a V máx., a subida, a corrida e a **massa máxima que a pista permite**.
 
 O MTOW detalhado é o da aba **Missão**, modo MTOW: a decolagem simulada no núcleo 6GDL, com o acionamento do
 profundor otimizado. A página **Estudo e ponto de projeto** confere os pontos no 6GDL.
@@ -261,7 +343,7 @@ a corrida espera.
 A página tem dois modos:
 
 - **varrer uma variável** (inclinação do motor, margem estática, V_H, braço da cauda, área, envergadura, ângulo de
-  cruzeiro) nas altitudes-densidade pedidas (`Joinville=655, São José dos Campos=1320`);
+  cruzeiro) nas altitudes-densidade pedidas (uma lista `lugar=AD`, separada por vírgulas);
 - **comparar os aviões guardados**.
 
 Ela marca o maior MTOW viável de cada altitude, confere os pontos no 6GDL (Desempenho → Missão, modo MTOW) e leva o ponto
@@ -274,39 +356,27 @@ aviso fica na mensagem da etapa: decolar não é requisito para ir para a Montag
 como dado de simulação: volta ao abrir o projeto, e a linha refaz o avião só quando precisa (3D, Montagem, 6GDL).
 Também dá para exportar em xlsx/csv.
 
-Com a asa S1223 (MTOW em kg, conta rápida / 6GDL):
+O laço do ponto de projeto é uma iteração de ponto fixo na massa, $m_{k+1} = MTOW(m_k)$, que para quando a variação
+relativa fica abaixo da tolerância. O arrasto de trim da EH entra na polar como um $C_{D}$ a mais, do $C_{L,h}$ que
+equilibra o cruzeiro:
 
-| inclinação do motor | Joinville (AD 655 m) | São José dos Campos (AD 1320 m) |
-|---|---|---|
-| 0° | 11,66 / 11,76 | 10,95 / 11,05 |
-| 3° | 11,71 / 12,02 | 10,99 / 11,32 |
-| **6°** | 11,75 / **12,25** | 11,03 / **11,52** |
-| 9° | 11,76 / 11,35 | 11,05 / 10,53 |
-| 12° | 11,76 / 11,35 | 11,06 / 10,67 |
+$$
+\Delta C_{D,trim} = \frac{S_h}{S}\,\frac{C_{L,h}^2}{\pi\,AR_h\,e_h}
+$$
 
-- **Inclinação do motor.** O ótimo fica perto de **6°** nos dois lugares. Até ali, a parte vertical da tração e
-  o momento cabrador ajudam a rodar e a sair do chão, e o arrasto de trim cai. Depois, o 6GDL mostra a
-  decolagem piorando. A conta rápida não vê essa queda (só cresce), por isso a conferência 6GDL faz parte do
-  estudo.
-- **Empenagem** (monomotor, 6GDL, Joinville / São José dos Campos):
+(forma do induzido da EH, a conferir no PDF de Raymer, §12.7.)
 
-  | empenagem | MTOW 6GDL (kg) | o que limita |
-  |---|---|---|
-  | EH MH 113 invertida | 11,76 / 11,05 | a pista |
-  | EH NACA 0012 | 11,64 / 10,73 | a rotação |
-  | EH convencional HT 14 (simétrica) com EV | 10,76 / 10,06 | a rotação |
-  | cauda em V MH 113 invertida | 9,56 / 8,98 | — |
+O que se aprendeu com os estudos:
 
-  As simétricas só rodam depois de poder sair do chão.
-- **Bimotor:** 10,41 / 9,83 kg. É mais pesado no PV, e a tração de dois motores menores não compensa.
-- **MH 113 sem inverter:** o profundor não consegue rodar o avião.
+- **Inclinação do motor.** Há um ótimo intermediário: até ali a parte vertical da tração e o momento cabrador ajudam a
+  rodar e a sair do chão, e o arrasto de trim cai; depois, o 6GDL mostra a decolagem piorando. A conta rápida não vê
+  essa queda (só cresce), por isso a conferência 6GDL faz parte do estudo.
+- **Empenagem.** A EH invertida deixa a pista limitar o MTOW; as simétricas só rodam depois de poder sair do chão, e a
+  rotação passa a limitar. A cauda em V e o bimotor (mais PV) ficam abaixo.
+- **Perfil arqueado na EH sem inverter:** o profundor não consegue rodar o avião.
 
-As altitudes-densidade vêm de uma tarde quente típica, que eu assumi; você pode trocar na página:
-
-| lugar | elevação | temperatura | umidade | AD |
-|---|---|---|---|---|
-| Joinville | 4 m | 30 °C | 75 % | 655 m |
-| São José dos Campos | 646 m | 28 °C | 60 % | 1320 m |
+As altitudes-densidade vêm de uma tarde quente típica (elevação, temperatura e umidade de cada lugar) e podem ser
+trocadas na página.
 
 ## Projeto numa pasta, um arquivo por asa (`store.py`)
 
@@ -350,16 +420,6 @@ A **inclinação do tubo** (`TailParams.boom_pitch`, + ponta de trás para cima)
 tubo (e a sapata de cauda); o braço da cauda continua medido na horizontal, então o tubo inclinado fica mais
 comprido.
 
-Outro exemplo: a mesma asa S1223 com três opções de superfícies num arquivo só: convencional (EH + EV + aileron,
-tubo de cauda inclinado 6° para cima), cauda em V (+ aileron) e sem cauda (elevon), com um avião para cada:
-
-```sh
-python tools/sprint_tres_caudas.py ~/sprint_tres_caudas
-```
-
-A **inclinação do tubo** (`TailParams.boom_pitch`, + ponta de trás para cima) sobe a cauda junto com a ponta do
-tubo; o braço da cauda continua medido na horizontal, então o tubo inclinado fica mais comprido.
-
 **Motores e montagem → Usar em Desempenho** abre o avião (rascunho ou guardado selecionado) e vai direto para as
 análises de Desempenho, sem passar pela Montagem.
 
@@ -401,6 +461,7 @@ põe uma linha por restrição ativa no diagnóstico, e o estudo marca o ponto c
 limite). Projetos antigos (esses quatro como campos) viram restrições ao abrir.
 
 ```python
+# não roda sozinho: req, ac, asm, pf, params vêm das etapas (ver o exemplo por arquivo no fim)
 from aerosim.design import registry as rg
 req.constraints.append(rg.Constraint("s_to", "≤", 3.0))     # decolar em 3 m
 rg.checks(req.constraints, rg.aircraft_values(ac, asm, pf, params))   # [(restrição, cumpre, texto)]
@@ -428,6 +489,7 @@ As contas e o otimizador estão no núcleo (`core/src/sizing`); aqui se monta a 
 e se leem os resultados.
 
 ```python
+# não roda sozinho: p, catalog, backend e manager vêm de fora (exemplo que roda em core/src/sizing/README.md)
 from aerosim.design import mdo
 p.mdo.kind, p.mdo.objective = "biplano", "EE"          # MdoParams: tipo, objetivo, otimizador, população...
 rows, best, names = mdo.run(p, catalog, backend, progress=lambda it, rows: ...)   # tempo real
@@ -446,7 +508,7 @@ mdo.check_6dof(p, rows[k], catalog, manager)             # guarda asa/conjunto/a
   `registry.bounds_from_constraints` leva as restrições ativas para os limites (b → envergadura, S → área,
   n_motor → motores mín./máx.).
 - **Arranjo dos motores** é variável (`LAYOUT_DATA`): motores aceitos (nariz e propulsora: 1; asa: aos pares),
-  instalação (propulsora na esteira: 0,9 da tração), arrasto das naceles e suporte por motor.
+  instalação (a propulsora na esteira perde parte da tração), arrasto das naceles e suporte por motor.
 - **Listas** (perfil da raiz e da ponta, motor, hélice, arranjo): `available(projeto, chave)` diz tudo o que existe
   (perfis do projeto + `.dat` de `MdoParams.airfoil_dir`, padrão `data/airfoils`); variável sem nada marcado = todos.
 - **Envelope completo e diagrama do indivíduo**: `full_envelope` (o desempenho do núcleo, `simple_perf`, com a polar
@@ -455,6 +517,66 @@ mdo.check_6dof(p, rows[k], catalog, manager)             # guarda asa/conjunto/a
 - **Empenagem** não é dimensionada: entra como fração da área da asa na massa e no arrasto.
 - **Perfil da ponta** também na etapa Asa (`WingParams.airfoil_tip`): a linha sustentadora usa a1(y) e α_L0(y)
   interpolados da raiz (e do trecho retangular) à ponta; o estol, o c_l,max local; o arrasto, o c_d local.
+
+## Um exemplo por arquivo
+
+```python
+import tempfile
+from aerosim.backend.zig import ZigBackend
+from aerosim.design import (airfoils, balance, checklist, dims, power, registry, spec, store, tail, wing,
+                            results as R)
+from aerosim.design.project import DesignProject
+
+be = ZigBackend()
+p = DesignProject()                                   # spec.Requirements, spec.DesignRules, perfis NACA
+req, rules = p.requirements, p.rules
+
+# airfoils.py: polar 2D no Re de cruzeiro e os números que a asa usa
+e = p.airfoils[0]
+pol = airfoils.polar(e, req.reynolds(0.3))
+print(e.name, {k: round(v, 3) for k, v in airfoils.metrics(pol).items() if isinstance(v, float)})
+
+# wing.py: linha sustentadora da asa em rascunho
+wr = wing.analyze(p.draft_wing(), req, rules)
+print(round(wr["CLa"], 2), round(wr["CLmax"], 2), round(wr["V_stall"], 1))
+
+# spec.py: C_L de cruzeiro e V_S pela área
+print(round(spec.cruise_CL(req, wr["S"]), 3), round(spec.stall_speed(req, wr["S"], wr["CLmax"]), 1))
+
+# tail.py: volume de cauda, ponto neutro, faixa de CG, rolagem
+p.keep_wing()
+tr = tail.analyze(p.draft_set(), req, rules, p.airfoil_map())
+print(round(tr["x_np"], 3), round(tr["pb2V"], 3))
+
+# power.py: monta o avião e o desempenho rápido (MTOW pela pista)
+p.keep_set()
+ac, asm = power.assemble(p.draft_aircraft(), req, rules)
+pf = power.performance(ac, asm, req, be)
+print(round(asm["empty"], 2), round(pf["mtow_runway"], 2))
+
+# results.py: a mesma etapa como gráficos + SimResult
+plots, res, *_ = R.aircraft_stage(p.draft_aircraft(), req, rules, backend=be)
+print(len(plots), list(res.summary)[:3])
+
+# registry.py: restrições ativas contra os valores do avião
+vals = registry.aircraft_values(ac, asm, pf)
+print([(c.key, ok) for c, ok, _ in registry.checks(req.constraints, vals)][:3])
+
+# dims.py e balance.py: medidas a partir do CG de projeto, CG com a carga
+print(dims.dimensions(ac)[1][:2], balance.full_cg(ac)[1])
+
+# checklist.py: o que falta definir antes de salvar
+print([c.item for c in checklist.pending(checklist.aircraft_checklist(ac, p))][:2])
+
+# store.py: o projeto numa pasta, um arquivo por asa
+with tempfile.TemporaryDirectory() as pasta:
+    print(store.save(p, pasta))
+    print(len(store.load(pasta).wings))
+```
+
+`flight.tune_takeoff(ac, backend)` acha a decolagem 6GDL do avião (o otimizador da Missão), `study.run(projeto,
+study.StudyParams(...))` faz o estudo do ponto de projeto, `mdo.run` o mini-MDO, e `fields.F` descreve um campo para a
+GUI; os três primeiros levam de segundos a minutos.
 
 ## Nível
 
