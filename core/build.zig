@@ -9,29 +9,24 @@
 //!   zig build -Dopt=peak,cse       -> otimizações em avaliação (ver core/OTIMIZACOES.md)
 const std = @import("std");
 
-/// as otimizações de `-Dopt`: nome e bit (o código lê os bits em `math/fmath.zig`, `opt_*`)
-const opt_names = .{
-    .{ "noinline", 1 }, // sincos da tabela sem inline forçado
-    .{ "floatmode", 2 }, // float mode "optimized" nas funções quentes
-    .{ "logstd", 4 }, // log da std com as tabelas
-    .{ "peak", 8 }, // peakCL por seção áurea
-    .{ "cse", 16 }, // o painel calcula sigmaStall e sincos(α) uma vez só (hoje: duas)
-    .{ "minimax", 32 }, // sin/cos por polinômio minimax, sem tabela
-    .{ "estrin", 64 }, // o polinômio do exp por Estrin no lugar do Horner
+/// as otimizações de `-Dopt`: o enum (nome = bit) fica em `src/opt.zig`, o mesmo que o código consulta
+const Opt = @import("src/opt.zig").Opt;
+/// "noinline, floatmode, ..." (os nomes do enum, para a ajuda e a mensagem de erro)
+const opt_list = blk: {
+    var s: []const u8 = "";
+    for (@typeInfo(Opt).@"enum".fields, 0..) |f, i| s = s ++ (if (i == 0) "" else ", ") ++ f.name;
+    break :blk s;
 };
-const opt_list = "noinline, floatmode, logstd, peak, cse, minimax, estrin";
 
 /// "peak,cse" -> 24; "24" -> 24; nome desconhecido para o build com a lista
 fn optBits(text: []const u8) u8 {
     if (std.fmt.parseInt(u8, text, 10)) |n| return n else |_| {}
     var bits: u8 = 0;
     var it = std.mem.tokenizeAny(u8, text, ", +");
-    next: while (it.next()) |name| {
-        inline for (opt_names) |o| if (std.mem.eql(u8, name, o[0])) {
-            bits |= o[1];
-            continue :next;
-        };
-        std.debug.panic("-Dopt: '{s}' não existe; use {s} (ou a soma dos bits)", .{ name, opt_list });
+    while (it.next()) |name| {
+        const o = std.meta.stringToEnum(Opt, name) orelse
+            std.debug.panic("-Dopt: '{s}' não existe; use {s} (ou a soma dos bits)", .{ name, opt_list });
+        bits |= o.bit();
     }
     return bits;
 }

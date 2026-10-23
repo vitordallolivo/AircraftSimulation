@@ -6,7 +6,7 @@
 //!   lut.exp      2^k · e^r, |r| <= ln2/2, Horner de grau 10 (erro relativo ~1e-13)
 //!   lut.log      expoente + série de atanh (erro ~1e-11)
 //!   minimax      sin/cos sem tabela: redução ao quadrante + polinômios minimax (Schlör), erro ~2e-16
-//!                (`-Dopt` bit 32 põe no lugar da tabela)
+//!                (`-Dopt=minimax` põe no lugar da tabela)
 //!   ref.*        as funções da std (para comparar)
 //! As funções públicas (`sin`, `atan2`, ...) usam `lut` ou `ref` conforme `-Dfast_math`.
 //! `SinLut(bits)` é genérico em comptime: o benchmark compara tamanhos de tabela.
@@ -14,17 +14,15 @@ const std = @import("std");
 const build_options = @import("build_options");
 
 pub const fast = build_options.fast_math;
-/// otimizações em avaliação (`-Dopt`, bits; 0 = como sempre). Ver core/build.zig
+/// otimizações em avaliação (`-Dopt`, soma dos bits; 0 = como sempre). Os nomes e os bits estão em `opt.zig`
+pub const Opt = @import("../opt.zig").Opt;
 pub const opt: u8 = build_options.opt;
-pub const opt_noinline = opt & 1 != 0;
-pub const opt_floatmode = opt & 2 != 0;
-pub const opt_log_std = opt & 4 != 0;
-pub const opt_peak = opt & 8 != 0;
-pub const opt_cse = opt & 16 != 0;
-pub const opt_minimax = opt & 32 != 0;
-pub const opt_estrin = opt & 64 != 0;
+/// a otimização `o` está ligada neste build? (comptime: o ramo desligado nem é compilado)
+pub inline fn optOn(comptime o: Opt) bool {
+    return comptime o.in(opt);
+}
 /// modo de ponto flutuante das funções quentes (`@setFloatMode(fm.float_mode)`): strict é o de sempre
-pub const float_mode: std.builtin.FloatMode = if (opt_floatmode) .optimized else .strict;
+pub const float_mode: std.builtin.FloatMode = if (optOn(.floatmode)) .optimized else .strict;
 pub const pi = std.math.pi;
 const two_pi = 2.0 * pi;
 const half_pi = 0.5 * pi;
@@ -49,9 +47,9 @@ pub fn SinLut(comptime bits: u5) type {
         };
 
         /// x = i·h + d, |d| <= h/2:  sin(x) = sin(ih) cos(d) + cos(ih) sin(d)
-        /// (inline forçado, como sempre; com `opt_noinline` o compilador decide)
+        /// (inline forçado, como sempre; com `-Dopt=noinline` o compilador decide)
         pub inline fn sincos(x: f64) SinCos {
-            return @call(if (opt_noinline) .auto else .always_inline, body, .{x});
+            return @call(if (optOn(.@"noinline")) .auto else .always_inline, body, .{x});
         }
 
         fn body(x: f64) SinCos {
@@ -75,7 +73,7 @@ pub const lut = struct {
     pub const Sin = SinLut(8); // 256 pontos = 2 KB (ver bench: tabelas maiores não ajudam)
 
     pub inline fn sincos(x: f64) SinCos {
-        return if (opt_minimax) minimax.sincos(x) else Sin.sincos(x);
+        return if (optOn(.minimax)) minimax.sincos(x) else Sin.sincos(x);
     }
 
     const atan_n = 256;
@@ -112,10 +110,10 @@ pub const lut = struct {
     }
 
     pub fn exp(x: f64) f64 {
-        return expWith(opt_estrin, x);
+        return expWith(optOn(.estrin), x);
     }
 
-    /// e^x = 2^k · e^r; o polinômio de e^r por Horner (o de sempre) ou por Estrin (`-Dopt` bit 64)
+    /// e^x = 2^k · e^r; o polinômio de e^r por Horner (o de sempre) ou por Estrin (`-Dopt=estrin`)
     pub fn expWith(comptime estrin: bool, x: f64) f64 {
         const xc = std.math.clamp(x, -700.0, 700.0);
         const k = @round(xc * (1.0 / std.math.ln2));
@@ -288,12 +286,12 @@ pub fn exp(x: f64) f64 {
     return impl.exp(x);
 }
 pub fn log(x: f64) f64 {
-    if (opt_log_std) return ref.log(x); // no bench, o log da tabela é mais lento que o da std
+    if (optOn(.logstd)) return ref.log(x); // no bench, o log da tabela é mais lento que o da std
     return impl.log(x);
 }
 pub fn pow(x: f64, y: f64) f64 {
     if (!fast) return std.math.pow(f64, x, y);
-    return lut.exp(y * (if (opt_log_std) ref.log(x) else lut.log(x)));
+    return lut.exp(y * (if (optOn(.logstd)) ref.log(x) else lut.log(x)));
 }
 pub fn tanh(x: f64) f64 {
     return impl.tanh(x);

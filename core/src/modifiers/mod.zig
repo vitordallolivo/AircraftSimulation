@@ -75,9 +75,9 @@ pub fn induced(p: *const T.Params, env: *const Env, i: usize, s: *const T.Surfac
     const n: usize = @intCast(p.n_mod);
     for (p.mods[0..n]) |*m| {
         if (m.enabled == 0 or !hits(m.surf_mask, i)) continue;
-        v += switch (m.kind) {
-            types.kind_slipstream_disk => slipstreamStrip(p, env, m, s),
-            else => vec.zero, // tipo vazio ou desconhecido: nada
+        v += switch (m.kindOf()) {
+            .slipstream_disk => slipstreamStrip(p, env, m, s),
+            .none, _ => vec.zero, // tipo vazio ou desconhecido: nada
         };
     }
     return v;
@@ -96,8 +96,8 @@ fn slipstreamStrip(p: *const T.Params, env: *const Env, m: *const types.Modifier
 /// soma das esteiras dos motores da máscara no ponto r (superposição, slipstream.zig)
 fn slipstreamAt(p: *const T.Params, env: *const Env, m: *const types.Modifier, r: V3) V3 {
     var v = vec.zero;
-    const ax = m.params[0] != 0;
-    const sw = m.params[1] != 0;
+    const ax = m.slip(.axial_on) != 0;
+    const sw = m.slip(.swirl_on) != 0;
     for (0..env.n_prop) |j| {
         if (!hitsProp(m.prop_mask, j) or env.T[j] <= 0) continue;
         const u = &p.prop[j];
@@ -105,7 +105,7 @@ fn slipstreamAt(p: *const T.Params, env: *const Env, m: *const types.Modifier, r
             r - vec.v3(u.r), ax, sw);
         if (!s.inside) continue;
         // ar empurrado para trás (−eT) e girando: o painel vê +axial eT e −giro
-        v += env.eT[j] * vec.splat(m.params[2] * s.axial) - s.swirl * vec.splat(m.params[3]);
+        v += env.eT[j] * vec.splat(m.slip(.axial_gain) * s.axial) - s.swirl * vec.splat(m.slip(.swirl_gain));
     }
     return v;
 }

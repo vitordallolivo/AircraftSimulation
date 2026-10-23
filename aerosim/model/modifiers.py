@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-GROUND_OFF = 0                 # core/src/modifiers/types.zig: ground_off
+GROUND_OFF = 0                 # core/src/modifiers/types.zig: Ground.off
 MAX_MODS = 8                   # core/src/limits.zig: max_mods (conferido contra o esquema nos testes)
 
 
@@ -38,7 +38,7 @@ class KindInfo:
     kind: str
     title: str
     category: str              # "solo" | "aditivo"
-    core_id: int               # o número do tipo no núcleo (types.zig)
+    core_id: int               # o número no núcleo (types.zig: Ground para "solo", Kind para "aditivo")
     reference: str             # de onde vem a fórmula (obra e equação)
     description: str = ""
     params: tuple[ParamInfo, ...] = ()

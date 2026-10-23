@@ -380,7 +380,7 @@ pub const Params = extern struct {
     n_pad: i32 = 0, // mesas/plataformas
     pads: [L.max_pads]Pad = [_]Pad{.{}} ** L.max_pads,
     // modificadores (modifiers/): método do efeito solo e efeitos a mais (desligados por padrão)
-    ground: i32 = MT.ground_mccormick,
+    ground: i32 = @intFromEnum(MT.Ground.mccormick),
     n_mod: i32 = 0,
     mods: [L.max_mods]Modifier = [_]Modifier{.{}} ** L.max_mods,
     // derivados

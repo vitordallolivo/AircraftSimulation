@@ -8,11 +8,12 @@
 const fm = @import("../math/fmath.zig");
 const MT = @import("types.zig");
 
-/// fator do arrasto induzido do método `method` (MT.ground_*) a uma altura `h` (m) com envergadura `b` (m)
+/// fator do arrasto induzido do método `method` (`Params.ground`, número de `MT.Ground`) a uma altura `h` (m) com
+/// envergadura `b` (m)
 pub inline fn factor(method: i32, h: f64, b: f64) f64 {
-    return switch (method) {
-        MT.ground_mccormick => mccormick(h, b),
-        else => 1.0,
+    return switch (@as(MT.Ground, @enumFromInt(method))) {
+        .mccormick => mccormick(h, b),
+        .off, _ => 1.0,
     };
 }
 
@@ -32,6 +33,6 @@ test "McCormick: valores da fórmula e limites" {
     try testing.expect(mccormick(100.0, 2.0) > 0.9999);
     try testing.expect(mccormick(0.0, 2.0) < 0.01);
     // desligado: 1
-    try testing.expectEqual(@as(f64, 1.0), factor(MT.ground_off, 0.1, 2.0));
-    try testing.expectEqual(mccormick(0.3, 2.0), factor(MT.ground_mccormick, 0.3, 2.0));
+    try testing.expectEqual(@as(f64, 1.0), factor(@intFromEnum(MT.Ground.off), 0.1, 2.0));
+    try testing.expectEqual(mccormick(0.3, 2.0), factor(@intFromEnum(MT.Ground.mccormick), 0.3, 2.0));
 }

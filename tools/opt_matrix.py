@@ -6,7 +6,7 @@ com a combinação 0 (o núcleo de sempre).
     python tools/opt_matrix.py --analises envelope,loads
     python tools/opt_matrix.py --instrucoes            # contagem exata de instruções (Callgrind), sem ruído
 
-Bits (nomes do core/build.zig): 1 noinline = sincos da tabela sem inline forçado; 2 floatmode = float mode
+Bits (o enum `Opt` de core/src/opt.zig): 1 noinline = sincos da tabela sem inline forçado; 2 floatmode = float mode
 "optimized" nas funções quentes; 4 logstd = log da std com as tabelas; 8 peak = peakCL por seção áurea; 16 cse = o
 painel calcula σ e sincos(α) uma vez só; 32 minimax = sin/cos por polinômio minimax, sem tabela; 64 estrin = o
 polinômio do exp por Estrin. `--std` acrescenta uma linha com a std no lugar das tabelas (-Dfast_math=false).
