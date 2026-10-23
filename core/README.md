@@ -3,8 +3,18 @@
 Integra a dinâmica 6GDL com RK4 (dt = 1 ms), calcula equilíbrios (trimagem) e entrega o registro em
 fatias. Toda a memória é estática (`src/limits.zig`); nada é alocado em tempo de execução.
 
-Metodologias que mudam a aerodinâmica do avião inteiro (efeito solo, esteira da hélice, tabelas de VSPAERO/CFD)
-ficam em [`src/modifiers/`](src/modifiers/README.md), cada uma com a fonte da fórmula.
+Cada pasta tem um README com o que os arquivos fazem, as equações (com a fonte) e como chamar:
+
+| pasta | o que tem |
+|---|---|
+| [`src/physics/`](src/physics/README.md) | aerodinâmica por faixas, tabela de voo, propulsão, trem, massa e sloshing, vento |
+| [`src/sim/`](src/sim/README.md) | equações do movimento e RK4, corrida, trimagem, modelo linear, envelope, desempenho por fórmula |
+| [`src/control/`](src/control/README.md) | guiamento, piloto automático e ajuste automático dos ganhos |
+| [`src/loads/`](src/loads/README.md) | linha sustentadora (Phillips e Snyder; Goates e Hunsaker) para as cargas e o voo |
+| [`src/modifiers/`](src/modifiers/README.md) | efeito solo e esteira da hélice, desligáveis por avião |
+| [`src/collision/`](src/collision/README.md) | o que fica dentro do tubo de cada hélice |
+| [`src/sizing/`](src/sizing/README.md) | dimensionamento inicial (mini-MDO) e os otimizadores |
+| [`src/math/`](src/math/README.md) | seno, exp, log por tabela e polinômio; vetores SIMD; polinômio de tração |
 
 ## Como chamar
 
@@ -149,81 +159,25 @@ A dinâmica, a trimagem e a linearização pedem as forças a `aeromodel.compute
 
 ### Dimensionamento inicial (`sizing/`)
 
-O mini-MDO inteiro roda aqui (o Python só monta a configuração e desenha): cada avaliação leva
-microssegundos a poucos milissegundos, então um PSO de 24 × 40 avaliações volta em menos de um segundo.
-
-```mermaid
-flowchart LR
-    X["x: envergadura, área, afilamento,<br/>perfil da raiz e da ponta, conjunto,<br/>n motores, inclinação"] --> G["geometry"] --> P["polar<br/>(tipo de aeronave)"]
-    X --> TH["Thrust.curve<br/>(motor + hélice do núcleo)"]
-    P --> MT["MTOW: bisseção na massa<br/>(restrições que dependem da massa)"]
-    TH --> MT
-    MT --> E["envelope · takeoff"] --> O["grandezas, violação,<br/>pontuação (MTOW ou EE)"]
-    X --> M["mass (PV)"] --> MT
-    O --> OPT["optimize.Problem"] --> PSO["Pso · RandomSearch · …"]
-```
-
-- **Tipos de aeronave em comptime** (`kinds.zig`): `Monoplane`, `Biplane` (duas asas de mesma envergadura;
-  arrasto induzido × (1 + σ)/2 de Prandtl), `FlyingWing`, `Tailsitter` (decola na vertical), `Vtol` (paira se
-  a tração deixar, senão corre). Cada um declara `wings`, `tail`, `hover`, `inducedFactor`, `clmaxFactor`,
-  `extraMass`, `surfaces`; `kinds.check` confere a interface em tempo de compilação. A cadeia
-  `chain.Chain(Tipo, Tração)` é gerada para cada tipo; a ABI escolhe pelo índice (`inline for`).
-- **Tração como interface**: `CoreThrust` (o motor + hélice + bateria de `physics/propulsion`) ou mocks
-  (`LinearThrust`) nos testes.
-- **Dois perfis na mesma asa**: raiz e ponta; as propriedades 2D entram pela média ao longo da envergadura
-  pesada pela corda, p_r + (p_t − p_r)(1 + 2λ)/(3(1 + λ)).
-- **Otimizador como interface** (`optimize.zig`): `Problem` (limites, tipo de cada variável e uma função de
-  avaliação) e `Recorder` (cada avaliação e o aviso por iteração). `Pso` e `RandomSearch` hoje; um método novo
-  é um struct com `name` e `run`, posto em `optimize.all`.
-- **Testes sem rodar o otimizador no avião**: cada estágio contra contas fechadas (corrida sem arrasto,
-  V_max com tração constante, MTOW no pairado = T0/(margem·g)); fuzzing das interfaces (`util/fuzz.zig`) com a
-  tração mock e entradas quaisquer em todos os tipos; os otimizadores em funções analíticas (esfera com
-  variáveis contínuas, inteira e de lista).
+O mini-MDO inteiro roda no núcleo; o Python só monta a configuração e desenha. Os estágios, as equações e como
+acrescentar um tipo de aeronave ou um otimizador estão em [`src/sizing/README.md`](src/sizing/README.md).
 
 ### Tração polinomial (comptime)
 
-`math/poly.zig` define `Poly2(grau)`: a tabela de expoentes (p00, p10, p01, p20, p11, p02, …, na ordem
-do `poly55` do MATLAB) e o laço de avaliação são resolvidos pelo compilador; em execução sobra uma
-sequência de FMAs. `types.ThrustPoly = Poly2(limits.thrust_poly_deg)` (grau 5, 21 coeficientes). Cada
-unidade propulsora escolhe `model = prop_motor` (motor BLDC + hélice J/C_T/C_P, com rotação como
-estado) ou `prop_poly`:
+`math/poly.zig` define `Poly2(grau)`: a tabela de expoentes, na ordem do `poly55` do MATLAB, e o laço de avaliação são
+resolvidos pelo compilador. Cada unidade propulsora escolhe `model = prop_motor` (motor + hélice, com a rotação como
+estado) ou `prop_poly`. As equações estão em [`src/physics/README.md`](src/physics/README.md) e em
+[`src/math/README.md`](src/math/README.md). A ordem dos termos sai no esquema (`poly_terms`), e o teste
+`tests/core/test_abi.py` confere que é a mesma do Python.
 
-```
-T = gain · P(x, y) · (ρ/ρ0)^rho_exp        x, y ∈ {nenhuma, V, acelerador, h, ρ, constante}
-T × acelerador, se nem x nem y for o acelerador;   T ≥ 0;   x, y limitados a [0, xmax] se xmax > 0
-```
+### Funções matemáticas e tempo de conta
 
-Com x = constante n, y = V, gain = g, rho_exp = 1 e T0 em p00, é exatamente a tração do
-`Envelope_main` original. A ordem dos termos sai no esquema (`poly_terms`) e o teste `tests/core/test_abi.py` confere que é a
-mesma do Python.
+`math/fmath.zig` tem as duas implementações lado a lado (`lut`, por tabela e polinômio, e `ref`, a da std), e
+`bench.zig` mede cada função isolada e a avaliação de f(t, x). O que se aprendeu:
 
-### LUTs e desempenho — o que foi medido
+- as tabelas cabem no cache, então o tamanho delas não muda o tempo;
+- em x86 o padrão é `x86_64_v3`: com AVX-512 (`-Dcpu=native` num Xeon) o LLVM gera código pior para as tabelas;
+- o gargalo não são as funções matemáticas, e sim a cadeia de dependências do laço dos painéis em `aero.zig`;
+- a rotação de equilíbrio do motor usa *regula falsi* com a modificação de Illinois em vez de bisseção.
 
-`math/fmath.zig` tem as duas implementações lado a lado (`lut` e `ref`), e `SinLut(bits)` gera tabelas
-de qualquer tamanho em comptime. `bench.zig` mede cada função isolada (entradas sequenciais ou
-aleatórias) e a avaliação de f(t, x). Nesta máquina (Xeon 2,1 GHz, L1d 48 KB, L2 2 MB por núcleo):
-
-| função (entradas aleatórias) | LUT / polinômio | std |
-|---|---|---|
-| sin (tabela 2 KB) | 6,2 ns | 28,1 ns |
-| sin (tabela 32 KB / 512 KB) | 6,2 / 6,3 ns | — |
-| atan2 | 9,3 ns | 15,3 ns |
-| exp | 8,1 ns | 19,2 ns |
-| log | 13,6 ns | 8,7 ns |
-
-- **As tabelas estão no cache**: 2 KB, 32 KB e 512 KB dão o mesmo tempo. Por isso o seno usa 256
-  pontos (2 KB) com correção de Taylor de 6ª ordem (erro ~1e-15).
-- **O que deixava a simulação lenta não eram as LUTs:** com `-Dcpu=native` num Xeon com AVX-512 o
-  LLVM gera código pior para elas (f(t, x): 1478 ns com LUT contra 987 ns com `x86_64_v3`), por isso
-  o padrão em x86 é `x86_64_v3`. Além disso, um `memset` genérico (slice de tamanho em tempo de
-  execução e uma struct de saída zerada a cada chamada) custava ~1 000 instruções por avaliação; foi
-  trocado por stores de tamanho fixo.
-- Hoje: f(t, x) ≈ 1 µs; missão completa (165 s) ≈ 1 s. Pelo callgrind a versão LUT executa ~2,5× menos
-  instruções que a std, mas o tempo das duas fica parecido: o gargalo é a cadeia de dependências do
-  laço dos painéis em `aero.zig`, não as funções matemáticas.
-
-Para reproduzir: `python -m pytest -m bench -s`.
-
-Rotação de equilíbrio do motor (trimagem, curva de tração, envelope): `dn/dt` cai com n, então a
-raiz é única em [1, 600] rps; *regula falsi* com a modificação de Illinois em vez de bisseção (≈10
-avaliações em vez de 60) — o envelope "modelo completo" ficou ~2× mais rápido.
+As medidas, com a máquina e a data, ficam em [`OTIMIZACOES.md`](OTIMIZACOES.md). Para medir: `python -m pytest -m bench -s`.

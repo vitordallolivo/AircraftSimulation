@@ -25,40 +25,125 @@ physics/aero.zig, em cada painel i (centro r):
 
 | arquivo | o que tem |
 |---|---|
-| `types.zig` | `Modifier` (extern struct: `kind`, `enabled`, `surf_mask[2]`, `prop_mask`, `params[16]`), constantes `ground_*` e `kind_*` |
+| `types.zig` | `Modifier` (extern struct: `kind`, `enabled`, `surf_mask[2]`, `prop_mask`, `params[16]`) e os enums que dão nome aos números: `Ground` (método do efeito solo), `Kind` (tipo do efeito a mais) e `SlipstreamParam` (o que cada `params[k]` da esteira quer dizer) |
 | `ground.zig` | métodos do efeito solo (`factor`, `mccormick`) |
 | `slipstream.zig` | esteira por disco atuador (`diskInduced`, `axialAt`, `radiusAt`, `swirlRate`, `at`); `shape`/`TubeShape.tube` montam o tubo que contrai para `collision/` |
-| `mod.zig` | entrada do módulo: `Env` (tração, torque, eixo e velocidade axial de cada motor no instante; `envFrom`), `induced` (soma dos efeitos a mais por painel, como média de uma grade `chord_samples × strip_samples` = 3 × 16 pontos da faixa; quem está dentro do tubo é dito por `collision/`), `hits` / `hitsProp` (máscaras) |
+| `mod.zig` | entrada do módulo: `Env` (tração, torque, eixo e velocidade axial de cada motor no instante; `envFrom`), `induced` (soma dos efeitos a mais por painel, como média de uma grade `chord_samples × strip_samples` de pontos da faixa; quem está dentro do tubo é dito por `collision/`), `hits` / `hitsProp` (máscaras) |
 | `README.md` | este arquivo |
+
+## Números na ABI, nomes no núcleo
+
+O Python escreve números (`Params.ground`, `Modifier.kind`, `params[k]`), porque a ABI só leva tipos C. Dentro do núcleo
+cada número vira um enum, e o código decide por nome:
+
+```zig
+switch (m.kindOf()) {                        // Modifier.kind → Kind
+    .slipstream_disk => slipstreamStrip(p, env, m, s),
+    .none, _ => vec.zero,                    // vazio ou de outra versão: nada
+}
+const ax = m.slip(.axial_on) != 0;           // params[0], pelo nome
+```
+
+Número desconhecido (um arquivo de uma versão mais nova) cai no `_` do enum e é ignorado. Um tipo novo é um campo novo
+no fim do enum, com o próximo número, e o mesmo número em `aerosim/model/modifiers.py` (`KINDS[...].core_id`).
+
+As máscaras `surf_mask` e `prop_mask` são outra coisa: o bit $i$ é o painel (ou o motor) $i$, e zero quer dizer todos.
 
 ## Dois jeitos de entrar
 
 | categoria | onde | padrão | exemplo |
 |---|---|---|---|
-| **solo**: método de um efeito que sempre existe; um por vez | `Params.ground` | `ground_mccormick` (o que o núcleo sempre fez) | `solo.mccormick`; sem nenhum na lista = desligado |
-| **aditivo**: efeito a mais, somado em cada painel | `Params.mods[0..n_mod]` | nenhum (`n_mod = 0`: o laço nem roda) | `esteira.disco`, `tabela` (próxima etapa) |
+| **solo**: método de um efeito que sempre existe; um por vez | `Params.ground` (número de `Ground`) | `Ground.mccormick` (o que o núcleo sempre fez) | `solo.mccormick`; sem nenhum na lista = desligado |
+| **aditivo**: efeito a mais, somado em cada painel | `Params.mods[0..n_mod]` (`kind` = número de `Kind`) | nenhum (`n_mod = 0`: o laço nem roda) | `esteira.disco`, `tabela` (próxima etapa) |
 
 ## Compatibilidade (nada muda sem pedir)
 
 - **`.json` antigo** (sem `modifiers`) abre com `default_modifiers()` = `[solo.mccormick]`, que é o
   comportamento de antes.
-- **Exemplos de `data/aircraft`:** conferidos bit a bit antes e depois desta mudança (coeficientes em
-  α × β × V, resumo e registro completo da decolagem, 9 arquivos): **0 diferenças**. Os testes
-  `tests/model/test_modifiers.py` garantem que todos continuam abrindo com o padrão.
+- **Exemplos de `data/aircraft`:** conferidos bit a bit antes e depois (coeficientes em α × β × V, resumo e
+  registro completo da decolagem), sem diferença. Os testes `tests/model/test_modifiers.py` garantem que todos
+  continuam abrindo com o padrão.
 - **`.cfg` e planilha** não têm onde guardar modificadores: abrem com o padrão. Ao gravar nesses formatos
   com uma lista fora do padrão, a GUI avisa o que fica de fora (`modifiers.not_exported`).
-- **AeroDrive** monta os `Params` dele com os padrões do Zig (`ground = mccormick`, `n_mod = 0`), então
-  não muda. O leitor de JSON dele ignora a chave `modifiers`. Compila e passa os 91 testes.
+- **AeroDrive** monta os `Params` dele com os padrões do Zig (`ground = Ground.mccormick`, `n_mod = 0`), então
+  não muda. O leitor de JSON dele ignora a chave `modifiers`.
 - **Tipo desconhecido** (arquivo de uma versão mais nova) fica guardado no `.json`, mas é ignorado, com
   aviso (`modifiers.problems`).
 
-## Métodos e referências
+## Métodos e equações
 
-| tipo | fórmula | fonte | testes |
-|---|---|---|---|
-| `solo.mccormick` (padrão) | φ = (16 h/b)² / (1 + (16 h/b)²); C_Di ← φ C_Di em cada painel horizontal; h = altura do painel acima do chão no passo (`h − z_painel`), b = envergadura de referência; h ≤ 1 cm vira 1 cm | B. W. McCormick, *Aerodynamics, Aeronautics, and Flight Mechanics* (Wiley). A mesma expressão em J. D. Anderson, *Aircraft Performance and Design* (McGraw-Hill), que cita o McCormick. **Número da equação e página: a conferir no PDF** | `ground.zig` (h/b = 0,1 → 2,56/3,56; limites 0 e 1); `tests/model/test_modifiers.py` (desligar muda a decolagem) |
+### `solo.mccormick` (padrão)
 
-| `esteira.disco` (aditivo, desligado por padrão) | por motor, com a tração T e o torque Q do instante: (1) w0 da teoria do momento, T = 2ρA w0 (V + w0); (2) w(x) = w0 (1 + x/√(x² + R²)) ao longo do eixo (x > 0 atrás do disco; à frente também, sem giro); (3) contração (V + w) R² = const; (4) giro de corpo rígido com fluxo de momento angular = Q: Ω0 = 2Q/(π ρ (V + w0) R⁴), Ω(x) = Ω0 (R/R(x))², no sentido da hélice. O painel soma `ganho_axial·w·eT − ganho_giro·v_giro`, média em 16 pontos ao longo da faixa (faixa só em parte dentro do tubo). N motores: superposição | (1) Rankine–Froude, em McCormick, *Aerodynamics, Aeronautics, and Flight Mechanics*, e Glauert, "Airplane Propellers", em Durand, *Aerodynamic Theory* IV (1935); (2) disco atuador com carga uniforme (cilindro de vórtices semi-infinito), em McCormick, *Aerodynamics of V/STOL Flight*, e Veldhuis (ICAS 2004; tese TU Delft 2005); (3) continuidade; (4) balanço de momento angular de Glauert, com a **hipótese de corpo rígido desta implementação**. **Equações e páginas: a conferir nos PDFs** | `slipstream.zig` (T = 2ρA w0(V+w0); estático; w(0) = w0, w(∞) = 2w0; contração; ∫ρ(V+w0) v_t r dA = Q; fora do tubo nada; sentido inverte o giro); `tests/model/test_slipstream.py` (tração zero = idêntico bit a bit; giro sozinho espelha C_l ao inverter o sentido; bimotor simétrico com sentidos opostos: C_l = C_n = C_Y = 0; superposição dos dois motores; máscara de motores; sonda = teoria do momento) |
+Perto do chão, o arrasto induzido de cada painel horizontal é multiplicado por um fator que vai de 0 (no chão) a 1
+(longe dele). Com $h$ a altura do painel acima do chão no passo ($h - z_{painel}$) e $b$ a envergadura de referência
+(B. W. McCormick, *Aerodynamics, Aeronautics, and Flight Mechanics*, Wiley; a mesma expressão em J. D. Anderson,
+*Aircraft Performance and Design*, McGraw-Hill, que cita o McCormick; número da equação e página a conferir no PDF):
+
+$$
+\varphi = \frac{(16\,h/b)^2}{1 + (16\,h/b)^2}
+\qquad
+C_{D_i} \leftarrow \varphi\,C_{D_i}
+$$
+
+Altura menor que 1 cm é tratada como 1 cm (o painel não atravessa o chão). Testes: `ground.zig` (o valor da fórmula em
+$h/b = 0{,}1$ e os limites 0 e 1); `tests/model/test_modifiers.py` (desligar muda a decolagem).
+
+### `esteira.disco` (aditivo, desligado por padrão)
+
+Por motor, com a tração $T$ e o torque $Q$ do instante, carga uniforme num disco de raio $R$ e área $A = \pi R^2$, e
+$V$ a velocidade axial através do disco.
+
+**1. Velocidade induzida no disco**, pela teoria do momento de Rankine–Froude (McCormick, *Aerodynamics, Aeronautics,
+and Flight Mechanics*; Glauert, "Airplane Propellers", em Durand, *Aerodynamic Theory* IV, 1935):
+
+$$
+T = 2\,\rho\,A\,w_0\,(V + w_0)
+\quad\Rightarrow\quad
+w_0 = -\frac{V}{2} + \sqrt{\frac{V^2}{4} + \frac{T}{2\rho A}}
+$$
+
+**2. Desenvolvimento ao longo do eixo.** O disco com carga uniforme é um cilindro de vórtices semi-infinito; com $x$
+medido a partir do disco, positivo para trás (McCormick, *Aerodynamics of V/STOL Flight*; Veldhuis, ICAS 2004 e tese TU
+Delft 2005):
+
+$$
+w(x) = w_0\left(1 + \frac{x}{\sqrt{x^2 + R^2}}\right)
+\qquad
+w(0) = w_0,\quad w(\infty) = 2\,w_0,\quad w(-\infty) = 0
+$$
+
+**3. Contração do tubo**, por continuidade:
+
+$$
+(V + w(x))\,R(x)^2 = (V + w_0)\,R^2
+$$
+
+**4. Giro.** O fluxo de momento angular que atravessa o disco é o torque (balanço de Glauert). Com rotação de corpo
+rígido $v_t = \Omega\,r$ (hipótese desta implementação) e conservando o momento angular no tubo que contrai:
+
+$$
+Q = \int_A \rho\,(V + w_0)\,v_t\,r\,dA
+\quad\Rightarrow\quad
+\Omega_0 = \frac{2\,Q}{\pi\,\rho\,(V + w_0)\,R^4}
+\qquad
+\Omega(x) = \Omega_0\left(\frac{R}{R(x)}\right)^2
+$$
+
+O giro tem o sentido da rotação da hélice (só atrás do disco).
+
+**5. No painel.** A velocidade que o painel vê soma a axial ao longo do eixo de tração $\hat e_T$ e tira o giro, com os
+ganhos de calibração (`SlipstreamParam.axial_gain`, `swirl_gain`; 1 é a teoria), em média nos pontos da faixa dentro do
+tubo (`collision/`). N motores somam por superposição:
+
+$$
+\Delta\vec v = k_{ax}\,w\,\hat e_T - k_{giro}\,\vec v_{giro}
+$$
+
+Equações e páginas a conferir nos PDFs. Testes: `slipstream.zig` (a teoria do momento; o caso estático; $w(0) = w_0$ e
+$w(\infty) = 2w_0$; a contração; a integral do momento angular igual a $Q$; fora do tubo nada; o sentido inverte o giro)
+e `tests/model/test_slipstream.py` (tração zero é idêntico bit a bit; o giro sozinho espelha $C_l$ ao inverter o sentido;
+bimotor simétrico com sentidos opostos dá $C_l = C_n = C_Y = 0$; superposição; máscara de motores; a sonda bate com a
+teoria do momento).
 
 ### Limites conhecidos do `solo.mccormick`
 
@@ -79,7 +164,7 @@ São as razões para ter outros métodos depois:
   ainda chamam a aerodinâmica sem motores (`Env.none`), então não veem a esteira;
 - esteiras que se cruzam somam (a superposição deixa de ser exata);
 - a parte da faixa fora do tubo (acima ou abaixo da linha de tração, ou fora da envergadura do tubo) não recebe nada: a
-  faixa é amostrada numa grade 3 × 16 e só os pontos dentro do tubo (`collision.Tube.contains`) somam.
+  faixa é amostrada numa grade e só os pontos dentro do tubo (`collision.Tube.contains`) somam.
 
 ### Próximos tipos (planejados; só entram com a fonte conferida)
 
@@ -116,20 +201,27 @@ python tools/span_load.py data/aircraft/Bimotor_convencional_tubo_cauda_em_V.jso
 - O `modcheck` roda a decolagem com os modificadores do avião, sem cada um e, com `--sem-solo`, sem efeito
   solo, e mostra a diferença.
 
-Exemplo, com o `Convencional_original.json`:
+Pelo Python, sem a linha de comando:
 
-| caso | decolou em (m) | saiu do chão em (m) |
-|---|---|---|
-| efeito solo de McCormick (padrão) | 51,381 | 39,679 |
-| sem efeito solo | 51,935 (+0,554) | 40,625 (+0,946) |
-| efeito solo + esteira | 49,497 (−1,884) | 37,404 (−2,275) |
+```python
+from aerosim.backend.zig import ZigBackend
+from aerosim.model.modifiers import Modifier, describe
+from aerosim.model.templates import conventional
+
+ac = conventional()
+print(describe(ac))                                  # ["efeito solo: McCormick (padrão)"]
+ac.modifiers.append(Modifier(kind="esteira.disco"))  # liga a esteira da hélice
+phi = ZigBackend().probe_ground(1, [0.1, 0.5, 2.0], 2.2)   # φ de McCormick (Ground.mccormick = 1) em três alturas
+print(describe(ac), phi)
+```
 
 Testes do módulo: `zig build test-physics` (inclui `modifiers/`), `pytest tests/model/test_modifiers.py`.
 
 ## Como adicionar um modificador
 
 1. **Fonte primeiro:** obra, equação, página. Sem isso não entra.
-2. Em `types.zig`: o `kind_*` (aditivo) ou `ground_*` (solo) e o que cada `params[k]` quer dizer.
+2. Em `types.zig`: um campo novo em `Kind` (aditivo) ou em `Ground` (solo), com o próximo número, e um enum com o que
+   cada `params[k]` quer dizer (como `SlipstreamParam`).
 3. Em `mod.zig` (aditivo, um caso no `switch` de `induced`) ou em `ground.zig` (solo, um caso em `factor`):
    a fórmula, com a referência no comentário. Teste Zig que reproduz um número publicado.
 4. Uma sonda em `root.zig` (`aerosim_probe_*`) e o subcomando em `tools/probe.py`.
