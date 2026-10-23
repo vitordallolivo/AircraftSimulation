@@ -1,56 +1,18 @@
 # aerosim/design — projeto do zero, etapa por etapa (sprint)
 
-Cria o avião do zero, e cada etapa parte do que a anterior guardou:
+Esta é a parte do projeto em que o avião nasce. Partindo só dos requisitos (massa estimada, velocidade de cruzeiro,
+pista, altitude), ela leva o projeto por etapas, e cada etapa cria uma peça a partir do que a anterior guardou:
+primeiro o perfil, depois a asa feita com ele, a empenagem que acompanha a asa, os motores com a montagem do avião
+inteiro e, por fim, o estudo que acha o ponto de projeto. O avião que sai daqui é uma configuração completa, a mesma
+que a Montagem edita, o AeroDrive pilota e o núcleo simula.
 
-1. **Perfil.** Você escolhe os perfis e vê a polar 2D de cada um.
-2. **Asa.** A asa é feita a partir do perfil escolhido. A planta é um **trapézio** (envergadura, afilamento,
-   trecho retangular; **dimensionar por área ou por corda** da raiz — o outro sai) ou uma **tabela de partições**,
-   como na planilha: uma linha por partição com **envergadura** (o quanto ela soma na envergadura total, metade
-   de cada lado), **corda** (no começo dela), **afilamento**, **perfil** (no fim dela; ao longo dela passa do da
-   anterior para este), **recuo** (o bordo de ataque andando para trás: enflechamento, move o CA e o CG de
-   projeto) e **θ** (torção no fim, em relação à raiz; − = washout, a ponta estola depois). A envergadura total
-   é a soma das partições; asa reta = uma linha só. A linha sustentadora e o arrasto de perfil interpolam entre
-   as seções. "do trapézio" monta a tabela a partir do trapézio atual.
-3. **Empenagem.** Entram as superfícies que acompanham a asa: cauda, tubo e comandos.
-4. **Motores.** A etapa decide onde ficam os motores. Com isso saem a bateria, a carga, a fuselagem e o trem.
-5. **Montagem.** O avião inteiro vai para a aba Montagem.
+Tudo aqui é *sprint*: contas rápidas, para comparar muitas variantes em pouco tempo. O programa não escolhe por
+você. Cada etapa guarda candidatos com nome, compara esses candidatos e mostra o diagnóstico, e a escolha fica com
+quem projeta. O estudo detalhado do avião montado fica nas simulações do manager, na subaba "Avião montado" e nas
+abas Missão e Tração.
 
-O programa não escolhe por você. Ele guarda candidatos com nome, compara esses candidatos e mostra o diagnóstico de cada etapa.
-
-Exemplo montado na interface (asa S1223; EH MH 113 invertida, EH simétrica e cauda em V; Joinville e São José
-dos Campos):
-
-![Perfil: S1223, MH 113, HT 14 e SD8020 pelo NeuralFoil](../../docs/img/estudo_perfil.png)
-
-![Asa S1223: 3D da asa, C_L × α e polar](../../docs/img/estudo_asa.png)
-
-![Asa: L/D × C_L e c_l na envergadura — o estol começa na raiz](../../docs/img/estudo_asa_estol.png)
-
-![Empenagem: EH MH 113 invertida, EV HT 14 — conjunto com CG e ponto neutro](../../docs/img/estudo_empenagem.png)
-
-![Empenagem invertida: diagnóstico — faixa de CG, EH sem estolar, rotação na decolagem](../../docs/img/estudo_empenagem_diagnostico.png)
-
-![EH convencional (HT 14, simétrica) com EV: roda mais tarde](../../docs/img/estudo_empenagem_convencional.png)
-
-![Motores e montagem: o avião inteiro e a distribuição de massa (PV e CP)](../../docs/img/estudo_motores.png)
-
-![Distribuição de massa: lastro + líquido + LAPES no CG, MTOW pela pista e CP possível](../../docs/img/estudo_massas.png)
-
-![Motores e montagem: diagnóstico — rotação com a tração, trim da EH, decolagem](../../docs/img/estudo_motores_diagnostico.png)
-
-![Mandado para a Montagem: mais um avião aberto, com tanque, LAPES e lastro](../../docs/img/estudo_montagem.png)
-
-![Estudo e ponto de projeto: inclinação do motor nas duas altitudes-densidade, conferido no 6GDL — o ponto marcado é o de 6°](../../docs/img/estudo_ponto_de_projeto.png)
-
-![MTOW × inclinação do motor: ● conta rápida, ★ 6GDL — o ótimo fica perto de 6° nos dois lugares](../../docs/img/estudo_ponto_de_projeto_graficos.png)
-
-![O ponto marcado (maior MTOW viável, pelo 6GDL) e o que limita](../../docs/img/estudo_ponto_de_projeto_diagnostico.png)
-
-![Comparação dos aviões guardados (EH invertida, EH convencional, NACA 0012, cauda em V, bimotor, motor inclinado)](../../docs/img/estudo_comparacao.png)
-
-![Comparação: MTOW de cada avião, rápido e 6GDL](../../docs/img/estudo_comparacao_graficos.png)
-
-Na GUI, as etapas ficam nas subabas de cada área. A última subaba, **Avião montado**, faz a análise detalhada do avião aberto (lltdrek ou AeroSandbox, núcleo 6GDL).
+Na GUI, as etapas ficam nas subabas de cada área, e a última subaba de cada área faz a análise detalhada do avião
+aberto:
 
 | área | subabas |
 |---|---|
@@ -58,33 +20,11 @@ Na GUI, as etapas ficam nas subabas de cada área. A última subaba, **Avião mo
 | Estabilidade | Empenagem e comandos, Avião montado |
 | Desempenho | Motores e montagem, Estudo e ponto de projeto, Avião montado |
 
-## Como chamar
-
-```python
-from aerosim.design.project import DesignProject
-from aerosim.design import results as R
-
-p = DesignProject()                        # requisitos, regras, perfis NACA 2412 e 4412
-p.requirements.mass = 9.0                  # massa, V de cruzeiro, V_S máx., AD, envergadura máx., pista
-p.wing_draft.area = 1.0                    # rascunho da asa
-plots, res, r = R.wing_stage(p.draft_wing(), p.requirements, p.rules)
-asa = p.keep_wing()                        # guardada como "asa 1" (o rascunho passa a "asa 2")
-p.tail_draft.wing = asa.name
-plots, res, r = R.set_stage(p.draft_set(), p.requirements, p.rules, p.airfoil_map())
-conj = p.keep_set()
-p.power_draft.set = conj.name
-plots, res, ac, asm, pf = R.aircraft_stage(p.draft_aircraft(), p.requirements, p.rules)
-print(type(ac).__name__)   # Aircraft: o mesmo arquivo da Montagem, do AeroDrive e do núcleo
-# p.save("sprint.json")    # grava o projeto (ou store.save(p, pasta), um arquivo por asa)
-```
-
-Cada `*_stage` devolve gráficos (`PlotSpec`), resultado (`SimResult`: séries, resumo, diagnóstico) e os números da etapa. Você também pode chamar direto:
-
-- `wing.analyze(candidato, requisitos)`
-- `tail.analyze(...)`
-- `power.assemble(...)`
-- `power.performance(...)`
-- `airfoils.polar(...)`
+O README mostra primeiro como as etapas se ligam e depois explica cada uma, na ordem em que aparecem: o perfil, a
+asa, a empenagem e os comandos, os motores e a montagem, e o estudo do ponto de projeto, cada etapa com as suas
+equações. Em seguida vem um projeto de exemplo, montado na interface, com as imagens de cada etapa. Depois vêm as
+partes que servem a todas as etapas: como o projeto é gravado numa pasta, as dimensões medidas a partir do CG, as
+condições, restrições e variáveis, e o mini-MDO. No fim, como chamar e um exemplo por arquivo.
 
 ## Como funciona
 
@@ -116,12 +56,10 @@ Cada candidato leva uma **cópia** do que veio antes: a asa leva o perfil, o con
 
 ### Perfil (`airfoils.py`)
 
-O perfil pode vir de quatro lugares:
-
-- um código NACA de 4 dígitos;
-- um `.dat` (Selig ou Lednicer);
-- só parâmetros, sem contorno: $a_1$, $\alpha_{L0}$, $c_{l,max}$, $c_{d0}$ e $c_m$;
-- a polar do XFLR5/XFOIL (texto ou CSV).
+Aqui se escolhem os perfis que a asa e a cauda vão usar e se vê a polar 2D de cada um. Um perfil pode vir de um código
+NACA de 4 dígitos, de um arquivo `.dat` (Selig ou Lednicer), só de parâmetros, sem contorno ($a_1$, a inclinação da
+curva de sustentação; $\alpha_{L0}$, o ângulo de sustentação nula; $c_{l,max}$; $c_{d0}$; e $c_m$), ou da polar
+exportada do XFLR5 ou do XFOIL.
 
 A polar sai por uma de três fontes, conforme o que o perfil permite:
 
@@ -139,7 +77,14 @@ $$
 
 ### Asa (`wing.py`)
 
-A forma em planta tem trecho retangular, trecho trapezoidal com afilamento, enflechamento de c/4, torção linear até a ponta e diedro.
+Aqui se define a forma da asa a partir do perfil escolhido, e saem a curva de sustentação, onde e quando ela estola, a
+polar com o arrasto induzido e o de perfil, e a razão L/D. A planta pode ser um trapézio (envergadura, afilamento e
+um trecho retangular, dimensionado pela área ou pela corda da raiz, e o outro sai) ou uma tabela de partições, como
+na planilha. A tabela não tem limite próprio de linhas: cada partição soma um pedaço à envergadura, tem a sua corda,
+afilamento, perfil, recuo (o enflechamento, que move o CA e o CG de projeto) e torção, e uma asa reta é uma linha só.
+O botão "do trapézio" monta a tabela a partir do trapézio atual. A forma da asa, com o significado de cada coluna e
+dois exemplos, está em [`aerosim/aero/README.md`](../aero/README.md#a-asa-por-partições); a linha sustentadora e o
+arrasto de perfil interpolam entre as seções.
 
 A análise é a linha sustentadora de Prandtl pela série de Glauert, simétrica (só os termos ímpares; Anderson,
 *Fundamentals of Aerodynamics*, §5.3, a conferir no PDF). A circulação na envergadura é escrita em
@@ -378,6 +323,41 @@ O que se aprendeu com os estudos:
 As altitudes-densidade vêm de uma tarde quente típica (elevação, temperatura e umidade de cada lugar) e podem ser
 trocadas na página.
 
+## Um projeto de exemplo
+
+As imagens abaixo são de um projeto montado na interface, etapa por etapa, com a asa S1223 e três empenagens
+diferentes (EH MH 113 invertida, EH simétrica e cauda em V), estudado em duas altitudes-densidade.
+
+![Perfil: S1223, MH 113, HT 14 e SD8020 pelo NeuralFoil](../../docs/img/estudo_perfil.png)
+
+![Asa S1223: 3D da asa, C_L × α e polar](../../docs/img/estudo_asa.png)
+
+![Asa: L/D × C_L e c_l na envergadura — o estol começa na raiz](../../docs/img/estudo_asa_estol.png)
+
+![Empenagem: EH MH 113 invertida, EV HT 14 — conjunto com CG e ponto neutro](../../docs/img/estudo_empenagem.png)
+
+![Empenagem invertida: diagnóstico — faixa de CG, EH sem estolar, rotação na decolagem](../../docs/img/estudo_empenagem_diagnostico.png)
+
+![EH convencional (HT 14, simétrica) com EV: roda mais tarde](../../docs/img/estudo_empenagem_convencional.png)
+
+![Motores e montagem: o avião inteiro e a distribuição de massa (PV e CP)](../../docs/img/estudo_motores.png)
+
+![Distribuição de massa: lastro + líquido + LAPES no CG, MTOW pela pista e CP possível](../../docs/img/estudo_massas.png)
+
+![Motores e montagem: diagnóstico — rotação com a tração, trim da EH, decolagem](../../docs/img/estudo_motores_diagnostico.png)
+
+![Mandado para a Montagem: mais um avião aberto, com tanque, LAPES e lastro](../../docs/img/estudo_montagem.png)
+
+![Estudo e ponto de projeto: inclinação do motor nas duas altitudes-densidade, conferido no 6GDL — o ponto marcado é o de 6°](../../docs/img/estudo_ponto_de_projeto.png)
+
+![MTOW × inclinação do motor: ● conta rápida, ★ 6GDL — o ótimo fica perto de 6° nos dois lugares](../../docs/img/estudo_ponto_de_projeto_graficos.png)
+
+![O ponto marcado (maior MTOW viável, pelo 6GDL) e o que limita](../../docs/img/estudo_ponto_de_projeto_diagnostico.png)
+
+![Comparação dos aviões guardados (EH invertida, EH convencional, NACA 0012, cauda em V, bimotor, motor inclinado)](../../docs/img/estudo_comparacao.png)
+
+![Comparação: MTOW de cada avião, rápido e 6GDL](../../docs/img/estudo_comparacao_graficos.png)
+
 ## Projeto numa pasta, um arquivo por asa (`store.py`)
 
 O projeto da sprint fica numa pasta que o usuário escolhe (**Projeto da sprint → Novo projeto numa pasta…**,
@@ -485,8 +465,27 @@ Os campos usam `fields.F`, que leva rótulo, unidade, dica e faixa. A GUI (`Data
 
 ## Dimensionamento inicial — mini-MDO (`mdo.py`)
 
-As contas e o otimizador estão no núcleo (`core/src/sizing`); aqui se monta a configuração a partir do projeto
-e se leem os resultados.
+O mini-MDO procura sozinho uma asa e um conjunto motopropulsor bons antes das etapas. Cada variável de projeto
+(envergadura, área, afilamento, perfis, motor, hélice, inclinação) recebe uma faixa ou uma lista, o otimizador do
+núcleo avalia milhares de combinações com contas rápidas, e o melhor indivíduo vira o rascunho da Asa e de Motores e
+montagem. As contas e o otimizador estão no núcleo (`core/src/sizing`); aqui se monta a configuração a partir do
+projeto e se leem os resultados.
+
+As variáveis vêm de Condições e restrições → Variáveis: envergadura, área, afilamento, perfil da raiz e da ponta,
+motor e hélice (os conjuntos são motor × hélice com a bateria do rascunho) e inclinação; o número de motores e o tipo
+de aeronave ficam em `MdoParams`, e uma variável fixa vale o rascunho. Nas listas (perfis, motor, hélice, arranjo),
+`available(projeto, chave)` diz tudo o que existe (os perfis do projeto mais os `.dat` de `MdoParams.airfoil_dir`,
+`data/airfoils` por padrão), e uma lista sem nada marcado quer dizer todos. O arranjo dos motores também é variável
+(`LAYOUT_DATA`): quantos motores cada posição aceita (nariz e propulsora, um; asa, aos pares), a perda da propulsora
+na esteira, o arrasto das naceles e o suporte por motor. A empenagem não é dimensionada: entra como fração da área da
+asa na massa e no arrasto.
+
+As restrições que valem são as ativas que o núcleo calcula (área, envergadura, velocidade de estol, potência, número
+de motores, corrida, V_max, subida, T/W, PV, CP, EE, MTOW); as outras, como comprimento e margem estática, ficam para
+as etapas e aparecem listadas. `registry.check_bounds` recusa uma variável física sem mínimo menor que o máximo (ou
+uma lista sem opções), e `registry.bounds_from_constraints` leva as restrições ativas para os limites das variáveis.
+Para o indivíduo escolhido, `full_envelope` dá o desempenho do núcleo em todas as velocidades, e `constraint_diagram`
+desenha o diagrama de restrições (`aerosim.sizing.constraints`) com a polar e as velocidades dele.
 
 ```python
 # não roda sozinho: p, catalog, backend e manager vêm de fora (exemplo que roda em core/src/sizing/README.md)
@@ -499,24 +498,34 @@ mdo.apply(p, rows[k])                                    # vira o rascunho da As
 mdo.check_6dof(p, rows[k], catalog, manager)             # guarda asa/conjunto/avião, ponto de projeto, MTOW 6GDL
 ```
 
-- **Variáveis** (Condições e restrições → Variáveis): envergadura, área, afilamento, perfil da raiz e da ponta
-  (listas), motor e hélice (listas: os conjuntos são motor × hélice com a bateria do rascunho), inclinação; o
-  número de motores e o tipo de aeronave ficam em `MdoParams`. Fixo = o valor do rascunho.
-- **Restrições**: as ativas que o núcleo calcula (S, b, V_S, potência, nº de motores, corrida, V_max, subida,
-  T/W, PV, CP, EE, MTOW); as outras (comprimento, margem estática...) ficam para as etapas e aparecem listadas.
-- **Limites**: `registry.check_bounds` recusa variável física sem mín. < máx. (ou lista sem opções);
-  `registry.bounds_from_constraints` leva as restrições ativas para os limites (b → envergadura, S → área,
-  n_motor → motores mín./máx.).
-- **Arranjo dos motores** é variável (`LAYOUT_DATA`): motores aceitos (nariz e propulsora: 1; asa: aos pares),
-  instalação (a propulsora na esteira perde parte da tração), arrasto das naceles e suporte por motor.
-- **Listas** (perfil da raiz e da ponta, motor, hélice, arranjo): `available(projeto, chave)` diz tudo o que existe
-  (perfis do projeto + `.dat` de `MdoParams.airfoil_dir`, padrão `data/airfoils`); variável sem nada marcado = todos.
-- **Envelope completo e diagrama do indivíduo**: `full_envelope` (o desempenho do núcleo, `simple_perf`, com a polar
-  e a curva de tração dele: todas as velocidades) e `constraint_diagram` (curvas de `aerosim.sizing.constraints`
-  com a polar e as velocidades dele; T/W estático equivalente pela queda da tração da hélice).
-- **Empenagem** não é dimensionada: entra como fração da área da asa na massa e no arrasto.
-- **Perfil da ponta** também na etapa Asa (`WingParams.airfoil_tip`): a linha sustentadora usa a1(y) e α_L0(y)
-  interpolados da raiz (e do trecho retangular) à ponta; o estol, o c_l,max local; o arrasto, o c_d local.
+
+## Como chamar
+
+```python
+from aerosim.design.project import DesignProject
+from aerosim.design import results as R
+
+p = DesignProject()                        # requisitos, regras, perfis NACA 2412 e 4412
+p.requirements.mass = 9.0                  # massa, V de cruzeiro, V_S máx., AD, envergadura máx., pista
+p.wing_draft.area = 1.0                    # rascunho da asa
+plots, res, r = R.wing_stage(p.draft_wing(), p.requirements, p.rules)
+asa = p.keep_wing()                        # guardada como "asa 1" (o rascunho passa a "asa 2")
+p.tail_draft.wing = asa.name
+plots, res, r = R.set_stage(p.draft_set(), p.requirements, p.rules, p.airfoil_map())
+conj = p.keep_set()
+p.power_draft.set = conj.name
+plots, res, ac, asm, pf = R.aircraft_stage(p.draft_aircraft(), p.requirements, p.rules)
+print(type(ac).__name__)   # Aircraft: o mesmo arquivo da Montagem, do AeroDrive e do núcleo
+# p.save("sprint.json")    # grava o projeto (ou store.save(p, pasta), um arquivo por asa)
+```
+
+Cada `*_stage` devolve gráficos (`PlotSpec`), resultado (`SimResult`: séries, resumo, diagnóstico) e os números da etapa. Você também pode chamar direto:
+
+- `wing.analyze(candidato, requisitos)`
+- `tail.analyze(...)`
+- `power.assemble(...)`
+- `power.performance(...)`
+- `airfoils.polar(...)`
 
 ## Um exemplo por arquivo
 
@@ -577,7 +586,3 @@ with tempfile.TemporaryDirectory() as pasta:
 `flight.tune_takeoff(ac, backend)` acha a decolagem 6GDL do avião (o otimizador da Missão), `study.run(projeto,
 study.StudyParams(...))` faz o estudo do ponto de projeto, `mdo.run` o mini-MDO, e `fields.F` descreve um campo para a
 GUI; os três primeiros levam de segundos a minutos.
-
-## Nível
-
-Tudo aqui é **sprint**: contas rápidas, para comparar muitas variantes. O estudo detalhado do avião montado fica nas simulações do manager, que aparecem na subaba "Avião montado" e nas abas Missão e Tração.
