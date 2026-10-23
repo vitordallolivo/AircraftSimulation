@@ -272,6 +272,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `math:80`, `dynamics:98`
 - `core/src/lib.zig` — O núcleo como módulo Zig (para programas em Zig, como o aerodrive): os mesmos tipos e funções
 - `core/src/limits.zig` — Limites de compilação. Toda a memória do núcleo é estática e dimensionada aqui:
+- `core/src/opt.zig` — Otimizações em avaliação (`-Dopt`): cada uma é um bit, desligado por padrão (ver core/OTIMIZACOES.md).
+  tipos `Opt:5`
 - `core/src/root.zig` — Interface C ABI do núcleo (o que o Python chama via ctypes).
   **ABI (44 exports)** `aerosim_abi_version`, `aerosim_schema`, `aerosim_probe_ground`, `aerosim_probe_slipstream`, `aerosim_aero_coeffs_thrust`, `aerosim_aero_coeffs_at`, `aerosim_tube_panel_hits`, `aerosim_tube_point_hits`, `aerosim_prop_state`, `aerosim_panel_states`, `aerosim_panel_states_llt`, `aerosim_aero_coeffs_llt`, `aerosim_schema_hash`, `aerosim_acquire`, `aerosim_release`, `aerosim_params`, `aerosim_params_reset`, `aerosim_configure`, `aerosim_reset_ground`, `aerosim_reset_air`, `aerosim_run`, `aerosim_events`, `aerosim_time`, `aerosim_snapshot_size`, `aerosim_snapshot_save`, `aerosim_snapshot_load`, `aerosim_mass_props`, `aerosim_aero_coeffs`, `aerosim_aero_coeffs_ex`, `aerosim_linearize`, `aerosim_autotune`, `aerosim_prop_point`, `aerosim_trim`, `aerosim_performance`, `aerosim_envelope`, `aerosim_envelope_curve`, `aerosim_simple_perf`, `aerosim_bench_math`, `aerosim_bench_dynamics`, `aerosim_fast_math`, `aerosim_sizing_eval`, `aerosim_sizing_optimize`, `aerosim_sizing_name`, `aerosim_sizing_defaults`
 - `core/src/tests_control.zig` — testes do grupo "control" (zig build test-control)
@@ -308,8 +310,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/math/**
 
 - `core/src/math/fmath.zig` — Funções matemáticas: tabelas (LUT) + aproximações polinomiais, e a referência da std.
-  tipos `SinCos:32`, `lut:74`, `ref:165`, `minimax:217`
-  fn `SinLut:35`, `sincos:260`, `sin:263`, `cos:266`, `tan:269`, `atan:273`, `atan2:276`, `asin:279`, `acos:283`, `exp:287`, `log:290`, `pow:294`, `tanh:298`, `sqrt:301`, `hypot:304`, `sat:309`, `lim:312`, `sgn:315`, `wrap:318`
+  tipos `SinCos:30`, `lut:72`, `ref:163`, `minimax:215`
+  fn `optOn:21`, `SinLut:33`, `sincos:258`, `sin:261`, `cos:264`, `tan:267`, `atan:271`, `atan2:274`, `asin:277`, `acos:281`, `exp:285`, `log:288`, `pow:292`, `tanh:296`, `sqrt:299`, `hypot:302`, `sat:307`, `lim:310`, `sgn:313`, `wrap:316`
 - `core/src/math/fmath_test.zig` — Testes só das LUTs e aproximações (independentes de -Dfast_math: comparam `lut` com `ref`).
 - `core/src/math/poly.zig` — Polinômio em duas variáveis de grau N gerado em comptime, na ordem dos ajustes do MATLAB
   fn `Poly2:9`
@@ -319,7 +321,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/modifiers/**
 
 - `core/src/modifiers/ground.zig` — Efeito solo: métodos para o fator do arrasto induzido perto do chão.
-  fn `factor:12`, `mccormick:20`
+  fn `factor:13`, `mccormick:21`
 - `core/src/modifiers/mod.zig` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro sem mexer no resto
   tipos `Env:20`
   fn `envFrom:31`, `hits:45`, `hitsProp:52`, `stripOf:66`, `induced:73`
@@ -327,7 +329,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `TubeShape:32`, `Point:81`
   fn `shape:49`, `diskInduced:54`, `axialAt:62`, `radiusAt:67`, `swirlRate:75`, `at:89`
 - `core/src/modifiers/types.zig` — Tipos dos modificadores trocados com o Python (C ABI, `extern struct`; o esquema sai de `abi.zig`).
-  tipos `Modifier:23`
+  tipos `Ground:14`, `Kind:21`, `SlipstreamParam:28`, `Modifier:38`
 
 **core/src/physics/**
 
@@ -643,8 +645,13 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/stability/README.md`
 - `core/README.md`
 - `core/src/collision/README.md`
+- `core/src/control/README.md`
 - `core/src/loads/README.md`
+- `core/src/math/README.md`
 - `core/src/modifiers/README.md`
+- `core/src/physics/README.md`
+- `core/src/sim/README.md`
+- `core/src/sizing/README.md`
 - `data/README.md`
 - `tests/README.md`
 - `tools/README.md`
