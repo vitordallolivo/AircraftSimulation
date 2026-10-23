@@ -48,6 +48,21 @@ flowchart LR
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
+### Uma análise rodando na tela
+
+O que acontece entre o clique em "Rodar" e o gráfico:
+
+```mermaid
+flowchart TD
+    F[/"formulário gerado pelos ParamSpec da simulação"/] --> B["Rodar"]
+    B --> TH["QThread: manager.run(nome, avião, parâmetros)"]
+    TH --> CH["cada fatia do registro chega por sinal"]
+    CH --> LP["LivePlots desenha em intervalos fixos"]
+    TH --> END["fim: SimResult"]
+    END --> SUM["resumo, séries e diagnóstico<br/>(ChecksPanel)"]
+    SUM --> EXP[/"Exportar CSV"/]
+```
+
 ### Montagem
 
 A Montagem é a última aba e é onde o avião é editado peça por peça, em três colunas. À esquerda ficam a lista de

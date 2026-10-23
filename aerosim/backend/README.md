@@ -45,6 +45,24 @@ com `max_rows=0` roda sem registro, mais rápido. As chamadas ctypes soltam o GI
 paralelo em threads, e as simulações de varredura usam isso. Para outro núcleo (outra linguagem, um modelo de teste),
 basta implementar `ISimBackend` e passá-lo para `SimulationManager(backend)`.
 
+## Uma sessão, passo a passo
+
+Do modelo universal até os resultados do núcleo:
+
+```mermaid
+flowchart TD
+    M[/"AircraftModel (+ missão, overrides)"/] --> TR["ZigTranslator.to_native:<br/>painéis por faixa, motores, trem,<br/>tanques, piloto, missão → SimSpec"]
+    TR --> ACQ["aerosim_acquire: uma instância estática"]
+    ACQ --> CF["configure: abi.write (dicionário → struct),<br/>aerosim_configure"]
+    CF --> CALL{"o que se pede"}
+    CALL -->|"run"| RUN["aerosim_run → LogChunk"]
+    CALL -->|"trim, aero_coeffs, linearize..."| ONE["chamada única"]
+    RUN --> BACK["tradutor de volta:<br/>coeficientes universais"]
+    ONE --> BACK
+    BACK --> OUT[/"resultado no formato universal"/]
+    OUT --> REL["aerosim_release ao fechar a sessão"]
+```
+
 ## Equações do tradutor (`zig/translator.py`)
 
 Cada trecho de superfície entre duas estações $`a`$ e $`b`$ (seções e bordas dos comandos) vira um painel de cada lado,

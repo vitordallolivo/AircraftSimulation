@@ -18,6 +18,22 @@ As funções públicas usam `lut` ou `ref` conforme `-Dfast_math` (padrão: `lut
 (`-Dopt`) trocam partes daqui; os nomes e os bits estão no enum `Opt` de [`../opt.zig`](../opt.zig), e o código pergunta
 por nome, `optOn(.minimax)`. O que cada uma faz e o que se mediu está em [`core/OTIMIZACOES.md`](../../OTIMIZACOES.md).
 
+## Como uma função por tabela é avaliada
+
+Todas as funções por tabela seguem o mesmo caminho: reduzir o argumento a um ponto da tabela mais um resto pequeno e
+corrigir o resto por uma série curta.
+
+```mermaid
+flowchart TD
+    X[/"x"/] --> RED["redução: x = i·h + d<br/>(ou k·ln 2 + r na exponencial,<br/>m·2^e no logaritmo)"]
+    TB[/"tabela gerada em comptime<br/>(tamanho 2^bits)"/] --> LOOK
+    RED --> LOOK["valor tabelado em i"]
+    RED --> SER["série curta no resto d<br/>(Taylor; Horner ou Estrin)"]
+    LOOK --> COMB["combina: identidade da soma de ângulos,<br/>2^k · e^r, e·ln 2 + ln m"]
+    SER --> COMB
+    COMB --> OUT[/"f(x)"/]
+```
+
 ## Seno e cosseno por tabela (`SinLut`)
 
 Uma tabela de $`N = 2^{bits}`$ valores de $`\sin`$ numa volta é gerada pelo compilador. O argumento é escrito como o ponto

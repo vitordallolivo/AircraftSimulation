@@ -78,6 +78,28 @@ continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram m
 `run(Stop(t=…, segment=…, autopilot=…, takeoff=…), chunk=…)`, `checkpoint(nome)`,
 `reconfigure(missão nova)`. Os checkpoints guardam só o estado; os parâmetros vêm da configuração atual.
 
+### Uma missão, passo a passo
+
+O caminho de uma missão pedida pela GUI, até o resultado:
+
+```mermaid
+flowchart TD
+    G[/"GUI: nome da simulação, avião,<br/>parâmetros (modo, until, start, V_list...)"/] --> M["SimulationManager.run"]
+    M --> CAL["prepare: cópia do avião e calibração do piloto<br/>(polar → C_L0, C_Lα; trimagem → acelerador;<br/>autotune → ganhos)"]
+    CAL --> MODE{"modo"}
+    MODE -->|"missão"| TO["decolagem otimizada (takeoff_opt):<br/>ponto de acionamento e deflexão"]
+    TO --> ST["cada etapa com o Runner,<br/>checkpoint no começo de cada uma"]
+    ST --> TURN{"curva com raio 0?"}
+    TURN -->|"sim"| RAD["testa raios a partir do checkpoint<br/>e usa o menor que passa (evaluate_turn)"]
+    TURN -->|"não"| NEXT["próxima etapa"]
+    RAD --> NEXT
+    MODE -->|"MTOW"| BIS["bisseção na massa;<br/>em cada massa reotimiza a decolagem"]
+    MODE -->|"curvas"| CUR["raio mínimo por V"]
+    NEXT --> RES[/"SimResult: status, summary,<br/>series, log, checks"/]
+    BIS --> RES
+    CUR --> RES
+```
+
 ### Decolagem: $`x_{warning}`$ e $`z_{warning}`$ (`takeoff_opt.py`)
 
 Na competição, a decolagem é julgada só pela pista: o avião tem de sair do chão antes de um comprimento e subir acima

@@ -34,6 +34,22 @@ flowchart LR
     style IF fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
+## O diagrama, passo a passo
+
+Como o diagrama de restrições é montado:
+
+```mermaid
+flowchart TD
+    R[/"Requirements: pista, V de cruzeiro, subida,<br/>curva (n), teto, V_S máx., atrito, altitude"/] --> K
+    P[/"polar parabólica (C_D0, K, C_L,max):<br/>da aba Aerodinâmica ou estimate_polar"/] --> K
+    K["para cada requisito ativo"] --> TW["T/W exigido em função de W/S<br/>(cruzeiro, subida, curva, decolagem, teto)"]
+    K --> WS["limites verticais de W/S<br/>(estol e pouso)"]
+    TW --> D["diagrama: curvas e limites juntos"]
+    WS --> D
+    T[/"tração do motor (núcleo):<br/>T/W disponível"/] --> D
+    D --> PT[/"ponto de projeto na região viável"/]
+```
+
 ## Equações
 
 Polar parabólica, com $`q = \tfrac12\rho V^2`$ e $`k = 1/(\pi\,AR\,e)`$. As curvas de T/W exigido por requisito vêm de

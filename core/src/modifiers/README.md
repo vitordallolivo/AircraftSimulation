@@ -28,6 +28,25 @@ physics/aero.zig, em cada painel i (centro r):
     C_Di ← modifiers.ground.factor(p.ground, h_i, b) · C_Di      (painéis não verticais)
 ```
 
+## Os modificadores numa avaliação
+
+Dentro de uma avaliação de forças, os modificadores entram em dois pontos do laço dos painéis:
+
+```mermaid
+flowchart TD
+    L[/"Aircraft.modifiers (lista)"/] --> T["tradutor: Params.ground,<br/>n_mod, mods[k] (kind, params, máscaras)"]
+    T --> ENV["mod.envFrom: tração, torque, eixo e<br/>velocidade axial de cada motor no instante"]
+    ENV --> PAN["laço dos painéis em physics/aero.zig"]
+    PAN --> IND{"n_mod > 0?"}
+    IND -->|"sim"| SL["esteira.disco: pontos da faixa no tubo (collision)<br/>→ axial w(x) e giro → v_ind"]
+    IND -->|"não"| V["v_i = V_ar + ω × r"]
+    SL --> V2["v_i = V_ar + ω × r + Σ v_ind"]
+    V --> CL["C_L, C_Di do painel"]
+    V2 --> CL
+    CL --> GR["efeito solo: C_Di × φ(h/b)<br/>(método de Params.ground)"]
+    GR --> F[/"forças do painel"/]
+```
+
 ## Arquivos
 
 | arquivo | o que tem |

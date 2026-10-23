@@ -53,6 +53,23 @@ flowchart LR
     style IF fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
+### A análise, passo a passo
+
+O que a aba faz com o avião, do começo ao diagnóstico:
+
+```mermaid
+flowchart TD
+    A[/"avião montado, x_CG, critérios<br/>(MIL-F-8785C, personalizado ou nenhum)"/] --> ST
+    ST["estática: C_Lα, C_mα no núcleo<br/>→ ponto neutro e margem"] --> SC["área da EH × faixa de CG<br/>(uma sessão por tamanho de EH)"]
+    SC --> CT["comandos: profundor para equilibrar,<br/>aileron (p b/2V, tempo de rolagem), leme"]
+    CT --> LIN["modelo linear por V (linearize):<br/>matrizes A e B"]
+    LIN --> MOD["modos: autovalores → ω_n, ζ, T, t½"]
+    MOD --> CR{"passa nos critérios?"}
+    CR -->|"não"| SR["search: refaz com deriva maior,<br/>mais diedro ou EH maior"]
+    SR --> DG
+    CR -->|"sim"| DG[/"diagnóstico: estado, valor, critério,<br/>causa e o que mudar"/]
+```
+
 ### Estática (`static.py`)
 
 **Ponto neutro numérico.** O núcleo dá $`C_{L\alpha}`$ e $`C_{m\alpha}`$ com os momentos num ponto $`x_{ref}`$; o ponto neutro é

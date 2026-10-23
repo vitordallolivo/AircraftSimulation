@@ -289,6 +289,25 @@ modelo da simulação, em que cada superfície tem a mesma inclinação de suste
 plana; serve para comparar. `"vlm_asb"` é o VLM do AeroSandbox, para a tendência. A explicação de cada método e das
 correções está em [`core/src/loads/README.md`](../../core/src/loads/README.md).
 
+O caminho de uma análise de carga, do pedido até o gráfico e a vista 3D:
+
+```mermaid
+flowchart TD
+    C[/"LoadCase: V, n, α e profundor (ou trimagem),<br/>β, rpm ou acelerador, props, method, refine"/] --> PREP
+    AC[/"avião (Aircraft) com os modificadores"/] --> PREP
+    PREP["prepare: trimagem do núcleo (se α não foi imposto)<br/>e estado de cada hélice (T, Q, J)"] --> LP[/"LoadPoint"/]
+    LP --> M{"method"}
+    M -->|"llt, llt_gh, faixas"| REF["refina cada superfície sozinha<br/>(faixas mais estreitas na ponta)"]
+    REF --> PS["núcleo: panel_states<br/>(linha sustentadora ou faixas)"]
+    PS --> COL["colisão: quanto de cada faixa<br/>está no tubo de cada hélice"]
+    M -->|"vlm_asb"| VLM["VLM do AeroSandbox"]
+    COL --> SL["SpanLoads: por superfície,<br/>L, D, α, V, q, c_l, c_d, vetores"]
+    VLM --> LR
+    SL --> LR[/"to_result → LoadResult"/]
+    LR --> G["load_plots: gráficos<br/>ao longo da envergadura"]
+    LR --> V3["LoadView: vista 3D<br/>(cores, setas, esteira)"]
+```
+
 A conta é do núcleo, no mesmo laço da simulação (`aero.computeTrace` via `aerosim_panel_states`), e entra com os
 modificadores do avião (efeito solo, esteira). O estado do motor vem de `aerosim_prop_state`, com a hélice em
 $`C_T(J)`$ e $`C_P(J)`$ na rotação pedida. O módulo só refina a geometria para dar resolução: põe mais seções na mesma

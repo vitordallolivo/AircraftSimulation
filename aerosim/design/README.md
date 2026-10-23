@@ -54,6 +54,23 @@ flowchart LR
 
 Cada candidato leva uma **cópia** do que veio antes: a asa leva o perfil, o conjunto leva a asa e o avião leva o conjunto. Por isso, mudar ou apagar algo numa etapa anterior não altera o que já foi guardado.
 
+### Uma etapa, passo a passo
+
+Toda etapa segue o mesmo ciclo, e a seguinte parte do que esta guardou:
+
+```mermaid
+flowchart TD
+    RQ[/"Requirements e DesignRules:<br/>massa, V de cruzeiro, AD, pista, regras de massa e de geometria"/] --> D
+    PREV[/"candidato da etapa anterior<br/>(perfil, asa ou conjunto)"/] --> D
+    D["rascunho da etapa<br/>(parâmetros na tela)"] --> AN["análise rápida<br/>(polar, linha sustentadora, estática, desempenho)"]
+    AN --> CK["diagnóstico e restrições ativas"]
+    CK --> SHOW["3D da peça, gráficos e tabela"]
+    SHOW --> ED{"bom?"}
+    ED -->|"não, edita"| D
+    ED -->|"sim"| KEEP["Guardar: candidato com nome<br/>(uma cópia do que veio antes)"]
+    KEEP --> NEXT[/"próxima etapa ou Montagem"/]
+```
+
 ### Perfil (`airfoils.py`)
 
 Aqui se escolhem os perfis que a asa e a cauda vão usar e se vê a polar 2D de cada um. Um perfil pode vir de um código

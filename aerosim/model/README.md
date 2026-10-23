@@ -50,6 +50,23 @@ flowchart LR
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
+### Como o modelo universal é montado
+
+O que `build_model(ac)` faz com a configuração, na ordem:
+
+```mermaid
+flowchart TD
+    A[/"Aircraft: superfícies (seções, perfis, comandos),<br/>dispositivos, motores, trem, massas, missão"/] --> C["apply_constraints: superfícies presas<br/>em tubos e pontas"]
+    C --> D["dispositivos de ponta → superfícies"]
+    D --> S["cada superfície → estações 3D<br/>(bordo de ataque, corda, torção, y),<br/>com o lado espelhado"]
+    S --> CO["coeficientes do perfil por faixa<br/>(Helmbold, C_L0, C_L,max; interpolados entre seções)"]
+    CO --> REF["referências S, c, b e a CMA"]
+    REF --> DW["downwash da asa na cauda"]
+    A --> MS["massa seca, CG e inércia<br/>(Steiner nas massas pontuais)"]
+    DW --> M[/"AircraftModel → tradutores<br/>(núcleo, lltdrek, AeroSandbox, AVL)"/]
+    MS --> M
+```
+
 ### Aeronave
 
 | componente | campos principais |

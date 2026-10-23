@@ -17,6 +17,24 @@ alongamento dela). Assim o alongamento muda a sustentação total, mas a carga s
 ponta carrega tanto quanto a raiz. Para voar isso basta, porque o que importa é a soma. Para cargas está errado,
 porque a ponta de uma asa real descarrega, e quanto menor o alongamento, mais a forma da carga muda.
 
+## Uma avaliação, passo a passo
+
+Uma avaliação da linha sustentadora começa com o avião já configurado (os painéis e os nós que o tradutor preencheu)
+e o ponto de voo. O fluxo abaixo mostra o que entra, o que é montado uma vez por configuração e o que é refeito a
+cada chamada:
+
+```mermaid
+flowchart TD
+    P[/"Params: painéis (r, c, S, eixos, C_Lα, C_L0, C_D0),<br/>nós qa e qb, llt_joint, llt_blend"/] --> PREP
+    PREP["prepare: nós, juntas e segmentos ligados<br/>(uma vez por configuração, llt_cache)"] --> LOOP
+    E[/"ponto de voo: V, α, β, p, q, r, comandos,<br/>altura, tração e torque de cada motor"/] --> VEL
+    VEL["velocidade local de cada painel<br/>(vento + rotação + modificadores)"] --> LOOP
+    LOOP["influência de cada ferradura j em cada ponto i<br/>(Biot–Savart com núcleo de Scully;<br/>só as pernas livres são refeitas)"] --> SYS
+    SYS["sistema linear em Γ:<br/>Kutta–Joukowski = sustentação da seção"] --> GAUSS["eliminação de Gauss"]
+    GAUSS --> F["força de cada painel:<br/>ρ Γ (V × dl) + arrasto de perfil"]
+    F --> OUT[/"PanelState: α efetivo, C_L, L, D, F, v, v_ind<br/>ou os coeficientes do avião (aero_coeffs_llt)"/]
+```
+
 ## Método de Phillips e Snyder (`llt.zig`)
 
 A linha sustentadora numérica de Phillips e Snyder (*Modern Adaptation of Prandtl's Classic Lifting-Line Theory*,

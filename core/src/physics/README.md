@@ -21,6 +21,29 @@ e a carga lançada), o vento e, por último, o terreno sob o avião.
 | `mass.zig` | massa, CG e inércia variáveis; sloshing dos tanques; carga lançada |
 | `atmosphere.zig` | vento com perfil de altura e rajada |
 
+## Como uma avaliação de forças acontece
+
+A cada instante, a dinâmica pede as forças a esta pasta. O fluxo mostra o que entra, a ordem em que cada parte é
+calculada e o que volta:
+
+```mermaid
+flowchart TD
+    S[/"estado: posição, velocidade, atitude, rotação p q r,<br/>rotação de cada motor, tanques, carga"/] --> W
+    PA[/"Params: painéis, fuselagem, motores, trem,<br/>massas, vento, terreno, aero_model"/] --> W
+    U[/"comandos do piloto: δe, δa, δr, acelerador"/] --> PR
+    W["vento no ponto (perfil de altura + rajada)<br/>e altura sobre o terreno"] --> PR
+    PR["propulsão: J, C_T, C_P → tração e torque<br/>(ou polinômio de tração)"] --> AE
+    AE{"aero_model"} -->|"faixas"| FX["cada painel: velocidade local, α local,<br/>estol (sigmoide), C_L, C_D, efeito solo"]
+    AE -->|"linha sustentadora"| LLT["loads/llt.zig"]
+    AE -->|"tabela"| TB["aerotable.zig"]
+    FX --> FU["+ fuselagem por coeficientes"]
+    LLT --> FU
+    TB --> FU
+    FU --> GE["trem: mola, amortecedor e atrito<br/>em cada ponto de contato"]
+    GE --> MA["massa, CG e inércia do instante<br/>(líquido que balança, carga lançada)"]
+    MA --> OUT[/"forças e momentos no CG,<br/>massa e inércia → sim/dynamics.zig"/]
+```
+
 ## Aerodinâmica por faixas (`aero.zig`)
 
 O avião é uma lista de painéis (faixas de meia asa, EH, EV, dispositivos). Cada painel tem centro aerodinâmico,

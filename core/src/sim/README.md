@@ -21,6 +21,27 @@ como numa planilha.
 | `simple_perf.zig` | polar parabólica, potências, subida, planeio, curva e bateria por fórmula |
 | `tests.zig` | testes do grupo "sim" (decolagem, checkpoint, trimagem) |
 
+## Uma corrida, passo a passo
+
+Uma corrida começa com os parâmetros escritos numa instância e segue em passos fixos até uma condição de parada:
+
+```mermaid
+flowchart TD
+    P[/"Params: avião, missão, piloto,<br/>dt, tmax, dtlog, paradas"/] --> CF["configure: derivados<br/>(estações, massas, cache da linha sustentadora)"]
+    CF --> R0{"começo"}
+    R0 -->|"reset_ground"| G["parado na pista"]
+    R0 -->|"reset_air(perna)"| A["voo equilibrado (trimagem)"]
+    R0 -->|"snapshot_load"| K["checkpoint"]
+    G --> STEP
+    A --> STEP
+    K --> STEP
+    STEP["passo RK4: quatro avaliações de f(t, x)<br/>(control → physics → equações do movimento)"] --> EV["eventos: decolou, piloto automático,<br/>soltura, toque, parada"]
+    EV --> LOG["registro a cada dtlog<br/>(em fatias para a GUI)"]
+    LOG --> STOP{"parada?<br/>fim da missão, evento pedido,<br/>t_limit, buffer cheio, queda"}
+    STOP -->|"não"| STEP
+    STOP -->|"sim"| OUT[/"RunStatus + registro<br/>(e checkpoint, se pedido)"/]
+```
+
 ## Equações do movimento (`dynamics.zig`)
 
 O avião é um corpo rígido de massa variável (a carga sai, o líquido oscila) escrito no CG do instante. Newton e Euler

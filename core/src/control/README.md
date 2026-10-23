@@ -16,6 +16,27 @@ piloto deve reagir.
 | `autopilot.zig` | os comandos (profundor, aileron, leme, acelerador, roda) a partir do que o guiamento pede |
 | `autotune.zig` | os ganhos das malhas internas a partir do modelo linear do avião |
 
+## O piloto, passo a passo
+
+A cada avaliação de $`f(t, x)`$, o piloto passa por três camadas:
+
+```mermaid
+flowchart TD
+    M[/"missão: segmentos (retas e arcos) com<br/>h0, h1, V0, V1, raio, sentido"/] --> GD
+    S[/"estado: posição, rumo, altura, V, α, φ, p, q, r"/] --> GD
+    GD["guiamento: segmento atual, curso pedido χ_d<br/>(campo vetorial), φ de antecipação, h(s) e V(s)"] --> PH{"fase"}
+    PH -->|"corrida"| TO["decolagem: acelerador cheio,<br/>profundor até o ponto de acionamento"]
+    PH -->|"no ar"| LON["longitudinal: erro de altura → n pedido<br/>→ α pedido → profundor;<br/>erro de V → acelerador"]
+    PH -->|"no ar"| LAT["látero-direcional: erro de curso → φ pedido<br/>→ aileron; leme contra β"]
+    PH -->|"pouso"| FL["arredondamento: razão de descida<br/>proporcional à altura das rodas"]
+    G[/"ganhos: autotune (modelo linear do avião)<br/>ou os do arquivo"/] --> LON
+    G --> LAT
+    TO --> OUT[/"comandos: δe, δa, δr, acelerador, roda"/]
+    LON --> OUT
+    LAT --> OUT
+    FL --> OUT
+```
+
 ## Guiamento (`guidance.zig`)
 
 O percurso é uma corrente de segmentos (retas e arcos). Para não depender de um ponto alvo, o curso pedido vem de um

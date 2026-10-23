@@ -40,6 +40,23 @@ flowchart LR
 | `.cfg` | INI: `[aircraft]`, `[surfaces.0]`, `[surfaces.0.sections.1]`, `[propulsion.0]`… listas em `[ ]` | `[motor: nome]`, `[helice: nome]`, `[bateria: nome]`, `[tracao: nome]` |
 | `.xlsx` | aba `geral` (seção, chave, valor) + uma aba-tabela por lista | abas `motores`, `helices`, `helices_tabela`, `baterias`, `tracao` |
 
+### Abrir um arquivo, passo a passo
+
+O que acontece em `load_aircraft(caminho)`:
+
+```mermaid
+flowchart TD
+    P[/"caminho do arquivo"/] --> EXT{"extensão"}
+    EXT -->|".json"| J["JSON: from_dict guiado pelas<br/>anotações das dataclasses"]
+    EXT -->|".cfg"| C["CFG do AeroDrive: chave = valor"]
+    EXT -->|".xlsx"| X["planilha: CellMapAircraftSource<br/>com o mapa de células (data/mappings)"]
+    J --> MIG["Aircraft.migrate: formatos antigos<br/>(boom único, sem modifiers...)"]
+    C --> MIG
+    X --> MIG
+    CAT[/"catálogo: motores, hélices,<br/>baterias, conjuntos de tração"/] --> MIG
+    MIG --> AC[/"Aircraft"/]
+```
+
 ### Planilha Dados_Desempenho.xlsx (mapa de células)
 
 `CellMapAircraftSource(mapa)` lê e grava as mesmas células. O mapa

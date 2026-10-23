@@ -18,6 +18,21 @@ A **faixa** (`Strip`) é um quadrilátero com centro a 25 % da corda, a direçã
 envergadura (`ey`), a corda e a largura. A **fração imersa** (`stripFraction`) é a parte da faixa dentro do tubo,
 contada em pontos no meio de cada célula de uma grade sobre a faixa.
 
+Como a fração imersa de uma faixa é calculada:
+
+```mermaid
+flowchart TD
+    H[/"hélice: centro do disco, eixo, raio R,<br/>comprimento do tubo, raio R(x) (opcional)"/] --> TU["Tube"]
+    F[/"faixa: centro a 25 % da corda, ex, ey,<br/>corda, largura"/] --> GR["grade nc × ns de pontos<br/>no meio de cada célula"]
+    GR --> PT["para cada ponto: x ao longo do eixo<br/>e distância d ao eixo"]
+    TU --> PT
+    PT --> IN{"0 ≤ x ≤ L e d ≤ R(x)?"}
+    IN -->|"sim"| C["conta o ponto"]
+    IN -->|"não"| N["não conta"]
+    C --> FR[/"fração imersa = pontos dentro / total"/]
+    N --> FR
+```
+
 **Ponto dentro do tubo.** Para um ponto $`\vec p`$, a distância ao longo do eixo e a distância ao eixo são
 
 ```math
