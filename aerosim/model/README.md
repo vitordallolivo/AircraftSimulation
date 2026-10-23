@@ -1,33 +1,26 @@
 # aerosim/model — configuração e modelo universal da aeronave
 
-Duas coisas, nesta ordem:
+Esta é a parte do projeto onde o avião é descrito. Aqui se define o que ele tem: as superfícies (asa, empenagem) com
+as suas seções e perfis, os comandos, os motores com hélice e bateria, o trem de pouso, os tanques, as massas e a
+missão que ele vai voar. É o mesmo avião que a GUI edita, que os arquivos guardam e que todas as análises recebem.
 
-1. **`Aircraft`** (`aircraft.py`): a configuração que o usuário edita (dataclasses em SI, ângulos em graus) —
-   superfícies por seções, comandos, dispositivos, motores, trem, tanques...
-2. **`AircraftModel`** (`universal.py`, `build_model(ac)`): o **modelo universal**, construído uma única vez
-   a partir da configuração. É o que todo núcleo e todo solver recebe. Superfícies viram estações 3D
-   (bordo de ataque, corda, torção total, coordenada de envergadura), com espelho, comandos por faixa e
-   coeficientes do perfil já resolvidos; dispositivos (winglet, placa, cerca) já chegam como superfícies;
-   referências S, c, b e a CMA; massa seca, CG e inércia; downwash.
+O avião existe aqui em duas formas, uma derivada da outra. A primeira é a configuração (`Aircraft`, em
+`aircraft.py`), do jeito que o usuário pensa: dataclasses em unidades SI, ângulos em graus, superfícies descritas por
+seções. A segunda é o modelo universal (`AircraftModel`, em `universal.py`), construído uma única vez por
+`build_model(ac)`. Nele as superfícies já viraram estações 3D (bordo de ataque, corda, torção total, posição na
+envergadura), com o lado espelhado, os comandos por faixa e os coeficientes do perfil resolvidos; os dispositivos de
+ponta já chegam como superfícies; e estão prontos as referências (área, corda, envergadura e a CMA, a corda média
+aerodinâmica), a massa seca com o CG e a inércia, e o downwash. Todo núcleo e todo método de cálculo recebem esse
+modelo.
 
-Ninguém fora de `universal.py` deriva geometria da configuração: o núcleo Zig, o lltdrek e o AeroSandbox
-recebem o `AircraftModel` pelos **tradutores** (`IModelTranslator`), que levam ao formato de cada um e
-trazem o resultado de volta em formato universal. Um teste (`tests/test_architecture.py`) garante isso.
+Ninguém fora de `universal.py` deriva geometria da configuração. O núcleo Zig, o lltdrek e o AeroSandbox recebem o
+`AircraftModel` pelos tradutores (`IModelTranslator`), que o levam ao formato de cada um e trazem o resultado de volta
+no formato universal, e `tests/test_architecture.py` garante isso. Assim uma conta de geometria nunca é feita duas
+vezes de jeitos diferentes.
 
-## Como chamar
-
-```python
-from aerosim.model import TEMPLATES, Aircraft, LiftingSurface, ControlSurface
-from aerosim.model.aircraft import rect_sections
-from aerosim.model.universal import build_model
-
-ac = TEMPLATES["conventional"]()               # ou "flying_wing", "twin_boom"; templates.empty(); ou load_aircraft(arquivo)
-ac.surfaces.append(LiftingSurface(name="canard", role="htail", x=0.8, sections=rect_sections(0.3, 0.15),
-                                  controls=[ControlSurface("elevator", 0.0, 1.0, 0.3)]))
-model = build_model(ac)                        # modelo universal: o que todo solver recebe
-print(model.S, model.c, model.b, model.mass["m"], model.mass["cg"])
-print([(s.name, len(s.stations)) for s in model.surfaces])
-```
+O README mostra primeiro como os arquivos se ligam e o que cada componente do avião guarda. Depois vêm as equações
+com que o modelo universal é montado (sustentação 3D a partir do perfil, downwash, perfis, atmosfera, massa, missão).
+No fim, um exemplo por arquivo e como chamar.
 
 ## Como funciona
 
@@ -239,3 +232,18 @@ print(copia.name == ac.name)
 `y_var` (`none`, `V`, `throttle`, `h`, `rho`), `gain`, `rho_exp`, `xmax`, `ymax` e, informativos,
 `T0` e `n` da planilha. `ThrustPoly.thrust(V, thr, h, rho)` faz a mesma conta do núcleo (testado
 contra ele em `tests/core/test_poly_thrust.py`).
+
+## Como chamar
+
+```python
+from aerosim.model import TEMPLATES, Aircraft, LiftingSurface, ControlSurface
+from aerosim.model.aircraft import rect_sections
+from aerosim.model.universal import build_model
+
+ac = TEMPLATES["conventional"]()               # ou "flying_wing", "twin_boom"; templates.empty(); ou load_aircraft(arquivo)
+ac.surfaces.append(LiftingSurface(name="canard", role="htail", x=0.8, sections=rect_sections(0.3, 0.15),
+                                  controls=[ControlSurface("elevator", 0.0, 1.0, 0.3)]))
+model = build_model(ac)                        # modelo universal: o que todo solver recebe
+print(model.S, model.c, model.b, model.mass["m"], model.mass["cg"])
+print([(s.name, len(s.stations)) for s in model.surfaces])
+```

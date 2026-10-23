@@ -1,24 +1,16 @@
 # aerosim/interfaces — contratos entre as camadas
 
-Só classes abstratas e tipos de dados; nenhuma implementação. Quem usa uma camada depende daqui, nunca
-do módulo concreto.
+Esta pasta guarda os contratos entre as partes do projeto: o que a GUI pode pedir ao gerenciador de simulações, o que
+o gerenciador pode pedir ao núcleo, o que um método aerodinâmico tem de devolver, como uma análise de cargas entrega o
+resultado. São só classes abstratas e tipos de dados, sem nenhuma implementação.
 
-## Como chamar
+Ela existe para que cada camada dependa de um contrato, e não de um módulo concreto. A GUI fala com o
+`ISimulationManager`, nunca com o núcleo; o gerenciador fala com o `ISimBackend`, nunca com o ctypes; a aba
+Aerodinâmica fala com o `IAeroSolver`, sem saber se por trás está o lltdrek ou o AVL. Um método novo entra
+implementando o contrato, e quem consome não muda.
 
-Ninguém instancia estas classes: elas dizem o que cada camada precisa ter. Trocar uma camada é
-passar outro objeto que cumpra a interface — por exemplo um núcleo falso nos testes:
-
-```python
-# não roda sozinho: o esqueleto de um núcleo novo (os "..." são os métodos dele)
-from aerosim.interfaces import ISimBackend
-from aerosim.manager import SimulationManager
-
-class MeuNucleo(ISimBackend):
-    ...                                        # open_session, limits, log_channels, translator
-m = SimulationManager(MeuNucleo())             # o manager e a GUI funcionam iguais
-```
-
-`tests/manager/test_orchestration.py` faz isso com um `FakeBackend`.
+O README mostra primeiro como os contratos se ligam e o que cada arquivo define. Depois vêm as convenções que todas
+as camadas seguem (eixos, unidades, coeficientes) e, no fim, um exemplo por arquivo e como chamar.
 
 ## Como funciona
 
@@ -125,3 +117,20 @@ class FonteDeTeste(IAircraftSource):                       # uma fonte nova impl
         pass
 print(FonteDeTeste().load("qualquer").name)
 ```
+
+## Como chamar
+
+Ninguém instancia estas classes: elas dizem o que cada camada precisa ter. Trocar uma camada é
+passar outro objeto que cumpra a interface — por exemplo um núcleo falso nos testes:
+
+```python
+# não roda sozinho: o esqueleto de um núcleo novo (os "..." são os métodos dele)
+from aerosim.interfaces import ISimBackend
+from aerosim.manager import SimulationManager
+
+class MeuNucleo(ISimBackend):
+    ...                                        # open_session, limits, log_channels, translator
+m = SimulationManager(MeuNucleo())             # o manager e a GUI funcionam iguais
+```
+
+`tests/manager/test_orchestration.py` faz isso com um `FakeBackend`.

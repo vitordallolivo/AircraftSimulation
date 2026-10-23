@@ -1,38 +1,16 @@
-# aerosim/data — Aircraft Data (de onde vêm as aeronaves)
+# aerosim/data — de onde vêm as aeronaves
 
-Implementa `IAircraftSource` e `ICatalogSource`. A GUI e os scripts chamam `load_aircraft(path)` /
-`save_aircraft(ac, path)` (o formato sai da extensão) ou usam `CellMapAircraftSource` para a planilha.
+Esta é a parte do projeto que lê e grava aviões e catálogos. Um avião pode estar num `.json` (o formato completo do
+projeto), num `.cfg` (o formato de texto do AeroDrive) ou na planilha antiga de desempenho, e o catálogo de motores,
+hélices, baterias e conjuntos de tração vem de arquivos próprios. Aqui tudo isso vira a mesma configuração
+(`Aircraft`) e o mesmo `Catalog`, e volta para o arquivo.
 
-## Como chamar
+A GUI e os scripts chamam `load_aircraft(path)` e `save_aircraft(ac, path)`, e o formato sai da extensão. A planilha
+usa `CellMapAircraftSource`, que lê as células por um mapa. Por trás estão as interfaces `IAircraftSource` e
+`ICatalogSource`, então um formato novo entra como mais uma implementação.
 
-```python
-import os, tempfile
-from aerosim.data import load_aircraft, save_aircraft, JsonProjectStore              # sources.py, projects.py
-from aerosim.data.flat import flatten, unflatten, encode, decode                     # flat.py
-from aerosim.data.projects import summary, slug
-
-ac = load_aircraft("data/aircraft/Asa_voadora.json")      # .json, .cfg ou .xlsx (pela extensão)
-pasta = tempfile.mkdtemp()
-save_aircraft(ac, os.path.join(pasta, "meu.cfg"))        # o mesmo avião em INI
-print(load_aircraft(os.path.join(pasta, "meu.cfg")).name, summary(ac), slug("Asa nova!"))
-
-store = JsonProjectStore(pasta)                # "meus aviões" (padrão: ~/aerosim_aeronaves ou AEROSIM_PROJETOS)
-store.save(ac, "asa nova")
-print([i.name for i in store.list()], store.load("asa nova").name)
-
-secoes = flatten(ac)                           # aeronave → seções planas (o que o .cfg e o .xlsx guardam)
-print(list(secoes)[:3], decode(encode([1.0, 2.0])))
-```
-
-A planilha por endereço de célula (`cellmap.py`):
-
-```python
-# não roda sozinho: precisa da planilha do usuário (fica fora do repositório)
-from aerosim.data.cellmap import CellMapAircraftSource
-src = CellMapAircraftSource("data/mappings/dados_desempenho.json")
-ac = src.load("Dados_Desempenho.xlsx")         # planilha por endereço de célula
-src.catalog.thrust_sets                        # conjuntos de tração da aba Tracao
-```
+O README mostra primeiro como os formatos se ligam e, em detalhe, como a planilha é lida pelo mapa de células, com as
+equações do polinômio de tração e do arrasto. No fim, como chamar.
 
 ## Como funciona
 
@@ -105,3 +83,34 @@ $$
   `unmapped` no próprio mapa: o núcleo calcula esses efeitos pelos painéis.
 - Eixos do modelo: x para frente, z para baixo. Se a planilha mede x a partir do nariz para trás, use
   `"scale": -1` e `"offset"` = x do nariz.
+
+## Como chamar
+
+```python
+import os, tempfile
+from aerosim.data import load_aircraft, save_aircraft, JsonProjectStore              # sources.py, projects.py
+from aerosim.data.flat import flatten, unflatten, encode, decode                     # flat.py
+from aerosim.data.projects import summary, slug
+
+ac = load_aircraft("data/aircraft/Asa_voadora.json")      # .json, .cfg ou .xlsx (pela extensão)
+pasta = tempfile.mkdtemp()
+save_aircraft(ac, os.path.join(pasta, "meu.cfg"))        # o mesmo avião em INI
+print(load_aircraft(os.path.join(pasta, "meu.cfg")).name, summary(ac), slug("Asa nova!"))
+
+store = JsonProjectStore(pasta)                # "meus aviões" (padrão: ~/aerosim_aeronaves ou AEROSIM_PROJETOS)
+store.save(ac, "asa nova")
+print([i.name for i in store.list()], store.load("asa nova").name)
+
+secoes = flatten(ac)                           # aeronave → seções planas (o que o .cfg e o .xlsx guardam)
+print(list(secoes)[:3], decode(encode([1.0, 2.0])))
+```
+
+A planilha por endereço de célula (`cellmap.py`):
+
+```python
+# não roda sozinho: precisa da planilha do usuário (fica fora do repositório)
+from aerosim.data.cellmap import CellMapAircraftSource
+src = CellMapAircraftSource("data/mappings/dados_desempenho.json")
+ac = src.load("Dados_Desempenho.xlsx")         # planilha por endereço de célula
+src.catalog.thrust_sets                        # conjuntos de tração da aba Tracao
+```

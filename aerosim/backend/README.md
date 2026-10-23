@@ -1,31 +1,18 @@
-# aerosim/backend — ponte para o núcleo (camada Sim)
+# aerosim/backend — ponte para o núcleo
 
-`ZigBackend` implementa `ISimBackend`/`ISimSession` sobre `libaerosim` via ctypes. O avião chega como
-**modelo universal** (`AircraftModel`) e o `ZigTranslator` (`zig/translator.py`) o traduz para o SimSpec do
-núcleo (painéis por faixa entre estações, motores, trem, tanques, piloto, missão); os coeficientes voltam
-pelo mesmo tradutor no formato universal. `backend.session_for(modelo)` entrega a sessão já configurada.
-Nenhuma struct é copiada à mão: `abi.py` lê o esquema que o núcleo gera em comptime, monta as classes ctypes e confere
-tamanho e offset de cada campo.
+Esta é a ponte entre o Python e o núcleo em Zig. O resto do projeto pede ao backend uma sessão de simulação para um
+avião, e por ela roda corridas, trima, calcula polares e lineariza, sem saber que do outro lado há uma biblioteca
+compilada chamada por ctypes.
 
-## Como chamar
+O `ZigBackend` implementa as interfaces `ISimBackend` e `ISimSession` sobre a `libaerosim`. O avião chega como modelo
+universal (`AircraftModel`), e o `ZigTranslator` (`zig/translator.py`) o traduz para o formato do núcleo: painéis por
+faixa entre estações, motores, trem, tanques, piloto e missão. Os coeficientes voltam pelo mesmo tradutor, no formato
+universal. `backend.session_for(modelo)` entrega a sessão já configurada. Nenhuma struct é copiada à mão: `abi.py` lê
+o esquema que o núcleo gera ao compilar, monta as classes ctypes e confere o tamanho e a posição de cada campo, então
+um campo novo no núcleo aparece no Python sozinho.
 
-```python
-import math
-from aerosim.backend.zig import ZigBackend
-from aerosim.model.templates import conventional
-from aerosim.model.universal import build_model
-
-ac = conventional()
-be = ZigBackend()                              # compila core/ se a biblioteca estiver velha
-with be.session_for(build_model(ac)) as s:     # sessão já configurada
-    s.aero_coeffs(15.0, math.radians(4))       # {"CL": ..., "CD": ..., "Cm": ...}
-    s.mass_props()                             # m, cg, I
-    s.trim(0, 15.0)                            # TrimKind.LEVEL
-    s.reset_ground()
-    status, log = s.run(5.0, 10000)            # até t = 5 s, no máximo 10 000 linhas
-    print(log["t"][-1], log["n"][-1], log["h"][-1])   # numpy, uma coluna por canal
-    data = s.snapshot(); s.restore(data)       # checkpoint
-```
+O README mostra primeiro como as peças se ligam, depois as equações do tradutor e a conferência da ABI e, no fim, um
+exemplo por arquivo e como chamar.
 
 ## Como funciona
 
@@ -51,14 +38,12 @@ flowchart LR
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
-- `configure(spec)`: zera os parâmetros, escreve o dicionário (chave desconhecida é erro) e chama
-  `aerosim_configure`. Erros do núcleo viram `CoreError` com a mensagem.
-- `run(t_limit, max_rows)`: devolve `RunStatus` e um `LogChunk` (uma coluna numpy por canal; vetores
-  como `rpm` viram `rpm_0`, `rpm_1`…). `max_rows=0` roda sem registro (mais rápido).
-- As chamadas ctypes soltam o GIL: sessões diferentes rodam em paralelo em threads (as simulações de
-  varredura usam isso).
-- Para outro núcleo (outra linguagem, um modelo de teste), implemente `ISimBackend` e passe para
-  `SimulationManager(backend)`.
+Uma sessão começa por `configure(spec)`, que zera os parâmetros, escreve o dicionário (uma chave desconhecida é erro)
+e chama `aerosim_configure`; os erros do núcleo viram `CoreError` com a mensagem. Depois, `run(t_limit, max_rows)`
+devolve um `RunStatus` e um `LogChunk`, com uma coluna numpy por canal (vetores como `rpm` viram `rpm_0`, `rpm_1`…);
+com `max_rows=0` roda sem registro, mais rápido. As chamadas ctypes soltam o GIL, então sessões diferentes rodam em
+paralelo em threads, e as simulações de varredura usam isso. Para outro núcleo (outra linguagem, um modelo de teste),
+basta implementar `ISimBackend` e passá-lo para `SimulationManager(backend)`.
 
 ## Equações do tradutor (`zig/translator.py`)
 
@@ -106,4 +91,24 @@ sc = be.schema                                 # o esquema lido da biblioteca (s
 model = build_model(conventional())
 spec = native_spec(model)                      # o SimSpec: o dicionário que vai para os Params do núcleo
 print(len(spec["surf"]), panel_owners(model)[:3])
+```
+
+## Como chamar
+
+```python
+import math
+from aerosim.backend.zig import ZigBackend
+from aerosim.model.templates import conventional
+from aerosim.model.universal import build_model
+
+ac = conventional()
+be = ZigBackend()                              # compila core/ se a biblioteca estiver velha
+with be.session_for(build_model(ac)) as s:     # sessão já configurada
+    s.aero_coeffs(15.0, math.radians(4))       # {"CL": ..., "CD": ..., "Cm": ...}
+    s.mass_props()                             # m, cg, I
+    s.trim(0, 15.0)                            # TrimKind.LEVEL
+    s.reset_ground()
+    status, log = s.run(5.0, 10000)            # até t = 5 s, no máximo 10 000 linhas
+    print(log["t"][-1], log["n"][-1], log["h"][-1])   # numpy, uma coluna por canal
+    data = s.snapshot(); s.restore(data)       # checkpoint
 ```

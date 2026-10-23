@@ -1,44 +1,38 @@
 # aerosim/aero — aerodinâmica a partir da geometria
 
-Na aba **Aerodinâmica** o método principal é o **lltdrek**; o núcleo Zig entra para comparar (é o que
-a simulação usa) e o AeroSandbox é opcional. O diagnóstico diz se os métodos concordam (e por que não),
-se o cruzeiro está perto do L/D máximo, a margem até o estol e — **só se a aeronave tiver dispositivos
-de ponta** (superfícies verticais na ponta da asa) — se eles compensam o atrito. Sem dispositivo, o estudo
-de pontas só roda se marcado.
+Esta é a parte do projeto que trata da aerodinâmica do avião. Aqui se parte da geometria (as superfícies com os seus
+perfis, a fuselagem, os comandos) e se tira o que o avião faz no ar: as curvas de sustentação, arrasto e momento em
+função do ângulo de ataque (a polar), as derivadas de estabilidade, onde o avião estola, a melhor razão entre
+sustentação e arrasto e o ponto neutro. Ela alimenta a aba **Aerodinâmica** da GUI
+(`manager/simulations/aerodynamics.py`) e pode ser chamada direto do Python.
 
-Calcula polares e derivadas de estabilidade da aeronave por **vários métodos** sobre a mesma
-geometria (o modelo de `aerosim/model`) e estuda **dispositivos de ponta de asa**. É usado pela aba
-**Aerodinâmica** (`manager/simulations/aerodynamics.py`) e pode ser chamado direto do Python.
+A mesma geometria passa por vários métodos de cálculo, e a aba mostra os resultados lado a lado. O principal é o
+**lltdrek**, uma linha sustentadora não linear que usa a polar de cada perfil. O núcleo Zig entra para comparar,
+porque é o modelo com que a simulação voa, e o AeroSandbox e o AVL são opcionais. O diagnóstico da aba diz se os
+métodos concordam (e por que não), se o cruzeiro está perto do L/D máximo e qual a margem até o estol. Quando o avião
+tem dispositivos de ponta de asa (winglets, placas), ele diz também se eles compensam o atrito que acrescentam.
 
-## Como chamar
+O README começa pela geometria que entra, com a asa por partições. Depois apresenta os métodos, como eles são ligados
+pela mesma interface e as equações que todos compartilham. Em seguida vêm três usos mais específicos: o estudo dos
+dispositivos de ponta de asa, a tabela de voo, que deixa a simulação voar com qualquer método, e a carga ao longo das
+superfícies, para a análise estrutural. No fim, como chamar e um exemplo por arquivo.
 
-```python
-import numpy as np
-from aerosim.aero import AeroCase, ZigPanelSolver, LltdrekSolver, AsbVLMSolver, polar_metrics
-from aerosim.backend.zig import ZigBackend
-from aerosim.model.templates import conventional
-from aerosim.model.universal import build_model
+## A asa por partições
 
-ac = conventional()
-model = build_model(ac)
-case = AeroCase(V=15, alphas=np.arange(-4, 14, 1.0), ref=(0.02, 0, 0.0))   # ref: ponto dos momentos
-pol = ZigPanelSolver(ZigBackend()).solve(model, case)      # ou LltdrekSolver(), AsbVLMSolver() se instalados
-pol.CL, pol.CD, pol.derivs                                  # polar e derivadas (C_mα, C_nβ, C_lp, ...)
-polar_metrics(pol, model, case)                             # C_Lmax, α de estol, (L/D)máx, ponto neutro...
-```
+Na etapa **Aerodinâmica → Asa** da sprint (`aerosim/design/wing.py`) se define a forma da asa. Ela pode ser um
+trapézio, com envergadura, afilamento e um trecho retangular, ou uma tabela de partições, como na planilha antiga. A
+tabela serve para asas que mudam ao longo da envergadura: um trecho reto seguido de um afilado, outro perfil na ponta,
+uma torção que cresce para fora. Cada partição soma um pedaço à envergadura, e uma asa reta é uma partição só. No
+núcleo, cada trecho entre seções vira um painel de cada lado, e o avião inteiro cabe em `max_surfaces` painéis
+(`core/src/limits.zig`), contando a EH e a EV, o que dá folga para várias partições.
 
-`lltdrek` e `aerosandbox` são opcionais (`pip install -r requirements-aero.txt`).
+Cada partição tem a sua envergadura (metade de cada lado), a corda no começo, o afilamento, o perfil no fim (ao longo
+da partição ele passa do perfil da anterior para este), o recuo do bordo de ataque, que dá o enflechamento, e a
+torção $\theta$ no fim, em relação à raiz. Uma torção negativa é o *washout*: a ponta voa com ângulo menor que a raiz e
+estola depois dela. A linha sustentadora da etapa usa o perfil de cada seção no Reynolds da corda dela.
 
-## Asa por partições (etapa Asa da sprint)
-
-Na etapa **Aerodinâmica → Asa** a asa pode ser um trapézio ou uma **tabela de partições**, como na planilha:
-cada linha é uma partição com **envergadura** (o quanto ela soma na envergadura total, metade de cada lado),
-**corda** (no começo dela), **afilamento**, **perfil** (no fim dela; ao longo da partição ele passa do da
-anterior para este), **recuo** (o bordo de ataque andando para trás: enflechamento) e **θ** (torção no fim, em
-relação à raiz; − = washout). A envergadura total é a soma das partições; asa reta é uma linha só. A linha
-sustentadora (`aerosim/design/wing.py`) usa o perfil de cada seção no Re da corda dela.
-
-Dois exemplos com perfis NACA gerados (polar pelo NeuralFoil):
+Os dois exemplos abaixo usam perfis NACA gerados, com a polar pelo NeuralFoil. O primeiro é uma asa reta, de uma
+partição; o segundo junta um trecho reto a um afilado, com outro perfil na ponta.
 
 ![Asa reta: uma partição](../../docs/img/asa_reta.png)
 
@@ -54,170 +48,11 @@ longo da semienvergadura no cruzeiro e no estol):
 A trapezoidal tem mais alongamento com a mesma envergadura (menos área), e o perfil simétrico na ponta
 (com washout) tira arqueamento de onde o estol seria perigoso: C_L0 e C_m,ac menores, estol mais tarde.
 
-## Tabela de voo de qualquer método (`flight_table.py`)
+## Os métodos
 
-Para voar com um método que não roda no núcleo (lltdrek, ASB, AVL), ele gera uma tabela antes do voo, e o núcleo voa
-com ela (`ac.sim.aero_model = "tabela"`, `core/src/physics/aerotable.zig`). A tabela tem:
-- C_L, C_D, C_m numa faixa de α, a uma V, com β = 0;
-- as derivadas lineares de β, de taxas e de comandos, tomadas num α pequeno.
-
-As equações com que o núcleo voa essa tabela estão em [`core/src/physics/README.md`](../../core/src/physics/README.md).
-
-```python
-from aerosim.backend.zig import ZigBackend
-from aerosim.model.templates import conventional
-backend, ac = ZigBackend(), conventional()
-from aerosim.aero import solver_by_name
-from aerosim.aero.flight_table import table
-from aerosim.model.universal import build_model
-model = build_model(ac)
-cg = tuple(model.mass["cg"])                        # momentos no CG
-t = table(solver_by_name(backend, "avl"), model, V=15.0, rho=1.225, ref=cg, fill=solver_by_name(backend, "zig"))
-ac.sim.aero_model, ac.sim.aero_table = "tabela", t        # t["completadas"]: as derivadas que vieram do núcleo
-```
-
-- **Derivadas que faltam:** as que o método não dá (NaN) vêm de `fill` (em geral o núcleo), e a tabela guarda quais.
-- **Cache:** as polares passam por `service.solve` (memória; disco para os métodos caros, `cost = "caro"`), então a
-  mesma tabela não é montada de novo.
-- **Fuselagem:** os métodos de fora não a têm (`IAeroSolver.includes_fuselage = False`), e o núcleo soma a dele por
-  cima.
-- **O que a tabela não tem:** efeito solo, esteira, variação com V e estol nos métodos lineares.
-
-Para comparar os voos com cada modelo: `tools/aero/missao.py`.
-
-## Carga ao longo das superfícies (`span_loads.py`)
-
-É a "análise de cargas" da aerodinâmica num ponto de operação.
-
-- **Padrão: voo nivelado a 12 m/s.** α, profundor e acelerador saem da trimagem do núcleo, então a distribuição é a
-  da carga real do avião (as superfícies sustentam o peso).
-- **Mudar a velocidade:** `V`.
-- **Curva:** `n` > 1 (fator de carga). Se o avião não segura aquele n naquela velocidade, a trimagem avisa em
-  `notes`.
-- **Impor tudo:** `alpha`, `de` e a **rotação de cada motor** (`rpm`). Para cada superfície (asa, EH, EV, cauda em V,
-dispositivos) devolve, ao longo da envergadura em metros:
-- sustentação e arrasto por metro (N/m);
-- α local, velocidade e pressão dinâmica locais;
-- C_l e C_d;
-- os **vetores** de cada faixa: centro, força, velocidade relativa e a parte dos modificadores. São o que a vista
-  3D vai desenhar.
-
-`tubes()` dá o contorno da esteira de cada motor, também para o 3D.
-
-```python
-from aerosim.backend.zig import ZigBackend
-from aerosim.model.templates import conventional
-backend, ac = ZigBackend(), conventional()
-from aerosim.aero.span_loads import LoadCase, compute
-r = compute(backend, ac)                                      # nivelado a 12 m/s (trimagem)
-r = compute(backend, ac, LoadCase(V=16, n=2))                 # curva com n = 2 a 16 m/s
-r = compute(backend, ac, LoadCase(V=8, alpha=2, rpm=6000))     # α e rotação impostos (rpm: um valor ou um por motor)
-r.alpha, r.de, r.weight, r.trim                               # o que foi usado
-asa = r.by_role("wing")[0]
-asa.s, asa.L, asa.alpha, asa.V                                # y (m), N/m, °, m/s
-asa.points, asa.force, asa.velocity, asa.induced              # (n, 3), corpo
-r.props[0].T, r.props[0].Q, r.props[0].J                      # motor naquela rotação
-```
-
-**Método da carga** (`LoadCase(method=...)`):
-- `"llt"` (padrão): linha sustentadora do núcleo (`core/src/loads/llt.zig`, Phillips e Snyder 2000). A carga depende
-  do alongamento e da forma, cai na ponta, e o downwash da asa na cauda sai das pernas dos vórtices. A superfície é
-  refinada com faixas mais estreitas na ponta.
-- `"llt_gh"`: a mesma linha sustentadora com as correções de Goates e Hunsaker (AIAA SciTech 2021): junta das
-  pernas, linha efetiva por ponto de controle e seção normal à linha. A de Phillips e Snyder não converge com a malha em
-  superfície enflechada nem em derrapagem; esta converge e fica perto do MachUpX (`core/src/loads/README.md`). Com o
-  cache da geometria (`llt.prepare`), custa da ordem da de Phillips e Snyder.
-- `"faixas"`: o C_Lα 3D uniforme de cada superfície, como a simulação usa. A carga sai plana: serve para comparar.
-- `"vlm_asb"`: o VLM do AeroSandbox (`asb_solver.AsbVLMLoads`), para a tendência.
-
-Na linha de comando: `--metodo llt|llt_gh|faixas`. O `tools/span_load.py` também aceita `--sem-helice`.
-
-A conta é do núcleo, no mesmo laço da simulação (`aero.computeTrace` via `aerosim_panel_states`), e entra com os
-modificadores do avião (efeito solo, esteira). O estado do motor vem de `aerosim_prop_state`: hélice C_T(J), C_P(J)
-na rotação pedida, com o ar no eixo do motor.
-
-O módulo só refina a geometria para dar resolução: põe mais seções na mesma superfície (corda, recuo e torção
-interpolados, com as seções originais exatas), uma superfície por vez, até o limite de painéis do núcleo. Sem motor,
-a sustentação total refinada é a mesma da sem refino (teste). Superfícies com perfil próprio por seção e dispositivos
-de ponta saem com as faixas que já têm.
-
-**Entrada padrão, gráficos e 3D.** `to_result(r, backend)` leva o resultado para a entrada padrão
-`aerosim.interfaces.loads.LoadResult`:
-- distribuições ao longo da envergadura;
-- a malha 3D: uma face por faixa, do bordo de ataque ao de fuga, na largura da faixa;
-- os campos: carga alar local (N/m²), sustentação por metro, α efetivo, V local / V∞, c_l, c_d, q;
-- os vetores (força e velocidade induzida) e os tubos da esteira.
-
-Quem desenha só lê esse formato:
-- `load_plots.span_figure` faz os gráficos;
-- `gui/widgets/load_view.LoadView` faz o 3D, com mapa de cores do campo escolhido, setas, esteira e o avião em
-  transparência.
-
-Por isso outro método (VLM, painéis, CFD) entra montando um `LoadResult`, sem mexer nos gráficos nem no 3D. O teste
-`tests/aero/test_load_result.py` faz isso com um "CFD" de mentira em triângulos e com um campo próprio.
-
-A vista 3D pinta o **próprio modelo da GUI** (`aircraft_meshes`): cada vértice de superfície pega o valor da faixa
-mais próxima. As setas têm ponta. Camadas de setas:
-- **força total** da faixa;
-- **sustentação (⟂ ao vento local)**;
-- **força normal à superfície**;
-- **velocidade induzida**.
-
-As setas de força são **por metro de envergadura (N/m)**, como `L` e `D` da distribuição. O refino deixa faixas
-mais estreitas nas quebras de seção; em N por faixa, elas apareciam como uma queda de carga que não existe.
-
-A força total não é perpendicular à superfície. A sustentação é perpendicular ao vento local, e com α grande ela fica
-inclinada para a frente em relação à normal da asa. Por isso há as duas camadas separadas.
-
-Escalas do mapa:
-- mín–máx (padrão);
-- simétrica em 0;
-- por superfície: cada superfície com a sua faixa, para ver a variação na EH mesmo com a asa carregando muito mais.
-
-O campo `imersao` mostra quanto de cada faixa está dentro do tubo de alguma hélice.
-
-**Sem hélice:** `LoadCase(props=False)` (ou `--sem-helice`) zera tração e torque. A distribuição sai a do avião
-limpo, para comparar ou para cargas sem motor.
-
-```
-python tools/load_view.py data/aircraft/Convencional_original.json --com esteira.disco                 # janela 3D
-python tools/load_view.py data/aircraft/Convencional_original.json --campo alpha_ef --png vista.png
-python tools/load_view.py data/aircraft/Convencional_original.json --com esteira.disco --sem-helice --png limpo.png
-```
-
-### Colisão com o tubo da hélice (`collision.py`)
-
-`tube_hits(backend, ac, V=0, thrust=None)` traça, a partir de cada hélice, um tubo ao longo do eixo de tração:
-- com `thrust` nulo, um cilindro do raio da hélice;
-- com tração, o tubo que contrai.
-
-O que o tubo pega vem como `Hit(prop, component, kind, fraction)`:
-- superfícies: fração da área (`aerosim_tube_panel_hits`);
-- objetos (fuselagem, trem, carga): fração dos vértices do modelo da GUI (`aerosim_tube_point_hits`).
-
-A geometria é do núcleo (`core/src/collision/`), e é a mesma que a esteira usa.
-
-```python
-from aerosim.backend.zig import ZigBackend
-from aerosim.model.templates import conventional
-backend, ac = ZigBackend(), conventional()
-from aerosim.aero.collision import tube_hits
-for h in tube_hits(backend, ac):
-    print(h.prop, h.component, h.kind, h.fraction)
-```
-
-A trimagem ainda não vê a esteira (ela chama a aerodinâmica sem motores). Com a esteira ligada, α e profundor são
-os do avião sem esteira e a sobra de sustentação aparece no resultado.
-
-Os testes estão em `tests/aero/test_span_loads.py`. Pela linha de comando:
-
-```
-python tools/span_load.py data/aircraft/Convencional_original.json --com esteira.disco --png carga.png   # 12 m/s
-python tools/span_load.py data/aircraft/Convencional_original.json --V 15 --n 2 --png curva.png
-python tools/span_load.py data/aircraft/Convencional_original.json --V 8 --alpha 2 --rpm 6000 --com esteira.disco
-```
-
-## Como funciona
+Todo método recebe o mesmo modelo universal do avião (`aerosim/model`) e devolve a mesma `AeroPolar`, pela interface
+`IAeroSolver` (`aerosim/interfaces/aero.py`). Assim a aba compara os métodos sem saber como cada um funciona por
+dentro.
 
 ```mermaid
 flowchart LR
@@ -248,7 +83,7 @@ flowchart LR
     style IF fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
-### Métodos comparados
+Os métodos diferem no que enxergam do avião e em como resolvem o escoamento:
 
 | solver | o que entra | como |
 |---|---|---|
@@ -261,16 +96,18 @@ flowchart LR
 | `avl` — [AVL](https://web.mit.edu/drela/Public/web/avl/) (Drela e Youngren) | asa, EH, EV, dispositivos, comandos | malha de vórtices; o programa `avl` é externo (PATH ou `AVL_PATH`). O tradutor escreve o `.avl` (NACA pelo código, os outros perfis por AFILE, C_D0 do modelo como CDp, comandos `pitch`/`roll`/`yaw` pelos ganhos da mistura), roda a varredura numa sessão e lê o `ST` de cada ponto |
 | `xflr5` — polar importada | o que estava no XFLR5 | lê a polar de avião exportada (Polars → Export, texto ou CSV): α, C_L, C_D, C_Di, C_m (no CG de lá); C_Lα e C_mα pelo ajuste em α; não roda nada |
 
-Cada solver só implementa `evaluate(modelo, caso, pontos)` — pontos de voo universais (α, β, p̂, q̂, r̂,
-comandos) → coeficientes universais —, com o seu tradutor fazendo a ida (modelo universal → formato
-dele) e a volta (resultado → eixos e adimensionalização universais). A varredura em α e as diferenças
-centrais das derivadas são o mesmo código para todos (`base.py`). Todos devolvem nos eixos do simulador (x à frente, z
-para baixo), com momentos no ponto `ref` do caso (o x_CG escolhido na aba, em % da CMA, ou o CG do modelo de massa). Os
-externos usam x para trás e z para cima (`geometry.to_xz_up`); o lltdrek usa velocidade livre unitária (ω entra
-dividido por V) e normaliza C_l e C_n por S c; o adaptador converte. As equações estão na seção abaixo.
+Cada método só implementa `evaluate(modelo, caso, pontos)`, que leva pontos de voo universais (α, β, as taxas
+$\hat p, \hat q, \hat r$ e os comandos) a coeficientes universais. O tradutor de cada um faz a ida, do modelo
+universal para o formato dele, e a volta, do resultado para os eixos e a adimensionalização universais. A varredura
+em α e as diferenças centrais das derivadas são o mesmo código para todos (`base.py`). Todos devolvem nos eixos do
+simulador (x à frente, z para baixo), com os momentos no ponto `ref` do caso, que é o x_CG escolhido na aba (em % da
+CMA, a corda média aerodinâmica) ou o CG do modelo de massa. Os métodos externos usam x para trás e z para cima
+(`geometry.to_xz_up`); o lltdrek usa velocidade livre unitária (ω entra dividido por V) e normaliza C_l e C_n por
+$S\,c$; o adaptador converte. Sem `lltdrek`, `aerosandbox` ou o programa `avl` instalados, o método aparece como
+indisponível na aba, com o motivo.
 
-**Polar 2D (`sections.py`)** — cada fonte é um `ISectionPolar` (`aerosim/interfaces/aero.py`) e a etapa
-Perfil da sprint e o lltdrek pedem pelo mesmo `section_polar(perfil, α, Re, fonte)`:
+**Polar 2D dos perfis (`sections.py`).** Os métodos que usam a polar de cada perfil (o lltdrek e a etapa Perfil da
+sprint) pedem a mesma função, `section_polar(perfil, α, Re, fonte)`. Cada fonte é um `ISectionPolar`:
 
 | fonte | o que é |
 |---|---|
@@ -278,31 +115,30 @@ Perfil da sprint e o lltdrek pedem pelo mesmo `section_polar(perfil, α, Re, fon
 | `neuralfoil` | o contorno real (.dat ou NACA) pela rede do NeuralFoil; sem contorno, cai no modelo |
 | `arquivo` | a polar exportada pelo XFLR5/XFOIL |
 
-**Perfil por seção no lltdrek** — cada estação do modelo universal carrega o perfil dela (asa por
-partições com outro perfil na ponta); o tradutor escreve uma polar por perfil diferente e o lltdrek
-mistura linearmente entre as estações, como a etapa Asa.
+No lltdrek, cada estação do modelo universal carrega o perfil dela. O tradutor escreve uma polar por perfil
+diferente, e o lltdrek mistura linearmente entre as estações, como a etapa Asa.
 
-**Cache** — a mesma pergunta não roda de novo:
+**Cache.** A mesma pergunta não roda de novo:
 
 | | chave | onde |
 |---|---|---|
 | 2D (`sections.py`) | perfil (nome, contorno, números, invertido) + fonte + arquivo e data + Re (em mil) + α | memória; NeuralFoil também em disco |
 | 3D (`service.py`) | configuração inteira + método + versão dele + caso (V, α, ref, ρ, polar 2D, painéis) | memória; métodos caros (lltdrek, AeroSandbox, AVL) também em disco |
 
-O disco é `~/.cache/aerosim` (ou a pasta da variável `AEROSIM_CACHE`), nunca o repositório nem `data/`.
-Na aba, o resumo mostra `[método] de onde`: `calculado`, `cache` ou `arquivo …`. Cada `AeroPolar` sai
-também com `fidelity` (`modelo` < `llt` < `vlm` < `painel` < `cfd` < `ensaio`), para depois calibrar o
-método barato pelo caro.
+O disco é `~/.cache/aerosim` (ou a pasta da variável `AEROSIM_CACHE`), nunca o repositório nem `data/`. Na aba, o
+resumo mostra de onde veio cada resultado: `calculado`, `cache` ou `arquivo …`. Cada `AeroPolar` sai também com a
+`fidelity` do método (`modelo` < `llt` < `vlm` < `painel` < `cfd` < `ensaio`), para depois calibrar o método barato
+pelo caro.
 
-Notas sobre o lltdrek 1.2: (1) o corretor de Newton só monta a matriz certa quando todas as
-superfícies têm o mesmo número de painéis — o adaptador sempre usa o mesmo N; (2) `np.cross` em
-vetores soltos domina o tempo — o adaptador troca por uma versão de 3 componentes, bem mais rápida.
+O adaptador do lltdrek 1.2 contorna duas coisas da biblioteca: o corretor de Newton só monta a matriz certa quando
+todas as superfícies têm o mesmo número de painéis, então o adaptador sempre usa o mesmo N; e o `np.cross` em vetores
+soltos dominava o tempo, então o adaptador o troca por uma versão de 3 componentes.
 
 ![Polares por método](../../docs/img/comparativo/conventional_aero_graficos.png)
 ![Derivadas por método](../../docs/img/comparativo/conventional_aero_diagnostico.png)
 ![Métricas por método](../../docs/img/comparativo/flying_wing_aero_diagnostico.png)
 
-### Equações comuns aos métodos
+## Equações comuns aos métodos
 
 **Taxas adimensionais.** Todos os métodos recebem e devolvem as rotações assim:
 
@@ -352,7 +188,203 @@ $$
 Re = \frac{V\,c}{\nu(\rho)}
 $$
 
-### Um exemplo por arquivo
+## Dispositivos de ponta de asa (`tipdevices.py`)
+
+Um dispositivo de ponta (winglet, placa de ponta, caixa, asa em C) diminui o arrasto induzido, mas acrescenta área
+molhada e, com ela, atrito. Este estudo diz quanto cada forma ganha e quando o ganho paga o atrito.
+
+Arrasto induzido mínimo no plano de Trefftz (Munk, 1921; Kroo, *Drag due to lift*, Annu. Rev. Fluid Mech. 33, 2001;
+Kroo, McMasters e Smith, *Highly nonplanar lifting systems*, 1995). O arrasto induzido de qualquer sistema sustentador
+depende só do traço da esteira no plano de Trefftz e da circulação $\Gamma(s)$ ao longo dele:
+
+$$
+L = \rho\,V\oint\Gamma\,dy
+\qquad
+D_i = -\frac{\rho}{2}\oint\Gamma\,w_n\,ds
+$$
+
+$w_n$ é a velocidade normal ao traço que os vórtices livres ($d\Gamma/ds$) induzem nele. Com o traço dividido em
+painéis de $\Gamma$ constante (espaçamento uniforme: o cosseno não converge nas junções), as duas integrais viram
+formas em $\Gamma$, e o mínimo de $D_i$ com $L$ fixo é um sistema linear (a condição de Munk, $w_n \propto \cos\theta$):
+
+$$
+D_i = \Gamma^T M\,\Gamma \qquad L = b^T\Gamma \qquad M\,\Gamma \propto b
+$$
+
+O fator de eficiência do vão compara com a asa plana elíptica ($e = 1$), e a extrapolação de Richardson em $n$ e $2n$
+painéis tira o erro da malha:
+
+$$
+e = \frac{L^2}{\pi\,q\,b^2\,D_i}
+$$
+
+A placa de ponta também é comparada com a correção empírica do Raymer (*Aircraft Design*, eq. 12.48):
+
+$$
+AR_{ef} = AR\,\left(1 + 1{,}9\,\frac{h}{b}\right)
+$$
+
+Os testes (`tests/aero/test_tipdevices.py`) conferem a asa plana ($e = 1$), a caixa contra Kroo 2001 e a placa contra o
+Raymer; os números esperados estão lá.
+
+`device_study` varre $h/b$ e dá, para winglet, placa, caixa e asa em C, o $e$ ótimo e a variação do arrasto total em
+relação à asa sem nada; $e_{plan}$ é a perda da asa real em relação ao carregamento ótimo:
+
+$$
+\frac{D}{q} = \frac{(C_L S)^2}{\pi\,b^2\,e\,e_{plan}} + C_f\,S_{molhada}
+$$
+
+Ele dá também duas referências de
+extensão de ponta: com a mesma área molhada e com o mesmo momento fletor na raiz (comparação de
+Whitcomb/Jones). Com carregamento ótimo a extensão ganha; o winglet compensa quando o vão é limitado
+(regulamento, hangar).
+
+![Pontas de asa](../../docs/img/comparativo/flying_wing_aero_graficos.png)
+
+## Tabela de voo de qualquer método (`flight_table.py`)
+
+A simulação voa com o modelo do núcleo, mas às vezes se quer voar com a aerodinâmica de outro método (lltdrek,
+AeroSandbox, AVL), que não roda dentro do núcleo. Para isso o método gera uma tabela antes do voo, e o núcleo voa com
+ela (`ac.sim.aero_model = "tabela"`, `core/src/physics/aerotable.zig`). A tabela tem C_L, C_D e C_m numa faixa de α,
+a uma velocidade, sem derrapagem, e as derivadas lineares em β, nas taxas e nos comandos, tomadas num α pequeno. As
+equações com que o núcleo voa essa tabela estão em [`core/src/physics/README.md`](../../core/src/physics/README.md).
+
+As derivadas que o método não dá (NaN) vêm do método `fill`, em geral o núcleo, e a tabela guarda quais vieram dele.
+As polares passam pelo cache, então a mesma tabela não é montada de novo. Os métodos de fora não têm a fuselagem
+(`IAeroSolver.includes_fuselage = False`), e o núcleo soma a dele por cima. A tabela não tem efeito solo, esteira da
+hélice, variação com a velocidade nem estol nos métodos lineares. Para comparar os voos com cada modelo:
+`tools/aero/missao.py`.
+
+```python
+from aerosim.backend.zig import ZigBackend
+from aerosim.model.templates import conventional
+backend, ac = ZigBackend(), conventional()
+from aerosim.aero import solver_by_name
+from aerosim.aero.flight_table import table
+from aerosim.model.universal import build_model
+model = build_model(ac)
+cg = tuple(model.mass["cg"])                        # momentos no CG
+t = table(solver_by_name(backend, "avl"), model, V=15.0, rho=1.225, ref=cg, fill=solver_by_name(backend, "zig"))
+ac.sim.aero_model, ac.sim.aero_table = "tabela", t        # t["completadas"]: as derivadas que vieram do núcleo
+```
+
+## Carga ao longo das superfícies (`span_loads.py`)
+
+Esta é a análise de cargas da aerodinâmica: como a sustentação e o arrasto se distribuem ao longo de cada superfície
+num ponto de operação. Por padrão o ponto é o voo nivelado, com α, profundor e acelerador saindo da trimagem do
+núcleo, então a distribuição é a da carga real do avião, com as superfícies sustentando o peso. Dá para mudar a
+velocidade (`V`), pedir uma curva com fator de carga `n` maior que 1 (se o avião não segura aquele n naquela
+velocidade, a trimagem avisa em `notes`) ou impor α, profundor (`de`) e a rotação de cada motor (`rpm`).
+
+Para cada superfície (asa, EH, EV, cauda em V, dispositivos), o resultado traz, ao longo da envergadura em metros, a
+sustentação e o arrasto por metro, o α local, a velocidade e a pressão dinâmica locais, o $c_l$ e o $c_d$, e os
+vetores de cada faixa (centro, força, velocidade relativa e a parte induzida pelos modificadores), que a vista 3D
+desenha. `tubes()` dá o contorno da esteira de cada motor, também para o 3D.
+
+O método da carga é escolhido em `LoadCase(method=...)`. O padrão, `"llt"`, é a linha sustentadora do núcleo de
+Phillips e Snyder (`core/src/loads/`): a carga depende do alongamento e da forma, cai na ponta, e o downwash da asa
+na cauda sai das pernas dos vórtices. `"llt_gh"` é a mesma linha sustentadora com as correções de Goates e Hunsaker,
+que dão um resultado confiável também em asa enflechada e em derrapagem (o vento chegando de lado). `"faixas"` é o
+modelo da simulação, em que cada superfície tem a mesma inclinação de sustentação em toda a envergadura e a carga sai
+plana; serve para comparar. `"vlm_asb"` é o VLM do AeroSandbox, para a tendência. A explicação de cada método e das
+correções está em [`core/src/loads/README.md`](../../core/src/loads/README.md).
+
+A conta é do núcleo, no mesmo laço da simulação (`aero.computeTrace` via `aerosim_panel_states`), e entra com os
+modificadores do avião (efeito solo, esteira). O estado do motor vem de `aerosim_prop_state`, com a hélice em
+$C_T(J)$ e $C_P(J)$ na rotação pedida. O módulo só refina a geometria para dar resolução: põe mais seções na mesma
+superfície (corda, recuo e torção interpolados, com as seções originais exatas), mais estreitas na ponta, até o
+limite de painéis do núcleo. Sem motor, a sustentação total refinada é a mesma da sem refino, e um teste confere isso.
+Com `LoadCase(props=False)`, a tração e o torque são zerados e a distribuição sai a do avião limpo.
+
+**Entrada padrão, gráficos e 3D.** `to_result(r, backend)` leva o resultado para a entrada padrão
+`aerosim.interfaces.loads.LoadResult`: as distribuições ao longo da envergadura, a malha 3D (uma face por faixa), os
+campos (carga alar local, sustentação por metro, α efetivo, V local / V∞, c_l, c_d, q, imersão na esteira), os
+vetores e os tubos da esteira. Quem desenha só lê esse formato: `load_plots.span_figure` faz os gráficos e
+`gui/widgets/load_view.LoadView` faz o 3D. Por isso outro método (VLM, painéis, CFD) entra montando um `LoadResult`,
+sem mexer nos gráficos nem no 3D; `tests/aero/test_load_result.py` faz isso com um "CFD" de mentira.
+
+A vista 3D pinta o próprio modelo da GUI, e cada vértice pega o valor da faixa mais próxima. As setas mostram a força
+total da faixa, a sustentação (perpendicular ao vento local), a força normal à superfície ou a velocidade induzida, e
+as de força são por metro de envergadura, como as distribuições; em N por faixa, as faixas mais estreitas das quebras
+de seção pareceriam uma queda de carga que não existe. A força total e a sustentação ficam em camadas separadas
+porque, com α grande, a sustentação se inclina para a frente em relação à normal da asa. O mapa de cores pode ir do
+mínimo ao máximo, ser simétrico em zero ou ter uma faixa por superfície, para ver a variação na EH mesmo com a asa
+carregando muito mais.
+
+A trimagem ainda não vê a esteira (ela chama a aerodinâmica sem motores). Com a esteira ligada, α e profundor são os
+do avião sem esteira, e a sobra de sustentação aparece no resultado. Os testes estão em
+`tests/aero/test_span_loads.py`.
+
+**O que o tubo da hélice pega (`collision.py`).** `tube_hits(backend, ac, V=0, thrust=None)` traça, a partir de cada
+hélice, um tubo ao longo do eixo de tração: um cilindro do raio da hélice sem tração, ou o tubo que contrai com ela.
+Cada coisa que o tubo pega vem como `Hit(prop, component, kind, fraction)`, com a fração da área para as superfícies e
+a fração dos vértices do modelo da GUI para os objetos (fuselagem, trem, carga). A geometria é a do núcleo
+(`core/src/collision/`), a mesma que a esteira usa.
+
+## Como chamar
+
+O caso mais comum é a polar de um método:
+
+```python
+import numpy as np
+from aerosim.aero import AeroCase, ZigPanelSolver, LltdrekSolver, AsbVLMSolver, polar_metrics
+from aerosim.backend.zig import ZigBackend
+from aerosim.model.templates import conventional
+from aerosim.model.universal import build_model
+
+ac = conventional()
+model = build_model(ac)
+case = AeroCase(V=15, alphas=np.arange(-4, 14, 1.0), ref=(0.02, 0, 0.0))   # ref: ponto dos momentos
+pol = ZigPanelSolver(ZigBackend()).solve(model, case)      # ou LltdrekSolver(), AsbVLMSolver() se instalados
+pol.CL, pol.CD, pol.derivs                                  # polar e derivadas (C_mα, C_nβ, C_lp, ...)
+polar_metrics(pol, model, case)                             # C_Lmax, α de estol, (L/D)máx, ponto neutro...
+```
+
+`lltdrek` e `aerosandbox` são opcionais (`pip install -r requirements-aero.txt`).
+
+A tabela de voo, a carga ao longo das superfícies e a colisão com o tubo:
+
+```python
+from aerosim.backend.zig import ZigBackend
+from aerosim.model.templates import conventional
+backend, ac = ZigBackend(), conventional()
+from aerosim.aero.span_loads import LoadCase, compute
+r = compute(backend, ac)                                      # nivelado a 12 m/s (trimagem)
+r = compute(backend, ac, LoadCase(V=16, n=2))                 # curva com n = 2 a 16 m/s
+r = compute(backend, ac, LoadCase(V=8, alpha=2, rpm=6000))     # α e rotação impostos (rpm: um valor ou um por motor)
+r.alpha, r.de, r.weight, r.trim                               # o que foi usado
+asa = r.by_role("wing")[0]
+asa.s, asa.L, asa.alpha, asa.V                                # y (m), N/m, °, m/s
+asa.points, asa.force, asa.velocity, asa.induced              # (n, 3), corpo
+r.props[0].T, r.props[0].Q, r.props[0].J                      # motor naquela rotação
+```
+
+```python
+from aerosim.backend.zig import ZigBackend
+from aerosim.model.templates import conventional
+backend, ac = ZigBackend(), conventional()
+from aerosim.aero.collision import tube_hits
+for h in tube_hits(backend, ac):
+    print(h.prop, h.component, h.kind, h.fraction)
+```
+
+Pela linha de comando:
+
+```
+python tools/span_load.py data/aircraft/Convencional_original.json --com esteira.disco --png carga.png   # 12 m/s
+python tools/span_load.py data/aircraft/Convencional_original.json --V 15 --n 2 --png curva.png
+python tools/span_load.py data/aircraft/Convencional_original.json --V 8 --alpha 2 --rpm 6000 --com esteira.disco
+```
+
+```
+python tools/load_view.py data/aircraft/Convencional_original.json --com esteira.disco                 # janela 3D
+python tools/load_view.py data/aircraft/Convencional_original.json --campo alpha_ef --png vista.png
+python tools/load_view.py data/aircraft/Convencional_original.json --com esteira.disco --sem-helice --png limpo.png
+```
+
+Figuras do comparativo: `python tools/plot_comparativo.py docs/img/comparativo [conventional|twin_boom|flying_wing|arquivo.cfg]`.
+
+## Um exemplo por arquivo
 
 Todos partem do avião de exemplo e do backend do núcleo:
 
@@ -443,58 +475,3 @@ from aerosim.aero.xflr5_import import read_plane_polar, Xflr5PolarFile
 d = read_plane_polar("minha_polar.txt")          # alpha, CL, CD, CDi, Cm
 metodo = Xflr5PolarFile("minha_polar.txt")
 ```
-
-### Dispositivos de ponta de asa (`tipdevices.py`)
-
-Arrasto induzido mínimo no plano de Trefftz (Munk, 1921; Kroo, *Drag due to lift*, Annu. Rev. Fluid Mech. 33, 2001;
-Kroo, McMasters e Smith, *Highly nonplanar lifting systems*, 1995). O arrasto induzido de qualquer sistema sustentador
-depende só do traço da esteira no plano de Trefftz e da circulação $\Gamma(s)$ ao longo dele:
-
-$$
-L = \rho\,V\oint\Gamma\,dy
-\qquad
-D_i = -\frac{\rho}{2}\oint\Gamma\,w_n\,ds
-$$
-
-$w_n$ é a velocidade normal ao traço que os vórtices livres ($d\Gamma/ds$) induzem nele. Com o traço dividido em
-painéis de $\Gamma$ constante (espaçamento uniforme: o cosseno não converge nas junções), as duas integrais viram
-formas em $\Gamma$, e o mínimo de $D_i$ com $L$ fixo é um sistema linear (a condição de Munk, $w_n \propto \cos\theta$):
-
-$$
-D_i = \Gamma^T M\,\Gamma \qquad L = b^T\Gamma \qquad M\,\Gamma \propto b
-$$
-
-O fator de eficiência do vão compara com a asa plana elíptica ($e = 1$), e a extrapolação de Richardson em $n$ e $2n$
-painéis tira o erro da malha:
-
-$$
-e = \frac{L^2}{\pi\,q\,b^2\,D_i}
-$$
-
-A placa de ponta também é comparada com a correção empírica do Raymer (*Aircraft Design*, eq. 12.48):
-
-$$
-AR_{ef} = AR\,\left(1 + 1{,}9\,\frac{h}{b}\right)
-$$
-
-Os testes (`tests/aero/test_tipdevices.py`) conferem a asa plana ($e = 1$), a caixa contra Kroo 2001 e a placa contra o
-Raymer; os números esperados estão lá.
-
-`device_study` varre $h/b$ e dá, para winglet, placa, caixa e asa em C, o $e$ ótimo e a variação do arrasto total em
-relação à asa sem nada; $e_{plan}$ é a perda da asa real em relação ao carregamento ótimo:
-
-$$
-\frac{D}{q} = \frac{(C_L S)^2}{\pi\,b^2\,e\,e_{plan}} + C_f\,S_{molhada}
-$$
-
-Ele dá também e duas referências de
-extensão de ponta: com a mesma área molhada e com o mesmo momento fletor na raiz (comparação de
-Whitcomb/Jones). Com carregamento ótimo a extensão ganha; o winglet compensa quando o vão é limitado
-(regulamento, hangar).
-
-![Pontas de asa](../../docs/img/comparativo/flying_wing_aero_graficos.png)
-
-`lltdrek`, `aerosandbox` e o programa `avl` são opcionais: sem eles o solver aparece como indisponível
-na aba, com o motivo.
-
-Figuras: `python tools/plot_comparativo.py docs/img/comparativo [conventional|twin_boom|flying_wing|arquivo.cfg]`.
