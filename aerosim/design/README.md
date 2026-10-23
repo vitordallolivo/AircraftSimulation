@@ -57,23 +57,23 @@ Cada candidato leva uma **cópia** do que veio antes: a asa leva o perfil, o con
 ### Perfil (`airfoils.py`)
 
 Aqui se escolhem os perfis que a asa e a cauda vão usar e se vê a polar 2D de cada um. Um perfil pode vir de um código
-NACA de 4 dígitos, de um arquivo `.dat` (Selig ou Lednicer), só de parâmetros, sem contorno ($a_1$, a inclinação da
-curva de sustentação; $\alpha_{L0}$, o ângulo de sustentação nula; $c_{l,max}$; $c_{d0}$; e $c_m$), ou da polar
+NACA de 4 dígitos, de um arquivo `.dat` (Selig ou Lednicer), só de parâmetros, sem contorno ($`a_1`$, a inclinação da
+curva de sustentação; $`\alpha_{L0}`$, o ângulo de sustentação nula; $`c_{l,max}`$; $`c_{d0}`$; e $`c_m`$), ou da polar
 exportada do XFLR5 ou do XFOIL.
 
 A polar sai por uma de três fontes, conforme o que o perfil permite:
 
 | fonte | quando dá | observação |
 |---|---|---|
-| `modelo` | sempre | a mesma polar do simulador; c_d constante, não serve para comparar c_l/c_d |
+| `modelo` | sempre | a mesma polar do simulador; $`c_d`$ constante, não serve para comparar $`c_l`$/c_d |
 | `neuralfoil` | quando há contorno e a rede está instalada | padrão de perfil novo com contorno |
 | `arquivo` | quando há uma polar importada | usa o Re do arquivo; avisa se estiver longe do Re de cruzeiro |
 
-`fitted` ajusta $a_1$, $\alpha_{L0}$, $c_{l,max}$, $c_{d,min}$ e $c_m$ na polar escolhida: $a_1$ e $\alpha_{L0}$ pela reta $c_l = a_1(\alpha - \alpha_{L0})$ na faixa linear, $c_{l,max}$ no pico, $c_{d,min}$ no mínimo da polar. A asa usa esses números, então a fonte escolhida aqui vale para a etapa seguinte. O Re é o do cruzeiro, com a corda média da asa em rascunho:
+`fitted` ajusta $`a_1`$, $`\alpha_{L0}`$, $`c_{l,max}`$, $`c_{d,min}`$ e $`c_m`$ na polar escolhida: $`a_1`$ e $`\alpha_{L0}`$ pela reta $`c_l = a_1(\alpha - \alpha_{L0})`$ na faixa linear, $`c_{l,max}`$ no pico, $`c_{d,min}`$ no mínimo da polar. A asa usa esses números, então a fonte escolhida aqui vale para a etapa seguinte. O Re é o do cruzeiro, com a corda média da asa em rascunho:
 
-$$
+```math
 Re = \frac{\rho\,V_{cru}\,\bar c}{\mu}
-$$
+```
 
 ### Asa (`wing.py`)
 
@@ -88,33 +88,33 @@ arrasto de perfil interpolam entre as seções.
 
 A análise é a linha sustentadora de Prandtl pela série de Glauert, simétrica (só os termos ímpares; Anderson,
 *Fundamentals of Aerodynamics*, §5.3, a conferir no PDF). A circulação na envergadura é escrita em
-$y = -\tfrac b2\cos\theta$, e cada estação $\theta$ dá uma equação para os coeficientes $A_n$. O enflechamento entra
-pela inclinação do perfil projetada, $a_1\cos\Lambda_{c/4}$:
+$`y = -\tfrac b2\cos\theta`$, e cada estação $`\theta`$ dá uma equação para os coeficientes $`A_n`$. O enflechamento entra
+pela inclinação do perfil projetada, $`a_1\cos\Lambda_{c/4}`$:
 
-$$
+```math
 \sum_{n\ \text{ímpar}} A_n \sin(n\theta)\,(\sin\theta + n\mu) = \mu\,\big(\alpha + \varepsilon(y) - \alpha_{L0}(y)\big)\sin\theta
 \qquad
 \mu = \frac{a_1\,c(y)}{4b}
-$$
+```
 
-Aqui $\varepsilon(y)$ é a torção local e $\alpha_{L0}(y)$ o ângulo de sustentação nula do perfil local (interpolado
-entre as seções). Com os $A_n$, os coeficientes da asa e a distribuição de sustentação ficam:
+Aqui $`\varepsilon(y)`$ é a torção local e $`\alpha_{L0}(y)`$ o ângulo de sustentação nula do perfil local (interpolado
+entre as seções). Com os $`A_n`$, os coeficientes da asa e a distribuição de sustentação ficam:
 
-$$
+```math
 C_L = \pi\,AR\,A_1
 \qquad
 C_{Di} = \pi\,AR \sum n\,A_n^2
 \qquad
 c_l(y) = \frac{4b}{c(y)} \sum A_n \sin(n\theta)
-$$
+```
 
-Como o sistema é linear em $\alpha$, ele é resolvido duas vezes (para $\alpha$ e para a torção) e
-$c_l(y) = \alpha\,g(y) + h(y)$ vale para qualquer ângulo.
+Como o sistema é linear em $`\alpha`$, ele é resolvido duas vezes (para $`\alpha`$ e para a torção) e
+$`c_l(y) = \alpha\,g(y) + h(y)`$ vale para qualquer ângulo.
 
-- **Estol:** o $C_{L,max}$ sai pela seção crítica, isto é, o primeiro ponto da envergadura que chega ao $c_{l,max}$ do
+- **Estol:** o $`C_{L,max}`$ sai pela seção crítica, isto é, o primeiro ponto da envergadura que chega ao $`c_{l,max}`$ do
   perfil. Esse ponto também diz **onde** o estol começa.
-- **Arrasto de perfil:** é o $c_d$ da polar 2D no $c_l$ local, integrado na envergadura:
-  $C_{D0} = \frac1S\int c_d\big(c_l(y)\big)\,c(y)\,dy$.
+- **Arrasto de perfil:** é o $`c_d`$ da polar 2D no $`c_l`$ local, integrado na envergadura:
+  $`C_{D0} = \frac1S\int c_d\big(c_l(y)\big)\,c(y)\,dy`$.
 - **Incidência:** a asa é calada para a fuselagem voar no **ângulo de cruzeiro** pedido, que vai para o envelope de voo
   do avião montado.
 
@@ -124,70 +124,70 @@ afilada) está em `tests/design`, com o número esperado em cada teste.
 ### Empenagem e comandos (`tail.py`)
 
 As áreas saem do volume de cauda (Raymer, *Aircraft Design: A Conceptual Approach*, §6.4, a conferir no PDF). O
-braço $l$ vai do centro aerodinâmico da asa ao da cauda:
+braço $`l`$ vai do centro aerodinâmico da asa ao da cauda:
 
-$$
+```math
 S_h = \frac{V_H\,S\,\bar c}{l_h}
 \qquad
 S_v = \frac{V_V\,S\,b}{l_v}
-$$
+```
 
 | tipo de cauda | superfícies e comandos |
 |---|---|
 | convencional | EH com profundor e EV com leme |
-| cauda em V | a mesma área total $S_h + S_v$, com diedro $\Gamma = \arctan\sqrt{S_v/S_h}$ e ruddervators |
+| cauda em V | a mesma área total $`S_h + S_v`$, com diedro $`\Gamma = \arctan\sqrt{S_v/S_h}`$ e ruddervators |
 | sem cauda | elevons na asa |
 
 Em todos os casos o tubo termina no bordo de fuga da cauda, e os ailerons ficam na asa. EH e EV têm perfis
-separados. A EH aceita perfil arqueado, inclusive **invertido** (o α_L0 dele entra na incidência); a EV deve ser
-simétrica. O perfil da cauda é ajustado na polar dele, no Re da cauda, e o C_L da EH fica limitado pelos **dois
-lados** da polar, com o ganho de c_l,max do profundor defletido (flape simples, Raymer cap. 12).
+separados. A EH aceita perfil arqueado, inclusive **invertido** (o $`\alpha_{L0}`$ dele entra na incidência); a EV deve ser
+simétrica. O perfil da cauda é ajustado na polar dele, no Re da cauda, e o $`C_L`$ da EH fica limitado pelos **dois
+lados** da polar, com o ganho de $`c_{l,max}`$ do profundor defletido (flape simples, Raymer cap. 12).
 
 A estática longitudinal segue a forma clássica (Etkin e Reid, *Dynamics of Flight*, cap. 2; Nelson, *Flight
 Stability and Automatic Control*, cap. 2, a conferir no PDF). O ponto neutro, em frações da CMA, soma ao centro
-aerodinâmico da asa a contribuição da EH, reduzida pelo downwash; o momento em torno do CG $h$ inclui o profundor
-pela efetividade $\tau$:
+aerodinâmico da asa a contribuição da EH, reduzida pelo downwash; o momento em torno do CG $`h`$ inclui o profundor
+pela efetividade $`\tau`$:
 
-$$
+```math
 h_n = h_{ac} + \eta\,V_H\,\frac{a_h}{a}\left(1 - \frac{d\varepsilon}{d\alpha}\right)
 \qquad
 \frac{d\varepsilon}{d\alpha} = \frac{2a}{\pi\,AR}
-$$
+```
 
-$$
+```math
 C_m = C_{m,ac} + C_L\,(h - h_{ac}) - \eta\,V_H\,a_h\,(\alpha_h + \tau\,\delta_e)
 \qquad
 \alpha_h = \alpha_w - \varepsilon + i_h
-$$
+```
 
 A partir dela:
 
 - O **CG** vai para a margem estática pedida.
 - A **incidência da EH** equilibra o cruzeiro com o profundor neutro.
-- A **faixa de CG** fica entre dois limites: o dianteiro, onde o profundor deixa de equilibrar o C_L,max no curso máximo, e o traseiro, na margem mínima.
-- A **rolagem** é medida por $pb/2V$ com o aileron todo. $C_{l\delta a}$ vem por faixas, sobre o trecho do aileron, e
-  $C_{lp}$ é o da asa trapezoidal de afilamento $\lambda$ (Nelson, cap. 5, a conferir no PDF); o aileron diferencial
+- A **faixa de CG** fica entre dois limites: o dianteiro, onde o profundor deixa de equilibrar o $`C_{L,max}`$ no curso máximo, e o traseiro, na margem mínima.
+- A **rolagem** é medida por $`pb/2V`$ com o aileron todo. $`C_{l\delta a}`$ vem por faixas, sobre o trecho do aileron, e
+  $`C_{lp}`$ é o da asa trapezoidal de afilamento $`\lambda`$ (Nelson, cap. 5, a conferir no PDF); o aileron diferencial
   entra pela média dos dois cursos:
 
-$$
+```math
 C_{l\delta a} = \frac{2\,a\,\tau_a}{S\,b}\int_{y_1}^{y_2} c(y)\,y\,dy
 \qquad
 C_{lp} = -\frac{a}{12}\,\frac{1 + 3\lambda}{1 + \lambda}
 \qquad
 \frac{pb}{2V} = -\frac{C_{l\delta a}}{C_{lp}}\,\delta_a
-$$
-- O **direcional** é medido por $C_{n\beta} = \eta\,V_V\,a_v$ da cauda.
+```
+- O **direcional** é medido por $`C_{n\beta} = \eta\,V_V\,a_v`$ da cauda.
 - A **rotação na decolagem** é a velocidade a partir da qual o profundor todo levanta o nariz em torno do trem
-  principal. Os momentos cabradores no ponto de contato $x_{tp}$ (C_m,ac da asa, sustentação da asa na incidência,
+  principal. Os momentos cabradores no ponto de contato $`x_{tp}`$ ($`C_{m,ac}`$ da asa, sustentação da asa na incidência,
   cauda) têm de vencer o do peso:
 
-$$
+```math
 q\,S\,\bar c\left[C_{m,ac} + C_{L,asa}\,\frac{x_{ca} - x_{tp}}{\bar c} + C_{m,cauda}(\delta_e)\right] \ge W\,(x_{CG} - x_{tp})
 \quad\Rightarrow\quad
 V_{rot} = \sqrt{\frac{2\,W\,(x_{CG} - x_{tp})}{\rho\,S\,\bar c\,C_{m,tp}}}
-$$
+```
 
-  A EH com sustentação para baixo cabra, e o perfil invertido tem $c_l$ negativo maior. Por isso o avião com EH
+  A EH com sustentação para baixo cabra, e o perfil invertido tem $`c_l`$ negativo maior. Por isso o avião com EH
   invertida roda mais cedo que com uma EH simétrica.
 
 ### Motores e montagem (`power.py`)
@@ -204,14 +204,14 @@ A montagem segue esta ordem:
 
 1. **Fuselagem (pod).** Vai do nariz até o bordo de fuga da asa, com largura e altura das regras. Ela desestabiliza
    pelo efeito de Munk (Munk, *The aerodynamic forces on airship hulls*, NACA Report 184, 1924, a conferir no PDF),
-   com $k_2 - k_1$ o fator de massa aparente de um corpo alongado e $\mathcal V$ o volume, e por isso o CG é
+   com $`k_2 - k_1`$ o fator de massa aparente de um corpo alongado e $`\mathcal V`$ o volume, e por isso o CG é
    recalculado com ela:
 
-$$
+```math
 C_{m\alpha,fus} \approx \frac{2\,(k_2 - k_1)\,\mathcal V}{S\,\bar c}
 \qquad
 C_{n\beta,fus} \approx -\frac{2\,(k_2 - k_1)\,\mathcal V}{S\,b}
-$$
+```
 2. **Massas.** A **tabela de distribuição de massa** mostra cada item com x e % do total.
    - **PV** (peso vazio): a estrutura (estimada por área e por comprimento, das regras), os motores, as hélices,
      a bateria e os sistemas.
@@ -223,12 +223,12 @@ $$
      requisitos e as restrições ativas do projeto — e pergunta se quer salvar mesmo assim.
    - A bateria vai onde o CG cai no alvo. Se ela não couber na fuselagem, entra **lastro de equilíbrio**, que
      conta no PV, e o diagnóstico avisa.
-   - Com o MTOW pela pista, a **CP possível** é $CP = MTOW - PV$, e a eficiência estrutural $EE = CP/PV$.
+   - Com o MTOW pela pista, a **CP possível** é $`CP = MTOW - PV`$, e a eficiência estrutural $`EE = CP/PV`$.
 3. **Trem.** O principal fica atrás do CG, e a altura dá folga para a hélice.
 
 O desempenho rápido junta duas partes:
 
-- **Arrasto:** o $C_{D0}$ das superfícies, da fuselagem e do tubo, mais o $C_{Di}$ da linha sustentadora, na forma $C_D = C_{D0} + K\,C_L^2$.
+- **Arrasto:** o $`C_{D0}`$ das superfícies, da fuselagem e do tubo, mais o $`C_{Di}`$ da linha sustentadora, na forma $`C_D = C_{D0} + K\,C_L^2`$.
 - **Tração:** a do núcleo, com acelerador cheio. Sem backend, o equilíbrio motor + hélice é feito aqui, e um teste confere que dá o mesmo resultado.
 
 **Superfícies já trimadas para o motor.** O eixo do motor dá momento de arfagem: pela inclinação e pela altura
@@ -247,15 +247,15 @@ O otimizador da decolagem da Missão (6GDL) também tenta segurar o profundor pi
 neutro, nenhuma posição de acionamento funciona: é o caso do motor muito inclinado, em que o avião sai do chão antes
 do comando e afunda.
 
-**Corrida e MTOW pela pista.** A corrida é integrada no tempo com a tração $T(V)$ inclinada de $\theta_T$; a parte
+**Corrida e MTOW pela pista.** A corrida é integrada no tempo com a tração $`T(V)`$ inclinada de $`\theta_T`$; a parte
 vertical da tração alivia o peso nas rodas (Raymer, §17.8, a conferir no PDF):
 
-$$
+```math
 m\,\frac{dV}{dt} = T\cos\theta_T - qS\,(C_{D0} + K C_{L,g}^2) - \mu\,\max\big(mg - qS\,C_{L,g} - T\sin\theta_T,\ 0\big)
-$$
+```
 
-O avião sai do chão quando passa de $V_{rot}$ e a asa sustenta o peso com folga, $qS\,C_{L,max} \ge 1{,}1^2\,(mg - T\sin\theta_T)$
-(o mesmo que $V \ge 1{,}1\,V_S$). A massa máxima que a pista permite é achada por bisseção na massa: a maior em que a
+O avião sai do chão quando passa de $`V_{rot}`$ e a asa sustenta o peso com folga, $`qS\,C_{L,max} \ge 1{,}1^2\,(mg - T\sin\theta_T)`$
+(o mesmo que $`V \ge 1{,}1\,V_S`$). A massa máxima que a pista permite é achada por bisseção na massa: a maior em que a
 corrida cabe na pista.
 
 Com isso saem a V máx., a subida, a corrida e a **massa máxima que a pista permite**.
@@ -279,7 +279,7 @@ No ponto convergido o estudo verifica a estabilidade nessa massa:
 
 - o profundor consegue rodar o avião (com a tração);
 - o trim de decolagem cabe no curso de picar;
-- a EH não estola no C_L,max;
+- a EH não estola no $`C_{L,max}`$;
 - a bateria alcança o CG.
 
 Ele também diz **o que limita** o MTOW: a pista ou a rotação. Se o avião só roda depois de poder sair do chão,
@@ -287,7 +287,7 @@ a corrida espera.
 
 A página tem dois modos:
 
-- **varrer uma variável** (inclinação do motor, margem estática, V_H, braço da cauda, área, envergadura, ângulo de
+- **varrer uma variável** (inclinação do motor, margem estática, $`V_H`$, braço da cauda, área, envergadura, ângulo de
   cruzeiro) nas altitudes-densidade pedidas (uma lista `lugar=AD`, separada por vírgulas);
 - **comparar os aviões guardados**.
 
@@ -301,13 +301,13 @@ aviso fica na mensagem da etapa: decolar não é requisito para ir para a Montag
 como dado de simulação: volta ao abrir o projeto, e a linha refaz o avião só quando precisa (3D, Montagem, 6GDL).
 Também dá para exportar em xlsx/csv.
 
-O laço do ponto de projeto é uma iteração de ponto fixo na massa, $m_{k+1} = MTOW(m_k)$, que para quando a variação
-relativa fica abaixo da tolerância. O arrasto de trim da EH entra na polar como um $C_{D}$ a mais, do $C_{L,h}$ que
+O laço do ponto de projeto é uma iteração de ponto fixo na massa, $`m_{k+1} = MTOW(m_k)`$, que para quando a variação
+relativa fica abaixo da tolerância. O arrasto de trim da EH entra na polar como um $`C_{D}`$ a mais, do $`C_{L,h}`$ que
 equilibra o cruzeiro:
 
-$$
+```math
 \Delta C_{D,trim} = \frac{S_h}{S}\,\frac{C_{L,h}^2}{\pi\,AR_h\,e_h}
-$$
+```
 
 (forma do induzido da EH, a conferir no PDF de Raymer, §12.7.)
 
@@ -406,14 +406,14 @@ análises de Desempenho, sem passar pela Montagem.
 ## Dimensões a partir do CG de projeto (`dims.py`)
 
 Tudo se mede do **CG de projeto** (o da margem estática pedida; a etapa Motores grava em `Aircraft.design_cg`):
-Δx + à frente, Δy + à direita, Δz + para baixo, e o valor "de planilha" de cada item — **x_TDP** (do CG ao trem
-principal, + atrás), **x_TDN** (do CG à bequilha, + à frente), altura do CG ao chão, ângulo de tombamento, braços
+Δx + à frente, Δy + à direita, Δz + para baixo, e o valor "de planilha" de cada item — **$`x_{TDP}`$** (do CG ao trem
+principal, + atrás), **$`x_{TDN}`$** (do CG à bequilha, + à frente), altura do CG ao chão, ângulo de tombamento, braços
 da EH e da EV (do CG ao CA), alturas ao chão, cubo de cada hélice (e a folga dela ao chão), tubo, tanques, LAPES,
 lastro e bateria. A tabela aparece em **Empenagem e comandos** (o conjunto, sem trem: sem as alturas),
 **Motores e montagem** e no painel da **Montagem** (com o desvio do CG atual para o de projeto).
 
-Entradas medidas do CG: **x_TDP** e **x_TDN** em Motores e montagem (0 = regra/automático) e o **braço da cauda**
-medido do CA da asa (clássico) ou do **CG de projeto** (como l_h na planilha antiga). Medido do CG, a cauda é
+Entradas medidas do CG: **$`x_{TDP}`$** e **$`x_{TDN}`$** em Motores e montagem (0 = regra/automático) e o **braço da cauda**
+medido do CA da asa (clássico) ou do **CG de projeto** (como $`l_h`$ na planilha antiga). Medido do CG, a cauda é
 reposicionada num ponto fixo até a distância do CG ao CA dela ser o braço dado, e os volumes de cauda usam esse
 braço.
 
@@ -455,7 +455,7 @@ rascunhos: envergadura, área, perfil, motor, hélice, inclinação, cargas, V d
 **Regras de projeto:**
 
 - massas por área (asa, empenagem) e por comprimento (tubo, fuselagem);
-- tamanho e C_D da fuselagem;
+- tamanho e $`C_D`$ da fuselagem;
 - sistemas e trem;
 - nariz à frente da asa e altura da asa;
 - folga da hélice, trem atrás do CG e bitola;
@@ -481,7 +481,7 @@ na esteira, o arrasto das naceles e o suporte por motor. A empenagem não é dim
 asa na massa e no arrasto.
 
 As restrições que valem são as ativas que o núcleo calcula (área, envergadura, velocidade de estol, potência, número
-de motores, corrida, V_max, subida, T/W, PV, CP, EE, MTOW); as outras, como comprimento e margem estática, ficam para
+de motores, corrida, $`V_{max}`$, subida, T/W, PV, CP, EE, MTOW); as outras, como comprimento e margem estática, ficam para
 as etapas e aparecem listadas. `registry.check_bounds` recusa uma variável física sem mínimo menor que o máximo (ou
 uma lista sem opções), e `registry.bounds_from_constraints` leva as restrições ativas para os limites das variáveis.
 Para o indivíduo escolhido, `full_envelope` dá o desempenho do núcleo em todas as velocidades, e `constraint_diagram`

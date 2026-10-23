@@ -32,82 +32,82 @@ seguem o escoamento livre, e o ponto de controle fica no centro `r` do painel, n
 EH, a EV e os dispositivos entram juntos, e por isso o downwash da asa na cauda sai das pernas da asa, e não do ε
 empírico da simulação.
 
-**Biot–Savart.** A velocidade induzida num ponto $P$ por um segmento reto de vórtice de $A$ a $B$, com circulação
-unitária, $\vec r_1 = P - A$, $\vec r_2 = P - B$ e $\vec r_0 = B - A$ (Katz e Plotkin, *Low-Speed Aerodynamics*, 2ª ed.,
+**Biot–Savart.** A velocidade induzida num ponto $`P`$ por um segmento reto de vórtice de $`A`$ a $`B`$, com circulação
+unitária, $`\vec r_1 = P - A`$, $`\vec r_2 = P - B`$ e $`\vec r_0 = B - A`$ (Katz e Plotkin, *Low-Speed Aerodynamics*, 2ª ed.,
 cap. 10; número da equação a conferir no PDF):
 
-$$
+```math
 \vec w = \frac{1}{4\pi}\,\frac{\vec r_1\times\vec r_2}{\lVert\vec r_1\times\vec r_2\rVert^2 + r_c^2\,\lVert\vec r_0\rVert^2}\;\vec r_0\cdot\left(\frac{\vec r_1}{\lVert\vec r_1\rVert} - \frac{\vec r_2}{\lVert\vec r_2\rVert}\right)
-$$
+```
 
-Como $\lVert\vec r_1\times\vec r_2\rVert = h\,\lVert\vec r_0\rVert$, com $h$ a distância do ponto à linha, o termo
-$r_c^2\lVert\vec r_0\rVert^2$ é o núcleo de Scully, $h^2 \to h^2 + r_c^2$ (abaixo). Sem núcleo, $r_c = 0$. Uma
-ferradura soma três segmentos: a perna que vem de longe até $A$, o ligado de $A$ a $B$ e a perna de $B$ para longe.
+Como $`\lVert\vec r_1\times\vec r_2\rVert = h\,\lVert\vec r_0\rVert`$, com $`h`$ a distância do ponto à linha, o termo
+$`r_c^2\lVert\vec r_0\rVert^2`$ é o núcleo de Scully, $`h^2 \to h^2 + r_c^2`$ (abaixo). Sem núcleo, $`r_c = 0`$. Uma
+ferradura soma três segmentos: a perna que vem de longe até $`A`$, o ligado de $`A`$ a $`B`$ e a perna de $`B`$ para longe.
 
 **Equação, por painel.** A sustentação de Kutta–Joukowski no segmento ligado iguala a da seção, com o ângulo de ataque
 tirado do que todas as ferraduras induzem no ponto de controle (Phillips e Snyder 2000):
 
-$$
+```math
 \rho\,\lVert\vec V_i\rVert\,\Gamma_i = \tfrac12\,\rho\,\lVert\vec V_i\rVert^2\,c_i\,\eta_i\,a_i\left(\alpha_{g,i} - \alpha_{0,i} - \frac{\vec w_i\cdot\hat e_{z,i}}{\lVert\vec V_i\rVert}\right)
 \qquad
 \vec w_i = \sum_j \Gamma_j\,\vec w_{ij}
-$$
+```
 
-Aqui $\vec V_i$ é a velocidade local, já com os modificadores (esteira, solo); $\alpha_{g,i}$ é o ângulo do painel sem
-o downwash empírico, com os comandos; $\alpha_{0,i} = -C_{L0}/C_{L\alpha}$; e $\vec w_{ij}$ é a velocidade que a
-ferradura $j$ com $\Gamma_j = 1$ induz no ponto de controle $i$, pelo Biot–Savart acima.
+Aqui $`\vec V_i`$ é a velocidade local, já com os modificadores (esteira, solo); $`\alpha_{g,i}`$ é o ângulo do painel sem
+o downwash empírico, com os comandos; $`\alpha_{0,i} = -C_{L0}/C_{L\alpha}`$; e $`\vec w_{ij}`$ é a velocidade que a
+ferradura $`j`$ com $`\Gamma_j = 1`$ induz no ponto de controle $`i`$, pelo Biot–Savart acima.
 
-A inclinação 2D $a_i$ sai do $C_{L\alpha}$ 3D do núcleo invertendo Helmbold, que é o que o tradutor usou (com
-$1 - 2C_{L\alpha}/(\pi AR) \le 0$, usa $2\pi$):
+A inclinação 2D $`a_i`$ sai do $`C_{L\alpha}`$ 3D do núcleo invertendo Helmbold, que é o que o tradutor usou (com
+$`1 - 2C_{L\alpha}/(\pi AR) \le 0`$, usa $`2\pi`$):
 
-$$
+```math
 a = \frac{C_{L\alpha}}{\sqrt{1 - \dfrac{2\,C_{L\alpha}}{\pi\,AR}}}
-$$
+```
 
-**Sistema linear.** Uma equação por painel, linear em $\Gamma$; resolvido por eliminação de Gauss com pivô.
+**Sistema linear.** Uma equação por painel, linear em $`\Gamma`$; resolvido por eliminação de Gauss com pivô.
 
-**Força.** Kutta–Joukowski no segmento ligado, com $d\vec l$ de nó a nó (inclui o enflechamento), mais o arrasto de
+**Força.** Kutta–Joukowski no segmento ligado, com $`d\vec l`$ de nó a nó (inclui o enflechamento), mais o arrasto de
 perfil:
 
-$$
+```math
 \vec F_i = \rho\,\Gamma_i\,(\vec V_i\times d\vec l_i) + q_i\,S_i\,C_{D0}\,\hat d_i
-$$
+```
 
 **Segmentos ligados.** Como em Phillips e Snyder, entram os segmentos ligados de todas as ferraduras, menos o do
 próprio painel (a linha não induz nela mesma). São eles que fazem o enflechamento tirar sustentação: o segmento da
 outra meia asa induz downwash perto da raiz. Antes, a ferradura era montada em torno do centro da faixa e
 perpendicular à corda, e numa superfície enflechada as ferraduras vizinhas não se encontravam: o pedaço de vórtice
-solto entre elas, cujo efeito cresce como $\tan\Lambda$ dividido pela largura da faixa, carregava a ponta em vez de
+solto entre elas, cujo efeito cresce como $`\tan\Lambda`$ dividido pela largura da faixa, carregava a ponta em vez de
 descarregá-la. Com os nós divididos, o winglet descarrega na ponta e a asa enflechada perde sustentação, na mesma
 tendência do VLM do AeroSandbox.
 
 **Núcleo dos vórtices entre superfícies.** Modelo de Scully (Vatistas, Kozel e Mih, *A simpler model for concentrated
-vortices*, Experiments in Fluids 11, 1991, $n = 1$), com o raio do núcleo proporcional à corda de quem solta o
+vortices*, Experiments in Fluids 11, 1991, $`n = 1`$), com o raio do núcleo proporcional à corda de quem solta o
 vórtice:
 
-$$
+```math
 \frac{1}{h^2} \;\to\; \frac{1}{h^2 + r_c^2}
 \qquad
 r_c = k\,c
-$$
+```
 
 Sem ele, a perna da raiz de uma EV que encosta na EH passa a milímetros dos pontos de controle da EH e induz uma
-velocidade absurda, que cresce como $1/h$. Numa faixa larga de $k$ o resultado quase não muda. Dentro da mesma
+velocidade absurda, que cresce como $`1/h`$. Numa faixa larga de $`k`$ o resultado quase não muda. Dentro da mesma
 superfície não há núcleo, porque a queda na ponta depende das pernas das faixas vizinhas, mais estreitas que qualquer
 núcleo dessa ordem.
 
 ## Método de Goates e Hunsaker (ligável, `llt_joint` e `llt_blend`)
 
 O método de Phillips e Snyder tem um problema em duas situações comuns, e a correção de Goates e Hunsaker existe para
-elas. A primeira é o voo com derrapagem, quando o vento chega de lado no avião (o ângulo $\beta$), como numa curva mal
+elas. A primeira é o voo com derrapagem, quando o vento chega de lado no avião (o ângulo $`\beta`$), como numa curva mal
 coordenada ou com vento cruzado. A segunda é a asa com enflechamento ou diedro. Nas duas, o resultado de Phillips e
 Snyder muda cada vez que se refina a malha, em vez de se aproximar de um valor. Na prática, isso quer dizer que não dá
-para confiar no momento de rolagem que a derrapagem produz (o $C_{l\beta}$, que decide a estabilidade lateral) nem na
+para confiar no momento de rolagem que a derrapagem produz (o $`C_{l\beta}`$, que decide a estabilidade lateral) nem na
 carga perto da raiz de uma asa enflechada.
 
 A causa está na geometria das ferraduras. Em derrapagem, as pernas seguem o vento e saem inclinadas no plano da asa;
-cada perna induz $(1 + \sin\beta)$ de um lado e $(1 - \sin\beta)$ do outro, e a parte assimétrica soma
-$\Delta\Gamma/|\Delta y|$ sem trocar de sinal, então o $C_{l\beta}$ da asa plana cresce com o logaritmo da malha. Com
+cada perna induz $`(1 + \sin\beta)`$ de um lado e $`(1 - \sin\beta)`$ do outro, e a parte assimétrica soma
+$`\Delta\Gamma/|\Delta y|`$ sem trocar de sinal, então o $`C_{l\beta}`$ da asa plana cresce com o logaritmo da malha. Com
 enflechamento ou diedro, o problema é a quina da raiz, descrita em Limites, abaixo.
 
 Goates e Hunsaker (*Practical Implementation of a General Numerical Lifting-Line Method*, AIAA SciTech 2021, a forma
@@ -116,45 +116,45 @@ MachUpX (github.com/usuaero/MachUpX), que serviu de referência nos testes.
 
 **As três correções** (só com `Params.llt_joint > 0` ou `Params.llt_blend > 0`):
 
-1. **Junta** (eq. 3 e 17). Cada perna sai do nó por um trecho de comprimento $\delta\,c_{nó}$ no plano da asa,
-   perpendicular à linha sustentadora ($\hat u_{a\Lambda}$, eq. 12–15), e só depois segue o escoamento livre.
-   $\delta$ é `llt_joint`.
+1. **Junta** (eq. 3 e 17). Cada perna sai do nó por um trecho de comprimento $`\delta\,c_{nó}`$ no plano da asa,
+   perpendicular à linha sustentadora ($`\hat u_{a\Lambda}`$, eq. 12–15), e só depois segue o escoamento livre.
+   $`\delta`$ é `llt_joint`.
 
-2. **Linha sustentadora efetiva** (eq. 7). Para cada ponto de controle $i$, os nós da mesma asa são misturados com a
-   reta tangente à linha em $i$, com o peso abaixo; sem curvatura em $i$, a quina deixa de ser singular. $s$ é o
-   comprimento ao longo da linha projetado em y-z, em metros; $b_{seg}$ a semienvergadura; $\Delta$ é `llt_blend` (a
-   forma dimensional do MachUpX, `airplane.py`; o artigo escreve com $s$ adimensional, eq. 8):
+2. **Linha sustentadora efetiva** (eq. 7). Para cada ponto de controle $`i`$, os nós da mesma asa são misturados com a
+   reta tangente à linha em $`i`$, com o peso abaixo; sem curvatura em $`i`$, a quina deixa de ser singular. $`s`$ é o
+   comprimento ao longo da linha projetado em y-z, em metros; $`b_{seg}`$ a semienvergadura; $`\Delta`$ é `llt_blend` (a
+   forma dimensional do MachUpX, `airplane.py`; o artigo escreve com $`s`$ adimensional, eq. 8):
 
-$$
+```math
 w(s) = e^{-\sigma\,(s - s_i)^2}
 \qquad
 \sigma = \left(\frac{2}{b_{seg}\,\Delta\,\cos\Lambda_i}\right)^2
 \qquad
 \vec q_j^{\,ef} = w(s_j)\,\left(\vec P_i + \vec D_i\,(s_j - s_i)\right) + \left(1 - w(s_j)\right)\vec q_j
-$$
+```
 
-   $\vec q_j$ é um nó original, $\vec P_i$ o ponto de controle e $\vec D_i = d\vec r/ds$ a direção da linha em $i$: perto
-   de $i$ o nó vai para a reta tangente, longe fica onde estava.
+   $`\vec q_j`$ é um nó original, $`\vec P_i`$ o ponto de controle e $`\vec D_i = d\vec r/ds`$ a direção da linha em $`i`$: perto
+   de $`i`$ o nó vai para a reta tangente, longe fica onde estava.
 
-   As juntas também usam o $\hat u_a$ misturado.
+   As juntas também usam o $`\hat u_a`$ misturado.
 
-3. **Seção no plano normal à linha** (§IV). O $\alpha$ da seção é tomado com a velocidade projetada nesse plano
-   (eq. 24–27), e a corda, o ângulo de sustentação nula e o comando mudam com o enflechamento local $\Lambda$:
+3. **Seção no plano normal à linha** (§IV). O $`\alpha`$ da seção é tomado com a velocidade projetada nesse plano
+   (eq. 24–27), e a corda, o ângulo de sustentação nula e o comando mudam com o enflechamento local $`\Lambda`$:
 
-$$
+```math
 c_\Lambda = c\cos\Lambda \;\text{(eq. 21)}
 \qquad
 \alpha_{0,\Lambda} = \frac{\alpha_0}{\cos\Lambda} \;\text{(eq. 35)}
 \qquad
 \delta_{f\Lambda} = \arcsin(\cos\Lambda\,\sin\delta_f) \;\text{(eq. 23)}
-$$
+```
 
 As asas são as cadeias de painéis do mesmo grupo que dividem nós. Um ponto de controle vê as outras asas com a geometria
 original (G-H §III.A). A corda num nó é a média dos dois painéis que o dividem.
 
 **Contra o MachUpX.** Nas asas de teste de `tools/aero` (retangular, com diedro, trapezoidal e enflechada), o
-$C_{L\alpha}$ e o $C_{l\beta}$ de Goates e Hunsaker ficam perto dos do MachUpX e convergem com a malha; os de Phillips e
-Snyder em derrapagem não convergem. Os números esperados estão em `tests/tools/test_aero_perfis.py`. O $C_{l\beta}$
+$`C_{L\alpha}`$ e o $`C_{l\beta}`$ de Goates e Hunsaker ficam perto dos do MachUpX e convergem com a malha; os de Phillips e
+Snyder em derrapagem não convergem. Os números esperados estão em `tests/tools/test_aero_perfis.py`. O $`C_{l\beta}`$
 positivo da asa plana é do modelo de esteira alinhada ao vento (o MachUpX dá o mesmo); o AVL e o VLM põem a esteira no
 eixo x e dão zero.
 
@@ -165,14 +165,14 @@ Snyder, com as mesmas contas de antes.
 
 ## Cache da geometria (`prepare`, `Params.llt_cache`)
 
-A cada avaliação, a linha sustentadora precisava da influência de cada ferradura $j$ em cada ponto de controle $i$, e
-no método de Goates e Hunsaker também refazia, para cada $i$, a linha efetiva, as tangentes e as juntas. O perfil de
+A cada avaliação, a linha sustentadora precisava da influência de cada ferradura $`j`$ em cada ponto de controle $`i`$, e
+no método de Goates e Hunsaker também refazia, para cada $`i`$, a linha efetiva, as tangentes e as juntas. O perfil de
 uma decolagem (`tools/time_profile.py`) mostrou que a maior parte do tempo ia em recalcular essa geometria, seguida
 pelo Biot–Savart, com a eliminação de Gauss quase de graça. Só as duas pernas livres dependem do escoamento, porque
 seguem o vento; os nós, as juntas e o segmento ligado são fixos para uma configuração. O MachUpX também monta a linha
 efetiva e as juntas uma vez, ao montar o avião (`machupX/airplane.py`).
 
-Por isso `prepare(p)`, chamado em `runner.configure` logo depois de `aero.init`, guarda para cada par $(i, j)$ de onde
+Por isso `prepare(p)`, chamado em `runner.configure` logo depois de `aero.init`, guarda para cada par $`(i, j)`$ de onde
 saem as pernas livres e os segmentos fixos (as juntas e o ligado), em memória estática no `Params`. Com o cache,
 `apply` calcula só as duas pernas livres e soma na mesma ordem de antes, e o resultado é o mesmo, bit a bit; o teste
 "cache da geometria" confere isso em derrapagem e com diedro, nos dois métodos. Sem o cache, faz a conta inteira de
@@ -182,7 +182,7 @@ Phillips e Snyder; as medidas estão em [`core/OTIMIZACOES.md`](../../OTIMIZACOE
 
 Ainda dá para ganhar tempo trocando a ordem das somas, o que muda o último dígito: a perna livre como vórtice
 semi-infinito por fórmula fechada (o 1º termo da eq. 3 de Goates e Hunsaker), uma perna por nó no Phillips e Snyder
-($n + 1$ pernas em vez de $2n$) e SIMD no Biot–Savart.
+($`n + 1`$ pernas em vez de $`2n`$) e SIMD no Biot–Savart.
 
 ## Limites conhecidos
 
@@ -190,35 +190,35 @@ semi-infinito por fórmula fechada (o 1º termo da eq. 3 de Goates e Hunsaker), 
   segmento ligado da outra meia asa passa perto do ponto de controle da faixa da raiz, e o valor na raiz depende da
   malha (com diedro, um pico; com enflechamento, um vale), embora a sustentação total convirja. A correção é a linha
   sustentadora efetiva de Goates e Hunsaker (acima), ligável. Em derrapagem vale o mesmo para as pernas inclinadas.
-- **Alongamento baixo:** a linha sustentadora superestima o $C_{L\alpha}$ (numa EV sozinha de alongamento pequeno, o
-  $C_{Y\beta}$ fica acima do AVL mesmo convergido).
-- **Linear:** $c_l = a\,(\alpha - \alpha_0)$, sem estol. Perto do $C_{L,max}$, a carga real é menor.
+- **Alongamento baixo:** a linha sustentadora superestima o $`C_{L\alpha}`$ (numa EV sozinha de alongamento pequeno, o
+  $`C_{Y\beta}`$ fica acima do AVL mesmo convergido).
+- **Linear:** $`c_l = a\,(\alpha - \alpha_0)`$, sem estol. Perto do $`C_{L,max}`$, a carga real é menor.
 - **Pernas retas:** não se enrolam nem se desviam pela esteira da hélice.
-- **Trimagem:** $\alpha$ e profundor vêm da trimagem da simulação. A soma das cargas pode ficar um pouco fora do peso,
+- **Trimagem:** $`\alpha`$ e profundor vêm da trimagem da simulação. A soma das cargas pode ficar um pouco fora do peso,
   e o momento de arfagem não fica exatamente zerado.
 - **Discretização:** a convergência é lenta com faixas iguais. `span_loads` refina com faixas mais estreitas na ponta,
-  como Phillips e Snyder recomendam, com $t$ uniforme em $[0, 1]$ ao longo do trecho:
+  como Phillips e Snyder recomendam, com $`t`$ uniforme em $`[0, 1]`$ ao longo do trecho:
 
-$$
+```math
 y(t) = y_0 + (y_1 - y_0)\,\sin\frac{\pi t}{2}
-$$
+```
 
 ## Testes (`zig build test-physics`)
 
 - Helmbold invertido volta à inclinação 2D do perfil.
-- Um segmento muito longo dá $\Gamma/(2\pi h)$, o vórtice infinito.
-- Na asa retangular, a ponta fica descarregada, a carga é simétrica e o $C_L$ fica perto de Helmbold. Com alongamento
-  menor, o $C_L$ também é menor.
+- Um segmento muito longo dá $`\Gamma/(2\pi h)`$, o vórtice infinito.
+- Na asa retangular, a ponta fica descarregada, a carga é simétrica e o $`C_L`$ fica perto de Helmbold. Com alongamento
+  menor, o $`C_L`$ também é menor.
 - Com diedro, a raiz não salta (o VLM do AeroSandbox dá um salto pequeno, na mesma direção).
-- Núcleo de Scully: finito em cima da linha e metade do valor sem núcleo a $h = r_c$.
+- Núcleo de Scully: finito em cima da linha e metade do valor sem núcleo a $`h = r_c`$.
 - Cauda em T: o painel da EH ao lado da raiz da EV não salta. Sem o núcleo, esse painel leva várias vezes a carga dos
   vizinhos, e o teste falha.
-- Derrapagem: o $C_{l\beta}$ de Phillips e Snyder muda muito ao dobrar a malha (não converge); o de Goates e Hunsaker
+- Derrapagem: o $`C_{l\beta}`$ de Phillips e Snyder muda muito ao dobrar a malha (não converge); o de Goates e Hunsaker
   quase não muda e fica perto do MachUpX.
 - Goates e Hunsaker desligado por padrão.
 - Cache da geometria: o mesmo resultado, bit a bit, com e sem o cache.
 
-Em `tests/tools/test_aero_perfis.py`: o $C_{L\alpha}$ e o $C_{l\beta}$ de Goates e Hunsaker contra o MachUpX nas quatro
+Em `tests/tools/test_aero_perfis.py`: o $`C_{L\alpha}`$ e o $`C_{l\beta}`$ de Goates e Hunsaker contra o MachUpX nas quatro
 asas de teste, com a tolerância e os números esperados no teste.
 
 Em Python (`tests/aero/test_span_loads.py`):
@@ -283,5 +283,5 @@ print(faixas["L"].sum(), linha["L"].sum())
 Os coeficientes do avião inteiro com a linha sustentadora saem de `aerosim_aero_coeffs_llt` (`llt.coeffs`), com os
 mesmos argumentos de `aerosim_aero_coeffs_at` (taxas p, q, r; altura sobre o chão; tração e torque de cada motor; ponto
 dos momentos). Ele faz a conta da simulação (`aero.computeTrace`) e troca só as forças dos painéis pelas de `apply`,
-então a fuselagem, o c_m das seções, o efeito solo e a esteira continuam os da simulação; o C_Di sai NaN. No Python,
+então a fuselagem, o $`c_m`$ das seções, o efeito solo e a esteira continuam os da simulação; o $`C_{Di}`$ sai NaN. No Python,
 `session.aero_coeffs_llt(...)`, e `method="faixas"` dá a carga plana da simulação.

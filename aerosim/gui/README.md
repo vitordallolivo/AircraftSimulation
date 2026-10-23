@@ -121,25 +121,25 @@ A GUI não calcula nada do avião (regra 2 do `CLAUDE.md`): ela só converte o q
 para a tela.
 
 **Eixos do corpo para o OpenGL** (`widgets/view3d.py`, `to_gl`). O modelo usa os eixos do corpo da mecânica de voo
-($x$ para a frente, $y$ para a direita, $z$ para baixo); a vista 3D usa $z$ para cima, então dois eixos trocam de
+($`x`$ para a frente, $`y`$ para a direita, $`z`$ para baixo); a vista 3D usa $`z`$ para cima, então dois eixos trocam de
 sinal:
 
-$$
+```math
 \begin{pmatrix} x \\ y \\ z \end{pmatrix}_{GL} = \begin{pmatrix} x \\ -y \\ -z \end{pmatrix}_{corpo}
-$$
+```
 
-**Cores das cargas** (`widgets/load_view.py`, `normalize`). Cada valor vira uma posição $t \in [0, 1]$ no mapa de
+**Cores das cargas** (`widgets/load_view.py`, `normalize`). Cada valor vira uma posição $`t \in [0, 1]`$ no mapa de
 cores. Na escala mín–máx, e na simétrica em zero (mapa divergente, para valores com sinal):
 
-$$
+```math
 t = \frac{v - v_{min}}{v_{max} - v_{min}}
 \qquad
 t = \frac{v + M}{2M}, \quad M = \max |v|
-$$
+```
 
-Na escala "por superfície", $v_{min}$ e $v_{max}$ são os de cada superfície.
+Na escala "por superfície", $`v_{min}`$ e $`v_{max}`$ são os de cada superfície.
 
-**Rótulos** (`widgets/plots.py`, `tex`). Os títulos dos gráficos aceitam uma notação LaTeX simples ($...$, letras
+**Rótulos** (`widgets/plots.py`, `tex`). Os títulos dos gráficos aceitam uma notação LaTeX simples (`$...$`, letras
 gregas como `\delta`, índices `C_L` e expoentes `x^2`), convertida para o HTML do Qt.
 
 ## Um exemplo por arquivo

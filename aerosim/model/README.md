@@ -55,7 +55,7 @@ flowchart LR
 | componente | campos principais |
 |---|---|
 | `LiftingSurface` | papel (`wing`, `htail`, `vtail`), posição do bordo de ataque da raiz, `sections` (y, corda, recuo, torção), diedro, incidência, `airfoil`, `controls`, sobrescritas `CLa`, `CL0`, `CLmax`, `CD0`, `Cmac`, `eps0`, `depsda`; `mount` (`""` solta, `"tubo:i"` na ponta do tubo i, `"ponta:j"` na ponta da superfície j: cauda em T) |
-| `WingSection` | y, corda, recuo, torção e `airfoil` (None: o da superfície); entre seções as propriedades 2D (c_lα, α_L0, c_l máx, c_d0, c_m) são interpoladas e cada faixa leva as suas (`universal.strip_coeffs`) |
+| `WingSection` | y, corda, recuo, torção e `airfoil` (None: o da superfície); entre seções as propriedades 2D ($`c_{l\alpha}`$, $`\alpha_{L0}`$, $`c_l`$ máx, $`c_{d0}`$, $`c_m`$) são interpoladas e cada faixa leva as suas (`universal.strip_coeffs`) |
 | `ControlSurface` | `kind` é o nome; `mix` = [arfagem, rolagem, guinada] (None: a do tipo em `KIND_MIX`: aileron, elevator, rudder, elevon, ruddervator, flaperon, flap); `role` diz o que faz pela mistura; `deflection` = deflexão fixa; início/fim (fração da semi-envergadura), fração da corda |
 | `PropulsionUnit` | posição, inclinação do eixo, `tilt_range` (eixo móvel: inclinação = tilt + comando·faixa, comando `pilot.tilt` 0..1 no núcleo), sentido; `thrust_model = "motor"` (motor + hélice + bateria) ou `"poly"` (`ThrustPoly`) |
 | `LandingGear` | `tricycle`, `conventional` ou `custom` (pontos livres) |
@@ -70,93 +70,93 @@ flowchart LR
 
 O tradutor do núcleo corta cada superfície nas seções e nas bordas dos comandos; cada faixa de cada lado vira um painel
 com centro aerodinâmico a 1/4 da corda média (com enflechamento e diedro). Entre seções, as propriedades 2D do perfil
-($c_{l\alpha}$, $\alpha_{L0}$, $c_{l,max}$, $c_{d0}$, $c_{m,ac}$) são interpoladas linearmente em $y$, e cada faixa leva as
+($`c_{l\alpha}`$, $`\alpha_{L0}`$, $`c_{l,max}`$, $`c_{d0}`$, $`c_{m,ac}`$) são interpoladas linearmente em $`y`$, e cada faixa leva as
 suas (`universal.strip_coeffs`). A deflexão de cada painel mistura os três comandos; o mesmo esquema cobre elevon e
 ruddervator:
 
-$$
+```math
 \delta_{painel} = \tau\,(m_e\,\delta_e + m_a\,\delta_a + m_r\,\delta_r)
-$$
+```
 
 ## Equações (`universal.py`, `airfoil.py`, `atmosphere.py`, `massprops.py`, `mission.py`)
 
-**2D → 3D (Helmbold).** O $C_{L\alpha}$ da superfície vem da inclinação 2D do perfil e do alongamento (fórmula de
+**2D → 3D (Helmbold).** O $`C_{L\alpha}`$ da superfície vem da inclinação 2D do perfil e do alongamento (fórmula de
 Helmbold, 1942; em Anderson, *Fundamentals of Aerodynamics*, cap. 5, a conferir no PDF). As sobrescritas da
 superfície, quando dadas, mandam:
 
-$$
+```math
 C_{L\alpha} = \frac{a_0}{\sqrt{1 + k^2} + k}
 \qquad
 k = \frac{a_0}{\pi\,AR}
-$$
+```
 
-O $C_{L0}$ vem do ângulo de sustentação nula, e o $C_{L,max}$ da superfície é uma fração do $c_{l,max}$ do perfil
+O $`C_{L0}`$ vem do ângulo de sustentação nula, e o $`C_{L,max}`$ da superfície é uma fração do $`c_{l,max}`$ do perfil
 (fator empírico desta implementação, sem fonte):
 
-$$
+```math
 C_{L0} = -C_{L\alpha}\,\alpha_{L0}
 \qquad
 C_{L,max} = 0{,}9\,c_{l,max}
-$$
+```
 
 Com perfil por seção, a média da superfície pesa cada trecho entre seções pela área dele.
 
-**Downwash da asa na cauda**, linear em $\alpha$ (teoria da linha sustentadora para a asa elíptica; Nelson, *Flight
-Stability and Automatic Control*, cap. 2, a conferir no PDF), com $C_{L0,w}$ já com a incidência da asa:
+**Downwash da asa na cauda**, linear em $`\alpha`$ (teoria da linha sustentadora para a asa elíptica; Nelson, *Flight
+Stability and Automatic Control*, cap. 2, a conferir no PDF), com $`C_{L0,w}`$ já com a incidência da asa:
 
-$$
+```math
 \varepsilon = \varepsilon_0 + \frac{d\varepsilon}{d\alpha}\,\alpha
 \qquad
 \varepsilon_0 = \frac{2\,C_{L0,w}}{\pi\,AR_w}
 \qquad
 \frac{d\varepsilon}{d\alpha} = \frac{2\,C_{L\alpha,w}}{\pi\,AR_w}
-$$
+```
 
 **Perfil fino** (`airfoil.thin_airfoil`; Anderson, *Fundamentals of Aerodynamics*, cap. 4, a conferir no PDF). Com a
-linha média $z_c(x)$ do `.dat`, a mudança de variável $x = \tfrac12(1 - \cos\theta)$ dá o ângulo de sustentação nula e
+linha média $`z_c(x)`$ do `.dat`, a mudança de variável $`x = \tfrac12(1 - \cos\theta)`$ dá o ângulo de sustentação nula e
 o momento no centro aerodinâmico:
 
-$$
+```math
 \alpha_{L0} = -\frac{1}{\pi}\int_0^\pi \frac{dz_c}{dx}\,(\cos\theta - 1)\,d\theta
 \qquad
 A_n = \frac{2}{\pi}\int_0^\pi \frac{dz_c}{dx}\cos(n\theta)\,d\theta
 \qquad
 c_{m,ac} = -\frac{\pi}{4}\,(A_1 - A_2)
-$$
+```
 
-**Efetividade de um flape simples** (`flap_effectiveness`), pelo perfil fino com a fração de corda $c_f/c$ e um fator
+**Efetividade de um flape simples** (`flap_effectiveness`), pelo perfil fino com a fração de corda $`c_f/c`$ e um fator
 empírico de 0,85 (a conferir no PDF):
 
-$$
+```math
 \theta_f = \arccos\!\left(2\,\frac{c_f}{c} - 1\right)
 \qquad
 \tau = 0{,}85\left(1 - \frac{\theta_f - \sin\theta_f}{\pi}\right)
-$$
+```
 
-**NACA de 4 dígitos** (`naca4`; Abbott e von Doenhoff, *Theory of Wing Sections*, cap. 6, a conferir no PDF). Com $m$ o
-arqueamento máximo, $p$ a posição dele e $t$ a espessura (frações da corda), a espessura e a linha média são:
+**NACA de 4 dígitos** (`naca4`; Abbott e von Doenhoff, *Theory of Wing Sections*, cap. 6, a conferir no PDF). Com $`m`$ o
+arqueamento máximo, $`p`$ a posição dele e $`t`$ a espessura (frações da corda), a espessura e a linha média são:
 
-$$
+```math
 y_t = 5t\left(0{,}2969\sqrt x - 0{,}1260\,x - 0{,}3516\,x^2 + 0{,}2843\,x^3 - 0{,}1036\,x^4\right)
-$$
+```
 
-$$
+```math
 y_c = \begin{cases}
 \dfrac{m}{p^2}\,(2px - x^2) & x < p \\[2mm]
 \dfrac{m}{(1 - p)^2}\,\left((1 - 2p) + 2px - x^2\right) & x \ge p
 \end{cases}
-$$
+```
 
-e o contorno soma a espessura perpendicular à linha média ($\theta = \arctan dy_c/dx$): $x_{u,l} = x \mp y_t\sin\theta$,
-$y_{u,l} = y_c \pm y_t\cos\theta$.
+e o contorno soma a espessura perpendicular à linha média ($`\theta = \arctan dy_c/dx`$): $`x_{u,l} = x \mp y_t\sin\theta`$,
+$`y_{u,l} = y_c \pm y_t\cos\theta`$.
 
 **Atmosfera ISA** na troposfera (`atmosphere.py`) e a altitude-densidade, a inversa:
 
-$$
+```math
 \rho(h) = \rho_0\,(1 - 2{,}25577\times10^{-5}\,h)^{4{,}25588}
 \qquad
 h_\rho = \frac{1 - (\rho/\rho_0)^{1/4{,}25588}}{2{,}25577\times10^{-5}}
-$$
+```
 
 **Massa seca** (`massprops.dry_mass`): a massa base mais as massas pontuais (motores, hélices, baterias, estrutura,
 lastro); CG pela média pesada e inércia levada ao CG por Steiner (as mesmas equações do núcleo, em
@@ -164,9 +164,9 @@ lastro); CG pela média pesada e inércia levada ao CG por Steiner (as mesmas eq
 
 **Raio automático das curvas da missão** (`mission.auto_radius`), o da curva nivelada coordenada:
 
-$$
+```math
 R = \frac{V^2}{g\,\tan\phi}
-$$
+```
 
 ## Um exemplo por arquivo
 

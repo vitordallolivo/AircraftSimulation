@@ -54,7 +54,7 @@ tempo.
   2. AVL, VLM e buildup do ASB, a ~1,5 m do núcleo;
   3. o lltdrek, sozinho, a ~3 m.
 - **O lltdrek muda de lugar conforme o nível:** nos coeficientes da asa sozinha, ele fica a ~1 % da nossa linha
-  sustentadora; no avião inteiro em voo, se afasta, porque o C_m dele com a cauda é outro e ele não trata β.
+  sustentadora; no avião inteiro em voo, se afasta, porque o $`C_m`$ dele com a cauda é outro e ele não trata β.
 
 ### Tempo de conta
 

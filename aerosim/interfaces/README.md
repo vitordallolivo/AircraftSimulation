@@ -38,7 +38,7 @@ flowchart LR
 |---|---|
 | `ISimBackend` | `open_session()`, `limits()`, `log_channels()` |
 | `ISimSession` | `configure(spec)`, `reset_ground()`, `reset_air(seg)`, `run(t_limit, max_rows)`, `events()`, `snapshot()`/`restore()`, `trim()`, `performance()`, `aero_coeffs()`, `aero_coeffs_ex()` (rotação e ponto de referência), `linearize(V)` (A, B), `prop_point()`, `mass_props()` |
-| `IModelTranslator` (`translator.py`) | `to_native(modelo universal)` → formato do solver; `from_native(resultado)` → coeficientes universais (eixos do corpo, C_l/C_n por S b, C_m por S c, taxas p̂ q̂ r̂) |
+| `IModelTranslator` (`translator.py`) | `to_native(modelo universal)` → formato do solver; `from_native(resultado)` → coeficientes universais (eixos do corpo, $`C_l`$/C_n por S b, $`C_m`$ por S c, taxas p̂ q̂ r̂) |
 | `ISimBackend.translator`, `session_for(modelo)` | todo núcleo tem um tradutor; a sessão já vem configurada a partir do modelo universal |
 | `IAeroSolver` (`aero.py`) | `available()`, `evaluate(modelo, caso, [FlightPoint])` → coeficientes universais; `solve(modelo, caso)` → `AeroPolar` (polar e derivadas pelo código comum `aero/base.py`) |
 | `LoadResult` (`loads.py`) | entrada padrão das análises de carga: `SpanDistribution` por superfície (valores ao longo da envergadura em metros: carga alar local, sustentação por metro, α efetivo, V local...) para os gráficos (`aero/load_plots.py`), e `SurfaceField` (malha 3D com valores por face, camadas de vetores, tubos da esteira) para a vista 3D (`gui/widgets/load_view.py`). Hoje quem produz é o núcleo por faixas (`aero/span_loads.py`, `to_result`); VLM, painéis ou CFD entram montando o mesmo `LoadResult` |
@@ -61,26 +61,26 @@ detalhado). É só para o código (filtros, otimização, testes) — a GUI não
 ## Convenções que todas as camadas seguem
 
 Todo tradutor devolve os coeficientes no formato universal: eixos do corpo (x à frente, z para baixo), forças por
-$qS$, momentos de rolamento e guinada por $qSb$, de arfagem por $qSc$, e as rotações adimensionais. Com
-$q = \tfrac12\rho V^2$:
+$`qS`$, momentos de rolamento e guinada por $`qSb`$, de arfagem por $`qSc`$, e as rotações adimensionais. Com
+$`q = \tfrac12\rho V^2`$:
 
-$$
+```math
 C_L = \frac{L}{qS} \qquad C_D = \frac{D}{qS} \qquad C_Y = \frac{Y}{qS}
 \qquad
 C_l = \frac{\mathcal L}{qSb} \qquad C_m = \frac{M}{qSc} \qquad C_n = \frac{N}{qSb}
-$$
+```
 
-$$
+```math
 \hat p = \frac{p\,b}{2V} \qquad \hat q = \frac{q\,c}{2V} \qquad \hat r = \frac{r\,b}{2V}
-$$
+```
 
-As derivadas (`DERIVATIVES`) são as parciais desses coeficientes: $C_{L\alpha} = \partial C_L/\partial\alpha$,
-$C_{mq} = \partial C_m/\partial\hat q$ e assim por diante. Na carga ao longo da envergadura, a integral de um campo é a
+As derivadas (`DERIVATIVES`) são as parciais desses coeficientes: $`C_{L\alpha} = \partial C_L/\partial\alpha`$,
+$`C_{mq} = \partial C_m/\partial\hat q`$ e assim por diante. Na carga ao longo da envergadura, a integral de um campo é a
 soma ponto a ponto vezes a largura de cada faixa (`SpanDistribution.integral`):
 
-$$
+```math
 \int f\,ds \approx \sum_k f_k\,\Delta s_k
-$$
+```
 
 ## Um exemplo por arquivo
 

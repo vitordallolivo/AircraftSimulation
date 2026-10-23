@@ -54,7 +54,7 @@ const ax = m.slip(.axial_on) != 0;           // params[0], pelo nome
 Número desconhecido (um arquivo de uma versão mais nova) cai no `_` do enum e é ignorado. Um tipo novo é um campo novo
 no fim do enum, com o próximo número, e o mesmo número em `aerosim/model/modifiers.py` (`KINDS[...].core_id`).
 
-As máscaras `surf_mask` e `prop_mask` são outra coisa: o bit $i$ é o painel (ou o motor) $i$, e zero quer dizer todos.
+As máscaras `surf_mask` e `prop_mask` são outra coisa: o bit $`i`$ é o painel (ou o motor) $`i`$, e zero quer dizer todos.
 
 ## Dois jeitos de entrar
 
@@ -79,81 +79,81 @@ fica guardado no `.json`, mas é ignorado com um aviso (`modifiers.problems`).
 ### `solo.mccormick` (padrão)
 
 Perto do chão, o arrasto induzido de cada painel horizontal é multiplicado por um fator que vai de 0 (no chão) a 1
-(longe dele). Com $h$ a altura do painel acima do chão no passo ($h - z_{painel}$) e $b$ a envergadura de referência
+(longe dele). Com $`h`$ a altura do painel acima do chão no passo ($`h - z_{painel}`$) e $`b`$ a envergadura de referência
 (B. W. McCormick, *Aerodynamics, Aeronautics, and Flight Mechanics*, Wiley; a mesma expressão em J. D. Anderson,
 *Aircraft Performance and Design*, McGraw-Hill, que cita o McCormick; número da equação e página a conferir no PDF):
 
-$$
+```math
 \varphi = \frac{(16\,h/b)^2}{1 + (16\,h/b)^2}
 \qquad
 C_{D_i} \leftarrow \varphi\,C_{D_i}
-$$
+```
 
 Altura menor que 1 cm é tratada como 1 cm (o painel não atravessa o chão). Testes: `ground.zig` (o valor da fórmula em
-$h/b = 0{,}1$ e os limites 0 e 1); `tests/model/test_modifiers.py` (desligar muda a decolagem).
+$`h/b = 0{,}1`$ e os limites 0 e 1); `tests/model/test_modifiers.py` (desligar muda a decolagem).
 
 ### `esteira.disco` (aditivo, desligado por padrão)
 
-Por motor, com a tração $T$ e o torque $Q$ do instante, carga uniforme num disco de raio $R$ e área $A = \pi R^2$, e
-$V$ a velocidade axial através do disco.
+Por motor, com a tração $`T`$ e o torque $`Q`$ do instante, carga uniforme num disco de raio $`R`$ e área $`A = \pi R^2`$, e
+$`V`$ a velocidade axial através do disco.
 
 **1. Velocidade induzida no disco**, pela teoria do momento de Rankine–Froude (McCormick, *Aerodynamics, Aeronautics,
 and Flight Mechanics*; Glauert, "Airplane Propellers", em Durand, *Aerodynamic Theory* IV, 1935):
 
-$$
+```math
 T = 2\,\rho\,A\,w_0\,(V + w_0)
 \quad\Rightarrow\quad
 w_0 = -\frac{V}{2} + \sqrt{\frac{V^2}{4} + \frac{T}{2\rho A}}
-$$
+```
 
-**2. Desenvolvimento ao longo do eixo.** O disco com carga uniforme é um cilindro de vórtices semi-infinito; com $x$
+**2. Desenvolvimento ao longo do eixo.** O disco com carga uniforme é um cilindro de vórtices semi-infinito; com $`x`$
 medido a partir do disco, positivo para trás (McCormick, *Aerodynamics of V/STOL Flight*; Veldhuis, ICAS 2004 e tese TU
 Delft 2005):
 
-$$
+```math
 w(x) = w_0\left(1 + \frac{x}{\sqrt{x^2 + R^2}}\right)
 \qquad
 w(0) = w_0,\quad w(\infty) = 2\,w_0,\quad w(-\infty) = 0
-$$
+```
 
 **3. Contração do tubo**, por continuidade:
 
-$$
+```math
 (V + w(x))\,R(x)^2 = (V + w_0)\,R^2
-$$
+```
 
 **4. Giro.** O fluxo de momento angular que atravessa o disco é o torque (balanço de Glauert). Com rotação de corpo
-rígido $v_t = \Omega\,r$ (hipótese desta implementação) e conservando o momento angular no tubo que contrai:
+rígido $`v_t = \Omega\,r`$ (hipótese desta implementação) e conservando o momento angular no tubo que contrai:
 
-$$
+```math
 Q = \int_A \rho\,(V + w_0)\,v_t\,r\,dA
 \quad\Rightarrow\quad
 \Omega_0 = \frac{2\,Q}{\pi\,\rho\,(V + w_0)\,R^4}
 \qquad
 \Omega(x) = \Omega_0\left(\frac{R}{R(x)}\right)^2
-$$
+```
 
 O giro tem o sentido da rotação da hélice (só atrás do disco).
 
-**5. No painel.** A velocidade que o painel vê soma a axial ao longo do eixo de tração $\hat e_T$ e tira o giro, com os
+**5. No painel.** A velocidade que o painel vê soma a axial ao longo do eixo de tração $`\hat e_T`$ e tira o giro, com os
 ganhos de calibração (`SlipstreamParam.axial_gain`, `swirl_gain`; 1 é a teoria), em média nos pontos da faixa dentro do
 tubo (`collision/`). N motores somam por superposição:
 
-$$
+```math
 \Delta\vec v = k_{ax}\,w\,\hat e_T - k_{giro}\,\vec v_{giro}
-$$
+```
 
-Equações e páginas a conferir nos PDFs. Testes: `slipstream.zig` (a teoria do momento; o caso estático; $w(0) = w_0$ e
-$w(\infty) = 2w_0$; a contração; a integral do momento angular igual a $Q$; fora do tubo nada; o sentido inverte o giro)
-e `tests/model/test_slipstream.py` (tração zero é idêntico bit a bit; o giro sozinho espelha $C_l$ ao inverter o sentido;
-bimotor simétrico com sentidos opostos dá $C_l = C_n = C_Y = 0$; superposição; máscara de motores; a sonda bate com a
+Equações e páginas a conferir nos PDFs. Testes: `slipstream.zig` (a teoria do momento; o caso estático; $`w(0) = w_0`$ e
+$`w(\infty) = 2w_0`$; a contração; a integral do momento angular igual a $`Q`$; fora do tubo nada; o sentido inverte o giro)
+e `tests/model/test_slipstream.py` (tração zero é idêntico bit a bit; o giro sozinho espelha $`C_l`$ ao inverter o sentido;
+bimotor simétrico com sentidos opostos dá $`C_l = C_n = C_Y = 0`$; superposição; máscara de motores; a sonda bate com a
 teoria do momento).
 
 ### Limites conhecidos do `solo.mccormick`
 
 São as razões para ter outros métodos depois:
 
-- só reduz o arrasto induzido: não aumenta C_Lα e não muda o downwash na cauda perto do chão;
+- só reduz o arrasto induzido: não aumenta $`C_{L\alpha}`$ e não muda o downwash na cauda perto do chão;
 - a altura do painel usa o z dele no corpo, sem girar pela arfagem e pelo rolamento;
 - usa o `b` de referência até para a EH.
 
@@ -174,7 +174,7 @@ São as razões para ter outros métodos depois:
 
 | tipo | ideia | fontes a conferir |
 |---|---|---|
-| `solo.imagem` (categoria solo) | método da imagem: sistema de vórtices espelhado abaixo do chão; mexe em C_L, C_Di e no downwash da cauda, e usa a altura de cada painel com a atitude | Katz e Plotkin, *Low-Speed Aerodynamics*; Phillips e Hunsaker, *Lift and Drag of Wings in Ground Effect* (J. Aircraft, 2013) |
+| `solo.imagem` (categoria solo) | método da imagem: sistema de vórtices espelhado abaixo do chão; mexe em $`C_L`$, $`C_{Di}`$ e no downwash da cauda, e usa a altura de cada painel com a atitude | Katz e Plotkin, *Low-Speed Aerodynamics*; Phillips e Hunsaker, *Lift and Drag of Wings in Ground Effect* (J. Aircraft, 2013) |
 | `esteira.conway` (aditivo) | o mesmo com carga não uniforme no disco | Conway (J. Fluid Mech., 1995) |
 | `tabela` (aditivo) | correção por painel (Δα, fator de pressão dinâmica, ΔC_L) em função de α, β, J e comandos, gerada fora da simulação (VSPAERO, CFD, túnel); o núcleo só interpola | a fonte é a de quem gerou a tabela (fica guardada no modificador) |
 
@@ -195,7 +195,7 @@ python tools/modcheck.py data/aircraft/Convencional_original.json --com esteira.
 - `aerosim_aero_coeffs_thrust` (sessão: `aero_coeffs_thrust(V, α, β, T[], Q[])`) dá os coeficientes do avião com a
   tração e o torque de cada motor, para estudar a esteira sem simular.
 - `aerosim_panel_states` (sessão: `panel_states(V, α, β, T[], Q[])`) dá o estado de cada faixa (`PanelState`: centro,
-  área, corda, grupo, α e velocidade locais, C_L, C_D, sustentação e arrasto em N), saído de `aero.computeTrace`, o
+  área, corda, grupo, α e velocidade locais, $`C_L`$, $`C_D`$, sustentação e arrasto em N), saído de `aero.computeTrace`, o
   mesmo laço da simulação. Com ele, `tools/span_load.py` desenha a carga ao longo da envergadura (y em metros) da
   asa e da EH com e sem um modificador:
 

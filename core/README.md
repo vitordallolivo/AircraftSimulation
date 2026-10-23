@@ -115,7 +115,7 @@ coeficientes de qualquer outro método (lltdrek, AeroSandbox, AVL), montados ant
 |---|---|---|
 | 0 (padrão) | faixas | `physics/aero.zig` |
 | 1 | linha sustentadora (Phillips e Snyder; Goates e Hunsaker com `llt_joint`, `llt_blend`) | `loads/llt.zig` (`compute`) |
-| 2 | tabela do avião inteiro (C_L, C_D, C_m em α e derivadas lineares) mais a fuselagem do núcleo | `physics/aerotable.zig` |
+| 2 | tabela do avião inteiro ($`C_L`$, $`C_D`$, $`C_m`$ em α e derivadas lineares) mais a fuselagem do núcleo | `physics/aerotable.zig` |
 
 Com o padrão, as contas são as de sempre, bit a bit, e a regressão dos exemplos confere isso. No Python, o campo é
 `ac.sim.aero_model` ("faixas", "llt", "llt_gh", "tabela"), e a tabela vem de `aerosim/aero/flight_table.py`. Para
@@ -194,7 +194,7 @@ acrescentar um campo basta pô-lo em `types.zig`, e o esquema e o Python se ajus
 | `aerosim_run(slot, t_limit, buf, cap, &n)` | avança até parar, até `t_limit` ou até encher `buf` |
 | `aerosim_snapshot_save/load` | checkpoint: os bytes do estado (os parâmetros vêm da configuração nova) |
 | `aerosim_trim`, `aerosim_performance` | equilíbrio e tabela de desempenho por V |
-| `aerosim_envelope`, `aerosim_envelope_curve` | envelope por altitude (V_min, V_max, V_e, V*, V_cru, teto) e as curvas T_d, T_r |
+| `aerosim_envelope`, `aerosim_envelope_curve` | envelope por altitude ($`V_{min}`$, $`V_{max}`$, $`V_e`$, V*, $`V_{cru}`$, teto) e as curvas $`T_d`$, $`T_r`$ |
 | `aerosim_simple_perf` | desempenho por fórmula, sem instância: potências, subida, planeio, curva, autonomia e alcance |
 | `aerosim_aero_coeffs`, `aerosim_prop_point`, `aerosim_mass_props` | polar, curva de tração, massa, CG e inércia |
 | `aerosim_aero_coeffs_ex` | coeficientes com rotação (p, q, r) e momentos em qualquer ponto |

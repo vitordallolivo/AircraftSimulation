@@ -47,33 +47,33 @@ basta implementar `ISimBackend` e passá-lo para `SimulationManager(backend)`.
 
 ## Equações do tradutor (`zig/translator.py`)
 
-Cada trecho de superfície entre duas estações $a$ e $b$ (seções e bordas dos comandos) vira um painel de cada lado,
+Cada trecho de superfície entre duas estações $`a`$ e $`b`$ (seções e bordas dos comandos) vira um painel de cada lado,
 com área trapezoidal, corda média e centro aerodinâmico a 1/4 da corda média atrás do ponto médio dos bordos de ataque:
 
-$$
+```math
 S = \tfrac12\,(c_a + c_b)\,\Delta s
 \qquad
 \bar c = \frac{S}{\Delta s}
 \qquad
 \vec r = \frac{\vec r_{BA,a} + \vec r_{BA,b}}{2} - \tfrac14\,\bar c\,\hat x
-$$
+```
 
-$\Delta s$ é a largura do trecho ao longo da envergadura. A incidência do painel é a média das torções das duas
-estações, mais a deflexão fixa do comando ($\tau\,\delta_{fixo}$, flape baixado). Os nós da ferradura da linha
-sustentadora ficam a 1/4 da corda nas duas bordas (Phillips e Snyder 2000). Os coeficientes 3D do painel ($C_{L\alpha}$
+$`\Delta s`$ é a largura do trecho ao longo da envergadura. A incidência do painel é a média das torções das duas
+estações, mais a deflexão fixa do comando ($`\tau\,\delta_{fixo}`$, flape baixado). Os nós da ferradura da linha
+sustentadora ficam a 1/4 da corda nas duas bordas (Phillips e Snyder 2000). Os coeficientes 3D do painel ($`C_{L\alpha}`$
 de Helmbold etc.) vêm prontos do modelo universal (equações em [`aerosim/model/README.md`](../model/README.md)).
 
 ## Conferência da ABI (`zig/abi.py`)
 
 O núcleo exporta o esquema das structs (nome, tipo, offset de cada campo) e um hash dele, calculado em comptime. O
 Python calcula o mesmo hash sobre o texto que leu e recusa a biblioteca se não bater. É o FNV-1a de 64 bits (Fowler,
-Noll e Vo; constantes do padrão FNV), aplicado byte a byte $c_k$ a partir do valor de base:
+Noll e Vo; constantes do padrão FNV), aplicado byte a byte $`c_k`$ a partir do valor de base:
 
-$$
+```math
 h_0 = \mathtt{cbf29ce484222325}_{16}
 \qquad
 h_{k+1} = \left(h_k \oplus c_k\right)\cdot \mathtt{100000001b3}_{16} \bmod 2^{64}
-$$
+```
 
 ## Um exemplo por arquivo
 

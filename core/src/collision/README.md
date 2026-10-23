@@ -10,40 +10,40 @@ O README segue as três peças do modelo: o tubo, a faixa aerodinâmica e a fra�
 ## Modelo
 
 O **tubo** (`Tube`) começa no disco da hélice (`origin`) e segue o eixo `axis`, unitário e apontando para onde o ar
-vai, que é para trás tanto numa hélice tratora quanto numa propulsora. Em cada distância $x$ ao longo do eixo, até o
+vai, que é para trás tanto numa hélice tratora quanto numa propulsora. Em cada distância $`x`$ ao longo do eixo, até o
 comprimento `length`, ele tem um raio `radius(x)`. À frente do disco não há tubo. Sem `radiusFn`, o tubo é um
-cilindro de raio $R$; com ela, é o tubo que contrai da esteira, descrito abaixo.
+cilindro de raio $`R`$; com ela, é o tubo que contrai da esteira, descrito abaixo.
 
 A **faixa** (`Strip`) é um quadrilátero com centro a 25 % da corda, a direção da corda (`ex`, para a frente), a da
 envergadura (`ey`), a corda e a largura. A **fração imersa** (`stripFraction`) é a parte da faixa dentro do tubo,
 contada em pontos no meio de cada célula de uma grade sobre a faixa.
 
-**Ponto dentro do tubo.** Para um ponto $\vec p$, a distância ao longo do eixo e a distância ao eixo são
+**Ponto dentro do tubo.** Para um ponto $`\vec p`$, a distância ao longo do eixo e a distância ao eixo são
 
-$$
+```math
 x = (\vec p - \vec o)\cdot\hat a
 \qquad
 d = \lVert(\vec p - \vec o) - x\,\hat a\rVert
-$$
+```
 
-com $\vec o$ o centro do disco e $\hat a$ o eixo. O ponto está dentro se $0 \le x \le L$ e $d \le R(x)$.
+com $`\vec o`$ o centro do disco e $`\hat a`$ o eixo. O ponto está dentro se $`0 \le x \le L`$ e $`d \le R(x)`$.
 
 **Raio do tubo que contrai.** Pela conservação de massa no disco atuador, o produto da velocidade pela área se mantém
-ao longo do tubo; com $w_0$ a velocidade induzida no disco e $w(x)$ a do ponto (`modifiers/slipstream.zig`):
+ao longo do tubo; com $`w_0`$ a velocidade induzida no disco e $`w(x)`$ a do ponto (`modifiers/slipstream.zig`):
 
-$$
+```math
 R(x) = R\,\sqrt{\frac{V + w_0}{V + w(x)}}
-$$
+```
 
 (Glauert, em Durand, *Aerodynamic Theory* vol. IV, div. L; McCormick, *Aerodynamics, Aeronautics and Flight
 Mechanics*, cap. da teoria da quantidade de movimento; número da equação a conferir no PDF.)
 
-**Fração imersa.** Com os pontos $\vec p_{ij}$ no meio de cada célula da grade $n_c \times n_s$ (da borda de ataque à de
+**Fração imersa.** Com os pontos $`\vec p_{ij}`$ no meio de cada célula da grade $`n_c \times n_s`$ (da borda de ataque à de
 fuga e ao longo da largura):
 
-$$
+```math
 f = \frac{1}{n_c\,n_s}\sum_{i, j}\mathbb 1\left[\vec p_{ij}\ \text{dentro do tubo}\right]
-$$
+```
 
 Uma superfície acima ou abaixo da linha de tração fica fora do tubo, ou só com parte dentro. Por isso a esteira não
 pega numa asa alta de um avião com o motor baixo. A EH e a EV que ficam atrás, na linha do motor, ficam dentro.

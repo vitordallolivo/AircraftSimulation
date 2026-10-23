@@ -67,17 +67,17 @@ flowchart LR
 - `@papel.area|span|chord|xac|K`: refaz a geometria da superfície (mantém afilamento e enflechamento).
 - `thrust_sets`: cada linha da aba `Tracao` (colunas B..V = p00..p05) vira um conjunto no catálogo
   (`src.catalog.thrust_sets`); a linha `nhelice + 2` (célula `Geral!C28`) vai para todos os motores
-  da aeronave com `thrust_model = "poly"`. A tração fica igual à do `Envelope_main`, com $x = n$ (coluna W, constante
-  do conjunto), $y = V$, $T_0$ (coluna Y) no lugar de $p_{00}$, ganho $g$ (polinômio em kgf) e $\rho_0$ de `Geral!C18`:
+  da aeronave com `thrust_model = "poly"`. A tração fica igual à do `Envelope_main`, com $`x = n`$ (coluna W, constante
+  do conjunto), $`y = V`$, $`T_0`$ (coluna Y) no lugar de $`p_{00}`$, ganho $`g`$ (polinômio em kgf) e $`\rho_0`$ de `Geral!C18`:
 
-$$
+```math
 T = g\,\frac{\rho}{\rho_0}\left(T_0 + p_{10}\,n + p_{01}\,V + p_{20}\,n^2 + p_{11}\,n V + \dots + p_{05}\,V^5\right)
-$$
+```
 
   Em voo a tração ainda é multiplicada pelo acelerador. `gain` aceita `"1"`, `"g"`, `"T0"`, `"T0*PT0"`, `"g*PT0"`
   (PT0 em `Geral!C29`) ou um número.
-- `@papel.K`: o $K$ da polar da planilha ($C_{D_i} = K\,C_L^2$) vira o Oswald da superfície, $e = 1/(\pi\,AR\,K)$.
-- `performance.*`: dados do envelope — `AnguloCruzeiro` (C14), `n` (C13), `rho0` (C18), C_Dp da asa e
+- `@papel.K`: o $`K`$ da polar da planilha ($`C_{D_i} = K\,C_L^2`$) vira o Oswald da superfície, $`e = 1/(\pi\,AR\,K)`$.
+- `performance.*`: dados do envelope — `AnguloCruzeiro` (C14), `n` (C13), `rho0` (C18), $`C_{Dp}`$ da asa e
   do EH (G36, G37, J36, J37) e `K` (C17).
 - O que não tem correspondência (derivadas de estabilidade, polinômios de arrasto) está listado em
   `unmapped` no próprio mapa: o núcleo calcula esses efeitos pelos painéis.

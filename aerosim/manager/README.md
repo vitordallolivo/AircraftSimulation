@@ -65,20 +65,20 @@ continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram m
 | `mission` | **missão**: decolagem otimizada (`takeoff_opt.py`) e o resto, etapa por etapa, com checkpoint "missão: início de <etapa>" em cada uma; começa de qualquer etapa (sem checkpoint: voa até lá e salva); curva com raio 0 = automático (testa raios do checkpoint dela e usa o menor que passa em `evaluate_turn`). **só decolagem**. **curvas**: raio mínimo por V. **MTOW**: bisseção na massa; em cada massa reotimiza o acionamento (e o xCG) |
 | `performance` | só contas (sem piloto): `ISimBackend.simple_performance` por altitude → envelope, potências, subida, planeio, curva × V, V-n, bateria; polar da aba Aerodinâmica se houver, senão a do núcleo |
 | `loads` | aba Cargas: `aero.span_loads` (linha sustentadora do núcleo ou faixas) num ponto de voo, com e sem hélice → `LoadResult` → gráficos por superfície e vista 3D (`loads3d`) |
-| `takeoff` | uma corrida até `h_end` (tempo real); opcional: varredura s_R × δe1 em paralelo |
+| `takeoff` | uma corrida até `h_end` (tempo real); opcional: varredura $`s_R`$ × δe1 em paralelo |
 | `turn` | por V: reta até o início da curva → **checkpoint**; para cada raio troca só a curva e retoma |
-| `envelope` | por altitude (sem integrar no tempo): V_min, V_max, V_e, V*, V_cru, teto — método da planilha e/ou modelo completo; mais a tabela ao nível do mar (subida, planeio, raios, V-n) |
+| `envelope` | por altitude (sem integrar no tempo): $`V_{min}`$, $`V_{max}`$, $`V_e`$, V*, $`V_{cru}`$, teto — método da planilha e/ou modelo completo; mais a tabela ao nível do mar (subida, planeio, raios, V-n) |
 | `climb` | por V: nivela → checkpoint; gradientes crescentes a partir dele |
 | `polar` | coeficientes estáticos, margem estática |
 | `thrust` | tração/potência/corrente × V de cada motor (motor+hélice ou polinômio) |
-| `aerodynamics` | sem tempo: cada solver de `aerosim/aero` (os que estiverem instalados e marcados) na mesma geometria e no mesmo x_CG; um solver que falha vira uma linha de erro no resumo, os outros seguem; estudo de pontas de asa |
+| `aerodynamics` | sem tempo: cada solver de `aerosim/aero` (os que estiverem instalados e marcados) na mesma geometria e no mesmo $`x_{CG}`$; um solver que falha vira uma linha de erro no resumo, os outros seguem; estudo de pontas de asa |
 | `stability` | sem tempo: estática → comandos → tesoura (uma sessão por tamanho de EH) → modelo linear por V |
 
 `Runner` é a ferramenta comum: `start_ground()`, `start_air(seg)`, `start_from(checkpoint)`,
 `run(Stop(t=…, segment=…, autopilot=…, takeoff=…), chunk=…)`, `checkpoint(nome)`,
 `reconfigure(missão nova)`. Os checkpoints guardam só o estado; os parâmetros vêm da configuração atual.
 
-### Decolagem: x_warning e z_warning (`takeoff_opt.py`)
+### Decolagem: $`x_{warning}`$ e $`z_{warning}`$ (`takeoff_opt.py`)
 
 Na competição, a decolagem é julgada só pela pista: o avião tem de sair do chão antes de um comprimento e subir acima
 de uma altura (ou, decolando de uma mesa, não afundar demais depois da borda). O piloto controla isso escolhendo em
@@ -87,34 +87,34 @@ ponto de acionamento que deixa a maior folga.
 
 | | |
 |---|---|
-| `x_warning` | comprimento de pista: $n_{dec}$ (onde "decolou") tem de ser $\le$ x_warning |
-| `z_warning` | $z > 0$: decolou quando as rodas passam essa altura sobre a superfície de partida; $z \le 0$ (mesa): decolou ao sair da borda e não pode afundar mais que $\lvert z\rvert$ |
+| `x_warning` | comprimento de pista: $`n_{dec}`$ (onde "decolou") tem de ser $`\le`$ $`x_{warning}`$ |
+| `z_warning` | $`z > 0`$: decolou quando as rodas passam essa altura sobre a superfície de partida; $`z \le 0`$ (mesa): decolou ao sair da borda e não pode afundar mais que $`\lvert z\rvert`$ |
 
-**Como se julga uma corrida (`judge`).** Com $h$ medido a partir da superfície de partida e $h_{min}$ a menor altura
+**Como se julga uma corrida (`judge`).** Com $`h`$ medido a partir da superfície de partida e $`h_{min}`$ a menor altura
 depois de sair do chão, a corrida passa quando decolou dentro da pista e não afundou abaixo do piso
-$\min(z_{warning}, 0)$:
+$`\min(z_{warning}, 0)`$:
 
-$$
+```math
 x_{exc} = \max(0,\ n_{dec} - x_{warning})
 \qquad
 z_{falta} = \max\big(0,\ \min(z_{warning}, 0) - h_{min}\big)
 \qquad
 \text{ok} \iff x_{exc} = 0 \ \text{e}\ z_{falta} = 0
-$$
+```
 
-Depois de decolar, a corrida continua alguns segundos: se cair ou voltar abaixo do z_warning, não decolou.
+Depois de decolar, a corrida continua alguns segundos: se cair ou voltar abaixo do $`z_{warning}`$, não decolou.
 
 **Como se escolhe o acionamento (`optimize`).** O objetivo é a maior folga de pista
-$x_{warning} - n_{dec}$. O ponto de acionamento $s$ é testado numa grade ao longo da pista, começando pela deflexão
-máxima (`de_max`) e descendo para frações menores só se nenhum ponto passar. Em volta do melhor ponto, $s$ é refinado
+$`x_{warning} - n_{dec}`$. O ponto de acionamento $`s`$ é testado numa grade ao longo da pista, começando pela deflexão
+máxima (`de_max`) e descendo para frações menores só se nenhum ponto passar. Em volta do melhor ponto, $`s`$ é refinado
 por seção áurea (Kiefer, *Sequential minimax search for a maximum*, Proc. AMS, 1953, a conferir no PDF): no
-intervalo $[a, b]$, com $g = (\sqrt5 - 1)/2$, os pontos testados são
+intervalo $`[a, b]`$, com $`g = (\sqrt5 - 1)/2`$, os pontos testados são
 
-$$
+```math
 c = b - g\,(b - a) \qquad d = a + g\,(b - a)
-$$
+```
 
-e o intervalo encolhe para $[a, d]$ ou $[c, b]$ conforme o lado com a folga maior; um dos pontos é reaproveitado na
+e o intervalo encolhe para $`[a, d]`$ ou $`[c, b]`$ conforme o lado com a folga maior; um dos pontos é reaproveitado na
 iteração seguinte.
 
 O terreno (mesas e plataformas) fica no núcleo (`core/src/physics/terrain.zig`): o trem, o efeito solo, o
@@ -122,13 +122,13 @@ arredondamento e o alvo do pouso usam a altura do terreno sob cada ponto.
 
 ### Curvas (`analysis.evaluate_turn`, `analysis.min_radius`)
 
-Cada curva é medida no transitório inteiro e no regime (depois de um quarto de volta, $s \ge \pi R/2$). O fator de
-carga em que a asa estola na velocidade do momento sai da razão $C_L/C_{L,max}$ registrada (Anderson, *Introduction
+Cada curva é medida no transitório inteiro e no regime (depois de um quarto de volta, $`s \ge \pi R/2`$). O fator de
+carga em que a asa estola na velocidade do momento sai da razão $`C_L/C_{L,max}`$ registrada (Anderson, *Introduction
 to Flight*, §6.17, a conferir no PDF):
 
-$$
+```math
 n_{estol} = \frac{n_z\,C_{L,max}}{C_L} = \frac{n_z}{C_L/C_{L,max}}
-$$
+```
 
 A curva passa quando segue o raio pedido (erro de trajetória e raio real dentro da tolerância), não estola, não perde
 altura e não perde o controle. O raio mínimo é o menor raio a partir do qual **todos** os maiores também passam.
@@ -136,75 +136,75 @@ altura e não perde o controle. O raio mínimo é o menor raio a partir do qual 
 ### Envelope de voo (adaptado do `Envelope_main`)
 
 O cálculo está no núcleo (`core/src/sim/envelope.zig`); a simulação só monta os dados e os gráficos.
-Para cada altitude (passo `h_step`) calcula $\rho(h)$ e acha $V_{min}$ e $V_{max}$ onde a tração disponível cruza a
-requerida: varre a grade `dV` de $V_f$ para $V_i$ e refina cada cruzamento por bisseção até `tol` (o original usava uma
-grade fina, sem bisseção). O teto absoluto é refinado por bisseção em $h$.
+Para cada altitude (passo `h_step`) calcula $`\rho(h)`$ e acha $`V_{min}`$ e $`V_{max}`$ onde a tração disponível cruza a
+requerida: varre a grade `dV` de $`V_f`$ para $`V_i`$ e refina cada cruzamento por bisseção até `tol` (o original usava uma
+grade fina, sem bisseção). O teto absoluto é refinado por bisseção em $`h`$.
 
 **Tração disponível** (os dois métodos): as unidades propulsoras com o polinômio de tração corrigido pela densidade,
-$T_d = g\,(\rho/\rho_0)\,P(n, V)$, sem ficar negativa fora da faixa do ajuste.
+$`T_d = g\,(\rho/\rho_0)\,P(n, V)`$, sem ficar negativa fora da faixa do ajuste.
 
-**Tração requerida, método planilha.** O $C_L$ sai do equilíbrio vertical com a tração inclinada do ângulo de cruzeiro
-$\alpha$; o arrasto soma o da asa, o da EH (pela razão de áreas) e o induzido (Anderson, *Aircraft Performance and
+**Tração requerida, método planilha.** O $`C_L`$ sai do equilíbrio vertical com a tração inclinada do ângulo de cruzeiro
+$`\alpha`$; o arrasto soma o da asa, o da EH (pela razão de áreas) e o induzido (Anderson, *Aircraft Performance and
 Design*, cap. 5, a conferir no PDF):
 
-$$
+```math
 C_L = \frac{W - T_d \sin\alpha}{\tfrac12\,\rho V^2 S_w}
 \qquad
 C_D = C_{Dp,w} + C_{Dp,h}\,\frac{S_h}{S_w} + K\,C_L^2
 \qquad
 T_r = \frac{\rho V^2 S_w\,C_D}{2\cos\alpha}
-$$
+```
 
-**Tração requerida, método modelo completo.** Trimagem completa (forças e momento, profundor): $V_{min}$ e $V_{max}$
+**Tração requerida, método modelo completo.** Trimagem completa (forças e momento, profundor): $`V_{min}`$ e $`V_{max}`$
 são as velocidades em que o acelerador de equilíbrio chega a 1.
 
-**Velocidades.** A de estol $V_e$ soma o $C_{L,max}$ de cada superfície (planilha) ou usa o da polar da aeronave
-(modelo completo); a de cruzeiro $V_{cru}$ é a do voo nivelado no ângulo de cruzeiro; a de manobra $V^*$ é a de estol
-no fator de carga limite $n$:
+**Velocidades.** A de estol $`V_e`$ soma o $`C_{L,max}`$ de cada superfície (planilha) ou usa o da polar da aeronave
+(modelo completo); a de cruzeiro $`V_{cru}`$ é a do voo nivelado no ângulo de cruzeiro; a de manobra $`V^*`$ é a de estol
+no fator de carga limite $`n`$:
 
-$$
+```math
 V_e = \sqrt{\frac{2W}{\rho\,(S_w C_{Lmax,w} + S_h C_{Lmax,h})}}
 \qquad
 V_e = \sqrt{\frac{2W}{\rho\,S\,C_{L,max}}}
-$$
+```
 
-$$
+```math
 V_{cru} = \sqrt{\left|\frac{2\,(W - T_d(V_f)\sin\alpha)}{\rho\,(S_w C_{L,w} + S_h C_{L,h})}\right|}
 \qquad
 V^* = V_e\sqrt{n}
-$$
+```
 
-No método modelo completo, $V_{cru}$ é a velocidade em que o $\alpha$ de equilíbrio é o ângulo de cruzeiro.
+No método modelo completo, $`V_{cru}`$ é a velocidade em que o $`\alpha`$ de equilíbrio é o ângulo de cruzeiro.
 
-**Densidade.** A ISA na troposfera, com o gradiente térmico $\lambda$, $T_0$ ao nível do mar e a constante do ar $R$
+**Densidade.** A ISA na troposfera, com o gradiente térmico $`\lambda`$, $`T_0`$ ao nível do mar e a constante do ar $`R`$
 (ICAO Doc 7488, a conferir no PDF):
 
-$$
+```math
 \rho(h) = \rho_0\left(1 - \frac{\lambda h}{T_0}\right)^{\frac{g}{\lambda R} - 1}
-$$
+```
 
 **"Reproduzir o original"** (só no método planilha) faz as mesmas contas do `Envelope_main`, para
 comparar com resultados antigos; `tests/manager/test_envelope.py` confere altitude por altitude contra
 o código original transcrito (`tests/helpers/envelope_reference.py`). Desligado, corrige três pontos:
 
-1. o arrasto usa $\rho$; o original usa $\rho/\rho_0$ em $T_r$, o que subestima a potência requerida por um fator
-   $\rho_0$;
-2. a densidade segue a ISA acima; o original usa $(1 + \lambda h/T_0)^{-g/(\lambda R) - 1}$, que cai mais devagar com
+1. o arrasto usa $`\rho`$; o original usa $`\rho/\rho_0`$ em $`T_r`$, o que subestima a potência requerida por um fator
+   $`\rho_0`$;
+2. a densidade segue a ISA acima; o original usa $`(1 + \lambda h/T_0)^{-g/(\lambda R) - 1}`$, que cai mais devagar com
    a altitude;
 3. a tração não fica negativa fora da faixa do ajuste (o original usa o polinômio como está).
 
-Além disso, quando sobra tração já em $V_i$ o original quebra (`intersections[1]` com um cruzamento só);
-aqui $V_{min}$ fica em $V_i$ e o cálculo segue. Dados usados: `ac.performance` (ângulo de cruzeiro, n, C_Dp,
-K, ρ0) e as superfícies (S, C_Lα, C_L0, C_Lmax, incidências, downwash), todos lidos da planilha pelo
+Além disso, quando sobra tração já em $`V_i`$ o original quebra (`intersections[1]` com um cruzamento só);
+aqui $`V_{min}`$ fica em $`V_i`$ e o cálculo segue. Dados usados: `ac.performance` (ângulo de cruzeiro, n, $`C_{Dp}`$,
+K, ρ0) e as superfícies (S, $`C_{L\alpha}`$, $`C_{L0}`$, $`C_{Lmax}`$, incidências, downwash), todos lidos da planilha pelo
 mapa `data/mappings/dados_desempenho.json`. "Exportar" grava um `.xlsx` com uma aba por tabela.
 
 ### Calibração do piloto (`calibration.py`)
 
 O piloto usa um modelo interno linear da sustentação, ajustado por mínimos quadrados na polar do próprio núcleo, na
-faixa linear de $\alpha$; a margem estática sai da inclinação de $C_m$ com $C_L$ (Etkin e Reid, *Dynamics of Flight*,
+faixa linear de $`\alpha`$; a margem estática sai da inclinação de $`C_m`$ com $`C_L`$ (Etkin e Reid, *Dynamics of Flight*,
 cap. 2, a conferir no PDF):
 
-$$
+```math
 C_L \approx C_{L0} + C_{L\alpha}\,\alpha
 \qquad
 MS = -\frac{dC_m}{dC_L}
@@ -212,7 +212,7 @@ MS = -\frac{dC_m}{dC_L}
 x_{np} = x_{cg} + MS\,\bar c
 \qquad
 V_s = \sqrt{\frac{2mg}{\rho\,S\,C_{L,max}}}
-$$
+```
 
 O acelerador de equilíbrio vem da trimagem nivelada na velocidade de cruzeiro, e os ganhos das malhas internas do
 `autotune` do núcleo (ver [`core/src/control/README.md`](../../core/src/control/README.md)).

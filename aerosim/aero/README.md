@@ -28,7 +28,7 @@ núcleo, cada trecho entre seções vira um painel de cada lado, e o avião inte
 
 Cada partição tem a sua envergadura (metade de cada lado), a corda no começo, o afilamento, o perfil no fim (ao longo
 da partição ele passa do perfil da anterior para este), o recuo do bordo de ataque, que dá o enflechamento, e a
-torção $\theta$ no fim, em relação à raiz. Uma torção negativa é o *washout*: a ponta voa com ângulo menor que a raiz e
+torção $`\theta`$ no fim, em relação à raiz. Uma torção negativa é o *washout*: a ponta voa com ângulo menor que a raiz e
 estola depois dela. A linha sustentadora da etapa usa o perfil de cada seção no Reynolds da corda dela.
 
 Os dois exemplos abaixo usam perfis NACA gerados, com a polar pelo NeuralFoil. O primeiro é uma asa reta, de uma
@@ -38,7 +38,7 @@ partição; o segundo junta um trecho reto a um afilado, com outro perfil na pon
 
 ![Asa trapezoidal: reta + afilada, outro perfil na ponta](../../docs/img/asa_trapezio.png)
 
-Os gráficos da etapa Asa para cada uma (C_L × α, polar com arrasto induzido e de perfil, L/D e c_l ao
+Os gráficos da etapa Asa para cada uma ($`C_L`$ × α, polar com arrasto induzido e de perfil, L/D e $`c_l`$ ao
 longo da semienvergadura no cruzeiro e no estol):
 
 ![Gráficos da asa reta](../../docs/img/asa_reta_graficos.png)
@@ -46,7 +46,7 @@ longo da semienvergadura no cruzeiro e no estol):
 ![Gráficos da asa trapezoidal](../../docs/img/asa_trapezio_graficos.png)
 
 A trapezoidal tem mais alongamento com a mesma envergadura (menos área), e o perfil simétrico na ponta
-(com washout) tira arqueamento de onde o estol seria perigoso: C_L0 e C_m,ac menores, estol mais tarde.
+(com washout) tira arqueamento de onde o estol seria perigoso: $`C_{L0}`$ e $`C_{m,ac}`$ menores, estol mais tarde.
 
 ## Os métodos
 
@@ -87,23 +87,23 @@ Os métodos diferem no que enxergam do avião e em como resolvem o escoamento:
 
 | solver | o que entra | como |
 |---|---|---|
-| `zig` — núcleo Zig | asa, EH, EV, fuselagem | o mesmo modelo da simulação: faixas por seção/comando, C_Lα de Helmbold, ε = ε0 + dε/dα α, estol de Beard e McLain. Derivadas por diferenças centrais em α, β, p̂, q̂, r̂ e nos comandos (`aerosim_aero_coeffs_ex`) |
+| `zig` — núcleo Zig | asa, EH, EV, fuselagem | o mesmo modelo da simulação: faixas por seção/comando, $`C_{L\alpha}`$ de Helmbold, ε = ε0 + dε/dα α, estol de Beard e McLain. Derivadas por diferenças centrais em α, β, p̂, q̂, r̂ e nos comandos (`aerosim_aero_coeffs_ex`) |
 | `lltdrek` — [kuodrek/lltdrek](https://github.com/kuodrek/lltdrek) | asa + EH (com interação) | linha sustentadora não linear (Phillips–Snyder) com a polar 2D de cada perfil; sem derrapagem (derivadas em β = NaN), sem EV e sem fuselagem |
 | `zig_llt`, `zig_llt_gh` — linha sustentadora do núcleo (`llt_solver.py`) | asa, EH, EV, fuselagem | a conta da simulação com as forças dos painéis pela linha sustentadora (`aerosim_aero_coeffs_llt`), com as superfícies refinadas (`span_loads.refine_all`, `n_span` faixas por lado, mais estreitas na ponta). `zig_llt`: Phillips e Snyder (2000), não converge em β nem com enflechamento; `zig_llt_gh`: Goates e Hunsaker (2021), converge e fica perto do MachUpX (`core/src/loads/README.md`). Sem estol |
-| `asb_vlm` — AeroSandbox VLM | asa, EH, EV | malha de vórtices em ferradura; arrasto só induzido (+ C_D0 do modelo) |
+| `asb_vlm` — AeroSandbox VLM | asa, EH, EV | malha de vórtices em ferradura; arrasto só induzido (+ $`C_{D0}`$ do modelo) |
 | `asb_buildup` — AeroSandbox AeroBuildup | asa, EH, EV, fuselagem | soma por componentes com NeuralFoil; arrasto completo |
 | `asb_ll` — AeroSandbox LiftingLine | asa, EH, EV | linha sustentadora com NeuralFoil; só derivadas em α e β |
-| `avl` — [AVL](https://web.mit.edu/drela/Public/web/avl/) (Drela e Youngren) | asa, EH, EV, dispositivos, comandos | malha de vórtices; o programa `avl` é externo (PATH ou `AVL_PATH`). O tradutor escreve o `.avl` (NACA pelo código, os outros perfis por AFILE, C_D0 do modelo como CDp, comandos `pitch`/`roll`/`yaw` pelos ganhos da mistura), roda a varredura numa sessão e lê o `ST` de cada ponto |
-| `xflr5` — polar importada | o que estava no XFLR5 | lê a polar de avião exportada (Polars → Export, texto ou CSV): α, C_L, C_D, C_Di, C_m (no CG de lá); C_Lα e C_mα pelo ajuste em α; não roda nada |
+| `avl` — [AVL](https://web.mit.edu/drela/Public/web/avl/) (Drela e Youngren) | asa, EH, EV, dispositivos, comandos | malha de vórtices; o programa `avl` é externo (PATH ou `AVL_PATH`). O tradutor escreve o `.avl` (NACA pelo código, os outros perfis por AFILE, $`C_{D0}`$ do modelo como CDp, comandos `pitch`/`roll`/`yaw` pelos ganhos da mistura), roda a varredura numa sessão e lê o `ST` de cada ponto |
+| `xflr5` — polar importada | o que estava no XFLR5 | lê a polar de avião exportada (Polars → Export, texto ou CSV): α, $`C_L`$, $`C_D`$, $`C_{Di}`$, $`C_m`$ (no CG de lá); $`C_{L\alpha}`$ e $`C_{m\alpha}`$ pelo ajuste em α; não roda nada |
 
 Cada método só implementa `evaluate(modelo, caso, pontos)`, que leva pontos de voo universais (α, β, as taxas
-$\hat p, \hat q, \hat r$ e os comandos) a coeficientes universais. O tradutor de cada um faz a ida, do modelo
+$`\hat p, \hat q, \hat r`$ e os comandos) a coeficientes universais. O tradutor de cada um faz a ida, do modelo
 universal para o formato dele, e a volta, do resultado para os eixos e a adimensionalização universais. A varredura
 em α e as diferenças centrais das derivadas são o mesmo código para todos (`base.py`). Todos devolvem nos eixos do
-simulador (x à frente, z para baixo), com os momentos no ponto `ref` do caso, que é o x_CG escolhido na aba (em % da
+simulador (x à frente, z para baixo), com os momentos no ponto `ref` do caso, que é o $`x_{CG}`$ escolhido na aba (em % da
 CMA, a corda média aerodinâmica) ou o CG do modelo de massa. Os métodos externos usam x para trás e z para cima
-(`geometry.to_xz_up`); o lltdrek usa velocidade livre unitária (ω entra dividido por V) e normaliza C_l e C_n por
-$S\,c$; o adaptador converte. Sem `lltdrek`, `aerosandbox` ou o programa `avl` instalados, o método aparece como
+(`geometry.to_xz_up`); o lltdrek usa velocidade livre unitária (ω entra dividido por V) e normaliza $`C_l`$ e $`C_n`$ por
+$`S\,c`$; o adaptador converte. Sem `lltdrek`, `aerosandbox` ou o programa `avl` instalados, o método aparece como
 indisponível na aba, com o motivo.
 
 **Polar 2D dos perfis (`sections.py`).** Os métodos que usam a polar de cada perfil (o lltdrek e a etapa Perfil da
@@ -111,7 +111,7 @@ sprint) pedem a mesma função, `section_polar(perfil, α, Re, fonte)`. Cada fon
 
 | fonte | o que é |
 |---|---|
-| `modelo` | c_l = a0 (α − α_L0) misturado à placa plana pela sigmoide de Beard e McLain, pico no c_l,max do perfil (a hipótese do núcleo, em 2D) |
+| `modelo` | $`c_l`$ = a0 (α − $`\alpha_{L0}`$) misturado à placa plana pela sigmoide de Beard e McLain, pico no $`c_{l,max}`$ do perfil (a hipótese do núcleo, em 2D) |
 | `neuralfoil` | o contorno real (.dat ou NACA) pela rede do NeuralFoil; sem contorno, cai no modelo |
 | `arquivo` | a polar exportada pelo XFLR5/XFOIL |
 
@@ -142,51 +142,51 @@ soltos dominava o tempo, então o adaptador o troca por uma versão de 3 compone
 
 **Taxas adimensionais.** Todos os métodos recebem e devolvem as rotações assim:
 
-$$
+```math
 \hat p = \frac{p\,b}{2V} \qquad \hat q = \frac{q\,c}{2V} \qquad \hat r = \frac{r\,b}{2V}
-$$
+```
 
-**Derivadas** (`base.py`). Diferença central em torno do ponto da derivada ($\alpha_d$, com o resto zero), com o mesmo
-passo $h$ para todos os métodos; $x$ é $\alpha$, $\beta$, $\hat p$, $\hat q$, $\hat r$ ou um comando, e $C$ um dos
+**Derivadas** (`base.py`). Diferença central em torno do ponto da derivada ($`\alpha_d`$, com o resto zero), com o mesmo
+passo $`h`$ para todos os métodos; $`x`$ é $`\alpha`$, $`\beta`$, $`\hat p`$, $`\hat q`$, $`\hat r`$ ou um comando, e $`C`$ um dos
 coeficientes:
 
-$$
+```math
 C_x = \frac{C(x + h) - C(x - h)}{2h}
-$$
+```
 
-**Métricas da polar** (`polar_metrics`). O $C_{L\alpha}$ e o $C_{m\alpha}$ são as inclinações no trecho linear; o ponto
-neutro e a margem estática, com $c$ a corda de referência (x à frente):
+**Métricas da polar** (`polar_metrics`). O $`C_{L\alpha}`$ e o $`C_{m\alpha}`$ são as inclinações no trecho linear; o ponto
+neutro e a margem estática, com $`c`$ a corda de referência (x à frente):
 
-$$
+```math
 x_{np} = x_{ref} + c\,\frac{C_{m\alpha}}{C_{L\alpha}}
 \qquad
 MS = \frac{x_{ref} - x_{np}}{c}
-$$
+```
 
 O fator de Oswald sai do ajuste da parte induzida, e a polar parabólica (`parabolic_polar`) do ajuste por mínimos
 quadrados no trecho linear:
 
-$$
+```math
 C_{D_i} = \frac{C_L^2}{\pi\,AR\,e}
 \qquad
 C_D = C_{D0} + k\,C_L^2
-$$
+```
 
-**Polar 2D "modelo"** (`sections.py`). A mesma hipótese do núcleo em 2D: a reta $c_l = a_0\,(\alpha - \alpha_{L0})$
-misturada à placa plana pela sigmoide $\sigma$ de Beard e McLain, com o ângulo de estol achado para o pico ser o
-$c_{l,max}$ do perfil (a sigmoide está em [`core/src/physics/README.md`](../../core/src/physics/README.md)):
+**Polar 2D "modelo"** (`sections.py`). A mesma hipótese do núcleo em 2D: a reta $`c_l = a_0\,(\alpha - \alpha_{L0})`$
+misturada à placa plana pela sigmoide $`\sigma`$ de Beard e McLain, com o ângulo de estol achado para o pico ser o
+$`c_{l,max}`$ do perfil (a sigmoide está em [`core/src/physics/README.md`](../../core/src/physics/README.md)):
 
-$$
+```math
 c_l = (1 - \sigma)\,a_0\,(\alpha - \alpha_{L0}) + \sigma\;2\operatorname{sgn}(\alpha)\sin^2\alpha\cos\alpha
 \qquad
 c_d = c_{d0} + 1{,}2\,\sigma\sin^2\alpha
-$$
+```
 
 **Reynolds** (`geometry.py`), com a viscosidade cinemática do ar na densidade dada:
 
-$$
+```math
 Re = \frac{V\,c}{\nu(\rho)}
-$$
+```
 
 ## Dispositivos de ponta de asa (`tipdevices.py`)
 
@@ -195,44 +195,44 @@ molhada e, com ela, atrito. Este estudo diz quanto cada forma ganha e quando o g
 
 Arrasto induzido mínimo no plano de Trefftz (Munk, 1921; Kroo, *Drag due to lift*, Annu. Rev. Fluid Mech. 33, 2001;
 Kroo, McMasters e Smith, *Highly nonplanar lifting systems*, 1995). O arrasto induzido de qualquer sistema sustentador
-depende só do traço da esteira no plano de Trefftz e da circulação $\Gamma(s)$ ao longo dele:
+depende só do traço da esteira no plano de Trefftz e da circulação $`\Gamma(s)`$ ao longo dele:
 
-$$
+```math
 L = \rho\,V\oint\Gamma\,dy
 \qquad
 D_i = -\frac{\rho}{2}\oint\Gamma\,w_n\,ds
-$$
+```
 
-$w_n$ é a velocidade normal ao traço que os vórtices livres ($d\Gamma/ds$) induzem nele. Com o traço dividido em
-painéis de $\Gamma$ constante (espaçamento uniforme: o cosseno não converge nas junções), as duas integrais viram
-formas em $\Gamma$, e o mínimo de $D_i$ com $L$ fixo é um sistema linear (a condição de Munk, $w_n \propto \cos\theta$):
+$`w_n`$ é a velocidade normal ao traço que os vórtices livres ($`d\Gamma/ds`$) induzem nele. Com o traço dividido em
+painéis de $`\Gamma`$ constante (espaçamento uniforme: o cosseno não converge nas junções), as duas integrais viram
+formas em $`\Gamma`$, e o mínimo de $`D_i`$ com $`L`$ fixo é um sistema linear (a condição de Munk, $`w_n \propto \cos\theta`$):
 
-$$
+```math
 D_i = \Gamma^T M\,\Gamma \qquad L = b^T\Gamma \qquad M\,\Gamma \propto b
-$$
+```
 
-O fator de eficiência do vão compara com a asa plana elíptica ($e = 1$), e a extrapolação de Richardson em $n$ e $2n$
+O fator de eficiência do vão compara com a asa plana elíptica ($`e = 1`$), e a extrapolação de Richardson em $`n`$ e $`2n`$
 painéis tira o erro da malha:
 
-$$
+```math
 e = \frac{L^2}{\pi\,q\,b^2\,D_i}
-$$
+```
 
 A placa de ponta também é comparada com a correção empírica do Raymer (*Aircraft Design*, eq. 12.48):
 
-$$
+```math
 AR_{ef} = AR\,\left(1 + 1{,}9\,\frac{h}{b}\right)
-$$
+```
 
-Os testes (`tests/aero/test_tipdevices.py`) conferem a asa plana ($e = 1$), a caixa contra Kroo 2001 e a placa contra o
+Os testes (`tests/aero/test_tipdevices.py`) conferem a asa plana ($`e = 1`$), a caixa contra Kroo 2001 e a placa contra o
 Raymer; os números esperados estão lá.
 
-`device_study` varre $h/b$ e dá, para winglet, placa, caixa e asa em C, o $e$ ótimo e a variação do arrasto total em
-relação à asa sem nada; $e_{plan}$ é a perda da asa real em relação ao carregamento ótimo:
+`device_study` varre $`h/b`$ e dá, para winglet, placa, caixa e asa em C, o $`e`$ ótimo e a variação do arrasto total em
+relação à asa sem nada; $`e_{plan}`$ é a perda da asa real em relação ao carregamento ótimo:
 
-$$
+```math
 \frac{D}{q} = \frac{(C_L S)^2}{\pi\,b^2\,e\,e_{plan}} + C_f\,S_{molhada}
-$$
+```
 
 Ele dá também duas referências de
 extensão de ponta: com a mesma área molhada e com o mesmo momento fletor na raiz (comparação de
@@ -245,7 +245,7 @@ Whitcomb/Jones). Com carregamento ótimo a extensão ganha; o winglet compensa q
 
 A simulação voa com o modelo do núcleo, mas às vezes se quer voar com a aerodinâmica de outro método (lltdrek,
 AeroSandbox, AVL), que não roda dentro do núcleo. Para isso o método gera uma tabela antes do voo, e o núcleo voa com
-ela (`ac.sim.aero_model = "tabela"`, `core/src/physics/aerotable.zig`). A tabela tem C_L, C_D e C_m numa faixa de α,
+ela (`ac.sim.aero_model = "tabela"`, `core/src/physics/aerotable.zig`). A tabela tem $`C_L`$, $`C_D`$ e $`C_m`$ numa faixa de α,
 a uma velocidade, sem derrapagem, e as derivadas lineares em β, nas taxas e nos comandos, tomadas num α pequeno. As
 equações com que o núcleo voa essa tabela estão em [`core/src/physics/README.md`](../../core/src/physics/README.md).
 
@@ -277,7 +277,7 @@ velocidade (`V`), pedir uma curva com fator de carga `n` maior que 1 (se o aviã
 velocidade, a trimagem avisa em `notes`) ou impor α, profundor (`de`) e a rotação de cada motor (`rpm`).
 
 Para cada superfície (asa, EH, EV, cauda em V, dispositivos), o resultado traz, ao longo da envergadura em metros, a
-sustentação e o arrasto por metro, o α local, a velocidade e a pressão dinâmica locais, o $c_l$ e o $c_d$, e os
+sustentação e o arrasto por metro, o α local, a velocidade e a pressão dinâmica locais, o $`c_l`$ e o $`c_d`$, e os
 vetores de cada faixa (centro, força, velocidade relativa e a parte induzida pelos modificadores), que a vista 3D
 desenha. `tubes()` dá o contorno da esteira de cada motor, também para o 3D.
 
@@ -291,14 +291,14 @@ correções está em [`core/src/loads/README.md`](../../core/src/loads/README.md
 
 A conta é do núcleo, no mesmo laço da simulação (`aero.computeTrace` via `aerosim_panel_states`), e entra com os
 modificadores do avião (efeito solo, esteira). O estado do motor vem de `aerosim_prop_state`, com a hélice em
-$C_T(J)$ e $C_P(J)$ na rotação pedida. O módulo só refina a geometria para dar resolução: põe mais seções na mesma
+$`C_T(J)`$ e $`C_P(J)`$ na rotação pedida. O módulo só refina a geometria para dar resolução: põe mais seções na mesma
 superfície (corda, recuo e torção interpolados, com as seções originais exatas), mais estreitas na ponta, até o
 limite de painéis do núcleo. Sem motor, a sustentação total refinada é a mesma da sem refino, e um teste confere isso.
 Com `LoadCase(props=False)`, a tração e o torque são zerados e a distribuição sai a do avião limpo.
 
 **Entrada padrão, gráficos e 3D.** `to_result(r, backend)` leva o resultado para a entrada padrão
 `aerosim.interfaces.loads.LoadResult`: as distribuições ao longo da envergadura, a malha 3D (uma face por faixa), os
-campos (carga alar local, sustentação por metro, α efetivo, V local / V∞, c_l, c_d, q, imersão na esteira), os
+campos (carga alar local, sustentação por metro, α efetivo, V local / V∞, $`c_l`$, $`c_d`$, q, imersão na esteira), os
 vetores e os tubos da esteira. Quem desenha só lê esse formato: `load_plots.span_figure` faz os gráficos e
 `gui/widgets/load_view.LoadView` faz o 3D. Por isso outro método (VLM, painéis, CFD) entra montando um `LoadResult`,
 sem mexer nos gráficos nem no 3D; `tests/aero/test_load_result.py` faz isso com um "CFD" de mentira.
