@@ -62,7 +62,7 @@ def test_window_runs_and_shows_each_candidate(app):
     assert len(w.rows) == 2 and w.funnel["superfícies"][0] == 2
     assert {"superfícies", "nota"} <= set(seen)
     assert len(w.points) == 4                                       # 2 pontos de projeto × 2 configurações
-    assert w.cfg_tab.rowCount() == 2 and w.stage_tab.rowCount() == 3            # geometria, superfícies, nota
+    assert w.cfg_tab.rowCount() == 2 and w.stage_tab.rowCount() == 4            # geometria, voa, superfícies, nota
     assert w.funnel["geometria"] == [2, 2, 2] and all(r["geração"] == 1 for r in w.rows.values())
     best = max(w.rows.values(), key=lambda r: r["nota"])
     assert w.selected == best["name"] and math.isfinite(best["nota"])
@@ -183,7 +183,7 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     assert set(w.menus) == {"pontuação", "variáveis", "restrições", "categorias", "configuração"}
     assert w.rot.window() is not w and w.scoring.window() is not w and w.cat_cb["asa alta"].window() is not w
     assert w.rot.window() is w.menus["restrições"] and w.evals.window() is w.menus["configuração"]
-    assert set(w.method) == {"configurações", "superfícies", "decolagem"}
+    assert set(w.method) == {"configurações", "voa", "superfícies", "decolagem"}
     w.rot.setValue(9.0)
     w.one_piece.setChecked(True)
     w.stab.setChecked(True)

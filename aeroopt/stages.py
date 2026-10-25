@@ -165,13 +165,64 @@ def configurations(project, problem: OptProblem, catalog=None) -> list[StageItem
 
 
 def _rank(r: dict) -> tuple:
-    m = r["mtow"]
-    return (r["ok"], m if math.isfinite(m) else -math.inf)
+    """as regras de viabilidade (Deb, "An efficient constraint handling method for genetic algorithms", Computer
+    Methods in Applied Mechanics and Engineering 186, 2000, seção 3, a conferir no PDF): o ponto que fecha ganha de
+    todo ponto que não fecha; entre dois que fecham ganha o de maior MTOW; entre dois que não fecham ganha o que viola
+    menos. Assim a busca anda para onde o avião passa a fechar, em vez de procurar o MTOW maior entre os que não
+    fecham"""
+    if r["ok"]:
+        m = r["mtow"]
+        return (1, m if math.isfinite(m) else -math.inf)
+    return (0, -r.get("viol", math.inf))
+
+
+def _fit(r: dict) -> float:
+    """o mesmo `_rank` num número só, para o algoritmo genético do núcleo (que ordena por posição)"""
+    a, b = _rank(r)
+    if not math.isfinite(b):
+        return math.nan
+    return b if a else -1e9 + b
 
 
 def _eval(x: dict, r: dict) -> dict:
-    """uma avaliação da busca das superfícies, para o histórico (e o CSV)"""
-    return dict(values=dict(x), mtow=r["mtow"], ok=r["ok"], why=r["why"], pv=r["pv"], b=r["b"], m_bat=r["m_bat"])
+    """uma avaliação da busca, para o histórico (e o CSV)"""
+    return dict(values=dict(x), mtow=r.get("mtow", math.nan), ok=r["ok"], why=r["why"], pv=r.get("pv", math.nan),
+                b=r.get("b", math.nan), m_bat=r.get("m_bat", math.nan), viol=r.get("viol", 0.0))
+
+
+def violation(d: dict, stab: dict | None = None, stab_params=None) -> tuple[float, list[str]]:
+    """quanto um ponto de projeto viola o que é preciso para voar, somado em escalas parecidas (cada termo vale 1
+    na fronteira de "bem fora"), e o motivo de cada termo. `d`: o ponto de projeto ou a montagem ({"asm": ...})"""
+    asm = d["asm"]
+    tr, st = asm.get("trim") or {}, asm["set"]
+    out: list[tuple[float, str]] = []
+    if not math.isfinite(tr.get("V_rot", 0.0)):
+        out.append((1.0, "o profundor não consegue rodar o avião"))
+    if not tr.get("hold_ok", True):
+        out.append((1.0, "trim de decolagem passa do curso de picar"))
+    if "CLh_lim" in st:
+        lo, hi = st["CLh_lim"]
+        x = st["CLh_CLmax"]
+        if not lo <= x <= hi:
+            out.append((min(abs(x - lo), abs(x - hi)) / max(hi - lo, 0.1), "EH estola no C_L,max"))
+    if not asm["battery_fits"]:
+        out.append((asm["ballast"] / 0.05, f"precisa de {asm['ballast']:.2f} kg de lastro de equilíbrio"))
+    sm_min = getattr(getattr(d.get("cand"), "set", None), "params", None)
+    sm_min = getattr(sm_min, "sm_min", None)
+    if sm_min is not None and asm.get("sm") is not None and asm["sm"] < sm_min:
+        out.append(((sm_min - asm["sm"]) / 5.0, f"margem estática {asm['sm']:.1f} % < {sm_min:g} %"))
+    if "mtow" in d and not math.isfinite(d["mtow"]):
+        out.append((1.0, "não decola na pista"))
+    if stab:
+        if "Cnb" in stab and stab["Cnb"] <= 0:
+            out.append((-stab["Cnb"] / 0.02 + 0.1, f"instável direcional (C_nβ = {stab['Cnb']:.3f} /rad)"))
+        if "Clb" in stab and stab["Clb"] >= 0:
+            out.append((stab["Clb"] / 0.02 + 0.1, f"instável em rolamento (C_lβ = {stab['Clb']:.3f} /rad)"))
+        lim = stab_params.level if stab_params is not None else 3
+        for k, v in stab.items():
+            if k not in ("Cnb", "Clb") and isinstance(v, int) and v > lim:
+                out.append((float(v - lim), f"{k}: nível {v} (aceito até {lim})"))
+    return sum(v for v, _ in out), [w for _, w in out]
 
 
 # os métodos da busca das superfícies (a GUI escolhe no menu Configuração)
@@ -219,15 +270,20 @@ class SurfaceSizing(IStage):
                 self._backend = ZigBackend()
             ok, w, stab = stability_check(d["ac"], p.requirements.V_cruise, self.stability, self._backend)
             why = ("estabilidade: " + w) if not ok else why
+        viol = 0.0
+        if not ok:
+            viol, _ = violation(d, stab, self.stability)
+            viol = viol or 1.0                    # não fecha por algo que a soma não mede (uma restrição)
         asm = d["asm"]
         m_bat = sum(i.mass for i in asm["items"] if i.name == "bateria")
         return dict(values=dict(values), mtow=float(d["mtow"]), ok=ok, why=why, pv=float(asm["empty"]),
                     m_bat=float(m_bat), b=float(d["cand"].set.wing.params.span),
                     s_to=float(p.requirements.takeoff_run), lapes=bool(cand.params.lapes),
-                    liquid=bool(cand.params.liquid), cand=d["cand"], req=d["req"], stab=stab)
+                    liquid=bool(cand.params.liquid), cand=d["cand"], req=d["req"], stab=stab, viol=viol)
 
     def one(self, item: StageItem) -> StageItem:
-        x = {k: min(max(float(get_value(self.project, k)), lo), hi) for k, lo, hi in self.free}
+        # parte do ponto que a etapa "voa" achou, se achou; senão, do avião como está
+        x = {k: min(max(float(item.values.get(k, get_value(self.project, k))), lo), hi) for k, lo, hi in self.free}
         best = self.point({**item.values, **x})
         hist = [_eval(x, best)]
         if self.method == "gerações":
@@ -261,47 +317,110 @@ class SurfaceSizing(IStage):
         return x, best
 
     def _generations(self, item: StageItem, x: dict, best: dict, hist: list) -> tuple[dict, dict]:
-        """o algoritmo genético do núcleo (core/src/optim/ga.zig) com genes reais entre os limites: o primeiro
-        indivíduo é o avião como está, e as avaliações param no total pedido. Cada gene cai no passo do campo (o
-        diedro de meio em meio grau), e um avião que já apareceu não gasta avaliação: a nota vem da memória. Sem
-        isso a população pequena vira cópias do melhor e a busca gasta o total refazendo o mesmo ponto. Voo que não
-        fecha fica atrás de todo voo que fecha"""
+        """o algoritmo genético do núcleo nas contínuas (`_real_search`): o primeiro indivíduo é o ponto de partida,
+        cada gene cai no passo do campo (o diedro de meio em meio grau) e um avião que já apareceu não gasta
+        avaliação. Sem isso a população pequena vira cópias do melhor e a busca gasta o total refazendo o mesmo
+        ponto"""
         if not self.free or self.evals <= 1:
             return x, best
-        from aerosim.backend.zig import ZigBackend
-        be = ZigBackend()
-        pop = max(4, min(10, self.evals // 3))
-        cfg = dict(n_genes=len(self.free), pop=pop, elite=1, card=[0] * len(self.free),
-                   lo=[lo for _, lo, _ in self.free], hi=[hi for _, _, hi in self.free], p_mut=0.3, sigma=0.15,
-                   seed=1 + zlib.crc32(item.name.encode()) % 100_000, generation=0)
-        steps = [(inp.get(k).step if inp.get(k) else 0.0) for k, _, _ in self.free]
+        return _real_search(self.free, x, best, lambda y: self.point({**item.values, **y}), self.evals, hist,
+                            seed=1 + zlib.crc32(item.name.encode()) % 100_000)
 
-        def snap(j, g):
-            k, lo, hi = self.free[j]
-            g = round(g / steps[j]) * steps[j] if steps[j] > 0 else g
-            return round(min(max(g, lo), hi), 6)
-        genes = be.ga_init(cfg)
-        genes[0] = [x[k] for k, _, _ in self.free]
-        seen = {tuple(genes[0]): best}
-        fit = [math.nan] * pop
-        for gen in range(4 * math.ceil(self.evals / pop) + 1):
-            for i in range(pop):
-                key = tuple(snap(j, g) for j, g in enumerate(genes[i])) if (gen or i) else tuple(genes[0])
-                genes[i] = key
-                r = seen.get(key)
-                if r is None and len(hist) < self.evals:
-                    y = {k: key[j] for j, (k, _, _) in enumerate(self.free)}
-                    r = seen[key] = self.point({**item.values, **y})
-                    hist.append(_eval(y, r))
-                    if _rank(r) > _rank(best):
-                        x, best = y, r
-                m = r["mtow"] if r is not None else math.nan
-                fit[i] = (m if r["ok"] else m - 1e9) if math.isfinite(m) else math.nan
-            if len(hist) >= self.evals:
-                break
-            cfg["generation"] = gen + 1
-            genes = be.ga_next(cfg, genes, fit)
-        return x, best
+
+# os métodos da etapa "voa" (a GUI escolhe no menu Configuração)
+FLY_METHODS = {"buscar": "achar um ponto que voa (gerações nas contínuas, pelas regras de viabilidade)",
+               "conferir": "só conferir o avião como está"}
+
+
+class FlightCheck(IStage):
+    """antes do desempenho: o avião da configuração voa? Na massa estimada do projeto, sem procurar o MTOW, ele tem
+    que trimar (o profundor roda o avião e segura o trim, a EH não estola), equilibrar sem lastro, ter a margem
+    estática mínima e, com a restrição de estabilidade ligada, ser estável. É mais barato que um ponto de projeto
+    (não corre a pista) e separa os dois problemas: primeiro achar algo que voa, depois fazer voar melhor. Quando o
+    avião como está não voa, a etapa procura nas contínuas livres o ponto que viola menos (as regras de viabilidade
+    de Deb) até achar um que voa; as superfícies partem dele"""
+    name = "voa"
+
+    def __init__(self, project, problem: OptProblem, catalog=None, evals: int = 24, method: str = "buscar",
+                 stability: StabilityParams | None = None):
+        if method not in FLY_METHODS:
+            raise ValueError(f"método da etapa voa desconhecido: {method}")
+        self.project, self.catalog, self.evals, self.method = project, catalog, int(evals), method
+        self.stability = stability
+        self.free = [(v.key, min(v.lo, v.hi), max(v.lo, v.hi)) for v in problem.free_variables()
+                     if v.kind == "contínua"]
+        self._backend = None
+
+    def __getstate__(self):
+        return {**self.__dict__, "_backend": None}
+
+    def point(self, values: dict) -> dict:
+        p, cand = candidate(self.project, values)
+        ac, asm = pw.assemble(cand, p.requirements, p.rules, self.catalog, p.airfoil_map())
+        d = dict(asm=asm, cand=cand)
+        viol, why = violation(d)
+        stab = {}
+        if not why and self.stability is not None:
+            if self._backend is None:
+                from aerosim.backend.zig import ZigBackend
+                self._backend = ZigBackend()
+            _, _, stab = stability_check(ac, p.requirements.V_cruise, self.stability, self._backend)
+            viol, why = violation(d, stab, self.stability)
+        return dict(values=dict(values), ok=not why, why="; ".join(why), viol=viol, mtow=math.nan, stab=stab)
+
+    def one(self, item: StageItem) -> StageItem:
+        x = {k: min(max(float(item.values.get(k, get_value(self.project, k))), lo), hi) for k, lo, hi in self.free}
+        best = self.point({**item.values, **x})
+        hist = [_eval(x, best)]
+        if not best["ok"] and self.method == "buscar" and self.free:
+            x, best = _real_search(self.free, x, best, lambda y: self.point({**item.values, **y}), self.evals, hist,
+                                   seed=7 + zlib.crc32(item.name.encode()) % 100_000, stop_ok=True)
+        item.values = {**item.values, **x}
+        item.data["voa"] = dict(history=hist, viol=best["viol"], stab=best["stab"])
+        if not best["ok"]:
+            item.data["violacao"] = best["viol"]
+            raise ValueError(best["why"] + (f" (melhor de {len(hist)} pontos)" if len(hist) > 1 else ""))
+        return item
+
+
+def _real_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: int, stop_ok: bool = False):
+    """o algoritmo genético do núcleo (core/src/optim/ga.zig) nas contínuas `free`, com `_rank` (as regras de
+    viabilidade): o primeiro indivíduo é `x`, cada gene cai no passo do campo e um ponto repetido não gasta
+    avaliação. Para no total de avaliações (ou no primeiro ponto que fecha, com `stop_ok`)"""
+    from aerosim.backend.zig import ZigBackend
+    be = ZigBackend()
+    pop = max(4, min(10, evals // 3))
+    cfg = dict(n_genes=len(free), pop=pop, elite=1, card=[0] * len(free), lo=[lo for _, lo, _ in free],
+               hi=[hi for _, _, hi in free], p_mut=0.3, sigma=0.15, seed=seed, generation=0)
+    steps = [(inp.get(k).step if inp.get(k) else 0.0) for k, _, _ in free]
+
+    def snap(j, g):
+        _, lo, hi = free[j]
+        g = round(g / steps[j]) * steps[j] if steps[j] > 0 else g
+        return round(min(max(g, lo), hi), 6)
+    genes = be.ga_init(cfg)
+    genes[0] = [x[k] for k, _, _ in free]
+    seen = {tuple(genes[0]): best}
+    fit = [math.nan] * pop
+    for gen in range(4 * math.ceil(evals / pop) + 1):
+        for i in range(pop):
+            key = tuple(snap(j, g) for j, g in enumerate(genes[i])) if (gen or i) else tuple(genes[0])
+            genes[i] = key
+            r = seen.get(key)
+            if r is None and len(hist) < evals:
+                y = {k: key[j] for j, (k, _, _) in enumerate(free)}
+                r = seen[key] = point(y)
+                hist.append(_eval(y, r))
+                if _rank(r) > _rank(best):
+                    x, best = y, r
+                if stop_ok and best["ok"]:
+                    return x, best
+            fit[i] = _fit(r) if r is not None else math.nan
+        if len(hist) >= evals:
+            break
+        cfg["generation"] = gen + 1
+        genes = be.ga_next(cfg, genes, fit)
+    return x, best
 
 
 class Takeoff6dof(IStage):
@@ -359,6 +478,9 @@ class Score(IStage):
             i.data["nota_formula"] = s["nota"]
             if not s["valido"]:
                 i.data["nota"] = 0.0
+                i.data["violacao"] = sum(abs(x - float(t.rsplit(" ", 1)[-1].replace(",", ".")))
+                                         / max(abs(float(t.rsplit(" ", 1)[-1].replace(",", "."))), 1.0)
+                                         for t, ok, x in s["validade"] if not ok)
         return items
 
 
@@ -449,8 +571,9 @@ class StagedEvaluator(IEvaluator):
 
     def __init__(self, project, catalog=None, backend=None, workers: int | None = None, six_dof: bool = True,
                  evals: int = 24, start_method: str | None = None, scoring=None, geometry=True,
-                 surfaces: str = "coordenadas", stability: StabilityParams | None = None):
+                 surfaces: str = "coordenadas", stability: StabilityParams | None = None, fly: str | None = "buscar"):
         self.project, self.catalog, self.backend = project, catalog, backend
+        self.fly = fly                             # o método da etapa "voa" (FLY_METHODS); None: sem a etapa
         self.surfaces = surfaces                   # o método da busca das superfícies (SURFACE_METHODS)
         self.stability = stability                 # a restrição de estabilidade de cada ponto (None: desligada)
         self.workers, self.six_dof, self.evals = workers, six_dof, evals
@@ -468,6 +591,8 @@ class StagedEvaluator(IEvaluator):
 
     def stages(self, project, problem: OptProblem) -> list[IStage]:
         sts: list[IStage] = [GeometryStage(project, self.geometry, self.catalog)] if self.geometry else []
+        if self.fly:
+            sts.append(FlightCheck(project, problem, self.catalog, self.evals, self.fly, self.stability))
         sts.append(SurfaceSizing(project, problem, self.catalog, self.evals, self.geometry, self.surfaces,
                                  self.stability))
         if self.six_dof:
@@ -502,6 +627,7 @@ def row(item: StageItem) -> dict:
                 mtow=d.get("mtow", math.nan), mtow6=d.get("mtow6", math.nan), pv=d.get("pv", math.nan),
                 b=d.get("b", math.nan), m_bat=d.get("m_bat", math.nan),
                 nota=d.get("nota", math.nan), nota_formula=d.get("nota_formula", d.get("nota", math.nan)),
+                violacao=d.get("violacao", math.nan),
                 valido=d.get("valido", False), termos=d.get("termos", {}),
                 validade=d.get("validade", []), inputs=d.get("inputs", {}), history=d.get("history", []))
 

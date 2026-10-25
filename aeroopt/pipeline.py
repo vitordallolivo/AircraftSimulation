@@ -18,7 +18,9 @@ from aerosim.interfaces.optim import IStage, StageItem
 
 
 def _fail(item: StageItem, stage: str, err: Exception) -> StageItem:
-    item.alive, item.why = False, f"{stage}: {type(err).__name__}: {err}"
+    # ValueError é o "não passou" de uma etapa (o motivo já está no texto); outro erro é falha de conta e leva o tipo
+    kind = "" if type(err) is ValueError else f"{type(err).__name__}: "
+    item.alive, item.why = False, f"{stage}: {kind}{err}"
     return item
 
 

@@ -25,12 +25,30 @@ from .problem import apply_to_project, fold_bounds
 from .stages import StagedEvaluator, axes, config_item, configurations, row
 
 
+# quanto mais longe nas etapas, melhor: quem parou no 6GDL ganha de quem parou nas superfícies, e assim por diante
+STAGE_TIER = {"nota": 0, "decolagem 6GDL": 1, "superfícies": 2, "voa": 3, "geometria": 4}
+
+
 def fitness(r: dict) -> float:
-    """a nota para a seleção: voo válido > voo inválido > parou numa etapa (NaN)"""
-    n = r.get("nota_formula", r.get("nota", math.nan))          # o inválido tem nota 0; a fórmula ordena entre eles
-    if not (r.get("alive") and math.isfinite(n)):
+    """a nota para a seleção, pelas regras de viabilidade (Deb, 2000; ver `stages._rank`): o voo válido pela nota;
+    o voo inválido atrás de todo válido, pelo quanto viola as condições de validade; quem parou numa etapa atrás de
+    todo voo, primeiro pela etapa a que chegou e depois pelo quanto viola. A seleção do núcleo é por posição: só a
+    ordem importa, não a escala"""
+    n = r.get("nota", math.nan)
+    viol = r.get("violacao", math.nan)
+    viol = viol if math.isfinite(viol) else 1.0          # parou sem uma medida de quanto: conta como 1
+    if r.get("alive") and math.isfinite(n):
+        return n if r.get("valido") else -1e9 - viol
+    if r.get("alive"):
         return math.nan
-    return n if r.get("valido") else n - 1e9
+    tier = STAGE_TIER.get(r.get("stage", ""), 5)
+    return -1e9 * (2 + tier) - min(viol, 1e8)
+
+
+def _best(rows: list[dict]) -> float:
+    """a melhor nota de voo válido até ali (NaN enquanto nenhum valeu)"""
+    return max((r["nota"] for r in rows if r.get("alive") and r.get("valido") and math.isfinite(r["nota"])),
+               default=math.nan)
 
 
 class GenerationsSolver(ISolver):
@@ -69,7 +87,7 @@ class GenerationsSolver(ISolver):
 
         if n_all <= self.population:                  # cabe numa geração: roda todas
             rows = stage_run(configurations(p, problem, evaluator.catalog), 1, 0.0, 1.0)
-            history.append((1, len(rows), max((fitness(r) for r in rows if math.isfinite(fitness(r))), default=math.nan)))
+            history.append((1, len(rows), _best(rows)))
         else:
             from aerosim.backend.zig import ZigBackend
             be = evaluator.backend if hasattr(evaluator.backend, "ga_next") else ZigBackend()
@@ -77,7 +95,6 @@ class GenerationsSolver(ISolver):
                        p_cross=self.p_cross, p_mut=self.p_mut, seed=self.seed, generation=0)
             genes = be.ga_init(cfg)
             seen: dict[tuple, dict] = {}
-            best = math.nan
             for g in range(self.generations):
                 if cancel is not None and cancel():
                     break
@@ -89,10 +106,7 @@ class GenerationsSolver(ISolver):
                     seen[k] = r
                     rows.append(r)
                 fit = [fitness(seen[k]) for k in keys]
-                ok = [f for f in fit if math.isfinite(f)]
-                if ok:
-                    best = max(best, max(ok)) if math.isfinite(best) else max(ok)
-                history.append((g + 1, len(new), best))
+                history.append((g + 1, len(new), _best(rows)))
                 cfg["generation"] = g + 1
                 genes = be.ga_next(cfg, genes, fit)
         done = [r for r in rows if r["alive"] and math.isfinite(r["nota"])]

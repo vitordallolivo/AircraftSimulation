@@ -90,7 +90,7 @@ e depois da barreira a etapa já vê todos e escolhe quem segue. Sem a barreira,
 antes de os outros serem dimensionados, e a escolha entre eles teria de esperar do mesmo jeito, só que espalhada
 pelo código.
 
-As etapas de hoje, em `stages.py`, são cinco. A **geometria** vem logo depois das configurações: o avião de cada
+As etapas de hoje, em `stages.py`, são seis. A **geometria** vem logo depois das configurações: o avião de cada
 configuração, montado como está nos rascunhos, passa pela checagem do núcleo (`core/src/geometry`): a hélice não pode
 acertar nenhuma peça, nenhuma massa pode ficar fora da geometria e nada pode bater no chão, parado ou girado no trem
 principal até o ângulo de rotação. A geometria não só reprova: ela conserta o que sabe consertar. Sem isso, quase
@@ -106,7 +106,27 @@ bate). Os pedaços soltos (asas sem montante ou tubo
 entre elas) por enquanto só são contados, porque o montador da sprint ainda não põe esses conectores. Sem a
 geometria, as etapas são as quatro abaixo. As **configurações** são as combinações das escolhas discretas livres
 (motor, hélice, perfil, arranjo, número de motores): cada combinação vira um candidato, até 256. Acima disso
-quem escolhe são as gerações, descritas logo abaixo. As **superfícies**
+quem escolhe são as gerações, descritas logo abaixo.
+
+A etapa **voa** (`FlightCheck`) separa dois problemas que antes andavam juntos: achar um avião que voa e depois
+fazê-lo voar melhor. Ela vem antes de qualquer conta de desempenho. Na massa estimada do projeto, sem procurar o
+MTOW e sem correr a pista, o avião tem que trimar (o profundor roda o avião e segura o trim, a EH não estola),
+equilibrar sem lastro, ter a margem estática mínima e, com a restrição de estabilidade ligada, ser estável. Quando
+a configuração como está não voa, a etapa procura nas contínuas livres o ponto que viola menos, até achar um que voa;
+as superfícies partem dele. Sem a etapa, a primeira busca já media o MTOW, e a configuração que só precisava de
+outra área de EH para equilibrar morria comparada pelo MTOW de quem também não fechava.
+
+A busca das duas etapas, e a das configurações, segue as **regras de viabilidade** (Deb, "An efficient constraint
+handling method for genetic algorithms", *Computer Methods in Applied Mechanics and Engineering* 186, 2000, seção 3,
+a conferir no PDF). O ponto que fecha ganha de todo ponto que não fecha. Entre dois que fecham, ganha o melhor
+(o MTOW, a nota). Entre dois que não fecham, ganha o que viola menos. A violação (`stages.violation`) soma, em
+escalas parecidas, o lastro que falta, o quanto o $C_L$ da EH passa do limite, a margem que falta, $C_{n\beta}$ e
+$C_{l\beta}$ do lado errado e os níveis MIL acima do aceito; no voo inválido, o quanto cada condição de validade
+passa do limite. Nas gerações das configurações, quem chegou mais longe nas etapas ganha de quem parou antes. Com
+isso os inválidos também guiam a busca, para onde o avião passa a fechar, em vez de ficarem todos empatados no fim
+da fila. A seleção do núcleo é por posição, então só a ordem importa, não a escala.
+
+As **superfícies**
 acertam, em cada configuração, as variáveis contínuas livres (envergadura, área, inclinação do motor) pela
 decolagem. Cada ponto é o ponto de projeto acoplado do aerosim (`power.design_point`: a asa calada e a EH retrimada
 com a tração, na massa que a pista deixa levar), e ganha o maior MTOW que fecha a estabilidade; a configuração que

@@ -135,7 +135,7 @@ def test_staged_solver_sizes_surfaces_by_takeoff():
     assert len(set(spans)) == 3                              # a busca andou na envergadura
     assert row["alive"] and row["nota"] == row["mtow"] == res.best["nota"]   # objetivo simples: o MTOW
     assert row["mtow"] == max(h["mtow"] for h in row["history"] if h["ok"])
-    assert res.names["etapas"] == [("superfícies", 1, 1), ("nota", 1, 1)]
+    assert res.names["etapas"] == [("voa", 1, 1), ("superfícies", 1, 1), ("nota", 1, 1)]
     assert seen[-1][0] == pytest.approx(1.0)
     assert p.wing_draft.span == before.wing_draft.span and p.variables == before.variables
 
@@ -255,3 +255,22 @@ def test_area_says_where_the_configuration_stopped():
     assert sg.area(dict(alive=False, why="não decola na pista; precisa de 0.07 kg de lastro")) == "equilíbrio + desempenho"
     assert sg.area(dict(alive=True, nota=90.0, valido=True)) == "nota"
     assert sg.area(dict(alive=True, nota=math.nan, stage="superfícies")) == "superfícies"
+
+
+def test_fly_stage_finds_a_point_that_flies_before_performance():
+    """a configuração que não equilibra como está (bateria não cabe, precisa de lastro) não morre: a etapa voa
+    procura nas contínuas o ponto que viola menos até achar um que voa, e as superfícies partem dele"""
+    from aerosim.interfaces.optim import StageItem
+    from aeroopt.gui import example_project
+    p, pr = example_project()
+    pr.variable("wing.area").lo, pr.variable("wing.area").hi = 0.4, 0.6
+    st = sg.FlightCheck(p, pr, evals=24)
+    start = st.point({})
+    assert not start["ok"] and start["viol"] > 0 and "lastro" in start["why"]
+    it = st.one(StageItem(name="a", values={}))
+    h = it.data["voa"]["history"]
+    assert h[-1]["ok"] and len(h) <= 24 and it.data["voa"]["viol"] == 0
+    assert st.point(it.values)["ok"]
+    assert sg.FlightCheck(p, pr, method="conferir").point({})["viol"] == start["viol"]
+    with pytest.raises(ValueError, match="lastro"):
+        sg.FlightCheck(p, pr, method="conferir").one(StageItem(name="b", values={}))

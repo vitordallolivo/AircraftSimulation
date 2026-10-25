@@ -88,4 +88,11 @@ def test_few_combinations_run_all_in_one_generation():
 
 def test_fitness_orders_valid_invalid_and_dead():
     assert fitness(dict(alive=True, nota=10.0, valido=True)) > fitness(dict(alive=True, nota=99.0, valido=False))
-    assert math.isnan(fitness(dict(alive=False, nota=math.nan)))
+    # as regras de viabilidade: o inválido que viola menos ganha do que viola mais; quem parou numa etapa fica atrás
+    # de todo voo, e quem chegou mais longe ganha
+    inv = lambda v: fitness(dict(alive=True, nota=0.0, valido=False, violacao=v))
+    assert inv(0.1) > inv(2.0) > fitness(dict(alive=False, stage="superfícies", violacao=0.01))
+    assert fitness(dict(alive=False, stage="superfícies", violacao=5.0)) > \
+        fitness(dict(alive=False, stage="voa", violacao=0.01)) > fitness(dict(alive=False, stage="geometria"))
+    assert fitness(dict(alive=False, stage="voa", violacao=0.2)) > fitness(dict(alive=False, stage="voa", violacao=3))
+    assert math.isnan(fitness(dict(alive=True, nota=math.nan)))                        # ainda rodando

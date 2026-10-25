@@ -6,6 +6,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, voa antes do desempenho: etapa nova "voa" (`FlightCheck`) entre a geometria e as superfícies. Na massa
+  estimada, sem MTOW, o avião tem que trimar, equilibrar sem lastro, ter a margem mínima e (com a restrição ligada)
+  ser estável; se não voa como está, a etapa procura nas contínuas o ponto que viola menos. As buscas seguem as regras
+  de viabilidade de Deb (2000): inválidos ordenados pela violação (`stages.violation`), e nas gerações das
+  configurações pela etapa a que chegaram. Método na Configuração: buscar, conferir ou desligada.
 - aeroopt, tabela e Parar: a tabela das configurações mostra o número (o nome fica na dica) e a área de projeto em que
   parou (`stages.area`). O Parar não espera a conta em andamento: o processo é encerrado (`Pipeline._map` espera
   0,2 s por vez).

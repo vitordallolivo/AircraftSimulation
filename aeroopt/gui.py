@@ -592,7 +592,7 @@ class ConstraintsTable(QtWidgets.QWidget):
 # o que o problema guarda em params["geometria"] e params["etapas"] (vai junto no .opt.json)
 GEOMETRY_DEFAULT = {"ligada": True, "rotação": 12.0, "folga": 0.0, "folga_hélice": 0.02, "uma_peça": False}
 STABILITY_DEFAULT = {"ligada": False, "nível": 2}
-STAGES_DEFAULT = {"configurações": "gerações", "superfícies": "coordenadas", "decolagem": "6gdl", "população": 16,
+STAGES_DEFAULT = {"configurações": "gerações", "voa": "buscar", "superfícies": "coordenadas", "decolagem": "6gdl", "população": 16,
                   "gerações": 8, "avaliações": 12, "processos": 0}
 # os métodos das etapas que não estão em aeroopt.stages (o menu Configuração)
 CONFIG_METHODS = {"gerações": "gerações (algoritmo genético do núcleo)",
@@ -809,14 +809,14 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         v = QtWidgets.QVBoxLayout(w)
         self.method: dict[str, QtWidgets.QComboBox] = {}
 
-        def stage(title: str, methods: dict | None, note: str = ""):
+        def stage(title: str, methods: dict | None, note: str = "", key: str | None = None):
             box = QtWidgets.QGroupBox(title)
             f = QtWidgets.QFormLayout(box)
             if methods:
                 c = QtWidgets.QComboBox()
                 for k, txt in methods.items():
                     c.addItem(txt, k)
-                self.method[title.split(".", 1)[1].strip()] = c
+                self.method[key or title.split(".", 1)[1].strip()] = c
                 f.addRow("método", c)
             if note:
                 lab = QtWidgets.QLabel(note)
@@ -838,14 +838,17 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         f.addRow("configurações por geração", self.pop)
         f.addRow("gerações", self.gens)
         stage("2. geometria", None, "liga, desliga e tem o ângulo de rotação em Restrições → Geometria")
-        f = stage("3. superfícies", sg.SURFACE_METHODS)
+        stage("3. voa", {**sg.FLY_METHODS, "desligada": "desligada (direto para o desempenho)"},
+              "na massa estimada, sem procurar o MTOW: trima, equilibra sem lastro, tem a margem mínima e, com a "
+              "restrição de estabilidade ligada, é estável. Gasta até as avaliações das superfícies")
+        f = stage("4. superfícies (desempenho e otimização)", sg.SURFACE_METHODS, key="superfícies")
         self.evals = QtWidgets.QSpinBox()
         self.evals.setRange(1, 200)
         self.evals.setValue(12)
         self.evals.setToolTip("pontos de projeto que a busca das superfícies gasta em cada configuração")
         f.addRow("avaliações por configuração", self.evals)
-        stage("4. decolagem", TAKEOFF_METHODS)
-        stage("5. nota", None, "no núcleo, com a pontuação escolhida")
+        stage("5. decolagem", TAKEOFF_METHODS)
+        stage("6. nota", None, "no núcleo, com a pontuação escolhida")
         f = QtWidgets.QFormLayout()
         self.workers = QtWidgets.QSpinBox()
         self.workers.setRange(1, max(os.cpu_count() or 1, 1))
@@ -1020,7 +1023,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         cfg = (f"gerações: {e['gerações']} × {e['população']}" if e["configurações"] == "gerações" else
                "todas as combinações")
         self.summary["configuração"].setText(
-            f"{cfg}; superfícies por {'gerações' if e['superfícies'] == 'gerações' else 'coordenadas'} "
+            f"{cfg}; voa: {'busca' if e['voa'] == 'buscar' else 'confere' if e['voa'] == 'conferir' else 'desligada'}; "
+            f"superfícies por {'gerações' if e['superfícies'] == 'gerações' else 'coordenadas'} "
             f"({e['avaliações']} pontos); decolagem {'no 6GDL' if e['decolagem'] == '6gdl' else 'só na pista'}")
 
     def open_menu(self, k: str) -> bool:
@@ -1116,7 +1120,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                                 evals=self.evals.value(), start_method="spawn", scoring=scoring,
                                 geometry=self.geometry_params(), surfaces=m["superfícies"],
                                 stability=sg.StabilityParams(level=self.stab_level.currentData())
-                                if self.stab.isChecked() else None)
+                                if self.stab.isChecked() else None,
+                                fly=None if m["voa"] == "desligada" else m["voa"])
         stage_names = [s.name for s in ev.stages(self.project, pr)]
         self.funnel = {s: [0, 0, 0] for s in stage_names}
         self._scoring = scoring
