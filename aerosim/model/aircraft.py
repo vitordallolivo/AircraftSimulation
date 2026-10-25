@@ -126,6 +126,7 @@ class LiftingSurface:
     depsda: float | None = None    # dε/dα; None: da asa principal
     mass: float = 0.0          # massa estrutural (entra no modelo de massa por componentes)
     mount: str = ""            # "" solta | "tubo:i" na ponta do tubo i | "ponta:j" na ponta da superfície j
+    #                            ("ponta_dir:j" / "ponta_esq:j": a ponta direita / esquerda dela, ex.: cauda em H)
     group: str = ""            # asas ligadas (tandem, biplano): o mesmo id opaco; "" asa sozinha (new_group_id)
 
     def section_airfoil(self, sec: WingSection) -> Airfoil:
@@ -671,7 +672,7 @@ class Aircraft:
             b = self.booms[i]
             x, y, z = b.end
             return x + root.chord, y, (z - b.diameter / 2 if s.vertical else z)
-        if kind == "ponta" and 0 <= i < len(self.surfaces) and self.surfaces[i] is not s:
+        if kind in ("ponta", "ponta_dir", "ponta_esq") and 0 <= i < len(self.surfaces) and self.surfaces[i] is not s:
             t = self.surfaces[i]
             if not t.sections:
                 return None
@@ -679,7 +680,12 @@ class Aircraft:
             if t.vertical:
                 return t.x - t.xoff_at(ys), t.y, t.z - ys
             d = math.radians(t.dihedral)
-            return t.x - t.xoff_at(ys), (t.y if t.symmetric else t.y + ys * math.cos(d)), t.z - ys * math.sin(d)
+            y = t.y + ys * math.cos(d)
+            if kind == "ponta_esq" and t.symmetric:      # a ponta do lado espelhado (cauda em H: uma EV de cada lado)
+                y = t.y - ys * math.cos(d)
+            elif kind == "ponta" and t.symmetric:        # o de sempre: no plano de simetria, na altura da ponta
+                y = t.y
+            return t.x - t.xoff_at(ys), y, t.z - ys * math.sin(d)
         return None
 
     def apply_constraints(self) -> None:

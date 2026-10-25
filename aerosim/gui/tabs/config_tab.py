@@ -55,8 +55,14 @@ NONGEOM = [("airfield", "🛫 Pista: chão, mesa e plataforma"), ("mass", "Massa
 
 def mount_choices(ac, s) -> tuple[str, ...]:
     """onde a superfície `s` pode se prender: solta, na ponta de cada tubo, na ponta de cada outra superfície"""
-    return (("solta",) + tuple(f"tubo:{i}" for i in range(len(ac.booms)))
-            + tuple(f"ponta:{j}" for j, t in enumerate(ac.surfaces) if t is not s))
+    tips = []
+    for j, t in enumerate(ac.surfaces):
+        if t is s:
+            continue
+        tips.append(f"ponta:{j}")
+        if t.symmetric and not t.vertical:           # as duas pontas de uma superfície espelhada (cauda em H)
+            tips += [f"ponta_dir:{j}", f"ponta_esq:{j}"]
+    return ("solta",) + tuple(f"tubo:{i}" for i in range(len(ac.booms))) + tuple(tips)
 
 
 class ConfigTab(QtWidgets.QWidget):
@@ -436,6 +442,8 @@ class ConfigTab(QtWidgets.QWidget):
         if field in ("name", "enabled"):
             self._fill_list()
         self.state.notify("geometry")
+        if field == "mount" and self.form is not None:      # presa em outro lugar: x, y, z mudaram
+            self.form.refresh()
 
     def _edit(self, key):
         ac = self.state.aircraft
