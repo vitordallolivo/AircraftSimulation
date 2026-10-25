@@ -12,9 +12,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   rodada com avião selecionado (a reconstrução dele contava como parte da rodada).
 - aeroopt, README: agora é a descrição geral e a janela, botão por botão, com as imagens da GUI
   (`docs/img/aeroopt/`). O texto das contas e de como chamar cada peça foi para `aeroopt/COMO_FUNCIONA.md`.
-- aeroopt, análises do aerosim: sob o avião selecionado, as abas do aerosim (dimensionamento, aerodinâmica com a
-  polar, estabilidade, tração, desempenho, envelopes, missão com a decolagem), menos as cargas, rodam sobre o avião
-  refeito pelo mesmo gerenciador. O estado delas usa uma pasta temporária: a sprint do usuário não é tocada.
+- aeroopt, gráficos do melhor avião: o melhor avião até aqui (voo válido antes, depois a nota) roda sozinho as
+  análises rápidas do aerosim (decolagem, polar do núcleo, estabilidade, desempenho) e os gráficos aparecem numa aba
+  por análise, sem formulário e sem gravar nada (`BEST_ANALYSES`). A janela e os submenus cabem em 1366 × 768.
 - aeroopt, mapa por variável: os eixos do mapa dos aviões são as variáveis do problema (as livres primeiro, depois as
   fixas) além das grandezas do resultado; a cor continua a nota. Uma lista (perfil, motor, sim/não) vira um eixo
   com o nome de cada opção. Abre nas duas primeiras variáveis livres.

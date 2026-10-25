@@ -112,13 +112,13 @@ para abrir numa planilha.
 
 ![A tabela das configurações e o avião selecionado em 3D](../docs/img/aeroopt/tabela.png)
 
-### Análises do avião selecionado
+### Gráficos do melhor avião
 
-Embaixo ficam as abas de análise do aerosim, sobre o avião selecionado: dimensionamento inicial, aerodinâmica com a
-polar, estabilidade, tração, desempenho, voo nivelado e envelopes, e missão com a decolagem 6GDL. Só as cargas ficam
-de fora. Cada aba roda no **▶ Rodar** dela, com os mesmos campos e gráficos do aerosim.
-
-![A aerodinâmica do avião selecionado, dentro do aeroopt](../docs/img/aeroopt/analises.png)
+Embaixo ficam os gráficos do melhor avião até aqui (voo válido antes de inválido, depois a nota). Quando um avião
+melhor chega à nota, ele roda sozinho as análises rápidas do aerosim, e os gráficos aparecem numa aba por análise:
+a decolagem, a aerodinâmica (C_L × α, polar e C_m pela polar do núcleo), a estabilidade e o desempenho com o
+envelope. Servem para olhar de relance se a decolagem e a curva de sustentação fazem sentido. Nada disso fica
+gravado. Para mexer nos parâmetros de uma análise, use **Abrir no aerosim…**.
 
 ## Como abrir
 

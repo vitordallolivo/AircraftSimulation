@@ -40,15 +40,27 @@ from .generations import GenerationsSolver
 OK_C, BAD_C, BEST_C = "#2ca02c", "#d62728", "#1f4e8c"
 SIMPLE = ("MTOW", "EE")                       # objetivos simples, sem arquivo
 EE_LINES = (0.5, 1.0, 1.5, 2.0, 3.0)
-ANALYSES_SKIP = ("loads",)                 # as análises do aerosim que não entram no aeroopt (as cargas)
+# os gráficos do melhor avião: as análises rápidas do aerosim (a aerodinâmica completa, com o lltdrek, leva meio
+# minuto; a polar é a do núcleo)
+BEST_ANALYSES = (("takeoff", "Decolagem"), ("polar", "Aerodinâmica (C_L × α, polar, C_m)"),
+                 ("stability", "Estabilidade"), ("performance", "Desempenho e envelope"))
 AXES = {"PV (kg)": "pv", "carga paga (kg)": "cp", "MTOW (kg)": "mtow_f", "EE": "ee", "nota": "nota",
         "envergadura (m)": "b", "bateria (kg)": "m_bat"}
+
+
+def _fit_screen(w: QtWidgets.QWidget, width: int, height: int) -> None:
+    """o tamanho pedido, sem passar da tela (a janela tem de caber num notebook de 1366 × 768)"""
+    from PyQt6 import QtGui
+    scr = QtGui.QGuiApplication.primaryScreen()
+    a = scr.availableGeometry() if scr is not None else None
+    w.resize(width if a is None else min(width, int(0.96 * a.width())),
+             height if a is None else min(height, int(0.92 * a.height())))
 
 
 def _plot(xlabel: str, ylabel: str, legend: bool = True):
     from aerosim.gui.design.mdo_page import LegendPlot
     w = LegendPlot(xlabel, ylabel, cols=3, legend=legend)
-    w.setMinimumHeight(300)
+    w.setMinimumHeight(240)
     return w
 
 
@@ -423,7 +435,7 @@ class VariablesTable(QtWidgets.QTabWidget):
                 cl.on_dat = self._dat_added
                 self.choices[key] = cl
                 self.menus[key] = _Menu(f"{i.label}: o que a busca pode escolher", cl, self)
-                self.menus[key].resize(420, 560)
+                _fit_screen(self.menus[key], 420, 560)
                 b = QtWidgets.QPushButton("escolher…")
                 b.clicked.connect(lambda _=False, k=key: self.open_list(k))
                 t.setCellWidget(r, 3, b)
@@ -608,7 +620,7 @@ class _Menu(QtWidgets.QDialog):
     def __init__(self, title: str, body: QtWidgets.QWidget, parent=None, top: QtWidgets.QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.resize(900, 620)
+        _fit_screen(self, 900, 620)
         v = QtWidgets.QVBoxLayout(self)
         if top is not None:
             v.addWidget(top, 0)
@@ -642,7 +654,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
     def __init__(self, project=None, problem=None, path: str = ""):
         super().__init__()
         self.setWindowTitle("aeroopt — otimizador do projeto")
-        self.resize(1600, 1000)
+        _fit_screen(self, 1600, 1000)
         self.project, self.path = project, path
         self.problem = problem
         self.rows: dict[str, dict] = {}
@@ -651,13 +663,17 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.funnel: dict[str, list[int]] = {}
         self.selected: str | None = None
         self._threads: list = []                             # a rodada (o Otimizar volta quando ela acaba)
-        self._side: list = []                                # o avião selecionado sendo refeito (não segura a rodada)
+        self._side: list = []                                # o avião selecionado e os gráficos do melhor (não seguram a rodada)
+        self._best_want: str | None = None                   # o melhor até aqui (os gráficos vão para ele)
+        self._best_job: str | None = None                    # de quem são os gráficos rodando agora
+        self._best_shown: str | None = None
         self._cancel = threading.Event()
         split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         self.setCentralWidget(split)
         split.addWidget(self._left())
         split.addWidget(self._right())
-        split.setSizes([560, 1040])
+        split.setSizes([int(0.36 * self.width()), int(0.64 * self.width())])
+        split.setChildrenCollapsible(False)
         if project is None:                          # sem projeto: os rascunhos de um projeto novo da sprint
             from aerosim.design.project import DesignProject
             project = DesignProject()
@@ -700,8 +716,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                       "categorias": _Menu("Categorias de avião", self._categories_box(), self),
                       "configuração": _Menu("Configuração: as etapas e o método de cada uma",
                                             self._config_box(), self)}
-        self.menus["categorias"].resize(760, 300)
-        self.menus["configuração"].resize(760, 560)
+        _fit_screen(self.menus["categorias"], 760, 300)
+        _fit_screen(self.menus["configuração"], 760, 560)
         _section(v, "O problema (cada botão abre o submenu)")
         self.summary: dict[str, QtWidgets.QLabel] = {}
         grid = QtWidgets.QGridLayout()
@@ -908,14 +924,14 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         h.addWidget(self.map_note)
         rv.addLayout(h)
         self.map = _plot("PV (kg)", "carga paga (kg)", legend=False)
-        self.map.setMinimumHeight(420)
+        self.map.setMinimumHeight(320)
         for side in ("bottom", "left"):                # área em m² sem o "(x0.001)" nem o 600 no lugar de 0,6
             self.map.getAxis(side).enableAutoSIPrefix(False)
         rv.addWidget(self.map)
         _section(rv, "Configurações")
         self.cfg_tab = _table(["id", "geração", "etapa", "área de projeto", "MTOW pista", "MTOW 6GDL", "PV", "nota",
                                "situação"])
-        self.cfg_tab.setMinimumHeight(240)
+        self.cfg_tab.setMinimumHeight(220)
         self.cfg_tab.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.cfg_tab.setSortingEnabled(True)
         self.cfg_tab.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
@@ -925,12 +941,12 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         _section(rv, "Avião selecionado")
         h = QtWidgets.QHBoxLayout()
         self.sel_tab = _table(["", "valor"])
-        self.sel_tab.setMinimumHeight(380)
+        self.sel_tab.setMinimumHeight(300)
         h.addWidget(self.sel_tab, 2)
         try:
             from aerosim.gui.widgets.view3d import AircraftView
             self.view = AircraftView()
-            self.view.setMinimumHeight(380)
+            self.view.setMinimumHeight(300)
             h.addWidget(self.view, 3)
         except Exception:  # noqa: BLE001 — sem OpenGL a janela segue sem o 3D
             self.view = None
@@ -954,38 +970,100 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         h.addWidget(self.csv_b)
         h.addStretch(1)
         rv.addLayout(h)
-        _section(rv, "Análises do avião selecionado")
-        self.analyses = self._analyses()
-        rv.addWidget(self.analyses)
+        _section(rv, "Gráficos do melhor avião")
+        self.best_lbl = QtWidgets.QLabel("aparecem sozinhos quando um avião chega à nota; não ficam gravados")
+        self.best_lbl.setStyleSheet("color:#555")
+        self.best_lbl.setWordWrap(True)
+        rv.addWidget(self.best_lbl)
+        self.best_tabs = QtWidgets.QTabWidget()
+        self.best_tabs.setDocumentMode(True)
+        rv.addWidget(self.best_tabs)
         s = QtWidgets.QScrollArea()
         s.setWidgetResizable(True)
         s.setWidget(body)
         self.right_scroll = s
         return s
 
-    def _analyses(self) -> QtWidgets.QTabWidget:
-        """as análises do aerosim (as mesmas abas: dimensionamento, missão com a decolagem, desempenho, envelopes,
-        tração, aerodinâmica com a polar, estabilidade), menos as cargas, sobre o avião selecionado. Cada aba roda no "▶ Rodar"
-        dela, pelo mesmo gerenciador do aerosim; o estado delas tem uma pasta própria, então a sprint do usuário não é
-        tocada"""
-        import tempfile
-        from aerosim.gui.tabs.simulation_tab import SimulationTab
-        from aerosim.gui.state import AppState
-        from aerosim.interfaces.simulation import AREAS
-        from aerosim.manager import SimulationManager
-        from aerosim.model.templates import empty
-        self._sim_dir = tempfile.mkdtemp(prefix="aeroopt_analises_")
-        self.sim_state = AppState(SimulationManager(), empty(), design_dir=self._sim_dir)
-        tabs = QtWidgets.QTabWidget()
-        tabs.setDocumentMode(True)
-        tabs.setMinimumHeight(760)
-        sims = sorted((x for x in self.sim_state.manager.simulations() if x.name not in ANALYSES_SKIP),
-                      key=lambda x: AREAS.index(x.area) if x.area in AREAS else len(AREAS))
-        for sim in sims:
-            tabs.addTab(SimulationTab(self.sim_state, sim), sim.title)
-        tabs.setEnabled(False)                        # liga quando um avião for selecionado e refeito
-        tabs.setToolTip("selecione um avião no mapa ou na tabela; cada aba roda no ▶ Rodar dela")
-        return tabs
+    # ------------------------------------------------------------------ gráficos do melhor avião
+    def _best_changed(self, r: dict) -> None:
+        """um avião chegou à nota: se é o melhor até aqui (voo válido antes de inválido, depois a nota), os gráficos
+        passam a ser dele. Enquanto uma leva roda, só o último pedido espera"""
+        key = lambda x: (bool(x.get("valido")), x.get("nota", -math.inf))   # noqa: E731
+        cur = self.rows.get(self._best_want or "")
+        if not math.isfinite(r.get("nota", math.nan)) or (cur is not None and key(r) <= key(cur)):
+            return
+        self._best_want = r["name"]
+        if self._best_job is None:
+            self._plot_best()
+
+    def _plot_best(self) -> None:
+        r = self.rows.get(self._best_want or "")
+        if r is None or self.project is None:
+            return
+        name, pr, values = r["name"], self.read_problem(), dict(r["values"])
+        self.best_lbl.setText(f"nº {r.get('index', '')} · nota {_fmt(r['nota'])}"
+                              + ("" if r.get("valido") else " (voo inválido)") + " · rodando as análises…")
+
+        def job(w):
+            from aerosim.manager import SimulationManager
+            ac = sg.design(self.project, pr, values)["ac"]
+            ac.name = name
+            man = SimulationManager()
+            for sim_name, title in BEST_ANALYSES:
+                sim = man.get(sim_name)
+                try:
+                    res = man.run(sim_name, copy.deepcopy(ac))
+                    w.item.emit(title, (sim.plots_for(ac, sim.defaults(ac, {})), res))
+                except Exception as e:  # noqa: BLE001 — uma análise que falha não tira as outras
+                    w.item.emit(title, (None, str(e)))
+            return name
+        w = _Worker(job)
+        w.item.connect(lambda title, out, n=name: self._best_plot(n, title, *out))
+        w.done.connect(self._best_done)
+        w.failed.connect(lambda t: (self.best_lbl.setText("as análises falharam:\n" + t), self._best_done(None)))
+        th = QtCore.QThread(self)
+        w.moveToThread(th)
+        th.started.connect(w.run)
+        for sig in (w.done, w.failed):
+            sig.connect(th.quit)
+        th.finished.connect(lambda: self._side.remove((th, w)) if (th, w) in self._side else None)
+        self._side.append((th, w))
+        self._best_job = name
+        if self.best_tabs.count() and self._best_shown != name:
+            self.best_tabs.clear()
+        th.start()
+
+    def _best_plot(self, name: str, title: str, specs, res) -> None:
+        from aerosim.gui.tabs.simulation_tab import _has_data
+        from aerosim.gui.widgets.plots import LivePlots
+        if specs is None:
+            body = QtWidgets.QLabel(f"não rodou: {res}")
+            body.setWordWrap(True)
+        else:
+            plots = LivePlots([sp for sp in specs if _has_data(sp, res)], columns=2, row_height=300)
+            plots.show_result(res)
+            body = QtWidgets.QScrollArea()
+            body.setWidgetResizable(True)
+            body.setWidget(plots)
+            body.setMinimumHeight(640)
+        for k in range(self.best_tabs.count()):
+            if self.best_tabs.tabText(k) == title:
+                self.best_tabs.removeTab(k)
+                self.best_tabs.insertTab(k, body, title)
+                break
+        else:
+            self.best_tabs.addTab(body, title)
+        self._best_shown = name
+
+    def _best_done(self, name) -> None:
+        self._best_job = None
+        r = self.rows.get(name or "")
+        if r is not None:
+            self.best_lbl.setText(f"nº {r.get('index', '')} · nota {_fmt(r['nota'])}"
+                                  + ("" if r.get("valido") else " (voo inválido)")
+                                  + " · o melhor até aqui (os gráficos não ficam gravados)")
+        if self._best_want and self._best_want != name:      # chegou um melhor enquanto esta leva rodava
+            self._plot_best()
 
     # ------------------------------------------------------------------ projeto e problema
     def set_project(self, project, path: str = "", problem=None) -> None:
@@ -1142,6 +1220,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             return
         self._cancel.clear()
         self.rows, self.points, self.order, self.funnel = {}, [], [], {}
+        self._best_want = None
         self.redraw()
         m = self.methods()
         if m["configurações"] == "todas" and n_all > sg.MAX_CONFIGS:
@@ -1216,6 +1295,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         if stage == "nota" and r["name"] not in self.order:
             self.order.append(r["name"])
         self.rows[r["name"]] = r
+        if stage == "nota":
+            self._best_changed(r)
         self.redraw()
 
     def _done(self, res):
@@ -1419,7 +1500,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         lines += [[("✔ " if ok else "✖ ") + txt, _fmt(x)] for txt, ok, x in r.get("validade", [])]
         lines += [["nota", _fmt(r["nota"])]] + ([["parou", r["why"]]] if not r["alive"] else [])
         _set_rows(self.sel_tab, lines, editable=False)
-        if self.project is None:                  # sem o 3D, o avião refeito ainda vai para as análises
+        if self.view is None or self.project is None:
             return
         pr, values = self.read_problem(), dict(r["values"])
         w = _Worker(lambda _w: sg.design(self.project, pr, values))
@@ -1437,10 +1518,6 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         if name == self.selected:
             self.selected_design = d
             self.aerosim_b.setEnabled(True)
-            ac = copy.deepcopy(d["ac"])
-            ac.name = name
-            self.sim_state.set_aircraft(ac)
-            self.analyses.setEnabled(True)
             if self.view is not None:
                 self.view.set_aircraft(d["ac"])
 
