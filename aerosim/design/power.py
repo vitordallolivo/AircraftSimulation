@@ -149,6 +149,8 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     if n_pairs:
         D0 = _unit(pp, cat, "m", 0, 0, 0, 1).propeller.D
         y = pp.motor_y if pp.motor_y > 0 else max(D0 / 2 + fw / 2 + 0.05, 0.15)
+        if n_nose and pp.motor_y <= 0:          # com hélice no nariz, o primeiro par livra o disco dela
+            y = max(y, D0 + 0.05)
         xm = 0.15 + 0.02
         wing = []
         for k in range(n_pairs):                                    # pares, de dentro para fora
