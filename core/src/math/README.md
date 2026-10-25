@@ -5,13 +5,13 @@ por missão, então aqui ficam versões rápidas dessas funções, os vetores 3D
 e o polinômio de tração, que o compilador monta antes de o programa rodar.
 
 O README começa pelas funções trigonométricas por tabela, segue para o arco tangente, a exponencial e o logaritmo, e
-mostra a alternativa sem tabela para o seno. Depois vêm o polinômio de tração e, por último, os vetores e as rotações.
+mostra a alternativa sem tabela para o seno. Depois vêm o polinômio de tração, os vetores e as rotações e, por último, os autovalores de uma matriz simétrica.
 
 | arquivo | o que tem |
 |---|---|
 | `fmath.zig` | `sin`, `cos`, `atan2`, `exp`, `log`, `pow`, `tanh`... por tabela e polinômio (`lut`) ou pela std (`ref`) |
 | `vec.zig` | vetores 3D em registradores SIMD (`@Vector`), matrizes 3×3 por linhas, a matriz corpo → NED |
-| `linalg.zig` | álgebra linear de tamanho fixo: LU com pivoteamento parcial, Cholesky e as soluções de A x = b (para os solvers do aeroopt) |
+| `linalg.zig` | álgebra linear de tamanho fixo: LU com pivoteamento parcial, Cholesky, as soluções de A x = b e os autovalores de uma matriz simétrica (Jacobi), para o aeroopt |
 | `poly.zig` | polinômio em duas variáveis de grau N gerado em comptime (`Poly2`), na ordem do MATLAB |
 | `fmath_test.zig` | erro de cada função contra a std em muitos pontos |
 
@@ -153,6 +153,35 @@ produtos vetoriais das linhas $`a_1, a_2, a_3`$ de $`A`$:
 ```math
 x = \frac{(a_2\times a_3)\,b_1 + (a_3\times a_1)\,b_2 + (a_1\times a_2)\,b_3}{a_1\cdot(a_2\times a_3)}
 ```
+
+## Autovalores de uma matriz simétrica (`linalg.symEigen`)
+
+Aqui se decompõe uma matriz simétrica $A$ de até $N \times N$ nos autovalores $w$ e nos autovetores $V$, com
+$A = V \operatorname{diag}(w)\, V^\top$. Quem usa isso é o CMA-ES do aeroopt (`../optim/cmaes.zig`). A cada
+geração ele precisa dos eixos e dos comprimentos da elipse de sorteio, que são os autovetores e os autovalores da
+matriz de covariância.
+
+O método é o de Jacobi cíclico (Golub e Van Loan, *Matrix Computations*, 4ª ed., 2013, seção 8.5, algoritmo 8.5.1; a
+conferir no PDF). Ele foi escolhido porque a matriz é pequena (até 32 × 32), sempre simétrica, e o código cabe em
+poucas linhas sem alocar nada. Os métodos mais rápidos para matrizes grandes (tridiagonalizar e depois QR) só
+compensam bem acima desse tamanho. O Jacobi também devolve autovetores ortogonais com precisão de máquina, mesmo com
+autovalores quase iguais, e isso é o que mantém a elipse do CMA-ES bem formada.
+
+A ideia é zerar os termos fora da diagonal um par de cada vez. Para cada par $(p, q)$, uma rotação de Givens $J$ no
+plano $p, q$ escolhida para zerar $A_{pq}$ troca $A$ por $J^\top A J$. Essa troca não muda os autovalores. O ângulo
+sai de
+
+$$\tau = \frac{A_{qq} - A_{pp}}{2 A_{pq}}, \qquad t = \frac{\operatorname{sinal}(\tau)}{\lvert\tau\rvert + \sqrt{1 + \tau^2}}, \qquad c = \frac{1}{\sqrt{1 + t^2}}, \qquad s = t\, c,$$
+
+onde $t$ é a tangente do ângulo, e a raiz menor de $t^2 + 2\tau t - 1 = 0$ é a que se escolhe, porque com ela a
+rotação é a menor possível (abaixo de 45°) e o arredondamento não cresce. Zerar um par desfaz um pouco os pares já
+zerados, mas a soma dos quadrados fora da diagonal sempre cai. Por isso se varre todos os pares várias vezes (as
+varreduras), e cada uma deixa essa soma bem menor que a anterior. A busca para quando a soma fica abaixo de
+$10^{-30}$ vezes a soma de todos os quadrados de $A$, ou depois de 64 varreduras. As mesmas rotações, acumuladas em
+$V$ (que começa na identidade), dão os autovetores nas colunas. Os autovalores são a diagonal que sobra.
+
+O teste monta uma matriz 4 × 4 simétrica e confere que $V$ é ortogonal ($V^\top V = I$), que $V
+\operatorname{diag}(w)\, V^\top$ devolve a matriz original e que a soma dos autovalores é o traço.
 
 ## Como chamar
 

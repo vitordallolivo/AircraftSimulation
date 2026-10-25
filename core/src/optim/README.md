@@ -42,48 +42,160 @@ Os sorteios saem de uma semente (`seed` e `generation`), então a mesma entrada 
 
 ## O CMA-ES
 
-Aqui se define uma busca em até 32 variáveis contínuas, com até 64 pontos por geração. O CMA-ES é a estratégia
-evolutiva com adaptação da matriz de covariância. O algoritmo genético muda cada gene por conta própria, com um sorteio
-do mesmo tamanho em toda direção. Quando duas variáveis só melhoram a nota juntas, ele quase nunca acerta as duas de
-uma vez. Por exemplo, aumentar a envergadura só ajuda se a área cresce junto. Já o CMA-ES sorteia cada geração de uma
-nuvem com forma de elipse e aprende essa forma com os melhores pontos. A elipse se alonga na direção em que a nota
-melhora e encolhe onde ela piora, então a busca passa a andar pelo vale que acopla as variáveis. As contas são as do
-tutorial de Hansen (*The CMA Evolution Strategy: A Tutorial*, arXiv:1604.00772, 2016, tabela 1 e equações da seção
-4; números das equações a conferir no PDF). A fonte das constantes padrão é a mesma tabela.
+Aqui se define uma busca em até 32 variáveis contínuas (envergadura, área, diedro, VH...), com até 64 aviões por
+geração. A busca recebe o avião de partida e devolve, geração a geração, aviões cada vez melhores. Quem avalia cada
+avião é o Python (o ponto de projeto do aeroopt), e o núcleo só decide quais aviões experimentar em seguida.
 
-As variáveis entram normalizadas em $[0, 1]$: o Python divide cada uma pela faixa dela. `init` recebe a média inicial
-$m$ (o avião de partida), o passo $\sigma$ e o tamanho $\lambda$ da geração; com $\lambda \le 0$ vale o padrão
-$4 + \lfloor 3 \ln n \rfloor$. `ask` sorteia a geração:
+### Por que outro método além das gerações
 
-$$x_k = m + \sigma\, B D z_k, \qquad z_k \sim \mathcal{N}(0, I),$$
+O algoritmo genético das gerações mexe em cada variável por conta própria. Cada gene muda com um sorteio do mesmo
+tamanho, sem olhar para os outros. Isso funciona quando cada variável tem o seu melhor valor, independente das
+outras. No avião não costuma ser assim. Aumentar a envergadura só ajuda se a área cresce junto (senão a corda fica
+fina demais), e um VH maior só ajuda com o braço da cauda certo. Nesses casos a região boa é um vale estreito e
+inclinado entre as variáveis. Um sorteio que mexe numa variável de cada vez cai fora do vale quase sempre, então o
+genético gasta a maior parte das avaliações em aviões piores.
 
-onde $C = B D^2 B^\top$ é a matriz de covariância, decomposta em autovetores $B$ e raízes dos autovalores $D$ (Jacobi
-cíclico, `linalg.symEigen`). O ponto que cai fora da caixa é levado para a borda, e é ele que se avalia.
+O CMA-ES (*Covariance Matrix Adaptation Evolution Strategy*, a estratégia evolutiva com adaptação da matriz de
+covariância) resolve isso aprendendo a forma do vale. Ele sorteia cada geração de uma nuvem em forma de elipse e,
+depois de ver quais aviões foram melhores, gira e estica a elipse ao longo da direção em que a nota sobe. Depois de
+algumas gerações, os sorteios saem quase todos dentro do vale. As contas e as constantes são as do tutorial de
+Hansen (*The CMA Evolution Strategy: A Tutorial*, arXiv:1604.00772, 2016, seção 4 e tabela 1; números das equações
+a conferir no PDF), na versão com pesos positivos.
 
-`tell` recebe a nota de cada ponto (maior é melhor; NaN é o pior) e ordena a geração. A nova média é a soma ponderada
-dos $\mu = \lambda/2$ melhores, com pesos $w_i \propto \ln\frac{\lambda+1}{2} - \ln i$ que somam 1:
+### O que o estado guarda
+
+Tudo o que a busca sabe fica na `CmaState`, que o Python segura entre uma geração e a outra. O estado é uma struct
+de tamanho fixo, sem alocação. Nele estão a média $m$ (o centro da nuvem, onde a busca acha que está o melhor
+avião), o passo $\sigma$ (o tamanho da nuvem) e a matriz de covariância $C$ (a forma dela: quanto a nuvem se
+estende em cada direção e como as variáveis andam juntas). Também guarda dois caminhos de evolução, $p_\sigma$ e
+$p_c$, que são a memória de para onde a média andou nas últimas gerações. E guarda $B$ e $D$, a decomposição de
+$C$ que o sorteio usa.
+
+As variáveis entram normalizadas em $[0, 1]$: o Python divide cada uma pela faixa dela. Assim um passo de 0,1 vale o
+mesmo para uma envergadura de metros e um diedro de graus, e um só $\sigma$ serve para todas.
+
+### As constantes
+
+`init` calcula as constantes a partir do número de variáveis $n$, todas da tabela 1 do tutorial. O tamanho da
+geração é
+
+$$\lambda = 4 + \lfloor 3 \ln n \rfloor,$$
+
+a não ser que o Python peça outro (o aeroopt usa o mesmo tamanho das gerações, para comparar os dois métodos com o
+mesmo total de avaliações). Dos $\lambda$ aviões, os $\mu = \lfloor \lambda / 2 \rfloor$ melhores entram nas contas. Eles
+entram com pesos que caem com a posição: o melhor pesa mais, o $\mu$-ésimo pesa quase nada. Os pesos somam 1:
+
+$$w_i = \frac{\ln\frac{\lambda + 1}{2} - \ln i}{\sum_{j=1}^{\mu} \left(\ln\frac{\lambda + 1}{2} - \ln j\right)}, \qquad i = 1 \ldots \mu.$$
+
+Com pesos diferentes, a média não vale $\mu$ aviões. O número efetivo de aviões que a média representa é
+
+$$\mu_{\mathrm{eff}} = \frac{1}{\sum_i w_i^2},$$
+
+e as outras constantes dependem dele e de $n$. As taxas de aprendizado dizem quanto uma geração muda o que se sabe:
+$c_\sigma$ para o passo, $c_c$ para o caminho $p_c$, $c_1$ e $c_\mu$ para a forma de $C$:
+
+$$c_\sigma = \frac{\mu_{\mathrm{eff}} + 2}{n + \mu_{\mathrm{eff}} + 5}, \qquad c_c = \frac{4 + \mu_{\mathrm{eff}}/n}{n + 4 + 2\mu_{\mathrm{eff}}/n},$$
+
+$$c_1 = \frac{2}{(n + 1{,}3)^2 + \mu_{\mathrm{eff}}}, \qquad c_\mu = \min\!\left(1 - c_1,\; \frac{2\,(\mu_{\mathrm{eff}} - 2 + 1/\mu_{\mathrm{eff}})}{(n + 2)^2 + \mu_{\mathrm{eff}}}\right).$$
+
+Com mais variáveis, as taxas caem: há mais a aprender, e cada geração traz menos informação por direção. O
+amortecimento do passo $d_\sigma$ freia a mudança de $\sigma$ para ela não oscilar. O $E\lVert\mathcal{N}(0, I)\rVert$
+é o comprimento médio de um sorteio normal em $n$ dimensões, a régua que diz se a média andou muito ou pouco:
+
+$$d_\sigma = 1 + 2 \max\!\left(0,\; \sqrt{\frac{\mu_{\mathrm{eff}} - 1}{n + 1}} - 1\right) + c_\sigma, \qquad E\lVert\mathcal{N}(0, I)\rVert \approx \sqrt{n}\left(1 - \frac{1}{4n} + \frac{1}{21 n^2}\right).$$
+
+No começo, $C$ é a identidade (a nuvem é uma esfera), a média é o avião de partida e $\sigma$ é o passo que o Python
+pede (o aeroopt usa 0,3, ou seja, 30 % da faixa de cada variável).
+
+### Uma geração: sortear (`ask`)
+
+Cada avião da geração sai de um sorteio normal $z_k$ de $n$ números independentes. O sorteio é esticado por $D$,
+girado por $B$, escalado por $\sigma$ e somado à média:
+
+$$x_k = m + \sigma\, B D z_k, \qquad z_k \sim \mathcal{N}(0, I), \qquad k = 1 \ldots \lambda.$$
+
+$B$ e $D$ vêm de $C = B D^2 B^\top$. As colunas de $B$ são os eixos da elipse, e $D$ é o comprimento de cada eixo
+(a raiz do autovalor). Por isso $B D z$ é um sorteio com a forma de $C$. O código faz isso em duas linhas: primeiro
+`dz = D·z`, depois cada componente $x_i$ é o produto escalar da linha $i$ de $B$ com `dz`.
+
+O avião que sai da caixa $[0, 1]$ é levado para a borda. É esse avião, já na borda, que se avalia e que volta para o
+`tell`, para a média nunca aprender com um ponto que não existe. Os sorteios saem da semente e do número da
+geração, então a mesma entrada dá sempre a mesma busca, e o `ask` pode ser chamado de novo sem mudar nada.
+
+### Uma geração: aprender (`tell`)
+
+O Python devolve a nota de cada avião (maior é melhor; NaN, que é o avião que não fecha, conta como o pior). O
+`tell` ordena a geração do melhor para o pior e faz quatro coisas, nesta ordem.
+
+**1. A média anda.** A nova média é a soma ponderada dos $\mu$ melhores, onde $x_{i:\lambda}$ é o $i$-ésimo melhor da
+geração:
 
 $$m' = \sum_{i=1}^{\mu} w_i\, x_{i:\lambda}.$$
 
-O passo $\sigma$ cresce quando as gerações andam várias vezes na mesma direção e diminui quando elas andam e voltam. Quem
-mede isso é o caminho de evolução $p_\sigma$, a soma com memória dos passos da média, medidos em unidades de $C$:
+O passo da média, medido em unidades de $\sigma$, é $y_w = (m' - m)/\sigma$. É dele que saem as outras três
+atualizações.
 
-$$p_\sigma \leftarrow (1 - c_\sigma)\, p_\sigma + \sqrt{c_\sigma (2 - c_\sigma)\, \mu_{\mathrm{eff}}}\; C^{-1/2}\, \frac{m' - m}{\sigma},
-\qquad \sigma \leftarrow \sigma \exp\!\left(\frac{c_\sigma}{d_\sigma}\left(\frac{\lVert p_\sigma\rVert}{E\lVert\mathcal{N}(0,I)\rVert} - 1\right)\right).$$
+**2. O passo se ajusta.** A ideia é olhar se as gerações recentes andaram para o mesmo lado. Se a média anda várias
+vezes na mesma direção, a nuvem está pequena demais e a busca está perdendo tempo: o passo cresce. Se ela anda e
+volta, os passos se cancelam, a nuvem está grande demais e pula por cima do melhor: o passo diminui. A soma com
+memória desses passos é o caminho $p_\sigma$:
 
-A forma da nuvem se aprende de dois jeitos. O caminho $p_c$ guarda a direção em que a média vem andando (atualização de
-posto um). Os passos dos $\mu$ melhores desta geração dão a outra parte (atualização de posto $\mu$):
+$$p_\sigma \leftarrow (1 - c_\sigma)\, p_\sigma + \sqrt{c_\sigma (2 - c_\sigma)\, \mu_{\mathrm{eff}}}\; C^{-1/2}\, y_w.$$
 
-$$C \leftarrow (1 - c_1 - c_\mu)\, C + c_1\, p_c p_c^\top + c_\mu \sum_{i=1}^{\mu} w_i\, y_i y_i^\top, \qquad y_i = \frac{x_{i:\lambda} - m}{\sigma}.$$
+O $C^{-1/2}$ tira a forma da elipse do passo, para o comprimento de $p_\sigma$ só depender de quanto a média andou e
+não da direção. O código calcula $C^{-1/2} y_w = B D^{-1} B^\top y_w$ em duas etapas: $t = D^{-1} B^\top y_w$ e depois
+$B t$. Com $p_\sigma$ em mãos, o passo cresce ou diminui conforme o comprimento dele passa ou não da régua:
 
-O $h_\sigma$ do tutorial interrompe o $p_c$ quando $p_\sigma$ fica longo demais, e o termo que ele tira volta somado a
-$C$. O passo fica preso em $[10^{-8}, 1]$. Os sorteios saem de `seed` e da geração, então a mesma entrada dá a mesma
-busca. Os produtos escalares e as somas de linha usam vetores do Zig (`@Vector`, do tamanho que a máquina sugere):
-com `-Dcpu=native` numa máquina com AVX-512 eles viram instruções de 512 bits.
+$$\sigma \leftarrow \sigma \exp\!\left(\frac{c_\sigma}{d_\sigma}\left(\frac{\lVert p_\sigma\rVert}{E\lVert\mathcal{N}(0, I)\rVert} - 1\right)\right).$$
 
-O teste confere uma elipse de 8 variáveis com escala de 1 a 1000 entre os eixos, o vale de Rosenbrock, a semente, a
-caixa e a simetria de $C$. A conta foi comparada à da `pycma`, que é a implementação de referência do mesmo autor,
-na mesma elipse, com a mesma população e o mesmo número de avaliações: as duas chegam ao mesmo resultado.
+No código, $\sigma$ fica preso em $[10^{-8}, 1]$. Um passo maior que a caixa inteira não faz sentido, e um passo
+zerado travaria a busca.
+
+**3. A direção recente entra na forma.** O caminho $p_c$ é como $p_\sigma$, mas sem tirar a forma: ele guarda a
+direção em que a média vem andando.
+
+$$p_c \leftarrow (1 - c_c)\, p_c + h_\sigma \sqrt{c_c (2 - c_c)\, \mu_{\mathrm{eff}}}\; y_w.$$
+
+O $h_\sigma$ vale 1 normalmente e 0 quando $p_\sigma$ está longo demais, ou seja, quando o passo acabou de crescer
+muito. Nessas gerações a média anda rápido porque $\sigma$ estava pequeno, e não porque a forma estava errada, e
+deixar $p_c$ crescer esticaria $C$ à toa. O teste é
+
+$$h_\sigma = 1 \iff \frac{\lVert p_\sigma\rVert}{\sqrt{1 - (1 - c_\sigma)^{2(g+1)}}} < \left(1{,}4 + \frac{2}{n + 1}\right) E\lVert\mathcal{N}(0, I)\rVert,$$
+
+onde $g$ é o número da geração. A raiz no denominador corrige o começo, quando $p_\sigma$ ainda não teve tempo de
+crescer.
+
+**4. A forma se ajusta.** A matriz $C$ aprende de dois jeitos ao mesmo tempo. A atualização de posto um usa $p_c$, a
+direção das últimas gerações. A atualização de posto $\mu$ usa os passos $y_i$ dos $\mu$ melhores desta geração, a
+direção em que os bons aviões estão agora. O resto de $C$ é a memória do que já se sabia:
+
+$$C \leftarrow \left(1 - c_1 - c_\mu + (1 - h_\sigma)\, c_1 c_c (2 - c_c)\right) C + c_1\, p_c p_c^\top + c_\mu \sum_{i=1}^{\mu} w_i\, y_i y_i^\top, \qquad y_i = \frac{x_{i:\lambda} - m}{\sigma}.$$
+
+O termo com $(1 - h_\sigma)$ devolve para $C$ o que se perdeu quando $h_\sigma$ cortou $p_c$. Cada $p_c p_c^\top$ e
+$y_i y_i^\top$ é uma matriz que estica a elipse na direção daquele vetor. Por isso, depois de algumas gerações, a
+elipse fica alongada ao longo do vale.
+
+Por último, $C$ volta a ser decomposta em $B$ e $D$ para o próximo `ask`. Antes da decomposição, o código usa a média
+de $C$ com a transposta dela, para tirar o arredondamento que a deixaria levemente assimétrica. A decomposição é o
+Jacobi cíclico de `../math/linalg.zig` (`symEigen`, descrito no README da `math`). Um autovalor que o arredondamento
+deixa negativo vira $10^{-20}$ antes da raiz, para $D$ nunca ser zero.
+
+### Vetores e AVX-512
+
+As contas que se repetem são produtos escalares (no sorteio e em $C^{-1/2} y_w$) e somas de uma linha com um vetor
+vezes um número (na média e nas atualizações de $C$). As duas usam `@Vector` do Zig, em blocos do tamanho que a
+máquina sugere (`std.simd.suggestVectorLength`), e terminam as posições que sobram uma a uma. Com o build padrão
+(x86-64-v3) os blocos são de 4 números (AVX2). Com `-Dcpu=native` numa máquina com AVX-512, são de 8 (512 bits). O
+resultado é o mesmo nos dois casos, a menos da ordem das somas.
+
+### O que os testes conferem
+
+O primeiro teste maximiza uma elipse de 8 variáveis com escala de 1 a 1000 entre os eixos (o caso mal condicionado,
+em que um passo do mesmo tamanho em toda direção não chega) e o vale curvo de Rosenbrock em 4 variáveis. Os dois
+precisam chegar ao máximo com um total fixo de avaliações. O segundo confere que a mesma semente dá a mesma geração,
+que todo ponto fica na caixa, que um NaN na nota não quebra a ordenação e que $C$ continua simétrica e com $D > 0$.
+A conta também foi comparada à `pycma`, a implementação de referência do mesmo autor. Na mesma elipse, com a mesma
+população e o mesmo total de avaliações, as duas chegam a resultados parecidos.
 
 ## Como chamar
 
