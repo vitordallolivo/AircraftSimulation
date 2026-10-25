@@ -456,6 +456,15 @@ export fn aerosim_ground_mtow(g: *const ground.GroundRun, lo: f64, hi: f64, runw
     return ground.mtow(g, lo, hi, runway);
 }
 
+// ------------------------------------------------------------------ tração motor + hélice da sprint (power.thrust_of)
+const motorprop = @import("sizing/motorprop.zig");
+
+/// tração em regime com acelerador cheio em cada `V[0..n]` (densidade `rho`), em `out`
+export fn aerosim_motor_prop_thrust(m: *const motorprop.MotorProp, V: [*]const f64, n: usize, rho: f64, out: [*]f64) i32 {
+    motorprop.curve(m, V[0..n], rho, out[0..n]);
+    return 0;
+}
+
 // ------------------------------------------------------------------ dimensionamento inicial (mini-MDO)
 const sizing = @import("sizing/sizing.zig");
 const SZ = sizing.types;

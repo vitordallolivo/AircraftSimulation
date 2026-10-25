@@ -19,6 +19,7 @@ segue essa ordem e termina no otimizador, que trata a cadeia como uma caixa-pret
 | `chain.zig` | a cadeia de um tipo e de um provedor de tração, gerada em comptime; o MTOW por bisseção na massa |
 | `optimize.zig` | os otimizadores atrás de uma interface só (PSO, busca aleatória) |
 | `ground.zig` | a corrida de decolagem rápida da sprint (etapa Motores do aerosim), com a espera pela rotação do profundor e a bisseção do MTOW na pista |
+| `motorprop.zig` | a tração em regime de um motor + hélice + bateria com acelerador cheio, a curva $`T(V)`$ da sprint |
 | `sizing.zig` | a entrada: escolhe a cadeia pelo índice do tipo e o otimizador pelo índice do método |
 
 ```mermaid
@@ -156,6 +157,39 @@ $`V_{rot}(m)`$ é a primeira velocidade da tabela em que o momento de cabrar (ae
 o da tração) vence o do peso em torno do trem principal. O passo é Euler explícito de 0,02 s, na mesma ordem das
 contas do Python, então o resultado sai bit a bit igual ao de antes (`tests/design/test_ground_run.py`). A fonte do
 modelo de corrida é a mesma da seção anterior (a conferir no PDF).
+
+## Tração motor + hélice da sprint (`motorprop.zig`)
+
+Aqui se calcula a curva de tração com acelerador cheio que a sprint e o aeroopt usam em quase toda conta rápida
+(`aerosim/design/power.py: thrust_of`): a corrida, a trimagem de decolagem, o desempenho. Antes ela era uma bisseção
+em Python para cada velocidade, e era o que mais pesava no aeroopt; como segurava o GIL, rodar os candidatos em
+linhas de execução não adiantava nada.
+
+A rotação do conjunto é a do equilíbrio entre o torque que o motor entrega e o que a hélice pede. O motor de
+corrente contínua sem escovas, com a bateria em série, é o modelo de primeira ordem (Drela, "First-Order DC Electric
+Motor Model", MIT, 2007, a conferir no PDF), com $`k_v`$ em rad/(V·s), $`R_m`$ do motor e $`R_{int}`$ da bateria:
+
+```math
+I = \min\left(\frac{V_{oc} - \omega/k_v}{R_m + R_{int}},\; I_{max}\right) \qquad Q_m = \frac{I}{k_v} - \tau_c - B\,\omega
+```
+
+A hélice pede o torque da tabela de potência, com a razão de avanço $`J = V/(nD)`$ e $`n = \omega/2\pi`$:
+
+```math
+Q_p = \frac{C_P(J)}{2\pi}\,\rho\,n^2 D^5
+```
+
+Uma bisseção de 60 passos em $`\omega \in [1, V_{oc}k_v]`$ acha $`Q_m = Q_p`$, e a tração sai da tabela de empuxo, que
+vale zero depois do último $`J`$ (a hélice já não empurra):
+
+```math
+T = \max\left(C_T(J)\,\rho\,n^2 D^4,\; 0\right)
+```
+
+As contas seguem a ordem das do Python de antes e a interpolação é a do `numpy.interp`; $`D^4`$ e $`D^5`$ vêm prontos do
+Python, porque a potência das duas linguagens pode diferir no último bit. Assim a curva sai bit a bit igual à de
+antes, com todos os motores, hélices e baterias do catálogo (`tests/design/test_motor_prop.py`). A tabela da hélice
+vai até 256 pontos. A chamada é `aerosim_motor_prop_thrust`, e no Python `ISimBackend.motor_prop_thrust(spec, V, rho)`.
 
 ## Massa e MTOW (`stages.emptyMass`, `chain`)
 

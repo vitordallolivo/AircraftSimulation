@@ -6,6 +6,15 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- paralelismo como módulo: contrato `IExecutor` (`aerosim/interfaces/executor.py`) e `aerosim/parallel` com as três
+  formas de rodar (série, threads, processos) e o `Executors`, um de cada tipo para a rodada inteira. O `Pipeline` e
+  as gerações do aeroopt rodam por ele, e os processos nascem uma vez por rodada, não a cada etapa de cada geração.
+  O Parar e um processo que morre no meio continuam tratados como antes. `tools/pipeline_bench.py --geracoes N`
+  compara o pool que dura com o pool novo por etapa (`spawn-novo`, `forkserver-novo`).
+- núcleo, tração motor + hélice da sprint: a bisseção do equilíbrio motor × hélice de `power.thrust_of` foi para o
+  núcleo (`core/src/sizing/motorprop.zig`, export `aerosim_motor_prop_thrust`, struct `MotorProp`,
+  `ISimBackend.motor_prop_thrust`). Bit a bit igual à conta em Python de antes com todo o catálogo; era a maior parte
+  do tempo do aeroopt e segurava o GIL.
 - aeroopt, paralelismo: `tools/pipeline_bench.py` compara série, threads e processos (fork, spawn, forkserver) no
   processo em etapas, com o tempo e o ganho de cada etapa, a fração presa ao GIL e a conferência de que o resultado
   não muda; `Pipeline.times` guarda o tempo de cada etapa. Correção: o Otimizar ficava desligado depois de uma

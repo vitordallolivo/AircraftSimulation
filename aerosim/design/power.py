@@ -373,7 +373,8 @@ def _base_inertia(parts, xs, zs, b, c, ac) -> tuple[float, float, float]:
 
 # ------------------------------------------------------------------ desempenho rápido
 def thrust_of(ac: Aircraft, V: np.ndarray, rho: float, backend=None) -> np.ndarray:
-    """tração total com acelerador cheio: o núcleo, se houver; senão o equilíbrio motor + hélice aqui"""
+    """tração total com acelerador cheio: a simulação do núcleo, se houver `backend`; senão o equilíbrio motor +
+    hélice em regime (core/src/sizing/motorprop.zig)"""
     V = np.asarray(V, float)
     if backend is not None:
         try:
@@ -395,35 +396,15 @@ def thrust_of(ac: Aircraft, V: np.ndarray, rho: float, backend=None) -> np.ndarr
         if u.thrust_model == "poly":
             tot += np.array([u.thrust_poly.thrust(v, 1.0, 0.0, rho) for v in V])
         else:
-            tot += np.array([_motor_prop(u, v, rho) for v in V])
+            tot += _core().motor_prop_thrust(motor_prop_spec(u), V, rho)     # a bisseção é do núcleo
     return tot
 
 
-def _motor_prop(u: PropulsionUnit, V: float, rho: float) -> float:
+def motor_prop_spec(u: PropulsionUnit) -> dict:
+    """o motor, a bateria e a hélice de uma unidade no formato de `ISimBackend.motor_prop_thrust`"""
     m, p, bt = u.motor, u.propeller, u.battery
-    if not p.J:
-        return 0.0
-    kv = m.Kv * 2 * math.pi / 60
-    R = m.Rm + bt.Rint
-    D = p.D
-
-    def resid(w):
-        I = min((bt.Voc - w / kv) / R, m.Imax)
-        Qm = I / kv - m.tauc - m.B * w
-        n = w / (2 * math.pi)
-        J = V / (n * D) if n > 0 else 0.0
-        CP = float(np.interp(J, p.J, p.CP))
-        return Qm - CP * rho * n * n * D ** 5 / (2 * math.pi), n, J
-    lo, hi = 1.0, bt.Voc * kv
-    for _ in range(60):
-        mid = 0.5 * (lo + hi)
-        if resid(mid)[0] > 0:
-            lo = mid
-        else:
-            hi = mid
-    _, n, J = resid(0.5 * (lo + hi))
-    CT = float(np.interp(J, p.J, p.CT, right=0.0))
-    return max(CT * rho * n * n * D ** 4, 0.0)
+    return dict(Kv=m.Kv, Rm=m.Rm, B=m.B, tauc=m.tauc, Imax=m.Imax, Voc=bt.Voc, Rint=bt.Rint, D=p.D,
+                J=list(p.J), CT=list(p.CT), CP=list(p.CP))
 
 
 _CORE = None

@@ -7,15 +7,19 @@ Uma etapa pode também tratar o lote inteiro de uma vez (a nota, que o núcleo c
 
     p = Pipeline([Configurations(...), SurfaceSizing(...), Takeoff6dof(...), Score(...)])
     itens = p.run(workers=4, progress=lambda f, txt: print(f"{f:4.0%} {txt}"))
+
+Quem roda os candidatos é um executor genérico (`aerosim.parallel`): cada etapa pede o tipo que quer (`parallel`:
+"processos", "threads" ou "não") e as etapas dividem os mesmos trabalhadores. Quem roda várias vezes (as gerações)
+passa um `Executors` próprio, e os processos nascem uma vez para a rodada inteira.
 """
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Callable
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolExecutor, wait
 
+from aerosim.interfaces.executor import KINDS, IExecutor, Outcome
 from aerosim.interfaces.optim import IStage, StageItem
+from aerosim.parallel import Executors
 
 
 def _fail(item: StageItem, stage: str, err: Exception) -> StageItem:
@@ -26,9 +30,10 @@ def _fail(item: StageItem, stage: str, err: Exception) -> StageItem:
 
 
 class Pipeline:
-    def __init__(self, stages: list[IStage], start_method: str | None = None):
+    def __init__(self, stages: list[IStage], start_method: str | None = None, executors: Executors | None = None):
         self.stages = list(stages)
         self.start_method = start_method                  # processos: "fork", "spawn"... (None = o do sistema)
+        self.executors = executors                        # None: um conjunto só desta rodada, fechado no fim
         self.log: list[tuple[str, int, int]] = []         # por etapa: nome, quantos entraram, quantos seguiram
         self.times: list[tuple[str, float]] = []          # por etapa: nome e o tempo de parede dela (s)
 
@@ -38,6 +43,12 @@ class Pipeline:
             on_item: Callable[[str, StageItem], None] | None = None) -> list[StageItem]:
         """roda as etapas em ordem; devolve todos os candidatos (os que pararam têm `alive = False` e o motivo).
         `on_item(etapa, candidato)` a cada candidato que termina uma etapa (quem mostra o andamento ao vivo)"""
+        if self.executors is not None:
+            return self._run(self.executors, items, workers, progress, cancel, on_item)
+        with Executors(workers, self.start_method) as ex:
+            return self._run(ex, items, workers, progress, cancel, on_item)
+
+    def _run(self, ex: Executors, items, workers, progress, cancel, on_item) -> list[StageItem]:
         items = list(items or [])
         n_st = len(self.stages)
         for k, st in enumerate(self.stages):
@@ -61,7 +72,8 @@ class Pipeline:
                 for it in out:
                     tick(it)
             else:
-                out = self._map(st, alive, workers, tick, cancel)
+                kind = "não" if workers == 1 else (st.parallel if st.parallel in KINDS else "processos")
+                out = self._map(st, ex.get(kind), alive, tick, cancel)
             pos = {id(a): j for j, a in enumerate(alive)}
             new = {pos[id(a)]: o for a, o in zip(alive, out)}
             items = [new.get(pos.get(id(i), -1), i) for i in items]
@@ -74,48 +86,18 @@ class Pipeline:
             self.times.append((st.name, time.perf_counter() - t0))
         return items
 
-    def _map(self, st: IStage, alive: list[StageItem], workers, tick, cancel) -> list[StageItem]:
+    @staticmethod
+    def _map(st: IStage, runner: IExecutor, alive: list[StageItem], tick, cancel) -> list[StageItem]:
         """`st.one` em cada candidato; a ordem da lista é mantida (o resultado não depende do paralelismo)"""
-        n = workers or max(1, min(len(alive), os.cpu_count() or 2))
-        out: list[StageItem | None] = [None] * len(alive)
-        if st.parallel == "não" or n == 1 or len(alive) < 2:
-            for j, it in enumerate(alive):
-                if cancel is not None and cancel():
-                    out[j] = _fail(it, st.name, RuntimeError("cancelado"))
-                    continue
-                try:
-                    out[j] = st.one(it)
-                except Exception as e:  # noqa: BLE001 — um candidato que quebra para ali; os outros seguem
-                    out[j] = _fail(it, st.name, e)
-                tick(out[j])
-            return out
-        if st.parallel == "processos":
-            import multiprocessing as mp
-            ctx = mp.get_context(self.start_method) if self.start_method else None
-            pool = ProcessPoolExecutor(max_workers=n, mp_context=ctx)
-        else:
-            pool = ThreadPoolExecutor(max_workers=n)
-        stopped = False
-        futs = {pool.submit(st.one, it): j for j, it in enumerate(alive)}
-        pending = set(futs)
-        try:
-            while pending:
-                # espera pouco por vez: o Parar é visto em uma fração de segundo, não quando o próximo termina
-                done, pending = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
-                for f in done:
-                    j = futs[f]
-                    try:
-                        out[j] = f.result()
-                    except Exception as e:  # noqa: BLE001
-                        out[j] = _fail(alive[j], st.name, e)
-                    tick(out[j])
-                if cancel is not None and cancel():
-                    stopped = True
-                    break
-        finally:
-            if stopped:
-                # a conta que está rodando num processo não tem como ouvir o Parar: o processo é encerrado
-                for proc in list((getattr(pool, "_processes", None) or {}).values()):
-                    proc.terminate()
-            pool.shutdown(wait=not stopped, cancel_futures=True)
-        return [o if o is not None else _fail(a, st.name, RuntimeError("cancelado")) for o, a in zip(out, alive)]
+        got: dict[int, StageItem] = {}
+
+        def item(j: int, r: Outcome) -> StageItem:
+            if r.ok:
+                return r.value
+            return _fail(alive[j], st.name, r.error if r.error is not None else RuntimeError("cancelado"))
+
+        def done(j: int, r: Outcome):
+            got[j] = item(j, r)
+            tick(got[j])
+        res = runner.map(st.one, alive, cancel, done)
+        return [got[j] if j in got else item(j, r) for j, r in enumerate(res)]

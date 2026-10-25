@@ -20,11 +20,12 @@ pub const exported = .{
     T.MassProps,   T.TrimPoint,   T.PerfRow,        env.EnvCfg,  env.EnvRow,     lin.LinModel, at.Result,
     sp.SimpleCfg,  sp.SimpleRow,  sp.SimpleSummary, sz.VarSpec,  sz.AirfoilData, sz.PropSet,   sz.Constraint,
     sz.LayoutData, sz.SizingCfg,  sz.SizingOut,     sz.OptOpts,  sz.Individual,  ot.Tier,      ot.Program,
-    gr.GroundRun,  geo.Part,      geo.Scene,       geo.Report,  ga.GaCfg,      cm.CmaState,
+    gr.GroundRun,  geo.Part,      geo.Scene,       geo.Report,  ga.GaCfg,      cm.CmaState,  mp.MotorProp,
 };
 const sz = @import("sizing/types.zig");
 const ot = @import("optim/types.zig");
 const gr = @import("sizing/ground.zig");
+const mp = @import("sizing/motorprop.zig");
 const geo = @import("geometry/geometry.zig");
 const ga = @import("optim/ga.zig");
 const cm = @import("optim/cmaes.zig");

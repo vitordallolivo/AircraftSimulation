@@ -149,6 +149,7 @@ class _Lib:
             "aerosim_expr_eval": (c_int, [ctypes.POINTER(T["Program"]), vp, c_size, c_size, vp, c_size]),
             "aerosim_ground_runs": (c_int, [ctypes.POINTER(T["GroundRun"]), vp, c_size, vp]),
             "aerosim_ground_mtow": (c_double, [ctypes.POINTER(T["GroundRun"]), c_double, c_double, c_double]),
+            "aerosim_motor_prop_thrust": (c_int, [ctypes.POINTER(T["MotorProp"]), vp, c_size, c_double, vp]),
             "aerosim_geometry_check": (c_int, [vp, c_size, vp]),
             "aerosim_ga_init": (c_int, [ctypes.POINTER(T["GaCfg"]), vp]),
             "aerosim_ga_next": (c_int, [ctypes.POINTER(T["GaCfg"]), vp, vp, vp]),
@@ -556,6 +557,18 @@ class ZigBackend(ISimBackend):
 
     def ground_mtow(self, g, lo: float, hi: float, runway: float) -> float:
         return float(self._lib.dll.aerosim_ground_mtow(ctypes.byref(g), lo, hi, runway))
+
+    # ------------------------------------------------------------------ tração motor + hélice da sprint
+    def motor_prop_thrust(self, spec: dict, V, rho: float) -> np.ndarray:
+        """tração em regime com acelerador cheio em cada `V` (core/src/sizing/motorprop.zig); `spec` com Kv, Rm, B,
+        tauc, Imax, Voc, Rint, D e a tabela J, CT, CP da hélice"""
+        m = self._lib.schema.types["MotorProp"]()
+        D = float(spec["D"])
+        abi.write(m, dict(spec, D4=D ** 4, D5=D ** 5, n=len(spec["J"])))
+        v = np.ascontiguousarray(np.atleast_1d(np.asarray(V, float)))
+        out = np.zeros_like(v)
+        self._lib.dll.aerosim_motor_prop_thrust(ctypes.byref(m), v.ctypes.data, v.size, float(rho), out.ctypes.data)
+        return out
 
     # ------------------------------------------------------------------ gerações do aeroopt
     def _ga_cfg(self, cfg: dict):

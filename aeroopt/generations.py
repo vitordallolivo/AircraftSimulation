@@ -19,6 +19,7 @@ import copy
 import math
 
 from aerosim.interfaces.optim import ISolver, OptResult
+from aerosim.parallel import Executors
 
 from .pipeline import Pipeline
 from .problem import apply_to_project, fold_bounds
@@ -71,8 +72,11 @@ class GenerationsSolver(ISolver):
         history: list[tuple[int, int, float]] = []
         rows: list[dict] = []
 
+        # os mesmos trabalhadores para todas as etapas de todas as gerações: os processos nascem uma vez
+        executors = Executors(evaluator.workers, evaluator.start_method)
+
         def stage_run(items, gen, f0, f1):
-            pipe = Pipeline(evaluator.stages(p, problem), evaluator.start_method)
+            pipe = Pipeline(evaluator.stages(p, problem), evaluator.start_method, executors)
             prog = (lambda f, t: progress(f0 + (f1 - f0) * f, f"geração {gen}: {t}")) if progress else None
 
             def cb(st, it):
@@ -85,30 +89,33 @@ class GenerationsSolver(ISolver):
                 s[1] += b
             return [dict(row(i), geração=gen) for i in out]
 
-        if n_all <= self.population:                  # cabe numa geração: roda todas
-            rows = stage_run(configurations(p, problem, evaluator.catalog), 1, 0.0, 1.0)
-            history.append((1, len(rows), _best(rows)))
-        else:
-            from aerosim.backend.zig import ZigBackend
-            be = evaluator.backend if hasattr(evaluator.backend, "ga_next") else ZigBackend()
-            cfg = dict(n_genes=len(ax), pop=self.population, elite=self.elite, card=[len(o) for _, o in ax],
-                       p_cross=self.p_cross, p_mut=self.p_mut, seed=self.seed, generation=0)
-            genes = be.ga_init(cfg)
-            seen: dict[tuple, dict] = {}
-            for g in range(self.generations):
-                if cancel is not None and cancel():
-                    break
-                keys = [tuple(int(round(x)) for x in ind) for ind in genes]
-                new = list(dict.fromkeys(k for k in keys if k not in seen))
-                items = [config_item({name: opts[k[j]] for j, (name, opts) in enumerate(ax)}, len(seen) + i + 1)
-                         for i, k in enumerate(new)]
-                for k, r in zip(new, stage_run(items, g + 1, g / self.generations, (g + 1) / self.generations)):
-                    seen[k] = r
-                    rows.append(r)
-                fit = [fitness(seen[k]) for k in keys]
-                history.append((g + 1, len(new), _best(rows)))
-                cfg["generation"] = g + 1
-                genes = be.ga_next(cfg, genes, fit)
+        try:
+            if n_all <= self.population:                  # cabe numa geração: roda todas
+                rows = stage_run(configurations(p, problem, evaluator.catalog), 1, 0.0, 1.0)
+                history.append((1, len(rows), _best(rows)))
+            else:
+                from aerosim.backend.zig import ZigBackend
+                be = evaluator.backend if hasattr(evaluator.backend, "ga_next") else ZigBackend()
+                cfg = dict(n_genes=len(ax), pop=self.population, elite=self.elite, card=[len(o) for _, o in ax],
+                           p_cross=self.p_cross, p_mut=self.p_mut, seed=self.seed, generation=0)
+                genes = be.ga_init(cfg)
+                seen: dict[tuple, dict] = {}
+                for g in range(self.generations):
+                    if cancel is not None and cancel():
+                        break
+                    keys = [tuple(int(round(x)) for x in ind) for ind in genes]
+                    new = list(dict.fromkeys(k for k in keys if k not in seen))
+                    items = [config_item({name: opts[k[j]] for j, (name, opts) in enumerate(ax)}, len(seen) + i + 1)
+                             for i, k in enumerate(new)]
+                    for k, r in zip(new, stage_run(items, g + 1, g / self.generations, (g + 1) / self.generations)):
+                        seen[k] = r
+                        rows.append(r)
+                    fit = [fitness(seen[k]) for k in keys]
+                    history.append((g + 1, len(new), _best(rows)))
+                    cfg["generation"] = g + 1
+                    genes = be.ga_next(cfg, genes, fit)
+        finally:
+            executors.close()
         done = [r for r in rows if r["alive"] and math.isfinite(r["nota"])]
         best_row = max(done, key=lambda r: (r["valido"], r["nota"])) if done else {}
         return OptResult(rows=rows, best=best_row, names={"etapas": [(k, a, b) for k, (a, b) in log.items()],

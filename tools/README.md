@@ -22,10 +22,13 @@ Compara as formas de rodar o processo em etapas do aeroopt em paralelo. O mesmo 
 threads e em processos (fork, spawn, forkserver), e a ferramenta imprime o tempo de cada etapa e o ganho sobre a série.
 Ela também confere se cada estratégia deu o mesmo resultado da série. Da fração que não paraleliza (Karp e Flatt)
 sai quanto de cada etapa fica preso ao GIL, a trava do Python que deixa só uma thread rodar código Python por vez.
-`--png` grava o ganho por etapa.
+`--png` grava o ganho por etapa. Com `--geracoes N` o lote passa N vezes, como nas gerações do otimizador: os
+processos ficam vivos a rodada inteira (`aerosim/parallel`), e as estratégias com "-novo" no nome abrem um pool novo
+a cada etapa, como era antes, para mostrar o custo de nascer.
 
 ```sh
 python tools/pipeline_bench.py --exemplo
+python tools/pipeline_bench.py --exemplo --geracoes 4 --estrategias serie,threads,spawn,spawn-novo
 python tools/pipeline_bench.py --projeto p.json --problema q.opt.json --configs 12 --processos 2,4 --png perfis/bench.png
 ```
 

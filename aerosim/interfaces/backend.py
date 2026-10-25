@@ -187,3 +187,8 @@ class ISimBackend(ABC):
         """desempenho por cálculo simples (sem simulação): `cfg` com W, S, C_D0, K, C_Lmax, h,
         tabela de tração (thr_V, thr_T), inclinações (bank, rad), bateria... -> (colunas por V, resumo)"""
         raise NotImplementedError(f"{self.name}: desempenho simples não implementado")
+
+    def motor_prop_thrust(self, spec: dict, V, rho: float):
+        """tração em regime de um motor + hélice + bateria com acelerador cheio em cada velocidade `V` (m/s):
+        `spec` com Kv (rpm/V), Rm, B, tauc, Imax, Voc, Rint, D (m) e a tabela J, CT, CP da hélice -> array de T (N)"""
+        raise NotImplementedError(f"{self.name}: tração motor + hélice não implementada")
