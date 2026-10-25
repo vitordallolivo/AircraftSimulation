@@ -424,6 +424,26 @@ test {
     _ = @import("tests_sim.zig");
 }
 
+// ------------------------------------------------------------------ aeroopt: programa da pontuação
+const expr = @import("optim/expr.zig");
+const OT = @import("optim/types.zig");
+
+/// confere o programa (0 = ok; negativo = `expr.Error`)
+export fn aerosim_expr_check(p: *const OT.Program) i32 {
+    return @intFromEnum(expr.check(p));
+}
+
+/// `rows` candidatos: entradas da linha k em `inputs[k * in_stride ..]`, todas as vagas dela em
+/// `out[k * out_stride ..]`. Confere o programa antes; erro = código negativo e nada é calculado
+export fn aerosim_expr_eval(p: *const OT.Program, inputs: [*]const f64, in_stride: usize, rows: usize, out: [*]f64, out_stride: usize) i32 {
+    const e = expr.check(p);
+    if (e != .ok) return @intFromEnum(e);
+    if (in_stride < @as(usize, @intCast(p.n_inputs)) or out_stride < @as(usize, @intCast(p.n_slots))) return @intFromEnum(expr.Error.bad_size);
+    if (rows == 0) return 0;
+    expr.runMany(p, inputs[0 .. (rows - 1) * in_stride + @as(usize, @intCast(p.n_inputs))], in_stride, rows, out[0 .. (rows - 1) * out_stride + @as(usize, @intCast(p.n_slots))], out_stride);
+    return 0;
+}
+
 // ------------------------------------------------------------------ dimensionamento inicial (mini-MDO)
 const sizing = @import("sizing/sizing.zig");
 const SZ = sizing.types;

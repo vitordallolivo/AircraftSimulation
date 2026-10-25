@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, nota no núcleo (O03): `core/src/optim` confere e executa o programa da pontuação, para um candidato ou
+  muitos (`aerosim_expr_check`, `aerosim_expr_eval`; grupo de testes `test-optim`), e `core/src/math/linalg.zig` traz
+  LU e Cholesky de tamanho fixo para os solvers. `aeroopt.scoring.evaluate` devolve nota, fatores e validade; as notas
+  da Micro 2026 calculadas à mão batem com as do núcleo.
 - aeroopt, pontuação por regulamento (O01): um `.toml` por ano em `aeroopt/pontuacao/`, traduzido para um programa de
   pilha que o núcleo vai executar (`aeroopt/scoring.py`). Primeiro arquivo: SAE BRASIL AeroDesign 2026, classe Micro
   (Regulamento Rev03, seção 9.8, eqs. 9.1 a 9.4, e as condições de voo válido como restrições).

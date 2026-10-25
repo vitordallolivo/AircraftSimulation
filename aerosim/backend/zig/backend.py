@@ -145,6 +145,8 @@ class _Lib:
             "aerosim_sizing_optimize": (c_int, [ctypes.POINTER(T["SizingCfg"]), ctypes.POINTER(T["OptOpts"]), vp, c_size,
                                                 ctypes.POINTER(c_size), ctypes.POINTER(T["SizingOut"]), vp, vp]),
             "aerosim_sizing_name": (ctypes.c_char_p, [c_int, c_int]),
+            "aerosim_expr_check": (c_int, [ctypes.POINTER(T["Program"])]),
+            "aerosim_expr_eval": (c_int, [ctypes.POINTER(T["Program"]), vp, c_size, c_size, vp, c_size]),
             "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
             "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
             "aerosim_prop_state": (c_int, [c_int, c_int] + [c_double] * 5 + [ctypes.POINTER(T["PropPoint"])]),
@@ -504,6 +506,32 @@ class ZigBackend(ISimBackend):
                                                      ctypes.byref(n), ctypes.byref(best),
                                                      ctypes.cast(fn, ctypes.c_void_p), None), "sizing_optimize")
         return buf[:n.value].copy(), abi.read(best)
+
+    # ------------------------------------------------------------------ aeroopt: programa da pontuação
+    _EXPR_ERRORS = {-1: "tamanho fora dos limites", -2: "operação desconhecida", -3: "índice inexistente",
+                    -4: "pilha", -5: "vaga lida antes de escrita", -6: "vaga escrita duas vezes"}
+
+    def _program(self, prog: dict):
+        p = self._lib.schema.types["Program"]()
+        tiers = [dict(limits=t["limits"], values=t["values"], n=len(t["limits"]), outside=t["outside"])
+                 for t in prog["tiers"]]
+        abi.write(p, dict(ops=prog["ops"], args=prog["args"], n_ops=len(prog["ops"]), consts=prog["consts"],
+                          n_consts=len(prog["consts"]), tiers=tiers, n_tiers=len(tiers), n_inputs=prog["n_inputs"],
+                          n_slots=len(prog["slots"])))
+        return p
+
+    def expr_eval(self, prog: dict, inputs) -> np.ndarray:
+        """todas as vagas do programa (colunas) para cada linha de entradas; `inputs`: (linhas, n_entradas)"""
+        p = self._program(prog)
+        x = np.ascontiguousarray(np.atleast_2d(np.asarray(inputs, float)))
+        if x.shape[1] != prog["n_inputs"]:
+            raise ValueError(f"{x.shape[1]} entradas por linha; o programa pede {prog['n_inputs']}")
+        out = np.zeros((x.shape[0], len(prog["slots"])))
+        code = self._lib.dll.aerosim_expr_eval(ctypes.byref(p), x.ctypes.data, x.shape[1], x.shape[0],
+                                               out.ctypes.data, out.shape[1])
+        if code < 0:
+            raise ValueError(f"programa da pontuação recusado pelo núcleo: {self._EXPR_ERRORS.get(code, code)}")
+        return out
 
     def simple_performance(self, cfg: dict) -> tuple[dict, dict]:
         T = self._lib.schema.types

@@ -192,6 +192,31 @@ def scoring_for(spec: str) -> IScoring:
     return Objective(spec.lower() if spec in ("MTOW", "EE") else spec)
 
 
+def evaluate(scoring: IScoring, rows, backend=None) -> list[dict]:
+    """a nota de cada candidato, calculada no núcleo. `rows`: dicionários com as entradas (ou um só).
+    Devolve, por candidato: nota, termos (os fatores), validade [(texto, cumpre, valor)] e válido"""
+    if backend is None:
+        from aerosim.backend.zig import ZigBackend
+        backend = ZigBackend()
+    rows = [rows] if isinstance(rows, dict) else list(rows)
+    prog, names = scoring.program(), scoring.quantities()
+    missing = sorted({n for r in rows for n in names if n not in r})
+    if missing:
+        raise KeyError(f"faltam entradas: {', '.join(missing)}")
+    out = backend.expr_eval(prog, [[float(r[n]) for n in names] for r in rows])
+    res = []
+    for v in out:
+        checks = []
+        for c in prog["valid"]:
+            x = float(v[c["slot"]])
+            ok = x <= c["value"] if c["op"] == "≤" else x >= c["value"] if c["op"] == "≥" else \
+                abs(x - c["value"]) <= 1e-9
+            checks.append((f"{c['text']} {c['op']} {c['value']:g}", bool(ok), x))
+        res.append(dict(nota=float(v[prog["score"]]), termos={k: float(v[i]) for k, i in prog["parts"].items()},
+                        validade=checks, valido=all(ok for _, ok, _ in checks)))
+    return res
+
+
 def listing(prog: dict) -> str:
     """o programa em texto, uma operação por linha (para ler e conferir)"""
     out = []

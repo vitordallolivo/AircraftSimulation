@@ -11,6 +11,7 @@ mostra a alternativa sem tabela para o seno. Depois vêm o polinômio de traçã
 |---|---|
 | `fmath.zig` | `sin`, `cos`, `atan2`, `exp`, `log`, `pow`, `tanh`... por tabela e polinômio (`lut`) ou pela std (`ref`) |
 | `vec.zig` | vetores 3D em registradores SIMD (`@Vector`), matrizes 3×3 por linhas, a matriz corpo → NED |
+| `linalg.zig` | álgebra linear de tamanho fixo: LU com pivoteamento parcial, Cholesky e as soluções de A x = b (para os solvers do aeroopt) |
 | `poly.zig` | polinômio em duas variáveis de grau N gerado em comptime (`Poly2`), na ordem do MATLAB |
 | `fmath_test.zig` | erro de cada função contra a std em muitos pontos |
 

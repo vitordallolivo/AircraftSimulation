@@ -68,3 +68,40 @@ def test_bad_files_are_refused(tmp_path, body, msg):
 def test_simple_objective():
     o = scoring_for("MTOW")
     assert isinstance(o, Objective) and o.quantities() == ["mtow"] and o.program()["score"] == 1
+
+
+def _micro(m):
+    """a nota da Micro 2026 escrita à mão a partir do regulamento (seção 9.8, eqs. 9.1 a 9.4), sem o compilador"""
+    import math
+    cp_m = 2 * min(m["c_lapes"], m["c_liq"])
+    ee = cp_m / m["pv"]
+    f_bat = max(0.2, 0.85 / (0.85 + math.exp((1000 * m["m_bat"] - 298) / 37.7 - 4.8)))
+    f_dec = 250 if m["s_to"] <= 1 else 170 if m["s_to"] <= 4 else 110 if m["s_to"] <= 8 else 0
+    pd = 0.4 * max(1000 * m["b"] - 1800, 0)
+    return 1.05 * f_bat * 1.0 * f_dec * cp_m ** 0.08 * (0.095 / (0.1 + math.exp(-ee)) + 0.4) - pd
+
+
+CASES = [
+    # EE = 4, decolagem em 3,5 m, bateria de 300 g, envergadura no limite: 224,67 pontos
+    (dict(c_lapes=1.0, c_liq=1.2, pv=0.5, m_bat=0.300, s_to=3.5, b=1.8), 224.6736, True),
+    # decolagem em 0,9 m, bateria de 420 g, 30 mm acima do limite (−12 pontos)
+    (dict(c_lapes=0.8, c_liq=0.8, pv=0.6, m_bat=0.420, s_to=0.9, b=1.83), 198.0695, True),
+    # decolagem além de 8 m: F_Dec = 0 e o voo não vale; carga abaixo de 0,3 PV
+    (dict(c_lapes=0.1, c_liq=0.5, pv=0.5, m_bat=0.250, s_to=8.5, b=1.7), 0.0, False),
+]
+
+
+@pytest.mark.parametrize("q, expected, valid", CASES)
+def test_micro_2026_score_in_the_core_matches_hand(backend, q, expected, valid):
+    from aeroopt.scoring import evaluate
+    r = evaluate(scoring_for("sae_br_2026_micro"), q, backend)[0]
+    assert r["nota"] == pytest.approx(_micro(q), rel=1e-12)
+    assert r["nota"] == pytest.approx(expected, abs=1e-3)
+    assert r["valido"] is valid
+
+
+def test_core_refuses_a_broken_program(backend):
+    p = scoring_for("MTOW").program()
+    bad = dict(p, ops=[LOAD, LOAD, STORE], args=[0, 0, 1])          # sobra um valor na pilha
+    with pytest.raises(ValueError, match="pilha"):
+        backend.expr_eval(bad, [[1.0]])
