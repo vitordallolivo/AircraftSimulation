@@ -63,6 +63,9 @@ class PowerParams:
                      0.0, 0.6, 0.005)
     x_tdn: float = F(0.0, "x_TDN: bequilha à frente do CG", "m", "triciclo: distância do CG de projeto à bequilha "
                      "(+ = à frente). 0 = automático (10 cm atrás do nariz)", 0.0, 1.5, 0.005)
+    gear_h: float = F(0.0, "altura do trem", "m", "do eixo do corpo ao chão no trem principal. 0 = a mínima para a "
+                      "hélice livrar o chão parada; maior desce todas as rodas juntas (a atitude parada não muda)",
+                      0.0, 1.0, 0.005)
 
 
 @dataclass
@@ -230,6 +233,8 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     gz = (D / 2 + rules.prop_clearance) if not n_pairs else max(D / 2 + rules.prop_clearance + w.z, 0.12)
     if n_pairs and (n_nose or n_rear):                  # a hélice do centro também tem que livrar o chão
         gz = max(gz, D / 2 + rules.prop_clearance)
+    dz = max(pp.gear_h - gz, 0.0)                      # trem mais alto que o mínimo: todas as rodas descem juntas
+    gz += dz
     x_tdp = pp.x_tdp if pp.x_tdp > 0 else rules.main_gear_aft          # medidas do CG de projeto
     if pp.gear == GEARS[0]:
         ac.gear = LandingGear("tricycle", main_x=x_t - x_tdp, main_track=rules.track, main_z=gz,
@@ -241,7 +246,7 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
         ac.gear = LandingGear("conventional", main_x=x_t + (pp.x_tdp if pp.x_tdp > 0 else 0.10), main_track=rules.track,
                               main_z=gz,
                               steer_x=ac.boom.x_end if ac.boom.enabled else x_t - 0.6,
-                              steer_z=(ac.boom.end[2] if ac.boom.enabled else 0.0) + 0.05, steer_k=1500,
+                              steer_z=(ac.boom.end[2] if ac.boom.enabled else 0.0) + 0.05 + dz, steer_k=1500,
                               steer_c=40, tail_skid=False, mu_roll=req.mu_roll)
     # ---- decolagem e piloto (o piloto ainda se calibra sozinho antes de voar)
     Vs = stall_speed(req, S, wr["CLmax"], M)

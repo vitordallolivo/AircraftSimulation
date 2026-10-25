@@ -164,7 +164,7 @@ def scene(model, params: GeometryParams | None = None) -> tuple[dict, list[str]]
 
 def report(r: dict, names: list[str], att: list[float], need: bool = True) -> GeometryReport:
     """o relatório do núcleo com os nomes das peças e os motivos em português"""
-    out = GeometryReport(ok=bool(r["ok"]))
+    out = GeometryReport(ok=bool(r["ok"]), gear_raise=float(r["gear_raise"]))
     for a, b in zip(r["hit_a"][:r["n_hits"]], r["hit_b"][:r["n_hits"]]):
         out.prop_hits.append((names[a], names[b]))
     out.outside = [names[i] for i in r["outside"][:r["n_outside"]]]

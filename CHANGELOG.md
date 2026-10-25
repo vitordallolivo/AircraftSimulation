@@ -6,6 +6,14 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, a geometria conserta: quase toda configuração reprovava por bater no chão na rotação (o trem do montador
+  só livra a hélice parado). O núcleo agora devolve quanto descer as rodas (`Report.gear_raise`, exato), a etapa
+  grava a altura do trem na configuração e segue; cada ponto das superfícies faz o mesmo. Campo novo na sprint,
+  `power_draft.gear_h` ("altura do trem", 0 = como antes, bit a bit).
+- aeroopt, variáveis de tudo: o submenu das variáveis tem todo campo das etapas do aerosim com faixa ou escolha
+  (`aeroopt/inputs.py`, lido da definição dos campos), uma aba por grupo. As listas (perfis, motor, hélice,
+  bateria, cauda, trem, sim/não) ficam no mesmo submenu, marcadas por item; os submenus separados de perfis e
+  peças saíram. Inteiros andam no passo do campo (motores na asa aos pares).
 - aeroopt, esquerda em submenus: pontuação, variáveis, restrições, perfis, peças, categorias e configuração são
   botões com resumo, cada um abrindo o seu submenu. A geometria (ângulo de rotação, folgas, uma peça só) foi para
   as restrições. A configuração escolhe o método de cada etapa: configurações por gerações ou todas; superfícies

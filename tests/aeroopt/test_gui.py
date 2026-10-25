@@ -132,14 +132,16 @@ def test_lists_by_region_and_catalog_parts(app, tmp_path):
     w = AeroOptWindow(p, pr)
     dat = tmp_path / "meu.dat"
     dat.write_text("MEU PERFIL\n1 0\n0.5 0.06\n0 0\n0.5 -0.02\n1 0\n")
-    w.airfoils.tick("wing.airfoil", ["NACA 2412"])
-    name = w.airfoils.add_dat(str(dat))
+    ch = w.vars.choices
+    ch["wing.airfoil"].tick("wing.airfoil", ["NACA 2412"])
+    name = ch["wing.airfoil"].add_dat(str(dat))
     assert name == "MEU PERFIL" and p.airfoil(name) is not None
-    assert w.airfoils.checked("wing.airfoil") == ["NACA 2412"]            # as marcas de antes ficam
-    assert name in [w.airfoils.lists["tail.airfoil"].item(i).data(256) for i in range(w.airfoils.lists["tail.airfoil"].count())]
-    w.airfoils.tick("tail.airfoil", [name])
-    bat = w.parts.lists["power.battery"].item(0).data(256)
-    w.parts.tick("power.battery", [bat])
+    assert ch["wing.airfoil"].checked("wing.airfoil") == ["NACA 2412"]            # as marcas de antes ficam
+    lw = ch["tail.airfoil"].lists["tail.airfoil"]
+    assert name in [lw.item(i).data(256) for i in range(lw.count())]            # e o perfil entra nas outras listas
+    ch["tail.airfoil"].tick("tail.airfoil", [name])
+    bat = ch["power.battery"].lists["power.battery"].item(0).data(256)
+    ch["power.battery"].tick("power.battery", [bat])
     out = w.read_problem()
     v = out.variable("tail.airfoil")
     assert v.free and v.options == [name] and v.kind == "lista"
@@ -151,7 +153,7 @@ def test_lists_by_region_and_catalog_parts(app, tmp_path):
     assert q.tail_draft.tail_airfoil == name and q.power_draft.battery == bat
     w.problem = out
     w._summaries(out)
-    assert name in w.summary["perfis"].text() and bat in w.summary["peças"].text()
+    assert name in w.summary["variáveis"].text() and bat in w.summary["variáveis"].text()
 
 
 def test_constraint_on_a_variable_becomes_its_bound():
@@ -178,7 +180,7 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     from aeroopt.gui import AeroOptWindow, example_project
     p, pr = example_project()
     w = AeroOptWindow(p, pr)
-    assert set(w.menus) == {"pontuação", "variáveis", "restrições", "perfis", "peças", "categorias", "configuração"}
+    assert set(w.menus) == {"pontuação", "variáveis", "restrições", "categorias", "configuração"}
     assert w.rot.window() is not w and w.scoring.window() is not w and w.cat_cb["asa alta"].window() is not w
     assert w.rot.window() is w.menus["restrições"] and w.evals.window() is w.menus["configuração"]
     assert set(w.method) == {"configurações", "superfícies", "decolagem"}
@@ -202,3 +204,29 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     w.scoring.set_spec("MTOW")                                   # Cancelar volta a pontuação ao que era
     w.scoring.restore(("sae_br_2026_micro", {}))
     assert w.scoring.spec() == "sae_br_2026_micro"
+
+
+def test_every_aerosim_input_is_a_variable_and_lists_are_ticked(app):
+    """o submenu das variáveis tem todo campo das etapas com faixa ou escolha; a lista se escolhe por marcação e o
+    número pelos limites, e os dois viram variáveis do problema"""
+    from aeroopt import inputs as inp
+    from aeroopt import stages as sg
+    from aeroopt.gui import AeroOptWindow, example_project
+    p, pr = example_project()
+    w = AeroOptWindow(p, pr)
+    assert set(w.vars.keys()) == set(inp.all_inputs()) and len(w.vars.keys()) > 60
+    assert {"tail.VH", "power.gear", "rules.fuselage_width", "tail.tail_inverted"} <= set(w.vars.keys())
+    w.vars.check("tail.VH", True, 0.35, 0.6)
+    w.vars.choices["power.gear"].tick("power.gear", ["triciclo", "convencional"])
+    w.vars.choices["tail.layout"].tick("tail.layout", ["em V"])
+    out = w.read_problem()
+    v = out.variable("tail.VH")
+    assert v.free and (v.lo, v.hi) == (0.35, 0.6) and v.kind == "contínua" and v.group == "empenagem"
+    assert out.variable("power.gear").options == ["triciclo", "convencional"]
+    ax = dict(sg.axes(p, out))
+    assert ax["power.gear"] == ["triciclo", "convencional"] and ax["tail.layout"] == ["em V"]
+    q, cand = sg.candidate(p, {"power.gear": "convencional", "tail.VH": 0.5, "tail.tail_inverted": "sim"})
+    assert cand.params.gear == "convencional" and cand.set.params.VH == 0.5 and cand.set.params.tail_inverted is True
+    w._isolate("empenagem")
+    assert {v.key for v in w.problem.free_variables() if v.kind != "lista"} == \
+        {k for k, i in inp.all_inputs().items() if i.group == "empenagem" and i.kind != "lista"}

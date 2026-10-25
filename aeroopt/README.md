@@ -93,8 +93,16 @@ pelo código.
 As etapas de hoje, em `stages.py`, são cinco. A **geometria** vem logo depois das configurações: o avião de cada
 configuração, montado como está nos rascunhos, passa pela checagem do núcleo (`core/src/geometry`): a hélice não pode
 acertar nenhuma peça, nenhuma massa pode ficar fora da geometria e nada pode bater no chão, parado ou girado no trem
-principal até o ângulo de rotação. É uma conta de microssegundos, então quem não cabe para aqui sem gastar pontos de
-projeto, e cada ponto da busca das superfícies também passa por ela. Os pedaços soltos (asas sem montante ou tubo
+principal até o ângulo de rotação. A geometria não só reprova: ela conserta o que sabe consertar. Sem isso, quase
+toda configuração parava aqui, porque o montador da sprint dá ao trem só a altura que livra a hélice com o avião
+parado, e girado na decolagem a EH, a cauda em V ou a hélice propulsora raspam o chão. Como a altura de cada peça
+girada é linear na posição (a conta está em `core/src/geometry/README.md`), o núcleo diz exatamente quanto descer as
+rodas, todas juntas, para tudo livrar o chão; a etapa grava essa altura do trem (`power.gear_h`) nos valores da
+configuração e confere de novo. A configuração segue com esse trem, e as superfícies e o 6GDL usam o mesmo. O que a
+geometria ainda não conserta (hélice que acerta peça, massa fora, peça solta quando se pede uma peça só) para aqui,
+com o motivo. É uma conta de microssegundos, então quem não cabe para sem gastar pontos de projeto, e cada ponto da
+busca das superfícies também passa por ela (com o mesmo conserto, porque mudar a envergadura ou a cauda muda o que
+bate). Os pedaços soltos (asas sem montante ou tubo
 entre elas) por enquanto só são contados, porque o montador da sprint ainda não põe esses conectores. Sem a
 geometria, as etapas são as quatro abaixo. As **configurações** são as combinações das escolhas discretas livres
 (motor, hélice, perfil, arranjo, número de motores): cada combinação vira um candidato, até 256. Acima disso
@@ -158,7 +166,7 @@ rodaram e a melhor nota até ali, e cada linha leva a geração em que a configu
 ## A janela
 
 `python -m aeroopt [projeto.json] [problema.opt.json]` abre a janela do aeroopt (`gui.py`); `--exemplo` abre um
-avião pequeno, perto da classe Micro, para ver tudo funcionando. Na esquerda se monta o problema, em sete botões,
+avião pequeno, perto da classe Micro, para ver tudo funcionando. Na esquerda se monta o problema, em cinco botões,
 cada um com um resumo do que está valendo ao lado. Cada botão abre um submenu, e o OK leva o que mudou para o
 problema (Cancelar desfaz). Tudo isso vai junto quando se grava o `.opt.json`: as categorias em
 `params["categorias"]`, a geometria em `params["geometria"]` e as etapas em `params["etapas"]`.
@@ -172,15 +180,17 @@ coordenadas ou das gerações nas contínuas, com quantos pontos de projeto cada
 pelo 6GDL ou fica só na corrida da pista; a nota é sempre no núcleo. Ali também se escolhe quantos processos rodam
 cada etapa.
 
-O submenu das **variáveis** mostra só as numéricas (contínuas e inteiras), como os limites inferior e superior de
-cada gene no MDO antigo da equipe: livre ou fixa, o valor que o avião tem agora e os dois limites, com botões para
-isolar um grupo. As listas não se digitam: os **perfis** se escolhem num submenu com uma lista marcável por região
-(raiz da asa, ponta da asa, EH, EV), puxada dos perfis do projeto e da pasta de perfis, e "Adicionar .dat…" lê um
-perfil novo para dentro do projeto aberto e de todas as listas. Os **motores, hélices e baterias** vêm do catálogo
-do mesmo jeito, junto com o arranjo dos motores. Uma lista sem nada marcado fica no valor do avião (em negrito); com
-marcas, a busca varre só os marcados, e cada lista marcada vira um eixo das configurações, como as categorias. Os
-perfis da cauda e a bateria são variáveis do aeroopt (`stages.EXTRA_INPUTS`), não da página MDO da sprint, e ficam só
-no problema.
+O submenu das **variáveis** tem tudo o que se escolhe nas etapas do aerosim e pode variar, uma aba por grupo (asa,
+empenagem, motores, carga e trem, requisitos, regras e massas). A lista sai de `inputs.py`, que lê a definição de
+cada campo dos rascunhos da sprint: o nome, a unidade e a faixa em que faz sentido, ou as escolhas que ele tem. Assim
+um campo novo numa etapa do aerosim aparece sozinho aqui. Um número é livre ou fixo, com o valor que o avião tem agora
+e os limites inferior e superior, como os genes do MDO antigo da equipe; o inteiro anda no passo do campo (os motores
+na asa vão aos pares). Uma escolha (o perfil de cada região, o motor, a hélice, a bateria, a cauda, o trem, o arranjo
+dos motores, os sim/não) tem no lugar dos limites o botão que abre a lista do que existe, puxada dos perfis do
+projeto e da pasta, do catálogo ou das escolhas do campo: os marcados são os limites dela. Nada marcado fica no valor
+do avião (em negrito); com marcas, cada lista vira um eixo das configurações, como as categorias. "Adicionar .dat…"
+lê um perfil novo para dentro do projeto e de todas as listas de perfis. Os botões de isolar soltam só as numéricas
+de um grupo, porque soltar todas as listas juntas multiplicaria as configurações sem necessidade.
 
 Na direita se vê a rodada. A janela se atualiza a cada candidato que termina uma etapa, não a cada passo do
 núcleo: é o bastante para ver a busca andar sem pesar a conta. Os eixos dos gráficos se refazem a cada ponto que

@@ -66,6 +66,13 @@ a altura do centro menos
 
 $$R \sqrt{|\mathbf{g}|^2 - (\mathbf{g}\cdot\mathbf{n})^2}$$
 
+Quando alguma peça fica abaixo da folga pedida, o relatório diz também quanto descer as rodas, todas juntas, para
+tudo livrar o chão (`gear_raise`). Descer as rodas $\Delta$ desce o pivô $\Delta$ no corpo; como as duas pernas descem
+juntas, a atitude parada não muda, e a altura de todo ponto girado de $\theta$ sobe $\Delta\cos\theta$. Com a pior
+folga $f < 0$ em cada atitude, basta
+
+$$\Delta = \max_\theta \frac{-f(\theta)}{\cos\theta}$$
+
 A atitude parada vem do trem (a bequilha ou a roda de cauda no chão); a da rotação é a maior entre a parada e o ângulo
 pedido. O trem não entra como peça: é ele que define o chão. O MDO antigo da equipe fazia a mesma conta só para a
 borda de fuga da EH, com 20° menos a incidência da asa.

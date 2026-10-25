@@ -73,7 +73,7 @@ def test_configurations_are_the_discrete_combinations():
             v.lo, v.hi = (2, 4) if v.key == "power.motors" else (v.lo, v.hi)
     pr = aeroopt.from_project(p)
     items = sg.configurations(p, pr)
-    assert len(items) == 2 * 3                               # 2 hélices × 3 números de motores; a envergadura é contínua
+    assert len(items) == 2 * 2                               # 2 hélices × 2 e 4 motores (na asa vão aos pares)
     assert {tuple(i.values) for i in items} == {("power.propeller", "power.motors")}
     pr.variable("power.motors").hi = 400
     with pytest.raises(ValueError):
@@ -150,20 +150,22 @@ def test_categories_build_each_kind_of_aircraft():
         sg.configurations(p, pr)
 
 
-def test_geometry_stage_stops_a_tail_strike_before_sizing():
-    """a EH deste avião raspa o chão girado 12°: a etapa geometria para a configuração antes das superfícies; com 8°
-    ela passa, e cada ponto da busca também passa pela geometria"""
+def test_geometry_stage_fixes_the_ground_and_stops_what_it_cannot_fix():
+    """a EH deste avião raspa o chão girado 12°: a etapa geometria desce o trem e a configuração segue, e cada ponto
+    da busca também passa pela geometria. Peça solta (pedida uma peça só) a geometria ainda não conserta: para ali"""
     from aerosim.interfaces.geometry import GeometryParams
     p = _project()
     pr = aeroopt.from_project(p)
     pr.isolate("wing.span")
     res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=2))
     (row,) = res.rows
-    assert not row["alive"] and row["stage"] == "geometria" and "bate no chão" in row["why"]
-    assert res.names["etapas"][0] == ("geometria", 1, 0)
+    assert row["alive"] and res.names["etapas"][0] == ("geometria", 1, 1)
+    assert row["values"][sg.GEAR_KEY] > 0.1 and all(h["ok"] or "geometria" not in h["why"] for h in row["history"])
+    pr.params["categorias"] = ["tandem"]                          # o montador ainda não põe o tubo entre as asas
     res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=2,
-                                                       geometry=GeometryParams(rotation=8.0, connected=False)))
-    assert res.rows[0]["alive"] and res.names["etapas"][0] == ("geometria", 1, 1)
+                                                       geometry=GeometryParams(connected=True)))
+    (row,) = res.rows
+    assert not row["alive"] and row["stage"] == "geometria" and "soltas" in row["why"]
 
 
 def test_surfaces_by_generations_keeps_the_budget_and_never_loses_the_start():
@@ -183,3 +185,22 @@ def test_surfaces_by_generations_keeps_the_budget_and_never_loses_the_start():
     assert [x["values"] for x in again["history"]] == [x["values"] for x in h]
     with pytest.raises(ValueError, match="desconhecido"):
         sg.SurfaceSizing(p, pr, method="nenhum")
+
+
+def test_geometry_stage_lowers_the_gear_instead_of_rejecting():
+    """a cauda que bate no chão na rotação não reprova: o núcleo diz quanto descer as rodas, a etapa desce e confere
+    de novo, e a altura do trem segue com a configuração (as superfícies e o 6GDL usam o mesmo trem)"""
+    from aerosim.interfaces.geometry import GeometryParams
+    from aerosim.interfaces.optim import StageItem
+    p = _project()
+    st = sg.GeometryStage(p, GeometryParams(rotation=20.0, connected=False))
+    it = st.one(StageItem(name="a", values={}))
+    h = it.values[sg.GEAR_KEY]
+    assert it.data["geometria"]["gear_raise"] > 0.01 and h > 0.1
+    assert all(x >= 0 for _, x in it.data["geometria"]["ground"])
+    q, cand = sg.candidate(p, it.values)
+    ac, _ = sg.pw.assemble(cand, q.requirements, q.rules, None, q.airfoil_map())
+    assert ac.gear.main_z == pytest.approx(h) and sg.geometry_check(ac, GeometryParams(rotation=20.0, connected=False)).ok
+    q, cand = sg.candidate(p, {})                                   # sem a altura: o trem de sempre (bit a bit)
+    ac0, _ = sg.pw.assemble(cand, q.requirements, q.rules, None, q.airfoil_map())
+    assert ac0.gear.main_z < h and ac.gear.steer_z - ac0.gear.steer_z == pytest.approx(h - ac0.gear.main_z)

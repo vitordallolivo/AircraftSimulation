@@ -32,6 +32,12 @@ class GeometryReport:
     outside: list[str] = field(default_factory=list)                   # massas fora da geometria
     groups: list[list[str]] = field(default_factory=list)              # pedaços (1 = o avião é uma peça só)
     ground: list[tuple[str, float, str]] = field(default_factory=list)  # (atitude, folga em m, peça mais baixa)
+    gear_raise: float = 0.0         # quanto descer as rodas, todas juntas, para tudo livrar o chão (m; 0 = livra)
+
+    @property
+    def only_ground(self) -> bool:
+        """reprovou só por bater no chão: descer as rodas `gear_raise` conserta"""
+        return not self.ok and self.gear_raise > 0 and all("bate no chão" in r for r in self.reasons)
 
     def why(self) -> str:
         return "; ".join(self.reasons)

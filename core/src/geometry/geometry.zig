@@ -61,6 +61,7 @@ pub const Report = extern struct {
     group: [max_parts]i32 = @splat(-1),
     low: [max_attitudes]f64 = @splat(0), // em cada atitude: a menor folga ao chão (já descontada a folga pedida)
     low_part: [max_attitudes]i32 = @splat(-1),
+    gear_raise: f64 = 0, // quanto descer as rodas (todas juntas, a atitude parada não muda) para tudo livrar o chão (m)
 };
 
 fn v(a: [3]f64) V3 {
@@ -337,7 +338,11 @@ pub fn check(s: *const Scene) Report {
             }
         }
         r.low[k] = best;
-        if (best < 0) r.ok = 0;
+        if (best < 0) {
+            r.ok = 0;
+            // descer as rodas Δ desce o pivô Δ no corpo, e a altura de todo ponto girado de θ sobe Δ cos θ
+            r.gear_raise = @max(r.gear_raise, -best / @cos(s.att[k]));
+        }
     }
     if (r.n_hits > 0 or r.n_outside > 0 or (s.need_connected != 0 and r.n_groups > 1)) r.ok = 0;
     return r;
@@ -443,6 +448,12 @@ test "cena: pedaço solto, massa fora e cauda no chão" {
     try std.testing.expectEqual(@as(i32, 1), r.n_groups);
     try std.testing.expect(r.low[0] > 0 and r.low[1] < 0);
     try std.testing.expectEqual(@as(i32, 2), r.low_part[1]);
+    // descendo as rodas o que o relatório pede, a EH passa raspando na rotação
+    try std.testing.expect(r.gear_raise > 0);
+    var up = s;
+    up.pivot[2] += r.gear_raise + 1e-9;
+    const r2 = check(&up);
+    try std.testing.expect(r2.ok == 1 and r2.low[1] >= 0 and r2.low[1] < 1e-8 and r2.gear_raise == 0);
     // a bateria fora de tudo
     s.parts[3].c = .{ 0.1, 0.5, 0.3 };
     r = check(&s);

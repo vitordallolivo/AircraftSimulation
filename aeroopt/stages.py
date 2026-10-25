@@ -45,16 +45,13 @@ from aerosim.interfaces.optim import (
 )
 
 from . import categories as cat
+from . import inputs as inp
 from . import scoring as sc
 from .pipeline import Pipeline
 from .problem import apply_to_project, fold_bounds
 
 MAX_CONFIGS = 256
-# variáveis de lista que o aeroopt escolhe além das do registro da sprint (`design.registry.INPUTS`)
-EXTRA_INPUTS = {"tail.airfoil": ("tail_draft.tail_airfoil", "perfil da EH"),
-                "tail.vairfoil": ("tail_draft.vtail_airfoil", "perfil da EV"),
-                "power.battery": ("power_draft.battery", "bateria")}
-AIRFOIL_KEYS = ("wing.airfoil", "wing.airfoil_tip", "tail.airfoil", "tail.vairfoil")
+AIRFOIL_KEYS = tuple(k for k, i in inp.all_inputs().items() if i.source == "perfis")
 SHORT = {"wing.airfoil": "perfil raiz", "wing.airfoil_tip": "perfil ponta", "tail.airfoil": "perfil EH",
          "tail.vairfoil": "perfil EV", "power.motor": "motor", "power.propeller": "hélice",
          "power.battery": "bateria", "power.motors": "nº de motores", "power.layout": "arranjo"}
@@ -66,27 +63,28 @@ def short(key: str) -> str:
 
 
 def set_value(project, key: str, value) -> None:
-    if key in EXTRA_INPUTS:
-        obj, _, attr = EXTRA_INPUTS[key][0].partition(".")
-        setattr(getattr(project, obj), attr, value)
-    else:
-        rg.set_input(project, key, value)
+    inp.set_value(project, key, value)
 
 
 def get_value(project, key: str):
-    if key in EXTRA_INPUTS:
-        obj, _, attr = EXTRA_INPUTS[key][0].partition(".")
-        return getattr(getattr(project, obj), attr)
-    return rg.get_input(project, key)
+    return inp.get_value(project, key)
 
 
 def available(project, key: str, catalog=None) -> list[str]:
-    """tudo o que uma variável de lista pode escolher (os perfis, o catálogo de motores, hélices e baterias)"""
-    if key in AIRFOIL_KEYS:
+    """tudo o que uma variável de lista pode escolher (os perfis, o catálogo de motores, hélices e baterias, as
+    escolhas do campo)"""
+    i = inp.get(key)
+    src = i.source if i else ""
+    if src == "perfis":
         return list(mdo.airfoil_catalog(project))
-    if key == "power.battery":
-        from aerosim.model.catalog import builtin_catalog
-        return [b.name for b in (catalog or builtin_catalog()).batteries]
+    if src in ("escolhas", "sim/não") and i.choices:
+        return list(i.choices)
+    from aerosim.model.catalog import builtin_catalog
+    c = catalog or builtin_catalog()
+    if src == "baterias":
+        return [b.name for b in c.batteries]
+    if src in ("motores", "hélices"):
+        return [m.name for m in (c.motors if src == "motores" else c.propellers)]
     return mdo.available(project, key, catalog)
 
 
@@ -145,7 +143,7 @@ def axes(project, problem: OptProblem, catalog=None) -> list[tuple[str, list]]:
                 raise ValueError(f"{v.key}: {', '.join(unknown)} não existe (há {', '.join(known)})")
             out.append((v.key, list(dict.fromkeys(v.options)) or known))
         elif v.kind == "inteira":
-            out.append((v.key, list(range(round(min(v.lo, v.hi)), round(max(v.lo, v.hi)) + 1))))
+            out.append((v.key, inp.integer_values(inp.get(v.key), v.lo, v.hi)))
     return out
 
 
@@ -200,7 +198,14 @@ class SurfaceSizing(IStage):
         ok, why = study.feasibility(d)
         if ok and self.geometry is not None:
             g = geometry_check(d["ac"], self.geometry)
-            ok, why = g.ok, ("geometria: " + g.why()) if not g.ok else why
+            if g.only_ground:                     # as superfícies mudaram a cauda: o trem desce de novo
+                values = {**values, GEAR_KEY: gear_fix(d["ac"], g)}
+                p, cand = candidate(self.project, values)
+                d = pw.design_point(cand, p.requirements, p.rules, self.catalog, p.airfoil_map())
+                ok, why = study.feasibility(d)
+                g = geometry_check(d["ac"], self.geometry)
+            if ok:
+                ok, why = g.ok, ("geometria: " + g.why()) if not g.ok else why
         asm = d["asm"]
         m_bat = sum(i.mass for i in asm["items"] if i.name == "bateria")
         return dict(values=dict(values), mtow=float(d["mtow"]), ok=ok, why=why, pv=float(asm["empty"]),
@@ -216,7 +221,7 @@ class SurfaceSizing(IStage):
             x, best = self._generations(item, x, best, hist)
         else:
             x, best = self._coordinates(item, x, best, hist)
-        item.values = {**item.values, **x}
+        item.values = {**item.values, **x, **best["values"]}     # com o trem que a geometria desceu, se desceu
         item.data.update(best, history=hist)
         item.alive, item.why = best["ok"], best["why"]
         return item
@@ -332,6 +337,15 @@ class Score(IStage):
         return items
 
 
+GEAR_KEY = "power.gear_h"          # a altura do trem: o que a geometria mexe para nada bater no chão
+GEAR_MARGIN = 0.002                # m a mais que o núcleo pediu (a conta é exata; isto só tira o arredondamento)
+
+
+def gear_fix(ac, g) -> float:
+    """a altura do trem que livra o chão: a de agora mais o que o relatório pede, com uma folga de arredondamento"""
+    return round(float(ac.gear.main_z) + g.gear_raise + GEAR_MARGIN, 4)
+
+
 def geometry_check(ac, params):
     """a checagem de geometria do núcleo para um avião montado (o modelo universal sai dele aqui)"""
     from aerosim.backend.zig.geometry import ZigGeometry
@@ -352,7 +366,15 @@ class GeometryStage(IStage):
         p, cand = candidate(self.project, item.values)
         ac, _ = pw.assemble(cand, p.requirements, p.rules, self.catalog, p.airfoil_map())
         g = geometry_check(ac, self.params)
-        item.data["geometria"] = dict(groups=len(g.groups), ground=[(a, x) for a, x, _ in g.ground])
+        raised = 0.0
+        if g.only_ground:                         # conserta: desce as rodas o que o núcleo pediu, e confere de novo
+            h = gear_fix(ac, g)
+            item.values = {**item.values, GEAR_KEY: h}
+            p, cand = candidate(self.project, item.values)
+            ac, _ = pw.assemble(cand, p.requirements, p.rules, self.catalog, p.airfoil_map())
+            raised, g = g.gear_raise, geometry_check(ac, self.params)
+        item.data["geometria"] = dict(groups=len(g.groups), ground=[(a, x) for a, x, _ in g.ground],
+                                      gear_raise=raised)
         if not g.ok:
             raise ValueError(g.why())
         return item

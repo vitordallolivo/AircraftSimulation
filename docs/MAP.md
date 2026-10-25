@@ -89,7 +89,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/design/mdo.py` — Dimensionamento inicial como mini-MDO: monta a configuração do núcleo (`core/src/sizing`) a partir do
   `class MdoParams:40`, `class MdoRun:60`, `airfoil_catalog:81`, `available:104`, `airfoil_data:134`, `build:144`, `tip_varies:225`, `at_bounds:235`, `opts_of:249`, `decode:254`, `history:269`, `run:280`, `evaluate:293`, `apply:305`, `planform:327`, `sketch:338`, `check_6dof:389`, `full_envelope:417`, `constraint_diagram:438`
 - `aerosim/design/power.py` — Etapa Motores e montagem: onde ficam os motores (e por consequência a bateria, a carga e o trem) e o
-  `class PowerParams:35`, `class AircraftCandidate:69`, `motor_counts:79`, `assemble:114`, `thrust_trim:276`, `thrust_of:370`, `performance:436`, `trim_drag:483`, `design_point:505`
+  `class PowerParams:35`, `class AircraftCandidate:72`, `motor_counts:82`, `assemble:117`, `thrust_trim:281`, `thrust_of:375`, `performance:441`, `trim_drag:488`, `design_point:510`
 - `aerosim/design/project.py` — O projeto da sprint: requisitos, regras e o que cada etapa guardou (perfis, asas, conjuntos, aviões).
   `rg_sae:31`, `class DesignProject:41`, `is_project_file:182`, `next_name:194`
 - `aerosim/design/registry.py` — Registro de grandezas do projeto: o que dá para medir, restringir ou variar.
@@ -155,7 +155,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/interfaces/backend.py` — Interface da camada Sim (núcleo numérico).
   `class RunStatus:26`, `class TrimKind:40`, `class LogChunk:48`, `class ISimSession:73`, `class ISimBackend:160`
 - `aerosim/interfaces/geometry.py` — Contrato da checagem de geometria do avião montado: se as peças cabem juntas, antes da aerodinâmica.
-  `class GeometryParams:16`, `class GeometryReport:28`, `class IGeometryCheck:40`
+  `class GeometryParams:16`, `class GeometryReport:28`, `class IGeometryCheck:46`
 - `aerosim/interfaces/loads.py` — Entrada padrão das análises de carga aerodinâmica: o que os gráficos de carga e a vista 3D aceitam.
   `label:48`, `class SpanDistribution:54`, `class VectorLayer:68`, `class SurfaceField:77`, `class LoadResult:95`, `class LoadPoint:119`, `class ILoadMethod:137`
 - `aerosim/interfaces/optim.py` — Contratos do aeroopt (o otimizador): o problema, a pontuação, o avaliador e o solver.
@@ -314,7 +314,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/geometry/geometry.zig` — Geometria do avião montado: se as peças cabem juntas antes de qualquer conta de aerodinâmica.
   tipos `Part:32`, `Scene:40`, `Report:53`
-  fn `boxesTouch:90`, `pointInBox:107`, `pointNearBox:112`, `discHitsBox:121`, `discsTouch:195`, `lowest:227`, `check:255`, `checkMany:346`
+  fn `boxesTouch:91`, `pointInBox:108`, `pointNearBox:113`, `discHitsBox:122`, `discsTouch:196`, `lowest:228`, `check:256`, `checkMany:351`
 
 **core/src/loads/**
 
@@ -651,7 +651,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 ## Testes (`tests/`)
 
 - `tests/aero` — 59 testes em 9 arquivo(s)
-- `tests/aeroopt` — 30 testes em 5 arquivo(s)
+- `tests/aeroopt` — 32 testes em 5 arquivo(s)
 - `tests/core` — 34 testes em 9 arquivo(s)
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 64 testes em 10 arquivo(s)
