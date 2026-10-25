@@ -93,6 +93,12 @@ def test_score_inputs_split_payload_and_micro_score_in_core():
     sg.Score(aeroopt.scoring.scoring_for("sae_br_2026_micro")).run([it])
     assert it.data["valido"] and it.data["nota"] > 0
     assert it.data["termos"]["cp_m"] == pytest.approx(2.6)
+    wide = StageItem("b", data=dict(d, b=2.4))                   # 2,4 m: a fórmula dá negativo e o voo não vale
+    sg.Score(aeroopt.scoring.scoring_for("sae_br_2026_micro")).run([wide])
+    assert not wide.data["valido"] and wide.data["nota"] == 0.0 and wide.data["nota_formula"] < 0
+    from aeroopt.generations import fitness
+    r_ok, r_bad = sg.row(it), sg.row(wide)
+    assert fitness(r_bad) == pytest.approx(wide.data["nota_formula"] - 1e9) and fitness(r_ok) > fitness(r_bad)
 
 
 def test_staged_solver_sizes_surfaces_by_takeoff():
@@ -204,3 +210,19 @@ def test_geometry_stage_lowers_the_gear_instead_of_rejecting():
     q, cand = sg.candidate(p, {})                                   # sem a altura: o trem de sempre (bit a bit)
     ac0, _ = sg.pw.assemble(cand, q.requirements, q.rules, None, q.airfoil_map())
     assert ac0.gear.main_z < h and ac.gear.steer_z - ac0.gear.steer_z == pytest.approx(h - ac0.gear.main_z)
+
+
+def test_stability_makes_dihedral_count():
+    """a corrida de decolagem não vê o diedro; a restrição de estabilidade vê: com anedro o C_lβ fica positivo e o
+    ponto não fecha, com diedro passa. Desligada (o padrão), nada muda"""
+    import pickle
+    p = _project()
+    pr = aeroopt.from_project(p)
+    on = sg.SurfaceSizing(p, pr, stability=sg.StabilityParams(level=3))
+    off = sg.SurfaceSizing(p, pr)
+    neg, pos = on.point({"wing.dihedral": -6.0}), on.point({"wing.dihedral": 6.0})
+    assert neg["mtow"] == pytest.approx(pos["mtow"])                       # a pista não muda
+    assert not neg["ok"] and "C_lβ" in neg["why"] and neg["stab"]["Clb"] > 0
+    assert pos["stab"]["Clb"] < 0 and pos["stab"]["Cnb"] > 0 and ("C_lβ" not in pos["why"])
+    assert off.point({"wing.dihedral": -6.0})["stab"] == {}
+    assert pickle.loads(pickle.dumps(on))._backend is None

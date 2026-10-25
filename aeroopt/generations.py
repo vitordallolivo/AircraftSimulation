@@ -27,7 +27,7 @@ from .stages import StagedEvaluator, axes, config_item, configurations, row
 
 def fitness(r: dict) -> float:
     """a nota para a seleção: voo válido > voo inválido > parou numa etapa (NaN)"""
-    n = r.get("nota", math.nan)
+    n = r.get("nota_formula", r.get("nota", math.nan))          # o inválido tem nota 0; a fórmula ordena entre eles
     if not (r.get("alive") and math.isfinite(n)):
         return math.nan
     return n if r.get("valido") else n - 1e9

@@ -30,6 +30,7 @@ import copy
 import itertools
 import math
 import zlib
+from dataclasses import dataclass
 
 from aerosim.design import mdo, study
 from aerosim.design import power as pw
@@ -183,14 +184,19 @@ class SurfaceSizing(IStage):
     name = "superfícies"
 
     def __init__(self, project, problem: OptProblem, catalog=None, evals: int = 24, geometry=None,
-                 method: str = "coordenadas"):
+                 method: str = "coordenadas", stability: StabilityParams | None = None):
         self.project, self.catalog, self.evals = project, catalog, int(evals)
         self.geometry = geometry                   # GeometryParams: cada ponto também passa pela geometria
+        self.stability = stability                 # StabilityParams: e pela estabilidade (desligada por padrão)
+        self._backend = None                       # criado no processo que roda a etapa
         if method not in SURFACE_METHODS:
             raise ValueError(f"método das superfícies desconhecido: {method}")
         self.method = method
         self.free = [(v.key, min(v.lo, v.hi), max(v.lo, v.hi)) for v in problem.free_variables()
                      if v.kind == "contínua"]
+
+    def __getstate__(self):                        # o núcleo (ctypes) não vai para outro processo
+        return {**self.__dict__, "_backend": None}
 
     def point(self, values: dict) -> dict:
         p, cand = candidate(self.project, values)
@@ -206,12 +212,19 @@ class SurfaceSizing(IStage):
                 g = geometry_check(d["ac"], self.geometry)
             if ok:
                 ok, why = g.ok, ("geometria: " + g.why()) if not g.ok else why
+        stab = {}
+        if ok and self.stability is not None:
+            if self._backend is None:
+                from aerosim.backend.zig import ZigBackend
+                self._backend = ZigBackend()
+            ok, w, stab = stability_check(d["ac"], p.requirements.V_cruise, self.stability, self._backend)
+            why = ("estabilidade: " + w) if not ok else why
         asm = d["asm"]
         m_bat = sum(i.mass for i in asm["items"] if i.name == "bateria")
         return dict(values=dict(values), mtow=float(d["mtow"]), ok=ok, why=why, pv=float(asm["empty"]),
                     m_bat=float(m_bat), b=float(d["cand"].set.wing.params.span),
                     s_to=float(p.requirements.takeoff_run), lapes=bool(cand.params.lapes),
-                    liquid=bool(cand.params.liquid), cand=d["cand"], req=d["req"])
+                    liquid=bool(cand.params.liquid), cand=d["cand"], req=d["req"], stab=stab)
 
     def one(self, item: StageItem) -> StageItem:
         x = {k: min(max(float(get_value(self.project, k)), lo), hi) for k, lo, hi in self.free}
@@ -249,33 +262,40 @@ class SurfaceSizing(IStage):
 
     def _generations(self, item: StageItem, x: dict, best: dict, hist: list) -> tuple[dict, dict]:
         """o algoritmo genético do núcleo (core/src/optim/ga.zig) com genes reais entre os limites: o primeiro
-        indivíduo é o avião como está, e as avaliações param no total pedido. Voo que não fecha fica atrás de todo
-        voo que fecha"""
+        indivíduo é o avião como está, e as avaliações param no total pedido. Cada gene cai no passo do campo (o
+        diedro de meio em meio grau), e um avião que já apareceu não gasta avaliação: a nota vem da memória. Sem
+        isso a população pequena vira cópias do melhor e a busca gasta o total refazendo o mesmo ponto. Voo que não
+        fecha fica atrás de todo voo que fecha"""
         if not self.free or self.evals <= 1:
             return x, best
         from aerosim.backend.zig import ZigBackend
         be = ZigBackend()
         pop = max(4, min(10, self.evals // 3))
         cfg = dict(n_genes=len(self.free), pop=pop, elite=1, card=[0] * len(self.free),
-                   lo=[lo for _, lo, _ in self.free], hi=[hi for _, _, hi in self.free], seed=1 + zlib.crc32(item.name.encode()) % 100_000,
-                   generation=0)
+                   lo=[lo for _, lo, _ in self.free], hi=[hi for _, _, hi in self.free], p_mut=0.3, sigma=0.15,
+                   seed=1 + zlib.crc32(item.name.encode()) % 100_000, generation=0)
+        steps = [(inp.get(k).step if inp.get(k) else 0.0) for k, _, _ in self.free]
+
+        def snap(j, g):
+            k, lo, hi = self.free[j]
+            g = round(g / steps[j]) * steps[j] if steps[j] > 0 else g
+            return round(min(max(g, lo), hi), 6)
         genes = be.ga_init(cfg)
         genes[0] = [x[k] for k, _, _ in self.free]
+        seen = {tuple(genes[0]): best}
         fit = [math.nan] * pop
-        for gen in range(math.ceil(self.evals / pop) + 1):
+        for gen in range(4 * math.ceil(self.evals / pop) + 1):
             for i in range(pop):
-                if gen == 0 and i == 0:
-                    r = best
-                elif len(hist) >= self.evals:
-                    fit[i] = math.nan
-                    continue
-                else:
-                    y = {k: float(genes[i][j]) for j, (k, _, _) in enumerate(self.free)}
-                    r = self.point({**item.values, **y})
+                key = tuple(snap(j, g) for j, g in enumerate(genes[i])) if (gen or i) else tuple(genes[0])
+                genes[i] = key
+                r = seen.get(key)
+                if r is None and len(hist) < self.evals:
+                    y = {k: key[j] for j, (k, _, _) in enumerate(self.free)}
+                    r = seen[key] = self.point({**item.values, **y})
                     hist.append(_eval(y, r))
                     if _rank(r) > _rank(best):
                         x, best = y, r
-                m = r["mtow"]
+                m = r["mtow"] if r is not None else math.nan
                 fit[i] = (m if r["ok"] else m - 1e9) if math.isfinite(m) else math.nan
             if len(hist) >= self.evals:
                 break
@@ -334,7 +354,51 @@ class Score(IStage):
         rows = [inputs(i.data) for i in items]
         for i, r, s in zip(items, rows, sc.evaluate(self.scoring, rows, self.backend)):
             i.data.update(inputs=r, **s)
+            # o voo que não vale (corrida, envergadura, bateria ou carga fora das condições) não pontua: a nota é 0.
+            # A conta da fórmula fica em "nota_formula", que as gerações usam para ordenar os inválidos entre si
+            i.data["nota_formula"] = s["nota"]
+            if not s["valido"]:
+                i.data["nota"] = 0.0
         return items
+
+
+@dataclass
+class StabilityParams:
+    """a restrição de estabilidade de cada ponto de projeto, com a análise que a aba Estabilidade já faz: a
+    estática látero-direcional (C_nβ > 0, C_lβ < 0, Nelson, *Flight Stability and Automatic Control*, cap. 3,
+    a conferir no PDF) e os modos do modelo linear do núcleo contra a MIL-F-8785C (classe I, categoria B), no
+    pior nível que se aceita. É isso que faz o diedro, o enflechamento e a deriva contarem na busca: a corrida de
+    decolagem quase não depende deles"""
+    level: int = 2                 # pior nível MIL aceito em qualquer modo (1 = o melhor)
+    static: bool = True            # confere C_nβ > 0 e C_lβ < 0
+    alpha: float = 0.03            # rad, onde as derivadas em β se tiram (perto do cruzeiro)
+
+
+def stability_check(ac, V: float, params: StabilityParams, backend=None) -> tuple[bool, str, dict]:
+    """(passa, motivo, valores) da estabilidade de um avião montado na velocidade V"""
+    from aerosim.stability import Probe, mil_check
+    from aerosim.stability.sizing import modes_at
+    if backend is None:
+        from aerosim.backend.zig import ZigBackend
+        backend = ZigBackend()
+    why, vals = [], {}
+    if params.static:
+        with Probe(backend, ac) as pb:
+            der = pb.deriv(V, params.alpha, "beta", ["Cl", "Cn"])
+        vals.update(Clb=float(der["Cl"]), Cnb=float(der["Cn"]))
+        if not der["Cn"] > 0:
+            why.append(f"instável direcional (C_nβ = {der['Cn']:.3f} /rad)")
+        if not der["Cl"] < 0:
+            why.append(f"instável em rolamento (C_lβ = {der['Cl']:.3f} /rad: falta diedro)")
+    m, _ = modes_at(backend, ac, V)
+    if m is None:
+        why.append("modelo linear não fecha no cruzeiro")
+    else:
+        for r in mil_check(m):
+            vals[r["criterio"]] = r["nivel"]
+            if r["nivel"] > params.level:
+                why.append(f"{r['criterio']}: nível {r['nivel']} (aceito até {params.level})")
+    return not why, "; ".join(why), vals
 
 
 GEAR_KEY = "power.gear_h"          # a altura do trem: o que a geometria mexe para nada bater no chão
@@ -385,9 +449,10 @@ class StagedEvaluator(IEvaluator):
 
     def __init__(self, project, catalog=None, backend=None, workers: int | None = None, six_dof: bool = True,
                  evals: int = 24, start_method: str | None = None, scoring=None, geometry=True,
-                 surfaces: str = "coordenadas"):
+                 surfaces: str = "coordenadas", stability: StabilityParams | None = None):
         self.project, self.catalog, self.backend = project, catalog, backend
         self.surfaces = surfaces                   # o método da busca das superfícies (SURFACE_METHODS)
+        self.stability = stability                 # a restrição de estabilidade de cada ponto (None: desligada)
         self.workers, self.six_dof, self.evals = workers, six_dof, evals
         self.start_method = start_method           # a GUI usa "spawn" (processos novos, sem herdar as linhas do Qt)
         self.scoring = scoring                     # uma pontuação já montada (a GUI edita os campos do .toml)
@@ -403,7 +468,8 @@ class StagedEvaluator(IEvaluator):
 
     def stages(self, project, problem: OptProblem) -> list[IStage]:
         sts: list[IStage] = [GeometryStage(project, self.geometry, self.catalog)] if self.geometry else []
-        sts.append(SurfaceSizing(project, problem, self.catalog, self.evals, self.geometry, self.surfaces))
+        sts.append(SurfaceSizing(project, problem, self.catalog, self.evals, self.geometry, self.surfaces,
+                                 self.stability))
         if self.six_dof:
             sts.append(Takeoff6dof(project, self.catalog, type(self.backend) if self.backend is not None else None))
         sts.append(Score(self.scoring or sc.scoring_for(problem.scoring), self.backend))
@@ -416,7 +482,8 @@ def row(item: StageItem) -> dict:
     return dict(index=d.get("index", 0), name=item.name, values=dict(item.values), alive=item.alive, why=item.why, stage=item.stage,
                 mtow=d.get("mtow", math.nan), mtow6=d.get("mtow6", math.nan), pv=d.get("pv", math.nan),
                 b=d.get("b", math.nan), m_bat=d.get("m_bat", math.nan),
-                nota=d.get("nota", math.nan), valido=d.get("valido", False), termos=d.get("termos", {}),
+                nota=d.get("nota", math.nan), nota_formula=d.get("nota_formula", d.get("nota", math.nan)),
+                valido=d.get("valido", False), termos=d.get("termos", {}),
                 validade=d.get("validade", []), inputs=d.get("inputs", {}), history=d.get("history", []))
 
 

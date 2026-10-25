@@ -186,6 +186,8 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     assert set(w.method) == {"configurações", "superfícies", "decolagem"}
     w.rot.setValue(9.0)
     w.one_piece.setChecked(True)
+    w.stab.setChecked(True)
+    w.stab_level.setCurrentIndex(2)
     w.set_method("superfícies", "gerações")
     w.set_method("configurações", "todas")
     for c, cb in w.cat_cb.items():
@@ -198,6 +200,7 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     aeroopt.save(out, str(tmp_path / "x.opt.json"))
     w2 = AeroOptWindow(p, aeroopt.load(str(tmp_path / "x.opt.json")))
     assert w2.rot.value() == 9.0 and w2.methods()["superfícies"] == "gerações"
+    assert w2.stab.isChecked() and w2.stab_level.currentData() == 3 and "nível 3" in w2.summary["restrições"].text()
     assert w2.methods()["configurações"] == "todas" and not w2.cat_cb["asa baixa"].isChecked()
     assert "9°" in w2.summary["restrições"].text() and "todas" in w2.summary["configuração"].text()
     w.problem = out
@@ -230,3 +233,11 @@ def test_every_aerosim_input_is_a_variable_and_lists_are_ticked(app):
     w._isolate("empenagem")
     assert {v.key for v in w.problem.free_variables() if v.kind != "lista"} == \
         {k for k, i in inp.all_inputs().items() if i.group == "empenagem" and i.kind != "lista"}
+
+
+def test_saved_files_get_their_extension():
+    from aeroopt.gui import with_ext
+    assert with_ext("/x/as1", ".opt.json") == "/x/as1.opt.json"
+    assert with_ext("/x/as1.opt.json", ".opt.json") == "/x/as1.opt.json"
+    assert with_ext("/x/as1.JSON", ".opt.json") == "/x/as1.JSON"
+    assert with_ext("/x/micro", ".toml") == "/x/micro.toml"

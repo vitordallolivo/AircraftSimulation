@@ -97,6 +97,12 @@ def _cells(t: QtWidgets.QTableWidget) -> list[list[str]]:
             for i in range(t.rowCount())]
 
 
+def with_ext(path: str, ext: str) -> str:
+    """o nome com a extensão do filtro (o diálogo do Qt sem tela nativa não põe sozinho)"""
+    last = "." + ext.rsplit(".", 1)[-1]                 # ".opt.json": basta terminar em ".json"
+    return path if path.lower().endswith(last) else path + ext
+
+
 def _fmt(v) -> str:
     return rg.fmt(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else str(v)
 
@@ -245,6 +251,7 @@ class ScoringEditor(QtWidgets.QWidget):
     def _save(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Gravar pontuação", sc.PONTUACAO, "pontuação (*.toml)")
         if path:
+            path = with_ext(path, ".toml")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(sc.to_toml(self.fields()))
             self.msg.setText(f"gravado: {path}")
@@ -584,6 +591,7 @@ class ConstraintsTable(QtWidgets.QWidget):
 
 # o que o problema guarda em params["geometria"] e params["etapas"] (vai junto no .opt.json)
 GEOMETRY_DEFAULT = {"ligada": True, "rotação": 12.0, "folga": 0.0, "folga_hélice": 0.02, "uma_peça": False}
+STABILITY_DEFAULT = {"ligada": False, "nível": 2}
 STAGES_DEFAULT = {"configurações": "gerações", "superfícies": "coordenadas", "decolagem": "6gdl", "população": 16,
                   "gerações": 8, "avaliações": 12, "processos": 0}
 # os métodos das etapas que não estão em aeroopt.stages (o menu Configuração)
@@ -686,7 +694,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.menus = {"pontuação": _Menu("Pontuação: o .toml do regulamento", self.scoring, self),
                       "variáveis": _Menu("Variáveis: tudo o que se escolhe nas etapas do aerosim (livre, limites ou a lista marcada)", self.vars, self, iso),
                       "restrições": _Menu("Restrições (como Condições e restrições do aerosim) e geometria",
-                                          self.cons, self, self._geometry_box()),
+                                          self.cons, self, self._restrictions_top()),
                       "categorias": _Menu("Categorias de avião", self._categories_box(), self),
                       "configuração": _Menu("Configuração: as etapas e o método de cada uma",
                                             self._config_box(), self)}
@@ -729,6 +737,28 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         s.setWidget(w)
         self.left_scroll = s
         return s
+
+    def _restrictions_top(self):
+        w = QtWidgets.QWidget()
+        h = QtWidgets.QHBoxLayout(w)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addWidget(self._geometry_box(), 1)
+        h.addWidget(self._stability_box(), 1)
+        return w
+
+    def _stability_box(self):
+        """a restrição de estabilidade (a análise da aba Estabilidade, em cada ponto de projeto)"""
+        box = QtWidgets.QGroupBox("Estabilidade (modelo linear do núcleo)")
+        f = QtWidgets.QFormLayout(box)
+        self.stab = QtWidgets.QCheckBox("conferir: C_nβ > 0, C_lβ < 0 e os modos (MIL-F-8785C)")
+        self.stab.setToolTip("é o que faz diedro, enflechamento e deriva contarem: a corrida de decolagem quase não "
+                             "depende deles. Uns 0,1 s a mais por ponto de projeto")
+        self.stab_level = QtWidgets.QComboBox()
+        for n, txt in ((1, "nível 1 (bom)"), (2, "nível 2 (aceitável)"), (3, "nível 3 (pilotável)")):
+            self.stab_level.addItem(txt, n)
+        f.addRow(self.stab)
+        f.addRow("pior nível aceito", self.stab_level)
+        return box
 
     def _geometry_box(self):
         """a restrição de geometria (core/src/geometry), em cima da tabela de restrições"""
@@ -951,6 +981,9 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.clear.setValue(100.0 * float(g["folga"]))
         self.prop_clear.setValue(100.0 * float(g["folga_hélice"]))
         self.one_piece.setChecked(bool(g["uma_peça"]))
+        st = {**STABILITY_DEFAULT, **(pr.params.get("estabilidade") or {})}
+        self.stab.setChecked(bool(st["ligada"]))
+        self.stab_level.setCurrentIndex(max(self.stab_level.findData(int(st["nível"])), 0))
         e = {**STAGES_DEFAULT, **(pr.params.get("etapas") or {})}
         for k in self.method:
             self.set_method(k, e[k])
@@ -977,6 +1010,10 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         if g["ligada"]:
             self.summary["restrições"].setText(self.summary["restrições"].text() + f"; geometria com rotação de "
                                                f"{_fmt(g['rotação'])}°" + ("; uma peça só" if g["uma_peça"] else ""))
+        st = {**STABILITY_DEFAULT, **(pr.params.get("estabilidade") or {})}
+        if st["ligada"]:
+            self.summary["restrições"].setText(self.summary["restrições"].text() +
+                                               f"; estabilidade até o nível {st['nível']}")
         e = {**STAGES_DEFAULT, **(pr.params.get("etapas") or {})}
         cfg = (f"gerações: {e['gerações']} × {e['população']}" if e["configurações"] == "gerações" else
                "todas as combinações")
@@ -1006,6 +1043,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         pr.params["geometria"] = {"ligada": self.geo.isChecked(), "rotação": self.rot.value(),
                                   "folga": self.clear.value() / 100.0, "folga_hélice": self.prop_clear.value() / 100.0,
                                   "uma_peça": self.one_piece.isChecked()}
+        pr.params["estabilidade"] = {"ligada": self.stab.isChecked(), "nível": self.stab_level.currentData()}
         pr.params["etapas"] = {**self.methods(), "população": self.pop.value(), "gerações": self.gens.value(),
                                "avaliações": self.evals.value(), "processos": self.workers.value()}
         return pr
@@ -1045,6 +1083,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
     def _save_problem(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Gravar problema", "", "problema (*.opt.json)")
         if path:
+            path = with_ext(path, ".opt.json")
             aeroopt.save(self.read_problem(), path)
             self.msg.setText(f"gravado: {path}")
 
@@ -1073,7 +1112,9 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             return
         ev = sg.StagedEvaluator(self.project, workers=self.workers.value(), six_dof=m["decolagem"] == "6gdl",
                                 evals=self.evals.value(), start_method="spawn", scoring=scoring,
-                                geometry=self.geometry_params(), surfaces=m["superfícies"])
+                                geometry=self.geometry_params(), surfaces=m["superfícies"],
+                                stability=sg.StabilityParams(level=self.stab_level.currentData())
+                                if self.stab.isChecked() else None)
         stage_names = [s.name for s in ev.stages(self.project, pr)]
         self.funnel = {s: [0, 0, 0] for s in stage_names}
         self._scoring = scoring
@@ -1329,6 +1370,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             return
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Gravar projeto", "", "projeto (*.json)")
         if path:
+            path = with_ext(path, ".json")
             p = copy.deepcopy(self.project)
             sg.apply_values(p, r["values"])
             p.save(path)

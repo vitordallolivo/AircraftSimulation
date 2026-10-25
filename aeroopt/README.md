@@ -132,7 +132,20 @@ mesmo algoritmo genético das configurações, agora com genes reais entre os li
 há mais variáveis contínuas livres ou quando o MTOW tem mais de um pico: a busca por coordenadas sobe o morro mais
 perto do avião de partida e para ali, e a população olha a faixa inteira de uma vez. O primeiro indivíduo é o avião
 como está, então o resultado nunca sai pior que o ponto de partida, e a busca para no mesmo total de avaliações. A
-semente vem do nome da configuração, então a mesma rodada dá a mesma busca.
+semente vem do nome da configuração, então a mesma rodada dá a mesma busca. Cada gene cai no passo do campo (o diedro
+de meio em meio grau) e um avião que já apareceu não gasta avaliação. Sem isso, a população pequena virava cópias do
+melhor, e a busca gastava o total refazendo o mesmo ponto.
+
+A corrida de decolagem quase não vê o diedro, o enflechamento e a deriva: soltos, eles andavam ao acaso, sem nada
+que preferisse um valor a outro. A restrição de **estabilidade** (`StabilityParams`, desligada por padrão) faz eles
+contarem. Cada ponto de projeto que fecha passa pela mesma análise da aba Estabilidade: a estática
+látero-direcional ($C_{n\beta} > 0$, $C_{l\beta} < 0$) e os modos do modelo linear do núcleo contra a MIL-F-8785C, até
+o pior nível que se aceita. O ponto com anedro demais, ou com a deriva pequena demais, não fecha, e a busca vai para
+onde o avião voa bem. São uns décimos de segundo a mais por ponto.
+
+A nota de um voo que não vale (corrida, envergadura, bateria ou carga fora das condições de validade) é 0, porque o
+voo não conta. A conta da fórmula fica em `nota_formula`. As gerações usam essa conta para ordenar os inválidos entre
+si, porque a fórmula da Micro fica negativa quando a penalidade da envergadura passa do resto.
 
 A nota da Micro precisa das duas cargas separadas. Com LAPES e líquido a bordo, a carga paga se divide igual entre as
 duas, porque é o que dá o maior $CP_M = 2\min(C_{LAPES}, C_{Liq})$:
@@ -214,7 +227,7 @@ superior, ≥ o inferior) e a tira da lista, e o submenu das restrições nem of
 fixa, o valor do avião tem que caber no limite, senão a rodada para antes de começar. Em cima da tabela fica a
 restrição de **geometria** do avião montado: se a etapa roda, o ângulo de rotação da decolagem (o avião girado no
 trem principal até ele não pode bater nada no chão), as folgas das peças e da hélice ao chão e se o avião tem que ser
-uma peça só.
+uma peça só. Ao lado fica a de **estabilidade**: se ela confere cada ponto e o pior nível MIL aceito.
 
 Para ver o avião escolhido em tudo o que o aerosim já calcula (polar, estabilidade, desempenho, envelopes, missão
 6GDL, cargas), "Abrir no aerosim" abre uma janela do aerosim com ele. O projeto dessa janela fica numa pasta própria

@@ -6,6 +6,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, estabilidade e nota: restrição de estabilidade por ponto de projeto (`StabilityParams`, desligada por
+  padrão; a análise da aba Estabilidade: $C_{n\beta}$, $C_{l\beta}$ e modos MIL-F-8785C), que faz diedro,
+  enflechamento e deriva contarem. Voo inválido tem nota 0 (a conta fica em `nota_formula`). As gerações nas
+  superfícies não repetem pontos e põem cada gene no passo do campo. Os arquivos gravados pela janela ganham a
+  extensão quando o nome vem sem ela.
 - aeroopt, a geometria conserta: quase toda configuração reprovava por bater no chão na rotação (o trem do montador
   só livra a hélice parado). O núcleo agora devolve quanto descer as rodas (`Report.gear_raise`, exato), a etapa
   grava a altura do trem na configuração e segue; cada ponto das superfícies faz o mesmo. Campo novo na sprint,
