@@ -147,6 +147,8 @@ class _Lib:
             "aerosim_sizing_name": (ctypes.c_char_p, [c_int, c_int]),
             "aerosim_expr_check": (c_int, [ctypes.POINTER(T["Program"])]),
             "aerosim_expr_eval": (c_int, [ctypes.POINTER(T["Program"]), vp, c_size, c_size, vp, c_size]),
+            "aerosim_ground_runs": (c_int, [ctypes.POINTER(T["GroundRun"]), vp, c_size, vp]),
+            "aerosim_ground_mtow": (c_double, [ctypes.POINTER(T["GroundRun"]), c_double, c_double, c_double]),
             "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
             "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
             "aerosim_prop_state": (c_int, [c_int, c_int] + [c_double] * 5 + [ctypes.POINTER(T["PropPoint"])]),
@@ -532,6 +534,22 @@ class ZigBackend(ISimBackend):
         if code < 0:
             raise ValueError(f"programa da pontuação recusado pelo núcleo: {self._EXPR_ERRORS.get(code, code)}")
         return out
+
+    # ------------------------------------------------------------------ corrida rápida da sprint
+    def ground_run(self, spec: dict):
+        """a struct GroundRun do núcleo a partir de um dicionário (as curvas como listas)"""
+        g = self._lib.schema.types["GroundRun"]()
+        abi.write(g, dict(spec, n=len(spec["V"]), n_rot=len(spec.get("rot_V", ()))))
+        return g
+
+    def ground_runs(self, g, masses) -> np.ndarray:
+        m = np.ascontiguousarray(np.atleast_1d(np.asarray(masses, float)))
+        out = np.zeros_like(m)
+        self._lib.dll.aerosim_ground_runs(ctypes.byref(g), m.ctypes.data, m.size, out.ctypes.data)
+        return out
+
+    def ground_mtow(self, g, lo: float, hi: float, runway: float) -> float:
+        return float(self._lib.dll.aerosim_ground_mtow(ctypes.byref(g), lo, hi, runway))
 
     def simple_performance(self, cfg: dict) -> tuple[dict, dict]:
         T = self._lib.schema.types

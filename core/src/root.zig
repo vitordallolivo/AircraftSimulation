@@ -442,6 +442,20 @@ export fn aerosim_expr_eval(p: *const OT.Program, inputs: [*]const f64, in_strid
     return 0;
 }
 
+// ------------------------------------------------------------------ corrida rápida da sprint (power.performance)
+const ground = @import("sizing/ground.zig");
+
+/// corridas (m) das massas `masses[0..n]` em `out`; inf = não decola
+export fn aerosim_ground_runs(g: *const ground.GroundRun, masses: [*]const f64, n: usize, out: [*]f64) i32 {
+    for (0..n) |i| out[i] = ground.run(g, masses[i]);
+    return 0;
+}
+
+/// o maior peso que corre até `runway` (bisseção em [lo, hi]); NaN se nem `lo` decola
+export fn aerosim_ground_mtow(g: *const ground.GroundRun, lo: f64, hi: f64, runway: f64) f64 {
+    return ground.mtow(g, lo, hi, runway);
+}
+
 // ------------------------------------------------------------------ dimensionamento inicial (mini-MDO)
 const sizing = @import("sizing/sizing.zig");
 const SZ = sizing.types;

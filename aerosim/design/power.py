@@ -333,12 +333,16 @@ def thrust_trim(ac, st, wr, req, rules, x_t, info, mass, tp) -> dict:
     Mth = np.array([_thrust_moment(us, t, x_mg, gz) for t in Tgrid])
     cm_full = aero_u(-math.radians(rules.de_max))
 
+    rot_a = 0.5 * rho * Vgrid ** 2 * S * c * cm_full + Mth     # momento cabrando, sem o do peso
+    rot_arm = x_t - x_mg
+
     def rot_speed(m: float) -> float:
         """V a partir da qual o profundor todo roda o avião com massa m (a corrida rápida espera por ela)"""
-        f = 0.5 * rho * Vgrid ** 2 * S * c * cm_full + Mth - m * G0 * (x_t - x_mg)
+        f = rot_a - m * G0 * rot_arm
         k = np.nonzero(f > 0)[0]
         return float(Vgrid[k[0]]) if len(k) else float("inf")
     out["rot_speed"] = rot_speed
+    out["rot_table"] = (Vgrid, rot_a, rot_arm)               # a mesma conta, para a corrida no núcleo
     out["V_lof"] = Vlof
     out["rot_ok"] = out["V_rot"] <= Vlof
     return out
@@ -417,6 +421,18 @@ def _motor_prop(u: PropulsionUnit, V: float, rho: float) -> float:
     return max(CT * rho * n * n * D ** 4, 0.0)
 
 
+_CORE = None
+
+
+def _core():
+    """o núcleo para a corrida quando quem chama não passou um (um por processo, carregado uma vez)"""
+    global _CORE
+    if _CORE is None:
+        from aerosim.backend.zig import ZigBackend
+        _CORE = ZigBackend()
+    return _CORE
+
+
 def performance(ac: Aircraft, asm: dict, req: Requirements, backend=None) -> dict:
     from aerosim.model.universal import build_model
     wr = asm["set"]["wing"]
@@ -445,44 +461,18 @@ def performance(ac: Aircraft, asm: dict, req: Requirements, backend=None) -> dic
     Vg = np.r_[0.0, V]
     Tgv = np.r_[T0, T]
 
-    rs = (asm.get("trim") or {}).get("rot_speed")
-
-    def run(mass):
-        v_rot = rs(mass) if rs else 0.0
-        if not math.isfinite(v_rot):
-            return float("inf")
-        x = v = 0.0
-        dt = 0.02
-        for _ in range(20000):
-            qq = 0.5 * rho * v * v
-            Tv = np.interp(v, Vg, Tgv)
-            L = qq * S * CLg + Tv * math.sin(tl)
-            Dd = qq * S * (CD0 + K * CLg * CLg)
-            a = (Tv * math.cos(tl) - Dd - req.mu_roll * max(mass * G0 - L, 0.0)) / mass
-            if a <= 0:
-                return float("inf")
-            v += a * dt
-            x += v * dt
-            # sai do chão com 1,1 V_S — a parte vertical da tração do motor inclinado alivia o peso — e só
-            # depois que o profundor consegue rodar o avião (EH que cabra pouco alonga a corrida)
-            if v >= v_rot and 0.5 * rho * v * v * S * wr["CLmax"] >= 1.21 * (mass * G0 - np.interp(v, Vg, Tgv) *
-                                                                            math.sin(tl)):
-                return x
-        return float("inf")
-    s_to = run(M)
+    # a corrida no chão é do núcleo (core/src/sizing/ground.zig): a mesma conta de antes, bit a bit
+    core = backend if hasattr(backend, "ground_runs") else _core()
+    rt = (asm.get("trim") or {}).get("rot_table")
+    g = core.ground_run(dict(rho=rho, S=S, CLg=CLg, CD0=CD0, K=K, CLmax=wr["CLmax"], mu=req.mu_roll,
+                             sin_tl=math.sin(tl), cos_tl=math.cos(tl), V=Vg, T=Tgv,
+                             rot_V=rt[0] if rt else [], rot_a=rt[1] if rt else [], rot_arm=rt[2] if rt else 0.0,
+                             rot_on=1 if rt else 0))
+    s_to = float(core.ground_runs(g, [M])[0])
     lo, hi = max(asm["empty"], 0.1), max(4 * M, 1.0)
-    if run(lo) > req.takeoff_run:
-        mtow = float("nan")
-    else:
-        for _ in range(40):
-            mid = 0.5 * (lo + hi)
-            if run(mid) <= req.takeoff_run:
-                lo = mid
-            else:
-                hi = mid
-        mtow = lo
+    mtow = core.ground_mtow(g, lo, hi, req.takeoff_run)
     masses = np.linspace(max(asm["empty"], 0.5), max(2.2 * M, mtow if math.isfinite(mtow) else 0) * 1.05, 25)
-    s_curve = np.array([run(m) for m in masses])
+    s_curve = core.ground_runs(g, masses)
     jc = int(np.argmin(np.abs(V - req.V_cruise)))
     return dict(CD_trim_cruise=float(CDt[jc]), V=V, T=T, D=Dg, RC=RC, P_req=Dg * V, P_av=T * V, Vs=Vs, Vmax=Vmax, RC_max=float(RC[i]), V_y=float(V[i]),
                 CD0=CD0, K=K, s_to=s_to, mtow_runway=mtow, payload_runway=mtow - asm["empty"] if math.isfinite(mtow)

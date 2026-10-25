@@ -18,6 +18,7 @@ segue essa ordem e termina no otimizador, que trata a cadeia como uma caixa-pret
 | `kinds.zig` | os tipos de aeronave (monoplano, biplano, asa voadora, tailsitter, VTOL), com a interface conferida em comptime |
 | `chain.zig` | a cadeia de um tipo e de um provedor de tração, gerada em comptime; o MTOW por bisseção na massa |
 | `optimize.zig` | os otimizadores atrás de uma interface só (PSO, busca aleatória) |
+| `ground.zig` | a corrida de decolagem rápida da sprint (etapa Motores do aerosim), com a espera pela rotação do profundor e a bisseção do MTOW na pista |
 | `sizing.zig` | a entrada: escolhe a cadeia pelo índice do tipo e o otimizador pelo índice do método |
 
 ```mermaid
@@ -138,6 +139,23 @@ m\,\frac{dV}{dt} = T\cos\theta_T - qS\,(C_{D0} + K C_{L,g}^2) - \mu\,\max(W - qS
 A posição avança com o passo exato para aceleração constante, e o último passo volta ao instante em que $`V = V_{LO}`$.
 O tipo que paira (tailsitter, ou VTOL se a tração deixar) decola na vertical quando a tração estática vence o peso com
 a margem pedida: $`T(0) \ge k\,m g`$.
+
+## Corrida rápida da sprint (`ground.zig`)
+
+Aqui se calcula a corrida do ponto de projeto acoplado do aerosim (`aerosim/design/power.py: performance`), que
+antes rodava em Python e era o que mais pesava em cada ponto: a bisseção do MTOW na pista e a curva corrida × massa
+refazem a corrida umas setenta vezes. A conta é a mesma da decolagem acima, com duas diferenças que vêm da sprint.
+A tração é lida de uma curva $`T(V)`$ com a interpolação do `numpy.interp`, e o avião só sai do chão depois de
+passar da velocidade em que o profundor todo cabrando consegue rodá-lo:
+
+```math
+V \ge V_{rot}(m) \quad\text{e}\quad \tfrac12\rho V^2 S\,C_{L,max} \ge 1{,}21\,(m g - T\sin\theta_T)
+```
+
+$`V_{rot}(m)`$ é a primeira velocidade da tabela em que o momento de cabrar (aerodinâmico com o profundor todo, mais
+o da tração) vence o do peso em torno do trem principal. O passo é Euler explícito de 0,02 s, na mesma ordem das
+contas do Python, então o resultado sai bit a bit igual ao de antes (`tests/design/test_ground_run.py`). A fonte do
+modelo de corrida é a mesma da seção anterior (a conferir no PDF).
 
 ## Massa e MTOW (`stages.emptyMass`, `chain`)
 

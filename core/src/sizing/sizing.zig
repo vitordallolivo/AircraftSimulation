@@ -11,6 +11,7 @@ const S = @import("types.zig");
 const chain = @import("chain.zig");
 const kinds = @import("kinds.zig");
 const opt = @import("optimize.zig");
+pub const ground = @import("ground.zig");
 
 pub const types = S;
 
@@ -75,6 +76,7 @@ test {
     _ = @import("stages.zig");
     _ = @import("chain.zig");
     _ = @import("optimize.zig");
+    _ = @import("ground.zig");
 }
 
 test "nomes para o Python" {
