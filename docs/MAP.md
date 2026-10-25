@@ -53,7 +53,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/backend/zig/abi.py` — Monta as estruturas ctypes a partir do esquema que o núcleo Zig exporta.
   `class AbiMismatch:22`, `fnv1a64:26`, `check:35`, `class FieldInfo:47`, `class StructInfo:55`, `class Schema:63`, `parse:74`, `write:130`, `read:154`
 - `aerosim/backend/zig/backend.py` — Implementação de ISimBackend com o núcleo em Zig (libaerosim, via ctypes).
-  `lib_path:24`, `build:47`, `class CoreError:72`, `class ZigSession:179`, `class ZigBackend:433`
+  `lib_path:24`, `build:47`, `class CoreError:74`, `class ZigSession:181`, `class ZigBackend:436`
 - `aerosim/backend/zig/translator.py` — Tradutor modelo universal -> núcleo Zig (SimSpec: dicionário com os campos das structs extern).
   `prop_native:26`, `surface_panels:42`, `panel_owners:75`, `class ZigTranslator:84`, `aero_native:149`, `native_spec:184`
 
@@ -83,25 +83,25 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/design/fields.py` — Campo de dataclass com o que a GUI precisa para mostrá-lo (rótulo, unidade, dica, opções, faixa).
   `F:12`
 - `aerosim/design/flight.py` — O avião só sai da sprint se voar: a decolagem do núcleo 6GDL (o mesmo otimizador da aba Missão) acha o
-  `tune_takeoff:11`
+  `tune_takeoff:19`
 - `aerosim/design/mdo.py` — Dimensionamento inicial como mini-MDO: monta a configuração do núcleo (`core/src/sizing`) a partir do
-  `class MdoParams:39`, `class MdoRun:59`, `airfoil_catalog:80`, `available:103`, `airfoil_data:133`, `build:143`, `tip_varies:224`, `at_bounds:234`, `opts_of:248`, `decode:253`, `history:268`, `run:279`, `evaluate:292`, `apply:304`, `planform:320`, `sketch:331`, `check_6dof:382`, `full_envelope:410`, `constraint_diagram:431`
+  `class MdoParams:40`, `class MdoRun:60`, `airfoil_catalog:81`, `available:104`, `airfoil_data:134`, `build:144`, `tip_varies:225`, `at_bounds:235`, `opts_of:249`, `decode:254`, `history:269`, `run:280`, `evaluate:293`, `apply:305`, `planform:327`, `sketch:338`, `check_6dof:389`, `full_envelope:417`, `constraint_diagram:438`
 - `aerosim/design/power.py` — Etapa Motores e montagem: onde ficam os motores (e por consequência a bateria, a carga e o trem) e o
-  `class PowerParams:35`, `class AircraftCandidate:66`, `assemble:99`, `thrust_trim:258`, `thrust_of:348`, `performance:402`, `trim_drag:475`, `design_point:497`
+  `class PowerParams:35`, `class AircraftCandidate:69`, `motor_counts:79`, `assemble:114`, `thrust_trim:276`, `thrust_of:366`, `performance:420`, `trim_drag:493`, `design_point:515`
 - `aerosim/design/project.py` — O projeto da sprint: requisitos, regras e o que cada etapa guardou (perfis, asas, conjuntos, aviões).
-  `rg_sae:31`, `class DesignProject:41`, `is_project_file:175`, `next_name:187`
+  `rg_sae:31`, `class DesignProject:41`, `is_project_file:182`, `next_name:194`
 - `aerosim/design/registry.py` — Registro de grandezas do projeto: o que dá para medir, restringir ou variar.
   `class Quantity:25`, `fmt:71`, `class Constraint:78`, `default_constraints:106`, `active:118`, `checks:122`, `class Input:138`, `class Variable:167`, `default_variables:179`, `get_input:187`, `set_input:192`, `wing_values:200`, `aircraft_values:206`, `sae_constraints:232`, `bounds_from_constraints:243`, `check_bounds:264`
 - `aerosim/design/results.py` — Cada etapa como um `SimResult` (séries, resumo, diagnóstico) e os gráficos dela (`PlotSpec`): a GUI
-  `constraint_checks:30`, `airfoil_stage:52`, `wing_stage:103`, `set_stage:177`, `aircraft_stage:283`
+  `constraint_checks:30`, `airfoil_stage:52`, `wing_stage:103`, `set_stage:177`, `aircraft_stage:289`
 - `aerosim/design/spec.py` — Condições e restrições (o que o avião tem de cumprir) e regras de projeto (como as peças se montam).
   `class Requirements:28`, `class DesignRules:96`, `cruise_CL:121`, `stall_speed:125`
 - `aerosim/design/store.py` — O projeto da sprint numa pasta escolhida pelo usuário, com um arquivo por asa.
-  `file_name:49`, `split:98`, `run_file:121`, `wing_files:142`, `save:155`, `join:185`, `is_folder:250`, `load:256`, `is_sprint_path:274`, `folder_for:287`, `open_path:300`
+  `file_name:49`, `split:98`, `run_file:135`, `wing_files:156`, `save:169`, `join:199`, `is_folder:263`, `load:269`, `is_sprint_path:287`, `folder_for:300`, `open_path:313`
 - `aerosim/design/study.py` — Estudo e ponto de projeto: as áreas se retroalimentam (não em ordem) e o estudo mostra onde estabilidade e
   `class StudyParams:45`, `class StudyRun:57`, `to_run:74`, `from_run:86`, `ensure:91`, `table:109`, `parse_places:114`, `with_value:129`, `feasibility:138`, `point_row:166`, `run:178`, `best_rows:211`, `mtow_of:223`, `check_6dof:227`, `check_many:249`, `result:284`
 - `aerosim/design/tail.py` — Etapa Empenagem e comandos: as superfícies que acompanham a asa escolhida, o tubo de cauda e os comandos.
-  `class TailParams:39`, `class SetCandidate:76`, `tail_airfoil:99`, `tail_entry:104`, `build_set:128`, `analyze:195`, `rotation:327`
+  `class TailParams:44`, `class SetCandidate:88`, `tail_airfoil:113`, `tail_entry:118`, `build_set:142`, `analyze:228`, `rotation:360`
 - `aerosim/design/wing.py` — Etapa Asa: do perfil escolhido à asa — forma em planta, linha sustentadora e o que ela entrega.
   `class WingPartition:39`, `class WingStation:55`, `class WingParams:65`, `class WingCandidate:92`, `stations:110`, `chords:130`, `totals:145`, `sync:151`, `partitions_from_trapezoid:168`, `build_wing:187`, `planform:209`, `tip_weight:223`, `station_weights:231`, `section_props:240`, `lifting_line:253`, `analyze:289`
 
@@ -110,7 +110,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/__init__.py` — GUI em PyQt6 + pyqtgraph: aba de configuração 3D e uma aba por simulação.
 - `aerosim/gui/__main__.py`
 - `aerosim/gui/app.py` — Ponto de entrada da GUI:  python -m aerosim.gui [aeronave.cfg|.json|.xlsx | projeto.json]
-  `main:10`
+  `main:26`
 - `aerosim/gui/main_window.py` — Janela principal: uma aba por área (na ordem do projeto: dimensionamento, aerodinâmica, estabilidade,
   `class MainWindow:28`, `class ProjectsDialog:365`
 - `aerosim/gui/state.py` — Estado compartilhado da GUI: a aeronave em edição, o catálogo e o Simulation Manager.
@@ -119,10 +119,10 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/design/mdo_page.py` — Página do dimensionamento inicial (mini-MDO): o otimizador do núcleo em tempo real.
   `class LegendPlot:29`, `class MdoPage:77`
 - `aerosim/gui/design/pages.py` — As etapas da sprint na GUI: cada uma edita um rascunho, mostra na hora o que vai ser feito (3D da peça,
-  `class ConstraintsTable:52`, `class VariablesTable:138`, `class ListPicker:246`, `class RequirementsDialog:310`, `class ReqBar:339`, `class StagePage:363`, `class AirfoilPage:582`, `class WingPage:743`, `class TailPage:918`, `class PowerPage:970`, `send_to_assembly:1087`, `class StudyPage:1147`
+  `class ConstraintsTable:52`, `class VariablesTable:138`, `class ListPicker:246`, `class RequirementsDialog:310`, `class ReqBar:339`, `class StagePage:363`, `class AirfoilPage:582`, `class WingPage:743`, `class TailPage:918`, `class PowerPage:972`, `send_to_assembly:1111`, `class StudyPage:1171`
 - `aerosim/gui/tabs/__init__.py`
 - `aerosim/gui/tabs/config_tab.py` — Aba de configuração em três colunas:
-  `mount_choices:56`, `class ConfigTab:62`, `info_html:1104`
+  `mount_choices:56`, `class ConfigTab:68`, `info_html:1150`
 - `aerosim/gui/tabs/simulation_tab.py` — Aba genérica de uma simulação: formulário gerado pelos ParamSpec, botões rodar/parar,
   `class SimulationTab:46`, `class TableInput:424`, `export_result:566`
 - `aerosim/gui/widgets/__init__.py`
@@ -137,7 +137,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/widgets/param_slider.py` — Slider + campo numérico sincronizados, e um formulário automático para dataclasses.
   `class ParamSlider:41`, `class NumberField:109`, `class DataclassForm:280`
 - `aerosim/gui/widgets/plots.py` — Gráficos da aba (pyqtgraph) montados a partir das PlotSpec da simulação.
-  `tex:39`, `is_angle:57`, `class LivePlots:339`, `format_value:441`
+  `tex:39`, `is_angle:57`, `class LivePlots:341`, `format_value:443`
 - `aerosim/gui/widgets/save_check.py` — Antes de salvar um avião: a lista de verificação (`aerosim.design.checklist`) como caixas de seleção só de
   `class SaveCheckDialog:19`, `confirm_save:80`
 - `aerosim/gui/widgets/view3d.py` — Visualização 3D da aeronave (pyqtgraph.opengl) com seleção e arraste de componentes.
@@ -179,7 +179,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/manager/runner.py` — Corrida orientada: começa (no chão, em voo ou de um checkpoint), roda até uma parada
   `class Stop:21`, `class RunOutput:35`, `class Runner:42`
 - `aerosim/manager/takeoff_opt.py` — Decolagem para a competição: só dois critérios, os da pista.
-  `class TakeoffResult:33`, `pitch_control:52`, `judge:59`, `evaluate:83`, `optimize:110`
+  `class TakeoffResult:35`, `pitch_control:54`, `judge:61`, `evaluate:125`, `optimize:166`
 - `aerosim/manager/simulations/__init__.py` — Simulações disponíveis (uma aba cada na GUI). Para adicionar outra: crie uma classe
 - `aerosim/manager/simulations/aerodynamics.py` — Aba Aerodinâmica — polares e derivadas a partir da geometria, com o lltdrek (linha
   `resolve_cg:31`, `class AerodynamicsSimulation:40`
@@ -212,7 +212,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/model/__init__.py` — Modelo de dados (independente do núcleo): aeronave, perfis, catálogo, missão, geometria.
 - `aerosim/model/aircraft.py` — Modelo de dados da aeronave (a "Aircraft Data").
-  `class WingSection:24`, `class ControlSurface:41`, `mix_role:63`, `panel_mix:69`, `class WingDevice:79`, `class LiftingSurface:100`, `rect_sections:192`, `class Fuselage:200`, `class TailBoom:216`, `class PropulsionUnit:252`, `class GearLeg:272`, `class LandingGear:282`, `class SloshTank:318`, `class Payload:346`, `class Ballast:363`, `class PointMass:373`, `class MassModel:382`, `class Airfield:398`, `class Environment:435`, `class Takeoff:462`, `class Autopilot:476`, `class PerformanceData:526`, `class SimSettings:539`, `class Aircraft:553`
+  `class WingSection:25`, `class ControlSurface:42`, `mix_role:64`, `panel_mix:70`, `class WingDevice:80`, `class LiftingSurface:101`, `new_group_id:182`, `rect_sections:204`, `class Fuselage:212`, `class TailBoom:228`, `class PropulsionUnit:264`, `class GearLeg:284`, `class LandingGear:294`, `class SloshTank:330`, `class Payload:358`, `class Ballast:375`, `class PointMass:385`, `class MassModel:394`, `class Airfield:410`, `class Environment:447`, `class Takeoff:474`, `class Autopilot:488`, `class PerformanceData:538`, `class SimSettings:551`, `class Aircraft:565`
 - `aerosim/model/airfoil.py` — Perfis: leitura de .dat (Selig ou Lednicer), gerador NACA 4 dígitos e teoria de
   `class Airfoil:14`, `naca4:51`, `read_dat:73`, `write_dat:93`, `camber_line:100`, `thin_airfoil:114`, `flap_effectiveness:126`, `helmbold:133`
 - `aerosim/model/atmosphere.py` — Atmosfera padrão (ISA, troposfera) para a altitude-densidade (AD).
@@ -222,21 +222,21 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/model/devices.py` — Geometria dos dispositivos de asa (winglet, winglet para baixo, placa de ponta, cerca).
   `class Leg:22`, `attach_point:44`, `legs:52`, `device_area:77`
 - `aerosim/model/features.py` — O que a aeronave tem — as abas de análise usam isto para decidir o que mostrar.
-  `class Features:14`, `features:83`
+  `class Features:14`, `features:97`
 - `aerosim/model/geometry.py` — Malhas 3D para a GUI (a partir do modelo universal) e posição/arraste dos componentes na
   `surface_mesh:47`, `control_meshes:73`, `ellipsoid_body:94`, `cylinder:109`, `box:122`, `thrust_axis:131`, `aircraft_meshes:136`, `component_position:178`, `move_component:202`
 - `aerosim/model/massprops.py` — Massa seca da aeronave: base (com inércia própria) + massas pontuais (Steiner).
-  `point_items:12`, `dry_mass:39`
+  `point_items:12`, `dry_mass:63`
 - `aerosim/model/mission.py` — Percurso como uma corrente de pernas (retas e curvas).
   `auto_radius:20`, `class Leg:26`, `class MissionEvent:41`, `class Mission:48`, `circuit:121`, `short_circuit:145`, `takeoff_runway:156`, `level_turn:161`
 - `aerosim/model/modifiers.py` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro (efeito solo, esteira
-  `class ParamInfo:28`, `class KindInfo:37`, `class Modifier:70`, `default_modifiers:88`, `active:93`, `ground_method:97`, `additive:103`, `problems:107`, `describe:120`, `is_default:131`, `not_exported:137`, `native:145`
+  `class ParamInfo:28`, `class KindInfo:37`, `class Modifier:79`, `default_modifiers:97`, `active:102`, `ground_method:106`, `additive:112`, `problems:116`, `describe:129`, `is_default:140`, `not_exported:146`, `native:154`
 - `aerosim/model/serialize.py` — dataclass <-> dicionário (genérico, guiado pelas anotações de tipo).
   `to_dict:10`, `from_dict:52`
 - `aerosim/model/templates.py` — Aeronaves prontas para começar.
   `conventional:26`, `flying_wing:75`, `twin_boom:111`, `empty:149`, `is_empty:163`, `not_ready:168`
 - `aerosim/model/universal.py` — Modelo universal da aeronave — construído UMA vez a partir da configuração (`Aircraft`) e
-  `class Control:32`, `class Station:42`, `class SurfaceModel:51`, `class AircraftModel:129`, `strip_coeffs:246`, `wing_downwash:289`, `build_model:362`
+  `class Control:32`, `class Station:42`, `class SurfaceModel:51`, `class AircraftModel:130`, `strip_coeffs:247`, `wing_downwash:290`, `build_model:363`
 
 ## Python · `aerosim/sizing`
 
@@ -305,13 +305,14 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/loads/**
 
 - `core/src/loads/llt.zig` — Linha sustentadora numérica (vórtices em ferradura) para a distribuição de carga ao longo da envergadura.
-  fn `sectionSlope:48`, `segment:55`, `horseshoe:71`, `prepare:263`, `apply:356`, `compute:468`, `coeffs:498`
+  tipos `Node:187`
+  fn `sectionSlope:48`, `segment:55`, `horseshoe:71`, `surfaceNodes:101`, `prepare:269`, `apply:362`, `compute:474`, `coeffs:506`
 
 **core/src/math/**
 
 - `core/src/math/fmath.zig` — Funções matemáticas: tabelas (LUT) + aproximações polinomiais, e a referência da std.
-  tipos `SinCos:30`, `lut:72`, `ref:163`, `minimax:215`
-  fn `optOn:21`, `SinLut:33`, `sincos:258`, `sin:261`, `cos:264`, `tan:267`, `atan:271`, `atan2:274`, `asin:277`, `acos:281`, `exp:285`, `log:288`, `pow:292`, `tanh:296`, `sqrt:299`, `hypot:302`, `sat:307`, `lim:310`, `sgn:313`, `wrap:316`
+  tipos `SinCos:30`, `lut:73`, `ref:164`, `minimax:216`
+  fn `optOn:21`, `SinLut:33`, `sincos:259`, `sin:262`, `cos:265`, `tan:268`, `atan:272`, `atan2:275`, `asin:278`, `acos:282`, `exp:286`, `log:289`, `pow:293`, `tanh:297`, `sqrt:300`, `hypot:303`, `sat:308`, `lim:311`, `sgn:314`, `wrap:317`
 - `core/src/math/fmath_test.zig` — Testes só das LUTs e aproximações (independentes de -Dfast_math: comparam `lut` com `ref`).
 - `core/src/math/poly.zig` — Polinômio em duas variáveis de grau N gerado em comptime, na ordem dos ajustes do MATLAB
   fn `Poly2:9`
@@ -323,19 +324,21 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/modifiers/ground.zig` — Efeito solo: métodos para o fator do arrasto induzido perto do chão.
   fn `factor:13`, `mccormick:21`
 - `core/src/modifiers/mod.zig` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro sem mexer no resto
-  tipos `Env:20`
-  fn `envFrom:31`, `hits:45`, `hitsProp:52`, `stripOf:66`, `induced:73`
+  tipos `Env:21`
+  fn `envFrom:36`, `hits:50`, `hitsProp:57`, `stripOf:71`, `induced:78`, `inducedNoPair:83`
 - `core/src/modifiers/slipstream.zig` — Esteira da hélice por disco atuador (modificador `esteira.disco`).
   tipos `TubeShape:32`, `Point:81`
   fn `shape:49`, `diskInduced:54`, `axialAt:62`, `radiusAt:67`, `swirlRate:75`, `at:89`
 - `core/src/modifiers/types.zig` — Tipos dos modificadores trocados com o Python (C ABI, `extern struct`; o esquema sai de `abi.zig`).
-  tipos `Ground:14`, `Kind:21`, `SlipstreamParam:28`, `Modifier:38`
+  tipos `Ground:14`, `Kind:21`, `SlipstreamParam:29`, `PairParam:38`, `Modifier:49`
+- `core/src/modifiers/wingpair.zig` — Interferência entre duas asas ligadas (tandem, biplano) no modelo de faixas.
+  fn `active:29`, `induced:44`
 
 **core/src/physics/**
 
 - `core/src/physics/aero.zig` — Aerodinâmica por componentes.
   tipos `Out:17`
-  fn `sigmaStall:27`, `init:90`, `compute:123`, `computeEnv:128`, `computeTrace:133`, `fuselage:210`, `coeffs:225`, `coeffsEx:230`, `coeffsEnv:235`, `coeffsAt:240`
+  fn `sigmaStall:27`, `init:90`, `compute:123`, `computeEnv:128`, `computeTrace:133`, `fuselage:239`, `coeffs:254`, `coeffsEx:259`, `coeffsEnv:264`, `coeffsAt:269`
 - `core/src/physics/aeromodel.zig` — O modelo aerodinâmico do voo, escolhido por `Params.aero_model`: quem a dinâmica, a trimagem e a linearização
   fn `compute:19`
 - `core/src/physics/aerotable.zig` — Modelo aerodinâmico por tabela (Params.aero_model = 2): os coeficientes do avião inteiro vêm de `Params.aero_tab`,
@@ -367,7 +370,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `rigid:52`, `linearize:162`, `residual:217`
 - `core/src/sim/runner.zig` — Executor de uma corrida: eventos discretos, paradas, registro e checkpoints.
   tipos `Status:23`, `Instance:33`
-  fn `configure:63`, `handover:114`, `resetGround:135`, `resetAir:167`, `run:317`
+  fn `stateText:58`, `configure:86`, `handover:137`, `resetGround:158`, `resetAir:199`, `run:350`
 - `core/src/sim/simple_perf.zig` — Desempenho por cálculo simples (sem simulação no tempo), como na "planilha suprema":
   tipos `SimpleCfg:23`, `SimpleRow:52`, `SimpleSummary:76`
   fn `density:107`, `compute:130`
@@ -472,7 +475,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerodrive/src/model/aircraft.zig` — Leitura do arquivo do avião salvo pela GUI (`data/aircraft/*.json`, "meus aviões").
   tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:115`, `Boom:132`, `Propeller:161`, `Motor:162`, `Battery:163`, `ThrustPoly:174`, `Propulsion:186`, `GearLeg:203`, `Gear:204`, `Tank:227`, `Payload:247`, `PointMass:258`, `Mass:259`, `Environment:270`, `Takeoff:280`, `SimSettings:281`, `Autopilot:283`, `Leg:328`, `MissionEvent:341`, `Mission:342`, `Ballast:352`, `Airfield:353`, `Aircraft:368`, `limits:399`, `Diag:423`, `Loaded:437`
-  fn `mixedAirfoils:14`, `kindGains:48`, `parse:447`, `validate:504`, `semispan:591`, `sortedSections:598`, `sectionAt:610`, `tailOnBoom:623`
+  fn `mixedAirfoils:14`, `kindGains:48`, `parse:447`, `validate:506`, `semispan:593`, `sortedSections:600`, `sectionAt:612`, `tailOnBoom:625`
 - `aerodrive/src/model/airfoil.zig` — Perfil 2D (x/c, y/c): NACA de 4 dígitos pelo nome ou as coordenadas do arquivo do avião.
   tipos `Profile:13`
   fn `nacaDigits:23`, `naca4:39`, `forDrawing:79`, `invert:95`, `full:102`, `thinAirfoil:126`, `flapEffectiveness:176`, `helmbold:183`, `split:190`
@@ -536,7 +539,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `autoRadius:13`, `segments:20`, `events:76`, `pads:92`
 - `aerodrive/src/sim/params.zig` — Avião (arquivo da GUI) -> parâmetros do núcleo (`types.Params`), em Zig.
   tipos `Info:28`, `DryMass:315`
-  fn `area:43`, `span:53`, `mac:57`, `references:76`, `dryMass:317`, `fill:382`, `setup:530`, `staticCharacteristics:560`
+  fn `area:43`, `span:53`, `mac:57`, `references:76`, `dryMass:342`, `fill:412`, `setup:560`, `staticCharacteristics:590`
 - `aerodrive/src/sim/session.zig` — Sessão de voo: o que o jogador escolhe nos menus antes de voar (cenário, modo, vento, sloshing,
   tipos `Scenario:7`, `Landing:19`, `Mode:31`, `Session:43`
   fn `gearExtent:98`
