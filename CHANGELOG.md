@@ -6,6 +6,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, README: agora é a descrição geral e a janela, botão por botão, com as imagens da GUI
+  (`docs/img/aeroopt/`). O texto das contas e de como chamar cada peça foi para `aeroopt/COMO_FUNCIONA.md`.
 - aeroopt, análises do aerosim: sob o avião selecionado, as abas do aerosim (dimensionamento, aerodinâmica com a
   polar, estabilidade, tração, desempenho, envelopes, missão com a decolagem), menos as cargas, rodam sobre o avião
   refeito pelo mesmo gerenciador. O estado delas usa uma pasta temporária: a sprint do usuário não é tocada.
