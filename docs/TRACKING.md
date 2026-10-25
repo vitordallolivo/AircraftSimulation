@@ -202,9 +202,9 @@ O terceiro braço: otimizador genérico (MDO) que monta um problema a partir de 
 
 | ID | Tarefa | Tipo | Depende de | Bloco | Estado |
 |---|---|---|---|---|---|
-| O01 | Pontuação da Micro 2026 com fonte: `aeroopt/pontuacao/sae_br_2026_micro.toml` com as eqs. 9.1 a 9.4 do Regulamento 2026 Rev03 e as regras de validade; notas calculadas à mão no teste | [novo] | — | B10 | Pronto (aguarda o ok do plano) |
+| O01 | Pontuação da Micro 2026 com fonte: `aeroopt/pontuacao/sae_br_2026_micro.toml` com as eqs. 9.1 a 9.4 do Regulamento 2026 Rev03 e as regras de validade, traduzidos para um programa de pilha (`aeroopt/scoring.py`); as notas à mão ficam no teste da O03 | [novo] | — | B10 | Feito (a revisar) |
 | O02 | Contratos (`aerosim/interfaces/optim.py`: `IProblem`, `IScoring`, `IEvaluator`, `ISolver`) e o arquivo `.opt.json`; o mini-MDO de hoje nesse formato dá o mesmo resultado, bit a bit; isolar uma variável ou um grupo (`isolate`) | [zero] | — | B10 | Feito (a revisar) |
-| O03 | Núcleo: expressão de pontuação (`core/src/optim/expr.zig`) e álgebra linear de tamanho fixo (`core/src/math/linalg.zig`, LU e Cholesky), na ABI | [novo] | O01, O02 | B10 | Bloqueado |
+| O03 | Núcleo: expressão de pontuação (`core/src/optim/expr.zig`) e álgebra linear de tamanho fixo (`core/src/math/linalg.zig`, LU e Cholesky), na ABI | [novo] | O01, O02 | B10 | Fazendo |
 | O04 | Ferramenta `tools/aeroopt.py problema.opt.json`: melhor ponto, nota fator por fator, convergência | [novo] | O03 | B10 | Bloqueado |
 | O05 | GUI do aeroopt: problema, rodada ao vivo, pausar e continuar, mandar um candidato para o aerosim ou o AeroDrive, histórico | [GUI] | O04 | B10 | Bloqueado |
 | O06 | Variáveis abertas (qualquer campo do `Aircraft`) e as duas cargas da Micro (líquido e LAPES, duas posições de CG) | [ext] | O04 | B10 | Bloqueado |

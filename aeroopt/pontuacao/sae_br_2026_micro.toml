@@ -1,0 +1,69 @@
+# SAE BRASIL AeroDesign 2026, classe Micro: nota de missão por voo.
+# Fonte: Regulamento SAE BRASIL AeroDesign 2026 Rev03 (inglês), seção 9.8, p. 86-87 (equações 9.1 a 9.4);
+# limites nas seções 9.4 a 9.7 e 10.2.1.
+#
+# Grandezas de entrada, em SI (o avaliador entrega assim):
+#   c_lapes, c_liq  carga paga de cada missão (kg); o mesmo avião faz as duas (R[9.3.0.1])
+#   pv              peso vazio (kg), com bateria e ESC (seção 9.2.1)
+#   m_bat           massa da bateria do motor (kg)
+#   s_to            corrida de decolagem (m)
+#   b               envergadura na decolagem (m)
+#
+# Fica de fora da nota otimizada (não depende do projeto, ou é ponto somado de operação):
+#   F_PV (9.3): acerto da previsão do PV, entre 0,95 e 1,05 -> constante f_pv
+#   F_PQ: abertura do paraquedas do LAPES, 1 / 0,5 / 0,2 -> constante f_pq
+#   P_AC (9.5), B_CF (9.6), B_RC (9.7): bônus de previsão da carga, de repetibilidade e de tempo de retirada
+
+nome = "SAE BRASIL AeroDesign 2026, classe Micro"
+fonte = "Regulamento SAE BRASIL AeroDesign 2026 Rev03, seção 9.8, p. 86-87"
+entradas = ["c_lapes", "c_liq", "pv", "m_bat", "s_to", "b"]
+
+[constantes]
+f_pv = 1.05        # (9.3) com o PV previsto igual ao medido
+f_pq = 1.0         # paraquedas abriu (9.8.2)
+
+# F_Dec (9.8.2): 250 até 1 m, 170 até 4 m, 110 até 8 m; além de 8 m o voo não vale (R[9.4.0.1])
+[faixas.f_dec]
+grandeza = "s_to"
+limites = [1.0, 4.0, 8.0]
+valores = [250.0, 170.0, 110.0]
+fora = 0.0
+
+# Os termos em ordem: cada um pode usar as entradas, as constantes, as faixas e os termos acima dele.
+[termos]
+cp_m = "2 * min(c_lapes, c_liq)"                                                   # (9.2)
+ee = "cp_m / pv"                                                                   # EE = CP_M / PV (9.8.2)
+f_bat = "max(0.2, 0.85 / (0.85 + exp((1000 * m_bat - 298) / 37.7 - 4.8)))"         # (9.4), P_Bat em gramas
+p_m = "f_pv * f_bat * f_pq * f_dec * cp_m ^ 0.08 * (0.095 / (0.1 + exp(-ee)) + 0.4)"   # (9.1)
+pd = "0.4 * max(1000 * b - 1800, 0)"                                               # NC[9.6.0.1], ΔB em mm
+
+[nota]
+expressao = "p_m - pd"
+
+# Condições de voo válido: entram no problema como restrições
+[[validade]]
+expressao = "s_to"
+op = "≤"
+valor = 8.0
+fonte = "R[9.4.0.1]"
+
+[[validade]]
+expressao = "1000 * b - 1800"
+op = "≤"
+valor = 50.0
+fonte = "NC[9.6.0.1]: acima de 50 mm o voo não vale"
+
+[[validade]]
+expressao = "1000 * m_bat"
+op = "≤"
+valor = 550.0
+fonte = "R[9.7.1.3]"
+
+[[validade]]
+expressao = "cp_m / 2 - 0.3 * pv"
+op = "≥"
+valor = 0.0
+fonte = "R[10.2.1.1]: carga mínima 0,3 PV em cada missão"
+
+# Fora daqui por enquanto: pouso numa zona de 16 m (R[9.5.0.1]) e as regras de construção do capítulo 9
+# (garrafas, saco do LAPES, compartimento), que não são grandezas do avaliador.

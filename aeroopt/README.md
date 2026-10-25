@@ -12,9 +12,9 @@ constrói (envergadura, perfil, motor). Uma **consequência** é o que sai das c
 decolagem): ela entra na nota ou numa restrição, nunca como variável. Um **parâmetro** é o que o regulamento ou o
 local impõem (densidade do ar, limite da bateria).
 
-A pasta se divide em três partes, na ordem em que aparecem num uso: o problema e seu arquivo (`problem.py`), os
-contratos que cada peça cumpre (em `aerosim/interfaces/optim.py`) e as peças já ligadas a eles, por enquanto o
-mini-MDO do núcleo (`mini_mdo.py`).
+A pasta se divide em quatro partes, na ordem em que aparecem num uso: o problema e seu arquivo (`problem.py`), a
+pontuação de cada regulamento (`scoring.py` e a pasta `pontuacao/`), os contratos que cada peça cumpre (em
+`aerosim/interfaces/optim.py`) e as peças já ligadas a eles, por enquanto o mini-MDO do núcleo (`mini_mdo.py`).
 
 ## O problema e o arquivo `.opt.json`
 
@@ -31,6 +31,47 @@ Nem sempre se quer otimizar o avião inteiro. Às vezes a asa já está decidida
 o contrário. Cada variável tem um interruptor `free`: só as livres entram na busca, e as outras ficam no valor que o
 avião já tem. `isolate` deixa livres só as variáveis ou os grupos citados (`asa`, `propulsão`, `requisitos`) e prende
 o resto. É a mesma ideia de ligar e desligar partes no aerosim e no núcleo: o resto do avião não muda.
+
+## A pontuação de cada regulamento
+
+Aqui se escreve a nota de uma competição num arquivo de texto, um por regulamento e por ano, em `pontuacao/`. Trocar
+de ano é trocar de arquivo, sem mexer em código. O arquivo declara as entradas (as grandezas que o avaliador entrega,
+sempre em SI), as constantes, as faixas (degraus, como o fator de decolagem), os termos em ordem, a expressão da nota
+e as condições de voo válido, que viram restrições do problema. Cada termo pode usar o que foi definido acima dele.
+As expressões aceitam números, nomes, + − × / ^ e as funções min, max, exp e abs; qualquer outra coisa é recusada ao
+abrir o arquivo, com a linha que falhou.
+
+O `scoring.py` traduz o arquivo para um programa curto de pilha: as entradas ocupam as primeiras vagas, e cada
+constante, faixa, termo, nota e condição ganha uma vaga, na ordem do arquivo. Quem executa o programa é o núcleo,
+para que a mesma conta rode em lote, em paralelo e, no futuro, na GPU. Os termos ficam guardados, então a GUI pode
+mostrar a nota de um avião fator por fator.
+
+### SAE BRASIL AeroDesign 2026, classe Micro
+
+O arquivo `pontuacao/sae_br_2026_micro.toml` segue o Regulamento SAE BRASIL AeroDesign 2026 Rev03, seção 9.8,
+p. 86–87. A nota de missão de cada voo é a equação 9.1:
+
+```math
+P_M = F_{PV}\, F_{Bat}\, F_{PQ}\, F_{Dec}\, CP_M^{0{,}08} \left[\frac{0{,}095}{0{,}1 + e^{-EE}} + 0{,}4\right]
+```
+
+A carga conta pela pior das duas missões, porque o mesmo avião tem de fazer as duas (equação 9.2, com
+$`EE = CP_M / PV`$):
+
+```math
+CP_M = 2 \min(C_{LAPES},\, C_{Liq})
+```
+
+O fator da bateria do motor (equação 9.4, $`P_{Bat}`$ em gramas) fica perto de 1 até uns 300 g e cai rápido depois:
+
+```math
+F_{Bat} = \max\left(0{,}2;\ \frac{0{,}85}{0{,}85 + \exp\left(\frac{P_{Bat} - 298}{37{,}7} - 4{,}8\right)}\right)
+```
+
+O fator de decolagem $`F_{Dec}`$ vale 250 até 1 m, 170 até 4 m e 110 até 8 m. A envergadura acima de 1800 mm perde
+0,4 ponto por milímetro, até 50 mm (NC[9.6.0.1]). O $`F_{PV}`$ (acerto da previsão do PV) e o $`F_{PQ}`$ (abertura
+do paraquedas) não dependem do projeto e ficam constantes; os bônus $`P_{AC}`$, $`B_{CF}`$ e $`B_{RC}`$ são pontos de
+operação e ficam fora da nota otimizada.
 
 ## Os contratos
 
@@ -64,5 +105,16 @@ print(res.best["score"], sorted({round(r["span"], 3) for r in res.rows})[:3])
 aeroopt.save(pr, "envergadura.opt.json")
 ```
 
-Testes: `python -m pytest -q tests/aeroopt`. Para acrescentar uma peça, escreva uma classe que implemente o contrato
+A pontuação de um regulamento, lida e traduzida:
+
+```python
+from aeroopt.scoring import scoring_for, listing
+
+sc = scoring_for("sae_br_2026_micro")
+print(sc.name, sc.quantities())
+print(listing(sc.program()).splitlines()[:7])
+```
+
+Testes: `python -m pytest -q tests/aeroopt`. Um regulamento novo é um `.toml` novo em `pontuacao/`, com a fonte na
+chave `fonte` e um teste com uma nota calculada à mão. Para acrescentar outra peça, escreva uma classe que implemente o contrato
 de `aerosim/interfaces/optim.py` e um teste em `tests/aeroopt`.
