@@ -25,7 +25,7 @@ from .fields import F
 from .spec import G0, DesignRules, Requirements, stall_speed
 from .tail import SetCandidate, analyze as analyze_set
 
-LAYOUTS = ("tratora no nariz", "dois motores na asa", "propulsora atrás da asa")
+LAYOUTS = ("tratora no nariz", "dois motores na asa", "propulsora atrás da asa", "livre: nariz + asa + atrás")
 THRUST = ("motor + hélice", "conjunto de tração")
 GEARS = ("triciclo", "convencional")
 K_MUNK = 0.9          # k2 − k1 de um corpo alongado (fineza ~ 6 a 8)
@@ -35,7 +35,8 @@ K_MUNK = 0.9          # k2 − k1 de um corpo alongado (fineza ~ 6 a 8)
 class PowerParams:
     name: str = F("avião 1", "nome", "", "nome do avião que vai para a Montagem")
     set: str = F("conjunto 1", "conjunto", "", "um dos conjuntos guardados na etapa Empenagem")
-    layout: str = F("tratora no nariz", "motores", "", "", choices=LAYOUTS)
+    layout: str = F("tratora no nariz", "motores", "", "livre: soma os motores do nariz, da asa e de trás (ex.: "
+                    "trimotor = 1 + 2 + 0; puxa-empurra = 1 + 0 + 1)", choices=LAYOUTS)
     thrust_model: str = F("motor + hélice", "tração por", "", "motor + hélice do catálogo ou um conjunto de tração "
                           "(polinômio, aba Tração)", choices=THRUST)
     motor: str = F("Scorpion A-5025-310Kv", "motor")
@@ -46,8 +47,10 @@ class PowerParams:
                     -10, 15, 0.5)
     motor_y: float = F(0.0, "afastamento dos motores", "m", "motores na asa: do centro ao eixo do primeiro par; 0 = o "
                        "mínimo para a hélice livrar a fuselagem", 0, 1.5, 0.01)
-    wing_motors: int = F(2, "motores na asa", "", "arranjo na asa: aos pares, espalhados na envergadura (uma hélice "
-                         "+ 5 cm de folga entre eles)", 2, 8, 2)
+    wing_motors: int = F(2, "motores na asa", "", "arranjo na asa e livre: aos pares, espalhados na envergadura (uma "
+                         "hélice + 5 cm de folga entre eles). No arranjo na asa, no mínimo 2", 0, 8, 2)
+    nose_motors: int = F(1, "motores no nariz", "", "arranjo livre: tratora no nariz (0 ou 1)", 0, 1, 1)
+    rear_motors: int = F(0, "motores atrás", "", "arranjo livre: propulsora atrás da asa (0 ou 1)", 0, 1, 1)
     lapes: bool = F(True, "tem LAPES", "", "carga lançada pela baia, no CG. Só diz se tem: os kg se decidem na "
                     "Montagem (o Desempenho varre a massa total)")
     n_lapes: int = F(1, "quantas cargas LAPES", "", "na mesma baia; a massa (o total) se define na Montagem", 1, 6, 1)
@@ -71,6 +74,18 @@ class AircraftCandidate:
     @property
     def name(self) -> str:
         return self.params.name
+
+
+def motor_counts(pp: PowerParams) -> tuple[int, int, int]:
+    """(motores no nariz, pares na asa, motores atrás) do arranjo; o livre sem nenhum motor fica com o do nariz"""
+    if pp.layout == LAYOUTS[0]:
+        return 1, 0, 0
+    if pp.layout == LAYOUTS[1]:
+        return 0, max(int(pp.wing_motors) // 2, 1), 0
+    if pp.layout == LAYOUTS[2]:
+        return 0, 0, 1
+    n = (min(max(int(pp.nose_motors), 0), 1), max(int(pp.wing_motors), 0) // 2, min(max(int(pp.rear_motors), 0), 1))
+    return n if any(n) else (1, 0, 0)
 
 
 def _unit(pp: PowerParams, cat: Catalog, name, x, y, z, sense) -> PropulsionUnit:
@@ -125,27 +140,26 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     D = 0.381
     # ---- fuselagem (pod) e motores
     fw, fh = rules.fuselage_width, rules.fuselage_height
-    if pp.layout == LAYOUTS[0]:
-        x_nose = rules.nose_length
-    else:
-        x_nose = 0.6 * rules.nose_length
+    n_nose, n_pairs, n_rear = motor_counts(pp)
+    x_nose = rules.nose_length if n_nose else 0.6 * rules.nose_length
     length = x_nose + cr + 0.05
     units = []
-    if pp.layout == LAYOUTS[0]:
-        units = [_unit(pp, cat, "motor 1", x_nose, 0.0, 0.0, 1)]
-    elif pp.layout == LAYOUTS[1]:
+    if n_nose:
+        units.append(_unit(pp, cat, "motor 1", x_nose, 0.0, 0.0, 1))
+    if n_pairs:
         D0 = _unit(pp, cat, "m", 0, 0, 0, 1).propeller.D
         y = pp.motor_y if pp.motor_y > 0 else max(D0 / 2 + fw / 2 + 0.05, 0.15)
         xm = 0.15 + 0.02
-        units = []
-        for k in range(max(int(pp.wing_motors) // 2, 1)):           # pares, de dentro para fora
+        wing = []
+        for k in range(n_pairs):                                    # pares, de dentro para fora
             yk = y + k * (D0 + 0.05)
-            units += [_unit(pp, cat, f"motor esq {k + 1}", xm, -yk, w.z, 1),
-                      _unit(pp, cat, f"motor dir {k + 1}", xm, yk, w.z, -1)]
-        if len(units) == 2:
-            units[0].name, units[1].name = "motor esq", "motor dir"
-    else:
-        units = [_unit(pp, cat, "motor 1", -cr - 0.06, 0.0, 0.0, 1)]
+            wing += [_unit(pp, cat, f"motor esq {k + 1}", xm, -yk, w.z, 1),
+                     _unit(pp, cat, f"motor dir {k + 1}", xm, yk, w.z, -1)]
+        if len(wing) == 2:
+            wing[0].name, wing[1].name = "motor esq", "motor dir"
+        units += wing
+    if n_rear:                     # com tratora no nariz, gira ao contrário dela: os torques se cancelam
+        units.append(_unit(pp, cat, "motor atrás" if units else "motor 1", -cr - 0.06, 0.0, 0.0, -1 if n_nose else 1))
     ac.propulsion = units
     D = max(u.propeller.D for u in units)
     vol = math.pi / 6 * fw * fh * length
@@ -211,7 +225,9 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     z_cg = (m_s * zs + sum(i.mass * i.z for i in items)) / max(m_s + sum(i.mass for i in items), 1e-9)
     ac.design_cg = [float(x_t), 0.0, float(z_cg)]        # CG de projeto: as dimensões se medem dele
     # ---- trem
-    gz = (D / 2 + rules.prop_clearance) if pp.layout != LAYOUTS[1] else max(D / 2 + rules.prop_clearance + w.z, 0.12)
+    gz = (D / 2 + rules.prop_clearance) if not n_pairs else max(D / 2 + rules.prop_clearance + w.z, 0.12)
+    if n_pairs and (n_nose or n_rear):                  # a hélice do centro também tem que livrar o chão
+        gz = max(gz, D / 2 + rules.prop_clearance)
     x_tdp = pp.x_tdp if pp.x_tdp > 0 else rules.main_gear_aft          # medidas do CG de projeto
     if pp.gear == GEARS[0]:
         ac.gear = LandingGear("tricycle", main_x=x_t - x_tdp, main_track=rules.track, main_z=gz,
@@ -241,7 +257,7 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     out = dict(set=st, x_cg_target=x_t, h_n=h_n, sm=100 * (h_n - h_t), mass=M, empty=M - m_cp, payload=m_cp,
                mass_table=table, x_bat=x_bat, x_bat_used=x_bat_c, battery_fits=abs(x_bat_c - x_bat) < 1e-6, ballast=m_eq,
                length=total_len, structure=m_s, masses=pf_mass, items=items, Vs=Vs, D=D,
-               boom_hits_prop=pp.layout == LAYOUTS[2] and ac.boom.enabled, trim=trim)
+               boom_hits_prop=bool(n_rear) and ac.boom.enabled, trim=trim)
     return ac, out
 
 
