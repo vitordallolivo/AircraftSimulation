@@ -229,13 +229,17 @@ def check_6dof(row: dict, project, manager, catalog=None) -> float:
     return _mtow6(row["_cand"], row["_req"], project.rules, catalog, project.airfoil_map(), manager)
 
 
-def _mtow6(cand, req, rules, catalog, airfoils, manager) -> float:
+def _mtow6(cand, req, rules, catalog, airfoils, manager, m_max: float | None = None) -> float:
+    """`m_max`: o topo da bisseção na massa total (padrão: PV + 15 kg); um topo perto do MTOW esperado gasta menos
+    voos"""
     ac, asm = pw.assemble(cand, req, rules, catalog, airfoils)
     x = asm["x_cg_target"]
     from aerosim.manager.simulations.mission import total_mass
     m0 = total_mass(ac)                       # o PV (a carga ainda sem kg): a massa total varre daí para cima
     masses = [dict(item="Massa total (kg)", min=m0, nom=max(asm["mass"], m0), max=m0 + 15.0),
               dict(item="xCG (m)", min=x, nom=x, max=x)]
+    if m_max is not None:
+        masses[0]["max"] = max(float(m_max), m0 + 0.1)
     r = manager.run("mission", ac, {"mode": "MTOW (x_warning e z_warning)", "masses": masses})
     return float(r.summary.get("MTOW (kg)", float("nan")))
 

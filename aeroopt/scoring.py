@@ -15,6 +15,7 @@ constante, faixa, termo, nota e condição ganha a sua, na ordem do arquivo.
 from __future__ import annotations
 
 import ast
+import copy
 import os
 
 import tomllib
@@ -109,12 +110,13 @@ class _Compiler:
 class ScoringFile(IScoring):
     """um arquivo de pontuação (.toml); um nome sem caminho procura em aeroopt/pontuacao"""
 
-    def __init__(self, path: str):
-        if not os.path.exists(path) and not os.path.dirname(path):
-            path = os.path.join(PONTUACAO, path if path.endswith(".toml") else path + ".toml")
-        self.path = path
-        with open(path, "rb") as f:
-            self.data = tomllib.load(f)
+    def __init__(self, path: str = "", data: dict | None = None):
+        if data is None:
+            if not os.path.exists(path) and not os.path.dirname(path):
+                path = os.path.join(PONTUACAO, path if path.endswith(".toml") else path + ".toml")
+            with open(path, "rb") as f:
+                data = tomllib.load(f)
+        self.path, self.data = path, copy.deepcopy(data)
         self.name = self.data.get("nome", os.path.basename(path))
         self.source = self.data.get("fonte", "")
         self._program = self._compile()
@@ -183,6 +185,35 @@ class Objective(IScoring):
     def program(self) -> dict:
         return dict(ops=[LOAD, STORE], args=[0, 1], consts=[], slots=[self.q, "nota"], n_inputs=1, tiers=[],
                     score=1, parts={}, valid=[])
+
+
+def _toml_value(v) -> str:
+    if isinstance(v, str):
+        return '"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (list, tuple)):
+        return "[" + ", ".join(_toml_value(x) for x in v) + "]"
+    return repr(float(v)) if isinstance(v, float) else str(v)
+
+
+def to_toml(data: dict) -> str:
+    """o arquivo de pontuação em texto .toml (a GUI edita os campos e grava por aqui); sem os comentários"""
+    out = []
+    for k in ("nome", "fonte", "entradas"):
+        if k in data:
+            out.append(f"{k} = {_toml_value(data[k])}")
+    if data.get("constantes"):
+        out += ["", "[constantes]"] + [f"{k} = {_toml_value(v)}" for k, v in data["constantes"].items()]
+    for name, t in data.get("faixas", {}).items():
+        out += ["", f"[faixas.{name}]"] + [f"{k} = {_toml_value(v)}" for k, v in t.items()]
+    if data.get("termos"):
+        out += ["", "[termos]"] + [f"{k} = {_toml_value(v)}" for k, v in data["termos"].items()]
+    if "nota" in data:
+        out += ["", "[nota]"] + [f"{k} = {_toml_value(v)}" for k, v in data["nota"].items()]
+    for v in data.get("validade", []):
+        out += ["", "[[validade]]"] + [f"{k} = {_toml_value(x)}" for k, x in v.items()]
+    return "\n".join(out) + "\n"
 
 
 def scoring_for(spec: str) -> IScoring:

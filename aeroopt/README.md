@@ -125,6 +125,30 @@ comando hoje, a GUI depois) atualiza um candidato por vez. O `OptResult` traz um
 MTOW, MTOW 6GDL, nota, fatores, validade, os pontos que a busca visitou) e, em `names["etapas"]`, quantos entraram e
 quantos seguiram em cada etapa.
 
+## A janela
+
+`python -m aeroopt [projeto.json] [problema.opt.json]` abre a janela do aeroopt (`gui.py`); `--exemplo` abre um
+avião pequeno, perto da classe Micro, para ver tudo funcionando. Na esquerda se monta o problema. A pontuação mostra
+tudo o que o `.toml` do regulamento tem (as entradas, as constantes, as faixas, os termos em ordem, a nota e as
+condições de voo válido), em campos editáveis: o que se muda vale na próxima rodada, "Conferir no núcleo" traduz e
+confere o programa, e "Gravar .toml…" grava um arquivo novo. Embaixo ficam as variáveis (livre ou fixa, limites,
+opções das listas, botões para isolar um grupo), as categorias de avião e as opções das etapas: quantos pontos de
+projeto a busca das superfícies gasta por configuração, quantos processos e se o MTOW passa pelo 6GDL.
+
+Na direita se vê a rodada. A janela se atualiza a cada candidato que termina uma etapa, não a cada passo do
+núcleo: é o bastante para ver a busca andar sem pesar a conta. A tabela das etapas conta quantos entraram, quantos
+estão prontos e quantos seguiram. O gráfico da esquerda mostra o MTOW de cada ponto de projeto avaliado (cheio:
+fecha a estabilidade; vazio: não fecha; no zero: não decola), e o da direita a nota de cada configuração na ordem
+em que chegou, com a melhor até ali. O **mapa dos aviões** põe cada configuração no plano PV × carga paga, com as
+linhas de eficiência estrutural constante (EE = CP/PV) e a cor pela nota; os eixos trocam para qualquer par (MTOW,
+EE, nota, envergadura, bateria). Clicar num ponto do mapa ou numa linha da tabela mostra o avião em 3D, com as
+entradas da nota, cada fator e cada condição de voo válido; "Gravar projeto com este avião…" leva os valores para os
+rascunhos das etapas, num projeto novo.
+
+Os processos das etapas, quando a rodada sai da janela, nascem novos ("spawn"): não herdam as linhas de execução do
+Qt. O 6GDL é a etapa mais lenta (dezenas de segundos por avião); o topo da bisseção na massa fica perto do MTOW da
+pista (1,6 vez), o que corta voos sem mudar o resultado além da resolução da bisseção.
+
 ## O mini-MDO do núcleo
 
 O primeiro avaliador e o primeiro solver são o mini-MDO que já existe em `core/src/sizing`: o PSO do núcleo propõe

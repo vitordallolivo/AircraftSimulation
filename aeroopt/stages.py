@@ -71,6 +71,25 @@ def candidate(project, values: dict):
     return p, pw.AircraftCandidate(copy.deepcopy(p.power_draft), s)
 
 
+def apply_values(project, values: dict) -> None:
+    """leva os valores de um candidato para os rascunhos do projeto (a categoria primeiro, depois as variáveis)"""
+    if cat.KEY in values:
+        cat.apply(project, values[cat.KEY])
+    p, _ = candidate(project, {k: v for k, v in values.items() if k != cat.KEY})
+    for k in values:
+        if k != cat.KEY:
+            rg.set_input(project, k, rg.get_input(p, k))
+    project.airfoils = p.airfoils
+
+
+def design(project, problem: OptProblem, values: dict, catalog=None) -> dict:
+    """o ponto de projeto de um candidato, refeito (para ver o avião: o 3D, as massas)"""
+    p = copy.deepcopy(project)
+    apply_to_project(problem, p)
+    q, cand = candidate(p, values)
+    return pw.design_point(cand, q.requirements, q.rules, catalog, q.airfoil_map())
+
+
 def configurations(project, problem: OptProblem, catalog=None) -> list[StageItem]:
     """um candidato por combinação das variáveis discretas livres (lista e inteira) e das categorias escolhidas"""
     axes = []
@@ -81,7 +100,11 @@ def configurations(project, problem: OptProblem, catalog=None) -> list[StageItem
         axes.append((cat.KEY, cats))
     for v in problem.free_variables():
         if v.kind == "lista":
-            axes.append((v.key, list(dict.fromkeys(v.options)) or mdo.available(project, v.key, catalog)))
+            known = mdo.available(project, v.key, catalog)
+            unknown = [o for o in v.options if known and o not in known]
+            if unknown:
+                raise ValueError(f"{v.key}: {', '.join(unknown)} não existe (há {', '.join(known)})")
+            axes.append((v.key, list(dict.fromkeys(v.options)) or known))
         elif v.kind == "inteira":
             axes.append((v.key, list(range(round(min(v.lo, v.hi)), round(max(v.lo, v.hi)) + 1))))
     n = math.prod(len(o) for _, o in axes) if axes else 1
@@ -162,8 +185,9 @@ class Takeoff6dof(IStage):
             from aerosim.backend.zig import ZigBackend
             self.backend_cls = ZigBackend
         d = item.data
+        top = 1.6 * d["mtow"] if math.isfinite(d["mtow"]) else None    # o 6GDL fica perto do MTOW da pista
         m6 = study._mtow6(d["cand"], d["req"], self.project.rules, self.catalog, self.project.airfoil_map(),
-                          SimulationManager(self.backend_cls()))
+                          SimulationManager(self.backend_cls()), m_max=top)
         d["mtow6"] = m6
         if not math.isfinite(m6):
             item.alive, item.why = False, "não decola no 6GDL"
@@ -205,9 +229,11 @@ class StagedEvaluator(IEvaluator):
     name = "etapas"
 
     def __init__(self, project, catalog=None, backend=None, workers: int | None = None, six_dof: bool = True,
-                 evals: int = 24):
+                 evals: int = 24, start_method: str | None = None, scoring=None):
         self.project, self.catalog, self.backend = project, catalog, backend
         self.workers, self.six_dof, self.evals = workers, six_dof, evals
+        self.start_method = start_method           # a GUI usa "spawn" (processos novos, sem herdar as linhas do Qt)
+        self.scoring = scoring                     # uma pontuação já montada (a GUI edita os campos do .toml)
 
     def quantities(self) -> list[str]:
         return ["mtow", "pv", "cp", "ee", "c_lapes", "c_liq", "m_bat", "s_to", "b"]
@@ -216,7 +242,7 @@ class StagedEvaluator(IEvaluator):
         sts: list[IStage] = [SurfaceSizing(project, problem, self.catalog, self.evals)]
         if self.six_dof:
             sts.append(Takeoff6dof(project, self.catalog, type(self.backend) if self.backend is not None else None))
-        sts.append(Score(sc.scoring_for(problem.scoring), self.backend))
+        sts.append(Score(self.scoring or sc.scoring_for(problem.scoring), self.backend))
         return sts
 
 
@@ -225,6 +251,7 @@ def row(item: StageItem) -> dict:
     d = item.data
     return dict(name=item.name, values=dict(item.values), alive=item.alive, why=item.why, stage=item.stage,
                 mtow=d.get("mtow", math.nan), mtow6=d.get("mtow6", math.nan), pv=d.get("pv", math.nan),
+                b=d.get("b", math.nan), m_bat=d.get("m_bat", math.nan),
                 nota=d.get("nota", math.nan), valido=d.get("valido", False), termos=d.get("termos", {}),
                 validade=d.get("validade", []), inputs=d.get("inputs", {}), history=d.get("history", []))
 
@@ -232,12 +259,14 @@ def row(item: StageItem) -> dict:
 class StagedSolver(ISolver):
     name = "etapas (configurações → superfícies → 6GDL → nota)"
 
-    def run(self, problem, evaluator: StagedEvaluator, progress=None, cancel=None) -> OptResult:
+    def run(self, problem, evaluator: StagedEvaluator, progress=None, cancel=None, on_item=None) -> OptResult:
+        """`on_item(etapa, linha)` a cada candidato que termina uma etapa (a linha de `row`, sem os objetos)"""
         p = copy.deepcopy(evaluator.project)          # o projeto do usuário não muda
         apply_to_project(problem, p)                  # as restrições do problema valem na viabilidade
         items = configurations(p, problem, evaluator.catalog)
-        pipe = Pipeline(evaluator.stages(p, problem))
-        items = pipe.run(items, evaluator.workers, progress, cancel)
+        pipe = Pipeline(evaluator.stages(p, problem), evaluator.start_method)
+        cb = (lambda st, it: on_item(st, row(it))) if on_item else None
+        items = pipe.run(items, evaluator.workers, progress, cancel, cb)
         rows = [row(i) for i in items]
         done = [r for r in rows if r["alive"] and math.isfinite(r["nota"])]
         best = max(done, key=lambda r: (r["valido"], r["nota"])) if done else {}

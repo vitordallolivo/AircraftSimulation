@@ -6,6 +6,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, janela (O05): `python -m aeroopt [projeto] [problema]` (ou `--exemplo`). O `.toml` da pontuação inteiro em
+  campos editáveis (conferir no núcleo, gravar), variáveis, categorias e opções das etapas; a rodada ao vivo, a cada
+  candidato que termina uma etapa: andamento das etapas, MTOW de cada ponto avaliado, nota por configuração, mapa dos
+  aviões (PV × carga paga com EE constante, cor pela nota) e o avião clicado em 3D com a nota fator por fator. O
+  topo da bisseção do 6GDL fica perto do MTOW da pista (`study._mtow6(..., m_max)`, o padrão continua o de antes).
 - aeroopt, categorias de configuração: asa alta, média, baixa, parasol, biplano, tandem, asa voadora e cauda em V
   (`aeroopt/categories.py`). As categorias escolhidas no problema viram um eixo das configurações do processo em
   etapas (`--categorias` na ferramenta).

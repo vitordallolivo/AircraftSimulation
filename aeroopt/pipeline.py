@@ -23,14 +23,17 @@ def _fail(item: StageItem, stage: str, err: Exception) -> StageItem:
 
 
 class Pipeline:
-    def __init__(self, stages: list[IStage]):
+    def __init__(self, stages: list[IStage], start_method: str | None = None):
         self.stages = list(stages)
+        self.start_method = start_method                  # processos: "fork", "spawn"... (None = o do sistema)
         self.log: list[tuple[str, int, int]] = []         # por etapa: nome, quantos entraram, quantos seguiram
 
     def run(self, items: list[StageItem] | None = None, workers: int | None = None,
             progress: Callable[[float, str], None] | None = None,
-            cancel: Callable[[], bool] | None = None) -> list[StageItem]:
-        """roda as etapas em ordem; devolve todos os candidatos (os que pararam têm `alive = False` e o motivo)"""
+            cancel: Callable[[], bool] | None = None,
+            on_item: Callable[[str, StageItem], None] | None = None) -> list[StageItem]:
+        """roda as etapas em ordem; devolve todos os candidatos (os que pararam têm `alive = False` e o motivo).
+        `on_item(etapa, candidato)` a cada candidato que termina uma etapa (quem mostra o andamento ao vivo)"""
         items = list(items or [])
         n_st = len(self.stages)
         for k, st in enumerate(self.stages):
@@ -45,6 +48,8 @@ class Pipeline:
                 it.stage = st.name
                 if progress:
                     progress((k + done / max(len(alive), 1)) / n_st, f"{st.name}: {it.name} ({done}/{len(alive)})")
+                if on_item:
+                    on_item(st.name, it)
 
             if st.batch:
                 out = st.run(alive)
@@ -63,8 +68,7 @@ class Pipeline:
             self.log.append((st.name, len(alive), len(kept)))
         return items
 
-    @staticmethod
-    def _map(st: IStage, alive: list[StageItem], workers, tick, cancel) -> list[StageItem]:
+    def _map(self, st: IStage, alive: list[StageItem], workers, tick, cancel) -> list[StageItem]:
         """`st.one` em cada candidato; a ordem da lista é mantida (o resultado não depende do paralelismo)"""
         n = workers or max(1, min(len(alive), os.cpu_count() or 2))
         out: list[StageItem | None] = [None] * len(alive)
@@ -79,8 +83,13 @@ class Pipeline:
                     out[j] = _fail(it, st.name, e)
                 tick(out[j])
             return out
-        pool = ProcessPoolExecutor if st.parallel == "processos" else ThreadPoolExecutor
-        with pool(max_workers=n) as ex:
+        if st.parallel == "processos":
+            import multiprocessing as mp
+            ctx = mp.get_context(self.start_method) if self.start_method else None
+            pool = ProcessPoolExecutor(max_workers=n, mp_context=ctx)
+        else:
+            pool = ThreadPoolExecutor(max_workers=n)
+        with pool as ex:
             futs = {ex.submit(st.one, it): j for j, it in enumerate(alive)}
             for f in as_completed(futs):
                 j = futs[f]

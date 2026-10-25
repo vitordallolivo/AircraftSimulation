@@ -69,7 +69,7 @@ def test_configurations_are_the_discrete_combinations():
     for v in p.variables:
         if v.key in ("power.propeller", "power.motors", "wing.span"):
             v.mode = "variável"
-            v.options = ["APC 15x8E", "APC 14x7E"] if v.key == "power.propeller" else []
+            v.options = ["APC 15x8E", "Genérica 11x7"] if v.key == "power.propeller" else []
             v.lo, v.hi = (2, 4) if v.key == "power.motors" else (v.lo, v.hi)
     pr = aeroopt.from_project(p)
     items = sg.configurations(p, pr)
@@ -77,6 +77,10 @@ def test_configurations_are_the_discrete_combinations():
     assert {tuple(i.values) for i in items} == {("power.propeller", "power.motors")}
     pr.variable("power.motors").hi = 400
     with pytest.raises(ValueError):
+        sg.configurations(p, pr)
+    pr.variable("power.motors").hi = 4
+    pr.variable("power.propeller").options = ["APC 99x1"]           # hélice que não existe: para antes de rodar
+    with pytest.raises(ValueError, match="não existe"):
         sg.configurations(p, pr)
 
 
@@ -137,7 +141,7 @@ def test_categories_build_each_kind_of_aircraft():
     assert q.rules.wing_z > 0 and p.rules.wing_z < 0              # o projeto do usuário não muda
     pr = aeroopt.from_project(p)
     pr.isolate("power.propeller")
-    pr.variable("power.propeller").options = ["APC 15x8E", "APC 14x7E"]
+    pr.variable("power.propeller").options = ["APC 15x8E", "Genérica 11x7"]
     pr.params["categorias"] = ["asa alta", "biplano", "asa voadora"]
     items = sg.configurations(p, pr)
     assert len(items) == 6 and items[0].name == "asa alta, propeller=APC 15x8E"
