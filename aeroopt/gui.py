@@ -913,16 +913,19 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.ax_x, self.ax_y = QtWidgets.QComboBox(), QtWidgets.QComboBox()
         for c in (self.ax_x, self.ax_y):
             c.setMaxVisibleItems(30)
+            c.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            c.setMinimumContentsLength(22)          # o nome da variável inteiro, mesmo em 1366 px
             c.currentIndexChanged.connect(lambda *_: self.draw_map())
         h.addWidget(QtWidgets.QLabel("x:"))
         h.addWidget(self.ax_x)
         h.addWidget(QtWidgets.QLabel("y:"))
         h.addWidget(self.ax_y)
         h.addStretch(1)
-        self.map_note = QtWidgets.QLabel()
-        self.map_note.setStyleSheet("color:#555")
-        h.addWidget(self.map_note)
         rv.addLayout(h)
+        self.map_note = QtWidgets.QLabel()               # numa linha própria: ao lado dos eixos não cabe em 1366 px
+        self.map_note.setStyleSheet("color:#555")
+        self.map_note.setWordWrap(True)
+        rv.addWidget(self.map_note)
         self.map = _plot("PV (kg)", "carga paga (kg)", legend=False)
         self.map.setMinimumHeight(320)
         for side in ("bottom", "left"):                # área em m² sem o "(x0.001)" nem o 600 no lugar de 0,6

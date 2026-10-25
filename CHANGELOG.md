@@ -10,8 +10,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   processo em etapas, com o tempo e o ganho de cada etapa, a fração presa ao GIL e a conferência de que o resultado
   não muda; `Pipeline.times` guarda o tempo de cada etapa. Correção: o Otimizar ficava desligado depois de uma
   rodada com avião selecionado (a reconstrução dele contava como parte da rodada).
-- aeroopt, README: agora é a descrição geral e a janela, botão por botão, com as imagens da GUI
-  (`docs/img/aeroopt/`). O texto das contas e de como chamar cada peça foi para `aeroopt/COMO_FUNCIONA.md`.
+- aeroopt, README: só a descrição do braço, como a pasta se divide e a janela, com as imagens da GUI
+  (`docs/img/aeroopt/`).
 - aeroopt, gráficos do melhor avião: o melhor avião até aqui (voo válido antes, depois a nota) roda sozinho as
   análises rápidas do aerosim (decolagem, polar do núcleo, estabilidade, desempenho) e os gráficos aparecem numa aba
   por análise, sem formulário e sem gravar nada (`BEST_ANALYSES`). A janela e os submenus cabem em 1366 × 768.
