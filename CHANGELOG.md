@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, contratos e problema (O02): `aerosim/interfaces/optim.py` (`OptProblem`, `IScoring`, `IEvaluator`,
+  `ISolver`), o arquivo `.opt.json` e a ponte com o projeto da sprint (`aeroopt/problem.py`). Uma variável só entra na
+  busca quando está livre; `isolate` deixa livres só as variáveis ou os grupos citados. O mini-MDO do núcleo roda pelo
+  contrato (`aeroopt/mini_mdo.py`) com o mesmo resultado da página MDO, bit a bit (`tests/aeroopt`).
 - Tracking por segmento: o quadro de `docs/TRACKING.md` tem uma tabela para o aerosim, o core, o AeroDrive, o aeroopt
   (o otimizador, tarefas O01 a O12, à espera do ok do plano) e o que é comum. O VTOL saiu das Torres (T83).
 - Asas ligadas, tandem e biplano (T78): grupo de asas no modelo, na Montagem e na sprint. O modificador
