@@ -135,6 +135,27 @@ pub fn computeTrace(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, e
     return computeImpl(true, p, Vr, w, rcg, h, d, env, out);
 }
 
+/// Γ = ½ V c η C_L de cada painel (Kutta–Joukowski com a carga da faixa, como o k_i de loads/llt.zig), com o α
+/// que o laço dos painéis daria sem o par de asas; e a direção para onde o ar vai
+fn pairGamma(p: *const T.Params, Vr: V3, w: V3, d: V3, env: *mods.Env) void {
+    const Va = vec.norm(Vr);
+    env.u = if (Va > 1e-6) -Vr / vec.splat(Va) else vec.zero;
+    const alfa = fm.atan2(Vr[2], Vr[0]);
+    const n: usize = @intCast(p.n_surf);
+    for (p.surf[0..n], 0..) |*s, i| {
+        env.gamma[i] = 0;
+        const v = Vr + vec.cross(w, vec.v3(s.r)) + mods.inducedNoPair(p, env, i, s);
+        const u = vec.dot(v, vec.v3(s.ex));
+        const ww = vec.dot(v, vec.v3(s.ez));
+        const V2 = u * u + ww * ww;
+        if (V2 < 1e-6) continue;
+        var al = fm.atan2(ww, u);
+        if (s.downwash != 0) al -= s.eps0 + s.depsda * alfa;
+        al += s.tau * vec.dot(vec.v3(s.mix), d);
+        env.gamma[i] = 0.5 * @sqrt(V2) * s.c * s.eta * clPanel(s, al, p.Mst);
+    }
+}
+
 fn computeImpl(comptime trace: bool, p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env, out: if (trace) []T.PanelState else void) Out {
     @setFloatMode(fm.float_mode);
     var o = Out{};
@@ -142,6 +163,14 @@ fn computeImpl(comptime trace: bool, p: *const T.Params, Vr: V3, w: V3, rcg: V3,
     const alfa = fm.atan2(Vr[2], Vr[0]);
     const n: usize = @intCast(p.n_surf);
     const with_mods = p.n_mod > 0;
+    // par de asas ligadas (modifiers/wingpair.zig): as circulações de antes da interferência, numa cópia do Env
+    var env_pair: mods.Env = undefined;
+    var envp = env;
+    if (with_mods and !env.no_pair and mods.wingpair.active(p)) {
+        env_pair = env.*;
+        pairGamma(p, Vr, w, d, &env_pair);
+        envp = &env_pair;
+    }
     for (p.surf[0..n], 0..) |*s, i| {
         const r = vec.v3(s.r);
         const ex = vec.v3(s.ex);
@@ -149,7 +178,7 @@ fn computeImpl(comptime trace: bool, p: *const T.Params, Vr: V3, w: V3, rcg: V3,
         var v = Vr + vec.cross(w, r);
         var vind = vec.zero;
         if (with_mods) {
-            vind = mods.induced(p, env, i, s); // esteira, tabela... (modifiers/)
+            vind = mods.induced(p, envp, i, s); // esteira, par de asas, tabela... (modifiers/)
             v += vind;
         }
         const u = vec.dot(v, ex);

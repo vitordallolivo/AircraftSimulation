@@ -170,13 +170,19 @@ export fn aerosim_prop_state(slot: i32, idx: i32, V: f64, alpha: f64, beta: f64,
 /// estado de cada painel a V, α, β (sem rotação, longe do chão), com a tração T[i] e o torque Q[i] de cada motor
 /// (n = número de motores; n = 0: sem motores). Escreve até `cap` painéis em `out`; devolve quantos há.
 export fn aerosim_panel_states(slot: i32, V: f64, alpha: f64, beta: f64, de: f64, da: f64, dr: f64, Tn: [*]const f64, Qn: [*]const f64, n: i32, out: [*]T.PanelState, cap: usize) i32 {
+    return panelStates(slot, V, alpha, beta, de, da, dr, Tn, Qn, n, out, cap, false);
+}
+
+/// `aerosim_panel_states`; `no_pair`: sem a interferência entre asas ligadas (a linha sustentadora vem depois)
+fn panelStates(slot: i32, V: f64, alpha: f64, beta: f64, de: f64, da: f64, dr: f64, Tn: [*]const f64, Qn: [*]const f64, n: i32, out: [*]T.PanelState, cap: usize, no_pair: bool) i32 {
     const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
     if (n != 0 and n != inst.p.n_prop) return E_BAD_INDEX;
     const a = fm.sincos(alpha);
     const b = fm.sincos(beta);
     const Vr = vec.V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
     const k: usize = @intCast(n);
-    const env = if (n > 0) modifiers.envFrom(&inst.p, Vr, vec.zero, Tn[0..k], Qn[0..k]) else modifiers.Env.none;
+    var env = if (n > 0) modifiers.envFrom(&inst.p, Vr, vec.zero, Tn[0..k], Qn[0..k]) else modifiers.Env.none;
+    env.no_pair = no_pair;
     const np_: usize = @intCast(inst.p.n_surf);
     const m = @min(cap, np_);
     const rcg = trim.Ctx.init(&inst.p, &inst.r.f).rcg;
@@ -191,7 +197,7 @@ export fn aerosim_panel_states_llt(slot: i32, V: f64, alpha: f64, beta: f64, de:
     const inst = getConfigured(slot) orelse return E_NOT_CONFIGURED;
     const np_: usize = @intCast(inst.p.n_surf);
     if (cap < np_) return E_BAD_INDEX;
-    const k = aerosim_panel_states(slot, V, alpha, beta, de, da, dr, Tn, Qn, n, out, cap);
+    const k = panelStates(slot, V, alpha, beta, de, da, dr, Tn, Qn, n, out, cap, true);
     if (k < 0) return k;
     const a = fm.sincos(alpha);
     const b = fm.sincos(beta);

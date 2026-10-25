@@ -42,7 +42,7 @@ const far = 1e3; // comprimento das pernas (m): "infinito" para aviões deste ta
 /// uma EV que encosta na EH passa a milímetros dos pontos de controle da EH e induz dezenas de m/s (1/h). Entre
 /// 0,05 e 0,25 da corda o resultado quase não muda; dentro da mesma superfície não há núcleo (a queda na ponta depende
 /// das pernas das faixas vizinhas, mais estreitas que qualquer núcleo dessa ordem)
-const core_frac = 0.1;
+pub const core_frac = 0.1;
 
 /// inclinação 2D a partir do C_Lα 3D (Helmbold invertido); sem solução (asa muito curta): 2π
 pub fn sectionSlope(CLa: f64, AR: f64) f64 {
@@ -95,6 +95,12 @@ fn nodes(s: *const T.Surface, ps: *const T.PanelState) Node {
     const dl = qb - qa;
     if (vec.dot(dl, dl) < 1e-18) return .{ .A = g.A, .B = g.B, .d = g.d };
     return if (vec.dot(dl, g.d) >= 0) .{ .A = qa, .B = qb, .d = g.d } else .{ .A = qb, .B = qa, .d = g.d };
+}
+
+/// os nós da ferradura de um painel só com a geometria dele (para quem não tem o `PanelState`: modifiers/wingpair.zig)
+pub fn surfaceNodes(s: *const T.Surface) Node {
+    const ps = T.PanelState{ .r = s.r, .S = s.S, .c = s.c, .group = s.group, .side = s.side, .ey = s.ey, .ex = s.ex };
+    return nodes(s, &ps);
 }
 
 /// comprimento projetado no plano y-z do corpo (a coordenada de envergadura `s` de Goates e Hunsaker, eq. 4–6)
@@ -178,7 +184,7 @@ const Wings = struct {
     }
 };
 
-const Node = struct { A: V3, B: V3, d: V3 };
+pub const Node = struct { A: V3, B: V3, d: V3 };
 
 /// direção da junta: perpendicular à tangente `t` no plano de `t` e de u_a (para trás, ao longo da corda), do lado
 /// de u_a (G-H eq. 12–15)
@@ -468,7 +474,9 @@ pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
 pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env) aero.Out {
     const n: usize = @intCast(@min(p.n_surf, @as(i32, n_max)));
     var ps: [n_max]T.PanelState = undefined;
-    var o = aero.computeTrace(p, Vr, w, rcg, h, d, env, ps[0..n]);
+    var env_ll = env.*;
+    env_ll.no_pair = true; // a interferência entre asas ligadas sai do sistema daqui, não do modifier das faixas
+    var o = aero.computeTrace(p, Vr, w, rcg, h, d, &env_ll, ps[0..n]);
     // tira as forças das faixas...
     for (ps[0..n]) |q| {
         if (q.group < 0) continue;

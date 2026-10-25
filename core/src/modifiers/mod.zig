@@ -13,6 +13,7 @@ const V3 = vec.V3;
 pub const types = @import("types.zig");
 pub const ground = @import("ground.zig");
 pub const slipstream = @import("slipstream.zig");
+pub const wingpair = @import("wingpair.zig");
 const T = @import("../types.zig");
 const prop = @import("../physics/propulsion.zig");
 
@@ -23,6 +24,10 @@ pub const Env = struct {
     Q: [L.max_props]f64 = [_]f64{0} ** L.max_props, // torque (N·m)
     Vax: [L.max_props]f64 = [_]f64{0} ** L.max_props, // velocidade do ar ao longo do eixo, no cubo (m/s)
     eT: [L.max_props]V3 = [_]V3{vec.zero} ** L.max_props, // eixo de tração (corpo)
+    // par de asas ligadas (wingpair.zig): circulação de cada painel e para onde o ar vai; a aerodinâmica preenche
+    gamma: [L.max_surfaces]f64 = [_]f64{0} ** L.max_surfaces,
+    u: V3 = vec.zero,
+    no_pair: bool = false, // a linha sustentadora vem depois (loads/llt.zig): o par já está no sistema dela
 
     pub const none: Env = .{};
 };
@@ -71,12 +76,22 @@ pub fn stripOf(s: *const T.Surface) collision.Strip {
 /// o que entra na velocidade relativa do painel `i`, somando os modificadores ligados.
 /// O painel vê v = V_ar + ω × r − v_ar_induzida; aqui sai −v_ar_induzida (média ao longo da faixa).
 pub fn induced(p: *const T.Params, env: *const Env, i: usize, s: *const T.Surface) V3 {
+    return inducedWith(true, p, env, i, s);
+}
+
+/// `induced` sem o par de asas (o α de cada painel antes da interferência, para as circulações do par)
+pub fn inducedNoPair(p: *const T.Params, env: *const Env, i: usize, s: *const T.Surface) V3 {
+    return inducedWith(false, p, env, i, s);
+}
+
+fn inducedWith(comptime pair: bool, p: *const T.Params, env: *const Env, i: usize, s: *const T.Surface) V3 {
     var v = vec.zero;
     const n: usize = @intCast(p.n_mod);
     for (p.mods[0..n]) |*m| {
         if (m.enabled == 0 or !hits(m.surf_mask, i)) continue;
         v += switch (m.kindOf()) {
             .slipstream_disk => slipstreamStrip(p, env, m, s),
+            .wing_pair => if (pair and p.aero_model == 0) wingpair.induced(p, m, env.gamma[0..], env.u, i) else vec.zero,
             .none, _ => vec.zero, // tipo vazio ou desconhecido: nada
         };
     }
@@ -123,4 +138,5 @@ test "máscara de painéis" {
 test {
     _ = ground;
     _ = slipstream;
+    _ = wingpair;
 }

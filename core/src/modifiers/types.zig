@@ -21,6 +21,7 @@ pub const Ground = enum(i32) {
 pub const Kind = enum(i32) {
     none = 0, // item vazio (ignorado)
     slipstream_disk = 1, // esteira da hélice por disco atuador (slipstream.zig); parâmetros em `SlipstreamParam`
+    wing_pair = 2, // interferência entre duas asas ligadas (tandem, biplano; wingpair.zig); parâmetros em `PairParam`
     _, // tipo de outra versão: ignorado
 };
 
@@ -30,6 +31,16 @@ pub const SlipstreamParam = enum(u8) {
     swirl_on = 1, // giro ligado (1/0)
     axial_gain = 2, // ganho da axial (1 = a teoria)
     swirl_gain = 3, // ganho do giro (1 = a teoria)
+};
+
+/// o que cada `Modifier.params[k]` quer dizer em `Kind.wing_pair`. As máscaras são as dos painéis de cada asa do
+/// par (bits de um i32 com sinal, guardados num f64: exatos), na mesma convenção de `surf_mask`
+pub const PairParam = enum(u8) {
+    gain = 0, // ganho da velocidade induzida (1 = a teoria)
+    a_lo = 1, // painéis da asa A, bits 0..31
+    a_hi = 2, // painéis da asa A, bits 32..63
+    b_lo = 3, // painéis da asa B, bits 0..31
+    b_hi = 4, // painéis da asa B, bits 32..63
 };
 
 pub const n_params = 16;
@@ -54,10 +65,23 @@ pub const Modifier = extern struct {
     pub inline fn slip(m: *const Modifier, k: SlipstreamParam) f64 {
         return m.params[@intFromEnum(k)];
     }
+
+    /// o parâmetro `k` de um modificador do tipo `Kind.wing_pair`
+    pub inline fn pair(m: *const Modifier, k: PairParam) f64 {
+        return m.params[@intFromEnum(k)];
+    }
+
+    /// a máscara de painéis da asa A (`a` = true) ou B do par
+    pub inline fn pairMask(m: *const Modifier, a: bool) [2]i32 {
+        const lo = m.pair(if (a) .a_lo else .b_lo);
+        const hi = m.pair(if (a) .a_hi else .b_hi);
+        return .{ @intFromFloat(lo), @intFromFloat(hi) };
+    }
 };
 
 comptime {
     if (L.max_surfaces > 64) @compileError("surf_mask cobre até 64 painéis");
     if (L.max_props > 31) @compileError("prop_mask cobre até 31 motores");
     for (@typeInfo(SlipstreamParam).@"enum".fields) |f| if (f.value >= n_params) @compileError("parâmetro fora de params");
+    for (@typeInfo(PairParam).@"enum".fields) |f| if (f.value >= n_params) @compileError("parâmetro fora de params");
 }

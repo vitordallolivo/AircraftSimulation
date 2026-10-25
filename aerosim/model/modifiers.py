@@ -63,6 +63,15 @@ KINDS: dict[str, KindInfo] = {
          ParamInfo("giro", "giro da esteira", 1.0, "", "1 liga, 0 desliga"),
          ParamInfo("ganho_axial", "ganho da axial", 1.0, "", "calibração (1 = a teoria)"),
          ParamInfo("ganho_giro", "ganho do giro", 1.0, "", "calibração (1 = a teoria)"))),
+    "interferencia.asas": KindInfo(
+        "interferencia.asas", "interferência entre asas ligadas (tandem, biplano)", "aditivo", 2,
+        "ferraduras de Γ = ½ V c η c_l (Kutta–Joukowski) e Biot–Savart de segmento reto (Katz e Plotkin, "
+        "Low-Speed Aerodynamics, 2ª ed., cap. 10; a conferir no PDF), como na linha sustentadora do núcleo "
+        "(Phillips e Snyder 2000), numa passada e só entre as duas asas",
+        "nas faixas, cada asa do par sente a velocidade induzida pela outra: a de trás do tandem voa no downwash "
+        "da da frente, e as asas do biplano se induzem. Só age com o voo pelas faixas e com asas ligadas "
+        "(as duas primeiras do grupo da asa principal). Desligado por padrão",
+        (ParamInfo("ganho", "ganho da induzida", 1.0, "", "calibração (1 = a teoria)"),)),
 }
 
 
@@ -158,5 +167,37 @@ def native(ac, panel_owner: list[str], prop_count: int, max_mods: int = MAX_MODS
                 continue                                                     # nenhum painel: nada a fazer
         pmask = sum(1 << i for i in m.props if 0 <= i < prop_count)
         vals = [m.value(p.key) for p in inf.params] + [0.0] * (16 - len(inf.params))
+        if m.kind == "interferencia.asas":            # as máscaras dos painéis de cada asa do par (types.zig, PairParam)
+            pair = _pair_masks(ac, panel_owner)
+            if pair is None:
+                continue                                                     # sem asas ligadas: nada a fazer
+            a, b = pair
+            vals[1:5] = [float(a[0]), float(a[1]), float(b[0]), float(b[1])]
+            mask = [_i32(_u32(a[0]) | _u32(b[0])), _i32(_u32(a[1]) | _u32(b[1]))]
         mods.append(dict(kind=inf.core_id, enabled=1, surf_mask=mask, prop_mask=pmask, params=vals[:16]))
     return dict(ground=ground_method(ac), n_mod=len(mods), mods=mods)
+
+
+def _u32(v: int) -> int:
+    return v & 0xFFFFFFFF
+
+
+def _i32(v: int) -> int:
+    return v - (1 << 32) if v >= 1 << 31 else v
+
+
+def _pair_masks(ac, panel_owner: list[str]):
+    """(máscara da asa A, da asa B) dos painéis das duas primeiras asas do grupo da asa principal; None sem par"""
+    ws = ac.wing_group() if hasattr(ac, "wing_group") else []
+    if len(ws) < 2:
+        return None
+    out = []
+    for w in ws[:2]:
+        m = [0, 0]
+        for i, owner in enumerate(panel_owner):
+            if owner == w.name and i < 64:
+                m[i // 32] |= 1 << (i % 32)
+        out.append([_i32(v) for v in m])
+    if out[0] == [0, 0] or out[1] == [0, 0] or ws[0].name == ws[1].name:
+        return None
+    return out[0], out[1]

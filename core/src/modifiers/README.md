@@ -172,6 +172,53 @@ teoria do momento).
 
 ![Disco atuador: o tubo que contrai e as velocidades](../../../docs/img/fig/disco_atuador.png)
 
+### `interferencia.asas` (aditivo, desligado por padrão)
+
+As faixas tratam cada painel sozinho. Num tandem, isso quer dizer que a asa de trás não sente o downwash da da frente;
+num biplano, que as duas asas não se induzem. A linha sustentadora do núcleo (`loads/llt.zig`) resolve as circulações
+de todos os painéis juntas e já tem esse efeito. Este modificador traz para as faixas só a parte entre as duas asas
+ligadas (as duas primeiras do grupo da asa principal), numa passada, sem montar o sistema.
+
+**1. Circulação de cada painel.** Pela relação de Kutta–Joukowski, a sustentação por unidade de envergadura é
+$`\rho V \Gamma`$, e a da faixa é $`\tfrac12 \rho V^2 c\,\eta\,c_l`$. Igualando as duas (o mesmo passo da linha
+sustentadora em `llt.zig`):
+
+```math
+\Gamma_j = \tfrac12\,V_j\,c_j\,\eta_j\,C_{L,j}
+```
+
+com o $`\alpha`$ do painel calculado sem esta interferência (os outros modificadores, o downwash empírico e os comandos
+entram).
+
+**2. Velocidade induzida pela outra asa.** Cada painel $`j`$ é uma ferradura: o segmento ligado no quarto da corda e as
+duas pernas retas na direção do vento relativo. No ponto de controle $`i`$ de uma asa somam-se só as ferraduras da outra:
+
+```math
+\vec w_i = \sum_{j \,\in\, \text{outra asa}} \Gamma_j\,\vec w_{ij}
+```
+
+$`\vec w_{ij}`$ é a velocidade de uma ferradura de circulação unitária, pela lei de Biot–Savart de segmento reto (Katz e
+Plotkin, *Low-Speed Aerodynamics*, 2ª ed., cap. 10; número da equação a conferir no PDF), com o núcleo de vórtice
+entre superfícies de `llt.core_frac`.
+
+**3. No painel.** O painel vê $`\vec v = \vec V_{ar} + \vec\omega\times\vec r - k\,\vec w_i`$, com $`k`$ o ganho
+(`PairParam.gain`; 1 é a teoria). Daí sai outro $`\alpha`$ e a força girada; o arrasto induzido da interferência vem
+da inclinação da sustentação, como na linha sustentadora.
+
+A própria asa fica de fora, porque a faixa já tem o seu $`C_{D_i} = C_L^2/(\pi e A\!R)`$. Com o voo pela linha
+sustentadora (`aero_model` ≠ 0) o modificador não faz nada, e a comparação com a linha sustentadora em `llt.compute`
+o desliga (`Env.no_pair`) para não contar o efeito duas vezes.
+
+Números de referência (avião de teste em tandem, C_Lα por radiano e ponto neutro em % da CMA de referência):
+
+| modelo | C_Lα | ponto neutro |
+|---|---|---|
+| faixas, sem o modificador | 4,47 | +28 % |
+| faixas, com o modificador | 3,48 | −21 % |
+| linha sustentadora (Goates e Hunsaker) | 3,44 | −23 % |
+
+Testes: `wingpair.zig` (as máscaras de cada asa do par).
+
 ### Limites conhecidos do `solo.mccormick`
 
 São as razões para ter outros métodos depois:
@@ -192,6 +239,15 @@ São as razões para ter outros métodos depois:
 - esteiras que se cruzam somam (a superposição deixa de ser exata);
 - a parte da faixa fora do tubo (acima ou abaixo da linha de tração, ou fora da envergadura do tubo) não recebe nada: a
   faixa é amostrada numa grade e só os pontos dentro do tubo (`collision.Tube.contains`) somam.
+
+### Limites conhecidos do `interferencia.asas`
+
+- uma passada: a asa da frente do tandem não recebe de volta o efeito da de trás pelo próprio $`\alpha`$; no biplano,
+  onde a influência é mútua, a passada é só a primeira iteração do sistema da linha sustentadora;
+- só as duas primeiras asas do grupo (um triplano usa as duas primeiras);
+- as pernas da ferradura são retas na direção do vento relativo: a esteira não enrola nem desce com o downwash;
+- no biplano as faixas sem o modificador já ficam abaixo do VLM e da linha sustentadora no $`C_{L\alpha}`$; com ele, o
+  valor cai entre os dois, mas a diferença entre os métodos ainda é grande (a conferir com dados de túnel).
 
 ### Próximos tipos (planejados; só entram com a fonte conferida)
 
