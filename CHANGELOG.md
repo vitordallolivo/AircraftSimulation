@@ -6,6 +6,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, tabela e Parar: a tabela das configurações mostra o número (o nome fica na dica) e a área de projeto em que
+  parou (`stages.area`). O Parar não espera a conta em andamento: o processo é encerrado (`Pipeline._map` espera
+  0,2 s por vez).
 - aeroopt, estabilidade e nota: restrição de estabilidade por ponto de projeto (`StabilityParams`, desligada por
   padrão; a análise da aba Estabilidade: $C_{n\beta}$, $C_{l\beta}$ e modos MIL-F-8785C), que faz diedro,
   enflechamento e deriva contarem. Voo inválido tem nota 0 (a conta fica em `nota_formula`). As gerações nas

@@ -907,12 +907,14 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.map.setMinimumHeight(420)
         rv.addWidget(self.map)
         _section(rv, "Configurações")
-        self.cfg_tab = _table(["configuração", "geração", "etapa", "MTOW pista", "MTOW 6GDL", "PV", "nota", "situação"])
+        self.cfg_tab = _table(["id", "geração", "etapa", "área de projeto", "MTOW pista", "MTOW 6GDL", "PV", "nota",
+                               "situação"])
         self.cfg_tab.setMinimumHeight(240)
         self.cfg_tab.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.cfg_tab.setSortingEnabled(True)
         self.cfg_tab.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
-        self.cfg_tab.cellClicked.connect(lambda r, _c: self.select(self.cfg_tab.item(r, 0).text()))
+        self.cfg_tab.cellClicked.connect(
+            lambda r, _c: self.select(self.cfg_tab.item(r, 0).data(QtCore.Qt.ItemDataRole.UserRole)))
         rv.addWidget(self.cfg_tab)
         _section(rv, "Avião selecionado")
         h = QtWidgets.QHBoxLayout()
@@ -1233,11 +1235,17 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.cfg_tab.setSortingEnabled(False)
         rows = sorted(self.rows.values(), key=lambda r: (r["alive"], r["valido"], np.nan_to_num(r["nota"], nan=-1e9)),
                       reverse=True)
-        _set_rows(self.cfg_tab, [[r["name"], r.get("geração", ""), r["stage"], _fmt(r["mtow"]), _fmt(r["mtow6"]), _fmt(r["pv"]),
-                                  _fmt(r["nota"]), ("válido" if r["valido"] else "voo inválido") if r["alive"] and
-                                  math.isfinite(r["nota"]) else ("em andamento" if r["alive"] else r["why"])]
+        _set_rows(self.cfg_tab, [["", r.get("geração", ""), r["stage"], sg.area(r), _fmt(r["mtow"]), _fmt(r["mtow6"]),
+                                  _fmt(r["pv"]), _fmt(r["nota"]), ("válido" if r["valido"] else "voo inválido")
+                                  if r["alive"] and math.isfinite(r["nota"]) else
+                                  ("em andamento" if r["alive"] else r["why"])]
                                  for r in rows], editable=False)
-        for i, r in enumerate(rows):
+        for i, r in enumerate(rows):                 # o id no lugar do nome (o nome inteiro fica na dica)
+            it = self.cfg_tab.item(i, 0)
+            it.setData(QtCore.Qt.ItemDataRole.DisplayRole, int(r.get("index", i + 1)))
+            it.setData(QtCore.Qt.ItemDataRole.UserRole, r["name"])
+            it.setToolTip(r["name"])
+            self.cfg_tab.item(i, 8).setToolTip(r["why"] or "")
             if not r["alive"]:
                 for j in range(self.cfg_tab.columnCount()):
                     self.cfg_tab.item(i, j).setForeground(QtCore.Qt.GlobalColor.darkRed)
@@ -1284,7 +1292,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.map.addItem(sp)
         for r in rows:
             if r["name"] == self.selected or (notas and r["nota"] == hi):
-                t = pg.TextItem(r["name"], color="#1f2d3d", anchor=(0, 0))
+                t = pg.TextItem(f"nº {r.get('index', '')}", color="#1f2d3d", anchor=(0, 0))
                 t.setPos(self._value(r, kx), self._value(r, ky))
                 self.map.addItem(t)
         self.map_note.setText(f"cor: nota de {_fmt(lo)} (roxo) a {_fmt(hi)} (amarelo) · borda vermelha: voo inválido · "
@@ -1299,7 +1307,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.keep_b.setEnabled(True)
         self.aerosim_b.setEnabled(False)          # liga quando o avião estiver refeito (o 3D)
         self.draw_map()
-        lines = [[sg.short(k), _fmt(v)] for k, v in r["values"].items()]
+        lines = [["id", str(r.get("index", ""))], ["área de projeto", sg.area(r)]]
+        lines += [[sg.short(k), _fmt(v)] for k, v in r["values"].items()]
         lines += [["MTOW na pista (kg)", _fmt(r["mtow"])], ["MTOW 6GDL (kg)", _fmt(r["mtow6"])],
                   ["PV (kg)", _fmt(r["pv"])]]
         lines += [[f"entrada: {k}", _fmt(v)] for k, v in r.get("inputs", {}).items()]

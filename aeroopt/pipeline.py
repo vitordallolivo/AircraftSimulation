@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolExecutor, wait
 
 from aerosim.interfaces.optim import IStage, StageItem
 
@@ -89,16 +89,27 @@ class Pipeline:
             pool = ProcessPoolExecutor(max_workers=n, mp_context=ctx)
         else:
             pool = ThreadPoolExecutor(max_workers=n)
-        with pool as ex:
-            futs = {ex.submit(st.one, it): j for j, it in enumerate(alive)}
-            for f in as_completed(futs):
-                j = futs[f]
-                try:
-                    out[j] = f.result()
-                except Exception as e:  # noqa: BLE001
-                    out[j] = _fail(alive[j], st.name, e)
-                tick(out[j])
+        stopped = False
+        futs = {pool.submit(st.one, it): j for j, it in enumerate(alive)}
+        pending = set(futs)
+        try:
+            while pending:
+                # espera pouco por vez: o Parar é visto em uma fração de segundo, não quando o próximo termina
+                done, pending = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+                for f in done:
+                    j = futs[f]
+                    try:
+                        out[j] = f.result()
+                    except Exception as e:  # noqa: BLE001
+                        out[j] = _fail(alive[j], st.name, e)
+                    tick(out[j])
                 if cancel is not None and cancel():
-                    for g in futs:
-                        g.cancel()
+                    stopped = True
+                    break
+        finally:
+            if stopped:
+                # a conta que está rodando num processo não tem como ouvir o Parar: o processo é encerrado
+                for proc in list((getattr(pool, "_processes", None) or {}).values()):
+                    proc.terminate()
+            pool.shutdown(wait=not stopped, cancel_futures=True)
         return [o if o is not None else _fail(a, st.name, RuntimeError("cancelado")) for o, a in zip(out, alive)]

@@ -53,6 +53,25 @@ def test_pipeline_barrier_select_and_failures(parallel):
     assert p.log == [("quadrado", 6, 5), ("posição", 5, 3)]
 
 
+class Slow(IStage):
+    name = "devagar"
+    parallel = "processos"
+
+    def one(self, it):
+        import time
+        time.sleep(30)
+        return it
+
+
+def test_stop_does_not_wait_for_running_work():
+    """o Parar não espera a conta que está rodando num processo terminar: o processo é encerrado"""
+    import time
+    t0 = time.time()
+    out = Pipeline([Slow()]).run([StageItem(f"c{x}") for x in range(4)], workers=2,
+                                 cancel=lambda: time.time() - t0 > 1.0)
+    assert time.time() - t0 < 8 and all(not i.alive and "cancelado" in i.why for i in out)
+
+
 def _project():
     p = DesignProject()
     p.wing_draft.area, p.wing_draft.alpha_cruise = 1.0, 3.0
@@ -226,3 +245,13 @@ def test_stability_makes_dihedral_count():
     assert pos["stab"]["Clb"] < 0 and pos["stab"]["Cnb"] > 0 and ("C_lβ" not in pos["why"])
     assert off.point({"wing.dihedral": -6.0})["stab"] == {}
     assert pickle.loads(pickle.dumps(on))._backend is None
+
+
+def test_area_says_where_the_configuration_stopped():
+    assert sg.area(dict(alive=False, why="geometria: EH bate no chão na rotação")) == "geometria"
+    assert sg.area(dict(alive=False, why="precisa de 0.05 kg de lastro de equilíbrio")) == "equilíbrio"
+    assert sg.area(dict(alive=False, why="estabilidade: instável direcional")) == "estabilidade"
+    assert sg.area(dict(alive=False, why="não decola na pista")) == "desempenho"
+    assert sg.area(dict(alive=False, why="não decola na pista; precisa de 0.07 kg de lastro")) == "equilíbrio + desempenho"
+    assert sg.area(dict(alive=True, nota=90.0, valido=True)) == "nota"
+    assert sg.area(dict(alive=True, nota=math.nan, stage="superfícies")) == "superfícies"

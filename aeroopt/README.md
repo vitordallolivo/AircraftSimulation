@@ -205,7 +205,7 @@ do avião (em negrito); com marcas, cada lista vira um eixo das configurações,
 lê um perfil novo para dentro do projeto e de todas as listas de perfis. Os botões de isolar soltam só as numéricas
 de um grupo, porque soltar todas as listas juntas multiplicaria as configurações sem necessidade.
 
-Na direita se vê a rodada. A janela se atualiza a cada candidato que termina uma etapa, não a cada passo do
+Na direita se vê a rodada. Na tabela das configurações cada uma aparece pelo número (o nome inteiro, com todas as escolhas, fica na dica e no painel do avião clicado), com a etapa em que está e a área de projeto em que parou: geometria, equilíbrio (lastro, EH, profundor), estabilidade, desempenho (não decola, estol, subida) ou restrições, todas as que o motivo cita (`stages.area`). O ■ Parar vale em uma fração de segundo: a espera pelos processos é curta, e a conta que está rodando num processo não tem como ouvir o pedido, então o processo é encerrado. A janela se atualiza a cada candidato que termina uma etapa, não a cada passo do
 núcleo: é o bastante para ver a busca andar sem pesar a conta. Os eixos dos gráficos se refazem a cada ponto que
 chega, para o que já foi avaliado. A tabela das etapas conta quantos entraram, quantos
 estão prontos e quantos seguiram. O gráfico da esquerda mostra o MTOW de cada ponto de projeto avaliado (cheio:

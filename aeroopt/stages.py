@@ -476,6 +476,25 @@ class StagedEvaluator(IEvaluator):
         return sts
 
 
+# a área de projeto de cada motivo, na ordem do projeto
+AREAS = (("geometria", ("geometria", "bate no chão", "hélice acerta", "fora da geometria", "soltas")),
+         ("equilíbrio", ("lastro", "EH estola", "profundor", "trim de decolagem")),
+         ("estabilidade", ("estabilidade", "instável", "C_nβ", "C_lβ", "nível")),
+         ("desempenho", ("não decola", "massa de projeto", "6GDL", "subida", "estol", "corrida")),
+         ("restrições", (" ≤ ", " ≥ ", " = ")))
+
+
+def area(r: dict) -> str:
+    """em que área de projeto a configuração está (viva) ou parou: todas as que o motivo cita, na ordem do projeto"""
+    if r.get("alive"):
+        if math.isfinite(r.get("nota", math.nan)):
+            return "nota" if r.get("valido") else "nota (voo inválido)"
+        return r.get("stage") or "na fila"
+    why = r.get("why", "")
+    hit = [name for name, words in AREAS if any(w in why for w in words)]
+    return " + ".join(hit) or r.get("stage") or "—"
+
+
 def row(item: StageItem) -> dict:
     """o candidato em linha de tabela (sem os objetos do avião)"""
     d = item.data
