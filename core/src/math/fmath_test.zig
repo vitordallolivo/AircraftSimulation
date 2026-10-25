@@ -106,4 +106,8 @@ test "NaN e infinito: sincos devolve NaN e wrap devolve o próprio valor, sem pa
     try std.testing.expect(std.math.isNan(fm.wrap(nan)));
     try std.testing.expectEqual(inf, fm.wrap(inf));
     try std.testing.expectApproxEqAbs(@as(f64, 1.0), fm.wrap(1.0 + 1.0e6 * 2.0 * std.math.pi), 1e-6);
+    try std.testing.expect(std.math.isNan(fm.atan2(nan, 1.0)));
+    try std.testing.expect(std.math.isNan(fm.atan2(1.0, nan)));
+    try std.testing.expect(std.math.isNan(fm.atan(nan)));
+    _ = fm.exp(nan); // o clamp já tira o NaN da conta: só não pode entrar em pane
 }

@@ -314,6 +314,31 @@ const Point = struct { m: f64, r: V3 };
 
 pub const DryMass = struct { m: f64, cg: V3, I: v3.M3 };
 
+/// raio de giração da meia superfície em torno do plano de simetria, com densidade por área constante:
+/// r² = ∫ (y_0 + η)² c(η) dη / ∫ c(η) dη, corda linear entre as seções, trapézios de 33 pontos por trecho
+/// (o mesmo de massprops.py `_half_gyration`); null sem seções ou sem área
+fn halfGyration(s: *const model.Surface) ?f64 {
+    if (s.sections.len < 2) return null;
+    var A: f64 = 0;
+    var J: f64 = 0;
+    for (s.sections[0 .. s.sections.len - 1], s.sections[1..]) |a, b| {
+        var e0 = a.y;
+        var c0 = a.chord;
+        for (1..33) |k| {
+            const t = @as(f64, @floatFromInt(k)) / 32.0;
+            const e1 = a.y + t * (b.y - a.y);
+            const c1 = a.chord + t * (b.chord - a.chord);
+            const h = e1 - e0;
+            A += 0.5 * h * (c0 + c1);
+            J += 0.5 * h * ((s.y + e0) * (s.y + e0) * c0 + (s.y + e1) * (s.y + e1) * c1);
+            e0 = e1;
+            c0 = c1;
+        }
+    }
+    if (!(A > 0)) return null;
+    return @sqrt(J / A);
+}
+
 pub fn dryMass(ac: *const Aircraft) DryMass {
     var items: [64]Point = undefined;
     var n: usize = 0;
@@ -340,7 +365,12 @@ pub fn dryMass(ac: *const Aircraft) DryMass {
         for (ac.surfaces) |*s| if (s.enabled and s.mass > 0) {
             const pos = model.tailOnBoom(ac, s);
             const mc = mac(s);
-            push(&items, &n, s.mass, .{ pos.x - 0.4 * (if (mc != 0) mc else 0.2), s.y, pos.z });
+            const x = pos.x - 0.4 * (if (mc != 0) mc else 0.2);
+            const r = if (s.symmetric and !s.vertical) halfGyration(s) else null;
+            if (r) |ry| { // cada meia asa com a metade da massa, no raio de giração dela (rolamento)
+                push(&items, &n, 0.5 * s.mass, .{ x, ry, pos.z });
+                push(&items, &n, 0.5 * s.mass, .{ x, -ry, pos.z });
+            } else push(&items, &n, s.mass, .{ x, s.y, pos.z });
         };
         const f = ac.fuselage;
         if (f.enabled and f.mass > 0) push(&items, &n, f.mass, .{ f.x_nose - 0.45 * f.length, 0, f.z });

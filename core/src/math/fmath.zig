@@ -91,7 +91,7 @@ pub const lut = struct {
         const a = k * (1.0 / @as(f64, atan_n));
         const d = z - a;
         const g = 1.0 / @mulAdd(f64, a, a, 1.0);
-        const i: usize = @intFromFloat(k);
+        const i: usize = if (k >= 0 and k <= atan_n) @intFromFloat(k) else 0; // NaN: sem pane, o resultado sai NaN
         return atan_table[i] + d * g * (1.0 - a * d * g);
     }
 
@@ -130,7 +130,7 @@ pub const lut = struct {
             break :blk c;
         };
         const p = if (estrin) estrin10(coef, r) else horner10(coef, r);
-        const ki: i64 = @intFromFloat(k);
+        const ki: i64 = if (@abs(k) < 4096) @intFromFloat(k) else 0; // NaN: sem pane, o resultado sai NaN
         const bits: u64 = @bitCast(ki + 1023);
         return p * @as(f64, @bitCast(bits << 52));
     }
@@ -241,7 +241,7 @@ pub const minimax = struct {
         inline for (1..9) |j| pc = @mulAdd(f64, pc, r2, cos_c[8 - j]);
         const s = r * ps;
         // quadrante sem desvio (com entradas aleatórias o desvio erra a previsão): máscaras sobre os bits
-        const ki: i64 = @intFromFloat(k);
+        const ki: i64 = if (@abs(k) < 9.0e18) @intFromFloat(k) else 0; // NaN: sem pane, o resultado sai NaN
         const q: u64 = @bitCast(ki);
         const swap: u64 = 0 -% (q & 1); // quadrantes 1 e 3: seno ↔ cosseno (tudo 1 ou tudo 0)
         const sb: u64 = @bitCast(s);

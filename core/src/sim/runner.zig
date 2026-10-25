@@ -171,7 +171,10 @@ pub fn resetGround(inst: *Instance) StateError!void {
     r.x[S.D] = -zr - h0;
     for (0..L.max_props) |i| r.x[S.rps(i)] = 1.0;
     var t: f64 = -3.0;
-    while (t < -1e-9) : (t += p.dt) dyn.rk4(inst.ctx(), t, &r.x, p.dt);
+    while (t < -1e-9) : (t += p.dt) {
+        dyn.rk4(inst.ctx(), t, &r.x, p.dt);
+        if (!std.math.isFinite(r.x[S.U]) or !std.math.isFinite(r.x[S.PHI]) or !std.math.isFinite(r.x[S.THE])) break;
+    }
     if (!finiteState(&r.x)) {
         r.valid = 0;
         return error.Diverged;
