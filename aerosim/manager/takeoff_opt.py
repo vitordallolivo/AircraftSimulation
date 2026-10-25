@@ -17,6 +17,7 @@ otimizar: a aeronave decola sozinha.
 from __future__ import annotations
 
 import math
+import threading
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -80,25 +81,56 @@ def judge(log, ev, x_warning: float, z_warning: float) -> tuple[float, float, fl
     return n_dec, h_min, x_excess, z_short, ok
 
 
+class _Runners:
+    """uma sessão do núcleo por thread, configurada uma vez para o avião. Entre uma decolagem e outra só muda o
+    comando de decolagem (`takeoff`), que o configure do núcleo não lê (core/src/sim/runner.zig, `configure`); o
+    resto do spec é o mesmo. Então reaproveitar a sessão dá o mesmo resultado, bit a bit, que abrir uma nova, sem
+    refazer a cada decolagem o `aero.init` (o pico de C_L de cada painel), que é a parte cara do configure."""
+
+    def __init__(self, backend, ac):
+        self.backend, self.ac = backend, ac
+        self._local = threading.local()
+        self._open: list[Runner] = []
+        self._lock = threading.Lock()
+
+    def get(self, key, mission, over: dict) -> Runner:
+        cache = self._local.__dict__.setdefault("runners", {})
+        r = cache.get(key)
+        if r is None:
+            r = cache[key] = Runner(self.backend, self.ac, mission, over)
+            with self._lock:
+                self._open.append(r)
+            return r
+        r.overrides = dict(over)
+        r.spec = self.backend.translator.to_native(r.model, mission=r.mission, overrides=r.overrides)
+        r.session.set(takeoff=r.spec["takeoff"])
+        return r
+
+    def close(self) -> None:
+        for r in self._open:
+            r.close()
+        self._open.clear()
+
+
 def evaluate(backend, ac, s: float | None, de: float, x_warning: float, z_warning: float,
-             overrides: dict | None = None, dtlog: float = 0.01, log: bool = False, de0: float | None = None):
+             overrides: dict | None = None, dtlog: float = 0.01, log: bool = False, de0: float | None = None,
+             runners: _Runners | None = None):
     """uma decolagem com acionamento em s (None: sem comando), deflexão de (graus) e, se dado, o profundor
-    de0 (graus) durante a corrida"""
+    de0 (graus) durante a corrida. `runners`: sessões reaproveitadas (as do `optimize`); None: uma sessão nova"""
     to = dict(sR=max(s, 1e-6) if s is not None else 1e9, VR=1e9, de1=math.radians(de),
               h_end=max(ac.takeoff.h_end, z_warning + 1.0))
     if de0 is not None and math.isfinite(de0):
         to["de0"] = math.radians(de0)
     over = dict(overrides or {})
     over.update(takeoff=dict(over.get("takeoff", {}), **to), tmax=over.get("tmax", 60.0), dtlog=dtlog)
-    with Runner(backend, ac, takeoff_runway(h=max(15.0, to["h_end"] + 5), V=ac.mission.V0), over) as r:
-        r.start_ground()
-        o = r.run(Stop(takeoff=True), live=False)
-        h0 = float(o.log["h"][0]) if len(o.log) else 0.0
-        status = o.status.name
-        if status == "COMPLETED":                 # decolar é continuar voando: mais 4 s depois de h_end
-            o2 = r.run(Stop(t=r.session.time + 4.0), live=False)
-            if o2.status.name == "CRASHED" or (len(o2.log) and float(o2.log["h"].min()) - h0 < max(z_warning, 0.0)):
-                status = "CAIU DEPOIS DE DECOLAR"
+    h_mission = max(15.0, to["h_end"] + 5)
+    mission = takeoff_runway(h=h_mission, V=ac.mission.V0)
+    if runners is None:
+        with Runner(backend, ac, mission, over) as r:
+            o, status, h0 = _fly(r, z_warning)
+    else:
+        key = (h_mission, ac.mission.V0, tuple(sorted((k, repr(v)) for k, v in over.items() if k != "takeoff")))
+        o, status, h0 = _fly(runners.get(key, mission, over), z_warning)
     n_dec, h_min, xe, zs, ok = judge(o.log, o.events, x_warning, z_warning)
     ok = ok and status == "COMPLETED"
     res = TakeoffResult(float("nan") if s is None else s, de, n_dec, h_min, xe, zs, ok, status, o.events,
@@ -107,12 +139,33 @@ def evaluate(backend, ac, s: float | None, de: float, x_warning: float, z_warnin
     return (res, o.log) if log else res
 
 
+def _fly(r: Runner, z_warning: float):
+    """corrida até decolar e mais 4 s de voo: (saída da corrida, situação, altura inicial)"""
+    r.start_ground()
+    o = r.run(Stop(takeoff=True), live=False)
+    h0 = float(o.log["h"][0]) if len(o.log) else 0.0
+    status = o.status.name
+    if status == "COMPLETED":                 # decolar é continuar voando: mais 4 s depois de h_end
+        o2 = r.run(Stop(t=r.session.time + 4.0), live=False)
+        if o2.status.name == "CRASHED" or (len(o2.log) and float(o2.log["h"].min()) - h0 < max(z_warning, 0.0)):
+            status = "CAIU DEPOIS DE DECOLAR"
+    return o, status, h0
+
+
 def optimize(backend, ac, x_warning: float, z_warning: float, parallel=None, overrides: dict | None = None,
              n_grid: int = 8, refine: int = 5) -> tuple[TakeoffResult, list[TakeoffResult]]:
     """melhor ponto de acionamento (e a maior deflexão que funciona); devolve (melhor, todos os testados)"""
+    runners = _Runners(backend, ac)       # uma sessão por thread, configurada uma vez
+    try:
+        return _optimize(backend, ac, x_warning, z_warning, parallel, overrides, n_grid, refine, runners)
+    finally:
+        runners.close()
+
+
+def _optimize(backend, ac, x_warning, z_warning, parallel, overrides, n_grid, refine, runners):
     run = parallel or (lambda fn, items: [fn(i) for i in items])
     if pitch_control(ac) is None:
-        r = evaluate(backend, ac, None, 0.0, x_warning, z_warning, overrides)
+        r = evaluate(backend, ac, None, 0.0, x_warning, z_warning, overrides, runners=runners)
         return r, [r]
     dmax = ac.autopilot.de_max
     grid = np.linspace(0.0, max(x_warning, 5.0) * 0.95, n_grid)
@@ -120,7 +173,7 @@ def optimize(backend, ac, x_warning: float, z_warning: float, parallel=None, ove
     for hold in (None, 0.25 * dmax, 0.5 * dmax):     # profundor na corrida: o do avião; depois picando
         for lv in LEVELS:                             # da deflexão máxima para baixo: para na 1ª que passa
             rs = run(lambda s: evaluate(backend, ac, float(s), -lv * dmax, x_warning, z_warning, overrides,
-                                        de0=hold), list(grid))
+                                        de0=hold, runners=runners), list(grid))
             tried += rs
             good = [r for r in rs if r.ok]
             if good:
@@ -136,7 +189,7 @@ def optimize(backend, ac, x_warning: float, z_warning: float, parallel=None, ove
     a, b = max(0.0, best.s - h), best.s + h
     g = (math.sqrt(5) - 1) / 2
     hold = None if not math.isfinite(best.de0) else best.de0
-    f = lambda s: evaluate(backend, ac, s, best.de, x_warning, z_warning, overrides, de0=hold)
+    f = lambda s: evaluate(backend, ac, s, best.de, x_warning, z_warning, overrides, de0=hold, runners=runners)
     c, d = b - g * (b - a), a + g * (b - a)
     rc, rd = f(c), f(d)
     tried += [rc, rd]

@@ -208,7 +208,8 @@ class ZigSession(ISimSession):
         """muda escalares sem refazer tudo (ex.: stop_t, stop_seg) — chama configure de novo"""
         p = self._lib.dll.aerosim_params(self._slot).contents
         abi.write(p, overrides)
-        if any(not k.startswith("stop_") for k in overrides):   # paradas não mudam nada derivado
+        # paradas e o comando de decolagem não mudam nada derivado (o configure do núcleo não os lê)
+        if any(not (k.startswith("stop_") or k == "takeoff") for k in overrides):
             _check(self._lib.dll.aerosim_configure(self._slot), "configure")
 
     # ------------------------------------------------------------------ corrida
