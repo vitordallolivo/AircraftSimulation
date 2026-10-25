@@ -16,6 +16,7 @@ otimizar: a aeronave decola sozinha.
 """
 from __future__ import annotations
 
+import contextlib
 import math
 import threading
 from dataclasses import dataclass, field
@@ -82,34 +83,43 @@ def judge(log, ev, x_warning: float, z_warning: float) -> tuple[float, float, fl
 
 
 class _Runners:
-    """uma sessão do núcleo por thread, configurada uma vez para o avião. Entre uma decolagem e outra só muda o
-    comando de decolagem (`takeoff`), que o configure do núcleo não lê (core/src/sim/runner.zig, `configure`); o
-    resto do spec é o mesmo. Então reaproveitar a sessão dá o mesmo resultado, bit a bit, que abrir uma nova, sem
-    refazer a cada decolagem o `aero.init` (o pico de C_L de cada painel), que é a parte cara do configure."""
+    """sessões do núcleo configuradas uma vez para o avião e emprestadas a quem vai decolar (uma por decolagem ao
+    mesmo tempo). Entre uma decolagem e outra só muda o comando de decolagem (`takeoff`), que o configure do núcleo
+    não lê (core/src/sim/runner.zig, `configure`); o resto do spec é o mesmo. Então reaproveitar a sessão dá o mesmo
+    resultado, bit a bit, que abrir uma nova, sem refazer a cada decolagem o `aero.init` (o pico de C_L de cada
+    painel), que é a parte cara do configure. As sessões livres ficam numa fila, não presas à thread: cada chamada
+    do `parallel` pode abrir threads novas, e o núcleo tem poucas vagas (`L.max_instances`)."""
 
     def __init__(self, backend, ac):
         self.backend, self.ac = backend, ac
-        self._local = threading.local()
+        self._free: dict = {}
         self._open: list[Runner] = []
         self._lock = threading.Lock()
 
-    def get(self, key, mission, over: dict) -> Runner:
-        cache = self._local.__dict__.setdefault("runners", {})
-        r = cache.get(key)
+    @contextlib.contextmanager
+    def borrow(self, key, mission, over: dict):
+        with self._lock:
+            free = self._free.setdefault(key, [])
+            r = free.pop() if free else None
         if r is None:
-            r = cache[key] = Runner(self.backend, self.ac, mission, over)
+            r = Runner(self.backend, self.ac, mission, over)
             with self._lock:
                 self._open.append(r)
-            return r
-        r.overrides = dict(over)
-        r.spec = self.backend.translator.to_native(r.model, mission=r.mission, overrides=r.overrides)
-        r.session.set(takeoff=r.spec["takeoff"])
-        return r
+        else:
+            r.overrides = dict(over)
+            r.spec = self.backend.translator.to_native(r.model, mission=r.mission, overrides=r.overrides)
+            r.session.set(takeoff=r.spec["takeoff"])
+        try:
+            yield r
+        finally:
+            with self._lock:
+                self._free[key].append(r)
 
     def close(self) -> None:
         for r in self._open:
             r.close()
         self._open.clear()
+        self._free.clear()
 
 
 def evaluate(backend, ac, s: float | None, de: float, x_warning: float, z_warning: float,
@@ -130,7 +140,8 @@ def evaluate(backend, ac, s: float | None, de: float, x_warning: float, z_warnin
             o, status, h0 = _fly(r, z_warning)
     else:
         key = (h_mission, ac.mission.V0, tuple(sorted((k, repr(v)) for k, v in over.items() if k != "takeoff")))
-        o, status, h0 = _fly(runners.get(key, mission, over), z_warning)
+        with runners.borrow(key, mission, over) as r:
+            o, status, h0 = _fly(r, z_warning)
     n_dec, h_min, xe, zs, ok = judge(o.log, o.events, x_warning, z_warning)
     ok = ok and status == "COMPLETED"
     res = TakeoffResult(float("nan") if s is None else s, de, n_dec, h_min, xe, zs, ok, status, o.events,
@@ -155,7 +166,7 @@ def _fly(r: Runner, z_warning: float):
 def optimize(backend, ac, x_warning: float, z_warning: float, parallel=None, overrides: dict | None = None,
              n_grid: int = 8, refine: int = 5) -> tuple[TakeoffResult, list[TakeoffResult]]:
     """melhor ponto de acionamento (e a maior deflexão que funciona); devolve (melhor, todos os testados)"""
-    runners = _Runners(backend, ac)       # uma sessão por thread, configurada uma vez
+    runners = _Runners(backend, ac)       # sessões configuradas uma vez, emprestadas a cada decolagem
     try:
         return _optimize(backend, ac, x_warning, z_warning, parallel, overrides, n_grid, refine, runners)
     finally:
