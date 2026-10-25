@@ -167,9 +167,7 @@ export fn aerosim_prop_state(slot: i32, idx: i32, V: f64, alpha: f64, beta: f64,
     const r = prop.unit(&inst.p, u, eT, Vr, vec.zero, n, if (imposed) 1.0 else thr, 0);
     const Vax = vec.dot(Vr, eT);
     const Ps = r.Q * 2.0 * fm.pi * n;
-    out.* = .{ .V = Vax, .rpm = n * 60.0, .J = r.J, .T = r.T, .Q = r.Q, .P_shaft = Ps,
-        .P_elec = if (imposed) 0 else r.P, .I = if (imposed) 0 else r.I,
-        .eta_prop = if (Ps > 1e-6) r.T * Vax / Ps else 0 };
+    out.* = .{ .V = Vax, .rpm = n * 60.0, .J = r.J, .T = r.T, .Q = r.Q, .P_shaft = Ps, .P_elec = if (imposed) 0 else r.P, .I = if (imposed) 0 else r.I, .eta_prop = if (Ps > 1e-6) r.T * Vax / Ps else 0 };
     return 0;
 }
 
