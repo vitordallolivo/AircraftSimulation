@@ -60,3 +60,22 @@ def test_isolated_variable_is_the_only_one_that_moves():
     assert {r["area"] for r in res.rows} == {p.wing_draft.area}
     assert {r["tilt"] for r in res.rows} == {p.power_draft.tilt}
     assert p.variables == _project().variables                      # o projeto do usuário não mudou
+
+
+def test_command_line_tool(tmp_path, capsys):
+    """tools/aeroopt.py: grava o exemplo, roda isolando a asa e grava a convergência"""
+    import importlib.util
+    import pathlib
+    spec = importlib.util.spec_from_file_location(
+        "aeroopt_tool", pathlib.Path(__file__).resolve().parents[2] / "tools" / "aeroopt.py")
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    f, png = tmp_path / "ex.opt.json", tmp_path / "c.png"
+    assert tool.main(["--exemplo", str(f)]) == 0
+    pr = aeroopt.load(str(f))
+    pr.solver.update(particles=4, iterations=2)
+    pr.scoring = "sae_br_2026_micro"
+    aeroopt.save(pr, str(f))
+    assert tool.main([str(f), "--isolar", "asa", "--png", str(png)]) == 0
+    out = capsys.readouterr().out
+    assert "ainda não calcula" in out and "melhor ponto" in out and png.exists()

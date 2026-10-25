@@ -5,6 +5,17 @@ rápido. Nenhum faz conta própria. O cálculo é do núcleo (`core/`) ou dos m�
 orquestra e desenha. O que elas gravam (gráficos, tabelas, voos) fica fora do git, em `perfis/` ou na pasta que você
 passar, e só as figuras escolhidas vão para `docs/img`.
 
+## Otimizador (`tools/aeroopt.py`)
+
+Roda um problema do aeroopt (`.opt.json`) pelo núcleo e imprime o melhor ponto, as grandezas e as restrições; com
+`--png`, grava a convergência. `--isolar asa` (ou chaves e grupos separados por vírgula) deixa livres só essas
+variáveis. Detalhes no [README do aeroopt](../aeroopt/README.md).
+
+```sh
+python tools/aeroopt.py --exemplo perfis/exemplo.opt.json
+python tools/aeroopt.py perfis/exemplo.opt.json --isolar asa --png perfis/convergencia.png
+```
+
 ## Aerodinâmica e voo com cada modelo (`tools/aero/`)
 
 Detalhes, comandos e resultados no [README da pasta](aero/README.md).

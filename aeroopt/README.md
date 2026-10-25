@@ -115,6 +115,14 @@ print(sc.name, sc.quantities())
 print(listing(sc.program()).splitlines()[:7])
 ```
 
+Pela linha de comando, `tools/aeroopt.py` roda um `.opt.json`, imprime o melhor ponto e as restrições e grava a
+convergência (`--png`); `--isolar` escolhe as variáveis livres na hora:
+
+```sh
+python tools/aeroopt.py --exemplo perfis/exemplo.opt.json
+python tools/aeroopt.py perfis/exemplo.opt.json --isolar asa --png perfis/convergencia.png
+```
+
 Testes: `python -m pytest -q tests/aeroopt`. Um regulamento novo é um `.toml` novo em `pontuacao/`, com a fonte na
 chave `fonte` e um teste com uma nota calculada à mão. Para acrescentar outra peça, escreva uma classe que implemente o contrato
 de `aerosim/interfaces/optim.py` e um teste em `tests/aeroopt`.

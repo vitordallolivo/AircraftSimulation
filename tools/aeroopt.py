@@ -1,0 +1,97 @@
+"""Roda um problema do aeroopt (.opt.json) e mostra o resultado: o melhor ponto, as restrições e a convergência.
+
+    python tools/aeroopt.py problema.opt.json                  # imprime
+    python tools/aeroopt.py problema.opt.json --png conv.png   # e grava a convergência
+    python tools/aeroopt.py --exemplo micro.opt.json           # grava um problema de exemplo (projeto novo da sprint)
+    python tools/aeroopt.py problema.opt.json --isolar asa     # só a asa livre (chaves ou grupos, separados por vírgula)
+
+O avaliador e o solver de hoje são o mini-MDO do núcleo (`aeroopt/mini_mdo.py`). Uma pontuação em .toml cujas
+entradas o avaliador ainda não calcula é avisada, e a busca usa o objetivo do mini-MDO (MTOW).
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+import aeroopt  # noqa: E402
+from aeroopt.mini_mdo import MiniMdoEvaluator, MiniMdoSolver  # noqa: E402
+from aeroopt.scoring import scoring_for  # noqa: E402
+
+
+def _fmt(v) -> str:
+    return f"{v:.4g}" if isinstance(v, float) else str(v)
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("problema", nargs="?")
+    ap.add_argument("--exemplo", metavar="ARQ", help="grava um problema de exemplo e sai")
+    ap.add_argument("--isolar", help="só estas variáveis ou grupos ficam livres (vírgula)")
+    ap.add_argument("--png", help="grava a convergência (melhor nota viável por iteração)")
+    a = ap.parse_args(argv)
+    from aerosim.design.project import DesignProject
+    if a.exemplo:
+        pr = aeroopt.from_project(DesignProject(), "exemplo: asa e motorização")
+        pr.isolate("wing.span", "wing.area", "power.tilt")
+        pr.solver.update(particles=12, iterations=8)
+        aeroopt.save(pr, a.exemplo)
+        print(f"gravado: {a.exemplo}")
+        return 0
+    if not a.problema:
+        ap.error("falta o arquivo do problema")
+    pr = aeroopt.load(a.problema)
+    if a.isolar:
+        pr.isolate(*[s.strip() for s in a.isolar.split(",") if s.strip()])
+    ev = MiniMdoEvaluator(DesignProject())
+    sc = scoring_for(pr.scoring)
+    missing = [q for q in sc.quantities() if q not in ev.quantities()]
+    print(f"problema: {pr.name or a.problema}")
+    print(f"livres: {', '.join(v.key for v in pr.free_variables()) or '(nenhuma)'}")
+    print(f"nota: {sc.name}" + (f"  [{sc.source}]" if sc.source else ""))
+    if missing:
+        print(f"  aviso: o avaliador {ev.name} ainda não calcula {', '.join(missing)}; a busca usa o MTOW")
+        pr.scoring = "MTOW"
+
+    def progress(it, rows):
+        ok = [r for r in rows if r["feasible"]]
+        best = max((r["score"] for r in ok), default=float("nan"))
+        print(f"  iteração {it + 1}: {len(rows)} avaliações, melhor viável {best:.4g}", flush=True)
+    res = MiniMdoSolver().run(pr, ev, progress)
+    b = max(res.rows, key=lambda r: (r["feasible"], r["fitness"]))
+    print("\nmelhor ponto" + ("" if b["feasible"] else " (NÃO cumpre as restrições)"))
+    for k in ("span", "area", "taper", "airfoil", "airfoil_tip", "motor", "propeller", "motors", "tilt", "layout"):
+        print(f"  {k:12s} {_fmt(b[k])}")
+    q = dict(zip(res.names["quantities"], res.best["q"]))
+    print("grandezas")
+    for k in ("mtow", "pv", "cp", "ee", "s_to", "V_S", "b", "S"):
+        print(f"  {k:12s} {_fmt(float(q[k]))}")
+    print("restrições")
+    from aerosim.design import registry as rg
+    for c in pr.constraints:
+        if c.active and c.key in q:
+            ok, txt = rg.Constraint(c.key, c.op, c.value).check(float(q[c.key]))
+            print(f"  {'ok ' if ok else 'NÃO'} {rg.QUANTITIES.get(c.key, rg.Quantity(c.key)).label}: {txt}")
+    if a.png:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from aerosim.design import mdo
+        h = mdo.history(res.rows)
+        fig, ax = plt.subplots(figsize=(7, 4))
+        ax.scatter([r["iter"] + 1 for r in res.rows], [r["score"] for r in res.rows], s=10, alpha=.35,
+                   c=["#2c7fb8" if r["feasible"] else "#d95f0e" for r in res.rows], label="avaliações (laranja: inviável)")
+        ax.plot([r["iter"] + 1 for r in h], [r["score"] for r in h], color="k", lw=2, label="melhor até a iteração")
+        ax.set(xlabel="iteração", ylabel=pr.scoring, title=pr.name or os.path.basename(a.problema))
+        ax.grid(alpha=.3)
+        ax.legend(fontsize=9)
+        fig.tight_layout()
+        fig.savefig(a.png, dpi=120)
+        print(f"gravado: {a.png}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
