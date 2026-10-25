@@ -88,6 +88,9 @@ def test_window_runs_and_shows_each_candidate(app):
     assert "Cargas" not in titles
     _wait(app, lambda: w.analyses.isEnabled())
     assert w.sim_state.aircraft.name == w.selected
+    # o avião refeito depois da rodada não segura o Otimizar (antes ele ficava desligado em 100 %)
+    _wait(app, lambda: not w._side)
+    assert w.run_b.isEnabled() and not w.stop_b.isEnabled()
     _wait(app, lambda: not w._threads)
 
 

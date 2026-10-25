@@ -16,6 +16,19 @@ python tools/aeroopt.py --exemplo perfis/exemplo.opt.json
 python tools/aeroopt.py perfis/exemplo.opt.json --isolar asa --png perfis/convergencia.png
 ```
 
+## Paralelismo do otimizador (`tools/pipeline_bench.py`)
+
+Compara as formas de rodar o processo em etapas do aeroopt em paralelo. O mesmo lote de configurações roda em série, em
+threads e em processos (fork, spawn, forkserver), e a ferramenta imprime o tempo de cada etapa e o ganho sobre a série.
+Ela também confere se cada estratégia deu o mesmo resultado da série. Da fração que não paraleliza (Karp e Flatt)
+sai quanto de cada etapa fica preso ao GIL, a trava do Python que deixa só uma thread rodar código Python por vez.
+`--png` grava o ganho por etapa.
+
+```sh
+python tools/pipeline_bench.py --exemplo
+python tools/pipeline_bench.py --projeto p.json --problema q.opt.json --configs 12 --processos 2,4 --png perfis/bench.png
+```
+
 ## Aerodinâmica e voo com cada modelo (`tools/aero/`)
 
 Detalhes, comandos e resultados no [README da pasta](aero/README.md).

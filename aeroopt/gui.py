@@ -650,7 +650,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.order: list[str] = []                           # configurações na ordem em que ganharam nota
         self.funnel: dict[str, list[int]] = {}
         self.selected: str | None = None
-        self._threads: list = []
+        self._threads: list = []                             # a rodada (o Otimizar volta quando ela acaba)
+        self._side: list = []                                # o avião selecionado sendo refeito (não segura a rodada)
         self._cancel = threading.Event()
         split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         self.setCentralWidget(split)
@@ -1428,8 +1429,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         th.started.connect(w.run)
         for sig in (w.done, w.failed):
             sig.connect(th.quit)
-        th.finished.connect(lambda: self._threads.remove((th, w)) if (th, w) in self._threads else None)
-        self._threads.append((th, w))
+        th.finished.connect(lambda: self._side.remove((th, w)) if (th, w) in self._side else None)
+        self._side.append((th, w))
         th.start()
 
     def _show3d(self, name: str, d: dict):

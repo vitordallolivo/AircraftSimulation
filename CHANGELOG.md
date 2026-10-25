@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, paralelismo: `tools/pipeline_bench.py` compara série, threads e processos (fork, spawn, forkserver) no
+  processo em etapas, com o tempo e o ganho de cada etapa, a fração presa ao GIL e a conferência de que o resultado
+  não muda; `Pipeline.times` guarda o tempo de cada etapa. Correção: o Otimizar ficava desligado depois de uma
+  rodada com avião selecionado (a reconstrução dele contava como parte da rodada).
 - aeroopt, README: agora é a descrição geral e a janela, botão por botão, com as imagens da GUI
   (`docs/img/aeroopt/`). O texto das contas e de como chamar cada peça foi para `aeroopt/COMO_FUNCIONA.md`.
 - aeroopt, análises do aerosim: sob o avião selecionado, as abas do aerosim (dimensionamento, aerodinâmica com a

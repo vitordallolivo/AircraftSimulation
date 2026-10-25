@@ -11,6 +11,7 @@ Uma etapa pode também tratar o lote inteiro de uma vez (a nota, que o núcleo c
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolExecutor, wait
 
@@ -29,6 +30,7 @@ class Pipeline:
         self.stages = list(stages)
         self.start_method = start_method                  # processos: "fork", "spawn"... (None = o do sistema)
         self.log: list[tuple[str, int, int]] = []         # por etapa: nome, quantos entraram, quantos seguiram
+        self.times: list[tuple[str, float]] = []          # por etapa: nome e o tempo de parede dela (s)
 
     def run(self, items: list[StageItem] | None = None, workers: int | None = None,
             progress: Callable[[float, str], None] | None = None,
@@ -43,6 +45,7 @@ class Pipeline:
                 break
             alive = [i for i in items if i.alive]
             done = 0
+            t0 = time.perf_counter()
 
             def tick(it: StageItem, k=k, st=st, alive=alive):
                 nonlocal done
@@ -68,6 +71,7 @@ class Pipeline:
                 if i.alive and id(i) not in keep:
                     i.alive, i.why = False, i.why or f"{st.name}: não foi escolhido"
             self.log.append((st.name, len(alive), len(kept)))
+            self.times.append((st.name, time.perf_counter() - t0))
         return items
 
     def _map(self, st: IStage, alive: list[StageItem], workers, tick, cancel) -> list[StageItem]:
