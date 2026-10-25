@@ -24,7 +24,8 @@ Ela também confere se cada estratégia deu o mesmo resultado da série. Da fra�
 sai quanto de cada etapa fica preso ao GIL, a trava do Python que deixa só uma thread rodar código Python por vez.
 `--png` grava o ganho por etapa. Com `--geracoes N` o lote passa N vezes, como nas gerações do otimizador: os
 processos ficam vivos a rodada inteira (`aerosim/parallel`), e as estratégias com "-novo" no nome abrem um pool novo
-a cada etapa, como era antes, para mostrar o custo de nascer.
+a cada etapa, como era antes, para mostrar o custo de nascer. `--sintetico S` troca as contas do avião pelos dados de
+teste do aeroopt (`aeroopt/synthetic.py`), com S segundos por ponto, e mede só o paralelismo.
 
 ```sh
 python tools/pipeline_bench.py --exemplo

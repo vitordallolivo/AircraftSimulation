@@ -654,9 +654,10 @@ class _Worker(QtCore.QObject):
 
 
 class AeroOptWindow(QtWidgets.QMainWindow):
-    def __init__(self, project=None, problem=None, path: str = ""):
+    def __init__(self, project=None, problem=None, path: str = "", synthetic: bool = False):
         super().__init__()
-        self.setWindowTitle("aeroopt — otimizador do projeto")
+        self.synthetic = synthetic                 # os dados de teste (aeroopt/synthetic.py) no lugar das contas
+        self.setWindowTitle("aeroopt — otimizador do projeto" + (" (dados sintéticos)" if synthetic else ""))
         _fit_screen(self, 1600, 1000)
         self.project, self.path = project, path
         self.problem = problem
@@ -1246,6 +1247,10 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                                 stability=sg.StabilityParams(level=self.stab_level.currentData())
                                 if self.stab.isChecked() else None,
                                 fly=None if m["voa"] == "desligada" else m["voa"])
+        if self.synthetic:
+            from .synthetic import SyntheticEvaluator
+            ev = SyntheticEvaluator(self.project, workers=self.workers.value(), evals=self.evals.value(),
+                                    surfaces=m["superfícies"], start_method="spawn", delay=0.02)
         stage_names = [s.name for s in ev.stages(self.project, pr)]
         self.funnel = {s: [0, 0, 0] for s in stage_names}
         self._scoring = scoring
@@ -1628,7 +1633,7 @@ def main(argv=None) -> int:
             problem = aeroopt.load(a)
         elif a.endswith(".json"):
             project, path = DesignProject.load(a), a
-    win = AeroOptWindow(project, problem, path)
+    win = AeroOptWindow(project, problem, path, synthetic="--sintetico" in argv)
     win.show()
     return app.exec()
 

@@ -17,7 +17,8 @@ alta, biplano ou asa voadora, ficam em `categories.py`. A pontuação de cada re
 traduzido por `scoring.py` para o núcleo calcular. A busca anda em etapas (`stages.py`, com a fila em `pipeline.py`):
 cada avião passa pela geometria, depois por "voa?", depois pelo desempenho e, por fim, pela nota. Quem escolhe quais
 aviões experimentar são as gerações de um algoritmo genético (`generations.py`). A janela fica em `gui.py`, e os CSV
-de cada rodada saem de `export.py`.
+de cada rodada saem de `export.py`. Para testar a máquina sem esperar as contas do avião, `synthetic.py` traz dados de
+teste: as mesmas etapas com funções simples, em que já se sabe onde cada configuração para e qual é a melhor.
 
 | arquivo | o que tem |
 |---|---|
@@ -29,6 +30,7 @@ de cada rodada saem de `export.py`.
 | `generations.py` | as gerações de configurações (algoritmo genético no núcleo) |
 | `gui.py` | a janela |
 | `export.py` | os CSV de cada rodada |
+| `synthetic.py` | os dados de teste: um avaliador rápido com o resultado sabido de antemão |
 | `mini_mdo.py` | o mini-MDO do núcleo, a primeira versão, que fica como alternativa |
 
 As contas que rodam no núcleo para o aeroopt (a nota, o algoritmo genético e o CMA-ES) estão explicadas em
@@ -73,6 +75,7 @@ desempenho. Eles servem para conferir de relance se o avião que está ganhando 
 ```sh
 python -m aeroopt --exemplo                            # a janela com um projeto de exemplo
 python -m aeroopt meu_projeto.json problema.opt.json   # partindo de um projeto da sprint
+python -m aeroopt --exemplo --sintetico                # a janela com os dados de teste: a rodada em segundos
 python tools/aeroopt.py problema.opt.json --etapas --projeto meu_projeto.json   # sem janela
 python -m pytest -q tests/aeroopt                      # os testes
 ```

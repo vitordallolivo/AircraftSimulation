@@ -6,6 +6,7 @@ a série e quanto de cada etapa fica preso ao GIL.
     python tools/pipeline_bench.py --projeto p.json --problema q.opt.json --configs 12 --processos 2,4
     python tools/pipeline_bench.py --exemplo --estrategias serie,threads,spawn --png bench.png
     python tools/pipeline_bench.py --exemplo --geracoes 4 --estrategias serie,spawn,spawn-novo   # o pool que dura
+    python tools/pipeline_bench.py --exemplo --sintetico 0.01          # dados de teste: só o custo do paralelismo
 
 O Python só deixa uma linha de execução rodar código Python por vez (o GIL, *global interpreter lock*). As chamadas
 ao núcleo em Zig (ctypes) soltam o GIL, então uma etapa que passa quase todo o tempo no núcleo ganha com threads, e
@@ -182,6 +183,8 @@ def main(argv=None) -> int:
     ap.add_argument("--estrategias", default="serie,threads,fork,spawn", help=", ".join(STRATEGIES))
     ap.add_argument("--superficies", default="coordenadas", help="método das superfícies")
     ap.add_argument("--seis-gdl", action="store_true", help="inclui a decolagem 6GDL (bem mais lenta)")
+    ap.add_argument("--sintetico", type=float, metavar="S", help="os dados de teste (aeroopt/synthetic.py) no lugar "
+                    "das contas, com S segundos por ponto: mede só o paralelismo")
     ap.add_argument("--png", help="grava o ganho por etapa")
     a = ap.parse_args(argv)
     import aeroopt
@@ -198,7 +201,11 @@ def main(argv=None) -> int:
     if bad:
         ap.error(f"estratégia desconhecida: {', '.join(bad)}")
     workers = [int(x) for x in a.processos.split(",") if x.strip()]
-    ev = StagedEvaluator(project, six_dof=a.seis_gdl, evals=a.avaliacoes, surfaces=a.superficies)
+    if a.sintetico is not None:
+        from aeroopt.synthetic import SyntheticEvaluator
+        ev = SyntheticEvaluator(project, evals=a.avaliacoes, surfaces=a.superficies, delay=a.sintetico)
+    else:
+        ev = StagedEvaluator(project, six_dof=a.seis_gdl, evals=a.avaliacoes, surfaces=a.superficies)
     items = sample(project, problem, a.configs)
     gil = getattr(sys, "_is_gil_enabled", lambda: True)()
     print(f"{len(items)} configurações × {a.geracoes} gerações, {a.avaliacoes} avaliações cada · "

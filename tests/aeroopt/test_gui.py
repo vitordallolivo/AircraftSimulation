@@ -263,3 +263,19 @@ def test_saved_files_get_their_extension():
     assert with_ext("/x/as1.opt.json", ".opt.json") == "/x/as1.opt.json"
     assert with_ext("/x/as1.JSON", ".opt.json") == "/x/as1.JSON"
     assert with_ext("/x/micro", ".toml") == "/x/micro.toml"
+
+
+def test_window_with_synthetic_data_finds_the_known_best(app):
+    """`python -m aeroopt --sintetico`: a janela inteira com os dados de teste, em segundos"""
+    from aeroopt import synthetic as sy
+    from aeroopt.gui import AeroOptWindow, example_project
+    p, pr = example_project()
+    w = AeroOptWindow(p, pr, synthetic=True)
+    w.workers.setValue(1)
+    w.evals.setValue(16)
+    w.start()
+    _wait(app, lambda: not w._threads, 60)
+    assert len(w.rows) == len(sy.expected(p, pr))
+    best = max(w.rows.values(), key=lambda r: (r["valido"], r["nota"]))
+    assert best["name"] == sy.best(p, pr) and "sintéticos" in w.windowTitle()
+    _wait(app, lambda: not w._side and w._best_job is None)
