@@ -14,7 +14,8 @@ local impõem (densidade do ar, limite da bateria).
 
 A pasta se divide em quatro partes, na ordem em que aparecem num uso: o problema e seu arquivo (`problem.py`), a
 pontuação de cada regulamento (`scoring.py` e a pasta `pontuacao/`), os contratos que cada peça cumpre (em
-`aerosim/interfaces/optim.py`) e as peças já ligadas a eles, por enquanto o mini-MDO do núcleo (`mini_mdo.py`).
+`aerosim/interfaces/optim.py`) e as peças já ligadas a eles: o processo em etapas (`pipeline.py` e `stages.py`), que
+é o caminho principal, e o mini-MDO do núcleo (`mini_mdo.py`), que fica como alternativa.
 
 ## O problema e o arquivo `.opt.json`
 
@@ -80,6 +81,43 @@ grandezas e diz a fonte da fórmula. `IEvaluator` transforma um candidato em gra
 os candidatos e devolve um `OptResult` com todas as avaliações e a melhor. Uma peça nova (um regulamento de outro
 ano, um avaliador de maior fidelidade, outro método) entra implementando o contrato, e quem usa não muda.
 
+## O processo em etapas
+
+Aqui se otimiza o avião seguindo o mesmo caminho da sprint, quebrado em etapas que todos os candidatos atravessam
+juntos. Uma **etapa** trata cada candidato sem olhar os outros; a próxima só começa quando o último candidato chega
+(a **barreira**). É essa espera que deixa paralelizar fácil: dentro de uma etapa cada candidato vai para um processo,
+e depois da barreira a etapa já vê todos e escolhe quem segue. Sem a barreira, um candidato rápido chegaria à nota
+antes de os outros serem dimensionados, e a escolha entre eles teria de esperar do mesmo jeito, só que espalhada
+pelo código.
+
+As etapas de hoje, em `stages.py`, são quatro. As **configurações** são as combinações das escolhas discretas livres
+(motor, hélice, perfil, arranjo, número de motores): cada combinação vira um candidato, até 256. As **superfícies**
+acertam, em cada configuração, as variáveis contínuas livres (envergadura, área, inclinação do motor) pela
+decolagem. Cada ponto é o ponto de projeto acoplado do aerosim (`power.design_point`: a asa calada e a EH retrimada
+com a tração, na massa que a pista deixa levar), e ganha o maior MTOW que fecha a estabilidade; a configuração que
+não fecha para ali, com o motivo. A **decolagem 6GDL** refaz o MTOW de cada sobrevivente na simulação de seis graus
+de liberdade (a aba Missão, modo MTOW), um processo por candidato. A **nota** calcula a pontuação de todos numa chamada
+só ao núcleo.
+
+O otimizador das superfícies é a busca por coordenadas com passo que encolhe: tenta mais e menos um passo em cada
+variável, aceita a primeira tentativa que melhora e, se nenhuma melhora, divide o passo por dois (Kolda, Lewis e
+Torczon, *Optimization by direct search*, SIAM Review 45(3), 2003, seção 3, a conferir no PDF). Ela foi escolhida
+porque o ponto de projeto tem saltos (viável ou não, decola ou não), então um método por derivada se perde, e porque
+com duas ou três variáveis ela chega perto do melhor em poucas avaliações (24 por configuração, por padrão).
+
+A nota da Micro precisa das duas cargas separadas. Com LAPES e líquido a bordo, a carga paga se divide igual entre as
+duas, porque é o que dá o maior $CP_M = 2\min(C_{LAPES}, C_{Liq})$:
+
+$$C_{LAPES} = C_{Liq} = \frac{MTOW - PV}{2}$$
+
+O MTOW é o do 6GDL quando essa etapa roda, e o da pista quando não. A corrida $s_{TO}$ é a pista pedida no projeto e
+$b$ é a envergadura.
+
+Cada candidato que termina uma etapa chama `progress(fração, texto)`, então quem mostra o andamento (a linha de
+comando hoje, a GUI depois) atualiza um candidato por vez. O `OptResult` traz uma linha por configuração (valores,
+MTOW, MTOW 6GDL, nota, fatores, validade, os pontos que a busca visitou) e, em `names["etapas"]`, quantos entraram e
+quantos seguiram em cada etapa.
+
 ## O mini-MDO do núcleo
 
 O primeiro avaliador e o primeiro solver são o mini-MDO que já existe em `core/src/sizing`: o PSO do núcleo propõe
@@ -115,13 +153,32 @@ print(sc.name, sc.quantities())
 print(listing(sc.program()).splitlines()[:7])
 ```
 
+O processo em etapas parte dos rascunhos de um projeto da sprint (com um conjunto guardado na etapa Empenagem):
+
+```python
+import aeroopt
+from aerosim.design.project import DesignProject
+from aeroopt.stages import StagedEvaluator, StagedSolver
+
+projeto = DesignProject.load("meu_projeto.json")
+pr = aeroopt.from_project(projeto, "Micro 2026")
+pr.scoring = "sae_br_2026_micro"
+pr.isolate("wing.span", "power.propeller")
+res = StagedSolver().run(pr, StagedEvaluator(projeto), progress=lambda f, t: print(f"{f:4.0%} {t}"))
+print(res.best["name"], res.best["nota"], res.names["etapas"])
+```
+
 Pela linha de comando, `tools/aeroopt.py` roda um `.opt.json`, imprime o melhor ponto e as restrições e grava a
 convergência (`--png`); `--isolar` escolhe as variáveis livres na hora:
 
 ```sh
 python tools/aeroopt.py --exemplo perfis/exemplo.opt.json
 python tools/aeroopt.py perfis/exemplo.opt.json --isolar asa --png perfis/convergencia.png
+python tools/aeroopt.py perfis/exemplo.opt.json --etapas --projeto meu_projeto.json --processos 4
 ```
+
+Uma etapa nova é uma classe que implementa `IStage` (`one` para um candidato, ou `batch = True` e `run` para o lote,
+e `select` para escolher quem segue) e entra na lista de `StagedEvaluator.stages`.
 
 Testes: `python -m pytest -q tests/aeroopt`. Um regulamento novo é um `.toml` novo em `pontuacao/`, com a fonte na
 chave `fonte` e um teste com uma nota calculada à mão. Para acrescentar outra peça, escreva uma classe que implemente o contrato

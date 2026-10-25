@@ -206,7 +206,7 @@ O terceiro braço: otimizador genérico (MDO) que monta um problema a partir de 
 | O02 | Contratos (`aerosim/interfaces/optim.py`: `IProblem`, `IScoring`, `IEvaluator`, `ISolver`) e o arquivo `.opt.json`; o mini-MDO de hoje nesse formato dá o mesmo resultado, bit a bit; isolar uma variável ou um grupo (`isolate`) | [zero] | — | B10 | Feito (a revisar) |
 | O03 | Núcleo: expressão de pontuação (`core/src/optim/expr.zig`) e álgebra linear de tamanho fixo (`core/src/math/linalg.zig`, LU e Cholesky), na ABI (`aerosim_expr_check`, `aerosim_expr_eval`); notas da Micro 2026 à mão no teste | [novo] | O01, O02 | B10 | Feito (a revisar) |
 | O04 | Ferramenta `tools/aeroopt.py problema.opt.json`: melhor ponto, restrições, convergência (`--png`), `--isolar`; a nota fator por fator entra quando o avaliador calcular as entradas da pontuação (O06) | [novo] | O03 | B10 | Feito (a revisar) |
-| O05 | GUI do aeroopt: problema, rodada ao vivo, pausar e continuar, mandar um candidato para o aerosim ou o AeroDrive, histórico | [GUI] | O04 | B10 | Pronto |
+| O05 | GUI do aeroopt: problema, rodada ao vivo (atualiza a cada candidato que termina uma etapa, como a página MDO; não precisa ser instantâneo), gerações de aviões, pausar e continuar, mandar um candidato para o aerosim ou o AeroDrive, histórico | [GUI] | O04, O13 | B10 | Pronto |
 | O06 | Variáveis abertas (qualquer campo do `Aircraft`) e as duas cargas da Micro (líquido e LAPES, duas posições de CG) | [ext] | O04 | B10 | Pronto |
 | O07 | Orquestração (pool de vagas fixas no núcleo, cascata, ilhas, pipeline, filtro por fidelidade) e reparo antes de avaliar | [novo] | O06, T28 | B10 | Bloqueado |
 | O08 | Caixa, montagem e desmontagem (era a T34): o encaixe das peças como sub-problema | [novo] | O07 | B10 | Bloqueado |
@@ -214,6 +214,7 @@ O terceiro braço: otimizador genérico (MDO) que monta um problema a partir de 
 | O10 | Solvers locais (Gould e Leyffer) e Lagrangiano aumentado no lugar da penalidade fixa | [novo] | O03 | B10 | Bloqueado |
 | O11 | SIMD e GPU, só depois de medir | [ext] | O07, T47 | B10 | Bloqueado |
 | O12 | Substituto aprendido a partir do histórico de avaliações | [novo] | O07 | B10 | Bloqueado |
+| O13 | Processo em etapas (o caminho principal no lugar do mini-MDO): configurações → superfícies pela decolagem (`power.design_point` com busca por coordenadas) → MTOW no 6GDL → nota no núcleo; barreira entre etapas e paralelo dentro (`aeroopt/pipeline.py`, `aeroopt/stages.py`, `--etapas` na ferramenta). Falta: a corrida da decolagem do `power.performance` ainda é Python (é o gargalo de cada ponto) | [novo] | O04 | B10 | Feito (a revisar) |
 | T59 | Otimização de perfis (futuro): forma do perfil por parâmetros (ex.: CST/Kulfan) com o polar do NeuralFoil (AeroSandbox, já instalado) ou do XFOIL (o motor do XFLR5), objetivo e restrições escolhidos pelo usuário (C_l máx, C_d no cruzeiro, C_m, espessura), atrás da interface de perfis; o perfil otimizado entra na biblioteca. Primeiro o plano com as fontes | [novo] | — | B3 | Pronto |
 
 ### comum

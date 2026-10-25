@@ -7,6 +7,8 @@ são peças trocáveis atrás de uma interface:
     IScoring    a nota (um arquivo de pontuação por regulamento, ou um objetivo simples como MTOW)
     IEvaluator  o avião candidato → as grandezas (massas, desempenho...), no núcleo
     ISolver     quem propõe os candidatos (PSO, busca aleatória, métodos locais)
+    IStage      uma etapa de um processo em etapas: todos os candidatos passam por ela, e a próxima só começa
+                quando o último chega (a barreira); dentro da etapa cada candidato roda em paralelo
 
 Isolar: uma variável só entra na busca quando está livre (`free`). As outras ficam no valor do avião, então dá
 para otimizar uma variável só, um grupo (`group`: asa, propulsão...) ou tudo.
@@ -126,3 +128,32 @@ class ISolver(ABC):
     def run(self, problem: OptProblem, evaluator: IEvaluator, progress: Progress | None = None,
             cancel: Callable[[], bool] | None = None) -> OptResult:
         """procura o melhor candidato; `progress(iteração, avaliações)` a cada iteração"""
+
+
+@dataclass
+class StageItem:
+    """um candidato andando pelas etapas: o que já se sabe dele vai se acumulando em `data`"""
+    name: str
+    values: dict = field(default_factory=dict)    # as variáveis que definem este candidato
+    data: dict = field(default_factory=dict)      # o que cada etapa deixou (avião, massas, nota...)
+    alive: bool = True                            # False: parou numa etapa (o motivo em `why`)
+    why: str = ""
+    stage: str = ""                               # a última etapa por onde passou
+
+
+class IStage(ABC):
+    """uma etapa. Ou trata um candidato por vez (`one`, que o processo roda em paralelo), ou o lote inteiro de uma
+    vez (`batch = True` e `run`, quando a conta é melhor em lote, como a nota no núcleo). `select` roda depois da
+    barreira, com todos os candidatos da etapa prontos"""
+    name: str = ""
+    batch: bool = False
+    parallel: str = "processos"                   # "processos", "threads" ou "não"
+
+    def one(self, item: StageItem) -> StageItem:
+        raise NotImplementedError
+
+    def run(self, items: list[StageItem]) -> list[StageItem]:
+        return [self.one(i) for i in items]
+
+    def select(self, items: list[StageItem]) -> list[StageItem]:
+        return items

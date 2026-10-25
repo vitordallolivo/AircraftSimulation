@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, processo em etapas (O13): configurações → superfícies acertadas pela decolagem → MTOW no 6GDL → nota no
+  núcleo, com todos os candidatos esperando entre uma etapa e outra e cada etapa em paralelo (`aeroopt/pipeline.py`,
+  `aeroopt/stages.py`, contrato `IStage` em `aerosim/interfaces/optim.py`). `tools/aeroopt.py --etapas --projeto`
+  roda pela linha de comando. O mini-MDO continua como alternativa, igual.
 - aeroopt, ferramenta (O04): `tools/aeroopt.py` roda um `.opt.json` pelo núcleo, imprime o melhor ponto, as grandezas e
   as restrições, grava a convergência (`--png`) e isola variáveis na hora (`--isolar asa`).
 - aeroopt, nota no núcleo (O03): `core/src/optim` confere e executa o programa da pontuação, para um candidato ou

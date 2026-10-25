@@ -48,7 +48,7 @@ flowchart LR
 | `IAircraftSource` / `ICatalogSource` | `load(path)` / `save(obj, path)` |
 | `IProjectStore` (`project_store.py`) | a biblioteca de aviões do usuário: listar, abrir, salvar com um nome |
 | `result_io.py` | `SimResult` ⇄ dicionário de JSON (para guardar no projeto o que já rodou) |
-| `OptProblem`, `IScoring`, `IEvaluator`, `ISolver` (`optim.py`) | o aeroopt: o problema (variáveis com `free` para isolar, restrições, nota, solver), a nota com a fonte, o candidato → grandezas no núcleo, quem propõe os candidatos (`run` → `OptResult`) |
+| `OptProblem`, `IScoring`, `IEvaluator`, `ISolver`, `IStage` (`optim.py`) | o aeroopt: o problema (variáveis com `free` para isolar, restrições, nota, solver), a nota com a fonte, o candidato → grandezas no núcleo, quem propõe os candidatos (`run` → `OptResult`) e uma etapa do processo em etapas (`one` por candidato ou `run` no lote, `select` depois da barreira) |
 
 Cada análise diz a área do projeto (`ISimulation.area`, uma de `AREAS`) e o nível: `level = "sprint"`
 (conta rápida, para comparar muitas variantes) ou `"detalhado"`; dentro de uma análise sprint,
