@@ -6,6 +6,16 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- Tracking por segmento: o quadro de `docs/TRACKING.md` tem uma tabela para o aerosim, o core, o AeroDrive, o aeroopt
+  (o otimizador, tarefas O01 a O12, à espera do ok do plano) e o que é comum. O VTOL saiu das Torres (T83).
+- Asas ligadas, tandem e biplano (T78): grupo de asas no modelo, na Montagem e na sprint. O modificador
+  `interferencia.asas` (T76, desligado por padrão) faz as faixas de uma asa sentirem a outra.
+- Motores livres (T79): arranjo nariz + pares na asa + propulsora.
+- Erros claros em vez de pane (T77, T80): o núcleo devolve sem trem, inércia inválida e divergência com texto (códigos
+  −6 a −8), o `fmath` não entra em pane com NaN, e o AeroDrive mostra a mensagem na tela.
+- Massa das superfícies simétricas em cada lado (T81), no aerosim e no AeroDrive.
+- Ajuste da decolagem sem travar (T85): sessões emprestadas de um pool.
+
 - READMEs com as equações (T75): cada pasta do `core` (`physics`, `sim`, `control`, `math`, `sizing`, `loads`,
   `modifiers`, `collision`) e do `aerosim` tem as equações em LaTeX, uma por parágrafo, com a fonte, e um exemplo em
   Python por arquivo, que roda. Os tempos de máquina e os números de um caso só saíram dos READMEs (ficam em
