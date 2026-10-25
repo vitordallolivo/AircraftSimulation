@@ -6,6 +6,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, mapa por variável: os eixos do mapa dos aviões são as variáveis do problema (as livres primeiro, depois as
+  fixas) além das grandezas do resultado; a cor continua a nota. Uma lista (perfil, motor, sim/não) vira um eixo
+  com o nome de cada opção. Abre nas duas primeiras variáveis livres.
 - aeroopt, CMA-ES: terceiro método das superfícies e da etapa voa (`method="cma-es"`), o CMA-ES de Hansen (2016)
   no núcleo (`core/src/optim/cmaes.zig`, exports `aerosim_cma_init`, `aerosim_cma_ask`, `aerosim_cma_tell`, struct
   `CmaState`). Ele aprende a forma da região boa e anda ao longo das variáveis acopladas. Autovalores de matriz

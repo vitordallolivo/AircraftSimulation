@@ -893,10 +893,9 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         _section(rv, "Mapa dos aviões")
         h = QtWidgets.QHBoxLayout()
         self.ax_x, self.ax_y = QtWidgets.QComboBox(), QtWidgets.QComboBox()
-        for c, d in ((self.ax_x, "PV (kg)"), (self.ax_y, "carga paga (kg)")):
-            c.addItems(list(AXES))
-            c.setCurrentText(d)
-            c.currentTextChanged.connect(lambda *_: self.draw_map())
+        for c in (self.ax_x, self.ax_y):
+            c.setMaxVisibleItems(30)
+            c.currentIndexChanged.connect(lambda *_: self.draw_map())
         h.addWidget(QtWidgets.QLabel("x:"))
         h.addWidget(self.ax_x)
         h.addWidget(QtWidgets.QLabel("y:"))
@@ -908,6 +907,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         rv.addLayout(h)
         self.map = _plot("PV (kg)", "carga paga (kg)", legend=False)
         self.map.setMinimumHeight(420)
+        for side in ("bottom", "left"):                # área em m² sem o "(x0.001)" nem o 600 no lugar de 0,6
+            self.map.getAxis(side).enableAutoSIPrefix(False)
         rv.addWidget(self.map)
         _section(rv, "Configurações")
         self.cfg_tab = _table(["id", "geração", "etapa", "área de projeto", "MTOW pista", "MTOW 6GDL", "PV", "nota",
@@ -978,6 +979,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         dela só existem no editor)"""
         self.vars.set_problem(pr, self.project)
         self.cons.set_problem(pr)
+        self._fill_axes(pr)
         for c, cb in self.cat_cb.items():
             cb.setChecked(c in (pr.params.get("categorias") or []))
         g = {**GEOMETRY_DEFAULT, **(pr.params.get("geometria") or {})}
@@ -1102,6 +1104,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             self.msg.setText(f"<span style='color:{BAD_C}'>pontuação: {e}</span>")
             return
         pr = self.read_problem()
+        self._fill_axes(pr)
         try:
             ax = sg.axes(self.project, pr)
             n_all = math.prod(len(o) for _, o in ax) if ax else 1
@@ -1256,6 +1259,54 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                     self.cfg_tab.item(i, j).setForeground(QtCore.Qt.GlobalColor.darkRed)
         self.cfg_tab.setSortingEnabled(True)
 
+    def _fill_axes(self, pr) -> None:
+        """os eixos do mapa: as variáveis do problema (as livres primeiro, depois as que ficam no valor do avião) e as
+        grandezas do resultado. Troca de problema mantém o eixo escolhido, se ele ainda existe"""
+        free = [v.key for v in pr.variables if v.free and inp.get(v.key)]
+        fixed = [v.key for v in pr.variables if not v.free and inp.get(v.key)]
+        items = [(self._var_label(k), "var:" + k, 0) for k in free]
+        items += [(self._var_label(k) + " · fixa", "var:" + k, 1) for k in fixed]
+        items += [(t, "res:" + k, 2) for t, k in AXES.items()]
+        texts = [t for t, _, _ in items]
+        for k, (t, d, g) in enumerate(items):       # nomes iguais em grupos diferentes (área da asa e da EH)
+            if texts.count(t) > 1:
+                where = d.split(":")[1].partition(".")[0] if g < 2 else "resultado"
+                items[k] = (f"{t} · {where}", d, g)
+        if len(free) >= 2:
+            first = ("var:" + free[0], "var:" + free[1])
+        elif free:
+            first = ("var:" + free[0], "res:nota")
+        else:
+            first = ("res:pv", "res:cp")
+        for c, d in zip((self.ax_x, self.ax_y), first):
+            keep = c.currentData()
+            c.blockSignals(True)
+            c.clear()
+            for k, (t, data, group) in enumerate(items):
+                if k and group != items[k - 1][2]:   # livres | fixas | resultado
+                    c.insertSeparator(c.count())
+                c.addItem(t, data)
+            i = c.findData(keep) if keep is not None else -1
+            c.setCurrentIndex(i if i >= 0 else max(c.findData(d), 0))
+            c.blockSignals(False)
+        self.draw_map()
+
+    @staticmethod
+    def _var_label(key: str) -> str:
+        i = inp.get(key)
+        return f"{i.label} ({i.unit})" if i.unit else i.label
+
+    def _raw(self, r: dict, axis: str):
+        """o valor de um eixo ("var:chave" ou "res:chave") para uma configuração: a variável como ela saiu (a do
+        avião, se não mudou) ou a grandeza do resultado"""
+        kind, _, key = axis.partition(":")
+        if kind == "var":
+            v = r.get("values", {}).get(key)
+            if v is None and self.project is not None:
+                v = inp.get_value(self.project, key)
+            return v
+        return self._value(r, key)
+
     def _value(self, r: dict, key: str) -> float:
         m6 = r.get("mtow6", math.nan)
         mtow = m6 if math.isfinite(m6) else r.get("mtow", math.nan)
@@ -1264,14 +1315,32 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                     nota=r.get("nota", math.nan), b=r.get("b", math.nan), m_bat=r.get("m_bat", math.nan))
         return float(vals[key])
 
+    def _coords(self, rows: list[dict], axis: str) -> tuple[list[float], list[str]]:
+        """as posições num eixo; uma lista (perfil, motor, sim/não) vira o índice da opção, e os nomes viram as
+        marcas do eixo"""
+        raw = [self._raw(r, axis) for r in rows]
+        if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in raw):
+            return [float(v) for v in raw], []
+        names = sorted({str(v) for v in raw})
+        return [float(names.index(str(v))) for v in raw], names
+
     def draw_map(self):
         self.map.clear()
-        kx, ky = AXES[self.ax_x.currentText()], AXES[self.ax_y.currentText()]
-        self.map.setLabel("bottom", self.ax_x.currentText())
-        self.map.setLabel("left", self.ax_y.currentText())
-        rows = [r for r in self.rows.values() if math.isfinite(self._value(r, kx)) and math.isfinite(self._value(r, ky))]
-        if (kx, ky) == ("pv", "cp") and rows:        # linhas de EE constante: CP = EE · PV
-            x1 = max(self._value(r, "pv") for r in rows) * 1.15
+        ax, ay = self.ax_x.currentData(), self.ax_y.currentData()
+        if ax is None or ay is None:
+            return
+        self.map.setLabel("bottom", self.ax_x.currentText().removesuffix(" · fixa"))
+        self.map.setLabel("left", self.ax_y.currentText().removesuffix(" · fixa"))
+        rows = list(self.rows.values())
+        xs, x_names = self._coords(rows, ax)
+        ys, y_names = self._coords(rows, ay)
+        keep = [k for k in range(len(rows)) if math.isfinite(xs[k]) and math.isfinite(ys[k])]
+        rows, xs, ys = [rows[k] for k in keep], [xs[k] for k in keep], [ys[k] for k in keep]
+        for side, names in (("bottom", x_names), ("left", y_names)):
+            short = [(k, os.path.basename(n).removesuffix(".dat")[:18] or "(vazio)") for k, n in enumerate(names)]
+            self.map.getAxis(side).setTicks([short] if names else None)
+        if (ax, ay) == ("res:pv", "res:cp") and rows:     # linhas de EE constante: CP = EE · PV
+            x1 = max(xs) * 1.15
             for ee in EE_LINES:
                 self.map.plot([0, x1], [0, ee * x1], pen=pg.mkPen("#b0b8c8", width=1, style=QtCore.Qt.PenStyle.DashLine))
                 t = pg.TextItem(f"EE {ee:g}", color="#8090a8", anchor=(0, 1))
@@ -1281,7 +1350,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         lo, hi = (min(notas), max(notas)) if notas else (0.0, 1.0)
         cmap = pg.colormap.get("viridis")
         spots = []
-        for r in rows:
+        for r, x, y in zip(rows, xs, ys):
             n = r["nota"]
             if math.isfinite(n):
                 c = cmap.map((n - lo) / (hi - lo) if hi > lo else 1.0, mode="qcolor")
@@ -1289,16 +1358,16 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             else:
                 brush, pen = pg.mkBrush(None), pg.mkPen("#999")
             size = 18 if r["name"] == self.selected else 12
-            spots.append(dict(pos=(self._value(r, kx), self._value(r, ky)), brush=brush, pen=pen, size=size,
-                              data=r["name"], symbol="o" if r["alive"] else "x"))
-        _fit_range(self.map, [p["pos"][0] for p in spots], [p["pos"][1] for p in spots])
+            spots.append(dict(pos=(x, y), brush=brush, pen=pen, size=size, data=r["name"],
+                              symbol="o" if r["alive"] else "x"))
+        _fit_range(self.map, xs, ys)
         sp = pg.ScatterPlotItem(spots=spots)
         sp.sigClicked.connect(lambda _it, pts, *_: pts and self.select(pts[0].data()))
         self.map.addItem(sp)
-        for r in rows:
+        for r, x, y in zip(rows, xs, ys):
             if r["name"] == self.selected or (notas and r["nota"] == hi):
                 t = pg.TextItem(f"nº {r.get('index', '')}", color="#1f2d3d", anchor=(0, 0))
-                t.setPos(self._value(r, kx), self._value(r, ky))
+                t.setPos(x, y)
                 self.map.addItem(t)
         self.map_note.setText(f"cor: nota de {_fmt(lo)} (roxo) a {_fmt(hi)} (amarelo) · borda vermelha: voo inválido · "
                               "×: parou numa etapa" if notas else "")

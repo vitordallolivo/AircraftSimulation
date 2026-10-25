@@ -69,6 +69,19 @@ def test_window_runs_and_shows_each_candidate(app):
     assert w.sel_tab.rowCount() > 5
     w.ax_x.setCurrentText("envergadura (m)")                       # o mapa troca de eixos sem rodar de novo
     w.ax_y.setCurrentText("nota")
+    # as variáveis do problema também são eixos: livres primeiro, depois as fixas, e a cor segue a nota
+    datas = [w.ax_x.itemData(i) for i in range(w.ax_x.count()) if w.ax_x.itemData(i)]
+    free = ["var:" + v.key for v in w.read_problem().variables if v.free]
+    assert datas[:len(free)] == free and "res:nota" in datas
+    assert w.ax_x.currentData() == free[0] or w.ax_x.currentText() == "envergadura (m) · resultado"
+    assert any(w.ax_x.itemText(i).endswith(" · fixa") for i in range(w.ax_x.count()))
+    w.ax_x.setCurrentIndex(w.ax_x.findData(free[0]))
+    xs, _ = w._coords(list(w.rows.values()), free[0])
+    assert len(xs) == 2 and all(math.isfinite(x) for x in xs)
+    lst = next("var:" + v.key for v in w.read_problem().variables if v.kind == "lista")
+    w.ax_y.setCurrentIndex(w.ax_y.findData(lst))                   # uma lista vira índice com o nome no eixo
+    ys, names = w._coords(list(w.rows.values()), lst)
+    assert names and all(0 <= y < len(names) for y in ys)
     _wait(app, lambda: not w._threads)
 
 
