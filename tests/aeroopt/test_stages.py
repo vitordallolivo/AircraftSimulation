@@ -144,7 +144,7 @@ def test_categories_build_each_kind_of_aircraft():
     pr.variable("power.propeller").options = ["APC 15x8E", "Genérica 11x7"]
     pr.params["categorias"] = ["asa alta", "biplano", "asa voadora"]
     items = sg.configurations(p, pr)
-    assert len(items) == 6 and items[0].name == "asa alta, propeller=APC 15x8E"
+    assert len(items) == 6 and items[0].name == "asa alta, hélice=APC 15x8E"
     pr.params["categorias"] = ["trimotor voador"]
     with pytest.raises(KeyError):
         sg.configurations(p, pr)

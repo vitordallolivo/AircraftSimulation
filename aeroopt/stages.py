@@ -46,9 +46,47 @@ from aerosim.interfaces.optim import (
 from . import categories as cat
 from . import scoring as sc
 from .pipeline import Pipeline
-from .problem import apply_to_project
+from .problem import apply_to_project, fold_bounds
 
-MAX_CONFIGS = 256                 # acima disso a lista de configurações é grande demais para varrer inteira
+MAX_CONFIGS = 256
+# variáveis de lista que o aeroopt escolhe além das do registro da sprint (`design.registry.INPUTS`)
+EXTRA_INPUTS = {"tail.airfoil": ("tail_draft.tail_airfoil", "perfil da EH"),
+                "tail.vairfoil": ("tail_draft.vtail_airfoil", "perfil da EV"),
+                "power.battery": ("power_draft.battery", "bateria")}
+AIRFOIL_KEYS = ("wing.airfoil", "wing.airfoil_tip", "tail.airfoil", "tail.vairfoil")
+SHORT = {"wing.airfoil": "perfil raiz", "wing.airfoil_tip": "perfil ponta", "tail.airfoil": "perfil EH",
+         "tail.vairfoil": "perfil EV", "power.motor": "motor", "power.propeller": "hélice",
+         "power.battery": "bateria", "power.motors": "nº de motores", "power.layout": "arranjo"}
+
+
+def short(key: str) -> str:
+    """o nome curto de uma variável, para o nome da configuração e as tabelas ("airfoil" sozinho não diz qual)"""
+    return SHORT.get(key) or key.partition(".")[2] or key
+
+
+def set_value(project, key: str, value) -> None:
+    if key in EXTRA_INPUTS:
+        obj, _, attr = EXTRA_INPUTS[key][0].partition(".")
+        setattr(getattr(project, obj), attr, value)
+    else:
+        rg.set_input(project, key, value)
+
+
+def get_value(project, key: str):
+    if key in EXTRA_INPUTS:
+        obj, _, attr = EXTRA_INPUTS[key][0].partition(".")
+        return getattr(getattr(project, obj), attr)
+    return rg.get_input(project, key)
+
+
+def available(project, key: str, catalog=None) -> list[str]:
+    """tudo o que uma variável de lista pode escolher (os perfis, o catálogo de motores, hélices e baterias)"""
+    if key in AIRFOIL_KEYS:
+        return list(mdo.airfoil_catalog(project))
+    if key == "power.battery":
+        from aerosim.model.catalog import builtin_catalog
+        return [b.name for b in (catalog or builtin_catalog()).batteries]
+    return mdo.available(project, key, catalog)
 
 
 def candidate(project, values: dict):
@@ -59,11 +97,11 @@ def candidate(project, values: dict):
     for k, v in values.items():
         if k == cat.KEY:
             continue
-        if k in ("wing.airfoil", "wing.airfoil_tip") and v and p.airfoil(v) is None:
+        if k in AIRFOIL_KEYS and v and p.airfoil(v) is None:
             e = mdo.airfoil_catalog(p).get(v)          # perfil da biblioteca que o projeto ainda não tem
             if e is not None:
                 p.airfoils.append(copy.deepcopy(e))
-        rg.set_input(p, k, v)
+        set_value(p, k, v)
     w = p.draft_wing()
     td = p.tail_draft
     w2 = w if td.wing2 == tl.SAME_WING else (p.wing(td.wing2) if td.wing2 and td.wing2 != tl.NO_WING2 else None)
@@ -78,7 +116,7 @@ def apply_values(project, values: dict) -> None:
     p, _ = candidate(project, {k: v for k, v in values.items() if k != cat.KEY})
     for k in values:
         if k != cat.KEY:
-            rg.set_input(project, k, rg.get_input(p, k))
+            set_value(project, k, get_value(p, k))
     project.airfoils = p.airfoils
 
 
@@ -100,7 +138,7 @@ def configurations(project, problem: OptProblem, catalog=None) -> list[StageItem
         axes.append((cat.KEY, cats))
     for v in problem.free_variables():
         if v.kind == "lista":
-            known = mdo.available(project, v.key, catalog)
+            known = available(project, v.key, catalog)
             unknown = [o for o in v.options if known and o not in known]
             if unknown:
                 raise ValueError(f"{v.key}: {', '.join(unknown)} não existe (há {', '.join(known)})")
@@ -114,7 +152,7 @@ def configurations(project, problem: OptProblem, catalog=None) -> list[StageItem
     out = []
     for combo in itertools.product(*(o for _, o in axes)):
         vals = dict(zip(keys, combo))
-        name = ", ".join(str(x) if k == cat.KEY else f"{k.partition('.')[2]}={x}" for k, x in vals.items()) \
+        name = ", ".join(str(x) if k == cat.KEY else f"{short(k)}={x}" for k, x in vals.items()) \
             or "configuração única"
         out.append(StageItem(name=name, values=vals, data={"index": len(out) + 1}))
     return out
@@ -151,7 +189,7 @@ class SurfaceSizing(IStage):
                     liquid=bool(cand.params.liquid), cand=d["cand"], req=d["req"])
 
     def one(self, item: StageItem) -> StageItem:
-        x = {k: min(max(float(rg.get_input(self.project, k)), lo), hi) for k, lo, hi in self.free}
+        x = {k: min(max(float(get_value(self.project, k)), lo), hi) for k, lo, hi in self.free}
         best = self.point({**item.values, **x})
         hist = [_eval(x, best)]
         step = {k: 0.25 * (hi - lo) for k, lo, hi in self.free}
@@ -267,6 +305,8 @@ class StagedSolver(ISolver):
     def run(self, problem, evaluator: StagedEvaluator, progress=None, cancel=None, on_item=None) -> OptResult:
         """`on_item(etapa, linha)` a cada candidato que termina uma etapa (a linha de `row`, sem os objetos)"""
         p = copy.deepcopy(evaluator.project)          # o projeto do usuário não muda
+        problem = copy.deepcopy(problem)
+        fold_bounds(problem, p)                       # envergadura, área, nº de motores: limites, não restrições
         apply_to_project(problem, p)                  # as restrições do problema valem na viabilidade
         items = configurations(p, problem, evaluator.catalog)
         pipe = Pipeline(evaluator.stages(p, problem), evaluator.start_method)

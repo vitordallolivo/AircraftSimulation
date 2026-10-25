@@ -131,12 +131,24 @@ quantos seguiram em cada etapa.
 avião pequeno, perto da classe Micro, para ver tudo funcionando. Na esquerda se monta o problema. A pontuação mostra
 tudo o que o `.toml` do regulamento tem (as entradas, as constantes, as faixas, os termos em ordem, a nota e as
 condições de voo válido), em campos editáveis: o que se muda vale na próxima rodada, "Conferir no núcleo" traduz e
-confere o programa, e "Gravar .toml…" grava um arquivo novo. Embaixo ficam as variáveis (livre ou fixa, limites,
-opções das listas, botões para isolar um grupo), as categorias de avião e as opções das etapas: quantos pontos de
-projeto a busca das superfícies gasta por configuração, quantos processos e se o MTOW passa pelo 6GDL.
+confere o programa, e "Gravar .toml…" grava um arquivo novo. Embaixo fica o problema, em quatro botões, cada um com
+um resumo do que está valendo ao lado; cada botão abre um submenu, e o OK leva o que mudou para o problema (Cancelar
+desfaz). Por último, as categorias de avião e as opções das etapas: quantos pontos de projeto a busca das superfícies
+gasta por configuração, quantos processos e se o MTOW passa pelo 6GDL.
+
+O submenu das **variáveis** mostra só as numéricas (contínuas e inteiras), como os limites inferior e superior de
+cada gene no MDO antigo da equipe: livre ou fixa, o valor que o avião tem agora e os dois limites, com botões para
+isolar um grupo. As listas não se digitam: os **perfis** se escolhem num submenu com uma lista marcável por região
+(raiz da asa, ponta da asa, EH, EV), puxada dos perfis do projeto e da pasta de perfis, e "Adicionar .dat…" lê um
+perfil novo para dentro do projeto aberto e de todas as listas. Os **motores, hélices e baterias** vêm do catálogo
+do mesmo jeito, junto com o arranjo dos motores. Uma lista sem nada marcado fica no valor do avião (em negrito); com
+marcas, a busca varre só os marcados, e cada lista marcada vira um eixo das configurações, como as categorias. Os
+perfis da cauda e a bateria são variáveis do aeroopt (`stages.EXTRA_INPUTS`), não da página MDO da sprint, e ficam só
+no problema.
 
 Na direita se vê a rodada. A janela se atualiza a cada candidato que termina uma etapa, não a cada passo do
-núcleo: é o bastante para ver a busca andar sem pesar a conta. A tabela das etapas conta quantos entraram, quantos
+núcleo: é o bastante para ver a busca andar sem pesar a conta. Os eixos dos gráficos se refazem a cada ponto que
+chega, para o que já foi avaliado. A tabela das etapas conta quantos entraram, quantos
 estão prontos e quantos seguiram. O gráfico da esquerda mostra o MTOW de cada ponto de projeto avaliado (cheio:
 fecha a estabilidade; vazio: não fecha; no zero: não decola), e o da direita a nota de cada configuração na ordem
 em que chegou, com a melhor até ali. O **mapa dos aviões** põe cada configuração no plano PV × carga paga, com as
@@ -146,10 +158,14 @@ entradas da nota, cada fator e cada condição de voo válido; "Gravar projeto c
 rascunhos das etapas, num projeto novo.
 
 A janela abre sem projeto nenhum: o avião sai dos rascunhos de um projeto novo da sprint (asa, empenagem e motores
-como estão nas etapas), sem precisar guardar nada antes. As **restrições** ficam numa tabela como a de Condições e
+como estão nas etapas), sem precisar guardar nada antes. As **restrições** ficam num submenu como Condições e
 restrições do aerosim (ligada, grandeza, operador, valor). A pista e o MTOW definem a busca, porque o MTOW é a maior
 massa que corre na pista; as outras barram o ponto de projeto que não cumpre. Com o objetivo simples (MTOW ou EE)
-no lugar do `.toml`, a rodada vira só "o maior MTOW que cumpre estas restrições".
+no lugar do `.toml`, a rodada vira só "o maior MTOW que cumpre estas restrições". Uma grandeza que também é variável
+(envergadura, área da asa, número de motores) não pode estar nos dois lugares, senão a busca andaria até um limite
+que a restrição depois recusa: `problem.fold_bounds` leva a restrição ligada para o limite da variável (≤ vira o
+superior, ≥ o inferior) e a tira da lista, e o submenu das restrições nem oferece essas grandezas. Com a variável
+fixa, o valor do avião tem que caber no limite, senão a rodada para antes de começar.
 
 Para ver o avião escolhido em tudo o que o aerosim já calcula (polar, estabilidade, desempenho, envelopes, missão
 6GDL, cargas), "Abrir no aerosim" abre uma janela do aerosim com ele. O projeto dessa janela fica numa pasta própria

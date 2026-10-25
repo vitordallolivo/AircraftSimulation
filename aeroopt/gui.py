@@ -4,8 +4,9 @@
     python -m aeroopt --exemplo                 # um projeto de exemplo, para ver a janela funcionando
 
 Esquerda, de cima para baixo: o projeto da sprint de onde saem os rascunhos, a pontuação (tudo o que o .toml do
-regulamento tem: entradas, constantes, faixas, termos, nota e validade, editável e gravável), as variáveis (livre ou
-fixa, limites, opções), as categorias de avião que a busca pode montar e as opções das etapas.
+regulamento tem: entradas, constantes, faixas, termos, nota e validade, editável e gravável), o problema em quatro
+botões que abrem submenus (variáveis com os limites, restrições, perfis por região, motores, hélices e baterias por
+marcação), as categorias de avião que a busca pode montar e as opções das etapas.
 
 Direita, atualizada a cada candidato que termina uma etapa (não a cada passo: o bastante para ver a busca andar):
 o andamento de cada etapa, o MTOW de cada ponto de projeto avaliado, a nota de cada configuração, o mapa dos
@@ -75,6 +76,17 @@ def _fit(t: QtWidgets.QTableWidget, extra: int = 1) -> None:
     """altura da tabela para as linhas que ela tem (mais `extra` em branco, para acrescentar)"""
     h = t.horizontalHeader().height() + 4 + sum(t.rowHeight(i) for i in range(t.rowCount()))
     t.setFixedHeight(h + extra * (t.verticalHeader().defaultSectionSize()))
+
+
+def _fit_range(plot, xs, ys, pad: float = 0.08) -> None:
+    """os eixos do gráfico para os pontos que ele tem (refeito a cada ponto que chega)"""
+    xs = [x for x in xs if math.isfinite(x)]
+    ys = [y for y in ys if math.isfinite(y)]
+    if not xs or not ys:
+        return
+    for (lo, hi), fn in (((min(xs), max(xs)), plot.setXRange), ((min(ys), max(ys)), plot.setYRange)):
+        d = (hi - lo) * pad or max(abs(hi) * pad, 0.5)
+        fn(lo - d, hi + d, padding=0)
 
 
 def _cells(t: QtWidgets.QTableWidget) -> list[list[str]]:
@@ -218,48 +230,93 @@ class ScoringEditor(QtWidgets.QWidget):
             self.msg.setText(f"gravado: {path}")
 
 
-# ------------------------------------------------------------------ variáveis
+# ------------------------------------------------------------------ variáveis: livre, limite inferior e superior
+AREAS = (("wing.airfoil", "asa (raiz)"), ("wing.airfoil_tip", "asa (ponta)"), ("tail.airfoil", "EH"),
+         ("tail.vairfoil", "EV"))
+PARTS = (("power.motor", "motores"), ("power.propeller", "hélices"), ("power.battery", "baterias"),
+         ("power.layout", "arranjo dos motores"))
+LIB_KEYS = tuple(k for k, _ in AREAS + PARTS)
+
+
+def _label(key: str) -> str:
+    if key in rg.INPUTS:
+        return rg.INPUTS[key].label
+    return sg.EXTRA_INPUTS[key][1] if key in sg.EXTRA_INPUTS else key
+
+
+def _variable(pr, key: str):
+    """a variável de lista do problema (criada fixa se o problema ainda não tem)"""
+    v = next((v for v in pr.variables if v.key == key), None)
+    if v is None:
+        from aerosim.interfaces.optim import OptVariable
+        v = OptVariable(key, "lista", group="asa" if key.startswith("wing") else
+                        "cauda" if key.startswith("tail") else "propulsão")
+        pr.variables.append(v)
+    return v
+
+
 class VariablesTable(QtWidgets.QTableWidget):
-    COLS = ["livre", "variável", "grupo", "tipo", "mín.", "máx.", "opções (vírgula; vazio = todas)"]
+    """as variáveis numéricas (contínuas e inteiras), como os lb/ub do MDO antigo: livre ou fixa, o valor do avião
+    e os limites. As listas (perfis, motores, hélices, baterias) se escolhem nas listas próprias, por marcação"""
+    COLS = ["livre", "variável", "grupo", "valor do avião", "limite inferior", "limite superior"]
 
     def __init__(self, parent=None):
         super().__init__(0, len(self.COLS), parent)
         self.setHorizontalHeaderLabels(self.COLS)
         self.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        self.horizontalHeader().setStretchLastSection(True)
+        self.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
         self.verticalHeader().setVisible(False)
-        self.setMinimumHeight(260)
+        self.keys: list[str] = []
 
-    def set_problem(self, pr) -> None:
-        self.setRowCount(len(pr.variables))
-        for i, v in enumerate(pr.variables):
+    @staticmethod
+    def _spin(v, x: float):
+        if v.kind == "inteira":
+            s = QtWidgets.QSpinBox()
+            s.setRange(0, 64)
+            s.setValue(round(x))
+        else:
+            s = QtWidgets.QDoubleSpinBox()
+            s.setRange(-1e4, 1e4)
+            s.setDecimals(3)
+            s.setSingleStep(0.05)
+            s.setValue(x)
+        return s
+
+    def set_problem(self, pr, project=None) -> None:
+        vs = [v for v in pr.variables if v.kind != "lista"]
+        self.keys = [v.key for v in vs]
+        self.setRowCount(0)                          # os campos de antes saem junto com as linhas
+        self.setRowCount(len(vs))
+        for i, v in enumerate(vs):
             box = QtWidgets.QTableWidgetItem()
             box.setCheckState(QtCore.Qt.CheckState.Checked if v.free else QtCore.Qt.CheckState.Unchecked)
             self.setItem(i, 0, box)
-            label = rg.INPUTS[v.key].label if v.key in rg.INPUTS else v.key
-            for j, txt in ((1, label), (2, v.group), (3, v.kind)):
+            unit = rg.INPUTS[v.key].unit if v.key in rg.INPUTS else ""
+            now = sg.get_value(project, v.key) if project is not None else ""
+            for j, txt in ((1, _label(v.key) + (f" ({unit})" if unit else "")), (2, v.group), (3, _fmt(now))):
                 it = QtWidgets.QTableWidgetItem(txt)
                 it.setFlags(it.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
                 it.setToolTip(v.key)
                 self.setItem(i, j, it)
-            for j, txt in ((4, f"{v.lo:g}"), (5, f"{v.hi:g}"), (6, ", ".join(v.options))):
-                self.setItem(i, j, QtWidgets.QTableWidgetItem(txt if v.kind != "lista" or j == 6 else "—"))
+            self.setCellWidget(i, 4, self._spin(v, v.lo))
+            self.setCellWidget(i, 5, self._spin(v, v.hi))
 
     def read_into(self, pr) -> None:
-        for i, v in enumerate(pr.variables):
+        for i, key in enumerate(self.keys):
+            v = next((v for v in pr.variables if v.key == key), None)
+            if v is None:
+                continue
             v.free = self.item(i, 0).checkState() == QtCore.Qt.CheckState.Checked
-            if v.kind != "lista":
-                try:
-                    v.lo, v.hi = float(self.item(i, 4).text()), float(self.item(i, 5).text())
-                except ValueError:
-                    pass
-            v.options = [s.strip() for s in self.item(i, 6).text().split(",") if s.strip()]
+            lo, hi = float(self.cellWidget(i, 4).value()), float(self.cellWidget(i, 5).value())
+            v.lo, v.hi = min(lo, hi), max(lo, hi)
 
 
 # ------------------------------------------------------------------ restrições
 class ConstraintsTable(QtWidgets.QWidget):
     """as restrições do problema, como em Condições e restrições do aerosim: ligada, grandeza, operador, valor.
-    A pista (s_to) e o MTOW definem a busca (o MTOW é o que corre na pista); as outras barram o ponto de projeto"""
+    A pista (s_to) e o MTOW definem a busca (o MTOW é o que corre na pista); as outras barram o ponto de projeto.
+    Envergadura, área e nº de motores não aparecem aqui: são variáveis, e o limite delas fica na tabela das
+    variáveis (`problem.fold_bounds`)"""
     COLS = ["ligada", "grandeza", "op", "valor"]
 
     def __init__(self, parent=None):
@@ -275,7 +332,8 @@ class ConstraintsTable(QtWidgets.QWidget):
         h = QtWidgets.QHBoxLayout()
         self.add_cb = QtWidgets.QComboBox()
         for k, q in rg.QUANTITIES.items():
-            self.add_cb.addItem(f"{q.label} ({q.unit})" if q.unit else q.label, k)
+            if k not in rg.CONSTRAINT_INPUT:
+                self.add_cb.addItem(f"{q.label} ({q.unit})" if q.unit else q.label, k)
         b = QtWidgets.QPushButton("+ restrição")
         b.clicked.connect(lambda: self._add(self.add_cb.currentData(), "≤", 0.0, True))
         r = QtWidgets.QPushButton("− tirar a selecionada")
@@ -286,6 +344,8 @@ class ConstraintsTable(QtWidgets.QWidget):
         v.addLayout(h)
 
     def _add(self, key: str, op: str, value: float, active: bool) -> None:
+        if key in rg.CONSTRAINT_INPUT:
+            return
         i = self.t.rowCount()
         self.t.insertRow(i)
         box = QtWidgets.QTableWidgetItem()
@@ -300,14 +360,16 @@ class ConstraintsTable(QtWidgets.QWidget):
         cb.addItems(["≤", "≥", "="])
         cb.setCurrentText(op)
         self.t.setCellWidget(i, 2, cb)
-        self.t.setItem(i, 3, QtWidgets.QTableWidgetItem(f"{value:g}"))
-        _fit(self.t, 0)
+        s = QtWidgets.QDoubleSpinBox()
+        s.setRange(-1e6, 1e6)
+        s.setDecimals(3)
+        s.setValue(value)
+        self.t.setCellWidget(i, 3, s)
 
     def set_problem(self, pr) -> None:
         self.t.setRowCount(0)
         for c in pr.constraints:
             self._add(c.key, c.op, c.value, c.active)
-        _fit(self.t, 0)
 
     def read_into(self, pr) -> None:
         from aerosim.interfaces.optim import OptConstraint
@@ -315,14 +377,128 @@ class ConstraintsTable(QtWidgets.QWidget):
         out = []
         for i in range(self.t.rowCount()):
             key = self.t.item(i, 1).data(QtCore.Qt.ItemDataRole.UserRole)
-            try:
-                val = float(self.t.item(i, 3).text().replace(",", "."))
-            except ValueError:
-                val = old[key].value if key in old else 0.0
-            out.append(OptConstraint(key, self.t.cellWidget(i, 2).currentText(), val,
+            out.append(OptConstraint(key, self.t.cellWidget(i, 2).currentText(), float(self.t.cellWidget(i, 3).value()),
                                      self.t.item(i, 0).checkState() == QtCore.Qt.CheckState.Checked,
                                      old[key].tol if key in old else 0.02))
         pr.constraints = out
+
+
+# ------------------------------------------------------------------ listas: perfis por região, motores, hélices...
+class ChoiceLists(QtWidgets.QWidget):
+    """uma lista marcável por variável de lista, lado a lado, puxada do que existe (os perfis do projeto e da pasta
+    de perfis, o catálogo de motores, hélices e baterias). Nada marcado: a lista fica no valor do avião (em
+    negrito); marcado: a busca varre os marcados, e cada lista marcada vira um eixo das configurações"""
+
+    def __init__(self, keys, airfoils: bool = False, parent=None):
+        super().__init__(parent)
+        self.keys = dict(keys)
+        v = QtWidgets.QVBoxLayout(self)
+        self.note = QtWidgets.QLabel("marque o que a busca pode escolher em cada lista; nada marcado = o do avião "
+                                     "(em negrito)")
+        self.note.setWordWrap(True)
+        top = QtWidgets.QHBoxLayout()
+        top.addWidget(self.note, 1)
+        if airfoils:
+            b = QtWidgets.QPushButton("Adicionar .dat…")
+            b.clicked.connect(self._add_dat)
+            top.addWidget(b)
+        v.addLayout(top)
+        h = QtWidgets.QHBoxLayout()
+        self.lists: dict[str, QtWidgets.QListWidget] = {}
+        for key, label in self.keys.items():
+            col = QtWidgets.QVBoxLayout()
+            col.addWidget(QtWidgets.QLabel(f"<b>{label}</b>"))
+            lw = QtWidgets.QListWidget()
+            lw.setMinimumSize(170, 320)
+            self.lists[key] = lw
+            col.addWidget(lw)
+            row = QtWidgets.QHBoxLayout()
+            for txt, st in (("todos", QtCore.Qt.CheckState.Checked), ("nenhum", QtCore.Qt.CheckState.Unchecked)):
+                b = QtWidgets.QPushButton(txt)
+                b.clicked.connect(lambda _=False, lw=lw, st=st: [lw.item(i).setCheckState(st) for i in range(lw.count())])
+                row.addWidget(b)
+            col.addLayout(row)
+            h.addLayout(col)
+        v.addLayout(h)
+        self.project, self.added = None, []
+
+    def set_problem(self, pr, project, catalog=None) -> None:
+        self.project = project
+        for key, lw in self.lists.items():
+            lw.clear()
+            v = next((v for v in pr.variables if v.key == key), None)
+            now = sg.get_value(project, key)
+            for n in sg.available(project, key, catalog):
+                it = QtWidgets.QListWidgetItem(n + ("  (acrescentado)" if n in self.added else ""))
+                it.setData(QtCore.Qt.ItemDataRole.UserRole, n)
+                it.setFlags(it.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+                on = v is not None and v.free and (n in v.options or not v.options)
+                it.setCheckState(QtCore.Qt.CheckState.Checked if on else QtCore.Qt.CheckState.Unchecked)
+                if n == now:
+                    f = it.font()
+                    f.setBold(True)
+                    it.setFont(f)
+                    it.setToolTip("o do avião")
+                lw.addItem(it)
+
+    def checked(self, key: str) -> list[str]:
+        lw, on = self.lists[key], QtCore.Qt.CheckState.Checked
+        return [lw.item(i).data(QtCore.Qt.ItemDataRole.UserRole) for i in range(lw.count())
+                if lw.item(i).checkState() == on]
+
+    def tick(self, key: str, names) -> None:
+        lw = self.lists[key]
+        for i in range(lw.count()):
+            if lw.item(i).data(QtCore.Qt.ItemDataRole.UserRole) in names:
+                lw.item(i).setCheckState(QtCore.Qt.CheckState.Checked)
+
+    def read_into(self, pr) -> None:
+        for key in self.lists:
+            names = self.checked(key)
+            if names or any(v.key == key for v in pr.variables):
+                v = _variable(pr, key)
+                v.free, v.options = bool(names), names
+
+    def add_dat(self, path: str) -> str:
+        """lê o .dat e põe o perfil no projeto e em todas as listas (desmarcado, as marcas de antes ficam);
+        devolve o nome"""
+        from aerosim.design import airfoils as afm
+        from aerosim.interfaces.optim import OptProblem
+        pr = OptProblem()
+        e = afm.entry(afm.from_dat(path))
+        if self.project.airfoil(e.name) is None:
+            self.project.airfoils.append(e)
+        self.added.append(e.name)
+        self.read_into(pr)
+        self.set_problem(pr, self.project)
+        return e.name
+
+    def _add_dat(self):
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(self, "Perfis", "", "perfil (*.dat *.txt)")
+        for p in paths:
+            try:
+                name = self.add_dat(p)
+                self.note.setText(f"perfil acrescentado: {name}. Marque as regiões em que ele pode ir")
+            except Exception as e:  # noqa: BLE001
+                self.note.setText(f"<span style='color:{BAD_C}'>{os.path.basename(p)}: {e}</span>")
+
+
+class _Menu(QtWidgets.QDialog):
+    """o submenu aberto por um botão da esquerda: o editor, OK aplica, Cancelar desfaz"""
+
+    def __init__(self, title: str, body: QtWidgets.QWidget, parent=None, top: QtWidgets.QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(900, 620)
+        v = QtWidgets.QVBoxLayout(self)
+        if top is not None:
+            v.addWidget(top, 0)
+        v.addWidget(body, 1)
+        bb = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
+                                        QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        v.addWidget(bb)
 
 
 # ------------------------------------------------------------------ contas fora da linha da janela
@@ -389,19 +565,36 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         _section(v, "Pontuação (o .toml do regulamento)")
         self.scoring = ScoringEditor()
         v.addWidget(self.scoring)
-        _section(v, "Variáveis (livre = entra na busca)")
-        h = QtWidgets.QHBoxLayout()
+        _section(v, "O problema (cada botão abre o submenu)")
+        self.vars, self.cons = VariablesTable(), ConstraintsTable()
+        self.airfoils, self.parts = ChoiceLists(AREAS, airfoils=True), ChoiceLists(PARTS)
+        iso = QtWidgets.QWidget()
+        h = QtWidgets.QHBoxLayout(iso)
+        h.setContentsMargins(0, 0, 0, 0)
         h.addWidget(QtWidgets.QLabel("isolar:"))
         for g in ("asa", "propulsão", "requisitos", "nenhuma"):
             b = QtWidgets.QPushButton(g)
             b.clicked.connect(lambda _=False, g=g: self._isolate(g))
             h.addWidget(b)
-        v.addLayout(h)
-        self.vars = VariablesTable()
-        v.addWidget(self.vars)
-        _section(v, "Restrições (como Condições e restrições do aerosim)")
-        self.cons = ConstraintsTable()
-        v.addWidget(self.cons)
+        h.addStretch(1)
+        self.menus = {"variáveis": _Menu("Variáveis: livre, limite inferior e superior", self.vars, self, iso),
+                      "restrições": _Menu("Restrições (como Condições e restrições do aerosim)", self.cons, self),
+                      "perfis": _Menu("Perfis: qual entra em que região", self.airfoils, self),
+                      "peças": _Menu("Motores, hélices e baterias do catálogo", self.parts, self)}
+        self.summary: dict[str, QtWidgets.QLabel] = {}
+        grid = QtWidgets.QGridLayout()
+        for i, (k, txt) in enumerate((("variáveis", "Variáveis…"), ("restrições", "Restrições…"),
+                                      ("perfis", "Perfis por região…"), ("peças", "Motores, hélices e baterias…"))):
+            b = QtWidgets.QPushButton(txt)
+            b.clicked.connect(lambda _=False, k=k: self.open_menu(k))
+            lab = QtWidgets.QLabel("—")
+            lab.setWordWrap(True)
+            lab.setStyleSheet("color:#444")
+            self.summary[k] = lab
+            grid.addWidget(b, i, 0, QtCore.Qt.AlignmentFlag.AlignTop)
+            grid.addWidget(lab, i, 1)
+        grid.setColumnStretch(1, 1)
+        v.addLayout(grid)
         _section(v, "Categorias de avião")
         grid = QtWidgets.QGridLayout()
         self.cat_cb = {}
@@ -548,16 +741,53 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.set_problem(problem)
 
     def set_problem(self, pr) -> None:
+        pr = copy.deepcopy(pr)
+        aeroopt.fold_bounds(pr)                     # o que é variável não fica também como restrição
         self.problem = pr
-        self.vars.set_problem(pr)
-        self.cons.set_problem(pr)
+        self._fill(pr)
         self.scoring.set_spec(pr.scoring)
         for c, cb in self.cat_cb.items():
             cb.setChecked(c in (pr.params.get("categorias") or []))
 
+    def _fill(self, pr) -> None:
+        """os submenus e os resumos ao lado dos botões, a partir do problema"""
+        self.vars.set_problem(pr, self.project)
+        self.cons.set_problem(pr)
+        self.airfoils.set_problem(pr, self.project)
+        self.parts.set_problem(pr, self.project)
+        self._summaries(pr)
+
+    def _summaries(self, pr) -> None:
+        free = [v for v in pr.variables if v.free and v.kind != "lista"]
+        self.summary["variáveis"].setText("; ".join(f"{_label(v.key)} {_fmt(v.lo)}…{_fmt(v.hi)}" for v in free)
+                                          or "nenhuma livre: as superfícies ficam como estão")
+        cs = [c for c in pr.constraints if c.active]
+        self.summary["restrições"].setText("; ".join(
+            f"{rg.QUANTITIES[c.key].label if c.key in rg.QUANTITIES else c.key} {c.op} {_fmt(c.value)}" for c in cs)
+            or "nenhuma ligada")
+        for k, keys in (("perfis", AREAS), ("peças", PARTS)):
+            parts = []
+            for key, label in keys:
+                v = next((v for v in pr.variables if v.key == key and v.free), None)
+                parts.append(f"{label}: {', '.join(v.options) if v.options else 'todos'}" if v else
+                             f"{label}: o do avião ({sg.get_value(self.project, key) or '—'})")
+            self.summary[k].setText("; ".join(parts))
+
+    def open_menu(self, k: str) -> bool:
+        """abre o submenu; OK leva o que mudou para o problema, Cancelar volta ao que era"""
+        ok = self.menus[k].exec() == QtWidgets.QDialog.DialogCode.Accepted
+        if ok:
+            self.problem = self.read_problem()
+            self._summaries(self.problem)
+        else:
+            self._fill(self.problem)
+        return ok
+
     def read_problem(self):
         pr = copy.deepcopy(self.problem)
         self.vars.read_into(pr)
+        self.airfoils.read_into(pr)
+        self.parts.read_into(pr)
         self.cons.read_into(pr)
         pr.scoring = self.scoring.spec()
         pr.evaluator = "etapas"
@@ -572,7 +802,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         else:
             pr.isolate(g)
         self.problem = pr
-        self.vars.set_problem(pr)
+        self._fill(pr)
 
     def _open_project(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Projeto da sprint", "", "projeto (*.json)")
@@ -711,6 +941,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             best = max(best, r["nota"])
             line.append(best)
         self.best_score.setData(np.arange(len(line)), np.array(line, float))
+        _fit_range(self.eval_plot, range(len(self.points)), [p[1] for p in ok + bad])
+        _fit_range(self.score_plot, range(len(sc_rows)), [r["nota"] for r in sc_rows])
         self.draw_map()
         self.cfg_tab.setSortingEnabled(False)
         rows = sorted(self.rows.values(), key=lambda r: (r["alive"], r["valido"], np.nan_to_num(r["nota"], nan=-1e9)),
@@ -760,6 +992,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             size = 18 if r["name"] == self.selected else 12
             spots.append(dict(pos=(self._value(r, kx), self._value(r, ky)), brush=brush, pen=pen, size=size,
                               data=r["name"], symbol="o" if r["alive"] else "x"))
+        _fit_range(self.map, [p["pos"][0] for p in spots], [p["pos"][1] for p in spots])
         sp = pg.ScatterPlotItem(spots=spots)
         sp.sigClicked.connect(lambda _it, pts, *_: pts and self.select(pts[0].data()))
         self.map.addItem(sp)
@@ -780,7 +1013,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.keep_b.setEnabled(True)
         self.aerosim_b.setEnabled(False)          # liga quando o avião estiver refeito (o 3D)
         self.draw_map()
-        lines = [[k.partition(".")[2] or k, _fmt(v)] for k, v in r["values"].items()]
+        lines = [[sg.short(k), _fmt(v)] for k, v in r["values"].items()]
         lines += [["MTOW na pista (kg)", _fmt(r["mtow"])], ["MTOW 6GDL (kg)", _fmt(r["mtow6"])],
                   ["PV (kg)", _fmt(r["pv"])]]
         lines += [[f"entrada: {k}", _fmt(v)] for k, v in r.get("inputs", {}).items()]

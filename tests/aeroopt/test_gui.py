@@ -102,11 +102,13 @@ def test_empty_project_runs_and_constraints_are_editable(app):
     pr = w.read_problem()
     assert pr.constraints and w.cons.t.rowCount() == len(pr.constraints)
     i = next(i for i, c in enumerate(pr.constraints) if c.key == "s_to")
-    w.cons.t.item(i, 3).setText("40")
-    w.cons._add("b", "≤", 1.8, True)
+    w.cons.t.cellWidget(i, 3).setValue(40)
+    w.cons._add("V_S", "≤", 13.0, True)
     pr = w.read_problem()
     assert next(c for c in pr.constraints if c.key == "s_to").value == 40.0
-    assert pr.constraints[-1].key == "b" and pr.constraints[-1].value == 1.8
+    assert pr.constraints[-1].key == "V_S" and pr.constraints[-1].value == 13.0
+    w.cons._add("b", "≤", 1.8, True)                         # envergadura é variável: não entra como restrição
+    assert w.read_problem().constraints[-1].key == "V_S"
     for v in w.problem.variables:
         v.free = False
     w.vars.set_problem(w.problem)
@@ -118,3 +120,51 @@ def test_empty_project_runs_and_constraints_are_editable(app):
     assert len(w.rows) == 1 and w.run_dir and os.path.exists(os.path.join(w.run_dir, "avaliacoes.csv"))
     import shutil
     shutil.rmtree(os.path.dirname(w.run_dir), ignore_errors=True) if "rodadas_aeroopt" in w.run_dir else None
+
+
+def test_lists_by_region_and_catalog_parts(app, tmp_path):
+    """o .dat acrescentado entra no projeto e nas listas; cada região marcada vira uma lista livre; nada marcado =
+    o do avião"""
+    from aeroopt import stages as sg
+    from aeroopt.gui import AeroOptWindow, example_project
+    p, pr = example_project()
+    w = AeroOptWindow(p, pr)
+    dat = tmp_path / "meu.dat"
+    dat.write_text("MEU PERFIL\n1 0\n0.5 0.06\n0 0\n0.5 -0.02\n1 0\n")
+    w.airfoils.tick("wing.airfoil", ["NACA 2412"])
+    name = w.airfoils.add_dat(str(dat))
+    assert name == "MEU PERFIL" and p.airfoil(name) is not None
+    assert w.airfoils.checked("wing.airfoil") == ["NACA 2412"]            # as marcas de antes ficam
+    assert name in [w.airfoils.lists["tail.airfoil"].item(i).data(256) for i in range(w.airfoils.lists["tail.airfoil"].count())]
+    w.airfoils.tick("tail.airfoil", [name])
+    bat = w.parts.lists["power.battery"].item(0).data(256)
+    w.parts.tick("power.battery", [bat])
+    out = w.read_problem()
+    v = out.variable("tail.airfoil")
+    assert v.free and v.options == [name] and v.kind == "lista"
+    assert out.variable("power.battery").options == [bat]
+    assert not out.variable("wing.airfoil_tip").free
+    items = sg.configurations(p, out)
+    assert all(i.values["tail.airfoil"] == name for i in items)
+    q, _ = sg.candidate(p, items[0].values)
+    assert q.tail_draft.tail_airfoil == name and q.power_draft.battery == bat
+    w.problem = out
+    w._summaries(out)
+    assert name in w.summary["perfis"].text() and bat in w.summary["peças"].text()
+
+
+def test_constraint_on_a_variable_becomes_its_bound():
+    """b ≤ 1,8 com a envergadura variável: vira o limite superior dela e sai das restrições"""
+    import aeroopt
+    from aeroopt.gui import example_project
+    from aerosim.interfaces.optim import OptConstraint
+    p, pr = example_project()
+    pr.constraints.append(OptConstraint("b", "≤", 1.7))
+    pr.constraints.append(OptConstraint("S", "≥", 0.45))
+    aeroopt.fold_bounds(pr, p)
+    assert not any(c.key in ("b", "S") for c in pr.constraints)
+    assert pr.variable("wing.span").hi == 1.7 and pr.variable("wing.area").lo == 0.45
+    pr.variable("wing.span").free = False
+    pr.constraints.append(OptConstraint("b", "≤", 1.2))                     # o avião tem 1,75 m
+    with pytest.raises(ValueError, match="fora dos limites"):
+        aeroopt.fold_bounds(pr, p)

@@ -6,6 +6,13 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, submenus do problema: variáveis (livre, valor do avião, limite inferior e superior), restrições, perfis
+  por região (raiz e ponta da asa, EH, EV, com `.dat` acrescentado na hora) e motores, hélices, baterias e arranjo do
+  catálogo, cada um num submenu aberto por botão, com o resumo ao lado; as listas se marcam, não se digitam, e cada
+  lista marcada vira um eixo das configurações. Perfis da cauda e bateria entraram como variáveis de lista do aeroopt
+  (`stages.EXTRA_INPUTS`). Uma restrição numa grandeza que é variável (envergadura, área, nº de motores) vira o limite
+  dela (`problem.fold_bounds`). Os gráficos refazem os eixos a cada ponto. Nomes das configurações em português
+  (`hélice=`, `perfil EH=`).
 - aeroopt, registro e restrições: cada rodada grava `avaliacoes.csv` (cada ponto de projeto, em ordem, com as
   variáveis) e `configuracoes.csv` (nota fator por fator) em `rodadas_aeroopt/` (`aeroopt/export.py`; `--csv` na
   ferramenta). A janela roda sem conjunto guardado (o avião sai dos rascunhos), edita as restrições como Condições e

@@ -44,11 +44,45 @@ def from_project(project, name: str = "") -> OptProblem:
                       params={k: getattr(mp, k) for k in PARAM_KEYS})
 
 
+def fold_bounds(problem: OptProblem, project=None) -> list[str]:
+    """uma grandeza que é também variável do problema (envergadura, área, nº de motores) não fica como restrição:
+    a restrição ligada vira o limite da variável (≤ → superior, ≥ → inferior, = → os dois) e sai da lista. Com a
+    variável fixa e o `project`, o valor do avião tem que caber no limite que veio da restrição (senão ValueError). Devolve o que mudou"""
+    from aerosim.design import registry as rg
+    out, keep, folded = [], [], []
+    for c in problem.constraints:
+        key = rg.CONSTRAINT_INPUT.get(c.key)
+        v = next((v for v in problem.variables if v.key == key), None)
+        if v is None:
+            keep.append(c)
+            continue
+        if c.active:
+            if c.op in ("≤", "="):
+                v.hi = min(v.hi, c.value) if c.op == "≤" else c.value
+            if c.op in ("≥", "="):
+                v.lo = max(v.lo, c.value) if c.op == "≥" else c.value
+            v.lo = min(v.lo, v.hi)
+            folded.append(key)
+            out.append(f"{rg.INPUTS[key].label}: {v.lo:g}…{v.hi:g}")
+    problem.constraints = keep
+    if project is not None:
+        for key in folded:                                # só o que veio de uma restrição: o limite de fábrica
+            v = next((v for v in problem.variables if v.key == key and not v.free), None)
+            if v is not None and v.kind != "lista":
+                x = float(rg.get_input(project, key))
+                if not v.lo - 1e-9 <= x <= v.hi + 1e-9:
+                    raise ValueError(f"{rg.INPUTS[key].label} fixa em {x:g}, fora dos limites {v.lo:g}…{v.hi:g}: "
+                                     "solte a variável ou mude o avião")
+    return out
+
+
 def apply_to_project(problem: OptProblem, project) -> None:
     """leva o problema para o projeto: modos e limites das variáveis, restrições e opções do mini-MDO"""
     from aerosim.design import registry as rg
     for ov in problem.variables:
         v = next((v for v in project.variables if v.key == ov.key), None)
+        if v is None and ov.key not in rg.INPUTS:      # as do aeroopt (perfis da cauda, bateria) não vão para a sprint
+            continue
         if v is None:
             v = rg.Variable(ov.key)
             project.variables.append(v)
