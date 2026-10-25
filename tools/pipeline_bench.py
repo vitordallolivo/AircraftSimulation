@@ -13,6 +13,9 @@ ao núcleo em Zig (ctypes) soltam o GIL, então uma etapa que passa quase todo o
 uma que passa o tempo em Python (montar o avião, traduzir, as buscas) não ganha nada. Processos não dividem o GIL,
 mas pagam para nascer (spawn importa tudo de novo) e para mandar cada candidato de um lado para o outro (pickle).
 
+O tempo de abrir os processos (com o núcleo já carregado em cada um) aparece numa coluna "nascer": ele acontece uma
+vez por rodada, e sem separar parecia que a primeira etapa em paralelo (a "voa") não ganhava nada.
+
 A parte presa ao GIL sai da lei de Amdahl: com $n$ threads e ganho $S = T_1 / T_n$, a fração serial é
 $f = (n/S - 1)/(n - 1)$ (Amdahl, "Validity of the single processor approach...", AFIPS 1967; a forma invertida é a
 de Karp e Flatt, CACM 33(5), 1990). Com threads, $f$ é quase toda o GIL; com processos, é o custo de nascer, de
@@ -70,9 +73,13 @@ def run_one(project, problem, evaluator, items, strategy: str, workers: int, gen
     from aerosim.parallel import Executors
     parallel, method = STRATEGIES[strategy]
     n = 1 if strategy == "serie" else workers
-    shared = None if strategy.endswith("-novo") else Executors(n, method)     # None: um pool por etapa, como antes
+    warm = getattr(evaluator, "warm", None)
+    shared = None if strategy.endswith("-novo") else Executors(n, method, warm)   # None: um pool por etapa, como antes
     times: dict[str, float] = {}
     t0 = time.perf_counter()
+    if shared is not None and parallel == "processos" and n > 1:
+        shared.get("processos").start()           # nascer fica numa coluna dele: acontece uma vez por rodada
+        times["nascer"] = time.perf_counter() - t0
     try:
         for _ in range(generations):
             stages = evaluator.stages(project, problem)
@@ -136,11 +143,12 @@ def bench(project, problem, evaluator, items, strategies, workers_list, log=prin
 
 
 def table(rows: list[dict]) -> str:
-    stages = list(rows[0]["stages"])
+    stages = (["nascer"] if any("nascer" in r["stages"] for r in rows) else []) + list(rows[0]["stages"])
     head = f"{'estratégia':<16}{'n':>3}{'total (s)':>11}{'ganho':>8}{'serial':>8}  " + "".join(f"{s[:12]:>14}" for s in stages)
     lines = [head, "-" * len(head)]
     for r in rows:
-        cells = "".join(f"{r['stages'].get(s, math.nan):>9.2f} ×{r['stage_speedup'].get(s, 1.0 if r['strategy'] == 'serie' else math.nan):<4.1f}"
+        cells = "".join(f"{r['stages'].get(s, 0.0):>9.2f}      " if s == "nascer" else
+                        f"{r['stages'].get(s, math.nan):>9.2f} ×{r['stage_speedup'].get(s, 1.0 if r['strategy'] == 'serie' else math.nan):<4.1f}"
                         for s in stages)
         flag = "" if r["same"] else ("  falhou" if r.get("error") else "  difere")
         lines.append(f"{r['strategy']:<16}{r['n']:>3}{r['total']:>11.2f}{r['speedup']:>8.2f}"

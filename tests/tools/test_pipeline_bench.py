@@ -30,5 +30,6 @@ def test_bench_compares_strategies_with_the_same_result():
     rows = pb.bench(p, pr, ev, items, ["serie", "fork"], [2], log=lambda *_: None)
     assert [(r["strategy"], r["n"]) for r in rows] == [("serie", 1), ("fork", 2)]
     assert all(r["same"] for r in rows) and rows[0]["speedup"] == pytest.approx(1.0)
-    assert set(rows[1]["stages"]) == set(rows[0]["stages"]) >= {"geometria", "superfícies", "nota"}
+    assert set(rows[1]["stages"]) - {"nascer"} == set(rows[0]["stages"]) >= {"geometria", "superfícies", "nota"}
+    assert rows[1]["stages"]["nascer"] >= 0 and "nascer" not in rows[0]["stages"]   # abrir os processos, à parte
     assert "fork" in pb.table(rows)

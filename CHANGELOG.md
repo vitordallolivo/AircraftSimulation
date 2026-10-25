@@ -13,8 +13,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - paralelismo como módulo: contrato `IExecutor` (`aerosim/interfaces/executor.py`) e `aerosim/parallel` com as três
   formas de rodar (série, threads, processos) e o `Executors`, um de cada tipo para a rodada inteira. O `Pipeline` e
   as gerações do aeroopt rodam por ele, e os processos nascem uma vez por rodada, não a cada etapa de cada geração.
+  O pool nasce com todos os trabalhadores de pé e o núcleo carregado em cada um (`initializer`, `stages.warm`).
   O Parar e um processo que morre no meio continuam tratados como antes. `tools/pipeline_bench.py --geracoes N`
-  compara o pool que dura com o pool novo por etapa (`spawn-novo`, `forkserver-novo`).
+  compara o pool que dura com o pool novo por etapa (`spawn-novo`, `forkserver-novo`), e o tempo de nascer sai numa
+  coluna própria.
 - núcleo, tração motor + hélice da sprint: a bisseção do equilíbrio motor × hélice de `power.thrust_of` foi para o
   núcleo (`core/src/sizing/motorprop.zig`, export `aerosim_motor_prop_thrust`, struct `MotorProp`,
   `ISimBackend.motor_prop_thrust`). Bit a bit igual à conta em Python de antes com todo o catálogo; era a maior parte

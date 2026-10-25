@@ -73,7 +73,7 @@ class GenerationsSolver(ISolver):
         rows: list[dict] = []
 
         # os mesmos trabalhadores para todas as etapas de todas as gerações: os processos nascem uma vez
-        executors = Executors(evaluator.workers, evaluator.start_method)
+        executors = Executors(evaluator.workers, evaluator.start_method, getattr(evaluator, "warm", None))
 
         def stage_run(items, gen, f0, f1):
             pipe = Pipeline(evaluator.stages(p, problem), evaluator.start_method, executors)

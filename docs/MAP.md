@@ -250,7 +250,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/parallel/__init__.py` — Paralelismo genérico: as formas de rodar uma função em muitos itens (`IExecutor`) e um conjunto delas que dura
 - `aerosim/parallel/executors.py` — As três formas de rodar uma função em muitos itens (`aerosim.interfaces.executor.IExecutor`).
-  `default_workers:22`, `class SerialExecutor:26`, `class ThreadExecutor:101`, `class ProcessExecutor:108`, `make_executor:128`, `class Executors:140`
+  `default_workers:22`, `class SerialExecutor:26`, `class ThreadExecutor:105`, `class ProcessExecutor:112`, `make_executor:143`, `class Executors:156`
 
 ## Python · `aerosim/sizing`
 
@@ -673,7 +673,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/gui` — 23 testes em 1 arquivo(s)
 - `tests/manager` — 57 testes em 10 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
-- `tests/parallel` — 4 testes em 1 arquivo(s)
+- `tests/parallel` — 5 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)
 - `tests/test_architecture.py` — 5 testes em 1 arquivo(s)
 - `tests/tools` — 26 testes em 4 arquivo(s)

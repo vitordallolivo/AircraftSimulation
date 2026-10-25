@@ -68,3 +68,22 @@ def test_serial_cancel_and_executors_share_one_of_each_kind():
         assert ex.get("threads") is ex.get("threads") and ex.get("não").workers == 1
     with pytest.raises(ValueError):
         make_executor("gpu")
+
+
+_WARM = []
+
+
+def _mark():
+    _WARM.append(os.getpid())
+
+
+def _was_warmed(_):
+    return list(_WARM)
+
+
+def test_process_pool_starts_every_worker_warm():
+    """todos os trabalhadores nascem juntos e rodam o `initializer` antes do primeiro item"""
+    with make_executor("processos", workers=3, start_method="fork", initializer=_mark) as ex:
+        res = ex.map(_was_warmed, range(9))
+        assert all(r.ok and r.value for r in res)                  # cada um já passou pelo initializer
+        assert len(ex._pool._processes) == 3

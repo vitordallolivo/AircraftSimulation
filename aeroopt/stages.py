@@ -613,8 +613,15 @@ class GeometryStage(IStage):
         return item
 
 
+def warm() -> None:
+    """o que cada processo trabalhador carrega ao nascer, antes da primeira etapa: os módulos (vêm com este) e o
+    núcleo em Zig (`power._core`, um por processo)"""
+    pw._core()
+
+
 class StagedEvaluator(IEvaluator):
     name = "etapas"
+    warm = staticmethod(warm)
 
     def __init__(self, project, catalog=None, backend=None, workers: int | None = None, six_dof: bool = True,
                  evals: int = 24, start_method: str | None = None, scoring=None, geometry=True,
@@ -689,7 +696,8 @@ class StagedSolver(ISolver):
         fold_bounds(problem, p)                       # envergadura, área, nº de motores: limites, não restrições
         apply_to_project(problem, p)                  # as restrições do problema valem na viabilidade
         items = configurations(p, problem, evaluator.catalog)
-        pipe = Pipeline(evaluator.stages(p, problem), evaluator.start_method)
+        pipe = Pipeline(evaluator.stages(p, problem), evaluator.start_method,
+                        initializer=getattr(evaluator, "warm", None))
         cb = (lambda st, it: on_item(st, row(it))) if on_item else None
         items = pipe.run(items, evaluator.workers, progress, cancel, cb)
         rows = [row(i) for i in items]

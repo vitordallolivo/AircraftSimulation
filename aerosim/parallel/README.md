@@ -30,6 +30,11 @@ morrem no `close`. O `Executors` guarda um executor de cada tipo, criado na prim
 pedem o tipo que querem (`IStage.parallel`) e todas dividem os mesmos trabalhadores. Os trabalhadores também ficam
 com o núcleo carregado, então a segunda geração já começa quente.
 
+Com *spawn* os trabalhadores nasceriam um a um, quando o trabalho chega, e cada um pagaria os imports e o núcleo no
+meio da primeira etapa pesada. Por isso o pool nasce com todos de pé: cada trabalhador roda o `initializer` (no
+aeroopt, `stages.warm`, que carrega o núcleo) em paralelo, antes do primeiro item. `start()` abre o pool na hora,
+para quem quer medir quanto custa nascer à parte, como faz a ferramenta de medida.
+
 O Parar é visto a cada 0,2 s, não só quando o próximo item termina. Uma conta que está rodando num processo não tem
 como ouvir o Parar, então o processo é encerrado; o que não terminou volta como cancelado e o próximo `map` abre
 trabalhadores novos. Um processo que morre no meio (o pool quebrado) é tratado do mesmo jeito: os itens dele voltam
@@ -47,7 +52,7 @@ from aerosim.parallel import Executors, make_executor
 def quadrado(x):
     return x * x
 
-with make_executor("processos", workers=4, start_method="spawn") as ex:
+with make_executor("processos", workers=4, start_method="spawn", initializer=None) as ex:
     for lote in ([1, 2, 3], [4, 5, 6]):                      # os mesmos 4 processos nos dois lotes
         res = ex.map(quadrado, lote, on_done=lambda j, r: print(j, r.value))
         print([r.value if r.ok else r.error for r in res])

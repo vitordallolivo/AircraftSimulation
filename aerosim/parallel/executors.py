@@ -55,6 +55,11 @@ class _PoolExecutor(IExecutor):
     def _new_pool(self) -> Executor:
         raise NotImplementedError
 
+    def start(self) -> None:
+        """abre o pool já (senão ele abre no primeiro `map`): para medir quanto custa nascer à parte"""
+        if self._pool is None:
+            self._pool = self._new_pool()
+
     def _stop(self) -> None:
         """o Parar no meio: solta o pool sem esperar a conta que está rodando"""
         if self._pool is not None:
@@ -65,8 +70,7 @@ class _PoolExecutor(IExecutor):
         items = list(items)
         if len(items) < 2 or self.workers == 1:      # um item só não paga a ida e a volta
             return SerialExecutor().map(fn, items, cancel, on_done)
-        if self._pool is None:
-            self._pool = self._new_pool()
+        self.start()
         out: list[Outcome | None] = [None] * len(items)
         futs = {self._pool.submit(fn, it): j for j, it in enumerate(items)}
         pending = set(futs)
@@ -108,14 +112,21 @@ class ThreadExecutor(_PoolExecutor):
 class ProcessExecutor(_PoolExecutor):
     kind = "processos"
 
-    def __init__(self, workers: int | None = None, start_method: str | None = None):
+    def __init__(self, workers: int | None = None, start_method: str | None = None,
+                 initializer: Callable[[], None] | None = None):
         super().__init__(workers)
         self.start_method = start_method         # "fork", "spawn", "forkserver" (None: o do sistema)
+        self.initializer = initializer           # roda uma vez em cada trabalhador quando ele nasce
 
     def _new_pool(self) -> Executor:
+        """o pool já com todos os trabalhadores de pé. Com spawn eles nascem vazios e só nasceriam quando chega
+        trabalho, um a um, pagando os imports e o núcleo no meio da primeira etapa pesada; aqui nascem todos juntos,
+        cada um roda o `initializer` (os imports, o núcleo carregado) em paralelo, e a primeira etapa já roda quente"""
         import multiprocessing as mp
         ctx = mp.get_context(self.start_method) if self.start_method else None
-        return ProcessPoolExecutor(max_workers=self.workers, mp_context=ctx)
+        pool = ProcessPoolExecutor(max_workers=self.workers, mp_context=ctx, initializer=self.initializer)
+        wait([pool.submit(_ready) for _ in range(self.workers)])
+        return pool
 
     def _stop(self) -> None:
         # a conta que está rodando num processo não tem como ouvir o Parar: o processo é encerrado
@@ -125,15 +136,20 @@ class ProcessExecutor(_PoolExecutor):
         super()._stop()
 
 
-def make_executor(kind: str = "processos", workers: int | None = None,
-                  start_method: str | None = None) -> IExecutor:
-    """o executor de um tipo de `KINDS`"""
+def _ready() -> None:
+    """a tarefa vazia que faz cada trabalhador nascer"""
+
+
+def make_executor(kind: str = "processos", workers: int | None = None, start_method: str | None = None,
+                  initializer: Callable[[], None] | None = None) -> IExecutor:
+    """o executor de um tipo de `KINDS`; `initializer` só vale para processos (as threads já dividem o que o
+    processo carregou)"""
     if kind == "não":
         return SerialExecutor()
     if kind == "threads":
         return ThreadExecutor(workers)
     if kind == "processos":
-        return ProcessExecutor(workers, start_method)
+        return ProcessExecutor(workers, start_method, initializer)
     raise ValueError(f"paralelismo desconhecido: {kind!r} (um de {', '.join(KINDS)})")
 
 
@@ -141,13 +157,14 @@ class Executors:
     """um executor de cada tipo, criado na primeira vez que alguém pede e guardado até `close`: as etapas de uma
     rodada pedem o tipo que querem e todas dividem os mesmos trabalhadores"""
 
-    def __init__(self, workers: int | None = None, start_method: str | None = None):
-        self.workers, self.start_method = workers, start_method
+    def __init__(self, workers: int | None = None, start_method: str | None = None,
+                 initializer: Callable[[], None] | None = None):
+        self.workers, self.start_method, self.initializer = workers, start_method, initializer
         self._made: dict[str, IExecutor] = {}
 
     def get(self, kind: str) -> IExecutor:
         if kind not in self._made:
-            self._made[kind] = make_executor(kind, self.workers, self.start_method)
+            self._made[kind] = make_executor(kind, self.workers, self.start_method, self.initializer)
         return self._made[kind]
 
     def close(self) -> None:
