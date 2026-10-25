@@ -116,13 +116,18 @@ def configurations(project, problem: OptProblem, catalog=None) -> list[StageItem
         vals = dict(zip(keys, combo))
         name = ", ".join(str(x) if k == cat.KEY else f"{k.partition('.')[2]}={x}" for k, x in vals.items()) \
             or "configuração única"
-        out.append(StageItem(name=name, values=vals))
+        out.append(StageItem(name=name, values=vals, data={"index": len(out) + 1}))
     return out
 
 
 def _rank(r: dict) -> tuple:
     m = r["mtow"]
     return (r["ok"], m if math.isfinite(m) else -math.inf)
+
+
+def _eval(x: dict, r: dict) -> dict:
+    """uma avaliação da busca das superfícies, para o histórico (e o CSV)"""
+    return dict(values=dict(x), mtow=r["mtow"], ok=r["ok"], why=r["why"], pv=r["pv"], b=r["b"], m_bat=r["m_bat"])
 
 
 class SurfaceSizing(IStage):
@@ -148,7 +153,7 @@ class SurfaceSizing(IStage):
     def one(self, item: StageItem) -> StageItem:
         x = {k: min(max(float(rg.get_input(self.project, k)), lo), hi) for k, lo, hi in self.free}
         best = self.point({**item.values, **x})
-        hist = [(dict(x), best["mtow"], best["ok"])]
+        hist = [_eval(x, best)]
         step = {k: 0.25 * (hi - lo) for k, lo, hi in self.free}
         while self.free and len(hist) < self.evals and any(step[k] > 1e-3 * (hi - lo) for k, lo, hi in self.free):
             moved = False
@@ -160,7 +165,7 @@ class SurfaceSizing(IStage):
                 if y[k] == x[k]:
                     continue
                 r = self.point({**item.values, **y})
-                hist.append((dict(y), r["mtow"], r["ok"]))
+                hist.append(_eval(y, r))
                 if _rank(r) > _rank(best):
                     x, best, moved = y, r, True
                     break
@@ -249,7 +254,7 @@ class StagedEvaluator(IEvaluator):
 def row(item: StageItem) -> dict:
     """o candidato em linha de tabela (sem os objetos do avião)"""
     d = item.data
-    return dict(name=item.name, values=dict(item.values), alive=item.alive, why=item.why, stage=item.stage,
+    return dict(index=d.get("index", 0), name=item.name, values=dict(item.values), alive=item.alive, why=item.why, stage=item.stage,
                 mtow=d.get("mtow", math.nan), mtow6=d.get("mtow6", math.nan), pv=d.get("pv", math.nan),
                 b=d.get("b", math.nan), m_bat=d.get("m_bat", math.nan),
                 nota=d.get("nota", math.nan), valido=d.get("valido", False), termos=d.get("termos", {}),

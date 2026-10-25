@@ -256,6 +256,75 @@ class VariablesTable(QtWidgets.QTableWidget):
             v.options = [s.strip() for s in self.item(i, 6).text().split(",") if s.strip()]
 
 
+# ------------------------------------------------------------------ restrições
+class ConstraintsTable(QtWidgets.QWidget):
+    """as restrições do problema, como em Condições e restrições do aerosim: ligada, grandeza, operador, valor.
+    A pista (s_to) e o MTOW definem a busca (o MTOW é o que corre na pista); as outras barram o ponto de projeto"""
+    COLS = ["ligada", "grandeza", "op", "valor"]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        v = QtWidgets.QVBoxLayout(self)
+        v.setContentsMargins(0, 0, 0, 0)
+        self.t = QtWidgets.QTableWidget(0, len(self.COLS))
+        self.t.setHorizontalHeaderLabels(self.COLS)
+        self.t.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        self.t.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.t.verticalHeader().setVisible(False)
+        v.addWidget(self.t)
+        h = QtWidgets.QHBoxLayout()
+        self.add_cb = QtWidgets.QComboBox()
+        for k, q in rg.QUANTITIES.items():
+            self.add_cb.addItem(f"{q.label} ({q.unit})" if q.unit else q.label, k)
+        b = QtWidgets.QPushButton("+ restrição")
+        b.clicked.connect(lambda: self._add(self.add_cb.currentData(), "≤", 0.0, True))
+        r = QtWidgets.QPushButton("− tirar a selecionada")
+        r.clicked.connect(lambda: self.t.removeRow(self.t.currentRow()) if self.t.currentRow() >= 0 else None)
+        h.addWidget(self.add_cb, 1)
+        h.addWidget(b)
+        h.addWidget(r)
+        v.addLayout(h)
+
+    def _add(self, key: str, op: str, value: float, active: bool) -> None:
+        i = self.t.rowCount()
+        self.t.insertRow(i)
+        box = QtWidgets.QTableWidgetItem()
+        box.setCheckState(QtCore.Qt.CheckState.Checked if active else QtCore.Qt.CheckState.Unchecked)
+        self.t.setItem(i, 0, box)
+        q = rg.QUANTITIES.get(key)
+        it = QtWidgets.QTableWidgetItem(f"{q.label} ({q.unit})" if q and q.unit else (q.label if q else key))
+        it.setData(QtCore.Qt.ItemDataRole.UserRole, key)
+        it.setFlags(it.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+        self.t.setItem(i, 1, it)
+        cb = QtWidgets.QComboBox()
+        cb.addItems(["≤", "≥", "="])
+        cb.setCurrentText(op)
+        self.t.setCellWidget(i, 2, cb)
+        self.t.setItem(i, 3, QtWidgets.QTableWidgetItem(f"{value:g}"))
+        _fit(self.t, 0)
+
+    def set_problem(self, pr) -> None:
+        self.t.setRowCount(0)
+        for c in pr.constraints:
+            self._add(c.key, c.op, c.value, c.active)
+        _fit(self.t, 0)
+
+    def read_into(self, pr) -> None:
+        from aerosim.interfaces.optim import OptConstraint
+        old = {c.key: c for c in pr.constraints}
+        out = []
+        for i in range(self.t.rowCount()):
+            key = self.t.item(i, 1).data(QtCore.Qt.ItemDataRole.UserRole)
+            try:
+                val = float(self.t.item(i, 3).text().replace(",", "."))
+            except ValueError:
+                val = old[key].value if key in old else 0.0
+            out.append(OptConstraint(key, self.t.cellWidget(i, 2).currentText(), val,
+                                     self.t.item(i, 0).checkState() == QtCore.Qt.CheckState.Checked,
+                                     old[key].tol if key in old else 0.02))
+        pr.constraints = out
+
+
 # ------------------------------------------------------------------ contas fora da linha da janela
 class _Worker(QtCore.QObject):
     progress = QtCore.pyqtSignal(float, str)
@@ -293,8 +362,10 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         split.addWidget(self._left())
         split.addWidget(self._right())
         split.setSizes([560, 1040])
-        if project is not None:
-            self.set_project(project, path, problem)
+        if project is None:                          # sem projeto: os rascunhos de um projeto novo da sprint
+            from aerosim.design.project import DesignProject
+            project = DesignProject()
+        self.set_project(project, path, problem)
 
     # ------------------------------------------------------------------ esquerda: o problema
     def _left(self):
@@ -328,6 +399,9 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         v.addLayout(h)
         self.vars = VariablesTable()
         v.addWidget(self.vars)
+        _section(v, "Restrições (como Condições e restrições do aerosim)")
+        self.cons = ConstraintsTable()
+        v.addWidget(self.cons)
         _section(v, "Categorias de avião")
         grid = QtWidgets.QGridLayout()
         self.cat_cb = {}
@@ -371,6 +445,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         s = QtWidgets.QScrollArea()
         s.setWidgetResizable(True)
         s.setWidget(w)
+        self.left_scroll = s
         return s
 
     # ------------------------------------------------------------------ direita: o que está acontecendo
@@ -444,6 +519,17 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.keep_b.setEnabled(False)
         self.keep_b.clicked.connect(self._keep)
         h.addWidget(self.keep_b)
+        self.aerosim_b = QtWidgets.QPushButton("Abrir no aerosim (todas as análises)…")
+        self.aerosim_b.setToolTip("abre o avião selecionado numa janela do aerosim: polar, estabilidade, desempenho, "
+                                  "missão 6GDL, cargas... tudo o que o aerosim tem")
+        self.aerosim_b.setEnabled(False)
+        self.aerosim_b.clicked.connect(self.open_aerosim)
+        h.addWidget(self.aerosim_b)
+        self.csv_b = QtWidgets.QPushButton("Exportar CSV…")
+        self.csv_b.setToolTip("cada avião avaliado, em ordem, com as variáveis que mudaram nele (avaliacoes.csv), e "
+                              "cada configuração com a nota fator por fator (configuracoes.csv)")
+        self.csv_b.clicked.connect(self._export)
+        h.addWidget(self.csv_b)
         h.addStretch(1)
         rv.addLayout(h)
         s = QtWidgets.QScrollArea()
@@ -464,6 +550,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
     def set_problem(self, pr) -> None:
         self.problem = pr
         self.vars.set_problem(pr)
+        self.cons.set_problem(pr)
         self.scoring.set_spec(pr.scoring)
         for c, cb in self.cat_cb.items():
             cb.setChecked(c in (pr.params.get("categorias") or []))
@@ -471,6 +558,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
     def read_problem(self):
         pr = copy.deepcopy(self.problem)
         self.vars.read_into(pr)
+        self.cons.read_into(pr)
         pr.scoring = self.scoring.spec()
         pr.evaluator = "etapas"
         pr.params["categorias"] = [c for c, cb in self.cat_cb.items() if cb.isChecked()]
@@ -505,9 +593,6 @@ class AeroOptWindow(QtWidgets.QMainWindow):
 
     # ------------------------------------------------------------------ rodar
     def start(self):
-        if self.project is None or self.project.draft_aircraft() is None:
-            self.msg.setText("abra um projeto com um conjunto guardado (etapa Empenagem)")
-            return
         try:
             scoring = self.scoring.scoring()
             scoring.program()
@@ -573,8 +658,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                 if k + 1 < len(names):
                     self.funnel[names[k + 1]][0] += 1
         if stage == "superfícies":
-            for _x, m, ok in r["history"]:
-                self.points.append((m, ok, r["name"]))
+            for h in r["history"]:
+                self.points.append((h["mtow"], h["ok"], r["name"]))
         if stage == "nota" and r["name"] not in self.order:
             self.order.append(r["name"])
         self.rows[r["name"]] = r
@@ -587,14 +672,21 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             if name in self.funnel:
                 self.funnel[name] = [n_in, n_in, n_out]
         self.redraw()
+        self.result_rows = res.rows
+        from . import export
+        base = os.path.join(os.path.dirname(os.path.abspath(self.path)) if self.path else os.getcwd(),
+                            "rodadas_aeroopt")
+        self.run_dir = export.write(res.rows, export.run_folder(base))
+        n_eval = sum(len(r["history"]) for r in res.rows)
+        csv_txt = f"<br>{len(res.rows)} configurações, {n_eval} pontos de projeto: CSV em {self.run_dir}"
         b = res.best
         self.bar.setValue(1000)
         if b:
             self.msg.setText(f"melhor: <b>{b['name']}</b> — nota {_fmt(b['nota'])}" +
-                             ("" if b["valido"] else " (voo inválido)"))
+                             ("" if b["valido"] else " (voo inválido)") + csv_txt)
             self.select(b["name"])
         else:
-            self.msg.setText("nenhuma configuração chegou ao fim (veja a coluna situação)")
+            self.msg.setText("nenhuma configuração chegou ao fim (veja a coluna situação)" + csv_txt)
 
     # ------------------------------------------------------------------ desenhar
     def redraw(self):
@@ -686,6 +778,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             return
         self.selected = name
         self.keep_b.setEnabled(True)
+        self.aerosim_b.setEnabled(False)          # liga quando o avião estiver refeito (o 3D)
         self.draw_map()
         lines = [[k.partition(".")[2] or k, _fmt(v)] for k, v in r["values"].items()]
         lines += [["MTOW na pista (kg)", _fmt(r["mtow"])], ["MTOW 6GDL (kg)", _fmt(r["mtow6"])],
@@ -710,8 +803,47 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         th.start()
 
     def _show3d(self, name: str, d: dict):
-        if name == self.selected and self.view is not None:
-            self.view.set_aircraft(d["ac"])
+        if name == self.selected:
+            self.selected_design = d
+            self.aerosim_b.setEnabled(True)
+            if self.view is not None:
+                self.view.set_aircraft(d["ac"])
+
+    def _export(self):
+        rows = getattr(self, "result_rows", None) or list(self.rows.values())
+        if not rows:
+            self.msg.setText("nada para exportar: rode antes")
+            return
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Pasta para os CSV")
+        if folder:
+            from . import export
+            export.write(rows, folder)
+            self.msg.setText(f"gravado: {folder}/avaliacoes.csv e configuracoes.csv")
+
+    def open_aerosim(self):
+        """o avião selecionado numa janela do aerosim (todas as abas). O projeto vai para uma pasta própria da
+        rodada, então a sprint do usuário não é tocada"""
+        r, d = self.rows.get(self.selected or ""), getattr(self, "selected_design", None)
+        if r is None or d is None:
+            return
+        from aerosim.gui.main_window import MainWindow
+        from aerosim.gui.state import AppState
+        from aerosim.manager import SimulationManager
+        p = copy.deepcopy(self.project)
+        sg.apply_values(p, r["values"])
+        ac = copy.deepcopy(d["ac"])
+        ac.name = r["name"]
+        p.fleet, p.current = [ac], 0
+        base = getattr(self, "run_dir", None) or os.path.join(os.getcwd(), "rodadas_aeroopt")
+        folder = os.path.join(base, "aerosim_" + "".join(ch if ch.isalnum() else "_" for ch in r["name"])[:60])
+        os.makedirs(folder, exist_ok=True)
+        st = AppState(SimulationManager(), ac, design_dir=folder)
+        st.open_design(p, folder)
+        win = MainWindow(st)
+        win.setWindowTitle(f"aerosim — {r['name']} (do aeroopt)")
+        win.show()
+        self._aerosim_windows = getattr(self, "_aerosim_windows", []) + [win]
+        return win
 
     def _keep(self):
         r = self.rows.get(self.selected or "")

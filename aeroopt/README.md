@@ -145,6 +145,24 @@ EE, nota, envergadura, bateria). Clicar num ponto do mapa ou numa linha da tabel
 entradas da nota, cada fator e cada condição de voo válido; "Gravar projeto com este avião…" leva os valores para os
 rascunhos das etapas, num projeto novo.
 
+A janela abre sem projeto nenhum: o avião sai dos rascunhos de um projeto novo da sprint (asa, empenagem e motores
+como estão nas etapas), sem precisar guardar nada antes. As **restrições** ficam numa tabela como a de Condições e
+restrições do aerosim (ligada, grandeza, operador, valor). A pista e o MTOW definem a busca, porque o MTOW é a maior
+massa que corre na pista; as outras barram o ponto de projeto que não cumpre. Com o objetivo simples (MTOW ou EE)
+no lugar do `.toml`, a rodada vira só "o maior MTOW que cumpre estas restrições".
+
+Para ver o avião escolhido em tudo o que o aerosim já calcula (polar, estabilidade, desempenho, envelopes, missão
+6GDL, cargas), "Abrir no aerosim" abre uma janela do aerosim com ele. O projeto dessa janela fica numa pasta própria
+da rodada, então a sprint aberta no aerosim não é tocada.
+
+Cada rodada grava o registro em `rodadas_aeroopt/<data_hora>/` (ao lado do projeto, fora do git), com dois CSV
+(`export.py`). Em `avaliacoes.csv` vai um ponto de projeto por linha, na ordem de cada configuração: o número da
+configuração e o da avaliação dentro dela, a categoria e as escolhas discretas, cada variável contínua, o MTOW na
+pista, o PV, a envergadura, a bateria, se fecha e por que não. Em `configuracoes.csv` vai uma configuração por linha:
+o melhor ponto dela, até que etapa chegou, o MTOW no 6GDL, as entradas da nota, cada fator, cada condição de voo
+válido e a nota. O separador é `;` com vírgula decimal, que o Excel e o LibreOffice em português abrem direto; no
+pandas, `pd.read_csv(arq, sep=";", decimal=",")`.
+
 Os processos das etapas, quando a rodada sai da janela, nascem novos ("spawn"): não herdam as linhas de execução do
 Qt. O 6GDL é a etapa mais lenta (dezenas de segundos por avião); o topo da bisseção na massa fica perto do MTOW da
 pista (1,6 vez), o que corta voos sem mudar o resultado além da resolução da bisseção.

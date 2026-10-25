@@ -69,3 +69,52 @@ def test_window_runs_and_shows_each_candidate(app):
     w.ax_x.setCurrentText("envergadura (m)")                       # o mapa troca de eixos sem rodar de novo
     w.ax_y.setCurrentText("nota")
     _wait(app, lambda: not w._threads)
+
+
+def test_csv_has_every_evaluation_in_order(tmp_path):
+    import csv
+
+    from aeroopt import export
+    from aeroopt import stages as sg
+    from aeroopt.gui import example_project
+    p, pr = example_project()
+    pr.params["categorias"] = ["asa alta", "cauda em V"]
+    pr.variable("power.propeller").options = ["Genérica 13x6.5"]
+    pr.variable("wing.area").lo, pr.variable("wing.area").hi = 0.55, 0.6
+    res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=3))
+    export.write(res.rows, str(tmp_path))
+    with open(tmp_path / "avaliacoes.csv", encoding="utf-8-sig") as f:
+        ev = list(csv.reader(f, delimiter=";"))
+    with open(tmp_path / "configuracoes.csv", encoding="utf-8-sig") as f:
+        cf = list(csv.reader(f, delimiter=";"))
+    head = ev[0]
+    assert head[:3] == ["configuração nº", "avaliação nº", "configuração"]
+    assert {"categoria", "power.propeller", "wing.span", "wing.area", "MTOW pista (kg)", "fecha", "motivo"} <= set(head)
+    assert len(ev) - 1 == sum(len(r["history"]) for r in res.rows) == 6     # 3 por configuração
+    assert [(r[0], r[1]) for r in ev[1:]] == [("1", "1"), ("1", "2"), ("1", "3"), ("2", "1"), ("2", "2"), ("2", "3")]
+    assert len(cf) == 3 and "nota" in cf[0] and "fator: f_bat" in cf[0]
+    assert "," in ev[1][head.index("wing.span")]                            # vírgula decimal
+
+
+def test_empty_project_runs_and_constraints_are_editable(app):
+    from aeroopt.gui import AeroOptWindow
+    w = AeroOptWindow()                                       # sem projeto: os rascunhos de um projeto novo
+    pr = w.read_problem()
+    assert pr.constraints and w.cons.t.rowCount() == len(pr.constraints)
+    i = next(i for i, c in enumerate(pr.constraints) if c.key == "s_to")
+    w.cons.t.item(i, 3).setText("40")
+    w.cons._add("b", "≤", 1.8, True)
+    pr = w.read_problem()
+    assert next(c for c in pr.constraints if c.key == "s_to").value == 40.0
+    assert pr.constraints[-1].key == "b" and pr.constraints[-1].value == 1.8
+    for v in w.problem.variables:
+        v.free = False
+    w.vars.set_problem(w.problem)
+    w.evals.setValue(1)
+    w.workers.setValue(1)
+    w.six.setChecked(False)
+    w.start()
+    _wait(app, lambda: not w._threads)
+    assert len(w.rows) == 1 and w.run_dir and os.path.exists(os.path.join(w.run_dir, "avaliacoes.csv"))
+    import shutil
+    shutil.rmtree(os.path.dirname(w.run_dir), ignore_errors=True) if "rodadas_aeroopt" in w.run_dir else None

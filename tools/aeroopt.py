@@ -37,6 +37,7 @@ def main(argv=None) -> int:
     ap.add_argument("--png", help="grava a convergência (melhor nota viável por iteração)")
     ap.add_argument("--etapas", action="store_true", help="avaliador em etapas (o padrão do arquivo é o mini-MDO)")
     ap.add_argument("--projeto", help="projeto da sprint (.json) de onde saem os rascunhos")
+    ap.add_argument("--csv", help="etapas: pasta dos CSV da rodada (padrão: rodadas_aeroopt/<data_hora>)")
     ap.add_argument("--categorias", help="etapas: tipos de avião, separados por vírgula (asa alta, biplano, tandem, "
                     "asa voadora...; ver aeroopt/categories.py)")
     ap.add_argument("--processos", type=int, help="processos por etapa (padrão: um por núcleo)")
@@ -113,15 +114,16 @@ def main(argv=None) -> int:
 def staged(pr, project, a) -> int:
     """o processo em etapas: imprime o andamento, cada configuração e a melhor"""
     from aeroopt.stages import StagedEvaluator, StagedSolver
-    if project.draft_aircraft() is None:
-        print("o projeto não tem conjunto guardado (etapa Empenagem): passe --projeto com um avião da sprint")
-        return 1
     sc = scoring_for(pr.scoring)
     print(f"problema: {pr.name or a.problema}")
     print(f"livres: {', '.join(v.key for v in pr.free_variables()) or '(nenhuma)'}")
     print(f"nota: {sc.name}" + (f"  [{sc.source}]" if sc.source else ""))
     ev = StagedEvaluator(project, workers=a.processos, six_dof=not a.sem_6gdl, evals=a.avaliacoes)
     res = StagedSolver().run(pr, ev, progress=lambda f, t: print(f"  {f:4.0%} {t}", flush=True))
+    from aeroopt import export
+    folder = export.write(res.rows, a.csv or export.run_folder())
+    print(f"\nCSV: {folder}/avaliacoes.csv ({sum(len(r['history']) for r in res.rows)} pontos de projeto) e "
+          f"configuracoes.csv ({len(res.rows)} configurações)")
     print("\netapas (entraram → seguiram)")
     for name, n_in, n_out in res.names["etapas"]:
         print(f"  {name:16s} {n_in} → {n_out}")

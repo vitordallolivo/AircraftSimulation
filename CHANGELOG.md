@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, registro e restrições: cada rodada grava `avaliacoes.csv` (cada ponto de projeto, em ordem, com as
+  variáveis) e `configuracoes.csv` (nota fator por fator) em `rodadas_aeroopt/` (`aeroopt/export.py`; `--csv` na
+  ferramenta). A janela roda sem conjunto guardado (o avião sai dos rascunhos), edita as restrições como Condições e
+  restrições do aerosim e abre o avião escolhido no aerosim, com todas as análises.
 - aeroopt, janela (O05): `python -m aeroopt [projeto] [problema]` (ou `--exemplo`). O `.toml` da pontuação inteiro em
   campos editáveis (conferir no núcleo, gravar), variáveis, categorias e opções das etapas; a rodada ao vivo, a cada
   candidato que termina uma etapa: andamento das etapas, MTOW de cada ponto avaliado, nota por configuração, mapa dos

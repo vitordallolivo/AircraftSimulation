@@ -106,10 +106,10 @@ def test_staged_solver_sizes_surfaces_by_takeoff():
     res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=3),
                                 progress=lambda f, t: seen.append((f, t)))
     (row,) = res.rows
-    spans = [h[0]["wing.span"] for h in row["history"]]
+    spans = [h["values"]["wing.span"] for h in row["history"]]
     assert len(set(spans)) == 3                              # a busca andou na envergadura
     assert row["alive"] and row["nota"] == row["mtow"] == res.best["nota"]   # objetivo simples: o MTOW
-    assert row["mtow"] == max(m for _, m, ok in row["history"] if ok)
+    assert row["mtow"] == max(h["mtow"] for h in row["history"] if h["ok"])
     assert res.names["etapas"] == [("superfícies", 1, 1), ("nota", 1, 1)]
     assert seen[-1][0] == pytest.approx(1.0)
     assert p.wing_draft.span == before.wing_draft.span and p.variables == before.variables
