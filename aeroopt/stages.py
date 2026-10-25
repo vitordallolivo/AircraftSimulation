@@ -43,6 +43,7 @@ from aerosim.interfaces.optim import (
     StageItem,
 )
 
+from . import categories as cat
 from . import scoring as sc
 from .pipeline import Pipeline
 from .problem import apply_to_project
@@ -53,7 +54,11 @@ MAX_CONFIGS = 256                 # acima disso a lista de configurações é gr
 def candidate(project, values: dict):
     """o avião dos rascunhos do projeto com estes valores (a asa, o conjunto e os motores da sprint)"""
     p = copy.deepcopy(project)
+    if cat.KEY in values:
+        cat.apply(p, values[cat.KEY])
     for k, v in values.items():
+        if k == cat.KEY:
+            continue
         if k in ("wing.airfoil", "wing.airfoil_tip") and v and p.airfoil(v) is None:
             e = mdo.airfoil_catalog(p).get(v)          # perfil da biblioteca que o projeto ainda não tem
             if e is not None:
@@ -67,8 +72,13 @@ def candidate(project, values: dict):
 
 
 def configurations(project, problem: OptProblem, catalog=None) -> list[StageItem]:
-    """um candidato por combinação das variáveis discretas livres (lista e inteira)"""
+    """um candidato por combinação das variáveis discretas livres (lista e inteira) e das categorias escolhidas"""
     axes = []
+    cats = list(problem.params.get("categorias") or [])
+    for c in cats:
+        cat.fields(c)                                 # nome errado para aqui, antes de rodar
+    if cats:
+        axes.append((cat.KEY, cats))
     for v in problem.free_variables():
         if v.kind == "lista":
             axes.append((v.key, list(dict.fromkeys(v.options)) or mdo.available(project, v.key, catalog)))
@@ -81,7 +91,8 @@ def configurations(project, problem: OptProblem, catalog=None) -> list[StageItem
     out = []
     for combo in itertools.product(*(o for _, o in axes)):
         vals = dict(zip(keys, combo))
-        name = ", ".join(f"{k.partition('.')[2]}={x}" for k, x in vals.items()) or "configuração única"
+        name = ", ".join(str(x) if k == cat.KEY else f"{k.partition('.')[2]}={x}" for k, x in vals.items()) \
+            or "configuração única"
         out.append(StageItem(name=name, values=vals))
     return out
 

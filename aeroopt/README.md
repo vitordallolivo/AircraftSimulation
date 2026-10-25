@@ -99,6 +99,13 @@ não fecha para ali, com o motivo. A **decolagem 6GDL** refaz o MTOW de cada sob
 de liberdade (a aba Missão, modo MTOW), um processo por candidato. A **nota** calcula a pontuação de todos numa chamada
 só ao núcleo.
 
+As **categorias** (`categories.py`) dizem que tipo de avião a busca pode montar: asa alta, média ou baixa, parasol,
+biplano, tandem, asa voadora e cauda em V. Cada categoria é um conjunto de campos da sprint que mudam juntos (a
+altura da asa, a segunda asa com o recuo e o desnível dela, o tipo de cauda), e as que o problema escolhe
+(`params["categorias"]`) viram mais um eixo das configurações: cada hélice, cada motor, uma vez em cada categoria. Sem
+categoria escolhida, o avião fica como está no projeto. A altura da asa não muda o MTOW da corrida rápida (o efeito
+solo é um modifier desligado por padrão); ela aparece no 6GDL, no trem e na vista 3D.
+
 O otimizador das superfícies é a busca por coordenadas com passo que encolhe: tenta mais e menos um passo em cada
 variável, aceita a primeira tentativa que melhora e, se nenhuma melhora, divide o passo por dois (Kolda, Lewis e
 Torczon, *Optimization by direct search*, SIAM Review 45(3), 2003, seção 3, a conferir no PDF). Ela foi escolhida
@@ -175,6 +182,7 @@ convergência (`--png`); `--isolar` escolhe as variáveis livres na hora:
 python tools/aeroopt.py --exemplo perfis/exemplo.opt.json
 python tools/aeroopt.py perfis/exemplo.opt.json --isolar asa --png perfis/convergencia.png
 python tools/aeroopt.py perfis/exemplo.opt.json --etapas --projeto meu_projeto.json --processos 4
+python tools/aeroopt.py perfis/exemplo.opt.json --etapas --projeto meu_projeto.json --categorias "asa alta,biplano,asa voadora"
 ```
 
 Uma etapa nova é uma classe que implementa `IStage` (`one` para um candidato, ou `batch = True` e `run` para o lote,

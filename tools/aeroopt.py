@@ -37,6 +37,8 @@ def main(argv=None) -> int:
     ap.add_argument("--png", help="grava a convergência (melhor nota viável por iteração)")
     ap.add_argument("--etapas", action="store_true", help="avaliador em etapas (o padrão do arquivo é o mini-MDO)")
     ap.add_argument("--projeto", help="projeto da sprint (.json) de onde saem os rascunhos")
+    ap.add_argument("--categorias", help="etapas: tipos de avião, separados por vírgula (asa alta, biplano, tandem, "
+                    "asa voadora...; ver aeroopt/categories.py)")
     ap.add_argument("--processos", type=int, help="processos por etapa (padrão: um por núcleo)")
     ap.add_argument("--avaliacoes", type=int, default=24, help="pontos de projeto por configuração (superfícies)")
     ap.add_argument("--sem-6gdl", action="store_true", help="pula a etapa da decolagem no 6GDL")
@@ -54,6 +56,8 @@ def main(argv=None) -> int:
     pr = aeroopt.load(a.problema)
     if a.isolar:
         pr.isolate(*[s.strip() for s in a.isolar.split(",") if s.strip()])
+    if a.categorias:
+        pr.params["categorias"] = [s.strip() for s in a.categorias.split(",") if s.strip()]
     project = DesignProject.load(a.projeto) if a.projeto else DesignProject()
     if a.etapas or pr.evaluator == "etapas":
         return staged(pr, project, a)

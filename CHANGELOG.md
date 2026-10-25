@@ -6,6 +6,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, categorias de configuração: asa alta, média, baixa, parasol, biplano, tandem, asa voadora e cauda em V
+  (`aeroopt/categories.py`). As categorias escolhidas no problema viram um eixo das configurações do processo em
+  etapas (`--categorias` na ferramenta).
 - Corrida de decolagem da sprint no núcleo: a corrida do `power.performance` (o MTOW na pista e a curva corrida ×
   massa) roda em `core/src/sizing/ground.zig` (`aerosim_ground_runs`, `aerosim_ground_mtow`), bit a bit igual à
   conta em Python de antes. O ponto de projeto acoplado ficou umas cinco vezes mais rápido.

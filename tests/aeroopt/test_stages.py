@@ -118,3 +118,29 @@ def test_six_dof_stage_gives_takeoff_mtow():
     res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, evals=1))
     (row,) = res.rows
     assert math.isfinite(row["mtow6"]) and row["inputs"]["mtow"] == row["mtow6"]
+
+
+def test_categories_build_each_kind_of_aircraft():
+    """cada categoria monta o avião dela pela sprint; as categorias escolhidas viram um eixo das configurações"""
+    from aeroopt import categories as cat
+    from aerosim.design import power as pw
+    p = _project()
+    surfaces = {}
+    for c in ("asa baixa", "biplano", "tandem", "asa voadora", "cauda em V"):
+        q, cand = sg.candidate(p, {cat.KEY: c})
+        ac, _ = pw.assemble(cand, q.requirements, q.rules, None, q.airfoil_map())
+        surfaces[c] = [s.role for s in ac.surfaces]
+    assert surfaces["asa voadora"].count("wing") == 1 and "htail" not in surfaces["asa voadora"]
+    assert surfaces["biplano"].count("wing") == 2 and "htail" in surfaces["biplano"]
+    assert surfaces["tandem"].count("wing") == 2 and "htail" not in surfaces["tandem"]
+    q, _ = sg.candidate(p, {cat.KEY: "asa baixa"})
+    assert q.rules.wing_z > 0 and p.rules.wing_z < 0              # o projeto do usuário não muda
+    pr = aeroopt.from_project(p)
+    pr.isolate("power.propeller")
+    pr.variable("power.propeller").options = ["APC 15x8E", "APC 14x7E"]
+    pr.params["categorias"] = ["asa alta", "biplano", "asa voadora"]
+    items = sg.configurations(p, pr)
+    assert len(items) == 6 and items[0].name == "asa alta, propeller=APC 15x8E"
+    pr.params["categorias"] = ["trimotor voador"]
+    with pytest.raises(KeyError):
+        sg.configurations(p, pr)
