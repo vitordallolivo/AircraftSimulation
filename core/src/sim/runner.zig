@@ -52,7 +52,30 @@ pub const ConfigError = error{
     TooManyPropPoints,
 };
 
-pub const StateError = error{ NotConfigured, BadSegment, TrimFailed };
+pub const StateError = error{ NotConfigured, BadSegment, TrimFailed, NoGear, BadInertia, Diverged };
+
+/// o que cada erro de estado quer dizer, para mostrar a quem voa (AeroDrive) ou analisa (aerosim)
+pub fn stateText(e: StateError) []const u8 {
+    return switch (e) {
+        error.NotConfigured => "o avião não foi configurado",
+        error.BadSegment => "segmento da missão inválido",
+        error.TrimFailed => "a trimagem não convergiu",
+        error.NoGear => "o avião não tem trem de pouso (o voo começa parado na pista)",
+        error.BadInertia => "massa ou inércia inválida (zero, negativa ou NaN): confira a massa e a inércia",
+        error.Diverged => "a simulação divergiu ao assentar o avião (estado NaN): confira o trem, a massa e a inércia",
+    };
+}
+
+/// o que o voo precisa e a configuração (feita também para análises sem voo) não exige
+fn checkFlight(p: *const T.Params) StateError!void {
+    inline for (.{ p.m_dry, p.Ixx, p.Iyy, p.Izz }) |v| if (!(v > 0) or !std.math.isFinite(v)) return error.BadInertia;
+    if (!std.math.isFinite(p.Ixz)) return error.BadInertia;
+}
+
+fn finiteState(x: []const f64) bool {
+    for (x) |v| if (!std.math.isFinite(v)) return false;
+    return true;
+}
 
 fn count(n: i32, max: usize, e: ConfigError) ConfigError!usize {
     if (n < 0 or n > max) return e;
@@ -134,6 +157,8 @@ fn resetCommon(inst: *Instance) void {
 /// aeronave parada na cabeceira, freada, até assentar no trem (3 s)
 pub fn resetGround(inst: *Instance) StateError!void {
     if (!inst.configured) return error.NotConfigured;
+    try checkFlight(&inst.p);
+    if (inst.p.n_gear <= 0) return error.NoGear;
     resetCommon(inst);
     const p = &inst.p;
     const r = &inst.r;
@@ -147,6 +172,10 @@ pub fn resetGround(inst: *Instance) StateError!void {
     for (0..L.max_props) |i| r.x[S.rps(i)] = 1.0;
     var t: f64 = -3.0;
     while (t < -1e-9) : (t += p.dt) dyn.rk4(inst.ctx(), t, &r.x, p.dt);
+    if (!finiteState(&r.x)) {
+        r.valid = 0;
+        return error.Diverged;
+    }
     r.x[S.N] = 0;
     r.x[S.E] = 0;
     r.x[S.PSI] = 0;
@@ -168,6 +197,7 @@ pub fn resetAir(inst: *Instance, seg: i32) StateError!void {
     if (!inst.configured) return error.NotConfigured;
     const p = &inst.p;
     if (seg < 0 or seg >= p.n_seg) return error.BadSegment;
+    try checkFlight(p);
     resetCommon(inst);
     const r = &inst.r;
     const sg = &p.seg[@intCast(seg)];
@@ -498,7 +528,9 @@ pub fn run(inst: *Instance, t_limit: f64, log: []T.LogRow, nrows: *usize) Status
             break;
         }
         // abaixo do chão, divergiu ou capotou (tocando o chão com mais de 80° de inclinação)
-        if (h < hgnd - 1.0 or !std.math.isFinite(x[S.U]) or (contact and @abs(fm.wrap(x[S.PHI])) > 1.4)) {
+        if (h < hgnd - 1.0 or !std.math.isFinite(x[S.U]) or !std.math.isFinite(x[S.PHI]) or
+            !std.math.isFinite(x[S.THE]) or (contact and @abs(fm.wrap(x[S.PHI])) > 1.4))
+        {
             status = .crashed;
             break;
         }

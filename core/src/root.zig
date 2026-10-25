@@ -32,6 +32,9 @@ pub const E_NOT_CONFIGURED: i32 = -2;
 pub const E_BAD_SEGMENT: i32 = -3;
 pub const E_TRIM: i32 = -4;
 pub const E_BAD_INDEX: i32 = -5;
+pub const E_NO_GEAR: i32 = -6;
+pub const E_BAD_INERTIA: i32 = -7;
+pub const E_DIVERGED: i32 = -8;
 
 fn configCode(e: runner.ConfigError) i32 {
     return switch (e) {
@@ -52,6 +55,9 @@ fn stateCode(e: runner.StateError) i32 {
         error.NotConfigured => E_NOT_CONFIGURED,
         error.BadSegment => E_BAD_SEGMENT,
         error.TrimFailed => E_TRIM,
+        error.NoGear => E_NO_GEAR,
+        error.BadInertia => E_BAD_INERTIA,
+        error.Diverged => E_DIVERGED,
     };
 }
 

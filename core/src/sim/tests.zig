@@ -154,3 +154,17 @@ test "linearização: equilíbrio, amortecimentos e acoplamentos" {
     try std.testing.expect(@abs(A[3 * n + 2]) < 0.05 * @abs(A[3 * n + 1]));
     try std.testing.expect(lm.B[4 * linear.nu + 0] < 0); // M_δe: δe > 0 baixa o nariz
 }
+
+test "avião que não pode voar: erro claro, sem pane" {
+    aircraft(&inst.p);
+    inst.p.n_gear = 0; // sem trem: cairia na pista
+    try runner.configure(&inst); // as análises sem voo continuam aceitando
+    try std.testing.expectError(error.NoGear, runner.resetGround(&inst));
+    aircraft(&inst.p);
+    inst.p.Ixx = 0; // sem inércia de rolamento
+    try runner.configure(&inst);
+    try std.testing.expectError(error.BadInertia, runner.resetGround(&inst));
+    try std.testing.expectError(error.BadInertia, runner.resetAir(&inst, 1));
+    inst.p.Ixx = std.math.nan(f64);
+    try std.testing.expectError(error.BadInertia, runner.resetGround(&inst));
+}

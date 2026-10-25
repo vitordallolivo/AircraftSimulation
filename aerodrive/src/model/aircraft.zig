@@ -467,7 +467,9 @@ pub fn parse(gpa: std.mem.Allocator, bytes: []const u8, diag: *Diag) (Error || s
     }
     const ac = std.json.parseFromValueLeaky(Aircraft, a, node, .{ .ignore_unknown_fields = true }) catch |e| {
         if (e == error.OutOfMemory) return error.OutOfMemory;
-        diag.set("campo com tipo errado na aeronave ({s})", .{@errorName(e)});
+        if (e == error.MissingField) {
+            diag.set("falta um campo obrigatório na aeronave: salve de novo pela GUI (ela completa o que falta)", .{});
+        } else diag.set("campo com tipo errado na aeronave ({s})", .{@errorName(e)});
         return error.BadField;
     };
     try validate(&ac, diag);

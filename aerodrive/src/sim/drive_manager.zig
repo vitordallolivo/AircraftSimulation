@@ -53,6 +53,7 @@ pub const DriveManager = struct {
     inst: *core.runner.Instance,
     info: params.Info,
     mode: Mode = .manual,
+    reset_error: []const u8 = "", // por que o núcleo não pôs o avião na pista (vazio: pôs)
     t: f64 = 0,
     last: ?T.LogRow = null,
     frame: Frame = .{},
@@ -70,7 +71,10 @@ pub const DriveManager = struct {
         inst.p.dtlog = 0.005; // várias linhas por quadro (o último estado é o do fim do quadro)
         core.runner.configure(inst) catch return error.CoreConfig;
         var dm: DriveManager = .{ .gpa = gpa, .inst = inst, .info = info, .n_seg = @intCast(inst.p.n_seg), .mode = mode };
-        try dm.restart();
+        dm.restart() catch |e| {
+            diag.set("{s}", .{dm.reset_error});
+            return e;
+        };
         return dm;
     }
 
@@ -80,7 +84,11 @@ pub const DriveManager = struct {
 
     pub fn restart(dm: *DriveManager) !void {
         dm.inst.p.pilot = .{ .manual = @intFromBool(dm.mode == .manual) };
-        core.runner.resetGround(dm.inst) catch return error.CoreConfig;
+        core.runner.resetGround(dm.inst) catch |e| {
+            dm.reset_error = core.runner.stateText(e);
+            return error.CoreConfig;
+        };
+        dm.reset_error = "";
         dm.t = 0;
         dm.last = null;
         dm.status = .chunk;

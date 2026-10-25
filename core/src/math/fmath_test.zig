@@ -97,3 +97,13 @@ test "exp por Estrin: erro relativo < 1e-12 e perto do Horner (só o arredondame
         try testing.expectApproxEqRel(fm.lut.expWith(false, x), e, 1e-15);
     }
 }
+
+test "NaN e infinito: sincos devolve NaN e wrap devolve o próprio valor, sem pane nem laço sem fim" {
+    const nan = std.math.nan(f64);
+    const inf = std.math.inf(f64);
+    try std.testing.expect(std.math.isNan(fm.sincos(nan).s));
+    try std.testing.expect(std.math.isNan(fm.sincos(inf).c));
+    try std.testing.expect(std.math.isNan(fm.wrap(nan)));
+    try std.testing.expectEqual(inf, fm.wrap(inf));
+    try std.testing.expectApproxEqAbs(@as(f64, 1.0), fm.wrap(1.0 + 1.0e6 * 2.0 * std.math.pi), 1e-6);
+}

@@ -533,10 +533,6 @@ pub fn setup(ac: *const Aircraft, inst: *core.runner.Instance, diag: *model.Diag
         diag.set("o núcleo recusou a configuração ({s})", .{@errorName(e)});
         return error.CoreConfig;
     };
-    if (inst.p.n_gear == 0) { // o voo começa parado na pista: sem trem o avião cai e o estado vira NaN
-        diag.set("o avião não tem trem de pouso: ponha um na Montagem (o voo começa na pista)", .{});
-        return error.CoreConfig;
-    }
     var info = staticCharacteristics(inst, ac);
     if (ac.autopilot.auto_calibrate) {
         if (!std.math.isFinite(info.CL0) or !std.math.isFinite(info.CLa) or !(info.CLa > 0)) {

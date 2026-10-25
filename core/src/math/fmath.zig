@@ -55,7 +55,8 @@ pub fn SinLut(comptime bits: u5) type {
         fn body(x: f64) SinCos {
             const k = @round(x * inv_step);
             const d = @mulAdd(f64, -k, step, x);
-            const ki: i64 = @intFromFloat(k);
+            // NaN ou infinito (estado que divergiu): sem isto o @intFromFloat entra em pane; o resultado sai NaN
+            const ki: i64 = if (@abs(k) < 9.0e18) @intFromFloat(k) else 0;
             const idx: u64 = @as(u64, @bitCast(ki)) & mask;
             const s0 = table[idx];
             const c0 = table[(idx + n / 4) & mask];
@@ -314,7 +315,9 @@ pub inline fn sgn(x: f64) f64 {
     return if (x >= 0.0) 1.0 else -1.0;
 }
 pub fn wrap(a: f64) f64 {
+    if (!std.math.isFinite(a)) return a; // NaN ou infinito: os laços abaixo nunca terminariam
     var r = a;
+    if (@abs(r) > 64 * pi) r -= two_pi * @round(r / two_pi); // ângulo enorme: de uma vez, sem mil voltas
     while (r > pi) r -= two_pi;
     while (r < -pi) r += two_pi;
     return r;

@@ -64,7 +64,9 @@ def _fresh_copy(path: str) -> str:
 
 
 _ERRORS = {-1: "slot inválido", -2: "não configurado", -3: "segmento inválido", -4: "trimagem não convergiu",
-           -5: "índice inválido", -10: "superfícies demais", -11: "motores demais", -12: "pontos de trem demais",
+           -5: "índice inválido", -6: "o avião não tem trem de pouso (o voo começa na pista)",
+           -7: "massa ou inércia inválida (zero, negativa ou NaN)",
+           -8: "a simulação divergiu ao assentar o avião (estado NaN): confira o trem, a massa e a inércia", -10: "superfícies demais", -11: "motores demais", -12: "pontos de trem demais",
            -13: "tanques demais", -14: "segmentos demais", -15: "eventos demais", -16: "dt inválido",
            -17: "massa inválida", -18: "pontos de hélice demais"}
 

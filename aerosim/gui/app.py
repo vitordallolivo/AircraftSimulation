@@ -7,6 +7,22 @@ from __future__ import annotations
 import sys
 
 
+def _show_error(kind, value, tb) -> None:
+    """erro não tratado num botão ou sinal: o PyQt6 fecharia a GUI (abort); aqui vira um aviso e o trabalho continua.
+    O rastro completo sai no terminal, para relatar"""
+    import traceback
+
+    from PyQt6 import QtWidgets
+    traceback.print_exception(kind, value, tb)
+    if issubclass(kind, KeyboardInterrupt):
+        QtWidgets.QApplication.quit()
+        return
+    box = QtWidgets.QMessageBox(QtWidgets.QMessageBox.Icon.Warning, "Erro",
+                                f"{kind.__name__}: {value}\n\nA GUI continua aberta; o rastro completo está no terminal.")
+    box.setDetailedText("".join(traceback.format_exception(kind, value, tb)))
+    box.exec()
+
+
 def main(argv: list[str] | None = None) -> int:
     from PyQt6 import QtWidgets
 
@@ -19,6 +35,7 @@ def main(argv: list[str] | None = None) -> int:
 
     argv = sys.argv if argv is None else argv
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(argv)
+    sys.excepthook = _show_error
     from aerosim.design.store import is_sprint_path
     ac, path = empty(), None
     project = len(argv) > 1 and is_sprint_path(argv[1])
