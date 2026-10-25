@@ -490,3 +490,32 @@ export fn aerosim_sizing_defaults(cfg: *SZ.SizingCfg, opts: *SZ.OptOpts) void {
     cfg.* = .{};
     opts.* = .{};
 }
+
+// ------------------------------------------------------------------ geometria do avião montado
+const geometry = @import("geometry/geometry.zig");
+
+/// confere `n` cenas (hélice × peças, massas fora, pedaços soltos, chão); devolve quantas passaram
+export fn aerosim_geometry_check(scenes: [*]const geometry.Scene, n: usize, out: [*]geometry.Report) i32 {
+    geometry.checkMany(scenes[0..n], out[0..n]);
+    var ok: i32 = 0;
+    for (out[0..n]) |r| ok += r.ok;
+    return ok;
+}
+
+// ------------------------------------------------------------------ gerações do aeroopt (algoritmo genético)
+const ga = @import("optim/ga.zig");
+
+/// a primeira geração (pop × n_genes em `out`)
+export fn aerosim_ga_init(cfg: *const ga.GaCfg, out: [*]f64) i32 {
+    if (cfg.n_genes < 1 or cfg.n_genes > ga.max_genes or cfg.pop < 1 or cfg.pop > ga.max_pop) return -1;
+    ga.init(cfg, out[0..@intCast(cfg.pop * cfg.n_genes)]);
+    return 0;
+}
+
+/// a geração seguinte a partir da nota de cada indivíduo (NaN: morreu)
+export fn aerosim_ga_next(cfg: *const ga.GaCfg, genes: [*]const f64, fit: [*]const f64, out: [*]f64) i32 {
+    if (cfg.n_genes < 1 or cfg.n_genes > ga.max_genes or cfg.pop < 1 or cfg.pop > ga.max_pop) return -1;
+    const k: usize = @intCast(cfg.pop * cfg.n_genes);
+    ga.next(cfg, genes[0..k], fit[0..@intCast(cfg.pop)], out[0..k]);
+    return 0;
+}

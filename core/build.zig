@@ -3,7 +3,7 @@
 //!   zig build --release=fast       -> zig-out/lib/libaerosim.so (C ABI, usada pelo Python)
 //!   zig build test                 -> todos os testes
 //!   zig build test-math            -> só LUTs/polinômios e vetores (também test-physics, test-control, test-sim,
-//!                                     test-sizing, test-optim)
+//!                                     test-sizing, test-optim, test-geometry)
 //!   zig build test -Dfuzz=N -Dseed=S -> fuzzing mais longo das interfaces (padrão 2000 entradas por teste)
 //!   zig build -Dfast_math=false    -> troca LUT/polinômios por std.math (referência)
 //!   zig build -Dopt=peak,cse       -> otimizações em avaliação (ver core/OTIMIZACOES.md)
@@ -70,7 +70,7 @@ pub fn build(b: *std.Build) void {
 
     // testes: tudo (`zig build test`) ou por grupo (`zig build test-math`, ...)
     const all = b.step("test", "Roda todos os testes do núcleo");
-    inline for (.{ "math", "physics", "control", "sim", "sizing", "optim" }) |group| {
+    inline for (.{ "math", "physics", "control", "sim", "sizing", "optim", "geometry" }) |group| {
         const m = b.createModule(.{
             .root_source_file = b.path("src/tests_" ++ group ++ ".zig"),
             .target = target,

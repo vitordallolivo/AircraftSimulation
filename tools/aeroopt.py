@@ -9,7 +9,8 @@
 
 Dois avaliadores. O processo em etapas (`aeroopt/stages.py`, `--etapas` ou "evaluator": "etapas" no arquivo)
 parte dos rascunhos de um projeto da sprint (`--projeto`): configurações → superfícies pela decolagem → MTOW no
-6GDL → nota, com todos esperando entre uma etapa e outra. O mini-MDO do núcleo (`aeroopt/mini_mdo.py`) é o
+6GDL → nota, com todos esperando entre uma etapa e outra. As configurações saem das gerações
+(`aeroopt/generations.py`, `--populacao`, `--geracoes`); com poucas combinações, todas rodam numa geração só. O mini-MDO do núcleo (`aeroopt/mini_mdo.py`) é o
 outro; uma pontuação em .toml cujas entradas ele não calcula é avisada, e a busca usa o MTOW.
 """
 from __future__ import annotations
@@ -43,6 +44,8 @@ def main(argv=None) -> int:
     ap.add_argument("--processos", type=int, help="processos por etapa (padrão: um por núcleo)")
     ap.add_argument("--avaliacoes", type=int, default=24, help="pontos de projeto por configuração (superfícies)")
     ap.add_argument("--sem-6gdl", action="store_true", help="pula a etapa da decolagem no 6GDL")
+    ap.add_argument("--populacao", type=int, default=16, help="etapas: configurações por geração")
+    ap.add_argument("--geracoes", type=int, default=8, help="etapas: gerações (com poucas combinações, uma só)")
     a = ap.parse_args(argv)
     from aerosim.design.project import DesignProject
     if a.exemplo:
@@ -113,17 +116,21 @@ def main(argv=None) -> int:
 
 def staged(pr, project, a) -> int:
     """o processo em etapas: imprime o andamento, cada configuração e a melhor"""
-    from aeroopt.stages import StagedEvaluator, StagedSolver
+    from aeroopt.generations import GenerationsSolver
+    from aeroopt.stages import StagedEvaluator
     sc = scoring_for(pr.scoring)
     print(f"problema: {pr.name or a.problema}")
     print(f"livres: {', '.join(v.key for v in pr.free_variables()) or '(nenhuma)'}")
     print(f"nota: {sc.name}" + (f"  [{sc.source}]" if sc.source else ""))
     ev = StagedEvaluator(project, workers=a.processos, six_dof=not a.sem_6gdl, evals=a.avaliacoes)
-    res = StagedSolver().run(pr, ev, progress=lambda f, t: print(f"  {f:4.0%} {t}", flush=True))
+    res = GenerationsSolver(a.populacao, a.geracoes).run(pr, ev, progress=lambda f, t: print(f"  {f:4.0%} {t}", flush=True))
     from aeroopt import export
     folder = export.write(res.rows, a.csv or export.run_folder())
     print(f"\nCSV: {folder}/avaliacoes.csv ({sum(len(r['history']) for r in res.rows)} pontos de projeto) e "
           f"configuracoes.csv ({len(res.rows)} configurações)")
+    print(f"\n{res.names['combinações']} combinações; gerações (configurações novas, melhor nota até ali)")
+    for g, n_new, best in res.names["gerações"]:
+        print(f"  {g:3d}: {n_new:3d} novas, melhor {_fmt(best)}")
     print("\netapas (entraram → seguiram)")
     for name, n_in, n_out in res.names["etapas"]:
         print(f"  {name:16s} {n_in} → {n_out}")

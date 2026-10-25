@@ -13,7 +13,8 @@ o andamento de cada etapa, o MTOW de cada ponto de projeto avaliado, a nota de c
 aviões (PV × carga paga, com as linhas de eficiência estrutural constante e a cor pela nota), a tabela das
 configurações e, do avião clicado, o 3D e a nota fator por fator.
 
-As contas são do núcleo (o ponto de projeto, o 6GDL, a nota); a janela só chama o `StagedSolver` e desenha.
+As contas são do núcleo (o ponto de projeto, o 6GDL, a nota, as gerações); a janela só chama o `GenerationsSolver`
+(as configurações saem das gerações; com poucas combinações, todas numa geração) e desenha.
 """
 from __future__ import annotations
 
@@ -33,6 +34,7 @@ from aerosim.design import registry as rg
 from . import categories as cat
 from . import scoring as sc
 from . import stages as sg
+from .generations import GenerationsSolver
 
 OK_C, BAD_C, BEST_C = "#2ca02c", "#d62728", "#1f4e8c"
 SIMPLE = ("MTOW", "EE")                       # objetivos simples, sem arquivo
@@ -617,6 +619,30 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.six.setChecked(True)
         f.addRow("avaliações por configuração", self.evals)
         f.addRow("processos por etapa", self.workers)
+        self.pop = QtWidgets.QSpinBox()
+        self.pop.setRange(2, 256)
+        self.pop.setValue(16)
+        self.pop.setToolTip("configurações por geração; com menos combinações que isto, roda todas de uma vez")
+        self.gens = QtWidgets.QSpinBox()
+        self.gens.setRange(1, 500)
+        self.gens.setValue(8)
+        self.gens.setToolTip("gerações do algoritmo genético (elite, seleção por posição, cruzamento, mutação)")
+        f.addRow("configurações por geração", self.pop)
+        f.addRow("gerações", self.gens)
+        self.geo = QtWidgets.QCheckBox("geometria no núcleo: hélice × peças, massas fora, chão")
+        self.geo.setChecked(True)
+        self.geo.setToolTip("etapa barata antes das superfícies, e cada ponto de projeto também passa por ela")
+        self.rot = QtWidgets.QDoubleSpinBox()
+        self.rot.setRange(0.0, 30.0)
+        self.rot.setValue(12.0)
+        self.rot.setSuffix(" °")
+        self.rot.setToolTip("atitude do corpo na rotação da decolagem: girado no trem principal, nada pode bater no chão")
+        self.one_piece = QtWidgets.QCheckBox("exigir uma peça só (sem peça solta)")
+        self.one_piece.setToolTip("o montador da sprint ainda não põe montantes nem tubos entre asas: biplano, tandem e "
+                                  "parasol saem soltos")
+        f.addRow(self.geo)
+        f.addRow("ângulo de rotação", self.rot)
+        f.addRow(self.one_piece)
         f.addRow(self.six)
         v.addLayout(f)
         h = QtWidgets.QHBoxLayout()
@@ -686,7 +712,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.map.setMinimumHeight(420)
         rv.addWidget(self.map)
         _section(rv, "Configurações")
-        self.cfg_tab = _table(["configuração", "etapa", "MTOW pista", "MTOW 6GDL", "PV", "nota", "situação"])
+        self.cfg_tab = _table(["configuração", "geração", "etapa", "MTOW pista", "MTOW 6GDL", "PV", "nota", "situação"])
         self.cfg_tab.setMinimumHeight(240)
         self.cfg_tab.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.cfg_tab.setSortingEnabled(True)
@@ -831,23 +857,30 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             return
         pr = self.read_problem()
         try:
-            n = len(sg.configurations(self.project, pr))
+            ax = sg.axes(self.project, pr)
+            n_all = math.prod(len(o) for _, o in ax) if ax else 1
         except (ValueError, KeyError) as e:
             self.msg.setText(f"<span style='color:{BAD_C}'>{e}</span>")
             return
         self._cancel.clear()
         self.rows, self.points, self.order, self.funnel = {}, [], [], {}
         self.redraw()
+        from aerosim.interfaces.geometry import GeometryParams
+        geo = GeometryParams(rotation=self.rot.value(), connected=self.one_piece.isChecked()) \
+            if self.geo.isChecked() else False
         ev = sg.StagedEvaluator(self.project, workers=self.workers.value(), six_dof=self.six.isChecked(),
-                                evals=self.evals.value(), start_method="spawn", scoring=scoring)
+                                evals=self.evals.value(), start_method="spawn", scoring=scoring, geometry=geo)
         stage_names = [s.name for s in ev.stages(self.project, pr)]
-        self.funnel = {s: [n if i == 0 else 0, 0, 0] for i, s in enumerate(stage_names)}
+        self.funnel = {s: [0, 0, 0] for s in stage_names}
         self._scoring = scoring
-        self.msg.setText(f"{n} configurações · etapas: {' → '.join(stage_names)}")
+        solver = GenerationsSolver(self.pop.value(), self.gens.value())
+        plan = (f"{n_all} combinações: todas numa geração" if n_all <= solver.population else
+                f"{n_all} combinações: {solver.generations} gerações de {solver.population}")
+        self.msg.setText(f"{plan} · etapas: {' → '.join(stage_names)}")
 
         def job(w):
-            return sg.StagedSolver().run(pr, ev, lambda f, t: w.progress.emit(f, t), self._cancel.is_set,
-                                         lambda st, r: w.item.emit(st, r))
+            return solver.run(pr, ev, lambda f, t: w.progress.emit(f, t), self._cancel.is_set,
+                              lambda st, r: w.item.emit(st, r))
         w = _Worker(job)
         w.progress.connect(self._progress)
         w.item.connect(self._item)
@@ -882,6 +915,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         names = list(self.funnel)
         if stage in self.funnel:
             self.funnel[stage][1] += 1
+            if names.index(stage) == 0:               # a cada geração entram mais
+                self.funnel[stage][0] = max(self.funnel[stage][0], self.funnel[stage][1])
             k = names.index(stage)
             if r["alive"]:
                 self.funnel[stage][2] += 1
@@ -908,7 +943,9 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                             "rodadas_aeroopt")
         self.run_dir = export.write(res.rows, export.run_folder(base))
         n_eval = sum(len(r["history"]) for r in res.rows)
-        csv_txt = f"<br>{len(res.rows)} configurações, {n_eval} pontos de projeto: CSV em {self.run_dir}"
+        gens = res.names.get("gerações", [])
+        csv_txt = (f"<br>{len(gens)} gerações, {len(res.rows)} configurações de {res.names.get('combinações', '?')} "
+                   f"combinações, {n_eval} pontos de projeto: CSV em {self.run_dir}")
         b = res.best
         self.bar.setValue(1000)
         if b:
@@ -947,7 +984,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.cfg_tab.setSortingEnabled(False)
         rows = sorted(self.rows.values(), key=lambda r: (r["alive"], r["valido"], np.nan_to_num(r["nota"], nan=-1e9)),
                       reverse=True)
-        _set_rows(self.cfg_tab, [[r["name"], r["stage"], _fmt(r["mtow"]), _fmt(r["mtow6"]), _fmt(r["pv"]),
+        _set_rows(self.cfg_tab, [[r["name"], r.get("geração", ""), r["stage"], _fmt(r["mtow"]), _fmt(r["mtow6"]), _fmt(r["pv"]),
                                   _fmt(r["nota"]), ("válido" if r["valido"] else "voo inválido") if r["alive"] and
                                   math.isfinite(r["nota"]) else ("em andamento" if r["alive"] else r["why"])]
                                  for r in rows], editable=False)
@@ -1100,7 +1137,7 @@ def example_project():
     r = p.rules                                          # estrutura leve, de avião pequeno
     r.wing_density, r.tail_density, r.fuselage_density, r.boom_density = 0.45, 0.3, 0.25, 0.06
     r.systems_mass, r.gear_mass, r.main_gear_aft = 0.12, 0.10, 0.02
-    r.fuselage_width, r.fuselage_height = 0.08, 0.09
+    r.fuselage_width, r.fuselage_height = 0.10, 0.14
     pd = p.power_draft
     pd.motor, pd.propeller, pd.battery, pd.layout, pd.wing_motors = ("Genérico 900Kv", "Genérica 13x6.5",
                                                                      "LiPo 4S 4000", "tratora no nariz", 0)

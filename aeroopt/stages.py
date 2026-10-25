@@ -128,34 +128,40 @@ def design(project, problem: OptProblem, values: dict, catalog=None) -> dict:
     return pw.design_point(cand, q.requirements, q.rules, catalog, q.airfoil_map())
 
 
-def configurations(project, problem: OptProblem, catalog=None) -> list[StageItem]:
-    """um candidato por combinação das variáveis discretas livres (lista e inteira) e das categorias escolhidas"""
-    axes = []
+def axes(project, problem: OptProblem, catalog=None) -> list[tuple[str, list]]:
+    """os eixos discretos da busca: as categorias escolhidas e cada variável de lista ou inteira livre, com as opções"""
+    out = []
     cats = list(problem.params.get("categorias") or [])
     for c in cats:
         cat.fields(c)                                 # nome errado para aqui, antes de rodar
     if cats:
-        axes.append((cat.KEY, cats))
+        out.append((cat.KEY, cats))
     for v in problem.free_variables():
         if v.kind == "lista":
             known = available(project, v.key, catalog)
             unknown = [o for o in v.options if known and o not in known]
             if unknown:
                 raise ValueError(f"{v.key}: {', '.join(unknown)} não existe (há {', '.join(known)})")
-            axes.append((v.key, list(dict.fromkeys(v.options)) or known))
+            out.append((v.key, list(dict.fromkeys(v.options)) or known))
         elif v.kind == "inteira":
-            axes.append((v.key, list(range(round(min(v.lo, v.hi)), round(max(v.lo, v.hi)) + 1))))
-    n = math.prod(len(o) for _, o in axes) if axes else 1
-    if n > MAX_CONFIGS:
-        raise ValueError(f"{n} configurações (o limite é {MAX_CONFIGS}): marque menos opções nas listas")
-    keys = [k for k, _ in axes]
-    out = []
-    for combo in itertools.product(*(o for _, o in axes)):
-        vals = dict(zip(keys, combo))
-        name = ", ".join(str(x) if k == cat.KEY else f"{short(k)}={x}" for k, x in vals.items()) \
-            or "configuração única"
-        out.append(StageItem(name=name, values=vals, data={"index": len(out) + 1}))
+            out.append((v.key, list(range(round(min(v.lo, v.hi)), round(max(v.lo, v.hi)) + 1))))
     return out
+
+
+def config_item(values: dict, index: int) -> StageItem:
+    name = ", ".join(str(x) if k == cat.KEY else f"{short(k)}={x}" for k, x in values.items()) or "configuração única"
+    return StageItem(name=name, values=dict(values), data={"index": index})
+
+
+def configurations(project, problem: OptProblem, catalog=None) -> list[StageItem]:
+    """um candidato por combinação das variáveis discretas livres (lista e inteira) e das categorias escolhidas;
+    acima de MAX_CONFIGS combinações, quem escolhe é o `GenerationsSolver` (aeroopt/generations.py)"""
+    ax = axes(project, problem, catalog)
+    n = math.prod(len(o) for _, o in ax) if ax else 1
+    if n > MAX_CONFIGS:
+        raise ValueError(f"{n} configurações (o limite para varrer todas é {MAX_CONFIGS}): use as gerações")
+    keys = [k for k, _ in ax]
+    return [config_item(dict(zip(keys, combo)), i + 1) for i, combo in enumerate(itertools.product(*(o for _, o in ax)))]
 
 
 def _rank(r: dict) -> tuple:
@@ -172,8 +178,9 @@ class SurfaceSizing(IStage):
     """as variáveis contínuas livres de uma configuração, pelo maior MTOW viável na pista"""
     name = "superfícies"
 
-    def __init__(self, project, problem: OptProblem, catalog=None, evals: int = 24):
+    def __init__(self, project, problem: OptProblem, catalog=None, evals: int = 24, geometry=None):
         self.project, self.catalog, self.evals = project, catalog, int(evals)
+        self.geometry = geometry                   # GeometryParams: cada ponto também passa pela geometria
         self.free = [(v.key, min(v.lo, v.hi), max(v.lo, v.hi)) for v in problem.free_variables()
                      if v.kind == "contínua"]
 
@@ -181,6 +188,9 @@ class SurfaceSizing(IStage):
         p, cand = candidate(self.project, values)
         d = pw.design_point(cand, p.requirements, p.rules, self.catalog, p.airfoil_map())
         ok, why = study.feasibility(d)
+        if ok and self.geometry is not None:
+            g = geometry_check(d["ac"], self.geometry)
+            ok, why = g.ok, ("geometria: " + g.why()) if not g.ok else why
         asm = d["asm"]
         m_bat = sum(i.mass for i in asm["items"] if i.name == "bateria")
         return dict(values=dict(values), mtow=float(d["mtow"]), ok=ok, why=why, pv=float(asm["empty"]),
@@ -268,21 +278,54 @@ class Score(IStage):
         return items
 
 
+def geometry_check(ac, params):
+    """a checagem de geometria do núcleo para um avião montado (o modelo universal sai dele aqui)"""
+    from aerosim.backend.zig.geometry import ZigGeometry
+    from aerosim.model.universal import build_model
+    return ZigGeometry().check(build_model(ac), params)
+
+
+class GeometryStage(IStage):
+    """barata, antes das superfícies: o avião da configuração, montado como está nos rascunhos, cabe? (hélice que
+    acerta peça, massa fora da geometria, cauda ou hélice no chão parado e na rotação; peças soltas, se pedido)"""
+    name = "geometria"
+    parallel = "não"
+
+    def __init__(self, project, params, catalog=None):
+        self.project, self.params, self.catalog = project, params, catalog
+
+    def one(self, item: StageItem) -> StageItem:
+        p, cand = candidate(self.project, item.values)
+        ac, _ = pw.assemble(cand, p.requirements, p.rules, self.catalog, p.airfoil_map())
+        g = geometry_check(ac, self.params)
+        item.data["geometria"] = dict(groups=len(g.groups), ground=[(a, x) for a, x, _ in g.ground])
+        if not g.ok:
+            raise ValueError(g.why())
+        return item
+
+
 class StagedEvaluator(IEvaluator):
     name = "etapas"
 
     def __init__(self, project, catalog=None, backend=None, workers: int | None = None, six_dof: bool = True,
-                 evals: int = 24, start_method: str | None = None, scoring=None):
+                 evals: int = 24, start_method: str | None = None, scoring=None, geometry=True):
         self.project, self.catalog, self.backend = project, catalog, backend
         self.workers, self.six_dof, self.evals = workers, six_dof, evals
         self.start_method = start_method           # a GUI usa "spawn" (processos novos, sem herdar as linhas do Qt)
         self.scoring = scoring                     # uma pontuação já montada (a GUI edita os campos do .toml)
+        # a geometria (core/src/geometry): True usa os GeometryParams padrão sem exigir uma peça só (o montador da
+        # sprint ainda não põe montantes nem tubos entre asas); um GeometryParams manda; False desliga
+        if geometry is True:
+            from aerosim.interfaces.geometry import GeometryParams
+            geometry = GeometryParams(connected=False)
+        self.geometry = geometry or None
 
     def quantities(self) -> list[str]:
         return ["mtow", "pv", "cp", "ee", "c_lapes", "c_liq", "m_bat", "s_to", "b"]
 
     def stages(self, project, problem: OptProblem) -> list[IStage]:
-        sts: list[IStage] = [SurfaceSizing(project, problem, self.catalog, self.evals)]
+        sts: list[IStage] = [GeometryStage(project, self.geometry, self.catalog)] if self.geometry else []
+        sts.append(SurfaceSizing(project, problem, self.catalog, self.evals, self.geometry))
         if self.six_dof:
             sts.append(Takeoff6dof(project, self.catalog, type(self.backend) if self.backend is not None else None))
         sts.append(Score(self.scoring or sc.scoring_for(problem.scoring), self.backend))

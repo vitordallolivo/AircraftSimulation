@@ -62,7 +62,8 @@ def test_window_runs_and_shows_each_candidate(app):
     assert len(w.rows) == 2 and w.funnel["superfícies"][0] == 2
     assert {"superfícies", "nota"} <= set(seen)
     assert len(w.points) == 4                                       # 2 pontos de projeto × 2 configurações
-    assert w.cfg_tab.rowCount() == 2 and w.stage_tab.rowCount() == 2
+    assert w.cfg_tab.rowCount() == 2 and w.stage_tab.rowCount() == 3            # geometria, superfícies, nota
+    assert w.funnel["geometria"] == [2, 2, 2] and all(r["geração"] == 1 for r in w.rows.values())
     best = max(w.rows.values(), key=lambda r: r["nota"])
     assert w.selected == best["name"] and math.isfinite(best["nota"])
     assert w.sel_tab.rowCount() > 5
@@ -81,14 +82,14 @@ def test_csv_has_every_evaluation_in_order(tmp_path):
     pr.params["categorias"] = ["asa alta", "cauda em V"]
     pr.variable("power.propeller").options = ["Genérica 13x6.5"]
     pr.variable("wing.area").lo, pr.variable("wing.area").hi = 0.55, 0.6
-    res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=3))
+    res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=3, geometry=False))
     export.write(res.rows, str(tmp_path))
     with open(tmp_path / "avaliacoes.csv", encoding="utf-8-sig") as f:
         ev = list(csv.reader(f, delimiter=";"))
     with open(tmp_path / "configuracoes.csv", encoding="utf-8-sig") as f:
         cf = list(csv.reader(f, delimiter=";"))
     head = ev[0]
-    assert head[:3] == ["configuração nº", "avaliação nº", "configuração"]
+    assert head[:4] == ["configuração nº", "avaliação nº", "geração", "configuração"]
     assert {"categoria", "power.propeller", "wing.span", "wing.area", "MTOW pista (kg)", "fecha", "motivo"} <= set(head)
     assert len(ev) - 1 == sum(len(r["history"]) for r in res.rows) == 6     # 3 por configuração
     assert [(r[0], r[1]) for r in ev[1:]] == [("1", "1"), ("1", "2"), ("1", "3"), ("2", "1"), ("2", "2"), ("2", "3")]

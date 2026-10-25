@@ -3,9 +3,9 @@
 Dois arquivos por rodada, numa pasta só:
 
     avaliacoes.csv      um ponto de projeto por linha, na ordem de cada configuração: nº da configuração, nº da
-                        avaliação dentro dela, a categoria e as escolhas discretas, cada variável contínua, MTOW na
+                        avaliação dentro dela, a geração em que ela entrou, a categoria e as escolhas discretas, cada variável contínua, MTOW na
                         pista, PV, envergadura, bateria, se fecha e por que não
-    configuracoes.csv   uma configuração por linha: os valores do melhor ponto dela, até que etapa chegou, MTOW
+    configuracoes.csv   uma configuração por linha (com a geração): os valores do melhor ponto dela, até que etapa chegou, MTOW
                         na pista e no 6GDL, as entradas da nota, cada fator, cada condição de voo válido e a nota
 
 Separador `;` e vírgula decimal, que o Excel e o LibreOffice em português abrem direto. No pandas:
@@ -42,12 +42,12 @@ def evaluations(rows: list[dict]) -> tuple[list[str], list[list]]:
     fixed = _keys(rows, "values")                     # as discretas (categoria, hélice...) e as contínuas
     cont = list(dict.fromkeys(k for r in rows for h in r.get("history", []) for k in h["values"]))
     disc = [k for k in fixed if k not in cont]
-    head = ["configuração nº", "avaliação nº", "configuração"] + disc + cont + \
+    head = ["configuração nº", "avaliação nº", "geração", "configuração"] + disc + cont + \
         ["MTOW pista (kg)", "PV (kg)", "envergadura (m)", "bateria (kg)", "fecha", "motivo"]
     out = []
     for r in sorted(rows, key=lambda r: r.get("index", 0)):
         for k, h in enumerate(r.get("history", []), 1):
-            out.append([r.get("index", 0), k, r["name"]] + [r["values"].get(c, "") for c in disc] +
+            out.append([r.get("index", 0), k, r.get("geração", ""), r["name"]] + [r["values"].get(c, "") for c in disc] +
                        [h["values"].get(c, "") for c in cont] +
                        [h["mtow"], h["pv"], h["b"], h["m_bat"], h["ok"], h["why"]])
     return head, out
@@ -57,14 +57,14 @@ def configurations(rows: list[dict]) -> tuple[list[str], list[list]]:
     """as linhas de configuracoes.csv (cabeçalho, linhas)"""
     vals, ins, terms = _keys(rows, "values"), _keys(rows, "inputs"), _keys(rows, "termos")
     checks = list(dict.fromkeys(t for r in rows for t, _ok, _x in r.get("validade", [])))
-    head = ["configuração nº", "configuração"] + vals + ["última etapa", "chegou ao fim", "motivo", "MTOW pista (kg)",
+    head = ["configuração nº", "geração", "configuração"] + vals + ["última etapa", "chegou ao fim", "motivo", "MTOW pista (kg)",
                                                           "MTOW 6GDL (kg)", "PV (kg)"] + \
         [f"entrada: {k}" for k in ins] + [f"fator: {k}" for k in terms] + [f"cumpre: {t}" for t in checks] + \
         ["voo válido", "nota"]
     out = []
     for r in sorted(rows, key=lambda r: r.get("index", 0)):
         ok = {t: o for t, o, _x in r.get("validade", [])}
-        out.append([r.get("index", 0), r["name"]] + [r["values"].get(k, "") for k in vals] +
+        out.append([r.get("index", 0), r.get("geração", ""), r["name"]] + [r["values"].get(k, "") for k in vals] +
                    [r.get("stage", ""), r["alive"], r["why"], r["mtow"], r["mtow6"], r["pv"]] +
                    [r.get("inputs", {}).get(k, "") for k in ins] + [r.get("termos", {}).get(k, "") for k in terms] +
                    [ok.get(t, "") for t in checks] + [r.get("valido", False), r["nota"]])

@@ -103,7 +103,7 @@ def test_staged_solver_sizes_surfaces_by_takeoff():
     pr.variable("wing.span").lo, pr.variable("wing.span").hi = 1.8, 3.0
     pr.isolate("wing.span")
     seen = []
-    res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=3),
+    res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=3, geometry=False),
                                 progress=lambda f, t: seen.append((f, t)))
     (row,) = res.rows
     spans = [h["values"]["wing.span"] for h in row["history"]]
@@ -119,7 +119,7 @@ def test_six_dof_stage_gives_takeoff_mtow():
     p = _project()
     pr = aeroopt.from_project(p)
     pr.isolate("wing.span")
-    res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, evals=1))
+    res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, evals=1, geometry=False))
     (row,) = res.rows
     assert math.isfinite(row["mtow6"]) and row["inputs"]["mtow"] == row["mtow6"]
 
@@ -148,3 +148,19 @@ def test_categories_build_each_kind_of_aircraft():
     pr.params["categorias"] = ["trimotor voador"]
     with pytest.raises(KeyError):
         sg.configurations(p, pr)
+
+
+def test_geometry_stage_stops_a_tail_strike_before_sizing():
+    """a EH deste avião raspa o chão girado 12°: a etapa geometria para a configuração antes das superfícies; com 8°
+    ela passa, e cada ponto da busca também passa pela geometria"""
+    from aerosim.interfaces.geometry import GeometryParams
+    p = _project()
+    pr = aeroopt.from_project(p)
+    pr.isolate("wing.span")
+    res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=2))
+    (row,) = res.rows
+    assert not row["alive"] and row["stage"] == "geometria" and "bate no chão" in row["why"]
+    assert res.names["etapas"][0] == ("geometria", 1, 0)
+    res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=2,
+                                                       geometry=GeometryParams(rotation=8.0, connected=False)))
+    assert res.rows[0]["alive"] and res.names["etapas"][0] == ("geometria", 1, 1)

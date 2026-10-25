@@ -149,6 +149,9 @@ class _Lib:
             "aerosim_expr_eval": (c_int, [ctypes.POINTER(T["Program"]), vp, c_size, c_size, vp, c_size]),
             "aerosim_ground_runs": (c_int, [ctypes.POINTER(T["GroundRun"]), vp, c_size, vp]),
             "aerosim_ground_mtow": (c_double, [ctypes.POINTER(T["GroundRun"]), c_double, c_double, c_double]),
+            "aerosim_geometry_check": (c_int, [vp, c_size, vp]),
+            "aerosim_ga_init": (c_int, [ctypes.POINTER(T["GaCfg"]), vp]),
+            "aerosim_ga_next": (c_int, [ctypes.POINTER(T["GaCfg"]), vp, vp, vp]),
             "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
             "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
             "aerosim_prop_state": (c_int, [c_int, c_int] + [c_double] * 5 + [ctypes.POINTER(T["PropPoint"])]),
@@ -550,6 +553,30 @@ class ZigBackend(ISimBackend):
 
     def ground_mtow(self, g, lo: float, hi: float, runway: float) -> float:
         return float(self._lib.dll.aerosim_ground_mtow(ctypes.byref(g), lo, hi, runway))
+
+    # ------------------------------------------------------------------ gerações do aeroopt
+    def _ga_cfg(self, cfg: dict):
+        c = self._lib.schema.types["GaCfg"]()
+        abi.write(c, cfg)
+        return c
+
+    def ga_init(self, cfg: dict) -> np.ndarray:
+        """a primeira geração (pop × n_genes) do algoritmo genético do núcleo (core/src/optim/ga.zig)"""
+        c = self._ga_cfg(cfg)
+        out = np.zeros((c.pop, c.n_genes))
+        if self._lib.dll.aerosim_ga_init(ctypes.byref(c), out.ctypes.data) < 0:
+            raise ValueError("gerações: genes ou população fora dos limites do núcleo")
+        return out
+
+    def ga_next(self, cfg: dict, genes, fitness) -> np.ndarray:
+        """a geração seguinte; `fitness` com NaN para quem morreu"""
+        c = self._ga_cfg(cfg)
+        g = np.ascontiguousarray(genes, float).reshape(c.pop, c.n_genes)
+        f = np.ascontiguousarray(fitness, float).reshape(c.pop)
+        out = np.zeros_like(g)
+        if self._lib.dll.aerosim_ga_next(ctypes.byref(c), g.ctypes.data, f.ctypes.data, out.ctypes.data) < 0:
+            raise ValueError("gerações: genes ou população fora dos limites do núcleo")
+        return out
 
     def simple_performance(self, cfg: dict) -> tuple[dict, dict]:
         T = self._lib.schema.types

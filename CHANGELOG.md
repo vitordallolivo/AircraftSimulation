@@ -6,6 +6,14 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, gerações: as configurações saem de um algoritmo genético no núcleo (`core/src/optim/ga.zig`, exports
+  `aerosim_ga_init`, `aerosim_ga_next`; `aeroopt/generations.py`) no lugar de varrer todas as combinações, que
+  passavam de um milhão com as listas marcadas. Configuração repetida não roda de novo. Na janela: configurações
+  por geração e nº de gerações; na ferramenta: `--populacao`, `--geracoes`; coluna "geração" nos CSV.
+- Geometria do avião montado no núcleo (`core/src/geometry`, export `aerosim_geometry_check`, interface
+  `aerosim/interfaces/geometry.py`, tradutor `aerosim/backend/zig/geometry.py`): hélice que acerta peça, massa fora
+  da geometria, pedaços soltos e folga ao chão parado e girado até o ângulo de rotação. No aeroopt vira a etapa
+  "geometria", antes das superfícies, e cada ponto de projeto também passa por ela (desligável na janela).
 - aeroopt, submenus do problema: variáveis (livre, valor do avião, limite inferior e superior), restrições, perfis
   por região (raiz e ponta da asa, EH, EV, com `.dat` acrescentado na hora) e motores, hélices, baterias e arranjo do
   catálogo, cada um num submenu aberto por botão, com o resumo ao lado; as listas se marcam, não se digitam, e cada

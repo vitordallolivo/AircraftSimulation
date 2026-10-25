@@ -90,8 +90,15 @@ e depois da barreira a etapa já vê todos e escolhe quem segue. Sem a barreira,
 antes de os outros serem dimensionados, e a escolha entre eles teria de esperar do mesmo jeito, só que espalhada
 pelo código.
 
-As etapas de hoje, em `stages.py`, são quatro. As **configurações** são as combinações das escolhas discretas livres
-(motor, hélice, perfil, arranjo, número de motores): cada combinação vira um candidato, até 256. As **superfícies**
+As etapas de hoje, em `stages.py`, são cinco. A **geometria** vem logo depois das configurações: o avião de cada
+configuração, montado como está nos rascunhos, passa pela checagem do núcleo (`core/src/geometry`): a hélice não pode
+acertar nenhuma peça, nenhuma massa pode ficar fora da geometria e nada pode bater no chão, parado ou girado no trem
+principal até o ângulo de rotação. É uma conta de microssegundos, então quem não cabe para aqui sem gastar pontos de
+projeto, e cada ponto da busca das superfícies também passa por ela. Os pedaços soltos (asas sem montante ou tubo
+entre elas) por enquanto só são contados, porque o montador da sprint ainda não põe esses conectores. Sem a
+geometria, as etapas são as quatro abaixo. As **configurações** são as combinações das escolhas discretas livres
+(motor, hélice, perfil, arranjo, número de motores): cada combinação vira um candidato, até 256. Acima disso
+quem escolhe são as gerações, descritas logo abaixo. As **superfícies**
 acertam, em cada configuração, as variáveis contínuas livres (envergadura, área, inclinação do motor) pela
 decolagem. Cada ponto é o ponto de projeto acoplado do aerosim (`power.design_point`: a asa calada e a EH retrimada
 com a tração, na massa que a pista deixa levar), e ganha o maior MTOW que fecha a estabilidade; a configuração que
@@ -120,10 +127,26 @@ $$C_{LAPES} = C_{Liq} = \frac{MTOW - PV}{2}$$
 O MTOW é o do 6GDL quando essa etapa roda, e o da pista quando não. A corrida $s_{TO}$ é a pista pedida no projeto e
 $b$ é a envergadura.
 
+### As gerações
+
+Varrer todas as combinações só serve quando elas são poucas. Cada perfil por região, cada hélice, cada bateria e
+cada categoria multiplicam a conta, e um problema comum passa de um milhão de combinações, quando cada uma gasta
+vários pontos de projeto. As **gerações** (`generations.py`) resolvem isso com um algoritmo genético. Um
+**indivíduo** é uma configuração, e o **gene** dele é o índice da opção escolhida em cada eixo discreto (a categoria,
+o perfil de cada região, a hélice...). A primeira geração é sorteada. Cada geração atravessa o processo em etapas
+inteiro, com a barreira, e a nota de cada indivíduo volta para o núcleo (`core/src/optim/ga.zig`), que monta a
+geração seguinte. Os operadores são os do MDO antigo da equipe: os melhores passam iguais (a **elite**), os pais são
+sorteados pela posição na fila e não pelo valor da nota, os genes se cruzam num ponto de corte e cada gene pode mudar
+para outra opção (a **mutação**) (Goldberg, *Genetic Algorithms in Search, Optimization and Machine Learning*, 1989;
+capítulo e página a conferir no PDF). Na fila, o voo válido vem antes de todo voo inválido e quem parou numa etapa fica por
+último. Uma configuração que já apareceu não roda de novo: a nota dela vem da memória. Com menos combinações que uma
+geração, todas rodam numa geração só, como antes.
+
 Cada candidato que termina uma etapa chama `progress(fração, texto)`, então quem mostra o andamento (a linha de
 comando hoje, a GUI depois) atualiza um candidato por vez. O `OptResult` traz uma linha por configuração (valores,
 MTOW, MTOW 6GDL, nota, fatores, validade, os pontos que a busca visitou) e, em `names["etapas"]`, quantos entraram e
-quantos seguiram em cada etapa.
+quantos seguiram em cada etapa. Com as gerações, `names["gerações"]` traz, por geração, quantas configurações novas
+rodaram e a melhor nota até ali, e cada linha leva a geração em que a configuração entrou.
 
 ## A janela
 
