@@ -74,6 +74,7 @@ class SurfaceModel:
     side: int = 0              # dispositivo não espelhado: +1/−1; superfícies: 0
     strip_coeffs: list[dict] | None = None     # perfil por seção: coeficientes de cada faixa (None: os da superfície)
     strip_airfoils: list[Airfoil] | None = None   # perfil de cada faixa (para desenhar)
+    group: str = ""                # asas ligadas (tandem, biplano): o mesmo id; "" asa sozinha
 
     @property
     def area(self) -> float:
@@ -332,7 +333,7 @@ def _surface(s: LiftingSurface, index: int, dw: tuple[float, float]) -> SurfaceM
         oswald=s.oswald, eta=s.eta, downwash=bool(s.downwash),
         eps0=(math.radians(s.eps0) if s.eps0 is not None else dw[0]) if s.downwash else 0.0,
         depsda=(s.depsda if s.depsda is not None else dw[1]) if s.downwash else 0.0,
-        strip_coeffs=strip_co, strip_airfoils=strip_af)
+        strip_coeffs=strip_co, strip_airfoils=strip_af, group=s.group if s.role == "wing" else "")
 
 
 def _devices(s: LiftingSurface, index: int) -> list[SurfaceModel]:
@@ -375,6 +376,11 @@ def build_model(ac: Aircraft, mission=None) -> AircraftModel:
             surfs += _devices(s, i)
     w = next((s for s in surfs if s.role == "wing"), None)
     mac_le = w.mac()["x_le"] if w is not None else 0.0
+    grp = [q for q in surfs if q.role == "wing" and w is not None and w.group and q.group == w.group]
+    if len(grp) > 1:                   # tandem, biplano: o 1/4 da CMA equivalente na média pela área dos 1/4
+        A = sum(q.total_area for q in grp)
+        if A > 0:
+            mac_le = sum(q.total_area * q.mac()["x_ac"] for q in grp) / A + 0.25 * c
     dm = dry_mass(ac)
     return AircraftModel(ac.name, S, c, b, mac_le, surfs, dict(m=dm["m"], cg=np.asarray(dm["cg"]), I=dm["I"]),
                          ac, mission if mission is not None else ac.mission, features(ac), dw)
