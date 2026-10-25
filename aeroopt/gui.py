@@ -41,9 +41,12 @@ OK_C, BAD_C, BEST_C = "#2ca02c", "#d62728", "#1f4e8c"
 SIMPLE = ("MTOW", "EE")                       # objetivos simples, sem arquivo
 EE_LINES = (0.5, 1.0, 1.5, 2.0, 3.0)
 # os gráficos do melhor avião: as análises rápidas do aerosim (a aerodinâmica completa, com o lltdrek, leva meio
-# minuto; a polar é a do núcleo)
-BEST_ANALYSES = (("takeoff", "Decolagem"), ("polar", "Aerodinâmica (C_L × α, polar, C_m)"),
+# minuto; a polar é a do núcleo). A decolagem é a da Missão em "só decolagem": o profundor otimizado para a pista
+# da restrição (x_warning = corrida de decolagem), e o voo para logo depois de sair do chão. Dela ficam só os
+# gráficos da decolagem (os que começam por estes nomes)
+BEST_ANALYSES = (("mission", "Decolagem"), ("polar", "Aerodinâmica (C_L × α, polar, C_m)"),
                  ("stability", "Estabilidade"), ("performance", "Desempenho e envelope"))
+BEST_KEEP = {"mission": ("Decolagem", "Acionamento", "Folga")}
 AXES = {"PV (kg)": "pv", "carga paga (kg)": "cp", "MTOW (kg)": "mtow_f", "EE": "ee", "nota": "nota",
         "envergadura (m)": "b", "bateria (kg)": "m_bat"}
 
@@ -1009,14 +1012,21 @@ class AeroOptWindow(QtWidgets.QMainWindow):
 
         def job(w):
             from aerosim.manager import SimulationManager
-            ac = sg.design(self.project, pr, values)["ac"]
+            d = sg.design(self.project, pr, values)
+            ac = d["ac"]
             ac.name = name
             man = SimulationManager()
             for sim_name, title in BEST_ANALYSES:
                 sim = man.get(sim_name)
+                params = ({"mode": "só decolagem", "x_warning": float(d["req"].takeoff_run)}
+                          if sim_name == "mission" else {})
                 try:
-                    res = man.run(sim_name, copy.deepcopy(ac))
-                    w.item.emit(title, (sim.plots_for(ac, sim.defaults(ac, {})), res))
+                    res = man.run(sim_name, copy.deepcopy(ac), params)
+                    specs = sim.plots_for(ac, sim.defaults(ac, params))
+                    keep = BEST_KEEP.get(sim_name)
+                    if keep:
+                        specs = [sp for sp in specs if sp.title.startswith(keep)]
+                    w.item.emit(title, (specs, res))
                 except Exception as e:  # noqa: BLE001 — uma análise que falha não tira as outras
                     w.item.emit(title, (None, str(e)))
             return name
