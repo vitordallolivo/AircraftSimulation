@@ -16,9 +16,9 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import aeroopt  # noqa: E402
-from aeroopt.mini_mdo import MiniMdoEvaluator, MiniMdoSolver  # noqa: E402
-from aeroopt.scoring import scoring_for  # noqa: E402
+import aeroopt
+from aeroopt.mini_mdo import MiniMdoEvaluator, MiniMdoSolver
+from aeroopt.scoring import scoring_for
 
 
 def _fmt(v) -> str:
@@ -78,6 +78,7 @@ def main(argv=None) -> int:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+
         from aerosim.design import mdo
         h = mdo.history(res.rows)
         fig, ax = plt.subplots(figsize=(7, 4))
