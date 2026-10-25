@@ -216,6 +216,12 @@ def set_stage(cand: tl.SetCandidate, req, rules, airfoils=None) -> tuple[list[Pl
     summ["rolagem: p b/2V com o aileron todo"] = r["pb2V"]
     summ["rotação: V com profundor todo, V com δe = 0, V de sair do chão (m/s)"] = [r["V_rot"], r["V_rot0"], r["V_lof"]]
     G = "empenagem e comandos"
+    if cand.wing2 is not None:
+        w2 = r["set"].surfaces[-1]
+        checks.append(_chk(INFO, "segunda asa ligada", f"{w2.name}: recuo {tp.wing2_dx:g} m, desnível "
+                           f"{tp.wing2_dz:g} m", "—", "a estática desta etapa é a da asa 1 com a cauda; com o par, a "
+                           "margem é a do avião inteiro no núcleo", "veja Aerodinâmica → Avião montado (linha "
+                           "sustentadora ou VLM, que ligam as asas) depois de mandar para a Montagem", G))
     if tp.layout != "sem cauda":
         width = pct(r["h_aft"] - r["h_fwd"])
         st = OK if width >= 15 else (ATT if width > 0 else FAIL)

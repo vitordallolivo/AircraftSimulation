@@ -15,7 +15,7 @@ import json
 import os
 from dataclasses import dataclass, field
 
-from aerosim.model.aircraft import Aircraft
+from aerosim.model.aircraft import Aircraft, new_group_id
 from aerosim.model.serialize import from_dict, to_dict
 
 from . import airfoils as afm
@@ -24,7 +24,7 @@ from .mdo import MdoParams, MdoRun
 from .registry import Variable, default_variables
 from .spec import DesignRules, Requirements
 from .study import StudyParams, StudyRun
-from .tail import SetCandidate, TailParams
+from .tail import NO_WING2, SAME_WING, SetCandidate, TailParams
 from .wing import WingCandidate, WingParams
 
 
@@ -138,12 +138,19 @@ class DesignProject:
 
     def draft_set(self) -> SetCandidate | None:
         w = self.wing(self.tail_draft.wing) or (self.wings[-1] if self.wings else None)
-        return None if w is None else SetCandidate(copy.deepcopy(self.tail_draft), copy.deepcopy(w))
+        if w is None:
+            return None
+        n2 = self.tail_draft.wing2
+        w2 = w if n2 == SAME_WING else (self.wing(n2) if n2 and n2 != NO_WING2 else None)
+        return SetCandidate(copy.deepcopy(self.tail_draft), copy.deepcopy(w),
+                            wing2=copy.deepcopy(w2) if w2 is not None else None)
 
     def keep_set(self) -> SetCandidate | None:
         c = self.draft_set()
         if c is not None:
             c.params.wing = c.wing.name
+            if c.wing2 is not None:                  # o id do par: sorteado uma vez, vai junto até a Montagem
+                c.group = new_group_id({s.group for s in self.sets if s.group})
             self._put(self.sets, c)
             self.tail_draft.name = next_name(self.tail_draft.name, [s.name for s in self.sets])
         return c

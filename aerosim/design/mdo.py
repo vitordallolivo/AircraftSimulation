@@ -29,6 +29,7 @@ from . import airfoils as afm
 from . import registry as rg
 from .fields import F
 from .power import LAYOUTS
+from .tail import NO_WING2, SAME_WING
 
 KINDS = ("monoplano", "biplano", "asa voadora", "tailsitter", "VTOL")     # a ordem de core/src/sizing/kinds.zig
 OBJECTIVES = ("MTOW", "EE")
@@ -308,7 +309,13 @@ def apply(project, row: dict) -> None:
     for n in {row["airfoil"], row["airfoil_tip"]}:          # perfil da pasta: entra nos perfis do projeto
         if project.airfoil(n) is None and n in cat:
             project.airfoils.append(copy.deepcopy(cat[n]))
-    wd.span, wd.area, wd.taper = round(row["span"], 3), round(row["area"], 3), round(row["taper"], 3)
+    bi = project.mdo.kind == "biplano"
+    wd.span, wd.taper = round(row["span"], 3), round(row["taper"], 3)
+    wd.area = round(row["area"] / (2 if bi else 1), 3)        # biplano: duas asas iguais dividem a área
+    td = project.tail_draft
+    td.wing2 = SAME_WING if bi else NO_WING2
+    if bi:            # vão G = 0,15 b, o G/b padrão do dimensionamento (core/src/sizing/types.zig, gap_ratio)
+        td.wing2_dx, td.wing2_dz, td.wing2_di = 0.0, round(0.15 * row["span"], 3), 0.0
     wd.airfoil = row["airfoil"]
     wd.airfoil_tip = row["airfoil_tip"] if row["airfoil_tip"] != row["airfoil"] else ""
     pd.motor, pd.propeller, pd.tilt = row["motor"], row["propeller"], round(row["tilt"], 2)

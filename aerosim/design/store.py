@@ -109,13 +109,27 @@ def split(p: DesignProject) -> tuple[dict, dict[str, dict]]:
             d = dict(params=to_dict(a.params), note=a.note, superficie=a.set.name)
             own = g.set_named(a.set.name)
             if own is None or not _same(own, a.set):         # cópia antiga da superfície: vai junto
-                d["superficie_copia"] = dict(params=to_dict(a.set.params), note=a.set.note)
+                d["superficie_copia"] = _set_dict(a.set)
             planes.append(d)
         files[g.file] = dict(format=WING_KIND, version=VERSION, nome=g.wing.name, guardada=g.kept,
                              asa=to_dict(g.wing),
-                             superficies=[dict(params=to_dict(s.params), note=s.note) for s in g.sets],
+                             superficies=[_set_dict(s) for s in g.sets],
                              avioes=planes)
     return main, files
+
+
+def _set_dict(s: SetCandidate) -> dict:
+    """um conjunto no arquivo da asa; com segunda asa (tandem, biplano), a cópia dela e o id que liga as duas"""
+    d = dict(params=to_dict(s.params), note=s.note)
+    if s.wing2 is not None:
+        d.update(asa2=to_dict(s.wing2), grupo=s.group)
+    return d
+
+
+def _set_from(d: dict, wing: WingCandidate) -> SetCandidate:
+    w2 = d.get("asa2")
+    return SetCandidate(from_dict(TailParams, d.get("params", {})), copy.deepcopy(wing), d.get("note", ""),
+                        from_dict(WingCandidate, w2) if w2 else None, d.get("grupo", ""))
 
 
 def run_file(r: dict) -> str:
@@ -193,13 +207,12 @@ def join(main: dict, files: dict[str, dict]) -> DesignProject:
     for n, d in files.items():
         if n not in wing:
             continue
-        sets[n] = [SetCandidate(from_dict(TailParams, s.get("params", {})), copy.deepcopy(wing[n]), s.get("note", ""))
-                   for s in d.get("superficies", [])]
+        sets[n] = [_set_from(s, wing[n]) for s in d.get("superficies", [])]
         planes[n] = []
         for a in d.get("avioes", []):
             cp = a.get("superficie_copia")
             if cp is not None:
-                st = SetCandidate(from_dict(TailParams, cp.get("params", {})), copy.deepcopy(wing[n]), cp.get("note", ""))
+                st = _set_from(cp, wing[n])
             else:
                 st = next((s for s in sets[n] if s.name == a.get("superficie")), None)
                 st = copy.deepcopy(st) if st is not None else SetCandidate(TailParams(name=a.get("superficie", "")),

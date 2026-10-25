@@ -14,6 +14,10 @@ A análise rápida é a estática longitudinal clássica (Etkin; Nelson, cap. 2)
 com o CG posto na margem estática pedida. A incidência da EH sai para equilibrar o cruzeiro com o
 profundor neutro. Faixa de CG: atrás, margem mínima; à frente, o profundor deixa de equilibrar o
 C_L,max. Rolagem: p b/2V com o aileron todo (faixas, C_lp de asa trapezoidal).
+
+Segunda asa (tandem, biplano): outra asa guardada, ou a mesma, posta a um recuo e a um desnível da primeira e
+ligada a ela (`Aircraft.wing_group`, o id fica no conjunto). A estática analítica acima continua sendo a da asa 1
+com a cauda; com o par, quem dá a margem é o avião inteiro no núcleo (Aerodinâmica → Avião montado).
 """
 from __future__ import annotations
 
@@ -33,12 +37,20 @@ from .wing import WingCandidate, analyze as analyze_wing, planform
 
 LAYOUTS = ("convencional", "em V", "sem cauda")
 ARM_FROM = ("CA da asa", "CG de projeto")
+NO_WING2, SAME_WING = "nenhuma", "a mesma asa"     # TailParams.wing2: sem segunda asa; a da etapa repetida
 
 
 @dataclass
 class TailParams:
     name: str = F("conjunto 1", "nome")
     wing: str = F("asa 1", "asa", "", "uma das asas guardadas na etapa Asa")
+    wing2: str = F(NO_WING2, "segunda asa (tandem, biplano)", "", "outra asa guardada, ou a mesma (biplano de asas "
+                   "iguais); ela fica ligada à primeira: a referência do avião passa a ser o par")
+    wing2_dx: float = F(0.0, "recuo da segunda asa", "m", "do bordo de ataque da raiz da primeira ao da segunda; "
+                        "+ para trás (tandem)", -3.0, 3.0, 0.01)
+    wing2_dz: float = F(0.0, "desnível da segunda asa", "m", "+ para cima (biplano: o vão entre as asas)", -1.0, 1.0,
+                        0.01)
+    wing2_di: float = F(0.0, "decalagem da segunda asa", "°", "incidência dela menos a da primeira", -8, 8, 0.25)
     layout: str = F("convencional", "cauda", "", "convencional: EH + EV; em V: duas superfícies inclinadas; "
                     "sem cauda: elevons na asa", choices=LAYOUTS)
     arm: float = F(0.95, "braço da cauda", "m", "até o centro aerodinâmico da cauda, medido de onde diz 'braço medido "
@@ -78,6 +90,8 @@ class SetCandidate:
     params: TailParams = field(default_factory=TailParams)
     wing: WingCandidate = field(default_factory=WingCandidate)
     note: str = ""
+    wing2: WingCandidate | None = None      # a segunda asa (cópia); None: monoplano
+    group: str = ""                         # id que liga as duas asas no avião (sorteado ao guardar)
 
     @property
     def name(self) -> str:
@@ -148,6 +162,7 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
     ac.payload.enabled = False
     info = dict(S=S, c=c, b=b, x_ac_w=pf["x_ac"], x_le_mac=pf["x_le_mac"], Sh=0.0, Sv=0.0, bh=0.0, hv=0.0, arm=0.0)
     if tp.layout == "sem cauda":
+        _add_wing2(ac, cand, req, rules)
         return ac, info
     l = tp.arm + arm_shift                          # do CA da asa ao da cauda (posição)
     Sh = tp.VH * S * c / tp.arm                     # volume de cauda com o braço como foi dado
@@ -186,10 +201,28 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
     for t in tails:
         t.mount = "tubo:0"
     ac.surfaces += tails
+    _add_wing2(ac, cand, req, rules)
     ac.apply_constraints()
     info.update(Sh=Sh, Sv=Sv, bh=bh, hv=hv, arm=l, x_ac_t=x_ac_t, cl_lim_h=lim,
                 boom=ac.boom.length, mass_tail=(Sh + Sv) * rules.tail_density, mass_boom=ac.boom.length * rules.boom_density)
     return ac, info
+
+
+def _add_wing2(ac: Aircraft, cand: SetCandidate, req: Requirements, rules: DesignRules) -> None:
+    """a segunda asa no fim da lista (as contas da etapa leem a asa em [0] e a cauda em [1]), ligada à primeira"""
+    if cand.wing2 is None:
+        return
+    tp = cand.params
+    w = ac.surfaces[0]
+    w2 = copy.deepcopy(analyze_wing(cand.wing2, req, rules)["surface"])
+    w2.name = w2.name if w2.name != w.name else f"{w.name} (2)"
+    w2.x, w2.y, w2.z = w.x - tp.wing2_dx, w.y, w.z - tp.wing2_dz      # z do corpo para baixo
+    w2.incidence = w2.incidence + tp.wing2_di
+    w2.controls = []                                  # os comandos ficam na primeira (na Montagem, livre)
+    ac.surfaces.append(w2)
+    ac.link_wings(w, w2)
+    if cand.group:                                    # o id guardado no conjunto (o mesmo até a Montagem)
+        w.group = w2.group = cand.group
 
 
 def analyze(cand: SetCandidate, req: Requirements, rules: DesignRules | None = None, airfoils: dict | None = None) -> dict:

@@ -936,7 +936,9 @@ class TailPage(StagePage):
 
     def choices(self):
         d = self.state.design
+        from aerosim.design.tail import NO_WING2, SAME_WING
         return {"wing": tuple(w.name for w in d.wings),
+                "wing2": (NO_WING2, SAME_WING) + tuple(w.name for w in d.wings),
                 "tail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + d.airfoil_names())),
                 "vtail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + d.airfoil_names()))}
 
