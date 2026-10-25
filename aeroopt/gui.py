@@ -30,6 +30,7 @@ from PyQt6 import QtCore, QtWidgets
 
 import aeroopt
 from aerosim.design import registry as rg
+from aerosim.parallel import session, warm_session
 
 from . import categories as cat
 from . import inputs as inp
@@ -39,6 +40,9 @@ from .generations import GenerationsSolver
 
 OK_C, BAD_C, BEST_C = "#2ca02c", "#d62728", "#1f4e8c"
 SIMPLE = ("MTOW", "EE")                       # objetivos simples, sem arquivo
+# processos novos a partir de um servidor que já importou tudo (aerosim.parallel): seguro com as linhas do Qt, como o
+# spawn, e um pool novo abre em centésimos de segundo
+START_METHOD = "forkserver"
 EE_LINES = (0.5, 1.0, 1.5, 2.0, 3.0)
 # os gráficos do melhor avião: as análises rápidas do aerosim (a aerodinâmica completa, com o lltdrek, leva meio
 # minuto; a polar é a do núcleo). A decolagem é a da Missão em "só decolagem": o profundor otimizado para a pista
@@ -876,6 +880,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.workers.setRange(1, max(os.cpu_count() or 1, 1))
         self.workers.setValue(max(1, (os.cpu_count() or 2) - 1))
         f.addRow("processos por etapa", self.workers)
+        warm_session(*self._pool_args())             # os processos nascem enquanto a janela abre, não na rodada
         v.addLayout(f)
         v.addStretch(1)
         return w
@@ -1217,6 +1222,14 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             self.msg.setText(f"gravado: {path}")
 
     # ------------------------------------------------------------------ rodar
+    def _pool_args(self) -> tuple:
+        return self.workers.value(), START_METHOD, sg.warm, sg.StagedEvaluator.preload
+
+    def pool(self):
+        """os processos da sessão (aerosim.parallel.session): os mesmos em todas as rodadas com este número de
+        processos; o Parar não os mata, então a rodada seguinte começa sem esperar ninguém nascer"""
+        return session(*self._pool_args())
+
     def start(self):
         try:
             scoring = self.scoring.scoring()
@@ -1242,15 +1255,16 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                              f"{sg.MAX_CONFIGS}; escolha as gerações em Configuração</span>")
             return
         ev = sg.StagedEvaluator(self.project, workers=self.workers.value(), six_dof=m["decolagem"] == "6gdl",
-                                evals=self.evals.value(), start_method="spawn", scoring=scoring,
+                                evals=self.evals.value(), start_method=START_METHOD, scoring=scoring,
                                 geometry=self.geometry_params(), surfaces=m["superfícies"],
                                 stability=sg.StabilityParams(level=self.stab_level.currentData())
                                 if self.stab.isChecked() else None,
-                                fly=None if m["voa"] == "desligada" else m["voa"])
+                                fly=None if m["voa"] == "desligada" else m["voa"], executors=self.pool())
         if self.synthetic:
             from .synthetic import SyntheticEvaluator
             ev = SyntheticEvaluator(self.project, workers=self.workers.value(), evals=self.evals.value(),
-                                    surfaces=m["superfícies"], start_method="spawn", delay=0.02)
+                                    surfaces=m["superfícies"], start_method=START_METHOD, delay=0.02,
+                                    executors=self.pool())
         stage_names = [s.name for s in ev.stages(self.project, pr)]
         self.funnel = {s: [0, 0, 0] for s in stage_names}
         self._scoring = scoring

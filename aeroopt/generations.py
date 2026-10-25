@@ -72,8 +72,11 @@ class GenerationsSolver(ISolver):
         history: list[tuple[int, int, float]] = []
         rows: list[dict] = []
 
-        # os mesmos trabalhadores para todas as etapas de todas as gerações: os processos nascem uma vez
-        executors = Executors(evaluator.workers, evaluator.start_method, getattr(evaluator, "warm", None))
+        # os mesmos trabalhadores para todas as etapas de todas as gerações: os processos nascem uma vez (ou nem isso,
+        # quando a janela passa os da sessão)
+        own = getattr(evaluator, "executors", None) is None
+        executors = (Executors(evaluator.workers, evaluator.start_method, getattr(evaluator, "warm", None),
+                               getattr(evaluator, "preload", ())) if own else evaluator.executors)
 
         def stage_run(items, gen, f0, f1):
             pipe = Pipeline(evaluator.stages(p, problem), evaluator.start_method, executors)
@@ -115,7 +118,8 @@ class GenerationsSolver(ISolver):
                     cfg["generation"] = g + 1
                     genes = be.ga_next(cfg, genes, fit)
         finally:
-            executors.close()
+            if own:
+                executors.close()
         done = [r for r in rows if r["alive"] and math.isfinite(r["nota"])]
         best_row = max(done, key=lambda r: (r["valido"], r["nota"])) if done else {}
         return OptResult(rows=rows, best=best_row, names={"etapas": [(k, a, b) for k, (a, b) in log.items()],

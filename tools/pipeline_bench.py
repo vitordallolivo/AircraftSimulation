@@ -74,7 +74,8 @@ def run_one(project, problem, evaluator, items, strategy: str, workers: int, gen
     parallel, method = STRATEGIES[strategy]
     n = 1 if strategy == "serie" else workers
     warm = getattr(evaluator, "warm", None)
-    shared = None if strategy.endswith("-novo") else Executors(n, method, warm)   # None: um pool por etapa, como antes
+    pre = getattr(evaluator, "preload", ())
+    shared = None if strategy.endswith("-novo") else Executors(n, method, warm, pre)   # None: um pool por etapa
     times: dict[str, float] = {}
     t0 = time.perf_counter()
     if shared is not None and parallel == "processos" and n > 1:
@@ -88,7 +89,7 @@ def run_one(project, problem, evaluator, items, strategy: str, workers: int, gen
                     st.parallel = parallel
             pipe = Pipeline(stages, method, shared)
             if shared is None:
-                pipe._map = _fresh_pool_map(n, method)
+                pipe._map = _fresh_pool_map(n, method, pre)
             out = pipe.run(copy.deepcopy(items), n)
             for k, v in pipe.times:
                 times[k] = times.get(k, 0.0) + v
@@ -101,7 +102,7 @@ def run_one(project, problem, evaluator, items, strategy: str, workers: int, gen
     return total, list(times.items()), sig
 
 
-def _fresh_pool_map(n: int, method):
+def _fresh_pool_map(n: int, method, preload=()):
     """o `_map` do Pipeline com um pool novo a cada etapa (o jeito de antes, para comparar com o que dura)"""
     from aeroopt.pipeline import Pipeline
     from aerosim.parallel import make_executor
@@ -109,7 +110,7 @@ def _fresh_pool_map(n: int, method):
     def run(st, runner, alive, tick, cancel):
         if runner.kind != "processos":
             return Pipeline._map(st, runner, alive, tick, cancel)
-        with make_executor("processos", n, method) as ex:
+        with make_executor("processos", n, method, preload=preload) as ex:
             return Pipeline._map(st, ex, alive, tick, cancel)
     return run
 

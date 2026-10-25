@@ -7,7 +7,7 @@ import time
 import pytest
 
 from aerosim.interfaces.executor import KINDS, IExecutor
-from aerosim.parallel import Executors, make_executor
+from aerosim.parallel import Executors, check_cancel, make_executor, session
 
 
 def _square(x):
@@ -87,3 +87,54 @@ def test_process_pool_starts_every_worker_warm():
         res = ex.map(_was_warmed, range(9))
         assert all(r.ok and r.value for r in res)                  # cada um já passou pelo initializer
         assert len(ex._pool._processes) == 3
+
+
+def _polite(x):
+    """uma conta longa que olha o Parar entre um passo e outro"""
+    for _ in range(200):
+        check_cancel()
+        time.sleep(0.01)
+    return x
+
+
+def _stubborn(x):
+    """uma conta que não olha o Parar (como uma chamada longa ao núcleo)"""
+    time.sleep(30)
+    return x
+
+
+@pytest.mark.filterwarnings("ignore:This process.*is multi-threaded:DeprecationWarning")
+@pytest.mark.parametrize("kind", KINDS)
+def test_cooperative_cancel_keeps_the_workers(kind):
+    """o Parar combinado: quem está rodando sai sozinho e os processos continuam os mesmos"""
+    stop = threading.Event()
+    ex = make_executor(kind, workers=2, start_method="fork" if kind == "processos" else None)
+    before = {r.value for r in ex.map(_pid, range(4))}
+    threading.Timer(0.15, stop.set).start()
+    t0 = time.perf_counter()
+    res = ex.map(_polite, range(6), cancel=stop.is_set)
+    assert time.perf_counter() - t0 < 1.5 and any(r.cancelled for r in res)
+    assert not any(r.error for r in res)                           # cancelado não é erro
+    if kind == "processos":
+        assert {r.value for r in ex.map(_pid, range(4))} == before    # ninguém foi encerrado
+    ex.close()
+
+
+@pytest.mark.filterwarnings("ignore:This process.*is multi-threaded:DeprecationWarning")
+def test_a_worker_that_does_not_stop_is_killed_after_the_grace(monkeypatch):
+    from aerosim.parallel import executors
+    monkeypatch.setattr(executors, "GRACE", 0.3)
+    stop = threading.Event()
+    ex = make_executor("processos", workers=2, start_method="fork")
+    before = {r.value for r in ex.map(_pid, range(4))}
+    threading.Timer(0.1, stop.set).start()
+    t0 = time.perf_counter()
+    res = ex.map(_stubborn, range(2), cancel=stop.is_set)
+    assert time.perf_counter() - t0 < 2.0 and all(r.cancelled for r in res)
+    assert not {r.value for r in ex.map(_pid, range(4))} & before  # encerrados: nasceram outros
+    ex.close()
+
+
+def test_session_executors_are_shared_between_runs():
+    a = session(2, "fork")
+    assert session(2, "fork") is a and session(3, "fork") is not a

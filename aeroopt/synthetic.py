@@ -34,6 +34,7 @@ import time
 import zlib
 
 from aerosim.interfaces.optim import IEvaluator, IStage, OptProblem, StageItem
+from aerosim.parallel import check_cancel
 
 from . import stages as sg
 
@@ -114,6 +115,7 @@ class SyntheticSurfaces(sg.SurfaceSizing):
         self.req = project.requirements
 
     def point(self, values: dict) -> dict:
+        check_cancel()
         time.sleep(self.delay)
         name = values.get("_config", "")
         u = [(float(values.get(k, lo)) - lo) / (hi - lo) if hi > lo else U_BEST for k, lo, hi in self.free]
@@ -152,10 +154,11 @@ class SyntheticEvaluator(IEvaluator):
     name = "sintético"
 
     def __init__(self, project, catalog=None, backend=None, workers: int | None = None, evals: int = 24,
-                 surfaces: str = "coordenadas", start_method: str | None = None, delay: float = 0.0, **_):
+                 surfaces: str = "coordenadas", start_method: str | None = None, delay: float = 0.0, executors=None,
+                 **_):
         self.project, self.catalog, self.backend = project, catalog, backend
         self.workers, self.evals, self.surfaces = workers, evals, surfaces
-        self.start_method, self.delay = start_method, delay
+        self.start_method, self.delay, self.executors = start_method, delay, executors
 
     def quantities(self) -> list[str]:
         return ["mtow", "pv", "cp", "ee", "b"]

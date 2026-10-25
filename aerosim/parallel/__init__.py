@@ -2,8 +2,9 @@
 uma rodada inteira. Ver o README desta pasta."""
 from aerosim.interfaces.executor import KINDS, IExecutor, Outcome
 
-from .executors import (Executors, ProcessExecutor, SerialExecutor, ThreadExecutor, default_workers,
-                        make_executor)
+from .executors import (Cancelled, Executors, ProcessExecutor, SerialExecutor, ThreadExecutor, cancelled,
+                        check_cancel, close_session, default_workers, make_executor, session, warm_session)
 
-__all__ = ["KINDS", "IExecutor", "Outcome", "Executors", "ProcessExecutor", "SerialExecutor", "ThreadExecutor",
-           "default_workers", "make_executor"]
+__all__ = ["KINDS", "IExecutor", "Outcome", "Cancelled", "Executors", "ProcessExecutor", "SerialExecutor",
+           "ThreadExecutor", "cancelled", "check_cancel", "close_session", "default_workers", "make_executor",
+           "session", "warm_session"]

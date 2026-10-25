@@ -44,6 +44,7 @@ from aerosim.interfaces.optim import (
     OptResult,
     StageItem,
 )
+from aerosim.parallel import check_cancel
 
 from . import categories as cat
 from . import inputs as inp
@@ -251,6 +252,7 @@ class SurfaceSizing(IStage):
         return {**self.__dict__, "_backend": None}
 
     def point(self, values: dict) -> dict:
+        check_cancel()                             # o Parar combinado: sai entre um ponto e outro
         p, cand = candidate(self.project, values)
         d = pw.design_point(cand, p.requirements, p.rules, self.catalog, p.airfoil_map())
         ok, why = study.feasibility(d)
@@ -359,6 +361,7 @@ class FlightCheck(IStage):
         return {**self.__dict__, "_backend": None}
 
     def point(self, values: dict) -> dict:
+        check_cancel()                             # o Parar combinado: sai entre um ponto e outro
         p, cand = candidate(self.project, values)
         ac, asm = pw.assemble(cand, p.requirements, p.rules, self.catalog, p.airfoil_map())
         d = dict(asm=asm, cand=cand)
@@ -478,6 +481,7 @@ class Takeoff6dof(IStage):
         self.project, self.catalog, self.backend_cls = project, catalog, backend_cls
 
     def one(self, item: StageItem) -> StageItem:
+        check_cancel()                             # o Parar combinado: sai entre um ponto e outro
         from aerosim.manager import SimulationManager
         if self.backend_cls is None:
             from aerosim.backend.zig import ZigBackend
@@ -622,11 +626,14 @@ def warm() -> None:
 class StagedEvaluator(IEvaluator):
     name = "etapas"
     warm = staticmethod(warm)
+    preload = ("aeroopt.stages",)              # forkserver: o que o servidor importa uma vez (aerosim vem junto)
 
     def __init__(self, project, catalog=None, backend=None, workers: int | None = None, six_dof: bool = True,
                  evals: int = 24, start_method: str | None = None, scoring=None, geometry=True,
-                 surfaces: str = "coordenadas", stability: StabilityParams | None = None, fly: str | None = "buscar"):
+                 surfaces: str = "coordenadas", stability: StabilityParams | None = None, fly: str | None = "buscar",
+                 executors=None):
         self.project, self.catalog, self.backend = project, catalog, backend
+        self.executors = executors                 # os da sessão (aerosim.parallel.session); None: um por rodada
         self.fly = fly                             # o método da etapa "voa" (FLY_METHODS); None: sem a etapa
         self.surfaces = surfaces                   # o método da busca das superfícies (SURFACE_METHODS)
         self.stability = stability                 # a restrição de estabilidade de cada ponto (None: desligada)
@@ -696,8 +703,8 @@ class StagedSolver(ISolver):
         fold_bounds(problem, p)                       # envergadura, área, nº de motores: limites, não restrições
         apply_to_project(problem, p)                  # as restrições do problema valem na viabilidade
         items = configurations(p, problem, evaluator.catalog)
-        pipe = Pipeline(evaluator.stages(p, problem), evaluator.start_method,
-                        initializer=getattr(evaluator, "warm", None))
+        pipe = Pipeline(evaluator.stages(p, problem), evaluator.start_method, getattr(evaluator, "executors", None),
+                        initializer=getattr(evaluator, "warm", None), preload=getattr(evaluator, "preload", ()))
         cb = (lambda st, it: on_item(st, row(it))) if on_item else None
         items = pipe.run(items, evaluator.workers, progress, cancel, cb)
         rows = [row(i) for i in items]

@@ -31,10 +31,11 @@ def _fail(item: StageItem, stage: str, err: Exception) -> StageItem:
 
 class Pipeline:
     def __init__(self, stages: list[IStage], start_method: str | None = None, executors: Executors | None = None,
-                 initializer=None):
+                 initializer=None, preload=()):
         self.stages = list(stages)
         self.start_method = start_method                  # processos: "fork", "spawn"... (None = o do sistema)
         self.initializer = initializer                    # o que cada processo carrega ao nascer (`stages.warm`)
+        self.preload = preload                            # forkserver: os módulos que o servidor importa uma vez
         self.executors = executors                        # None: um conjunto só desta rodada, fechado no fim
         self.log: list[tuple[str, int, int]] = []         # por etapa: nome, quantos entraram, quantos seguiram
         self.times: list[tuple[str, float]] = []          # por etapa: nome e o tempo de parede dela (s)
@@ -47,7 +48,7 @@ class Pipeline:
         `on_item(etapa, candidato)` a cada candidato que termina uma etapa (quem mostra o andamento ao vivo)"""
         if self.executors is not None:
             return self._run(self.executors, items, workers, progress, cancel, on_item)
-        with Executors(workers, self.start_method, self.initializer) as ex:
+        with Executors(workers, self.start_method, self.initializer, self.preload) as ex:
             return self._run(ex, items, workers, progress, cancel, on_item)
 
     def _run(self, ex: Executors, items, workers, progress, cancel, on_item) -> list[StageItem]:

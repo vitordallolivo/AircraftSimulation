@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- paralelismo, o Parar sem matar e sem esperar nascer: o Parar é combinado (`check_cancel()` no começo de cada ponto
+  de projeto; os processos continuam vivos, e só quem não para em 2 s é encerrado). A janela usa *forkserver* com
+  `aeroopt.stages` pré-carregado e um pool da sessão (`aerosim.parallel.session`, `warm_session`) que nasce em
+  segundo plano quando ela abre e serve todas as rodadas.
 - aeroopt, dados de teste: `aeroopt/synthetic.py`, um avaliador com as mesmas etapas e colunas e o resultado sabido
   de antemão (onde cada configuração para, o ótimo em 70 % da faixa de cada contínua, a melhor configuração). As
   buscas das superfícies são as de verdade. `python -m aeroopt --exemplo --sintetico` roda a janela com ele, e
