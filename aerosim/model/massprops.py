@@ -26,7 +26,13 @@ def point_items(ac: Aircraft) -> list[tuple[str, float, np.ndarray]]:
     if mm.include_structure:
         for s in ac.surfaces:
             if s.enabled and s.mass > 0:
-                out.append((s.name, s.mass, np.array([s.x - 0.4 * (s.mac or 0.2), s.y, s.z])))
+                x = s.x - 0.4 * (s.mac or 0.2)
+                r = _half_gyration(s) if s.symmetric and not s.vertical else None
+                if r is None:
+                    out.append((s.name, s.mass, np.array([x, s.y, s.z])))
+                else:                   # cada meia asa com a metade da massa, no raio de giração dela (rolamento)
+                    out.append((f"{s.name} (direita)", 0.5 * s.mass, np.array([x, r, s.z])))
+                    out.append((f"{s.name} (esquerda)", 0.5 * s.mass, np.array([x, -r, s.z])))
         if ac.fuselage.enabled and ac.fuselage.mass > 0:
             f = ac.fuselage
             out.append(("fuselagem", f.mass, np.array([f.x_nose - 0.45 * f.length, 0, f.z])))
@@ -34,6 +40,24 @@ def point_items(ac: Aircraft) -> list[tuple[str, float, np.ndarray]]:
             if b.enabled and b.mass > 0:
                 out.append((b.name, b.mass, np.array(b.middle)))
     return out
+
+
+def _half_gyration(s) -> float | None:
+    """raio de giração da meia superfície em torno do plano de simetria, com a massa espalhada pela área (densidade
+    por área constante): r² = ∫ (y_0 + η)² c(η) dη / ∫ c(η) dη, a corda linear entre as seções. É a definição do
+    momento de inércia de uma placa fina (r² = I/m); None sem seções"""
+    if len(s.sections) < 2:
+        return None
+    eta, c = [], []
+    for a, b in zip(s.sections[:-1], s.sections[1:]):
+        t = np.linspace(0.0, 1.0, 33)
+        eta.append(a.y + t * (b.y - a.y))
+        c.append(a.chord + t * (b.chord - a.chord))
+    eta, c = np.concatenate(eta), np.concatenate(c)
+    A = np.trapezoid(c, eta)
+    if A <= 0:
+        return None
+    return float(np.sqrt(np.trapezoid((s.y + eta) ** 2 * c, eta) / A))
 
 
 def dry_mass(ac: Aircraft) -> dict:
