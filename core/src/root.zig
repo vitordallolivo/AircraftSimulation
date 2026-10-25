@@ -519,3 +519,27 @@ export fn aerosim_ga_next(cfg: *const ga.GaCfg, genes: [*]const f64, fit: [*]con
     ga.next(cfg, genes[0..k], fit[0..@intCast(cfg.pop)], out[0..k]);
     return 0;
 }
+
+// ------------------------------------------------------------------ CMA-ES do aeroopt (variáveis contínuas)
+const cm = @import("optim/cmaes.zig");
+
+/// prepara o estado do CMA-ES: `x0` normalizado em [0, 1], passo `sigma0`, λ (≤ 0: o padrão 4 + ⌊3 ln n⌋)
+export fn aerosim_cma_init(s: *cm.CmaState, n: i32, x0: [*]const f64, sigma0: f64, lambda: i32, seed: i32) i32 {
+    if (n < 1 or n > cm.max_n or lambda > cm.max_lambda or !(sigma0 > 0)) return -1;
+    cm.init(s, @intCast(n), x0[0..@intCast(n)], sigma0, lambda, seed);
+    return s.lambda;
+}
+
+/// a geração seguinte: λ × n pontos em `out`, todos em [0, 1]
+export fn aerosim_cma_ask(s: *const cm.CmaState, out: [*]f64) i32 {
+    if (s.n < 1 or s.n > cm.max_n or s.lambda < 1 or s.lambda > cm.max_lambda) return -1;
+    cm.ask(s, out[0..@intCast(s.lambda * s.n)]);
+    return 0;
+}
+
+/// a nota de cada ponto da geração (maior é melhor; NaN é o pior) atualiza média, C e σ
+export fn aerosim_cma_tell(s: *cm.CmaState, xs: [*]const f64, fit: [*]const f64) i32 {
+    if (s.n < 1 or s.n > cm.max_n or s.lambda < 1 or s.lambda > cm.max_lambda) return -1;
+    cm.tell(s, xs[0..@intCast(s.lambda * s.n)], fit[0..@intCast(s.lambda)]);
+    return 0;
+}

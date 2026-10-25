@@ -156,6 +156,17 @@ semente vem do nome da configuração, então a mesma rodada dá a mesma busca. 
 de meio em meio grau) e um avião que já apareceu não gasta avaliação. Sem isso, a população pequena virava cópias do
 melhor, e a busca gastava o total refazendo o mesmo ponto.
 
+O terceiro método (`method="cma-es"`) é o CMA-ES do núcleo (`core/src/optim/README.md`). As gerações mudam cada
+variável por conta própria, então tropeçam quando duas variáveis só melhoram juntas, como a envergadura e a área ou o
+VH e o braço da cauda. O CMA-ES aprende de geração em geração a direção em que elas andam juntas e passa a sortear ao
+longo dela. As variáveis andam normalizadas pela faixa, a média começa no avião de partida, e o passo começa em 0,3
+da faixa. Cada ponto cai no passo do campo antes de avaliar, e o ponto que caiu é o que volta para o núcleo. A
+população e o total de avaliações são os mesmos das gerações, para que os dois possam ser comparados lado a lado. Ele
+pode parar antes do total: quando o passo fica menor que o passo do campo, os pontos se repetem, e isso quer dizer que
+a busca convergiu. Com poucas avaliações e variáveis quase independentes, as gerações ainda chegam antes, porque o
+CMA-ES gasta as primeiras gerações aprendendo a forma. Com variáveis acopladas e avaliações de sobra, ele fica ordens
+de grandeza à frente. A etapa voa também aceita o CMA-ES (`FlightCheck(method="cma-es")`).
+
 A corrida de decolagem quase não vê o diedro, o enflechamento e a deriva: soltos, eles andavam ao acaso, sem nada
 que preferisse um valor a outro. A restrição de **estabilidade** (`StabilityParams`, desligada por padrão) faz eles
 contarem. Cada ponto de projeto que fecha passa pela mesma análise da aba Estabilidade: a estática
@@ -209,7 +220,7 @@ ordem, a nota e as condições de voo válido), em campos editáveis: o que se m
 núcleo" traduz e confere o programa, e "Gravar .toml…" grava um arquivo novo. As **categorias** são as caixas de
 cada tipo de avião que a busca pode montar. A **configuração** mostra as etapas na ordem em que rodam, cada uma com o
 método dela. As configurações saem das gerações ou de todas as combinações (até 256); as superfícies, da busca por
-coordenadas ou das gerações nas contínuas, com quantos pontos de projeto cada configuração gasta; a decolagem passa
+coordenadas, das gerações ou do CMA-ES nas contínuas, com quantos pontos de projeto cada configuração gasta; a decolagem passa
 pelo 6GDL ou fica só na corrida da pista; a nota é sempre no núcleo. Ali também se escolhe quantos processos rodam
 cada etapa.
 

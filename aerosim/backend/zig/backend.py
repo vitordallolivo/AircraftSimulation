@@ -152,6 +152,9 @@ class _Lib:
             "aerosim_geometry_check": (c_int, [vp, c_size, vp]),
             "aerosim_ga_init": (c_int, [ctypes.POINTER(T["GaCfg"]), vp]),
             "aerosim_ga_next": (c_int, [ctypes.POINTER(T["GaCfg"]), vp, vp, vp]),
+            "aerosim_cma_init": (c_int, [ctypes.POINTER(T["CmaState"]), c_int, vp, c_double, c_int, c_int]),
+            "aerosim_cma_ask": (c_int, [ctypes.POINTER(T["CmaState"]), vp]),
+            "aerosim_cma_tell": (c_int, [ctypes.POINTER(T["CmaState"]), vp, vp]),
             "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
             "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
             "aerosim_prop_state": (c_int, [c_int, c_int] + [c_double] * 5 + [ctypes.POINTER(T["PropPoint"])]),
@@ -577,6 +580,29 @@ class ZigBackend(ISimBackend):
         if self._lib.dll.aerosim_ga_next(ctypes.byref(c), g.ctypes.data, f.ctypes.data, out.ctypes.data) < 0:
             raise ValueError("gerações: genes ou população fora dos limites do núcleo")
         return out
+
+    # ------------------------------------------------------------------ CMA-ES do aeroopt
+    def cma_init(self, x0, sigma0: float = 0.3, lam: int = 0, seed: int = 1):
+        """o estado do CMA-ES do núcleo (core/src/optim/cmaes.zig) com média inicial `x0` em [0, 1]; λ ≤ 0 usa o
+        padrão. O estado é uma struct ctypes: passa de volta a `cma_ask` e `cma_tell`"""
+        st = self._lib.schema.types["CmaState"]()
+        x = np.ascontiguousarray(x0, float).ravel()
+        if self._lib.dll.aerosim_cma_init(ctypes.byref(st), len(x), x.ctypes.data, float(sigma0), int(lam),
+                                          int(seed)) < 0:
+            raise ValueError("CMA-ES: variáveis ou população fora dos limites do núcleo")
+        return st
+
+    def cma_ask(self, st) -> np.ndarray:
+        """a geração (λ × n) em [0, 1]"""
+        out = np.zeros((getattr(st, "lambda"), st.n))          # "lambda" é palavra reservada do Python
+        self._lib.dll.aerosim_cma_ask(ctypes.byref(st), out.ctypes.data)
+        return out
+
+    def cma_tell(self, st, xs, fitness) -> None:
+        """a nota de cada ponto da geração (maior é melhor; NaN é o pior)"""
+        x = np.ascontiguousarray(xs, float)
+        f = np.ascontiguousarray(fitness, float).ravel()
+        self._lib.dll.aerosim_cma_tell(ctypes.byref(st), x.ctypes.data, f.ctypes.data)
 
     def simple_performance(self, cfg: dict) -> tuple[dict, dict]:
         T = self._lib.schema.types

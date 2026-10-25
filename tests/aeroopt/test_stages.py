@@ -193,17 +193,19 @@ def test_geometry_stage_fixes_the_ground_and_stops_what_it_cannot_fix():
     assert not row["alive"] and row["stage"] == "geometria" and "soltas" in row["why"]
 
 
-def test_surfaces_by_generations_keeps_the_budget_and_never_loses_the_start():
-    """o método das gerações nas contínuas: o primeiro ponto é o avião como está, o total de pontos é o pedido e o
+@pytest.mark.parametrize("method", ["gerações", "cma-es"])
+def test_surfaces_by_generations_keeps_the_budget_and_never_loses_the_start(method):
+    """as gerações e o CMA-ES nas contínuas: o primeiro ponto é o avião como está, o total de pontos é o pedido e o
     melhor que sai não perde para o ponto de partida"""
     p = _project()
     pr = aeroopt.from_project(p)
     pr.variable("wing.span").lo, pr.variable("wing.span").hi = 1.8, 3.0
     pr.isolate("wing.span")
-    ev = sg.StagedEvaluator(p, workers=1, six_dof=False, evals=9, geometry=False, surfaces="gerações")
+    ev = sg.StagedEvaluator(p, workers=1, six_dof=False, evals=9, geometry=False, surfaces=method)
     (row,) = sg.StagedSolver().run(pr, ev).rows
     h = row["history"]
-    assert len(h) == 9 and len({x["values"]["wing.span"] for x in h}) > 3
+    # o CMA-ES pode parar antes: com σ abaixo do passo do campo os pontos se repetem (convergiu)
+    assert len(h) <= 9 and (len(h) == 9 or method == "cma-es") and len({x["values"]["wing.span"] for x in h}) > 3
     assert all(1.8 <= x["values"]["wing.span"] <= 3.0 for x in h)
     assert row["mtow"] == max(x["mtow"] for x in h if x["ok"]) >= (h[0]["mtow"] if h[0]["ok"] else -1)
     again = sg.StagedSolver().run(pr, ev).rows[0]                    # a semente é o nome: mesma busca
@@ -257,14 +259,15 @@ def test_area_says_where_the_configuration_stopped():
     assert sg.area(dict(alive=True, nota=math.nan, stage="superfícies")) == "superfícies"
 
 
-def test_fly_stage_finds_a_point_that_flies_before_performance():
+@pytest.mark.parametrize("method", ["buscar", "cma-es"])
+def test_fly_stage_finds_a_point_that_flies_before_performance(method):
     """a configuração que não equilibra como está (bateria não cabe, precisa de lastro) não morre: a etapa voa
     procura nas contínuas o ponto que viola menos até achar um que voa, e as superfícies partem dele"""
     from aerosim.interfaces.optim import StageItem
     from aeroopt.gui import example_project
     p, pr = example_project()
     pr.variable("wing.area").lo, pr.variable("wing.area").hi = 0.4, 0.6
-    st = sg.FlightCheck(p, pr, evals=24)
+    st = sg.FlightCheck(p, pr, evals=24, method=method)
     start = st.point({})
     assert not start["ok"] and start["viol"] > 0 and "lastro" in start["why"]
     it = st.one(StageItem(name="a", values={}))
@@ -274,3 +277,24 @@ def test_fly_stage_finds_a_point_that_flies_before_performance():
     assert sg.FlightCheck(p, pr, method="conferir").point({})["viol"] == start["viol"]
     with pytest.raises(ValueError, match="lastro"):
         sg.FlightCheck(p, pr, method="conferir").one(StageItem(name="b", values={}))
+
+
+def test_cma_es_search_learns_coupled_variables():
+    """o CMA-ES do núcleo pelo contrato das buscas (`_cma_search`): fica na faixa, cai no passo, respeita o total e,
+    com folga de avaliações, chega ao máximo de uma elipse girada (as variáveis acopladas, como envergadura e área),
+    onde as gerações, que andam gene por gene, ficam ordens de grandeza atrás com o mesmo total"""
+    import numpy as np
+    free = [(f"v{i}", 0.0, 10.0) for i in range(4)]
+
+    def point(y):
+        z = np.cumsum([y[f"v{i}"] / 10 - 0.7 for i in range(4)])
+        return dict(values=dict(y), ok=True, why="", mtow=-float(sum(10 ** i * z[i] ** 2 for i in range(4))), viol=0.0)
+    x = {k: 2.0 for k, _, _ in free}
+    start, hist = point(x), []
+    x, best = sg._cma_search(free, x, start, point, 1200, hist, seed=3)
+    assert len(hist) <= 1200 and all(0 <= v <= 10 for h in hist for v in h["values"].values())
+    _, ga = sg._real_search(free, {k: 2.0 for k, _, _ in free}, start, point, 1200, [], seed=3)
+    assert best["mtow"] > -1e-6 and ga["mtow"] < 1e3 * best["mtow"]
+    again = []
+    sg._cma_search(free, {k: 2.0 for k, _, _ in free}, start, point, 1200, again, seed=3)
+    assert [h["values"] for h in again] == [h["values"] for h in hist]

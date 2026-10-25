@@ -4,7 +4,9 @@
 //!
 //! LU: P A = L U por eliminação de Gauss com pivô parcial (Golub e Van Loan, Matrix Computations,
 //! 4ª ed., alg. 3.4.1, a conferir no PDF). Cholesky: A = L Lᵀ para A simétrica positiva definida
-//! (idem, alg. 4.2.1, a conferir no PDF). L e U ficam guardadas na própria A.
+//! (idem, alg. 4.2.1, a conferir no PDF). L e U ficam guardadas na própria A. Autovalores e autovetores de uma
+//! simétrica: o método de Jacobi cíclico (idem, seção 8.5, a conferir no PDF), que gira a matriz até a parte fora
+//! da diagonal sumir; para as matrizes pequenas do CMA-ES (até 32) é simples e preciso.
 const std = @import("std");
 
 /// fatora A (n × n) em P A = L U no lugar: abaixo da diagonal, L (diagonal unitária implícita); da
@@ -87,6 +89,53 @@ pub fn cholSolve(comptime N: usize, L: *const [N][N]f64, n: usize, b: *[N]f64) v
 }
 
 /// A x = b de uma vez (A e b são copiados); false se A é singular
+/// A (n × n, simétrica) = V diag(w) Vᵀ pelo Jacobi cíclico; A é destruída. As colunas de V são os autovetores.
+/// Para quando a soma dos quadrados fora da diagonal cai abaixo de 1e-30 vezes a total, ou em 64 varreduras
+pub fn symEigen(comptime N: usize, A: *[N][N]f64, n: usize, w: *[N]f64, V: *[N][N]f64) void {
+    for (0..n) |i| {
+        for (0..n) |j| V[i][j] = if (i == j) 1 else 0;
+    }
+    var total: f64 = 0;
+    for (0..n) |i| for (0..n) |j| {
+        total += A[i][j] * A[i][j];
+    };
+    var sweep: usize = 0;
+    while (sweep < 64) : (sweep += 1) {
+        var off: f64 = 0;
+        for (0..n) |i| for (i + 1..n) |j| {
+            off += 2 * A[i][j] * A[i][j];
+        };
+        if (off <= 1e-30 * total or off == 0) break;
+        for (0..n) |p| for (p + 1..n) |q| {
+            if (A[p][q] == 0) continue;
+            // a rotação que zera A[p][q] (Golub e Van Loan, alg. 8.5.1)
+            const tau = (A[q][q] - A[p][p]) / (2 * A[p][q]);
+            const t = (if (tau >= 0) @as(f64, 1) else -1) / (@abs(tau) + @sqrt(1 + tau * tau));
+            const c = 1 / @sqrt(1 + t * t);
+            const s = t * c;
+            for (0..n) |k| { // A ← A J
+                const akp = A[k][p];
+                const akq = A[k][q];
+                A[k][p] = c * akp - s * akq;
+                A[k][q] = s * akp + c * akq;
+            }
+            for (0..n) |k| { // A ← Jᵀ A
+                const apk = A[p][k];
+                const aqk = A[q][k];
+                A[p][k] = c * apk - s * aqk;
+                A[q][k] = s * apk + c * aqk;
+            }
+            for (0..n) |k| { // V ← V J
+                const vkp = V[k][p];
+                const vkq = V[k][q];
+                V[k][p] = c * vkp - s * vkq;
+                V[k][q] = s * vkp + c * vkq;
+            }
+        };
+    }
+    for (0..n) |i| w[i] = A[i][i];
+}
+
 pub fn solve(comptime N: usize, A: [N][N]f64, n: usize, b: [N]f64, x: *[N]f64) bool {
     var M = A;
     var piv: [N]usize = undefined;
@@ -142,4 +191,24 @@ test "Cholesky: fator conhecido e solução igual à da LU" {
     for (x, y) |a, b| try testing.expectApproxEqAbs(b, a, 1e-9);
     var N = [2][2]f64{ .{ 1, 2 }, .{ 2, 1 } }; // autovalores 3 e −1
     try testing.expect(!cholesky(2, &N, 2));
+}
+
+test "Jacobi: A = V diag(w) Vᵀ e V ortogonal" {
+    const N = 4;
+    const A0 = [N][N]f64{ .{ 4, 1, -2, 2 }, .{ 1, 2, 0, 1 }, .{ -2, 0, 3, -2 }, .{ 2, 1, -2, -1 } };
+    var A = A0;
+    var w: [N]f64 = undefined;
+    var V: [N][N]f64 = undefined;
+    symEigen(N, &A, N, &w, &V);
+    for (0..N) |i| for (0..N) |j| {
+        var r: f64 = 0;
+        var o: f64 = 0;
+        for (0..N) |k| {
+            r += V[i][k] * w[k] * V[j][k];
+            o += V[k][i] * V[k][j];
+        }
+        try testing.expectApproxEqAbs(A0[i][j], r, 1e-10);
+        try testing.expectApproxEqAbs(@as(f64, if (i == j) 1 else 0), o, 1e-10);
+    };
+    try testing.expectApproxEqAbs(@as(f64, 8), w[0] + w[1] + w[2] + w[3], 1e-10); // traço
 }

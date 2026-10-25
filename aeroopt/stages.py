@@ -227,7 +227,8 @@ def violation(d: dict, stab: dict | None = None, stab_params=None) -> tuple[floa
 
 # os métodos da busca das superfícies (a GUI escolhe no menu Configuração)
 SURFACE_METHODS = {"coordenadas": "busca por coordenadas (um eixo por vez, passo cai à metade)",
-                   "gerações": "gerações nas contínuas (algoritmo genético do núcleo)"}
+                   "gerações": "gerações nas contínuas (algoritmo genético do núcleo)",
+                   "cma-es": "CMA-ES nas contínuas (aprende a forma da região boa; núcleo)"}
 
 
 class SurfaceSizing(IStage):
@@ -288,6 +289,8 @@ class SurfaceSizing(IStage):
         hist = [_eval(x, best)]
         if self.method == "gerações":
             x, best = self._generations(item, x, best, hist)
+        elif self.method == "cma-es":
+            x, best = self._generations(item, x, best, hist, _cma_search)
         else:
             x, best = self._coordinates(item, x, best, hist)
         item.values = {**item.values, **x, **best["values"]}     # com o trem que a geometria desceu, se desceu
@@ -316,19 +319,20 @@ class SurfaceSizing(IStage):
                 step = {k: 0.5 * s for k, s in step.items()}
         return x, best
 
-    def _generations(self, item: StageItem, x: dict, best: dict, hist: list) -> tuple[dict, dict]:
+    def _generations(self, item: StageItem, x: dict, best: dict, hist: list, search=None) -> tuple[dict, dict]:
         """o algoritmo genético do núcleo nas contínuas (`_real_search`): o primeiro indivíduo é o ponto de partida,
         cada gene cai no passo do campo (o diedro de meio em meio grau) e um avião que já apareceu não gasta
         avaliação. Sem isso a população pequena vira cópias do melhor e a busca gasta o total refazendo o mesmo
-        ponto"""
+        ponto. `search` troca a busca (`_cma_search`) mantendo o resto"""
         if not self.free or self.evals <= 1:
             return x, best
-        return _real_search(self.free, x, best, lambda y: self.point({**item.values, **y}), self.evals, hist,
-                            seed=1 + zlib.crc32(item.name.encode()) % 100_000)
+        return (search or _real_search)(self.free, x, best, lambda y: self.point({**item.values, **y}), self.evals,
+                                        hist, seed=1 + zlib.crc32(item.name.encode()) % 100_000)
 
 
 # os métodos da etapa "voa" (a GUI escolhe no menu Configuração)
 FLY_METHODS = {"buscar": "achar um ponto que voa (gerações nas contínuas, pelas regras de viabilidade)",
+               "cma-es": "achar um ponto que voa (CMA-ES nas contínuas, pelas regras de viabilidade)",
                "conferir": "só conferir o avião como está"}
 
 
@@ -372,8 +376,9 @@ class FlightCheck(IStage):
         x = {k: min(max(float(item.values.get(k, get_value(self.project, k))), lo), hi) for k, lo, hi in self.free}
         best = self.point({**item.values, **x})
         hist = [_eval(x, best)]
-        if not best["ok"] and self.method == "buscar" and self.free:
-            x, best = _real_search(self.free, x, best, lambda y: self.point({**item.values, **y}), self.evals, hist,
+        if not best["ok"] and self.method in ("buscar", "cma-es") and self.free:
+            search = _cma_search if self.method == "cma-es" else _real_search
+            x, best = search(self.free, x, best, lambda y: self.point({**item.values, **y}), self.evals, hist,
                                    seed=7 + zlib.crc32(item.name.encode()) % 100_000, stop_ok=True)
         item.values = {**item.values, **x}
         item.data["voa"] = dict(history=hist, viol=best["viol"], stab=best["stab"])
@@ -420,6 +425,48 @@ def _real_search(free, x: dict, best: dict, point, evals: int, hist: list, seed:
             break
         cfg["generation"] = gen + 1
         genes = be.ga_next(cfg, genes, fit)
+    return x, best
+
+
+def _cma_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: int, stop_ok: bool = False):
+    """o mesmo contrato de `_real_search`, com o CMA-ES do núcleo (core/src/optim/cmaes.zig) no lugar do algoritmo
+    genético. As variáveis andam normalizadas pela faixa ([0, 1]), a média começa em `x` e o passo em 0,3 da faixa;
+    cada ponto sorteado cai no passo do campo antes de avaliar, e é o ponto que caiu que volta para o núcleo. Um
+    ponto que já apareceu não gasta avaliação. A população é a mesma das gerações, para comparar os dois pelo
+    mesmo total de avaliações"""
+    from aerosim.backend.zig import ZigBackend
+    be = ZigBackend()
+    lo = [a for _, a, _ in free]
+    span = [max(b - a, 1e-12) for _, a, b in free]
+    steps = [(inp.get(k).step if inp.get(k) else 0.0) for k, _, _ in free]
+
+    def snap(j, u):
+        g = lo[j] + min(max(u, 0.0), 1.0) * span[j]
+        g = round(g / steps[j]) * steps[j] if steps[j] > 0 else g
+        return round(min(max(g, free[j][1]), free[j][2]), 6)
+    st = be.cma_init([(x[k] - lo[j]) / span[j] for j, (k, _, _) in enumerate(free)], 0.3,
+                     max(4, min(10, evals // 3)), seed)
+    seen = {tuple(x[k] for k, _, _ in free): best}
+    lam = getattr(st, "lambda")
+    for _ in range(4 * math.ceil(evals / lam) + 1):
+        U = be.cma_ask(st)
+        fit = []
+        for i in range(lam):
+            key = tuple(snap(j, u) for j, u in enumerate(U[i]))
+            U[i] = [(g - lo[j]) / span[j] for j, g in enumerate(key)]
+            r = seen.get(key)
+            if r is None and len(hist) < evals:
+                y = {k: key[j] for j, (k, _, _) in enumerate(free)}
+                r = seen[key] = point(y)
+                hist.append(_eval(y, r))
+                if _rank(r) > _rank(best):
+                    x, best = y, r
+                if stop_ok and best["ok"]:
+                    return x, best
+            fit.append(_fit(r) if r is not None else math.nan)
+        if len(hist) >= evals:
+            break
+        be.cma_tell(st, U, fit)
     return x, best
 
 
