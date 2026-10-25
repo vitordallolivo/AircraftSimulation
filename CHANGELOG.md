@@ -6,6 +6,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, análises do aerosim: sob o avião selecionado, as abas do aerosim (dimensionamento, aerodinâmica com a
+  polar, estabilidade, tração, desempenho, envelopes, missão com a decolagem), menos as cargas, rodam sobre o avião
+  refeito pelo mesmo gerenciador. O estado delas usa uma pasta temporária: a sprint do usuário não é tocada.
 - aeroopt, mapa por variável: os eixos do mapa dos aviões são as variáveis do problema (as livres primeiro, depois as
   fixas) além das grandezas do resultado; a cor continua a nota. Uma lista (perfil, motor, sim/não) vira um eixo
   com o nome de cada opção. Abre nas duas primeiras variáveis livres.

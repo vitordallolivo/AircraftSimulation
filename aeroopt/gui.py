@@ -40,6 +40,7 @@ from .generations import GenerationsSolver
 OK_C, BAD_C, BEST_C = "#2ca02c", "#d62728", "#1f4e8c"
 SIMPLE = ("MTOW", "EE")                       # objetivos simples, sem arquivo
 EE_LINES = (0.5, 1.0, 1.5, 2.0, 3.0)
+ANALYSES_SKIP = ("loads",)                 # as análises do aerosim que não entram no aeroopt (as cargas)
 AXES = {"PV (kg)": "pv", "carga paga (kg)": "cp", "MTOW (kg)": "mtow_f", "EE": "ee", "nota": "nota",
         "envergadura (m)": "b", "bateria (kg)": "m_bat"}
 
@@ -952,11 +953,38 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         h.addWidget(self.csv_b)
         h.addStretch(1)
         rv.addLayout(h)
+        _section(rv, "Análises do avião selecionado")
+        self.analyses = self._analyses()
+        rv.addWidget(self.analyses)
         s = QtWidgets.QScrollArea()
         s.setWidgetResizable(True)
         s.setWidget(body)
         self.right_scroll = s
         return s
+
+    def _analyses(self) -> QtWidgets.QTabWidget:
+        """as análises do aerosim (as mesmas abas: dimensionamento, missão com a decolagem, desempenho, envelopes,
+        tração, aerodinâmica com a polar, estabilidade), menos as cargas, sobre o avião selecionado. Cada aba roda no "▶ Rodar"
+        dela, pelo mesmo gerenciador do aerosim; o estado delas tem uma pasta própria, então a sprint do usuário não é
+        tocada"""
+        import tempfile
+        from aerosim.gui.tabs.simulation_tab import SimulationTab
+        from aerosim.gui.state import AppState
+        from aerosim.interfaces.simulation import AREAS
+        from aerosim.manager import SimulationManager
+        from aerosim.model.templates import empty
+        self._sim_dir = tempfile.mkdtemp(prefix="aeroopt_analises_")
+        self.sim_state = AppState(SimulationManager(), empty(), design_dir=self._sim_dir)
+        tabs = QtWidgets.QTabWidget()
+        tabs.setDocumentMode(True)
+        tabs.setMinimumHeight(760)
+        sims = sorted((x for x in self.sim_state.manager.simulations() if x.name not in ANALYSES_SKIP),
+                      key=lambda x: AREAS.index(x.area) if x.area in AREAS else len(AREAS))
+        for sim in sims:
+            tabs.addTab(SimulationTab(self.sim_state, sim), sim.title)
+        tabs.setEnabled(False)                        # liga quando um avião for selecionado e refeito
+        tabs.setToolTip("selecione um avião no mapa ou na tabela; cada aba roda no ▶ Rodar dela")
+        return tabs
 
     # ------------------------------------------------------------------ projeto e problema
     def set_project(self, project, path: str = "", problem=None) -> None:
@@ -1390,7 +1418,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         lines += [[("✔ " if ok else "✖ ") + txt, _fmt(x)] for txt, ok, x in r.get("validade", [])]
         lines += [["nota", _fmt(r["nota"])]] + ([["parou", r["why"]]] if not r["alive"] else [])
         _set_rows(self.sel_tab, lines, editable=False)
-        if self.view is None or self.project is None:
+        if self.project is None:                  # sem o 3D, o avião refeito ainda vai para as análises
             return
         pr, values = self.read_problem(), dict(r["values"])
         w = _Worker(lambda _w: sg.design(self.project, pr, values))
@@ -1408,6 +1436,10 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         if name == self.selected:
             self.selected_design = d
             self.aerosim_b.setEnabled(True)
+            ac = copy.deepcopy(d["ac"])
+            ac.name = name
+            self.sim_state.set_aircraft(ac)
+            self.analyses.setEnabled(True)
             if self.view is not None:
                 self.view.set_aircraft(d["ac"])
 

@@ -82,6 +82,12 @@ def test_window_runs_and_shows_each_candidate(app):
     w.ax_y.setCurrentIndex(w.ax_y.findData(lst))                   # uma lista vira índice com o nome no eixo
     ys, names = w._coords(list(w.rows.values()), lst)
     assert names and all(0 <= y < len(names) for y in ys)
+    # as análises do aerosim (menos as cargas) ficam sob o mapa, sobre o avião selecionado
+    titles = [w.analyses.tabText(i) for i in range(w.analyses.count())]
+    assert {"Missão", "Desempenho", "Voo nivelado e envelopes", "Aerodinâmica", "Estabilidade"} <= set(titles)
+    assert "Cargas" not in titles
+    _wait(app, lambda: w.analyses.isEnabled())
+    assert w.sim_state.aircraft.name == w.selected
     _wait(app, lambda: not w._threads)
 
 
