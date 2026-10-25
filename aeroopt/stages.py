@@ -29,6 +29,7 @@ from __future__ import annotations
 import copy
 import itertools
 import math
+import zlib
 
 from aerosim.design import mdo, study
 from aerosim.design import power as pw
@@ -174,13 +175,22 @@ def _eval(x: dict, r: dict) -> dict:
     return dict(values=dict(x), mtow=r["mtow"], ok=r["ok"], why=r["why"], pv=r["pv"], b=r["b"], m_bat=r["m_bat"])
 
 
+# os métodos da busca das superfícies (a GUI escolhe no menu Configuração)
+SURFACE_METHODS = {"coordenadas": "busca por coordenadas (um eixo por vez, passo cai à metade)",
+                   "gerações": "gerações nas contínuas (algoritmo genético do núcleo)"}
+
+
 class SurfaceSizing(IStage):
     """as variáveis contínuas livres de uma configuração, pelo maior MTOW viável na pista"""
     name = "superfícies"
 
-    def __init__(self, project, problem: OptProblem, catalog=None, evals: int = 24, geometry=None):
+    def __init__(self, project, problem: OptProblem, catalog=None, evals: int = 24, geometry=None,
+                 method: str = "coordenadas"):
         self.project, self.catalog, self.evals = project, catalog, int(evals)
         self.geometry = geometry                   # GeometryParams: cada ponto também passa pela geometria
+        if method not in SURFACE_METHODS:
+            raise ValueError(f"método das superfícies desconhecido: {method}")
+        self.method = method
         self.free = [(v.key, min(v.lo, v.hi), max(v.lo, v.hi)) for v in problem.free_variables()
                      if v.kind == "contínua"]
 
@@ -202,6 +212,17 @@ class SurfaceSizing(IStage):
         x = {k: min(max(float(get_value(self.project, k)), lo), hi) for k, lo, hi in self.free}
         best = self.point({**item.values, **x})
         hist = [_eval(x, best)]
+        if self.method == "gerações":
+            x, best = self._generations(item, x, best, hist)
+        else:
+            x, best = self._coordinates(item, x, best, hist)
+        item.values = {**item.values, **x}
+        item.data.update(best, history=hist)
+        item.alive, item.why = best["ok"], best["why"]
+        return item
+
+    def _coordinates(self, item: StageItem, x: dict, best: dict, hist: list) -> tuple[dict, dict]:
+        """busca por coordenadas: anda um passo em cada eixo; sem melhora em nenhum, o passo cai à metade"""
         step = {k: 0.25 * (hi - lo) for k, lo, hi in self.free}
         while self.free and len(hist) < self.evals and any(step[k] > 1e-3 * (hi - lo) for k, lo, hi in self.free):
             moved = False
@@ -219,10 +240,43 @@ class SurfaceSizing(IStage):
                     break
             if not moved:
                 step = {k: 0.5 * s for k, s in step.items()}
-        item.values = {**item.values, **x}
-        item.data.update(best, history=hist)
-        item.alive, item.why = best["ok"], best["why"]
-        return item
+        return x, best
+
+    def _generations(self, item: StageItem, x: dict, best: dict, hist: list) -> tuple[dict, dict]:
+        """o algoritmo genético do núcleo (core/src/optim/ga.zig) com genes reais entre os limites: o primeiro
+        indivíduo é o avião como está, e as avaliações param no total pedido. Voo que não fecha fica atrás de todo
+        voo que fecha"""
+        if not self.free or self.evals <= 1:
+            return x, best
+        from aerosim.backend.zig import ZigBackend
+        be = ZigBackend()
+        pop = max(4, min(10, self.evals // 3))
+        cfg = dict(n_genes=len(self.free), pop=pop, elite=1, card=[0] * len(self.free),
+                   lo=[lo for _, lo, _ in self.free], hi=[hi for _, _, hi in self.free], seed=1 + zlib.crc32(item.name.encode()) % 100_000,
+                   generation=0)
+        genes = be.ga_init(cfg)
+        genes[0] = [x[k] for k, _, _ in self.free]
+        fit = [math.nan] * pop
+        for gen in range(math.ceil(self.evals / pop) + 1):
+            for i in range(pop):
+                if gen == 0 and i == 0:
+                    r = best
+                elif len(hist) >= self.evals:
+                    fit[i] = math.nan
+                    continue
+                else:
+                    y = {k: float(genes[i][j]) for j, (k, _, _) in enumerate(self.free)}
+                    r = self.point({**item.values, **y})
+                    hist.append(_eval(y, r))
+                    if _rank(r) > _rank(best):
+                        x, best = y, r
+                m = r["mtow"]
+                fit[i] = (m if r["ok"] else m - 1e9) if math.isfinite(m) else math.nan
+            if len(hist) >= self.evals:
+                break
+            cfg["generation"] = gen + 1
+            genes = be.ga_next(cfg, genes, fit)
+        return x, best
 
 
 class Takeoff6dof(IStage):
@@ -308,8 +362,10 @@ class StagedEvaluator(IEvaluator):
     name = "etapas"
 
     def __init__(self, project, catalog=None, backend=None, workers: int | None = None, six_dof: bool = True,
-                 evals: int = 24, start_method: str | None = None, scoring=None, geometry=True):
+                 evals: int = 24, start_method: str | None = None, scoring=None, geometry=True,
+                 surfaces: str = "coordenadas"):
         self.project, self.catalog, self.backend = project, catalog, backend
+        self.surfaces = surfaces                   # o método da busca das superfícies (SURFACE_METHODS)
         self.workers, self.six_dof, self.evals = workers, six_dof, evals
         self.start_method = start_method           # a GUI usa "spawn" (processos novos, sem herdar as linhas do Qt)
         self.scoring = scoring                     # uma pontuação já montada (a GUI edita os campos do .toml)
@@ -325,7 +381,7 @@ class StagedEvaluator(IEvaluator):
 
     def stages(self, project, problem: OptProblem) -> list[IStage]:
         sts: list[IStage] = [GeometryStage(project, self.geometry, self.catalog)] if self.geometry else []
-        sts.append(SurfaceSizing(project, problem, self.catalog, self.evals, self.geometry))
+        sts.append(SurfaceSizing(project, problem, self.catalog, self.evals, self.geometry, self.surfaces))
         if self.six_dof:
             sts.append(Takeoff6dof(project, self.catalog, type(self.backend) if self.backend is not None else None))
         sts.append(Score(self.scoring or sc.scoring_for(problem.scoring), self.backend))

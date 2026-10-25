@@ -53,7 +53,7 @@ def test_window_runs_and_shows_each_candidate(app):
     w = AeroOptWindow(p, pr)
     w.evals.setValue(2)
     w.workers.setValue(1)
-    w.six.setChecked(False)
+    w.set_method("decolagem", "pista")
     seen = []
     w.start()
     _wait(app, lambda: bool(w._threads))
@@ -115,7 +115,7 @@ def test_empty_project_runs_and_constraints_are_editable(app):
     w.vars.set_problem(w.problem)
     w.evals.setValue(1)
     w.workers.setValue(1)
-    w.six.setChecked(False)
+    w.set_method("decolagem", "pista")
     w.start()
     _wait(app, lambda: not w._threads)
     assert len(w.rows) == 1 and w.run_dir and os.path.exists(os.path.join(w.run_dir, "avaliacoes.csv"))
@@ -169,3 +169,36 @@ def test_constraint_on_a_variable_becomes_its_bound():
     pr.constraints.append(OptConstraint("b", "≤", 1.2))                     # o avião tem 1,75 m
     with pytest.raises(ValueError, match="fora dos limites"):
         aeroopt.fold_bounds(pr, p)
+
+
+def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
+    """tudo da esquerda abre num submenu; a geometria fica nas restrições, as etapas e o método de cada uma na
+    Configuração, e tudo vai no .opt.json"""
+    import aeroopt
+    from aeroopt.gui import AeroOptWindow, example_project
+    p, pr = example_project()
+    w = AeroOptWindow(p, pr)
+    assert set(w.menus) == {"pontuação", "variáveis", "restrições", "perfis", "peças", "categorias", "configuração"}
+    assert w.rot.window() is not w and w.scoring.window() is not w and w.cat_cb["asa alta"].window() is not w
+    assert w.rot.window() is w.menus["restrições"] and w.evals.window() is w.menus["configuração"]
+    assert set(w.method) == {"configurações", "superfícies", "decolagem"}
+    w.rot.setValue(9.0)
+    w.one_piece.setChecked(True)
+    w.set_method("superfícies", "gerações")
+    w.set_method("configurações", "todas")
+    for c, cb in w.cat_cb.items():
+        cb.setChecked(c == "asa alta")
+    out = w.read_problem()
+    assert out.params["geometria"]["rotação"] == 9.0 and out.params["geometria"]["uma_peça"]
+    assert out.params["etapas"]["superfícies"] == "gerações" and out.params["categorias"] == ["asa alta"]
+    g = w.geometry_params()
+    assert g.rotation == 9.0 and g.connected and g.prop_clearance == pytest.approx(0.02)
+    aeroopt.save(out, str(tmp_path / "x.opt.json"))
+    w2 = AeroOptWindow(p, aeroopt.load(str(tmp_path / "x.opt.json")))
+    assert w2.rot.value() == 9.0 and w2.methods()["superfícies"] == "gerações"
+    assert w2.methods()["configurações"] == "todas" and not w2.cat_cb["asa baixa"].isChecked()
+    assert "9°" in w2.summary["restrições"].text() and "todas" in w2.summary["configuração"].text()
+    w.problem = out
+    w.scoring.set_spec("MTOW")                                   # Cancelar volta a pontuação ao que era
+    w.scoring.restore(("sae_br_2026_micro", {}))
+    assert w.scoring.spec() == "sae_br_2026_micro"

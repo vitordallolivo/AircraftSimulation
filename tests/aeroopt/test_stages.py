@@ -164,3 +164,22 @@ def test_geometry_stage_stops_a_tail_strike_before_sizing():
     res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=2,
                                                        geometry=GeometryParams(rotation=8.0, connected=False)))
     assert res.rows[0]["alive"] and res.names["etapas"][0] == ("geometria", 1, 1)
+
+
+def test_surfaces_by_generations_keeps_the_budget_and_never_loses_the_start():
+    """o método das gerações nas contínuas: o primeiro ponto é o avião como está, o total de pontos é o pedido e o
+    melhor que sai não perde para o ponto de partida"""
+    p = _project()
+    pr = aeroopt.from_project(p)
+    pr.variable("wing.span").lo, pr.variable("wing.span").hi = 1.8, 3.0
+    pr.isolate("wing.span")
+    ev = sg.StagedEvaluator(p, workers=1, six_dof=False, evals=9, geometry=False, surfaces="gerações")
+    (row,) = sg.StagedSolver().run(pr, ev).rows
+    h = row["history"]
+    assert len(h) == 9 and len({x["values"]["wing.span"] for x in h}) > 3
+    assert all(1.8 <= x["values"]["wing.span"] <= 3.0 for x in h)
+    assert row["mtow"] == max(x["mtow"] for x in h if x["ok"]) >= (h[0]["mtow"] if h[0]["ok"] else -1)
+    again = sg.StagedSolver().run(pr, ev).rows[0]                    # a semente é o nome: mesma busca
+    assert [x["values"] for x in again["history"]] == [x["values"] for x in h]
+    with pytest.raises(ValueError, match="desconhecido"):
+        sg.SurfaceSizing(p, pr, method="nenhum")

@@ -6,6 +6,12 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, esquerda em submenus: pontuação, variáveis, restrições, perfis, peças, categorias e configuração são
+  botões com resumo, cada um abrindo o seu submenu. A geometria (ângulo de rotação, folgas, uma peça só) foi para
+  as restrições. A configuração escolhe o método de cada etapa: configurações por gerações ou todas; superfícies
+  por coordenadas ou por gerações nas contínuas (`SurfaceSizing(method=...)`, `StagedEvaluator(surfaces=...)`, o
+  algoritmo genético do núcleo com genes reais); decolagem no 6GDL ou só na pista. Tudo vai no `.opt.json`
+  (`params["geometria"]`, `params["etapas"]`).
 - aeroopt, gerações: as configurações saem de um algoritmo genético no núcleo (`core/src/optim/ga.zig`, exports
   `aerosim_ga_init`, `aerosim_ga_next`; `aeroopt/generations.py`) no lugar de varrer todas as combinações, que
   passavam de um milhão com as listas marcadas. Configuração repetida não roda de novo. Na janela: configurações

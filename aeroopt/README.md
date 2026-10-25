@@ -119,6 +119,13 @@ Torczon, *Optimization by direct search*, SIAM Review 45(3), 2003, seção 3, a 
 porque o ponto de projeto tem saltos (viável ou não, decola ou não), então um método por derivada se perde, e porque
 com duas ou três variáveis ela chega perto do melhor em poucas avaliações (24 por configuração, por padrão).
 
+O outro método das superfícies (`SurfaceSizing(method="gerações")`, ou `StagedEvaluator(surfaces="gerações")`) usa o
+mesmo algoritmo genético das configurações, agora com genes reais entre os limites de cada variável. Ele serve quando
+há mais variáveis contínuas livres ou quando o MTOW tem mais de um pico: a busca por coordenadas sobe o morro mais
+perto do avião de partida e para ali, e a população olha a faixa inteira de uma vez. O primeiro indivíduo é o avião
+como está, então o resultado nunca sai pior que o ponto de partida, e a busca para no mesmo total de avaliações. A
+semente vem do nome da configuração, então a mesma rodada dá a mesma busca.
+
 A nota da Micro precisa das duas cargas separadas. Com LAPES e líquido a bordo, a carga paga se divide igual entre as
 duas, porque é o que dá o maior $CP_M = 2\min(C_{LAPES}, C_{Liq})$:
 
@@ -151,13 +158,19 @@ rodaram e a melhor nota até ali, e cada linha leva a geração em que a configu
 ## A janela
 
 `python -m aeroopt [projeto.json] [problema.opt.json]` abre a janela do aeroopt (`gui.py`); `--exemplo` abre um
-avião pequeno, perto da classe Micro, para ver tudo funcionando. Na esquerda se monta o problema. A pontuação mostra
-tudo o que o `.toml` do regulamento tem (as entradas, as constantes, as faixas, os termos em ordem, a nota e as
-condições de voo válido), em campos editáveis: o que se muda vale na próxima rodada, "Conferir no núcleo" traduz e
-confere o programa, e "Gravar .toml…" grava um arquivo novo. Embaixo fica o problema, em quatro botões, cada um com
-um resumo do que está valendo ao lado; cada botão abre um submenu, e o OK leva o que mudou para o problema (Cancelar
-desfaz). Por último, as categorias de avião e as opções das etapas: quantos pontos de projeto a busca das superfícies
-gasta por configuração, quantos processos e se o MTOW passa pelo 6GDL.
+avião pequeno, perto da classe Micro, para ver tudo funcionando. Na esquerda se monta o problema, em sete botões,
+cada um com um resumo do que está valendo ao lado. Cada botão abre um submenu, e o OK leva o que mudou para o
+problema (Cancelar desfaz). Tudo isso vai junto quando se grava o `.opt.json`: as categorias em
+`params["categorias"]`, a geometria em `params["geometria"]` e as etapas em `params["etapas"]`.
+
+A **pontuação** mostra tudo o que o `.toml` do regulamento tem (as entradas, as constantes, as faixas, os termos em
+ordem, a nota e as condições de voo válido), em campos editáveis: o que se muda vale na próxima rodada, "Conferir no
+núcleo" traduz e confere o programa, e "Gravar .toml…" grava um arquivo novo. As **categorias** são as caixas de
+cada tipo de avião que a busca pode montar. A **configuração** mostra as etapas na ordem em que rodam, cada uma com o
+método dela. As configurações saem das gerações ou de todas as combinações (até 256); as superfícies, da busca por
+coordenadas ou das gerações nas contínuas, com quantos pontos de projeto cada configuração gasta; a decolagem passa
+pelo 6GDL ou fica só na corrida da pista; a nota é sempre no núcleo. Ali também se escolhe quantos processos rodam
+cada etapa.
 
 O submenu das **variáveis** mostra só as numéricas (contínuas e inteiras), como os limites inferior e superior de
 cada gene no MDO antigo da equipe: livre ou fixa, o valor que o avião tem agora e os dois limites, com botões para
@@ -188,7 +201,10 @@ no lugar do `.toml`, a rodada vira só "o maior MTOW que cumpre estas restriçõ
 (envergadura, área da asa, número de motores) não pode estar nos dois lugares, senão a busca andaria até um limite
 que a restrição depois recusa: `problem.fold_bounds` leva a restrição ligada para o limite da variável (≤ vira o
 superior, ≥ o inferior) e a tira da lista, e o submenu das restrições nem oferece essas grandezas. Com a variável
-fixa, o valor do avião tem que caber no limite, senão a rodada para antes de começar.
+fixa, o valor do avião tem que caber no limite, senão a rodada para antes de começar. Em cima da tabela fica a
+restrição de **geometria** do avião montado: se a etapa roda, o ângulo de rotação da decolagem (o avião girado no
+trem principal até ele não pode bater nada no chão), as folgas das peças e da hélice ao chão e se o avião tem que ser
+uma peça só.
 
 Para ver o avião escolhido em tudo o que o aerosim já calcula (polar, estabilidade, desempenho, envelopes, missão
 6GDL, cargas), "Abrir no aerosim" abre uma janela do aerosim com ele. O projeto dessa janela fica numa pasta própria
