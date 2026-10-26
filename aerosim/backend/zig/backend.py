@@ -156,6 +156,9 @@ class _Lib:
             "aerosim_cma_init": (c_int, [ctypes.POINTER(T["CmaState"]), c_int, vp, c_double, c_int, c_int]),
             "aerosim_cma_ask": (c_int, [ctypes.POINTER(T["CmaState"]), vp]),
             "aerosim_cma_tell": (c_int, [ctypes.POINTER(T["CmaState"]), vp, vp]),
+            "aerosim_de_init": (c_int, [c_size, c_size, vp, ctypes.c_uint64, vp]),
+            "aerosim_de_trials": (c_int, [c_size, c_size, vp, c_double, c_double, ctypes.c_uint64, ctypes.c_uint64, vp]),
+            "aerosim_de_select": (c_int, [c_size, c_size, vp, vp, vp, vp]),
             "aerosim_local_fit": (c_int, [c_size, c_size, vp, vp, vp, c_double, c_int, vp, vp, vp]),
             "aerosim_sens_tolerance": (c_double, [c_size, vp, vp, vp, c_double, vp, vp, vp, vp]),
             "aerosim_morris_design": (c_int, [c_size, c_size, c_size, ctypes.c_uint64, vp]),
@@ -620,6 +623,30 @@ class ZigBackend(ISimBackend):
         x = np.ascontiguousarray(xs, float)
         f = np.ascontiguousarray(fitness, float).ravel()
         self._lib.dll.aerosim_cma_tell(ctypes.byref(st), x.ctypes.data, f.ctypes.data)
+
+    def de_init(self, x0, np_: int, seed: int = 1) -> np.ndarray:
+        """a população inicial da evolução diferencial (core/src/optim/de.zig): `x0` em [0, 1] na primeira linha"""
+        x = np.ascontiguousarray(np.asarray(x0, float).ravel())
+        out = np.zeros((np_, x.size))
+        if self._lib.dll.aerosim_de_init(x.size, np_, x.ctypes.data, int(seed), out.ctypes.data) < 0:
+            raise ValueError("evolução diferencial: até 32 variáveis e de 4 a 64 indivíduos")
+        return out
+
+    def de_trials(self, pop, f: float = 0.7, cr: float = 0.9, seed: int = 1, generation: int = 0) -> np.ndarray:
+        """os testes de uma geração (DE/rand/1/bin), um por indivíduo, em [0, 1]"""
+        p = np.ascontiguousarray(np.asarray(pop, float))
+        out = np.zeros_like(p)
+        if self._lib.dll.aerosim_de_trials(p.shape[1], p.shape[0], p.ctypes.data, float(f), float(cr), int(seed),
+                                           int(generation), out.ctypes.data) < 0:
+            raise ValueError("evolução diferencial: até 32 variáveis e de 4 a 64 indivíduos")
+        return out
+
+    def de_select(self, pop, fit, trials, tfit) -> int:
+        """o teste que não é pior entra no lugar do indivíduo (muda `pop` e `fit`, arrays float contíguos)"""
+        t = np.ascontiguousarray(np.asarray(trials, float))
+        tf = np.ascontiguousarray(np.asarray(tfit, float).ravel())
+        return int(self._lib.dll.aerosim_de_select(pop.shape[1], pop.shape[0], pop.ctypes.data, fit.ctypes.data,
+                                                   t.ctypes.data, tf.ctypes.data))
 
     def local_fit(self, xs, ys, x0, r: float, quad: bool = True):
         """o modelo y ≈ a + gᵀ(x − x₀) + ½ Σ cₖ(xₖ − x₀ₖ)² pelos pontos (core/src/optim/localfit.zig; sem `quad`, o

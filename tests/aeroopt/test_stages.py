@@ -193,7 +193,7 @@ def test_geometry_stage_fixes_the_ground_and_stops_what_it_cannot_fix():
     assert not row["alive"] and row["stage"] == "geometria" and "soltas" in row["why"]
 
 
-@pytest.mark.parametrize("method", ["gerações", "cma-es"])
+@pytest.mark.parametrize("method", ["gerações", "cma-es", "de"])
 def test_surfaces_by_generations_keeps_the_budget_and_never_loses_the_start(method):
     """as gerações e o CMA-ES nas contínuas: o primeiro ponto é o avião como está, o total de pontos é o pedido e o
     melhor que sai não perde para o ponto de partida"""
@@ -205,7 +205,7 @@ def test_surfaces_by_generations_keeps_the_budget_and_never_loses_the_start(meth
     (row,) = sg.StagedSolver().run(pr, ev).rows
     h = row["history"]
     # o CMA-ES pode parar antes: com σ abaixo do passo do campo os pontos se repetem (convergiu)
-    assert len(h) <= 9 and (len(h) == 9 or method == "cma-es") and len({x["values"]["wing.span"] for x in h}) > 3
+    assert len(h) <= 9 and (len(h) == 9 or method in ("cma-es", "de")) and len({x["values"]["wing.span"] for x in h}) > 3
     assert all(1.8 <= x["values"]["wing.span"] <= 3.0 for x in h)
     assert row["mtow"] == max(x["mtow"] for x in h if x["ok"]) >= (h[0]["mtow"] if h[0]["ok"] else -1)
     again = sg.StagedSolver().run(pr, ev).rows[0]                    # a semente é o nome: mesma busca
@@ -259,7 +259,7 @@ def test_area_says_where_the_configuration_stopped():
     assert sg.area(dict(alive=True, nota=math.nan, stage="superfícies")) == "superfícies"
 
 
-@pytest.mark.parametrize("method", ["buscar", "cma-es"])
+@pytest.mark.parametrize("method", ["buscar", "cma-es", "de"])
 def test_fly_stage_finds_a_point_that_flies_before_performance(method):
     """a configuração que não equilibra como está (bateria não cabe, precisa de lastro) não morre: a etapa voa
     procura nas contínuas o ponto que viola menos até achar um que voa, e as superfícies partem dele"""
@@ -297,4 +297,25 @@ def test_cma_es_search_learns_coupled_variables():
     assert best["mtow"] > -1e-6 and ga["mtow"] < 1e3 * best["mtow"]
     again = []
     sg._cma_search(free, {k: 2.0 for k, _, _ in free}, start, point, 1200, again, seed=3)
+    assert [h["values"] for h in again] == [h["values"] for h in hist]
+
+
+def test_differential_evolution_search_keeps_the_contract():
+    """a evolução diferencial do núcleo pelo contrato das buscas (`_de_search`): fica na faixa, cai no passo, respeita
+    o total, não perde para o ponto de partida, repete a busca com a mesma semente e, na mesma elipse girada, chega
+    mais perto do máximo que as gerações com o mesmo total"""
+    import numpy as np
+    free = [(f"v{i}", 0.0, 10.0) for i in range(4)]
+
+    def point(y):
+        z = np.cumsum([y[f"v{i}"] / 10 - 0.7 for i in range(4)])
+        return dict(values=dict(y), ok=True, why="", mtow=-float(sum(10 ** i * z[i] ** 2 for i in range(4))), viol=0.0)
+    x = {k: 2.0 for k, _, _ in free}
+    start, hist = point(x), []
+    x, best = sg._de_search(free, x, start, point, 1200, hist, seed=3)
+    assert len(hist) <= 1200 and all(0 <= v <= 10 for h in hist for v in h["values"].values())
+    _, ga = sg._real_search(free, {k: 2.0 for k, _, _ in free}, start, point, 1200, [], seed=3)
+    assert best["mtow"] >= start["mtow"] and best["mtow"] > ga["mtow"]
+    again = []
+    sg._de_search(free, {k: 2.0 for k, _, _ in free}, start, point, 1200, again, seed=3)
     assert [h["values"] for h in again] == [h["values"] for h in hist]

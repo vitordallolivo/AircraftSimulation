@@ -9,9 +9,9 @@ Aqui também nascem as gerações de aviões: o algoritmo genético que escolhe 
 CMA-ES, a outra busca das variáveis contínuas (envergadura, área, diedro...). Depois da busca, o modelo local e os outros métodos da
 sensibilidade dizem o quanto a nota do melhor avião muda em volta dele.
 
-A pasta tem seis partes: os tipos do programa (`types.zig`), quem o confere e executa (`expr.zig`), as gerações
-(`ga.zig`), o CMA-ES (`cmaes.zig`), o modelo local (`localfit.zig`) e os outros métodos da sensibilidade
-(`sensmethods.zig`). A álgebra linear que os solvers vão usar fica em `../math/linalg.zig`.
+A pasta tem sete partes: os tipos do programa (`types.zig`), quem o confere e executa (`expr.zig`), as gerações
+(`ga.zig`), o CMA-ES (`cmaes.zig`), a evolução diferencial (`de.zig`), o modelo local (`localfit.zig`) e os outros
+métodos da sensibilidade (`sensmethods.zig`). A álgebra linear que os solvers vão usar fica em `../math/linalg.zig`.
 
 ## O programa
 
@@ -199,6 +199,23 @@ que todo ponto fica na caixa, que um NaN na nota não quebra a ordenação e que
 A conta também foi comparada à `pycma`, a implementação de referência do mesmo autor. Na mesma elipse, com a mesma
 população e o mesmo total de avaliações, as duas chegam a resultados parecidos.
 
+## A evolução diferencial
+
+Aqui se define a terceira busca das variáveis contínuas, em até 32 variáveis e 64 aviões por geração. O genético muta
+cada gene com um sorteio de tamanho fixo, e o CMA-ES aprende a forma da região boa com uma matriz. A evolução
+diferencial fica no meio: ela tira o tamanho do passo da própria população, sem matriz nenhuma. Para cada avião
+$x_i$, o avião de teste soma a um avião sorteado a diferença entre outros dois,
+
+$$v = x_{r_1} + F\,(x_{r_2} - x_{r_3})$$
+
+e cada gene do teste vem de $v$ com probabilidade CR (pelo menos um vem sempre), senão de $x_i$. O teste só entra no
+lugar de $x_i$ se a nota dele não for pior. Com a população espalhada as diferenças são grandes e a busca explora;
+com ela junta perto do ótimo, as diferenças encolhem e a busca refina, sem um passo para ajustar. É o DE/rand/1/bin
+de Storn e Price (J. Global Optimization 11, 341–359, 1997, a conferir no PDF), com F = 0,5 e CR = 0,9, os valores
+de partida do artigo. As variáveis entram em [0, 1], e o gene que sai da caixa vai para a borda. Os testes conferem a
+esfera e o vale de Rosenbrock com um total fixo, que o teste fica na caixa, que a mesma semente dá os mesmos testes e
+que a seleção não piora ninguém.
+
 ## O modelo local
 
 Aqui se ajusta, em até 32 variáveis, um modelo da nota em volta de um ponto $x_0$ a partir de pontos já avaliados.
@@ -284,6 +301,11 @@ for _ in range(60):
     be.cma_tell(st, X, -((X - 0.7) ** 2).sum(axis=1))   # maior é melhor
 print(st.mean[:3], st.sigma)                            # ≈ 0,7 0,7 0,7, passo pequeno
 ```
+
+A evolução diferencial: `aerosim_de_init(n, np, x0, semente, saída)`, `aerosim_de_trials(n, np, população, F, CR,
+semente, geração, saída)` e `aerosim_de_select(n, np, população, notas, testes, notas dos testes)`. No Python,
+`be.de_init(x0, np)`, `be.de_trials(pop, 0.5, 0.9, seed, gen)` e `be.de_select(pop, fit, trial, tfit)`, que o
+`aeroopt/stages.py` (`_de_search`) usa.
 
 O modelo local: `aerosim_local_fit(n, m, pontos, valores, x0, r, quad, g, c, saída)`, com saída = (a, resíduo, soma
 dos pesos) e −1 se as direções não ficam determinadas. No Python:

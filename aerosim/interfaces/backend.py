@@ -211,3 +211,15 @@ class ISimBackend(ABC):
     def morris_effects(self, design, y):
         """os efeitos elementares das trajetórias com as respostas y (NaN = não vale): μ, μ*, σ, passos contados"""
         raise NotImplementedError(f"{self.name}: Morris não implementado")
+
+    def de_init(self, x0, np_: int, seed: int = 1):
+        """a população inicial da evolução diferencial: `x0` em [0, 1] na primeira linha, as outras sorteadas"""
+        raise NotImplementedError(f"{self.name}: evolução diferencial não implementada")
+
+    def de_trials(self, pop, f: float = 0.7, cr: float = 0.9, seed: int = 1, generation: int = 0):
+        """os testes de uma geração da evolução diferencial (DE/rand/1/bin), um por indivíduo"""
+        raise NotImplementedError(f"{self.name}: evolução diferencial não implementada")
+
+    def de_select(self, pop, fit, trials, tfit) -> int:
+        """a seleção da evolução diferencial: o teste que não é pior entra no lugar (muda pop e fit)"""
+        raise NotImplementedError(f"{self.name}: evolução diferencial não implementada")

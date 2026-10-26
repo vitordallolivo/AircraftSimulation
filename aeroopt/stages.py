@@ -32,6 +32,8 @@ import math
 import zlib
 from dataclasses import dataclass
 
+import numpy as np
+
 from aerosim.design import mdo, study
 from aerosim.design import power as pw
 from aerosim.design import registry as rg
@@ -229,7 +231,8 @@ def violation(d: dict, stab: dict | None = None, stab_params=None) -> tuple[floa
 # os métodos da busca das superfícies (a GUI escolhe no menu Configuração)
 SURFACE_METHODS = {"coordenadas": "busca por coordenadas (um eixo por vez, passo cai à metade)",
                    "gerações": "gerações nas contínuas (algoritmo genético do núcleo)",
-                   "cma-es": "CMA-ES nas contínuas (aprende a forma da região boa; núcleo)"}
+                   "cma-es": "CMA-ES nas contínuas (aprende a forma da região boa; núcleo)",
+                   "de": "evolução diferencial nas contínuas (o passo sai das diferenças da população; núcleo)"}
 
 
 class SurfaceSizing(IStage):
@@ -293,6 +296,8 @@ class SurfaceSizing(IStage):
             x, best = self._generations(item, x, best, hist)
         elif self.method == "cma-es":
             x, best = self._generations(item, x, best, hist, _cma_search)
+        elif self.method == "de":
+            x, best = self._generations(item, x, best, hist, _de_search)
         else:
             x, best = self._coordinates(item, x, best, hist)
         item.values = {**item.values, **x, **best["values"]}     # com o trem que a geometria desceu, se desceu
@@ -335,6 +340,7 @@ class SurfaceSizing(IStage):
 # os métodos da etapa "voa" (a GUI escolhe no menu Configuração)
 FLY_METHODS = {"buscar": "achar um ponto que voa (gerações nas contínuas, pelas regras de viabilidade)",
                "cma-es": "achar um ponto que voa (CMA-ES nas contínuas, pelas regras de viabilidade)",
+               "de": "achar um ponto que voa (evolução diferencial nas contínuas, pelas regras de viabilidade)",
                "conferir": "só conferir o avião como está"}
 
 
@@ -379,8 +385,8 @@ class FlightCheck(IStage):
         x = {k: min(max(float(item.values.get(k, get_value(self.project, k))), lo), hi) for k, lo, hi in self.free}
         best = self.point({**item.values, **x})
         hist = [_eval(x, best)]
-        if not best["ok"] and self.method in ("buscar", "cma-es") and self.free:
-            search = _cma_search if self.method == "cma-es" else _real_search
+        if not best["ok"] and self.method in ("buscar", "cma-es", "de") and self.free:
+            search = {"cma-es": _cma_search, "de": _de_search}.get(self.method, _real_search)
             x, best = search(self.free, x, best, lambda y: self.point({**item.values, **y}), self.evals, hist,
                                    seed=7 + zlib.crc32(item.name.encode()) % 100_000, stop_ok=True)
         item.values = {**item.values, **x}
@@ -470,6 +476,56 @@ def _cma_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: 
         if len(hist) >= evals:
             break
         be.cma_tell(st, U, fit)
+    return x, best
+
+
+DE_F, DE_CR = 0.5, 0.9           # os valores de partida de Storn e Price (1997, seção 4; a conferir no PDF)
+
+
+def _de_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: int, stop_ok: bool = False):
+    """o mesmo contrato de `_real_search`, com a evolução diferencial do núcleo (core/src/optim/de.zig, DE/rand/1/bin,
+    F = 0,5, CR = 0,9). A população começa com `x` e o resto sorteado na caixa, cada teste cai no passo do campo
+    antes de avaliar (e é o ponto que caiu que entra na seleção), e um ponto repetido não gasta avaliação. A
+    população é a mesma das gerações, para comparar pelo mesmo total de avaliações"""
+    from aerosim.backend.zig import ZigBackend
+    be = ZigBackend()
+    lo = [a for _, a, _ in free]
+    span = [max(b - a, 1e-12) for _, a, b in free]
+    steps = [(inp.get(k).step if inp.get(k) else 0.0) for k, _, _ in free]
+
+    def snap(j, u):
+        g = lo[j] + min(max(u, 0.0), 1.0) * span[j]
+        g = round(g / steps[j]) * steps[j] if steps[j] > 0 else g
+        return round(min(max(g, free[j][1]), free[j][2]), 6)
+    np_ = max(4, min(10, evals // 3))
+    seen = {tuple(x[k] for k, _, _ in free): best}
+
+    def evaluate(U):
+        nonlocal x, best
+        fit = []
+        for i in range(len(U)):
+            key = tuple(snap(j, u) for j, u in enumerate(U[i]))
+            U[i] = [(g - lo[j]) / span[j] for j, g in enumerate(key)]
+            r = seen.get(key)
+            if r is None and len(hist) < evals:
+                y = {k: key[j] for j, (k, _, _) in enumerate(free)}
+                r = seen[key] = point(y)
+                hist.append(_eval(y, r))
+                if _rank(r) > _rank(best):
+                    x, best = y, r
+            fit.append(_fit(r) if r is not None else math.nan)
+            if stop_ok and best["ok"]:                   # a etapa voa para no primeiro ponto que fecha
+                fit += [math.nan] * (len(U) - len(fit))
+                break
+        return np.ascontiguousarray(fit, float)
+    pop = be.de_init([(x[k] - lo[j]) / span[j] for j, (k, _, _) in enumerate(free)], np_, seed)
+    fit = evaluate(pop)
+    for gen in range(4 * math.ceil(evals / np_) + 1):
+        if len(hist) >= evals or (stop_ok and best["ok"]):
+            break
+        trial = be.de_trials(pop, DE_F, DE_CR, seed, gen)
+        tfit = evaluate(trial)
+        be.de_select(pop, fit, trial, tfit)
     return x, best
 
 

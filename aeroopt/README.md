@@ -36,7 +36,7 @@ teste: as mesmas etapas com funções simples, em que já se sabe onde cada conf
 | `sensitivity.py` | a sensibilidade do melhor: inclinação e curvatura da nota em cada contínua livre, pelos pontos que a busca já avaliou |
 | `mini_mdo.py` | o mini-MDO do núcleo, a primeira versão, que fica como alternativa |
 
-As contas que rodam no núcleo para o aeroopt (a nota, o algoritmo genético e o CMA-ES) estão explicadas em
+As contas que rodam no núcleo para o aeroopt (a nota, o algoritmo genético, o CMA-ES e a evolução diferencial) estão explicadas em
 [`core/src/optim/README.md`](../core/src/optim/README.md).
 
 ## A janela

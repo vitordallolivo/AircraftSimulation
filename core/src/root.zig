@@ -553,6 +553,27 @@ export fn aerosim_cma_tell(s: *cm.CmaState, xs: [*]const f64, fit: [*]const f64)
     return 0;
 }
 
+// ------------------------------------------------------------------ evolução diferencial do aeroopt (contínuas)
+const dif = @import("optim/de.zig");
+
+/// a população inicial da evolução diferencial: `x0` na primeira linha, as outras sorteadas em [0, 1] (np × n)
+export fn aerosim_de_init(n: usize, np: usize, x0: [*]const f64, seed: u64, out: [*]f64) i32 {
+    if (n == 0 or n > dif.max_n or np > dif.max_np) return -1;
+    return if (dif.initPop(n, np, x0[0..n], seed, out[0 .. np * n])) 0 else -1;
+}
+
+/// os testes da geração (DE/rand/1/bin, F e CR): um por indivíduo, em [0, 1] (np × n)
+export fn aerosim_de_trials(n: usize, np: usize, pop: [*]const f64, f: f64, cr: f64, seed: u64, generation: u64, out: [*]f64) i32 {
+    if (n == 0 or n > dif.max_n or np > dif.max_np) return -1;
+    return if (dif.trials(n, np, pop[0 .. np * n], f, cr, seed, generation, out[0 .. np * n])) 0 else -1;
+}
+
+/// a seleção: o teste que não é pior entra no lugar (muda `pop` e `fit`); devolve quantos entraram
+export fn aerosim_de_select(n: usize, np: usize, pop: [*]f64, fit: [*]f64, trial: [*]const f64, tfit: [*]const f64) i32 {
+    if (n == 0 or n > dif.max_n or np < 4 or np > dif.max_np) return -1;
+    return @intCast(dif.select(n, np, pop[0 .. np * n], fit[0..np], trial[0 .. np * n], tfit[0..np]));
+}
+
 // ------------------------------------------------------------------ modelo local (sensibilidade do melhor)
 const lf = @import("optim/localfit.zig");
 

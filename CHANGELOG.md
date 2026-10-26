@@ -6,6 +6,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, evolução diferencial: mais um método das superfícies e da etapa voa, no núcleo (`core/src/optim/de.zig`,
+  DE/rand/1/bin de Storn e Price, F = 0,5, CR = 0,9; `aerosim_de_init`, `aerosim_de_trials`, `aerosim_de_select`).
+  O passo sai das diferenças entre os aviões da população, então encolhe sozinho perto do ótimo. Nos dados de
+  teste, com 24 pontos, chega a 99,7 % da nota sabida, como as gerações; numa elipse girada (variáveis acopladas)
+  fica mais perto do máximo que as gerações com o mesmo total.
 - aeroopt, caminho da busca: coordenadas paralelas (`aeroopt/pcoords.py`), uma linha por avião passando por um eixo
   por variável livre e pelo MTOW, o PV e a nota, com a cor pela geração e o caminho do melhor até ali em preto. Fica
   na janela, embaixo do mapa, e o botão "Exportar HTML…" grava a mesma figura numa página que abre sem internet, com
