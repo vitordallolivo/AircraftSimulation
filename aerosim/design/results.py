@@ -316,7 +316,11 @@ def aircraft_stage(cand: pw.AircraftCandidate, req, rules, catalog=None, backend
     summ["corrida de decolagem (m)"] = pf["s_to"]
     summ["MTOW pela pista (kg); CP possível = MTOW − PV (kg)"] = [pf["mtow_runway"], pf["payload_runway"]]
     G = "montagem"
-    if asm["battery_fits"]:
+    if asm["battery_fits"] and asm.get("payload_moved"):
+        checks.append(_chk(OK, "CG no alvo pela bateria e pela carga paga", f"bateria em x = {asm['x_bat_used']:.2f} m, "
+                           f"carga em x = {asm['x_payload']:.2f} m", "dentro da fuselagem", "a carga fora do CG "
+                           f"(escolha do otimizador); sem ela, margem estática de {asm['sm_empty']:.1f} %", "", G))
+    elif asm["battery_fits"]:
         checks.append(_chk(OK, "CG no alvo pela bateria", f"bateria em x = {asm['x_bat_used']:.2f} m", "dentro da fuselagem",
                            "", "", G))
     else:

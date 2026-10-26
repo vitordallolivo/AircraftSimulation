@@ -6,6 +6,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- sprint e aeroopt: a posição da carga paga (`power.x_payload`, do CG de projeto) é variável, e a E&C a escolhe junto com
+  os comandos; a bateria equilibra junto e a margem sem a carga é conferida (O27). Com 0, a montagem de sempre.
 - sprint: o tandem com deriva na ponta achava a asa de trás pelo fim da lista e lia a deriva como asa (ponto neutro na asa
   da frente, lastro de ~1 kg, nunca voava na E&C). Agora a segunda asa se acha pelo papel (`tail.second_wing`).
 - aeroopt, E&C: população inicial por hipercubo latino (`core/src/optim/sampling.zig`, maximin; `etapas.inicio =

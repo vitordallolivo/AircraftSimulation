@@ -187,6 +187,22 @@ def test_tip_fins_do_not_move_the_tandem_neutral_point():
     assert [c.kind for c in w1.controls] == ["elevator"]
 
 
+def test_payload_position_is_a_variable_and_zero_keeps_the_old_assembly():
+    """a posição da carga paga é variável do otimizador (`power.x_payload`, do CG de projeto), não regra da sprint
+    (O27). Com 0 a montagem é a de sempre; com a carga atrás do CG a bateria vai para a frente para equilibrar, a
+    carga fica no x pedido e, sem ela, o CG anda para a frente (a margem sem a carga cresce)"""
+    w = _wing(area=1.0)
+    def asm(xp):
+        return pw.assemble(pw.AircraftCandidate(pw.PowerParams(lapes=True, x_payload=xp), tl.SetCandidate(
+            tl.TailParams(), w)), Requirements())
+    ac0, a0 = asm(0.0)
+    assert not a0["payload_moved"] and a0["x_payload"] == a0["x_cg_target"] and a0["sm_empty"] == pytest.approx(a0["sm"])
+    ac, a = asm(-0.05)
+    assert a["payload_moved"] and ac.payload.x == pytest.approx(a["x_cg_target"] - 0.05)
+    assert a["x_bat_used"] > a0["x_bat_used"] and a["battery_fits"]
+    assert a["sm_empty"] > a["sm"]
+
+
 def test_obstacle_height_sets_the_6dof_takeoff_and_old_projects_keep_one_meter():
     """a altura do obstáculo (Regular 2026: 0,90 m a 55 m) vira o z_warning da decolagem 6GDL; sem ela, 1 m como antes"""
     from aerosim.model.serialize import from_dict

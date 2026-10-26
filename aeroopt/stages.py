@@ -259,6 +259,9 @@ def violation(d: dict, stab: dict | None = None, stab_params=None, rotation: boo
     sm_min = getattr(sm_min, "sm_min", None)
     if sm_min is not None and asm.get("sm") is not None and asm["sm"] < sm_min:
         out.append(((sm_min - asm["sm"]) / 5.0, f"margem estática {asm['sm']:.1f} % < {sm_min:g} %"))
+    if sm_min is not None and asm.get("payload_moved") and asm["sm_empty"] < sm_min:
+        out.append(((sm_min - asm["sm_empty"]) / 5.0, f"sem a carga paga (que equilibra o CG fora dele) a margem "
+                    f"estática cai para {asm['sm_empty']:.1f} % < {sm_min:g} %"))
     if "mtow" in d and not math.isfinite(d["mtow"]):
         out.append((1.0, "não decola na pista"))
     if stab:
@@ -450,20 +453,23 @@ TIP_KEY = "wing.airfoil_tip"        # a asa voadora com os comandos: perfil sim�
 TANDEM_PITCH_KEY = "tail.tandem_pitch"   # onde fica a arfagem do tandem (tail.TANDEM_PITCH)
 FLAP_KEY = "tail.flap_moment"      # a E&C com os comandos liga o momento próprio deles (modifiers/flapmoment.zig)
 # os comandos que a rodada interna da E&C ajusta, por tipo de avião (chave, mínimo, máximo). O curso vai até 30°,
-# o que um servo comum dá com folga; o elevon pode ir até a corda de 50 % e da raiz (5 %) à ponta
+# o que um servo comum dá com folga; o elevon pode ir até a corda de 50 % e da raiz (5 %) à ponta. A posição da carga
+# paga (do CG de projeto) também: com ela fora do CG a bateria equilibra junto, e a margem sem a carga é conferida
 CONTROLS = {
-    "com cauda": (("tail.elevator", 0.25, 0.5), ("rules.de_max", 15.0, 30.0), ("power.tilt", 0.0, 12.0)),
+    "com cauda": (("tail.elevator", 0.25, 0.5), ("rules.de_max", 15.0, 30.0), ("power.tilt", 0.0, 12.0),
+                  ("power.x_payload", -0.3, 0.3)),
     "asa voadora": (("tail.sm_target", 6.0, 12.0), ("tail.aileron_start", 0.05, 0.6), ("tail.aileron_end", 0.8, 1.0), ("tail.aileron_chord", 0.2, 0.5),
                     ("rules.de_max", 15.0, 30.0), ("power.tilt", 0.0, 12.0), ("power.ground_pitch", 0.0, 12.0),
                     ("power.x_tdp", 0.03, 0.25), ("wing.sweep", 0.0, 40.0), ("wing.twist", -6.0, 0.0),
                     ("wing.rect_frac", 0.0, 1.0), ("wing.taper", 0.4, 1.0), ("tail.tip_fin", 0.0, 0.3),
-                    ("tail.tip_fin_chord", 0.3, 1.0)),
+                    ("tail.tip_fin_chord", 0.3, 1.0), ("power.x_payload", -0.3, 0.3)),
     # tandem: a asa de trás faz o papel da EH; quem trima é a decalagem (incidência da de trás menos a da da frente)
     # e o recuo dela, e o profundor da asa de trás comanda a arfagem (aileron_*: o trecho e a corda dele)
     "tandem": (("tail.sm_target", 6.0, 15.0), ("tail.wing2_di", -12.0, 4.0), ("tail.wing2_dx", 0.6, 1.6), ("tail.wing2_dz", -0.2, 0.4),
                ("tail.aileron_start", 0.05, 0.6), ("tail.aileron_end", 0.8, 1.0), ("tail.aileron_chord", 0.2, 0.5),
                ("rules.de_max", 15.0, 30.0), ("power.tilt", 0.0, 12.0), ("power.ground_pitch", 0.0, 12.0),
-               ("power.x_tdp", 0.03, 0.25), ("tail.tip_fin", 0.0, 0.3), ("tail.tip_fin_chord", 0.3, 1.0)),
+               ("power.x_tdp", 0.03, 0.25), ("tail.tip_fin", 0.0, 0.3), ("tail.tip_fin_chord", 0.3, 1.0),
+               ("power.x_payload", -0.3, 0.3)),
 }
 def elevon_airfoil(project, values: dict) -> str:
     """o perfil da ponta da asa voadora, onde fica o elevon: o primeiro simétrico (pelo nome) entre os do projeto e

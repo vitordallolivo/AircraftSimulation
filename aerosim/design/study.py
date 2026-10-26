@@ -153,6 +153,9 @@ def feasibility(d: dict) -> tuple[bool, str]:
         why.append("EH estola no C_L,max")
     if not asm["battery_fits"]:
         why.append(f"precisa de {asm['ballast']:.2f} kg de lastro de equilíbrio")
+    sm_min = getattr(getattr(getattr(d.get("cand"), "set", None), "params", None), "sm_min", None)
+    if asm.get("payload_moved") and sm_min is not None and asm["sm_empty"] < sm_min:
+        why.append(f"sem a carga paga a margem estática cai para {asm['sm_empty']:.1f} %")
     req = d.get("req")
     if req is not None and "ac" in d:                 # as restrições ativas (a corrida já define o MTOW)
         from . import registry as rg

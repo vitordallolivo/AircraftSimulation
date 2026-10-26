@@ -61,6 +61,9 @@ class PowerParams:
     x_tdp: float = F(0.0, "x_TDP: trem principal ao CG", "m", "distância do CG de projeto ao trem principal: atrás "
                      "dele no triciclo, à frente no convencional. 0 = a regra (triciclo) ou 10 cm (convencional)",
                      0.0, 0.6, 0.005)
+    x_payload: float = F(0.0, "x da carga paga ao CG", "m", "onde fica a carga paga (LAPES, líquido), medida do CG de "
+                         "projeto (+ = à frente). 0 = no CG; fora dele a bateria equilibra junto, e o CG anda quando a "
+                         "carga sai. O otimizador escolhe", -0.5, 0.5, 0.005)
     x_tdn: float = F(0.0, "x_TDN: bequilha à frente do CG", "m", "triciclo: distância do CG de projeto à bequilha "
                      "(+ = à frente). 0 = automático (10 cm atrás do nariz)", 0.0, 1.5, 0.005)
     gear_h: float = F(0.0, "altura do trem", "m", "do eixo do corpo ao chão no trem principal. 0 = a mínima para a "
@@ -216,14 +219,16 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     m_pv = m_s + sum(i.mass for i in items) + m_bat
     m_cp = max(req.mass - m_pv, 0.0)
     M = m_pv + m_cp
-    Mx = m_s * xs + sum(i.mass * i.x for i in items) + m_cp * x_t
-    x_bat = (M * x_t - Mx) / m_bat if m_bat > 0 else x_t
     lo, hi = x_nose - length + 0.08, x_nose - 0.12
+    x_cp = min(max(x_t + pp.x_payload, lo), hi) if pp.x_payload else x_t     # a carga paga: o otimizador escolhe onde
+    Mx = m_s * xs + sum(i.mass * i.x for i in items) + m_cp * x_cp
+    x_bat = (M * x_t - Mx) / m_bat if m_bat > 0 else x_t
     x_bat_c = min(max(x_bat, lo), hi)
     items.append(PointMass("bateria", m_bat, x_bat_c, 0.0, 0.02))
     Mx += m_bat * x_bat_c
     m_eq = 0.0
-    if abs(x_bat_c - x_bat) > 1e-6:          # a bateria não alcança: lastro de equilíbrio (não é carga paga)
+    balanced = abs(x_bat_c - x_bat) < 1e-6
+    if not balanced:                          # a bateria não alcança: lastro de equilíbrio (não é carga paga)
         xb = x_nose - 0.04 if x_bat > x_bat_c else (ac.boom.x_end + 0.05 if ac.boom.enabled else lo)
         mb = (M * x_t - Mx) / (xb - x_t)
         if mb > 0:
@@ -233,14 +238,15 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
             items.append(PointMass("lastro de equilíbrio", float(mb), float(xb), 0.0, float(zb)))
             m_eq = float(mb)
             M += mb
+            Mx += mb * xb
     ac.ballast = Ballast(enabled=False, mass=0.0, x=x_t, y=0.0, z=0.0)         # no CG; os kg, na Montagem
     if pp.liquid:
         side, n = 0.12, max(int(pp.n_tanks), 1)
         ys = [(k - (n - 1) / 2) * (side + 0.01) for k in range(n)]
-        ac.tanks = [SloshTank(f"tanque {k + 1}" if n > 1 else "tanque", x_t, y, 0.03, side=side, volume=0.0, height=0.08)
+        ac.tanks = [SloshTank(f"tanque {k + 1}" if n > 1 else "tanque", x_cp, y, 0.03, side=side, volume=0.0, height=0.08)
                     for k, y in enumerate(ys)]
     if pp.lapes:
-        ac.payload = Payload(enabled=True, mass=0.0, count=max(int(pp.n_lapes), 1), x=x_t, y=0.0, z=0.06)
+        ac.payload = Payload(enabled=True, mass=0.0, count=max(int(pp.n_lapes), 1), x=x_cp, y=0.0, z=0.06)
     ac.mass = MassModel(base_mass=m_s, base_cg=[xs, 0.0, zs], Ixx=I[0], Iyy=I[1], Izz=I[2], Ixz=0.0, items=items,
                         include_propulsion=False, include_structure=False)
     z_cg = (m_s * zs + sum(i.mass * i.z for i in items)) / max(m_s + sum(i.mass for i in items), 1e-9)
@@ -279,9 +285,12 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     total_len = max(xs_all) - min(xs_all + ([ac.boom.x_end] if ac.boom.enabled else []))
     what = ", ".join(x for x, on in (("LAPES", pp.lapes), ("líquido", pp.liquid)) if on) or "lastro"
     table = [("PV", n, m, x) for n, m, x, _ in pf_mass] + [("PV", i.name, i.mass, i.x) for i in items] + \
-        ([("CP", f"estimada = massa de projeto − PV ({what}: os kg na Montagem)", m_cp, x_t)] if m_cp > 0 else [])
+        ([("CP", f"estimada = massa de projeto − PV ({what}: os kg na Montagem)", m_cp, x_cp)] if m_cp > 0 else [])
+    x_e = (Mx - m_cp * x_cp) / max(M - m_cp, 1e-9)               # o CG sem a carga paga (soltura, consumo)
+    sm_empty = 100 * (h_n - (info["x_le_mac"] - x_e) / c)
     out = dict(set=st, x_cg_target=x_t, h_n=h_n, sm=100 * (h_n - h_t), mass=M, empty=M - m_cp, payload=m_cp,
-               mass_table=table, x_bat=x_bat, x_bat_used=x_bat_c, battery_fits=abs(x_bat_c - x_bat) < 1e-6, ballast=m_eq,
+               mass_table=table, x_bat=x_bat, x_bat_used=x_bat_c, battery_fits=balanced, ballast=m_eq,
+               x_payload=x_cp, payload_moved=abs(x_cp - x_t) > 1e-6, sm_empty=sm_empty,
                length=total_len, structure=m_s, masses=pf_mass, items=items, Vs=Vs, D=D,
                boom_hits_prop=bool(n_rear) and ac.boom.enabled, trim=trim)
     return ac, out

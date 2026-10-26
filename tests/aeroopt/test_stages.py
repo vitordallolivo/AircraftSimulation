@@ -492,3 +492,12 @@ def test_ground_pitch_sets_the_nose_gear_and_the_6dof_starts_on_it():
     assert pw.ground_pitch(ac) == pytest.approx(6.0) and asm["trim"]["CL_ground"] > asm0["set"]["CL_ground"]
     _, log = TO.evaluate(ZigBackend(), ac, 1.0, -10.0, 8.0, 1.0, log=True)
     assert np.degrees(float(log["theta"][0])) == pytest.approx(6.0, abs=0.3)
+
+
+def test_payload_position_is_searched_by_the_flight_check_for_every_kind():
+    """onde fica a carga paga é escolha do otimizador (O27): a busca dos comandos da E&C mexe em `power.x_payload`
+    em todo tipo de avião, e o projeto parte da carga no CG"""
+    from aerosim.design.power import PowerParams
+    assert PowerParams().x_payload == 0.0
+    for kind, ctl in sg.CONTROLS.items():
+        assert "power.x_payload" in [k for k, _, _ in ctl], kind
