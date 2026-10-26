@@ -77,6 +77,11 @@ No segmento de pouso a altura cai em rampa até as rodas tocarem o ponto de toqu
 **Decolagem** (Riboldi et al., 2022, a conferir no PDF): acelerador cheio, profundor $`\delta_{e0}`$ até a velocidade (ou
 a distância) de rotação e $`\delta_{e1}`$ depois, com a taxa do servo; no chão, leme e roda direcionável seguem a pista.
 
+Esse comando é fixo até o piloto automático assumir, e aí um avião leve e com muita tração passa do estol antes disso:
+a asa voadora chegava a 32° de α com o elevon todo cabrando. Com a **proteção de α na decolagem**
+(`takeoff.alpha_guard`, desligada por padrão) a mesma lei de α e $`q`$ do voo entra nessa fase, com α pedido igual a
+$`\alpha_{max}`$, e só pica: ela nunca cabra mais que $`\delta_{e1}`$. As decolagens que já funcionavam não mudam.
+
 **Longitudinal, no ar.** A altura vira fator de carga vertical. Da cinemática $`\ddot h = g\,(n\cos\phi - \cos\gamma)`$, o
 piloto pede:
 

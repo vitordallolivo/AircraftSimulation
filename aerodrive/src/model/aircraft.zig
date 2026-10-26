@@ -277,7 +277,7 @@ pub const Environment = struct {
     gust_T: f64 = 1,
     gust_U: []const f64 = &.{ -1, -2, -1 },
 };
-pub const Takeoff = struct { VR: f64 = 12.5, sR: f64 = 37.5, de0: f64 = 0, de1: f64 = -6, rate_de: f64 = 60, ht: f64 = 2, rate_thr: f64 = 2, h_end: f64 = 6 };
+pub const Takeoff = struct { VR: f64 = 12.5, sR: f64 = 37.5, de0: f64 = 0, de1: f64 = -6, rate_de: f64 = 60, ht: f64 = 2, rate_thr: f64 = 2, h_end: f64 = 6, alpha_guard: bool = false };
 pub const SimSettings = struct { dt: f64 = 1e-3, tmax: f64 = 400, dtlog: f64 = 0.02, Mst: f64 = 50, slosh: bool = true };
 /// os mesmos nomes do núcleo (`types.Autopilot`); ângulos em graus no arquivo
 pub const Autopilot = struct {

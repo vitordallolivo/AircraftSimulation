@@ -179,7 +179,8 @@ def test_categories_build_each_kind_of_aircraft():
 
 def test_geometry_stage_fixes_the_ground_and_stops_what_it_cannot_fix():
     """a EH deste avião raspa o chão girado 12°: a etapa geometria desce o trem e a configuração segue, e cada ponto
-    da busca também passa pela geometria. Peça solta (pedida uma peça só) a geometria ainda não conserta: para ali"""
+    da busca também passa pela geometria. O tandem, com o tubo até a asa de trás e o pod até o CG, passa ligado (pedida
+    uma peça só) e com as massas dentro"""
     from aerosim.interfaces.geometry import GeometryParams
     p = _project()
     pr = aeroopt.from_project(p)
@@ -188,11 +189,11 @@ def test_geometry_stage_fixes_the_ground_and_stops_what_it_cannot_fix():
     (row,) = res.rows
     assert row["alive"] and res.names["etapas"][0] == ("geometria", 1, 1)
     assert row["values"][sg.GEAR_KEY] > 0.1 and all(h["ok"] or "geometria" not in h["why"] for h in row["history"])
-    pr.params["categorias"] = ["tandem"]                          # o montador ainda não põe o tubo entre as asas
+    pr.params["categorias"] = ["tandem"]                          # o tubo liga a asa de trás à fuselagem
     res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=2,
                                                        geometry=GeometryParams(connected=True)))
     (row,) = res.rows
-    assert not row["alive"] and row["stage"] == "geometria" and "soltas" in row["why"]
+    assert row["stage"] != "geometria" and "soltas" not in row["why"] and "fora da geometria" not in row["why"]
 
 
 @pytest.mark.parametrize("method", ["gerações", "cma-es", "de"])
@@ -388,6 +389,10 @@ def test_flight_check_with_controls_adds_the_controls_of_the_kind_of_aircraft():
     keys = [k for k, _, _ in fc.free_for({"categoria": "monoplano"})]
     assert "tail.elevator" in keys and "tail.aileron_chord" not in keys
     assert sg.FlightCheck(p, pr, evals=2).free_for({"categoria": "asa voadora"}) == fc.free
+    # o tandem também é sem cauda, mas a asa de trás é a cauda: decalagem e recuo dela, nada de enflechamento
+    assert fc.kind({"categoria": "tandem"}) == "tandem" and fc.kind({"categoria": "asa voadora"}) == "asa voadora"
+    keys = [k for k, _, _ in fc.free_for({"categoria": "tandem"})]
+    assert "tail.wing2_di" in keys and "tail.wing2_dx" in keys and "wing.sweep" not in keys
 
 
 def test_flying_wing_flies_with_the_controls_of_e_and_c():
@@ -405,6 +410,26 @@ def test_flying_wing_flies_with_the_controls_of_e_and_c():
     assert out.data["voa"]["viol"] == 0 and v["wing.sweep"] > 0 and v["wing.twist"] < 0
     with pytest.raises(ValueError):
         sg.FlightCheck(p, pr, evals=4).one(StageItem(name="b", values={"categoria": "asa voadora"}))
+
+
+def test_e_and_c_rejects_what_the_6dof_would_reject():
+    """duas coisas que a sprint deixava passar e só apareciam no 6GDL: pouco peso na bequilha (o avião senta para
+    trás na corrida) e nenhuma estabilidade direcional (avião sem cauda, sem deriva na ponta)"""
+    from aerosim.design import power as pw, tail as tl
+    from aerosim.design.spec import Requirements
+    from aerosim.design.wing import WingCandidate, WingParams
+    from aerosim.design import airfoils as afm
+    w = WingCandidate(WingParams(span=2.4, area=0.8), afm.AirfoilEntry(afm.from_naca("NACA 2412")))
+    def viol(x_tdp=0.03, **tail):
+        cand = pw.AircraftCandidate(pw.PowerParams(ground_pitch=3.0, x_tdp=x_tdp),
+                                    tl.SetCandidate(tl.TailParams(**tail), w))
+        _, asm = pw.assemble(cand, Requirements())
+        return sg.violation(dict(asm=asm, cand=cand), rotation=True)[1]
+    why = " ".join(viol(layout="sem cauda"))
+    assert "bequilha leva só" in why and "estabilidade direcional" in why
+    assert "estabilidade direcional" not in " ".join(viol(layout="sem cauda", tip_fin=0.25))
+    # o mesmo avião com o trem mais atrás passa a levar peso na bequilha
+    assert "bequilha" not in " ".join(viol(x_tdp=0.12, layout="sem cauda", tip_fin=0.25))
 
 
 def test_ground_pitch_sets_the_nose_gear_and_the_6dof_starts_on_it():

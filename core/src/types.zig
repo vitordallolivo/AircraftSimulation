@@ -204,6 +204,9 @@ pub const Takeoff = extern struct {
     ht: f64 = 2, // altura em que o piloto automático assume
     rate_thr: f64 = 2,
     h_end: f64 = 6, // fim da simulação "só decolagem"
+    // 1: depois do acionamento o profundor não deixa α passar de ap.alpha_max (asa voadora e tandem leves cabram
+    // até estolar com o comando fixo de1); 0 (padrão): o comando fixo de sempre
+    alpha_guard: f64 = 0,
 };
 
 /// comandos de quem pilota de fora (controle, simulador): com `manual` = 1 substituem os do piloto

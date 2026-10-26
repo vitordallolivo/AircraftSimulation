@@ -69,6 +69,9 @@ class PowerParams:
     ground_pitch: float = F(0.0, "atitude no chão", "°", "triciclo: a bequilha mais comprida deixa o avião parado com o "
                             "nariz para cima, e a asa corre nesse ângulo. Com sustentação bastante ele sai do chão sem "
                             "rodar (asa voadora). 0 = nivelado", 0.0, 15.0, 0.5)
+    alpha_guard: bool = F(False, "proteção de α na decolagem", "", "o profundor não deixa α passar do limite do piloto "
+                          "enquanto ele não assume. Sem ela, a asa voadora leve e com muita tração cabra até estolar; "
+                          "desligada, a decolagem é a de sempre")
 
 
 @dataclass
@@ -141,6 +144,7 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     ac.environment.set_density_altitude(req.density_altitude)
     ac.performance.alpha_cruise = cand.set.wing.params.alpha_cruise
     ac.airfield.x_warning = req.takeoff_run
+    ac.airfield.z_warning = req.obstacle_h
     w = ac.surfaces[0]
     cr = w.sections[0].chord
     S, c, b = info["S"], info["c"], info["b"]
@@ -150,6 +154,11 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     n_nose, n_pairs, n_rear = motor_counts(pp)
     x_nose = rules.nose_length if n_nose else 0.6 * rules.nose_length
     length = x_nose + cr + 0.05
+    tandem = cand.set.wing2 is not None and cand.set.params.layout == "sem cauda"
+    if tandem:
+        # tandem: o CG fica entre as asas, atrás do bordo de fuga da da frente; o pod vai até lá, com o CG na
+        # metade dele (dali para trás o pod afina e a carga já não cabe)
+        length = max(length, (x_nose - st["x_cg"]) / 0.5)
     units = []
     if n_nose:
         units.append(_unit(pp, cat, "motor 1", x_nose, 0.0, 0.0, 1))
@@ -218,7 +227,10 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
         xb = x_nose - 0.04 if x_bat > x_bat_c else (ac.boom.x_end + 0.05 if ac.boom.enabled else lo)
         mb = (M * x_t - Mx) / (xb - x_t)
         if mb > 0:
-            items.append(PointMass("lastro de equilíbrio", float(mb), float(xb), 0.0, 0.0))
+            # no tandem o tubo sobe até a asa de trás: o lastro fica nele, não no eixo da fuselagem
+            zb = (ac.boom.z - (ac.boom.x_start - xb) * math.tan(math.radians(ac.boom.pitch))
+                  if tandem and ac.boom.enabled and x_bat <= x_bat_c else 0.0)
+            items.append(PointMass("lastro de equilíbrio", float(mb), float(xb), 0.0, float(zb)))
             m_eq = float(mb)
             M += mb
     ac.ballast = Ballast(enabled=False, mass=0.0, x=x_t, y=0.0, z=0.0)         # no CG; os kg, na Montagem
@@ -258,6 +270,7 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     Vs = stall_speed(req, S, wr["CLmax"], M)
     ac.takeoff.VR = round(1.15 * Vs, 2)
     ac.takeoff.sR = 0.0
+    ac.takeoff.alpha_guard = bool(pp.alpha_guard)
     ac.autopilot.CL0 = float(wr["CL0"] + wr["CLa"] * math.radians(wr["incidence"]))
     ac.autopilot.CLa = float(wr["CLa"])
     ac.apply_constraints()
@@ -351,6 +364,12 @@ def thrust_trim(ac, st, wr, req, rules, x_t, info, mass, tp) -> dict:
         CLg += wr["CLa"] * th                               # alto que a roda, chega para trás dela
         arm_w = arm_w * math.cos(th) - (gz - z_cg) * math.sin(th)
         out["tip_ok"] = arm_w > 0
+    # o peso que a bequilha leva parado: o braço do CG sobre a distância entre as rodas. Com pouco peso nela o avião
+    # senta para trás no 6GDL ao primeiro empurrão (tandem com o trem a 3 cm do CG: 5 % na bequilha, sentou no tubo).
+    # Raymer pede de 8 a 15 % na bequilha ("Aircraft Design: A Conceptual Approach", §11.2, a conferir no PDF); a E&C
+    # com os comandos confere (`aeroopt.stages.violation`)
+    base = (ac.gear.steer_x - x_mg) * math.cos(th)
+    out["nose_load"] = arm_w / base if base > 1e-6 else 0.0
     CLmax = wr["CLmax"]
     if tp.layout == "sem cauda" and any(m.kind == "comando.momento_flape" for m in ac.modifiers):
         # asa voadora com o núcleo nos comandos: quem sustenta devagar é o C_L trimado (o elevon tira sustentação)
@@ -395,8 +414,13 @@ def thrust_trim(ac, st, wr, req, rules, x_t, info, mass, tp) -> dict:
     out["rot_speed"] = rot_speed
     out["rot_table"] = (Vgrid, rot_a, rot_arm)               # a mesma conta, para a corrida no núcleo
     if th > 0:                                               # sai do chão sem rodar quando a asa no ângulo sustenta
-        out["CL_ground"] = CLg
         out["ground_stall"] = CLg * 1.21 / wr["CLmax"] - 1   # > 0: corre mais perto do estol que 1,1 V_S
+        if "CL_trim_max" in out:
+            # sem cauda: só sai do chão nessa atitude o C_L que o comando ainda trima. Acima dele o avião não se
+            # segura no ângulo e pica de volta para a bequilha (o tandem com C_L 1,7 no chão e 0,77 trimado
+            # corria a 15 m/s nariz para baixo no 6GDL, e a sprint achava que ele saía do chão sozinho)
+            CLg = min(CLg, max(out["CL_trim_max"], 0.0))
+        out["CL_ground"] = CLg
         out["V_rot"] = min(out["V_rot"], math.sqrt(2 * W / (rho * S * CLg)) if CLg > 0 else math.inf)
     out["V_lof"] = Vlof
     out["rot_ok"] = out["V_rot"] <= Vlof
@@ -556,21 +580,36 @@ def design_point(cand: AircraftCandidate, req: Requirements, rules: DesignRules 
     m = req.mass
     hist = []
     out = None
-    for _ in range(iters):
+
+    def at(m):
         rq = copy.deepcopy(req)
         rq.mass = m
         c = copy.deepcopy(cand)
         ac, asm = assemble(c, rq, rules, catalog, airfoils)    # a massa de projeto é m (o que passa do PV é a CP)
-        fixed = asm["empty"]
         pf = performance(ac, asm, rq, backend)
-        mt = pf["mtow_runway"]
-        hist.append((m, mt))
-        out = dict(ac=ac, asm=asm, pf=pf, cand=c, req=rq)
+        hist.append((m, pf["mtow_runway"]))
+        return pf["mtow_runway"], asm["empty"], dict(ac=ac, asm=asm, pf=pf, cand=c, req=rq)
+
+    for _ in range(iters):
+        mt, fixed, out = at(m)
         if not math.isfinite(mt):
             break
         if abs(mt - m) < tol:
             break
         m = max(0.5 * (m + mt), fixed)
+    # quando o MTOW cresce quase tanto quanto a massa de projeto (tandem, asa voadora: o C_L trimado e a pista
+    # mudam com ela), a média anda devagar e as voltas acabam antes. Daí em diante, secante em g(m) = MTOW(m) − m
+    # pelas duas últimas voltas. Quem já convergia não chega aqui e fica igual
+    if len(hist) >= 2 and math.isfinite(hist[-1][1]) and abs(hist[-1][1] - hist[-1][0]) >= tol:
+        for _ in range(iters):
+            (m0, t0), (m1, t1) = hist[-2], hist[-1]
+            g0, g1 = t0 - m0, t1 - m1
+            if g1 == g0:
+                break
+            m = max(m1 - g1 * (m1 - m0) / (g1 - g0), fixed)
+            mt, fixed, out = at(m)
+            if not math.isfinite(mt) or abs(mt - m) < tol:
+                break
     out.update(history=hist, mass=hist[-1][0], mtow=hist[-1][1],
                converged=len(hist) > 1 and math.isfinite(hist[-1][1]) and abs(hist[-1][1] - hist[-1][0]) < tol)
     return out

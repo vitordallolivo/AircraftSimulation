@@ -35,6 +35,8 @@ class Requirements:
     V_turn: float = F(0.0, "V da curva", "m/s", "a velocidade da curva sustentada (restrição de fator de carga); "
                       "0 = a de cruzeiro", 0, 60, 0.5)
     mu_brake: float = F(0.3, "atrito na frenagem", "", "pouso: rodas freando na pista", 0.05, 1.0, 0.05)
+    obstacle_h: float = F(1.0, "altura do obstáculo", "m", "a decolagem 6GDL só vale se passar desta altura no fim da "
+                          "corrida (z_warning); a Regular 2026 pede 0,90 m a 55 m, R[7.8.0.1]", 0.0, 5.0, 0.05)
     constraints: list[Constraint] = field(default_factory=default_constraints)
 
     # ---- os limites que as contas usam, lidos das restrições ativas (desligada = sem limite)

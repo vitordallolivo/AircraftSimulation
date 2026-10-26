@@ -83,6 +83,15 @@ pub fn commands(c: S.Ctx, t: f64, x: []const f64, in: Input, g: *const G.Guide, 
     if (!autop) {
         cmd.thr = if (f.brakes != 0) 0.0 else fm.lim(p.takeoff.rate_thr * t, 0.0, 1.0);
         cmd.de = takeoffElevator(c, t);
+        if (p.takeoff.alpha_guard != 0 and c.tR >= 0.0 and t >= c.tR) {
+            // proteção de α na decolagem: a mesma lei do voo (α e q) com α pedido = alpha_max; só pica, nunca
+            // cabra mais que o comando de decolagem
+            const de_g = a.Kae * (in.al - a.alpha_max) + a.Kqe * x[S.Q];
+            if (de_g > cmd.de) {
+                cmd.de = de_g;
+                cmd.alim = true;
+            }
+        }
         cmd.thc = x[S.THE];
     } else if (f.landed != 0) {
         cmd.thc = 0.0;

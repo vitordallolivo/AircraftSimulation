@@ -158,6 +158,8 @@ S_v = \frac{V_V\,S\,b}{l_v}
 | convencional | EH com profundor e EV com leme |
 | cauda em V | a mesma área total $`S_h + S_v`$, com diedro $`\Gamma = \arctan\sqrt{S_v/S_h}`$ e ruddervators |
 | sem cauda | elevons na asa |
+| sem cauda, com a segunda asa (tandem) | aileron na asa da frente e profundor na de trás, que faz o papel da EH |
+| deriva na ponta (sem cauda) | uma superfície vertical com leme em cada ponta da asa, que também é winglet |
 | cauda em H | a EH da convencional e a EV repartida em duas iguais ($`S_v/2`$ cada, o mesmo alongamento), uma em cada ponta da EH |
 
 Na cauda em H a estática é a da convencional, porque a área vertical é a mesma; o ganho de placa de ponta que as
@@ -183,6 +185,34 @@ C_m = C_{m,ac} + C_L\,(h - h_{ac}) - \eta\,V_H\,a_h\,(\alpha_h + \tau\,\delta_e)
 \qquad
 \alpha_h = \alpha_w - \varepsilon + i_h
 ```
+
+No tandem as duas asas são do mesmo tamanho, e a forma acima, que despreza a sustentação da cauda no total, deixa
+de servir: com ela o ponto neutro ficava no da asa da frente, o CG ia para perto dela e o avião não trimava. O ponto
+neutro passa a ser a média dos centros aerodinâmicos, cada um pesado pelo quanto a asa ganha de sustentação com
+$`\alpha`$; a de trás com $`\eta`$ e o downwash da da frente (Etkin e Reid, *Dynamics of Flight*, seção 2.3, a
+conferir no PDF):
+
+```math
+x_n = \frac{a\,S\,x_{ac,1} + \eta\,a_2\,S_2\left(1 - \frac{d\varepsilon}{d\alpha}\right)x_{ac,2}}
+           {a\,S + \eta\,a_2\,S_2\left(1 - \frac{d\varepsilon}{d\alpha}\right)}
+```
+
+Quem trima o tandem é a decalagem, a incidência da asa de trás menos a da da frente (`wing2_di`, negativa: a de trás
+sustenta menos por área). Um tubo liga a asa de trás à fuselagem, e o pod vai até o CG, que fica entre as asas. O
+comando de arfagem (`tandem_pitch`) pode ficar na asa de trás, e aí ele é um profundor comum, na da frente, e aí ele
+desce para cabrar porque está à frente do CG, como um canard, ou nas duas.
+
+Nenhum avião sem cauda tem estabilidade direcional: não há nada atrás que aponte o nariz no vento. A deriva na ponta
+(`tip_fin`, a altura em metros; 0 = nenhuma) resolve isso sem tubo nem empenagem, e de quebra trabalha como placa de
+ponta; o ganho de alongamento efetivo dela fica de fora, do lado conservador. O $`C_{n\beta}`$ sai do volume de cauda
+vertical das duas, com o braço do CG ao centro aerodinâmico delas:
+
+```math
+C_{n\beta} = \frac{S_v\,(x_{CG} - x_{ac,v})}{S\,b}\,a_v
+```
+
+No tandem a ponta da asa da frente fica quase sobre o CG, sem braço nenhum, então as derivas vão na asa de trás
+(`tip_fin_where`).
 
 A partir dela:
 
@@ -287,6 +317,11 @@ isso o avião fica parado com o nariz para cima e a asa corre nesse ângulo, com
 $`C_{L\alpha}\,\theta`$. Ele sai do chão sem rodar quando a sustentação vence o peso. O peso passa a ter o braço
 horizontal $`d\cos\theta - h\sin\theta`$ no trem principal, em que $`h`$ é a altura do CG acima da roda. Se o
 braço fica negativo, o avião senta para trás. A decolagem 6GDL começa parada nessa atitude.
+
+Antes disso, o avião senta para trás por outro motivo: pouco peso na bequilha. O que ela leva parado é o braço do CG
+sobre a distância entre as rodas, $`(x_{CG} - x_{mg})/(x_{nw} - x_{mg})`$, e com pouco peso ali o primeiro empurrão
+levanta o nariz (o tandem, com o trem a 3 cm do CG, sentava no tubo no 6GDL). A E&C com os comandos exige o mínimo
+usual de 8 % (Raymer, "Aircraft Design: A Conceptual Approach", §11.2, a conferir no PDF).
 
 Na asa voadora com o momento próprio dos comandos ligado (`tail.flap_moment`), o C_L que vale na pista é o maior C_L
 trimado pelo núcleo (`trimmed_clmax`), e não o C_L,max da asa. Na asa voadora o elevon que trima também tira

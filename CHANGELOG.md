@@ -6,6 +6,32 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- sprint, tandem: a asa de trás agora é tratada como a cauda. O ponto neutro sai das duas asas (a média dos CA
+  ponderada por a S, com η e o downwash da da frente). Antes era o da asa da frente sozinha, o CG ia para perto dela
+  e o tandem não trimava em α nenhum. O profundor fica na asa de trás e a da frente só tem aileron: um elevon na da
+  frente, à frente do CG, cabrava quando descia. A asa de trás sente o downwash, um tubo a liga à fuselagem e o pod
+  vai até o CG, onde ficam a carga e a bateria. Na E&C com os comandos, o tandem tem os comandos dele: decalagem e
+  recuo da asa de trás, margem estática, trecho e corda do profundor, atitude no chão e trem. Muda só o tandem.
+- sprint e E&C, saída do chão sem rodar (atitude no chão): no avião sem cauda só conta o C_L que o comando ainda
+  trima. Antes a sprint usava o C_L da asa sem trimagem (1,7 no tandem, que trimado dá 0,77) e achava que o avião saía
+  do chão sozinho; no 6GDL ele picava de volta para a bequilha e não decolava.
+- E&C (etapa voa com os comandos) confere duas coisas que antes só apareciam no 6GDL: o peso mínimo na bequilha
+  parado (8 %, Raymer §11.2; com menos o avião senta para trás na corrida) e a estabilidade direcional (C_nβ; um
+  avião sem cauda e sem deriva não tem nenhuma).
+- sprint, deriva na ponta da asa (`tail.tip_fin`, 0 por padrão): uma superfície vertical com leme em cada ponta da
+  asa sem cauda, que também trabalha como placa de ponta. É ela que dá o C_nβ da asa voadora e do tandem. No tandem
+  ela vai na asa de trás (`tail.tip_fin_where`), porque a ponta da da frente fica quase no CG, sem braço.
+- aeroopt, arfagem do tandem (`tail.tandem_pitch`): o comando de arfagem na asa de trás (profundor), na da frente
+  (elevon que desce para cabrar, como um canard) ou nas duas. A E&C escolhe entre as três, como escolhe a cauda.
+- núcleo, proteção de α na decolagem (`takeoff.alpha_guard`, desligada por padrão): enquanto o piloto automático não
+  assume, o profundor não deixa α passar do limite dele. Sem ela, a asa voadora leve e com muita tração cabra até
+  estolar com o comando fixo (de 32° para 11° de α no teste do núcleo). A etapa do 6GDL do aeroopt roda com e sem e
+  fica com o maior MTOW. As decolagens de hoje ficam iguais.
+- sprint, ponto de projeto: quando a média de sempre acaba as voltas sem convergir (o MTOW sobe quase tanto quanto a
+  massa de projeto, como no tandem e na asa voadora), segue por secante. Quem já convergia fica igual.
+- sprint, altura do obstáculo (`requirements.obstacle_h`, 1 m por padrão, que era o fixo de antes): é o z_warning da
+  decolagem 6GDL. A Regular 2026 pede 0,90 m a 55 m (R[7.8.0.1]).
+
 - aeroopt, pontuação da Regular 2026 (`pontuacao/sae_br_2026_regular.toml`): P_EE = 50 EE e a nota de voo da eq.
   7.5, com o fator do número de superfícies longitudinais N (`stages.n_surfaces`: asa voadora 1, monoplano e tandem
   2, biplano 3), o fator de envergadura 1,15^(−b), o MTOW de 20 kg e a penalidade de envergadura acima de 4 m. O

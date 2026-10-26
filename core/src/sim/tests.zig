@@ -90,6 +90,35 @@ test "decolagem até h_end" {
     try std.testing.expect(n > 10);
 }
 
+test "proteção de α na decolagem" {
+    // com o comando todo cabrando fixo (−25°) o avião passa de alpha_max (uns 32°) até o piloto assumir em ht; com a
+    // proteção ligada, para perto dele
+    var amax: f64 = 0;
+    for ([_]f64{ 0, 1 }) |guard| {
+        aircraft(&inst.p);
+        inst.p.stop_takeoff = 1;
+        inst.p.takeoff.de1 = -25 * deg;
+        inst.p.takeoff.alpha_guard = guard;
+        try runner.configure(&inst);
+        try runner.resetGround(&inst);
+        var n: usize = 0;
+        const st = runner.run(&inst, 1e9, &log, &n);
+        var top: f64 = 0;
+        for (log[0..n]) |row| {
+            if (row.h >= inst.p.takeoff.ht) break;
+            if (row.Va > 5) top = @max(top, row.alpha); // parado, α não tem sentido
+        }
+        if (guard == 0) {
+            amax = top;
+            try std.testing.expect(top > inst.p.ap.alpha_max);
+        } else {
+            try std.testing.expect(top < amax);
+            try std.testing.expect(top < inst.p.ap.alpha_max + 2 * deg);
+            try std.testing.expectEqual(runner.Status.completed, st); // sem a proteção, estola e não chega a h_end
+        }
+    }
+}
+
 test "checkpoint: retomar dá o mesmo resultado" {
     aircraft(&inst.p);
     inst.p.stop_t = 6.0;

@@ -43,6 +43,8 @@ LAYOUTS = ("convencional", "em V", "sem cauda", "em H")
 WITH_HTAIL = ("convencional", "em H")              # EH e EV separadas (a estática e o C_nβ são os mesmos)
 ARM_FROM = ("CA da asa", "CG de projeto")
 NO_WING2, SAME_WING = "nenhuma", "a mesma asa"     # TailParams.wing2: sem segunda asa; a da etapa repetida
+TANDEM_PITCH = ("asa de trás", "asa da frente", "as duas")   # TailParams.tandem_pitch: onde fica o comando de arfagem
+TIP_FIN_WHERE = ("asa de trás", "asa da frente")   # TailParams.tip_fin_where: em qual asa vão as derivas (tandem)
 
 
 @dataclass
@@ -55,7 +57,17 @@ class TailParams:
                         "+ para trás (tandem)", -3.0, 3.0, 0.01)
     wing2_dz: float = F(0.0, "desnível da segunda asa", "m", "+ para cima (biplano: o vão entre as asas)", -1.0, 1.0,
                         0.01)
-    wing2_di: float = F(0.0, "decalagem da segunda asa", "°", "incidência dela menos a da primeira", -8, 8, 0.25)
+    wing2_di: float = F(0.0, "decalagem da segunda asa", "°", "incidência dela menos a da primeira", -12, 8, 0.25)
+    tandem_pitch: str = F(TANDEM_PITCH[0], "arfagem do tandem", "", "onde fica o comando de arfagem: na asa de trás "
+                          "(profundor, e aileron na da frente), na da frente (elevon que desce para cabrar, como um "
+                          "canard) ou nas duas", choices=TANDEM_PITCH)
+    tip_fin: float = F(0.0, "deriva na ponta (altura)", "m", "sem cauda: uma superfície vertical em cada ponta da "
+                       "asa, com leme. Ela faz a estabilidade direcional que a asa voadora e o tandem não têm, e de "
+                       "quebra trabalha como placa de ponta. 0 = nenhuma", 0.0, 0.5, 0.01)
+    tip_fin_chord: float = F(0.6, "deriva na ponta: corda", "", "fração da corda da ponta da asa", 0.2, 1.2, 0.05)
+    tip_fin_where: str = F(TIP_FIN_WHERE[0], "deriva na ponta: onde", "", "no tandem, em qual asa ficam as derivas (a "
+                           "ponta da asa da frente fica quase no CG, sem braço para guinar)",
+                           choices=TIP_FIN_WHERE)
     layout: str = F("convencional", "cauda", "", "convencional: EH + EV; em V: duas superfícies inclinadas; "
                     "sem cauda: elevons na asa; em H: EH com uma EV em cada ponta", choices=LAYOUTS)
     arm: float = F(0.95, "braço da cauda", "m", "até o centro aerodinâmico da cauda, medido de onde diz 'braço medido "
@@ -173,6 +185,31 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
     info = dict(S=S, c=c, b=b, x_ac_w=pf["x_ac"], x_le_mac=pf["x_le_mac"], Sh=0.0, Sv=0.0, bh=0.0, hv=0.0, arm=0.0)
     if tp.layout == "sem cauda":
         _add_wing2(ac, cand, req, rules)
+        if cand.wing2 is not None:
+            # tandem: a asa de trás é a cauda. Na da frente o comando só rola (um elevon ali, à frente do CG, cabra
+            # descendo e pica subindo, o contrário de um profundor); na de trás, no mesmo trecho, ele é o profundor
+            # a da frente fica à frente do CG: para cabrar o comando dela desce (ganho de arfagem −1, `mix`)
+            front = tp.tandem_pitch in TANDEM_PITCH[1:]
+            rear = tp.tandem_pitch != TANDEM_PITCH[1]
+            w.controls = [ControlSurface("elevon", a0, min(a1, 1.0), tp.aileron_chord, mix=[-1.0, 1.0, 0.0]) if front
+                          else ControlSurface("aileron", a0, min(a1, 1.0), tp.aileron_chord)]
+            w2 = ac.surfaces[-1]
+            w2.controls = [ControlSurface("elevator", a0, min(a1, 1.0), tp.aileron_chord)] if rear else []
+            # atrás da da frente, ela sente o downwash dela, como uma EH (sem isto o núcleo punha o ponto neutro
+            # na média dos dois CA, bem atrás do da sprint), e um tubo a liga à fuselagem: a massa dele entra e o
+            # lastro, quando falta, vai na ponta dele
+            w2.downwash, w2.eta = True, tp.tail_eta
+            x_start = w.x - 0.25 * w.sections[0].chord
+            reach = max(x_start - (w2.x - w2.sections[0].chord), 0.05)
+            pitch = math.degrees(math.atan2(-w2.z, reach))   # da fuselagem (z = 0) à altura da asa de trás
+            ac.booms = [TailBoom(name="tubo de cauda", x_start=x_start, length=math.hypot(reach, w2.z),
+                                 diameter=tp.boom_diameter, pitch=pitch)]
+            w2.mount = "tubo:0"
+            ac.apply_constraints()
+            info.update(boom=ac.boom.length, mass_boom=ac.boom.length * rules.boom_density)
+        if tp.tip_fin > 0:
+            info.update(_tip_fins(ac, cand, tp, airfoils, req))
+        ac.apply_constraints()
         return ac, info
     l = tp.arm + arm_shift                          # do CA da asa ao da cauda (posição)
     Sh = tp.VH * S * c / tp.arm                     # volume de cauda com o braço como foi dado
@@ -223,6 +260,42 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
     info.update(Sh=Sh, Sv=Sv, bh=bh, hv=hv, arm=l, x_ac_t=x_ac_t, cl_lim_h=lim,
                 boom=ac.boom.length, mass_tail=(Sh + Sv) * rules.tail_density, mass_boom=ac.boom.length * rules.boom_density)
     return ac, info
+
+
+def _fin_cnb(info: dict, S: float, b: float, x_cg: float) -> float:
+    """C_nβ = η V_V a_v das derivas nas pontas, com o braço do CG ao centro aerodinâmico delas. Sem deriva, NaN: a
+    asa sem cauda não tem estabilidade direcional de que falar"""
+    if not info.get("n_fins"):
+        return float("nan")
+    Sv, h = info["Sv"], info["hv"]
+    a_v = helmbold(5.9, 2 * h * h / max(Sv, 1e-9))     # as duas metades: alongamento efetivo de placa de ponta
+    return float(Sv * (x_cg - info["x_ac_fin"]) / (S * b) * a_v)
+
+
+def _tip_fins(ac: Aircraft, cand: SetCandidate, tp: TailParams, airfoils, req) -> dict:
+    """as derivas nas pontas da asa sem cauda: uma de cada lado, presa à ponta (`mount` "ponta_dir"/"ponta_esq"),
+    com leme. Sem cauda não há nada que dê estabilidade direcional, e a asa enflechada sozinha guina de volta
+    devagar; a deriva na ponta resolve isso sem tubo nem EV atrás, e ainda trabalha como placa de ponta (o ganho de
+    alongamento efetivo fica de fora, do lado conservador; Raymer, "Aircraft Design: A Conceptual Approach", cap. 12,
+    a conferir no PDF). Devolve a área, a altura e o braço delas para o C_nβ"""
+    # no tandem a ponta da asa da frente fica quase no CG (braço nenhum): as derivas vão na de trás, a não ser que
+    # se peça o contrário
+    host = ac.surfaces[-1] if (cand.wing2 is not None and tp.tip_fin_where == TIP_FIN_WHERE[0]) else ac.surfaces[0]
+    i = ac.surfaces.index(host)
+    h = tp.tip_fin
+    ct = host.sections[-1].chord
+    cr = tp.tip_fin_chord * ct
+    af = tail_airfoil(tp.vtail_airfoil, airfoils, req.reynolds(cr))
+    out = []
+    for name, mount in (("deriva direita", f"ponta_dir:{i}"), ("deriva esquerda", f"ponta_esq:{i}")):
+        f_ = _surface(name, "vtail", h, h * cr * (1 + tp.taper_v) / 2, tp.taper_v, af, vertical=True, symmetric=False)
+        f_.controls = [ControlSurface("rudder", 0.0, 1.0, tp.rudder)]
+        f_.mount, f_.eta = mount, 1.0              # na ponta da asa, fora da esteira da fuselagem
+        out.append(f_)
+    ac.surfaces += out
+    Sv = sum(f_.area for f_ in out)
+    x_ac_f = host.x - host.xoff_at(host.semispan) - 0.25 * cr
+    return dict(Sv=Sv, hv=h, x_ac_fin=x_ac_f, n_fins=2)
 
 
 def _add_wing2(ac: Aircraft, cand: SetCandidate, req: Requirements, rules: DesignRules) -> None:
@@ -285,6 +358,20 @@ def _analyze(cand, req, rules, airfoils, wr, arm_shift) -> dict:
     CLc = wr["CL_cruise"]
     if tp.layout == "sem cauda":
         h_n = h_ac
+        if cand.wing2 is not None and len(ac.surfaces) > 1:
+            # tandem: a asa de trás é a "cauda". O ponto neutro é a média dos CA ponderada pela sustentação que cada
+            # asa ganha com α (a de trás com a eficiência η e o downwash da da frente): x_n = Σ a_i S_i x_ac,i / Σ a_i S_i.
+            # Com uma EH pequena isto vira o h_n = h_ac + η V_H (a_t/a)(1 − dε/dα) de sempre, que despreza a
+            # sustentação da cauda no total e não serve quando as duas asas são do mesmo tamanho (Etkin e Reid,
+            # "Dynamics of Flight", seção 2.3; a conferir no PDF). Antes o tandem ficava com o ponto neutro da asa da
+            # frente sozinha: o CG ia para perto dela e o avião não trimava com C_m nenhum
+            w2 = ac.surfaces[-1]
+            pf2 = planform(w2)
+            a2 = analyze_wing(cand.wing2, req, rules)["CLa"]
+            k2 = tp.tail_eta * a2 * pf2["S"] * (1 - deda)
+            x_np = (a * S * info["x_ac_w"] + k2 * pf2["x_ac"]) / (a * S + k2)
+            h_n = (info["x_le_mac"] - x_np) / c
+            out.update(x_ac_2=pf2["x_ac"], S2=pf2["S"])
         h_cg = h_n - tp.sm_target / 100
         # elevon, por faixa: o Δc_l = a τ δ no quarto de corda da faixa, com o braço até o CG, mais o momento próprio
         # do flape no quarto de corda (perfil fino: Δc_m,c/4 = −½ sen θ_f (1 − cos θ_f) δ, cos θ_f = 2 c_f/c − 1;
@@ -292,11 +379,20 @@ def _analyze(cand, req, rules, airfoils, wr, arm_shift) -> dict:
         # com o mesmo fator empírico 0,85 de `flap_effectiveness`. Antes o Δc_l ia todo a 3/4 da corda, o que dava
         # uns 4 vezes o C_mδ do núcleo (O16 no tracking; tools/rotacao.py compara)
         x_c = info["x_le_mac"] - h_cg * c
-        th = math.acos(min(max(2 * ctl.chord_frac - 1, -1.0), 1.0))
-        dcm = -0.85 * 0.5 * math.sin(th) * (1 - math.cos(th))
-        ch = np.array([w.chord_at(y) for y in yy])
-        arm = np.array([x_c - (w.x - w.xoff_at(y) - 0.25 * w.chord_at(y)) for y in yy])
-        Cmd = 2 / (S * c) * np.trapezoid(-a * tau_a * ch * arm + dcm * ch * ch, yy)
+        # cada comando com arfagem soma, com o ganho dele (no tandem: o profundor da de trás, o da frente com −1)
+        Cmd = 0.0
+        for pw_ in (ac.surfaces if cand.wing2 is not None else [w]):
+            for pc in pw_.controls:
+                g = pc.gains[0]
+                if g == 0:
+                    continue
+                tau_p = flap_effectiveness(pc.chord_frac)
+                yp = np.linspace(pc.span_start * pw_.semispan, min(pc.span_end, 1.0) * pw_.semispan, 60)
+                th = math.acos(min(max(2 * pc.chord_frac - 1, -1.0), 1.0))
+                dcm = -0.85 * 0.5 * math.sin(th) * (1 - math.cos(th))
+                ch = np.array([pw_.chord_at(y) for y in yp])
+                arm = np.array([x_c - (pw_.x - pw_.xoff_at(y) - 0.25 * pw_.chord_at(y)) for y in yp])
+                Cmd += g * 2 / (S * c) * np.trapezoid(-a * tau_p * ch * arm + dcm * ch * ch, yp)
         Cm0 = wr["Cm_ac"]
         de_cru = -(Cm0 + CLc * (h_cg - h_ac)) / Cmd
         de_max_cl = -(Cm0 + CLmax * (h_cg - h_ac)) / Cmd
@@ -304,7 +400,8 @@ def _analyze(cand, req, rules, airfoils, wr, arm_shift) -> dict:
         out.update(rotation(wr, req, rules, x_c, info["x_ac_w"], c, S, tw))
         out["tail_cm_mg"] = tw
         out.update(h_n=h_n, h_cg=h_cg, x_cg=x_c, x_np=info["x_le_mac"] - h_n * c, Cmde=Cmd, i_h=0.0,
-                   de_cruise=math.degrees(de_cru), de_CLmax=math.degrees(de_max_cl), VH=0.0, VV=0.0, Cnb=float("nan"))
+                   de_cruise=math.degrees(de_cru), de_CLmax=math.degrees(de_max_cl), VH=0.0, VV=0.0,
+                   Cnb=_fin_cnb(info, S, b, x_c))
         out.update(_curves(out, wr, req, None))
         return out
     t = ac.surfaces[1]

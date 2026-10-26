@@ -24,7 +24,11 @@ essa cauda. Custa uma busca a mais por cauda, mas um avião que não voaria com 
 chance antes de ser descartado. Com "comandos (E&C)" ligado, a mesma busca mexe também nos comandos (o profundor, ou o trecho e a
 corda do elevon, o curso e a inclinação do motor) e exige que o comando rode o avião na pista antes da velocidade de
 sair do chão. Essa conferência usa os coeficientes do núcleo, os mesmos da decolagem 6GDL, e não a conta analítica
-da sprint, que superestima o elevon da asa voadora. Quem escolhe quais
+da sprint, que superestima o elevon da asa voadora. Com os comandos ela escolhe, do mesmo jeito que escolhe a cauda,
+onde fica a arfagem do tandem (na asa de trás, na da frente ou nas duas) e confere duas coisas que antes só apareciam
+na decolagem 6GDL: o peso que a bequilha leva parado (com pouco, o avião senta para trás na corrida) e a estabilidade
+direcional, que um avião sem cauda só tem com a deriva na ponta da asa. A etapa do 6GDL, por sua vez, roda a
+decolagem com e sem a proteção de α do piloto e fica com o MTOW maior. Quem escolhe quais
 aviões experimentar são as gerações de um algoritmo genético (`generations.py`). A janela fica em `gui.py`, e os CSV
 de cada rodada saem de `export.py`. Depois da rodada, `sensitivity.py` diz o quanto a nota do melhor avião depende de
 cada variável: se ele está num morro largo ou na beira de um precipício. Para testar a máquina sem esperar as contas do avião, `synthetic.py` traz dados de

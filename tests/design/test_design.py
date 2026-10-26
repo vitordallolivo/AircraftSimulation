@@ -120,6 +120,69 @@ def test_payload_options_count_and_old_files():
     assert old.liquid is True and old.lapes is False and not hasattr(old, "ballast")
 
 
+def test_tandem_neutral_point_uses_both_wings_and_the_rear_wing_pitches(manager):
+    """tandem: a asa de trás é a cauda. O ponto neutro fica entre os dois CA (antes era o da asa da frente sozinha),
+    o profundor fica na de trás, ela sente o downwash da da frente e um tubo a liga; o ponto neutro do núcleo fica
+    perto do da sprint (a menos de 15 % da CMA) e o profundor de trás para cima cabra"""
+    import copy
+    from aerosim.model.universal import build_model
+    w = _wing(span=2.4, area=0.8)
+    tp = tl.TailParams(layout="sem cauda", wing2=tl.SAME_WING, wing2_dx=1.0, wing2_dz=0.1, wing2_di=-6.0,
+                       sm_target=8.0)
+    cand = pw.AircraftCandidate(pw.PowerParams(), tl.SetCandidate(tp, w, wing2=copy.deepcopy(w)))
+    st = tl.analyze(cand.set, Requirements())
+    x1, x2 = st["info"]["x_ac_w"], st["x_ac_2"]
+    assert x2 < st["x_np"] < x1 and st["x_np"] < x1 - 0.2 * (x1 - x2)
+    ac, asm = pw.assemble(cand, Requirements())
+    front, rear = ac.surfaces[0], ac.surfaces[-1]
+    assert [c.kind for c in front.controls] == ["aileron"] and [c.kind for c in rear.controls] == ["elevator"]
+    assert rear.downwash and rear.mount == "tubo:0" and ac.boom.enabled
+    m = build_model(ac)
+    with manager.backend.session_for(m) as s:
+        k1, k2 = s.aero_coeffs(10.0, math.radians(2)), s.aero_coeffs(10.0, math.radians(4))
+        up = s.aero_coeffs(10.0, math.radians(2), de=-math.radians(15))
+    x_np_core = m.mass["cg"][0] + (k2["Cm"] - k1["Cm"]) / (k2["CL"] - k1["CL"]) * m.c
+    assert abs(x_np_core - st["x_np"]) < 0.15 * st["info"]["c"]       # o resto da diferença: O21 no tracking
+    assert up["Cm"] > k1["Cm"]
+
+
+def test_tip_fins_give_the_tailless_aircraft_directional_stability():
+    """a deriva na ponta (que também é winglet) é a única coisa que aponta o nariz no vento num avião sem cauda: sem
+    ela o C_nβ não existe, com ela cresce com a altura, e no tandem o lugar com braço é a asa de trás"""
+    import copy
+    w = _wing(span=2.4, area=0.8)
+    def cnb(fin, **kw):
+        tp = tl.TailParams(layout="sem cauda", tip_fin=fin, **kw)
+        wing2 = copy.deepcopy(w) if kw.get("wing2") else None
+        return tl.analyze(tl.SetCandidate(tp, w, wing2=wing2), Requirements())
+    assert math.isnan(cnb(0.0)["Cnb"])
+    small, big = cnb(0.12)["Cnb"], cnb(0.24)["Cnb"]
+    assert 0 < small < big
+    ac, _ = pw.assemble(pw.AircraftCandidate(pw.PowerParams(), tl.SetCandidate(
+        tl.TailParams(layout="sem cauda", tip_fin=0.2), w)), Requirements())
+    fins = [s for s in ac.surfaces if s.role == "vtail"]
+    assert len(fins) == 2 and all(s.vertical and s.mount.startswith("ponta_") for s in fins)
+    assert [c.kind for s in fins for c in s.controls] == ["rudder", "rudder"]
+    base = dict(wing2=tl.SAME_WING, wing2_dx=1.0)
+    rear = cnb(0.2, **base, tip_fin_where=tl.TIP_FIN_WHERE[0])["Cnb"]
+    front = cnb(0.2, **base, tip_fin_where=tl.TIP_FIN_WHERE[1])["Cnb"]
+    assert rear > 10 * front                     # a ponta da asa da frente fica quase no CG
+
+
+def test_obstacle_height_sets_the_6dof_takeoff_and_old_projects_keep_one_meter():
+    """a altura do obstáculo (Regular 2026: 0,90 m a 55 m) vira o z_warning da decolagem 6GDL; sem ela, 1 m como antes"""
+    from aerosim.model.serialize import from_dict
+    set_ = tl.SetCandidate(tl.TailParams(), _wing(area=1.0))
+    cand = pw.AircraftCandidate(pw.PowerParams(), set_)
+    ac, _ = pw.assemble(cand, Requirements())
+    assert ac.airfield.z_warning == 1.0
+    req = Requirements()
+    req.takeoff_run, req.obstacle_h = 55.0, 0.9
+    ac, _ = pw.assemble(cand, req)
+    assert (ac.airfield.x_warning, ac.airfield.z_warning) == (55.0, 0.9)
+    assert from_dict(Requirements, dict(mass=12.0)).obstacle_h == 1.0
+
+
 def test_python_thrust_matches_core(manager):
     cand = pw.AircraftCandidate(pw.PowerParams(), tl.SetCandidate(tl.TailParams(), _wing(area=1.0)))
     ac, _ = pw.assemble(cand, Requirements())
@@ -235,6 +298,9 @@ def test_design_point_converges_and_study_marks_best():
     p.power_draft.set = p.keep_set().name
     d = pw.design_point(p.draft_aircraft(), p.requirements, p.rules, None, p.airfoil_map())
     assert d["converged"] and d["asm"]["mass"] == pytest.approx(d["mtow"], abs=0.05)
+    # com poucas voltas a média não chega; a secante termina e cai no mesmo MTOW
+    few = pw.design_point(p.draft_aircraft(), p.requirements, p.rules, None, p.airfoil_map(), iters=2)
+    assert few["converged"] and few["mtow"] == pytest.approx(d["mtow"], abs=0.05)
     sp = sd.StudyParams(start=0.0, stop=8.0, n=2, places="A=0, B=1500")
     rows = sd.run(p, sp)
     assert len(rows) == 4 and {r["place"] for r in rows} == {"A", "B"}
@@ -334,7 +400,8 @@ def test_mdo_layout_and_lists_default_to_all():
     _var(p, "power.motors", "variável", 1, 4)
     p.mdo.particles, p.mdo.iterations = 12, 4
     rows, best, names = mdo.run(p)
-    assert names["layouts"] == list(LAYOUTS) and len(names["airfoils"]) >= 9
+    # o arranjo livre (nariz + asa + atrás) não tem modelo no dimensionamento do núcleo: fica de fora da lista
+    assert names["layouts"] == [l for l in LAYOUTS if l in mdo.LAYOUT_DATA] and len(names["airfoils"]) >= 9
     for r in rows:
         if r["layout"] == LAYOUTS[1]:
             assert r["motors"] % 2 == 0
