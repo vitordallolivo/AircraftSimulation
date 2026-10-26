@@ -6,6 +6,14 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, a cauda é escolhida em E&C: a etapa voa (estabilidade e controle) testa as caudas marcadas na
+  Configuração (convencional, em H, em V, sem cauda) na asa de cada configuração e fica com a que voa; entre as que
+  voam, a de menor PV. O indivíduo passa a ter essa cauda (`values["tail.layout"]`), e as etapas seguintes a usam.
+  "cauda em V" saiu dos tipos de avião (continua valendo nos `.opt.json` gravados, que mostram os nomes antigos e
+  rodam iguais). Desligada por padrão; o exemplo da janela liga as quatro. `params["etapas"]["caudas"]`.
+- sprint, cauda em H: a EH da convencional com a EV repartida em duas iguais, uma em cada ponta da EH
+  (`tail.LAYOUTS`, opção nova; as outras caudas não mudam).
+
 - aeroopt, menus: cada opção da Configuração e das Restrições ganhou um "(?)" com a explicação (no mouse ou no
   clique), e os campos de número perderam o texto ("10.00 % da faixa" virou "10.00" no campo "passo (% da faixa)").
   Os tipos de avião saíram do submenu Categorias e foram para a Configuração ("aviões"). Asa alta, média, baixa e

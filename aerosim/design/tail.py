@@ -4,7 +4,10 @@ Dimensionamento por volume de cauda (o braço é do centro aerodinâmico da asa 
 
     S_h = V_H S c̄ / l        S_v = V_V S b / l
 
-Cauda em V: a mesma área total S_h + S_v, diedro atan √(S_v / S_h). Sem cauda: elevons na asa.
+Cauda em V: a mesma área total S_h + S_v, diedro atan √(S_v / S_h). Sem cauda: elevons na asa. Cauda em H: a EH
+da convencional com a EV repartida em duas iguais, uma em cada ponta da EH (S_v/2 cada, o mesmo alongamento). A
+estática é a da convencional: a área vertical é a mesma, e o ganho de placa de ponta que as duas EV dão à EH fica de
+fora, do lado conservador (Raymer, "Aircraft Design: A Conceptual Approach", cap. 4 e 16, a conferir no PDF).
 
 A análise rápida é a estática longitudinal clássica (Etkin; Nelson, cap. 2):
 
@@ -35,7 +38,8 @@ from .fields import F
 from .spec import DesignRules, Requirements
 from .wing import WingCandidate, analyze as analyze_wing, planform
 
-LAYOUTS = ("convencional", "em V", "sem cauda")
+LAYOUTS = ("convencional", "em V", "sem cauda", "em H")
+WITH_HTAIL = ("convencional", "em H")              # EH e EV separadas (a estática e o C_nβ são os mesmos)
 ARM_FROM = ("CA da asa", "CG de projeto")
 NO_WING2, SAME_WING = "nenhuma", "a mesma asa"     # TailParams.wing2: sem segunda asa; a da etapa repetida
 
@@ -52,7 +56,7 @@ class TailParams:
                         0.01)
     wing2_di: float = F(0.0, "decalagem da segunda asa", "°", "incidência dela menos a da primeira", -8, 8, 0.25)
     layout: str = F("convencional", "cauda", "", "convencional: EH + EV; em V: duas superfícies inclinadas; "
-                    "sem cauda: elevons na asa", choices=LAYOUTS)
+                    "sem cauda: elevons na asa; em H: EH com uma EV em cada ponta", choices=LAYOUTS)
     arm: float = F(0.95, "braço da cauda", "m", "até o centro aerodinâmico da cauda, medido de onde diz 'braço medido "
                    "do'", 0.2, 3.0, 0.01)
     arm_from: str = F("CA da asa", "braço medido do", "", "CA da asa: do centro aerodinâmico da asa (clássico); CG de "
@@ -168,16 +172,21 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
     Sh = tp.VH * S * c / tp.arm                     # volume de cauda com o braço como foi dado
     Sv = tp.VV * S * b / tp.arm
     x_ac_t = pf["x_ac"] - l
-    if tp.layout == "convencional":
+    if tp.layout in WITH_HTAIL:
         bh = math.sqrt(tp.AR_h * Sh)
         af_t, lim = tail_entry(tp.tail_airfoil, airfoils, req.reynolds(Sh / bh), tp.tail_inverted)
         eh = _surface("EH", "htail", bh, Sh, tp.taper_h, af_t)
         eh.controls = [ControlSurface("elevator", 0.0, 1.0, tp.elevator)]
-        hv = math.sqrt(tp.AR_v * Sv)
-        af_v = tail_airfoil(tp.vtail_airfoil, airfoils, req.reynolds(Sv / hv))
-        ev = _surface("EV", "vtail", hv, Sv, tp.taper_v, af_v, vertical=True, symmetric=False)
-        ev.controls = [ControlSurface("rudder", 0.0, 1.0, tp.rudder)]
-        tails = [eh, ev]
+        n_v = 2 if tp.layout == "em H" else 1          # em H: a EV repartida nas duas pontas da EH
+        hv = math.sqrt(tp.AR_v * Sv / n_v)
+        af_v = tail_airfoil(tp.vtail_airfoil, airfoils, req.reynolds(Sv / n_v / hv))
+        evs = []
+        for k in range(n_v):
+            ev = _surface("EV" if n_v == 1 else ("EV direita", "EV esquerda")[k], "vtail", hv, Sv / n_v, tp.taper_v,
+                          af_v, vertical=True, symmetric=False)
+            ev.controls = [ControlSurface("rudder", 0.0, 1.0, tp.rudder)]
+            evs.append(ev)
+        tails = [eh, *evs]
     else:
         St = Sh + Sv
         gam = math.degrees(math.atan(math.sqrt(Sv / Sh)))
@@ -200,6 +209,8 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
                          diameter=tp.boom_diameter, pitch=tp.boom_pitch)]
     for t in tails:
         t.mount = "tubo:0"
+    if tp.layout == "em H":                      # as EV nas pontas da EH (ela fica em [1])
+        tails[1].mount, tails[2].mount = "ponta_dir:1", "ponta_esq:1"
     ac.surfaces += tails
     _add_wing2(ac, cand, req, rules)
     ac.apply_constraints()
@@ -290,7 +301,7 @@ def _analyze(cand, req, rules, airfoils, wr, arm_shift) -> dict:
     if tp.layout == "em V":
         a_h *= math.cos(math.radians(info.get("gamma", 0.0))) ** 2
     eta = tp.tail_eta
-    Sh = info["Sh"] if tp.layout == "convencional" else info["Sh"] + info["Sv"]
+    Sh = info["Sh"] if tp.layout in WITH_HTAIL else info["Sh"] + info["Sv"]
     # cauda em V: tudo no plano de arfagem — a_h já tem cos²γ (uma vez só); α_L0, incidência e comando são da
     # superfície (α_n = α cos γ + i): equivalem a α_L0/cos γ, i/cos γ e τ/cos γ em arfagem
     cg = math.cos(math.radians(info.get("gamma", 0.0))) if tp.layout == "em V" else 1.0
@@ -336,7 +347,7 @@ def _analyze(cand, req, rules, airfoils, wr, arm_shift) -> dict:
     out["tail_cm_mg"] = tail_rot           # a etapa Motores retrima a EH com o momento da tração
     h_aft = h_n - tp.sm_min / 100
     # direcional: C_nβ da EV
-    if tp.layout == "convencional":
+    if tp.layout in WITH_HTAIL:                            # em H: cada EV tem o alongamento de uma só
         ev = ac.surfaces[2]
         a_v = helmbold(ev.airfoil.cl_alpha, 1.55 * ev.aspect_ratio)
         VV = info["Sv"] * info["arm"] / (S * b)

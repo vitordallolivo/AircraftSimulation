@@ -58,7 +58,9 @@ MAX_CONFIGS = 256
 AIRFOIL_KEYS = tuple(k for k, i in inp.all_inputs().items() if i.source == "perfis")
 SHORT = {"wing.airfoil": "perfil raiz", "wing.airfoil_tip": "perfil ponta", "tail.airfoil": "perfil EH",
          "tail.vairfoil": "perfil EV", "power.motor": "motor", "power.propeller": "hélice",
-         "power.battery": "bateria", "power.motors": "nº de motores", "power.layout": "arranjo"}
+         "power.battery": "bateria", "power.motors": "nº de motores", "power.layout": "arranjo",
+         "tail.layout": "cauda"}
+TAIL_KEY = "tail.layout"
 
 
 def short(key: str) -> str:
@@ -338,6 +340,8 @@ class SurfaceSizing(IStage):
 
 
 # os métodos da etapa "voa" (a GUI escolhe no menu Configuração)
+# as caudas que a etapa voa (E&C) pode escolher para um avião, na ordem em que desempatam
+TAILS = ("convencional", "em H", "em V", "sem cauda")
 FLY_METHODS = {"buscar": "achar um ponto que voa (gerações nas contínuas, pelas regras de viabilidade)",
                "cma-es": "achar um ponto que voa (CMA-ES nas contínuas, pelas regras de viabilidade)",
                "de": "achar um ponto que voa (evolução diferencial nas contínuas, pelas regras de viabilidade)",
@@ -350,15 +354,27 @@ class FlightCheck(IStage):
     estática mínima e, com a restrição de estabilidade ligada, ser estável. É mais barato que um ponto de projeto
     (não corre a pista) e separa os dois problemas: primeiro achar algo que voa, depois fazer voar melhor. Quando o
     avião como está não voa, a etapa procura nas contínuas livres o ponto que viola menos (as regras de viabilidade
-    de Deb) até achar um que voa; as superfícies partem dele"""
+    de Deb) até achar um que voa; as superfícies partem dele.
+
+    Com `tails` (algumas de `TAILS`), a etapa também escolhe a cauda, porque a cauda é assunto de estabilidade e
+    controle e não um tipo de avião: para a asa (ou o par de asas) de cada configuração ela roda a mesma busca com
+    cada cauda e fica com a que voa; entre as que voam, a de menor PV (a cauda e o tubo pesam), e no empate a
+    primeira da lista. A escolha muda o indivíduo (`values["tail.layout"]`), e as etapas seguintes usam essa cauda.
+    Uma categoria que já define a cauda (tandem, asa voadora) ou uma cauda livre no problema fica como está. Cada
+    cauda gasta até as avaliações da etapa"""
     name = "voa"
 
     def __init__(self, project, problem: OptProblem, catalog=None, evals: int = 24, method: str = "buscar",
-                 stability: StabilityParams | None = None):
+                 stability: StabilityParams | None = None, tails=None):
         if method not in FLY_METHODS:
             raise ValueError(f"método da etapa voa desconhecido: {method}")
+        unknown = [t for t in tails or () if t not in TAILS]
+        if unknown:
+            raise ValueError(f"cauda desconhecida: {', '.join(unknown)} (há {', '.join(TAILS)})")
         self.project, self.catalog, self.evals, self.method = project, catalog, int(evals), method
         self.stability = stability
+        self.tails = tuple(t for t in TAILS if t in (tails or ()))     # na ordem de TAILS
+        self.tail_free = any(v.key == TAIL_KEY for v in problem.free_variables())
         self.free = [(v.key, min(v.lo, v.hi), max(v.lo, v.hi)) for v in problem.free_variables()
                      if v.kind == "contínua"]
         self._backend = None
@@ -379,16 +395,43 @@ class FlightCheck(IStage):
                 self._backend = ZigBackend()
             _, _, stab = stability_check(ac, p.requirements.V_cruise, self.stability, self._backend)
             viol, why = violation(d, stab, self.stability)
-        return dict(values=dict(values), ok=not why, why="; ".join(why), viol=viol, mtow=math.nan, stab=stab)
+        return dict(values=dict(values), ok=not why, why="; ".join(why), viol=viol, mtow=math.nan, stab=stab,
+                    pv=float(asm["empty"]))
 
-    def one(self, item: StageItem) -> StageItem:
-        x = {k: min(max(float(item.values.get(k, get_value(self.project, k))), lo), hi) for k, lo, hi in self.free}
-        best = self.point({**item.values, **x})
+    def _fly(self, item: StageItem, values: dict):
+        """(x, melhor ponto, histórico) da busca de um ponto que voa, partindo de `values`"""
+        x = {k: min(max(float(values.get(k, get_value(self.project, k))), lo), hi) for k, lo, hi in self.free}
+        best = self.point({**values, **x})
         hist = [_eval(x, best)]
         if not best["ok"] and self.method in ("buscar", "cma-es", "de") and self.free:
             search = {"cma-es": _cma_search, "de": _de_search}.get(self.method, _real_search)
-            x, best = search(self.free, x, best, lambda y: self.point({**item.values, **y}), self.evals, hist,
+            x, best = search(self.free, x, best, lambda y: self.point({**values, **y}), self.evals, hist,
                                    seed=7 + zlib.crc32(item.name.encode()) % 100_000, stop_ok=True)
+        return x, best, hist
+
+    def chooses_tail(self, item: StageItem) -> bool:
+        """a etapa escolhe a cauda deste avião: há caudas pedidas, a cauda não é variável do problema e a categoria
+        não define a cauda"""
+        if not self.tails or self.tail_free or TAIL_KEY in item.values:
+            return False
+        c = item.values.get(cat.KEY)
+        return c is None or cat.fields(c)["tail_draft.layout"] == cat.BASE_TAIL
+
+    def one(self, item: StageItem) -> StageItem:
+        if self.chooses_tail(item):
+            tried = {}
+            for t in self.tails:
+                x, best, hist = self._fly(item, {**item.values, TAIL_KEY: t})
+                tried[t] = (x, best, hist)
+            pick = max(self.tails, key=lambda t: (tried[t][1]["ok"], -tried[t][1]["viol"] if not tried[t][1]["ok"]
+                                                  else -tried[t][1]["pv"], -self.tails.index(t)))
+            x, best, hist = tried[pick]
+            item.values = {**item.values, TAIL_KEY: pick}
+            item.data["caudas"] = {t: dict(ok=b["ok"], viol=b["viol"], pv=b["pv"], why=b["why"], pontos=len(h))
+                                   for t, (_, b, h) in tried.items()}
+            hist = [e for t in self.tails for e in tried[t][2]]   # todas as caudas no histórico da etapa
+        else:
+            x, best, hist = self._fly(item, item.values)
         item.values = {**item.values, **x}
         item.data["voa"] = dict(history=hist, viol=best["viol"], stab=best["stab"])
         if not best["ok"]:
@@ -687,10 +730,11 @@ class StagedEvaluator(IEvaluator):
     def __init__(self, project, catalog=None, backend=None, workers: int | None = None, six_dof: bool = True,
                  evals: int = 24, start_method: str | None = None, scoring=None, geometry=True,
                  surfaces: str = "coordenadas", stability: StabilityParams | None = None, fly: str | None = "buscar",
-                 executors=None):
+                 executors=None, tails=None):
         self.project, self.catalog, self.backend = project, catalog, backend
         self.executors = executors                 # os da sessão (aerosim.parallel.session); None: um por rodada
         self.fly = fly                             # o método da etapa "voa" (FLY_METHODS); None: sem a etapa
+        self.tails = tails                         # as caudas que a "voa" escolhe; None: as do problema (etapas.caudas)
         self.surfaces = surfaces                   # o método da busca das superfícies (SURFACE_METHODS)
         self.stability = stability                 # a restrição de estabilidade de cada ponto (None: desligada)
         self.workers, self.six_dof, self.evals = workers, six_dof, evals
@@ -709,7 +753,8 @@ class StagedEvaluator(IEvaluator):
     def stages(self, project, problem: OptProblem) -> list[IStage]:
         sts: list[IStage] = [GeometryStage(project, self.geometry, self.catalog)] if self.geometry else []
         if self.fly:
-            sts.append(FlightCheck(project, problem, self.catalog, self.evals, self.fly, self.stability))
+            tails = self.tails if self.tails is not None else (problem.params.get("etapas") or {}).get("caudas")
+            sts.append(FlightCheck(project, problem, self.catalog, self.evals, self.fly, self.stability, tails))
         sts.append(SurfaceSizing(project, problem, self.catalog, self.evals, self.geometry, self.surfaces,
                                  self.stability))
         if self.six_dof:

@@ -171,7 +171,7 @@ def test_categories_build_each_kind_of_aircraft():
     items = sg.configurations(p, pr)
     assert len(items) == 6 and items[0].name == "asa alta, hélice=APC 15x8E"
     assert cat.fields("monoplano") == cat.fields("asa alta")      # o monoplano sai com a asa alta
-    assert cat.current("parasol") == "monoplano" and "parasol" not in cat.CATEGORIES
+    assert "parasol" in cat.LEGACY and "parasol" not in cat.CATEGORIES
     pr.params["categorias"] = ["trimotor voador"]
     with pytest.raises(KeyError):
         sg.configurations(p, pr)
@@ -321,3 +321,29 @@ def test_differential_evolution_search_keeps_the_contract():
     again = []
     sg._de_search(free, {k: 2.0 for k, _, _ in free}, start, point, 1200, again, seed=3)
     assert [h["values"] for h in again] == [h["values"] for h in hist]
+
+
+def test_flight_check_chooses_the_tail_and_changes_the_individual():
+    """com caudas pedidas, a etapa voa (E&C) testa cada uma na asa da configuração e fica com a que voa (a de menor
+    PV entre as que voam); o indivíduo passa a ter a cauda. Tandem e asa voadora definem a cauda e ficam como estão"""
+    from aeroopt import categories as cat
+    p = _project()
+    pr = aeroopt.from_project(p)
+    pr.isolate("wing.span")
+    pr.params["categorias"] = ["monoplano", "asa voadora"]
+    pr.params["etapas"] = {"caudas": list(sg.TAILS)}
+    fc = sg.FlightCheck(p, pr, evals=2, tails=pr.params["etapas"]["caudas"])
+    mono, flying = sg.configurations(p, pr)
+    assert fc.chooses_tail(mono) and not fc.chooses_tail(flying)
+    out = fc.one(mono)
+    tried = out.data["caudas"]
+    assert list(tried) == list(sg.TAILS) and out.values[sg.TAIL_KEY] in sg.TAILS
+    ok = [t for t, d in tried.items() if d["ok"]]
+    assert ok and out.values[sg.TAIL_KEY] == min(ok, key=lambda t: (tried[t]["pv"], sg.TAILS.index(t)))
+    assert sg.TAIL_KEY not in fc.one(flying).values
+    assert "cauda em V" not in cat.CATEGORIES and "cauda em V" in cat.LEGACY
+    with pytest.raises(ValueError):
+        sg.FlightCheck(p, pr, tails=["em T"])
+    res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=2))   # pelo problema
+    row = next(r for r in res.rows if r["values"][cat.KEY] == "monoplano")
+    assert row["values"].get(sg.TAIL_KEY) == out.values[sg.TAIL_KEY]

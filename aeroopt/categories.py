@@ -1,5 +1,4 @@
-"""Categorias de configuração: o tipo de avião que a busca pode montar (monoplano, biplano, tandem, asa voadora,
-cauda em V).
+"""Categorias de configuração: o tipo de avião que a busca pode montar (monoplano, biplano, tandem, asa voadora).
 
 Cada categoria é um conjunto de campos da sprint que mudam juntos: a altura da asa (`rules.wing_z`, − = acima da
 fuselagem), a segunda asa (`tail_draft.wing2`, o recuo e o desnível dela) e a cauda (`tail_draft.layout`). O
@@ -10,6 +9,11 @@ A altura da asa não é categoria: asa alta, média, baixa e parasol são o mesm
 a busca já sabe mexer num número. O monoplano sai com a asa alta; para a busca escolher a altura, solta-se a variável
 "altura da asa" (`rules.wing_z`, em Variáveis → regras e massas), que vale depois da categoria. Os nomes antigos
 (`LEGACY`) continuam valendo, para os problemas gravados rodarem iguais.
+
+A cauda também não é categoria: ela é escolhida pela etapa voa, a de estabilidade e controle (`stages.FlightCheck`,
+com as caudas pedidas em `params["etapas"]["caudas"]`), entre convencional, em H, em V e sem cauda, para a asa de
+cada configuração. Por isso "cauda em V" ficou só entre os nomes antigos. Tandem e asa voadora definem a cauda (não
+têm) e ficam como estão.
 
     apply(projeto, "biplano")            # o projeto passa a ter duas asas iguais, uma acima da outra
 """
@@ -27,8 +31,8 @@ CATEGORIES: dict[str, dict] = {
     "tandem": {"tail_draft.wing2": tl.SAME_WING, "tail_draft.wing2_dx": 1.0, "tail_draft.wing2_dz": 0.10,
                "tail_draft.layout": "sem cauda"},
     "asa voadora": {"tail_draft.layout": "sem cauda"},
-    "cauda em V": {"tail_draft.layout": "em V"},
 }
+BASE_TAIL = _BASE["tail_draft.layout"]             # a categoria que fica nesta deixa a cauda para a etapa voa
 
 # os monoplanos de antes, cada um com a sua altura de asa (problemas gravados)
 LEGACY: dict[str, dict] = {
@@ -36,17 +40,18 @@ LEGACY: dict[str, dict] = {
     "asa média": {"rules.wing_z": 0.0},
     "asa baixa": {"rules.wing_z": 0.10},
     "parasol": {"rules.wing_z": -0.30},                          # asa sobre montantes, bem acima da fuselagem
+    "cauda em V": {"tail_draft.layout": "em V"},                 # a cauda agora é da etapa voa
 }
 
 # o que cada uma é e no que muda a busca (o "(?)" do menu)
 HELP = {
-    "monoplano": "uma asa só, com empenagem convencional atrás. Sai com a asa alta; soltando a variável "
-                 "\"altura da asa\" a busca escolhe entre alta, média, baixa e parasol",
+    "monoplano": "uma asa só, com empenagem atrás. Sai com a asa alta; soltando a variável \"altura da asa\" a "
+                 "busca escolhe entre alta, média, baixa e parasol. A cauda (convencional, em H, em V ou nenhuma) é "
+                 "escolhida na etapa voa (E&C)",
     "biplano": "duas asas iguais, uma 35 cm acima da outra: mais área na mesma envergadura, com mais arrasto de "
-               "interferência",
+               "interferência. A cauda é escolhida na etapa voa (E&C)",
     "tandem": "duas asas iguais, uma 1 m atrás da outra, sem empenagem: a de trás faz o papel da cauda",
     "asa voadora": "sem empenagem: a asa sozinha tem de equilibrar e ser estável (enflechamento, torção, perfil)",
-    "cauda em V": "monoplano com duas superfícies em V no lugar da horizontal e da vertical",
 }
 
 KEY = "categoria"                  # o nome do eixo nas configurações
@@ -59,10 +64,6 @@ def fields(name: str) -> dict:
         raise KeyError(f"categoria desconhecida: {name} (há {', '.join(CATEGORIES)})")
     return {**_BASE, **known[name]}
 
-
-def current(name: str) -> str:
-    """o nome de hoje de uma categoria (os monoplanos antigos viram "monoplano")"""
-    return "monoplano" if name in LEGACY else name
 
 
 def apply(project, name: str) -> None:

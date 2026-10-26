@@ -12,10 +12,15 @@ Zig (`core/`). Aqui só se organiza a busca e se mostra o resultado.
 ## Como se divide
 
 Tudo começa no problema (`problem.py`): o que é livre, os limites, as restrições e a pontuação, gravados num arquivo
-`.opt.json`. As variáveis possíveis são os campos das etapas do aerosim (`inputs.py`), e os tipos de avião, como asa
-alta, biplano ou asa voadora, ficam em `categories.py`. A pontuação de cada regulamento é um `.toml` em `pontuacao/`,
+`.opt.json`. As variáveis possíveis são os campos das etapas do aerosim (`inputs.py`), e os tipos de avião
+(monoplano, biplano, tandem e asa voadora) ficam em `categories.py`. A pontuação de cada regulamento é um `.toml` em `pontuacao/`,
 traduzido por `scoring.py` para o núcleo calcular. A busca anda em etapas (`stages.py`, com a fila em `pipeline.py`):
-cada avião passa pela geometria, depois por "voa?", depois pelo desempenho e, por fim, pela nota. Quem escolhe quais
+cada avião passa pela geometria, depois por "voa?", depois pelo desempenho e, por fim, pela nota. A etapa "voa?" é
+a de estabilidade e controle, e é nela que se escolhe a cauda: a cauda não é um tipo de avião, é o que faz uma asa
+(ou um par de asas) voar. Com as caudas marcadas na Configuração, ela testa cada uma (convencional, em H, em V e sem
+cauda) na asa daquela configuração, fica com a que voa e, entre as que voam, com a mais leve. O avião sai dali com
+essa cauda. Custa uma busca a mais por cauda, mas um avião que não voaria com a cauda dos rascunhos ganha outra
+chance antes de ser descartado. Quem escolhe quais
 aviões experimentar são as gerações de um algoritmo genético (`generations.py`). A janela fica em `gui.py`, e os CSV
 de cada rodada saem de `export.py`. Depois da rodada, `sensitivity.py` diz o quanto a nota do melhor avião depende de
 cada variável: se ele está num morro largo ou na beira de um precipício. Para testar a máquina sem esperar as contas do avião, `synthetic.py` traz dados de
@@ -43,7 +48,8 @@ As contas que rodam no núcleo para o aeroopt (a nota, o algoritmo genético, o 
 
 À esquerda fica o problema, com um botão para cada parte: pontuação, variáveis, restrições e configuração. Cada
 botão abre um submenu, e ao lado dele aparece um resumo do que está escolhido. Os tipos de avião que a busca monta
-(monoplano, biplano, tandem, asa voadora, cauda em V) ficam na Configuração, junto do método de cada etapa. Cada
+(monoplano, biplano, tandem, asa voadora) e as caudas que a etapa "voa?" testa ficam na Configuração, junto do
+método de cada etapa. Cada
 opção dos submenus tem um "(?)" que explica o que ela é e no que muda a busca, e os campos de número levam só o
 número: a unidade fica no nome do campo. Asa alta, média, baixa e parasol são o mesmo monoplano com a asa em outra
 altura; para a busca escolher a altura, solta-se a variável "altura da asa". À direita fica a

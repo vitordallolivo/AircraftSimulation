@@ -45,6 +45,7 @@ def test_window_runs_and_shows_each_candidate(app):
     from aeroopt.gui import AeroOptWindow, example_project
     p, pr = example_project()
     pr.params["categorias"] = ["asa alta", "cauda em V"]
+    pr.params["etapas"] = {}                                      # a cauda fica a de cada categoria (sem E&C)
     for v in pr.variables:
         if v.key == "power.propeller":
             v.options = ["Genérica 13x6.5"]
@@ -205,7 +206,9 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     assert set(w.menus) == {"pontuação", "variáveis", "restrições", "configuração"}
     assert w.rot.window() is not w and w.scoring.window() is not w
     assert w.cat_cb["monoplano"].window() is w.menus["configuração"]
-    assert set(w.cat_cb) == {"monoplano", "biplano", "tandem", "asa voadora", "cauda em V"}
+    assert {c for c, r in w.cat_row.items() if not r.isHidden()} == {"monoplano", "biplano", "tandem", "asa voadora"}
+    assert all(cb.isChecked() for cb in w.tail_cb.values())              # o exemplo escolhe a cauda em E&C
+    w.tail_cb["sem cauda"].setChecked(False)
     assert w.rot.window() is w.menus["restrições"] and w.evals.window() is w.menus["configuração"]
     assert set(w.method) == {"configurações", "voa", "superfícies", "decolagem"}
     titles = [b.title() for b in w.menus["configuração"].findChildren(QtWidgets.QGroupBox)]
@@ -236,7 +239,9 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     assert "9°" in w2.summary["restrições"].text() and "todas" in w2.summary["configuração"].text()
     sp = w2.sens_params()
     assert sp.method == "morris" and sp.trajectories == 9 and sp.limits and "Morris" in w2.summary["configuração"].text()
-    assert "aviões: monoplano" in w2.summary["configuração"].text()
+    assert "aviões: monoplano" in w2.summary["configuração"].text() and not w2.tail_cb["sem cauda"].isChecked()
+    assert w2.read_problem().params["etapas"]["caudas"] == ["convencional", "em H", "em V"]
+    assert "escolhe a cauda" in w2.summary["configuração"].text()
     w.problem = out
     w.scoring.set_spec("MTOW")                                   # Cancelar volta a pontuação ao que era
     w.scoring.restore(("sae_br_2026_micro", {}))
@@ -325,7 +330,7 @@ def test_sensitivity_tab_with_morris_and_limits(app):
 
 def test_numbers_have_no_text_and_every_option_has_help(app):
     """os campos de número são só o número (a unidade fica no nome), e cada opção dos menus tem o "(?)" com a
-    explicação; um problema gravado com os monoplanos antigos marca o monoplano"""
+    explicação; um problema gravado com os nomes antigos mostra e marca esses nomes, e só eles"""
     from aeroopt.gui import AeroOptWindow, _Help, example_project
     p, pr = example_project()
     pr.params["categorias"] = ["asa baixa", "parasol", "biplano"]
@@ -336,4 +341,6 @@ def test_numbers_have_no_text_and_every_option_has_help(app):
         helps = w.menus[k].findChildren(_Help)
         assert helps and all(h.toolTip() for h in helps)
     assert len(w.menus["configuração"].findChildren(_Help)) >= 15
-    assert [c for c, cb in w.cat_cb.items() if cb.isChecked()] == ["monoplano", "biplano"]
+    assert [c for c, cb in w.cat_cb.items() if cb.isChecked()] == ["biplano", "asa baixa", "parasol"]
+    assert not w.cat_row["parasol"].isHidden() and w.cat_row["asa média"].isHidden()
+    assert w.read_problem().params["categorias"] == ["biplano", "asa baixa", "parasol"]

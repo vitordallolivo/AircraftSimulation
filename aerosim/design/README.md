@@ -158,8 +158,11 @@ S_v = \frac{V_V\,S\,b}{l_v}
 | convencional | EH com profundor e EV com leme |
 | cauda em V | a mesma área total $`S_h + S_v`$, com diedro $`\Gamma = \arctan\sqrt{S_v/S_h}`$ e ruddervators |
 | sem cauda | elevons na asa |
+| cauda em H | a EH da convencional e a EV repartida em duas iguais ($`S_v/2`$ cada, o mesmo alongamento), uma em cada ponta da EH |
 
-Em todos os casos o tubo termina no bordo de fuga da cauda, e os ailerons ficam na asa. EH e EV têm perfis
+Na cauda em H a estática é a da convencional, porque a área vertical é a mesma; o ganho de placa de ponta que as
+duas EV dão à EH fica de fora, do lado conservador (Raymer, "Aircraft Design: A Conceptual Approach", cap. 4 e 16, a
+conferir no PDF). Em todos os casos o tubo termina no bordo de fuga da cauda, e os ailerons ficam na asa. EH e EV têm perfis
 separados. A EH aceita perfil arqueado, inclusive **invertido** (o $`\alpha_{L0}`$ dele entra na incidência); a EV deve ser
 simétrica. O perfil da cauda é ajustado na polar dele, no Re da cauda, e o $`C_L`$ da EH fica limitado pelos **dois
 lados** da polar, com o ganho de $`c_{l,max}`$ do profundor defletido (flape simples, Raymer cap. 12).

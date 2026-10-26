@@ -643,7 +643,7 @@ class ConstraintsTable(QtWidgets.QWidget):
 GEOMETRY_DEFAULT = {"ligada": True, "rotação": 12.0, "folga": 0.0, "folga_hélice": 0.02, "uma_peça": False}
 STABILITY_DEFAULT = {"ligada": False, "nível": 2}
 STAGES_DEFAULT = {"configurações": "gerações", "voa": "buscar", "superfícies": "coordenadas", "decolagem": "6gdl", "população": 16,
-                  "gerações": 8, "avaliações": 12, "processos": 0}
+                  "gerações": 8, "avaliações": 12, "processos": 0, "caudas": []}
 # os métodos das etapas que não estão em aeroopt.stages (o menu Configuração)
 CONFIG_METHODS = {"gerações": "gerações (algoritmo genético do núcleo)",
                   "todas": f"todas as combinações (até {sg.MAX_CONFIGS})"}
@@ -859,15 +859,21 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         return box
 
     def _categories_box(self):
-        """os tipos de avião que a busca monta, cada um com o "(?)"; nenhum marcado: o avião como está"""
+        """os tipos de avião que a busca monta, cada um com o "(?)"; nenhum marcado: o avião como está. Os nomes
+        antigos (asa alta, cauda em V...) só aparecem num problema gravado que os usa, para ele rodar igual"""
         w = QtWidgets.QWidget()
         grid = QtWidgets.QGridLayout(w)
         grid.setContentsMargins(0, 0, 0, 0)
-        self.cat_cb = {}
-        for i, c in enumerate(cat.CATEGORIES):
+        self.cat_cb, self.cat_row = {}, {}
+        for i, c in enumerate([*cat.CATEGORIES, *cat.LEGACY]):
             cb = QtWidgets.QCheckBox(c)
             self.cat_cb[c] = cb
-            grid.addWidget(_help(cb, cat.HELP[c]), i // 3, i % 3)
+            row = _help(cb, cat.HELP.get(c, "nome antigo, de um problema gravado: um monoplano com "
+                                         + ", ".join(f"{k} = {x}" for k, x in cat.LEGACY[c].items())
+                                         if cat.LEGACY.get(c) else "nome antigo: o monoplano com a asa alta"))
+            self.cat_row[c] = row
+            row.setVisible(c in cat.CATEGORIES)
+            grid.addWidget(row, i // 3, i % 3)
         return w
 
     def _config_box(self):
@@ -905,10 +911,23 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                        "que isto, roda todas de uma vez"), self.pop)
         f.addRow(_help("gerações", "quantas vezes o algoritmo genético escolhe uma geração nova (elite, seleção por "
                        "posição, cruzamento, mutação). Mais gerações acham mais, e demoram mais"), self.gens)
-        stage("voa", {**sg.FLY_METHODS, "desligada": "desligada (direto para o desempenho)"},
-              "antes de procurar o MTOW, acha um ponto em que o avião voa na massa estimada: trima, equilibra sem "
-              "lastro, tem a margem mínima e, com a restrição de estabilidade ligada, é estável. A busca das "
-              "superfícies parte dele. Gasta até as avaliações das superfícies")
+        f = stage("voa", {**sg.FLY_METHODS, "desligada": "desligada (direto para o desempenho)"},
+                  "antes de procurar o MTOW, acha um ponto em que o avião voa na massa estimada: trima, equilibra "
+                  "sem lastro, tem a margem mínima e, com a restrição de estabilidade ligada, é estável. A busca das "
+                  "superfícies parte dele. Gasta até as avaliações das superfícies")
+        tw = QtWidgets.QWidget()
+        th = QtWidgets.QHBoxLayout(tw)
+        th.setContentsMargins(0, 0, 0, 0)
+        self.tail_cb = {}
+        for t in sg.TAILS:
+            cb = QtWidgets.QCheckBox(t)
+            self.tail_cb[t] = cb
+            th.addWidget(cb)
+        th.addStretch(1)
+        f.addRow(_help("caudas (E&C)", "as caudas que esta etapa testa em cada avião: ela roda a busca com cada uma "
+                       "e fica com a que voa; entre as que voam, a de menor PV. A escolha muda o avião, e as etapas "
+                       "seguintes usam essa cauda. Cada cauda gasta até as avaliações da etapa. Nenhuma marcada: o "
+                       "avião fica com a cauda dos rascunhos. Tandem e asa voadora não têm cauda e não entram"), tw)
         f = stage("superfícies (desempenho e otimização)", sg.SURFACE_METHODS,
                   "a busca das contínuas livres (envergadura, área...) pelo maior MTOW que fecha na pista. "
                   "Coordenadas: um eixo por vez, rápida quando as variáveis são independentes. Gerações, CMA-ES e "
@@ -1369,9 +1388,10 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.vars.set_problem(pr, self.project)
         self.cons.set_problem(pr)
         self._fill_axes(pr)
-        cats = {cat.current(c) for c in pr.params.get("categorias") or []}
+        cats = set(pr.params.get("categorias") or [])
         for c, cb in self.cat_cb.items():
             cb.setChecked(c in cats)
+            self.cat_row[c].setVisible(c in cat.CATEGORIES or c in cats)
         g = {**GEOMETRY_DEFAULT, **(pr.params.get("geometria") or {})}
         self.geo.setChecked(bool(g["ligada"]))
         self.rot.setValue(float(g["rotação"]))
@@ -1384,6 +1404,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         e = {**STAGES_DEFAULT, **(pr.params.get("etapas") or {})}
         for k in self.method:
             self.set_method(k, e[k])
+        for t, cb in self.tail_cb.items():
+            cb.setChecked(t in (e.get("caudas") or []))
         self.pop.setValue(int(e["população"]))
         self.gens.setValue(int(e["gerações"]))
         self.evals.setValue(int(e["avaliações"]))
@@ -1413,10 +1435,11 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         e = {**STAGES_DEFAULT, **(pr.params.get("etapas") or {})}
         cfg = (f"gerações: {e['gerações']} × {e['população']}" if e["configurações"] == "gerações" else
                "todas as combinações")
-        cats = list(dict.fromkeys(cat.current(c) for c in pr.params.get("categorias") or []))
+        cats = list(pr.params.get("categorias") or [])
         self.summary["configuração"].setText(
             f"aviões: {', '.join(cats) or 'o dos rascunhos'}; {cfg}; "
-            f"voa: {'desligada' if e['voa'] == 'desligada' else METHOD_NAMES.get(e['voa'], e['voa'])}; "
+            f"voa: {'desligada' if e['voa'] == 'desligada' else METHOD_NAMES.get(e['voa'], e['voa'])}"
+            + (f", escolhe a cauda ({', '.join(e['caudas'])})" if e.get("caudas") else "") + "; "
             f"superfícies por {METHOD_NAMES.get(e['superfícies'], e['superfícies'])} "
             f"({e['avaliações']} pontos); decolagem {'no 6GDL' if e['decolagem'] == '6gdl' else 'só na pista'}; "
             + (f"sensibilidade: {SENS_METHODS[sp.method]}" if (sp := SensParams.from_dict(
@@ -1446,7 +1469,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                                   "uma_peça": self.one_piece.isChecked()}
         pr.params["estabilidade"] = {"ligada": self.stab.isChecked(), "nível": self.stab_level.currentData()}
         pr.params["etapas"] = {**self.methods(), "população": self.pop.value(), "gerações": self.gens.value(),
-                               "avaliações": self.evals.value(), "processos": self.workers.value()}
+                               "avaliações": self.evals.value(), "processos": self.workers.value(),
+                               "caudas": [t for t, cb in self.tail_cb.items() if cb.isChecked()]}
         pr.params["sensibilidade"] = self.sens_params().to_dict()
         return pr
 
@@ -1558,7 +1582,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                                   geometry=self.geometry_params(), surfaces=m["superfícies"],
                                   stability=sg.StabilityParams(level=self.stab_level.currentData())
                                   if self.stab.isChecked() else None,
-                                  fly=None if m["voa"] == "desligada" else m["voa"], executors=self.pool())
+                                  fly=None if m["voa"] == "desligada" else m["voa"], executors=self.pool(),
+                                  tails=[t for t, cb in self.tail_cb.items() if cb.isChecked()])
 
     def run_sensitivity(self):
         """só a sensibilidade do avião selecionado, sem rodar o resto: o resultado vai para uma aba dos gráficos do
@@ -1992,7 +2017,8 @@ def example_project():
             v.lo, v.hi = 0.4, 0.6
         if v.key == "power.propeller":
             v.options = ["Genérica 11x7", "Genérica 13x6.5", "APC 15x8E"]
-    pr.params["categorias"] = ["monoplano", "biplano", "tandem", "asa voadora", "cauda em V"]
+    pr.params["categorias"] = ["monoplano", "biplano", "tandem", "asa voadora"]
+    pr.params["etapas"] = {"caudas": list(sg.TAILS)}
     return p, pr
 
 

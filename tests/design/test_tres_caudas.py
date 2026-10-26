@@ -69,3 +69,25 @@ def test_three_aircraft_assemble():
         assert asm["mass"] > 0
         tails.append(sorted(s.name for s in ac.surfaces))
     assert tails == [["EH", "EV", "asa"], ["asa", "cauda em V"], ["asa"]]
+
+
+def test_h_tail_splits_the_fin_on_the_tips_of_the_stabilizer():
+    """cauda em H: a EH da convencional e a EV repartida em duas iguais, uma em cada ponta da EH, com a mesma área
+    vertical; a estática longitudinal não muda"""
+    import copy
+    p = _tool().build()
+    conv = p.sets[0]
+    h = copy.deepcopy(conv)
+    h.params.layout = "em H"
+    ac0, i0 = tl.build_set(conv, p.requirements, p.rules, airfoils=p.airfoil_map())
+    ac1, i1 = tl.build_set(h, p.requirements, p.rules, airfoils=p.airfoil_map())
+    assert _controls(ac1) == {"asa": ["aileron"], "EH": ["elevator"], "EV direita": ["rudder"],
+                              "EV esquerda": ["rudder"]}
+    eh = next(s for s in ac1.surfaces if s.name == "EH")
+    evs = [s for s in ac1.surfaces if s.role == "vtail"]
+    assert [e.mount for e in evs] == ["ponta_dir:1", "ponta_esq:1"]
+    assert abs(evs[0].y - eh.semispan) < 1e-9 and abs(evs[1].y + eh.semispan) < 1e-9
+    assert abs(sum(e.area for e in evs) - i0["Sv"]) < 1e-9 and i1["Sh"] == i0["Sh"]
+    a0 = tl.analyze(conv, p.requirements, p.rules, p.airfoil_map())
+    a1 = tl.analyze(h, p.requirements, p.rules, p.airfoil_map())
+    assert a1["h_n"] == a0["h_n"] and a1["VV"] == a0["VV"] and a1["Cnb"] > 0
