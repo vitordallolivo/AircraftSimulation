@@ -9,75 +9,6 @@ e mostra qual ganhou e por quê.
 O aeroopt não tem física própria. Cada avião é montado pelas mesmas etapas do aerosim e as contas rodam no núcleo em
 Zig (`core/`). Aqui só se organiza a busca e se mostra o resultado.
 
-## Como se divide
-
-Tudo começa no problema (`problem.py`): o que é livre, os limites, as restrições e a pontuação, gravados num arquivo
-`.opt.json`. As variáveis possíveis são os campos das etapas do aerosim (`inputs.py`), e os tipos de avião
-(monoplano, biplano, tandem e asa voadora) ficam em `categories.py`. A pontuação de cada regulamento é um `.toml` em `pontuacao/`,
-traduzido por `scoring.py` para o núcleo calcular. A busca anda em etapas (`stages.py`, com a fila em `pipeline.py`):
-cada avião passa pela geometria, depois por "voa?", depois pelo desempenho e, por fim, pela nota. A etapa "voa?" é
-a de estabilidade e controle, e é nela que se escolhe a cauda: a cauda não é um tipo de avião, é o que faz uma asa
-(ou um par de asas) voar. Com as caudas marcadas na Configuração, ela testa cada uma (convencional, em H, em V e sem
-cauda) na asa daquela configuração, fica com a que voa e, entre as que voam, com a que decola na pista levando mais carga paga (só voar não
-basta: sem cauda o avião é o mais leve e voa, mas pode não rodar na pista). O avião sai dali com
-essa cauda. Custa uma busca a mais por cauda, mas um avião que não voaria com a cauda dos rascunhos ganha outra
-chance antes de ser descartado. Com "comandos (E&C)" ligado, a mesma busca mexe também nos comandos (o profundor, ou o trecho e a
-corda do elevon, o curso e a inclinação do motor) e exige que o comando rode o avião na pista antes da velocidade de
-sair do chão. Essa conferência usa os coeficientes do núcleo, os mesmos da decolagem 6GDL, e não a conta analítica
-da sprint, que superestima o elevon da asa voadora. Com os comandos ela escolhe, do mesmo jeito que escolhe a cauda,
-onde fica a arfagem do tandem (na asa de trás, na da frente ou nas duas) e confere duas coisas que antes só apareciam
-na decolagem 6GDL: o peso que a bequilha leva parado (com pouco, o avião senta para trás na corrida) e a estabilidade
-direcional, que um avião sem cauda só tem com a deriva na ponta da asa. No tandem ela confere três coisas a mais
-(`stages.tandem_terms`). A primeira é a divisão da sustentação: trimado em voo nivelado no cruzeiro, a asa da frente
-tem de levar de 40 a 60 % do total, pela carga dos painéis do núcleo no α e no profundor do trim. As outras duas são
-geométricas: o recuo da asa de trás fica entre 3 e 5 cordas, para ela não ficar no miolo da esteira da da frente
-nem deixar o avião comprido à toa, e o desnível fica em até 1 corda. As faixas são do Kryvokhatko e da discussão
-que o dono trouxe, ainda a conferir no PDF. Para isso a busca mexe também na área da asa de trás (`tail.wing2_area`,
-de 1,15 a 2 vezes a da frente), e a categoria tandem já parte com a de trás maior e de perfil simétrico. Na etapa do 6GDL a decolagem é
-sempre com a proteção de α do piloto, e a que estola é reprovada mesmo passando a pista. Quase todo o tempo dela vai nas massas que
-não decolam: para cada uma, a busca do acionamento tentava as quinze combinações de deflexão e de profundor na
-corrida antes de desistir. A tolerância (`etapas.tolerancia`, em % do x_warning; 0 é a busca de sempre) aceita errar
-o ponto de acionamento até essa fração e desiste da massa logo que, nem com o comando todo cabrando, o avião sai do
-chão antes do fim da pista, porque uma deflexão menor ou o profundor picando na corrida só atrasam a rotação.
-
-A busca dessa etapa é local: ela parte de x0, com poucos indivíduos, e para no primeiro ponto que voa, e as superfícies
-partem só dele. Se x0 cai numa bacia ruim, a rodada fica nela. Dois ajustes, desligados por padrão, atacam isso. O
-início (`etapas.inicio = "lhs"`, ou `init` no avaliador) sorteia a população inicial por hipercubo latino, que põe um
-ponto em cada fatia da faixa de cada variável. As partidas (`etapas.partidas = k`) fazem a busca seguir até achar k
-pontos que voam, afastados uns dos outros, e ficar com o que decola na pista com a maior carga paga.
-`tools/sementes.py` roda a mesma configuração com sementes diferentes e diz se todas caem no mesmo avião. Os métodos guiados pela falha (`guided.py`) usam o motivo do avião não voar, e não só o quanto ele viola: cada
-termo da violação tem um código, o diagnóstico (`diagnosis.py`) liga o código às variáveis que o consertam, e a busca
-muta ou repara só elas. O "diagnóstico" deixa um bandido escolher, filho a filho, entre a evolução diferencial, a
-mutação no remédio, o reparo por gradiente, o algoritmo cultural e o LEM, pelo que cada um já rendeu.
-`tools/metodos_voa.py` compara todos os métodos da etapa (sucesso e avaliações até voar). Quem escolhe quais
-aviões experimentar são as gerações de um algoritmo genético (`generations.py`). A janela fica em `gui.py`, e os CSV
-de cada rodada saem de `export.py`. Depois da rodada, `sensitivity.py` diz o quanto a nota do melhor avião depende de
-cada variável: se ele está num morro largo ou na beira de um precipício. Para testar a máquina sem esperar as contas do avião, `synthetic.py` traz dados de
-teste: as mesmas etapas com funções simples, em que já se sabe onde cada configuração para e qual é a melhor. Elas
-vêm em três formas (a tigela, a acoplada e a multimodal), e `tools/banco_otimizadores.py` compara nelas as buscas
-das superfícies e da etapa voa: é a medida para escolher o otimizador padrão. Por ela entrou a busca "substituto" das superfícies: o
-genético sorteia muitos filhos, um modelo barato (uma superfície que passa por todos os pontos já avaliados, no
-núcleo) dá o palpite de cada um, e só os de melhor palpite vão para a conta de verdade.
-
-| arquivo | o que tem |
-|---|---|
-| `problem.py` | o problema e o arquivo `.opt.json` |
-| `inputs.py` | as variáveis: todo campo das etapas do aerosim, com faixa ou lista |
-| `categories.py` | os tipos de avião que a busca pode montar |
-| `scoring.py`, `pontuacao/` | a pontuação de cada regulamento (Micro 2026 e Regular 2026), com a fonte |
-| `stages.py`, `pipeline.py` | as etapas e a fila que as roda em paralelo |
-| `generations.py` | as gerações de configurações (algoritmo genético no núcleo) |
-| `guided.py`, `diagnosis.py` | a busca da etapa voa guiada pela falha e a tabela falha → variáveis do remédio |
-| `gui.py` | a janela |
-| `export.py` | os CSV de cada rodada |
-| `synthetic.py` | os dados de teste: um avaliador rápido com o resultado sabido de antemão |
-| `pcoords.py` | o caminho da busca em coordenadas paralelas, na janela e numa página HTML |
-| `sensitivity.py` | a sensibilidade do melhor: inclinação e curvatura da nota em cada contínua livre, pelos pontos que a busca já avaliou |
-| `mini_mdo.py` | o mini-MDO do núcleo, a primeira versão, que fica como alternativa |
-
-As contas que rodam no núcleo para o aeroopt (a nota, o algoritmo genético, o CMA-ES, a evolução diferencial e a busca guiada pela falha) estão explicadas em
-[`core/src/optim/README.md`](../core/src/optim/README.md).
-
 ## A janela
 
 À esquerda fica o problema, com um botão para cada parte: pontuação, variáveis, restrições e configuração. Cada
@@ -140,6 +71,124 @@ avaliados e a faixa da tolerância; um por limite mostra a nota com o limite ape
 ![A decolagem do melhor avião](../docs/img/aeroopt/melhor_decolagem.png)
 
 ![A aerodinâmica do melhor avião](../docs/img/aeroopt/melhor_aerodinamica.png)
+
+## Como funciona
+
+Cada configuração (o tipo de avião, a cauda, os perfis, o motor, a hélice) passa por uma fila de blocos, como num
+diagrama de blocos de um conversor. Cada bloco confere uma coisa e só deixa passar quem cumpre: o que cai sai ali,
+com o motivo. Quem chega ao fim ganha uma nota, e as gerações, em cima, leem as notas e escolhem as próximas
+configurações. Os blocos vão do mais barato ao mais caro, para que as contas caras só rodem para quem já passou nas
+baratas.
+
+![Os blocos do aeroopt](../docs/img/aeroopt/blocos.png)
+
+## Como se divide
+
+O problema (`problem.py`) diz o que é livre, entre que limites, as restrições e a pontuação, e fica gravado num
+arquivo `.opt.json`. As variáveis possíveis são os campos das etapas do aerosim (`inputs.py`), e os tipos de avião
+ficam em `categories.py`. Os blocos estão em `stages.py`, e a fila que os roda em paralelo em `pipeline.py`. As
+gerações das configurações ficam em `generations.py`, e a pontuação de cada regulamento é um `.toml` em
+`pontuacao/`, lido por `scoring.py`. As contas pesadas (a nota, as buscas, o substituto) rodam no núcleo em Zig e
+estão explicadas em [`core/src/optim/README.md`](../core/src/optim/README.md). As seções abaixo seguem os blocos, na
+ordem do diagrama.
+
+| arquivo | o que tem |
+|---|---|
+| `problem.py` | o problema e o arquivo `.opt.json` |
+| `inputs.py` | as variáveis: todo campo das etapas do aerosim, com faixa ou lista |
+| `categories.py` | os tipos de avião que a busca pode montar |
+| `scoring.py`, `pontuacao/` | a pontuação de cada regulamento (Micro 2026 e Regular 2026), com a fonte |
+| `stages.py`, `pipeline.py` | os blocos e a fila que os roda em paralelo |
+| `generations.py` | as gerações de configurações (algoritmo genético no núcleo) |
+| `guided.py`, `diagnosis.py` | a busca do bloco "voa?" guiada pela falha e a tabela falha → variáveis do remédio |
+| `gui.py` | a janela |
+| `export.py` | os CSV de cada rodada |
+| `synthetic.py` | os dados de teste: um avaliador rápido com o resultado sabido de antemão |
+| `pcoords.py` | o caminho da busca em coordenadas paralelas, na janela e numa página HTML |
+| `sensitivity.py` | a sensibilidade do melhor: inclinação e curvatura da nota em cada contínua livre |
+| `mini_mdo.py` | o mini-MDO do núcleo, a primeira versão, que fica como alternativa |
+
+### Geometria
+
+Aqui se monta o avião da configuração e se confere se ele roda na pista sem que o cone de cauda ou a hélice batam
+no chão. Se precisar, o trem desce até caber. É a conta mais barata da fila, então vem primeiro.
+
+### Voa?
+
+Aqui se confere a estabilidade e o controle e se escolhe a cauda. A cauda não é um tipo de avião: é o que faz uma
+asa voar. Com as caudas marcadas na Configuração, o bloco testa cada uma (convencional, em H, em V e sem cauda) e
+fica com a que voa e, entre as que voam, com a que decola na pista levando mais carga paga. Com "comandos (E&C)"
+ligado, a mesma busca mexe também no profundor (ou no elevon) e no motor, e exige que o comando rode o avião na pista
+antes da velocidade de sair do chão, que a bequilha leve peso suficiente parado e que o avião aponte o nariz para o
+vento.
+
+Cada coisa que falta vira um termo da violação, com um código: $V(x) = \sum_t v_t(x)$, com cada $v_t$ valendo 1 na
+fronteira de "bem fora". Dois pontos se comparam pelas regras de Deb (Computer Methods in Applied Mechanics and
+Engineering 186, 2000, seção 3, a conferir no PDF): quem voa ganha de quem não voa; entre dois que voam ganha o de
+maior MTOW; entre dois que não voam ganha o que viola menos.
+
+$$\text{rank}(x) = \begin{cases} (1,\ \text{MTOW}) & V(x) = 0 \\ (0,\ -V(x)) & V(x) > 0 \end{cases}$$
+
+O código de cada termo diz quais variáveis consertam aquela falha (`diagnosis.py`), e a busca guiada pela falha
+(`guided.py`) muta ou repara só elas. O "diagnóstico" deixa um bandido escolher, filho a filho, entre a evolução
+diferencial, a mutação no remédio, o reparo por gradiente, o algoritmo cultural e o LEM, pelo que cada um já rendeu.
+Sem isso a busca mexia às cegas e gastava pontos; no caso de teste, a guiada voa com 12 a 13 avaliações, e as
+gerações puras precisavam de umas 38 (`tools/metodos_voa.py`).
+
+No tandem o bloco confere mais três coisas (`stages.tandem_terms`): a asa da frente leva de 40 a 60 % da sustentação
+no cruzeiro, a de trás fica de 3 a 5 cordas atrás e o desnível fica em até 1 corda. As faixas são do Kryvokhatko e de
+uma discussão de fórum, ainda a conferir no PDF.
+
+A busca do bloco parte do avião como está e para no primeiro ponto que voa. Se esse ponto de partida cai numa região
+ruim, a rodada fica nela. Para isso há dois ajustes, desligados por padrão: o início por hipercubo latino
+(`etapas.inicio = "lhs"`), que espalha a população inicial pela faixa toda, e as partidas (`etapas.partidas = k`),
+que seguem até achar k pontos que voam, longe uns dos outros.
+
+### Superfícies
+
+Aqui se acham a envergadura, a área e as outras variáveis contínuas que dão o maior MTOW na pista, com as mesmas
+regras de Deb. Há cinco buscas na Configuração: coordenadas (um eixo por vez), gerações (algoritmo genético), CMA-ES,
+evolução diferencial e gerações com substituto. Cada ponto aqui é um avião inteiro, por isso importa achar o melhor
+com poucos pontos. A busca com substituto ataca exatamente isso: o genético sorteia muitos filhos, um modelo barato
+que passa por todos os pontos já avaliados dá o palpite de cada um, e só os de melhor palpite vão para a conta de
+verdade. O modelo é uma soma de cúbicas em volta de cada ponto com um plano (Gutmann, J. Global Optimization 19,
+2001, a conferir no PDF):
+
+$$s(u) = \sum_{i=1}^{m} \lambda_i \lVert u - u_i \rVert^3 + c_0 + c^{\mathsf T} u$$
+
+### Decolagem 6GDL
+
+Aqui se acha o MTOW que vale: o maior peso que decola na simulação 6GDL dentro da pista sem estolar. A conta da pista
+do bloco anterior é aproximada; esta voa o avião de verdade, com o piloto. A massa sai por bisseção, que corta a faixa
+ao meio até ela ficar menor que 1 %:
+
+$$m_{k+1} = \tfrac12 (m_{lo} + m_{hi}), \qquad \text{decolou: } m_{lo} \leftarrow m_{k+1}, \quad \text{não: } m_{hi} \leftarrow m_{k+1}$$
+
+A decolagem é sempre com a proteção de α do piloto, que pica o nariz antes do estol, e a que estola é reprovada mesmo
+passando a pista. Quase todo o tempo vai nas massas que não decolam. A tolerância (`etapas.tolerancia`, em % do
+x_warning) aceita errar um pouco o ponto de acionamento e desiste logo da massa que nem com o comando todo cabrando
+sai do chão.
+
+### Nota
+
+Aqui a carga paga ($CP = \text{MTOW}_{6GDL} - PV$) entra na fórmula do regulamento. Na Regular 2026, por exemplo, a
+parte principal é a eficiência estrutural $EE = CP/PV$, corrigida pelo número de superfícies e pela envergadura
+(Regulamento SAE BRASIL AeroDesign 2026, seção 7, eqs. 7.2 a 7.5). Um regulamento novo é só um `.toml` novo.
+
+### Gerações
+
+Com poucas combinações, a rodada passa todas pela fila. Com muitas (cada perfil, motor, hélice e categoria
+multiplicam a conta, e um problema comum passa de um milhão), um algoritmo genético escolhe quais experimentar: cada
+configuração é um indivíduo, as melhores notas geram as próximas, e quem parou num bloco fica atrás de quem foi mais
+longe. Uma configuração que já apareceu vem da memória.
+
+### Depois da rodada e para testar
+
+`sensitivity.py` diz o quanto a nota do melhor avião depende de cada variável: se ele está num morro largo ou na
+beira de um precipício (a aba Sensibilidade, acima). Para testar a máquina sem esperar as contas do avião,
+`synthetic.py` troca as contas por funções simples em que já se sabe a resposta, em três formas: a tigela (fácil), a
+acoplada (as variáveis puxam juntas) e a multimodal (com vales falsos). `tools/banco_otimizadores.py` compara as
+buscas nelas, e `tools/sementes.py` diz se sementes diferentes caem no mesmo avião.
 
 ## Como abrir
 

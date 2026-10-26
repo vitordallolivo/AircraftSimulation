@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, README: a janela vem primeiro; depois o diagrama de blocos (`docs/img/aeroopt/blocos.png`, a pedido do
+  vitor) e uma seção curta por bloco, com o que ele faz, por que existe e a conta principal, no lugar do texto
+  corrido de antes.
+
 - aeroopt, GA com substituto (O36, passo 2): a busca "substituto" das superfícies. A cada geração o GA do núcleo
   sorteia 16 vezes mais filhos que a população, um substituto RBF cúbico com cauda linear (`core/src/optim/rbf.zig`,
   Gutmann 2001; Regis e Shoemaker 2007) do MTOW e outro da violação dão o palpite de cada um, e só os de melhor
