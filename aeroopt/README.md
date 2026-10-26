@@ -18,7 +18,8 @@ traduzido por `scoring.py` para o núcleo calcular. A busca anda em etapas (`sta
 cada avião passa pela geometria, depois por "voa?", depois pelo desempenho e, por fim, pela nota. A etapa "voa?" é
 a de estabilidade e controle, e é nela que se escolhe a cauda: a cauda não é um tipo de avião, é o que faz uma asa
 (ou um par de asas) voar. Com as caudas marcadas na Configuração, ela testa cada uma (convencional, em H, em V e sem
-cauda) na asa daquela configuração, fica com a que voa e, entre as que voam, com a mais leve. O avião sai dali com
+cauda) na asa daquela configuração, fica com a que voa e, entre as que voam, com a que decola na pista levando mais carga paga (só voar não
+basta: sem cauda o avião é o mais leve e voa, mas pode não rodar na pista). O avião sai dali com
 essa cauda. Custa uma busca a mais por cauda, mas um avião que não voaria com a cauda dos rascunhos ganha outra
 chance antes de ser descartado. Quem escolhe quais
 aviões experimentar são as gerações de um algoritmo genético (`generations.py`). A janela fica em `gui.py`, e os CSV

@@ -358,8 +358,10 @@ class FlightCheck(IStage):
 
     Com `tails` (algumas de `TAILS`), a etapa também escolhe a cauda, porque a cauda é assunto de estabilidade e
     controle e não um tipo de avião: para a asa (ou o par de asas) de cada configuração ela roda a mesma busca com
-    cada cauda e fica com a que voa; entre as que voam, a de menor PV (a cauda e o tubo pesam), e no empate a
-    primeira da lista. A escolha muda o indivíduo (`values["tail.layout"]`), e as etapas seguintes usam essa cauda.
+    cada cauda e fica com a que voa. Entre as que voam, um ponto de projeto em cada uma desempata: ganha a que
+    decola na pista com a maior carga paga (MTOW − PV), e no empate a primeira da lista. Só voar não basta: sem
+    cauda o avião é o mais leve e voa, mas pode não rodar na pista. A escolha muda o indivíduo
+    (`values["tail.layout"]`), e as etapas seguintes usam essa cauda.
     Uma categoria que já define a cauda (tandem, asa voadora) ou uma cauda livre no problema fica como está. Cada
     cauda gasta até as avaliações da etapa"""
     name = "voa"
@@ -409,6 +411,15 @@ class FlightCheck(IStage):
                                    seed=7 + zlib.crc32(item.name.encode()) % 100_000, stop_ok=True)
         return x, best, hist
 
+    def _runway(self, values: dict) -> float:
+        """a carga paga (MTOW na pista − PV) de um ponto que voa, num ponto de projeto; NaN se não decola"""
+        check_cancel()
+        p, cand = candidate(self.project, values)
+        d = pw.design_point(cand, p.requirements, p.rules, self.catalog, p.airfoil_map())
+        ok, _ = study.feasibility(d)
+        m = float(d["mtow"])
+        return m - float(d["asm"]["empty"]) if ok and math.isfinite(m) else math.nan
+
     def chooses_tail(self, item: StageItem) -> bool:
         """a etapa escolhe a cauda deste avião: há caudas pedidas, a cauda não é variável do problema e a categoria
         não define a cauda"""
@@ -423,12 +434,19 @@ class FlightCheck(IStage):
             for t in self.tails:
                 x, best, hist = self._fly(item, {**item.values, TAIL_KEY: t})
                 tried[t] = (x, best, hist)
-            pick = max(self.tails, key=lambda t: (tried[t][1]["ok"], -tried[t][1]["viol"] if not tried[t][1]["ok"]
-                                                  else -tried[t][1]["pv"], -self.tails.index(t)))
+            cp = {t: self._runway({**item.values, TAIL_KEY: t, **tried[t][0]}) if tried[t][1]["ok"] else math.nan
+                  for t in self.tails}
+
+            def rank(t):                          # voa; decola na pista, com a maior CP; ou viola menos
+                b = tried[t][1]
+                if not b["ok"]:
+                    return (0, 0, -b["viol"], -self.tails.index(t))
+                return (1, 1, cp[t], -self.tails.index(t)) if math.isfinite(cp[t]) else (1, 0, 0.0, -self.tails.index(t))
+            pick = max(self.tails, key=rank)
             x, best, hist = tried[pick]
             item.values = {**item.values, TAIL_KEY: pick}
-            item.data["caudas"] = {t: dict(ok=b["ok"], viol=b["viol"], pv=b["pv"], why=b["why"], pontos=len(h))
-                                   for t, (_, b, h) in tried.items()}
+            item.data["caudas"] = {t: dict(ok=b["ok"], viol=b["viol"], pv=b["pv"], cp=cp[t], why=b["why"],
+                                           pontos=len(h)) for t, (_, b, h) in tried.items()}
             hist = [e for t in self.tails for e in tried[t][2]]   # todas as caudas no histórico da etapa
         else:
             x, best, hist = self._fly(item, item.values)

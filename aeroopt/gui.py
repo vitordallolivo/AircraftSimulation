@@ -925,9 +925,10 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             th.addWidget(cb)
         th.addStretch(1)
         f.addRow(_help("caudas (E&C)", "as caudas que esta etapa testa em cada avião: ela roda a busca com cada uma "
-                       "e fica com a que voa; entre as que voam, a de menor PV. A escolha muda o avião, e as etapas "
-                       "seguintes usam essa cauda. Cada cauda gasta até as avaliações da etapa. Nenhuma marcada: o "
-                       "avião fica com a cauda dos rascunhos. Tandem e asa voadora não têm cauda e não entram"), tw)
+                       "e fica com a que voa; entre as que voam, a que decola na pista com a maior carga paga. A "
+                       "escolha muda o avião, e as etapas seguintes usam essa cauda. Cada cauda gasta até as "
+                       "avaliações da etapa e um ponto de projeto. Nenhuma marcada: o avião fica com a cauda dos "
+                       "rascunhos. Tandem e asa voadora não têm cauda e não entram"), tw)
         f = stage("superfícies (desempenho e otimização)", sg.SURFACE_METHODS,
                   "a busca das contínuas livres (envergadura, área...) pelo maior MTOW que fecha na pista. "
                   "Coordenadas: um eixo por vez, rápida quando as variáveis são independentes. Gerações, CMA-ES e "

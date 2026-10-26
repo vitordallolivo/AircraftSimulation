@@ -324,8 +324,9 @@ def test_differential_evolution_search_keeps_the_contract():
 
 
 def test_flight_check_chooses_the_tail_and_changes_the_individual():
-    """com caudas pedidas, a etapa voa (E&C) testa cada uma na asa da configuração e fica com a que voa (a de menor
-    PV entre as que voam); o indivíduo passa a ter a cauda. Tandem e asa voadora definem a cauda e ficam como estão"""
+    """com caudas pedidas, a etapa voa (E&C) testa cada uma na asa da configuração e fica com a que voa e decola na
+    pista com a maior carga paga; o indivíduo passa a ter a cauda. Tandem e asa voadora definem a cauda e ficam como
+    estão"""
     from aeroopt import categories as cat
     p = _project()
     pr = aeroopt.from_project(p)
@@ -338,8 +339,8 @@ def test_flight_check_chooses_the_tail_and_changes_the_individual():
     out = fc.one(mono)
     tried = out.data["caudas"]
     assert list(tried) == list(sg.TAILS) and out.values[sg.TAIL_KEY] in sg.TAILS
-    ok = [t for t, d in tried.items() if d["ok"]]
-    assert ok and out.values[sg.TAIL_KEY] == min(ok, key=lambda t: (tried[t]["pv"], sg.TAILS.index(t)))
+    up = [t for t, d in tried.items() if d["ok"] and math.isfinite(d["cp"])]   # voam e decolam na pista
+    assert up and out.values[sg.TAIL_KEY] == max(up, key=lambda t: (tried[t]["cp"], -sg.TAILS.index(t)))
     assert sg.TAIL_KEY not in fc.one(flying).values
     assert "cauda em V" not in cat.CATEGORIES and "cauda em V" in cat.LEGACY
     with pytest.raises(ValueError):
