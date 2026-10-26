@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, caminho da busca: coordenadas paralelas (`aeroopt/pcoords.py`), uma linha por avião passando por um eixo
+  por variável livre e pelo MTOW, o PV e a nota, com a cor pela geração e o caminho do melhor até ali em preto. Fica
+  na janela, embaixo do mapa, e o botão "Exportar HTML…" grava a mesma figura numa página que abre sem internet, com
+  o controle "até a geração" e o avião embaixo do mouse.
 - aeroopt, sensibilidade sozinha e curvas: o botão "Sensibilidade deste avião" roda só a sensibilidade do avião
   selecionado, com o método do menu, numa aba própria. A aba ganha um gráfico por variável (a nota pelo modelo, os
   pontos avaliados no eixo e a faixa da tolerância) e um por limite do problema. O menu Configuração perdeu a

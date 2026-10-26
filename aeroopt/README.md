@@ -32,6 +32,7 @@ teste: as mesmas etapas com funções simples, em que já se sabe onde cada conf
 | `gui.py` | a janela |
 | `export.py` | os CSV de cada rodada |
 | `synthetic.py` | os dados de teste: um avaliador rápido com o resultado sabido de antemão |
+| `pcoords.py` | o caminho da busca em coordenadas paralelas, na janela e numa página HTML |
 | `sensitivity.py` | a sensibilidade do melhor: inclinação e curvatura da nota em cada contínua livre, pelos pontos que a busca já avaliou |
 | `mini_mdo.py` | o mini-MDO do núcleo, a primeira versão, que fica como alternativa |
 
@@ -62,6 +63,12 @@ estabilidade. Na configuração se escolhe o método de cada etapa.
 No mapa, cada ponto é um avião. Os eixos podem ser qualquer variável do problema ou um resultado, e a cor é a nota.
 
 ![O mapa dos aviões](../docs/img/aeroopt/mapa.png)
+
+Embaixo do mapa fica o caminho da busca, em coordenadas paralelas: cada avião é uma linha que passa por um eixo por
+variável livre e pelo MTOW, o PV e a nota. Num mapa se veem duas grandezas por vez; aqui aparecem todas, e as linhas
+das boas notas que se juntam num trecho de um eixo mostram onde está a região boa. A cor é a geração, e a linha preta
+é o melhor até ali, na ordem em que os aviões foram avaliados. "Exportar HTML…" grava a mesma figura numa página que
+abre sem internet.
 
 Embaixo da tabela aparecem os gráficos do melhor avião até aqui: a decolagem, a aerodinâmica, a estabilidade e o
 desempenho. Eles servem para conferir de relance se o avião que está ganhando faz sentido, e não ficam gravados.

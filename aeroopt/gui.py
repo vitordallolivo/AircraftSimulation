@@ -996,6 +996,25 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         for side in ("bottom", "left"):                # área em m² sem o "(x0.001)" nem o 600 no lugar de 0,6
             self.map.getAxis(side).enableAutoSIPrefix(False)
         rv.addWidget(self.map)
+        _section(rv, "Caminho da busca")
+        h = QtWidgets.QHBoxLayout()
+        self.pc_note = QtWidgets.QLabel("cada linha é um avião, cada eixo uma variável livre ou um resultado; cor: a "
+                                        "geração; linha preta: o melhor até ali, na ordem em que foram avaliados")
+        self.pc_note.setStyleSheet("color:#555")
+        self.pc_note.setWordWrap(True)
+        h.addWidget(self.pc_note, 1)
+        self.html_b = QtWidgets.QPushButton("Exportar HTML…")
+        self.html_b.setToolTip("a mesma figura numa página que abre sem internet, com o controle das gerações")
+        self.html_b.clicked.connect(self._export_html)
+        h.addWidget(self.html_b)
+        rv.addLayout(h)
+        self.pc = pg.PlotWidget()
+        self.pc.setBackground("w")
+        self.pc.setMinimumHeight(320)
+        self.pc.getPlotItem().hideAxis("left")
+        self.pc.getPlotItem().hideAxis("bottom")
+        self.pc.setMouseEnabled(x=False, y=False)
+        rv.addWidget(self.pc)
         _section(rv, "Configurações")
         self.cfg_tab = _table(["id", "geração", "etapa", "área de projeto", "MTOW pista", "MTOW 6GDL", "PV", "nota",
                                "situação"])
@@ -1626,6 +1645,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         _fit_range(self.eval_plot, range(len(self.points)), [p[1] for p in ok + bad])
         _fit_range(self.score_plot, range(len(sc_rows)), [r["nota"] for r in sc_rows])
         self.draw_map()
+        self.draw_paths()
         self.cfg_tab.setSortingEnabled(False)
         rows = sorted(self.rows.values(), key=lambda r: (r["alive"], r["valido"], np.nan_to_num(r["nota"], nan=-1e9)),
                       reverse=True)
@@ -1768,6 +1788,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.sens_b.setEnabled(math.isfinite(r.get("nota", math.nan)))
         self.aerosim_b.setEnabled(False)          # liga quando o avião estiver refeito (o 3D)
         self.draw_map()
+        self.draw_paths()
         lines = [["id", str(r.get("index", ""))], ["área de projeto", sg.area(r)]]
         lines += [[sg.short(k), _fmt(v)] for k, v in r["values"].items()]
         lines += [["MTOW na pista (kg)", _fmt(r["mtow"])], ["MTOW 6GDL (kg)", _fmt(r["mtow6"])],
@@ -1797,6 +1818,61 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             self.aerosim_b.setEnabled(True)
             if self.view is not None:
                 self.view.set_aircraft(d["ac"])
+
+    def draw_paths(self):
+        """as coordenadas paralelas (aeroopt/pcoords.py): uma linha por avião, a cor pela geração, o caminho da busca
+        em preto e o selecionado em vermelho"""
+        from . import pcoords
+        self.pc.clear()
+        rows = list(self.rows.values())
+        if not rows:
+            return
+        d = pcoords.data(self.problem, rows)
+        n, gmax = len(d["axes"]), max(d["generations"], 1)
+        cmap = pg.colormap.get("viridis")
+        on_path = d["path"]
+        for line in d["lines"]:
+            if line["name"] in on_path or line["name"] == self.selected:
+                continue
+            c = cmap.map(1 - line["gen"] / gmax, mode="qcolor")
+            c.setAlpha(140)
+            pen = pg.mkPen(c, width=1.2, style=QtCore.Qt.PenStyle.SolidLine if line["alive"] else
+                           QtCore.Qt.PenStyle.DashLine)
+            self.pc.plot(list(range(n)), line["ys"], pen=pen, connect="finite")
+        by = {line["name"]: line for line in d["lines"]}
+        for k, name in enumerate(on_path):
+            last = k == len(on_path) - 1
+            self.pc.plot(list(range(n)), by[name]["ys"], connect="finite",
+                         pen=pg.mkPen(0, 0, 0, int(90 + 165 * (k + 1) / len(on_path)), width=3.2 if last else 1.8))
+        if self.selected in by:
+            self.pc.plot(list(range(n)), by[self.selected]["ys"], pen=pg.mkPen(BAD_C, width=2.5), connect="finite")
+        for k, a in enumerate(d["axes"]):
+            self.pc.addItem(pg.InfiniteLine(pos=k, angle=90, pen=pg.mkPen("#8a94a3", width=1.5)))
+            t = pg.TextItem(a["label"], color="#1b2430", anchor=(0.5, 0))
+            t.setPos(k, -0.04)
+            self.pc.addItem(t)
+            marks = ([(i / max(len(a["names"]) - 1, 1), os.path.basename(nm).removesuffix(".dat")[:16])
+                      for i, nm in enumerate(a["names"])] if a["kind"] == "lista" else
+                     [(0.0, _fmt(a["lo"])), (1.0, _fmt(a["hi"]))])
+            for y, txt in marks:
+                m = pg.TextItem(txt, color="#5a6676", anchor=(0, 0.5), fill=pg.mkBrush(255, 255, 255, 200))
+                m.setPos(k + 0.03, y)
+                self.pc.addItem(m)
+        self.pc.setXRange(-0.3, n - 0.7 + 0.3, padding=0)
+        self.pc.setYRange(-0.18, 1.05, padding=0)
+
+    def _export_html(self):
+        rows = getattr(self, "result_rows", None) or list(self.rows.values())
+        if not rows:
+            self.msg.setText("nada para exportar: rode antes")
+            return
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Caminho da busca em HTML", "caminho.html",
+                                                        "página (*.html)")
+        if path:
+            from . import pcoords
+            path = with_ext(path, ".html")
+            pcoords.write_html(self.read_problem(), rows, path, f"Caminho da busca · {self.problem.name or 'aeroopt'}")
+            self.msg.setText(f"gravado: {path}")
 
     def _export(self):
         rows = getattr(self, "result_rows", None) or list(self.rows.values())
