@@ -62,7 +62,9 @@ def test_window_runs_and_shows_each_candidate(app):
     _wait(app, lambda: not w._threads)
     assert len(w.rows) == 2 and w.funnel["superfícies"][0] == 2
     assert {"superfícies", "nota"} <= set(seen)
-    assert len(w.points) == 4                                       # 2 pontos de projeto × 2 configurações
+    assert not hasattr(w, "eval_plot")             # sem o MTOW da pista: não é ele que pontua
+    head = [w.cfg_tab.horizontalHeaderItem(j).text() for j in range(w.cfg_tab.columnCount())]
+    assert "MTOW 6GDL" in head and "MTOW pista" not in head
     assert w.cfg_tab.rowCount() == 2 and w.stage_tab.rowCount() == 4            # geometria, voa, superfícies, nota
     assert w.funnel["geometria"] == [2, 2, 2] and all(r["geração"] == 1 for r in w.rows.values())
     best = max(w.rows.values(), key=lambda r: r["nota"])

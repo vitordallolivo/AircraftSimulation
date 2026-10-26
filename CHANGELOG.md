@@ -6,6 +6,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, janela: sai o gráfico e a coluna do MTOW na pista (a conta da sprint não é o que pontua); ficam a nota e o
+  MTOW do 6GDL.
 - aeroopt, janela: os submenus rolam e o regulamento fica fixo no alto da Pontuação; numa tela de 1366 × 768 o
   combo e o OK ficavam fora da tela. A Configuração ganhou o início (uniforme ou hipercubo latino) e as partidas da
   E&C, que antes só se mudavam no `.opt.json`.

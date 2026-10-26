@@ -723,7 +723,6 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.project, self.path = project, path
         self.problem = problem
         self.rows: dict[str, dict] = {}
-        self.points: list[tuple[float, bool, str]] = []      # MTOW de cada ponto avaliado, viável, configuração
         self.order: list[str] = []                           # configurações na ordem em que ganharam nota
         self.funnel: dict[str, list[int]] = {}
         self.selected: str | None = None
@@ -1047,20 +1046,15 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.stage_tab = _table(["etapa", "entraram", "prontos", "seguiram"])
         self.stage_tab.setFixedHeight(150)
         rv.addWidget(self.stage_tab)
+        # só a nota: o MTOW na corrida da pista (a conta da sprint) não é o que pontua, e mostrá-lo enganava; a massa
+        # em que se confia é a do 6GDL, que vai na tabela
         h = QtWidgets.QHBoxLayout()
-        self.eval_plot = _plot("ponto de projeto avaliado", "MTOW na pista (kg)")
-        self.pts_ok = pg.ScatterPlotItem(size=6, brush=pg.mkBrush(OK_C), pen=pg.mkPen(None), name="fecha")
-        self.pts_bad = pg.ScatterPlotItem(size=6, brush=pg.mkBrush(None), pen=pg.mkPen(BAD_C), name="não fecha")
-        self.best_eval = pg.PlotDataItem(pen=pg.mkPen(BEST_C, width=2), name="melhor até aqui")
-        for it in (self.pts_ok, self.pts_bad, self.best_eval):
-            self.eval_plot.addItem(it)
         self.score_plot = _plot("configuração (ordem de chegada)", "nota")
         self.sc_ok = pg.ScatterPlotItem(size=9, brush=pg.mkBrush(BEST_C), pen=pg.mkPen(None), name="voo válido")
         self.sc_bad = pg.ScatterPlotItem(size=9, brush=pg.mkBrush(None), pen=pg.mkPen(BAD_C), name="voo inválido")
         self.best_score = pg.PlotDataItem(pen=pg.mkPen("#000", width=2), name="melhor até aqui")
         for it in (self.sc_ok, self.sc_bad, self.best_score):
             self.score_plot.addItem(it)
-        h.addWidget(self.eval_plot)
         h.addWidget(self.score_plot)
         rv.addLayout(h)
         _section(rv, "Mapa dos aviões")
@@ -1106,7 +1100,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.pc.setMouseEnabled(x=False, y=False)
         rv.addWidget(self.pc)
         _section(rv, "Configurações")
-        self.cfg_tab = _table(["id", "geração", "etapa", "área de projeto", "MTOW pista", "MTOW 6GDL", "PV", "nota",
+        self.cfg_tab = _table(["id", "geração", "etapa", "área de projeto", "MTOW 6GDL", "PV", "nota",
                                "situação"])
         self.cfg_tab.setMinimumHeight(220)
         self.cfg_tab.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
@@ -1577,7 +1571,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             self.msg.setText(f"<span style='color:{BAD_C}'>{e}</span>")
             return
         self._cancel.clear()
-        self.rows, self.points, self.order, self.funnel = {}, [], [], {}
+        self.rows, self.order, self.funnel = {}, [], {}
         self._best_want = None
         self.redraw()
         m = self.methods()
@@ -1690,9 +1684,6 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                 self.funnel[stage][2] += 1
                 if k + 1 < len(names):
                     self.funnel[names[k + 1]][0] += 1
-        if stage == "superfícies":
-            for h in r["history"]:
-                self.points.append((h["mtow"], h["ok"], r["name"]))
         if stage == "nota" and r["name"] not in self.order:
             self.order.append(r["name"])
         self.rows[r["name"]] = r
@@ -1728,16 +1719,6 @@ class AeroOptWindow(QtWidgets.QMainWindow):
     # ------------------------------------------------------------------ desenhar
     def redraw(self):
         _set_rows(self.stage_tab, [[s, a, b, c] for s, (a, b, c) in self.funnel.items()], editable=False)
-        ok = [(i, m) for i, (m, good, _) in enumerate(self.points) if good and math.isfinite(m)]
-        bad = [(i, m if math.isfinite(m) else 0.0) for i, (m, good, _) in enumerate(self.points) if not good]
-        self.pts_ok.setData([p[0] for p in ok], [p[1] for p in ok])
-        self.pts_bad.setData([p[0] for p in bad], [p[1] for p in bad])
-        best, line = -math.inf, []
-        for i, (m, good, _) in enumerate(self.points):
-            if good and math.isfinite(m):
-                best = max(best, m)
-            line.append(best if math.isfinite(best) else np.nan)
-        self.best_eval.setData(np.arange(len(line)), np.array(line, float), connect="finite")
         sc_rows = [self.rows[n] for n in self.order if n in self.rows and math.isfinite(self.rows[n]["nota"])]
         xs = {r["name"]: i for i, r in enumerate(sc_rows)}
         self.sc_ok.setData([xs[r["name"]] for r in sc_rows if r["valido"]], [r["nota"] for r in sc_rows if r["valido"]])
@@ -1748,14 +1729,13 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             best = max(best, r["nota"])
             line.append(best)
         self.best_score.setData(np.arange(len(line)), np.array(line, float))
-        _fit_range(self.eval_plot, range(len(self.points)), [p[1] for p in ok + bad])
         _fit_range(self.score_plot, range(len(sc_rows)), [r["nota"] for r in sc_rows])
         self.draw_map()
         self.draw_paths()
         self.cfg_tab.setSortingEnabled(False)
         rows = sorted(self.rows.values(), key=lambda r: (r["alive"], r["valido"], np.nan_to_num(r["nota"], nan=-1e9)),
                       reverse=True)
-        _set_rows(self.cfg_tab, [["", r.get("geração", ""), r["stage"], sg.area(r), _fmt(r["mtow"]), _fmt(r["mtow6"]),
+        _set_rows(self.cfg_tab, [["", r.get("geração", ""), r["stage"], sg.area(r), _fmt(r["mtow6"]),
                                   _fmt(r["pv"]), _fmt(r["nota"]), ("válido" if r["valido"] else "voo inválido")
                                   if r["alive"] and math.isfinite(r["nota"]) else
                                   ("em andamento" if r["alive"] else r["why"])]
@@ -1765,7 +1745,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             it.setData(QtCore.Qt.ItemDataRole.DisplayRole, int(r.get("index", i + 1)))
             it.setData(QtCore.Qt.ItemDataRole.UserRole, r["name"])
             it.setToolTip(r["name"])
-            self.cfg_tab.item(i, 8).setToolTip(r["why"] or "")
+            self.cfg_tab.item(i, 7).setToolTip(r["why"] or "")
             if not r["alive"]:
                 for j in range(self.cfg_tab.columnCount()):
                     self.cfg_tab.item(i, j).setForeground(QtCore.Qt.GlobalColor.darkRed)
@@ -1897,7 +1877,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.draw_paths()
         lines = [["id", str(r.get("index", ""))], ["área de projeto", sg.area(r)]]
         lines += [[sg.short(k), _fmt(v)] for k, v in r["values"].items()]
-        lines += [["MTOW na pista (kg)", _fmt(r["mtow"])], ["MTOW 6GDL (kg)", _fmt(r["mtow6"])],
+        lines += [["MTOW 6GDL (kg)", _fmt(r["mtow6"])],
                   ["PV (kg)", _fmt(r["pv"])]]
         lines += [[f"entrada: {k}", _fmt(v)] for k, v in r.get("inputs", {}).items()]
         lines += [[f"fator: {k}", _fmt(v)] for k, v in r.get("termos", {}).items()]
