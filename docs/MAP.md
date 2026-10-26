@@ -650,6 +650,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 ## Ferramentas (`tools/`)
 
 - `tools/aeroopt.py` — Roda um problema do aeroopt (.opt.json) e mostra o resultado: o melhor ponto, as restrições e a convergência.
+- `tools/banco_otimizadores.py` — Banco de comparação dos otimizadores do aeroopt: qual busca acha o melhor avião, com quantos pontos, em que tipo de
 - `tools/capturas.py` — Fotos de todas as abas (roda cada simulação com os padrões).
 - `tools/codemap.py` — Mapa do código: gera docs/MAP.md a partir do próprio código (nunca editar o MAP.md à mão).
 - `tools/load_view.py` — Vista 3D da carga aerodinâmica de um avião num ponto de operação: as superfícies pintadas pela carga alar local
@@ -682,7 +683,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 ## Testes (`tests/`)
 
 - `tests/aero` — 59 testes em 9 arquivo(s)
-- `tests/aeroopt` — 74 testes em 8 arquivo(s)
+- `tests/aeroopt` — 76 testes em 8 arquivo(s)
 - `tests/core` — 34 testes em 9 arquivo(s)
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 75 testes em 11 arquivo(s)
@@ -692,7 +693,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)
 - `tests/test_architecture.py` — 5 testes em 1 arquivo(s)
-- `tests/tools` — 27 testes em 5 arquivo(s)
+- `tests/tools` — 29 testes em 6 arquivo(s)
 - `tests/validation` — 2 testes em 1 arquivo(s)
 
 ## README por pasta

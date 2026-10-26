@@ -6,6 +6,12 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, banco dos otimizadores (`tools/banco_otimizadores.py`, O36): compara as buscas das superfícies e da
+  etapa voa nos dados de teste, em três formas de problema (`synthetic.SHAPES`: tigela, acoplada e multimodal, com
+  o mesmo ótimo). Linha de base com 6 contínuas e 48 pontos: ninguém chega a 99 % do ótimo; as coordenadas ganham
+  na tigela e na multimodal, o CMA-ES na acoplada, e o GA puro perde nas três. A busca das superfícies ganhou
+  `SurfaceSizing.seed` (0: a de sempre).
+
 - decolagem, proteções obrigatórias (vitor: "se não faz sentido não pode acontecer"). A proteção de α na decolagem
   deixa de ser opção (sai `takeoff.alpha_guard` do avião e `power.alpha_guard` do dimensionamento; arquivos antigos
   carregam iguais), e o limite dela passa a ser o estol de cada avião: o α em que a superfície mais carregada chega a

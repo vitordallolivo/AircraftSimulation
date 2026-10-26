@@ -53,7 +53,9 @@ mutação no remédio, o reparo por gradiente, o algoritmo cultural e o LEM, pel
 aviões experimentar são as gerações de um algoritmo genético (`generations.py`). A janela fica em `gui.py`, e os CSV
 de cada rodada saem de `export.py`. Depois da rodada, `sensitivity.py` diz o quanto a nota do melhor avião depende de
 cada variável: se ele está num morro largo ou na beira de um precipício. Para testar a máquina sem esperar as contas do avião, `synthetic.py` traz dados de
-teste: as mesmas etapas com funções simples, em que já se sabe onde cada configuração para e qual é a melhor.
+teste: as mesmas etapas com funções simples, em que já se sabe onde cada configuração para e qual é a melhor. Elas
+vêm em três formas (a tigela, a acoplada e a multimodal), e `tools/banco_otimizadores.py` compara nelas as buscas
+das superfícies e da etapa voa: é a medida para escolher o otimizador padrão.
 
 | arquivo | o que tem |
 |---|---|

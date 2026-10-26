@@ -51,6 +51,21 @@ python tools/pipeline_bench.py --exemplo --geracoes 4 --estrategias serie,thread
 python tools/pipeline_bench.py --projeto p.json --problema q.opt.json --configs 12 --processos 2,4 --png perfis/bench.png
 ```
 
+## Banco dos otimizadores (`tools/banco_otimizadores.py`)
+
+Diz qual busca do aeroopt acha o melhor avião, com quantos pontos, em que tipo de problema. Serve de linha de base
+para escolher o otimizador padrão e para medir um método novo contra os de hoje. Tudo roda nos dados de teste do
+aeroopt (`aeroopt/synthetic.py`), que têm o ótimo sabido e levam segundos, em três formas de problema: a tigela, em
+que as variáveis não se misturam; a acoplada, em que andar num eixo por vez é ruim porque as variáveis andam juntas;
+e a multimodal, com mínimos locais onde a busca local para. Para cada forma, método e semente sai a fração do ótimo
+(o maior MTOW que fecha sobre o do ótimo) ao longo dos pontos. `--voa` junta a etapa voa no caso com remédio de
+`tools/metodos_voa.py`, e `--png` grava as curvas e as barras.
+
+```sh
+python tools/banco_otimizadores.py --sementes 5 --avaliacoes 48 --variaveis 6 --voa --png perfis/banco.png
+python tools/banco_otimizadores.py --formas acoplada --metodos coordenadas,cma-es --sementes 10
+```
+
 ## Aerodinâmica e voo com cada modelo (`tools/aero/`)
 
 Detalhes, comandos e resultados no [README da pasta](aero/README.md).

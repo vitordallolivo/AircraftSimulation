@@ -58,3 +58,20 @@ def test_generations_reach_the_best_with_few_configurations(case):
                                                                                                 workers=1))
     ex = sy.expected(p, pr)
     assert res.best["valido"] and res.best["nota"] >= 0.9 * ex[sy.best(p, pr)]["nota"]
+
+
+@pytest.mark.parametrize("shape", sy.SHAPES)
+def test_every_shape_keeps_the_optimum_at_u_best(shape):
+    """as três formas do d² têm o ótimo no mesmo ponto, então `expected` vale para todas"""
+    assert sy.distance2([sy.U_BEST] * 6, shape) == pytest.approx(0.0, abs=1e-15)
+    assert all(sy.distance2([sy.U_BEST + dz] + [sy.U_BEST] * 5, shape) > 0 for dz in (-0.3, -0.05, 0.05, 0.3))
+
+
+def test_coupled_shape_mixes_the_variables_and_multimodal_has_local_minima():
+    d = lambda z0, z1: sy.distance2([sy.U_BEST + z0, sy.U_BEST + z1], "acoplada")
+    assert d(0.1, 0.1) - d(0.1, 0.0) - d(0.0, 0.1) + d(0.0, 0.0) != pytest.approx(0.0, abs=1e-6)   # não separável
+    assert sy.distance2([sy.U_BEST + 0.1, sy.U_BEST], "tigela") == pytest.approx(0.01)
+    m = lambda z: sy.distance2([sy.U_BEST + z], "multimodal")
+    assert m(0.18) < m(0.15) and m(0.18) < m(0.21)          # um mínimo local perto de z = 0,18 (a busca local para)
+    with pytest.raises(ValueError):
+        sy.distance2([0.5], "outra")

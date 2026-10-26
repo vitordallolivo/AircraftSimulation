@@ -455,6 +455,7 @@ class SurfaceSizing(IStage):
         self.method = method
         self.free = [(v.key, min(v.lo, v.hi), max(v.lo, v.hi)) for v in problem.free_variables()
                      if v.kind == "contínua"]
+        self.seed = 0                              # soma na semente das buscas (o banco roda várias); 0: a de sempre
 
     def __getstate__(self):                        # o núcleo (ctypes) não vai para outro processo
         return {**self.__dict__, "_backend": None}
@@ -539,7 +540,7 @@ class SurfaceSizing(IStage):
         if not self.free or self.evals <= 1:
             return x, best
         return (search or _real_search)(self.free, x, best, lambda y: self.point({**item.values, **y}), self.evals,
-                                        hist, seed=1 + zlib.crc32(item.name.encode()) % 100_000)
+                                        hist, seed=1 + (zlib.crc32(item.name.encode()) + self.seed) % 100_000)
 
 
 # os métodos da etapa "voa" (a GUI escolhe no menu Configuração)
