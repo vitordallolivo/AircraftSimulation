@@ -552,3 +552,17 @@ export fn aerosim_cma_tell(s: *cm.CmaState, xs: [*]const f64, fit: [*]const f64)
     cm.tell(s, xs[0..@intCast(s.lambda * s.n)], fit[0..@intCast(s.lambda)]);
     return 0;
 }
+
+// ------------------------------------------------------------------ modelo local (sensibilidade do melhor)
+const lf = @import("optim/localfit.zig");
+
+/// y ≈ a + gᵀ(x − x₀) (+ ½ Σ cₖ(xₖ − x₀ₖ)² com `quad` ≠ 0) pelos `m` pontos `xs` (m × n), com peso (1 − (d/r)³)³; g em
+/// `g[0..n]`, c em `c[0..n]` e `out` = (a, resíduo, soma dos pesos). −1 se as direções não ficam todas determinadas
+export fn aerosim_local_fit(n: usize, m: usize, xs: [*]const f64, ys: [*]const f64, x0: [*]const f64, r: f64, quad: i32, g: [*]f64, c: [*]f64, out: [*]f64) i32 {
+    if (n == 0 or n > lf.max_n) return -1;
+    const f = lf.fit(n, m, xs[0 .. m * n], ys[0..m], x0[0..n], r, quad != 0, g[0..n], c[0..n]) orelse return -1;
+    out[0] = f.a;
+    out[1] = f.rms;
+    out[2] = f.weight;
+    return 0;
+}

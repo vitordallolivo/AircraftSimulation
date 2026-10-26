@@ -9,11 +9,13 @@ passar, e só as figuras escolhidas vão para `docs/img`.
 
 Roda um problema do aeroopt (`.opt.json`) pelo núcleo e imprime o melhor ponto, as grandezas e as restrições; com
 `--png`, grava a convergência. `--isolar asa` (ou chaves e grupos separados por vírgula) deixa livres só essas
-variáveis. Detalhes no [README do aeroopt](../aeroopt/README.md).
+variáveis. Com `--etapas --sensibilidade`, no fim imprime a sensibilidade do melhor: a inclinação e a curvatura da
+nota em cada contínua livre, tiradas dos pontos que a busca já avaliou, e a nota prevista a ±10 % da faixa. Detalhes no [README do aeroopt](../aeroopt/README.md).
 
 ```sh
 python tools/aeroopt.py --exemplo perfis/exemplo.opt.json
 python tools/aeroopt.py perfis/exemplo.opt.json --isolar asa --png perfis/convergencia.png
+python tools/aeroopt.py problema.opt.json --etapas --projeto p.json --sem-6gdl --sensibilidade
 ```
 
 ## Paralelismo do otimizador (`tools/pipeline_bench.py`)

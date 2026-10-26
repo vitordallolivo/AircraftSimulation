@@ -17,7 +17,8 @@ alta, biplano ou asa voadora, ficam em `categories.py`. A pontuação de cada re
 traduzido por `scoring.py` para o núcleo calcular. A busca anda em etapas (`stages.py`, com a fila em `pipeline.py`):
 cada avião passa pela geometria, depois por "voa?", depois pelo desempenho e, por fim, pela nota. Quem escolhe quais
 aviões experimentar são as gerações de um algoritmo genético (`generations.py`). A janela fica em `gui.py`, e os CSV
-de cada rodada saem de `export.py`. Para testar a máquina sem esperar as contas do avião, `synthetic.py` traz dados de
+de cada rodada saem de `export.py`. Depois da rodada, `sensitivity.py` diz o quanto a nota do melhor avião depende de
+cada variável: se ele está num morro largo ou na beira de um precipício. Para testar a máquina sem esperar as contas do avião, `synthetic.py` traz dados de
 teste: as mesmas etapas com funções simples, em que já se sabe onde cada configuração para e qual é a melhor.
 
 | arquivo | o que tem |
@@ -31,6 +32,7 @@ teste: as mesmas etapas com funções simples, em que já se sabe onde cada conf
 | `gui.py` | a janela |
 | `export.py` | os CSV de cada rodada |
 | `synthetic.py` | os dados de teste: um avaliador rápido com o resultado sabido de antemão |
+| `sensitivity.py` | a sensibilidade do melhor: inclinação e curvatura da nota em cada contínua livre, pelos pontos que a busca já avaliou |
 | `mini_mdo.py` | o mini-MDO do núcleo, a primeira versão, que fica como alternativa |
 
 As contas que rodam no núcleo para o aeroopt (a nota, o algoritmo genético e o CMA-ES) estão explicadas em
@@ -63,6 +65,14 @@ No mapa, cada ponto é um avião. Os eixos podem ser qualquer variável do probl
 
 Embaixo da tabela aparecem os gráficos do melhor avião até aqui: a decolagem, a aerodinâmica, a estabilidade e o
 desempenho. Eles servem para conferir de relance se o avião que está ganhando faz sentido, e não ficam gravados.
+
+A última aba é a sensibilidade do melhor: o quanto a nota muda se uma contínua livre sai do lugar, para saber se o
+avião está no alto de um morro largo ou na beira de uma restrição. Ela olha só esse avião e só o que o problema deixa
+mexer, dentro dos limites. Em vez de refazer o avião em vários pontos, ela reaproveita os pontos que a busca das
+superfícies já avaliou em volta dele e passa por eles um modelo com a inclinação e a curvatura de cada variável (no
+núcleo, `core/src/optim/localfit.zig`). Só a direção que a busca não cobriu ganha pontos novos. Cada barra vai da
+nota prevista a 10 % da faixa para um lado à prevista para o outro, e o lado em que o avião deixa de fechar aparece
+em vermelho, com o motivo.
 
 ![A tabela e o avião selecionado](../docs/img/aeroopt/tabela.png)
 

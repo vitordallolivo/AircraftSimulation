@@ -50,6 +50,7 @@ EE_LINES = (0.5, 1.0, 1.5, 2.0, 3.0)
 # gráficos da decolagem (os que começam por estes nomes)
 BEST_ANALYSES = (("mission", "Decolagem"), ("polar", "Aerodinâmica (C_L × α, polar, C_m)"),
                  ("stability", "Estabilidade"), ("performance", "Desempenho e envelope"))
+SENS_TITLE = "Sensibilidade"                   # a aba da sensibilidade do melhor (aeroopt/sensitivity.py)
 BEST_KEEP = {"mission": ("Decolagem", "Acionamento", "Folga")}
 AXES = {"PV (kg)": "pv", "carga paga (kg)": "cp", "MTOW (kg)": "mtow_f", "EE": "ee", "nota": "nota",
         "envergadura (m)": "b", "bateria (kg)": "m_bat"}
@@ -1013,6 +1014,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         if r is None or self.project is None:
             return
         name, pr, values = r["name"], self.read_problem(), dict(r["values"])
+        ev = getattr(self, "_ev", None)
         self.best_lbl.setText(f"nº {r.get('index', '')} · nota {_fmt(r['nota'])}"
                               + ("" if r.get("valido") else " (voo inválido)") + " · rodando as análises…")
 
@@ -1035,6 +1037,12 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                     w.item.emit(title, (specs, res))
                 except Exception as e:  # noqa: BLE001 — uma análise que falha não tira as outras
                     w.item.emit(title, (None, str(e)))
+            if ev is not None:
+                from .sensitivity import sensitivity
+                try:
+                    w.item.emit(SENS_TITLE, ("sens", sensitivity(self.project, pr, r, ev)))
+                except Exception as e:  # noqa: BLE001
+                    w.item.emit(SENS_TITLE, (None, str(e)))
             return name
         w = _Worker(job)
         w.item.connect(lambda title, out, n=name: self._best_plot(n, title, *out))
@@ -1058,6 +1066,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         if specs is None:
             body = QtWidgets.QLabel(f"não rodou: {res}")
             body.setWordWrap(True)
+        elif specs == "sens":
+            body = self._sens_widget(res)
         else:
             plots = LivePlots([sp for sp in specs if _has_data(sp, res)], columns=2, row_height=300)
             plots.show_result(res)
@@ -1073,6 +1083,70 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         else:
             self.best_tabs.addTab(body, title)
         self._best_shown = name
+
+    def _sens_widget(self, s: dict) -> QtWidgets.QWidget:
+        """o tornado: uma barra por contínua livre, da nota prevista em x₀ − h·faixa à prevista em x₀ + h·faixa (o
+        modelo local, aeroopt/sensitivity.py); a linha é a nota do melhor na pista, e o lado em que o avião deixa de
+        fechar fica com o ponto vazado em vermelho"""
+        rows = s["rows"]
+        base = s["base"]["nota"]
+        w = QtWidgets.QWidget()
+        v = QtWidgets.QVBoxLayout(w)
+        pw_ = pg.PlotWidget()
+        pw_.setBackground("w")
+        pw_.setMinimumHeight(max(220, 46 * len(rows) + 80))
+        pi = pw_.getPlotItem()
+        pi.showGrid(x=True, y=False, alpha=0.25)
+        pi.setLabel("bottom", "nota (pista)")
+        n = len(rows)
+        ticks = []
+        for k, r in enumerate(rows):
+            y = n - 1 - k
+            ticks.append((y, r["label"]))
+            ends = [x for x in (r["minus"], r["plus"]) if math.isfinite(x)]
+            if not ends or not math.isfinite(base):
+                continue
+            lo, hi = min(ends + [base]), max(ends + [base])
+            pi.addItem(pg.BarGraphItem(x0=[lo], y=[y], width=[max(hi - lo, 1e-9)], height=0.55,
+                                       brush=pg.mkBrush(70, 120, 180, 110), pen=pg.mkPen(70, 120, 180)))
+            stop = {side for side, *_ in r["blocked"]}
+            for side, nt in (("−", r["minus"]), ("+", r["plus"])):
+                if not math.isfinite(nt):
+                    continue
+                bad = side in stop
+                pi.addItem(pg.ScatterPlotItem([nt], [y], size=10, symbol="t3" if side == "−" else "t2",
+                                              brush=pg.mkBrush(None) if bad else pg.mkBrush(30, 60, 110),
+                                              pen=pg.mkPen(BAD_C, width=2) if bad else pg.mkPen(30, 60, 110)))
+        if math.isfinite(base):
+            pi.addItem(pg.InfiniteLine(pos=base, angle=90, pen=pg.mkPen("#222", width=1.5, style=QtCore.Qt.PenStyle.DashLine)))
+        ax = pi.getAxis("left")
+        ax.setTicks([ticks])
+        ax.setWidth(min(220, 12 + 7 * max((len(t) for _, t in ticks), default=8)))   # o nome inteiro de cada variável
+        pi.setYRange(-0.7, max(n, 1) - 0.3)
+        v.addWidget(pw_)
+        if not rows:
+            lines = ["o problema não tem contínuas livres: não há o que variar no melhor"]
+        else:
+            lines = [f"nota do melhor na pista: {_fmt(base)}" + ("" if s["base"]["valido"] else
+                                                               " (voo inválido: a nota da fórmula)")
+                     + f". Modelo local com {s['used']} pontos que fecham, dos {s['history']} da busca do melhor, e "
+                     + (f"{s['new']} pontos novos" if s["new"] else "nenhum ponto novo")
+                     + (f" (resíduo {_fmt(s['rms'])})" if math.isfinite(s["rms"]) else "")
+                     + f"; barras a ±{100 * s['h']:g} % da faixa, dentro dos limites do problema."]
+        for r in rows:
+            curv = f", ∂²nota/∂x² ≈ {_fmt(r['curv'])}" if math.isfinite(r["curv"]) else ""
+            txt = (f"<b>{r['label']}</b> = {_fmt(r['x0'])}: ∂nota/∂x ≈ {_fmt(r['slope'])}{curv}; "
+                   f"em {_fmt(r['x_minus'])} → {_fmt(r['minus'])}, em {_fmt(r['x_plus'])} → {_fmt(r['plus'])}")
+            if r["at_bound"]:
+                txt += f"; no limite ({r['at_bound']})"
+            for side, x, why in r["blocked"]:
+                txt += f"; em {_fmt(x)} não fecha: {why}"
+            txt += f" ({r['near']} pontos perto" + (f", {r['new']} novos)" if r["new"] else ")")
+            lines.append(txt)
+        lab = QtWidgets.QLabel("<br>".join(lines))
+        lab.setWordWrap(True)
+        v.addWidget(lab)
+        return w
 
     def _best_done(self, name) -> None:
         self._best_job = None
@@ -1268,6 +1342,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         stage_names = [s.name for s in ev.stages(self.project, pr)]
         self.funnel = {s: [0, 0, 0] for s in stage_names}
         self._scoring = scoring
+        self._ev = ev                                 # a sensibilidade do melhor refaz os pontos com o mesmo avaliador
         if m["configurações"] == "todas":
             solver = sg.StagedSolver()
             plan = f"{n_all} combinações: todas"

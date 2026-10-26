@@ -192,3 +192,9 @@ class ISimBackend(ABC):
         """tração em regime de um motor + hélice + bateria com acelerador cheio em cada velocidade `V` (m/s):
         `spec` com Kv (rpm/V), Rm, B, tauc, Imax, Voc, Rint, D (m) e a tabela J, CT, CP da hélice -> array de T (N)"""
         raise NotImplementedError(f"{self.name}: tração motor + hélice não implementada")
+
+    def local_fit(self, xs, ys, x0, r: float, quad: bool = True):
+        """y ≈ a + gᵀ(x − x₀) + ½ Σ cₖ(xₖ − x₀ₖ)² por mínimos quadrados ponderados (peso (1 − (d/r)³)³, zero fora de r) nos pontos
+        `xs` (m × n); sem `quad`, o plano. (g, c, a, resíduo, soma dos pesos), ou None se os pontos não determinam
+        todas as direções"""
+        raise NotImplementedError(f"{self.name}: modelo local não implementado")

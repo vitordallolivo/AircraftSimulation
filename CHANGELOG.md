@@ -6,6 +6,14 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, sensibilidade do melhor (O14): `aeroopt/sensitivity.py` olha só o melhor indivíduo e só as contínuas
+  livres dele, dentro dos limites e das restrições do problema. Um modelo local no núcleo
+  (`core/src/optim/localfit.zig`, `aerosim_local_fit`: inclinação e curvatura por eixo, mínimos quadrados com o peso
+  tricúbico da regressão local) passa pelos pontos que a busca das superfícies já avaliou em volta dele, então em
+  geral não roda nenhum ponto novo; só a direção que o histórico não determina ganha pontos em ±10 % da faixa. Dá
+  ∂nota/∂x, ∂²nota/∂x², a nota prevista a ±10 % e o lado em que o avião deixa de fechar. Na janela, a aba
+  "Sensibilidade" dos gráficos do melhor mostra o tornado; na ferramenta, `--sensibilidade`. Conferida com os dados
+  de teste, em que a inclinação e a curvatura são sabidas.
 - paralelismo, o Parar sem matar e sem esperar nascer: o Parar é combinado (`check_cancel()` no começo de cada ponto
   de projeto; os processos continuam vivos, e só quem não para em 2 s é encerrado). A janela usa *forkserver* com
   `aeroopt.stages` pré-carregado e um pool da sessão (`aerosim.parallel.session`, `warm_session`) que nasce em

@@ -156,6 +156,7 @@ class _Lib:
             "aerosim_cma_init": (c_int, [ctypes.POINTER(T["CmaState"]), c_int, vp, c_double, c_int, c_int]),
             "aerosim_cma_ask": (c_int, [ctypes.POINTER(T["CmaState"]), vp]),
             "aerosim_cma_tell": (c_int, [ctypes.POINTER(T["CmaState"]), vp, vp]),
+            "aerosim_local_fit": (c_int, [c_size, c_size, vp, vp, vp, c_double, c_int, vp, vp, vp]),
             "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
             "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
             "aerosim_prop_state": (c_int, [c_int, c_int] + [c_double] * 5 + [ctypes.POINTER(T["PropPoint"])]),
@@ -616,6 +617,19 @@ class ZigBackend(ISimBackend):
         x = np.ascontiguousarray(xs, float)
         f = np.ascontiguousarray(fitness, float).ravel()
         self._lib.dll.aerosim_cma_tell(ctypes.byref(st), x.ctypes.data, f.ctypes.data)
+
+    def local_fit(self, xs, ys, x0, r: float, quad: bool = True):
+        """o modelo y ≈ a + gᵀ(x − x₀) + ½ Σ cₖ(xₖ − x₀ₖ)² pelos pontos (core/src/optim/localfit.zig; sem `quad`, o
+        plano e c = 0), com o peso tricúbico de raio r: (g, c, a, resíduo, soma dos pesos), ou None se alguma direção não
+        fica determinada"""
+        x = np.ascontiguousarray(np.atleast_2d(np.asarray(xs, float)))
+        y = np.ascontiguousarray(np.asarray(ys, float).ravel())
+        x0 = np.ascontiguousarray(np.asarray(x0, float).ravel())
+        g, c, out = np.zeros(x0.size), np.zeros(x0.size), np.zeros(3)
+        code = self._lib.dll.aerosim_local_fit(x0.size, y.size, x.ctypes.data, y.ctypes.data, x0.ctypes.data,
+                                               float(r), int(bool(quad)), g.ctypes.data, c.ctypes.data,
+                                               out.ctypes.data)
+        return None if code < 0 else (g, c, float(out[0]), float(out[1]), float(out[2]))
 
     def simple_performance(self, cfg: dict) -> tuple[dict, dict]:
         T = self._lib.schema.types

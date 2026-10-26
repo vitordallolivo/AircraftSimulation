@@ -6,10 +6,11 @@ milhares de uma vez, sem alocar memória. Dele sai a nota e cada termo dela (os 
 avião ganhou.
 
 Aqui também nascem as gerações de aviões: o algoritmo genético que escolhe quais configurações o aeroopt avalia. E o
-CMA-ES, a outra busca das variáveis contínuas (envergadura, área, diedro...).
+CMA-ES, a outra busca das variáveis contínuas (envergadura, área, diedro...). Depois da busca, o modelo local diz o
+quanto a nota do melhor avião muda em volta dele.
 
-A pasta tem quatro partes: os tipos do programa (`types.zig`), quem o confere e executa (`expr.zig`), as gerações
-(`ga.zig`) e o CMA-ES (`cmaes.zig`). A álgebra linear que os solvers vão usar fica em `../math/linalg.zig`.
+A pasta tem cinco partes: os tipos do programa (`types.zig`), quem o confere e executa (`expr.zig`), as gerações
+(`ga.zig`), o CMA-ES (`cmaes.zig`) e o modelo local (`localfit.zig`). A álgebra linear que os solvers vão usar fica em `../math/linalg.zig`.
 
 ## O programa
 
@@ -197,6 +198,33 @@ que todo ponto fica na caixa, que um NaN na nota não quebra a ordenação e que
 A conta também foi comparada à `pycma`, a implementação de referência do mesmo autor. Na mesma elipse, com a mesma
 população e o mesmo total de avaliações, as duas chegam a resultados parecidos.
 
+## O modelo local
+
+Aqui se ajusta, em até 32 variáveis, um modelo da nota em volta de um ponto $x_0$ a partir de pontos já avaliados.
+Ele é a sensibilidade do melhor avião (`aeroopt/sensitivity.py`). Sem ele, saber o quanto a nota muda com cada
+variável pedia refazer o avião em dois pontos por variável, e cada ponto de projeto é caro. Só que a busca das
+superfícies já passou por vários pontos perto do melhor, e eles carregam essa informação: o modelo que melhor passa
+por eles dá a inclinação e a curvatura de graça.
+
+O modelo tem a inclinação $g$ e uma curvatura $c_k$ por variável, sem os termos cruzados, para que os pontos de uma
+busca por coordenadas, que anda um eixo por vez, bastem:
+
+$$y \approx a + g^T (x - x_0) + \tfrac12 \sum_k c_k (x_k - x_{0k})^2$$
+
+A curvatura importa porque no alto do morro a inclinação é zero e não diz quanto se perde ao sair dali. Os
+coeficientes saem dos mínimos quadrados ponderados, pelas equações normais resolvidas por Cholesky (Björck,
+*Numerical Methods for Least Squares Problems*, SIAM 1996, seções 1.1 e 4.1, a conferir no PDF), com cada coluna
+escalada antes, porque pontos muito perto de $x_0$ deixam a matriz mal condicionada:
+
+$$\min_{a, g, c} \sum_i w_i \left(y_i - \hat y_i\right)^2, \qquad w_i = \left(1 - (d_i / r)^3\right)^3 \ \text{se}\ d_i < r,\quad 0\ \text{fora}$$
+
+O peso tricúbico, com $d_i$ a distância de $x_i$ a $x_0$ nas variáveis normalizadas, faz os pontos de perto mandarem
+e os de fora do raio $r$ não contarem. É o peso da regressão local de Cleveland e Devlin (JASA 83(403), 1988, a
+conferir no PDF). Uma nota NaN é ignorada. Quando os pontos não abrem todas as direções (uma variável que a busca não mexeu, ou
+só dois valores dela para a curvatura), um pivô de Cholesky some e a conta devolve que não dá. Quem chama então
+avalia só as direções que faltam. Os testes conferem um plano exato, uma parábola (inclinação zero no topo e
+curvatura exata mesmo com pontos de um lado só), os pontos de uma busca por coordenadas e as direções que faltam.
+
 ## Como chamar
 
 Pela ABI: `aerosim_expr_check(programa)` e `aerosim_expr_eval(programa, entradas, passo, linhas, saída, passo)`,
@@ -226,6 +254,19 @@ for _ in range(60):
     X = be.cma_ask(st)                                  # λ × n em [0, 1]
     be.cma_tell(st, X, -((X - 0.7) ** 2).sum(axis=1))   # maior é melhor
 print(st.mean[:3], st.sigma)                            # ≈ 0,7 0,7 0,7, passo pequeno
+```
+
+O modelo local: `aerosim_local_fit(n, m, pontos, valores, x0, r, quad, g, c, saída)`, com saída = (a, resíduo, soma
+dos pesos) e −1 se as direções não ficam determinadas. No Python:
+
+```python
+import numpy as np
+from aerosim.backend.zig import ZigBackend
+
+X = np.array([[0.5, 0.5], [0.6, 0.5], [0.4, 0.5], [0.5, 0.6], [0.5, 0.45]])
+y = 1 + 2 * (X[:, 0] - 0.5) - 3 * (X[:, 1] - 0.5) ** 2
+g, c, a, rms, peso = ZigBackend().local_fit(X, y, [0.5, 0.5], 0.2)
+print(g, c)                                             # ≈ [2 0] [0 −6]
 ```
 
 Testes: `python -m ziglang build test-optim` (dentro de `core/`) e `python -m pytest -q tests/aeroopt`. Uma operação

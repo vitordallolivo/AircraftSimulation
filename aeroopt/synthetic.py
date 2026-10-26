@@ -113,24 +113,18 @@ class SyntheticSurfaces(sg.SurfaceSizing):
         super().__init__(project, problem, None, evals, None, method, None)
         self.delay = delay
         self.req = project.requirements
+        self.axis_keys = [k for k, _ in sg.axes(project, problem)]   # o nome da configuração sai destes valores
 
     def point(self, values: dict) -> dict:
         check_cancel()
         time.sleep(self.delay)
-        name = values.get("_config", "")
+        name = sg.config_item({k: values[k] for k in self.axis_keys if k in values}, 0).name
         u = [(float(values.get(k, lo)) - lo) / (hi - lo) if hi > lo else U_BEST for k, lo, hi in self.free]
         r = evaluate(name, u or [U_BEST])
         b = float(values.get("wing.span", sg.get_value(self.project, "wing.span")))
-        return dict(values={k: v for k, v in values.items() if k != "_config"}, mtow=r["mtow"], ok=r["ok"],
+        return dict(values=dict(values), mtow=r["mtow"], ok=r["ok"],
                     why=r["why"], pv=r["pv"], m_bat=0.3, b=b, s_to=float(self.req.takeoff_run), lapes=True,
                     liquid=True, cand=None, req=self.req, stab={}, viol=r["viol"])
-
-    def one(self, item: StageItem) -> StageItem:
-        item.values["_config"] = item.name          # o ponto precisa do nome da configuração (o fator dela)
-        try:
-            return super().one(item)
-        finally:
-            item.values.pop("_config", None)
 
 
 class SyntheticScore(IStage):

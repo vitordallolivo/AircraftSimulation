@@ -46,6 +46,8 @@ def main(argv=None) -> int:
     ap.add_argument("--sem-6gdl", action="store_true", help="pula a etapa da decolagem no 6GDL")
     ap.add_argument("--populacao", type=int, default=16, help="etapas: configurações por geração")
     ap.add_argument("--geracoes", type=int, default=8, help="etapas: gerações (com poucas combinações, uma só)")
+    ap.add_argument("--sensibilidade", action="store_true",
+                    help="etapas: no fim, a sensibilidade do melhor (as contínuas livres, pelo histórico da busca)")
     a = ap.parse_args(argv)
     from aerosim.design.project import DesignProject
     if a.exemplo:
@@ -149,6 +151,17 @@ def staged(pr, project, a) -> int:
         print(f"  {k:16s} {_fmt(v)}")
     for txt, ok, _ in b["validade"]:
         print(f"  {'ok ' if ok else 'NÃO'} {txt}")
+    if a.sensibilidade:
+        from aeroopt.sensitivity import sensitivity
+        from aerosim.parallel import make_executor
+        with make_executor("processos", a.processos) as ex:
+            s = sensitivity(project, pr, b, ev, executor=ex)
+        print(f"\nsensibilidade (nota na pista {_fmt(s['base']['nota'])}; {s['used']} pontos da busca do melhor, "
+              f"{s['new']} novos; ±{100 * s['h']:g} % da faixa)")
+        for r in s["rows"]:
+            stop = "".join(f"; em {_fmt(x)} não fecha: {why}" for _, x, why in r["blocked"])
+            print(f"  {r['label']} = {_fmt(r['x0'])}: ∂nota/∂x ≈ {_fmt(r['slope'])}, ∂²nota/∂x² ≈ {_fmt(r['curv'])}"
+                  f"\n      {_fmt(r['x_minus'])} → {_fmt(r['minus'])}, {_fmt(r['x_plus'])} → {_fmt(r['plus'])}{stop}")
     return 0
 
 
