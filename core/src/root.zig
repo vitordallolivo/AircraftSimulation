@@ -588,6 +588,23 @@ export fn aerosim_local_fit(n: usize, m: usize, xs: [*]const f64, ys: [*]const f
     return 0;
 }
 
+// ------------------------------------------------------------------ substituto RBF (GA com substituto)
+const rbf = @import("optim/rbf.zig");
+
+/// ajusta s(x) = Σ λᵢ ‖x − xᵢ‖³ + c₀ + cᵀx pelos `m` pontos `xs` (m × n) com valores `ys`; `coef` recebe
+/// (λ₁..λₘ, c₀, c₁..cₙ) e `work` tem (m + n + 1)² valores. −1 se os pontos não determinam a cauda
+export fn aerosim_rbf_fit(n: usize, m: usize, xs: [*]const f64, ys: [*]const f64, work: [*]f64, coef: [*]f64) i32 {
+    if (n == 0 or n > rbf.max_n or m < n + 1) return -1;
+    const k = rbf.size(n, m);
+    return if (rbf.fit(n, m, xs[0 .. m * n], ys[0..m], work[0 .. k * k], coef[0..k])) 0 else -1;
+}
+
+/// o substituto de `aerosim_rbf_fit` nos `q` pontos `qs` (q × n), em `out[0..q]`
+export fn aerosim_rbf_eval(n: usize, m: usize, xs: [*]const f64, coef: [*]const f64, q: usize, qs: [*]const f64, out: [*]f64) void {
+    const k = rbf.size(n, m);
+    for (0..q) |i| out[i] = rbf.eval(n, m, xs[0 .. m * n], coef[0..k], qs[i * n ..][0..n]);
+}
+
 // ------------------------------------------------------------------ amostragem (hipercubo latino)
 const smp = @import("optim/sampling.zig");
 

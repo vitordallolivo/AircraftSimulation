@@ -75,3 +75,33 @@ def test_coupled_shape_mixes_the_variables_and_multimodal_has_local_minima():
     assert m(0.18) < m(0.15) and m(0.18) < m(0.21)          # um mínimo local perto de z = 0,18 (a busca local para)
     with pytest.raises(ValueError):
         sy.distance2([0.5], "outra")
+
+
+def test_rbf_surrogate_passes_through_the_points_and_guesses_between_them():
+    """o substituto do núcleo (`rbf_fit`/`rbf_eval`): exato nos pontos, perto da tigela entre eles, e None quando os
+    pontos ficam todos numa reta (a cauda linear não fica determinada)"""
+    import numpy as np
+
+    from aerosim.backend.zig import ZigBackend
+    be = ZigBackend()
+    g = np.linspace(0, 1, 5)
+    X = np.array([(a, b) for a in g for b in g])
+    y = -((X - 0.6) ** 2).sum(1)
+    m = be.rbf_fit(X, y)
+    assert np.allclose(be.rbf_eval(m, X), y, atol=1e-9)
+    mid = np.array([(0.375, 0.625), (0.625, 0.125)])
+    assert np.allclose(be.rbf_eval(m, mid), -((mid - 0.6) ** 2).sum(1), atol=0.01)
+    assert be.rbf_fit([[0, 0], [0.5, 0.5], [1, 1], [0.25, 0.25]], [1, 2, 3, 4]) is None
+
+
+def test_surrogate_beats_plain_generations_on_the_coupled_shape():
+    """com o mesmo total de pontos, o substituto escolhe filhos melhores que o GA puro na forma acoplada (no banco,
+    6 contínuas e 48 pontos, a mediana de 7 sementes foi de 91 % para 98 % do ótimo)"""
+    import statistics
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+    import banco_otimizadores as bo
+    rows = bo.run_surfaces(["acoplada"], ["gerações", "substituto"], 5, 48, 6)
+    med = {m: statistics.median(r["final"] for r in rows if r["method"] == m) for m in ("gerações", "substituto")}
+    assert med["substituto"] > med["gerações"] + 0.03 and med["substituto"] >= 0.95

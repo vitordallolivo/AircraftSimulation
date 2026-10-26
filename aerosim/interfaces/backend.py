@@ -199,6 +199,15 @@ class ISimBackend(ABC):
         todas as direções"""
         raise NotImplementedError(f"{self.name}: modelo local não implementado")
 
+    def rbf_fit(self, xs, ys):
+        """o substituto por funções de base radial s(x) = Σ λᵢ ‖x − xᵢ‖³ + c₀ + cᵀx, que passa por todos os pontos
+        `xs` (m × n) com valores `ys`: o modelo para `rbf_eval`, ou None se os pontos não determinam a cauda linear"""
+        raise NotImplementedError(f"{self.name}: substituto RBF não implementado")
+
+    def rbf_eval(self, model, qs):
+        """o substituto de `rbf_fit` nos pontos `qs` (q × n): array de q valores"""
+        raise NotImplementedError(f"{self.name}: substituto RBF não implementado")
+
     def sens_tolerance(self, g, c, x0, n0: float, delta):
         """a perda de nota por uma tolerância δ em cada variável, pela inclinação g e a curvatura c (NaN = sem):
         (ΔN em −δ, ΔN em +δ, elasticidade g·x/N, σ_N pelos dois primeiros momentos)"""

@@ -162,6 +162,8 @@ class _Lib:
             "aerosim_local_fit": (c_int, [c_size, c_size, vp, vp, vp, c_double, c_int, vp, vp, vp]),
             "aerosim_sens_tolerance": (c_double, [c_size, vp, vp, vp, c_double, vp, vp, vp, vp]),
             "aerosim_morris_design": (c_int, [c_size, c_size, c_size, ctypes.c_uint64, vp]),
+            "aerosim_rbf_fit": (c_int, [c_size, c_size, vp, vp, vp, vp]),
+            "aerosim_rbf_eval": (None, [c_size, c_size, vp, vp, c_size, vp, vp]),
             "aerosim_lhs": (c_int, [c_size, c_size, c_size, ctypes.c_uint64, vp]),
             "aerosim_repair_step": (c_int, [c_size, c_size, vp, vp, c_double, vp]),
             "aerosim_eps_level": (c_double, [c_double, c_double, c_double, c_double]),
@@ -743,6 +745,27 @@ class ZigBackend(ISimBackend):
                                                float(r), int(bool(quad)), g.ctypes.data, c.ctypes.data,
                                                out.ctypes.data)
         return None if code < 0 else (g, c, float(out[0]), float(out[1]), float(out[2]))
+
+    def rbf_fit(self, xs, ys):
+        """o substituto s(x) = Σ λᵢ ‖x − xᵢ‖³ + c₀ + cᵀx pelos pontos (core/src/optim/rbf.zig): (xs, coeficientes), ou
+        None se os pontos não determinam a cauda linear"""
+        x = np.ascontiguousarray(np.atleast_2d(np.asarray(xs, float)))
+        y = np.ascontiguousarray(np.asarray(ys, float).ravel())
+        m, n = x.shape
+        k = m + n + 1
+        work, coef = np.zeros(k * k), np.zeros(k)
+        if self._lib.dll.aerosim_rbf_fit(n, m, x.ctypes.data, y.ctypes.data, work.ctypes.data, coef.ctypes.data) < 0:
+            return None
+        return x, coef
+
+    def rbf_eval(self, model, qs):
+        """o substituto de `rbf_fit` nos pontos `qs` (q × n): array de q valores"""
+        x, coef = model
+        q = np.ascontiguousarray(np.atleast_2d(np.asarray(qs, float)))
+        out = np.zeros(q.shape[0])
+        self._lib.dll.aerosim_rbf_eval(x.shape[1], x.shape[0], x.ctypes.data, coef.ctypes.data, q.shape[0],
+                                       q.ctypes.data, out.ctypes.data)
+        return out
 
     def sens_tolerance(self, g, c, x0, n0: float, delta):
         """a perda de nota por tolerância (core/src/optim/sensmethods.zig): (ΔN em −δ, ΔN em +δ, elasticidade, σ_N)"""

@@ -55,7 +55,9 @@ de cada rodada saem de `export.py`. Depois da rodada, `sensitivity.py` diz o qua
 cada variável: se ele está num morro largo ou na beira de um precipício. Para testar a máquina sem esperar as contas do avião, `synthetic.py` traz dados de
 teste: as mesmas etapas com funções simples, em que já se sabe onde cada configuração para e qual é a melhor. Elas
 vêm em três formas (a tigela, a acoplada e a multimodal), e `tools/banco_otimizadores.py` compara nelas as buscas
-das superfícies e da etapa voa: é a medida para escolher o otimizador padrão.
+das superfícies e da etapa voa: é a medida para escolher o otimizador padrão. Por ela entrou a busca "substituto" das superfícies: o
+genético sorteia muitos filhos, um modelo barato (uma superfície que passa por todos os pontos já avaliados, no
+núcleo) dá o palpite de cada um, e só os de melhor palpite vão para a conta de verdade.
 
 | arquivo | o que tem |
 |---|---|

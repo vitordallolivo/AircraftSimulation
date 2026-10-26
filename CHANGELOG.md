@@ -6,6 +6,13 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, GA com substituto (O36, passo 2): a busca "substituto" das superfícies. A cada geração o GA do núcleo
+  sorteia 16 vezes mais filhos que a população, um substituto RBF cúbico com cauda linear (`core/src/optim/rbf.zig`,
+  Gutmann 2001; Regis e Shoemaker 2007) do MTOW e outro da violação dão o palpite de cada um, e só os de melhor
+  palpite (mais um sorteado) são avaliados. No banco, com 6 contínuas e 48 pontos, a mediana de 7 sementes foi 94 %
+  do ótimo na tigela, 98 % na acoplada e 88 % na multimodal (o GA puro: 78, 91 e 71 %): a melhor busca nas duas
+  formas difíceis. Os métodos de antes ficam iguais.
+
 - aeroopt, banco dos otimizadores (`tools/banco_otimizadores.py`, O36): compara as buscas das superfícies e da
   etapa voa nos dados de teste, em três formas de problema (`synthetic.SHAPES`: tigela, acoplada e multimodal, com
   o mesmo ótimo). Linha de base com 6 contínuas e 48 pontos: ninguém chega a 99 % do ótimo; as coordenadas ganham

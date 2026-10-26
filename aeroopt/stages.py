@@ -30,6 +30,7 @@ import copy
 import functools
 import itertools
 import math
+import random
 import zlib
 from dataclasses import dataclass
 
@@ -437,7 +438,9 @@ def core_rotation(ac, asm: dict, rules, rho: float, backend, v_need: float | Non
 SURFACE_METHODS = {"coordenadas": "busca por coordenadas (um eixo por vez, passo cai à metade)",
                    "gerações": "gerações nas contínuas (algoritmo genético do núcleo)",
                    "cma-es": "CMA-ES nas contínuas (aprende a forma da região boa; núcleo)",
-                   "de": "evolução diferencial nas contínuas (o passo sai das diferenças da população; núcleo)"}
+                   "de": "evolução diferencial nas contínuas (o passo sai das diferenças da população; núcleo)",
+                   "substituto": "gerações com substituto (um modelo RBF dos pontos já vistos escolhe os filhos que "
+                                 "valem a conta; núcleo)"}
 
 
 class SurfaceSizing(IStage):
@@ -504,6 +507,8 @@ class SurfaceSizing(IStage):
             x, best = self._generations(item, x, best, hist, _cma_search)
         elif self.method == "de":
             x, best = self._generations(item, x, best, hist, _de_search)
+        elif self.method == "substituto":
+            x, best = self._generations(item, x, best, hist, _sga_search)
         else:
             x, best = self._coordinates(item, x, best, hist)
         item.values = {**item.values, **x, **best["values"]}     # com o trem que a geometria desceu, se desceu
@@ -877,6 +882,91 @@ def _real_search(free, x: dict, best: dict, point, evals: int, hist: list, seed:
             break
         cfg["generation"] = gen + 1
         genes = be.ga_next(cfg, genes, fit)
+    return x, best
+
+
+SGA_POOL = 16                    # filhos sorteados por filho avaliado no GA com substituto (o banco: 2, 4, 8, 16)
+
+
+def _sga_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: int, stop_ok: bool = False,
+                init: str = "uniforme", starts: Starts | None = None):
+    """o mesmo contrato de `_real_search`, com o GA assistido por substituto (pré-seleção; Jin, "Surrogate-assisted
+    evolutionary computation: recent advances and future challenges", Swarm and Evolutionary Computation 1(2), 2011,
+    a conferir no PDF). A cada geração o GA do núcleo sorteia `SGA_POOL` gerações de filhos a partir da mesma
+    população; dois substitutos RBF (`rbf_fit`, core/src/optim/rbf.zig), um do MTOW e um da violação, ajustados em
+    todos os pontos já avaliados nas contínuas normalizadas, dão o palpite de cada filho, e `_rank` no palpite os
+    ordena. A geração seguinte é o melhor ponto até ali (a elite, que não gasta avaliação), os filhos de melhor
+    palpite e um sorteado entre os outros, para o substituto não ficar preso no que já acha. Enquanto um substituto
+    não tem n + 2 pontos, ou o sistema não fecha, os filhos são sorteados sem ele: é o GA de sempre"""
+    from aerosim.backend.zig import ZigBackend
+    be = ZigBackend()
+    n = len(free)
+    pop = max(4, min(10, evals // 3))
+    lo = np.array([a for _, a, _ in free])
+    span = np.array([max(b - a, 1e-12) for _, a, b in free])
+    cfg = dict(n_genes=n, pop=pop, elite=1, card=[0] * n, lo=list(lo), hi=[hi for _, _, hi in free], p_mut=0.3,
+               sigma=0.15, seed=seed, generation=0)
+    steps = [(inp.get(k).step if inp.get(k) else 0.0) for k, _, _ in free]
+    keys = [k for k, _, _ in free]
+    rng = random.Random(seed)
+
+    def snap(j, g):
+        _, a, b = free[j]
+        g = round(g / steps[j]) * steps[j] if steps[j] > 0 else g
+        return round(min(max(g, a), b), 6)
+    genes = be.ga_init(cfg)
+    rows = _start_rows(be, n, pop, seed, init)
+    if rows is not None:
+        genes[1:] = [[a + u * (b - a) for u, (_, a, b) in zip(row, free)] for row in rows]
+    genes = [tuple(x[k] for k in keys)] + [tuple(snap(j, g) for j, g in enumerate(r)) for r in genes[1:]]
+    seen = {genes[0]: best}
+
+    def model(U, y):
+        ok = np.isfinite(y)
+        return be.rbf_fit(U[ok], y[ok]) if ok.sum() >= n + 2 else None
+
+    def choose(cand: list, need: int) -> list:
+        if len(cand) <= need:
+            return cand
+        pts = list(seen)
+        U = (np.array(pts) - lo) / span
+        mt = model(U, np.array([seen[p]["mtow"] for p in pts], float))
+        vi = model(U, np.array([0.0 if seen[p]["ok"] else seen[p].get("viol", math.inf) for p in pts], float))
+        if mt is None and vi is None:
+            return rng.sample(cand, need)
+        Q = (np.array(cand) - lo) / span
+        pm = be.rbf_eval(mt, Q) if mt is not None else np.zeros(len(cand))
+        pv = be.rbf_eval(vi, Q) if vi is not None else np.zeros(len(cand))
+        order = sorted(range(len(cand)), key=lambda i: (1, pm[i]) if pv[i] <= 0 else (0, -pv[i]), reverse=True)
+        rest = [cand[i] for i in order[need - 1:]]
+        return [cand[i] for i in order[:need - 1]] + [rng.choice(rest)]
+    for gen in range(4 * math.ceil(evals / pop) + 1):
+        fit = []
+        for key in genes:
+            r = seen.get(key)
+            if r is None and len(hist) < evals:
+                y = {k: key[j] for j, k in enumerate(keys)}
+                r = seen[key] = point(y)
+                hist.append(_eval(y, r))
+                if _rank(r) > _rank(best):
+                    x, best = y, r
+                if stop_ok and (starts.add(y, r) if starts else best["ok"]):
+                    return x, best
+            fit.append(_fit(r) if r is not None else math.nan)
+        if len(hist) >= evals:
+            break
+        cand: list = []
+        for d in range(SGA_POOL):
+            cfg["generation"] = gen * SGA_POOL + d + 1
+            for g in be.ga_next(cfg, genes, fit):
+                key = tuple(snap(j, v) for j, v in enumerate(g))
+                if key not in seen and key not in cand:
+                    cand.append(key)
+        if not cand:                     # todo filho já foi visto: a busca não tem mais para onde ir
+            break
+        elite = max(seen, key=lambda k: _rank(seen[k]))
+        genes = [elite] + choose(cand, pop - 1)
+        genes += [elite] * (pop - len(genes))
     return x, best
 
 

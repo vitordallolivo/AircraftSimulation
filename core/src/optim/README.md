@@ -9,9 +9,9 @@ Aqui também nascem as gerações de aviões: o algoritmo genético que escolhe 
 CMA-ES, a outra busca das variáveis contínuas (envergadura, área, diedro...). Depois da busca, o modelo local e os outros métodos da
 sensibilidade dizem o quanto a nota do melhor avião muda em volta dele.
 
-A pasta tem nove partes: os tipos do programa (`types.zig`), quem o confere e executa (`expr.zig`), as gerações
+A pasta tem dez partes: os tipos do programa (`types.zig`), quem o confere e executa (`expr.zig`), as gerações
 (`ga.zig`), o CMA-ES (`cmaes.zig`), a evolução diferencial (`de.zig`), o hipercubo latino de onde nascem as
-populações (`sampling.zig`), as peças da busca guiada pela falha (`guided.zig`), o modelo local (`localfit.zig`) e os outros métodos da sensibilidade (`sensmethods.zig`). A álgebra linear que os solvers vão usar fica em `../math/linalg.zig`.
+populações (`sampling.zig`), o substituto RBF do GA com substituto (`rbf.zig`), as peças da busca guiada pela falha (`guided.zig`), o modelo local (`localfit.zig`) e os outros métodos da sensibilidade (`sensmethods.zig`). A álgebra linear que os solvers vão usar fica em `../math/linalg.zig`.
 
 ## O programa
 
@@ -236,6 +236,33 @@ Statistical Planning and Inference 43, 1995, a conferir no PDF). Os testes confe
 a mesma semente dá os mesmos pontos, que o maximin não afasta menos que um sorteio só e que, em 12 variáveis com 8
 pontos, o sorteio uniforme deixa fatias vazias e o latino não.
 
+## O substituto RBF
+
+Aqui se ajusta uma superfície barata que passa por todos os aviões já avaliados, até 32 variáveis e tantos pontos
+quanto a memória que quem chama entrega. O problema que isso resolve: nas gerações, cada filho custa um ponto de
+projeto inteiro (a pista, a estabilidade, a geometria), e quase todos os filhos sorteados são piores que os pais.
+Com o substituto, o genético sorteia muitos filhos, o substituto dá um palpite de cada um, e só os de melhor palpite
+são avaliados de verdade. É a pré-seleção do GA assistido por substituto (Jin, Swarm and Evolutionary Computation
+1(2), 2011, a conferir no PDF), a busca "substituto" das superfícies em `aeroopt/stages.py`.
+
+A superfície é a soma de uma cúbica em volta de cada ponto $x_i$ com um plano,
+
+$$s(x) = \sum_{i=1}^{m} \lambda_i \lVert x - x_i \rVert^3 + c_0 + c^{\mathsf T} x$$
+
+a do método RBF de Gutmann (J. Global Optimization 19, 2001) e de Regis e Shoemaker (INFORMS J. Computing 19(4),
+2007), os dois a conferir no PDF. A cúbica não tem parâmetro de forma para ajustar, o que importa porque ninguém vai
+afinar nada no meio de uma rodada. Os coeficientes saem de pedir que $s$ passe pelos pontos e que os $\lambda$ não
+tenham parte linear:
+
+$$\begin{bmatrix} \Phi & P \\ P^{\mathsf T} & 0 \end{bmatrix} \begin{bmatrix} \lambda \\ c \end{bmatrix} =
+\begin{bmatrix} y \\ 0 \end{bmatrix}, \qquad \Phi_{ij} = \lVert x_i - x_j \rVert^3, \quad P_i = (1,\ x_i^{\mathsf T})$$
+
+O sistema tem solução única quando os pontos não ficam todos num mesmo hiperplano. Ele é resolvido por LU com
+pivoteamento parcial, e como cresce com os pontos, a memória ((m + n + 1)² valores) vem de quem chama: o núcleo não
+aloca. Com pontos repetidos ou todos numa reta, a conta diz que não dá, e o aeroopt sorteia os filhos sem o
+substituto. Os testes conferem que $s$ passa pelos pontos, que um plano sai exato (só a cauda), que numa grade 5 × 5
+a tigela fica certa entre os pontos com erro menor que 0,01 e que pontos numa reta ou repetidos são recusados.
+
 ## A busca guiada pela falha
 
 As buscas acima só veem um número por ponto: o quanto ele viola. A etapa voa do aeroopt sabe mais: por que o avião
@@ -344,6 +371,10 @@ print(round(r["nota"], 2), {k: round(v, 3) for k, v in r["termos"].items()}, r["
 
 As gerações: `aerosim_ga_init(cfg, saída)` e `aerosim_ga_next(cfg, genes, notas, saída)`, com a `GaCfg`; no Python,
 `ZigBackend().ga_init(cfg)` e `ga_next(cfg, genes, notas)`, que o `aeroopt/generations.py` usa.
+
+O substituto: `aerosim_rbf_fit(n, m, pontos, valores, memória, coeficientes)` e `aerosim_rbf_eval(n, m, pontos,
+coeficientes, q, consultas, saída)`; no Python, `ZigBackend().rbf_fit(xs, ys)`, que devolve o modelo (ou None), e
+`rbf_eval(modelo, consultas)`.
 
 O CMA-ES: `aerosim_cma_init(estado, n, x0, sigma0, lambda, seed)` (devolve λ ou um código negativo),
 `aerosim_cma_ask(estado, saída)` e `aerosim_cma_tell(estado, pontos, notas)`, com a `CmaState`, que guarda tudo
