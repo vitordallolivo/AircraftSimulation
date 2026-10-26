@@ -89,7 +89,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/design/mdo.py` — Dimensionamento inicial como mini-MDO: monta a configuração do núcleo (`core/src/sizing`) a partir do
   `class MdoParams:40`, `class MdoRun:60`, `airfoil_catalog:81`, `available:104`, `airfoil_data:134`, `build:144`, `tip_varies:225`, `at_bounds:235`, `opts_of:249`, `decode:254`, `history:269`, `run:280`, `evaluate:293`, `apply:305`, `planform:327`, `sketch:338`, `check_6dof:389`, `full_envelope:417`, `constraint_diagram:438`
 - `aerosim/design/power.py` — Etapa Motores e montagem: onde ficam os motores (e por consequência a bateria, a carga e o trem) e o
-  `class PowerParams:35`, `class AircraftCandidate:72`, `motor_counts:82`, `assemble:117`, `thrust_trim:282`, `thrust_of:376`, `motor_prop_spec:404`, `performance:423`, `trim_drag:470`, `design_point:492`
+  `class PowerParams:35`, `class AircraftCandidate:75`, `motor_counts:85`, `assemble:120`, `ground_pitch:287`, `trimmed_clmax:295`, `thrust_trim:316`, `thrust_of:425`, `motor_prop_spec:453`, `performance:472`, `trim_drag:525`, `design_point:547`
 - `aerosim/design/project.py` — O projeto da sprint: requisitos, regras e o que cada etapa guardou (perfis, asas, conjuntos, aviões).
   `rg_sae:31`, `class DesignProject:41`, `is_project_file:182`, `next_name:194`
 - `aerosim/design/registry.py` — Registro de grandezas do projeto: o que dá para medir, restringir ou variar.
@@ -417,7 +417,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `rigid:52`, `linearize:162`, `residual:217`
 - `core/src/sim/runner.zig` — Executor de uma corrida: eventos discretos, paradas, registro e checkpoints.
   tipos `Status:23`, `Instance:33`
-  fn `stateText:58`, `configure:86`, `handover:137`, `resetGround:158`, `resetAir:199`, `run:350`
+  fn `stateText:58`, `configure:86`, `handover:137`, `resetGround:158`, `resetAir:212`, `run:363`
 - `core/src/sim/simple_perf.zig` — Desempenho por cálculo simples (sem simulação no tempo), como na "planilha suprema":
   tipos `SimpleCfg:23`, `SimpleRow:52`, `SimpleSummary:76`
   fn `density:107`, `compute:130`
@@ -436,7 +436,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `checkThrust:17`, `decode:55`, `motorsFor:77`, `Chain:92`
 - `core/src/sizing/ground.zig` — Corrida de decolagem rápida da sprint (etapa Motores, `aerosim/design/power.py: performance`): a mesma
   tipos `GroundRun:23`
-  fn `interp:46`, `rotSpeed:73`, `run:83`, `mtow:106`
+  fn `interp:50`, `rotSpeed:77`, `run:87`, `mtow:112`
 - `core/src/sizing/kinds.zig` — Tipos de aeronave do dimensionamento: cada um é um tipo Zig com a mesma interface, conferida em
   tipos `Hover:19`, `Monoplane:21`, `Biplane:46`, `FlyingWing:66`, `Tailsitter:85`, `Vtol:104`
   fn `biplaneSigma:41`, `check:127`
@@ -676,7 +676,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 ## Testes (`tests/`)
 
 - `tests/aero` — 59 testes em 9 arquivo(s)
-- `tests/aeroopt` — 61 testes em 8 arquivo(s)
+- `tests/aeroopt` — 64 testes em 8 arquivo(s)
 - `tests/core` — 34 testes em 9 arquivo(s)
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 69 testes em 11 arquivo(s)

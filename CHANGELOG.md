@@ -6,6 +6,23 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, pontuação da Regular 2026 (`pontuacao/sae_br_2026_regular.toml`): P_EE = 50 EE e a nota de voo da eq.
+  7.5, com o fator do número de superfícies longitudinais N (`stages.n_surfaces`: asa voadora 1, monoplano e tandem
+  2, biplano 3), o fator de envergadura 1,15^(−b), o MTOW de 20 kg e a penalidade de envergadura acima de 4 m. O
+  voo vale se passar o obstáculo a 55 m. A penalidade de potência acima de 600 W fica de fora: o avaliador ainda
+  não entrega a potência de pico.
+
+- asa voadora na E&C: com "comandos (E&C)", a asa voadora parte de uma asa enflechada com torção para baixo. Ela
+  ganha perfil simétrico na ponta (onde fica o elevon), hélice propulsora e o momento próprio dos comandos, e a busca
+  mexe também em margem estática, enflechamento, torção, afilamento, atitude no chão e posição do trem. A E&C confere
+  no núcleo: o maior C_L trimado contra a velocidade de estol pedida, o elevon picando segurando o nariz com o motor
+  cheio e a asa correndo longe do estol. O exemplo usa o S1223 na asa (`example_project(airfoil)` troca).
+- sprint, atitude no chão (`power.ground_pitch`, 0 por padrão): a bequilha mais comprida deixa a asa correndo num
+  ângulo, e a corrida do núcleo (`GroundRun.lift_off`) sai do chão sem rodar quando a sustentação vence o peso. A
+  pista da asa voadora usa o C_L trimado (`power.trimmed_clmax`). 6GDL: com a bequilha mais comprida, a decolagem
+  começa parada na atitude do trem; antes começava nivelada, a bequilha entrava no chão e o avião capotava. Os
+  trens nivelados ficam iguais.
+
 - sprint, elevon da asa voadora (O16): a sustentação do elevon ia toda a 3/4 da corda e dava uns 4 vezes o C_mδ do
   núcleo. Agora vai no quarto de corda da faixa, mais o momento próprio do flape do perfil fino. Muda só a cauda
   "sem cauda". Núcleo: o modificador novo `comando.momento_flape` (`core/src/modifiers/flapmoment.zig`) soma esse

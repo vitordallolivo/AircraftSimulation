@@ -54,6 +54,7 @@ flowchart TD
 | `types.zig` | `Modifier` (extern struct: `kind`, `enabled`, `surf_mask[2]`, `prop_mask`, `params[16]`) e os enums que dão nome aos números: `Ground` (método do efeito solo), `Kind` (tipo do efeito a mais) e `SlipstreamParam` (o que cada `params[k]` da esteira quer dizer) |
 | `ground.zig` | métodos do efeito solo (`factor`, `mccormick`) |
 | `slipstream.zig` | esteira por disco atuador (`diskInduced`, `axialAt`, `radiusAt`, `swirlRate`, `at`); `shape`/`TubeShape.tube` montam o tubo que contrai para `collision/` |
+| `flapmoment.zig` | momento próprio do comando no quarto de corda da faixa (teoria do perfil fino; Anderson, a conferir no PDF): `thetaOf` acha θ_f a partir do τ da faixa, e `cmDelta` dá dΔc_m/dδ. Entra no momento de cada faixa pelo `flapCm` de `mod.zig`, só com o modificador `comando.momento_flape` ligado |
 | `mod.zig` | entrada do módulo: `Env` (tração, torque, eixo e velocidade axial de cada motor no instante; `envFrom`), `induced` (soma dos efeitos a mais por painel, como média de uma grade `chord_samples × strip_samples` de pontos da faixa; quem está dentro do tubo é dito por `collision/`), `hits` / `hitsProp` (máscaras) |
 | `README.md` | este arquivo |
 

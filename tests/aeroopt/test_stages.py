@@ -267,7 +267,7 @@ def test_fly_stage_finds_a_point_that_flies_before_performance(method):
     procura nas contínuas o ponto que viola menos até achar um que voa, e as superfícies partem dele"""
     from aerosim.interfaces.optim import StageItem
     from aeroopt.gui import example_project
-    p, pr = example_project()
+    p, pr = example_project("NACA 2412")          # com o perfil de antes a bateria não cabe como está
     pr.variable("wing.area").lo, pr.variable("wing.area").hi = 0.4, 0.6
     st = sg.FlightCheck(p, pr, evals=24, method=method)
     start = st.point({})
@@ -359,7 +359,7 @@ def test_core_rotation_agrees_with_the_sprint_with_the_flap_moment():
     from aeroopt.gui import example_project
     from aerosim.backend.zig import ZigBackend
     from aerosim.design import power as pw
-    p, _ = example_project()
+    p, _ = example_project("NACA 2412")
     be = ZigBackend()
 
     def both(values):
@@ -375,7 +375,7 @@ def test_core_rotation_agrees_with_the_sprint_with_the_flap_moment():
           "power.tilt": 4.5}
     vs, vc, vl = both(fw)
     vs2, vc2, _ = both({**fw, "tail.flap_moment": True})
-    assert vs2 == vs and vc2 < vc                    # o modificador só muda o núcleo
+    assert vs2 == pytest.approx(vs, rel=0.02) and vc2 < vc   # na sprint só a grade de V muda (V_lof trimado)
     assert vc2 == pytest.approx(vs, rel=0.1) and vl < vs
 
 
@@ -388,3 +388,40 @@ def test_flight_check_with_controls_adds_the_controls_of_the_kind_of_aircraft():
     keys = [k for k, _, _ in fc.free_for({"categoria": "monoplano"})]
     assert "tail.elevator" in keys and "tail.aileron_chord" not in keys
     assert sg.FlightCheck(p, pr, evals=2).free_for({"categoria": "asa voadora"}) == fc.free
+
+
+def test_flying_wing_flies_with_the_controls_of_e_and_c():
+    """com os comandos, a E&C da asa voadora parte de uma asa enflechada com torção para baixo, põe um perfil
+    simétrico na ponta (onde fica o elevon), a hélice atrás e o momento próprio dos comandos; a asa de alta
+    sustentação do exemplo (S1223) passa a trimar e voa. Sem os comandos ela não roda na pista"""
+    from aerosim.interfaces.optim import StageItem
+    from aeroopt.gui import example_project
+    p, pr = example_project()
+    pr.isolate("wing.span")
+    fc = sg.FlightCheck(p, pr, evals=4, controls=True)
+    out = fc.one(StageItem(name="asa voadora", values={"categoria": "asa voadora"}))
+    v = out.values
+    assert v[sg.FLAP_KEY] and v[sg.LAYOUT_KEY] == sg.PUSHER and v[sg.TIP_KEY] == sg.elevon_airfoil(p, v)
+    assert out.data["voa"]["viol"] == 0 and v["wing.sweep"] > 0 and v["wing.twist"] < 0
+    with pytest.raises(ValueError):
+        sg.FlightCheck(p, pr, evals=4).one(StageItem(name="b", values={"categoria": "asa voadora"}))
+
+
+def test_ground_pitch_sets_the_nose_gear_and_the_6dof_starts_on_it():
+    """a atitude no chão (`power.ground_pitch`) alonga a bequilha; a sprint corre com a asa nesse ângulo e a
+    decolagem 6GDL começa parada nela (antes começava nivelada, a bequilha entrava no chão e o avião capotava)"""
+    import numpy as np
+    from aeroopt.gui import example_project
+    from aerosim.backend.zig import ZigBackend
+    from aerosim.design import power as pw
+    from aerosim.manager import takeoff_opt as TO
+    p, _ = example_project()
+    v = {"categoria": "monoplano"}
+    q, cand = sg.candidate(p, v)
+    ac0, asm0 = pw.assemble(cand, q.requirements, q.rules, None, q.airfoil_map())
+    q, cand = sg.candidate(p, {**v, "power.ground_pitch": 6.0})
+    ac, asm = pw.assemble(cand, q.requirements, q.rules, None, q.airfoil_map())
+    assert pw.ground_pitch(ac0) == 0 and "CL_ground" not in asm0["trim"]
+    assert pw.ground_pitch(ac) == pytest.approx(6.0) and asm["trim"]["CL_ground"] > asm0["set"]["CL_ground"]
+    _, log = TO.evaluate(ZigBackend(), ac, 1.0, -10.0, 8.0, 1.0, log=True)
+    assert np.degrees(float(log["theta"][0])) == pytest.approx(6.0, abs=0.3)

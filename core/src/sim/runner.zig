@@ -164,11 +164,24 @@ pub fn resetGround(inst: *Instance) StateError!void {
     const r = &inst.r;
     r.f.brakes = 1;
     var zr: f64 = 0.0;
-    for (p.gear[0..@intCast(p.n_gear)]) |*g| if (g.kind == T.gear_main) {
-        zr = g.r[2];
-    };
+    var xr: f64 = 0.0;
+    var nose: ?[3]f64 = null;
+    for (p.gear[0..@intCast(p.n_gear)]) |*g| {
+        if (g.kind == T.gear_main) {
+            zr = g.r[2];
+            xr = g.r[0];
+        } else if (g.kind == T.gear_steer) nose = g.r;
+    }
     const h0 = terrain.height(p, 0, 0); // mesa: começa em cima dela
     r.x[S.D] = -zr - h0;
+    // bequilha à frente e mais comprida que o trem principal (atitude no chão, `power.ground_pitch`): começa já
+    // na atitude em que as rodas tocam juntas. Nivelado, a bequilha entraria no chão e o assentamento chutaria o
+    // nariz para cima. Nos outros trens nada muda
+    if (nose) |nr| if (nr[0] > xr and nr[2] > zr) {
+        const th = std.math.atan((nr[2] - zr) / (nr[0] - xr));
+        r.x[S.THE] = th;
+        r.x[S.D] = -h0 - (-xr * @sin(th) + zr * @cos(th));
+    };
     for (0..L.max_props) |i| r.x[S.rps(i)] = 1.0;
     var t: f64 = -3.0;
     while (t < -1e-9) : (t += p.dt) {

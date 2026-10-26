@@ -282,6 +282,16 @@ O avião sai do chão quando passa de $`V_{rot}`$ e a asa sustenta o peso com fo
 (o mesmo que $`V \ge 1{,}1\,V_S`$). A massa máxima que a pista permite é achada por bisseção na massa: a maior em que a
 corrida cabe na pista.
 
+**Atitude no chão e asa voadora.** No triciclo, a atitude no chão (`ground_pitch`, graus) alonga a bequilha. Com
+isso o avião fica parado com o nariz para cima e a asa corre nesse ângulo, com $`C_{L,g}`$ somado de
+$`C_{L\alpha}\,\theta`$. Ele sai do chão sem rodar quando a sustentação vence o peso. O peso passa a ter o braço
+horizontal $`d\cos\theta - h\sin\theta`$ no trem principal, em que $`h`$ é a altura do CG acima da roda. Se o
+braço fica negativo, o avião senta para trás. A decolagem 6GDL começa parada nessa atitude.
+
+Na asa voadora com o momento próprio dos comandos ligado (`tail.flap_moment`), o C_L que vale na pista é o maior C_L
+trimado pelo núcleo (`trimmed_clmax`), e não o C_L,max da asa. Na asa voadora o elevon que trima também tira
+sustentação, e um perfil de alta sustentação como o S1223 só trima com o elevon bem para cima.
+
 Com isso saem a V máx., a subida, a corrida e a **massa máxima que a pista permite**.
 
 O MTOW detalhado é o da aba **Missão**, modo MTOW: a decolagem simulada no núcleo 6GDL, com o acionamento do

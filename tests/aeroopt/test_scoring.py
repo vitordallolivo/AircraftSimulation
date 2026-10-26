@@ -100,6 +100,25 @@ def test_micro_2026_score_in_the_core_matches_hand(backend, q, expected, valid):
     assert r["valido"] is valid
 
 
+REGULAR = [
+    # monoplano com cauda (N = 2), EE = 2, 3 m de envergadura: 110 × 1,15^−3 = 72,3268 pontos
+    (dict(cp=10.0, pv=5.0, s_to=50.0, b=3.0, n_sup=2), 72.3268, True),
+    # asa voadora (N = 1, ×1,22), 30 mm acima dos 4 m (−3 pontos): 1,1 × 50 × 1,5 × 1,22 × 1,15^−4,03 − 3 = 54,3062
+    (dict(cp=6.0, pv=4.0, s_to=40.0, b=4.03, n_sup=1), 54.3062, True),
+    # biplano (N = 3, ×1,15) que passa de 20 kg (conta só 20 − PV) e de 4,05 m (+20); corrida além do obstáculo
+    (dict(cp=18.0, pv=6.0, s_to=60.0, b=4.1, n_sup=3), 1.1 * 50 * (14 / 6) * 1.15 * 1.15 ** -4.1 - 30.0, False),
+]
+
+
+@pytest.mark.parametrize("q, expected, valid", REGULAR)
+def test_regular_2026_score_in_the_core_matches_hand(backend, q, expected, valid):
+    """a nota da Regular 2026 à mão (seção 7.7, eqs. 7.2 e 7.5; P_D de NC[7.2.0.1])"""
+    from aeroopt.scoring import evaluate
+    r = evaluate(scoring_for("sae_br_2026_regular"), q, backend)[0]
+    assert r["nota"] == pytest.approx(expected, abs=1e-3)
+    assert r["valido"] is valid
+
+
 def test_core_refuses_a_broken_program(backend):
     p = scoring_for("MTOW").program()
     bad = dict(p, ops=[LOAD, LOAD, STORE], args=[0, 0, 1])          # sobra um valor na pilha

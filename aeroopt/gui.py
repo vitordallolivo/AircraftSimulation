@@ -2000,12 +2000,14 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             self.msg.setText(f"gravado: {path} (os valores estão nos rascunhos das etapas)")
 
 
-def example_project():
+def example_project(airfoil: str = "S1223HiRes"):
     """um avião pequeno, perto da classe Micro (pista de 8 m, envergadura até 1,8 m), com asa, conjunto e motores
-    guardados, para ver a janela funcionando"""
+    guardados, para ver a janela funcionando. A asa é de alta sustentação em baixa velocidade (S1223, de
+    data/airfoils); `airfoil` troca (os testes antigos usam o NACA 2412 de antes)"""
     from aerosim.design.project import DesignProject
     p = DesignProject()
     p.wing_draft.area, p.wing_draft.span, p.wing_draft.alpha_cruise = 0.5, 1.75, 3.0
+    p.wing_draft.airfoil = airfoil
     p.requirements.takeoff_run, p.requirements.V_stall_max, p.requirements.mass = 8.0, 14.0, 2.0
     r = p.rules                                          # estrutura leve, de avião pequeno
     r.wing_density, r.tail_density, r.fuselage_density, r.boom_density = 0.45, 0.3, 0.25, 0.06

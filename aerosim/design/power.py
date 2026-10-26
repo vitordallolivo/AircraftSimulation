@@ -66,6 +66,9 @@ class PowerParams:
     gear_h: float = F(0.0, "altura do trem", "m", "do eixo do corpo ao chão no trem principal. 0 = a mínima para a "
                       "hélice livrar o chão parada; maior desce todas as rodas juntas (a atitude parada não muda)",
                       0.0, 1.0, 0.005)
+    ground_pitch: float = F(0.0, "atitude no chão", "°", "triciclo: a bequilha mais comprida deixa o avião parado com o "
+                            "nariz para cima, e a asa corre nesse ângulo. Com sustentação bastante ele sai do chão sem "
+                            "rodar (asa voadora). 0 = nivelado", 0.0, 15.0, 0.5)
 
 
 @dataclass
@@ -238,8 +241,10 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     gz += dz
     x_tdp = pp.x_tdp if pp.x_tdp > 0 else rules.main_gear_aft          # medidas do CG de projeto
     if pp.gear == GEARS[0]:
+        x_nw = x_t + pp.x_tdn if pp.x_tdn > 0 else x_nose - 0.10
+        z_nw = gz if pp.ground_pitch <= 0 else gz + (x_nw - (x_t - x_tdp)) * math.tan(math.radians(pp.ground_pitch))
         ac.gear = LandingGear("tricycle", main_x=x_t - x_tdp, main_track=rules.track, main_z=gz,
-                              steer_x=x_t + pp.x_tdn if pp.x_tdn > 0 else x_nose - 0.10, steer_z=gz,
+                              steer_x=x_nw, steer_z=z_nw,
                               tail_skid=ac.boom.enabled,
                               skid_x=ac.boom.x_end if ac.boom.enabled else -1.0,
                               skid_z=ac.boom.end[2] if ac.boom.enabled else 0.0, mu_roll=req.mu_roll)   # na ponta do tubo
@@ -279,6 +284,35 @@ def _thrust_moment(units, T_each, px, pz) -> float:
     return M
 
 
+def ground_pitch(ac) -> float:
+    """a atitude no chão (°) do triciclo montado: da altura da bequilha e do trem principal (0 nivelado)"""
+    g = ac.gear
+    if g.layout != "tricycle" or g.steer_x == g.main_x:
+        return 0.0
+    return math.degrees(math.atan((g.steer_z - g.main_z) / (g.steer_x - g.main_x)))
+
+
+def trimmed_clmax(ac, de_up: float, de_down: float, backend=None) -> tuple[float, float]:
+    """(o maior C_L trimado, o maior C_m com o comando em algum ponto do curso), pelo núcleo. Numa asa voadora o
+    elevon que trima também tira sustentação, e é este C_L, não o C_L,max da asa, que a sustenta devagar. Em cada α
+    (0 a 20°) o comando anda de 2 em 2° pelo curso (de −de_up a +de_down, graus), e o δ de trimagem fica entre os
+    dois vizinhos em que C_m troca de sinal (com o curso todo a faixa estola, então os extremos não servem para
+    interpolar). −inf: não trima em α nenhum"""
+    from aerosim.model.universal import build_model
+    be = backend or _core()
+    des = np.radians(np.arange(-de_up, de_down + 1e-9, 2.0))
+    cl_trim, cm_up = -math.inf, -math.inf
+    with be.session_for(build_model(ac)) as s:
+        for a in np.radians(np.arange(0.0, 22.0, 2.0)):
+            ks = [s.aero_coeffs(10.0, float(a), de=float(d)) for d in des]
+            cm_up = max(cm_up, max(k["Cm"] for k in ks))
+            for lo, hi in zip(ks, ks[1:]):
+                if (lo["Cm"] >= 0) != (hi["Cm"] >= 0):
+                    f = lo["Cm"] / (lo["Cm"] - hi["Cm"])
+                    cl_trim = max(cl_trim, lo["CL"] + f * (hi["CL"] - lo["CL"]))
+    return float(cl_trim), float(cm_up)
+
+
 def thrust_trim(ac, st, wr, req, rules, x_t, info, mass, tp) -> dict:
     """a EH trimada para o voo COM o momento da tração (motor inclinado ou fora do CG) e o trim de decolagem:
     quanto o profundor fica picando na corrida para o avião não sair do chão antes da hora — dentro do curso
@@ -311,14 +345,25 @@ def thrust_trim(ac, st, wr, req, rules, x_t, info, mass, tp) -> dict:
     # ---- corrida: momentos no trem principal (+ cabra), com a tração do motor inclinado
     x_mg, gz = ac.gear.main_x, ac.gear.main_z
     CLg = st["CL_ground"]
-    Vlof = 1.1 * stall_speed(req, S, wr["CLmax"], mass)
+    th = math.radians(ground_pitch(ac))
+    arm_w = x_t - x_mg                                      # braço do peso no trem principal
+    if th > 0:                                              # atitude no chão: a asa corre no ângulo, e o CG, mais
+        CLg += wr["CLa"] * th                               # alto que a roda, chega para trás dela
+        arm_w = arm_w * math.cos(th) - (gz - z_cg) * math.sin(th)
+        out["tip_ok"] = arm_w > 0
+    CLmax = wr["CLmax"]
+    if tp.layout == "sem cauda" and any(m.kind == "comando.momento_flape" for m in ac.modifiers):
+        # asa voadora com o núcleo nos comandos: quem sustenta devagar é o C_L trimado (o elevon tira sustentação)
+        out["CL_trim_max"], out["Cm_up_max"] = trimmed_clmax(ac, rules.de_max, rules.de_down)
+        CLmax = min(CLmax, out["CL_trim_max"]) if out["CL_trim_max"] > 0 else CLmax
+    Vlof = 1.1 * stall_speed(req, S, CLmax, mass)
     Vs_ = np.linspace(0.5, 1.6 * Vlof, 64)
     Tv = thrust_of(ac, Vs_, rho, None) / len(us)
 
     def nose_up(i, de):
         qq = 0.5 * rho * Vs_[i] ** 2
         aero = qq * S * c * (wr["Cm_ac"] + CLg * (info["x_ac_w"] - x_mg) / c + tail(CLg, de, x_mg, dih))
-        return aero + _thrust_moment(us, Tv[i], x_mg, gz) - W * (x_t - x_mg)
+        return aero + _thrust_moment(us, Tv[i], x_mg, gz) - W * arm_w
     early = [i for i in range(len(Vs_)) if Vs_[i] <= 0.95 * Vlof]
     lifts = lambda de: any(nose_up(i, de) > 0 for i in early)
     if lifts(0.0):
@@ -340,7 +385,7 @@ def thrust_trim(ac, st, wr, req, rules, x_t, info, mass, tp) -> dict:
     cm_full = aero_u(-math.radians(rules.de_max))
 
     rot_a = 0.5 * rho * Vgrid ** 2 * S * c * cm_full + Mth     # momento cabrando, sem o do peso
-    rot_arm = x_t - x_mg
+    rot_arm = arm_w
 
     def rot_speed(m: float) -> float:
         """V a partir da qual o profundor todo roda o avião com massa m (a corrida rápida espera por ela)"""
@@ -349,6 +394,10 @@ def thrust_trim(ac, st, wr, req, rules, x_t, info, mass, tp) -> dict:
         return float(Vgrid[k[0]]) if len(k) else float("inf")
     out["rot_speed"] = rot_speed
     out["rot_table"] = (Vgrid, rot_a, rot_arm)               # a mesma conta, para a corrida no núcleo
+    if th > 0:                                               # sai do chão sem rodar quando a asa no ângulo sustenta
+        out["CL_ground"] = CLg
+        out["ground_stall"] = CLg * 1.21 / wr["CLmax"] - 1   # > 0: corre mais perto do estol que 1,1 V_S
+        out["V_rot"] = min(out["V_rot"], math.sqrt(2 * W / (rho * S * CLg)) if CLg > 0 else math.inf)
     out["V_lof"] = Vlof
     out["rot_ok"] = out["V_rot"] <= Vlof
     return out
@@ -444,6 +493,12 @@ def performance(ac: Aircraft, asm: dict, req: Requirements, backend=None) -> dic
     Vmax = float(V[ok][-1]) if ok.any() else float("nan")
     i = int(np.argmax(RC))
     CLg = wr["CL0"] + wr["CLa"] * math.radians(wr["incidence"])
+    lift_off = 0
+    if "CL_ground" in (asm.get("trim") or {}):              # atitude no chão: corre no ângulo e sai sem rodar
+        CLg, lift_off = asm["trim"]["CL_ground"], 1
+    CLmax = wr["CLmax"]
+    if (asm.get("trim") or {}).get("CL_trim_max", 0.0) > 0:   # asa voadora: sai do chão no C_L trimado
+        CLmax = min(CLmax, asm["trim"]["CL_trim_max"])
     T0 = float(thrust_of(ac, np.array([0.0]), rho, backend)[0])
     Vg = np.r_[0.0, V]
     Tgv = np.r_[T0, T]
@@ -451,10 +506,10 @@ def performance(ac: Aircraft, asm: dict, req: Requirements, backend=None) -> dic
     # a corrida no chão é do núcleo (core/src/sizing/ground.zig): a mesma conta de antes, bit a bit
     core = backend if hasattr(backend, "ground_runs") else _core()
     rt = (asm.get("trim") or {}).get("rot_table")
-    g = core.ground_run(dict(rho=rho, S=S, CLg=CLg, CD0=CD0, K=K, CLmax=wr["CLmax"], mu=req.mu_roll,
+    g = core.ground_run(dict(rho=rho, S=S, CLg=CLg, CD0=CD0, K=K, CLmax=CLmax, mu=req.mu_roll,
                              sin_tl=math.sin(tl), cos_tl=math.cos(tl), V=Vg, T=Tgv,
                              rot_V=rt[0] if rt else [], rot_a=rt[1] if rt else [], rot_arm=rt[2] if rt else 0.0,
-                             rot_on=1 if rt else 0))
+                             rot_on=1 if rt else 0, lift_off=lift_off))
     s_to = float(core.ground_runs(g, [M])[0])
     lo, hi = max(asm["empty"], 0.1), max(4 * M, 1.0)
     mtow = core.ground_mtow(g, lo, hi, req.takeoff_run)

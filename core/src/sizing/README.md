@@ -158,6 +158,11 @@ o da tração) vence o do peso em torno do trem principal. O passo é Euler expl
 contas do Python, então o resultado sai bit a bit igual ao de antes (`tests/design/test_ground_run.py`). A fonte do
 modelo de corrida é a mesma da seção anterior (a conferir no PDF).
 
+Com a atitude no chão da sprint (`power.ground_pitch`, a bequilha mais comprida), a asa já corre num ângulo e o avião
+pode sair do chão sem rodar. É o caso da asa voadora, em que o elevon roda pouco. `lift_off = 1` liga essa saída: o
+avião também sai quando $`\tfrac12\rho V^2 S\,C_{L,g} + T\sin\theta_T \ge m g`$, com o $`C_{L,g}`$ já nesse ângulo.
+Desligado, a corrida é a de sempre.
+
 ## Tração motor + hélice da sprint (`motorprop.zig`)
 
 Aqui se calcula a curva de tração com acelerador cheio que a sprint e o aeroopt usam em quase toda conta rápida

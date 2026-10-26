@@ -40,6 +40,10 @@ pub const GroundRun = extern struct {
     rot_arm: f64 = 0,
     n_rot: i32 = 0,
     rot_on: i32 = 0,
+    // atitude no chão (`power.ground_pitch` > 0: o trem do nariz mais alto deixa a asa num ângulo): o avião também
+    // sai do chão sem rodar, quando a sustentação da corrida (C_Lg, já nesse ângulo) mais a parte vertical da
+    // tração vence o peso. 0: só pela rotação, como sempre
+    lift_off: i32 = 0,
 };
 
 /// `numpy.interp(x, xp, fp)` para um x só (xp crescente): fora da faixa, o valor da ponta
@@ -83,7 +87,7 @@ pub fn rotSpeed(g: *const GroundRun, m: f64) f64 {
 pub fn run(g: *const GroundRun, mass: f64) f64 {
     const inf = std.math.inf(f64);
     const v_rot = rotSpeed(g, mass);
-    if (!std.math.isFinite(v_rot)) return inf;
+    if (!std.math.isFinite(v_rot) and g.lift_off == 0) return inf;
     const vg, const tg = curve(g);
     var x: f64 = 0;
     var v: f64 = 0;
@@ -98,6 +102,8 @@ pub fn run(g: *const GroundRun, mass: f64) f64 {
         x += v * dt;
         if (v >= v_rot and 0.5 * g.rho * v * v * g.S * g.CLmax >= 1.21 * (mass * g0 - interp(v, vg, tg) * g.sin_tl))
             return x;
+        if (g.lift_off != 0 and 0.5 * g.rho * v * v * g.S * g.CLg + interp(v, vg, tg) * g.sin_tl >= mass * g0)
+            return x; // sai do chão na atitude da corrida, sem rodar
     }
     return inf;
 }
@@ -142,6 +148,23 @@ test "corrida: mais pesado corre mais; a pista limita o MTOW" {
     const m = mtow(&g, 1.0, 12.0, 20.0);
     try std.testing.expect(run(&g, m) <= 20.0 and run(&g, m * 1.01) > 20.0);
     try std.testing.expect(std.math.isNan(mtow(&g, 1.0, 12.0, 0.01)));
+}
+
+test "corrida: na atitude do chão sai sem rodar quando ½ρV²S C_Lg vence o peso" {
+    var g = GroundRun{ .S = 0.6, .CLg = 0.9, .CLmax = 1.2, .mu = 0.0, .CD0 = 0.0, .K = 0.0 };
+    g.n = 2;
+    g.V[0..2].* = .{ 0, 40 };
+    g.T[0..2].* = .{ 10, 10 };
+    g.rot_on = 1;
+    g.n_rot = 1;
+    g.rot_V[0] = 5;
+    g.rot_a[0] = -1; // o profundor nunca roda
+    try std.testing.expect(std.math.isInf(run(&g, 2.0)));
+    g.lift_off = 1;
+    // sem arrasto nem atrito: a = T/m = 5 m/s², v = 0,1 n no passo n; sai no primeiro n com v² ≥ 2 m g0 / (ρ S C_Lg)
+    // (7,70 m/s: n = 78), e o Euler explícito dá x = a dt² n (n + 1) / 2 (≈ V²/2a = 5,93 m com o passo de 0,02 s)
+    const n: f64 = @ceil(@sqrt(2.0 * 2.0 * g0 / (1.225 * 0.6 * 0.9)) / 0.1);
+    try std.testing.expectApproxEqRel(5.0 * dt * dt * n * (n + 1) / 2.0, run(&g, 2.0), 1e-9);
 }
 
 test "corrida: sem tração não sai; a rotação espera o profundor" {

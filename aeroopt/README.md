@@ -35,7 +35,7 @@ teste: as mesmas etapas com funções simples, em que já se sabe onde cada conf
 | `problem.py` | o problema e o arquivo `.opt.json` |
 | `inputs.py` | as variáveis: todo campo das etapas do aerosim, com faixa ou lista |
 | `categories.py` | os tipos de avião que a busca pode montar |
-| `scoring.py`, `pontuacao/` | a pontuação de cada regulamento (Micro 2026), com a fonte |
+| `scoring.py`, `pontuacao/` | a pontuação de cada regulamento (Micro 2026 e Regular 2026), com a fonte |
 | `stages.py`, `pipeline.py` | as etapas e a fila que as roda em paralelo |
 | `generations.py` | as gerações de configurações (algoritmo genético no núcleo) |
 | `gui.py` | a janela |
