@@ -510,3 +510,70 @@ def test_flight_check_with_controls_turns_on_the_dynamic_stability():
     p, pr = example_project()
     assert isinstance(sg.FlightCheck(p, pr, controls=True).stability, sg.StabilityParams)
     assert sg.FlightCheck(p, pr).stability is None
+
+
+def _coded_case():
+    """12 contínuas, duas com remédio na tabela do diagnóstico: o termo "cnb" só depende da deriva e o "lastro" só
+    da posição da carga paga; as outras dez não mexem em nada"""
+    free = [("tail.tip_fin", 0.0, 0.5), ("power.x_payload", -0.3, 0.3)] + [(f"v{i}", 0.0, 1.0) for i in range(10)]
+
+    def point(y):
+        t = {}
+        if y["tail.tip_fin"] < 0.35:
+            t["cnb"] = (0.35 - y["tail.tip_fin"]) / 0.1 + 0.1
+        if abs(y["power.x_payload"] - 0.12) > 0.03:
+            t["lastro"] = abs(y["power.x_payload"] - 0.12) / 0.05
+        return dict(values=dict(y), ok=not t, why="; ".join(t), mtow=math.nan, viol=sum(t.values()), terms=t)
+    return free, point
+
+
+def test_diagnosis_maps_each_failure_to_the_free_variables_that_fix_it():
+    """o diagnóstico liga o código do termo às variáveis que o consertam e ignora as que não estão livres; todo
+    termo da violação tem código, e todo código tem remédio na tabela"""
+    from aeroopt.diagnosis import REMEDIES, TableDiagnosis
+    d = TableDiagnosis()
+    assert d.remedies(["cnb", "lastro"], ["power.x_payload", "wing.span", "tail.tip_fin"]) == \
+        ["tail.tip_fin", "power.x_payload"]
+    assert d.remedies(["pista"], ["wing.span"]) == []
+    import inspect
+    src = inspect.getsource(sg.violation_terms)
+    import re
+    codes = set(re.findall(r'out\.append\(\("(\w+)"', src))
+    assert codes and codes - {"pista"} <= set(REMEDIES)
+
+
+@pytest.mark.parametrize("mode", ["reparo", "εde", "cultural", "lem", "diagnóstico"])
+def test_guided_search_keeps_the_contract_and_finds_a_flying_point(mode):
+    """a busca guiada pelo contrato das buscas: fica na faixa, respeita o total, repete com a mesma semente e acha
+    um ponto que voa no caso com remédio"""
+    from aeroopt.guided import guided_search
+    free, point = _coded_case()
+    x = {k: lo for k, lo, _ in free}
+    hist, again = [], []
+    _, best = guided_search(free, dict(x), point(x), point, 150, hist, seed=3, stop_ok=True, mode=mode)
+    assert best["ok"] and len(hist) <= 150
+    assert all(lo <= h["values"][k] <= hi for h in hist for k, lo, hi in free)
+    guided_search(free, dict(x), point(x), point, 150, again, seed=3, stop_ok=True, mode=mode)
+    assert [h["values"] for h in again] == [h["values"] for h in hist]
+    with pytest.raises(ValueError, match="guiada"):
+        guided_search(free, dict(x), point(x), point, 10, [], seed=3, mode="nada")
+
+
+def test_failure_guided_search_needs_fewer_evaluations_than_plain_de():
+    """com o motivo da falha a busca vai direto nas variáveis que consertam: o reparo por gradiente e o bandido do
+    diagnóstico voam em todas as sementes, e com menos avaliações que a evolução diferencial de sempre, que muta as
+    doze variáveis por igual"""
+    from aeroopt.guided import guided_search
+    free, point = _coded_case()
+    x = {k: lo for k, lo, _ in free}
+
+    def cost(run):
+        out = []
+        for s in range(8):
+            h = []
+            _, b = run(free, dict(x), point(x), point, 150, h, seed=s, stop_ok=True)
+            out.append(len(h) if b["ok"] else 1000)
+        return sum(out) / len(out)
+    de = cost(sg._de_search)
+    for mode in ("reparo", "diagnóstico"):
+        assert cost(lambda *a, **k: guided_search(*a, **k, mode=mode)) < 0.7 * de

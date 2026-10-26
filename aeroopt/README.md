@@ -35,7 +35,11 @@ partem só dele. Se x0 cai numa bacia ruim, a rodada fica nela. Dois ajustes, de
 início (`etapas.inicio = "lhs"`, ou `init` no avaliador) sorteia a população inicial por hipercubo latino, que põe um
 ponto em cada fatia da faixa de cada variável. As partidas (`etapas.partidas = k`) fazem a busca seguir até achar k
 pontos que voam, afastados uns dos outros, e ficar com o que decola na pista com a maior carga paga.
-`tools/sementes.py` roda a mesma configuração com sementes diferentes e diz se todas caem no mesmo avião. Quem escolhe quais
+`tools/sementes.py` roda a mesma configuração com sementes diferentes e diz se todas caem no mesmo avião. Os métodos guiados pela falha (`guided.py`) usam o motivo do avião não voar, e não só o quanto ele viola: cada
+termo da violação tem um código, o diagnóstico (`diagnosis.py`) liga o código às variáveis que o consertam, e a busca
+muta ou repara só elas. O "diagnóstico" deixa um bandido escolher, filho a filho, entre a evolução diferencial, a
+mutação no remédio, o reparo por gradiente, o algoritmo cultural e o LEM, pelo que cada um já rendeu.
+`tools/metodos_voa.py` compara todos os métodos da etapa (sucesso e avaliações até voar). Quem escolhe quais
 aviões experimentar são as gerações de um algoritmo genético (`generations.py`). A janela fica em `gui.py`, e os CSV
 de cada rodada saem de `export.py`. Depois da rodada, `sensitivity.py` diz o quanto a nota do melhor avião depende de
 cada variável: se ele está num morro largo ou na beira de um precipício. Para testar a máquina sem esperar as contas do avião, `synthetic.py` traz dados de
@@ -49,6 +53,7 @@ teste: as mesmas etapas com funções simples, em que já se sabe onde cada conf
 | `scoring.py`, `pontuacao/` | a pontuação de cada regulamento (Micro 2026 e Regular 2026), com a fonte |
 | `stages.py`, `pipeline.py` | as etapas e a fila que as roda em paralelo |
 | `generations.py` | as gerações de configurações (algoritmo genético no núcleo) |
+| `guided.py`, `diagnosis.py` | a busca da etapa voa guiada pela falha e a tabela falha → variáveis do remédio |
 | `gui.py` | a janela |
 | `export.py` | os CSV de cada rodada |
 | `synthetic.py` | os dados de teste: um avaliador rápido com o resultado sabido de antemão |
@@ -56,7 +61,7 @@ teste: as mesmas etapas com funções simples, em que já se sabe onde cada conf
 | `sensitivity.py` | a sensibilidade do melhor: inclinação e curvatura da nota em cada contínua livre, pelos pontos que a busca já avaliou |
 | `mini_mdo.py` | o mini-MDO do núcleo, a primeira versão, que fica como alternativa |
 
-As contas que rodam no núcleo para o aeroopt (a nota, o algoritmo genético, o CMA-ES e a evolução diferencial) estão explicadas em
+As contas que rodam no núcleo para o aeroopt (a nota, o algoritmo genético, o CMA-ES, a evolução diferencial e a busca guiada pela falha) estão explicadas em
 [`core/src/optim/README.md`](../core/src/optim/README.md).
 
 ## A janela

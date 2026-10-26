@@ -598,6 +598,64 @@ export fn aerosim_lhs(n: usize, m: usize, tries: usize, seed: u64, out: [*]f64) 
     return if (smp.lhs(n, m, tries, seed, out[0 .. m * n])) 0 else -1;
 }
 
+// ------------------------------------------------------------------ busca guiada pela falha (reparo, ε, bandido, crenças, LEM)
+const gd = @import("optim/guided.zig");
+
+/// o passo de reparo Δx = −Jᵀ (J Jᵀ + λ I)⁻¹ g nas `n` variáveis do remédio (`J`: m × n por linhas); −1 se não cabe
+/// ou o sistema é singular
+export fn aerosim_repair_step(n: usize, m: usize, J: [*]const f64, g: [*]const f64, lambda: f64, out: [*]f64) i32 {
+    if (n == 0 or n > gd.max_n or m == 0 or m > gd.max_m) return -1;
+    return if (gd.repairStep(n, m, J[0 .. m * n], g[0..m], lambda, out[0..n])) 0 else -1;
+}
+
+/// o nível ε(t) = ε₀ (1 − t/Tc)^cp do ε-restrito
+export fn aerosim_eps_level(eps0: f64, t: f64, tc: f64, cp: f64) f64 {
+    return gd.epsLevel(eps0, t, tc, cp);
+}
+
+/// 1 se (fa, va) é pior que (fb, vb) na ordem ε, 0 senão
+export fn aerosim_eps_worse(fa: f64, va: f64, fb: f64, vb: f64, eps: f64) i32 {
+    return if (gd.epsWorse(fa, va, fb, vb, eps)) 1 else 0;
+}
+
+/// o tamanho do estado do bandido (f64)
+export fn aerosim_bandit_state_len() usize {
+    return gd.state_len;
+}
+
+/// zera o bandido de `k` braços em `s` (aerosim_bandit_state_len f64); −1 se k não cabe
+export fn aerosim_bandit_init(s: [*]f64, k: usize) i32 {
+    return if (gd.banditInit(s[0..gd.state_len], k)) 0 else -1;
+}
+
+/// o braço a jogar entre os permitidos (bit k = braço k), UCB1 com o peso `c`; −1 se nenhum é permitido
+export fn aerosim_bandit_pick(s: [*]const f64, c: f64, allowed: u32) i32 {
+    return gd.banditPick(s[0..gd.state_len], c, allowed);
+}
+
+/// registra a recompensa do braço `a`; 1 se o Page–Hinkley (δ, γ) reiniciou o bandido
+export fn aerosim_bandit_update(s: [*]f64, a: usize, reward: f64, delta: f64, gamma: f64) i32 {
+    return if (gd.banditUpdate(s[0..gd.state_len], a, reward, delta, gamma)) 1 else 0;
+}
+
+/// o espaço normativo (a faixa de cada variável entre os `frac` melhores de `pop`, m × n); −1 se não cabe
+export fn aerosim_normative(n: usize, m: usize, pop: [*]const f64, fit: [*]const f64, frac: f64, lo: [*]f64, hi: [*]f64) i32 {
+    if (n == 0 or n > gd.max_n or m == 0 or m > gd.max_pop) return -1;
+    return if (gd.normative(n, m, pop[0 .. m * n], fit[0..m], frac, lo[0..n], hi[0..n])) 0 else -1;
+}
+
+/// a regra do LEM (a faixa que cobre os `frac` melhores e deixa os piores de fora); −1 se não cabe
+export fn aerosim_lem_box(n: usize, m: usize, pop: [*]const f64, fit: [*]const f64, frac: f64, lo: [*]f64, hi: [*]f64) i32 {
+    if (n == 0 or n > gd.max_n or m < 2 or m > gd.max_pop) return -1;
+    return if (gd.lemBox(n, m, pop[0 .. m * n], fit[0..m], frac, lo[0..n], hi[0..n])) 0 else -1;
+}
+
+/// `count` pontos uniformes na caixa [lo, hi] (count × n em `out`); −1 se não cabe
+export fn aerosim_box_sample(n: usize, lo: [*]const f64, hi: [*]const f64, count: usize, seed: u64, generation: u64, out: [*]f64) i32 {
+    if (n == 0 or n > gd.max_n or count > gd.max_pop) return -1;
+    return if (gd.boxSample(n, lo[0..n], hi[0..n], count, seed, generation, out[0 .. count * n])) 0 else -1;
+}
+
 // ------------------------------------------------------------------ métodos da sensibilidade (tolerância, Morris)
 const sm = @import("optim/sensmethods.zig");
 

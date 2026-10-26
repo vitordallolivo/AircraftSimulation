@@ -652,7 +652,9 @@ TAKEOFF_METHODS = {"6gdl": "6GDL: bisseção na massa, profundor otimizado (mais
 # o nome curto de cada método nos menus (a explicação fica na dica, ao parar o mouse em cima)
 METHOD_NAMES = {"gerações": "gerações", "todas": "todas", "buscar": "gerações", "cma-es": "CMA-ES",
                 "conferir": "só conferir", "desligada": "desligada", "coordenadas": "coordenadas", "6gdl": "6GDL",
-                "de": "evolução diferencial",
+                "de": "evolução diferencial", "reparo": "reparo por gradiente", "εde": "ε-restrito (εDE)",
+                "cultural": "algoritmo cultural", "lem": "LEM (regra aprendida)",
+                "diagnóstico": "diagnóstico da falha (bandido)",
                 "pista": "pista"}
 
 

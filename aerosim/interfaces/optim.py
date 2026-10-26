@@ -157,3 +157,12 @@ class IStage(ABC):
 
     def select(self, items: list[StageItem]) -> list[StageItem]:
         return items
+
+
+class IFailureDiagnosis(ABC):
+    """o diagnóstico da falha de um ponto: dos códigos dos termos violados (`aeroopt.stages.violation_terms`), as
+    variáveis que os consertam. É o que a busca guiada (aeroopt/guided.py) usa para mutar e reparar só o que importa"""
+
+    @abstractmethod
+    def remedies(self, codes, free) -> list[str]:
+        """as variáveis de `free` (chaves) que mexem nos termos `codes`, da que mais mexe para a que menos mexe"""

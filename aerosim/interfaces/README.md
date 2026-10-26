@@ -48,7 +48,7 @@ flowchart LR
 | `IAircraftSource` / `ICatalogSource` | `load(path)` / `save(obj, path)` |
 | `IProjectStore` (`project_store.py`) | a biblioteca de aviões do usuário: listar, abrir, salvar com um nome |
 | `result_io.py` | `SimResult` ⇄ dicionário de JSON (para guardar no projeto o que já rodou) |
-| `OptProblem`, `IScoring`, `IEvaluator`, `ISolver`, `IStage` (`optim.py`) | o aeroopt: o problema (variáveis com `free` para isolar, restrições, nota, solver), a nota com a fonte, o candidato → grandezas no núcleo, quem propõe os candidatos (`run` → `OptResult`) e uma etapa do processo em etapas (`one` por candidato ou `run` no lote, `select` depois da barreira) |
+| `OptProblem`, `IScoring`, `IEvaluator`, `ISolver`, `IStage`, `IFailureDiagnosis` (`optim.py`) | o aeroopt: o problema (variáveis com `free` para isolar, restrições, nota, solver), a nota com a fonte, o candidato → grandezas no núcleo, quem propõe os candidatos (`run` → `OptResult`) e uma etapa do processo em etapas (`one` por candidato ou `run` no lote, `select` depois da barreira); e o diagnóstico da falha (os códigos dos termos violados → as variáveis que os consertam) |
 | `IExecutor`, `Outcome` (`executor.py`) | rodar uma função em muitos itens independentes: `map(fn, itens, cancel, on_done)` → um `Outcome` por item, na ordem (valor, erro ou cancelado); `close()`. Em série, threads ou processos que duram a rodada (`aerosim/parallel`) |
 
 Cada análise diz a área do projeto (`ISimulation.area`, uma de `AREAS`) e o nível: `level = "sprint"`

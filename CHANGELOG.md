@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, E&C: busca guiada pela falha. Cada termo da violação tem um código, e o diagnóstico liga o código às
+  variáveis que o consertam; métodos novos da etapa voa: reparo por gradiente, εDE, algoritmo cultural, LEM e
+  diagnóstico (um bandido escolhe o operador de cada filho). As contas no núcleo (`core/src/optim/guided.zig`).
+  `tools/metodos_voa.py` compara os métodos. O padrão continua "gerações" (O30).
 - aeroopt: a E&C com os comandos liga a estabilidade dinâmica (modos do núcleo contra a MIL-F-8785C); o tandem da Regular 2026
   era instável em guinada e caía logo depois de decolar, e a sprint não via. A deriva da ponta vai até 0,5 m (O28).
 - decolagem: busca do ponto de acionamento por bisseção a partir da corrida sem acionar (opção `busca`; o 6GDL do aeroopt

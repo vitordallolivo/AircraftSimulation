@@ -163,6 +163,16 @@ class _Lib:
             "aerosim_sens_tolerance": (c_double, [c_size, vp, vp, vp, c_double, vp, vp, vp, vp]),
             "aerosim_morris_design": (c_int, [c_size, c_size, c_size, ctypes.c_uint64, vp]),
             "aerosim_lhs": (c_int, [c_size, c_size, c_size, ctypes.c_uint64, vp]),
+            "aerosim_repair_step": (c_int, [c_size, c_size, vp, vp, c_double, vp]),
+            "aerosim_eps_level": (c_double, [c_double, c_double, c_double, c_double]),
+            "aerosim_eps_worse": (c_int, [c_double, c_double, c_double, c_double, c_double]),
+            "aerosim_bandit_state_len": (c_size, []),
+            "aerosim_bandit_init": (c_int, [vp, c_size]),
+            "aerosim_bandit_pick": (c_int, [vp, c_double, ctypes.c_uint32]),
+            "aerosim_bandit_update": (c_int, [vp, c_size, c_double, c_double, c_double]),
+            "aerosim_normative": (c_int, [c_size, c_size, vp, vp, c_double, vp, vp]),
+            "aerosim_lem_box": (c_int, [c_size, c_size, vp, vp, c_double, vp, vp]),
+            "aerosim_box_sample": (c_int, [c_size, vp, vp, c_size, ctypes.c_uint64, ctypes.c_uint64, vp]),
             "aerosim_morris_effects": (c_int, [c_size, c_size, vp, vp, vp, vp, vp, vp]),
             "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
             "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
@@ -639,6 +649,70 @@ class ZigBackend(ISimBackend):
         out = np.zeros((m, n))
         if self._lib.dll.aerosim_lhs(n, m, tries, int(seed), out.ctypes.data) < 0:
             raise ValueError("hipercubo latino: até 32 variáveis e 256 pontos")
+        return out
+
+    # --- busca guiada pela falha (core/src/optim/guided.zig)
+    def repair_step(self, J, g, lam: float = 1e-6) -> np.ndarray:
+        """o passo de reparo Δx = −Jᵀ (J Jᵀ + λ I)⁻¹ g (`J`: m × n, `g`: m); ValueError se não cabe ou é singular"""
+        J = np.ascontiguousarray(np.atleast_2d(np.asarray(J, float)))
+        g = np.ascontiguousarray(np.asarray(g, float).ravel())
+        out = np.zeros(J.shape[1])
+        if self._lib.dll.aerosim_repair_step(J.shape[1], J.shape[0], J.ctypes.data, g.ctypes.data, float(lam),
+                                             out.ctypes.data) < 0:
+            raise ValueError("reparo: até 32 variáveis e 16 restrições, J Jᵀ + λ I não singular")
+        return out
+
+    def eps_level(self, eps0: float, t: float, tc: float, cp: float = 5.0) -> float:
+        """o nível ε(t) = ε₀ (1 − t/Tc)^cp do ε-restrito"""
+        return float(self._lib.dll.aerosim_eps_level(float(eps0), float(t), float(tc), float(cp)))
+
+    def eps_worse(self, fa: float, va: float, fb: float, vb: float, eps: float) -> bool:
+        """(fa, va) é pior que (fb, vb) na ordem ε"""
+        return bool(self._lib.dll.aerosim_eps_worse(float(fa), float(va), float(fb), float(vb), float(eps)))
+
+    def bandit_init(self, k: int) -> np.ndarray:
+        """o estado de um bandido de `k` braços (D-MAB), um vetor que quem usa guarda"""
+        s = np.zeros(int(self._lib.dll.aerosim_bandit_state_len()))
+        if self._lib.dll.aerosim_bandit_init(s.ctypes.data, k) < 0:
+            raise ValueError("bandido: de 1 a 16 braços")
+        return s
+
+    def bandit_pick(self, s: np.ndarray, c: float = 0.5, allowed=None) -> int:
+        """o braço a jogar (UCB1) entre os permitidos (`allowed`: índices; None = todos); −1 se nenhum"""
+        mask = 0xFFFFFFFF if allowed is None else sum(1 << int(a) for a in allowed)
+        return int(self._lib.dll.aerosim_bandit_pick(s.ctypes.data, float(c), mask))
+
+    def bandit_update(self, s: np.ndarray, arm: int, reward: float, delta: float = 0.05,
+                      gamma: float = 5.0) -> bool:
+        """registra a recompensa do braço; True se o Page–Hinkley reiniciou o bandido"""
+        return bool(self._lib.dll.aerosim_bandit_update(s.ctypes.data, int(arm), float(reward), float(delta),
+                                                         float(gamma)))
+
+    def _box(self, name: str, pop, fit, frac: float):
+        p = np.ascontiguousarray(np.asarray(pop, float))
+        f = np.ascontiguousarray(np.asarray(fit, float).ravel())
+        lo, hi = np.zeros(p.shape[1]), np.zeros(p.shape[1])
+        if getattr(self._lib.dll, name)(p.shape[1], p.shape[0], p.ctypes.data, f.ctypes.data, float(frac),
+                                        lo.ctypes.data, hi.ctypes.data) < 0:
+            raise ValueError("crenças: até 32 variáveis e 256 indivíduos")
+        return lo, hi
+
+    def normative(self, pop, fit, frac: float = 0.2):
+        """o espaço normativo do algoritmo cultural: (lo, hi) por variável entre os `frac` melhores"""
+        return self._box("aerosim_normative", pop, fit, frac)
+
+    def lem_box(self, pop, fit, frac: float = 0.3):
+        """a regra do LEM: (lo, hi) que cobre os `frac` melhores e deixa os piores de fora"""
+        return self._box("aerosim_lem_box", pop, fit, frac)
+
+    def box_sample(self, lo, hi, count: int, seed: int = 1, generation: int = 0) -> np.ndarray:
+        """`count` pontos uniformes na caixa [lo, hi]"""
+        lo = np.ascontiguousarray(np.asarray(lo, float).ravel())
+        hi = np.ascontiguousarray(np.asarray(hi, float).ravel())
+        out = np.zeros((count, lo.size))
+        if self._lib.dll.aerosim_box_sample(lo.size, lo.ctypes.data, hi.ctypes.data, count, int(seed),
+                                            int(generation), out.ctypes.data) < 0:
+            raise ValueError("caixa: até 32 variáveis e 256 pontos")
         return out
 
     def de_trials(self, pop, f: float = 0.7, cr: float = 0.9, seed: int = 1, generation: int = 0) -> np.ndarray:

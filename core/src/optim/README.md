@@ -9,9 +9,9 @@ Aqui também nascem as gerações de aviões: o algoritmo genético que escolhe 
 CMA-ES, a outra busca das variáveis contínuas (envergadura, área, diedro...). Depois da busca, o modelo local e os outros métodos da
 sensibilidade dizem o quanto a nota do melhor avião muda em volta dele.
 
-A pasta tem oito partes: os tipos do programa (`types.zig`), quem o confere e executa (`expr.zig`), as gerações
+A pasta tem nove partes: os tipos do programa (`types.zig`), quem o confere e executa (`expr.zig`), as gerações
 (`ga.zig`), o CMA-ES (`cmaes.zig`), a evolução diferencial (`de.zig`), o hipercubo latino de onde nascem as
-populações (`sampling.zig`), o modelo local (`localfit.zig`) e os outros métodos da sensibilidade (`sensmethods.zig`). A álgebra linear que os solvers vão usar fica em `../math/linalg.zig`.
+populações (`sampling.zig`), as peças da busca guiada pela falha (`guided.zig`), o modelo local (`localfit.zig`) e os outros métodos da sensibilidade (`sensmethods.zig`). A álgebra linear que os solvers vão usar fica em `../math/linalg.zig`.
 
 ## O programa
 
@@ -235,6 +235,44 @@ Um hipercubo latino ainda pode sair ruim no conjunto, com os pontos alinhados nu
 Statistical Planning and Inference 43, 1995, a conferir no PDF). Os testes conferem que cada fatia tem um ponto, que
 a mesma semente dá os mesmos pontos, que o maximin não afasta menos que um sorteio só e que, em 12 variáveis com 8
 pontos, o sorteio uniforme deixa fatias vazias e o latino não.
+
+## A busca guiada pela falha
+
+As buscas acima só veem um número por ponto: o quanto ele viola. A etapa voa do aeroopt sabe mais: por que o avião
+não voa (C_nβ negativo, lastro, comando que não trima), e quais variáveis consertam cada motivo (a tabela fica em
+`aeroopt/diagnosis.py`). `guided.zig` tem as contas que deixam a busca usar isso; o laço fica em
+`aeroopt/guided.py`. São cinco peças, cada uma uma função pura.
+
+O **reparo por gradiente** dá um passo de Newton nas restrições violadas, só nas variáveis do remédio. Com $g$ as
+violações (m) e $J$ o jacobiano delas nessas variáveis (m × n, tirado por diferença no Python), o passo de menor
+norma que zera $g$ na aproximação linear usa a pseudoinversa, e o $\lambda$ de Levenberg segura o passo quando duas
+restrições puxam quase na mesma direção (Chootinan e Chen, Computers & Operations Research 33(8), 2006, a conferir no
+PDF):
+
+$$\Delta x = -J^\top \left(J J^\top + \lambda I\right)^{-1} g$$
+
+O **ε-restrito** compara dois pontos pela nota quando os dois violam até ε, e pela violação senão; ε cai até zero
+em $T_c$ gerações. No começo a busca atravessa regiões que quase voam; no fim só aceita o que voa (Takahama e Sakai,
+IEEE CEC 2006, a conferir no PDF):
+
+$$\varepsilon(t) = \varepsilon_0 \left(1 - \frac{t}{T_c}\right)^{c_p}, \quad t < T_c$$
+
+O **bandido** escolhe o operador de cada filho como um caça-níquel de vários braços. O braço $k$ guarda a média
+$\hat p_k$ do quanto já melhorou quem ele mutou e quantas vezes $n_k$ foi jogado; joga-se o de maior valor no UCB1.
+Quando o avião sai de uma falha e cai noutra, as recompensas caem, o teste de Page–Hinkley percebe e zera o bandido
+(o D-MAB de Da Costa, Fialho, Schoenauer e Sebag, GECCO 2008, a conferir no PDF):
+
+$$a = \arg\max_k \; \hat p_k + C\sqrt{\frac{2 \ln \sum_j n_j}{n_k}}, \qquad
+m_t = \sum_{i \le t} \left(r_i - \bar r_i + \delta\right), \quad \text{reinicia se } \max_{i \le t} m_i - m_t > \gamma$$
+
+O **espaço normativo** do algoritmo cultural é a faixa de cada variável entre os melhores da população; os filhos
+nascem dentro dela (Reynolds, 1994; Landa Becerra e Coello, GECCO 2005, a conferir no PDF). A **regra do LEM**
+separa os melhores (H) dos piores (L) com um corte por variável, $x_j \ge t$ ou $x_j \le t$, o que deixa mais de H
+dentro e menos de L; os filhos nascem na caixa que sobra (Michalski, Machine Learning 38, 2000, a conferir no PDF;
+o AQ do artigo aprende várias regras, aqui é uma só). As duas sorteiam os filhos com `boxSample`. Os testes conferem
+que o reparo zera uma e duas restrições lineares num passo, que o ε cai como a fórmula e vira a regra de Deb em
+zero, que o bandido prefere o braço que paga e reinicia quando ele para de pagar, e que as duas caixas ficam onde
+os melhores estão.
 
 ## O modelo local
 

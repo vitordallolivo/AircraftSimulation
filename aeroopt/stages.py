@@ -27,6 +27,7 @@ duas ou três variáveis.
 from __future__ import annotations
 
 import copy
+import functools
 import itertools
 import math
 import zlib
@@ -51,6 +52,8 @@ from aerosim.parallel import check_cancel
 from . import categories as cat
 from . import inputs as inp
 from . import scoring as sc
+from .diagnosis import MIL_CODES
+from .guided import GUIDED, guided_search
 from .pipeline import Pipeline
 from .problem import apply_to_project, fold_bounds
 
@@ -199,15 +202,18 @@ CNB_MIN = 0.02            # C_nβ mínimo (/rad) para o avião apontar o nariz n
 NOSE_LOAD_MIN = 0.08      # o peso mínimo na bequilha parado (Raymer, §11.2, de 8 a 15 %; a conferir no PDF)
 
 
-def violation(d: dict, stab: dict | None = None, stab_params=None, rotation: bool = False) -> tuple[float, list[str]]:
+def violation_terms(d: dict, stab: dict | None = None, stab_params=None,
+                    rotation: bool = False) -> list[tuple[str, float, str]]:
     """quanto um ponto de projeto viola o que é preciso para voar, somado em escalas parecidas (cada termo vale 1
-    na fronteira de "bem fora"), e o motivo de cada termo. `d`: o ponto de projeto ou a montagem ({"asm": ...}).
+    na fronteira de "bem fora"), termo a termo: (código, valor, motivo). O código diz qual falha é
+    (`diagnosis.REMEDIES` liga cada um às variáveis que o consertam). `d`: o ponto de projeto ou a montagem
+    ({"asm": ...}).
     Com `rotation` (a rodada interna da E&C), o comando de arfagem tem de rodar o avião antes da velocidade de sair
     do chão, e o termo cresce com o quanto falta: V_rot / V_lof − 1, mais 1 se não roda em velocidade nenhuma. Sem
     ele, vale o de sempre: só não rodar em velocidade nenhuma conta"""
     asm = d["asm"]
     tr, st = asm.get("trim") or {}, asm["set"]
-    out: list[tuple[float, str]] = []
+    out: list[tuple[str, float, str]] = []
     v_rot, v_lof = tr.get("V_rot", 0.0), tr.get("V_lof", math.inf)
     if tr.get("lifts_off") and math.isfinite(v_rot):   # sai do chão na atitude da corrida: não precisa rodar
         pass
@@ -218,62 +224,68 @@ def violation(d: dict, stab: dict | None = None, stab_params=None, rotation: boo
             _, M, arm = tr["rot_table"]
             need = float(asm["mass"]) * 9.80665 * arm
             gap = 1.0 + max(0.0, 1.0 - float(np.max(M)) / need) if need > 0 else 1.0
-        out.append((gap, f"o comando de arfagem só roda o avião a {v_rot:.1f} m/s (sai do chão a {v_lof:.1f})"
+        out.append(("rotacao", gap, f"o comando de arfagem só roda o avião a {v_rot:.1f} m/s (sai do chão a {v_lof:.1f})"
                     if math.isfinite(v_rot) else "o profundor não consegue rodar o avião"))
     elif not math.isfinite(v_rot):
-        out.append((1.0, "o profundor não consegue rodar o avião"))
+        out.append(("rotacao", 1.0, "o profundor não consegue rodar o avião"))
     if not tr.get("hold_ok", True):
-        out.append((1.0, "trim de decolagem passa do curso de picar"))
+        out.append(("trim_picar", 1.0, "trim de decolagem passa do curso de picar"))
     if "CL_trim_max" in tr and "CL_lof" in tr and not tr["CL_trim_max"] >= tr["CL_lof"]:
         cl = tr["CL_trim_max"]
-        out.append(((tr["CL_lof"] / cl - 1.0) if cl > 0 else 2.0 + max(-tr.get("Cm_up_max", 0.0), 0.0) / 0.05,
+        out.append(("trim_cl", (tr["CL_lof"] / cl - 1.0) if cl > 0 else 2.0 + max(-tr.get("Cm_up_max", 0.0), 0.0) / 0.05,
                     f"trimado, o C_L máximo é {cl:.2f}; a velocidade de estol pedida pede {tr['CL_lof']:.2f}" if cl > -math.inf
                     else "o comando não trima o avião em α nenhum"))
     if tr.get("climb_M", -1.0) > 0:                  # E&C pelo núcleo: o comando não segura o nariz no ar
-        out.append((min(tr["climb_M"] / tr["climb_scale"], 3.0) + 0.1,
+        out.append(("nariz_subida", min(tr["climb_M"] / tr["climb_scale"], 3.0) + 0.1,
                     "logo depois de sair do chão o comando todo picando não segura o nariz com o motor cheio"))
     if tr.get("ground_stall", -1.0) > 0:
-        out.append((tr["ground_stall"] / 0.2 + 0.1, "na atitude do chão a asa corre perto do estol (sai do chão "
+        out.append(("estol_chao", tr["ground_stall"] / 0.2 + 0.1, "na atitude do chão a asa corre perto do estol (sai do chão "
                     "estolada)"))
     if not tr.get("tip_ok", True):
-        out.append((1.0, "na atitude do chão o CG fica atrás do trem principal (o avião senta para trás)"))
+        out.append(("senta", 1.0, "na atitude do chão o CG fica atrás do trem principal (o avião senta para trás)"))
     if rotation:
         cnb = float(st.get("Cnb", math.nan))
         if math.isnan(cnb):                      # sem cauda e sem deriva: nada aponta o nariz no vento
-            out.append((1.0, "sem estabilidade direcional: não há EV nem deriva na ponta da asa"))
+            out.append(("cnb", 1.0, "sem estabilidade direcional: não há EV nem deriva na ponta da asa"))
         elif cnb < CNB_MIN:
-            out.append(((CNB_MIN - cnb) / CNB_MIN + 0.1,
+            out.append(("cnb", (CNB_MIN - cnb) / CNB_MIN + 0.1,
                         f"C_nβ de {cnb:.3f} /rad (< {CNB_MIN:g}): guina de volta devagar demais"))
     if rotation and tr.get("nose_load", NOSE_LOAD_MIN) < NOSE_LOAD_MIN:
-        out.append(((NOSE_LOAD_MIN - tr["nose_load"]) / NOSE_LOAD_MIN + 0.1,
+        out.append(("bequilha", (NOSE_LOAD_MIN - tr["nose_load"]) / NOSE_LOAD_MIN + 0.1,
                     f"a bequilha leva só {100 * tr['nose_load']:.0f} % do peso parado (< {100 * NOSE_LOAD_MIN:.0f} %): "
                     "o avião senta para trás na corrida"))
     if "CLh_lim" in st:
         lo, hi = st["CLh_lim"]
         x = st["CLh_CLmax"]
         if not lo <= x <= hi:
-            out.append((min(abs(x - lo), abs(x - hi)) / max(hi - lo, 0.1), "EH estola no C_L,max"))
+            out.append(("eh_estol", min(abs(x - lo), abs(x - hi)) / max(hi - lo, 0.1), "EH estola no C_L,max"))
     if not asm["battery_fits"]:
-        out.append((asm["ballast"] / 0.05, f"precisa de {asm['ballast']:.2f} kg de lastro de equilíbrio"))
+        out.append(("lastro", asm["ballast"] / 0.05, f"precisa de {asm['ballast']:.2f} kg de lastro de equilíbrio"))
     sm_min = getattr(getattr(d.get("cand"), "set", None), "params", None)
     sm_min = getattr(sm_min, "sm_min", None)
     if sm_min is not None and asm.get("sm") is not None and asm["sm"] < sm_min:
-        out.append(((sm_min - asm["sm"]) / 5.0, f"margem estática {asm['sm']:.1f} % < {sm_min:g} %"))
+        out.append(("margem", (sm_min - asm["sm"]) / 5.0, f"margem estática {asm['sm']:.1f} % < {sm_min:g} %"))
     if sm_min is not None and asm.get("payload_moved") and asm["sm_empty"] < sm_min:
-        out.append(((sm_min - asm["sm_empty"]) / 5.0, f"sem a carga paga (que equilibra o CG fora dele) a margem "
+        out.append(("margem_vazio", (sm_min - asm["sm_empty"]) / 5.0, f"sem a carga paga (que equilibra o CG fora dele) a margem "
                     f"estática cai para {asm['sm_empty']:.1f} % < {sm_min:g} %"))
     if "mtow" in d and not math.isfinite(d["mtow"]):
-        out.append((1.0, "não decola na pista"))
+        out.append(("pista", 1.0, "não decola na pista"))
     if stab:
         if "Cnb" in stab and stab["Cnb"] <= 0:
-            out.append((-stab["Cnb"] / 0.02 + 0.1, f"instável direcional (C_nβ = {stab['Cnb']:.3f} /rad)"))
+            out.append(("cnb", -stab["Cnb"] / 0.02 + 0.1, f"instável direcional (C_nβ = {stab['Cnb']:.3f} /rad)"))
         if "Clb" in stab and stab["Clb"] >= 0:
-            out.append((stab["Clb"] / 0.02 + 0.1, f"instável em rolamento (C_lβ = {stab['Clb']:.3f} /rad)"))
+            out.append(("clb", stab["Clb"] / 0.02 + 0.1, f"instável em rolamento (C_lβ = {stab['Clb']:.3f} /rad)"))
         lim = stab_params.level if stab_params is not None else 3
         for k, v in stab.items():
             if k not in ("Cnb", "Clb") and isinstance(v, int) and v > lim:
-                out.append((float(v - lim), f"{k}: nível {v} (aceito até {lim})"))
-    return sum(v for v, _ in out), [w for _, w in out]
+                out.append((MIL_CODES.get(k, "estabilidade"), float(v - lim), f"{k}: nível {v} (aceito até {lim})"))
+    return out
+
+
+def violation(d: dict, stab: dict | None = None, stab_params=None, rotation: bool = False) -> tuple[float, list[str]]:
+    """a soma dos termos de `violation_terms` e o motivo de cada um"""
+    terms = violation_terms(d, stab, stab_params, rotation)
+    return sum(v for _, v, _ in terms), [w for _, _, w in terms]
 
 
 def core_rotation(ac, asm: dict, rules, rho: float, backend, v_need: float | None = None) -> dict | None:
@@ -499,6 +511,7 @@ CONTROL_START = {"asa voadora": {"wing.sweep": 25.0, "wing.twist": -5.0, "wing.r
 FLY_METHODS = {"buscar": "achar um ponto que voa (gerações nas contínuas, pelas regras de viabilidade)",
                "cma-es": "achar um ponto que voa (CMA-ES nas contínuas, pelas regras de viabilidade)",
                "de": "achar um ponto que voa (evolução diferencial nas contínuas, pelas regras de viabilidade)",
+               **GUIDED,                  # os guiados pela falha (guided.py): usam o motivo, não só o quanto viola
                "conferir": "só conferir o avião como está"}
 
 
@@ -568,16 +581,19 @@ class FlightCheck(IStage):
             tr = core_rotation(ac, asm, p.rules, p.requirements.rho, self._backend, p.requirements.V_stall_max)
             asm = {**asm, "trim": tr} if tr is not None else asm
         d = dict(asm=asm, cand=cand)
-        viol, why = violation(d, rotation=self.controls)
+        terms = violation_terms(d, rotation=self.controls)
         stab = {}
-        if not why and self.stability is not None:
+        if not terms and self.stability is not None:
             if self._backend is None:
                 from aerosim.backend.zig import ZigBackend
                 self._backend = ZigBackend()
             _, _, stab = stability_check(ac, p.requirements.V_cruise, self.stability, self._backend)
-            viol, why = violation(d, stab, self.stability, rotation=self.controls)
-        return dict(values=dict(values), ok=not why, why="; ".join(why), viol=viol, mtow=math.nan, stab=stab,
-                    pv=float(asm["empty"]))
+            terms = violation_terms(d, stab, self.stability, rotation=self.controls)
+        terms_d: dict[str, float] = {}             # por código (a busca guiada diagnostica por eles)
+        for c, v, _ in terms:
+            terms_d[c] = terms_d.get(c, 0.0) + v
+        return dict(values=dict(values), ok=not terms, why="; ".join(w for _, _, w in terms),
+                    viol=sum(v for _, v, _ in terms), mtow=math.nan, stab=stab, pv=float(asm["empty"]), terms=terms_d)
 
     def kind(self, values: dict) -> str:
         """o tipo de avião para os comandos: "asa voadora" (sem cauda), "tandem" (sem cauda, com a segunda asa),
@@ -605,8 +621,10 @@ class FlightCheck(IStage):
         x = {k: min(max(float(values.get(k, start.get(k, get_value(self.project, k)))), lo), hi) for k, lo, hi in free}
         best = self.point({**values, **x})
         hist = [_eval(x, best)]
-        if not best["ok"] and self.method in ("buscar", "cma-es", "de") and free:
+        if not best["ok"] and self.method != "conferir" and free:
             search = {"cma-es": _cma_search, "de": _de_search}.get(self.method, _real_search)
+            if self.method in GUIDED:
+                search = functools.partial(guided_search, mode=self.method)
             st = Starts(free, self.starts) if self.starts > 1 else None
             x, best = search(free, x, best, lambda y: self.point({**values, **y}), self.evals, hist,
                              seed=7 + self.seed + zlib.crc32(item.name.encode()) % 100_000, stop_ok=True,
