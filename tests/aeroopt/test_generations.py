@@ -37,7 +37,7 @@ class FakeEvaluator(sg.StagedEvaluator):
 def _problem():
     p = DesignProject()
     pr = aeroopt.from_project(p)
-    pr.params["categorias"] = list(cat.CATEGORIES)
+    pr.params["categorias"] = list(cat.LEGACY) + [c for c in cat.CATEGORIES if c != "monoplano"]   # as 8 de antes
     names = sg.available(p, "wing.airfoil")
     for k in ("wing.airfoil", "wing.airfoil_tip", "power.propeller", "power.motor"):
         v = pr.variable(k)

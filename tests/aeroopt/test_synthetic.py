@@ -11,7 +11,11 @@ from aeroopt.stages import SURFACE_METHODS, StagedSolver
 
 @pytest.fixture(scope="module")
 def case():
-    return example_project()
+    """o exemplo com as categorias de antes do monoplano único: os nomes fazem os fatores, e com estes o melhor fica
+    longe o bastante do segundo para toda busca achar com 24 pontos"""
+    p, pr = example_project()
+    pr.params["categorias"] = ["asa alta", "asa baixa", "biplano", "asa voadora", "cauda em V"]
+    return p, pr
 
 
 def test_the_landscape_is_what_the_docstring_says():

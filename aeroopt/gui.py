@@ -26,7 +26,7 @@ import traceback
 
 import numpy as np
 import pyqtgraph as pg
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 import aeroopt
 from aerosim.design import registry as rg
@@ -78,6 +78,33 @@ def _section(lay, title: str):
     lab = QtWidgets.QLabel(f"<b>{title}</b>")
     lab.setStyleSheet("font-size:13px; color:#1f2d3d; border-bottom:1px solid #c9d3e0; padding-bottom:2px")
     lay.addWidget(lab)
+
+
+class _Help(QtWidgets.QLabel):
+    """o "(?)" de uma opção: a explicação aparece ao parar o mouse em cima ou ao clicar"""
+
+    def __init__(self, tip: str):
+        super().__init__("(?)")
+        self.setToolTip(tip)
+        pal = self.palette()                       # paleta, não folha de estilo: a dica herdaria a cor
+        pal.setColor(QtGui.QPalette.ColorRole.WindowText, QtGui.QColor("#2a78d6"))
+        self.setPalette(pal)
+        self.setCursor(QtCore.Qt.CursorShape.WhatsThisCursor)
+
+    def mousePressEvent(self, e):
+        QtWidgets.QToolTip.showText(e.globalPosition().toPoint(), self.toolTip(), self)
+
+
+def _help(item, tip: str) -> QtWidgets.QWidget:
+    """um nome (texto) ou uma caixa de marcar com o "(?)" ao lado"""
+    w = QtWidgets.QWidget()
+    h = QtWidgets.QHBoxLayout(w)
+    h.setContentsMargins(0, 0, 0, 0)
+    h.setSpacing(4)
+    h.addWidget(QtWidgets.QLabel(item) if isinstance(item, str) else item)
+    h.addWidget(_Help(tip))
+    h.addStretch(1)
+    return w
 
 
 def _table(headers: list[str]) -> QtWidgets.QTableWidget:
@@ -739,17 +766,14 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                       "variáveis": _Menu("Variáveis: tudo o que se escolhe nas etapas do aerosim (livre, limites ou a lista marcada)", self.vars, self, iso),
                       "restrições": _Menu("Restrições (como Condições e restrições do aerosim) e geometria",
                                           self.cons, self, self._restrictions_top()),
-                      "categorias": _Menu("Categorias de avião", self._categories_box(), self),
                       "configuração": _Menu("Configuração: as etapas e o método de cada uma",
                                             self._config_box(), self)}
-        _fit_screen(self.menus["categorias"], 760, 300)
         _fit_screen(self.menus["configuração"], 760, 560)
         _section(v, "O problema (cada botão abre o submenu)")
         self.summary: dict[str, QtWidgets.QLabel] = {}
         grid = QtWidgets.QGridLayout()
         for i, (k, txt) in enumerate((("pontuação", "Pontuação…"), ("variáveis", "Variáveis…"),
-                                      ("restrições", "Restrições…"), ("categorias", "Categorias…"),
-                                      ("configuração", "Configuração…"))):
+                                      ("restrições", "Restrições…"), ("configuração", "Configuração…"))):
             b = QtWidgets.QPushButton(txt)
             b.clicked.connect(lambda _=False, k=k: self.open_menu(k))
             lab = QtWidgets.QLabel("—")
@@ -795,13 +819,16 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         box = QtWidgets.QGroupBox("Estabilidade (modelo linear do núcleo)")
         f = QtWidgets.QFormLayout(box)
         self.stab = QtWidgets.QCheckBox("conferir: C_nβ > 0, C_lβ < 0 e os modos (MIL-F-8785C)")
-        self.stab.setToolTip("é o que faz diedro, enflechamento e deriva contarem: a corrida de decolagem quase não "
-                             "depende deles. Uns 0,1 s a mais por ponto de projeto")
         self.stab_level = QtWidgets.QComboBox()
         for n, txt in ((1, "nível 1 (bom)"), (2, "nível 2 (aceitável)"), (3, "nível 3 (pilotável)")):
             self.stab_level.addItem(txt, n)
-        f.addRow(self.stab)
-        f.addRow("pior nível aceito", self.stab_level)
+        f.addRow(_help(self.stab, "cada ponto de projeto passa pela análise da aba Estabilidade: estabilidade de "
+                       "direção (C_nβ > 0), de rolamento (C_lβ < 0) e os modos. É o que faz diedro, enflechamento e "
+                       "deriva contarem, porque a corrida de decolagem quase não depende deles. Uns 0,1 s a mais por "
+                       "ponto"))
+        f.addRow(_help("pior nível aceito", "o nível de qualidade de voo da MIL-F-8785C que cada modo tem de ter: "
+                       "1 é bom, 2 aceitável (o piloto trabalha mais), 3 só pilotável. Mais exigente corta mais "
+                       "aviões"), self.stab_level)
         return box
 
     def _geometry_box(self):
@@ -810,41 +837,37 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         f = QtWidgets.QFormLayout(box)
         self.geo = QtWidgets.QCheckBox("conferir: hélice × peças, massas fora da geometria, chão")
         self.geo.setChecked(True)
-        self.geo.setToolTip("etapa barata antes das superfícies, e cada ponto de projeto também passa por ela")
         self.rot = QtWidgets.QDoubleSpinBox()
         self.rot.setRange(0.0, 30.0)
         self.rot.setValue(12.0)
-        self.rot.setSuffix(" °")
-        self.rot.setToolTip("atitude do corpo na rotação da decolagem: girado no trem principal, nada pode bater no chão")
         self.clear = QtWidgets.QDoubleSpinBox()
         self.clear.setRange(0.0, 20.0)
-        self.clear.setSuffix(" cm")
-        self.clear.setToolTip("folga mínima de qualquer peça ao chão")
         self.prop_clear = QtWidgets.QDoubleSpinBox()
         self.prop_clear.setRange(0.0, 20.0)
         self.prop_clear.setValue(2.0)
-        self.prop_clear.setSuffix(" cm")
-        self.prop_clear.setToolTip("folga mínima da ponta da hélice ao chão")
         self.one_piece = QtWidgets.QCheckBox("exigir uma peça só (sem peça solta)")
-        self.one_piece.setToolTip("o montador da sprint ainda não põe montantes nem tubos entre asas: biplano, tandem e "
-                                  "parasol saem soltos")
-        f.addRow(self.geo)
-        f.addRow("ângulo de rotação", self.rot)
-        f.addRow("folga das peças ao chão", self.clear)
-        f.addRow("folga da hélice ao chão", self.prop_clear)
-        f.addRow(self.one_piece)
+        f.addRow(_help(self.geo, "etapa barata antes das superfícies, e cada ponto de projeto também passa por ela: "
+                       "a hélice não pode cruzar peça, as massas têm de caber no avião e nada bate no chão"))
+        f.addRow(_help("ângulo de rotação (°)", "a atitude do corpo na rotação da decolagem: girado no trem "
+                       "principal, nada pode bater no chão. Maior pede trem mais alto ou cauda mais curta"), self.rot)
+        f.addRow(_help("folga das peças ao chão (cm)", "a menor distância de qualquer peça ao chão, parado e na "
+                       "rotação"), self.clear)
+        f.addRow(_help("folga da hélice ao chão (cm)", "a menor distância da ponta da hélice ao chão; com pouca "
+                       "folga a hélice pode bater na grama ou numa pedra"), self.prop_clear)
+        f.addRow(_help(self.one_piece, "o avião tem de ser uma peça só, sem peça solta. O montador da sprint ainda "
+                       "não põe montantes nem tubos entre asas, então biplano e tandem saem soltos e param aqui"))
         return box
 
     def _categories_box(self):
+        """os tipos de avião que a busca monta, cada um com o "(?)"; nenhum marcado: o avião como está"""
         w = QtWidgets.QWidget()
         grid = QtWidgets.QGridLayout(w)
+        grid.setContentsMargins(0, 0, 0, 0)
         self.cat_cb = {}
         for i, c in enumerate(cat.CATEGORIES):
             cb = QtWidgets.QCheckBox(c)
-            cb.setToolTip(", ".join(f"{k} = {x}" for k, x in cat.fields(c).items()))
             self.cat_cb[c] = cb
-            grid.addWidget(cb, i // 4, i % 4)
-        grid.setRowStretch(grid.rowCount(), 1)
+            grid.addWidget(_help(cb, cat.HELP[c]), i // 3, i % 3)
         return w
 
     def _config_box(self):
@@ -853,7 +876,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         v = QtWidgets.QVBoxLayout(w)
         self.method: dict[str, QtWidgets.QComboBox] = {}
 
-        def stage(title: str, methods: dict | None, note: str = "", key: str | None = None):
+        def stage(title: str, methods: dict | None, note: str, key: str | None = None):
             box = QtWidgets.QGroupBox(title)
             f = QtWidgets.QFormLayout(box)
             if methods:
@@ -862,35 +885,45 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                     c.addItem(METHOD_NAMES.get(k, k), k)
                     c.setItemData(c.count() - 1, txt, QtCore.Qt.ItemDataRole.ToolTipRole)
                 self.method[key or title] = c
-                f.addRow("método", c)
-            if note:
-                box.setToolTip(note)
+                f.addRow(_help("método", note), c)
             v.addWidget(box)
             return f
 
-        f = stage("configurações", CONFIG_METHODS)
+        f = stage("configurações", CONFIG_METHODS,
+                  "como se escolhem as combinações das listas livres (categoria, hélice, motor...). Todas: roda cada "
+                  "combinação uma vez. Gerações: o algoritmo genético escolhe quais rodar, geração a geração, para "
+                  "quando são combinações demais")
+        f.addRow(_help("aviões", "os tipos de avião que a busca monta; cada um vira mais um eixo das combinações. "
+                       "Nenhum marcado: o avião como está nos rascunhos"), self._categories_box())
         self.pop = QtWidgets.QSpinBox()
         self.pop.setRange(2, 256)
         self.pop.setValue(16)
-        self.pop.setToolTip("configurações por geração; com menos combinações que isto, roda todas de uma vez")
         self.gens = QtWidgets.QSpinBox()
         self.gens.setRange(1, 500)
         self.gens.setValue(8)
-        self.gens.setToolTip("gerações do algoritmo genético (elite, seleção por posição, cruzamento, mutação)")
-        f.addRow("configurações por geração", self.pop)
-        f.addRow("gerações", self.gens)
+        f.addRow(_help("configurações por geração", "quantas combinações cada geração roda; com menos combinações "
+                       "que isto, roda todas de uma vez"), self.pop)
+        f.addRow(_help("gerações", "quantas vezes o algoritmo genético escolhe uma geração nova (elite, seleção por "
+                       "posição, cruzamento, mutação). Mais gerações acham mais, e demoram mais"), self.gens)
         stage("voa", {**sg.FLY_METHODS, "desligada": "desligada (direto para o desempenho)"},
-              "na massa estimada, sem procurar o MTOW: trima, equilibra sem lastro, tem a margem mínima e, com a "
-              "restrição de estabilidade ligada, é estável. Gasta até as avaliações das superfícies")
-        f = stage("superfícies (desempenho e otimização)", sg.SURFACE_METHODS, key="superfícies")
+              "antes de procurar o MTOW, acha um ponto em que o avião voa na massa estimada: trima, equilibra sem "
+              "lastro, tem a margem mínima e, com a restrição de estabilidade ligada, é estável. A busca das "
+              "superfícies parte dele. Gasta até as avaliações das superfícies")
+        f = stage("superfícies (desempenho e otimização)", sg.SURFACE_METHODS,
+                  "a busca das contínuas livres (envergadura, área...) pelo maior MTOW que fecha na pista. "
+                  "Coordenadas: um eixo por vez, rápida quando as variáveis são independentes. Gerações, CMA-ES e "
+                  "evolução diferencial: populações, melhores quando as variáveis andam juntas", key="superfícies")
         self.evals = QtWidgets.QSpinBox()
         self.evals.setRange(1, 200)
         self.evals.setValue(12)
-        self.evals.setToolTip("pontos de projeto que a busca das superfícies gasta em cada configuração")
-        f.addRow("avaliações por configuração", self.evals)
-        stage("decolagem", TAKEOFF_METHODS)
-        f = stage("sensibilidade do melhor", None, "o quanto a nota do melhor muda com cada contínua livre, "
-                  "dentro do problema (aeroopt/sensitivity.py); o resultado fica na aba Sensibilidade do melhor")
+        f.addRow(_help("avaliações por configuração", "pontos de projeto que a busca das superfícies gasta em cada "
+                       "configuração. Mais pontos chegam mais perto do melhor MTOW, e o tempo cresce junto"),
+                 self.evals)
+        stage("decolagem", TAKEOFF_METHODS,
+              "como se confere o MTOW achado. 6GDL: simula a decolagem inteira e procura a maior massa que sai do "
+              "chão, com o profundor otimizado (mais lento, mais fiel). Pista: fica com a corrida da etapa das "
+              "superfícies")
+        f = stage("sensibilidade do melhor", None, "")
         self.sens_on = QtWidgets.QCheckBox("rodar")
         self.sens_method = QtWidgets.QComboBox()
         for k, txt in SENS_METHODS.items():
@@ -903,26 +936,32 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                                      QtCore.Qt.ItemDataRole.ToolTipRole)
         self.sens_h = QtWidgets.QDoubleSpinBox()
         self.sens_h.setRange(1, 50)
-        self.sens_h.setSuffix(" % da faixa")
         self.sens_tol = QtWidgets.QDoubleSpinBox()
         self.sens_tol.setRange(0, 20)
         self.sens_tol.setDecimals(2)
-        self.sens_tol.setSuffix(" % do valor")
         self.sens_traj = QtWidgets.QSpinBox()
         self.sens_traj.setRange(2, 64)
         self.sens_limits = QtWidgets.QCheckBox("limites do problema (2 pontos por limite)")
-        f.addRow(self.sens_on)
-        f.addRow("método", self.sens_method)
-        f.addRow("passo", self.sens_h)
-        f.addRow("tolerância", self.sens_tol)
-        f.addRow("trajetórias (Morris)", self.sens_traj)
-        f.addRow(self.sens_limits)
+        f.addRow(_help(self.sens_on, "no fim da rodada, o quanto a nota do melhor muda com cada contínua livre, "
+                       "dentro do problema; o resultado fica numa aba própria"))
+        f.addRow(_help("método", "modelo local: usa os pontos que a busca já avaliou perto do melhor e só avalia "
+                       "o que falta. Um por vez: 2 pontos novos por variável. Morris: efeitos elementares, acusa "
+                       "também curvatura e interação"), self.sens_method)
+        f.addRow(_help("passo (% da faixa)", "quanto cada variável anda para cada lado do melhor, em % da faixa "
+                       "dela no problema"), self.sens_h)
+        f.addRow(_help("tolerância (% do valor)", "o erro de fabricação de cada variável, em % do valor: a "
+                       "sensibilidade diz quanto de nota se perde com ele"), self.sens_tol)
+        f.addRow(_help("trajetórias (Morris)", "quantos caminhos o Morris percorre; cada um custa (variáveis + 1) "
+                       "pontos"), self.sens_traj)
+        f.addRow(_help(self.sens_limits, "a nota do melhor com cada limite do problema (pista, restrições) 5 % "
+                       "mais folgado e mais apertado: mostra qual limite está segurando a nota"))
         self._set_sens(SensParams())
         f = QtWidgets.QFormLayout()
         self.workers = QtWidgets.QSpinBox()
         self.workers.setRange(1, max(os.cpu_count() or 1, 1))
         self.workers.setValue(max(1, (os.cpu_count() or 2) - 1))
-        f.addRow("processos por etapa", self.workers)
+        f.addRow(_help("processos por etapa", "quantos aviões são avaliados ao mesmo tempo, um por núcleo do "
+                       "processador. Um a menos que os núcleos deixa a janela respondendo"), self.workers)
         warm_session(*self._pool_args())             # os processos nascem enquanto a janela abre, não na rodada
         v.addLayout(f)
         v.addStretch(1)
@@ -1330,8 +1369,9 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.vars.set_problem(pr, self.project)
         self.cons.set_problem(pr)
         self._fill_axes(pr)
+        cats = {cat.current(c) for c in pr.params.get("categorias") or []}
         for c, cb in self.cat_cb.items():
-            cb.setChecked(c in (pr.params.get("categorias") or []))
+            cb.setChecked(c in cats)
         g = {**GEOMETRY_DEFAULT, **(pr.params.get("geometria") or {})}
         self.geo.setChecked(bool(g["ligada"]))
         self.rot.setValue(float(g["rotação"]))
@@ -1362,8 +1402,6 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             f"{rg.QUANTITIES[c.key].label if c.key in rg.QUANTITIES else c.key} {c.op} {_fmt(c.value)}" for c in cs)
             or "nenhuma ligada")
         self.summary["pontuação"].setText(self.scoring.spec())
-        cats = pr.params.get("categorias") or []
-        self.summary["categorias"].setText(", ".join(cats) or "nenhuma: o avião como está nos rascunhos")
         g = {**GEOMETRY_DEFAULT, **(pr.params.get("geometria") or {})}
         if g["ligada"]:
             self.summary["restrições"].setText(self.summary["restrições"].text() + f"; geometria com rotação de "
@@ -1375,9 +1413,11 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         e = {**STAGES_DEFAULT, **(pr.params.get("etapas") or {})}
         cfg = (f"gerações: {e['gerações']} × {e['população']}" if e["configurações"] == "gerações" else
                "todas as combinações")
+        cats = list(dict.fromkeys(cat.current(c) for c in pr.params.get("categorias") or []))
         self.summary["configuração"].setText(
-            f"{cfg}; voa: {'busca' if e['voa'] == 'buscar' else 'confere' if e['voa'] == 'conferir' else 'desligada'}; "
-            f"superfícies por {'gerações' if e['superfícies'] == 'gerações' else 'coordenadas'} "
+            f"aviões: {', '.join(cats) or 'o dos rascunhos'}; {cfg}; "
+            f"voa: {'desligada' if e['voa'] == 'desligada' else METHOD_NAMES.get(e['voa'], e['voa'])}; "
+            f"superfícies por {METHOD_NAMES.get(e['superfícies'], e['superfícies'])} "
             f"({e['avaliações']} pontos); decolagem {'no 6GDL' if e['decolagem'] == '6gdl' else 'só na pista'}; "
             + (f"sensibilidade: {SENS_METHODS[sp.method]}" if (sp := SensParams.from_dict(
                 pr.params.get("sensibilidade"))).on else "sem sensibilidade"))
@@ -1952,7 +1992,7 @@ def example_project():
             v.lo, v.hi = 0.4, 0.6
         if v.key == "power.propeller":
             v.options = ["Genérica 11x7", "Genérica 13x6.5", "APC 15x8E"]
-    pr.params["categorias"] = ["asa alta", "asa baixa", "biplano", "asa voadora", "cauda em V"]
+    pr.params["categorias"] = ["monoplano", "biplano", "tandem", "asa voadora", "cauda em V"]
     return p, pr
 
 

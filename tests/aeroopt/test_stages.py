@@ -170,6 +170,8 @@ def test_categories_build_each_kind_of_aircraft():
     pr.params["categorias"] = ["asa alta", "biplano", "asa voadora"]
     items = sg.configurations(p, pr)
     assert len(items) == 6 and items[0].name == "asa alta, hélice=APC 15x8E"
+    assert cat.fields("monoplano") == cat.fields("asa alta")      # o monoplano sai com a asa alta
+    assert cat.current("parasol") == "monoplano" and "parasol" not in cat.CATEGORIES
     pr.params["categorias"] = ["trimotor voador"]
     with pytest.raises(KeyError):
         sg.configurations(p, pr)

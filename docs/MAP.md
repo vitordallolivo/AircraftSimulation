@@ -673,7 +673,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 ## Testes (`tests/`)
 
 - `tests/aero` — 59 testes em 9 arquivo(s)
-- `tests/aeroopt` — 57 testes em 8 arquivo(s)
+- `tests/aeroopt` — 58 testes em 8 arquivo(s)
 - `tests/core` — 34 testes em 9 arquivo(s)
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 68 testes em 11 arquivo(s)

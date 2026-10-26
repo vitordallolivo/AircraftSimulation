@@ -41,8 +41,12 @@ As contas que rodam no núcleo para o aeroopt (a nota, o algoritmo genético, o 
 
 ## A janela
 
-À esquerda fica o problema, com um botão para cada parte: pontuação, variáveis, restrições, categorias e
-configuração. Cada botão abre um submenu, e ao lado dele aparece um resumo do que está escolhido. À direita fica a
+À esquerda fica o problema, com um botão para cada parte: pontuação, variáveis, restrições e configuração. Cada
+botão abre um submenu, e ao lado dele aparece um resumo do que está escolhido. Os tipos de avião que a busca monta
+(monoplano, biplano, tandem, asa voadora, cauda em V) ficam na Configuração, junto do método de cada etapa. Cada
+opção dos submenus tem um "(?)" que explica o que ela é e no que muda a busca, e os campos de número levam só o
+número: a unidade fica no nome do campo. Asa alta, média, baixa e parasol são o mesmo monoplano com a asa em outra
+altura; para a busca escolher a altura, solta-se a variável "altura da asa". À direita fica a
 rodada: quantos aviões passaram em cada etapa, o MTOW de cada ponto avaliado, a nota de cada configuração, o mapa dos
 aviões, a tabela e o avião selecionado em 3D.
 

@@ -196,14 +196,16 @@ def test_constraint_on_a_variable_becomes_its_bound():
 
 
 def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
-    """tudo da esquerda abre num submenu; a geometria fica nas restrições, as etapas e o método de cada uma na
-    Configuração, e tudo vai no .opt.json"""
+    """tudo da esquerda abre num submenu; a geometria fica nas restrições, as etapas, o método de cada uma e os
+    aviões na Configuração, e tudo vai no .opt.json"""
     import aeroopt
     from aeroopt.gui import AeroOptWindow, example_project
     p, pr = example_project()
     w = AeroOptWindow(p, pr)
-    assert set(w.menus) == {"pontuação", "variáveis", "restrições", "categorias", "configuração"}
-    assert w.rot.window() is not w and w.scoring.window() is not w and w.cat_cb["asa alta"].window() is not w
+    assert set(w.menus) == {"pontuação", "variáveis", "restrições", "configuração"}
+    assert w.rot.window() is not w and w.scoring.window() is not w
+    assert w.cat_cb["monoplano"].window() is w.menus["configuração"]
+    assert set(w.cat_cb) == {"monoplano", "biplano", "tandem", "asa voadora", "cauda em V"}
     assert w.rot.window() is w.menus["restrições"] and w.evals.window() is w.menus["configuração"]
     assert set(w.method) == {"configurações", "voa", "superfícies", "decolagem"}
     titles = [b.title() for b in w.menus["configuração"].findChildren(QtWidgets.QGroupBox)]
@@ -215,7 +217,7 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     w.set_method("superfícies", "gerações")
     w.set_method("configurações", "todas")
     for c, cb in w.cat_cb.items():
-        cb.setChecked(c == "asa alta")
+        cb.setChecked(c == "monoplano")
     w.sens_method.setCurrentIndex(w.sens_method.findData("morris"))   # a sensibilidade: método e limites
     w.sens_traj.setValue(9)
     w.sens_limits.setChecked(True)
@@ -223,17 +225,18 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     out = w.read_problem()
     assert out.params["sensibilidade"]["método"] == "morris" and out.params["sensibilidade"]["limites"]
     assert out.params["geometria"]["rotação"] == 9.0 and out.params["geometria"]["uma_peça"]
-    assert out.params["etapas"]["superfícies"] == "gerações" and out.params["categorias"] == ["asa alta"]
+    assert out.params["etapas"]["superfícies"] == "gerações" and out.params["categorias"] == ["monoplano"]
     g = w.geometry_params()
     assert g.rotation == 9.0 and g.connected and g.prop_clearance == pytest.approx(0.02)
     aeroopt.save(out, str(tmp_path / "x.opt.json"))
     w2 = AeroOptWindow(p, aeroopt.load(str(tmp_path / "x.opt.json")))
     assert w2.rot.value() == 9.0 and w2.methods()["superfícies"] == "gerações"
     assert w2.stab.isChecked() and w2.stab_level.currentData() == 3 and "nível 3" in w2.summary["restrições"].text()
-    assert w2.methods()["configurações"] == "todas" and not w2.cat_cb["asa baixa"].isChecked()
+    assert w2.methods()["configurações"] == "todas" and not w2.cat_cb["biplano"].isChecked()
     assert "9°" in w2.summary["restrições"].text() and "todas" in w2.summary["configuração"].text()
     sp = w2.sens_params()
     assert sp.method == "morris" and sp.trajectories == 9 and sp.limits and "Morris" in w2.summary["configuração"].text()
+    assert "aviões: monoplano" in w2.summary["configuração"].text()
     w.problem = out
     w.scoring.set_spec("MTOW")                                   # Cancelar volta a pontuação ao que era
     w.scoring.restore(("sae_br_2026_micro", {}))
@@ -318,3 +321,19 @@ def test_sensitivity_tab_with_morris_and_limits(app):
         body = w._sens_widget(res)
         txt = body.findChild(QtWidgets.QLabel).text()
         assert "limite pista" in txt and ("μ*" in txt) == (m == "morris")
+
+
+def test_numbers_have_no_text_and_every_option_has_help(app):
+    """os campos de número são só o número (a unidade fica no nome), e cada opção dos menus tem o "(?)" com a
+    explicação; um problema gravado com os monoplanos antigos marca o monoplano"""
+    from aeroopt.gui import AeroOptWindow, _Help, example_project
+    p, pr = example_project()
+    pr.params["categorias"] = ["asa baixa", "parasol", "biplano"]
+    w = AeroOptWindow(p, pr)
+    for k in ("restrições", "configuração"):
+        for s in w.menus[k].findChildren(QtWidgets.QAbstractSpinBox):
+            assert s.suffix() == "" and s.prefix() == ""
+        helps = w.menus[k].findChildren(_Help)
+        assert helps and all(h.toolTip() for h in helps)
+    assert len(w.menus["configuração"].findChildren(_Help)) >= 15
+    assert [c for c, cb in w.cat_cb.items() if cb.isChecked()] == ["monoplano", "biplano"]
