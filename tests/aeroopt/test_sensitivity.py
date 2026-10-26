@@ -88,3 +88,58 @@ def test_processes_give_the_same_answer(case):
     key = lambda s: [(r["key"], round(r["slope"], 9), round(r["curv"], 6)) for r in s["rows"]]  # noqa: E731
     assert key(serial) == key(par)
     assert all(math.isfinite(r["swing"]) for r in serial["rows"])
+
+
+def test_one_at_a_time_ignores_the_history_and_matches(case):
+    from aeroopt.sensitivity import SensParams
+    p, pr, ev, row, f = case
+    s = sensitivity(p, pr, row, ev, SensParams(method="eixos"))
+    assert s["new"] == 2 * len(free(pr))               # o melhor vem do histórico; só os eixos são novos
+    by = {r["key"]: r for r in s["rows"]}
+    for key, g, c in _known(pr, row, f):
+        assert by[key]["slope"] == pytest.approx(g, abs=1e-6 * abs(c))
+        assert by[key]["curv"] == pytest.approx(c, rel=1e-6)
+
+
+def test_morris_effects_of_the_known_quadratic(case):
+    """na caixa u₀ ± h, o efeito elementar de uma parábola separável num passo de a para b é a média das
+    inclinações nas pontas: μ fica perto da inclinação em u₀ e σ > 0 acusa a curvatura"""
+    from aeroopt.sensitivity import SensParams
+    p, pr, ev, row, f = case
+    sp = SensParams(method="morris", trajectories=8)
+    s = sensitivity(p, pr, row, ev, sp)
+    k = len(free(pr))
+    assert 0 < s["new"] <= sp.trajectories * (k + 1)
+    for r in s["rows"]:
+        assert r["steps"] == sp.trajectories and r["mustar"] >= abs(r["slope"]) - 1e-12
+        assert r["sigma"] > 0 and not math.isfinite(r["curv"])
+    by = {r["key"]: r for r in s["rows"]}
+    for key, g, c in _known(pr, row, f):              # |μ − g| ≤ |c|·h·faixa (a caixa tem meia largura h·faixa)
+        lo, hi = next((lo, hi) for kk, lo, hi, _ in free(pr) if kk == key)
+        assert abs(by[key]["slope"] - g) <= abs(c) * 0.1 * (hi - lo) + 1e-9
+
+
+def test_tolerance_and_elasticity(case):
+    from aeroopt.sensitivity import SensParams
+    p, pr, ev, row, f = case
+    s = sensitivity(p, pr, row, ev, SensParams(tol=0.01))
+    for r in s["rows"]:
+        d = 0.01 * r["x0"]
+        assert r["tol_delta"] == pytest.approx(d)
+        assert r["tol_plus"] == pytest.approx(r["slope"] * d + 0.5 * r["curv"] * d * d)
+        assert r["tol_minus"] == pytest.approx(-r["slope"] * d + 0.5 * r["curv"] * d * d)
+        assert r["elast"] == pytest.approx(r["slope"] * r["x0"] / s["base"]["nota"])
+    assert s["sigma"] > 0
+
+
+def test_limits_of_the_problem(case):
+    """os dados de teste não dependem da pista nem das restrições: ∂N/∂L = 0 em todo limite, e cada um custa 2"""
+    from aeroopt.sensitivity import SensParams, limits
+    p, pr, ev, row, f = case
+    s = sensitivity(p, pr, row, ev, SensParams(limits=True))
+    pr2 = copy.deepcopy(pr)
+    fold_bounds(pr2, copy.deepcopy(p))
+    assert {lm["key"] for lm in s["limits"]} == {k for k, *_ in limits(p, pr2)}
+    assert "pista" in {lm["key"] for lm in s["limits"]}
+    for lm in s["limits"]:
+        assert lm["new"] == 2 and lm["dNdL"] == pytest.approx(0.0, abs=1e-9) and not lm["binding"]

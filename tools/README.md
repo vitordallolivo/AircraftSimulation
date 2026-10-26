@@ -10,7 +10,9 @@ passar, e só as figuras escolhidas vão para `docs/img`.
 Roda um problema do aeroopt (`.opt.json`) pelo núcleo e imprime o melhor ponto, as grandezas e as restrições; com
 `--png`, grava a convergência. `--isolar asa` (ou chaves e grupos separados por vírgula) deixa livres só essas
 variáveis. Com `--etapas --sensibilidade`, no fim imprime a sensibilidade do melhor: a inclinação e a curvatura da
-nota em cada contínua livre, tiradas dos pontos que a busca já avaliou, e a nota prevista a ±10 % da faixa. Detalhes no [README do aeroopt](../aeroopt/README.md).
+nota em cada contínua livre, tiradas dos pontos que a busca já avaliou, e a nota prevista a ±10 % da faixa
+(`--sensibilidade eixos` ou `morris` troca o método; `--tolerancia 1` dá a perda com 1 % em cada medida; `--limites`
+refaz o melhor com cada limite do problema mudado). Detalhes no [README do aeroopt](../aeroopt/README.md).
 
 ```sh
 python tools/aeroopt.py --exemplo perfis/exemplo.opt.json

@@ -74,6 +74,14 @@ núcleo, `core/src/optim/localfit.zig`). Só a direção que a busca não cobriu
 nota prevista a 10 % da faixa para um lado à prevista para o outro, e o lado em que o avião deixa de fechar aparece
 em vermelho, com o motivo.
 
+No menu Configuração, a caixa da sensibilidade liga a análise e escolhe o método. O modelo local é o padrão e
+quase não custa nada. O "um por vez" refaz dois pontos por variável e serve para conferir o modelo. Morris anda em
+trajetórias pela região em volta do melhor e mostra se uma variável tem efeito que muda de um lugar para outro
+(curvatura ou interação com as outras), ao preço de alguns pontos por variável. A tolerância diz quanto a nota cai
+se o avião sair da oficina com aquela diferença em cada medida. Com os limites ligados, a pista e cada restrição
+ligada mudam um pouco para cada lado, e a aba mostra quanto a nota do melhor ganha ou perde com isso, no mesmo
+gráfico.
+
 ![A tabela e o avião selecionado](../docs/img/aeroopt/tabela.png)
 
 ![A decolagem do melhor avião](../docs/img/aeroopt/melhor_decolagem.png)

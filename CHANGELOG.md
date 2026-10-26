@@ -6,6 +6,14 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, sensibilidade com menu e três métodos: no menu Configuração, "7. sensibilidade do melhor" liga a análise e
+  escolhe o método (modelo local, um por vez ou Morris), o passo, a tolerância de fabricação, as trajetórias e os
+  limites do problema; tudo vai no `.opt.json` (`params["sensibilidade"]`). No núcleo, `core/src/optim/sensmethods.zig`
+  dá a perda por tolerância pelos dois primeiros momentos (`aerosim_sens_tolerance`) e as trajetórias e os efeitos
+  elementares de Morris (`aerosim_morris_design`, `aerosim_morris_effects`). Com os limites ligados, o melhor é refeito
+  com a pista e cada restrição ligada ±5 %, e sai ∂nota/∂L. Tudo aparece no mesmo tornado da aba Sensibilidade. Os
+  menus mostram só o nome de cada método; a explicação passou para a dica do mouse. Na ferramenta,
+  `--sensibilidade [local|eixos|morris] --tolerancia --limites`.
 - aeroopt, sensibilidade do melhor (O14): `aeroopt/sensitivity.py` olha só o melhor indivíduo e só as contínuas
   livres dele, dentro dos limites e das restrições do problema. Um modelo local no núcleo
   (`core/src/optim/localfit.zig`, `aerosim_local_fit`: inclinação e curvatura por eixo, mínimos quadrados com o peso

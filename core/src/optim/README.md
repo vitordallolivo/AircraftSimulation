@@ -6,11 +6,12 @@ milhares de uma vez, sem alocar memória. Dele sai a nota e cada termo dela (os 
 avião ganhou.
 
 Aqui também nascem as gerações de aviões: o algoritmo genético que escolhe quais configurações o aeroopt avalia. E o
-CMA-ES, a outra busca das variáveis contínuas (envergadura, área, diedro...). Depois da busca, o modelo local diz o
-quanto a nota do melhor avião muda em volta dele.
+CMA-ES, a outra busca das variáveis contínuas (envergadura, área, diedro...). Depois da busca, o modelo local e os outros métodos da
+sensibilidade dizem o quanto a nota do melhor avião muda em volta dele.
 
-A pasta tem cinco partes: os tipos do programa (`types.zig`), quem o confere e executa (`expr.zig`), as gerações
-(`ga.zig`), o CMA-ES (`cmaes.zig`) e o modelo local (`localfit.zig`). A álgebra linear que os solvers vão usar fica em `../math/linalg.zig`.
+A pasta tem seis partes: os tipos do programa (`types.zig`), quem o confere e executa (`expr.zig`), as gerações
+(`ga.zig`), o CMA-ES (`cmaes.zig`), o modelo local (`localfit.zig`) e os outros métodos da sensibilidade
+(`sensmethods.zig`). A álgebra linear que os solvers vão usar fica em `../math/linalg.zig`.
 
 ## O programa
 
@@ -225,6 +226,34 @@ só dois valores dela para a curvatura), um pivô de Cholesky some e a conta dev
 avalia só as direções que faltam. Os testes conferem um plano exato, uma parábola (inclinação zero no topo e
 curvatura exata mesmo com pontos de um lado só), os pontos de uma busca por coordenadas e as direções que faltam.
 
+## A tolerância e Morris
+
+Aqui se tira, das mesmas inclinações e curvaturas, o que uma tolerância de fabricação faz com a nota, e se fazem as
+trajetórias de Morris, em até 32 variáveis e 64 trajetórias.
+
+A tolerância responde "posso construir com 1 cm de diferença na envergadura?". Com uma diferença $\delta_k$ em cada
+medida, a nota muda de cada lado pela série de Taylor, e, tomando $\delta_k$ como o desvio padrão de uma medida
+normal e independente das outras, a dispersão da nota sai dos dois primeiros momentos (Putko, Taylor, Newman e
+Green, NASA/AIAA 2001-2528, a conferir no PDF):
+
+$$\Delta N^\pm_k = \pm g_k \delta_k + \tfrac12 c_k \delta_k^2, \qquad \sigma_N^2 \approx \sum_k (g_k \delta_k)^2 + \tfrac12 \sum_k (c_k \delta_k^2)^2$$
+
+A elasticidade $e_k = g_k x_k / N$ diz quantos por cento a nota muda com 1 % da medida, e deixa comparar a
+envergadura (em metros) com a área (em metros quadrados).
+
+O modelo local olha o ponto; Morris olha a região em volta dele. Ele resolve o caso em que uma variável muda de
+efeito de um lugar para outro (uma curvatura forte ou uma interação com outra variável), que a inclinação no ponto
+esconde. São r trajetórias de k + 1 pontos numa grade de p níveis, e cada passo mexe uma variável só, em
+$\Delta = p / (2(p-1))$. O efeito de cada passo é
+
+$$EE_k = \frac{y(x + \Delta e_k) - y(x)}{\Delta}$$
+
+e de cada variável saem a média $\mu$, a média do módulo $\mu^*$, que não deixa efeitos de sinais opostos se
+cancelarem, e o desvio $\sigma$, que acusa a curvatura ou a interação (Morris, Technometrics 33(2), 1991; o $\mu^*$
+é de Campolongo, Cariboni e Saltelli, Environmental Modelling & Software 22, 2007; ambos a conferir no PDF). Um ponto
+que não vale (NaN) tira os dois passos que o usam. Os testes conferem a perda de uma parábola e de uma reta, e, numa
+função sabida, que cada passo mexe uma variável só e que $\mu$ e $\sigma$ saem certos.
+
 ## Como chamar
 
 Pela ABI: `aerosim_expr_check(programa)` e `aerosim_expr_eval(programa, entradas, passo, linhas, saída, passo)`,
@@ -267,6 +296,17 @@ X = np.array([[0.5, 0.5], [0.6, 0.5], [0.4, 0.5], [0.5, 0.6], [0.5, 0.45]])
 y = 1 + 2 * (X[:, 0] - 0.5) - 3 * (X[:, 1] - 0.5) ** 2
 g, c, a, rms, peso = ZigBackend().local_fit(X, y, [0.5, 0.5], 0.2)
 print(g, c)                                             # ≈ [2 0] [0 −6]
+```
+
+A tolerância e Morris: `aerosim_sens_tolerance(n, g, c, x0, N, δ, menos, mais, elasticidade)` devolve σ_N;
+`aerosim_morris_design(k, r, p, semente, saída)` e `aerosim_morris_effects(k, r, trajetórias, y, μ, μ*, σ, passos)`.
+No Python:
+
+```python
+be = ZigBackend()
+D = be.morris_design(3, 10)                             # (10, 4, 3) em [0, 1]
+y = 3 * D[..., 0] - 2 * D[..., 1] + D[..., 2] ** 2
+mu, mustar, sigma, n = be.morris_effects(D, y)          # μ ≈ 3, −2 e algo entre 0,7 e 1,3; σ = 0, 0 e > 0
 ```
 
 Testes: `python -m ziglang build test-optim` (dentro de `core/`) e `python -m pytest -q tests/aeroopt`. Uma operação

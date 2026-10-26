@@ -566,3 +566,26 @@ export fn aerosim_local_fit(n: usize, m: usize, xs: [*]const f64, ys: [*]const f
     out[2] = f.weight;
     return 0;
 }
+
+// ------------------------------------------------------------------ métodos da sensibilidade (tolerância, Morris)
+const sm = @import("optim/sensmethods.zig");
+
+/// a perda de nota por tolerância δ em cada uma das `n` variáveis, com a inclinação `g` e a curvatura `c` (NaN = sem):
+/// ΔN de cada lado em `minus`/`plus`, a elasticidade em `elast`; devolve σ_N (−1 se n não cabe)
+export fn aerosim_sens_tolerance(n: usize, g: [*]const f64, c: [*]const f64, x0: [*]const f64, n0: f64, delta: [*]const f64, minus: [*]f64, plus: [*]f64, elast: [*]f64) f64 {
+    if (n == 0 or n > sm.max_k) return -1;
+    return sm.tolerance(n, g[0..n], c[0..n], x0[0..n], n0, delta[0..n], minus[0..n], plus[0..n], elast[0..n]);
+}
+
+/// as `r` trajetórias de Morris em [0, 1]^k numa grade de `p` níveis: r·(k + 1)·k números em `out`; −1 se não cabe
+export fn aerosim_morris_design(k: usize, r: usize, p: usize, seed: u64, out: [*]f64) i32 {
+    if (k == 0 or k > sm.max_k or r == 0 or r > sm.max_r) return -1;
+    return if (sm.morrisDesign(k, r, p, seed, out[0 .. r * (k + 1) * k])) 0 else -1;
+}
+
+/// os efeitos elementares (μ, μ*, σ, passos que contaram) das trajetórias `design` com as respostas `y` (NaN = não vale)
+export fn aerosim_morris_effects(k: usize, r: usize, design: [*]const f64, y: [*]const f64, mu: [*]f64, mustar: [*]f64, sigma: [*]f64, count: [*]usize) i32 {
+    if (k == 0 or k > sm.max_k or r == 0 or r > sm.max_r) return -1;
+    sm.morrisEffects(k, r, design[0 .. r * (k + 1) * k], y[0 .. r * (k + 1)], mu[0..k], mustar[0..k], sigma[0..k], count[0..k]);
+    return 0;
+}

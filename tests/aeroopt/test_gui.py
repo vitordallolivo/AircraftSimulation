@@ -214,7 +214,12 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     w.set_method("configurações", "todas")
     for c, cb in w.cat_cb.items():
         cb.setChecked(c == "asa alta")
+    w.sens_method.setCurrentIndex(w.sens_method.findData("morris"))   # a sensibilidade: método e limites
+    w.sens_traj.setValue(9)
+    w.sens_limits.setChecked(True)
+    assert w.method["superfícies"].currentText() == "gerações"        # o menu mostra só o nome do método
     out = w.read_problem()
+    assert out.params["sensibilidade"]["método"] == "morris" and out.params["sensibilidade"]["limites"]
     assert out.params["geometria"]["rotação"] == 9.0 and out.params["geometria"]["uma_peça"]
     assert out.params["etapas"]["superfícies"] == "gerações" and out.params["categorias"] == ["asa alta"]
     g = w.geometry_params()
@@ -225,6 +230,8 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     assert w2.stab.isChecked() and w2.stab_level.currentData() == 3 and "nível 3" in w2.summary["restrições"].text()
     assert w2.methods()["configurações"] == "todas" and not w2.cat_cb["asa baixa"].isChecked()
     assert "9°" in w2.summary["restrições"].text() and "todas" in w2.summary["configuração"].text()
+    sp = w2.sens_params()
+    assert sp.method == "morris" and sp.trajectories == 9 and sp.limits and "Morris" in w2.summary["configuração"].text()
     w.problem = out
     w.scoring.set_spec("MTOW")                                   # Cancelar volta a pontuação ao que era
     w.scoring.restore(("sae_br_2026_micro", {}))
@@ -279,3 +286,26 @@ def test_window_with_synthetic_data_finds_the_known_best(app):
     best = max(w.rows.values(), key=lambda r: (r["valido"], r["nota"]))
     assert best["name"] == sy.best(p, pr) and "sintéticos" in w.windowTitle()
     _wait(app, lambda: not w._side and w._best_job is None)
+
+
+def test_sensitivity_tab_with_morris_and_limits(app):
+    """a aba Sensibilidade desenha qualquer método e os limites do problema no mesmo tornado"""
+    import copy as _copy
+
+    from aeroopt import synthetic as sy
+    from aeroopt.gui import AeroOptWindow, example_project
+    from aeroopt.problem import apply_to_project, fold_bounds
+    from aeroopt.sensitivity import SensParams, sensitivity
+    p, pr = example_project()
+    ev = sy.SyntheticEvaluator(p, evals=16)
+    it = next(i for i in sy.sg.configurations(p, pr) if i.name == sy.best(p, pr))
+    pp, prr = _copy.deepcopy(p), _copy.deepcopy(pr)
+    fold_bounds(prr, pp)
+    apply_to_project(prr, pp)
+    {s.name: s for s in ev.stages(pp, prr)}["superfícies"].one(it)
+    w = AeroOptWindow(p, pr, synthetic=True)
+    for m in ("local", "morris"):
+        res = sensitivity(p, pr, sy.sg.row(it), ev, SensParams(method=m, limits=True))
+        body = w._sens_widget(res)
+        txt = body.findChild(QtWidgets.QLabel).text()
+        assert "limite pista" in txt and ("μ*" in txt) == (m == "morris")

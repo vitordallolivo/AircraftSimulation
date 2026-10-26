@@ -198,3 +198,16 @@ class ISimBackend(ABC):
         `xs` (m × n); sem `quad`, o plano. (g, c, a, resíduo, soma dos pesos), ou None se os pontos não determinam
         todas as direções"""
         raise NotImplementedError(f"{self.name}: modelo local não implementado")
+
+    def sens_tolerance(self, g, c, x0, n0: float, delta):
+        """a perda de nota por uma tolerância δ em cada variável, pela inclinação g e a curvatura c (NaN = sem):
+        (ΔN em −δ, ΔN em +δ, elasticidade g·x/N, σ_N pelos dois primeiros momentos)"""
+        raise NotImplementedError(f"{self.name}: tolerância não implementada")
+
+    def morris_design(self, k: int, r: int, levels: int = 4, seed: int = 1):
+        """as r trajetórias de Morris em [0, 1]^k, numa grade de `levels` níveis: array (r, k + 1, k)"""
+        raise NotImplementedError(f"{self.name}: Morris não implementado")
+
+    def morris_effects(self, design, y):
+        """os efeitos elementares das trajetórias com as respostas y (NaN = não vale): μ, μ*, σ, passos contados"""
+        raise NotImplementedError(f"{self.name}: Morris não implementado")

@@ -157,6 +157,9 @@ class _Lib:
             "aerosim_cma_ask": (c_int, [ctypes.POINTER(T["CmaState"]), vp]),
             "aerosim_cma_tell": (c_int, [ctypes.POINTER(T["CmaState"]), vp, vp]),
             "aerosim_local_fit": (c_int, [c_size, c_size, vp, vp, vp, c_double, c_int, vp, vp, vp]),
+            "aerosim_sens_tolerance": (c_double, [c_size, vp, vp, vp, c_double, vp, vp, vp, vp]),
+            "aerosim_morris_design": (c_int, [c_size, c_size, c_size, ctypes.c_uint64, vp]),
+            "aerosim_morris_effects": (c_int, [c_size, c_size, vp, vp, vp, vp, vp, vp]),
             "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
             "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
             "aerosim_prop_state": (c_int, [c_int, c_int] + [c_double] * 5 + [ctypes.POINTER(T["PropPoint"])]),
@@ -630,6 +633,35 @@ class ZigBackend(ISimBackend):
                                                float(r), int(bool(quad)), g.ctypes.data, c.ctypes.data,
                                                out.ctypes.data)
         return None if code < 0 else (g, c, float(out[0]), float(out[1]), float(out[2]))
+
+    def sens_tolerance(self, g, c, x0, n0: float, delta):
+        """a perda de nota por tolerância (core/src/optim/sensmethods.zig): (ΔN em −δ, ΔN em +δ, elasticidade, σ_N)"""
+        f = lambda a: np.ascontiguousarray(np.asarray(a, float).ravel())  # noqa: E731
+        g, c, x0, delta = f(g), f(c), f(x0), f(delta)
+        mi, pl, el = np.zeros(g.size), np.zeros(g.size), np.zeros(g.size)
+        s = self._lib.dll.aerosim_sens_tolerance(g.size, g.ctypes.data, c.ctypes.data, x0.ctypes.data, float(n0),
+                                                 delta.ctypes.data, mi.ctypes.data, pl.ctypes.data, el.ctypes.data)
+        if s < 0:
+            raise ValueError(f"tolerância: {g.size} variáveis (o limite é 32)")
+        return mi, pl, el, float(s)
+
+    def morris_design(self, k: int, r: int, levels: int = 4, seed: int = 1):
+        """as r trajetórias de Morris em [0, 1]^k: array (r, k + 1, k)"""
+        out = np.zeros(r * (k + 1) * k)
+        if self._lib.dll.aerosim_morris_design(k, r, levels, seed, out.ctypes.data) < 0:
+            raise ValueError(f"Morris: k = {k}, r = {r}, {levels} níveis (até 32 variáveis e 64 trajetórias, níveis pares)")
+        return out.reshape(r, k + 1, k)
+
+    def morris_effects(self, design, y):
+        """μ, μ*, σ e os passos que contaram de cada variável, das trajetórias (r, k + 1, k) e das respostas (r, k + 1)"""
+        d = np.ascontiguousarray(np.asarray(design, float))
+        r, _, k = d.shape
+        yy = np.ascontiguousarray(np.asarray(y, float).ravel())
+        mu, ms, sg, n = np.zeros(k), np.zeros(k), np.zeros(k), np.zeros(k, np.uint64)
+        if self._lib.dll.aerosim_morris_effects(k, r, d.ctypes.data, yy.ctypes.data, mu.ctypes.data, ms.ctypes.data,
+                                                sg.ctypes.data, n.ctypes.data) < 0:
+            raise ValueError(f"Morris: k = {k}, r = {r}")
+        return mu, ms, sg, n.astype(int)
 
     def simple_performance(self, cfg: dict) -> tuple[dict, dict]:
         T = self._lib.schema.types

@@ -30,13 +30,15 @@ from PyQt6 import QtCore, QtWidgets
 
 import aeroopt
 from aerosim.design import registry as rg
-from aerosim.parallel import session, warm_session
+from aerosim.parallel import make_executor, session, warm_session
 
 from . import categories as cat
 from . import inputs as inp
 from . import scoring as sc
 from . import stages as sg
 from .generations import GenerationsSolver
+from .sensitivity import METHODS as SENS_METHODS
+from .sensitivity import SensParams
 
 OK_C, BAD_C, BEST_C = "#2ca02c", "#d62728", "#1f4e8c"
 SIMPLE = ("MTOW", "EE")                       # objetivos simples, sem arquivo
@@ -620,6 +622,10 @@ CONFIG_METHODS = {"gerações": "gerações (algoritmo genético do núcleo)",
                   "todas": f"todas as combinações (até {sg.MAX_CONFIGS})"}
 TAKEOFF_METHODS = {"6gdl": "6GDL: bisseção na massa, profundor otimizado (mais lento, mais fiel)",
                    "pista": "só a corrida na pista da etapa das superfícies"}
+# o nome curto de cada método nos menus (a explicação fica na dica, ao parar o mouse em cima)
+METHOD_NAMES = {"gerações": "gerações", "todas": "todas", "buscar": "gerações", "cma-es": "CMA-ES",
+                "conferir": "só conferir", "desligada": "desligada", "coordenadas": "coordenadas", "6gdl": "6GDL",
+                "pista": "pista"}
 
 
 class _Menu(QtWidgets.QDialog):
@@ -842,14 +848,12 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             if methods:
                 c = QtWidgets.QComboBox()
                 for k, txt in methods.items():
-                    c.addItem(txt, k)
+                    c.addItem(METHOD_NAMES.get(k, k), k)
+                    c.setItemData(c.count() - 1, txt, QtCore.Qt.ItemDataRole.ToolTipRole)
                 self.method[key or title.split(".", 1)[1].strip()] = c
                 f.addRow("método", c)
             if note:
-                lab = QtWidgets.QLabel(note)
-                lab.setWordWrap(True)
-                lab.setStyleSheet("color:#444")
-                f.addRow(lab)
+                box.setToolTip(note)
             v.addWidget(box)
             return f
 
@@ -876,6 +880,35 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         f.addRow("avaliações por configuração", self.evals)
         stage("5. decolagem", TAKEOFF_METHODS)
         stage("6. nota", None, "no núcleo, com a pontuação escolhida")
+        f = stage("7. sensibilidade do melhor", None, "o quanto a nota do melhor muda com cada contínua livre, "
+                  "dentro do problema (aeroopt/sensitivity.py); o resultado fica na aba Sensibilidade do melhor")
+        self.sens_on = QtWidgets.QCheckBox("rodar")
+        self.sens_method = QtWidgets.QComboBox()
+        for k, txt in SENS_METHODS.items():
+            self.sens_method.addItem(txt, k)
+        self.sens_method.setItemData(0, "pelos pontos que a busca já avaliou; só o eixo que falta ganha pontos",
+                                     QtCore.Qt.ItemDataRole.ToolTipRole)
+        self.sens_method.setItemData(1, "2 pontos novos por variável, sem o histórico",
+                                     QtCore.Qt.ItemDataRole.ToolTipRole)
+        self.sens_method.setItemData(2, "efeitos elementares: trajetórias × (variáveis + 1) pontos",
+                                     QtCore.Qt.ItemDataRole.ToolTipRole)
+        self.sens_h = QtWidgets.QDoubleSpinBox()
+        self.sens_h.setRange(1, 50)
+        self.sens_h.setSuffix(" % da faixa")
+        self.sens_tol = QtWidgets.QDoubleSpinBox()
+        self.sens_tol.setRange(0, 20)
+        self.sens_tol.setDecimals(2)
+        self.sens_tol.setSuffix(" % do valor")
+        self.sens_traj = QtWidgets.QSpinBox()
+        self.sens_traj.setRange(2, 64)
+        self.sens_limits = QtWidgets.QCheckBox("limites do problema (2 pontos por limite)")
+        f.addRow(self.sens_on)
+        f.addRow("método", self.sens_method)
+        f.addRow("passo", self.sens_h)
+        f.addRow("tolerância", self.sens_tol)
+        f.addRow("trajetórias (Morris)", self.sens_traj)
+        f.addRow(self.sens_limits)
+        self._set_sens(SensParams())
         f = QtWidgets.QFormLayout()
         self.workers = QtWidgets.QSpinBox()
         self.workers.setRange(1, max(os.cpu_count() or 1, 1))
@@ -885,6 +918,20 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         v.addLayout(f)
         v.addStretch(1)
         return w
+
+    def _set_sens(self, sp) -> None:
+        self.sens_on.setChecked(sp.on)
+        self.sens_method.setCurrentIndex(max(self.sens_method.findData(sp.method), 0))
+        self.sens_h.setValue(100 * sp.h)
+        self.sens_tol.setValue(100 * sp.tol)
+        self.sens_traj.setValue(sp.trajectories)
+        self.sens_limits.setChecked(sp.limits)
+
+    def sens_params(self):
+        """a SensParams do menu Configuração"""
+        return SensParams(on=self.sens_on.isChecked(), method=self.sens_method.currentData(),
+                          h=self.sens_h.value() / 100, tol=self.sens_tol.value() / 100,
+                          trajectories=self.sens_traj.value(), limits=self.sens_limits.isChecked())
 
     def set_method(self, stage: str, key: str) -> None:
         c = self.method[stage]
@@ -1015,6 +1062,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             return
         name, pr, values = r["name"], self.read_problem(), dict(r["values"])
         ev = getattr(self, "_ev", None)
+        sp, pool_args = self.sens_params(), self._pool_args()
         self.best_lbl.setText(f"nº {r.get('index', '')} · nota {_fmt(r['nota'])}"
                               + ("" if r.get("valido") else " (voo inválido)") + " · rodando as análises…")
 
@@ -1037,10 +1085,15 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                     w.item.emit(title, (specs, res))
                 except Exception as e:  # noqa: BLE001 — uma análise que falha não tira as outras
                     w.item.emit(title, (None, str(e)))
-            if ev is not None:
+            if ev is not None and sp.on:
                 from .sensitivity import sensitivity
                 try:
-                    w.item.emit(SENS_TITLE, ("sens", sensitivity(self.project, pr, r, ev)))
+                    if sp.method == "local" and not sp.limits:         # poucos pontos ou nenhum: em série
+                        res = sensitivity(self.project, pr, r, ev, sp)
+                    else:                                              # os da rodada podem estar ocupados
+                        with make_executor("processos", *pool_args) as ex:
+                            res = sensitivity(self.project, pr, r, ev, sp, executor=ex)
+                    w.item.emit(SENS_TITLE, ("sens", res))
                 except Exception as e:  # noqa: BLE001
                     w.item.emit(SENS_TITLE, (None, str(e)))
             return name
@@ -1085,64 +1138,90 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self._best_shown = name
 
     def _sens_widget(self, s: dict) -> QtWidgets.QWidget:
-        """o tornado: uma barra por contínua livre, da nota prevista em x₀ − h·faixa à prevista em x₀ + h·faixa (o
-        modelo local, aeroopt/sensitivity.py); a linha é a nota do melhor na pista, e o lado em que o avião deixa de
+        """o tornado: uma barra por contínua livre, da nota em x₀ − h·faixa à nota em x₀ + h·faixa pelo método
+        escolhido (aeroopt/sensitivity.py), e, com os limites ligados, uma barra por limite do problema (a nota com
+        o limite mais apertado e mais folgado). A linha é a nota do melhor na pista; o lado em que o avião deixa de
         fechar fica com o ponto vazado em vermelho"""
-        rows = s["rows"]
+        rows, lims = s["rows"], s.get("limits", [])
         base = s["base"]["nota"]
         w = QtWidgets.QWidget()
         v = QtWidgets.QVBoxLayout(w)
         pw_ = pg.PlotWidget()
         pw_.setBackground("w")
-        pw_.setMinimumHeight(max(220, 46 * len(rows) + 80))
+        bars = [(r["label"], r["minus"], r["plus"], {side for side, *_ in r["blocked"]}) for r in rows]
+        bars += [(f"limite: {lm['label']}", *[n for _, n, _ in lm["points"]],
+                  {side for side, (_, n, _) in zip("−+", lm["points"]) if not math.isfinite(n)}) for lm in lims
+                 if len(lm["points"]) == 2]
+        pw_.setMinimumHeight(max(220, 46 * len(bars) + 80))
         pi = pw_.getPlotItem()
         pi.showGrid(x=True, y=False, alpha=0.25)
         pi.setLabel("bottom", "nota (pista)")
-        n = len(rows)
+        n = len(bars)
         ticks = []
-        for k, r in enumerate(rows):
+        for k, (name, n_minus, n_plus, stop) in enumerate(bars):
             y = n - 1 - k
-            ticks.append((y, r["label"]))
-            ends = [x for x in (r["minus"], r["plus"]) if math.isfinite(x)]
-            if not ends or not math.isfinite(base):
+            ticks.append((y, name))
+            ends = [x for x in (n_minus, n_plus) if math.isfinite(x)]
+            if not math.isfinite(base):
                 continue
-            lo, hi = min(ends + [base]), max(ends + [base])
-            pi.addItem(pg.BarGraphItem(x0=[lo], y=[y], width=[max(hi - lo, 1e-9)], height=0.55,
-                                       brush=pg.mkBrush(70, 120, 180, 110), pen=pg.mkPen(70, 120, 180)))
-            stop = {side for side, *_ in r["blocked"]}
-            for side, nt in (("−", r["minus"]), ("+", r["plus"])):
-                if not math.isfinite(nt):
-                    continue
+            lim = name.startswith("limite: ")
+            if ends:
+                lo, hi = min(ends + [base]), max(ends + [base])
+                col = (150, 110, 40) if lim else (70, 120, 180)
+                pi.addItem(pg.BarGraphItem(x0=[lo], y=[y], width=[max(hi - lo, 1e-9)], height=0.55,
+                                           brush=pg.mkBrush(*col, 110), pen=pg.mkPen(*col)))
+            for side, nt in (("−", n_minus), ("+", n_plus)):
                 bad = side in stop
-                pi.addItem(pg.ScatterPlotItem([nt], [y], size=10, symbol="t3" if side == "−" else "t2",
+                x = nt if math.isfinite(nt) else base
+                pi.addItem(pg.ScatterPlotItem([x], [y], size=10, symbol="t3" if side == "−" else "t2",
                                               brush=pg.mkBrush(None) if bad else pg.mkBrush(30, 60, 110),
                                               pen=pg.mkPen(BAD_C, width=2) if bad else pg.mkPen(30, 60, 110)))
         if math.isfinite(base):
             pi.addItem(pg.InfiniteLine(pos=base, angle=90, pen=pg.mkPen("#222", width=1.5, style=QtCore.Qt.PenStyle.DashLine)))
         ax = pi.getAxis("left")
         ax.setTicks([ticks])
-        ax.setWidth(min(220, 12 + 7 * max((len(t) for _, t in ticks), default=8)))   # o nome inteiro de cada variável
+        ax.setWidth(min(240, 12 + 7 * max((len(t) for _, t in ticks), default=8)))   # o nome inteiro de cada barra
         pi.setYRange(-0.7, max(n, 1) - 0.3)
         v.addWidget(pw_)
+        method = SENS_METHODS.get(s.get("method", "local"), "")
         if not rows:
             lines = ["o problema não tem contínuas livres: não há o que variar no melhor"]
         else:
             lines = [f"nota do melhor na pista: {_fmt(base)}" + ("" if s["base"]["valido"] else
                                                                " (voo inválido: a nota da fórmula)")
-                     + f". Modelo local com {s['used']} pontos que fecham, dos {s['history']} da busca do melhor, e "
+                     + f". {method}: {s['used']} pontos que fecham"
+                     + (f" ({s['history']} da busca do melhor), " if s.get("method", "local") == "local" else ", ")
                      + (f"{s['new']} pontos novos" if s["new"] else "nenhum ponto novo")
-                     + (f" (resíduo {_fmt(s['rms'])})" if math.isfinite(s["rms"]) else "")
+                     + (f", resíduo {_fmt(s['rms'])}" if math.isfinite(s["rms"]) else "")
                      + f"; barras a ±{100 * s['h']:g} % da faixa, dentro dos limites do problema."]
+            if math.isfinite(s.get("sigma", math.nan)) and s.get("tol"):
+                lines.append(f"com {100 * s['tol']:g} % de tolerância em cada variável, a nota varia "
+                             f"± {_fmt(s['sigma'])} (um desvio padrão)")
+            if s.get("failed", (0, ""))[0]:
+                lines.append(f"{s['failed'][0]} pontos de Morris não fecham: {s['failed'][1]}")
         for r in rows:
-            curv = f", ∂²nota/∂x² ≈ {_fmt(r['curv'])}" if math.isfinite(r["curv"]) else ""
-            txt = (f"<b>{r['label']}</b> = {_fmt(r['x0'])}: ∂nota/∂x ≈ {_fmt(r['slope'])}{curv}; "
-                   f"em {_fmt(r['x_minus'])} → {_fmt(r['minus'])}, em {_fmt(r['x_plus'])} → {_fmt(r['plus'])}")
+            if "mustar" in r:
+                txt = (f"<b>{r['label']}</b> = {_fmt(r['x0'])}: μ ≈ {_fmt(r['slope'])}, μ* ≈ {_fmt(r['mustar'])}, "
+                       f"σ ≈ {_fmt(r['sigma'])} ({r['steps']} passos)")
+            else:
+                curv = f", ∂²nota/∂x² ≈ {_fmt(r['curv'])}" if math.isfinite(r["curv"]) else ""
+                txt = f"<b>{r['label']}</b> = {_fmt(r['x0'])}: ∂nota/∂x ≈ {_fmt(r['slope'])}{curv}"
+            txt += (f"; em {_fmt(r['x_minus'])} → {_fmt(r['minus'])}, em {_fmt(r['x_plus'])} → {_fmt(r['plus'])}")
+            if "tol_delta" in r and r["tol_delta"] > 0:
+                txt += (f"; ±{_fmt(r['tol_delta'])}: {_fmt(r['tol_minus'])} / {_fmt(r['tol_plus'])}"
+                        f"; elasticidade {_fmt(r['elast'])}")
             if r["at_bound"]:
                 txt += f"; no limite ({r['at_bound']})"
             for side, x, why in r["blocked"]:
                 txt += f"; em {_fmt(x)} não fecha: {why}"
-            txt += f" ({r['near']} pontos perto" + (f", {r['new']} novos)" if r["new"] else ")")
+            if "near" in r and "mustar" not in r:
+                txt += f" ({r['near']} pontos perto" + (f", {r['new']} novos)" if r["new"] else ")")
             lines.append(txt)
+        for lm in lims:
+            pts = ", ".join(f"{_fmt(lv)} → " + (_fmt(nt) if math.isfinite(nt) else f"não fecha ({why})")
+                            for lv, nt, why in lm["points"])
+            lines.append(f"<b>limite {lm['label']} {lm['op']} {_fmt(lm['value'])}</b>: ∂nota/∂L ≈ {_fmt(lm['dNdL'])}"
+                         f"; {pts}")
         lab = QtWidgets.QLabel("<br>".join(lines))
         lab.setWordWrap(True)
         v.addWidget(lab)
@@ -1199,6 +1278,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.evals.setValue(int(e["avaliações"]))
         if e.get("processos"):
             self.workers.setValue(int(e["processos"]))
+        self._set_sens(SensParams.from_dict(pr.params.get("sensibilidade")))
         self._summaries(pr)
 
     def _summaries(self, pr) -> None:
@@ -1227,7 +1307,9 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.summary["configuração"].setText(
             f"{cfg}; voa: {'busca' if e['voa'] == 'buscar' else 'confere' if e['voa'] == 'conferir' else 'desligada'}; "
             f"superfícies por {'gerações' if e['superfícies'] == 'gerações' else 'coordenadas'} "
-            f"({e['avaliações']} pontos); decolagem {'no 6GDL' if e['decolagem'] == '6gdl' else 'só na pista'}")
+            f"({e['avaliações']} pontos); decolagem {'no 6GDL' if e['decolagem'] == '6gdl' else 'só na pista'}; "
+            + (f"sensibilidade: {SENS_METHODS[sp.method]}" if (sp := SensParams.from_dict(
+                pr.params.get("sensibilidade"))).on else "sem sensibilidade"))
 
     def open_menu(self, k: str) -> bool:
         """abre o submenu; OK leva o que mudou para o problema, Cancelar volta ao que era"""
@@ -1254,6 +1336,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         pr.params["estabilidade"] = {"ligada": self.stab.isChecked(), "nível": self.stab_level.currentData()}
         pr.params["etapas"] = {**self.methods(), "população": self.pop.value(), "gerações": self.gens.value(),
                                "avaliações": self.evals.value(), "processos": self.workers.value()}
+        pr.params["sensibilidade"] = self.sens_params().to_dict()
         return pr
 
     def geometry_params(self):

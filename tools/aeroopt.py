@@ -46,8 +46,11 @@ def main(argv=None) -> int:
     ap.add_argument("--sem-6gdl", action="store_true", help="pula a etapa da decolagem no 6GDL")
     ap.add_argument("--populacao", type=int, default=16, help="etapas: configurações por geração")
     ap.add_argument("--geracoes", type=int, default=8, help="etapas: gerações (com poucas combinações, uma só)")
-    ap.add_argument("--sensibilidade", action="store_true",
-                    help="etapas: no fim, a sensibilidade do melhor (as contínuas livres, pelo histórico da busca)")
+    ap.add_argument("--sensibilidade", nargs="?", const="local", choices=["local", "eixos", "morris"],
+                    help="etapas: no fim, a sensibilidade do melhor (local: pelo histórico da busca; eixos: um por "
+                         "vez; morris: efeitos elementares)")
+    ap.add_argument("--tolerancia", type=float, default=1.0, help="sensibilidade: tolerância, %% do valor")
+    ap.add_argument("--limites", action="store_true", help="sensibilidade: também a nota com cada limite mudado")
     a = ap.parse_args(argv)
     from aerosim.design.project import DesignProject
     if a.exemplo:
@@ -152,16 +155,25 @@ def staged(pr, project, a) -> int:
     for txt, ok, _ in b["validade"]:
         print(f"  {'ok ' if ok else 'NÃO'} {txt}")
     if a.sensibilidade:
-        from aeroopt.sensitivity import sensitivity
+        from aeroopt.sensitivity import METHODS, SensParams, sensitivity
         from aerosim.parallel import make_executor
+        sp = SensParams(method=a.sensibilidade, tol=a.tolerancia / 100, limits=a.limites)
         with make_executor("processos", a.processos) as ex:
-            s = sensitivity(project, pr, b, ev, executor=ex)
-        print(f"\nsensibilidade (nota na pista {_fmt(s['base']['nota'])}; {s['used']} pontos da busca do melhor, "
-              f"{s['new']} novos; ±{100 * s['h']:g} % da faixa)")
+            s = sensitivity(project, pr, b, ev, sp, executor=ex)
+        print(f"\nsensibilidade, {METHODS[sp.method]} (nota na pista {_fmt(s['base']['nota'])}; {s['used']} pontos "
+              f"que fecham, {s['new']} novos; ±{100 * s['h']:g} % da faixa; com {a.tolerancia:g} % de tolerância a "
+              f"nota varia ± {_fmt(s['sigma'])})")
         for r in s["rows"]:
             stop = "".join(f"; em {_fmt(x)} não fecha: {why}" for _, x, why in r["blocked"])
-            print(f"  {r['label']} = {_fmt(r['x0'])}: ∂nota/∂x ≈ {_fmt(r['slope'])}, ∂²nota/∂x² ≈ {_fmt(r['curv'])}"
-                  f"\n      {_fmt(r['x_minus'])} → {_fmt(r['minus'])}, {_fmt(r['x_plus'])} → {_fmt(r['plus'])}{stop}")
+            extra = (f", μ* ≈ {_fmt(r['mustar'])}, σ ≈ {_fmt(r['sigma'])}" if "mustar" in r
+                     else f", ∂²nota/∂x² ≈ {_fmt(r['curv'])}")
+            print(f"  {r['label']} = {_fmt(r['x0'])}: ∂nota/∂x ≈ {_fmt(r['slope'])}{extra}; elasticidade "
+                  f"{_fmt(r['elast'])}\n      {_fmt(r['x_minus'])} → {_fmt(r['minus'])}, {_fmt(r['x_plus'])} → "
+                  f"{_fmt(r['plus'])}{stop}")
+        for lm in s["limits"]:
+            pts = ", ".join(f"{_fmt(lv)} → " + (_fmt(n) if n == n else f"não fecha ({why})")
+                            for lv, n, why in lm["points"])
+            print(f"  limite {lm['label']} {lm['op']} {_fmt(lm['value'])}: ∂nota/∂L ≈ {_fmt(lm['dNdL'])}; {pts}")
     return 0
 
 
