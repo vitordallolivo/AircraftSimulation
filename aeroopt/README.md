@@ -74,11 +74,8 @@ avaliados e a faixa da tolerância; um por limite mostra a nota com o limite ape
 
 ## Como funciona
 
-Cada configuração (o tipo de avião, a cauda, os perfis, o motor, a hélice) passa por uma fila de blocos, como num
-diagrama de blocos de um conversor. Cada bloco confere uma coisa e só deixa passar quem cumpre: o que cai sai ali,
-com o motivo. Quem chega ao fim ganha uma nota, e as gerações, em cima, leem as notas e escolhem as próximas
-configurações. Os blocos vão do mais barato ao mais caro, para que as contas caras só rodem para quem já passou nas
-baratas.
+Cada configuração passa pelos blocos da esquerda para a direita. Quem falha num bloco sai ali, com o motivo. Quem
+chega ao fim ganha uma nota, e as gerações escolhem as próximas configurações pelas notas.
 
 ![Os blocos do aeroopt](../docs/img/aeroopt/blocos.png)
 
@@ -91,6 +88,44 @@ gerações das configurações ficam em `generations.py`, e a pontuação de cad
 `pontuacao/`, lido por `scoring.py`. As contas pesadas (a nota, as buscas, o substituto) rodam no núcleo em Zig e
 estão explicadas em [`core/src/optim/README.md`](../core/src/optim/README.md). As seções abaixo seguem os blocos, na
 ordem do diagrama.
+
+```mermaid
+flowchart TB
+    subgraph PY["aeroopt (Python: organiza a busca)"]
+        direction LR
+        PR["problem · inputs<br/>variáveis, limites, categorias"]
+        ST["stages · pipeline<br/>os blocos e a fila em paralelo"]
+        GE["generations<br/>GA das configurações"]
+        GD["guided · diagnosis<br/>falha → remédio"]
+        SC["scoring<br/>pontuacao/*.toml"]
+        GUI["gui · export · pcoords<br/>janela, CSV, caminho da busca"]
+        SE["sensitivity<br/>morro largo ou precipício?"]
+        SY["synthetic<br/>dados de teste com o ótimo sabido"]
+    end
+    subgraph AS["aerosim (o mesmo avião)"]
+        direction LR
+        DS["design<br/>dimensionamento, pista"]
+        STB["stability<br/>E&C"]
+        MG["manager<br/>decolagem 6GDL"]
+    end
+    subgraph Z["core/src/optim (Zig: as contas)"]
+        direction LR
+        ZGA["ga"] ~~~ ZCM["cmaes"] ~~~ ZDE["de"] ~~~ ZGU["guided"]
+        ZRB["rbf<br/>substituto"] ~~~ ZSA["sampling"] ~~~ ZLF["localfit"] ~~~ ZEX["expr<br/>a nota"]
+    end
+    ABI["ABI: aerosim_ga_next, aerosim_cma_*, aerosim_rbf_fit, aerosim_lhs, ... (ctypes)"]
+    T["testes: zig build test-optim · pytest tests/aeroopt ·<br/>tools/banco_otimizadores.py · tools/metodos_voa.py"]
+    PY <--> AS
+    PY <--> ABI
+    ABI <--> Z
+    T -.-> PY
+    T -.-> Z
+    style PY fill:#d5e8d4,stroke:#82b366
+    style AS fill:#d5e8d4,stroke:#82b366
+    style Z fill:#fff2cc,stroke:#d6b656
+    style ABI fill:#dae8fc,stroke:#6c8ebf
+    style T fill:#e1d5e7,stroke:#9673a6
+```
 
 | arquivo | o que tem |
 |---|---|
