@@ -6,6 +6,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, E&C: população inicial por hipercubo latino (`core/src/optim/sampling.zig`, maximin; `etapas.inicio =
+  "lhs"`) e multi-start (`etapas.partidas = k`: k pontos que voam, afastados, e fica o de maior carga paga na pista).
+  Os dois desligados por padrão. `tools/sementes.py` roda a mesma configuração com sementes diferentes e mostra se
+  caem no mesmo avião.
+
 - sprint, tandem: a asa de trás agora é tratada como a cauda. O ponto neutro sai das duas asas (a média dos CA
   ponderada por a S, com η e o downwash da da frente). Antes era o da asa da frente sozinha, o CG ia para perto dela
   e o tandem não trimava em α nenhum. O profundor fica na asa de trás e a da frente só tem aileron: um elevon na da

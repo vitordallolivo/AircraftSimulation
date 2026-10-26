@@ -324,6 +324,48 @@ def test_differential_evolution_search_keeps_the_contract():
     assert [h["values"] for h in again] == [h["values"] for h in hist]
 
 
+def test_latin_hypercube_start_covers_every_slice_of_every_variable():
+    """com `init="lhs"` a primeira geração (fora o x0) tem um ponto em cada fatia da faixa de cada variável, nas
+    gerações e na evolução diferencial; o sorteio uniforme de sempre, com 9 pontos em 12 variáveis, deixa fatias
+    vazias. O padrão continua o uniforme"""
+    free = [(f"v{i}", 0.0, 9.0) for i in range(12)]
+
+    def point(y):
+        return dict(values=dict(y), ok=False, why="não fecha", mtow=math.nan, viol=1.0 + sum(y.values()))
+
+    def empty(hist):
+        first = [h["values"] for h in hist[:9]]
+        return sum(9 - len({min(int(v[k]), 8) for v in first}) for k, _, _ in free)
+    x = {k: 0.5 for k, _, _ in free}
+    for search in (sg._real_search, sg._de_search):
+        lhs, uni = [], []
+        search(free, dict(x), point(x), point, 30, lhs, seed=5, init="lhs")
+        search(free, dict(x), point(x), point, 30, uni, seed=5)
+        assert empty(lhs) == 0 and empty(uni) > 0
+    with pytest.raises(ValueError, match="início"):
+        sg._real_search(free, dict(x), point(x), point, 30, [], seed=5, init="sobol")
+
+
+def test_multi_start_keeps_searching_until_k_flying_points_far_apart():
+    """a etapa voa para no primeiro ponto que fecha; com `Starts(k)` ela segue até ter k pontos que fecham, cada par
+    afastado de pelo menos START_DIST da faixa, e devolve os k para a etapa escolher"""
+    free = [(f"v{i}", 0.0, 10.0) for i in range(3)]
+
+    def point(y):
+        ok = y["v0"] > 5
+        return dict(values=dict(y), ok=ok, why="" if ok else "não fecha", mtow=math.nan, viol=0.0 if ok else 6 - y["v0"])
+    x = {k: 1.0 for k, _, _ in free}
+    one = []
+    sg._real_search(free, dict(x), point(x), point, 200, one, seed=2, stop_ok=True)
+    assert sum(h["ok"] for h in one) == 1 and one[-1]["ok"]
+    st, hist = sg.Starts(free, 3), []
+    sg._real_search(free, dict(x), point(x), point, 200, hist, seed=2, stop_ok=True, init="lhs", starts=st)
+    assert len(st.found) == 3 and all(r["ok"] for _, r in st.found)
+    u = [[y[k] / 10 for k, _, _ in free] for y, _ in st.found]
+    assert all(math.sqrt(sum((p - q) ** 2 for p, q in zip(u[i], u[j])) / 3) >= sg.START_DIST
+               for i in range(3) for j in range(i))
+
+
 def test_flight_check_chooses_the_tail_and_changes_the_individual():
     """com caudas pedidas, a etapa voa (E&C) testa cada uma na asa da configuração e fica com a que voa e decola na
     pista com a maior carga paga; o indivíduo passa a ter a cauda. Tandem e asa voadora definem a cauda e ficam como

@@ -521,13 +521,19 @@ class FlightCheck(IStage):
     name = "voa"
 
     def __init__(self, project, problem: OptProblem, catalog=None, evals: int = 24, method: str = "buscar",
-                 stability: StabilityParams | None = None, tails=None, controls: bool = False):
+                 stability: StabilityParams | None = None, tails=None, controls: bool = False,
+                 init: str = "uniforme", starts: int = 1, seed: int = 0):
         if method not in FLY_METHODS:
             raise ValueError(f"método da etapa voa desconhecido: {method}")
         unknown = [t for t in tails or () if t not in TAILS]
         if unknown:
             raise ValueError(f"cauda desconhecida: {', '.join(unknown)} (há {', '.join(TAILS)})")
         self.project, self.catalog, self.evals, self.method = project, catalog, int(evals), method
+        if init not in INITS:
+            raise ValueError(f"início da busca desconhecido: {init} (há {', '.join(INITS)})")
+        self.init = init                           # a população inicial (INITS)
+        self.starts = max(1, int(starts))          # quantos pontos que voam, longe uns dos outros, antes de escolher
+        self.seed = int(seed)                      # somada à semente de cada avião (a ferramenta de sementes)
         self.stability = stability
         self.tails = tuple(t for t in TAILS if t in (tails or ()))     # na ordem de TAILS
         self.tail_free = any(v.key == TAIL_KEY for v in problem.free_variables())
@@ -582,7 +588,9 @@ class FlightCheck(IStage):
         return self.free + [c for c in CONTROLS[self.kind(values)] if c[0] not in have]
 
     def _fly(self, item: StageItem, values: dict):
-        """(x, melhor ponto, histórico) da busca de um ponto que voa, partindo de `values`"""
+        """(x, melhor ponto, histórico) da busca de um ponto que voa, partindo de `values`. Com `starts` > 1 a busca
+        segue até achar tantos pontos que voam, longe uns dos outros, e fica o que decola na pista com a maior carga
+        paga (`item.data["partidas"]`): as superfícies e o 6GDL partem dele, e não só do primeiro que fechou"""
         free = self.free_for(values)
         start = {k: v for k, v in CONTROL_START.get(self.kind(values), {}).items()} if self.controls else {}
         x = {k: min(max(float(values.get(k, start.get(k, get_value(self.project, k)))), lo), hi) for k, lo, hi in free}
@@ -590,8 +598,15 @@ class FlightCheck(IStage):
         hist = [_eval(x, best)]
         if not best["ok"] and self.method in ("buscar", "cma-es", "de") and free:
             search = {"cma-es": _cma_search, "de": _de_search}.get(self.method, _real_search)
+            st = Starts(free, self.starts) if self.starts > 1 else None
             x, best = search(free, x, best, lambda y: self.point({**values, **y}), self.evals, hist,
-                                   seed=7 + zlib.crc32(item.name.encode()) % 100_000, stop_ok=True)
+                             seed=7 + self.seed + zlib.crc32(item.name.encode()) % 100_000, stop_ok=True,
+                             init=self.init, starts=st)
+            if st is not None and len(st.found) > 1:
+                cp = [self._runway({**values, **y}) for y, _ in st.found]
+                item.data["partidas"] = [dict(values=y, cp=c) for (y, _), c in zip(st.found, cp)]
+                i = max(range(len(cp)), key=lambda i: (math.isfinite(cp[i]), cp[i] if math.isfinite(cp[i]) else 0, -i))
+                x, best = st.found[i]
         return x, best, hist
 
     def _runway(self, values: dict) -> float:
@@ -659,7 +674,44 @@ class FlightCheck(IStage):
         return item
 
 
-def _real_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: int, stop_ok: bool = False):
+INITS = {"uniforme": "x0 e o resto sorteado na caixa, um a um (o de sempre)",
+         "lhs": "x0 e o resto por hipercubo latino: cada fatia da faixa de cada variável recebe um ponto"}
+LHS_TRIES = 20          # hipercubos sorteados para o critério maximin (core/src/optim/sampling.zig)
+START_DIST = 0.2        # distância mínima entre duas partidas, na raiz da média dos quadrados da faixa normalizada
+
+
+def _start_rows(be, n: int, pop: int, seed: int, init: str):
+    """as linhas 1.. da população inicial em [0, 1]^n por hipercubo latino, ou None para o sorteio de cada busca"""
+    if init == "uniforme":
+        return None
+    if init != "lhs":
+        raise ValueError(f"início da busca desconhecido: {init} (há {', '.join(INITS)})")
+    return be.lhs(n, pop - 1, LHS_TRIES, seed)
+
+
+class Starts:
+    """as partidas da etapa voa: guarda os pontos que fecham e diz quando já há `k` deles longe uns dos outros (pelo
+    menos START_DIST da faixa). Com k = 1 é o primeiro ponto que fecha, como antes"""
+
+    def __init__(self, free, k: int = 1):
+        self.k, self.free, self.found = max(1, int(k)), free, []
+
+    def _u(self, y: dict) -> list:
+        return [(y[key] - lo) / max(hi - lo, 1e-12) for key, lo, hi in self.free]
+
+    def add(self, y: dict, r: dict) -> bool:
+        """registra um ponto avaliado; True quando já há `k` partidas"""
+        if r["ok"]:
+            u = self._u(y)
+            far = all(math.sqrt(sum((a - b) ** 2 for a, b in zip(u, self._u(f))) / len(u)) >= START_DIST
+                      for f, _ in self.found)
+            if far:
+                self.found.append((dict(y), r))
+        return len(self.found) >= self.k
+
+
+def _real_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: int, stop_ok: bool = False,
+                 init: str = "uniforme", starts: Starts | None = None):
     """o algoritmo genético do núcleo (core/src/optim/ga.zig) nas contínuas `free`, com `_rank` (as regras de
     viabilidade): o primeiro indivíduo é `x`, cada gene cai no passo do campo e um ponto repetido não gasta
     avaliação. Para no total de avaliações (ou no primeiro ponto que fecha, com `stop_ok`)"""
@@ -675,6 +727,9 @@ def _real_search(free, x: dict, best: dict, point, evals: int, hist: list, seed:
         g = round(g / steps[j]) * steps[j] if steps[j] > 0 else g
         return round(min(max(g, lo), hi), 6)
     genes = be.ga_init(cfg)
+    rows = _start_rows(be, len(free), pop, seed, init)
+    if rows is not None:
+        genes[1:] = [[lo + u * (hi - lo) for u, (_, lo, hi) in zip(row, free)] for row in rows]
     genes[0] = [x[k] for k, _, _ in free]
     seen = {tuple(genes[0]): best}
     fit = [math.nan] * pop
@@ -689,7 +744,7 @@ def _real_search(free, x: dict, best: dict, point, evals: int, hist: list, seed:
                 hist.append(_eval(y, r))
                 if _rank(r) > _rank(best):
                     x, best = y, r
-                if stop_ok and best["ok"]:
+                if stop_ok and (starts.add(y, r) if starts else best["ok"]):
                     return x, best
             fit[i] = _fit(r) if r is not None else math.nan
         if len(hist) >= evals:
@@ -699,12 +754,13 @@ def _real_search(free, x: dict, best: dict, point, evals: int, hist: list, seed:
     return x, best
 
 
-def _cma_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: int, stop_ok: bool = False):
+def _cma_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: int, stop_ok: bool = False,
+                init: str = "uniforme", starts: Starts | None = None):
     """o mesmo contrato de `_real_search`, com o CMA-ES do núcleo (core/src/optim/cmaes.zig) no lugar do algoritmo
     genético. As variáveis andam normalizadas pela faixa ([0, 1]), a média começa em `x` e o passo em 0,3 da faixa;
     cada ponto sorteado cai no passo do campo antes de avaliar, e é o ponto que caiu que volta para o núcleo. Um
     ponto que já apareceu não gasta avaliação. A população é a mesma das gerações, para comparar os dois pelo
-    mesmo total de avaliações"""
+    mesmo total de avaliações. O CMA-ES parte de uma média só: `init` não muda nada aqui"""
     from aerosim.backend.zig import ZigBackend
     be = ZigBackend()
     lo = [a for _, a, _ in free]
@@ -732,7 +788,7 @@ def _cma_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: 
                 hist.append(_eval(y, r))
                 if _rank(r) > _rank(best):
                     x, best = y, r
-                if stop_ok and best["ok"]:
+                if stop_ok and (starts.add(y, r) if starts else best["ok"]):
                     return x, best
             fit.append(_fit(r) if r is not None else math.nan)
         if len(hist) >= evals:
@@ -744,7 +800,8 @@ def _cma_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: 
 DE_F, DE_CR = 0.5, 0.9           # os valores de partida de Storn e Price (1997, seção 4; a conferir no PDF)
 
 
-def _de_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: int, stop_ok: bool = False):
+def _de_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: int, stop_ok: bool = False,
+               init: str = "uniforme", starts: Starts | None = None):
     """o mesmo contrato de `_real_search`, com a evolução diferencial do núcleo (core/src/optim/de.zig, DE/rand/1/bin,
     F = 0,5, CR = 0,9). A população começa com `x` e o resto sorteado na caixa, cada teste cai no passo do campo
     antes de avaliar (e é o ponto que caiu que entra na seleção), e um ponto repetido não gasta avaliação. A
@@ -761,9 +818,10 @@ def _de_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: i
         return round(min(max(g, free[j][1]), free[j][2]), 6)
     np_ = max(4, min(10, evals // 3))
     seen = {tuple(x[k] for k, _, _ in free): best}
+    done = False
 
     def evaluate(U):
-        nonlocal x, best
+        nonlocal x, best, done
         fit = []
         for i in range(len(U)):
             key = tuple(snap(j, u) for j, u in enumerate(U[i]))
@@ -775,15 +833,19 @@ def _de_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: i
                 hist.append(_eval(y, r))
                 if _rank(r) > _rank(best):
                     x, best = y, r
+                done = done or (starts.add(y, r) if starts else best["ok"])
             fit.append(_fit(r) if r is not None else math.nan)
-            if stop_ok and best["ok"]:                   # a etapa voa para no primeiro ponto que fecha
+            if stop_ok and done:                         # a etapa voa para no primeiro ponto que fecha
                 fit += [math.nan] * (len(U) - len(fit))
                 break
         return np.ascontiguousarray(fit, float)
     pop = be.de_init([(x[k] - lo[j]) / span[j] for j, (k, _, _) in enumerate(free)], np_, seed)
+    rows = _start_rows(be, len(free), np_, seed, init)
+    if rows is not None:
+        pop[1:] = rows
     fit = evaluate(pop)
     for gen in range(4 * math.ceil(evals / np_) + 1):
-        if len(hist) >= evals or (stop_ok and best["ok"]):
+        if len(hist) >= evals or (stop_ok and done):
             break
         trial = be.de_trials(pop, DE_F, DE_CR, seed, gen)
         tfit = evaluate(trial)
@@ -980,8 +1042,11 @@ class StagedEvaluator(IEvaluator):
     def __init__(self, project, catalog=None, backend=None, workers: int | None = None, six_dof: bool = True,
                  evals: int = 24, start_method: str | None = None, scoring=None, geometry=True,
                  surfaces: str = "coordenadas", stability: StabilityParams | None = None, fly: str | None = "buscar",
-                 executors=None, tails=None, controls: bool | None = None):
+                 executors=None, tails=None, controls: bool | None = None, init: str | None = None,
+                 starts: int | None = None):
         self.project, self.catalog, self.backend = project, catalog, backend
+        self.init = init                           # a população inicial da "voa" (INITS); None: etapas.inicio
+        self.starts = starts                       # as partidas da "voa"; None: etapas.partidas (1)
         self.executors = executors                 # os da sessão (aerosim.parallel.session); None: um por rodada
         self.fly = fly                             # o método da etapa "voa" (FLY_METHODS); None: sem a etapa
         self.tails = tails                         # as caudas que a "voa" escolhe; None: as do problema (etapas.caudas)
@@ -1007,8 +1072,10 @@ class StagedEvaluator(IEvaluator):
         controls = self.controls if self.controls is not None else bool(e.get("comandos"))
         if self.fly:
             tails = self.tails if self.tails is not None else e.get("caudas")
+            init = self.init or e.get("inicio") or "uniforme"
+            starts = self.starts if self.starts is not None else int(e.get("partidas") or 1)
             sts.append(FlightCheck(project, problem, self.catalog, self.evals, self.fly, self.stability, tails,
-                                   controls))
+                                   controls, init, starts))
         sts.append(SurfaceSizing(project, problem, self.catalog, self.evals, self.geometry, self.surfaces,
                                  self.stability))
         if self.six_dof:

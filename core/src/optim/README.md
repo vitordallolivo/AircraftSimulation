@@ -9,9 +9,9 @@ Aqui também nascem as gerações de aviões: o algoritmo genético que escolhe 
 CMA-ES, a outra busca das variáveis contínuas (envergadura, área, diedro...). Depois da busca, o modelo local e os outros métodos da
 sensibilidade dizem o quanto a nota do melhor avião muda em volta dele.
 
-A pasta tem sete partes: os tipos do programa (`types.zig`), quem o confere e executa (`expr.zig`), as gerações
-(`ga.zig`), o CMA-ES (`cmaes.zig`), a evolução diferencial (`de.zig`), o modelo local (`localfit.zig`) e os outros
-métodos da sensibilidade (`sensmethods.zig`). A álgebra linear que os solvers vão usar fica em `../math/linalg.zig`.
+A pasta tem oito partes: os tipos do programa (`types.zig`), quem o confere e executa (`expr.zig`), as gerações
+(`ga.zig`), o CMA-ES (`cmaes.zig`), a evolução diferencial (`de.zig`), o hipercubo latino de onde nascem as
+populações (`sampling.zig`), o modelo local (`localfit.zig`) e os outros métodos da sensibilidade (`sensmethods.zig`). A álgebra linear que os solvers vão usar fica em `../math/linalg.zig`.
 
 ## O programa
 
@@ -216,6 +216,26 @@ de partida do artigo. As variáveis entram em [0, 1], e o gene que sai da caixa 
 esfera e o vale de Rosenbrock com um total fixo, que o teste fica na caixa, que a mesma semente dá os mesmos testes e
 que a seleção não piora ninguém.
 
+## O hipercubo latino
+
+Aqui se sorteiam os primeiros indivíduos de uma busca de modo que cada variável seja varrida de ponta a ponta, até
+32 variáveis e 256 pontos. O problema que isso resolve: as buscas contínuas do aeroopt começam com x0 e poucos
+indivíduos (de 4 a 10) em 12 ou mais variáveis. Sorteados um a um, uniformes, eles se amontoam, e várias variáveis
+ficam com todos os valores numa parte da faixa; se o ponto bom de f(x, u) está na parte que ninguém visitou, a busca
+fica presa num mínimo local perto de x0, e a resposta depende da semente.
+
+Com m pontos, a faixa de cada variável é cortada em m fatias iguais, e cada fatia recebe exatamente um ponto. A ordem
+das fatias é uma permutação $\pi_j$ sorteada por variável, e dentro da fatia a posição é sorteada (McKay, Beckman e
+Conover, Technometrics 21(2), 1979, a conferir no PDF):
+
+$$x_{ij} = \frac{\pi_j(i) + U_{ij}}{m}, \qquad U_{ij} \sim \mathcal{U}(0, 1)$$
+
+Um hipercubo latino ainda pode sair ruim no conjunto, com os pontos alinhados numa diagonal. Por isso se sorteiam
+`tries` deles e fica o de maior distância mínima entre dois pontos, o critério maximin (Morris e Mitchell, J.
+Statistical Planning and Inference 43, 1995, a conferir no PDF). Os testes conferem que cada fatia tem um ponto, que
+a mesma semente dá os mesmos pontos, que o maximin não afasta menos que um sorteio só e que, em 12 variáveis com 8
+pontos, o sorteio uniforme deixa fatias vazias e o latino não.
+
 ## O modelo local
 
 Aqui se ajusta, em até 32 variáveis, um modelo da nota em volta de um ponto $x_0$ a partir de pontos já avaliados.
@@ -306,6 +326,9 @@ A evolução diferencial: `aerosim_de_init(n, np, x0, semente, saída)`, `aerosi
 semente, geração, saída)` e `aerosim_de_select(n, np, população, notas, testes, notas dos testes)`. No Python,
 `be.de_init(x0, np)`, `be.de_trials(pop, 0.5, 0.9, seed, gen)` e `be.de_select(pop, fit, trial, tfit)`, que o
 `aeroopt/stages.py` (`_de_search`) usa.
+
+O hipercubo latino: `aerosim_lhs(n, m, tries, semente, saída)`, m × n pontos em [0, 1], −1 se não cabe. No Python,
+`be.lhs(n, m, tries, seed)`, que `_real_search` e `_de_search` usam com `init="lhs"`.
 
 O modelo local: `aerosim_local_fit(n, m, pontos, valores, x0, r, quad, g, c, saída)`, com saída = (a, resíduo, soma
 dos pesos) e −1 se as direções não ficam determinadas. No Python:

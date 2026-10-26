@@ -162,6 +162,7 @@ class _Lib:
             "aerosim_local_fit": (c_int, [c_size, c_size, vp, vp, vp, c_double, c_int, vp, vp, vp]),
             "aerosim_sens_tolerance": (c_double, [c_size, vp, vp, vp, c_double, vp, vp, vp, vp]),
             "aerosim_morris_design": (c_int, [c_size, c_size, c_size, ctypes.c_uint64, vp]),
+            "aerosim_lhs": (c_int, [c_size, c_size, c_size, ctypes.c_uint64, vp]),
             "aerosim_morris_effects": (c_int, [c_size, c_size, vp, vp, vp, vp, vp, vp]),
             "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
             "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
@@ -630,6 +631,14 @@ class ZigBackend(ISimBackend):
         out = np.zeros((np_, x.size))
         if self._lib.dll.aerosim_de_init(x.size, np_, x.ctypes.data, int(seed), out.ctypes.data) < 0:
             raise ValueError("evolução diferencial: até 32 variáveis e de 4 a 64 indivíduos")
+        return out
+
+    def lhs(self, n: int, m: int, tries: int = 20, seed: int = 1) -> np.ndarray:
+        """`m` pontos em [0, 1]^n por hipercubo latino (core/src/optim/sampling.zig), o de maior distância mínima
+        entre `tries` sorteios"""
+        out = np.zeros((m, n))
+        if self._lib.dll.aerosim_lhs(n, m, tries, int(seed), out.ctypes.data) < 0:
+            raise ValueError("hipercubo latino: até 32 variáveis e 256 pontos")
         return out
 
     def de_trials(self, pop, f: float = 0.7, cr: float = 0.9, seed: int = 1, generation: int = 0) -> np.ndarray:

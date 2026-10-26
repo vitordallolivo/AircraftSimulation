@@ -588,6 +588,16 @@ export fn aerosim_local_fit(n: usize, m: usize, xs: [*]const f64, ys: [*]const f
     return 0;
 }
 
+// ------------------------------------------------------------------ amostragem (hipercubo latino)
+const smp = @import("optim/sampling.zig");
+
+/// `m` pontos em [0, 1]^n por hipercubo latino; com `tries` > 1, o de maior distância mínima entre tantos sorteios
+/// (m × n em `out`); −1 se não cabe
+export fn aerosim_lhs(n: usize, m: usize, tries: usize, seed: u64, out: [*]f64) i32 {
+    if (n == 0 or n > smp.max_n or m == 0 or m > smp.max_m) return -1;
+    return if (smp.lhs(n, m, tries, seed, out[0 .. m * n])) 0 else -1;
+}
+
 // ------------------------------------------------------------------ métodos da sensibilidade (tolerância, Morris)
 const sm = @import("optim/sensmethods.zig");
 

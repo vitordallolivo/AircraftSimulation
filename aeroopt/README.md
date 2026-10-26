@@ -28,7 +28,14 @@ da sprint, que superestima o elevon da asa voadora. Com os comandos ela escolhe,
 onde fica a arfagem do tandem (na asa de trás, na da frente ou nas duas) e confere duas coisas que antes só apareciam
 na decolagem 6GDL: o peso que a bequilha leva parado (com pouco, o avião senta para trás na corrida) e a estabilidade
 direcional, que um avião sem cauda só tem com a deriva na ponta da asa. A etapa do 6GDL, por sua vez, roda a
-decolagem com e sem a proteção de α do piloto e fica com o MTOW maior. Quem escolhe quais
+decolagem com e sem a proteção de α do piloto e fica com o MTOW maior.
+
+A busca dessa etapa é local: ela parte de x0, com poucos indivíduos, e para no primeiro ponto que voa, e as superfícies
+partem só dele. Se x0 cai numa bacia ruim, a rodada fica nela. Dois ajustes, desligados por padrão, atacam isso. O
+início (`etapas.inicio = "lhs"`, ou `init` no avaliador) sorteia a população inicial por hipercubo latino, que põe um
+ponto em cada fatia da faixa de cada variável. As partidas (`etapas.partidas = k`) fazem a busca seguir até achar k
+pontos que voam, afastados uns dos outros, e ficar com o que decola na pista com a maior carga paga.
+`tools/sementes.py` roda a mesma configuração com sementes diferentes e diz se todas caem no mesmo avião. Quem escolhe quais
 aviões experimentar são as gerações de um algoritmo genético (`generations.py`). A janela fica em `gui.py`, e os CSV
 de cada rodada saem de `export.py`. Depois da rodada, `sensitivity.py` diz o quanto a nota do melhor avião depende de
 cada variável: se ele está num morro largo ou na beira de um precipício. Para testar a máquina sem esperar as contas do avião, `synthetic.py` traz dados de
