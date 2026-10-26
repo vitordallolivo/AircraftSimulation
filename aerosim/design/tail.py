@@ -193,7 +193,7 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
             rear = tp.tandem_pitch != TANDEM_PITCH[1]
             w.controls = [ControlSurface("elevon", a0, min(a1, 1.0), tp.aileron_chord, mix=[-1.0, 1.0, 0.0]) if front
                           else ControlSurface("aileron", a0, min(a1, 1.0), tp.aileron_chord)]
-            w2 = ac.surfaces[-1]
+            w2 = second_wing(ac)
             w2.controls = [ControlSurface("elevator", a0, min(a1, 1.0), tp.aileron_chord)] if rear else []
             # atrás da da frente, ela sente o downwash dela, como uma EH (sem isto o núcleo punha o ponto neutro
             # na média dos dois CA, bem atrás do da sprint), e um tubo a liga à fuselagem: a massa dele entra e o
@@ -280,7 +280,7 @@ def _tip_fins(ac: Aircraft, cand: SetCandidate, tp: TailParams, airfoils, req) -
     a conferir no PDF). Devolve a área, a altura e o braço delas para o C_nβ"""
     # no tandem a ponta da asa da frente fica quase no CG (braço nenhum): as derivas vão na de trás, a não ser que
     # se peça o contrário
-    host = ac.surfaces[-1] if (cand.wing2 is not None and tp.tip_fin_where == TIP_FIN_WHERE[0]) else ac.surfaces[0]
+    host = second_wing(ac) if (cand.wing2 is not None and tp.tip_fin_where == TIP_FIN_WHERE[0]) else ac.surfaces[0]
     i = ac.surfaces.index(host)
     h = tp.tip_fin
     ct = host.sections[-1].chord
@@ -296,6 +296,12 @@ def _tip_fins(ac: Aircraft, cand: SetCandidate, tp: TailParams, airfoils, req) -
     Sv = sum(f_.area for f_ in out)
     x_ac_f = host.x - host.xoff_at(host.semispan) - 0.25 * cr
     return dict(Sv=Sv, hv=h, x_ac_fin=x_ac_f, n_fins=2)
+
+
+def second_wing(ac: Aircraft):
+    """a segunda asa (tandem, biplano): a primeira superfície de papel "wing" depois da asa em [0], ou None. Não é
+    `surfaces[-1]`: as derivas da ponta entram depois dela, e com elas a estática lia a deriva como asa de trás"""
+    return next((s for s in ac.surfaces[1:] if s.role == "wing"), None)
 
 
 def _add_wing2(ac: Aircraft, cand: SetCandidate, req: Requirements, rules: DesignRules) -> None:
@@ -358,14 +364,14 @@ def _analyze(cand, req, rules, airfoils, wr, arm_shift) -> dict:
     CLc = wr["CL_cruise"]
     if tp.layout == "sem cauda":
         h_n = h_ac
-        if cand.wing2 is not None and len(ac.surfaces) > 1:
+        if cand.wing2 is not None and second_wing(ac) is not None:
             # tandem: a asa de trás é a "cauda". O ponto neutro é a média dos CA ponderada pela sustentação que cada
             # asa ganha com α (a de trás com a eficiência η e o downwash da da frente): x_n = Σ a_i S_i x_ac,i / Σ a_i S_i.
             # Com uma EH pequena isto vira o h_n = h_ac + η V_H (a_t/a)(1 − dε/dα) de sempre, que despreza a
             # sustentação da cauda no total e não serve quando as duas asas são do mesmo tamanho (Etkin e Reid,
             # "Dynamics of Flight", seção 2.3; a conferir no PDF). Antes o tandem ficava com o ponto neutro da asa da
             # frente sozinha: o CG ia para perto dela e o avião não trimava com C_m nenhum
-            w2 = ac.surfaces[-1]
+            w2 = second_wing(ac)
             pf2 = planform(w2)
             a2 = analyze_wing(cand.wing2, req, rules)["CLa"]
             k2 = tp.tail_eta * a2 * pf2["S"] * (1 - deda)

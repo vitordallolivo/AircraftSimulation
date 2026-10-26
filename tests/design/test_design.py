@@ -169,6 +169,24 @@ def test_tip_fins_give_the_tailless_aircraft_directional_stability():
     assert rear > 10 * front                     # a ponta da asa da frente fica quase no CG
 
 
+def test_tip_fins_do_not_move_the_tandem_neutral_point():
+    """as derivas da ponta entram na lista depois da asa de trás; a estática do tandem tem de achar a asa de trás
+    pelo papel, não pelo fim da lista. Antes ela lia a deriva como asa de trás: o ponto neutro ia para a asa da
+    frente, o comando não trimava e a E&C pedia perto de 1 kg de lastro. Deriva vertical não muda o ponto neutro"""
+    import copy
+    w = _wing(span=2.4, area=0.8)
+    def np_(fin):
+        tp = tl.TailParams(layout="sem cauda", wing2=tl.SAME_WING, wing2_dx=1.0, wing2_dz=0.1, wing2_di=-6.0,
+                           sm_target=8.0, tip_fin=fin)
+        st = tl.analyze(tl.SetCandidate(tp, w, wing2=copy.deepcopy(w)), Requirements())
+        return st, tl.second_wing(st["set"])
+    (st0, w0), (st1, w1) = np_(0.0), np_(0.2)
+    assert w1.role == "wing" and not w1.vertical and w1.name == w0.name
+    assert st1["x_np"] == pytest.approx(st0["x_np"], abs=1e-9)
+    assert st1["Cmde"] == pytest.approx(st0["Cmde"], rel=1e-9)
+    assert [c.kind for c in w1.controls] == ["elevator"]
+
+
 def test_obstacle_height_sets_the_6dof_takeoff_and_old_projects_keep_one_meter():
     """a altura do obstáculo (Regular 2026: 0,90 m a 55 m) vira o z_warning da decolagem 6GDL; sem ela, 1 m como antes"""
     from aerosim.model.serialize import from_dict

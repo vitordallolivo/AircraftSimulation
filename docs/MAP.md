@@ -103,7 +103,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/design/study.py` — Estudo e ponto de projeto: as áreas se retroalimentam (não em ordem) e o estudo mostra onde estabilidade e
   `class StudyParams:45`, `class StudyRun:57`, `to_run:74`, `from_run:86`, `ensure:91`, `table:109`, `parse_places:114`, `with_value:129`, `feasibility:138`, `point_row:166`, `run:178`, `best_rows:211`, `mtow_of:223`, `check_6dof:227`, `check_many:253`, `result:288`
 - `aerosim/design/tail.py` — Etapa Empenagem e comandos: as superfícies que acompanham a asa escolhida, o tubo de cauda e os comandos.
-  `class TailParams:51`, `class SetCandidate:108`, `tail_airfoil:133`, `tail_entry:138`, `build_set:162`, `analyze:318`, `rotation:481`
+  `class TailParams:51`, `class SetCandidate:108`, `tail_airfoil:133`, `tail_entry:138`, `build_set:162`, `second_wing:301`, `analyze:324`, `rotation:487`
 - `aerosim/design/wing.py` — Etapa Asa: do perfil escolhido à asa — forma em planta, linha sustentadora e o que ela entrega.
   `class WingPartition:39`, `class WingStation:55`, `class WingParams:65`, `class WingCandidate:92`, `stations:110`, `chords:130`, `totals:145`, `sync:151`, `partitions_from_trapezoid:168`, `build_wing:187`, `planform:209`, `tip_weight:223`, `station_weights:231`, `section_props:240`, `lifting_line:253`, `analyze:289`
 
@@ -682,7 +682,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/aeroopt` — 67 testes em 8 arquivo(s)
 - `tests/core` — 34 testes em 9 arquivo(s)
 - `tests/data` — 12 testes em 4 arquivo(s)
-- `tests/design` — 72 testes em 11 arquivo(s)
+- `tests/design` — 73 testes em 11 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
 - `tests/manager` — 57 testes em 10 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
