@@ -211,6 +211,11 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     w.tail_cb["sem cauda"].setChecked(False)
     assert not w.controls_cb.isChecked()                                    # comandos: desligado por padrão
     w.controls_cb.setChecked(True)
+    assert w.init_cb.currentData() == "uniforme" and w.starts_sb.value() == 1    # E&C: início e partidas de sempre
+    w.init_cb.setCurrentIndex(w.init_cb.findData("lhs"))
+    w.starts_sb.setValue(3)
+    w.set_method("voa", "diagnóstico")                                      # os métodos guiados pela falha
+    assert w.method["voa"].currentText() == "diagnóstico da falha (bandido)"
     assert w.rot.window() is w.menus["restrições"] and w.evals.window() is w.menus["configuração"]
     assert set(w.method) == {"configurações", "voa", "superfícies", "decolagem"}
     titles = [b.title() for b in w.menus["configuração"].findChildren(QtWidgets.QGroupBox)]
@@ -245,6 +250,8 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     assert w2.read_problem().params["etapas"]["caudas"] == ["convencional", "em H", "em V"]
     assert "escolhe a cauda" in w2.summary["configuração"].text()
     assert w2.controls_cb.isChecked() and "ajusta os comandos" in w2.summary["configuração"].text()
+    assert w2.init_cb.currentData() == "lhs" and w2.starts_sb.value() == 3 and w2.methods()["voa"] == "diagnóstico"
+    assert "hipercubo latino, 3 partidas" in w2.summary["configuração"].text()
     w.problem = out
     w.scoring.set_spec("MTOW")                                   # Cancelar volta a pontuação ao que era
     w.scoring.restore(("sae_br_2026_micro", {}))
@@ -347,3 +354,20 @@ def test_numbers_have_no_text_and_every_option_has_help(app):
     assert [c for c, cb in w.cat_cb.items() if cb.isChecked()] == ["biplano", "asa baixa", "parasol"]
     assert not w.cat_row["parasol"].isHidden() and w.cat_row["asa média"].isHidden()
     assert w.read_problem().params["categorias"] == ["biplano", "asa baixa", "parasol"]
+
+
+def test_menus_scroll_and_the_regulation_stays_on_top(app):
+    """num notebook de 1366 × 768 o .toml do regulamento é mais alto que a tela: o corpo dos submenus rola, e o
+    combo do regulamento e o OK ficam sempre à vista (antes o submenu crescia até o conteúdo e os dois sumiam)"""
+    from aeroopt.gui import AeroOptWindow, example_project
+    p, pr = example_project()
+    w = AeroOptWindow(p, pr)
+    m = w.menus["pontuação"]
+    sa = m.findChild(QtWidgets.QScrollArea)
+    assert sa is not None and sa.widget() is w.scoring
+    assert not w.scoring.isAncestorOf(w.scoring.combo) and m.isAncestorOf(w.scoring.combo)
+    assert all(mm.findChild(QtWidgets.QScrollArea) is not None for mm in w.menus.values())
+    w.scoring.combo.setCurrentText("sae_br_2026_regular")
+    m.accept()
+    w.problem = w.read_problem()
+    assert w.problem.scoring == "sae_br_2026_regular"

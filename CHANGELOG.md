@@ -6,6 +6,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, janela: os submenus rolam e o regulamento fica fixo no alto da Pontuação; numa tela de 1366 × 768 o
+  combo e o OK ficavam fora da tela. A Configuração ganhou o início (uniforme ou hipercubo latino) e as partidas da
+  E&C, que antes só se mudavam no `.opt.json`.
 - aeroopt, E&C: busca guiada pela falha. Cada termo da violação tem um código, e o diagnóstico liga o código às
   variáveis que o consertam; métodos novos da etapa voa: reparo por gradiente, εDE, algoritmo cultural, LEM e
   diagnóstico (um bandido escolhe o operador de cada filho). As contas no núcleo (`core/src/optim/guided.zig`).

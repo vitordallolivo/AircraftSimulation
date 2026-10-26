@@ -165,7 +165,12 @@ class ScoringEditor(QtWidgets.QWidget):
         super().__init__(parent)
         v = QtWidgets.QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
-        h = QtWidgets.QHBoxLayout()
+        # o regulamento fica no alto do submenu, fora da rolagem (`top`): o resto do arquivo é mais alto que a tela
+        # de um notebook, e antes o combo e o OK ficavam fora dela
+        self.top = QtWidgets.QWidget()
+        h = QtWidgets.QHBoxLayout(self.top)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addWidget(QtWidgets.QLabel("regulamento:"))
         self.combo = QtWidgets.QComboBox()
         files = sorted(f[:-5] for f in os.listdir(sc.PONTUACAO) if f.endswith(".toml"))
         self.combo.addItems(files + list(SIMPLE))
@@ -174,7 +179,6 @@ class ScoringEditor(QtWidgets.QWidget):
         self.open_b = QtWidgets.QPushButton("Abrir…")
         self.open_b.clicked.connect(self._open)
         h.addWidget(self.open_b)
-        v.addLayout(h)
         self.head = QtWidgets.QLabel()
         self.head.setWordWrap(True)
         self.head.setStyleSheet("color:#334")
@@ -643,7 +647,8 @@ class ConstraintsTable(QtWidgets.QWidget):
 GEOMETRY_DEFAULT = {"ligada": True, "rotação": 12.0, "folga": 0.0, "folga_hélice": 0.02, "uma_peça": False}
 STABILITY_DEFAULT = {"ligada": False, "nível": 2}
 STAGES_DEFAULT = {"configurações": "gerações", "voa": "buscar", "superfícies": "coordenadas", "decolagem": "6gdl", "população": 16,
-                  "gerações": 8, "avaliações": 12, "processos": 0, "caudas": [], "comandos": False}
+                  "gerações": 8, "avaliações": 12, "processos": 0, "caudas": [], "comandos": False,
+                  "inicio": "uniforme", "partidas": 1}
 # os métodos das etapas que não estão em aeroopt.stages (o menu Configuração)
 CONFIG_METHODS = {"gerações": "gerações (algoritmo genético do núcleo)",
                   "todas": f"todas as combinações (até {sg.MAX_CONFIGS})"}
@@ -668,7 +673,12 @@ class _Menu(QtWidgets.QDialog):
         v = QtWidgets.QVBoxLayout(self)
         if top is not None:
             v.addWidget(top, 0)
-        v.addWidget(body, 1)
+        # o corpo rola: sem isso o submenu cresce até o tamanho do conteúdo e passa da tela (o OK some embaixo)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll.setWidget(body)
+        v.addWidget(scroll, 1)
         bb = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
                                         QtWidgets.QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
@@ -764,7 +774,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             b.clicked.connect(lambda _=False, g=g: self._isolate(g))
             h.addWidget(b)
         h.addStretch(1)
-        self.menus = {"pontuação": _Menu("Pontuação: o .toml do regulamento", self.scoring, self),
+        self.menus = {"pontuação": _Menu("Pontuação: o .toml do regulamento", self.scoring, self, self.scoring.top),
                       "variáveis": _Menu("Variáveis: tudo o que se escolhe nas etapas do aerosim (livre, limites ou a lista marcada)", self.vars, self, iso),
                       "restrições": _Menu("Restrições (como Condições e restrições do aerosim) e geometria",
                                           self.cons, self, self._restrictions_top()),
@@ -937,6 +947,18 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                        "pista antes da velocidade de sair do chão, pela conta do núcleo (a mesma da decolagem 6GDL). "
                        "É o que faz uma asa voadora ter chance de decolar. Os comandos achados ficam no avião"),
                  self.controls_cb)
+        self.init_cb = QtWidgets.QComboBox()
+        for k, txt in sg.INITS.items():
+            self.init_cb.addItem({"uniforme": "uniforme", "lhs": "hipercubo latino"}.get(k, k), k)
+            self.init_cb.setItemData(self.init_cb.count() - 1, txt, QtCore.Qt.ItemDataRole.ToolTipRole)
+        f.addRow(_help("início (E&C)", "de onde nasce a população da busca: uniforme (cada ponto sorteado na caixa) "
+                       "ou hipercubo latino (um ponto em cada fatia da faixa de cada variável, que cobre melhor "
+                       "quando há muitas variáveis e poucos indivíduos)"), self.init_cb)
+        self.starts_sb = QtWidgets.QSpinBox()
+        self.starts_sb.setRange(1, 8)
+        f.addRow(_help("partidas (E&C)", "quantos aviões que voam, afastados uns dos outros, a busca junta antes de "
+                       "escolher; fica o que decola na pista com a maior carga paga. 1: o primeiro que voa"),
+                 self.starts_sb)
         f = stage("superfícies (desempenho e otimização)", sg.SURFACE_METHODS,
                   "a busca das contínuas livres (envergadura, área...) pelo maior MTOW que fecha na pista. "
                   "Coordenadas: um eixo por vez, rápida quando as variáveis são independentes. Gerações, CMA-ES e "
@@ -1416,6 +1438,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         for t, cb in self.tail_cb.items():
             cb.setChecked(t in (e.get("caudas") or []))
         self.controls_cb.setChecked(bool(e.get("comandos")))
+        self.init_cb.setCurrentIndex(max(self.init_cb.findData(e.get("inicio") or "uniforme"), 0))
+        self.starts_sb.setValue(int(e.get("partidas") or 1))
         self.pop.setValue(int(e["população"]))
         self.gens.setValue(int(e["gerações"]))
         self.evals.setValue(int(e["avaliações"]))
@@ -1450,7 +1474,9 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             f"aviões: {', '.join(cats) or 'o dos rascunhos'}; {cfg}; "
             f"voa: {'desligada' if e['voa'] == 'desligada' else METHOD_NAMES.get(e['voa'], e['voa'])}"
             + (f", escolhe a cauda ({', '.join(e['caudas'])})" if e.get("caudas") else "")
-            + (", ajusta os comandos" if e.get("comandos") else "") + "; "
+            + (", ajusta os comandos" if e.get("comandos") else "")
+            + (", início por hipercubo latino" if e.get("inicio") == "lhs" else "")
+            + (f", {e['partidas']} partidas" if int(e.get("partidas") or 1) > 1 else "") + "; "
             f"superfícies por {METHOD_NAMES.get(e['superfícies'], e['superfícies'])} "
             f"({e['avaliações']} pontos); decolagem {'no 6GDL' if e['decolagem'] == '6gdl' else 'só na pista'}; "
             + (f"sensibilidade: {SENS_METHODS[sp.method]}" if (sp := SensParams.from_dict(
@@ -1482,7 +1508,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         pr.params["etapas"] = {**self.methods(), "população": self.pop.value(), "gerações": self.gens.value(),
                                "avaliações": self.evals.value(), "processos": self.workers.value(),
                                "caudas": [t for t, cb in self.tail_cb.items() if cb.isChecked()],
-                               "comandos": self.controls_cb.isChecked()}
+                               "comandos": self.controls_cb.isChecked(), "inicio": self.init_cb.currentData(),
+                               "partidas": self.starts_sb.value()}
         pr.params["sensibilidade"] = self.sens_params().to_dict()
         return pr
 
