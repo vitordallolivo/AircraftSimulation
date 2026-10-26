@@ -89,7 +89,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/design/mdo.py` — Dimensionamento inicial como mini-MDO: monta a configuração do núcleo (`core/src/sizing`) a partir do
   `class MdoParams:40`, `class MdoRun:60`, `airfoil_catalog:81`, `available:104`, `airfoil_data:134`, `build:144`, `tip_varies:225`, `at_bounds:235`, `opts_of:249`, `decode:254`, `history:269`, `run:280`, `evaluate:293`, `apply:305`, `planform:327`, `sketch:338`, `check_6dof:389`, `full_envelope:417`, `constraint_diagram:438`
 - `aerosim/design/power.py` — Etapa Motores e montagem: onde ficam os motores (e por consequência a bateria, a carga e o trem) e o
-  `class PowerParams:35`, `class AircraftCandidate:72`, `motor_counts:82`, `assemble:117`, `thrust_trim:281`, `thrust_of:375`, `motor_prop_spec:403`, `performance:422`, `trim_drag:469`, `design_point:491`
+  `class PowerParams:35`, `class AircraftCandidate:72`, `motor_counts:82`, `assemble:117`, `thrust_trim:282`, `thrust_of:376`, `motor_prop_spec:404`, `performance:423`, `trim_drag:470`, `design_point:492`
 - `aerosim/design/project.py` — O projeto da sprint: requisitos, regras e o que cada etapa guardou (perfis, asas, conjuntos, aviões).
   `rg_sae:31`, `class DesignProject:41`, `is_project_file:182`, `next_name:194`
 - `aerosim/design/registry.py` — Registro de grandezas do projeto: o que dá para medir, restringir ou variar.
@@ -103,7 +103,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/design/study.py` — Estudo e ponto de projeto: as áreas se retroalimentam (não em ordem) e o estudo mostra onde estabilidade e
   `class StudyParams:45`, `class StudyRun:57`, `to_run:74`, `from_run:86`, `ensure:91`, `table:109`, `parse_places:114`, `with_value:129`, `feasibility:138`, `point_row:166`, `run:178`, `best_rows:211`, `mtow_of:223`, `check_6dof:227`, `check_many:253`, `result:288`
 - `aerosim/design/tail.py` — Etapa Empenagem e comandos: as superfícies que acompanham a asa escolhida, o tubo de cauda e os comandos.
-  `class TailParams:48`, `class SetCandidate:92`, `tail_airfoil:117`, `tail_entry:122`, `build_set:146`, `analyze:239`, `rotation:371`
+  `class TailParams:49`, `class SetCandidate:96`, `tail_airfoil:121`, `tail_entry:126`, `build_set:150`, `analyze:245`, `rotation:384`
 - `aerosim/design/wing.py` — Etapa Asa: do perfil escolhido à asa — forma em planta, linha sustentadora e o que ela entrega.
   `class WingPartition:39`, `class WingStation:55`, `class WingParams:65`, `class WingCandidate:92`, `stations:110`, `chords:130`, `totals:145`, `sync:151`, `partitions_from_trapezoid:168`, `build_wing:187`, `planform:209`, `tip_weight:223`, `station_weights:231`, `section_props:240`, `lifting_line:253`, `analyze:289`
 
@@ -238,7 +238,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/model/mission.py` — Percurso como uma corrente de pernas (retas e curvas).
   `auto_radius:20`, `class Leg:26`, `class MissionEvent:41`, `class Mission:48`, `circuit:121`, `short_circuit:145`, `takeoff_runway:156`, `level_turn:161`
 - `aerosim/model/modifiers.py` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro (efeito solo, esteira
-  `class ParamInfo:28`, `class KindInfo:37`, `class Modifier:79`, `default_modifiers:97`, `active:102`, `ground_method:106`, `additive:112`, `problems:116`, `describe:129`, `is_default:140`, `not_exported:146`, `native:154`
+  `class ParamInfo:28`, `class KindInfo:37`, `class Modifier:87`, `default_modifiers:105`, `active:110`, `ground_method:114`, `additive:120`, `problems:124`, `describe:137`, `is_default:148`, `not_exported:154`, `native:162`
 - `aerosim/model/serialize.py` — dataclass <-> dicionário (genérico, guiado pelas anotações de tipo).
   `to_dict:10`, `from_dict:52`
 - `aerosim/model/templates.py` — Aeronaves prontas para começar.
@@ -345,16 +345,18 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 **core/src/modifiers/**
 
+- `core/src/modifiers/flapmoment.zig` — Momento próprio do comando (flape, profundor, elevon) no quarto de corda da faixa.
+  fn `thetaOf:16`, `cmDelta:29`
 - `core/src/modifiers/ground.zig` — Efeito solo: métodos para o fator do arrasto induzido perto do chão.
   fn `factor:13`, `mccormick:21`
 - `core/src/modifiers/mod.zig` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro sem mexer no resto
-  tipos `Env:21`
-  fn `envFrom:36`, `hits:50`, `hitsProp:57`, `stripOf:71`, `induced:78`, `inducedNoPair:83`
+  tipos `Env:22`
+  fn `envFrom:37`, `hits:51`, `hitsProp:58`, `stripOf:72`, `induced:79`, `inducedNoPair:84`, `flapCm:104`
 - `core/src/modifiers/slipstream.zig` — Esteira da hélice por disco atuador (modificador `esteira.disco`).
   tipos `TubeShape:32`, `Point:81`
   fn `shape:49`, `diskInduced:54`, `axialAt:62`, `radiusAt:67`, `swirlRate:75`, `at:89`
 - `core/src/modifiers/types.zig` — Tipos dos modificadores trocados com o Python (C ABI, `extern struct`; o esquema sai de `abi.zig`).
-  tipos `Ground:14`, `Kind:21`, `SlipstreamParam:29`, `PairParam:38`, `Modifier:49`
+  tipos `Ground:14`, `Kind:21`, `SlipstreamParam:30`, `PairParam:39`, `Modifier:50`
 - `core/src/modifiers/wingpair.zig` — Interferência entre duas asas ligadas (tandem, biplano) no modelo de faixas.
   fn `active:29`, `induced:44`
 
@@ -383,7 +385,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/physics/aero.zig` — Aerodinâmica por componentes.
   tipos `Out:17`
-  fn `sigmaStall:27`, `init:90`, `compute:123`, `computeEnv:128`, `computeTrace:133`, `fuselage:239`, `coeffs:254`, `coeffsEx:259`, `coeffsEnv:264`, `coeffsAt:269`
+  fn `sigmaStall:27`, `init:90`, `compute:123`, `computeEnv:128`, `computeTrace:133`, `fuselage:243`, `coeffs:258`, `coeffsEx:263`, `coeffsEnv:268`, `coeffsAt:273`
 - `core/src/physics/aeromodel.zig` — O modelo aerodinâmico do voo, escolhido por `Params.aero_model`: quem a dinâmica, a trimagem e a linearização
   fn `compute:19`
 - `core/src/physics/aerotable.zig` — Modelo aerodinâmico por tabela (Params.aero_model = 2): os coeficientes do avião inteiro vêm de `Params.aero_tab`,

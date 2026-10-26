@@ -127,6 +127,7 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     ac.name = pp.name
     ac.surfaces = copy.deepcopy(part.surfaces)
     ac.booms = copy.deepcopy(part.booms)
+    ac.modifiers += [copy.deepcopy(m) for m in part.modifiers if m.kind == "comando.momento_flape"]   # Empenagem
     ac.Sref = ac.cref = ac.bref = None
     ac.tanks = []
     ac.payload.enabled = False

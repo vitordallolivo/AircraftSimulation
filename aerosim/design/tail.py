@@ -32,6 +32,7 @@ import numpy as np
 
 from aerosim.model.aircraft import Aircraft, ControlSurface, LiftingSurface, TailBoom, WingSection
 from aerosim.model.airfoil import Airfoil, flap_effectiveness, helmbold
+from aerosim.model.modifiers import Modifier
 
 from . import airfoils as afm
 from .fields import F
@@ -78,6 +79,9 @@ class TailParams:
     aileron_start: float = F(0.55, "aileron: início", "", "fração da semienvergadura", 0.0, 0.95, 0.01)
     aileron_end: float = F(0.95, "aileron: fim", "", "", 0.1, 1.0, 0.01)
     aileron_chord: float = F(0.25, "aileron (fração da corda)", "", "", 0.1, 0.5, 0.01)
+    flap_moment: bool = F(False, "momento próprio dos comandos", "", "o comando também muda o momento no quarto de "
+                          "corda da faixa (perfil fino), no núcleo: o elevon da asa voadora cabra o que a teoria dá. "
+                          "Liga o modificador comando.momento_flape no avião")
     sm_target: float = F(12.0, "margem estática desejada", "% CMA", "põe o CG aqui (a etapa Motores arruma as massas)",
                          2, 40, 0.5)
     sm_min: float = F(5.0, "margem estática mínima", "% CMA", "limite traseiro do CG", 0, 20, 0.5)
@@ -164,6 +168,8 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
     ac.propulsion = []
     ac.tanks = []
     ac.payload.enabled = False
+    if tp.flap_moment:                              # momento próprio dos comandos (core/src/modifiers/flapmoment.zig)
+        ac.modifiers.append(Modifier("comando.momento_flape"))
     info = dict(S=S, c=c, b=b, x_ac_w=pf["x_ac"], x_le_mac=pf["x_le_mac"], Sh=0.0, Sv=0.0, bh=0.0, hv=0.0, arm=0.0)
     if tp.layout == "sem cauda":
         _add_wing2(ac, cand, req, rules)
@@ -280,10 +286,17 @@ def _analyze(cand, req, rules, airfoils, wr, arm_shift) -> dict:
     if tp.layout == "sem cauda":
         h_n = h_ac
         h_cg = h_n - tp.sm_target / 100
-        # elevon: C_mδ ≈ −C_lδa · b/(2 y_m) · ... aqui: arfagem por faixa com o braço até o CA
+        # elevon, por faixa: o Δc_l = a τ δ no quarto de corda da faixa, com o braço até o CG, mais o momento próprio
+        # do flape no quarto de corda (perfil fino: Δc_m,c/4 = −½ sen θ_f (1 − cos θ_f) δ, cos θ_f = 2 c_f/c − 1;
+        # Anderson, "Fundamentals of Aerodynamics", seção do flape na teoria do perfil fino, a conferir no PDF),
+        # com o mesmo fator empírico 0,85 de `flap_effectiveness`. Antes o Δc_l ia todo a 3/4 da corda, o que dava
+        # uns 4 vezes o C_mδ do núcleo (O16 no tracking; tools/rotacao.py compara)
         x_c = info["x_le_mac"] - h_cg * c
-        Cmd = -a * tau_a / (S * c) * 2 * np.trapezoid(np.array([w.chord_at(y) * (x_c - (w.x - w.xoff_at(y) - 0.75 * w.chord_at(y)))
-                                                                for y in yy]), yy)
+        th = math.acos(min(max(2 * ctl.chord_frac - 1, -1.0), 1.0))
+        dcm = -0.85 * 0.5 * math.sin(th) * (1 - math.cos(th))
+        ch = np.array([w.chord_at(y) for y in yy])
+        arm = np.array([x_c - (w.x - w.xoff_at(y) - 0.25 * w.chord_at(y)) for y in yy])
+        Cmd = 2 / (S * c) * np.trapezoid(-a * tau_a * ch * arm + dcm * ch * ch, yy)
         Cm0 = wr["Cm_ac"]
         de_cru = -(Cm0 + CLc * (h_cg - h_ac)) / Cmd
         de_max_cl = -(Cm0 + CLmax * (h_cg - h_ac)) / Cmd

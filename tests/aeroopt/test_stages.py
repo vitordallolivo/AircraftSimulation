@@ -341,7 +341,8 @@ def test_flight_check_chooses_the_tail_and_changes_the_individual():
     assert list(tried) == list(sg.TAILS) and out.values[sg.TAIL_KEY] in sg.TAILS
     up = [t for t, d in tried.items() if d["ok"] and math.isfinite(d["cp"])]   # voam e decolam na pista
     assert up and out.values[sg.TAIL_KEY] == max(up, key=lambda t: (tried[t]["cp"], -sg.TAILS.index(t)))
-    assert sg.TAIL_KEY not in fc.one(flying).values
+    with pytest.raises(ValueError, match="rodar"):     # a asa voadora fica sem cauda e, com o elevon de hoje, não
+        fc.one(flying)                                 # roda na pista (O20 no tracking)
     assert "cauda em V" not in cat.CATEGORIES and "cauda em V" in cat.LEGACY
     with pytest.raises(ValueError):
         sg.FlightCheck(p, pr, tails=["em T"])
@@ -350,10 +351,11 @@ def test_flight_check_chooses_the_tail_and_changes_the_individual():
     assert row["values"].get(sg.TAIL_KEY) == out.values[sg.TAIL_KEY]
 
 
-def test_core_rotation_agrees_with_the_sprint_on_a_tail_and_catches_the_flying_wing_elevon():
+def test_core_rotation_agrees_with_the_sprint_with_the_flap_moment():
     """a rotação pelo núcleo (a conta da E&C com os comandos): no monoplano bate com a da sprint (mesmos termos,
-    só C_m e C_L do núcleo); na asa voadora com elevon na envergadura toda a sprint diz que roda antes de sair do
-    chão e o núcleo não, que é o que a decolagem 6GDL mostra (ela bate na pista)"""
+    só C_m e C_L do núcleo). Na asa voadora com elevon na envergadura toda, o núcleo só bate com a sprint com o
+    momento próprio do comando ligado (modifiers/flapmoment.zig; sem ele o elevon cabra uns 2 vezes menos), e as
+    duas dizem que ela não roda antes de sair do chão: a tração da hélice puxa o nariz para baixo (O20)"""
     from aeroopt.gui import example_project
     from aerosim.backend.zig import ZigBackend
     from aerosim.design import power as pw
@@ -368,10 +370,13 @@ def test_core_rotation_agrees_with_the_sprint_on_a_tail_and_catches_the_flying_w
 
     vs, vc, _ = both({"categoria": "monoplano"})
     assert vc == pytest.approx(vs, rel=0.1)
-    vs, vc, vl = both({"categoria": "asa voadora", "power.propeller": "Genérica 13x6.5", "wing.span": 1.58,
-                       "wing.area": 0.6, "tail.aileron_start": 0.1, "tail.aileron_end": 0.99,
-                       "tail.aileron_chord": 0.48, "rules.de_max": 20.0, "power.tilt": 4.5})
-    assert vs < vl < vc
+    fw = {"categoria": "asa voadora", "power.propeller": "Genérica 13x6.5", "wing.span": 1.58, "wing.area": 0.6,
+          "tail.aileron_start": 0.1, "tail.aileron_end": 0.99, "tail.aileron_chord": 0.48, "rules.de_max": 20.0,
+          "power.tilt": 4.5}
+    vs, vc, vl = both(fw)
+    vs2, vc2, _ = both({**fw, "tail.flap_moment": True})
+    assert vs2 == vs and vc2 < vc                    # o modificador só muda o núcleo
+    assert vc2 == pytest.approx(vs, rel=0.1) and vl < vs
 
 
 def test_flight_check_with_controls_adds_the_controls_of_the_kind_of_aircraft():

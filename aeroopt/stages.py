@@ -385,6 +385,7 @@ class SurfaceSizing(IStage):
 # os métodos da etapa "voa" (a GUI escolhe no menu Configuração)
 # as caudas que a etapa voa (E&C) pode escolher para um avião, na ordem em que desempatam
 TAILS = ("convencional", "em H", "em V", "sem cauda")
+FLAP_KEY = "tail.flap_moment"      # a E&C com os comandos liga o momento próprio deles (modifiers/flapmoment.zig)
 # os comandos que a rodada interna da E&C ajusta, por tipo de avião (chave, mínimo, máximo). O curso vai até 30°,
 # o que um servo comum dá com folga; o elevon pode ir até a corda de 50 % e da raiz (5 %) à ponta
 CONTROLS = {
@@ -417,8 +418,9 @@ class FlightCheck(IStage):
 
     Com `controls`, a busca também mexe nos comandos (`CONTROLS`: a corda e o trecho do elevon, a corda do
     profundor, o curso e a inclinação do motor), além das contínuas livres do problema, e o comando de arfagem tem de
-    rodar o avião antes da velocidade de sair do chão (`violation(..., rotation=True)`). É o que faz uma asa voadora
-    decolar: com o elevon de sempre ela só roda depois de sair do chão. Os comandos achados ficam no indivíduo"""
+    rodar o avião antes da velocidade de sair do chão (`violation(..., rotation=True)`, pelo núcleo). É o que faz uma
+    asa voadora decolar: com o elevon de sempre ela só roda depois de sair do chão. Os comandos achados ficam no
+    indivíduo, com o momento próprio dos comandos ligado (`tail.flap_moment`), o mesmo na decolagem 6GDL"""
     name = "voa"
 
     def __init__(self, project, problem: OptProblem, catalog=None, evals: int = 24, method: str = "buscar",
@@ -508,6 +510,8 @@ class FlightCheck(IStage):
         return c is None or cat.fields(c)["tail_draft.layout"] == cat.BASE_TAIL
 
     def one(self, item: StageItem) -> StageItem:
+        if self.controls:                          # o momento próprio dos comandos no núcleo, daqui até o 6GDL
+            item.values = {**item.values, FLAP_KEY: True}
         if self.chooses_tail(item):
             tried = {}
             for t in self.tails:

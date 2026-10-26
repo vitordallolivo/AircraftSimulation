@@ -72,6 +72,14 @@ KINDS: dict[str, KindInfo] = {
         "da da frente, e as asas do biplano se induzem. Só age com o voo pelas faixas e com asas ligadas "
         "(as duas primeiras do grupo da asa principal). Desligado por padrão",
         (ParamInfo("ganho", "ganho da induzida", 1.0, "", "calibração (1 = a teoria)"),)),
+    "comando.momento_flape": KindInfo(
+        "comando.momento_flape", "momento próprio dos comandos (flape, profundor, elevon)", "aditivo", 3,
+        "teoria do perfil fino com flape: Δc_m,c/4 = −½ sen θ_f (1 − cos θ_f) δ, cos θ_f = 2 c_f/c − 1 (J. D. "
+        "Anderson, Fundamentals of Aerodynamics, seção do flape na teoria do perfil fino; a conferir no PDF)",
+        "nas faixas, o comando também muda o momento no quarto de corda da faixa, além do C_L. Sem isso o elevon "
+        "de uma asa voadora cabra menos do que deveria, porque o braço dele até o CG é curto. θ_f sai do τ da faixa "
+        "com o fator k do τ. Só nas faixas. Desligado por padrão",
+        (ParamInfo("fator", "fator empírico k do τ", 0.85, "", "o mesmo de flap_effectiveness (0,85)"),)),
 }
 
 

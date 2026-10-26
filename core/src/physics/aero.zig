@@ -203,7 +203,11 @@ fn computeImpl(comptime trace: bool, p: *const T.Params, Vr: V3, w: V3, rcg: V3,
         const drag_dir = -(ex * vec.splat(u) + ez * vec.splat(ww)) / vec.splat(Vp);
         const F = lift_dir * vec.splat(qS * CL) + drag_dir * vec.splat(qS * CD);
         const Fi = drag_dir * vec.splat(qS * CDi);
-        const M = vec.cross(r - rcg, F) + vec.v3(s.ey) * vec.splat(qS * s.c * s.Cmac);
+        var M = vec.cross(r - rcg, F) + vec.v3(s.ey) * vec.splat(qS * s.c * s.Cmac);
+        if (with_mods) {
+            const dcm = mods.flapCm(p, i, s, d); // momento próprio do comando (modifiers/flapmoment.zig)
+            if (dcm != 0) M += vec.v3(s.ey) * vec.splat(qS * s.c * dcm);
+        }
         if (trace) {
             if (i < out.len) out[i] = .{ .r = s.r, .S = s.S, .c = s.c, .group = s.group, .side = s.side, .alpha = al,
                 .V = Vp, .CL = CL, .CD = CD, .L = qS * CL, .D = qS * CD, .F = F, .v = v, .vind = vind, .ey = s.ey, .ex = s.ex };

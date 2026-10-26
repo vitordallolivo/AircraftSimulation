@@ -14,6 +14,7 @@ pub const types = @import("types.zig");
 pub const ground = @import("ground.zig");
 pub const slipstream = @import("slipstream.zig");
 pub const wingpair = @import("wingpair.zig");
+pub const flapmoment = @import("flapmoment.zig");
 const T = @import("../types.zig");
 const prop = @import("../physics/propulsion.zig");
 
@@ -92,10 +93,22 @@ fn inducedWith(comptime pair: bool, p: *const T.Params, env: *const Env, i: usiz
         v += switch (m.kindOf()) {
             .slipstream_disk => slipstreamStrip(p, env, m, s),
             .wing_pair => if (pair and p.aero_model == 0) wingpair.induced(p, m, env.gamma[0..], env.u, i) else vec.zero,
-            .none, _ => vec.zero, // tipo vazio ou desconhecido: nada
+            .flap_moment, .none, _ => vec.zero, // tipo vazio ou desconhecido: nada
         };
     }
     return v;
+}
+
+/// Δc_m da faixa i pelo comando (flapmoment.zig), já com o curso: soma dos `flap_moment` ligados que pegam a faixa;
+/// 0 sem nenhum (aí a faixa fica bit a bit como era)
+pub fn flapCm(p: *const T.Params, i: usize, s: *const T.Surface, d: V3) f64 {
+    var cm: f64 = 0.0;
+    const n: usize = @intCast(p.n_mod);
+    for (p.mods[0..n]) |*m| {
+        if (m.enabled == 0 or m.kindOf() != .flap_moment or !hits(m.surf_mask, i)) continue;
+        cm += flapmoment.cmDelta(s.tau, m.params[0]) * vec.dot(vec.v3(s.mix), d);
+    }
+    return cm;
 }
 
 /// média da esteira na faixa, na grade chord_samples × strip_samples (corda × envergadura)
@@ -139,4 +152,5 @@ test {
     _ = ground;
     _ = slipstream;
     _ = wingpair;
+    _ = flapmoment;
 }

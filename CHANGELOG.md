@@ -6,6 +6,12 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- sprint, elevon da asa voadora (O16): a sustentação do elevon ia toda a 3/4 da corda e dava uns 4 vezes o C_mδ do
+  núcleo. Agora vai no quarto de corda da faixa, mais o momento próprio do flape do perfil fino. Muda só a cauda
+  "sem cauda". Núcleo: o modificador novo `comando.momento_flape` (`core/src/modifiers/flapmoment.zig`) soma esse
+  momento em cada faixa com comando. Ele fica desligado por padrão, e o `tail.flap_moment` da Empenagem liga; a E&C
+  com os comandos liga sozinha. Com ele, sprint e núcleo dão −0,69 e −0,73 /rad no mesmo avião.
+
 - aeroopt, comandos em E&C: com "comandos (E&C)" marcado na Configuração (`params["etapas"]["comandos"]`), a etapa
   voa também mexe nos comandos do tipo de avião (profundor; ou trecho e corda do elevon; curso para cabrar e
   inclinação do motor), e o comando tem de rodar o avião antes de sair do chão. Essa conta usa o C_m e o C_L do

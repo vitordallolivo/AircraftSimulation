@@ -22,6 +22,7 @@ pub const Kind = enum(i32) {
     none = 0, // item vazio (ignorado)
     slipstream_disk = 1, // esteira da hélice por disco atuador (slipstream.zig); parâmetros em `SlipstreamParam`
     wing_pair = 2, // interferência entre duas asas ligadas (tandem, biplano; wingpair.zig); parâmetros em `PairParam`
+    flap_moment = 3, // momento próprio do comando no quarto de corda da faixa (flapmoment.zig); params[0] = k
     _, // tipo de outra versão: ignorado
 };
 
