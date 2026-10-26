@@ -40,6 +40,12 @@ REMEDIES = {
     "espiral": ("wing.dihedral", "tail.tip_fin", "tail.tip_fin_chord"),
     "curto": ("tail.sm_target", "tail.wing2_dx", "tail.elevator"),
     "fugoide": ("tail.sm_target", "wing.twist"),
+    # tandem (stages.tandem_terms): a parte da sustentação de cada asa mexe com a área da de trás, a decalagem e
+    # onde fica o CG; o escalonamento e o vão, só com a posição dela
+    "divisao": ("tail.wing2_area", "tail.wing2_span", "tail.wing2_sweep", "tail.wing2_di", "tail.sm_target", "power.x_payload", "tail.wing2_dx"),
+    "escalonamento": ("tail.wing2_dx",),
+    "vao": ("tail.wing2_dz",),
+    "envergadura": ("tail.wing2_span", "wing.span"),
 }
 # o critério da MIL-F-8785C (aerosim.stability.mil_check) → o código do termo
 MIL_CODES = {"ζ curto período": "curto", "ζ fugóide": "fugoide", "dutch roll ζ / ζω_n / ω_n": "dutch",

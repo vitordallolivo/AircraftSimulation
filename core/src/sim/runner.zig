@@ -18,6 +18,8 @@ const llt = @import("../loads/llt.zig");
 const prop = @import("../physics/propulsion.zig");
 const mass = @import("../physics/mass.zig");
 const trim = @import("trim.zig");
+const aeromodel = @import("../physics/aeromodel.zig");
+const mods = @import("../modifiers/mod.zig");
 const terrain = @import("../physics/terrain.zig");
 
 pub const Status = enum(i32) {
@@ -113,7 +115,23 @@ pub fn configure(inst: *Instance) ConfigError!void {
     llt.prepare(p); // a geometria fixa da linha sustentadora (cargas e aero_model = 1)
     prop.init(p);
     mass.initTanks(p);
+    p.alpha_guard_lim = guardAlpha(p);
     inst.configured = true;
+}
+
+/// o α (rad) da proteção de α na decolagem: o primeiro em que a superfície mais carregada chega a ap.kCL do C_Lmax
+/// dela (o C_L/C_Lmax do modelo aerodinâmico do voo, em voo livre a 12 m/s, sem comando), varrendo de 0 a 30° de
+/// 0,25 em 0,25°. É o estol de cada avião, não um número fixo: o alpha_max do piloto (11°) segura um monoplano que
+/// sai do chão a 14° e deixa passar uma asa que estola antes. Sem chegar a kCL até 30°: ap.alpha_max
+fn guardAlpha(p: *const T.Params) f64 {
+    const step = 0.25 * std.math.rad_per_deg;
+    var al: f64 = 0;
+    while (al <= 30.0 * std.math.rad_per_deg) : (al += step) {
+        const sa = fm.sincos(al);
+        const ae = aeromodel.compute(p, .{ 12.0 * sa.c, 0, 12.0 * sa.s }, vec.zero, vec.zero, 100.0, vec.zero, &mods.Env.none);
+        if (ae.ratioCL >= p.ap.kCL) return al;
+    }
+    return p.ap.alpha_max;
 }
 
 /// liga o piloto automático sem degrau: profundor e acelerador continuam de onde estavam

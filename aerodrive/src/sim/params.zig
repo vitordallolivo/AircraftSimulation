@@ -539,7 +539,7 @@ pub fn fill(ac: *const Aircraft, p: *T.Params, diag: *model.Diag) Error!void {
     p.env = .{ .rho = e.rho, .Vw10 = e.wind_speed, .wind_from = e.wind_from * D2R, .wind_elev = e.wind_elev * D2R, .h_ref = e.h_ref, .gust_T = e.gust_T, .gust_on = @intFromBool(e.gust) };
     for (e.gust_U[0..@min(e.gust_U.len, 3)], 0..) |x, i| p.env.gust_U[i] = x;
     const to = ac.takeoff;
-    p.takeoff = .{ .VR = to.VR, .sR = to.sR, .de0 = to.de0 * D2R, .de1 = to.de1 * D2R, .rate_de = to.rate_de * D2R, .ht = to.ht, .rate_thr = to.rate_thr, .h_end = to.h_end, .alpha_guard = if (to.alpha_guard) 1 else 0 };
+    p.takeoff = .{ .VR = to.VR, .sR = to.sR, .de0 = to.de0 * D2R, .de1 = to.de1 * D2R, .rate_de = to.rate_de * D2R, .ht = to.ht, .rate_thr = to.rate_thr, .h_end = to.h_end, .alpha_guard = 1 }; // proteção de α sempre ligada
     inline for (@typeInfo(T.Autopilot).@"struct".fields) |fld| {
         const val = @field(ac.autopilot, fld.name);
         const angle = comptime for ([_][]const u8{ "alpha_max", "chi_inf", "phimax", "pmax_cmd", "de_max", "da_max", "dr_max" }) |k| {

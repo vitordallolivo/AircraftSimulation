@@ -78,9 +78,13 @@ No segmento de pouso a altura cai em rampa até as rodas tocarem o ponto de toqu
 a distância) de rotação e $`\delta_{e1}`$ depois, com a taxa do servo; no chão, leme e roda direcionável seguem a pista.
 
 Esse comando é fixo até o piloto automático assumir, e aí um avião leve e com muita tração passa do estol antes disso:
-a asa voadora chegava a 32° de α com o elevon todo cabrando. Com a **proteção de α na decolagem**
-(`takeoff.alpha_guard`, desligada por padrão) a mesma lei de α e $`q`$ do voo entra nessa fase, com α pedido igual a
-$`\alpha_{max}`$, e só pica: ela nunca cabra mais que $`\delta_{e1}`$. As decolagens que já funcionavam não mudam.
+a asa voadora chegava a 32° de α com o elevon todo cabrando, e o tandem, depois de sair do chão, subia o nariz até
+estolar e cair. Por isso a **proteção de α na decolagem** é sempre ligada (o aerosim e o AeroDrive mandam
+`takeoff.alpha_guard = 1`; o 0 só existe para o teste que mostra a diferença). A mesma lei de α e $`q`$ do voo entra
+nessa fase e só pica: ela nunca cabra mais que $`\delta_{e1}`$. O α pedido é o do estol de cada avião, não um número
+fixo: no `configure`, o núcleo varre α em voo livre e guarda o primeiro em que a superfície mais carregada chega a
+$`k_{CL}`$ do $`C_{L,max}`$ dela (`alpha_guard_lim`, $`k_{CL}`$ = 0,95). Com o $`\alpha_{max}`$ do voo (11°) no lugar, o
+monoplano, que sai do chão perto de 14°, não decolava mais na pista dele.
 
 **Longitudinal, no ar.** A altura vira fator de carga vertical. Da cinemática $`\ddot h = g\,(n\cos\phi - \cos\gamma)`$, o
 piloto pede:

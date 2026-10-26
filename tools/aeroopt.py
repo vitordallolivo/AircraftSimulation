@@ -44,7 +44,7 @@ def main(argv=None) -> int:
     ap.add_argument("--processos", type=int, help="processos por etapa (padrão: um por núcleo)")
     ap.add_argument("--avaliacoes", type=int, default=24, help="pontos de projeto por configuração (superfícies)")
     ap.add_argument("--sem-6gdl", action="store_true", help="pula a etapa da decolagem no 6GDL")
-    ap.add_argument("--populacao", type=int, default=16, help="etapas: configurações por geração")
+    ap.add_argument("--populacao", type=int, default=16, help="etapas: indivíduos (aviões) por geração")
     ap.add_argument("--geracoes", type=int, default=8, help="etapas: gerações (com poucas combinações, uma só)")
     ap.add_argument("--sensibilidade", nargs="?", const="local", choices=["local", "eixos", "morris"],
                     help="etapas: no fim, a sensibilidade do melhor (local: pelo histórico da busca; eixos: um por "

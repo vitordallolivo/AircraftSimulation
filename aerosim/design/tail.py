@@ -36,8 +36,8 @@ from aerosim.model.modifiers import Modifier
 
 from . import airfoils as afm
 from .fields import F
-from .spec import DesignRules, Requirements
-from .wing import WingCandidate, analyze as analyze_wing, planform
+from .spec import DesignRules, Requirements, cruise_CL
+from .wing import WingCandidate, analyze as analyze_wing, lifting_line, planform
 
 LAYOUTS = ("convencional", "em V", "sem cauda", "em H")
 WITH_HTAIL = ("convencional", "em H")              # EH e EV separadas (a estática e o C_nβ são os mesmos)
@@ -58,6 +58,19 @@ class TailParams:
     wing2_dz: float = F(0.0, "desnível da segunda asa", "m", "+ para cima (biplano: o vão entre as asas)", -1.0, 1.0,
                         0.01)
     wing2_di: float = F(0.0, "decalagem da segunda asa", "°", "incidência dela menos a da primeira", -12, 8, 0.25)
+    wing2_area: float = F(1.0, "área da segunda asa / da primeira", "", "as cordas da segunda asa vezes isto, com a "
+                          "mesma envergadura (a envergadura máxima vale para as duas). No tandem a da frente é a "
+                          "menor: a de trás trabalha no downwash dela e precisa de mais área para dividir a "
+                          "sustentação (Kryvokhatko, IntechOpen, a conferir no PDF). 1 = a mesma asa", 0.5, 2.5, 0.05)
+    wing2_span: float = F(1.0, "envergadura da segunda asa / da primeira", "", "a asa de trás do tandem costuma ser "
+                          "a maior também na envergadura (o Libellula do dono: 2,3 m atrás, 1,3 m na frente). A área "
+                          "fica a de `wing2_area`: só as cordas acompanham. 1 = a mesma", 0.5, 2.5, 0.05)
+    wing2_sweep: float = F(0.0, "enflechamento a mais na segunda asa", "°", "do bordo de ataque, somado ao dela. "
+                           "Na asa de trás do tandem ele leva o CA dela para trás sem alongar o tubo, e com as "
+                           "derivas na ponta aumenta o braço delas (o Libellula tem uns 23°)", 0.0, 40.0, 0.5)
+    wing2_airfoil: str = F("", "perfil da segunda asa", "", "vazio = o da asa dela. No tandem, um perfil de pouco "
+                           "momento atrás: o C_m picador de um perfil de alta sustentação (S1223) empurra a asa de "
+                           "trás para baixo no trim, e a da frente acaba levando quase toda a sustentação")
     tandem_pitch: str = F(TANDEM_PITCH[0], "arfagem do tandem", "", "onde fica o comando de arfagem: na asa de trás "
                           "(profundor, e aileron na da frente), na da frente (elevon que desce para cabrar, como um "
                           "canard) ou nas duas", choices=TANDEM_PITCH)
@@ -298,6 +311,21 @@ def _tip_fins(ac: Aircraft, cand: SetCandidate, tp: TailParams, airfoils, req) -
     return dict(Sv=Sv, hv=h, x_ac_fin=x_ac_f, n_fins=2)
 
 
+def wing2_candidate(w2: WingCandidate | None, tp: TailParams, lookup) -> WingCandidate | None:
+    """a segunda asa do conjunto: uma cópia de `w2` com o perfil `tp.wing2_airfoil` em toda a envergadura, quando
+    há um (`lookup(nome)` devolve o `AirfoilEntry` ou None; um nome que não existe deixa o perfil dela)"""
+    if w2 is None:
+        return None
+    w2 = copy.deepcopy(w2)
+    e = lookup(tp.wing2_airfoil) if tp.wing2_airfoil else None
+    if e is not None:
+        w2.airfoil, w2.airfoil_tip, w2.section_airfoils = copy.deepcopy(e), None, []
+        w2.params.airfoil, w2.params.airfoil_tip = e.name, ""
+        for q in w2.params.partitions:
+            q.airfoil = ""
+    return w2
+
+
 def second_wing(ac: Aircraft):
     """a segunda asa (tandem, biplano): a primeira superfície de papel "wing" depois da asa em [0], ou None. Não é
     `surfaces[-1]`: as derivas da ponta entram depois dela, e com elas a estática lia a deriva como asa de trás"""
@@ -313,7 +341,40 @@ def _add_wing2(ac: Aircraft, cand: SetCandidate, req: Requirements, rules: Desig
     w2 = copy.deepcopy(analyze_wing(cand.wing2, req, rules)["surface"])
     w2.name = w2.name if w2.name != w.name else f"{w.name} (2)"
     w2.x, w2.y, w2.z = w.x - tp.wing2_dx, w.y, w.z - tp.wing2_dz      # z do corpo para baixo
-    w2.incidence = w2.incidence + tp.wing2_di
+    if tp.wing2_area != 1.0 or tp.wing2_span != 1.0:
+        # a envergadura vezes `wing2_span` e as cordas vezes área/envergadura: a área sai `wing2_area` vezes a da
+        # primeira, com a mesma forma em planta (o recuo do bordo de ataque acompanha as cordas)
+        kc = tp.wing2_area / tp.wing2_span
+        for sec in w2.sections:
+            sec.y *= tp.wing2_span
+            sec.chord *= kc
+            sec.x_offset *= kc
+    if tp.wing2_sweep:                                # enflechamento a mais no bordo de ataque
+        t = math.tan(math.radians(tp.wing2_sweep))
+        for sec in w2.sections:
+            sec.x_offset += sec.y * t
+    # a decalagem (`wing2_di`) conta da primeira asa. Com o mesmo perfil, é a diferença das incidências, como sempre.
+    # Com outro perfil ela é a decalagem aerodinâmica, entre as linhas de sustentação nula das duas: com 0 as duas
+    # asas sustentam o mesmo C_L no mesmo α. Antes a asa de trás ficava com a incidência que a etapa Asa daria a ela
+    # sozinha, que não conversa com a da frente (NACA 0012 atrás de uma E423: 14,8° contra 4,3°, e o corpo picado a
+    # −10° no cruzeiro); e com a diferença das incidências geométricas a de trás, simétrica, ficava ~10° abaixo da
+    # sustentação da da frente, e o profundor trimava a 18° (Kryvokhatko, "Tandem wing", IntechOpen, a conferir no PDF)
+    if tp.layout == "sem cauda":
+        # tandem: as duas asas dividem o peso, e a incidência que a etapa Asa deu à da frente era para ela sozinha
+        # levar o avião no cruzeiro (C_L do peso na área dela). Com a de trás sustentando junto, o C_L de cruzeiro é
+        # o do peso na soma das áreas, e as duas asas descem a incidência do quanto o C_L cai: ΔCL / C_Lα. Sem isso
+        # um tandem de asa da frente pequena saía com 24° nas duas asas, a de trás estolava no cruzeiro e o profundor
+        # não mexia no C_m. O biplano ainda não passa por aqui (O31 no tracking)
+        wr = analyze_wing(cand.wing, req, rules)
+        S1 = w.area
+        dCL = cruise_CL(req, S1 + w2.area) - cruise_CL(req, S1)
+        w.incidence += math.degrees(dCL / wr["CLa"])
+    names = lambda s: [(q.airfoil or s.airfoil).name for q in s.sections]
+    if names(w2) != names(w):
+        a0 = lambda s: -lifting_line(s)["At"][0] / lifting_line(s)["Aa"][0]       # α da raiz com C_L = 0 (rad)
+        w2.incidence = w.incidence + tp.wing2_di + math.degrees(a0(w2) - a0(w))
+    else:
+        w2.incidence = w.incidence + tp.wing2_di
     w2.controls = []                                  # os comandos ficam na primeira (na Montagem, livre)
     ac.surfaces.append(w2)
     ac.link_wings(w, w2)
@@ -373,7 +434,11 @@ def _analyze(cand, req, rules, airfoils, wr, arm_shift) -> dict:
             # frente sozinha: o CG ia para perto dela e o avião não trimava com C_m nenhum
             w2 = second_wing(ac)
             pf2 = planform(w2)
-            a2 = analyze_wing(cand.wing2, req, rules)["CLa"]
+            if tp.wing2_area == 1.0 and tp.wing2_span == 1.0 and not tp.wing2_sweep:
+                a2 = analyze_wing(cand.wing2, req, rules)["CLa"]
+            else:                                    # com as cordas da razão de áreas: o alongamento cai
+                L2 = lifting_line(w2)
+                a2 = math.pi * L2["AR"] * L2["Aa"][0]
             k2 = tp.tail_eta * a2 * pf2["S"] * (1 - deda)
             x_np = (a * S * info["x_ac_w"] + k2 * pf2["x_ac"]) / (a * S + k2)
             h_n = (info["x_le_mac"] - x_np) / c

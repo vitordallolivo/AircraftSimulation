@@ -187,6 +187,36 @@ def test_tip_fins_do_not_move_the_tandem_neutral_point():
     assert [c.kind for c in w1.controls] == ["elevator"]
 
 
+def test_tandem_rear_wing_area_ratio_and_airfoil():
+    """a razão de áreas (`wing2_area`) multiplica as cordas da asa de trás com a mesma envergadura, e o ponto neutro
+    anda para trás com ela (a de trás pesa mais na média dos CA). Com 1 e sem perfil, a asa de trás é a cópia de
+    sempre; com `wing2_airfoil` ela leva esse perfil em toda a envergadura e a da frente fica com o dela"""
+    import copy
+    w = _wing(span=2.4, area=0.8)
+    def st(**kw):
+        tp = tl.TailParams(layout="sem cauda", wing2=tl.SAME_WING, wing2_dx=1.0, wing2_dz=0.1, wing2_di=-2.0,
+                           sm_target=8.0, **kw)
+        w2 = tl.wing2_candidate(w, tp, {"NACA 0012": afm.entry(afm.from_naca("0012"))}.get)
+        out = tl.analyze(tl.SetCandidate(tp, w, wing2=w2), Requirements())
+        return out, out["set"].surfaces[0], tl.second_wing(out["set"])
+    (s1, f1, r1), (s2, f2, r2) = st(), st(wing2_area=1.5)
+    assert r1.area == pytest.approx(f1.area) and r2.area == pytest.approx(1.5 * f2.area)
+    assert r2.span == pytest.approx(f2.span)
+    assert s2["x_np"] < s1["x_np"]                             # x + para a frente: o ponto neutro foi para trás
+    _, f3, r3 = st(wing2_airfoil="NACA 0012")
+    assert r3.airfoil.name == "NACA 0012" and f3.airfoil.name != "NACA 0012"
+    # outro perfil: a decalagem é entre as linhas de sustentação nula (com o NACA 0012 atrás, uma incidência maior)
+    a0 = lambda s: -wg.lifting_line(s)["At"][0] / wg.lifting_line(s)["Aa"][0]
+    assert r3.incidence == pytest.approx(f3.incidence - 2.0 + math.degrees(a0(r3) - a0(f3)))
+    assert r3.incidence > f3.incidence - 2.0
+    s5, f5, r5 = st(wing2_area=2.0, wing2_span=1.5)        # a de trás maior também na envergadura
+    assert r5.span == pytest.approx(1.5 * f5.span) and r5.area == pytest.approx(2.0 * f5.area)
+    s6, _, r6 = st(wing2_area=2.0, wing2_span=1.5, wing2_sweep=20.0)
+    assert r6.sections[-1].x_offset > r5.sections[-1].x_offset and s6["x_np"] < s5["x_np"]
+    _, _, r4 = st(wing2_airfoil="não existe")
+    assert r4.airfoil.name == f3.airfoil.name
+
+
 def test_payload_position_is_a_variable_and_zero_keeps_the_old_assembly():
     """a posição da carga paga é variável do otimizador (`power.x_payload`, do CG de projeto), não regra da sprint
     (O27). Com 0 a montagem é a de sempre; com a carga atrás do CG a bateria vai para a frente para equilibrar, a

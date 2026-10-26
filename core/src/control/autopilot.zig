@@ -84,9 +84,10 @@ pub fn commands(c: S.Ctx, t: f64, x: []const f64, in: Input, g: *const G.Guide, 
         cmd.thr = if (f.brakes != 0) 0.0 else fm.lim(p.takeoff.rate_thr * t, 0.0, 1.0);
         cmd.de = takeoffElevator(c, t);
         if (p.takeoff.alpha_guard != 0 and c.tR >= 0.0 and t >= c.tR) {
-            // proteção de α na decolagem: a mesma lei do voo (α e q) com α pedido = alpha_max; só pica, nunca
-            // cabra mais que o comando de decolagem
-            const de_g = a.Kae * (in.al - a.alpha_max) + a.Kqe * x[S.Q];
+            // proteção de α na decolagem: a mesma lei do voo (α e q) com α pedido = o do estol do avião
+            // (alpha_guard_lim, runner.guardAlpha); só pica, nunca cabra mais que o comando de decolagem
+            const alim = if (p.alpha_guard_lim > 0.0) p.alpha_guard_lim else a.alpha_max;
+            const de_g = a.Kae * (in.al - alim) + a.Kqe * x[S.Q];
             if (de_g > cmd.de) {
                 cmd.de = de_g;
                 cmd.alim = true;

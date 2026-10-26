@@ -89,7 +89,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/design/mdo.py` — Dimensionamento inicial como mini-MDO: monta a configuração do núcleo (`core/src/sizing`) a partir do
   `class MdoParams:40`, `class MdoRun:60`, `airfoil_catalog:81`, `available:104`, `airfoil_data:134`, `build:144`, `tip_varies:225`, `at_bounds:235`, `opts_of:249`, `decode:254`, `history:269`, `run:280`, `evaluate:293`, `apply:305`, `planform:327`, `sketch:338`, `check_6dof:389`, `full_envelope:417`, `constraint_diagram:438`
 - `aerosim/design/power.py` — Etapa Motores e montagem: onde ficam os motores (e por consequência a bateria, a carga e o trem) e o
-  `class PowerParams:35`, `class AircraftCandidate:81`, `motor_counts:91`, `assemble:126`, `ground_pitch:309`, `trimmed_clmax:317`, `thrust_trim:338`, `thrust_of:458`, `motor_prop_spec:486`, `performance:505`, `trim_drag:558`, `design_point:580`
+  `class PowerParams:35`, `class AircraftCandidate:78`, `motor_counts:88`, `assemble:123`, `ground_pitch:309`, `trimmed_clmax:317`, `thrust_trim:338`, `thrust_of:458`, `motor_prop_spec:486`, `performance:505`, `trim_drag:558`, `design_point:580`
 - `aerosim/design/project.py` — O projeto da sprint: requisitos, regras e o que cada etapa guardou (perfis, asas, conjuntos, aviões).
   `rg_sae:31`, `class DesignProject:41`, `is_project_file:182`, `next_name:194`
 - `aerosim/design/registry.py` — Registro de grandezas do projeto: o que dá para medir, restringir ou variar.
@@ -101,9 +101,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/design/store.py` — O projeto da sprint numa pasta escolhida pelo usuário, com um arquivo por asa.
   `file_name:49`, `split:98`, `run_file:135`, `wing_files:156`, `save:169`, `join:199`, `is_folder:263`, `load:269`, `is_sprint_path:287`, `folder_for:300`, `open_path:313`
 - `aerosim/design/study.py` — Estudo e ponto de projeto: as áreas se retroalimentam (não em ordem) e o estudo mostra onde estabilidade e
-  `class StudyParams:45`, `class StudyRun:57`, `to_run:74`, `from_run:86`, `ensure:91`, `table:109`, `parse_places:114`, `with_value:129`, `feasibility:138`, `point_row:169`, `run:181`, `best_rows:214`, `mtow_of:226`, `check_6dof:230`, `check_many:256`, `result:291`
+  `class StudyParams:45`, `class StudyRun:57`, `to_run:74`, `from_run:86`, `ensure:91`, `table:109`, `parse_places:114`, `with_value:129`, `feasibility:138`, `point_row:169`, `run:181`, `best_rows:214`, `mtow_of:226`, `check_6dof:230`, `check_many:258`, `result:293`
 - `aerosim/design/tail.py` — Etapa Empenagem e comandos: as superfícies que acompanham a asa escolhida, o tubo de cauda e os comandos.
-  `class TailParams:51`, `class SetCandidate:108`, `tail_airfoil:133`, `tail_entry:138`, `build_set:162`, `second_wing:301`, `analyze:324`, `rotation:487`
+  `class TailParams:51`, `class SetCandidate:121`, `tail_airfoil:146`, `tail_entry:151`, `build_set:175`, `wing2_candidate:314`, `second_wing:329`, `analyze:385`, `rotation:552`
 - `aerosim/design/wing.py` — Etapa Asa: do perfil escolhido à asa — forma em planta, linha sustentadora e o que ela entrega.
   `class WingPartition:39`, `class WingStation:55`, `class WingParams:65`, `class WingCandidate:92`, `stations:110`, `chords:130`, `totals:145`, `sync:151`, `partitions_from_trapezoid:168`, `build_wing:187`, `planform:209`, `tip_weight:223`, `station_weights:231`, `section_props:240`, `lifting_line:253`, `analyze:289`
 
@@ -186,8 +186,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   `class SimulationManager:19`
 - `aerosim/manager/runner.py` — Corrida orientada: começa (no chão, em voo ou de um checkpoint), roda até uma parada
   `class Stop:21`, `class RunOutput:35`, `class Runner:42`
-- `aerosim/manager/takeoff_opt.py` — Decolagem para a competição: só dois critérios, os da pista.
-  `class TakeoffResult:45`, `pitch_control:64`, `judge:71`, `evaluate:135`, `optimize:176`
+- `aerosim/manager/takeoff_opt.py` — Decolagem para a competição: os dois critérios da pista e um de voo.
+  `class TakeoffResult:50`, `pitch_control:69`, `judge:76`, `evaluate:140`, `optimize:183`
 - `aerosim/manager/simulations/__init__.py` — Simulações disponíveis (uma aba cada na GUI). Para adicionar outra: crie uma classe
 - `aerosim/manager/simulations/aerodynamics.py` — Aba Aerodinâmica — polares e derivadas a partir da geometria, com o lltdrek (linha
   `resolve_cg:31`, `class AerodynamicsSimulation:40`
@@ -220,7 +220,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/model/__init__.py` — Modelo de dados (independente do núcleo): aeronave, perfis, catálogo, missão, geometria.
 - `aerosim/model/aircraft.py` — Modelo de dados da aeronave (a "Aircraft Data").
-  `class WingSection:25`, `class ControlSurface:42`, `mix_role:64`, `panel_mix:70`, `class WingDevice:80`, `class LiftingSurface:101`, `new_group_id:182`, `rect_sections:204`, `class Fuselage:212`, `class TailBoom:228`, `class PropulsionUnit:264`, `class GearLeg:284`, `class LandingGear:294`, `class SloshTank:330`, `class Payload:358`, `class Ballast:375`, `class PointMass:385`, `class MassModel:394`, `class Airfield:410`, `class Environment:447`, `class Takeoff:474`, `class Autopilot:489`, `class PerformanceData:539`, `class SimSettings:552`, `class Aircraft:566`
+  `class WingSection:25`, `class ControlSurface:42`, `mix_role:64`, `panel_mix:70`, `class WingDevice:80`, `class LiftingSurface:101`, `new_group_id:182`, `rect_sections:204`, `class Fuselage:212`, `class TailBoom:228`, `class PropulsionUnit:264`, `class GearLeg:284`, `class LandingGear:294`, `class SloshTank:330`, `class Payload:358`, `class Ballast:375`, `class PointMass:385`, `class MassModel:394`, `class Airfield:410`, `class Environment:447`, `class Takeoff:474`, `class Autopilot:490`, `class PerformanceData:540`, `class SimSettings:553`, `class Aircraft:567`
 - `aerosim/model/airfoil.py` — Perfis: leitura de .dat (Selig ou Lednicer), gerador NACA 4 dígitos e teoria de
   `class Airfoil:14`, `naca4:51`, `read_dat:73`, `write_dat:93`, `camber_line:100`, `thin_airfoil:114`, `flap_effectiveness:126`, `helmbold:133`
 - `aerosim/model/atmosphere.py` — Atmosfera padrão (ISA, troposfera) para a altitude-densidade (AD).
@@ -298,7 +298,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/tests_sim.zig` — testes do grupo "sim" (zig build test-sim)
 - `core/src/tests_sizing.zig` — testes do grupo "sizing" (zig build test-sizing): estágios, tipos de aeronave, otimizadores,
 - `core/src/types.zig` — Estruturas trocadas com o Python (C ABI, `extern struct`).
-  tipos `Surface:29`, `PropUnit:64`, `Gear:108`, `Tank:124`, `Segment:140`, `Event:162`, `Pad:166`, `Payload:175`, `Environment:186`, `Takeoff:198`, `Pilot:214`, `Autopilot:224`, `AeroTable:273`, `LltCache:306`, `Params:318`, `PanelState:394`, `Events:414`, `LogRow:456`, `AeroCoeffs:570`, `PropPoint:585`, `MassProps:597`, `TrimPoint:609`, `PerfRow:626`
+  tipos `Surface:29`, `PropUnit:64`, `Gear:108`, `Tank:124`, `Segment:140`, `Event:162`, `Pad:166`, `Payload:175`, `Environment:186`, `Takeoff:198`, `Pilot:216`, `Autopilot:226`, `AeroTable:275`, `LltCache:308`, `Params:320`, `PanelState:397`, `Events:417`, `LogRow:459`, `AeroCoeffs:573`, `PropPoint:588`, `MassProps:600`, `TrimPoint:612`, `PerfRow:629`
 
 **core/src/collision/**
 
@@ -420,8 +420,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `LinModel:25`
   fn `rigid:52`, `linearize:162`, `residual:217`
 - `core/src/sim/runner.zig` — Executor de uma corrida: eventos discretos, paradas, registro e checkpoints.
-  tipos `Status:23`, `Instance:33`
-  fn `stateText:58`, `configure:86`, `handover:137`, `resetGround:158`, `resetAir:212`, `run:363`
+  tipos `Status:25`, `Instance:35`
+  fn `stateText:60`, `configure:88`, `handover:155`, `resetGround:176`, `resetAir:230`, `run:381`
 - `core/src/sim/simple_perf.zig` — Desempenho por cálculo simples (sem simulação no tempo), como na "planilha suprema":
   tipos `SimpleCfg:23`, `SimpleRow:52`, `SimpleSummary:76`
   fn `density:107`, `compute:130`
@@ -682,12 +682,12 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 ## Testes (`tests/`)
 
 - `tests/aero` — 59 testes em 9 arquivo(s)
-- `tests/aeroopt` — 73 testes em 8 arquivo(s)
+- `tests/aeroopt` — 74 testes em 8 arquivo(s)
 - `tests/core` — 34 testes em 9 arquivo(s)
 - `tests/data` — 12 testes em 4 arquivo(s)
-- `tests/design` — 74 testes em 11 arquivo(s)
+- `tests/design` — 75 testes em 11 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 58 testes em 10 arquivo(s)
+- `tests/manager` — 60 testes em 10 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)

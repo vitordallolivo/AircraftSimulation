@@ -648,7 +648,7 @@ GEOMETRY_DEFAULT = {"ligada": True, "rotação": 12.0, "folga": 0.0, "folga_hél
 STABILITY_DEFAULT = {"ligada": False, "nível": 2}
 STAGES_DEFAULT = {"configurações": "gerações", "voa": "buscar", "superfícies": "coordenadas", "decolagem": "6gdl", "população": 16,
                   "gerações": 8, "avaliações": 12, "processos": 0, "caudas": [], "comandos": False,
-                  "inicio": "uniforme", "partidas": 1}
+                  "inicio": "uniforme", "partidas": 1, "tolerancia": 0.0}
 # os métodos das etapas que não estão em aeroopt.stages (o menu Configuração)
 CONFIG_METHODS = {"gerações": "gerações (algoritmo genético do núcleo)",
                   "todas": f"todas as combinações (até {sg.MAX_CONFIGS})"}
@@ -918,8 +918,9 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.gens = QtWidgets.QSpinBox()
         self.gens.setRange(1, 500)
         self.gens.setValue(8)
-        f.addRow(_help("configurações por geração", "quantas combinações cada geração roda; com menos combinações "
-                       "que isto, roda todas de uma vez"), self.pop)
+        f.addRow(_help("indivíduos", "quantos aviões (combinações das listas livres) cada geração roda: o tamanho "
+                       "da população do algoritmo genético. Com menos combinações que isto, roda todas de uma vez"),
+                 self.pop)
         f.addRow(_help("gerações", "quantas vezes o algoritmo genético escolhe uma geração nova (elite, seleção por "
                        "posição, cruzamento, mutação). Mais gerações acham mais, e demoram mais"), self.gens)
         f = stage("voa", {**sg.FLY_METHODS, "desligada": "desligada (direto para o desempenho)"},
@@ -968,10 +969,16 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         f.addRow(_help("avaliações por configuração", "pontos de projeto que a busca das superfícies gasta em cada "
                        "configuração. Mais pontos chegam mais perto do melhor MTOW, e o tempo cresce junto"),
                  self.evals)
-        stage("decolagem", TAKEOFF_METHODS,
-              "como se confere o MTOW achado. 6GDL: simula a decolagem inteira e procura a maior massa que sai do "
-              "chão, com o profundor otimizado (mais lento, mais fiel). Pista: fica com a corrida da etapa das "
-              "superfícies")
+        f = stage("decolagem", TAKEOFF_METHODS,
+                  "como se confere o MTOW achado. 6GDL: simula a decolagem inteira e procura a maior massa que sai "
+                  "do chão, com o profundor otimizado (mais lento, mais fiel). Pista: fica com a corrida da etapa das "
+                  "superfícies")
+        self.tol_sb = QtWidgets.QDoubleSpinBox()
+        self.tol_sb.setRange(0.0, 20.0)
+        self.tol_sb.setDecimals(1)
+        f.addRow(_help("tolerância 6GDL (% do x_warning)", "aceita errar o ponto de acionamento até isto do x_warning e desiste "
+                       "cedo da massa que nem com o comando todo cabrando sai do chão a tempo. Gasta bem menos voos; "
+                       "0 = a busca de sempre"), self.tol_sb)
         f = stage("sensibilidade do melhor", None, "")
         self.sens_on = QtWidgets.QCheckBox("rodar")
         self.sens_method = QtWidgets.QComboBox()
@@ -1434,6 +1441,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.controls_cb.setChecked(bool(e.get("comandos")))
         self.init_cb.setCurrentIndex(max(self.init_cb.findData(e.get("inicio") or "uniforme"), 0))
         self.starts_sb.setValue(int(e.get("partidas") or 1))
+        self.tol_sb.setValue(float(e.get("tolerancia") or 0.0))
         self.pop.setValue(int(e["população"]))
         self.gens.setValue(int(e["gerações"]))
         self.evals.setValue(int(e["avaliações"]))
@@ -1503,7 +1511,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                                "avaliações": self.evals.value(), "processos": self.workers.value(),
                                "caudas": [t for t, cb in self.tail_cb.items() if cb.isChecked()],
                                "comandos": self.controls_cb.isChecked(), "inicio": self.init_cb.currentData(),
-                               "partidas": self.starts_sb.value()}
+                               "partidas": self.starts_sb.value(), "tolerancia": self.tol_sb.value()}
         pr.params["sensibilidade"] = self.sens_params().to_dict()
         return pr
 

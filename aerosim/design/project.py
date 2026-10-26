@@ -24,7 +24,7 @@ from .mdo import MdoParams, MdoRun
 from .registry import Variable, default_variables
 from .spec import DesignRules, Requirements
 from .study import StudyParams, StudyRun
-from .tail import NO_WING2, SAME_WING, SetCandidate, TailParams
+from .tail import NO_WING2, SAME_WING, SetCandidate, TailParams, wing2_candidate
 from .wing import WingCandidate, WingParams
 
 
@@ -143,7 +143,7 @@ class DesignProject:
         n2 = self.tail_draft.wing2
         w2 = w if n2 == SAME_WING else (self.wing(n2) if n2 and n2 != NO_WING2 else None)
         return SetCandidate(copy.deepcopy(self.tail_draft), copy.deepcopy(w),
-                            wing2=copy.deepcopy(w2) if w2 is not None else None)
+                            wing2=wing2_candidate(w2, self.tail_draft, self.airfoil))
 
     def keep_set(self) -> SetCandidate | None:
         c = self.draft_set()

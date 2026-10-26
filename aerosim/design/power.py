@@ -23,7 +23,7 @@ from aerosim.model.catalog import Catalog, builtin_catalog
 
 from .fields import F
 from .spec import G0, DesignRules, Requirements, stall_speed
-from .tail import SetCandidate, analyze as analyze_set
+from .tail import SetCandidate, analyze as analyze_set, second_wing
 
 LAYOUTS = ("tratora no nariz", "dois motores na asa", "propulsora atrás da asa", "livre: nariz + asa + atrás")
 THRUST = ("motor + hélice", "conjunto de tração")
@@ -72,9 +72,6 @@ class PowerParams:
     ground_pitch: float = F(0.0, "atitude no chão", "°", "triciclo: a bequilha mais comprida deixa o avião parado com o "
                             "nariz para cima, e a asa corre nesse ângulo. Com sustentação bastante ele sai do chão sem "
                             "rodar (asa voadora). 0 = nivelado", 0.0, 15.0, 0.5)
-    alpha_guard: bool = F(False, "proteção de α na decolagem", "", "o profundor não deixa α passar do limite do piloto "
-                          "enquanto ele não assume. Sem ela, a asa voadora leve e com muita tração cabra até estolar; "
-                          "desligada, a decolagem é a de sempre")
 
 
 @dataclass
@@ -179,8 +176,12 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
         if len(wing) == 2:
             wing[0].name, wing[1].name = "motor esq", "motor dir"
         units += wing
+    w2 = second_wing(ac) if tandem else None
     if n_rear:                     # com tratora no nariz, gira ao contrário dela: os torques se cancelam
-        units.append(_unit(pp, cat, "motor atrás" if units else "motor 1", -cr - 0.06, 0.0, 0.0, -1 if n_nose else 1))
+        # no tandem a propulsora vai no bordo de fuga da asa de trás, na ponta do tubo (o arranjo dos tandem de
+        # verdade); atrás da da frente ela giraria no meio do tubo, entre as asas
+        xr, zr = (w2.x - w2.sections[0].chord - 0.06, w2.z) if w2 is not None else (-cr - 0.06, 0.0)
+        units.append(_unit(pp, cat, "motor atrás" if units else "motor 1", xr, 0.0, zr, -1 if n_nose else 1))
     ac.propulsion = units
     D = max(u.propeller.D for u in units)
     vol = math.pi / 6 * fw * fh * length
@@ -276,7 +277,6 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     Vs = stall_speed(req, S, wr["CLmax"], M)
     ac.takeoff.VR = round(1.15 * Vs, 2)
     ac.takeoff.sR = 0.0
-    ac.takeoff.alpha_guard = bool(pp.alpha_guard)
     ac.autopilot.CL0 = float(wr["CL0"] + wr["CLa"] * math.radians(wr["incidence"]))
     ac.autopilot.CLa = float(wr["CLa"])
     ac.apply_constraints()
@@ -292,7 +292,7 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
                mass_table=table, x_bat=x_bat, x_bat_used=x_bat_c, battery_fits=balanced, ballast=m_eq,
                x_payload=x_cp, payload_moved=abs(x_cp - x_t) > 1e-6, sm_empty=sm_empty,
                length=total_len, structure=m_s, masses=pf_mass, items=items, Vs=Vs, D=D,
-               boom_hits_prop=bool(n_rear) and ac.boom.enabled, trim=trim)
+               boom_hits_prop=bool(n_rear) and ac.boom.enabled and w2 is None, trim=trim)
     return ac, out
 
 

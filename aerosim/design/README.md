@@ -186,7 +186,7 @@ C_m = C_{m,ac} + C_L\,(h - h_{ac}) - \eta\,V_H\,a_h\,(\alpha_h + \tau\,\delta_e)
 \alpha_h = \alpha_w - \varepsilon + i_h
 ```
 
-No tandem as duas asas são do mesmo tamanho, e a forma acima, que despreza a sustentação da cauda no total, deixa
+No tandem as duas asas têm tamanhos parecidos, e a forma acima, que despreza a sustentação da cauda no total, deixa
 de servir: com ela o ponto neutro ficava no da asa da frente, o CG ia para perto dela e o avião não trimava. O ponto
 neutro passa a ser a média dos centros aerodinâmicos, cada um pesado pelo quanto a asa ganha de sustentação com
 $`\alpha`$; a de trás com $`\eta`$ e o downwash da da frente (Etkin e Reid, *Dynamics of Flight*, seção 2.3, a
@@ -201,6 +201,17 @@ Quem trima o tandem é a decalagem, a incidência da asa de trás menos a da da 
 sustenta menos por área). Um tubo liga a asa de trás à fuselagem, e o pod vai até o CG, que fica entre as asas. O
 comando de arfagem (`tandem_pitch`) pode ficar na asa de trás, e aí ele é um profundor comum, na da frente, e aí ele
 desce para cabrar porque está à frente do CG, como um canard, ou nas duas.
+
+As duas asas de um tandem não devem ser iguais. A de trás trabalha no downwash da da frente e, para dividir a
+sustentação, precisa de mais área: com as duas iguais, o CG que dá a margem estática fica perto da asa da frente e
+ela leva quase tudo, enquanto a de trás vira uma empenagem grande que só pesa e arrasta (Kryvokhatko, capítulo
+"Tandem wing" na IntechOpen, a conferir no PDF). A razão de áreas (`wing2_area`, a área da de trás sobre a da
+frente) multiplica as cordas da segunda asa com a mesma envergadura, porque a envergadura é a do limite do
+regulamento, e o $`a_2`$ do ponto neutro sai da linha sustentadora dessa asa já com as cordas novas. O perfil dela
+pode ser outro (`wing2_airfoil`). Isso pesa mais do que parece: o $`C_m`$ picador de um perfil de alta sustentação
+como o S1223 é um momento que a asa de trás só equilibra empurrando para baixo, e com ele nas duas asas a da frente
+passa de 100 % da sustentação no cruzeiro, seja qual for a área. Um perfil de pouco momento atrás (o tandem do
+aeroopt parte do NACA 0012) tira a maior parte desse efeito.
 
 Nenhum avião sem cauda tem estabilidade direcional: não há nada atrás que aponte o nariz no vento. A deriva na ponta
 (`tip_fin`, a altura em metros; 0 = nenhuma) resolve isso sem tubo nem empenagem, e de quebra trabalha como placa de

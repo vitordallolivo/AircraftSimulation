@@ -60,7 +60,7 @@ from .problem import apply_to_project, fold_bounds
 MAX_CONFIGS = 256
 AIRFOIL_KEYS = tuple(k for k, i in inp.all_inputs().items() if i.source == "perfis")
 SHORT = {"wing.airfoil": "perfil raiz", "wing.airfoil_tip": "perfil ponta", "tail.airfoil": "perfil EH",
-         "tail.vairfoil": "perfil EV", "power.motor": "motor", "power.propeller": "hélice",
+         "tail.vairfoil": "perfil EV", "tail.wing2_airfoil": "perfil asa de trás", "power.motor": "motor", "power.propeller": "hélice",
          "power.battery": "bateria", "power.motors": "nº de motores", "power.layout": "arranjo",
          "tail.layout": "cauda"}
 TAIL_KEY = "tail.layout"
@@ -113,7 +113,8 @@ def candidate(project, values: dict):
     w = p.draft_wing()
     td = p.tail_draft
     w2 = w if td.wing2 == tl.SAME_WING else (p.wing(td.wing2) if td.wing2 and td.wing2 != tl.NO_WING2 else None)
-    s = tl.SetCandidate(copy.deepcopy(td), w, wing2=copy.deepcopy(w2) if w2 is not None else None)
+    s = tl.SetCandidate(copy.deepcopy(td), w, wing2=tl.wing2_candidate(
+        w2, td, lambda n: p.airfoil(n) or mdo.airfoil_catalog(p).get(n)))
     return p, pw.AircraftCandidate(copy.deepcopy(p.power_draft), s)
 
 
@@ -200,6 +201,11 @@ def _eval(x: dict, r: dict) -> dict:
 
 CNB_MIN = 0.02            # C_nβ mínimo (/rad) para o avião apontar o nariz no vento; a conferir na literatura
 NOSE_LOAD_MIN = 0.08      # o peso mínimo na bequilha parado (Raymer, §11.2, de 8 a 15 %; a conferir no PDF)
+# tandem: a faixa da parte da sustentação de cada asa no cruzeiro, e o recuo (escalonamento) e o desnível (vão)
+# entre elas, em cordas médias da asa da frente. Ver `tandem_terms`
+TANDEM_SHARE = (0.40, 0.60)
+TANDEM_STAGGER = (3.0, 5.0)
+TANDEM_GAP_MAX = 1.0
 
 
 def violation_terms(d: dict, stab: dict | None = None, stab_params=None,
@@ -286,6 +292,85 @@ def violation(d: dict, stab: dict | None = None, stab_params=None, rotation: boo
     """a soma dos termos de `violation_terms` e o motivo de cada um"""
     terms = violation_terms(d, stab, stab_params, rotation)
     return sum(v for _, v, _ in terms), [w for _, _, w in terms]
+
+
+def tandem_split(ac, V: float, backend) -> float:
+    """a parte da sustentação das duas asas que a asa da frente leva, trimado em voo nivelado a V (o trim do núcleo e
+    a carga dos painéis no α e no profundor dele; as asas ligadas ficam no mesmo grupo, então a de cada uma sai pela
+    posição). NaN quando não trima ou não há segunda asa"""
+    from aerosim.interfaces.backend import TrimKind
+    from aerosim.model.universal import build_model
+    w, w2 = ac.surfaces[0], tl.second_wing(ac)
+    if w2 is None:
+        return math.nan
+    with backend.session_for(build_model(ac)) as s:
+        tr = s.trim(TrimKind.LEVEL, V)
+        if not tr["ok"]:
+            return math.nan
+        P = s.panel_states(V, tr["alpha"], de=tr["de"])
+    if not len(P):
+        return math.nan
+    wing = P["group"] == P["group"][np.argmin(np.abs(P["r"][:, 0] - w.x))]
+    front = wing & (P["r"][:, 0] > w.x - 0.5 * (w.x - w2.x))
+    L, Lf = float(P["L"][wing].sum()), float(P["L"][front].sum())
+    return Lf / L if L > 0 else math.nan
+
+
+def tandem_terms(ac, speeds, backend, span_max: float = 0.0) -> list[tuple[str, float, str]]:
+    """os termos de violação que só o tandem tem, no formato de `violation_terms`. Sem a segunda asa, nenhum.
+
+    A divisão da sustentação ("divisao"): trimado em voo nivelado (o trim do núcleo) em cada velocidade de `speeds`
+    (um número ou vários: a E&C passa a de cruzeiro e a de sair do chão), a asa da frente tem de levar de 40 a 60 %
+    da sustentação das duas. Nas duas pontas porque a divisão muda com a velocidade: o C_m do perfil é um momento
+    que cresce com q enquanto o C_L do trim cai, e com um perfil arqueado na asa da frente ela leva cada vez mais
+    quanto mais rápido o avião voa; em baixa velocidade a divisão volta para a da posição do CG. O tandem é tandem porque as duas asas
+    sustentam; com a da frente levando quase tudo, a de trás vira uma empenagem grande que só arrasta e pesa (o
+    caso do tandem do aeroopt antes desta conta: 83 a 100 % na da frente). A faixa é a do projeto de tandem do
+    Kryvokhatko (cap. "Tandem wing", IntechOpen, https://www.intechopen.com/chapters/56528, a conferir no PDF), que
+    também pede a asa da frente um pouco menor que a de trás (`TailParams.wing2_area`). A carga de cada asa é a dos
+    painéis do núcleo (`panel_states`, faixas) no α e no profundor do trim; as duas asas ligadas ficam no mesmo
+    grupo, então a de cada uma sai pela posição: o painel na frente do meio do caminho entre as duas é da frente.
+
+    A envergadura ("envergadura"): a asa de trás pode ser maior que a da frente (`wing2_span`), e o limite do
+    regulamento (`span_max`, 0 = nenhum) vale para ela também; o da variável `wing.span` só segura a da frente.
+
+    O escalonamento ("escalonamento") e o vão ("vao"): o recuo da de trás entre 3 e 5 cordas e o desnível até 1
+    corda. Assim a de trás não fica no miolo da esteira da da frente (perto demais) e o avião não fica comprido e
+    pesado à toa (longe demais). A regra é a da discussão que o dono trouxe (r/AerospaceEngineering, "Help
+    understanding tandem wings"); a conferir no PDF do Kryvokhatko ("Tandem wing aircraft", Springer, 2025, a
+    conferir no PDF, pp. 201 a 211)"""
+    w, w2 = ac.surfaces[0], tl.second_wing(ac)
+    if w2 is None:
+        return []
+    out: list[tuple[str, float, str]] = []
+    c = w.mac
+    stagger, gap = (w.x - w2.x) / c, abs(w.z - w2.z) / c
+    lo, hi = TANDEM_STAGGER
+    if not lo <= stagger <= hi:
+        out.append(("escalonamento", min(abs(stagger - lo), abs(stagger - hi)) + 0.1,
+                    f"a asa de trás fica a {stagger:.1f} cordas da da frente (de {lo:g} a {hi:g})"))
+    b2 = w2.span
+    if span_max > 0 and b2 > span_max * (1 + 1e-9):
+        out.append(("envergadura", (b2 / span_max - 1.0) / 0.05 + 0.1, f"a asa de trás tem {b2:.2f} m de envergadura "
+                    f"(o limite é {span_max:g} m)"))
+    if gap > TANDEM_GAP_MAX:
+        out.append(("vao", gap - TANDEM_GAP_MAX + 0.1, f"o desnível entre as asas é de {gap:.1f} cordas (até "
+                    f"{TANDEM_GAP_MAX:g})"))
+    lo, hi = TANDEM_SHARE
+    worst = None
+    for V in np.atleast_1d(speeds):
+        share = tandem_split(ac, float(V), backend)
+        if not math.isfinite(share):
+            t = (1.0, f"não trima em voo nivelado a {V:.1f} m/s")
+        elif not lo <= share <= hi:
+            t = (min(abs(share - lo), abs(share - hi)) / 0.1 + 0.1, f"a {V:.1f} m/s a asa da frente leva "
+                 f"{100 * share:.0f} % da sustentação (de {100 * lo:.0f} a {100 * hi:.0f} %)")
+        else:
+            continue
+        worst = t if worst is None or t[0] > worst[0] else worst
+    if worst is not None:
+        out.append(("divisao", *worst))
+    return out
 
 
 def core_rotation(ac, asm: dict, rules, rho: float, backend, v_need: float | None = None) -> dict | None:
@@ -477,7 +562,12 @@ CONTROLS = {
                     ("tail.tip_fin_chord", 0.3, 1.0), ("power.x_payload", -0.3, 0.3)),
     # tandem: a asa de trás faz o papel da EH; quem trima é a decalagem (incidência da de trás menos a da da frente)
     # e o recuo dela, e o profundor da asa de trás comanda a arfagem (aileron_*: o trecho e a corda dele)
-    "tandem": (("tail.sm_target", 6.0, 15.0), ("tail.wing2_di", -12.0, 4.0), ("tail.wing2_dx", 0.6, 1.6), ("tail.wing2_dz", -0.2, 0.4),
+    # as asas quase alinhadas (vitor, 2026-10-26: "o melhor é que elas estejam alinhadas"): a decalagem é entre as
+    # linhas de sustentação nula (tail._add_wing2), de −3 a 3°, e o desnível vai até uns 15 cm; o ângulo de cruzeiro
+    # da asa põe a atitude do corpo (com as duas asas sustentando, a incidência da asa sozinha deixava o corpo picado)
+    "tandem": (("tail.sm_target", 6.0, 15.0), ("tail.wing2_di", -3.0, 3.0), ("tail.wing2_dx", 0.6, 1.6), ("tail.wing2_dz", 0.0, 0.15),
+               ("wing.alpha_cruise", -2.0, 8.0),
+               ("tail.wing2_area", 1.15, 2.8), ("tail.wing2_span", 1.0, 2.0), ("tail.wing2_sweep", 0.0, 30.0),
                ("tail.aileron_start", 0.05, 0.6), ("tail.aileron_end", 0.8, 1.0), ("tail.aileron_chord", 0.2, 0.5),
                ("rules.de_max", 15.0, 30.0), ("power.tilt", 0.0, 12.0), ("power.ground_pitch", 0.0, 12.0),
                ("power.x_tdp", 0.03, 0.25), ("tail.tip_fin", 0.0, 0.5), ("tail.tip_fin_chord", 0.3, 1.0),
@@ -505,7 +595,9 @@ CONTROL_START = {"asa voadora": {"wing.sweep": 25.0, "wing.twist": -5.0, "wing.r
                  # a de trás com menos incidência que a da frente (o diedro longitudinal que estabiliza o tandem)
                  # o tandem parte do que a conta do chão pede: deriva na ponta da asa de trás (a estabilidade
                  # direcional que ele não tem), trem bem atrás do CG (peso na bequilha) e nivelado
-                 "tandem": {"tail.wing2_di": -4.0, "tail.wing2_dx": 1.0, "tail.sm_target": 8.0,
+                 "tandem": {"tail.wing2_di": -2.0, "tail.wing2_dx": 1.0, "tail.sm_target": 8.0, "tail.wing2_area": 2.0,
+                            "tail.wing2_dz": 0.05, "wing.alpha_cruise": 2.0, "tail.wing2_span": 1.5,
+                            "tail.wing2_sweep": 15.0,
                             "tail.aileron_start": 0.3, "tail.aileron_chord": 0.3, "tail.tip_fin": 0.2,
                             "power.ground_pitch": 0.0, "power.x_tdp": 0.12, "power.tilt": 0.0}}
 FLY_METHODS = {"buscar": "achar um ponto que voa (gerações nas contínuas, pelas regras de viabilidade)",
@@ -581,14 +673,18 @@ class FlightCheck(IStage):
             tr = core_rotation(ac, asm, p.rules, p.requirements.rho, self._backend, p.requirements.V_stall_max)
             asm = {**asm, "trim": tr} if tr is not None else asm
         d = dict(asm=asm, cand=cand)
-        terms = violation_terms(d, rotation=self.controls)
+        v_lof = (asm.get("trim") or {}).get("V_lof", math.inf)
+        speeds = [p.requirements.V_cruise] + ([v_lof] if math.isfinite(v_lof) and v_lof > 0 else [])
+        extra = (tandem_terms(ac, speeds, self._backend, p.requirements.span_max)
+                 if self.controls and self.kind(values) == "tandem" else [])
+        terms = violation_terms(d, rotation=self.controls) + extra
         stab = {}
         if not terms and self.stability is not None:
             if self._backend is None:
                 from aerosim.backend.zig import ZigBackend
                 self._backend = ZigBackend()
             _, _, stab = stability_check(ac, p.requirements.V_cruise, self.stability, self._backend)
-            terms = violation_terms(d, stab, self.stability, rotation=self.controls)
+            terms = violation_terms(d, stab, self.stability, rotation=self.controls) + extra
         terms_d: dict[str, float] = {}             # por código (a busca guiada diagnostica por eles)
         for c, v, _ in terms:
             terms_d[c] = terms_d.get(c, 0.0) + v
@@ -681,9 +777,11 @@ class FlightCheck(IStage):
                 tip = elevon_airfoil(self.project, item.values)
                 if tip:
                     item.values = {**item.values, TIP_KEY: tip}
-            if self.kind(item.values) == "asa voadora" and LAYOUT_KEY not in item.values and not self.layout_free:
+            if self.kind(item.values) in ("asa voadora", "tandem") and LAYOUT_KEY not in item.values \
+                    and not self.layout_free:
                 # sem cauda nem tubo, a hélice vai atrás: o motor no nariz puxa o CG para a frente do que a asa
-                # enflechada pede, e só lastro equilibra (a de data/aircraft/Asa_voadora.json também é propulsora)
+                # enflechada pede, e só lastro equilibra (a de data/aircraft/Asa_voadora.json também é propulsora).
+                # No tandem ela fica no bordo de fuga da asa de trás (power.assemble)
                 item.values = {**item.values, LAYOUT_KEY: PUSHER}
         if self.chooses_tail(item):
             x, best, hist = self._choose(item, TAIL_KEY, self.tails, "caudas")
@@ -880,33 +978,23 @@ def _de_search(free, x: dict, best: dict, point, evals: int, hist: list, seed: i
     return x, best
 
 
-GUARD_KEY = "power.alpha_guard"     # proteção de α na decolagem (desligada por padrão)
-
-
 class Takeoff6dof(IStage):
-    """o MTOW na simulação 6GDL (bisseção na massa, profundor otimizado), um processo por candidato.
-
-    Com os comandos (E&C), quando o avião leva menos no 6GDL do que na pista da sprint a etapa repete com a proteção
-    de α na decolagem (`power.alpha_guard`) e fica com o maior dos dois: a asa voadora e o tandem, leves e com muita
-    tração, cabram com o comando fixo até estolar logo depois de sair do chão. O resultado de cada um fica em
-    `item.data["proteção de α"]`"""
+    """o MTOW na simulação 6GDL (bisseção na massa, profundor otimizado), um processo por candidato. A decolagem
+    é sempre com a proteção de α do piloto e reprova quem estola (`aerosim.manager.takeoff_opt`)"""
     name = "decolagem 6GDL"
 
-    def __init__(self, project, catalog=None, backend_cls=None, controls: bool = False):
+    def __init__(self, project, catalog=None, backend_cls=None, controls: bool = False, tol: float = 0.0):
         self.project, self.catalog, self.backend_cls = project, catalog, backend_cls
         self.controls = bool(controls)
-        self.guard_free = False
+        self.tol = float(tol)                      # % do x_warning (`takeoff_opt._bisect`); 0: a busca de sempre
 
-    def _run(self, item: StageItem, guard: bool) -> float:
+    def _run(self, item: StageItem) -> float:
         from aerosim.manager import SimulationManager
         d = item.data
         cand = d["cand"]
-        if guard:
-            cand = copy.deepcopy(cand)
-            cand.params.alpha_guard = True
         top = 1.6 * d["mtow"] if math.isfinite(d["mtow"]) else None    # o 6GDL fica perto do MTOW da pista
         return study._mtow6(cand, d["req"], self.project.rules, self.catalog, self.project.airfoil_map(),
-                            SimulationManager(self.backend_cls()), m_max=top, search="bisseção")
+                            SimulationManager(self.backend_cls()), m_max=top, search="bisseção", tol=self.tol)
 
     def one(self, item: StageItem) -> StageItem:
         check_cancel()                             # o Parar combinado: sai entre um ponto e outro
@@ -914,14 +1002,7 @@ class Takeoff6dof(IStage):
             from aerosim.backend.zig import ZigBackend
             self.backend_cls = ZigBackend
         d = item.data
-        m6 = self._run(item, bool(item.values.get(GUARD_KEY, False)))
-        if self.controls and not item.values.get(GUARD_KEY) and not self.guard_free \
-                and not (math.isfinite(m6) and m6 >= d["mtow"]):
-            check_cancel()
-            with_guard = self._run(item, True)
-            item.data["proteção de α"] = {"não": m6, "sim": with_guard}
-            if math.isfinite(with_guard) and (not math.isfinite(m6) or with_guard > m6):
-                m6, item.values = with_guard, {**item.values, GUARD_KEY: True}
+        m6 = self._run(item)
         d["mtow6"] = m6
         if not math.isfinite(m6):
             item.alive, item.why = False, "não decola no 6GDL"
@@ -1107,8 +1188,7 @@ class StagedEvaluator(IEvaluator):
                                  self.stability))
         if self.six_dof:
             to = Takeoff6dof(project, self.catalog, type(self.backend) if self.backend is not None else None,
-                             controls)
-            to.guard_free = any(v.key == GUARD_KEY for v in problem.free_variables())
+                             controls, float(e.get("tolerancia") or 0.0))
             sts.append(to)
         sts.append(Score(self.scoring or sc.scoring_for(problem.scoring), self.backend))
         return sts

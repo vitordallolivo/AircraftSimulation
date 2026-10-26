@@ -577,3 +577,40 @@ def test_failure_guided_search_needs_fewer_evaluations_than_plain_de():
     de = cost(sg._de_search)
     for mode in ("reparo", "diagnóstico"):
         assert cost(lambda *a, **k: guided_search(*a, **k, mode=mode)) < 0.7 * de
+
+
+def test_tandem_terms_split_stagger_and_gap():
+    """os termos só do tandem (`stages.tandem_terms`): o recuo da asa de trás fora de 3 a 5 cordas, o desnível
+    acima de 1 corda e a parte da sustentação da asa da frente fora de 40 a 60 % no cruzeiro trimado. Com as asas
+    iguais a da frente leva quase tudo; com a de trás maior e de perfil simétrico, menos (o C_m do perfil arqueado
+    empurra a de trás para baixo). Sem segunda asa, nenhum termo"""
+    from aerosim.backend.zig import ZigBackend
+    from aerosim.design import power as pw
+    from aeroopt.diagnosis import REMEDIES
+    p = _project()
+    be = ZigBackend()
+
+    def terms(**kw):
+        values = {"categoria": "tandem", **kw}
+        pp, cand = sg.candidate(p, values)
+        ac, _ = pw.assemble(cand, pp.requirements, pp.rules, None, pp.airfoil_map())
+        return dict((c, v) for c, v, _ in sg.tandem_terms(ac, pp.requirements.V_cruise, be))
+    near = terms(**{"tail.wing2_dx": 0.4, "tail.wing2_dz": 0.0})
+    assert "escalonamento" in near and "vao" not in near
+    assert "vao" in terms(**{"tail.wing2_dx": 1.6, "tail.wing2_dz": 0.6})
+    same = terms(**{"tail.wing2_dx": 1.6, "tail.wing2_area": 1.0, "tail.wing2_airfoil": ""})
+    big = terms(**{"tail.wing2_dx": 1.6, "tail.wing2_area": 2.0, "tail.wing2_airfoil": "NACA 0012"})
+    assert same["divisao"] > big.get("divisao", 0.0)
+    # a divisão muda com a velocidade (o C_m do perfil cresce com q): com várias, vale a pior
+    pp, cand = sg.candidate(p, {"categoria": "tandem", "tail.wing2_dx": 1.6, "tail.wing2_area": 1.0,
+                                "tail.wing2_airfoil": ""})
+    ac, _ = pw.assemble(cand, pp.requirements, pp.rules, None, pp.airfoil_map())
+    s8, s16 = sg.tandem_split(ac, 8.0, be), sg.tandem_split(ac, 16.0, be)
+    assert s16 > s8
+    both = dict((c, v) for c, v, _ in sg.tandem_terms(ac, [8.0, 16.0], be))
+    assert both["divisao"] >= max(dict((c, v) for c, v, _ in sg.tandem_terms(ac, V, be)).get("divisao", 0.0)
+                                  for V in (8.0, 16.0)) - 1e-12
+    pp, cand = sg.candidate(p, {"categoria": "asa voadora"})
+    ac, _ = pw.assemble(cand, pp.requirements, pp.rules, None, pp.airfoil_map())
+    assert sg.tandem_terms(ac, 12.0, be) == []
+    assert {"divisao", "escalonamento", "vao"} <= set(REMEDIES) and "tail.wing2_area" in REMEDIES["divisao"]

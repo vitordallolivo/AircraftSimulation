@@ -1,10 +1,14 @@
-"""Decolagem para a competição: só dois critérios, os da pista.
+"""Decolagem para a competição: os dois critérios da pista e um de voo.
 
   x_warning  comprimento de pista: a aeronave tem de "decolar" antes dele
   z_warning  altura que conta como decolado, medida sobre a superfície de partida (chão ou mesa).
              z > 0: decolou quando as rodas passam dessa altura (n_dec = onde isso acontece).
              z ≤ 0 (mesa): decolou ao sair da borda e não pode afundar mais que |z| abaixo dela.
              Em qualquer caso, depois de sair do chão não pode descer abaixo de min(z, 0).
+  estol      até o fim da decolagem (h_end) nenhuma superfície chega ao C_Lmax (C_L/C_Lmax < 1, o `ratio_to` do
+             núcleo). Uma decolagem que só passa a pista estolando não é decolagem: sem isto a busca preferia a
+             rotação mais agressiva, que sai do chão cedo e estola logo depois. A proteção de α do piloto (núcleo,
+             control/autopilot.zig) é sempre ligada, e o profundor não deixa α passar do alpha_max
 
 O comando de decolagem é o profundor (ou o elevon, numa asa voadora): no ponto de acionamento s
 (posição na pista) ele vai para a deflexão de cabrar. O otimizador procura o s que deixa a maior folga
@@ -39,6 +43,7 @@ from .runner import Runner, Stop
 LEVELS = (1.0, 0.75, 0.5, 0.3, 0.15)       # frações da deflexão máxima, da maior para a menor
 SEARCHES = ("grade", "bisseção")            # a busca do ponto de acionamento (o docstring do módulo)
 S_TOL = 0.25                                # bisseção: para quando a faixa de s fica menor que isto (m)
+STALL = 1.0                                 # C_L/C_Lmax (a superfície mais carregada) que reprova a decolagem
 
 
 @dataclass
@@ -153,6 +158,8 @@ def evaluate(backend, ac, s: float | None, de: float, x_warning: float, z_warnin
         with runners.borrow(key, mission, over) as r:
             o, status, h0 = _fly(r, z_warning)
     n_dec, h_min, xe, zs, ok = judge(o.log, o.events, x_warning, z_warning)
+    if status == "COMPLETED" and o.events.get("ratio_to", 0.0) >= STALL:
+        status = "ESTOLOU NA DECOLAGEM"           # conta como "cedo demais" na bisseção (`_early`)
     ok = ok and status == "COMPLETED"
     res = TakeoffResult(float("nan") if s is None else s, de, n_dec, h_min, xe, zs, ok, status, o.events,
                         float("nan") if de0 is None else de0)
@@ -174,14 +181,16 @@ def _fly(r: Runner, z_warning: float):
 
 
 def optimize(backend, ac, x_warning: float, z_warning: float, parallel=None, overrides: dict | None = None,
-             n_grid: int = 8, refine: int = 5, search: str = "grade") -> tuple[TakeoffResult, list[TakeoffResult]]:
-    """melhor ponto de acionamento (e a maior deflexão que funciona); devolve (melhor, todos os testados)"""
+             n_grid: int = 8, refine: int = 5, search: str = "grade",
+             tol: float = 0.0) -> tuple[TakeoffResult, list[TakeoffResult]]:
+    """melhor ponto de acionamento (e a maior deflexão que funciona); devolve (melhor, todos os testados). `tol`
+    (fração do x_warning; só na bisseção, 0 = a busca de sempre): ver `_bisect`"""
     if search not in SEARCHES:
         raise ValueError(f"busca do acionamento desconhecida: {search} (há {', '.join(SEARCHES)})")
     runners = _Runners(backend, ac)       # sessões configuradas uma vez, emprestadas a cada decolagem
     try:
         if search == "bisseção":
-            return _bisect(backend, ac, x_warning, z_warning, overrides, runners)
+            return _bisect(backend, ac, x_warning, z_warning, overrides, runners, tol)
         return _optimize(backend, ac, x_warning, z_warning, parallel, overrides, n_grid, refine, runners)
     finally:
         runners.close()
@@ -234,13 +243,20 @@ def _optimize(backend, ac, x_warning, z_warning, parallel, overrides, n_grid, re
 
 
 def _early(r: TakeoffResult) -> bool:
-    """acionou cedo demais: saiu do chão e afundou abaixo do permitido, ou caiu depois de sair"""
+    """acionou cedo demais: saiu do chão e afundou abaixo do permitido, estolou ou caiu depois de sair"""
     return r.z_short > 0 or r.status != "COMPLETED"
 
 
-def _bisect(backend, ac, x_warning, z_warning, overrides, runners):
+def _bisect(backend, ac, x_warning, z_warning, overrides, runners, tol: float = 0.0):
     """a busca "bisseção" (o docstring do módulo). Para cada profundor na corrida (o do avião; depois picando) e cada
-    deflexão (da maior para a menor), como a grade: para na primeira que passa"""
+    deflexão (da maior para a menor), como a grade: para na primeira que passa.
+
+    Com `tol` > 0 (fração do x_warning) a busca aceita errar um pouco para gastar menos voos, em duas coisas. A
+    bisseção em s para quando a faixa fica menor que tol × x_warning (e não menos que `S_TOL`). E a massa que não
+    decola desiste cedo: se com o comando todo cabrando nenhum voo saiu do chão cedo demais (todos passaram do fim
+    da pista sem decolar), uma deflexão menor ou o profundor picando na corrida só atrasam a rotação, e o resto das
+    combinações não é tentado. É nessas massas que vai o grosso do tempo do MTOW: no monoplano da Regular 2026, 447
+    dos 691 voos eram de "passou do fim sem decolar" """
     if pitch_control(ac) is None:
         r = evaluate(backend, ac, None, 0.0, x_warning, z_warning, overrides, runners=runners)
         return r, [r]
@@ -254,21 +270,23 @@ def _bisect(backend, ac, x_warning, z_warning, overrides, runners):
         for lv in LEVELS:
             f = lambda s: evaluate(backend, ac, s, -lv * dmax, x_warning, z_warning, overrides, de0=hold,
                                    runners=runners)
-            lo, hi, good = 0.0, top, None
-            while hi - lo > S_TOL:
+            lo, hi, good, early = 0.0, top, None, False
+            while hi - lo > max(S_TOL, tol * x_warning):
                 r = f(0.5 * (lo + hi))
                 tried.append(r)
                 if r.ok:
                     good = r if good is None or r.x_warning_margin > good.x_warning_margin else good
                     hi = r.s                          # passa: tenta antes, para ganhar folga
                 elif _early(r):
-                    lo = r.s
+                    lo, early = r.s, True
                 else:
                     hi = r.s
             if good is not None:
                 best = good
                 break
-        if best is not None:
+            if tol > 0 and not early:                 # nem todo cabrando sai do chão a tempo: o resto só atrasa
+                break
+        if best is not None or (tol > 0 and not early):
             break
     if best is None:
         best = min(tried, key=lambda r: (r.x_excess + 10 * r.z_short, r.n_dec))

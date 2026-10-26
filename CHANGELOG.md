@@ -6,6 +6,23 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- decolagem, proteções obrigatórias (vitor: "se não faz sentido não pode acontecer"). A proteção de α na decolagem
+  deixa de ser opção (sai `takeoff.alpha_guard` do avião e `power.alpha_guard` do dimensionamento; arquivos antigos
+  carregam iguais), e o limite dela passa a ser o estol de cada avião: o α em que a superfície mais carregada chega a
+  0,95 do C_Lmax, calculado pelo núcleo no `configure`, no lugar dos 11° fixos. A busca da decolagem reprova a que
+  estola (C_L/C_Lmax ≥ 1 até h_end), que conta como "acionou cedo demais". O aeroopt deixa de rodar o 6GDL com e sem
+  a proteção. **Muda o resultado das decolagens e dos exemplos**: sem isso, 5 de 6 tandens da grade estolavam e caíam
+  logo depois de sair do chão; com isso, os 6 chegam ao fim da manobra 1.
+
+- tandem: as duas asas deixam de ser iguais. A área da asa de trás sobre a da frente (`wing2_area`) e o perfil dela
+  (`wing2_airfoil`) são campos novos (1 e vazio: o de sempre). A E&C do tandem confere a divisão da sustentação no
+  cruzeiro (40 a 60 % na asa da frente, pelo núcleo), o recuo de 3 a 5 cordas e o desnível até 1 corda (O31).
+- aeroopt, janela: "configurações por geração" passa a se chamar "indivíduos".
+- decolagem 6GDL: tolerância da bisseção do acionamento (`tolerancia`, % do x_warning; 0 = a de sempre), na aba
+  Missão e na Configuração do aeroopt. Com 1 %, o MTOW do monoplano da Regular 2026 cai de 730 s para 157 s
+  (15,42 → 15,36 kg).
+- tandem: a E&C confere a divisão da sustentação no cruzeiro e na velocidade de sair do chão (ela muda com a
+  velocidade: o C_m do perfil pesa mais quanto maior o q).
 - aeroopt, janela: sai o gráfico e a coluna do MTOW na pista (a conta da sprint não é o que pontua); ficam a nota e o
   MTOW do 6GDL.
 - aeroopt, janela: os submenus rolam e o regulamento fica fixo no alto da Pontuação; numa tela de 1366 × 768 o
@@ -45,7 +62,7 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   ela vai na asa de trás (`tail.tip_fin_where`), porque a ponta da da frente fica quase no CG, sem braço.
 - aeroopt, arfagem do tandem (`tail.tandem_pitch`): o comando de arfagem na asa de trás (profundor), na da frente
   (elevon que desce para cabrar, como um canard) ou nas duas. A E&C escolhe entre as três, como escolhe a cauda.
-- núcleo, proteção de α na decolagem (`takeoff.alpha_guard`, desligada por padrão): enquanto o piloto automático não
+- núcleo, proteção de α na decolagem (`takeoff.alpha_guard`, desligada por padrão; obrigatória desde a v0.2.3): enquanto o piloto automático não
   assume, o profundor não deixa α passar do limite dele. Sem ela, a asa voadora leve e com muita tração cabra até
   estolar com o comando fixo (de 32° para 11° de α no teste do núcleo). A etapa do 6GDL do aeroopt roda com e sem e
   fica com o maior MTOW. As decolagens de hoje ficam iguais.

@@ -26,7 +26,7 @@ SKIP = {"name", "wing", "wing2", "set", "thrust_set", "partitions", "constraints
         "thrust_model"}
 # campos de texto que são escolhas do que existe (as listas puxadas do projeto e do catálogo)
 CATALOG = {"airfoil": "perfis", "airfoil_tip": "perfis", "tail_airfoil": "perfis", "vtail_airfoil": "perfis",
-           "motor": "motores", "propeller": "hélices", "battery": "baterias"}
+           "wing2_airfoil": "perfis", "motor": "motores", "propeller": "hélices", "battery": "baterias"}
 # os nomes de sempre (o registro da sprint e as primeiras listas do aeroopt) para os mesmos campos
 ALIAS = {"tail_draft.tail_airfoil": "tail.airfoil", "tail_draft.vtail_airfoil": "tail.vairfoil",
          "power_draft.battery": "power.battery"}

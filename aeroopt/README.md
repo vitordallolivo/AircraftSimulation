@@ -27,8 +27,18 @@ sair do chão. Essa conferência usa os coeficientes do núcleo, os mesmos da de
 da sprint, que superestima o elevon da asa voadora. Com os comandos ela escolhe, do mesmo jeito que escolhe a cauda,
 onde fica a arfagem do tandem (na asa de trás, na da frente ou nas duas) e confere duas coisas que antes só apareciam
 na decolagem 6GDL: o peso que a bequilha leva parado (com pouco, o avião senta para trás na corrida) e a estabilidade
-direcional, que um avião sem cauda só tem com a deriva na ponta da asa. A etapa do 6GDL, por sua vez, roda a
-decolagem com e sem a proteção de α do piloto e fica com o MTOW maior.
+direcional, que um avião sem cauda só tem com a deriva na ponta da asa. No tandem ela confere três coisas a mais
+(`stages.tandem_terms`). A primeira é a divisão da sustentação: trimado em voo nivelado no cruzeiro, a asa da frente
+tem de levar de 40 a 60 % do total, pela carga dos painéis do núcleo no α e no profundor do trim. As outras duas são
+geométricas: o recuo da asa de trás fica entre 3 e 5 cordas, para ela não ficar no miolo da esteira da da frente
+nem deixar o avião comprido à toa, e o desnível fica em até 1 corda. As faixas são do Kryvokhatko e da discussão
+que o dono trouxe, ainda a conferir no PDF. Para isso a busca mexe também na área da asa de trás (`tail.wing2_area`,
+de 1,15 a 2 vezes a da frente), e a categoria tandem já parte com a de trás maior e de perfil simétrico. Na etapa do 6GDL a decolagem é
+sempre com a proteção de α do piloto, e a que estola é reprovada mesmo passando a pista. Quase todo o tempo dela vai nas massas que
+não decolam: para cada uma, a busca do acionamento tentava as quinze combinações de deflexão e de profundor na
+corrida antes de desistir. A tolerância (`etapas.tolerancia`, em % do x_warning; 0 é a busca de sempre) aceita errar
+o ponto de acionamento até essa fração e desiste da massa logo que, nem com o comando todo cabrando, o avião sai do
+chão antes do fim da pista, porque uma deflexão menor ou o profundor picando na corrida só atrasam a rotação.
 
 A busca dessa etapa é local: ela parte de x0, com poucos indivíduos, e para no primeiro ponto que voa, e as superfícies
 partem só dele. Se x0 cai numa bacia ruim, a rodada fica nela. Dois ajustes, desligados por padrão, atacam isso. O

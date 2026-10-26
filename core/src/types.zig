@@ -204,9 +204,11 @@ pub const Takeoff = extern struct {
     ht: f64 = 2, // altura em que o piloto automático assume
     rate_thr: f64 = 2,
     h_end: f64 = 6, // fim da simulação "só decolagem"
-    // 1: depois do acionamento o profundor não deixa α passar de ap.alpha_max (asa voadora e tandem leves cabram
-    // até estolar com o comando fixo de1); 0 (padrão): o comando fixo de sempre
-    alpha_guard: f64 = 0,
+    // 1 (padrão, e o que o aerosim e o AeroDrive sempre mandam): depois do acionamento o profundor não deixa α passar
+    // do α em que a superfície mais carregada chega a ap.kCL do C_Lmax dela (Params.alpha_guard_lim, calculado no
+    // configure). Sem isso, o comando fixo de1 cabra até estolar (asa voadora e tandem leves, com muita tração).
+    // 0 só existe para o teste que mostra a diferença
+    alpha_guard: f64 = 1,
 };
 
 /// comandos de quem pilota de fora (controle, simulador): com `manual` = 1 substituem os do piloto
@@ -388,6 +390,7 @@ pub const Params = extern struct {
     mods: [L.max_mods]Modifier = [_]Modifier{.{}} ** L.max_mods,
     // derivados
     steer_sign: f64 = 1, // −1 se a roda direcionável está atrás das principais (convencional)
+    alpha_guard_lim: f64 = 0, // α da proteção de α na decolagem (rad; `runner.guardAlpha`); 0: ap.alpha_max
 };
 
 /// estado de um painel num instante (saída de `aero.computeTrace`): para ver a carga ao longo da envergadura

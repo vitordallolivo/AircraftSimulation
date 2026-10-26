@@ -214,8 +214,10 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     assert not w.controls_cb.isChecked()                                    # comandos: desligado por padrão
     w.controls_cb.setChecked(True)
     assert w.init_cb.currentData() == "uniforme" and w.starts_sb.value() == 1    # E&C: início e partidas de sempre
+    assert w.tol_sb.value() == 0.0                                             # 6GDL: a busca de sempre
     w.init_cb.setCurrentIndex(w.init_cb.findData("lhs"))
     w.starts_sb.setValue(3)
+    w.tol_sb.setValue(1.5)
     w.set_method("voa", "diagnóstico")                                      # os métodos guiados pela falha
     assert w.method["voa"].currentText() == "diagnóstico da falha (bandido)"
     assert w.rot.window() is w.menus["restrições"] and w.evals.window() is w.menus["configuração"]
@@ -254,6 +256,7 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     assert w2.controls_cb.isChecked() and "ajusta os comandos" in w2.summary["configuração"].text()
     assert w2.init_cb.currentData() == "lhs" and w2.starts_sb.value() == 3 and w2.methods()["voa"] == "diagnóstico"
     assert "hipercubo latino, 3 partidas" in w2.summary["configuração"].text()
+    assert w2.tol_sb.value() == pytest.approx(1.5) and w2.read_problem().params["etapas"]["tolerancia"] == 1.5
     w.problem = out
     w.scoring.set_spec("MTOW")                                   # Cancelar volta a pontuação ao que era
     w.scoring.restore(("sae_br_2026_micro", {}))

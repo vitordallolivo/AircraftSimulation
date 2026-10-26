@@ -482,7 +482,8 @@ class Takeoff:
     ht: float = 2.0            # altura em que o piloto automático assume
     rate_thr: float = 2.0
     h_end: float = 6.0
-    alpha_guard: bool = False  # depois do acionamento, o profundor não deixa α passar do alpha_max do piloto
+    # a proteção de α (depois do acionamento o profundor não deixa α passar do alpha_max do piloto) é sempre ligada:
+    # não é opção (o tradutor manda alpha_guard = 1 ao núcleo); arquivos antigos com `alpha_guard` carregam iguais
 
 
 @dataclass

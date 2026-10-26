@@ -51,6 +51,18 @@ def test_optimize_actuation_point(backend, name):
 
 
 @pytest.mark.parametrize("name", list(TEMPLATES))
+def test_takeoff_never_passes_stalling(backend, name):
+    """a decolagem escolhida não estola (C_L/C_Lmax < 1 até h_end, a proteção de α sempre ligada), e uma que estola
+    é reprovada mesmo passando a pista"""
+    ac = TEMPLATES[name]()
+    best, tried = TO.optimize(backend, ac, 60.0, 1.0)
+    assert best.ok and best.events["ratio_to"] < TO.STALL
+    assert all(not r.ok for r in tried if r.events.get("ratio_to", 0.0) >= TO.STALL)
+    stalled = [r for r in tried if r.status == "ESTOLOU NA DECOLAGEM"]
+    assert all(TO._early(r) for r in stalled)                 # na bisseção conta como "acionou cedo demais"
+
+
+@pytest.mark.parametrize("name", list(TEMPLATES))
 def test_bisection_finds_the_actuation_window_like_the_grid(backend, name):
     """a busca "bisseção" parte da corrida sem acionar e divide a faixa até S_TOL: acha uma decolagem que passa onde a
     grade acha, com a mesma deflexão, e nunca aciona depois de onde o avião sai do chão sozinho (ou do fim da pista)"""
@@ -63,6 +75,17 @@ def test_bisection_finds_the_actuation_window_like_the_grid(backend, name):
     assert all(r.s <= min(top, 60.0) + 1e-9 for r in tried[1:] if math.isfinite(r.s))
     with pytest.raises(ValueError):
         TO.optimize(backend, ac, 60.0, 1.0, search="chute")
+
+
+def test_bisection_tolerance_gives_up_early_on_a_mass_that_does_not_lift_off(backend):
+    """a tolerância da bisseção (`tol`, fração do x_warning): numa pista que nem com tudo cabrando dá para sair do chão
+    a tempo, ela desiste depois das deflexões máximas em vez de tentar as 15 combinações; numa que dá, ainda passa"""
+    ac = TEMPLATES["conventional"]()
+    full, tried = TO.optimize(backend, ac, 3.0, 1.0, search="bisseção")
+    quick, tried_q = TO.optimize(backend, ac, 3.0, 1.0, search="bisseção", tol=0.01)
+    assert not full.ok and not quick.ok and len(tried_q) < len(tried)
+    best, _ = TO.optimize(backend, ac, 60.0, 1.0, search="bisseção", tol=0.01)
+    assert best.ok and best.n_dec <= 60.0
 
 
 def test_platform_landing(backend):

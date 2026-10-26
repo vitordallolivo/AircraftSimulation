@@ -23,13 +23,15 @@ from aerosim.design import tail as tl
 
 # campos que toda categoria define (o que não muda volta ao padrão: uma categoria não herda da outra)
 _BASE = {"rules.wing_z": -0.10, "tail_draft.wing2": tl.NO_WING2, "tail_draft.wing2_dx": 0.0,
-         "tail_draft.wing2_dz": 0.0, "tail_draft.wing2_di": 0.0, "tail_draft.layout": "convencional"}
+         "tail_draft.wing2_dz": 0.0, "tail_draft.wing2_di": 0.0, "tail_draft.wing2_area": 1.0,
+         "tail_draft.wing2_span": 1.0, "tail_draft.wing2_sweep": 0.0, "tail_draft.wing2_airfoil": "", "tail_draft.layout": "convencional"}
 
 CATEGORIES: dict[str, dict] = {
     "monoplano": {},                                             # asa alta; a altura sai da variável, se livre
     "biplano": {"tail_draft.wing2": tl.SAME_WING, "tail_draft.wing2_dz": 0.35},
     "tandem": {"tail_draft.wing2": tl.SAME_WING, "tail_draft.wing2_dx": 1.0, "tail_draft.wing2_dz": 0.10,
-               "tail_draft.layout": "sem cauda"},
+               "tail_draft.wing2_area": 2.0, "tail_draft.wing2_span": 1.5, "tail_draft.wing2_sweep": 15.0,
+               "tail_draft.wing2_airfoil": "NACA 0012", "tail_draft.layout": "sem cauda"},
     "asa voadora": {"tail_draft.layout": "sem cauda"},
 }
 BASE_TAIL = _BASE["tail_draft.layout"]             # a categoria que fica nesta deixa a cauda para a etapa voa

@@ -119,6 +119,24 @@ test "proteção de α na decolagem" {
     }
 }
 
+test "proteção de α: o limite é o estol do avião (C_L/C_Lmax = kCL), não o alpha_max fixo" {
+    aircraft(&inst.p);
+    try runner.configure(&inst);
+    const lim = inst.p.alpha_guard_lim;
+    try std.testing.expect(lim > 0 and lim < 30 * deg);
+    const aeromodel = @import("../physics/aeromodel.zig");
+    const mods = @import("../modifiers/mod.zig");
+    const vec = @import("../math/vec.zig");
+    const ratio = struct {
+        fn at(p: *const T.Params, al: f64) f64 {
+            const Vr = vec.V3{ 12.0 * @cos(al), 0, 12.0 * @sin(al) };
+            return aeromodel.compute(p, Vr, vec.zero, vec.zero, 100.0, vec.zero, &mods.Env.none).ratioCL;
+        }
+    }.at;
+    try std.testing.expect(ratio(&inst.p, lim) >= inst.p.ap.kCL);
+    try std.testing.expect(ratio(&inst.p, lim - 0.25 * deg) < inst.p.ap.kCL);
+}
+
 test "checkpoint: retomar dá o mesmo resultado" {
     aircraft(&inst.p);
     inst.p.stop_t = 6.0;
