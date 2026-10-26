@@ -501,3 +501,12 @@ def test_payload_position_is_searched_by_the_flight_check_for_every_kind():
     assert PowerParams().x_payload == 0.0
     for kind, ctl in sg.CONTROLS.items():
         assert "power.x_payload" in [k for k, _, _ in ctl], kind
+
+
+def test_flight_check_with_controls_turns_on_the_dynamic_stability():
+    """com os comandos, a E&C confere sempre os modos do núcleo (arfagem e látero-direcional, MIL-F-8785C): a conta
+    estática da sprint deixava passar o tandem que, no 6GDL, guinava até cair (O28). Sem os comandos, como antes"""
+    from aeroopt.gui import example_project
+    p, pr = example_project()
+    assert isinstance(sg.FlightCheck(p, pr, controls=True).stability, sg.StabilityParams)
+    assert sg.FlightCheck(p, pr).stability is None

@@ -50,6 +50,21 @@ def test_optimize_actuation_point(backend, name):
     assert not better                                         # nenhuma deflexão maior passou
 
 
+@pytest.mark.parametrize("name", list(TEMPLATES))
+def test_bisection_finds_the_actuation_window_like_the_grid(backend, name):
+    """a busca "bisseção" parte da corrida sem acionar e divide a faixa até S_TOL: acha uma decolagem que passa onde a
+    grade acha, com a mesma deflexão, e nunca aciona depois de onde o avião sai do chão sozinho (ou do fim da pista)"""
+    ac = TEMPLATES[name]()
+    grid, _ = TO.optimize(backend, ac, 60.0, 1.0)
+    best, tried = TO.optimize(backend, ac, 60.0, 1.0, search="bisseção")
+    assert best.ok and best.n_dec <= 60.0 and best.de == grid.de
+    free = tried[0]
+    top = free.events["nLO"] if free.events.get("tLO", -1) > 0 else 60.0
+    assert all(r.s <= min(top, 60.0) + 1e-9 for r in tried[1:] if math.isfinite(r.s))
+    with pytest.raises(ValueError):
+        TO.optimize(backend, ac, 60.0, 1.0, search="chute")
+
+
 def test_platform_landing(backend):
     ac = TEMPLATES["conventional"]()
     ac.airfield.landing_on = "plataforma"

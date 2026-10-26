@@ -187,7 +187,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/manager/runner.py` — Corrida orientada: começa (no chão, em voo ou de um checkpoint), roda até uma parada
   `class Stop:21`, `class RunOutput:35`, `class Runner:42`
 - `aerosim/manager/takeoff_opt.py` — Decolagem para a competição: só dois critérios, os da pista.
-  `class TakeoffResult:35`, `pitch_control:54`, `judge:61`, `evaluate:125`, `optimize:166`
+  `class TakeoffResult:45`, `pitch_control:64`, `judge:71`, `evaluate:135`, `optimize:176`
 - `aerosim/manager/simulations/__init__.py` — Simulações disponíveis (uma aba cada na GUI). Para adicionar outra: crie uma classe
 - `aerosim/manager/simulations/aerodynamics.py` — Aba Aerodinâmica — polares e derivadas a partir da geometria, com o lltdrek (linha
   `resolve_cg:31`, `class AerodynamicsSimulation:40`
@@ -679,12 +679,12 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 ## Testes (`tests/`)
 
 - `tests/aero` — 59 testes em 9 arquivo(s)
-- `tests/aeroopt` — 68 testes em 8 arquivo(s)
+- `tests/aeroopt` — 69 testes em 8 arquivo(s)
 - `tests/core` — 34 testes em 9 arquivo(s)
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 74 testes em 11 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 57 testes em 10 arquivo(s)
+- `tests/manager` — 58 testes em 10 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)

@@ -461,14 +461,14 @@ CONTROLS = {
     "asa voadora": (("tail.sm_target", 6.0, 12.0), ("tail.aileron_start", 0.05, 0.6), ("tail.aileron_end", 0.8, 1.0), ("tail.aileron_chord", 0.2, 0.5),
                     ("rules.de_max", 15.0, 30.0), ("power.tilt", 0.0, 12.0), ("power.ground_pitch", 0.0, 12.0),
                     ("power.x_tdp", 0.03, 0.25), ("wing.sweep", 0.0, 40.0), ("wing.twist", -6.0, 0.0),
-                    ("wing.rect_frac", 0.0, 1.0), ("wing.taper", 0.4, 1.0), ("tail.tip_fin", 0.0, 0.3),
+                    ("wing.rect_frac", 0.0, 1.0), ("wing.taper", 0.4, 1.0), ("tail.tip_fin", 0.0, 0.5),
                     ("tail.tip_fin_chord", 0.3, 1.0), ("power.x_payload", -0.3, 0.3)),
     # tandem: a asa de trás faz o papel da EH; quem trima é a decalagem (incidência da de trás menos a da da frente)
     # e o recuo dela, e o profundor da asa de trás comanda a arfagem (aileron_*: o trecho e a corda dele)
     "tandem": (("tail.sm_target", 6.0, 15.0), ("tail.wing2_di", -12.0, 4.0), ("tail.wing2_dx", 0.6, 1.6), ("tail.wing2_dz", -0.2, 0.4),
                ("tail.aileron_start", 0.05, 0.6), ("tail.aileron_end", 0.8, 1.0), ("tail.aileron_chord", 0.2, 0.5),
                ("rules.de_max", 15.0, 30.0), ("power.tilt", 0.0, 12.0), ("power.ground_pitch", 0.0, 12.0),
-               ("power.x_tdp", 0.03, 0.25), ("tail.tip_fin", 0.0, 0.3), ("tail.tip_fin_chord", 0.3, 1.0),
+               ("power.x_tdp", 0.03, 0.25), ("tail.tip_fin", 0.0, 0.5), ("tail.tip_fin_chord", 0.3, 1.0),
                ("power.x_payload", -0.3, 0.3)),
 }
 def elevon_airfoil(project, values: dict) -> str:
@@ -540,7 +540,10 @@ class FlightCheck(IStage):
         self.init = init                           # a população inicial (INITS)
         self.starts = max(1, int(starts))          # quantos pontos que voam, longe uns dos outros, antes de escolher
         self.seed = int(seed)                      # somada à semente de cada avião (a ferramenta de sementes)
-        self.stability = stability
+        # com os comandos, a estabilidade dinâmica entra sempre (os modos do núcleo, arfagem e látero-direcional,
+        # contra a MIL-F-8785C): é ela que dimensiona a deriva, o diedro e a margem. Só a conta estática da sprint
+        # deixava passar o tandem da Regular 2026 que, no 6GDL, guinava até cair logo depois de decolar (O28)
+        self.stability = stability if stability is not None or not controls else StabilityParams()
         self.tails = tuple(t for t in TAILS if t in (tails or ()))     # na ordem de TAILS
         self.tail_free = any(v.key == TAIL_KEY for v in problem.free_variables())
         self.controls = bool(controls)
@@ -885,7 +888,7 @@ class Takeoff6dof(IStage):
             cand.params.alpha_guard = True
         top = 1.6 * d["mtow"] if math.isfinite(d["mtow"]) else None    # o 6GDL fica perto do MTOW da pista
         return study._mtow6(cand, d["req"], self.project.rules, self.catalog, self.project.airfoil_map(),
-                            SimulationManager(self.backend_cls()), m_max=top)
+                            SimulationManager(self.backend_cls()), m_max=top, search="bisseção")
 
     def one(self, item: StageItem) -> StageItem:
         check_cancel()                             # o Parar combinado: sai entre um ponto e outro

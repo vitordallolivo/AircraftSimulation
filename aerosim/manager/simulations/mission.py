@@ -205,7 +205,10 @@ class MissionSimulation(SimulationBase):
                  ParamSpec("z_warning", "z_warning (altura)", af.z_warning if af else 1.0,
                            minimum=-20, maximum=50, unit="m", group=GP,
                            help="altura sobre a superfície de partida que conta como decolado; ≤ 0 na mesa: quanto pode "
-                                "afundar abaixo dela")]
+                                "afundar abaixo dela"),
+                 ParamSpec("busca", "Busca do acionamento", TO.SEARCHES[0], kind="choice", choices=TO.SEARCHES,
+                           group=GP, help="grade: 8 pontos na pista e refino em volta do melhor. bisseção: parte de "
+                                          "onde o avião sai do chão sem acionar e divide a faixa até achar a janela")]
         if mode == M_MIS:
             P += [ParamSpec("legs", "Trajetória", legs_to_rows(ac.mission.legs) if ac is not None else [],
                             kind="table", columns=LEG_COLS, bound=True,
@@ -372,7 +375,8 @@ class MissionSimulation(SimulationBase):
     def _optimize(self, ctx, ac, refs, overrides=None):
         ctx.on_progress(0.0, "otimizando o acionamento do profundor")
         par = lambda fn, items: self.parallel(ctx, fn, items, "decolagens")
-        return TO.optimize(ctx.backend, ac, refs["x_warning"], refs["z_warning"], par, overrides)
+        search = ctx.params.get("busca") or TO.SEARCHES[0]
+        return TO.optimize(ctx.backend, ac, refs["x_warning"], refs["z_warning"], par, overrides, search=search)
 
     @staticmethod
     def _opt_series(tried, best, refs, prefix="op_") -> dict:

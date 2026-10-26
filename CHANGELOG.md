@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt: a E&C com os comandos liga a estabilidade dinâmica (modos do núcleo contra a MIL-F-8785C); o tandem da Regular 2026
+  era instável em guinada e caía logo depois de decolar, e a sprint não via. A deriva da ponta vai até 0,5 m (O28).
+- decolagem: busca do ponto de acionamento por bisseção a partir da corrida sem acionar (opção `busca`; o 6GDL do aeroopt
+  usa) (O29).
 - sprint e aeroopt: a posição da carga paga (`power.x_payload`, do CG de projeto) é variável, e a E&C a escolhe junto com
   os comandos; a bateria equilibra junto e a margem sem a carga é conferida (O27). Com 0, a montagem de sempre.
 - sprint: o tandem com deriva na ponta achava a asa de trás pelo fim da lista e lia a deriva como asa (ponto neutro na asa

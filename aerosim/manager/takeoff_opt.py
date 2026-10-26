@@ -13,6 +13,14 @@ posição funcionar com a máxima. Se nada funcionar com o profundor como está 
 tenta segurá-lo picando na corrida (25 % e 50 % do curso) — o que o piloto faz quando o avião quer sair
 do chão antes da hora (motor inclinado, EH que cabra muito). Sem comando de arfagem não há o que
 otimizar: a aeronave decola sozinha.
+
+Duas buscas do ponto de acionamento (`search`):
+  grade     8 pontos iguais ao longo da pista, e uma seção áurea em volta do melhor (o de sempre).
+  bisseção  primeiro a corrida sem acionar: onde o avião sai do chão sozinho (ou o fim da pista) é o acionamento mais
+            tarde que faz sentido. Daí, bisseção em s com passos até `S_TOL`: se o avião passa do fim da pista sem
+            decolar, aciona antes; se sai do chão e afunda (ou cai), aciona depois; se passa, tenta antes, para ganhar
+            folga. O número de voos depende da faixa (log₂(faixa / S_TOL)), não de uma grade fixa, e a janela estreita
+            que a grade pulava (o tandem que roda cedo demais) não escapa.
 """
 from __future__ import annotations
 
@@ -29,6 +37,8 @@ from aerosim.model.mission import takeoff_runway
 from .runner import Runner, Stop
 
 LEVELS = (1.0, 0.75, 0.5, 0.3, 0.15)       # frações da deflexão máxima, da maior para a menor
+SEARCHES = ("grade", "bisseção")            # a busca do ponto de acionamento (o docstring do módulo)
+S_TOL = 0.25                                # bisseção: para quando a faixa de s fica menor que isto (m)
 
 
 @dataclass
@@ -164,10 +174,14 @@ def _fly(r: Runner, z_warning: float):
 
 
 def optimize(backend, ac, x_warning: float, z_warning: float, parallel=None, overrides: dict | None = None,
-             n_grid: int = 8, refine: int = 5) -> tuple[TakeoffResult, list[TakeoffResult]]:
+             n_grid: int = 8, refine: int = 5, search: str = "grade") -> tuple[TakeoffResult, list[TakeoffResult]]:
     """melhor ponto de acionamento (e a maior deflexão que funciona); devolve (melhor, todos os testados)"""
+    if search not in SEARCHES:
+        raise ValueError(f"busca do acionamento desconhecida: {search} (há {', '.join(SEARCHES)})")
     runners = _Runners(backend, ac)       # sessões configuradas uma vez, emprestadas a cada decolagem
     try:
+        if search == "bisseção":
+            return _bisect(backend, ac, x_warning, z_warning, overrides, runners)
         return _optimize(backend, ac, x_warning, z_warning, parallel, overrides, n_grid, refine, runners)
     finally:
         runners.close()
@@ -216,4 +230,46 @@ def _optimize(backend, ac, x_warning, z_warning, parallel, overrides, n_grid, re
             rd = f(d)
             tried.append(rd)
     best = max([best, rc, rd], key=lambda r: r.x_warning_margin)
+    return best, tried
+
+
+def _early(r: TakeoffResult) -> bool:
+    """acionou cedo demais: saiu do chão e afundou abaixo do permitido, ou caiu depois de sair"""
+    return r.z_short > 0 or r.status != "COMPLETED"
+
+
+def _bisect(backend, ac, x_warning, z_warning, overrides, runners):
+    """a busca "bisseção" (o docstring do módulo). Para cada profundor na corrida (o do avião; depois picando) e cada
+    deflexão (da maior para a menor), como a grade: para na primeira que passa"""
+    if pitch_control(ac) is None:
+        r = evaluate(backend, ac, None, 0.0, x_warning, z_warning, overrides, runners=runners)
+        return r, [r]
+    dmax = ac.autopilot.de_max
+    tried, best = [], None
+    for hold in (None, 0.25 * dmax, 0.5 * dmax):
+        free = evaluate(backend, ac, None, 0.0, x_warning, z_warning, overrides, de0=hold, runners=runners)
+        tried.append(free)
+        lof = free.events.get("nLO", math.inf) if free.events.get("tLO", -1) > 0 else math.inf
+        top = min(lof, x_warning) if math.isfinite(lof) else x_warning     # acionar depois disso não adianta
+        for lv in LEVELS:
+            f = lambda s: evaluate(backend, ac, s, -lv * dmax, x_warning, z_warning, overrides, de0=hold,
+                                   runners=runners)
+            lo, hi, good = 0.0, top, None
+            while hi - lo > S_TOL:
+                r = f(0.5 * (lo + hi))
+                tried.append(r)
+                if r.ok:
+                    good = r if good is None or r.x_warning_margin > good.x_warning_margin else good
+                    hi = r.s                          # passa: tenta antes, para ganhar folga
+                elif _early(r):
+                    lo = r.s
+                else:
+                    hi = r.s
+            if good is not None:
+                best = good
+                break
+        if best is not None:
+            break
+    if best is None:
+        best = min(tried, key=lambda r: (r.x_excess + 10 * r.z_short, r.n_dec))
     return best, tried
