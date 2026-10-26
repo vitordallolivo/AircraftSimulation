@@ -21,7 +21,10 @@ a de estabilidade e controle, e é nela que se escolhe a cauda: a cauda não é 
 cauda) na asa daquela configuração, fica com a que voa e, entre as que voam, com a que decola na pista levando mais carga paga (só voar não
 basta: sem cauda o avião é o mais leve e voa, mas pode não rodar na pista). O avião sai dali com
 essa cauda. Custa uma busca a mais por cauda, mas um avião que não voaria com a cauda dos rascunhos ganha outra
-chance antes de ser descartado. Quem escolhe quais
+chance antes de ser descartado. Com "comandos (E&C)" ligado, a mesma busca mexe também nos comandos (o profundor, ou o trecho e a
+corda do elevon, o curso e a inclinação do motor) e exige que o comando rode o avião na pista antes da velocidade de
+sair do chão. Essa conferência usa os coeficientes do núcleo, os mesmos da decolagem 6GDL, e não a conta analítica
+da sprint, que superestima o elevon da asa voadora. Quem escolhe quais
 aviões experimentar são as gerações de um algoritmo genético (`generations.py`). A janela fica em `gui.py`, e os CSV
 de cada rodada saem de `export.py`. Depois da rodada, `sensitivity.py` diz o quanto a nota do melhor avião depende de
 cada variável: se ele está num morro largo ou na beira de um precipício. Para testar a máquina sem esperar as contas do avião, `synthetic.py` traz dados de

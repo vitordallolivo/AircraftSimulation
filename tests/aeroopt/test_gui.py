@@ -209,6 +209,8 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     assert {c for c, r in w.cat_row.items() if not r.isHidden()} == {"monoplano", "biplano", "tandem", "asa voadora"}
     assert all(cb.isChecked() for cb in w.tail_cb.values())              # o exemplo escolhe a cauda em E&C
     w.tail_cb["sem cauda"].setChecked(False)
+    assert not w.controls_cb.isChecked()                                    # comandos: desligado por padrão
+    w.controls_cb.setChecked(True)
     assert w.rot.window() is w.menus["restrições"] and w.evals.window() is w.menus["configuração"]
     assert set(w.method) == {"configurações", "voa", "superfícies", "decolagem"}
     titles = [b.title() for b in w.menus["configuração"].findChildren(QtWidgets.QGroupBox)]
@@ -242,6 +244,7 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     assert "aviões: monoplano" in w2.summary["configuração"].text() and not w2.tail_cb["sem cauda"].isChecked()
     assert w2.read_problem().params["etapas"]["caudas"] == ["convencional", "em H", "em V"]
     assert "escolhe a cauda" in w2.summary["configuração"].text()
+    assert w2.controls_cb.isChecked() and "ajusta os comandos" in w2.summary["configuração"].text()
     w.problem = out
     w.scoring.set_spec("MTOW")                                   # Cancelar volta a pontuação ao que era
     w.scoring.restore(("sae_br_2026_micro", {}))

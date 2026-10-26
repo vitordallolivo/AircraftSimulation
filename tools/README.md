@@ -20,6 +20,20 @@ python tools/aeroopt.py perfis/exemplo.opt.json --isolar asa --png perfis/conver
 python tools/aeroopt.py problema.opt.json --etapas --projeto p.json --sem-6gdl --sensibilidade
 ```
 
+## Rotação na pista (`tools/rotacao.py`)
+
+Responde se o comando de arfagem consegue levantar o nariz na corrida, pelas duas contas que o projeto tem: a
+analítica da sprint e a do núcleo (o mesmo modelo da decolagem 6GDL). O avião é o do exemplo do aeroopt, com a
+categoria e os valores passados. A ferramenta imprime a velocidade em que cada conta roda o avião, a de sair do chão,
+cada momento em torno do trem principal (o aerodinâmico, o da sustentação, o da tração e o do peso) e o C_mδ das
+duas. Serve para achar qual termo segura o nariz no chão. `--png` desenha o momento pela velocidade e o C_m do núcleo
+pelo curso do comando; `--varre chave=início:fim:pontos` repete a conta mexendo uma variável.
+
+```sh
+python tools/rotacao.py "asa voadora" tail.aileron_chord=0.48 --png perfis/rotacao.png
+python tools/rotacao.py monoplano --varre rules.main_gear_aft=0:0.1:6
+```
+
 ## Paralelismo do otimizador (`tools/pipeline_bench.py`)
 
 Compara as formas de rodar o processo em etapas do aeroopt em paralelo. O mesmo lote de configurações roda em série, em

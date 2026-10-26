@@ -195,13 +195,26 @@ def _eval(x: dict, r: dict) -> dict:
                 b=r.get("b", math.nan), m_bat=r.get("m_bat", math.nan), viol=r.get("viol", 0.0))
 
 
-def violation(d: dict, stab: dict | None = None, stab_params=None) -> tuple[float, list[str]]:
+def violation(d: dict, stab: dict | None = None, stab_params=None, rotation: bool = False) -> tuple[float, list[str]]:
     """quanto um ponto de projeto viola o que é preciso para voar, somado em escalas parecidas (cada termo vale 1
-    na fronteira de "bem fora"), e o motivo de cada termo. `d`: o ponto de projeto ou a montagem ({"asm": ...})"""
+    na fronteira de "bem fora"), e o motivo de cada termo. `d`: o ponto de projeto ou a montagem ({"asm": ...}).
+    Com `rotation` (a rodada interna da E&C), o comando de arfagem tem de rodar o avião antes da velocidade de sair
+    do chão, e o termo cresce com o quanto falta: V_rot / V_lof − 1, mais 1 se não roda em velocidade nenhuma. Sem
+    ele, vale o de sempre: só não rodar em velocidade nenhuma conta"""
     asm = d["asm"]
     tr, st = asm.get("trim") or {}, asm["set"]
     out: list[tuple[float, str]] = []
-    if not math.isfinite(tr.get("V_rot", 0.0)):
+    v_rot, v_lof = tr.get("V_rot", 0.0), tr.get("V_lof", math.inf)
+    if rotation and "rot_table" in tr and not v_rot <= v_lof:
+        if math.isfinite(v_rot):
+            gap = v_rot / v_lof - 1.0
+        else:                                        # nem a 40 m/s: o quanto o maior momento cabrando não cobre o peso
+            _, M, arm = tr["rot_table"]
+            need = float(asm["mass"]) * 9.80665 * arm
+            gap = 1.0 + max(0.0, 1.0 - float(np.max(M)) / need) if need > 0 else 1.0
+        out.append((gap, f"o comando de arfagem só roda o avião a {v_rot:.1f} m/s (sai do chão a {v_lof:.1f})"
+                    if math.isfinite(v_rot) else "o profundor não consegue rodar o avião"))
+    elif not math.isfinite(v_rot):
         out.append((1.0, "o profundor não consegue rodar o avião"))
     if not tr.get("hold_ok", True):
         out.append((1.0, "trim de decolagem passa do curso de picar"))
@@ -228,6 +241,36 @@ def violation(d: dict, stab: dict | None = None, stab_params=None) -> tuple[floa
             if k not in ("Cnb", "Clb") and isinstance(v, int) and v > lim:
                 out.append((float(v - lim), f"{k}: nível {v} (aceito até {lim})"))
     return sum(v for v, _ in out), [w for _, w in out]
+
+
+def core_rotation(ac, asm: dict, rules, rho: float, backend) -> dict | None:
+    """a conta de "o comando de arfagem roda o avião?" da montagem (`power.thrust_trim`) refeita com os
+    coeficientes do núcleo, o mesmo modelo da corrida 6GDL, em vez da conta analítica da sprint. Os momentos são no
+    trem principal (+ cabra), com o avião no chão (α = 0) e o comando todo cabrando (−de_max):
+
+        M(V) = q S c C_m,CG + q S C_L (x_CG − x_TP) + M_tração(V) − W (x_CG − x_TP)
+
+    a mesma soma de `thrust_trim` (o arrasto na altura do trem fica de fora nas duas). Devolve o `trim` da montagem
+    com `V_rot` e `rot_table` do núcleo, ou None quando não há corrida para conferir (sem motor ou sem triciclo)"""
+    from aerosim.model.universal import build_model
+    tr = asm.get("trim") or {}
+    us = [u for u in ac.propulsion if u.enabled]
+    if "rot_table" not in tr or not us or ac.gear.layout != "tricycle":
+        return None
+    Vgrid, _, _ = tr["rot_table"]
+    model = build_model(ac)
+    S, c, x_cg = model.S, model.c, float(model.mass["cg"][0])
+    x_mg, gz = ac.gear.main_x, ac.gear.main_z
+    arm = x_cg - x_mg
+    with backend.session_for(model) as s:
+        k = s.aero_coeffs(10.0, 0.0, de=-math.radians(rules.de_max))
+    Tv = pw.thrust_of(ac, Vgrid, rho, None) / len(us)
+    Mth = np.array([pw._thrust_moment(us, t, x_mg, gz) for t in Tv])
+    rot_a = 0.5 * rho * Vgrid ** 2 * S * (c * k["Cm"] + k["CL"] * arm) + Mth     # sem o momento do peso
+    f = rot_a - float(asm["mass"]) * pw.G0 * arm
+    up = np.nonzero(f > 0)[0]
+    return {**tr, "V_rot": float(Vgrid[up[0]]) if len(up) else math.inf, "rot_table": (Vgrid, rot_a, arm),
+            "rot_core": True}
 
 
 # os métodos da busca das superfícies (a GUI escolhe no menu Configuração)
@@ -342,6 +385,13 @@ class SurfaceSizing(IStage):
 # os métodos da etapa "voa" (a GUI escolhe no menu Configuração)
 # as caudas que a etapa voa (E&C) pode escolher para um avião, na ordem em que desempatam
 TAILS = ("convencional", "em H", "em V", "sem cauda")
+# os comandos que a rodada interna da E&C ajusta, por tipo de avião (chave, mínimo, máximo). O curso vai até 30°,
+# o que um servo comum dá com folga; o elevon pode ir até a corda de 50 % e da raiz (5 %) à ponta
+CONTROLS = {
+    "com cauda": (("tail.elevator", 0.25, 0.5), ("rules.de_max", 15.0, 30.0), ("power.tilt", 0.0, 12.0)),
+    "asa voadora": (("tail.aileron_start", 0.05, 0.6), ("tail.aileron_end", 0.8, 1.0), ("tail.aileron_chord", 0.2, 0.5),
+                    ("rules.de_max", 15.0, 30.0), ("power.tilt", 0.0, 12.0)),
+}
 FLY_METHODS = {"buscar": "achar um ponto que voa (gerações nas contínuas, pelas regras de viabilidade)",
                "cma-es": "achar um ponto que voa (CMA-ES nas contínuas, pelas regras de viabilidade)",
                "de": "achar um ponto que voa (evolução diferencial nas contínuas, pelas regras de viabilidade)",
@@ -363,11 +413,16 @@ class FlightCheck(IStage):
     cauda o avião é o mais leve e voa, mas pode não rodar na pista. A escolha muda o indivíduo
     (`values["tail.layout"]`), e as etapas seguintes usam essa cauda.
     Uma categoria que já define a cauda (tandem, asa voadora) ou uma cauda livre no problema fica como está. Cada
-    cauda gasta até as avaliações da etapa"""
+    cauda gasta até as avaliações da etapa.
+
+    Com `controls`, a busca também mexe nos comandos (`CONTROLS`: a corda e o trecho do elevon, a corda do
+    profundor, o curso e a inclinação do motor), além das contínuas livres do problema, e o comando de arfagem tem de
+    rodar o avião antes da velocidade de sair do chão (`violation(..., rotation=True)`). É o que faz uma asa voadora
+    decolar: com o elevon de sempre ela só roda depois de sair do chão. Os comandos achados ficam no indivíduo"""
     name = "voa"
 
     def __init__(self, project, problem: OptProblem, catalog=None, evals: int = 24, method: str = "buscar",
-                 stability: StabilityParams | None = None, tails=None):
+                 stability: StabilityParams | None = None, tails=None, controls: bool = False):
         if method not in FLY_METHODS:
             raise ValueError(f"método da etapa voa desconhecido: {method}")
         unknown = [t for t in tails or () if t not in TAILS]
@@ -377,6 +432,7 @@ class FlightCheck(IStage):
         self.stability = stability
         self.tails = tuple(t for t in TAILS if t in (tails or ()))     # na ordem de TAILS
         self.tail_free = any(v.key == TAIL_KEY for v in problem.free_variables())
+        self.controls = bool(controls)
         self.free = [(v.key, min(v.lo, v.hi), max(v.lo, v.hi)) for v in problem.free_variables()
                      if v.kind == "contínua"]
         self._backend = None
@@ -388,26 +444,49 @@ class FlightCheck(IStage):
         check_cancel()                             # o Parar combinado: sai entre um ponto e outro
         p, cand = candidate(self.project, values)
         ac, asm = pw.assemble(cand, p.requirements, p.rules, self.catalog, p.airfoil_map())
+        if self.controls and self._backend is None:
+            from aerosim.backend.zig import ZigBackend
+            self._backend = ZigBackend()
+        if self.controls:                          # a rotação pelo núcleo: a conta da sprint superestima o elevon
+            tr = core_rotation(ac, asm, p.rules, p.requirements.rho, self._backend)
+            asm = {**asm, "trim": tr} if tr is not None else asm
         d = dict(asm=asm, cand=cand)
-        viol, why = violation(d)
+        viol, why = violation(d, rotation=self.controls)
         stab = {}
         if not why and self.stability is not None:
             if self._backend is None:
                 from aerosim.backend.zig import ZigBackend
                 self._backend = ZigBackend()
             _, _, stab = stability_check(ac, p.requirements.V_cruise, self.stability, self._backend)
-            viol, why = violation(d, stab, self.stability)
+            viol, why = violation(d, stab, self.stability, rotation=self.controls)
         return dict(values=dict(values), ok=not why, why="; ".join(why), viol=viol, mtow=math.nan, stab=stab,
                     pv=float(asm["empty"]))
 
+    def kind(self, values: dict) -> str:
+        """o tipo de avião para os comandos: "asa voadora" (sem cauda), "com cauda" """
+        layout = values.get(TAIL_KEY)
+        if layout is None and cat.KEY in values:
+            layout = cat.fields(values[cat.KEY])["tail_draft.layout"]
+        if layout is None:
+            layout = self.project.tail_draft.layout
+        return "asa voadora" if layout == "sem cauda" else "com cauda"
+
+    def free_for(self, values: dict) -> list:
+        """as contínuas da busca: as livres do problema e, com `controls`, os comandos do tipo de avião"""
+        if not self.controls:
+            return self.free
+        have = {k for k, _, _ in self.free}
+        return self.free + [c for c in CONTROLS[self.kind(values)] if c[0] not in have]
+
     def _fly(self, item: StageItem, values: dict):
         """(x, melhor ponto, histórico) da busca de um ponto que voa, partindo de `values`"""
-        x = {k: min(max(float(values.get(k, get_value(self.project, k))), lo), hi) for k, lo, hi in self.free}
+        free = self.free_for(values)
+        x = {k: min(max(float(values.get(k, get_value(self.project, k))), lo), hi) for k, lo, hi in free}
         best = self.point({**values, **x})
         hist = [_eval(x, best)]
-        if not best["ok"] and self.method in ("buscar", "cma-es", "de") and self.free:
+        if not best["ok"] and self.method in ("buscar", "cma-es", "de") and free:
             search = {"cma-es": _cma_search, "de": _de_search}.get(self.method, _real_search)
-            x, best = search(self.free, x, best, lambda y: self.point({**values, **y}), self.evals, hist,
+            x, best = search(free, x, best, lambda y: self.point({**values, **y}), self.evals, hist,
                                    seed=7 + zlib.crc32(item.name.encode()) % 100_000, stop_ok=True)
         return x, best, hist
 
@@ -748,11 +827,12 @@ class StagedEvaluator(IEvaluator):
     def __init__(self, project, catalog=None, backend=None, workers: int | None = None, six_dof: bool = True,
                  evals: int = 24, start_method: str | None = None, scoring=None, geometry=True,
                  surfaces: str = "coordenadas", stability: StabilityParams | None = None, fly: str | None = "buscar",
-                 executors=None, tails=None):
+                 executors=None, tails=None, controls: bool | None = None):
         self.project, self.catalog, self.backend = project, catalog, backend
         self.executors = executors                 # os da sessão (aerosim.parallel.session); None: um por rodada
         self.fly = fly                             # o método da etapa "voa" (FLY_METHODS); None: sem a etapa
         self.tails = tails                         # as caudas que a "voa" escolhe; None: as do problema (etapas.caudas)
+        self.controls = controls                   # a "voa" ajusta os comandos; None: o do problema (etapas.comandos)
         self.surfaces = surfaces                   # o método da busca das superfícies (SURFACE_METHODS)
         self.stability = stability                 # a restrição de estabilidade de cada ponto (None: desligada)
         self.workers, self.six_dof, self.evals = workers, six_dof, evals
@@ -771,8 +851,11 @@ class StagedEvaluator(IEvaluator):
     def stages(self, project, problem: OptProblem) -> list[IStage]:
         sts: list[IStage] = [GeometryStage(project, self.geometry, self.catalog)] if self.geometry else []
         if self.fly:
-            tails = self.tails if self.tails is not None else (problem.params.get("etapas") or {}).get("caudas")
-            sts.append(FlightCheck(project, problem, self.catalog, self.evals, self.fly, self.stability, tails))
+            e = problem.params.get("etapas") or {}
+            tails = self.tails if self.tails is not None else e.get("caudas")
+            controls = self.controls if self.controls is not None else bool(e.get("comandos"))
+            sts.append(FlightCheck(project, problem, self.catalog, self.evals, self.fly, self.stability, tails,
+                                   controls))
         sts.append(SurfaceSizing(project, problem, self.catalog, self.evals, self.geometry, self.surfaces,
                                  self.stability))
         if self.six_dof:

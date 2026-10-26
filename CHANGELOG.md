@@ -6,6 +6,13 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, comandos em E&C: com "comandos (E&C)" marcado na Configuração (`params["etapas"]["comandos"]`), a etapa
+  voa também mexe nos comandos do tipo de avião (profundor; ou trecho e corda do elevon; curso para cabrar e
+  inclinação do motor), e o comando tem de rodar o avião antes de sair do chão. Essa conta usa o C_m e o C_L do
+  núcleo (`stages.core_rotation`), porque a conta analítica da sprint dá ao elevon da asa voadora uns 4 a 5 vezes o
+  C_mδ do núcleo e passava aviões que batem no 6GDL. Desligado por padrão. Ferramenta nova `tools/rotacao.py`:
+  a rotação pelas duas contas, termo a termo. As suspeitas viraram os itens O16 a O20 do tracking.
+
 - aeroopt, a cauda é escolhida em E&C: a etapa voa (estabilidade e controle) testa as caudas marcadas na
   Configuração (convencional, em H, em V, sem cauda) na asa de cada configuração e fica com a que voa; entre as que
   voam, a que decola na pista com a maior carga paga (um ponto de projeto por cauda). O indivíduo passa a ter essa cauda (`values["tail.layout"]`), e as etapas seguintes a usam.

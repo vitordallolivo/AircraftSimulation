@@ -348,3 +348,38 @@ def test_flight_check_chooses_the_tail_and_changes_the_individual():
     res = sg.StagedSolver().run(pr, sg.StagedEvaluator(p, workers=1, six_dof=False, evals=2))   # pelo problema
     row = next(r for r in res.rows if r["values"][cat.KEY] == "monoplano")
     assert row["values"].get(sg.TAIL_KEY) == out.values[sg.TAIL_KEY]
+
+
+def test_core_rotation_agrees_with_the_sprint_on_a_tail_and_catches_the_flying_wing_elevon():
+    """a rotação pelo núcleo (a conta da E&C com os comandos): no monoplano bate com a da sprint (mesmos termos,
+    só C_m e C_L do núcleo); na asa voadora com elevon na envergadura toda a sprint diz que roda antes de sair do
+    chão e o núcleo não, que é o que a decolagem 6GDL mostra (ela bate na pista)"""
+    from aeroopt.gui import example_project
+    from aerosim.backend.zig import ZigBackend
+    from aerosim.design import power as pw
+    p, _ = example_project()
+    be = ZigBackend()
+
+    def both(values):
+        q, cand = sg.candidate(p, values)
+        ac, asm = pw.assemble(cand, q.requirements, q.rules, None, q.airfoil_map())
+        tr = sg.core_rotation(ac, asm, q.rules, q.requirements.rho, be)
+        return asm["trim"]["V_rot"], tr["V_rot"], tr["V_lof"]
+
+    vs, vc, _ = both({"categoria": "monoplano"})
+    assert vc == pytest.approx(vs, rel=0.1)
+    vs, vc, vl = both({"categoria": "asa voadora", "power.propeller": "Genérica 13x6.5", "wing.span": 1.58,
+                       "wing.area": 0.6, "tail.aileron_start": 0.1, "tail.aileron_end": 0.99,
+                       "tail.aileron_chord": 0.48, "rules.de_max": 20.0, "power.tilt": 4.5})
+    assert vs < vl < vc
+
+
+def test_flight_check_with_controls_adds_the_controls_of_the_kind_of_aircraft():
+    from aeroopt.gui import example_project
+    p, pr = example_project()
+    fc = sg.FlightCheck(p, pr, evals=2, controls=True)
+    keys = [k for k, _, _ in fc.free_for({"categoria": "asa voadora"})]
+    assert "tail.aileron_chord" in keys and "tail.elevator" not in keys
+    keys = [k for k, _, _ in fc.free_for({"categoria": "monoplano"})]
+    assert "tail.elevator" in keys and "tail.aileron_chord" not in keys
+    assert sg.FlightCheck(p, pr, evals=2).free_for({"categoria": "asa voadora"}) == fc.free

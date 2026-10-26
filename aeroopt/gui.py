@@ -643,7 +643,7 @@ class ConstraintsTable(QtWidgets.QWidget):
 GEOMETRY_DEFAULT = {"ligada": True, "rotação": 12.0, "folga": 0.0, "folga_hélice": 0.02, "uma_peça": False}
 STABILITY_DEFAULT = {"ligada": False, "nível": 2}
 STAGES_DEFAULT = {"configurações": "gerações", "voa": "buscar", "superfícies": "coordenadas", "decolagem": "6gdl", "população": 16,
-                  "gerações": 8, "avaliações": 12, "processos": 0, "caudas": []}
+                  "gerações": 8, "avaliações": 12, "processos": 0, "caudas": [], "comandos": False}
 # os métodos das etapas que não estão em aeroopt.stages (o menu Configuração)
 CONFIG_METHODS = {"gerações": "gerações (algoritmo genético do núcleo)",
                   "todas": f"todas as combinações (até {sg.MAX_CONFIGS})"}
@@ -929,6 +929,12 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                        "escolha muda o avião, e as etapas seguintes usam essa cauda. Cada cauda gasta até as "
                        "avaliações da etapa e um ponto de projeto. Nenhuma marcada: o avião fica com a cauda dos "
                        "rascunhos. Tandem e asa voadora não têm cauda e não entram"), tw)
+        self.controls_cb = QtWidgets.QCheckBox("ajustar os comandos")
+        f.addRow(_help("comandos (E&C)", "a busca também mexe nos comandos: a corda do profundor, o trecho e a corda "
+                       "do elevon, o curso para cabrar e a inclinação do motor. E o comando tem de rodar o avião na "
+                       "pista antes da velocidade de sair do chão, pela conta do núcleo (a mesma da decolagem 6GDL). "
+                       "É o que faz uma asa voadora ter chance de decolar. Os comandos achados ficam no avião"),
+                 self.controls_cb)
         f = stage("superfícies (desempenho e otimização)", sg.SURFACE_METHODS,
                   "a busca das contínuas livres (envergadura, área...) pelo maior MTOW que fecha na pista. "
                   "Coordenadas: um eixo por vez, rápida quando as variáveis são independentes. Gerações, CMA-ES e "
@@ -1407,6 +1413,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             self.set_method(k, e[k])
         for t, cb in self.tail_cb.items():
             cb.setChecked(t in (e.get("caudas") or []))
+        self.controls_cb.setChecked(bool(e.get("comandos")))
         self.pop.setValue(int(e["população"]))
         self.gens.setValue(int(e["gerações"]))
         self.evals.setValue(int(e["avaliações"]))
@@ -1440,7 +1447,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.summary["configuração"].setText(
             f"aviões: {', '.join(cats) or 'o dos rascunhos'}; {cfg}; "
             f"voa: {'desligada' if e['voa'] == 'desligada' else METHOD_NAMES.get(e['voa'], e['voa'])}"
-            + (f", escolhe a cauda ({', '.join(e['caudas'])})" if e.get("caudas") else "") + "; "
+            + (f", escolhe a cauda ({', '.join(e['caudas'])})" if e.get("caudas") else "")
+            + (", ajusta os comandos" if e.get("comandos") else "") + "; "
             f"superfícies por {METHOD_NAMES.get(e['superfícies'], e['superfícies'])} "
             f"({e['avaliações']} pontos); decolagem {'no 6GDL' if e['decolagem'] == '6gdl' else 'só na pista'}; "
             + (f"sensibilidade: {SENS_METHODS[sp.method]}" if (sp := SensParams.from_dict(
@@ -1471,7 +1479,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         pr.params["estabilidade"] = {"ligada": self.stab.isChecked(), "nível": self.stab_level.currentData()}
         pr.params["etapas"] = {**self.methods(), "população": self.pop.value(), "gerações": self.gens.value(),
                                "avaliações": self.evals.value(), "processos": self.workers.value(),
-                               "caudas": [t for t, cb in self.tail_cb.items() if cb.isChecked()]}
+                               "caudas": [t for t, cb in self.tail_cb.items() if cb.isChecked()],
+                               "comandos": self.controls_cb.isChecked()}
         pr.params["sensibilidade"] = self.sens_params().to_dict()
         return pr
 
@@ -1584,7 +1593,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                                   stability=sg.StabilityParams(level=self.stab_level.currentData())
                                   if self.stab.isChecked() else None,
                                   fly=None if m["voa"] == "desligada" else m["voa"], executors=self.pool(),
-                                  tails=[t for t, cb in self.tail_cb.items() if cb.isChecked()])
+                                  tails=[t for t, cb in self.tail_cb.items() if cb.isChecked()],
+                                  controls=self.controls_cb.isChecked())
 
     def run_sensitivity(self):
         """só a sensibilidade do avião selecionado, sem rodar o resto: o resultado vai para uma aba dos gráficos do
