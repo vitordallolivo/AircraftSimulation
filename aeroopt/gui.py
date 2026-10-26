@@ -664,6 +664,16 @@ class _Worker(QtCore.QObject):
             self.failed.emit(traceback.format_exc(limit=5))
 
 
+def _sensitivity(project, pr, row, ev, sp, pool_args) -> dict:
+    """a sensibilidade de um avião (a linha da tabela), numa linha de fundo: em série quando roda poucos pontos ou
+    nenhum, senão num pool próprio (o da rodada pode estar ocupado)"""
+    from .sensitivity import sensitivity
+    if sp.method == "local" and not sp.limits:
+        return sensitivity(project, pr, row, ev, sp)
+    with make_executor("processos", *pool_args) as ex:
+        return sensitivity(project, pr, row, ev, sp, executor=ex)
+
+
 class AeroOptWindow(QtWidgets.QMainWindow):
     def __init__(self, project=None, problem=None, path: str = "", synthetic: bool = False):
         super().__init__()
@@ -850,14 +860,14 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                 for k, txt in methods.items():
                     c.addItem(METHOD_NAMES.get(k, k), k)
                     c.setItemData(c.count() - 1, txt, QtCore.Qt.ItemDataRole.ToolTipRole)
-                self.method[key or title.split(".", 1)[1].strip()] = c
+                self.method[key or title] = c
                 f.addRow("método", c)
             if note:
                 box.setToolTip(note)
             v.addWidget(box)
             return f
 
-        f = stage("1. configurações", CONFIG_METHODS)
+        f = stage("configurações", CONFIG_METHODS)
         self.pop = QtWidgets.QSpinBox()
         self.pop.setRange(2, 256)
         self.pop.setValue(16)
@@ -868,19 +878,17 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.gens.setToolTip("gerações do algoritmo genético (elite, seleção por posição, cruzamento, mutação)")
         f.addRow("configurações por geração", self.pop)
         f.addRow("gerações", self.gens)
-        stage("2. geometria", None, "liga, desliga e tem o ângulo de rotação em Restrições → Geometria")
-        stage("3. voa", {**sg.FLY_METHODS, "desligada": "desligada (direto para o desempenho)"},
+        stage("voa", {**sg.FLY_METHODS, "desligada": "desligada (direto para o desempenho)"},
               "na massa estimada, sem procurar o MTOW: trima, equilibra sem lastro, tem a margem mínima e, com a "
               "restrição de estabilidade ligada, é estável. Gasta até as avaliações das superfícies")
-        f = stage("4. superfícies (desempenho e otimização)", sg.SURFACE_METHODS, key="superfícies")
+        f = stage("superfícies (desempenho e otimização)", sg.SURFACE_METHODS, key="superfícies")
         self.evals = QtWidgets.QSpinBox()
         self.evals.setRange(1, 200)
         self.evals.setValue(12)
         self.evals.setToolTip("pontos de projeto que a busca das superfícies gasta em cada configuração")
         f.addRow("avaliações por configuração", self.evals)
-        stage("5. decolagem", TAKEOFF_METHODS)
-        stage("6. nota", None, "no núcleo, com a pontuação escolhida")
-        f = stage("7. sensibilidade do melhor", None, "o quanto a nota do melhor muda com cada contínua livre, "
+        stage("decolagem", TAKEOFF_METHODS)
+        f = stage("sensibilidade do melhor", None, "o quanto a nota do melhor muda com cada contínua livre, "
                   "dentro do problema (aeroopt/sensitivity.py); o resultado fica na aba Sensibilidade do melhor")
         self.sens_on = QtWidgets.QCheckBox("rodar")
         self.sens_method = QtWidgets.QComboBox()
@@ -1023,6 +1031,11 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         self.aerosim_b.setEnabled(False)
         self.aerosim_b.clicked.connect(self.open_aerosim)
         h.addWidget(self.aerosim_b)
+        self.sens_b = QtWidgets.QPushButton("Sensibilidade deste avião")
+        self.sens_b.setToolTip("roda só a sensibilidade do avião selecionado, com o método do menu Configuração")
+        self.sens_b.setEnabled(False)
+        self.sens_b.clicked.connect(self.run_sensitivity)
+        h.addWidget(self.sens_b)
         self.csv_b = QtWidgets.QPushButton("Exportar CSV…")
         self.csv_b.setToolTip("cada avião avaliado, em ordem, com as variáveis que mudaram nele (avaliacoes.csv), e "
                               "cada configuração com a nota fator por fator (configuracoes.csv)")
@@ -1086,14 +1099,8 @@ class AeroOptWindow(QtWidgets.QMainWindow):
                 except Exception as e:  # noqa: BLE001 — uma análise que falha não tira as outras
                     w.item.emit(title, (None, str(e)))
             if ev is not None and sp.on:
-                from .sensitivity import sensitivity
                 try:
-                    if sp.method == "local" and not sp.limits:         # poucos pontos ou nenhum: em série
-                        res = sensitivity(self.project, pr, r, ev, sp)
-                    else:                                              # os da rodada podem estar ocupados
-                        with make_executor("processos", *pool_args) as ex:
-                            res = sensitivity(self.project, pr, r, ev, sp, executor=ex)
-                    w.item.emit(SENS_TITLE, ("sens", res))
+                    w.item.emit(SENS_TITLE, ("sens", _sensitivity(self.project, pr, r, ev, sp, pool_args)))
                 except Exception as e:  # noqa: BLE001
                     w.item.emit(SENS_TITLE, (None, str(e)))
             return name
@@ -1183,6 +1190,9 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         ax.setWidth(min(240, 12 + 7 * max((len(t) for _, t in ticks), default=8)))   # o nome inteiro de cada barra
         pi.setYRange(-0.7, max(n, 1) - 0.3)
         v.addWidget(pw_)
+        curves = self._sens_curves(s)
+        if curves is not None:
+            v.addWidget(curves)
         method = SENS_METHODS.get(s.get("method", "local"), "")
         if not rows:
             lines = ["o problema não tem contínuas livres: não há o que variar no melhor"]
@@ -1225,6 +1235,47 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         lab = QtWidgets.QLabel("<br>".join(lines))
         lab.setWordWrap(True)
         v.addWidget(lab)
+        return w
+
+    def _sens_curves(self, s: dict) -> QtWidgets.QWidget | None:
+        """quanto mexer em cada coisa muda a nota: um gráfico por contínua (a curva do modelo, os pontos avaliados
+        no eixo e a faixa da tolerância) e um por limite do problema (a nota com o limite mais apertado, como está e
+        mais folgado). A linha tracejada é o valor do melhor"""
+        base = s["base"]["nota"]
+        items = [(r["label"], r["x0"], r.get("curve", ([], [])), r.get("points", []), r.get("tol_delta", 0.0))
+                 for r in s["rows"]]
+        items += [(f"limite: {lm['label']}", lm["value"], ([], []),
+                   sorted([(lv, n, why) for lv, n, why in lm["points"]] + [(lm["value"], base, "")]), 0.0)
+                  for lm in s.get("limits", [])]
+        if not items:
+            return None
+        w = QtWidgets.QWidget()
+        g = QtWidgets.QGridLayout(w)
+        for k, (name, x0, (cx, cy), pts, tol) in enumerate(items):
+            pw_ = pg.PlotWidget()
+            pw_.setBackground("w")
+            pw_.setMinimumHeight(220)
+            pi = pw_.getPlotItem()
+            pi.showGrid(x=True, y=True, alpha=0.25)
+            pi.setLabel("bottom", name)
+            pi.setLabel("left", "nota")
+            for a in ("bottom", "left"):
+                pi.getAxis(a).enableAutoSIPrefix(False)             # o valor como está no campo, sem ×0,001
+            if tol > 0:
+                band = pg.LinearRegionItem((x0 - tol, x0 + tol), movable=False, brush=pg.mkBrush(70, 120, 180, 40),
+                                           pen=pg.mkPen(None))
+                pi.addItem(band)
+            if cx:
+                pi.plot(cx, cy, pen=pg.mkPen(70, 120, 180, width=2))
+            good = [(x, n) for x, n, _ in pts if math.isfinite(n)]
+            bad = [x for x, n, _ in pts if not math.isfinite(n)]
+            if good:
+                pi.plot([x for x, _ in good], [n for _, n in good], pen=None if cx else pg.mkPen(150, 110, 40),
+                        symbol="o", symbolSize=8, symbolBrush=pg.mkBrush(30, 60, 110), symbolPen=pg.mkPen(30, 60, 110))
+            if bad and math.isfinite(base):
+                pi.plot(bad, [base] * len(bad), pen=None, symbol="x", symbolSize=11, symbolPen=pg.mkPen(BAD_C, width=2))
+            pi.addItem(pg.InfiniteLine(pos=x0, angle=90, pen=pg.mkPen("#222", width=1, style=QtCore.Qt.PenStyle.DashLine)))
+            g.addWidget(pw_, k // 2, k % 2)
         return w
 
     def _best_done(self, name) -> None:
@@ -1411,17 +1462,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             self.msg.setText(f"<span style='color:{BAD_C}'>{n_all} combinações: para varrer todas o limite é "
                              f"{sg.MAX_CONFIGS}; escolha as gerações em Configuração</span>")
             return
-        ev = sg.StagedEvaluator(self.project, workers=self.workers.value(), six_dof=m["decolagem"] == "6gdl",
-                                evals=self.evals.value(), start_method=START_METHOD, scoring=scoring,
-                                geometry=self.geometry_params(), surfaces=m["superfícies"],
-                                stability=sg.StabilityParams(level=self.stab_level.currentData())
-                                if self.stab.isChecked() else None,
-                                fly=None if m["voa"] == "desligada" else m["voa"], executors=self.pool())
-        if self.synthetic:
-            from .synthetic import SyntheticEvaluator
-            ev = SyntheticEvaluator(self.project, workers=self.workers.value(), evals=self.evals.value(),
-                                    surfaces=m["superfícies"], start_method=START_METHOD, delay=0.02,
-                                    executors=self.pool())
+        ev = self.evaluator(scoring)
         stage_names = [s.name for s in ev.stages(self.project, pr)]
         self.funnel = {s: [0, 0, 0] for s in stage_names}
         self._scoring = scoring
@@ -1443,6 +1484,51 @@ class AeroOptWindow(QtWidgets.QMainWindow):
         w.item.connect(self._item)
         w.done.connect(self._done)
         self._run(w)
+
+    def evaluator(self, scoring):
+        """o avaliador das etapas com o que está no menu Configuração (ou o sintético)"""
+        m = self.methods()
+        if self.synthetic:
+            from .synthetic import SyntheticEvaluator
+            return SyntheticEvaluator(self.project, workers=self.workers.value(), evals=self.evals.value(),
+                                      surfaces=m["superfícies"], start_method=START_METHOD, delay=0.02,
+                                      executors=self.pool())
+        return sg.StagedEvaluator(self.project, workers=self.workers.value(), six_dof=m["decolagem"] == "6gdl",
+                                  evals=self.evals.value(), start_method=START_METHOD, scoring=scoring,
+                                  geometry=self.geometry_params(), surfaces=m["superfícies"],
+                                  stability=sg.StabilityParams(level=self.stab_level.currentData())
+                                  if self.stab.isChecked() else None,
+                                  fly=None if m["voa"] == "desligada" else m["voa"], executors=self.pool())
+
+    def run_sensitivity(self):
+        """só a sensibilidade do avião selecionado, sem rodar o resto: o resultado vai para uma aba dos gráficos do
+        melhor, com o número do avião"""
+        r = self.rows.get(self.selected or "")
+        if r is None or self.project is None or not math.isfinite(r.get("nota", math.nan)):
+            return
+        pr, sp, pool_args = self.read_problem(), self.sens_params(), self._pool_args()
+        ev = getattr(self, "_ev", None) or self.evaluator(self.scoring.scoring())
+        title = f"{SENS_TITLE} nº {r.get('index', '')}"
+        self.sens_b.setEnabled(False)
+        self.msg.setText(f"sensibilidade do nº {r.get('index', '')} ({SENS_METHODS[sp.method]})…")
+        w = _Worker(lambda w: _sensitivity(self.project, pr, r, ev, sp, pool_args))
+
+        def done(res):
+            self._best_plot(self._best_shown or r["name"], title, "sens", res)
+            k = next(i for i in range(self.best_tabs.count()) if self.best_tabs.tabText(i) == title)
+            self.best_tabs.setCurrentIndex(k)
+            self.msg.setText(f"sensibilidade do nº {r.get('index', '')}: {res['new']} pontos novos")
+            self.sens_b.setEnabled(True)
+        w.done.connect(done)
+        w.failed.connect(lambda t: (self.msg.setText("a sensibilidade falhou:\n" + t), self.sens_b.setEnabled(True)))
+        th = QtCore.QThread(self)
+        w.moveToThread(th)
+        th.started.connect(w.run)
+        for sig in (w.done, w.failed):
+            sig.connect(th.quit)
+        th.finished.connect(lambda: self._side.remove((th, w)) if (th, w) in self._side else None)
+        self._side.append((th, w))
+        th.start()
 
     def _run(self, w: _Worker):
         th = QtCore.QThread(self)
@@ -1679,6 +1765,7 @@ class AeroOptWindow(QtWidgets.QMainWindow):
             return
         self.selected = name
         self.keep_b.setEnabled(True)
+        self.sens_b.setEnabled(math.isfinite(r.get("nota", math.nan)))
         self.aerosim_b.setEnabled(False)          # liga quando o avião estiver refeito (o 3D)
         self.draw_map()
         lines = [["id", str(r.get("index", ""))], ["área de projeto", sg.area(r)]]

@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- aeroopt, sensibilidade sozinha e curvas: o botão "Sensibilidade deste avião" roda só a sensibilidade do avião
+  selecionado, com o método do menu, numa aba própria. A aba ganha um gráfico por variável (a nota pelo modelo, os
+  pontos avaliados no eixo e a faixa da tolerância) e um por limite do problema. O menu Configuração perdeu a
+  numeração das etapas e as caixas sem opção (geometria e nota).
 - aeroopt, sensibilidade com menu e três métodos: no menu Configuração, "7. sensibilidade do melhor" liga a análise e
   escolhe o método (modelo local, um por vez ou Morris), o passo, a tolerância de fabricação, as trajetórias e os
   limites do problema; tudo vai no `.opt.json` (`params["sensibilidade"]`). No núcleo, `core/src/optim/sensmethods.zig`

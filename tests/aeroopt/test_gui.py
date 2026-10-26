@@ -206,6 +206,8 @@ def test_left_panel_is_buttons_and_settings_go_with_the_problem(app, tmp_path):
     assert w.rot.window() is not w and w.scoring.window() is not w and w.cat_cb["asa alta"].window() is not w
     assert w.rot.window() is w.menus["restrições"] and w.evals.window() is w.menus["configuração"]
     assert set(w.method) == {"configurações", "voa", "superfícies", "decolagem"}
+    titles = [b.title() for b in w.menus["configuração"].findChildren(QtWidgets.QGroupBox)]
+    assert "geometria" not in titles and not any(t[:1].isdigit() for t in titles)   # sem numeração nem caixa vazia
     w.rot.setValue(9.0)
     w.one_piece.setChecked(True)
     w.stab.setChecked(True)
@@ -286,6 +288,13 @@ def test_window_with_synthetic_data_finds_the_known_best(app):
     best = max(w.rows.values(), key=lambda r: (r["valido"], r["nota"]))
     assert best["name"] == sy.best(p, pr) and "sintéticos" in w.windowTitle()
     _wait(app, lambda: not w._side and w._best_job is None)
+    w.select(best["name"])                                        # só a sensibilidade, do avião selecionado
+    w.sens_method.setCurrentIndex(w.sens_method.findData("eixos"))
+    assert w.sens_b.isEnabled()
+    w.run_sensitivity()
+    title = f"Sensibilidade nº {best.get('index', '')}"
+    _wait(app, lambda: not w._side and any(w.best_tabs.tabText(i) == title for i in range(w.best_tabs.count())), 60)
+    assert w.best_tabs.tabText(w.best_tabs.currentIndex()) == title and w.sens_b.isEnabled()
 
 
 def test_sensitivity_tab_with_morris_and_limits(app):

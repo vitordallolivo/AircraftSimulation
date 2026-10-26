@@ -80,7 +80,9 @@ trajetórias pela região em volta do melhor e mostra se uma variável tem efeit
 (curvatura ou interação com as outras), ao preço de alguns pontos por variável. A tolerância diz quanto a nota cai
 se o avião sair da oficina com aquela diferença em cada medida. Com os limites ligados, a pista e cada restrição
 ligada mudam um pouco para cada lado, e a aba mostra quanto a nota do melhor ganha ou perde com isso, no mesmo
-gráfico.
+gráfico. Embaixo do tornado, um gráfico por variável mostra a nota pelo modelo em volta do melhor, os pontos
+avaliados e a faixa da tolerância; um por limite mostra a nota com o limite apertado, como está e folgado. O botão
+"Sensibilidade deste avião" roda só a sensibilidade do avião selecionado na tabela, sem rodar o resto.
 
 ![A tabela e o avião selecionado](../docs/img/aeroopt/tabela.png)
 

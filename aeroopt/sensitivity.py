@@ -254,7 +254,9 @@ def _row(P: _Points, k: int, h: float, slope_u: float, curv_u: float, quad: bool
     def model(t: float) -> float:
         return float(n0 + slope_u * t + (0.5 * curv_u * t * t if quad else 0.0))
     span = P.span[k]
-    return dict(key=key, label=label(key), x0=float(P.x0[k]), lo=lo, hi=hi, slope=float(slope_u / span),
+    ts = np.linspace(-t_lo, t_hi, 21)                    # a curva do modelo, para o gráfico nota × variável
+    curve = ([float(P.x0[k] + t * span) for t in ts], [model(t) for t in ts]) if math.isfinite(slope_u) else ([], [])
+    return dict(key=key, label=label(key), x0=float(P.x0[k]), lo=lo, hi=hi, slope=float(slope_u / span), curve=curve,
                 curv=float(curv_u / span ** 2) if quad else math.nan, x_minus=float(P.x0[k] - t_lo * span),
                 x_plus=float(P.x0[k] + t_hi * span), minus=model(-t_lo), plus=model(t_hi),
                 at_bound=("mín" if t_lo < EPS else "") + ("máx" if t_hi < EPS else ""), blocked=[])
@@ -302,6 +304,8 @@ def _local(P: _Points, sp: SensParams, usable, resp, n0, backend, out) -> list[d
                 q = min(fail, key=lambda q: abs(q["u"][k] - P.u0[k]))
                 why = q["why"] if not q["ok"] else ("voo inválido" if out["base"]["valido"] else "voo válido")
                 r["blocked"].append((side, float(q["x"][k]), why))
+        r["points"] = sorted((float(q["x"][k]), float(q[resp]) if usable(q) else math.nan, q["why"])
+                             for q in P.pts if P.on_axis(q, k) and abs(q["u"][k] - P.u0[k]) <= h + EPS)
         r.update(near=sum(1 for q in use if float(np.linalg.norm(q["u"] - P.u0)) <= NEAR
                           and abs(q["u"][k] - P.u0[k]) >= EPS),
                  new=sum(1 for q in P.pts if q["new"] and abs(q["u"][k] - P.u0[k]) >= EPS and P.on_axis(q, k)),
@@ -328,6 +332,7 @@ def _morris(P: _Points, sp: SensParams, usable, resp, n0, backend, out) -> list[
     rows = []
     for k, (_, lo, hi, step) in enumerate(P.vars):
         r = _row(P, k, h, mu[k], math.nan, False, n0)
+        r["points"] = []
         r.update(mustar=float(ms[k] / P.span[k]), sigma=float(sg_[k] / P.span[k]), steps=int(cnt[k]),
                  failed=sp.trajectories - int(cnt[k]), near=int(cnt[k]), asked=True,
                  new=sum(1 for q in P.pts if q["new"]))
