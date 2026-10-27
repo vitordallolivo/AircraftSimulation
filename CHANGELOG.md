@@ -6,9 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
-- aeroopt, README: a janela vem primeiro; depois o fluxo dos blocos (`docs/img/aeroopt/blocos.png`, a pedido do
-  vitor), os módulos em mermaid e uma seção curta por bloco, com o que ele faz, por que existe e a conta principal, no lugar do texto
-  corrido de antes.
+- aeroopt e core/optim, README com figuras: no aeroopt, "Como se divide" (o PNG dos módulos) vem antes de "Como
+  funciona" (o fluxo dos blocos e uma figura por bloco, com dados reais: a rotação na pista, as regras de Deb e a
+  violação até voar, onde caem os pontos de cada busca, a bisseção na massa, a nota e as gerações). No core/optim,
+  cada busca ganhou o seu desenho (GA, CMA-ES, DE, hipercubo latino, busca guiada, substituto RBF e modelo local).
 
 - aeroopt, GA com substituto (O36, passo 2): a busca "substituto" das superfícies. A cada geração o GA do núcleo
   sorteia 16 vezes mais filhos que a população, um substituto RBF cúbico com cauda linear (`core/src/optim/rbf.zig`,

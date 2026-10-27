@@ -42,6 +42,10 @@ ponto de corte sorteado vêm de um pai e o resto do outro. Depois, cada gene mud
 discreto vira outra opção qualquer, e o real anda um sorteio normal de desvio $\sigma (hi - lo)$, preso aos limites.
 Os sorteios saem de uma semente (`seed` e `generation`), então a mesma entrada dá a mesma geração.
 
+Na figura, cada caixa é um gene, e a cor é o valor. Os pais saem da seleção por posição (o primeiro tem mais chance), o filho pega o começo de um e o fim do outro, e um gene sofre mutação.
+
+![Gerações: seleção, cruzamento e mutação](../../../docs/img/fig/optim_ga.png)
+
 ## O CMA-ES
 
 Aqui se define uma busca em até 32 variáveis contínuas (envergadura, área, diedro, VH...), com até 64 aviões por
@@ -63,6 +67,10 @@ depois de ver quais aviões foram melhores, gira e estica a elipse ao longo da d
 algumas gerações, os sorteios saem quase todos dentro do vale. As contas e as constantes são as do tutorial de
 Hansen (*The CMA Evolution Strategy: A Tutorial*, arXiv:1604.00772, 2016, seção 4 e tabela 1; números das equações
 a conferir no PDF), na versão com pesos positivos.
+
+A figura é o CMA-ES do núcleo de verdade, num vale inclinado como o de envergadura e área. A elipse redonda da primeira geração deita no vale e encolhe perto do ótimo.
+
+![CMA-ES num vale inclinado](../../../docs/img/fig/optim_cmaes.png)
 
 ### O que o estado guarda
 
@@ -216,6 +224,10 @@ de partida do artigo. As variáveis entram em [0, 1], e o gene que sai da caixa 
 esfera e o vale de Rosenbrock com um total fixo, que o teste fica na caixa, que a mesma semente dá os mesmos testes e
 que a seleção não piora ninguém.
 
+Na figura, o passo do teste é a diferença entre dois aviões da população, somada a um terceiro.
+
+![Evolução diferencial: um teste](../../../docs/img/fig/optim_de.png)
+
 ## O hipercubo latino
 
 Aqui se sorteiam os primeiros indivíduos de uma busca de modo que cada variável seja varrida de ponta a ponta, até
@@ -235,6 +247,10 @@ Um hipercubo latino ainda pode sair ruim no conjunto, com os pontos alinhados nu
 Statistical Planning and Inference 43, 1995, a conferir no PDF). Os testes conferem que cada fatia tem um ponto, que
 a mesma semente dá os mesmos pontos, que o maximin não afasta menos que um sorteio só e que, em 12 variáveis com 8
 pontos, o sorteio uniforme deixa fatias vazias e o latino não.
+
+Na figura, oito pontos sorteados um a um deixam fatias inteiras sem ponto (em vermelho); os oito do hipercubo latino do núcleo cobrem todas.
+
+![Hipercubo latino contra sorteio uniforme](../../../docs/img/fig/optim_lhs.png)
 
 ## O substituto RBF
 
@@ -262,6 +278,10 @@ pivoteamento parcial, e como cresce com os pontos, a memória ((m + n + 1)² val
 aloca. Com pontos repetidos ou todos numa reta, a conta diz que não dá, e o aeroopt sorteia os filhos sem o
 substituto. Os testes conferem que $s$ passa pelos pontos, que um plano sai exato (só a cauda), que numa grade 5 × 5
 a tigela fica certa entre os pontos com erro menor que 0,01 e que pontos numa reta ou repetidos são recusados.
+
+Na figura, o substituto do núcleo (azul) passa pelos pontos já avaliados e dá o palpite de cada filho sorteado. Só os de melhor palpite, mais um sorteado, vão para a conta de verdade (a curva tracejada, que na rodada ninguém conhece).
+
+![Substituto RBF escolhendo os filhos](../../../docs/img/fig/optim_rbf.png)
 
 ## A busca guiada pela falha
 
@@ -301,6 +321,10 @@ que o reparo zera uma e duas restrições lineares num passo, que o ε cai como 
 zero, que o bandido prefere o braço que paga e reinicia quando ele para de pagar, e que as duas caixas ficam onde
 os melhores estão.
 
+Na figura, à esquerda, o reparo leva um ponto que viola as duas restrições até a borda do que voa num passo só. No meio, o bandido do núcleo escolhe o operador que rende e troca quando a falha muda. À direita, o ε fecha até zero.
+
+![Reparo, bandido e ε](../../../docs/img/fig/optim_guiada.png)
+
 ## O modelo local
 
 Aqui se ajusta, em até 32 variáveis, um modelo da nota em volta de um ponto $x_0$ a partir de pontos já avaliados.
@@ -327,6 +351,10 @@ conferir no PDF). Uma nota NaN é ignorada. Quando os pontos não abrem todas as
 só dois valores dela para a curvatura), um pivô de Cholesky some e a conta devolve que não dá. Quem chama então
 avalia só as direções que faltam. Os testes conferem um plano exato, uma parábola (inclinação zero no topo e
 curvatura exata mesmo com pontos de um lado só), os pontos de uma busca por coordenadas e as direções que faltam.
+
+Na figura, o modelo local do núcleo em volta do melhor: cada ponto já avaliado pesa pelo tamanho, e fora do raio não conta. Saem a inclinação $g$ e a curvatura $c$.
+
+![Modelo local em volta do melhor](../../../docs/img/fig/optim_localfit.png)
 
 ## A tolerância e Morris
 
