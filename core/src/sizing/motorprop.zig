@@ -37,89 +37,89 @@ pub const MotorProp = extern struct {
 };
 
 /// `numpy.interp(x, xp, fp, right=r)`: depois do último ponto, `r`
-fn interpRight(x: f64, xp: []const f64, fp: []const f64, r: f64) f64 {
-    if (xp.len > 0 and x > xp[xp.len - 1]) return r;
-    return ground.interp(x, xp, fp);
+fn interpRight(query: f64, xp: []const f64, fp: []const f64, right_value: f64) f64 {
+    if (xp.len > 0 and query > xp[xp.len - 1]) return right_value;
+    return ground.interp(query, xp, fp);
 }
 
 /// a tração (N) na velocidade `V` (m/s) com densidade `rho`; 0 sem tabela
-pub fn thrust(m: *const MotorProp, V: f64, rho: f64) f64 {
-    const np: usize = @intCast(std.math.clamp(m.n, 0, max_pts));
+pub fn thrust(motor_prop: *const MotorProp, airspeed: f64, rho: f64) f64 {
+    const np: usize = @intCast(std.math.clamp(motor_prop.n, 0, max_pts));
     if (np == 0) return 0;
-    const tJ = m.J[0..np];
+    const tJ = motor_prop.J[0..np];
     const two_pi = 2 * std.math.pi;
-    const kv = m.Kv * 2 * std.math.pi / 60;
-    const R = m.Rm + m.Rint;
-    const Res = struct { r: f64, n: f64, J: f64 };
+    const kv = motor_prop.Kv * 2 * std.math.pi / 60;
+    const total_resistance = motor_prop.Rm + motor_prop.Rint;
+    const Res = struct { residual: f64, rev_per_s: f64, advance: f64 };
     const resid = struct {
-        fn f(mp: *const MotorProp, tab: []const f64, cp: []const f64, k: f64, Rs: f64, v: f64, rh: f64, w: f64) Res {
-            const a = (mp.Voc - w / k) / Rs;
-            const I = if (mp.Imax < a) mp.Imax else a; // o min do Python
-            const Qm = I / k - mp.tauc - mp.B * w;
-            const n = w / two_pi;
-            const J = if (n > 0) v / (n * mp.D) else 0.0;
-            const CP = ground.interp(J, tab, cp);
-            return .{ .r = Qm - CP * rh * n * n * mp.D5 / two_pi, .n = n, .J = J };
+        fn evaluate(mp: *const MotorProp, tab: []const f64, cp: []const f64, kv_rad: f64, resistance: f64, speed: f64, rh: f64, omega: f64) Res {
+            const free_current = (mp.Voc - omega / kv_rad) / resistance;
+            const current = if (mp.Imax < free_current) mp.Imax else free_current; // o min do Python
+            const Qm = current / kv_rad - mp.tauc - mp.B * omega;
+            const rev_per_s = omega / two_pi;
+            const advance = if (rev_per_s > 0) speed / (rev_per_s * mp.D) else 0.0;
+            const CP = ground.interp(advance, tab, cp);
+            return .{ .residual = Qm - CP * rh * rev_per_s * rev_per_s * mp.D5 / two_pi, .rev_per_s = rev_per_s, .advance = advance };
         }
-    }.f;
-    const cp = m.CP[0..np];
+    }.evaluate;
+    const cp = motor_prop.CP[0..np];
     var lo: f64 = 1.0;
-    var hi: f64 = m.Voc * kv;
+    var hi: f64 = motor_prop.Voc * kv;
     for (0..iterations) |_| {
         const mid = 0.5 * (lo + hi);
-        if (resid(m, tJ, cp, kv, R, V, rho, mid).r > 0) lo = mid else hi = mid;
+        if (resid(motor_prop, tJ, cp, kv, total_resistance, airspeed, rho, mid).residual > 0) lo = mid else hi = mid;
     }
-    const e = resid(m, tJ, cp, kv, R, V, rho, 0.5 * (lo + hi));
-    const CT = interpRight(e.J, tJ, m.CT[0..np], 0.0);
-    const t = CT * rho * e.n * e.n * m.D4;
-    return if (0.0 > t) 0.0 else t; // o max do Python
+    const solution = resid(motor_prop, tJ, cp, kv, total_resistance, airspeed, rho, 0.5 * (lo + hi));
+    const CT = interpRight(solution.advance, tJ, motor_prop.CT[0..np], 0.0);
+    const thrust_value = CT * rho * solution.rev_per_s * solution.rev_per_s * motor_prop.D4;
+    return if (0.0 > thrust_value) 0.0 else thrust_value; // o max do Python
 }
 
-/// a curva: `out[i]` = tração em `V[i]`
-pub fn curve(m: *const MotorProp, V: []const f64, rho: f64, out: []f64) void {
-    for (V, out) |v, *o| o.* = thrust(m, v, rho);
+/// a curva: `out[i]` = tração em `airspeeds[i]`
+pub fn curve(motor_prop: *const MotorProp, airspeeds: []const f64, rho: f64, out: []f64) void {
+    for (airspeeds, out) |airspeed, *out_value| out_value.* = thrust(motor_prop, airspeed, rho);
 }
 
 // ------------------------------------------------------------------ testes
 fn sample() MotorProp {
-    var m: MotorProp = .{ .Kv = 900, .Rm = 0.08, .B = 1e-6, .tauc = 0.02, .Imax = 40, .Voc = 11.1, .Rint = 0.02, .D = 0.33 };
-    m.D4 = m.D * m.D * m.D * m.D;
-    m.D5 = m.D4 * m.D;
-    m.n = 4;
-    m.J[0..4].* = .{ 0, 0.3, 0.6, 0.8 };
-    m.CT[0..4].* = .{ 0.12, 0.10, 0.05, 0.0 };
-    m.CP[0..4].* = .{ 0.06, 0.055, 0.04, 0.02 };
-    return m;
+    var motor_prop: MotorProp = .{ .Kv = 900, .Rm = 0.08, .B = 1e-6, .tauc = 0.02, .Imax = 40, .Voc = 11.1, .Rint = 0.02, .D = 0.33 };
+    motor_prop.D4 = motor_prop.D * motor_prop.D * motor_prop.D * motor_prop.D;
+    motor_prop.D5 = motor_prop.D4 * motor_prop.D;
+    motor_prop.n = 4;
+    motor_prop.J[0..4].* = .{ 0, 0.3, 0.6, 0.8 };
+    motor_prop.CT[0..4].* = .{ 0.12, 0.10, 0.05, 0.0 };
+    motor_prop.CP[0..4].* = .{ 0.06, 0.055, 0.04, 0.02 };
+    return motor_prop;
 }
 
 test "motor × hélice: o torque fecha no equilíbrio e a tração cai com V" {
-    const m = sample();
-    const t0 = thrust(&m, 0, 1.2);
-    const t10 = thrust(&m, 10, 1.2);
+    const motor_prop = sample();
+    const t0 = thrust(&motor_prop, 0, 1.2);
+    const t10 = thrust(&motor_prop, 10, 1.2);
     try std.testing.expect(t0 > 5 and t0 < 60);
     try std.testing.expect(t10 < t0 and t10 > 0);
     // no equilíbrio, Q_m = Q_p: refaz a conta na rotação de T = C_T ρ n² D⁴ (V = 0, J = 0: C_T = 0,12)
-    const n = @sqrt(t0 / (0.12 * 1.2 * m.D4));
-    const w = n * 2 * std.math.pi;
-    const kv = m.Kv * 2 * std.math.pi / 60;
-    const I = @min((m.Voc - w / kv) / (m.Rm + m.Rint), m.Imax);
-    const Qm = I / kv - m.tauc - m.B * w;
-    const Qp = 0.06 * 1.2 * n * n * m.D5 / (2 * std.math.pi);
+    const rev_per_s = @sqrt(t0 / (0.12 * 1.2 * motor_prop.D4));
+    const omega = rev_per_s * 2 * std.math.pi;
+    const kv = motor_prop.Kv * 2 * std.math.pi / 60;
+    const current = @min((motor_prop.Voc - omega / kv) / (motor_prop.Rm + motor_prop.Rint), motor_prop.Imax);
+    const Qm = current / kv - motor_prop.tauc - motor_prop.B * omega;
+    const Qp = 0.06 * 1.2 * rev_per_s * rev_per_s * motor_prop.D5 / (2 * std.math.pi);
     try std.testing.expectApproxEqRel(Qp, Qm, 1e-9);
 }
 
 test "motor × hélice: depois do fim da tabela não há tração; sem tabela, zero" {
-    var m = sample();
-    try std.testing.expectEqual(@as(f64, 0), thrust(&m, 80, 1.2)); // J > 0,8
-    m.n = 0;
-    try std.testing.expectEqual(@as(f64, 0), thrust(&m, 5, 1.2));
+    var motor_prop = sample();
+    try std.testing.expectEqual(@as(f64, 0), thrust(&motor_prop, 80, 1.2)); // J > 0,8
+    motor_prop.n = 0;
+    try std.testing.expectEqual(@as(f64, 0), thrust(&motor_prop, 5, 1.2));
     try std.testing.expectEqual(@as(f64, 0), interpRight(2, &.{ 0, 1 }, &.{ 3, 4 }, 0));
     try std.testing.expectEqual(@as(f64, 4), interpRight(1, &.{ 0, 1 }, &.{ 3, 4 }, 0));
 }
 
 test "motor × hélice: a corrente máxima limita a tração parada" {
-    var m = sample();
-    const free = thrust(&m, 0, 1.2);
-    m.Imax = 5;
-    try std.testing.expect(thrust(&m, 0, 1.2) < free);
+    var motor_prop = sample();
+    const free = thrust(&motor_prop, 0, 1.2);
+    motor_prop.Imax = 5;
+    try std.testing.expect(thrust(&motor_prop, 0, 1.2) < free);
 }

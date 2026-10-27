@@ -433,8 +433,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/sizing/**
 
 - `core/src/sizing/chain.zig` — A cadeia do mini-MDO para um tipo de aeronave e um provedor de tração, gerada em comptime:
-  tipos `CoreThrust:23`, `LinearThrust:45`
-  fn `checkThrust:17`, `decode:55`, `motorsFor:77`, `Chain:92`
+  tipos `CoreThrust:24`, `LinearThrust:47`
+  fn `checkThrust:18`, `decode:58`, `motorsFor:80`, `Chain:96`
 - `core/src/sizing/ground.zig` — Corrida de decolagem rápida da sprint (etapa Motores, `aerosim/design/power.py: performance`): a mesma
   tipos `GroundRun:23`
   fn `interp:50`, `rotSpeed:77`, `run:87`, `mtow:112`
@@ -443,15 +443,15 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `biplaneSigma:45`, `check:146`
 - `core/src/sizing/motorprop.zig` — Tração em regime de um conjunto motor + hélice + bateria com acelerador cheio, para a curva T(V) da sprint
   tipos `MotorProp:22`
-  fn `thrust:46`, `curve:78`
+  fn `thrust:46`, `curve:79`
 - `core/src/sizing/optimize.zig` — Otimizadores do mini-MDO atrás de uma interface só.
-  tipos `Eval:16`, `Problem:21`, `Recorder:48`, `Result:76`, `Pso:97`, `RandomSearch:152`
-  fn `check:182`, `run:192`
+  tipos `Eval:16`, `Problem:21`, `Recorder:50`, `Result:79`, `Pso:100`, `RandomSearch:156`
+  fn `check:188`, `run:198`
 - `core/src/sizing/sizing.zig` — Dimensionamento inicial (mini-MDO) no núcleo: avalia um vetor de projeto e otimiza.
   fn `eval:20`, `fitness:29`, `optimize:49`, `name:59`
 - `core/src/sizing/stages.zig` — Estágios da cadeia de dimensionamento, cada um uma função pura com entradas e saídas pequenas:
-  tipos `Curve:18`, `Geo:40`, `Polar:65`, `Env:80`, `Mass:207`
-  fn `geometry:43`, `blendAirfoils:53`, `polar:68`, `stallSpeed:91`, `envelope:95`, `sustainedN:128`, `isaRho:137`, `isaAltitude:142`, `ceiling:147`, `landingRun:171`, `takeoffRun:177`, `canHover:202`, `emptyMass:209`, `linearCurve:223`
+  tipos `Curve:18`, `Geo:42`, `Polar:67`, `Env:82`, `Mass:211`
+  fn `geometry:45`, `blendAirfoils:55`, `polar:70`, `stallSpeed:94`, `envelope:99`, `sustainedN:132`, `isaRho:141`, `isaAltitude:146`, `ceiling:151`, `landingRun:175`, `takeoffRun:181`, `canHover:206`, `emptyMass:214`, `linearCurve:228`
 - `core/src/sizing/types.zig` — Tipos do dimensionamento inicial (mini-MDO): a configuração que vem do Python, o vetor de
   tipos `VarSpec:30`, `Constraint:76`, `AirfoilData:94`, `LayoutData:105`, `PropSet:115`, `SizingCfg:130`, `SizingOut:171`, `OptOpts:191`, `Individual:203`
   fn `massDependent:65`, `violation:84`
