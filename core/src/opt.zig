@@ -12,18 +12,18 @@ pub const Opt = enum(u8) {
     estrin = 64, // o polinômio do exp por Estrin no lugar do Horner (math/fmath.zig)
 
     /// o bit da otimização (o mesmo número do campo)
-    pub inline fn bit(o: Opt) u8 {
-        return @intFromEnum(o);
+    pub inline fn bit(self: Opt) u8 {
+        return @intFromEnum(self);
     }
 
-    /// a otimização `o` está ligada em `bits`?
-    pub inline fn in(o: Opt, bits: u8) bool {
-        return bits & o.bit() != 0;
+    /// a otimização `self` está ligada em `bits`?
+    pub inline fn in(self: Opt, bits: u8) bool {
+        return bits & self.bit() != 0;
     }
 };
 
 comptime {
     // cada campo é uma potência de 2 e nenhum se repete (o enum já proíbe valores iguais)
-    for (@typeInfo(Opt).@"enum".fields) |f| if (f.value == 0 or f.value & (f.value - 1) != 0)
-        @compileError("-Dopt: '" ++ f.name ++ "' não é um bit só");
+    for (@typeInfo(Opt).@"enum".fields) |field| if (field.value == 0 or field.value & (field.value - 1) != 0)
+        @compileError("-Dopt: '" ++ field.name ++ "' não é um bit só");
 }

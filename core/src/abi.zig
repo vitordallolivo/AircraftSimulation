@@ -44,7 +44,7 @@ fn typeTag(comptime Ty: type) struct { []const u8, usize } {
     return switch (@typeInfo(Ty)) {
         .float => .{ "f64", 1 },
         .int => .{ "i32", 1 },
-        .array => |a| .{ typeTag(a.child)[0], a.len * typeTag(a.child)[1] },
+        .array => |array_info| .{ typeTag(array_info.child)[0], array_info.len * typeTag(array_info.child)[1] },
         .@"struct" => .{ shortName(Ty), 1 },
         else => @compileError("tipo não suportado no ABI: " ++ @typeName(Ty)),
     };
@@ -52,38 +52,38 @@ fn typeTag(comptime Ty: type) struct { []const u8, usize } {
 
 fn describe(comptime Ty: type) []const u8 {
     comptime {
-        var s: []const u8 = std.fmt.comptimePrint("struct {s} {d} {d}\n", .{ shortName(Ty), @sizeOf(Ty), @alignOf(Ty) });
-        for (@typeInfo(Ty).@"struct".fields) |f| {
-            const tag = typeTag(f.type);
-            s = s ++ std.fmt.comptimePrint("field {s} {s} {d} {d}\n", .{ f.name, tag[0], tag[1], @offsetOf(Ty, f.name) });
+        var text: []const u8 = std.fmt.comptimePrint("struct {s} {d} {d}\n", .{ shortName(Ty), @sizeOf(Ty), @alignOf(Ty) });
+        for (@typeInfo(Ty).@"struct".fields) |field| {
+            const tag = typeTag(field.type);
+            text = text ++ std.fmt.comptimePrint("field {s} {s} {d} {d}\n", .{ field.name, tag[0], tag[1], @offsetOf(Ty, field.name) });
         }
-        return s ++ "end\n";
+        return text ++ "end\n";
     }
 }
 
 pub const schema: [:0]const u8 = blk: {
     @setEvalBranchQuota(1_000_000);
-    var s: []const u8 = std.fmt.comptimePrint(
+    var text: []const u8 = std.fmt.comptimePrint(
         "abi {d}\nlimit surfaces {d}\nlimit props {d}\nlimit prop_pts {d}\nlimit gear {d}\nlimit tanks {d}\nlimit segments {d}\nlimit events {d}\nlimit instances {d}\nlimit mods {d}\nlimit nx {d}\nsnapshot {d}\n",
         .{ version, limits.max_surfaces, limits.max_props, limits.max_prop_pts, limits.max_gear, limits.max_tanks, limits.max_segments, limits.max_events, limits.max_instances, limits.max_mods, state.nx, @sizeOf(state.Run) },
     );
-    s = s ++ std.fmt.comptimePrint("limit poly_coef {d}\npoly_terms", .{types.ThrustPoly.n_coef});
-    for (0..types.ThrustPoly.n_coef) |k| s = s ++ " " ++ types.ThrustPoly.name(k);
-    s = s ++ "\n";
-    for (exported) |Ty| s = s ++ describe(Ty);
-    const z = s ++ "\x00";
-    break :blk z[0..s.len :0];
+    text = text ++ std.fmt.comptimePrint("limit poly_coef {d}\npoly_terms", .{types.ThrustPoly.n_coef});
+    for (0..types.ThrustPoly.n_coef) |k| text = text ++ " " ++ types.ThrustPoly.name(k);
+    text = text ++ "\n";
+    for (exported) |Ty| text = text ++ describe(Ty);
+    const terminated = text ++ "\x00";
+    break :blk terminated[0..text.len :0];
 };
 
 /// FNV-1a de 64 bits do esquema (comptime): o Python recalcula sobre o texto que recebeu e confere
 pub const schema_hash: u64 = blk: {
     @setEvalBranchQuota(10_000_000);
-    var h: u64 = 0xcbf29ce484222325;
-    for (schema) |c| {
-        h ^= c;
-        h *%= 0x100000001b3;
+    var hash: u64 = 0xcbf29ce484222325;
+    for (schema) |byte| {
+        hash ^= byte;
+        hash *%= 0x100000001b3;
     }
-    break :blk h;
+    break :blk hash;
 };
 
 test "esquema tem todas as structs" {

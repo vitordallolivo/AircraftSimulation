@@ -31,85 +31,85 @@ inline fn next(rng_state: *u64, range: f64) f64 {
     return (draw * (1.0 / 9007199254740992.0) * 2.0 - 1.0) * range;
 }
 
-fn loop(comptime f: anytype, n: u64, random: bool, r: f64) f64 {
-    var st: u64 = 12345;
+fn loop(comptime func: anytype, count: u64, random: bool, range: f64) f64 {
+    var seed: u64 = 12345;
     var acc: f64 = 0;
-    var x: f64 = -r;
-    const dx = 2.0 * r / @as(f64, @floatFromInt(n));
+    var sweep: f64 = -range;
+    const step = 2.0 * range / @as(f64, @floatFromInt(count));
     var i: u64 = 0;
-    while (i < n) : (i += 1) {
-        const v = if (random) next(&st, r) else blk: {
-            x += dx;
-            break :blk x;
+    while (i < count) : (i += 1) {
+        const input = if (random) next(&seed, range) else blk: {
+            sweep += step;
+            break :blk sweep;
         };
-        acc += f(v);
+        acc += func(input);
     }
     return acc;
 }
 
-fn sinOf(comptime T: type) fn (f64) f64 {
+fn sinOf(comptime Table: type) fn (f64) f64 {
     return struct {
-        fn f(x: f64) f64 {
-            return T.sincos(x).s;
+        fn evaluate(angle: f64) f64 {
+            return Table.sincos(angle).s;
         }
-    }.f;
+    }.evaluate;
 }
 
 // o exp da tabela com cada esquema, independente de -Dopt
-fn expHorner(x: f64) f64 {
-    return fmath.lut.expWith(false, x);
+fn expHorner(value: f64) f64 {
+    return fmath.lut.expWith(false, value);
 }
-fn expEstrin(x: f64) f64 {
-    return fmath.lut.expWith(true, x);
-}
-
-fn atan2L(x: f64) f64 {
-    return fmath.lut.atan2(x, 0.7);
-}
-fn atan2R(x: f64) f64 {
-    return fmath.ref.atan2(x, 0.7);
-}
-fn logL(x: f64) f64 {
-    return fmath.lut.log(@abs(x) + 1e-3);
-}
-fn logR(x: f64) f64 {
-    return fmath.ref.log(@abs(x) + 1e-3);
+fn expEstrin(value: f64) f64 {
+    return fmath.lut.expWith(true, value);
 }
 
-/// roda n chamadas; devolve a soma (para o compilador não apagar o laço)
-pub fn math(kind: Kind, n: u64, random: bool) f64 {
+fn atan2L(value: f64) f64 {
+    return fmath.lut.atan2(value, 0.7);
+}
+fn atan2R(value: f64) f64 {
+    return fmath.ref.atan2(value, 0.7);
+}
+fn logL(value: f64) f64 {
+    return fmath.lut.log(@abs(value) + 1e-3);
+}
+fn logR(value: f64) f64 {
+    return fmath.ref.log(@abs(value) + 1e-3);
+}
+
+/// roda `count` chamadas; devolve a soma (para o compilador não apagar o laço)
+pub fn math(kind: Kind, count: u64, random: bool) f64 {
     return switch (kind) {
-        .sin_lut256 => loop(sinOf(fmath.lut.Sin), n, random, 10.0),
-        .sin_ref => loop(sinOf(fmath.ref), n, random, 10.0),
-        .sin_lut4096 => loop(sinOf(Mid), n, random, 10.0),
-        .sin_lut65536 => loop(sinOf(Big), n, random, 10.0),
-        .atan2_lut => loop(atan2L, n, random, 30.0),
-        .atan2_ref => loop(atan2R, n, random, 30.0),
-        .exp_lut => loop(expHorner, n, random, 50.0),
-        .exp_estrin => loop(expEstrin, n, random, 50.0),
-        .sin_minimax => loop(sinOf(fmath.minimax), n, random, 10.0),
-        .exp_ref => loop(fmath.ref.exp, n, random, 50.0),
-        .log_lut => loop(logL, n, random, 1e3),
-        .log_ref => loop(logR, n, random, 1e3),
+        .sin_lut256 => loop(sinOf(fmath.lut.Sin), count, random, 10.0),
+        .sin_ref => loop(sinOf(fmath.ref), count, random, 10.0),
+        .sin_lut4096 => loop(sinOf(Mid), count, random, 10.0),
+        .sin_lut65536 => loop(sinOf(Big), count, random, 10.0),
+        .atan2_lut => loop(atan2L, count, random, 30.0),
+        .atan2_ref => loop(atan2R, count, random, 30.0),
+        .exp_lut => loop(expHorner, count, random, 50.0),
+        .exp_estrin => loop(expEstrin, count, random, 50.0),
+        .sin_minimax => loop(sinOf(fmath.minimax), count, random, 10.0),
+        .exp_ref => loop(fmath.ref.exp, count, random, 50.0),
+        .log_lut => loop(logL, count, random, 1e3),
+        .log_ref => loop(logR, count, random, 1e3),
     };
 }
 
-/// n avaliações de f(t, x) no estado atual da simulação
-pub fn dynamics(inst: *runner.Instance, n: u64) f64 {
-    var dx: [state.nx]f64 = undefined;
+/// `count` avaliações das derivadas no estado atual da simulação
+pub fn dynamics(inst: *runner.Instance, count: u64) f64 {
+    var state_rates: [state.nx]f64 = undefined;
     var acc: f64 = 0;
     var i: u64 = 0;
-    while (i < n) : (i += 1) {
-        sim_dynamics.derivatives(inst.ctx(), inst.r.t, &inst.r.x, &dx, null);
-        acc += dx[state.VEL_X];
+    while (i < count) : (i += 1) {
+        sim_dynamics.derivatives(inst.ctx(), inst.r.t, &inst.r.x, &state_rates, null);
+        acc += state_rates[state.VEL_X];
     }
     return acc;
 }
 
 test "bench roda e dá o mesmo resultado nas tabelas" {
-    const a = math(.sin_lut256, 1000, true);
-    const b = math(.sin_ref, 1000, true);
-    const c = math(.sin_lut4096, 1000, true);
-    try std.testing.expectApproxEqAbs(b, a, 1e-9);
-    try std.testing.expectApproxEqAbs(b, c, 1e-9);
+    const lut256 = math(.sin_lut256, 1000, true);
+    const reference = math(.sin_ref, 1000, true);
+    const lut4096 = math(.sin_lut4096, 1000, true);
+    try std.testing.expectApproxEqAbs(reference, lut256, 1e-9);
+    try std.testing.expectApproxEqAbs(reference, lut4096, 1e-9);
 }
