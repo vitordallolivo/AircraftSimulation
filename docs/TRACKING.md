@@ -185,6 +185,7 @@ O núcleo físico em Zig (`core/`): dinâmica, aerodinâmica, cargas, estruturas
 | T32 | Modos de vibração e flutter | [novo] | T21 | B9 | Bloqueado |
 | T76 | Modificador `interferencia.asas` (tandem, biplano): as faixas de uma asa sentem as ferraduras da outra asa do par (Biot–Savart); desligado por padrão | [ext] | T78 | B3 | Feito (a revisar) |
 | T77 | Erros claros em vez de pane: `StateError` com texto (sem trem, inércia inválida, divergência; códigos −6 a −8 na ABI) e guardas de NaN e infinito no `fmath` (sincos, atan, exp, wrap) | [ext] | — | B1+ | Feito (a revisar) |
+| T87 | Legibilidade do núcleo (revisão do vitor): erros da ABI como `error{...}` com o código só na fronteira (`abiCode`); testes por `zig build test -Dgrupo=... -Dfiltro=...` no lugar dos arquivos `tests_*.zig`; nomes descritivos no lugar dos de uma letra em todo `core/src` (imports, parâmetros, locais); índices do vetor de estados num `enum` (`state.Entry`); `///` em toda `pub fn` e `export fn`. Biblioteca igual bit a bit, AeroDrive compila e passa. Falta: campos de uma letra das structs (`Instance.p/r`, `Ctx.p/f`, campos da ABI) e os nomes do AeroDrive | [ext] | — | B1+ | Feito (a revisar) |
 | T83 | VTOL, nesta ordem: quadplane, tilt-rotor, tailsitter. O regulamento da Micro 2026 permite decolar e pousar com sustentação vetorada (seções 9.4 e 9.5). Primeiro o plano com as fontes | [novo] | — | B3 | Pronto (plano) |
 
 ### aerodrive

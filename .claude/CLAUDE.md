@@ -92,6 +92,19 @@ as configurações.
     - **Números específicos** (tempos de máquina, resultados de um caso só) não vão no README. Eles ficam em
       `core/OTIMIZACOES.md` ou no teste.
 
+11. **Nomes no Zig dizem o que a coisa é.**
+    - Nada de nome de uma letra, a não ser os iteradores de laço simples (`i`, `j`, `k`). Parâmetro, variável local,
+      import e função ganham nomes que se leem sozinhos: `guide(ctx: state.Ctx, north: f64, east: f64,
+      ground_speed: f64)`, não `guide(c: S.Ctx, n: f64, e: f64, Vg: f64)`. Vale também para os imports
+      (`const limits = @import("../limits.zig")`, nunca `const L = ...`).
+    - Um conjunto de índices ou de códigos é um `enum`, não uma lista de constantes soltas (ex.: `state.Entry`, com
+      `state.index(.pitch)`). Erros são `error{...}`; o código numérico só existe na fronteira da ABI (`abiCode`).
+    - Toda `pub fn` e toda `export fn` tem um `///` curto dizendo o que ela faz (o equivalente do `@brief` do C).
+    - Os campos das structs `extern` da ABI ficam como estão (o Python lê pelo esquema); renomear um campo é uma
+      tarefa à parte.
+    - Depois de mexer no núcleo, compilar e testar também o AeroDrive (`cd aerodrive && python -m ziglang build test`
+      e `build`), porque ele usa o núcleo como módulo.
+
 ## 4. Como trabalhar com o dono do repositório
 
 - **Uma tarefa por vez.**

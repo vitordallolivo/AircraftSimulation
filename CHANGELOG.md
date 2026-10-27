@@ -6,6 +6,13 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- núcleo, legibilidade (T87, revisão do vitor). Os erros da ABI viram um `error{...}` (`AbiError`), e o número negativo
+  só aparece na fronteira, em `abiCode`. Os arquivos `tests_*.zig` por grupo dão lugar a `zig build test -Dgrupo=math`
+  (ou physics, sim...) e `-Dfiltro=<nome>`. Em todo `core/src`, os nomes de uma letra (imports `L`, `S`, `fm`;
+  parâmetros e variáveis `c`, `n`, `e`, `V`...) viram nomes que dizem o que são. Os índices do vetor de estados viram
+  o `enum` `state.Entry` (`state.index(.pitch)`), e toda `pub fn` e `export fn` ganha um `///`. A biblioteca sai igual
+  bit a bit, e o AeroDrive compila e passa nos testes. A regra está no `.claude/CLAUDE.md` (decisão 11).
+
 - aeroopt e core/optim, README com figuras: no aeroopt, "Como se divide" (o PNG dos módulos) vem antes de "Como
   funciona" (o fluxo dos blocos e uma figura por bloco, com dados reais: a rotação na pista, as regras de Deb e a
   violação até voar, onde caem os pontos de cada busca, a bisseção na massa, a nota e as gerações). No core/optim,
