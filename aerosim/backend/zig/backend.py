@@ -64,7 +64,9 @@ def _fresh_copy(path: str) -> str:
 
 
 _ERRORS = {-1: "slot inválido", -2: "não configurado", -3: "segmento inválido", -4: "trimagem não convergiu",
-           -5: "índice inválido", -10: "superfícies demais", -11: "motores demais", -12: "pontos de trem demais",
+           -5: "índice inválido", -6: "o avião não tem trem de pouso (o voo começa na pista)",
+           -7: "massa ou inércia inválida (zero, negativa ou NaN)",
+           -8: "a simulação divergiu ao assentar o avião (estado NaN): confira o trem, a massa e a inércia", -10: "superfícies demais", -11: "motores demais", -12: "pontos de trem demais",
            -13: "tanques demais", -14: "segmentos demais", -15: "eventos demais", -16: "dt inválido",
            -17: "massa inválida", -18: "pontos de hélice demais"}
 
@@ -143,6 +145,37 @@ class _Lib:
             "aerosim_sizing_optimize": (c_int, [ctypes.POINTER(T["SizingCfg"]), ctypes.POINTER(T["OptOpts"]), vp, c_size,
                                                 ctypes.POINTER(c_size), ctypes.POINTER(T["SizingOut"]), vp, vp]),
             "aerosim_sizing_name": (ctypes.c_char_p, [c_int, c_int]),
+            "aerosim_expr_check": (c_int, [ctypes.POINTER(T["Program"])]),
+            "aerosim_expr_eval": (c_int, [ctypes.POINTER(T["Program"]), vp, c_size, c_size, vp, c_size]),
+            "aerosim_ground_runs": (c_int, [ctypes.POINTER(T["GroundRun"]), vp, c_size, vp]),
+            "aerosim_ground_mtow": (c_double, [ctypes.POINTER(T["GroundRun"]), c_double, c_double, c_double]),
+            "aerosim_motor_prop_thrust": (c_int, [ctypes.POINTER(T["MotorProp"]), vp, c_size, c_double, vp]),
+            "aerosim_geometry_check": (c_int, [vp, c_size, vp]),
+            "aerosim_ga_init": (c_int, [ctypes.POINTER(T["GaCfg"]), vp]),
+            "aerosim_ga_next": (c_int, [ctypes.POINTER(T["GaCfg"]), vp, vp, vp]),
+            "aerosim_cma_init": (c_int, [ctypes.POINTER(T["CmaState"]), c_int, vp, c_double, c_int, c_int]),
+            "aerosim_cma_ask": (c_int, [ctypes.POINTER(T["CmaState"]), vp]),
+            "aerosim_cma_tell": (c_int, [ctypes.POINTER(T["CmaState"]), vp, vp]),
+            "aerosim_de_init": (c_int, [c_size, c_size, vp, ctypes.c_uint64, vp]),
+            "aerosim_de_trials": (c_int, [c_size, c_size, vp, c_double, c_double, ctypes.c_uint64, ctypes.c_uint64, vp]),
+            "aerosim_de_select": (c_int, [c_size, c_size, vp, vp, vp, vp]),
+            "aerosim_local_fit": (c_int, [c_size, c_size, vp, vp, vp, c_double, c_int, vp, vp, vp]),
+            "aerosim_sens_tolerance": (c_double, [c_size, vp, vp, vp, c_double, vp, vp, vp, vp]),
+            "aerosim_morris_design": (c_int, [c_size, c_size, c_size, ctypes.c_uint64, vp]),
+            "aerosim_rbf_fit": (c_int, [c_size, c_size, vp, vp, vp, vp]),
+            "aerosim_rbf_eval": (None, [c_size, c_size, vp, vp, c_size, vp, vp]),
+            "aerosim_lhs": (c_int, [c_size, c_size, c_size, ctypes.c_uint64, vp]),
+            "aerosim_repair_step": (c_int, [c_size, c_size, vp, vp, c_double, vp]),
+            "aerosim_eps_level": (c_double, [c_double, c_double, c_double, c_double]),
+            "aerosim_eps_worse": (c_int, [c_double, c_double, c_double, c_double, c_double]),
+            "aerosim_bandit_state_len": (c_size, []),
+            "aerosim_bandit_init": (c_int, [vp, c_size]),
+            "aerosim_bandit_pick": (c_int, [vp, c_double, ctypes.c_uint32]),
+            "aerosim_bandit_update": (c_int, [vp, c_size, c_double, c_double, c_double]),
+            "aerosim_normative": (c_int, [c_size, c_size, vp, vp, c_double, vp, vp]),
+            "aerosim_lem_box": (c_int, [c_size, c_size, vp, vp, c_double, vp, vp]),
+            "aerosim_box_sample": (c_int, [c_size, vp, vp, c_size, ctypes.c_uint64, ctypes.c_uint64, vp]),
+            "aerosim_morris_effects": (c_int, [c_size, c_size, vp, vp, vp, vp, vp, vp]),
             "aerosim_probe_ground": (c_double, [c_int, c_double, c_double]),
             "aerosim_probe_slipstream": (c_int, [c_double] * 9 + [ctypes.POINTER(c_double * 4)]),
             "aerosim_prop_state": (c_int, [c_int, c_int] + [c_double] * 5 + [ctypes.POINTER(T["PropPoint"])]),
@@ -208,7 +241,8 @@ class ZigSession(ISimSession):
         """muda escalares sem refazer tudo (ex.: stop_t, stop_seg) — chama configure de novo"""
         p = self._lib.dll.aerosim_params(self._slot).contents
         abi.write(p, overrides)
-        if any(not k.startswith("stop_") for k in overrides):   # paradas não mudam nada derivado
+        # paradas e o comando de decolagem não mudam nada derivado (o configure do núcleo não os lê)
+        if any(not (k.startswith("stop_") or k == "takeoff") for k in overrides):
             _check(self._lib.dll.aerosim_configure(self._slot), "configure")
 
     # ------------------------------------------------------------------ corrida
@@ -501,6 +535,266 @@ class ZigBackend(ISimBackend):
                                                      ctypes.byref(n), ctypes.byref(best),
                                                      ctypes.cast(fn, ctypes.c_void_p), None), "sizing_optimize")
         return buf[:n.value].copy(), abi.read(best)
+
+    # ------------------------------------------------------------------ aeroopt: programa da pontuação
+    _EXPR_ERRORS = {-1: "tamanho fora dos limites", -2: "operação desconhecida", -3: "índice inexistente",
+                    -4: "pilha", -5: "vaga lida antes de escrita", -6: "vaga escrita duas vezes"}
+
+    def _program(self, prog: dict):
+        p = self._lib.schema.types["Program"]()
+        tiers = [dict(limits=t["limits"], values=t["values"], n=len(t["limits"]), outside=t["outside"])
+                 for t in prog["tiers"]]
+        abi.write(p, dict(ops=prog["ops"], args=prog["args"], n_ops=len(prog["ops"]), consts=prog["consts"],
+                          n_consts=len(prog["consts"]), tiers=tiers, n_tiers=len(tiers), n_inputs=prog["n_inputs"],
+                          n_slots=len(prog["slots"])))
+        return p
+
+    def expr_eval(self, prog: dict, inputs) -> np.ndarray:
+        """todas as vagas do programa (colunas) para cada linha de entradas; `inputs`: (linhas, n_entradas)"""
+        p = self._program(prog)
+        x = np.ascontiguousarray(np.atleast_2d(np.asarray(inputs, float)))
+        if x.shape[1] != prog["n_inputs"]:
+            raise ValueError(f"{x.shape[1]} entradas por linha; o programa pede {prog['n_inputs']}")
+        out = np.zeros((x.shape[0], len(prog["slots"])))
+        code = self._lib.dll.aerosim_expr_eval(ctypes.byref(p), x.ctypes.data, x.shape[1], x.shape[0],
+                                               out.ctypes.data, out.shape[1])
+        if code < 0:
+            raise ValueError(f"programa da pontuação recusado pelo núcleo: {self._EXPR_ERRORS.get(code, code)}")
+        return out
+
+    # ------------------------------------------------------------------ corrida rápida da sprint
+    def ground_run(self, spec: dict):
+        """a struct GroundRun do núcleo a partir de um dicionário (as curvas como listas)"""
+        g = self._lib.schema.types["GroundRun"]()
+        abi.write(g, dict(spec, n=len(spec["V"]), n_rot=len(spec.get("rot_V", ()))))
+        return g
+
+    def ground_runs(self, g, masses) -> np.ndarray:
+        m = np.ascontiguousarray(np.atleast_1d(np.asarray(masses, float)))
+        out = np.zeros_like(m)
+        self._lib.dll.aerosim_ground_runs(ctypes.byref(g), m.ctypes.data, m.size, out.ctypes.data)
+        return out
+
+    def ground_mtow(self, g, lo: float, hi: float, runway: float) -> float:
+        return float(self._lib.dll.aerosim_ground_mtow(ctypes.byref(g), lo, hi, runway))
+
+    # ------------------------------------------------------------------ tração motor + hélice da sprint
+    def motor_prop_thrust(self, spec: dict, V, rho: float) -> np.ndarray:
+        """tração em regime com acelerador cheio em cada `V` (core/src/sizing/motorprop.zig); `spec` com Kv, Rm, B,
+        tauc, Imax, Voc, Rint, D e a tabela J, CT, CP da hélice"""
+        m = self._lib.schema.types["MotorProp"]()
+        D = float(spec["D"])
+        abi.write(m, dict(spec, D4=D ** 4, D5=D ** 5, n=len(spec["J"])))
+        v = np.ascontiguousarray(np.atleast_1d(np.asarray(V, float)))
+        out = np.zeros_like(v)
+        self._lib.dll.aerosim_motor_prop_thrust(ctypes.byref(m), v.ctypes.data, v.size, float(rho), out.ctypes.data)
+        return out
+
+    # ------------------------------------------------------------------ gerações do aeroopt
+    def _ga_cfg(self, cfg: dict):
+        c = self._lib.schema.types["GaCfg"]()
+        abi.write(c, cfg)
+        return c
+
+    def ga_init(self, cfg: dict) -> np.ndarray:
+        """a primeira geração (pop × n_genes) do algoritmo genético do núcleo (core/src/optim/ga.zig)"""
+        c = self._ga_cfg(cfg)
+        out = np.zeros((c.pop, c.n_genes))
+        if self._lib.dll.aerosim_ga_init(ctypes.byref(c), out.ctypes.data) < 0:
+            raise ValueError("gerações: genes ou população fora dos limites do núcleo")
+        return out
+
+    def ga_next(self, cfg: dict, genes, fitness) -> np.ndarray:
+        """a geração seguinte; `fitness` com NaN para quem morreu"""
+        c = self._ga_cfg(cfg)
+        g = np.ascontiguousarray(genes, float).reshape(c.pop, c.n_genes)
+        f = np.ascontiguousarray(fitness, float).reshape(c.pop)
+        out = np.zeros_like(g)
+        if self._lib.dll.aerosim_ga_next(ctypes.byref(c), g.ctypes.data, f.ctypes.data, out.ctypes.data) < 0:
+            raise ValueError("gerações: genes ou população fora dos limites do núcleo")
+        return out
+
+    # ------------------------------------------------------------------ CMA-ES do aeroopt
+    def cma_init(self, x0, sigma0: float = 0.3, lam: int = 0, seed: int = 1):
+        """o estado do CMA-ES do núcleo (core/src/optim/cmaes.zig) com média inicial `x0` em [0, 1]; λ ≤ 0 usa o
+        padrão. O estado é uma struct ctypes: passa de volta a `cma_ask` e `cma_tell`"""
+        st = self._lib.schema.types["CmaState"]()
+        x = np.ascontiguousarray(x0, float).ravel()
+        if self._lib.dll.aerosim_cma_init(ctypes.byref(st), len(x), x.ctypes.data, float(sigma0), int(lam),
+                                          int(seed)) < 0:
+            raise ValueError("CMA-ES: variáveis ou população fora dos limites do núcleo")
+        return st
+
+    def cma_ask(self, st) -> np.ndarray:
+        """a geração (λ × n) em [0, 1]"""
+        out = np.zeros((getattr(st, "lambda"), st.n))          # "lambda" é palavra reservada do Python
+        self._lib.dll.aerosim_cma_ask(ctypes.byref(st), out.ctypes.data)
+        return out
+
+    def cma_tell(self, st, xs, fitness) -> None:
+        """a nota de cada ponto da geração (maior é melhor; NaN é o pior)"""
+        x = np.ascontiguousarray(xs, float)
+        f = np.ascontiguousarray(fitness, float).ravel()
+        self._lib.dll.aerosim_cma_tell(ctypes.byref(st), x.ctypes.data, f.ctypes.data)
+
+    def de_init(self, x0, np_: int, seed: int = 1) -> np.ndarray:
+        """a população inicial da evolução diferencial (core/src/optim/de.zig): `x0` em [0, 1] na primeira linha"""
+        x = np.ascontiguousarray(np.asarray(x0, float).ravel())
+        out = np.zeros((np_, x.size))
+        if self._lib.dll.aerosim_de_init(x.size, np_, x.ctypes.data, int(seed), out.ctypes.data) < 0:
+            raise ValueError("evolução diferencial: até 32 variáveis e de 4 a 64 indivíduos")
+        return out
+
+    def lhs(self, n: int, m: int, tries: int = 20, seed: int = 1) -> np.ndarray:
+        """`m` pontos em [0, 1]^n por hipercubo latino (core/src/optim/sampling.zig), o de maior distância mínima
+        entre `tries` sorteios"""
+        out = np.zeros((m, n))
+        if self._lib.dll.aerosim_lhs(n, m, tries, int(seed), out.ctypes.data) < 0:
+            raise ValueError("hipercubo latino: até 32 variáveis e 256 pontos")
+        return out
+
+    # --- busca guiada pela falha (core/src/optim/guided.zig)
+    def repair_step(self, J, g, lam: float = 1e-6) -> np.ndarray:
+        """o passo de reparo Δx = −Jᵀ (J Jᵀ + λ I)⁻¹ g (`J`: m × n, `g`: m); ValueError se não cabe ou é singular"""
+        J = np.ascontiguousarray(np.atleast_2d(np.asarray(J, float)))
+        g = np.ascontiguousarray(np.asarray(g, float).ravel())
+        out = np.zeros(J.shape[1])
+        if self._lib.dll.aerosim_repair_step(J.shape[1], J.shape[0], J.ctypes.data, g.ctypes.data, float(lam),
+                                             out.ctypes.data) < 0:
+            raise ValueError("reparo: até 32 variáveis e 16 restrições, J Jᵀ + λ I não singular")
+        return out
+
+    def eps_level(self, eps0: float, t: float, tc: float, cp: float = 5.0) -> float:
+        """o nível ε(t) = ε₀ (1 − t/Tc)^cp do ε-restrito"""
+        return float(self._lib.dll.aerosim_eps_level(float(eps0), float(t), float(tc), float(cp)))
+
+    def eps_worse(self, fa: float, va: float, fb: float, vb: float, eps: float) -> bool:
+        """(fa, va) é pior que (fb, vb) na ordem ε"""
+        return bool(self._lib.dll.aerosim_eps_worse(float(fa), float(va), float(fb), float(vb), float(eps)))
+
+    def bandit_init(self, k: int) -> np.ndarray:
+        """o estado de um bandido de `k` braços (D-MAB), um vetor que quem usa guarda"""
+        s = np.zeros(int(self._lib.dll.aerosim_bandit_state_len()))
+        if self._lib.dll.aerosim_bandit_init(s.ctypes.data, k) < 0:
+            raise ValueError("bandido: de 1 a 16 braços")
+        return s
+
+    def bandit_pick(self, s: np.ndarray, c: float = 0.5, allowed=None) -> int:
+        """o braço a jogar (UCB1) entre os permitidos (`allowed`: índices; None = todos); −1 se nenhum"""
+        mask = 0xFFFFFFFF if allowed is None else sum(1 << int(a) for a in allowed)
+        return int(self._lib.dll.aerosim_bandit_pick(s.ctypes.data, float(c), mask))
+
+    def bandit_update(self, s: np.ndarray, arm: int, reward: float, delta: float = 0.05,
+                      gamma: float = 5.0) -> bool:
+        """registra a recompensa do braço; True se o Page–Hinkley reiniciou o bandido"""
+        return bool(self._lib.dll.aerosim_bandit_update(s.ctypes.data, int(arm), float(reward), float(delta),
+                                                         float(gamma)))
+
+    def _box(self, name: str, pop, fit, frac: float):
+        p = np.ascontiguousarray(np.asarray(pop, float))
+        f = np.ascontiguousarray(np.asarray(fit, float).ravel())
+        lo, hi = np.zeros(p.shape[1]), np.zeros(p.shape[1])
+        if getattr(self._lib.dll, name)(p.shape[1], p.shape[0], p.ctypes.data, f.ctypes.data, float(frac),
+                                        lo.ctypes.data, hi.ctypes.data) < 0:
+            raise ValueError("crenças: até 32 variáveis e 256 indivíduos")
+        return lo, hi
+
+    def normative(self, pop, fit, frac: float = 0.2):
+        """o espaço normativo do algoritmo cultural: (lo, hi) por variável entre os `frac` melhores"""
+        return self._box("aerosim_normative", pop, fit, frac)
+
+    def lem_box(self, pop, fit, frac: float = 0.3):
+        """a regra do LEM: (lo, hi) que cobre os `frac` melhores e deixa os piores de fora"""
+        return self._box("aerosim_lem_box", pop, fit, frac)
+
+    def box_sample(self, lo, hi, count: int, seed: int = 1, generation: int = 0) -> np.ndarray:
+        """`count` pontos uniformes na caixa [lo, hi]"""
+        lo = np.ascontiguousarray(np.asarray(lo, float).ravel())
+        hi = np.ascontiguousarray(np.asarray(hi, float).ravel())
+        out = np.zeros((count, lo.size))
+        if self._lib.dll.aerosim_box_sample(lo.size, lo.ctypes.data, hi.ctypes.data, count, int(seed),
+                                            int(generation), out.ctypes.data) < 0:
+            raise ValueError("caixa: até 32 variáveis e 256 pontos")
+        return out
+
+    def de_trials(self, pop, f: float = 0.7, cr: float = 0.9, seed: int = 1, generation: int = 0) -> np.ndarray:
+        """os testes de uma geração (DE/rand/1/bin), um por indivíduo, em [0, 1]"""
+        p = np.ascontiguousarray(np.asarray(pop, float))
+        out = np.zeros_like(p)
+        if self._lib.dll.aerosim_de_trials(p.shape[1], p.shape[0], p.ctypes.data, float(f), float(cr), int(seed),
+                                           int(generation), out.ctypes.data) < 0:
+            raise ValueError("evolução diferencial: até 32 variáveis e de 4 a 64 indivíduos")
+        return out
+
+    def de_select(self, pop, fit, trials, tfit) -> int:
+        """o teste que não é pior entra no lugar do indivíduo (muda `pop` e `fit`, arrays float contíguos)"""
+        t = np.ascontiguousarray(np.asarray(trials, float))
+        tf = np.ascontiguousarray(np.asarray(tfit, float).ravel())
+        return int(self._lib.dll.aerosim_de_select(pop.shape[1], pop.shape[0], pop.ctypes.data, fit.ctypes.data,
+                                                   t.ctypes.data, tf.ctypes.data))
+
+    def local_fit(self, xs, ys, x0, r: float, quad: bool = True):
+        """o modelo y ≈ a + gᵀ(x − x₀) + ½ Σ cₖ(xₖ − x₀ₖ)² pelos pontos (core/src/optim/localfit.zig; sem `quad`, o
+        plano e c = 0), com o peso tricúbico de raio r: (g, c, a, resíduo, soma dos pesos), ou None se alguma direção não
+        fica determinada"""
+        x = np.ascontiguousarray(np.atleast_2d(np.asarray(xs, float)))
+        y = np.ascontiguousarray(np.asarray(ys, float).ravel())
+        x0 = np.ascontiguousarray(np.asarray(x0, float).ravel())
+        g, c, out = np.zeros(x0.size), np.zeros(x0.size), np.zeros(3)
+        code = self._lib.dll.aerosim_local_fit(x0.size, y.size, x.ctypes.data, y.ctypes.data, x0.ctypes.data,
+                                               float(r), int(bool(quad)), g.ctypes.data, c.ctypes.data,
+                                               out.ctypes.data)
+        return None if code < 0 else (g, c, float(out[0]), float(out[1]), float(out[2]))
+
+    def rbf_fit(self, xs, ys):
+        """o substituto s(x) = Σ λᵢ ‖x − xᵢ‖³ + c₀ + cᵀx pelos pontos (core/src/optim/rbf.zig): (xs, coeficientes), ou
+        None se os pontos não determinam a cauda linear"""
+        x = np.ascontiguousarray(np.atleast_2d(np.asarray(xs, float)))
+        y = np.ascontiguousarray(np.asarray(ys, float).ravel())
+        m, n = x.shape
+        k = m + n + 1
+        work, coef = np.zeros(k * k), np.zeros(k)
+        if self._lib.dll.aerosim_rbf_fit(n, m, x.ctypes.data, y.ctypes.data, work.ctypes.data, coef.ctypes.data) < 0:
+            return None
+        return x, coef
+
+    def rbf_eval(self, model, qs):
+        """o substituto de `rbf_fit` nos pontos `qs` (q × n): array de q valores"""
+        x, coef = model
+        q = np.ascontiguousarray(np.atleast_2d(np.asarray(qs, float)))
+        out = np.zeros(q.shape[0])
+        self._lib.dll.aerosim_rbf_eval(x.shape[1], x.shape[0], x.ctypes.data, coef.ctypes.data, q.shape[0],
+                                       q.ctypes.data, out.ctypes.data)
+        return out
+
+    def sens_tolerance(self, g, c, x0, n0: float, delta):
+        """a perda de nota por tolerância (core/src/optim/sensmethods.zig): (ΔN em −δ, ΔN em +δ, elasticidade, σ_N)"""
+        f = lambda a: np.ascontiguousarray(np.asarray(a, float).ravel())  # noqa: E731
+        g, c, x0, delta = f(g), f(c), f(x0), f(delta)
+        mi, pl, el = np.zeros(g.size), np.zeros(g.size), np.zeros(g.size)
+        s = self._lib.dll.aerosim_sens_tolerance(g.size, g.ctypes.data, c.ctypes.data, x0.ctypes.data, float(n0),
+                                                 delta.ctypes.data, mi.ctypes.data, pl.ctypes.data, el.ctypes.data)
+        if s < 0:
+            raise ValueError(f"tolerância: {g.size} variáveis (o limite é 32)")
+        return mi, pl, el, float(s)
+
+    def morris_design(self, k: int, r: int, levels: int = 4, seed: int = 1):
+        """as r trajetórias de Morris em [0, 1]^k: array (r, k + 1, k)"""
+        out = np.zeros(r * (k + 1) * k)
+        if self._lib.dll.aerosim_morris_design(k, r, levels, seed, out.ctypes.data) < 0:
+            raise ValueError(f"Morris: k = {k}, r = {r}, {levels} níveis (até 32 variáveis e 64 trajetórias, níveis pares)")
+        return out.reshape(r, k + 1, k)
+
+    def morris_effects(self, design, y):
+        """μ, μ*, σ e os passos que contaram de cada variável, das trajetórias (r, k + 1, k) e das respostas (r, k + 1)"""
+        d = np.ascontiguousarray(np.asarray(design, float))
+        r, _, k = d.shape
+        yy = np.ascontiguousarray(np.asarray(y, float).ravel())
+        mu, ms, sg, n = np.zeros(k), np.zeros(k), np.zeros(k), np.zeros(k, np.uint64)
+        if self._lib.dll.aerosim_morris_effects(k, r, d.ctypes.data, yy.ctypes.data, mu.ctypes.data, ms.ctypes.data,
+                                                sg.ctypes.data, n.ctypes.data) < 0:
+            raise ValueError(f"Morris: k = {k}, r = {r}")
+        return mu, ms, sg, n.astype(int)
 
     def simple_performance(self, cfg: dict) -> tuple[dict, dict]:
         T = self._lib.schema.types

@@ -1,5 +1,6 @@
 """tools/opt_matrix.py: a tabela binária, os nomes dos bits, a leitura do Callgrind e a comparação dos resultados."""
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
@@ -32,12 +33,12 @@ def test_parse_bits_by_name_or_number():
     assert om.parse_bits("minimax+estrin") == [32, 64]
 
 
-def test_names_match_core_build_zig():
-    """os nomes e bits daqui são os mesmos do core/build.zig (opt_names)"""
-    with open(os.path.join(om.CORE, "build.zig"), encoding="utf-8") as f:
+def test_names_match_core_opt_zig():
+    """os nomes e bits daqui são os mesmos do enum `Opt` do núcleo (core/src/opt.zig)"""
+    with open(os.path.join(om.CORE, "src", "opt.zig"), encoding="utf-8") as f:
         src = f.read()
     for name, bit in om.KEYS.items():
-        assert f'.{{ "{name}", {bit} }}' in src
+        assert re.search(rf'^\s+(@"{name}"|{name}) = {bit},', src, re.M), name
     assert set(om.KEYS.values()) == set(om.NAMES)
 
 

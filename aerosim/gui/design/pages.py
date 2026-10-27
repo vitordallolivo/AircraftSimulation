@@ -936,7 +936,9 @@ class TailPage(StagePage):
 
     def choices(self):
         d = self.state.design
+        from aerosim.design.tail import NO_WING2, SAME_WING
         return {"wing": tuple(w.name for w in d.wings),
+                "wing2": (NO_WING2, SAME_WING) + tuple(w.name for w in d.wings),
                 "tail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + d.airfoil_names())),
                 "vtail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + d.airfoil_names()))}
 
@@ -1084,6 +1086,28 @@ class PowerPage(StagePage):
         send_to_assembly(self.state, ac, self, go)
 
 
+def _off_gui_thread(fn):
+    """roda fn numa thread e devolve o resultado; enquanto isso a janela continua se redesenhando (sem aceitar
+    clique nem tecla, para ninguém mandar o mesmo avião duas vezes)"""
+    import threading
+    out = {}
+
+    def work():
+        try:
+            out["r"] = fn()
+        except Exception as ex:                # noqa: BLE001 — repassa para quem chamou
+            out["e"] = ex
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+    flags = QtCore.QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
+    while t.is_alive():
+        QtWidgets.QApplication.processEvents(flags, 30)
+        t.join(0.01)
+    if "e" in out:
+        raise out["e"]
+    return out["r"]
+
+
 def send_to_assembly(state: AppState, ac, widget, go: str = "montagem") -> bool:
     """o avião vira mais um avião aberto e fica salvo em 'meus aviões' (nome livre: acrescenta (2)...); a janela
     vai para a Montagem (go="montagem") ou para as análises de Desempenho (go="desempenho").
@@ -1092,7 +1116,7 @@ def send_to_assembly(state: AppState, ac, widget, go: str = "montagem") -> bool:
     from aerosim.design.flight import tune_takeoff
     QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
     try:
-        ok, why = tune_takeoff(ac, state.manager.backend)
+        ok, why = _off_gui_thread(lambda: tune_takeoff(ac, state.manager.backend))
     except Exception as ex:
         ok, why = False, f"a decolagem não rodou ({ex})"
     finally:

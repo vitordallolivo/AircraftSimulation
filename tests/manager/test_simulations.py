@@ -103,3 +103,10 @@ def test_aerodynamics_simulation(manager):
     assert r.summary["[modelo interno] SM"] > 0
     r = manager.run("aerodynamics", flying_wing(), p)
     assert any(c.group == "dispositivos de asa" for c in r.checks)
+
+
+def test_aerodynamics_com_a_linha_sustentadora_do_nucleo(manager):
+    from aerosim.model.templates import conventional
+    p = {"use_lltdrek": False, "use_zig_llt_gh": True, "a0": -2.0, "a1": 8.0, "da": 2.0}
+    r = manager.run("aerodynamics", conventional(), p)
+    assert "polar_LLT do núcleo (G-H)" in r.series and r.summary["[LLT do núcleo (G-H)] SM"] > 0

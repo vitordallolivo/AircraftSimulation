@@ -486,7 +486,9 @@ class MdoPage(QtWidgets.QWidget):
                                                                          style=QtCore.Qt.PenStyle.DashLine),
                                               label=d["labels"].get(k, k), labelOpts=dict(position=0.9)))
         x, y = d["point"]
-        self.diag.plot([x], [y], pen=None, symbol="o", symbolSize=12, symbolBrush=BEST_C, name="o indivíduo (T0/W, W/S)")
+        if math.isfinite(x) and math.isfinite(y):          # sem ponto válido o pyqtgraph avisa (All-NaN slice)
+            self.diag.plot([x], [y], pen=None, symbol="o", symbolSize=12, symbolBrush=BEST_C,
+                           name="o indivíduo (T0/W, W/S)")
         ys = [v for k, v in d["curves"].items() if k != "ws"]
         top = max([y] + [float(np.nanmedian(v)) for v in ys]) * 2.2 if ys else 2 * y
         self.diag.setYRange(0, top, padding=0.02)

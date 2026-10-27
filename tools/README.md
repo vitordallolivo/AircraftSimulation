@@ -5,6 +5,67 @@ rápido. Nenhum faz conta própria. O cálculo é do núcleo (`core/`) ou dos m�
 orquestra e desenha. O que elas gravam (gráficos, tabelas, voos) fica fora do git, em `perfis/` ou na pasta que você
 passar, e só as figuras escolhidas vão para `docs/img`.
 
+## Otimizador (`tools/aeroopt.py`)
+
+Roda um problema do aeroopt (`.opt.json`) pelo núcleo e imprime o melhor ponto, as grandezas e as restrições; com
+`--png`, grava a convergência. `--isolar asa` (ou chaves e grupos separados por vírgula) deixa livres só essas
+variáveis. Com `--etapas --sensibilidade`, no fim imprime a sensibilidade do melhor: a inclinação e a curvatura da
+nota em cada contínua livre, tiradas dos pontos que a busca já avaliou, e a nota prevista a ±10 % da faixa
+(`--sensibilidade eixos` ou `morris` troca o método; `--tolerancia 1` dá a perda com 1 % em cada medida; `--limites`
+refaz o melhor com cada limite do problema mudado). Detalhes no [README do aeroopt](../aeroopt/README.md).
+
+```sh
+python tools/aeroopt.py --exemplo perfis/exemplo.opt.json
+python tools/aeroopt.py perfis/exemplo.opt.json --isolar asa --png perfis/convergencia.png
+python tools/aeroopt.py problema.opt.json --etapas --projeto p.json --sem-6gdl --sensibilidade
+```
+
+## Rotação na pista (`tools/rotacao.py`)
+
+Responde se o comando de arfagem consegue levantar o nariz na corrida, pelas duas contas que o projeto tem: a
+analítica da sprint e a do núcleo (o mesmo modelo da decolagem 6GDL). O avião é o do exemplo do aeroopt, com a
+categoria e os valores passados. A ferramenta imprime a velocidade em que cada conta roda o avião, a de sair do chão,
+cada momento em torno do trem principal (o aerodinâmico, o da sustentação, o da tração e o do peso) e o C_mδ das
+duas. Serve para achar qual termo segura o nariz no chão. `--png` desenha o momento pela velocidade e o C_m do núcleo
+pelo curso do comando; `--varre chave=início:fim:pontos` repete a conta mexendo uma variável.
+
+```sh
+python tools/rotacao.py "asa voadora" tail.aileron_chord=0.48 --png perfis/rotacao.png
+python tools/rotacao.py monoplano --varre rules.main_gear_aft=0:0.1:6
+```
+
+## Paralelismo do otimizador (`tools/pipeline_bench.py`)
+
+Compara as formas de rodar o processo em etapas do aeroopt em paralelo. O mesmo lote de configurações roda em série, em
+threads e em processos (fork, spawn, forkserver), e a ferramenta imprime o tempo de cada etapa e o ganho sobre a série.
+Ela também confere se cada estratégia deu o mesmo resultado da série. Da fração que não paraleliza (Karp e Flatt)
+sai quanto de cada etapa fica preso ao GIL, a trava do Python que deixa só uma thread rodar código Python por vez.
+`--png` grava o ganho por etapa. Com `--geracoes N` o lote passa N vezes, como nas gerações do otimizador: os
+processos ficam vivos a rodada inteira (`aerosim/parallel`), e as estratégias com "-novo" no nome abrem um pool novo
+a cada etapa, como era antes, para mostrar o custo de nascer. `--sintetico S` troca as contas do avião pelos dados de
+teste do aeroopt (`aeroopt/synthetic.py`), com S segundos por ponto, e mede só o paralelismo.
+
+```sh
+python tools/pipeline_bench.py --exemplo
+python tools/pipeline_bench.py --exemplo --geracoes 4 --estrategias serie,threads,spawn,spawn-novo
+python tools/pipeline_bench.py --projeto p.json --problema q.opt.json --configs 12 --processos 2,4 --png perfis/bench.png
+```
+
+## Banco dos otimizadores (`tools/banco_otimizadores.py`)
+
+Diz qual busca do aeroopt acha o melhor avião, com quantos pontos, em que tipo de problema. Serve de linha de base
+para escolher o otimizador padrão e para medir um método novo contra os de hoje. Tudo roda nos dados de teste do
+aeroopt (`aeroopt/synthetic.py`), que têm o ótimo sabido e levam segundos, em três formas de problema: a tigela, em
+que as variáveis não se misturam; a acoplada, em que andar num eixo por vez é ruim porque as variáveis andam juntas;
+e a multimodal, com mínimos locais onde a busca local para. Para cada forma, método e semente sai a fração do ótimo
+(o maior MTOW que fecha sobre o do ótimo) ao longo dos pontos. `--voa` junta a etapa voa no caso com remédio de
+`tools/metodos_voa.py`, e `--png` grava as curvas e as barras.
+
+```sh
+python tools/banco_otimizadores.py --sementes 5 --avaliacoes 48 --variaveis 6 --voa --png perfis/banco.png
+python tools/banco_otimizadores.py --formas acoplada --metodos coordenadas,cma-es --sementes 10
+```
+
 ## Aerodinâmica e voo com cada modelo (`tools/aero/`)
 
 Detalhes, comandos e resultados no [README da pasta](aero/README.md).
@@ -27,6 +88,13 @@ python tools/aero/missao.py --carregar perfis/missao --ref tabela:avl           
 
 Os três mapas medem o quanto cada método fica perto de cada outro, em três níveis.
 
+```sh
+python tools/aero/coeficientes.py --matriz --pasta perfis/aero                  # coeficientes (matriz.png)
+python tools/aero/missao.py --puro --pasta perfis/missao                         # missão voada (matriz.png)
+python tools/aero/missao.py --puro --analise decolagem --pasta perfis/decolagem  # decolagem voada
+python tools/aero/missao.py --carregar perfis/missao                             # refaz o mapa sem voar de novo
+```
+
 **Coeficientes** (`coeficientes.py --matriz`): a mediana de |erro| (%) da linha tomando a coluna como referência, em
 todos os casos e coeficientes. Não é simétrica, porque o erro relativo divide pelo valor da referência.
 
@@ -47,17 +115,25 @@ tempo.
   2. AVL, VLM e buildup do ASB, a ~1,5 m do núcleo;
   3. o lltdrek, sozinho, a ~3 m.
 - **O lltdrek muda de lugar conforme o nível:** nos coeficientes da asa sozinha, ele fica a ~1 % da nossa linha
-  sustentadora; no avião inteiro em voo, se afasta, porque o C_m dele com a cauda é outro e ele não trata β.
+  sustentadora; no avião inteiro em voo, se afasta, porque o $`C_m`$ dele com a cauda é outro e ele não trata β.
 
 ### Tempo de conta
 
 ![tempo de conta por modelo na missão](../docs/img/aero_tempo.png)
 
-Medido em sequência, na missão de 165 s do `conventional`:
-- faixas: 4 s;
-- faixas refinadas: 17 s;
-- linha sustentadora: ~260 s;
-- tabelas dos métodos de fora: 3–9 s (com o cache em disco).
+Medido em sequência (`missao.py --jobs 1`), na missão de 165 s do `conventional`, cada modelo sozinho:
+
+| modelo | tempo |
+|---|---|
+| faixas (`faixas`) | 4 s |
+| faixas refinadas (`faixas_fino`) | 17 s |
+| linha sustentadora de Phillips e Snyder (`llt`) | 261 s |
+| linha sustentadora de Goates e Hunsaker (`llt_gh`) | 258 s |
+| tabelas dos métodos de fora (`tabela:*`, com o cache em disco) | 3–9 s cada |
+| **os 9 modelos** | **9 min 37 s** em sequência; 5 min 15 s em paralelo (`--jobs`, 4 núcleos) |
+
+A linha sustentadora custa ~65× as faixas. Antes do cache da geometria, a missão levava 52 min com o `llt_gh` e
+10 min com o `llt` (numa máquina anterior).
 
 O que deixou a linha sustentadora rápida está em `core/OTIMIZACOES.md`.
 

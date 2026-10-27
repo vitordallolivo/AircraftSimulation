@@ -3,7 +3,7 @@
 //!
 //! Tudo `extern struct` (vai no esquema da ABI); as listas têm tamanho fixo e um contador.
 const std = @import("std");
-const T = @import("../types.zig");
+const types = @import("../types.zig");
 
 pub const max_airfoils = 64;
 pub const max_sets = 64; // conjuntos motor + hélice + bateria
@@ -62,8 +62,8 @@ pub const n_q = 23;
 pub const q_names = [n_q][:0]const u8{ "S", "b", "AR", "V_S", "n_surf", "P_motor", "n_motor", "s_to", "V_max", "RC", "TW", "mass", "pv", "cp", "ee", "mtow", "V_LD", "LD", "c_root", "n_turn", "grad", "ceiling", "s_land" };
 
 /// a grandeza depende da massa (entra na busca do MTOW) ou é só da geometria/carga
-pub fn massDependent(q: usize) bool {
-    return switch (q) {
+pub fn massDependent(quantity: usize) bool {
+    return switch (quantity) {
         q_VS, q_s_to, q_Vmax, q_RC, q_TW, q_n_turn, q_grad, q_ceiling, q_s_land => true,
         else => false,
     };
@@ -81,13 +81,13 @@ pub const Constraint = extern struct {
 };
 
 /// quanto a restrição é violada, normalizado pelo valor (0 = cumpre)
-pub fn violation(c: Constraint, x: f64) f64 {
-    if (!std.math.isFinite(x)) return 1.0;
-    const s = @max(@abs(c.value), 1e-6);
-    return switch (c.op) {
-        op_le => @max(x - c.value, 0) / s,
-        op_ge => @max(c.value - x, 0) / s,
-        else => @max(@abs(x - c.value) - c.tol * s, 0) / s,
+pub fn violation(constraint: Constraint, value_now: f64) f64 {
+    if (!std.math.isFinite(value_now)) return 1.0;
+    const scale = @max(@abs(constraint.value), 1e-6);
+    return switch (constraint.op) {
+        op_le => @max(value_now - constraint.value, 0) / scale,
+        op_ge => @max(constraint.value - value_now, 0) / scale,
+        else => @max(@abs(value_now - constraint.value) - constraint.tol * scale, 0) / scale,
     };
 }
 
@@ -113,7 +113,7 @@ pub const LayoutData = extern struct {
 
 /// conjunto de tração: a unidade do núcleo (motor + hélice + bateria) e a massa dela
 pub const PropSet = extern struct {
-    unit: T.PropUnit = .{},
+    unit: types.PropUnit = .{},
     mass: f64 = 0.8,
     P_max: f64 = 0, // potência elétrica máxima de um motor (W)
 };

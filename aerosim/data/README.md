@@ -1,24 +1,16 @@
-# aerosim/data — Aircraft Data (de onde vêm as aeronaves)
+# aerosim/data — de onde vêm as aeronaves
 
-Implementa `IAircraftSource` e `ICatalogSource`. A GUI e os scripts chamam `load_aircraft(path)` /
-`save_aircraft(ac, path)` (o formato sai da extensão) ou usam `CellMapAircraftSource` para a planilha.
+Esta é a parte do projeto que lê e grava aviões e catálogos. Um avião pode estar num `.json` (o formato completo do
+projeto), num `.cfg` (o formato de texto do AeroDrive) ou na planilha antiga de desempenho, e o catálogo de motores,
+hélices, baterias e conjuntos de tração vem de arquivos próprios. Aqui tudo isso vira a mesma configuração
+(`Aircraft`) e o mesmo `Catalog`, e volta para o arquivo.
 
-## Como chamar
+A GUI e os scripts chamam `load_aircraft(path)` e `save_aircraft(ac, path)`, e o formato sai da extensão. A planilha
+usa `CellMapAircraftSource`, que lê as células por um mapa. Por trás estão as interfaces `IAircraftSource` e
+`ICatalogSource`, então um formato novo entra como mais uma implementação.
 
-```python
-from aerosim.data import load_aircraft, save_aircraft, JsonProjectStore
-from aerosim.data.cellmap import CellMapAircraftSource
-
-ac = load_aircraft("data/aircraft/Asa_voadora.json")      # .json, .cfg ou .xlsx (pela extensão)
-save_aircraft(ac, "meu.cfg")
-
-store = JsonProjectStore()                     # "meus aviões" (~/aerosim_aeronaves ou AEROSIM_PROJETOS)
-store.save(ac, "asa nova"); store.list(); store.load("asa nova")
-
-src = CellMapAircraftSource("data/mappings/dados_desempenho.json")
-ac = src.load("Dados_Desempenho.xlsx")         # planilha por endereço de célula
-src.catalog.thrust_sets                        # conjuntos de tração da aba Tracao
-```
+O README mostra primeiro como os formatos se ligam e, em detalhe, como a planilha é lida pelo mapa de células, com as
+equações do polinômio de tração e do arrasto. No fim, como chamar.
 
 ## Como funciona
 
@@ -48,6 +40,23 @@ flowchart LR
 | `.cfg` | INI: `[aircraft]`, `[surfaces.0]`, `[surfaces.0.sections.1]`, `[propulsion.0]`… listas em `[ ]` | `[motor: nome]`, `[helice: nome]`, `[bateria: nome]`, `[tracao: nome]` |
 | `.xlsx` | aba `geral` (seção, chave, valor) + uma aba-tabela por lista | abas `motores`, `helices`, `helices_tabela`, `baterias`, `tracao` |
 
+### Abrir um arquivo, passo a passo
+
+O que acontece em `load_aircraft(caminho)`:
+
+```mermaid
+flowchart TD
+    P[/"caminho do arquivo"/] --> EXT{"extensão"}
+    EXT -->|".json"| J["JSON: from_dict guiado pelas<br/>anotações das dataclasses"]
+    EXT -->|".cfg"| C["CFG do AeroDrive: chave = valor"]
+    EXT -->|".xlsx"| X["planilha: CellMapAircraftSource<br/>com o mapa de células (data/mappings)"]
+    J --> MIG["Aircraft.migrate: formatos antigos<br/>(boom único, sem modifiers...)"]
+    C --> MIG
+    X --> MIG
+    CAT[/"catálogo: motores, hélices,<br/>baterias, conjuntos de tração"/] --> MIG
+    MIG --> AC[/"Aircraft"/]
+```
+
 ### Planilha Dados_Desempenho.xlsx (mapa de células)
 
 `CellMapAircraftSource(mapa)` lê e grava as mesmas células. O mapa
@@ -72,18 +81,53 @@ flowchart LR
 
 - `fields`: caminho no modelo → célula. Caminhos: `a.b`, `surfaces[wing]` (por papel ou nome),
   `propulsion[0]`, `mass.base_cg[0]`; `scale`/`offset` convertem unidades e eixos.
-- `@papel.area|span|chord|xac|K`: refaz a geometria da superfície (mantém afilamento e enflechamento);
-  `K` (C_Di = K C_L²) vira o Oswald.
+- `@papel.area|span|chord|xac|K`: refaz a geometria da superfície (mantém afilamento e enflechamento).
 - `thrust_sets`: cada linha da aba `Tracao` (colunas B..V = p00..p05) vira um conjunto no catálogo
   (`src.catalog.thrust_sets`); a linha `nhelice + 2` (célula `Geral!C28`) vai para todos os motores
-  da aeronave com `thrust_model = "poly"`. A tração fica igual à do `Envelope_main`:
-  `T = g·(ρ/ρ0)·(T0 + p10·n + p01·V + p20·n² + p11·n·V + … + p05·V⁵)` — x = n (coluna W, constante
-  do conjunto), y = V, T0 (coluna Y) no lugar de p00, ganho g (polinômio em kgf), ρ0 de `Geral!C18`.
-  Em voo a tração ainda é multiplicada pelo acelerador. `gain` aceita `"1"`, `"g"`, `"T0"`, `"T0*PT0"`,
-  `"g*PT0"` (PT0 em `Geral!C29`) ou um número.
-- `performance.*`: dados do envelope — `AnguloCruzeiro` (C14), `n` (C13), `rho0` (C18), C_Dp da asa e
+  da aeronave com `thrust_model = "poly"`. A tração fica igual à do `Envelope_main`, com $`x = n`$ (coluna W, constante
+  do conjunto), $`y = V`$, $`T_0`$ (coluna Y) no lugar de $`p_{00}`$, ganho $`g`$ (polinômio em kgf) e $`\rho_0`$ de `Geral!C18`:
+
+```math
+T = g\,\frac{\rho}{\rho_0}\left(T_0 + p_{10}\,n + p_{01}\,V + p_{20}\,n^2 + p_{11}\,n V + \dots + p_{05}\,V^5\right)
+```
+
+  Em voo a tração ainda é multiplicada pelo acelerador. `gain` aceita `"1"`, `"g"`, `"T0"`, `"T0*PT0"`, `"g*PT0"`
+  (PT0 em `Geral!C29`) ou um número.
+- `@papel.K`: o $`K`$ da polar da planilha ($`C_{D_i} = K\,C_L^2`$) vira o Oswald da superfície, $`e = 1/(\pi\,AR\,K)`$.
+- `performance.*`: dados do envelope — `AnguloCruzeiro` (C14), `n` (C13), `rho0` (C18), $`C_{Dp}`$ da asa e
   do EH (G36, G37, J36, J37) e `K` (C17).
 - O que não tem correspondência (derivadas de estabilidade, polinômios de arrasto) está listado em
   `unmapped` no próprio mapa: o núcleo calcula esses efeitos pelos painéis.
 - Eixos do modelo: x para frente, z para baixo. Se a planilha mede x a partir do nariz para trás, use
   `"scale": -1` e `"offset"` = x do nariz.
+
+## Como chamar
+
+```python
+import os, tempfile
+from aerosim.data import load_aircraft, save_aircraft, JsonProjectStore              # sources.py, projects.py
+from aerosim.data.flat import flatten, unflatten, encode, decode                     # flat.py
+from aerosim.data.projects import summary, slug
+
+ac = load_aircraft("data/aircraft/Asa_voadora.json")      # .json, .cfg ou .xlsx (pela extensão)
+pasta = tempfile.mkdtemp()
+save_aircraft(ac, os.path.join(pasta, "meu.cfg"))        # o mesmo avião em INI
+print(load_aircraft(os.path.join(pasta, "meu.cfg")).name, summary(ac), slug("Asa nova!"))
+
+store = JsonProjectStore(pasta)                # "meus aviões" (padrão: ~/aerosim_aeronaves ou AEROSIM_PROJETOS)
+store.save(ac, "asa nova")
+print([i.name for i in store.list()], store.load("asa nova").name)
+
+secoes = flatten(ac)                           # aeronave → seções planas (o que o .cfg e o .xlsx guardam)
+print(list(secoes)[:3], decode(encode([1.0, 2.0])))
+```
+
+A planilha por endereço de célula (`cellmap.py`):
+
+```python
+# não roda sozinho: precisa da planilha do usuário (fica fora do repositório)
+from aerosim.data.cellmap import CellMapAircraftSource
+src = CellMapAircraftSource("data/mappings/dados_desempenho.json")
+ac = src.load("Dados_Desempenho.xlsx")         # planilha por endereço de célula
+src.catalog.thrust_sets                        # conjuntos de tração da aba Tracao
+```

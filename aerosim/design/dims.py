@@ -47,7 +47,19 @@ def dimensions(ac, cg: tuple | None = None) -> list[Row]:
         add("CG", "altura do CG ao chão", None, h_cg, "z_CG (origem: chão)")
     hgt = lambda z: ground - z if ground is not None else None
     w = ac.wing
-    if w is not None and w.sections:
+    group = [q for q in ac.wing_group(w) if q.enabled and q.sections] if w is not None else []
+    if len(group) > 1:                      # tandem, biplano: a CMA de referência do conjunto (a do modelo universal)
+        from aerosim.model.universal import build_model
+        m = build_model(ac)
+        x_le, mac = m.mac_le, m.c
+        x_ac = x_le - 0.25 * mac
+        z_ac = sum(q.area * q.z for q in group) / sum(q.area for q in group)
+        add("CG", "x_CG / CMA do conjunto de asas", None, (x_le - cg[0]) / mac, "adimensional")
+        add("asa", "CA do conjunto de asas (1/4 da CMA)", (x_ac - cg[0], 0.0, z_ac - cg[2]), (x_ac - cg[0]) / mac,
+            "valor: (x_CA − x_CG)/CMA; + = CA à frente do CG; média dos CA pela área")
+        for q in group:
+            add("asa", f"{q.name}: bordo de ataque da raiz", _rel((q.x, q.y, q.z), cg), hgt(q.z), "valor: altura ao chão")
+    elif w is not None and w.sections:
         pf = _mac(w)
         x_le = pf["x_le_mac"]
         add("CG", "x_CG / CMA (do bordo de ataque da CMA)", None, (x_le - cg[0]) / pf["mac"], "adimensional")
@@ -78,7 +90,7 @@ def dimensions(ac, cg: tuple | None = None) -> list[Row]:
         add("motores", f"{u.name}: cubo da hélice", _rel((u.x, u.y, u.z), cg), hgt(u.z + D / 2),
             f"valor: folga da hélice ao chão (D = {D:.3f} m); inclinação {u.tilt:g}°")
     for s in ac.surfaces[1:]:
-        if not s.enabled or not s.sections:
+        if not s.enabled or not s.sections or any(s is q for q in group):
             continue
         pf = _mac(s)
         add("empenagem", f"{s.name}: CA", (pf["x_ac"] - cg[0], s.y - cg[1], s.z - cg[2]), cg[0] - pf["x_ac"],

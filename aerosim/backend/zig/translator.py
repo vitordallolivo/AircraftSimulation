@@ -124,7 +124,8 @@ class ZigTranslator(IModelTranslator):
             env=dict(rho=e.rho, Vw10=e.wind_speed, wind_from=e.wind_from * D2R, wind_elev=e.wind_elev * D2R,
                      h_ref=e.h_ref, gust_T=e.gust_T, gust_U=list(e.gust_U), gust_on=int(e.gust)),
             takeoff=dict(VR=to.VR, sR=to.sR, de0=to.de0 * D2R, de1=to.de1 * D2R, rate_de=to.rate_de * D2R,
-                         ht=to.ht, rate_thr=to.rate_thr, h_end=to.h_end),
+                         ht=to.ht, rate_thr=to.rate_thr, h_end=to.h_end,
+                         alpha_guard=1.0),        # proteção de α na decolagem: sempre ligada
             ap=ap,
             dt=ac.sim.dt, tmax=ac.sim.tmax, dtlog=ac.sim.dtlog,
             seg=m.segments(), event=m.core_events(),

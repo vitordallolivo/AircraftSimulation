@@ -14,8 +14,8 @@
 //! Resumo: V_e, V*, V_min/V_max (P_d = P_r), RC máx., γ máx., E máx. e menor ângulo de planeio,
 //! menor razão de descida, raio mínimo (fórmula fechada da planilha), autonomia e alcance máximos.
 const std = @import("std");
-const fm = @import("../math/fmath.zig");
-const L = @import("../limits.zig");
+const fmath = @import("../math/fmath.zig");
+const limits = @import("../limits.zig");
 
 pub const max_pts = 128;
 pub const max_bank = 8;
@@ -104,162 +104,164 @@ pub const SimpleSummary = extern struct {
     V_LDmax: f64 = 0, // V de L/D máximo (cruzeiro de maior alcance): C_L = √(C_D0/K)
 };
 
-pub fn density(c: *const SimpleCfg) f64 {
-    return c.rho0 * std.math.pow(f64, 1.0 + c.lapse * c.h / c.T0, -L.g0 / (c.lapse * c.Rgas) - 1.0);
+/// densidade ISA na altitude da configuração (kg/m³)
+pub fn density(cfg: *const SimpleCfg) f64 {
+    return cfg.rho0 * std.math.pow(f64, 1.0 + cfg.lapse * cfg.h / cfg.T0, -limits.g0 / (cfg.lapse * cfg.Rgas) - 1.0);
 }
 
-fn thrust(c: *const SimpleCfg, V: f64, sigma: f64) f64 {
-    const n: usize = @intCast(@max(c.n_thr, 0));
-    if (n == 0) return 0;
-    var T: f64 = c.thr_T[n - 1];
-    if (V <= c.thr_V[0]) {
-        T = c.thr_T[0];
+/// tração disponível em V: interpola a tabela T(V) e corrige por (ρ/ρ0)^m
+fn thrust(cfg: *const SimpleCfg, airspeed: f64, sigma: f64) f64 {
+    const point_count: usize = @intCast(@max(cfg.n_thr, 0));
+    if (point_count == 0) return 0;
+    var thrust_value: f64 = cfg.thr_T[point_count - 1];
+    if (airspeed <= cfg.thr_V[0]) {
+        thrust_value = cfg.thr_T[0];
     } else {
-        for (1..n) |i| {
-            if (V <= c.thr_V[i]) {
-                const f = (V - c.thr_V[i - 1]) / (c.thr_V[i] - c.thr_V[i - 1]);
-                T = c.thr_T[i - 1] + f * (c.thr_T[i] - c.thr_T[i - 1]);
+        for (1..point_count) |i| {
+            if (airspeed <= cfg.thr_V[i]) {
+                const fraction = (airspeed - cfg.thr_V[i - 1]) / (cfg.thr_V[i] - cfg.thr_V[i - 1]);
+                thrust_value = cfg.thr_T[i - 1] + fraction * (cfg.thr_T[i] - cfg.thr_T[i - 1]);
                 break;
             }
         }
     }
-    return @max(T, 0.0) * std.math.pow(f64, sigma, c.rho_exp);
+    return @max(thrust_value, 0.0) * std.math.pow(f64, sigma, cfg.rho_exp);
 }
 
 /// preenche as linhas (uma por V) e o resumo; devolve quantas linhas
-pub fn compute(c: *const SimpleCfg, rows: []SimpleRow, sum: *SimpleSummary) usize {
-    const g = L.g0;
-    const rho = density(c);
-    const sigma = rho / c.rho0;
-    const WS = c.W / c.S;
-    sum.* = .{};
-    sum.rho = rho;
-    sum.WS = WS;
-    sum.Vs = @sqrt(2.0 * WS / (rho * c.CLmax));
-    sum.Vman = sum.Vs * @sqrt(@max(c.n_load, 1.0));
-    sum.glide_min = 1e9;
-    sum.sink_min = 1e9;
-    const sphi = fm.sin(c.phi_T);
-    var n: usize = 0;
-    var V = c.V_lo;
+pub fn compute(cfg: *const SimpleCfg, rows: []SimpleRow, summary: *SimpleSummary) usize {
+    const gravity = limits.g0;
+    const rho = density(cfg);
+    const sigma = rho / cfg.rho0;
+    const WS = cfg.W / cfg.S;
+    summary.* = .{};
+    summary.rho = rho;
+    summary.WS = WS;
+    summary.Vs = @sqrt(2.0 * WS / (rho * cfg.CLmax));
+    summary.Vman = summary.Vs * @sqrt(@max(cfg.n_load, 1.0));
+    summary.glide_min = 1e9;
+    summary.sink_min = 1e9;
+    const sphi = fmath.sin(cfg.phi_T);
+    var row_count: usize = 0;
+    var airspeed = cfg.V_lo;
     var prev_ex: f64 = std.math.nan(f64);
     var TWmax: f64 = 0;
-    const nb: usize = @intCast(@max(@min(c.n_bank, max_bank), 0));
-    while (V <= c.V_hi + 1e-9 and n < rows.len) : (V += c.dV) {
-        var r = std.mem.zeroes(SimpleRow);
-        r.V = V;
-        const q = 0.5 * rho * V * V;
-        const Td = thrust(c, V, sigma);
-        TWmax = @max(TWmax, Td / c.W);
-        const CL = 2.0 * (c.W - Td * sphi) / (rho * c.S * V * V);
-        const CD = c.CD0 + c.K * CL * CL;
-        r.CL = CL;
-        r.CD = CD;
-        r.ok = if (CL <= c.CLmax and CL > 0) 1 else 0;
-        r.Td = Td;
-        r.Tr = c.W * CD / CL;
-        r.Pd = Td * V;
-        r.Pr = r.Tr * V;
-        r.RC = (r.Pd - r.Pr) / c.W;
-        r.gam = fm.asin(fm.lim(r.RC / V, -1.0, 1.0));
-        r.E = CL / CD;
-        r.gam_glide = fm.atan(1.0 / r.E);
-        r.V_glide = @sqrt(2.0 * c.W * fm.cos(r.gam_glide) / (rho * c.S * CL));
-        r.sink = r.V_glide * fm.sin(r.gam_glide);
+    const bank_count: usize = @intCast(@max(@min(cfg.n_bank, max_bank), 0));
+    while (airspeed <= cfg.V_hi + 1e-9 and row_count < rows.len) : (airspeed += cfg.dV) {
+        var row = std.mem.zeroes(SimpleRow);
+        row.V = airspeed;
+        const dyn_pressure = 0.5 * rho * airspeed * airspeed;
+        const Td = thrust(cfg, airspeed, sigma);
+        TWmax = @max(TWmax, Td / cfg.W);
+        const CL = 2.0 * (cfg.W - Td * sphi) / (rho * cfg.S * airspeed * airspeed);
+        const CD = cfg.CD0 + cfg.K * CL * CL;
+        row.CL = CL;
+        row.CD = CD;
+        row.ok = if (CL <= cfg.CLmax and CL > 0) 1 else 0;
+        row.Td = Td;
+        row.Tr = cfg.W * CD / CL;
+        row.Pd = Td * airspeed;
+        row.Pr = row.Tr * airspeed;
+        row.RC = (row.Pd - row.Pr) / cfg.W;
+        row.gam = fmath.asin(fmath.lim(row.RC / airspeed, -1.0, 1.0));
+        row.E = CL / CD;
+        row.gam_glide = fmath.atan(1.0 / row.E);
+        row.V_glide = @sqrt(2.0 * cfg.W * fmath.cos(row.gam_glide) / (rho * cfg.S * CL));
+        row.sink = row.V_glide * fmath.sin(row.gam_glide);
         // curva: limite de estol e de tração
-        r.n_stall = q * c.S * c.CLmax / c.W;
-        const arg = q / (c.K * WS) * (Td / c.W - q * c.CD0 / WS);
-        r.n_sust = if (arg > 0) @sqrt(arg) else 0;
-        r.R_stall = if (r.n_stall > 1) V * V / (g * @sqrt(r.n_stall * r.n_stall - 1)) else std.math.inf(f64);
-        r.R_sust = if (r.n_sust > 1) V * V / (g * @sqrt(r.n_sust * r.n_sust - 1)) else std.math.inf(f64);
-        for (0..nb) |k| r.R_bank[k] = V * V / (g * fm.tan(c.bank[k]));
+        row.n_stall = dyn_pressure * cfg.S * cfg.CLmax / cfg.W;
+        const arg = dyn_pressure / (cfg.K * WS) * (Td / cfg.W - dyn_pressure * cfg.CD0 / WS);
+        row.n_sust = if (arg > 0) @sqrt(arg) else 0;
+        row.R_stall = if (row.n_stall > 1) airspeed * airspeed / (gravity * @sqrt(row.n_stall * row.n_stall - 1)) else std.math.inf(f64);
+        row.R_sust = if (row.n_sust > 1) airspeed * airspeed / (gravity * @sqrt(row.n_sust * row.n_sust - 1)) else std.math.inf(f64);
+        for (0..bank_count) |k| row.R_bank[k] = airspeed * airspeed / (gravity * fmath.tan(cfg.bank[k]));
         // bateria (Peukert) na potência requerida
-        const Pel = r.Pr / c.bat_eta;
-        r.t_bat = std.math.pow(f64, c.bat_Rt, 1.0 - c.bat_n) * std.math.pow(f64, c.bat_V * c.bat_C / Pel, c.bat_n);
-        r.range_bat = r.t_bat * 3600.0 * V;
+        const Pel = row.Pr / cfg.bat_eta;
+        row.t_bat = std.math.pow(f64, cfg.bat_Rt, 1.0 - cfg.bat_n) * std.math.pow(f64, cfg.bat_V * cfg.bat_C / Pel, cfg.bat_n);
+        row.range_bat = row.t_bat * 3600.0 * airspeed;
         // V_min e V_max onde P_d = P_r em toda a faixa (como na planilha: sem cortar no C_Lmax)
         if (CL > 0) {
-            const ex = r.Pd - r.Pr;
-            if (ex >= 0) sum.ceiling_ok = 1;
+            const ex = row.Pd - row.Pr;
+            if (ex >= 0) summary.ceiling_ok = 1;
             if (!std.math.isNan(prev_ex)) {
-                if (prev_ex < 0 and ex >= 0 and sum.Vmin == 0) sum.Vmin = V;
-                if (prev_ex >= 0 and ex < 0) sum.Vmax = V;
-            } else if (ex >= 0) sum.Vmin = V;
+                if (prev_ex < 0 and ex >= 0 and summary.Vmin == 0) summary.Vmin = airspeed;
+                if (prev_ex >= 0 and ex < 0) summary.Vmax = airspeed;
+            } else if (ex >= 0) summary.Vmin = airspeed;
             prev_ex = ex;
         }
-        if (r.ok > 0) {
-            if (r.RC > sum.RCmax) {
-                sum.RCmax = r.RC;
-                sum.V_RCmax = V;
+        if (row.ok > 0) {
+            if (row.RC > summary.RCmax) {
+                summary.RCmax = row.RC;
+                summary.V_RCmax = airspeed;
             }
-            if (r.gam > sum.gmax) {
-                sum.gmax = r.gam;
-                sum.V_gmax = V;
+            if (row.gam > summary.gmax) {
+                summary.gmax = row.gam;
+                summary.V_gmax = airspeed;
             }
-            if (r.E > sum.Emax) {
-                sum.Emax = r.E;
-                sum.V_Emax = V;
+            if (row.E > summary.Emax) {
+                summary.Emax = row.E;
+                summary.V_Emax = airspeed;
             }
-            if (r.gam_glide < sum.glide_min) {
-                sum.glide_min = r.gam_glide;
-                sum.V_glide_min = r.V_glide;
+            if (row.gam_glide < summary.glide_min) {
+                summary.glide_min = row.gam_glide;
+                summary.V_glide_min = row.V_glide;
             }
-            if (r.sink < sum.sink_min) {
-                sum.sink_min = r.sink;
-                sum.V_sink_min = r.V_glide;
+            if (row.sink < summary.sink_min) {
+                summary.sink_min = row.sink;
+                summary.V_sink_min = row.V_glide;
             }
-            if (r.t_bat > sum.t_max) {
-                sum.t_max = r.t_bat;
-                sum.V_tmax = V;
+            if (row.t_bat > summary.t_max) {
+                summary.t_max = row.t_bat;
+                summary.V_tmax = airspeed;
             }
-            if (r.range_bat > sum.range_max) {
-                sum.range_max = r.range_bat;
-                sum.V_range_max = V;
+            if (row.range_bat > summary.range_max) {
+                summary.range_max = row.range_bat;
+                summary.V_range_max = airspeed;
             }
         }
-        rows[n] = r;
-        n += 1;
+        rows[row_count] = row;
+        row_count += 1;
     }
-    if (sum.ceiling_ok > 0 and sum.Vmax == 0) sum.Vmax = c.V_hi; // ainda sobra potência no fim da faixa
-    sum.V_LDmax = @sqrt(2.0 * WS / (rho * @sqrt(c.CD0 / c.K)));
+    if (summary.ceiling_ok > 0 and summary.Vmax == 0) summary.Vmax = cfg.V_hi; // ainda sobra potência no fim da faixa
+    summary.V_LDmax = @sqrt(2.0 * WS / (rho * @sqrt(cfg.CD0 / cfg.K)));
     // raio mínimo (curva sustentada no T/W máximo), como na planilha
-    sum.TW_max = TWmax;
-    const d = 1.0 - 4.0 * c.K * c.CD0 / (TWmax * TWmax);
-    if (TWmax > 0 and d > 0) {
-        sum.V_Rmin = @sqrt(4.0 * c.K * WS / (TWmax * rho));
-        sum.n_Rmin = @sqrt(2.0 - 4.0 * c.K * c.CD0 / (TWmax * TWmax));
-        sum.R_min = 4.0 * c.K * WS / (rho * g * TWmax * @sqrt(d));
-        sum.phi_Rmin = fm.acos(1.0 / sum.n_Rmin);
+    summary.TW_max = TWmax;
+    const discriminant = 1.0 - 4.0 * cfg.K * cfg.CD0 / (TWmax * TWmax);
+    if (TWmax > 0 and discriminant > 0) {
+        summary.V_Rmin = @sqrt(4.0 * cfg.K * WS / (TWmax * rho));
+        summary.n_Rmin = @sqrt(2.0 - 4.0 * cfg.K * cfg.CD0 / (TWmax * TWmax));
+        summary.R_min = 4.0 * cfg.K * WS / (rho * gravity * TWmax * @sqrt(discriminant));
+        summary.phi_Rmin = fmath.acos(1.0 / summary.n_Rmin);
     }
     // autonomia máxima (fórmula fechada de Traub)
-    const den = (2.0 / @sqrt(rho * c.S)) * std.math.pow(f64, c.CD0, 0.25) *
-        std.math.pow(f64, 2.0 * c.W * @sqrt(c.K / 3.0), 1.5);
-    sum.t_max_formula = std.math.pow(f64, c.bat_Rt, 1.0 - c.bat_n) *
-        std.math.pow(f64, c.bat_eta * c.bat_V * c.bat_C / den, c.bat_n);
-    return n;
+    const den = (2.0 / @sqrt(rho * cfg.S)) * std.math.pow(f64, cfg.CD0, 0.25) *
+        std.math.pow(f64, 2.0 * cfg.W * @sqrt(cfg.K / 3.0), 1.5);
+    summary.t_max_formula = std.math.pow(f64, cfg.bat_Rt, 1.0 - cfg.bat_n) *
+        std.math.pow(f64, cfg.bat_eta * cfg.bat_V * cfg.bat_C / den, cfg.bat_n);
+    return row_count;
 }
 
 test "densidade ISA a 900 m (planilha: 1,129)" {
-    var c = SimpleCfg{};
-    c.h = 900;
-    c.T0 = 308.15;
-    try std.testing.expectApproxEqAbs(@as(f64, 1.12900), density(&c), 1e-4);
+    var cfg = SimpleCfg{};
+    cfg.h = 900;
+    cfg.T0 = 308.15;
+    try std.testing.expectApproxEqAbs(@as(f64, 1.12900), density(&cfg), 1e-4);
 }
 
 test "raio mínimo e potência como na planilha" {
-    var c = SimpleCfg{ .W = 7.32 * 9.81, .S = 0.44, .CD0 = 0.0253526912130295, .K = 0.3183102044939952, .CLmax = 2.2216 };
-    c.n_thr = 2;
-    c.thr_V[0] = 0;
-    c.thr_T[0] = 9.81 * 5.11;
-    c.thr_V[1] = 40;
-    c.thr_T[1] = 9.81 * 5.11;
+    var cfg = SimpleCfg{ .W = 7.32 * 9.81, .S = 0.44, .CD0 = 0.0253526912130295, .K = 0.3183102044939952, .CLmax = 2.2216 };
+    cfg.n_thr = 2;
+    cfg.thr_V[0] = 0;
+    cfg.thr_T[0] = 9.81 * 5.11;
+    cfg.thr_V[1] = 40;
+    cfg.thr_T[1] = 9.81 * 5.11;
     var rows: [100]SimpleRow = undefined;
-    var s: SimpleSummary = undefined;
-    const n = compute(&c, &rows, &s);
-    try std.testing.expect(n > 10);
+    var summary: SimpleSummary = undefined;
+    const row_count = compute(&cfg, &rows, &summary);
+    try std.testing.expect(row_count > 10);
     // R_min = 4 K (W/S) / (ρ g (T/W) √(1 − 4 K C_D0/(T/W)²))
     const TW = 5.11 / 7.32;
     const WS = 7.32 * 9.81 / 0.44;
-    const R = 4 * c.K * WS / (1.225 * 9.80665 * TW * @sqrt(1 - 4 * c.K * c.CD0 / (TW * TW)));
-    try std.testing.expectApproxEqRel(R, s.R_min, 1e-9);
+    const expected_radius = 4 * cfg.K * WS / (1.225 * 9.80665 * TW * @sqrt(1 - 4 * cfg.K * cfg.CD0 / (TW * TW)));
+    try std.testing.expectApproxEqRel(expected_radius, summary.R_min, 1e-9);
 }

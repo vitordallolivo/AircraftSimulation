@@ -6,64 +6,68 @@
 //! O tipo de aeronave (`cfg.kind`) e o otimizador (`opts.method`) chegam como números e viram tipos
 //! Zig aqui (`inline for` sobre `kinds.all` e `optimize.all`): cada combinação é compilada à parte.
 const std = @import("std");
-const T = @import("../types.zig");
-const S = @import("types.zig");
+const core_types = @import("../types.zig");
+const sizing_types = @import("types.zig");
 const chain = @import("chain.zig");
 const kinds = @import("kinds.zig");
-const opt = @import("optimize.zig");
+const optimizer = @import("optimize.zig");
+pub const ground = @import("ground.zig");
+pub const motorprop = @import("motorprop.zig");
 
-pub const types = S;
+pub const types = sizing_types;
 
-/// avalia `x` com a tração do núcleo (`p`: um Params de trabalho, só env/prop[0] são usados)
-pub fn eval(cfg: *const S.SizingCfg, p: *T.Params, x: []const f64) S.SizingOut {
-    var th: chain.CoreThrust = .{ .p = p, .rho = cfg.rho };
-    inline for (kinds.all, 0..) |K, i| {
-        if (cfg.kind == i) return chain.Chain(K, chain.CoreThrust).eval(cfg, &th, x);
+/// avalia `design_vars` com a tração do núcleo (`params`: um Params de trabalho, só env/prop[0] são usados)
+pub fn eval(cfg: *const sizing_types.SizingCfg, params: *core_types.Params, design_vars: []const f64) sizing_types.SizingOut {
+    var thrust: chain.CoreThrust = .{ .p = params, .rho = cfg.rho };
+    inline for (kinds.all, 0..) |Kind, i| {
+        if (cfg.kind == i) return chain.Chain(Kind, chain.CoreThrust).eval(cfg, &thrust, design_vars);
     }
-    return chain.Chain(kinds.all[0], chain.CoreThrust).eval(cfg, &th, x);
+    return chain.Chain(kinds.all[0], chain.CoreThrust).eval(cfg, &thrust, design_vars);
 }
 
-pub fn fitness(o: *const S.SizingOut, penalty: f64) f64 {
-    const s = if (std.math.isFinite(o.score)) o.score else -1e6;
-    return s - penalty * o.violation * (1.0 + @abs(s));
+/// nota usada pelo otimizador: a pontuação penalizada pela violação das restrições
+pub fn fitness(result: *const sizing_types.SizingOut, penalty: f64) f64 {
+    const score = if (std.math.isFinite(result.score)) result.score else -1e6;
+    return score - penalty * result.violation * (1.0 + @abs(score));
 }
 
 const Ctx = struct {
-    cfg: *const S.SizingCfg,
-    p: *T.Params,
+    cfg: *const sizing_types.SizingCfg,
+    p: *core_types.Params,
     penalty: f64,
 
-    fn f(ctx: *anyopaque, x: []const f64) opt.Eval {
+    fn evaluate(ctx: *anyopaque, design_vars: []const f64) optimizer.Eval {
         const self: *Ctx = @ptrCast(@alignCast(ctx));
-        const o = eval(self.cfg, self.p, x);
-        var ind: S.Individual = .{ .x = o.x, .feasible = o.feasible, .score = o.score, .violation = o.violation, .mtow = o.q[S.q_mtow], .ee = o.q[S.q_ee], .pv = o.q[S.q_pv] };
-        ind.fitness = fitness(&o, self.penalty);
+        const result = eval(self.cfg, self.p, design_vars);
+        var ind: sizing_types.Individual = .{ .x = result.x, .feasible = result.feasible, .score = result.score, .violation = result.violation, .mtow = result.q[sizing_types.q_mtow], .ee = result.q[sizing_types.q_ee], .pv = result.q[sizing_types.q_pv] };
+        ind.fitness = fitness(&result, self.penalty);
         return .{ .fitness = ind.fitness, .ind = ind };
     }
 };
 
-pub fn optimize(cfg: *const S.SizingCfg, opts: *const S.OptOpts, p: *T.Params, buf: []S.Individual, n: *usize, best: *S.SizingOut, progress: ?opt.Progress, pctx: ?*anyopaque) void {
-    var ctx: Ctx = .{ .cfg = cfg, .p = p, .penalty = opts.penalty };
-    const pb: opt.Problem = .{ .ctx = &ctx, .specs = &cfg.vars, .evalFn = Ctx.f };
-    var rec: opt.Recorder = .{ .buf = buf, .progress = progress, .progress_ctx = pctx };
-    const r = opt.run(pb, opts, &rec);
-    n.* = rec.n;
-    best.* = eval(cfg, p, &r.best);
+/// roda o otimizador escolhido em `opts`, grava as avaliações em `buf` e o melhor em `best`
+pub fn optimize(cfg: *const sizing_types.SizingCfg, opts: *const sizing_types.OptOpts, params: *core_types.Params, buf: []sizing_types.Individual, evaluated: *usize, best: *sizing_types.SizingOut, progress: ?optimizer.Progress, pctx: ?*anyopaque) void {
+    var ctx: Ctx = .{ .cfg = cfg, .p = params, .penalty = opts.penalty };
+    const problem: optimizer.Problem = .{ .ctx = &ctx, .specs = &cfg.vars, .evalFn = Ctx.evaluate };
+    var rec: optimizer.Recorder = .{ .buf = buf, .progress = progress, .progress_ctx = pctx };
+    const outcome = optimizer.run(problem, opts, &rec);
+    evaluated.* = rec.n;
+    best.* = eval(cfg, params, &outcome.best);
 }
 
 /// nomes para o Python montar os índices: 0 grandezas, 1 variáveis, 2 tipos de aeronave, 3 otimizadores
-pub fn name(what: i32, i: i32) ?[*:0]const u8 {
-    if (i < 0) return null;
-    const k: usize = @intCast(i);
+pub fn name(what: i32, index: i32) ?[*:0]const u8 {
+    if (index < 0) return null;
+    const position: usize = @intCast(index);
     switch (what) {
-        0 => return if (k < S.n_q) S.q_names[k].ptr else null,
-        1 => return if (k < S.n_vars) S.var_names[k].ptr else null,
+        0 => return if (position < sizing_types.n_q) sizing_types.q_names[position].ptr else null,
+        1 => return if (position < sizing_types.n_vars) sizing_types.var_names[position].ptr else null,
         2 => {
-            inline for (kinds.all, 0..) |K, j| if (j == k) return K.name.ptr;
+            inline for (kinds.all, 0..) |Kind, j| if (j == position) return Kind.name.ptr;
             return null;
         },
         3 => {
-            inline for (opt.all, 0..) |O, j| if (j == k) return O.name.ptr;
+            inline for (optimizer.all, 0..) |Optimizer, j| if (j == position) return Optimizer.name.ptr;
             return null;
         },
         else => return null,
@@ -75,10 +79,12 @@ test {
     _ = @import("stages.zig");
     _ = @import("chain.zig");
     _ = @import("optimize.zig");
+    _ = @import("ground.zig");
+    _ = @import("motorprop.zig");
 }
 
 test "nomes para o Python" {
-    try std.testing.expectEqualStrings("mtow", std.mem.span(name(0, S.q_mtow).?));
-    try std.testing.expectEqualStrings("biplano", std.mem.span(name(2, S.kind_biplane).?));
+    try std.testing.expectEqualStrings("mtow", std.mem.span(name(0, sizing_types.q_mtow).?));
+    try std.testing.expectEqualStrings("biplano", std.mem.span(name(2, sizing_types.kind_biplane).?));
     try std.testing.expect(name(2, 99) == null and name(3, 0) != null);
 }

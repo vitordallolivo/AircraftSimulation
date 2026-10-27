@@ -34,8 +34,8 @@ def static_characteristics(backend: ISimBackend, ac: Aircraft, V: float = 12.0) 
     CLmax = float(CL[i])
     Vs = math.sqrt(2 * mp["m"] * G0 / (ac.environment.rho * S * CLmax)) if CLmax > 0 else float("nan")
     return dict(CL0=float(CL0), CLa=float(CLa), CLmax=CLmax, alpha_stall=math.degrees(al[i]),
-                static_margin=float(-dCm), x_np=float(mp["cg"][0] - dCm * c), Vs=Vs, mass=mp["m"],
-                cg=list(mp["cg"]), Sref=S, cref=c, bref=b)
+                static_margin=float(-dCm), x_np=float(mp["cg"][0] + dCm * c), Vs=Vs, mass=mp["m"],
+                cg=list(mp["cg"]), Sref=S, cref=c, bref=b)   # x + à frente: dCm/dCL = (x_NP − x_CG)/c
 
 
 def calibrate(backend: ISimBackend, ac: Aircraft) -> dict:

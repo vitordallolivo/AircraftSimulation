@@ -72,6 +72,38 @@ as configurações.
    - Quando faz sentido, uma ferramenta de linha de comando em `tools/` que imprime e plota.
    - Sempre que possível, validar contra a literatura, com o número esperado escrito no teste.
 9. **Textos em português**: mensagens, gráficos, documentação, commits. Os comentários seguem o estilo do arquivo.
+10. **Como escrever um README.** Escreva como uma pessoa explica para outra, em três tempos:
+    - **Começa simples.** O primeiro parágrafo diz o que é a pasta e para que serve no projeto, sem supor que o leitor
+      já sabe do que se trata. Por exemplo: "este é o núcleo de simulação e controle da aeronave". Diga o que se
+      define ali e o que se tira disso: "aqui se define a geometria da asa, e com isso saem a polar, as derivadas e
+      onde o estol começa".
+    - **Depois apresenta as partes.** Um parágrafo em texto corrido conta como a pasta se divide, na ordem em que as
+      partes aparecem. Em seguida vem uma seção para cada parte.
+    - **Fica específico no meio.** As equações (cada uma num parágrafo dela, em LaTeX, com a fonte), os limites e os
+      detalhes de implementação vêm aqui. Cada seção começa dizendo o que dá para fazer, por exemplo "aqui se define
+      a quantidade de partições, até N". Depois vêm os parâmetros básicos e, por último, as imagens.
+    - **Termina simples.** Como chamar, um exemplo que roda e como acrescentar algo.
+    - **Prefira texto corrido a tópicos.** Use lista só quando os itens são de fato uma lista (comandos, arquivos,
+      passos).
+    - **Explique cada termo uma vez,** na primeira vez que ele aparece. Depois, use sem explicar de novo, porque a essa
+      altura o leitor já sabe o que é (derrapagem, CMA, washout...).
+    - **Justifique um método pelo problema que ele resolve,** em palavras do usuário. Diga o que dava errado sem ele e
+      em que situação. Uma citação solta de artigo, sem esse contexto, não explica nada.
+    - **Números específicos** (tempos de máquina, resultados de um caso só) não vão no README. Eles ficam em
+      `core/OTIMIZACOES.md` ou no teste.
+
+11. **Nomes no Zig dizem o que a coisa é.**
+    - Nada de nome de uma letra, a não ser os iteradores de laço simples (`i`, `j`, `k`). Parâmetro, variável local,
+      import e função ganham nomes que se leem sozinhos: `guide(ctx: state.Ctx, north: f64, east: f64,
+      ground_speed: f64)`, não `guide(c: S.Ctx, n: f64, e: f64, Vg: f64)`. Vale também para os imports
+      (`const limits = @import("../limits.zig")`, nunca `const L = ...`).
+    - Um conjunto de índices ou de códigos é um `enum`, não uma lista de constantes soltas (ex.: `state.Entry`, com
+      `state.index(.pitch)`). Erros são `error{...}`; o código numérico só existe na fronteira da ABI (`abiCode`).
+    - Toda `pub fn` e toda `export fn` tem um `///` curto dizendo o que ela faz (o equivalente do `@brief` do C).
+    - Os campos das structs `extern` da ABI ficam como estão (o Python lê pelo esquema); renomear um campo é uma
+      tarefa à parte.
+    - Depois de mexer no núcleo, compilar e testar também o AeroDrive (`cd aerodrive && python -m ziglang build test`
+      e `build`), porque ele usa o núcleo como módulo.
 
 ## 4. Como trabalhar com o dono do repositório
 
@@ -120,7 +152,8 @@ as configurações.
 ```sh
 python tools/codemap.py                          # refaz docs/MAP.md (e --check para conferir)
 python tools/checks/run.py                       # checks rápidos; --tudo inclui GUI, design e manager
-cd core && python -m ziglang build test          # testes do núcleo (test-math, test-physics, test-sim...)
+cd core && python -m ziglang build test          # testes do núcleo; -Dgrupo=math (ou physics, sim...) e -Dfiltro=<nome>
+cd core && python -m ziglang build docs          # documentação do Zig (dos `///`) em zig-out/docs; servir com `python -m http.server -d zig-out/docs`
 cd aerodrive && python -m ziglang build test     # testes do AeroDrive; build run abre o jogo
 QT_QPA_PLATFORM=offscreen python -m pytest -q tests/<área>
 python tools/time_profile.py loads --exato       # perfil: flame graph, tabela por função e por módulo (perfis/)

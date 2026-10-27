@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import math
+import secrets
 from dataclasses import dataclass, field
 
 from .airfoil import Airfoil
@@ -125,6 +126,8 @@ class LiftingSurface:
     depsda: float | None = None    # dε/dα; None: da asa principal
     mass: float = 0.0          # massa estrutural (entra no modelo de massa por componentes)
     mount: str = ""            # "" solta | "tubo:i" na ponta do tubo i | "ponta:j" na ponta da superfície j
+    #                            ("ponta_dir:j" / "ponta_esq:j": a ponta direita / esquerda dela, ex.: cauda em H)
+    group: str = ""            # asas ligadas (tandem, biplano): o mesmo id opaco; "" asa sozinha (new_group_id)
 
     def section_airfoil(self, sec: WingSection) -> Airfoil:
         return sec.airfoil if sec.airfoil is not None else self.airfoil
@@ -174,6 +177,15 @@ class LiftingSurface:
             num += dy * (c0 * c0 + c0 * c1 + c1 * c1) / 3
             den += dy * (c0 + c1) / 2
         return num / den if den > 0 else 0.0
+
+
+def new_group_id(taken=()) -> str:
+    """id de um grupo de asas: 8 caracteres hexadecimais sorteados, sem repetir os de `taken`. Ninguém lê o
+    texto: ele só diz "estas asas andam juntas", e não muda quando a asa troca de nome ou vira cópia"""
+    while True:
+        g = secrets.token_hex(4)
+        if g not in taken:
+            return g
 
 
 def _interp_sections(sections: list[WingSection], y: float, attr: str) -> float:
@@ -470,6 +482,8 @@ class Takeoff:
     ht: float = 2.0            # altura em que o piloto automático assume
     rate_thr: float = 2.0
     h_end: float = 6.0
+    # a proteção de α (depois do acionamento o profundor não deixa α passar do alpha_max do piloto) é sempre ligada:
+    # não é opção (o tradutor manda alpha_guard = 1 ao núcleo); arquivos antigos com `alpha_guard` carregam iguais
 
 
 @dataclass
@@ -584,7 +598,39 @@ class Aircraft:
     def wing(self) -> LiftingSurface | None:
         return self.surface("wing")
 
+    def wing_group(self, s: LiftingSurface | None = None) -> list[LiftingSurface]:
+        """as asas ligadas a `s` (padrão: a asa principal), na ordem da lista; sem grupo, só ela"""
+        s = s if s is not None else self.wing
+        if s is None:
+            return []
+        if not s.group:
+            return [s]
+        return [t for t in self.surfaces if t.enabled and t.role == "wing" and t.group == s.group]
+
+    def link_wings(self, a: LiftingSurface, b: LiftingSurface) -> str:
+        """liga `b` ao grupo de `a` (cria o grupo se `a` não tem); devolve o id"""
+        if not a.group:
+            a.group = new_group_id({t.group for t in self.surfaces if t.group})
+        b.group = a.group
+        return a.group
+
+    def unlink_wing(self, s: LiftingSurface) -> None:
+        """tira `s` do grupo; a última asa que sobra sozinha também perde o id"""
+        g, s.group = s.group, ""
+        rest = [t for t in self.surfaces if t.group == g] if g else []
+        if len(rest) == 1:
+            rest[0].group = ""
+
     def references(self) -> tuple[float, float, float]:
+        """S, c e b de referência. Asa principal num grupo (tandem, biplano): S = soma das áreas, b = a maior
+        envergadura, c = CMA média ponderada pela área (convenção de referência; fonte a conferir no PDF)"""
+        ws = self.wing_group()
+        if len(ws) > 1:
+            Sw = sum(w.area for w in ws)
+            S = self.Sref if self.Sref else Sw
+            c = self.cref if self.cref else (sum(w.area * w.mac for w in ws) / Sw if Sw > 0 else 0.3)
+            b = self.bref if self.bref else max(w.span for w in ws)
+            return S, c, b
         w = self.wing
         S = self.Sref if self.Sref else (w.area if w else 1.0)
         c = self.cref if self.cref else (w.mac if w else 0.3)
@@ -628,7 +674,7 @@ class Aircraft:
             b = self.booms[i]
             x, y, z = b.end
             return x + root.chord, y, (z - b.diameter / 2 if s.vertical else z)
-        if kind == "ponta" and 0 <= i < len(self.surfaces) and self.surfaces[i] is not s:
+        if kind in ("ponta", "ponta_dir", "ponta_esq") and 0 <= i < len(self.surfaces) and self.surfaces[i] is not s:
             t = self.surfaces[i]
             if not t.sections:
                 return None
@@ -636,7 +682,12 @@ class Aircraft:
             if t.vertical:
                 return t.x - t.xoff_at(ys), t.y, t.z - ys
             d = math.radians(t.dihedral)
-            return t.x - t.xoff_at(ys), (t.y if t.symmetric else t.y + ys * math.cos(d)), t.z - ys * math.sin(d)
+            y = t.y + ys * math.cos(d)
+            if kind == "ponta_esq" and t.symmetric:      # a ponta do lado espelhado (cauda em H: uma EV de cada lado)
+                y = t.y - ys * math.cos(d)
+            elif kind == "ponta" and t.symmetric:        # o de sempre: no plano de simetria, na altura da ponta
+                y = t.y
+            return t.x - t.xoff_at(ys), y, t.z - ys * math.sin(d)
         return None
 
     def apply_constraints(self) -> None:

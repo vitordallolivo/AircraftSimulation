@@ -11,7 +11,7 @@ Modos:
   MTOW                  bisseção na massa: a maior que decola com x_warning e z_warning, otimizando o
                         acionamento do profundor (e o xCG, se pedido) em cada massa
 
-Critérios da decolagem: só os da pista (manager/takeoff_opt.py).
+Critérios da decolagem: os da pista e o de não estolar (manager/takeoff_opt.py).
 """
 from __future__ import annotations
 
@@ -205,7 +205,14 @@ class MissionSimulation(SimulationBase):
                  ParamSpec("z_warning", "z_warning (altura)", af.z_warning if af else 1.0,
                            minimum=-20, maximum=50, unit="m", group=GP,
                            help="altura sobre a superfície de partida que conta como decolado; ≤ 0 na mesa: quanto pode "
-                                "afundar abaixo dela")]
+                                "afundar abaixo dela"),
+                 ParamSpec("busca", "Busca do acionamento", TO.SEARCHES[0], kind="choice", choices=TO.SEARCHES,
+                           group=GP, help="grade: 8 pontos na pista e refino em volta do melhor. bisseção: parte de "
+                                          "onde o avião sai do chão sem acionar e divide a faixa até achar a janela"),
+                 ParamSpec("tolerancia", "Tolerância da bisseção", 0.0, minimum=0.0, maximum=20.0, unit="% x_warning",
+                           group=GP, help="só na bisseção: aceita errar o acionamento até isto do x_warning e desiste "
+                                          "cedo da massa que nem com o comando todo cabrando sai do chão a tempo. "
+                                          "0 = a busca de sempre")]
         if mode == M_MIS:
             P += [ParamSpec("legs", "Trajetória", legs_to_rows(ac.mission.legs) if ac is not None else [],
                             kind="table", columns=LEG_COLS, bound=True,
@@ -372,7 +379,10 @@ class MissionSimulation(SimulationBase):
     def _optimize(self, ctx, ac, refs, overrides=None):
         ctx.on_progress(0.0, "otimizando o acionamento do profundor")
         par = lambda fn, items: self.parallel(ctx, fn, items, "decolagens")
-        return TO.optimize(ctx.backend, ac, refs["x_warning"], refs["z_warning"], par, overrides)
+        search = ctx.params.get("busca") or TO.SEARCHES[0]
+        tol = float(ctx.params.get("tolerancia") or 0.0) / 100.0
+        return TO.optimize(ctx.backend, ac, refs["x_warning"], refs["z_warning"], par, overrides, search=search,
+                           tol=tol)
 
     @staticmethod
     def _opt_series(tried, best, refs, prefix="op_") -> dict:

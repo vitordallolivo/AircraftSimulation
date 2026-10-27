@@ -6,12 +6,311 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.3 (branch `0.2_dev`)
 
+- núcleo, legibilidade (T87, revisão do vitor). Os erros da ABI viram um `error{...}` (`AbiError`), e o número negativo
+  só aparece na fronteira, em `abiCode`. Os arquivos `tests_*.zig` por grupo dão lugar a `zig build test -Dgrupo=math`
+  (ou physics, sim...) e `-Dfiltro=<nome>`. Em todo `core/src`, os nomes de uma letra (imports `L`, `S`, `fm`;
+  parâmetros e variáveis `c`, `n`, `e`, `V`...) viram nomes que dizem o que são. Os índices do vetor de estados viram
+  o `enum` `state.Entry` (`state.index(.pitch)`), e toda `pub fn` e `export fn` ganha um `///`. A biblioteca sai igual
+  bit a bit, e o AeroDrive compila e passa nos testes. A regra está no `.claude/CLAUDE.md` (decisão 11).
+
+- aeroopt e core/optim, README com figuras: no aeroopt, "Como se divide" (o PNG dos módulos) vem antes de "Como
+  funciona" (o fluxo dos blocos e uma figura por bloco, com dados reais: a rotação na pista, as regras de Deb e a
+  violação até voar, onde caem os pontos de cada busca, a bisseção na massa, a nota e as gerações). No core/optim,
+  cada busca ganhou o seu desenho (GA, CMA-ES, DE, hipercubo latino, busca guiada, substituto RBF e modelo local).
+
+- aeroopt, GA com substituto (O36, passo 2): a busca "substituto" das superfícies. A cada geração o GA do núcleo
+  sorteia 16 vezes mais filhos que a população, um substituto RBF cúbico com cauda linear (`core/src/optim/rbf.zig`,
+  Gutmann 2001; Regis e Shoemaker 2007) do MTOW e outro da violação dão o palpite de cada um, e só os de melhor
+  palpite (mais um sorteado) são avaliados. No banco, com 6 contínuas e 48 pontos, a mediana de 7 sementes foi 94 %
+  do ótimo na tigela, 98 % na acoplada e 88 % na multimodal (o GA puro: 78, 91 e 71 %): a melhor busca nas duas
+  formas difíceis. Os métodos de antes ficam iguais.
+
+- aeroopt, banco dos otimizadores (`tools/banco_otimizadores.py`, O36): compara as buscas das superfícies e da
+  etapa voa nos dados de teste, em três formas de problema (`synthetic.SHAPES`: tigela, acoplada e multimodal, com
+  o mesmo ótimo). Linha de base com 6 contínuas e 48 pontos: ninguém chega a 99 % do ótimo; as coordenadas ganham
+  na tigela e na multimodal, o CMA-ES na acoplada, e o GA puro perde nas três. A busca das superfícies ganhou
+  `SurfaceSizing.seed` (0: a de sempre).
+
+- decolagem, proteções obrigatórias (vitor: "se não faz sentido não pode acontecer"). A proteção de α na decolagem
+  deixa de ser opção (sai `takeoff.alpha_guard` do avião e `power.alpha_guard` do dimensionamento; arquivos antigos
+  carregam iguais), e o limite dela passa a ser o estol de cada avião: o α em que a superfície mais carregada chega a
+  0,95 do C_Lmax, calculado pelo núcleo no `configure`, no lugar dos 11° fixos. A busca da decolagem reprova a que
+  estola (C_L/C_Lmax ≥ 1 até h_end), que conta como "acionou cedo demais". O aeroopt deixa de rodar o 6GDL com e sem
+  a proteção. **Muda o resultado das decolagens e dos exemplos**: sem isso, 5 de 6 tandens da grade estolavam e caíam
+  logo depois de sair do chão; com isso, os 6 chegam ao fim da manobra 1.
+
+- tandem: as duas asas deixam de ser iguais. A área da asa de trás sobre a da frente (`wing2_area`) e o perfil dela
+  (`wing2_airfoil`) são campos novos (1 e vazio: o de sempre). A E&C do tandem confere a divisão da sustentação no
+  cruzeiro (40 a 60 % na asa da frente, pelo núcleo), o recuo de 3 a 5 cordas e o desnível até 1 corda (O31).
+- aeroopt, janela: "configurações por geração" passa a se chamar "indivíduos".
+- decolagem 6GDL: tolerância da bisseção do acionamento (`tolerancia`, % do x_warning; 0 = a de sempre), na aba
+  Missão e na Configuração do aeroopt. Com 1 %, o MTOW do monoplano da Regular 2026 cai de 730 s para 157 s
+  (15,42 → 15,36 kg).
+- tandem: a E&C confere a divisão da sustentação no cruzeiro e na velocidade de sair do chão (ela muda com a
+  velocidade: o C_m do perfil pesa mais quanto maior o q).
+- aeroopt, janela: sai o gráfico e a coluna do MTOW na pista (a conta da sprint não é o que pontua); ficam a nota e o
+  MTOW do 6GDL.
+- aeroopt, janela: os submenus rolam e o regulamento fica fixo no alto da Pontuação; numa tela de 1366 × 768 o
+  combo e o OK ficavam fora da tela. A Configuração ganhou o início (uniforme ou hipercubo latino) e as partidas da
+  E&C, que antes só se mudavam no `.opt.json`.
+- aeroopt, E&C: busca guiada pela falha. Cada termo da violação tem um código, e o diagnóstico liga o código às
+  variáveis que o consertam; métodos novos da etapa voa: reparo por gradiente, εDE, algoritmo cultural, LEM e
+  diagnóstico (um bandido escolhe o operador de cada filho). As contas no núcleo (`core/src/optim/guided.zig`).
+  `tools/metodos_voa.py` compara os métodos. O padrão continua "gerações" (O30).
+- aeroopt: a E&C com os comandos liga a estabilidade dinâmica (modos do núcleo contra a MIL-F-8785C); o tandem da Regular 2026
+  era instável em guinada e caía logo depois de decolar, e a sprint não via. A deriva da ponta vai até 0,5 m (O28).
+- decolagem: busca do ponto de acionamento por bisseção a partir da corrida sem acionar (opção `busca`; o 6GDL do aeroopt
+  usa) (O29).
+- sprint e aeroopt: a posição da carga paga (`power.x_payload`, do CG de projeto) é variável, e a E&C a escolhe junto com
+  os comandos; a bateria equilibra junto e a margem sem a carga é conferida (O27). Com 0, a montagem de sempre.
+- sprint: o tandem com deriva na ponta achava a asa de trás pelo fim da lista e lia a deriva como asa (ponto neutro na asa
+  da frente, lastro de ~1 kg, nunca voava na E&C). Agora a segunda asa se acha pelo papel (`tail.second_wing`).
+- aeroopt, E&C: população inicial por hipercubo latino (`core/src/optim/sampling.zig`, maximin; `etapas.inicio =
+  "lhs"`) e multi-start (`etapas.partidas = k`: k pontos que voam, afastados, e fica o de maior carga paga na pista).
+  Os dois desligados por padrão. `tools/sementes.py` roda a mesma configuração com sementes diferentes e mostra se
+  caem no mesmo avião.
+
+- sprint, tandem: a asa de trás agora é tratada como a cauda. O ponto neutro sai das duas asas (a média dos CA
+  ponderada por a S, com η e o downwash da da frente). Antes era o da asa da frente sozinha, o CG ia para perto dela
+  e o tandem não trimava em α nenhum. O profundor fica na asa de trás e a da frente só tem aileron: um elevon na da
+  frente, à frente do CG, cabrava quando descia. A asa de trás sente o downwash, um tubo a liga à fuselagem e o pod
+  vai até o CG, onde ficam a carga e a bateria. Na E&C com os comandos, o tandem tem os comandos dele: decalagem e
+  recuo da asa de trás, margem estática, trecho e corda do profundor, atitude no chão e trem. Muda só o tandem.
+- sprint e E&C, saída do chão sem rodar (atitude no chão): no avião sem cauda só conta o C_L que o comando ainda
+  trima. Antes a sprint usava o C_L da asa sem trimagem (1,7 no tandem, que trimado dá 0,77) e achava que o avião saía
+  do chão sozinho; no 6GDL ele picava de volta para a bequilha e não decolava.
+- E&C (etapa voa com os comandos) confere duas coisas que antes só apareciam no 6GDL: o peso mínimo na bequilha
+  parado (8 %, Raymer §11.2; com menos o avião senta para trás na corrida) e a estabilidade direcional (C_nβ; um
+  avião sem cauda e sem deriva não tem nenhuma).
+- sprint, deriva na ponta da asa (`tail.tip_fin`, 0 por padrão): uma superfície vertical com leme em cada ponta da
+  asa sem cauda, que também trabalha como placa de ponta. É ela que dá o C_nβ da asa voadora e do tandem. No tandem
+  ela vai na asa de trás (`tail.tip_fin_where`), porque a ponta da da frente fica quase no CG, sem braço.
+- aeroopt, arfagem do tandem (`tail.tandem_pitch`): o comando de arfagem na asa de trás (profundor), na da frente
+  (elevon que desce para cabrar, como um canard) ou nas duas. A E&C escolhe entre as três, como escolhe a cauda.
+- núcleo, proteção de α na decolagem (`takeoff.alpha_guard`, desligada por padrão; obrigatória desde a v0.2.3): enquanto o piloto automático não
+  assume, o profundor não deixa α passar do limite dele. Sem ela, a asa voadora leve e com muita tração cabra até
+  estolar com o comando fixo (de 32° para 11° de α no teste do núcleo). A etapa do 6GDL do aeroopt roda com e sem e
+  fica com o maior MTOW. As decolagens de hoje ficam iguais.
+- sprint, ponto de projeto: quando a média de sempre acaba as voltas sem convergir (o MTOW sobe quase tanto quanto a
+  massa de projeto, como no tandem e na asa voadora), segue por secante. Quem já convergia fica igual.
+- sprint, altura do obstáculo (`requirements.obstacle_h`, 1 m por padrão, que era o fixo de antes): é o z_warning da
+  decolagem 6GDL. A Regular 2026 pede 0,90 m a 55 m (R[7.8.0.1]).
+
+- aeroopt, pontuação da Regular 2026 (`pontuacao/sae_br_2026_regular.toml`): P_EE = 50 EE e a nota de voo da eq.
+  7.5, com o fator do número de superfícies longitudinais N (`stages.n_surfaces`: asa voadora 1, monoplano e tandem
+  2, biplano 3), o fator de envergadura 1,15^(−b), o MTOW de 20 kg e a penalidade de envergadura acima de 4 m. O
+  voo vale se passar o obstáculo a 55 m. A penalidade de potência acima de 600 W fica de fora: o avaliador ainda
+  não entrega a potência de pico.
+
+- asa voadora na E&C: com "comandos (E&C)", a asa voadora parte de uma asa enflechada com torção para baixo. Ela
+  ganha perfil simétrico na ponta (onde fica o elevon), hélice propulsora e o momento próprio dos comandos, e a busca
+  mexe também em margem estática, enflechamento, torção, afilamento, atitude no chão e posição do trem. A E&C confere
+  no núcleo: o maior C_L trimado contra a velocidade de estol pedida, o elevon picando segurando o nariz com o motor
+  cheio e a asa correndo longe do estol. O exemplo usa o S1223 na asa (`example_project(airfoil)` troca).
+- sprint, atitude no chão (`power.ground_pitch`, 0 por padrão): a bequilha mais comprida deixa a asa correndo num
+  ângulo, e a corrida do núcleo (`GroundRun.lift_off`) sai do chão sem rodar quando a sustentação vence o peso. A
+  pista da asa voadora usa o C_L trimado (`power.trimmed_clmax`). 6GDL: com a bequilha mais comprida, a decolagem
+  começa parada na atitude do trem; antes começava nivelada, a bequilha entrava no chão e o avião capotava. Os
+  trens nivelados ficam iguais.
+
+- sprint, elevon da asa voadora (O16): a sustentação do elevon ia toda a 3/4 da corda e dava uns 4 vezes o C_mδ do
+  núcleo. Agora vai no quarto de corda da faixa, mais o momento próprio do flape do perfil fino. Muda só a cauda
+  "sem cauda". Núcleo: o modificador novo `comando.momento_flape` (`core/src/modifiers/flapmoment.zig`) soma esse
+  momento em cada faixa com comando. Ele fica desligado por padrão, e o `tail.flap_moment` da Empenagem liga; a E&C
+  com os comandos liga sozinha. Com ele, sprint e núcleo dão −0,69 e −0,73 /rad no mesmo avião.
+
+- aeroopt, comandos em E&C: com "comandos (E&C)" marcado na Configuração (`params["etapas"]["comandos"]`), a etapa
+  voa também mexe nos comandos do tipo de avião (profundor; ou trecho e corda do elevon; curso para cabrar e
+  inclinação do motor), e o comando tem de rodar o avião antes de sair do chão. Essa conta usa o C_m e o C_L do
+  núcleo (`stages.core_rotation`), porque a conta analítica da sprint dá ao elevon da asa voadora uns 4 a 5 vezes o
+  C_mδ do núcleo e passava aviões que batem no 6GDL. Desligado por padrão. Ferramenta nova `tools/rotacao.py`:
+  a rotação pelas duas contas, termo a termo. As suspeitas viraram os itens O16 a O20 do tracking.
+
+- aeroopt, a cauda é escolhida em E&C: a etapa voa (estabilidade e controle) testa as caudas marcadas na
+  Configuração (convencional, em H, em V, sem cauda) na asa de cada configuração e fica com a que voa; entre as que
+  voam, a que decola na pista com a maior carga paga (um ponto de projeto por cauda). O indivíduo passa a ter essa cauda (`values["tail.layout"]`), e as etapas seguintes a usam.
+  "cauda em V" saiu dos tipos de avião (continua valendo nos `.opt.json` gravados, que mostram os nomes antigos e
+  rodam iguais). Desligada por padrão; o exemplo da janela liga as quatro. `params["etapas"]["caudas"]`.
+- sprint, cauda em H: a EH da convencional com a EV repartida em duas iguais, uma em cada ponta da EH
+  (`tail.LAYOUTS`, opção nova; as outras caudas não mudam).
+
+- aeroopt, menus: cada opção da Configuração e das Restrições ganhou um "(?)" com a explicação (no mouse ou no
+  clique), e os campos de número perderam o texto ("10.00 % da faixa" virou "10.00" no campo "passo (% da faixa)").
+  Os tipos de avião saíram do submenu Categorias e foram para a Configuração ("aviões"). Asa alta, média, baixa e
+  parasol viraram um "monoplano" só, com a asa alta; a altura sai da variável "altura da asa" quando ela está livre.
+  Os nomes antigos continuam valendo nos `.opt.json` gravados e rodam iguais.
+
+- aeroopt, evolução diferencial: mais um método das superfícies e da etapa voa, no núcleo (`core/src/optim/de.zig`,
+  DE/rand/1/bin de Storn e Price, F = 0,5, CR = 0,9; `aerosim_de_init`, `aerosim_de_trials`, `aerosim_de_select`).
+  O passo sai das diferenças entre os aviões da população, então encolhe sozinho perto do ótimo. Nos dados de
+  teste, com 24 pontos, chega a 99,7 % da nota sabida, como as gerações; numa elipse girada (variáveis acopladas)
+  fica mais perto do máximo que as gerações com o mesmo total.
+- aeroopt, caminho da busca: coordenadas paralelas (`aeroopt/pcoords.py`), uma linha por avião passando por um eixo
+  por variável livre e pelo MTOW, o PV e a nota, com a cor pela geração e o caminho do melhor até ali em preto. Fica
+  na janela, embaixo do mapa, e o botão "Exportar HTML…" grava a mesma figura numa página que abre sem internet, com
+  o controle "até a geração" e o avião embaixo do mouse.
+- aeroopt, sensibilidade sozinha e curvas: o botão "Sensibilidade deste avião" roda só a sensibilidade do avião
+  selecionado, com o método do menu, numa aba própria. A aba ganha um gráfico por variável (a nota pelo modelo, os
+  pontos avaliados no eixo e a faixa da tolerância) e um por limite do problema. O menu Configuração perdeu a
+  numeração das etapas e as caixas sem opção (geometria e nota).
+- aeroopt, sensibilidade com menu e três métodos: no menu Configuração, "7. sensibilidade do melhor" liga a análise e
+  escolhe o método (modelo local, um por vez ou Morris), o passo, a tolerância de fabricação, as trajetórias e os
+  limites do problema; tudo vai no `.opt.json` (`params["sensibilidade"]`). No núcleo, `core/src/optim/sensmethods.zig`
+  dá a perda por tolerância pelos dois primeiros momentos (`aerosim_sens_tolerance`) e as trajetórias e os efeitos
+  elementares de Morris (`aerosim_morris_design`, `aerosim_morris_effects`). Com os limites ligados, o melhor é refeito
+  com a pista e cada restrição ligada ±5 %, e sai ∂nota/∂L. Tudo aparece no mesmo tornado da aba Sensibilidade. Os
+  menus mostram só o nome de cada método; a explicação passou para a dica do mouse. Na ferramenta,
+  `--sensibilidade [local|eixos|morris] --tolerancia --limites`.
+- aeroopt, sensibilidade do melhor (O14): `aeroopt/sensitivity.py` olha só o melhor indivíduo e só as contínuas
+  livres dele, dentro dos limites e das restrições do problema. Um modelo local no núcleo
+  (`core/src/optim/localfit.zig`, `aerosim_local_fit`: inclinação e curvatura por eixo, mínimos quadrados com o peso
+  tricúbico da regressão local) passa pelos pontos que a busca das superfícies já avaliou em volta dele, então em
+  geral não roda nenhum ponto novo; só a direção que o histórico não determina ganha pontos em ±10 % da faixa. Dá
+  ∂nota/∂x, ∂²nota/∂x², a nota prevista a ±10 % e o lado em que o avião deixa de fechar. Na janela, a aba
+  "Sensibilidade" dos gráficos do melhor mostra o tornado; na ferramenta, `--sensibilidade`. Conferida com os dados
+  de teste, em que a inclinação e a curvatura são sabidas.
+- paralelismo, o Parar sem matar e sem esperar nascer: o Parar é combinado (`check_cancel()` no começo de cada ponto
+  de projeto; os processos continuam vivos, e só quem não para em 2 s é encerrado). A janela usa *forkserver* com
+  `aeroopt.stages` pré-carregado e um pool da sessão (`aerosim.parallel.session`, `warm_session`) que nasce em
+  segundo plano quando ela abre e serve todas as rodadas.
+- aeroopt, dados de teste: `aeroopt/synthetic.py`, um avaliador com as mesmas etapas e colunas e o resultado sabido
+  de antemão (onde cada configuração para, o ótimo em 70 % da faixa de cada contínua, a melhor configuração). As
+  buscas das superfícies são as de verdade. `python -m aeroopt --exemplo --sintetico` roda a janela com ele, e
+  `tools/pipeline_bench.py --sintetico S` mede só o paralelismo.
+- paralelismo como módulo: contrato `IExecutor` (`aerosim/interfaces/executor.py`) e `aerosim/parallel` com as três
+  formas de rodar (série, threads, processos) e o `Executors`, um de cada tipo para a rodada inteira. O `Pipeline` e
+  as gerações do aeroopt rodam por ele, e os processos nascem uma vez por rodada, não a cada etapa de cada geração.
+  O pool nasce com todos os trabalhadores de pé e o núcleo carregado em cada um (`initializer`, `stages.warm`).
+  O Parar e um processo que morre no meio continuam tratados como antes. `tools/pipeline_bench.py --geracoes N`
+  compara o pool que dura com o pool novo por etapa (`spawn-novo`, `forkserver-novo`), e o tempo de nascer sai numa
+  coluna própria.
+- núcleo, tração motor + hélice da sprint: a bisseção do equilíbrio motor × hélice de `power.thrust_of` foi para o
+  núcleo (`core/src/sizing/motorprop.zig`, export `aerosim_motor_prop_thrust`, struct `MotorProp`,
+  `ISimBackend.motor_prop_thrust`). Bit a bit igual à conta em Python de antes com todo o catálogo; era a maior parte
+  do tempo do aeroopt e segurava o GIL.
+- aeroopt, paralelismo: `tools/pipeline_bench.py` compara série, threads e processos (fork, spawn, forkserver) no
+  processo em etapas, com o tempo e o ganho de cada etapa, a fração presa ao GIL e a conferência de que o resultado
+  não muda; `Pipeline.times` guarda o tempo de cada etapa. Correção: o Otimizar ficava desligado depois de uma
+  rodada com avião selecionado (a reconstrução dele contava como parte da rodada).
+- aeroopt, README: só a descrição do braço, como a pasta se divide e a janela, com as imagens da GUI
+  (`docs/img/aeroopt/`).
+- aeroopt, gráficos do melhor avião: o melhor avião até aqui (voo válido antes, depois a nota) roda sozinho as
+  análises rápidas do aerosim (decolagem da Missão com o profundor otimizado para a pista da restrição, polar do
+  núcleo, estabilidade, desempenho) e os gráficos aparecem numa aba
+  por análise, sem formulário e sem gravar nada (`BEST_ANALYSES`). A janela e os submenus cabem em 1366 × 768.
+- aeroopt, mapa por variável: os eixos do mapa dos aviões são as variáveis do problema (as livres primeiro, depois as
+  fixas) além das grandezas do resultado; a cor continua a nota. Uma lista (perfil, motor, sim/não) vira um eixo
+  com o nome de cada opção. Abre nas duas primeiras variáveis livres.
+- aeroopt, CMA-ES: terceiro método das superfícies e da etapa voa (`method="cma-es"`), o CMA-ES de Hansen (2016)
+  no núcleo (`core/src/optim/cmaes.zig`, exports `aerosim_cma_init`, `aerosim_cma_ask`, `aerosim_cma_tell`, struct
+  `CmaState`). Ele aprende a forma da região boa e anda ao longo das variáveis acopladas. Autovalores de matriz
+  simétrica por Jacobi em `linalg.symEigen`; produtos em `@Vector` (AVX-512 com `-Dcpu=native`). Conferido contra a
+  `pycma`. Os métodos antigos ficam iguais.
+- aeroopt, voa antes do desempenho: etapa nova "voa" (`FlightCheck`) entre a geometria e as superfícies. Na massa
+  estimada, sem MTOW, o avião tem que trimar, equilibrar sem lastro, ter a margem mínima e (com a restrição ligada)
+  ser estável; se não voa como está, a etapa procura nas contínuas o ponto que viola menos. As buscas seguem as regras
+  de viabilidade de Deb (2000): inválidos ordenados pela violação (`stages.violation`), e nas gerações das
+  configurações pela etapa a que chegaram. Método na Configuração: buscar, conferir ou desligada.
+- aeroopt, tabela e Parar: a tabela das configurações mostra o número (o nome fica na dica) e a área de projeto em que
+  parou (`stages.area`). O Parar não espera a conta em andamento: o processo é encerrado (`Pipeline._map` espera
+  0,2 s por vez).
+- aeroopt, estabilidade e nota: restrição de estabilidade por ponto de projeto (`StabilityParams`, desligada por
+  padrão; a análise da aba Estabilidade: $C_{n\beta}$, $C_{l\beta}$ e modos MIL-F-8785C), que faz diedro,
+  enflechamento e deriva contarem. Voo inválido tem nota 0 (a conta fica em `nota_formula`). As gerações nas
+  superfícies não repetem pontos e põem cada gene no passo do campo. Os arquivos gravados pela janela ganham a
+  extensão quando o nome vem sem ela.
+- aeroopt, a geometria conserta: quase toda configuração reprovava por bater no chão na rotação (o trem do montador
+  só livra a hélice parado). O núcleo agora devolve quanto descer as rodas (`Report.gear_raise`, exato), a etapa
+  grava a altura do trem na configuração e segue; cada ponto das superfícies faz o mesmo. Campo novo na sprint,
+  `power_draft.gear_h` ("altura do trem", 0 = como antes, bit a bit).
+- aeroopt, variáveis de tudo: o submenu das variáveis tem todo campo das etapas do aerosim com faixa ou escolha
+  (`aeroopt/inputs.py`, lido da definição dos campos), uma aba por grupo. As listas (perfis, motor, hélice,
+  bateria, cauda, trem, sim/não) ficam no mesmo submenu, marcadas por item; os submenus separados de perfis e
+  peças saíram. Inteiros andam no passo do campo (motores na asa aos pares).
+- aeroopt, esquerda em submenus: pontuação, variáveis, restrições, perfis, peças, categorias e configuração são
+  botões com resumo, cada um abrindo o seu submenu. A geometria (ângulo de rotação, folgas, uma peça só) foi para
+  as restrições. A configuração escolhe o método de cada etapa: configurações por gerações ou todas; superfícies
+  por coordenadas ou por gerações nas contínuas (`SurfaceSizing(method=...)`, `StagedEvaluator(surfaces=...)`, o
+  algoritmo genético do núcleo com genes reais); decolagem no 6GDL ou só na pista. Tudo vai no `.opt.json`
+  (`params["geometria"]`, `params["etapas"]`).
+- aeroopt, gerações: as configurações saem de um algoritmo genético no núcleo (`core/src/optim/ga.zig`, exports
+  `aerosim_ga_init`, `aerosim_ga_next`; `aeroopt/generations.py`) no lugar de varrer todas as combinações, que
+  passavam de um milhão com as listas marcadas. Configuração repetida não roda de novo. Na janela: configurações
+  por geração e nº de gerações; na ferramenta: `--populacao`, `--geracoes`; coluna "geração" nos CSV.
+- Geometria do avião montado no núcleo (`core/src/geometry`, export `aerosim_geometry_check`, interface
+  `aerosim/interfaces/geometry.py`, tradutor `aerosim/backend/zig/geometry.py`): hélice que acerta peça, massa fora
+  da geometria, pedaços soltos e folga ao chão parado e girado até o ângulo de rotação. No aeroopt vira a etapa
+  "geometria", antes das superfícies, e cada ponto de projeto também passa por ela (desligável na janela).
+- aeroopt, submenus do problema: variáveis (livre, valor do avião, limite inferior e superior), restrições, perfis
+  por região (raiz e ponta da asa, EH, EV, com `.dat` acrescentado na hora) e motores, hélices, baterias e arranjo do
+  catálogo, cada um num submenu aberto por botão, com o resumo ao lado; as listas se marcam, não se digitam, e cada
+  lista marcada vira um eixo das configurações. Perfis da cauda e bateria entraram como variáveis de lista do aeroopt
+  (`stages.EXTRA_INPUTS`). Uma restrição numa grandeza que é variável (envergadura, área, nº de motores) vira o limite
+  dela (`problem.fold_bounds`). Os gráficos refazem os eixos a cada ponto. Nomes das configurações em português
+  (`hélice=`, `perfil EH=`).
+- aeroopt, registro e restrições: cada rodada grava `avaliacoes.csv` (cada ponto de projeto, em ordem, com as
+  variáveis) e `configuracoes.csv` (nota fator por fator) em `rodadas_aeroopt/` (`aeroopt/export.py`; `--csv` na
+  ferramenta). A janela roda sem conjunto guardado (o avião sai dos rascunhos), edita as restrições como Condições e
+  restrições do aerosim e abre o avião escolhido no aerosim, com todas as análises.
+- aeroopt, janela (O05): `python -m aeroopt [projeto] [problema]` (ou `--exemplo`). O `.toml` da pontuação inteiro em
+  campos editáveis (conferir no núcleo, gravar), variáveis, categorias e opções das etapas; a rodada ao vivo, a cada
+  candidato que termina uma etapa: andamento das etapas, MTOW de cada ponto avaliado, nota por configuração, mapa dos
+  aviões (PV × carga paga com EE constante, cor pela nota) e o avião clicado em 3D com a nota fator por fator. O
+  topo da bisseção do 6GDL fica perto do MTOW da pista (`study._mtow6(..., m_max)`, o padrão continua o de antes).
+- aeroopt, categorias de configuração: asa alta, média, baixa, parasol, biplano, tandem, asa voadora e cauda em V
+  (`aeroopt/categories.py`). As categorias escolhidas no problema viram um eixo das configurações do processo em
+  etapas (`--categorias` na ferramenta).
+- Corrida de decolagem da sprint no núcleo: a corrida do `power.performance` (o MTOW na pista e a curva corrida ×
+  massa) roda em `core/src/sizing/ground.zig` (`aerosim_ground_runs`, `aerosim_ground_mtow`), bit a bit igual à
+  conta em Python de antes. O ponto de projeto acoplado ficou umas cinco vezes mais rápido.
+- aeroopt, processo em etapas (O13): configurações → superfícies acertadas pela decolagem → MTOW no 6GDL → nota no
+  núcleo, com todos os candidatos esperando entre uma etapa e outra e cada etapa em paralelo (`aeroopt/pipeline.py`,
+  `aeroopt/stages.py`, contrato `IStage` em `aerosim/interfaces/optim.py`). `tools/aeroopt.py --etapas --projeto`
+  roda pela linha de comando. O mini-MDO continua como alternativa, igual.
+- aeroopt, ferramenta (O04): `tools/aeroopt.py` roda um `.opt.json` pelo núcleo, imprime o melhor ponto, as grandezas e
+  as restrições, grava a convergência (`--png`) e isola variáveis na hora (`--isolar asa`).
+- aeroopt, nota no núcleo (O03): `core/src/optim` confere e executa o programa da pontuação, para um candidato ou
+  muitos (`aerosim_expr_check`, `aerosim_expr_eval`; grupo de testes `test-optim`), e `core/src/math/linalg.zig` traz
+  LU e Cholesky de tamanho fixo para os solvers. `aeroopt.scoring.evaluate` devolve nota, fatores e validade; as notas
+  da Micro 2026 calculadas à mão batem com as do núcleo.
+- aeroopt, pontuação por regulamento (O01): um `.toml` por ano em `aeroopt/pontuacao/`, traduzido para um programa de
+  pilha que o núcleo vai executar (`aeroopt/scoring.py`). Primeiro arquivo: SAE BRASIL AeroDesign 2026, classe Micro
+  (Regulamento Rev03, seção 9.8, eqs. 9.1 a 9.4, e as condições de voo válido como restrições).
+- aeroopt, contratos e problema (O02): `aerosim/interfaces/optim.py` (`OptProblem`, `IScoring`, `IEvaluator`,
+  `ISolver`), o arquivo `.opt.json` e a ponte com o projeto da sprint (`aeroopt/problem.py`). Uma variável só entra na
+  busca quando está livre; `isolate` deixa livres só as variáveis ou os grupos citados. O mini-MDO do núcleo roda pelo
+  contrato (`aeroopt/mini_mdo.py`) com o mesmo resultado da página MDO, bit a bit (`tests/aeroopt`).
+- Tracking por segmento: o quadro de `docs/TRACKING.md` tem uma tabela para o aerosim, o core, o AeroDrive, o aeroopt
+  (o otimizador, tarefas O01 a O12, à espera do ok do plano) e o que é comum. O VTOL saiu das Torres (T83).
+- Asas ligadas, tandem e biplano (T78): grupo de asas no modelo, na Montagem e na sprint. O modificador
+  `interferencia.asas` (T76, desligado por padrão) faz as faixas de uma asa sentirem a outra.
+- Motores livres (T79): arranjo nariz + pares na asa + propulsora.
+- Erros claros em vez de pane (T77, T80): o núcleo devolve sem trem, inércia inválida e divergência com texto (códigos
+  −6 a −8), o `fmath` não entra em pane com NaN, e o AeroDrive mostra a mensagem na tela.
+- Massa das superfícies simétricas em cada lado (T81), no aerosim e no AeroDrive.
+- Ajuste da decolagem sem travar (T85): sessões emprestadas de um pool.
+
+- READMEs com as equações (T75): cada pasta do `core` (`physics`, `sim`, `control`, `math`, `sizing`, `loads`,
+  `modifiers`, `collision`) e do `aerosim` tem as equações em LaTeX, uma por parágrafo, com a fonte, e um exemplo em
+  Python por arquivo, que roda. Os tempos de máquina e os números de um caso só saíram dos READMEs (ficam em
+  `core/OTIMIZACOES.md` e nos testes).
+- Núcleo: enums no lugar dos bits. `core/src/opt.zig` (`Opt`) dá nome a cada bit do `-Dopt`, e o `build.zig` recusa um
+  nome que não existe. Nos modificadores, `Ground`, `Kind` e `SlipstreamParam` dizem o que cada número seleciona. Os
+  campos da ABI continuam `i32`, então o esquema e os `.cfg` não mudam.
+- Aba Aerodinâmica com a linha sustentadora do núcleo (T67): `CoreLLTSolver` (`aerosim/aero/llt_solver.py`) em
+  `all_solvers`, com duas variantes, `zig_llt` (Phillips e Snyder) e `zig_llt_gh` (Goates e Hunsaker). Liga em
+  "comparar: linha sustentadora do núcleo"; desligado por padrão. As superfícies são refinadas
+  (`span_loads.refine_all`, com os painéis por semiasa da aba). Os `nucleo_llt` e `nucleo_gh` de `tools/aero` passam a
+  ser essa classe, com o mesmo resultado (o teste contra o MachUpX continua passando).
 - Linha sustentadora mais rápida: a geometria fixa (nós, juntas de Goates e Hunsaker, segmentos ligados) é montada uma
   vez por configuração (`llt.prepare`, `Params.llt_cache`), e a cada avaliação só as pernas livres são calculadas.
   O resultado é bit a bit igual (teste em Zig). A decolagem com o `llt_gh` caiu de 107 para 10 s e com o `llt`, de
-  21 para 12 s, na mesma máquina.
+  21 para 12 s, na mesma máquina. Na missão de 165 s, em sequência: faixas 4 s, faixas refinadas 17 s, `llt` 261 s,
+  `llt_gh` 258 s; os 9 modelos, 9 min 37 s (5 min 15 s em paralelo), contra mais de 1 h antes.
 - `tools/aero/missao.py`: os voos rodam em paralelo (`--jobs`), e as tabelas de voo passam pelo cache de polares
   (`aerosim/aero/service.py`). O gráfico de tempo separa preparar de voar.
+- Documentação: `tools/README.md` (índice das ferramentas, os três mapas de proximidade com os comandos, tempo de conta
+  por modelo) e `core/OTIMIZACOES.md` (o que deixou a linha sustentadora rápida e o que se mediu).
 - Correção: o lltdrek não ia para o cache em disco, porque o `cost = "caro"` estava no tradutor e não no solver.
 - Voar com outro modelo aerodinâmico, fase B (T65): `Params.aero_model` escolhe o modelo da dinâmica, da trimagem e da
   linearização (`core/src/physics/aeromodel.zig`): 0 = faixas (o padrão: bit a bit igual, o AeroDrive não muda),

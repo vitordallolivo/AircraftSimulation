@@ -153,6 +153,9 @@ def feasibility(d: dict) -> tuple[bool, str]:
         why.append("EH estola no C_L,max")
     if not asm["battery_fits"]:
         why.append(f"precisa de {asm['ballast']:.2f} kg de lastro de equilíbrio")
+    sm_min = getattr(getattr(getattr(d.get("cand"), "set", None), "params", None), "sm_min", None)
+    if asm.get("payload_moved") and sm_min is not None and asm["sm_empty"] < sm_min:
+        why.append(f"sem a carga paga a margem estática cai para {asm['sm_empty']:.1f} %")
     req = d.get("req")
     if req is not None and "ac" in d:                 # as restrições ativas (a corrida já define o MTOW)
         from . import registry as rg
@@ -229,14 +232,20 @@ def check_6dof(row: dict, project, manager, catalog=None) -> float:
     return _mtow6(row["_cand"], row["_req"], project.rules, catalog, project.airfoil_map(), manager)
 
 
-def _mtow6(cand, req, rules, catalog, airfoils, manager) -> float:
+def _mtow6(cand, req, rules, catalog, airfoils, manager, m_max: float | None = None, search: str = "grade",
+           tol: float = 0.0) -> float:
+    """`m_max`: o topo da bisseção na massa total (padrão: PV + 15 kg); um topo perto do MTOW esperado gasta menos
+    voos. `tol`: a tolerância da bisseção do acionamento, em % do x_warning (0 = a de sempre; `takeoff_opt._bisect`)"""
     ac, asm = pw.assemble(cand, req, rules, catalog, airfoils)
     x = asm["x_cg_target"]
     from aerosim.manager.simulations.mission import total_mass
     m0 = total_mass(ac)                       # o PV (a carga ainda sem kg): a massa total varre daí para cima
     masses = [dict(item="Massa total (kg)", min=m0, nom=max(asm["mass"], m0), max=m0 + 15.0),
               dict(item="xCG (m)", min=x, nom=x, max=x)]
-    r = manager.run("mission", ac, {"mode": "MTOW (x_warning e z_warning)", "masses": masses})
+    if m_max is not None:
+        masses[0]["max"] = max(float(m_max), m0 + 0.1)
+    r = manager.run("mission", ac, {"mode": "MTOW (x_warning e z_warning)", "masses": masses, "busca": search,
+                                        "tolerancia": tol})
     return float(r.summary.get("MTOW (kg)", float("nan")))
 
 

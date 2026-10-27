@@ -27,83 +27,92 @@
 //! a_i: inclinação 2D tirada do C_Lα 3D do núcleo invertendo Helmbold (o tradutor fez C_Lα = helmbold(a, AR)):
 //!     C_Lα = a/(√(1+k²)+k), k = a/(πAR)   ⇒   a = C_Lα / √(1 − 2 C_Lα/(πAR))
 const std = @import("std");
-const L = @import("../limits.zig");
-const T = @import("../types.zig");
-const fm = @import("../math/fmath.zig");
+const limits = @import("../limits.zig");
+const types = @import("../types.zig");
+const fmath = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
 const aero = @import("../physics/aero.zig");
 const mods = @import("../modifiers/mod.zig");
 const V3 = vec.V3;
 
-const n_max = L.max_surfaces;
+const n_max = limits.max_surfaces;
 const far = 1e3; // comprimento das pernas (m): "infinito" para aviões deste tamanho
 /// núcleo dos vórtices entre superfícies diferentes, em fração da corda de quem solta (Scully; Vatistas, Kozel e Mih,
 /// "A simpler model for concentrated vortices", Experiments in Fluids 11, 1991, n = 1). Sem ele, a perna da raiz de
 /// uma EV que encosta na EH passa a milímetros dos pontos de controle da EH e induz dezenas de m/s (1/h). Entre
 /// 0,05 e 0,25 da corda o resultado quase não muda; dentro da mesma superfície não há núcleo (a queda na ponta depende
 /// das pernas das faixas vizinhas, mais estreitas que qualquer núcleo dessa ordem)
-const core_frac = 0.1;
+pub const core_frac = 0.1;
 
 /// inclinação 2D a partir do C_Lα 3D (Helmbold invertido); sem solução (asa muito curta): 2π
 pub fn sectionSlope(CLa: f64, AR: f64) f64 {
     if (AR <= 0) return CLa;
-    const q = 1.0 - 2.0 * CLa / (fm.pi * AR);
-    return if (q > 1e-6) CLa / @sqrt(q) else 2.0 * fm.pi;
+    const radicand = 1.0 - 2.0 * CLa / (fmath.pi * AR);
+    return if (radicand > 1e-6) CLa / @sqrt(radicand) else 2.0 * fmath.pi;
 }
 
-/// velocidade induzida em P por um segmento de vórtice reto de A a B com Γ = 1 (Katz e Plotkin, cap. 10)
-pub fn segment(P: V3, A: V3, B: V3, rc: f64) V3 {
-    const r1 = P - A;
-    const r2 = P - B;
-    const c = vec.cross(r1, r2);
-    const r0 = B - A;
+/// velocidade induzida em `point` por um segmento de vórtice reto de `start` a `end` com Γ = 1 (Katz e Plotkin, cap. 10)
+pub fn segment(point: V3, start: V3, end: V3, rc: f64) V3 {
+    const r1 = point - start;
+    const r2 = point - end;
+    const cross_r1r2 = vec.cross(r1, r2);
+    const r0 = end - start;
     // |r1 × r2| = h |r0| (h: distância à linha); núcleo de Scully: h² → h² + rc²
-    const c2 = vec.dot(c, c) + rc * rc * vec.dot(r0, r0);
+    const c2 = vec.dot(cross_r1r2, cross_r1r2) + rc * rc * vec.dot(r0, r0);
     const n1 = vec.norm(r1);
     const n2 = vec.norm(r2);
     if (c2 < 1e-12 or n1 < 1e-9 or n2 < 1e-9) return vec.zero; // em cima da linha do vórtice
-    const k = vec.dot(r0, r1 / vec.splat(n1) - r2 / vec.splat(n2)) / (4.0 * fm.pi * c2);
-    return c * vec.splat(k);
+    const factor = vec.dot(r0, r1 / vec.splat(n1) - r2 / vec.splat(n2)) / (4.0 * fmath.pi * c2);
+    return cross_r1r2 * vec.splat(factor);
 }
 
-/// ferradura: perna de longe até A, A → B, B até longe (pernas ao longo de `u`, para onde o ar vai).
+/// ferradura: perna de longe até node_a, node_a → node_b, node_b até longe (pernas ao longo de `flow_dir`, para
+/// onde o ar vai).
 /// `bound` = false: só as pernas (painéis da mesma superfície; ver `apply`)
-pub fn horseshoe(P: V3, A: V3, B: V3, u: V3, bound: bool, rc: f64) V3 {
-    const Af = A + u * vec.splat(far);
-    const Bf = B + u * vec.splat(far);
-    const legs = segment(P, Af, A, rc) + segment(P, B, Bf, rc);
-    return if (bound) legs + segment(P, A, B, rc) else legs;
+pub fn horseshoe(point: V3, node_a: V3, node_b: V3, flow_dir: V3, bound: bool, rc: f64) V3 {
+    const far_a = node_a + flow_dir * vec.splat(far);
+    const far_b = node_b + flow_dir * vec.splat(far);
+    const legs = segment(point, far_a, node_a, rc) + segment(point, node_b, far_b, rc);
+    return if (bound) legs + segment(point, node_a, node_b, rc) else legs;
 }
 
-fn span(ps: *const T.PanelState, ez: V3) struct { A: V3, B: V3, d: V3 } {
-    const ex = vec.v3(ps.ex);
-    var d = vec.cross(ez, ex); // da esquerda para a direita (de baixo para cima nas verticais): Γ > 0 sustenta
-    d = d / vec.splat(@max(vec.norm(d), 1e-12));
-    const hw = 0.5 * ps.S / @max(ps.c, 1e-12);
-    const r = vec.v3(ps.r);
-    return .{ .A = r - d * vec.splat(hw), .B = r + d * vec.splat(hw), .d = d };
+/// o segmento perpendicular à corda pelo centro do painel (nós A e B) e a direção da envergadura
+fn span(panel: *const types.PanelState, ez: V3) struct { A: V3, B: V3, d: V3 } {
+    const ex = vec.v3(panel.ex);
+    var span_dir = vec.cross(ez, ex); // da esquerda para a direita (de baixo para cima nas verticais): Γ > 0 sustenta
+    span_dir = span_dir / vec.splat(@max(vec.norm(span_dir), 1e-12));
+    const half_width = 0.5 * panel.S / @max(panel.c, 1e-12);
+    const center = vec.v3(panel.r);
+    return .{ .A = center - span_dir * vec.splat(half_width), .B = center + span_dir * vec.splat(half_width), .d = span_dir };
 }
 
 /// os nós da ferradura do painel: os pontos de 1/4 de corda nas bordas da faixa (`qa`, `qb` do tradutor), como em
 /// Phillips e Snyder (2000): ferraduras vizinhas dividem o nó e as pernas livres se cancelam onde Γ é igual, também
 /// com enflechamento. A ordem segue `d` (Γ > 0 sustenta). Sem os nós (qa = qb = 0): o segmento perpendicular à
 /// corda pelo centro (`span`), que só fecha as ferraduras sem enflechamento
-fn nodes(s: *const T.Surface, ps: *const T.PanelState) Node {
-    const g = span(ps, vec.v3(s.ez));
-    const qa = vec.v3(s.qa);
-    const qb = vec.v3(s.qb);
-    const dl = qb - qa;
-    if (vec.dot(dl, dl) < 1e-18) return .{ .A = g.A, .B = g.B, .d = g.d };
-    return if (vec.dot(dl, g.d) >= 0) .{ .A = qa, .B = qb, .d = g.d } else .{ .A = qb, .B = qa, .d = g.d };
+fn nodes(surface: *const types.Surface, panel: *const types.PanelState) Node {
+    const centered = span(panel, vec.v3(surface.ez));
+    const qa = vec.v3(surface.qa);
+    const qb = vec.v3(surface.qb);
+    const node_line = qb - qa;
+    if (vec.dot(node_line, node_line) < 1e-18) return .{ .A = centered.A, .B = centered.B, .d = centered.d };
+    return if (vec.dot(node_line, centered.d) >= 0) .{ .A = qa, .B = qb, .d = centered.d } else .{ .A = qb, .B = qa, .d = centered.d };
+}
+
+/// os nós da ferradura de um painel só com a geometria dele (para quem não tem o `PanelState`: modifiers/wingpair.zig)
+pub fn surfaceNodes(surface: *const types.Surface) Node {
+    const panel = types.PanelState{ .r = surface.r, .S = surface.S, .c = surface.c, .group = surface.group, .side = surface.side, .ey = surface.ey, .ex = surface.ex };
+    return nodes(surface, &panel);
 }
 
 /// comprimento projetado no plano y-z do corpo (a coordenada de envergadura `s` de Goates e Hunsaker, eq. 4–6)
-fn yz(v: V3) f64 {
-    return @sqrt(v[1] * v[1] + v[2] * v[2]);
+fn yz(vector: V3) f64 {
+    return @sqrt(vector[1] * vector[1] + vector[2] * vector[2]);
 }
 
-fn unit(v: V3) V3 {
-    return v / vec.splat(@max(vec.norm(v), 1e-300));
+/// o vetor dividido pelo módulo (vetor nulo continua nulo)
+fn unit(vector: V3) V3 {
+    return vector / vec.splat(@max(vec.norm(vector), 1e-300));
 }
 
 /// Goates, C. D. e Hunsaker, D. F., "Practical Implementation of a General Numerical Lifting-Line Method", AIAA
@@ -129,205 +138,207 @@ const Wings = struct {
     cB: [n_max]f64 = undefined,
     bseg: [n_max]f64 = undefined, // semienvergadura da cadeia de cada painel (projetada em y-z)
 
-    fn build(p: *const T.Params, ps: []const T.PanelState, n: usize) Wings {
-        var w = Wings{};
+    /// as cadeias de painéis (asas) que dividem nós, com s, cordas e semienvergadura de cada uma
+    fn build(params: *const types.Params, panels: []const types.PanelState, n_panels: usize) Wings {
+        var wings = Wings{};
         const tol = 1e-9;
-        for (0..n) |j| {
-            w.g[j] = nodes(&p.surf[j], &ps[j]);
-            w.prev[j] = null;
-            w.next[j] = null;
+        for (0..n_panels) |j| {
+            wings.g[j] = nodes(&params.surf[j], &panels[j]);
+            wings.prev[j] = null;
+            wings.next[j] = null;
         }
-        for (0..n) |j| {
-            if (!used_geom(ps, j)) continue;
-            for (0..n) |k| {
-                if (k == j or !used_geom(ps, k) or ps[k].group != ps[j].group) continue;
-                if (vec.norm(w.g[k].B - w.g[j].A) < tol) w.prev[j] = k;
-                if (vec.norm(w.g[k].A - w.g[j].B) < tol) w.next[j] = k;
+        for (0..n_panels) |j| {
+            if (!used_geom(panels, j)) continue;
+            for (0..n_panels) |cursor| {
+                if (cursor == j or !used_geom(panels, cursor) or panels[cursor].group != panels[j].group) continue;
+                if (vec.norm(wings.g[cursor].B - wings.g[j].A) < tol) wings.prev[j] = cursor;
+                if (vec.norm(wings.g[cursor].A - wings.g[j].B) < tol) wings.next[j] = cursor;
             }
         }
-        var nw: usize = 0;
-        for (0..n) |j| {
-            if (!used_geom(ps, j) or w.prev[j] != null) continue;
+        var n_wings: usize = 0;
+        for (0..n_panels) |j| {
+            if (!used_geom(panels, j) or wings.prev[j] != null) continue;
             // começo de uma cadeia: anda até o fim somando s
             var total: f64 = 0;
             var two_sides = false;
-            var k: ?usize = j;
+            var cursor: ?usize = j;
             var guard: usize = 0;
-            while (k) |c| : (guard += 1) {
-                if (guard > n) break;
-                w.wing[c] = nw;
-                w.sA[c] = total;
-                total += yz(w.g[c].B - w.g[c].A);
-                w.sB[c] = total;
-                if (ps[c].side != 0) two_sides = true;
-                k = w.next[c];
+            while (cursor) |current| : (guard += 1) {
+                if (guard > n_panels) break;
+                wings.wing[current] = n_wings;
+                wings.sA[current] = total;
+                total += yz(wings.g[current].B - wings.g[current].A);
+                wings.sB[current] = total;
+                if (panels[current].side != 0) two_sides = true;
+                cursor = wings.next[current];
             }
             const half = if (two_sides) 0.5 * total else total;
-            k = j;
+            cursor = j;
             guard = 0;
-            while (k) |c| : (guard += 1) {
-                if (guard > n) break;
-                w.bseg[c] = half;
-                w.cA[c] = if (w.prev[c]) |q| 0.5 * (ps[c].c + ps[q].c) else ps[c].c;
-                w.cB[c] = if (w.next[c]) |q| 0.5 * (ps[c].c + ps[q].c) else ps[c].c;
-                k = w.next[c];
+            while (cursor) |current| : (guard += 1) {
+                if (guard > n_panels) break;
+                wings.bseg[current] = half;
+                wings.cA[current] = if (wings.prev[current]) |neighbor| 0.5 * (panels[current].c + panels[neighbor].c) else panels[current].c;
+                wings.cB[current] = if (wings.next[current]) |neighbor| 0.5 * (panels[current].c + panels[neighbor].c) else panels[current].c;
+                cursor = wings.next[current];
             }
-            nw += 1;
+            n_wings += 1;
         }
-        return w;
+        return wings;
     }
 };
 
-const Node = struct { A: V3, B: V3, d: V3 };
+/// os nós A e B da ferradura de um painel e a direção da envergadura `d`
+pub const Node = struct { A: V3, B: V3, d: V3 };
 
-/// direção da junta: perpendicular à tangente `t` no plano de `t` e de u_a (para trás, ao longo da corda), do lado
+/// direção da junta: perpendicular à tangente `tangent` no plano de `tangent` e de u_a (para trás, ao longo da corda), do lado
 /// de u_a (G-H eq. 12–15)
-fn jointDir(ua: V3, t: V3) V3 {
-    return unit(ua - t * vec.splat(vec.dot(ua, t)));
+fn jointDir(chord_aft: V3, tangent: V3) V3 {
+    return unit(chord_aft - tangent * vec.splat(vec.dot(chord_aft, tangent)));
 }
 
-/// velocidade induzida em P (Γ = 1) pela ferradura com junta: longe → jA → A → B → jB → longe; sem o segmento ligado
+/// velocidade induzida em `point` (Γ = 1) pela ferradura com junta: longe → joint_a → node_a → node_b → joint_b → longe; sem o segmento ligado
 /// quando `bound` = false. Com jA = A e jB = B é a ferradura de Phillips e Snyder
-fn jointed(P: V3, A: V3, B: V3, jA: V3, jB: V3, u: V3, bound: bool, rc: f64) V3 {
-    const Af = jA + u * vec.splat(far);
-    const Bf = jB + u * vec.splat(far);
-    var v = segment(P, Af, jA, rc) + segment(P, jA, A, rc) + segment(P, B, jB, rc) + segment(P, jB, Bf, rc);
-    if (bound) v += segment(P, A, B, rc);
-    return v;
+fn jointed(point: V3, node_a: V3, node_b: V3, joint_a: V3, joint_b: V3, flow_dir: V3, bound: bool, rc: f64) V3 {
+    const far_a = joint_a + flow_dir * vec.splat(far);
+    const far_b = joint_b + flow_dir * vec.splat(far);
+    var velocity = segment(point, far_a, joint_a, rc) + segment(point, joint_a, node_a, rc) + segment(point, node_b, joint_b, rc) + segment(point, joint_b, far_b, rc);
+    if (bound) velocity += segment(point, node_a, node_b, rc);
+    return velocity;
 }
 
 /// a linha de cada ferradura vista do ponto de controle i (Goates e Hunsaker): nós efetivos e juntas de todos os
 /// painéis j; escreve em `infl[j]` a velocidade induzida em i por j com Γ = 1
-fn ghInfluence(p: *const T.Params, ps: []const T.PanelState, n: usize, w: *const Wings, i: usize, u: V3, infl: []V3) void {
-    var A: [n_max]V3 = undefined;
-    var B: [n_max]V3 = undefined;
-    var jA: [n_max]V3 = undefined;
-    var jB: [n_max]V3 = undefined;
-    ghRow(p, ps, n, w, i, &A, &B, &jA, &jB);
-    const Pi = vec.v3(ps[i].r);
-    for (0..n) |j| {
+fn ghInfluence(params: *const types.Params, panels: []const types.PanelState, n_panels: usize, wings: *const Wings, i: usize, flow_dir: V3, infl: []V3) void {
+    var node_a: [n_max]V3 = undefined;
+    var node_b: [n_max]V3 = undefined;
+    var joint_a: [n_max]V3 = undefined;
+    var joint_b: [n_max]V3 = undefined;
+    ghRow(params, panels, n_panels, wings, i, &node_a, &node_b, &joint_a, &joint_b);
+    const control_point = vec.v3(panels[i].r);
+    for (0..n_panels) |j| {
         infl[j] = vec.zero;
-        if (!used_geom(ps, j)) continue;
-        infl[j] = jointed(Pi, A[j], B[j], jA[j], jB[j], u, withBound(i, j), coreOf(ps, i, j));
+        if (!used_geom(panels, j)) continue;
+        infl[j] = jointed(control_point, node_a[j], node_b[j], joint_a[j], joint_b[j], flow_dir, withBound(i, j), coreOf(panels, i, j));
     }
 }
 
 /// a geometria que o ponto de controle i vê (Goates e Hunsaker): os nós efetivos A, B e as juntas jA, jB de cada
 /// painel j. Só depende da geometria: `prepare` guarda, `ghInfluence` recalcula quando não há cache
-fn ghRow(p: *const T.Params, ps: []const T.PanelState, n: usize, w: *const Wings, i: usize, A: *[n_max]V3, B: *[n_max]V3, jA: *[n_max]V3, jB: *[n_max]V3) void {
+fn ghRow(params: *const types.Params, panels: []const types.PanelState, n_panels: usize, wings: *const Wings, i: usize, node_a: *[n_max]V3, node_b: *[n_max]V3, joint_a: *[n_max]V3, joint_b: *[n_max]V3) void {
     var ua: [n_max]V3 = undefined;
-    const Pi = vec.v3(ps[i].r);
-    const di = w.g[i].B - w.g[i].A;
-    const D = di / vec.splat(@max(yz(di), 1e-12)); // d r / d s em i (s projetado em y-z)
-    const cosL = yz(di) / @max(vec.norm(di), 1e-12);
-    const si = 0.5 * (w.sA[i] + w.sB[i]);
-    const den = w.bseg[i] * p.llt_blend * cosL;
-    const sigma = if (p.llt_blend > 0 and den > 1e-12) (2.0 / den) * (2.0 / den) else 0.0;
-    const uai = -vec.v3(ps[i].ex);
-    for (0..n) |j| {
-        A[j] = w.g[j].A;
-        B[j] = w.g[j].B;
-        ua[j] = -vec.v3(ps[j].ex);
-        if (!used_geom(ps, j) or sigma == 0 or w.wing[j] != w.wing[i] or ps[j].group != ps[i].group) continue;
-        const bA = @exp(-sigma * (w.sA[j] - si) * (w.sA[j] - si));
-        const bB = @exp(-sigma * (w.sB[j] - si) * (w.sB[j] - si));
-        A[j] = (Pi + D * vec.splat(w.sA[j] - si)) * vec.splat(bA) + A[j] * vec.splat(1 - bA);
-        B[j] = (Pi + D * vec.splat(w.sB[j] - si)) * vec.splat(bB) + B[j] * vec.splat(1 - bB);
-        const sc = 0.5 * (w.sA[j] + w.sB[j]) - si;
-        const bc = @exp(-sigma * sc * sc);
-        ua[j] = unit(uai * vec.splat(bc) + ua[j] * vec.splat(1 - bc));
+    const control_point = vec.v3(panels[i].r);
+    const node_line = wings.g[i].B - wings.g[i].A;
+    const tangent_rate = node_line / vec.splat(@max(yz(node_line), 1e-12)); // d r / d s em i (s projetado em y-z)
+    const cosL = yz(node_line) / @max(vec.norm(node_line), 1e-12);
+    const si = 0.5 * (wings.sA[i] + wings.sB[i]);
+    const den = wings.bseg[i] * params.llt_blend * cosL;
+    const sigma = if (params.llt_blend > 0 and den > 1e-12) (2.0 / den) * (2.0 / den) else 0.0;
+    const uai = -vec.v3(panels[i].ex);
+    for (0..n_panels) |j| {
+        node_a[j] = wings.g[j].A;
+        node_b[j] = wings.g[j].B;
+        ua[j] = -vec.v3(panels[j].ex);
+        if (!used_geom(panels, j) or sigma == 0 or wings.wing[j] != wings.wing[i] or panels[j].group != panels[i].group) continue;
+        const blend_a = @exp(-sigma * (wings.sA[j] - si) * (wings.sA[j] - si));
+        const blend_b = @exp(-sigma * (wings.sB[j] - si) * (wings.sB[j] - si));
+        node_a[j] = (control_point + tangent_rate * vec.splat(wings.sA[j] - si)) * vec.splat(blend_a) + node_a[j] * vec.splat(1 - blend_a);
+        node_b[j] = (control_point + tangent_rate * vec.splat(wings.sB[j] - si)) * vec.splat(blend_b) + node_b[j] * vec.splat(1 - blend_b);
+        const s_center = 0.5 * (wings.sA[j] + wings.sB[j]) - si;
+        const blend_center = @exp(-sigma * s_center * s_center);
+        ua[j] = unit(uai * vec.splat(blend_center) + ua[j] * vec.splat(1 - blend_center));
     }
-    for (0..n) |j| {
-        jA[j] = A[j];
-        jB[j] = B[j];
-        if (!used_geom(ps, j)) continue;
-        const dj = unit(B[j] - A[j]);
-        const tA = if (w.prev[j]) |q| unit(dj + unit(B[q] - A[q])) else dj; // tangente nos nós (média dos vizinhos)
-        const tB = if (w.next[j]) |q| unit(dj + unit(B[q] - A[q])) else dj;
-        jA[j] = A[j] + jointDir(ua[j], tA) * vec.splat(p.llt_joint * w.cA[j]);
-        jB[j] = B[j] + jointDir(ua[j], tB) * vec.splat(p.llt_joint * w.cB[j]);
+    for (0..n_panels) |j| {
+        joint_a[j] = node_a[j];
+        joint_b[j] = node_b[j];
+        if (!used_geom(panels, j)) continue;
+        const dir_j = unit(node_b[j] - node_a[j]);
+        const tangent_a = if (wings.prev[j]) |neighbor| unit(dir_j + unit(node_b[neighbor] - node_a[neighbor])) else dir_j; // tangente nos nós (média dos vizinhos)
+        const tangent_b = if (wings.next[j]) |neighbor| unit(dir_j + unit(node_b[neighbor] - node_a[neighbor])) else dir_j;
+        joint_a[j] = node_a[j] + jointDir(ua[j], tangent_a) * vec.splat(params.llt_joint * wings.cA[j]);
+        joint_b[j] = node_b[j] + jointDir(ua[j], tangent_b) * vec.splat(params.llt_joint * wings.cB[j]);
     }
 }
 
 /// os painéis como `aero.computeTrace` os escreve, só com a geometria (para `prepare`, antes de qualquer escoamento)
-fn geometryPanels(p: *const T.Params, n: usize, ps: []T.PanelState) void {
-    for (0..n) |k| {
-        const s = &p.surf[k];
-        ps[k] = .{ .r = s.r, .S = s.S, .c = s.c, .group = s.group, .side = s.side, .ey = s.ey, .ex = s.ex };
+fn geometryPanels(params: *const types.Params, n_panels: usize, panels: []types.PanelState) void {
+    for (0..n_panels) |k| {
+        const surface = &params.surf[k];
+        panels[k] = .{ .r = surface.r, .S = surface.S, .c = surface.c, .group = surface.group, .side = surface.side, .ey = surface.ey, .ex = surface.ex };
     }
 }
 
 /// monta `Params.llt_cache` (chamado em `runner.configure`, depois de `aero.init`): de onde saem as pernas livres e
 /// os segmentos fixos de cada par (i, j), para Phillips e Snyder ou Goates e Hunsaker conforme `llt_joint`,
 /// `llt_blend`. Não muda nenhuma conta: `apply` com e sem o cache dá o mesmo resultado, bit a bit
-pub fn prepare(p: *T.Params) void {
-    const c = &p.llt_cache;
-    c.ok = 0;
-    const n: usize = @intCast(@min(@max(p.n_surf, 0), @as(i32, n_max)));
-    var ps: [n_max]T.PanelState = undefined;
-    geometryPanels(p, n, ps[0..n]);
-    const gh = p.llt_joint > 0 or p.llt_blend > 0;
-    const wings = if (gh) Wings.build(p, ps[0..n], n) else Wings{};
-    for (0..n) |j| c.used[j] = @intFromBool(used_geom(ps[0..n], j));
-    var A: [n_max]V3 = undefined;
-    var B: [n_max]V3 = undefined;
-    var jA: [n_max]V3 = undefined;
-    var jB: [n_max]V3 = undefined;
-    for (0..n) |i| {
-        if (!used_geom(ps[0..n], i)) continue;
+pub fn prepare(params: *types.Params) void {
+    const cache = &params.llt_cache;
+    cache.ok = 0;
+    const n_panels: usize = @intCast(@min(@max(params.n_surf, 0), @as(i32, n_max)));
+    var panels: [n_max]types.PanelState = undefined;
+    geometryPanels(params, n_panels, panels[0..n_panels]);
+    const gh = params.llt_joint > 0 or params.llt_blend > 0;
+    const wings = if (gh) Wings.build(params, panels[0..n_panels], n_panels) else Wings{};
+    for (0..n_panels) |j| cache.used[j] = @intFromBool(used_geom(panels[0..n_panels], j));
+    var node_a: [n_max]V3 = undefined;
+    var node_b: [n_max]V3 = undefined;
+    var joint_a: [n_max]V3 = undefined;
+    var joint_b: [n_max]V3 = undefined;
+    for (0..n_panels) |i| {
+        if (!used_geom(panels[0..n_panels], i)) continue;
         if (gh) {
-            ghRow(p, ps[0..n], n, &wings, i, &A, &B, &jA, &jB);
+            ghRow(params, panels[0..n_panels], n_panels, &wings, i, &node_a, &node_b, &joint_a, &joint_b);
         } else {
-            for (0..n) |j| {
-                const g = nodes(&p.surf[j], &ps[j]);
-                A[j] = g.A;
-                B[j] = g.B;
-                jA[j] = g.A;
-                jB[j] = g.B;
+            for (0..n_panels) |j| {
+                const node = nodes(&params.surf[j], &panels[j]);
+                node_a[j] = node.A;
+                node_b[j] = node.B;
+                joint_a[j] = node.A;
+                joint_b[j] = node.B;
             }
         }
-        const P = vec.v3(ps[i].r);
-        for (0..n) |j| {
-            if (!used_geom(ps[0..n], j)) continue;
-            const k = i * n_max + j;
-            const rc = coreOf(ps[0..n], i, j);
-            c.jA[k] = jA[j];
-            c.jB[k] = jB[j];
-            c.s2[k] = if (gh) segment(P, jA[j], A[j], rc) else vec.zero;
-            c.s3[k] = if (gh) segment(P, B[j], jB[j], rc) else vec.zero;
-            c.bound[k] = if (withBound(i, j)) segment(P, A[j], B[j], rc) else vec.zero;
+        const point = vec.v3(panels[i].r);
+        for (0..n_panels) |j| {
+            if (!used_geom(panels[0..n_panels], j)) continue;
+            const pair_index = i * n_max + j;
+            const rc = coreOf(panels[0..n_panels], i, j);
+            cache.jA[pair_index] = joint_a[j];
+            cache.jB[pair_index] = joint_b[j];
+            cache.s2[pair_index] = if (gh) segment(point, joint_a[j], node_a[j], rc) else vec.zero;
+            cache.s3[pair_index] = if (gh) segment(point, node_b[j], joint_b[j], rc) else vec.zero;
+            cache.bound[pair_index] = if (withBound(i, j)) segment(point, node_a[j], node_b[j], rc) else vec.zero;
         }
     }
-    c.n = @intCast(n);
-    c.gh = @intFromBool(gh);
-    c.ok = 1;
+    cache.n = @intCast(n_panels);
+    cache.gh = @intFromBool(gh);
+    cache.ok = 1;
 }
 
 /// a influência de j em i (Γ = 1) com o cache: só as duas pernas livres, somadas na mesma ordem de `horseshoe`
 /// (Phillips e Snyder) ou de `jointed` (Goates e Hunsaker)
-fn cachedInfluence(c: *const T.LltCache, P: V3, i: usize, j: usize, u: V3, rc: f64) V3 {
-    const k = i * n_max + j;
-    const jA = vec.v3(c.jA[k]);
-    const jB = vec.v3(c.jB[k]);
-    const Af = jA + u * vec.splat(far);
-    const Bf = jB + u * vec.splat(far);
+fn cachedInfluence(cache: *const types.LltCache, point: V3, i: usize, j: usize, flow_dir: V3, rc: f64) V3 {
+    const pair_index = i * n_max + j;
+    const joint_a = vec.v3(cache.jA[pair_index]);
+    const joint_b = vec.v3(cache.jB[pair_index]);
+    const far_a = joint_a + flow_dir * vec.splat(far);
+    const far_b = joint_b + flow_dir * vec.splat(far);
     const bound = withBound(i, j);
-    if (c.gh != 0) {
-        var v = segment(P, Af, jA, rc) + vec.v3(c.s2[k]) + vec.v3(c.s3[k]) + segment(P, jB, Bf, rc);
-        if (bound) v += vec.v3(c.bound[k]);
-        return v;
+    if (cache.gh != 0) {
+        var velocity = segment(point, far_a, joint_a, rc) + vec.v3(cache.s2[pair_index]) + vec.v3(cache.s3[pair_index]) + segment(point, joint_b, far_b, rc);
+        if (bound) velocity += vec.v3(cache.bound[pair_index]);
+        return velocity;
     }
-    const legs = segment(P, Af, jA, rc) + segment(P, jB, Bf, rc);
-    return if (bound) legs + vec.v3(c.bound[k]) else legs;
+    const legs = segment(point, far_a, joint_a, rc) + segment(point, joint_b, far_b, rc);
+    return if (bound) legs + vec.v3(cache.bound[pair_index]) else legs;
 }
 
 /// o cache serve para estes painéis: montado para a mesma configuração e com os mesmos painéis com geometria (um
 /// painel sem escoamento no instante muda as cadeias de Goates e Hunsaker: aí a conta inteira)
-fn cacheFits(p: *const T.Params, ps: []const T.PanelState, n: usize, gh: bool) bool {
-    const c = &p.llt_cache;
-    if (c.ok == 0 or c.n != @as(i32, @intCast(n)) or (c.gh != 0) != gh) return false;
-    for (0..n) |j| {
-        if ((c.used[j] != 0) != used_geom(ps, j)) return false;
+fn cacheFits(params: *const types.Params, panels: []const types.PanelState, n_panels: usize, gh: bool) bool {
+    const cache = &params.llt_cache;
+    if (cache.ok == 0 or cache.n != @as(i32, @intCast(n_panels)) or (cache.gh != 0) != gh) return false;
+    for (0..n_panels) |j| {
+        if ((cache.used[j] != 0) != used_geom(panels, j)) return false;
     }
     return true;
 }
@@ -336,184 +347,187 @@ fn cacheFits(p: *const T.Params, ps: []const T.PanelState, n: usize, gh: bool) b
 /// eq. 16), no lugar de `ex` e `ez`, e cos Λ_i (eq. 19). Sem enflechamento, são `ex`, `ez` e 1
 const Section = struct { ex: V3, ez: V3, cosL: f64 };
 
-fn sweptSection(s: *const T.Surface, ps: *const T.PanelState) Section {
-    const g = nodes(s, ps);
-    const dl = g.B - g.A;
-    const us = unit(dl);
-    const ua = jointDir(-vec.v3(ps.ex), us);
-    const un = vec.cross(ua, us);
-    return .{ .ex = -ua, .ez = -un, .cosL = yz(dl) / @max(vec.norm(dl), 1e-12) };
+/// a seção enflechada do painel (eixos e cos Λ) pelos nós da ferradura
+fn sweptSection(surface: *const types.Surface, panel: *const types.PanelState) Section {
+    const node = nodes(surface, panel);
+    const node_line = node.B - node.A;
+    const span_dir = unit(node_line);
+    const chord_aft = jointDir(-vec.v3(panel.ex), span_dir);
+    const normal = vec.cross(chord_aft, span_dir);
+    return .{ .ex = -chord_aft, .ez = -normal, .cosL = yz(node_line) / @max(vec.norm(node_line), 1e-12) };
 }
 
 /// α do comando na seção enflechada: δ_fΛ = asin(cos Λ sen δ_f) (G-H eq. 23)
-fn sweptControl(s: *const T.Surface, d: V3, cosL: f64) f64 {
-    return s.tau * fm.asin(cosL * @sin(vec.dot(vec.v3(s.mix), d)));
+fn sweptControl(surface: *const types.Surface, deflections: V3, cosL: f64) f64 {
+    return surface.tau * fmath.asin(cosL * @sin(vec.dot(vec.v3(surface.mix), deflections)));
 }
 
 /// Resolve as circulações e reescreve os painéis do núcleo (`ps`, de `aero.computeTrace`) com a carga da linha
 /// sustentadora: alpha (efetivo), CL (seção), CD, L, D, F e vind (+ a velocidade induzida pelas ferraduras).
-/// `Vr`: velocidade do avião em relação ao ar (corpo); `d`: comandos (de, da, dr). Devolve a soma de Γ (teste).
-pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
-    const n = @min(ps.len, n_max);
+/// `Vr`: velocidade do avião em relação ao ar (corpo); `deflections`: comandos (de, da, dr). Devolve a soma de Γ (teste).
+pub fn apply(params: *const types.Params, Vr: V3, deflections: V3, panels: []types.PanelState) f64 {
+    const n_panels = @min(panels.len, n_max);
     const Va = vec.norm(Vr);
-    if (Va < 1e-6 or n == 0) return 0;
-    const u = -Vr / vec.splat(Va); // para onde o ar vai
-    var A: [n_max][n_max]f64 = undefined;
+    if (Va < 1e-6 or n_panels == 0) return 0;
+    const flow_dir = -Vr / vec.splat(Va); // para onde o ar vai
+    var matrix: [n_max][n_max]f64 = undefined;
     var rhs: [n_max]f64 = undefined;
     var used: [n_max]bool = undefined;
     var k_i: [n_max]f64 = undefined; // ½ c η a
     // Goates e Hunsaker (llt_joint, llt_blend > 0): a geometria muda com o ponto de controle; a influência fica
     // guardada para a segunda volta. Com os dois em 0, as contas são as de Phillips e Snyder, como sempre
-    const gh = p.llt_joint > 0 or p.llt_blend > 0;
+    const gh = params.llt_joint > 0 or params.llt_blend > 0;
     var infl: [n_max][n_max]V3 = undefined;
-    const cached = cacheFits(p, ps, n, gh); // a geometria fixa já montada (prepare): só as pernas livres
-    const wings = if (gh and !cached) Wings.build(p, ps, n) else Wings{};
-    for (0..n) |i| {
-        const s = &p.surf[i];
-        const q = &ps[i];
+    const cached = cacheFits(params, panels, n_panels, gh); // a geometria fixa já montada (prepare): só as pernas livres
+    const wings = if (gh and !cached) Wings.build(params, panels, n_panels) else Wings{};
+    for (0..n_panels) |i| {
+        const surface = &params.surf[i];
+        const panel = &panels[i];
         // G-H: a seção no plano normal à linha (eq. 21, 27, 35); P-S: a seção na corda
-        const sw = if (gh) sweptSection(s, q) else Section{ .ex = vec.v3(s.ex), .ez = vec.v3(s.ez), .cosL = 1 };
-        const ez = sw.ez;
-        const ex = sw.ex;
-        const v = vec.v3(q.v);
-        const uu = vec.dot(v, ex);
-        const ww = vec.dot(v, ez);
+        const section = if (gh) sweptSection(surface, panel) else Section{ .ex = vec.v3(surface.ex), .ez = vec.v3(surface.ez), .cosL = 1 };
+        const ez = section.ez;
+        const ex = section.ex;
+        const velocity = vec.v3(panel.v);
+        const uu = vec.dot(velocity, ex);
+        const ww = vec.dot(velocity, ez);
         const Vp = @sqrt(uu * uu + ww * ww);
-        used[i] = q.group >= 0 and Vp > 1e-3 and q.S > 0;
-        for (0..n) |j| A[i][j] = if (i == j) 1 else 0;
+        used[i] = panel.group >= 0 and Vp > 1e-3 and panel.S > 0;
+        for (0..n_panels) |j| matrix[i][j] = if (i == j) 1 else 0;
         rhs[i] = 0;
         if (!used[i]) continue;
-        const ag = fm.atan2(ww, uu) + (if (gh) sweptControl(s, d, sw.cosL) else s.tau * vec.dot(vec.v3(s.mix), d));
-        const a = sectionSlope(s.CLa, s.AR);
-        const a0 = (if (s.CLa != 0) -s.CL0 / s.CLa else 0) / sw.cosL;
-        k_i[i] = 0.5 * q.c * sw.cosL * s.eta * a;
+        const ag = fmath.atan2(ww, uu) + (if (gh) sweptControl(surface, deflections, section.cosL) else surface.tau * vec.dot(vec.v3(surface.mix), deflections));
+        const slope = sectionSlope(surface.CLa, surface.AR);
+        const a0 = (if (surface.CLa != 0) -surface.CL0 / surface.CLa else 0) / section.cosL;
+        k_i[i] = 0.5 * panel.c * section.cosL * surface.eta * slope;
         rhs[i] = k_i[i] * Vp * (ag - a0);
-        const P = vec.v3(q.r);
+        const point = vec.v3(panel.r);
         if (cached) {
-            for (0..n) |j| {
+            for (0..n_panels) |j| {
                 infl[i][j] = vec.zero;
-                if (!used_geom(ps, j)) continue;
-                infl[i][j] = cachedInfluence(&p.llt_cache, P, i, j, u, coreOf(ps, i, j));
-                A[i][j] += k_i[i] * vec.dot(infl[i][j], ez);
+                if (!used_geom(panels, j)) continue;
+                infl[i][j] = cachedInfluence(&params.llt_cache, point, i, j, flow_dir, coreOf(panels, i, j));
+                matrix[i][j] += k_i[i] * vec.dot(infl[i][j], ez);
             }
             continue;
         }
         if (gh) {
-            ghInfluence(p, ps, n, &wings, i, u, infl[i][0..n]);
-            for (0..n) |j| {
-                if (used_geom(ps, j)) A[i][j] += k_i[i] * vec.dot(infl[i][j], ez);
+            ghInfluence(params, panels, n_panels, &wings, i, flow_dir, infl[i][0..n_panels]);
+            for (0..n_panels) |j| {
+                if (used_geom(panels, j)) matrix[i][j] += k_i[i] * vec.dot(infl[i][j], ez);
             }
             continue;
         }
-        for (0..n) |j| {
-            if (!used_geom(ps, j)) continue;
-            const g = nodes(&p.surf[j], &ps[j]);
-            A[i][j] += k_i[i] * vec.dot(horseshoe(P, g.A, g.B, u, withBound(i, j), coreOf(ps, i, j)), ez);
+        for (0..n_panels) |j| {
+            if (!used_geom(panels, j)) continue;
+            const node = nodes(&params.surf[j], &panels[j]);
+            matrix[i][j] += k_i[i] * vec.dot(horseshoe(point, node.A, node.B, flow_dir, withBound(i, j), coreOf(panels, i, j)), ez);
         }
     }
-    var G: [n_max]f64 = undefined;
-    solve(n, &A, &rhs, &G);
+    var gamma: [n_max]f64 = undefined;
+    solve(n_panels, &matrix, &rhs, &gamma);
     // carga de cada painel com as circulações
     var sum: f64 = 0;
-    for (0..n) |i| {
+    for (0..n_panels) |i| {
         if (!used[i]) continue;
-        const s = &p.surf[i];
-        const q = &ps[i];
-        const sw = if (gh) sweptSection(s, q) else Section{ .ex = vec.v3(s.ex), .ez = vec.v3(s.ez), .cosL = 1 };
-        const ez = sw.ez;
-        const ex = sw.ex;
-        const P = vec.v3(q.r);
-        var w = vec.zero; // velocidade do ar induzida pelas ferraduras
-        for (0..n) |j| {
+        const surface = &params.surf[i];
+        const panel = &panels[i];
+        const section = if (gh) sweptSection(surface, panel) else Section{ .ex = vec.v3(surface.ex), .ez = vec.v3(surface.ez), .cosL = 1 };
+        const ez = section.ez;
+        const ex = section.ex;
+        const point = vec.v3(panel.r);
+        var induced = vec.zero; // velocidade do ar induzida pelas ferraduras
+        for (0..n_panels) |j| {
             if (!used[j]) continue;
             if (gh or cached) {
-                w += infl[i][j] * vec.splat(G[j]);
+                induced += infl[i][j] * vec.splat(gamma[j]);
                 continue;
             }
-            const g = nodes(&p.surf[j], &ps[j]);
-            w += horseshoe(P, g.A, g.B, u, withBound(i, j), coreOf(ps, i, j)) * vec.splat(G[j]);
+            const node = nodes(&params.surf[j], &panels[j]);
+            induced += horseshoe(point, node.A, node.B, flow_dir, withBound(i, j), coreOf(panels, i, j)) * vec.splat(gamma[j]);
         }
-        const v = vec.v3(q.v) - w; // velocidade do painel em relação ao ar, com a induzida
-        const uu = vec.dot(v, ex);
-        const ww = vec.dot(v, ez);
+        const velocity = vec.v3(panel.v) - induced; // velocidade do painel em relação ao ar, com a induzida
+        const uu = vec.dot(velocity, ex);
+        const ww = vec.dot(velocity, ez);
         const V2 = uu * uu + ww * ww;
         const Vp = @sqrt(V2);
-        const al = fm.atan2(ww, uu) + (if (gh) sweptControl(s, d, sw.cosL) else s.tau * vec.dot(vec.v3(s.mix), d));
-        const g = nodes(s, q);
-        const rho = p.env.rho;
+        const al = fmath.atan2(ww, uu) + (if (gh) sweptControl(surface, deflections, section.cosL) else surface.tau * vec.dot(vec.v3(surface.mix), deflections));
+        const node = nodes(surface, panel);
+        const rho = params.env.rho;
         // Kutta–Joukowski no segmento ligado (ar = −v): F = ρ Γ (−v) × dl, dl de nó a nó (com o enflechamento)
-        const Fl = vec.cross(-v, g.B - g.A) * vec.splat(rho * G[i]);
-        const Lp = std.math.sign(G[i]) * vec.norm(Fl);
-        const qS = 0.5 * rho * V2 * s.eta * q.S;
+        const Fl = vec.cross(-velocity, node.B - node.A) * vec.splat(rho * gamma[i]);
+        const Lp = std.math.sign(gamma[i]) * vec.norm(Fl);
+        const qS = 0.5 * rho * V2 * surface.eta * panel.S;
         const drag_dir = -(ex * vec.splat(uu) + ez * vec.splat(ww)) / vec.splat(@max(Vp, 1e-12));
-        const Dp = qS * s.CD0;
-        const F = Fl + drag_dir * vec.splat(Dp);
-        q.alpha = al;
-        q.V = Vp;
-        q.CL = if (qS > 0) Lp / qS else 0;
-        q.L = Lp;
-        q.D = vec.dot(F, drag_dir);
-        q.CD = if (qS > 0) q.D / qS else 0;
-        q.F = F;
-        q.v = v;
-        q.vind = vec.v3(q.vind) - w;
-        sum += G[i];
+        const Dp = qS * surface.CD0;
+        const force = Fl + drag_dir * vec.splat(Dp);
+        panel.alpha = al;
+        panel.V = Vp;
+        panel.CL = if (qS > 0) Lp / qS else 0;
+        panel.L = Lp;
+        panel.D = vec.dot(force, drag_dir);
+        panel.CD = if (qS > 0) panel.D / qS else 0;
+        panel.F = force;
+        panel.v = velocity;
+        panel.vind = vec.v3(panel.vind) - induced;
+        sum += gamma[i];
     }
     return sum;
 }
 
 /// as forças e momentos do avião (`aero.Out`, como `aero.computeEnv`) com a carga da linha sustentadora: a conta da
-/// simulação (faixas, fuselagem, c_m das seções, modificadores, efeito solo a `h`) com as forças dos painéis trocadas
-/// pelas de `apply`. É o modelo 1 do voo (`physics/aeromodel.zig`); o `ratioCL` e o `Fi` ficam os das faixas
-pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env) aero.Out {
-    const n: usize = @intCast(@min(p.n_surf, @as(i32, n_max)));
-    var ps: [n_max]T.PanelState = undefined;
-    var o = aero.computeTrace(p, Vr, w, rcg, h, d, env, ps[0..n]);
+/// simulação (faixas, fuselagem, c_m das seções, modificadores, efeito solo a `height`) com as forças dos painéis
+/// trocadas pelas de `apply`. É o modelo 1 do voo (`physics/aeromodel.zig`); o `ratioCL` e o `Fi` ficam os das faixas
+pub fn compute(params: *const types.Params, Vr: V3, body_rates: V3, rcg: V3, height: f64, deflections: V3, env: *const mods.Env) aero.Out {
+    const n_panels: usize = @intCast(@min(params.n_surf, @as(i32, n_max)));
+    var panels: [n_max]types.PanelState = undefined;
+    var env_ll = env.*;
+    env_ll.no_pair = true; // a interferência entre asas ligadas sai do sistema daqui, não do modifier das faixas
+    var out = aero.computeTrace(params, Vr, body_rates, rcg, height, deflections, &env_ll, panels[0..n_panels]);
     // tira as forças das faixas...
-    for (ps[0..n]) |q| {
-        if (q.group < 0) continue;
-        const F = vec.v3(q.F);
-        o.F -= F;
-        o.M -= vec.cross(vec.v3(q.r) - rcg, F);
-        o.Fg[@intCast(q.group)] -= F;
-        o.Mg[@intCast(q.group)] -= vec.cross(vec.v3(q.r) - rcg, F);
+    for (panels[0..n_panels]) |panel| {
+        if (panel.group < 0) continue;
+        const force = vec.v3(panel.F);
+        out.F -= force;
+        out.M -= vec.cross(vec.v3(panel.r) - rcg, force);
+        out.Fg[@intCast(panel.group)] -= force;
+        out.Mg[@intCast(panel.group)] -= vec.cross(vec.v3(panel.r) - rcg, force);
     }
-    _ = apply(p, Vr, d, ps[0..n]);
+    _ = apply(params, Vr, deflections, panels[0..n_panels]);
     // ... e põe as da linha sustentadora
-    for (ps[0..n]) |q| {
-        if (q.group < 0) continue;
-        const F = vec.v3(q.F);
-        o.F += F;
-        o.M += vec.cross(vec.v3(q.r) - rcg, F);
-        o.Fg[@intCast(q.group)] += F;
-        o.Mg[@intCast(q.group)] += vec.cross(vec.v3(q.r) - rcg, F);
+    for (panels[0..n_panels]) |panel| {
+        if (panel.group < 0) continue;
+        const force = vec.v3(panel.F);
+        out.F += force;
+        out.M += vec.cross(vec.v3(panel.r) - rcg, force);
+        out.Fg[@intCast(panel.group)] += force;
+        out.Mg[@intCast(panel.group)] += vec.cross(vec.v3(panel.r) - rcg, force);
     }
-    return o;
+    return out;
 }
 
 /// coeficientes do avião inteiro com a carga da linha sustentadora: a conta da simulação (`aero.computeTrace`: faixas,
 /// fuselagem, c_m das seções, modificadores, efeito solo a `h`) com as forças dos painéis trocadas pelas de `apply`.
 /// Mesmos argumentos e eixos de `aero.coeffsAt` (w em rad/s; momentos em `ref`). C_Di: NaN (as forças da linha
 /// sustentadora não separam o induzido do de perfil)
-pub fn coeffs(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V3, d: V3, h: f64, thrust: ?[2][]const f64) T.AeroCoeffs {
-    const a = fm.sincos(alpha);
-    const b = fm.sincos(beta);
-    const Vr = V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
-    const env = if (thrust) |tq| mods.envFrom(p, Vr, w, tq[0], tq[1]) else mods.Env.none;
-    const o = compute(p, Vr, w, ref, h, d, &env);
-    const qS = 0.5 * p.env.rho * V * V * p.Sref;
+pub fn coeffs(params: *const types.Params, airspeed: f64, alpha: f64, beta: f64, body_rates: V3, ref: V3, deflections: V3, height: f64, thrust: ?[2][]const f64) types.AeroCoeffs {
+    const sc_alpha = fmath.sincos(alpha);
+    const sc_beta = fmath.sincos(beta);
+    const Vr = V3{ airspeed * sc_alpha.c * sc_beta.c, airspeed * sc_beta.s, airspeed * sc_alpha.s * sc_beta.c };
+    const env = if (thrust) |tq| mods.envFrom(params, Vr, body_rates, tq[0], tq[1]) else mods.Env.none;
+    const out = compute(params, Vr, body_rates, ref, height, deflections, &env);
+    const qS = 0.5 * params.env.rho * airspeed * airspeed * params.Sref;
     return .{
-        .CL = (-o.F[2] * a.c + o.F[0] * a.s) / qS,
-        .CD = -(o.F[0] * a.c * b.c + o.F[1] * b.s + o.F[2] * a.s * b.c) / qS,
-        .CY = o.F[1] / qS,
-        .Cl = o.M[0] / (qS * p.bref),
-        .Cm = o.M[1] / (qS * p.cref),
-        .Cn = o.M[2] / (qS * p.bref),
-        .CL_wing = (-o.Fg[L.group_wing][2] * a.c + o.Fg[L.group_wing][0] * a.s) / qS,
-        .CL_ht = (-o.Fg[L.group_htail][2] * a.c + o.Fg[L.group_htail][0] * a.s) / qS,
-        .ratioCL = o.ratioCL,
+        .CL = (-out.F[2] * sc_alpha.c + out.F[0] * sc_alpha.s) / qS,
+        .CD = -(out.F[0] * sc_alpha.c * sc_beta.c + out.F[1] * sc_beta.s + out.F[2] * sc_alpha.s * sc_beta.c) / qS,
+        .CY = out.F[1] / qS,
+        .Cl = out.M[0] / (qS * params.bref),
+        .Cm = out.M[1] / (qS * params.cref),
+        .Cn = out.M[2] / (qS * params.bref),
+        .CL_wing = (-out.Fg[limits.group_wing][2] * sc_alpha.c + out.Fg[limits.group_wing][0] * sc_alpha.s) / qS,
+        .CL_ht = (-out.Fg[limits.group_htail][2] * sc_alpha.c + out.Fg[limits.group_htail][0] * sc_alpha.s) / qS,
+        .ratioCL = out.ratioCL,
         .CDi = std.math.nan(f64),
-        .CN = -o.F[2] / qS,
+        .CN = -out.F[2] / qS,
     };
 }
 
@@ -523,263 +537,264 @@ fn withBound(i: usize, j: usize) bool {
 }
 
 /// núcleo de Scully só entre superfícies diferentes (ver `core_frac`)
-fn coreOf(ps: []const T.PanelState, i: usize, j: usize) f64 {
-    return if (ps[j].group != ps[i].group) core_frac * ps[j].c else 0;
+fn coreOf(panels: []const types.PanelState, i: usize, j: usize) f64 {
+    return if (panels[j].group != panels[i].group) core_frac * panels[j].c else 0;
 }
 
-fn used_geom(ps: []const T.PanelState, j: usize) bool {
-    return ps[j].group >= 0 and ps[j].S > 0 and ps[j].c > 0;
+/// verdadeiro se o painel j tem geometria (grupo, área e corda)
+fn used_geom(panels: []const types.PanelState, j: usize) bool {
+    return panels[j].group >= 0 and panels[j].S > 0 and panels[j].c > 0;
 }
 
-/// eliminação de Gauss com pivô parcial (n ≤ max_surfaces)
-fn solve(n: usize, A: *[n_max][n_max]f64, b: *[n_max]f64, x: *[n_max]f64) void {
-    for (0..n) |c| {
-        var pv = c;
-        for (c + 1..n) |r| {
-            if (@abs(A[r][c]) > @abs(A[pv][c])) pv = r;
+/// resolve matrix · solution = rhs por eliminação de Gauss com pivô parcial (size ≤ max_surfaces)
+fn solve(size: usize, matrix: *[n_max][n_max]f64, rhs: *[n_max]f64, solution: *[n_max]f64) void {
+    for (0..size) |col| {
+        var pivot = col;
+        for (col + 1..size) |row| {
+            if (@abs(matrix[row][col]) > @abs(matrix[pivot][col])) pivot = row;
         }
-        if (pv != c) {
-            std.mem.swap([n_max]f64, &A[c], &A[pv]);
-            std.mem.swap(f64, &b[c], &b[pv]);
+        if (pivot != col) {
+            std.mem.swap([n_max]f64, &matrix[col], &matrix[pivot]);
+            std.mem.swap(f64, &rhs[col], &rhs[pivot]);
         }
-        const d = A[c][c];
-        if (@abs(d) < 1e-15) continue;
-        for (c + 1..n) |r| {
-            const f = A[r][c] / d;
-            if (f == 0) continue;
-            for (c..n) |k| A[r][k] -= f * A[c][k];
-            b[r] -= f * b[c];
+        const diagonal = matrix[col][col];
+        if (@abs(diagonal) < 1e-15) continue;
+        for (col + 1..size) |row| {
+            const factor = matrix[row][col] / diagonal;
+            if (factor == 0) continue;
+            for (col..size) |k| matrix[row][k] -= factor * matrix[col][k];
+            rhs[row] -= factor * rhs[col];
         }
     }
-    var i = n;
+    var i = size;
     while (i > 0) {
         i -= 1;
-        var s = b[i];
-        for (i + 1..n) |k| s -= A[i][k] * x[k];
-        x[i] = if (@abs(A[i][i]) < 1e-15) 0 else s / A[i][i];
+        var sum = rhs[i];
+        for (i + 1..size) |k| sum -= matrix[i][k] * solution[k];
+        solution[i] = if (@abs(matrix[i][i]) < 1e-15) 0 else sum / matrix[i][i];
     }
 }
 
 const testing = std.testing;
 
 test "Helmbold invertido volta ao a do perfil" {
-    const a = 2.0 * fm.pi;
+    const slope = 2.0 * fmath.pi;
     for ([_]f64{ 4, 6, 8, 12 }) |AR| {
-        const k = a / (fm.pi * AR);
-        const CLa = a / (@sqrt(1 + k * k) + k);
-        try testing.expectApproxEqRel(a, sectionSlope(CLa, AR), 1e-12);
+        const ratio = slope / (fmath.pi * AR);
+        const CLa = slope / (@sqrt(1 + ratio * ratio) + ratio);
+        try testing.expectApproxEqRel(slope, sectionSlope(CLa, AR), 1e-12);
     }
 }
 
 test "segmento: vórtice infinito dá Γ/(2πh)" {
-    const v = segment(.{ 0, 0, 1 }, .{ -1e5, 0, 0 }, .{ 1e5, 0, 0 }, 0);
-    try testing.expectApproxEqRel(1.0 / (2.0 * fm.pi), vec.norm(v), 1e-6);
+    const velocity = segment(.{ 0, 0, 1 }, .{ -1e5, 0, 0 }, .{ 1e5, 0, 0 }, 0);
+    try testing.expectApproxEqRel(1.0 / (2.0 * fmath.pi), vec.norm(velocity), 1e-6);
 }
 
-/// asa reta retangular em n faixas, corpo x à frente, z para baixo
-fn rectWing(p: *T.Params, ps: []T.PanelState, n: usize, b: f64, c: f64, a: f64, V: f64, alpha: f64) void {
-    const AR = b / c;
-    const k = a / (fm.pi * AR);
-    p.n_surf = @intCast(n);
-    const w = b / @as(f64, @floatFromInt(n));
-    for (0..n) |i| {
-        const y = -0.5 * b + (@as(f64, @floatFromInt(i)) + 0.5) * w;
-        p.surf[i] = .{ .S = w * c, .c = c, .AR = AR, .CLa = a / (@sqrt(1 + k * k) + k), .CL0 = 0, .CD0 = 0, .eta = 1,
+/// asa reta retangular em n_panels faixas, corpo x à frente, z para baixo
+fn rectWing(params: *types.Params, panels: []types.PanelState, n_panels: usize, wing_span: f64, chord: f64, slope: f64, airspeed: f64, alpha: f64) void {
+    const AR = wing_span / chord;
+    const ratio = slope / (fmath.pi * AR);
+    params.n_surf = @intCast(n_panels);
+    const width = wing_span / @as(f64, @floatFromInt(n_panels));
+    for (0..n_panels) |i| {
+        const y_center = -0.5 * wing_span + (@as(f64, @floatFromInt(i)) + 0.5) * width;
+        params.surf[i] = .{ .S = width * chord, .c = chord, .AR = AR, .CLa = slope / (@sqrt(1 + ratio * ratio) + ratio), .CL0 = 0, .CD0 = 0, .eta = 1,
             .ex = .{ 1, 0, 0 }, .ey = .{ 0, 1, 0 }, .ez = .{ 0, 0, 1 },
-            .qa = .{ 0, y - 0.5 * w, 0 }, .qb = .{ 0, y + 0.5 * w, 0 } };
-        ps[i] = .{ .r = .{ 0, y, 0 }, .S = w * c, .c = c, .group = 0, .side = if (y > 0) 1 else -1, .ex = .{ 1, 0, 0 },
-            .ey = .{ 0, 1, 0 }, .v = .{ V * @cos(alpha), 0, V * @sin(alpha) } };
+            .qa = .{ 0, y_center - 0.5 * width, 0 }, .qb = .{ 0, y_center + 0.5 * width, 0 } };
+        panels[i] = .{ .r = .{ 0, y_center, 0 }, .S = width * chord, .c = chord, .group = 0, .side = if (y_center > 0) 1 else -1, .ex = .{ 1, 0, 0 },
+            .ey = .{ 0, 1, 0 }, .v = .{ airspeed * @cos(alpha), 0, airspeed * @sin(alpha) } };
     }
 }
 
 test "asa retangular: carga cai na ponta, C_L perto de Helmbold e menor com alongamento menor" {
-    var p = T.Params{};
-    var ps: [40]T.PanelState = undefined;
+    var params = types.Params{};
+    var panels: [40]types.PanelState = undefined;
     const al = 0.08;
-    const V = 12.0;
+    const airspeed = 12.0;
     var CLs: [2]f64 = undefined;
-    for ([_]f64{ 8, 4 }, 0..) |AR, m| {
-        rectWing(&p, &ps, 40, AR * 0.25, 0.25, 2 * fm.pi, V, al);
-        _ = apply(&p, .{ V * @cos(al), 0, V * @sin(al) }, vec.zero, ps[0..40]);
+    for ([_]f64{ 8, 4 }, 0..) |AR, case| {
+        rectWing(&params, &panels, 40, AR * 0.25, 0.25, 2 * fmath.pi, airspeed, al);
+        _ = apply(&params, .{ airspeed * @cos(al), 0, airspeed * @sin(al) }, vec.zero, panels[0..40]);
         var Lt: f64 = 0;
-        for (ps[0..40]) |q| Lt += q.L;
-        CLs[m] = Lt / (0.5 * p.env.rho * V * V * AR * 0.25 * 0.25);
-        const tip = ps[0].L / ps[0].S;
-        const root = ps[20].L / ps[20].S;
+        for (panels[0..40]) |panel| Lt += panel.L;
+        CLs[case] = Lt / (0.5 * params.env.rho * airspeed * airspeed * AR * 0.25 * 0.25);
+        const tip = panels[0].L / panels[0].S;
+        const root = panels[20].L / panels[20].S;
         try testing.expect(tip < 0.75 * root); // ponta descarregada
-        try testing.expectApproxEqAbs(ps[0].L, ps[39].L, 1e-9 * root); // simétrica
+        try testing.expectApproxEqAbs(panels[0].L, panels[39].L, 1e-9 * root); // simétrica
         // Helmbold é uma aproximação da linha sustentadora: perto, não igual
-        const k = 2 * fm.pi / (fm.pi * AR);
-        try testing.expectApproxEqRel(2 * fm.pi / (@sqrt(1 + k * k) + k) * al, CLs[m], 0.06);
+        const ratio = 2 * fmath.pi / (fmath.pi * AR);
+        try testing.expectApproxEqRel(2 * fmath.pi / (@sqrt(1 + ratio * ratio) + ratio) * al, CLs[case], 0.06);
     }
     try testing.expect(CLs[1] < CLs[0]);
 }
 
 test "diedro: a raiz não salta mais que o VLM (1 %)" {
-    var p = T.Params{};
-    var ps: [40]T.PanelState = undefined;
+    var params = types.Params{};
+    var panels: [40]types.PanelState = undefined;
     const al = 0.08;
-    const V = 12.0;
-    rectWing(&p, &ps, 40, 2.0, 0.25, 2 * fm.pi, V, al);
-    const g = 3.0 * fm.pi / 180.0; // pontas para cima (z para baixo)
+    const airspeed = 12.0;
+    rectWing(&params, &panels, 40, 2.0, 0.25, 2 * fmath.pi, airspeed, al);
+    const dihedral = 3.0 * fmath.pi / 180.0; // pontas para cima (z para baixo)
     for (0..40) |i| {
-        const y = ps[i].r[1];
-        const sd: f64 = if (y > 0) 1 else -1;
-        ps[i].r[2] = -@abs(y) * @tan(g);
-        p.surf[i].ez = .{ 0, sd * @sin(g), @cos(g) };
-        p.surf[i].qa[2] = -@abs(p.surf[i].qa[1]) * @tan(g);
-        p.surf[i].qb[2] = -@abs(p.surf[i].qb[1]) * @tan(g);
+        const y_center = panels[i].r[1];
+        const sd: f64 = if (y_center > 0) 1 else -1;
+        panels[i].r[2] = -@abs(y_center) * @tan(dihedral);
+        params.surf[i].ez = .{ 0, sd * @sin(dihedral), @cos(dihedral) };
+        params.surf[i].qa[2] = -@abs(params.surf[i].qa[1]) * @tan(dihedral);
+        params.surf[i].qb[2] = -@abs(params.surf[i].qb[1]) * @tan(dihedral);
     }
-    _ = apply(&p, .{ V * @cos(al), 0, V * @sin(al) }, vec.zero, ps[0..40]);
+    _ = apply(&params, .{ airspeed * @cos(al), 0, airspeed * @sin(al) }, vec.zero, panels[0..40]);
     // a carga cresce da ponta até a raiz sem saltar no meio
     // a carga não salta na raiz: no VLM do AeroSandbox (12 × 40 painéis por lado, asa plana AR 5) a faixa da raiz
     // fica 0,25 % acima da vizinha a 3° de diedro e 0,9 % a 10°; aqui, com os segmentos ligados da outra meia asa
     // (Phillips e Snyder), 0,7 %. A quina da raiz é singular na linha sustentadora (Reid e Hunsaker 2020)
-    try testing.expect(ps[19].L <= ps[18].L * 1.01);
+    try testing.expect(panels[19].L <= panels[18].L * 1.01);
 }
 
 test "núcleo de Scully: finito na linha, metade do valor sem núcleo a h = rc" {
-    const A = V3{ -1e5, 0, 0 };
-    const B = V3{ 1e5, 0, 0 };
+    const start = V3{ -1e5, 0, 0 };
+    const end = V3{ 1e5, 0, 0 };
     const rc = 0.02;
-    try testing.expectApproxEqAbs(@as(f64, 0), vec.norm(segment(.{ 0, 0, 1e-9 }, A, B, rc)), 1e-3);
-    const free = vec.norm(segment(.{ 0, 0, rc }, A, B, 0));
-    try testing.expectApproxEqRel(0.5 * free, vec.norm(segment(.{ 0, 0, rc }, A, B, rc)), 1e-6);
+    try testing.expectApproxEqAbs(@as(f64, 0), vec.norm(segment(.{ 0, 0, 1e-9 }, start, end, rc)), 1e-3);
+    const free = vec.norm(segment(.{ 0, 0, rc }, start, end, 0));
+    try testing.expectApproxEqRel(0.5 * free, vec.norm(segment(.{ 0, 0, rc }, start, end, rc)), 1e-6);
 }
 
 test "cauda em T: a perna da raiz da EV não explode na EH" {
-    var p = T.Params{};
-    var ps: [30]T.PanelState = undefined;
+    var params = types.Params{};
+    var panels: [30]types.PanelState = undefined;
     const al = 0.05;
-    const V = 12.0;
-    rectWing(&p, &ps, 20, 0.8, 0.2, 2 * fm.pi, V, al); // EH em z = 0
-    for (0..20) |i| ps[i].group = 1;
+    const airspeed = 12.0;
+    rectWing(&params, &panels, 20, 0.8, 0.2, 2 * fmath.pi, airspeed, al); // EH em z = 0
+    for (0..20) |i| panels[i].group = 1;
     // EV: 10 painéis de z = 0 até 0,3 m para cima, raiz em cima da EH, em x = 0, a 2 mm do ponto de controle de um
     // painel da EH (como nos aviões com a EV encostada na EH); com β para ter carga
-    const h = 0.03;
+    const height_step = 0.03;
     for (20..30) |i| {
-        const k: f64 = @floatFromInt(i - 20);
-        p.surf[i] = p.surf[0];
-        p.surf[i].ez = .{ 0, 1, 0 };
-        p.surf[i].S = h * 0.2;
-        ps[i] = ps[0];
-        ps[i].group = 2;
-        ps[i].S = h * 0.2;
-        ps[i].r = .{ 0, ps[10].r[1] + 0.002, -(k + 0.5) * h };
-        ps[i].v = .{ V * @cos(al), V * 0.15, V * @sin(al) };
+        const index: f64 = @floatFromInt(i - 20);
+        params.surf[i] = params.surf[0];
+        params.surf[i].ez = .{ 0, 1, 0 };
+        params.surf[i].S = height_step * 0.2;
+        panels[i] = panels[0];
+        panels[i].group = 2;
+        panels[i].S = height_step * 0.2;
+        panels[i].r = .{ 0, panels[10].r[1] + 0.002, -(index + 0.5) * height_step };
+        panels[i].v = .{ airspeed * @cos(al), airspeed * 0.15, airspeed * @sin(al) };
     }
-    p.n_surf = 30;
-    _ = apply(&p, .{ V * @cos(al), 0, V * @sin(al) }, vec.zero, ps[0..30]);
+    params.n_surf = 30;
+    _ = apply(&params, .{ airspeed * @cos(al), 0, airspeed * @sin(al) }, vec.zero, panels[0..30]);
     // o painel da EH ao lado da raiz da EV não salta (sem núcleo: 5× os vizinhos)
-    try testing.expect(ps[10].L < 1.5 * @max(ps[9].L, ps[11].L));
+    try testing.expect(panels[10].L < 1.5 * @max(panels[9].L, panels[11].L));
 }
 
-/// C_lβ (por rad) da asa retangular em n faixas a α, por diferença central em β = ±0,5°
-fn rectClb(p: *T.Params, n: usize, alpha: f64) f64 {
-    var ps: [n_max]T.PanelState = undefined;
-    const V = 12.0;
-    const b = 2.0;
-    const c = 0.25;
+/// C_lβ (por rad) da asa retangular em n_panels faixas a α, por diferença central em β = ±0,5°
+fn rectClb(params: *types.Params, n_panels: usize, alpha: f64) f64 {
+    var panels: [n_max]types.PanelState = undefined;
+    const airspeed = 12.0;
+    const wing_span = 2.0;
+    const chord = 0.25;
     var Cl: [2]f64 = undefined;
-    for ([_]f64{ 1, -1 }, 0..) |sg, m| {
-        const be = sg * 0.5 * fm.pi / 180.0;
-        rectWing(p, &ps, n, b, c, 2 * fm.pi, V, alpha);
-        const Vr = V3{ V * @cos(alpha) * @cos(be), V * @sin(be), V * @sin(alpha) * @cos(be) };
-        for (ps[0..n]) |*q| q.v = Vr;
-        _ = apply(p, Vr, vec.zero, ps[0..n]);
+    for ([_]f64{ 1, -1 }, 0..) |sg, case| {
+        const be = sg * 0.5 * fmath.pi / 180.0;
+        rectWing(params, &panels, n_panels, wing_span, chord, 2 * fmath.pi, airspeed, alpha);
+        const Vr = V3{ airspeed * @cos(alpha) * @cos(be), airspeed * @sin(be), airspeed * @sin(alpha) * @cos(be) };
+        for (panels[0..n_panels]) |*panel| panel.v = Vr;
+        _ = apply(params, Vr, vec.zero, panels[0..n_panels]);
         var Mx: f64 = 0;
-        for (ps[0..n]) |q| Mx += q.r[1] * q.F[2] - q.r[2] * q.F[1];
-        Cl[m] = Mx / (0.5 * p.env.rho * V * V * b * c * b);
+        for (panels[0..n_panels]) |panel| Mx += panel.r[1] * panel.F[2] - panel.r[2] * panel.F[1];
+        Cl[case] = Mx / (0.5 * params.env.rho * airspeed * airspeed * wing_span * chord * wing_span);
     }
-    return (Cl[0] - Cl[1]) / (2 * 0.5 * fm.pi / 180.0);
+    return (Cl[0] - Cl[1]) / (2 * 0.5 * fmath.pi / 180.0);
 }
 
 test "derrapagem: Phillips e Snyder não converge; Goates e Hunsaker converge e bate com o MachUpX" {
     // asa retangular AR 8 (b = 2 m, c = 0,25 m), a = 2π, α0 = 0, α = 0,08 rad. Referência: MachUpX (a implementação
     // de Goates e Hunsaker pelos autores, github.com/usuaero/MachUpX), 80 painéis por semiasa: C_lβ = 0,01524
-    var p = T.Params{};
-    const ps20 = rectClb(&p, 20, 0.08);
-    const ps40 = rectClb(&p, 40, 0.08);
+    var params = types.Params{};
+    const ps20 = rectClb(&params, 20, 0.08);
+    const ps40 = rectClb(&params, 40, 0.08);
     try testing.expect(@abs(ps40 - ps20) > 0.1 * @abs(ps40)); // P-S: cresce com a malha (G-H §II.A)
-    p.llt_joint = 0.15;
-    p.llt_blend = 1.0;
-    const gh20 = rectClb(&p, 20, 0.08);
-    const gh40 = rectClb(&p, 40, 0.08);
+    params.llt_joint = 0.15;
+    params.llt_blend = 1.0;
+    const gh20 = rectClb(&params, 20, 0.08);
+    const gh40 = rectClb(&params, 40, 0.08);
     try testing.expectApproxEqRel(gh40, gh20, 0.03); // converge
     try testing.expectApproxEqRel(@as(f64, 0.01524), gh40, 0.05);
 }
 
 test "Goates e Hunsaker desligado por padrão (a linha sustentadora de sempre)" {
-    const p = T.Params{};
-    try testing.expect(p.llt_joint == 0 and p.llt_blend == 0);
+    const params = types.Params{};
+    try testing.expect(params.llt_joint == 0 and params.llt_blend == 0);
 }
 
 test "coeffs: o avião com a carga da linha sustentadora (asa retangular AR 8)" {
     // a mesma asa de "asa retangular": C_L perto de Helmbold (6 %); sem β, C_l = C_n = 0; C_Di: NaN
-    var p = T.Params{};
-    var ps: [20]T.PanelState = undefined;
+    var params = types.Params{};
+    var panels: [20]types.PanelState = undefined;
     const al = 0.08;
-    const b = 2.0;
-    const c = 0.25;
-    rectWing(&p, &ps, 20, b, c, 2 * fm.pi, 12.0, al);
+    const wing_span = 2.0;
+    const chord = 0.25;
+    rectWing(&params, &panels, 20, wing_span, chord, 2 * fmath.pi, 12.0, al);
     for (0..20) |i| {
-        p.surf[i].r = ps[i].r;
-        p.surf[i].side = ps[i].side;
-        p.surf[i].CLmax = 3.0;
+        params.surf[i].r = panels[i].r;
+        params.surf[i].side = panels[i].side;
+        params.surf[i].CLmax = 3.0;
     }
-    p.Sref = b * c;
-    p.cref = c;
-    p.bref = b;
-    aero.init(&p);
-    const k = 2 * fm.pi / (fm.pi * b / c);
-    const helm = 2 * fm.pi / (@sqrt(1 + k * k) + k) * al;
-    const o = coeffs(&p, 12.0, al, 0, vec.zero, vec.zero, vec.zero, 50.0, null);
-    try testing.expectApproxEqRel(helm, o.CL, 0.06);
-    try testing.expectApproxEqAbs(@as(f64, 0), o.Cl, 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 0), o.Cn, 1e-12);
-    try testing.expect(std.math.isNan(o.CDi));
+    params.Sref = wing_span * chord;
+    params.cref = chord;
+    params.bref = wing_span;
+    aero.init(&params);
+    const ratio = 2 * fmath.pi / (fmath.pi * wing_span / chord);
+    const helm = 2 * fmath.pi / (@sqrt(1 + ratio * ratio) + ratio) * al;
+    const out = coeffs(&params, 12.0, al, 0, vec.zero, vec.zero, vec.zero, 50.0, null);
+    try testing.expectApproxEqRel(helm, out.CL, 0.06);
+    try testing.expectApproxEqAbs(@as(f64, 0), out.Cl, 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, 0), out.Cn, 1e-12);
+    try testing.expect(std.math.isNan(out.CDi));
     // a simulação (faixas) na mesma asa: outro C_L, mesmo sinal e ordem
-    const f = aero.coeffsAt(&p, 12.0, al, 0, vec.zero, vec.zero, vec.zero, 50.0, null);
-    try testing.expect(o.CL != f.CL and @abs(o.CL - f.CL) < 0.1 * f.CL);
+    const strips = aero.coeffsAt(&params, 12.0, al, 0, vec.zero, vec.zero, vec.zero, 50.0, null);
+    try testing.expect(out.CL != strips.CL and @abs(out.CL - strips.CL) < 0.1 * strips.CL);
 }
 
 test "cache da geometria (prepare): o mesmo resultado, bit a bit, que a conta inteira" {
     // asa retangular com diedro, em derrapagem, nos dois métodos: Phillips e Snyder e Goates e Hunsaker
     inline for (.{ false, true }) |gh| {
-        var p = T.Params{};
-        var ps: [24]T.PanelState = undefined;
+        var params = types.Params{};
+        var panels: [24]types.PanelState = undefined;
         const al = 0.08;
-        const V = 12.0;
-        rectWing(&p, &ps, 24, 2.0, 0.25, 2 * fm.pi, V, al);
-        const g = 4.0 * fm.pi / 180.0;
+        const airspeed = 12.0;
+        rectWing(&params, &panels, 24, 2.0, 0.25, 2 * fmath.pi, airspeed, al);
+        const dihedral = 4.0 * fmath.pi / 180.0;
         for (0..24) |i| {
-            const y = ps[i].r[1];
-            const sd: f64 = if (y > 0) 1 else -1;
-            ps[i].r[2] = -@abs(y) * @tan(g);
-            p.surf[i].ez = .{ 0, sd * @sin(g), @cos(g) };
-            p.surf[i].qa[2] = -@abs(p.surf[i].qa[1]) * @tan(g);
-            p.surf[i].qb[2] = -@abs(p.surf[i].qb[1]) * @tan(g);
-            p.surf[i].r = ps[i].r;
-            p.surf[i].side = ps[i].side;
+            const y_center = panels[i].r[1];
+            const sd: f64 = if (y_center > 0) 1 else -1;
+            panels[i].r[2] = -@abs(y_center) * @tan(dihedral);
+            params.surf[i].ez = .{ 0, sd * @sin(dihedral), @cos(dihedral) };
+            params.surf[i].qa[2] = -@abs(params.surf[i].qa[1]) * @tan(dihedral);
+            params.surf[i].qb[2] = -@abs(params.surf[i].qb[1]) * @tan(dihedral);
+            params.surf[i].r = panels[i].r;
+            params.surf[i].side = panels[i].side;
         }
         if (gh) {
-            p.llt_joint = 0.15;
-            p.llt_blend = 1.0;
+            params.llt_joint = 0.15;
+            params.llt_blend = 1.0;
         }
         const be = 0.06;
-        const Vr = V3{ V * @cos(al) * @cos(be), V * @sin(be), V * @sin(al) * @cos(be) };
-        for (ps[0..24]) |*q| q.v = Vr;
-        var a = ps;
-        var b = ps;
-        prepare(&p);
-        try testing.expect(p.llt_cache.ok == 1);
-        const ga = apply(&p, Vr, vec.zero, a[0..24]); // com o cache
-        p.llt_cache.ok = 0;
-        const gb = apply(&p, Vr, vec.zero, b[0..24]); // a conta inteira
+        const Vr = V3{ airspeed * @cos(al) * @cos(be), airspeed * @sin(be), airspeed * @sin(al) * @cos(be) };
+        for (panels[0..24]) |*panel| panel.v = Vr;
+        var cached = panels;
+        var full = panels;
+        prepare(&params);
+        try testing.expect(params.llt_cache.ok == 1);
+        const ga = apply(&params, Vr, vec.zero, cached[0..24]); // com o cache
+        params.llt_cache.ok = 0;
+        const gb = apply(&params, Vr, vec.zero, full[0..24]); // a conta inteira
         try testing.expectEqual(gb, ga);
         for (0..24) |i| {
-            try testing.expectEqual(b[i].L, a[i].L);
-            try testing.expectEqual(b[i].F, a[i].F);
+            try testing.expectEqual(full[i].L, cached[i].L);
+            try testing.expectEqual(full[i].F, cached[i].F);
         }
     }
 }

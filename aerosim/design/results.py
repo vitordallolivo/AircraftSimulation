@@ -216,6 +216,12 @@ def set_stage(cand: tl.SetCandidate, req, rules, airfoils=None) -> tuple[list[Pl
     summ["rolagem: p b/2V com o aileron todo"] = r["pb2V"]
     summ["rotação: V com profundor todo, V com δe = 0, V de sair do chão (m/s)"] = [r["V_rot"], r["V_rot0"], r["V_lof"]]
     G = "empenagem e comandos"
+    if cand.wing2 is not None:
+        w2 = tl.second_wing(r["set"])
+        checks.append(_chk(INFO, "segunda asa ligada", f"{w2.name}: recuo {tp.wing2_dx:g} m, desnível "
+                           f"{tp.wing2_dz:g} m", "—", "a estática desta etapa é a da asa 1 com a cauda; com o par, a "
+                           "margem é a do avião inteiro no núcleo", "veja Aerodinâmica → Avião montado (linha "
+                           "sustentadora ou VLM, que ligam as asas) depois de mandar para a Montagem", G))
     if tp.layout != "sem cauda":
         width = pct(r["h_aft"] - r["h_fwd"])
         st = OK if width >= 15 else (ATT if width > 0 else FAIL)
@@ -310,7 +316,11 @@ def aircraft_stage(cand: pw.AircraftCandidate, req, rules, catalog=None, backend
     summ["corrida de decolagem (m)"] = pf["s_to"]
     summ["MTOW pela pista (kg); CP possível = MTOW − PV (kg)"] = [pf["mtow_runway"], pf["payload_runway"]]
     G = "montagem"
-    if asm["battery_fits"]:
+    if asm["battery_fits"] and asm.get("payload_moved"):
+        checks.append(_chk(OK, "CG no alvo pela bateria e pela carga paga", f"bateria em x = {asm['x_bat_used']:.2f} m, "
+                           f"carga em x = {asm['x_payload']:.2f} m", "dentro da fuselagem", "a carga fora do CG "
+                           f"(escolha do otimizador); sem ela, margem estática de {asm['sm_empty']:.1f} %", "", G))
+    elif asm["battery_fits"]:
         checks.append(_chk(OK, "CG no alvo pela bateria", f"bateria em x = {asm['x_bat_used']:.2f} m", "dentro da fuselagem",
                            "", "", G))
     else:

@@ -3,8 +3,8 @@
 //! que monta os `Params` com os padrões, fica igual); 1 = linha sustentadora (`loads/llt.zig`, `compute`; Phillips e
 //! Snyder ou Goates e Hunsaker conforme `llt_joint` e `llt_blend`); 2 = tabela (`aerotable.zig`) mais a fuselagem do
 //! núcleo se a tabela não a tem.
-const T = @import("../types.zig");
-const L = @import("../limits.zig");
+const types = @import("../types.zig");
+const limits = @import("../limits.zig");
 const vec = @import("../math/vec.zig");
 const aero = @import("aero.zig");
 const table = @import("aerotable.zig");
@@ -16,20 +16,21 @@ pub const faixas = 0;
 pub const linha = 1;
 pub const tabela = 2;
 
-pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env) aero.Out {
-    return switch (p.aero_model) {
-        linha => llt.compute(p, Vr, w, rcg, h, d, env),
+/// forças e momentos aerodinâmicos pelo modelo de `params.aero_model` (faixas, linha sustentadora ou tabela)
+pub fn compute(params: *const types.Params, Vr: V3, body_rates: V3, rcg: V3, height: f64, deflections: V3, env: *const mods.Env) aero.Out {
+    return switch (params.aero_model) {
+        linha => llt.compute(params, Vr, body_rates, rcg, height, deflections, env),
         tabela => blk: {
-            var o = table.compute(p, Vr, w, rcg, d);
-            if (p.aero_tab.fus == 0 and vec.norm(Vr) > 0.1) {
-                const fu = aero.fuselage(p, Vr, rcg);
-                o.F += fu.F;
-                o.M += fu.M;
-                o.Fg[L.group_fuselage] += fu.F;
-                o.Mg[L.group_fuselage] += fu.M;
+            var out = table.compute(params, Vr, body_rates, rcg, deflections);
+            if (params.aero_tab.fus == 0 and vec.norm(Vr) > 0.1) {
+                const fu = aero.fuselage(params, Vr, rcg);
+                out.F += fu.F;
+                out.M += fu.M;
+                out.Fg[limits.group_fuselage] += fu.F;
+                out.Mg[limits.group_fuselage] += fu.M;
             }
-            break :blk o;
+            break :blk out;
         },
-        else => aero.computeEnv(p, Vr, w, rcg, h, d, env),
+        else => aero.computeEnv(params, Vr, body_rates, rcg, height, deflections, env),
     };
 }

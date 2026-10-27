@@ -23,7 +23,7 @@
 //!   - o tubo segue o eixo do motor (não é desviado pelo α nem pela asa);
 //!   - sem interação hélice → hélice e asa → hélice.
 const std = @import("std");
-const fm = @import("../math/fmath.zig");
+const fmath = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
 const collision = @import("../collision/collision.zig");
 const V3 = vec.V3;
@@ -34,9 +34,9 @@ pub const TubeShape = struct {
     V: f64,
     w0: f64,
 
-    fn radius(ctx: *const anyopaque, x: f64) f64 {
+    fn radius(ctx: *const anyopaque, distance: f64) f64 {
         const self: *const TubeShape = @ptrCast(@alignCast(ctx));
-        return if (self.w0 > 0) radiusAt(self.R, self.V, self.w0, x) else self.R;
+        return if (self.w0 > 0) radiusAt(self.R, self.V, self.w0, distance) else self.R;
     }
 
     /// `shape` precisa viver enquanto o tubo for usado. axis_fwd: eixo de tração (o tubo vai no sentido oposto)
@@ -45,39 +45,40 @@ pub const TubeShape = struct {
     }
 };
 
-/// a forma do tubo de um motor com tração T a V (w0 da teoria do momento; T ≤ 0: cilindro)
-pub fn shape(T: f64, V: f64, R: f64, rho: f64) TubeShape {
-    return .{ .R = R, .V = @max(V, 0.0), .w0 = diskInduced(T, V, R, rho) };
+/// a forma do tubo de um motor com tração `thrust` e velocidade axial `axial_speed` (w0 da teoria do momento; T ≤ 0: cilindro)
+pub fn shape(thrust: f64, axial_speed: f64, radius: f64, rho: f64) TubeShape {
+    return .{ .R = radius, .V = @max(axial_speed, 0.0), .w0 = diskInduced(thrust, axial_speed, radius, rho) };
 }
 
-/// w0 da teoria do momento (m/s). V: velocidade axial através do disco (≥ 0); T ≤ 0: sem esteira
-pub fn diskInduced(T: f64, V: f64, R: f64, rho: f64) f64 {
-    if (T <= 0 or R <= 0 or rho <= 0) return 0;
-    const A = fm.pi * R * R;
-    const Vp = @max(V, 0.0);
-    return -0.5 * Vp + @sqrt(0.25 * Vp * Vp + T / (2.0 * rho * A));
+/// w0 da teoria do momento (m/s). axial_speed: velocidade axial através do disco (≥ 0); T ≤ 0: sem esteira
+pub fn diskInduced(thrust: f64, axial_speed: f64, radius: f64, rho: f64) f64 {
+    if (thrust <= 0 or radius <= 0 or rho <= 0) return 0;
+    const disk_area = fmath.pi * radius * radius;
+    const speed_in = @max(axial_speed, 0.0);
+    return -0.5 * speed_in + @sqrt(0.25 * speed_in * speed_in + thrust / (2.0 * rho * disk_area));
 }
 
-/// w(x) no eixo, x a partir do disco (positivo para trás)
-pub fn axialAt(w0: f64, R: f64, x: f64) f64 {
-    return w0 * (1.0 + x / @sqrt(x * x + R * R));
+/// w(x) no eixo, com x = `distance` a partir do disco (positivo para trás)
+pub fn axialAt(w0: f64, radius: f64, distance: f64) f64 {
+    return w0 * (1.0 + distance / @sqrt(distance * distance + radius * radius));
 }
 
-/// raio do tubo em x (continuidade)
-pub fn radiusAt(R: f64, V: f64, w0: f64, x: f64) f64 {
-    const Vp = @max(V, 0.0);
-    const u = Vp + axialAt(w0, R, x);
-    if (u <= 1e-9) return R;
-    return R * @sqrt((Vp + w0) / u);
+/// raio do tubo a `distance` do disco (continuidade)
+pub fn radiusAt(radius: f64, axial_speed: f64, w0: f64, distance: f64) f64 {
+    const speed_in = @max(axial_speed, 0.0);
+    const speed_out = speed_in + axialAt(w0, radius, distance);
+    if (speed_out <= 1e-9) return radius;
+    return radius * @sqrt((speed_in + w0) / speed_out);
 }
 
 /// Ω0 (rad/s) do giro de corpo rígido no disco a partir do torque
-pub fn swirlRate(Q: f64, V: f64, w0: f64, R: f64, rho: f64) f64 {
-    const u = @max(V, 0.0) + w0;
-    if (u <= 1e-9 or R <= 0 or rho <= 0) return 0;
-    return 2.0 * Q / (fm.pi * rho * u * R * R * R * R);
+pub fn swirlRate(torque: f64, axial_speed: f64, w0: f64, radius: f64, rho: f64) f64 {
+    const speed_through = @max(axial_speed, 0.0) + w0;
+    if (speed_through <= 1e-9 or radius <= 0 or rho <= 0) return 0;
+    return 2.0 * torque / (fmath.pi * rho * speed_through * radius * radius * radius * radius);
 }
 
+/// a esteira num ponto: velocidade axial a mais, giro, raio do tubo ali e se o ponto está dentro
 pub const Point = struct {
     axial: f64 = 0, // velocidade a mais do ar, para trás ao longo do eixo (m/s)
     swirl: V3 = vec.zero, // velocidade do ar do giro (m/s, corpo)
@@ -85,83 +86,83 @@ pub const Point = struct {
     inside: bool = false,
 };
 
-/// a esteira de um motor no ponto `d = r_ponto − r_cubo` (corpo); eT: eixo de tração (para a frente)
-pub fn at(T: f64, Q: f64, V: f64, R: f64, rho: f64, sense: f64, eT: V3, d: V3, use_axial: bool, use_swirl: bool) Point {
-    const w0 = diskInduced(T, V, R, rho);
+/// a esteira de um motor no ponto `offset = r_ponto − r_cubo` (corpo); eT: eixo de tração (para a frente)
+pub fn at(thrust: f64, torque: f64, axial_speed: f64, radius: f64, rho: f64, sense: f64, eT: V3, offset: V3, use_axial: bool, use_swirl: bool) Point {
+    const w0 = diskInduced(thrust, axial_speed, radius, rho);
     if (w0 <= 0) return .{};
-    const x = -vec.dot(d, eT); // para trás do disco: x > 0
-    const rad = d + eT * vec.splat(x); // componente perpendicular ao eixo
+    const distance = -vec.dot(offset, eT); // para trás do disco: x > 0
+    const rad = offset + eT * vec.splat(distance); // componente perpendicular ao eixo
     const rr = vec.norm(rad);
-    const Rx = radiusAt(R, V, w0, x);
+    const Rx = radiusAt(radius, axial_speed, w0, distance);
     if (rr > Rx) return .{ .R = Rx };
-    var o = Point{ .R = Rx, .inside = true };
-    if (use_axial) o.axial = axialAt(w0, R, x);
-    if (use_swirl and x > 0) {
-        const Om = swirlRate(Q, V, w0, R, rho) * (R / Rx) * (R / Rx);
+    var out = Point{ .R = Rx, .inside = true };
+    if (use_axial) out.axial = axialAt(w0, radius, distance);
+    if (use_swirl and distance > 0) {
+        const omega = swirlRate(torque, axial_speed, w0, radius, rho) * (radius / Rx) * (radius / Rx);
         // ar girando com a hélice: ω_esteira = sense Ω eT; v = ω × r
-        o.swirl = vec.cross(eT * vec.splat(sense * Om), rad);
+        out.swirl = vec.cross(eT * vec.splat(sense * omega), rad);
     }
-    return o;
+    return out;
 }
 
 const testing = std.testing;
 
 test "momento: T = 2ρA w0 (V + w0), estático w0 = √(T/(2ρA))" {
-    const R: f64 = 0.19;
+    const radius: f64 = 0.19;
     const rho: f64 = 1.225;
-    const A = fm.pi * R * R;
-    for ([_]f64{ 0, 5, 12, 20 }) |V| {
-        const w0 = diskInduced(30.0, V, R, rho);
-        try testing.expectApproxEqRel(30.0, 2.0 * rho * A * w0 * (V + w0), 1e-12);
+    const disk_area = fmath.pi * radius * radius;
+    for ([_]f64{ 0, 5, 12, 20 }) |axial_speed| {
+        const w0 = diskInduced(30.0, axial_speed, radius, rho);
+        try testing.expectApproxEqRel(30.0, 2.0 * rho * disk_area * w0 * (axial_speed + w0), 1e-12);
     }
-    try testing.expectApproxEqRel(@sqrt(30.0 / (2.0 * rho * A)), diskInduced(30.0, 0, R, rho), 1e-12);
-    try testing.expectEqual(@as(f64, 0), diskInduced(0, 10, R, rho));
-    try testing.expectEqual(@as(f64, 0), diskInduced(-3, 10, R, rho));
+    try testing.expectApproxEqRel(@sqrt(30.0 / (2.0 * rho * disk_area)), diskInduced(30.0, 0, radius, rho), 1e-12);
+    try testing.expectEqual(@as(f64, 0), diskInduced(0, 10, radius, rho));
+    try testing.expectEqual(@as(f64, 0), diskInduced(-3, 10, radius, rho));
 }
 
 test "eixo: w(0) = w0, w(∞) → 2 w0, w(−∞) → 0; contração por continuidade" {
     const w0: f64 = 4.0;
-    const R: f64 = 0.2;
-    try testing.expectApproxEqAbs(w0, axialAt(w0, R, 0), 1e-12);
-    try testing.expectApproxEqRel(2.0 * w0, axialAt(w0, R, 1e4), 1e-6);
-    try testing.expect(axialAt(w0, R, -1e4) < 1e-6);
-    const V: f64 = 10.0;
-    const Rx = radiusAt(R, V, w0, 5.0);
-    try testing.expectApproxEqRel((V + w0) * R * R, (V + axialAt(w0, R, 5.0)) * Rx * Rx, 1e-12);
-    try testing.expect(Rx < R);
+    const radius: f64 = 0.2;
+    try testing.expectApproxEqAbs(w0, axialAt(w0, radius, 0), 1e-12);
+    try testing.expectApproxEqRel(2.0 * w0, axialAt(w0, radius, 1e4), 1e-6);
+    try testing.expect(axialAt(w0, radius, -1e4) < 1e-6);
+    const axial_speed: f64 = 10.0;
+    const Rx = radiusAt(radius, axial_speed, w0, 5.0);
+    try testing.expectApproxEqRel((axial_speed + w0) * radius * radius, (axial_speed + axialAt(w0, radius, 5.0)) * Rx * Rx, 1e-12);
+    try testing.expect(Rx < radius);
 }
 
 test "giro: o fluxo de momento angular no disco é o torque" {
-    const R: f64 = 0.19;
+    const radius: f64 = 0.19;
     const rho: f64 = 1.225;
-    const V: f64 = 8.0;
-    const Q: f64 = 1.3;
-    const w0 = diskInduced(30.0, V, R, rho);
-    const Om = swirlRate(Q, V, w0, R, rho);
+    const axial_speed: f64 = 8.0;
+    const torque: f64 = 1.3;
+    const w0 = diskInduced(30.0, axial_speed, radius, rho);
+    const omega = swirlRate(torque, axial_speed, w0, radius, rho);
     // ∫0^R ρ (V + w0) (Ω r) r 2π r dr, numérico
-    var s: f64 = 0;
-    const n: usize = 4000;
-    const dr = R / @as(f64, @floatFromInt(n));
-    for (0..n) |k| {
-        const r = (@as(f64, @floatFromInt(k)) + 0.5) * dr;
-        s += rho * (V + w0) * Om * r * r * 2.0 * fm.pi * r * dr;
+    var flux: f64 = 0;
+    const steps: usize = 4000;
+    const dr = radius / @as(f64, @floatFromInt(steps));
+    for (0..steps) |k| {
+        const position = (@as(f64, @floatFromInt(k)) + 0.5) * dr;
+        flux += rho * (axial_speed + w0) * omega * position * position * 2.0 * fmath.pi * position * dr;
     }
-    try testing.expectApproxEqRel(Q, s, 1e-6);
+    try testing.expectApproxEqRel(torque, flux, 1e-6);
 }
 
 test "ponto: fora do tubo nada; sentido inverte o giro; à frente sem giro" {
     const eT = V3{ 1, 0, 0 };
     const back = V3{ -0.5, 0.1, 0 }; // 0,5 m atrás, 0,1 m à direita
-    const a = at(30, 1.2, 10, 0.19, 1.225, 1, eT, back, true, true);
-    const b = at(30, 1.2, 10, 0.19, 1.225, -1, eT, back, true, true);
-    try testing.expect(a.inside and a.axial > 0);
-    try testing.expectApproxEqAbs(a.swirl[2], -b.swirl[2], 1e-12);
-    try testing.expect(@abs(a.swirl[2]) > 0);
+    const clockwise = at(30, 1.2, 10, 0.19, 1.225, 1, eT, back, true, true);
+    const counter = at(30, 1.2, 10, 0.19, 1.225, -1, eT, back, true, true);
+    try testing.expect(clockwise.inside and clockwise.axial > 0);
+    try testing.expectApproxEqAbs(clockwise.swirl[2], -counter.swirl[2], 1e-12);
+    try testing.expect(@abs(clockwise.swirl[2]) > 0);
     const out = at(30, 1.2, 10, 0.19, 1.225, 1, eT, V3{ -0.5, 0.5, 0 }, true, true);
     try testing.expect(!out.inside and out.axial == 0);
     const ahead = at(30, 1.2, 10, 0.19, 1.225, 1, eT, V3{ 0.1, 0.05, 0 }, true, true);
     try testing.expect(ahead.inside and ahead.axial > 0 and ahead.axial < diskInduced(30, 10, 0.19, 1.225));
     try testing.expectEqual(@as(f64, 0), vec.norm(ahead.swirl));
     // horário visto de trás, ponto à direita (+y): o ar desce na direita? ω = +x, r = +y ⇒ ω × r = +z (para baixo)
-    try testing.expect(a.swirl[2] > 0);
+    try testing.expect(clockwise.swirl[2] > 0);
 }

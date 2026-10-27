@@ -179,8 +179,10 @@ class _Plot2D(QtWidgets.QWidget):
                     if not tab.get("_nolegend"):
                         leg.addItem(c1, tex(lab))
                     continue
+                if (sym or s.scatter) and not np.isfinite(xs + ys).any():
+                    continue                      # marcador sem nenhum ponto válido: o pyqtgraph avisa (All-NaN slice)
                 if sym:
-                    size = float(tab.get("_size", 18 if sym == "star" else 11))
+                    size =float(tab.get("_size", 18 if sym == "star" else 11))
                     it = p.plot(xs, ys, pen=_pen(col_, width, dash) if tab.get("_line") else None,
                                 symbol=SYMBOLS.get(sym, sym), symbolSize=size, symbolBrush=col_,
                                 symbolPen=pg.mkPen("k", width=0.8))

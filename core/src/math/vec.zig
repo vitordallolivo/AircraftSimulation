@@ -1,55 +1,61 @@
 //! Vetores 3D em registradores SIMD (@Vector) e matrizes 3x3 por linhas.
 const std = @import("std");
-const fm = @import("fmath.zig");
+const fmath = @import("fmath.zig");
 
 pub const V3 = @Vector(3, f64);
 pub const M3 = [3]V3; // linhas
 
 pub const zero: V3 = @splat(0.0);
 
-pub inline fn v3(a: [3]f64) V3 {
-    return a;
+/// o vetor SIMD a partir de um array de 3
+pub inline fn v3(components: [3]f64) V3 {
+    return components;
 }
-pub inline fn arr(x: V3) [3]f64 {
-    return x;
+/// o array de 3 a partir do vetor SIMD
+pub inline fn arr(vector: V3) [3]f64 {
+    return vector;
 }
-pub inline fn splat(s: f64) V3 {
-    return @splat(s);
+/// o vetor com as três componentes iguais a `value`
+pub inline fn splat(value: f64) V3 {
+    return @splat(value);
 }
-pub inline fn dot(a: V3, b: V3) f64 {
-    return @reduce(.Add, a * b);
+/// produto escalar
+pub inline fn dot(left: V3, right: V3) f64 {
+    return @reduce(.Add, left * right);
 }
-pub inline fn norm(a: V3) f64 {
-    return @sqrt(dot(a, a));
+/// módulo (norma euclidiana)
+pub inline fn norm(vector: V3) f64 {
+    return @sqrt(dot(vector, vector));
 }
-pub inline fn cross(a: V3, b: V3) V3 {
-    const a1 = @shuffle(f64, a, undefined, [3]i32{ 1, 2, 0 });
-    const a2 = @shuffle(f64, a, undefined, [3]i32{ 2, 0, 1 });
-    const b1 = @shuffle(f64, b, undefined, [3]i32{ 1, 2, 0 });
-    const b2 = @shuffle(f64, b, undefined, [3]i32{ 2, 0, 1 });
-    return a1 * b2 - a2 * b1;
+/// produto vetorial left × right
+pub inline fn cross(left: V3, right: V3) V3 {
+    const left_yzx = @shuffle(f64, left, undefined, [3]i32{ 1, 2, 0 });
+    const left_zxy = @shuffle(f64, left, undefined, [3]i32{ 2, 0, 1 });
+    const right_yzx = @shuffle(f64, right, undefined, [3]i32{ 1, 2, 0 });
+    const right_zxy = @shuffle(f64, right, undefined, [3]i32{ 2, 0, 1 });
+    return left_yzx * right_zxy - left_zxy * right_yzx;
 }
 
-/// R x
-pub inline fn mul(R: M3, x: V3) V3 {
-    return .{ dot(R[0], x), dot(R[1], x), dot(R[2], x) };
+/// matriz × vetor: R v
+pub inline fn mul(matrix: M3, vector: V3) V3 {
+    return .{ dot(matrix[0], vector), dot(matrix[1], vector), dot(matrix[2], vector) };
 }
-/// Rᵀ x
-pub inline fn mulT(R: M3, x: V3) V3 {
-    return R[0] * splat(x[0]) + R[1] * splat(x[1]) + R[2] * splat(x[2]);
+/// transposta × vetor: Rᵀ v
+pub inline fn mulT(matrix: M3, vector: V3) V3 {
+    return matrix[0] * splat(vector[0]) + matrix[1] * splat(vector[1]) + matrix[2] * splat(vector[2]);
 }
 
 /// matriz corpo -> NED a partir dos ângulos de Euler
 pub fn rotation(phi: f64, theta: f64, psi: f64) M3 {
-    const a = fm.sincos(phi);
-    const b = fm.sincos(theta);
-    const c = fm.sincos(psi);
-    const sph = a.s;
-    const cph = a.c;
-    const sth = b.s;
-    const cth = b.c;
-    const sps = c.s;
-    const cps = c.c;
+    const roll = fmath.sincos(phi);
+    const pitch = fmath.sincos(theta);
+    const yaw = fmath.sincos(psi);
+    const sph = roll.s;
+    const cph = roll.c;
+    const sth = pitch.s;
+    const cth = pitch.c;
+    const sps = yaw.s;
+    const cps = yaw.c;
     return .{
         .{ cth * cps, sph * sth * cps - cph * sps, cph * sth * cps + sph * sps },
         .{ cth * sps, sph * sth * sps + cph * cps, cph * sth * sps - sph * cps },
@@ -58,32 +64,32 @@ pub fn rotation(phi: f64, theta: f64, psi: f64) M3 {
 }
 
 /// resolve A x = b (3x3) pela inversa por produtos vetoriais
-pub fn solve3(A: M3, b: V3) V3 {
-    const c0 = cross(A[1], A[2]);
-    const c1 = cross(A[2], A[0]);
-    const c2 = cross(A[0], A[1]);
-    const det = dot(A[0], c0);
-    return (c0 * splat(b[0]) + c1 * splat(b[1]) + c2 * splat(b[2])) / splat(det);
+pub fn solve3(matrix: M3, rhs: V3) V3 {
+    const cofactor0 = cross(matrix[1], matrix[2]);
+    const cofactor1 = cross(matrix[2], matrix[0]);
+    const cofactor2 = cross(matrix[0], matrix[1]);
+    const det = dot(matrix[0], cofactor0);
+    return (cofactor0 * splat(rhs[0]) + cofactor1 * splat(rhs[1]) + cofactor2 * splat(rhs[2])) / splat(det);
 }
 
 const testing = std.testing;
 
 test "cross e solve3" {
-    const a = V3{ 1, 2, 3 };
-    const b = V3{ -2, 0.5, 4 };
-    const c = cross(a, b);
-    try testing.expectApproxEqAbs(@as(f64, 2 * 4 - 3 * 0.5), c[0], 1e-14);
-    try testing.expectApproxEqAbs(@as(f64, 3 * -2 - 1 * 4), c[1], 1e-14);
-    try testing.expectApproxEqAbs(@as(f64, 1 * 0.5 - 2 * -2), c[2], 1e-14);
-    const A = M3{ .{ 4, 1, 0.2 }, .{ 0.5, 3, -1 }, .{ 0.1, -0.3, 2 } };
-    const x = V3{ 0.3, -1.2, 2.5 };
-    const y = solve3(A, mul(A, x));
-    inline for (0..3) |i| try testing.expectApproxEqAbs(x[i], y[i], 1e-12);
+    const left = V3{ 1, 2, 3 };
+    const right = V3{ -2, 0.5, 4 };
+    const product = cross(left, right);
+    try testing.expectApproxEqAbs(@as(f64, 2 * 4 - 3 * 0.5), product[0], 1e-14);
+    try testing.expectApproxEqAbs(@as(f64, 3 * -2 - 1 * 4), product[1], 1e-14);
+    try testing.expectApproxEqAbs(@as(f64, 1 * 0.5 - 2 * -2), product[2], 1e-14);
+    const matrix = M3{ .{ 4, 1, 0.2 }, .{ 0.5, 3, -1 }, .{ 0.1, -0.3, 2 } };
+    const expected = V3{ 0.3, -1.2, 2.5 };
+    const solved = solve3(matrix, mul(matrix, expected));
+    inline for (0..3) |i| try testing.expectApproxEqAbs(expected[i], solved[i], 1e-12);
 }
 
 test "rotation ortogonal" {
-    const R = rotation(0.3, -0.2, 1.1);
-    const x = V3{ 1, -2, 0.5 };
-    const y = mulT(R, mul(R, x));
-    inline for (0..3) |i| try testing.expectApproxEqAbs(x[i], y[i], 1e-12);
+    const matrix = rotation(0.3, -0.2, 1.1);
+    const original = V3{ 1, -2, 0.5 };
+    const back = mulT(matrix, mul(matrix, original));
+    inline for (0..3) |i| try testing.expectApproxEqAbs(original[i], back[i], 1e-12);
 }

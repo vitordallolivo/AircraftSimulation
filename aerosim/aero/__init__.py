@@ -11,6 +11,7 @@ from aerosim.interfaces.aero import DERIVATIVES, AeroCase, AeroPolar, IAeroSolve
 
 from .asb_solver import AsbBuildupSolver, AsbLiftingLineSolver, AsbVLMLoads, AsbVLMSolver
 from .avl_solver import AvlSolver
+from .llt_solver import CoreLLTSolver
 from .lltdrek_solver import LltdrekSolver
 from .xflr5_import import Xflr5PolarFile
 from .zig_solver import ZigPanelSolver
@@ -18,7 +19,7 @@ from .zig_solver import ZigPanelSolver
 
 def all_solvers(backend) -> list[IAeroSolver]:
     return [ZigPanelSolver(backend), LltdrekSolver(), AsbVLMSolver(), AsbBuildupSolver(), AsbLiftingLineSolver(),
-            AvlSolver()]
+            AvlSolver(), CoreLLTSolver(backend), CoreLLTSolver(backend, gh=True)]
 
 
 def all_load_methods(backend, refine: bool = True) -> list:
@@ -85,5 +86,6 @@ def polar_metrics(pol: AeroPolar, model, case: AeroCase) -> dict[str, float]:
 
 
 __all__ = ["DERIVATIVES", "AeroCase", "AeroPolar", "AsbBuildupSolver", "AsbLiftingLineSolver", "AsbVLMSolver", "AvlSolver",
+           "CoreLLTSolver",
            "IAeroSolver", "LltdrekSolver", "ZigPanelSolver", "all_solvers", "parabolic_polar", "polar_metrics",
            "solver_by_name", "Xflr5PolarFile"]

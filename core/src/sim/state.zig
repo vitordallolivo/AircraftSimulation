@@ -1,49 +1,86 @@
 //! Layout do vetor de estados (definido em comptime a partir dos limites)
 //! e o estado discreto de uma corrida (o que vai no checkpoint).
-const L = @import("../limits.zig");
-const T = @import("../types.zig");
+const limits = @import("../limits.zig");
+const types = @import("../types.zig");
 
-pub const N = 0;
-pub const E = 1;
-pub const D = 2;
-pub const PHI = 3;
-pub const THE = 4;
-pub const PSI = 5;
-pub const U = 6;
-pub const V = 7;
-pub const W = 8;
-pub const P = 9;
-pub const Q = 10;
-pub const R = 11;
-pub const IH = 12; // integradores do piloto
-pub const IV = 13;
-pub const ITH = 14;
-pub const IE = 15;
-pub const HR = 16; // altura de referência filtrada
-pub const PHC = 17; // inclinação pedida filtrada
-pub const EN = 18; // energia tirada das baterias (J)
-pub const SL = 19; // deslizamento da carga
-pub const SLD = 20;
-pub const RPS0 = 21; // rotação de cada motor (rps)
-pub const SLOSH0 = RPS0 + L.max_props; // por tanque: ex, ey, exd, eyd
-pub const nx = SLOSH0 + 4 * L.max_tanks;
+/// o que fica em cada posição do vetor de estados, na ordem
+pub const Entry = enum(usize) {
+    /// posição norte (m, NED)
+    north,
+    /// posição leste (m, NED)
+    east,
+    /// posição para baixo (m, NED; altura = −down)
+    down,
+    /// rolamento φ (rad)
+    roll,
+    /// arfagem θ (rad)
+    pitch,
+    /// guinada ψ (rad)
+    yaw,
+    /// velocidade u no corpo (m/s)
+    vel_x,
+    /// velocidade v no corpo (m/s)
+    vel_y,
+    /// velocidade w no corpo (m/s)
+    vel_z,
+    /// taxa de rolamento p no corpo (rad/s)
+    rate_p,
+    /// taxa de arfagem q no corpo (rad/s)
+    rate_q,
+    /// taxa de guinada r no corpo (rad/s)
+    rate_r,
+    /// integrador do piloto: erro de altura
+    int_height,
+    /// integrador do piloto: erro de velocidade
+    int_speed,
+    /// integrador do piloto: erro de α
+    int_alpha,
+    /// integrador do piloto: erro de trajetória (desvio lateral)
+    int_track,
+    /// altura de referência filtrada
+    ref_height,
+    /// inclinação pedida filtrada
+    bank_cmd,
+    /// energia tirada das baterias (J)
+    energy,
+    /// deslizamento da carga
+    cargo_slide,
+    /// velocidade de deslizamento da carga
+    cargo_slide_rate,
+    /// rotação do primeiro motor (rps); os outros seguem, max_props posições a partir daqui
+    rps0 = 21,
+    /// líquido do primeiro tanque: ex, ey, exd, eyd; 4 posições por tanque
+    slosh0 = 21 + limits.max_props,
+};
+
+/// posição de `entry` no vetor de estados
+pub inline fn index(comptime entry: Entry) usize {
+    return @intFromEnum(entry);
+}
+
+pub const nx = index(.slosh0) + 4 * limits.max_tanks;
 
 pub const Vec = @Vector(nx, f64);
 
-pub inline fn rps(i: usize) usize {
-    return RPS0 + i;
+/// índice da rotação (rps) do motor prop_index
+pub inline fn rps(prop_index: usize) usize {
+    return index(.rps0) + prop_index;
 }
-pub inline fn sx(i: usize) usize {
-    return SLOSH0 + 4 * i;
+/// índice do deslocamento x do líquido do tanque tank_index
+pub inline fn sx(tank_index: usize) usize {
+    return index(.slosh0) + 4 * tank_index;
 }
-pub inline fn sy(i: usize) usize {
-    return SLOSH0 + 4 * i + 1;
+/// índice do deslocamento y do líquido do tanque tank_index
+pub inline fn sy(tank_index: usize) usize {
+    return index(.slosh0) + 4 * tank_index + 1;
 }
-pub inline fn sxd(i: usize) usize {
-    return SLOSH0 + 4 * i + 2;
+/// índice da velocidade x do líquido do tanque tank_index
+pub inline fn sxd(tank_index: usize) usize {
+    return index(.slosh0) + 4 * tank_index + 2;
 }
-pub inline fn syd(i: usize) usize {
-    return SLOSH0 + 4 * i + 3;
+/// índice da velocidade y do líquido do tanque tank_index
+pub inline fn syd(tank_index: usize) usize {
+    return index(.slosh0) + 4 * tank_index + 3;
 }
 
 /// modos discretos (mudam só entre passos)
@@ -58,7 +95,7 @@ pub const Flags = extern struct {
     released: i32 = 0,
     pk_flying: i32 = 0,
     _pad: i32 = 0,
-    ev_done: [L.max_events]i32 = [_]i32{0} ** L.max_events,
+    ev_done: [limits.max_events]i32 = [_]i32{0} ** limits.max_events,
 };
 
 /// tudo o que define o instante (checkpoint). Os parâmetros NÃO vão junto:
@@ -73,14 +110,14 @@ pub const Run = extern struct {
     next_log: f64 = 0,
     pk: [6]f64 = [_]f64{0} ** 6,
     f: Flags = .{},
-    ev: T.Events = .{},
+    ev: types.Events = .{},
     valid: i32 = 0,
     _pad: i32 = 0,
 };
 
 /// visão "somente leitura" usada pelos módulos de física
 pub const Ctx = struct {
-    p: *const T.Params,
+    p: *const types.Params,
     f: *const Flags,
     tR: f64,
     h_ground: f64,

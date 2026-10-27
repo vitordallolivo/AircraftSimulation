@@ -55,8 +55,14 @@ NONGEOM = [("airfield", "🛫 Pista: chão, mesa e plataforma"), ("mass", "Massa
 
 def mount_choices(ac, s) -> tuple[str, ...]:
     """onde a superfície `s` pode se prender: solta, na ponta de cada tubo, na ponta de cada outra superfície"""
-    return (("solta",) + tuple(f"tubo:{i}" for i in range(len(ac.booms)))
-            + tuple(f"ponta:{j}" for j, t in enumerate(ac.surfaces) if t is not s))
+    tips = []
+    for j, t in enumerate(ac.surfaces):
+        if t is s:
+            continue
+        tips.append(f"ponta:{j}")
+        if t.symmetric and not t.vertical:           # as duas pontas de uma superfície espelhada (cauda em H)
+            tips += [f"ponta_dir:{j}", f"ponta_esq:{j}"]
+    return ("solta",) + tuple(f"tubo:{i}" for i in range(len(ac.booms))) + tuple(tips)
 
 
 class ConfigTab(QtWidgets.QWidget):
@@ -326,6 +332,7 @@ class ConfigTab(QtWidgets.QWidget):
         kind, _, idx = key.partition(":")
         ac = self.state.aircraft
         if kind == "surface":
+            ac.unlink_wing(ac.surfaces[int(idx)])        # a asa que ficar sozinha no grupo sai dele
             del ac.surfaces[int(idx)]
         elif kind == "prop":
             del ac.propulsion[int(idx)]
@@ -367,7 +374,9 @@ class ConfigTab(QtWidgets.QWidget):
                          if self.comp_list.currentItem() else None)
         self.comp_list.blockSignals(True)
         self.comp_list.clear()
-        items = [(f"surface:{i}", f"✈ {s.name} ({s.role})") for i, s in enumerate(ac.surfaces)]
+        linked = lambda s: " 🔗 " + ", ".join(t.name for t in ac.wing_group(s) if t is not s) \
+            if s.role == "wing" and len(ac.wing_group(s)) > 1 else ""
+        items = [(f"surface:{i}", f"✈ {s.name} ({s.role})" + linked(s)) for i, s in enumerate(ac.surfaces)]
         items += [(f"prop:{i}", f"⚙ {u.name}") for i, u in enumerate(ac.propulsion)]
         items += [(f"tank:{i}", f"▣ {t.name}") for i, t in enumerate(ac.tanks)]
         off = lambda on: "" if on else " (desligado)"
@@ -433,6 +442,8 @@ class ConfigTab(QtWidgets.QWidget):
         if field in ("name", "enabled"):
             self._fill_list()
         self.state.notify("geometry")
+        if field == "mount" and self.form is not None:      # presa em outro lugar: x, y, z mudaram
+            self.form.refresh()
 
     def _edit(self, key):
         ac = self.state.aircraft
@@ -443,9 +454,11 @@ class ConfigTab(QtWidgets.QWidget):
         self.form = None
         if kind == "surface":
             s = ac.surfaces[int(idx)]
-            self.form = DataclassForm(s, exclude=("sections", "controls", "airfoil", "devices"),
+            self.form = DataclassForm(s, exclude=("sections", "controls", "airfoil", "devices", "group"),
                                       choices={"mount": mount_choices(ac, s)})
             v.addWidget(self.form)
+            if s.role == "wing":
+                v.addWidget(self._group_editor(s))
             v.addWidget(self._sections_editor(s))
             v.addWidget(self._controls_editor(s))
             if not s.vertical:
@@ -894,6 +907,39 @@ class ConfigTab(QtWidgets.QWidget):
         v.addWidget(pw)
         v.addWidget(info)
         plot()
+        return box
+
+    def _group_editor(self, s: LiftingSurface) -> QtWidgets.QWidget:
+        """liga esta asa a outra (tandem, biplano): as duas viram a referência do avião (áreas somadas, CMA
+        equivalente). Quem guarda o vínculo é o modelo; aqui só se escolhe com quem"""
+        ac = self.state.aircraft
+        box = QtWidgets.QGroupBox("Asas ligadas (tandem, biplano)")
+        box.setObjectName("group_box")
+        h = QtWidgets.QHBoxLayout(box)
+        h.addWidget(QtWidgets.QLabel("ligada a"))
+        combo = QtWidgets.QComboBox()
+        combo.setObjectName("group_combo")
+        combo.setToolTip("asas ligadas formam um conjunto só: a área de referência é a soma, a CMA é a média "
+                         "pela área e a margem estática se mede nela. A linha sustentadora e o VLM já calculam "
+                         "a interferência entre elas")
+        others = [t for t in ac.surfaces if t is not s and t.role == "wing"]
+        combo.addItem("(nenhuma)")
+        for t in others:
+            combo.addItem(t.name)
+        mates = [t for t in ac.wing_group(s) if t is not s] if s.group else []
+        if mates:
+            combo.setCurrentIndex(others.index(mates[0]) + 1)
+        h.addWidget(combo, 1)
+
+        def pick(i):
+            if i <= 0:
+                ac.unlink_wing(s)
+            else:
+                ac.unlink_wing(s)
+                ac.link_wings(others[i - 1], s)
+            self.state.notify("geometry")
+            QtCore.QTimer.singleShot(0, self._fill_list)     # refaz a lista (e este editor) fora do sinal do combo
+        combo.currentIndexChanged.connect(pick)
         return box
 
     def _rotation_button(self, u: PropulsionUnit) -> QtWidgets.QPushButton:

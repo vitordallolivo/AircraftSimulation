@@ -170,6 +170,21 @@ def refine_surface(ac, index: int, per_side: int, tip: bool = False):
     return a
 
 
+def refine_all(backend, ac, tip: bool = False, per_side: int | None = None):
+    """todas as superfícies em `per_side` faixas por lado (None: o maior número, igual em todas, que cabe no limite de
+    painéis do núcleo; um pedido acima do limite fica no limite). tip=True: faixas mais estreitas na ponta (Phillips e
+    Snyder, para a linha sustentadora). Quem usa: a linha sustentadora como método de polar (`llt_solver.py`)"""
+    from aerosim.backend.zig.translator import native_spec
+    limit = backend.schema.limits["surfaces"]
+    for n in range(min(per_side or MAX_PER_SIDE, MAX_PER_SIDE), 0, -1):
+        a = ac
+        for i in range(len(ac.surfaces)):
+            a = refine_surface(a, i, n, tip)
+        if len(native_spec(a)["surf"]) <= limit:
+            return a
+    return ac
+
+
 def _fit(ac, index: int, limit: int, tip: bool = False):
     """a maior divisão da superfície que cabe no limite de painéis do núcleo"""
     from aerosim.backend.zig.translator import native_spec

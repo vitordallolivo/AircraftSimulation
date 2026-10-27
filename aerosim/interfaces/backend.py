@@ -187,3 +187,48 @@ class ISimBackend(ABC):
         """desempenho por cálculo simples (sem simulação): `cfg` com W, S, C_D0, K, C_Lmax, h,
         tabela de tração (thr_V, thr_T), inclinações (bank, rad), bateria... -> (colunas por V, resumo)"""
         raise NotImplementedError(f"{self.name}: desempenho simples não implementado")
+
+    def motor_prop_thrust(self, spec: dict, V, rho: float):
+        """tração em regime de um motor + hélice + bateria com acelerador cheio em cada velocidade `V` (m/s):
+        `spec` com Kv (rpm/V), Rm, B, tauc, Imax, Voc, Rint, D (m) e a tabela J, CT, CP da hélice -> array de T (N)"""
+        raise NotImplementedError(f"{self.name}: tração motor + hélice não implementada")
+
+    def local_fit(self, xs, ys, x0, r: float, quad: bool = True):
+        """y ≈ a + gᵀ(x − x₀) + ½ Σ cₖ(xₖ − x₀ₖ)² por mínimos quadrados ponderados (peso (1 − (d/r)³)³, zero fora de r) nos pontos
+        `xs` (m × n); sem `quad`, o plano. (g, c, a, resíduo, soma dos pesos), ou None se os pontos não determinam
+        todas as direções"""
+        raise NotImplementedError(f"{self.name}: modelo local não implementado")
+
+    def rbf_fit(self, xs, ys):
+        """o substituto por funções de base radial s(x) = Σ λᵢ ‖x − xᵢ‖³ + c₀ + cᵀx, que passa por todos os pontos
+        `xs` (m × n) com valores `ys`: o modelo para `rbf_eval`, ou None se os pontos não determinam a cauda linear"""
+        raise NotImplementedError(f"{self.name}: substituto RBF não implementado")
+
+    def rbf_eval(self, model, qs):
+        """o substituto de `rbf_fit` nos pontos `qs` (q × n): array de q valores"""
+        raise NotImplementedError(f"{self.name}: substituto RBF não implementado")
+
+    def sens_tolerance(self, g, c, x0, n0: float, delta):
+        """a perda de nota por uma tolerância δ em cada variável, pela inclinação g e a curvatura c (NaN = sem):
+        (ΔN em −δ, ΔN em +δ, elasticidade g·x/N, σ_N pelos dois primeiros momentos)"""
+        raise NotImplementedError(f"{self.name}: tolerância não implementada")
+
+    def morris_design(self, k: int, r: int, levels: int = 4, seed: int = 1):
+        """as r trajetórias de Morris em [0, 1]^k, numa grade de `levels` níveis: array (r, k + 1, k)"""
+        raise NotImplementedError(f"{self.name}: Morris não implementado")
+
+    def morris_effects(self, design, y):
+        """os efeitos elementares das trajetórias com as respostas y (NaN = não vale): μ, μ*, σ, passos contados"""
+        raise NotImplementedError(f"{self.name}: Morris não implementado")
+
+    def de_init(self, x0, np_: int, seed: int = 1):
+        """a população inicial da evolução diferencial: `x0` em [0, 1] na primeira linha, as outras sorteadas"""
+        raise NotImplementedError(f"{self.name}: evolução diferencial não implementada")
+
+    def de_trials(self, pop, f: float = 0.7, cr: float = 0.9, seed: int = 1, generation: int = 0):
+        """os testes de uma geração da evolução diferencial (DE/rand/1/bin), um por indivíduo"""
+        raise NotImplementedError(f"{self.name}: evolução diferencial não implementada")
+
+    def de_select(self, pop, fit, trials, tfit) -> int:
+        """a seleção da evolução diferencial: o teste que não é pior entra no lugar (muda pop e fit)"""
+        raise NotImplementedError(f"{self.name}: evolução diferencial não implementada")

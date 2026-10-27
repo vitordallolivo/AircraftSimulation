@@ -25,6 +25,15 @@ class Features:
     payload: bool = False         # carga que é solta
     multi_engine: bool = False    # mais de um motor fora do plano de simetria
     gear: bool = True
+    wing_group: list[LiftingSurface] = field(default_factory=list)   # asas ligadas à principal (ela inclusa)
+
+    @property
+    def arrangement(self) -> str:
+        """'tandem' ou 'biplano' pela geometria das asas ligadas (desnível maior que o recuo: biplano); '' sem grupo"""
+        if len(self.wing_group) < 2:
+            return ""
+        a, b = self.wing_group[0], self.wing_group[1]
+        return "biplano" if abs(a.z - b.z) > abs(a.x - b.x) else "tandem"
 
     @property
     def tailless(self) -> bool:
@@ -59,7 +68,12 @@ class Features:
         return sum(hs) / len(hs) / self.wing.span if hs else 0.0
 
     def summary(self) -> str:
-        parts = ["asa voadora (sem EH)" if self.tailless else f"EH: {self.htail.name}"]
+        if self.arrangement:
+            parts = [f"{self.arrangement}: " + " + ".join(w.name for w in self.wing_group)]
+            if self.htail is not None:
+                parts.append(f"EH: {self.htail.name}")
+        else:
+            parts = ["asa voadora (sem EH)" if self.tailless else f"EH: {self.htail.name}"]
         if self.pitch:
             parts.append(f"arfagem por {self.pitch_kind}")
         if self.roll:
@@ -85,12 +99,16 @@ def features(ac: Aircraft) -> Features:
     surfs = [s for s in ac.surfaces if _ok(s)]
     f.wing = next((s for s in surfs if s.role == "wing"), None)
     f.htail = next((s for s in surfs if s.role == "htail"), None)
-    bw = f.wing.semispan if f.wing is not None else 0.0
+    f.wing_group = [w for w in ac.wing_group(f.wing) if _ok(w)] if f.wing is not None else []
+
+    def at_tip(s, w):
+        bw = w.semispan
+        return bw > 0 and abs(abs(s.y) - (w.y + bw)) < 0.08 * bw
     for s in surfs:
         if not s.vertical or s.role == "wing":
             continue
-        at_tip = f.wing is not None and bw > 0 and abs(abs(s.y) - (f.wing.y + bw)) < 0.08 * bw
-        (f.tip_devices if at_tip else f.vtail).append(s)
+        tip = any(at_tip(s, w) for w in (f.wing_group or ([f.wing] if f.wing is not None else [])))
+        (f.tip_devices if tip else f.vtail).append(s)
 
     def find(kinds):
         for s in surfs:

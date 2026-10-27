@@ -1,0 +1,58 @@
+# SAE BRASIL AeroDesign 2026, classe Regular: nota de voo por bateria.
+# Fonte: Regulamento SAE BRASIL AeroDesign 2026 (inglês), seção 7, p. 46-59: restrições físicas R[7.2.0.1] (eq. 7.1),
+# MTOW R[7.6.0.1], pontuação 7.7.1 a 7.7.4 (eqs. 7.2 a 7.5) e decolagem válida R[7.8.0.1]. O texto extraído do PDF
+# sai com os expoentes desalinhados: o fator de envergadura 1,15^(−b) da eq. 7.5 e o limite B ≤ 4,0 m da eq. 7.1
+# estão a conferir no PDF.
+#
+# Grandezas de entrada, em SI (o avaliador entrega assim):
+#   cp      carga paga (kg)
+#   pv      peso vazio (kg)
+#   s_to    corrida de decolagem (m)
+#   b       envergadura (m)
+#   n_sup   N: superfícies sustentadoras com função longitudinal (asa ou asas, EH ou cauda em V), no máximo 3
+#
+# Fica de fora da nota otimizada (não depende do projeto, ou é ponto somado de operação):
+#   F_PV (7.3): acerto da previsão do PV, entre 0,80 e 1,10 -> constante f_pv
+#   F_PR (7.4): nota do relatório, entre 0,50 e 1,00 -> constante f_pr
+#   P_AC (7.6), B_PO (7.7), B_RC (7.8), B_CF (7.9): previsão da carga, pouso, retirada da carga e repetibilidade
+#   P_P (eq. de NC[7.2.0.1]): potência acima de 600 W. O avaliador ainda não entrega a potência de pico em voo
+
+nome = "SAE BRASIL AeroDesign 2026, classe Regular"
+fonte = "Regulamento SAE BRASIL AeroDesign 2026, seção 7, p. 46-59"
+entradas = ["cp", "pv", "s_to", "b", "n_sup"]
+
+[constantes]
+f_pv = 1.10        # (7.3) com o PV previsto igual ao medido
+f_pr = 1.0         # (7.4) com a nota máxima do relatório
+
+# P_D (NC[7.2.0.1]): passar mais de 50 mm do limite de envergadura soma 20 pontos à penalidade
+[faixas.pd_extra]
+grandeza = "max(b - 4.0, 0)"
+limites = [0.05]
+valores = [0.0]
+fora = 20.0
+
+# Os termos em ordem: cada um pode usar as entradas, as constantes, as faixas e os termos acima dele.
+[termos]
+cp_v = "max(min(cp, 20 - pv), 0)"                                    # NC[7.6.0.1]: o que passa de 20 kg não conta
+ee = "cp_v / pv"                                                     # EE = CP / PV (7.7.1)
+p_ee = "50 * ee"                                                     # (7.2)
+f_n = "0.185 * n_sup ^ 2 - 0.775 * n_sup + 1.81"                     # (7.5): N = 1 dá 1,22; 2 dá 1,00; 3 dá 1,15
+p_voo = "f_pv * f_pr * p_ee * f_n * 1.15 ^ (0 - b)"                  # (7.5)
+pd = "100 * max(b - 4.0, 0) + pd_extra"                              # NC[7.2.0.1], Δd em metros
+
+[nota]
+expressao = "p_voo - pd"
+
+# Condições de voo válido: entram no problema como restrições
+[[validade]]
+expressao = "s_to"
+op = "≤"
+valor = 55.0
+fonte = "R[7.8.0.1]: passar o obstáculo de 0,90 m a 55 m do início da corrida (a corrida da sprint até sair do chão)"
+
+[[validade]]
+expressao = "n_sup"
+op = "≤"
+valor = 3.0
+fonte = "7.7.4: N vale no máximo 3"

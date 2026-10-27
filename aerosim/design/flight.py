@@ -4,13 +4,21 @@ acionamento do profundor, a deflexão e, se precisar, o profundor picando na cor
 from __future__ import annotations
 
 import math
+from concurrent.futures import ThreadPoolExecutor
 
 from aerosim.manager import takeoff_opt as TO
+from aerosim.manager.simulations.base import WORKERS
+
+
+def _parallel(fn, items):
+    """as decolagens da grade em threads (cada uma com a sua sessão no núcleo)"""
+    with ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        return list(ex.map(fn, items))
 
 
 def tune_takeoff(ac, backend) -> tuple[bool, str]:
     """(decolou?, explicação); com sucesso, grava a decolagem achada no avião"""
-    best, _ = TO.optimize(backend, ac, ac.airfield.x_warning, ac.airfield.z_warning)
+    best, _ = TO.optimize(backend, ac, ac.airfield.x_warning, ac.airfield.z_warning, _parallel)
     if not best.ok:
         return False, (f"não decola na pista ({best.status.lower()}; x_warning {ac.airfield.x_warning:g} m, "
                        f"z_warning {ac.airfield.z_warning:g} m)")

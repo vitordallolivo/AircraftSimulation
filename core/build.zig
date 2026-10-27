@@ -1,39 +1,45 @@
 //! Núcleo de simulação (camada "Sim").
 //!
 //!   zig build --release=fast       -> zig-out/lib/libaerosim.so (C ABI, usada pelo Python)
-//!   zig build test                 -> todos os testes
-//!   zig build test-math            -> só LUTs/polinômios e vetores (também test-physics, test-control, test-sim,
-//!                                     test-sizing)
+//!   zig build test                 -> todos os testes (src/tests.zig)
+//!   zig build test -Dgrupo=math    -> só um grupo: math, physics, control, sim, sizing, optim, geometry
+//!   zig build test -Dfiltro=trim   -> só os testes cujo nome contém o texto (junta com -Dgrupo)
 //!   zig build test -Dfuzz=N -Dseed=S -> fuzzing mais longo das interfaces (padrão 2000 entradas por teste)
 //!   zig build -Dfast_math=false    -> troca LUT/polinômios por std.math (referência)
 //!   zig build -Dopt=peak,cse       -> otimizações em avaliação (ver core/OTIMIZACOES.md)
+//!   zig build docs                 -> zig-out/docs: a documentação do Zig gerada dos `///` (abrir por um servidor)
 const std = @import("std");
 
-/// as otimizações de `-Dopt`: nome e bit (o código lê os bits em `math/fmath.zig`, `opt_*`)
-const opt_names = .{
-    .{ "noinline", 1 }, // sincos da tabela sem inline forçado
-    .{ "floatmode", 2 }, // float mode "optimized" nas funções quentes
-    .{ "logstd", 4 }, // log da std com as tabelas
-    .{ "peak", 8 }, // peakCL por seção áurea
-    .{ "cse", 16 }, // o painel calcula sigmaStall e sincos(α) uma vez só (hoje: duas)
-    .{ "minimax", 32 }, // sin/cos por polinômio minimax, sem tabela
-    .{ "estrin", 64 }, // o polinômio do exp por Estrin no lugar do Horner
+/// as otimizações de `-Dopt`: o enum (nome = bit) fica em `src/opt.zig`, o mesmo que o código consulta
+const Opt = @import("src/opt.zig").Opt;
+/// "noinline, floatmode, ..." (os nomes do enum, para a ajuda e a mensagem de erro)
+const opt_list = blk: {
+    var s: []const u8 = "";
+    for (@typeInfo(Opt).@"enum".fields, 0..) |f, i| s = s ++ (if (i == 0) "" else ", ") ++ f.name;
+    break :blk s;
 };
-const opt_list = "noinline, floatmode, logstd, peak, cse, minimax, estrin";
 
 /// "peak,cse" -> 24; "24" -> 24; nome desconhecido para o build com a lista
 fn optBits(text: []const u8) u8 {
     if (std.fmt.parseInt(u8, text, 10)) |n| return n else |_| {}
     var bits: u8 = 0;
     var it = std.mem.tokenizeAny(u8, text, ", +");
-    next: while (it.next()) |name| {
-        inline for (opt_names) |o| if (std.mem.eql(u8, name, o[0])) {
-            bits |= o[1];
-            continue :next;
-        };
-        std.debug.panic("-Dopt: '{s}' não existe; use {s} (ou a soma dos bits)", .{ name, opt_list });
+    while (it.next()) |name| {
+        const o = std.meta.stringToEnum(Opt, name) orelse
+            std.debug.panic("-Dopt: '{s}' não existe; use {s} (ou a soma dos bits)", .{ name, opt_list });
+        bits |= o.bit();
     }
     return bits;
+}
+
+/// os grupos de `-Dgrupo` (cada um é um bloco `test` em src/tests.zig)
+const test_groups = .{ "tudo", "math", "physics", "control", "sim", "sizing", "optim", "geometry" };
+const test_group_list = "tudo, math, physics, control, sim, sizing, optim, geometry";
+
+/// verdadeiro se `name` é um dos `test_groups`
+fn isTestGroup(name: []const u8) bool {
+    inline for (test_groups) |group| if (std.mem.eql(u8, name, group)) return true;
+    return false;
 }
 
 pub fn build(b: *std.Build) void {
@@ -73,18 +79,30 @@ pub fn build(b: *std.Build) void {
     zmod.addOptions("build_options", opts);
     b.installArtifact(lib);
 
-    // testes: tudo (`zig build test`) ou por grupo (`zig build test-math`, ...)
-    const all = b.step("test", "Roda todos os testes do núcleo");
-    inline for (.{ "math", "physics", "control", "sim", "sizing" }) |group| {
-        const m = b.createModule(.{
-            .root_source_file = b.path("src/tests_" ++ group ++ ".zig"),
-            .target = target,
-            .optimize = .Debug,
-        });
-        m.addOptions("build_options", opts);
-        const t = b.addTest(.{ .root_module = m, .name = "test-" ++ group });
-        const run = b.addRunArtifact(t);
-        b.step("test-" ++ group, "Testes do grupo " ++ group).dependOn(&run.step);
-        all.dependOn(&run.step);
-    }
+    // documentação (o autodoc do Zig): src/aerosim.zig reexporta todas as pastas (o autodoc toma como raiz o arquivo com o nome do módulo)
+    const docs_mod = b.createModule(.{ .root_source_file = b.path("src/aerosim.zig"), .target = target, .optimize = .Debug });
+    docs_mod.addOptions("build_options", opts);
+    const docs_obj = b.addObject(.{ .name = "aerosim", .root_module = docs_mod });
+    const install_docs = b.addInstallDirectory(.{ .source_dir = docs_obj.getEmittedDocs(), .install_dir = .prefix, .install_subdir = "docs" });
+    b.step("docs", "Gera a documentação HTML em zig-out/docs (servir com `python -m http.server`)").dependOn(&install_docs.step);
+
+    // testes: um binário só (src/tests.zig); o grupo e o filtro vêm do CLI
+    const test_group = b.option([]const u8, "grupo", "grupo de testes: " ++ test_group_list ++ " (padrão: tudo)") orelse "tudo";
+    if (!isTestGroup(test_group)) std.debug.panic("-Dgrupo: '{s}' não existe; use {s}", .{ test_group, test_group_list });
+    const test_filter = b.option([]const u8, "filtro", "só os testes cujo nome contém este texto");
+    const test_opts = b.addOptions();
+    test_opts.addOption([]const u8, "test_group", test_group);
+    const test_module = b.createModule(.{
+        .root_source_file = b.path("src/tests.zig"),
+        .target = target,
+        .optimize = .Debug,
+    });
+    test_module.addOptions("build_options", opts);
+    test_module.addOptions("test_options", test_opts);
+    const tests = b.addTest(.{
+        .root_module = test_module,
+        .name = "test",
+        .filters = if (test_filter) |text| b.dupeStrings(&.{text}) else &.{},
+    });
+    b.step("test", "Roda os testes do núcleo (-Dgrupo=..., -Dfiltro=...)").dependOn(&b.addRunArtifact(tests).step);
 }
