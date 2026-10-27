@@ -317,7 +317,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/geometry/geometry.zig` — Geometria do avião montado: se as peças cabem juntas antes de qualquer conta de aerodinâmica.
   tipos `Part:32`, `Scene:40`, `Report:53`
-  fn `boxesTouch:91`, `pointInBox:108`, `pointNearBox:113`, `discHitsBox:122`, `discsTouch:196`, `lowest:228`, `check:256`, `checkMany:351`
+  fn `boxesTouch:91`, `pointInBox:109`, `pointNearBox:114`, `discHitsBox:123`, `discsTouch:197`, `lowest:229`, `check:258`, `checkMany:354`
 
 **core/src/loads/**
 
@@ -460,7 +460,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/util/fuzz.zig` — Fuzzing dos módulos.
   tipos `Src:15`
-  fn `check:56`, `checkScaled:65`
+  fn `check:60`, `checkScaled:69`
 
 
 ## Zig · AeroDrive (`aerodrive/src`)

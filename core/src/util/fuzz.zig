@@ -16,43 +16,47 @@ pub const Src = struct {
     smith: ?*Smith = null,
     rnd: ?std.Random = null,
 
-    pub fn int(s: *Src, comptime T: type, lo: T, hi: T) T {
-        if (s.smith) |m| return m.valueRangeAtMost(T, lo, hi);
-        return s.rnd.?.intRangeAtMost(T, lo, hi);
+    /// inteiro em [lo, hi]
+    pub fn int(self: *Src, comptime Int: type, lo: Int, hi: Int) Int {
+        if (self.smith) |smith| return smith.valueRangeAtMost(Int, lo, hi);
+        return self.rnd.?.intRangeAtMost(Int, lo, hi);
     }
-    pub fn boolean(s: *Src) bool {
-        if (s.smith) |m| return m.value(bool);
-        return s.rnd.?.boolean();
+    /// verdadeiro ou falso
+    pub fn boolean(self: *Src) bool {
+        if (self.smith) |smith| return smith.value(bool);
+        return self.rnd.?.boolean();
     }
-    /// verdadeiro com chance 1 / n
-    pub fn chance(s: *Src, n: u32) bool {
-        return s.int(u32, 1, n) == 1;
+    /// verdadeiro com chance 1 / one_in
+    pub fn chance(self: *Src, one_in: u32) bool {
+        return self.int(u32, 1, one_in) == 1;
     }
-    pub fn index(s: *Src, len: usize) usize {
-        return @intCast(s.int(u32, 0, @intCast(len - 1)));
+    /// índice válido de uma lista de `len` itens
+    pub fn index(self: *Src, len: usize) usize {
+        return @intCast(self.int(u32, 0, @intCast(len - 1)));
     }
     /// número na faixa [lo, hi]
-    pub fn range(s: *Src, lo: f64, hi: f64) f64 {
-        return lo + (hi - lo) * @as(f64, @floatFromInt(s.int(u16, 0, 65535))) / 65535.0;
+    pub fn range(self: *Src, lo: f64, hi: f64) f64 {
+        return lo + (hi - lo) * @as(f64, @floatFromInt(self.int(u16, 0, 65535))) / 65535.0;
     }
     /// qualquer f32 (NaN, ±inf, subnormais e enormes inclusive)
-    pub fn any(s: *Src) f64 {
-        return @floatCast(@as(f32, @bitCast(s.int(u32, 0, std.math.maxInt(u32)))));
+    pub fn any(self: *Src) f64 {
+        return @floatCast(@as(f32, @bitCast(self.int(u32, 0, std.math.maxInt(u32)))));
     }
     /// quase sempre válido em [lo, hi]; 1 em 12, um valor qualquer (passa pelo caminho que
     /// funciona e também pelos erros)
-    pub fn mostly(s: *Src, lo: f64, hi: f64) f64 {
-        return if (s.chance(12)) s.any() else s.range(lo, hi);
+    pub fn mostly(self: *Src, lo: f64, hi: f64) f64 {
+        return if (self.chance(12)) self.any() else self.range(lo, hi);
     }
     /// enche um pedaço de `buf` com bytes quaisquer; devolve o tamanho
-    pub fn bytes(s: *Src, buf: []u8) usize {
-        if (s.smith) |m| return m.slice(buf);
-        const n = s.rnd.?.uintAtMost(usize, buf.len);
-        s.rnd.?.bytes(buf[0..n]);
-        return n;
+    pub fn bytes(self: *Src, buf: []u8) usize {
+        if (self.smith) |smith| return smith.slice(buf);
+        const count = self.rnd.?.uintAtMost(usize, buf.len);
+        self.rnd.?.bytes(buf[0..count]);
+        return count;
     }
 };
 
+/// roda `testOne` pelo fuzzer do Zig e com N entradas aleatórias (-Dfuzz, -Dseed)
 pub fn check(
     context: anytype,
     comptime testOne: fn (@TypeOf(context), *Src) anyerror!void,
@@ -68,19 +72,19 @@ pub fn checkScaled(
     options: std.testing.FuzzInputOptions,
     divide: usize,
 ) !void {
-    const W = struct {
-        fn f(c: @TypeOf(context), m: *Smith) anyerror!void {
-            var src: Src = .{ .smith = m };
-            return testOne(c, &src);
+    const Wrapper = struct {
+        fn run(ctx: @TypeOf(context), smith: *Smith) anyerror!void {
+            var src: Src = .{ .smith = smith };
+            return testOne(ctx, &src);
         }
     };
-    try std.testing.fuzz(context, W.f, options);
+    try std.testing.fuzz(context, Wrapper.run, options);
     var prng = std.Random.DefaultPrng.init(opts.fuzz_seed);
     for (0..@max(opts.fuzz_iterations / @max(divide, 1), 1)) |it| {
         var src: Src = .{ .rnd = prng.random() };
-        testOne(context, &src) catch |e| {
-            std.debug.print("fuzz: falhou na iteração {d} (semente {d}): {s}\n", .{ it, opts.fuzz_seed, @errorName(e) });
-            return e;
+        testOne(context, &src) catch |err| {
+            std.debug.print("fuzz: falhou na iteração {d} (semente {d}): {s}\n", .{ it, opts.fuzz_seed, @errorName(err) });
+            return err;
         };
     }
 }
