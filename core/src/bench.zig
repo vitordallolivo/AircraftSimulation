@@ -100,8 +100,8 @@ pub fn dynamics(inst: *runner.Instance, n: u64) f64 {
     var acc: f64 = 0;
     var i: u64 = 0;
     while (i < n) : (i += 1) {
-        sim_dynamics.f(inst.ctx(), inst.r.t, &inst.r.x, &dx, null);
-        acc += dx[state.U];
+        sim_dynamics.derivatives(inst.ctx(), inst.r.t, &inst.r.x, &dx, null);
+        acc += dx[state.VEL_X];
     }
     return acc;
 }

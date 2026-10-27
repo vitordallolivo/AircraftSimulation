@@ -32,6 +32,7 @@ pub const method_model = 1;
 pub const atmos_isa = 0;
 pub const atmos_sheet = 1;
 
+/// a configuração do envelope: método, atmosfera, faixas de h e V e os dados da planilha
 pub const EnvCfg = extern struct {
     method: i32 = method_sheet,
     atmos: i32 = atmos_isa,
@@ -69,6 +70,7 @@ pub const EnvCfg = extern struct {
     _pad2: i32 = 0,
 };
 
+/// uma linha do envelope: h, ρ, V_min, V_max, V_e, V*, V_cru e a tração máxima
 pub const EnvRow = extern struct {
     h: f64 = 0,
     rho: f64 = 0,
@@ -82,68 +84,70 @@ pub const EnvRow = extern struct {
 };
 
 /// densidade com a altitude
-pub fn density(cfg: *const EnvCfg, h: f64) f64 {
+pub fn density(cfg: *const EnvCfg, height: f64) f64 {
     const lam = 0.0065;
     const Rg = 287.053;
     const T0 = 288.15;
     return if (cfg.atmos == atmos_sheet)
         // expressão do Envelope_main original
-        cfg.rho0 * fmath.pow(1.0 + lam * h / T0, -limits.g0 / (lam * Rg) - 1.0)
+        cfg.rho0 * fmath.pow(1.0 + lam * height / T0, -limits.g0 / (lam * Rg) - 1.0)
     else
         // ISA, troposfera
-        cfg.rho0 * fmath.pow(@max(1.0 - lam * h / T0, 1e-6), limits.g0 / (lam * Rg) - 1.0);
+        cfg.rho0 * fmath.pow(@max(1.0 - lam * height / T0, 1e-6), limits.g0 / (lam * Rg) - 1.0);
 }
 
 /// contexto de uma altitude: cópia dos parâmetros com ρ(h)
 const Alt = struct {
-    p: types.Params,
-    W: f64,
+    params: types.Params,
+    weight: f64,
     rho: f64,
     Vstall: f64 = 0, // modelo: abaixo disso nem tenta trimar
     raw: bool = false, // "como na planilha": polinômio sem o corte em T ≥ 0
     below: bool = false, // modelo com below_stall: abaixo do estol trima em `plin`
-    plin: types.Params = undefined, // cópia de `p` sem estol (só com `below`)
+    plin: types.Params = undefined, // cópia de `params` sem estol (só com `below`)
 
-    fn thrust(self: *const Alt, V: f64) f64 {
+    /// tração disponível com acelerador cheio a `airspeed`, somando as unidades
+    fn thrust(self: *const Alt, airspeed: f64) f64 {
         var Td: f64 = 0;
-        for (self.p.prop[0..@intCast(self.p.n_prop)]) |*u| {
-            Td += if (self.raw and u.model == types.prop_poly) prop.polyRaw(&self.p, u, V, 1.0, 0) else prop.point(&self.p, u, V, 1.0).T;
+        for (self.params.prop[0..@intCast(self.params.n_prop)]) |*prop_unit| {
+            Td += if (self.raw and prop_unit.model == types.prop_poly) prop.polyRaw(&self.params, prop_unit, airspeed, 1.0, 0) else prop.point(&self.params, prop_unit, airspeed, 1.0).T;
         }
         return Td;
     }
 };
 
 // ---------------------------------------------------------------- método da planilha
-fn sheetDrag(cfg: *const EnvCfg, a: *const Alt, V: f64, Td: f64) f64 {
+/// arrasto pela polar parabólica da planilha
+fn sheetDrag(cfg: *const EnvCfg, alt: *const Alt, airspeed: f64, Td: f64) f64 {
     const sa = fmath.sincos(cfg.alpha_cruise);
-    const Cl = (a.W - Td * sa.s) / (0.5 * cfg.Sw * a.rho * V * V);
+    const Cl = (alt.weight - Td * sa.s) / (0.5 * cfg.Sw * alt.rho * airspeed * airspeed);
     const CDpw = cfg.cdpw_c1 * cfg.cdp_x + cfg.cdpw_c2;
     const CDph = cfg.cdph_c1 * cfg.cdp_x + cfg.cdph_c2;
     const Cd = CDpw + CDph * (cfg.Sh / cfg.Sw) + cfg.K * Cl * Cl;
-    const dens = if (cfg.faithful != 0) a.rho / cfg.rho0 else a.rho;
-    return dens * V * V * cfg.Sw * Cd / (2.0 * sa.c);
+    const dens = if (cfg.faithful != 0) alt.rho / cfg.rho0 else alt.rho;
+    return dens * airspeed * airspeed * cfg.Sw * Cd / (2.0 * sa.c);
 }
 
 /// excesso de tração T_d − T_r (mesmo sinal de P_d − P_r)
-fn excess(cfg: *const EnvCfg, a: *const Alt, V: f64, guess: *[3]f64) f64 {
+fn excess(cfg: *const EnvCfg, alt: *const Alt, airspeed: f64, guess: *[3]f64) f64 {
     if (cfg.method == method_sheet) {
-        const Td = a.thrust(V);
-        return Td - sheetDrag(cfg, a, V, Td);
+        const Td = alt.thrust(airspeed);
+        return Td - sheetDrag(cfg, alt, airspeed, Td);
     }
     // modelo completo: 1 − acelerador de equilíbrio (fora do envelope se não trima ou estola)
-    if (V < 0.98 * a.Vstall) return if (a.below) excessBelow(a, V, guess) else -1.0;
-    const tc = trim.Ctx.init(&a.p, &no_flags);
-    const tp = trim.solve(tc, types.trim_level, V, 1.0, guess);
+    if (airspeed < 0.98 * alt.Vstall) return if (alt.below) excessBelow(alt, airspeed, guess) else -1.0;
+    const tc = trim.Ctx.init(&alt.params, &no_flags);
+    const tp = trim.solve(tc, types.trim_level, airspeed, 1.0, guess);
     if (tp.ok == 0 or tp.ratioCL > 1.0) {
         guess.* = .{ 0.1, -0.05, 0.5 };
-        return if (a.below) excessBelow(a, V, guess) else -1.0;
+        return if (alt.below) excessBelow(alt, airspeed, guess) else -1.0;
     }
     return 1.0 - tp.thr;
 }
 
 /// abaixo do estol (só com `below`): o mesmo equilíbrio na polar sem estol
-fn excessBelow(a: *const Alt, V: f64, guess: *[3]f64) f64 {
-    const tp = trim.solve(trim.Ctx.init(&a.plin, &no_flags), types.trim_level, V, 1.0, guess);
+fn excessBelow(alt: *const Alt, airspeed: f64, guess: *[3]f64) f64 {
+    const tp = trim.solve(trim.Ctx.init(&alt.plin, &no_flags), types.trim_level, airspeed, 1.0, guess);
     if (tp.ok == 0) {
         guess.* = .{ 0.1, -0.05, 0.5 };
         return -1.0;
@@ -152,62 +156,64 @@ fn excessBelow(a: *const Alt, V: f64, guess: *[3]f64) f64 {
 }
 
 /// cópia dos parâmetros sem estol: o a0 de cada painel vai para longe e o C_L fica na reta (aero.clPanel)
-fn noStall(p: *const types.Params) types.Params {
-    var q = p.*;
-    const n: usize = @intCast(q.n_surf);
-    for (q.surf[0..n]) |*s| s.a0 = 10.0;
-    return q;
+fn noStall(params: *const types.Params) types.Params {
+    var copy = params.*;
+    const n_surf: usize = @intCast(copy.n_surf);
+    for (copy.surf[0..n_surf]) |*surface| surface.a0 = 10.0;
+    return copy;
 }
 
 const no_flags = state.Flags{ .released = 0 };
 
-fn bisect(cfg: *const EnvCfg, a: *const Alt, lo0: f64, hi0: f64) f64 {
+/// bisseção em V entre lo0 e hi0 até o excesso de tração trocar de sinal
+fn bisect(cfg: *const EnvCfg, alt: *const Alt, lo0: f64, hi0: f64) f64 {
     var lo = lo0;
     var hi = hi0;
-    var g = [3]f64{ 0.1, -0.05, 0.5 };
-    const flo = excess(cfg, a, lo, &g) > 0;
+    var guess = [3]f64{ 0.1, -0.05, 0.5 };
+    const flo = excess(cfg, alt, lo, &guess) > 0;
     // a trimagem converge a ~1e-9; abaixo de 1e-3 m/s não muda nada no modelo completo
     const tol = if (cfg.method == method_model) @max(cfg.tol, 1e-3) else @max(cfg.tol, 1e-10);
     var it: usize = 0;
     while (hi - lo > tol and it < 100) : (it += 1) {
         const mid = 0.5 * (lo + hi);
-        if ((excess(cfg, a, mid, &g) > 0) == flo) lo = mid else hi = mid;
+        if ((excess(cfg, alt, mid, &guess) > 0) == flo) lo = mid else hi = mid;
     }
     return 0.5 * (lo + hi);
 }
 
+/// os cruzamentos achados numa altitude e a maior tração disponível
 const Cross = struct { vmin: f64, vmax: f64, any: bool, Td_max: f64 };
 
 /// procura na grade os cruzamentos e refina: V_min (− → +) e V_max (+ → −)
-fn crossings(cfg: *const EnvCfg, a: *const Alt) Cross {
+fn crossings(cfg: *const EnvCfg, alt: *const Alt) Cross {
     var out = Cross{ .vmin = 0, .vmax = 0, .any = false, .Td_max = 0 };
-    var g = [3]f64{ 0.1, -0.05, 0.5 };
+    var guess = [3]f64{ 0.1, -0.05, 0.5 };
     // de cima para baixo: o chute da trimagem vem do ponto anterior
-    var V = cfg.V_hi;
-    var f_prev = excess(cfg, a, V, &g);
+    var airspeed = cfg.V_hi;
+    var f_prev = excess(cfg, alt, airspeed, &guess);
     var have_max = false;
     var first_pos_low: f64 = -1;
-    out.Td_max = a.thrust(V);
+    out.Td_max = alt.thrust(airspeed);
     if (f_prev > 0) {
         out.vmax = cfg.V_hi; // ainda sobra tração no fim da faixa
         have_max = true;
     }
-    while (V - cfg.dV >= cfg.V_lo - 1e-12) {
-        const Vn = V - cfg.dV;
-        const f = excess(cfg, a, Vn, &g);
-        out.Td_max = @max(out.Td_max, a.thrust(Vn));
-        if (f > 0 and f_prev <= 0 and !have_max) {
-            out.vmax = bisect(cfg, a, Vn, V);
+    while (airspeed - cfg.dV >= cfg.V_lo - 1e-12) {
+        const Vn = airspeed - cfg.dV;
+        const excess_now = excess(cfg, alt, Vn, &guess);
+        out.Td_max = @max(out.Td_max, alt.thrust(Vn));
+        if (excess_now > 0 and f_prev <= 0 and !have_max) {
+            out.vmax = bisect(cfg, alt, Vn, airspeed);
             have_max = true;
         }
-        if (f <= 0 and f_prev > 0 and have_max) {
-            out.vmin = bisect(cfg, a, Vn, V);
+        if (excess_now <= 0 and f_prev > 0 and have_max) {
+            out.vmin = bisect(cfg, alt, Vn, airspeed);
             out.any = true;
             return out;
         }
-        if (f > 0) first_pos_low = Vn;
-        f_prev = f;
-        V = Vn;
+        if (excess_now > 0) first_pos_low = Vn;
+        f_prev = excess_now;
+        airspeed = Vn;
     }
     if (have_max and first_pos_low > 0) { // sobra tração até o começo da faixa
         out.vmin = cfg.V_lo;
@@ -216,138 +222,139 @@ fn crossings(cfg: *const EnvCfg, a: *const Alt) Cross {
     return out;
 }
 
-fn altitude(p: *const types.Params, cfg: *const EnvCfg, h: f64, W: f64, CLmax_ac: f64) Alt {
-    var a = Alt{ .p = p.*, .W = W, .rho = density(cfg, h), .raw = cfg.method == method_sheet and cfg.faithful != 0 };
-    a.p.env.rho = a.rho;
-    if (cfg.method == method_model) a.Vstall = @sqrt(2.0 * W / (a.rho * p.Sref * CLmax_ac));
+/// o contexto da altitude `height`: ρ, cópia dos parâmetros e, no modelo, o V de estol
+fn altitude(params: *const types.Params, cfg: *const EnvCfg, height: f64, weight: f64, CLmax_ac: f64) Alt {
+    var alt = Alt{ .params = params.*, .weight = weight, .rho = density(cfg, height), .raw = cfg.method == method_sheet and cfg.faithful != 0 };
+    alt.params.env.rho = alt.rho;
+    if (cfg.method == method_model) alt.Vstall = @sqrt(2.0 * weight / (alt.rho * params.Sref * CLmax_ac));
     if (cfg.method == method_model and cfg.below_stall != 0) {
-        a.below = true;
-        a.plin = noStall(&a.p);
+        alt.below = true;
+        alt.plin = noStall(&alt.params);
     }
-    return a;
+    return alt;
 }
 
-fn row(p: *const types.Params, cfg: *const EnvCfg, h: f64, W: f64, CLmax_ac: f64, alt: *Alt) EnvRow {
-    alt.* = altitude(p, cfg, h, W, CLmax_ac);
-    const a = alt;
-    var r = EnvRow{ .h = h, .rho = a.rho };
-    const c = crossings(cfg, a);
-    r.Td_max = c.Td_max;
-    r.ok = if (c.any) 1 else 0;
-    r.Vmin = c.vmin;
-    r.Vmax = c.vmax;
+/// a linha do envelope na altitude `height`
+fn row(params: *const types.Params, cfg: *const EnvCfg, height: f64, weight: f64, CLmax_ac: f64, alt: *Alt) EnvRow {
+    alt.* = altitude(params, cfg, height, weight, CLmax_ac);
+    var result = EnvRow{ .h = height, .rho = alt.rho };
+    const cross = crossings(cfg, alt);
+    result.Td_max = cross.Td_max;
+    result.ok = if (cross.any) 1 else 0;
+    result.Vmin = cross.vmin;
+    result.Vmax = cross.vmax;
     if (cfg.method == method_sheet) {
-        r.Ve = @sqrt(2.0 * W / (a.rho * (cfg.Sw * cfg.CLmax_w + cfg.Sh * cfg.CLmax_h)));
+        result.Ve = @sqrt(2.0 * weight / (alt.rho * (cfg.Sw * cfg.CLmax_w + cfg.Sh * cfg.CLmax_h)));
         const alphah = cfg.alpha_cruise * (1.0 - cfg.depsda) - cfg.eps0 + cfg.ih;
         const CLw = cfg.CL0_w + cfg.CLa_w * (cfg.iw + cfg.alpha_cruise);
         const CLh = -cfg.CL0_h + cfg.CLa_h * alphah;
-        const Td_end = a.thrust(cfg.V_hi);
-        r.Vcru = @sqrt(@abs(2.0 * (W - Td_end * fmath.sin(cfg.alpha_cruise)) / (a.rho * (cfg.Sw * CLw + cfg.Sh * CLh))));
+        const Td_end = alt.thrust(cfg.V_hi);
+        result.Vcru = @sqrt(@abs(2.0 * (weight - Td_end * fmath.sin(cfg.alpha_cruise)) / (alt.rho * (cfg.Sw * CLw + cfg.Sh * CLh))));
     } else {
-        r.Ve = a.Vstall;
-        r.Vcru = if (c.any) cruiseSpeed(cfg, a, c.vmin, c.vmax) else std.math.nan(f64);
+        result.Ve = alt.Vstall;
+        result.Vcru = if (cross.any) cruiseSpeed(cfg, alt, cross.vmin, cross.vmax) else std.math.nan(f64);
     }
-    r.Vman = r.Ve * @sqrt(cfg.n_load);
-    return r;
+    result.Vman = result.Ve * @sqrt(cfg.n_load);
+    return result;
 }
 
 /// modelo completo: V (dentro do envelope) em que o α de equilíbrio é o ângulo de cruzeiro
-fn cruiseSpeed(cfg: *const EnvCfg, a: *const Alt, Vlo: f64, Vhi: f64) f64 {
-    const tc = trim.Ctx.init(&a.p, &no_flags);
+fn cruiseSpeed(cfg: *const EnvCfg, alt: *const Alt, Vlo: f64, Vhi: f64) f64 {
+    const tc = trim.Ctx.init(&alt.params, &no_flags);
     const Fn = struct {
-        fn da(t: trim.Ctx, V: f64, ac: f64) ?f64 {
-            var g = [3]f64{ 0.1, -0.05, 0.5 };
-            const tp = trim.solve(t, types.trim_level, V, 1.0, &g);
-            return if (tp.ok != 0) tp.alpha - ac else null;
+        fn alphaError(trim_ctx: trim.Ctx, airspeed: f64, target_alpha: f64) ?f64 {
+            var guess = [3]f64{ 0.1, -0.05, 0.5 };
+            const tp = trim.solve(trim_ctx, types.trim_level, airspeed, 1.0, &guess);
+            return if (tp.ok != 0) tp.alpha - target_alpha else null;
         }
     };
     var lo = Vlo + 1e-3;
     var hi = Vhi - 1e-3;
     // com `below`, o V_min pode estar abaixo do estol, onde a trimagem normal não existe: a busca começa no
     // primeiro V (a partir do V_e) em que ela converge
-    if (a.below and lo < a.Vstall) {
-        lo = a.Vstall;
-        while (lo < hi and Fn.da(tc, lo, cfg.alpha_cruise) == null) lo += 0.05;
+    if (alt.below and lo < alt.Vstall) {
+        lo = alt.Vstall;
+        while (lo < hi and Fn.alphaError(tc, lo, cfg.alpha_cruise) == null) lo += 0.05;
     }
-    const alo = Fn.da(tc, lo, cfg.alpha_cruise) orelse return std.math.nan(f64);
-    const ahi = Fn.da(tc, hi, cfg.alpha_cruise) orelse return std.math.nan(f64);
+    const alo = Fn.alphaError(tc, lo, cfg.alpha_cruise) orelse return std.math.nan(f64);
+    const ahi = Fn.alphaError(tc, hi, cfg.alpha_cruise) orelse return std.math.nan(f64);
     if ((alo > 0) == (ahi > 0)) return std.math.nan(f64); // ângulo de cruzeiro fora do envelope
     var it: usize = 0;
     while (hi - lo > 1e-3 and it < 60) : (it += 1) {
         const mid = 0.5 * (lo + hi);
-        const d = Fn.da(tc, mid, cfg.alpha_cruise) orelse return std.math.nan(f64);
-        if ((d > 0) == (alo > 0)) lo = mid else hi = mid;
+        const alpha_error = Fn.alphaError(tc, mid, cfg.alpha_cruise) orelse return std.math.nan(f64);
+        if ((alpha_error > 0) == (alo > 0)) lo = mid else hi = mid;
     }
     return 0.5 * (lo + hi);
 }
 
 /// C_L máximo da aeronave inteira (polar estática, profundor neutro)
-fn aircraftCLmax(p: *const types.Params, rcg: vec.V3) f64 {
+fn aircraftCLmax(params: *const types.Params, rcg: vec.V3) f64 {
     var best: f64 = 0;
     var al: f64 = 0;
-    while (al < 0.6) : (al += 0.002) best = @max(best, aero.coeffs(p, 15.0, al, 0, rcg, vec.zero).CL);
+    while (al < 0.6) : (al += 0.002) best = @max(best, aero.coeffs(params, 15.0, al, 0, rcg, vec.zero).CL);
     return best;
 }
 
 /// linhas por altitude; devolve quantas e o teto absoluto (refinado por bisseção em h)
-pub fn compute(p: *const types.Params, cfg: *const EnvCfg, rows: []EnvRow, ceiling: *f64) usize {
-    const tc = trim.Ctx.init(p, &no_flags);
-    const W = tc.m * limits.g0;
-    const CLmax_ac = aircraftCLmax(p, tc.rcg);
+pub fn compute(params: *const types.Params, cfg: *const EnvCfg, rows: []EnvRow, ceiling: *f64) usize {
+    const tc = trim.Ctx.init(params, &no_flags);
+    const weight = tc.m * limits.g0;
+    const CLmax_ac = aircraftCLmax(params, tc.rcg);
     var alt: Alt = undefined;
-    var k: usize = 0;
-    var h: f64 = 0;
+    var count: usize = 0;
+    var height: f64 = 0;
     ceiling.* = 0;
-    while (k < rows.len and h <= cfg.h_max) : (h += cfg.h_step) {
-        const r = row(p, cfg, h, W, CLmax_ac, &alt);
-        if (r.ok == 0 or r.Vmax - r.Vmin < cfg.tol) {
+    while (count < rows.len and height <= cfg.h_max) : (height += cfg.h_step) {
+        const result = row(params, cfg, height, weight, CLmax_ac, &alt);
+        if (result.ok == 0 or result.Vmax - result.Vmin < cfg.tol) {
             // teto entre h − h_step e h
-            var lo = @max(h - cfg.h_step, 0.0);
-            var hi = h;
-            if (k == 0) return 0;
+            var lo = @max(height - cfg.h_step, 0.0);
+            var hi = height;
+            if (count == 0) return 0;
             var it: usize = 0;
             while (hi - lo > 0.5 and it < 60) : (it += 1) {
                 const mid = 0.5 * (lo + hi);
-                alt = altitude(p, cfg, mid, W, CLmax_ac);
-                const c = crossings(cfg, &alt);
-                if (c.any and c.vmax - c.vmin >= cfg.tol) lo = mid else hi = mid;
+                alt = altitude(params, cfg, mid, weight, CLmax_ac);
+                const cross = crossings(cfg, &alt);
+                if (cross.any and cross.vmax - cross.vmin >= cfg.tol) lo = mid else hi = mid;
             }
             ceiling.* = lo;
-            return k;
+            return count;
         }
-        rows[k] = r;
-        k += 1;
-        ceiling.* = h;
+        rows[count] = result;
+        count += 1;
+        ceiling.* = height;
     }
-    return k;
+    return count;
 }
 
-/// curvas T_d(V) e T_r(V) numa altitude (para os gráficos de potência)
-pub fn curve(p: *const types.Params, cfg: *const EnvCfg, h: f64, V: []f64, Td: []f64, Tr: []f64) usize {
-    const tc = trim.Ctx.init(p, &no_flags);
-    const alt = altitude(p, cfg, h, tc.m * limits.g0, aircraftCLmax(p, tc.rcg));
-    const n = @min(V.len, @min(Td.len, Tr.len));
-    var g = [3]f64{ 0.1, -0.05, 0.5 };
-    var i: usize = n;
+/// curvas T_d(V) e T_r(V) na altitude `height`, nos V de `speeds` (para os gráficos de potência)
+pub fn curve(params: *const types.Params, cfg: *const EnvCfg, height: f64, speeds: []f64, Td: []f64, Tr: []f64) usize {
+    const tc = trim.Ctx.init(params, &no_flags);
+    const alt = altitude(params, cfg, height, tc.m * limits.g0, aircraftCLmax(params, tc.rcg));
+    const count = @min(speeds.len, @min(Td.len, Tr.len));
+    var guess = [3]f64{ 0.1, -0.05, 0.5 };
+    var i: usize = count;
     while (i > 0) { // de cima para baixo (chute da trimagem)
         i -= 1;
-        const v = cfg.V_lo + (cfg.V_hi - cfg.V_lo) * @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(@max(n, 2) - 1));
-        V[i] = v;
-        Td[i] = alt.thrust(v);
+        const airspeed = cfg.V_lo + (cfg.V_hi - cfg.V_lo) * @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(@max(count, 2) - 1));
+        speeds[i] = airspeed;
+        Td[i] = alt.thrust(airspeed);
         if (cfg.method == method_sheet) {
-            Tr[i] = sheetDrag(cfg, &alt, v, Td[i]);
+            Tr[i] = sheetDrag(cfg, &alt, airspeed, Td[i]);
         } else {
             // tração requerida = tração no equilíbrio nivelado
-            var tp = trim.solve(trim.Ctx.init(&alt.p, &no_flags), types.trim_level, v, 1.0, &g);
-            if (alt.below and (v < 0.98 * alt.Vstall or tp.ok == 0 or tp.ratioCL > 1.0)) {
-                if (tp.ok == 0) g = .{ 0.1, -0.05, 0.5 };
-                tp = trim.solve(trim.Ctx.init(&alt.plin, &no_flags), types.trim_level, v, 1.0, &g);
+            var tp = trim.solve(trim.Ctx.init(&alt.params, &no_flags), types.trim_level, airspeed, 1.0, &guess);
+            if (alt.below and (airspeed < 0.98 * alt.Vstall or tp.ok == 0 or tp.ratioCL > 1.0)) {
+                if (tp.ok == 0) guess = .{ 0.1, -0.05, 0.5 };
+                tp = trim.solve(trim.Ctx.init(&alt.plin, &no_flags), types.trim_level, airspeed, 1.0, &guess);
             }
             Tr[i] = if (tp.ok != 0) tp.T else std.math.nan(f64);
-            if (tp.ok == 0) g = .{ 0.1, -0.05, 0.5 };
+            if (tp.ok == 0) guess = .{ 0.1, -0.05, 0.5 };
         }
     }
-    return n;
+    return count;
 }
 
 const testing = std.testing;
@@ -361,34 +368,34 @@ test "ISA e a fórmula da planilha" {
 }
 
 test "envelope da planilha: V_min < V_max, teto finito, ρ cai" {
-    var p = types.Params{ .m_dry = 8.0, .Sref = 0.6 };
-    p.n_prop = 1;
-    p.prop[0] = .{ .model = types.prop_poly, .poly_x = types.pvar_V, .poly_gain = 1, .poly_rho_exp = 1 };
-    p.prop[0].poly[0] = 25; // T(V) = 25 − 0,04 V²
-    p.prop[0].poly[3] = -0.04;
-    prop.init(&p);
+    var params = types.Params{ .m_dry = 8.0, .Sref = 0.6 };
+    params.n_prop = 1;
+    params.prop[0] = .{ .model = types.prop_poly, .poly_x = types.pvar_V, .poly_gain = 1, .poly_rho_exp = 1 };
+    params.prop[0].poly[0] = 25; // T(V) = 25 − 0,04 V²
+    params.prop[0].poly[3] = -0.04;
+    prop.init(&params);
     const cfg = EnvCfg{ .Sw = 0.6, .CLmax_w = 1.4, .K = 0.06, .cdpw_c2 = 0.03, .cdph_c2 = 0.01, .faithful = 0, .h_step = 250, .dV = 0.1 };
     var rows: [200]EnvRow = undefined;
     var ceil: f64 = 0;
-    const n = compute(&p, &cfg, &rows, &ceil);
-    try testing.expect(n > 2);
+    const count = compute(&params, &cfg, &rows, &ceil);
+    try testing.expect(count > 2);
     try testing.expect(ceil > 0 and ceil < cfg.h_max);
-    for (rows[0..n]) |r| try testing.expect(r.Vmin < r.Vmax);
-    try testing.expect(rows[n - 1].rho < rows[0].rho);
-    try testing.expect(rows[n - 1].Vmax - rows[n - 1].Vmin < rows[0].Vmax - rows[0].Vmin);
+    for (rows[0..count]) |result| try testing.expect(result.Vmin < result.Vmax);
+    try testing.expect(rows[count - 1].rho < rows[0].rho);
+    try testing.expect(rows[count - 1].Vmax - rows[count - 1].Vmin < rows[0].Vmax - rows[0].Vmin);
 }
 
 test "sem estol (below_stall): a cópia mantém o C_L na reta depois do estol do original" {
-    var p = types.Params{ .m_dry = 8.0, .Sref = 0.6 };
-    p.n_surf = 1;
-    p.surf[0].CL0 = 0.3;
-    p.surf[0].CLa = 5.0;
-    p.surf[0].a0 = 0.25; // estol do original em ~14°
-    const q = noStall(&p);
-    try testing.expectEqual(@as(f64, 0.25), p.surf[0].a0); // o original não muda
-    try testing.expectEqual(@as(f64, 10.0), q.surf[0].a0);
+    var params = types.Params{ .m_dry = 8.0, .Sref = 0.6 };
+    params.n_surf = 1;
+    params.surf[0].CL0 = 0.3;
+    params.surf[0].CLa = 5.0;
+    params.surf[0].a0 = 0.25; // estol do original em ~14°
+    const copy = noStall(&params);
+    try testing.expectEqual(@as(f64, 0.25), params.surf[0].a0); // o original não muda
+    try testing.expectEqual(@as(f64, 10.0), copy.surf[0].a0);
     const al: f64 = 0.4; // depois do estol do original
-    const cl = aero.sigmaStall(al, q.surf[0].a0, 50.0);
+    const cl = aero.sigmaStall(al, copy.surf[0].a0, 50.0);
     try testing.expect(cl < 1e-6); // a mistura com a placa plana some: só a reta
-    try testing.expect(aero.sigmaStall(al, p.surf[0].a0, 50.0) > 0.99);
+    try testing.expect(aero.sigmaStall(al, params.surf[0].a0, 50.0) > 0.99);
 }

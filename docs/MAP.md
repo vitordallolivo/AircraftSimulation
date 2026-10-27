@@ -407,28 +407,28 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 **core/src/sim/**
 
-- `core/src/sim/dynamics.zig` — Equação mestre f(t, x) e integração RK4.
+- `core/src/sim/dynamics.zig` — Equação mestre f(t, x) (`derivatives`) e integração RK4.
   tipos `Out:26`
-  fn `f:85`, `rk4:246`
+  fn `derivatives:87`, `rk4:248`
 - `core/src/sim/envelope.zig` — Envelope de voo por altitude (sem integrar no tempo).
-  tipos `EnvCfg:35`, `EnvRow:72`
-  fn `density:85`, `compute:293`, `curve:326`
+  tipos `EnvCfg:36`, `EnvRow:74`
+  fn `density:87`, `compute:300`, `curve:333`
 - `core/src/sim/linear.zig` — Modelo linear em torno do voo nivelado equilibrado (estabilidade dinâmica).
-  tipos `LinModel:25`
-  fn `rigid:52`, `linearize:162`, `residual:217`
+  tipos `LinModel:28`
+  fn `rigid:56`, `linearize:169`, `residual:224`
 - `core/src/sim/runner.zig` — Executor de uma corrida: eventos discretos, paradas, registro e checkpoints.
-  tipos `Status:25`, `Instance:35`
-  fn `stateText:60`, `configure:88`, `handover:155`, `resetGround:176`, `resetAir:230`, `run:381`
+  tipos `Status:26`, `Instance:37`
+  fn `stateText:65`, `configure:95`, `handover:162`, `resetGround:184`, `resetAir:238`, `run:391`
 - `core/src/sim/simple_perf.zig` — Desempenho por cálculo simples (sem simulação no tempo), como na "planilha suprema":
   tipos `SimpleCfg:23`, `SimpleRow:52`, `SimpleSummary:76`
-  fn `density:107`, `compute:130`
+  fn `density:108`, `compute:132`
 - `core/src/sim/state.zig` — Layout do vetor de estados (definido em comptime a partir dos limites)
-  tipos `Flags:50`, `Run:66`, `Ctx:82`
-  fn `rps:33`, `sx:36`, `sy:39`, `sxd:42`, `syd:45`
+  tipos `Flags:55`, `Run:71`, `Ctx:87`
+  fn `rps:34`, `sx:38`, `sy:42`, `sxd:46`, `syd:50`
 - `core/src/sim/tests.zig` — Testes de integração do núcleo: aeronave monomotora convencional (a do código
 - `core/src/sim/trim.zig` — Equilíbrio (trimagem) e desempenho por velocidade, sem integração no tempo.
-  tipos `Ctx:24`
-  fn `solve:123`, `performance:137`
+  tipos `Ctx:25`
+  fn `solve:131`, `performance:145`
 
 **core/src/sizing/**
 
