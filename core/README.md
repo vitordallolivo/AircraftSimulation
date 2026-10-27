@@ -203,4 +203,4 @@ acrescentar um campo basta pô-lo em `types.zig`, e o esquema e o Python se ajus
 | `aerosim_bench_math`, `aerosim_bench_dynamics` | medições |
 
 Dentro do núcleo, os erros são *error unions* do Zig (`ConfigError`, `StateError`); só na fronteira eles viram
-códigos negativos (`configCode`, `stateCode` em `root.zig`).
+códigos negativos (`AbiError` e a tabela `abiCode` em `root.zig`).
