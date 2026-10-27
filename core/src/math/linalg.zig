@@ -10,138 +10,138 @@
 const std = @import("std");
 
 /// fatora A (n × n) em P A = L U no lugar: abaixo da diagonal, L (diagonal unitária implícita); da
-/// diagonal para cima, U. `piv[k]` = a linha trocada com a k no passo k. false se A é singular
-pub fn luFactor(comptime N: usize, A: *[N][N]f64, n: usize, piv: *[N]usize) bool {
-    std.debug.assert(n <= N);
-    for (0..n) |k| {
-        var p = k;
-        var big = @abs(A[k][k]);
-        for (k + 1..n) |i| {
-            if (@abs(A[i][k]) > big) {
-                big = @abs(A[i][k]);
-                p = i;
+/// diagonal para cima, U. `pivots[k]` = a linha trocada com a k no passo k. false se A é singular
+pub fn luFactor(comptime capacity: usize, matrix: *[capacity][capacity]f64, size: usize, pivots: *[capacity]usize) bool {
+    std.debug.assert(size <= capacity);
+    for (0..size) |k| {
+        var pivot_row = k;
+        var largest = @abs(matrix[k][k]);
+        for (k + 1..size) |i| {
+            if (@abs(matrix[i][k]) > largest) {
+                largest = @abs(matrix[i][k]);
+                pivot_row = i;
             }
         }
-        piv[k] = p;
-        if (!(big > 0)) return false; // zero ou NaN
-        if (p != k) std.mem.swap([N]f64, &A[k], &A[p]);
-        const inv = 1.0 / A[k][k];
-        for (k + 1..n) |i| {
-            const m = A[i][k] * inv;
-            A[i][k] = m;
-            for (k + 1..n) |j| A[i][j] -= m * A[k][j];
+        pivots[k] = pivot_row;
+        if (!(largest > 0)) return false; // zero ou NaN
+        if (pivot_row != k) std.mem.swap([capacity]f64, &matrix[k], &matrix[pivot_row]);
+        const inv_pivot = 1.0 / matrix[k][k];
+        for (k + 1..size) |i| {
+            const factor = matrix[i][k] * inv_pivot;
+            matrix[i][k] = factor;
+            for (k + 1..size) |j| matrix[i][j] -= factor * matrix[k][j];
         }
     }
     return true;
 }
 
 /// resolve A x = b com a fatoração de `luFactor`; b vira x
-pub fn luSolve(comptime N: usize, LU: *const [N][N]f64, n: usize, piv: *const [N]usize, b: *[N]f64) void {
-    for (0..n) |k| {
-        if (piv[k] != k) std.mem.swap(f64, &b[k], &b[piv[k]]);
+pub fn luSolve(comptime capacity: usize, factors: *const [capacity][capacity]f64, size: usize, pivots: *const [capacity]usize, rhs: *[capacity]f64) void {
+    for (0..size) |k| {
+        if (pivots[k] != k) std.mem.swap(f64, &rhs[k], &rhs[pivots[k]]);
     }
-    for (0..n) |i| { // L y = P b
-        var s = b[i];
-        for (0..i) |j| s -= LU[i][j] * b[j];
-        b[i] = s;
+    for (0..size) |i| { // L y = P b
+        var sum = rhs[i];
+        for (0..i) |j| sum -= factors[i][j] * rhs[j];
+        rhs[i] = sum;
     }
-    var i = n;
+    var i = size;
     while (i > 0) { // U x = y
         i -= 1;
-        var s = b[i];
-        for (i + 1..n) |j| s -= LU[i][j] * b[j];
-        b[i] = s / LU[i][i];
+        var sum = rhs[i];
+        for (i + 1..size) |j| sum -= factors[i][j] * rhs[j];
+        rhs[i] = sum / factors[i][i];
     }
 }
 
 /// A = L Lᵀ no lugar (L no triângulo de baixo; o de cima não é tocado). false se A não é positiva definida
-pub fn cholesky(comptime N: usize, A: *[N][N]f64, n: usize) bool {
-    std.debug.assert(n <= N);
-    for (0..n) |j| {
-        var d = A[j][j];
-        for (0..j) |k| d -= A[j][k] * A[j][k];
-        if (!(d > 0)) return false;
-        const ljj = @sqrt(d);
-        A[j][j] = ljj;
-        for (j + 1..n) |i| {
-            var s = A[i][j];
-            for (0..j) |k| s -= A[i][k] * A[j][k];
-            A[i][j] = s / ljj;
+pub fn cholesky(comptime capacity: usize, matrix: *[capacity][capacity]f64, size: usize) bool {
+    std.debug.assert(size <= capacity);
+    for (0..size) |j| {
+        var diagonal = matrix[j][j];
+        for (0..j) |k| diagonal -= matrix[j][k] * matrix[j][k];
+        if (!(diagonal > 0)) return false;
+        const factor_diagonal = @sqrt(diagonal);
+        matrix[j][j] = factor_diagonal;
+        for (j + 1..size) |i| {
+            var sum = matrix[i][j];
+            for (0..j) |k| sum -= matrix[i][k] * matrix[j][k];
+            matrix[i][j] = sum / factor_diagonal;
         }
     }
     return true;
 }
 
 /// resolve A x = b com a fatoração de `cholesky`; b vira x
-pub fn cholSolve(comptime N: usize, L: *const [N][N]f64, n: usize, b: *[N]f64) void {
-    for (0..n) |i| { // L y = b
-        var s = b[i];
-        for (0..i) |k| s -= L[i][k] * b[k];
-        b[i] = s / L[i][i];
+pub fn cholSolve(comptime capacity: usize, factor: *const [capacity][capacity]f64, size: usize, rhs: *[capacity]f64) void {
+    for (0..size) |i| { // L y = b
+        var sum = rhs[i];
+        for (0..i) |k| sum -= factor[i][k] * rhs[k];
+        rhs[i] = sum / factor[i][i];
     }
-    var i = n;
+    var i = size;
     while (i > 0) { // Lᵀ x = y
         i -= 1;
-        var s = b[i];
-        for (i + 1..n) |k| s -= L[k][i] * b[k];
-        b[i] = s / L[i][i];
+        var sum = rhs[i];
+        for (i + 1..size) |k| sum -= factor[k][i] * rhs[k];
+        rhs[i] = sum / factor[i][i];
     }
 }
 
-/// A x = b de uma vez (A e b são copiados); false se A é singular
 /// A (n × n, simétrica) = V diag(w) Vᵀ pelo Jacobi cíclico; A é destruída. As colunas de V são os autovetores.
 /// Para quando a soma dos quadrados fora da diagonal cai abaixo de 1e-30 vezes a total, ou em 64 varreduras
-pub fn symEigen(comptime N: usize, A: *[N][N]f64, n: usize, w: *[N]f64, V: *[N][N]f64) void {
-    for (0..n) |i| {
-        for (0..n) |j| V[i][j] = if (i == j) 1 else 0;
+pub fn symEigen(comptime capacity: usize, matrix: *[capacity][capacity]f64, size: usize, eigenvalues: *[capacity]f64, eigenvectors: *[capacity][capacity]f64) void {
+    for (0..size) |i| {
+        for (0..size) |j| eigenvectors[i][j] = if (i == j) 1 else 0;
     }
     var total: f64 = 0;
-    for (0..n) |i| for (0..n) |j| {
-        total += A[i][j] * A[i][j];
+    for (0..size) |i| for (0..size) |j| {
+        total += matrix[i][j] * matrix[i][j];
     };
     var sweep: usize = 0;
     while (sweep < 64) : (sweep += 1) {
-        var off: f64 = 0;
-        for (0..n) |i| for (i + 1..n) |j| {
-            off += 2 * A[i][j] * A[i][j];
+        var off_diagonal: f64 = 0;
+        for (0..size) |i| for (i + 1..size) |j| {
+            off_diagonal += 2 * matrix[i][j] * matrix[i][j];
         };
-        if (off <= 1e-30 * total or off == 0) break;
-        for (0..n) |p| for (p + 1..n) |q| {
-            if (A[p][q] == 0) continue;
+        if (off_diagonal <= 1e-30 * total or off_diagonal == 0) break;
+        for (0..size) |row| for (row + 1..size) |col| {
+            if (matrix[row][col] == 0) continue;
             // a rotação que zera A[p][q] (Golub e Van Loan, alg. 8.5.1)
-            const tau = (A[q][q] - A[p][p]) / (2 * A[p][q]);
-            const t = (if (tau >= 0) @as(f64, 1) else -1) / (@abs(tau) + @sqrt(1 + tau * tau));
-            const c = 1 / @sqrt(1 + t * t);
-            const s = t * c;
-            for (0..n) |k| { // A ← A J
-                const akp = A[k][p];
-                const akq = A[k][q];
-                A[k][p] = c * akp - s * akq;
-                A[k][q] = s * akp + c * akq;
+            const tau = (matrix[col][col] - matrix[row][row]) / (2 * matrix[row][col]);
+            const tangent = (if (tau >= 0) @as(f64, 1) else -1) / (@abs(tau) + @sqrt(1 + tau * tau));
+            const cosine = 1 / @sqrt(1 + tangent * tangent);
+            const sine = tangent * cosine;
+            for (0..size) |k| { // A ← A J
+                const a_kp = matrix[k][row];
+                const a_kq = matrix[k][col];
+                matrix[k][row] = cosine * a_kp - sine * a_kq;
+                matrix[k][col] = sine * a_kp + cosine * a_kq;
             }
-            for (0..n) |k| { // A ← Jᵀ A
-                const apk = A[p][k];
-                const aqk = A[q][k];
-                A[p][k] = c * apk - s * aqk;
-                A[q][k] = s * apk + c * aqk;
+            for (0..size) |k| { // A ← Jᵀ A
+                const a_pk = matrix[row][k];
+                const a_qk = matrix[col][k];
+                matrix[row][k] = cosine * a_pk - sine * a_qk;
+                matrix[col][k] = sine * a_pk + cosine * a_qk;
             }
-            for (0..n) |k| { // V ← V J
-                const vkp = V[k][p];
-                const vkq = V[k][q];
-                V[k][p] = c * vkp - s * vkq;
-                V[k][q] = s * vkp + c * vkq;
+            for (0..size) |k| { // V ← V J
+                const v_kp = eigenvectors[k][row];
+                const v_kq = eigenvectors[k][col];
+                eigenvectors[k][row] = cosine * v_kp - sine * v_kq;
+                eigenvectors[k][col] = sine * v_kp + cosine * v_kq;
             }
         };
     }
-    for (0..n) |i| w[i] = A[i][i];
+    for (0..size) |i| eigenvalues[i] = matrix[i][i];
 }
 
-pub fn solve(comptime N: usize, A: [N][N]f64, n: usize, b: [N]f64, x: *[N]f64) bool {
-    var M = A;
-    var piv: [N]usize = undefined;
-    if (!luFactor(N, &M, n, &piv)) return false;
-    x.* = b;
-    luSolve(N, &M, n, &piv, x);
+/// A x = b de uma vez (A e b são copiados); false se A é singular
+pub fn solve(comptime capacity: usize, matrix: [capacity][capacity]f64, size: usize, rhs: [capacity]f64, solution: *[capacity]f64) bool {
+    var factors = matrix;
+    var pivots: [capacity]usize = undefined;
+    if (!luFactor(capacity, &factors, size, &pivots)) return false;
+    solution.* = rhs;
+    luSolve(capacity, &factors, size, &pivots, solution);
     return true;
 }
 
@@ -149,66 +149,66 @@ const testing = std.testing;
 
 test "LU: sistema 3x3 de solução inteira, com troca de linha" {
     // x = (1, 2, 3); A[0][0] = 0 obriga o pivô
-    const A = [3][3]f64{ .{ 0, 2, 1 }, .{ 1, 1, 1 }, .{ 2, 1, 3 } };
-    const b = [3]f64{ 7, 6, 13 };
-    var x: [3]f64 = undefined;
-    try testing.expect(solve(3, A, 3, b, &x));
-    for (x, [3]f64{ 1, 2, 3 }) |v, e| try testing.expectApproxEqAbs(e, v, 1e-12);
+    const matrix = [3][3]f64{ .{ 0, 2, 1 }, .{ 1, 1, 1 }, .{ 2, 1, 3 } };
+    const rhs = [3]f64{ 7, 6, 13 };
+    var solution: [3]f64 = undefined;
+    try testing.expect(solve(3, matrix, 3, rhs, &solution));
+    for (solution, [3]f64{ 1, 2, 3 }) |got, expected| try testing.expectApproxEqAbs(expected, got, 1e-12);
 }
 
 test "LU: matriz de Hilbert 5x5, resíduo pequeno; singular é recusada" {
-    const N = 8;
-    var A: [N][N]f64 = @splat(@splat(0));
-    var b: [N]f64 = @splat(0);
-    const n = 5;
-    for (0..n) |i| {
-        for (0..n) |j| A[i][j] = 1.0 / @as(f64, @floatFromInt(i + j + 1));
-        b[i] = 1;
+    const capacity = 8;
+    var matrix: [capacity][capacity]f64 = @splat(@splat(0));
+    var rhs: [capacity]f64 = @splat(0);
+    const size = 5;
+    for (0..size) |i| {
+        for (0..size) |j| matrix[i][j] = 1.0 / @as(f64, @floatFromInt(i + j + 1));
+        rhs[i] = 1;
     }
-    var x: [N]f64 = undefined;
-    try testing.expect(solve(N, A, n, b, &x));
-    for (0..n) |i| {
-        var r = -b[i];
-        for (0..n) |j| r += A[i][j] * x[j];
-        try testing.expect(@abs(r) < 1e-9);
+    var solution: [capacity]f64 = undefined;
+    try testing.expect(solve(capacity, matrix, size, rhs, &solution));
+    for (0..size) |i| {
+        var residual = -rhs[i];
+        for (0..size) |j| residual += matrix[i][j] * solution[j];
+        try testing.expect(@abs(residual) < 1e-9);
     }
-    var S = [2][2]f64{ .{ 1, 2 }, .{ 2, 4 } };
-    var piv: [2]usize = undefined;
-    try testing.expect(!luFactor(2, &S, 2, &piv));
+    var singular = [2][2]f64{ .{ 1, 2 }, .{ 2, 4 } };
+    var pivots: [2]usize = undefined;
+    try testing.expect(!luFactor(2, &singular, 2, &pivots));
 }
 
 test "Cholesky: fator conhecido e solução igual à da LU" {
     // A = L Lᵀ com L = [[2,0,0],[6,1,0],[-8,5,3]] (Golub e Van Loan usam este tipo de exemplo)
-    var A = [3][3]f64{ .{ 4, 12, -16 }, .{ 12, 37, -43 }, .{ -16, -43, 98 } };
-    const A0 = A;
-    try testing.expect(cholesky(3, &A, 3));
-    const L = [3][3]f64{ .{ 2, 0, 0 }, .{ 6, 1, 0 }, .{ -8, 5, 3 } };
-    for (0..3) |i| for (0..i + 1) |j| try testing.expectApproxEqAbs(L[i][j], A[i][j], 1e-12);
-    var x = [3]f64{ 1, 2, 3 };
-    cholSolve(3, &A, 3, &x);
-    var y: [3]f64 = undefined;
-    try testing.expect(solve(3, A0, 3, .{ 1, 2, 3 }, &y));
-    for (x, y) |a, b| try testing.expectApproxEqAbs(b, a, 1e-9);
-    var N = [2][2]f64{ .{ 1, 2 }, .{ 2, 1 } }; // autovalores 3 e −1
-    try testing.expect(!cholesky(2, &N, 2));
+    var matrix = [3][3]f64{ .{ 4, 12, -16 }, .{ 12, 37, -43 }, .{ -16, -43, 98 } };
+    const original = matrix;
+    try testing.expect(cholesky(3, &matrix, 3));
+    const expected_factor = [3][3]f64{ .{ 2, 0, 0 }, .{ 6, 1, 0 }, .{ -8, 5, 3 } };
+    for (0..3) |i| for (0..i + 1) |j| try testing.expectApproxEqAbs(expected_factor[i][j], matrix[i][j], 1e-12);
+    var chol_solution = [3]f64{ 1, 2, 3 };
+    cholSolve(3, &matrix, 3, &chol_solution);
+    var lu_solution: [3]f64 = undefined;
+    try testing.expect(solve(3, original, 3, .{ 1, 2, 3 }, &lu_solution));
+    for (chol_solution, lu_solution) |chol_value, lu_value| try testing.expectApproxEqAbs(lu_value, chol_value, 1e-9);
+    var indefinite = [2][2]f64{ .{ 1, 2 }, .{ 2, 1 } }; // autovalores 3 e −1
+    try testing.expect(!cholesky(2, &indefinite, 2));
 }
 
 test "Jacobi: A = V diag(w) Vᵀ e V ortogonal" {
-    const N = 4;
-    const A0 = [N][N]f64{ .{ 4, 1, -2, 2 }, .{ 1, 2, 0, 1 }, .{ -2, 0, 3, -2 }, .{ 2, 1, -2, -1 } };
-    var A = A0;
-    var w: [N]f64 = undefined;
-    var V: [N][N]f64 = undefined;
-    symEigen(N, &A, N, &w, &V);
-    for (0..N) |i| for (0..N) |j| {
-        var r: f64 = 0;
-        var o: f64 = 0;
-        for (0..N) |k| {
-            r += V[i][k] * w[k] * V[j][k];
-            o += V[k][i] * V[k][j];
+    const size = 4;
+    const original = [size][size]f64{ .{ 4, 1, -2, 2 }, .{ 1, 2, 0, 1 }, .{ -2, 0, 3, -2 }, .{ 2, 1, -2, -1 } };
+    var matrix = original;
+    var eigenvalues: [size]f64 = undefined;
+    var eigenvectors: [size][size]f64 = undefined;
+    symEigen(size, &matrix, size, &eigenvalues, &eigenvectors);
+    for (0..size) |i| for (0..size) |j| {
+        var rebuilt: f64 = 0;
+        var orthogonality: f64 = 0;
+        for (0..size) |k| {
+            rebuilt += eigenvectors[i][k] * eigenvalues[k] * eigenvectors[j][k];
+            orthogonality += eigenvectors[k][i] * eigenvectors[k][j];
         }
-        try testing.expectApproxEqAbs(A0[i][j], r, 1e-10);
-        try testing.expectApproxEqAbs(@as(f64, if (i == j) 1 else 0), o, 1e-10);
+        try testing.expectApproxEqAbs(original[i][j], rebuilt, 1e-10);
+        try testing.expectApproxEqAbs(@as(f64, if (i == j) 1 else 0), orthogonality, 1e-10);
     };
-    try testing.expectApproxEqAbs(@as(f64, 8), w[0] + w[1] + w[2] + w[3], 1e-10); // traço
+    try testing.expectApproxEqAbs(@as(f64, 8), eigenvalues[0] + eigenvalues[1] + eigenvalues[2] + eigenvalues[3], 1e-10); // traço
 }
