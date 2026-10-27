@@ -5,10 +5,10 @@
 //! (Beard e McLain, cap. 10). Altura e velocidade de cada segmento vão de (h0, V0) a
 //! (h1, V1) por uma curva cosseno; no segmento de pouso a altura cai em rampa.
 const std = @import("std");
-const L = @import("../limits.zig");
-const T = @import("../types.zig");
-const S = @import("../sim/state.zig");
-const fm = @import("../math/fmath.zig");
+const limits = @import("../limits.zig");
+const types = @import("../types.zig");
+const state = @import("../sim/state.zig");
+const fmath = @import("../math/fmath.zig");
 const terrain = @import("../physics/terrain.zig");
 
 pub const Guide = struct {
@@ -22,10 +22,10 @@ pub const Guide = struct {
 };
 
 fn smooth(x: f64) f64 {
-    return 0.5 * (1.0 - fm.cos(fm.pi * fm.lim(x, 0.0, 1.0)));
+    return 0.5 * (1.0 - fmath.cos(fmath.pi * fmath.lim(x, 0.0, 1.0)));
 }
 
-pub fn guide(c: S.Ctx, n: f64, e: f64, Vg: f64) Guide {
+pub fn guide(c: state.Ctx, n: f64, e: f64, Vg: f64) Guide {
     const p = c.p;
     const ap = &p.ap;
     var g = Guide{};
@@ -34,32 +34,32 @@ pub fn guide(c: S.Ctx, n: f64, e: f64, Vg: f64) Guide {
     const sg = &p.seg[k];
     const has_next = c.f.seg + 1 < p.n_seg;
     if (sg.arc == 0) {
-        const sc = fm.sincos(sg.chi0);
+        const sc = fmath.sincos(sg.chi0);
         g.s = (n - sg.n0) * sc.c + (e - sg.e0) * sc.s;
         g.ect = -(n - sg.n0) * sc.s + (e - sg.e0) * sc.c; // + : à direita
         g.chip = sg.chi0;
-        g.chid = sg.chi0 - ap.chi_inf * (2.0 / fm.pi) * fm.atan(ap.kvf * g.ect);
+        g.chid = sg.chi0 - ap.chi_inf * (2.0 / fmath.pi) * fmath.atan(ap.kvf * g.ect);
         // antecipação: se a próxima perna é curva, começa a inclinar t_lead s antes
         if (has_next and p.seg[k + 1].arc != 0 and ap.tlead > 0.0) {
             const nx = &p.seg[k + 1];
             const w = 1.0 - (sg.L - g.s) / (Vg * ap.tlead + 1e-6);
-            g.phiff = fm.lim(w, 0.0, 1.0) * nx.lam * fm.atan(Vg * Vg / (L.g0 * nx.R));
+            g.phiff = fmath.lim(w, 0.0, 1.0) * nx.lam * fmath.atan(Vg * Vg / (limits.g0 * nx.R));
         }
     } else {
-        const fi = fm.atan2(e - sg.ce, n - sg.cn);
-        const fi0 = fm.atan2(sg.e0 - sg.ce, sg.n0 - sg.cn);
-        const d = fm.hypot(n - sg.cn, e - sg.ce);
+        const fi = fmath.atan2(e - sg.ce, n - sg.cn);
+        const fi0 = fmath.atan2(sg.e0 - sg.ce, sg.n0 - sg.cn);
+        const d = fmath.hypot(n - sg.cn, e - sg.ce);
         var dl = sg.lam * (fi - fi0);
-        while (dl < -0.5 * fm.pi) dl += 2.0 * fm.pi;
-        while (dl >= 1.5 * fm.pi) dl -= 2.0 * fm.pi;
+        while (dl < -0.5 * fmath.pi) dl += 2.0 * fmath.pi;
+        while (dl >= 1.5 * fmath.pi) dl -= 2.0 * fmath.pi;
         g.s = sg.R * dl;
         g.ect = sg.lam * (d - sg.R); // + : por fora
-        g.chip = fi + sg.lam * 0.5 * fm.pi;
+        g.chip = fi + sg.lam * 0.5 * fmath.pi;
         // ganho da órbita em 1/m limitado: em raio pequeno k_o/R ficaria agressivo demais
-        g.chid = fi + sg.lam * (0.5 * fm.pi + fm.atan(ap.korb * (d - sg.R) / @max(sg.R, ap.Lorb)));
-        g.phiff = sg.lam * fm.atan(Vg * Vg / (L.g0 * sg.R));
+        g.chid = fi + sg.lam * (0.5 * fmath.pi + fmath.atan(ap.korb * (d - sg.R) / @max(sg.R, ap.Lorb)));
+        g.phiff = sg.lam * fmath.atan(Vg * Vg / (limits.g0 * sg.R));
         if (ap.tlead > 0.0 and has_next and p.seg[k + 1].arc == 0)
-            g.phiff *= fm.lim((sg.L - g.s) / (Vg * ap.tlead + 1e-6), 0.0, 1.0);
+            g.phiff *= fmath.lim((sg.L - g.s) / (Vg * ap.tlead + 1e-6), 0.0, 1.0);
     }
     const xs = g.s / sg.L;
     g.hseg = sg.h0 + (sg.h1 - sg.h0) * smooth(xs);
@@ -67,30 +67,30 @@ pub fn guide(c: S.Ctx, n: f64, e: f64, Vg: f64) Guide {
     if (sg.landing != 0) {
         // mira o terreno no ponto de toque (chão ou plataforma) com as rodas a 10 cm
         const st = sg.L - sg.clearance;
-        const sc = fm.sincos(sg.chi0);
+        const sc = fmath.sincos(sg.chi0);
         const htd = if (sg.arc == 0) terrain.height(p, sg.n0 + st * sc.c, sg.e0 + st * sc.s) else 0.0;
-        g.hseg = sg.h0 + (htd + c.h_rest + 0.1 - sg.h0) * fm.lim(g.s / st, 0.0, 1.0);
+        g.hseg = sg.h0 + (htd + c.h_rest + 0.1 - sg.h0) * fmath.lim(g.s / st, 0.0, 1.0);
     }
     return g;
 }
 
 /// ponto da perna na fração `fr` (0..1): n, e, h
-fn segPoint(sg: *const T.Segment, fr: f64) [3]f64 {
+fn segPoint(sg: *const types.Segment, fr: f64) [3]f64 {
     const h = sg.h0 + (sg.h1 - sg.h0) * smooth(fr);
     if (sg.arc != 0 and sg.R > 0.0) {
-        const fi0 = fm.atan2(sg.e0 - sg.ce, sg.n0 - sg.cn);
+        const fi0 = fmath.atan2(sg.e0 - sg.ce, sg.n0 - sg.cn);
         const fi = fi0 + sg.lam * fr * sg.L / sg.R;
-        return .{ sg.cn + sg.R * fm.cos(fi), sg.ce + sg.R * fm.sin(fi), h };
+        return .{ sg.cn + sg.R * fmath.cos(fi), sg.ce + sg.R * fmath.sin(fi), h };
     }
-    const sc = fm.sincos(sg.chi0);
+    const sc = fmath.sincos(sg.chi0);
     return .{ sg.n0 + fr * sg.L * sc.c, sg.e0 + fr * sg.L * sc.s, h };
 }
 
 /// perna para retomar o percurso de onde a aeronave está (troca do manual para o automático):
 /// a de cruzeiro mais perto (distância + 2 × diferença de altura). Cruzeiro = nem decolagem, nem
 /// pouso, nem perna baixa (abaixo de 60 % da altura do circuito). null se não houver.
-pub fn rejoinSegment(p: *const T.Params, n: f64, e: f64, h: f64) ?i32 {
-    const ns: usize = @intCast(std.math.clamp(p.n_seg, 0, L.max_segments));
+pub fn rejoinSegment(p: *const types.Params, n: f64, e: f64, h: f64) ?i32 {
+    const ns: usize = @intCast(std.math.clamp(p.n_seg, 0, limits.max_segments));
     if (ns == 0 or !std.math.isFinite(n + e + h)) return null;
     var hmax: f64 = 0;
     for (p.seg[0..ns]) |sg| hmax = @max(hmax, @max(sg.h0, sg.h1));
@@ -101,7 +101,7 @@ pub fn rejoinSegment(p: *const T.Params, n: f64, e: f64, h: f64) ?i32 {
         if (@min(sg.h0, sg.h1) < 0.6 * hmax) continue;
         for (0..21) |i| {
             const q = segPoint(sg, @as(f64, @floatFromInt(i)) / 20.0);
-            const d = fm.hypot(q[0] - n, q[1] - e) + 2.0 * @abs(q[2] - h);
+            const d = fmath.hypot(q[0] - n, q[1] - e) + 2.0 * @abs(q[2] - h);
             if (d < bd) {
                 bd = d;
                 best = @intCast(k);
@@ -112,7 +112,7 @@ pub fn rejoinSegment(p: *const T.Params, n: f64, e: f64, h: f64) ?i32 {
 }
 
 test "retomada: perna de cruzeiro mais perto, nunca a baixa" {
-    var p = T.Params{};
+    var p = types.Params{};
     p.n_seg = 4;
     p.seg[0] = .{ .takeoff = 1, .L = 60, .chi0 = 0, .h0 = 0, .h1 = 15 };
     p.seg[1] = .{ .L = 100, .n0 = 60, .chi0 = 0, .h0 = 15, .h1 = 15 };
@@ -132,11 +132,11 @@ test "retomada: perna de cruzeiro mais perto, nunca a baixa" {
 }
 
 test "reta: erro lateral e distância" {
-    var p = T.Params{};
+    var p = types.Params{};
     p.n_seg = 1;
     p.seg[0] = .{ .L = 100, .chi0 = 0, .h0 = 10, .h1 = 10, .V0 = 15, .V1 = 15 };
-    const f = S.Flags{};
-    const ctx = S.Ctx{ .p = &p, .f = &f, .tR = -1, .h_ground = 0, .tg = -1 };
+    const f = state.Flags{};
+    const ctx = state.Ctx{ .p = &p, .f = &f, .tR = -1, .h_ground = 0, .tg = -1 };
     const g = guide(ctx, 30, 2, 15);
     try std.testing.expectApproxEqAbs(@as(f64, 30), g.s, 1e-9);
     try std.testing.expectApproxEqAbs(@as(f64, 2), g.ect, 1e-9);

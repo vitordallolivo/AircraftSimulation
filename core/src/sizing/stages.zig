@@ -9,30 +9,30 @@
 //! A tração entra como uma curva T(V) já calculada (`Curve`): quem a calcula é um `Thrust`
 //! (o do núcleo, `CoreThrust`, ou um mock nos testes) — ver chain.zig.
 const std = @import("std");
-const S = @import("types.zig");
+const sizing_types = @import("types.zig");
 const kinds = @import("kinds.zig");
 
 pub const g0 = 9.80665;
 pub const V_top = 50.0; // a curva vai de 0 a V_top (m/s)
 
 pub const Curve = struct {
-    V: [S.n_curve]f64,
-    T: [S.n_curve]f64, // tração total (N), ≥ 0
+    V: [sizing_types.n_curve]f64,
+    T: [sizing_types.n_curve]f64, // tração total (N), ≥ 0
 
-    pub fn grid() [S.n_curve]f64 {
-        var v: [S.n_curve]f64 = undefined;
-        for (&v, 0..) |*x, i| x.* = V_top * @as(f64, @floatFromInt(i)) / @as(f64, S.n_curve - 1);
+    pub fn grid() [sizing_types.n_curve]f64 {
+        var v: [sizing_types.n_curve]f64 = undefined;
+        for (&v, 0..) |*x, i| x.* = V_top * @as(f64, @floatFromInt(i)) / @as(f64, sizing_types.n_curve - 1);
         return v;
     }
     pub fn at(c: *const Curve, V: f64) f64 {
         if (V <= c.V[0]) return c.T[0];
-        for (0..S.n_curve - 1) |i| {
+        for (0..sizing_types.n_curve - 1) |i| {
             if (V <= c.V[i + 1]) {
                 const f = (V - c.V[i]) / (c.V[i + 1] - c.V[i]);
                 return c.T[i] + f * (c.T[i + 1] - c.T[i]);
             }
         }
-        return c.T[S.n_curve - 1];
+        return c.T[sizing_types.n_curve - 1];
     }
 };
 
@@ -50,7 +50,7 @@ pub fn geometry(comptime K: type, span: f64, area: f64) Geo {
 // ------------------------------------------------------------------ perfil da asa (raiz → ponta)
 /// propriedades 2D médias da asa trapezoidal com perfil da raiz e da ponta: interpolação linear ao longo
 /// da envergadura pesada pela corda, ∫p c dη / ∫c dη = p_r + (p_t − p_r)(1 + 2λ)/(3(1 + λ))
-pub fn blendAirfoils(root: S.AirfoilData, tip: S.AirfoilData, taper: f64) S.AirfoilData {
+pub fn blendAirfoils(root: sizing_types.AirfoilData, tip: sizing_types.AirfoilData, taper: f64) sizing_types.AirfoilData {
     const l = std.math.clamp(taper, 0.05, 1.0);
     const f = (1.0 + 2.0 * l) / (3.0 * (1.0 + l));
     const mix = struct {
@@ -65,7 +65,7 @@ pub fn blendAirfoils(root: S.AirfoilData, tip: S.AirfoilData, taper: f64) S.Airf
 pub const Polar = struct { CD0: f64, K: f64, CLmax: f64, CLg: f64 };
 
 /// `extra_CDS`: C_D·S que o arranjo acrescenta (naceles)
-pub fn polar(comptime K: type, cfg: *const S.SizingCfg, geo: Geo, af: S.AirfoilData, extra_CDS: f64) Polar {
+pub fn polar(comptime K: type, cfg: *const sizing_types.SizingCfg, geo: Geo, af: sizing_types.AirfoilData, extra_CDS: f64) Polar {
     const tail = if (K.tail) cfg.tail_area_frac * cfg.tail_drag_frac else 0.0;
     const CLmax = @max(K.clmaxFactor(cfg) * af.clmax, 0.1);
     return .{
@@ -85,7 +85,7 @@ pub const Env = struct {
     V_LD: f64,
     LD: f64,
     grad: f64, // gradiente de subida máximo, sen γ (adimensional)
-    D: [S.n_curve]f64, // arrasto de voo nivelado (tração requerida, N) na grade inteira; V = 0: infinito
+    D: [sizing_types.n_curve]f64, // arrasto de voo nivelado (tração requerida, N) na grade inteira; V = 0: infinito
 };
 
 pub fn stallSpeed(p: Polar, W: f64, Sw: f64, rho: f64) f64 {
@@ -97,7 +97,7 @@ pub fn envelope(p: Polar, c: *const Curve, W: f64, Sw: f64, rho: f64) Env {
     var prev_ok = false;
     var prev_V: f64 = 0;
     var prev_m: f64 = 0;
-    for (0..S.n_curve) |i| {
+    for (0..sizing_types.n_curve) |i| {
         const V = c.V[i];
         const q = 0.5 * rho * V * V;
         const CL = if (q > 0) W / (q * Sw) else std.math.inf(f64);
@@ -206,7 +206,7 @@ pub fn canHover(c: *const Curve, m: f64, margin: f64) bool {
 // ------------------------------------------------------------------ massa
 pub const Mass = struct { pv: f64, wing: f64, tail: f64, propulsion: f64, fixed: f64 };
 
-pub fn emptyMass(comptime K: type, cfg: *const S.SizingCfg, geo: Geo, set_mass: f64, n_motor: f64) Mass {
+pub fn emptyMass(comptime K: type, cfg: *const sizing_types.SizingCfg, geo: Geo, set_mass: f64, n_motor: f64) Mass {
     const wing = cfg.wing_density * geo.S;
     const tail = if (K.tail) cfg.tail_density * cfg.tail_area_frac * geo.S else 0.0;
     const prop = n_motor * set_mass;
@@ -217,7 +217,7 @@ pub fn emptyMass(comptime K: type, cfg: *const S.SizingCfg, geo: Geo, set_mass: 
 
 // ------------------------------------------------------------------ testes (mocks no lugar da tração)
 const testing = std.testing;
-const fz = @import("../util/fuzz.zig");
+const fuzz = @import("../util/fuzz.zig");
 
 /// mock de tração: T = T0 (1 − V/Vz), ≥ 0
 pub fn linearCurve(T0: f64, Vz: f64) Curve {
@@ -227,8 +227,8 @@ pub fn linearCurve(T0: f64, Vz: f64) Curve {
 }
 
 test "dois perfis: retangular pesa meio a meio; perfil igual não muda nada" {
-    const a: S.AirfoilData = .{ .clmax = 2.0, .cd0 = 0.02 };
-    const b: S.AirfoilData = .{ .clmax = 1.2, .cd0 = 0.01 };
+    const a: sizing_types.AirfoilData = .{ .clmax = 2.0, .cd0 = 0.02 };
+    const b: sizing_types.AirfoilData = .{ .clmax = 1.2, .cd0 = 0.01 };
     const r = blendAirfoils(a, b, 1.0);
     try testing.expectApproxEqAbs(@as(f64, 1.6), r.clmax, 1e-12);
     try testing.expectApproxEqAbs(@as(f64, 0.015), r.cd0, 1e-12);
@@ -276,9 +276,9 @@ test "envelope com tração constante: V_max analítica" {
     try testing.expectApproxEqRel(@sqrt(2 * q / rho), e.Vmax, 0.02); // interpolação linear na grade
 }
 
-fn fuzzStages(_: void, src: *fz.Src) !void {
-    const cfg: S.SizingCfg = .{ .oswald = src.range(0.3, 1), .clmax_factor = src.range(0.5, 1), .cl_ground = src.range(0, 1), .fuselage_CDS = src.range(0, 0.05) };
-    const af: S.AirfoilData = .{ .clmax = src.range(0.8, 2.4), .cd0 = src.range(0.005, 0.03) };
+fn fuzzStages(_: void, src: *fuzz.Src) !void {
+    const cfg: sizing_types.SizingCfg = .{ .oswald = src.range(0.3, 1), .clmax_factor = src.range(0.5, 1), .cl_ground = src.range(0, 1), .fuselage_CDS = src.range(0, 0.05) };
+    const af: sizing_types.AirfoilData = .{ .clmax = src.range(0.8, 2.4), .cd0 = src.range(0.005, 0.03) };
     inline for (kinds.all) |K| {
         const geo = geometry(K, src.range(0.3, 5), src.range(0.05, 3));
         const p = polar(K, &cfg, geo, af, src.range(0, 0.02));
@@ -307,5 +307,5 @@ fn fuzzStages(_: void, src: *fz.Src) !void {
 }
 
 test "fuzz: estágios com tração mock (todas as formas de aeronave)" {
-    try fz.check({}, fuzzStages, .{});
+    try fuzz.check({}, fuzzStages, .{});
 }

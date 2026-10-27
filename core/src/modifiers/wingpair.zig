@@ -20,13 +20,13 @@
 //! (`aero_model` ≠ 0) não faz nada: lá a interferência já está no sistema.
 const std = @import("std");
 const vec = @import("../math/vec.zig");
-const T = @import("../types.zig");
+const core_types = @import("../types.zig");
 const types = @import("types.zig");
 const llt = @import("../loads/llt.zig");
 const V3 = vec.V3;
 
 /// algum par ligado e o voo pelas faixas: a aerodinâmica precisa das circulações antes do laço dos painéis
-pub fn active(p: *const T.Params) bool {
+pub fn active(p: *const core_types.Params) bool {
     if (p.aero_model != 0) return false;
     const n: usize = @intCast(p.n_mod);
     for (p.mods[0..n]) |*m| {
@@ -41,7 +41,7 @@ inline fn has(mask: [2]i32, i: usize) bool {
 }
 
 /// −ganho · w_i no painel i (o que entra na velocidade dele); `gamma`: Γ de cada painel; `u`: para onde o ar vai
-pub fn induced(p: *const T.Params, m: *const types.Modifier, gamma: []const f64, u: V3, i: usize) V3 {
+pub fn induced(p: *const core_types.Params, m: *const types.Modifier, gamma: []const f64, u: V3, i: usize) V3 {
     const a = m.pairMask(true);
     const b = m.pairMask(false);
     const src = if (has(a, i)) b else if (has(b, i)) a else return vec.zero;

@@ -37,7 +37,7 @@
 //!
 //! As variáveis entram normalizadas em [0, 1]; o que sai também.
 const std = @import("std");
-const la = @import("../math/linalg.zig");
+const linalg = @import("../math/linalg.zig");
 
 pub const max_n = 32;
 pub const max_m = 16;
@@ -61,7 +61,7 @@ pub fn repairStep(n: usize, m: usize, J: []const f64, g: []const f64, lambda: f6
         b[i] = g[i];
     }
     var y: [max_m]f64 = undefined;
-    if (!la.solve(max_m, A, m, b, &y)) return false;
+    if (!linalg.solve(max_m, A, m, b, &y)) return false;
     for (0..n) |j| {
         var s: f64 = 0;
         for (0..m) |i| s += J[i * n + j] * y[i];

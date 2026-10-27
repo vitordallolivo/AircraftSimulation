@@ -328,15 +328,15 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/math/**
 
 - `core/src/math/fmath.zig` — Funções matemáticas: tabelas (LUT) + aproximações polinomiais, e a referência da std.
-  tipos `SinCos:30`, `lut:73`, `ref:164`, `minimax:216`
-  fn `optOn:21`, `SinLut:33`, `sincos:259`, `sin:262`, `cos:265`, `tan:268`, `atan:272`, `atan2:275`, `asin:278`, `acos:282`, `exp:286`, `log:289`, `pow:293`, `tanh:297`, `sqrt:300`, `hypot:303`, `sat:308`, `lim:311`, `sgn:314`, `wrap:317`
+  tipos `SinCos:30`, `lut:73`, `ref:170`, `minimax:228`
+  fn `optOn:21`, `SinLut:33`, `sincos:273`, `sin:277`, `cos:281`, `tan:285`, `atan:290`, `atan2:294`, `asin:298`, `acos:303`, `exp:308`, `log:312`, `pow:317`, `tanh:322`, `sqrt:326`, `hypot:330`, `sat:336`, `lim:340`, `sgn:344`, `wrap:348`
 - `core/src/math/fmath_test.zig` — Testes só das LUTs e aproximações (independentes de -Dfast_math: comparam `lut` com `ref`).
 - `core/src/math/linalg.zig` — Álgebra linear densa de tamanho fixo: fatoração LU com pivoteamento parcial e de Cholesky, e as
-  fn `luFactor:14`, `luSolve:39`, `cholesky:58`, `cholSolve:76`, `symEigen:94`, `solve:139`
+  fn `luFactor:14`, `luSolve:39`, `cholesky:58`, `cholSolve:76`, `symEigen:93`, `solve:139`
 - `core/src/math/poly.zig` — Polinômio em duas variáveis de grau N gerado em comptime, na ordem dos ajustes do MATLAB
-  fn `Poly2:9`
+  fn `Poly2:10`
 - `core/src/math/vec.zig` — Vetores 3D em registradores SIMD (@Vector) e matrizes 3x3 por linhas.
-  fn `v3:10`, `arr:13`, `splat:16`, `dot:19`, `norm:22`, `cross:25`, `mul:34`, `mulT:38`, `rotation:43`, `solve3:61`
+  fn `v3:11`, `arr:15`, `splat:19`, `dot:23`, `norm:27`, `cross:31`, `mul:40`, `mulT:44`, `rotation:49`, `solve3:67`
 
 **core/src/modifiers/**
 

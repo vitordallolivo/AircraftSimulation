@@ -14,7 +14,7 @@
 //!
 //! Novo tipo: escreva o struct e ponha em `all`; a ABI e o Python passam a aceitá-lo pelo índice.
 const std = @import("std");
-const S = @import("types.zig");
+const sizing_types = @import("types.zig");
 
 pub const Hover = enum { none, optional, required };
 
@@ -23,13 +23,13 @@ pub const Monoplane = struct {
     pub const wings = 1;
     pub const tail = true;
     pub const hover: Hover = .none;
-    pub fn inducedFactor(_: *const S.SizingCfg) f64 {
+    pub fn inducedFactor(_: *const sizing_types.SizingCfg) f64 {
         return 1.0;
     }
-    pub fn clmaxFactor(cfg: *const S.SizingCfg) f64 {
+    pub fn clmaxFactor(cfg: *const sizing_types.SizingCfg) f64 {
         return cfg.clmax_factor;
     }
-    pub fn extraMass(_: *const S.SizingCfg, _: f64) f64 {
+    pub fn extraMass(_: *const sizing_types.SizingCfg, _: f64) f64 {
         return 0;
     }
     pub fn surfaces() u32 {
@@ -49,13 +49,13 @@ pub const Biplane = struct {
     pub const tail = true;
     pub const hover: Hover = .none;
     /// mesma envergadura e área total: D_i do biplano / D_i do monoplano = (1 + σ)/2
-    pub fn inducedFactor(cfg: *const S.SizingCfg) f64 {
+    pub fn inducedFactor(cfg: *const sizing_types.SizingCfg) f64 {
         return 0.5 * (1.0 + biplaneSigma(cfg.gap_ratio));
     }
-    pub fn clmaxFactor(cfg: *const S.SizingCfg) f64 {
+    pub fn clmaxFactor(cfg: *const sizing_types.SizingCfg) f64 {
         return 0.95 * cfg.clmax_factor; // a asa de baixo perde um pouco no C_L,max (interferência)
     }
-    pub fn extraMass(cfg: *const S.SizingCfg, _: f64) f64 {
+    pub fn extraMass(cfg: *const sizing_types.SizingCfg, _: f64) f64 {
         return 0.1 * cfg.fuselage_mass; // montantes e estais
     }
     pub fn surfaces() u32 {
@@ -68,13 +68,13 @@ pub const FlyingWing = struct {
     pub const wings = 1;
     pub const tail = false;
     pub const hover: Hover = .none;
-    pub fn inducedFactor(_: *const S.SizingCfg) f64 {
+    pub fn inducedFactor(_: *const sizing_types.SizingCfg) f64 {
         return 1.0;
     }
-    pub fn clmaxFactor(cfg: *const S.SizingCfg) f64 {
+    pub fn clmaxFactor(cfg: *const sizing_types.SizingCfg) f64 {
         return cfg.clmax_factor * cfg.trim_clmax_factor; // equilibrar sem EH custa C_L
     }
-    pub fn extraMass(_: *const S.SizingCfg, _: f64) f64 {
+    pub fn extraMass(_: *const sizing_types.SizingCfg, _: f64) f64 {
         return 0;
     }
     pub fn surfaces() u32 {
@@ -87,13 +87,13 @@ pub const Tailsitter = struct {
     pub const wings = 1;
     pub const tail = false;
     pub const hover: Hover = .required;
-    pub fn inducedFactor(_: *const S.SizingCfg) f64 {
+    pub fn inducedFactor(_: *const sizing_types.SizingCfg) f64 {
         return 1.0;
     }
-    pub fn clmaxFactor(cfg: *const S.SizingCfg) f64 {
+    pub fn clmaxFactor(cfg: *const sizing_types.SizingCfg) f64 {
         return cfg.clmax_factor * cfg.trim_clmax_factor;
     }
-    pub fn extraMass(cfg: *const S.SizingCfg, _: f64) f64 {
+    pub fn extraMass(cfg: *const sizing_types.SizingCfg, _: f64) f64 {
         return cfg.gear_mass * 0.5; // pés de pouso em vez de trem
     }
     pub fn surfaces() u32 {
@@ -106,13 +106,13 @@ pub const Vtol = struct {
     pub const wings = 1;
     pub const tail = true;
     pub const hover: Hover = .optional;
-    pub fn inducedFactor(_: *const S.SizingCfg) f64 {
+    pub fn inducedFactor(_: *const sizing_types.SizingCfg) f64 {
         return 1.0;
     }
-    pub fn clmaxFactor(cfg: *const S.SizingCfg) f64 {
+    pub fn clmaxFactor(cfg: *const sizing_types.SizingCfg) f64 {
         return cfg.clmax_factor;
     }
-    pub fn extraMass(cfg: *const S.SizingCfg, sets_mass: f64) f64 {
+    pub fn extraMass(cfg: *const sizing_types.SizingCfg, sets_mass: f64) f64 {
         return cfg.vtol_mass_frac * sets_mass; // braços e suportes dos motores de sustentação
     }
     pub fn surfaces() u32 {
@@ -130,9 +130,9 @@ pub fn check(comptime K: type) void {
     }
     if (@TypeOf(K.hover) != Hover) @compileError(@typeName(K) ++ ".hover tem de ser kinds.Hover");
     if (K.wings < 1) @compileError(@typeName(K) ++ ".wings < 1");
-    _ = @as(fn (*const S.SizingCfg) f64, K.inducedFactor);
-    _ = @as(fn (*const S.SizingCfg) f64, K.clmaxFactor);
-    _ = @as(fn (*const S.SizingCfg, f64) f64, K.extraMass);
+    _ = @as(fn (*const sizing_types.SizingCfg) f64, K.inducedFactor);
+    _ = @as(fn (*const sizing_types.SizingCfg) f64, K.clmaxFactor);
+    _ = @as(fn (*const sizing_types.SizingCfg, f64) f64, K.extraMass);
 }
 
 comptime {
@@ -143,7 +143,7 @@ const testing = std.testing;
 
 test "biplano: σ cai com o vão; menos arrasto induzido que o monoplano de mesma envergadura" {
     try testing.expect(biplaneSigma(0.1) > biplaneSigma(0.3));
-    var cfg: S.SizingCfg = .{};
+    var cfg: sizing_types.SizingCfg = .{};
     cfg.gap_ratio = 0.15;
     const f = Biplane.inducedFactor(&cfg);
     try testing.expect(f > 0.5 and f < 1.0);

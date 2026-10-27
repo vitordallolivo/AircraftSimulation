@@ -3,7 +3,7 @@
 //!
 //! Tudo `extern struct` (vai no esquema da ABI); as listas têm tamanho fixo e um contador.
 const std = @import("std");
-const T = @import("../types.zig");
+const types = @import("../types.zig");
 
 pub const max_airfoils = 64;
 pub const max_sets = 64; // conjuntos motor + hélice + bateria
@@ -113,7 +113,7 @@ pub const LayoutData = extern struct {
 
 /// conjunto de tração: a unidade do núcleo (motor + hélice + bateria) e a massa dela
 pub const PropSet = extern struct {
-    unit: T.PropUnit = .{},
+    unit: types.PropUnit = .{},
     mass: f64 = 0.8,
     P_max: f64 = 0, // potência elétrica máxima de um motor (W)
 };

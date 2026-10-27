@@ -5,13 +5,13 @@
 //! B. W. McCormick, *Aerodynamics, Aeronautics, and Flight Mechanics* (Wiley); a mesma expressão é usada
 //! por J. D. Anderson, *Aircraft Performance and Design* (McGraw-Hill), citando o McCormick.
 //! h: altura do painel acima do chão; b: envergadura de referência.
-const fm = @import("../math/fmath.zig");
-const MT = @import("types.zig");
+const fmath = @import("../math/fmath.zig");
+const modifier_types = @import("types.zig");
 
-/// fator do arrasto induzido do método `method` (`Params.ground`, número de `MT.Ground`) a uma altura `h` (m) com
+/// fator do arrasto induzido do método `method` (`Params.ground`, número de `modifier_types.Ground`) a uma altura `h` (m) com
 /// envergadura `b` (m)
 pub inline fn factor(method: i32, h: f64, b: f64) f64 {
-    return switch (@as(MT.Ground, @enumFromInt(method))) {
+    return switch (@as(modifier_types.Ground, @enumFromInt(method))) {
         .mccormick => mccormick(h, b),
         .off, _ => 1.0,
     };
@@ -33,6 +33,6 @@ test "McCormick: valores da fórmula e limites" {
     try testing.expect(mccormick(100.0, 2.0) > 0.9999);
     try testing.expect(mccormick(0.0, 2.0) < 0.01);
     // desligado: 1
-    try testing.expectEqual(@as(f64, 1.0), factor(@intFromEnum(MT.Ground.off), 0.1, 2.0));
-    try testing.expectEqual(mccormick(0.3, 2.0), factor(@intFromEnum(MT.Ground.mccormick), 0.3, 2.0));
+    try testing.expectEqual(@as(f64, 1.0), factor(@intFromEnum(modifier_types.Ground.off), 0.1, 2.0));
+    try testing.expectEqual(mccormick(0.3, 2.0), factor(@intFromEnum(modifier_types.Ground.mccormick), 0.3, 2.0));
 }

@@ -23,7 +23,7 @@
 //!   - o tubo segue o eixo do motor (não é desviado pelo α nem pela asa);
 //!   - sem interação hélice → hélice e asa → hélice.
 const std = @import("std");
-const fm = @import("../math/fmath.zig");
+const fmath = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
 const collision = @import("../collision/collision.zig");
 const V3 = vec.V3;
@@ -53,7 +53,7 @@ pub fn shape(T: f64, V: f64, R: f64, rho: f64) TubeShape {
 /// w0 da teoria do momento (m/s). V: velocidade axial através do disco (≥ 0); T ≤ 0: sem esteira
 pub fn diskInduced(T: f64, V: f64, R: f64, rho: f64) f64 {
     if (T <= 0 or R <= 0 or rho <= 0) return 0;
-    const A = fm.pi * R * R;
+    const A = fmath.pi * R * R;
     const Vp = @max(V, 0.0);
     return -0.5 * Vp + @sqrt(0.25 * Vp * Vp + T / (2.0 * rho * A));
 }
@@ -75,7 +75,7 @@ pub fn radiusAt(R: f64, V: f64, w0: f64, x: f64) f64 {
 pub fn swirlRate(Q: f64, V: f64, w0: f64, R: f64, rho: f64) f64 {
     const u = @max(V, 0.0) + w0;
     if (u <= 1e-9 or R <= 0 or rho <= 0) return 0;
-    return 2.0 * Q / (fm.pi * rho * u * R * R * R * R);
+    return 2.0 * Q / (fmath.pi * rho * u * R * R * R * R);
 }
 
 pub const Point = struct {
@@ -109,7 +109,7 @@ const testing = std.testing;
 test "momento: T = 2ρA w0 (V + w0), estático w0 = √(T/(2ρA))" {
     const R: f64 = 0.19;
     const rho: f64 = 1.225;
-    const A = fm.pi * R * R;
+    const A = fmath.pi * R * R;
     for ([_]f64{ 0, 5, 12, 20 }) |V| {
         const w0 = diskInduced(30.0, V, R, rho);
         try testing.expectApproxEqRel(30.0, 2.0 * rho * A * w0 * (V + w0), 1e-12);
@@ -144,7 +144,7 @@ test "giro: o fluxo de momento angular no disco é o torque" {
     const dr = R / @as(f64, @floatFromInt(n));
     for (0..n) |k| {
         const r = (@as(f64, @floatFromInt(k)) + 0.5) * dr;
-        s += rho * (V + w0) * Om * r * r * 2.0 * fm.pi * r * dr;
+        s += rho * (V + w0) * Om * r * r * 2.0 * fmath.pi * r * dr;
     }
     try testing.expectApproxEqRel(Q, s, 1e-6);
 }

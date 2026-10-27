@@ -4,13 +4,13 @@
 //! `abi.zig` gera em comptime um esquema (nome, tipo, offset) que o lado Python lê
 //! para montar as estruturas ctypes. Campos marcados "derivado" são calculados em
 //! `init` a partir dos demais e podem ser lidos de volta.
-const L = @import("limits.zig");
+const limits = @import("limits.zig");
 const poly = @import("math/poly.zig");
-const MT = @import("modifiers/types.zig");
-pub const Modifier = MT.Modifier;
+const modifier_types = @import("modifiers/types.zig");
+pub const Modifier = modifier_types.Modifier;
 
 /// polinômio de tração (gerado em comptime a partir do grau em limits.zig)
-pub const ThrustPoly = poly.Poly2(L.thrust_poly_deg);
+pub const ThrustPoly = poly.Poly2(limits.thrust_poly_deg);
 
 pub const prop_motor = 0; // motor BLDC + hélice por tabela J, C_T, C_P (com dinâmica de rotação)
 pub const prop_poly = 1; // tração por polinômio T(x, y) ajustado (sem motor/bateria)
@@ -91,9 +91,9 @@ pub const PropUnit = extern struct {
     poly_xc: f64 = 0, // valor de x quando poly_x = pvar_const
     poly_yc: f64 = 0,
     poly: [ThrustPoly.n_coef]f64 = [_]f64{0} ** ThrustPoly.n_coef,
-    J: [L.max_prop_pts]f64 = [_]f64{0} ** L.max_prop_pts,
-    CT: [L.max_prop_pts]f64 = [_]f64{0} ** L.max_prop_pts,
-    CP: [L.max_prop_pts]f64 = [_]f64{0} ** L.max_prop_pts,
+    J: [limits.max_prop_pts]f64 = [_]f64{0} ** limits.max_prop_pts,
+    CT: [limits.max_prop_pts]f64 = [_]f64{0} ** limits.max_prop_pts,
+    CP: [limits.max_prop_pts]f64 = [_]f64{0} ** limits.max_prop_pts,
     // derivados
     eT: [3]f64 = .{ 1, 0, 0 },
     D4: f64 = 0,
@@ -275,10 +275,10 @@ pub const Autopilot = extern struct {
 pub const AeroTable = extern struct {
     n: i32 = 0,
     fus: i32 = 0,
-    alpha: [L.max_tab]f64 = [_]f64{0} ** L.max_tab, // rad, crescente
-    CL: [L.max_tab]f64 = [_]f64{0} ** L.max_tab,
-    CD: [L.max_tab]f64 = [_]f64{0} ** L.max_tab,
-    Cm: [L.max_tab]f64 = [_]f64{0} ** L.max_tab,
+    alpha: [limits.max_tab]f64 = [_]f64{0} ** limits.max_tab, // rad, crescente
+    CL: [limits.max_tab]f64 = [_]f64{0} ** limits.max_tab,
+    CD: [limits.max_tab]f64 = [_]f64{0} ** limits.max_tab,
+    Cm: [limits.max_tab]f64 = [_]f64{0} ** limits.max_tab,
     ref: [3]f64 = .{ 0, 0, 0 }, // ponto dos momentos da tabela (corpo, m)
     CYb: f64 = 0,
     Clb: f64 = 0,
@@ -309,12 +309,12 @@ pub const LltCache = extern struct {
     ok: i32 = 0,
     n: i32 = 0,
     gh: i32 = 0, // montado com as correções de Goates e Hunsaker
-    used: [L.max_surfaces]i32 = [_]i32{0} ** L.max_surfaces, // o painel tinha geometria na montagem
-    jA: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
-    jB: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
-    s2: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
-    s3: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
-    bound: [L.max_surfaces * L.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (L.max_surfaces * L.max_surfaces),
+    used: [limits.max_surfaces]i32 = [_]i32{0} ** limits.max_surfaces, // o painel tinha geometria na montagem
+    jA: [limits.max_surfaces * limits.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (limits.max_surfaces * limits.max_surfaces),
+    jB: [limits.max_surfaces * limits.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (limits.max_surfaces * limits.max_surfaces),
+    s2: [limits.max_surfaces * limits.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (limits.max_surfaces * limits.max_surfaces),
+    s3: [limits.max_surfaces * limits.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (limits.max_surfaces * limits.max_surfaces),
+    bound: [limits.max_surfaces * limits.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (limits.max_surfaces * limits.max_surfaces),
 };
 
 pub const Params = extern struct {
@@ -345,12 +345,12 @@ pub const Params = extern struct {
     n_event: i32 = 0,
     slosh_on: i32 = 1,
     _pad0: i32 = 0,
-    surf: [L.max_surfaces]Surface = [_]Surface{.{}} ** L.max_surfaces,
-    prop: [L.max_props]PropUnit = [_]PropUnit{.{}} ** L.max_props,
-    gear: [L.max_gear]Gear = [_]Gear{.{}} ** L.max_gear,
-    tank: [L.max_tanks]Tank = [_]Tank{.{}} ** L.max_tanks,
-    seg: [L.max_segments]Segment = [_]Segment{.{}} ** L.max_segments,
-    event: [L.max_events]Event = [_]Event{.{}} ** L.max_events,
+    surf: [limits.max_surfaces]Surface = [_]Surface{.{}} ** limits.max_surfaces,
+    prop: [limits.max_props]PropUnit = [_]PropUnit{.{}} ** limits.max_props,
+    gear: [limits.max_gear]Gear = [_]Gear{.{}} ** limits.max_gear,
+    tank: [limits.max_tanks]Tank = [_]Tank{.{}} ** limits.max_tanks,
+    seg: [limits.max_segments]Segment = [_]Segment{.{}} ** limits.max_segments,
+    event: [limits.max_events]Event = [_]Event{.{}} ** limits.max_events,
     // atrito no solo
     mu_roll: f64 = 0.04,
     mu_lat: f64 = 0.6,
@@ -383,11 +383,11 @@ pub const Params = extern struct {
     prop_strike: i32 = 0, // 1: a ponta da pá tocar o chão encerra o voo (`crashed`, Events.tprop); 0 (padrão): só registra
     no_payload: i32 = 0, // começa sem a carga
     n_pad: i32 = 0, // mesas/plataformas
-    pads: [L.max_pads]Pad = [_]Pad{.{}} ** L.max_pads,
+    pads: [limits.max_pads]Pad = [_]Pad{.{}} ** limits.max_pads,
     // modificadores (modifiers/): método do efeito solo e efeitos a mais (desligados por padrão)
-    ground: i32 = @intFromEnum(MT.Ground.mccormick),
+    ground: i32 = @intFromEnum(modifier_types.Ground.mccormick),
     n_mod: i32 = 0,
-    mods: [L.max_mods]Modifier = [_]Modifier{.{}} ** L.max_mods,
+    mods: [limits.max_mods]Modifier = [_]Modifier{.{}} ** limits.max_mods,
     // derivados
     steer_sign: f64 = 1, // −1 se a roda direcionável está atrás das principais (convencional)
     alpha_guard_lim: f64 = 0, // α da proteção de α na decolagem (rad; `runner.guardAlpha`); 0: ap.alpha_max
@@ -561,12 +561,12 @@ pub const LogRow = extern struct {
     pk_h: f64,
     hgnd: f64, // altura do terreno (chão, mesa ou plataforma) sob o CG
     hw: f64, // altura das rodas sobre o terreno
-    rpm: [L.max_props]f64,
-    thrust: [L.max_props]f64,
-    current: [L.max_props]f64,
-    Ngear: [L.max_gear]f64,
-    slosh_x: [L.max_tanks]f64,
-    slosh_y: [L.max_tanks]f64,
+    rpm: [limits.max_props]f64,
+    thrust: [limits.max_props]f64,
+    current: [limits.max_props]f64,
+    Ngear: [limits.max_gear]f64,
+    slosh_x: [limits.max_tanks]f64,
+    slosh_y: [limits.max_tanks]f64,
 };
 
 /// coeficientes estáticos (polar)

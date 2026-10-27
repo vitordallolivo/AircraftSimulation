@@ -5,7 +5,7 @@
 //!     o padrão é o comportamento de antes, então arquivos antigos e o AeroDrive não mudam;
 //!   - efeito a mais (esteira da hélice, tabela de correção...): um item em `Params.mods`, desligado
 //!     por padrão (`n_mod = 0`: o laço nem roda).
-const L = @import("../limits.zig");
+const limits = @import("../limits.zig");
 
 // Na ABI os seletores são `i32` (o Python escreve o número); dentro do núcleo viram estes enums, e o `switch`
 // sobre eles diz por nome o que cada número liga. Número novo = um campo novo no enum, no fim.
@@ -81,8 +81,8 @@ pub const Modifier = extern struct {
 };
 
 comptime {
-    if (L.max_surfaces > 64) @compileError("surf_mask cobre até 64 painéis");
-    if (L.max_props > 31) @compileError("prop_mask cobre até 31 motores");
+    if (limits.max_surfaces > 64) @compileError("surf_mask cobre até 64 painéis");
+    if (limits.max_props > 31) @compileError("prop_mask cobre até 31 motores");
     for (@typeInfo(SlipstreamParam).@"enum".fields) |f| if (f.value >= n_params) @compileError("parâmetro fora de params");
     for (@typeInfo(PairParam).@"enum".fields) |f| if (f.value >= n_params) @compileError("parâmetro fora de params");
 }

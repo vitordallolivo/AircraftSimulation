@@ -6,7 +6,7 @@
 //! `run` só faz contas, sem conferir de novo. As funções são as da std (`@exp`, `std.math.pow`): a nota de
 //! um regulamento precisa sair igual à conta à mão, e as tabelas rápidas do `fmath` não garantem isso.
 const std = @import("std");
-const T = @import("types.zig");
+const types = @import("types.zig");
 
 pub const Error = enum(i32) {
     ok = 0,
@@ -18,16 +18,16 @@ pub const Error = enum(i32) {
     double_write = -6,
 };
 
-pub fn check(p: *const T.Program) Error {
-    if (p.n_ops < 0 or p.n_ops > T.max_ops or p.n_consts < 0 or p.n_consts > T.max_consts or
-        p.n_tiers < 0 or p.n_tiers > T.max_tiers or p.n_inputs < 0 or p.n_slots < p.n_inputs or
-        p.n_slots > T.max_slots) return .bad_size;
-    for (p.tiers[0..@intCast(p.n_tiers)]) |t| if (t.n < 0 or t.n > T.max_steps) return .bad_size;
-    var written: [T.max_slots]bool = @splat(false);
+pub fn check(p: *const types.Program) Error {
+    if (p.n_ops < 0 or p.n_ops > types.max_ops or p.n_consts < 0 or p.n_consts > types.max_consts or
+        p.n_tiers < 0 or p.n_tiers > types.max_tiers or p.n_inputs < 0 or p.n_slots < p.n_inputs or
+        p.n_slots > types.max_slots) return .bad_size;
+    for (p.tiers[0..@intCast(p.n_tiers)]) |t| if (t.n < 0 or t.n > types.max_steps) return .bad_size;
+    var written: [types.max_slots]bool = @splat(false);
     for (0..@intCast(p.n_inputs)) |i| written[i] = true;
     var depth: i32 = 0;
     for (p.ops[0..@intCast(p.n_ops)], p.args[0..@intCast(p.n_ops)]) |code, a| {
-        const op = std.enums.fromInt(T.Op, code) orelse return .bad_op;
+        const op = std.enums.fromInt(types.Op, code) orelse return .bad_op;
         switch (op) {
             .@"const" => {
                 if (a < 0 or a >= p.n_consts) return .bad_index;
@@ -53,13 +53,13 @@ pub fn check(p: *const T.Program) Error {
             .add, .sub, .mul, .div, .pow, .min, .max => 1, // depois de tirar um, sobra pelo menos um
             else => 0,
         };
-        if (depth < need or depth > T.max_stack) return .stack;
+        if (depth < need or depth > types.max_stack) return .stack;
         if (op != .@"const" and op != .load and depth < 0) return .stack;
     }
     return if (depth == 0) .ok else .stack;
 }
 
-fn tier(t: *const T.Tier, x: f64) f64 {
+fn tier(t: *const types.Tier, x: f64) f64 {
     for (t.limits[0..@intCast(t.n)], t.values[0..@intCast(t.n)]) |lim, v| {
         if (x <= lim) return v;
     }
@@ -67,11 +67,11 @@ fn tier(t: *const T.Tier, x: f64) f64 {
 }
 
 /// calcula todas as vagas; `slots[0..n_inputs]` já trazem as entradas. O programa tem de ter passado no `check`
-pub fn run(p: *const T.Program, slots: *[T.max_slots]f64) void {
-    var st: [T.max_stack]f64 = undefined;
+pub fn run(p: *const types.Program, slots: *[types.max_slots]f64) void {
+    var st: [types.max_stack]f64 = undefined;
     var sp: usize = 0;
     for (p.ops[0..@intCast(p.n_ops)], p.args[0..@intCast(p.n_ops)]) |code, a| {
-        const op: T.Op = @enumFromInt(code);
+        const op: types.Op = @enumFromInt(code);
         const ua: usize = @intCast(@max(a, 0));
         switch (op) {
             .@"const" => {
@@ -111,10 +111,10 @@ pub fn run(p: *const T.Program, slots: *[T.max_slots]f64) void {
 
 /// vários candidatos de uma vez: a linha k das entradas começa em `inputs[k * in_stride]` e as vagas dela
 /// vão para `out[k * out_stride ..][0..n_slots]`
-pub fn runMany(p: *const T.Program, inputs: []const f64, in_stride: usize, rows: usize, out: []f64, out_stride: usize) void {
+pub fn runMany(p: *const types.Program, inputs: []const f64, in_stride: usize, rows: usize, out: []f64, out_stride: usize) void {
     const ni: usize = @intCast(p.n_inputs);
     const ns: usize = @intCast(p.n_slots);
-    var slots: [T.max_slots]f64 = undefined;
+    var slots: [types.max_slots]f64 = undefined;
     for (0..rows) |k| {
         @memcpy(slots[0..ni], inputs[k * in_stride ..][0..ni]);
         run(p, &slots);
@@ -125,8 +125,8 @@ pub fn runMany(p: *const T.Program, inputs: []const f64, in_stride: usize, rows:
 // ------------------------------------------------------------------ testes
 const testing = std.testing;
 
-fn program(ops: []const T.Op, args: []const i32, consts: []const f64, n_inputs: i32, n_slots: i32) T.Program {
-    var p: T.Program = .{};
+fn program(ops: []const types.Op, args: []const i32, consts: []const f64, n_inputs: i32, n_slots: i32) types.Program {
+    var p: types.Program = .{};
     for (ops, args, 0..) |o, a, i| {
         p.ops[i] = @intFromEnum(o);
         p.args[i] = a;
@@ -152,7 +152,7 @@ test "F_Bat do regulamento da Micro 2026 (eq. 9.4) escrito à mão como programa
     // valores da eq. 9.4 e do texto da seção 9.8.4 (p. 87): ~1 até 300 g, ~0,8 em 420 g, 0,2 a partir de ~520 g
     const cases = [_][2]f64{ .{ 0.300, 0.989894 }, .{ 0.420, 0.802407 }, .{ 0.550, 0.2 } };
     for (cases) |c| {
-        var s: [T.max_slots]f64 = undefined;
+        var s: [types.max_slots]f64 = undefined;
         s[0] = c[0];
         run(&p, &s);
         try testing.expectApproxEqAbs(c[1], s[1], 1e-6);
@@ -167,7 +167,7 @@ test "faixa: primeiro limite que cabe, fora acima de todos e com NaN" {
     p.tiers[0].values[0..3].* = .{ 250, 170, 110 };
     try testing.expectEqual(Error.ok, check(&p));
     for ([_][2]f64{ .{ 0.5, 250 }, .{ 1.0, 250 }, .{ 3.9, 170 }, .{ 8.0, 110 }, .{ 8.01, 0 }, .{ std.math.nan(f64), 0 } }) |c| {
-        var s: [T.max_slots]f64 = undefined;
+        var s: [types.max_slots]f64 = undefined;
         s[0] = c[0];
         run(&p, &s);
         try testing.expectEqual(c[1], s[1]);
@@ -184,7 +184,7 @@ test "check recusa programa malformado" {
     p.ops[0] = 99;
     p.n_ops = 1;
     try testing.expectEqual(Error.bad_op, check(&p));
-    p.n_slots = T.max_slots + 1;
+    p.n_slots = types.max_slots + 1;
     try testing.expectEqual(Error.bad_size, check(&p));
 }
 

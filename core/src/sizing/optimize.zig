@@ -11,16 +11,16 @@
 //! Novo otimizador (GA, Nelder-Mead, gradiente...): escreva o struct, ponha em `all` (o índice é o
 //! `OptOpts.method`) e ele aparece para a ABI e para o Python.
 const std = @import("std");
-const S = @import("types.zig");
+const sizing_types = @import("types.zig");
 
 pub const Eval = struct {
     fitness: f64, // o que o otimizador maximiza (pontuação − penalidade)
-    ind: S.Individual, // o que fica registrado (x usado, pontuação, violação...)
+    ind: sizing_types.Individual, // o que fica registrado (x usado, pontuação, violação...)
 };
 
 pub const Problem = struct {
     ctx: *anyopaque,
-    specs: []const S.VarSpec,
+    specs: []const sizing_types.VarSpec,
     evalFn: *const fn (ctx: *anyopaque, x: []const f64) Eval,
 
     pub fn eval(self: Problem, x: []const f64) Eval {
@@ -34,7 +34,7 @@ pub const Problem = struct {
         const v = self.specs[i];
         const lo = @min(v.lo, v.hi);
         const hi = @max(v.lo, v.hi);
-        if (v.kind == S.var_continuous or lo == hi) return .{ lo, hi };
+        if (v.kind == sizing_types.var_continuous or lo == hi) return .{ lo, hi };
         const il = @ceil(lo);
         const ih = @max(@floor(hi), il);
         return .{ il - 0.499, ih + 0.499 };
@@ -46,7 +46,7 @@ pub const Problem = struct {
 pub const Progress = *const fn (ctx: ?*anyopaque, iter: i32, n: usize) callconv(.c) i32;
 
 pub const Recorder = struct {
-    buf: []S.Individual,
+    buf: []sizing_types.Individual,
     n: usize = 0,
     evals: usize = 0,
     progress: ?Progress = null,
@@ -74,9 +74,9 @@ pub const Recorder = struct {
 };
 
 pub const Result = struct {
-    best: [S.n_vars]f64 = [_]f64{0} ** S.n_vars,
+    best: [sizing_types.n_vars]f64 = [_]f64{0} ** sizing_types.n_vars,
     fitness: f64 = -std.math.inf(f64),
-    best_ind: S.Individual = .{},
+    best_ind: sizing_types.Individual = .{},
 };
 
 fn keep(r: *Result, x: []const f64, e: Eval) void {
@@ -88,7 +88,7 @@ fn keep(r: *Result, x: []const f64, e: Eval) void {
     }
 }
 
-fn rng(opts: *const S.OptOpts) std.Random.DefaultPrng {
+fn rng(opts: *const sizing_types.OptOpts) std.Random.DefaultPrng {
     const s: u64 = if (std.math.isFinite(opts.seed)) @intFromFloat(@abs(@round(opts.seed))) else 1;
     return std.Random.DefaultPrng.init(s);
 }
@@ -98,16 +98,16 @@ pub const Pso = struct {
     pub const name: [:0]const u8 = "PSO (enxame de partículas)";
     const max_p = 256;
 
-    pub fn run(pb: Problem, opts: *const S.OptOpts, rec: *Recorder) Result {
+    pub fn run(pb: Problem, opts: *const sizing_types.OptOpts, rec: *Recorder) Result {
         var r: Result = .{};
         const n = pb.dim();
         const np: usize = @intCast(std.math.clamp(opts.particles, 2, max_p));
         const ni: usize = @intCast(std.math.clamp(opts.iterations, 1, 10000));
         var prng = rng(opts);
         const rand = prng.random();
-        var pos: [max_p][S.n_vars]f64 = undefined;
-        var vel: [max_p][S.n_vars]f64 = undefined;
-        var pbest: [max_p][S.n_vars]f64 = undefined;
+        var pos: [max_p][sizing_types.n_vars]f64 = undefined;
+        var vel: [max_p][sizing_types.n_vars]f64 = undefined;
+        var pbest: [max_p][sizing_types.n_vars]f64 = undefined;
         var pfit: [max_p]f64 = undefined;
         for (0..np) |k| {
             for (0..n) |i| {
@@ -152,14 +152,14 @@ pub const Pso = struct {
 pub const RandomSearch = struct {
     pub const name: [:0]const u8 = "busca aleatória";
 
-    pub fn run(pb: Problem, opts: *const S.OptOpts, rec: *Recorder) Result {
+    pub fn run(pb: Problem, opts: *const sizing_types.OptOpts, rec: *Recorder) Result {
         var r: Result = .{};
         const n = pb.dim();
         const np: usize = @intCast(std.math.clamp(opts.particles, 1, 100000));
         const ni: usize = @intCast(std.math.clamp(opts.iterations, 1, 10000));
         var prng = rng(opts);
         const rand = prng.random();
-        var x: [S.n_vars]f64 = undefined;
+        var x: [sizing_types.n_vars]f64 = undefined;
         for (0..ni) |it| {
             for (0..np) |k| {
                 for (0..n) |i| {
@@ -181,7 +181,7 @@ pub const all = .{ Pso, RandomSearch };
 
 pub fn check(comptime O: type) void {
     if (!@hasDecl(O, "name") or !@hasDecl(O, "run")) @compileError("otimizador " ++ @typeName(O) ++ " sem `name` ou `run`");
-    _ = @as(fn (Problem, *const S.OptOpts, *Recorder) Result, O.run);
+    _ = @as(fn (Problem, *const sizing_types.OptOpts, *Recorder) Result, O.run);
 }
 
 comptime {
@@ -189,7 +189,7 @@ comptime {
 }
 
 /// roda o método `opts.method`
-pub fn run(pb: Problem, opts: *const S.OptOpts, rec: *Recorder) Result {
+pub fn run(pb: Problem, opts: *const sizing_types.OptOpts, rec: *Recorder) Result {
     inline for (all, 0..) |O, i| {
         if (opts.method == i) return O.run(pb, opts, rec);
     }
@@ -198,11 +198,11 @@ pub fn run(pb: Problem, opts: *const S.OptOpts, rec: *Recorder) Result {
 
 // ------------------------------------------------------------------ testes: funções analíticas (rápidos)
 const testing = std.testing;
-const fz = @import("../util/fuzz.zig");
+const fuzz = @import("../util/fuzz.zig");
 
 /// esfera deslocada com uma variável inteira e uma de lista: máximo em (1.3, −0.7, 3, 2)
 const Sphere = struct {
-    specs: [4]S.VarSpec = .{ .{ .lo = -5, .hi = 5 }, .{ .lo = -5, .hi = 5 }, .{ .lo = 0, .hi = 6, .kind = S.var_integer }, .{ .lo = 0, .hi = 4, .kind = S.var_list } },
+    specs: [4]sizing_types.VarSpec = .{ .{ .lo = -5, .hi = 5 }, .{ .lo = -5, .hi = 5 }, .{ .lo = 0, .hi = 6, .kind = sizing_types.var_integer }, .{ .lo = 0, .hi = 4, .kind = sizing_types.var_list } },
     calls: usize = 0,
 
     fn f(ctx: *anyopaque, x: []const f64) Eval {
@@ -210,9 +210,9 @@ const Sphere = struct {
         self.calls += 1;
         const t = [_]f64{ 1.3, -0.7, 3, 2 };
         var s: f64 = 0;
-        var ind: S.Individual = .{};
+        var ind: sizing_types.Individual = .{};
         for (x, 0..) |v, i| {
-            const u = if (self.specs[i].kind == S.var_continuous) v else @round(v);
+            const u = if (self.specs[i].kind == sizing_types.var_continuous) v else @round(v);
             ind.x[i] = u;
             s += (u - t[i]) * (u - t[i]);
         }
@@ -226,9 +226,9 @@ const Sphere = struct {
 
 test "PSO acha o máximo da esfera (contínuas, inteira e lista)" {
     var sp: Sphere = .{};
-    var buf: [2000]S.Individual = undefined;
+    var buf: [2000]sizing_types.Individual = undefined;
     var rec: Recorder = .{ .buf = &buf };
-    const opts: S.OptOpts = .{ .particles = 20, .iterations = 60, .seed = 3 };
+    const opts: sizing_types.OptOpts = .{ .particles = 20, .iterations = 60, .seed = 3 };
     const r = Pso.run(sp.problem(), &opts, &rec);
     try testing.expect(r.fitness > -1e-3);
     try testing.expectEqual(@as(f64, 3), r.best_ind.x[2]);
@@ -239,36 +239,36 @@ test "PSO acha o máximo da esfera (contínuas, inteira e lista)" {
 
 test "a interface troca o método; a mesma semente dá o mesmo resultado" {
     var sp: Sphere = .{};
-    var buf: [600]S.Individual = undefined;
+    var buf: [600]sizing_types.Individual = undefined;
     var rec: Recorder = .{ .buf = &buf };
-    var opts: S.OptOpts = .{ .particles = 10, .iterations = 30, .seed = 5, .method = S.method_random };
+    var opts: sizing_types.OptOpts = .{ .particles = 10, .iterations = 30, .seed = 5, .method = sizing_types.method_random };
     const a = run(sp.problem(), &opts, &rec);
     rec.n = 0;
     const b = run(sp.problem(), &opts, &rec);
     try testing.expectEqual(a.fitness, b.fitness);
-    opts.method = S.method_pso;
+    opts.method = sizing_types.method_pso;
     rec.n = 0;
     const p = run(sp.problem(), &opts, &rec);
     try testing.expect(p.fitness >= a.fitness); // o enxame não perde da busca aleatória com o mesmo orçamento
 }
 
-fn fuzzOpt(_: void, src: *fz.Src) !void {
+fn fuzzOpt(_: void, src: *fuzz.Src) !void {
     var sp: Sphere = .{};
     for (&sp.specs) |*v| {
         v.lo = src.range(-10, 10);
         v.hi = v.lo + src.range(0, 10);
     }
-    var buf: [64]S.Individual = undefined;
+    var buf: [64]sizing_types.Individual = undefined;
     var rec: Recorder = .{ .buf = &buf };
-    const opts: S.OptOpts = .{ .particles = @intCast(src.int(u32, 0, 12)), .iterations = @intCast(src.int(u32, 0, 8)), .seed = src.range(0, 1e6), .method = @intCast(src.int(u32, 0, 1)), .w = src.range(0, 1.2), .c1 = src.range(0, 3), .c2 = src.range(0, 3) };
+    const opts: sizing_types.OptOpts = .{ .particles = @intCast(src.int(u32, 0, 12)), .iterations = @intCast(src.int(u32, 0, 8)), .seed = src.range(0, 1e6), .method = @intCast(src.int(u32, 0, 1)), .w = src.range(0, 1.2), .c1 = src.range(0, 3), .c2 = src.range(0, 3) };
     _ = run(sp.problem(), &opts, &rec);
     // nenhum ponto avaliado sai dos limites (inteiros e listas arredondados dentro deles)
     for (buf[0..rec.n]) |ind| {
         for (0..4) |i| {
             const v = sp.specs[i];
             errdefer std.debug.print("i={d} x={d} lo={d} hi={d} kind={d}\n", .{ i, ind.x[i], v.lo, v.hi, v.kind });
-            const lo = if (v.kind == S.var_continuous or v.lo == v.hi) v.lo else @ceil(v.lo);
-            const hi = if (v.kind == S.var_continuous or v.lo == v.hi) v.hi else @max(@floor(v.hi), @ceil(v.lo));
+            const lo = if (v.kind == sizing_types.var_continuous or v.lo == v.hi) v.lo else @ceil(v.lo);
+            const hi = if (v.kind == sizing_types.var_continuous or v.lo == v.hi) v.hi else @max(@floor(v.hi), @ceil(v.lo));
             try testing.expect(ind.x[i] >= lo - 1e-9 and ind.x[i] <= hi + 1e-9);
         }
     }
@@ -286,11 +286,11 @@ test "progresso por iteração e parada pedida de fora" {
     };
     var cnt = [2]usize{ 0, 0 };
     var sp: Sphere = .{};
-    var buf: [400]S.Individual = undefined;
+    var buf: [400]sizing_types.Individual = undefined;
     inline for (all) |O| {
         cnt = .{ 0, 0 };
         var rec: Recorder = .{ .buf = &buf, .progress = Count.f, .progress_ctx = &cnt };
-        const opts: S.OptOpts = .{ .particles = 6, .iterations = 50 };
+        const opts: sizing_types.OptOpts = .{ .particles = 6, .iterations = 50 };
         _ = O.run(sp.problem(), &opts, &rec);
         try testing.expectEqual(@as(usize, 5), cnt[0]);
         try testing.expectEqual(@as(usize, 30), cnt[1]); // 5 iterações × 6
@@ -298,5 +298,5 @@ test "progresso por iteração e parada pedida de fora" {
 }
 
 test "fuzz: otimizadores com limites e opções quaisquer" {
-    try fz.check({}, fuzzOpt, .{});
+    try fuzz.check({}, fuzzOpt, .{});
 }

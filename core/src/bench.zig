@@ -1,9 +1,9 @@
 //! Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
 //! de tamanhos diferentes (para ver o efeito do cache) e a avaliação da dinâmica f(t, x).
 const std = @import("std");
-const fm = @import("math/fmath.zig");
-const S = @import("sim/state.zig");
-const dyn = @import("sim/dynamics.zig");
+const fmath = @import("math/fmath.zig");
+const state = @import("sim/state.zig");
+const sim_dynamics = @import("sim/dynamics.zig");
 const runner = @import("sim/runner.zig");
 
 pub const Kind = enum(i32) {
@@ -21,14 +21,14 @@ pub const Kind = enum(i32) {
     exp_estrin = 11, // o polinômio do exp por Estrin (`-Dopt` bit 64)
 };
 
-const Big = fm.SinLut(16);
-const Mid = fm.SinLut(12);
+const Big = fmath.SinLut(16);
+const Mid = fmath.SinLut(12);
 
 /// entrada pseudoaleatória barata (LCG), em [-r, r]
-inline fn next(state: *u64, r: f64) f64 {
-    state.* = state.* *% 6364136223846793005 +% 1442695040888963407;
-    const u: f64 = @floatFromInt(state.* >> 11);
-    return (u * (1.0 / 9007199254740992.0) * 2.0 - 1.0) * r;
+inline fn next(rng_state: *u64, range: f64) f64 {
+    rng_state.* = rng_state.* *% 6364136223846793005 +% 1442695040888963407;
+    const draw: f64 = @floatFromInt(rng_state.* >> 11);
+    return (draw * (1.0 / 9007199254740992.0) * 2.0 - 1.0) * range;
 }
 
 fn loop(comptime f: anytype, n: u64, random: bool, r: f64) f64 {
@@ -57,38 +57,38 @@ fn sinOf(comptime T: type) fn (f64) f64 {
 
 // o exp da tabela com cada esquema, independente de -Dopt
 fn expHorner(x: f64) f64 {
-    return fm.lut.expWith(false, x);
+    return fmath.lut.expWith(false, x);
 }
 fn expEstrin(x: f64) f64 {
-    return fm.lut.expWith(true, x);
+    return fmath.lut.expWith(true, x);
 }
 
 fn atan2L(x: f64) f64 {
-    return fm.lut.atan2(x, 0.7);
+    return fmath.lut.atan2(x, 0.7);
 }
 fn atan2R(x: f64) f64 {
-    return fm.ref.atan2(x, 0.7);
+    return fmath.ref.atan2(x, 0.7);
 }
 fn logL(x: f64) f64 {
-    return fm.lut.log(@abs(x) + 1e-3);
+    return fmath.lut.log(@abs(x) + 1e-3);
 }
 fn logR(x: f64) f64 {
-    return fm.ref.log(@abs(x) + 1e-3);
+    return fmath.ref.log(@abs(x) + 1e-3);
 }
 
 /// roda n chamadas; devolve a soma (para o compilador não apagar o laço)
 pub fn math(kind: Kind, n: u64, random: bool) f64 {
     return switch (kind) {
-        .sin_lut256 => loop(sinOf(fm.lut.Sin), n, random, 10.0),
-        .sin_ref => loop(sinOf(fm.ref), n, random, 10.0),
+        .sin_lut256 => loop(sinOf(fmath.lut.Sin), n, random, 10.0),
+        .sin_ref => loop(sinOf(fmath.ref), n, random, 10.0),
         .sin_lut4096 => loop(sinOf(Mid), n, random, 10.0),
         .sin_lut65536 => loop(sinOf(Big), n, random, 10.0),
         .atan2_lut => loop(atan2L, n, random, 30.0),
         .atan2_ref => loop(atan2R, n, random, 30.0),
         .exp_lut => loop(expHorner, n, random, 50.0),
         .exp_estrin => loop(expEstrin, n, random, 50.0),
-        .sin_minimax => loop(sinOf(fm.minimax), n, random, 10.0),
-        .exp_ref => loop(fm.ref.exp, n, random, 50.0),
+        .sin_minimax => loop(sinOf(fmath.minimax), n, random, 10.0),
+        .exp_ref => loop(fmath.ref.exp, n, random, 50.0),
         .log_lut => loop(logL, n, random, 1e3),
         .log_ref => loop(logR, n, random, 1e3),
     };
@@ -96,12 +96,12 @@ pub fn math(kind: Kind, n: u64, random: bool) f64 {
 
 /// n avaliações de f(t, x) no estado atual da simulação
 pub fn dynamics(inst: *runner.Instance, n: u64) f64 {
-    var dx: [S.nx]f64 = undefined;
+    var dx: [state.nx]f64 = undefined;
     var acc: f64 = 0;
     var i: u64 = 0;
     while (i < n) : (i += 1) {
-        dyn.f(inst.ctx(), inst.r.t, &inst.r.x, &dx, null);
-        acc += dx[S.U];
+        sim_dynamics.f(inst.ctx(), inst.r.t, &inst.r.x, &dx, null);
+        acc += dx[state.U];
     }
     return acc;
 }

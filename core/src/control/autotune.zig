@@ -13,8 +13,8 @@
 //! do avião). Derivada que não dá para usar (comando sem efeito, número absurdo) deixa o ganho
 //! do arquivo como está e marca no resultado.
 const std = @import("std");
-const T = @import("../types.zig");
-const S = @import("../sim/state.zig");
+const types = @import("../types.zig");
+const state = @import("../sim/state.zig");
 const linear = @import("../sim/linear.zig");
 
 pub const Targets = struct {
@@ -49,7 +49,7 @@ fn put(dst: *f64, v: f64, lo: f64, hi: f64) bool {
 }
 
 /// ganhos a partir do modelo linear (A, B por linhas; x = u v w p q r φ θ; u = δe δa δr thr)
-pub fn fromLinear(lm: *const linear.LinModel, ap: *T.Autopilot, k: Targets) Result {
+pub fn fromLinear(lm: *const linear.LinModel, ap: *types.Autopilot, k: Targets) Result {
     var r = Result{};
     if (lm.ok == 0 or !(lm.V > 1)) return r;
     r.ok = 1;
@@ -140,7 +140,7 @@ pub fn fromLinear(lm: *const linear.LinModel, ap: *T.Autopilot, k: Targets) Resu
 }
 
 /// lineariza o avião em V (voo nivelado) e ajusta `p.ap`
-pub fn tune(p: *T.Params, f: *const S.Flags, V: f64) Result {
+pub fn tune(p: *types.Params, f: *const state.Flags, V: f64) Result {
     const lm = linear.linearize(p, f, V);
     return fromLinear(&lm, &p.ap, .{});
 }
@@ -148,7 +148,7 @@ pub fn tune(p: *T.Params, f: *const S.Flags, V: f64) Result {
 // ------------------------------------------------------------------ testes
 const testing = std.testing;
 
-fn closedPitch(lm: *const linear.LinModel, ap: *const T.Autopilot) [2]f64 {
+fn closedPitch(lm: *const linear.LinModel, ap: *const types.Autopilot) [2]f64 {
     const V = lm.V;
     const Za = lm.A[2 * 8 + 2];
     const Mq = lm.A[4 * 8 + 4] + lm.B[4 * 4 + 0] * ap.Kqe;
@@ -173,8 +173,8 @@ test "autotune: dois aviões diferentes ficam com a mesma resposta em arfagem e 
     b.B[4 * 4 + 0] = -118;
     b.B[3 * 4 + 1] = 343;
     b.B[5 * 4 + 2] = 0; // sem leme
-    var pa = T.Autopilot{};
-    var pb = T.Autopilot{};
+    var pa = types.Autopilot{};
+    var pb = types.Autopilot{};
     const ra = fromLinear(&a, &pa, .{});
     const rb = fromLinear(&b, &pb, .{});
     try testing.expect(ra.pitch == 1 and rb.pitch == 1 and ra.roll == 1 and rb.roll == 1);
@@ -183,7 +183,7 @@ test "autotune: dois aviões diferentes ficam com a mesma resposta em arfagem e 
     try testing.expectApproxEqAbs(@as(f64, 0.65), ca[1], 1e-9);
     try testing.expectApproxEqAbs(@as(f64, 0.65), closedPitch(&b, &pb)[1], 1e-9);
     // os dois seguem o mesmo 80 % do α pedido só com o proporcional
-    for ([_]struct { *const linear.LinModel, *const T.Autopilot }{ .{ &a, &pa }, .{ &b, &pb } }) |c| {
+    for ([_]struct { *const linear.LinModel, *const types.Autopilot }{ .{ &a, &pa }, .{ &b, &pb } }) |c| {
         const Ma = c[0].A[4 * 8 + 2] * c[0].V;
         const Mde = c[0].B[4 * 4 + 0];
         try testing.expectApproxEqAbs(@as(f64, 0.8), Mde * c[1].Kae / (Ma + Mde * c[1].Kae), 1e-9);
@@ -202,9 +202,9 @@ test "autotune: modelo ruim ou números absurdos deixam os ganhos como estavam" 
         var lm = linear.LinModel{ .ok = @intFromBool(rnd.boolean()), .V = @floatCast(@as(f32, @bitCast(rnd.int(u32)))) };
         for (&lm.A) |*x| x.* = if (rnd.uintLessThan(u8, 4) == 0) @floatCast(@as(f32, @bitCast(rnd.int(u32)))) else rnd.float(f64) * 200 - 100;
         for (&lm.B) |*x| x.* = if (rnd.uintLessThan(u8, 4) == 0) @floatCast(@as(f32, @bitCast(rnd.int(u32)))) else rnd.float(f64) * 400 - 200;
-        var ap = T.Autopilot{};
+        var ap = types.Autopilot{};
         _ = fromLinear(&lm, &ap, .{});
-        inline for (@typeInfo(T.Autopilot).@"struct".fields) |f| try testing.expect(std.math.isFinite(@field(ap, f.name)));
+        inline for (@typeInfo(types.Autopilot).@"struct".fields) |f| try testing.expect(std.math.isFinite(@field(ap, f.name)));
         try testing.expect(ap.Kae > 0 and ap.Kae < 50 and ap.Kqe >= 0 and ap.Kphia >= 0 and ap.Kphia <= 20);
         try testing.expect(ap.Kbeta >= 0 and ap.Kbeta <= 3 and ap.KV > 0 and ap.KV <= 2);
     }

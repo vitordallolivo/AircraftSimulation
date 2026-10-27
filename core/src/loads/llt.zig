@@ -27,15 +27,15 @@
 //! a_i: inclinação 2D tirada do C_Lα 3D do núcleo invertendo Helmbold (o tradutor fez C_Lα = helmbold(a, AR)):
 //!     C_Lα = a/(√(1+k²)+k), k = a/(πAR)   ⇒   a = C_Lα / √(1 − 2 C_Lα/(πAR))
 const std = @import("std");
-const L = @import("../limits.zig");
-const T = @import("../types.zig");
-const fm = @import("../math/fmath.zig");
+const limits = @import("../limits.zig");
+const types = @import("../types.zig");
+const fmath = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
 const aero = @import("../physics/aero.zig");
 const mods = @import("../modifiers/mod.zig");
 const V3 = vec.V3;
 
-const n_max = L.max_surfaces;
+const n_max = limits.max_surfaces;
 const far = 1e3; // comprimento das pernas (m): "infinito" para aviões deste tamanho
 /// núcleo dos vórtices entre superfícies diferentes, em fração da corda de quem solta (Scully; Vatistas, Kozel e Mih,
 /// "A simpler model for concentrated vortices", Experiments in Fluids 11, 1991, n = 1). Sem ele, a perna da raiz de
@@ -47,8 +47,8 @@ pub const core_frac = 0.1;
 /// inclinação 2D a partir do C_Lα 3D (Helmbold invertido); sem solução (asa muito curta): 2π
 pub fn sectionSlope(CLa: f64, AR: f64) f64 {
     if (AR <= 0) return CLa;
-    const q = 1.0 - 2.0 * CLa / (fm.pi * AR);
-    return if (q > 1e-6) CLa / @sqrt(q) else 2.0 * fm.pi;
+    const q = 1.0 - 2.0 * CLa / (fmath.pi * AR);
+    return if (q > 1e-6) CLa / @sqrt(q) else 2.0 * fmath.pi;
 }
 
 /// velocidade induzida em P por um segmento de vórtice reto de A a B com Γ = 1 (Katz e Plotkin, cap. 10)
@@ -62,7 +62,7 @@ pub fn segment(P: V3, A: V3, B: V3, rc: f64) V3 {
     const n1 = vec.norm(r1);
     const n2 = vec.norm(r2);
     if (c2 < 1e-12 or n1 < 1e-9 or n2 < 1e-9) return vec.zero; // em cima da linha do vórtice
-    const k = vec.dot(r0, r1 / vec.splat(n1) - r2 / vec.splat(n2)) / (4.0 * fm.pi * c2);
+    const k = vec.dot(r0, r1 / vec.splat(n1) - r2 / vec.splat(n2)) / (4.0 * fmath.pi * c2);
     return c * vec.splat(k);
 }
 
@@ -75,7 +75,7 @@ pub fn horseshoe(P: V3, A: V3, B: V3, u: V3, bound: bool, rc: f64) V3 {
     return if (bound) legs + segment(P, A, B, rc) else legs;
 }
 
-fn span(ps: *const T.PanelState, ez: V3) struct { A: V3, B: V3, d: V3 } {
+fn span(ps: *const types.PanelState, ez: V3) struct { A: V3, B: V3, d: V3 } {
     const ex = vec.v3(ps.ex);
     var d = vec.cross(ez, ex); // da esquerda para a direita (de baixo para cima nas verticais): Γ > 0 sustenta
     d = d / vec.splat(@max(vec.norm(d), 1e-12));
@@ -88,7 +88,7 @@ fn span(ps: *const T.PanelState, ez: V3) struct { A: V3, B: V3, d: V3 } {
 /// Phillips e Snyder (2000): ferraduras vizinhas dividem o nó e as pernas livres se cancelam onde Γ é igual, também
 /// com enflechamento. A ordem segue `d` (Γ > 0 sustenta). Sem os nós (qa = qb = 0): o segmento perpendicular à
 /// corda pelo centro (`span`), que só fecha as ferraduras sem enflechamento
-fn nodes(s: *const T.Surface, ps: *const T.PanelState) Node {
+fn nodes(s: *const types.Surface, ps: *const types.PanelState) Node {
     const g = span(ps, vec.v3(s.ez));
     const qa = vec.v3(s.qa);
     const qb = vec.v3(s.qb);
@@ -98,8 +98,8 @@ fn nodes(s: *const T.Surface, ps: *const T.PanelState) Node {
 }
 
 /// os nós da ferradura de um painel só com a geometria dele (para quem não tem o `PanelState`: modifiers/wingpair.zig)
-pub fn surfaceNodes(s: *const T.Surface) Node {
-    const ps = T.PanelState{ .r = s.r, .S = s.S, .c = s.c, .group = s.group, .side = s.side, .ey = s.ey, .ex = s.ex };
+pub fn surfaceNodes(s: *const types.Surface) Node {
+    const ps = types.PanelState{ .r = s.r, .S = s.S, .c = s.c, .group = s.group, .side = s.side, .ey = s.ey, .ex = s.ex };
     return nodes(s, &ps);
 }
 
@@ -135,7 +135,7 @@ const Wings = struct {
     cB: [n_max]f64 = undefined,
     bseg: [n_max]f64 = undefined, // semienvergadura da cadeia de cada painel (projetada em y-z)
 
-    fn build(p: *const T.Params, ps: []const T.PanelState, n: usize) Wings {
+    fn build(p: *const types.Params, ps: []const types.PanelState, n: usize) Wings {
         var w = Wings{};
         const tol = 1e-9;
         for (0..n) |j| {
@@ -204,7 +204,7 @@ fn jointed(P: V3, A: V3, B: V3, jA: V3, jB: V3, u: V3, bound: bool, rc: f64) V3 
 
 /// a linha de cada ferradura vista do ponto de controle i (Goates e Hunsaker): nós efetivos e juntas de todos os
 /// painéis j; escreve em `infl[j]` a velocidade induzida em i por j com Γ = 1
-fn ghInfluence(p: *const T.Params, ps: []const T.PanelState, n: usize, w: *const Wings, i: usize, u: V3, infl: []V3) void {
+fn ghInfluence(p: *const types.Params, ps: []const types.PanelState, n: usize, w: *const Wings, i: usize, u: V3, infl: []V3) void {
     var A: [n_max]V3 = undefined;
     var B: [n_max]V3 = undefined;
     var jA: [n_max]V3 = undefined;
@@ -220,7 +220,7 @@ fn ghInfluence(p: *const T.Params, ps: []const T.PanelState, n: usize, w: *const
 
 /// a geometria que o ponto de controle i vê (Goates e Hunsaker): os nós efetivos A, B e as juntas jA, jB de cada
 /// painel j. Só depende da geometria: `prepare` guarda, `ghInfluence` recalcula quando não há cache
-fn ghRow(p: *const T.Params, ps: []const T.PanelState, n: usize, w: *const Wings, i: usize, A: *[n_max]V3, B: *[n_max]V3, jA: *[n_max]V3, jB: *[n_max]V3) void {
+fn ghRow(p: *const types.Params, ps: []const types.PanelState, n: usize, w: *const Wings, i: usize, A: *[n_max]V3, B: *[n_max]V3, jA: *[n_max]V3, jB: *[n_max]V3) void {
     var ua: [n_max]V3 = undefined;
     const Pi = vec.v3(ps[i].r);
     const di = w.g[i].B - w.g[i].A;
@@ -256,7 +256,7 @@ fn ghRow(p: *const T.Params, ps: []const T.PanelState, n: usize, w: *const Wings
 }
 
 /// os painéis como `aero.computeTrace` os escreve, só com a geometria (para `prepare`, antes de qualquer escoamento)
-fn geometryPanels(p: *const T.Params, n: usize, ps: []T.PanelState) void {
+fn geometryPanels(p: *const types.Params, n: usize, ps: []types.PanelState) void {
     for (0..n) |k| {
         const s = &p.surf[k];
         ps[k] = .{ .r = s.r, .S = s.S, .c = s.c, .group = s.group, .side = s.side, .ey = s.ey, .ex = s.ex };
@@ -266,11 +266,11 @@ fn geometryPanels(p: *const T.Params, n: usize, ps: []T.PanelState) void {
 /// monta `Params.llt_cache` (chamado em `runner.configure`, depois de `aero.init`): de onde saem as pernas livres e
 /// os segmentos fixos de cada par (i, j), para Phillips e Snyder ou Goates e Hunsaker conforme `llt_joint`,
 /// `llt_blend`. Não muda nenhuma conta: `apply` com e sem o cache dá o mesmo resultado, bit a bit
-pub fn prepare(p: *T.Params) void {
+pub fn prepare(p: *types.Params) void {
     const c = &p.llt_cache;
     c.ok = 0;
     const n: usize = @intCast(@min(@max(p.n_surf, 0), @as(i32, n_max)));
-    var ps: [n_max]T.PanelState = undefined;
+    var ps: [n_max]types.PanelState = undefined;
     geometryPanels(p, n, ps[0..n]);
     const gh = p.llt_joint > 0 or p.llt_blend > 0;
     const wings = if (gh) Wings.build(p, ps[0..n], n) else Wings{};
@@ -311,7 +311,7 @@ pub fn prepare(p: *T.Params) void {
 
 /// a influência de j em i (Γ = 1) com o cache: só as duas pernas livres, somadas na mesma ordem de `horseshoe`
 /// (Phillips e Snyder) ou de `jointed` (Goates e Hunsaker)
-fn cachedInfluence(c: *const T.LltCache, P: V3, i: usize, j: usize, u: V3, rc: f64) V3 {
+fn cachedInfluence(c: *const types.LltCache, P: V3, i: usize, j: usize, u: V3, rc: f64) V3 {
     const k = i * n_max + j;
     const jA = vec.v3(c.jA[k]);
     const jB = vec.v3(c.jB[k]);
@@ -329,7 +329,7 @@ fn cachedInfluence(c: *const T.LltCache, P: V3, i: usize, j: usize, u: V3, rc: f
 
 /// o cache serve para estes painéis: montado para a mesma configuração e com os mesmos painéis com geometria (um
 /// painel sem escoamento no instante muda as cadeias de Goates e Hunsaker: aí a conta inteira)
-fn cacheFits(p: *const T.Params, ps: []const T.PanelState, n: usize, gh: bool) bool {
+fn cacheFits(p: *const types.Params, ps: []const types.PanelState, n: usize, gh: bool) bool {
     const c = &p.llt_cache;
     if (c.ok == 0 or c.n != @as(i32, @intCast(n)) or (c.gh != 0) != gh) return false;
     for (0..n) |j| {
@@ -342,7 +342,7 @@ fn cacheFits(p: *const T.Params, ps: []const T.PanelState, n: usize, gh: bool) b
 /// eq. 16), no lugar de `ex` e `ez`, e cos Λ_i (eq. 19). Sem enflechamento, são `ex`, `ez` e 1
 const Section = struct { ex: V3, ez: V3, cosL: f64 };
 
-fn sweptSection(s: *const T.Surface, ps: *const T.PanelState) Section {
+fn sweptSection(s: *const types.Surface, ps: *const types.PanelState) Section {
     const g = nodes(s, ps);
     const dl = g.B - g.A;
     const us = unit(dl);
@@ -352,14 +352,14 @@ fn sweptSection(s: *const T.Surface, ps: *const T.PanelState) Section {
 }
 
 /// α do comando na seção enflechada: δ_fΛ = asin(cos Λ sen δ_f) (G-H eq. 23)
-fn sweptControl(s: *const T.Surface, d: V3, cosL: f64) f64 {
-    return s.tau * fm.asin(cosL * @sin(vec.dot(vec.v3(s.mix), d)));
+fn sweptControl(s: *const types.Surface, d: V3, cosL: f64) f64 {
+    return s.tau * fmath.asin(cosL * @sin(vec.dot(vec.v3(s.mix), d)));
 }
 
 /// Resolve as circulações e reescreve os painéis do núcleo (`ps`, de `aero.computeTrace`) com a carga da linha
 /// sustentadora: alpha (efetivo), CL (seção), CD, L, D, F e vind (+ a velocidade induzida pelas ferraduras).
 /// `Vr`: velocidade do avião em relação ao ar (corpo); `d`: comandos (de, da, dr). Devolve a soma de Γ (teste).
-pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
+pub fn apply(p: *const types.Params, Vr: V3, d: V3, ps: []types.PanelState) f64 {
     const n = @min(ps.len, n_max);
     const Va = vec.norm(Vr);
     if (Va < 1e-6 or n == 0) return 0;
@@ -389,7 +389,7 @@ pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
         for (0..n) |j| A[i][j] = if (i == j) 1 else 0;
         rhs[i] = 0;
         if (!used[i]) continue;
-        const ag = fm.atan2(ww, uu) + (if (gh) sweptControl(s, d, sw.cosL) else s.tau * vec.dot(vec.v3(s.mix), d));
+        const ag = fmath.atan2(ww, uu) + (if (gh) sweptControl(s, d, sw.cosL) else s.tau * vec.dot(vec.v3(s.mix), d));
         const a = sectionSlope(s.CLa, s.AR);
         const a0 = (if (s.CLa != 0) -s.CL0 / s.CLa else 0) / sw.cosL;
         k_i[i] = 0.5 * q.c * sw.cosL * s.eta * a;
@@ -444,7 +444,7 @@ pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
         const ww = vec.dot(v, ez);
         const V2 = uu * uu + ww * ww;
         const Vp = @sqrt(V2);
-        const al = fm.atan2(ww, uu) + (if (gh) sweptControl(s, d, sw.cosL) else s.tau * vec.dot(vec.v3(s.mix), d));
+        const al = fmath.atan2(ww, uu) + (if (gh) sweptControl(s, d, sw.cosL) else s.tau * vec.dot(vec.v3(s.mix), d));
         const g = nodes(s, q);
         const rho = p.env.rho;
         // Kutta–Joukowski no segmento ligado (ar = −v): F = ρ Γ (−v) × dl, dl de nó a nó (com o enflechamento)
@@ -471,9 +471,9 @@ pub fn apply(p: *const T.Params, Vr: V3, d: V3, ps: []T.PanelState) f64 {
 /// as forças e momentos do avião (`aero.Out`, como `aero.computeEnv`) com a carga da linha sustentadora: a conta da
 /// simulação (faixas, fuselagem, c_m das seções, modificadores, efeito solo a `h`) com as forças dos painéis trocadas
 /// pelas de `apply`. É o modelo 1 do voo (`physics/aeromodel.zig`); o `ratioCL` e o `Fi` ficam os das faixas
-pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env) aero.Out {
+pub fn compute(p: *const types.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env) aero.Out {
     const n: usize = @intCast(@min(p.n_surf, @as(i32, n_max)));
-    var ps: [n_max]T.PanelState = undefined;
+    var ps: [n_max]types.PanelState = undefined;
     var env_ll = env.*;
     env_ll.no_pair = true; // a interferência entre asas ligadas sai do sistema daqui, não do modifier das faixas
     var o = aero.computeTrace(p, Vr, w, rcg, h, d, &env_ll, ps[0..n]);
@@ -503,9 +503,9 @@ pub fn compute(p: *const T.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *
 /// fuselagem, c_m das seções, modificadores, efeito solo a `h`) com as forças dos painéis trocadas pelas de `apply`.
 /// Mesmos argumentos e eixos de `aero.coeffsAt` (w em rad/s; momentos em `ref`). C_Di: NaN (as forças da linha
 /// sustentadora não separam o induzido do de perfil)
-pub fn coeffs(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V3, d: V3, h: f64, thrust: ?[2][]const f64) T.AeroCoeffs {
-    const a = fm.sincos(alpha);
-    const b = fm.sincos(beta);
+pub fn coeffs(p: *const types.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V3, d: V3, h: f64, thrust: ?[2][]const f64) types.AeroCoeffs {
+    const a = fmath.sincos(alpha);
+    const b = fmath.sincos(beta);
     const Vr = V3{ V * a.c * b.c, V * b.s, V * a.s * b.c };
     const env = if (thrust) |tq| mods.envFrom(p, Vr, w, tq[0], tq[1]) else mods.Env.none;
     const o = compute(p, Vr, w, ref, h, d, &env);
@@ -517,8 +517,8 @@ pub fn coeffs(p: *const T.Params, V: f64, alpha: f64, beta: f64, w: V3, ref: V3,
         .Cl = o.M[0] / (qS * p.bref),
         .Cm = o.M[1] / (qS * p.cref),
         .Cn = o.M[2] / (qS * p.bref),
-        .CL_wing = (-o.Fg[L.group_wing][2] * a.c + o.Fg[L.group_wing][0] * a.s) / qS,
-        .CL_ht = (-o.Fg[L.group_htail][2] * a.c + o.Fg[L.group_htail][0] * a.s) / qS,
+        .CL_wing = (-o.Fg[limits.group_wing][2] * a.c + o.Fg[limits.group_wing][0] * a.s) / qS,
+        .CL_ht = (-o.Fg[limits.group_htail][2] * a.c + o.Fg[limits.group_htail][0] * a.s) / qS,
         .ratioCL = o.ratioCL,
         .CDi = std.math.nan(f64),
         .CN = -o.F[2] / qS,
@@ -531,11 +531,11 @@ fn withBound(i: usize, j: usize) bool {
 }
 
 /// núcleo de Scully só entre superfícies diferentes (ver `core_frac`)
-fn coreOf(ps: []const T.PanelState, i: usize, j: usize) f64 {
+fn coreOf(ps: []const types.PanelState, i: usize, j: usize) f64 {
     return if (ps[j].group != ps[i].group) core_frac * ps[j].c else 0;
 }
 
-fn used_geom(ps: []const T.PanelState, j: usize) bool {
+fn used_geom(ps: []const types.PanelState, j: usize) bool {
     return ps[j].group >= 0 and ps[j].S > 0 and ps[j].c > 0;
 }
 
@@ -571,9 +571,9 @@ fn solve(n: usize, A: *[n_max][n_max]f64, b: *[n_max]f64, x: *[n_max]f64) void {
 const testing = std.testing;
 
 test "Helmbold invertido volta ao a do perfil" {
-    const a = 2.0 * fm.pi;
+    const a = 2.0 * fmath.pi;
     for ([_]f64{ 4, 6, 8, 12 }) |AR| {
-        const k = a / (fm.pi * AR);
+        const k = a / (fmath.pi * AR);
         const CLa = a / (@sqrt(1 + k * k) + k);
         try testing.expectApproxEqRel(a, sectionSlope(CLa, AR), 1e-12);
     }
@@ -581,13 +581,13 @@ test "Helmbold invertido volta ao a do perfil" {
 
 test "segmento: vórtice infinito dá Γ/(2πh)" {
     const v = segment(.{ 0, 0, 1 }, .{ -1e5, 0, 0 }, .{ 1e5, 0, 0 }, 0);
-    try testing.expectApproxEqRel(1.0 / (2.0 * fm.pi), vec.norm(v), 1e-6);
+    try testing.expectApproxEqRel(1.0 / (2.0 * fmath.pi), vec.norm(v), 1e-6);
 }
 
 /// asa reta retangular em n faixas, corpo x à frente, z para baixo
-fn rectWing(p: *T.Params, ps: []T.PanelState, n: usize, b: f64, c: f64, a: f64, V: f64, alpha: f64) void {
+fn rectWing(p: *types.Params, ps: []types.PanelState, n: usize, b: f64, c: f64, a: f64, V: f64, alpha: f64) void {
     const AR = b / c;
-    const k = a / (fm.pi * AR);
+    const k = a / (fmath.pi * AR);
     p.n_surf = @intCast(n);
     const w = b / @as(f64, @floatFromInt(n));
     for (0..n) |i| {
@@ -601,13 +601,13 @@ fn rectWing(p: *T.Params, ps: []T.PanelState, n: usize, b: f64, c: f64, a: f64, 
 }
 
 test "asa retangular: carga cai na ponta, C_L perto de Helmbold e menor com alongamento menor" {
-    var p = T.Params{};
-    var ps: [40]T.PanelState = undefined;
+    var p = types.Params{};
+    var ps: [40]types.PanelState = undefined;
     const al = 0.08;
     const V = 12.0;
     var CLs: [2]f64 = undefined;
     for ([_]f64{ 8, 4 }, 0..) |AR, m| {
-        rectWing(&p, &ps, 40, AR * 0.25, 0.25, 2 * fm.pi, V, al);
+        rectWing(&p, &ps, 40, AR * 0.25, 0.25, 2 * fmath.pi, V, al);
         _ = apply(&p, .{ V * @cos(al), 0, V * @sin(al) }, vec.zero, ps[0..40]);
         var Lt: f64 = 0;
         for (ps[0..40]) |q| Lt += q.L;
@@ -617,19 +617,19 @@ test "asa retangular: carga cai na ponta, C_L perto de Helmbold e menor com alon
         try testing.expect(tip < 0.75 * root); // ponta descarregada
         try testing.expectApproxEqAbs(ps[0].L, ps[39].L, 1e-9 * root); // simétrica
         // Helmbold é uma aproximação da linha sustentadora: perto, não igual
-        const k = 2 * fm.pi / (fm.pi * AR);
-        try testing.expectApproxEqRel(2 * fm.pi / (@sqrt(1 + k * k) + k) * al, CLs[m], 0.06);
+        const k = 2 * fmath.pi / (fmath.pi * AR);
+        try testing.expectApproxEqRel(2 * fmath.pi / (@sqrt(1 + k * k) + k) * al, CLs[m], 0.06);
     }
     try testing.expect(CLs[1] < CLs[0]);
 }
 
 test "diedro: a raiz não salta mais que o VLM (1 %)" {
-    var p = T.Params{};
-    var ps: [40]T.PanelState = undefined;
+    var p = types.Params{};
+    var ps: [40]types.PanelState = undefined;
     const al = 0.08;
     const V = 12.0;
-    rectWing(&p, &ps, 40, 2.0, 0.25, 2 * fm.pi, V, al);
-    const g = 3.0 * fm.pi / 180.0; // pontas para cima (z para baixo)
+    rectWing(&p, &ps, 40, 2.0, 0.25, 2 * fmath.pi, V, al);
+    const g = 3.0 * fmath.pi / 180.0; // pontas para cima (z para baixo)
     for (0..40) |i| {
         const y = ps[i].r[1];
         const sd: f64 = if (y > 0) 1 else -1;
@@ -656,11 +656,11 @@ test "núcleo de Scully: finito na linha, metade do valor sem núcleo a h = rc" 
 }
 
 test "cauda em T: a perna da raiz da EV não explode na EH" {
-    var p = T.Params{};
-    var ps: [30]T.PanelState = undefined;
+    var p = types.Params{};
+    var ps: [30]types.PanelState = undefined;
     const al = 0.05;
     const V = 12.0;
-    rectWing(&p, &ps, 20, 0.8, 0.2, 2 * fm.pi, V, al); // EH em z = 0
+    rectWing(&p, &ps, 20, 0.8, 0.2, 2 * fmath.pi, V, al); // EH em z = 0
     for (0..20) |i| ps[i].group = 1;
     // EV: 10 painéis de z = 0 até 0,3 m para cima, raiz em cima da EH, em x = 0, a 2 mm do ponto de controle de um
     // painel da EH (como nos aviões com a EV encostada na EH); com β para ter carga
@@ -683,15 +683,15 @@ test "cauda em T: a perna da raiz da EV não explode na EH" {
 }
 
 /// C_lβ (por rad) da asa retangular em n faixas a α, por diferença central em β = ±0,5°
-fn rectClb(p: *T.Params, n: usize, alpha: f64) f64 {
-    var ps: [n_max]T.PanelState = undefined;
+fn rectClb(p: *types.Params, n: usize, alpha: f64) f64 {
+    var ps: [n_max]types.PanelState = undefined;
     const V = 12.0;
     const b = 2.0;
     const c = 0.25;
     var Cl: [2]f64 = undefined;
     for ([_]f64{ 1, -1 }, 0..) |sg, m| {
-        const be = sg * 0.5 * fm.pi / 180.0;
-        rectWing(p, &ps, n, b, c, 2 * fm.pi, V, alpha);
+        const be = sg * 0.5 * fmath.pi / 180.0;
+        rectWing(p, &ps, n, b, c, 2 * fmath.pi, V, alpha);
         const Vr = V3{ V * @cos(alpha) * @cos(be), V * @sin(be), V * @sin(alpha) * @cos(be) };
         for (ps[0..n]) |*q| q.v = Vr;
         _ = apply(p, Vr, vec.zero, ps[0..n]);
@@ -699,13 +699,13 @@ fn rectClb(p: *T.Params, n: usize, alpha: f64) f64 {
         for (ps[0..n]) |q| Mx += q.r[1] * q.F[2] - q.r[2] * q.F[1];
         Cl[m] = Mx / (0.5 * p.env.rho * V * V * b * c * b);
     }
-    return (Cl[0] - Cl[1]) / (2 * 0.5 * fm.pi / 180.0);
+    return (Cl[0] - Cl[1]) / (2 * 0.5 * fmath.pi / 180.0);
 }
 
 test "derrapagem: Phillips e Snyder não converge; Goates e Hunsaker converge e bate com o MachUpX" {
     // asa retangular AR 8 (b = 2 m, c = 0,25 m), a = 2π, α0 = 0, α = 0,08 rad. Referência: MachUpX (a implementação
     // de Goates e Hunsaker pelos autores, github.com/usuaero/MachUpX), 80 painéis por semiasa: C_lβ = 0,01524
-    var p = T.Params{};
+    var p = types.Params{};
     const ps20 = rectClb(&p, 20, 0.08);
     const ps40 = rectClb(&p, 40, 0.08);
     try testing.expect(@abs(ps40 - ps20) > 0.1 * @abs(ps40)); // P-S: cresce com a malha (G-H §II.A)
@@ -718,18 +718,18 @@ test "derrapagem: Phillips e Snyder não converge; Goates e Hunsaker converge e 
 }
 
 test "Goates e Hunsaker desligado por padrão (a linha sustentadora de sempre)" {
-    const p = T.Params{};
+    const p = types.Params{};
     try testing.expect(p.llt_joint == 0 and p.llt_blend == 0);
 }
 
 test "coeffs: o avião com a carga da linha sustentadora (asa retangular AR 8)" {
     // a mesma asa de "asa retangular": C_L perto de Helmbold (6 %); sem β, C_l = C_n = 0; C_Di: NaN
-    var p = T.Params{};
-    var ps: [20]T.PanelState = undefined;
+    var p = types.Params{};
+    var ps: [20]types.PanelState = undefined;
     const al = 0.08;
     const b = 2.0;
     const c = 0.25;
-    rectWing(&p, &ps, 20, b, c, 2 * fm.pi, 12.0, al);
+    rectWing(&p, &ps, 20, b, c, 2 * fmath.pi, 12.0, al);
     for (0..20) |i| {
         p.surf[i].r = ps[i].r;
         p.surf[i].side = ps[i].side;
@@ -739,8 +739,8 @@ test "coeffs: o avião com a carga da linha sustentadora (asa retangular AR 8)" 
     p.cref = c;
     p.bref = b;
     aero.init(&p);
-    const k = 2 * fm.pi / (fm.pi * b / c);
-    const helm = 2 * fm.pi / (@sqrt(1 + k * k) + k) * al;
+    const k = 2 * fmath.pi / (fmath.pi * b / c);
+    const helm = 2 * fmath.pi / (@sqrt(1 + k * k) + k) * al;
     const o = coeffs(&p, 12.0, al, 0, vec.zero, vec.zero, vec.zero, 50.0, null);
     try testing.expectApproxEqRel(helm, o.CL, 0.06);
     try testing.expectApproxEqAbs(@as(f64, 0), o.Cl, 1e-12);
@@ -754,12 +754,12 @@ test "coeffs: o avião com a carga da linha sustentadora (asa retangular AR 8)" 
 test "cache da geometria (prepare): o mesmo resultado, bit a bit, que a conta inteira" {
     // asa retangular com diedro, em derrapagem, nos dois métodos: Phillips e Snyder e Goates e Hunsaker
     inline for (.{ false, true }) |gh| {
-        var p = T.Params{};
-        var ps: [24]T.PanelState = undefined;
+        var p = types.Params{};
+        var ps: [24]types.PanelState = undefined;
         const al = 0.08;
         const V = 12.0;
-        rectWing(&p, &ps, 24, 2.0, 0.25, 2 * fm.pi, V, al);
-        const g = 4.0 * fm.pi / 180.0;
+        rectWing(&p, &ps, 24, 2.0, 0.25, 2 * fmath.pi, V, al);
+        const g = 4.0 * fmath.pi / 180.0;
         for (0..24) |i| {
             const y = ps[i].r[1];
             const sd: f64 = if (y > 0) 1 else -1;

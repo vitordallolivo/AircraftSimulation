@@ -14,8 +14,8 @@
 //! Resumo: V_e, V*, V_min/V_max (P_d = P_r), RC máx., γ máx., E máx. e menor ângulo de planeio,
 //! menor razão de descida, raio mínimo (fórmula fechada da planilha), autonomia e alcance máximos.
 const std = @import("std");
-const fm = @import("../math/fmath.zig");
-const L = @import("../limits.zig");
+const fmath = @import("../math/fmath.zig");
+const limits = @import("../limits.zig");
 
 pub const max_pts = 128;
 pub const max_bank = 8;
@@ -105,7 +105,7 @@ pub const SimpleSummary = extern struct {
 };
 
 pub fn density(c: *const SimpleCfg) f64 {
-    return c.rho0 * std.math.pow(f64, 1.0 + c.lapse * c.h / c.T0, -L.g0 / (c.lapse * c.Rgas) - 1.0);
+    return c.rho0 * std.math.pow(f64, 1.0 + c.lapse * c.h / c.T0, -limits.g0 / (c.lapse * c.Rgas) - 1.0);
 }
 
 fn thrust(c: *const SimpleCfg, V: f64, sigma: f64) f64 {
@@ -128,7 +128,7 @@ fn thrust(c: *const SimpleCfg, V: f64, sigma: f64) f64 {
 
 /// preenche as linhas (uma por V) e o resumo; devolve quantas linhas
 pub fn compute(c: *const SimpleCfg, rows: []SimpleRow, sum: *SimpleSummary) usize {
-    const g = L.g0;
+    const g = limits.g0;
     const rho = density(c);
     const sigma = rho / c.rho0;
     const WS = c.W / c.S;
@@ -139,7 +139,7 @@ pub fn compute(c: *const SimpleCfg, rows: []SimpleRow, sum: *SimpleSummary) usiz
     sum.Vman = sum.Vs * @sqrt(@max(c.n_load, 1.0));
     sum.glide_min = 1e9;
     sum.sink_min = 1e9;
-    const sphi = fm.sin(c.phi_T);
+    const sphi = fmath.sin(c.phi_T);
     var n: usize = 0;
     var V = c.V_lo;
     var prev_ex: f64 = std.math.nan(f64);
@@ -161,18 +161,18 @@ pub fn compute(c: *const SimpleCfg, rows: []SimpleRow, sum: *SimpleSummary) usiz
         r.Pd = Td * V;
         r.Pr = r.Tr * V;
         r.RC = (r.Pd - r.Pr) / c.W;
-        r.gam = fm.asin(fm.lim(r.RC / V, -1.0, 1.0));
+        r.gam = fmath.asin(fmath.lim(r.RC / V, -1.0, 1.0));
         r.E = CL / CD;
-        r.gam_glide = fm.atan(1.0 / r.E);
-        r.V_glide = @sqrt(2.0 * c.W * fm.cos(r.gam_glide) / (rho * c.S * CL));
-        r.sink = r.V_glide * fm.sin(r.gam_glide);
+        r.gam_glide = fmath.atan(1.0 / r.E);
+        r.V_glide = @sqrt(2.0 * c.W * fmath.cos(r.gam_glide) / (rho * c.S * CL));
+        r.sink = r.V_glide * fmath.sin(r.gam_glide);
         // curva: limite de estol e de tração
         r.n_stall = q * c.S * c.CLmax / c.W;
         const arg = q / (c.K * WS) * (Td / c.W - q * c.CD0 / WS);
         r.n_sust = if (arg > 0) @sqrt(arg) else 0;
         r.R_stall = if (r.n_stall > 1) V * V / (g * @sqrt(r.n_stall * r.n_stall - 1)) else std.math.inf(f64);
         r.R_sust = if (r.n_sust > 1) V * V / (g * @sqrt(r.n_sust * r.n_sust - 1)) else std.math.inf(f64);
-        for (0..nb) |k| r.R_bank[k] = V * V / (g * fm.tan(c.bank[k]));
+        for (0..nb) |k| r.R_bank[k] = V * V / (g * fmath.tan(c.bank[k]));
         // bateria (Peukert) na potência requerida
         const Pel = r.Pr / c.bat_eta;
         r.t_bat = std.math.pow(f64, c.bat_Rt, 1.0 - c.bat_n) * std.math.pow(f64, c.bat_V * c.bat_C / Pel, c.bat_n);
@@ -229,7 +229,7 @@ pub fn compute(c: *const SimpleCfg, rows: []SimpleRow, sum: *SimpleSummary) usiz
         sum.V_Rmin = @sqrt(4.0 * c.K * WS / (TWmax * rho));
         sum.n_Rmin = @sqrt(2.0 - 4.0 * c.K * c.CD0 / (TWmax * TWmax));
         sum.R_min = 4.0 * c.K * WS / (rho * g * TWmax * @sqrt(d));
-        sum.phi_Rmin = fm.acos(1.0 / sum.n_Rmin);
+        sum.phi_Rmin = fmath.acos(1.0 / sum.n_Rmin);
     }
     // autonomia máxima (fórmula fechada de Traub)
     const den = (2.0 / @sqrt(rho * c.S)) * std.math.pow(f64, c.CD0, 0.25) *

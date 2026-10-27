@@ -14,7 +14,7 @@
 //! Sorteios por semente e geração: a mesma entrada dá a mesma busca. As contas de matriz usam vetores do Zig
 //! (`@Vector`): com `-Dcpu=native` numa máquina com AVX-512 elas viram instruções de 512 bits.
 const std = @import("std");
-const la = @import("../math/linalg.zig");
+const linalg = @import("../math/linalg.zig");
 
 pub const max_n = 32;
 pub const max_lambda = 64;
@@ -182,7 +182,7 @@ pub fn tell(s: *CmaState, xs: []const f64, fit: []const f64) void {
         A[i][j] = 0.5 * (s.C[i][j] + s.C[j][i]);
     };
     var w: [max_n]f64 = undefined;
-    la.symEigen(max_n, &A, n, &w, &s.B);
+    linalg.symEigen(max_n, &A, n, &w, &s.B);
     for (0..n) |i| s.D[i] = @sqrt(@max(w[i], 1e-20));
 }
 

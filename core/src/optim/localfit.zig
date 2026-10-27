@@ -16,7 +16,7 @@
 //! direções a matriz não é positiva definida e a conta diz que não dá; quem chama então avalia só as direções que
 //! faltam.
 const std = @import("std");
-const la = @import("../math/linalg.zig");
+const linalg = @import("../math/linalg.zig");
 
 pub const max_n = 32;
 const M = 2 * max_n + 1;
@@ -77,10 +77,10 @@ pub fn fit(n: usize, m: usize, xs: []const f64, ys: []const f64, x0: []const f64
         b[p] *= s[p];
         for (0..nb) |q| A[p][q] *= s[p] * s[q];
     }
-    if (!la.cholesky(M, &A, nb)) return null;
+    if (!linalg.cholesky(M, &A, nb)) return null;
     // uma direção quase sem pontos: o pivô de Cholesky some (a matriz é quase singular)
     for (0..nb) |p| if (A[p][p] < 1e-6) return null;
-    la.cholSolve(M, &A, nb, &b);
+    linalg.cholSolve(M, &A, nb, &b);
     for (0..nb) |p| b[p] *= s[p];
     var res: f64 = 0;
     for (0..m) |i| {

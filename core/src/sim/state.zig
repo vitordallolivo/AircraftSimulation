@@ -1,7 +1,7 @@
 //! Layout do vetor de estados (definido em comptime a partir dos limites)
 //! e o estado discreto de uma corrida (o que vai no checkpoint).
-const L = @import("../limits.zig");
-const T = @import("../types.zig");
+const limits = @import("../limits.zig");
+const types = @import("../types.zig");
 
 pub const N = 0;
 pub const E = 1;
@@ -25,8 +25,8 @@ pub const EN = 18; // energia tirada das baterias (J)
 pub const SL = 19; // deslizamento da carga
 pub const SLD = 20;
 pub const RPS0 = 21; // rotação de cada motor (rps)
-pub const SLOSH0 = RPS0 + L.max_props; // por tanque: ex, ey, exd, eyd
-pub const nx = SLOSH0 + 4 * L.max_tanks;
+pub const SLOSH0 = RPS0 + limits.max_props; // por tanque: ex, ey, exd, eyd
+pub const nx = SLOSH0 + 4 * limits.max_tanks;
 
 pub const Vec = @Vector(nx, f64);
 
@@ -58,7 +58,7 @@ pub const Flags = extern struct {
     released: i32 = 0,
     pk_flying: i32 = 0,
     _pad: i32 = 0,
-    ev_done: [L.max_events]i32 = [_]i32{0} ** L.max_events,
+    ev_done: [limits.max_events]i32 = [_]i32{0} ** limits.max_events,
 };
 
 /// tudo o que define o instante (checkpoint). Os parâmetros NÃO vão junto:
@@ -73,14 +73,14 @@ pub const Run = extern struct {
     next_log: f64 = 0,
     pk: [6]f64 = [_]f64{0} ** 6,
     f: Flags = .{},
-    ev: T.Events = .{},
+    ev: types.Events = .{},
     valid: i32 = 0,
     _pad: i32 = 0,
 };
 
 /// visão "somente leitura" usada pelos módulos de física
 pub const Ctx = struct {
-    p: *const T.Params,
+    p: *const types.Params,
     f: *const Flags,
     tR: f64,
     h_ground: f64,

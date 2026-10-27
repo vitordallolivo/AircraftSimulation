@@ -186,12 +186,12 @@ O teste monta uma matriz 4 × 4 simétrica e confere que $V$ é ortogonal ($V^\t
 ## Como chamar
 
 ```zig
-const fm = @import("math/fmath.zig");
-const sc = fm.sincos(0.3);          // seno e cosseno de uma vez (sc.s, sc.c)
-const a = fm.atan2(1.0, 2.0);
+const fmath = @import("math/fmath.zig");
+const sin_cos = fmath.sincos(0.3);           // seno e cosseno de uma vez (sin_cos.s, sin_cos.c)
+const angle = fmath.atan2(1.0, 2.0);
 const vec = @import("math/vec.zig");
-const v = vec.V3{ 1, 0, 0 };
-const w = vec.cross(v, vec.V3{ 0, 1, 0 });   // (0, 0, 1)
+const x_axis = vec.V3{ 1, 0, 0 };
+const z_axis = vec.cross(x_axis, vec.V3{ 0, 1, 0 });   // (0, 0, 1)
 ```
 
 Pelo Python, só as medições: `python -m pytest -m bench -s tests/core/test_lut.py`.

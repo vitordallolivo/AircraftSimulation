@@ -18,10 +18,10 @@
 //! potência pode ficar abaixo do V_e, e o mínimo voável é max(V_min, V_e) (Anderson, Aircraft Performance and
 //! Design, cap. 5; a conferir no PDF).
 const std = @import("std");
-const L = @import("../limits.zig");
-const T = @import("../types.zig");
-const S = @import("state.zig");
-const fm = @import("../math/fmath.zig");
+const limits = @import("../limits.zig");
+const types = @import("../types.zig");
+const state = @import("state.zig");
+const fmath = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
 const prop = @import("../physics/propulsion.zig");
 const aero = @import("../physics/aero.zig");
@@ -88,26 +88,26 @@ pub fn density(cfg: *const EnvCfg, h: f64) f64 {
     const T0 = 288.15;
     return if (cfg.atmos == atmos_sheet)
         // expressão do Envelope_main original
-        cfg.rho0 * fm.pow(1.0 + lam * h / T0, -L.g0 / (lam * Rg) - 1.0)
+        cfg.rho0 * fmath.pow(1.0 + lam * h / T0, -limits.g0 / (lam * Rg) - 1.0)
     else
         // ISA, troposfera
-        cfg.rho0 * fm.pow(@max(1.0 - lam * h / T0, 1e-6), L.g0 / (lam * Rg) - 1.0);
+        cfg.rho0 * fmath.pow(@max(1.0 - lam * h / T0, 1e-6), limits.g0 / (lam * Rg) - 1.0);
 }
 
 /// contexto de uma altitude: cópia dos parâmetros com ρ(h)
 const Alt = struct {
-    p: T.Params,
+    p: types.Params,
     W: f64,
     rho: f64,
     Vstall: f64 = 0, // modelo: abaixo disso nem tenta trimar
     raw: bool = false, // "como na planilha": polinômio sem o corte em T ≥ 0
     below: bool = false, // modelo com below_stall: abaixo do estol trima em `plin`
-    plin: T.Params = undefined, // cópia de `p` sem estol (só com `below`)
+    plin: types.Params = undefined, // cópia de `p` sem estol (só com `below`)
 
     fn thrust(self: *const Alt, V: f64) f64 {
         var Td: f64 = 0;
         for (self.p.prop[0..@intCast(self.p.n_prop)]) |*u| {
-            Td += if (self.raw and u.model == T.prop_poly) prop.polyRaw(&self.p, u, V, 1.0, 0) else prop.point(&self.p, u, V, 1.0).T;
+            Td += if (self.raw and u.model == types.prop_poly) prop.polyRaw(&self.p, u, V, 1.0, 0) else prop.point(&self.p, u, V, 1.0).T;
         }
         return Td;
     }
@@ -115,7 +115,7 @@ const Alt = struct {
 
 // ---------------------------------------------------------------- método da planilha
 fn sheetDrag(cfg: *const EnvCfg, a: *const Alt, V: f64, Td: f64) f64 {
-    const sa = fm.sincos(cfg.alpha_cruise);
+    const sa = fmath.sincos(cfg.alpha_cruise);
     const Cl = (a.W - Td * sa.s) / (0.5 * cfg.Sw * a.rho * V * V);
     const CDpw = cfg.cdpw_c1 * cfg.cdp_x + cfg.cdpw_c2;
     const CDph = cfg.cdph_c1 * cfg.cdp_x + cfg.cdph_c2;
@@ -133,7 +133,7 @@ fn excess(cfg: *const EnvCfg, a: *const Alt, V: f64, guess: *[3]f64) f64 {
     // modelo completo: 1 − acelerador de equilíbrio (fora do envelope se não trima ou estola)
     if (V < 0.98 * a.Vstall) return if (a.below) excessBelow(a, V, guess) else -1.0;
     const tc = trim.Ctx.init(&a.p, &no_flags);
-    const tp = trim.solve(tc, T.trim_level, V, 1.0, guess);
+    const tp = trim.solve(tc, types.trim_level, V, 1.0, guess);
     if (tp.ok == 0 or tp.ratioCL > 1.0) {
         guess.* = .{ 0.1, -0.05, 0.5 };
         return if (a.below) excessBelow(a, V, guess) else -1.0;
@@ -143,7 +143,7 @@ fn excess(cfg: *const EnvCfg, a: *const Alt, V: f64, guess: *[3]f64) f64 {
 
 /// abaixo do estol (só com `below`): o mesmo equilíbrio na polar sem estol
 fn excessBelow(a: *const Alt, V: f64, guess: *[3]f64) f64 {
-    const tp = trim.solve(trim.Ctx.init(&a.plin, &no_flags), T.trim_level, V, 1.0, guess);
+    const tp = trim.solve(trim.Ctx.init(&a.plin, &no_flags), types.trim_level, V, 1.0, guess);
     if (tp.ok == 0) {
         guess.* = .{ 0.1, -0.05, 0.5 };
         return -1.0;
@@ -152,14 +152,14 @@ fn excessBelow(a: *const Alt, V: f64, guess: *[3]f64) f64 {
 }
 
 /// cópia dos parâmetros sem estol: o a0 de cada painel vai para longe e o C_L fica na reta (aero.clPanel)
-fn noStall(p: *const T.Params) T.Params {
+fn noStall(p: *const types.Params) types.Params {
     var q = p.*;
     const n: usize = @intCast(q.n_surf);
     for (q.surf[0..n]) |*s| s.a0 = 10.0;
     return q;
 }
 
-const no_flags = S.Flags{ .released = 0 };
+const no_flags = state.Flags{ .released = 0 };
 
 fn bisect(cfg: *const EnvCfg, a: *const Alt, lo0: f64, hi0: f64) f64 {
     var lo = lo0;
@@ -216,7 +216,7 @@ fn crossings(cfg: *const EnvCfg, a: *const Alt) Cross {
     return out;
 }
 
-fn altitude(p: *const T.Params, cfg: *const EnvCfg, h: f64, W: f64, CLmax_ac: f64) Alt {
+fn altitude(p: *const types.Params, cfg: *const EnvCfg, h: f64, W: f64, CLmax_ac: f64) Alt {
     var a = Alt{ .p = p.*, .W = W, .rho = density(cfg, h), .raw = cfg.method == method_sheet and cfg.faithful != 0 };
     a.p.env.rho = a.rho;
     if (cfg.method == method_model) a.Vstall = @sqrt(2.0 * W / (a.rho * p.Sref * CLmax_ac));
@@ -227,7 +227,7 @@ fn altitude(p: *const T.Params, cfg: *const EnvCfg, h: f64, W: f64, CLmax_ac: f6
     return a;
 }
 
-fn row(p: *const T.Params, cfg: *const EnvCfg, h: f64, W: f64, CLmax_ac: f64, alt: *Alt) EnvRow {
+fn row(p: *const types.Params, cfg: *const EnvCfg, h: f64, W: f64, CLmax_ac: f64, alt: *Alt) EnvRow {
     alt.* = altitude(p, cfg, h, W, CLmax_ac);
     const a = alt;
     var r = EnvRow{ .h = h, .rho = a.rho };
@@ -242,7 +242,7 @@ fn row(p: *const T.Params, cfg: *const EnvCfg, h: f64, W: f64, CLmax_ac: f64, al
         const CLw = cfg.CL0_w + cfg.CLa_w * (cfg.iw + cfg.alpha_cruise);
         const CLh = -cfg.CL0_h + cfg.CLa_h * alphah;
         const Td_end = a.thrust(cfg.V_hi);
-        r.Vcru = @sqrt(@abs(2.0 * (W - Td_end * fm.sin(cfg.alpha_cruise)) / (a.rho * (cfg.Sw * CLw + cfg.Sh * CLh))));
+        r.Vcru = @sqrt(@abs(2.0 * (W - Td_end * fmath.sin(cfg.alpha_cruise)) / (a.rho * (cfg.Sw * CLw + cfg.Sh * CLh))));
     } else {
         r.Ve = a.Vstall;
         r.Vcru = if (c.any) cruiseSpeed(cfg, a, c.vmin, c.vmax) else std.math.nan(f64);
@@ -257,7 +257,7 @@ fn cruiseSpeed(cfg: *const EnvCfg, a: *const Alt, Vlo: f64, Vhi: f64) f64 {
     const Fn = struct {
         fn da(t: trim.Ctx, V: f64, ac: f64) ?f64 {
             var g = [3]f64{ 0.1, -0.05, 0.5 };
-            const tp = trim.solve(t, T.trim_level, V, 1.0, &g);
+            const tp = trim.solve(t, types.trim_level, V, 1.0, &g);
             return if (tp.ok != 0) tp.alpha - ac else null;
         }
     };
@@ -282,7 +282,7 @@ fn cruiseSpeed(cfg: *const EnvCfg, a: *const Alt, Vlo: f64, Vhi: f64) f64 {
 }
 
 /// C_L máximo da aeronave inteira (polar estática, profundor neutro)
-fn aircraftCLmax(p: *const T.Params, rcg: vec.V3) f64 {
+fn aircraftCLmax(p: *const types.Params, rcg: vec.V3) f64 {
     var best: f64 = 0;
     var al: f64 = 0;
     while (al < 0.6) : (al += 0.002) best = @max(best, aero.coeffs(p, 15.0, al, 0, rcg, vec.zero).CL);
@@ -290,9 +290,9 @@ fn aircraftCLmax(p: *const T.Params, rcg: vec.V3) f64 {
 }
 
 /// linhas por altitude; devolve quantas e o teto absoluto (refinado por bisseção em h)
-pub fn compute(p: *const T.Params, cfg: *const EnvCfg, rows: []EnvRow, ceiling: *f64) usize {
+pub fn compute(p: *const types.Params, cfg: *const EnvCfg, rows: []EnvRow, ceiling: *f64) usize {
     const tc = trim.Ctx.init(p, &no_flags);
-    const W = tc.m * L.g0;
+    const W = tc.m * limits.g0;
     const CLmax_ac = aircraftCLmax(p, tc.rcg);
     var alt: Alt = undefined;
     var k: usize = 0;
@@ -323,9 +323,9 @@ pub fn compute(p: *const T.Params, cfg: *const EnvCfg, rows: []EnvRow, ceiling: 
 }
 
 /// curvas T_d(V) e T_r(V) numa altitude (para os gráficos de potência)
-pub fn curve(p: *const T.Params, cfg: *const EnvCfg, h: f64, V: []f64, Td: []f64, Tr: []f64) usize {
+pub fn curve(p: *const types.Params, cfg: *const EnvCfg, h: f64, V: []f64, Td: []f64, Tr: []f64) usize {
     const tc = trim.Ctx.init(p, &no_flags);
-    const alt = altitude(p, cfg, h, tc.m * L.g0, aircraftCLmax(p, tc.rcg));
+    const alt = altitude(p, cfg, h, tc.m * limits.g0, aircraftCLmax(p, tc.rcg));
     const n = @min(V.len, @min(Td.len, Tr.len));
     var g = [3]f64{ 0.1, -0.05, 0.5 };
     var i: usize = n;
@@ -338,10 +338,10 @@ pub fn curve(p: *const T.Params, cfg: *const EnvCfg, h: f64, V: []f64, Td: []f64
             Tr[i] = sheetDrag(cfg, &alt, v, Td[i]);
         } else {
             // tração requerida = tração no equilíbrio nivelado
-            var tp = trim.solve(trim.Ctx.init(&alt.p, &no_flags), T.trim_level, v, 1.0, &g);
+            var tp = trim.solve(trim.Ctx.init(&alt.p, &no_flags), types.trim_level, v, 1.0, &g);
             if (alt.below and (v < 0.98 * alt.Vstall or tp.ok == 0 or tp.ratioCL > 1.0)) {
                 if (tp.ok == 0) g = .{ 0.1, -0.05, 0.5 };
-                tp = trim.solve(trim.Ctx.init(&alt.plin, &no_flags), T.trim_level, v, 1.0, &g);
+                tp = trim.solve(trim.Ctx.init(&alt.plin, &no_flags), types.trim_level, v, 1.0, &g);
             }
             Tr[i] = if (tp.ok != 0) tp.T else std.math.nan(f64);
             if (tp.ok == 0) g = .{ 0.1, -0.05, 0.5 };
@@ -361,9 +361,9 @@ test "ISA e a fórmula da planilha" {
 }
 
 test "envelope da planilha: V_min < V_max, teto finito, ρ cai" {
-    var p = T.Params{ .m_dry = 8.0, .Sref = 0.6 };
+    var p = types.Params{ .m_dry = 8.0, .Sref = 0.6 };
     p.n_prop = 1;
-    p.prop[0] = .{ .model = T.prop_poly, .poly_x = T.pvar_V, .poly_gain = 1, .poly_rho_exp = 1 };
+    p.prop[0] = .{ .model = types.prop_poly, .poly_x = types.pvar_V, .poly_gain = 1, .poly_rho_exp = 1 };
     p.prop[0].poly[0] = 25; // T(V) = 25 − 0,04 V²
     p.prop[0].poly[3] = -0.04;
     prop.init(&p);
@@ -379,7 +379,7 @@ test "envelope da planilha: V_min < V_max, teto finito, ρ cai" {
 }
 
 test "sem estol (below_stall): a cópia mantém o C_L na reta depois do estol do original" {
-    var p = T.Params{ .m_dry = 8.0, .Sref = 0.6 };
+    var p = types.Params{ .m_dry = 8.0, .Sref = 0.6 };
     p.n_surf = 1;
     p.surf[0].CL0 = 0.3;
     p.surf[0].CLa = 5.0;

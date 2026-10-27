@@ -6,10 +6,10 @@
 //!   δẋ = A δx + B δu,   x = (u, v, w, p, q, r, φ, θ),   u = (δe, δa, δr, acelerador)
 //! ψ e a posição não entram (não mudam as forças com ρ constante).
 const std = @import("std");
-const L = @import("../limits.zig");
-const T = @import("../types.zig");
-const S = @import("state.zig");
-const fm = @import("../math/fmath.zig");
+const limits = @import("../limits.zig");
+const types = @import("../types.zig");
+const state = @import("state.zig");
+const fmath = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
 const aero = @import("../physics/aero.zig");
 const aeromodel = @import("../physics/aeromodel.zig");
@@ -54,30 +54,30 @@ pub fn rigid(b: *const Body, x: [nl]f64, u: [nu]f64) [nl]f64 {
     const VB = V3{ x[0], x[1], x[2] };
     const w = V3{ x[3], x[4], x[5] };
     const ae = aeromodel.compute(p, VB, w, b.c.rcg, 100.0, .{ u[0], u[1], u[2] }, &mods.Env.none);
-    var rps = [_]f64{1} ** L.max_props;
+    var rps = [_]f64{1} ** limits.max_props;
     for (p.prop[0..@intCast(p.n_prop)], 0..) |*pu, i| rps[i] = prop.equilibriumRps(p, pu, VB, u[3]);
     const pr = prop.compute(p, VB, w, b.c.rcg, &rps, u[3], u[2], x[7], 0.0); // h como na trimagem
     var F = ae.F + pr.F;
     const M = ae.M + pr.M + pr.Mgyro;
-    const a = fm.sincos(x[6]);
-    const t = fm.sincos(x[7]);
-    F += V3{ -t.s, t.c * a.s, t.c * a.c } * vec.splat(b.c.m * L.g0);
+    const a = fmath.sincos(x[6]);
+    const t = fmath.sincos(x[7]);
+    F += V3{ -t.s, t.c * a.s, t.c * a.c } * vec.splat(b.c.m * limits.g0);
     const acc = F / vec.splat(b.c.m) - vec.cross(w, VB);
     const wd = vec.solve3(b.I, M - vec.cross(w, vec.mul(b.I, w)));
     const qs_rc = w[1] * a.s + w[2] * a.c;
     return .{ acc[0], acc[1], acc[2], wd[0], wd[1], wd[2], w[0] + qs_rc * t.s / t.c, w[1] * a.c - w[2] * a.s };
 }
 
-fn state(V: f64, z: [6]f64) [nl]f64 {
-    const sa = fm.sincos(z[0]);
+fn stateVector(V: f64, z: [6]f64) [nl]f64 {
+    const sa = fmath.sincos(z[0]);
     return .{ V * sa.c, 0, V * sa.s, 0, 0, 0, z[3], z[0] };
 }
 
 const w_lon: f64 = 1e3;
 
 fn res6(b: *const Body, V: f64, z: [6]f64) [6]f64 {
-    const d = rigid(b, state(V, z), .{ z[1], z[4], z[5], z[2] });
-    const s = 1.0 / L.g0;
+    const d = rigid(b, stateVector(V, z), .{ z[1], z[4], z[5], z[2] });
+    const s = 1.0 / limits.g0;
     // longitudinal pesa mais: sem como zerar o látero-direcional (sem leme), ele não pode
     // estragar o equilíbrio longitudinal nos mínimos quadrados
     const k = w_lon;
@@ -117,7 +117,7 @@ fn full(b: *const Body, V: f64, z: *[6]f64) bool {
         var better = false;
         for (0..10) |_| { // passo amortecido
             var zt = z.*;
-            for (0..6) |i| zt[i] += fs * fm.sat(dz[i], 0.1);
+            for (0..6) |i| zt[i] += fs * fmath.sat(dz[i], 0.1);
             const rt = res6(b, V, zt);
             var nt: f64 = 0;
             for (rt) |v| nt += v * v;
@@ -159,11 +159,11 @@ fn gauss6(M: *[6][7]f64) ?[6]f64 {
 }
 
 /// trima nivelado em V e deriva A e B
-pub fn linearize(p: *const T.Params, f: *const S.Flags, V: f64) LinModel {
-    const xz = [_]f64{0} ** S.nx;
+pub fn linearize(p: *const types.Params, f: *const state.Flags, V: f64) LinModel {
+    const xz = [_]f64{0} ** state.nx;
     const ms = mass.compute(.{ .p = p, .f = f, .tR = -1, .h_ground = 0, .tg = -1 }, &xz);
     const b = Body{ .c = .{ .p = p, .m = ms.m, .rcg = ms.rcg }, .I = ms.I };
-    const tp = trim.solve(b.c, T.trim_level, V, 1, null);
+    const tp = trim.solve(b.c, types.trim_level, V, 1, null);
     var o = LinModel{
         .ok = tp.ok,
         .V = V,
@@ -188,7 +188,7 @@ pub fn linearize(p: *const T.Params, f: *const S.Flags, V: f64) LinModel {
     o.phi = z[3];
     o.da = z[4];
     o.dr = z[5];
-    const x0 = state(V, z);
+    const x0 = stateVector(V, z);
     const uc = [nu]f64{ z[1], z[4], z[5], z[2] };
     for (0..nl) |j| {
         const h: f64 = if (j < 3) 1e-4 * @max(V, 1.0) else 1e-5;
@@ -214,11 +214,11 @@ pub fn linearize(p: *const T.Params, f: *const S.Flags, V: f64) LinModel {
 }
 
 /// resíduo |ẋ| no ponto de equilíbrio (para testes)
-pub fn residual(p: *const T.Params, f: *const S.Flags, lm: *const LinModel) f64 {
-    const xz = [_]f64{0} ** S.nx;
+pub fn residual(p: *const types.Params, f: *const state.Flags, lm: *const LinModel) f64 {
+    const xz = [_]f64{0} ** state.nx;
     const ms = mass.compute(.{ .p = p, .f = f, .tR = -1, .h_ground = 0, .tg = -1 }, &xz);
     const b = Body{ .c = .{ .p = p, .m = ms.m, .rcg = ms.rcg }, .I = ms.I };
-    const d = rigid(&b, state(lm.V, .{ lm.alpha, lm.de, lm.thr, lm.phi, lm.da, lm.dr }), .{ lm.de, lm.da, lm.dr, lm.thr });
+    const d = rigid(&b, stateVector(lm.V, .{ lm.alpha, lm.de, lm.thr, lm.phi, lm.da, lm.dr }), .{ lm.de, lm.da, lm.dr, lm.thr });
     var s: f64 = 0;
     for (d) |v| s += @abs(v);
     return s;
