@@ -12,28 +12,30 @@ const vec = @import("../math/vec.zig");
 const V3 = vec.V3;
 const terrain = @import("terrain.zig");
 
+/// força e momento do trem no corpo e a força normal de cada contato
 pub const Out = struct {
     F: V3 = vec.zero,
     M: V3 = vec.zero,
     N: [limits.max_gear]f64 = [_]f64{0} ** limits.max_gear,
 };
 
-pub fn compute(c: state.Ctx, x: []const f64, R: vec.M3, rcg: V3, dw: f64) Out {
-    var o = Out{};
-    const p = c.p;
-    const VB = V3{ x[state.U], x[state.V], x[state.W] };
-    const w = V3{ x[state.P], x[state.Q], x[state.R] };
-    const n: usize = @intCast(p.n_gear);
-    for (p.gear[0..n], 0..) |*g, i| {
-        const r = vec.v3(g.r);
-        const pc = vec.mul(R, r);
-        const pen = x[state.D] + pc[2] + terrain.height(p, x[state.N] + pc[0], x[state.E] + pc[1]); // > 0: comprimido
+/// força e momento do trem (corpo, momento no CG `rcg`) com a roda direcionável virada `steer` (rad)
+pub fn compute(ctx: state.Ctx, state_vector: []const f64, body_to_ned: vec.M3, rcg: V3, steer: f64) Out {
+    var out = Out{};
+    const params = ctx.p;
+    const VB = V3{ state_vector[state.U], state_vector[state.V], state_vector[state.W] };
+    const body_rates = V3{ state_vector[state.P], state_vector[state.Q], state_vector[state.R] };
+    const n_gear: usize = @intCast(params.n_gear);
+    for (params.gear[0..n_gear], 0..) |*contact, i| {
+        const position = vec.v3(contact.r);
+        const pc = vec.mul(body_to_ned, position);
+        const pen = state_vector[state.D] + pc[2] + terrain.height(params, state_vector[state.N] + pc[0], state_vector[state.E] + pc[1]); // > 0: comprimido
         if (pen <= 0.0) continue;
-        const vn = vec.mul(R, VB + vec.cross(w, r));
-        const Nn = @max(0.0, g.k * pen + g.c * vn[2]);
-        const dir = if (g.kind == types.gear_steer) dw else 0.0;
+        const vn = vec.mul(body_to_ned, VB + vec.cross(body_rates, position));
+        const Nn = @max(0.0, contact.k * pen + contact.c * vn[2]);
+        const dir = if (contact.kind == types.gear_steer) steer else 0.0;
         const sc = fmath.sincos(dir);
-        const fn_ = vec.mul(R, V3{ sc.c, sc.s, 0 });
+        const fn_ = vec.mul(body_to_ned, V3{ sc.c, sc.s, 0 });
         const fh = fmath.hypot(fn_[0], fn_[1]);
         const fx = fn_[0] / fh;
         const fy = fn_[1] / fh;
@@ -41,42 +43,42 @@ pub fn compute(c: state.Ctx, x: []const f64, R: vec.M3, rcg: V3, dw: f64) Out {
         const ly = fx;
         const vl = vn[0] * fx + vn[1] * fy;
         const vt = vn[0] * lx + vn[1] * ly;
-        var mu = p.mu_roll;
-        var mul = p.mu_lat;
-        if (g.kind == types.gear_main and c.f.brakes != 0) mu = p.mu_brake;
-        if (g.kind == types.gear_main and c.f.landed != 0) mu = p.mu_landing;
-        if (g.kind == types.gear_skid) {
-            mu = p.mu_skid;
-            mul = p.mu_skid;
+        var mu = params.mu_roll;
+        var mul = params.mu_lat;
+        if (contact.kind == types.gear_main and ctx.f.brakes != 0) mu = params.mu_brake;
+        if (contact.kind == types.gear_main and ctx.f.landed != 0) mu = params.mu_landing;
+        if (contact.kind == types.gear_skid) {
+            mu = params.mu_skid;
+            mul = params.mu_skid;
         }
         const Fl = -mu * Nn * fmath.tanh(vl / 0.05);
         const Ft = -mul * Nn * fmath.tanh(vt / 0.05);
-        const FB = vec.mulT(R, V3{ Fl * fx + Ft * lx, Fl * fy + Ft * ly, -Nn });
-        o.F += FB;
-        o.M += vec.cross(r - rcg, FB);
-        o.N[i] = Nn;
+        const FB = vec.mulT(body_to_ned, V3{ Fl * fx + Ft * lx, Fl * fy + Ft * ly, -Nn });
+        out.F += FB;
+        out.M += vec.cross(position - rcg, FB);
+        out.N[i] = Nn;
     }
-    return o;
+    return out;
 }
 
-/// algum ponto de contato tocando o chão
-pub fn touching(p: *const types.Params, x: []const f64, R: vec.M3) bool {
-    const n: usize = @intCast(p.n_gear);
-    for (p.gear[0..n]) |*g| {
-        const pc = vec.mul(R, vec.v3(g.r));
-        if (x[state.D] + pc[2] + terrain.height(p, x[state.N] + pc[0], x[state.E] + pc[1]) > 0.0) return true;
+/// verdadeiro se algum ponto de contato toca o chão
+pub fn touching(params: *const types.Params, state_vector: []const f64, body_to_ned: vec.M3) bool {
+    const n_gear: usize = @intCast(params.n_gear);
+    for (params.gear[0..n_gear]) |*contact| {
+        const pc = vec.mul(body_to_ned, vec.v3(contact.r));
+        if (state_vector[state.D] + pc[2] + terrain.height(params, state_vector[state.N] + pc[0], state_vector[state.E] + pc[1]) > 0.0) return true;
     }
     return false;
 }
 
 test "apoiado: força vertical equilibra" {
-    var p = types.Params{};
-    p.n_gear = 1;
-    p.gear[0] = .{ .r = .{ 0, 0, 0.2 }, .k = 1000, .c = 0 };
-    const f = state.Flags{};
-    const ctx = state.Ctx{ .p = &p, .f = &f, .tR = -1, .h_ground = 0, .tg = -1 };
-    var x = [_]f64{0} ** state.nx;
-    x[state.D] = -0.19; // 1 cm de compressão
-    const o = compute(ctx, &x, vec.rotation(0, 0, 0), vec.zero, 0);
-    try std.testing.expectApproxEqAbs(@as(f64, -10), o.F[2], 1e-6);
+    var params = types.Params{};
+    params.n_gear = 1;
+    params.gear[0] = .{ .r = .{ 0, 0, 0.2 }, .k = 1000, .c = 0 };
+    const flags = state.Flags{};
+    const ctx = state.Ctx{ .p = &params, .f = &flags, .tR = -1, .h_ground = 0, .tg = -1 };
+    var state_vector = [_]f64{0} ** state.nx;
+    state_vector[state.D] = -0.19; // 1 cm de compressão
+    const out = compute(ctx, &state_vector, vec.rotation(0, 0, 0), vec.zero, 0);
+    try std.testing.expectApproxEqAbs(@as(f64, -10), out.F[2], 1e-6);
 }

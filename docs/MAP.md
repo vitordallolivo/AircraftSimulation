@@ -385,23 +385,23 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/physics/**
 
 - `core/src/physics/aero.zig` — Aerodinâmica por componentes.
-  tipos `Out:17`
-  fn `sigmaStall:27`, `init:90`, `compute:123`, `computeEnv:128`, `computeTrace:133`, `fuselage:243`, `coeffs:258`, `coeffsEx:263`, `coeffsEnv:268`, `coeffsAt:273`
+  tipos `Out:18`
+  fn `sigmaStall:28`, `init:93`, `compute:126`, `computeEnv:131`, `computeTrace:136`, `fuselage:247`, `coeffs:262`, `coeffsEx:267`, `coeffsEnv:272`, `coeffsAt:277`
 - `core/src/physics/aeromodel.zig` — O modelo aerodinâmico do voo, escolhido por `Params.aero_model`: quem a dinâmica, a trimagem e a linearização
-  fn `compute:19`
+  fn `compute:20`
 - `core/src/physics/aerotable.zig` — Modelo aerodinâmico por tabela (Params.aero_model = 2): os coeficientes do avião inteiro vêm de `Params.aero_tab`,
   fn `coeffs:34`, `compute:50`
 - `core/src/physics/atmosphere.zig` — Vento 3D numa direção (perfil 1/7 com a altura) e rajada 1-cos.
   fn `wind:8`
 - `core/src/physics/gear.zig` — Trem de pouso: N pontos de contato (triciclo, convencional, patins...).
-  tipos `Out:15`
-  fn `compute:21`, `touching:63`
+  tipos `Out:16`
+  fn `compute:23`, `touching:65`
 - `core/src/physics/mass.zig` — Massa, CG e inércia variáveis; sloshing de N tanques; extração da carga (LAPES).
-  tipos `Mass:47`, `Load:101`
-  fn `initTanks:16`, `compute:55`, `slosh:104`, `payload:133`
+  tipos `Mass:49`, `Load:105`
+  fn `initTanks:17`, `compute:58`, `slosh:109`, `payload:138`
 - `core/src/physics/propulsion.zig` — K unidades propulsoras: hélice por tabela C_T(J), C_P(J) + motor BLDC + bateria.
-  tipos `Unit:15`, `Out:26`
-  fn `init:39`, `polyRaw:95`, `tiltNow:112`, `axis:119`, `unit:126`, `compute:149`, `equilibriumRps:187`, `point:217`
+  tipos `Unit:16`, `Out:28`
+  fn `init:42`, `polyRaw:100`, `tiltNow:117`, `axis:124`, `unit:132`, `compute:156`, `equilibriumRps:194`, `point:224`
 - `core/src/physics/terrain.zig` — Terreno: chão plano (h = 0) com mesas/plataformas retangulares elevadas.
   fn `height:9`
 

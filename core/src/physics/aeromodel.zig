@@ -16,20 +16,21 @@ pub const faixas = 0;
 pub const linha = 1;
 pub const tabela = 2;
 
-pub fn compute(p: *const types.Params, Vr: V3, w: V3, rcg: V3, h: f64, d: V3, env: *const mods.Env) aero.Out {
-    return switch (p.aero_model) {
-        linha => llt.compute(p, Vr, w, rcg, h, d, env),
+/// forças e momentos aerodinâmicos pelo modelo de `params.aero_model` (faixas, linha sustentadora ou tabela)
+pub fn compute(params: *const types.Params, Vr: V3, body_rates: V3, rcg: V3, height: f64, deflections: V3, env: *const mods.Env) aero.Out {
+    return switch (params.aero_model) {
+        linha => llt.compute(params, Vr, body_rates, rcg, height, deflections, env),
         tabela => blk: {
-            var o = table.compute(p, Vr, w, rcg, d);
-            if (p.aero_tab.fus == 0 and vec.norm(Vr) > 0.1) {
-                const fu = aero.fuselage(p, Vr, rcg);
-                o.F += fu.F;
-                o.M += fu.M;
-                o.Fg[limits.group_fuselage] += fu.F;
-                o.Mg[limits.group_fuselage] += fu.M;
+            var out = table.compute(params, Vr, body_rates, rcg, deflections);
+            if (params.aero_tab.fus == 0 and vec.norm(Vr) > 0.1) {
+                const fu = aero.fuselage(params, Vr, rcg);
+                out.F += fu.F;
+                out.M += fu.M;
+                out.Fg[limits.group_fuselage] += fu.F;
+                out.Mg[limits.group_fuselage] += fu.M;
             }
-            break :blk o;
+            break :blk out;
         },
-        else => aero.computeEnv(p, Vr, w, rcg, h, d, env),
+        else => aero.computeEnv(params, Vr, body_rates, rcg, height, deflections, env),
     };
 }

@@ -18,95 +18,95 @@ const vec = @import("../math/vec.zig");
 const aero = @import("aero.zig");
 const V3 = vec.V3;
 
-/// interpolação linear em `xs` (crescente, n pontos); fora, o valor da ponta
-fn interp(xs: []const f64, ys: []const f64, x: f64) f64 {
-    const n = xs.len;
-    if (n == 0) return 0;
-    if (x <= xs[0]) return ys[0];
-    if (x >= xs[n - 1]) return ys[n - 1];
+/// `ys` interpolado linearmente em `value` sobre `xs` (crescente); fora da faixa, o valor da ponta
+fn interp(xs: []const f64, ys: []const f64, value: f64) f64 {
+    const count = xs.len;
+    if (count == 0) return 0;
+    if (value <= xs[0]) return ys[0];
+    if (value >= xs[count - 1]) return ys[count - 1];
     var i: usize = 1;
-    while (i < n - 1 and xs[i] < x) : (i += 1) {}
-    const t = (x - xs[i - 1]) / (xs[i] - xs[i - 1]);
-    return ys[i - 1] + t * (ys[i] - ys[i - 1]);
+    while (i < count - 1 and xs[i] < value) : (i += 1) {}
+    const fraction = (value - xs[i - 1]) / (xs[i] - xs[i - 1]);
+    return ys[i - 1] + fraction * (ys[i] - ys[i - 1]);
 }
 
 /// os coeficientes da tabela num estado (os mesmos eixos de `aero.coeffsAt`)
-pub fn coeffs(tb: *const types.AeroTable, p: *const types.Params, V: f64, alpha: f64, beta: f64, w: V3, d: V3) [6]f64 {
-    const n: usize = @intCast(@max(@min(tb.n, @as(i32, limits.max_tab)), 0));
-    const ph = w[0] * p.bref / (2 * V);
-    const qh = w[1] * p.cref / (2 * V);
-    const rh = w[2] * p.bref / (2 * V);
-    const CL = interp(tb.alpha[0..n], tb.CL[0..n], alpha) + tb.CLq * qh + tb.CLde * d[0];
-    const CD = interp(tb.alpha[0..n], tb.CD[0..n], alpha);
-    const Cm = interp(tb.alpha[0..n], tb.Cm[0..n], alpha) + tb.Cmq * qh + tb.Cmde * d[0];
-    const CY = tb.CYb * beta + tb.CYp * ph + tb.CYr * rh + tb.CYdr * d[2];
-    const Cl = tb.Clb * beta + tb.Clp * ph + tb.Clr * rh + tb.Clda * d[1] + tb.Cldr * d[2];
-    const Cn = tb.Cnb * beta + tb.Cnp * ph + tb.Cnr * rh + tb.Cnda * d[1] + tb.Cndr * d[2];
+pub fn coeffs(table: *const types.AeroTable, params: *const types.Params, airspeed: f64, alpha: f64, beta: f64, body_rates: V3, deflections: V3) [6]f64 {
+    const count: usize = @intCast(@max(@min(table.n, @as(i32, limits.max_tab)), 0));
+    const ph = body_rates[0] * params.bref / (2 * airspeed);
+    const qh = body_rates[1] * params.cref / (2 * airspeed);
+    const rh = body_rates[2] * params.bref / (2 * airspeed);
+    const CL = interp(table.alpha[0..count], table.CL[0..count], alpha) + table.CLq * qh + table.CLde * deflections[0];
+    const CD = interp(table.alpha[0..count], table.CD[0..count], alpha);
+    const Cm = interp(table.alpha[0..count], table.Cm[0..count], alpha) + table.Cmq * qh + table.Cmde * deflections[0];
+    const CY = table.CYb * beta + table.CYp * ph + table.CYr * rh + table.CYdr * deflections[2];
+    const Cl = table.Clb * beta + table.Clp * ph + table.Clr * rh + table.Clda * deflections[1] + table.Cldr * deflections[2];
+    const Cn = table.Cnb * beta + table.Cnp * ph + table.Cnr * rh + table.Cnda * deflections[1] + table.Cndr * deflections[2];
     return .{ CL, CD, CY, Cl, Cm, Cn };
 }
 
-/// forças e momentos do avião pela tabela (`aero.Out`, momentos em `rcg`; comandos `d` = δe, δa, δr em rad). A força sai dos coeficientes pelas mesmas
+/// forças e momentos do avião pela tabela (`aero.Out`, momentos em `rcg`; comandos `deflections` = δe, δa, δr em rad). A força sai dos coeficientes pelas mesmas
 /// definições de `aero.coeffsAt`: C_L = (−F_z cos α + F_x sen α)/qS, C_D = −F·V̂/qS, C_Y = F_y/qS
-pub fn compute(p: *const types.Params, Vr: V3, w: V3, rcg: V3, d: V3) aero.Out {
-    const V = vec.norm(Vr);
-    if (V < 0.1) return aero.Out{};
-    return computeCmd(p, Vr, w, rcg, fmath.atan2(Vr[2], Vr[0]), fmath.asin(Vr[1] / V), V, &p.aero_tab, d);
+pub fn compute(params: *const types.Params, Vr: V3, body_rates: V3, rcg: V3, deflections: V3) aero.Out {
+    const airspeed = vec.norm(Vr);
+    if (airspeed < 0.1) return aero.Out{};
+    return computeCmd(params, Vr, body_rates, rcg, fmath.atan2(Vr[2], Vr[0]), fmath.asin(Vr[1] / airspeed), airspeed, &params.aero_tab, deflections);
 }
 
 /// `compute` com α, β e V já calculados
-fn computeCmd(p: *const types.Params, Vr: V3, w: V3, rcg: V3, alpha: f64, beta: f64, V: f64, tb: *const types.AeroTable, d: V3) aero.Out {
+fn computeCmd(params: *const types.Params, Vr: V3, body_rates: V3, rcg: V3, alpha: f64, beta: f64, airspeed: f64, table: *const types.AeroTable, deflections: V3) aero.Out {
     _ = Vr;
-    var o = aero.Out{};
-    const c = coeffs(tb, p, V, alpha, beta, w, d);
-    const qS = 0.5 * p.env.rho * V * V * p.Sref;
-    const a = fmath.sincos(alpha);
-    const b = fmath.sincos(beta);
-    const Fy = c[2] * qS;
+    var out = aero.Out{};
+    const coefs = coeffs(table, params, airspeed, alpha, beta, body_rates, deflections);
+    const qS = 0.5 * params.env.rho * airspeed * airspeed * params.Sref;
+    const sc_alpha = fmath.sincos(alpha);
+    const sc_beta = fmath.sincos(beta);
+    const Fy = coefs[2] * qS;
     // −F_z cos α + F_x sen α = C_L qS;  −(F_x cos α cos β + F_y sen β + F_z sen α cos β) = C_D qS
-    const A = c[0] * qS;
-    const B = -c[1] * qS - Fy * b.s;
+    const lift = coefs[0] * qS;
+    const drag_part = -coefs[1] * qS - Fy * sc_beta.s;
     // F_x = A sen α + (B / cos β) cos α;  F_z = −A cos α + (B / cos β) sen α
-    const Bc = B / @max(b.c, 1e-9);
-    const F = V3{ A * a.s + Bc * a.c, Fy, -A * a.c + Bc * a.s };
-    const Mref = V3{ c[3] * qS * p.bref, c[4] * qS * p.cref, c[5] * qS * p.bref };
-    const M = Mref + vec.cross(vec.v3(tb.ref) - rcg, F);
-    o.F = F;
-    o.M = M;
+    const Bc = drag_part / @max(sc_beta.c, 1e-9);
+    const force = V3{ lift * sc_alpha.s + Bc * sc_alpha.c, Fy, -lift * sc_alpha.c + Bc * sc_alpha.s };
+    const Mref = V3{ coefs[3] * qS * params.bref, coefs[4] * qS * params.cref, coefs[5] * qS * params.bref };
+    const moment = Mref + vec.cross(vec.v3(table.ref) - rcg, force);
+    out.F = force;
+    out.M = moment;
     // C_L / C_Lmáx: o maior C_L da própria tabela faz o papel do C_Lmáx (a tabela não tem o das faixas)
-    const n: usize = @intCast(@max(@min(tb.n, @as(i32, limits.max_tab)), 0));
+    const count: usize = @intCast(@max(@min(table.n, @as(i32, limits.max_tab)), 0));
     var CLmax: f64 = 0;
-    for (tb.CL[0..n]) |x| CLmax = @max(CLmax, x);
-    if (CLmax > 0) o.ratioCL = c[0] / CLmax;
-    o.Fg[limits.group_wing] = F; // a tabela não separa as superfícies
-    o.Mg[limits.group_wing] = M;
-    return o;
+    for (table.CL[0..count]) |value| CLmax = @max(CLmax, value);
+    if (CLmax > 0) out.ratioCL = coefs[0] / CLmax;
+    out.Fg[limits.group_wing] = force; // a tabela não separa as superfícies
+    out.Mg[limits.group_wing] = moment;
+    return out;
 }
 
 const testing = std.testing;
 
 test "tabela: os coeficientes voltam pelas definições de aero.coeffsAt" {
-    var p = types.Params{};
-    p.Sref = 0.5;
-    p.cref = 0.25;
-    p.bref = 2.0;
-    p.aero_tab.n = 3;
-    p.aero_tab.alpha[0..3].* = .{ -0.1, 0.0, 0.2 };
-    p.aero_tab.CL[0..3].* = .{ -0.3, 0.2, 1.2 };
-    p.aero_tab.CD[0..3].* = .{ 0.03, 0.02, 0.08 };
-    p.aero_tab.Cm[0..3].* = .{ 0.05, 0.0, -0.1 };
-    p.aero_tab.CYb = -0.3;
-    p.aero_tab.Clb = -0.05;
-    const V = 12.0;
+    var params = types.Params{};
+    params.Sref = 0.5;
+    params.cref = 0.25;
+    params.bref = 2.0;
+    params.aero_tab.n = 3;
+    params.aero_tab.alpha[0..3].* = .{ -0.1, 0.0, 0.2 };
+    params.aero_tab.CL[0..3].* = .{ -0.3, 0.2, 1.2 };
+    params.aero_tab.CD[0..3].* = .{ 0.03, 0.02, 0.08 };
+    params.aero_tab.Cm[0..3].* = .{ 0.05, 0.0, -0.1 };
+    params.aero_tab.CYb = -0.3;
+    params.aero_tab.Clb = -0.05;
+    const airspeed = 12.0;
     const al = 0.1;
     const be = 0.05;
-    const Vr = V3{ V * @cos(al) * @cos(be), V * @sin(be), V * @sin(al) * @cos(be) };
-    const o = computeCmd(&p, Vr, vec.zero, vec.zero, al, be, V, &p.aero_tab, vec.zero);
-    const qS = 0.5 * p.env.rho * V * V * p.Sref;
-    const a = fmath.sincos(al);
-    const b = fmath.sincos(be);
-    try testing.expectApproxEqAbs(@as(f64, 0.7), (-o.F[2] * a.c + o.F[0] * a.s) / qS, 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 0.05), -(o.F[0] * a.c * b.c + o.F[1] * b.s + o.F[2] * a.s * b.c) / qS, 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, -0.015), o.F[1] / qS, 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, -0.05), o.M[1] / (qS * p.cref), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, -0.0025), o.M[0] / (qS * p.bref), 1e-12);
+    const Vr = V3{ airspeed * @cos(al) * @cos(be), airspeed * @sin(be), airspeed * @sin(al) * @cos(be) };
+    const out = computeCmd(&params, Vr, vec.zero, vec.zero, al, be, airspeed, &params.aero_tab, vec.zero);
+    const qS = 0.5 * params.env.rho * airspeed * airspeed * params.Sref;
+    const sc_alpha = fmath.sincos(al);
+    const sc_beta = fmath.sincos(be);
+    try testing.expectApproxEqAbs(@as(f64, 0.7), (-out.F[2] * sc_alpha.c + out.F[0] * sc_alpha.s) / qS, 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, 0.05), -(out.F[0] * sc_alpha.c * sc_beta.c + out.F[1] * sc_beta.s + out.F[2] * sc_alpha.s * sc_beta.c) / qS, 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, -0.015), out.F[1] / qS, 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, -0.05), out.M[1] / (qS * params.cref), 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, -0.0025), out.M[0] / (qS * params.bref), 1e-12);
 }

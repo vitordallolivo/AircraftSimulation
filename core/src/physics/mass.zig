@@ -13,37 +13,39 @@ const fmath = @import("../math/fmath.zig");
 const vec = @import("../math/vec.zig");
 const V3 = vec.V3;
 
-pub fn initTanks(p: *types.Params) void {
-    const n: usize = @intCast(p.n_tank);
-    for (p.tank[0..n]) |*t| {
-        if (t.fill <= 0 or t.side <= 0) {
-            t.m_liq = 0;
-            t.m0 = 0;
-            t.m1 = 0;
-            t.l1 = 1;
-            t.w1 = 1;
+/// massa de líquido, massa que oscila (m1), braço (l1) e frequência (w1) de cada tanque, pelo formato e pelo enchimento
+pub fn initTanks(params: *types.Params) void {
+    const n_tanks: usize = @intCast(params.n_tank);
+    for (params.tank[0..n_tanks]) |*tank| {
+        if (tank.fill <= 0 or tank.side <= 0) {
+            tank.m_liq = 0;
+            tank.m0 = 0;
+            tank.m1 = 0;
+            tank.l1 = 1;
+            tank.w1 = 1;
             continue;
         }
-        if (t.shape == types.tank_cylinder) {
+        if (tank.shape == types.tank_cylinder) {
             const xi = 1.841;
-            const R = 0.5 * t.side;
-            const th = fmath.tanh(xi * t.fill / R);
-            t.m_liq = t.rho * fmath.pi * R * R * t.fill;
-            t.w1 = @sqrt(limits.g0 * xi / R * th);
-            t.m1 = t.m_liq * 2.0 * th / (xi * (xi * xi - 1.0) * t.fill / R);
+            const radius = 0.5 * tank.side;
+            const depth_factor = fmath.tanh(xi * tank.fill / radius);
+            tank.m_liq = tank.rho * fmath.pi * radius * radius * tank.fill;
+            tank.w1 = @sqrt(limits.g0 * xi / radius * depth_factor);
+            tank.m1 = tank.m_liq * 2.0 * depth_factor / (xi * (xi * xi - 1.0) * tank.fill / radius);
         } else {
-            const k = fmath.pi / t.side;
-            const th = fmath.tanh(k * t.fill);
-            t.m_liq = t.rho * t.side * t.side * t.fill;
-            t.w1 = @sqrt(limits.g0 * k * th);
-            t.m1 = t.m_liq * 8.0 * th / (fmath.pi * fmath.pi * fmath.pi * t.fill / t.side);
+            const wavenumber = fmath.pi / tank.side;
+            const depth_factor = fmath.tanh(wavenumber * tank.fill);
+            tank.m_liq = tank.rho * tank.side * tank.side * tank.fill;
+            tank.w1 = @sqrt(limits.g0 * wavenumber * depth_factor);
+            tank.m1 = tank.m_liq * 8.0 * depth_factor / (fmath.pi * fmath.pi * fmath.pi * tank.fill / tank.side);
         }
-        t.m1 = @min(t.m1, t.m_liq);
-        t.l1 = limits.g0 / (t.w1 * t.w1);
-        t.m0 = t.m_liq - t.m1;
+        tank.m1 = @min(tank.m1, tank.m_liq);
+        tank.l1 = limits.g0 / (tank.w1 * tank.w1);
+        tank.m0 = tank.m_liq - tank.m1;
     }
 }
 
+/// massa, CG e inércia do avião num instante
 pub const Mass = struct {
     m: f64,
     rcg: V3,
@@ -52,119 +54,122 @@ pub const Mass = struct {
     rL: V3, // posição da carga
 };
 
-pub fn compute(c: state.Ctx, x: []const f64) Mass {
-    const p = c.p;
-    var o: Mass = undefined;
+/// massa, CG e inércia com os tanques (pêndulos) e a carga na posição do estado
+pub fn compute(ctx: state.Ctx, state_vector: []const f64) Mass {
+    const params = ctx.p;
+    var out: Mass = undefined;
     // inércia seca dada no CG dela; as massas pontuais somam por Steiner
-    var I = vec.M3{ .{ p.Ixx, 0, -p.Ixz }, .{ 0, p.Iyy, 0 }, .{ -p.Ixz, 0, p.Izz } };
-    var m: f64 = 0;
-    var mr = vec.zero;
-    const Acc = struct {
-        fn add(Ip: *vec.M3, mp: *f64, mrp: *V3, mk: f64, r: V3) void {
-            if (mk == 0) return;
-            mp.* += mk;
-            mrp.* += r * vec.splat(mk);
-            const r2 = vec.dot(r, r);
+    var inertia = vec.M3{ .{ params.Ixx, 0, -params.Ixz }, .{ 0, params.Iyy, 0 }, .{ -params.Ixz, 0, params.Izz } };
+    var mass: f64 = 0;
+    var moment = vec.zero;
+    const Accumulate = struct {
+        fn add(inertia_sum: *vec.M3, mass_sum: *f64, moment_sum: *V3, point_mass: f64, position: V3) void {
+            if (point_mass == 0) return;
+            mass_sum.* += point_mass;
+            moment_sum.* += position * vec.splat(point_mass);
+            const distance2 = vec.dot(position, position);
             inline for (0..3) |i| {
-                var e = vec.zero;
-                e[i] = r2;
-                Ip[i] += (e - r * vec.splat(r[i])) * vec.splat(mk);
+                var diagonal = vec.zero;
+                diagonal[i] = distance2;
+                inertia_sum[i] += (diagonal - position * vec.splat(position[i])) * vec.splat(point_mass);
             }
         }
     };
-    Acc.add(&I, &m, &mr, p.m_dry, vec.v3(p.r_dry));
-    const n: usize = @intCast(p.n_tank);
-    const slosh_on = p.slosh_on != 0;
-    for (p.tank[0..n], 0..) |*t, i| {
-        const ex = if (slosh_on) x[state.sx(i)] else 0.0;
-        const ey = if (slosh_on) x[state.sy(i)] else 0.0;
-        const a = fmath.sincos(ex);
-        const b = fmath.sincos(ey);
-        const rt = vec.v3(t.r);
-        o.r1[i] = rt + V3{ t.l1 * a.s, t.l1 * b.s, -t.l1 + t.l1 * a.c * b.c };
-        Acc.add(&I, &m, &mr, t.m0, rt);
-        Acc.add(&I, &m, &mr, t.m1, o.r1[i]);
+    Accumulate.add(&inertia, &mass, &moment, params.m_dry, vec.v3(params.r_dry));
+    const n_tanks: usize = @intCast(params.n_tank);
+    const slosh_on = params.slosh_on != 0;
+    for (params.tank[0..n_tanks], 0..) |*tank, i| {
+        const ex = if (slosh_on) state_vector[state.sx(i)] else 0.0;
+        const ey = if (slosh_on) state_vector[state.sy(i)] else 0.0;
+        const swing_x = fmath.sincos(ex);
+        const swing_y = fmath.sincos(ey);
+        const rt = vec.v3(tank.r);
+        out.r1[i] = rt + V3{ tank.l1 * swing_x.s, tank.l1 * swing_y.s, -tank.l1 + tank.l1 * swing_x.c * swing_y.c };
+        Accumulate.add(&inertia, &mass, &moment, tank.m0, rt);
+        Accumulate.add(&inertia, &mass, &moment, tank.m1, out.r1[i]);
     }
-    o.rL = V3{ p.payload.r[0] - x[state.SL], p.payload.r[1], p.payload.r[2] };
-    if (p.payload.enabled != 0 and c.f.released == 0) Acc.add(&I, &m, &mr, p.payload.m, o.rL);
-    o.m = m;
-    o.rcg = mr / vec.splat(m);
-    const c2 = vec.dot(o.rcg, o.rcg);
+    out.rL = V3{ params.payload.r[0] - state_vector[state.SL], params.payload.r[1], params.payload.r[2] };
+    if (params.payload.enabled != 0 and ctx.f.released == 0) Accumulate.add(&inertia, &mass, &moment, params.payload.m, out.rL);
+    out.m = mass;
+    out.rcg = moment / vec.splat(mass);
+    const cg_distance2 = vec.dot(out.rcg, out.rcg);
     inline for (0..3) |i| {
-        var e = vec.zero;
-        e[i] = c2;
-        o.I[i] = I[i] - (e - o.rcg * vec.splat(o.rcg[i])) * vec.splat(m);
+        var diagonal = vec.zero;
+        diagonal[i] = cg_distance2;
+        out.I[i] = inertia[i] - (diagonal - out.rcg * vec.splat(out.rcg[i])) * vec.splat(mass);
     }
-    return o;
+    return out;
 }
 
+/// força e momento (corpo) de um efeito de massa
 pub const Load = struct { F: V3 = vec.zero, M: V3 = vec.zero };
 
-/// F_ext: forças externas (sem peso) no corpo; ω; escreve as derivadas dos tanques
-pub fn slosh(p: *const types.Params, x: []const f64, F_ext: V3, w: V3, ms: *const Mass, dx: []f64) Load {
-    var o = Load{};
-    if (p.slosh_on == 0) return o;
-    const n: usize = @intCast(p.n_tank);
-    for (p.tank[0..n], 0..) |*t, i| {
-        if (t.m1 <= 0) continue;
-        const rt = vec.v3(t.r);
-        const aap = -F_ext / vec.splat(ms.m) - vec.cross(w, vec.cross(w, rt));
-        const ex = x[state.sx(i)];
-        const ey = x[state.sy(i)];
-        const exd = x[state.sxd(i)];
-        const eyd = x[state.syd(i)];
-        const a = fmath.sincos(ex);
-        const b = fmath.sincos(ey);
-        const exdd = (aap[0] * a.c - aap[2] * a.s) / t.l1 - 2.0 * t.zeta * t.w1 * exd;
-        const eydd = (aap[1] * b.c - aap[2] * b.s) / t.l1 - 2.0 * t.zeta * t.w1 * eyd;
-        dx[state.sx(i)] = exd;
-        dx[state.sy(i)] = eyd;
-        dx[state.sxd(i)] = exdd;
-        dx[state.syd(i)] = eydd;
-        const arel = V3{ t.l1 * (exdd * a.c - exd * exd * a.s), t.l1 * (eydd * b.c - eyd * eyd * b.s), 0 };
-        const F = arel * vec.splat(-t.m1);
-        o.F += F;
-        o.M += vec.cross(ms.r1[i] - ms.rcg, F);
+/// força e momento do líquido que oscila nos tanques, com as forças externas `F_ext` (sem peso) no corpo e as
+/// taxas de rotação `body_rates`; escreve as derivadas dos tanques em `state_rates`
+pub fn slosh(params: *const types.Params, state_vector: []const f64, F_ext: V3, body_rates: V3, mass: *const Mass, state_rates: []f64) Load {
+    var out = Load{};
+    if (params.slosh_on == 0) return out;
+    const n_tanks: usize = @intCast(params.n_tank);
+    for (params.tank[0..n_tanks], 0..) |*tank, i| {
+        if (tank.m1 <= 0) continue;
+        const rt = vec.v3(tank.r);
+        const aap = -F_ext / vec.splat(mass.m) - vec.cross(body_rates, vec.cross(body_rates, rt));
+        const ex = state_vector[state.sx(i)];
+        const ey = state_vector[state.sy(i)];
+        const exd = state_vector[state.sxd(i)];
+        const eyd = state_vector[state.syd(i)];
+        const swing_x = fmath.sincos(ex);
+        const swing_y = fmath.sincos(ey);
+        const exdd = (aap[0] * swing_x.c - aap[2] * swing_x.s) / tank.l1 - 2.0 * tank.zeta * tank.w1 * exd;
+        const eydd = (aap[1] * swing_y.c - aap[2] * swing_y.s) / tank.l1 - 2.0 * tank.zeta * tank.w1 * eyd;
+        state_rates[state.sx(i)] = exd;
+        state_rates[state.sy(i)] = eyd;
+        state_rates[state.sxd(i)] = exdd;
+        state_rates[state.syd(i)] = eydd;
+        const arel = V3{ tank.l1 * (exdd * swing_x.c - exd * exd * swing_x.s), tank.l1 * (eydd * swing_y.c - eyd * eyd * swing_y.s), 0 };
+        const force = arel * vec.splat(-tank.m1);
+        out.F += force;
+        out.M += vec.cross(mass.r1[i] - mass.rcg, force);
     }
-    return o;
+    return out;
 }
 
-/// aap: gravidade aparente no tanque 0 (ou no CG) para o atrito da carga
-pub fn payload(c: state.Ctx, x: []const f64, aap: V3, ms: *const Mass, dx: []f64) Load {
-    var o = Load{};
-    const p = c.p;
-    if (c.f.extracting == 0 or c.f.released != 0 or p.payload.enabled == 0) return o;
+/// força e momento do atrito da carga que desliza na baia; `aap` é a gravidade aparente no tanque 0 (ou no CG)
+pub fn payload(ctx: state.Ctx, state_vector: []const f64, aap: V3, mass: *const Mass, state_rates: []f64) Load {
+    var out = Load{};
+    const params = ctx.p;
+    if (ctx.f.extracting == 0 or ctx.f.released != 0 or params.payload.enabled == 0) return out;
     const nz = @max(aap[2], 0.0);
-    const fr = p.payload.mu_b * p.payload.m * nz;
-    dx[state.SL] = x[state.SLD];
-    dx[state.SLD] = p.payload.Fext_g * limits.g0 - fr / p.payload.m;
-    o.F = V3{ -fr, 0, 0 };
-    o.M = vec.cross(ms.rL - ms.rcg, o.F);
-    return o;
+    const friction = params.payload.mu_b * params.payload.m * nz;
+    state_rates[state.SL] = state_vector[state.SLD];
+    state_rates[state.SLD] = params.payload.Fext_g * limits.g0 - friction / params.payload.m;
+    out.F = V3{ -friction, 0, 0 };
+    out.M = vec.cross(mass.rL - mass.rcg, out.F);
+    return out;
 }
 
 const testing = std.testing;
 
 test "tanque quadrado: frequência e massas" {
-    var p = types.Params{};
-    p.n_tank = 1;
-    p.tank[0] = .{ .side = 0.1, .fill = 0.05, .rho = 1000 };
-    initTanks(&p);
-    const t = p.tank[0];
-    try testing.expectApproxEqAbs(@as(f64, 0.5), t.m_liq, 1e-12);
-    const w = @sqrt(limits.g0 * std.math.pi / 0.1 * std.math.tanh(@as(f64, std.math.pi * 0.5)));
-    try testing.expectApproxEqRel(w, t.w1, 1e-9);
-    try testing.expect(t.m1 > 0 and t.m1 < t.m_liq);
+    var params = types.Params{};
+    params.n_tank = 1;
+    params.tank[0] = .{ .side = 0.1, .fill = 0.05, .rho = 1000 };
+    initTanks(&params);
+    const tank = params.tank[0];
+    try testing.expectApproxEqAbs(@as(f64, 0.5), tank.m_liq, 1e-12);
+    const omega = @sqrt(limits.g0 * std.math.pi / 0.1 * std.math.tanh(@as(f64, std.math.pi * 0.5)));
+    try testing.expectApproxEqRel(omega, tank.w1, 1e-9);
+    try testing.expect(tank.m1 > 0 and tank.m1 < tank.m_liq);
 }
 
 test "CG e Steiner" {
-    var p = types.Params{ .m_dry = 2, .Ixx = 0, .Iyy = 0, .Izz = 0, .r_dry = .{ 1, 0, 0 } };
-    p.payload = .{ .enabled = 1, .m = 2, .r = .{ -1, 0, 0 } };
-    const f = state.Flags{};
-    const ctx = state.Ctx{ .p = &p, .f = &f, .tR = -1, .h_ground = 0, .tg = -1 };
-    const x = [_]f64{0} ** state.nx;
-    const ms = compute(ctx, &x);
-    try testing.expectApproxEqAbs(@as(f64, 4), ms.m, 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 0), ms.rcg[0], 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 4), ms.I[1][1], 1e-12); // 2·1² + 2·1²
+    var params = types.Params{ .m_dry = 2, .Ixx = 0, .Iyy = 0, .Izz = 0, .r_dry = .{ 1, 0, 0 } };
+    params.payload = .{ .enabled = 1, .m = 2, .r = .{ -1, 0, 0 } };
+    const flags = state.Flags{};
+    const ctx = state.Ctx{ .p = &params, .f = &flags, .tR = -1, .h_ground = 0, .tg = -1 };
+    const state_vector = [_]f64{0} ** state.nx;
+    const mass = compute(ctx, &state_vector);
+    try testing.expectApproxEqAbs(@as(f64, 4), mass.m, 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, 0), mass.rcg[0], 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, 4), mass.I[1][1], 1e-12); // 2·1² + 2·1²
 }
