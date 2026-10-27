@@ -23,13 +23,13 @@ pub const Out = struct {
 pub fn compute(ctx: state.Ctx, state_vector: []const f64, body_to_ned: vec.M3, rcg: V3, steer: f64) Out {
     var out = Out{};
     const params = ctx.p;
-    const VB = V3{ state_vector[state.VEL_X], state_vector[state.VEL_Y], state_vector[state.VEL_Z] };
-    const body_rates = V3{ state_vector[state.RATE_P], state_vector[state.RATE_Q], state_vector[state.RATE_R] };
+    const VB = V3{ state_vector[state.index(.vel_x)], state_vector[state.index(.vel_y)], state_vector[state.index(.vel_z)] };
+    const body_rates = V3{ state_vector[state.index(.rate_p)], state_vector[state.index(.rate_q)], state_vector[state.index(.rate_r)] };
     const n_gear: usize = @intCast(params.n_gear);
     for (params.gear[0..n_gear], 0..) |*gear_point, i| {
         const position = vec.v3(gear_point.r);
         const pc = vec.mul(body_to_ned, position);
-        const pen = state_vector[state.DOWN] + pc[2] + terrain.height(params, state_vector[state.NORTH] + pc[0], state_vector[state.EAST] + pc[1]); // > 0: comprimido
+        const pen = state_vector[state.index(.down)] + pc[2] + terrain.height(params, state_vector[state.index(.north)] + pc[0], state_vector[state.index(.east)] + pc[1]); // > 0: comprimido
         if (pen <= 0.0) continue;
         const vn = vec.mul(body_to_ned, VB + vec.cross(body_rates, position));
         const Nn = @max(0.0, gear_point.k * pen + gear_point.c * vn[2]);
@@ -66,7 +66,7 @@ pub fn touching(params: *const types.Params, state_vector: []const f64, body_to_
     const n_gear: usize = @intCast(params.n_gear);
     for (params.gear[0..n_gear]) |*gear_point| {
         const pc = vec.mul(body_to_ned, vec.v3(gear_point.r));
-        if (state_vector[state.DOWN] + pc[2] + terrain.height(params, state_vector[state.NORTH] + pc[0], state_vector[state.EAST] + pc[1]) > 0.0) return true;
+        if (state_vector[state.index(.down)] + pc[2] + terrain.height(params, state_vector[state.index(.north)] + pc[0], state_vector[state.index(.east)] + pc[1]) > 0.0) return true;
     }
     return false;
 }
@@ -78,7 +78,7 @@ test "apoiado: força vertical equilibra" {
     const flags = state.Flags{};
     const ctx = state.Ctx{ .p = &params, .f = &flags, .tR = -1, .h_ground = 0, .tg = -1 };
     var state_vector = [_]f64{0} ** state.nx;
-    state_vector[state.DOWN] = -0.19; // 1 cm de compressão
+    state_vector[state.index(.down)] = -0.19; // 1 cm de compressão
     const out = compute(ctx, &state_vector, vec.rotation(0, 0, 0), vec.zero, 0);
     try std.testing.expectApproxEqAbs(@as(f64, -10), out.F[2], 1e-6);
 }

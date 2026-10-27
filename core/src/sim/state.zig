@@ -3,52 +3,61 @@
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
 
-pub const NORTH = 0;
-pub const EAST = 1;
-pub const DOWN = 2;
-pub const PHI = 3;
-pub const THE = 4;
-pub const PSI = 5;
-pub const VEL_X = 6;
-pub const VEL_Y = 7;
-pub const VEL_Z = 8;
-pub const RATE_P = 9;
-pub const RATE_Q = 10;
-pub const RATE_R = 11;
-pub const IH = 12; // integradores do piloto
-pub const IV = 13;
-pub const ITH = 14;
-pub const IE = 15;
-pub const HR = 16; // altura de referência filtrada
-pub const PHC = 17; // inclinação pedida filtrada
-pub const EN = 18; // energia tirada das baterias (J)
-pub const SL = 19; // deslizamento da carga
-pub const SLD = 20;
-pub const RPS0 = 21; // rotação de cada motor (rps)
-pub const SLOSH0 = RPS0 + limits.max_props; // por tanque: ex, ey, exd, eyd
-pub const nx = SLOSH0 + 4 * limits.max_tanks;
+/// o que fica em cada posição do vetor de estados, na ordem
+pub const Entry = enum(usize) {
+    north, // posição NED (m)
+    east,
+    down,
+    roll, // ângulos de Euler φ, θ, ψ (rad)
+    pitch,
+    yaw,
+    vel_x, // velocidade no corpo u, v, w (m/s)
+    vel_y,
+    vel_z,
+    rate_p, // velocidade angular no corpo p, q, r (rad/s)
+    rate_q,
+    rate_r,
+    int_height, // integradores do piloto: erro de altura, de velocidade, de α e de trajetória
+    int_speed,
+    int_alpha,
+    int_track,
+    ref_height, // altura de referência filtrada
+    bank_cmd, // inclinação pedida filtrada
+    energy, // energia tirada das baterias (J)
+    cargo_slide, // deslizamento da carga e sua velocidade
+    cargo_slide_rate,
+    rps0 = 21, // rotação de cada motor (rps), max_props posições a partir daqui
+    slosh0 = 21 + limits.max_props, // por tanque: ex, ey, exd, eyd
+};
+
+/// posição de `entry` no vetor de estados
+pub inline fn index(comptime entry: Entry) usize {
+    return @intFromEnum(entry);
+}
+
+pub const nx = index(.slosh0) + 4 * limits.max_tanks;
 
 pub const Vec = @Vector(nx, f64);
 
 /// índice da rotação (rps) do motor prop_index
 pub inline fn rps(prop_index: usize) usize {
-    return RPS0 + prop_index;
+    return index(.rps0) + prop_index;
 }
 /// índice do deslocamento x do líquido do tanque tank_index
 pub inline fn sx(tank_index: usize) usize {
-    return SLOSH0 + 4 * tank_index;
+    return index(.slosh0) + 4 * tank_index;
 }
 /// índice do deslocamento y do líquido do tanque tank_index
 pub inline fn sy(tank_index: usize) usize {
-    return SLOSH0 + 4 * tank_index + 1;
+    return index(.slosh0) + 4 * tank_index + 1;
 }
 /// índice da velocidade x do líquido do tanque tank_index
 pub inline fn sxd(tank_index: usize) usize {
-    return SLOSH0 + 4 * tank_index + 2;
+    return index(.slosh0) + 4 * tank_index + 2;
 }
 /// índice da velocidade y do líquido do tanque tank_index
 pub inline fn syd(tank_index: usize) usize {
-    return SLOSH0 + 4 * tank_index + 3;
+    return index(.slosh0) + 4 * tank_index + 3;
 }
 
 /// modos discretos (mudam só entre passos)

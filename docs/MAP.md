@@ -423,8 +423,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `SimpleCfg:23`, `SimpleRow:52`, `SimpleSummary:76`
   fn `density:108`, `compute:132`
 - `core/src/sim/state.zig` — Layout do vetor de estados (definido em comptime a partir dos limites)
-  tipos `Flags:55`, `Run:71`, `Ctx:87`
-  fn `rps:34`, `sx:38`, `sy:42`, `sxd:46`, `syd:50`
+  tipos `Entry:7`, `Flags:64`, `Run:80`, `Ctx:96`
+  fn `index:34`, `rps:43`, `sx:47`, `sy:51`, `sxd:55`, `syd:59`
 - `core/src/sim/tests.zig` — Testes de integração do núcleo: aeronave monomotora convencional (a do código
 - `core/src/sim/trim.zig` — Equilíbrio (trimagem) e desempenho por velocidade, sem integração no tempo.
   tipos `Ctx:25`
@@ -439,16 +439,16 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `GroundRun:23`
   fn `interp:50`, `rotSpeed:77`, `run:87`, `mtow:112`
 - `core/src/sizing/kinds.zig` — Tipos de aeronave do dimensionamento: cada um é um tipo Zig com a mesma interface, conferida em
-  tipos `Hover:19`, `Monoplane:21`, `Biplane:46`, `FlyingWing:66`, `Tailsitter:85`, `Vtol:104`
-  fn `biplaneSigma:41`, `check:127`
+  tipos `Hover:19`, `Monoplane:21`, `Biplane:50`, `FlyingWing:73`, `Tailsitter:96`, `Vtol:119`
+  fn `biplaneSigma:45`, `check:146`
 - `core/src/sizing/motorprop.zig` — Tração em regime de um conjunto motor + hélice + bateria com acelerador cheio, para a curva T(V) da sprint
   tipos `MotorProp:22`
-  fn `thrust:46`, `curve:79`
+  fn `thrust:46`, `curve:78`
 - `core/src/sizing/optimize.zig` — Otimizadores do mini-MDO atrás de uma interface só.
   tipos `Eval:16`, `Problem:21`, `Recorder:48`, `Result:76`, `Pso:97`, `RandomSearch:152`
   fn `check:182`, `run:192`
 - `core/src/sizing/sizing.zig` — Dimensionamento inicial (mini-MDO) no núcleo: avalia um vetor de projeto e otimiza.
-  fn `eval:20`, `fitness:28`, `optimize:47`, `name:57`
+  fn `eval:20`, `fitness:29`, `optimize:49`, `name:59`
 - `core/src/sizing/stages.zig` — Estágios da cadeia de dimensionamento, cada um uma função pura com entradas e saídas pequenas:
   tipos `Curve:18`, `Geo:40`, `Polar:65`, `Env:80`, `Mass:207`
   fn `geometry:43`, `blendAirfoils:53`, `polar:68`, `stallSpeed:91`, `envelope:95`, `sustainedN:128`, `isaRho:137`, `isaAltitude:142`, `ceiling:147`, `landingRun:171`, `takeoffRun:177`, `canHover:202`, `emptyMass:209`, `linearCurve:223`

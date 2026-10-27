@@ -77,9 +77,9 @@ fn manual(params: *const types.Params, cmd: *autopilot.Cmd, state_rates: []f64) 
     cmd.dr = ok(pilot.dr, gains.dr_max);
     cmd.thr = if (std.math.isFinite(pilot.thr)) fmath.lim(pilot.thr, 0.0, 1.0) else 0.0;
     cmd.dw = fmath.sat(-cmd.dr * params.steer_sign, 20.0 * std.math.rad_per_deg); // roda direcionável segue o leme
-    state_rates[state.IH] = 0.0;
-    state_rates[state.IV] = 0.0;
-    state_rates[state.ITH] = 0.0;
+    state_rates[state.index(.int_height)] = 0.0;
+    state_rates[state.index(.int_speed)] = 0.0;
+    state_rates[state.index(.int_alpha)] = 0.0;
 }
 
 /// a equação mestre: as derivadas `state_rates` = f(time, state_vector); com `out`, também o que o registro e os
@@ -89,10 +89,10 @@ pub fn derivatives(ctx: state.Ctx, time: f64, state_vector: []const f64, state_r
     var scratch: Out = undefined; // sem saída: só guide e cmd são escritos (evita zerar ~2 KB por chamada)
     const result: *Out = out orelse &scratch;
     state_rates[0..state.nx].* = @as([state.nx]f64, @splat(0.0)); // tamanho em comptime: stores vetoriais, sem chamar memset
-    const body_to_ned = vec.rotation(state_vector[state.PHI], state_vector[state.THE], state_vector[state.PSI]);
-    const VB = V3{ state_vector[state.VEL_X], state_vector[state.VEL_Y], state_vector[state.VEL_Z] };
-    const body_rates = V3{ state_vector[state.RATE_P], state_vector[state.RATE_Q], state_vector[state.RATE_R] };
-    const altitude = -state_vector[state.DOWN];
+    const body_to_ned = vec.rotation(state_vector[state.index(.roll)], state_vector[state.index(.pitch)], state_vector[state.index(.yaw)]);
+    const VB = V3{ state_vector[state.index(.vel_x)], state_vector[state.index(.vel_y)], state_vector[state.index(.vel_z)] };
+    const body_rates = V3{ state_vector[state.index(.rate_p)], state_vector[state.index(.rate_q)], state_vector[state.index(.rate_r)] };
+    const altitude = -state_vector[state.index(.down)];
 
     const mass_props = mass.compute(ctx, state_vector);
 
@@ -109,15 +109,15 @@ pub fn derivatives(ctx: state.Ctx, time: f64, state_vector: []const f64, state_r
     const on_ground = gear.touching(params, state_vector, body_to_ned);
 
     // guiamento e piloto
-    result.guide = guidance.guide(ctx, state_vector[state.NORTH], state_vector[state.EAST], Vg);
+    result.guide = guidance.guide(ctx, state_vector[state.index(.north)], state_vector[state.index(.east)], Vg);
     result.cmd = autopilot.commands(ctx, time, state_vector, .{ .Va = Va, .Vg = Vg, .al = al, .be = be, .chi = chi, .hdot = -vn[2], .qb = qb, .m = mass_props.m, .on_ground = on_ground }, &result.guide, state_rates);
     if (params.pilot.manual != 0) manual(params, &result.cmd, state_rates);
     const cmd = &result.cmd;
 
     // forças e momentos
-    const hgnd = terrain.height(params, state_vector[state.NORTH], state_vector[state.EAST]);
+    const hgnd = terrain.height(params, state_vector[state.index(.north)], state_vector[state.index(.east)]);
     // a propulsão antes da aerodinâmica: os modificadores (esteira da hélice) olham a tração do instante
-    const pr = prop.compute(params, Vr, body_rates, mass_props.rcg, state_vector[state.RPS0 .. state.RPS0 + limits.max_props], cmd.thr, cmd.dr, state_vector[state.THE], altitude);
+    const pr = prop.compute(params, Vr, body_rates, mass_props.rcg, state_vector[state.index(.rps0) .. state.index(.rps0) + limits.max_props], cmd.thr, cmd.dr, state_vector[state.index(.pitch)], altitude);
     var env = mods.Env{};
     if (params.n_mod > 0) {
         var thrusts: [limits.max_props]f64 = undefined;
@@ -143,30 +143,30 @@ pub fn derivatives(ctx: state.Ctx, time: f64, state_vector: []const f64, state_r
     moment += sl.M + pl.M;
 
     // peso
-    const roll = fmath.sincos(state_vector[state.PHI]);
-    const pitch = fmath.sincos(state_vector[state.THE]);
+    const roll = fmath.sincos(state_vector[state.index(.roll)]);
+    const pitch = fmath.sincos(state_vector[state.index(.pitch)]);
     force += V3{ -pitch.s, pitch.c * roll.s, pitch.c * roll.c } * vec.splat(mass_props.m * limits.g0);
 
     // corpo rígido
     const acc = force / vec.splat(mass_props.m) - vec.cross(body_rates, VB);
-    state_rates[state.VEL_X] = acc[0];
-    state_rates[state.VEL_Y] = acc[1];
-    state_rates[state.VEL_Z] = acc[2];
+    state_rates[state.index(.vel_x)] = acc[0];
+    state_rates[state.index(.vel_y)] = acc[1];
+    state_rates[state.index(.vel_z)] = acc[2];
     const Iw = vec.mul(mass_props.I, body_rates);
     const wd = vec.solve3(mass_props.I, moment - vec.cross(body_rates, Iw));
-    state_rates[state.RATE_P] = wd[0];
-    state_rates[state.RATE_Q] = wd[1];
-    state_rates[state.RATE_R] = wd[2];
+    state_rates[state.index(.rate_p)] = wd[0];
+    state_rates[state.index(.rate_q)] = wd[1];
+    state_rates[state.index(.rate_r)] = wd[2];
     const qs_rc = body_rates[1] * roll.s + body_rates[2] * roll.c;
-    state_rates[state.PHI] = body_rates[0] + qs_rc * pitch.s / pitch.c;
-    state_rates[state.THE] = body_rates[1] * roll.c - body_rates[2] * roll.s;
-    state_rates[state.PSI] = qs_rc / pitch.c;
-    state_rates[state.NORTH] = vn[0];
-    state_rates[state.EAST] = vn[1];
-    state_rates[state.DOWN] = vn[2];
+    state_rates[state.index(.roll)] = body_rates[0] + qs_rc * pitch.s / pitch.c;
+    state_rates[state.index(.pitch)] = body_rates[1] * roll.c - body_rates[2] * roll.s;
+    state_rates[state.index(.yaw)] = qs_rc / pitch.c;
+    state_rates[state.index(.north)] = vn[0];
+    state_rates[state.index(.east)] = vn[1];
+    state_rates[state.index(.down)] = vn[2];
     const np: usize = @intCast(params.n_prop);
     for (0..np) |i| state_rates[state.rps(i)] = pr.u[i].drps;
-    state_rates[state.EN] = pr.P;
+    state_rates[state.index(.energy)] = pr.P;
 
     if (out == null) return;
 
@@ -213,7 +213,7 @@ pub fn derivatives(ctx: state.Ctx, time: f64, state_vector: []const f64, state_r
     for (params.gear[0..ng]) |*gear_point| {
         if (gear_point.kind == types.gear_skid) {
             const pc = vec.mul(body_to_ned, vec.v3(gear_point.r));
-            result.htail = @min(result.htail, -(state_vector[state.DOWN] + pc[2]) - terrain.height(params, state_vector[state.NORTH] + pc[0], state_vector[state.EAST] + pc[1]));
+            result.htail = @min(result.htail, -(state_vector[state.index(.down)] + pc[2]) - terrain.height(params, state_vector[state.index(.north)] + pc[0], state_vector[state.index(.east)] + pc[1]));
         }
         if (gear_point.kind == types.gear_main) {
             xm += gear_point.r[0];
@@ -232,7 +232,7 @@ pub fn derivatives(ctx: state.Ctx, time: f64, state_vector: []const f64, state_r
         const kp = down - ax * vec.splat(vec.dot(down, ax));
         const nk = vec.norm(kp);
         const low = if (nk > 1e-9) hub + kp * vec.splat(0.5 * prop_unit.D / nk) else hub;
-        result.hprop = @min(result.hprop, -(state_vector[state.DOWN] + low[2]) - terrain.height(params, state_vector[state.NORTH] + low[0], state_vector[state.EAST] + low[1]));
+        result.hprop = @min(result.hprop, -(state_vector[state.index(.down)] + low[2]) - terrain.height(params, state_vector[state.index(.north)] + low[0], state_vector[state.index(.east)] + low[1]));
     }
     // reações no trem pelo artigo (Riboldi et al., eqs. 3-5): pista plana
     const Lift = result.CL * qS;

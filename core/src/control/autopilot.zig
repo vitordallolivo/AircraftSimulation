@@ -65,24 +65,24 @@ pub fn commands(ctx: state.Ctx, time: f64, state_vector: []const f64, input: Inp
     const gains = &params.ap;
     const flags = ctx.f;
     var cmd = Cmd{};
-    const altitude = -state_vector[state.DOWN];
+    const altitude = -state_vector[state.index(.down)];
     const ground_speed = @max(input.Vg, 3.0);
     const noar = !input.on_ground and flags.brakes == 0 and flags.landed == 0;
     const autop = flags.autop != 0;
 
     // altura de referência: segue o segmento com taxa limitada
-    var rate = fmath.lim(gains.Khr * (guide.hseg - state_vector[state.HR]), -gains.g_down * ground_speed, gains.g_up * ground_speed);
+    var rate = fmath.lim(gains.Khr * (guide.hseg - state_vector[state.index(.ref_height)]), -gains.g_down * ground_speed, gains.g_up * ground_speed);
     // prioridade da velocidade: abaixo de Vseg a subida pedida diminui
     if (rate > 0.0) rate *= fmath.lim(1.0 - gains.Kvs * (guide.Vseg - input.Va), 0.0, 1.0);
-    state_rates[state.HR] = if (autop) rate else 0.0;
-    cmd.href = if (autop) state_vector[state.HR] else guide.hseg;
+    state_rates[state.index(.ref_height)] = if (autop) rate else 0.0;
+    cmd.href = if (autop) state_vector[state.index(.ref_height)] else guide.hseg;
     cmd.hdref = if (autop) rate else 0.0;
     const height_error = cmd.href - altitude;
     const climb_rate_error = cmd.hdref - input.hdot;
 
     // ---------------- longitudinal ----------------
-    const cph = fmath.cos(fmath.lim(state_vector[state.PHI], -75.0 * std.math.rad_per_deg, 75.0 * std.math.rad_per_deg));
-    const qref = qTurn(state_vector[state.PHI], input.Va);
+    const cph = fmath.cos(fmath.lim(state_vector[state.index(.roll)], -75.0 * std.math.rad_per_deg, 75.0 * std.math.rad_per_deg));
+    const qref = qTurn(state_vector[state.index(.roll)], input.Va);
     cmd.alc = input.al;
     if (!autop) {
         cmd.thr = if (flags.brakes != 0) 0.0 else fmath.lim(params.takeoff.rate_thr * time, 0.0, 1.0);
@@ -91,24 +91,24 @@ pub fn commands(ctx: state.Ctx, time: f64, state_vector: []const f64, input: Inp
             // proteção de α na decolagem: a mesma lei do voo (α e q) com α pedido = o do estol do avião
             // (alpha_guard_lim, runner.guardAlpha); só pica, nunca cabra mais que o comando de decolagem
             const alim = if (params.alpha_guard_lim > 0.0) params.alpha_guard_lim else gains.alpha_max;
-            const de_g = gains.Kae * (input.al - alim) + gains.Kqe * state_vector[state.RATE_Q];
+            const de_g = gains.Kae * (input.al - alim) + gains.Kqe * state_vector[state.index(.rate_q)];
             if (de_g > cmd.de) {
                 cmd.de = de_g;
                 cmd.alim = true;
             }
         }
-        cmd.thc = state_vector[state.THE];
+        cmd.thc = state_vector[state.index(.pitch)];
     } else if (flags.landed != 0) {
         cmd.thc = 0.0;
         cmd.thr = 0.0;
-        cmd.de = gains.Kthe * state_vector[state.THE] + gains.Kqe * state_vector[state.RATE_Q];
+        cmd.de = gains.Kthe * state_vector[state.index(.pitch)] + gains.Kqe * state_vector[state.index(.rate_q)];
     } else {
         // h'' = g (n cos φ − cos γ)  =>  n cos φ = cos γ_ref + Kn_h e_h + Kn_hd e_ḣ + Kn_ih ∫e_h
         const gref = fmath.atan2(cmd.hdref, ground_speed);
-        var load_factor = fmath.cos(gref) + gains.Kn_h * height_error + gains.Kn_hd * climb_rate_error + gains.Kn_ih * state_vector[state.IH];
-        cmd.thr = fmath.lim(gains.Dtrim + gains.KV * (guide.Vseg - input.Va) + gains.KIV * state_vector[state.IV] + gains.KHT * height_error, 0.0, 1.0);
+        var load_factor = fmath.cos(gref) + gains.Kn_h * height_error + gains.Kn_hd * climb_rate_error + gains.Kn_ih * state_vector[state.index(.int_height)];
+        cmd.thr = fmath.lim(gains.Dtrim + gains.KV * (guide.Vseg - input.Va) + gains.KIV * state_vector[state.index(.int_speed)] + gains.KHT * height_error, 0.0, 1.0);
         if (flags.flare != 0) { // arredondamento exponencial: dh/dt = −h_rodas / τ
-            const wheel_height = altitude - terrain.height(params, state_vector[state.NORTH], state_vector[state.EAST]) - ctx.h_rest;
+            const wheel_height = altitude - terrain.height(params, state_vector[state.index(.north)], state_vector[state.index(.east)]) - ctx.h_rest;
             cmd.hdref = -fmath.lim(wheel_height / gains.tau_flare, 0.2, @max(-input.hdot, 0.2));
             load_factor = 1.0 + gains.Kfn * (cmd.hdref - input.hdot);
             if (wheel_height < 0.3) cmd.thr = 0.0;
@@ -118,20 +118,20 @@ pub fn commands(ctx: state.Ctx, time: f64, state_vector: []const f64, input: Inp
         const al_free = (CLc - gains.CL0) / gains.CLa;
         cmd.alc = fmath.lim(al_free, -6.0 * std.math.rad_per_deg, gains.alpha_max); // proteção de α
         cmd.alim = al_free >= gains.alpha_max;
-        cmd.thc = state_vector[state.THE] + (cmd.alc - input.al);
-        cmd.de = gains.Kae * (input.al - cmd.alc) + gains.Kqe * (state_vector[state.RATE_Q] - qref) + gains.KIa * state_vector[state.ITH];
+        cmd.thc = state_vector[state.index(.pitch)] + (cmd.alc - input.al);
+        cmd.de = gains.Kae * (input.al - cmd.alc) + gains.Kqe * (state_vector[state.index(.rate_q)] - qref) + gains.KIa * state_vector[state.index(.int_alpha)];
     }
     cmd.de = fmath.sat(cmd.de, gains.de_max);
 
     // ---------------- látero-direcional ----------------
     if (input.on_ground) {
-        const psiref = guide.chip - fmath.atan(gains.Ky * guide.ect + gains.Ki * state_vector[state.IE]);
-        const uy = gains.Kpsi * fmath.wrap(psiref - state_vector[state.PSI]) - gains.Kr * state_vector[state.RATE_R];
-        cmd.da = -gains.Kphia * state_vector[state.PHI] - gains.Kpa * state_vector[state.RATE_P];
+        const psiref = guide.chip - fmath.atan(gains.Ky * guide.ect + gains.Ki * state_vector[state.index(.int_track)]);
+        const uy = gains.Kpsi * fmath.wrap(psiref - state_vector[state.index(.yaw)]) - gains.Kr * state_vector[state.index(.rate_r)];
+        cmd.da = -gains.Kphia * state_vector[state.index(.roll)] - gains.Kpa * state_vector[state.index(.rate_p)];
         cmd.dr = -uy;
         cmd.dw = gains.Kbeq * uy * params.steer_sign;
         cmd.phic = 0.0;
-        state_rates[state.PHC] = -state_vector[state.PHC] / gains.tau_phi;
+        state_rates[state.index(.bank_cmd)] = -state_vector[state.index(.bank_cmd)] / gains.tau_phi;
     } else {
         // inclinação máxima que a asa sustenta sem perder altura: 1/cos φ <= n_max(α_max)
         const CLlim = gains.CL0 + gains.CLa * gains.alpha_max;
@@ -139,9 +139,9 @@ pub fn commands(ctx: state.Ctx, time: f64, state_vector: []const f64, input: Inp
         var philim = if (nmax > 1.0) fmath.acos(1.0 / nmax) else 0.0;
         if (philim > gains.phimax) philim = gains.phimax;
         const phir = if (input.Vg > 3.0) fmath.sat(guide.phiff + gains.Kchi * fmath.wrap(guide.chid - input.chi), philim) else 0.0;
-        state_rates[state.PHC] = fmath.sat((phir - state_vector[state.PHC]) / gains.tau_phi, gains.pmax_cmd);
-        cmd.phic = state_vector[state.PHC];
-        cmd.da = gains.Kphia * (cmd.phic - state_vector[state.PHI]) - gains.Kpa * state_vector[state.RATE_P];
+        state_rates[state.index(.bank_cmd)] = fmath.sat((phir - state_vector[state.index(.bank_cmd)]) / gains.tau_phi, gains.pmax_cmd);
+        cmd.phic = state_vector[state.index(.bank_cmd)];
+        cmd.da = gains.Kphia * (cmd.phic - state_vector[state.index(.roll)]) - gains.Kpa * state_vector[state.index(.rate_p)];
         cmd.dr = -gains.Kbeta * input.be;
         cmd.dw = 0.0;
     }
@@ -151,11 +151,11 @@ pub fn commands(ctx: state.Ctx, time: f64, state_vector: []const f64, input: Inp
 
     // ---------------- integradores ----------------
     const active = autop and noar and flags.flare == 0;
-    state_rates[state.IH] = if (active) fmath.sat(height_error, 3.0) else 0.0;
-    const thr_free = gains.Dtrim + gains.KV * (guide.Vseg - input.Va) + gains.KIV * state_vector[state.IV] + gains.KHT * height_error;
+    state_rates[state.index(.int_height)] = if (active) fmath.sat(height_error, 3.0) else 0.0;
+    const thr_free = gains.Dtrim + gains.KV * (guide.Vseg - input.Va) + gains.KIV * state_vector[state.index(.int_speed)] + gains.KHT * height_error;
     const saturated = (thr_free > 1.0 and guide.Vseg > input.Va) or (thr_free < 0.0 and guide.Vseg < input.Va);
-    state_rates[state.IV] = if (active and !saturated) guide.Vseg - input.Va else 0.0;
-    state_rates[state.ITH] = if (active) fmath.sat(input.al - cmd.alc, 5.0 * std.math.rad_per_deg) else 0.0;
-    state_rates[state.IE] = if (input.on_ground) guide.ect else 0.0;
+    state_rates[state.index(.int_speed)] = if (active and !saturated) guide.Vseg - input.Va else 0.0;
+    state_rates[state.index(.int_alpha)] = if (active) fmath.sat(input.al - cmd.alc, 5.0 * std.math.rad_per_deg) else 0.0;
+    state_rates[state.index(.int_track)] = if (input.on_ground) guide.ect else 0.0;
     return cmd;
 }

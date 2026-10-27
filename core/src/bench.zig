@@ -101,7 +101,7 @@ pub fn dynamics(inst: *runner.Instance, count: u64) f64 {
     var i: u64 = 0;
     while (i < count) : (i += 1) {
         sim_dynamics.derivatives(inst.ctx(), inst.r.t, &inst.r.x, &state_rates, null);
-        acc += state_rates[state.VEL_X];
+        acc += state_rates[state.index(.vel_x)];
     }
     return acc;
 }

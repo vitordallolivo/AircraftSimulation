@@ -88,7 +88,7 @@ pub fn compute(ctx: state.Ctx, state_vector: []const f64) Mass {
         Accumulate.add(&inertia, &mass, &moment, tank.m0, rt);
         Accumulate.add(&inertia, &mass, &moment, tank.m1, out.r1[i]);
     }
-    out.rL = V3{ params.payload.r[0] - state_vector[state.SL], params.payload.r[1], params.payload.r[2] };
+    out.rL = V3{ params.payload.r[0] - state_vector[state.index(.cargo_slide)], params.payload.r[1], params.payload.r[2] };
     if (params.payload.enabled != 0 and ctx.f.released == 0) Accumulate.add(&inertia, &mass, &moment, params.payload.m, out.rL);
     out.m = mass;
     out.rcg = moment / vec.splat(mass);
@@ -141,8 +141,8 @@ pub fn payload(ctx: state.Ctx, state_vector: []const f64, aap: V3, mass: *const 
     if (ctx.f.extracting == 0 or ctx.f.released != 0 or params.payload.enabled == 0) return out;
     const nz = @max(aap[2], 0.0);
     const friction = params.payload.mu_b * params.payload.m * nz;
-    state_rates[state.SL] = state_vector[state.SLD];
-    state_rates[state.SLD] = params.payload.Fext_g * limits.g0 - friction / params.payload.m;
+    state_rates[state.index(.cargo_slide)] = state_vector[state.index(.cargo_slide_rate)];
+    state_rates[state.index(.cargo_slide_rate)] = params.payload.Fext_g * limits.g0 - friction / params.payload.m;
     out.F = V3{ -friction, 0, 0 };
     out.M = vec.cross(mass.rL - mass.rcg, out.F);
     return out;

@@ -145,14 +145,14 @@ fn guardAlpha(params: *const types.Params) f64 {
 fn syncIntegrators(inst: *Instance, de_before: f64, thr_before: f64) void {
     const gains = &inst.p.ap;
     const state_vector = &inst.r.x;
-    state_vector[state.ITH] = 0.0;
-    state_vector[state.IH] = 0.0;
+    state_vector[state.index(.int_alpha)] = 0.0;
+    state_vector[state.index(.int_height)] = 0.0;
     var state_rates: [state.nx]f64 = undefined;
     var out: dynamics.Out = .{};
     dynamics.derivatives(inst.ctx(), inst.r.t, state_vector, &state_rates, &out);
-    const qref = @import("../control/autopilot.zig").qTurn(state_vector[state.PHI], out.Va);
-    state_vector[state.ITH] = if (gains.KIa != 0.0) (de_before - gains.Kae * (out.alfa - out.cmd.alc) - gains.Kqe * (state_vector[state.RATE_Q] - qref)) / gains.KIa else 0.0;
-    state_vector[state.IV] = if (gains.KIV != 0.0) (thr_before - gains.Dtrim - gains.KV * (out.guide.Vseg - out.Va) - gains.KHT * (out.cmd.href + state_vector[state.DOWN])) / gains.KIV else 0.0;
+    const qref = @import("../control/autopilot.zig").qTurn(state_vector[state.index(.roll)], out.Va);
+    state_vector[state.index(.int_alpha)] = if (gains.KIa != 0.0) (de_before - gains.Kae * (out.alfa - out.cmd.alc) - gains.Kqe * (state_vector[state.index(.rate_q)] - qref)) / gains.KIa else 0.0;
+    state_vector[state.index(.int_speed)] = if (gains.KIV != 0.0) (thr_before - gains.Dtrim - gains.KV * (out.guide.Vseg - out.Va) - gains.KHT * (out.cmd.href + state_vector[state.index(.down)])) / gains.KIV else 0.0;
 }
 
 /// passa do comando de fora para o piloto automático sem tranco: altura de referência = altura
@@ -165,11 +165,11 @@ pub fn handover(inst: *Instance) void {
     const thr = inst.p.pilot.thr;
     const state_vector = &inst.r.x;
     inst.p.pilot.manual = 0;
-    state_vector[state.HR] = -state_vector[state.DOWN];
-    state_vector[state.IE] = 0.0;
+    state_vector[state.index(.ref_height)] = -state_vector[state.index(.down)];
+    state_vector[state.index(.int_track)] = 0.0;
     if (inst.r.f.airborne != 0 and inst.r.f.landed == 0) {
         inst.r.f.autop = 1;
-        if (guidance.rejoinSegment(&inst.p, state_vector[state.NORTH], state_vector[state.EAST], -state_vector[state.DOWN])) |seg_index| inst.r.f.seg = seg_index;
+        if (guidance.rejoinSegment(&inst.p, state_vector[state.index(.north)], state_vector[state.index(.east)], -state_vector[state.index(.down)])) |seg_index| inst.r.f.seg = seg_index;
     }
     if (inst.r.f.autop != 0) syncIntegrators(inst, de, thr);
 }
@@ -199,36 +199,36 @@ pub fn resetGround(inst: *Instance) StateError!void {
         } else if (gear_point.kind == types.gear_steer) nose = gear_point.r;
     }
     const h0 = terrain.height(params, 0, 0); // mesa: começa em cima dela
-    run_state.x[state.DOWN] = -zr - h0;
+    run_state.x[state.index(.down)] = -zr - h0;
     // bequilha à frente e mais comprida que o trem principal (atitude no chão, `power.ground_pitch`): começa já
     // na atitude em que as rodas tocam juntas. Nivelado, a bequilha entraria no chão e o assentamento chutaria o
     // nariz para cima. Nos outros trens nada muda
     if (nose) |nr| if (nr[0] > xr and nr[2] > zr) {
         const pitch = std.math.atan((nr[2] - zr) / (nr[0] - xr));
-        run_state.x[state.THE] = pitch;
-        run_state.x[state.DOWN] = -h0 - (-xr * @sin(pitch) + zr * @cos(pitch));
+        run_state.x[state.index(.pitch)] = pitch;
+        run_state.x[state.index(.down)] = -h0 - (-xr * @sin(pitch) + zr * @cos(pitch));
     };
     for (0..limits.max_props) |i| run_state.x[state.rps(i)] = 1.0;
     var time: f64 = -3.0;
     while (time < -1e-9) : (time += params.dt) {
         dynamics.rk4(inst.ctx(), time, &run_state.x, params.dt);
-        if (!std.math.isFinite(run_state.x[state.VEL_X]) or !std.math.isFinite(run_state.x[state.PHI]) or !std.math.isFinite(run_state.x[state.THE])) break;
+        if (!std.math.isFinite(run_state.x[state.index(.vel_x)]) or !std.math.isFinite(run_state.x[state.index(.roll)]) or !std.math.isFinite(run_state.x[state.index(.pitch)])) break;
     }
     if (!finiteState(&run_state.x)) {
         run_state.valid = 0;
         return error.Diverged;
     }
-    run_state.x[state.NORTH] = 0;
-    run_state.x[state.EAST] = 0;
-    run_state.x[state.PSI] = 0;
-    run_state.x[state.VEL_X] = 0;
-    run_state.x[state.VEL_Y] = 0;
-    run_state.x[state.RATE_P] = 0;
-    run_state.x[state.RATE_R] = 0;
-    inline for (.{ state.IH, state.IV, state.ITH, state.IE, state.HR, state.PHC, state.EN }) |k| run_state.x[k] = 0;
-    run_state.h_ground = -run_state.x[state.DOWN];
+    run_state.x[state.index(.north)] = 0;
+    run_state.x[state.index(.east)] = 0;
+    run_state.x[state.index(.yaw)] = 0;
+    run_state.x[state.index(.vel_x)] = 0;
+    run_state.x[state.index(.vel_y)] = 0;
+    run_state.x[state.index(.rate_p)] = 0;
+    run_state.x[state.index(.rate_r)] = 0;
+    inline for (.{ state.index(.int_height), state.index(.int_speed), state.index(.int_alpha), state.index(.int_track), state.index(.ref_height), state.index(.bank_cmd), state.index(.energy) }) |k| run_state.x[k] = 0;
+    run_state.h_ground = -run_state.x[state.index(.down)];
     run_state.h_rest = run_state.h_ground - h0;
-    run_state.x[state.HR] = run_state.h_ground;
+    run_state.x[state.index(.ref_height)] = run_state.h_ground;
     run_state.f.brakes = 0;
     run_state.t = 0;
     run_state.valid = 1;
@@ -253,24 +253,24 @@ pub fn resetAir(inst: *Instance, seg: i32) StateError!void {
     for (params.gear[0..@intCast(params.n_gear)]) |*gear_point| if (gear_point.kind == types.gear_main) {
         run_state.h_rest = gear_point.r[2];
     };
-    run_state.x[state.NORTH] = segment.n0;
-    run_state.x[state.EAST] = segment.e0;
-    run_state.x[state.DOWN] = -segment.h0;
+    run_state.x[state.index(.north)] = segment.n0;
+    run_state.x[state.index(.east)] = segment.e0;
+    run_state.x[state.index(.down)] = -segment.h0;
     const chi = if (segment.arc != 0) fmath.atan2(segment.e0 - segment.ce, segment.n0 - segment.cn) + segment.lam * 0.5 * fmath.pi else segment.chi0;
-    run_state.x[state.PSI] = chi;
-    run_state.x[state.THE] = tp.alpha;
+    run_state.x[state.index(.yaw)] = chi;
+    run_state.x[state.index(.pitch)] = tp.alpha;
     const sa = fmath.sincos(tp.alpha);
-    run_state.x[state.VEL_X] = airspeed * sa.c;
-    run_state.x[state.VEL_Z] = airspeed * sa.s;
+    run_state.x[state.index(.vel_x)] = airspeed * sa.c;
+    run_state.x[state.index(.vel_z)] = airspeed * sa.s;
     // começa voando em relação à massa de ar: soma o vento na velocidade em relação ao solo
     const body_to_ned = vec.rotation(0, tp.alpha, chi);
     const WB = vec.mulT(body_to_ned, atmosphere.wind(&params.env, 0, segment.h0, -1));
-    run_state.x[state.VEL_X] += WB[0];
-    run_state.x[state.VEL_Y] += WB[1];
-    run_state.x[state.VEL_Z] += WB[2];
+    run_state.x[state.index(.vel_x)] += WB[0];
+    run_state.x[state.index(.vel_y)] += WB[1];
+    run_state.x[state.index(.vel_z)] += WB[2];
     const Vr = vec.V3{ airspeed * sa.c, 0, airspeed * sa.s };
     for (params.prop[0..@intCast(params.n_prop)], 0..) |*prop_unit, i| run_state.x[state.rps(i)] = prop.equilibriumRps(params, prop_unit, Vr, tp.thr);
-    run_state.x[state.HR] = segment.h0;
+    run_state.x[state.index(.ref_height)] = segment.h0;
     run_state.ev.tLO = 0;
     run_state.ev.tHt = 0;
     run_state.ev.tR = 0;
@@ -288,15 +288,15 @@ fn writeRow(inst: *const Instance, row: *types.LogRow, out: *const dynamics.Out)
     row.* = std.mem.zeroes(types.LogRow);
     row.t = run_state.t;
     row.seg = @floatFromInt(run_state.f.seg);
-    row.n = state_vector[state.NORTH];
-    row.e = state_vector[state.EAST];
-    row.h = -state_vector[state.DOWN];
-    row.phi = state_vector[state.PHI];
-    row.theta = state_vector[state.THE];
-    row.psi = state_vector[state.PSI];
-    row.p = state_vector[state.RATE_P];
-    row.q = state_vector[state.RATE_Q];
-    row.r = state_vector[state.RATE_R];
+    row.n = state_vector[state.index(.north)];
+    row.e = state_vector[state.index(.east)];
+    row.h = -state_vector[state.index(.down)];
+    row.phi = state_vector[state.index(.roll)];
+    row.theta = state_vector[state.index(.pitch)];
+    row.psi = state_vector[state.index(.yaw)];
+    row.p = state_vector[state.index(.rate_p)];
+    row.q = state_vector[state.index(.rate_q)];
+    row.r = state_vector[state.index(.rate_r)];
     row.Va = out.Va;
     row.Vg = out.Vg;
     row.alpha = out.alfa;
@@ -325,7 +325,7 @@ fn writeRow(inst: *const Instance, row: *types.LogRow, out: *const dynamics.Out)
     row.P = out.pr.P;
     row.Ibat = out.pr.Ibat;
     row.Vbus = out.pr.Vbus;
-    row.E = state_vector[state.EN] / 3600.0;
+    row.E = state_vector[state.index(.energy)] / 3600.0;
     row.thr = out.cmd.thr;
     row.de = out.cmd.de;
     row.da = out.cmd.da;
@@ -356,7 +356,7 @@ fn writeRow(inst: *const Instance, row: *types.LogRow, out: *const dynamics.Out)
     row.Izz = out.I[2][2];
     row.Fslx = out.Fsl[0];
     row.Fsly = out.Fsl[1];
-    row.sL = state_vector[state.SL];
+    row.sL = state_vector[state.index(.cargo_slide)];
     const comps = [_]vec.V3{ out.Mgr[0], out.Mgr[1], out.Mgr[2], out.Mgr[3], out.Mprop, out.Mgyro, out.Mgear, out.Mliq, out.Mpay, out.Mt };
     const Lf = [_]*f64{ &row.L_wing, &row.L_ht, &row.L_vt, &row.L_fus, &row.L_prop, &row.L_gyro, &row.L_gear, &row.L_liq, &row.L_pay, &row.L_tot };
     const Mf = [_]*f64{ &row.M_wing, &row.M_ht, &row.M_vt, &row.M_fus, &row.M_prop, &row.M_gyro, &row.M_gear, &row.M_liq, &row.M_pay, &row.M_tot };
@@ -374,8 +374,8 @@ fn writeRow(inst: *const Instance, row: *types.LogRow, out: *const dynamics.Out)
         row.pk_e = if (run_state.f.pk_flying != 0) run_state.pk[1] else run_state.ev.pk_e;
         row.pk_h = if (run_state.f.pk_flying != 0) -run_state.pk[2] else 0;
     }
-    row.hgnd = terrain.height(params, state_vector[state.NORTH], state_vector[state.EAST]);
-    row.hw = -state_vector[state.DOWN] - row.hgnd - run_state.h_rest;
+    row.hgnd = terrain.height(params, state_vector[state.index(.north)], state_vector[state.index(.east)]);
+    row.hw = -state_vector[state.index(.down)] - row.hgnd - run_state.h_rest;
     for (0..@intCast(params.n_prop)) |i| {
         row.rpm[i] = state_vector[state.rps(i)] * 60.0;
         row.thrust[i] = out.pr.u[i].T;
@@ -407,7 +407,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
 
         dynamics.derivatives(inst.ctx(), run_state.t, state_vector, &state_rates, &out);
         const time = run_state.t;
-        const altitude = -state_vector[state.DOWN];
+        const altitude = -state_vector[state.index(.down)];
         var contact = false;
         var steer = false;
         var main = false;
@@ -419,38 +419,38 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
             }
         }
         const segment = &params.seg[@intCast(run_state.f.seg)];
-        const hgnd = terrain.height(params, state_vector[state.NORTH], state_vector[state.EAST]);
+        const hgnd = terrain.height(params, state_vector[state.index(.north)], state_vector[state.index(.east)]);
         const hw = altitude - hgnd - run_state.h_rest; // rodas sobre o terreno local (chão, mesa ou plataforma)
 
         // ---- decolagem: profundor por velocidade (VR) ou distância (sR) ----
-        const pull = if (params.takeoff.sR > 0.0) state_vector[state.NORTH] >= params.takeoff.sR else out.Va >= params.takeoff.VR;
+        const pull = if (params.takeoff.sR > 0.0) state_vector[state.index(.north)] >= params.takeoff.sR else out.Va >= params.takeoff.VR;
         if (run_state.f.autop == 0 and run_state.tR < 0.0 and pull) {
             run_state.tR = time;
             events.tR = time;
         }
         if (segment.takeoff != 0 and events.tRot < 0.0 and !steer and time > 0.05) {
             events.tRot = time;
-            events.nRot = state_vector[state.NORTH];
+            events.nRot = state_vector[state.index(.north)];
         }
         if (run_state.f.airborne == 0 and !contact and hw > 0.005) {
             run_state.f.airborne = 1;
             events.tLO = time;
-            events.nLO = state_vector[state.NORTH];
+            events.nLO = state_vector[state.index(.north)];
             events.VLO = out.Va;
-            events.thLO = state_vector[state.THE];
+            events.thLO = state_vector[state.index(.pitch)];
         }
         // referência de altura com catraca (não devolve altura já ganha rumo ao alvo)
         if (run_state.f.autop != 0 and run_state.f.flare == 0 and run_state.f.landed == 0 and segment.landing == 0) {
-            if (out.guide.hseg > state_vector[state.HR] and altitude > state_vector[state.HR]) state_vector[state.HR] = @min(altitude, out.guide.hseg) else if (out.guide.hseg < state_vector[state.HR] and altitude < state_vector[state.HR]) state_vector[state.HR] = @max(altitude, out.guide.hseg);
+            if (out.guide.hseg > state_vector[state.index(.ref_height)] and altitude > state_vector[state.index(.ref_height)]) state_vector[state.index(.ref_height)] = @min(altitude, out.guide.hseg) else if (out.guide.hseg < state_vector[state.index(.ref_height)] and altitude < state_vector[state.index(.ref_height)]) state_vector[state.index(.ref_height)] = @max(altitude, out.guide.hseg);
         }
         var switched_on = false;
         if (run_state.f.airborne != 0 and run_state.f.autop == 0 and hw >= params.takeoff.ht) {
             run_state.f.autop = 1;
-            state_vector[state.HR] = altitude;
+            state_vector[state.index(.ref_height)] = altitude;
             switched_on = true;
             syncIntegrators(inst, out.cmd.de, 1.0);
             events.tHt = time;
-            events.nHt = state_vector[state.NORTH];
+            events.nHt = state_vector[state.index(.north)];
             events.VHt = out.Va;
             events.gHt = out.gama;
         }
@@ -459,7 +459,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         if (segment.takeoff != 0) {
             events.hcmin = @min(events.hcmin, out.htail);
             if (out.Va > 4.0) events.ratio_to = @max(events.ratio_to, out.ratioCL);
-            events.qpeak_to = @max(events.qpeak_to, @abs(state_vector[state.RATE_Q]));
+            events.qpeak_to = @max(events.qpeak_to, @abs(state_vector[state.index(.rate_q)]));
         }
         if (run_state.f.airborne != 0 and run_state.f.landed == 0 and contact and segment.landing == 0) events.bounced = 1;
         if (out.Va > 4.0) events.ratio_mission = @max(events.ratio_mission, out.ratioCL);
@@ -468,14 +468,14 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         // ---- percurso e eventos ----
         var switched = false;
         if (segment.landing == 0 and run_state.f.seg < params.n_seg - 1 and out.guide.s >= segment.L) {
-            if (segment.takeoff != 0) events.E_to = state_vector[state.EN] / 3600.0;
+            if (segment.takeoff != 0) events.E_to = state_vector[state.index(.energy)] / 3600.0;
             run_state.f.seg += 1;
             switched = true;
         }
         if (params.pilot.drop != 0 and run_state.f.released == 0 and run_state.f.extracting == 0) { // soltura pedida de fora
             run_state.f.extracting = 1;
             events.tdrop = time;
-            events.ndrop = state_vector[state.NORTH];
+            events.ndrop = state_vector[state.index(.north)];
             events.hdrop = altitude;
         }
         if (!switched) {
@@ -489,22 +489,22 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
                 } else if (run_state.f.released == 0) {
                     run_state.f.extracting = 1;
                     events.tdrop = time;
-                    events.ndrop = state_vector[state.NORTH];
+                    events.ndrop = state_vector[state.index(.north)];
                     events.hdrop = altitude;
                 }
             }
         }
-        if (run_state.f.extracting != 0 and run_state.f.released == 0 and state_vector[state.SL] >= params.payload.bay) {
+        if (run_state.f.extracting != 0 and run_state.f.released == 0 and state_vector[state.index(.cargo_slide)] >= params.payload.bay) {
             run_state.f.released = 1;
             events.trel = time;
-            const body_to_ned = vec.rotation(state_vector[state.PHI], state_vector[state.THE], state_vector[state.PSI]);
-            const rL = vec.V3{ params.payload.r[0] - state_vector[state.SL], params.payload.r[1], params.payload.r[2] };
-            const body_rates = vec.V3{ state_vector[state.RATE_P], state_vector[state.RATE_Q], state_vector[state.RATE_R] };
+            const body_to_ned = vec.rotation(state_vector[state.index(.roll)], state_vector[state.index(.pitch)], state_vector[state.index(.yaw)]);
+            const rL = vec.V3{ params.payload.r[0] - state_vector[state.index(.cargo_slide)], params.payload.r[1], params.payload.r[2] };
+            const body_rates = vec.V3{ state_vector[state.index(.rate_p)], state_vector[state.index(.rate_q)], state_vector[state.index(.rate_r)] };
             const pc = vec.mul(body_to_ned, rL);
-            var vb = vec.V3{ state_vector[state.VEL_X], state_vector[state.VEL_Y], state_vector[state.VEL_Z] } + vec.cross(body_rates, rL);
-            vb[0] -= state_vector[state.SLD];
+            var vb = vec.V3{ state_vector[state.index(.vel_x)], state_vector[state.index(.vel_y)], state_vector[state.index(.vel_z)] } + vec.cross(body_rates, rL);
+            vb[0] -= state_vector[state.index(.cargo_slide_rate)];
             const vn = vec.mul(body_to_ned, vb);
-            run_state.pk = .{ state_vector[state.NORTH] + pc[0], state_vector[state.EAST] + pc[1], state_vector[state.DOWN] + pc[2], vn[0], vn[1], vn[2] };
+            run_state.pk = .{ state_vector[state.index(.north)] + pc[0], state_vector[state.index(.east)] + pc[1], state_vector[state.index(.down)] + pc[2], vn[0], vn[1], vn[2] };
             run_state.f.pk_flying = 1;
         }
         if (run_state.f.pk_flying != 0) { // carga com paraquedas (Euler explícito, desacoplada)
@@ -527,7 +527,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         if (segment.landing != 0 and run_state.f.landed == 0 and main) {
             run_state.f.landed = 1;
             events.tTD = time;
-            events.nTD = state_vector[state.NORTH];
+            events.nTD = state_vector[state.index(.north)];
             events.hgnd_td = hgnd;
         }
 
@@ -550,7 +550,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
             break;
         }
         if (run_state.f.landed != 0 and out.Vg < 0.3) {
-            events.nStop = state_vector[state.NORTH];
+            events.nStop = state_vector[state.index(.north)];
             events.completed = 1;
             status = .completed;
             break;
@@ -572,8 +572,8 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
             break;
         }
         // abaixo do chão, divergiu ou capotou (tocando o chão com mais de 80° de inclinação)
-        if (altitude < hgnd - 1.0 or !std.math.isFinite(state_vector[state.VEL_X]) or !std.math.isFinite(state_vector[state.PHI]) or
-            !std.math.isFinite(state_vector[state.THE]) or (contact and @abs(fmath.wrap(state_vector[state.PHI])) > 1.4))
+        if (altitude < hgnd - 1.0 or !std.math.isFinite(state_vector[state.index(.vel_x)]) or !std.math.isFinite(state_vector[state.index(.roll)]) or
+            !std.math.isFinite(state_vector[state.index(.pitch)]) or (contact and @abs(fmath.wrap(state_vector[state.index(.roll)])) > 1.4))
         {
             status = .crashed;
             break;
@@ -582,6 +582,6 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         run_state.t = time + params.dt;
     }
     events.tend = run_state.t;
-    events.E = state_vector[state.EN] / 3600.0;
+    events.E = state_vector[state.index(.energy)] / 3600.0;
     return status;
 }

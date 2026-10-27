@@ -150,7 +150,7 @@ test "checkpoint: retomar dá o mesmo resultado" {
     inst2 = inst;
     inst2.r = snap;
     _ = runner.run(&inst2, 1e9, &log, &log_count);
-    try std.testing.expectEqual(inst.r.x[state.NORTH], inst2.r.x[state.NORTH]);
+    try std.testing.expectEqual(inst.r.x[state.index(.north)], inst2.r.x[state.index(.north)]);
 }
 
 test "fatias de tempo continuam sem perder passos" {
@@ -176,7 +176,7 @@ test "trimagem nivelada e começo em voo" {
     inst.p.stop_t = 5;
     var log_count: usize = 0;
     _ = runner.run(&inst, 1e9, &log, &log_count);
-    try std.testing.expectApproxEqAbs(@as(f64, 15), -inst.r.x[state.DOWN], 1.0);
+    try std.testing.expectApproxEqAbs(@as(f64, 15), -inst.r.x[state.index(.down)], 1.0);
 }
 
 const linear = @import("linear.zig");
