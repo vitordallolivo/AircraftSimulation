@@ -5,29 +5,52 @@ const types = @import("../types.zig");
 
 /// o que fica em cada posição do vetor de estados, na ordem
 pub const Entry = enum(usize) {
-    north, // posição NED (m)
+    /// posição norte (m, NED)
+    north,
+    /// posição leste (m, NED)
     east,
+    /// posição para baixo (m, NED; altura = −down)
     down,
-    roll, // ângulos de Euler φ, θ, ψ (rad)
+    /// rolamento φ (rad)
+    roll,
+    /// arfagem θ (rad)
     pitch,
+    /// guinada ψ (rad)
     yaw,
-    vel_x, // velocidade no corpo u, v, w (m/s)
+    /// velocidade u no corpo (m/s)
+    vel_x,
+    /// velocidade v no corpo (m/s)
     vel_y,
+    /// velocidade w no corpo (m/s)
     vel_z,
-    rate_p, // velocidade angular no corpo p, q, r (rad/s)
+    /// taxa de rolamento p no corpo (rad/s)
+    rate_p,
+    /// taxa de arfagem q no corpo (rad/s)
     rate_q,
+    /// taxa de guinada r no corpo (rad/s)
     rate_r,
-    int_height, // integradores do piloto: erro de altura, de velocidade, de α e de trajetória
+    /// integrador do piloto: erro de altura
+    int_height,
+    /// integrador do piloto: erro de velocidade
     int_speed,
+    /// integrador do piloto: erro de α
     int_alpha,
+    /// integrador do piloto: erro de trajetória (desvio lateral)
     int_track,
-    ref_height, // altura de referência filtrada
-    bank_cmd, // inclinação pedida filtrada
-    energy, // energia tirada das baterias (J)
-    cargo_slide, // deslizamento da carga e sua velocidade
+    /// altura de referência filtrada
+    ref_height,
+    /// inclinação pedida filtrada
+    bank_cmd,
+    /// energia tirada das baterias (J)
+    energy,
+    /// deslizamento da carga
+    cargo_slide,
+    /// velocidade de deslizamento da carga
     cargo_slide_rate,
-    rps0 = 21, // rotação de cada motor (rps), max_props posições a partir daqui
-    slosh0 = 21 + limits.max_props, // por tanque: ex, ey, exd, eyd
+    /// rotação do primeiro motor (rps); os outros seguem, max_props posições a partir daqui
+    rps0 = 21,
+    /// líquido do primeiro tanque: ex, ey, exd, eyd; 4 posições por tanque
+    slosh0 = 21 + limits.max_props,
 };
 
 /// posição de `entry` no vetor de estados

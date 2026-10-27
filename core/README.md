@@ -152,6 +152,7 @@ python -m ziglang build --release=fast -Dfast_math=false   # funções da std no
 python -m ziglang build test                  # todos os testes
 python -m ziglang build test -Dgrupo=math     # só um grupo: math, physics, control, sim, sizing, optim, geometry
 python -m ziglang build test -Dfiltro=trim    # só os testes cujo nome contém "trim" (junta com -Dgrupo)
+python -m ziglang build docs                  # documentação HTML dos `///` em zig-out/docs; abrir com `python -m http.server -d zig-out/docs`
 python -m ziglang build test -Dfuzz=200000 -Dseed=7   # fuzzing mais longo das interfaces
 ```
 

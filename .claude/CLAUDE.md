@@ -153,6 +153,7 @@ as configurações.
 python tools/codemap.py                          # refaz docs/MAP.md (e --check para conferir)
 python tools/checks/run.py                       # checks rápidos; --tudo inclui GUI, design e manager
 cd core && python -m ziglang build test          # testes do núcleo; -Dgrupo=math (ou physics, sim...) e -Dfiltro=<nome>
+cd core && python -m ziglang build docs          # documentação do Zig (dos `///`) em zig-out/docs; servir com `python -m http.server -d zig-out/docs`
 cd aerodrive && python -m ziglang build test     # testes do AeroDrive; build run abre o jogo
 QT_QPA_PLATFORM=offscreen python -m pytest -q tests/<área>
 python tools/time_profile.py loads --exato       # perfil: flame graph, tabela por função e por módulo (perfis/)

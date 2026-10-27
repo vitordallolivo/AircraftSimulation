@@ -281,6 +281,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/**
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
+- `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
+  tipos `math:10`, `physics:18`, `modifiers:30`, `collision:40`, `control:45`, `sim:52`, `loads:63`, `sizing:68`, `optim:80`, `geometry:94`, `util:99`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
@@ -423,8 +425,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `SimpleCfg:23`, `SimpleRow:52`, `SimpleSummary:76`
   fn `density:108`, `compute:132`
 - `core/src/sim/state.zig` — Layout do vetor de estados (definido em comptime a partir dos limites)
-  tipos `Entry:7`, `Flags:64`, `Run:80`, `Ctx:96`
-  fn `index:34`, `rps:43`, `sx:47`, `sy:51`, `sxd:55`, `syd:59`
+  tipos `Entry:7`, `Flags:87`, `Run:103`, `Ctx:119`
+  fn `index:57`, `rps:66`, `sx:70`, `sy:74`, `sxd:78`, `syd:82`
 - `core/src/sim/tests.zig` — Testes de integração do núcleo: aeronave monomotora convencional (a do código
 - `core/src/sim/trim.zig` — Equilíbrio (trimagem) e desempenho por velocidade, sem integração no tempo.
   tipos `Ctx:25`

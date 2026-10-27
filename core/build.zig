@@ -7,6 +7,7 @@
 //!   zig build test -Dfuzz=N -Dseed=S -> fuzzing mais longo das interfaces (padrão 2000 entradas por teste)
 //!   zig build -Dfast_math=false    -> troca LUT/polinômios por std.math (referência)
 //!   zig build -Dopt=peak,cse       -> otimizações em avaliação (ver core/OTIMIZACOES.md)
+//!   zig build docs                 -> zig-out/docs: a documentação do Zig gerada dos `///` (abrir por um servidor)
 const std = @import("std");
 
 /// as otimizações de `-Dopt`: o enum (nome = bit) fica em `src/opt.zig`, o mesmo que o código consulta
@@ -77,6 +78,13 @@ pub fn build(b: *std.Build) void {
     const zmod = b.addModule("aerosim", .{ .root_source_file = b.path("src/lib.zig"), .target = target, .optimize = optimize });
     zmod.addOptions("build_options", opts);
     b.installArtifact(lib);
+
+    // documentação (o autodoc do Zig): src/aerosim.zig reexporta todas as pastas (o autodoc toma como raiz o arquivo com o nome do módulo)
+    const docs_mod = b.createModule(.{ .root_source_file = b.path("src/aerosim.zig"), .target = target, .optimize = .Debug });
+    docs_mod.addOptions("build_options", opts);
+    const docs_obj = b.addObject(.{ .name = "aerosim", .root_module = docs_mod });
+    const install_docs = b.addInstallDirectory(.{ .source_dir = docs_obj.getEmittedDocs(), .install_dir = .prefix, .install_subdir = "docs" });
+    b.step("docs", "Gera a documentação HTML em zig-out/docs (servir com `python -m http.server`)").dependOn(&install_docs.step);
 
     // testes: um binário só (src/tests.zig); o grupo e o filtro vêm do CLI
     const test_group = b.option([]const u8, "grupo", "grupo de testes: " ++ test_group_list ++ " (padrão: tudo)") orelse "tudo";
