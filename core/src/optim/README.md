@@ -451,5 +451,5 @@ y = 3 * D[..., 0] - 2 * D[..., 1] + D[..., 2] ** 2
 mu, mustar, sigma, n = be.morris_effects(D, y)          # μ ≈ 3, −2 e algo entre 0,7 e 1,3; σ = 0, 0 e > 0
 ```
 
-Testes: `python -m ziglang build test-optim` (dentro de `core/`) e `python -m pytest -q tests/aeroopt`. Uma operação
+Testes: `python -m ziglang build test -Dgrupo=optim` (dentro de `core/`) e `python -m pytest -q tests/aeroopt`. Uma operação
 nova entra no enum `Op`, em `check`, em `run` e no compilador `aeroopt/scoring.py`, com o mesmo código nos dois lados.

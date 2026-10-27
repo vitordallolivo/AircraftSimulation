@@ -225,7 +225,7 @@ semi-infinito por fórmula fechada (o 1º termo da eq. 3 de Goates e Hunsaker), 
 y(t) = y_0 + (y_1 - y_0)\,\sin\frac{\pi t}{2}
 ```
 
-## Testes (`zig build test-physics`)
+## Testes (`zig build test -Dgrupo=physics`)
 
 - Helmbold invertido volta à inclinação 2D do perfil.
 - Um segmento muito longo dá $`\Gamma/(2\pi h)`$, o vórtice infinito.

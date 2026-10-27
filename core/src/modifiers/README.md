@@ -299,7 +299,7 @@ phi = ZigBackend().probe_ground(1, [0.1, 0.5, 2.0], 2.2)   # φ de McCormick (Gr
 print(describe(ac), phi)
 ```
 
-Testes do módulo: `zig build test-physics` (inclui `modifiers/`), `pytest tests/model/test_modifiers.py`.
+Testes do módulo: `zig build test -Dgrupo=physics` (inclui `modifiers/`), `pytest tests/model/test_modifiers.py`.
 
 ## Como adicionar um modificador
 

@@ -330,4 +330,4 @@ core.aero.init(&p);                   // eixos de cada painel e ângulo de estol
 const o = core.aero.compute(&p, Vr, w, rcg, h, d);   // o.F, o.M (corpo, momentos no CG)
 ```
 
-Testes: `python -m ziglang build test-physics` (dentro de `core/`).
+Testes: `python -m ziglang build test -Dgrupo=physics` (dentro de `core/`).

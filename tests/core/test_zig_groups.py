@@ -1,4 +1,4 @@
-"""Testes unitários do núcleo Zig, um por grupo (zig build test-<grupo>)."""
+"""Testes unitários do núcleo Zig, um por grupo (zig build test -Dgrupo=<grupo>)."""
 import subprocess
 
 import pytest
@@ -6,8 +6,8 @@ import pytest
 from aerosim.backend.zig.backend import CORE, _zig_cmd
 
 
-def zig(step):
-    r = subprocess.run(_zig_cmd() + ["build", step, "--summary", "all"], cwd=CORE, capture_output=True, text=True)
+def zig(group):
+    r = subprocess.run(_zig_cmd() + ["build", "test", f"-Dgrupo={group}", "--summary", "all"], cwd=CORE, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr[-3000:]
     return r.stderr
 
@@ -15,16 +15,16 @@ def zig(step):
 @pytest.mark.lut
 def test_math_luts_and_polynomials():
     """sin/cos, atan, exp, log por tabela/polinômio, vetores SIMD e o polinômio de tração em comptime"""
-    zig("test-math")
+    zig("math")
 
 
 def test_physics():
-    zig("test-physics")
+    zig("physics")
 
 
 def test_control():
-    zig("test-control")
+    zig("control")
 
 
 def test_sim():
-    zig("test-sim")
+    zig("sim")

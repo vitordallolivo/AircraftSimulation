@@ -244,7 +244,7 @@ rows, best, names = mdo.run(proj, backend=ZigBackend())
 print(len(rows), best["score"], best["feasible"])   # cada avaliação e a melhor
 ```
 
-Testes: `python -m ziglang build test-sizing` (dentro de `core/`), com fuzzing das interfaces (`-Dfuzz=N -Dseed=S`).
+Testes: `python -m ziglang build test -Dgrupo=sizing` (dentro de `core/`), com fuzzing das interfaces (`-Dfuzz=N -Dseed=S`).
 
 ## Como acrescentar
 

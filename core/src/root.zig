@@ -424,13 +424,6 @@ export fn aerosim_fast_math() i32 {
     return if (@import("math/fmath.zig").fast) 1 else 0;
 }
 
-test {
-    _ = @import("tests_math.zig");
-    _ = @import("tests_physics.zig");
-    _ = @import("tests_control.zig");
-    _ = @import("tests_sim.zig");
-}
-
 // ------------------------------------------------------------------ aeroopt: programa da pontuação
 const expr = @import("optim/expr.zig");
 const OT = @import("optim/types.zig");

@@ -220,4 +220,4 @@ with be.session_for(build_model(ac), takeoff_runway()) as s:
     lin = s.linearize(14.0)                            # linear.zig: A (8×8), B (8×4)
 ```
 
-Testes: `python -m ziglang build test-sim` (dentro de `core/`).
+Testes: `python -m ziglang build test -Dgrupo=sim` (dentro de `core/`).

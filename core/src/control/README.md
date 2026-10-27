@@ -189,4 +189,4 @@ with be.session_for(build_model(ac), circuit()) as s:
     print(status, log["h"].max())
 ```
 
-Testes: `python -m ziglang build test-control` (dentro de `core/`).
+Testes: `python -m ziglang build test -Dgrupo=control` (dentro de `core/`).

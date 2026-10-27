@@ -1,9 +1,9 @@
 //! Núcleo de simulação (camada "Sim").
 //!
 //!   zig build --release=fast       -> zig-out/lib/libaerosim.so (C ABI, usada pelo Python)
-//!   zig build test                 -> todos os testes
-//!   zig build test-math            -> só LUTs/polinômios e vetores (também test-physics, test-control, test-sim,
-//!                                     test-sizing, test-optim, test-geometry)
+//!   zig build test                 -> todos os testes (src/tests.zig)
+//!   zig build test -Dgrupo=math    -> só um grupo: math, physics, control, sim, sizing, optim, geometry
+//!   zig build test -Dfiltro=trim   -> só os testes cujo nome contém o texto (junta com -Dgrupo)
 //!   zig build test -Dfuzz=N -Dseed=S -> fuzzing mais longo das interfaces (padrão 2000 entradas por teste)
 //!   zig build -Dfast_math=false    -> troca LUT/polinômios por std.math (referência)
 //!   zig build -Dopt=peak,cse       -> otimizações em avaliação (ver core/OTIMIZACOES.md)
@@ -29,6 +29,16 @@ fn optBits(text: []const u8) u8 {
         bits |= o.bit();
     }
     return bits;
+}
+
+/// os grupos de `-Dgrupo` (cada um é um bloco `test` em src/tests.zig)
+const test_groups = .{ "tudo", "math", "physics", "control", "sim", "sizing", "optim", "geometry" };
+const test_group_list = "tudo, math, physics, control, sim, sizing, optim, geometry";
+
+/// verdadeiro se `name` é um dos `test_groups`
+fn isTestGroup(name: []const u8) bool {
+    inline for (test_groups) |group| if (std.mem.eql(u8, name, group)) return true;
+    return false;
 }
 
 pub fn build(b: *std.Build) void {
@@ -68,18 +78,23 @@ pub fn build(b: *std.Build) void {
     zmod.addOptions("build_options", opts);
     b.installArtifact(lib);
 
-    // testes: tudo (`zig build test`) ou por grupo (`zig build test-math`, ...)
-    const all = b.step("test", "Roda todos os testes do núcleo");
-    inline for (.{ "math", "physics", "control", "sim", "sizing", "optim", "geometry" }) |group| {
-        const m = b.createModule(.{
-            .root_source_file = b.path("src/tests_" ++ group ++ ".zig"),
-            .target = target,
-            .optimize = .Debug,
-        });
-        m.addOptions("build_options", opts);
-        const t = b.addTest(.{ .root_module = m, .name = "test-" ++ group });
-        const run = b.addRunArtifact(t);
-        b.step("test-" ++ group, "Testes do grupo " ++ group).dependOn(&run.step);
-        all.dependOn(&run.step);
-    }
+    // testes: um binário só (src/tests.zig); o grupo e o filtro vêm do CLI
+    const test_group = b.option([]const u8, "grupo", "grupo de testes: " ++ test_group_list ++ " (padrão: tudo)") orelse "tudo";
+    if (!isTestGroup(test_group)) std.debug.panic("-Dgrupo: '{s}' não existe; use {s}", .{ test_group, test_group_list });
+    const test_filter = b.option([]const u8, "filtro", "só os testes cujo nome contém este texto");
+    const test_opts = b.addOptions();
+    test_opts.addOption([]const u8, "test_group", test_group);
+    const test_module = b.createModule(.{
+        .root_source_file = b.path("src/tests.zig"),
+        .target = target,
+        .optimize = .Debug,
+    });
+    test_module.addOptions("build_options", opts);
+    test_module.addOptions("test_options", test_opts);
+    const tests = b.addTest(.{
+        .root_module = test_module,
+        .name = "test",
+        .filters = if (test_filter) |text| b.dupeStrings(&.{text}) else &.{},
+    });
+    b.step("test", "Roda os testes do núcleo (-Dgrupo=..., -Dfiltro=...)").dependOn(&b.addRunArtifact(tests).step);
 }

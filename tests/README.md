@@ -29,7 +29,7 @@ python -m pytest -m legacy             # comparação com o simulador C original
 
 | arquivo | o que testa |
 |---|---|
-| `core/test_zig_groups.py` | `zig build test-math`, `test-physics`, `test-control`, `test-sim` |
+| `core/test_zig_groups.py` | `zig build test -Dgrupo=math`, `physics`, `control`, `sim` |
 | `core/test_lut.py` | LUTs isoladas: mesmo resultado que a std (sequencial e aleatório), tempos (`bench`) |
 | `core/test_abi.py` | esquema, ordem dos termos do polinômio, erros de configuração, slots |
 | `core/test_session.py` | checkpoint exato, fatias = corrida inteira, trimagem, começo em voo |

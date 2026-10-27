@@ -196,4 +196,4 @@ const w = vec.cross(v, vec.V3{ 0, 1, 0 });   // (0, 0, 1)
 
 Pelo Python, só as medições: `python -m pytest -m bench -s tests/core/test_lut.py`.
 
-Testes: `python -m ziglang build test-math` (dentro de `core/`).
+Testes: `python -m ziglang build test -Dgrupo=math` (dentro de `core/`).

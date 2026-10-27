@@ -150,13 +150,13 @@ As medidas, com a máquina e a data, e as otimizações em avaliação (`-Dopt`)
 python -m ziglang build --release=fast        # zig-out/lib/libaerosim.so (dll/dylib)
 python -m ziglang build --release=fast -Dfast_math=false   # funções da std no lugar das LUTs
 python -m ziglang build test                  # todos os testes
-python -m ziglang build test-math             # só math/: LUTs, polinômio, vetores
-python -m ziglang build test-physics          # physics/
-python -m ziglang build test-control          # control/
-python -m ziglang build test-sim              # sim/, abi, bench (decolagem, checkpoint, trimagem...)
-python -m ziglang build test-sizing           # sizing/: estágios, tipos de aeronave, otimizadores, fuzzing
+python -m ziglang build test -Dgrupo=math     # só um grupo: math, physics, control, sim, sizing, optim, geometry
+python -m ziglang build test -Dfiltro=trim    # só os testes cujo nome contém "trim" (junta com -Dgrupo)
 python -m ziglang build test -Dfuzz=200000 -Dseed=7   # fuzzing mais longo das interfaces
 ```
+
+Os testes ficam junto do código de cada arquivo; `src/tests.zig` é o único arquivo raiz e diz que arquivos formam
+cada grupo.
 
 As opções de compilação são `-Dfast_math` (as tabelas, ligado por padrão), `-Dstrip` (tira os símbolos fora do
 Debug), `-Dcpu` (o alvo, `x86_64_v3` por padrão em x86) e `-Dopt`, que liga otimizações em avaliação pelo nome
