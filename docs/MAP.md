@@ -364,21 +364,21 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `initPop:25`, `trials:35`, `select:63`
 - `core/src/optim/expr.zig` — Executa o programa de pilha da pontuação (`types.Program`): as entradas de um candidato entram nas
   tipos `Error:11`
-  fn `check:21`, `run:70`, `runMany:114`
+  fn `check:22`, `run:71`, `runMany:115`
 - `core/src/optim/ga.zig` — Gerações de aviões: o algoritmo genético que escolhe as configurações do aeroopt no lugar de varrer todas as
   tipos `GaCfg:21`
   fn `init:47`, `next:64`
 - `core/src/optim/guided.zig` — Busca guiada pela falha: as peças que deixam o otimizador usar o MOTIVO de um avião não voar, e não só o quanto
-  fn `repairStep:50`, `epsLevel:76`, `epsWorse:83`, `banditInit:101`, `banditPick:118`, `banditUpdate:137`, `normative:180`, `lemBox:199`, `boxSample:240`
+  fn `repairStep:50`, `epsLevel:76`, `epsWorse:83`, `banditInit:102`, `banditPick:119`, `banditUpdate:138`, `normative:181`, `lemBox:200`, `boxSample:241`
 - `core/src/optim/localfit.zig` — Modelo local por mínimos quadrados ponderados: a partir de pontos já avaliados em volta de um ponto x₀, a
   tipos `Fit:24`
-  fn `fit:53`
+  fn `fit:54`
 - `core/src/optim/rbf.zig` — Substituto por funções de base radial (RBF): a superfície que passa exatamente por todos os pontos já avaliados e
   fn `size:23`, `fit:73`, `eval:100`
 - `core/src/optim/sampling.zig` — Amostragem do espaço de busca: de onde nascem os primeiros indivíduos das buscas contínuas do aeroopt.
   fn `minDist2:38`, `lhs:55`
 - `core/src/optim/sensmethods.zig` — Os métodos da sensibilidade do melhor avião do aeroopt (`aeroopt/sensitivity.py`), além do modelo local
-  fn `tolerance:29`, `morrisDelta:44`, `morrisDesign:52`, `morrisEffects:77`
+  fn `tolerance:29`, `morrisDelta:44`, `morrisDesign:53`, `morrisEffects:78`
 - `core/src/optim/types.zig` — Tipos do aeroopt no núcleo: o programa de pilha que calcula a nota de um candidato. O Python traduz o
   tipos `Op:12`, `Tier:30`, `Program:37`
 

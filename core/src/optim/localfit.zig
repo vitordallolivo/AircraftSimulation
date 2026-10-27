@@ -19,82 +19,83 @@ const std = @import("std");
 const linalg = @import("../math/linalg.zig");
 
 pub const max_n = 32;
-const M = 2 * max_n + 1;
+const max_basis = 2 * max_n + 1; // termos da base com a curvatura: 1, Δx e ½Δx²
 
 pub const Fit = struct {
-    a: f64 = 0, // o valor do modelo em x₀
+    intercept: f64 = 0, // o valor do modelo em x₀
     rms: f64 = 0, // o resíduo ponderado (o quanto os pontos fogem do modelo)
     weight: f64 = 0, // a soma dos pesos (quantos pontos "contaram")
 };
 
-/// o peso tricúbico (1 − (d/r)³)³ dentro do raio r e zero fora, com d² dado
-fn tricube(d2: f64, r: f64) f64 {
-    const q = @sqrt(d2) / r;
-    if (q >= 1) return 0;
-    const t = 1 - q * q * q;
-    return t * t * t;
+/// o peso tricúbico (1 − (d/radius)³)³ dentro do raio e zero fora, com d² dado
+fn tricube(d2: f64, radius: f64) f64 {
+    const ratio = @sqrt(d2) / radius;
+    if (ratio >= 1) return 0;
+    const one_minus = 1 - ratio * ratio * ratio;
+    return one_minus * one_minus * one_minus;
 }
 
-fn basis(n: usize, quad: bool, x: []const f64, x0: []const f64, z: []f64) f64 {
-    z[0] = 1;
+/// os termos da base em `point` (1, Δx e, com `quad`, ½Δx²) em `terms`; devolve |Δx|²
+fn basis(dims: usize, quad: bool, point: []const f64, x0: []const f64, terms: []f64) f64 {
+    terms[0] = 1;
     var d2: f64 = 0;
-    for (0..n) |k| {
-        const d = x[k] - x0[k];
-        z[k + 1] = d;
-        if (quad) z[n + 1 + k] = 0.5 * d * d;
-        d2 += d * d;
+    for (0..dims) |k| {
+        const delta = point[k] - x0[k];
+        terms[k + 1] = delta;
+        if (quad) terms[dims + 1 + k] = 0.5 * delta * delta;
+        d2 += delta * delta;
     }
     return d2;
 }
 
-/// ajusta o modelo nos `m` pontos `xs` (m × n, linha a linha, já normalizados) com valores `ys`, em volta de `x0`,
-/// com o raio `r` do peso; a inclinação vai para `g[0..n]` e, com `quad`, a curvatura para `c[0..n]`. null se as
+/// ajusta o modelo nos `points` pontos `xs` (points × dims, linha a linha, já normalizados) com valores `ys`, em volta de `x0`,
+/// com o raio `radius` do peso; a inclinação vai para `gradient` e, com `quad`, a curvatura para `curvature`. null se as
 /// direções não ficam todas determinadas
-pub fn fit(n: usize, m: usize, xs: []const f64, ys: []const f64, x0: []const f64, r: f64, quad: bool, g: []f64,
-    c: []f64) ?Fit {
-    const nb = if (quad) 2 * n + 1 else n + 1;
-    if (n == 0 or n > max_n or m < nb or !(r > 0)) return null;
-    var A: [M][M]f64 = @splat(@splat(0));
-    var b: [M]f64 = @splat(0);
-    var z: [M]f64 = undefined;
+pub fn fit(dims: usize, points: usize, xs: []const f64, ys: []const f64, x0: []const f64, radius: f64, quad: bool, gradient: []f64,
+    curvature: []f64) ?Fit {
+    const basis_len = if (quad) 2 * dims + 1 else dims + 1;
+    if (dims == 0 or dims > max_n or points < basis_len or !(radius > 0)) return null;
+    var normal: [max_basis][max_basis]f64 = @splat(@splat(0));
+    var rhs: [max_basis]f64 = @splat(0);
+    var terms: [max_basis]f64 = undefined;
     var wsum: f64 = 0;
-    for (0..m) |i| {
-        const y = ys[i];
-        if (!std.math.isFinite(y)) continue;
-        const w = tricube(basis(n, quad, xs[i * n ..][0..n], x0, &z), r);
-        if (w == 0) continue;
-        wsum += w;
-        for (0..nb) |p| {
-            b[p] += w * y * z[p];
-            for (0..nb) |q| A[p][q] += w * z[p] * z[q];
+    for (0..points) |i| {
+        const value = ys[i];
+        if (!std.math.isFinite(value)) continue;
+        const weight = tricube(basis(dims, quad, xs[i * dims ..][0..dims], x0, &terms), radius);
+        if (weight == 0) continue;
+        wsum += weight;
+        for (0..basis_len) |row| {
+            rhs[row] += weight * value * terms[row];
+            for (0..basis_len) |col| normal[row][col] += weight * terms[row] * terms[col];
         }
     }
     // escala de cada coluna (pontos muito perto de x₀ deixam a matriz mal condicionada): resolve com D A D (D⁻¹β)
-    var s: [M]f64 = undefined;
-    for (0..nb) |p| s[p] = if (A[p][p] > 0) 1 / @sqrt(A[p][p]) else 0;
-    for (0..nb) |p| {
-        if (s[p] == 0) return null;
-        b[p] *= s[p];
-        for (0..nb) |q| A[p][q] *= s[p] * s[q];
+    var scale: [max_basis]f64 = undefined;
+    for (0..basis_len) |row| scale[row] = if (normal[row][row] > 0) 1 / @sqrt(normal[row][row]) else 0;
+    for (0..basis_len) |row| {
+        if (scale[row] == 0) return null;
+        rhs[row] *= scale[row];
+        for (0..basis_len) |col| normal[row][col] *= scale[row] * scale[col];
     }
-    if (!linalg.cholesky(M, &A, nb)) return null;
+    if (!linalg.cholesky(max_basis, &normal, basis_len)) return null;
     // uma direção quase sem pontos: o pivô de Cholesky some (a matriz é quase singular)
-    for (0..nb) |p| if (A[p][p] < 1e-6) return null;
-    linalg.cholSolve(M, &A, nb, &b);
-    for (0..nb) |p| b[p] *= s[p];
-    var res: f64 = 0;
-    for (0..m) |i| {
+    for (0..basis_len) |row| if (normal[row][row] < 1e-6) return null;
+    linalg.cholSolve(max_basis, &normal, basis_len, &rhs);
+    for (0..basis_len) |row| rhs[row] *= scale[row];
+    var res_sum: f64 = 0;
+    for (0..points) |i| {
         if (!std.math.isFinite(ys[i])) continue;
-        const d2 = basis(n, quad, xs[i * n ..][0..n], x0, &z);
-        var e = ys[i];
-        for (0..nb) |p| e -= b[p] * z[p];
-        res += tricube(d2, r) * e * e;
+        const d2 = basis(dims, quad, xs[i * dims ..][0..dims], x0, &terms);
+        var residual = ys[i];
+        for (0..basis_len) |row| residual -= rhs[row] * terms[row];
+        res_sum += tricube(d2, radius) * residual * residual;
     }
-    for (0..n) |k| {
-        g[k] = b[k + 1];
-        if (quad) c[k] = b[n + 1 + k];
+    for (0..dims) |k| {
+        gradient[k] = rhs[k + 1];
+        if (quad) curvature[k] = rhs[dims + 1 + k];
     }
-    return .{ .a = b[0], .rms = @sqrt(res / wsum), .weight = wsum };
+    return .{ .intercept = rhs[0], .rms = @sqrt(res_sum / wsum), .weight = wsum };
 }
 
 // ------------------------------------------------------------------ testes
@@ -103,13 +104,13 @@ test "plano exato: a inclinação sai igual, com qualquer peso" {
     const xs = [_]f64{ 0.1, 0.2, 0.5, 0.5, 0.9, 0.1, 0.3, 0.8, 0.6, 0.4, 0.45, 0.55 };
     var ys: [6]f64 = undefined;
     for (0..6) |i| ys[i] = 3 + 2 * xs[2 * i] - 5 * xs[2 * i + 1];
-    var g: [2]f64 = undefined;
-    var c: [2]f64 = undefined;
-    const f = fit(2, 6, &xs, &ys, &.{ 0.5, 0.5 }, 0.8, false, &g, &c).?;
-    try std.testing.expectApproxEqAbs(@as(f64, 2), g[0], 1e-9);
-    try std.testing.expectApproxEqAbs(@as(f64, -5), g[1], 1e-9);
-    try std.testing.expectApproxEqAbs(@as(f64, 3 + 1 - 2.5), f.a, 1e-9);
-    try std.testing.expect(f.rms < 1e-9);
+    var gradient: [2]f64 = undefined;
+    var curvature: [2]f64 = undefined;
+    const result = fit(2, 6, &xs, &ys, &.{ 0.5, 0.5 }, 0.8, false, &gradient, &curvature).?;
+    try std.testing.expectApproxEqAbs(@as(f64, 2), gradient[0], 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, -5), gradient[1], 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 3 + 1 - 2.5), result.intercept, 1e-9);
+    try std.testing.expect(result.rms < 1e-9);
 }
 
 test "parábola: o plano dá zero no topo e a corda de um lado; com a curvatura sai exata dos dois jeitos" {
@@ -117,19 +118,19 @@ test "parábola: o plano dá zero no topo e a corda de um lado; com a curvatura 
     const xs = [_]f64{ 0.3, 0.4, 0.5, 0.6, 0.7 };
     var ys: [5]f64 = undefined;
     for (0..5) |i| ys[i] = -(xs[i] - 0.5) * (xs[i] - 0.5);
-    var g: [1]f64 = undefined;
-    var c: [1]f64 = undefined;
-    _ = fit(1, 5, &xs, &ys, &.{0.5}, 0.2, false, &g, &c).?;
-    try std.testing.expectApproxEqAbs(@as(f64, 0), g[0], 1e-12);
+    var gradient: [1]f64 = undefined;
+    var curvature: [1]f64 = undefined;
+    _ = fit(1, 5, &xs, &ys, &.{0.5}, 0.2, false, &gradient, &curvature).?;
+    try std.testing.expectApproxEqAbs(@as(f64, 0), gradient[0], 1e-12);
     const right = [_]f64{ 0.5, 0.55, 0.6 };
     var yr: [3]f64 = undefined;
     for (0..3) |i| yr[i] = -(right[i] - 0.5) * (right[i] - 0.5);
-    _ = fit(1, 3, &right, &yr, &.{0.5}, 0.2, false, &g, &c).?;
-    try std.testing.expect(g[0] < 0 and g[0] > -0.2); // a corda no lado direito, puxada para x₀
-    const f = fit(1, 3, &right, &yr, &.{0.5}, 0.2, true, &g, &c).?; // três pontos de um lado só já bastam
-    try std.testing.expectApproxEqAbs(@as(f64, 0), g[0], 1e-9);
-    try std.testing.expectApproxEqAbs(@as(f64, -2), c[0], 1e-9);
-    try std.testing.expectApproxEqAbs(@as(f64, 0), f.a, 1e-12);
+    _ = fit(1, 3, &right, &yr, &.{0.5}, 0.2, false, &gradient, &curvature).?;
+    try std.testing.expect(gradient[0] < 0 and gradient[0] > -0.2); // a corda no lado direito, puxada para x₀
+    const result = fit(1, 3, &right, &yr, &.{0.5}, 0.2, true, &gradient, &curvature).?; // três pontos de um lado só já bastam
+    try std.testing.expectApproxEqAbs(@as(f64, 0), gradient[0], 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, -2), curvature[0], 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 0), result.intercept, 1e-12);
 }
 
 test "curvatura por eixo com pontos de uma busca por coordenadas" {
@@ -137,29 +138,29 @@ test "curvatura por eixo com pontos de uma busca por coordenadas" {
     const xs = [_]f64{ 0, 0, 0.1, 0, -0.1, 0, 0.2, 0, 0, 0.1, 0, -0.05 };
     var ys: [6]f64 = undefined;
     for (0..6) |i| {
-        const a = xs[2 * i];
-        const b = xs[2 * i + 1];
-        ys[i] = 1 + a - 3 * a * a + b * b;
+        const coord_x = xs[2 * i];
+        const coord_y = xs[2 * i + 1];
+        ys[i] = 1 + coord_x - 3 * coord_x * coord_x + coord_y * coord_y;
     }
-    var g: [2]f64 = undefined;
-    var c: [2]f64 = undefined;
-    _ = fit(2, 6, &xs, &ys, &.{ 0, 0 }, 0.3, true, &g, &c).?;
-    try std.testing.expectApproxEqAbs(@as(f64, 1), g[0], 1e-9);
-    try std.testing.expectApproxEqAbs(@as(f64, 0), g[1], 1e-9);
-    try std.testing.expectApproxEqAbs(@as(f64, -6), c[0], 1e-9);
-    try std.testing.expectApproxEqAbs(@as(f64, 2), c[1], 1e-9);
+    var gradient: [2]f64 = undefined;
+    var curvature: [2]f64 = undefined;
+    _ = fit(2, 6, &xs, &ys, &.{ 0, 0 }, 0.3, true, &gradient, &curvature).?;
+    try std.testing.expectApproxEqAbs(@as(f64, 1), gradient[0], 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 0), gradient[1], 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, -6), curvature[0], 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 2), curvature[1], 1e-9);
 }
 
 test "direção sem pontos: não dá, e NaN é ignorado" {
     // todos os pontos com x₁ = x₀: a inclinação em x₁ não fica determinada
     const xs = [_]f64{ 0.1, 0.5, 0.3, 0.5, 0.7, 0.5, 0.9, 0.5 };
     const ys = [_]f64{ 1, 2, 3, std.math.nan(f64) };
-    var g: [2]f64 = undefined;
-    var c: [2]f64 = undefined;
-    try std.testing.expect(fit(2, 4, &xs, &ys, &.{ 0.5, 0.5 }, 0.3, false, &g, &c) == null);
-    try std.testing.expect(fit(2, 2, &xs, &ys, &.{ 0.5, 0.5 }, 0.3, false, &g, &c) == null); // menos de n + 1
+    var gradient: [2]f64 = undefined;
+    var curvature: [2]f64 = undefined;
+    try std.testing.expect(fit(2, 4, &xs, &ys, &.{ 0.5, 0.5 }, 0.3, false, &gradient, &curvature) == null);
+    try std.testing.expect(fit(2, 2, &xs, &ys, &.{ 0.5, 0.5 }, 0.3, false, &gradient, &curvature) == null); // menos de n + 1
     // dois valores só em x₀ (x₀ e 0,6): a curvatura não fica determinada
     const two = [_]f64{ 0.5, 0.6, 0.5, 0.6 };
     const y2 = [_]f64{ 1, 2, 1, 2 };
-    try std.testing.expect(fit(1, 4, &two, &y2, &.{0.5}, 0.3, true, &g, &c) == null);
+    try std.testing.expect(fit(1, 4, &two, &y2, &.{0.5}, 0.3, true, &gradient, &curvature) == null);
 }

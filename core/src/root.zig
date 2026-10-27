@@ -603,7 +603,7 @@ const localfit = @import("optim/localfit.zig");
 export fn aerosim_local_fit(dims: usize, points: usize, xs: [*]const f64, ys: [*]const f64, x0: [*]const f64, radius: f64, quad: i32, gradient: [*]f64, curvature: [*]f64, out: [*]f64) i32 {
     if (dims == 0 or dims > localfit.max_n) return abiCode(error.OutOfRange);
     const fit_result = localfit.fit(dims, points, xs[0 .. points * dims], ys[0..points], x0[0..dims], radius, quad != 0, gradient[0..dims], curvature[0..dims]) orelse return abiCode(error.SingularSystem);
-    out[0] = fit_result.a;
+    out[0] = fit_result.intercept;
     out[1] = fit_result.rms;
     out[2] = fit_result.weight;
     return 0;

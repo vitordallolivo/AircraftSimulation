@@ -25,150 +25,151 @@ pub const max_k = 32;
 pub const max_r = 64;
 
 /// a perda por tolerância: `minus`/`plus` = ΔN de cada lado em ±δₖ, `elast` = gₖxₖ/N; devolve σ_N. Sem curvatura
-/// (`c` com NaN) só a parte linear entra
-pub fn tolerance(n: usize, g: []const f64, c: []const f64, x0: []const f64, n0: f64, delta: []const f64,
+/// (`curvature` com NaN) só a parte linear entra
+pub fn tolerance(dims: usize, gradient: []const f64, curvature: []const f64, x0: []const f64, n0: f64, delta: []const f64,
     minus: []f64, plus: []f64, elast: []f64) f64 {
-    var s2: f64 = 0;
-    for (0..n) |k| {
-        const lin = g[k] * delta[k];
-        const q = if (std.math.isFinite(c[k])) 0.5 * c[k] * delta[k] * delta[k] else 0;
-        minus[k] = -lin + q;
-        plus[k] = lin + q;
-        elast[k] = if (n0 != 0) g[k] * x0[k] / n0 else std.math.nan(f64);
-        s2 += lin * lin + 2 * q * q; // ½ (cδ²)² = 2 (½ c δ²)²
+    var variance: f64 = 0;
+    for (0..dims) |k| {
+        const lin = gradient[k] * delta[k];
+        const quad_term = if (std.math.isFinite(curvature[k])) 0.5 * curvature[k] * delta[k] * delta[k] else 0;
+        minus[k] = -lin + quad_term;
+        plus[k] = lin + quad_term;
+        elast[k] = if (n0 != 0) gradient[k] * x0[k] / n0 else std.math.nan(f64);
+        variance += lin * lin + 2 * quad_term * quad_term; // ½ (cδ²)² = 2 (½ c δ²)²
     }
-    return @sqrt(s2);
+    return @sqrt(variance);
 }
 
-/// o passo de Morris numa grade de p níveis
-pub fn morrisDelta(p: usize) f64 {
-    const pf: f64 = @floatFromInt(p);
-    return pf / (2 * (pf - 1));
+/// o passo de Morris numa grade de `levels` níveis
+pub fn morrisDelta(levels: usize) f64 {
+    const levels_f: f64 = @floatFromInt(levels);
+    return levels_f / (2 * (levels_f - 1));
 }
 
-/// as r trajetórias de Morris em [0, 1]ᵏ: `out` com r·(k + 1) pontos de k coordenadas, trajetória por trajetória.
+/// as `trajectories` trajetórias de Morris em [0, 1]^dims: `out` com trajectories·(dims + 1) pontos de dims coordenadas, trajetória por trajetória.
 /// Cada uma começa num nível sorteado da grade e mexe as variáveis numa ordem sorteada, para cima quando o nível
-/// está na metade de baixo e para baixo na de cima (assim todo ponto fica na grade). `false` se k, r ou p não cabem
-pub fn morrisDesign(k: usize, r: usize, p: usize, seed: u64, out: []f64) bool {
-    if (k == 0 or k > max_k or r == 0 or r > max_r or p < 2 or p % 2 != 0) return false;
+/// está na metade de baixo e para baixo na de cima (assim todo ponto fica na grade). `false` se dims,
+/// trajectories ou levels não cabem
+pub fn morrisDesign(dims: usize, trajectories: usize, levels: usize, seed: u64, out: []f64) bool {
+    if (dims == 0 or dims > max_k or trajectories == 0 or trajectories > max_r or levels < 2 or levels % 2 != 0) return false;
     var prng = std.Random.DefaultPrng.init(seed);
     const rnd = prng.random();
-    const d = morrisDelta(p);
-    const step = 1 / @as(f64, @floatFromInt(p - 1));
+    const delta_step = morrisDelta(levels);
+    const step = 1 / @as(f64, @floatFromInt(levels - 1));
     var order: [max_k]usize = undefined;
-    for (0..r) |t| {
-        const base = out[t * (k + 1) * k ..];
-        for (0..k) |m| base[m] = @as(f64, @floatFromInt(rnd.uintLessThan(usize, p))) * step;
-        for (0..k) |m| order[m] = m;
-        rnd.shuffle(usize, order[0..k]);
-        for (0..k) |j| {
-            const prev = base[j * k ..][0..k];
-            const next = base[(j + 1) * k ..][0..k];
+    for (0..trajectories) |traj| {
+        const base = out[traj * (dims + 1) * dims ..];
+        for (0..dims) |var_index| base[var_index] = @as(f64, @floatFromInt(rnd.uintLessThan(usize, levels))) * step;
+        for (0..dims) |var_index| order[var_index] = var_index;
+        rnd.shuffle(usize, order[0..dims]);
+        for (0..dims) |move| {
+            const prev = base[move * dims ..][0..dims];
+            const next = base[(move + 1) * dims ..][0..dims];
             @memcpy(next, prev);
-            const m = order[j];
-            next[m] = if (prev[m] < 0.5) prev[m] + d else prev[m] - d;
+            const var_index = order[move];
+            next[var_index] = if (prev[var_index] < 0.5) prev[var_index] + delta_step else prev[var_index] - delta_step;
         }
     }
     return true;
 }
 
-/// os efeitos elementares das r trajetórias de `design` com as respostas `y` (NaN = o ponto não vale; o passo que o
+/// os efeitos elementares das `trajectories` trajetórias de `design` com as respostas `responses` (NaN = o ponto não vale; o passo que o
 /// usa não conta): μ, μ*, σ e quantos passos contaram, por variável
-pub fn morrisEffects(k: usize, r: usize, design: []const f64, y: []const f64, mu: []f64, mustar: []f64, sigma: []f64,
+pub fn morrisEffects(dims: usize, trajectories: usize, design: []const f64, responses: []const f64, mu: []f64, mustar: []f64, sigma: []f64,
     count: []usize) void {
-    var s1: [max_k]f64 = @splat(0);
-    var sa: [max_k]f64 = @splat(0);
-    var s2: [max_k]f64 = @splat(0);
-    for (0..k) |m| count[m] = 0;
-    for (0..r) |t| {
-        const o = t * (k + 1);
-        for (0..k) |j| {
-            const a = design[(o + j) * k ..][0..k];
-            const b = design[(o + j + 1) * k ..][0..k];
-            const ya = y[o + j];
-            const yb = y[o + j + 1];
-            var m: usize = 0;
-            while (m < k and a[m] == b[m]) m += 1;
-            if (m == k or !std.math.isFinite(ya) or !std.math.isFinite(yb)) continue;
-            const ee = (yb - ya) / (b[m] - a[m]);
-            s1[m] += ee;
-            sa[m] += @abs(ee);
-            s2[m] += ee * ee;
-            count[m] += 1;
+    var sum_ee: [max_k]f64 = @splat(0);
+    var sum_abs: [max_k]f64 = @splat(0);
+    var sum_sq: [max_k]f64 = @splat(0);
+    for (0..dims) |var_index| count[var_index] = 0;
+    for (0..trajectories) |traj| {
+        const offset = traj * (dims + 1);
+        for (0..dims) |j| {
+            const point_a = design[(offset + j) * dims ..][0..dims];
+            const point_b = design[(offset + j + 1) * dims ..][0..dims];
+            const resp_a = responses[offset + j];
+            const resp_b = responses[offset + j + 1];
+            var var_index: usize = 0;
+            while (var_index < dims and point_a[var_index] == point_b[var_index]) var_index += 1;
+            if (var_index == dims or !std.math.isFinite(resp_a) or !std.math.isFinite(resp_b)) continue;
+            const ee = (resp_b - resp_a) / (point_b[var_index] - point_a[var_index]);
+            sum_ee[var_index] += ee;
+            sum_abs[var_index] += @abs(ee);
+            sum_sq[var_index] += ee * ee;
+            count[var_index] += 1;
         }
     }
-    for (0..k) |m| {
-        const nf: f64 = @floatFromInt(count[m]);
-        if (count[m] == 0) {
-            mu[m] = std.math.nan(f64);
-            mustar[m] = std.math.nan(f64);
-            sigma[m] = std.math.nan(f64);
+    for (0..dims) |var_index| {
+        const count_f: f64 = @floatFromInt(count[var_index]);
+        if (count[var_index] == 0) {
+            mu[var_index] = std.math.nan(f64);
+            mustar[var_index] = std.math.nan(f64);
+            sigma[var_index] = std.math.nan(f64);
             continue;
         }
-        mu[m] = s1[m] / nf;
-        mustar[m] = sa[m] / nf;
-        sigma[m] = if (count[m] > 1) @sqrt(@max(s2[m] - nf * mu[m] * mu[m], 0) / (nf - 1)) else 0;
+        mu[var_index] = sum_ee[var_index] / count_f;
+        mustar[var_index] = sum_abs[var_index] / count_f;
+        sigma[var_index] = if (count[var_index] > 1) @sqrt(@max(sum_sq[var_index] - count_f * mu[var_index] * mu[var_index], 0) / (count_f - 1)) else 0;
     }
 }
 
 // ------------------------------------------------------------------ testes
 test "tolerância: a parábola perde dos dois lados igual, e a reta só muda de sinal" {
-    const g = [_]f64{ 0, 2 };
-    const c = [_]f64{ -4, std.math.nan(f64) };
+    const gradient = [_]f64{ 0, 2 };
+    const curvature = [_]f64{ -4, std.math.nan(f64) };
     const x0 = [_]f64{ 1, 5 };
     const delta = [_]f64{ 0.1, 0.5 };
-    var mi: [2]f64 = undefined;
-    var pl: [2]f64 = undefined;
-    var el: [2]f64 = undefined;
-    const s = tolerance(2, &g, &c, &x0, 10, &delta, &mi, &pl, &el);
-    try std.testing.expectApproxEqAbs(@as(f64, -0.02), mi[0], 1e-15); // ½·(−4)·0,1²
-    try std.testing.expectApproxEqAbs(@as(f64, -0.02), pl[0], 1e-15);
-    try std.testing.expectApproxEqAbs(@as(f64, -1), mi[1], 1e-15);
-    try std.testing.expectApproxEqAbs(@as(f64, 1), pl[1], 1e-15);
-    try std.testing.expectApproxEqAbs(@as(f64, 1), el[1], 1e-15); // 2·5/10
+    var minus: [2]f64 = undefined;
+    var plus: [2]f64 = undefined;
+    var elast: [2]f64 = undefined;
+    const sigma_n = tolerance(2, &gradient, &curvature, &x0, 10, &delta, &minus, &plus, &elast);
+    try std.testing.expectApproxEqAbs(@as(f64, -0.02), minus[0], 1e-15); // ½·(−4)·0,1²
+    try std.testing.expectApproxEqAbs(@as(f64, -0.02), plus[0], 1e-15);
+    try std.testing.expectApproxEqAbs(@as(f64, -1), minus[1], 1e-15);
+    try std.testing.expectApproxEqAbs(@as(f64, 1), plus[1], 1e-15);
+    try std.testing.expectApproxEqAbs(@as(f64, 1), elast[1], 1e-15); // 2·5/10
     // σ² = (2·0,5)² + ½(−4·0,1²)² = 1 + 0,0008
-    try std.testing.expectApproxEqAbs(@sqrt(1.0008), s, 1e-15);
+    try std.testing.expectApproxEqAbs(@sqrt(1.0008), sigma_n, 1e-15);
 }
 
 test "Morris: a grade, um passo por variável, e os efeitos de uma função sabida" {
-    const k = 3;
-    const r = 10;
-    var design: [r * (k + 1) * k]f64 = undefined;
-    try std.testing.expect(morrisDesign(k, r, 4, 7, &design));
-    try std.testing.expect(!morrisDesign(k, r, 3, 7, &design)); // p ímpar não fecha a grade
-    const d = morrisDelta(4);
-    try std.testing.expectApproxEqAbs(@as(f64, 2.0 / 3.0), d, 1e-15);
-    var y: [r * (k + 1)]f64 = undefined;
-    for (0..r * (k + 1)) |i| {
-        const x = design[i * k ..][0..k];
-        for (x) |v| try std.testing.expect(v >= -1e-12 and v <= 1 + 1e-12);
+    const dims = 3;
+    const trajectories = 10;
+    var design: [trajectories * (dims + 1) * dims]f64 = undefined;
+    try std.testing.expect(morrisDesign(dims, trajectories, 4, 7, &design));
+    try std.testing.expect(!morrisDesign(dims, trajectories, 3, 7, &design)); // p ímpar não fecha a grade
+    const delta_step = morrisDelta(4);
+    try std.testing.expectApproxEqAbs(@as(f64, 2.0 / 3.0), delta_step, 1e-15);
+    var responses: [trajectories * (dims + 1)]f64 = undefined;
+    for (0..trajectories * (dims + 1)) |i| {
+        const point = design[i * dims ..][0..dims];
+        for (point) |value| try std.testing.expect(value >= -1e-12 and value <= 1 + 1e-12);
         // y = 3 x₀ − 2 x₁ + x₂²: μ₀ = 3 e σ₀ = 0; μ₁ = −2, μ₁* = 2; x₂ tem efeito que varia com o nível (σ > 0)
-        y[i] = 3 * x[0] - 2 * x[1] + x[2] * x[2];
+        responses[i] = 3 * point[0] - 2 * point[1] + point[2] * point[2];
     }
-    for (0..r) |t| { // cada passo mexe uma variável só, em ±Δ
-        for (0..k) |j| {
+    for (0..trajectories) |traj| { // cada passo mexe uma variável só, em ±Δ
+        for (0..dims) |step| {
             var moved: usize = 0;
-            for (0..k) |m| {
-                const a = design[(t * (k + 1) + j) * k + m];
-                const b = design[(t * (k + 1) + j + 1) * k + m];
-                if (a != b) {
+            for (0..dims) |var_index| {
+                const before = design[(traj * (dims + 1) + step) * dims + var_index];
+                const after = design[(traj * (dims + 1) + step + 1) * dims + var_index];
+                if (before != after) {
                     moved += 1;
-                    try std.testing.expectApproxEqAbs(d, @abs(b - a), 1e-12);
+                    try std.testing.expectApproxEqAbs(delta_step, @abs(after - before), 1e-12);
                 }
             }
             try std.testing.expectEqual(@as(usize, 1), moved);
         }
     }
-    var mu: [k]f64 = undefined;
-    var ms: [k]f64 = undefined;
-    var sg: [k]f64 = undefined;
-    var n: [k]usize = undefined;
-    y[1] = std.math.nan(f64); // um ponto que não vale tira os dois passos que o usam
-    morrisEffects(k, r, &design, &y, &mu, &ms, &sg, &n);
+    var mu: [dims]f64 = undefined;
+    var mustar: [dims]f64 = undefined;
+    var sigma: [dims]f64 = undefined;
+    var counts: [dims]usize = undefined;
+    responses[1] = std.math.nan(f64); // um ponto que não vale tira os dois passos que o usam
+    morrisEffects(dims, trajectories, &design, &responses, &mu, &mustar, &sigma, &counts);
     try std.testing.expectApproxEqAbs(@as(f64, 3), mu[0], 1e-9);
-    try std.testing.expectApproxEqAbs(@as(f64, 0), sg[0], 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 0), sigma[0], 1e-9);
     try std.testing.expectApproxEqAbs(@as(f64, -2), mu[1], 1e-9);
-    try std.testing.expectApproxEqAbs(@as(f64, 2), ms[1], 1e-9);
-    try std.testing.expect(sg[2] > 0.1);
-    try std.testing.expectEqual(@as(usize, 3 * r - 2), n[0] + n[1] + n[2]);
+    try std.testing.expectApproxEqAbs(@as(f64, 2), mustar[1], 1e-9);
+    try std.testing.expect(sigma[2] > 0.1);
+    try std.testing.expectEqual(@as(usize, 3 * trajectories - 2), counts[0] + counts[1] + counts[2]);
 }

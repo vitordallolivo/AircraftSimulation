@@ -33,77 +33,77 @@ pub const GaCfg = extern struct {
 };
 
 fn rng(cfg: *const GaCfg) std.Random.DefaultPrng {
-    const s: u64 = @as(u64, @intCast(@max(cfg.seed, 0))) *% 1_000_003 +% @as(u64, @intCast(@max(cfg.generation, 0)));
-    return std.Random.DefaultPrng.init(s);
+    const seed: u64 = @as(u64, @intCast(@max(cfg.seed, 0))) *% 1_000_003 +% @as(u64, @intCast(@max(cfg.generation, 0)));
+    return std.Random.DefaultPrng.init(seed);
 }
 
-fn randomGene(cfg: *const GaCfg, r: std.Random, j: usize) f64 {
-    const k = cfg.card[j];
-    if (k > 0) return @floatFromInt(r.uintLessThan(u32, @intCast(k)));
-    return cfg.lo[j] + r.float(f64) * (cfg.hi[j] - cfg.lo[j]);
+fn randomGene(cfg: *const GaCfg, random: std.Random, j: usize) f64 {
+    const options = cfg.card[j];
+    if (options > 0) return @floatFromInt(random.uintLessThan(u32, @intCast(options)));
+    return cfg.lo[j] + random.float(f64) * (cfg.hi[j] - cfg.lo[j]);
 }
 
 /// a primeira geração, sorteada (`out`: pop × n_genes)
 pub fn init(cfg: *const GaCfg, out: []f64) void {
-    var p = rng(cfg);
-    const r = p.random();
-    const n: usize = @intCast(cfg.n_genes);
-    const m: usize = @intCast(cfg.pop);
-    for (0..m) |i| {
-        for (0..n) |j| out[i * n + j] = randomGene(cfg, r, j);
+    var prng = rng(cfg);
+    const random = prng.random();
+    const gene_count: usize = @intCast(cfg.n_genes);
+    const pop_size: usize = @intCast(cfg.pop);
+    for (0..pop_size) |i| {
+        for (0..gene_count) |j| out[i * gene_count + j] = randomGene(cfg, random, j);
     }
 }
 
-fn better(fit: []const f64, a: usize, b: usize) bool {
-    const fa = if (std.math.isNan(fit[a])) -std.math.inf(f64) else fit[a];
-    const fb = if (std.math.isNan(fit[b])) -std.math.inf(f64) else fit[b];
-    return fa > fb or (fa == fb and a < b); // empate: a ordem de antes, para ficar determinístico
+fn better(fit: []const f64, first: usize, second: usize) bool {
+    const fit_first = if (std.math.isNan(fit[first])) -std.math.inf(f64) else fit[first];
+    const fit_second = if (std.math.isNan(fit[second])) -std.math.inf(f64) else fit[second];
+    return fit_first > fit_second or (fit_first == fit_second and first < second); // empate: a ordem de antes, para ficar determinístico
 }
 
 /// a geração seguinte: `genes` (pop × n_genes) com a nota `fit` de cada um (NaN ou −inf: morreu) → `out`
 pub fn next(cfg: *const GaCfg, genes: []const f64, fit: []const f64, out: []f64) void {
-    var p = rng(cfg);
-    const r = p.random();
-    const n: usize = @intCast(cfg.n_genes);
-    const m: usize = @intCast(cfg.pop);
+    var prng = rng(cfg);
+    const random = prng.random();
+    const gene_count: usize = @intCast(cfg.n_genes);
+    const pop_size: usize = @intCast(cfg.pop);
     var order: [max_pop]usize = undefined;
-    for (0..m) |i| order[i] = i;
-    for (1..m) |i| { // inserção, do melhor para o pior
+    for (0..pop_size) |i| order[i] = i;
+    for (1..pop_size) |i| { // inserção, do melhor para o pior
         var j = i;
         while (j > 0 and better(fit, order[j], order[j - 1])) : (j -= 1) std.mem.swap(usize, &order[j], &order[j - 1]);
     }
-    const ne: usize = @intCast(std.math.clamp(cfg.elite, 0, cfg.pop));
-    for (0..ne) |i| @memcpy(out[i * n .. (i + 1) * n], genes[order[i] * n .. (order[i] + 1) * n]);
-    const total: f64 = @floatFromInt(m * (m + 1) / 2);
-    for (ne..m) |i| {
-        const a = order[pick(r, m, total)];
-        const b = order[pick(r, m, total)];
-        const cut = if (n > 1 and r.float(f64) < cfg.p_cross) 1 + r.uintLessThan(usize, n - 1) else n;
-        for (0..n) |j| {
-            var g = if (j < cut) genes[a * n + j] else genes[b * n + j];
-            if (r.float(f64) < cfg.p_mut) {
-                const k = cfg.card[j];
-                if (k > 1) {
-                    const now: u32 = @intFromFloat(g);
-                    const other = r.uintLessThan(u32, @intCast(k - 1));
-                    g = @floatFromInt(if (other >= now) other + 1 else other);
-                } else if (k == 0) {
-                    g = std.math.clamp(g + r.floatNorm(f64) * cfg.sigma * (cfg.hi[j] - cfg.lo[j]), cfg.lo[j], cfg.hi[j]);
+    const elite_count: usize = @intCast(std.math.clamp(cfg.elite, 0, cfg.pop));
+    for (0..elite_count) |i| @memcpy(out[i * gene_count .. (i + 1) * gene_count], genes[order[i] * gene_count .. (order[i] + 1) * gene_count]);
+    const total: f64 = @floatFromInt(pop_size * (pop_size + 1) / 2);
+    for (elite_count..pop_size) |i| {
+        const parent_a = order[pick(random, pop_size, total)];
+        const parent_b = order[pick(random, pop_size, total)];
+        const cut = if (gene_count > 1 and random.float(f64) < cfg.p_cross) 1 + random.uintLessThan(usize, gene_count - 1) else gene_count;
+        for (0..gene_count) |j| {
+            var gene = if (j < cut) genes[parent_a * gene_count + j] else genes[parent_b * gene_count + j];
+            if (random.float(f64) < cfg.p_mut) {
+                const options = cfg.card[j];
+                if (options > 1) {
+                    const now: u32 = @intFromFloat(gene);
+                    const other = random.uintLessThan(u32, @intCast(options - 1));
+                    gene = @floatFromInt(if (other >= now) other + 1 else other);
+                } else if (options == 0) {
+                    gene = std.math.clamp(gene + random.floatNorm(f64) * cfg.sigma * (cfg.hi[j] - cfg.lo[j]), cfg.lo[j], cfg.hi[j]);
                 }
             }
-            out[i * n + j] = g;
+            out[i * gene_count + j] = gene;
         }
     }
 }
 
-/// posição sorteada com peso m − posição (0 = o melhor)
-fn pick(r: std.Random, m: usize, total: f64) usize {
-    var x = r.float(f64) * total;
-    for (0..m) |i| {
-        x -= @floatFromInt(m - i);
-        if (x < 0) return i;
+/// posição sorteada com peso pop_size − posição (0 = o melhor)
+fn pick(random: std.Random, pop_size: usize, total: f64) usize {
+    var draw = random.float(f64) * total;
+    for (0..pop_size) |i| {
+        draw -= @floatFromInt(pop_size - i);
+        if (draw < 0) return i;
     }
-    return m - 1;
+    return pop_size - 1;
 }
 
 // ------------------------------------------------------------------ testes
@@ -113,25 +113,25 @@ test "a geração sai dentro das opções e dos limites, e a elite passa igual" 
     cfg.card[1] = 2;
     cfg.lo[2] = -1;
     cfg.hi[2] = 3;
-    var g: [24]f64 = undefined;
-    init(&cfg, &g);
+    var genes: [24]f64 = undefined;
+    init(&cfg, &genes);
     var fit: [8]f64 = undefined;
-    for (0..8) |i| fit[i] = g[i * 3] + g[i * 3 + 2]; // a melhor é a de maior opção 0 e maior real
+    for (0..8) |i| fit[i] = genes[i * 3] + genes[i * 3 + 2]; // a melhor é a de maior opção 0 e maior real
     fit[5] = std.math.nan(f64); // morreu
     var out: [24]f64 = undefined;
-    next(&cfg, &g, &fit, &out);
+    next(&cfg, &genes, &fit, &out);
     var best: usize = 0;
     for (0..8) |i| if (i != 5 and fit[i] > fit[best]) {
         best = i;
     };
-    try std.testing.expectEqualSlices(f64, g[best * 3 .. best * 3 + 3], out[0..3]);
+    try std.testing.expectEqualSlices(f64, genes[best * 3 .. best * 3 + 3], out[0..3]);
     for (0..8) |i| {
         try std.testing.expect(out[i * 3] >= 0 and out[i * 3] < 5 and @round(out[i * 3]) == out[i * 3]);
         try std.testing.expect(out[i * 3 + 1] == 0 or out[i * 3 + 1] == 1);
         try std.testing.expect(out[i * 3 + 2] >= -1 and out[i * 3 + 2] <= 3);
     }
     var again: [24]f64 = undefined; // determinística
-    next(&cfg, &g, &fit, &again);
+    next(&cfg, &genes, &fit, &again);
     try std.testing.expectEqualSlices(f64, &out, &again);
 }
 
@@ -140,21 +140,21 @@ test "as gerações acham o máximo de um problema discreto grande" {
     const target = [8]f64{ 3, 1, 4, 1, 5, 2, 0, 5 };
     var cfg = GaCfg{ .n_genes = 8, .pop = 40, .elite = 2, .p_mut = 0.1 };
     for (0..8) |j| cfg.card[j] = 6;
-    var g: [320]f64 = undefined;
+    var genes: [320]f64 = undefined;
     var out: [320]f64 = undefined;
     var fit: [40]f64 = undefined;
-    init(&cfg, &g);
+    init(&cfg, &genes);
     var best: f64 = 0;
     for (0..60) |gen| {
         for (0..40) |i| {
-            var s: f64 = 0;
-            for (0..8) |j| s += if (g[i * 8 + j] == target[j]) 1 else 0;
-            fit[i] = s;
-            best = @max(best, s);
+            var hits: f64 = 0;
+            for (0..8) |j| hits += if (genes[i * 8 + j] == target[j]) 1 else 0;
+            fit[i] = hits;
+            best = @max(best, hits);
         }
         cfg.generation = @intCast(gen + 1);
-        next(&cfg, &g, &fit, &out);
-        g = out;
+        next(&cfg, &genes, &fit, &out);
+        genes = out;
     }
     try std.testing.expectEqual(@as(f64, 8), best); // 60 × 40 = 2400 avaliações, 0,14 % do espaço
 }
