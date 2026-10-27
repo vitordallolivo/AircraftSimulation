@@ -58,24 +58,24 @@ pub const Modifier = extern struct {
     params: [n_params]f64 = [_]f64{0} ** n_params,
 
     /// o tipo pelo nome (número desconhecido vira um valor sem nome, que o `switch` ignora)
-    pub inline fn kindOf(m: *const Modifier) Kind {
-        return @enumFromInt(m.kind);
+    pub inline fn kindOf(self: *const Modifier) Kind {
+        return @enumFromInt(self.kind);
     }
 
-    /// o parâmetro `k` de um modificador do tipo `Kind.slipstream_disk`
-    pub inline fn slip(m: *const Modifier, k: SlipstreamParam) f64 {
-        return m.params[@intFromEnum(k)];
+    /// o parâmetro `param` de um modificador do tipo `Kind.slipstream_disk`
+    pub inline fn slip(self: *const Modifier, param: SlipstreamParam) f64 {
+        return self.params[@intFromEnum(param)];
     }
 
-    /// o parâmetro `k` de um modificador do tipo `Kind.wing_pair`
-    pub inline fn pair(m: *const Modifier, k: PairParam) f64 {
-        return m.params[@intFromEnum(k)];
+    /// o parâmetro `param` de um modificador do tipo `Kind.wing_pair`
+    pub inline fn pair(self: *const Modifier, param: PairParam) f64 {
+        return self.params[@intFromEnum(param)];
     }
 
-    /// a máscara de painéis da asa A (`a` = true) ou B do par
-    pub inline fn pairMask(m: *const Modifier, a: bool) [2]i32 {
-        const lo = m.pair(if (a) .a_lo else .b_lo);
-        const hi = m.pair(if (a) .a_hi else .b_hi);
+    /// a máscara de painéis da asa A (`wing_a` = true) ou B do par
+    pub inline fn pairMask(self: *const Modifier, wing_a: bool) [2]i32 {
+        const lo = self.pair(if (wing_a) .a_lo else .b_lo);
+        const hi = self.pair(if (wing_a) .a_hi else .b_hi);
         return .{ @intFromFloat(lo), @intFromFloat(hi) };
     }
 };
@@ -83,6 +83,6 @@ pub const Modifier = extern struct {
 comptime {
     if (limits.max_surfaces > 64) @compileError("surf_mask cobre até 64 painéis");
     if (limits.max_props > 31) @compileError("prop_mask cobre até 31 motores");
-    for (@typeInfo(SlipstreamParam).@"enum".fields) |f| if (f.value >= n_params) @compileError("parâmetro fora de params");
-    for (@typeInfo(PairParam).@"enum".fields) |f| if (f.value >= n_params) @compileError("parâmetro fora de params");
+    for (@typeInfo(SlipstreamParam).@"enum".fields) |field| if (field.value >= n_params) @compileError("parâmetro fora de params");
+    for (@typeInfo(PairParam).@"enum".fields) |field| if (field.value >= n_params) @compileError("parâmetro fora de params");
 }

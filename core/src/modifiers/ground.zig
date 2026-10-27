@@ -8,18 +8,18 @@
 const fmath = @import("../math/fmath.zig");
 const modifier_types = @import("types.zig");
 
-/// fator do arrasto induzido do método `method` (`Params.ground`, número de `modifier_types.Ground`) a uma altura `h` (m) com
-/// envergadura `b` (m)
-pub inline fn factor(method: i32, h: f64, b: f64) f64 {
+/// fator do arrasto induzido do método `method` (`Params.ground`, número de `modifier_types.Ground`) a uma altura `height` (m)
+/// com envergadura `span` (m)
+pub inline fn factor(method: i32, height: f64, span: f64) f64 {
     return switch (@as(modifier_types.Ground, @enumFromInt(method))) {
-        .mccormick => mccormick(h, b),
+        .mccormick => mccormick(height, span),
         .off, _ => 1.0,
     };
 }
 
-/// φ de McCormick (ver o cabeçalho). h ≤ 0,01 m é tratado como 0,01 m (o painel não atravessa o chão)
-pub inline fn mccormick(h: f64, b: f64) f64 {
-    const r16 = 16.0 * @max(h, 0.01) / b;
+/// φ de McCormick (ver o cabeçalho). height ≤ 0,01 m é tratado como 0,01 m (o painel não atravessa o chão)
+pub inline fn mccormick(height: f64, span: f64) f64 {
+    const r16 = 16.0 * @max(height, 0.01) / span;
     return r16 * r16 / (1.0 + r16 * r16);
 }
 

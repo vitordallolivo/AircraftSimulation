@@ -26,35 +26,36 @@ const llt = @import("../loads/llt.zig");
 const V3 = vec.V3;
 
 /// algum par ligado e o voo pelas faixas: a aerodinâmica precisa das circulações antes do laço dos painéis
-pub fn active(p: *const core_types.Params) bool {
-    if (p.aero_model != 0) return false;
-    const n: usize = @intCast(p.n_mod);
-    for (p.mods[0..n]) |*m| {
-        if (m.enabled != 0 and m.kindOf() == .wing_pair) return true;
+pub fn active(params: *const core_types.Params) bool {
+    if (params.aero_model != 0) return false;
+    const n_mods: usize = @intCast(params.n_mod);
+    for (params.mods[0..n_mods]) |*modifier| {
+        if (modifier.enabled != 0 and modifier.kindOf() == .wing_pair) return true;
     }
     return false;
 }
 
+/// verdadeiro se o bit `i` (painel i) está ligado na máscara de 64 bits
 inline fn has(mask: [2]i32, i: usize) bool {
-    const w: u32 = @bitCast(mask[i / 32]);
-    return (w >> @intCast(i % 32)) & 1 != 0;
+    const word: u32 = @bitCast(mask[i / 32]);
+    return (word >> @intCast(i % 32)) & 1 != 0;
 }
 
-/// −ganho · w_i no painel i (o que entra na velocidade dele); `gamma`: Γ de cada painel; `u`: para onde o ar vai
-pub fn induced(p: *const core_types.Params, m: *const types.Modifier, gamma: []const f64, u: V3, i: usize) V3 {
-    const a = m.pairMask(true);
-    const b = m.pairMask(false);
-    const src = if (has(a, i)) b else if (has(b, i)) a else return vec.zero;
-    const P = vec.v3(p.surf[i].r);
-    const n: usize = @intCast(p.n_surf);
-    var w = vec.zero;
-    for (0..n) |j| {
+/// −ganho · w_i no painel i (o que entra na velocidade dele); `gamma`: Γ de cada painel; `flow_dir`: para onde o ar vai
+pub fn induced(params: *const core_types.Params, modifier: *const types.Modifier, gamma: []const f64, flow_dir: V3, i: usize) V3 {
+    const mask_a = modifier.pairMask(true);
+    const mask_b = modifier.pairMask(false);
+    const src = if (has(mask_a, i)) mask_b else if (has(mask_b, i)) mask_a else return vec.zero;
+    const control_point = vec.v3(params.surf[i].r);
+    const n_surf: usize = @intCast(params.n_surf);
+    var induced_sum = vec.zero;
+    for (0..n_surf) |j| {
         if (!has(src, j) or gamma[j] == 0) continue;
-        const s = &p.surf[j];
-        const g = llt.surfaceNodes(s);
-        w += llt.horseshoe(P, g.A, g.B, u, true, llt.core_frac * s.c) * vec.splat(gamma[j]);
+        const surface = &params.surf[j];
+        const nodes = llt.surfaceNodes(surface);
+        induced_sum += llt.horseshoe(control_point, nodes.A, nodes.B, flow_dir, true, llt.core_frac * surface.c) * vec.splat(gamma[j]);
     }
-    return -w * vec.splat(m.pair(.gain));
+    return -induced_sum * vec.splat(modifier.pair(.gain));
 }
 
 const testing = std.testing;

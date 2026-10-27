@@ -298,8 +298,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/collision/**
 
 - `core/src/collision/collision.zig` — Colisão geométrica: o que fica dentro do tubo de uma hélice (cilindro do raio dela ou o tubo que contrai da
-  tipos `Tube:13`, `Strip:39`
-  fn `stripFraction:56`
+  tipos `Tube:14`, `Strip:43`
+  fn `stripFraction:60`
 
 **core/src/control/**
 
@@ -322,8 +322,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/loads/**
 
 - `core/src/loads/llt.zig` — Linha sustentadora numérica (vórtices em ferradura) para a distribuição de carga ao longo da envergadura.
-  tipos `Node:187`
-  fn `sectionSlope:48`, `segment:55`, `horseshoe:71`, `surfaceNodes:101`, `prepare:269`, `apply:362`, `compute:474`, `coeffs:506`
+  tipos `Node:192`
+  fn `sectionSlope:48`, `segment:55`, `horseshoe:72`, `surfaceNodes:103`, `prepare:274`, `apply:368`, `compute:480`, `coeffs:512`
 
 **core/src/math/**
 
@@ -348,12 +348,12 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Env:22`
   fn `envFrom:37`, `hits:51`, `hitsProp:58`, `stripOf:72`, `induced:79`, `inducedNoPair:84`, `flapCm:104`
 - `core/src/modifiers/slipstream.zig` — Esteira da hélice por disco atuador (modificador `esteira.disco`).
-  tipos `TubeShape:32`, `Point:81`
-  fn `shape:49`, `diskInduced:54`, `axialAt:62`, `radiusAt:67`, `swirlRate:75`, `at:89`
+  tipos `TubeShape:32`, `Point:82`
+  fn `shape:49`, `diskInduced:54`, `axialAt:62`, `radiusAt:67`, `swirlRate:75`, `at:90`
 - `core/src/modifiers/types.zig` — Tipos dos modificadores trocados com o Python (C ABI, `extern struct`; o esquema sai de `abi.zig`).
   tipos `Ground:14`, `Kind:21`, `SlipstreamParam:30`, `PairParam:39`, `Modifier:50`
 - `core/src/modifiers/wingpair.zig` — Interferência entre duas asas ligadas (tandem, biplano) no modelo de faixas.
-  fn `active:29`, `induced:44`
+  fn `active:29`, `induced:45`
 
 **core/src/optim/**
 

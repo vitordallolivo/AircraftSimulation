@@ -325,9 +325,9 @@ Pelo Zig, direto (é o que o AeroDrive faz):
 
 ```zig
 const core = @import("aerosim");
-var p: core.types.Params = .{};               // painéis, motores, trem... preenchidos por quem chama
-core.aero.init(&p);                   // eixos de cada painel e ângulo de estol
-const o = core.aero.compute(&p, Vr, w, rcg, h, d);   // o.F, o.M (corpo, momentos no CG)
+var params: core.types.Params = .{};          // painéis, motores, trem... preenchidos por quem chama
+core.aero.init(&params);                      // eixos de cada painel e ângulo de estol
+const out = core.aero.compute(&params, Vr, body_rates, rcg, height, deflections);   // out.F, out.M (corpo, no CG)
 ```
 
 Testes: `python -m ziglang build test -Dgrupo=physics` (dentro de `core/`).

@@ -12,24 +12,24 @@
 const std = @import("std");
 const fmath = @import("../math/fmath.zig");
 
-/// θ_f (rad) do flape simples cujo τ (com o fator k) é `tau`: bisseção em [0, π], onde τ cai com θ_f
-pub fn thetaOf(tau: f64, k: f64) f64 {
-    const t = @min(@max(tau / k, 0.0), 1.0);
+/// θ_f (rad) do flape simples cujo τ (com o fator empírico `factor`) é `tau`: bisseção em [0, π], onde τ cai com θ_f
+pub fn thetaOf(tau: f64, factor: f64) f64 {
+    const target = @min(@max(tau / factor, 0.0), 1.0);
     var lo: f64 = 0.0;
     var hi: f64 = fmath.pi;
     for (0..48) |_| {
         const mid = 0.5 * (lo + hi);
-        const tm = 1.0 - (mid - @sin(mid)) / fmath.pi;
-        if (tm > t) lo = mid else hi = mid;
+        const tau_mid = 1.0 - (mid - @sin(mid)) / fmath.pi;
+        if (tau_mid > target) lo = mid else hi = mid;
     }
     return 0.5 * (lo + hi);
 }
 
 /// dΔc_m,c/4 / dδ (por rad) da faixa com efetividade `tau`; 0 sem comando
-pub fn cmDelta(tau: f64, k: f64) f64 {
-    if (tau <= 0 or k <= 0) return 0.0;
-    const th = thetaOf(tau, k);
-    return -k * 0.5 * @sin(th) * (1.0 - @cos(th));
+pub fn cmDelta(tau: f64, factor: f64) f64 {
+    if (tau <= 0 or factor <= 0) return 0.0;
+    const theta = thetaOf(tau, factor);
+    return -factor * 0.5 * @sin(theta) * (1.0 - @cos(theta));
 }
 
 const testing = std.testing;
