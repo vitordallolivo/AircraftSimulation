@@ -304,14 +304,14 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/control/**
 
 - `core/src/control/autopilot.zig` — Piloto automático.
-  tipos `Cmd:17`, `Input:31`
-  fn `qTurn:53`, `commands:59`
+  tipos `Cmd:18`, `Input:33`
+  fn `qTurn:56`, `commands:63`
 - `core/src/control/autotune.zig` — Ajuste automático dos ganhos do piloto automático, igual para qualquer avião.
-  tipos `Targets:20`, `Result:30`
-  fn `fromLinear:52`, `tune:143`
+  tipos `Targets:21`, `Result:32`
+  fn `fromLinear:56`, `tune:147`
 - `core/src/control/guidance.zig` — Percurso (corrente de segmentos) e guiamento lateral.
-  tipos `Guide:14`
-  fn `guide:28`, `rejoinSegment:92`
+  tipos `Guide:15`
+  fn `guide:38`, `rejoinSegment:102`
 
 **core/src/geometry/**
 
