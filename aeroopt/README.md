@@ -1,13 +1,11 @@
-# aeroopt/ — o otimizador do projeto
+# AeroOpt
 
 Este é o terceiro braço do AircraftSimulation. O `aerosim` é onde se projeta um avião e o `aerodrive` é onde se voa
-nele. O aeroopt procura, entre muitos aviões possíveis, o que faz mais pontos numa competição. Você diz o que pode
+nele. O AeroOpt procura, entre muitos aviões possíveis, o que faz mais pontos dado uma regra. Você diz o que pode
 mudar no avião (envergadura, área, perfis, motor, hélice, tipo de avião...), entre que limites e com que restrições, e
-escolhe a pontuação do regulamento. Ele monta os aviões, confere se cada um cabe, voa e decola, dá a nota de cada um
-e mostra qual ganhou e por quê.
+escolhe a pontuação do regulamento. 
 
-O aeroopt não tem física própria. Cada avião é montado pelas mesmas etapas do aerosim e as contas rodam no núcleo em
-Zig (`core/`). Aqui só se organiza a busca e se mostra o resultado.
+Resumindo ele apenas gera um monte de aeronaves e otimiza elas!
 
 ## A janela
 
@@ -39,11 +37,6 @@ No mapa, cada ponto é um avião. Os eixos podem ser qualquer variável do probl
 
 ![O mapa dos aviões](../docs/img/aeroopt/mapa.png)
 
-Embaixo do mapa fica o caminho da busca, em coordenadas paralelas: cada avião é uma linha que passa por um eixo por
-variável livre e pelo MTOW, o PV e a nota. Num mapa se veem duas grandezas por vez; aqui aparecem todas, e as linhas
-das boas notas que se juntam num trecho de um eixo mostram onde está a região boa. A cor é a geração, e a linha preta
-é o melhor até ali, na ordem em que os aviões foram avaliados. "Exportar HTML…" grava a mesma figura numa página que
-abre sem internet.
 
 Embaixo da tabela aparecem os gráficos do melhor avião até aqui: a decolagem, a aerodinâmica, a estabilidade e o
 desempenho. Eles servem para conferir de relance se o avião que está ganhando faz sentido, e não ficam gravados.
@@ -106,48 +99,43 @@ muda na busca.
 
 ### Geometria
 
-O avião é montado a partir da configuração e girado em torno da roda principal, como na rotação da decolagem. Ele
-passa se o ângulo de rotação fica abaixo do ângulo em que o cone de cauda encosta no chão e se a ponta da hélice
-continua acima do chão. Se não passa, o trem desce e a conta se refaz; se nem assim, o avião sai aqui ("bate no
-chão"). É a conta mais barata da fila, então vem primeiro.
+O avião é montado a partir da configuração e girado em torno da roda principal, para ver a cauda não bate no chão.
 
 ![A rotação na pista](../docs/img/fig/aeroopt_geometria.png)
 
 ### Voa?
 
-Aqui se confere a estabilidade e o controle, e se escolhe a cauda. A cauda não é um tipo de avião: é o que faz uma
-asa voar. O bloco testa cada cauda marcada (convencional, em H, em V e sem cauda) na asa da configuração e fica com a
-que voa e, entre as que voam, com a que decola na pista levando mais carga paga. Com os comandos ligados, ele mexe
-também no profundor (ou no elevon) e no motor, e exige que o comando rode o avião na pista antes da velocidade de
-sair do chão, que a bequilha leve peso parado e que o avião aponte o nariz para o vento.
+Roda-se então a área de estabilidade e controle, inicialmente não tem como saber se existe uma cauda otima, então nesta região
+do projeto se faz uma otimização junto a decolagem a fim de avaliar qual a melhor cauda para esta aeronave, fora as otimizações
+já existentes em desempenho. 
 
-Cada coisa que falta vira um termo da violação $V$, e cada termo vale 1 na fronteira de "bem fora". Assim C_nβ,
-trim e peso na bequilha, que têm unidades diferentes, somam numa escala só:
+Porém uma falha não deve aqui imediatamente negar o individuo então cria-se um termo da violação $V$, onde basicamente
+podemos ter multiplas falhas. 
 
 $$V(x) = \sum_t v_t(x), \qquad V = 0 \iff \text{voa}$$
 
-Dois pontos se comparam pelas regras de Deb (Computer Methods in Applied Mechanics and Engineering 186, 2000, seção
+Usa-se as regras de Deb (Computer Methods in Applied Mechanics and Engineering 186, 2000, seção
 3, a conferir no PDF): quem voa ganha de quem não voa; entre dois que voam ganha o de maior MTOW; entre dois que não
 voam ganha o que viola menos. A busca então anda primeiro para onde o avião passa a voar, e só depois procura MTOW.
 
 $$\text{rank}(x) = \begin{cases} (1,\ \text{MTOW}) & V(x) = 0 \\ (0,\ -V(x)) & V(x) > 0 \end{cases}$$
 
-Cada termo sabe o que falhou (deriva pequena, carga paga fora do lugar, profundor que não trima), e por isso sabe
-quais variáveis consertam a falha. A busca guiada pela falha mexe só nelas, e um bandido escolhe, filho a filho, o
-operador que mais tem rendido. No gráfico da direita, com doze variáveis em que só duas consertam as duas falhas, a
+E cada individuo sabe onde falha (deriva pequena, carga paga fora do lugar, profundor que não trima), e por isso sabe
+quais variáveis precisamos consertar. Ou seja torna-se uma busca guiada pela falha. No gráfico da direita, com doze variáveis em que só duas consertam as duas falhas, a
 guiada voa sempre e com poucos pontos; as gerações às cegas variam muito de uma semente para outra, e às vezes nem
 chegam a voar.
 
 ![As regras de Deb e a violação até voar](../docs/img/fig/aeroopt_voa.png)
 
-No tandem o bloco confere mais três coisas: a asa da frente leva de 40 a 60 % da sustentação no cruzeiro, a de trás
-fica de 3 a 5 cordas atrás e o desnível fica em até 1 corda. As faixas são do Kryvokhatko e de uma discussão de
-fórum, ainda a conferir no PDF.
+Então observa-se que a tendência é que esses individuos consigam mais rapidamente se recuperar das falhas por conta que sabemos o que falha ( OBS: 
+certos tipos de aeronaves precisam de falhas especificas, então por exemplo tandem e canard tem suas próprias falhas)
 
-A busca do bloco parte do avião como está e para no primeiro ponto que voa. Se esse ponto de partida cai numa região
-ruim, a rodada fica nela. Para isso há dois ajustes, desligados por padrão: o início por hipercubo latino, que
-espalha a população inicial pela faixa toda, e as partidas, que seguem até achar vários pontos que voam, longe uns
-dos outros, e ficam com o que decola com mais carga.
+A busca do bloco parte de um avião como está e para no primeiro ponto que voa. Se esse ponto de partida cai numa região
+ruim, a rodada fica nela. Para isso há dois ajustes, desligados por padrão: o início por Hipercubo Latino, que basicamente
+espalha a população inicial pela faixa toda e as Partidas, que seguem até achar vários pontos que voam, longe uns
+dos outros, e ficam com o que decola com mais peso. 
+
+Para se informar melhor sobre todos os tipos de otimização possíveis olhe em [`core/src/optim/README.md`](../core/src/optim/README.md).
 
 ### Superfícies
 
