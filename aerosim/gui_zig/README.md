@@ -31,7 +31,8 @@ O gráfico (`plot.zig`) faz curvas e nuvens de pontos dentro de um cartão, com 
 dos números ficam em `numbers.zig`, que não abre janela e por isso tem teste.
 
 As janelas por cima da tela ficam em `dialogs.zig`: o seletor de arquivo, que navega pelas pastas e mostra só as
-extensões pedidas, para abrir (um clique no arquivo) ou para salvar (com o nome digitado), e a pergunta de um texto
+extensões pedidas (a pasta se digita no campo de cima, com `~` para a pessoal, ou se escolhe pelos atalhos
+Exemplos, Pasta pessoal, Pasta atual e Raiz), para abrir (um clique no arquivo) ou para salvar (com o nome digitado), e a pergunta de um texto
 curto. Enquanto uma delas está aberta, a tela de baixo não recebe o clique nem a roda. "Abrir avião" e "Salvar
 .json" do cabeçalho, os botões de Perfis e os menus que vierem usam as mesmas; salvar, por enquanto, grava o avião
 como foi lido, porque a edição ainda não existe.
@@ -63,8 +64,10 @@ e o NACA 4412, e não do avião aberto. A lista fica à esquerda, todos os candi
 acrescentam um NACA pelo código ("+ NACA..."), um `.dat` ("+ .dat...", Selig ou Lednicer), um perfil só de números
 ("+ só parâmetros") ou ligam a polar exportada pelo XFLR5 ou pelo XFOIL ao perfil selecionado ("+ polar XFLR5...").
 "Remover" tira o selecionado. Os arquivos se escolhem num seletor dentro da própria janela (`src/ui/dialogs.zig`),
-que navega pelas pastas e mostra só as extensões pedidas; arrastar o arquivo para a janela também funciona. Embaixo
-da lista vem o editor do selecionado: de onde vem a polar ("modelo" ou "arquivo") e os números do perfil (a1,
+que navega pelas pastas do computador e mostra só as extensões pedidas; arrastar o arquivo para a janela também funciona. Embaixo
+da lista, "polar por" abre um menu de marcar com os métodos de polar do selecionado: o modelo do simulador e a polar
+do arquivo (quando há uma lida); pode ser mais de um, e cada um vira uma curva. A asa usa a do arquivo se ela estiver
+marcada. As mudanças só refazem os gráficos no "Rodar". Depois vem o editor dos números do perfil (a1,
 $\alpha_{L0}$, $c_{l,\max}$, $c_{d0}$, $c_m$). Um perfil sem $\alpha_{L0}$ ou $c_m$ ganha os dois pela teoria de perfil
 fino sobre a linha média do contorno. "Usar na asa" leva o selecionado para a raiz da asa em Projetar.
 

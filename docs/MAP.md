@@ -675,10 +675,10 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui_zig/src/**
 
 - `aerosim/gui_zig/src/airfoil_stage.zig` — A etapa Perfis: os perfis candidatos, a polar 2D de cada um e os números que a asa vai usar, como a página
-  tipos `Source:21`, `Candidate:24`, `Outcome:35`, `default_numbers:83`
-  fn `alphas:42`, `evaluate:49`, `fromAircraft:62`, `fromOutline:90`, `aircraftCandidates:102`, `maxCamber:117`, `wingSection:164`, `isNaca4:172`, `readPolarText:182`
+  tipos `Source:21`, `Candidate:26`, `Outcome:38`, `default_numbers:100`
+  fn `alphas:45`, `evaluate:52`, `setMethods:57`, `evaluateWith:66`, `fromAircraft:79`, `fromOutline:107`, `aircraftCandidates:119`, `maxCamber:134`, `wingSection:181`, `isNaca4:189`, `readPolarText:199`
 - `aerosim/gui_zig/src/airfoil_tab.zig` — A aba Aerodinâmica → Perfis: os perfis candidatos e a polar 2D de cada um, como a página Perfis da GUI em
-  tipos `AirfoilTab:39`
+  tipos `AirfoilTab:47`
 - `aerosim/gui_zig/src/analyze_tab.zig` — A aba Aerodinâmica → Analisar: as asas do avião aberto, como a simulação "Asas" do aerosim em Python. À
   tipos `AnalyzeTab:39`
 - `aerosim/gui_zig/src/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
@@ -704,8 +704,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Args:13`
   fn `parseArgs:24`, `run:56`
 - `aerosim/gui_zig/src/ui/dialogs.zig` — As janelas por cima da tela: o seletor de arquivo (navega pelas pastas e mostra só as extensões pedidas; para
-  tipos `FilePicker:15`, `TextPrompt:181`
-  fn `button:219`
+  tipos `FilePicker:15`, `TextPrompt:213`
+  fn `button:272`
 - `aerosim/gui_zig/src/ui/form.zig` — O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador e escolha. A tela descrev
   tipos `Kind:12`, `Field:21`, `Group:34`, `Form:44`
 - `aerosim/gui_zig/src/ui/numbers.zig` — Números na tela sem janela (testáveis): o texto curto de um campo e as marcas "redondas" dos eixos.

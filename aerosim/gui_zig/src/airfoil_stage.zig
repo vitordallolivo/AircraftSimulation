@@ -17,16 +17,19 @@ pub const max_candidates = 16;
 /// os ângulos da etapa: de −16° a 20°, de meio em meio grau (o `ALPHAS` da GUI)
 pub const alpha_count = 73;
 
-/// de onde vem a polar
+/// de onde vem a polar: o modelo do simulador (reta e estol) ou a polar medida de um arquivo do XFLR5/XFOIL
 pub const Source = enum { modelo, arquivo };
+/// os métodos marcados de um candidato (pode ser mais de um: cada um vira uma curva)
+pub const Sources = std.EnumSet(Source);
 
 /// um perfil candidato
 pub const Candidate = struct {
     name: []const u8,
-    origin: []const u8, // "avião", "biblioteca", "NACA", "polar"
+    origin: []const u8, // de onde veio o contorno: "naca", "dat", "parâmetros" (o `kind` da GUI)
     numbers: section.Airfoil,
     outline: []const [2]f64 = &.{}, // vazio: só parâmetros (ou só a polar)
-    source: Source = .modelo,
+    source: Source = .modelo, // o que segue para a asa
+    methods: Sources = Sources.initOne(.modelo), // o que entra nos gráficos
     measured: ?*const section.Polar = null, // a polar do arquivo, em ordem de α
     measured_reynolds: f64 = std.math.nan(f64),
 };
@@ -45,10 +48,24 @@ pub fn alphas() [alpha_count]f64 {
     return out;
 }
 
-/// a polar e os números de `candidate`
+/// a polar e os números de `candidate` pela fonte que segue para a asa
 pub fn evaluate(candidate: *const Candidate, out: *Outcome) void {
+    evaluateWith(candidate, candidate.source, out);
+}
+
+/// os métodos marcados; a asa usa a polar do arquivo se ela estiver marcada (e existir), senão o modelo
+pub fn setMethods(candidate: *Candidate, methods: Sources) void {
+    var chosen = methods;
+    if (candidate.measured == null) chosen.remove(.arquivo);
+    if (chosen.count() == 0) chosen.insert(.modelo);
+    candidate.methods = chosen;
+    candidate.source = if (chosen.contains(.arquivo)) .arquivo else .modelo;
+}
+
+/// a polar e os números de `candidate` pela fonte `method`
+pub fn evaluateWith(candidate: *const Candidate, method: Source, out: *Outcome) void {
     const angles = alphas();
-    if (candidate.source == .arquivo and candidate.measured != null) {
+    if (method == .arquivo and candidate.measured != null) {
         section.interpolate(candidate.measured.?, &angles, &out.polar);
     } else {
         section.modelPolar(candidate.numbers, &angles, &out.polar);

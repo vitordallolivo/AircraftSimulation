@@ -24,6 +24,10 @@ pub const FilePicker = struct {
     arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator),
     scroll: f32 = 0,
     chosen: [std.fs.max_path_bytes]u8 = undefined,
+    examples: [std.fs.max_path_bytes]u8 = undefined, // a pasta de começo (o atalho "Exemplos")
+    examples_len: usize = 0,
+    path_text: [std.fs.max_path_bytes:0]u8 = [_:0]u8{0} ** std.fs.max_path_bytes, // a pasta digitada
+    editing_path: bool = false,
     saving: bool = false, // salvar: o nome se digita (um arquivo da lista preenche o nome)
     file_name: [128:0]u8 = [_:0]u8{0} ** 128,
     editing_name: bool = false,
@@ -34,6 +38,8 @@ pub const FilePicker = struct {
         _ = widgets.format(&picker.title, "{s}", .{title});
         picker.extensions = extensions;
         if (!picker.enter(start)) _ = picker.enter(".");
+        @memcpy(picker.examples[0..picker.folder_len], picker.folder[0..picker.folder_len]);
+        picker.examples_len = picker.folder_len;
         picker.saving = false;
         picker.open = true;
     }
@@ -57,6 +63,9 @@ pub const FilePicker = struct {
         defer dir.close(io());
         @memcpy(picker.folder[0..length], buffer[0..length]);
         picker.folder_len = length;
+        picker.path_text = [_:0]u8{0} ** std.fs.max_path_bytes;
+        @memcpy(picker.path_text[0..length], buffer[0..length]);
+        picker.editing_path = false;
         _ = picker.arena.reset(.retain_capacity);
         const allocator = picker.arena.allocator();
         picker.count = 0;
@@ -101,12 +110,35 @@ pub const FilePicker = struct {
         rl.drawRectangleRec(screen, .{ .r = 20, .g = 30, .b = 50, .a = 90 });
         const box: rl.Rectangle = .{ .x = screen.x + (screen.width - 640) / 2, .y = screen.y + 60, .width = 640, .height = @min(screen.height - 120, 620) };
         const inner = widgets.card(ui, box, std.mem.sliceTo(&picker.title, 0));
-        var folder_text: [200:0]u8 = undefined;
+        // a pasta: dá para digitar outra (Enter entra nela) ou ir por um atalho
         const folder = picker.folder[0..picker.folder_len];
-        const tail = if (folder.len > 80) folder[folder.len - 80 ..] else folder;
-        theme.text(ui.fonts.mono, widgets.format(&folder_text, "{s}{s}", .{ if (folder.len > 80) "..." else "", tail }), inner.x + 10, inner.y + 4, 13, theme.colors.label);
+        const path_box: rl.Rectangle = .{ .x = inner.x + 6, .y = inner.y + 2, .width = inner.width - 12, .height = 28 };
+        if (rg.textBox(path_box, &picker.path_text, picker.editing_path)) {
+            if (picker.editing_path) {
+                var typed: [std.fs.max_path_bytes]u8 = undefined;
+                const text = std.mem.sliceTo(&picker.path_text, 0);
+                @memcpy(typed[0..text.len], text);
+                if (!picker.enter(expandHome(&typed, text.len))) picker.editing_path = false;
+            } else picker.editing_path = true;
+        }
+        const shortcuts = [_][:0]const u8{ "Exemplos", "Pasta pessoal", "Pasta atual", "Raiz /" };
+        var shortcut_x = inner.x + 6;
+        for (shortcuts, 0..) |caption, k| {
+            const shortcut_width = theme.textWidth(ui.fonts.regular, caption, 14) + 24;
+            if (button(ui, .{ .x = shortcut_x, .y = inner.y + 36, .width = shortcut_width, .height = 26 }, caption)) {
+                var target: [std.fs.max_path_bytes]u8 = undefined;
+                const path: []const u8 = switch (k) {
+                    0 => picker.examples[0..picker.examples_len],
+                    1 => home(&target),
+                    2 => ".",
+                    else => "/",
+                };
+                _ = picker.enter(path);
+            }
+            shortcut_x += shortcut_width + 8;
+        }
         const footer: f32 = if (picker.saving) 96 else 52;
-        const list: rl.Rectangle = .{ .x = inner.x + 6, .y = inner.y + 26, .width = inner.width - 12, .height = inner.height - 26 - footer };
+        const list: rl.Rectangle = .{ .x = inner.x + 6, .y = inner.y + 70, .width = inner.width - 12, .height = inner.height - 70 - footer };
         widgets.rounded(list, 6, theme.colors.background);
         // a primeira linha sobe uma pasta
         const total = @as(f32, @floatFromInt(picker.count + 1)) * row_height;
@@ -214,6 +246,27 @@ pub const TextPrompt = struct {
         return answer;
     }
 };
+
+/// a pasta pessoal ($HOME; no Windows, %USERPROFILE%), ou a atual se não houver
+fn home(buffer: []u8) []const u8 {
+    const value = std.c.getenv("HOME") orelse std.c.getenv("USERPROFILE") orelse return ".";
+    const text = std.mem.sliceTo(value, 0);
+    const length = @min(text.len, buffer.len);
+    @memcpy(buffer[0..length], text[0..length]);
+    return buffer[0..length];
+}
+
+/// "~" no começo do caminho digitado vira a pasta pessoal
+fn expandHome(typed: []u8, length: usize) []const u8 {
+    if (length == 0 or typed[0] != '~') return typed[0..length];
+    var home_buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const base = home(&home_buffer);
+    const rest_length = length - 1;
+    if (base.len + rest_length > typed.len) return typed[0..length];
+    std.mem.copyBackwards(u8, typed[base.len .. base.len + rest_length], typed[1..length]);
+    @memcpy(typed[0..base.len], base);
+    return typed[0 .. base.len + rest_length];
+}
 
 /// um botão secundário: branco, borda fina, texto azul
 pub fn button(ui: *widgets.Ui, rect: rl.Rectangle, caption: [:0]const u8) bool {

@@ -147,7 +147,9 @@ pub fn readPolar(memory: std.mem.Allocator, path: []const u8, candidate: *stage.
     const measured = try memory.create(section.Polar);
     candidate.measured_reynolds = try stage.readPolarText(text, measured);
     candidate.measured = measured;
-    candidate.source = .arquivo;
+    var methods = candidate.methods;
+    methods.insert(.arquivo);
+    stage.setMethods(candidate, methods);
 }
 
 fn lessText(_: void, a: []const u8, b: []const u8) bool {

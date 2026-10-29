@@ -4,7 +4,7 @@
 //!   <programa> [LxA]
 //!   <programa> --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME]
 //!
-//! `arquivo` vai para o `openFile` da tela (.json, .dat ou uma polar); `acao=NOME` chama `command(NOME)` da tela,
+//! `arquivo` vai para o `openFile` da tela (.json, .dat ou uma polar); `acao=NOME` (ou `acao=A,B`) chama `command` da tela para cada nome,
 //! se ela tiver (abre um diálogo para o print, por exemplo).
 const std = @import("std");
 const rl = @import("raylib");
@@ -77,8 +77,11 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     if (args.tab) |tab| {
         if (@hasDecl(@TypeOf(screen.*), "selectTab")) screen.selectTab(tab);
     }
-    if (args.action) |action| {
-        if (@hasDecl(@TypeOf(screen.*), "command")) screen.command(action);
+    if (args.action) |actions| { // acao=a,b: um comando depois do outro
+        var list = std.mem.splitScalar(u8, actions, ',');
+        while (list.next()) |action| {
+            if (@hasDecl(@TypeOf(screen.*), "command")) screen.command(action);
+        }
     }
 
     var frames: usize = 0;
