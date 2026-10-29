@@ -663,6 +663,47 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Map:7`, `Bounds:31`
 
 
+## Zig · interface do aerosim e do aeroopt (`interface/src`)
+
+**interface/src/**
+
+- `interface/src/main.zig` — A interface do aerosim e do aeroopt em Zig: abre a janela e desenha a tela pedida.
+  fn `main:49`
+- `interface/src/opt_example.zig` — Dados de exemplo da tela do aeroopt enquanto ela não roda a busca: uma rodada inventada, sempre a mesma (semente
+  tipos `Run:16`
+  fn `syntheticScore:31`, `generate:38`
+- `interface/src/tests.zig` — Os testes sem janela: números dos eixos e dos campos, a asa de exemplo no núcleo e a rodada de exemplo.
+- `interface/src/wing_example.zig` — A asa da tela Analisar enquanto a tela ainda não lê o avião aberto: uma asa trapezoidal sem enflechamento
+  tipos `Input:14`, `Curve:30`, `Result:36`
+  fn `buildParams:57`, `helmbold:91`, `chordAt:97`, `alphaList:103`, `run:115`
+
+**interface/src/screens/**
+
+- `interface/src/screens/aeroopt.zig` — A tela do aeroopt: à esquerda o problema (pontuação, variáveis, restrições e configuração, cada um num grupo
+  tipos `Screen:44`
+- `interface/src/screens/aerosim.zig` — A tela do aerosim: cabeçalho, abas das áreas, subabas da Aerodinâmica e, em Analisar, o formulário lateral, o
+  tipos `Screen:45`
+
+**interface/src/ui/**
+
+- `interface/src/ui/form.zig` — O formulário lateral: campos agrupados (cada grupo com a faixa preta e a borda laranja, abre e fecha no
+  tipos `Kind:13`, `Field:16`, `Group:29`, `Form:39`
+- `interface/src/ui/numbers.zig` — Números na tela sem janela (testáveis): o texto curto de um campo e as marcas "redondas" dos eixos.
+  tipos `Range:38`
+  fn `numberText:5`, `niceStep:21`, `decimalsFor:31`
+- `interface/src/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
+  tipos `Series:11`, `Cloud:21`, `Axes:29`
+  fn `lines:48`, `cloud:81`
+- `interface/src/ui/shapes.zig` — As formas do visual: retângulo com dois cantos cortados (cartões), paralelogramo (abas e botões inclinados) e
+  fn `cutCornerPoints:6`, `cutCorners:22`, `cutCornersTopEdge:28`, `slantedPoints:34`, `slanted:44`, `hazard:50`
+- `interface/src/ui/theme.zig` — O visual da interface (o "tema 6" escolhido no protótipo em HTML): grafite, laranja e preto, cantos cortados,
+  tipos `Fonts:86`, `Logo:130`
+  fn `hex:7`, `withAlpha:12`, `plotColor:36`, `spacing:115`, `text:120`, `textWidth:125`
+- `interface/src/ui/widgets.zig` — Os pedaços comuns das telas: o contexto de desenho (fontes, logo, mouse), o cabeçalho com a logo, a barra de
+  tipos `Ui:10`, `Status:171`
+  fn `header:83`, `tabBar:107`, `primaryButton:129`, `card:140`, `labeledCard:150`, `statusColor:161`, `tableRow:174`, `format:181`
+
+
 ## Ferramentas (`tools/`)
 
 - `tools/aeroopt.py` — Roda um problema do aeroopt (.opt.json) e mostra o resultado: o melhor ponto, as restrições e a convergência.
@@ -742,6 +783,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sim/README.md`
 - `core/src/sizing/README.md`
 - `data/README.md`
+- `interface/README.md`
 - `tests/README.md`
 - `tools/README.md`
 - `tools/aero/README.md`
