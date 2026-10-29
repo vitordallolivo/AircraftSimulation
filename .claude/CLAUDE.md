@@ -133,7 +133,7 @@ as configurações.
   - A `main` está em `v0.2.2`.
   - Cada tarefa mesclada sobe o último número (`0.2.1`, `0.2.2`…).
   - A lista inteira do tracking feita vira `0.3.0`.
-  - A `1.0` é a meta "tudo em Zig, rodando sem instalar nada" (`docs/TRACKING.md` → "Meta da 1.0"), sem data:
+  - A `1.0` é a meta "tudo no navegador, sem instalar nada" (`docs/TRACKING.md` → "Meta da 1.0"), sem data:
     nada vira release sem o dono testar cada componente.
 - **Commits** terminam com as linhas de atribuição pedidas pela sessão. Sem identificador de modelo em commit, código
   ou PR.

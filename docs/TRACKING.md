@@ -60,23 +60,44 @@ Como usar:
 - O trabalho fica numa branch só, `0.2_dev`. Cada tarefa fechada vai por PR para a `main` e para no review.
 - As tags só são criadas com o ok do dono do repositório.
 
-## Meta da 1.0: tudo em Zig, rodando sem instalar nada
+## Meta da 1.0: tudo no navegador, sem instalar nada
 
-A `1.0` é o aerosim, o aeroopt e o AeroDrive em Zig, com o mesmo código saindo de dois jeitos: um executável só para
-o PC, que roda sem Python, e uma página web que roda no navegador do PC e do celular. Em ambos, a conta é feita no
-próprio aparelho, e o site só entrega os arquivos. A ordem abaixo vai do que já dá para fazer hoje até a troca da
-interface. Cada etapa é uma tarefa do quadro quando chegar a vez dela, com plano antes e ok do dono.
+**O que se quer.** Abrir um endereço no navegador, do PC ou do celular, e ter o projeto inteiro ali, sem instalar
+nada. A primeira coisa que aparece é uma tela de seleção com cara de BIOS: fundo escuro, texto monoespaçado, uma
+lista com as três aplicações e a seleção andando pelas setas (ou pelo toque). Dela se invoca cada aplicação:
+
+- **aerosim**: dimensionar o avião e rodar as análises;
+- **aeroopt**: otimizar a configuração;
+- **AeroDrive**: voar o avião.
+
+As três leem e gravam o mesmo `.json` do avião. Um arquivo do PC do usuário entra pelo botão "Abrir" ou arrastando
+para a página. O avião fica guardado no navegador (IndexedDB), passa de uma aplicação para a outra sem baixar de novo
+e sai como `.json` pela pasta de downloads. Toda conta roda no próprio aparelho, em WebAssembly: o site só entrega os
+arquivos e, depois de carregado, funciona sem internet. O mesmo código também sai como um executável só para o PC,
+sem Python.
+
+**Por que em Zig.** O núcleo já é Zig com memória estática, o que cabe bem no WebAssembly. O que hoje impede a web é
+a parte em Python: a interface em PyQt6, os gráficos (pyqtgraph, matplotlib) e as contas que ainda não foram para o
+núcleo. Na `1.0`, os métodos que vêm de bibliotecas Python (lltdrek, ASB, optvl/AVL) ou são portados para o núcleo, ou
+ficam de fora da versão web, avisando que não estão disponíveis.
+
+**Bônus da 1.1.** Rodar essas bibliotecas Python de forma estática no WebAssembly (por exemplo com o Pyodide, ou com
+o AVL em Fortran compilado para wasm), para que a versão web tenha os mesmos métodos que a de Python.
+
+Cada etapa é uma tarefa do quadro quando chegar a vez dela, com plano antes e o ok do dono.
 
 | Etapa | O que | Depende de |
 |---|---|---|
 | **W1** | AeroDrive na web: compilar com o emscripten (`aerodrive.html`/`.js`/`.wasm`), shaders `#version 300 es`, avião de exemplo embutido, controle por toque | — |
-| **W2** | Aviões no navegador: abrir `.json` por botão ou arrastando, biblioteca guardada no navegador (IndexedDB), salvar baixando o `.json` | W1 |
-| **W3** | Publicar no GitHub Pages, com instalação na tela inicial do celular (PWA) e uso sem internet | W1 |
-| **W4** | Levar para o núcleo as contas que ainda estão em Python no aerosim e no aeroopt | — |
-| **W5** | Métodos de fora (lltdrek, ASB, optvl/AVL): portar para o núcleo ou deixar de fora das versões sem Python | W4 |
-| **W6** | Interface do aerosim e do aeroopt em Zig (raygui, Dear ImGui ou dvui, a escolher no plano), com os gráficos | W4 |
-| **W7** | Paralelismo do aeroopt na web (web workers; a página precisa dos cabeçalhos COOP/COEP) | W6 |
-| **W8** | Executável único no PC e a página web com as três partes; o dono testa cada componente → `1.0` | W2, W3, W5, W6, W7 |
+| **W2** | Aviões no navegador: abrir `.json` do PC por botão ou arrastando, biblioteca guardada no navegador (IndexedDB), salvar baixando o `.json` | W1 |
+| **W3** | Tela de seleção estilo BIOS que invoca as aplicações e passa o avião aberto entre elas | W1 |
+| **W4** | Publicar no GitHub Pages, com instalação na tela inicial do celular (PWA) e uso sem internet | W3 |
+| **W5** | Levar para o núcleo as contas que ainda estão em Python no aerosim e no aeroopt | — |
+| **W6** | Métodos de bibliotecas Python (lltdrek, ASB, optvl/AVL): portar para o núcleo ou deixar de fora da web com aviso | W5 |
+| **W7** | Interface do aerosim e do aeroopt em Zig (raygui, Dear ImGui ou dvui, a escolher no plano), com os gráficos | W5 |
+| **W8** | Paralelismo do aeroopt na web (web workers; a página precisa dos cabeçalhos COOP/COEP) | W7 |
+| **W9** | As três aplicações na página e no executável único; o dono testa cada componente → `1.0` | W2, W4, W6, W7, W8 |
+| **W10** | **1.1:** bibliotecas Python estáticas no WebAssembly (Pyodide, AVL em wasm) | W9 |
 
 ## Blocos de trabalho (ordem)
 
