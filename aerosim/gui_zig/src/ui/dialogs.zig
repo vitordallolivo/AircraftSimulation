@@ -1,5 +1,5 @@
-//! As janelas por cima da tela: o seletor de arquivo (navega pelas pastas e mostra só as extensões pedidas, o
-//! equivalente do `QFileDialog.getOpenFileName`) e a pergunta de um texto curto (o `QInputDialog.getText`). Cada
+//! As janelas por cima da tela: o seletor de arquivo (navega pelas pastas e mostra só as extensões pedidas; para
+//! abrir, o equivalente do `QFileDialog.getOpenFileName`, e para salvar, do `getSaveFileName`, com o nome digitado) e a pergunta de um texto curto (o `QInputDialog.getText`). Cada
 //! uma é uma struct com `show` para abrir e `draw` a cada quadro, que devolve a resposta uma vez, quando ela chega.
 //! Enquanto uma janela está aberta, ela fica com o clique e a roda: a tela de baixo não reage.
 const std = @import("std");
@@ -24,7 +24,9 @@ pub const FilePicker = struct {
     arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator),
     scroll: f32 = 0,
     chosen: [std.fs.max_path_bytes]u8 = undefined,
-    note: [160:0]u8 = [_:0]u8{0} ** 160,
+    saving: bool = false, // salvar: o nome se digita (um arquivo da lista preenche o nome)
+    file_name: [128:0]u8 = [_:0]u8{0} ** 128,
+    editing_name: bool = false,
 
     /// abre o seletor na pasta `start` (ou na atual, se ela não existir), mostrando as pastas e os arquivos com uma
     /// das `extensions` (".dat", ...)
@@ -32,7 +34,19 @@ pub const FilePicker = struct {
         _ = widgets.format(&picker.title, "{s}", .{title});
         picker.extensions = extensions;
         if (!picker.enter(start)) _ = picker.enter(".");
+        picker.saving = false;
         picker.open = true;
+    }
+
+    /// abre o seletor para salvar, na pasta `start`, com o nome sugerido `name`; a extensão `extensions[0]` entra
+    /// no nome se faltar
+    pub fn showSave(picker: *FilePicker, title: []const u8, start: []const u8, extensions: []const []const u8, name: []const u8) void {
+        picker.show(title, start, extensions);
+        picker.saving = true;
+        picker.editing_name = true;
+        picker.file_name = [_:0]u8{0} ** 128;
+        const length = @min(name.len, 127);
+        @memcpy(picker.file_name[0..length], name[0..length]);
     }
 
     /// entra na pasta `path` (relativa à atual do programa ou absoluta) e lê o que há nela
@@ -91,7 +105,8 @@ pub const FilePicker = struct {
         const folder = picker.folder[0..picker.folder_len];
         const tail = if (folder.len > 80) folder[folder.len - 80 ..] else folder;
         theme.text(ui.fonts.mono, widgets.format(&folder_text, "{s}{s}", .{ if (folder.len > 80) "..." else "", tail }), inner.x + 10, inner.y + 4, 13, theme.colors.label);
-        const list: rl.Rectangle = .{ .x = inner.x + 6, .y = inner.y + 26, .width = inner.width - 12, .height = inner.height - 26 - 52 };
+        const footer: f32 = if (picker.saving) 96 else 52;
+        const list: rl.Rectangle = .{ .x = inner.x + 6, .y = inner.y + 26, .width = inner.width - 12, .height = inner.height - 26 - footer };
         widgets.rounded(list, 6, theme.colors.background);
         // a primeira linha sobe uma pasta
         const total = @as(f32, @floatFromInt(picker.count + 1)) * row_height;
@@ -123,12 +138,29 @@ pub const FilePicker = struct {
                 var buffer: [std.fs.max_path_bytes]u8 = undefined;
                 const next = std.fmt.bufPrint(&buffer, "{s}/{s}", .{ folder, picker.names[row - 1] }) catch folder;
                 _ = picker.enter(next);
+            } else if (picker.saving) {
+                picker.file_name = [_:0]u8{0} ** 128;
+                const name = picker.names[row - 1];
+                @memcpy(picker.file_name[0..@min(name.len, 127)], name[0..@min(name.len, 127)]);
             } else {
                 const path = std.fmt.bufPrint(&picker.chosen, "{s}/{s}", .{ folder, picker.names[row - 1] }) catch null;
                 if (path) |chosen| {
                     picker.open = false;
                     picked = chosen;
                 }
+            }
+        }
+        if (picker.saving) {
+            theme.text(ui.fonts.regular, "nome:", inner.x + 10, box.y + box.height - 84, 14, theme.colors.label);
+            const name_box: rl.Rectangle = .{ .x = inner.x + 60, .y = box.y + box.height - 90, .width = inner.width - 70, .height = 30 };
+            if (rg.textBox(name_box, &picker.file_name, picker.editing_name)) picker.editing_name = !picker.editing_name;
+            if (widgets.primaryButton(ui, .{ .x = box.x + box.width - 250, .y = box.y + box.height - 46, .width = 110, .height = 32 }, "Salvar", std.mem.sliceTo(&picker.file_name, 0).len > 0)) {
+                const name = std.mem.sliceTo(&picker.file_name, 0);
+                const extension = if (picker.extensions.len > 0 and std.fs.path.extension(name).len == 0) picker.extensions[0] else "";
+                if (std.fmt.bufPrint(&picker.chosen, "{s}/{s}{s}", .{ folder, name, extension })) |chosen| {
+                    picker.open = false;
+                    picked = chosen;
+                } else |_| {}
             }
         }
         var extension_text: [96:0]u8 = undefined;

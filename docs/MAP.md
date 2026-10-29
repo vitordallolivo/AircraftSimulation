@@ -683,7 +683,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `AnalyzeTab:39`
 - `aerosim/gui_zig/src/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
   tipos `Triangle:14`, `Mesh:22`, `Assembly:90`
-  fn `buildMesh:55`, `load:108`, `fillAirfoilFiles:125`, `parseDat:160`, `findExample:192`
+  fn `buildMesh:55`, `load:110`, `fillAirfoilFiles:127`, `parseDat:162`, `findExample:194`
 - `aerosim/gui_zig/src/design.zig` — O projeto de dimensionamento que as etapas compartilham, como o `DesignProject` da GUI em Python
   tipos `Requirements:16`, `Design:28`
   fn `libraryFolder:125`, `readDat:136`, `readPolar:145`
@@ -703,9 +703,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui_zig/src/ui/app.zig` — O que os dois programas têm igual em volta da tela: a linha de comando, a janela e o laço de desenho, com o
   tipos `Args:13`
   fn `parseArgs:24`, `run:56`
-- `aerosim/gui_zig/src/ui/dialogs.zig` — As janelas por cima da tela: o seletor de arquivo (navega pelas pastas e mostra só as extensões pedidas, o
-  tipos `FilePicker:15`, `TextPrompt:149`
-  fn `button:187`
+- `aerosim/gui_zig/src/ui/dialogs.zig` — As janelas por cima da tela: o seletor de arquivo (navega pelas pastas e mostra só as extensões pedidas; para
+  tipos `FilePicker:15`, `TextPrompt:181`
+  fn `button:219`
 - `aerosim/gui_zig/src/ui/form.zig` — O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador e escolha. A tela descrev
   tipos `Kind:12`, `Field:21`, `Group:34`, `Form:44`
 - `aerosim/gui_zig/src/ui/numbers.zig` — Números na tela sem janela (testáveis): o texto curto de um campo e as marcas "redondas" dos eixos.

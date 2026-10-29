@@ -25,6 +25,7 @@ pub const Screen = struct {
     airfoils: airfoil_tab.AirfoilTab = .{},
     wing: wing_tab.WingTab = .{},
     design: design_mod.Design = .{}, // o projeto de dimensionamento (Perfis e Projetar)
+    files: ui_kit.dialogs.FilePicker = .{}, // abrir e salvar o avião (cabeçalho)
     assembly_view: view3d.View = .{}, // a vista 3D da Montagem
     assembly: ?assembly_mod.Assembly = null, // o avião aberto
     assembly_note: [240:0]u8 = [_:0]u8{0} ** 240,
@@ -57,7 +58,28 @@ pub const Screen = struct {
     /// um comando pelo nome (`acao=` da linha de comando, para os prints): "naca", "dat", "polar" abrem os
     /// diálogos de Perfis
     pub fn command(screen: *Screen, name: []const u8) void {
-        screen.airfoils.command(name);
+        if (std.mem.eql(u8, name, "abrir")) {
+            var buffer: [256]u8 = undefined;
+            var fixed = std.heap.FixedBufferAllocator.init(&buffer);
+            const folder = if (screen.assembly) |*opened| std.fs.path.dirname(opened.path) orelse "." else exampleFolder(fixed.allocator());
+            screen.files.show("Abrir avião (.json)", folder, &.{".json"});
+        } else if (std.mem.eql(u8, name, "salvar")) {
+            const opened = &(screen.assembly orelse {
+                _ = std.fmt.bufPrintZ(&screen.assembly_note, "nenhum avião aberto para salvar", .{}) catch {};
+                return;
+            });
+            screen.files.showSave("Salvar avião (.json)", std.fs.path.dirname(opened.path) orelse ".", &.{".json"}, std.fs.path.basename(opened.path));
+        } else screen.airfoils.command(name);
+    }
+
+    /// grava o avião aberto em `path`; enquanto não há edição, é o texto do arquivo como foi lido
+    fn save(screen: *Screen, path: []const u8) void {
+        const opened = &(screen.assembly orelse return);
+        std.Io.Dir.cwd().writeFile(io(), .{ .sub_path = path, .data = opened.source }) catch |err| {
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "não salvou '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) }) catch {};
+            return;
+        };
+        _ = std.fmt.bufPrintZ(&screen.assembly_note, "salvo em {s}", .{path}) catch {};
     }
 
     /// abre o arquivo `path`: um `.dat` ou uma polar vão para Perfis; um `.json` é o avião (Montagem)
@@ -106,7 +128,7 @@ pub const Screen = struct {
             screen.scroll = 0;
         }
         // com uma janela aberta (seletor de arquivo, pergunta), a tela de baixo não recebe o clique nem a roda
-        const modal = screen.airfoils.modalOpen();
+        const modal = screen.airfoils.modalOpen() or screen.files.open;
         const wheel = ui.wheel;
         if (modal) {
             ui.click_taken = true;
@@ -123,8 +145,9 @@ pub const Screen = struct {
         } else {
             placeholder(ui, .{ .x = 0, .y = top, .width = width, .height = height - top }, if (screen.area == 1) aero_tabs[screen.aero_tab] else areas[screen.area]);
         }
-        if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião (.json)", "Salvar .json" }, "contas no núcleo em Zig")) |_|
-            _ = std.fmt.bufPrintZ(&screen.assembly_note, "para abrir: arraste o .json para a janela; o diálogo de arquivo e o salvar entram depois", .{}) catch {};
+        if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião (.json)", "Salvar .json" }, "contas no núcleo em Zig")) |button| {
+            if (button == 0) screen.command("abrir") else screen.command("salvar");
+        }
         _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, &areas, &screen.area, 14);
         if (screen.area == 1) {
             _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, &aero_tabs, &screen.aero_tab, 13);
@@ -134,7 +157,15 @@ pub const Screen = struct {
         if (modal) {
             ui.click_taken = false;
             ui.wheel = wheel;
-            screen.airfoils.drawModal(ui, .{ .x = 0, .y = 0, .width = width, .height = height });
+            const whole: rl.Rectangle = .{ .x = 0, .y = 0, .width = width, .height = height };
+            screen.airfoils.drawModal(ui, whole);
+            const saving = screen.files.saving;
+            if (screen.files.draw(ui, whole)) |path| {
+                if (saving) screen.save(path) else {
+                    screen.openAircraft(path);
+                    screen.area = 5;
+                }
+            }
         }
     }
 
@@ -163,6 +194,12 @@ pub const Screen = struct {
         theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.assembly_note, 0), area.x + 6, area.y + area.height - 18, 12, theme.colors.muted);
     }
 };
+
+/// a pasta dos aviões de exemplo (`data/aircraft`), perto da atual
+fn exampleFolder(memory: std.mem.Allocator) []const u8 {
+    const example = assembly_mod.findExample(memory, io()) orelse return ".";
+    return std.fs.path.dirname(example) orelse ".";
+}
 
 /// a leitura de arquivos (sem threads)
 fn io() std.Io {

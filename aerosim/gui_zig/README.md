@@ -30,6 +30,12 @@ O gráfico (`plot.zig`) faz curvas e nuvens de pontos dentro de um cartão, com 
 1, 2 ou 5 vezes uma potência de dez), grade, a legenda embaixo e a barra de cores na nuvem. As contas dos eixos e
 dos números ficam em `numbers.zig`, que não abre janela e por isso tem teste.
 
+As janelas por cima da tela ficam em `dialogs.zig`: o seletor de arquivo, que navega pelas pastas e mostra só as
+extensões pedidas, para abrir (um clique no arquivo) ou para salvar (com o nome digitado), e a pergunta de um texto
+curto. Enquanto uma delas está aberta, a tela de baixo não recebe o clique nem a roda. "Abrir avião" e "Salvar
+.json" do cabeçalho, os botões de Perfis e os menus que vierem usam as mesmas; salvar, por enquanto, grava o avião
+como foi lido, porque a edição ainda não existe.
+
 A vista 3D (`view3d.zig`) segue as ideias da vista do aerosim em Python, mas desenhada aqui, com o raylib: cada
 peça na cor do tipo dela (asa azul, profundor verde, leme roxo, comando laranja), sombreada dos dois lados por uma
 luz fixa, as arestas das faixas, o chão quadriculado, os eixos do corpo (frente em vermelho, direita em verde, cima

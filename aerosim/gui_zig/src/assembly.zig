@@ -91,6 +91,8 @@ pub const Assembly = struct {
     loaded: model.Loaded,
     mesh: Mesh,
     name: [:0]const u8,
+    source: []const u8, // o texto do arquivo, como foi lido (o que "Salvar" grava enquanto não há edição)
+    path: []const u8,
 
     /// libera tudo
     pub fn deinit(assembly: *Assembly) void {
@@ -117,7 +119,7 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Di
     try fillAirfoilFiles(allocator, io, path, bytes, &loaded.ac);
     var mesh = try buildMesh(gpa, &loaded.ac, diagnosis);
     errdefer mesh.deinit();
-    return .{ .loaded = loaded, .mesh = mesh, .name = try allocator.dupeZ(u8, loaded.ac.name) };
+    return .{ .loaded = loaded, .mesh = mesh, .name = try allocator.dupeZ(u8, loaded.ac.name), .source = try allocator.dupe(u8, bytes), .path = try allocator.dupe(u8, path) };
 }
 
 /// os perfis das superfícies que o arquivo só aponta (`airfoil.path`, sem `coords`): lê o `.dat`. O caminho é
