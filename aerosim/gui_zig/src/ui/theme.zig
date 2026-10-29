@@ -221,7 +221,7 @@ pub fn textWidth(font: rl.Font, content: [:0]const u8, size: f32) f32 {
 pub const Logo = struct {
     texture: rl.Texture2D,
 
-    const png = @embedFile("../assets/albatroz.png");
+    const png = @embedFile("albatroz.png");
 
     /// carrega a logo branca (o desenho pinta com a cor pedida); precisa da janela aberta
     pub fn load() !Logo {

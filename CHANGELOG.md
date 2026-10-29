@@ -6,10 +6,12 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.4 (branch `0.2_dev`)
 
-- interface em Zig (W7, começo): pasta `interface/` com raylib e raygui, no visual escolhido (tema 6). O formulário
+- interface em Zig (W7, começo): `aerosim/gui_zig/` (com as peças comuns em `src/ui`) e `aeroopt/gui_zig/`, com
+  raylib e raygui, modo claro (padrão, concreto e aço azul) e escuro (tema 6). O formulário
   lateral sai de uma lista de campos, e o gráfico tem marcas redondas, legenda e a paleta de dez cores. No aerosim,
   Aerodinâmica → Analisar roda a varredura do núcleo numa asa trapezoidal de exemplo (linha sustentadora não linear e
-  faixas). O aeroopt mostra uma rodada de exemplo. O `tools/codemap.py` passa a mapear `interface/src`.
+  faixas). O aeroopt mostra uma rodada de exemplo. A vista da asa tem a vista de cima em escala e a de frente com um vetor de carga por faixa. O
+  `tools/codemap.py` passa a mapear as duas pastas.
 - tracking: meta da 1.0 (tudo no navegador, sem instalar nada; o Python em WebAssembly fica para a 1.1) e o quadro
   em dia com a `main` (os itens "a revisar" que já foram no PR #31 passam a "Feito (na `main`)").
 - tracking: seção "Ordem de prioridade" com a fila atual.

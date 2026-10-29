@@ -3,13 +3,14 @@
 //! lugar delas.
 const std = @import("std");
 const rl = @import("raylib");
-const theme = @import("../ui/theme.zig");
-const shapes = @import("../ui/shapes.zig");
-const widgets = @import("../ui/widgets.zig");
-const form_mod = @import("../ui/form.zig");
-const plot = @import("../ui/plot.zig");
-const numbers = @import("../ui/numbers.zig");
-const wing = @import("../wing_example.zig");
+const ui_kit = @import("ui");
+const theme = ui_kit.theme;
+const shapes = ui_kit.shapes;
+const widgets = ui_kit.widgets;
+const form_mod = ui_kit.form;
+const plot = ui_kit.plot;
+const numbers = ui_kit.numbers;
+const wing = @import("wing_example.zig");
 
 const areas = [_][:0]const u8{ "DIMENSIONAMENTO", "AERODINÂMICA", "ESTABILIDADE", "DESEMPENHO", "CARGAS", "MONTAGEM" };
 const aero_tabs = [_][:0]const u8{ "PERFIS", "PROJETAR", "ANALISAR" };
@@ -55,10 +56,11 @@ pub const Screen = struct {
     progress: f32 = 0,
     scroll: f32 = 0,
 
-    /// liga o formulário às listas da própria tela (chamar depois de pôr a tela no lugar final)
-    pub fn init(screen: *Screen) void {
+    /// liga o formulário às listas da própria tela e roda a análise uma vez (chamar com a janela aberta e a tela
+    /// já no lugar final)
+    pub fn start(screen: *Screen) void {
         screen.form = .{ .groups = &screen.groups, .fields = &screen.fields };
-        screen.setMessage("pronto: ▶ RODAR roda a varredura no núcleo", .{});
+        screen.runAnalysis();
     }
 
     fn field(screen: *Screen, id: FieldId) *form_mod.Field {
@@ -89,7 +91,7 @@ pub const Screen = struct {
 
     /// roda a varredura com os valores do formulário
     pub fn runAnalysis(screen: *Screen) void {
-        const start = rl.getTime();
+        const started = rl.getTime();
         wing.run(screen.input(), &screen.result) catch {
             screen.has_result = false;
             screen.progress = 0;
@@ -98,7 +100,7 @@ pub const Screen = struct {
         };
         screen.has_result = true;
         screen.progress = 1;
-        const elapsed_ms = (rl.getTime() - start) * 1000;
+        const elapsed_ms = (rl.getTime() - started) * 1000;
         screen.setMessage("terminado: ok — {d:.1} ms no núcleo", .{elapsed_ms});
         if (screen.field(.compare).choice != 0)
             screen.setMessage("terminado: ok — {d:.1} ms; o método em Python ainda não está ligado", .{elapsed_ms});

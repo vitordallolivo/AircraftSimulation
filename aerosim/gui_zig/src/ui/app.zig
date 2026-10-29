@@ -1,31 +1,23 @@
-//! A interface do aerosim e do aeroopt em Zig: abre a janela e desenha a tela pedida.
+//! O que os dois programas têm igual em volta da tela: a linha de comando, a janela e o laço de desenho, com o
+//! print sem interação do `--shot`.
 //!
-//!   aircraftsimulation [aerosim|aeroopt] [claro|escuro] [LxA]
-//!   aircraftsimulation --shot <saída.png> [aerosim|aeroopt] [claro|escuro] [LxA] [rolar=PIXELS]
-//!
-//! No modo --shot a tela é desenhada alguns quadros e salva numa imagem (para os prints sem interação).
+//!   <programa> [claro|escuro] [LxA]
+//!   <programa> --shot <saída.png> [claro|escuro] [LxA] [rolar=PIXELS]
 const std = @import("std");
 const rl = @import("raylib");
-const theme = @import("ui/theme.zig");
-const widgets = @import("ui/widgets.zig");
-const aerosim_screen = @import("screens/aerosim.zig");
-const aeroopt_screen = @import("screens/aeroopt.zig");
+const theme = @import("theme.zig");
+const widgets = @import("widgets.zig");
 
-pub const std_options_debug_io: std.Io = std.Io.Threaded.global_single_threaded.io();
-pub const std_options_debug_threaded_io: ?*std.Io.Threaded = std.Io.Threaded.global_single_threaded;
-
-const Program = enum { aerosim, aeroopt };
-
-const Args = struct {
-    program: Program = .aerosim,
-    mode: theme.Mode = .claro,
+pub const Args = struct {
     shot: ?[:0]const u8 = null,
+    mode: theme.Mode = .claro,
     width: i32 = 1500,
     height: i32 = 950,
     scroll: f32 = 0, // rolagem da área dos gráficos no print
 };
 
-fn parseArgs(argv: []const [:0]const u8) !Args {
+/// lê a linha de comando (o primeiro item é o nome do programa)
+pub fn parseArgs(argv: []const [:0]const u8) !Args {
     var args: Args = .{};
     var i: usize = 1;
     while (i < argv.len) : (i += 1) {
@@ -34,8 +26,6 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
             i += 1;
             if (i >= argv.len) return error.BadArgs;
             args.shot = argv[i];
-        } else if (std.meta.stringToEnum(Program, value)) |program| {
-            args.program = program;
         } else if (std.meta.stringToEnum(theme.Mode, value)) |mode| {
             args.mode = mode;
         } else if (std.mem.startsWith(u8, value, "rolar=")) {
@@ -48,31 +38,27 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
     return args;
 }
 
-/// abre a janela e desenha até fechar (ou uma foto, com --shot)
-pub fn main(init: std.process.Init) !void {
+/// abre a janela `title` e desenha `screen` até fechar (ou uma foto, com --shot); `screen` é um ponteiro para uma
+/// tela com `start()` (chamado com a janela aberta), `draw(ui, largura, altura)` e o campo `scroll`
+pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     const arena = init.arena.allocator();
     const argv = try init.minimal.args.toSlice(arena);
     const args = parseArgs(argv) catch {
-        std.debug.print("uso: aircraftsimulation [aerosim|aeroopt] [claro|escuro] [LxA]\n     aircraftsimulation --shot <saída.png> [aerosim|aeroopt] [claro|escuro] [LxA] [rolar=PIXELS]\n", .{});
+        std.debug.print("uso: {s} [claro|escuro] [LxA]\n     {s} --shot <saída.png> [claro|escuro] [LxA] [rolar=PIXELS]\n", .{ title, title });
         std.process.exit(2);
     };
     const shot = args.shot != null;
-    rl.setTraceLogLevel(.warning);
+    rl.setTraceLogLevel(.err);
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .window_resizable = true, .vsync_hint = !shot });
-    rl.initWindow(args.width, args.height, if (args.program == .aerosim) "aerosim" else "aeroopt");
+    rl.initWindow(args.width, args.height, title);
     defer rl.closeWindow();
     rl.setTargetFPS(60);
 
     theme.use(args.mode);
     var ui = try widgets.Ui.init();
     defer ui.deinit();
-    var aerosim: aerosim_screen.Screen = .{};
-    aerosim.init();
-    aerosim.runAnalysis();
-    aerosim.scroll = args.scroll;
-    var aeroopt: aeroopt_screen.Screen = .{};
-    aeroopt.init();
-    aeroopt.scroll = args.scroll;
+    screen.start();
+    screen.scroll = args.scroll;
 
     var frames: usize = 0;
     while (!rl.windowShouldClose()) : (frames += 1) {
@@ -81,10 +67,7 @@ pub fn main(init: std.process.Init) !void {
         ui.beginFrame();
         if (shot) ui.wheel = 0; // o print não rola sozinho
         rl.beginDrawing();
-        switch (args.program) {
-            .aerosim => aerosim.draw(&ui, width, height),
-            .aeroopt => aeroopt.draw(&ui, width, height),
-        }
+        screen.draw(&ui, width, height);
         rl.endDrawing();
         if (shot and frames == 3) {
             const image = try rl.loadImageFromScreen();

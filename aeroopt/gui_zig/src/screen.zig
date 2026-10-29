@@ -4,13 +4,14 @@
 //! tabela dos melhores. Por enquanto com uma rodada de exemplo (`opt_example.zig`).
 const std = @import("std");
 const rl = @import("raylib");
-const theme = @import("../ui/theme.zig");
-const shapes = @import("../ui/shapes.zig");
-const widgets = @import("../ui/widgets.zig");
-const form_mod = @import("../ui/form.zig");
-const plot = @import("../ui/plot.zig");
-const numbers = @import("../ui/numbers.zig");
-const example = @import("../opt_example.zig");
+const ui_kit = @import("ui");
+const theme = ui_kit.theme;
+const shapes = ui_kit.shapes;
+const widgets = ui_kit.widgets;
+const form_mod = ui_kit.form;
+const plot = ui_kit.plot;
+const numbers = ui_kit.numbers;
+const example = @import("opt_example.zig");
 
 const tabs = [_][:0]const u8{ "OTIMIZAR", "SENSIBILIDADE" };
 
@@ -52,8 +53,8 @@ pub const Screen = struct {
     scroll: f32 = 0,
     message: [160:0]u8 = [_:0]u8{0} ** 160,
 
-    /// liga o formulário e monta a rodada de exemplo
-    pub fn init(screen: *Screen) void {
+    /// liga o formulário e monta a rodada de exemplo (chamar com a tela já no lugar final)
+    pub fn start(screen: *Screen) void {
         screen.form = .{ .groups = &screen.groups, .fields = &screen.fields };
         example.generate(&screen.run);
         _ = std.fmt.bufPrintZ(&screen.message, "rodada de exemplo: {d} aviões, {d} gerações", .{ example.evaluation_count, example.generation_count }) catch {};
