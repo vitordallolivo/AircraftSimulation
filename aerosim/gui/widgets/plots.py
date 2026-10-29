@@ -335,7 +335,8 @@ class _PlotLoads3D(QtWidgets.QWidget):
         self.view.set_result(r, tab.get("_aircraft"))
         if r.field is not None and len(r.field.vertices):
             size = max(float(np.abs(r.field.vertices).max()) * 2.9, 2.0)
-            self.view.set_camera(distance=size, elevation=28, azimuth=-125)
+            camera = {"distance": size, "elevation": 28, "azimuth": -125, **(tab.get("_camera") or {})}  # ex.: de cima
+            self.view.set_camera(**camera)
 
 
 class LivePlots(QtWidgets.QWidget):

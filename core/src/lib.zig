@@ -9,6 +9,7 @@ pub const modifiers = @import("modifiers/mod.zig");
 pub const collision = @import("collision/collision.zig");
 pub const geometry = @import("geometry/geometry.zig");
 pub const llt = @import("loads/llt.zig");
+pub const sweep = @import("loads/sweep.zig");
 pub const vec = @import("math/vec.zig");
 pub const autotune = @import("control/autotune.zig");
 pub const linear = @import("sim/linear.zig");

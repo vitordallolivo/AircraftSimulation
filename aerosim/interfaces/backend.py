@@ -147,6 +147,12 @@ class ISimSession(ABC):
     def derived(self) -> SimSpec:
         """parâmetros como o núcleo os vê depois de `configure` (com os derivados)"""
 
+    def wing_sweep(self, V: float, alphas, owners, owner_count: int, llt: bool = True) -> dict[str, np.ndarray]:
+        """varredura das asas: cada α (rad) imposto, sem hélice; `owners[i]` é o dono do painel i (−1 fora). Devolve
+        owner_lift (α × dono, N), owner_area (m²), owner_chord (corda média, m), section_cl (α × painel) e
+        panel_span (y de cada painel, m). llt=False: as faixas da simulação"""
+        raise NotImplementedError("varredura das asas não implementada neste núcleo")
+
     @abstractmethod
     def close(self) -> None: ...
 
@@ -232,3 +238,13 @@ class ISimBackend(ABC):
     def de_select(self, pop, fit, trials, tfit) -> int:
         """a seleção da evolução diferencial: o teste que não é pior entra no lugar (muda pop e fit)"""
         raise NotImplementedError(f"{self.name}: evolução diferencial não implementada")
+
+    def wing_sweep_summary(self, owner_lift, owner_area, dynamic_pressure: float, section_cl, panel_owner,
+                           panel_span) -> dict:
+        """resumo da varredura das asas: total_cl (α), owner_cl (α × dono), peak (índice do α do C_L máximo),
+        lift_max, onset_panel (painel onde o estol começa; −1 nenhum) e onset_fraction (0 raiz, 1 ponta)"""
+        raise NotImplementedError(f"{self.name}: resumo da varredura das asas não implementado")
+
+    def reynolds(self, rho: float, V: float, chord: float, altitude: float) -> float:
+        """Re = ρ V c / μ, com μ (Sutherland) na temperatura da atmosfera padrão na `altitude` (m)"""
+        raise NotImplementedError(f"{self.name}: Reynolds não implementado")

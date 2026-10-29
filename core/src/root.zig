@@ -16,6 +16,7 @@ const aero = @import("physics/aero.zig");
 const modifiers = @import("modifiers/mod.zig");
 const collision = @import("collision/collision.zig");
 const llt = @import("loads/llt.zig");
+const sweep = @import("loads/sweep.zig");
 const fmath = @import("math/fmath.zig");
 const prop = @import("physics/propulsion.zig");
 const mass = @import("physics/mass.zig");
@@ -219,6 +220,38 @@ export fn aerosim_panel_states_llt(slot: i32, airspeed: f64, alpha: f64, beta: f
     const Vr = vec.V3{ airspeed * alpha_sc.c * beta_sc.c, airspeed * beta_sc.s, airspeed * alpha_sc.s * beta_sc.c };
     _ = llt.apply(&inst.p, Vr, .{ de, da, dr }, out[0..surf_count]);
     return panel_count;
+}
+
+/// varredura das asas em α (loads/sweep.zig): cada α (rad) imposto ao avião configurado, sem hélice e longe do chão;
+/// `owners[i]` é o dono do painel i (−1 fica de fora). Escreve a sustentação de cada dono em cada α
+/// (`alpha_count` × `owner_count`), a área e a corda média de cada dono, o c_l de cada painel em cada α e a posição y
+/// de cada painel. `method`: 0 faixas, 1 linha sustentadora. Devolve o número de painéis
+export fn aerosim_wing_sweep(slot: i32, airspeed: f64, method: i32, alphas: [*]const f64, alpha_count: usize, owners: [*]const i32, owner_count: usize, owner_lift: [*]f64, owner_area: [*]f64, owner_chord: [*]f64, section_cl: [*]f64, panel_span: [*]f64, panel_cap: usize) i32 {
+    const inst = getConfigured(slot) catch |err| return abiCode(err);
+    const panel_count: usize = @intCast(inst.p.n_surf);
+    if (panel_cap < panel_count) return abiCode(error.BadIndex);
+    const load_method = std.enums.fromInt(sweep.Method, method) orelse return abiCode(error.BadIndex);
+    sweep.sweep(&inst.p, airspeed, alphas[0..alpha_count], owners[0..panel_count], owner_count, load_method, .{
+        .owner_lift = owner_lift[0 .. alpha_count * owner_count],
+        .owner_area = owner_area[0..owner_count],
+        .owner_chord = owner_chord[0..owner_count],
+        .section_cl = section_cl[0 .. alpha_count * panel_count],
+        .panel_span = panel_span[0..panel_count],
+    }) catch |err| return abiCode(err);
+    return @intCast(panel_count);
+}
+
+/// resumo da varredura das asas (loads/sweep.zig, `summarize`): C_L de cada dono e do conjunto em cada α, C_L máximo
+/// e onde o estol começa. Não precisa de simulação configurada
+export fn aerosim_wing_sweep_summary(alpha_count: usize, owner_count: usize, panel_count: usize, owner_lift: [*]const f64, owner_area: [*]const f64, dynamic_pressure: f64, section_cl: [*]const f64, panel_owner: [*]const i32, panel_span: [*]const f64, total_cl: [*]f64, owner_cl: [*]f64, out: *types.SweepSummary) i32 {
+    const summary = sweep.summarize(owner_lift[0 .. alpha_count * owner_count], owner_area[0..owner_count], dynamic_pressure, section_cl[0 .. alpha_count * panel_count], panel_owner[0..panel_count], panel_span[0..panel_count], total_cl[0..alpha_count], owner_cl[0 .. alpha_count * owner_count]) catch |err| return abiCode(err);
+    out.* = .{ .peak = @intCast(summary.peak), .onset_panel = if (summary.onset_panel) |panel| @intCast(panel) else -1, .lift_max = summary.lift_max, .onset_fraction = summary.onset_fraction };
+    return 0;
+}
+
+/// número de Reynolds ρ V c / μ de uma corda, com μ (Sutherland) na temperatura da atmosfera padrão na `altitude` (m)
+export fn aerosim_reynolds(density: f64, airspeed: f64, chord: f64, altitude: f64) f64 {
+    return sweep.reynolds(density, airspeed, chord, altitude);
 }
 
 /// `aerosim_aero_coeffs_at` com a carga da linha sustentadora (loads/llt.zig, `coeffs`): as forças dos painéis

@@ -23,7 +23,7 @@ desenvolvido" até ser feito) · ⚠ cálculo em Python que, pela regra 2 do `.c
 | Dispositivos de ponta | ✅ ⚠ | `aero/tipdevices.py` (Trefftz em Python) | — |
 | Flape (ΔC_l, ΔC_l máx, ΔC_d, ΔC_m, comando) — prioridade | 🟡 | só deflexão fixa na incidência (`translator.py`) | T54 |
 | Linha sustentadora das cargas (enflechamento, não linear) | ✅ | `core/src/loads/llt.zig` | T55 |
-| Só as asas (uma, biplano, tandem, canard): polar, C_L máximo, início do estol, chapas de ponta, Reynolds | ✅ | `manager/simulations/wings.py` | T89 |
+| Só as asas (uma, biplano, tandem, canard; da Montagem ou da sprint): varredura no núcleo, C_L máximo, início do estol, vista 3D, comparação dos métodos, chapas de ponta, Reynolds | ✅ | `manager/simulations/wings.py`, `core/src/loads/sweep.zig` | T89 |
 | Arrasto por componente | ⬜ | — | T11 |
 | Reynolds no núcleo | ⬜ | — | T10 |
 | Trimagem com esteira e tubo desviado | ⬜ | modifier `esteira.disco` | T08 |

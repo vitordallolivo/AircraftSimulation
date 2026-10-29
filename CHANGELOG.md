@@ -34,10 +34,13 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   do seu perfil com estol, e o sistema de Phillips e Snyder é resolvido por Newton a partir da solução linear. Mostra
   onde o estol começa e para quanto a carga satura. Depois do estol, viscosidade artificial (Chattot) e continuação em
   pseudo-tempo deixam a carga suave e convergida. Desligada por padrão: o voo e o AeroDrive ficam iguais.
-- aerodinâmica (T89): subaba Asas. Analisa só as superfícies marcadas (uma asa, biplano, tandem, canard), sem
-  trimar, sem fuselagem e sem hélice, como no túnel: C_L do conjunto e de cada superfície em α, C_L máximo, onde o
-  estol começa, a carga ao longo da envergadura e o Reynolds de cada superfície. Chapas de ponta opcionais. Usa a
-  linha sustentadora não linear por padrão e compara com outro método.
+- aerodinâmica (T89): subaba Asas, a simulação de aerodinâmica completa de um conjunto de asas (uma asa, biplano,
+  tandem, canard), sem trimar, sem fuselagem e sem hélice, como no túnel. Roda com o avião da Montagem ou com as asas
+  guardadas na sprint, mesmo sem fuselagem e sem massa. Mostra o C_L do conjunto e de cada superfície em α, o C_L
+  máximo, onde o estol começa, a carga ao longo da envergadura, a vista 3D e de cima do que se simula, o Reynolds de
+  cada superfície e as polares de todos os métodos do Avião montado nas superfícies escolhidas. Chapas de ponta
+  opcionais. A varredura em α é do núcleo (`core/src/loads/sweep.zig`), numa chamada, igual ao laço em Python e cerca
+  de dez vezes mais rápida.
 - celular: no primeiro toque a página vai para a tela cheia e trava deitada; em pé aparece "gire o celular"; o jogo
   acompanha o tamanho da página (tela cheia, barra do navegador, giro).
 - celular, segunda rodada (testada pelo vitor num Galaxy): o jogo desenha numa área de no mínimo 640 px de altura e

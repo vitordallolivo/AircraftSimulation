@@ -9,7 +9,8 @@ trimagem e o AeroDrive ficam iguais.
 O README começa explicando por que esta pasta existe. Depois apresenta o método de Phillips e Snyder, que é o padrão,
 e o de Goates e Hunsaker, uma correção ligável para asas enflechadas e para voo com derrapagem. Depois vem a versão não
 linear, também ligável, em que cada faixa estola pela curva do seu perfil. Em seguida vêm o cache
-que deixa a conta rápida, os limites do método, os testes, como validar e as referências. No fim, como chamar.
+que deixa a conta rápida, a varredura das asas em α (`sweep.zig`, a conta da subaba Asas), os limites do método, os
+testes, como validar e as referências. No fim, como chamar.
 
 ## Por que existe
 
@@ -300,6 +301,54 @@ Ainda dá para ganhar tempo trocando a ordem das somas, o que muda o último dí
 semi-infinito por fórmula fechada (o 1º termo da eq. 3 de Goates e Hunsaker), uma perna por nó no Phillips e Snyder
 ($`n + 1`$ pernas em vez de $`2n`$) e SIMD no Biot–Savart.
 
+## Varredura das asas em α (`sweep.zig`)
+
+Aqui se analisa um conjunto de asas como num túnel de vento: uma asa sozinha, um biplano, um tandem ou uma asa com
+canard, sem trimar, sem fuselagem e sem hélice. É a conta da subaba Asas da Aerodinâmica. Antes, o Python chamava
+`aerosim_panel_states_llt` uma vez por α, montava as distribuições e somava a sustentação de cada superfície. Com
+dezenas de α e uma sessão por superfície refinada, isso levava segundos, e o somatório, o $`C_L`$ máximo e o início do
+estol ficavam em Python. A varredura faz tudo isso no núcleo, numa chamada, com o mesmo resultado.
+
+`sweep` recebe os α (em radianos) e um "dono" para cada painel: o índice da superfície a que ele pertence, ou −1 para
+o que fica de fora da conta (a deriva e as placas de ponta). Em cada α, com β = 0, comandos em zero e longe do chão,
+os painéis saem das faixas (`aero.computeTrace`) e, se pedido, a carga sai da linha sustentadora (`apply`), linear ou
+não linear conforme `Params.llt_nonlinear`. A saída é a sustentação $`L_k`$ de cada dono em cada α, a área $`S_k`$ e a
+corda média aerodinâmica de cada dono, o $`c_l`$ de cada painel em cada α e a posição $`y`$ de cada painel.
+
+A corda média aerodinâmica de um dono sai das faixas dele, cada uma com área $`S_i`$ e corda $`c_i`$:
+
+```math
+\bar c_k = \frac{\sum_{i \in k} S_i\, c_i}{\sum_{i \in k} S_i}
+```
+
+que é a forma discreta de $`\bar c = \int c^2\,dy / \int c\,dy`$, porque $`S_i = c_i\, \Delta y_i`$ (Raymer,
+*Aircraft Design: A Conceptual Approach*, seção 7.3 — a conferir no PDF).
+
+`summarize` tira daí o $`C_L`$ de cada dono, na área dele, e o do conjunto, na soma das áreas, com a pressão dinâmica
+$`q = \tfrac12 \rho V^2`$:
+
+```math
+C_{L,k} = \frac{L_k}{q\, S_k}, \qquad C_L = \frac{\sum_k L_k}{q \sum_k S_k}
+```
+
+O $`C_L`$ máximo é o maior valor do conjunto na varredura. O estol começa no painel cujo $`c_l`$ mais cai do α do
+pico para o α seguinte. A posição dele é dada como fração da maior distância $`|y|`$ entre os painéis do mesmo dono
+(0 na raiz, 1 na ponta). Se o pico é o último α, não há início de estol: o método não tem estol ou falta varrer mais.
+
+`reynolds` dá o número de Reynolds de uma corda, $`Re = \rho V c / \mu`$. A viscosidade $`\mu`$ vem da lei de
+Sutherland, com $`\mu_0 = 1{,}716 \times 10^{-5}`$ Pa·s, $`T_0 = 273{,}15`$ K e $`S = 110{,}4`$ K (White, *Viscous
+Fluid Flow*, 3ª ed., eq. 1-36 e tabela 1-2 — a conferir no PDF):
+
+```math
+\mu = \mu_0 \left(\frac{T}{T_0}\right)^{3/2} \frac{T_0 + S}{T + S}
+```
+
+A temperatura é a da atmosfera padrão na altitude-densidade do avião, $`T = 288{,}15 - 0{,}0065\, h`$ (ICAO, *Manual
+of the ICAO Standard Atmosphere*, Doc 7488 — a conferir no PDF).
+
+Como cada superfície é refinada sozinha até o limite de painéis do núcleo (`aerosim/aero/span_loads.py`, `_fit`), o
+Python chama a varredura uma vez por superfície refinada, com todos os α, e junta os donos.
+
 ## Limites conhecidos
 
 - **Quinas (raiz de asa com diedro ou enflechamento):** ali a linha sustentadora de Phillips e Snyder é singular. O
@@ -341,6 +390,11 @@ y(t) = y_0 + (y_1 - y_0)\,\sin\frac{\pi t}{2}
   chega ao estol antes da ponta; com e sem o cache, o mesmo resultado bit a bit; desligada por padrão.
 - Viscosidade: o trecho antes do estol fica igual; depois do estol a carga é suave e o $`C_L`$ com 24 e 48 faixas fica
   perto; sem ela, as faixas estolam salteadas.
+- Varredura (`sweep.zig`): a sustentação de cada dono é a soma das faixas dele, igual à conta painel a painel; a área e
+  a corda média saem das faixas; dono fora da faixa e vetor curto viram erro.
+- Resumo: na asa retangular com a linha sustentadora não linear, o $`C_L`$ máximo fica abaixo do $`c_{l,max}`$ do perfil
+  e o estol começa na raiz; com o pico no último α, não há início de estol.
+- Reynolds: a viscosidade de Sutherland ao nível do mar padrão e o Re de uma corda, com o número esperado no teste.
 
 Em `tests/tools/test_aero_perfis.py`: o $`C_{L\alpha}`$ e o $`C_{l\beta}`$ de Goates e Hunsaker contra o MachUpX nas quatro
 asas de teste, com a tolerância e os números esperados no teste.
@@ -382,6 +436,8 @@ Em Python (`tests/aero/test_span_loads.py`):
 - Katz, J. e Plotkin, A., *Low-Speed Aerodynamics*, 2ª ed., Cambridge, 2001, cap. 10. Segmento de vórtice reto.
 - Vatistas, G. H., Kozel, V. e Mih, W. C., *A simpler model for concentrated vortices*, Experiments in Fluids 11,
   1991. Núcleo de Scully.
+- White, F. M., *Viscous Fluid Flow*, 3ª ed., McGraw-Hill, 2006, eq. 1-36. Lei de Sutherland (a conferir no PDF).
+- ICAO, *Manual of the ICAO Standard Atmosphere*, Doc 7488. Temperatura da atmosfera padrão (a conferir no PDF).
 
 Os PDFs não ficam no repositório (regra 7 do `.claude/CLAUDE.md`): só a citação.
 
@@ -410,3 +466,29 @@ mesmos argumentos de `aerosim_aero_coeffs_at` (taxas p, q, r; altura sobre o ch�
 dos momentos). Ele faz a conta da simulação (`aero.computeTrace`) e troca só as forças dos painéis pelas de `apply`,
 então a fuselagem, o $`c_m`$ das seções, o efeito solo e a esteira continuam os da simulação; o $`C_{Di}`$ sai NaN. No Python,
 `session.aero_coeffs_llt(...)`, e `method="faixas"` dá a carga plana da simulação.
+
+A varredura das asas sai de `aerosim_wing_sweep` (os α, o dono de cada painel e se é a linha sustentadora), o resumo de
+`aerosim_wing_sweep_summary` e o Reynolds de `aerosim_reynolds`. No Python, `method.sweep(...)` de qualquer método de
+carga (`ILoadMethod`; no núcleo, esta varredura), `backend.wing_sweep_summary(...)` e `backend.reynolds(...)`:
+
+```python
+import numpy as np
+from aerosim.aero import load_method
+from aerosim.backend.zig import ZigBackend
+from aerosim.manager.simulations.wings import wings_only
+from aerosim.model.templates import conventional
+from aerosim.model.universal import build_model
+
+backend = ZigBackend()
+ac = wings_only(conventional(), [0, 1])                     # a asa e a EH, sem fuselagem e sem hélice
+alphas = np.arange(0.0, 22.0, 2.0)
+sweep = load_method(backend, "llt_nl").sweep(build_model(ac), 12.0, alphas, ac.environment.rho, ["asa", "EH"])
+q = 0.5 * ac.environment.rho * 12.0 ** 2
+r = backend.wing_sweep_summary(sweep.owner_lift, sweep.owner_area, q, sweep.section_cl, sweep.panel_owner,
+                               sweep.panel_span)
+print(r["lift_max"], alphas[r["peak"]], r["onset_fraction"])
+print(backend.reynolds(ac.environment.rho, 12.0, sweep.owner_chord[0], 0.0))
+```
+
+Para acrescentar uma grandeza ao resumo, ela entra em `summarize` (com um teste em `sweep.zig`) e no `SweepSummary`
+da ABI, e o Python lê o campo novo pelo esquema.

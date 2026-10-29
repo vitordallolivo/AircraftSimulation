@@ -59,9 +59,10 @@ pub const sim = struct {
     pub const trim = @import("sim/trim.zig");
 };
 
-/// linha sustentadora (cargas ao longo da envergadura)
+/// linha sustentadora (cargas ao longo da envergadura) e a varredura das asas em α
 pub const loads = struct {
     pub const llt = @import("loads/llt.zig");
+    pub const sweep = @import("loads/sweep.zig");
 };
 
 /// dimensionamento inicial (mini-MDO)

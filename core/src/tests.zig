@@ -17,7 +17,7 @@ comptime {
     }
 }
 
-// physics: atmosfera, aerodinâmica, propulsão, trem, massas, terreno, modificadores, colisão, linha sustentadora
+// physics: atmosfera, aerodinâmica, propulsão, trem, massas, terreno, modificadores, colisão, linha sustentadora, varredura das asas
 comptime {
     if (wanted("physics")) {
         _ = @import("physics/atmosphere.zig");
@@ -29,6 +29,7 @@ comptime {
         _ = @import("modifiers/mod.zig");
         _ = @import("collision/collision.zig");
         _ = @import("loads/llt.zig");
+        _ = @import("loads/sweep.zig");
     }
 }
 

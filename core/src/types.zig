@@ -417,6 +417,14 @@ pub const PanelState = extern struct {
     ex: [3]f64 = .{ 0, 0, 0 }, // direção da corda, para a frente (corpo; o centro `r` fica a 25 % da corda)
 };
 
+/// resumo da varredura das asas (loads/sweep.zig, `summarize`) na fronteira da ABI
+pub const SweepSummary = extern struct {
+    peak: i32 = 0, // índice do α do C_L máximo do conjunto
+    onset_panel: i32 = -1, // painel onde o estol começa; −1: nenhum (o pico é o último α)
+    lift_max: f64 = 0, // C_L máximo do conjunto
+    onset_fraction: f64 = 0, // |y| do painel / maior |y| do mesmo dono (0 raiz, 1 ponta)
+};
+
 /// medidas acumuladas de uma corrida (o "relatório" de eventos)
 pub const Events = extern struct {
     tR: f64 = -1,

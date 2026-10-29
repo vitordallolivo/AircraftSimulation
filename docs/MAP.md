@@ -37,7 +37,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/aero/service.py` — Polar da aeronave para quem precisa dela, com cache (a mesma pergunta não roda de novo).
   `signature:34`, `polar_key:43`, `clear_cache:80`, `solve:87`, `remember:112`, `aircraft_polar:117`
 - `aerosim/aero/span_loads.py` — Carga aerodinâmica ao longo de cada superfície num ponto de operação: velocidade, α, β, comandos e a rotação de
-  `class LoadCase:37`, `class SurfaceLoad:54`, `class PropState:86`, `class SpanLoads:102`, `refine_surface:149`, `refine_all:173`, `prepare:235`, `class StripLoadMethod:263`, `class CoreLoadMethod:294`, `compute:369`, `to_result:382`
+  `class LoadCase:37`, `class SurfaceLoad:54`, `class PropState:86`, `class SpanLoads:102`, `refine_surface:149`, `refine_all:173`, `prepare:235`, `class StripLoadMethod:263`, `class CoreLoadMethod:294`, `compute:411`, `to_result:424`
 - `aerosim/aero/tipdevices.py` — Dispositivos de ponta de asa pelo arrasto induzido mínimo no plano de Trefftz.
   `trace:40`, `optimal_loading:68`, `span_efficiency:104`, `raymer_endplate:111`, `raymer_oswald:116`, `device_study:121`, `model_trace:167`, `model_efficiency:196`, `devices_wetted_area:207`
 - `aerosim/aero/xflr5_import.py` — Polar 3D exportada pelo XFLR5 (análise de avião: LLT, VLM1/VLM2 ou painéis), lida como mais um método da
@@ -53,7 +53,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/backend/zig/abi.py` — Monta as estruturas ctypes a partir do esquema que o núcleo Zig exporta.
   `class AbiMismatch:22`, `fnv1a64:26`, `check:35`, `class FieldInfo:47`, `class StructInfo:55`, `class Schema:63`, `parse:74`, `write:130`, `read:154`
 - `aerosim/backend/zig/backend.py` — Implementação de ISimBackend com o núcleo em Zig (libaerosim, via ctypes).
-  `lib_path:24`, `build:47`, `class CoreError:74`, `class ZigSession:212`, `class ZigBackend:467`
+  `lib_path:24`, `build:47`, `class CoreError:74`, `class ZigSession:216`, `class ZigBackend:486`
 - `aerosim/backend/zig/geometry.py` — Tradutor da checagem de geometria: o modelo universal vira as peças simples do núcleo (`core/src/geometry`),
   `scene:114`, `report:165`, `class ZigGeometry:191`
 - `aerosim/backend/zig/translator.py` — Tradutor modelo universal -> núcleo Zig (SimSpec: dicionário com os campos das structs extern).
@@ -91,7 +91,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/design/power.py` — Etapa Motores e montagem: onde ficam os motores (e por consequência a bateria, a carga e o trem) e o
   `class PowerParams:35`, `class AircraftCandidate:78`, `motor_counts:88`, `assemble:123`, `ground_pitch:309`, `trimmed_clmax:317`, `thrust_trim:338`, `thrust_of:458`, `motor_prop_spec:486`, `performance:505`, `trim_drag:558`, `design_point:580`
 - `aerosim/design/project.py` — O projeto da sprint: requisitos, regras e o que cada etapa guardou (perfis, asas, conjuntos, aviões).
-  `rg_sae:31`, `class DesignProject:41`, `is_project_file:182`, `next_name:194`
+  `rg_sae:31`, `class DesignProject:41`, `is_project_file:193`, `next_name:205`
 - `aerosim/design/registry.py` — Registro de grandezas do projeto: o que dá para medir, restringir ou variar.
   `class Quantity:25`, `fmt:71`, `class Constraint:78`, `default_constraints:106`, `active:118`, `checks:122`, `class Input:138`, `class Variable:167`, `default_variables:179`, `get_input:187`, `set_input:192`, `wing_values:200`, `aircraft_values:206`, `sae_constraints:232`, `bounds_from_constraints:243`, `check_bounds:264`
 - `aerosim/design/results.py` — Cada etapa como um `SimResult` (séries, resumo, diagnóstico) e os gráficos dela (`PlotSpec`): a GUI
@@ -126,7 +126,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/tabs/config_tab.py` — Aba de configuração em três colunas:
   `mount_choices:56`, `class ConfigTab:68`, `info_html:1150`
 - `aerosim/gui/tabs/simulation_tab.py` — Aba genérica de uma simulação: formulário gerado pelos ParamSpec, botões rodar/parar,
-  `class SimulationTab:46`, `class TableInput:424`, `export_result:566`
+  `class SimulationTab:46`, `class TableInput:426`, `export_result:568`
 - `aerosim/gui/widgets/__init__.py`
 - `aerosim/gui/widgets/aircraft_panel.py` — O avião da sprint nas abas: barra para trocar entre os aviões abertos (◀ nome ▶, + variante,
   `class FleetBar:14`, `class AircraftPanel:73`, `summary_line:119`
@@ -139,7 +139,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/widgets/param_slider.py` — Slider + campo numérico sincronizados, e um formulário automático para dataclasses.
   `class ParamSlider:41`, `class NumberField:109`, `class DataclassForm:280`
 - `aerosim/gui/widgets/plots.py` — Gráficos da aba (pyqtgraph) montados a partir das PlotSpec da simulação.
-  `tex:39`, `is_angle:57`, `class LivePlots:341`, `format_value:443`
+  `tex:39`, `is_angle:57`, `class LivePlots:342`, `format_value:444`
 - `aerosim/gui/widgets/save_check.py` — Antes de salvar um avião: a lista de verificação (`aerosim.design.checklist`) como caixas de seleção só de
   `class SaveCheckDialog:19`, `confirm_save:80`
 - `aerosim/gui/widgets/view3d.py` — Visualização 3D da aeronave (pyqtgraph.opengl) com seleção e arraste de componentes.
@@ -153,13 +153,13 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/interfaces/aircraft_source.py` — Interface "Aircraft Data": de onde vem (e para onde vai) a aeronave.
   `class IAircraftSource:17`, `class ICatalogSource:29`
 - `aerosim/interfaces/backend.py` — Interface da camada Sim (núcleo numérico).
-  `class RunStatus:26`, `class TrimKind:40`, `class LogChunk:48`, `class ISimSession:73`, `class ISimBackend:160`
+  `class RunStatus:26`, `class TrimKind:40`, `class LogChunk:48`, `class ISimSession:73`, `class ISimBackend:166`
 - `aerosim/interfaces/executor.py` — Contrato de quem roda uma função em muitos itens independentes: em série, em linhas de execução (threads) ou em
   `class Outcome:23`, `class IExecutor:33`
 - `aerosim/interfaces/geometry.py` — Contrato da checagem de geometria do avião montado: se as peças cabem juntas, antes da aerodinâmica.
   `class GeometryParams:16`, `class GeometryReport:28`, `class IGeometryCheck:46`
 - `aerosim/interfaces/loads.py` — Entrada padrão das análises de carga aerodinâmica: o que os gráficos de carga e a vista 3D aceitam.
-  `label:48`, `class SpanDistribution:54`, `class VectorLayer:68`, `class SurfaceField:77`, `class LoadResult:95`, `class LoadPoint:119`, `class ILoadMethod:137`
+  `label:48`, `class SpanDistribution:54`, `class VectorLayer:68`, `class SurfaceField:77`, `class LoadResult:95`, `class LoadPoint:119`, `class WingSweep:138`, `owner_of:152`, `class ILoadMethod:161`
 - `aerosim/interfaces/optim.py` — Contratos do aeroopt (o otimizador): o problema, a pontuação, o avaliador e o solver.
   `class OptVariable:32`, `class OptConstraint:43`, `class OptProblem:52`, `class OptResult:92`, `class IScoring:98`, `class IEvaluator:112`, `class ISolver:124`, `class StageItem:134`, `class IStage:144`, `class IFailureDiagnosis:162`
 - `aerosim/interfaces/project_store.py` — Interface da biblioteca de aeronaves do usuário ("meus aviões").
@@ -167,7 +167,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/interfaces/result_io.py` — SimResult ⇄ dicionário de JSON (para guardar no projeto o que já rodou e mostrar ao abrir sem rodar de novo).
   `result_to_dict:92`, `result_from_dict:101`
 - `aerosim/interfaces/simulation.py` — Interface de uma simulação (plugin do Simulation Manager) e do próprio manager.
-  `class ParamSpec:34`, `class PlotSpec:54`, `class Check:76`, `class SimResult:89`, `class CancelledError:99`, `class RunContext:104`, `class ISimulation:126`, `class ISimulationManager:170`
+  `class ParamSpec:34`, `class PlotSpec:54`, `class Check:76`, `class SimResult:89`, `class CancelledError:99`, `class RunContext:104`, `class ISimulation:126`, `class ISimulationManager:174`
 - `aerosim/interfaces/translator.py` — Tradutores: modelo universal (`aerosim.model.universal.AircraftModel`) <-> formato de cada solver.
   `class IModelTranslator:21`
 
@@ -190,7 +190,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   `class TakeoffResult:50`, `pitch_control:69`, `judge:76`, `evaluate:140`, `optimize:183`
 - `aerosim/manager/simulations/__init__.py` — Simulações disponíveis (uma aba cada na GUI). Para adicionar outra: crie uma classe
 - `aerosim/manager/simulations/aerodynamics.py` — Aba Aerodinâmica — polares e derivadas a partir da geometria, com o lltdrek (linha
-  `resolve_cg:31`, `class AerodynamicsSimulation:40`
+  `resolve_cg:31`, `compare_solvers:40`, `class AerodynamicsSimulation:79`
 - `aerosim/manager/simulations/base.py` — Base comum das simulações: prepara a aeronave (calibração) e roda casos em paralelo.
   `floats:16`, `class SimulationBase:25`
 - `aerosim/manager/simulations/climb.py` — Subida em regime: para cada V, nivela (checkpoint) e pede gradientes crescentes a
@@ -215,8 +215,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   `thrust_curves:12`, `class ThrustSimulation:25`
 - `aerosim/manager/simulations/turn.py` — Curvas niveladas: raio mínimo por velocidade.
   `class TurnSimulation:21`
-- `aerosim/manager/simulations/wings.py` — Asas: a polar e a carga só das superfícies escolhidas (uma asa, um biplano, um tandem, asa e canard), sem trimar,
-  `lifting_surfaces:45`, `wings_only:50`, `class WingsSimulation:66`
+- `aerosim/manager/simulations/wings.py` — Asas: a aerodinâmica só das superfícies escolhidas (uma asa, um biplano, um tandem, asa e canard), sem trimar, sem
+  `sprint_wings:60`, `lifting_surfaces:66`, `strip_aircraft:71`, `wings_only:82`, `sprint_aircraft:96`, `class WingsSimulation:112`
 
 ## Python · `aerosim/model`
 
@@ -284,7 +284,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
-  tipos `math:10`, `physics:18`, `modifiers:30`, `collision:40`, `control:45`, `sim:52`, `loads:63`, `sizing:68`, `optim:80`, `geometry:94`, `util:99`
+  tipos `math:10`, `physics:18`, `modifiers:30`, `collision:40`, `control:45`, `sim:52`, `loads:63`, `sizing:69`, `optim:81`, `geometry:95`, `util:100`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
@@ -293,11 +293,11 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/opt.zig` — Otimizações em avaliação (`-Dopt`): cada uma é um bit, desligado por padrão (ver core/OTIMIZACOES.md).
   tipos `Opt:5`
 - `core/src/root.zig` — Interface C ABI do núcleo (o que o Python chama via ctypes).
-  fn `abiCode:48`
-  **ABI (75 exports)** `aerosim_abi_version`, `aerosim_schema`, `aerosim_probe_ground`, `aerosim_probe_slipstream`, `aerosim_aero_coeffs_thrust`, `aerosim_aero_coeffs_at`, `aerosim_tube_panel_hits`, `aerosim_tube_point_hits`, `aerosim_prop_state`, `aerosim_panel_states`, `aerosim_panel_states_llt`, `aerosim_aero_coeffs_llt`, `aerosim_schema_hash`, `aerosim_acquire`, `aerosim_release`, `aerosim_params`, `aerosim_params_reset`, `aerosim_configure`, `aerosim_reset_ground`, `aerosim_reset_air`, `aerosim_run`, `aerosim_events`, `aerosim_time`, `aerosim_snapshot_size`, `aerosim_snapshot_save`, `aerosim_snapshot_load`, `aerosim_mass_props`, `aerosim_aero_coeffs`, `aerosim_aero_coeffs_ex`, `aerosim_linearize`, `aerosim_autotune`, `aerosim_prop_point`, `aerosim_trim`, `aerosim_performance`, `aerosim_envelope`, `aerosim_envelope_curve`, `aerosim_simple_perf`, `aerosim_bench_math`, `aerosim_bench_dynamics`, `aerosim_fast_math`, `aerosim_expr_check`, `aerosim_expr_eval`, `aerosim_ground_runs`, `aerosim_ground_mtow`, `aerosim_motor_prop_thrust`, `aerosim_sizing_eval`, `aerosim_sizing_optimize`, `aerosim_sizing_name`, `aerosim_sizing_defaults`, `aerosim_geometry_check`, `aerosim_ga_init`, `aerosim_ga_next`, `aerosim_cma_init`, `aerosim_cma_ask`, `aerosim_cma_tell`, `aerosim_de_init`, `aerosim_de_trials`, `aerosim_de_select`, `aerosim_local_fit`, `aerosim_rbf_fit`, `aerosim_rbf_eval`, `aerosim_lhs`, `aerosim_repair_step`, `aerosim_eps_level`, `aerosim_eps_worse`, `aerosim_bandit_state_len`, `aerosim_bandit_init`, `aerosim_bandit_pick`, `aerosim_bandit_update`, `aerosim_normative`, `aerosim_lem_box`, `aerosim_box_sample`, `aerosim_sens_tolerance`, `aerosim_morris_design`, `aerosim_morris_effects`
+  fn `abiCode:49`
+  **ABI (78 exports)** `aerosim_abi_version`, `aerosim_schema`, `aerosim_probe_ground`, `aerosim_probe_slipstream`, `aerosim_aero_coeffs_thrust`, `aerosim_aero_coeffs_at`, `aerosim_tube_panel_hits`, `aerosim_tube_point_hits`, `aerosim_prop_state`, `aerosim_panel_states`, `aerosim_panel_states_llt`, `aerosim_wing_sweep`, `aerosim_wing_sweep_summary`, `aerosim_reynolds`, `aerosim_aero_coeffs_llt`, `aerosim_schema_hash`, `aerosim_acquire`, `aerosim_release`, `aerosim_params`, `aerosim_params_reset`, `aerosim_configure`, `aerosim_reset_ground`, `aerosim_reset_air`, `aerosim_run`, `aerosim_events`, `aerosim_time`, `aerosim_snapshot_size`, `aerosim_snapshot_save`, `aerosim_snapshot_load`, `aerosim_mass_props`, `aerosim_aero_coeffs`, `aerosim_aero_coeffs_ex`, `aerosim_linearize`, `aerosim_autotune`, `aerosim_prop_point`, `aerosim_trim`, `aerosim_performance`, `aerosim_envelope`, `aerosim_envelope_curve`, `aerosim_simple_perf`, `aerosim_bench_math`, `aerosim_bench_dynamics`, `aerosim_fast_math`, `aerosim_expr_check`, `aerosim_expr_eval`, `aerosim_ground_runs`, `aerosim_ground_mtow`, `aerosim_motor_prop_thrust`, `aerosim_sizing_eval`, `aerosim_sizing_optimize`, `aerosim_sizing_name`, `aerosim_sizing_defaults`, `aerosim_geometry_check`, `aerosim_ga_init`, `aerosim_ga_next`, `aerosim_cma_init`, `aerosim_cma_ask`, `aerosim_cma_tell`, `aerosim_de_init`, `aerosim_de_trials`, `aerosim_de_select`, `aerosim_local_fit`, `aerosim_rbf_fit`, `aerosim_rbf_eval`, `aerosim_lhs`, `aerosim_repair_step`, `aerosim_eps_level`, `aerosim_eps_worse`, `aerosim_bandit_state_len`, `aerosim_bandit_init`, `aerosim_bandit_pick`, `aerosim_bandit_update`, `aerosim_normative`, `aerosim_lem_box`, `aerosim_box_sample`, `aerosim_sens_tolerance`, `aerosim_morris_design`, `aerosim_morris_effects`
 - `core/src/tests.zig` — Todos os testes do núcleo, por grupo. `zig build test` roda tudo; `-Dgrupo=math` roda só um grupo e
 - `core/src/types.zig` — Estruturas trocadas com o Python (C ABI, `extern struct`).
-  tipos `Surface:29`, `PropUnit:64`, `Gear:108`, `Tank:124`, `Segment:140`, `Event:162`, `Pad:166`, `Payload:175`, `Environment:186`, `Takeoff:198`, `Pilot:216`, `Autopilot:226`, `AeroTable:275`, `LltCache:308`, `Params:322`, `PanelState:401`, `Events:421`, `LogRow:463`, `AeroCoeffs:577`, `PropPoint:592`, `MassProps:604`, `TrimPoint:616`, `PerfRow:633`
+  tipos `Surface:29`, `PropUnit:64`, `Gear:108`, `Tank:124`, `Segment:140`, `Event:162`, `Pad:166`, `Payload:175`, `Environment:186`, `Takeoff:198`, `Pilot:216`, `Autopilot:226`, `AeroTable:275`, `LltCache:308`, `Params:322`, `PanelState:401`, `SweepSummary:421`, `Events:429`, `LogRow:471`, `AeroCoeffs:585`, `PropPoint:600`, `MassProps:612`, `TrimPoint:624`, `PerfRow:641`
 
 **core/src/collision/**
 
@@ -328,6 +328,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/loads/llt.zig` — Linha sustentadora numérica (vórtices em ferradura) para a distribuição de carga ao longo da envergadura.
   tipos `Curve:79`, `Node:265`
   fn `sectionSlope:67`, `sectionLift:83`, `stallAngle:116`, `segment:128`, `horseshoe:145`, `surfaceNodes:176`, `prepare:347`, `apply:464`, `compute:604`, `coeffs:636`
+- `core/src/loads/sweep.zig` — Varredura das asas em α (subaba Asas da Aerodinâmica): só as superfícies escolhidas, sem trimar, sem fuselagem e
+  tipos `Method:27`, `Output:33`, `Summary:84`
+  fn `sweep:49`, `summarize:93`, `isaTemperature:135`, `airViscosity:141`, `reynolds:150`
 
 **core/src/math/**
 
@@ -702,7 +705,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 75 testes em 11 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 66 testes em 11 arquivo(s)
+- `tests/manager` — 69 testes em 11 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)

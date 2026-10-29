@@ -132,6 +132,10 @@ class ISimulation(ABC):
     level: str = "sprint"   # "sprint": entra no ciclo rápido; "detalhado": estudo mais fundo (fica para depois)
     detailed: tuple[str, ...] = ()   # campos do formulário que são do nível detalhado (o resto é sprint)
     show_aircraft: bool = False      # a aba mostra o avião em 3D (com a troca entre aviões abertos)
+    needs_aircraft: bool = True      # False: roda mesmo com o avião vazio ou sem massa (ex.: só as asas da sprint)
+    # o que as abas compartilham (o mesmo dict de RunContext.shared; o manager liga ao registrar): o formulário pode
+    # depender dele (ex.: as asas guardadas na sprint, em shared["sprint"])
+    shared: dict | None = None
 
     def level_of(self, p: "ParamSpec") -> str:
         """nível de um campo: o dele, se marcado; senão detalhado se estiver em `detailed`, senão o da simulação"""

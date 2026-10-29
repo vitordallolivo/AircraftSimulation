@@ -365,6 +365,48 @@ class CoreLoadMethod(StripLoadMethod):
                     done.add(sm.name)
         return out, notes
 
+    def sweep(self, model, V, alphas, rho, owners):
+        """a varredura das asas pelo núcleo (`core/src/loads/sweep.zig`): uma chamada por superfície refinada, com
+        todos os α de uma vez"""
+        from aerosim.backend.zig.translator import panel_owners
+        from aerosim.interfaces.loads import WingSweep, owner_of
+        from aerosim.model.universal import build_model
+        ac = model.aircraft
+        alphas = np.asarray(alphas, float)
+        n_o = len(owners)
+        lift = np.zeros((len(alphas), n_o))
+        area, chord = np.zeros(n_o), np.zeros(n_o)
+        cls, own, span, done = [], [], [], set()
+        limit = self.backend.schema.limits["surfaces"]
+        targets = [i for i, x in enumerate(ac.surfaces) if x.enabled] if self.refine else []
+        jobs = [(i, _fit(ac, i, limit, self.llt)) for i in targets] + [(None, ac)]
+        for idx, a_ac in jobs:
+            m = build_model(a_ac)
+            panel_owner = []
+            for name, k in panel_owners(m):
+                sm = m.surfaces[k]
+                o = owner_of(sm.name, owners)
+                ok = (o >= 0 and o not in done and sm.role != "device" and not sm.vertical
+                      and (idx is None or sm.index == idx))
+                panel_owner.append(o if ok else -1)
+            active = sorted({o for o in panel_owner if o >= 0})
+            if not active:
+                continue
+            with self.backend.session_for(m, overrides=self.overrides or None) as s:
+                r = s.wing_sweep(V, np.radians(alphas), panel_owner, n_o, llt=self.llt)
+            cols = [j for j, o in enumerate(panel_owner) if o >= 0]
+            for o in active:
+                lift[:, o] = r["owner_lift"][:, o]
+                area[o], chord[o] = r["owner_area"][o], r["owner_chord"][o]
+                done.add(o)
+            cls.append(r["section_cl"][:, cols])
+            own.append(np.asarray(panel_owner, np.int32)[cols])
+            span.append(r["panel_span"][cols])
+        return WingSweep(alphas, list(owners), lift, area, chord,
+                         np.hstack(cls) if cls else np.zeros((len(alphas), 0)),
+                         np.concatenate(own) if own else np.zeros(0, np.int32),
+                         np.concatenate(span) if span else np.zeros(0))
+
 
 def compute(backend, ac, case: LoadCase | None = None) -> SpanLoads:
     """a carga de cada superfície do avião `ac` no caso `case` (com os modificadores do avião), pelo método

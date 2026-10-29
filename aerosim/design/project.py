@@ -92,6 +92,17 @@ class DesignProject:
     def wing(self, name: str) -> WingCandidate | None:
         return next((w for w in self.wings if w.name == name), None)
 
+    def wing_surface(self, name: str):
+        """a asa guardada `name` como superfície do avião (bordo de ataque da raiz em x = 0), com o perfil ajustado no
+        Reynolds dela, como a etapa Asa mostra; None se não existe"""
+        from .wing import analyze
+        cand = self.wing(name)
+        if cand is None:
+            return None
+        surface = analyze(cand, self.requirements, self.rules)["surface"]
+        surface.name = name
+        return surface
+
     def set(self, name: str) -> SetCandidate | None:
         return next((s for s in self.sets if s.name == name), None)
 

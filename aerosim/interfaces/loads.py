@@ -134,6 +134,30 @@ class LoadPoint:
     notes: list[str] = _field(default_factory=list)
 
 
+@dataclass
+class WingSweep:
+    """a varredura das asas em α (subaba Asas): o que cada método entrega para o resumo do núcleo
+    (`ISimBackend.wing_sweep_summary`). Um "dono" é uma superfície horizontal escolhida; os painéis são as faixas de
+    todos os donos, na ordem do método"""
+    alpha: np.ndarray                          # graus
+    owners: list[str]                          # nome de cada dono
+    owner_lift: np.ndarray                     # (α, dono): sustentação (N)
+    owner_area: np.ndarray                     # (dono): área (m²)
+    owner_chord: np.ndarray                    # (dono): corda média aerodinâmica (m)
+    section_cl: np.ndarray                     # (α, painel): c_l local
+    panel_owner: np.ndarray                    # (painel): índice do dono
+    panel_span: np.ndarray                     # (painel): posição ao longo da envergadura (m)
+
+
+def owner_of(name: str, owners: list[str]) -> int:
+    """índice do dono de uma distribuição pelo nome (igual, senão o nome mais longo que começa o dela, para "asa de
+    cima" não cair em "asa"); −1 se nenhum"""
+    if name in owners:
+        return owners.index(name)
+    best = max((o for o in owners if name.startswith(o)), key=len, default=None)
+    return owners.index(best) if best is not None else -1
+
+
 class ILoadMethod(ABC):
     """um método de carga aerodinâmica ao longo das superfícies"""
     name: str = ""
@@ -152,3 +176,30 @@ class ILoadMethod(ABC):
     @abstractmethod
     def compute(self, model, point: LoadPoint) -> LoadResult:
         """a carga do modelo universal `model` no ponto `point`"""
+
+    def sweep(self, model, V: float, alphas, rho: float, owners: list[str]) -> WingSweep:
+        """a varredura das asas: cada α (graus) imposto, sem hélice, só as superfícies `owners`. Padrão: um
+        `compute` por α; o núcleo faz a varredura inteira numa chamada"""
+        alphas = np.asarray(alphas, float)
+        surf = {s.name: s for s in model.aircraft.surfaces}
+        lift = np.zeros((len(alphas), len(owners)))
+        rows, panel_owner, panel_span = [], None, None
+        for a_i, a in enumerate(alphas):
+            res = self.compute(model, LoadPoint(V=V, alpha=float(a), rho=rho, props=[], props_on=False))
+            cl, own, span = [], [], []
+            for d in res.distributions:
+                k = owner_of(d.surface, owners)
+                if k < 0 or d.role == "device" or d.vertical:
+                    continue
+                lift[a_i, k] += d.integral("L")
+                cl.append(np.asarray(d.fields.get("cl", np.full(len(d.s), np.nan)), float))
+                own.append(np.full(len(d.s), k))
+                span.append(np.asarray(d.s, float))
+            rows.append(np.concatenate(cl) if cl else np.zeros(0))
+            if panel_owner is None:
+                panel_owner = np.concatenate(own).astype(np.int32) if own else np.zeros(0, np.int32)
+                panel_span = np.concatenate(span) if span else np.zeros(0)
+        n = min((len(r) for r in rows), default=0)
+        return WingSweep(alphas, list(owners), lift, np.array([surf[o].area for o in owners]),
+                         np.array([surf[o].mac for o in owners]), np.array([r[:n] for r in rows]).reshape(len(rows), n),
+                         panel_owner[:n], panel_span[:n])
