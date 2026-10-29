@@ -12,7 +12,7 @@ const widgets = ui_kit.widgets;
 const form_mod = ui_kit.form;
 const plot = ui_kit.plot;
 const stage = @import("airfoil_stage.zig");
-const airfoil_tab = @import("airfoil_tab.zig");
+const design_mod = @import("design.zig");
 
 const wing_line = core.wing_line;
 
@@ -27,8 +27,8 @@ const default_fields = [_]form_mod.Field{
     .{ .label = "dimensionar por", .group = planform_group, .kind = .choice, .choices = "área;corda" },
     .{ .label = "área", .unit = "m²", .group = planform_group, .number = 0.85, .minimum = 0.05, .maximum = 5 },
     .{ .label = "corda da raiz", .unit = "m", .group = planform_group, .number = 0.35, .minimum = 0.03, .maximum = 3 },
-    .{ .label = "afilamento", .group = planform_group, .number = 0.6, .minimum = 0.2, .maximum = 1 },
-    .{ .label = "trecho retangular", .group = planform_group, .number = 0.4, .minimum = 0, .maximum = 1 },
+    .{ .label = "afilamento", .group = planform_group, .number = 1, .minimum = 0.2, .maximum = 1 },
+    .{ .label = "trecho retangular", .group = planform_group, .number = 1, .minimum = 0, .maximum = 1 },
     .{ .label = "enflechamento (c/4)", .unit = "°", .group = planform_group, .number = 0, .minimum = -10, .maximum = 45 },
     .{ .label = "torção na ponta", .unit = "°", .group = planform_group, .number = -1, .minimum = -8, .maximum = 4 },
     .{ .label = "α de cruzeiro (fuselagem)", .unit = "°", .group = planform_group, .number = 0, .minimum = -4, .maximum = 8 },
@@ -40,16 +40,17 @@ const default_fields = [_]form_mod.Field{
     .{ .label = "massa da asa por área", .unit = "kg/m²", .group = conditions_group, .number = 1.1, .minimum = 0.1, .maximum = 6 },
 };
 
-const max_choices = stage.max_candidates + 1;
+const max_choices = design_mod.max_airfoils * 2;
 
 pub const WingTab = struct {
-    groups: [3]form_mod.Group = .{ .{ .title = "Planta (trapézio)" }, .{ .title = "Perfis (da aba Perfis)" }, .{ .title = "Condições de projeto" } },
+    groups: [3]form_mod.Group = .{ .{ .title = "Planta (trapézio)" }, .{ .title = "Perfis (de Perfis e da biblioteca)" }, .{ .title = "Condições de projeto" } },
     fields: [default_fields.len]form_mod.Field = default_fields,
     form: form_mod.Form = .{ .groups = &.{}, .fields = &.{} },
     root_choices: [max_choices * 64:0]u8 = [_:0]u8{0} ** (max_choices * 64),
     tip_choices: [max_choices * 64 + 32:0]u8 = [_:0]u8{0} ** (max_choices * 64 + 32),
     candidates: [max_choices]*const stage.Candidate = undefined, // na ordem das escolhas
     candidate_count: usize = 0,
+    design: *design_mod.Design = undefined,
     seen_version: u32 = std.math.maxInt(u32),
     result: wing_line.Result = .{},
     has_result: bool = false,
@@ -75,25 +76,57 @@ pub const WingTab = struct {
         _ = std.fmt.bufPrintZ(&tab.message, fmt, args) catch {};
     }
 
-    /// refaz as escolhas de perfil quando a lista da aba Perfis muda (raiz padrão: o primeiro perfil do avião)
-    pub fn syncAirfoils(tab: *WingTab, airfoils: *const airfoil_tab.AirfoilTab) void {
-        if (airfoils.version == tab.seen_version and tab.form.fields.len > 0) return;
-        tab.seen_version = airfoils.version;
+    /// liga a aba ao projeto (as escolhas de perfil, as condições e a asa em desenho)
+    pub fn attach(tab: *WingTab, design: *design_mod.Design) void {
+        tab.design = design;
+        tab.syncDesign();
+    }
+
+    /// refaz as escolhas de perfil quando a lista de Perfis muda (os perfis do projeto e a biblioteca); a raiz é a
+    /// que "Usar na asa" escolheu
+    fn syncDesign(tab: *WingTab) void {
+        const design = tab.design;
+        if (design.version == tab.seen_version) return;
+        tab.seen_version = design.version;
+        const old_tip = if (tab.tip_used) std.mem.sliceTo(&tab.tip_name, 0) else "";
+        var tip_keep: [64]u8 = undefined;
+        @memcpy(tip_keep[0..old_tip.len], old_tip);
         tab.candidate_count = 0;
         var root_writer: std.Io.Writer = .fixed(&tab.root_choices);
         var tip_writer: std.Io.Writer = .fixed(&tab.tip_choices);
         tip_writer.writeAll("= raiz") catch {};
-        for (airfoils.pool[0..airfoils.pool_count]) |*candidate| tab.addChoice(candidate, &root_writer, &tip_writer);
-        if (airfoils.naca_code != 0) tab.addChoice(&airfoils.naca, &root_writer, &tip_writer);
+        for (design.airfoils[0..design.airfoil_count]) |*candidate| tab.addChoice(candidate, &root_writer, &tip_writer);
+        for (design.library[0..design.library_count]) |*candidate| {
+            if (design.find(candidate.name) == null) tab.addChoice(candidate, &root_writer, &tip_writer);
+        }
         tab.root_choices[root_writer.end] = 0;
         tab.tip_choices[tip_writer.end] = 0;
-        const count: i32 = @intCast(tab.candidate_count);
         tab.field(.root_airfoil).choices = tab.root_choices[0..root_writer.end :0];
         tab.field(.tip_airfoil).choices = tab.tip_choices[0..tip_writer.end :0];
-        tab.field(.root_airfoil).choice = std.math.clamp(tab.field(.root_airfoil).choice, 0, @max(count - 1, 0));
-        tab.field(.tip_airfoil).choice = std.math.clamp(tab.field(.tip_airfoil).choice, 0, count);
+        tab.field(.root_airfoil).choice = @intCast(tab.indexOf(design.rootAirfoil()) orelse 0);
+        tab.field(.tip_airfoil).choice = if (tab.indexOf(tip_keep[0..old_tip.len])) |k| @intCast(k + 1) else 0;
+        const wing = design.wing;
+        const requirements = design.requirements;
+        tab.field(.span).number = wing.span;
+        tab.field(.size_by).choice = @intFromBool(wing.size_by_chord);
+        tab.field(.area).number = wing.area;
+        tab.field(.root_chord).number = wing.root_chord;
+        tab.field(.taper).number = wing.taper;
+        tab.field(.rect_fraction).number = wing.rect_fraction;
+        tab.field(.sweep).number = wing.sweep;
+        tab.field(.twist).number = wing.twist;
+        tab.field(.alpha_cruise).number = wing.alpha_cruise;
+        tab.field(.mass).number = requirements.mass;
+        tab.field(.airspeed).number = requirements.airspeed;
+        tab.field(.altitude).number = requirements.altitude;
+        tab.field(.wing_density).number = requirements.wing_density;
         tab.form = .{ .groups = &tab.groups, .fields = &tab.fields };
         tab.run();
+    }
+
+    fn indexOf(tab: *const WingTab, name: []const u8) ?usize {
+        for (tab.candidates[0..tab.candidate_count], 0..) |candidate, k| if (std.mem.eql(u8, candidate.name, name)) return k;
+        return null;
     }
 
     fn addChoice(tab: *WingTab, candidate: *const stage.Candidate, root_writer: *std.Io.Writer, tip_writer: *std.Io.Writer) void {
@@ -109,12 +142,16 @@ pub const WingTab = struct {
     pub fn run(tab: *WingTab) void {
         tab.has_result = false;
         if (tab.candidate_count == 0) {
-            tab.setMessage("nenhum perfil: abra um avião ou marque um perfil em Perfis", .{});
+            tab.setMessage("nenhum perfil: acrescente um em Perfis", .{});
             return;
         }
         const root_index: usize = @intCast(std.math.clamp(tab.field(.root_airfoil).choice, 0, @as(i32, @intCast(tab.candidate_count - 1))));
         const tip_choice = tab.field(.tip_airfoil).choice;
         const root = stage.wingSection(tab.candidates[root_index]);
+        if (!std.mem.eql(u8, tab.design.rootAirfoil(), tab.candidates[root_index].name)) {
+            tab.design.setRoot(tab.candidates[root_index].name);
+            tab.seen_version = tab.design.version;
+        }
         _ = widgets.format(&tab.root_name, "{s}", .{tab.candidates[root_index].name});
         var tip: wing_line.SectionAirfoil = undefined;
         tab.tip_used = tip_choice > 0 and tip_choice <= tab.candidate_count and @as(usize, @intCast(tip_choice - 1)) != root_index;
@@ -134,12 +171,18 @@ pub const WingTab = struct {
             .twist = tab.field(.twist).number,
             .alpha_cruise = tab.field(.alpha_cruise).number,
         };
-        const conditions: wing_line.Conditions = .{
+        const requirements: design_mod.Requirements = .{
             .mass = tab.field(.mass).number,
             .airspeed = tab.field(.airspeed).number,
-            .density = wing_line.isaDensity(tab.field(.altitude).number),
+            .altitude = tab.field(.altitude).number,
             .wing_density = tab.field(.wing_density).number,
         };
+        // a asa e as condições valem para o projeto inteiro (a etapa Perfis tira o Reynolds daqui)
+        tab.design.wing = trapezoid;
+        tab.design.requirements = requirements;
+        tab.design.touch();
+        tab.seen_version = tab.design.version;
+        const conditions = requirements.conditions();
         wing_line.analyze(trapezoid, &root, if (tab.tip_used) &tip else null, conditions, &tab.result);
         tab.has_result = true;
         tab.buildShapes(trapezoid);
@@ -193,6 +236,7 @@ pub const WingTab = struct {
 
     /// desenha a aba em `rect`
     pub fn draw(tab: *WingTab, ui: *widgets.Ui, rect: rl.Rectangle) void {
+        tab.syncDesign();
         const sidebar_width: f32 = 360;
         tab.drawSidebar(ui, .{ .x = rect.x, .y = rect.y, .width = sidebar_width, .height = rect.height });
         tab.drawPlots(ui, .{ .x = rect.x + sidebar_width, .y = rect.y, .width = rect.width - sidebar_width, .height = rect.height });

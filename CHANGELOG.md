@@ -11,9 +11,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   inteiro em 3D pelo modelo do AeroDrive. O formulário
   lateral sai de uma lista de campos, e o gráfico tem marcas redondas, legenda e a paleta de dez cores. No aerosim,
   Aerodinâmica → Analisar roda a varredura do núcleo no avião aberto (linha sustentadora não linear e
-  faixas), com a escolha das superfícies e o refino da GUI em Python, e os mesmos números. Aerodinâmica → Perfis: os
-  perfis do avião, da biblioteca, um NACA e o que se arrasta (`.dat`, polar do XFLR5), com a polar 2D e os números
-  no núcleo (`core/src/physics/section.zig`, novo, iguais à GUI em Python). Aerodinâmica → Projetar: a asa
+  faixas), com a escolha das superfícies e o refino da GUI em Python, e os mesmos números. Aerodinâmica → Perfis no formato
+  da GUI em Python: a lista de candidatos do projeto (NACA 2412 e 4412 no começo) com "+ NACA", "+ .dat", "+ só
+  parâmetros", "+ polar XFLR5" e "Remover", o seletor de arquivo dentro da janela, o editor do selecionado e "Usar
+  na asa", com a polar 2D e os números no núcleo (`core/src/physics/section.zig`, novo, iguais à GUI em Python). Aerodinâmica → Projetar: a asa
   trapezoidal pela linha sustentadora de Glauert no núcleo (`core/src/sizing/wing_line.zig`, novo, igual à etapa
   Asa em Python), com perfil na ponta, polar, L/D, onde o estol começa e o cruzeiro. O aeroopt mostra uma rodada de exemplo. A vista da asa tem o 3D com um vetor de carga por painel e a vista de cima. O AeroDrive passa a
   preencher o quarto de corda dos painéis (`qa`/`qb`), que a linha sustentadora usa. O

@@ -678,16 +678,19 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Source:21`, `Candidate:24`, `Outcome:35`, `default_numbers:83`
   fn `alphas:42`, `evaluate:49`, `fromAircraft:62`, `fromOutline:90`, `aircraftCandidates:102`, `maxCamber:117`, `wingSection:164`, `isNaca4:172`, `readPolarText:182`
 - `aerosim/gui_zig/src/airfoil_tab.zig` — A aba Aerodinâmica → Perfis: os perfis candidatos e a polar 2D de cada um, como a página Perfis da GUI em
-  tipos `AirfoilTab:34`
+  tipos `AirfoilTab:39`
 - `aerosim/gui_zig/src/analyze_tab.zig` — A aba Aerodinâmica → Analisar: as asas do avião aberto, como a simulação "Asas" do aerosim em Python. À
   tipos `AnalyzeTab:39`
 - `aerosim/gui_zig/src/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
   tipos `Triangle:14`, `Mesh:22`, `Assembly:90`
   fn `buildMesh:55`, `load:108`, `fillAirfoilFiles:125`, `parseDat:160`, `findExample:192`
+- `aerosim/gui_zig/src/design.zig` — O projeto de dimensionamento que as etapas compartilham, como o `DesignProject` da GUI em Python
+  tipos `Requirements:16`, `Design:28`
+  fn `libraryFolder:125`, `readDat:136`, `readPolar:145`
 - `aerosim/gui_zig/src/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
   fn `main:15`
 - `aerosim/gui_zig/src/screen.zig` — A tela do aerosim: cabeçalho, abas das áreas e subabas da Aerodinâmica. Cada aba feita mora no arquivo dela
-  tipos `Screen:19`
+  tipos `Screen:20`
 - `aerosim/gui_zig/src/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos e a asa de exemplo.
 - `aerosim/gui_zig/src/wing_analysis.zig` — A análise das asas do avião aberto (a aba Aerodinâmica → Analisar), em Zig: o mesmo caminho da simulação "Asas"
   tipos `Method:28`, `Input:31`, `Result:42`
@@ -698,8 +701,11 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui_zig/src/ui/**
 
 - `aerosim/gui_zig/src/ui/app.zig` — O que os dois programas têm igual em volta da tela: a linha de comando, a janela e o laço de desenho, com o
-  tipos `Args:10`
-  fn `parseArgs:20`, `run:45`
+  tipos `Args:13`
+  fn `parseArgs:24`, `run:56`
+- `aerosim/gui_zig/src/ui/dialogs.zig` — As janelas por cima da tela: o seletor de arquivo (navega pelas pastas e mostra só as extensões pedidas, o
+  tipos `FilePicker:15`, `TextPrompt:149`
+  fn `button:187`
 - `aerosim/gui_zig/src/ui/form.zig` — O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador e escolha. A tela descrev
   tipos `Kind:12`, `Field:21`, `Group:34`, `Form:44`
 - `aerosim/gui_zig/src/ui/numbers.zig` — Números na tela sem janela (testáveis): o texto curto de um campo e as marcas "redondas" dos eixos.

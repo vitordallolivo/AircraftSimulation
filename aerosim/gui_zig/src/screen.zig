@@ -10,6 +10,7 @@ const view3d = ui_kit.view3d;
 const analyze_tab = @import("analyze_tab.zig");
 const airfoil_tab = @import("airfoil_tab.zig");
 const wing_tab = @import("wing_tab.zig");
+const design_mod = @import("design.zig");
 const assembly_mod = @import("assembly.zig");
 const aircraft_model = @import("aircraft_model");
 
@@ -23,6 +24,7 @@ pub const Screen = struct {
     analyze: analyze_tab.AnalyzeTab = .{},
     airfoils: airfoil_tab.AirfoilTab = .{},
     wing: wing_tab.WingTab = .{},
+    design: design_mod.Design = .{}, // o projeto de dimensionamento (Perfis e Projetar)
     assembly_view: view3d.View = .{}, // a vista 3D da Montagem
     assembly: ?assembly_mod.Assembly = null, // o avião aberto
     assembly_note: [240:0]u8 = [_:0]u8{0} ** 240,
@@ -39,12 +41,12 @@ pub const Screen = struct {
     /// liga o formulário às listas da própria tela e roda a análise uma vez (chamar com a janela aberta e a tela
     /// já no lugar final)
     pub fn start(screen: *Screen) void {
+        screen.design.start();
+        screen.airfoils.attach(&screen.design);
+        screen.wing.attach(&screen.design);
         var buffer: [512]u8 = undefined;
         var fixed = std.heap.FixedBufferAllocator.init(&buffer);
-        if (assembly_mod.findExample(fixed.allocator(), io())) |path| screen.openFile(path) else {
-            screen.analyze.setAircraft(null);
-            screen.airfoils.setAircraft(null, null);
-        }
+        if (assembly_mod.findExample(fixed.allocator(), io())) |path| screen.openFile(path) else screen.analyze.setAircraft(null);
     }
 
     /// o avião aberto, se houver
@@ -52,14 +54,20 @@ pub const Screen = struct {
         return if (screen.assembly) |*opened| &opened.loaded.ac else null;
     }
 
-    /// a corda média aerodinâmica da primeira superfície da análise das asas (a corda do Reynolds dos perfis)
-    fn referenceChord(screen: *Screen) ?f64 {
-        const result = screen.analyze.results[0] orelse screen.analyze.results[1] orelse return null;
-        return if (result.owner_count > 0) result.owner_chord[0] else null;
+    /// um comando pelo nome (`acao=` da linha de comando, para os prints): "naca", "dat", "polar" abrem os
+    /// diálogos de Perfis
+    pub fn command(screen: *Screen, name: []const u8) void {
+        screen.airfoils.command(name);
+    }
+
+    /// abre o arquivo `path`: um `.dat` ou uma polar vão para Perfis; um `.json` é o avião (Montagem)
+    pub fn openFile(screen: *Screen, path: []const u8) void {
+        if (screen.airfoils.addFile(path)) return;
+        screen.openAircraft(path);
     }
 
     /// abre o avião em `path` (.json) na Montagem
-    pub fn openFile(screen: *Screen, path: []const u8) void {
+    fn openAircraft(screen: *Screen, path: []const u8) void {
         var diagnosis: assembly_mod.Diagnosis = .{};
         const loaded = assembly_mod.load(std.heap.page_allocator, io(), path, &diagnosis) catch |err| {
             const reason = if (diagnosis.len > 0) diagnosis.text() else @errorName(err);
@@ -69,7 +77,6 @@ pub const Screen = struct {
         if (screen.assembly) |*old| old.deinit();
         screen.assembly = loaded;
         screen.analyze.setAircraft(screen.aircraft());
-        screen.airfoils.setAircraft(screen.aircraft(), screen.referenceChord());
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · {d} peças · arraste outro .json para a janela para trocar · arraste para girar, roda para aproximar", .{ std.fs.path.basename(path), loaded.mesh.piece_count }) catch {};
     }
 
@@ -81,11 +88,11 @@ pub const Screen = struct {
             defer rl.unloadDroppedFiles(dropped);
             for (0..dropped.count) |k| {
                 const path = std.mem.sliceTo(dropped.paths[k], 0);
-                if (screen.airfoils.addFile(path, screen.aircraft(), screen.referenceChord())) {
+                if (screen.airfoils.addFile(path)) {
                     screen.area = 1;
                     screen.aero_tab = 0;
                 } else {
-                    screen.openFile(path);
+                    screen.openAircraft(path);
                     screen.area = 5;
                 }
             }
@@ -98,10 +105,16 @@ pub const Screen = struct {
             screen.wing.scroll = screen.scroll;
             screen.scroll = 0;
         }
+        // com uma janela aberta (seletor de arquivo, pergunta), a tela de baixo não recebe o clique nem a roda
+        const modal = screen.airfoils.modalOpen();
+        const wheel = ui.wheel;
+        if (modal) {
+            ui.click_taken = true;
+            ui.wheel = 0;
+        }
         if (screen.area == 1 and screen.aero_tab == 0) {
-            screen.airfoils.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top });
+            if (screen.airfoils.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top })) screen.aero_tab = 1;
         } else if (screen.area == 1 and screen.aero_tab == 1) {
-            screen.wing.syncAirfoils(&screen.airfoils);
             screen.wing.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top });
         } else if (screen.area == 1 and screen.aero_tab == 2) {
             screen.analyze.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top }, screen.aircraft());
@@ -117,6 +130,11 @@ pub const Screen = struct {
             _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, &aero_tabs, &screen.aero_tab, 13);
         } else {
             rl.drawRectangleRec(.{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, theme.colors.panel);
+        }
+        if (modal) {
+            ui.click_taken = false;
+            ui.wheel = wheel;
+            screen.airfoils.drawModal(ui, .{ .x = 0, .y = 0, .width = width, .height = height });
         }
     }
 

@@ -1,185 +1,232 @@
 //! A aba Aerodinâmica → Perfis: os perfis candidatos e a polar 2D de cada um, como a página Perfis da GUI em
-//! Python. À esquerda, quais candidatos entram (os do avião aberto, os da biblioteca `data/airfoils`, os `.dat` e
-//! as polares do XFLR5 arrastados para a janela, um NACA pelo código) e o caso que dá o Reynolds; à direita, c_l,
-//! a polar, c_l/c_d e c_m em α, o contorno, o diagnóstico e a tabela dos números. A conta é a de
-//! `airfoil_stage.zig` (e do núcleo, `physics/section.zig`).
+//! Python (`aerosim/gui/design/pages.py: AirfoilPage`). À esquerda, as condições de projeto numa linha, a lista de
+//! candidatos (todos entram nos gráficos) com os botões "+ NACA", "+ .dat", "+ só parâmetros", "+ polar XFLR5" e
+//! "Remover", o Reynolds e o editor do candidato selecionado; embaixo, "Usar na asa" leva o perfil para a etapa
+//! Projetar. À direita, c_l, a polar, c_l/c_d e c_m em α, o contorno, o diagnóstico e a tabela dos números. A conta
+//! é a de `airfoil_stage.zig` (e do núcleo, `physics/section.zig`); a lista é a do projeto (`design.zig`).
 const std = @import("std");
 const rl = @import("raylib");
-const aircraft_model = @import("aircraft_model");
 const core = @import("aerosim");
 const ui_kit = @import("ui");
 const theme = ui_kit.theme;
 const widgets = ui_kit.widgets;
 const form_mod = ui_kit.form;
 const plot = ui_kit.plot;
+const dialogs = ui_kit.dialogs;
 const stage = @import("airfoil_stage.zig");
-const assembly_mod = @import("assembly.zig");
+const design_mod = @import("design.zig");
 
-const model = aircraft_model.aircraft;
 const section = core.section;
 const max_candidates = stage.max_candidates;
 
-const Group = enum(usize) { aircraft, library, dropped, case };
+const FieldId = enum(usize) { source, cl_alpha, alpha0, cl_max, cd0, cm_ac };
 
-/// os campos fixos (depois dos candidatos)
-const FieldId = enum(usize) { naca, airspeed, chord, density };
-
-const fixed_fields = [_]form_mod.Field{
-    .{ .label = "código NACA (0: nenhum)", .group = @intFromEnum(Group.case), .number = 0, .minimum = 0, .maximum = 9999 },
-    .{ .label = "velocidade de cruzeiro", .unit = "m/s", .group = @intFromEnum(Group.case), .number = 12, .minimum = 2, .maximum = 80 },
-    .{ .label = "corda de referência", .unit = "m", .group = @intFromEnum(Group.case), .number = 0.3, .minimum = 0.02, .maximum = 3 },
-    .{ .label = "densidade do ar", .unit = "kg/m³", .group = @intFromEnum(Group.case), .number = 1.225, .minimum = 0.5, .maximum = 1.4 },
+const editor_fields = [_]form_mod.Field{
+    .{ .label = "polar por", .group = 0, .kind = .choice, .choices = "modelo" },
+    .{ .label = "a1 (inclinação)", .unit = "1/rad", .group = 1, .minimum = 0.5, .maximum = 12 },
+    .{ .label = "α_L0", .unit = "°", .group = 1, .minimum = -20, .maximum = 10 },
+    .{ .label = "c_l,max", .group = 1, .minimum = 0.1, .maximum = 4 },
+    .{ .label = "c_d0", .group = 1, .minimum = 0.001, .maximum = 0.2 },
+    .{ .label = "c_m", .group = 1, .minimum = -0.6, .maximum = 0.3 },
 };
 
+/// os botões da lista
+const Action = enum { naca, dat, parameters, polar, remove };
+
+/// o que o seletor de arquivo está escolhendo
+const Purpose = enum { dat, polar };
+
 pub const AirfoilTab = struct {
-    groups: [4]form_mod.Group = .{ .{ .title = "Do avião" }, .{ .title = "Biblioteca (data/airfoils)" }, .{ .title = "Arrastados (.dat, polar)" }, .{ .title = "NACA e Reynolds" } },
-    fields: [max_candidates + fixed_fields.len]form_mod.Field = undefined,
-    labels: [max_candidates][96:0]u8 = undefined,
+    design: *design_mod.Design = undefined,
+    selected: usize = 0,
+    list_scroll: f32 = 0,
+    groups: [2]form_mod.Group = .{ .{ .title = "Polar" }, .{ .title = "Perfil" } },
+    fields: [editor_fields.len]form_mod.Field = editor_fields,
     form: form_mod.Form = .{ .groups = &.{}, .fields = &.{} },
-    pool: [max_candidates]stage.Candidate = undefined, // os candidatos, na ordem dos campos
-    pool_groups: [max_candidates]Group = undefined,
-    pool_count: usize = 0,
-    arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator), // avião e biblioteca
-    dropped_arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator), // o que se arrastou
-    dropped: [max_candidates]stage.Candidate = undefined,
-    dropped_count: usize = 0,
-    naca: stage.Candidate = undefined,
-    naca_code: u32 = 0,
-    naca_name: [16]u8 = undefined,
-    naca_arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+    group_title: [120:0]u8 = [_:0]u8{0} ** 120,
+    picker: dialogs.FilePicker = .{},
+    purpose: Purpose = .dat,
+    prompt: dialogs.TextPrompt = .{},
+    seen_version: u32 = std.math.maxInt(u32),
     // o que se mostra (refeito a cada mudança)
-    shown: [max_candidates + 1]*const stage.Candidate = undefined,
-    shown_names: [max_candidates + 1][64:0]u8 = undefined,
-    outcomes: [max_candidates + 1]stage.Outcome = undefined,
-    contour_x: [max_candidates + 1][]f64 = undefined,
-    contour_y: [max_candidates + 1][]f64 = undefined,
+    shown: [max_candidates]*const stage.Candidate = undefined,
+    shown_names: [max_candidates][64:0]u8 = undefined,
+    outcomes: [max_candidates]stage.Outcome = undefined,
+    contour_x: [max_candidates][]f64 = undefined,
+    contour_y: [max_candidates][]f64 = undefined,
     contour_arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator),
     shown_count: usize = 0,
     reynolds: f64 = 0,
     message: [200:0]u8 = [_:0]u8{0} ** 200,
     scroll: f32 = 0,
-    version: u32 = 0, // sobe a cada mudança da lista (a aba Projetar refaz as escolhas)
 
-    /// troca o avião: refaz a lista (os perfis do avião marcados, a biblioteca desmarcada) e a corda de referência
-    pub fn setAircraft(tab: *AirfoilTab, ac: ?*const model.Aircraft, reference_chord: ?f64) void {
-        const keep = if (tab.pool_count + fixed_fields.len == tab.form.fields.len and tab.form.fields.len > 0) tab.fields[tab.pool_count..][0..fixed_fields.len].* else fixed_fields;
-        var checked_before: [max_candidates]bool = undefined;
-        const old_count = tab.pool_count;
-        for (0..old_count) |k| checked_before[k] = tab.fields[k].checked;
-        _ = tab.arena.reset(.retain_capacity);
-        const allocator = tab.arena.allocator();
-        tab.pool_count = 0;
-        if (ac) |plane| {
-            const count = stage.aircraftCandidates(allocator, plane, &tab.pool) catch 0;
-            for (0..count) |k| tab.pool_groups[k] = .aircraft;
-            tab.pool_count = count;
-        }
-        tab.loadLibrary(allocator);
-        for (tab.dropped[0..tab.dropped_count]) |candidate| {
-            if (tab.pool_count == max_candidates) break;
-            tab.pool[tab.pool_count] = candidate;
-            tab.pool_groups[tab.pool_count] = .dropped;
-            tab.pool_count += 1;
-        }
-        for (0..tab.pool_count) |k| {
-            const candidate = &tab.pool[k];
-            const label = widgets.format(&tab.labels[k], "{s} ({s})", .{ candidate.name, candidate.origin });
-            const checked = tab.pool_groups[k] != .library;
-            tab.fields[k] = .{ .label = label, .group = @intFromEnum(tab.pool_groups[k]), .kind = .toggle, .checked = checked };
-        }
-        tab.fields[tab.pool_count..][0..fixed_fields.len].* = keep;
-        if (reference_chord) |chord| tab.fields[tab.pool_count + @intFromEnum(FieldId.chord)].number = @round(chord * 1e4) / 1e4;
-        tab.form = .{ .groups = &tab.groups, .fields = tab.fields[0 .. tab.pool_count + fixed_fields.len] };
-        tab.version +%= 1;
+    /// liga a aba ao projeto
+    pub fn attach(tab: *AirfoilTab, design: *design_mod.Design) void {
+        tab.design = design;
         tab.refresh();
     }
 
-    /// os `.dat` de `data/airfoils` que não são NACA (os NACA já saem do código), procurando a pasta perto da atual
-    fn loadLibrary(tab: *AirfoilTab, allocator: std.mem.Allocator) void {
-        const folder = findLibrary(allocator) orelse return;
-        var dir = std.Io.Dir.cwd().openDir(io(), folder, .{ .iterate = true }) catch return;
-        defer dir.close(io());
-        var names: [max_candidates][]const u8 = undefined;
-        var name_count: usize = 0;
-        var iterator = dir.iterate();
-        while (iterator.next(io()) catch null) |entry| {
-            if (name_count == names.len or !std.ascii.endsWithIgnoreCase(entry.name, ".dat")) continue;
-            names[name_count] = allocator.dupe(u8, entry.name) catch continue;
-            name_count += 1;
+    /// uma janela (seletor de arquivo, pergunta) está aberta: a tela de baixo não deve reagir
+    pub fn modalOpen(tab: *const AirfoilTab) bool {
+        return tab.picker.open or tab.prompt.open;
+    }
+
+    /// desenha as janelas por cima de tudo e trata a resposta
+    pub fn drawModal(tab: *AirfoilTab, ui: *widgets.Ui, screen: rl.Rectangle) void {
+        if (tab.picker.draw(ui, screen)) |path| {
+            switch (tab.purpose) {
+                .dat => tab.addDat(path),
+                .polar => tab.addPolar(path),
+            }
         }
-        std.mem.sort([]const u8, names[0..name_count], {}, lessText);
-        for (names[0..name_count]) |file_name| {
-            if (tab.pool_count == max_candidates) break;
-            const path = std.fs.path.join(allocator, &.{ folder, file_name }) catch continue;
-            const candidate = readDat(allocator, path, "biblioteca") catch continue;
-            if (stage.isNaca4(candidate.name) or tab.has(candidate.name)) continue;
-            tab.pool[tab.pool_count] = candidate;
-            tab.pool_groups[tab.pool_count] = .library;
-            tab.pool_count += 1;
+        if (tab.prompt.draw(ui, screen)) |code| {
+            var digits: [4]u8 = undefined;
+            var count: usize = 0;
+            for (code) |ch| if (std.ascii.isDigit(ch)) {
+                if (count < 4) digits[count] = ch;
+                count += 1;
+            };
+            if (count == 4) {
+                var name: [16]u8 = undefined;
+                const text = std.fmt.bufPrint(&name, "NACA {s}", .{digits[0..4]}) catch return;
+                tab.add(stage.fromOutline(tab.design.allocator(), text, &.{}, "naca") catch return);
+            } else tab.setMessage("o código NACA tem 4 dígitos", .{});
         }
     }
 
-    fn has(tab: *const AirfoilTab, name: []const u8) bool {
-        for (tab.pool[0..tab.pool_count]) |candidate| if (std.mem.eql(u8, candidate.name, name)) return true;
+    /// um arquivo arrastado para a janela: `.dat` vira candidato; polar (`.txt`, `.csv`, `.pol`) vai para o
+    /// candidato selecionado. Devolve falso se não for um dos dois
+    pub fn addFile(tab: *AirfoilTab, path: []const u8) bool {
+        const extension = std.fs.path.extension(path);
+        if (std.ascii.eqlIgnoreCase(extension, ".dat")) {
+            tab.addDat(path);
+            return true;
+        }
+        for ([_][]const u8{ ".txt", ".csv", ".pol" }) |polar| if (std.ascii.eqlIgnoreCase(extension, polar)) {
+            tab.addPolar(path);
+            return true;
+        };
         return false;
     }
 
-    /// um arquivo arrastado para a janela: `.dat` vira candidato; polar (`.txt`, `.csv`, `.pol`) vira candidato com
-    /// a polar medida. Devolve falso se não for um dos dois
-    pub fn addFile(tab: *AirfoilTab, path: []const u8, ac: ?*const model.Aircraft, reference_chord: ?f64) bool {
-        const extension = std.fs.path.extension(path);
-        const is_dat = std.ascii.eqlIgnoreCase(extension, ".dat");
-        const is_polar = std.ascii.eqlIgnoreCase(extension, ".txt") or std.ascii.eqlIgnoreCase(extension, ".csv") or std.ascii.eqlIgnoreCase(extension, ".pol");
-        if (!is_dat and !is_polar) return false;
-        if (tab.dropped_count == max_candidates) {
-            tab.setMessage("lista cheia ({d} candidatos)", .{max_candidates});
-            return true;
-        }
-        const allocator = tab.dropped_arena.allocator();
-        const candidate = (if (is_dat) readDat(allocator, path, "arrastado") else readPolar(allocator, path)) catch |err| {
-            tab.setMessage("não li '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) });
-            return true;
-        };
-        tab.dropped[tab.dropped_count] = candidate;
-        tab.dropped_count += 1;
-        tab.setAircraft(ac, reference_chord);
-        return true;
+    fn add(tab: *AirfoilTab, candidate: stage.Candidate) void {
+        if (tab.design.find(candidate.name) != null) return tab.setMessage("'{s}' já está na lista", .{candidate.name});
+        if (tab.design.airfoil_count == max_candidates) return tab.setMessage("lista cheia ({d} perfis)", .{max_candidates});
+        tab.design.add(candidate);
+        tab.selected = tab.design.airfoil_count - 1;
+        tab.refresh();
     }
 
-    fn field(tab: *AirfoilTab, id: FieldId) *form_mod.Field {
-        return &tab.fields[tab.pool_count + @intFromEnum(id)];
+    fn addDat(tab: *AirfoilTab, path: []const u8) void {
+        const candidate = design_mod.readDat(tab.design.allocator(), path) catch |err| return tab.setMessage("não li '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) });
+        tab.add(candidate);
+    }
+
+    /// a polar vai para o perfil selecionado (sem nenhum, vira um perfil novo com o nome do arquivo)
+    fn addPolar(tab: *AirfoilTab, path: []const u8) void {
+        const memory = tab.design.allocator();
+        if (tab.design.airfoil_count == 0) {
+            tab.add(.{ .name = memory.dupe(u8, std.fs.path.stem(path)) catch return, .origin = "parâmetros", .numbers = parameterNumbers() });
+        }
+        const candidate = &tab.design.airfoils[@min(tab.selected, tab.design.airfoil_count - 1)];
+        design_mod.readPolar(memory, path, candidate) catch |err| return tab.setMessage("não li a polar '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) });
+        tab.design.touch();
+        tab.refresh();
+        tab.setMessage("polar lida: {d} pontos, Re {d:.3}", .{ candidate.measured.?.count, candidate.measured_reynolds });
+    }
+
+    /// o que cada botão da lista faz, pelo nome (também para `acao=` dos prints)
+    pub fn command(tab: *AirfoilTab, name: []const u8) void {
+        const action = std.meta.stringToEnum(Action, name) orelse return;
+        const design = tab.design;
+        switch (action) {
+            .naca => tab.prompt.show("Perfil NACA", "Código de 4 dígitos:", "4412"),
+            .dat => {
+                tab.purpose = .dat;
+                var buffer: [256]u8 = undefined;
+                var fixed = std.heap.FixedBufferAllocator.init(&buffer);
+                tab.picker.show("Perfil (.dat)", design_mod.libraryFolder(fixed.allocator()) orelse ".", &.{ ".dat", ".txt" });
+            },
+            .parameters => {
+                var name_buffer: [32]u8 = undefined;
+                const text = std.fmt.bufPrint(&name_buffer, "perfil {d}", .{design.airfoil_count + 1}) catch "perfil";
+                tab.add(.{ .name = design.allocator().dupe(u8, text) catch return, .origin = "parâmetros", .numbers = parameterNumbers() });
+            },
+            .polar => {
+                tab.purpose = .polar;
+                tab.picker.show("Polar do XFLR5/XFOIL", ".", &.{ ".txt", ".csv", ".dat", ".pol" });
+            },
+            .remove => if (design.airfoil_count > 0) {
+                design.remove(tab.selected);
+                tab.refresh();
+            },
+        }
     }
 
     fn setMessage(tab: *AirfoilTab, comptime fmt: []const u8, args: anytype) void {
         _ = std.fmt.bufPrintZ(&tab.message, fmt, args) catch {};
     }
 
-    /// refaz as polares dos candidatos marcados e o Reynolds
+    /// o editor do selecionado e as polares de todos os candidatos
     fn refresh(tab: *AirfoilTab) void {
-        tab.updateNaca();
+        const design = tab.design;
+        tab.seen_version = design.version;
+        if (tab.selected >= design.airfoil_count and design.airfoil_count > 0) tab.selected = design.airfoil_count - 1;
+        tab.loadEditor();
         _ = tab.contour_arena.reset(.retain_capacity);
-        const allocator = tab.contour_arena.allocator();
+        const memory = tab.contour_arena.allocator();
         tab.shown_count = 0;
-        for (0..tab.pool_count) |k| {
-            if (tab.fields[k].checked) tab.show(allocator, &tab.pool[k]);
-        }
-        if (tab.naca_code != 0) tab.show(allocator, &tab.naca);
-        tab.reynolds = section.reynolds(tab.field(.density).number, tab.field(.airspeed).number, tab.field(.chord).number);
-        if (tab.shown_count == 0) {
-            tab.setMessage("marque ao menos um perfil", .{});
-        } else {
-            tab.setMessage("Re = {d:.0} (cruzeiro, corda de referência)", .{tab.reynolds});
-        }
+        for (design.airfoils[0..design.airfoil_count]) |*candidate| tab.show(memory, candidate);
+        tab.reynolds = design.reynolds();
+        tab.message[0] = 0;
     }
 
-    fn show(tab: *AirfoilTab, allocator: std.mem.Allocator, candidate: *const stage.Candidate) void {
+    /// os campos do editor com os números do selecionado
+    fn loadEditor(tab: *AirfoilTab) void {
+        if (tab.design.airfoil_count == 0) {
+            tab.form = .{ .groups = &.{}, .fields = &.{} };
+            return;
+        }
+        const candidate = &tab.design.airfoils[tab.selected];
+        const numbers = candidate.numbers;
+        tab.fields[@intFromEnum(FieldId.source)].choices = if (candidate.measured != null) "modelo;arquivo" else "modelo";
+        tab.fields[@intFromEnum(FieldId.source)].choice = if (candidate.source == .arquivo and candidate.measured != null) 1 else 0;
+        tab.fields[@intFromEnum(FieldId.cl_alpha)].number = numbers.cl_alpha;
+        tab.fields[@intFromEnum(FieldId.alpha0)].number = numbers.alpha0;
+        tab.fields[@intFromEnum(FieldId.cl_max)].number = numbers.cl_max;
+        tab.fields[@intFromEnum(FieldId.cd0)].number = numbers.cd0;
+        tab.fields[@intFromEnum(FieldId.cm_ac)].number = numbers.cm_ac;
+        tab.groups[1].title = if (candidate.source == .arquivo)
+            widgets.format(&tab.group_title, "Perfil (só na polar 'modelo')", .{})
+        else
+            widgets.format(&tab.group_title, "Perfil: {s}", .{candidate.name});
+        tab.form = .{ .groups = &tab.groups, .fields = &tab.fields };
+    }
+
+    /// o que se editou volta para o candidato
+    fn saveEditor(tab: *AirfoilTab) void {
+        if (tab.design.airfoil_count == 0) return;
+        const candidate = &tab.design.airfoils[tab.selected];
+        candidate.source = if (tab.fields[@intFromEnum(FieldId.source)].choice == 1) .arquivo else .modelo;
+        candidate.numbers = .{
+            .cl_alpha = tab.fields[@intFromEnum(FieldId.cl_alpha)].number,
+            .alpha0 = tab.fields[@intFromEnum(FieldId.alpha0)].number,
+            .cl_max = tab.fields[@intFromEnum(FieldId.cl_max)].number,
+            .cd0 = tab.fields[@intFromEnum(FieldId.cd0)].number,
+            .cm_ac = tab.fields[@intFromEnum(FieldId.cm_ac)].number,
+        };
+        tab.design.touch();
+        tab.refresh();
+    }
+
+    fn show(tab: *AirfoilTab, memory: std.mem.Allocator, candidate: *const stage.Candidate) void {
         const k = tab.shown_count;
         tab.shown[k] = candidate;
         _ = widgets.format(&tab.shown_names[k], "{s}", .{candidate.name});
         stage.evaluate(candidate, &tab.outcomes[k]);
         const n = candidate.outline.len;
-        tab.contour_x[k] = allocator.alloc(f64, n) catch &.{};
-        tab.contour_y[k] = allocator.alloc(f64, n) catch &.{};
+        tab.contour_x[k] = memory.alloc(f64, n) catch &.{};
+        tab.contour_y[k] = memory.alloc(f64, n) catch &.{};
         if (tab.contour_x[k].len == n and tab.contour_y[k].len == n) {
             for (candidate.outline, 0..) |point, i| {
                 tab.contour_x[k][i] = point[0];
@@ -189,39 +236,85 @@ pub const AirfoilTab = struct {
         tab.shown_count += 1;
     }
 
-    /// o candidato NACA do campo (refeito só quando o código muda)
-    fn updateNaca(tab: *AirfoilTab) void {
-        const value = tab.field(.naca).number;
-        const code: u32 = if (value >= 1 and value <= 9999) @intFromFloat(@round(value)) else 0;
-        if (code == tab.naca_code) return;
-        tab.version +%= 1;
-        tab.naca_code = 0;
-        if (code == 0) return;
-        _ = tab.naca_arena.reset(.retain_capacity);
-        const name = std.fmt.bufPrint(&tab.naca_name, "NACA {d:0>4}", .{code}) catch return;
-        tab.naca = stage.fromOutline(tab.naca_arena.allocator(), name, &.{}, "NACA") catch return;
-        tab.naca_code = code;
-    }
-
-    /// desenha a aba em `rect` (formulário à esquerda, gráficos à direita)
-    pub fn draw(tab: *AirfoilTab, ui: *widgets.Ui, rect: rl.Rectangle) void {
+    /// desenha a aba em `rect` (a lista e o editor à esquerda, gráficos à direita); devolve verdadeiro quando se
+    /// pede "Usar na asa" (o perfil selecionado já foi para a asa; quem chama abre Projetar)
+    pub fn draw(tab: *AirfoilTab, ui: *widgets.Ui, rect: rl.Rectangle) bool {
+        if (tab.design.version != tab.seen_version) tab.refresh();
         const sidebar_width: f32 = 360;
-        tab.drawSidebar(ui, .{ .x = rect.x, .y = rect.y, .width = sidebar_width, .height = rect.height });
         tab.drawPlots(ui, .{ .x = rect.x + sidebar_width, .y = rect.y, .width = rect.width - sidebar_width, .height = rect.height });
+        return tab.drawSidebar(ui, .{ .x = rect.x, .y = rect.y, .width = sidebar_width, .height = rect.height });
     }
 
-    fn drawSidebar(tab: *AirfoilTab, ui: *widgets.Ui, rect: rl.Rectangle) void {
+    fn drawSidebar(tab: *AirfoilTab, ui: *widgets.Ui, rect: rl.Rectangle) bool {
+        const design = tab.design;
         rl.drawRectangleRec(rect, theme.colors.panel);
         rl.drawRectangleRec(.{ .x = rect.x + rect.width - 1, .y = rect.y, .width = 1, .height = rect.height }, theme.colors.line);
-        const footer_height: f32 = 64;
-        const form_rect: rl.Rectangle = .{ .x = rect.x, .y = rect.y + 4, .width = rect.width - 1, .height = rect.height - footer_height - 4 };
-        const footer: rl.Rectangle = .{ .x = rect.x, .y = rect.y + rect.height - footer_height, .width = rect.width - 1, .height = footer_height };
-        rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 1 }, theme.colors.line);
-        theme.text(ui.fonts.regular, std.mem.sliceTo(&tab.message, 0), footer.x + 12, footer.y + 12, 13, theme.colors.label);
-        theme.text(ui.fonts.regular, "arraste um .dat ou a polar do XFLR5 para a janela", footer.x + 12, footer.y + 34, 12, theme.colors.muted);
-        if (tab.pool_count + fixed_fields.len == tab.form.fields.len) {
-            if (tab.form.draw(ui, form_rect)) tab.refresh();
+        const x = rect.x + 12;
+        const width = rect.width - 24;
+        var y = rect.y + 10;
+        // as condições de projeto numa linha (editadas na etapa Projetar)
+        const requirements = design.requirements;
+        var bar: [160:0]u8 = undefined;
+        const bar_rect: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = 40 };
+        widgets.rounded(bar_rect, 5, theme.colors.selected);
+        theme.text(ui.fonts.regular, widgets.format(&bar, "partida m = {d} kg · V = {d} m/s · AD {d:.0} m", .{ requirements.mass, requirements.airspeed, requirements.altitude }), x + 8, y + 4, 12, theme.colors.ink);
+        theme.text(ui.fonts.regular, widgets.format(&bar, "(ρ = {d:.3}) · as condições se editam em Projetar", .{core.wing_line.isaDensity(requirements.altitude)}), x + 8, y + 21, 12, theme.colors.label);
+        y += 50;
+        theme.text(ui.fonts.regular, "Candidatos (todos entram nos gráficos):", x, y, 14, theme.colors.ink);
+        y += 22;
+        // a lista
+        const list: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = 128 };
+        widgets.rounded(list, 6, theme.colors.field);
+        widgets.roundedLines(list, 6, theme.colors.line);
+        const line_height: f32 = 24;
+        const total = @as(f32, @floatFromInt(design.airfoil_count)) * line_height;
+        if (ui.hovering(list)) tab.list_scroll = std.math.clamp(tab.list_scroll - ui.wheel * line_height, 0, @max(0, total - list.height + 4));
+        rl.beginScissorMode(@intFromFloat(list.x + 1), @intFromFloat(list.y + 1), @intFromFloat(list.width - 2), @intFromFloat(list.height - 2));
+        for (design.airfoils[0..design.airfoil_count], 0..) |candidate, k| {
+            const row: rl.Rectangle = .{ .x = list.x + 3, .y = list.y + 2 + line_height * @as(f32, @floatFromInt(k)) - tab.list_scroll, .width = list.width - 6, .height = line_height };
+            if (k == tab.selected) widgets.rounded(row, 4, theme.colors.selected) else if (ui.hovering(row) and ui.hovering(list)) widgets.rounded(row, 4, theme.colors.hover);
+            var text: [128:0]u8 = undefined;
+            theme.text(ui.fonts.regular, widgets.format(&text, "{s}   ({s}, polar: {s})", .{ candidate.name, candidate.origin, @tagName(candidate.source) }), row.x + 6, row.y + 4, 14, theme.colors.ink);
+            if (ui.hovering(list) and ui.clickedIn(row) and k != tab.selected) {
+                tab.selected = k;
+                tab.loadEditor();
+            }
         }
+        rl.endScissorMode();
+        y += list.height + 8;
+        // os botões, dois por linha
+        const half = (width - 8) / 2;
+        const buttons = [_]struct { caption: [:0]const u8, action: Action }{
+            .{ .caption = "+ NACA...", .action = .naca },
+            .{ .caption = "+ .dat...", .action = .dat },
+            .{ .caption = "+ só parâmetros", .action = .parameters },
+            .{ .caption = "+ polar XFLR5...", .action = .polar },
+            .{ .caption = "Remover", .action = .remove },
+        };
+        for (buttons, 0..) |item, k| {
+            const column: f32 = @floatFromInt(k % 2);
+            const button_rect: rl.Rectangle = .{ .x = x + column * (half + 8), .y = y + 36 * @as(f32, @floatFromInt(k / 2)), .width = half, .height = 30 };
+            if (dialogs.button(ui, button_rect, item.caption)) tab.command(@tagName(item.action));
+        }
+        y += 36 * 3 + 2;
+        var re_text: [96:0]u8 = undefined;
+        theme.text(ui.fonts.regular, widgets.format(&re_text, "Re = {d:.0} (cruzeiro, corda média da asa)", .{tab.reynolds}), x, y, 13, theme.colors.label);
+        y += 22;
+        // o editor do selecionado
+        const footer_height: f32 = 92;
+        const editor: rl.Rectangle = .{ .x = rect.x, .y = y, .width = rect.width - 1, .height = rect.y + rect.height - footer_height - y };
+        if (tab.form.fields.len > 0 and tab.form.draw(ui, editor)) tab.saveEditor();
+        // embaixo: usar na asa
+        const footer: rl.Rectangle = .{ .x = rect.x, .y = rect.y + rect.height - footer_height, .width = rect.width - 1, .height = footer_height };
+        rl.drawRectangleRec(footer, theme.colors.panel);
+        rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 1 }, theme.colors.line);
+        var used = false;
+        if (widgets.primaryButton(ui, .{ .x = footer.x + 12, .y = footer.y + 14, .width = footer.width - 24, .height = 34 }, "Usar na asa →", design.airfoil_count > 0)) {
+            design.setRoot(design.airfoils[tab.selected].name);
+            used = true;
+        }
+        theme.text(ui.fonts.regular, std.mem.sliceTo(&tab.message, 0), footer.x + 12, footer.y + 60, 13, theme.colors.muted);
+        return used;
     }
 
     fn drawPlots(tab: *AirfoilTab, ui: *widgets.Ui, rect: rl.Rectangle) void {
@@ -343,47 +436,8 @@ pub const AirfoilTab = struct {
     }
 };
 
-/// um `.dat` (nome na primeira linha; senão o do arquivo)
-fn readDat(allocator: std.mem.Allocator, path: []const u8, origin: []const u8) !stage.Candidate {
-    const text = try std.Io.Dir.cwd().readFileAlloc(io(), path, allocator, .limited(1 << 20));
-    const coords = try assembly_mod.parseDat(allocator, text);
-    var lines = std.mem.tokenizeAny(u8, text, "\r\n");
-    const first = std.mem.trim(u8, lines.next() orelse "", " \t");
-    const stem = std.fs.path.stem(path);
-    return stage.fromOutline(allocator, if (first.len > 0) first else stem, coords, origin);
-}
 
-/// a polar do XFLR5/XFOIL: um candidato sem contorno, com a polar medida
-fn readPolar(allocator: std.mem.Allocator, path: []const u8) !stage.Candidate {
-    const text = try std.Io.Dir.cwd().readFileAlloc(io(), path, allocator, .limited(1 << 22));
-    const measured = try allocator.create(section.Polar);
-    const reynolds = try stage.readPolarText(text, measured);
-    return .{
-        .name = try allocator.dupe(u8, std.fs.path.stem(path)),
-        .origin = "polar",
-        .numbers = .{ .cl_alpha = stage.default_numbers.cl_alpha, .alpha0 = 0, .cl_max = stage.default_numbers.cl_max, .cd0 = stage.default_numbers.cd0, .cm_ac = 0 },
-        .source = .arquivo,
-        .measured = measured,
-        .measured_reynolds = reynolds,
-    };
-}
-
-/// a pasta `data/airfoils` a partir da atual ou das de cima
-fn findLibrary(allocator: std.mem.Allocator) ?[]const u8 {
-    var prefix: []const u8 = "";
-    for (0..4) |_| {
-        const candidate = std.mem.concat(allocator, u8, &.{ prefix, "data/airfoils" }) catch return null;
-        if (std.Io.Dir.cwd().access(io(), candidate, .{})) |_| return candidate else |_| {}
-        prefix = std.mem.concat(allocator, u8, &.{ prefix, "../" }) catch return null;
-    }
-    return null;
-}
-
-fn lessText(_: void, a: []const u8, b: []const u8) bool {
-    return std.mem.lessThan(u8, a, b);
-}
-
-/// a leitura de arquivos (sem threads)
-fn io() std.Io {
-    return std.Io.Threaded.global_single_threaded.io();
+/// os números de um perfil "só parâmetros" novo (os do botão em Python)
+fn parameterNumbers() section.Airfoil {
+    return .{ .cl_alpha = stage.default_numbers.cl_alpha, .alpha0 = -3.0, .cl_max = 1.5, .cd0 = stage.default_numbers.cd0, .cm_ac = -0.08 };
 }

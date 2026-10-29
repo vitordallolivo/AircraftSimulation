@@ -11,7 +11,7 @@ aeroopt: as cores e as fontes, as formas do visual, os widgets (cabeçalho, abas
 lateral, o gráfico, a vista 3D e o laço do programa. Em `src/screen.zig` fica a tela do aerosim, montada com essas peças, e cada aba
 tem o seu arquivo: `src/airfoil_tab.zig` (Perfis) com a etapa em `src/airfoil_stage.zig`, `src/wing_tab.zig`
 (Projetar), `src/analyze_tab.zig` (Analisar) com as contas em `src/wing_analysis.zig`, e `src/assembly.zig`
-(Montagem).
+(Montagem). O projeto de dimensionamento que Perfis e Projetar dividem fica em `src/design.zig`.
 
 ## As peças (`src/ui`)
 
@@ -49,23 +49,29 @@ leitura e as peças são as do AeroDrive (`aerodrive/src/model`, pelo `aerodrive
 mesmas formas e cores da GUI em Python; o `src/assembly.zig` só completa os perfis que o arquivo aponta num `.dat`
 e passa cada triângulo para a vista 3D. As outras abas mostram só o lugar delas.
 
-## Os perfis (`src/airfoil_stage.zig`)
+## Os perfis (`src/airfoil_tab.zig`, `src/airfoil_stage.zig`, `src/design.zig`)
 
-Aqui se comparam perfis candidatos antes de desenhar a asa. Entram os perfis das superfícies do avião aberto
-(marcados), os `.dat` da biblioteca `data/airfoils` que não são NACA (desmarcados), um NACA de 4 dígitos pelo código
-e o que se arrasta para a janela: um `.dat` vira candidato, e uma polar exportada pelo XFLR5 ou pelo XFOIL (`.txt`,
-`.csv`, `.pol`) vira um candidato com a polar medida. Um perfil sem $\alpha_{L0}$ ou $c_m$ no arquivo ganha os dois pela
-teoria de perfil fino sobre a linha média do contorno, como a GUI em Python faz.
+Aqui se comparam perfis candidatos antes de desenhar a asa, do mesmo jeito que a página Perfis da GUI em Python. Os
+candidatos são do projeto de dimensionamento (`design.zig`, o `DesignProject` em Python), que começa com o NACA 2412
+e o NACA 4412, e não do avião aberto. A lista fica à esquerda, todos os candidatos entram nos gráficos, e os botões
+acrescentam um NACA pelo código ("+ NACA..."), um `.dat` ("+ .dat...", Selig ou Lednicer), um perfil só de números
+("+ só parâmetros") ou ligam a polar exportada pelo XFLR5 ou pelo XFOIL ao perfil selecionado ("+ polar XFLR5...").
+"Remover" tira o selecionado. Os arquivos se escolhem num seletor dentro da própria janela (`src/ui/dialogs.zig`),
+que navega pelas pastas e mostra só as extensões pedidas; arrastar o arquivo para a janela também funciona. Embaixo
+da lista vem o editor do selecionado: de onde vem a polar ("modelo" ou "arquivo") e os números do perfil (a1,
+$\alpha_{L0}$, $c_{l,\max}$, $c_{d0}$, $c_m$). Um perfil sem $\alpha_{L0}$ ou $c_m$ ganha os dois pela teoria de perfil
+fino sobre a linha média do contorno. "Usar na asa" leva o selecionado para a raiz da asa em Projetar.
 
 A polar sai do núcleo (`core/src/physics/section.zig`): a do modelo, ou a medida lida de −16° a 20°. Os gráficos
 mostram $c_l$, a polar, $c_l/c_d$ e $c_m$ em α e o contorno em escala; a tabela embaixo tem os números que seguem para a
-asa. O Reynolds vem da velocidade de cruzeiro, da corda de referência (a corda média da asa, da análise das asas) e da
-densidade, $Re = \rho V c / \mu$. O diagnóstico avisa Reynolds abaixo de $10^5$, polar medida noutro Reynolds e a
-polar do modelo com $c_d$ constante.
+asa. O Reynolds é o de cruzeiro na corda média da asa em desenho, $Re = \rho V c / \mu$, com as condições do projeto
+(editadas em Projetar). O diagnóstico avisa Reynolds abaixo de $10^5$, polar medida noutro Reynolds e a polar do
+modelo com $c_d$ constante.
 
 ## A asa (`src/wing_tab.zig`)
 
-Aqui se desenha a asa a partir de um perfil da aba Perfis. O formulário pede a planta trapezoidal (envergadura,
+Aqui se desenha a asa a partir de um perfil da aba Perfis ou da biblioteca `data/airfoils`. A asa começa retangular,
+como em Python. O formulário pede a planta trapezoidal (envergadura,
 área ou corda da raiz, afilamento, trecho retangular, enflechamento de 1/4 da corda, torção na ponta e o ângulo
 da fuselagem no cruzeiro), o perfil da raiz e o da ponta (por padrão, o mesmo) e as condições de projeto (massa
 estimada, velocidade de cruzeiro, altitude-densidade e massa da asa por área). Cada perfil entra ajustado na polar
