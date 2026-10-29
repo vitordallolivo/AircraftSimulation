@@ -26,6 +26,16 @@
 //! Entre superfícies diferentes os vórtices têm núcleo de Scully (raio 0,1 c de quem solta; ver `core_frac`).
 //! a_i: inclinação 2D tirada do C_Lα 3D do núcleo invertendo Helmbold (o tradutor fez C_Lα = helmbold(a, AR)):
 //!     C_Lα = a/(√(1+k²)+k), k = a/(πAR)   ⇒   a = C_Lα / √(1 − 2 C_Lα/(πAR))
+//!
+//! Versão não linear (`Params.llt_nonlinear = 1`, desligada por padrão): cada seção segue a sua curva c_l(α) com estol
+//! (a reta acima misturada com a placa plana, como nas faixas: Beard e McLain, `aero.sigmaStall`), e o sistema
+//!
+//!     R_i(Γ) = Γ_i − ½ c_i η_i |V_i| c_l,i(α_i) = 0,   V_i = v_i − Σ_j Γ_j w_ij,   α_i = atan2(V_i·ez_i, V_i·ex_i) + comando
+//!
+//! é resolvido por Newton, partindo da solução linear (Phillips e Snyder 2000, versão não linear; Hunsaker e Snyder,
+//! eq. 4 a 15 — números das equações a conferir no PDF). O c_l,max da seção sai do C_Lmax da faixa invertendo o fator
+//! do tradutor, C_Lmax = 0,9 c_l,max (`aerosim/model/universal.py`; Raymer, "Aircraft Design: A Conceptual Approach",
+//! eq. 12.15 — a conferir no PDF).
 const std = @import("std");
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
@@ -49,6 +59,60 @@ pub fn sectionSlope(CLa: f64, AR: f64) f64 {
     if (AR <= 0) return CLa;
     const radicand = 1.0 - 2.0 * CLa / (fmath.pi * AR);
     return if (radicand > 1e-6) CLa / @sqrt(radicand) else 2.0 * fmath.pi;
+}
+
+/// C_Lmax = 0,9 c_l,max: o fator com que o tradutor passa do perfil para a faixa (`aerosim/model/universal.py`,
+/// `_coeffs_from`; Raymer, eq. 12.15 — a conferir no PDF). A versão não linear volta ao c_l,max da seção com ele
+pub const clmax_factor = 0.9;
+
+/// a curva c_l(α) de uma seção: inclinação 2D, ângulo de sustentação nula e ângulo de estol da mistura com a placa
+/// plana (`stall` ≤ 0: só a reta)
+pub const Curve = struct { slope: f64, zero_lift: f64, stall: f64 };
+
+/// c_l da seção em `alpha`: a reta a (α − α0) misturada com a placa plana depois do estol, com a mesma mistura das
+/// faixas (Beard e McLain, `aero.sigmaStall`; `steepness` é o `Params.Mst`)
+pub fn sectionLift(curve: Curve, alpha: f64, steepness: f64) f64 {
+    const linear = curve.slope * (alpha - curve.zero_lift);
+    if (curve.stall <= 0) return linear;
+    const sigma = aero.sigmaStall(alpha, curve.stall, steepness);
+    const sin_cos = fmath.sincos(alpha);
+    return (1.0 - sigma) * linear + sigma * 2.0 * fmath.sgn(alpha) * sin_cos.s * sin_cos.s * sin_cos.c;
+}
+
+/// o maior c_l da curva em α de 0 a 0,9 rad: varredura de 0,01 rad e seção áurea em volta do melhor ponto
+fn peakLift(curve: Curve, steepness: f64) f64 {
+    var best: f64 = 0;
+    var peak: f64 = -1e9;
+    var alpha: f64 = 0.0;
+    while (alpha < 0.9) : (alpha += 0.01) {
+        const lift = sectionLift(curve, alpha, steepness);
+        if (lift > peak) {
+            peak = lift;
+            best = alpha;
+        }
+    }
+    const golden = 0.6180339887498949;
+    var low = @max(best - 0.01, 0.0);
+    var high = @min(best + 0.01, 0.9);
+    for (0..40) |_| {
+        const left = high - golden * (high - low);
+        const right = low + golden * (high - low);
+        if (sectionLift(curve, left, steepness) < sectionLift(curve, right, steepness)) low = left else high = right;
+    }
+    return @max(peak, sectionLift(curve, 0.5 * (low + high), steepness));
+}
+
+/// o ângulo de estol que faz o pico da curva igual a `clmax` (bisseção, como `aero.init` faz com as faixas);
+/// `clmax` ≤ 0: sem estol (0)
+pub fn stallAngle(slope: f64, zero_lift: f64, clmax: f64, steepness: f64) f64 {
+    if (clmax <= 0) return 0;
+    var low: f64 = 0.02;
+    var high: f64 = 0.8;
+    for (0..50) |_| {
+        const stall = 0.5 * (low + high);
+        if (peakLift(.{ .slope = slope, .zero_lift = zero_lift, .stall = stall }, steepness) > clmax) high = stall else low = stall;
+    }
+    return 0.5 * (low + high);
 }
 
 /// velocidade induzida em `point` por um segmento de vórtice reto de `start` a `end` com Γ = 1 (Katz e Plotkin, cap. 10)
@@ -309,9 +373,32 @@ pub fn prepare(params: *types.Params) void {
             cache.bound[pair_index] = if (withBound(i, j)) segment(point, node_a[j], node_b[j], rc) else vec.zero;
         }
     }
+    cache.nonlinear = 0;
+    if (params.llt_nonlinear != 0) {
+        for (0..n_panels) |i| {
+            const cosL = if (gh) sweptSection(&params.surf[i], &panels[i]).cosL else 1.0;
+            cache.stall[i] = panelStall(params, &params.surf[i], cosL);
+        }
+        cache.nonlinear = 1;
+    }
     cache.n = @intCast(n_panels);
     cache.gh = @intFromBool(gh);
     cache.ok = 1;
+}
+
+/// a reta da seção do painel: inclinação 2D (Helmbold invertido) e α0 = −C_L0/C_Lα, dividido por cos Λ na seção
+/// enflechada de Goates e Hunsaker (eq. 35; cos Λ = 1 em Phillips e Snyder)
+fn sectionLine(surface: *const types.Surface, cosL: f64) struct { slope: f64, zero_lift: f64 } {
+    return .{
+        .slope = sectionSlope(surface.CLa, surface.AR),
+        .zero_lift = (if (surface.CLa != 0) -surface.CL0 / surface.CLa else 0) / cosL,
+    };
+}
+
+/// o ângulo de estol da seção do painel, com o c_l,max da seção (C_Lmax / `clmax_factor`)
+fn panelStall(params: *const types.Params, surface: *const types.Surface, cosL: f64) f64 {
+    const line = sectionLine(surface, cosL);
+    return stallAngle(line.slope, line.zero_lift, surface.CLmax / clmax_factor, params.Mst);
 }
 
 /// a influência de j em i (Γ = 1) com o cache: só as duas pernas livres, somadas na mesma ordem de `horseshoe`
@@ -374,6 +461,12 @@ pub fn apply(params: *const types.Params, Vr: V3, deflections: V3, panels: []typ
     var rhs: [n_max]f64 = undefined;
     var used: [n_max]bool = undefined;
     var k_i: [n_max]f64 = undefined; // ½ c η a
+    // versão não linear (llt_nonlinear): o que o Newton precisa de cada painel
+    const nonlinear = params.llt_nonlinear != 0;
+    var sections: [n_max]Section = undefined;
+    var controls: [n_max]f64 = undefined;
+    var curves: [n_max]Curve = undefined;
+    var half_chords: [n_max]f64 = undefined; // ½ c cos Λ η
     // Goates e Hunsaker (llt_joint, llt_blend > 0): a geometria muda com o ponto de controle; a influência fica
     // guardada para a segunda volta. Com os dois em 0, as contas são as de Phillips e Snyder, como sempre
     const gh = params.llt_joint > 0 or params.llt_blend > 0;
@@ -395,11 +488,20 @@ pub fn apply(params: *const types.Params, Vr: V3, deflections: V3, panels: []typ
         for (0..n_panels) |j| matrix[i][j] = if (i == j) 1 else 0;
         rhs[i] = 0;
         if (!used[i]) continue;
-        const ag = fmath.atan2(ww, uu) + (if (gh) sweptControl(surface, deflections, section.cosL) else surface.tau * vec.dot(vec.v3(surface.mix), deflections));
-        const slope = sectionSlope(surface.CLa, surface.AR);
-        const a0 = (if (surface.CLa != 0) -surface.CL0 / surface.CLa else 0) / section.cosL;
+        const control = if (gh) sweptControl(surface, deflections, section.cosL) else surface.tau * vec.dot(vec.v3(surface.mix), deflections);
+        const ag = fmath.atan2(ww, uu) + control;
+        const line = sectionLine(surface, section.cosL);
+        const slope = line.slope;
+        const a0 = line.zero_lift;
         k_i[i] = 0.5 * panel.c * section.cosL * surface.eta * slope;
         rhs[i] = k_i[i] * Vp * (ag - a0);
+        if (nonlinear) {
+            sections[i] = section;
+            controls[i] = control;
+            half_chords[i] = 0.5 * panel.c * section.cosL * surface.eta;
+            const stall = if (cached and params.llt_cache.nonlinear != 0) params.llt_cache.stall[i] else panelStall(params, surface, section.cosL);
+            curves[i] = .{ .slope = slope, .zero_lift = a0, .stall = stall };
+        }
         const point = vec.v3(panel.r);
         if (cached) {
             for (0..n_panels) |j| {
@@ -418,13 +520,22 @@ pub fn apply(params: *const types.Params, Vr: V3, deflections: V3, panels: []typ
             continue;
         }
         for (0..n_panels) |j| {
+            if (nonlinear) infl[i][j] = vec.zero;
             if (!used_geom(panels, j)) continue;
             const node = nodes(&params.surf[j], &panels[j]);
-            matrix[i][j] += k_i[i] * vec.dot(horseshoe(point, node.A, node.B, flow_dir, withBound(i, j), coreOf(panels, i, j)), ez);
+            const influence = horseshoe(point, node.A, node.B, flow_dir, withBound(i, j), coreOf(panels, i, j));
+            if (nonlinear) infl[i][j] = influence;
+            matrix[i][j] += k_i[i] * vec.dot(influence, ez);
         }
     }
     var gamma: [n_max]f64 = undefined;
     solve(n_panels, &matrix, &rhs, &gamma);
+    if (nonlinear) {
+        var velocities: [n_max]V3 = undefined;
+        for (0..n_panels) |i| velocities[i] = vec.v3(panels[i].v);
+        newton(.{ .n_panels = n_panels, .used = &used, .infl = &infl, .sections = &sections, .controls = &controls, .curves = &curves,
+            .half_chords = &half_chords, .velocities = &velocities, .steepness = params.Mst }, &gamma);
+    }
     // carga de cada painel com as circulações
     var sum: f64 = 0;
     for (0..n_panels) |i| {
@@ -438,7 +549,7 @@ pub fn apply(params: *const types.Params, Vr: V3, deflections: V3, panels: []typ
         var induced = vec.zero; // velocidade do ar induzida pelas ferraduras
         for (0..n_panels) |j| {
             if (!used[j]) continue;
-            if (gh or cached) {
+            if (gh or cached or nonlinear) {
                 induced += infl[i][j] * vec.splat(gamma[j]);
                 continue;
             }
@@ -458,7 +569,9 @@ pub fn apply(params: *const types.Params, Vr: V3, deflections: V3, panels: []typ
         const Lp = std.math.sign(gamma[i]) * vec.norm(Fl);
         const qS = 0.5 * rho * V2 * surface.eta * panel.S;
         const drag_dir = -(ex * vec.splat(uu) + ez * vec.splat(ww)) / vec.splat(@max(Vp, 1e-12));
-        const Dp = qS * surface.CD0;
+        // não linear: depois do estol, o arrasto da placa plana das faixas (σ 1,2 sen²α, Beard e McLain)
+        const stall_drag = if (nonlinear and curves[i].stall > 0) aero.sigmaStall(al, curves[i].stall, params.Mst) * 1.2 * @sin(al) * @sin(al) else 0.0;
+        const Dp = if (nonlinear) qS * (surface.CD0 + stall_drag) else qS * surface.CD0;
         const force = Fl + drag_dir * vec.splat(Dp);
         panel.alpha = al;
         panel.V = Vp;
@@ -547,6 +660,99 @@ fn used_geom(panels: []const types.PanelState, j: usize) bool {
 }
 
 /// resolve matrix · solution = rhs por eliminação de Gauss com pivô parcial (size ≤ max_surfaces)
+/// o que o Newton da versão não linear recebe de `apply`, por painel
+const NewtonInput = struct {
+    n_panels: usize,
+    used: *const [n_max]bool,
+    infl: *const [n_max][n_max]V3, // velocidade induzida em i pela ferradura j com Γ = 1
+    sections: *const [n_max]Section,
+    controls: *const [n_max]f64, // α do comando na seção
+    curves: *const [n_max]Curve,
+    half_chords: *const [n_max]f64, // ½ c cos Λ η
+    velocities: *const [n_max]V3, // velocidade do painel em relação ao ar, sem a induzida pelas ferraduras
+    steepness: f64,
+};
+
+/// o estado de uma seção com as circulações `gamma`: velocidade no plano da seção (componentes ao longo da corda e da
+/// normal), módulo e α
+const SectionFlow = struct { along: f64, normal: f64, speed: f64, alpha: f64 };
+
+fn sectionFlow(input: NewtonInput, i: usize, gamma: *const [n_max]f64) SectionFlow {
+    var velocity = input.velocities[i];
+    for (0..input.n_panels) |j| {
+        if (gamma[j] != 0) velocity -= input.infl[i][j] * vec.splat(gamma[j]);
+    }
+    const along = vec.dot(velocity, input.sections[i].ex);
+    const normal = vec.dot(velocity, input.sections[i].ez);
+    return .{ .along = along, .normal = normal, .speed = @sqrt(along * along + normal * normal), .alpha = fmath.atan2(normal, along) + input.controls[i] };
+}
+
+/// os resíduos R_i = Γ_i − ½ c_i η_i |V_i| c_l,i(α_i); devolve o maior |R_i|
+fn residuals(input: NewtonInput, gamma: *const [n_max]f64, out: *[n_max]f64) f64 {
+    var largest: f64 = 0;
+    for (0..input.n_panels) |i| {
+        out[i] = 0;
+        if (!input.used[i]) continue;
+        const flow = sectionFlow(input, i, gamma);
+        out[i] = gamma[i] - input.half_chords[i] * flow.speed * sectionLift(input.curves[i], flow.alpha, input.steepness);
+        largest = @max(largest, @abs(out[i]));
+    }
+    return largest;
+}
+
+/// Phillips e Snyder (2000), versão não linear: Newton em Γ a partir da solução linear (`gamma` entra com ela e sai
+/// com a não linear). Jacobiano, com V_i = v_i − Σ Γ_j w_ij, u = V·ex e w = V·ez:
+///   ∂R_i/∂Γ_j = δ_ij − ½ c_i η_i (c_l ∂|V_i|/∂Γ_j + |V_i| c_l' ∂α_i/∂Γ_j)
+///   ∂|V_i|/∂Γ_j = −(u w_ij·ex + w w_ij·ez)/|V_i|,   ∂α_i/∂Γ_j = −(u w_ij·ez − w w_ij·ex)/|V_i|²
+/// c_l' por diferença central. Passo amortecido: se o resíduo cresce, o passo cai pela metade (até 10 vezes); depois
+/// do estol a solução pode não ser única, e o Newton fica com a mais perto da linear
+fn newton(input: NewtonInput, gamma: *[n_max]f64) void {
+    const n_panels = input.n_panels;
+    var residual: [n_max]f64 = undefined;
+    var largest = residuals(input, gamma, &residual);
+    var scale: f64 = 1;
+    for (0..n_panels) |i| scale = @max(scale, @abs(gamma[i]));
+    var jacobian: [n_max][n_max]f64 = undefined;
+    var step: [n_max]f64 = undefined;
+    var negative: [n_max]f64 = undefined;
+    for (0..50) |_| {
+        if (largest <= 1e-12 * scale) return;
+        for (0..n_panels) |i| {
+            for (0..n_panels) |j| jacobian[i][j] = if (i == j) 1 else 0;
+            negative[i] = -residual[i];
+            if (!input.used[i]) continue;
+            const flow = sectionFlow(input, i, gamma);
+            const curve = input.curves[i];
+            const lift = sectionLift(curve, flow.alpha, input.steepness);
+            const delta = 1e-6;
+            const lift_slope = (sectionLift(curve, flow.alpha + delta, input.steepness) - sectionLift(curve, flow.alpha - delta, input.steepness)) / (2 * delta);
+            const speed = @max(flow.speed, 1e-12);
+            for (0..n_panels) |j| {
+                const along_rate = vec.dot(input.infl[i][j], input.sections[i].ex);
+                const normal_rate = vec.dot(input.infl[i][j], input.sections[i].ez);
+                const speed_rate = -(flow.along * along_rate + flow.normal * normal_rate) / speed;
+                const alpha_rate = -(flow.along * normal_rate - flow.normal * along_rate) / (speed * speed);
+                jacobian[i][j] -= input.half_chords[i] * (lift * speed_rate + speed * lift_slope * alpha_rate);
+            }
+        }
+        solve(n_panels, &jacobian, &negative, &step);
+        var trial: [n_max]f64 = undefined;
+        var fraction: f64 = 1;
+        var trial_residual: [n_max]f64 = undefined;
+        var trial_largest: f64 = largest;
+        for (0..11) |_| {
+            for (0..n_panels) |i| trial[i] = gamma[i] + fraction * step[i];
+            trial_largest = residuals(input, &trial, &trial_residual);
+            if (trial_largest < largest) break;
+            fraction *= 0.5;
+        }
+        if (trial_largest >= largest) return; // não melhora mais: fica com o último
+        gamma.* = trial;
+        residual = trial_residual;
+        largest = trial_largest;
+    }
+}
+
 fn solve(size: usize, matrix: *[n_max][n_max]f64, rhs: *[n_max]f64, solution: *[n_max]f64) void {
     for (0..size) |col| {
         var pivot = col;
@@ -797,4 +1003,84 @@ test "cache da geometria (prepare): o mesmo resultado, bit a bit, que a conta in
             try testing.expectEqual(full[i].F, cached[i].F);
         }
     }
+}
+
+/// sustentação total e C_L da asa retangular de `rectWing` (n_panels faixas) no ângulo `alpha`
+fn rectLift(params: *types.Params, panels: []types.PanelState, wing_span: f64, chord: f64, airspeed: f64, alpha: f64) f64 {
+    rectWing(params, panels, panels.len, wing_span, chord, 2 * fmath.pi, airspeed, alpha);
+    _ = apply(params, .{ airspeed * @cos(alpha), 0, airspeed * @sin(alpha) }, vec.zero, panels);
+    var total: f64 = 0;
+    for (panels) |panel| total += panel.L;
+    return total / (0.5 * params.env.rho * airspeed * airspeed * wing_span * chord);
+}
+
+test "não linear desligado por padrão" {
+    const params = types.Params{};
+    try testing.expect(params.llt_nonlinear == 0);
+}
+
+test "curva da seção: reta antes do estol e pico igual ao c_l,max pedido" {
+    const slope = 2.0 * fmath.pi;
+    const zero_lift = -0.04;
+    const clmax = 1.4;
+    const stall = stallAngle(slope, zero_lift, clmax, 50);
+    const curve = Curve{ .slope = slope, .zero_lift = zero_lift, .stall = stall };
+    try testing.expectApproxEqRel(clmax, peakLift(curve, 50), 1e-6);
+    try testing.expectApproxEqRel(slope * (0.05 - zero_lift), sectionLift(curve, 0.05, 50), 1e-6);
+    try testing.expect(sectionLift(curve, 0.6, 50) < 0.8 * clmax); // depois do estol, cai
+    try testing.expectEqual(@as(f64, 0), stallAngle(slope, zero_lift, 0, 50)); // sem c_l,max: sem estol
+}
+
+test "não linear: em α pequeno fica com a linear; perto do estol o C_L para abaixo do c_l,max da seção" {
+    var params = types.Params{};
+    var panels: [32]types.PanelState = undefined;
+    const wing_span = 2.0;
+    const chord = 0.25;
+    const airspeed = 12.0;
+    const linear_small = rectLift(&params, &panels, wing_span, chord, airspeed, 0.04);
+    params.llt_nonlinear = 1;
+    const nonlinear_small = rectLift(&params, &panels, wing_span, chord, airspeed, 0.04);
+    try testing.expectApproxEqRel(linear_small, nonlinear_small, 0.01);
+    // varredura em α: a linear cresce sempre; a não linear tem um máximo abaixo do c_l,max da seção (1,2 / 0,9)
+    const default_surface = types.Surface{};
+    const section_clmax = default_surface.CLmax / clmax_factor;
+    var largest: f64 = 0;
+    var alpha: f64 = 0.04;
+    while (alpha < 0.45) : (alpha += 0.02) largest = @max(largest, rectLift(&params, &panels, wing_span, chord, airspeed, alpha));
+    try testing.expect(largest < section_clmax and largest > 0.8 * section_clmax);
+    const late = rectLift(&params, &panels, wing_span, chord, airspeed, 0.44);
+    params.llt_nonlinear = 0;
+    const late_linear = rectLift(&params, &panels, wing_span, chord, airspeed, 0.44);
+    try testing.expect(late < 0.8 * late_linear);
+    for (panels) |panel| try testing.expect(std.math.isFinite(panel.L));
+}
+
+test "não linear: na asa retangular a raiz chega ao estol antes da ponta" {
+    var params = types.Params{};
+    var panels: [32]types.PanelState = undefined;
+    params.llt_nonlinear = 1;
+    _ = rectLift(&params, &panels, 2.0, 0.25, 12.0, 0.2);
+    try testing.expect(panels[16].CL > panels[1].CL); // c_l da raiz acima do da ponta: ela estola primeiro
+}
+
+test "não linear com o cache da geometria: o mesmo resultado, bit a bit" {
+    var params = types.Params{};
+    var panels: [24]types.PanelState = undefined;
+    const alpha = 0.22;
+    const airspeed = 12.0;
+    rectWing(&params, &panels, 24, 2.0, 0.25, 2 * fmath.pi, airspeed, alpha);
+    for (0..24) |i| {
+        params.surf[i].r = panels[i].r;
+        params.surf[i].side = panels[i].side;
+    }
+    params.llt_nonlinear = 1;
+    const Vr = V3{ airspeed * @cos(alpha), 0, airspeed * @sin(alpha) };
+    var cached = panels;
+    var full = panels;
+    prepare(&params);
+    try testing.expect(params.llt_cache.nonlinear == 1);
+    _ = apply(&params, Vr, vec.zero, cached[0..24]);
+    params.llt_cache.ok = 0;
+    _ = apply(&params, Vr, vec.zero, full[0..24]);
+    for (0..24) |i| try testing.expectEqual(full[i].L, cached[i].L);
 }

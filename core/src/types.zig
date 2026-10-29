@@ -315,6 +315,8 @@ pub const LltCache = extern struct {
     s2: [limits.max_surfaces * limits.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (limits.max_surfaces * limits.max_surfaces),
     s3: [limits.max_surfaces * limits.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (limits.max_surfaces * limits.max_surfaces),
     bound: [limits.max_surfaces * limits.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (limits.max_surfaces * limits.max_surfaces),
+    nonlinear: i32 = 0, // montado com llt_nonlinear: `stall` vale
+    stall: [limits.max_surfaces]f64 = [_]f64{0} ** limits.max_surfaces, // ângulo de estol da seção de cada painel (rad)
 };
 
 pub const Params = extern struct {
@@ -379,6 +381,7 @@ pub const Params = extern struct {
     aero_tab: AeroTable = .{},
     llt_joint: f64 = 0, // comprimento da junta das pernas, fração da corda no nó (G-H eq. 17)
     llt_blend: f64 = 0, // distância de mistura da linha efetiva, fração da semienvergadura (G-H eq. 7; MachUpX)
+    llt_nonlinear: i32 = 0, // 1: a linha sustentadora resolve com o c_l(α) de cada seção com estol, por Newton (Phillips e Snyder 2000)
     llt_cache: LltCache = .{}, // montado por llt.prepare na configuração (não vem do Python)
     prop_strike: i32 = 0, // 1: a ponta da pá tocar o chão encerra o voo (`crashed`, Events.tprop); 0 (padrão): só registra
     no_payload: i32 = 0, // começa sem a carga
