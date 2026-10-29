@@ -8,6 +8,7 @@ const shapes = @import("../ui/shapes.zig");
 const widgets = @import("../ui/widgets.zig");
 const form_mod = @import("../ui/form.zig");
 const plot = @import("../ui/plot.zig");
+const numbers = @import("../ui/numbers.zig");
 const wing = @import("../wing_example.zig");
 
 const areas = [_][:0]const u8{ "DIMENSIONAMENTO", "AERODINÂMICA", "ESTABILIDADE", "DESEMPENHO", "CARGAS", "MONTAGEM" };
@@ -105,7 +106,7 @@ pub const Screen = struct {
 
     /// desenha a tela inteira e trata o mouse
     pub fn draw(screen: *Screen, ui: *widgets.Ui, width: f32, height: f32) void {
-        rl.clearBackground(theme.background);
+        rl.clearBackground(theme.colors.background);
         // conteúdo primeiro, cabeçalho e abas por cima (a rolagem passa por baixo deles)
         const top = widgets.header_height + 38 + 32;
         const sidebar_width: f32 = 360;
@@ -117,25 +118,25 @@ pub const Screen = struct {
         }
         if (widgets.header(ui, width, "AEROSIM", &.{ "Abrir avião (.json)", "Salvar .json" }, "asa trapezoidal de exemplo · conta no núcleo em Zig")) |_|
             screen.setMessage("abrir e salvar o .json entram na próxima etapa", .{});
-        _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, &areas, &screen.area, theme.black, 14);
+        _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, &areas, &screen.area, theme.colors.strip, 14);
         if (screen.area == 1) {
-            _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, &aero_tabs, &screen.aero_tab, theme.sidebar, 13);
+            _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, &aero_tabs, &screen.aero_tab, theme.colors.sidebar, 13);
         } else {
-            rl.drawRectangleRec(.{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, theme.sidebar);
+            rl.drawRectangleRec(.{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, theme.colors.sidebar);
         }
     }
 
     fn drawSidebar(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
-        rl.drawRectangleRec(rect, theme.sidebar);
-        rl.drawRectangleRec(.{ .x = rect.x + rect.width - 3, .y = rect.y, .width = 3, .height = rect.height }, theme.black);
+        rl.drawRectangleRec(rect, theme.colors.sidebar);
+        rl.drawRectangleRec(.{ .x = rect.x + rect.width - 3, .y = rect.y, .width = 3, .height = rect.height }, theme.colors.strip);
         const footer_height: f32 = 92;
         const form_rect: rl.Rectangle = .{ .x = rect.x, .y = rect.y + 4, .width = rect.width - 3, .height = rect.height - footer_height - 4 };
         const footer: rl.Rectangle = .{ .x = rect.x, .y = rect.y + rect.height - footer_height, .width = rect.width - 3, .height = footer_height };
-        rl.drawRectangleRec(footer, theme.black);
-        rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 3 }, theme.orange);
+        rl.drawRectangleRec(footer, theme.colors.strip);
+        rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 3 }, theme.colors.accent);
         if (widgets.primaryButton(ui, .{ .x = footer.x + 12, .y = footer.y + 14, .width = footer.width - 24, .height = 34 }, "▶  RODAR", true)) screen.runAnalysis();
-        shapes.hazard(.{ .x = footer.x + 12, .y = footer.y + 54, .width = footer.width - 24, .height = 7 }, screen.progress, theme.orange, theme.panel);
-        theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.message, 0), footer.x + 12, footer.y + 68, 13, theme.muted);
+        shapes.hazard(.{ .x = footer.x + 12, .y = footer.y + 54, .width = footer.width - 24, .height = 7 }, screen.progress, theme.colors.hazard, theme.colors.panel);
+        theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.message, 0), footer.x + 12, footer.y + 68, 13, theme.colors.strip_label);
         // o formulário por último: a lista aberta de uma escolha fica por cima do rodapé
         if (screen.form.draw(ui, form_rect)) screen.runAnalysis();
     }
@@ -150,7 +151,7 @@ pub const Screen = struct {
         rl.beginScissorMode(@intFromFloat(rect.x), @intFromFloat(rect.y), @intFromFloat(rect.width), @intFromFloat(rect.height));
         defer rl.endScissorMode();
         if (!screen.has_result) {
-            theme.text(ui.fonts.regular, "rode a análise para ver os gráficos", rect.x + 40, rect.y + 40, 16, theme.muted);
+            theme.text(ui.fonts.regular, "rode a análise para ver os gráficos", rect.x + 40, rect.y + 40, 16, theme.colors.muted);
             return;
         }
         const r = &screen.result;
@@ -198,44 +199,52 @@ pub const Screen = struct {
         screen.drawSummary(ui, .{ .x = x1, .y = y, .width = column_width, .height = 300 });
     }
 
-    /// vista de cima da asa: as faixas pintadas pelo c_l no α da carga (linha sustentadora)
+    /// a asa e a carga no α da carga (linha sustentadora), em dois quadros com o mesmo eixo da envergadura: em cima, a
+    /// vista de cima em escala (mesmo metro por pixel nos dois eixos), só o contorno e as faixas; embaixo, a vista de
+    /// frente com um vetor por faixa, de comprimento L' (N/m), na escala do eixo
     fn drawPlanform(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
-        const inner = widgets.card(ui, rect, "Vista de cima: c_l no α da carga (linha sustentadora)");
         const r = &screen.result;
         const in = screen.input();
-        const scale = @min((inner.width - 40) / @as(f32, @floatCast(in.span)), (inner.height - 80) / @as(f32, @floatCast(in.root_chord * 1.6)));
-        const center_x = inner.x + inner.width / 2;
-        const leading_y = inner.y + 30;
-        var low: f64 = std.math.inf(f64);
-        var high: f64 = -std.math.inf(f64);
-        for (r.section_cl_lifting_line[0..r.panel_count]) |v| {
-            low = @min(low, v);
-            high = @max(high, v);
-        }
+        var title_buffer: [96]u8 = undefined;
+        const title = widgets.format(&title_buffer, "Asa e carga no α = {d:.1}° (linha sustentadora)", .{in.alpha_load});
+        const inner = widgets.card(ui, rect, title);
+        const top_height = inner.height * 0.42;
+        const half = 0.5 * in.span;
+        const span_range: numbers.Range = .{ .low = -half * 1.06, .high = half * 1.06 };
+        // vista de cima: x do corpo para trás; no gráfico, −x para cima (o bordo de ataque fica em cima)
+        const top = plot.drawFrame(ui, .{ .x = inner.x, .y = inner.y, .width = inner.width, .height = top_height }, .{ .title = title, .x_label = "", .y_label = "−x (m)" }, span_range, .{ .low = -in.root_chord * 0.85, .high = in.root_chord * 0.35 }, 0, true);
         const width = in.span / @as(f64, @floatFromInt(r.panel_count));
+        const outline = theme.colors.ink;
         for (0..r.panel_count) |i| {
-            const y_mid = r.panel_span[i];
-            const y_a = y_mid - width / 2;
-            const y_b = y_mid + width / 2;
+            const y_a = r.panel_span[i] - width / 2;
+            const y_b = r.panel_span[i] + width / 2;
             const chord_a = wing.chordAt(in, y_a);
             const chord_b = wing.chordAt(in, y_b);
-            // linha de 1/4 de corda reta: o bordo de ataque fica c/4 à frente dela
-            const xa: f32 = center_x + @as(f32, @floatCast(y_a)) * scale;
-            const xb: f32 = center_x + @as(f32, @floatCast(y_b)) * scale;
-            const quarter = leading_y + @as(f32, @floatCast(in.root_chord * 0.25)) * scale;
-            const top_a = quarter - @as(f32, @floatCast(chord_a * 0.25)) * scale;
-            const top_b = quarter - @as(f32, @floatCast(chord_b * 0.25)) * scale;
-            const bottom_a = quarter + @as(f32, @floatCast(chord_a * 0.75)) * scale;
-            const bottom_b = quarter + @as(f32, @floatCast(chord_b * 0.75)) * scale;
-            const t: f32 = if (high > low) @floatCast((r.section_cl_lifting_line[i] - low) / (high - low)) else 0.5;
-            const color = blend(theme.hex(0x4dabf7), theme.orange, t);
-            const quad = [_]rl.Vector2{ .{ .x = xa, .y = top_a }, .{ .x = xa, .y = bottom_a }, .{ .x = xb, .y = bottom_b }, .{ .x = xb, .y = top_b } };
-            rl.drawTriangleFan(&quad, color);
-            rl.drawLineEx(.{ .x = xb, .y = top_b }, .{ .x = xb, .y = bottom_b }, 1, theme.panel);
+            // linha de 1/4 de corda reta em x = 0: bordo de ataque em −c/4, de fuga em 3c/4
+            const leading_a = top.toScreen(y_a, chord_a * 0.25);
+            const trailing_a = top.toScreen(y_a, -chord_a * 0.75);
+            const leading_b = top.toScreen(y_b, chord_b * 0.25);
+            const trailing_b = top.toScreen(y_b, -chord_b * 0.75);
+            rl.drawTriangleFan(&[_]rl.Vector2{ leading_a, trailing_a, trailing_b, leading_b }, theme.colors.field);
+            rl.drawLineEx(leading_a, trailing_a, 1, theme.colors.grid);
+            rl.drawLineEx(leading_a, leading_b, 2, outline);
+            rl.drawLineEx(trailing_a, trailing_b, 2, outline);
         }
-        var buffer: [96]u8 = undefined;
-        theme.text(ui.fonts.mono, widgets.format(&buffer, "c_l de {d:.2} (azul) a {d:.2} (laranja)", .{ low, high }), inner.x + 10, inner.y + inner.height - 40, 13, theme.muted);
-        theme.text(ui.fonts.mono, widgets.format(&buffer, "S = {d:.3} m²   b = {d:.2} m   A = {d:.2}", .{ r.area, in.span, r.aspect_ratio }), inner.x + 10, inner.y + inner.height - 20, 13, theme.muted);
+        rl.drawLineEx(top.toScreen(-half, wing.chordAt(in, half) * 0.25), top.toScreen(-half, -wing.chordAt(in, half) * 0.75), 2, outline);
+        rl.drawLineEx(top.toScreen(half, wing.chordAt(in, half) * 0.25), top.toScreen(half, -wing.chordAt(in, half) * 0.75), 2, outline);
+        // vista de frente: um vetor de sustentação por faixa, no centro dela
+        const loads = r.load_lifting_line[0..r.panel_count];
+        var load_range = numbers.Range.of(loads, 0.08);
+        load_range.low = @min(load_range.low, 0);
+        load_range.high = @max(load_range.high, 0);
+        const front = plot.drawFrame(ui, .{ .x = inner.x, .y = inner.y + top_height, .width = inner.width, .height = inner.height - top_height }, .{ .title = title, .x_label = "y (m)", .y_label = "L' (N/m)" }, top.x_range, load_range, 0, false);
+        rl.drawLineEx(front.toScreen(-half, 0), front.toScreen(half, 0), 3, outline);
+        const color = theme.plotColor(0);
+        for (0..r.panel_count) |i| {
+            const base = front.toScreen(r.panel_span[i], 0);
+            const tip = front.toScreen(r.panel_span[i], loads[i]);
+            arrow(base, tip, color);
+        }
     }
 
     fn drawDiagnosis(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
@@ -254,10 +263,10 @@ pub const Screen = struct {
         };
         for (rows) |row| {
             const labels = [_][:0]const u8{ @tagName(row.status), row.item, row.value };
-            const colors = [_]rl.Color{ widgets.statusColor(row.status), theme.ink, theme.label };
+            const colors = [_]rl.Color{ widgets.statusColor(row.status), theme.colors.ink, theme.colors.label };
             widgets.tableRow(ui, y, &columns, &labels, &colors, 14);
             y += 26;
-            rl.drawRectangleRec(.{ .x = inner.x, .y = y - 6, .width = inner.width, .height = 1 }, theme.grid);
+            rl.drawRectangleRec(.{ .x = inner.x, .y = y - 6, .width = inner.width, .height = 1 }, theme.colors.grid);
         }
     }
 
@@ -266,7 +275,7 @@ pub const Screen = struct {
         const r = &screen.result;
         var buffers: [6][64]u8 = undefined;
         const columns = [_]f32{ inner.x, inner.x + 300 };
-        const colors = [_]rl.Color{ theme.label, theme.ink };
+        const colors = [_]rl.Color{ theme.colors.label, theme.colors.ink };
         const rows = [_][2][:0]const u8{
             .{ "área (m²)", widgets.format(&buffers[0], "{d:.4}", .{r.area}) },
             .{ "corda média aerodinâmica (m)", widgets.format(&buffers[1], "{d:.4}", .{r.mean_chord}) },
@@ -279,24 +288,32 @@ pub const Screen = struct {
         for (rows) |row| {
             widgets.tableRow(ui, y, &columns, &row, &colors, 14);
             y += 26;
-            rl.drawRectangleRec(.{ .x = inner.x, .y = y - 6, .width = inner.width, .height = 1 }, theme.grid);
+            rl.drawRectangleRec(.{ .x = inner.x, .y = y - 6, .width = inner.width, .height = 1 }, theme.colors.grid);
         }
     }
 };
 
-fn blend(a: rl.Color, b: rl.Color, t: f32) rl.Color {
-    const s = std.math.clamp(t, 0, 1);
-    const mix = struct {
-        fn f(x: u8, y: u8, k: f32) u8 {
-            return @intFromFloat(@as(f32, @floatFromInt(x)) + (@as(f32, @floatFromInt(y)) - @as(f32, @floatFromInt(x))) * k);
-        }
-    };
-    return .{ .r = mix.f(a.r, b.r, s), .g = mix.f(a.g, b.g, s), .b = mix.f(a.b, b.b, s), .a = 255 };
+/// vetor de `base` até `tip`, com a ponta em triângulo (some quando é mais curto que a ponta)
+fn arrow(base: rl.Vector2, tip: rl.Vector2, color: rl.Color) void {
+    const dx = tip.x - base.x;
+    const dy = tip.y - base.y;
+    const length = @sqrt(dx * dx + dy * dy);
+    if (length < 1) return;
+    const head = @min(9, length);
+    const ux = dx / length;
+    const uy = dy / length;
+    const neck: rl.Vector2 = .{ .x = tip.x - ux * head, .y = tip.y - uy * head };
+    rl.drawLineEx(base, neck, 2, color);
+    const side = head * 0.45;
+    const left: rl.Vector2 = .{ .x = neck.x - uy * side, .y = neck.y + ux * side };
+    const right: rl.Vector2 = .{ .x = neck.x + uy * side, .y = neck.y - ux * side };
+    rl.drawTriangle(tip, left, right, color);
+    rl.drawTriangle(tip, right, left, color); // um dos dois sai na ordem certa, qualquer que seja o sentido
 }
 
 /// o lugar de uma aba que ainda não foi feita
 fn placeholder(ui: *widgets.Ui, rect: rl.Rectangle, name: [:0]const u8) void {
     const box: rl.Rectangle = .{ .x = rect.x + 40, .y = rect.y + 40, .width = @min(rect.width - 80, 620), .height = 150 };
     const inner = widgets.labeledCard(ui, box, name);
-    theme.text(ui.fonts.regular, "esta aba ainda não foi feita em Zig; o desenho segue o mesmo tema", inner.x, inner.y + 10, 15, theme.label);
+    theme.text(ui.fonts.regular, "esta aba ainda não foi feita em Zig; o desenho segue o mesmo tema", inner.x, inner.y + 10, 15, theme.colors.label);
 }

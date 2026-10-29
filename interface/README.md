@@ -1,7 +1,8 @@
 # interface
 
 Esta é a interface do aerosim e do aeroopt escrita em Zig, com raylib e raygui, no mesmo visual escolhido para o
-site: grafite, laranja e preto, cantos cortados, abas e botões inclinados e a logo do albatroz em azul. Ela é o
+site: cantos cortados, abas e botões inclinados e a logo do albatroz em azul, em dois modos de cor. O claro, que é o
+padrão, é cinza claro com bordas pretas, azul e a zebra amarela; o escuro é grafite, laranja e preto. Ela é o
 começo da troca da GUI em PyQt por uma que não precisa de Python: as contas vêm do núcleo (`core/`), que entra aqui
 como módulo, igual ao AeroDrive. Por enquanto é o desenho das telas. No aerosim, a aba Analisar já roda a
 varredura das asas no núcleo; o aeroopt mostra uma rodada de exemplo.
@@ -13,9 +14,10 @@ enquanto não leem o avião e o problema de verdade: a asa de exemplo e a rodada
 
 ## As peças (`src/ui`)
 
-Aqui se define a aparência e o comportamento comum. `theme.zig` guarda as cores (com a paleta de dez cores das
-curvas), as três fontes (texto, títulos e números, procuradas no sistema) e a logo, carregada branca e pintada de
-azul na hora de desenhar. `shapes.zig` desenha o retângulo de dois cantos cortados, o paralelogramo das abas e do
+Aqui se define a aparência e o comportamento comum. `theme.zig` guarda as cores dos dois modos, cada uma com um
+papel (fundo, cartão, faixa escura, destaque, texto e a paleta de dez cores das curvas, escolhida para cada fundo); o
+botão no canto do cabeçalho troca o modo na hora. Lá também ficam as três fontes (texto, títulos e números,
+procuradas no sistema) e a logo, carregada branca e pintada de azul na hora de desenhar. `shapes.zig` desenha o retângulo de dois cantos cortados, o paralelogramo das abas e do
 botão e a faixa zebrada da barra de progresso.
 
 O formulário (`form.zig`) recebe uma lista de campos, cada um com rótulo, unidade, grupo, tipo (número, marcador ou
@@ -32,8 +34,9 @@ dos números ficam em `numbers.zig`, que não abre janela e por isso tem teste.
 No aerosim, o cabeçalho tem os botões de abrir e salvar, e embaixo vêm as abas das áreas e as subabas da
 Aerodinâmica (Perfis, Projetar, Analisar). Em Analisar, o formulário pede a asa, o perfil e o caso, e o botão Rodar
 chama a varredura do núcleo pelos dois métodos, a linha sustentadora não linear e as faixas independentes. Os
-gráficos mostram o C_L do conjunto em α, a vista de cima pintada pelo c_l, o c_l e a carga ao longo da
-envergadura, o diagnóstico (C_L máximo, onde o estol começa, Reynolds) e um resumo. As outras abas mostram só o
+gráficos mostram o C_L do conjunto em α, a asa e a carga (a vista de cima em escala, só o contorno e as faixas, e
+embaixo a vista de frente com um vetor de sustentação por faixa, do tamanho de L' na escala do eixo), o c_l e a
+carga ao longo da envergadura, o diagnóstico (C_L máximo, onde o estol começa, Reynolds) e um resumo. As outras abas mostram só o
 lugar delas.
 
 No aeroopt, o problema fica à esquerda, em quatro grupos: pontuação, variáveis, restrições e configuração. À
@@ -68,6 +71,7 @@ cd interface
 python -m ziglang build test                                  # testes sem janela
 python -m ziglang build run -- aerosim                        # abre o aerosim
 python -m ziglang build run -- aeroopt                        # abre o aeroopt
+python -m ziglang build run -- aerosim escuro                 # já no modo escuro
 xvfb-run -a python -m ziglang build shot -- aerosim.png aerosim   # print sem tela
 ```
 

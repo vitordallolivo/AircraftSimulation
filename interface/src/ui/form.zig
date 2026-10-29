@@ -79,16 +79,16 @@ pub const Form = struct {
         var y = rect.y + 8 - form.scroll;
         for (form.groups, 0..) |*group, g| {
             const band: rl.Rectangle = .{ .x = rect.x + 10, .y = y, .width = rect.width - 20, .height = band_height };
-            rl.drawRectangleRec(band, theme.black);
-            rl.drawRectangleRec(.{ .x = band.x, .y = band.y, .width = 5, .height = band.height }, theme.orange);
+            rl.drawRectangleRec(band, theme.colors.band);
+            rl.drawRectangleRec(.{ .x = band.x, .y = band.y, .width = 5, .height = band.height }, theme.colors.accent);
             const arrow: [:0]const u8 = if (group.open) "▼" else "▸";
-            theme.text(ui.fonts.bold, arrow, band.x + 14, band.y + 8, 12, theme.orange);
-            theme.text(ui.fonts.bold, group.title, band.x + 32, band.y + 8, 13, theme.orange);
+            theme.text(ui.fonts.bold, arrow, band.x + 14, band.y + 8, 12, theme.colors.band_text);
+            theme.text(ui.fonts.bold, group.title, band.x + 32, band.y + 8, 13, theme.colors.band_text);
             if (ui.clickedIn(band)) group.open = !group.open;
             y += band_height;
             if (group.open) {
                 const body: rl.Rectangle = .{ .x = band.x, .y = y, .width = band.width, .height = row_height * @as(f32, @floatFromInt(form.countIn(g))) + 6 };
-                rl.drawRectangleRec(body, theme.panel);
+                rl.drawRectangleRec(body, theme.colors.panel);
                 y += 3;
                 for (form.fields, 0..) |*field, i| {
                     if (field.group != g) continue;
@@ -129,10 +129,10 @@ pub const Form = struct {
         switch (field.kind) {
             .toggle => {
                 const box: rl.Rectangle = .{ .x = x, .y = y + 7, .width = 16, .height = 16 };
-                rl.drawRectangleRec(box, if (field.checked) theme.orange else theme.field);
-                rl.drawRectangleLinesEx(box, 1, if (field.checked) theme.orange else theme.line);
-                if (field.checked) theme.text(ui.fonts.bold, "✓", box.x + 2, box.y - 1, 15, theme.black);
-                theme.text(ui.fonts.regular, field.label, x + 26, y + 7, 14, theme.label);
+                rl.drawRectangleRec(box, if (field.checked) theme.colors.accent else theme.colors.field);
+                rl.drawRectangleLinesEx(box, 1, if (field.checked) theme.colors.accent else theme.colors.line);
+                if (field.checked) theme.text(ui.fonts.bold, "✓", box.x + 2, box.y - 1, 15, theme.colors.on_accent);
+                theme.text(ui.fonts.regular, field.label, x + 26, y + 7, 14, theme.colors.label);
                 const row: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = row_height };
                 if (ui.clickedIn(row)) {
                     field.checked = !field.checked;
@@ -142,12 +142,12 @@ pub const Form = struct {
             },
             .number, .choice => {
                 const caption = if (field.unit.len > 0) widgets.format(&buffer, "{s} ({s})", .{ field.label, field.unit }) else field.label;
-                theme.text(ui.fonts.regular, caption, x, y + 7, 14, theme.label);
+                theme.text(ui.fonts.regular, caption, x, y + 7, 14, theme.colors.label);
             },
         }
         if (field.kind == .choice) {
-            rl.drawRectangleRec(control, theme.field);
-            rl.drawRectangleRec(.{ .x = control.x, .y = control.y + control.height - 2, .width = control.width, .height = 2 }, theme.orange);
+            rl.drawRectangleRec(control, theme.colors.field);
+            rl.drawRectangleRec(.{ .x = control.x, .y = control.y + control.height - 2, .width = control.width, .height = 2 }, theme.colors.accent);
             var options = std.mem.splitScalar(u8, field.choices, ';');
             var k: i32 = 0;
             var current: []const u8 = "";
@@ -157,9 +157,9 @@ pub const Form = struct {
             var text_buffer: [96]u8 = undefined;
             const shown = widgets.format(&text_buffer, "{s}", .{current});
             rl.beginScissorMode(@intFromFloat(control.x), @intFromFloat(control.y), @intFromFloat(control.width - 18), @intFromFloat(control.height));
-            theme.text(ui.fonts.mono, shown, control.x + 6, control.y + 5, 14, theme.ink);
+            theme.text(ui.fonts.mono, shown, control.x + 6, control.y + 5, 14, theme.colors.ink);
             rl.endScissorMode();
-            theme.text(ui.fonts.bold, "▼", control.x + control.width - 16, control.y + 6, 11, theme.orange);
+            theme.text(ui.fonts.bold, "▼", control.x + control.width - 16, control.y + 6, 11, theme.colors.accent);
             if (ui.clickedIn(control)) form.open_choice = index;
             return false;
         }
@@ -175,9 +175,9 @@ pub const Form = struct {
             }
             return false;
         }
-        rl.drawRectangleRec(control, theme.field);
-        rl.drawRectangleRec(.{ .x = control.x, .y = control.y + control.height - 2, .width = control.width, .height = 2 }, theme.orange);
-        theme.text(ui.fonts.mono, numberText(&buffer, field.number), control.x + 6, control.y + 5, 14, theme.ink);
+        rl.drawRectangleRec(control, theme.colors.field);
+        rl.drawRectangleRec(.{ .x = control.x, .y = control.y + control.height - 2, .width = control.width, .height = 2 }, theme.colors.accent);
+        theme.text(ui.fonts.mono, numberText(&buffer, field.number), control.x + 6, control.y + 5, 14, theme.colors.ink);
         if (ui.clickedIn(control)) {
             form.editing = index;
             form.edit_text = [_:0]u8{0} ** 32;

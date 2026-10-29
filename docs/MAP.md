@@ -668,7 +668,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **interface/src/**
 
 - `interface/src/main.zig` — A interface do aerosim e do aeroopt em Zig: abre a janela e desenha a tela pedida.
-  fn `main:49`
+  fn `main:52`
 - `interface/src/opt_example.zig` — Dados de exemplo da tela do aeroopt enquanto ela não roda a busca: uma rodada inventada, sempre a mesma (semente
   tipos `Run:16`
   fn `syntheticScore:31`, `generate:38`
@@ -680,9 +680,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **interface/src/screens/**
 
 - `interface/src/screens/aeroopt.zig` — A tela do aeroopt: à esquerda o problema (pontuação, variáveis, restrições e configuração, cada um num grupo
-  tipos `Screen:44`
-- `interface/src/screens/aerosim.zig` — A tela do aerosim: cabeçalho, abas das áreas, subabas da Aerodinâmica e, em Analisar, o formulário lateral, o
   tipos `Screen:45`
+- `interface/src/screens/aerosim.zig` — A tela do aerosim: cabeçalho, abas das áreas, subabas da Aerodinâmica e, em Analisar, o formulário lateral, o
+  tipos `Screen:46`
 
 **interface/src/ui/**
 
@@ -692,16 +692,16 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Range:38`
   fn `numberText:5`, `niceStep:21`, `decimalsFor:31`
 - `interface/src/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
-  tipos `Series:11`, `Cloud:21`, `Axes:29`
-  fn `lines:48`, `cloud:81`
+  tipos `Series:11`, `Cloud:21`, `Axes:29`, `Frame:35`
+  fn `lines:49`, `cloud:82`, `ramp:101`, `colorBar:117`, `drawFrame:137`
 - `interface/src/ui/shapes.zig` — As formas do visual: retângulo com dois cantos cortados (cartões), paralelogramo (abas e botões inclinados) e
   fn `cutCornerPoints:6`, `cutCorners:22`, `cutCornersTopEdge:28`, `slantedPoints:34`, `slanted:44`, `hazard:50`
-- `interface/src/ui/theme.zig` — O visual da interface (o "tema 6" escolhido no protótipo em HTML): grafite, laranja e preto, cantos cortados,
-  tipos `Fonts:86`, `Logo:130`
-  fn `hex:7`, `withAlpha:12`, `plotColor:36`, `spacing:115`, `text:120`, `textWidth:125`
+- `interface/src/ui/theme.zig` — O visual da interface: cantos cortados, abas e botões inclinados e a logo do albatroz em azul, em dois modos de
+  tipos `Palette:18`, `Mode:105`, `Fonts:177`, `Logo:221`
+  fn `hex:8`, `withAlpha:13`, `use:112`, `plotColor:121`, `isDark:126`, `spacing:206`, `text:211`, `textWidth:216`
 - `interface/src/ui/widgets.zig` — Os pedaços comuns das telas: o contexto de desenho (fontes, logo, mouse), o cabeçalho com a logo, a barra de
-  tipos `Ui:10`, `Status:171`
-  fn `header:83`, `tabBar:107`, `primaryButton:129`, `card:140`, `labeledCard:150`, `statusColor:161`, `tableRow:174`, `format:181`
+  tipos `Ui:10`, `Status:183`
+  fn `header:84`, `tabBar:119`, `primaryButton:141`, `card:152`, `labeledCard:162`, `statusColor:173`, `tableRow:186`, `format:193`
 
 
 ## Ferramentas (`tools/`)

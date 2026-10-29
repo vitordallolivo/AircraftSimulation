@@ -9,6 +9,7 @@ const shapes = @import("../ui/shapes.zig");
 const widgets = @import("../ui/widgets.zig");
 const form_mod = @import("../ui/form.zig");
 const plot = @import("../ui/plot.zig");
+const numbers = @import("../ui/numbers.zig");
 const example = @import("../opt_example.zig");
 
 const tabs = [_][:0]const u8{ "OTIMIZAR", "SENSIBILIDADE" };
@@ -60,7 +61,7 @@ pub const Screen = struct {
 
     /// desenha a tela inteira e trata o mouse
     pub fn draw(screen: *Screen, ui: *widgets.Ui, width: f32, height: f32) void {
-        rl.clearBackground(theme.background);
+        rl.clearBackground(theme.colors.background);
         const top = widgets.header_height + 38;
         const sidebar_width: f32 = 360;
         if (screen.tab == 0) {
@@ -69,27 +70,27 @@ pub const Screen = struct {
         } else {
             const box: rl.Rectangle = .{ .x = 40, .y = top + 40, .width = 620, .height = 150 };
             const inner = widgets.labeledCard(ui, box, "SENSIBILIDADE");
-            theme.text(ui.fonts.regular, "esta aba ainda não foi feita em Zig; o desenho segue o mesmo tema", inner.x, inner.y + 10, 15, theme.label);
+            theme.text(ui.fonts.regular, "esta aba ainda não foi feita em Zig; o desenho segue o mesmo tema", inner.x, inner.y + 10, 15, theme.colors.label);
         }
         if (widgets.header(ui, width, "AEROOPT", &.{ "Abrir problema (.opt.json)", "Salvar" }, "dados de exemplo · desenho da interface em Zig")) |_|
             _ = std.fmt.bufPrintZ(&screen.message, "abrir e salvar o problema entram na próxima etapa", .{}) catch {};
-        _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, &tabs, &screen.tab, theme.black, 14);
+        _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, &tabs, &screen.tab, theme.colors.strip, 14);
     }
 
     fn drawSidebar(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
-        rl.drawRectangleRec(rect, theme.sidebar);
-        rl.drawRectangleRec(.{ .x = rect.x + rect.width - 3, .y = rect.y, .width = 3, .height = rect.height }, theme.black);
+        rl.drawRectangleRec(rect, theme.colors.sidebar);
+        rl.drawRectangleRec(.{ .x = rect.x + rect.width - 3, .y = rect.y, .width = 3, .height = rect.height }, theme.colors.strip);
         const footer_height: f32 = 92;
         const footer: rl.Rectangle = .{ .x = rect.x, .y = rect.y + rect.height - footer_height, .width = rect.width - 3, .height = footer_height };
-        rl.drawRectangleRec(footer, theme.black);
-        rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 3 }, theme.orange);
+        rl.drawRectangleRec(footer, theme.colors.strip);
+        rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 3 }, theme.colors.accent);
         if (widgets.primaryButton(ui, .{ .x = footer.x + 12, .y = footer.y + 14, .width = footer.width - 24, .height = 34 }, "▶  OTIMIZAR", true)) {
             example.generate(&screen.run);
             screen.progress = 1;
             _ = std.fmt.bufPrintZ(&screen.message, "a busca de verdade entra na próxima etapa (exemplo refeito)", .{}) catch {};
         }
-        shapes.hazard(.{ .x = footer.x + 12, .y = footer.y + 54, .width = footer.width - 24, .height = 7 }, screen.progress, theme.orange, theme.panel);
-        theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.message, 0), footer.x + 12, footer.y + 68, 13, theme.muted);
+        shapes.hazard(.{ .x = footer.x + 12, .y = footer.y + 54, .width = footer.width - 24, .height = 7 }, screen.progress, theme.colors.hazard, theme.colors.panel);
+        theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.message, 0), footer.x + 12, footer.y + 68, 13, theme.colors.strip_label);
         _ = screen.form.draw(ui, .{ .x = rect.x, .y = rect.y + 4, .width = rect.width - 3, .height = rect.height - footer_height - 4 });
     }
 
@@ -136,9 +137,9 @@ pub const Screen = struct {
         }.better);
         const columns = [_]f32{ inner.x, inner.x + 46, inner.x + 140, inner.x + 270, inner.x + 400 };
         const head = [_][:0]const u8{ "#", "nota", "envergadura", "corda raiz", "MTOW" };
-        const head_colors = [_]rl.Color{theme.orange};
+        const head_colors = [_]rl.Color{theme.colors.accent};
         widgets.tableRow(ui, inner.y, &columns, &head, &head_colors, 13);
-        rl.drawRectangleRec(.{ .x = inner.x, .y = inner.y + 20, .width = inner.width, .height = 2 }, theme.orange);
+        rl.drawRectangleRec(.{ .x = inner.x, .y = inner.y + 20, .width = inner.width, .height = 2 }, theme.colors.accent);
         var y = inner.y + 28;
         var buffers: [5][24]u8 = undefined;
         for (order[0..10], 0..) |i, rank| {
@@ -149,8 +150,8 @@ pub const Screen = struct {
                 widgets.format(&buffers[3], "{d:.3} m", .{run.chord[i]}),
                 widgets.format(&buffers[4], "{d:.2} kg", .{run.mtow[i]}),
             };
-            const row_color = if (rank == 0) theme.orange else theme.ink;
-            const colors = [_]rl.Color{ theme.muted, row_color, theme.label, theme.label, theme.label };
+            const row_color = if (rank == 0) theme.colors.accent else theme.colors.ink;
+            const colors = [_]rl.Color{ theme.colors.muted, row_color, theme.colors.label, theme.colors.label, theme.colors.label };
             widgets.tableRow(ui, y, &columns, &cells, &colors, 14);
             y += 28;
             if (y > inner.y + inner.height) break;
@@ -158,23 +159,35 @@ pub const Screen = struct {
     }
 };
 
-/// barras horizontais com o rótulo à esquerda e o valor no fim (cores da paleta, uma por barra)
+/// barras horizontais retas, de uma cor só, todas a partir do zero (o comprimento é o valor), com a escala embaixo
+/// e o valor no fim de cada barra
 fn bars(ui: *widgets.Ui, rect: rl.Rectangle, title: [:0]const u8, labels: []const [:0]const u8, values: []const f64, comptime value_format: []const u8) void {
     const inner = widgets.card(ui, rect, title);
     var high: f64 = 0;
     for (values) |v| high = @max(high, v);
     if (!(high > 0)) high = 1;
+    const step = numbers.niceStep(high, 5);
+    const axis_high = @ceil(high / step) * step;
     const label_width: f32 = 190;
-    const n: f32 = @floatFromInt(labels.len);
-    const slot = (inner.height - 10) / n;
-    const thickness = @min(slot * 0.62, 30);
+    const scale_height: f32 = 24;
+    const area: rl.Rectangle = .{ .x = inner.x + label_width, .y = inner.y + 4, .width = inner.width - label_width - 60, .height = inner.height - scale_height - 8 };
     var buffer: [32]u8 = undefined;
+    // escala: grade e marcas
+    var tick: f64 = 0;
+    while (tick <= axis_high + step * 1e-9) : (tick += step) {
+        const x = area.x + @as(f32, @floatCast(tick / axis_high)) * area.width;
+        rl.drawLineEx(.{ .x = x, .y = area.y }, .{ .x = x, .y = area.y + area.height }, 1, if (tick == 0) theme.colors.line else theme.colors.grid);
+        const text = widgets.format(&buffer, "{d}", .{tick});
+        theme.text(ui.fonts.mono, text, x - theme.textWidth(ui.fonts.mono, text, 12) / 2, area.y + area.height + 6, 12, theme.colors.muted);
+    }
+    const n: f32 = @floatFromInt(labels.len);
+    const slot = area.height / n;
+    const thickness = @min(slot * 0.6, 28);
     for (labels, values, 0..) |caption, value, i| {
-        const y = inner.y + 6 + @as(f32, @floatFromInt(i)) * slot;
-        theme.text(ui.fonts.regular, caption, inner.x + 6, y + (thickness - 14) / 2, 14, theme.label);
-        const full = inner.width - label_width - 70;
-        const length = full * @as(f32, @floatCast(value / high));
-        shapes.slanted(.{ .x = inner.x + label_width, .y = y, .width = @max(length, 12), .height = thickness }, 6, theme.plotColor(i));
-        theme.text(ui.fonts.mono, widgets.format(&buffer, value_format, .{value}), inner.x + label_width + length + 10, y + (thickness - 14) / 2, 14, theme.ink);
+        const y = area.y + (@as(f32, @floatFromInt(i)) + 0.5) * slot - thickness / 2;
+        theme.text(ui.fonts.regular, caption, inner.x + 6, y + (thickness - 14) / 2, 14, theme.colors.label);
+        const length = area.width * @as(f32, @floatCast(value / axis_high));
+        rl.drawRectangleRec(.{ .x = area.x, .y = y, .width = length, .height = thickness }, theme.plotColor(1));
+        theme.text(ui.fonts.mono, widgets.format(&buffer, value_format, .{value}), area.x + length + 8, y + (thickness - 14) / 2, 14, theme.colors.ink);
     }
 }

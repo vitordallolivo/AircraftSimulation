@@ -1,7 +1,7 @@
 //! A interface do aerosim e do aeroopt em Zig: abre a janela e desenha a tela pedida.
 //!
-//!   aircraftsimulation [aerosim|aeroopt] [LxA]
-//!   aircraftsimulation --shot <saída.png> [aerosim|aeroopt] [LxA] [grupo=N,...] [rolar=PIXELS]
+//!   aircraftsimulation [aerosim|aeroopt] [claro|escuro] [LxA]
+//!   aircraftsimulation --shot <saída.png> [aerosim|aeroopt] [claro|escuro] [LxA] [rolar=PIXELS]
 //!
 //! No modo --shot a tela é desenhada alguns quadros e salva numa imagem (para os prints sem interação).
 const std = @import("std");
@@ -18,6 +18,7 @@ const Program = enum { aerosim, aeroopt };
 
 const Args = struct {
     program: Program = .aerosim,
+    mode: theme.Mode = .claro,
     shot: ?[:0]const u8 = null,
     width: i32 = 1500,
     height: i32 = 950,
@@ -35,6 +36,8 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
             args.shot = argv[i];
         } else if (std.meta.stringToEnum(Program, value)) |program| {
             args.program = program;
+        } else if (std.meta.stringToEnum(theme.Mode, value)) |mode| {
+            args.mode = mode;
         } else if (std.mem.startsWith(u8, value, "rolar=")) {
             args.scroll = std.fmt.parseFloat(f32, value[6..]) catch return error.BadArgs;
         } else if (std.mem.indexOfScalar(u8, value, 'x')) |cut| {
@@ -50,7 +53,7 @@ pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
     const argv = try init.minimal.args.toSlice(arena);
     const args = parseArgs(argv) catch {
-        std.debug.print("uso: aircraftsimulation [aerosim|aeroopt] [LxA]\n     aircraftsimulation --shot <saída.png> [aerosim|aeroopt] [LxA] [rolar=PIXELS]\n", .{});
+        std.debug.print("uso: aircraftsimulation [aerosim|aeroopt] [claro|escuro] [LxA]\n     aircraftsimulation --shot <saída.png> [aerosim|aeroopt] [claro|escuro] [LxA] [rolar=PIXELS]\n", .{});
         std.process.exit(2);
     };
     const shot = args.shot != null;
@@ -60,6 +63,7 @@ pub fn main(init: std.process.Init) !void {
     defer rl.closeWindow();
     rl.setTargetFPS(60);
 
+    theme.use(args.mode);
     var ui = try widgets.Ui.init();
     defer ui.deinit();
     var aerosim: aerosim_screen.Screen = .{};
