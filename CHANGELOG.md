@@ -4,7 +4,12 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## Não lançado
 
-### v0.2.3 (branch `0.2_dev`)
+### v0.2.4 (branch `0.2_dev`)
+
+- tracking: meta da 1.0 (tudo no navegador, sem instalar nada; o Python em WebAssembly fica para a 1.1) e o quadro
+  em dia com a `main` (os itens "a revisar" que já foram no PR #31 passam a "Feito (na `main`)").
+
+### v0.2.3 (`main`, PR #31)
 
 - núcleo, legibilidade (T87, revisão do vitor). Os erros da ABI viram um `error{...}` (`AbiError`), e o número negativo
   só aparece na fronteira, em `abiCode`. Os arquivos `tests_*.zig` por grupo dão lugar a `zig build test -Dgrupo=math`
