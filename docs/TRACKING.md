@@ -50,6 +50,10 @@ O que pegar primeiro, lendo o quadro como ele está agora. Tudo o que estava "a 
 6. **Cargas, estruturas e aeroelasticidade (B4 a B9):** quase tudo espera a T38 (plano da arquitetura de cargas) e a
    T20 (estruturas).
 7. **Meta da 1.0 (W1 a W10):** à parte, sem posição em relação ao resto.
+8. **Suspeita a resolver (próximo item da web):** o Zig 0.16.0 não compila `std.Io.Threaded` para o emscripten
+   (`std/os/emscripten.zig`, `W.STOPSIG` devolve `u32` por `@enumFromInt`). Hoje o AeroDrive contorna com um `std.Io`
+   próprio (`aerodrive/src/sys/browser_io.zig`). Conferir se o 0.16.1 ou o 0.17 corrige e, se corrigir, tirar o
+   contorno.
 
 ## O castelo (mapa)
 
@@ -107,10 +111,10 @@ Cada etapa é uma tarefa do quadro quando chegar a vez dela, com plano antes e o
 
 | Etapa | O que | Depende de |
 |---|---|---|
-| **W1** | AeroDrive na web: compilar com o emscripten (`aerodrive.html`/`.js`/`.wasm`), shaders `#version 300 es`, avião de exemplo embutido, controle por toque | — |
-| **W2** | Aviões no navegador: abrir `.json` do PC por botão ou arrastando, biblioteca guardada no navegador (IndexedDB), salvar baixando o `.json` | W1 |
-| **W3** | Tela de seleção estilo BIOS que invoca as aplicações e passa o avião aberto entre elas | W1 |
-| **W4** | Publicar no GitHub Pages, com instalação na tela inicial do celular (PWA) e uso sem internet | W3 |
+| **W1** | AeroDrive na web: compilar com o emscripten (`aerodrive.html`/`.js`/`.wasm`), shaders `#version 300 es`, avião de exemplo embutido, controle por toque. **Feito na `0.2_dev`** | — |
+| **W2** | Aviões no navegador: abrir `.json` do PC por botão ou arrastando, biblioteca guardada no navegador (IndexedDB), salvar baixando o `.json`. **Feito na `0.2_dev`** | W1 |
+| **W3** | Tela de seleção estilo BIOS que invoca as aplicações e passa o avião aberto entre elas. **Feito na `0.2_dev`** (`web/index.html`; aerosim e aeroopt aparecem como "em breve") | W1 |
+| **W4** | Publicar no GitHub Pages, com instalação na tela inicial do celular (PWA) e uso sem internet. Publicação feita (`tools/web_build.py` e `.github/workflows/site.yml`); falta o PWA | W3 |
 | **W5** | Levar para o núcleo as contas que ainda estão em Python no aerosim e no aeroopt | — |
 | **W6** | Métodos de bibliotecas Python (lltdrek, ASB, optvl/AVL): portar para o núcleo ou deixar de fora da web com aviso | W5 |
 | **W7** | Interface do aerosim e do aeroopt em Zig (raygui, Dear ImGui ou dvui, a escolher no plano), com os gráficos | W5 |

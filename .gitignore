@@ -259,3 +259,14 @@ Entrega de relatórios/
 # perfis de tempo (tools/time_profile.py): saída local, fora do git
 perfis/
 rodadas_aeroopt/
+
+# repositório público: chaves e credenciais nunca no git
+*.pem
+*.key
+*.p12
+*.pfx
+.netrc
+credentials*.json
+secrets*.json
+# site montado por tools/web_build.py (o GitHub Actions monta de novo a cada publicação)
+site/

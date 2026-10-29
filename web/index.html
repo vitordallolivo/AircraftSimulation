@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0000aa">
+<title>AircraftSimulation</title>
+<!--
+  Tela inicial do site (estilo BIOS): escolhe o programa. Só HTML, CSS e JS, sem nada para baixar.
+  tools/web_build.py copia esta página para a raiz do site, ao lado do aerodrive.html.
+
+  "Carregar avião (.json)" guarda o arquivo no IndexedDB "aircraftsimulation", loja "pendente",
+  chave "aviao" ({name, bytes}); o aerodrive.html lê, apaga e abre o avião (aerodrive/web/shell.html).
+-->
+<style>
+  :root {
+    --fundo: #0000aa;
+    --texto: #c0c0c0;
+    --claro: #ffffff;
+    --apagado: #7f7fd4;
+    --barra: #00aaaa;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--fundo); }
+  body {
+    color: var(--texto);
+    font: 16px/1.5 ui-monospace, "DejaVu Sans Mono", "Cascadia Mono", Consolas, "Courier New", monospace;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 16px;
+  }
+  .moldura { width: 100%; max-width: 46em; }
+  /* moldura: cantos fixos e a linha ═ cortada na largura da tela */
+  .borda { display: flex; color: var(--claro); user-select: none; white-space: pre; line-height: 1; }
+  .borda .linha { flex: 1; overflow: hidden; }
+  /* as laterais ║ alinhadas ao meio dos cantos ╔ ╗ */
+  .corpo {
+    margin: 0 calc(0.5ch - 2px); padding: 0.5em 2ch;
+    border-left: 4px double var(--claro); border-right: 4px double var(--claro);
+  }
+  h1 { font-size: inherit; font-weight: normal; margin: 0; color: var(--claro); text-align: center; }
+  .sub { text-align: center; color: var(--apagado); margin: 0 0 1em; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li button {
+    all: unset; box-sizing: border-box; display: block; width: 100%; padding: 0.15em 1ch; cursor: pointer; white-space: pre-wrap;
+    color: var(--texto);
+  }
+  li button::before { content: "  "; }
+  li button.ativo, li button:focus-visible { background: var(--texto); color: var(--fundo); }
+  li button.ativo::before { content: "> "; }
+  li button:disabled { color: var(--apagado); cursor: default; }
+  li button:disabled.ativo { background: var(--apagado); color: var(--fundo); }
+  .separador { color: var(--apagado); padding: 0.4em 1ch 0.2em; }
+  .ajuda { margin: 1em 0 0; min-height: 3em; color: var(--claro); }
+  .rodape { margin-top: 0.6em; background: var(--barra); color: #000; padding: 0.1em 1ch; text-align: center; white-space: pre-wrap; }
+  .rodape b { font-weight: normal; color: var(--claro); }
+  @media (max-width: 520px) { body { font-size: 14px; padding: 8px; } }
+</style>
+</head>
+<body>
+<div class="moldura">
+  <div class="borda" aria-hidden="true"><span>╔</span><span class="linha">════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════</span><span>╗</span></div>
+  <div class="corpo">
+    <h1>AircraftSimulation</h1>
+    <p class="sub">dimensionar uma aeronave e voar o resultado</p>
+    <ul id="lista" role="listbox" aria-label="Programas">
+      <li><button data-acao="aerodrive" data-ajuda="Simulação em tempo real: escolha um avião de exemplo (ou o seu) e pilote com teclado, controle ou toque.">AeroDrive — pilotar o avião</button></li>
+      <li><button data-acao="carregar" data-ajuda="Escolha o .json de um avião feito no aerosim. Ele fica guardado neste navegador e o AeroDrive abre já com ele.">Carregar avião (.json)</button></li>
+      <li class="separador" aria-hidden="true">em breve</li>
+      <li><button disabled data-ajuda="Onde se projeta o avião: dimensionamento, aerodinâmica, desempenho, estabilidade e cargas. Por enquanto só no programa instalado.">aerosim — projetar (em breve)</button></li>
+      <li><button disabled data-ajuda="Otimização do projeto para a competição. Por enquanto só no programa instalado.">aeroopt — otimizar (em breve)</button></li>
+    </ul>
+    <p class="ajuda" id="ajuda" aria-live="polite"></p>
+  </div>
+  <div class="borda" aria-hidden="true"><span>╚</span><span class="linha">════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════</span><span>╝</span></div>
+  <div class="rodape"><b>↑↓</b> escolher  <b>Enter</b> abrir  <b>Esc</b> voltar</div>
+</div>
+<input id="arquivo" type="file" accept=".json,application/json" hidden>
+<script>
+  'use strict';
+  const botoes = Array.from(document.querySelectorAll('#lista button'));
+  const ajuda = document.getElementById('ajuda');
+  const arquivo = document.getElementById('arquivo');
+  let atual = 0;
+
+  function marcar(indice) {
+    atual = (indice + botoes.length) % botoes.length;
+    botoes.forEach((botao, i) => {
+      botao.classList.toggle('ativo', i === atual);
+      botao.setAttribute('aria-selected', i === atual ? 'true' : 'false');
+    });
+    ajuda.textContent = botoes[atual].dataset.ajuda || '';
+  }
+
+  // guarda o avião para o aerodrive.html abrir (IndexedDB "aircraftsimulation" / "pendente" / "aviao")
+  function guardarPendente(nome, bytes) {
+    return new Promise((resolve, reject) => {
+      const pedido = indexedDB.open('aircraftsimulation', 1);
+      pedido.onupgradeneeded = () => pedido.result.createObjectStore('pendente');
+      pedido.onerror = () => reject(pedido.error);
+      pedido.onsuccess = () => {
+        const transacao = pedido.result.transaction('pendente', 'readwrite');
+        transacao.objectStore('pendente').put({ name: nome, bytes: bytes }, 'aviao');
+        transacao.oncomplete = () => resolve();
+        transacao.onerror = () => reject(transacao.error);
+      };
+    });
+  }
+
+  function abrir(indice) {
+    const botao = botoes[indice];
+    if (!botao || botao.disabled) return;
+    if (botao.dataset.acao === 'aerodrive') window.location.href = 'aerodrive.html';
+    else if (botao.dataset.acao === 'carregar') arquivo.click();
+  }
+
+  arquivo.addEventListener('change', async () => {
+    const escolhido = arquivo.files[0];
+    arquivo.value = '';
+    if (!escolhido) return;
+    try {
+      await guardarPendente(escolhido.name, await escolhido.arrayBuffer());
+      window.location.href = 'aerodrive.html';
+    } catch (erro) {
+      ajuda.textContent = 'Não consegui guardar o arquivo neste navegador: ' + erro;
+    }
+  });
+
+  botoes.forEach((botao, i) => {
+    botao.addEventListener('mouseenter', () => marcar(i));
+    botao.addEventListener('focus', () => marcar(i));
+    botao.addEventListener('click', () => { marcar(i); abrir(i); });
+  });
+
+  document.addEventListener('keydown', (evento) => {
+    if (evento.key === 'ArrowDown') { marcar(atual + 1); botoes[atual].focus(); evento.preventDefault(); }
+    else if (evento.key === 'ArrowUp') { marcar(atual - 1); botoes[atual].focus(); evento.preventDefault(); }
+    else if (evento.key === 'Enter') { abrir(atual); evento.preventDefault(); }
+    else if (evento.key === 'Escape') { marcar(0); botoes[0].focus(); }
+  });
+
+  marcar(0);
+</script>
+</body>
+</html>
