@@ -41,6 +41,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   cada superfície e as polares de todos os métodos do Avião montado nas superfícies escolhidas. Chapas de ponta
   opcionais. A varredura em α é do núcleo (`core/src/loads/sweep.zig`), numa chamada, igual ao laço em Python e cerca
   de dez vezes mais rápida.
+- aerodinâmica: a subaba Avião montado saiu. A Asas faz também a análise do avião completo (polares no CG, profundor e
+  derrapagem, estol × cruzeiro, L/D, pontas de asa) quando o avião aberto está pronto, e a polar continua indo para o
+  Desempenho.
 - celular: no primeiro toque a página vai para a tela cheia e trava deitada; em pé aparece "gire o celular"; o jogo
   acompanha o tamanho da página (tela cheia, barra do navegador, giro).
 - celular, segunda rodada (testada pelo vitor num Galaxy): o jogo desenha numa área de no mínimo 640 px de altura e

@@ -129,7 +129,7 @@ def test_stability_and_aero_tabs(app, manager):
     from aerosim.gui.tabs.simulation_tab import SimulationTab
     from aerosim.model.templates import conventional
     st = AppState(manager, conventional())
-    for name, over in (("stability", {"size_tail": False}), ("aerodynamics", {"use_lltdrek": False})):
+    for name, over in (("stability", {"size_tail": False}), ("wings", {"use_lltdrek": False})):
         tab = SimulationTab(st, manager.get(name))
         for k, v in over.items():
             tab.inputs[k].setChecked(v)
@@ -178,7 +178,7 @@ def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypa
     titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
     assert titles.index("Aerodinâmica") < titles.index("Estabilidade") < titles.index("Desempenho")
     aero = w.tabs.widget(titles.index("Aerodinâmica"))
-    assert [aero.tabText(i) for i in range(aero.count())] == ["Perfil", "Asa", "Avião montado", "Asas"]
+    assert [aero.tabText(i) for i in range(aero.count())] == ["Perfil", "Asa", "Asas"]
     w.tabs.setCurrentWidget(aero)
     perfil = aero.widget(0)
     pump(app, 0.6)

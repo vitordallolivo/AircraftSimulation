@@ -330,7 +330,7 @@ class _PlotLoads3D(QtWidgets.QWidget):
         name = self.spec.source.split(":", 1)[1]
         tab = res.series.get(name) or {}
         r = tab.get("_result")
-        if r is None:
+        if r is None or isinstance(r, dict):     # do projeto guardado só volta o dicionário: precisa rodar de novo
             return
         self.view.set_result(r, tab.get("_aircraft"))
         if r.field is not None and len(r.field.vertices):

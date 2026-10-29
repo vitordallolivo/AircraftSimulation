@@ -117,7 +117,7 @@ tudo é em metros.
 `AppState.fleet` guarda os aviões abertos e `current` o escolhido. A `FleetBar` (◀ nome ▶, ＋ variante, ×) troca entre
 eles, e todas as abas acompanham. "Abrir ao lado" (menu Arquivo) abre mais um arquivo sem fechar o atual, "＋ variante"
 abre uma cópia para variar, e o título mostra quantos aviões estão abertos. As análises do avião montado com
-`show_aircraft = True` (as subabas "Avião montado" e a Missão) mostram no topo um `AircraftPanel`, com o avião atual em
+`show_aircraft = True` (as subabas "Avião montado", Asas e a Missão) mostram no topo um `AircraftPanel`, com o avião atual em
 3D, só para ver, e os gráficos embaixo.
 
 ### Abas de simulação

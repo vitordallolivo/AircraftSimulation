@@ -58,7 +58,7 @@ flowchart LR
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
-Abas (`tab = True`): `sizing`, `mission`, `performance`, `thrust`, `aerodynamics`, `wings`, `stability`, `loads`. As outras
+Abas (`tab = True`): `sizing`, `mission`, `performance`, `thrust`, `wings`, `stability`, `loads`. As outras
 continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram modos ou partes de outra.
 
 | simulação | orientação |
@@ -72,8 +72,8 @@ continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram m
 | `climb` | por V: nivela → checkpoint; gradientes crescentes a partir dele |
 | `polar` | coeficientes estáticos, margem estática |
 | `thrust` | tração/potência/corrente × V de cada motor (motor+hélice ou polinômio) |
-| `aerodynamics` | sem tempo: cada solver de `aerosim/aero` (os que estiverem instalados e marcados) na mesma geometria e no mesmo $`x_{CG}`$; um solver que falha vira uma linha de erro no resumo, os outros seguem; estudo de pontas de asa |
-| `wings` | subaba Asas da Aerodinâmica, sem tempo: só as superfícies marcadas (uma asa, biplano, tandem, canard), do avião aberto ou das asas guardadas na sprint (`shared["sprint"]`), sem trimar, sem fuselagem e sem hélice; roda sem massa (`needs_aircraft = False`). A varredura em α de cada método de carga (`ILoadMethod.sweep`; no núcleo, `core/src/loads/sweep.zig`) e o resumo do núcleo (`wing_sweep_summary`) dão o C_L do conjunto e de cada superfície, o C_L máximo e onde o estol começa; no α da carga, a distribuição e as vistas 3D e de cima (`loads3d`); depois as polares dos solvers marcados (`compare_solvers`, o mesmo laço do Avião montado). Chapas de ponta opcionais (dispositivo "placa") |
+| `aerodynamics` | sem aba (roda dentro da `wings`, parte do avião completo), sem tempo: cada solver de `aerosim/aero` (os que estiverem instalados e marcados) na mesma geometria e no mesmo $`x_{CG}`$; um solver que falha vira uma linha de erro no resumo, os outros seguem; estudo de pontas de asa |
+| `wings` | subaba Asas da Aerodinâmica, sem tempo: só as superfícies marcadas (uma asa, biplano, tandem, canard), do avião aberto ou das asas guardadas na sprint (`shared["sprint"]`), sem trimar, sem fuselagem e sem hélice; roda sem massa (`needs_aircraft = False`). A varredura em α de cada método de carga (`ILoadMethod.sweep`; no núcleo, `core/src/loads/sweep.zig`) e o resumo do núcleo (`wing_sweep_summary`) dão o C_L do conjunto e de cada superfície, o C_L máximo e onde o estol começa; no α da carga, a distribuição e as vistas 3D e de cima (`loads3d`); depois as polares dos solvers marcados (`compare_solvers`, o mesmo laço da `aerodynamics`), na soma das áreas; com o avião aberto pronto, a `aerodynamics` no avião completo (séries `full_polar_*`, `full_ld_*`, `full_span`, `pa*`, `tip*`; a polar fica em `shared` para o Desempenho). Chapas de ponta opcionais (dispositivo "placa") |
 | `stability` | sem tempo: estática → comandos → tesoura (uma sessão por tamanho de EH) → modelo linear por V |
 
 `Runner` é a ferramenta comum: `start_ground()`, `start_air(seg)`, `start_from(checkpoint)`,

@@ -77,6 +77,8 @@ def compare_solvers(ctx: RunContext, model, case: AeroCase, chosen: list, S_: di
 
 
 class AerodynamicsSimulation(SimulationBase):
+    # sem aba: a subaba Asas (wings.py) roda esta análise na parte "avião completo"; scripts e testes chamam pelo nome
+    tab = False
     name = "aerodynamics"
     title = "Aerodinâmica"
     area = "aerodinamica"

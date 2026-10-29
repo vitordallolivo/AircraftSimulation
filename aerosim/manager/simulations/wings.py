@@ -1,8 +1,9 @@
-"""Asas: a aerodinâmica só das superfícies escolhidas (uma asa, um biplano, um tandem, asa e canard), sem trimar, sem
-fuselagem e sem hélice, como num túnel de vento. É a simulação de aerodinâmica completa de um conjunto de asas: roda
-com o avião da Montagem ou com as asas guardadas na sprint (etapa Asa), mesmo sem fuselagem e sem massa.
+"""Asas: a simulação de aerodinâmica da aba Aerodinâmica. Analisa as superfícies escolhidas (uma asa, um biplano, um
+tandem, asa e canard) sem trimar, sem fuselagem e sem hélice, como num túnel de vento, e, com o avião aberto pronto
+(com massa), também o avião completo, como a antiga subaba Avião montado. Roda com o avião da Montagem ou com as asas
+guardadas na sprint (etapa Asa), mesmo sem fuselagem e sem massa.
 
-Três partes:
+Quatro partes:
 
     varredura     cada α imposto e cada método de carga (`ILoadMethod.sweep`; no núcleo, `core/src/loads/sweep.zig`,
                   todos os α numa chamada) dão a sustentação de cada superfície; o resumo do núcleo
@@ -11,7 +12,9 @@ Três partes:
     carga e 3D    no α da carga, a distribuição ao longo da envergadura e a vista 3D e de cima do que se simula
                   (`LoadResult`, a mesma vista da aba Cargas)
     métodos       as polares de cada solver marcado (`IAeroSolver`: lltdrek, modelo interno, linhas sustentadoras do
-                  núcleo, AeroSandbox, AVL), como na subaba Avião montado, só nas superfícies escolhidas
+                  núcleo, AeroSandbox, AVL) só nas superfícies escolhidas, na soma das áreas
+    avião completo  o avião aberto inteiro (`AerodynamicsSimulation`, sem aba própria): polares no CG, profundor e
+                  derrapagem (núcleo 6GDL), estol × cruzeiro, L/D, pontas de asa; a polar fica para as outras abas
 
 O Reynolds de cada superfície (corda média aerodinâmica, viscosidade de Sutherland no núcleo) entra no diagnóstico:
 abaixo do Reynolds crítico dos perfis de aeromodelo, a bolha laminar pode não recolar e o perfil perde sustentação, o
@@ -43,6 +46,23 @@ SOLVERS = (("lltdrek", "lltdrek (linha sustentadora não linear)", True),
            ("asb_buildup", "AeroSandbox AeroBuildup", False),
            ("asb_ll", "AeroSandbox LiftingLine", False),
            ("avl", "AVL", False))
+WHOLE = "Avião completo (fuselagem, massa e CG)"
+# campos da análise do avião completo (AerodynamicsSimulation) que vêm da própria aba Asas
+SHARED_KEYS = {"V", "a0", "a1", "da", "section", "n_span"} | {f"use_{k}" for k, _, _ in SOLVERS}
+# séries do avião completo que mudam de nome para não se misturar com as das superfícies escolhidas
+RENAMED = (("polar_", "full_polar_"), ("ld_", "full_ld_"), ("span", "full_span"))
+
+
+def _aero():
+    """a análise do avião completo (a antiga subaba Avião montado), sem aba própria"""
+    from .aerodynamics import AerodynamicsSimulation
+    return AerodynamicsSimulation()
+
+
+def _whole_default(ac) -> bool:
+    """o avião completo entra por padrão quando o avião aberto está pronto (tem superfície e massa)"""
+    from aerosim.model.templates import not_ready
+    return ac is not None and not_ready(ac) is None
 
 
 def _titles() -> tuple[str, ...]:
@@ -115,6 +135,7 @@ class WingsSimulation(SimulationBase):
     title = "Asas"
     area = "aerodinamica"
     needs_aircraft = False
+    show_aircraft = True             # o avião aberto em 3D no topo (com a troca entre aviões abertos)
     detailed = tuple(f"use_{k}" for k, _, _ in SOLVERS) + ("section", "n_span", "compare")
     description = ("Aerodinâmica só das superfícies escolhidas (uma asa, biplano, tandem, canard), sem trimar, sem "
                    "fuselagem e sem hélice, como no túnel: C_L em α de cada superfície e do conjunto, C_L máximo, "
@@ -155,6 +176,24 @@ class WingsSimulation(SimulationBase):
         L = "Carga ao longo da envergadura"
         ps += [ParamSpec("method", "método", _default_method(), kind="choice", choices=_titles(), group=L),
                ParamSpec("compare", "comparar com", NENHUM, kind="choice", choices=(NENHUM,) + _titles(), group=L)]
+        if source == OPEN:
+            whole = values.get("whole", _whole_default(ac))
+            ps.append(ParamSpec("whole", "analisar também o avião completo", _whole_default(ac), kind="bool",
+                                group=WHOLE, rebuild=True,
+                                help="o avião aberto inteiro, como voa: polares no CG, profundor e derrapagem, estol × "
+                                     "cruzeiro, L/D, pontas de asa; a polar fica para as outras abas (Desempenho...)"))
+            if whole:
+                aero_specs = _aero().parameters_for(ac, values)
+                cruise = next((s for s in aero_specs if s.key == "V"), None)
+                if cruise is not None:
+                    ps.append(ParamSpec("V_cruise", "velocidade de cruzeiro", cruise.default, minimum=3, maximum=80,
+                                        unit="m/s", group=WHOLE))
+                for spec in aero_specs:
+                    if spec.key in SHARED_KEYS:
+                        continue
+                    spec = copy.copy(spec)
+                    spec.group = WHOLE if spec.group in ("Caso", "Métodos", "", None) else f"{WHOLE}: {spec.group}"
+                    ps.append(spec)
         M = "Comparação dos métodos (polares)"
         ps += [ParamSpec(f"use_{k}", label, on, kind="bool", group=M) for k, label, on in SOLVERS]
         ps += [ParamSpec("section", "polar 2D dos perfis no lltdrek", "modelo", kind="choice",
@@ -167,6 +206,22 @@ class WingsSimulation(SimulationBase):
         return self.plots_for(None)
 
     def plots_for(self, ac, values=None):
+        values = values or {}
+        out = self._wing_plots()
+        if values.get("source", OPEN) == OPEN and values.get("whole", _whole_default(ac)):
+            for spec in _aero().plots_for(ac, values):
+                spec = copy.copy(spec)
+                for old, new in RENAMED:
+                    if spec.source.startswith(f"series:{old}"):
+                        spec.source = f"series:{new}" + spec.source[len(f"series:{old}"):]
+                        break
+                spec.key = f"ac_{spec.key}"
+                if not spec.title.startswith("Aeronave completa"):
+                    spec.title = f"Avião completo: {spec.title}"
+                out.append(spec)
+        return out
+
+    def _wing_plots(self):
         return [PlotSpec("v3d", "Vista 3D do que se simula (α da carga)", "superfícies", ("superfícies",), live=False,
                          source="series:v3d", kind="loads3d", height=620),
                 PlotSpec("top", "Vista de cima (α da carga)", "superfícies", ("superfícies",), live=False,
@@ -295,7 +350,9 @@ class WingsSimulation(SimulationBase):
                             rho=rho, section=P("section"), n_span=int(P("n_span")))
             summ["métricas dos métodos ([...] C_L0, C_Lmax...): na área da asa principal (m²)"] = model.S
             before = set(series)
-            _, _, _, span = compare_solvers(ctx, model, case, chosen, series, summ, add, progress=(0.55, 0.98))
+            whole = P("source") == OPEN and bool(P("whole"))
+            _, _, _, span = compare_solvers(ctx, model, case, chosen, series, summ, add,
+                                            progress=(0.5, 0.65 if whole else 0.98))
             # todo método marcado em todo gráfico que ele preenche, na mesma referência (a soma das áreas)
             scale = model.S / S_total if S_total > 0 else 1.0
             for key in [k for k in series if k.startswith("polar_") and k not in before]:
@@ -315,4 +372,33 @@ class WingsSimulation(SimulationBase):
             add("info", "comparação dos métodos", "sem asa principal", "",
                 "os solvers tomam a referência (S, c, b) da asa principal: marque uma superfície do tipo asa", "",
                 "métodos")
+        if P("source") == OPEN and P("whole"):
+            self._whole(ctx, P, series, summ, checks)
         return SimResult(series=series, summary=summ, checks=checks)
+
+    def _whole(self, ctx: RunContext, P, series: dict, summ: dict, checks: list) -> None:
+        """o avião aberto inteiro, como a antiga subaba Avião montado (AerodynamicsSimulation): as séries dele com
+        nome próprio (`RENAMED`), o resumo com "avião completo ·" na frente e os diagnósticos dele"""
+        from aerosim.model.templates import not_ready
+        why = not_ready(ctx.aircraft)
+        if why:
+            checks.append(Check("info", "avião completo", "não analisado", "", why, "", "avião completo"))
+            return
+        aero = _aero()
+        aero.shared = self.shared
+        keys = {p.key for p in aero.parameters_for(ctx.aircraft, ctx.params)}
+        params = {k: P(k) for k in keys if k != "V" and (k in SHARED_KEYS or k in ctx.params)}
+        params["V"] = P("V_cruise")
+        sub = RunContext(backend=ctx.backend, aircraft=ctx.aircraft, params=params, checkpoints=ctx.checkpoints,
+                         on_progress=lambda f, m: ctx.on_progress(0.65 + 0.35 * f, f"avião completo: {m}"),
+                         cancel=ctx.cancel, shared=ctx.shared)
+        r = aero.run(sub)
+        for key, value in r.series.items():
+            for old, new in RENAMED:
+                if key.startswith(old):
+                    key = new + key[len(old):]
+                    break
+            series[key] = value
+        for key, value in r.summary.items():
+            summ[f"avião completo · {key}"] = value
+        checks.extend(r.checks)

@@ -220,7 +220,7 @@ def set_stage(cand: tl.SetCandidate, req, rules, airfoils=None) -> tuple[list[Pl
         w2 = tl.second_wing(r["set"])
         checks.append(_chk(INFO, "segunda asa ligada", f"{w2.name}: recuo {tp.wing2_dx:g} m, desnível "
                            f"{tp.wing2_dz:g} m", "—", "a estática desta etapa é a da asa 1 com a cauda; com o par, a "
-                           "margem é a do avião inteiro no núcleo", "veja Aerodinâmica → Avião montado (linha "
+                           "margem é a do avião inteiro no núcleo", "veja Aerodinâmica → Asas (linha "
                            "sustentadora ou VLM, que ligam as asas) depois de mandar para a Montagem", G))
     if tp.layout != "sem cauda":
         width = pct(r["h_aft"] - r["h_fwd"])

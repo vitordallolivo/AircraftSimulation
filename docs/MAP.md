@@ -165,7 +165,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/interfaces/project_store.py` — Interface da biblioteca de aeronaves do usuário ("meus aviões").
   `class ProjectInfo:18`, `class IProjectStore:25`
 - `aerosim/interfaces/result_io.py` — SimResult ⇄ dicionário de JSON (para guardar no projeto o que já rodou e mostrar ao abrir sem rodar de novo).
-  `result_to_dict:92`, `result_from_dict:101`
+  `result_to_dict:92`, `result_from_dict:102`
 - `aerosim/interfaces/simulation.py` — Interface de uma simulação (plugin do Simulation Manager) e do próprio manager.
   `class ParamSpec:34`, `class PlotSpec:54`, `class Check:76`, `class SimResult:89`, `class CancelledError:99`, `class RunContext:104`, `class ISimulation:126`, `class ISimulationManager:174`
 - `aerosim/interfaces/translator.py` — Tradutores: modelo universal (`aerosim.model.universal.AircraftModel`) <-> formato de cada solver.
@@ -215,8 +215,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   `thrust_curves:12`, `class ThrustSimulation:25`
 - `aerosim/manager/simulations/turn.py` — Curvas niveladas: raio mínimo por velocidade.
   `class TurnSimulation:21`
-- `aerosim/manager/simulations/wings.py` — Asas: a aerodinâmica só das superfícies escolhidas (uma asa, um biplano, um tandem, asa e canard), sem trimar, sem
-  `sprint_wings:60`, `lifting_surfaces:66`, `strip_aircraft:71`, `wings_only:82`, `sprint_aircraft:96`, `class WingsSimulation:112`
+- `aerosim/manager/simulations/wings.py` — Asas: a simulação de aerodinâmica da aba Aerodinâmica. Analisa as superfícies escolhidas (uma asa, um biplano, um
+  `sprint_wings:80`, `lifting_surfaces:86`, `strip_aircraft:91`, `wings_only:102`, `sprint_aircraft:116`, `class WingsSimulation:132`
 
 ## Python · `aerosim/model`
 
@@ -705,7 +705,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 75 testes em 11 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 69 testes em 11 arquivo(s)
+- `tests/manager` — 70 testes em 11 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)

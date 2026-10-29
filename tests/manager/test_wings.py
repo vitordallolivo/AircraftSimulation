@@ -128,3 +128,17 @@ def test_endplates_raise_lift_slope(manager):
 def test_no_surface_chosen_is_a_failure(manager):
     r = manager.run("wings", conventional(), {**FAST, "surf_0": False})
     assert any(c.status == "falha" for c in r.checks)
+
+
+def test_whole_aircraft_replaces_the_old_subtab(manager):
+    # com o avião aberto pronto, a Asas roda também a análise do avião completo (a antiga subaba Avião montado): as
+    # curvas do núcleo com profundor e derrapagem, os diagnósticos dele e a polar que fica para o Desempenho
+    manager.shared.pop("aero_polar", None)
+    r = manager.run("wings", conventional(), {**FAST, "use_zig": True, "a0": -4.0, "a1": 16.0, "da": 2.0})
+    assert "paL_C_L total (δe = 0)" in r.series and "full_polar_modelo interno" in r.series
+    assert any(k.startswith("avião completo · ") for k in r.summary)
+    assert any(c.item == "estabilidade direcional C_nβ" for c in r.checks)
+    assert "aero_polar" in manager.shared
+    # desligada, a parte do avião completo não roda e o resto fica igual
+    off = manager.run("wings", conventional(), {**FAST, "whole": False, "a0": 0.0, "a1": 4.0, "da": 2.0})
+    assert not any(k.startswith("paL_") for k in off.series)

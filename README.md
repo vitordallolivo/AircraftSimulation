@@ -125,8 +125,8 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   ![Histórico: o enxame da iteração 3](docs/img/mdo2_historico.png)
   ![Seletor de perfis](docs/img/seletor_perfis.png)
 - **Montagem** (última aba): componentes, 3D editável, ambiente (altitude-densidade, vento) e envelope
-  de voo (ângulo de cruzeiro, fator de carga). As subabas "Avião montado" e a Missão (dentro de
-  Desempenho, junto com Tração) mostram o avião atual em 3D acima dos gráficos.
+  de voo (ângulo de cruzeiro, fator de carga). As subabas "Avião montado", Asas (Aerodinâmica) e a
+  Missão (dentro de Desempenho, junto com Tração) mostram o avião atual em 3D acima dos gráficos.
 - **Vários aviões:** **Arquivo → Abrir ao lado** ou **＋ variante** abre mais um; ◀ ▶ troca, e todas
   as abas rodam o escolhido.
 
