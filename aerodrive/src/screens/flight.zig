@@ -257,7 +257,7 @@ pub const Flight = struct {
             const blink = @mod(app.time, 1.0) < 0.6;
             if (blink) rl.drawCircleV(.{ .x = W - ms, .y = ry + 10 }, 7, theme.danger);
             const dur = r.t_last - (r.t0 orelse r.t_last);
-            ft.draw(std.fmt.bufPrintZ(&buf, "gravando {d:.0} s{s}", .{ dur, if (r.video == null) " (só dados)" else "" }) catch "", W - ms + 14, ry, 17, theme.danger);
+            ft.draw(std.fmt.bufPrintZ(&buf, "gravando {d:.0} s{s}", .{ dur, if (r.video == null and !app.browser_video) " (só dados)" else "" }) catch "", W - ms + 14, ry, 17, theme.danger);
             ry += 26;
         }
         if (feats.payload and dm.hasPayload() and f.payload_ned == null) {

@@ -29,6 +29,13 @@
     background: #0000aa; color: #fff; font: 16px/1.5 ui-monospace, "DejaVu Sans Mono", Consolas, monospace;
     white-space: pre;
   }
+  /* celular em pé: o jogo é feito para a tela deitada */
+  #rotate {
+    position: fixed; inset: 0; z-index: 5; display: none; align-items: center; justify-content: center;
+    background: #0000aa; color: #fff; text-align: center; white-space: pre-line;
+    font: 80px/1.5 ui-monospace, "DejaVu Sans Mono", Consolas, monospace; /* a página tem 1280 px lógicos */
+  }
+  @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
   #drop {
     position: fixed; inset: 12px; z-index: 4; display: none; align-items: center; justify-content: center;
     border: 3px dashed #ffff55; background: rgba(0, 0, 80, 0.75); color: #ffff55;
@@ -42,6 +49,8 @@
 <div id="loading">AeroDrive
 carregando...</div>
 <div id="drop">solte o .json do avião</div>
+<div id="rotate">gire o celular
+para pilotar deitado</div>
 <input id="picker" type="file" accept=".json,application/json" hidden>
 <script>
   'use strict';
@@ -102,6 +111,16 @@ carregando...</div>
 
   window.addEventListener('touchstart', () => { Module.aerodrivePage.touchSeen = true; }, { capture: true, passive: true });
 
+  // celular: no primeiro toque a página vai para a tela cheia (sem as barras do navegador) e trava
+  // deitada. O navegador só aceita isso logo depois de um toque (touchend), e o iPhone não deixa.
+  window.addEventListener('touchend', () => {
+    const page = document.documentElement;
+    if (document.fullscreenElement || !page.requestFullscreen) return;
+    page.requestFullscreen({ navigationUI: 'hide' })
+      .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'))
+      .catch(() => {}); // sem tela cheia ou sem trava: segue como está
+  }, { capture: true, passive: true });
+
   var Module = {
     canvas: canvas,
     print: (text) => console.log(text),
@@ -111,11 +130,12 @@ carregando...</div>
       openFilePicker: () => picker.click(),
       download: (name, bytes) => {
         const link = document.createElement('a');
-        link.href = URL.createObjectURL(new Blob([bytes], { type: 'application/json' }));
+        // bytes do jogo (o .json) ou um Blob pronto (o vídeo)
+        link.href = URL.createObjectURL(bytes instanceof Blob ? bytes : new Blob([bytes], { type: 'application/json' }));
         link.download = name;
         document.body.appendChild(link);
         link.click();
-        setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
+        setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 60000);
       },
       leave: () => { window.location.href = 'index.html'; },
     },

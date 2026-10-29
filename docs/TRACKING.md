@@ -54,6 +54,12 @@ O que pegar primeiro, lendo o quadro como ele está agora. Tudo o que estava "a 
    (`std/os/emscripten.zig`, `W.STOPSIG` devolve `u32` por `@enumFromInt`). Hoje o AeroDrive contorna com um `std.Io`
    próprio (`aerodrive/src/sys/browser_io.zig`). Conferir se o 0.16.1 ou o 0.17 corrige e, se corrigir, tirar o
    contorno.
+9. **Travamentos ao abrir menus no navegador: medidos e corrigidos os dois grandes** (relato do vitor, 2026-10-29).
+   Entrar em Aeronave levava ~4 s (o `emscripten_return_address`, chamado a cada alocação, montava um rastro da pilha
+   do JS) e Decolar ~3,7 s (fma em software no wasm); ver `core/OTIMIZACOES.md`. Sobra o Decolar em ~0,5 s (`peakCL`;
+   o `-Dopt=peak` resolve, mas muda os números: decisão do dono).
+10. **Suspeita a resolver:** em Voos gravados, "Ver os dados" e "Apagar a gravação" só respondem ao mouse; as setas
+   e o Enter não chegam aos botões (vale também para o controle).
 
 ## O castelo (mapa)
 

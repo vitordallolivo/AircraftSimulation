@@ -23,6 +23,8 @@ extern fn aerodrive_download(name: [*]const u8, name_len: usize, data: [*]const 
 extern fn aerodrive_touch_seen() i32;
 extern fn aerodrive_leave() void;
 extern fn aerodrive_gamepad_trigger(side: c_int) f64;
+extern fn aerodrive_video_start(name: [*]const u8, name_len: usize, fps: c_int) i32;
+extern fn aerodrive_video_stop() void;
 extern fn emscripten_set_main_loop_timing(mode: c_int, value: c_int) c_int;
 
 // ------------------------------------------------------------------ arquivos (FS do emscripten)
@@ -88,6 +90,18 @@ pub const TriggerSide = enum(c_int) { left = 0, right = 1 };
 pub fn gamepadTrigger(side: TriggerSide) f64 {
     const value = aerodrive_gamepad_trigger(@intFromEnum(side));
     return if (std.math.isFinite(value)) std.math.clamp(value, 0, 1) else 0;
+}
+
+/// começa a gravar o canvas em vídeo (MediaRecorder do navegador: .mp4, ou .webm onde não houver
+/// .mp4). No Chrome e no Edge do PC a página pergunta onde salvar; nos outros, o vídeo é baixado ao
+/// parar. `name` é o nome sugerido, sem a extensão. false se o navegador não grava vídeo.
+pub fn videoStart(name: []const u8, fps: u32) bool {
+    return aerodrive_video_start(name.ptr, name.len, @intCast(fps)) == 1;
+}
+
+/// para o vídeo começado por `videoStart` e fecha o arquivo (ou baixa); nada se não havia vídeo
+pub fn videoStop() void {
+    aerodrive_video_stop();
 }
 
 /// volta à tela inicial do site (o "Sair" do navegador)

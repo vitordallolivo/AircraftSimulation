@@ -12,6 +12,7 @@
 //! `SinLut(bits)` é genérico em comptime: o benchmark compara tamanhos de tabela.
 const std = @import("std");
 const build_options = @import("build_options");
+const builtin = @import("builtin");
 
 pub const fast = build_options.fast_math;
 /// otimizações em avaliação (`-Dopt`, soma dos bits; 0 = como sempre). Os nomes e os bits estão em `opt.zig`
@@ -24,6 +25,14 @@ pub inline fn optOn(comptime optimization: Opt) bool {
 /// modo de ponto flutuante das funções quentes (`@setFloatMode(fmath.float_mode)`): strict é o de sempre
 pub const float_mode: std.builtin.FloatMode = if (optOn(.floatmode)) .optimized else .strict;
 pub const pi = std.math.pi;
+/// a·b + c. No PC é o @mulAdd (fma, um arredondamento só). O WebAssembly não tem fma: o @mulAdd vira a
+/// rotina exata em software do compiler-rt, umas 50 vezes mais lenta, e montar o voo no navegador
+/// levava ~3,7 s. Lá se faz a conta comum (dois arredondamentos; difere do PC só no último bit).
+pub inline fn mulAdd(first: f64, second: f64, addend: f64) f64 {
+    if (comptime builtin.cpu.arch.isWasm()) return first * second + addend;
+    return @mulAdd(f64, first, second, addend);
+}
+
 const two_pi = 2.0 * pi;
 const half_pi = 0.5 * pi;
 
@@ -54,7 +63,7 @@ pub fn SinLut(comptime bits: u5) type {
 
         fn body(angle: f64) SinCos {
             const steps = @round(angle * inv_step);
-            const offset = @mulAdd(f64, -steps, step, angle);
+            const offset = mulAdd(-steps, step, angle);
             // NaN ou infinito (estado que divergiu): sem isto o @intFromFloat entra em pane; o resultado sai NaN
             const steps_int: i64 = if (@abs(steps) < 9.0e18) @intFromFloat(steps) else 0;
             // o índice cabe em `usize` também no wasm32 (é menor que `points`); no x86-64 a conversão não gera código
@@ -65,7 +74,7 @@ pub fn SinLut(comptime bits: u5) type {
             // cos d = 1 − d²/2 + d⁴/24 − d⁶/720 ;  sin d = d (1 − d²/6 + d⁴/120)
             const cos_offset = 1.0 - offset2 * (0.5 - offset2 * (1.0 / 24.0 - offset2 * (1.0 / 720.0)));
             const sin_offset = offset * (1.0 - offset2 * (1.0 / 6.0 - offset2 * (1.0 / 120.0)));
-            return .{ .s = @mulAdd(f64, sin0, cos_offset, cos0 * sin_offset), .c = @mulAdd(f64, cos0, cos_offset, -sin0 * sin_offset) };
+            return .{ .s = mulAdd(sin0, cos_offset, cos0 * sin_offset), .c = mulAdd(cos0, cos_offset, -sin0 * sin_offset) };
         }
     };
 }
@@ -92,7 +101,7 @@ pub const lut = struct {
         const node = @round(ratio * atan_n);
         const node_ratio = node * (1.0 / @as(f64, atan_n));
         const offset = ratio - node_ratio;
-        const slope = 1.0 / @mulAdd(f64, node_ratio, node_ratio, 1.0);
+        const slope = 1.0 / mulAdd(node_ratio, node_ratio, 1.0);
         const index: usize = if (node >= 0 and node <= atan_n) @intFromFloat(node) else 0; // NaN: sem pane, o resultado sai NaN
         return atan_table[index] + offset * slope * (1.0 - node_ratio * offset * slope);
     }
@@ -123,7 +132,7 @@ pub const lut = struct {
     pub fn expWith(comptime estrin: bool, value: f64) f64 {
         const clamped = std.math.clamp(value, -700.0, 700.0);
         const power_of_two = @round(clamped * (1.0 / std.math.ln2));
-        const remainder = @mulAdd(f64, -power_of_two, std.math.ln2, clamped);
+        const remainder = mulAdd(-power_of_two, std.math.ln2, clamped);
         // Horner com coeficientes 1/n! gerados em comptime
         const coef = comptime blk: {
             var values: [11]f64 = undefined;
@@ -153,8 +162,8 @@ pub const lut = struct {
         const atanh_arg = (mantissa - 1.0) / (mantissa + 1.0);
         const atanh_arg2 = atanh_arg * atanh_arg;
         var series: f64 = 1.0 / 13.0;
-        inline for (.{ 11.0, 9.0, 7.0, 5.0, 3.0, 1.0 }) |odd| series = @mulAdd(f64, series, atanh_arg2, 1.0 / odd);
-        return @mulAdd(f64, @as(f64, @floatFromInt(exponent)), std.math.ln2, 2.0 * atanh_arg * series);
+        inline for (.{ 11.0, 9.0, 7.0, 5.0, 3.0, 1.0 }) |odd| series = mulAdd(series, atanh_arg2, 1.0 / odd);
+        return mulAdd(@as(f64, @floatFromInt(exponent)), std.math.ln2, 2.0 * atanh_arg * series);
     }
 
     /// tangente hiperbólica pelo exp da tabela
@@ -198,7 +207,7 @@ pub const ref = struct {
 /// Horner: p = c0 + r(c1 + r(c2 + ...)), 10 multiplicações-somas em cadeia (cada uma espera a anterior)
 inline fn horner10(coefs: [11]f64, variable: f64) f64 {
     var result: f64 = coefs[10];
-    inline for (1..11) |j| result = @mulAdd(f64, result, variable, coefs[10 - j]);
+    inline for (1..11) |j| result = mulAdd(result, variable, coefs[10 - j]);
     return result;
 }
 
@@ -209,15 +218,15 @@ inline fn estrin10(coefs: [11]f64, variable: f64) f64 {
     const variable2 = variable * variable;
     const variable4 = variable2 * variable2;
     const variable8 = variable4 * variable4;
-    const pair0 = @mulAdd(f64, coefs[1], variable, coefs[0]);
-    const pair1 = @mulAdd(f64, coefs[3], variable, coefs[2]);
-    const pair2 = @mulAdd(f64, coefs[5], variable, coefs[4]);
-    const pair3 = @mulAdd(f64, coefs[7], variable, coefs[6]);
-    const pair4 = @mulAdd(f64, coefs[9], variable, coefs[8]);
-    const quad0 = @mulAdd(f64, pair1, variable2, pair0);
-    const quad1 = @mulAdd(f64, pair3, variable2, pair2);
-    const quad2 = @mulAdd(f64, coefs[10], variable2, pair4);
-    return @mulAdd(f64, quad2, variable8, @mulAdd(f64, quad1, variable4, quad0));
+    const pair0 = mulAdd(coefs[1], variable, coefs[0]);
+    const pair1 = mulAdd(coefs[3], variable, coefs[2]);
+    const pair2 = mulAdd(coefs[5], variable, coefs[4]);
+    const pair3 = mulAdd(coefs[7], variable, coefs[6]);
+    const pair4 = mulAdd(coefs[9], variable, coefs[8]);
+    const quad0 = mulAdd(pair1, variable2, pair0);
+    const quad1 = mulAdd(pair3, variable2, pair2);
+    const quad2 = mulAdd(coefs[10], variable2, pair4);
+    return mulAdd(quad2, variable8, mulAdd(quad1, variable4, quad0));
 }
 
 /// seno e cosseno sem tabela. Fonte dos coeficientes: L. Schlör, "Fast MiniMax Polynomial Approximations of Sine
@@ -247,12 +256,12 @@ pub const minimax = struct {
     /// seno e cosseno do ângulo (rad) por redução ao quadrante e polinômios minimax
     pub fn sincos(angle: f64) SinCos {
         const quadrant_f = @round(angle * (2.0 / pi));
-        const reduced = @mulAdd(f64, -quadrant_f, half_pi_lo, @mulAdd(f64, -quadrant_f, half_pi_hi, angle));
+        const reduced = mulAdd(-quadrant_f, half_pi_lo, mulAdd(-quadrant_f, half_pi_hi, angle));
         const reduced2 = reduced * reduced;
         var sin_poly: f64 = sin_c[7];
-        inline for (1..8) |j| sin_poly = @mulAdd(f64, sin_poly, reduced2, sin_c[7 - j]);
+        inline for (1..8) |j| sin_poly = mulAdd(sin_poly, reduced2, sin_c[7 - j]);
         var cos_poly: f64 = cos_c[8];
-        inline for (1..9) |j| cos_poly = @mulAdd(f64, cos_poly, reduced2, cos_c[8 - j]);
+        inline for (1..9) |j| cos_poly = mulAdd(cos_poly, reduced2, cos_c[8 - j]);
         const sin_reduced = reduced * sin_poly;
         // quadrante sem desvio (com entradas aleatórias o desvio erra a previsão): máscaras sobre os bits
         const quadrant_int: i64 = if (@abs(quadrant_f) < 9.0e18) @intFromFloat(quadrant_f) else 0; // NaN: sem pane, o resultado sai NaN
@@ -329,7 +338,7 @@ pub inline fn sqrt(value: f64) f64 {
 }
 /// √(first² + second²)
 pub inline fn hypot(first: f64, second: f64) f64 {
-    return @sqrt(@mulAdd(f64, first, first, second * second));
+    return @sqrt(mulAdd(first, first, second * second));
 }
 
 // ---------------------------------------------------------------- saturações
