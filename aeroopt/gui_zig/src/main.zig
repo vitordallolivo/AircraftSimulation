@@ -1,7 +1,7 @@
 //! A interface do aeroopt em Zig (raylib e raygui), com as peças da interface do aerosim.
 //!
-//!   aeroopt [claro|escuro] [LxA]
-//!   aeroopt --shot <saída.png> [claro|escuro] [LxA] [rolar=PIXELS]
+//!   aeroopt [LxA]
+//!   aeroopt --shot <saída.png> [LxA] [rolar=PIXELS]
 //!
 //! No modo --shot a tela é desenhada alguns quadros e salva numa imagem (para os prints sem interação).
 const std = @import("std");
