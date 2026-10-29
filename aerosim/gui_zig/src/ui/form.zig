@@ -1,5 +1,4 @@
-//! O formulário lateral: campos agrupados (cada grupo com a faixa preta e a borda laranja, abre e fecha no
-//! clique), número, marcador e escolha. A tela descreve os campos numa lista (o equivalente do `ParamSpec` do
+//! O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador e escolha. A tela descreve os campos numa lista (o equivalente do `ParamSpec` do
 //! aerosim em Python) e o mesmo código desenha o formulário de qualquer aba. A edição de número e a lista de
 //! escolhas são do raygui.
 const std = @import("std");
@@ -11,6 +10,12 @@ const numbers = @import("numbers.zig");
 const numberText = numbers.numberText;
 
 pub const Kind = enum { number, toggle, choice };
+
+/// a caixa de um valor: branca, de cantos arredondados, borda fina
+fn fieldBox(control: rl.Rectangle) void {
+    widgets.rounded(control, 5, theme.colors.field);
+    widgets.roundedLines(control, 5, theme.colors.line);
+}
 
 /// um campo do formulário
 pub const Field = struct {
@@ -79,11 +84,10 @@ pub const Form = struct {
         var y = rect.y + 8 - form.scroll;
         for (form.groups, 0..) |*group, g| {
             const band: rl.Rectangle = .{ .x = rect.x + 10, .y = y, .width = rect.width - 20, .height = band_height };
-            rl.drawRectangleRec(band, theme.colors.band);
-            rl.drawRectangleRec(.{ .x = band.x, .y = band.y, .width = 5, .height = band.height }, theme.colors.accent);
+            if (ui.hovering(band)) widgets.rounded(band, 7, theme.colors.hover);
             const arrow: [:0]const u8 = if (group.open) "▼" else "▸";
-            theme.text(ui.fonts.bold, arrow, band.x + 14, band.y + 8, 12, theme.colors.band_text);
-            theme.text(ui.fonts.bold, group.title, band.x + 32, band.y + 8, 13, theme.colors.band_text);
+            theme.text(ui.fonts.regular, arrow, band.x + 10, band.y + 8, 12, theme.colors.accent);
+            theme.text(ui.fonts.regular, group.title, band.x + 28, band.y + 6, 16, theme.colors.accent);
             if (ui.clickedIn(band)) group.open = !group.open;
             y += band_height;
             if (group.open) {
@@ -129,9 +133,9 @@ pub const Form = struct {
         switch (field.kind) {
             .toggle => {
                 const box: rl.Rectangle = .{ .x = x, .y = y + 7, .width = 16, .height = 16 };
-                rl.drawRectangleRec(box, if (field.checked) theme.colors.accent else theme.colors.field);
-                rl.drawRectangleLinesEx(box, 1, if (field.checked) theme.colors.accent else theme.colors.line);
-                if (field.checked) theme.text(ui.fonts.bold, "✓", box.x + 2, box.y - 1, 15, theme.colors.on_accent);
+                widgets.rounded(box, 4, if (field.checked) theme.colors.accent else theme.colors.field);
+                if (!field.checked) widgets.roundedLines(box, 4, theme.colors.line);
+                if (field.checked) theme.text(ui.fonts.regular, "✓", box.x + 2, box.y - 1, 15, theme.colors.on_accent);
                 theme.text(ui.fonts.regular, field.label, x + 26, y + 7, 14, theme.colors.label);
                 const row: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = row_height };
                 if (ui.clickedIn(row)) {
@@ -146,8 +150,7 @@ pub const Form = struct {
             },
         }
         if (field.kind == .choice) {
-            rl.drawRectangleRec(control, theme.colors.field);
-            rl.drawRectangleRec(.{ .x = control.x, .y = control.y + control.height - 2, .width = control.width, .height = 2 }, theme.colors.accent);
+            fieldBox(control);
             var options = std.mem.splitScalar(u8, field.choices, ';');
             var k: i32 = 0;
             var current: []const u8 = "";
@@ -159,7 +162,7 @@ pub const Form = struct {
             rl.beginScissorMode(@intFromFloat(control.x), @intFromFloat(control.y), @intFromFloat(control.width - 18), @intFromFloat(control.height));
             theme.text(ui.fonts.mono, shown, control.x + 6, control.y + 5, 14, theme.colors.ink);
             rl.endScissorMode();
-            theme.text(ui.fonts.bold, "▼", control.x + control.width - 16, control.y + 6, 11, theme.colors.accent);
+            theme.text(ui.fonts.regular, "▼", control.x + control.width - 16, control.y + 6, 11, theme.colors.muted);
             if (ui.clickedIn(control)) form.open_choice = index;
             return false;
         }
@@ -175,8 +178,7 @@ pub const Form = struct {
             }
             return false;
         }
-        rl.drawRectangleRec(control, theme.colors.field);
-        rl.drawRectangleRec(.{ .x = control.x, .y = control.y + control.height - 2, .width = control.width, .height = 2 }, theme.colors.accent);
+        fieldBox(control);
         theme.text(ui.fonts.mono, numberText(&buffer, field.number), control.x + 6, control.y + 5, 14, theme.colors.ink);
         if (ui.clickedIn(control)) {
             form.editing = index;

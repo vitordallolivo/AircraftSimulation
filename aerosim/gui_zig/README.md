@@ -1,8 +1,7 @@
 # gui_zig (aerosim)
 
-Esta é a interface do aerosim escrita em Zig, com raylib e raygui, no mesmo visual escolhido para o
-site: cantos cortados, abas e botões inclinados e a logo do albatroz em azul, em dois modos de cor. O claro, que é o
-padrão, é cinza claro com bordas pretas, azul e a zebra amarela; o escuro é grafite, laranja e preto. Ela é o
+Esta é a interface do aerosim escrita em Zig, com raylib e raygui, no mesmo visual do AeroDrive: fundo
+claro, cantos arredondados, azul nos títulos, pouco texto e a logo do albatroz. Ela é o
 começo da troca da GUI em PyQt por uma que não precisa de Python: as contas vêm do núcleo (`core/`), que entra aqui
 como módulo, igual ao AeroDrive. Por enquanto é o desenho da tela: a aba Analisar já roda a varredura das asas no
 núcleo. A interface do aeroopt fica em `aeroopt/gui_zig` e usa as peças comuns daqui.
@@ -14,11 +13,11 @@ lateral, o gráfico, a vista 3D e o laço do programa. Em `src/screen.zig` fica 
 
 ## As peças (`src/ui`)
 
-Aqui se define a aparência e o comportamento comum. `theme.zig` guarda as cores dos dois modos, cada uma com um
-papel (fundo, cartão, faixa escura, destaque, texto e a paleta de dez cores das curvas, escolhida para cada fundo); o
-botão no canto do cabeçalho troca o modo na hora. Lá também ficam as três fontes (texto, títulos e números,
-procuradas no sistema) e a logo, carregada branca e pintada de azul na hora de desenhar. `shapes.zig` desenha o retângulo de dois cantos cortados, o paralelogramo das abas e do
-botão e a faixa zebrada da barra de progresso.
+Aqui se define a aparência e o comportamento comum. `theme.zig` guarda as cores, cada uma com um papel (fundo,
+painel, cartão, borda, texto, o azul dos títulos e a paleta de dez cores das curvas), as mesmas do AeroDrive. Lá
+também ficam as três fontes (texto, títulos e números, procuradas no sistema) e a logo. Os widgets
+(`widgets.zig`) são os do AeroDrive em versão de tela grande: a aba ativa em azul claro com um traço embaixo, o
+botão azul, o cartão branco de cantos arredondados e a barra de progresso.
 
 O formulário (`form.zig`) recebe uma lista de campos, cada um com rótulo, unidade, grupo, tipo (número, marcador ou
 escolha) e limites, que é o equivalente do `ParamSpec` do aerosim em Python. O mesmo código desenha o formulário de
@@ -71,7 +70,6 @@ pasta `aerodrive/zig-pkg` para cá.
 cd aerosim/gui_zig
 python -m ziglang build test                                  # testes sem janela
 python -m ziglang build run                                   # abre o aerosim
-python -m ziglang build run -- escuro                         # já no modo escuro
 xvfb-run -a python -m ziglang build shot -- aerosim.png       # print sem tela
 xvfb-run -a python -m ziglang build shot -- montagem.png aba=5   # print de outra aba
 python -m ziglang build run -- ../../data/aircraft/Asa_voadora.json   # abre um avião

@@ -2,7 +2,6 @@
 //! (`aerosim/gui_zig/src/ui`), para os dois programas terem o mesmo visual.
 //!
 //!   zig build run                                abre o aeroopt
-//!   zig build run -- escuro                      abre no modo escuro
 //!   zig build shot -- <saída.png> [LxA]          desenha a tela e salva uma imagem (sem interação)
 //!   zig build test                               testes (sem janela)
 //!

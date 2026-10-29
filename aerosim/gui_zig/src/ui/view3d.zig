@@ -35,9 +35,9 @@ pub fn fraction(red: f32, green: f32, blue: f32) rl.Color {
     return .{ .r = @intFromFloat(red * 255), .g = @intFromFloat(green * 255), .b = @intFromFloat(blue * 255), .a = 255 };
 }
 
-/// a cor da camada "sustentação" da vista de cargas (`aerosim/aero/span_loads.py`); no fundo escuro, um verde claro
+/// a cor da camada "sustentação" da vista de cargas (`aerosim/aero/span_loads.py`)
 pub fn liftColor() rl.Color {
-    return if (theme.isDark(theme.colors.field)) theme.hex(0x69db7c) else fraction(0.05, 0.45, 0.15);
+    return fraction(0.05, 0.45, 0.15);
 }
 
 /// corpo → raylib: x do raylib = y do corpo, y do raylib = −z (para cima), z do raylib = −x
@@ -113,7 +113,7 @@ pub const View = struct {
         };
         view.label_count = 0;
         rl.beginTextureMode(view.texture.?);
-        rl.clearBackground(theme.colors.field);
+        rl.clearBackground(theme.colors.background); // o fundo do 3D da GUI e do AeroDrive
         rl.beginMode3D(view.camera);
         return true;
     }

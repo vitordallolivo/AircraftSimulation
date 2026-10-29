@@ -7,7 +7,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 ### v0.2.4 (branch `0.2_dev`)
 
 - interface em Zig (W7, começo): `aerosim/gui_zig/` (com as peças comuns em `src/ui`) e `aeroopt/gui_zig/`, com
-  raylib e raygui, modo claro (padrão, concreto e aço azul) e escuro (tema 6). O formulário
+  raylib e raygui, no visual do AeroDrive (fundo claro, cantos arredondados, azul nos títulos). A Montagem mostra o avião
+  inteiro em 3D pelo modelo do AeroDrive. O formulário
   lateral sai de uma lista de campos, e o gráfico tem marcas redondas, legenda e a paleta de dez cores. No aerosim,
   Aerodinâmica → Analisar roda a varredura do núcleo numa asa trapezoidal de exemplo (linha sustentadora não linear e
   faixas). O aeroopt mostra uma rodada de exemplo. A vista da asa tem a vista de cima em escala e a de frente com um vetor de carga por faixa. O

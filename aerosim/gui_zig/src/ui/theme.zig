@@ -1,6 +1,5 @@
-//! O visual da interface: cantos cortados, abas e botões inclinados e a logo do albatroz em azul, em dois modos de
-//! cor, o claro (o "tema 5" do protótipo em HTML, concreto e aço azul; o padrão) e o escuro (o "tema 6", grafite,
-//! laranja e preto). Aqui ficam as cores, as fontes e a logo.
+//! O visual da interface, o mesmo do AeroDrive: fundo claro, cantos arredondados, azul nos títulos e pouco texto.
+//! Aqui ficam as cores, as fontes e a logo do albatroz (nas cores dela).
 const std = @import("std");
 const rl = @import("raylib");
 
@@ -14,119 +13,57 @@ pub fn withAlpha(color: rl.Color, alpha: f32) rl.Color {
     return .{ .r = color.r, .g = color.g, .b = color.b, .a = @intFromFloat(std.math.clamp(alpha, 0, 1) * 255) };
 }
 
-/// os papéis das cores; cada modo dá um valor para cada papel
+/// os papéis das cores
 pub const Palette = struct {
-    background: rl.Color, // fundo da área dos gráficos
-    panel: rl.Color, // cartões e grupos do formulário
-    sidebar: rl.Color, // coluna do formulário e barra das subabas
-    strip: rl.Color, // faixas escuras (cabeçalho, abas, rodapé do formulário)
-    strip_text: rl.Color, // destaque escrito numa faixa escura (nome do programa)
-    strip_label: rl.Color, // texto comum numa faixa escura
-    band: rl.Color, // título de um grupo do formulário
-    band_text: rl.Color,
-    field: rl.Color, // caixa de um valor
+    background: rl.Color, // fundo da tela e do 3D
+    panel: rl.Color, // cabeçalho, abas, coluna do formulário
+    selected: rl.Color, // aba ativa, grupo com o mouse em cima
+    hover: rl.Color,
+    field: rl.Color, // cartões e caixas de valor
     line: rl.Color, // bordas e a linha do zero
     grid: rl.Color, // grade dos gráficos
     ink: rl.Color, // texto
     label: rl.Color, // rótulo de um campo
     muted: rl.Color, // texto secundário (unidades, eixos)
-    accent: rl.Color, // destaque: aba ativa, botão principal, bordas dos cartões
+    accent: rl.Color, // títulos, aba ativa, botão principal, marcador ligado
     accent_hover: rl.Color,
     on_accent: rl.Color, // texto sobre o destaque
-    hazard: rl.Color, // a zebra da barra de progresso (com `strip`)
-    logo: rl.Color,
     ok: rl.Color,
     warning: rl.Color,
     failure: rl.Color,
-    /// as cores das curvas, em ordem: 10 cores bem distintas no fundo do modo
+    /// as cores das curvas, em ordem: 10 cores bem distintas no fundo claro
     plot: [10]rl.Color,
 };
 
-/// o modo escuro (o "tema 6": grafite, laranja e preto)
-pub const dark: Palette = .{
-    .background = hex(0x25282c),
-    .panel = hex(0x2f3338),
-    .sidebar = hex(0x1b1d20),
-    .strip = hex(0x0e0f11),
-    .strip_text = hex(0xff6a13),
-    .strip_label = hex(0xc9ced5),
-    .band = hex(0x0e0f11),
-    .band_text = hex(0xff6a13),
-    .field = hex(0x17191c),
-    .line = hex(0x474d55),
-    .grid = hex(0x3a3f46),
-    .ink = hex(0xe3e5e8),
-    .label = hex(0xc9ced5),
-    .muted = hex(0x9aa1ab),
-    .accent = hex(0xff6a13),
-    .accent_hover = hex(0xff8a3d),
-    .on_accent = hex(0x0e0f11),
-    .hazard = hex(0xff6a13),
-    .logo = hex(0x2f8bff),
-    .ok = hex(0x69db7c),
-    .warning = hex(0xffd43b),
-    .failure = hex(0xff6b6b),
-    .plot = .{
-        hex(0xff8a3d), hex(0x4dabf7), hex(0x69db7c), hex(0xff6b6b), hex(0xb197fc),
-        hex(0x3bc9db), hex(0xffd43b), hex(0xf783ac), hex(0xa9e34b), hex(0xced4da),
-    },
-};
-
-/// o modo claro (o "tema 5", concreto e aço azul): cinza claro, bordas pretas, azul do albatroz e a zebra amarela
-pub const light: Palette = .{
-    .background = hex(0xc6c9cd),
-    .panel = hex(0xdcdfe2),
-    .sidebar = hex(0xd0d3d7),
-    .strip = hex(0x15171a),
-    .strip_text = hex(0xf2c200),
-    .strip_label = hex(0xd0d3d7),
-    .band = hex(0xb9bdc2),
-    .band_text = hex(0x15171a),
-    .field = hex(0xeef0f2),
-    .line = hex(0x15171a),
-    .grid = hex(0xb4b8bd),
-    .ink = hex(0x111316),
-    .label = hex(0x2a2e33),
-    .muted = hex(0x474c53),
-    .accent = hex(0x1f5aa6),
-    .accent_hover = hex(0x2c66b3),
+/// as cores do AeroDrive (`aerodrive/src/ui/theme.zig`), as mesmas da GUI em Python: fundo claro, azul nos títulos
+pub const colors: Palette = .{
+    .background = hex(0xf5f6fa),
+    .panel = hex(0xe8ecf3),
+    .selected = hex(0xc8d6ec),
+    .hover = hex(0xdae4f4),
+    .field = hex(0xffffff),
+    .line = hex(0xc4cad6),
+    .grid = hex(0xe3e7ee),
+    .ink = hex(0x28282e),
+    .label = hex(0x28282e),
+    .muted = hex(0x787c86),
+    .accent = hex(0x1f4e8c),
+    .accent_hover = hex(0x2e6ec4),
     .on_accent = hex(0xffffff),
-    .hazard = hex(0xf2c200),
-    .logo = hex(0x2f8bff),
-    .ok = hex(0x2b8a3e),
-    .warning = hex(0xb35c00),
-    .failure = hex(0xc92a2a),
+    .ok = hex(0x2ca02c),
+    .warning = hex(0xd98200),
+    .failure = hex(0xd62728),
     .plot = .{
         hex(0xd9480f), hex(0x1864ab), hex(0x2b8a3e), hex(0xc92a2a), hex(0x6741d9),
         hex(0x0b7285), hex(0xe67700), hex(0xa61e4d), hex(0x5c940d), hex(0x343a40),
     },
 };
 
-pub const Mode = enum { claro, escuro };
-
-/// as cores em uso; o padrão é o modo claro
-pub var colors: Palette = light;
-pub var mode: Mode = .claro;
-
-/// troca o modo (as telas leem `colors` a cada quadro)
-pub fn use(new_mode: Mode) void {
-    mode = new_mode;
-    colors = switch (new_mode) {
-        .claro => light,
-        .escuro => dark,
-    };
-}
-
 /// cor da curva `index` (dá a volta na paleta)
 pub fn plotColor(index: usize) rl.Color {
     return colors.plot[index % colors.plot.len];
 }
 
-/// verdadeiro se `color` é escura (para escolher texto claro ou escuro por cima)
-pub fn isDark(color: rl.Color) bool {
-    const luminance = 0.299 * @as(f32, @floatFromInt(color.r)) + 0.587 * @as(f32, @floatFromInt(color.g)) + 0.114 * @as(f32, @floatFromInt(color.b));
-    return luminance < 128;
-}
 
 /// as fontes do sistema que servem (com acentos e letras gregas); sem nenhuma, a do raylib
 const regular_candidates = [_][:0]const u8{
@@ -217,17 +154,16 @@ pub fn textWidth(font: rl.Font, content: [:0]const u8, size: f32) f32 {
     return rl.measureTextEx(font, content, size, spacing(size)).x;
 }
 
-/// a logo do albatroz numa cor só (a forma da imagem, pintada na hora de desenhar)
+/// a logo do albatroz, nas cores dela
 pub const Logo = struct {
     texture: rl.Texture2D,
 
     const png = @embedFile("albatroz.png");
 
-    /// carrega a logo branca (o desenho pinta com a cor pedida); precisa da janela aberta
+    /// carrega a logo; precisa da janela aberta
     pub fn load() !Logo {
-        var image = try rl.loadImageFromMemory(".png", png);
+        const image = try rl.loadImageFromMemory(".png", png);
         defer rl.unloadImage(image);
-        rl.imageColorBrightness(&image, 255); // tudo branco, mantendo a transparência
         const texture = try rl.loadTextureFromImage(image);
         rl.setTextureFilter(texture, .bilinear);
         return .{ .texture = texture };
@@ -238,11 +174,12 @@ pub const Logo = struct {
         rl.unloadTexture(logo.texture);
     }
 
-    /// desenha a logo com altura `height`, o canto de cima à esquerda em (x, y)
-    pub fn draw(logo: *const Logo, x: f32, y: f32, height: f32, color: rl.Color) void {
+    /// desenha a logo com altura `height`, o canto de cima à esquerda em (x, y); devolve a largura
+    pub fn draw(logo: *const Logo, x: f32, y: f32, height: f32) f32 {
         const source_width: f32 = @floatFromInt(logo.texture.width);
         const source_height: f32 = @floatFromInt(logo.texture.height);
         const width = height * source_width / source_height;
-        rl.drawTexturePro(logo.texture, .{ .x = 0, .y = 0, .width = source_width, .height = source_height }, .{ .x = x, .y = y, .width = width, .height = height }, .{ .x = 0, .y = 0 }, 0, color);
+        rl.drawTexturePro(logo.texture, .{ .x = 0, .y = 0, .width = source_width, .height = source_height }, .{ .x = x, .y = y, .width = width, .height = height }, .{ .x = 0, .y = 0 }, 0, .white);
+        return width;
     }
 };

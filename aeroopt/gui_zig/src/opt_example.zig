@@ -11,7 +11,7 @@ pub const per_generation = evaluation_count / generation_count;
 pub const configurations = [_][:0]const u8{ "monoplano, asa alta", "monoplano, asa baixa", "biplano", "tandem", "asa voadora", "monoplano, cauda em V" };
 
 /// quantos aviões passaram em cada etapa (do primeiro ao último)
-pub const stages = [_][:0]const u8{ "CONFIGURAÇÕES", "GEOMETRIA", "VOA?", "SUPERFÍCIES", "6GDL", "NOTA" };
+pub const stages = [_][:0]const u8{ "Configurações", "Geometria", "Voa?", "Superfícies", "6GDL", "Nota" };
 
 pub const Run = struct {
     span: [evaluation_count]f64 = undefined, // envergadura (m)

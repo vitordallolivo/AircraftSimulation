@@ -2,7 +2,7 @@
 //! `src/ui` e servem também ao aeroopt (`aeroopt/gui_zig`).
 //!
 //!   zig build run                                abre o aerosim
-//!   zig build run -- escuro                      abre no modo escuro
+//!   zig build run -- <avião.json>                abre um avião na Montagem
 //!   zig build shot -- <saída.png> [LxA]          desenha a tela e salva uma imagem (sem interação)
 //!   zig build test                               testes (sem janela)
 //!

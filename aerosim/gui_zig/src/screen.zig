@@ -5,7 +5,6 @@ const std = @import("std");
 const rl = @import("raylib");
 const ui_kit = @import("ui");
 const theme = ui_kit.theme;
-const shapes = ui_kit.shapes;
 const widgets = ui_kit.widgets;
 const form_mod = ui_kit.form;
 const plot = ui_kit.plot;
@@ -14,15 +13,15 @@ const view3d = ui_kit.view3d;
 const wing = @import("wing_example.zig");
 const assembly_mod = @import("assembly.zig");
 
-const areas = [_][:0]const u8{ "DIMENSIONAMENTO", "AERODINÂMICA", "ESTABILIDADE", "DESEMPENHO", "CARGAS", "MONTAGEM" };
-const aero_tabs = [_][:0]const u8{ "PERFIS", "PROJETAR", "ANALISAR" };
+const areas = [_][:0]const u8{ "Dimensionamento", "Aerodinâmica", "Estabilidade", "Desempenho", "Cargas", "Montagem" };
+const aero_tabs = [_][:0]const u8{ "Perfis", "Projetar", "Analisar" };
 
 const Group = enum(usize) { wing, airfoil, case, methods };
 
 /// os índices dos campos (a ordem da lista `initial_fields`)
 const FieldId = enum(usize) { span, root_chord, tip_chord, panels, lift_max, lift_slope, airspeed, density, alpha_start, alpha_end, alpha_step, alpha_load, use_lifting_line, use_strips, compare };
 
-const initial_groups = [_]form_mod.Group{ .{ .title = "ASA" }, .{ .title = "PERFIL" }, .{ .title = "CASO" }, .{ .title = "MÉTODOS" } };
+const initial_groups = [_]form_mod.Group{ .{ .title = "Asa" }, .{ .title = "Perfil" }, .{ .title = "Caso" }, .{ .title = "Métodos" } };
 
 fn g(group: Group) usize {
     return @intFromEnum(group);
@@ -155,27 +154,27 @@ pub const Screen = struct {
         } else {
             placeholder(ui, .{ .x = 0, .y = top, .width = width, .height = height - top }, if (screen.area == 1) aero_tabs[screen.aero_tab] else areas[screen.area]);
         }
-        if (widgets.header(ui, width, "AEROSIM", &.{ "Abrir avião (.json)", "Salvar .json" }, "asa trapezoidal de exemplo · conta no núcleo em Zig")) |_|
+        if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião (.json)", "Salvar .json" }, "asa trapezoidal de exemplo · conta no núcleo em Zig")) |_|
             screen.setMessage("abrir e salvar o .json entram na próxima etapa", .{});
-        _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, &areas, &screen.area, theme.colors.strip, 14);
+        _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, &areas, &screen.area, 14);
         if (screen.area == 1) {
-            _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, &aero_tabs, &screen.aero_tab, theme.colors.sidebar, 13);
+            _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, &aero_tabs, &screen.aero_tab, 13);
         } else {
-            rl.drawRectangleRec(.{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, theme.colors.sidebar);
+            rl.drawRectangleRec(.{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, theme.colors.panel);
         }
     }
 
     fn drawSidebar(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
-        rl.drawRectangleRec(rect, theme.colors.sidebar);
-        rl.drawRectangleRec(.{ .x = rect.x + rect.width - 3, .y = rect.y, .width = 3, .height = rect.height }, theme.colors.strip);
+        rl.drawRectangleRec(rect, theme.colors.panel);
+        rl.drawRectangleRec(.{ .x = rect.x + rect.width - 1, .y = rect.y, .width = 1, .height = rect.height }, theme.colors.line);
         const footer_height: f32 = 92;
         const form_rect: rl.Rectangle = .{ .x = rect.x, .y = rect.y + 4, .width = rect.width - 3, .height = rect.height - footer_height - 4 };
         const footer: rl.Rectangle = .{ .x = rect.x, .y = rect.y + rect.height - footer_height, .width = rect.width - 3, .height = footer_height };
-        rl.drawRectangleRec(footer, theme.colors.strip);
-        rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 3 }, theme.colors.accent);
-        if (widgets.primaryButton(ui, .{ .x = footer.x + 12, .y = footer.y + 14, .width = footer.width - 24, .height = 34 }, "▶  RODAR", true)) screen.runAnalysis();
-        shapes.hazard(.{ .x = footer.x + 12, .y = footer.y + 54, .width = footer.width - 24, .height = 7 }, screen.progress, theme.colors.hazard, theme.colors.panel);
-        theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.message, 0), footer.x + 12, footer.y + 68, 13, theme.colors.strip_label);
+        rl.drawRectangleRec(footer, theme.colors.panel);
+        rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 1 }, theme.colors.line);
+        if (widgets.primaryButton(ui, .{ .x = footer.x + 12, .y = footer.y + 14, .width = footer.width - 24, .height = 34 }, "Rodar", true)) screen.runAnalysis();
+        widgets.progressBar(.{ .x = footer.x + 12, .y = footer.y + 54, .width = footer.width - 24, .height = 7 }, screen.progress);
+        theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.message, 0), footer.x + 12, footer.y + 68, 13, theme.colors.muted);
         // o formulário por último: a lista aberta de uma escolha fica por cima do rodapé
         if (screen.form.draw(ui, form_rect)) screen.runAnalysis();
     }
@@ -376,7 +375,7 @@ pub const Screen = struct {
     }
 
     fn drawDiagnosis(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
-        const inner = widgets.labeledCard(ui, rect, "DIAGNÓSTICO");
+        const inner = widgets.labeledCard(ui, rect, "Diagnóstico");
         const r = &screen.result;
         var buffers: [3][96]u8 = undefined;
         const ll = r.lifting_line.summary;
@@ -399,7 +398,7 @@ pub const Screen = struct {
     }
 
     fn drawSummary(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
-        const inner = widgets.labeledCard(ui, rect, "RESUMO");
+        const inner = widgets.labeledCard(ui, rect, "Resumo");
         const r = &screen.result;
         var buffers: [6][64]u8 = undefined;
         const columns = [_]f32{ inner.x, inner.x + 300 };

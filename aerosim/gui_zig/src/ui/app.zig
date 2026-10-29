@@ -1,16 +1,14 @@
 //! O que os dois programas têm igual em volta da tela: a linha de comando, a janela e o laço de desenho, com o
 //! print sem interação do `--shot`.
 //!
-//!   <programa> [claro|escuro] [LxA]
-//!   <programa> --shot <saída.png> [arquivo.json] [claro|escuro] [LxA] [aba=N] [rolar=PIXELS]
+//!   <programa> [LxA]
+//!   <programa> --shot <saída.png> [arquivo.json] [LxA] [aba=N] [rolar=PIXELS]
 const std = @import("std");
 const rl = @import("raylib");
-const theme = @import("theme.zig");
 const widgets = @import("widgets.zig");
 
 pub const Args = struct {
     shot: ?[:0]const u8 = null,
-    mode: theme.Mode = .claro,
     width: i32 = 1500,
     height: i32 = 950,
     scroll: f32 = 0, // rolagem da área dos gráficos no print
@@ -28,8 +26,6 @@ pub fn parseArgs(argv: []const [:0]const u8) !Args {
             i += 1;
             if (i >= argv.len) return error.BadArgs;
             args.shot = argv[i];
-        } else if (std.meta.stringToEnum(theme.Mode, value)) |mode| {
-            args.mode = mode;
         } else if (std.mem.endsWith(u8, value, ".json")) {
             args.file = value;
         } else if (std.mem.startsWith(u8, value, "aba=")) {
@@ -50,7 +46,7 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     const arena = init.arena.allocator();
     const argv = try init.minimal.args.toSlice(arena);
     const args = parseArgs(argv) catch {
-        std.debug.print("uso: {s} [claro|escuro] [LxA]\n     {s} --shot <saída.png> [arquivo.json] [claro|escuro] [LxA] [aba=N] [rolar=PIXELS]\n", .{ title, title });
+        std.debug.print("uso: {s} [LxA]\n     {s} --shot <saída.png> [arquivo.json] [LxA] [aba=N] [rolar=PIXELS]\n", .{ title, title });
         std.process.exit(2);
     };
     const shot = args.shot != null;
@@ -60,7 +56,6 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     defer rl.closeWindow();
     rl.setTargetFPS(60);
 
-    theme.use(args.mode);
     var ui = try widgets.Ui.init();
     defer ui.deinit();
     screen.start();

@@ -6,14 +6,13 @@ const std = @import("std");
 const rl = @import("raylib");
 const ui_kit = @import("ui");
 const theme = ui_kit.theme;
-const shapes = ui_kit.shapes;
 const widgets = ui_kit.widgets;
 const form_mod = ui_kit.form;
 const plot = ui_kit.plot;
 const numbers = ui_kit.numbers;
 const example = @import("opt_example.zig");
 
-const tabs = [_][:0]const u8{ "OTIMIZAR", "SENSIBILIDADE" };
+const tabs = [_][:0]const u8{ "Otimizar", "Sensibilidade" };
 
 const Group = enum(usize) { score, variables, constraints, settings };
 
@@ -21,7 +20,7 @@ fn g(group: Group) usize {
     return @intFromEnum(group);
 }
 
-const initial_groups = [_]form_mod.Group{ .{ .title = "PONTUAÇÃO", .open = false }, .{ .title = "VARIÁVEIS" }, .{ .title = "RESTRIÇÕES", .open = false }, .{ .title = "CONFIGURAÇÃO" } };
+const initial_groups = [_]form_mod.Group{ .{ .title = "Pontuação", .open = false }, .{ .title = "Variáveis" }, .{ .title = "Restrições", .open = false }, .{ .title = "Configuração" } };
 
 const initial_fields = [_]form_mod.Field{
     .{ .label = "regulamento", .group = g(.score), .kind = .choice, .choices = "Regular 2026;Micro 2026;Avançada 2026" },
@@ -70,28 +69,28 @@ pub const Screen = struct {
             screen.drawResults(ui, .{ .x = sidebar_width, .y = top, .width = width - sidebar_width, .height = height - top });
         } else {
             const box: rl.Rectangle = .{ .x = 40, .y = top + 40, .width = 620, .height = 150 };
-            const inner = widgets.labeledCard(ui, box, "SENSIBILIDADE");
+            const inner = widgets.labeledCard(ui, box, "Sensibilidade");
             theme.text(ui.fonts.regular, "esta aba ainda não foi feita em Zig; o desenho segue o mesmo tema", inner.x, inner.y + 10, 15, theme.colors.label);
         }
-        if (widgets.header(ui, width, "AEROOPT", &.{ "Abrir problema (.opt.json)", "Salvar" }, "dados de exemplo · desenho da interface em Zig")) |_|
+        if (widgets.header(ui, width, "AeroOpt", &.{ "Abrir problema (.opt.json)", "Salvar" }, "dados de exemplo · desenho da interface em Zig")) |_|
             _ = std.fmt.bufPrintZ(&screen.message, "abrir e salvar o problema entram na próxima etapa", .{}) catch {};
-        _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, &tabs, &screen.tab, theme.colors.strip, 14);
+        _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, &tabs, &screen.tab, 14);
     }
 
     fn drawSidebar(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
-        rl.drawRectangleRec(rect, theme.colors.sidebar);
-        rl.drawRectangleRec(.{ .x = rect.x + rect.width - 3, .y = rect.y, .width = 3, .height = rect.height }, theme.colors.strip);
+        rl.drawRectangleRec(rect, theme.colors.panel);
+        rl.drawRectangleRec(.{ .x = rect.x + rect.width - 1, .y = rect.y, .width = 1, .height = rect.height }, theme.colors.line);
         const footer_height: f32 = 92;
         const footer: rl.Rectangle = .{ .x = rect.x, .y = rect.y + rect.height - footer_height, .width = rect.width - 3, .height = footer_height };
-        rl.drawRectangleRec(footer, theme.colors.strip);
-        rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 3 }, theme.colors.accent);
-        if (widgets.primaryButton(ui, .{ .x = footer.x + 12, .y = footer.y + 14, .width = footer.width - 24, .height = 34 }, "▶  OTIMIZAR", true)) {
+        rl.drawRectangleRec(footer, theme.colors.panel);
+        rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 1 }, theme.colors.line);
+        if (widgets.primaryButton(ui, .{ .x = footer.x + 12, .y = footer.y + 14, .width = footer.width - 24, .height = 34 }, "Otimizar", true)) {
             example.generate(&screen.run);
             screen.progress = 1;
             _ = std.fmt.bufPrintZ(&screen.message, "a busca de verdade entra na próxima etapa (exemplo refeito)", .{}) catch {};
         }
-        shapes.hazard(.{ .x = footer.x + 12, .y = footer.y + 54, .width = footer.width - 24, .height = 7 }, screen.progress, theme.colors.hazard, theme.colors.panel);
-        theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.message, 0), footer.x + 12, footer.y + 68, 13, theme.colors.strip_label);
+        widgets.progressBar(.{ .x = footer.x + 12, .y = footer.y + 54, .width = footer.width - 24, .height = 7 }, screen.progress);
+        theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.message, 0), footer.x + 12, footer.y + 68, 13, theme.colors.muted);
         _ = screen.form.draw(ui, .{ .x = rect.x, .y = rect.y + 4, .width = rect.width - 3, .height = rect.height - footer_height - 4 });
     }
 
@@ -127,7 +126,7 @@ pub const Screen = struct {
 
     /// os 10 melhores aviões
     fn drawTable(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
-        const inner = widgets.labeledCard(ui, rect, "MELHORES AVIÕES");
+        const inner = widgets.labeledCard(ui, rect, "Melhores aviões");
         const run = &screen.run;
         var order: [example.evaluation_count]usize = undefined;
         for (&order, 0..) |*o, i| o.* = i;

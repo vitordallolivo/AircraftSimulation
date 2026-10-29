@@ -2,8 +2,8 @@
 
 Esta é a interface do aeroopt escrita em Zig, com raylib e raygui. Aqui se monta o problema de otimização (a
 pontuação, as variáveis, as restrições e a configuração da busca) e se veem os resultados da rodada. Ela usa as
-mesmas peças da interface do aerosim (`aerosim/gui_zig/src/ui`), para os dois programas terem o mesmo visual e os
-mesmos dois modos de cor, o claro (padrão) e o escuro. Por enquanto a rodada é de exemplo.
+mesmas peças da interface do aerosim (`aerosim/gui_zig/src/ui`), para os dois programas terem o mesmo visual, o
+do AeroDrive. Por enquanto a rodada é de exemplo.
 
 A pasta tem a tela (`src/screen.zig`), a rodada de exemplo (`src/opt_example.zig`) e o programa (`src/main.zig`),
 que só abre a janela pelo laço comum das peças.
