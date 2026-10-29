@@ -24,6 +24,10 @@ addToLibrary({
       }, 250);
     },
 
+    // a menor altura em que os menus cabem inteiros
+    minHeight: 640,
+    scale: () => Math.max(1, aerodrive.minHeight / Math.max(1, window.innerHeight)),
+
     isFolder: (path) => {
       try { return FS.isDir(FS.stat(path).mode); } catch (error) { return false; }
     },
@@ -110,8 +114,13 @@ addToLibrary({
     }
   },
 
-  aerodrive_viewport_width: () => window.innerWidth,
-  aerodrive_viewport_height: () => window.innerHeight,
+  // tamanho em que o jogo desenha: o da página, aumentado quando ela é mais baixa que
+  // aerodrive.minHeight (a interface foi feita para tela de PC). O canvas estica para a página
+  // pelo CSS, e o raylib converte o toque e o mouse para essa área.
+  aerodrive_viewport_width__deps: ['$aerodrive'],
+  aerodrive_viewport_width: () => Math.round(window.innerWidth * aerodrive.scale()),
+  aerodrive_viewport_height__deps: ['$aerodrive'],
+  aerodrive_viewport_height: () => Math.round(window.innerHeight * aerodrive.scale()),
 
   aerodrive_open_file_picker: () => Module.aerodrivePage.openFilePicker(),
 

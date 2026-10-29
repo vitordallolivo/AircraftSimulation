@@ -19,9 +19,6 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - site: tela inicial estilo BIOS (`web/index.html`) que abre o AeroDrive (aerosim e aeroopt "em breve") e carrega um
   `.json`; `tools/web_build.py` monta `zig-out/site/`; o workflow `.github/workflows/site.yml` publica no GitHub
   Pages a cada push na `main`.
-
-### v0.2.5 (branch `0.2_dev`)
-
 - AeroDrive no navegador sem os travamentos grandes: entrar em Aeronave caiu de ~4 s para ~40 ms (o
   `emscripten_return_address` passa a responder 0, em vez de montar um rastro da pilha do JS a cada alocação do Zig),
   e Decolar de ~3,7 s para ~0,5 s, com o quadro de voo de ~7,7 ms para ~2,2 ms (`fmath.mulAdd`: no WebAssembly, que
@@ -31,6 +28,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   salvar ao começar e grava direto no arquivo; nos outros, o vídeo é baixado ao parar.
 - celular: no primeiro toque a página vai para a tela cheia e trava deitada; em pé aparece "gire o celular"; o jogo
   acompanha o tamanho da página (tela cheia, barra do navegador, giro).
+- celular, segunda rodada (testada pelo vitor num Galaxy): o jogo desenha numa área de no mínimo 640 px de altura e
+  estica para a tela (antes os menus saíam cortados); tocar nos menus vale como clique; o rodapé das teclas dá lugar a
+  um botão "← voltar"; no voo, painel de dados compacto, minimapa menor e os botões "modo" e "LAPES" ao lado de pausa
+  e câmera; o link "◄ início" some depois do primeiro toque.
 
 ### v0.2.3 (`main`, PR #31)
 

@@ -64,7 +64,8 @@ pub fn pathRemove(path: []const u8) bool {
 // ------------------------------------------------------------------ página
 pub const Size = struct { width: i32, height: i32 };
 
-/// o tamanho da área da página (em pixels CSS), no mínimo 320×240
+/// o tamanho em que o jogo desenha: o da página (pixels CSS), aumentado na mesma proporção quando
+/// a página é baixa demais para os menus (celular deitado); no mínimo 320×240
 pub fn viewportSize() Size {
     return .{ .width = @max(320, aerodrive_viewport_width()), .height = @max(240, aerodrive_viewport_height()) };
 }

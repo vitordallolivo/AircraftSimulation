@@ -475,7 +475,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/app/**
 
 - `aerodrive/src/app/app.zig` — O jogo inteiro: o que as telas dividem (fontes, widgets, configurações, o avião carregado, som,
-  tipos `Id:50`, `Next:52`, `Plane:61`, `Screens:80`, `App:95`
+  tipos `Id:51`, `Next:53`, `Plane:62`, `Screens:81`, `App:96`
 - `aerodrive/src/app/library.zig` — Biblioteca de aviões: os `.json` das pastas de exemplos e de "meus aviões" (os salvos pela
   tipos `Group:8`, `Entry:20`, `Library:28`
   fn `scan:43`, `fingerprint:81`, `safeFileName:117`, `entryName:136`
@@ -524,8 +524,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Actions:24`, `Reader:34`
   fn `toRaylib:119`, `pressedButton:141`
 - `aerodrive/src/input/touch.zig` — Controles por toque (celular, tablet): dois manches virtuais e dois botões, desenhados sobre o
-  tipos `Point:16`, `Stick:18`, `Button:23`, `ButtonArea:25`, `Layout:30`, `State:55`, `Controls:71`
-  fn `layout:37`
+  tipos `Point:16`, `Stick:18`, `Button:23`, `ButtonArea:25`, `Layout:30`, `State:58`, `Controls:74`
+  fn `layout:38`
 
 **aerodrive/src/math/**
 
@@ -574,7 +574,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerodrive/src/screens/control_menu.zig` — Controle, em duas abas:
   tipos `ControlMenu:31`
 - `aerodrive/src/screens/flight.zig` — Voo: o drive_manager avança a física em tempo real; no manual, o controle (com as curvas do
-  tipos `Flight:39`
+  tipos `Flight:40`
 - `aerodrive/src/screens/fly_menu.zig` — Voar: onde começa (chão ou mesa), onde pousa (chão ou plataforma), quem pilota no começo
   tipos `FlyMenu:26`
 - `aerodrive/src/screens/main_menu.zig` — Menu inicial: logo da Albatroz, "AeroDrive", o avião escolhido e os itens; à direita a aeronave
@@ -608,8 +608,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/sys/**
 
 - `aerodrive/src/sys/browser.zig` — A ponte com a página no navegador (só no alvo web). As funções `extern` estão em JS, em
-  tipos `Size:63`, `TriggerSide:85`, `ImportedFile:106`
-  fn `fileSize:30`, `fileRead:36`, `fileWrite:41`, `folderList:46`, `pathRemove:58`, `viewportSize:66`, `openFilePicker:71`, `download:76`, `touchSeen:81`, `gamepadTrigger:88`, `leave:94`, `setFrameRate:99`, `takeImport:126`, `queueImport:133`
+  tipos `Size:65`, `TriggerSide:88`, `ImportedFile:121`
+  fn `fileSize:32`, `fileRead:38`, `fileWrite:43`, `folderList:48`, `pathRemove:60`, `viewportSize:69`, `openFilePicker:74`, `download:79`, `touchSeen:84`, `gamepadTrigger:91`, `videoStart:99`, `videoStop:104`, `leave:109`, `setFrameRate:114`, `takeImport:141`, `queueImport:148`
 - `aerodrive/src/sys/browser_io.zig` — O `std.Io` do navegador. No Zig 0.16 o `std.Io.Threaded` não compila para emscripten (o
 - `aerodrive/src/sys/keep_awake.zig` — Não deixa a tela escurecer nem apagar com o jogo aberto. Jogar só com o controle não conta como
   tipos `KeepAwake:20`
@@ -640,8 +640,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerodrive/src/ui/touch_view.zig` — Desenha os controles por toque (`input/touch.zig`) sobre o voo: os dois manches com a bolinha
   fn `draw:14`
 - `aerodrive/src/ui/widgets.zig` — Widgets dos menus (modo imediato): cada quadro a tela chama `begin`, os widgets na ordem em que
-  tipos `Nav:14`, `Ui:23`, `Row:252`, `ScrollList:255`, `Column:312`
-  fn `header:330`, `footer:336`
+  tipos `Nav:32`, `Ui:41`, `Row:280`, `ScrollList:283`, `Column:340`
+  fn `touchMode:19`, `header:358`, `footer:364`
 
 **aerodrive/src/util/**
 

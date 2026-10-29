@@ -106,8 +106,8 @@ pub const Reader = struct {
         }.f;
         return .{
             .pause = rl.isKeyPressed(.escape) or rl.isKeyPressed(.p) or b(pad, bind.pause) or (touched and r.touch_state.pressed(.pause)),
-            .toggle_mode = rl.isKeyPressed(.m) or b(pad, bind.mode),
-            .drop = rl.isKeyPressed(.l) or b(pad, bind.drop),
+            .toggle_mode = rl.isKeyPressed(.m) or b(pad, bind.mode) or (touched and r.touch_state.pressed(.mode)),
+            .drop = rl.isKeyPressed(.l) or b(pad, bind.drop) or (touched and r.touch_state.pressed(.drop)),
             .record = rl.isKeyPressed(.g) or b(pad, bind.record),
             .camera = rl.isKeyPressed(.c) or b(pad, bind.camera) or (touched and r.touch_state.pressed(.camera)),
             .restart = rl.isKeyPressed(.r) or b(pad, bind.restart),

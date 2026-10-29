@@ -1,5 +1,5 @@
 //! Desenha os controles por toque (`input/touch.zig`) sobre o voo: os dois manches com a bolinha
-//! onde o dedo está, a marca do acelerador e os botões de pausa e câmera.
+//! onde o dedo está, a marca do acelerador e os botões (manual/automático, pausa, câmera, LAPES).
 const std = @import("std");
 const rl = @import("raylib");
 const touch = @import("../input/touch.zig");
@@ -10,8 +10,8 @@ const fill: rl.Color = .{ .r = 20, .g = 40, .b = 80, .a = 70 };
 const knob: rl.Color = .{ .r = 255, .g = 255, .b = 255, .a = 200 };
 const pressed_fill: rl.Color = .{ .r = 242, .g = 166, .b = 38, .a = 200 };
 
-/// manches e botões na posição de `touch.layout` para a tela atual
-pub fn draw(fonts: *const theme.Fonts, state: touch.State) void {
+/// manches e os botões de `shown` na posição de `touch.layout` para a tela atual
+pub fn draw(fonts: *const theme.Fonts, state: touch.State, shown: std.EnumSet(touch.Button)) void {
     const area = touch.layout(@floatFromInt(rl.getScreenWidth()), @floatFromInt(rl.getScreenHeight()));
     drawStick(fonts, area.left, state.left_knob, "motor · leme");
     drawStick(fonts, area.right, state.right_knob, "arfagem · rolagem");
@@ -22,8 +22,9 @@ pub fn draw(fonts: *const theme.Fonts, state: touch.State) void {
     const level: f32 = @floatCast(std.math.clamp(state.throttle, 0, 1));
     rl.drawRectangleRec(.{ .x = bar.x, .y = bar.y + bar.height * (1 - level), .width = bar.width, .height = bar.height * level }, theme.accent);
 
-    const labels = std.EnumArray(touch.Button, [:0]const u8).init(.{ .pause = "pausa", .camera = "câmera" });
+    const labels = std.EnumArray(touch.Button, [:0]const u8).init(.{ .mode = "modo", .pause = "pausa", .camera = "câmera", .drop = "LAPES" });
     for (std.enums.values(touch.Button)) |button| {
+        if (!shown.contains(button)) continue;
         const spot = area.buttons.get(button);
         const center: rl.Vector2 = .{ .x = spot.center.x, .y = spot.center.y };
         rl.drawCircleV(center, spot.radius, if (state.held.contains(button)) pressed_fill else fill);
