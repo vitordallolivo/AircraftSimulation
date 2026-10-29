@@ -236,10 +236,45 @@ $`w = \vec V_i\cdot\hat e_z`$:
 ```
 
 A derivada $`c_l'`$ é tirada por diferença central. O passo é amortecido: se o resíduo cresce, ele cai pela metade, até
-dez vezes. Depois do estol a solução pode não ser única (a mesma asa sustenta com faixas estoladas em lugares
-diferentes), e o Newton fica com a mais perto da linear. Depois do estol a força de cada faixa ganha também o arrasto
-da placa plana das faixas, $`\sigma\,1{,}2\,\sin^2\alpha`$. Com Goates e Hunsaker ligado, a seção é a do plano normal à
-linha, como na versão linear.
+dez vezes. Depois do estol a força de cada faixa ganha também o arrasto da placa plana das faixas,
+$`\sigma\,1{,}2\,\sin^2\alpha`$. Com Goates e Hunsaker ligado, a seção é a do plano normal à linha, como na versão
+linear.
+
+**Depois do estol (`llt_viscosity`).** Quando a curva do perfil passa do pico, $`c_l`$ cai com $`\alpha`$ e cada faixa
+tem duas respostas possíveis, uma de cada lado do pico. As faixas se acoplam pelo downwash: uma que estola perde
+$`\Gamma`$ e muda o $`\alpha`$ das vizinhas. O sistema passa a ter muitas soluções. Só com o Newton, metade dos ângulos
+depois do estol não convergia (o passo parava num mínimo local do resíduo) e os que convergiam tinham faixas estoladas
+salteadas, uma sim e outra não, com a sustentação da asa subindo e descendo de um ângulo para o outro. Duas correções
+resolvem isso.
+
+A primeira é a viscosidade artificial de Chattot, que soma ao resíduo um termo que espalha $`\Gamma`$ entre as faixas
+vizinhas e escolhe a solução suave. Na forma discreta, o coeficiente precisa crescer com o quadrado do número de
+faixas para o resultado não mudar com a malha (*Relaxation limits and artificial viscosity for lifting-line
+simulations of uniformly discretized rectangular wings in pre- and post-stall conditions*, 2026; a conferir no PDF).
+Por isso aqui ele entra na forma contínua, com a corda como escala de comprimento, e pesado pela mistura $`\sigma`$ do
+estol, que é quase 0 antes do estol, para o trecho linear ficar como estava:
+
+```math
+R_i \;\to\; R_i - \sigma_i\,\nu\,c_i^2\,\frac{d^2\Gamma}{ds^2}\bigg|_i
+```
+
+$`s`$ é a distância ao longo da envergadura (projetada em y-z) e $`\nu`$ é `llt_viscosity`. A segunda derivada usa a
+diferença de espaçamento desigual entre os centros das faixas vizinhas da mesma asa, com $`\Gamma = 0`$ no nó da ponta.
+A forma contínua e o peso $`\sigma`$ são escolhas nossas; a ideia do termo é a de Chattot.
+
+A segunda é a continuação em pseudo-tempo, usada quando o Newton para sem convergir. Em vez do passo de Newton,
+resolve-se
+
+```math
+\left(\frac{I}{\tau} + J\right)\Delta\Gamma = -R
+```
+
+com $`\tau`$ crescendo à medida que o resíduo cai (Kelley e Keyes, *Convergence analysis of pseudo-transient
+continuation*, SIAM J. Numer. Anal. 35, 1998; regra SER de Mulder e van Leer, 1985; a conferir no PDF). Com $`\tau`$
+pequeno o passo é curto e segue $`-R`$, o que atravessa os mínimos locais; com $`\tau`$ grande vira o Newton.
+
+O $`\nu`$ do método `llt_nl` foi escolhido numa varredura na asa retangular dos testes: o menor valor com que todos os
+ângulos convergiram, nas duas malhas, sem saltos de $`c_l`$ entre faixas vizinhas.
 
 Para ligar, a aba Cargas tem o método "linha sustentadora não linear (estol por perfil)" (`llt_nl`), e o voo usa a
 mesma conta com `ac.sim.aero_model = "llt_nl"`. Com `llt_nonlinear = 0`, o padrão, a conta é a linear de sempre.
@@ -275,7 +310,8 @@ semi-infinito por fórmula fechada (o 1º termo da eq. 3 de Goates e Hunsaker), 
   $`C_{Y\beta}`$ fica acima do AVL mesmo convergido).
 - **Estol:** a versão de sempre é linear, $`c_l = a\,(\alpha - \alpha_0)`$, sem estol; perto do $`C_{L,max}`$ a carga real é
   menor. A versão não linear tem o estol, mas a curva depois dele é a da placa plana, e a seção estolada não tem a
-  histerese nem o arrasto de uma asa real estolando.
+  histerese nem o arrasto de uma asa real estolando. Bem depois do pico (uns 6° na asa retangular dos testes), a asa
+  pula para a solução toda estolada, e o ângulo em que isso acontece depende da malha.
 - **Pernas retas:** não se enrolam nem se desviam pela esteira da hélice.
 - **Trimagem:** $`\alpha`$ e profundor vêm da trimagem da simulação. A soma das cargas pode ficar um pouco fora do peso,
   e o momento de arfagem não fica exatamente zerado.
@@ -303,6 +339,8 @@ y(t) = y_0 + (y_1 - y_0)\,\sin\frac{\pi t}{2}
 - Não linear: a curva da seção tem o pico no $`c_{l,max}`$ pedido; em α pequeno a asa fica com a linear; numa varredura
   em α o $`C_L`$ para abaixo do $`c_{l,max}`$ da seção e, depois do estol, cai abaixo da linear; a raiz da asa retangular
   chega ao estol antes da ponta; com e sem o cache, o mesmo resultado bit a bit; desligada por padrão.
+- Viscosidade: o trecho antes do estol fica igual; depois do estol a carga é suave e o $`C_L`$ com 24 e 48 faixas fica
+  perto; sem ela, as faixas estolam salteadas.
 
 Em `tests/tools/test_aero_perfis.py`: o $`C_{L\alpha}`$ e o $`C_{l\beta}`$ de Goates e Hunsaker contra o MachUpX nas quatro
 asas de teste, com a tolerância e os números esperados no teste.
