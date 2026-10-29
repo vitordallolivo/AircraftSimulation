@@ -4,6 +4,7 @@
 const std = @import("std");
 const session = @import("../sim/session.zig");
 const ch = @import("../input/channels.zig");
+const storage = @import("storage.zig");
 const fz = @import("../util/fuzz.zig");
 
 pub const CameraKind = enum { chase, ground, orbit };
@@ -70,18 +71,18 @@ pub const Settings = struct {
         return std.json.Stringify.valueAlloc(gpa, d, .{ .whitespace = .indent_2 });
     }
 
-    pub fn load(io: std.Io, gpa: std.mem.Allocator, path: []const u8) Settings {
-        const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 20)) catch return .{};
+    /// lê de `files` (ausente ou quebrado = padrões)
+    pub fn load(files: storage.Storage, gpa: std.mem.Allocator, path: []const u8) Settings {
+        const bytes = files.read(gpa, path, 1 << 20) catch return .{};
         defer gpa.free(bytes);
         return parse(gpa, bytes) catch .{};
     }
 
     /// grava (cria a pasta); falha calada — perder a configuração não pode parar o jogo
-    pub fn save(s: *const Settings, io: std.Io, gpa: std.mem.Allocator, path: []const u8) void {
+    pub fn save(s: *const Settings, files: storage.Storage, gpa: std.mem.Allocator, path: []const u8) void {
         const json = s.toJson(gpa) catch return;
         defer gpa.free(json);
-        if (std.fs.path.dirname(path)) |dir| std.Io.Dir.cwd().createDirPath(io, dir) catch {};
-        std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = json }) catch {};
+        files.write(path, json) catch {};
     }
 };
 

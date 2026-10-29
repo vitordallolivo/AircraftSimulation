@@ -4,7 +4,23 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## Não lançado
 
-### v0.2.3 (branch `0.2_dev`)
+### v0.2.4 (branch `0.2_dev`)
+
+- tracking: meta da 1.0 (tudo no navegador, sem instalar nada; o Python em WebAssembly fica para a 1.1) e o quadro
+  em dia com a `main` (os itens "a revisar" que já foram no PR #31 passam a "Feito (na `main`)").
+- tracking: seção "Ordem de prioridade" com a fila atual.
+- AeroDrive no navegador (W1 a W4 da meta da 1.0). `zig build -Dtarget=wasm32-emscripten` gera `aerodrive.html`,
+  `.js`, `.wasm` e `.data` (aviões de exemplo e uma fonte livre embutidos) em `aerodrive/zig-out/web`. Os arquivos
+  passam por uma interface de armazenamento (`app/storage.zig`): disco no programa instalado, IndexedDB no navegador.
+  "Abrir arquivo do computador..." lê um `.json` pelo seletor ou arrastando para a página (no programa instalado,
+  arrastando para a janela); o avião fica guardado no navegador e "Exportar" baixa o `.json`. No celular aparecem dois
+  manches virtuais (motor e leme; arfagem e rolagem) e os botões de pausa e câmera. O nativo continua igual, e o
+  núcleo só ganhou um índice em `usize` para compilar em 32 bits (regressão bit a bit igual).
+- site: tela inicial estilo BIOS (`web/index.html`) que abre o AeroDrive (aerosim e aeroopt "em breve") e carrega um
+  `.json`; `tools/web_build.py` monta `zig-out/site/`; o workflow `.github/workflows/site.yml` publica no GitHub
+  Pages a cada push na `main`.
+
+### v0.2.3 (`main`, PR #31)
 
 - núcleo, legibilidade (T87, revisão do vitor). Os erros da ABI viram um `error{...}` (`AbiError`), e o número negativo
   só aparece na fronteira, em `abiCode`. Os arquivos `tests_*.zig` por grupo dão lugar a `zig build test -Dgrupo=math`

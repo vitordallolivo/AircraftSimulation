@@ -1,12 +1,14 @@
 //! Interface de armazenamento chave → bytes (e JSON por cima). Quem guarda configurações não sabe
-//! onde ficam: `FileStore` grava arquivos numa pasta; `MemStore` guarda na memória (testes). Outra
-//! implementação (nuvem, banco) é só outro `VTable`.
+//! onde ficam: `FileStore` grava um arquivo por chave numa pasta (pelo `storage.Storage`: disco no
+//! nativo, IndexedDB no navegador); `MemStore` guarda na memória (testes). Outra implementação
+//! (nuvem, banco) é só outro `VTable`.
 //!
-//!   var fs = FileStore{ .io = io, .root = "~/.config/aerodrive/avioes" };
+//!   var fs = FileStore{ .files = disk.storage(), .root = "~/.config/aerodrive/avioes" };
 //!   const st = fs.store();
 //!   st.saveJson(gpa, chave, valor);
 //!   const v = st.loadJson(T, gpa, chave) orelse padrão;
 const std = @import("std");
+const storage = @import("storage.zig");
 const fz = @import("../util/fuzz.zig");
 
 pub const Store = struct {
@@ -47,7 +49,7 @@ pub const Store = struct {
 
 /// um arquivo `<root>/<chave>.json` por chave
 pub const FileStore = struct {
-    io: std.Io,
+    files: storage.Storage,
     root: []const u8,
 
     pub fn store(f: *FileStore) Store {
@@ -59,18 +61,17 @@ pub const FileStore = struct {
     }
 
     fn load(ptr: *anyopaque, gpa: std.mem.Allocator, key: []const u8) ?[]u8 {
-        const f: *FileStore = @ptrCast(@alignCast(ptr));
-        var buf: [1200]u8 = undefined;
-        const p = f.path(&buf, key) orelse return null;
-        return std.Io.Dir.cwd().readFileAlloc(f.io, p, gpa, .limited(1 << 20)) catch null;
+        const file_store: *FileStore = @ptrCast(@alignCast(ptr));
+        var path_buf: [1200]u8 = undefined;
+        const file_path = file_store.path(&path_buf, key) orelse return null;
+        return file_store.files.read(gpa, file_path, 1 << 20) catch null;
     }
 
     fn save(ptr: *anyopaque, key: []const u8, bytes: []const u8) bool {
-        const f: *FileStore = @ptrCast(@alignCast(ptr));
-        var buf: [1200]u8 = undefined;
-        const p = f.path(&buf, key) orelse return false;
-        std.Io.Dir.cwd().createDirPath(f.io, f.root) catch {};
-        std.Io.Dir.cwd().writeFile(f.io, .{ .sub_path = p, .data = bytes }) catch return false;
+        const file_store: *FileStore = @ptrCast(@alignCast(ptr));
+        var path_buf: [1200]u8 = undefined;
+        const file_path = file_store.path(&path_buf, key) orelse return false;
+        file_store.files.write(file_path, bytes) catch return false;
         return true;
     }
 };
@@ -163,7 +164,8 @@ test "arquivo: grava e lê na pasta" {
     var buf: [512]u8 = undefined;
     const root = buf[0..try tmp.dir.realPath(testing.io, &buf)];
     var pb: [600]u8 = undefined;
-    var f: FileStore = .{ .io = testing.io, .root = try std.fmt.bufPrint(&pb, "{s}/sub/avioes", .{root}) };
+    var disk: storage.DiskStorage = .{ .io = testing.io };
+    var f: FileStore = .{ .files = disk.storage(), .root = try std.fmt.bufPrint(&pb, "{s}/sub/avioes", .{root}) };
     const s = f.store();
     try testing.expect(s.saveJson(testing.allocator, "Asa-1", Demo{ .b = true }));
     try testing.expect(s.loadJson(Demo, testing.allocator, "Asa-1").?.b);

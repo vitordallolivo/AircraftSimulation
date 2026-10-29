@@ -1,0 +1,67 @@
+# Publica o site (tela inicial + AeroDrive em WebAssembly) no GitHub Pages a cada push na main.
+# Endereço: https://<usuario>.github.io/AircraftSimulation/
+# No repositório: Settings -> Pages -> Source: GitHub Actions. Para montar o mesmo site no PC:
+#   python tools/web_build.py && python -m http.server -d zig-out/site 8000
+name: site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # botão "Run workflow" na aba Actions
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# uma publicação por vez; a nova não cancela a que já está no ar
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  montar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Zig 0.16.0 (o minimum_zig_version do aerodrive/build.zig.zon); o emsdk o próprio build baixa
+      - name: Zig
+        run: pip install "ziglang==0.16.0"
+
+      # pacotes do Zig (raylib, emsdk) entre uma publicação e outra
+      - uses: actions/cache@v4
+        with:
+          path: |
+            aerodrive/zig-pkg
+            ~/.cache/zig
+          key: zig-${{ runner.os }}-${{ hashFiles('aerodrive/build.zig.zon') }}
+
+      # bibliotecas do sistema que o raylib nativo pede (os testes compilam o programa do PC)
+      - name: Bibliotecas do raylib
+        run: sudo apt-get update && sudo apt-get install -y libgl-dev libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libxext-dev
+
+      - name: Testes do AeroDrive
+        working-directory: aerodrive
+        run: python -m ziglang build test
+
+      - name: Montar o site
+        run: python tools/web_build.py
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: zig-out/site
+
+  publicar:
+    needs: montar
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

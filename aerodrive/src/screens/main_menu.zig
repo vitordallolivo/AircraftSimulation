@@ -8,6 +8,7 @@ const widgets = @import("../ui/widgets.zig");
 const Showcase = @import("../ui/showcase.zig").Showcase;
 const pose = @import("../gfx/pose.zig");
 const ch = @import("../input/channels.zig");
+const platform = @import("../sys/platform.zig");
 
 const App = app_mod.App;
 const Next = app_mod.Next;
@@ -17,7 +18,8 @@ const items = [_]Item{
     .{ .label = "Voar", .hint = null, .next = .{ .open = .fly } },
     .{ .label = "Aeronave", .hint = "arquivo, vento, LAPES", .next = .{ .open = .aircraft } },
     .{ .label = "Opções", .hint = "controle, câmera, som, voos gravados", .next = .{ .open = .options } },
-    .{ .label = "Sair", .hint = null, .next = .quit },
+    // no navegador, "Sair" volta à tela inicial do site
+    .{ .label = if (platform.in_browser) "Voltar ao início" else "Sair", .hint = null, .next = .quit },
 };
 
 pub const MainMenu = struct {
@@ -84,6 +86,7 @@ pub const MainMenu = struct {
             app.fonts.draw(std.fmt.bufPrintZ(&buf, "{s}", .{e[0..@min(e.len, 280)]}) catch "", x, H - 56, 15, theme.danger);
         }
         widgets.footer(&app.fonts, &.{ widgets.nav, widgets.accept, .{ .btn = .rs, .key = "mouse", .label = "girar o avião" } });
+        if (platform.in_browser and app.ui.back()) next = .quit; // Esc no menu inicial: volta à tela inicial do site
         return next;
     }
 };

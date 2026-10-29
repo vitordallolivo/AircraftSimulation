@@ -57,9 +57,10 @@ pub fn SinLut(comptime bits: u5) type {
             const offset = @mulAdd(f64, -steps, step, angle);
             // NaN ou infinito (estado que divergiu): sem isto o @intFromFloat entra em pane; o resultado sai NaN
             const steps_int: i64 = if (@abs(steps) < 9.0e18) @intFromFloat(steps) else 0;
-            const index: u64 = @as(u64, @bitCast(steps_int)) & mask;
+            // o índice cabe em `usize` também no wasm32 (é menor que `points`); no x86-64 a conversão não gera código
+            const index: usize = @intCast(@as(u64, @bitCast(steps_int)) & mask);
             const sin0 = table[index];
-            const cos0 = table[(index + points / 4) & mask];
+            const cos0 = table[(index + points / 4) & (points - 1)];
             const offset2 = offset * offset;
             // cos d = 1 − d²/2 + d⁴/24 − d⁶/720 ;  sin d = d (1 − d²/6 + d⁴/120)
             const cos_offset = 1.0 - offset2 * (0.5 - offset2 * (1.0 / 24.0 - offset2 * (1.0 / 720.0)));

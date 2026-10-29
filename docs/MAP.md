@@ -330,8 +330,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/math/**
 
 - `core/src/math/fmath.zig` — Funções matemáticas: tabelas (LUT) + aproximações polinomiais, e a referência da std.
-  tipos `SinCos:30`, `lut:73`, `ref:170`, `minimax:228`
-  fn `optOn:21`, `SinLut:33`, `sincos:273`, `sin:277`, `cos:281`, `tan:285`, `atan:290`, `atan2:294`, `asin:298`, `acos:303`, `exp:308`, `log:312`, `pow:317`, `tanh:322`, `sqrt:326`, `hypot:330`, `sat:336`, `lim:340`, `sgn:344`, `wrap:348`
+  tipos `SinCos:30`, `lut:74`, `ref:171`, `minimax:229`
+  fn `optOn:21`, `SinLut:33`, `sincos:274`, `sin:278`, `cos:282`, `tan:286`, `atan:291`, `atan2:295`, `asin:299`, `acos:304`, `exp:309`, `log:313`, `pow:318`, `tanh:323`, `sqrt:327`, `hypot:331`, `sat:337`, `lim:341`, `sgn:345`, `wrap:349`
 - `core/src/math/fmath_test.zig` — Testes só das LUTs e aproximações (independentes de -Dfast_math: comparam `lut` com `ref`).
 - `core/src/math/linalg.zig` — Álgebra linear densa de tamanho fixo: fatoração LU com pivoteamento parcial e de Cholesky, e as
   fn `luFactor:14`, `luSolve:39`, `cholesky:58`, `cholSolve:76`, `symEigen:93`, `solve:139`
@@ -470,27 +470,29 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/**
 
 - `aerodrive/src/main.zig` — AeroDrive: abre o menu inicial com o avião (o último escolhido, ou o do argumento).
-  fn `main:85`
 - `aerodrive/src/tests.zig` — Todos os testes do aerodrive que não precisam de janela (`zig build test`).
 
 **aerodrive/src/app/**
 
 - `aerodrive/src/app/app.zig` — O jogo inteiro: o que as telas dividem (fontes, widgets, configurações, o avião carregado, som,
-  tipos `Id:46`, `Next:48`, `Plane:57`, `Screens:76`, `App:91`
+  tipos `Id:50`, `Next:52`, `Plane:61`, `Screens:80`, `App:95`
 - `aerodrive/src/app/library.zig` — Biblioteca de aviões: os `.json` das pastas de exemplos e de "meus aviões" (os salvos pela
-  tipos `Group:7`, `Entry:19`, `Library:27`
-  fn `scan:42`, `fingerprint:80`, `entryName:116`
+  tipos `Group:8`, `Entry:20`, `Library:28`
+  fn `scan:43`, `fingerprint:81`, `safeFileName:117`, `entryName:136`
 - `aerodrive/src/app/paths.zig` — Onde ficam as coisas no disco, a partir das variáveis de ambiente:
-  tipos `Paths:10`
-  fn `resolve:19`
+  tipos `Paths:12`
+  fn `resolve:31`
 - `aerodrive/src/app/plane_settings.zig` — Configurações de cada avião, lembradas por arquivo: a sessão (chão/mesa, pouso, quem pilota,
   tipos `PlaneSettings:14`
 - `aerodrive/src/app/settings.zig` — Configurações do jogador, guardadas entre uma vez e outra: avião escolhido, sessão (cenário,
-  tipos `CameraKind:9`, `CameraSettings:11`, `Settings:26`
-  fn `sanitizeProfile:111`
+  tipos `CameraKind:10`, `CameraSettings:12`, `Settings:27`
+  fn `sanitizeProfile:112`
+- `aerodrive/src/app/storage.zig` — Interface de armazenamento por caminho: ler, gravar, listar e apagar. Configurações, biblioteca
+  tipos `Kind:28`, `Entry:30`, `Listing:36`, `Storage:52`, `DiskStorage:85`, `BrowserStorage:140`
+  fn `parseListing:174`
 - `aerodrive/src/app/store.zig` — Interface de armazenamento chave → bytes (e JSON por cima). Quem guarda configurações não sabe
-  tipos `Store:12`, `FileStore:49`, `MemStore:79`
-  fn `keyFor:125`
+  tipos `Store:14`, `FileStore:51`, `MemStore:80`
+  fn `keyFor:126`
 
 **aerodrive/src/audio/**
 
@@ -511,16 +513,19 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `DriveState:18`, `Rigid:28`
   fn `about:48`, `piece:54`, `body:72`
 - `aerodrive/src/gfx/render.zig` — Desenho com raylib (pelo raylib-zig) — a única parte que conhece a biblioteca gráfica, junto
-  tipos `Scene:87`
-  fn `toScreen:26`, `matrix:32`, `camera3d:43`, `color:47`, `hangarGrid:163`, `drawField:176`, `drawTrail:196`
+  tipos `Scene:90`
+  fn `toScreen:27`, `matrix:33`, `camera3d:44`, `color:48`, `hangarGrid:166`, `drawField:179`, `drawTrail:199`
 
 **aerodrive/src/input/**
 
 - `aerodrive/src/input/channels.zig` — Canais de comando: o que está apertado no controle (eixos −1..1, gatilhos 0..1, botões) ->
   tipos `Source:15`, `Pad:46`, `Action:66`, `Bindings:100`, `Scheme:126`, `Curve:152`, `Raw:175`, `Commands:191`, `Profile:193`, `Inputs:224`, `State:227`
 - `aerodrive/src/input/gamepad.zig` — Leitura do controle e do teclado (raylib) → o que está apertado (`channels.Raw`) + botões de
-  tipos `Actions:19`, `Reader:29`
-  fn `toRaylib:77`, `pressedButton:99`
+  tipos `Actions:24`, `Reader:34`
+  fn `toRaylib:119`, `pressedButton:141`
+- `aerodrive/src/input/touch.zig` — Controles por toque (celular, tablet): dois manches virtuais e dois botões, desenhados sobre o
+  tipos `Point:16`, `Stick:18`, `Button:23`, `ButtonArea:25`, `Layout:30`, `State:55`, `Controls:71`
+  fn `layout:37`
 
 **aerodrive/src/math/**
 
@@ -550,8 +555,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Series:10`, `Page:12`, `Range:69`, `Ticks:89`
   fn `available:53`, `list:60`, `range:72`, `ticks:92`
 - `aerodrive/src/record/recorder.zig` — Gravação de um voo, ligada e desligada no meio do voo: cada gravação é uma pasta
-  tipos `Info:13`, `Recorder:21`, `Entry:112`, `Catalog:119`
-  fn `stampOf:96`, `list:129`, `deleteVideo:162`, `deleteRecording:170`, `label:184`
+  tipos `Info:16`, `Recorder:24`, `Entry:116`, `Catalog:123`
+  fn `stampOf:100`, `list:133`, `deleteVideo:167`, `deleteRecording:175`, `label:182`
 - `aerodrive/src/record/video.zig` — Vídeo do voo em .mp4: os quadros da tela (RGBA) vão por um cano para o `ffmpeg` (H.264).
   tipos `Video:6`
   fn `accepts:56`
@@ -562,26 +567,26 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/screens/**
 
 - `aerodrive/src/screens/aircraft_menu.zig` — Aeronave: escolher o arquivo (exemplos e "meus aviões" da GUI) — o modelo 3D troca na hora —,
-  tipos `AircraftMenu:17`
-  fn `compass:120`
+  tipos `AircraftMenu:24`
+  fn `compass:160`
 - `aerodrive/src/screens/camera_menu.zig` — Câmera: distância e altura da perseguição (em envergaduras), campo de visão e a câmera
   tipos `CameraMenu:20`
 - `aerodrive/src/screens/control_menu.zig` — Controle, em duas abas:
   tipos `ControlMenu:31`
 - `aerodrive/src/screens/flight.zig` — Voo: o drive_manager avança a física em tempo real; no manual, o controle (com as curvas do
-  tipos `Flight:38`
+  tipos `Flight:39`
 - `aerodrive/src/screens/fly_menu.zig` — Voar: onde começa (chão ou mesa), onde pousa (chão ou plataforma), quem pilota no começo
-  tipos `FlyMenu:24`
+  tipos `FlyMenu:26`
 - `aerodrive/src/screens/main_menu.zig` — Menu inicial: logo da Albatroz, "AeroDrive", o avião escolhido e os itens; à direita a aeronave
-  tipos `MainMenu:23`
+  tipos `MainMenu:25`
 - `aerodrive/src/screens/options_menu.zig` — Opções (do menu inicial): Controle, Câmera, Som, Voos gravados e a tela (janela ou tela cheia,
   tipos `OptionsMenu:12`
 - `aerodrive/src/screens/pause_menu.zig` — Pausa (Start / Esc no voo): o voo congelado por trás e o menu — continuar, ajustar controle e
-  tipos `PauseMenu:12`
+  tipos `PauseMenu:13`
 - `aerodrive/src/screens/recording_view.zig` — Dados de um voo gravado: a lista de gráficos disponíveis à esquerda (as grandezas da aba Missão)
   tipos `RecordingView:15`
 - `aerodrive/src/screens/recordings_menu.zig` — Voos gravados: as gravações (mais novas primeiro); escolhida uma: assistir o vídeo aqui dentro
-  tipos `RecordingsMenu:14`
+  tipos `RecordingsMenu:15`
 - `aerodrive/src/screens/sound_menu.zig` — Som: volume geral e o teste — o acelerador de teste (ou o gatilho / W e S) muda a altura e o
   tipos `SoundMenu:12`
 - `aerodrive/src/screens/video_view.zig` — Assistir o vídeo de um voo gravado dentro do jogo. A / Espaço: pausa e continua · ← →: volta e
@@ -602,8 +607,13 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 **aerodrive/src/sys/**
 
+- `aerodrive/src/sys/browser.zig` — A ponte com a página no navegador (só no alvo web). As funções `extern` estão em JS, em
+  tipos `Size:63`, `TriggerSide:85`, `ImportedFile:106`
+  fn `fileSize:30`, `fileRead:36`, `fileWrite:41`, `folderList:46`, `pathRemove:58`, `viewportSize:66`, `openFilePicker:71`, `download:76`, `touchSeen:81`, `gamepadTrigger:88`, `leave:94`, `setFrameRate:99`, `takeImport:126`, `queueImport:133`
+- `aerodrive/src/sys/browser_io.zig` — O `std.Io` do navegador. No Zig 0.16 o `std.Io.Threaded` não compila para emscripten (o
 - `aerodrive/src/sys/keep_awake.zig` — Não deixa a tela escurecer nem apagar com o jogo aberto. Jogar só com o controle não conta como
   tipos `KeepAwake:20`
+- `aerodrive/src/sys/platform.zig` — Em que plataforma o programa foi compilado (decidido em comptime pelo alvo).
 - `aerodrive/src/sys/stats.zig` — Números do painel de desenvolvedor (F3): memória (RAM residente) e uso de CPU do processo.
   tipos `Sample:33`, `Sampler:38`
   fn `parseStatm:9`, `parseStatTicks:18`
@@ -625,8 +635,10 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerodrive/src/ui/showcase.zig` — A aeronave em exposição num retângulo do menu: gira devagar sozinha, arrastar gira, a roda
   tipos `Showcase:14`
 - `aerodrive/src/ui/theme.zig` — Aparência das telas (mesma linguagem da GUI: fundo claro, azul nos títulos, pouco texto), a
-  tipos `Fonts:36`
-  fn `commandBar:69`
+  tipos `Fonts:38`
+  fn `commandBar:71`
+- `aerodrive/src/ui/touch_view.zig` — Desenha os controles por toque (`input/touch.zig`) sobre o voo: os dois manches com a bolinha
+  fn `draw:14`
 - `aerodrive/src/ui/widgets.zig` — Widgets dos menus (modo imediato): cada quadro a tela chama `begin`, os widgets na ordem em que
   tipos `Nav:14`, `Ui:23`, `Row:252`, `ScrollList:255`, `Column:312`
   fn `header:330`, `footer:336`
@@ -665,6 +677,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tools/sprint_pasta.py` — Exemplo: converte um projeto da sprint antigo (um .json só) para a pasta nova, um arquivo por asa.
 - `tools/sprint_tres_caudas.py` — Exemplo: uma asa só com três opções de superfícies, no formato de pasta (um arquivo por asa).
 - `tools/time_profile.py` — Perfil de tempo: onde uma análise gasta o tempo, no Python e no núcleo Zig ao mesmo tempo.
+- `tools/web_build.py` — Monta o site do AircraftSimulation em zig-out/site/: a tela inicial (web/index.html) e o AeroDrive em WebAssembly.
 - `tools/aero/__init__.py`
 - `tools/aero/casos.py` — Perfis de teste da aerodinâmica: aviões simples, só superfícies (sem fuselagem e sem motor), para comparar os
 - `tools/aero/coeficientes.py` — Coeficientes de cada perfil de teste (tools/aero/casos.py) a uma velocidade (padrão 12 m/s), por método, e a

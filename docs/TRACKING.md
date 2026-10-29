@@ -32,6 +32,29 @@ Como usar:
 
 ---
 
+## Ordem de prioridade (2026-10-29)
+
+O que pegar primeiro, lendo o quadro como ele está agora. Tudo o que estava "a revisar" já foi para a `main` no PR #31
+(`v0.2.3`); a tag `v0.2.3` ainda não foi criada (só com o ok do dono).
+
+1. **Terminar o que está em andamento.** No núcleo: T55 (linha sustentadora nas cargas) e T65 (voar com outro modelo
+   aerodinâmico, fase C). No aeroopt: O14, O15, O20, O25, O29, O30, O31 e O36.
+2. **Os próximos marcados do aeroopt:** O17 a O24, quase todos suspeitas de erro (C_m do elevon, ponto neutro com
+   enflechamento, tandem visto como asa voadora, potência da Regular 2026, missão completa no melhor).
+3. **Ferramentas (B1+):** T47 (perfil), T48 (snapshot das abas), T49 (smoke), T50 (lint e hook), T52 (propriedades),
+   T53 (avisos de documentação).
+4. **Desempenho (B2):** T43 a T46 (decolagem, subida, que hoje está errada, curva, descida e pouso), depois T37, T56,
+   T71 e T86.
+5. **Aerodinâmica (B3):** a **T54 (flape de verdade) é a prioridade**; depois T08, T09, T10, T11, T61, T62, T66, T68,
+   T69, T72, T73 e T74.
+6. **Cargas, estruturas e aeroelasticidade (B4 a B9):** quase tudo espera a T38 (plano da arquitetura de cargas) e a
+   T20 (estruturas).
+7. **Meta da 1.0 (W1 a W10):** à parte, sem posição em relação ao resto.
+8. **Suspeita a resolver (próximo item da web):** o Zig 0.16.0 não compila `std.Io.Threaded` para o emscripten
+   (`std/os/emscripten.zig`, `W.STOPSIG` devolve `u32` por `@enumFromInt`). Hoje o AeroDrive contorna com um `std.Io`
+   próprio (`aerodrive/src/sys/browser_io.zig`). Conferir se o 0.16.1 ou o 0.17 corrige e, se corrigir, tirar o
+   contorno.
+
 ## O castelo (mapa)
 
 ```
@@ -53,12 +76,51 @@ Como usar:
 
 ## Versões
 
-- **A `main` está em `v0.2.2`** (PR #27). O milestone de fundação fechou na `v0.2.0` (PRs #21–#25).
+- **A `main` está em `v0.2.3`** (PR #31; antes, #29 e #30). O milestone de fundação fechou na `v0.2.0` (PRs #21–#25).
 - **Cada tarefa concluída e mesclada sobe só o último número:** `0.2.1`, `0.2.2`, `0.2.3`…
-- **Quando toda a lista de tarefas abaixo estiver feita, vira `0.3.0`.** Não há data nem promessa de 1.0: nada vira
-  release sem o dono testar pessoalmente cada componente.
+- **Quando toda a lista de tarefas abaixo estiver feita, vira `0.3.0`.** A `1.0` tem meta própria (seção "Meta da
+  1.0", abaixo), sem data: nada vira release sem o dono testar pessoalmente cada componente.
 - O trabalho fica numa branch só, `0.2_dev`. Cada tarefa fechada vai por PR para a `main` e para no review.
 - As tags só são criadas com o ok do dono do repositório.
+
+## Meta da 1.0: tudo no navegador, sem instalar nada
+
+**O que se quer.** Abrir um endereço no navegador, do PC ou do celular, e ter o projeto inteiro ali, sem instalar
+nada. A primeira coisa que aparece é uma tela de seleção com cara de BIOS: fundo escuro, texto monoespaçado, uma
+lista com as três aplicações e a seleção andando pelas setas (ou pelo toque). Dela se invoca cada aplicação:
+
+- **aerosim**: dimensionar o avião e rodar as análises;
+- **aeroopt**: otimizar a configuração;
+- **AeroDrive**: voar o avião.
+
+As três leem e gravam o mesmo `.json` do avião. Um arquivo do PC do usuário entra pelo botão "Abrir" ou arrastando
+para a página. O avião fica guardado no navegador (IndexedDB), passa de uma aplicação para a outra sem baixar de novo
+e sai como `.json` pela pasta de downloads. Toda conta roda no próprio aparelho, em WebAssembly: o site só entrega os
+arquivos e, depois de carregado, funciona sem internet. O mesmo código também sai como um executável só para o PC,
+sem Python.
+
+**Por que em Zig.** O núcleo já é Zig com memória estática, o que cabe bem no WebAssembly. O que hoje impede a web é
+a parte em Python: a interface em PyQt6, os gráficos (pyqtgraph, matplotlib) e as contas que ainda não foram para o
+núcleo. Na `1.0`, os métodos que vêm de bibliotecas Python (lltdrek, ASB, optvl/AVL) ou são portados para o núcleo, ou
+ficam de fora da versão web, avisando que não estão disponíveis.
+
+**Bônus da 1.1.** Rodar essas bibliotecas Python de forma estática no WebAssembly (por exemplo com o Pyodide, ou com
+o AVL em Fortran compilado para wasm), para que a versão web tenha os mesmos métodos que a de Python.
+
+Cada etapa é uma tarefa do quadro quando chegar a vez dela, com plano antes e o ok do dono.
+
+| Etapa | O que | Depende de |
+|---|---|---|
+| **W1** | AeroDrive na web: compilar com o emscripten (`aerodrive.html`/`.js`/`.wasm`), shaders `#version 300 es`, avião de exemplo embutido, controle por toque. **Feito na `0.2_dev`** | — |
+| **W2** | Aviões no navegador: abrir `.json` do PC por botão ou arrastando, biblioteca guardada no navegador (IndexedDB), salvar baixando o `.json`. **Feito na `0.2_dev`** | W1 |
+| **W3** | Tela de seleção estilo BIOS que invoca as aplicações e passa o avião aberto entre elas. **Feito na `0.2_dev`** (`web/index.html`; aerosim e aeroopt aparecem como "em breve") | W1 |
+| **W4** | Publicar no GitHub Pages, com instalação na tela inicial do celular (PWA) e uso sem internet. Publicação feita (`tools/web_build.py` e `.github/workflows/site.yml`); falta o PWA | W3 |
+| **W5** | Levar para o núcleo as contas que ainda estão em Python no aerosim e no aeroopt | — |
+| **W6** | Métodos de bibliotecas Python (lltdrek, ASB, optvl/AVL): portar para o núcleo ou deixar de fora da web com aviso | W5 |
+| **W7** | Interface do aerosim e do aeroopt em Zig (raygui, Dear ImGui ou dvui, a escolher no plano), com os gráficos | W5 |
+| **W8** | Paralelismo do aeroopt na web (web workers; a página precisa dos cabeçalhos COOP/COEP) | W7 |
+| **W9** | As três aplicações na página e no executável único; o dono testa cada componente → `1.0` | W2, W4, W6, W7, W8 |
+| **W10** | **1.1:** bibliotecas Python estáticas no WebAssembly (Pyodide, AVL em wasm) | W9 |
 
 ## Blocos de trabalho (ordem)
 
@@ -114,7 +176,7 @@ O programa de projeto (PyQt6): abas, sprint, manager, ferramentas de comparaçã
 |---|---|---|---|---|---|
 | T86 | E&C: onde fica o líquido (sloshing) e o que isso faz com os modos. Hoje o tanque fica sempre no CG de projeto, dentro da fuselagem (`aerosim/design/power.py`: cubo de 12 cm, 8 cm de altura, n lado a lado). A análise varre a posição do tanque (distância ao CG, embaixo da asa a uma distância da fuselagem) e o ângulo dele, e mostra os polos e as qualidades de voo de cada caso (curto período, fugóide, dutch roll, espiral) e o passeio do CG. Depois, se fizer sentido, as regras de construção do regulamento (garrafas, posição, volume; Regulamento 2026, seção a conferir no PDF) entram como escolha. Não é do aeroopt. Primeiro o plano com as fontes | [novo] | T05 | B2 | Pronto |
 | T04 | E&C: ME × xCG com ênfase, passeio do CG (o limite pela rotação já existe) | [ext] | — | B2 | Feito |
-| T06 | Curvas com fator de carga na Missão e nas curvas (n_z, 1/cos φ, n no estol) | [ext] | — | B2 | Feito (vai no PR da T12) |
+| T06 | Curvas com fator de carga na Missão e nas curvas (n_z, 1/cos φ, n no estol) | [ext] | — | B2 | Feito (na `main`) |
 | T42 | Desempenho por etapa de voo, 1: subaba "Voo nivelado e envelopes" com todos os envelopes (planilha e modelo completo, `envelope.py` ganha aba) | [GUI] | — | B2 | Feito |
 | T43 | Desempenho, 2: subaba Decolagem (analítica + 6GDL) com a caixa "MTOW para o comprimento de pista": varredura da massa total ou fragmentada (componentes ligáveis, cada um com mín., máx., inicial e passo do usuário); o modo MTOW avulso sai | [ext] | — | B2 | Pronto |
 | T44 | Desempenho, 3: subida (a simulada está errada: γ obtido não segue o pedido) junto com a analítica | [ext] | — | B2 | Pronto |
@@ -123,25 +185,25 @@ O programa de projeto (PyQt6): abas, sprint, manager, ferramentas de comparaçã
 | T37 | Restrições, normas e métodos como preset do usuário: tirar os padrões (MIL-F-8785C, FAR 23.233, RC > 0,5 m/s, 3 m nas curvas, φ 75°...); sem preset, só mostra | [ext] | — | B2 | Pronto |
 | T09 | Distribuição a α na aba Aerodinâmica | [GUI] | — | B3 | Pronto |
 | T11 | Arrasto por componente | [ext] | — | B3 | Pronto |
-| T60 | Validação contra avião real: o Ryan Navion (NASA TN D-6643) montado com a Tabela I e a Figura 2 (`tools/validacao/navion.py`), derivadas de cada método × voo, teste em `tests/validation` | [novo] | — | B3 | Feito (a revisar) |
-| T63 | Perfis de teste dos coeficientes (`tools/aero`): aviões só de superfícies (sem fuselagem e sem motor) a 12 m/s, todos os métodos e variantes do núcleo (malha, efeito solo, linha sustentadora), distância até qualquer método ou CSV de fora, matriz entre os métodos, varredura de malha e de V, perfil por .dat; figuras em `docs/img/aero_*.png` | [novo] | — | B3 | Feito (a revisar) |
+| T60 | Validação contra avião real: o Ryan Navion (NASA TN D-6643) montado com a Tabela I e a Figura 2 (`tools/validacao/navion.py`), derivadas de cada método × voo, teste em `tests/validation` | [novo] | — | B3 | Feito (na `main`) |
+| T63 | Perfis de teste dos coeficientes (`tools/aero`): aviões só de superfícies (sem fuselagem e sem motor) a 12 m/s, todos os métodos e variantes do núcleo (malha, efeito solo, linha sustentadora), distância até qualquer método ou CSV de fora, matriz entre os métodos, varredura de malha e de V, perfil por .dat; figuras em `docs/img/aero_*.png` | [novo] | — | B3 | Feito (na `main`) |
 | T66 | GUI: escolher o modelo aerodinâmico do voo (`ac.sim.aero_model`: faixas, linha sustentadora de Phillips e Snyder ou de Goates e Hunsaker, tabela) em Configuração → Integração. Mostrar o custo esperado (a linha sustentadora é ~65× mais lenta que as faixas na missão: 258–261 s contra 4 s), refinar a malha sozinho quando for a linha sustentadora (`tools/aero/coeficientes.refinar`) e avisar que o `.cfg` e a planilha não guardam o modelo nem a tabela (`not_exported`) | [GUI] | T65 | B3 | Pronto |
-| T67 | GUI: a linha sustentadora do núcleo (Phillips e Snyder e Goates e Hunsaker, com taxas pelo `aerosim_aero_coeffs_llt`) como métodos da aba Aerodinâmica: `CoreLLTSolver` (`aerosim/aero/llt_solver.py`, `zig_llt` e `zig_llt_gh`) em `all_solvers`, ligados em "comparar: linha sustentadora do núcleo"; `tools/aero` usa a mesma classe | [ext] | T64 | B3 | Feito (a revisar) |
+| T67 | GUI: a linha sustentadora do núcleo (Phillips e Snyder e Goates e Hunsaker, com taxas pelo `aerosim_aero_coeffs_llt`) como métodos da aba Aerodinâmica: `CoreLLTSolver` (`aerosim/aero/llt_solver.py`, `zig_llt` e `zig_llt_gh`) em `all_solvers`, ligados em "comparar: linha sustentadora do núcleo"; `tools/aero` usa a mesma classe | [ext] | T64 | B3 | Feito (na `main`) |
 | T68 | GUI: Aerodinâmica → "tabela de voo": montar a tabela de um método (lltdrek, ASB, AVL; `aerosim/aero/flight_table.py`), ver C_L, C_D, C_m em α e as derivadas (e quais vieram do núcleo), escolher a V e usar no voo (`aero_model = tabela`). O cache em disco das polares já evita montar de novo | [GUI] | T65 | B3 | Pronto |
 | T69 | GUI: "comparar modelos aerodinâmicos" na Missão e na Decolagem: a mesma análise voada com cada modelo (`tools/aero/missao.py`): curvas sobrepostas, o resumo lado a lado, a tabela de erros ao longo do percurso contra a referência escolhida, o mapa de proximidade dos voos e o tempo de conta; voos em paralelo | [GUI] | T65 | B3 | Pronto |
 | T70 | GUI: Cargas → "linha sustentadora (Goates e Hunsaker)" já está no registro (`llt_gh`): conferir na aba (rótulo, fonte) e avisar, no método de Phillips e Snyder, quando a superfície é enflechada ou há β (ele não converge com a malha ali; Goates e Hunsaker 2021, §II.A) | [GUI] | T64 | B4 | Pronto |
 | T71 | GUI: a falha "hélice tocou o chão" (`ac.sim.prop_strike`, desligada por padrão desde a T56) como opção em Configuração → Integração, e a folga da pá (`hprop`) no gráfico de folgas da Missão | [GUI] | T56 | B2 | Pronto |
 | T72 | GUI: coeficientes perto do chão (`aerosim_aero_coeffs_at`, com a altura) na aba Aerodinâmica: a polar a uma h/b escolhida, com o modifier de efeito solo do avião | [GUI] | — | B3 | Pronto |
 | T74 | Dados: avisar quando uma sobrescrita da superfície diverge do perfil (o `conventional` impõe C_L0 = 0,3 na asa; o NACA 2412 dá ~0,17). Só o núcleo usa a sobrescrita, então os métodos de fora (lltdrek, ASB, AVL) ficam 0,12–0,15 abaixo no C_L (`tools/aero/decolagem.py --puro` mostra) | [ext] | — | B3 | Pronto |
-| T58 | Cargas pelo AeroSandbox: o VLM do ASB como mais um método da aba Cargas, atrás da interface (`ILoadMethod` → `LoadResult`): distribuição por faixa, vista 3D e comparação lado a lado com a linha sustentadora do núcleo, no mesmo ponto de voo. Serve de referência independente para winglet, enflechamento e diedro | [ext] | — | B4 | Feito (a revisar) |
+| T58 | Cargas pelo AeroSandbox: o VLM do ASB como mais um método da aba Cargas, atrás da interface (`ILoadMethod` → `LoadResult`): distribuição por faixa, vista 3D e comparação lado a lado com a linha sustentadora do núcleo, no mesmo ponto de voo. Serve de referência independente para winglet, enflechamento e diedro | [ext] | — | B4 | Feito (na `main`) |
 | T12 | Aba Cargas (distribuição + 3D; hélice do conjunto motopropulsor do avião; só com modelo pronto) | [GUI] | — | B4 | Feito |
 | T33 | Aba de controle | [GUI] | — | B9 | Pronto |
 | T35 | Importador de dados medidos → comparação com ensaio e voo real | [novo] | — | B9 | Pronto |
 | T40 | V-n refinado com dados de voo (sensoriamento) | [ext] | T13, T35 | B9 | Bloqueado |
 | T41 | Etapas desatualizadas: cada etapa guarda a assinatura do modelo; mudou antes, as seguintes ficam marcadas | [ext] | — | B9 | Pronto |
-| T78 | Asas ligadas (tandem, biplano): grupo de asas no modelo, na Montagem (presa na ponta, cauda em H; x_CG/CMA e CA do conjunto) e na sprint (segunda asa) | [ext] | — | B3 | Feito (a revisar) |
-| T79 | Motores livres: arranjo nariz + pares na asa + propulsora (`motor_counts`), com o par da asa fora do disco da hélice do nariz | [ext] | — | B2 | Feito (a revisar) |
-| T85 | Ajuste da decolagem sem travar: sessões do núcleo emprestadas de um pool a cada decolagem | [ext] | — | B1+ | Feito (a revisar) |
+| T78 | Asas ligadas (tandem, biplano): grupo de asas no modelo, na Montagem (presa na ponta, cauda em H; x_CG/CMA e CA do conjunto) e na sprint (segunda asa) | [ext] | — | B3 | Feito (na `main`) |
+| T79 | Motores livres: arranjo nariz + pares na asa + propulsora (`motor_counts`), com o par da asa fora do disco da hélice do nariz | [ext] | — | B2 | Feito (na `main`) |
+| T85 | Ajuste da decolagem sem travar: sessões do núcleo emprestadas de um pool a cada decolagem | [ext] | — | B1+ | Feito (na `main`) |
 | T84 | Profundor numa superfície à frente do CG (canard, asa dianteira do tandem): hoje age invertido com a mistura padrão. Proposta: derivar o sinal da posição em relação ao CG | [ext] | T78 | B3 | Pronto (proposta) |
 
 ### core
@@ -152,8 +214,8 @@ O núcleo físico em Zig (`core/`): dinâmica, aerodinâmica, cargas, estruturas
 |---|---|---|---|---|---|
 | T54 | **Prioridade da aerodinâmica.** Flape de verdade (no Navion com flape a 20°, o núcleo precisa de α = 10° para o C_L do voo; o VLM, 4,7°): hoje o flape é só uma deflexão fixa somada à incidência (`tau · deflexão`), sem ΔC_l máx, sem ΔC_d, sem ΔC_m, sem comando na simulação. Por tipo (simples, ventral, fendido, Fowler), com método da literatura escolhido pelo usuário; comandável na decolagem e no pouso; entra na linha sustentadora (corda e α0 por faixa) e na esteira. Primeiro o plano com as fontes | [ext] | — | B3 | Pronto |
 | T55 | Linha sustentadora (cargas): ferraduras com os nós no 1/4 de corda das bordas de cada faixa (Phillips e Snyder 2000; Hunsaker e Snyder), corrige superfície enflechada e winglet (carga crescendo para a ponta); depois a versão não linear com C_l(α) de cada perfil (Newton) | [ext] | — | B3 | Fazendo |
-| T64 | Linha sustentadora de Goates e Hunsaker 2021 no núcleo (`Params.llt_joint`, `llt_blend`; desligada por padrão): junta das pernas, linha efetiva por ponto de controle e seção normal à linha. Converge em derrapagem e com enflechamento; C_Lα a 1,5 % e C_lβ a 3 % do MachUpX (teste em `tests/tools`, `zig build test`). Método novo na aba Cargas (`llt_gh`) e no `tools/aero` (`nucleo_gh`) | [ext] | T63 | B3 | Feito (a revisar) |
-| T65 | Voar com outro modelo aerodinâmico. Fase A (feita): `tools/aero/decolagem.py` reavalia cada ponto da decolagem com todos os métodos; `aerosim_aero_coeffs_llt`. Fase B (feita, a revisar): `Params.aero_model` (`physics/aeromodel.zig`; 0 = faixas, padrão, bit a bit igual; o AeroDrive fica no de sempre), linha sustentadora (1) e tabela de qualquer método (2, `aerotable.zig`, `aerosim/aero/flight_table.py`), `ac.sim.aero_model`; `tools/aero/missao.py` voa a decolagem e a missão com cada modelo. Fase C: efeito solo por imagens na linha sustentadora e nas tabelas (Katz e Plotkin, a conferir). Velocidade (feita, a revisar): cache da geometria da linha sustentadora (`llt.prepare`, bit a bit igual; `llt_gh` 10,8× mais rápido na decolagem), voos em paralelo e cache das tabelas no `missao.py`; missão de 165 s em sequência: faixas 4 s, faixas refinadas 17 s, `llt` 261 s, `llt_gh` 258 s (antes, 10 min e 52 min), os 9 modelos 9 min 37 s (5 min 15 s em paralelo); correção: o lltdrek não ia para o cache em disco; ainda possível: perna semi-infinita fechada, uma perna por nó, SIMD | [ext] | T64 | B3 | Fazendo |
+| T64 | Linha sustentadora de Goates e Hunsaker 2021 no núcleo (`Params.llt_joint`, `llt_blend`; desligada por padrão): junta das pernas, linha efetiva por ponto de controle e seção normal à linha. Converge em derrapagem e com enflechamento; C_Lα a 1,5 % e C_lβ a 3 % do MachUpX (teste em `tests/tools`, `zig build test`). Método novo na aba Cargas (`llt_gh`) e no `tools/aero` (`nucleo_gh`) | [ext] | T63 | B3 | Feito (na `main`) |
+| T65 | Voar com outro modelo aerodinâmico. Fase A (feita): `tools/aero/decolagem.py` reavalia cada ponto da decolagem com todos os métodos; `aerosim_aero_coeffs_llt`. Fase B (feita, na `main`): `Params.aero_model` (`physics/aeromodel.zig`; 0 = faixas, padrão, bit a bit igual; o AeroDrive fica no de sempre), linha sustentadora (1) e tabela de qualquer método (2, `aerotable.zig`, `aerosim/aero/flight_table.py`), `ac.sim.aero_model`; `tools/aero/missao.py` voa a decolagem e a missão com cada modelo. Fase C: efeito solo por imagens na linha sustentadora e nas tabelas (Katz e Plotkin, a conferir). Velocidade (feita, a revisar): cache da geometria da linha sustentadora (`llt.prepare`, bit a bit igual; `llt_gh` 10,8× mais rápido na decolagem), voos em paralelo e cache das tabelas no `missao.py`; missão de 165 s em sequência: faixas 4 s, faixas refinadas 17 s, `llt` 261 s, `llt_gh` 258 s (antes, 10 min e 52 min), os 9 modelos 9 min 37 s (5 min 15 s em paralelo); correção: o lltdrek não ia para o cache em disco; ainda possível: perna semi-infinita fechada, uma perna por nó, SIMD | [ext] | T64 | B3 | Fazendo |
 | T73 | Simulação: a malha da simulação (uma faixa por trecho entre seções) põe a força de uma asa trapezoidal no meio da semienvergadura: na asa enflechada de 25° de `tools/aero`, o ponto neutro fica 10 % da CMA atrás (com a malha refinada, 0,9 %), e a torção sai pela metade. Propor a correção (faixas por CMA ou refino mínimo) com a regressão nova; muda os números da simulação, então só com o ok do dono | [ext] | T63 | B3 | Pronto |
 | T57 | Esteira desviada pelo escoamento e com perfil radial (Duivenvoorden et al. 2026; correção de Rethorst, Exalto et al. 2024; Goates 2018), validada contra Stuper (NACA TM 874) | [ext] | T55 | B3 | Bloqueado |
 | T62 | Núcleo: efeito diedro (C_lβ −0,139 × AVL −0,079 × voo −0,070 no Navion) e C_Lq (4,8 × AVL 9,5 × voo 15,9). Achar a causa nas faixas do núcleo e corrigir com fonte | [ext] | T60 | B3 | Pronto |
@@ -183,9 +245,9 @@ O núcleo físico em Zig (`core/`): dinâmica, aerodinâmica, cargas, estruturas
 | T30 | Turbulência Dryden | [novo] | — | B8 | Pronto |
 | T31 | Vento cruzado na decolagem | [ext] | — | B8 | Pronto |
 | T32 | Modos de vibração e flutter | [novo] | T21 | B9 | Bloqueado |
-| T76 | Modificador `interferencia.asas` (tandem, biplano): as faixas de uma asa sentem as ferraduras da outra asa do par (Biot–Savart); desligado por padrão | [ext] | T78 | B3 | Feito (a revisar) |
-| T77 | Erros claros em vez de pane: `StateError` com texto (sem trem, inércia inválida, divergência; códigos −6 a −8 na ABI) e guardas de NaN e infinito no `fmath` (sincos, atan, exp, wrap) | [ext] | — | B1+ | Feito (a revisar) |
-| T87 | Legibilidade do núcleo (revisão do vitor): erros da ABI como `error{...}` com o código só na fronteira (`abiCode`); testes por `zig build test -Dgrupo=... -Dfiltro=...` no lugar dos arquivos `tests_*.zig`; nomes descritivos no lugar dos de uma letra em todo `core/src` (imports, parâmetros, locais); índices do vetor de estados num `enum` (`state.Entry`); `///` em toda `pub fn` e `export fn`. Biblioteca igual bit a bit, AeroDrive compila e passa. Falta: campos de uma letra das structs (`Instance.p/r`, `Ctx.p/f`, campos da ABI) e os nomes do AeroDrive | [ext] | — | B1+ | Feito (a revisar) |
+| T76 | Modificador `interferencia.asas` (tandem, biplano): as faixas de uma asa sentem as ferraduras da outra asa do par (Biot–Savart); desligado por padrão | [ext] | T78 | B3 | Feito (na `main`) |
+| T77 | Erros claros em vez de pane: `StateError` com texto (sem trem, inércia inválida, divergência; códigos −6 a −8 na ABI) e guardas de NaN e infinito no `fmath` (sincos, atan, exp, wrap) | [ext] | — | B1+ | Feito (na `main`) |
+| T87 | Legibilidade do núcleo (revisão do vitor): erros da ABI como `error{...}` com o código só na fronteira (`abiCode`); testes por `zig build test -Dgrupo=... -Dfiltro=...` no lugar dos arquivos `tests_*.zig`; nomes descritivos no lugar dos de uma letra em todo `core/src` (imports, parâmetros, locais); índices do vetor de estados num `enum` (`state.Entry`); `///` em toda `pub fn` e `export fn`. Biblioteca igual bit a bit, AeroDrive compila e passa. Falta: campos de uma letra das structs (`Instance.p/r`, `Ctx.p/f`, campos da ABI) e os nomes do AeroDrive | [ext] | — | B1+ | Feito (na `main`) |
 | T83 | VTOL, nesta ordem: quadplane, tilt-rotor, tailsitter. O regulamento da Micro 2026 permite decolar e pousar com sustentação vetorada (seções 9.4 e 9.5). Primeiro o plano com as fontes | [novo] | — | B3 | Pronto (plano) |
 
 ### aerodrive
@@ -194,8 +256,8 @@ O simulador de voo em tempo real (Zig + raylib) que pilota o avião projetado. U
 
 | ID | Tarefa | Tipo | Depende de | Bloco | Estado |
 |---|---|---|---|---|---|
-| T80 | Abrir qualquer avião sem pane: campo faltando, avião sem trem, inércia inválida ou divergência viram mensagem na tela | [ext] | T77 | B1+ | Feito (a revisar) |
-| T81 | Massa das superfícies simétricas em cada lado (meia massa no raio de giração da meia asa), igual ao `massprops` do aerosim; sem isso o Ixx de um tandem saía quase zero | [ext] | — | B1+ | Feito (a revisar) |
+| T80 | Abrir qualquer avião sem pane: campo faltando, avião sem trem, inércia inválida ou divergência viram mensagem na tela | [ext] | T77 | B1+ | Feito (na `main`) |
+| T81 | Massa das superfícies simétricas em cada lado (meia massa no raio de giração da meia asa), igual ao `massprops` do aerosim; sem isso o Ixx de um tandem saía quase zero | [ext] | — | B1+ | Feito (na `main`) |
 | T82 | Voar VTOL: transição e comandos de cada arranjo | [ext] | T83 | B3 | Bloqueado |
 
 ### aeroopt
@@ -204,11 +266,11 @@ O terceiro braço: otimizador genérico (MDO) que monta um problema a partir de 
 
 | ID | Tarefa | Tipo | Depende de | Bloco | Estado |
 |---|---|---|---|---|---|
-| O01 | Pontuação da Micro 2026 com fonte: `aeroopt/pontuacao/sae_br_2026_micro.toml` com as eqs. 9.1 a 9.4 do Regulamento 2026 Rev03 e as regras de validade, traduzidos para um programa de pilha (`aeroopt/scoring.py`); as notas à mão ficam no teste da O03 | [novo] | — | B10 | Feito (a revisar) |
-| O02 | Contratos (`aerosim/interfaces/optim.py`: `IProblem`, `IScoring`, `IEvaluator`, `ISolver`) e o arquivo `.opt.json`; o mini-MDO de hoje nesse formato dá o mesmo resultado, bit a bit; isolar uma variável ou um grupo (`isolate`) | [zero] | — | B10 | Feito (a revisar) |
-| O03 | Núcleo: expressão de pontuação (`core/src/optim/expr.zig`) e álgebra linear de tamanho fixo (`core/src/math/linalg.zig`, LU e Cholesky), na ABI (`aerosim_expr_check`, `aerosim_expr_eval`); notas da Micro 2026 à mão no teste | [novo] | O01, O02 | B10 | Feito (a revisar) |
-| O04 | Ferramenta `tools/aeroopt.py problema.opt.json`: melhor ponto, restrições, convergência (`--png`), `--isolar`; a nota fator por fator entra quando o avaliador calcular as entradas da pontuação (O06) | [novo] | O03 | B10 | Feito (a revisar) |
-| O05 | GUI do aeroopt (`python -m aeroopt`, `aeroopt/gui.py`): o `.toml` da pontuação inteiro em campos editáveis, variáveis e categorias, rodada ao vivo (atualiza a cada candidato que termina uma etapa, como a página MDO; não precisa ser instantâneo), mapa dos aviões (PV × CP com EE constante, cor pela nota), tabela, 3D e nota fator por fator do avião clicado, gravar o avião num projeto, abrir o avião no aerosim (todas as análises), restrições editáveis, CSV de cada rodada (`aeroopt/export.py`), projeto vazio roda. Submenus por botão: variáveis com limites, restrições (sem as grandezas que são variáveis), perfis por região com `.dat` acrescentado, motores, hélices e baterias por marcação. Esquerda toda em submenus (pontuação, variáveis, restrições, configuração com os aviões e o método de cada etapa; geometria nas restrições), cada opção com "(?)", gravada no `.opt.json`. Variáveis: todo campo das etapas do aerosim (`aeroopt/inputs.py`), listas marcadas no mesmo submenu. Falta: gerações de aviões (algoritmo genético, ver O14), pausar e continuar, mandar para o AeroDrive | [GUI] | O04, O13 | B10 | Feito (a revisar) |
+| O01 | Pontuação da Micro 2026 com fonte: `aeroopt/pontuacao/sae_br_2026_micro.toml` com as eqs. 9.1 a 9.4 do Regulamento 2026 Rev03 e as regras de validade, traduzidos para um programa de pilha (`aeroopt/scoring.py`); as notas à mão ficam no teste da O03 | [novo] | — | B10 | Feito (na `main`) |
+| O02 | Contratos (`aerosim/interfaces/optim.py`: `IProblem`, `IScoring`, `IEvaluator`, `ISolver`) e o arquivo `.opt.json`; o mini-MDO de hoje nesse formato dá o mesmo resultado, bit a bit; isolar uma variável ou um grupo (`isolate`) | [zero] | — | B10 | Feito (na `main`) |
+| O03 | Núcleo: expressão de pontuação (`core/src/optim/expr.zig`) e álgebra linear de tamanho fixo (`core/src/math/linalg.zig`, LU e Cholesky), na ABI (`aerosim_expr_check`, `aerosim_expr_eval`); notas da Micro 2026 à mão no teste | [novo] | O01, O02 | B10 | Feito (na `main`) |
+| O04 | Ferramenta `tools/aeroopt.py problema.opt.json`: melhor ponto, restrições, convergência (`--png`), `--isolar`; a nota fator por fator entra quando o avaliador calcular as entradas da pontuação (O06) | [novo] | O03 | B10 | Feito (na `main`) |
+| O05 | GUI do aeroopt (`python -m aeroopt`, `aeroopt/gui.py`): o `.toml` da pontuação inteiro em campos editáveis, variáveis e categorias, rodada ao vivo (atualiza a cada candidato que termina uma etapa, como a página MDO; não precisa ser instantâneo), mapa dos aviões (PV × CP com EE constante, cor pela nota), tabela, 3D e nota fator por fator do avião clicado, gravar o avião num projeto, abrir o avião no aerosim (todas as análises), restrições editáveis, CSV de cada rodada (`aeroopt/export.py`), projeto vazio roda. Submenus por botão: variáveis com limites, restrições (sem as grandezas que são variáveis), perfis por região com `.dat` acrescentado, motores, hélices e baterias por marcação. Esquerda toda em submenus (pontuação, variáveis, restrições, configuração com os aviões e o método de cada etapa; geometria nas restrições), cada opção com "(?)", gravada no `.opt.json`. Variáveis: todo campo das etapas do aerosim (`aeroopt/inputs.py`), listas marcadas no mesmo submenu. Falta: gerações de aviões (algoritmo genético, ver O14), pausar e continuar, mandar para o AeroDrive | [GUI] | O04, O13 | B10 | Feito (na `main`) |
 | O06 | Variáveis abertas (qualquer campo do `Aircraft`) e as duas cargas da Micro (líquido e LAPES, duas posições de CG) | [ext] | O04 | B10 | Pronto |
 | O07 | Orquestração (pool de vagas fixas no núcleo, cascata, ilhas, pipeline, filtro por fidelidade) e reparo antes de avaliar | [novo] | O06, T28 | B10 | Bloqueado |
 | O08 | Caixa, montagem e desmontagem (era a T34): o encaixe das peças como sub-problema | [novo] | O07 | B10 | Bloqueado |
@@ -216,10 +278,10 @@ O terceiro braço: otimizador genérico (MDO) que monta um problema a partir de 
 | O10 | Solvers locais (Gould e Leyffer) e Lagrangiano aumentado no lugar da penalidade fixa | [novo] | O03 | B10 | Bloqueado |
 | O11 | SIMD e GPU, só depois de medir | [ext] | O07, T47 | B10 | Bloqueado |
 | O12 | Substituto aprendido a partir do histórico de avaliações | [novo] | O07 | B10 | Bloqueado |
-| O13 | Processo em etapas (o caminho principal no lugar do mini-MDO): configurações → superfícies pela decolagem (`power.design_point` com busca por coordenadas) → MTOW no 6GDL → nota no núcleo; barreira entre etapas e paralelo dentro (`aeroopt/pipeline.py`, `aeroopt/stages.py`, `--etapas` na ferramenta); categorias de configuração (monoplano, biplano, tandem, asa voadora; os nomes antigos asa alta, média, baixa, parasol e cauda em V continuam valendo); a cauda é escolhida na etapa voa (E&C) entre convencional, em H, em V e sem cauda como eixo das configurações (`aeroopt/categories.py`). A corrida da decolagem do `power.performance` foi para o núcleo (`core/src/sizing/ground.zig`), bit a bit igual | [novo] | O04 | B10 | Feito (a revisar) |
+| O13 | Processo em etapas (o caminho principal no lugar do mini-MDO): configurações → superfícies pela decolagem (`power.design_point` com busca por coordenadas) → MTOW no 6GDL → nota no núcleo; barreira entre etapas e paralelo dentro (`aeroopt/pipeline.py`, `aeroopt/stages.py`, `--etapas` na ferramenta); categorias de configuração (monoplano, biplano, tandem, asa voadora; os nomes antigos asa alta, média, baixa, parasol e cauda em V continuam valendo); a cauda é escolhida na etapa voa (E&C) entre convencional, em H, em V e sem cauda como eixo das configurações (`aeroopt/categories.py`). A corrida da decolagem do `power.performance` foi para o núcleo (`core/src/sizing/ground.zig`), bit a bit igual | [novo] | O04 | B10 | Feito (na `main`) |
 | O14 | Do MDO antigo da equipe (MDO-2024-REGULAR). Feito: gerações por algoritmo genético no núcleo (`core/src/optim/ga.zig`: elite, seleção por posição, cruzamento num ponto, mutação; `aeroopt/generations.py`, na janela e em `--populacao/--geracoes`), no lugar de varrer as combinações; toque da cauda na rotação (G1). CMA-ES no núcleo (`core/src/optim/cmaes.zig`, Hansen 2016) como método das superfícies e da etapa voa, conferido contra a `pycma`. Paralelismo como módulo (`aerosim/parallel`, `IExecutor`): processos que duram a rodada inteira; tração motor + hélice da sprint no núcleo (`core/src/sizing/motorprop.zig`), bit a bit igual. Sensibilidade do melhor (`aeroopt/sensitivity.py`: só o melhor e as contínuas livres dele, dentro do problema; modelo local no núcleo, `core/src/optim/localfit.zig`, sobre o histórico da busca, sem pontos novos quando ele basta; também um por vez e Morris, `core/src/optim/sensmethods.zig`, com a perda por tolerância e ∂nota/∂limite do problema; menu Configuração → sensibilidade, aba Sensibilidade nos gráficos do melhor, `--sensibilidade` na ferramenta). Falta: regra 80/20 do trem, variáveis por razão para as partições da asa, inércia da fuselagem como caixa, arrasto das fixações do biplano | [novo] | O13 | B10 | Em andamento |
 | O15 | Topologias realistas (plano em https://claude.ai/artifact/CGbqUwPUpo4Y5BjrpjbVQW). G1 feito: geometria no núcleo (`core/src/geometry`: hélice × peças, massas fora, pedaços soltos, chão parado e na rotação), tradutor `aerosim/backend/zig/geometry.py`, etapa "geometria" do aeroopt e checagem em cada ponto de projeto; a geometria conserta o chão descendo o trem (`gear_raise`, `power_draft.gear_h`). Falta: G2 gramática e fuzzing de topologias, G3 peças novas no montador (EV entre asas, elevon, motores fora da asa, fuselagem entre asas, conectores entre asas com massa, 3+ asas, massa própria de cada asa), G4 lote no CPU, G5 GPU | [novo] | O13 | B10 | Em andamento |
-| O16 | Suspeita: o C_mδ do elevon da asa voadora na sprint (`aerosim/design/tail.py`) é uns 4 a 5 vezes o do núcleo (−1,52 contra −0,34 /rad no avião da busca), e por isso a etapa voa dizia que ela roda e o 6GDL bate. A E&C com os comandos já usa o núcleo (`aeroopt.stages.core_rotation`). Conferir a conta da sprint contra a literatura (braço do elevon tratado como de cauda?) e corrigir como método novo, sem mudar os resultados de hoje. Ferramenta: `tools/rotacao.py "asa voadora"`. Feito: a sustentação do elevon no quarto de corda mais o momento próprio do flape (perfil fino), na sprint e no núcleo (modificador `comando.momento_flape`, desligado por padrão) | [ext] | O13 | B10 | Feito (a revisar) |
+| O16 | Suspeita: o C_mδ do elevon da asa voadora na sprint (`aerosim/design/tail.py`) é uns 4 a 5 vezes o do núcleo (−1,52 contra −0,34 /rad no avião da busca), e por isso a etapa voa dizia que ela roda e o 6GDL bate. A E&C com os comandos já usa o núcleo (`aeroopt.stages.core_rotation`). Conferir a conta da sprint contra a literatura (braço do elevon tratado como de cauda?) e corrigir como método novo, sem mudar os resultados de hoje. Ferramenta: `tools/rotacao.py "asa voadora"`. Feito: a sustentação do elevon no quarto de corda mais o momento próprio do flape (perfil fino), na sprint e no núcleo (modificador `comando.momento_flape`, desligado por padrão) | [ext] | O13 | B10 | Feito (na `main`) |
 | O17 | Suspeita: no núcleo, o C_m da asa voadora não cresce com o curso do elevon além de 20° (cai de 0,059 a −20° para 0,021 a −27,5° e volta a subir até −40°). Achar a causa (fator de eficácia do flape pelo curso, estol da faixa ou C_L limitado) com a fonte de cada um. Ferramenta: `tools/rotacao.py "asa voadora" --png x.png` (o gráfico de C_m(δ)) | [ext] | — | B1 | Pronto (próximo) |
 | O18 | Suspeita: o C_m,ac da asa voadora na sprint não tem o termo da torção com enflechamento (Nickel e Wohlfahrt, a conferir no PDF); torção e enflechamento não mudam a rotação. Comparar com o núcleo antes de acrescentar | [ext] | O16 | B10 | Pronto (próximo) |
 | O19 | Tandem: a sprint analisa o tandem como asa voadora (a asa de trás é ignorada na estática e o resultado sai igual ao da asa voadora). A asa de trás tem de entrar como a cauda: profundor na asa 2, decalagem (`tail.wing2_di`) e distância (`tail.wing2_dx`) como comandos da E&C; testar se precisa de EV (aletas nas pontas da asa de trás) ou se o elevon basta; um projeto de exemplo de tandem | [ext] | O13 | B10 | Pronto (próximo) |
@@ -264,7 +326,7 @@ Ferramentas, checks, documentação e git, que valem para os quatro segmentos.
 | T53 | Avisos de documentação (README em pasta nova, fonte de fórmula no Zig, CHANGELOG no PR) | [ext] | — | B1+ | Pronto |
 | T02 | Rodar os checks na pilha e corrigir | [ext] | T00 | B1 | Feito (tudo verde, nada a corrigir) |
 | T03 | PRs da pilha para a `main` | git | T02 | B1 | Feito (PRs #21–#25) |
-| T75 | Documentação: README de cada pasta do `core` e do `aerosim` com as equações em LaTeX (um parágrafo por equação, com a fonte ou "a conferir no PDF"), como funciona e um exemplo em Python por arquivo, rodado; sem números de máquina ou de um caso só. Núcleo: enums no lugar dos números e bits (`core/src/opt.zig` para o `-Dopt`; `Ground`, `Kind` e `SlipstreamParam` em `core/src/modifiers/types.zig`), com a ABI igual | [ext] | — | B3 | Feito (a revisar) |
+| T75 | Documentação: README de cada pasta do `core` e do `aerosim` com as equações em LaTeX (um parágrafo por equação, com a fonte ou "a conferir no PDF"), como funciona e um exemplo em Python por arquivo, rodado; sem números de máquina ou de um caso só. Núcleo: enums no lugar dos números e bits (`core/src/opt.zig` para o `-Dopt`; `Ground`, `Kind` e `SlipstreamParam` em `core/src/modifiers/types.zig`), com a ABI igual | [ext] | — | B3 | Feito (na `main`) |
 
 **Caminho crítico:** T38 → T13 → T15 → T21 → T24 → T25/T26 → T32. Estruturas e aeroelasticidade esperam por ele.
 
@@ -446,7 +508,7 @@ A Missão mostra só o que a simulação já calcula: a corrente média e a de p
 
 São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
-**Onde foi medido:** na `main` (`v0.2.2`), com os ❓ do T01 já conferidos no código. Na `0.2_dev` entraram os itens AE-19 a AE-22 (código feito, GUI não), que só aumentam o total.
+**Onde foi medido:** na `main` (`v0.2.2`; a contagem ainda não foi refeita na `v0.2.3`), com os ❓ do T01 já conferidos no código. Na `0.2_dev` entraram os itens AE-19 a AE-22 (código feito, GUI não), que só aumentam o total.
 
 | Seção | ✅ na GUI / itens |
 |---|---|
@@ -477,7 +539,6 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 - Relatórios e dados de terceiros nunca entram no git.
 
 **Situação atual das branches**
-- `main`: `v0.2.2` (PR #27).
-- `0.2_dev`: correção do tracking, T06, T12 e T42 (commits `4062360` e `bb06118`); vão juntos no mesmo PR (`0.2.3`).
-  Desde então, direto na `0.2_dev` por pedido do dono: T75, T76 a T81, T85 e este tracking por segmento.
+- `main`: `v0.2.3` (PR #31, 2026-10-27). Tudo o que estava na `0.2_dev` até a T87 e o `build docs` já está nela.
+- `0.2_dev`: a `main` mais a meta da 1.0 no tracking.
 - As branches antigas foram apagadas aqui; no GitHub, o dono apaga (a sessão não tem permissão).

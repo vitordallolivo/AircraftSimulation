@@ -2,6 +2,7 @@
 //! GUI), em ordem de nome. Pasta que não existe é pulada. Arquivos que são o MESMO avião e só
 //! mudam o campo (decola da mesa, pousa na plataforma — escolhas do menu Voar) aparecem uma vez.
 const std = @import("std");
+const storage = @import("storage.zig");
 const fz = @import("../util/fuzz.zig");
 
 pub const Group = enum {
@@ -39,22 +40,22 @@ pub const Library = struct {
 };
 
 /// procura nas pastas (a primeira pasta de exemplos que existir e a de "meus aviões")
-pub fn scan(io: std.Io, gpa: std.mem.Allocator, examples: []const []const u8, mine: []const u8) !Library {
+pub fn scan(files: storage.Storage, gpa: std.mem.Allocator, examples: []const []const u8, mine: []const u8) !Library {
     var lib: Library = .{ .arena = .init(gpa) };
     errdefer lib.deinit();
     const a = lib.arena.allocator();
     var list: std.ArrayList(Entry) = .empty;
     for (examples) |dir| {
         const before = list.items.len;
-        try addDir(io, a, &list, dir, .examples);
+        try addDir(files, a, &list, dir, .examples);
         if (list.items.len > before) break; // a mesma pasta vista de dois lugares: só uma vez
     }
-    try addDir(io, a, &list, mine, .mine);
+    try addDir(files, a, &list, mine, .mine);
     // o mesmo avião em dois arquivos (só o campo muda): fica o de nome mais curto
     var keep: std.ArrayList(Entry) = .empty;
     var prints: std.ArrayList(u64) = .empty;
     for (list.items) |e| {
-        const bytes = std.Io.Dir.cwd().readFileAlloc(io, e.path, gpa, .limited(16 << 20)) catch {
+        const bytes = files.read(gpa, e.path, 16 << 20) catch {
             try keep.append(a, e);
             try prints.append(a, 0);
             continue;
@@ -94,14 +95,13 @@ pub fn fingerprint(gpa: std.mem.Allocator, bytes: []const u8) ?u64 {
     return std.hash.Wyhash.hash(1, txt) | 1;
 }
 
-fn addDir(io: std.Io, a: std.mem.Allocator, list: *std.ArrayList(Entry), dir_path: []const u8, g: Group) !void {
-    var dir = std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch return;
-    defer dir.close(io);
+fn addDir(files: storage.Storage, a: std.mem.Allocator, list: *std.ArrayList(Entry), dir_path: []const u8, g: Group) !void {
+    var listing = files.list(a, dir_path) catch |err| return if (err == error.OutOfMemory) err else {};
+    defer listing.deinit();
     const start = list.items.len;
-    var it = dir.iterate();
-    while (it.next(io) catch null) |e| {
+    for (listing.entries) |e| {
         if (list.items.len >= max_entries) break;
-        if (e.kind != .file and e.kind != .sym_link) continue;
+        if (e.kind != .file) continue;
         const name = entryName(a, e.name) catch continue orelse continue;
         try list.append(a, .{ .name = name, .path = try std.fs.path.join(a, &.{ dir_path, e.name }), .group = g });
     }
@@ -110,6 +110,26 @@ fn addDir(io: std.Io, a: std.mem.Allocator, list: *std.ArrayList(Entry), dir_pat
             return std.ascii.lessThanIgnoreCase(x.name, y.name);
         }
     }.lt);
+}
+
+/// nome de arquivo para guardar um .json que veio de fora: só o nome (sem pastas), letras,
+/// números, espaço, ponto, _ e -; sempre termina em ".json" ("../x/Meu avião!.JSON" → "Meu avi_o_.json")
+pub fn safeFileName(buf: *[96]u8, file_name: []const u8) []const u8 {
+    const base = std.fs.path.basename(file_name);
+    const stem = if (std.ascii.endsWithIgnoreCase(base, ".json")) base[0 .. base.len - 5] else base;
+    var len: usize = 0;
+    for (stem) |char| {
+        if (len >= buf.len - 5) break;
+        const keep = std.ascii.isAlphanumeric(char) or char == ' ' or char == '_' or char == '-' or (char == '.' and len > 0);
+        buf[len] = if (keep) char else '_';
+        len += 1;
+    }
+    if (len == 0) {
+        @memcpy(buf[0..5], "aviao");
+        len = 5;
+    }
+    @memcpy(buf[len .. len + 5], ".json");
+    return buf[0 .. len + 5];
 }
 
 /// "Asa_voadora.json" → "Asa voadora"; outro tipo de arquivo → null
@@ -125,7 +145,8 @@ pub fn entryName(a: std.mem.Allocator, file: []const u8) !?[:0]u8 {
 const testing = std.testing;
 
 test "acha os exemplos do repositório em ordem" {
-    var lib = try scan(testing.io, testing.allocator, &.{ "../data/aircraft", "data/aircraft" }, "/nao/existe");
+    var disk: storage.DiskStorage = .{ .io = testing.io };
+    var lib = try scan(disk.storage(), testing.allocator, &.{ "../data/aircraft", "data/aircraft" }, "/nao/existe");
     defer lib.deinit();
     try testing.expect(lib.entries.len >= 3);
     for (lib.entries[1..], lib.entries[0 .. lib.entries.len - 1]) |b, a| try testing.expect(!std.ascii.lessThanIgnoreCase(b.name, a.name));
@@ -142,6 +163,26 @@ test "impressão digital ignora nome e campo" {
     try testing.expectEqual(fingerprint(testing.allocator, a).?, fingerprint(testing.allocator, b).?);
     try testing.expect(fingerprint(testing.allocator, a).? != fingerprint(testing.allocator, c).?);
     try testing.expect(fingerprint(testing.allocator, "não é json") == null);
+}
+
+test "nome seguro para o .json que veio de fora" {
+    var buf: [96]u8 = undefined;
+    try testing.expectEqualStrings("Asa voadora.json", safeFileName(&buf, "Asa voadora.json"));
+    try testing.expectEqualStrings("Meu avi__o_.json", safeFileName(&buf, "../x/Meu avião!.JSON"));
+    try testing.expectEqualStrings("aviao.json", safeFileName(&buf, ""));
+    try testing.expectEqualStrings("_x.json", safeFileName(&buf, ".x"));
+}
+
+fn fuzzSafeName(_: void, source: *fz.Src) anyerror!void {
+    var input: [200]u8 = undefined;
+    var buf: [96]u8 = undefined;
+    const name = safeFileName(&buf, input[0..source.bytes(&input)]);
+    try testing.expect(std.mem.endsWith(u8, name, ".json") and name.len > 5 and name[0] != '.');
+    for (name) |char| try testing.expect(char != '/' and char != '\\' and char != 0);
+}
+
+test "fuzz: nome seguro" {
+    try fz.check({}, fuzzSafeName, .{});
 }
 
 fn fuzzName(_: void, src: *fz.Src) anyerror!void {

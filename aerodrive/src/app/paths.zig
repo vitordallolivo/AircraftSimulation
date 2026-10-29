@@ -4,6 +4,8 @@
 //!   voos        $AERODRIVE_VOOS, ou ~/aerodrive_voos (gravações: vídeo + dados)
 //!   meus aviões $AEROSIM_PROJETOS, ou ~/aerosim_aeronaves (os da GUI)
 //!   exemplos    ../data/aircraft e data/aircraft (rodando de aerodrive/ ou da raiz)
+//! No navegador os caminhos são fixos (`browser`): o que o jogo grava fica em /aerodrive (guardado no
+//! IndexedDB) e os exemplos vêm no pacote, em /data/aircraft.
 const std = @import("std");
 const fz = @import("../util/fuzz.zig");
 
@@ -13,6 +15,16 @@ pub const Paths = struct {
     recordings: []const u8,
     mine: []const u8,
     examples: [2][]const u8 = .{ "../data/aircraft", "data/aircraft" },
+};
+
+/// no navegador: /aerodrive persiste (IndexedDB); os aviões abertos do computador vão para
+/// /aerodrive/meus_avioes
+pub const browser: Paths = .{
+    .config = "/aerodrive/config.json",
+    .planes = "/aerodrive/avioes",
+    .recordings = "/aerodrive/voos",
+    .mine = "/aerodrive/meus_avioes",
+    .examples = .{ "/data/aircraft", "/data/aircraft" },
 };
 
 /// `get(nome)` lê uma variável de ambiente (null = não existe); `a` guarda os textos

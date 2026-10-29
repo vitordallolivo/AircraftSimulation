@@ -3,6 +3,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const app_mod = @import("../app/app.zig");
+const platform = @import("../sys/platform.zig");
 const theme = @import("../ui/theme.zig");
 const widgets = @import("../ui/widgets.zig");
 
@@ -44,7 +45,7 @@ pub const PauseMenu = struct {
         var fs = app.settings.fullscreen;
         if (app.ui.toggle(col.next(46), "Tela cheia (F11)", &fs)) app.setFullscreen(fs);
         if (app.ui.menuItem(col.next(46), "Menu inicial", null)) next = .home;
-        if (app.ui.menuItem(col.next(46), "Sair do jogo", null)) next = .quit;
+        if (app.ui.menuItem(col.next(46), if (platform.in_browser) "Voltar ao início" else "Sair do jogo", null)) next = .quit;
         const gp = @import("../input/gamepad.zig");
         if (app.ui.back() or rl.isGamepadButtonPressed(0, gp.toRaylib(b.pause)) or rl.isKeyPressed(.p)) next = .back;
         return next;

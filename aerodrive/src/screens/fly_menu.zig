@@ -4,6 +4,8 @@
 const std = @import("std");
 const rl = @import("raylib");
 const app_mod = @import("../app/app.zig");
+const platform = @import("../sys/platform.zig");
+const browser = @import("../sys/browser.zig");
 const session = @import("../sim/session.zig");
 const settings = @import("../app/settings.zig");
 const ch = @import("../input/channels.zig");
@@ -45,7 +47,7 @@ pub const FlyMenu = struct {
         var fi: usize = if (app.settings.fps == 30) 1 else 0;
         if (app.ui.choice(col.next(42), "Quadros por segundo", &fi, &fpss)) {
             app.settings.fps = if (fi == 1) 30 else 60;
-            rl.setTargetFPS(@intCast(app.settings.fps));
+            if (platform.in_browser) browser.setFrameRate(app.settings.fps) else rl.setTargetFPS(@intCast(app.settings.fps));
         }
         col.space(14);
         var next: Next = .stay;
