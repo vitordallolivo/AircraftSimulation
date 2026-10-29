@@ -40,6 +40,13 @@ addToLibrary({
     },
   },
 
+  // O Zig passa @returnAddress() a cada alocação (std.mem.Allocator), e no emscripten isso vira
+  // emscripten_return_address, que monta um rastro da pilha do JS (new Error().stack) a cada chamada:
+  // abrir o menu Aeronave levava 4 s só nisso. O endereço só serve para rastros de depuração, que o
+  // navegador não mostra; 0 é o "desconhecido" que o Zig já aceita.
+  emscripten_return_address__deps: [],
+  emscripten_return_address: (level) => 0,
+
   aerodrive_file_size__deps: ['$aerodrive', '$FS'],
   aerodrive_file_size: (path, pathLength) => {
     try {

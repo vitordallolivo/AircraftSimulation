@@ -239,3 +239,15 @@ para subir cada um.
 - **GPU:** um voo é uma sequência de avaliações pequenas e dependentes, e a GPU perderia no tempo de lançar o kernel e
   de transferir os dados. Ela compensa com lotes grandes (Monte Carlo de milhares de voos, um VLM de milhares de
   painéis), como um módulo do núcleo, "lote de voos", desligado por padrão.
+
+## WebAssembly: fma em software (feito; só no alvo wasm, não é bit de `-Dopt`)
+
+O WebAssembly não tem instrução de fma, e o `@mulAdd` vira a rotina exata do compiler-rt (`fma`, com `normalize` e
+`scalbn`), dezenas de vezes mais lenta que a conta comum. No AeroDrive no navegador, "Decolar" (o `sim.runner.configure`,
+que varre o C_L de cada painel com `expWith`) levava 3,7 s, dos quais ~3,1 s eram `fma`; um quadro de voo levava
+~7,7 ms de wasm. Com `fmath.mulAdd` (no wasm, `a * b + c`; nos outros alvos, o `@mulAdd` de antes), o decolar caiu
+para ~0,5 s e o quadro de voo para ~2,2 ms (Chromium com SwiftShader, no container da sessão, 2026-10-29). O nativo
+segue bit a bit igual (regressão 9/9); no navegador os números diferem do PC no último bit de cada conta.
+
+O resto do decolar no navegador é o `peakCL` (4500 avaliações de `clPanel` por superfície); o `-Dopt=peak` já reduz
+isso, mas muda os números e fica para o dono decidir.

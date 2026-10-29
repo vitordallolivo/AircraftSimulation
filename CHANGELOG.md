@@ -20,6 +20,13 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   `.json`; `tools/web_build.py` monta `zig-out/site/`; o workflow `.github/workflows/site.yml` publica no GitHub
   Pages a cada push na `main`.
 
+### v0.2.5 (branch `0.2_dev`)
+
+- AeroDrive no navegador sem os travamentos grandes: entrar em Aeronave caiu de ~4 s para ~40 ms (o
+  `emscripten_return_address` passa a responder 0, em vez de montar um rastro da pilha do JS a cada alocação do Zig),
+  e Decolar de ~3,7 s para ~0,5 s, com o quadro de voo de ~7,7 ms para ~2,2 ms (`fmath.mulAdd`: no WebAssembly, que
+  não tem fma, a conta comum no lugar do fma em software). O nativo sai bit a bit igual.
+
 ### v0.2.3 (`main`, PR #31)
 
 - núcleo, legibilidade (T87, revisão do vitor). Os erros da ABI viram um `error{...}` (`AbiError`), e o número negativo

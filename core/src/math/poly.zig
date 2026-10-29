@@ -5,6 +5,7 @@
 //! A tabela de expoentes e o laço de avaliação são resolvidos pelo compilador: em tempo de
 //! execução sobra só uma sequência de FMAs com as potências calculadas uma vez.
 const std = @import("std");
+const fmath = @import("fmath.zig");
 
 /// o tipo do polinômio de grau `deg` em duas variáveis
 pub fn Poly2(comptime deg: u32) type {
@@ -41,7 +42,7 @@ pub fn Poly2(comptime deg: u32) type {
                 y_powers[k] = y_powers[k - 1] * y_value;
             }
             var sum: f64 = 0;
-            inline for (exps, 0..) |exponent, k| sum = @mulAdd(f64, coefficients[k], x_powers[exponent[0]] * y_powers[exponent[1]], sum);
+            inline for (exps, 0..) |exponent, k| sum = fmath.mulAdd(coefficients[k], x_powers[exponent[0]] * y_powers[exponent[1]], sum);
             return sum;
         }
 
@@ -57,7 +58,7 @@ pub fn Poly2(comptime deg: u32) type {
             }
             var sum: f64 = 0;
             inline for (exps, 0..) |exponent, k| {
-                if (exponent[0] > 0) sum = @mulAdd(f64, coefficients[k] * @as(f64, @floatFromInt(exponent[0])), x_powers[exponent[0] - 1] * y_powers[exponent[1]], sum);
+                if (exponent[0] > 0) sum = fmath.mulAdd(coefficients[k] * @as(f64, @floatFromInt(exponent[0])), x_powers[exponent[0] - 1] * y_powers[exponent[1]], sum);
             }
             return sum;
         }
