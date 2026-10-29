@@ -37,6 +37,11 @@ curto. Enquanto uma delas está aberta, a tela de baixo não recebe o clique nem
 .json" do cabeçalho, os botões de Perfis e os menus que vierem usam as mesmas; salvar, por enquanto, grava o avião
 como foi lido, porque a edição ainda não existe.
 
+As peças de escolha que as abas repetem ficam em `menus.zig`: a lista de itens com um selecionado (`ItemList`), a
+grade de botões de ação embaixo dela (`buttonGrid`) e o menu de marcar (`CheckMenu`), um botão que abre caixas de
+marcar para escolher um ou mais itens, como os métodos de polar de Perfis. O menu funciona em dois tempos porque
+cobre o que está embaixo dele: `update` antes dos widgets de baixo fica com o clique, e `draw` depois deles desenha.
+
 A vista 3D (`view3d.zig`) segue as ideias da vista do aerosim em Python, mas desenhada aqui, com o raylib: cada
 peça na cor do tipo dela (asa azul, profundor verde, leme roxo, comando laranja), sombreada dos dois lados por uma
 luz fixa, as arestas das faixas, o chão quadriculado, os eixos do corpo (frente em vermelho, direita em verde, cima

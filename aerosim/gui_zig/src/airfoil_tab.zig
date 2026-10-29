@@ -13,6 +13,7 @@ const widgets = ui_kit.widgets;
 const form_mod = ui_kit.form;
 const plot = ui_kit.plot;
 const dialogs = ui_kit.dialogs;
+const menus = ui_kit.menus;
 const stage = @import("airfoil_stage.zig");
 const design_mod = @import("design.zig");
 
@@ -47,9 +48,9 @@ const Purpose = enum { dat, polar };
 pub const AirfoilTab = struct {
     design: *design_mod.Design = undefined,
     selected: usize = 0,
-    list_scroll: f32 = 0,
+    list: menus.ItemList = .{},
     groups: [1]form_mod.Group = .{.{ .title = "Perfil" }},
-    methods_open: bool = false, // o menu dos métodos de polar
+    methods: menus.CheckMenu = .{}, // o menu dos métodos de polar
     stale: bool = false, // algo mudou desde a última rodada
     fields: [editor_fields.len]form_mod.Field = editor_fields,
     form: form_mod.Form = .{ .groups = &.{}, .fields = &.{} },
@@ -151,7 +152,7 @@ pub const AirfoilTab = struct {
     pub fn command(tab: *AirfoilTab, name: []const u8) void {
         if (std.mem.eql(u8, name, "rodar")) return tab.run();
         if (std.mem.eql(u8, name, "metodos")) {
-            tab.methods_open = true;
+            tab.methods.open = true;
             return;
         }
         const action = std.meta.stringToEnum(Action, name) orelse return;
@@ -301,84 +302,49 @@ pub const AirfoilTab = struct {
         theme.text(ui.fonts.regular, "Candidatos (todos entram nos gráficos):", x, y, 14, theme.colors.ink);
         y += 22;
         // a lista
-        const list: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = 128 };
-        widgets.rounded(list, 6, theme.colors.field);
-        widgets.roundedLines(list, 6, theme.colors.line);
-        const line_height: f32 = 24;
-        const total = @as(f32, @floatFromInt(design.airfoil_count)) * line_height;
-        if (ui.hovering(list)) tab.list_scroll = std.math.clamp(tab.list_scroll - ui.wheel * line_height, 0, @max(0, total - list.height + 4));
-        rl.beginScissorMode(@intFromFloat(list.x + 1), @intFromFloat(list.y + 1), @intFromFloat(list.width - 2), @intFromFloat(list.height - 2));
+        var labels: [max_candidates][:0]const u8 = undefined;
+        var label_text: [max_candidates][128:0]u8 = undefined;
         for (design.airfoils[0..design.airfoil_count], 0..) |candidate, k| {
-            const row: rl.Rectangle = .{ .x = list.x + 3, .y = list.y + 2 + line_height * @as(f32, @floatFromInt(k)) - tab.list_scroll, .width = list.width - 6, .height = line_height };
-            if (k == tab.selected) widgets.rounded(row, 4, theme.colors.selected) else if (ui.hovering(row) and ui.hovering(list)) widgets.rounded(row, 4, theme.colors.hover);
-            var text: [128:0]u8 = undefined;
             var method_text: [48:0]u8 = undefined;
-            theme.text(ui.fonts.regular, widgets.format(&text, "{s}   ({s}, polar: {s})", .{ candidate.name, candidate.origin, methodsText(&method_text, candidate.methods) }), row.x + 6, row.y + 4, 14, theme.colors.ink);
-            if (ui.hovering(list) and ui.clickedIn(row) and k != tab.selected) {
-                tab.selected = k;
-                tab.loadEditor();
-            }
+            labels[k] = widgets.format(&label_text[k], "{s}   ({s}, polar: {s})", .{ candidate.name, candidate.origin, methodsText(&method_text, candidate.methods) });
         }
-        rl.endScissorMode();
-        y += list.height + 8;
-        // os botões, dois por linha
-        const half = (width - 8) / 2;
-        const buttons = [_]struct { caption: [:0]const u8, action: Action }{
-            .{ .caption = "+ NACA...", .action = .naca },
-            .{ .caption = "+ .dat...", .action = .dat },
-            .{ .caption = "+ só parâmetros", .action = .parameters },
-            .{ .caption = "+ polar XFLR5...", .action = .polar },
-            .{ .caption = "Remover", .action = .remove },
-        };
-        for (buttons, 0..) |item, k| {
-            const column: f32 = @floatFromInt(k % 2);
-            const button_rect: rl.Rectangle = .{ .x = x + column * (half + 8), .y = y + 36 * @as(f32, @floatFromInt(k / 2)), .width = half, .height = 30 };
-            if (dialogs.button(ui, button_rect, item.caption)) tab.command(@tagName(item.action));
+        if (tab.list.draw(ui, .{ .x = x, .y = y, .width = width, .height = 128 }, labels[0..design.airfoil_count], tab.selected)) |picked| {
+            tab.selected = picked;
+            tab.loadEditor();
         }
-        y += 36 * 3 + 2;
+        y += 128 + 8;
+        // os botões de ação, dois por linha
+        const captions = [_][:0]const u8{ "+ NACA...", "+ .dat...", "+ só parâmetros", "+ polar XFLR5...", "Remover" };
+        const actions = [_]Action{ .naca, .dat, .parameters, .polar, .remove };
+        var grid_height: f32 = 0;
+        if (menus.buttonGrid(ui, x, y, width, &captions, 2, &grid_height)) |pressed| tab.command(@tagName(actions[pressed]));
+        y += grid_height + 2;
         var re_text: [96:0]u8 = undefined;
         theme.text(ui.fonts.regular, widgets.format(&re_text, "Re = {d:.0} (cruzeiro, corda média da asa)", .{tab.reynolds}), x, y, 13, theme.colors.label);
         y += 22;
-        // os métodos de polar do selecionado: um botão que abre o menu de marcar
-        var popup: ?rl.Rectangle = null;
+        // os métodos de polar do selecionado: um botão que abre o menu de marcar (fica com o clique antes do editor)
         const has_selection = design.airfoil_count > 0;
+        const toggle: rl.Rectangle = .{ .x = x + 80, .y = y, .width = width - 80, .height = 30 };
         if (has_selection) {
-            const candidate = &design.airfoils[tab.selected];
+            if (tab.methods.update(ui, toggle, method_list.len)) |row| tab.toggleMethod(method_list[row].method);
             theme.text(ui.fonts.regular, "polar por:", x, y + 7, 14, theme.colors.label);
-            const toggle: rl.Rectangle = .{ .x = x + 80, .y = y, .width = width - 80, .height = 30 };
-            var caption: [64:0]u8 = undefined;
-            var method_text: [48:0]u8 = undefined;
-            if (tab.methods_open) {
-                popup = .{ .x = toggle.x, .y = toggle.y + toggle.height + 2, .width = toggle.width + 0, .height = 8 + 30 * @as(f32, method_list.len) };
-                // o menu pega o clique antes do formulário que fica embaixo dele
-                if (ui.clicked and !ui.click_taken) {
-                    if (ui.hovering(popup.?)) {
-                        const row: usize = @intFromFloat(@max(0, (ui.mouse.y - popup.?.y - 4) / 30));
-                        if (row < method_list.len) {
-                            const item = method_list[row];
-                            var methods = candidate.methods;
-                            if (methods.contains(item.method)) methods.remove(item.method) else methods.insert(item.method);
-                            if (item.method == .arquivo and candidate.measured == null) {
-                                tab.setMessage("este perfil não tem polar de arquivo: use + polar XFLR5", .{});
-                            } else if (methods.count() == 0) {
-                                tab.setMessage("marque ao menos um método", .{});
-                            } else {
-                                stage.setMethods(candidate, methods);
-                                design.touch();
-                            }
-                        }
-                        ui.click_taken = true;
-                    } else if (!ui.hovering(toggle)) tab.methods_open = false;
-                }
-            }
-            if (dialogs.button(ui, toggle, widgets.format(&caption, "{s}  ▼", .{methodsText(&method_text, candidate.methods)}))) tab.methods_open = !tab.methods_open;
             y += 40;
         }
         // o editor do selecionado
         const footer_height: f32 = 128;
         const editor: rl.Rectangle = .{ .x = rect.x, .y = y, .width = rect.width - 1, .height = rect.y + rect.height - footer_height - y };
         if (tab.form.fields.len > 0 and tab.form.draw(ui, editor)) tab.saveEditor();
-        if (popup) |menu| tab.drawMethods(ui, menu);
+        if (has_selection) {
+            const candidate = &design.airfoils[tab.selected];
+            var items: [method_list.len]menus.CheckItem = undefined;
+            var label_buffers: [method_list.len][64:0]u8 = undefined;
+            for (method_list, 0..) |item, k| {
+                const available = item.method != .arquivo or candidate.measured != null;
+                items[k] = .{ .label = if (available) item.caption else widgets.format(&label_buffers[k], "{s}: sem polar lida", .{@tagName(item.method)}), .checked = candidate.methods.contains(item.method), .enabled = available };
+            }
+            var caption: [48:0]u8 = undefined;
+            tab.methods.draw(ui, toggle, methodsText(&caption, candidate.methods), &items);
+        }
         // embaixo: usar na asa
         const footer: rl.Rectangle = .{ .x = rect.x, .y = rect.y + rect.height - footer_height, .width = rect.width - 1, .height = footer_height };
         rl.drawRectangleRec(footer, theme.colors.panel);
@@ -393,24 +359,15 @@ pub const AirfoilTab = struct {
         return used;
     }
 
-    /// o menu aberto dos métodos de polar: uma caixa de marcar por método (o arquivo só com a polar lida)
-    fn drawMethods(tab: *AirfoilTab, ui: *widgets.Ui, menu: rl.Rectangle) void {
+    /// marca ou desmarca um método de polar do selecionado (o arquivo só com a polar lida; ao menos um fica)
+    fn toggleMethod(tab: *AirfoilTab, method: stage.Source) void {
         const candidate = &tab.design.airfoils[tab.selected];
-        widgets.rounded(menu, 6, theme.colors.field);
-        widgets.roundedLines(menu, 6, theme.colors.line);
-        for (method_list, 0..) |item, k| {
-            const row: rl.Rectangle = .{ .x = menu.x + 4, .y = menu.y + 4 + 30 * @as(f32, @floatFromInt(k)), .width = menu.width - 8, .height = 30 };
-            const available = item.method != .arquivo or candidate.measured != null;
-            if (ui.hovering(row) and available) widgets.rounded(row, 4, theme.colors.hover);
-            const checked = candidate.methods.contains(item.method);
-            const box: rl.Rectangle = .{ .x = row.x + 6, .y = row.y + 7, .width = 16, .height = 16 };
-            widgets.rounded(box, 4, if (checked) theme.colors.accent else theme.colors.field);
-            if (!checked) widgets.roundedLines(box, 4, theme.colors.line);
-            if (checked) theme.text(ui.fonts.regular, "✓", box.x + 2, box.y - 1, 15, theme.colors.on_accent);
-            var label: [96:0]u8 = undefined;
-            const text = if (available) item.caption else widgets.format(&label, "{s}: sem polar lida", .{@tagName(item.method)});
-            theme.text(ui.fonts.regular, text, row.x + 30, row.y + 7, 13, if (available) theme.colors.ink else theme.colors.muted);
-        }
+        var methods = candidate.methods;
+        if (methods.contains(method)) methods.remove(method) else methods.insert(method);
+        if (method == .arquivo and candidate.measured == null) return tab.setMessage("este perfil não tem polar de arquivo: use + polar XFLR5", .{});
+        if (methods.count() == 0) return tab.setMessage("marque ao menos um método", .{});
+        stage.setMethods(candidate, methods);
+        tab.design.touch();
     }
 
     fn drawPlots(tab: *AirfoilTab, ui: *widgets.Ui, rect: rl.Rectangle) void {
@@ -541,13 +498,11 @@ fn parameterNumbers() section.Airfoil {
 
 /// "modelo", "arquivo" ou "modelo, arquivo"
 fn methodsText(buffer: []u8, methods: stage.Sources) [:0]const u8 {
-    var writer: std.Io.Writer = .fixed(buffer[0 .. buffer.len - 1]);
-    var first = true;
-    for (method_list) |item| {
-        if (!methods.contains(item.method)) continue;
-        writer.print("{s}{s}", .{ if (first) "" else ", ", @tagName(item.method) }) catch {};
-        first = false;
+    var names: [method_list.len][]const u8 = undefined;
+    var checked: [method_list.len]bool = undefined;
+    for (method_list, 0..) |item, k| {
+        names[k] = @tagName(item.method);
+        checked[k] = methods.contains(item.method);
     }
-    buffer[writer.end] = 0;
-    return buffer[0..writer.end :0];
+    return menus.checkedText(buffer, &names, &checked);
 }
