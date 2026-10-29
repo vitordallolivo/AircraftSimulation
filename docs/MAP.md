@@ -521,8 +521,11 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerodrive/src/input/channels.zig` — Canais de comando: o que está apertado no controle (eixos −1..1, gatilhos 0..1, botões) ->
   tipos `Source:15`, `Pad:46`, `Action:66`, `Bindings:100`, `Scheme:126`, `Curve:152`, `Raw:175`, `Commands:191`, `Profile:193`, `Inputs:224`, `State:227`
 - `aerodrive/src/input/gamepad.zig` — Leitura do controle e do teclado (raylib) → o que está apertado (`channels.Raw`) + botões de
-  tipos `Actions:21`, `Reader:31`
-  fn `toRaylib:84`, `pressedButton:106`
+  tipos `Actions:24`, `Reader:34`
+  fn `toRaylib:119`, `pressedButton:141`
+- `aerodrive/src/input/touch.zig` — Controles por toque (celular, tablet): dois manches virtuais e dois botões, desenhados sobre o
+  tipos `Point:16`, `Stick:18`, `Button:23`, `ButtonArea:25`, `Layout:30`, `State:55`, `Controls:71`
+  fn `layout:37`
 
 **aerodrive/src/math/**
 
@@ -571,7 +574,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerodrive/src/screens/control_menu.zig` — Controle, em duas abas:
   tipos `ControlMenu:31`
 - `aerodrive/src/screens/flight.zig` — Voo: o drive_manager avança a física em tempo real; no manual, o controle (com as curvas do
-  tipos `Flight:38`
+  tipos `Flight:39`
 - `aerodrive/src/screens/fly_menu.zig` — Voar: onde começa (chão ou mesa), onde pousa (chão ou plataforma), quem pilota no começo
   tipos `FlyMenu:26`
 - `aerodrive/src/screens/main_menu.zig` — Menu inicial: logo da Albatroz, "AeroDrive", o avião escolhido e os itens; à direita a aeronave
@@ -634,6 +637,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerodrive/src/ui/theme.zig` — Aparência das telas (mesma linguagem da GUI: fundo claro, azul nos títulos, pouco texto), a
   tipos `Fonts:38`
   fn `commandBar:71`
+- `aerodrive/src/ui/touch_view.zig` — Desenha os controles por toque (`input/touch.zig`) sobre o voo: os dois manches com a bolinha
+  fn `draw:14`
 - `aerodrive/src/ui/widgets.zig` — Widgets dos menus (modo imediato): cada quadro a tela chama `begin`, os widgets na ordem em que
   tipos `Nav:14`, `Ui:23`, `Row:252`, `ScrollList:255`, `Column:312`
   fn `header:330`, `footer:336`

@@ -14,6 +14,7 @@ const cam = @import("../camera/camera.zig");
 const field = @import("../world/field.zig");
 const theme = @import("../ui/theme.zig");
 const minimap = @import("../ui/minimap_view.zig");
+const touch_view = @import("../ui/touch_view.zig");
 const dm_mod = @import("../sim/drive_manager.zig");
 const ch = @import("../input/channels.zig");
 const glyphs = @import("../ui/glyphs.zig");
@@ -142,7 +143,7 @@ pub const Flight = struct {
         app.audio.updateWind(f.Va, app.settings.volume);
 
         var in: cam.Input = .{ .target = f.pos_ned, .heading = f.psi, .zoom = rl.getMouseWheelMove() };
-        if (rl.isMouseButtonDown(.left)) {
+        if (rl.isMouseButtonDown(.left) and !app.reader.touchActive()) { // no toque o dedo é dos manches
             const d = rl.getMouseDelta();
             in.drag = .{ -d.x, d.y };
         }
@@ -218,8 +219,12 @@ pub const Flight = struct {
         };
         ft.draw(ph[0], 26, 136, 18, ph[1]);
 
+        // com toque: os manches no lugar do painel de comandos e das dicas de teclas
+        const touched = app.reader.touchActive();
+        if (touched) touch_view.draw(ft, app.reader.touch_state);
+
         // canto inferior esquerdo: o que vai para as superfícies
-        rl.drawRectangleRounded(.{ .x = 12, .y = H - 150, .width = 340, .height = 138 }, 0.08, 6, theme.panel_glass);
+        if (!touched) rl.drawRectangleRounded(.{ .x = 12, .y = H - 150, .width = 340, .height = 138 }, 0.08, 6, theme.panel_glass);
         const ap = &dm.inst.p.ap;
         const pr = app.effectiveProfile();
         const de_max = if (manual) pr.de_max else ap.de_max;
@@ -227,19 +232,19 @@ pub const Flight = struct {
         const dr_max = if (manual) pr.dr_max else ap.dr_max;
         var y = H - 140;
         const feats = if (app.plane) |p| p.feats else @import("../model/features.zig").Features{};
-        if (feats.has(.elevator)) {
+        if (!touched and feats.has(.elevator)) {
             theme.commandBar(ft, "profundor", f.drive.de, de_max, true, 26, y, 310);
             y += 30;
         }
-        if (feats.has(.aileron)) {
+        if (!touched and feats.has(.aileron)) {
             theme.commandBar(ft, "aileron", f.drive.da, da_max, true, 26, y, 310);
             y += 30;
         }
-        if (feats.has(.rudder)) {
+        if (!touched and feats.has(.rudder)) {
             theme.commandBar(ft, "leme", f.drive.dr, dr_max, true, 26, y, 310);
             y += 30;
         }
-        if (feats.has(.throttle)) theme.commandBar(ft, "motor", f.thr, 1, false, 26, y, 310);
+        if (!touched and feats.has(.throttle)) theme.commandBar(ft, "motor", f.thr, 1, false, 26, y, 310);
 
         // canto superior direito: minimapa
         const ms: f32 = @min(240, @min(W, H) * 0.32);
@@ -267,6 +272,6 @@ pub const Flight = struct {
         const b = app.profile().buttons;
         var items: [ch.Action.all.len]glyphs.Hint = undefined;
         for (ch.Action.all, 0..) |a, i| items[i] = .{ .btn = glyphs.fromPad(b.get(a)), .key = a.key(), .label = short(a) };
-        _ = glyphs.hints(ft, W - glyphs.hintsWidth(ft, &items) - 4, H - 34, &items, theme.text);
+        if (!touched) _ = glyphs.hints(ft, W - glyphs.hintsWidth(ft, &items) - 4, H - 34, &items, theme.text);
     }
 };

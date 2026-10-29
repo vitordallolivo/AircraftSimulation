@@ -356,6 +356,7 @@ pub const App = struct {
             return false;
         };
         app.channel_state = .{};
+        app.reader.resetTouch();
         app.screens.flight.begin(app);
         return true;
     }
@@ -495,6 +496,7 @@ pub const App = struct {
         if (rl.isKeyPressed(.f11)) app.setFullscreen(!app.settings.fullscreen);
         app.keep_awake.tick(app.io, dt);
         app.ui.stick_nav = app.top() != .control; // no menu de controle o analógico mexe o ponto
+        app.reader.touch_enabled = app.top() == .flight; // manches por toque só no voo (nos menus, toque = clique)
         app.ui.begin(dt);
         rl.beginDrawing();
         const next = app.frameOf(app.top(), dt);

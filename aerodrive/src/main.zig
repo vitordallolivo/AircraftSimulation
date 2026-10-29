@@ -206,7 +206,7 @@ fn browserFrame() callconv(.c) void {
     const app = browser_app orelse return;
     if (browser.takeImport()) |file| {
         defer file.deinit();
-        _ = app.importFile(file.name, file.bytes);
+        if (app.importFile(file.name, file.bytes)) app.saveSettings(); // a página pode fechar sem aviso: já fica lembrado
     }
     app.step(@floatCast(rl.getFrameTime()));
     if (app.quit) { // "Sair" no navegador: grava e volta à tela inicial do site

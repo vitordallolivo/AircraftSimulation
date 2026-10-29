@@ -12,11 +12,14 @@
 //!   —                           F3         painel de desempenho
 //!
 //! Teclado nos comandos: setas ↑↓ profundor, ← → aileron, A/D leme, W/S motor.
+//! No navegador, depois do primeiro toque na tela, os manches e botões de `touch.zig` também valem
+//! (só durante o voo: `touch_enabled`, que o App liga).
 const std = @import("std");
 const rl = @import("raylib");
 const ch = @import("channels.zig");
 const platform = @import("../sys/platform.zig");
 const browser = @import("../sys/browser.zig");
+const touch = @import("touch.zig");
 
 pub const Actions = struct {
     pause: bool = false,
@@ -30,6 +33,36 @@ pub const Actions = struct {
 
 pub const Reader = struct {
     thr_key: ?f64 = null, // acelerador pelo teclado (W/S); null até a primeira tecla
+    touch_enabled: bool = false, // o App liga só no voo (nos menus o toque é clique)
+    touch_controls: touch.Controls = .{},
+    touch_state: touch.State = .{},
+
+    /// os controles por toque valem agora (navegador, já houve toque e estamos no voo)
+    pub fn touchActive(r: *const Reader) bool {
+        return platform.in_browser and r.touch_enabled and browser.touchSeen();
+    }
+
+    /// recomeça os manches por toque (acelerador em zero), no início de cada voo
+    pub fn resetTouch(r: *Reader) void {
+        r.touch_controls = .{};
+        r.touch_state = .{};
+    }
+
+    /// lê os dedos na tela e põe os manches nos canais do teclado
+    fn readTouch(r: *Reader, out: *ch.Raw) void {
+        var fingers: [8]touch.Point = undefined;
+        const count: usize = @intCast(std.math.clamp(rl.getTouchPointCount(), 0, fingers.len));
+        for (fingers[0..count], 0..) |*finger, i| {
+            const position = rl.getTouchPosition(@intCast(i));
+            finger.* = .{ .x = position.x, .y = position.y };
+        }
+        const area = touch.layout(@floatFromInt(rl.getScreenWidth()), @floatFromInt(rl.getScreenHeight()));
+        r.touch_state = r.touch_controls.update(area, fingers[0..count]);
+        out.key_elev = r.touch_state.elevator;
+        out.key_ail = r.touch_state.aileron;
+        out.key_rud = r.touch_state.rudder;
+        out.key_thr = r.touch_state.throttle;
+    }
 
     /// estado bruto (eixos do controle + teclado) neste quadro
     pub fn raw(r: *Reader, dt: f64) ch.Raw {
@@ -49,6 +82,7 @@ pub const Reader = struct {
             out.lb = rl.isGamepadButtonDown(0, .left_trigger_1);
             out.rb = rl.isGamepadButtonDown(0, .right_trigger_1);
         }
+        if (r.touchActive()) r.readTouch(&out);
         if (rl.isKeyDown(.down)) out.key_elev = 1;
         if (rl.isKeyDown(.up)) out.key_elev = -1;
         if (rl.isKeyDown(.left)) out.key_ail = -1;
@@ -57,12 +91,13 @@ pub const Reader = struct {
         if (rl.isKeyDown(.d)) out.key_rud = 1;
         if (rl.isKeyDown(.w)) r.thr_key = @min(1, (r.thr_key orelse 0) + 0.6 * dt);
         if (rl.isKeyDown(.s)) r.thr_key = @max(0, (r.thr_key orelse 0) - 0.6 * dt);
-        out.key_thr = r.thr_key;
+        if (r.thr_key) |keyboard| out.key_thr = @max(keyboard, out.key_thr orelse 0);
         return out;
     }
 
     /// ações pelos botões configurados (menu Controle) e pelas teclas fixas
-    pub fn actions(_: *const Reader, bind: ch.Bindings) Actions {
+    pub fn actions(r: *const Reader, bind: ch.Bindings) Actions {
+        const touched = r.touchActive();
         const pad = rl.isGamepadAvailable(0);
         const b = struct {
             fn f(p: bool, btn: ch.Pad) bool {
@@ -70,11 +105,11 @@ pub const Reader = struct {
             }
         }.f;
         return .{
-            .pause = rl.isKeyPressed(.escape) or rl.isKeyPressed(.p) or b(pad, bind.pause),
+            .pause = rl.isKeyPressed(.escape) or rl.isKeyPressed(.p) or b(pad, bind.pause) or (touched and r.touch_state.pressed(.pause)),
             .toggle_mode = rl.isKeyPressed(.m) or b(pad, bind.mode),
             .drop = rl.isKeyPressed(.l) or b(pad, bind.drop),
             .record = rl.isKeyPressed(.g) or b(pad, bind.record),
-            .camera = rl.isKeyPressed(.c) or b(pad, bind.camera),
+            .camera = rl.isKeyPressed(.c) or b(pad, bind.camera) or (touched and r.touch_state.pressed(.camera)),
             .restart = rl.isKeyPressed(.r) or b(pad, bind.restart),
             .dev = rl.isKeyPressed(.f3),
         };

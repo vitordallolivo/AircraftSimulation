@@ -8,6 +8,7 @@ test {
     _ = @import("camera/camera.zig");
     _ = @import("gfx/pose.zig");
     _ = @import("input/channels.zig");
+    _ = @import("input/touch.zig");
     _ = @import("sim/mission.zig");
     _ = @import("sim/params.zig");
     _ = @import("sim/drive_manager.zig");
