@@ -382,6 +382,7 @@ pub const Params = extern struct {
     llt_joint: f64 = 0, // comprimento da junta das pernas, fração da corda no nó (G-H eq. 17)
     llt_blend: f64 = 0, // distância de mistura da linha efetiva, fração da semienvergadura (G-H eq. 7; MachUpX)
     llt_nonlinear: i32 = 0, // 1: a linha sustentadora resolve com o c_l(α) de cada seção com estol, por Newton (Phillips e Snyder 2000)
+    llt_viscosity: f64 = 0, // viscosidade artificial da não linear (ν, adimensional): suaviza Γ depois do estol (Chattot)
     llt_cache: LltCache = .{}, // montado por llt.prepare na configuração (não vem do Python)
     prop_strike: i32 = 0, // 1: a ponta da pá tocar o chão encerra o voo (`crashed`, Events.tprop); 0 (padrão): só registra
     no_payload: i32 = 0, // começa sem a carga

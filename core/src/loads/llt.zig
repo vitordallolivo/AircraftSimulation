@@ -36,6 +36,15 @@
 //! eq. 4 a 15 — números das equações a conferir no PDF). O c_l,max da seção sai do C_Lmax da faixa invertendo o fator
 //! do tradutor, C_Lmax = 0,9 c_l,max (`aerosim/model/universal.py`; Raymer, "Aircraft Design: A Conceptual Approach",
 //! eq. 12.15 — a conferir no PDF).
+//!
+//! Depois do estol o sistema tem várias soluções (c_l cai com α, e as faixas se acoplam pelo downwash) e o Newton
+//! parava em mínimos locais do resíduo, com faixas estoladas salteadas. Duas correções, só na não linear:
+//!   - viscosidade artificial (Chattot; o coeficiente da forma discreta cresce com o quadrado do número de faixas,
+//!     "Relaxation limits and artificial viscosity for lifting-line simulations...", 2026 — a conferir no PDF), aqui
+//!     na forma contínua, que não depende da malha, e pesada pela mistura σ (0 antes do estol: o trecho linear fica
+//!     igual):  R_i −= σ_i ν c_i² d²Γ/ds²  (`Params.llt_viscosity` = ν);
+//!   - continuação em pseudo-tempo quando o Newton para: (I/τ + J) ΔΓ = −R, τ crescendo com a queda do resíduo
+//!     (Kelley e Keyes, SIAM J. Numer. Anal. 35, 1998; regra SER de Mulder e van Leer 1985 — a conferir no PDF).
 const std = @import("std");
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
@@ -533,8 +542,10 @@ pub fn apply(params: *const types.Params, Vr: V3, deflections: V3, panels: []typ
     if (nonlinear) {
         var velocities: [n_max]V3 = undefined;
         for (0..n_panels) |i| velocities[i] = vec.v3(panels[i].v);
-        newton(.{ .n_panels = n_panels, .used = &used, .infl = &infl, .sections = &sections, .controls = &controls, .curves = &curves,
-            .half_chords = &half_chords, .velocities = &velocities, .steepness = params.Mst }, &gamma);
+        var spanwise = Spanwise{};
+        if (params.llt_viscosity > 0) spanwise = Spanwise.build(params, panels, n_panels);
+        _ = newton(.{ .n_panels = n_panels, .used = &used, .infl = &infl, .sections = &sections, .controls = &controls, .curves = &curves,
+            .half_chords = &half_chords, .velocities = &velocities, .steepness = params.Mst, .viscosity = params.llt_viscosity, .spanwise = &spanwise }, &gamma);
     }
     // carga de cada painel com as circulações
     var sum: f64 = 0;
@@ -671,6 +682,50 @@ const NewtonInput = struct {
     half_chords: *const [n_max]f64, // ½ c cos Λ η
     velocities: *const [n_max]V3, // velocidade do painel em relação ao ar, sem a induzida pelas ferraduras
     steepness: f64,
+    viscosity: f64 = 0, // ν de `Params.llt_viscosity`
+    spanwise: *const Spanwise,
+};
+
+/// os vizinhos de cada painel ao longo da envergadura (as cadeias de `Wings`: mesmo grupo, nós divididos) e as
+/// distâncias entre os centros, em s (m, projetado em y-z). Sem vizinho (ponta): Γ = 0 no nó da ponta, a meia largura
+/// do centro. `chord2` = c² de cada painel
+const Spanwise = struct {
+    left: [n_max]?usize = [_]?usize{null} ** n_max,
+    right: [n_max]?usize = [_]?usize{null} ** n_max,
+    gap_left: [n_max]f64 = [_]f64{1} ** n_max,
+    gap_right: [n_max]f64 = [_]f64{1} ** n_max,
+    chord2: [n_max]f64 = [_]f64{0} ** n_max,
+
+    fn build(params: *const types.Params, panels: []const types.PanelState, n_panels: usize) Spanwise {
+        var spanwise = Spanwise{};
+        const wings = Wings.build(params, panels, n_panels);
+        for (0..n_panels) |i| {
+            if (!used_geom(panels, i)) continue;
+            const half = 0.5 * (wings.sB[i] - wings.sA[i]);
+            spanwise.chord2[i] = panels[i].c * panels[i].c;
+            spanwise.left[i] = wings.prev[i];
+            spanwise.right[i] = wings.next[i];
+            spanwise.gap_left[i] = if (wings.prev[i]) |neighbor| half + 0.5 * (wings.sB[neighbor] - wings.sA[neighbor]) else half;
+            spanwise.gap_right[i] = if (wings.next[i]) |neighbor| half + 0.5 * (wings.sB[neighbor] - wings.sA[neighbor]) else half;
+            spanwise.gap_left[i] = @max(spanwise.gap_left[i], 1e-9);
+            spanwise.gap_right[i] = @max(spanwise.gap_right[i], 1e-9);
+        }
+        return spanwise;
+    }
+
+    /// os pesos da segunda diferença com espaçamento desigual, d²Γ/ds² ≈ w_l Γ_l − (w_l + w_r) Γ_i + w_r Γ_r
+    fn weights(spanwise: *const Spanwise, i: usize) struct { left: f64, right: f64 } {
+        const total = spanwise.gap_left[i] + spanwise.gap_right[i];
+        return .{ .left = 2.0 / (total * spanwise.gap_left[i]), .right = 2.0 / (total * spanwise.gap_right[i]) };
+    }
+
+    /// ν c² d²Γ/ds² no painel i (o termo de viscosidade artificial)
+    fn diffusion(spanwise: *const Spanwise, viscosity: f64, i: usize, gamma: *const [n_max]f64) f64 {
+        const weight = spanwise.weights(i);
+        const left = if (spanwise.left[i]) |neighbor| gamma[neighbor] else 0.0;
+        const right = if (spanwise.right[i]) |neighbor| gamma[neighbor] else 0.0;
+        return viscosity * spanwise.chord2[i] * (weight.left * left - (weight.left + weight.right) * gamma[i] + weight.right * right);
+    }
 };
 
 /// o estado de uma seção com as circulações `gamma`: velocidade no plano da seção (componentes ao longo da corda e da
@@ -687,6 +742,12 @@ fn sectionFlow(input: NewtonInput, i: usize, gamma: *const [n_max]f64) SectionFl
     return .{ .along = along, .normal = normal, .speed = @sqrt(along * along + normal * normal), .alpha = fmath.atan2(normal, along) + input.controls[i] };
 }
 
+/// o peso da viscosidade no painel: σ da mistura (0 antes do estol, 1 depois), para não mexer no trecho linear
+fn stallWeight(input: NewtonInput, i: usize, alpha: f64) f64 {
+    const curve = input.curves[i];
+    return if (curve.stall > 0) aero.sigmaStall(alpha, curve.stall, input.steepness) else 0.0;
+}
+
 /// os resíduos R_i = Γ_i − ½ c_i η_i |V_i| c_l,i(α_i); devolve o maior |R_i|
 fn residuals(input: NewtonInput, gamma: *const [n_max]f64, out: *[n_max]f64) f64 {
     var largest: f64 = 0;
@@ -695,6 +756,7 @@ fn residuals(input: NewtonInput, gamma: *const [n_max]f64, out: *[n_max]f64) f64
         if (!input.used[i]) continue;
         const flow = sectionFlow(input, i, gamma);
         out[i] = gamma[i] - input.half_chords[i] * flow.speed * sectionLift(input.curves[i], flow.alpha, input.steepness);
+        if (input.viscosity > 0) out[i] -= stallWeight(input, i, flow.alpha) * input.spanwise.diffusion(input.viscosity, i, gamma);
         largest = @max(largest, @abs(out[i]));
     }
     return largest;
@@ -705,8 +767,9 @@ fn residuals(input: NewtonInput, gamma: *const [n_max]f64, out: *[n_max]f64) f64
 ///   ∂R_i/∂Γ_j = δ_ij − ½ c_i η_i (c_l ∂|V_i|/∂Γ_j + |V_i| c_l' ∂α_i/∂Γ_j)
 ///   ∂|V_i|/∂Γ_j = −(u w_ij·ex + w w_ij·ez)/|V_i|,   ∂α_i/∂Γ_j = −(u w_ij·ez − w w_ij·ex)/|V_i|²
 /// c_l' por diferença central. Passo amortecido: se o resíduo cresce, o passo cai pela metade (até 10 vezes); depois
-/// do estol a solução pode não ser única, e o Newton fica com a mais perto da linear
-fn newton(input: NewtonInput, gamma: *[n_max]f64) void {
+/// do estol a solução pode não ser única, e o Newton fica com a mais perto da linear. Devolve o maior |R_i| no fim,
+/// relativo ao maior |Γ| (abaixo de 1e-12: convergiu)
+fn newton(input: NewtonInput, gamma: *[n_max]f64) f64 {
     const n_panels = input.n_panels;
     var residual: [n_max]f64 = undefined;
     var largest = residuals(input, gamma, &residual);
@@ -715,26 +778,11 @@ fn newton(input: NewtonInput, gamma: *[n_max]f64) void {
     var jacobian: [n_max][n_max]f64 = undefined;
     var step: [n_max]f64 = undefined;
     var negative: [n_max]f64 = undefined;
+    // 1) Newton com o passo cortado ao meio quando o resíduo cresce
+    var stuck = false;
     for (0..50) |_| {
-        if (largest <= 1e-12 * scale) return;
-        for (0..n_panels) |i| {
-            for (0..n_panels) |j| jacobian[i][j] = if (i == j) 1 else 0;
-            negative[i] = -residual[i];
-            if (!input.used[i]) continue;
-            const flow = sectionFlow(input, i, gamma);
-            const curve = input.curves[i];
-            const lift = sectionLift(curve, flow.alpha, input.steepness);
-            const delta = 1e-6;
-            const lift_slope = (sectionLift(curve, flow.alpha + delta, input.steepness) - sectionLift(curve, flow.alpha - delta, input.steepness)) / (2 * delta);
-            const speed = @max(flow.speed, 1e-12);
-            for (0..n_panels) |j| {
-                const along_rate = vec.dot(input.infl[i][j], input.sections[i].ex);
-                const normal_rate = vec.dot(input.infl[i][j], input.sections[i].ez);
-                const speed_rate = -(flow.along * along_rate + flow.normal * normal_rate) / speed;
-                const alpha_rate = -(flow.along * normal_rate - flow.normal * along_rate) / (speed * speed);
-                jacobian[i][j] -= input.half_chords[i] * (lift * speed_rate + speed * lift_slope * alpha_rate);
-            }
-        }
+        if (largest <= 1e-12 * scale) return largest / scale;
+        buildJacobian(input, gamma, &residual, &jacobian, &negative);
         solve(n_panels, &jacobian, &negative, &step);
         var trial: [n_max]f64 = undefined;
         var fraction: f64 = 1;
@@ -746,10 +794,67 @@ fn newton(input: NewtonInput, gamma: *[n_max]f64) void {
             if (trial_largest < largest) break;
             fraction *= 0.5;
         }
-        if (trial_largest >= largest) return; // não melhora mais: fica com o último
+        if (trial_largest >= largest) {
+            stuck = true;
+            break;
+        }
         gamma.* = trial;
         residual = trial_residual;
         largest = trial_largest;
+    }
+    if (!stuck or largest <= 1e-12 * scale) return largest / scale;
+    // 2) parado num mínimo local do resíduo (depois do estol): continuação em pseudo-tempo, (I/τ + J) ΔΓ = −R, com τ
+    // crescendo quando o resíduo cai (Kelley e Keyes 1998; regra SER de Mulder e van Leer 1985 — a conferir no PDF).
+    // Com τ grande vira o Newton; com τ pequeno, um passo curto ao longo de −R, que atravessa os mínimos locais
+    var pseudo_step: f64 = 0.5;
+    for (0..300) |_| {
+        if (largest <= 1e-12 * scale) break;
+        buildJacobian(input, gamma, &residual, &jacobian, &negative);
+        for (0..n_panels) |i| jacobian[i][i] += 1.0 / pseudo_step;
+        solve(n_panels, &jacobian, &negative, &step);
+        var trial: [n_max]f64 = undefined;
+        for (0..n_panels) |i| trial[i] = gamma[i] + step[i];
+        var trial_residual: [n_max]f64 = undefined;
+        const trial_largest = residuals(input, &trial, &trial_residual);
+        if (!std.math.isFinite(trial_largest)) {
+            pseudo_step *= 0.25;
+            continue;
+        }
+        pseudo_step = @min(pseudo_step * @min(largest / @max(trial_largest, 1e-300), 4.0), 1e12);
+        gamma.* = trial;
+        residual = trial_residual;
+        largest = trial_largest;
+    }
+    return largest / scale;
+}
+
+/// o jacobiano ∂R_i/∂Γ_j em `jacobian` e −R em `negative` (ver `newton`)
+fn buildJacobian(input: NewtonInput, gamma: *const [n_max]f64, residual: *const [n_max]f64, jacobian: *[n_max][n_max]f64, negative: *[n_max]f64) void {
+    const n_panels = input.n_panels;
+    for (0..n_panels) |i| {
+        for (0..n_panels) |j| jacobian[i][j] = if (i == j) 1 else 0;
+        negative[i] = -residual[i];
+        if (!input.used[i]) continue;
+        const flow = sectionFlow(input, i, gamma);
+        const curve = input.curves[i];
+        const lift = sectionLift(curve, flow.alpha, input.steepness);
+        const delta = 1e-6;
+        const lift_slope = (sectionLift(curve, flow.alpha + delta, input.steepness) - sectionLift(curve, flow.alpha - delta, input.steepness)) / (2 * delta);
+        const speed = @max(flow.speed, 1e-12);
+        for (0..n_panels) |j| {
+            const along_rate = vec.dot(input.infl[i][j], input.sections[i].ex);
+            const normal_rate = vec.dot(input.infl[i][j], input.sections[i].ez);
+            const speed_rate = -(flow.along * along_rate + flow.normal * normal_rate) / speed;
+            const alpha_rate = -(flow.along * normal_rate - flow.normal * along_rate) / (speed * speed);
+            jacobian[i][j] -= input.half_chords[i] * (lift * speed_rate + speed * lift_slope * alpha_rate);
+        }
+        if (input.viscosity > 0) {
+            const weight = input.spanwise.weights(i);
+            const factor = stallWeight(input, i, flow.alpha) * input.viscosity * input.spanwise.chord2[i];
+            jacobian[i][i] += factor * (weight.left + weight.right);
+            if (input.spanwise.left[i]) |neighbor| jacobian[i][neighbor] -= factor * weight.left;
+            if (input.spanwise.right[i]) |neighbor| jacobian[i][neighbor] -= factor * weight.right;
+        }
     }
 }
 
@@ -1084,4 +1189,38 @@ test "não linear com o cache da geometria: o mesmo resultado, bit a bit" {
     params.llt_cache.ok = 0;
     _ = apply(&params, Vr, vec.zero, full[0..24]);
     for (0..24) |i| try testing.expectEqual(full[i].L, cached[i].L);
+}
+
+/// C_L e o maior salto de c_l entre faixas vizinhas da asa retangular de `rectWing`, com a não linear e viscosidade `viscosity`
+fn stalledWing(panels: []types.PanelState, alpha: f64, viscosity: f64) struct { lift: f64, jump: f64 } {
+    var params = types.Params{};
+    params.llt_nonlinear = 1;
+    params.llt_viscosity = viscosity;
+    const lift = rectLift(&params, panels, 2.0, 0.25, 12.0, alpha);
+    var jump: f64 = 0;
+    for (1..panels.len) |i| jump = @max(jump, @abs(panels[i].CL - panels[i - 1].CL));
+    return .{ .lift = lift, .jump = jump };
+}
+
+test "viscosidade: o trecho antes do estol fica igual" {
+    var panels: [24]types.PanelState = undefined;
+    const without = stalledWing(&panels, 0.1, 0).lift;
+    const with = stalledWing(&panels, 0.1, 2).lift;
+    try testing.expectApproxEqRel(without, with, 1e-4); // σ ≈ 1e-4 antes do estol: quase nada
+}
+
+test "viscosidade: depois do estol a carga é suave e o C_L quase não muda com a malha" {
+    // sem viscosidade (ν = 0) as faixas estolam salteadas: saltos de c_l de uma faixa para a vizinha. Com ν = 2 a
+    // carga é suave e o C_L com 24 e 48 faixas fica perto até uns 6° depois do C_L máximo; mais adiante, o α em que a
+    // asa pula para a solução toda estolada depende da malha (limite conhecido, no README)
+    var coarse: [24]types.PanelState = undefined;
+    var fine: [48]types.PanelState = undefined;
+    var alpha: f64 = 0.28;
+    while (alpha < 0.37) : (alpha += 0.02) {
+        const smooth = stalledWing(&fine, alpha, 2);
+        try testing.expect(smooth.jump < 0.25);
+        const coarse_lift = stalledWing(&coarse, alpha, 2).lift;
+        try testing.expectApproxEqRel(smooth.lift, coarse_lift, 0.05);
+    }
+    try testing.expect(stalledWing(&fine, 0.34, 0).jump > 0.25); // sem viscosidade: salteado
 }
