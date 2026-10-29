@@ -57,6 +57,7 @@ comptime {
 comptime {
     if (wanted("sizing")) {
         _ = @import("sizing/sizing.zig");
+        _ = @import("sizing/wing_line.zig");
     }
 }
 

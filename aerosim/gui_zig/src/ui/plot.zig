@@ -51,12 +51,16 @@ pub fn lines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
     const inner = widgets.card(ui, rect, axes.title);
     var x_range: ?numbers.Range = null;
     var y_range: ?numbers.Range = null;
+    // as faixas juntam os dados de todas as curvas; uma reta vertical (x igual) ou horizontal só entra com o
+    // valor dela, sem a meia unidade de folga que `Range.of` dá a um valor único
     for (series) |s| {
-        const rx = numbers.Range.of(s.xs, 0);
-        const ry = numbers.Range.of(s.ys, 0.06);
+        const rx = extent(s.xs) orelse continue;
+        const ry = extent(s.ys) orelse continue;
         x_range = if (x_range) |r| r.merge(rx) else rx;
         y_range = if (y_range) |r| r.merge(ry) else ry;
     }
+    if (x_range) |r| x_range = numbers.Range.of(&.{ r.low, r.high }, 0);
+    if (y_range) |r| y_range = numbers.Range.of(&.{ r.low, r.high }, 0.06);
     const legend_height = legendHeight(ui, inner.width, series);
     const frame = drawFrame(ui, inner, axes, x_range orelse .{ .low = 0, .high = 1 }, y_range orelse .{ .low = 0, .high = 1 }, legend_height, axes.equal_axes);
     rl.beginScissorMode(@intFromFloat(frame.area.x), @intFromFloat(frame.area.y - 1), @intFromFloat(frame.area.width + 1), @intFromFloat(frame.area.height + 2));
@@ -77,6 +81,17 @@ pub fn lines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
     }
     rl.endScissorMode();
     drawLegend(ui, .{ .x = inner.x + 10, .y = inner.y + inner.height - legend_height + 4, .width = inner.width - 20, .height = legend_height }, series);
+}
+
+/// o menor e o maior valor finito (null se não houver)
+fn extent(values: []const f64) ?numbers.Range {
+    var low = std.math.inf(f64);
+    var high = -std.math.inf(f64);
+    for (values) |v| if (std.math.isFinite(v)) {
+        low = @min(low, v);
+        high = @max(high, v);
+    };
+    return if (low <= high) .{ .low = low, .high = high } else null;
 }
 
 /// cartão com a nuvem de pontos colorida pelo valor (com a barra de cores)

@@ -76,6 +76,7 @@ pub const sizing = struct {
     pub const sizing = @import("sizing/sizing.zig");
     pub const stages = @import("sizing/stages.zig");
     pub const types = @import("sizing/types.zig");
+    pub const wing_line = @import("sizing/wing_line.zig");
 };
 
 /// buscas do aeroopt (GA, CMA-ES, DE, RBF, amostragem, sensibilidade)

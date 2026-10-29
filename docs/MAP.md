@@ -284,7 +284,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
-  tipos `math:10`, `physics:18`, `modifiers:31`, `collision:41`, `control:46`, `sim:53`, `loads:64`, `sizing:70`, `optim:82`, `geometry:96`, `util:101`
+  tipos `math:10`, `physics:18`, `modifiers:31`, `collision:41`, `control:46`, `sim:53`, `loads:64`, `sizing:70`, `optim:83`, `geometry:97`, `util:102`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
@@ -410,8 +410,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Unit:16`, `Out:28`
   fn `init:42`, `polyRaw:100`, `tiltNow:117`, `axis:124`, `unit:132`, `compute:156`, `equilibriumRps:194`, `point:224`
 - `core/src/physics/section.zig` — Polar 2D de um perfil e os números que saem dela, a etapa Perfis do dimensionamento.
-  tipos `Airfoil:21`, `Polar:30`, `Metrics:92`
-  fn `stallAngle:45`, `modelPolar:58`, `interpolate:73`, `metrics:114`, `reynolds:206`
+  tipos `Airfoil:21`, `Polar:30`, `Metrics:92`, `DragBranch:211`
+  fn `stallAngle:45`, `modelPolar:58`, `interpolate:73`, `metrics:114`, `reynolds:206`, `dragBranch:232`, `fitted:263`
 - `core/src/physics/terrain.zig` — Terreno: chão plano (h = 0) com mesas/plataformas retangulares elevadas.
   fn `height:9`
 
@@ -465,6 +465,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sizing/types.zig` — Tipos do dimensionamento inicial (mini-MDO): a configuração que vem do Python, o vetor de
   tipos `VarSpec:30`, `Constraint:76`, `AirfoilData:94`, `LayoutData:105`, `PropSet:115`, `SizingCfg:130`, `SizingOut:171`, `OptOpts:191`, `Individual:203`
   fn `massDependent:65`, `violation:84`
+- `core/src/sizing/wing_line.zig` — A etapa Asa do dimensionamento: do perfil escolhido à asa trapezoidal, pela linha sustentadora de Prandtl
+  tipos `Trapezoid:25`, `SectionAirfoil:38`, `Conditions:44`, `Planform:67`, `Result:147`
+  fn `isaDensity:53`, `reynolds:59`, `planformOf:127`, `analyze:291`, `modelSection:393`
 
 **core/src/util/**
 
@@ -673,7 +676,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/gui_zig/src/airfoil_stage.zig` — A etapa Perfis: os perfis candidatos, a polar 2D de cada um e os números que a asa vai usar, como a página
   tipos `Source:21`, `Candidate:24`, `Outcome:35`, `default_numbers:83`
-  fn `alphas:42`, `evaluate:49`, `fromAircraft:62`, `fromOutline:90`, `aircraftCandidates:102`, `isNaca4:116`, `readPolarText:126`
+  fn `alphas:42`, `evaluate:49`, `fromAircraft:62`, `fromOutline:90`, `aircraftCandidates:102`, `maxCamber:117`, `wingSection:164`, `isNaca4:172`, `readPolarText:182`
 - `aerosim/gui_zig/src/airfoil_tab.zig` — A aba Aerodinâmica → Perfis: os perfis candidatos e a polar 2D de cada um, como a página Perfis da GUI em
   tipos `AirfoilTab:34`
 - `aerosim/gui_zig/src/analyze_tab.zig` — A aba Aerodinâmica → Analisar: as asas do avião aberto, como a simulação "Asas" do aerosim em Python. À
@@ -684,11 +687,13 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui_zig/src/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
   fn `main:15`
 - `aerosim/gui_zig/src/screen.zig` — A tela do aerosim: cabeçalho, abas das áreas e subabas da Aerodinâmica. Cada aba feita mora no arquivo dela
-  tipos `Screen:18`
+  tipos `Screen:19`
 - `aerosim/gui_zig/src/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos e a asa de exemplo.
 - `aerosim/gui_zig/src/wing_analysis.zig` — A análise das asas do avião aberto (a aba Aerodinâmica → Analisar), em Zig: o mesmo caminho da simulação "Asas"
   tipos `Method:28`, `Input:31`, `Result:42`
   fn `liftingSurfaces:77`, `defaultChoice:89`, `run:97`, `wingsOnly:203`
+- `aerosim/gui_zig/src/wing_tab.zig` — A aba Aerodinâmica → Projetar: a asa a partir do perfil escolhido em Perfis, como a etapa Asa da GUI em
+  tipos `WingTab:45`
 
 **aerosim/gui_zig/src/ui/**
 
@@ -702,7 +707,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `numberText:5`, `niceStep:21`, `decimalsFor:31`
 - `aerosim/gui_zig/src/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
   tipos `Series:11`, `Cloud:21`, `Axes:29`, `Frame:36`
-  fn `lines:50`, `cloud:83`, `ramp:102`, `colorBar:118`, `drawFrame:138`
+  fn `lines:50`, `cloud:98`, `ramp:117`, `colorBar:133`, `drawFrame:153`
 - `aerosim/gui_zig/src/ui/theme.zig` — O visual da interface, o mesmo do AeroDrive: fundo claro, cantos arredondados, azul nos títulos e pouco texto.
   tipos `Palette:17`, `Fonts:114`, `Logo:158`
   fn `hex:7`, `withAlpha:12`, `plotColor:63`, `spacing:143`, `text:148`, `textWidth:153`

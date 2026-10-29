@@ -207,6 +207,70 @@ pub fn reynolds(density: f64, airspeed: f64, chord: f64) f64 {
     return density * airspeed * chord / 1.81e-5;
 }
 
+/// o ramo colado de uma polar (do menor c_l antes do pico até o pico), em ordem de c_l: dá o c_d num c_l pedido
+pub const DragBranch = struct {
+    cl: [max_points]f64 = undefined,
+    cd: [max_points]f64 = undefined,
+    count: usize = 0,
+    fallback: f64 = 0.01, // menos de 2 pontos: o menor c_d da polar
+
+    /// o c_d no c_l pedido (interpolado; fora do ramo, o da ponta, como `np.interp`)
+    pub fn at(branch: *const DragBranch, cl: f64) f64 {
+        if (branch.count < 2) return branch.fallback;
+        if (cl <= branch.cl[0]) return branch.cd[0];
+        for (1..branch.count) |k| {
+            if (cl <= branch.cl[k]) {
+                const span = branch.cl[k] - branch.cl[k - 1];
+                return if (span > 0) branch.cd[k - 1] + (cl - branch.cl[k - 1]) / span * (branch.cd[k] - branch.cd[k - 1]) else branch.cd[k];
+            }
+        }
+        return branch.cd[branch.count - 1];
+    }
+};
+
+/// o ramo colado de `polar` (o `drag_at` de `aerosim/design/airfoils.py`)
+pub fn dragBranch(polar: *const Polar) DragBranch {
+    var cl: [max_points]f64 = undefined;
+    var cd: [max_points]f64 = undefined;
+    var count: usize = 0;
+    for (0..polar.count) |i| {
+        if (!std.math.isFinite(polar.cl[i]) or !std.math.isFinite(polar.cd[i])) continue;
+        cl[count] = polar.cl[i];
+        cd[count] = polar.cd[i];
+        count += 1;
+    }
+    var branch: DragBranch = .{};
+    if (count == 0) return branch;
+    const top = std.mem.indexOfMax(f64, cl[0..count]);
+    const bottom = if (top > 0) std.mem.indexOfMin(f64, cl[0 .. top + 1]) else 0;
+    branch.fallback = std.mem.min(f64, cd[0..count]);
+    branch.count = top + 1 - bottom;
+    @memcpy(branch.cl[0..branch.count], cl[bottom .. top + 1]);
+    @memcpy(branch.cd[0..branch.count], cd[bottom .. top + 1]);
+    // em ordem de c_l (ordenação estável, como o argsort do numpy nos empates não importa: c_l iguais têm a mesma posição)
+    for (1..branch.count) |i| {
+        var k = i;
+        while (k > 0 and branch.cl[k - 1] > branch.cl[k]) : (k -= 1) {
+            std.mem.swap(f64, &branch.cl[k - 1], &branch.cl[k]);
+            std.mem.swap(f64, &branch.cd[k - 1], &branch.cd[k]);
+        }
+    }
+    return branch;
+}
+
+/// o perfil com os números ajustados na polar (o que a asa usa); simétrico: α_L0 = c_m = 0, porque em Re baixo
+/// a bolha desloca o ajuste (o `fitted` de `aerosim/design/airfoils.py`)
+pub fn fitted(airfoil: Airfoil, found: ?Metrics, symmetric: bool) Airfoil {
+    const numbers = found orelse return airfoil;
+    return .{
+        .cl_alpha = numbers.cl_alpha,
+        .alpha0 = if (symmetric) 0 else numbers.alpha0,
+        .cl_max = numbers.cl_max,
+        .cd0 = numbers.cd_min,
+        .cm_ac = if (symmetric) 0 else numbers.cm,
+    };
+}
+
 test "polar do modelo e números: iguais à GUI em Python" {
     // referência: model_polar e metrics de aerosim (NACA 2412 padrão: a = 5,9, α_L0 = −2, c_l,max 1,4, c_d0 0,012)
     var alphas: [73]f64 = undefined;

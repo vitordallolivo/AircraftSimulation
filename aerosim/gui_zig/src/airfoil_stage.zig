@@ -112,6 +112,62 @@ pub fn aircraftCandidates(allocator: std.mem.Allocator, ac: *const model.Aircraf
     return count;
 }
 
+/// a maior flecha da linha média (fração da corda): a média entre extradorso e intradorso no mesmo x, em 200
+/// pontos de espaçamento cosseno, como `camber_line` da GUI
+pub fn maxCamber(outline: []const [2]f64) f64 {
+    if (outline.len < 3) return 0;
+    var leading: usize = 0;
+    var x_low = outline[0][0];
+    var x_high = outline[0][0];
+    for (outline, 0..) |point, k| {
+        if (point[0] < outline[leading][0]) leading = k;
+        x_low = @min(x_low, point[0]);
+        x_high = @max(x_high, point[0]);
+    }
+    if (!(x_high - x_low > 1e-9)) return 0;
+    const upper = outline[0 .. leading + 1];
+    const lower = outline[leading..];
+    var largest: f64 = 0;
+    for (0..200) |i| {
+        const fraction = 0.5 * (1 - @cos(std.math.pi * @as(f64, @floatFromInt(i)) / 199.0));
+        const x = x_low + (x_high - x_low) * fraction;
+        largest = @max(largest, @abs(0.5 * (heightAt(upper, x) + heightAt(lower, x)) / (x_high - x_low)));
+    }
+    return largest;
+}
+
+/// y de uma metade do contorno em x (interpolado, saturado nas pontas; a metade pode vir em qualquer sentido)
+fn heightAt(half: []const [2]f64, x: f64) f64 {
+    var low_index: usize = 0;
+    var high_index: usize = 0;
+    for (half, 0..) |point, k| {
+        if (point[0] < half[low_index][0]) low_index = k;
+        if (point[0] > half[high_index][0]) high_index = k;
+    }
+    if (x <= half[low_index][0]) return half[low_index][1];
+    if (x >= half[high_index][0]) return half[high_index][1];
+    // o par vizinho que cerca x mais de perto (a metade é monótona em x)
+    var best_left: ?usize = null;
+    var best_right: ?usize = null;
+    for (half, 0..) |point, k| {
+        if (point[0] <= x and (best_left == null or point[0] > half[best_left.?][0])) best_left = k;
+        if (point[0] >= x and (best_right == null or point[0] < half[best_right.?][0])) best_right = k;
+    }
+    const left = half[best_left.?];
+    const right = half[best_right.?];
+    if (right[0] - left[0] <= 0) return left[1];
+    return left[1] + (x - left[0]) / (right[0] - left[0]) * (right[1] - left[1]);
+}
+
+/// o perfil de `candidate` pronto para a asa: os números ajustados na polar dele (a fonte escolhida) e o ramo do
+/// c_d; simétrico (flecha < 0,3 %): α_L0 = c_m = 0
+pub fn wingSection(candidate: *const Candidate) core.wing_line.SectionAirfoil {
+    var outcome: Outcome = .{};
+    evaluate(candidate, &outcome);
+    const symmetric = candidate.outline.len > 0 and maxCamber(candidate.outline) < 0.003;
+    return .{ .numbers = section.fitted(candidate.numbers, outcome.metrics, symmetric), .drag = section.dragBranch(&outcome.polar) };
+}
+
 /// é um NACA de 4 dígitos pelo nome ("naca" e quatro algarismos)?
 pub fn isNaca4(name: []const u8) bool {
     var digits: usize = 0;
@@ -218,6 +274,8 @@ test "candidatos do avião de exemplo e a polar do XFLR5" {
     try std.testing.expectApproxEqAbs(@as(f64, -2.114661), naca.numbers.alpha0, 1e-4);
     try std.testing.expectApproxEqAbs(@as(f64, -0.052817), naca.numbers.cm_ac, 1e-5);
     try std.testing.expect(isNaca4("naca 4412") and !isNaca4("s1223"));
+    const symmetric = try fromOutline(allocator, "NACA 0012", &.{}, "NACA");
+    try std.testing.expect(maxCamber(symmetric.outline) < 1e-9 and maxCamber(naca.outline) > 0.019);
     var outcome: Outcome = .{};
     evaluate(&naca, &outcome);
     try std.testing.expect(outcome.metrics != null);

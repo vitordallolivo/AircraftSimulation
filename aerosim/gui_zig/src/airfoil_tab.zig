@@ -58,6 +58,7 @@ pub const AirfoilTab = struct {
     reynolds: f64 = 0,
     message: [200:0]u8 = [_:0]u8{0} ** 200,
     scroll: f32 = 0,
+    version: u32 = 0, // sobe a cada mudança da lista (a aba Projetar refaz as escolhas)
 
     /// troca o avião: refaz a lista (os perfis do avião marcados, a biblioteca desmarcada) e a corda de referência
     pub fn setAircraft(tab: *AirfoilTab, ac: ?*const model.Aircraft, reference_chord: ?f64) void {
@@ -89,6 +90,7 @@ pub const AirfoilTab = struct {
         tab.fields[tab.pool_count..][0..fixed_fields.len].* = keep;
         if (reference_chord) |chord| tab.fields[tab.pool_count + @intFromEnum(FieldId.chord)].number = @round(chord * 1e4) / 1e4;
         tab.form = .{ .groups = &tab.groups, .fields = tab.fields[0 .. tab.pool_count + fixed_fields.len] };
+        tab.version +%= 1;
         tab.refresh();
     }
 
@@ -192,6 +194,7 @@ pub const AirfoilTab = struct {
         const value = tab.field(.naca).number;
         const code: u32 = if (value >= 1 and value <= 9999) @intFromFloat(@round(value)) else 0;
         if (code == tab.naca_code) return;
+        tab.version +%= 1;
         tab.naca_code = 0;
         if (code == 0) return;
         _ = tab.naca_arena.reset(.retain_capacity);

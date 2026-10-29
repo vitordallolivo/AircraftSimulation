@@ -9,7 +9,8 @@ os mesmos números da GUI em Python. A interface do aeroopt fica em `aeroopt/gui
 A pasta se divide em três partes. Em `src/ui` ficam as peças de qualquer tela, as mesmas para o aerosim e para o
 aeroopt: as cores e as fontes, as formas do visual, os widgets (cabeçalho, abas, botão, cartão), o formulário
 lateral, o gráfico, a vista 3D e o laço do programa. Em `src/screen.zig` fica a tela do aerosim, montada com essas peças, e cada aba
-tem o seu arquivo: `src/airfoil_tab.zig` (Perfis) com a etapa em `src/airfoil_stage.zig`, `src/analyze_tab.zig` (Analisar) com as contas em `src/wing_analysis.zig`, e `src/assembly.zig`
+tem o seu arquivo: `src/airfoil_tab.zig` (Perfis) com a etapa em `src/airfoil_stage.zig`, `src/wing_tab.zig`
+(Projetar), `src/analyze_tab.zig` (Analisar) com as contas em `src/wing_analysis.zig`, e `src/assembly.zig`
 (Montagem).
 
 ## As peças (`src/ui`)
@@ -61,6 +62,17 @@ mostram $c_l$, a polar, $c_l/c_d$ e $c_m$ em α e o contorno em escala; a tabela
 asa. O Reynolds vem da velocidade de cruzeiro, da corda de referência (a corda média da asa, da análise das asas) e da
 densidade, $Re = \rho V c / \mu$. O diagnóstico avisa Reynolds abaixo de $10^5$, polar medida noutro Reynolds e a
 polar do modelo com $c_d$ constante.
+
+## A asa (`src/wing_tab.zig`)
+
+Aqui se desenha a asa a partir de um perfil da aba Perfis. O formulário pede a planta trapezoidal (envergadura,
+área ou corda da raiz, afilamento, trecho retangular, enflechamento de 1/4 da corda, torção na ponta e o ângulo
+da fuselagem no cruzeiro), o perfil da raiz e o da ponta (por padrão, o mesmo) e as condições de projeto (massa
+estimada, velocidade de cruzeiro, altitude-densidade e massa da asa por área). Cada perfil entra ajustado na polar
+dele, e um perfil simétrico (flecha da linha média abaixo de 0,3 % da corda) fica com $\alpha_{L0} = c_m = 0$, como
+na GUI em Python. A conta é a linha sustentadora de Glauert do núcleo (`core/src/sizing/wing_line.zig`); os
+gráficos mostram C_L até o estol, a polar (induzido, perfil e total), L/D com o C_L de cruzeiro, o $c_l$ ao longo
+da envergadura no cruzeiro e no estol (com o $c_{l,\max}$ do perfil e onde o estol começa) e a planta em escala.
 
 ## A análise das asas (`src/wing_analysis.zig`)
 

@@ -9,6 +9,7 @@ const widgets = ui_kit.widgets;
 const view3d = ui_kit.view3d;
 const analyze_tab = @import("analyze_tab.zig");
 const airfoil_tab = @import("airfoil_tab.zig");
+const wing_tab = @import("wing_tab.zig");
 const assembly_mod = @import("assembly.zig");
 const aircraft_model = @import("aircraft_model");
 
@@ -21,6 +22,7 @@ pub const Screen = struct {
     scroll: f32 = 0, // rolagem inicial (prints), passada à aba aberta
     analyze: analyze_tab.AnalyzeTab = .{},
     airfoils: airfoil_tab.AirfoilTab = .{},
+    wing: wing_tab.WingTab = .{},
     assembly_view: view3d.View = .{}, // a vista 3D da Montagem
     assembly: ?assembly_mod.Assembly = null, // o avião aberto
     assembly_note: [240:0]u8 = [_:0]u8{0} ** 240,
@@ -93,10 +95,14 @@ pub const Screen = struct {
         if (screen.scroll > 0) { // a rolagem pedida na linha de comando vai para a aba aberta
             screen.analyze.scroll = screen.scroll;
             screen.airfoils.scroll = screen.scroll;
+            screen.wing.scroll = screen.scroll;
             screen.scroll = 0;
         }
         if (screen.area == 1 and screen.aero_tab == 0) {
             screen.airfoils.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top });
+        } else if (screen.area == 1 and screen.aero_tab == 1) {
+            screen.wing.syncAirfoils(&screen.airfoils);
+            screen.wing.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top });
         } else if (screen.area == 1 and screen.aero_tab == 2) {
             screen.analyze.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top }, screen.aircraft());
         } else if (screen.area == 5) {
