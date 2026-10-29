@@ -7,6 +7,7 @@ pub const form = @import("form.zig");
 pub const plot = @import("plot.zig");
 pub const numbers = @import("numbers.zig");
 pub const app = @import("app.zig");
+pub const view3d = @import("view3d.zig");
 
 test {
     _ = numbers;

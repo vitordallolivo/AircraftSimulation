@@ -670,7 +670,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui_zig/src/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
   fn `main:15`
 - `aerosim/gui_zig/src/screen.zig` — A tela do aerosim: cabeçalho, abas das áreas, subabas da Aerodinâmica e, em Analisar, o formulário lateral, o
-  tipos `Screen:47`
+  tipos `Screen:48`
 - `aerosim/gui_zig/src/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos e a asa de exemplo.
 - `aerosim/gui_zig/src/wing_example.zig` — A asa da tela Analisar enquanto a tela ainda não lê o avião aberto: uma asa trapezoidal sem enflechamento
   tipos `Input:14`, `Curve:30`, `Result:36`
@@ -680,7 +680,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/gui_zig/src/ui/app.zig` — O que os dois programas têm igual em volta da tela: a linha de comando, a janela e o laço de desenho, com o
   tipos `Args:11`
-  fn `parseArgs:20`, `run:43`
+  fn `parseArgs:21`, `run:46`
 - `aerosim/gui_zig/src/ui/form.zig` — O formulário lateral: campos agrupados (cada grupo com a faixa preta e a borda laranja, abre e fecha no
   tipos `Kind:13`, `Field:16`, `Group:29`, `Form:39`
 - `aerosim/gui_zig/src/ui/numbers.zig` — Números na tela sem janela (testáveis): o texto curto de um campo e as marcas "redondas" dos eixos.
@@ -695,6 +695,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Palette:18`, `Mode:105`, `Fonts:177`, `Logo:221`
   fn `hex:8`, `withAlpha:13`, `use:112`, `plotColor:121`, `isDark:126`, `spacing:206`, `text:211`, `textWidth:216`
 - `aerosim/gui_zig/src/ui/ui.zig` — As peças comuns das telas do aerosim e do aeroopt em Zig: cores e fontes, formas, widgets, formulário, gráfico
+- `aerosim/gui_zig/src/ui/view3d.zig` — Vista 3D dentro de um cartão, com as mesmas ideias da vista do aerosim em Python (`aerosim/gui/widgets/view3d.py`
+  tipos `Kind:17`, `View:59`
+  fn `kindColor:20`, `fraction:34`, `liftColor:39`, `toWorld:44`, `quad:162`, `segment:179`, `arrow:184`, `floor:196`, `bodyAxes:208`
 - `aerosim/gui_zig/src/ui/widgets.zig` — Os pedaços comuns das telas: o contexto de desenho (fontes, logo, mouse), o cabeçalho com a logo, a barra de
   tipos `Ui:10`, `Status:183`
   fn `header:84`, `tabBar:119`, `primaryButton:141`, `card:152`, `labeledCard:162`, `statusColor:173`, `tableRow:186`, `format:193`

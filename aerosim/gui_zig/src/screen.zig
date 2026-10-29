@@ -10,6 +10,7 @@ const widgets = ui_kit.widgets;
 const form_mod = ui_kit.form;
 const plot = ui_kit.plot;
 const numbers = ui_kit.numbers;
+const view3d = ui_kit.view3d;
 const wing = @import("wing_example.zig");
 
 const areas = [_][:0]const u8{ "DIMENSIONAMENTO", "AERODINÂMICA", "ESTABILIDADE", "DESEMPENHO", "CARGAS", "MONTAGEM" };
@@ -55,6 +56,13 @@ pub const Screen = struct {
     message: [160:0]u8 = [_:0]u8{0} ** 160,
     progress: f32 = 0,
     scroll: f32 = 0,
+    load_view: view3d.View = .{}, // a vista 3D da asa e da carga (Analisar)
+    assembly_view: view3d.View = .{}, // a vista 3D da Montagem
+
+    /// abre a aba de área `index` (0 = Dimensionamento ... 5 = Montagem), para os prints
+    pub fn selectTab(screen: *Screen, index: usize) void {
+        screen.area = @min(index, areas.len - 1);
+    }
 
     /// liga o formulário às listas da própria tela e roda a análise uma vez (chamar com a janela aberta e a tela
     /// já no lugar final)
@@ -115,6 +123,8 @@ pub const Screen = struct {
         if (screen.area == 1 and screen.aero_tab == 2) {
             screen.drawSidebar(ui, .{ .x = 0, .y = top, .width = sidebar_width, .height = height - top });
             screen.drawPlots(ui, .{ .x = sidebar_width, .y = top, .width = width - sidebar_width, .height = height - top });
+        } else if (screen.area == 5) {
+            screen.drawAssembly(ui, .{ .x = 0, .y = top, .width = width, .height = height - top });
         } else {
             placeholder(ui, .{ .x = 0, .y = top, .width = width, .height = height - top }, if (screen.area == 1) aero_tabs[screen.aero_tab] else areas[screen.area]);
         }
@@ -149,6 +159,16 @@ pub const Screen = struct {
         const row_height: f32 = 420;
         const rows: f32 = 3;
         const content_height = rows * (row_height + gap) + gap;
+        const x0 = rect.x + gap;
+        const x1 = x0 + column_width + gap;
+        var y = rect.y + gap - screen.scroll;
+        // a vista 3D usa a roda antes da rolagem da página, e a textura é desenhada fora do recorte
+        const view_card: rl.Rectangle = .{ .x = x1, .y = y, .width = column_width, .height = row_height };
+        if (screen.has_result) {
+            const view_area = cardInside(view_card);
+            screen.load_view.handleInput(ui, view_area);
+            screen.renderWing(&screen.load_view, view_area, true);
+        }
         if (ui.hovering(rect)) screen.scroll = std.math.clamp(screen.scroll - ui.wheel * 60, 0, @max(0, content_height - rect.height));
         rl.beginScissorMode(@intFromFloat(rect.x), @intFromFloat(rect.y), @intFromFloat(rect.width), @intFromFloat(rect.height));
         defer rl.endScissorMode();
@@ -157,9 +177,6 @@ pub const Screen = struct {
             return;
         }
         const r = &screen.result;
-        const x0 = rect.x + gap;
-        const x1 = x0 + column_width + gap;
-        var y = rect.y + gap - screen.scroll;
         const n = r.alpha_count;
         const k = r.panel_count;
         const use_ll = screen.field(.use_lifting_line).checked;
@@ -176,7 +193,7 @@ pub const Screen = struct {
             count += 1;
         }
         plot.lines(ui, .{ .x = x0, .y = y, .width = column_width, .height = row_height }, .{ .title = "C_L do conjunto × α", .x_label = "α (°)", .y_label = "C_L" }, curves[0..count]);
-        screen.drawPlanform(ui, .{ .x = x1, .y = y, .width = column_width, .height = row_height });
+        screen.drawLoadView(ui, view_card);
         y += row_height + gap;
 
         count = 0;
@@ -197,12 +214,80 @@ pub const Screen = struct {
         plot.lines(ui, .{ .x = x1, .y = y, .width = column_width, .height = row_height }, .{ .title = widgets.format(&load_title, "Carga ao longo da envergadura (α = {d:.1}°)", .{screen.field(.alpha_load).number}), .x_label = "y (m)", .y_label = "L' (N/m)" }, loads[0..count]);
         y += row_height + gap;
 
-        screen.drawDiagnosis(ui, .{ .x = x0, .y = y, .width = column_width, .height = 300 });
-        screen.drawSummary(ui, .{ .x = x1, .y = y, .width = column_width, .height = 300 });
+        screen.drawPlanform(ui, .{ .x = x0, .y = y, .width = column_width, .height = row_height });
+        screen.drawDiagnosis(ui, .{ .x = x1, .y = y, .width = column_width, .height = 160 });
+        screen.drawSummary(ui, .{ .x = x1, .y = y + 172, .width = column_width, .height = row_height - 172 });
+    }
+
+    /// a asa de exemplo em 3D na cor da asa, com as arestas das faixas, o chão e os eixos do corpo; com
+    /// `with_loads`, um vetor de sustentação por faixa no 1/4 de corda (a maior seta = 18 % da envergadura, como na
+    /// vista de cargas em Python)
+    fn renderWing(screen: *Screen, view: *view3d.View, area: rl.Rectangle, with_loads: bool) void {
+        const in = screen.input();
+        const size = in.span;
+        if (!view.begin(area, .{ -0.25 * in.root_chord, 0, if (with_loads) -0.08 * size else 0 }, size)) return;
+        defer view.end();
+        const half = 0.5 * in.span;
+        view3d.floor(.{ 0, 0, 0 }, 0.3, 1.5 * size, 0.25);
+        const color = view3d.kindColor(.wing);
+        const edge = theme.withAlpha(theme.hex(0x333333), 0.35);
+        const count = in.panel_count;
+        const width = in.span / @as(f64, @floatFromInt(count));
+        for (0..count) |i| {
+            const y_a = -half + @as(f64, @floatFromInt(i)) * width;
+            const y_b = y_a + width;
+            const chord_a = wing.chordAt(in, y_a);
+            const chord_b = wing.chordAt(in, y_b);
+            const leading_a: view3d.Body = .{ 0.25 * chord_a, y_a, 0 };
+            const trailing_a: view3d.Body = .{ -0.75 * chord_a, y_a, 0 };
+            const leading_b: view3d.Body = .{ 0.25 * chord_b, y_b, 0 };
+            const trailing_b: view3d.Body = .{ -0.75 * chord_b, y_b, 0 };
+            view3d.quad(leading_a, trailing_a, trailing_b, leading_b, color);
+            // as arestas um pouco acima e abaixo da placa (no plano dela, a profundidade as esconde)
+            const lift_off = 0.002 * size;
+            view3d.segment(.{ leading_a[0], y_a, -lift_off }, .{ trailing_a[0], y_a, -lift_off }, edge);
+            view3d.segment(.{ leading_a[0], y_a, lift_off }, .{ trailing_a[0], y_a, lift_off }, edge);
+        }
+        view3d.bodyAxes(view, .{ -0.75 * in.root_chord - 0.12 * size, -half - 0.12 * size, 0.04 * size }, 0.14 * size);
+        if (!with_loads or !screen.has_result) return;
+        const loads = screen.result.load_lifting_line[0..screen.result.panel_count];
+        var largest: f64 = 0;
+        for (loads) |value| largest = @max(largest, @abs(value));
+        if (!(largest > 1e-12)) return;
+        const scale = 0.18 * size / largest;
+        for (loads, 0..) |value, i| {
+            // sustentação para cima (−z no corpo), na linha de 1/4 de corda (x = 0)
+            view3d.arrow(.{ 0, screen.result.panel_span[i], 0 }, .{ 0, 0, -value * scale }, 0.022 * size, view3d.liftColor());
+        }
+    }
+
+    /// o cartão da vista 3D com a carga: o título, a imagem e a escala das setas
+    fn drawLoadView(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
+        var title_buffer: [96]u8 = undefined;
+        const title = widgets.format(&title_buffer, "Asa e sustentação em 3D (α = {d:.1}°, linha sustentadora)", .{screen.field(.alpha_load).number});
+        _ = widgets.card(ui, rect, title);
+        const area = cardInside(rect);
+        screen.load_view.blit(ui, area);
+        var largest: f64 = 0;
+        for (screen.result.load_lifting_line[0..screen.result.panel_count]) |value| largest = @max(largest, @abs(value));
+        var note_buffer: [96]u8 = undefined;
+        const note = widgets.format(&note_buffer, "sustentação: maior seta = {d:.3} N/m · arraste para girar, roda para aproximar", .{largest});
+        theme.text(ui.fonts.regular, note, area.x + 6, area.y + area.height - 18, 12, theme.colors.muted);
+    }
+
+    /// a Montagem: por enquanto só a asa de exemplo em 3D (o avião inteiro entra quando a tela ler o .json)
+    fn drawAssembly(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
+        const card_rect: rl.Rectangle = .{ .x = rect.x + 12, .y = rect.y + 12, .width = rect.width - 24, .height = rect.height - 24 };
+        const area = cardInside(card_rect);
+        screen.assembly_view.handleInput(ui, area);
+        screen.renderWing(&screen.assembly_view, area, false);
+        _ = widgets.card(ui, card_rect, "Montagem em 3D");
+        screen.assembly_view.blit(ui, area);
+        theme.text(ui.fonts.regular, "só a asa de exemplo; o avião inteiro (fuselagem, cauda, motor) entra quando a tela ler o .json · arraste para girar, roda para aproximar", area.x + 6, area.y + area.height - 18, 12, theme.colors.muted);
     }
 
     /// a asa e a carga no α da carga (linha sustentadora), em dois quadros com o mesmo eixo da envergadura: em cima, a
-    /// vista de cima em escala (mesmo metro por pixel nos dois eixos), só o contorno e as faixas; embaixo, a vista de
+    /// vista de cima em escala (mesmo metro por pixel nos dois eixos), na cor da asa, com as faixas; embaixo, a vista de
     /// frente com um vetor por faixa, de comprimento L' (N/m), na escala do eixo
     fn drawPlanform(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
         const r = &screen.result;
@@ -227,8 +312,8 @@ pub const Screen = struct {
             const trailing_a = top.toScreen(y_a, -chord_a * 0.75);
             const leading_b = top.toScreen(y_b, chord_b * 0.25);
             const trailing_b = top.toScreen(y_b, -chord_b * 0.75);
-            rl.drawTriangleFan(&[_]rl.Vector2{ leading_a, trailing_a, trailing_b, leading_b }, theme.colors.field);
-            rl.drawLineEx(leading_a, trailing_a, 1, theme.colors.grid);
+            rl.drawTriangleFan(&[_]rl.Vector2{ leading_a, trailing_a, trailing_b, leading_b }, view3d.kindColor(.wing)); // a cor da asa da vista 3D
+            rl.drawLineEx(leading_a, trailing_a, 1, theme.withAlpha(theme.hex(0x333333), 0.35));
             rl.drawLineEx(leading_a, leading_b, 2, outline);
             rl.drawLineEx(trailing_a, trailing_b, 2, outline);
         }
@@ -241,7 +326,7 @@ pub const Screen = struct {
         load_range.high = @max(load_range.high, 0);
         const front = plot.drawFrame(ui, .{ .x = inner.x, .y = inner.y + top_height, .width = inner.width, .height = inner.height - top_height }, .{ .title = title, .x_label = "y (m)", .y_label = "L' (N/m)" }, top.x_range, load_range, 0, false);
         rl.drawLineEx(front.toScreen(-half, 0), front.toScreen(half, 0), 3, outline);
-        const color = theme.plotColor(0);
+        const color = view3d.liftColor(); // a cor da sustentação da vista 3D
         for (0..r.panel_count) |i| {
             const base = front.toScreen(r.panel_span[i], 0);
             const tip = front.toScreen(r.panel_span[i], loads[i]);
@@ -256,7 +341,7 @@ pub const Screen = struct {
         const ll = r.lifting_line.summary;
         const peak_alpha = r.alphas_deg[ll.peak];
         const at_end = ll.peak + 1 == r.alpha_count;
-        const columns = [_]f32{ inner.x, inner.x + 80, inner.x + 330 };
+        const columns = [_]f32{ inner.x, inner.x + 56, inner.x + 290 };
         var y = inner.y;
         const rows = [_]struct { status: widgets.Status, item: [:0]const u8, value: [:0]const u8 }{
             .{ .status = if (at_end) .info else .ok, .item = "C_L máximo (linha sustentadora)", .value = widgets.format(&buffers[0], "{d:.3} a {d:.1}°{s}", .{ ll.lift_max, peak_alpha, if (at_end) " (fim da varredura)" else "" }) },
@@ -294,6 +379,11 @@ pub const Screen = struct {
         }
     }
 };
+
+/// a parte de dentro de um cartão onde vai a imagem 3D (abaixo do título)
+fn cardInside(rect: rl.Rectangle) rl.Rectangle {
+    return .{ .x = rect.x + 4, .y = rect.y + 34, .width = rect.width - 8, .height = rect.height - 40 };
+}
 
 /// vetor de `base` até `tip`, com a ponta em triângulo (some quando é mais curto que a ponta)
 fn arrow(base: rl.Vector2, tip: rl.Vector2, color: rl.Color) void {

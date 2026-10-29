@@ -9,7 +9,7 @@ núcleo. A interface do aeroopt fica em `aeroopt/gui_zig` e usa as peças comuns
 
 A pasta se divide em três partes. Em `src/ui` ficam as peças de qualquer tela, as mesmas para o aerosim e para o
 aeroopt: as cores e as fontes, as formas do visual, os widgets (cabeçalho, abas, botão, cartão), o formulário
-lateral, o gráfico e o laço do programa. Em `src/screen.zig` fica a tela do aerosim, montada com essas peças. Em
+lateral, o gráfico, a vista 3D e o laço do programa. Em `src/screen.zig` fica a tela do aerosim, montada com essas peças. Em
 `src/wing_example.zig` fica a asa que a tela mostra enquanto não lê o avião de verdade.
 
 ## As peças (`src/ui`)
@@ -29,15 +29,21 @@ O gráfico (`plot.zig`) faz curvas e nuvens de pontos dentro de um cartão, com 
 1, 2 ou 5 vezes uma potência de dez), grade, a legenda embaixo e a barra de cores na nuvem. As contas dos eixos e
 dos números ficam em `numbers.zig`, que não abre janela e por isso tem teste.
 
+A vista 3D (`view3d.zig`) segue as ideias da vista do aerosim em Python, mas desenhada aqui, com o raylib: cada
+peça na cor do tipo dela (asa azul, profundor verde, leme roxo, comando laranja), sombreada dos dois lados por uma
+luz fixa, as arestas das faixas, o chão quadriculado, os eixos do corpo (frente em vermelho, direita em verde, cima
+em azul) e os vetores de carga, com a maior seta valendo 18 % do tamanho do avião, como na vista de cargas em
+Python. O 3D é desenhado numa textura do tamanho do cartão; arrastar gira e a roda aproxima.
+
 ## A tela (`src/screen.zig`)
 
 O cabeçalho tem os botões de abrir e salvar, e embaixo vêm as abas das áreas e as subabas da
 Aerodinâmica (Perfis, Projetar, Analisar). Em Analisar, o formulário pede a asa, o perfil e o caso, e o botão Rodar
 chama a varredura do núcleo pelos dois métodos, a linha sustentadora não linear e as faixas independentes. Os
-gráficos mostram o C_L do conjunto em α, a asa e a carga (a vista de cima em escala, só o contorno e as faixas, e
+gráficos mostram o C_L do conjunto em α, a asa em 3D com um vetor de sustentação por faixa, a asa e a carga (a vista de cima em escala, só o contorno e as faixas, e
 embaixo a vista de frente com um vetor de sustentação por faixa, do tamanho de L' na escala do eixo), o c_l e a
-carga ao longo da envergadura, o diagnóstico (C_L máximo, onde o estol começa, Reynolds) e um resumo. As outras abas mostram só o
-lugar delas.
+carga ao longo da envergadura, o diagnóstico (C_L máximo, onde o estol começa, Reynolds) e um resumo. A aba Montagem mostra a asa de exemplo em 3D; o avião inteiro
+entra quando a tela ler o `.json`. As outras abas mostram só o lugar delas.
 
 ## A asa de exemplo
 
@@ -64,6 +70,7 @@ python -m ziglang build test                                  # testes sem janel
 python -m ziglang build run                                   # abre o aerosim
 python -m ziglang build run -- escuro                         # já no modo escuro
 xvfb-run -a python -m ziglang build shot -- aerosim.png       # print sem tela
+xvfb-run -a python -m ziglang build shot -- montagem.png aba=5   # print de outra aba
 ```
 
 Para uma tela nova, monte a lista de campos e de grupos dela (veja as listas no começo de `src/screen.zig`),

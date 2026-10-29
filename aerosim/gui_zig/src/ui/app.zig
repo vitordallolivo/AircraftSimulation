@@ -2,7 +2,7 @@
 //! print sem interação do `--shot`.
 //!
 //!   <programa> [claro|escuro] [LxA]
-//!   <programa> --shot <saída.png> [claro|escuro] [LxA] [rolar=PIXELS]
+//!   <programa> --shot <saída.png> [claro|escuro] [LxA] [aba=N] [rolar=PIXELS]
 const std = @import("std");
 const rl = @import("raylib");
 const theme = @import("theme.zig");
@@ -14,6 +14,7 @@ pub const Args = struct {
     width: i32 = 1500,
     height: i32 = 950,
     scroll: f32 = 0, // rolagem da área dos gráficos no print
+    tab: ?usize = null, // aba aberta no começo (aba=N), se a tela tiver `selectTab`
 };
 
 /// lê a linha de comando (o primeiro item é o nome do programa)
@@ -28,6 +29,8 @@ pub fn parseArgs(argv: []const [:0]const u8) !Args {
             args.shot = argv[i];
         } else if (std.meta.stringToEnum(theme.Mode, value)) |mode| {
             args.mode = mode;
+        } else if (std.mem.startsWith(u8, value, "aba=")) {
+            args.tab = std.fmt.parseInt(usize, value[4..], 10) catch return error.BadArgs;
         } else if (std.mem.startsWith(u8, value, "rolar=")) {
             args.scroll = std.fmt.parseFloat(f32, value[6..]) catch return error.BadArgs;
         } else if (std.mem.indexOfScalar(u8, value, 'x')) |cut| {
@@ -44,7 +47,7 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     const arena = init.arena.allocator();
     const argv = try init.minimal.args.toSlice(arena);
     const args = parseArgs(argv) catch {
-        std.debug.print("uso: {s} [claro|escuro] [LxA]\n     {s} --shot <saída.png> [claro|escuro] [LxA] [rolar=PIXELS]\n", .{ title, title });
+        std.debug.print("uso: {s} [claro|escuro] [LxA]\n     {s} --shot <saída.png> [claro|escuro] [LxA] [aba=N] [rolar=PIXELS]\n", .{ title, title });
         std.process.exit(2);
     };
     const shot = args.shot != null;
@@ -59,6 +62,9 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     defer ui.deinit();
     screen.start();
     screen.scroll = args.scroll;
+    if (args.tab) |tab| {
+        if (@hasDecl(@TypeOf(screen.*), "selectTab")) screen.selectTab(tab);
+    }
 
     var frames: usize = 0;
     while (!rl.windowShouldClose()) : (frames += 1) {
