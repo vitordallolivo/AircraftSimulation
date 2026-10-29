@@ -30,6 +30,7 @@ flowchart LR
         PF["performance.py<br/>envelope + cálculo simples"]
         TH["thrust.py"]
         AE["aerodynamics.py<br/>+ polar da aeronave"]
+        WI["wings.py<br/>só as asas"]
         ST["stability.py"]
         BASE["base.py<br/>prepare, parallel"]
     end
@@ -57,7 +58,7 @@ flowchart LR
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
-Abas (`tab = True`): `sizing`, `mission`, `performance`, `thrust`, `aerodynamics`, `stability`, `loads`. As outras
+Abas (`tab = True`): `sizing`, `mission`, `performance`, `thrust`, `aerodynamics`, `wings`, `stability`, `loads`. As outras
 continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram modos ou partes de outra.
 
 | simulação | orientação |
@@ -72,6 +73,7 @@ continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram m
 | `polar` | coeficientes estáticos, margem estática |
 | `thrust` | tração/potência/corrente × V de cada motor (motor+hélice ou polinômio) |
 | `aerodynamics` | sem tempo: cada solver de `aerosim/aero` (os que estiverem instalados e marcados) na mesma geometria e no mesmo $`x_{CG}`$; um solver que falha vira uma linha de erro no resumo, os outros seguem; estudo de pontas de asa |
+| `wings` | subaba Asas da Aerodinâmica, sem tempo: só as superfícies marcadas (uma asa, biplano, tandem, canard), sem trimar, sem fuselagem e sem hélice; cada α é um `LoadPoint` com α imposto, e cada método de carga (`ILoadMethod`) dá a carga; daí o C_L do conjunto e de cada superfície, o C_L máximo, onde o estol começa e o Reynolds de cada superfície. Chapas de ponta opcionais (dispositivo "placa") |
 | `stability` | sem tempo: estática → comandos → tesoura (uma sessão por tamanho de EH) → modelo linear por V |
 
 `Runner` é a ferramenta comum: `start_ground()`, `start_air(seg)`, `start_from(checkpoint)`,

@@ -12,13 +12,14 @@ from .stability import StabilitySimulation
 from .takeoff import TakeoffSimulation
 from .thrust import ThrustSimulation, thrust_curves
 from .turn import TurnSimulation
+from .wings import WingsSimulation
 
 # abas: decolagem, curvas simuladas e subida simulada são modos da Missão; envelope, subida,
 # descida e curva por cálculo estão no Desempenho; a polar da aeronave está na Aerodinâmica.
 # As classes antigas continuam importáveis (scripts e testes).
-BUILTIN = [SizingSimulation, MissionSimulation, PerformanceSimulation, ThrustSimulation, AerodynamicsSimulation,
+BUILTIN = [SizingSimulation, MissionSimulation, PerformanceSimulation, ThrustSimulation, AerodynamicsSimulation, WingsSimulation,
            StabilitySimulation, LoadsSimulation, TakeoffSimulation, TurnSimulation, EnvelopeSimulation, ClimbSimulation,
            PolarSimulation]
 
 __all__ = ["BUILTIN", "SizingSimulation", "AerodynamicsSimulation", "ClimbSimulation", "EnvelopeSimulation", "LoadsSimulation", "MissionSimulation", "PerformanceSimulation", "PolarSimulation",
-           "TakeoffSimulation", "ThrustSimulation", "TurnSimulation", "thrust_curves"]
+           "TakeoffSimulation", "ThrustSimulation", "TurnSimulation", "WingsSimulation", "thrust_curves"]

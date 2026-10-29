@@ -215,6 +215,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   `thrust_curves:12`, `class ThrustSimulation:25`
 - `aerosim/manager/simulations/turn.py` — Curvas niveladas: raio mínimo por velocidade.
   `class TurnSimulation:21`
+- `aerosim/manager/simulations/wings.py` — Asas: a polar e a carga só das superfícies escolhidas (uma asa, um biplano, um tandem, asa e canard), sem trimar,
+  `lifting_surfaces:45`, `wings_only:50`, `class WingsSimulation:66`
 
 ## Python · `aerosim/model`
 
@@ -700,7 +702,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 75 testes em 11 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 60 testes em 10 arquivo(s)
+- `tests/manager` — 66 testes em 11 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)

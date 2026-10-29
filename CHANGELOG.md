@@ -34,6 +34,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   do seu perfil com estol, e o sistema de Phillips e Snyder é resolvido por Newton a partir da solução linear. Mostra
   onde o estol começa e para quanto a carga satura. Depois do estol, viscosidade artificial (Chattot) e continuação em
   pseudo-tempo deixam a carga suave e convergida. Desligada por padrão: o voo e o AeroDrive ficam iguais.
+- aerodinâmica (T89): subaba Asas. Analisa só as superfícies marcadas (uma asa, biplano, tandem, canard), sem
+  trimar, sem fuselagem e sem hélice, como no túnel: C_L do conjunto e de cada superfície em α, C_L máximo, onde o
+  estol começa, a carga ao longo da envergadura e o Reynolds de cada superfície. Chapas de ponta opcionais. Usa a
+  linha sustentadora não linear por padrão e compara com outro método.
 - celular: no primeiro toque a página vai para a tela cheia e trava deitada; em pé aparece "gire o celular"; o jogo
   acompanha o tamanho da página (tela cheia, barra do navegador, giro).
 - celular, segunda rodada (testada pelo vitor num Galaxy): o jogo desenha numa área de no mínimo 640 px de altura e

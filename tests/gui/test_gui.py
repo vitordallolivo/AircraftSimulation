@@ -178,7 +178,7 @@ def test_sprint_stages_from_scratch_to_assembly(app, manager, tmp_path, monkeypa
     titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
     assert titles.index("Aerodinâmica") < titles.index("Estabilidade") < titles.index("Desempenho")
     aero = w.tabs.widget(titles.index("Aerodinâmica"))
-    assert [aero.tabText(i) for i in range(aero.count())] == ["Perfil", "Asa", "Avião montado"]
+    assert [aero.tabText(i) for i in range(aero.count())] == ["Perfil", "Asa", "Avião montado", "Asas"]
     w.tabs.setCurrentWidget(aero)
     perfil = aero.widget(0)
     pump(app, 0.6)
