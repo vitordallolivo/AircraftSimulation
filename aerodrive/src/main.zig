@@ -189,7 +189,9 @@ var browser_storage: storage.BrowserStorage = .{};
 fn browserMain() !void {
     const gpa = std.heap.c_allocator;
     rl.setTraceLogLevel(.warning);
-    rl.setConfigFlags(.{ .msaa_4x_hint = true, .window_resizable = true });
+    // sem window_resizable: o raylib poria o canvas no tamanho da página; quem acompanha a página é
+    // `followViewport`, com a área lógica de `browser.viewportSize`
+    rl.setConfigFlags(.{ .msaa_4x_hint = true });
     const size = browser.viewportSize();
     rl.initWindow(size.width, size.height, "AeroDrive");
     rl.setExitKey(.null); // Esc é "voltar"/pausa
@@ -202,7 +204,7 @@ fn browserMain() !void {
 }
 
 /// a janela do jogo acompanha a página: celular girado, tela cheia ligada ou desligada, barra do
-/// navegador aparecendo (o raylib só redimensiona o canvas, e o desenho ficaria no tamanho antigo)
+/// navegador aparecendo
 fn followViewport() void {
     const size = browser.viewportSize();
     if (size.width != rl.getScreenWidth() or size.height != rl.getScreenHeight()) rl.setWindowSize(size.width, size.height);

@@ -2,8 +2,9 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<!-- no celular a página tem 1280 px de largura lógica: a interface (feita para tela de PC) cabe deitada -->
-<meta name="viewport" content="width=1280, user-scalable=no, viewport-fit=cover">
+<!-- a página na largura do aparelho; o jogo desenha numa área lógica maior quando a tela é baixa
+     (celular deitado) e o canvas estica (aerodrive_library.js, aerodrive_viewport_*) -->
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#000">
 <title>AeroDrive · AircraftSimulation</title>
 <!--
@@ -33,7 +34,7 @@
   #rotate {
     position: fixed; inset: 0; z-index: 5; display: none; align-items: center; justify-content: center;
     background: #0000aa; color: #fff; text-align: center; white-space: pre-line;
-    font: 80px/1.5 ui-monospace, "DejaVu Sans Mono", Consolas, monospace; /* a página tem 1280 px lógicos */
+    font: 6vw/1.5 ui-monospace, "DejaVu Sans Mono", Consolas, monospace;
   }
   @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
   #drop {
@@ -109,7 +110,11 @@ para pilotar deitado</div>
     };
   }
 
-  window.addEventListener('touchstart', () => { Module.aerodrivePage.touchSeen = true; }, { capture: true, passive: true });
+  // com toque o jogo tem os próprios botões de voltar; o link do topo ficaria em cima dos botões do voo
+  window.addEventListener('touchstart', () => {
+    Module.aerodrivePage.touchSeen = true;
+    document.getElementById('back').style.display = 'none';
+  }, { capture: true, passive: true });
 
   // celular: no primeiro toque a página vai para a tela cheia (sem as barras do navegador) e trava
   // deitada. O navegador só aceita isso logo depois de um toque (touchend), e o iPhone não deixa.

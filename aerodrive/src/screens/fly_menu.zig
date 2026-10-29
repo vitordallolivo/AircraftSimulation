@@ -57,11 +57,15 @@ pub const FlyMenu = struct {
         col.space(14);
         // os botões do voo (os configurados no menu Controle)
         app.fonts.draw("No voo", col.x + 4, col.next(24).y, 17, theme.title);
-        const b = app.profile().buttons;
-        var items: [ch.Action.all.len]glyphs.Hint = undefined;
-        for (ch.Action.all, 0..) |a, i| items[i] = .{ .btn = glyphs.fromPad(b.get(a)), .key = a.key(), .label = a.label() };
-        _ = glyphs.hints(&app.fonts, col.x + 4, col.next(28).y, items[0..3], theme.text);
-        _ = glyphs.hints(&app.fonts, col.x + 4, col.next(28).y, items[3..], theme.text);
+        if (widgets.touchMode()) {
+            app.fonts.draw("manches na tela; botões modo, pausa, câmera e LAPES no alto", col.x + 4, col.next(28).y, 16, theme.text);
+        } else {
+            const b = app.profile().buttons;
+            var items: [ch.Action.all.len]glyphs.Hint = undefined;
+            for (ch.Action.all, 0..) |a, i| items[i] = .{ .btn = glyphs.fromPad(b.get(a)), .key = a.key(), .label = a.label() };
+            _ = glyphs.hints(&app.fonts, col.x + 4, col.next(28).y, items[0..3], theme.text);
+            _ = glyphs.hints(&app.fonts, col.x + 4, col.next(28).y, items[3..], theme.text);
+        }
         if (app.planeError()) |e| {
             var buf: [300]u8 = undefined;
             app.fonts.draw(std.fmt.bufPrintZ(&buf, "{s}", .{e[0..@min(e.len, 280)]}) catch "", col.x + 4, col.next(22).y, 16, theme.danger);

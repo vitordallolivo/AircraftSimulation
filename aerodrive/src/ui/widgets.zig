@@ -3,10 +3,28 @@
 //! teclado (setas, Enter, Esc) e pelo controle (direcional ou analógico, A, B):
 //!   ↑ ↓      muda o item em destaque          ← →   muda o valor (deslizador, opção, liga/desliga)
 //!   Enter/A  ativa                             Esc/B  volta
+//! No navegador, depois do primeiro toque na tela, tocar vale como clicar, e o rodapé das teclas dá
+//! lugar a um botão "← voltar" (as teclas não existem no celular).
 const std = @import("std");
 const rl = @import("raylib");
 const theme = @import("theme.zig");
 const glyphs = @import("glyphs.zig");
+const platform = @import("../sys/platform.zig");
+const browser = @import("../sys/browser.zig");
+
+/// o rodapé do quadro anterior tinha o botão "voltar" (só com toque): o `begin` confere o toque nele
+var back_button_shown = false;
+
+/// celular ou tablet no navegador: já houve um toque na tela
+pub fn touchMode() bool {
+    return platform.in_browser and browser.touchSeen();
+}
+
+/// onde fica o botão "← voltar" do rodapé (com toque)
+fn backButtonRect() Rect {
+    const H: f32 = @floatFromInt(rl.getScreenHeight());
+    return .{ .x = 16, .y = H - 60, .width = 170, .height = 48 };
+}
 pub const Hint = glyphs.Hint;
 
 pub const Rect = rl.Rectangle;
@@ -46,6 +64,11 @@ pub const Ui = struct {
         u.mouse = m;
         u.clicked = rl.isMouseButtonPressed(.left);
         u.down = rl.isMouseButtonDown(.left);
+        if (platform.in_browser) { // o toque não aperta o "mouse" do raylib: o gesto de toque é o clique
+            const gesture = rl.getGestureDetected();
+            if (gesture.tap or gesture.doubletap) u.clicked = true;
+            if (rl.getTouchPointCount() > 0) u.down = true;
+        }
         if (!u.down) u.dragging = null;
         var n: Nav = .{};
         const pad = rl.isGamepadAvailable(0);
@@ -55,6 +78,11 @@ pub const Ui = struct {
         n.right = rl.isKeyPressed(.right) or (pad and rl.isGamepadButtonPressed(0, .left_face_right));
         n.accept = rl.isKeyPressed(.enter) or rl.isKeyPressed(.kp_enter) or (pad and rl.isGamepadButtonPressed(0, .right_face_down));
         n.back = rl.isKeyPressed(.escape) or rl.isKeyPressed(.backspace) or (pad and rl.isGamepadButtonPressed(0, .right_face_right));
+        if (back_button_shown and u.clicked and rl.checkCollisionPointRec(u.mouse, backButtonRect())) {
+            n.back = true;
+            u.clicked = false; // o toque foi no botão, não no que estiver por baixo
+        }
+        back_button_shown = false;
         // segurar uma direção (tecla, direcional ou analógico) repete: 0,35 s e depois a cada 0,08 s
         var dir: u8 = 0;
         if (rl.isKeyDown(.up) or (pad and rl.isGamepadButtonDown(0, .left_face_up))) dir = 1;
@@ -334,6 +362,18 @@ pub fn header(f: *const theme.Fonts, title: [:0]const u8, sub: ?[:0]const u8) vo
 
 /// dicas no rodapé, com o símbolo do botão do controle (ou a tecla, sem controle)
 pub fn footer(f: *const theme.Fonts, items: []const Hint) void {
+    if (touchMode()) { // sem teclas no celular: só o botão de voltar, se a tela volta
+        for (items) |item| {
+            if (item.btn != back_hint.btn or !std.mem.eql(u8, item.key, back_hint.key)) continue;
+            const area = backButtonRect();
+            const pressed = rl.isMouseButtonDown(.left) and rl.checkCollisionPointRec(rl.getMousePosition(), area);
+            rl.drawRectangleRounded(area, 0.3, 8, if (pressed) theme.accent else theme.title);
+            const label = "← voltar";
+            f.draw(label, area.x + 0.5 * (area.width - f.width(label, 22)), area.y + 12, 22, .white);
+            back_button_shown = true;
+        }
+        return;
+    }
     const H: f32 = @floatFromInt(rl.getScreenHeight());
     _ = glyphs.hints(f, 40, H - 38, items, theme.muted);
 }

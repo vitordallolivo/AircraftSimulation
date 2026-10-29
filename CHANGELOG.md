@@ -28,6 +28,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   salvar ao começar e grava direto no arquivo; nos outros, o vídeo é baixado ao parar.
 - celular: no primeiro toque a página vai para a tela cheia e trava deitada; em pé aparece "gire o celular"; o jogo
   acompanha o tamanho da página (tela cheia, barra do navegador, giro).
+- celular, segunda rodada (testada pelo vitor num Galaxy): o jogo desenha numa área de no mínimo 640 px de altura e
+  estica para a tela (antes os menus saíam cortados); tocar nos menus vale como clique; o rodapé das teclas dá lugar a
+  um botão "← voltar"; no voo, painel de dados compacto, minimapa menor e os botões "modo" e "LAPES" ao lado de pausa
+  e câmera; o link "◄ início" some depois do primeiro toque.
 
 ### v0.2.3 (`main`, PR #31)
 

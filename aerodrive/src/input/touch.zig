@@ -5,7 +5,7 @@
 //!
 //!   manche esquerdo   acelerador (para cima = mais; fica onde o dedo deixou) e leme (volta ao centro)
 //!   manche direito    arfagem (para baixo = puxar) e rolagem (voltam ao centro)   — como no rádio modo 2
-//!   botões            pausa e câmera, no alto, entre o painel e o minimapa
+//!   botões            manual/automático, pausa, câmera e LAPES, no alto, entre o painel e o minimapa
 //!
 //!   var controls: touch.Controls = .{};
 //!   const state = controls.update(touch.layout(largura, altura), dedos);   // dedos: []const Point
@@ -20,7 +20,7 @@ pub const Stick = struct {
     radius: f32,
 };
 
-pub const Button = enum { pause, camera };
+pub const Button = enum { mode, pause, camera, drop };
 
 pub const ButtonArea = struct {
     center: Point,
@@ -33,7 +33,8 @@ pub const Layout = struct {
     buttons: std.EnumArray(Button, ButtonArea),
 };
 
-/// onde fica cada peça numa tela `width` × `height`: manches nos cantos de baixo, botões no alto
+/// onde fica cada peça numa tela `width` × `height`: manches nos cantos de baixo, botões no alto,
+/// lado a lado no meio
 pub fn layout(width: f32, height: f32) Layout {
     const short_side = @max(1, @min(width, height));
     const radius = 0.17 * short_side;
@@ -45,8 +46,10 @@ pub fn layout(width: f32, height: f32) Layout {
         .left = .{ .center = .{ .x = margin + radius, .y = stick_y }, .radius = radius },
         .right = .{ .center = .{ .x = width - margin - radius, .y = stick_y }, .radius = radius },
         .buttons = .init(.{
-            .pause = .{ .center = .{ .x = 0.5 * width - 2.2 * button_radius, .y = button_y }, .radius = button_radius },
-            .camera = .{ .center = .{ .x = 0.5 * width + 2.2 * button_radius, .y = button_y }, .radius = button_radius },
+            .mode = .{ .center = .{ .x = 0.5 * width - 3.6 * button_radius, .y = button_y }, .radius = button_radius },
+            .pause = .{ .center = .{ .x = 0.5 * width - 1.2 * button_radius, .y = button_y }, .radius = button_radius },
+            .camera = .{ .center = .{ .x = 0.5 * width + 1.2 * button_radius, .y = button_y }, .radius = button_radius },
+            .drop = .{ .center = .{ .x = 0.5 * width + 3.6 * button_radius, .y = button_y }, .radius = button_radius },
         }),
     };
 }
@@ -84,7 +87,7 @@ pub const Controls = struct {
             if (!std.math.isFinite(finger.x) or !std.math.isFinite(finger.y)) continue;
             for (std.enums.values(Button)) |button| {
                 const spot = area.buttons.get(button);
-                if (distance(finger, spot.center) <= 1.3 * spot.radius) {
+                if (distance(finger, spot.center) <= 1.15 * spot.radius) {
                     state.held.insert(button);
                     continue :fingers;
                 }
@@ -172,7 +175,7 @@ test "botão conta uma vez por toque e não mexe nos manches" {
     var controls: Controls = .{};
     const pause = area.buttons.get(.pause).center;
     var state = controls.update(area, &.{pause});
-    try testing.expect(state.pressed(.pause) and !state.pressed(.camera));
+    try testing.expect(state.pressed(.pause) and !state.pressed(.camera) and !state.pressed(.mode));
     try testing.expectEqual(@as(f64, 0), state.rudder);
     state = controls.update(area, &.{pause});
     try testing.expect(!state.pressed(.pause) and state.held.contains(.pause));
@@ -189,6 +192,10 @@ test "as peças cabem num celular deitado sem se sobrepor" {
         try testing.expect(area.left.center.x + area.left.radius < area.right.center.x - area.right.radius);
         const pause = area.buttons.get(.pause);
         try testing.expect(pause.center.y + pause.radius < area.left.center.y - area.left.radius);
+        const mode = area.buttons.get(.mode);
+        const drop = area.buttons.get(.drop);
+        try testing.expect(mode.center.x - mode.radius > area.left.center.x + area.left.radius);
+        try testing.expect(drop.center.x + drop.radius < area.right.center.x - area.right.radius);
     }
 }
 

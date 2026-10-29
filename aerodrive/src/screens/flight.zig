@@ -15,6 +15,7 @@ const field = @import("../world/field.zig");
 const theme = @import("../ui/theme.zig");
 const minimap = @import("../ui/minimap_view.zig");
 const touch_view = @import("../ui/touch_view.zig");
+const touch = @import("../input/touch.zig");
 const dm_mod = @import("../sim/drive_manager.zig");
 const ch = @import("../input/channels.zig");
 const glyphs = @import("../ui/glyphs.zig");
@@ -196,20 +197,16 @@ pub const Flight = struct {
         const dm = &app.dm.?;
         var buf: [128]u8 = undefined;
 
+        // com toque (celular): painel e minimapa menores, os manches no lugar do painel de comandos e
+        // das dicas de teclas, e o modo e o LAPES viram botões
+        const touched = app.reader.touchActive();
+        const feats = if (app.plane) |p| p.feats else @import("../model/features.zig").Features{};
+        const can_drop = feats.payload and dm.hasPayload() and f.payload_ned == null;
+
         // canto superior esquerdo: quem pilota, etapa, t, V, h
-        rl.drawRectangleRounded(.{ .x = 12, .y = 12, .width = 340, .height = 156 }, 0.08, 6, theme.panel_glass);
         const manual = f.mode == .manual;
-        const badge: rl.Rectangle = .{ .x = 24, .y = 22, .width = if (manual) 110 else 190, .height = 30 };
-        rl.drawRectangleRounded(badge, 0.5, 6, if (manual) theme.accent else theme.title);
-        ft.draw(if (manual) "MANUAL" else "AUTOMÁTICO", badge.x + 12, badge.y + 5, 19, .white);
-        _ = glyphs.hints(ft, badge.x + badge.width + 10, badge.y + 4, &.{.{ .btn = glyphs.fromPad(app.profile().buttons.mode), .key = "M", .label = "trocar" }}, theme.muted);
         const legs = app.flight_ac.mission.legs;
         const stage: []const u8 = if (f.phase == .ground_run) "na pista" else if (manual) "voo livre" else if (f.seg < legs.len) legs[f.seg].name else "rolagem";
-        ft.draw(std.fmt.bufPrintZ(&buf, "{s} · t = {d:.1} s", .{ stage, f.t }) catch "", 26, 60, 18, theme.text);
-        ft.draw(std.fmt.bufPrintZ(&buf, "V = {d:.1} m/s", .{f.Va}) catch "", 26, 86, 18, theme.text);
-        ft.draw(std.fmt.bufPrintZ(&buf, "h = {d:.1} m", .{-f.pos_ned[2]}) catch "", 186, 86, 18, theme.text);
-        ft.draw(std.fmt.bufPrintZ(&buf, "α = {d:.1}°", .{std.math.radiansToDegrees(f.alpha)}) catch "", 26, 110, 18, theme.text);
-        ft.draw(std.fmt.bufPrintZ(&buf, "n = {d:.2}", .{f.nz}) catch "", 186, 110, 18, theme.text);
         const ph: struct { [:0]const u8, rl.Color } = switch (f.phase) {
             .ground_run => .{ "na pista", theme.muted },
             .flying => .{ "voando", theme.ok },
@@ -217,11 +214,30 @@ pub const Flight = struct {
             .crashed => .{ "caiu — recomece", theme.danger },
             .timeout => .{ "tempo máximo", theme.muted },
         };
-        ft.draw(ph[0], 26, 136, 18, ph[1]);
+        if (touched) {
+            rl.drawRectangleRounded(.{ .x = 8, .y = 8, .width = 236, .height = 74 }, 0.12, 6, theme.panel_glass);
+            ft.draw(std.fmt.bufPrintZ(&buf, "{s} · {s} · t = {d:.0} s", .{ if (manual) "manual" else "automático", stage, f.t }) catch "", 16, 14, 15, theme.text);
+            ft.draw(std.fmt.bufPrintZ(&buf, "V = {d:.1} m/s   h = {d:.1} m", .{ f.Va, -f.pos_ned[2] }) catch "", 16, 36, 15, theme.text);
+            ft.draw(ph[0], 16, 58, 15, ph[1]);
+        } else {
+            rl.drawRectangleRounded(.{ .x = 12, .y = 12, .width = 340, .height = 156 }, 0.08, 6, theme.panel_glass);
+            const badge: rl.Rectangle = .{ .x = 24, .y = 22, .width = if (manual) 110 else 190, .height = 30 };
+            rl.drawRectangleRounded(badge, 0.5, 6, if (manual) theme.accent else theme.title);
+            ft.draw(if (manual) "MANUAL" else "AUTOMÁTICO", badge.x + 12, badge.y + 5, 19, .white);
+            _ = glyphs.hints(ft, badge.x + badge.width + 10, badge.y + 4, &.{.{ .btn = glyphs.fromPad(app.profile().buttons.mode), .key = "M", .label = "trocar" }}, theme.muted);
+            ft.draw(std.fmt.bufPrintZ(&buf, "{s} · t = {d:.1} s", .{ stage, f.t }) catch "", 26, 60, 18, theme.text);
+            ft.draw(std.fmt.bufPrintZ(&buf, "V = {d:.1} m/s", .{f.Va}) catch "", 26, 86, 18, theme.text);
+            ft.draw(std.fmt.bufPrintZ(&buf, "h = {d:.1} m", .{-f.pos_ned[2]}) catch "", 186, 86, 18, theme.text);
+            ft.draw(std.fmt.bufPrintZ(&buf, "α = {d:.1}°", .{std.math.radiansToDegrees(f.alpha)}) catch "", 26, 110, 18, theme.text);
+            ft.draw(std.fmt.bufPrintZ(&buf, "n = {d:.2}", .{f.nz}) catch "", 186, 110, 18, theme.text);
+            ft.draw(ph[0], 26, 136, 18, ph[1]);
+        }
 
-        // com toque: os manches no lugar do painel de comandos e das dicas de teclas
-        const touched = app.reader.touchActive();
-        if (touched) touch_view.draw(ft, app.reader.touch_state);
+        if (touched) {
+            var shown = std.EnumSet(touch.Button).initFull();
+            if (!can_drop) shown.remove(.drop);
+            touch_view.draw(ft, app.reader.touch_state, shown);
+        }
 
         // canto inferior esquerdo: o que vai para as superfícies
         if (!touched) rl.drawRectangleRounded(.{ .x = 12, .y = H - 150, .width = 340, .height = 138 }, 0.08, 6, theme.panel_glass);
@@ -231,7 +247,6 @@ pub const Flight = struct {
         const da_max = if (manual) pr.da_max else ap.da_max;
         const dr_max = if (manual) pr.dr_max else ap.dr_max;
         var y = H - 140;
-        const feats = if (app.plane) |p| p.feats else @import("../model/features.zig").Features{};
         if (!touched and feats.has(.elevator)) {
             theme.commandBar(ft, "profundor", f.drive.de, de_max, true, 26, y, 310);
             y += 30;
@@ -247,7 +262,7 @@ pub const Flight = struct {
         if (!touched and feats.has(.throttle)) theme.commandBar(ft, "motor", f.thr, 1, false, 26, y, 310);
 
         // canto superior direito: minimapa
-        const ms: f32 = @min(240, @min(W, H) * 0.32);
+        const ms: f32 = if (touched) @min(W, H) * 0.2 else @min(240, @min(W, H) * 0.32);
         const env = app.flight_ac.environment;
         minimap.draw(ft, .{ .x = W - ms - 14, .y = 14, .width = ms, .height = ms }, .{ .fld = &fl.fld, .trail = fl.trail[0..fl.n_trail], .pos = f.pos_ned, .psi = f.psi, .payload = f.payload_ned, .wind_from_deg = env.wind_from, .wind_speed = env.wind_speed });
 
@@ -260,7 +275,7 @@ pub const Flight = struct {
             ft.draw(std.fmt.bufPrintZ(&buf, "gravando {d:.0} s{s}", .{ dur, if (r.video == null and !app.browser_video) " (só dados)" else "" }) catch "", W - ms + 14, ry, 17, theme.danger);
             ry += 26;
         }
-        if (feats.payload and dm.hasPayload() and f.payload_ned == null) {
+        if (can_drop and !touched) {
             _ = glyphs.hints(ft, W - ms - 14, ry, &.{.{ .btn = glyphs.fromPad(app.profile().buttons.drop), .key = "L", .label = "soltar o LAPES" }}, theme.text);
             ry += 22;
         }
