@@ -2,4 +2,5 @@
 test {
     _ = @import("ui/numbers.zig");
     _ = @import("wing_example.zig");
+    _ = @import("assembly.zig");
 }

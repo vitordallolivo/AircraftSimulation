@@ -42,8 +42,11 @@ Aerodinâmica (Perfis, Projetar, Analisar). Em Analisar, o formulário pede a as
 chama a varredura do núcleo pelos dois métodos, a linha sustentadora não linear e as faixas independentes. Os
 gráficos mostram o C_L do conjunto em α, a asa em 3D com um vetor de sustentação por faixa, a asa e a carga (a vista de cima em escala, só o contorno e as faixas, e
 embaixo a vista de frente com um vetor de sustentação por faixa, do tamanho de L' na escala do eixo), o c_l e a
-carga ao longo da envergadura, o diagnóstico (C_L máximo, onde o estol começa, Reynolds) e um resumo. A aba Montagem mostra a asa de exemplo em 3D; o avião inteiro
-entra quando a tela ler o `.json`. As outras abas mostram só o lugar delas.
+carga ao longo da envergadura, o diagnóstico (C_L máximo, onde o estol começa, Reynolds) e um resumo. A aba Montagem mostra o avião inteiro em 3D: abre sozinha o
+avião de exemplo de `data/aircraft`, e outro `.json` entra pela linha de comando ou arrastado para a janela. A
+leitura e as peças são as do AeroDrive (`aerodrive/src/model`, pelo `aerodrive/src/aircraft_model.zig`), as
+mesmas formas e cores da GUI em Python; o `src/assembly.zig` só completa os perfis que o arquivo aponta num `.dat`
+e passa cada triângulo para a vista 3D. As outras abas mostram só o lugar delas.
 
 ## A asa de exemplo
 
@@ -71,6 +74,7 @@ python -m ziglang build run                                   # abre o aerosim
 python -m ziglang build run -- escuro                         # já no modo escuro
 xvfb-run -a python -m ziglang build shot -- aerosim.png       # print sem tela
 xvfb-run -a python -m ziglang build shot -- montagem.png aba=5   # print de outra aba
+python -m ziglang build run -- ../../data/aircraft/Asa_voadora.json   # abre um avião
 ```
 
 Para uma tela nova, monte a lista de campos e de grupos dela (veja as listas no começo de `src/screen.zig`),

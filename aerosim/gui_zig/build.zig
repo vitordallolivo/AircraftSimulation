@@ -16,12 +16,26 @@ pub fn build(b: *std.Build) void {
     // ---- o núcleo de física (core/) como módulo Zig, sempre otimizado
     const core = b.dependency("aerosim", .{ .target = target, .release = true }).module("aerosim");
 
+    // ---- o modelo do avião do AeroDrive (leitura do .json e as malhas das peças), para a Montagem
+    const fuzz_options = b.addOptions(); // o módulo de fuzzing do AeroDrive pede estas opções
+    fuzz_options.addOption(usize, "fuzz_iterations", 2000);
+    fuzz_options.addOption(u64, "fuzz_seed", 1);
+    const aircraft_model = b.createModule(.{
+        .root_source_file = b.path("../../aerodrive/src/aircraft_model.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    aircraft_model.addOptions("build_options", fuzz_options);
+
     // ---- testes: só o que não abre janela (escalas dos gráficos, a asa de exemplo)
     const tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "aerosim", .module = core }},
+        .imports = &.{
+            .{ .name = "aerosim", .module = core },
+            .{ .name = "aircraft_model", .module = aircraft_model },
+        },
     }) });
     b.step("test", "Testes (sem janela)").dependOn(&b.addRunArtifact(tests).step);
 
@@ -48,6 +62,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "raylib", .module = raylib },
             .{ .name = "ui", .module = ui },
             .{ .name = "aerosim", .module = core },
+            .{ .name = "aircraft_model", .module = aircraft_model },
         },
     });
     const exe = b.addExecutable(.{ .name = "aerosim", .root_module = program });

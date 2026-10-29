@@ -2,7 +2,7 @@
 //! print sem interação do `--shot`.
 //!
 //!   <programa> [claro|escuro] [LxA]
-//!   <programa> --shot <saída.png> [claro|escuro] [LxA] [aba=N] [rolar=PIXELS]
+//!   <programa> --shot <saída.png> [arquivo.json] [claro|escuro] [LxA] [aba=N] [rolar=PIXELS]
 const std = @import("std");
 const rl = @import("raylib");
 const theme = @import("theme.zig");
@@ -15,6 +15,7 @@ pub const Args = struct {
     height: i32 = 950,
     scroll: f32 = 0, // rolagem da área dos gráficos no print
     tab: ?usize = null, // aba aberta no começo (aba=N), se a tela tiver `selectTab`
+    file: ?[:0]const u8 = null, // um arquivo para abrir (.json), se a tela tiver `openFile`
 };
 
 /// lê a linha de comando (o primeiro item é o nome do programa)
@@ -29,6 +30,8 @@ pub fn parseArgs(argv: []const [:0]const u8) !Args {
             args.shot = argv[i];
         } else if (std.meta.stringToEnum(theme.Mode, value)) |mode| {
             args.mode = mode;
+        } else if (std.mem.endsWith(u8, value, ".json")) {
+            args.file = value;
         } else if (std.mem.startsWith(u8, value, "aba=")) {
             args.tab = std.fmt.parseInt(usize, value[4..], 10) catch return error.BadArgs;
         } else if (std.mem.startsWith(u8, value, "rolar=")) {
@@ -47,7 +50,7 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     const arena = init.arena.allocator();
     const argv = try init.minimal.args.toSlice(arena);
     const args = parseArgs(argv) catch {
-        std.debug.print("uso: {s} [claro|escuro] [LxA]\n     {s} --shot <saída.png> [claro|escuro] [LxA] [aba=N] [rolar=PIXELS]\n", .{ title, title });
+        std.debug.print("uso: {s} [claro|escuro] [LxA]\n     {s} --shot <saída.png> [arquivo.json] [claro|escuro] [LxA] [aba=N] [rolar=PIXELS]\n", .{ title, title });
         std.process.exit(2);
     };
     const shot = args.shot != null;
@@ -62,6 +65,9 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     defer ui.deinit();
     screen.start();
     screen.scroll = args.scroll;
+    if (args.file) |path| {
+        if (@hasDecl(@TypeOf(screen.*), "openFile")) screen.openFile(path);
+    }
     if (args.tab) |tab| {
         if (@hasDecl(@TypeOf(screen.*), "selectTab")) screen.selectTab(tab);
     }

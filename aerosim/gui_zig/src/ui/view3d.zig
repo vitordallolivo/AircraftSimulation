@@ -157,6 +157,23 @@ fn scaled(color: rl.Color, factor: f64) rl.Color {
     return .{ .r = @intFromFloat(@as(f32, @floatFromInt(color.r)) * f), .g = @intFromFloat(@as(f32, @floatFromInt(color.g)) * f), .b = @intFromFloat(@as(f32, @floatFromInt(color.b)) * f), .a = color.a };
 }
 
+/// a cor de um triângulo com a sombra da vista em Python: cor × (0,45 + 0,6 |n·luz|)
+pub fn shaded(a: Body, b: Body, c: Body, color: rl.Color) rl.Color {
+    const normal = cross(subtract(b, a), subtract(c, a));
+    const length = @sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+    const facing = if (length > 0) @abs(normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2]) / length else 1;
+    return scaled(color, 0.45 + 0.6 * facing);
+}
+
+/// triângulo já sombreado, visto dos dois lados
+pub fn triangle(a: Body, b: Body, c: Body, color: rl.Color) void {
+    const wa = toWorld(a);
+    const wb = toWorld(b);
+    const wc = toWorld(c);
+    rl.drawTriangle3D(wa, wb, wc, color);
+    rl.drawTriangle3D(wa, wc, wb, color);
+}
+
 /// quadrilátero plano `a b c d` sombreado dos dois lados como no shader `aero_twosided` da vista em Python:
 /// cor × (0,45 + 0,6 |n·luz|)
 pub fn quad(a: Body, b: Body, c: Body, d: Body, color: rl.Color) void {

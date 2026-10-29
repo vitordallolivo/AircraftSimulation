@@ -12,6 +12,7 @@ const plot = ui_kit.plot;
 const numbers = ui_kit.numbers;
 const view3d = ui_kit.view3d;
 const wing = @import("wing_example.zig");
+const assembly_mod = @import("assembly.zig");
 
 const areas = [_][:0]const u8{ "DIMENSIONAMENTO", "AERODINÂMICA", "ESTABILIDADE", "DESEMPENHO", "CARGAS", "MONTAGEM" };
 const aero_tabs = [_][:0]const u8{ "PERFIS", "PROJETAR", "ANALISAR" };
@@ -58,6 +59,8 @@ pub const Screen = struct {
     scroll: f32 = 0,
     load_view: view3d.View = .{}, // a vista 3D da asa e da carga (Analisar)
     assembly_view: view3d.View = .{}, // a vista 3D da Montagem
+    assembly: ?assembly_mod.Assembly = null, // o avião aberto
+    assembly_note: [240:0]u8 = [_:0]u8{0} ** 240,
 
     /// abre a aba de área `index` (0 = Dimensionamento ... 5 = Montagem), para os prints
     pub fn selectTab(screen: *Screen, index: usize) void {
@@ -69,6 +72,22 @@ pub const Screen = struct {
     pub fn start(screen: *Screen) void {
         screen.form = .{ .groups = &screen.groups, .fields = &screen.fields };
         screen.runAnalysis();
+        var buffer: [512]u8 = undefined;
+        var fixed = std.heap.FixedBufferAllocator.init(&buffer);
+        if (assembly_mod.findExample(fixed.allocator(), io())) |path| screen.openFile(path);
+    }
+
+    /// abre o avião em `path` (.json) na Montagem
+    pub fn openFile(screen: *Screen, path: []const u8) void {
+        var diagnosis: assembly_mod.Diagnosis = .{};
+        const loaded = assembly_mod.load(std.heap.page_allocator, io(), path, &diagnosis) catch |err| {
+            const reason = if (diagnosis.len > 0) diagnosis.text() else @errorName(err);
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "não abriu '{s}': {s}", .{ std.fs.path.basename(path), reason }) catch {};
+            return;
+        };
+        if (screen.assembly) |*old| old.deinit();
+        screen.assembly = loaded;
+        _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · {d} peças · arraste outro .json para a janela para trocar · arraste para girar, roda para aproximar", .{ std.fs.path.basename(path), loaded.piece_count }) catch {};
     }
 
     fn field(screen: *Screen, id: FieldId) *form_mod.Field {
@@ -117,6 +136,14 @@ pub const Screen = struct {
     /// desenha a tela inteira e trata o mouse
     pub fn draw(screen: *Screen, ui: *widgets.Ui, width: f32, height: f32) void {
         rl.clearBackground(theme.colors.background);
+        if (rl.isFileDropped()) {
+            const dropped = rl.loadDroppedFiles();
+            defer rl.unloadDroppedFiles(dropped);
+            if (dropped.count > 0) {
+                screen.openFile(std.mem.sliceTo(dropped.paths[0], 0));
+                screen.area = 5;
+            }
+        }
         // conteúdo primeiro, cabeçalho e abas por cima (a rolagem passa por baixo deles)
         const top = widgets.header_height + 38 + 32;
         const sidebar_width: f32 = 360;
@@ -275,15 +302,29 @@ pub const Screen = struct {
         theme.text(ui.fonts.regular, note, area.x + 6, area.y + area.height - 18, 12, theme.colors.muted);
     }
 
-    /// a Montagem: por enquanto só a asa de exemplo em 3D (o avião inteiro entra quando a tela ler o .json)
+    /// a Montagem: o avião aberto em 3D, todas as peças nas cores da GUI, com o chão e os eixos do corpo
     fn drawAssembly(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
         const card_rect: rl.Rectangle = .{ .x = rect.x + 12, .y = rect.y + 12, .width = rect.width - 24, .height = rect.height - 24 };
         const area = cardInside(card_rect);
         screen.assembly_view.handleInput(ui, area);
-        screen.renderWing(&screen.assembly_view, area, false);
-        _ = widgets.card(ui, card_rect, "Montagem em 3D");
-        screen.assembly_view.blit(ui, area);
-        theme.text(ui.fonts.regular, "só a asa de exemplo; o avião inteiro (fuselagem, cauda, motor) entra quando a tela ler o .json · arraste para girar, roda para aproximar", area.x + 6, area.y + area.height - 18, 12, theme.colors.muted);
+        var title_buffer: [160]u8 = undefined;
+        var title: [:0]const u8 = "Montagem: nenhum avião aberto (arraste um .json para a janela)";
+        if (screen.assembly) |*plane| {
+            title = widgets.format(&title_buffer, "Montagem: {s}", .{plane.name});
+            const size = plane.size();
+            const middle = plane.center();
+            if (screen.assembly_view.begin(area, middle, 1.1 * size)) {
+                defer screen.assembly_view.end();
+                // o chão um pouco abaixo da peça mais baixa (z para baixo), quadriculado de 25 cm
+                view3d.floor(.{ middle[0], middle[1], 0 }, plane.high[2] + 0.02, 1.6 * size, 0.25);
+                for (plane.solid) |t| view3d.triangle(t.a, t.b, t.c, t.color);
+                for (plane.translucent) |t| view3d.triangle(t.a, t.b, t.c, t.color);
+                view3d.bodyAxes(&screen.assembly_view, .{ plane.low[0] - 0.12 * size, plane.low[1] - 0.12 * size, plane.high[2] + 0.04 * size }, 0.14 * size);
+            }
+        }
+        _ = widgets.card(ui, card_rect, title);
+        if (screen.assembly != null) screen.assembly_view.blit(ui, area);
+        theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.assembly_note, 0), area.x + 6, area.y + area.height - 18, 12, theme.colors.muted);
     }
 
     /// a asa e a carga no α da carga (linha sustentadora), em dois quadros com o mesmo eixo da envergadura: em cima, a
@@ -379,6 +420,11 @@ pub const Screen = struct {
         }
     }
 };
+
+/// a leitura de arquivos (sem threads)
+fn io() std.Io {
+    return std.Io.Threaded.global_single_threaded.io();
+}
 
 /// a parte de dentro de um cartão onde vai a imagem 3D (abaixo do título)
 fn cardInside(rect: rl.Rectangle) rl.Rectangle {
