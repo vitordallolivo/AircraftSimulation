@@ -61,6 +61,7 @@ pub const View = struct {
     azimuth: f32 = -130, // graus, como a câmera da vista em Python
     elevation: f32 = 22,
     zoom: f32 = 1,
+    orthographic: bool = false, // vista de cima sem perspectiva (as distâncias em escala)
     dragging: bool = false,
     camera: rl.Camera3D = undefined,
     labels: [max_labels]Label = undefined,
@@ -108,8 +109,8 @@ pub const View = struct {
             .position = .{ .x = target.x + offset.x, .y = target.y + offset.y, .z = target.z + offset.z },
             .target = target,
             .up = .{ .x = 0, .y = 1, .z = 0 },
-            .fovy = 35,
-            .projection = .perspective,
+            .fovy = if (view.orthographic) @floatCast(1.15 * size * view.zoom) else 35,
+            .projection = if (view.orthographic) .orthographic else .perspective,
         };
         view.label_count = 0;
         rl.beginTextureMode(view.texture.?);

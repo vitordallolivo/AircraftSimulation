@@ -26,6 +26,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     aircraft_model.addOptions("build_options", fuzz_options);
+    aircraft_model.addImport("aerosim", core);
 
     // ---- testes: só o que não abre janela (escalas dos gráficos, a asa de exemplo)
     const tests = b.addTest(.{ .root_module = b.createModule(.{

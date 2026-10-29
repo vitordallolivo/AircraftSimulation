@@ -223,8 +223,13 @@ fn surfacePanels(out: Panels, ac: *const Aircraft, s: *const model.Surface, dw: 
             if (std.mem.eql(u8, c.role(), "flap")) tau = 0;
         }
         for (sides) |side| {
+            const sign: f64 = if (side >= 0) 1 else -1;
             try out.add(.{
-                .r = .{ mid[0] - 0.25 * cm, mid[1] * @as(f64, if (side >= 0) 1 else -1), mid[2] },
+                .r = .{ mid[0] - 0.25 * cm, mid[1] * sign, mid[2] },
+                // 1/4 de corda nas bordas: os nós da ferradura da linha sustentadora (Phillips e Snyder 2000), como
+                // `surface_panels` do tradutor em Python; as faixas não leem
+                .qa = .{ a.le[0] - 0.25 * a.chord, a.le[1] * sign, a.le[2] },
+                .qb = .{ b.le[0] - 0.25 * b.chord, b.le[1] * sign, b.le[2] },
                 .S = S,
                 .c = cm,
                 .AR = co.AR,
@@ -287,8 +292,11 @@ fn devicePanels(out: Panels, ac: *const Aircraft, s: *const model.Surface) Error
                 const cm = S / ds;
                 const mid = v3.scale(v3.add(lea, leb), 0.5);
                 for (sides) |side| {
+                    const sign: f64 = if (side >= 0) 1 else -1;
                     try out.add(.{
-                        .r = .{ mid[0] - 0.25 * cm, mid[1] * @as(f64, if (side >= 0) 1 else -1), mid[2] },
+                        .r = .{ mid[0] - 0.25 * cm, mid[1] * sign, mid[2] },
+                        .qa = .{ lea[0] - 0.25 * ca, lea[1] * sign, lea[2] },
+                        .qb = .{ leb[0] - 0.25 * cb, leb[1] * sign, leb[2] },
                         .S = S,
                         .c = cm,
                         .AR = AR,

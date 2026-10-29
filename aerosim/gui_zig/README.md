@@ -3,13 +3,14 @@
 Esta é a interface do aerosim escrita em Zig, com raylib e raygui, no mesmo visual do AeroDrive: fundo
 claro, cantos arredondados, azul nos títulos, pouco texto e a logo do albatroz. Ela é o
 começo da troca da GUI em PyQt por uma que não precisa de Python: as contas vêm do núcleo (`core/`), que entra aqui
-como módulo, igual ao AeroDrive. Por enquanto é o desenho da tela: a aba Analisar já roda a varredura das asas no
-núcleo. A interface do aeroopt fica em `aeroopt/gui_zig` e usa as peças comuns daqui.
+como módulo, igual ao AeroDrive. A aba Analisar já roda a varredura das asas do avião aberto no núcleo, com
+os mesmos números da GUI em Python. A interface do aeroopt fica em `aeroopt/gui_zig` e usa as peças comuns daqui.
 
 A pasta se divide em três partes. Em `src/ui` ficam as peças de qualquer tela, as mesmas para o aerosim e para o
 aeroopt: as cores e as fontes, as formas do visual, os widgets (cabeçalho, abas, botão, cartão), o formulário
-lateral, o gráfico, a vista 3D e o laço do programa. Em `src/screen.zig` fica a tela do aerosim, montada com essas peças. Em
-`src/wing_example.zig` fica a asa que a tela mostra enquanto não lê o avião de verdade.
+lateral, o gráfico, a vista 3D e o laço do programa. Em `src/screen.zig` fica a tela do aerosim, montada com essas peças, e cada aba
+tem o seu arquivo: `src/analyze_tab.zig` (Analisar) com as contas em `src/wing_analysis.zig`, e `src/assembly.zig`
+(Montagem).
 
 ## As peças (`src/ui`)
 
@@ -37,28 +38,32 @@ Python. O 3D é desenhado numa textura do tamanho do cartão; arrastar gira e a 
 ## A tela (`src/screen.zig`)
 
 O cabeçalho tem os botões de abrir e salvar, e embaixo vêm as abas das áreas e as subabas da
-Aerodinâmica (Perfis, Projetar, Analisar). Em Analisar, o formulário pede a asa, o perfil e o caso, e o botão Rodar
-chama a varredura do núcleo pelos dois métodos, a linha sustentadora não linear e as faixas independentes. Os
-gráficos mostram o C_L do conjunto em α, a asa em 3D com um vetor de sustentação por faixa, a asa e a carga (a vista de cima em escala, só o contorno e as faixas, e
-embaixo a vista de frente com um vetor de sustentação por faixa, do tamanho de L' na escala do eixo), o c_l e a
-carga ao longo da envergadura, o diagnóstico (C_L máximo, onde o estol começa, Reynolds) e um resumo. A aba Montagem mostra o avião inteiro em 3D: abre sozinha o
+Aerodinâmica (Perfis, Projetar, Analisar). Em Analisar, o formulário pede quais superfícies entram (por padrão
+só a asa), o caso (velocidade e a faixa de α) e os métodos, e o botão Rodar chama a varredura do núcleo no avião
+aberto. Os gráficos mostram, em cima, o que se simula em 3D com um vetor de sustentação por painel e a vista de
+cima; depois o C_L do conjunto e o de cada superfície em α, o c_l e a carga L' ao longo da envergadura, o
+diagnóstico (C_L máximo, onde o estol começa, Reynolds) e um resumo. A aba Montagem mostra o avião inteiro em 3D: abre sozinha o
 avião de exemplo de `data/aircraft`, e outro `.json` entra pela linha de comando ou arrastado para a janela. A
 leitura e as peças são as do AeroDrive (`aerodrive/src/model`, pelo `aerodrive/src/aircraft_model.zig`), as
 mesmas formas e cores da GUI em Python; o `src/assembly.zig` só completa os perfis que o arquivo aponta num `.dat`
 e passa cada triângulo para a vista 3D. As outras abas mostram só o lugar delas.
 
-## A asa de exemplo
+## A análise das asas (`src/wing_analysis.zig`)
 
-A asa de exemplo (`wing_example.zig`) é trapezoidal, sem enflechamento, cortada em faixas iguais. O núcleo guarda
-o C_Lα de cada faixa já em 3D, como o tradutor em Python faz, e por isso a montagem aplica a relação de Helmbold
-sobre o C_Lα do perfil:
+Aqui se escolhem as superfícies que sustentam e sai a polar de cada uma, a do conjunto e a carga ao longo da
+envergadura. É a mesma conta da simulação Asas da GUI em Python: o avião vira só as superfícies (sem fuselagem,
+motor, tanque nem carga, como o `wings_only`), e cada superfície é refinada até o maior número de faixas que cabe
+no núcleo, com as faixas mais finas na ponta, onde a carga muda mais depressa. Sem esse refino, a linha
+sustentadora com poucas faixas erra o C_L máximo e o lugar do estol. Os painéis passam pelo mesmo
+`params.fill` do AeroDrive, a tradução do modelo universal para o núcleo.
 
-$$C_{L\alpha} = \frac{a}{\sqrt{1 + k^2} + k}, \qquad k = \frac{a}{\pi A}$$
+O espaçamento das estações de cada lado segue
 
-onde $a$ é a inclinação do perfil e $A$ o alongamento da asa. É a mesma relação que `core/src/loads/llt.zig`
-inverte para voltar à inclinação 2D. A carga por unidade de envergadura é $L' = q\,c\,c_l$, com $q$ a pressão
-dinâmica e $c$ a corda da faixa. Essa montagem é provisória: quando o modelo universal estiver em Zig, as faixas
-saem dele.
+$$y(t) = y_0 + (y_1 - y_0)\,\sin\left(\frac{\pi t}{2}\right), \qquad t \in [0, 1]$$
+
+como o `refine_surface` em Python. A carga por unidade de envergadura é $L' = q\,c\,c_l$, com $q$ a pressão
+dinâmica e $c$ a corda do painel. O teste confere o C_L e o C_L máximo do avião de exemplo contra a GUI em Python
+pelos dois métodos.
 
 ## Como chamar
 

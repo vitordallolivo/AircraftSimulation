@@ -10,8 +10,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   raylib e raygui, no visual do AeroDrive (fundo claro, cantos arredondados, azul nos títulos). A Montagem mostra o avião
   inteiro em 3D pelo modelo do AeroDrive. O formulário
   lateral sai de uma lista de campos, e o gráfico tem marcas redondas, legenda e a paleta de dez cores. No aerosim,
-  Aerodinâmica → Analisar roda a varredura do núcleo numa asa trapezoidal de exemplo (linha sustentadora não linear e
-  faixas). O aeroopt mostra uma rodada de exemplo. A vista da asa tem a vista de cima em escala e a de frente com um vetor de carga por faixa. O
+  Aerodinâmica → Analisar roda a varredura do núcleo no avião aberto (linha sustentadora não linear e
+  faixas), com a escolha das superfícies e o refino da GUI em Python, e os mesmos números. O aeroopt mostra uma rodada de exemplo. A vista da asa tem o 3D com um vetor de carga por painel e a vista de cima. O AeroDrive passa a
+  preencher o quarto de corda dos painéis (`qa`/`qb`), que a linha sustentadora usa. O
   `tools/codemap.py` passa a mapear as duas pastas.
 - tracking: meta da 1.0 (tudo no navegador, sem instalar nada; o Python em WebAssembly fica para a 1.1) e o quadro
   em dia com a `main` (os itens "a revisar" que já foram no PR #31 passam a "Feito (na `main`)").

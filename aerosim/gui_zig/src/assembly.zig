@@ -18,11 +18,10 @@ pub const Triangle = struct {
     color: rl.Color,
 };
 
-pub const Assembly = struct {
-    loaded: model.Loaded,
+/// as peças de um avião prontas para a vista 3D: cada triângulo com a cor e a sombra
+pub const Mesh = struct {
     skeleton: skeleton.Skeleton,
     arena: std.heap.ArenaAllocator,
-    name: [:0]const u8,
     solid: []Triangle, // opacos (desenhados primeiro)
     translucent: []Triangle, // disco da hélice, tanque, líquido
     low: view3d.Body, // caixa que envolve o avião (corpo)
@@ -30,43 +29,35 @@ pub const Assembly = struct {
     piece_count: usize,
 
     /// libera tudo
-    pub fn deinit(assembly: *Assembly) void {
-        assembly.skeleton.deinit();
-        assembly.loaded.deinit();
-        assembly.arena.deinit();
+    pub fn deinit(mesh: *Mesh) void {
+        mesh.skeleton.deinit();
+        mesh.arena.deinit();
     }
 
     /// o centro da caixa
-    pub fn center(assembly: *const Assembly) view3d.Body {
-        return .{ 0.5 * (assembly.low[0] + assembly.high[0]), 0.5 * (assembly.low[1] + assembly.high[1]), 0.5 * (assembly.low[2] + assembly.high[2]) };
+    pub fn center(mesh: *const Mesh) view3d.Body {
+        return .{ 0.5 * (mesh.low[0] + mesh.high[0]), 0.5 * (mesh.low[1] + mesh.high[1]), 0.5 * (mesh.low[2] + mesh.high[2]) };
     }
 
     /// o maior lado da caixa (m)
-    pub fn size(assembly: *const Assembly) f64 {
-        return @max(assembly.high[0] - assembly.low[0], @max(assembly.high[1] - assembly.low[1], assembly.high[2] - assembly.low[2]));
+    pub fn size(mesh: *const Mesh) f64 {
+        return @max(mesh.high[0] - mesh.low[0], @max(mesh.high[1] - mesh.low[1], mesh.high[2] - mesh.low[2]));
+    }
+
+    /// desenha os triângulos (dentro de `View.begin`/`end`)
+    pub fn draw(mesh: *const Mesh) void {
+        for (mesh.solid) |t| view3d.triangle(t.a, t.b, t.c, t.color);
+        for (mesh.translucent) |t| view3d.triangle(t.a, t.b, t.c, t.color);
     }
 };
 
-pub const max_file_bytes = 1 << 24;
-
-/// a mensagem do último erro (o nome do componente com problema, como o AeroDrive dá)
-pub const Diagnosis = model.Diag;
-
-/// lê o avião em `path` e monta as peças
-pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) !Assembly {
+/// as peças do avião `ac` pelo esqueleto do AeroDrive
+pub fn buildMesh(gpa: std.mem.Allocator, ac: *const model.Aircraft, diagnosis: *Diagnosis) !Mesh {
     var arena = std.heap.ArenaAllocator.init(gpa);
     errdefer arena.deinit();
     const allocator = arena.allocator();
-    const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(max_file_bytes)) catch |err| {
-        diagnosis.set("não consegui abrir '{s}' ({s})", .{ path, @errorName(err) });
-        return err;
-    };
-    var loaded = try model.parse(gpa, bytes, diagnosis);
-    errdefer loaded.deinit();
-    try fillAirfoilFiles(allocator, io, path, bytes, &loaded.ac);
-    var built = try skeleton.build(gpa, &loaded.ac, diagnosis);
+    var built = try skeleton.build(gpa, ac, diagnosis);
     errdefer built.deinit();
-
     var solid: std.ArrayList(Triangle) = .empty;
     var translucent: std.ArrayList(Triangle) = .empty;
     var low: view3d.Body = .{ std.math.inf(f64), std.math.inf(f64), std.math.inf(f64) };
@@ -92,17 +83,41 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Di
         low = .{ -0.5, -0.5, -0.1 };
         high = .{ 0.5, 0.5, 0.1 };
     }
-    return .{
-        .loaded = loaded,
-        .skeleton = built,
-        .arena = arena,
-        .name = try allocator.dupeZ(u8, loaded.ac.name),
-        .solid = solid.items,
-        .translucent = translucent.items,
-        .low = low,
-        .high = high,
-        .piece_count = built.pieces.len,
+    return .{ .skeleton = built, .arena = arena, .solid = solid.items, .translucent = translucent.items, .low = low, .high = high, .piece_count = built.pieces.len };
+}
+
+/// o avião aberto: o que o arquivo diz e as peças dele
+pub const Assembly = struct {
+    loaded: model.Loaded,
+    mesh: Mesh,
+    name: [:0]const u8,
+
+    /// libera tudo
+    pub fn deinit(assembly: *Assembly) void {
+        assembly.mesh.deinit();
+        assembly.loaded.deinit();
+    }
+};
+
+pub const max_file_bytes = 1 << 24;
+
+/// a mensagem do último erro (o nome do componente com problema, como o AeroDrive dá)
+pub const Diagnosis = model.Diag;
+
+/// lê o avião em `path` e monta as peças
+pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) !Assembly {
+    const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(max_file_bytes)) catch |err| {
+        diagnosis.set("não consegui abrir '{s}' ({s})", .{ path, @errorName(err) });
+        return err;
     };
+    defer gpa.free(bytes);
+    var loaded = try model.parse(gpa, bytes, diagnosis);
+    errdefer loaded.deinit();
+    const allocator = loaded.arena.allocator();
+    try fillAirfoilFiles(allocator, io, path, bytes, &loaded.ac);
+    var mesh = try buildMesh(gpa, &loaded.ac, diagnosis);
+    errdefer mesh.deinit();
+    return .{ .loaded = loaded, .mesh = mesh, .name = try allocator.dupeZ(u8, loaded.ac.name) };
 }
 
 /// os perfis das superfícies que o arquivo só aponta (`airfoil.path`, sem `coords`): lê o `.dat`. O caminho é
