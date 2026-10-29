@@ -54,6 +54,10 @@ O que pegar primeiro, lendo o quadro como ele está agora. Tudo o que estava "a 
    (`std/os/emscripten.zig`, `W.STOPSIG` devolve `u32` por `@enumFromInt`). Hoje o AeroDrive contorna com um `std.Io`
    próprio (`aerodrive/src/sys/browser_io.zig`). Conferir se o 0.16.1 ou o 0.17 corrige e, se corrigir, tirar o
    contorno.
+9. **Suspeita a resolver (próximo item da web):** pequenos travamentos ao abrir menus do AeroDrive no navegador
+   (relato do vitor, 2026-10-29). Suspeitas: o menu Aeronave relê e monta todos os `.json` da biblioteca ao entrar;
+   a fonte gerada num tamanho novo na primeira vez. Medir o tempo de cada menu (nativo contra navegador) antes de
+   mexer.
 
 ## O castelo (mapa)
 
