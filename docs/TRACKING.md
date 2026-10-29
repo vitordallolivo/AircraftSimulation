@@ -327,7 +327,7 @@ Ferramentas, checks, documentação e git, que valem para os quatro segmentos.
 | T48 | Snapshot do resultado de cada aba (resumo + diagnóstico por template, valores padrão) em `tools/checks`, com `--aceitar` para mudança intencional | [ext] | — | B1+ | Pronto |
 | T49 | Smoke test de todas as abas e subabas: abre sem tela, roda com os padrões, todo gráfico declarado tem dado | [ext] | — | B1+ | Pronto |
 | T50 | Lint (`ruff`, `zig fmt --check`) em `tools/checks` e hook de `pre-push` com os checks rápidos (`tools/hooks/`, `core.hooksPath`) | [ext] | — | B1+ | Pronto |
-| T88 | Checks no GitHub Actions (`.github/workflows/testes.yml`): o `tools/checks/run.py --tudo` a cada PR para a `main` e a cada push na `0.2_dev`, em três jobs paralelos (núcleo e AeroDrive, regressão bit a bit contra a `main`, testes Python), com o relatório em Markdown como artefato. De graça porque o repositório é público | [ext] | — | B1+ | A revisar |
+| T88 | Checks no GitHub Actions (`.github/workflows/testes.yml`): o `tools/checks/run.py --tudo` a cada PR para a `main` (uma rodada por commit), em três jobs paralelos (núcleo e AeroDrive, regressão bit a bit contra a `main`, testes Python), com o relatório em Markdown como artefato. De graça porque o repositório é público | [ext] | — | B1+ | A revisar |
 | T51 | Tempo como regressão: benchmarks e abas contra a `main`, só aviso | [ext] | T47 | B1+ | Bloqueado |
 | T52 | Testes de propriedade (simetria, soma das cargas, monotonicidade, R·ω = V…), cada lei com fonte | [novo] | — | B1+ | Pronto |
 | T53 | Avisos de documentação (README em pasta nova, fonte de fórmula no Zig, CHANGELOG no PR) | [ext] | — | B1+ | Pronto |
