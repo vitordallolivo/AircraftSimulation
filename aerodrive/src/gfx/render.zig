@@ -12,6 +12,7 @@ const sk = @import("../model/skeleton.zig");
 const pose = @import("pose.zig");
 const cam = @import("../camera/camera.zig");
 const field = @import("../world/field.zig");
+const platform = @import("../sys/platform.zig");
 
 const V3 = v3.V3;
 
@@ -53,8 +54,11 @@ fn color8(c: field.Rgba) rl.Color {
 }
 
 // ------------------------------------------------------------------ sombreamento da GUI
-const vs =
-    \\#version 330
+// O mesmo shader nos dois alvos; só a primeira linha muda: GLSL 3.30 no nativo (OpenGL 3.3) e
+// GLSL ES 3.00 no navegador (WebGL 2), que pede a precisão dos float no fragmento.
+const glsl_version = if (platform.in_browser) "#version 300 es\nprecision mediump float;\n" else "#version 330\n";
+
+const vs = glsl_version ++
     \\in vec3 vertexPosition;
     \\in vec3 vertexNormal;
     \\uniform mat4 mvp;
@@ -66,8 +70,7 @@ const vs =
     \\    gl_Position = mvp * vec4(vertexPosition, 1.0);
     \\}
 ;
-const fs =
-    \\#version 330
+const fs = glsl_version ++
     \\in vec3 eyeNormal;
     \\uniform vec4 colDiffuse;
     \\out vec4 finalColor;

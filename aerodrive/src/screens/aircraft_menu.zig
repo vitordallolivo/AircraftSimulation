@@ -1,6 +1,11 @@
 //! Aeronave: escolher o arquivo (exemplos e "meus aviões" da GUI) — o modelo 3D troca na hora —,
 //! ligar/desligar o sloshing (se tiver tanque) e o LAPES (se tiver carga), e o vento (velocidade e
 //! de onde vem, com a rosa dos ventos).
+//!
+//! "Abrir arquivo do computador...": no navegador abre o seletor de arquivo da página (o .json
+//! chega pelo `sys/browser.zig` e vai para a biblioteca guardada no navegador) e "Exportar"
+//! baixa o .json do avião aberto; no nativo o item explica que basta arrastar o .json para a
+//! janela (o arquivo arrastado abre direto, sem diálogo de sistema).
 const std = @import("std");
 const rl = @import("raylib");
 const app_mod = @import("../app/app.zig");
@@ -8,6 +13,8 @@ const library = @import("../app/library.zig");
 const theme = @import("../ui/theme.zig");
 const widgets = @import("../ui/widgets.zig");
 const Showcase = @import("../ui/showcase.zig").Showcase;
+const platform = @import("../sys/platform.zig");
+const browser = @import("../sys/browser.zig");
 
 const App = app_mod.App;
 const Next = app_mod.Next;
@@ -23,12 +30,13 @@ pub const AircraftMenu = struct {
 
     pub fn enter(m: *AircraftMenu, app: *App) void {
         m.app = app;
-        if (library.scan(app.io, app.gpa, &app.paths.examples, app.paths.mine)) |lib| {
-            app.lib.deinit();
-            app.lib = lib;
-        } else |_| {}
-        m.build(app);
+        app.rescanLibrary();
         m.planeChanged(app);
+    }
+
+    /// a biblioteca mudou (avião novo aberto do computador): refaz a lista
+    pub fn libraryChanged(m: *AircraftMenu, app: *App) void {
+        m.build(app);
     }
 
     fn build(m: *AircraftMenu, app: *App) void {
@@ -73,15 +81,26 @@ pub const AircraftMenu = struct {
         rl.clearBackground(theme.panel);
         widgets.header(&app.fonts, "Aeronave", "escolha o arquivo; o modelo troca na hora");
 
-        // lista de arquivos à esquerda
+        // lista de arquivos à esquerda; embaixo, abrir do computador (e exportar, no navegador)
         const lw = @max(300, W * 0.3);
-        const area: rl.Rectangle = .{ .x = 28, .y = 110, .width = lw, .height = H - 160 };
+        const file_rows: f32 = if (platform.in_browser) 2 else 1;
+        const area: rl.Rectangle = .{ .x = 28, .y = 110, .width = lw, .height = H - 160 - file_rows * 46 };
         if (m.n_rows == 0) {
             app.fonts.draw("nenhum .json em data/aircraft nem em ~/aerosim_aeronaves", area.x + 10, area.y + 10, 16, theme.muted);
         } else if (m.list.draw(&app.ui, area, 38, m.n_rows, m, row)) |i| switch (m.rows[i]) {
             .entry => |k| if (app.loadPlane(app.lib.entries[k].path)) m.planeChanged(app),
             .header => {},
         };
+        var files_column: widgets.Column = .{ .x = area.x, .y = area.y + area.height + 6, .w = lw, .gap = 6 };
+        if (app.ui.menuItem(files_column.next(40), "Abrir arquivo do computador...", null)) {
+            if (platform.in_browser) browser.openFilePicker() else app.note("arraste o arquivo .json para esta janela", .{});
+        }
+        if (platform.in_browser and app.ui.menuItem(files_column.next(40), "Exportar o avião (.json)", null)) exportPlane(app);
+        if (rl.isFileDropped()) openDropped(app, m);
+        if (app.message()) |text| {
+            var message_buf: [200]u8 = undefined;
+            app.fonts.draw(std.fmt.bufPrintZ(&message_buf, "{s}", .{text}) catch "", area.x + lw + 28, 84, 16, theme.muted);
+        }
 
         // à direita: o avião e as opções
         const x = area.x + area.width + 28;
@@ -115,6 +134,27 @@ pub const AircraftMenu = struct {
         return if (app.ui.back()) .back else .stay;
     }
 };
+
+/// o primeiro .json arrastado para a janela abre direto do lugar onde está (nativo)
+fn openDropped(app: *App, m: *AircraftMenu) void {
+    const dropped = rl.loadDroppedFiles();
+    defer rl.unloadDroppedFiles(dropped);
+    for (0..dropped.count) |i| {
+        const path = std.mem.span(dropped.paths[i]);
+        if (!std.ascii.endsWithIgnoreCase(path, ".json")) continue;
+        if (app.loadPlane(path)) m.planeChanged(app);
+        return;
+    }
+    app.note("arraste um arquivo .json", .{});
+}
+
+/// baixa o .json do avião aberto (navegador)
+fn exportPlane(app: *App) void {
+    const plane = app.plane orelse return;
+    const bytes = app.planeBytes() orelse return app.note("não consegui ler o avião aberto", .{});
+    defer app.gpa.free(bytes);
+    browser.download(std.fs.path.basename(plane.path), bytes);
+}
 
 /// rosa dos ventos: N para cima; a seta mostra para onde o vento sopra
 pub fn compass(f: *const theme.Fonts, c: rl.Vector2, r: f32, from_deg: f64, speed: f64) void {

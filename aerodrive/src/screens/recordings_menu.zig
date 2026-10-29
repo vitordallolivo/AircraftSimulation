@@ -5,6 +5,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const app_mod = @import("../app/app.zig");
 const recorder = @import("../record/recorder.zig");
+const platform = @import("../sys/platform.zig");
 const theme = @import("../ui/theme.zig");
 const widgets = @import("../ui/widgets.zig");
 
@@ -19,7 +20,7 @@ pub const RecordingsMenu = struct {
 
     pub fn enter(m: *RecordingsMenu, app: *App) void {
         if (m.cat) |*c| c.deinit();
-        m.cat = recorder.list(app.io, app.gpa, app.paths.recordings) catch null;
+        m.cat = recorder.list(app.files, app.gpa, app.paths.recordings) catch null;
         if (m.sel) |s| if (m.cat == null or s >= m.cat.?.entries.len) {
             m.sel = null;
         };
@@ -74,7 +75,7 @@ pub const RecordingsMenu = struct {
                 const p = std.fmt.bufPrintZ(&buf, "{s}/video.mp4", .{e.dir}) catch "";
                 if (p.len > 0) rl.openURL(p);
             }
-            if (app.ui.button(col.next(44), "Abrir a pasta", false)) {
+            if (!platform.in_browser and app.ui.button(col.next(44), "Abrir a pasta", false)) {
                 const p = std.fmt.bufPrintZ(&buf, "{s}", .{e.dir}) catch "";
                 if (p.len > 0) rl.openURL(p);
             }
@@ -82,14 +83,14 @@ pub const RecordingsMenu = struct {
             // apagar: o primeiro aperto pede confirmação, o segundo apaga
             if (e.has_video and app.ui.button(col.next(44), if (m.confirm == .video) "Apertar de novo: apagar o vídeo" else "Apagar o vídeo", false)) {
                 if (m.confirm == .video) {
-                    _ = recorder.deleteVideo(app.io, e.dir);
+                    _ = recorder.deleteVideo(app.files, e.dir);
                     m.confirm = null;
                     m.enter(app);
                 } else m.confirm = .video;
             }
             if (app.ui.button(col.next(44), if (m.confirm == .all) "Apertar de novo: apagar tudo" else "Apagar a gravação (vídeo e dados)", false)) {
                 if (m.confirm == .all) {
-                    _ = recorder.deleteRecording(app.io, e.dir);
+                    _ = recorder.deleteRecording(app.files, e.dir);
                     m.confirm = null;
                     m.sel = null;
                     m.enter(app);

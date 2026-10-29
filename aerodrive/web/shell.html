@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000">
+<title>AeroDrive · AircraftSimulation</title>
+<!--
+  Página do AeroDrive no navegador (o emcc troca o marcador SCRIPT pelo aerodrive.js).
+  O que ela faz, além de mostrar o canvas:
+    - monta /aerodrive no IndexedDB (IDBFS) e carrega antes do main (configurações, aviões abertos)
+    - seletor de arquivo e arrastar .json para a página -> aerodrive_load_aircraft (sys/browser.zig)
+    - avião deixado pela tela inicial (index.html) no IndexedDB "aircraftsimulation" -> idem
+    - download do .json (Exportar), detecção de toque e o botão de voltar à tela inicial
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; overscroll-behavior: none; }
+  canvas { display: block; position: fixed; inset: 0; width: 100vw; height: 100vh; touch-action: none; outline: none; }
+  #back {
+    position: fixed; top: 4px; left: 50%; transform: translateX(-50%); z-index: 2; padding: 3px 10px;
+    font: 13px/1.4 ui-monospace, "DejaVu Sans Mono", Consolas, monospace;
+    color: #cfd8ff; background: rgba(0, 0, 40, 0.55); border: 1px solid #5865b0; border-radius: 3px;
+    text-decoration: none; cursor: pointer;
+  }
+  #back:hover, #back:focus { background: #0000aa; color: #fff; }
+  #loading {
+    position: fixed; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center;
+    background: #0000aa; color: #fff; font: 16px/1.5 ui-monospace, "DejaVu Sans Mono", Consolas, monospace;
+    white-space: pre;
+  }
+  #drop {
+    position: fixed; inset: 12px; z-index: 4; display: none; align-items: center; justify-content: center;
+    border: 3px dashed #ffff55; background: rgba(0, 0, 80, 0.75); color: #ffff55;
+    font: 20px ui-monospace, "DejaVu Sans Mono", Consolas, monospace; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+<a id="back" href="index.html" title="Voltar à tela inicial">◄ início</a>
+<div id="loading">AeroDrive
+carregando...</div>
+<div id="drop">solte o .json do avião</div>
+<input id="picker" type="file" accept=".json,application/json" hidden>
+<script>
+  'use strict';
+  const canvas = document.getElementById('canvas');
+  const picker = document.getElementById('picker');
+  const loading = document.getElementById('loading');
+  const dropHint = document.getElementById('drop');
+
+  // bytes de um .json para o jogo: copia para a memória do wasm e chama aerodrive_load_aircraft
+  function sendAircraft(name, bytes) {
+    const nameBytes = new TextEncoder().encode(name);
+    const namePointer = Module._malloc(Math.max(1, nameBytes.length));
+    const bytesPointer = Module._malloc(Math.max(1, bytes.length));
+    Module.HEAPU8.set(nameBytes, namePointer);
+    Module.HEAPU8.set(bytes, bytesPointer);
+    const code = Module._aerodrive_load_aircraft(namePointer, nameBytes.length, bytesPointer, bytes.length);
+    Module._free(namePointer);
+    Module._free(bytesPointer);
+    if (code !== 0) alert(code === 1 ? 'Arquivo grande demais.' : 'Sem memória para abrir o arquivo.');
+  }
+
+  async function sendFile(file) {
+    if (!file || !/\.json$/i.test(file.name)) { alert('Escolha um arquivo .json de avião.'); return; }
+    sendAircraft(file.name, new Uint8Array(await file.arrayBuffer()));
+  }
+
+  picker.addEventListener('change', () => { sendFile(picker.files[0]); picker.value = ''; });
+
+  // arrastar para qualquer lugar da página (na fase de captura: o canvas não recebe)
+  let dragDepth = 0;
+  window.addEventListener('dragenter', (event) => { event.preventDefault(); dragDepth++; dropHint.style.display = 'flex'; }, true);
+  window.addEventListener('dragleave', (event) => { if (--dragDepth <= 0) { dragDepth = 0; dropHint.style.display = 'none'; } }, true);
+  window.addEventListener('dragover', (event) => { event.preventDefault(); event.stopPropagation(); }, true);
+  window.addEventListener('drop', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepth = 0;
+    dropHint.style.display = 'none';
+    sendFile(event.dataTransfer.files[0]);
+  }, true);
+
+  // avião deixado pela tela inicial (index.html): IndexedDB "aircraftsimulation", loja "pendente"
+  function takePendingAircraft() {
+    const request = indexedDB.open('aircraftsimulation', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('pendente');
+    request.onsuccess = () => {
+      const database = request.result;
+      const store = database.transaction('pendente', 'readwrite').objectStore('pendente');
+      const read = store.get('aviao');
+      read.onsuccess = () => {
+        const pending = read.result;
+        if (!pending) return;
+        store.delete('aviao');
+        sendAircraft(pending.name, new Uint8Array(pending.bytes));
+      };
+    };
+  }
+
+  window.addEventListener('touchstart', () => { Module.aerodrivePage.touchSeen = true; }, { capture: true, passive: true });
+
+  var Module = {
+    canvas: canvas,
+    print: (text) => console.log(text),
+    printErr: (text) => console.warn(text),
+    aerodrivePage: {
+      touchSeen: false,
+      openFilePicker: () => picker.click(),
+      download: (name, bytes) => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(new Blob([bytes], { type: 'application/json' }));
+        link.download = name;
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1000);
+      },
+      leave: () => { window.location.href = 'index.html'; },
+    },
+    preRun: [() => {
+      // /aerodrive no IndexedDB: carrega antes do main (o jogo lê as configurações logo no início)
+      FS.mkdir('/aerodrive');
+      FS.mount(IDBFS, {}, '/aerodrive');
+      addRunDependency('idbfs');
+      FS.syncfs(true, (error) => {
+        if (error) console.warn('AeroDrive: IndexedDB indisponível; nada será guardado', error);
+        removeRunDependency('idbfs');
+      });
+    }],
+    postRun: [() => {
+      loading.remove();
+      canvas.focus();
+      takePendingAircraft();
+    }],
+    setStatus: (text) => { if (text) loading.textContent = 'AeroDrive\n' + text.replace('Downloading data...', 'baixando...'); },
+  };
+  window.addEventListener('pagehide', () => { try { FS.syncfs(false, () => {}); } catch (error) { } });
+  window.addEventListener('error', (event) => { loading.textContent = 'AeroDrive\nerro: ' + event.message; });
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

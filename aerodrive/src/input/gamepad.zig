@@ -15,6 +15,8 @@
 const std = @import("std");
 const rl = @import("raylib");
 const ch = @import("channels.zig");
+const platform = @import("../sys/platform.zig");
+const browser = @import("../sys/browser.zig");
 
 pub const Actions = struct {
     pause: bool = false,
@@ -37,8 +39,13 @@ pub const Reader = struct {
             out.ly = rl.getGamepadAxisMovement(0, .left_y);
             out.rx = rl.getGamepadAxisMovement(0, .right_x);
             out.ry = rl.getGamepadAxisMovement(0, .right_y);
-            out.rt = 0.5 * (rl.getGamepadAxisMovement(0, .right_trigger) + 1);
-            out.lt = 0.5 * (rl.getGamepadAxisMovement(0, .left_trigger) + 1);
+            if (platform.in_browser) { // o raylib web não traz os gatilhos como eixo: a página lê o valor
+                out.rt = browser.gamepadTrigger(.right);
+                out.lt = browser.gamepadTrigger(.left);
+            } else {
+                out.rt = 0.5 * (rl.getGamepadAxisMovement(0, .right_trigger) + 1);
+                out.lt = 0.5 * (rl.getGamepadAxisMovement(0, .left_trigger) + 1);
+            }
             out.lb = rl.isGamepadButtonDown(0, .left_trigger_1);
             out.rb = rl.isGamepadButtonDown(0, .right_trigger_1);
         }

@@ -6,11 +6,25 @@
 //!     tela: inicio, aeronave, voar, opcoes, controle, camera, som, voos, dados, video, voo, pausa
 //!
 //! No modo --shot nada é lido nem gravado nas configurações (fotos sempre iguais).
+//!
+//! No navegador (`zig build -Dtarget=wasm32-emscripten`) o `main` é outro: não há argumentos nem
+//! laço bloqueante; o jogo monta e entrega cada quadro ao navegador (`emscripten_set_main_loop`).
 const std = @import("std");
 const rl = @import("raylib");
 const app_mod = @import("app/app.zig");
 const paths_mod = @import("app/paths.zig");
 const settings = @import("app/settings.zig");
+const storage = @import("app/storage.zig");
+const platform = @import("sys/platform.zig");
+const browser = @import("sys/browser.zig");
+const browser_io = @import("sys/browser_io.zig");
+
+pub const main = if (platform.in_browser) browserMain else nativeMain;
+
+// a `Io` do std.debug (print, panes): no navegador a nossa (o `std.Io.Threaded` do Zig 0.16 não
+// compila para emscripten, ver sys/browser_io.zig); no nativo o mesmo padrão de sempre do std
+pub const std_options_debug_io: std.Io = if (platform.in_browser) browser_io.io else std.Io.Threaded.global_single_threaded.io();
+pub const std_options_debug_threaded_io: ?*std.Io.Threaded = if (platform.in_browser) null else std.Io.Threaded.global_single_threaded;
 
 const Args = struct {
     shot: ?[:0]const u8 = null,
@@ -82,7 +96,8 @@ fn parseArgs(argv: []const [:0]const u8) !Args {
     return a;
 }
 
-pub fn main(init: std.process.Init) !void {
+/// programa nativo: argumentos, janela e laço até fechar (ou uma foto, com --shot)
+fn nativeMain(init: std.process.Init) !void {
     const gpa = init.gpa;
     const arena = init.arena.allocator();
     const argv = try init.minimal.args.toSlice(arena);
@@ -103,7 +118,8 @@ pub fn main(init: std.process.Init) !void {
     defer rl.closeWindow();
     rl.setExitKey(.null); // Esc é "voltar"/pausa; fechar a janela sai
 
-    const app = try app_mod.App.init(init.io, gpa, paths);
+    var disk: storage.DiskStorage = .{ .io = init.io };
+    const app = try app_mod.App.init(init.io, gpa, paths, disk.storage());
     defer app.deinit();
     if (args.fps) |f| app.settings.fps = f;
     rl.setTargetFPS(@intCast(app.settings.fps));
@@ -159,5 +175,43 @@ pub fn main(init: std.process.Init) !void {
     if (!rl.exportImage(img, args.shot.?)) {
         std.debug.print("erro: não consegui gravar '{s}'\n", .{args.shot.?});
         std.process.exit(1);
+    }
+}
+
+// ------------------------------------------------------------------ navegador
+/// o jogo do navegador; fica aqui (e não na pilha do `main`) porque o `main` termina e o
+/// navegador continua chamando `browserFrame`
+var browser_app: ?*app_mod.App = null;
+var browser_storage: storage.BrowserStorage = .{};
+
+/// navegador: janela do tamanho da página, configurações e aviões do IndexedDB (a página já
+/// carregou /aerodrive antes do `main`), e o laço entregue ao navegador
+fn browserMain() !void {
+    const gpa = std.heap.c_allocator;
+    rl.setTraceLogLevel(.warning);
+    rl.setConfigFlags(.{ .msaa_4x_hint = true, .window_resizable = true });
+    const size = browser.viewportSize();
+    rl.initWindow(size.width, size.height, "AeroDrive");
+    rl.setExitKey(.null); // Esc é "voltar"/pausa
+    const app = try app_mod.App.init(browser_io.io, gpa, paths_mod.browser, browser_storage.storage());
+    browser_app = app;
+    app.begin();
+    browser.setFrameRate(app.settings.fps);
+    // 0 = no ritmo da tela (requestAnimationFrame); 1 = não volta daqui (o main "fica rodando")
+    std.os.emscripten.emscripten_set_main_loop(browserFrame, 0, 1);
+}
+
+/// um quadro no navegador: o .json que chegou da página (se houver) e o jogo
+fn browserFrame() callconv(.c) void {
+    const app = browser_app orelse return;
+    if (browser.takeImport()) |file| {
+        defer file.deinit();
+        _ = app.importFile(file.name, file.bytes);
+    }
+    app.step(@floatCast(rl.getFrameTime()));
+    if (app.quit) { // "Sair" no navegador: grava e volta à tela inicial do site
+        app.quit = false;
+        app.saveSettings();
+        browser.leave();
     }
 }

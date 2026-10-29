@@ -4,10 +4,13 @@
 //!   video.mp4   a tela, se houver ffmpeg (record/video.zig)
 //!   info.json   avião, data, duração
 //! `list` lê as pastas de volta (para o menu "Voos gravados"), as mais novas primeiro.
+//! Dados e info passam pelo `storage.Storage` (disco, ou o IndexedDB no navegador); o vídeo é do
+//! ffmpeg e só existe no disco.
 const std = @import("std");
 const core = @import("aerosim");
 const datalog = @import("datalog.zig");
 const video_mod = @import("video.zig");
+const storage = @import("../app/storage.zig");
 const fz = @import("../util/fuzz.zig");
 
 pub const Info = struct {
@@ -33,7 +36,8 @@ pub const Recorder = struct {
         return r.dir_buf[0..r.dir_len];
     }
 
-    /// cria a pasta e (se `w`·`h` > 0) liga o vídeo
+    /// guarda o nome da pasta e (se `w`·`h` > 0) cria a pasta no disco e liga o vídeo; a pasta
+    /// dos dados nasce no `finish`
     pub fn start(io: std.Io, gpa: std.mem.Allocator, root: []const u8, epoch_s: i64, w: u32, h: u32, fps: u32) !Recorder {
         var r: Recorder = .{ .gpa = gpa };
         r.stamp = stampOf(epoch_s);
@@ -41,8 +45,8 @@ pub const Recorder = struct {
         const folder = try folderName(&name, r.stamp);
         const p = try std.fmt.bufPrint(&r.dir_buf, "{s}/{s}", .{ root, folder });
         r.dir_len = p.len;
-        try std.Io.Dir.cwd().createDirPath(io, p);
         if (w > 0 and h > 0) {
+            try std.Io.Dir.cwd().createDirPath(io, p);
             var vb: [1100]u8 = undefined;
             const vp = try std.fmt.bufPrint(&vb, "{s}/video.mp4", .{p});
             r.video = video_mod.Video.start(io, vp, w, h, fps) catch |e| blk: {
@@ -67,8 +71,8 @@ pub const Recorder = struct {
         };
     }
 
-    /// fecha tudo e grava os arquivos; devolve se o vídeo ficou bom
-    pub fn finish(r: *Recorder, io: std.Io, aircraft: []const u8) !void {
+    /// fecha o vídeo e grava dados.csv e info.json em `files`
+    pub fn finish(r: *Recorder, io: std.Io, files: storage.Storage, aircraft: []const u8) !void {
         defer r.data.deinit(r.gpa);
         var ok_video = false;
         var pb: [1100]u8 = undefined;
@@ -80,7 +84,7 @@ pub const Recorder = struct {
         var out: std.Io.Writer.Allocating = .init(r.gpa);
         defer out.deinit();
         try r.data.writeCsv(&out.writer);
-        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try std.fmt.bufPrint(&pb, "{s}/dados.csv", .{r.dir()}), .data = out.written() });
+        try files.write(try std.fmt.bufPrint(&pb, "{s}/dados.csv", .{r.dir()}), out.written());
         var started: [19]u8 = r.stamp;
         started[10] = ' ';
         started[13] = ':';
@@ -88,7 +92,7 @@ pub const Recorder = struct {
         const info: Info = .{ .aircraft = aircraft, .started = &started, .duration_s = r.t_last - (r.t0 orelse r.t_last), .rows = r.data.count(), .video = ok_video };
         const j = try std.json.Stringify.valueAlloc(r.gpa, info, .{ .whitespace = .indent_2 });
         defer r.gpa.free(j);
-        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try std.fmt.bufPrint(&pb, "{s}/info.json", .{r.dir()}), .data = j });
+        try files.write(try std.fmt.bufPrint(&pb, "{s}/info.json", .{r.dir()}), j);
     }
 };
 
@@ -126,24 +130,25 @@ pub const Catalog = struct {
 };
 
 /// as gravações em `root`, mais novas primeiro (pasta sem dados nem vídeo é pulada)
-pub fn list(io: std.Io, gpa: std.mem.Allocator, root: []const u8) !Catalog {
+pub fn list(files: storage.Storage, gpa: std.mem.Allocator, root: []const u8) !Catalog {
     var c: Catalog = .{ .arena = .init(gpa) };
     errdefer c.deinit();
     const a = c.arena.allocator();
     var out: std.ArrayList(Entry) = .empty;
-    var d = std.Io.Dir.cwd().openDir(io, root, .{ .iterate = true }) catch return c;
-    defer d.close(io);
-    var it = d.iterate();
-    while (it.next(io) catch null) |e| {
-        if (e.kind != .directory or !std.mem.startsWith(u8, e.name, "voo_") or out.items.len >= 1000) continue;
+    var folders = files.list(a, root) catch |err| return if (err == error.OutOfMemory) err else c;
+    defer folders.deinit();
+    for (folders.entries) |e| {
+        if (e.kind != .folder or !std.mem.startsWith(u8, e.name, "voo_") or out.items.len >= 1000) continue;
         const full = try std.fs.path.join(a, &.{ root, e.name });
-        const has_data = exists(io, d, e.name, "dados.csv");
-        const has_video = exists(io, d, e.name, "video.mp4");
+        var contents = files.list(a, full) catch continue;
+        defer contents.deinit();
+        const has_data = contents.find("dados.csv") != null;
+        const has_video = contents.find("video.mp4") != null;
         if (!has_data and !has_video) continue;
         var info: Info = .{};
-        var pb: [512]u8 = undefined;
-        if (std.fmt.bufPrint(&pb, "{s}/info.json", .{e.name})) |ip| {
-            if (d.readFileAlloc(io, ip, a, .limited(1 << 16))) |bytes| {
+        var pb: [1100]u8 = undefined;
+        if (std.fmt.bufPrint(&pb, "{s}/info.json", .{full})) |ip| {
+            if (files.read(a, ip, 1 << 16)) |bytes| {
                 info = std.json.parseFromSliceLeaky(Info, a, bytes, .{ .ignore_unknown_fields = true }) catch .{};
             } else |_| {}
         } else |_| {}
@@ -159,24 +164,17 @@ pub fn list(io: std.Io, gpa: std.mem.Allocator, root: []const u8) !Catalog {
 }
 
 /// apaga só o vídeo da gravação (os dados ficam)
-pub fn deleteVideo(io: std.Io, dir: []const u8) bool {
+pub fn deleteVideo(files: storage.Storage, dir: []const u8) bool {
     var pb: [1100]u8 = undefined;
     const p = std.fmt.bufPrint(&pb, "{s}/video.mp4", .{dir}) catch return false;
-    std.Io.Dir.cwd().deleteFile(io, p) catch return false;
+    files.remove(p) catch return false;
     return true;
 }
 
 /// apaga a gravação inteira — só pastas de gravação (`voo_…`), por segurança
-pub fn deleteRecording(io: std.Io, dir: []const u8) bool {
+pub fn deleteRecording(files: storage.Storage, dir: []const u8) bool {
     if (!std.mem.startsWith(u8, std.fs.path.basename(dir), "voo_")) return false;
-    std.Io.Dir.cwd().deleteTree(io, dir) catch return false;
-    return true;
-}
-
-fn exists(io: std.Io, d: std.Io.Dir, sub: []const u8, file: []const u8) bool {
-    var pb: [512]u8 = undefined;
-    const p = std.fmt.bufPrint(&pb, "{s}/{s}", .{ sub, file }) catch return false;
-    _ = d.statFile(io, p, .{}) catch return false;
+    files.remove(dir) catch return false;
     return true;
 }
 
@@ -215,8 +213,9 @@ test "grava só dados e acha de volta no catálogo" {
         row.t = 2 + @as(f64, @floatFromInt(i)) * 0.1;
         r.addRow(&row);
     }
-    try r.finish(testing.io, "Convencional");
-    var cat = try list(testing.io, testing.allocator, root);
+    var disk: storage.DiskStorage = .{ .io = testing.io };
+    try r.finish(testing.io, disk.storage(), "Convencional");
+    var cat = try list(disk.storage(), testing.allocator, root);
     defer cat.deinit();
     try testing.expectEqual(@as(usize, 1), cat.entries.len);
     try testing.expect(cat.entries[0].has_data and !cat.entries[0].has_video);
@@ -231,16 +230,18 @@ test "apagar o vídeo deixa os dados; apagar a gravação some com ela; pasta es
     var r = try Recorder.start(testing.io, testing.allocator, root, 1791037325, 0, 0, 30);
     var row: core.types.LogRow = std.mem.zeroes(core.types.LogRow);
     r.addRow(&row);
-    try r.finish(testing.io, "X");
+    var disk: storage.DiskStorage = .{ .io = testing.io };
+    const files = disk.storage();
+    try r.finish(testing.io, files, "X");
     var vb: [1100]u8 = undefined;
     try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = try std.fmt.bufPrint(&vb, "{s}/video.mp4", .{r.dir()}), .data = "x" });
-    try testing.expect(deleteVideo(testing.io, r.dir()));
-    var cat = try list(testing.io, testing.allocator, root);
+    try testing.expect(deleteVideo(files, r.dir()));
+    var cat = try list(files, testing.allocator, root);
     try testing.expect(cat.entries.len == 1 and !cat.entries[0].has_video and cat.entries[0].has_data);
     cat.deinit();
-    try testing.expect(!deleteRecording(testing.io, root)); // não é voo_…
-    try testing.expect(deleteRecording(testing.io, r.dir()));
-    var cat2 = try list(testing.io, testing.allocator, root);
+    try testing.expect(!deleteRecording(files, root)); // não é voo_…
+    try testing.expect(deleteRecording(files, r.dir()));
+    var cat2 = try list(files, testing.allocator, root);
     defer cat2.deinit();
     try testing.expectEqual(@as(usize, 0), cat2.entries.len);
 }

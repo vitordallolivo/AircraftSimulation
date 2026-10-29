@@ -2,6 +2,7 @@
 //! fonte com acentos (procura uma do sistema; sem nenhuma, usa a do raylib) e os widgets simples.
 const std = @import("std");
 const rl = @import("raylib");
+const platform = @import("../sys/platform.zig");
 
 pub const bg: rl.Color = .{ .r = 245, .g = 246, .b = 250, .a = 255 }; // fundo do 3D (o da GUI)
 pub const sky: rl.Color = .{ .r = 112, .g = 172, .b = 236, .a = 255 }; // céu do voo (saturado)
@@ -21,7 +22,8 @@ pub const selected: rl.Color = .{ .r = 200, .g = 214, .b = 236, .a = 255 };
 pub const danger: rl.Color = .{ .r = 214, .g = 39, .b = 40, .a = 255 };
 pub const ok: rl.Color = .{ .r = 44, .g = 160, .b = 44, .a = 255 };
 
-const candidates = [_][:0]const u8{
+// no navegador, a fonte que o build põe no pacote (build.zig, `web_font_candidates`)
+const candidates = (if (platform.in_browser) [_][:0]const u8{"/fonts/aerodrive.ttf"} else [_][:0]const u8{}) ++ [_][:0]const u8{
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",

@@ -24,6 +24,7 @@ test {
     _ = @import("record/video.zig");
     _ = @import("record/recorder.zig");
     _ = @import("app/store.zig");
+    _ = @import("app/storage.zig");
     _ = @import("app/plane_settings.zig");
     _ = @import("record/video_player.zig");
     _ = @import("sys/keep_awake.zig");

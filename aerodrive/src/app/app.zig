@@ -15,6 +15,7 @@ const theme = @import("../ui/theme.zig");
 const widgets = @import("../ui/widgets.zig");
 const settings_mod = @import("settings.zig");
 const store_mod = @import("store.zig");
+const storage = @import("storage.zig");
 const PlaneSettings = @import("plane_settings.zig").PlaneSettings;
 const paths_mod = @import("paths.zig");
 const library = @import("library.zig");
@@ -39,8 +40,11 @@ const options_menu = @import("../screens/options_menu.zig");
 const video_view = @import("../screens/video_view.zig");
 const KeepAwake = @import("../sys/keep_awake.zig").KeepAwake;
 const dev_overlay = @import("../ui/dev_overlay.zig");
+const platform = @import("../sys/platform.zig");
 
 const logo_png = @embedFile("../assets/albatroz.png");
+/// o maior .json de avião que se lê (disco, navegador ou arquivo arrastado)
+pub const max_plane_bytes = 64 << 20;
 const video_fps = 30;
 
 pub const Id = enum { main, aircraft, fly, options, control, camera, sound, recordings, viewer, video, flight, pause };
@@ -95,6 +99,7 @@ pub const App = struct {
     ui: widgets.Ui,
     settings: settings_mod.Settings, // gerais (último avião, controle e câmera gerais, som, fps)
     paths: paths_mod.Paths,
+    files: storage.Storage, // disco no nativo, IndexedDB no navegador
     plane_files: store_mod.FileStore, // configurações por avião (uma por arquivo)
     plane_cfg: PlaneSettings = .{}, // as do avião aberto
     lib: library.Library,
@@ -126,17 +131,19 @@ pub const App = struct {
     quit: bool = false,
     time: f64 = 0,
 
-    pub fn init(io: std.Io, gpa: std.mem.Allocator, paths: paths_mod.Paths) !*App {
+    /// fontes, configurações (lidas de `files`), biblioteca, som e logo
+    pub fn init(io: std.Io, gpa: std.mem.Allocator, paths: paths_mod.Paths, files: storage.Storage) !*App {
         const app = try gpa.create(App);
         app.* = .{
             .io = io,
             .gpa = gpa,
             .fonts = theme.Fonts.load(),
             .ui = undefined,
-            .settings = settings_mod.Settings.load(io, gpa, paths.config),
+            .settings = settings_mod.Settings.load(files, gpa, paths.config),
             .paths = paths,
-            .plane_files = .{ .io = io, .root = paths.planes },
-            .lib = library.scan(io, gpa, &paths.examples, paths.mine) catch .{ .arena = .init(gpa) },
+            .files = files,
+            .plane_files = .{ .files = files, .root = paths.planes },
+            .lib = library.scan(files, gpa, &paths.examples, paths.mine) catch .{ .arena = .init(gpa) },
             .audio = Player.init(),
         };
         app.ui = .{ .fonts = &app.fonts };
@@ -175,7 +182,7 @@ pub const App = struct {
             app.settings.session = app.plane_cfg.session;
             _ = app.plane_cfg.save(app.plane_files.store(), app.gpa, p.path);
         }
-        app.settings.save(app.io, app.gpa, app.paths.config);
+        app.settings.save(app.files, app.gpa, app.paths.config);
     }
 
     // ---------------------------------------------------------------- o que vale agora
@@ -244,11 +251,62 @@ pub const App = struct {
     /// lê e monta o avião; se falhar, o anterior continua e o erro fica em `planeError`
     pub fn loadPlane(app: *App, path: []const u8) bool {
         var diag: model.Diag = .{};
-        const p = app.buildPlane(path, &diag) catch {
-            const msg = std.fmt.bufPrint(&app.plane_error, "{s}", .{diag.text()}) catch app.plane_error[0..0];
-            app.plane_error_len = msg.len;
-            return false;
+        const p = app.readPlane(path, &diag) catch return app.failPlane(&diag);
+        app.usePlane(p);
+        return true;
+    }
+
+    /// avião vindo de fora (arrastado para a janela, ou escolhido na página do navegador): monta
+    /// a partir dos bytes e, se der certo, grava em `path` (o .json passa a ser da biblioteca)
+    pub fn importPlane(app: *App, path: []const u8, bytes: []const u8) bool {
+        var diag: model.Diag = .{};
+        const p = app.buildPlane(path, bytes, &diag) catch return app.failPlane(&diag);
+        app.files.write(path, bytes) catch |err| {
+            var plane = p;
+            plane.deinit(app.gpa);
+            diag.set("não consegui guardar '{s}' ({s})", .{ path, @errorName(err) });
+            return app.failPlane(&diag);
         };
+        app.usePlane(p);
+        return true;
+    }
+
+    /// .json escolhido pelo jogador no navegador: vai para "meus aviões" (`paths.mine`, guardado no
+    /// IndexedDB) com um nome de arquivo seguro, abre e aparece na biblioteca
+    pub fn importFile(app: *App, file_name: []const u8, bytes: []const u8) bool {
+        var name_buf: [96]u8 = undefined;
+        var path_buf: [1200]u8 = undefined;
+        const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ app.paths.mine, library.safeFileName(&name_buf, file_name) }) catch return false;
+        if (!app.importPlane(path, bytes)) return false;
+        app.rescanLibrary();
+        return true;
+    }
+
+    /// lê as pastas de aviões de novo e avisa as telas (`libraryChanged`)
+    pub fn rescanLibrary(app: *App) void {
+        const lib = library.scan(app.files, app.gpa, &app.paths.examples, app.paths.mine) catch return;
+        app.lib.deinit();
+        app.lib = lib;
+        inline for (@typeInfo(Screens).@"struct".fields) |f| {
+            if (@hasDecl(f.type, "libraryChanged")) @field(app.screens, f.name).libraryChanged(app);
+        }
+    }
+
+    /// o .json do avião aberto, como está guardado (o chamador libera com `gpa`)
+    pub fn planeBytes(app: *App) ?[]u8 {
+        const p = app.plane orelse return null;
+        return app.files.read(app.gpa, p.path, max_plane_bytes) catch null;
+    }
+
+    fn failPlane(app: *App, diag: *const model.Diag) bool {
+        const msg = std.fmt.bufPrint(&app.plane_error, "{s}", .{diag.text()}) catch app.plane_error[0..0];
+        app.plane_error_len = msg.len;
+        return false;
+    }
+
+    /// troca o avião aberto pelo `p` (já montado)
+    fn usePlane(app: *App, p: Plane) void {
+        const path = p.path;
         app.endFlight();
         app.saveSettings(); // guarda as do avião que sai
         if (app.plane) |*old| old.deinit(app.gpa);
@@ -256,19 +314,22 @@ pub const App = struct {
         app.plane_error_len = 0;
         app.settings.setAircraft(path);
         // as do avião que entra; nunca aberto antes: começa da última sessão usada e do controle geral
-        app.plane_cfg = PlaneSettings.load(app.plane_files.store(), app.gpa, p.path, .{ .session = app.settings.session });
+        app.plane_cfg = PlaneSettings.load(app.plane_files.store(), app.gpa, path, .{ .session = app.settings.session });
         inline for (@typeInfo(Screens).@"struct".fields) |f| {
             if (@hasDecl(f.type, "planeChanged")) @field(app.screens, f.name).planeChanged(app);
         }
-        return true;
     }
 
-    fn buildPlane(app: *App, path: []const u8, diag: *model.Diag) !Plane {
-        const bytes = std.Io.Dir.cwd().readFileAlloc(app.io, path, app.gpa, .limited(64 << 20)) catch |e| {
+    fn readPlane(app: *App, path: []const u8, diag: *model.Diag) !Plane {
+        const bytes = app.files.read(app.gpa, path, max_plane_bytes) catch |e| {
             diag.set("não consegui abrir '{s}' ({s})", .{ path, @errorName(e) });
             return error.Open;
         };
         defer app.gpa.free(bytes);
+        return app.buildPlane(path, bytes, diag);
+    }
+
+    fn buildPlane(app: *App, path: []const u8, bytes: []const u8, diag: *model.Diag) !Plane {
         var loaded = try model.parse(app.gpa, bytes, diag);
         errdefer loaded.deinit();
         var skel = try sk.build(app.gpa, &loaded.ac, diag);
@@ -315,8 +376,9 @@ pub const App = struct {
         if (app.rec != null) return;
         const now = std.Io.Clock.real.now(app.io);
         const secs: i64 = @intCast(@divFloor(now.nanoseconds, std.time.ns_per_s));
-        const w: u32 = @intCast(@max(rl.getRenderWidth(), 0));
-        const h: u32 = @intCast(@max(rl.getRenderHeight(), 0));
+        // no navegador não há ffmpeg: grava só os dados (w = h = 0 desliga o vídeo)
+        const w: u32 = if (platform.in_browser) 0 else @intCast(@max(rl.getRenderWidth(), 0));
+        const h: u32 = if (platform.in_browser) 0 else @intCast(@max(rl.getRenderHeight(), 0));
         app.video_acc = 0;
         app.rec = recorder.Recorder.start(app.io, app.gpa, app.paths.recordings, secs, w, h, video_fps) catch |e| {
             app.note("não consegui gravar: {s}", .{@errorName(e)});
@@ -324,6 +386,8 @@ pub const App = struct {
         };
         if (app.rec.?.video_error) |e| {
             app.note("gravando só os dados (vídeo: {s})", .{if (e == error.NoFfmpeg) "instale o ffmpeg" else @errorName(e)});
+        } else if (platform.in_browser) {
+            app.note("gravando os dados (vídeo só no programa instalado)", .{});
         } else app.note("gravando vídeo e dados", .{});
     }
 
@@ -331,7 +395,7 @@ pub const App = struct {
         var r = app.rec orelse return;
         app.rec = null;
         const name = if (app.plane) |p| p.loaded.ac.name else "";
-        r.finish(app.io, name) catch |e| {
+        r.finish(app.io, app.files, name) catch |e| {
             app.note("erro ao salvar: {s}", .{@errorName(e)});
             return;
         };
@@ -442,7 +506,14 @@ pub const App = struct {
         app.go(next);
     }
 
+    /// o laço do programa nativo, até fechar a janela (no navegador quem chama `step` é a página)
     pub fn run(app: *App) void {
+        app.begin();
+        while (!rl.windowShouldClose() and !app.quit) app.step(@floatCast(rl.getFrameTime()));
+    }
+
+    /// abre o último avião (ou o Convencional) e o menu inicial: o que vem antes do laço
+    pub fn begin(app: *App) void {
         if (app.settings.aircraft().len > 0) _ = app.loadPlane(app.settings.aircraft());
         if (app.plane == null and app.lib.entries.len > 0) {
             // o Convencional, se existir; senão o primeiro da lista
@@ -454,6 +525,5 @@ pub const App = struct {
             _ = app.loadPlane(app.lib.entries[pick].path);
         }
         app.enter(.main);
-        while (!rl.windowShouldClose() and !app.quit) app.step(@floatCast(rl.getFrameTime()));
     }
 };

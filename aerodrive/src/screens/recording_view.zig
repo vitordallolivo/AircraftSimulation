@@ -26,7 +26,7 @@ pub const RecordingView = struct {
         v.page = 0;
         var buf: [1100]u8 = undefined;
         const path = std.fmt.bufPrint(&buf, "{s}/dados.csv", .{app.viewer_dir[0..app.viewer_dir_len]}) catch return;
-        const bytes = std.Io.Dir.cwd().readFileAlloc(app.io, path, app.gpa, .limited(512 << 20)) catch {
+        const bytes = app.files.read(app.gpa, path, 512 << 20) catch {
             v.err = "não consegui ler dados.csv";
             return;
         };
