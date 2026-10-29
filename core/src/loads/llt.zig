@@ -1026,7 +1026,8 @@ test "curva da seção: reta antes do estol e pico igual ao c_l,max pedido" {
     const stall = stallAngle(slope, zero_lift, clmax, 50);
     const curve = Curve{ .slope = slope, .zero_lift = zero_lift, .stall = stall };
     try testing.expectApproxEqRel(clmax, peakLift(curve, 50), 1e-6);
-    try testing.expectApproxEqRel(slope * (0.05 - zero_lift), sectionLift(curve, 0.05, 50), 1e-6);
+    // a mistura já pesa um pouco antes do estol (σ ≈ e^(−M (α_estol − α)), como nas faixas): perto da reta, não igual
+    try testing.expectApproxEqRel(slope * (0.05 - zero_lift), sectionLift(curve, 0.05, 50), 1e-3);
     try testing.expect(sectionLift(curve, 0.6, 50) < 0.8 * clmax); // depois do estol, cai
     try testing.expectEqual(@as(f64, 0), stallAngle(slope, zero_lift, 0, 50)); // sem c_l,max: sem estol
 }
