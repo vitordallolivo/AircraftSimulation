@@ -201,6 +201,13 @@ fn browserMain() !void {
     std.os.emscripten.emscripten_set_main_loop(browserFrame, 0, 1);
 }
 
+/// a janela do jogo acompanha a página: celular girado, tela cheia ligada ou desligada, barra do
+/// navegador aparecendo (o raylib só redimensiona o canvas, e o desenho ficaria no tamanho antigo)
+fn followViewport() void {
+    const size = browser.viewportSize();
+    if (size.width != rl.getScreenWidth() or size.height != rl.getScreenHeight()) rl.setWindowSize(size.width, size.height);
+}
+
 /// um quadro no navegador: o .json que chegou da página (se houver) e o jogo
 fn browserFrame() callconv(.c) void {
     const app = browser_app orelse return;
@@ -208,6 +215,7 @@ fn browserFrame() callconv(.c) void {
         defer file.deinit();
         if (app.importFile(file.name, file.bytes)) app.saveSettings(); // a página pode fechar sem aviso: já fica lembrado
     }
+    followViewport();
     app.step(@floatCast(rl.getFrameTime()));
     if (app.quit) { // "Sair" no navegador: grava e volta à tela inicial do site
         app.quit = false;

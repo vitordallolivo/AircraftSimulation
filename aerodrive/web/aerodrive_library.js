@@ -127,6 +127,63 @@ addToLibrary({
     return button ? button.value : 0;
   },
 
+  // vídeo do voo: o MediaRecorder grava o canvas. Formato: o primeiro que o navegador souber gravar
+  // (.mp4 no Chrome, Edge e Safari recentes; .webm no Firefox). Onde existe o "Salvar como"
+  // (showSaveFilePicker: Chrome e Edge do PC), a página pergunta onde salvar ao começar e grava os
+  // pedaços direto no arquivo; nos outros, junta os pedaços e baixa ao parar.
+  $aerodriveVideo: {
+    recorder: null,
+    formats: [
+      ['video/mp4;codecs=avc1', 'mp4'], ['video/mp4', 'mp4'],
+      ['video/webm;codecs=vp9', 'webm'], ['video/webm;codecs=vp8', 'webm'], ['video/webm', 'webm'],
+    ],
+  },
+
+  aerodrive_video_start__deps: ['$aerodrive', '$aerodriveVideo'],
+  aerodrive_video_start: (name, nameLength, fps) => {
+    const video = aerodriveVideo;
+    if (video.recorder || typeof MediaRecorder === 'undefined' || !Module.canvas.captureStream) return 0;
+    const format = video.formats.find(([type]) => MediaRecorder.isTypeSupported(type));
+    if (!format) return 0;
+    const [type, extension] = format;
+    const fileName = aerodrive.text(name, nameLength) + '.' + extension;
+    let recorder;
+    try {
+      recorder = new MediaRecorder(Module.canvas.captureStream(fps), { mimeType: type, videoBitsPerSecond: 8000000 });
+    } catch (error) {
+      console.warn('AeroDrive: o navegador recusou gravar vídeo', error);
+      return 0;
+    }
+    // onde salvar: o arquivo escolhido (aberto para escrita) ou null (baixar no fim)
+    const target = window.showSaveFilePicker
+      ? window.showSaveFilePicker({ suggestedName: fileName, types: [{ description: 'Vídeo do voo', accept: { [type.split(';')[0]]: ['.' + extension] } }] })
+          .then((handle) => handle.createWritable())
+          .catch(() => null) // cancelou ou sem permissão: baixa no fim
+      : Promise.resolve(null);
+    const pieces = [];
+    let writing = target; // os pedaços entram no arquivo na ordem em que chegam
+    recorder.ondataavailable = (event) => {
+      if (!event.data.size) return;
+      writing = writing.then((file) => (file ? file.write(event.data).then(() => file) : (pieces.push(event.data), null)));
+    };
+    recorder.onstop = () => {
+      writing.then((file) => {
+        if (file) return file.close();
+        Module.aerodrivePage.download(fileName, new Blob(pieces, { type: type.split(';')[0] }));
+      }).catch((error) => console.error('AeroDrive: não consegui salvar o vídeo', error));
+    };
+    recorder.start(1000); // um pedaço por segundo: no arquivo escolhido, a memória não cresce
+    video.recorder = recorder;
+    return 1;
+  },
+
+  aerodrive_video_stop__deps: ['$aerodriveVideo'],
+  aerodrive_video_stop: () => {
+    const recorder = aerodriveVideo.recorder;
+    aerodriveVideo.recorder = null;
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+  },
+
   aerodrive_touch_seen: () => (Module.aerodrivePage.touchSeen ? 1 : 0),
 
   aerodrive_leave__deps: ['$FS'],

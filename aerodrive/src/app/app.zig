@@ -41,6 +41,7 @@ const video_view = @import("../screens/video_view.zig");
 const KeepAwake = @import("../sys/keep_awake.zig").KeepAwake;
 const dev_overlay = @import("../ui/dev_overlay.zig");
 const platform = @import("../sys/platform.zig");
+const browser = @import("../sys/browser.zig");
 
 const logo_png = @embedFile("../assets/albatroz.png");
 /// o maior .json de avião que se lê (disco, navegador ou arquivo arrastado)
@@ -116,6 +117,7 @@ pub const App = struct {
     dm: ?dm_mod.DriveManager = null,
     flight_ac: model.Aircraft = .{},
     rec: ?recorder.Recorder = null,
+    browser_video: bool = false, // o MediaRecorder da página está gravando o vídeo desta gravação
     rec_message: [160]u8 = undefined,
     rec_message_len: usize = 0,
     rec_message_t: f64 = 0,
@@ -377,7 +379,7 @@ pub const App = struct {
         if (app.rec != null) return;
         const now = std.Io.Clock.real.now(app.io);
         const secs: i64 = @intCast(@divFloor(now.nanoseconds, std.time.ns_per_s));
-        // no navegador não há ffmpeg: grava só os dados (w = h = 0 desliga o vídeo)
+        // no navegador não há ffmpeg: o recorder grava só os dados (w = h = 0) e o vídeo é da página
         const w: u32 = if (platform.in_browser) 0 else @intCast(@max(rl.getRenderWidth(), 0));
         const h: u32 = if (platform.in_browser) 0 else @intCast(@max(rl.getRenderHeight(), 0));
         app.video_acc = 0;
@@ -388,19 +390,29 @@ pub const App = struct {
         if (app.rec.?.video_error) |e| {
             app.note("gravando só os dados (vídeo: {s})", .{if (e == error.NoFfmpeg) "instale o ffmpeg" else @errorName(e)});
         } else if (platform.in_browser) {
-            app.note("gravando os dados (vídeo só no programa instalado)", .{});
+            // o vídeo do navegador é o MediaRecorder da página (sys/browser.zig), com o nome da pasta dos dados
+            const folder = std.fs.path.basename(app.rec.?.dir());
+            app.browser_video = browser.videoStart(folder, video_fps);
+            if (app.browser_video) {
+                app.note("gravando vídeo e dados", .{});
+            } else app.note("gravando só os dados (este navegador não grava vídeo)", .{});
         } else app.note("gravando vídeo e dados", .{});
     }
 
     pub fn stopRecording(app: *App) void {
         var r = app.rec orelse return;
         app.rec = null;
+        const had_video = app.browser_video;
+        if (platform.in_browser and had_video) browser.videoStop();
+        app.browser_video = false;
         const name = if (app.plane) |p| p.loaded.ac.name else "";
         r.finish(app.io, app.files, name) catch |e| {
             app.note("erro ao salvar: {s}", .{@errorName(e)});
             return;
         };
-        app.note("salvo em {s}", .{r.dir()});
+        if (had_video) {
+            app.note("dados em Voos gravados; vídeo onde você escolheu (ou em Downloads)", .{});
+        } else app.note("salvo em {s}", .{r.dir()});
     }
 
     /// recado curto no canto da tela (some depois de alguns segundos)
