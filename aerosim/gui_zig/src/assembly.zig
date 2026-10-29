@@ -122,7 +122,7 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Di
 
 /// os perfis das superfícies que o arquivo só aponta (`airfoil.path`, sem `coords`): lê o `.dat`. O caminho é
 /// relativo à raiz do repositório (como `data/airfoils/s1223.dat`), então procura subindo a partir do `.json`
-fn fillAirfoilFiles(allocator: std.mem.Allocator, io: std.Io, json_path: []const u8, bytes: []const u8, ac: *model.Aircraft) !void {
+pub fn fillAirfoilFiles(allocator: std.mem.Allocator, io: std.Io, json_path: []const u8, bytes: []const u8, ac: *model.Aircraft) !void {
     const root = std.json.parseFromSliceLeaky(std.json.Value, allocator, bytes, .{}) catch return;
     if (root != .object) return;
     const node = root.object.get("aeronave") orelse root;

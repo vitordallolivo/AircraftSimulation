@@ -9,7 +9,7 @@ os mesmos números da GUI em Python. A interface do aeroopt fica em `aeroopt/gui
 A pasta se divide em três partes. Em `src/ui` ficam as peças de qualquer tela, as mesmas para o aerosim e para o
 aeroopt: as cores e as fontes, as formas do visual, os widgets (cabeçalho, abas, botão, cartão), o formulário
 lateral, o gráfico, a vista 3D e o laço do programa. Em `src/screen.zig` fica a tela do aerosim, montada com essas peças, e cada aba
-tem o seu arquivo: `src/analyze_tab.zig` (Analisar) com as contas em `src/wing_analysis.zig`, e `src/assembly.zig`
+tem o seu arquivo: `src/airfoil_tab.zig` (Perfis) com a etapa em `src/airfoil_stage.zig`, `src/analyze_tab.zig` (Analisar) com as contas em `src/wing_analysis.zig`, e `src/assembly.zig`
 (Montagem).
 
 ## As peças (`src/ui`)
@@ -47,6 +47,20 @@ avião de exemplo de `data/aircraft`, e outro `.json` entra pela linha de comand
 leitura e as peças são as do AeroDrive (`aerodrive/src/model`, pelo `aerodrive/src/aircraft_model.zig`), as
 mesmas formas e cores da GUI em Python; o `src/assembly.zig` só completa os perfis que o arquivo aponta num `.dat`
 e passa cada triângulo para a vista 3D. As outras abas mostram só o lugar delas.
+
+## Os perfis (`src/airfoil_stage.zig`)
+
+Aqui se comparam perfis candidatos antes de desenhar a asa. Entram os perfis das superfícies do avião aberto
+(marcados), os `.dat` da biblioteca `data/airfoils` que não são NACA (desmarcados), um NACA de 4 dígitos pelo código
+e o que se arrasta para a janela: um `.dat` vira candidato, e uma polar exportada pelo XFLR5 ou pelo XFOIL (`.txt`,
+`.csv`, `.pol`) vira um candidato com a polar medida. Um perfil sem $\alpha_{L0}$ ou $c_m$ no arquivo ganha os dois pela
+teoria de perfil fino sobre a linha média do contorno, como a GUI em Python faz.
+
+A polar sai do núcleo (`core/src/physics/section.zig`): a do modelo, ou a medida lida de −16° a 20°. Os gráficos
+mostram $c_l$, a polar, $c_l/c_d$ e $c_m$ em α e o contorno em escala; a tabela embaixo tem os números que seguem para a
+asa. O Reynolds vem da velocidade de cruzeiro, da corda de referência (a corda média da asa, da análise das asas) e da
+densidade, $Re = \rho V c / \mu$. O diagnóstico avisa Reynolds abaixo de $10^5$, polar medida noutro Reynolds e a
+polar do modelo com $c_d$ constante.
 
 ## A análise das asas (`src/wing_analysis.zig`)
 

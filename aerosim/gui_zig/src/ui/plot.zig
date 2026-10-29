@@ -30,6 +30,7 @@ pub const Axes = struct {
     title: [:0]const u8,
     x_label: [:0]const u8,
     y_label: [:0]const u8,
+    equal_axes: bool = false, // a mesma escala em x e em y (um contorno de perfil)
 };
 
 pub const Frame = struct {
@@ -57,7 +58,7 @@ pub fn lines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
         y_range = if (y_range) |r| r.merge(ry) else ry;
     }
     const legend_height = legendHeight(ui, inner.width, series);
-    const frame = drawFrame(ui, inner, axes, x_range orelse .{ .low = 0, .high = 1 }, y_range orelse .{ .low = 0, .high = 1 }, legend_height, false);
+    const frame = drawFrame(ui, inner, axes, x_range orelse .{ .low = 0, .high = 1 }, y_range orelse .{ .low = 0, .high = 1 }, legend_height, axes.equal_axes);
     rl.beginScissorMode(@intFromFloat(frame.area.x), @intFromFloat(frame.area.y - 1), @intFromFloat(frame.area.width + 1), @intFromFloat(frame.area.height + 2));
     for (series, 0..) |s, i| {
         const color = theme.plotColor(s.color_index orelse i);

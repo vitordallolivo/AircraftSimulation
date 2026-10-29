@@ -6,7 +6,8 @@ vento, e diz onde estão a massa, o CG e a inércia. Ela não avança no tempo: 
 `sim/dynamics.zig`. Também não aloca memória, porque os vetores têm o tamanho dos limites de `limits.zig`.
 
 O README segue a ordem das forças. Primeiro vem a aerodinâmica por faixas, que é o modelo padrão do voo, e logo
-depois a escolha do modelo aerodinâmico e a tabela de voo, as duas alternativas a ele. Em seguida vêm a propulsão
+depois a escolha do modelo aerodinâmico, a tabela de voo (as duas alternativas a ele) e a polar 2D de um perfil
+sozinho, que a etapa Perfis do dimensionamento usa. Em seguida vêm a propulsão
 (motor elétrico e hélice, ou um polinômio de tração), o trem de pouso, a massa (com o líquido que balança nos tanques
 e a carga lançada), o vento e, por último, o terreno sob o avião.
 
@@ -172,6 +173,27 @@ C_n = C_{n\beta}\,\beta + C_{np}\,\hat p + C_{nr}\,\hat r + C_{n\delta_a}\,\delt
 Fora da faixa da tabela vale o valor da ponta. A força volta aos eixos do corpo pelas mesmas definições de
 `aero.coeffsAt` ($`C_L`$ perpendicular ao vento no plano de simetria, $`C_D`$ ao longo dele). A tabela não tem efeito solo
 nem esteira: é de voo livre.
+
+## Polar 2D de um perfil (`section.zig`)
+
+Aqui se tira a polar de um perfil sozinho, sem asa em volta, e os números que a asa vai usar. Serve para comparar
+perfis candidatos antes de desenhar a asa: qual sustenta mais, onde estola, quanto arrasta. A polar do modelo é a
+mesma hipótese das faixas acima, só que em 2D: a reta até perto do estol, misturada com a placa plana pela sigmoide
+de Beard e McLain, com o α de transição $\alpha_0$ achado por bisseção para o pico da curva ser o $c_{l,\max}$ do
+perfil:
+
+$$c_l(\alpha) = (1 - \sigma)\,a\,(\alpha - \alpha_{L0}) + \sigma\,2\,\mathrm{sgn}(\alpha)\,\sin^2\alpha\cos\alpha$$
+
+com $\sigma$ a mistura de `aero.sigmaStall` e $a$ a inclinação 2D (Beard e McLain, Small Unmanned Aircraft, 2012,
+eq. 4.10). O arrasto é $c_{d0}$ mais a parte da placa plana, $\sigma\,1{,}2\sin^2\alpha$, e o $c_m$ é o do perfil.
+Esse modelo não tem o balde de arrasto de um perfil real, então o $c_l/c_d$ dele não serve para comparar perfis; para
+isso entra a polar medida (do XFLR5), lida nos mesmos ângulos por `interpolate`.
+
+De qualquer polar, `metrics` tira o $c_{l,\max}$ e o α de estol, o $(c_l/c_d)$ máximo, o $c_d$ mínimo e, no trecho
+colado (c_l entre 15 % e 70 % do máximo), a inclinação e o $\alpha_{L0}$ pela reta de Theil-Sen: a mediana das
+inclinações de todos os pares de pontos. Uma reta de mínimos quadrados se deixa puxar pelo salto de uma bolha de
+separação, comum em Reynolds baixo (o S1223 tem um); a mediana não. As contas são as de `aerosim/aero/sections.py` e
+`aerosim/design/airfoils.py`, e o teste confere os números contra elas.
 
 ## Propulsão (`propulsion.zig`)
 

@@ -23,6 +23,7 @@ pub const physics = struct {
     pub const gear = @import("physics/gear.zig");
     pub const mass = @import("physics/mass.zig");
     pub const propulsion = @import("physics/propulsion.zig");
+    pub const section = @import("physics/section.zig");
     pub const terrain = @import("physics/terrain.zig");
 };
 

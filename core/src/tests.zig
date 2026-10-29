@@ -22,6 +22,7 @@ comptime {
     if (wanted("physics")) {
         _ = @import("physics/atmosphere.zig");
         _ = @import("physics/aero.zig");
+        _ = @import("physics/section.zig");
         _ = @import("physics/propulsion.zig");
         _ = @import("physics/gear.zig");
         _ = @import("physics/mass.zig");

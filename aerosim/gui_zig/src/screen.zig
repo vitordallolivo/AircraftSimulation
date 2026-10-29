@@ -8,6 +8,7 @@ const theme = ui_kit.theme;
 const widgets = ui_kit.widgets;
 const view3d = ui_kit.view3d;
 const analyze_tab = @import("analyze_tab.zig");
+const airfoil_tab = @import("airfoil_tab.zig");
 const assembly_mod = @import("assembly.zig");
 const aircraft_model = @import("aircraft_model");
 
@@ -19,13 +20,18 @@ pub const Screen = struct {
     aero_tab: usize = 2,
     scroll: f32 = 0, // rolagem inicial (prints), passada à aba aberta
     analyze: analyze_tab.AnalyzeTab = .{},
+    airfoils: airfoil_tab.AirfoilTab = .{},
     assembly_view: view3d.View = .{}, // a vista 3D da Montagem
     assembly: ?assembly_mod.Assembly = null, // o avião aberto
     assembly_note: [240:0]u8 = [_:0]u8{0} ** 240,
 
-    /// abre a aba de área `index` (0 = Dimensionamento ... 5 = Montagem), para os prints
+    /// abre a aba de área `index` (0 = Dimensionamento ... 5 = Montagem; 6, 7 e 8 = Aerodinâmica → Perfis, Projetar
+    /// e Analisar), para os prints
     pub fn selectTab(screen: *Screen, index: usize) void {
-        screen.area = @min(index, areas.len - 1);
+        if (index >= areas.len) {
+            screen.area = 1;
+            screen.aero_tab = @min(index - areas.len, aero_tabs.len - 1);
+        } else screen.area = index;
     }
 
     /// liga o formulário às listas da própria tela e roda a análise uma vez (chamar com a janela aberta e a tela
@@ -33,12 +39,21 @@ pub const Screen = struct {
     pub fn start(screen: *Screen) void {
         var buffer: [512]u8 = undefined;
         var fixed = std.heap.FixedBufferAllocator.init(&buffer);
-        if (assembly_mod.findExample(fixed.allocator(), io())) |path| screen.openFile(path) else screen.analyze.setAircraft(null);
+        if (assembly_mod.findExample(fixed.allocator(), io())) |path| screen.openFile(path) else {
+            screen.analyze.setAircraft(null);
+            screen.airfoils.setAircraft(null, null);
+        }
     }
 
     /// o avião aberto, se houver
     fn aircraft(screen: *Screen) ?*const aircraft_model.aircraft.Aircraft {
         return if (screen.assembly) |*opened| &opened.loaded.ac else null;
+    }
+
+    /// a corda média aerodinâmica da primeira superfície da análise das asas (a corda do Reynolds dos perfis)
+    fn referenceChord(screen: *Screen) ?f64 {
+        const result = screen.analyze.results[0] orelse screen.analyze.results[1] orelse return null;
+        return if (result.owner_count > 0) result.owner_chord[0] else null;
     }
 
     /// abre o avião em `path` (.json) na Montagem
@@ -52,6 +67,7 @@ pub const Screen = struct {
         if (screen.assembly) |*old| old.deinit();
         screen.assembly = loaded;
         screen.analyze.setAircraft(screen.aircraft());
+        screen.airfoils.setAircraft(screen.aircraft(), screen.referenceChord());
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · {d} peças · arraste outro .json para a janela para trocar · arraste para girar, roda para aproximar", .{ std.fs.path.basename(path), loaded.mesh.piece_count }) catch {};
     }
 
@@ -61,18 +77,27 @@ pub const Screen = struct {
         if (rl.isFileDropped()) {
             const dropped = rl.loadDroppedFiles();
             defer rl.unloadDroppedFiles(dropped);
-            if (dropped.count > 0) {
-                screen.openFile(std.mem.sliceTo(dropped.paths[0], 0));
-                screen.area = 5;
+            for (0..dropped.count) |k| {
+                const path = std.mem.sliceTo(dropped.paths[k], 0);
+                if (screen.airfoils.addFile(path, screen.aircraft(), screen.referenceChord())) {
+                    screen.area = 1;
+                    screen.aero_tab = 0;
+                } else {
+                    screen.openFile(path);
+                    screen.area = 5;
+                }
             }
         }
         // conteúdo primeiro, cabeçalho e abas por cima (a rolagem passa por baixo deles)
         const top = widgets.header_height + 38 + 32;
         if (screen.scroll > 0) { // a rolagem pedida na linha de comando vai para a aba aberta
             screen.analyze.scroll = screen.scroll;
+            screen.airfoils.scroll = screen.scroll;
             screen.scroll = 0;
         }
-        if (screen.area == 1 and screen.aero_tab == 2) {
+        if (screen.area == 1 and screen.aero_tab == 0) {
+            screen.airfoils.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top });
+        } else if (screen.area == 1 and screen.aero_tab == 2) {
             screen.analyze.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top }, screen.aircraft());
         } else if (screen.area == 5) {
             screen.drawAssembly(ui, .{ .x = 0, .y = top, .width = width, .height = height - top });
