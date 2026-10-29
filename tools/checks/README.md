@@ -36,6 +36,14 @@ Sai com código 1 se algum check falhar. Os pulados, por exemplo quando falta o 
 - **Diferença não é erro automático:** uma mudança de física pedida muda os números. O check lista o que mudou (avião,
   parte, maior diferença) e quem lê decide.
 
+## No GitHub Actions
+
+O mesmo `run.py --tudo` roda sozinho a cada PR para a `main` e a cada push na `0.2_dev`
+(`.github/workflows/testes.yml`). Ele se divide em três partes que correm ao mesmo tempo: núcleo e AeroDrive,
+regressão bit a bit e testes Python. O resultado aparece no PR, e o relatório em Markdown de cada parte fica na aba
+Actions, em Artifacts. Os retratos da regressão ficam no cache do Actions, então o da `main` só se calcula uma vez.
+Um check novo entra no CI sem mexer no workflow, porque ele chama o `run.py` por grupo.
+
 ## Check novo
 
 Uma função com `@check("grupo", "nome")` num módulo importado por `run.py`, devolvendo

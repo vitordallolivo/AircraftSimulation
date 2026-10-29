@@ -26,6 +26,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - AeroDrive no navegador grava vídeo: o G (ou "Gravar" na pausa) liga o MediaRecorder da página junto com os dados.
   Sai .mp4 (Chrome, Edge e Safari recentes) ou .webm (Firefox). No Chrome e no Edge do PC a página pergunta onde
   salvar ao começar e grava direto no arquivo; nos outros, o vídeo é baixado ao parar.
+- CI: `.github/workflows/testes.yml` roda os checks de `tools/checks` (`run.py --tudo`) a cada PR para a `main` e a
+  cada push na `0.2_dev`, em três partes paralelas (núcleo e AeroDrive, regressão bit a bit, testes Python), e deixa
+  o relatório de cada parte como artefato na aba Actions.
 - celular: no primeiro toque a página vai para a tela cheia e trava deitada; em pé aparece "gire o celular"; o jogo
   acompanha o tamanho da página (tela cheia, barra do navegador, giro).
 - celular, segunda rodada (testada pelo vitor num Galaxy): o jogo desenha numa área de no mínimo 640 px de altura e

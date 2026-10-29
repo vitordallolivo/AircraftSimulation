@@ -135,7 +135,7 @@ Os blocos só ordenam a lista; não são versões.
 | Bloco | O que | Tarefas |
 |---|---|---|
 | **B1** | Fundação (feito) | checks de regressão, conferir os ❓, pilha na `main` |
-| **B1+** | Proteção e medição (local, sem CI pago) | perfil (flame graph) · snapshot das abas · smoke das abas · lint + hook de pre-push · tempo como regressão · propriedades · avisos de documentação |
+| **B1+** | Proteção e medição (local, e no GitHub Actions desde que o repositório ficou público) | perfil (flame graph) · snapshot das abas · smoke das abas · lint + hook de pre-push · tempo como regressão · propriedades · avisos de documentação |
 | **B2** | Análises simples | passeio do CG e ME no tempo · curvas com fator de carga · restrições e normas como preset do usuário · Desempenho por etapa de voo (envelopes, decolagem com MTOW, subida, curva, descida e pouso) |
 | **B3** | Aero completo na GUI | **flape (prioridade)** · linha sustentadora corrigida e não linear · esteira desviada · trimagem com esteira e tubo desviado · distribuição a α · Reynolds no núcleo · arrasto por componente |
 | **B4** | Cargas I | aba Cargas · arquitetura de cargas e aeroelasticidade · casos do V-n · rajada · cortante, fletor e torsor |
@@ -327,6 +327,7 @@ Ferramentas, checks, documentação e git, que valem para os quatro segmentos.
 | T48 | Snapshot do resultado de cada aba (resumo + diagnóstico por template, valores padrão) em `tools/checks`, com `--aceitar` para mudança intencional | [ext] | — | B1+ | Pronto |
 | T49 | Smoke test de todas as abas e subabas: abre sem tela, roda com os padrões, todo gráfico declarado tem dado | [ext] | — | B1+ | Pronto |
 | T50 | Lint (`ruff`, `zig fmt --check`) em `tools/checks` e hook de `pre-push` com os checks rápidos (`tools/hooks/`, `core.hooksPath`) | [ext] | — | B1+ | Pronto |
+| T88 | Checks no GitHub Actions (`.github/workflows/testes.yml`): o `tools/checks/run.py --tudo` a cada PR para a `main` e a cada push na `0.2_dev`, em três jobs paralelos (núcleo e AeroDrive, regressão bit a bit contra a `main`, testes Python), com o relatório em Markdown como artefato. De graça porque o repositório é público | [ext] | — | B1+ | A revisar |
 | T51 | Tempo como regressão: benchmarks e abas contra a `main`, só aviso | [ext] | T47 | B1+ | Bloqueado |
 | T52 | Testes de propriedade (simetria, soma das cargas, monotonicidade, R·ω = V…), cada lei com fonte | [novo] | — | B1+ | Pronto |
 | T53 | Avisos de documentação (README em pasta nova, fonte de fórmula no Zig, CHANGELOG no PR) | [ext] | — | B1+ | Pronto |
