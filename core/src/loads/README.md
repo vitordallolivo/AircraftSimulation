@@ -9,7 +9,7 @@ trimagem e o AeroDrive ficam iguais.
 O README começa explicando por que esta pasta existe. Depois apresenta o método de Phillips e Snyder, que é o padrão,
 e o de Goates e Hunsaker, uma correção ligável para asas enflechadas e para voo com derrapagem. Depois vem a versão não
 linear, também ligável, em que cada faixa estola pela curva do seu perfil. Em seguida vêm o cache
-que deixa a conta rápida, a varredura das asas em α (`sweep.zig`, a conta da subaba Asas), os limites do método, os
+que deixa a conta rápida, a varredura das asas em α (`sweep.zig`, a conta da subaba Analisar da Aerodinâmica), os limites do método, os
 testes, como validar e as referências. No fim, como chamar.
 
 ## Por que existe
@@ -304,7 +304,7 @@ semi-infinito por fórmula fechada (o 1º termo da eq. 3 de Goates e Hunsaker), 
 ## Varredura das asas em α (`sweep.zig`)
 
 Aqui se analisa um conjunto de asas como num túnel de vento: uma asa sozinha, um biplano, um tandem ou uma asa com
-canard, sem trimar, sem fuselagem e sem hélice. É a conta da subaba Asas da Aerodinâmica. Antes, o Python chamava
+canard, sem trimar, sem fuselagem e sem hélice. É a conta da subaba Analisar da Aerodinâmica. Antes, o Python chamava
 `aerosim_panel_states_llt` uma vez por α, montava as distribuições e somava a sustentação de cada superfície. Com
 dezenas de α e uma sessão por superfície refinada, isso levava segundos, e o somatório, o $`C_L`$ máximo e o início do
 estol ficavam em Python. A varredura faz tudo isso no núcleo, numa chamada, com o mesmo resultado.

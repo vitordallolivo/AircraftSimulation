@@ -44,6 +44,7 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - aerodinâmica: a subaba Avião montado saiu. A Asas faz também a análise do avião completo (polares no CG, profundor e
   derrapagem, estol × cruzeiro, L/D, pontas de asa) quando o avião aberto está pronto, e a polar continua indo para o
   Desempenho.
+- aerodinâmica: as subabas passam a se chamar Perfis, Projetar (a etapa da asa) e Analisar (a antiga Asas).
 - celular: no primeiro toque a página vai para a tela cheia e trava deitada; em pé aparece "gire o celular"; o jogo
   acompanha o tamanho da página (tela cheia, barra do navegador, giro).
 - celular, segunda rodada (testada pelo vitor num Galaxy): o jogo desenha numa área de no mínimo 640 px de altura e

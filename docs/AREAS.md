@@ -17,9 +17,9 @@ desenvolvido" até ser feito) · ⚠ cálculo em Python que, pela regra 2 do `.c
 
 | Submódulo | Estado | Onde | Tarefa |
 |---|---|---|---|
-| Perfil (polares 2D por Re, cache) | ✅ | `design/airfoils.py`, `aero/sections.py` | — |
-| Asa (forma em planta, partições) | ✅ ⚠ | `design/wing.py` (Helmbold em Python) | — |
-| Avião completo (polar e derivadas; núcleo, lltdrek, ASB, AVL, XFLR5), dentro da subaba Asas | ✅ | `manager/simulations/aerodynamics.py` (sem aba), `wings.py`, `aero/*_solver.py` | T89 |
+| Perfis (polares 2D por Re, cache) | ✅ | `design/airfoils.py`, `aero/sections.py` | — |
+| Projetar a asa (forma em planta, partições) | ✅ ⚠ | `design/wing.py` (Helmbold em Python) | — |
+| Avião completo (polar e derivadas; núcleo, lltdrek, ASB, AVL, XFLR5), dentro da subaba Analisar | ✅ | `manager/simulations/aerodynamics.py` (sem aba), `wings.py`, `aero/*_solver.py` | T89 |
 | Dispositivos de ponta | ✅ ⚠ | `aero/tipdevices.py` (Trefftz em Python) | — |
 | Flape (ΔC_l, ΔC_l máx, ΔC_d, ΔC_m, comando) — prioridade | 🟡 | só deflexão fixa na incidência (`translator.py`) | T54 |
 | Linha sustentadora das cargas (enflechamento, não linear) | ✅ | `core/src/loads/llt.zig` | T55 |
@@ -113,7 +113,7 @@ de cauda e na fuselagem, e a tabela de casos (de onde veio cada carga).
 | D2 | Curvas: raio mínimo | `turn.py` (sem aba) e a Missão "curvas: raio mínimo" (mesmo `evaluate_turn`, laço repetido) | subaba Curva única (analítica + numérica) |
 | D3 | Decolagem | `takeoff.py` (sem aba), Missão "só decolagem" e "MTOW", e `design/flight.py` (todos usam `takeoff_opt`) | subaba Decolagem única, com o MTOW como caixa de marcar |
 | D4 | Envelope de voo | `envelope.py` (sem aba, "Envelope_main original") e `performance.py` (`simple_perf`) | subaba Voo nivelado e envelopes, com todos os envelopes plotados |
-| D5 | Polar estática | `polar.py` (sem aba) e Aerodinâmica → Asas (avião completo) | conferir quem usa `polar.py` |
+| D5 | Polar estática | `polar.py` (sem aba) e Aerodinâmica → Analisar (avião completo) | conferir quem usa `polar.py` |
 | D6 | Distribuição ao longo da envergadura | T09 (Aerodinâmica) e Cargas → Distribuição (T12) | T09 fecha com a subaba de Cargas (ou a Aerodinâmica mostra o mesmo `LoadResult`) |
 | D7 | Requisitos do projeto | `design/spec.py` e `sizing/constraints.py`: duas classes `Requirements`, campos repetidos com padrões diferentes (V de cruzeiro 15 × 16 m/s) | uma classe só; os limites viram preset do usuário (T37) |
 | D8 | Helmbold (C_Lα 3D) | `model/airfoil.py` (Python) e o tradutor/núcleo | uma fórmula só, no núcleo |

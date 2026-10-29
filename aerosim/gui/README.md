@@ -27,7 +27,7 @@ flowchart LR
     ST["state.py<br/>AppState: aeronave, catálogo, sinais"]
     CT["tabs/config_tab.py<br/>Montagem: componentes | 3D | editor"]
     AP["widgets/aircraft_panel.py<br/>FleetBar ◀ ▶ + 3D só de ver"]
-    DP["design/pages.py<br/>etapas da sprint: Perfil, Asa,<br/>Empenagem, Motores"]
+    DP["design/pages.py<br/>etapas da sprint: Perfis, Projetar,<br/>Empenagem, Motores"]
     DS["aerosim.design<br/>contas das etapas"]
     STAB["tabs/simulation_tab.py<br/>formulário, QThread, tempo real"]
     V3D["widgets/view3d.py<br/>malhas, seleção, arraste"]
@@ -79,8 +79,8 @@ de cruzeiro, o fator de carga e o teto mínimo, cada motor tem o botão "⟲⟳ 
 
 ### Etapas da sprint
 
-As etapas do projeto do zero (`design/pages.py`) ficam como subabas das áreas, antes da análise do avião montado: Perfil
-e Asa em Aerodinâmica, Empenagem e comandos em Estabilidade, Motores e montagem e o Estudo e ponto de projeto em
+As etapas do projeto do zero (`design/pages.py`) ficam como subabas das áreas, antes da análise do avião montado: Perfis
+e Projetar (a asa) em Aerodinâmica, Empenagem e comandos em Estabilidade, Motores e montagem e o Estudo e ponto de projeto em
 Desempenho. Cada etapa edita um rascunho e mostra na hora o que vai sair, com a peça em 3D (a asa sozinha; asa, cauda
 e tubo com o CG e o ponto neutro; o avião inteiro), os gráficos e o diagnóstico. "Guardar" cria um candidato com nome,
 que a etapa seguinte escolhe. "Mandar para a Montagem" abre o avião como mais um avião aberto e o salva em "meus
@@ -108,8 +108,8 @@ um slider sobre `mdo.history`. Clicar num indivíduo o refaz (`mdo.evaluate`) pa
 
 `DataclassForm` monta um formulário a partir de uma dataclass, usando o rótulo, a unidade, a dica, as opções e a faixa
 dos metadados de cada campo (`aerosim.design.fields.F`). `choices` e `editable` mudam um campo para listas que
-dependem do projeto, como os perfis disponíveis. Os `.dat` de `data/airfoils` aparecem nas listas de perfil da Asa e da
-Empenagem desde o início, sem passar pela etapa Perfil. Na tela, a posição do CG aparece em % da CMA, e por dentro
+dependem do projeto, como os perfis disponíveis. Os `.dat` de `data/airfoils` aparecem nas listas de perfil da etapa Projetar e da
+Empenagem desde o início, sem passar pela etapa Perfis. Na tela, a posição do CG aparece em % da CMA, e por dentro
 tudo é em metros.
 
 ### Vários aviões abertos
@@ -117,7 +117,7 @@ tudo é em metros.
 `AppState.fleet` guarda os aviões abertos e `current` o escolhido. A `FleetBar` (◀ nome ▶, ＋ variante, ×) troca entre
 eles, e todas as abas acompanham. "Abrir ao lado" (menu Arquivo) abre mais um arquivo sem fechar o atual, "＋ variante"
 abre uma cópia para variar, e o título mostra quantos aviões estão abertos. As análises do avião montado com
-`show_aircraft = True` (as subabas "Avião montado", Asas e a Missão) mostram no topo um `AircraftPanel`, com o avião atual em
+`show_aircraft = True` (as subabas "Avião montado", Analisar e a Missão) mostram no topo um `AircraftPanel`, com o avião atual em
 3D, só para ver, e os gráficos embaixo.
 
 ### Abas de simulação

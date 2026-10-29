@@ -4,7 +4,7 @@ Feita para caber em 1366 × 768.
 
 As áreas que têm etapas da sprint (gui/design) viram subabas: primeiro as etapas que criam o avião do
 zero (Perfil → Asa → Empenagem → Motores), por último "Avião montado" (a análise detalhada do avião
-aberto; na Aerodinâmica, "Asas", que analisa as asas escolhidas e o avião completo). A etapa Motores manda o avião para a Montagem."""
+aberto; na Aerodinâmica, "Analisar", que analisa as asas escolhidas e o avião completo). A etapa Motores manda o avião para a Montagem."""
 from __future__ import annotations
 
 import os
