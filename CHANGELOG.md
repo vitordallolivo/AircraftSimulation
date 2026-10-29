@@ -8,6 +8,7 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 - tracking: meta da 1.0 (tudo no navegador, sem instalar nada; o Python em WebAssembly fica para a 1.1) e o quadro
   em dia com a `main` (os itens "a revisar" que já foram no PR #31 passam a "Feito (na `main`)").
+- tracking: seção "Ordem de prioridade" com a fila atual.
 
 ### v0.2.3 (`main`, PR #31)
 

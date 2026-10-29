@@ -32,6 +32,25 @@ Como usar:
 
 ---
 
+## Ordem de prioridade (2026-10-29)
+
+O que pegar primeiro, lendo o quadro como ele está agora. Tudo o que estava "a revisar" já foi para a `main` no PR #31
+(`v0.2.3`); a tag `v0.2.3` ainda não foi criada (só com o ok do dono).
+
+1. **Terminar o que está em andamento.** No núcleo: T55 (linha sustentadora nas cargas) e T65 (voar com outro modelo
+   aerodinâmico, fase C). No aeroopt: O14, O15, O20, O25, O29, O30, O31 e O36.
+2. **Os próximos marcados do aeroopt:** O17 a O24, quase todos suspeitas de erro (C_m do elevon, ponto neutro com
+   enflechamento, tandem visto como asa voadora, potência da Regular 2026, missão completa no melhor).
+3. **Ferramentas (B1+):** T47 (perfil), T48 (snapshot das abas), T49 (smoke), T50 (lint e hook), T52 (propriedades),
+   T53 (avisos de documentação).
+4. **Desempenho (B2):** T43 a T46 (decolagem, subida, que hoje está errada, curva, descida e pouso), depois T37, T56,
+   T71 e T86.
+5. **Aerodinâmica (B3):** a **T54 (flape de verdade) é a prioridade**; depois T08, T09, T10, T11, T61, T62, T66, T68,
+   T69, T72, T73 e T74.
+6. **Cargas, estruturas e aeroelasticidade (B4 a B9):** quase tudo espera a T38 (plano da arquitetura de cargas) e a
+   T20 (estruturas).
+7. **Meta da 1.0 (W1 a W10):** à parte, sem posição em relação ao resto.
+
 ## O castelo (mapa)
 
 ```
