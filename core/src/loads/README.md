@@ -7,7 +7,8 @@ estol começa. Ela nasceu para a aba Cargas, e o voo também pode usá-la, escol
 trimagem e o AeroDrive ficam iguais.
 
 O README começa explicando por que esta pasta existe. Depois apresenta o método de Phillips e Snyder, que é o padrão,
-e o de Goates e Hunsaker, uma correção ligável para asas enflechadas e para voo com derrapagem. Em seguida vêm o cache
+e o de Goates e Hunsaker, uma correção ligável para asas enflechadas e para voo com derrapagem. Depois vem a versão não
+linear, também ligável, em que cada faixa estola pela curva do seu perfil. Em seguida vêm o cache
 que deixa a conta rápida, os limites do método, os testes, como validar e as referências. No fim, como chamar.
 
 ## Por que existe
@@ -185,6 +186,64 @@ Para ligar, use `Params.llt_joint` e `Params.llt_blend` (os valores usados estã
 sustentadora (Goates e Hunsaker)" (`llt_gh`). Com os dois em 0 (o padrão), a linha sustentadora é a de Phillips e
 Snyder, com as mesmas contas de antes.
 
+## Versão não linear (ligável, `llt_nonlinear`)
+
+Aqui se liga o estol de cada faixa: com `Params.llt_nonlinear = 1`, a sustentação de cada seção segue a curva
+$`c_l(\alpha)`$ do seu perfil, que sobe em reta e cai depois do estol. Com isso a linha sustentadora mostra onde o estol
+começa ao longo da envergadura e para quanto o $`C_L`$ da asa satura, o que importa para o caso de carga de $`C_{L,max}`$.
+
+Sem ela, a seção é a reta $`c_l = a\,(\alpha - \alpha_0)`$ sem limite. Num α alto a carga continua subindo, a raiz de uma
+asa retangular passa do $`c_{l,max}`$ do perfil sem perder nada e o momento fletor sai maior do que o avião consegue
+produzir. A simulação por faixas tem estol, mas a carga dela é plana, então não diz qual parte da asa estola primeiro.
+
+**A curva da seção.** É a mesma mistura que as faixas usam (Beard e McLain, `aero.sigmaStall`), a reta da seção
+misturada com a placa plana pelo peso $`\sigma`$, que vai de 0 antes do estol a 1 depois:
+
+```math
+c_l(\alpha) = \left(1 - \sigma\right)\,a\,(\alpha - \alpha_0) + \sigma\;2\,\mathrm{sgn}(\alpha)\,\sin^2\alpha\,\cos\alpha
+```
+
+O ângulo de estol de $`\sigma`$ é escolhido, por bisseção, para que o pico da curva seja o $`c_{l,max}`$ do perfil. Esse
+$`c_{l,max}`$ sai do $`C_{L,max}`$ que a faixa recebe do tradutor, desfazendo o fator que ele aplicou (Raymer, *Aircraft
+Design: A Conceptual Approach*, eq. 12.15; número a conferir no PDF):
+
+```math
+c_{l,max} = \frac{C_{L,max}}{0{,}9}
+```
+
+O ângulo de estol de cada painel é calculado uma vez, em `prepare`, e fica no cache.
+
+**O sistema.** Com o $`c_l`$ não linear, a equação de cada painel deixa de ser linear em $`\Gamma`$. O resíduo de cada
+painel é a diferença entre a circulação e a que a seção dá na velocidade que ela vê (Phillips e Snyder 2000, versão não
+linear; Hunsaker e Snyder, eq. 4 a 15; números das equações a conferir no PDF):
+
+```math
+R_i(\Gamma) = \Gamma_i - \tfrac12\,c_i\,\eta_i\,\lVert\vec V_i\rVert\,c_{l,i}(\alpha_i)
+\qquad
+\vec V_i = \vec v_i - \sum_j \Gamma_j\,\vec w_{ij}
+```
+
+Aqui $`\vec v_i`$ é a velocidade do painel sem o que as ferraduras induzem, e $`\alpha_i`$ é o ângulo de $`\vec V_i`$ no plano
+da seção, mais o comando. O Newton parte da solução linear e usa o jacobiano analítico, com $`u = \vec V_i\cdot\hat e_x`$ e
+$`w = \vec V_i\cdot\hat e_z`$:
+
+```math
+\frac{\partial R_i}{\partial \Gamma_j} = \delta_{ij} - \tfrac12\,c_i\,\eta_i\left(c_l\,\frac{\partial\lVert\vec V_i\rVert}{\partial\Gamma_j} + \lVert\vec V_i\rVert\,c_l'\,\frac{\partial\alpha_i}{\partial\Gamma_j}\right)
+\qquad
+\frac{\partial\lVert\vec V_i\rVert}{\partial\Gamma_j} = -\frac{u\,\vec w_{ij}\cdot\hat e_x + w\,\vec w_{ij}\cdot\hat e_z}{\lVert\vec V_i\rVert}
+\qquad
+\frac{\partial\alpha_i}{\partial\Gamma_j} = -\frac{u\,\vec w_{ij}\cdot\hat e_z - w\,\vec w_{ij}\cdot\hat e_x}{\lVert\vec V_i\rVert^2}
+```
+
+A derivada $`c_l'`$ é tirada por diferença central. O passo é amortecido: se o resíduo cresce, ele cai pela metade, até
+dez vezes. Depois do estol a solução pode não ser única (a mesma asa sustenta com faixas estoladas em lugares
+diferentes), e o Newton fica com a mais perto da linear. Depois do estol a força de cada faixa ganha também o arrasto
+da placa plana das faixas, $`\sigma\,1{,}2\,\sin^2\alpha`$. Com Goates e Hunsaker ligado, a seção é a do plano normal à
+linha, como na versão linear.
+
+Para ligar, a aba Cargas tem o método "linha sustentadora não linear (estol por perfil)" (`llt_nl`), e o voo usa a
+mesma conta com `ac.sim.aero_model = "llt_nl"`. Com `llt_nonlinear = 0`, o padrão, a conta é a linear de sempre.
+
 ## Cache da geometria (`prepare`, `Params.llt_cache`)
 
 A cada avaliação, a linha sustentadora precisava da influência de cada ferradura $`j`$ em cada ponto de controle $`i`$, e
@@ -214,7 +273,9 @@ semi-infinito por fórmula fechada (o 1º termo da eq. 3 de Goates e Hunsaker), 
   sustentadora efetiva de Goates e Hunsaker (acima), ligável. Em derrapagem vale o mesmo para as pernas inclinadas.
 - **Alongamento baixo:** a linha sustentadora superestima o $`C_{L\alpha}`$ (numa EV sozinha de alongamento pequeno, o
   $`C_{Y\beta}`$ fica acima do AVL mesmo convergido).
-- **Linear:** $`c_l = a\,(\alpha - \alpha_0)`$, sem estol. Perto do $`C_{L,max}`$, a carga real é menor.
+- **Estol:** a versão de sempre é linear, $`c_l = a\,(\alpha - \alpha_0)`$, sem estol; perto do $`C_{L,max}`$ a carga real é
+  menor. A versão não linear tem o estol, mas a curva depois dele é a da placa plana, e a seção estolada não tem a
+  histerese nem o arrasto de uma asa real estolando.
 - **Pernas retas:** não se enrolam nem se desviam pela esteira da hélice.
 - **Trimagem:** $`\alpha`$ e profundor vêm da trimagem da simulação. A soma das cargas pode ficar um pouco fora do peso,
   e o momento de arfagem não fica exatamente zerado.
@@ -239,12 +300,16 @@ y(t) = y_0 + (y_1 - y_0)\,\sin\frac{\pi t}{2}
   quase não muda e fica perto do MachUpX.
 - Goates e Hunsaker desligado por padrão.
 - Cache da geometria: o mesmo resultado, bit a bit, com e sem o cache.
+- Não linear: a curva da seção tem o pico no $`c_{l,max}`$ pedido; em α pequeno a asa fica com a linear; numa varredura
+  em α o $`C_L`$ para abaixo do $`c_{l,max}`$ da seção e, depois do estol, cai abaixo da linear; a raiz da asa retangular
+  chega ao estol antes da ponta; com e sem o cache, o mesmo resultado bit a bit; desligada por padrão.
 
 Em `tests/tools/test_aero_perfis.py`: o $`C_{L\alpha}`$ e o $`C_{l\beta}`$ de Goates e Hunsaker contra o MachUpX nas quatro
 asas de teste, com a tolerância e os números esperados no teste.
 
 Em Python (`tests/aero/test_span_loads.py`):
 - o winglet enflechado da asa voadora descarrega na ponta, com e sem β;
+- a versão não linear carrega quase o mesmo que a linear no cruzeiro e menos que ela 14° acima;
 - o enflechamento tira sustentação (tendência do VLM do AeroSandbox; os números não precisam bater, o VLM resolve a
   corda e a linha sustentadora não);
 - a sustentação da asa converge ao refinar a malha.

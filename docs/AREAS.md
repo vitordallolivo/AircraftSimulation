@@ -22,7 +22,7 @@ desenvolvido" até ser feito) · ⚠ cálculo em Python que, pela regra 2 do `.c
 | Avião montado (polar e derivadas; núcleo, lltdrek, ASB, AVL, XFLR5) | ✅ | `manager/simulations/aerodynamics.py`, `aero/*_solver.py` | — |
 | Dispositivos de ponta | ✅ ⚠ | `aero/tipdevices.py` (Trefftz em Python) | — |
 | Flape (ΔC_l, ΔC_l máx, ΔC_d, ΔC_m, comando) — prioridade | 🟡 | só deflexão fixa na incidência (`translator.py`) | T54 |
-| Linha sustentadora das cargas (enflechamento, não linear) | 🟡 | `core/src/loads/llt.zig` | T55 |
+| Linha sustentadora das cargas (enflechamento, não linear) | ✅ | `core/src/loads/llt.zig` | T55 |
 | Arrasto por componente | ⬜ | — | T11 |
 | Reynolds no núcleo | ⬜ | — | T10 |
 | Trimagem com esteira e tubo desviado | ⬜ | modifier `esteira.disco` | T08 |

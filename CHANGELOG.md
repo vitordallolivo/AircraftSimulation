@@ -29,6 +29,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - CI: `.github/workflows/testes.yml` roda os checks de `tools/checks` (`run.py --tudo`) a cada PR para a `main` (uma
   rodada por commit), em três partes paralelas (núcleo e AeroDrive, regressão bit a bit, testes Python), e deixa
   o relatório de cada parte como artefato na aba Actions.
+- cargas (T55): linha sustentadora não linear (`Params.llt_nonlinear`; método "linha sustentadora não linear (estol
+  por perfil)", `llt_nl`, na aba Cargas, no `tools/span_load.py` e como `ac.sim.aero_model`). Cada faixa segue a curva
+  do seu perfil com estol, e o sistema de Phillips e Snyder é resolvido por Newton a partir da solução linear. Mostra
+  onde o estol começa e para quanto a carga satura. Desligada por padrão: o voo e o AeroDrive ficam iguais.
 - celular: no primeiro toque a página vai para a tela cheia e trava deitada; em pé aparece "gire o celular"; o jogo
   acompanha o tamanho da página (tela cheia, barra do navegador, giro).
 - celular, segunda rodada (testada pelo vitor num Galaxy): o jogo desenha numa área de no mínimo 640 px de altura e
