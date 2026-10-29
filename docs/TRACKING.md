@@ -55,10 +55,28 @@ Como usar:
 
 - **A `main` está em `v0.2.2`** (PR #27). O milestone de fundação fechou na `v0.2.0` (PRs #21–#25).
 - **Cada tarefa concluída e mesclada sobe só o último número:** `0.2.1`, `0.2.2`, `0.2.3`…
-- **Quando toda a lista de tarefas abaixo estiver feita, vira `0.3.0`.** Não há data nem promessa de 1.0: nada vira
-  release sem o dono testar pessoalmente cada componente.
+- **Quando toda a lista de tarefas abaixo estiver feita, vira `0.3.0`.** A `1.0` tem meta própria (seção "Meta da
+  1.0", abaixo), sem data: nada vira release sem o dono testar pessoalmente cada componente.
 - O trabalho fica numa branch só, `0.2_dev`. Cada tarefa fechada vai por PR para a `main` e para no review.
 - As tags só são criadas com o ok do dono do repositório.
+
+## Meta da 1.0: tudo em Zig, rodando sem instalar nada
+
+A `1.0` é o aerosim, o aeroopt e o AeroDrive em Zig, com o mesmo código saindo de dois jeitos: um executável só para
+o PC, que roda sem Python, e uma página web que roda no navegador do PC e do celular. Em ambos, a conta é feita no
+próprio aparelho, e o site só entrega os arquivos. A ordem abaixo vai do que já dá para fazer hoje até a troca da
+interface. Cada etapa é uma tarefa do quadro quando chegar a vez dela, com plano antes e ok do dono.
+
+| Etapa | O que | Depende de |
+|---|---|---|
+| **W1** | AeroDrive na web: compilar com o emscripten (`aerodrive.html`/`.js`/`.wasm`), shaders `#version 300 es`, avião de exemplo embutido, controle por toque | — |
+| **W2** | Aviões no navegador: abrir `.json` por botão ou arrastando, biblioteca guardada no navegador (IndexedDB), salvar baixando o `.json` | W1 |
+| **W3** | Publicar no GitHub Pages, com instalação na tela inicial do celular (PWA) e uso sem internet | W1 |
+| **W4** | Levar para o núcleo as contas que ainda estão em Python no aerosim e no aeroopt | — |
+| **W5** | Métodos de fora (lltdrek, ASB, optvl/AVL): portar para o núcleo ou deixar de fora das versões sem Python | W4 |
+| **W6** | Interface do aerosim e do aeroopt em Zig (raygui, Dear ImGui ou dvui, a escolher no plano), com os gráficos | W4 |
+| **W7** | Paralelismo do aeroopt na web (web workers; a página precisa dos cabeçalhos COOP/COEP) | W6 |
+| **W8** | Executável único no PC e a página web com as três partes; o dono testa cada componente → `1.0` | W2, W3, W5, W6, W7 |
 
 ## Blocos de trabalho (ordem)
 
