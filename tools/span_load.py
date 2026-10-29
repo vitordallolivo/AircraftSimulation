@@ -27,9 +27,9 @@ def main(argv=None) -> int:
     ap.add_argument("--beta", type=float, default=0.0, help="β (°)")
     ap.add_argument("--rpm", type=float, action="append", help="rotação (rpm): uma para todos ou uma por motor")
     ap.add_argument("--acelerador", type=float, default=1.0, help="sem --rpm: rotação de equilíbrio com este acelerador")
-    ap.add_argument("--metodo", default="llt", choices=("llt", "llt_gh", "faixas", "vlm_asb"),
+    ap.add_argument("--metodo", default="llt", choices=("llt", "llt_gh", "llt_nl", "faixas", "vlm_asb"),
                     help="llt: linha sustentadora de Phillips e Snyder (padrão); llt_gh: a de Goates e Hunsaker (converge "
-                         "com enflechamento e β); faixas: C_Lα uniforme da simulação; vlm_asb: VLM do AeroSandbox")
+                         "com enflechamento e β); llt_nl: Phillips e Snyder com o estol de cada perfil; faixas: C_Lα uniforme da simulação; vlm_asb: VLM do AeroSandbox")
     ap.add_argument("--sem-helice", action="store_true", help="sem a influência das hélices nas superfícies")
     ap.add_argument("--csv")
     ap.add_argument("--png")

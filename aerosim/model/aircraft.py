@@ -558,7 +558,8 @@ class SimSettings:
     slosh: bool = True
     prop_strike: bool = False  # True: a ponta da pá tocar o chão encerra o voo; False (padrão): só registra a folga
     # modelo aerodinâmico do voo (core/src/physics/aeromodel.zig): "faixas" (o de sempre), "llt" (linha sustentadora de
-    # Phillips e Snyder), "llt_gh" (Goates e Hunsaker) ou "tabela" (`aero_table`, de aerosim/aero/flight_table.py)
+    # Phillips e Snyder), "llt_gh" (Goates e Hunsaker), "llt_nl" (Phillips e Snyder com o estol de cada perfil) ou
+    # "tabela" (`aero_table`, de aerosim/aero/flight_table.py)
     aero_model: str = "faixas"
     aero_table: dict | None = None
 

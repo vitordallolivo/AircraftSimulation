@@ -285,17 +285,26 @@ class StripLoadMethod(ILoadMethod):
 # Goates e Hunsaker 2021: junta das pernas (fração da corda) e distância de mistura da linha efetiva (padrões do
 # MachUpX); com os dois em 0 a linha sustentadora do núcleo é a de Phillips e Snyder (core/src/loads/llt.zig)
 GOATES_HUNSAKER = {"llt_joint": 0.15, "llt_blend": 1.0}
+# versão não linear: cada seção segue o c_l(α) do perfil com estol, resolvida por Newton (Phillips e Snyder 2000)
+NONLINEAR = {"llt_nonlinear": 1}
 
 
 class CoreLoadMethod(StripLoadMethod):
     """o núcleo: a linha sustentadora (`core/src/loads/llt.zig`; de Phillips e Snyder ou, com `gh`, com as correções
-    de Goates e Hunsaker) ou as faixas da simulação (o C_Lα uniforme de cada superfície). Cada superfície é refinada
-    sozinha até o limite de painéis do núcleo (`refine`)"""
+    de Goates e Hunsaker; com `nonlinear`, a de Phillips e Snyder com o estol de cada perfil) ou as faixas da
+    simulação (o C_Lα uniforme de cada superfície). Cada superfície é refinada sozinha até o limite de painéis do
+    núcleo (`refine`)"""
 
-    def __init__(self, backend, llt: bool = True, refine: bool = True, gh: bool = False):
+    def __init__(self, backend, llt: bool = True, refine: bool = True, gh: bool = False, nonlinear: bool = False):
         self.backend, self.llt, self.refine = backend, llt, refine
         self.overrides = dict(GOATES_HUNSAKER) if (llt and gh) else {}
-        if llt and gh:
+        if llt and nonlinear:
+            self.overrides = dict(NONLINEAR)
+            self.name, self.title = "llt_nl", "linha sustentadora não linear (estol por perfil)"
+            self.source = ("núcleo: linha sustentadora de Phillips e Snyder com o c_l(α) de cada perfil e estol, "
+                           "resolvida por Newton (core/src/loads/llt.zig; Phillips e Snyder 2000)")
+            self.supports = frozenset({"esteira", "solo", "comandos", "estol"})
+        elif llt and gh:
             self.name, self.title = "llt_gh", "linha sustentadora (Goates e Hunsaker)"
             self.source = ("núcleo: linha sustentadora com junta e linha efetiva (core/src/loads/llt.zig; Goates e "
                            "Hunsaker 2021): converge com a malha em derrapagem e com enflechamento")
@@ -315,9 +324,13 @@ class CoreLoadMethod(StripLoadMethod):
         ac = model.aircraft
         notes = []
         if self.llt:
-            notes.append(("carga pela linha sustentadora (ferraduras com junta e linha efetiva, Goates e Hunsaker "
-                          "2021)" if self.overrides else "carga pela linha sustentadora (ferraduras, Phillips e Snyder "
-                          "2000)") + "; α e profundor da trimagem do núcleo, então a soma pode diferir um pouco do peso")
+            if self.name == "llt_nl":
+                kind = "carga pela linha sustentadora não linear (c_l(α) de cada perfil com estol, Phillips e Snyder 2000)"
+            elif self.overrides:
+                kind = "carga pela linha sustentadora (ferraduras com junta e linha efetiva, Goates e Hunsaker 2021)"
+            else:
+                kind = "carga pela linha sustentadora (ferraduras, Phillips e Snyder 2000)"
+            notes.append(kind + "; α e profundor da trimagem do núcleo, então a soma pode diferir um pouco do peso")
         limit = self.backend.schema.limits["surfaces"]
         props = point.props
         a, b = math.radians(point.alpha), math.radians(point.beta)

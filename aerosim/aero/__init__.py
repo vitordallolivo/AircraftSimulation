@@ -26,6 +26,7 @@ def all_load_methods(backend, refine: bool = True) -> list:
     """os métodos de carga ao longo das superfícies (interfaces/loads.py: ILoadMethod), na ordem da aba Cargas"""
     from .span_loads import CoreLoadMethod
     return [CoreLoadMethod(backend, llt=True, refine=refine), CoreLoadMethod(backend, llt=True, refine=refine, gh=True),
+            CoreLoadMethod(backend, llt=True, refine=refine, nonlinear=True),
             CoreLoadMethod(backend, llt=False, refine=refine), AsbVLMLoads()]
 
 
