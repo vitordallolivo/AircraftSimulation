@@ -109,6 +109,13 @@ na GUI em Python. A conta é a linha sustentadora de Glauert do núcleo (`core/s
 gráficos mostram C_L até o estol, a polar (induzido, perfil e total), L/D com o C_L de cruzeiro, o $c_l$ ao longo
 da envergadura no cruzeiro e no estol (com o $c_{l,\max}$ do perfil e onde o estol começa) e a planta em escala.
 
+A primeira coisa à direita é a asa em 3D, com o contorno de verdade dos perfis da raiz e da ponta, montada pelo
+mesmo esqueleto da Montagem e do AeroDrive num avião que só tem a asa (sem trem, fuselagem nem motor, como a
+prévia da GUI em Python). Ela muda a cada valor editado. Embaixo do formulário, "Guardar asa" guarda a asa em
+desenho com o nome dela ("Asa 1", e o desenho passa a "Asa 2"); as guardadas ficam numa lista, de onde voltam para
+o desenho ("Carregar no rascunho") ou saem ("Apagar"), e aparecem tracejadas nos gráficos de C_L e de L/D, para
+comparar com a que se está desenhando.
+
 ## A análise das asas (`wing_analysis.zig`)
 
 Aqui se escolhem as superfícies que sustentam e sai a polar de cada uma, a do conjunto e a carga ao longo da

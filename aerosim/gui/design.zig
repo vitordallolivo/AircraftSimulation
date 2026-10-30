@@ -25,6 +25,36 @@ pub const Requirements = struct {
     }
 };
 
+pub const max_wings = 8;
+
+/// um nome curto guardado por valor
+pub const Name = struct {
+    pub const capacity = 64;
+    bytes: [capacity]u8 = undefined,
+    len: usize = 0,
+
+    /// o nome `value` (cortado na capacidade)
+    pub fn of(value: []const u8) Name {
+        var name: Name = .{};
+        name.len = @min(value.len, capacity);
+        @memcpy(name.bytes[0..name.len], value[0..name.len]);
+        return name;
+    }
+
+    /// o texto do nome
+    pub fn text(name: *const Name) []const u8 {
+        return name.bytes[0..name.len];
+    }
+};
+
+/// uma asa guardada: a planta e os perfis da raiz e da ponta (vazio: o da raiz)
+pub const SavedWing = struct {
+    name: Name,
+    wing: wing_line.Trapezoid,
+    root: Name,
+    tip: Name,
+};
+
 pub const Design = struct {
     requirements: Requirements = .{},
     airfoils: [max_airfoils]stage.Candidate = undefined,
@@ -36,6 +66,9 @@ pub const Design = struct {
     root_airfoil_len: usize = 0,
     arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator),
     version: u32 = 0, // sobe a cada mudança da lista (a etapa Projetar refaz as escolhas)
+    wings: [max_wings]SavedWing = undefined, // as asas guardadas em Projetar, para comparar
+    wing_count: usize = 0,
+    wing_name: Name = Name.of("Asa 1"), // o nome que a asa em desenho vai ter ao ser guardada
 
     /// os dois perfis do começo e a biblioteca
     pub fn start(design: *Design) void {
@@ -74,6 +107,53 @@ pub const Design = struct {
     /// marca que um candidato mudou (números, fonte da polar)
     pub fn touch(design: *Design) void {
         design.version +%= 1;
+    }
+
+    /// guarda a asa em desenho com o nome dela (uma de mesmo nome é trocada) e passa o nome do desenho para o
+    /// seguinte livre ("Asa 2"...), como `keep_wing` da GUI em Python; falso se a lista está cheia
+    pub fn keepWing(design: *Design, root: []const u8, tip: []const u8) bool {
+        const saved: SavedWing = .{ .name = design.wing_name, .wing = design.wing, .root = Name.of(root), .tip = Name.of(tip) };
+        if (design.findWing(design.wing_name.text())) |k| {
+            design.wings[k] = saved;
+        } else {
+            if (design.wing_count == max_wings) return false;
+            design.wings[design.wing_count] = saved;
+            design.wing_count += 1;
+        }
+        var number: usize = design.wing_count + 1;
+        while (true) : (number += 1) {
+            var buffer: [Name.capacity]u8 = undefined;
+            const next = std.fmt.bufPrint(&buffer, "Asa {d}", .{number}) catch break;
+            if (design.findWing(next) == null) {
+                design.wing_name = Name.of(next);
+                break;
+            }
+        }
+        design.version +%= 1;
+        return true;
+    }
+
+    /// o índice da asa guardada com o nome `name`
+    pub fn findWing(design: *const Design, name: []const u8) ?usize {
+        for (design.wings[0..design.wing_count], 0..) |saved, k| if (std.mem.eql(u8, saved.name.text(), name)) return k;
+        return null;
+    }
+
+    /// tira a asa guardada `index`
+    pub fn removeWing(design: *Design, index: usize) void {
+        if (index >= design.wing_count) return;
+        for (index..design.wing_count - 1) |k| design.wings[k] = design.wings[k + 1];
+        design.wing_count -= 1;
+        design.version +%= 1;
+    }
+
+    /// a asa guardada `index` volta para o desenho (com o nome e os perfis dela)
+    pub fn loadWing(design: *Design, index: usize) void {
+        if (index >= design.wing_count) return;
+        const saved = design.wings[index];
+        design.wing = saved.wing;
+        design.wing_name = saved.name;
+        design.setRoot(saved.root.text());
     }
 
     /// o perfil da raiz da asa passa a ser `name`

@@ -685,8 +685,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Triangle:14`, `Mesh:22`, `Assembly:90`
   fn `buildMesh:55`, `load:110`, `fillAirfoilFiles:127`, `parseDat:162`, `findExample:194`
 - `aerosim/gui/design.zig` — O projeto de dimensionamento que as etapas compartilham, como o `DesignProject` da GUI em Python
-  tipos `Requirements:16`, `Design:28`
-  fn `libraryFolder:125`, `readDat:136`, `readPolar:145`
+  tipos `Requirements:16`, `Name:31`, `SavedWing:51`, `Design:58`
+  fn `libraryFolder:205`, `readDat:216`, `readPolar:225`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
   fn `main:15`
 - `aerosim/gui/screen.zig` — A tela do aerosim: cabeçalho, abas das áreas e subabas da Aerodinâmica. Cada aba feita mora no arquivo dela
@@ -696,7 +696,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Method:28`, `Input:31`, `Result:42`
   fn `liftingSurfaces:77`, `defaultChoice:89`, `run:97`, `wingsOnly:203`
 - `aerosim/gui/wing_tab.zig` — A aba Aerodinâmica → Projetar: a asa a partir do perfil escolhido em Perfis, como a etapa Asa da GUI em
-  tipos `WingTab:45`
+  tipos `WingTab:52`
 
 **aerosim/gui/ui/**
 
