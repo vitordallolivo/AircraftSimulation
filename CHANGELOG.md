@@ -25,6 +25,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   grava e lê de volta) e o Δy; a coluna "pontas ligadas" põe a placa entre as pontas (asa em caixa, Prandtl) na vista
   3D, na Empenagem e no avião; Analisar ganhou a origem "asas do avião (tabela de Projetar)", que roda o biplano, o
   tandem ou a caixa como a tabela põe.
+- a Aerodinâmica entrega uma configuração: "Guardar configuração" em Projetar grava a tabela "Asas do avião" com um
+  nome, e a Empenagem escolhe no campo "configuração" uma das guardadas ou a tabela como está. Os campos de segunda
+  asa saíram da Empenagem. Uma sprint antiga com segunda asa abre com ela virada numa configuração de duas asas e o
+  mesmo conjunto.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

@@ -246,6 +246,7 @@ def join(main: dict, files: dict[str, dict]) -> DesignProject:
     p.wings = pick("wings", kept, lambda w: w.name)
     p.sets = pick("sets", sets, lambda s: s.name)
     p.aircraft = pick("aircraft", planes, lambda a: a.name)
+    p.adopt_second_wing()
     return p
 
 

@@ -65,6 +65,14 @@ class WingPlacement:
 
 
 @dataclass
+class WingConfig:
+    """uma configuração guardada em Projetar: as asas do avião e onde cada uma fica (as linhas da tabela "Asas do
+    avião"). É o que a Aerodinâmica entrega à Estabilidade: a Empenagem escolhe uma delas"""
+    name: str = "configuração 1"
+    wings: list[WingPlacement] = field(default_factory=list)
+
+
+@dataclass
 class WingStation:
     """seção da asa (de dentro: sai das partições); entre seções tudo é interpolado"""
     y: float = 0.0                 # da raiz, na semienvergadura (m)

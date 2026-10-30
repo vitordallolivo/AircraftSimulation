@@ -93,7 +93,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/design/power.py` — Etapa Motores e montagem: onde ficam os motores (e por consequência a bateria, a carga e o trem) e o
   `class PowerParams:35`, `class AircraftCandidate:78`, `motor_counts:88`, `assemble:123`, `ground_pitch:309`, `trimmed_clmax:317`, `thrust_trim:338`, `thrust_of:458`, `motor_prop_spec:486`, `performance:505`, `trim_drag:558`, `design_point:580`
 - `aerosim/design/project.py` — O projeto da sprint: requisitos, regras e o que cada etapa guardou (perfis, asas, conjuntos, aviões).
-  `rg_sae:31`, `class DesignProject:41`, `is_project_file:235`, `next_name:247`
+  `rg_sae:31`, `class DesignProject:41`, `is_project_file:271`, `next_name:283`
 - `aerosim/design/registry.py` — Registro de grandezas do projeto: o que dá para medir, restringir ou variar.
   `class Quantity:25`, `fmt:71`, `class Constraint:78`, `default_constraints:106`, `active:118`, `checks:122`, `class Input:138`, `class Variable:167`, `default_variables:179`, `get_input:187`, `set_input:192`, `wing_values:200`, `aircraft_values:206`, `sae_constraints:232`, `bounds_from_constraints:243`, `check_bounds:264`
 - `aerosim/design/results.py` — Cada etapa como um `SimResult` (séries, resumo, diagnóstico) e os gráficos dela (`PlotSpec`): a GUI
@@ -101,13 +101,13 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/design/spec.py` — Condições e restrições (o que o avião tem de cumprir) e regras de projeto (como as peças se montam).
   `class Requirements:28`, `class DesignRules:98`, `cruise_CL:123`, `stall_speed:127`
 - `aerosim/design/store.py` — O projeto da sprint numa pasta escolhida pelo usuário, com um arquivo por asa.
-  `file_name:49`, `split:98`, `run_file:139`, `wing_files:160`, `save:173`, `join:203`, `is_folder:267`, `load:273`, `is_sprint_path:291`, `folder_for:304`, `open_path:317`
+  `file_name:49`, `split:98`, `run_file:139`, `wing_files:160`, `save:173`, `join:203`, `is_folder:268`, `load:274`, `is_sprint_path:292`, `folder_for:305`, `open_path:318`
 - `aerosim/design/study.py` — Estudo e ponto de projeto: as áreas se retroalimentam (não em ordem) e o estudo mostra onde estabilidade e
   `class StudyParams:45`, `class StudyRun:57`, `to_run:74`, `from_run:86`, `ensure:91`, `table:109`, `parse_places:114`, `with_value:129`, `feasibility:138`, `point_row:169`, `run:181`, `best_rows:214`, `mtow_of:226`, `check_6dof:230`, `check_many:258`, `result:293`
 - `aerosim/design/tail.py` — Etapa Empenagem e comandos: as superfícies que acompanham a asa escolhida, o tubo de cauda e os comandos.
-  `class TailParams:51`, `class SetCandidate:125`, `tail_airfoil:152`, `tail_entry:157`, `build_set:181`, `wing2_candidate:312`, `second_wing:327`, `join_tips:333`, `analyze:419`, `rotation:586`
+  `class TailParams:52`, `class SetCandidate:128`, `tail_airfoil:155`, `tail_entry:160`, `build_set:184`, `wing2_candidate:315`, `second_wing:330`, `join_tips:336`, `analyze:422`, `rotation:589`
 - `aerosim/design/wing.py` — Etapa Asa: do perfil escolhido à asa — forma em planta, linha sustentadora e o que ela entrega.
-  `class WingPartition:39`, `class WingPlacement:55`, `class WingStation:68`, `class WingParams:78`, `class WingCandidate:105`, `stations:123`, `chords:143`, `totals:158`, `sync:164`, `partitions_from_trapezoid:181`, `build_wing:200`, `planform:222`, `tip_weight:236`, `station_weights:244`, `section_props:253`, `lifting_line:266`, `analyze:302`
+  `class WingPartition:39`, `class WingPlacement:55`, `class WingConfig:68`, `class WingStation:76`, `class WingParams:86`, `class WingCandidate:113`, `stations:131`, `chords:151`, `totals:166`, `sync:172`, `partitions_from_trapezoid:189`, `build_wing:208`, `planform:230`, `tip_weight:244`, `station_weights:252`, `section_props:261`, `lifting_line:274`, `analyze:310`
 
 ## Python · `aerosim/gui`
 
@@ -123,7 +123,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/design/mdo_page.py` — Página do dimensionamento inicial (mini-MDO): o otimizador do núcleo em tempo real.
   `class LegendPlot:29`, `class MdoPage:77`
 - `aerosim/gui/design/pages.py` — As etapas da sprint na GUI: cada uma edita um rascunho, mostra na hora o que vai ser feito (3D da peça,
-  `class ConstraintsTable:52`, `class VariablesTable:138`, `class ListPicker:246`, `class RequirementsDialog:310`, `class ReqBar:339`, `class StagePage:363`, `class AirfoilPage:582`, `class WingPage:743`, `class TailPage:918`, `class PowerPage:972`, `send_to_assembly:1111`, `class StudyPage:1171`
+  `class ConstraintsTable:52`, `class VariablesTable:138`, `class ListPicker:246`, `class RequirementsDialog:310`, `class ReqBar:339`, `class StagePage:363`, `class AirfoilPage:582`, `class WingPage:743`, `class TailPage:918`, `class PowerPage:973`, `send_to_assembly:1112`, `class StudyPage:1172`
 - `aerosim/gui/tabs/__init__.py`
 - `aerosim/gui/tabs/config_tab.py` — Aba de configuração em três colunas:
   `mount_choices:56`, `class ConfigTab:68`, `info_html:1150`
@@ -192,7 +192,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/manager/runner.py` — Corrida orientada: começa (no chão, em voo ou de um checkpoint), roda até uma parada
   `class Stop:21`, `class RunOutput:35`, `class Runner:42`
 - `aerosim/manager/stages.py` — As etapas da sprint sem Qt, para a tela em Zig pela ponte (`aerosim/bridge.py`): o mesmo que as páginas de
-  `class Action:35`, `class Table:45`, `class Outcome:53`, `class GridColumn:64`, `class Grid:74`, `class Context:86`, `only_surfaces:101`, `dims_table:114`, `class Stage:126`, `class AirfoilStage:228`, `class WingStage:325`, `class TailStage:506`, `class PowerStage:559`, `class RequirementsStage:641`
+  `class Action:35`, `class Table:45`, `class Outcome:53`, `class GridColumn:64`, `class Grid:74`, `class Context:86`, `only_surfaces:101`, `dims_table:114`, `class Stage:126`, `class AirfoilStage:228`, `class WingStage:325`, `class TailStage:525`, `class PowerStage:591`, `class RequirementsStage:673`
 - `aerosim/manager/takeoff_opt.py` — Decolagem para a competição: os dois critérios da pista e um de voo.
   `class TakeoffResult:50`, `pitch_control:69`, `judge:76`, `evaluate:140`, `optimize:183`
 - `aerosim/manager/simulations/__init__.py` — Simulações disponíveis (uma aba cada na GUI). Para adicionar outra: crie uma classe
@@ -817,7 +817,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 75 testes em 11 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 83 testes em 13 arquivo(s)
+- `tests/manager` — 85 testes em 13 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)

@@ -413,7 +413,7 @@ class WingStage(Stage):
         kinds = {"wing": ("choice", names + extra), "join": ("choice", self.JOIN)}
         columns = [GridColumn(k, label, kinds.get(k, ("float",))[0], kinds.get(k, (None, ()))[1], tip)
                    for k, label, tip in self.LAYOUT_COLUMNS]
-        note = "a primeira linha é a referência (Δ = 0); a Empenagem leva todas."
+        note = "a primeira linha é a referência (Δ = 0); 'Guardar configuração' leva estas asas para a Empenagem."
         return [Grid("asas", "Asas do avião", columns,
                      [[self.JOIN[int(r.join)] if k == "join" else getattr(r, k) for k, _, _ in self.LAYOUT_COLUMNS]
                       for r in d.wing_layout], note,
@@ -498,11 +498,30 @@ class WingStage(Stage):
         d.tail_draft.wing = c.name
         return c.name
 
+    def actions(self):
+        from aerosim.design.project import next_name
+        d = self.ctx.design
+        return [Action("config", "Guardar configuração", "text",
+                       "guarda as asas da tabela 'Asas do avião' (quais e onde) com um nome; a Empenagem passa a usar "
+                       "esta configuração", next_name("configuração 1", [c.name for c in d.configs]))]
+
+    def act(self, key, arg):
+        if key != "config":
+            return super().act(key, arg)
+        c = self.ctx.design.keep_config(arg)
+        if c is None:
+            return "A tabela 'Asas do avião' está vazia: ponha pelo menos uma asa (+ asa)."
+        self.ctx.save()
+        return f"configuração guardada: {c.name} ({len(c.wings)} asa{'s' if len(c.wings) > 1 else ''}); a " \
+               f"Empenagem usa esta"
+
 
 # ====================================================================== Empenagem
-# os campos da Empenagem que a tabela de asas de Projetar decide
-LAYOUT_KEYS = ("wing", "wing2", "wing2_dx", "wing2_dy", "wing2_dz", "wing2_join", "wing2_di", "wing2_area", "wing2_span", "wing2_sweep",
-               "wing2_airfoil")
+# os campos da segunda asa: quem diz quantas asas há e onde ficam é a configuração de Projetar, não a Empenagem
+SECOND_WING_KEYS = ("wing2", "wing2_dx", "wing2_dy", "wing2_dz", "wing2_join", "wing2_di", "wing2_area", "wing2_span",
+                    "wing2_sweep", "wing2_airfoil")
+
+
 class TailStage(Stage):
     name = "empenagem"
     title = "Empenagem e comandos"
@@ -519,18 +538,31 @@ class TailStage(Stage):
 
     def choices(self):
         d = self.ctx.design
-        from aerosim.design.tail import NO_WING2, SAME_WING
-        return {"wing": tuple(w.name for w in d.wings),
-                "wing2": (NO_WING2, SAME_WING) + tuple(w.name for w in d.wings),
+        from aerosim.design.tail import LIVE_LAYOUT
+        return {"config": (LIVE_LAYOUT,) + tuple(c.name for c in d.configs),
+                "wing": tuple(w.name for w in d.wings),
                 "tail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + d.airfoil_names())),
                 "vtail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + d.airfoil_names()))}
 
     def editable(self):
         return ("tail_airfoil", "vtail_airfoil")
 
+    def exclude(self):
+        return SECOND_WING_KEYS
+
     def disabled(self):
-        """com a tabela de asas de Projetar, quais asas e onde ficam vêm de lá"""
-        return LAYOUT_KEYS if self.ctx.design.wing_layout else ()
+        """com uma configuração (ou a tabela de Projetar preenchida), a asa vem de lá"""
+        return ("wing",) if self.ctx.design.layout_rows() else ()
+
+    def after_edit(self, changed):
+        if "config" not in changed:
+            return
+        d = self.ctx.design
+        if d.layout_rows():
+            d.apply_wing_layout()
+        else:                                  # a tabela vazia: só a asa, sem a segunda escondida da anterior
+            from aerosim.design.tail import NO_WING2
+            d.tail_draft.wing2 = NO_WING2
 
     def kept_items(self):
         return self.ctx.design.sets

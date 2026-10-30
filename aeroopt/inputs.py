@@ -22,7 +22,7 @@ DRAFTS = (("wing", "wing_draft", "asa"), ("tail", "tail_draft", "empenagem"), ("
           ("req", "requirements", "requisitos"), ("rules", "rules", "regras e massas"))
 GROUP_ORDER = tuple(g for _, _, g in DRAFTS)
 # campos que não são escolha de projeto: nomes, ligações entre candidatos, tabelas e o modo de preencher
-SKIP = {"name", "wing", "wing2", "set", "thrust_set", "partitions", "constraints", "planform", "size_by",
+SKIP = {"name", "config", "wing", "wing2", "set", "thrust_set", "partitions", "constraints", "planform", "size_by",
         "thrust_model"}
 # campos de texto que são escolhas do que existe (as listas puxadas do projeto e do catálogo)
 CATALOG = {"airfoil": "perfis", "airfoil_tip": "perfis", "tail_airfoil": "perfis", "vtail_airfoil": "perfis",

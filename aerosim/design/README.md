@@ -110,11 +110,18 @@ para trás), Δy (+ para a direita) e Δz (+ para cima), mais a decalagem. Uma l
 da outra, um biplano; uma atrás da outra, um tandem; três, um triplano. A coluna "pontas ligadas" põe uma placa entre
 a ponta dela e a da referência, a asa em caixa do "best wing system" de Prandtl (*Induced drag of multiplanes*, NACA
 TN 182, 1924): no mesmo vão, o sistema fechado tem menos arrasto induzido que duas asas soltas (Kroo, *Annu. Rev.
-Fluid Mech.* 33, 2001, fig. 7: $`e pprox 1{,}46`$ com $`h/b = 0{,}2`$). `apply_wing_layout` leva a primeira e a
-segunda asa para a Empenagem (os campos delas ficam em cinza lá) e `draft_set` leva as outras no conjunto
-(`SetCandidate.more_wings`); `layout_surfaces` monta as asas no lugar delas para a vista 3D e para Analisar. A tabela
-vazia deixa tudo como antes: a Empenagem escolhe a segunda asa. Como chegar no CG de projeto (tubos, lastro) é da
-Montagem, não destas etapas.
+Fluid Mech.* 33, 2001, fig. 7: $`e \approx 1{,}46`$ com $`h/b = 0{,}2`$).
+
+O que a Aerodinâmica entrega à Estabilidade é uma configuração, não uma asa. "Guardar configuração" grava a tabela
+com um nome (`WingConfig`, em `DesignProject.configs`), e a Empenagem escolhe no campo "configuração" uma das
+guardadas ou a tabela como está agora. Assim dá para guardar um tandem e um biplano e comparar os dois na Empenagem,
+sem refazer a tabela a cada vez. A Empenagem não tem mais campos de segunda asa: `apply_wing_layout` leva a primeira e
+a segunda asa da configuração para o rascunho dela, e `draft_set` leva as outras no conjunto
+(`SetCandidate.more_wings`). `layout_surfaces` monta as asas no lugar delas para a vista 3D e para Analisar. Uma
+sprint de antes, com a segunda asa nos campos da Empenagem, abre com essa segunda asa virada numa configuração de
+duas asas (`adopt_second_wing`) e dá o mesmo conjunto. A exceção é a segunda asa escalada (área, envergadura,
+enflechamento ou perfil próprios), que só o aeroopt usa: ela não é uma asa guardada e continua montada como antes.
+Como chegar no CG de projeto (tubos, lastro) é da Montagem, não destas etapas.
 
 A análise é a linha sustentadora de Prandtl pela série de Glauert, simétrica (só os termos ímpares; Anderson,
 *Fundamentals of Aerodynamics*, §5.3, a conferir no PDF). A circulação na envergadura é escrita em

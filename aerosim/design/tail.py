@@ -45,11 +45,14 @@ ARM_FROM = ("CA da asa", "CG de projeto")
 NO_WING2, SAME_WING = "nenhuma", "a mesma asa"     # TailParams.wing2: sem segunda asa; a da etapa repetida
 TANDEM_PITCH = ("asa de trás", "asa da frente", "as duas")   # TailParams.tandem_pitch: onde fica o comando de arfagem
 TIP_FIN_WHERE = ("asa de trás", "asa da frente")   # TailParams.tip_fin_where: em qual asa vão as derivas (tandem)
+LIVE_LAYOUT = "a tabela de Projetar"               # TailParams.config: as asas da tabela como ela está agora
 
 
 @dataclass
 class TailParams:
     name: str = F("conjunto 1", "nome")
+    config: str = F(LIVE_LAYOUT, "configuração", "", "as asas do avião e onde ficam: uma configuração guardada em "
+                    "Projetar, ou a tabela de lá como está agora (vazia: só a asa abaixo)")
     wing: str = F("asa 1", "asa", "", "uma das asas guardadas na etapa Asa")
     wing2: str = F(NO_WING2, "segunda asa (tandem, biplano)", "", "outra asa guardada, ou a mesma (biplano de asas "
                    "iguais); ela fica ligada à primeira: a referência do avião passa a ser o par")

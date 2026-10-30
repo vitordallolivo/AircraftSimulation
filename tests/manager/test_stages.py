@@ -113,9 +113,56 @@ def test_wing_layout_table_feeds_the_tail_stage(tmp_path):
     assert rows[0][1] == 0.0 and rows[1][:2] == ["asa 2", 1.4]
     tail = ctx.design.tail_draft
     assert (tail.wing, tail.wing2, tail.wing2_dx) == ("asa 1", "asa 2", 1.4)
-    assert "wing2_dx" in stages.TailStage(ctx).disabled()
+    form = [q.key for q in stages.TailStage(ctx).form()]
+    assert "config" in form and not any(k.startswith("wing2") for k in form)   # a Empenagem não tem segunda asa
+    assert stages.TailStage(ctx).disabled() == ("wing",)
     wing.edit_grid("asas", "delete", 1)
     assert ctx.design.tail_draft.wing2 == "nenhuma"
+
+
+def test_wing_configuration_is_kept_and_chosen_in_the_tail_stage(tmp_path):
+    """'Guardar configuração' em Projetar guarda a tabela com um nome; a Empenagem escolhe entre as guardadas e a
+    tabela como está, e mexer na tabela depois não muda a configuração escolhida"""
+    from aerosim.design import store
+    ctx = _context(tmp_path)
+    wing = stages.WingStage(ctx)
+    wing.do_keep()
+    wing.edit_grid("asas", "add", -1)
+    wing.edit_grid("asas", "add", 0)
+    wing.edit_grid("asas", "set", 1, "dx", 1.0)
+    assert "guardada" in wing.act("config", "tandem")
+    tail = stages.TailStage(ctx)
+    assert tail.choices()["config"] == ("a tabela de Projetar", "tandem")
+    assert ctx.design.tail_draft.config == "tandem" and ctx.design.tail_draft.wing2_dx == 1.0
+    wing.edit_grid("asas", "set", 1, "dx", 0.0)
+    wing.edit_grid("asas", "set", 1, "dz", 0.4)                 # agora um biplano na tabela
+    assert ctx.design.tail_draft.wing2_dx == 1.0                # a Empenagem segue no tandem guardado
+    tail.set({"config": "a tabela de Projetar"})
+    assert (ctx.design.tail_draft.wing2_dx, ctx.design.tail_draft.wing2_dz) == (0.0, 0.4)
+    again = store.load(ctx.folder)
+    assert again.configs[0].name == "tandem" and again.configs[0].wings[1].dx == 1.0
+
+
+def test_old_second_wing_becomes_a_configuration(tmp_path):
+    """uma sprint de antes, com a segunda asa nos campos da Empenagem, abre com uma configuração de duas asas e o
+    mesmo conjunto (as mesmas superfícies, no mesmo lugar)"""
+    from aerosim.design import store
+    from aerosim.model.serialize import to_dict
+    ctx = _context(tmp_path)
+    stages.WingStage(ctx).do_keep()
+    t = ctx.design.tail_draft
+    t.wing2, t.wing2_dx, t.wing2_dz, t.wing2_di = "a mesma asa", 0.0, 0.35, 1.0
+    def surfaces():                                             # sem o id do par (sorteado a cada conta)
+        return [{k: v for k, v in to_dict(x).items() if k != "group"}
+                for x in stages.TailStage(ctx).compute().aircraft.surfaces]
+    before = surfaces()
+    ctx.save()
+    again = store.load(ctx.folder)
+    assert [c.name for c in again.configs] == ["configuração 1"] and again.tail_draft.config == "configuração 1"
+    rows = again.configs[0].wings
+    assert rows[1].wing == rows[0].wing and (rows[1].dz, rows[1].di) == (0.35, 1.0)
+    ctx.design = again
+    assert surfaces() == before
 
 
 def test_wing_layout_three_wings_and_joined_tips(tmp_path):
