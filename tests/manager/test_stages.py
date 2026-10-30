@@ -116,3 +116,25 @@ def test_wing_layout_table_feeds_the_tail_stage(tmp_path):
     assert "wing2_dx" in stages.TailStage(ctx).disabled()
     wing.edit_grid("asas", "delete", 1)
     assert ctx.design.tail_draft.wing2 == "nenhuma"
+
+
+def test_wing_layout_three_wings_and_joined_tips(tmp_path):
+    """da tabela de Projetar até a Empenagem: um triplano leva as três asas, o Δy e a placa das pontas ligadas
+    (asa em caixa), e o conjunto guardado lê de volta igual"""
+    from aerosim.design import store
+    ctx = _context(tmp_path)
+    wing = stages.WingStage(ctx)
+    wing.do_keep()
+    for op, row, key, value in (("add", -1, "", None), ("add", 0, "", None), ("add", 1, "", None),
+                                ("set", 1, "dz", 0.35), ("set", 1, "dy", 0.05), ("set", 1, "join", "sim"),
+                                ("set", 2, "dz", 0.7)):
+        wing.edit_grid("asas", op, row, key, value)
+    assert len(wing.compute().aircraft.surfaces) == 3
+    tail = stages.TailStage(ctx)
+    ac = tail.compute().aircraft
+    wings = [s for s in ac.surfaces if s.role == "wing"]
+    assert len(wings) == 3 and abs(wings[1].y - 0.05) < 1e-9
+    assert [d.kind for d in wings[0].devices] == ["winglet"] and abs(wings[0].devices[0].height - 0.35) < 1e-9
+    tail.do_keep()
+    again = store.load(ctx.folder)
+    assert len(again.sets[0].more_wings) == 1 and again.sets[0].more_places[0].dz == 0.7

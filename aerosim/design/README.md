@@ -103,6 +103,19 @@ O botão "do trapézio" monta a tabela a partir do trapézio atual. A forma da a
 dois exemplos, está em [`aerosim/aero/README.md`](../aero/README.md#a-asa-por-partições); a linha sustentadora e o
 arrasto de perfil interpolam entre as seções.
 
+Também é aqui, na Aerodinâmica, que se decide quantas asas o avião tem e onde fica cada uma. A tabela "Asas do avião"
+(`DesignProject.wing_layout`, uma `WingPlacement` por linha) funciona como a das partições: cada linha escolhe uma
+asa guardada e diz onde fica o bordo de ataque da raiz dela em relação ao da primeira linha, a referência, em Δx (+
+para trás), Δy (+ para a direita) e Δz (+ para cima), mais a decalagem. Uma linha só é um monoplano; duas, uma acima
+da outra, um biplano; uma atrás da outra, um tandem; três, um triplano. A coluna "pontas ligadas" põe uma placa entre
+a ponta dela e a da referência, a asa em caixa do "best wing system" de Prandtl (*Induced drag of multiplanes*, NACA
+TN 182, 1924): no mesmo vão, o sistema fechado tem menos arrasto induzido que duas asas soltas (Kroo, *Annu. Rev.
+Fluid Mech.* 33, 2001, fig. 7: $`e pprox 1{,}46`$ com $`h/b = 0{,}2`$). `apply_wing_layout` leva a primeira e a
+segunda asa para a Empenagem (os campos delas ficam em cinza lá) e `draft_set` leva as outras no conjunto
+(`SetCandidate.more_wings`); `layout_surfaces` monta as asas no lugar delas para a vista 3D e para Analisar. A tabela
+vazia deixa tudo como antes: a Empenagem escolhe a segunda asa. Como chegar no CG de projeto (tubos, lastro) é da
+Montagem, não destas etapas.
+
 A análise é a linha sustentadora de Prandtl pela série de Glauert, simétrica (só os termos ímpares; Anderson,
 *Fundamentals of Aerodynamics*, §5.3, a conferir no PDF). A circulação na envergadura é escrita em
 $`y = -\tfrac b2\cos\theta`$, e cada estação $`\theta`$ dá uma equação para os coeficientes $`A_n`$. O enflechamento entra
@@ -198,7 +211,7 @@ x_n = \frac{a\,S\,x_{ac,1} + \eta\,a_2\,S_2\left(1 - \frac{d\varepsilon}{d\alpha
 ```
 
 Quem trima o tandem é a decalagem, a incidência da asa de trás menos a da da frente (`wing2_di`, negativa: a de trás
-sustenta menos por área). Um tubo liga a asa de trás à fuselagem, e o pod vai até o CG, que fica entre as asas. O
+sustenta menos por área). A etapa não liga as asas com tubo: o que une as duas é da Montagem. O
 comando de arfagem (`tandem_pitch`) pode ficar na asa de trás, e aí ele é um profundor comum, na da frente, e aí ele
 desce para cabrar porque está à frente do CG, como um canard, ou nas duas.
 

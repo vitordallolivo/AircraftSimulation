@@ -30,14 +30,14 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from aerosim.model.aircraft import Aircraft, ControlSurface, LiftingSurface, TailBoom, WingSection
+from aerosim.model.aircraft import Aircraft, ControlSurface, LiftingSurface, TailBoom, WingDevice, WingSection
 from aerosim.model.airfoil import Airfoil, flap_effectiveness, helmbold
 from aerosim.model.modifiers import Modifier
 
 from . import airfoils as afm
 from .fields import F
 from .spec import DesignRules, Requirements, cruise_CL
-from .wing import WingCandidate, analyze as analyze_wing, lifting_line, planform
+from .wing import WingCandidate, WingPlacement, analyze as analyze_wing, lifting_line, planform
 
 LAYOUTS = ("convencional", "em V", "sem cauda", "em H")
 WITH_HTAIL = ("convencional", "em H")              # EH e EV separadas (a estática e o C_nβ são os mesmos)
@@ -58,6 +58,10 @@ class TailParams:
     wing2_dz: float = F(0.0, "desnível da segunda asa", "m", "+ para cima (biplano: o vão entre as asas)", -1.0, 1.0,
                         0.01)
     wing2_di: float = F(0.0, "decalagem da segunda asa", "°", "incidência dela menos a da primeira", -12, 8, 0.25)
+    wing2_dy: float = F(0.0, "deslocamento lateral da segunda asa", "m", "+ para a direita (vem da tabela de asas "
+                        "de Projetar)", -3.0, 3.0, 0.01)
+    wing2_join: bool = F(False, "pontas ligadas à segunda asa", "", "uma placa liga as pontas das duas asas (asa em "
+                         "caixa); vem da tabela de asas de Projetar")
     wing2_area: float = F(1.0, "área da segunda asa / da primeira", "", "as cordas da segunda asa vezes isto, com a "
                           "mesma envergadura (a envergadura máxima vale para as duas). No tandem a da frente é a "
                           "menor: a de trás trabalha no downwash dela e precisa de mais área para dividir a "
@@ -125,6 +129,8 @@ class SetCandidate:
     note: str = ""
     wing2: WingCandidate | None = None      # a segunda asa (cópia); None: monoplano
     group: str = ""                         # id que liga as duas asas no avião (sorteado ao guardar)
+    more_wings: list[WingCandidate] = field(default_factory=list)       # da terceira asa em diante (cópias)
+    more_places: list[WingPlacement] = field(default_factory=list)      # onde cada uma fica em relação à primeira
 
     @property
     def name(self) -> str:
@@ -324,6 +330,24 @@ def second_wing(ac: Aircraft):
     return next((s for s in ac.surfaces[1:] if s.role == "wing"), None)
 
 
+def join_tips(a: LiftingSurface, b: LiftingSurface) -> None:
+    """liga as pontas de `a` e `b` (biplano ou tandem em caixa): uma placa vertical sai da ponta da asa de baixo e
+    sobe até a de cima, inclinada para trás ou para a frente quando uma está deslocada da outra em x. É o sistema
+    em caixa de Prandtl ("Induced drag of multiplanes", NACA TN 182, 1924): no mesmo vão, o arrasto induzido cai
+    com a altura da caixa (Kroo, Annu. Rev. Fluid Mech. 33, 2001, fig. 7: e ≈ 1,46 com h/b = 0,2). A altura é a
+    do vão na raiz (o diedro das duas asas é o mesmo na tabela); com envergaduras diferentes a placa fica na
+    ponta da de baixo"""
+    lower, upper = (a, b) if a.z >= b.z else (b, a)   # z do corpo para baixo
+    gap = lower.z - upper.z
+    if gap <= 1e-6:
+        return
+    x_le = lambda s: s.x - s.sections[-1].x_offset    # bordo de ataque da ponta (x do corpo, + para a frente)
+    back = x_le(lower) - x_le(upper)                  # quanto a de cima está atrás da de baixo
+    lower.devices.append(WingDevice(kind="winglet", eta=1.0, height=math.hypot(gap, back), root_chord=0.0,
+                                    taper=upper.sections[-1].chord / max(lower.sections[-1].chord, 1e-6),
+                                    sweep=math.degrees(math.atan2(back, gap)), cant=0.0, profile="NACA 0010"))
+
+
 def _add_wing2(ac: Aircraft, cand: SetCandidate, req: Requirements, rules: DesignRules) -> None:
     """a segunda asa no fim da lista (as contas da etapa leem a asa em [0] e a cauda em [1]), ligada à primeira"""
     if cand.wing2 is None:
@@ -332,7 +356,7 @@ def _add_wing2(ac: Aircraft, cand: SetCandidate, req: Requirements, rules: Desig
     w = ac.surfaces[0]
     w2 = copy.deepcopy(analyze_wing(cand.wing2, req, rules)["surface"])
     w2.name = w2.name if w2.name != w.name else f"{w.name} (2)"
-    w2.x, w2.y, w2.z = w.x - tp.wing2_dx, w.y, w.z - tp.wing2_dz      # z do corpo para baixo
+    w2.x, w2.y, w2.z = w.x - tp.wing2_dx, w.y + tp.wing2_dy, w.z - tp.wing2_dz      # z do corpo para baixo
     if tp.wing2_area != 1.0 or tp.wing2_span != 1.0:
         # a envergadura vezes `wing2_span` e as cordas vezes área/envergadura: a área sai `wing2_area` vezes a da
         # primeira, com a mesma forma em planta (o recuo do bordo de ataque acompanha as cordas)
@@ -362,14 +386,32 @@ def _add_wing2(ac: Aircraft, cand: SetCandidate, req: Requirements, rules: Desig
         dCL = cruise_CL(req, S1 + w2.area) - cruise_CL(req, S1)
         w.incidence += math.degrees(dCL / wr["CLa"])
     names = lambda s: [(q.airfoil or s.airfoil).name for q in s.sections]
+    a0 = lambda s: -lifting_line(s)["At"][0] / lifting_line(s)["Aa"][0]           # α da raiz com C_L = 0 (rad)
     if names(w2) != names(w):
-        a0 = lambda s: -lifting_line(s)["At"][0] / lifting_line(s)["Aa"][0]       # α da raiz com C_L = 0 (rad)
         w2.incidence = w.incidence + tp.wing2_di + math.degrees(a0(w2) - a0(w))
     else:
         w2.incidence = w.incidence + tp.wing2_di
     w2.controls = []                                  # os comandos ficam na primeira (na Montagem, livre)
     ac.surfaces.append(w2)
     ac.link_wings(w, w2)
+    if tp.wing2_join:
+        join_tips(w, w2)
+    # da terceira asa em diante (tabela de asas de Projetar): cada uma no lugar dela em relação à primeira, com a
+    # decalagem contada da linha de sustentação nula da primeira, como a segunda; sem comandos
+    for k, (extra, place) in enumerate(zip(cand.more_wings, cand.more_places)):
+        s = copy.deepcopy(analyze_wing(extra, req, rules)["surface"])
+        s.name = f"{s.name} ({k + 3})"
+        s.x, s.y, s.z = w.x - place.dx, w.y + place.dy, w.z - place.dz
+        s.incidence = w.incidence + place.di
+        if names(s) != names(w):
+            s.incidence += math.degrees(a0(s) - a0(w))
+        if tp.layout == "sem cauda" and place.dx > 0:  # atrás da primeira: sente o downwash dela
+            s.downwash, s.eta = True, tp.tail_eta
+        s.controls = []
+        ac.surfaces.append(s)
+        ac.link_wings(w, s)
+        if place.join:
+            join_tips(w, s)
     if cand.group:                                    # o id guardado no conjunto (o mesmo até a Montagem)
         w.group = w2.group = cand.group
 

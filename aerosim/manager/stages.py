@@ -372,17 +372,7 @@ class WingStage(Stage):
 
     def _layout_surfaces(self):
         """as asas da tabela, cada uma no lugar dela (a vista 3D mostra o avião com todas)"""
-        d = self.ctx.design
-        surfaces = []
-        for k, row in enumerate(d.wing_layout):
-            s = d.wing_surface(row.wing)
-            if s is None:
-                continue
-            s.name = f"{row.wing} ({k + 1})" if k else row.wing
-            s.x, s.y, s.z = -row.dx, row.dy, -row.dz           # x e z do corpo: + para a frente, + para baixo
-            s.incidence += row.di
-            surfaces.append(s)
-        return surfaces
+        return self.ctx.design.layout_surfaces()
 
     # a tabela de partições (a mesma de `WingPage` na GUI PyQt)
     COLUMNS = (("span", "envergadura (m)", "quanto a partição soma na envergadura total (metade de cada lado)"),
@@ -405,7 +395,9 @@ class WingStage(Stage):
                       ("dx", "Δx (m)", "bordo de ataque da raiz em relação ao da referência: + para trás"),
                       ("dy", "Δy (m)", "+ para a direita"),
                       ("dz", "Δz (m)", "+ para cima (biplano: o vão entre as asas)"),
-                      ("di", "decalagem (°)", "incidência dela menos a da referência"))
+                      ("di", "decalagem (°)", "incidência dela menos a da referência"),
+                      ("join", "pontas ligadas", "uma placa liga a ponta dela à da referência (asa em caixa)"))
+    JOIN = ("não", "sim")
     LAYOUT_BUTTONS = (("add", "+ asa", "mais uma asa guardada, depois da selecionada (ou no fim)"),
                       ("delete", "− asa", "tira a selecionada da lista"))
 
@@ -418,11 +410,13 @@ class WingStage(Stage):
         if not names:
             return []
         extra = tuple(r.wing for r in d.wing_layout if r.wing not in names)
-        columns = [GridColumn(k, label, "choice" if k == "wing" else "float", names + extra if k == "wing" else (),
-                              tip) for k, label, tip in self.LAYOUT_COLUMNS]
-        note = "a primeira linha é a referência (Δ = 0). A Empenagem usa a primeira e a segunda asa."
+        kinds = {"wing": ("choice", names + extra), "join": ("choice", self.JOIN)}
+        columns = [GridColumn(k, label, kinds.get(k, ("float",))[0], kinds.get(k, (None, ()))[1], tip)
+                   for k, label, tip in self.LAYOUT_COLUMNS]
+        note = "a primeira linha é a referência (Δ = 0); a Empenagem leva todas."
         return [Grid("asas", "Asas do avião", columns,
-                     [[getattr(r, k) for k, _, _ in self.LAYOUT_COLUMNS] for r in d.wing_layout], note,
+                     [[self.JOIN[int(r.join)] if k == "join" else getattr(r, k) for k, _, _ in self.LAYOUT_COLUMNS]
+                      for r in d.wing_layout], note,
                      "quantas asas o avião tem e onde fica cada uma, com base na primeira: uma linha é monoplano, "
                      "duas lado a lado em Δz são um biplano, uma atrás da outra em Δx um tandem.",
                      list(self.LAYOUT_BUTTONS))]
@@ -460,6 +454,8 @@ class WingStage(Stage):
         if op == "set" and rows:
             if key == "wing":
                 rows[row].wing = str(value or "")
+            elif key == "join":
+                rows[row].join = row > 0 and str(value) in (self.JOIN[1], "True", "1")
             elif row > 0:                                  # a referência fica em Δ = 0
                 setattr(rows[row], key, float(value))
         elif op == "add":
@@ -505,7 +501,7 @@ class WingStage(Stage):
 
 # ====================================================================== Empenagem
 # os campos da Empenagem que a tabela de asas de Projetar decide
-LAYOUT_KEYS = ("wing", "wing2", "wing2_dx", "wing2_dz", "wing2_di", "wing2_area", "wing2_span", "wing2_sweep",
+LAYOUT_KEYS = ("wing", "wing2", "wing2_dx", "wing2_dy", "wing2_dz", "wing2_join", "wing2_di", "wing2_area", "wing2_span", "wing2_sweep",
                "wing2_airfoil")
 class TailStage(Stage):
     name = "empenagem"

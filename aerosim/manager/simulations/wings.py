@@ -33,6 +33,7 @@ from .base import SimulationBase
 
 NENHUM = "nenhum"
 OPEN, SPRINT = "avião aberto (Montagem)", "asas guardadas na sprint"
+LAYOUT = "asas do avião (tabela de Projetar)"
 # Reynolds crítico dos perfis de aeromodelo: abaixo dele a bolha laminar tende a não recolar (Lissaman, "Low-Reynolds-
 # number airfoils", Annual Review of Fluid Mechanics 15, 1983 — valor a conferir no PDF)
 RE_CRITICAL = 7e4
@@ -159,8 +160,9 @@ class WingsSimulation(SimulationBase):
         sprint = sprint_wings(self.shared)
         source = values.get("source", OPEN if (ac is not None and lifting_surfaces(ac)) or not sprint else SPRINT)
         F = "De onde vêm as asas"
-        ps = [ParamSpec("source", "asas de", source, kind="choice", choices=(OPEN, SPRINT), group=F, rebuild=True,
-                        help="o avião aberto na Montagem, ou as asas guardadas na etapa Asa da sprint (sem fuselagem)")]
+        ps = [ParamSpec("source", "asas de", source, kind="choice", choices=(OPEN, SPRINT, LAYOUT), group=F,
+                        rebuild=True, help="o avião aberto na Montagem, as asas guardadas na etapa Asa da sprint (sem "
+                        "fuselagem) ou as asas do avião como a tabela de Projetar põe (biplano, tandem, caixa)")]
         S = "Superfícies"
         if source == SPRINT:
             placed = layout_positions(self.shared)
@@ -173,7 +175,7 @@ class WingsSimulation(SimulationBase):
                                  "Começa com o da tabela de asas de Projetar"),
                        ParamSpec(f"h_{i}", f"{name}: altura", h, minimum=-3, maximum=3, unit="m", group=S,
                                  help="biplano: a asa de cima mais alta")]
-        else:
+        elif source == OPEN:
             for i, s in lifting_surfaces(ac):
                 ps.append(ParamSpec(f"surf_{i}", f"incluir: {s.name}", s.role == "wing", kind="bool", group=S))
         C = "Caso"
@@ -261,6 +263,16 @@ class WingsSimulation(SimulationBase):
     def _aircraft(self, ctx: RunContext):
         """(avião só com as superfícies escolhidas, motivo se não deu)"""
         P = lambda k: self.param(ctx, k)
+        if P("source") == LAYOUT:
+            from aerosim.model.aircraft import Aircraft
+            project = (self.shared or ctx.shared or {}).get("sprint")
+            surfaces = project.layout_surfaces() if project is not None else []
+            if not surfaces:
+                return None, "a tabela de asas de Projetar está vazia"
+            ac = Aircraft(name="asas do avião", surfaces=copy.deepcopy(surfaces))
+            ac.propulsion = []
+            ac = strip_aircraft(ac)
+            return wings_only(ac, list(range(len(ac.surfaces))), float(P("endplate"))), ""
         if P("source") == SPRINT:
             project = (self.shared or ctx.shared or {}).get("sprint")
             names = sprint_wings(self.shared or ctx.shared)

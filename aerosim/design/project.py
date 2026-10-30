@@ -70,20 +70,40 @@ class DesignProject:
 
     def apply_wing_layout(self) -> None:
         """as asas da tabela de Projetar vão para a Empenagem: a primeira é a asa do conjunto e a segunda, a segunda
-        asa (recuo, desnível e decalagem em relação à primeira). Tabela vazia: a Empenagem fica como está."""
+        asa (recuo, lado, desnível e decalagem em relação à primeira); da terceira em diante entram pelo conjunto
+        (`draft_set`). Tabela vazia: a Empenagem fica como está."""
         rows = self.wing_layout
         if not rows:
             return
         t = self.tail_draft
         t.wing = rows[0].wing
         if len(rows) < 2:
-            t.wing2 = NO_WING2
+            t.wing2, t.wing2_dy, t.wing2_join = NO_WING2, 0.0, False
             return
         second = rows[1]
         t.wing2 = SAME_WING if second.wing == rows[0].wing else second.wing
-        t.wing2_dx, t.wing2_dz, t.wing2_di = second.dx, second.dz, second.di
+        t.wing2_dx, t.wing2_dy, t.wing2_dz, t.wing2_di = second.dx, second.dy, second.dz, second.di
+        t.wing2_join = second.join
         # a segunda asa é a guardada, como está: nada de escalar a área, a envergadura, o enflechamento ou o perfil
         t.wing2_area, t.wing2_span, t.wing2_sweep, t.wing2_airfoil = 1.0, 1.0, 0.0, ""
+
+    def layout_surfaces(self) -> list:
+        """as asas da tabela de Projetar como superfícies, cada uma no lugar dela (bordo de ataque da raiz da
+        referência em x = 0), com a decalagem como incidência (o α de uma varredura é o da corda da referência) e as
+        placas das pontas ligadas"""
+        from .tail import join_tips
+        surfaces = []
+        for k, row in enumerate(self.wing_layout):
+            s = self.wing_surface(row.wing)
+            if s is None:
+                continue
+            s.name = f"{row.wing} ({k + 1})" if k else row.wing
+            s.x, s.y, s.z = -row.dx, row.dy, -row.dz           # x e z do corpo: + para a frente, + para baixo
+            s.incidence = row.di
+            if k and row.join and surfaces:
+                join_tips(surfaces[0], s)
+            surfaces.append(s)
+        return surfaces
 
     def summary(self) -> list[tuple[str, str]]:
         """o que está guardado, etapa por etapa (para mostrar ao abrir)"""
@@ -171,8 +191,12 @@ class DesignProject:
             return None
         n2 = self.tail_draft.wing2
         w2 = w if n2 == SAME_WING else (self.wing(n2) if n2 and n2 != NO_WING2 else None)
+        more = [(self.wing(r.wing), r) for r in self.wing_layout[2:]]
+        more = [(m, r) for m, r in more if m is not None]
         return SetCandidate(copy.deepcopy(self.tail_draft), copy.deepcopy(w),
-                            wing2=wing2_candidate(w2, self.tail_draft, self.airfoil))
+                            wing2=wing2_candidate(w2, self.tail_draft, self.airfoil),
+                            more_wings=[copy.deepcopy(m) for m, _ in more],
+                            more_places=[copy.deepcopy(r) for _, r in more])
 
     def keep_set(self) -> SetCandidate | None:
         c = self.draft_set()

@@ -21,6 +21,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   3D mostra todas; a Empenagem pega a primeira e a segunda (esses campos ficam em cinza lá), e Analisar começa com
   as posições da tabela. O tandem não ganha mais o tubo entre as asas na Empenagem: o que liga as asas é da
   Montagem (vitor: "o CG é apenas de projeto").
+- a tabela "Asas do avião" vai até o fim: a Empenagem leva todas as asas (da terceira em diante pelo conjunto, que
+  grava e lê de volta) e o Δy; a coluna "pontas ligadas" põe a placa entre as pontas (asa em caixa, Prandtl) na vista
+  3D, na Empenagem e no avião; Analisar ganhou a origem "asas do avião (tabela de Projetar)", que roda o biplano, o
+  tandem ou a caixa como a tabela põe.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

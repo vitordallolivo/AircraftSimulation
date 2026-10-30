@@ -31,7 +31,7 @@ from aerosim.model.serialize import from_dict, to_dict
 from .power import AircraftCandidate, PowerParams
 from .project import DesignProject
 from .tail import SetCandidate, TailParams
-from .wing import WingCandidate
+from .wing import WingCandidate, WingPlacement
 
 MAIN = "sprint.json"
 LEGACY = "projeto.json"
@@ -123,13 +123,17 @@ def _set_dict(s: SetCandidate) -> dict:
     d = dict(params=to_dict(s.params), note=s.note)
     if s.wing2 is not None:
         d.update(asa2=to_dict(s.wing2), grupo=s.group)
+    if s.more_wings:
+        d.update(mais_asas=[to_dict(w) for w in s.more_wings], lugares=[to_dict(q) for q in s.more_places])
     return d
 
 
 def _set_from(d: dict, wing: WingCandidate) -> SetCandidate:
     w2 = d.get("asa2")
     return SetCandidate(from_dict(TailParams, d.get("params", {})), copy.deepcopy(wing), d.get("note", ""),
-                        from_dict(WingCandidate, w2) if w2 else None, d.get("grupo", ""))
+                        from_dict(WingCandidate, w2) if w2 else None, d.get("grupo", ""),
+                        [from_dict(WingCandidate, w) for w in d.get("mais_asas", [])],
+                        [from_dict(WingPlacement, q) for q in d.get("lugares", [])])
 
 
 def run_file(r: dict) -> str:

@@ -60,6 +60,8 @@ class WingPlacement:
     dy: float = F(0.0, "Δy", "m", "+ para a direita", -5.0, 5.0, 0.01)
     dz: float = F(0.0, "Δz", "m", "+ para cima (biplano: o vão entre as asas)", -3.0, 3.0, 0.01)
     di: float = F(0.0, "decalagem", "°", "incidência dela menos a da referência", -12.0, 8.0, 0.25)
+    join: bool = F(False, "pontas ligadas", "", "uma placa liga a ponta dela à da referência (asa em caixa, o "
+                   "\"best wing system\" de Prandtl): menos arrasto induzido no mesmo vão")
 
 
 @dataclass
