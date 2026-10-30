@@ -318,7 +318,7 @@ test "candidatos do avião de exemplo e a polar do XFLR5" {
 test "perfis do avião de exemplo: os mesmos números da GUI em Python" {
     const assembly = @import("assembly.zig");
     const io = std.testing.io;
-    const path = "../../data/aircraft/S1223_monomotor_EH_convencional_Joinville.json";
+    const path = "../data/aircraft/S1223_monomotor_EH_convencional_Joinville.json";
     const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, std.testing.allocator, .limited(1 << 24)) catch return error.SkipZigTest;
     defer std.testing.allocator.free(bytes);
     var diagnosis: model.Diag = .{};

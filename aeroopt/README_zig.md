@@ -1,11 +1,11 @@
-# gui_zig (aeroopt)
+# A interface do aeroopt em Zig
 
 Esta é a interface do aeroopt escrita em Zig, com raylib e raygui. Aqui se monta o problema de otimização (a
 pontuação, as variáveis, as restrições e a configuração da busca) e se veem os resultados da rodada. Ela usa as
-mesmas peças da interface do aerosim (`aerosim/gui_zig/src/ui`), para os dois programas terem o mesmo visual, o
+mesmas peças da interface do aerosim (`aerosim/gui/ui`), para os dois programas terem o mesmo visual, o
 do AeroDrive. Por enquanto a rodada é de exemplo.
 
-A pasta tem a tela (`src/screen.zig`), a rodada de exemplo (`src/opt_example.zig`) e o programa (`src/main.zig`),
+Os arquivos Zig ficam junto do Python do aeroopt, com o build em `aeroopt/build.zig`. A pasta tem a tela (`screen.zig`), a rodada de exemplo (`opt_example.zig`) e o programa (`main.zig`),
 que só abre a janela pelo laço comum das peças.
 
 ## A tela
@@ -28,7 +28,7 @@ Precisa do Zig 0.16 (`pip install ziglang`) e das mesmas bibliotecas de sistema 
 `zig fetch`, dá para copiar a pasta `aerodrive/zig-pkg` para cá.
 
 ```sh
-cd aeroopt/gui_zig
+cd aeroopt
 python -m ziglang build test                                  # testes sem janela
 python -m ziglang build run                                   # abre o aeroopt
 xvfb-run -a python -m ziglang build shot -- aeroopt.png       # print sem tela

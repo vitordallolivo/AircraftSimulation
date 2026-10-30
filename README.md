@@ -51,12 +51,14 @@ pip install -r requirements-aero.txt   # opcional: lltdrek e AeroSandbox (compar
 
 ## Rodar
 
-Para rodar o aerodrive:
+Os programas em Zig compilam e abrem a partir da raiz, cada um pelo nome:
 
 ```sh
-cd aerodrive
-python -m ziglang build run
-cd ..
+python -m ziglang build aerodrive          # o simulador
+python -m ziglang build aerosim            # a interface do aerosim em Zig
+python -m ziglang build aeroopt            # a interface do aeroopt em Zig
+python -m ziglang build                    # compila os três
+python -m ziglang build test               # testes do núcleo, das interfaces e do AeroDrive
 ```
 
 

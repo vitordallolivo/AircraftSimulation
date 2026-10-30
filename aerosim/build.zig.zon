@@ -5,7 +5,7 @@
     .fingerprint = 0x3184dfa2bb6283d5,
     .dependencies = .{
         // o núcleo de física do aerosim (mesmo repositório)
-        .aerosim = .{ .path = "../../core" },
+        .aerosim = .{ .path = "../core" },
         // raylib-zig (raylib 6.0 e raygui), o mesmo commit do AeroDrive
         .raylib_zig = .{
             .url = "git+https://github.com/raylib-zig/raylib-zig#8758f4cd3a5ae0df6941c4715257223d34c5ad3e",
@@ -13,5 +13,5 @@
             .lazy = true,
         },
     },
-    .paths = .{ "build.zig", "build.zig.zon", "src", "README.md" },
+    .paths = .{ "build.zig", "build.zig.zon", "gui" },
 }

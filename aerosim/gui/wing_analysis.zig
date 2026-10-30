@@ -348,7 +348,7 @@ fn markPanels(ac: *const model.Aircraft, index: usize, owner: i32, panel_owner: 
 
 test "análise das asas: o S1223 de data/aircraft pela linha sustentadora e pelas faixas" {
     const io = std.testing.io;
-    const bytes = std.Io.Dir.cwd().readFileAlloc(io, "../../data/aircraft/S1223_monomotor_EH_convencional_Joinville.json", std.testing.allocator, .limited(1 << 24)) catch return error.SkipZigTest;
+    const bytes = std.Io.Dir.cwd().readFileAlloc(io, "../data/aircraft/S1223_monomotor_EH_convencional_Joinville.json", std.testing.allocator, .limited(1 << 24)) catch return error.SkipZigTest;
     defer std.testing.allocator.free(bytes);
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);

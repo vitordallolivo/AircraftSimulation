@@ -1,19 +1,19 @@
-# gui_zig (aerosim)
+# A interface do aerosim em Zig
 
 Esta é a interface do aerosim escrita em Zig, com raylib e raygui, no mesmo visual do AeroDrive: fundo
 claro, cantos arredondados, azul nos títulos, pouco texto e a logo do albatroz. Ela é o
 começo da troca da GUI em PyQt por uma que não precisa de Python: as contas vêm do núcleo (`core/`), que entra aqui
 como módulo, igual ao AeroDrive. A aba Analisar já roda a varredura das asas do avião aberto no núcleo, com
-os mesmos números da GUI em Python. A interface do aeroopt fica em `aeroopt/gui_zig` e usa as peças comuns daqui.
+os mesmos números da GUI em Python. A interface do aeroopt fica em `aeroopt/` (junto do Python dele) e usa as peças comuns daqui.
 
-A pasta se divide em três partes. Em `src/ui` ficam as peças de qualquer tela, as mesmas para o aerosim e para o
+A pasta se divide em três partes. Os arquivos Zig ficam aqui mesmo, junto dos arquivos Python da interface em PyQt, e o build é o `aerosim/build.zig`. Em `ui/` ficam as peças de qualquer tela, as mesmas para o aerosim e para o
 aeroopt: as cores e as fontes, as formas do visual, os widgets (cabeçalho, abas, botão, cartão), o formulário
-lateral, o gráfico, a vista 3D e o laço do programa. Em `src/screen.zig` fica a tela do aerosim, montada com essas peças, e cada aba
-tem o seu arquivo: `src/airfoil_tab.zig` (Perfis) com a etapa em `src/airfoil_stage.zig`, `src/wing_tab.zig`
-(Projetar), `src/analyze_tab.zig` (Analisar) com as contas em `src/wing_analysis.zig`, e `src/assembly.zig`
-(Montagem). O projeto de dimensionamento que Perfis e Projetar dividem fica em `src/design.zig`.
+lateral, o gráfico, a vista 3D e o laço do programa. Em `screen.zig` fica a tela do aerosim, montada com essas peças, e cada aba
+tem o seu arquivo: `airfoil_tab.zig` (Perfis) com a etapa em `airfoil_stage.zig`, `wing_tab.zig`
+(Projetar), `analyze_tab.zig` (Analisar) com as contas em `wing_analysis.zig`, e `assembly.zig`
+(Montagem). O projeto de dimensionamento que Perfis e Projetar dividem fica em `design.zig`.
 
-## As peças (`src/ui`)
+## As peças (`ui/`)
 
 Aqui se define a aparência e o comportamento comum. `theme.zig` guarda as cores, cada uma com um papel (fundo,
 painel, cartão, borda, texto, o azul dos títulos e a paleta de dez cores das curvas), as mesmas do AeroDrive. Lá
@@ -48,7 +48,7 @@ luz fixa, as arestas das faixas, o chão quadriculado, os eixos do corpo (frente
 em azul) e os vetores de carga, com a maior seta valendo 18 % do tamanho do avião, como na vista de cargas em
 Python. O 3D é desenhado numa textura do tamanho do cartão; arrastar gira e a roda aproxima.
 
-## A tela (`src/screen.zig`)
+## A tela (`screen.zig`)
 
 O cabeçalho tem os botões de abrir e salvar, e embaixo vêm as abas das áreas e as subabas da
 Aerodinâmica (Perfis, Projetar, Analisar). Em Analisar, o formulário pede quais superfícies entram (por padrão
@@ -58,17 +58,17 @@ cima; depois o C_L do conjunto e o de cada superfície em α, o c_l e a carga L'
 diagnóstico (C_L máximo, onde o estol começa, Reynolds) e um resumo. A aba Montagem mostra o avião inteiro em 3D: abre sozinha o
 avião de exemplo de `data/aircraft`, e outro `.json` entra pela linha de comando ou arrastado para a janela. A
 leitura e as peças são as do AeroDrive (`aerodrive/src/model`, pelo `aerodrive/src/aircraft_model.zig`), as
-mesmas formas e cores da GUI em Python; o `src/assembly.zig` só completa os perfis que o arquivo aponta num `.dat`
+mesmas formas e cores da GUI em Python; o `assembly.zig` só completa os perfis que o arquivo aponta num `.dat`
 e passa cada triângulo para a vista 3D. As outras abas mostram só o lugar delas.
 
-## Os perfis (`src/airfoil_tab.zig`, `src/airfoil_stage.zig`, `src/design.zig`)
+## Os perfis (`airfoil_tab.zig`, `airfoil_stage.zig`, `design.zig`)
 
 Aqui se comparam perfis candidatos antes de desenhar a asa, do mesmo jeito que a página Perfis da GUI em Python. Os
 candidatos são do projeto de dimensionamento (`design.zig`, o `DesignProject` em Python), que começa com o NACA 2412
 e o NACA 4412, e não do avião aberto. A lista fica à esquerda, todos os candidatos entram nos gráficos, e os botões
 acrescentam um NACA pelo código ("+ NACA..."), um `.dat` ("+ .dat...", Selig ou Lednicer), um perfil só de números
 ("+ só parâmetros") ou ligam a polar exportada pelo XFLR5 ou pelo XFOIL ao perfil selecionado ("+ polar XFLR5...").
-"Remover" tira o selecionado. Os arquivos se escolhem num seletor dentro da própria janela (`src/ui/dialogs.zig`),
+"Remover" tira o selecionado. Os arquivos se escolhem num seletor dentro da própria janela (`ui/dialogs.zig`),
 que navega pelas pastas do computador e mostra só as extensões pedidas; arrastar o arquivo para a janela também funciona. Embaixo
 da lista, "polar por" abre um menu de marcar com os métodos de polar do selecionado: o modelo do simulador e a polar
 do arquivo (quando há uma lida); pode ser mais de um, e cada um vira uma curva. A asa usa a do arquivo se ela estiver
@@ -82,7 +82,7 @@ asa. O Reynolds é o de cruzeiro na corda média da asa em desenho, $Re = \rho V
 (editadas em Projetar). O diagnóstico avisa Reynolds abaixo de $10^5$, polar medida noutro Reynolds e a polar do
 modelo com $c_d$ constante.
 
-## A asa (`src/wing_tab.zig`)
+## A asa (`wing_tab.zig`)
 
 Aqui se desenha a asa a partir de um perfil da aba Perfis ou da biblioteca `data/airfoils`. A asa começa retangular,
 como em Python. O formulário pede a planta trapezoidal (envergadura,
@@ -94,7 +94,7 @@ na GUI em Python. A conta é a linha sustentadora de Glauert do núcleo (`core/s
 gráficos mostram C_L até o estol, a polar (induzido, perfil e total), L/D com o C_L de cruzeiro, o $c_l$ ao longo
 da envergadura no cruzeiro e no estol (com o $c_{l,\max}$ do perfil e onde o estol começa) e a planta em escala.
 
-## A análise das asas (`src/wing_analysis.zig`)
+## A análise das asas (`wing_analysis.zig`)
 
 Aqui se escolhem as superfícies que sustentam e sai a polar de cada uma, a do conjunto e a carga ao longo da
 envergadura. É a mesma conta da simulação Asas da GUI em Python: o avião vira só as superfícies (sem fuselagem,
@@ -117,15 +117,18 @@ Precisa do Zig 0.16 (`pip install ziglang`) e, no Linux, dos cabeçalhos do sist
 `CLAUDE.md` para o AeroDrive. O raylib-zig é o mesmo do AeroDrive. Sem acesso ao `zig fetch`, dá para copiar a
 pasta `aerodrive/zig-pkg` para cá.
 
+Da raiz do repositório, `python -m ziglang build aerosim` compila e abre (e `aeroopt`, `aerodrive` fazem o mesmo
+com os outros programas; `build test` roda todos os testes). Dentro da pasta:
+
 ```sh
-cd aerosim/gui_zig
+cd aerosim
 python -m ziglang build test                                  # testes sem janela
 python -m ziglang build run                                   # abre o aerosim
 xvfb-run -a python -m ziglang build shot -- aerosim.png       # print sem tela
 xvfb-run -a python -m ziglang build shot -- montagem.png aba=5   # print de outra aba
-python -m ziglang build run -- ../../data/aircraft/Asa_voadora.json   # abre um avião
+python -m ziglang build run -- ../data/aircraft/Asa_voadora.json   # abre um avião
 ```
 
-Para uma tela nova, monte a lista de campos e de grupos dela (veja as listas no começo de `src/screen.zig`),
+Para uma tela nova, monte a lista de campos e de grupos dela (veja as listas no começo de `screen.zig`),
 desenhe o formulário com `Form.draw` e os gráficos com `plot.lines` ou `plot.cloud`, dentro do mesmo cabeçalho e
 das mesmas abas.

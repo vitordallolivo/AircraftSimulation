@@ -6,7 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.4 (branch `0.2_dev`)
 
-- interface em Zig (W7, começo): `aerosim/gui_zig/` (com as peças comuns em `src/ui`) e `aeroopt/gui_zig/`, com
+- compilar e rodar da raiz: `zig build aerosim`, `aeroopt`, `aerodrive`, `zig build` (os três) e `zig build test`
+  (`build.zig` na raiz chama o build de cada pasta). O código Zig das interfaces passa para a pasta do módulo, junto
+  do Python: `aerosim/gui/` (com `aerosim/build.zig`) e `aeroopt/` (com `aeroopt/build.zig`).
+- interface em Zig (W7, começo): `aerosim/gui/` (com as peças comuns em `gui/ui`) e `aeroopt/`, com
   raylib e raygui, no visual do AeroDrive (fundo claro, cantos arredondados, azul nos títulos). A Montagem mostra o avião
   inteiro em 3D pelo modelo do AeroDrive. O formulário
   lateral sai de uma lista de campos, e o gráfico tem marcas redondas, legenda e a paleta de dez cores. No aerosim,

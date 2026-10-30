@@ -1,5 +1,6 @@
-//! Interface do aerosim em Zig (raylib e raygui), com o núcleo como módulo. As peças comuns das telas ficam em
-//! `src/ui` e servem também ao aeroopt (`aeroopt/gui_zig`).
+//! Interface do aerosim em Zig (raylib e raygui), com o núcleo como módulo. O código Zig fica junto do Python, na
+//! pasta da interface (`gui/`); as peças comuns das telas ficam em `gui/ui` e servem também ao aeroopt. Da raiz do
+//! repositório, `zig build aerosim` faz o mesmo que `zig build run` aqui.
 //!
 //!   zig build run                                abre o aerosim
 //!   zig build run -- <avião.json>                abre um avião na Montagem
@@ -21,7 +22,7 @@ pub fn build(b: *std.Build) void {
     fuzz_options.addOption(usize, "fuzz_iterations", 2000);
     fuzz_options.addOption(u64, "fuzz_seed", 1);
     const aircraft_model = b.createModule(.{
-        .root_source_file = b.path("../../aerodrive/src/aircraft_model.zig"),
+        .root_source_file = b.path("../aerodrive/src/aircraft_model.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -30,7 +31,7 @@ pub fn build(b: *std.Build) void {
 
     // ---- testes: só o que não abre janela (escalas dos gráficos, a asa de exemplo)
     const tests = b.addTest(.{ .root_module = b.createModule(.{
-        .root_source_file = b.path("src/tests.zig"),
+        .root_source_file = b.path("gui/tests.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
@@ -40,14 +41,14 @@ pub fn build(b: *std.Build) void {
     }) });
     b.step("test", "Testes (sem janela)").dependOn(&b.addRunArtifact(tests).step);
 
-    // ---- o programa
+    // ---- o programa (gui/main.zig)
     const display = b.option(enum { X11, Wayland, Both }, "display", "Linux: X11 (padrão), Wayland ou Both") orelse .X11;
     const raylib_zig = b.lazyDependency("raylib_zig", .{ .target = target, .optimize = .ReleaseFast, .linux_display_backend = display }) orelse return;
     const raylib = raylib_zig.module("raylib");
     const raygui = raylib_zig.module("raygui");
-    // as peças comuns das telas (src/ui/ui.zig)
+    // as peças comuns das telas (gui/ui/ui.zig)
     const ui = b.createModule(.{
-        .root_source_file = b.path("src/ui/ui.zig"),
+        .root_source_file = b.path("gui/ui/ui.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
@@ -56,7 +57,7 @@ pub fn build(b: *std.Build) void {
         },
     });
     const program = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("gui/main.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{

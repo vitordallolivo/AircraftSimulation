@@ -1,0 +1,8 @@
+.{
+    .name = .aircraftsimulation,
+    .version = "0.2.4",
+    .minimum_zig_version = "0.16.0",
+    .fingerprint = 0xff4696874e6c75f,
+    .dependencies = .{},
+    .paths = .{ "build.zig", "build.zig.zon" },
+}

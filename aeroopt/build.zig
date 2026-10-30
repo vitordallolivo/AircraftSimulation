@@ -1,5 +1,5 @@
 //! Interface do aeroopt em Zig (raylib e raygui). As peças comuns das telas vêm da interface do aerosim
-//! (`aerosim/gui_zig/src/ui`), para os dois programas terem o mesmo visual.
+//! (`aerosim/gui/ui`), para os dois programas terem o mesmo visual.
 //!
 //!   zig build run                                abre o aeroopt
 //!   zig build shot -- <saída.png> [LxA]          desenha a tela e salva uma imagem (sem interação)
@@ -14,7 +14,7 @@ pub fn build(b: *std.Build) void {
 
     // ---- testes: só o que não abre janela (a rodada de exemplo)
     const tests = b.addTest(.{ .root_module = b.createModule(.{
-        .root_source_file = b.path("src/tests.zig"),
+        .root_source_file = b.path("tests.zig"),
         .target = target,
         .optimize = optimize,
     }) });
@@ -25,9 +25,9 @@ pub fn build(b: *std.Build) void {
     const raylib_zig = b.lazyDependency("raylib_zig", .{ .target = target, .optimize = .ReleaseFast, .linux_display_backend = display }) orelse return;
     const raylib = raylib_zig.module("raylib");
     const raygui = raylib_zig.module("raygui");
-    // as peças comuns das telas (../../aerosim/gui_zig/src/ui/ui.zig)
+    // as peças comuns das telas (../../aerosim/gui/ui/ui.zig)
     const ui = b.createModule(.{
-        .root_source_file = b.path("../../aerosim/gui_zig/src/ui/ui.zig"),
+        .root_source_file = b.path("../aerosim/gui/ui/ui.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
@@ -36,7 +36,7 @@ pub fn build(b: *std.Build) void {
         },
     });
     const program = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("main.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{

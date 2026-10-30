@@ -1,5 +1,5 @@
 //! As peças comuns das telas do aerosim e do aeroopt em Zig: cores e fontes, formas, widgets, formulário, gráfico
-//! e o laço do programa. O aeroopt usa este módulo tirado daqui (`aeroopt/gui_zig/build.zig.zon`).
+//! e o laço do programa. O aeroopt usa este módulo tirado daqui (`aeroopt/build.zig`).
 pub const theme = @import("theme.zig");
 pub const widgets = @import("widgets.zig");
 pub const form = @import("form.zig");

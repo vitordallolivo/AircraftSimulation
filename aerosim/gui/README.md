@@ -228,3 +228,5 @@ w = MainWindow(st)
 w.show()                                       # app.exec() abre a janela de verdade
 st.notify("geometry"); st.undo(); st.redo()    # toda mudança passa por AppState (Ctrl+Z)
 ```
+
+A mesma interface também existe em Zig, nesta pasta (os arquivos `.zig`); ela está descrita em `README_zig.md`.
