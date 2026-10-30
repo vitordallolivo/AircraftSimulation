@@ -4,7 +4,7 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## Não lançado
 
-### v0.2.4 (branch `0.2_dev`)
+### v0.2.4 (`main`, fechada em 2026-10-30)
 
 - interface do aerosim em Zig igual à GUI PyQt, com os managers em Python: as áreas e as subabas vêm do Python na
   mesma arrumação (`aerosim/bridge.py`, pedido "layout"), e cada subaba é uma página genérica (`aerosim/gui/page.zig`):

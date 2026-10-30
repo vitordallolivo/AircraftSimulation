@@ -291,7 +291,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
-  tipos `math:10`, `physics:18`, `modifiers:31`, `collision:41`, `control:46`, `sim:53`, `loads:64`, `stability:71`, `sizing:75`, `optim:88`, `geometry:102`, `util:107`
+  tipos `math:10`, `physics:18`, `modifiers:31`, `collision:41`, `control:46`, `sim:53`, `loads:64`, `sizing:70`, `optim:83`, `geometry:97`, `util:102`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
@@ -475,12 +475,6 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sizing/wing_line.zig` — A etapa Asa do dimensionamento: do perfil escolhido à asa trapezoidal, pela linha sustentadora de Prandtl
   tipos `Trapezoid:37`, `Partition:52`, `SectionAirfoil:62`, `Conditions:68`, `Station:88`, `Planform:94`, `Result:274`
   fn `isaDensity:77`, `reynolds:83`, `planformOf:180`, `planformOfPartitions:201`, `totals:230`, `partitionsFromTrapezoid:243`, `analyze:426`, `analyzePlanform:434`, `modelSection:534`
-
-**core/src/stability/**
-
-- `core/src/stability/static.zig` — Estabilidade estática do avião montado: o que a aba Estabilidade calcula antes da dinâmica. Igual a
-  tipos `Inputs:28`, `Probe:31`, `Sweep:197`
-  fn `cgSweep:210`, `limitCrossing:236`
 
 **core/src/util/**
 

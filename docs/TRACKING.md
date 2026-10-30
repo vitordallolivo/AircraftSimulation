@@ -35,7 +35,7 @@ Como usar:
 ## Ordem de prioridade (2026-10-29)
 
 O que pegar primeiro, lendo o quadro como ele está agora. Tudo o que estava "a revisar" já foi para a `main` no PR #31
-(`v0.2.3`); a tag `v0.2.3` ainda não foi criada (só com o ok do dono).
+(`v0.2.3`); a `v0.2.4` fecha no PR da `0.2_dev` de 2026-10-30. As tags ainda não foram criadas (só com o ok do dono).
 
 1. **Suspeitas a resolver primeiro:** T90 (biplano na linha sustentadora: divisão entre as asas e perda do par diferentes do VLM) e T91 (teste de desfazer da GUI quebrado), e a massa do CG da Montagem em Zig (`assembly.balance`: `params.dryMass` mais a carga) dar 1 kg a menos que a `mass_props` da sessão do núcleo no tandem de teste (8,32 contra 9,32 kg): achar a massa que falta e usar a mesma conta nos dois.
 1. **Terminar o que está em andamento.** No núcleo: T55 (linha sustentadora nas cargas; a versão não linear feita,
@@ -84,7 +84,7 @@ O que pegar primeiro, lendo o quadro como ele está agora. Tudo o que estava "a 
 
 ## Versões
 
-- **A `main` está em `v0.2.3`** (PR #31; antes, #29 e #30). O milestone de fundação fechou na `v0.2.0` (PRs #21–#25).
+- **A `main` está em `v0.2.4`** (fechada em 2026-10-30, PRs #33 a #35 e o PR de fechamento; antes, `v0.2.3` no #31). O milestone de fundação fechou na `v0.2.0` (PRs #21–#25).
 - **Cada tarefa concluída e mesclada sobe só o último número:** `0.2.1`, `0.2.2`, `0.2.3`…
 - **Quando toda a lista de tarefas abaixo estiver feita, vira `0.3.0`.** A `1.0` tem meta própria (seção "Meta da
   1.0", abaixo), sem data: nada vira release sem o dono testar pessoalmente cada componente.
@@ -227,7 +227,7 @@ O núcleo físico em Zig (`core/`): dinâmica, aerodinâmica, cargas, estruturas
 | T73 | Simulação: a malha da simulação (uma faixa por trecho entre seções) põe a força de uma asa trapezoidal no meio da semienvergadura: na asa enflechada de 25° de `tools/aero`, o ponto neutro fica 10 % da CMA atrás (com a malha refinada, 0,9 %), e a torção sai pela metade. Propor a correção (faixas por CMA ou refino mínimo) com a regressão nova; muda os números da simulação, então só com o ok do dono | [ext] | T63 | B3 | Pronto |
 | T89 | Aba Aerodinâmica → Asas, a simulação de aerodinâmica completa de um conjunto de asas (uma asa, biplano, tandem, canard), sem trimar, sem fuselagem e sem hélice, como no túnel. Roda com o avião da Montagem ou com as asas guardadas na sprint (posição x e altura de cada uma), mesmo sem fuselagem e sem massa (`needs_aircraft = False`). A varredura em α é do núcleo (`core/src/loads/sweep.zig`: sustentação por superfície, C_L do conjunto e de cada uma, C_L máximo, onde o estol começa, Reynolds com Sutherland; exports `aerosim_wing_sweep`, `aerosim_wing_sweep_summary`, `aerosim_reynolds`), atrás de `ILoadMethod.sweep` e `ISimBackend.wing_sweep_summary`; os métodos em Python (VLM) usam o padrão da interface. Vista 3D e de cima do que se simula (a mesma das Cargas), carga ao longo da envergadura, chapas de ponta opcionais e a comparação das polares de todos os solvers do Avião montado (`compare_solvers`) só nas superfícies escolhidas, todo método marcado em todo gráfico que ele preenche (na soma das áreas). A subaba Avião montado saiu: a Asas roda a análise do avião completo (`AerodynamicsSimulation`, agora sem aba) quando o avião aberto está pronto, com as curvas de profundor e derrapagem, estol × cruzeiro, L/D, pontas de asa e a polar para o Desempenho (`manager/simulations/wings.py`) | [novo] | T55 | B3 | A revisar |
 | T90 | Suspeita: biplano na linha sustentadora. Com a folga da ordem da corda, a asa de cima sai bem mais carregada que a de baixo (a de baixo perde a velocidade que o vórtice preso da de cima induz) e o par perde menos sustentação que no VLM do AeroSandbox (folga 0,3 m, corda 0,4 m, α 6°: o par sustenta 0,89 da asa sozinha na linha sustentadora e 0,77 no VLM). Conferir contra a teoria do biplano (Munk, NACA Report 151, 1923; Prandtl) e dados de túnel; se for limite do método, avisar na subaba Asas quando a folga for pequena | [novo] | T89 | B3 | Pronto |
-| T91 | Teste quebrado: `tests/gui/test_gui.py::test_undo_restores_tab_values` falha na `0.2_dev` (desfazer não volta o modo da aba Missão); falhava antes da T89 | [novo] | — | B1+ | Pronto |
+| T91 | Teste quebrado: `tests/gui/test_gui.py::test_undo_restores_tab_values` falha quando já existe o projeto da sprint de quem roda (`~/aerosim_aeronaves/sprint`): a aba Missão abre com o modo da última rodada guardada ("só decolagem"), o `setCurrentText` não muda nada e não há passo para desfazer. Com a pasta vazia, os 23 testes de `tests/gui` passam. Causa de fundo: os testes da GUI leem e gravam o projeto real da sprint; apontar `AEROSIM_SPRINT` para uma pasta temporária nos testes | [novo] | — | B1+ | Pronto |
 | T92 | Suspeita: o AeroDrive desenha errado o perfil dos aviões que só apontam o `.dat` (`airfoil.path`, sem `coords`, como os dois S1223 de `data/aircraft`). O `model/aircraft.zig` não lê `path`, e o `airfoil.naca4` tira os dígitos do nome ("S1223" vira NACA 1223). A Montagem em Zig (`aerosim/gui/assembly.zig`) já lê o `.dat`; levar isso para o AeroDrive, com teste do contorno | [novo] | — | B1+ | Pronto |
 | T57 | Esteira desviada pelo escoamento e com perfil radial (Duivenvoorden et al. 2026; correção de Rethorst, Exalto et al. 2024; Goates 2018), validada contra Stuper (NACA TM 874) | [ext] | T55 | B3 | Bloqueado |
 | T62 | Núcleo: efeito diedro (C_lβ −0,139 × AVL −0,079 × voo −0,070 no Navion) e C_Lq (4,8 × AVL 9,5 × voo 15,9). Achar a causa nas faixas do núcleo e corrigir com fonte | [ext] | T60 | B3 | Pronto |
@@ -552,6 +552,6 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 - Relatórios e dados de terceiros nunca entram no git.
 
 **Situação atual das branches**
-- `main`: `v0.2.3` (PR #31, 2026-10-27). Tudo o que estava na `0.2_dev` até a T87 e o `build docs` já está nela.
-- `0.2_dev`: a `main` mais a meta da 1.0 no tracking.
+- `main`: `v0.2.4` (2026-10-30). Tudo o que estava na `0.2_dev` até a interface em Zig com os managers em Python vai nela.
+- `0.2_dev`: igual à `main` depois do merge; o que vier entra sob a próxima versão quando o dono disser.
 - As branches antigas foram apagadas aqui; no GitHub, o dono apaga (a sessão não tem permissão).
