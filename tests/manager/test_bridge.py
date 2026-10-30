@@ -1,6 +1,7 @@
 """A ponte com a tela em Zig (`aerosim/bridge.py`): o processo responde aos pedidos por JSON, e a curva que chega
 na tela é a mesma que o Simulation Manager devolve rodando direto (o mesmo código, sem conta no caminho)."""
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -17,8 +18,9 @@ VALUES = {"whole": False, "use_zig": False, "use_zig_llt": False, "a0": 0.0, "a1
 
 def _talk(requests: list[dict]) -> list[dict]:
     """manda os pedidos e lê as respostas (sem as linhas de progresso) até a última"""
-    process = subprocess.Popen([sys.executable, "-m", "aerosim.bridge"], cwd=ROOT, stdin=subprocess.PIPE,
-                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    environment = {**os.environ, "AEROSIM_SPRINT": str(ROOT / ".nao_existe_sprint")}   # sem o projeto de quem roda
+    process = subprocess.Popen([sys.executable, "-m", "aerosim.bridge"], cwd=ROOT, env=environment, text=True,
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     try:
         replies = [json.loads(process.stdout.readline())]
         for request in requests:
@@ -38,17 +40,20 @@ def _talk(requests: list[dict]) -> list[dict]:
 @pytest.fixture(scope="module")
 def replies():
     return _talk([{"id": 1, "op": "open", "path": str(PLANE)},
-                  {"id": 2, "op": "list"},
+                  {"id": 2, "op": "layout"},
                   {"id": 3, "op": "specs", "name": "wings", "values": VALUES},
                   {"id": 4, "op": "run", "name": "wings", "values": VALUES},
                   {"id": 5, "op": "run", "name": "nao_existe"}])
 
 
-def test_ready_and_list(replies):
+def test_ready_and_layout(replies):
+    """as abas na arrumação da GUI PyQt: a Aerodinâmica com Perfis, Projetar e Analisar (a aba Asas), Montagem no fim"""
     assert replies[0] == {"id": 0, "ok": True, "ready": True}
     assert replies[1]["ok"] and replies[1]["id"] == 1
-    names = [s["name"] for s in replies[2]["sims"]]
-    assert "wings" in names
+    areas = {a["title"]: a for a in replies[2]["areas"]}
+    aero = [(t["title"], t["kind"], t["name"]) for t in areas["Aerodinâmica"]["tabs"]]
+    assert aero == [("Perfis", "stage", "perfis"), ("Projetar", "stage", "asa"), ("Analisar", "sim", "wings")]
+    assert replies[2]["areas"][-1]["tabs"][0]["kind"] == "assembly"
 
 
 def test_specs_carry_the_form(replies):

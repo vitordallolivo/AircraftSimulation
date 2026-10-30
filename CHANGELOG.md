@@ -6,10 +6,15 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.4 (branch `0.2_dev`)
 
-- teste do caminho raylib → managers em Python → núcleo Zig: `aerosim/bridge.py` atende a tela em Zig por JSON
-  (listar as abas, campos e gráficos, rodar, cancelar), e a aba Aerodinâmica → "Pelo Python (teste)" monta o
-  formulário e os gráficos de qualquer aba `ISimulation` a partir das specs, com os mesmos números da GUI PyQt
-  (`tests/manager/test_bridge.py`). Só no PC por enquanto; campos de tabela e arquivo e as vistas 3D ficam no padrão.
+- interface do aerosim em Zig igual à GUI PyQt, com os managers em Python: as áreas e as subabas vêm do Python na
+  mesma arrumação (`aerosim/bridge.py`, pedido "layout"), e cada subaba é uma página genérica (`aerosim/gui/page.zig`):
+  as análises `ISimulation` (Analisar, Estabilidade, Desempenho, Tração, Missão, Cargas...) e as etapas da sprint
+  (Perfis, Projetar, Empenagem e comandos, Motores e montagem, "Condições e restrições…"), com Guardar, os guardados,
+  os botões da etapa e as tabelas de massa e dimensões. As etapas sem Qt ficam em `aerosim/manager/stages.py`, o
+  formulário de dataclass em `aerosim/manager/forms.py` e os rótulos em `aerosim/manager/form_meta.py` (a GUI PyQt lê
+  os mesmos). A ponte atende várias abas ao mesmo tempo (cada pedido na sua thread, respostas por número). Saem as
+  abas reescritas à mão em Zig (Perfis, Projetar, Analisar e as contas delas) e a aba "Pelo Python". Falta: Mini-MDO,
+  Estudo, tabelas editáveis, campos de arquivo, vistas 3D e a ponte no navegador.
 - aerosim e aeroopt em Zig no navegador, para teste: os dois compilam para wasm (`-Dtarget=wasm32-emscripten`), com
   os aviões de exemplo, os perfis de `data/airfoils` e as fontes no pacote; "abrir do computador" ou arrastar o
   arquivo para a página, e salvar baixa o arquivo. `tools/web_build.py` e o workflow do site publicam os três

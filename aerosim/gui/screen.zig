@@ -1,76 +1,93 @@
-//! A tela do aerosim: cabeçalho, abas das áreas e subabas da Aerodinâmica. Cada aba feita mora no arquivo dela
-//! (`analyze_tab.zig`, a Montagem aqui mesmo); o avião aberto (`assembly.zig`) é o mesmo para todas. As abas que
-//! ainda não foram feitas mostram só o lugar delas.
+//! A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt
+//! (`aerosim/gui/main_window.py`). As abas vêm do Python (`python_bridge.zig`, pedido "layout"): cada subaba é uma
+//! `Page` (`page.zig`), uma análise do Simulation Manager ou uma etapa da sprint, que a tela desenha a partir do que
+//! o Python descreve. A Montagem é daqui mesmo: o avião aberto em 3D (`assembly.zig`), com o CG.
 const std = @import("std");
 const rl = @import("raylib");
 const ui_kit = @import("ui");
 const theme = ui_kit.theme;
 const widgets = ui_kit.widgets;
 const view3d = ui_kit.view3d;
-const analyze_tab = @import("analyze_tab.zig");
-const airfoil_tab = @import("airfoil_tab.zig");
-const wing_tab = @import("wing_tab.zig");
-const python_tab = @import("python_tab.zig");
-const design_mod = @import("design.zig");
-const requirements_dialog = @import("requirements_dialog.zig");
+const jobs = ui_kit.jobs;
+const page_mod = @import("page.zig");
+const python_bridge = @import("python_bridge.zig");
 const assembly_mod = @import("assembly.zig");
 const aircraft_model = @import("aircraft_model");
 
-const areas = [_][:0]const u8{ "Dimensionamento", "Aerodinâmica", "Estabilidade", "Desempenho", "Cargas", "Montagem" };
-const aero_tabs = [_][:0]const u8{ "Perfis", "Projetar", "Analisar", "Pelo Python (teste)" };
+const Page = page_mod.Page;
+const Json = std.json.Value;
+
+/// uma área: o título na barra de cima e as subabas (uma `Page` cada; `null` é a Montagem)
+const Area = struct {
+    title: [:0]const u8,
+    single: bool, // uma página só, sem a barra de subabas
+    labels: []const [:0]const u8,
+    pages: []?*Page,
+    active: usize = 0,
+};
+
+/// o pedido das abas ao Python, na thread
+const LayoutLoader = struct {
+    job: jobs.Job = .{},
+    waiter: python_bridge.Waiter = .{},
+    arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+    reply: ?Json = null,
+    asked: bool = false,
+
+    fn work(loader: *LayoutLoader, bridge: *python_bridge.Bridge, process: ?std.Io) void {
+        loader.waiter.memory = loader.arena.allocator();
+        const io_process = process orelse {
+            _ = std.fmt.bufPrintZ(&loader.waiter.failure, "no navegador a ponte com o Python ainda não existe; a Montagem funciona", .{}) catch {};
+            return;
+        };
+        bridge.start(io_process) catch |err| {
+            _ = std.fmt.bufPrintZ(&loader.waiter.failure, "não abriu o Python ({s}): rode da pasta do repositório, com as dependências instaladas; a Montagem funciona", .{@errorName(err)}) catch {};
+            return;
+        };
+        loader.reply = bridge.request(&loader.waiter, "\"op\": \"layout\"") catch null;
+    }
+};
+
+const waiting_labels = [_][:0]const u8{ "Python…", "Montagem" };
 
 pub const Screen = struct {
-    area: usize = 1,
-    aero_tab: usize = 2,
-    scroll: f32 = 0, // rolagem inicial (prints), passada à aba aberta
-    analyze: analyze_tab.AnalyzeTab = .{},
-    airfoils: airfoil_tab.AirfoilTab = .{},
-    wing: wing_tab.WingTab = .{},
-    python: python_tab.PythonTab = .{}, // as abas do Python pela ponte (teste da arquitetura)
+    area: usize = 0,
+    scroll: f32 = 0, // rolagem inicial (prints), passada à página aberta
     io: ?std.Io = null, // a `Io` do processo (o programa a passa em `ui/app.zig`): a ponte abre o Python com ela
-    design: design_mod.Design = .{}, // o projeto de dimensionamento (Perfis e Projetar)
-    requirements: requirements_dialog.RequirementsDialog = .{}, // "Condições e restrições…", aberta por qualquer etapa
+    bridge: python_bridge.Bridge = .{},
+    layout: LayoutLoader = .{},
+    areas: []Area = &.{},
+    area_labels: []const [:0]const u8 = &waiting_labels,
+    shown: ?*Page = null, // a página do último quadro (trocar de página pede ela de novo)
+    requirements: Page = .{ .kind = .stage, .name = "requisitos", .title = "Condições e restrições" },
+    requirements_open: bool = false,
+    pending_tab: ?usize = null, // aba=N da linha de comando, até as abas chegarem
+    pending_run: bool = false, // acao=rodar, idem
+    pending_file: [1024]u8 = undefined, // um perfil arrastado antes de as abas chegarem
+    pending_file_len: usize = 0,
     files: ui_kit.dialogs.FilePicker = .{}, // abrir e salvar o avião (cabeçalho)
     assembly_view: view3d.View = .{}, // a vista 3D da Montagem
     assembly: ?assembly_mod.Assembly = null, // o avião aberto
     assembly_note: [240:0]u8 = [_:0]u8{0} ** 240,
     loader: ui_kit.jobs.Job = .{}, // lê o .json fora do laço da tela
     loading: Loading = .{},
+    message: [240:0]u8 = [_:0]u8{0} ** 240,
 
-    /// abre a aba de área `index` (0 = Dimensionamento ... 5 = Montagem; 6, 7, 8 e 9 = Aerodinâmica → Perfis,
-    /// Projetar, Analisar e Pelo Python), para os prints
+    /// abre a subaba de número `index`, contando todas em ordem (a Montagem é a última), para os prints
     pub fn selectTab(screen: *Screen, index: usize) void {
-        if (index >= areas.len) {
-            screen.area = 1;
-            screen.aero_tab = @min(index - areas.len, aero_tabs.len - 1);
-        } else screen.area = index;
+        screen.pending_tab = index;
     }
 
-    /// liga o formulário às listas da própria tela e roda a análise uma vez (chamar com a janela aberta e a tela
-    /// já no lugar final)
+    /// pede as abas ao Python e abre o avião de exemplo (chamar com a janela aberta)
     pub fn start(screen: *Screen) void {
-        screen.design.start();
-        screen.airfoils.attach(&screen.design);
-        screen.wing.attach(&screen.design);
+        screen.requirements.bridge = &screen.bridge;
         var buffer: [512]u8 = undefined;
         var fixed = std.heap.FixedBufferAllocator.init(&buffer);
-        if (assembly_mod.findExample(fixed.allocator(), io())) |path| screen.openFile(path) else screen.analyze.setAircraft(null);
+        if (assembly_mod.findExample(fixed.allocator(), io())) |path| screen.openFile(path);
     }
 
-    /// a aba da janela "Condições e restrições…" pelo nome do comando (prints)
-fn requirementsTab(name: []const u8) ?usize {
-    const names = [_][]const u8{ "condicoes", "restricoes", "variaveis", "regras" };
-    for (names, 0..) |candidate, k| if (std.mem.eql(u8, candidate, name)) return k;
-    return null;
-}
-
-/// o avião aberto, se houver
-    fn aircraft(screen: *Screen) ?*const aircraft_model.aircraft.Aircraft {
-        return if (screen.assembly) |*opened| &opened.loaded.ac else null;
-    }
-
-    /// um comando pelo nome (`acao=` da linha de comando, para os prints): "naca", "dat", "polar" abrem os
-    /// diálogos de Perfis
+    /// um comando pelo nome (`acao=` da linha de comando, para os prints): "abrir", "salvar", "rodar" (roda a análise
+    /// aberta assim que os campos chegam)
     pub fn command(screen: *Screen, name: []const u8) void {
         if (std.mem.eql(u8, name, "abrir")) {
             var buffer: [256]u8 = undefined;
@@ -83,14 +100,11 @@ fn requirementsTab(name: []const u8) ?usize {
                 return;
             });
             screen.files.showSave("Salvar avião (.json)", std.fs.path.dirname(opened.path) orelse ".", &.{".json"}, std.fs.path.basename(opened.path));
-        } else if (requirementsTab(name)) |tab| {
-            screen.requirements.show();
-            screen.requirements.dialog.tab = tab;
         } else if (std.mem.eql(u8, name, "rodar")) {
-            screen.python.command(name);
-        } else if (std.mem.eql(u8, name, "tabela")) {
-            screen.wing.command(name);
-        } else screen.airfoils.command(name);
+            screen.pending_run = true;
+        } else if (std.mem.eql(u8, name, "condicoes")) {
+            screen.requirements_open = true;
+        }
     }
 
     /// grava o avião aberto em `path`; enquanto não há edição, é o texto do arquivo como foi lido
@@ -104,10 +118,40 @@ fn requirementsTab(name: []const u8) ?usize {
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "salvo em {s}", .{path}) catch {};
     }
 
-    /// abre o arquivo `path`: um `.dat` ou uma polar vão para Perfis; um `.json` é o avião (Montagem)
+    /// abre o arquivo `path`: um `.json` é o avião (Montagem); um `.dat` ou uma polar vão para a etapa Perfis
     pub fn openFile(screen: *Screen, path: []const u8) void {
-        if (screen.airfoils.addFile(path)) return;
-        screen.openAircraft(path);
+        if (std.mem.endsWith(u8, path, ".json")) return screen.openAircraft(path);
+        const perfis = screen.findPage("perfis") orelse {
+            const length = @min(path.len, screen.pending_file.len);
+            @memcpy(screen.pending_file[0..length], path[0..length]);
+            screen.pending_file_len = length;
+            return;
+        };
+        perfis.act(if (std.mem.endsWith(u8, path, ".dat")) "dat" else "polar", path);
+        screen.showPage(perfis);
+    }
+
+    /// a página de uma análise ou etapa pelo nome
+    fn findPage(screen: *Screen, name: []const u8) ?*Page {
+        for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| if (std.mem.eql(u8, page.name, name)) return page;
+        return null;
+    }
+
+    /// leva a tela até a página `target`
+    fn showPage(screen: *Screen, target: *Page) void {
+        for (screen.areas, 0..) |*area, a| for (area.pages, 0..) |maybe, k| if (maybe == target) {
+            screen.area = a;
+            area.active = k;
+        };
+    }
+
+    /// leva a tela até a Montagem
+    fn showAssembly(screen: *Screen) void {
+        for (screen.areas, 0..) |*area, a| for (area.pages, 0..) |maybe, k| if (maybe == null) {
+            screen.area = a;
+            area.active = k;
+        };
+        if (screen.areas.len == 0) screen.area = 1;
     }
 
     /// abre o avião em `path` (.json) na Montagem: a leitura e as peças saem numa thread; a tela segue desenhando e
@@ -126,7 +170,7 @@ fn requirementsTab(name: []const u8) ?usize {
         screen.collectAircraft();
     }
 
-    /// no quadro em que a leitura acabou: troca o avião aberto (antes, espera a análise que lia o antigo)
+    /// no quadro em que a leitura acabou: troca o avião aberto e avisa as páginas (o Python abre o mesmo arquivo)
     fn collectAircraft(screen: *Screen) void {
         if (!screen.loader.finished()) return;
         const path = screen.loading.pathText();
@@ -135,88 +179,192 @@ fn requirementsTab(name: []const u8) ?usize {
             return;
         };
         screen.loading.result = null;
-        screen.analyze.cancel();
         if (screen.assembly) |*old| old.deinit();
         screen.assembly = loaded;
-        screen.analyze.setAircraft(screen.aircraft());
-        screen.python.setAircraftPath(path);
+        for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| page.setAircraftPath(loaded.path);
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · {d} peças · arraste outro .json para a janela para trocar · arraste para girar, roda para aproximar", .{ std.fs.path.basename(path), loaded.mesh.piece_count }) catch {};
+    }
+
+    /// pede as abas na primeira vez e monta as áreas quando a resposta chega
+    fn collectLayout(screen: *Screen) void {
+        const loader = &screen.layout;
+        if (!loader.asked) {
+            loader.asked = true;
+            _ = std.fmt.bufPrintZ(&screen.message, "abrindo o Python (os managers das análises)...", .{}) catch {};
+            _ = loader.job.start(LayoutLoader.work, .{ loader, &screen.bridge, screen.io });
+        }
+        if (!loader.job.finished()) return;
+        const reply = loader.reply orelse {
+            _ = std.fmt.bufPrintZ(&screen.message, "{s}", .{std.mem.sliceTo(&loader.waiter.failure, 0)}) catch {};
+            return;
+        };
+        screen.buildAreas(reply) catch {
+            _ = std.fmt.bufPrintZ(&screen.message, "as abas vieram fora do esperado", .{}) catch {};
+            return;
+        };
+        screen.message[0] = 0;
+    }
+
+    /// as áreas e as páginas a partir da resposta "layout"
+    fn buildAreas(screen: *Screen, reply: Json) !void {
+        const memory = screen.layout.arena.allocator();
+        const items = (reply.object.get("areas") orelse return error.BadReply).array.items;
+        const areas = try memory.alloc(Area, items.len);
+        const labels = try memory.alloc([:0]const u8, items.len);
+        const path = if (screen.assembly) |*opened| opened.path else "";
+        for (items, 0..) |item, a| {
+            const tabs = (item.object.get("tabs") orelse return error.BadReply).array.items;
+            const tab_labels = try memory.alloc([:0]const u8, tabs.len);
+            const pages = try memory.alloc(?*Page, tabs.len);
+            for (tabs, 0..) |tab, k| {
+                tab_labels[k] = try memory.dupeZ(u8, stringField(tab, "title"));
+                const kind_text = stringField(tab, "kind");
+                if (std.mem.eql(u8, kind_text, "assembly")) {
+                    pages[k] = null;
+                    continue;
+                }
+                const page = try std.heap.page_allocator.create(Page);
+                page.* = .{
+                    .kind = if (std.mem.eql(u8, kind_text, "sim")) .simulation else if (std.mem.eql(u8, kind_text, "stage")) .stage else .todo,
+                    .name = try memory.dupe(u8, stringField(tab, "name")),
+                    .title = tab_labels[k],
+                    .bridge = &screen.bridge,
+                };
+                page.setAircraftPath(path);
+                page.stale = false;
+                pages[k] = page;
+            }
+            labels[a] = try memory.dupeZ(u8, stringField(item, "title"));
+            areas[a] = .{ .title = labels[a], .single = flag(item, "single"), .labels = tab_labels, .pages = pages };
+        }
+        screen.areas = areas;
+        screen.area_labels = labels;
+        screen.area = @min(screen.area, areas.len - 1);
+        // o padrão é a Aerodinâmica → Analisar, como a aba que o aerosim em Zig abria antes
+        if (screen.pending_tab == null) for (areas, 0..) |*area, a| if (std.mem.eql(u8, area.title, "Aerodinâmica")) {
+            screen.area = a;
+            area.active = area.pages.len - 1;
+        };
+        if (screen.pending_tab) |index| {
+            var count: usize = 0;
+            for (areas, 0..) |*area, a| for (area.pages, 0..) |_, k| {
+                if (count == index) {
+                    screen.area = a;
+                    area.active = k;
+                }
+                count += 1;
+            };
+            screen.pending_tab = null;
+        }
+        if (screen.pending_file_len > 0) {
+            const length = screen.pending_file_len;
+            screen.pending_file_len = 0;
+            screen.openFile(screen.pending_file[0..length]);
+        }
     }
 
     /// desenha a tela inteira e trata o mouse
     pub fn draw(screen: *Screen, ui: *widgets.Ui, width: f32, height: f32) void {
         rl.clearBackground(theme.colors.background);
         screen.collectAircraft();
+        screen.collectLayout();
         if (rl.isFileDropped()) {
             const dropped = rl.loadDroppedFiles();
             defer rl.unloadDroppedFiles(dropped);
             for (0..dropped.count) |k| {
                 const path = std.mem.sliceTo(dropped.paths[k], 0);
-                if (screen.airfoils.addFile(path)) {
-                    screen.area = 1;
-                    screen.aero_tab = 0;
-                } else {
-                    screen.openAircraft(path);
-                    screen.area = 5;
-                }
+                screen.openFile(path);
+                if (std.mem.endsWith(u8, path, ".json")) screen.showAssembly();
             }
         }
-        // conteúdo primeiro, cabeçalho e abas por cima (a rolagem passa por baixo deles)
-        const top = widgets.header_height + 38 + 32;
-        if (screen.scroll > 0) { // a rolagem pedida na linha de comando vai para a aba aberta
-            screen.analyze.scroll = screen.scroll;
-            screen.airfoils.scroll = screen.scroll;
-            screen.wing.scroll = screen.scroll;
-            screen.scroll = 0;
-        }
-        // com uma janela aberta (seletor de arquivo, pergunta), a tela de baixo não recebe o clique nem a roda
-        if (screen.design.requirements_open) {
-            screen.design.requirements_open = false;
-            screen.requirements.show();
-        }
-        const modal = screen.airfoils.modalOpen() or screen.files.open or screen.requirements.isOpen();
+        // a página aberta
+        const page: ?*Page = if (screen.areas.len > 0) screen.areas[screen.area].pages[screen.areas[screen.area].active] else null;
+        const single = screen.areas.len == 0 or screen.areas[screen.area].single;
+        const top = widgets.header_height + 38 + (if (single) @as(f32, 0) else 32);
+        // com uma janela aberta (seletor de arquivo, pergunta, condições), a tela de baixo não recebe o clique nem a roda
+        const page_modal = if (page) |p| p.modalOpen() else false;
+        const modal = screen.files.open or screen.requirements_open or page_modal;
         const wheel = ui.wheel;
         if (modal) {
             ui.click_taken = true;
             ui.wheel = 0;
         }
-        if (screen.area == 1 and screen.aero_tab == 0) {
-            if (screen.airfoils.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top })) screen.aero_tab = 1;
-        } else if (screen.area == 1 and screen.aero_tab == 1) {
-            screen.wing.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top });
-        } else if (screen.area == 1 and screen.aero_tab == 2) {
-            screen.analyze.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top }, screen.aircraft());
-        } else if (screen.area == 1 and screen.aero_tab == 3) {
-            screen.python.process_io = screen.io;
-            screen.python.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top });
-        } else if (screen.area == 5) {
-            screen.drawAssembly(ui, .{ .x = 0, .y = top, .width = width, .height = height - top });
+        const content: rl.Rectangle = .{ .x = 0, .y = top, .width = width, .height = height - top };
+        if (page) |p| {
+            p.process_io = screen.io;
+            if (screen.shown != p) {
+                if (screen.shown != null) p.markStale(); // outra página pode ter mudado o projeto
+                screen.shown = p;
+            }
+            if (screen.pending_run) {
+                p.command("rodar");
+                screen.pending_run = false;
+            }
+            if (screen.scroll > 0) {
+                p.scroll_to = screen.scroll;
+                screen.scroll = 0;
+            }
+            p.draw(ui, content);
+            if (p.wants_requirements) {
+                p.wants_requirements = false;
+                screen.requirements_open = true;
+                screen.requirements.stale = true;
+            }
+            if (p.takeOpened()) |path| {
+                screen.openAircraft(path);
+                screen.showAssembly();
+            }
+        } else if (screen.areas.len == 0 and screen.area == 0) {
+            screen.drawWaiting(ui, content);
         } else {
-            placeholder(ui, .{ .x = 0, .y = top, .width = width, .height = height - top }, if (screen.area == 1) aero_tabs[screen.aero_tab] else areas[screen.area]);
+            screen.shown = null;
+            screen.drawAssembly(ui, content);
         }
-        if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião (.json)", "Salvar .json" }, "contas no núcleo em Zig")) |button| {
+        if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião (.json)", "Salvar .json" }, "managers em Python, contas no núcleo em Zig")) |button| {
             if (button == 0) screen.command("abrir") else screen.command("salvar");
         }
-        _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, &areas, &screen.area, 14);
-        if (screen.area == 1) {
-            _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, &aero_tabs, &screen.aero_tab, 13);
-        } else {
-            rl.drawRectangleRec(.{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, theme.colors.panel);
+        _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, screen.area_labels, &screen.area, 14);
+        if (!single) {
+            const area = &screen.areas[screen.area];
+            _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, area.labels, &area.active, 13);
         }
         if (modal) {
             ui.click_taken = false;
             ui.wheel = wheel;
             const whole: rl.Rectangle = .{ .x = 0, .y = 0, .width = width, .height = height };
-            screen.airfoils.drawModal(ui, whole);
-            screen.requirements.draw(ui, whole, &screen.design);
+            if (page) |p| p.drawModal(ui, whole);
+            if (screen.requirements_open) screen.drawRequirements(ui, whole);
             const saving = screen.files.saving;
             if (screen.files.draw(ui, whole)) |path| {
                 if (saving) screen.save(path) else {
                     screen.openAircraft(path);
-                    screen.area = 5;
+                    screen.showAssembly();
                 }
             }
         }
+    }
+
+    /// "Condições e restrições…": a etapa "requisitos" numa janela por cima; ao fechar, as etapas refazem a conta
+    fn drawRequirements(screen: *Screen, ui: *widgets.Ui, whole: rl.Rectangle) void {
+        rl.drawRectangleRec(whole, .{ .r = 20, .g = 30, .b = 50, .a = 90 });
+        const box: rl.Rectangle = .{ .x = whole.x + 60, .y = whole.y + 50, .width = whole.width - 120, .height = whole.height - 100 };
+        _ = widgets.card(ui, box, "Condições, restrições e variáveis de projeto");
+        screen.requirements.process_io = screen.io;
+        screen.requirements.draw(ui, .{ .x = box.x + 4, .y = box.y + 40, .width = box.width - 8, .height = box.height - 90 });
+        const close: rl.Rectangle = .{ .x = box.x + box.width - 140, .y = box.y + box.height - 44, .width = 120, .height = 32 };
+        if (widgets.primaryButton(ui, close, "Fechar", true) or rl.isKeyPressed(.escape)) {
+            screen.requirements_open = false;
+            for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |p| if (p.kind == .stage) p.markStale();
+        }
+        ui.click_taken = true;
+        ui.wheel = 0;
+    }
+
+    /// antes de as abas chegarem do Python
+    fn drawWaiting(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
+        const box: rl.Rectangle = .{ .x = rect.x + 40, .y = rect.y + 40, .width = @min(rect.width - 80, 720), .height = 150 };
+        const inner = widgets.labeledCard(ui, box, "As abas vêm do Python");
+        _ = widgets.paragraph(ui.fonts.regular, std.mem.sliceTo(&screen.message, 0), inner.x, inner.y + 10, inner.width, 15, theme.colors.label);
     }
 
     /// a Montagem: o avião aberto em 3D, todas as peças nas cores da GUI, com o chão e os eixos do corpo
@@ -322,9 +470,15 @@ fn cardInside(rect: rl.Rectangle) rl.Rectangle {
     return .{ .x = rect.x + 4, .y = rect.y + 34, .width = rect.width - 8, .height = rect.height - 40 };
 }
 
-/// o lugar de uma aba que ainda não foi feita
-fn placeholder(ui: *widgets.Ui, rect: rl.Rectangle, name: [:0]const u8) void {
-    const box: rl.Rectangle = .{ .x = rect.x + 40, .y = rect.y + 40, .width = @min(rect.width - 80, 620), .height = 150 };
-    const inner = widgets.labeledCard(ui, box, name);
-    theme.text(ui.fonts.regular, "esta aba ainda não foi feita em Zig; o desenho segue o mesmo tema", inner.x, inner.y + 10, 15, theme.colors.label);
+/// o texto de `key` num objeto JSON ("" se não há)
+fn stringField(value: Json, key: []const u8) []const u8 {
+    if (value != .object) return "";
+    const found = value.object.get(key) orelse return "";
+    return if (found == .string) found.string else "";
+}
+
+fn flag(value: Json, key: []const u8) bool {
+    if (value != .object) return false;
+    const found = value.object.get(key) orelse return false;
+    return found == .bool and found.bool;
 }

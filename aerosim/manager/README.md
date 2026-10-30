@@ -243,6 +243,16 @@ V_s = \sqrt{\frac{2mg}{\rho\,S\,C_{L,max}}}
 O acelerador de equilíbrio vem da trimagem nivelada na velocidade de cruzeiro, e os ganhos das malhas internas do
 `autotune` do núcleo (ver [`core/src/control/README.md`](../../core/src/control/README.md)).
 
+### As etapas da sprint para a tela em Zig (`stages.py`, `forms.py`, `form_meta.py`)
+
+A tela em Zig não tem Qt, então não pode usar as páginas de `aerosim/gui/design/pages.py`. As etapas da sprint
+(Perfis, Asa, Empenagem e comandos, Motores e montagem, e as condições e regras do projeto) ficam também em
+`stages.py`, sem Qt: cada uma diz qual é o rascunho, as escolhas dos campos, o que se guarda, a conta e o que o
+"guardar" faz, chamando as mesmas funções de `aerosim.design` que a página PyQt chama, então os números são os mesmos.
+`forms.py` transforma o rascunho (uma dataclass) em `ParamSpec`, com a mesma leitura dos metadados que o
+`DataclassForm` faz, e grava de volta o que a tela mandou; os rótulos, as faixas e as dicas por nome de campo ficam em
+`form_meta.py`, que a GUI PyQt também lê. Quem usa isso é a ponte (`aerosim/bridge.py`).
+
 ## Um exemplo por arquivo
 
 ```python
