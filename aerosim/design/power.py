@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from aerosim.model.aircraft import (Aircraft, Ballast, Fuselage, LandingGear, MassModel, Payload, PointMass,
+from aerosim.model.aircraft import (Aircraft, Ballast, TailBoom, Fuselage, LandingGear, MassModel, Payload, PointMass,
                                     PropulsionUnit, SloshTank)
 from aerosim.model.catalog import Catalog, builtin_catalog
 
@@ -120,6 +120,19 @@ def _unit(pp: PowerParams, cat: Catalog, name, x, y, z, sense) -> PropulsionUnit
     return u
 
 
+def _tandem_boom(ac: Aircraft, diameter: float) -> None:
+    """tandem: um tubo liga a fuselagem à asa de trás (a massa dele entra e o lastro, quando falta, vai na ponta
+    dele). É da Montagem, não da Empenagem: a etapa de projeto só põe as asas (vitor, 2026-10-30)"""
+    w, w2 = ac.surfaces[0], second_wing(ac)
+    x_start = w.x - 0.25 * w.sections[0].chord
+    reach = max(x_start - (w2.x - w2.sections[0].chord), 0.05)
+    pitch = math.degrees(math.atan2(-w2.z, reach))       # da fuselagem (z = 0) à altura da asa de trás
+    ac.booms = [TailBoom(name="tubo de cauda", x_start=x_start, length=math.hypot(reach, w2.z), diameter=diameter,
+                         pitch=pitch)]
+    w2.mount = "tubo:0"
+    ac.apply_constraints()
+
+
 def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | None = None,
              catalog: Catalog | None = None, airfoils: dict | None = None) -> tuple[Aircraft, dict]:
     """o avião inteiro (o mesmo `Aircraft` da Montagem) e as contas da montagem"""
@@ -133,6 +146,8 @@ def assemble(cand: AircraftCandidate, req: Requirements, rules: DesignRules | No
     ac.name = pp.name
     ac.surfaces = copy.deepcopy(part.surfaces)
     ac.booms = copy.deepcopy(part.booms)
+    if cand.set.wing2 is not None and cand.set.params.layout == "sem cauda" and not ac.boom.enabled:
+        _tandem_boom(ac, cand.set.params.boom_diameter)
     ac.modifiers += [copy.deepcopy(m) for m in part.modifiers if m.kind == "comando.momento_flape"]   # Empenagem
     ac.Sref = ac.cref = ac.bref = None
     ac.tanks = []

@@ -137,7 +137,8 @@ def test_tandem_neutral_point_uses_both_wings_and_the_rear_wing_pitches(manager)
     ac, asm = pw.assemble(cand, Requirements())
     front, rear = ac.surfaces[0], ac.surfaces[-1]
     assert [c.kind for c in front.controls] == ["aileron"] and [c.kind for c in rear.controls] == ["elevator"]
-    assert rear.downwash and rear.mount == "" and not ac.boom.enabled
+    assert not st["set"].boom.enabled                             # a Empenagem só põe as asas
+    assert rear.downwash and rear.mount == "tubo:0" and ac.boom.enabled   # o tubo é da Montagem
     m = build_model(ac)
     with manager.backend.session_for(m) as s:
         k1, k2 = s.aero_coeffs(10.0, math.radians(2)), s.aero_coeffs(10.0, math.radians(4))

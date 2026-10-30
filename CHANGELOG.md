@@ -29,6 +29,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   nome, e a Empenagem escolhe no campo "configuração" uma das guardadas ou a tabela como está. Os campos de segunda
   asa saíram da Empenagem. Uma sprint antiga com segunda asa abre com ela virada numa configuração de duas asas e o
   mesmo conjunto.
+- o tubo do tandem foi para a Montagem (`power.assemble`): a Empenagem só põe as asas, e o avião montado sai igual ao
+  de antes (o aeroopt pede a peça ligada e voltou a passar).
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 
