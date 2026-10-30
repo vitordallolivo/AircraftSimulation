@@ -106,21 +106,51 @@ asa. O Reynolds é o de cruzeiro na corda média da asa em desenho, $Re = \rho V
 (editadas em Projetar). O diagnóstico avisa Reynolds abaixo de $10^5$, polar medida noutro Reynolds e a polar do
 modelo com $c_d$ constante.
 
+## As peças de toda etapa (`ui/stage.zig`, `ui/table.zig`, `ui/checks.zig`, `registry.zig`, `requirements_dialog.zig`)
+
+As etapas do dimensionamento repetem as mesmas peças, como o `StagePage` da GUI em Python, e aqui elas existem uma
+vez só. Em cima da barra lateral fica a barra de requisitos (`stage.reqBar`): o resumo das condições e das
+restrições ativas, sempre à vista, e o botão "Condições e restrições…". Depois vem o título da etapa com o "?" de
+ajuda (`stage.title`), cuja dica aparece com o mouse parado em cima, como toda dica da interface
+(`Ui.tooltip`). No fim da barra fica a caixa "Guardados" (`stage.KeptBox`), com a lista do que a etapa guardou e
+os botões "Carregar no rascunho" e "Apagar". À direita, o diagnóstico (`checks.ChecksPanel`) mostra uma linha por
+verificação, as falhas primeiro, e embaixo o porquê e o que fazer da linha clicada.
+
+A tabela que se edita no lugar (`table.EditTable`) faz as partições da asa, as restrições e as variáveis. Quem
+chama monta as células a cada quadro (número, texto, escolha, marcar, botão ou só leitura) e recebe de volta a
+edição feita, que aplica ele mesmo. Um campo do formulário pode estar desligado (aparece em cinza e não edita, como
+a área quando se dimensiona pela corda), ser texto (o nome da asa) e ter dica.
+
+A janela "Condições e restrições…" (`requirements_dialog.zig`) é a mesma para todas as etapas e tem quatro abas,
+como em Python. Condições traz a massa de partida, a velocidade de cruzeiro, a altitude-densidade e a pista.
+Restrições lista uma restrição por linha: ligada ou não, a grandeza, o operador (≤, ≥, =), o valor, a unidade, o
+último valor calculado e se ele cumpre. Uma restrição desligada guarda o valor. Variáveis diz, para cada entrada de
+projeto, se ela fica fixa, varia entre mínimo e máximo (numa lista, entre as opções marcadas, escolhidas num
+seletor com busca) ou é calculada, e "Limites a partir das restrições" leva as restrições ativas para as faixas.
+Regras de projeto traz as massas por área e por metro, a fuselagem, o trem e os cursos dos comandos. As grandezas,
+as restrições e as variáveis moram em `registry.zig`, a mesma tabela de `aerosim/design/registry.py`, com teste.
+Cada etapa grava o que calculou (`Design.values`) e confere as restrições ativas dela no diagnóstico.
+
 ## A asa (`wing_tab.zig`)
 
-Aqui se desenha a asa a partir de um perfil da aba Perfis ou da biblioteca `data/airfoils`. A asa começa retangular,
-como em Python. O formulário pede a planta trapezoidal (envergadura,
-área ou corda da raiz, afilamento, trecho retangular, enflechamento de 1/4 da corda, torção na ponta e o ângulo
-da fuselagem no cruzeiro), o perfil da raiz e o da ponta (por padrão, o mesmo) e as condições de projeto (massa
-estimada, velocidade de cruzeiro, altitude-densidade e massa da asa por área). Cada perfil entra ajustado na polar
+Aqui se desenha a asa a partir de um perfil da aba Perfis ou da biblioteca `data/airfoils`, campo por campo como a
+etapa Asa da GUI em Python. A asa começa retangular. O formulário pede o nome, a planta (trapézio ou tabela de
+seções), o perfil da raiz e o da ponta (por padrão, o mesmo), a envergadura, a área ou a corda da raiz (pelo
+"dimensionar por"; a outra sai da conta e fica desligada), o afilamento, o trecho retangular, o enflechamento de
+1/4 da corda, a torção na ponta, o diedro e o ângulo da fuselagem no cruzeiro. Na planta "tabela", a tabela de
+partições aparece embaixo do formulário, começando pelo trapézio de agora, com "+ partição", "− partição" e "do
+trapézio"; os campos que só valem no trapézio ficam desligados e mostram a envergadura, a área e a corda da tabela.
+As condições de projeto se editam na janela "Condições e restrições…". Cada perfil entra ajustado na polar
 dele, e um perfil simétrico (flecha da linha média abaixo de 0,3 % da corda) fica com $\alpha_{L0} = c_m = 0$, como
 na GUI em Python. A conta é a linha sustentadora de Glauert do núcleo (`core/src/sizing/wing_line.zig`); os
 gráficos mostram C_L até o estol, a polar (induzido, perfil e total), L/D com o C_L de cruzeiro, o $c_l$ ao longo
-da envergadura no cruzeiro e no estol (com o $c_{l,\max}$ do perfil e onde o estol começa) e a planta em escala.
+da envergadura no cruzeiro e no estol (com o $c_{l,\max}$ do perfil e onde o estol começa), o diagnóstico (as
+restrições ativas da asa, onde o estol começa, cruzeiro perto do L/D máximo, cruzeiro longe do estol, Reynolds na
+ponta) e os resultados com as mesmas linhas da GUI em Python.
 
 A primeira coisa à direita é a asa em 3D, com o contorno de verdade dos perfis da raiz e da ponta, montada pelo
 mesmo esqueleto da Montagem e do AeroDrive num avião que só tem a asa (sem trem, fuselagem nem motor, como a
-prévia da GUI em Python). Ela muda a cada valor editado. Embaixo do formulário, "Guardar asa" guarda a asa em
+prévia da GUI em Python), com o diedro, a incidência e o ponto neutro (PN) marcado. Ela muda a cada valor editado. Embaixo do formulário, "Guardar asa" guarda a asa em
 desenho com o nome dela ("Asa 1", e o desenho passa a "Asa 2"); as guardadas ficam numa lista, de onde voltam para
 o desenho ("Carregar no rascunho") ou saem ("Apagar"), e aparecem tracejadas nos gráficos de C_L e de L/D, para
 comparar com a que se está desenhando.

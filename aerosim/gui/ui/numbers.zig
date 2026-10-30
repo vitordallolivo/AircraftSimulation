@@ -82,3 +82,41 @@ test "faixa ignora NaN e dá folga" {
     try std.testing.expectApproxEqRel(@as(f64, 0.9), range.low, 1e-12);
     try std.testing.expectApproxEqRel(@as(f64, 3.1), range.high, 1e-12);
 }
+
+/// um número com `digits` algarismos significativos, como o `{:.4g}` do Python: em notação científica
+/// ("3.47e+05") quando o expoente passa de `digits` − 1 ou fica abaixo de −4; "—" se não é finito
+pub fn significant(buffer: []u8, value: f64, comptime digits: i32) []const u8 {
+    if (!std.math.isFinite(value)) return "—";
+    if (value == 0) return "0";
+    const exponent: i32 = @intFromFloat(@floor(std.math.log10(@abs(value))));
+    if (exponent < -4 or exponent >= digits) {
+        const mantissa = value / std.math.pow(f64, 10, @floatFromInt(exponent));
+        var head: [32]u8 = undefined;
+        const text = trimZeros(std.fmt.bufPrint(&head, "{d:.[1]}", .{ mantissa, @as(usize, @intCast(digits - 1)) }) catch return "");
+        return std.fmt.bufPrint(buffer, "{s}e{s}{d:0>2}", .{ text, if (exponent < 0) "-" else "+", @abs(exponent) }) catch "";
+    }
+    const decimals: usize = @intCast(@max(0, digits - 1 - exponent));
+    var head: [64]u8 = undefined;
+    const text = trimZeros(std.fmt.bufPrint(&head, "{d:.[1]}", .{ value, decimals }) catch return "");
+    if (text.len > buffer.len) return "";
+    @memcpy(buffer[0..text.len], text);
+    return buffer[0..text.len];
+}
+
+fn trimZeros(text: []const u8) []const u8 {
+    if (std.mem.indexOfScalar(u8, text, '.') == null) return text;
+    var end = text.len;
+    while (text[end - 1] == '0') end -= 1;
+    if (text[end - 1] == '.') end -= 1;
+    return text[0..end];
+}
+
+test "algarismos significativos como o .4g do Python" {
+    var buffer: [32]u8 = undefined;
+    try std.testing.expectEqualStrings("3.47e+05", significant(&buffer, 347000.39, 4));
+    try std.testing.expectEqualStrings("12.4", significant(&buffer, 12.4, 4));
+    try std.testing.expectEqualStrings("0.3622", significant(&buffer, 0.362216, 4));
+    try std.testing.expectEqualStrings("-1.677", significant(&buffer, -1.676747, 4));
+    try std.testing.expectEqualStrings("1.2e-05", significant(&buffer, 0.000012, 4));
+    try std.testing.expectEqualStrings("2400", significant(&buffer, 2400, 4));
+}

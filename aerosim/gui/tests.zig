@@ -5,4 +5,5 @@ test {
     _ = @import("assembly.zig");
     _ = @import("wing_analysis.zig");
     _ = @import("airfoil_stage.zig");
+    _ = @import("registry.zig");
 }

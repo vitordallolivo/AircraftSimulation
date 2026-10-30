@@ -10,7 +10,7 @@ const scroll = @import("scroll.zig");
 const numbers = @import("numbers.zig");
 const numberText = numbers.numberText;
 
-pub const Kind = enum { number, toggle, choice };
+pub const Kind = enum { number, toggle, choice, text };
 
 /// a caixa de um valor: branca, de cantos arredondados, borda fina
 fn fieldBox(control: rl.Rectangle) void {
@@ -30,6 +30,21 @@ pub const Field = struct {
     checked: bool = false,
     choices: [:0]const u8 = "", // opções separadas por ";" (o formato do raygui)
     choice: i32 = 0,
+    text: [48:0]u8 = [_:0]u8{0} ** 48, // o valor de um campo de texto (um nome)
+    enabled: bool = true, // desligado: aparece em cinza e não edita (o campo que outro modo calcula)
+    help: [:0]const u8 = "", // a dica com o mouse em cima do rótulo
+
+    /// o texto de um campo de texto
+    pub fn textValue(field: *const Field) []const u8 {
+        return std.mem.sliceTo(&field.text, 0);
+    }
+
+    /// troca o texto de um campo de texto
+    pub fn setText(field: *Field, value: []const u8) void {
+        field.text = [_:0]u8{0} ** 48;
+        const length = @min(value.len, 47);
+        @memcpy(field.text[0..length], value[0..length]);
+    }
 };
 
 pub const Group = struct {
@@ -48,6 +63,7 @@ pub const Form = struct {
     area: scroll.ScrollArea = .{},
     editing: ?usize = null, // número sendo digitado
     open_choice: ?usize = null, // escolha com a lista aberta
+    opening: bool = false, // a lista abriu neste quadro (o raygui veria o mesmo clique e fecharia)
     edit_text: [32:0]u8 = [_:0]u8{0} ** 32,
     origin: rl.Vector2 = .{ .x = 0, .y = 0 }, // onde o formulário foi desenhado no último quadro
     width: f32 = 0,
@@ -145,21 +161,45 @@ pub const Form = struct {
     fn drawField(form: *Form, ui: *widgets.Ui, index: usize, field: *Field, x: f32, y: f32, width: f32) bool {
         var buffer: [96]u8 = undefined;
         const control: rl.Rectangle = .{ .x = x + width - control_width, .y = y + 3, .width = control_width, .height = row_height - 6 };
+        const label_color = if (field.enabled) theme.colors.label else theme.colors.muted;
+        ui.tooltip(.{ .x = x, .y = y, .width = width - control_width - 4, .height = row_height }, field.help);
+        if (!field.enabled) {
+            if (form.editing == index) form.editing = null;
+            if (form.open_choice == index) form.open_choice = null;
+        }
         switch (field.kind) {
             .toggle => {
                 widgets.checkBox(.{ .x = x, .y = y + 7, .width = 16, .height = 16 }, field.checked);
-                theme.text(ui.fonts.regular, field.label, x + 26, y + 7, 14, theme.colors.label);
+                theme.text(ui.fonts.regular, field.label, x + 26, y + 7, 14, label_color);
                 const row: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = row_height };
-                if (ui.clickedIn(row)) {
+                if (field.enabled and ui.clickedIn(row)) {
                     field.checked = !field.checked;
                     return true;
                 }
                 return false;
             },
-            .number, .choice => {
+            .number, .choice, .text => {
                 const caption = if (field.unit.len > 0) widgets.format(&buffer, "{s} ({s})", .{ field.label, field.unit }) else field.label;
-                theme.text(ui.fonts.regular, caption, x, y + 7, 14, theme.colors.label);
+                theme.text(ui.fonts.regular, caption, x, y + 7, 14, label_color);
             },
+        }
+        if (field.kind == .text) {
+            if (form.editing == index) {
+                if (rg.textBox(control, &field.text, true)) {
+                    form.editing = null;
+                    return true;
+                }
+                return false;
+            }
+            fieldBox(control);
+            ui.pushClip(control);
+            theme.text(ui.fonts.mono, field.text[0..field.textValue().len :0], control.x + 6, control.y + 5, 14, if (field.enabled) theme.colors.ink else theme.colors.muted);
+            ui.popClip();
+            if (field.enabled and ui.clickedIn(control)) {
+                form.editing = index;
+                widgets.caretToEnd(ui, &field.text);
+            }
+            return false;
         }
         if (field.kind == .choice) {
             fieldBox(control);
@@ -172,10 +212,13 @@ pub const Form = struct {
             var text_buffer: [96]u8 = undefined;
             const shown = widgets.format(&text_buffer, "{s}", .{current});
             ui.pushClip(.{ .x = control.x, .y = control.y, .width = control.width - 18, .height = control.height });
-            theme.text(ui.fonts.mono, shown, control.x + 6, control.y + 5, 14, theme.colors.ink);
+            theme.text(ui.fonts.mono, shown, control.x + 6, control.y + 5, 14, if (field.enabled) theme.colors.ink else theme.colors.muted);
             ui.popClip();
             widgets.disclosure(control.x + control.width - 11, control.y + control.height / 2, 8, true, theme.colors.muted);
-            if (ui.clickedIn(control)) form.open_choice = index;
+            if (field.enabled and ui.clickedIn(control)) {
+                form.open_choice = index;
+                form.opening = true;
+            }
             return false;
         }
         // número: o raygui edita o texto; fora da edição, o valor em fonte monoespaçada
@@ -190,13 +233,14 @@ pub const Form = struct {
             }
             return false;
         }
-        fieldBox(control);
-        theme.text(ui.fonts.mono, numberText(&buffer, field.number), control.x + 6, control.y + 5, 14, theme.colors.ink);
-        if (ui.clickedIn(control)) {
+        if (field.enabled) fieldBox(control) else widgets.rounded(control, 5, theme.colors.panel);
+        theme.text(ui.fonts.mono, numberText(&buffer, field.number), control.x + 6, control.y + 5, 14, if (field.enabled) theme.colors.ink else theme.colors.muted);
+        if (field.enabled and ui.clickedIn(control)) {
             form.editing = index;
             form.edit_text = [_:0]u8{0} ** 32;
             const typed = numberText(&buffer, field.number);
             @memcpy(form.edit_text[0..typed.len], typed);
+            widgets.caretToEnd(ui, &form.edit_text);
         }
         return false;
     }
@@ -207,6 +251,10 @@ pub const Form = struct {
             form.open_choice = null;
             return false;
         };
+        if (form.opening) { // no quadro em que abriu, o clique é o de abrir
+            form.opening = false;
+            return false;
+        }
         var active: i32 = field.choice;
         const pressed = rg.dropdownBox(control, field.choices, &active, true);
         if (pressed != 0) {

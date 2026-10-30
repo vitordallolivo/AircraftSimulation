@@ -252,8 +252,20 @@ para a torção, e o $c_l$ local fica $\alpha g(y) + h(y)$. O estol começa na e
 $c_{l,\max}$ do perfil dela, e o arrasto de perfil integra o $c_d$ da polar 2D no $c_l$ local. Com perfil na ponta,
 do fim do trecho retangular até a ponta os números do perfil e o $c_d$ são interpolados.
 
+A planta também pode vir da tabela de partições da planilha (`Partition`, até oito): cada linha diz quanto soma na
+envergadura total (metade de cada lado), a corda no começo, o afilamento, o perfil no fim, o recuo do bordo de
+ataque e a torção no fim. É o caminho para a asa que o trapézio não descreve, como um trecho reto, um afilado e uma
+ponta de outro perfil. `planformOfPartitions` faz as seções como `stations` da GUI: onde duas partições têm cordas
+diferentes, a troca acontece num trecho de 0,1 mm, e cada seção leva o seu perfil. Entre seções vizinhas os números
+do perfil e o $c_d$ são interpolados, o mesmo que o trapézio com perfil na ponta faz entre a quebra e a ponta.
+`analyzePlanform` roda a etapa numa planta qualquer, e `analyze` é ela no trapézio. `totals` dá a envergadura e a
+área da tabela, `partitionsFromTrapezoid` a tabela que reproduz o trapézio, e `Planform.aeroCenter` o centro
+aerodinâmico (1/4 da corda média aerodinâmica, atrás do bordo de ataque da raiz), que é o ponto neutro da asa
+sozinha.
+
 A polar 2D e os números ajustados de cada perfil vêm de `physics/section.zig`. A conta é a de
-`aerosim/design/wing.py: analyze`, e os testes conferem dois casos contra ela.
+`aerosim/design/wing.py: analyze`, e os testes conferem três casos contra ela (o trapézio, o trapézio com perfil na
+ponta e uma tabela com degrau de corda e outro perfil na ponta).
 
 ## Como chamar
 

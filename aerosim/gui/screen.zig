@@ -11,6 +11,7 @@ const analyze_tab = @import("analyze_tab.zig");
 const airfoil_tab = @import("airfoil_tab.zig");
 const wing_tab = @import("wing_tab.zig");
 const design_mod = @import("design.zig");
+const requirements_dialog = @import("requirements_dialog.zig");
 const assembly_mod = @import("assembly.zig");
 const aircraft_model = @import("aircraft_model");
 
@@ -25,6 +26,7 @@ pub const Screen = struct {
     airfoils: airfoil_tab.AirfoilTab = .{},
     wing: wing_tab.WingTab = .{},
     design: design_mod.Design = .{}, // o projeto de dimensionamento (Perfis e Projetar)
+    requirements: requirements_dialog.RequirementsDialog = .{}, // "Condições e restrições…", aberta por qualquer etapa
     files: ui_kit.dialogs.FilePicker = .{}, // abrir e salvar o avião (cabeçalho)
     assembly_view: view3d.View = .{}, // a vista 3D da Montagem
     assembly: ?assembly_mod.Assembly = null, // o avião aberto
@@ -52,7 +54,14 @@ pub const Screen = struct {
         if (assembly_mod.findExample(fixed.allocator(), io())) |path| screen.openFile(path) else screen.analyze.setAircraft(null);
     }
 
-    /// o avião aberto, se houver
+    /// a aba da janela "Condições e restrições…" pelo nome do comando (prints)
+fn requirementsTab(name: []const u8) ?usize {
+    const names = [_][]const u8{ "condicoes", "restricoes", "variaveis", "regras" };
+    for (names, 0..) |candidate, k| if (std.mem.eql(u8, candidate, name)) return k;
+    return null;
+}
+
+/// o avião aberto, se houver
     fn aircraft(screen: *Screen) ?*const aircraft_model.aircraft.Aircraft {
         return if (screen.assembly) |*opened| &opened.loaded.ac else null;
     }
@@ -71,6 +80,11 @@ pub const Screen = struct {
                 return;
             });
             screen.files.showSave("Salvar avião (.json)", std.fs.path.dirname(opened.path) orelse ".", &.{".json"}, std.fs.path.basename(opened.path));
+        } else if (requirementsTab(name)) |tab| {
+            screen.requirements.show();
+            screen.requirements.dialog.tab = tab;
+        } else if (std.mem.eql(u8, name, "tabela")) {
+            screen.wing.command(name);
         } else screen.airfoils.command(name);
     }
 
@@ -149,7 +163,11 @@ pub const Screen = struct {
             screen.scroll = 0;
         }
         // com uma janela aberta (seletor de arquivo, pergunta), a tela de baixo não recebe o clique nem a roda
-        const modal = screen.airfoils.modalOpen() or screen.files.open;
+        if (screen.design.requirements_open) {
+            screen.design.requirements_open = false;
+            screen.requirements.show();
+        }
+        const modal = screen.airfoils.modalOpen() or screen.files.open or screen.requirements.isOpen();
         const wheel = ui.wheel;
         if (modal) {
             ui.click_taken = true;
@@ -180,6 +198,7 @@ pub const Screen = struct {
             ui.wheel = wheel;
             const whole: rl.Rectangle = .{ .x = 0, .y = 0, .width = width, .height = height };
             screen.airfoils.drawModal(ui, whole);
+            screen.requirements.draw(ui, whole, &screen.design);
             const saving = screen.files.saving;
             if (screen.files.draw(ui, whole)) |path| {
                 if (saving) screen.save(path) else {

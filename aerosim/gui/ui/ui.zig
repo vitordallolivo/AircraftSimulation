@@ -12,6 +12,9 @@ pub const menus = @import("menus.zig");
 pub const jobs = @import("jobs.zig");
 pub const scroll = @import("scroll.zig");
 pub const export_file = @import("export.zig");
+pub const table = @import("table.zig");
+pub const checks = @import("checks.zig");
+pub const stage = @import("stage.zig");
 
 test {
     _ = numbers;

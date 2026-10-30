@@ -23,6 +23,10 @@ pub const Ui = struct {
     // desenhando numa imagem (exportar um gráfico): o recorte da tela vira o da imagem, (p - origem) · escala
     clip_origin: rl.Vector2 = .{ .x = 0, .y = 0 },
     clip_scale: f32 = 1,
+    // a dica do que está sob o mouse (o `setToolTip` do Qt): marcada durante o quadro, desenhada no fim dele
+    tip: [:0]const u8 = "",
+    tip_key: usize = 0, // o retângulo da dica, para saber há quanto tempo o mouse está nele
+    tip_since: f64 = 0,
 
     /// abre fontes e logo e ajusta o estilo do raygui às cores do tema; precisa da janela aberta
     pub fn init() !Ui {
@@ -44,6 +48,32 @@ pub const Ui = struct {
         ui.right_clicked = rl.isMouseButtonPressed(.right);
         ui.wheel = rl.getMouseWheelMove();
         ui.click_taken = false;
+        ui.tip = "";
+    }
+
+    /// a dica `text` aparece se o mouse fica um instante em `rect` (desenhada por `drawTip`, no fim do quadro)
+    pub fn tooltip(ui: *Ui, rect: rl.Rectangle, text: [:0]const u8) void {
+        // com uma janela por cima (o clique da tela de baixo já foi tomado), a de baixo não dá dica
+        if (text.len == 0 or ui.click_taken or !ui.hovering(rect)) return;
+        const key = @as(usize, @intFromFloat(@max(0, rect.x))) *% 73856093 ^ @as(usize, @intFromFloat(@max(0, rect.y))) *% 19349663;
+        if (key != ui.tip_key) {
+            ui.tip_key = key;
+            ui.tip_since = rl.getTime();
+        }
+        ui.tip = text;
+    }
+
+    /// desenha a dica marcada neste quadro, perto do mouse (depois de tudo, fora dos recortes)
+    pub fn drawTip(ui: *Ui, screen_width: f32, screen_height: f32) void {
+        if (ui.tip.len == 0 or rl.getTime() - ui.tip_since < 0.45) return;
+        const width: f32 = @min(380, screen_width - 16);
+        const height = paragraphHeight(ui.fonts.regular, ui.tip, width - 16, 13) + 12;
+        const x = @min(ui.mouse.x + 14, screen_width - width - 8);
+        const y = if (ui.mouse.y + 22 + height > screen_height) ui.mouse.y - height - 8 else ui.mouse.y + 22;
+        const box: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = height };
+        rounded(box, 5, theme.hex(0xfffbe6));
+        roundedLines(box, 5, theme.colors.line);
+        _ = paragraph(ui.fonts.regular, ui.tip, x + 8, y + 6, width - 16, 13, theme.colors.ink);
     }
 
     /// verdadeiro se o mouse está em `rect` (e dentro do recorte aberto)
@@ -104,6 +134,77 @@ fn intersection(a: rl.Rectangle, b: rl.Rectangle) rl.Rectangle {
     const right = @min(a.x + a.width, b.x + b.width);
     const bottom = @min(a.y + a.height, b.y + b.height);
     return .{ .x = left, .y = top, .width = @max(0, right - left), .height = @max(0, bottom - top) };
+}
+
+/// texto corrido quebrado em linhas de até `width` (nas palavras e no "\n"); devolve a altura usada
+pub fn paragraph(font: rl.Font, content: []const u8, x: f32, y: f32, width: f32, size: f32, color: rl.Color) f32 {
+    return wrapText(font, content, x, y, width, size, color, true);
+}
+
+/// a altura que `paragraph` usaria
+pub fn paragraphHeight(font: rl.Font, content: []const u8, width: f32, size: f32) f32 {
+    return wrapText(font, content, 0, 0, width, size, theme.colors.ink, false);
+}
+
+fn wrapText(font: rl.Font, content: []const u8, x: f32, y: f32, width: f32, size: f32, color: rl.Color, draw_it: bool) f32 {
+    const line_height = size + 4;
+    var line: [512:0]u8 = undefined;
+    var line_len: usize = 0;
+    var lines: f32 = 0;
+    var paragraphs = std.mem.splitScalar(u8, content, '\n');
+    while (paragraphs.next()) |part| {
+        var words = std.mem.tokenizeScalar(u8, part, ' ');
+        line_len = 0;
+        while (words.next()) |word| {
+            const extra = word.len + @intFromBool(line_len > 0);
+            if (line_len + extra >= line.len) break;
+            var trial = line;
+            var trial_len = line_len;
+            if (trial_len > 0) {
+                trial[trial_len] = ' ';
+                trial_len += 1;
+            }
+            @memcpy(trial[trial_len..][0..word.len], word);
+            trial_len += word.len;
+            trial[trial_len] = 0;
+            if (line_len > 0 and theme.textWidth(font, trial[0..trial_len :0], size) > width) {
+                line[line_len] = 0;
+                if (draw_it) theme.text(font, line[0..line_len :0], x, y + lines * line_height, size, color);
+                lines += 1;
+                @memcpy(line[0..word.len], word);
+                line_len = word.len;
+            } else {
+                line = trial;
+                line_len = trial_len;
+            }
+        }
+        line[line_len] = 0;
+        if (draw_it and line_len > 0) theme.text(font, line[0..line_len :0], x, y + lines * line_height, size, color);
+        lines += 1;
+    }
+    return lines * line_height;
+}
+
+/// põe o cursor do texto do raygui no fim de `buffer` (ao começar a editar um campo, digitar acrescenta no fim):
+/// o raygui só põe o cursor por um clique dentro do texto, então ele vê, num recorte vazio, uma caixa montada para o
+/// mouse cair logo depois do texto
+pub fn caretToEnd(ui: *Ui, buffer: [:0]u8) void {
+    const length = std.mem.indexOfScalar(u8, buffer, 0) orelse buffer.len;
+    const padding: f32 = @floatFromInt(rg.getStyle(.default, .text_padding));
+    const width = rg.getTextWidth(buffer[0..length :0]);
+    const fake: rl.Rectangle = .{ .x = ui.mouse.x - @as(f32, @floatFromInt(width)) - padding - 6, .y = ui.mouse.y - 10, .width = @as(f32, @floatFromInt(width)) + 2 * padding + 40, .height = 20 };
+    ui.pushClip(.{ .x = 0, .y = 0, .width = 0, .height = 0 });
+    _ = rg.textBox(fake, buffer, true);
+    ui.popClip();
+}
+
+/// o "?" de ajuda ao lado de um título: a dica `text` com o mouse em cima
+pub fn helpMark(ui: *Ui, x: f32, y: f32, text: [:0]const u8) void {
+    const center: rl.Vector2 = .{ .x = x + 8, .y = y + 8 };
+    rl.drawCircleV(center, 8, theme.colors.selected);
+    rl.drawCircleLinesV(center, 8, theme.colors.accent);
+    theme.text(ui.fonts.regular, "?", x + 4.5, y + 0.5, 13, theme.colors.accent);
+    ui.tooltip(.{ .x = x, .y = y, .width = 16, .height = 16 }, text);
 }
 
 /// a caixa de marcar: azul com o visto desenhado (duas linhas, sem depender de a fonte ter o "✓") ou branca

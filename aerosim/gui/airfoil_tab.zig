@@ -39,6 +39,7 @@ const method_list = [_]struct { method: stage.Source, caption: [:0]const u8 }{
 /// uma curva por candidato e método
 const action_captions = [_][:0]const u8{ "+ NACA...", "+ .dat...", "+ só parâmetros", "+ polar XFLR5...", "Remover" };
 const actions = [_]Action{ .naca, .dat, .parameters, .polar, .remove };
+const help = "Perfis candidatos e a polar 2D de cada um no Re do cruzeiro. O perfil pode vir de um código NACA, de um .dat, só de parâmetros (sem contorno) ou da polar do XFLR5/XFOIL. 'Usar na asa' leva o perfil selecionado para a etapa Asa.";
 const list_height: f32 = 104; // a lista de candidatos (quatro linhas à vista; o resto rola)
 const max_shown = max_candidates * method_list.len;
 
@@ -300,8 +301,11 @@ pub const AirfoilTab = struct {
         const x = rect.x + 12;
         const width = rect.width - 24 - 10; // 10: a barra de rolagem
         const has_selection = design.airfoil_count > 0;
+        var summary_buffer: [900]u8 = undefined;
+        const summary = design.requirementsSummary(&summary_buffer);
+        const bar_height = ui_kit.stage.reqBarHeight(ui, summary, width);
         // o botão dos métodos fica numa altura fixa do conteúdo: o clique no menu aberto vale antes de tudo
-        const toggle_offset: f32 = 10 + 50 + 22 + list_height + 8 + 36 * @as(f32, @floatFromInt((action_captions.len + 1) / 2)) + 2 + 22;
+        const toggle_offset: f32 = 10 + bar_height + 8 + 28 + 22 + list_height + 8 + 36 * @as(f32, @floatFromInt((action_captions.len + 1) / 2)) + 2 + 22;
         const toggle: rl.Rectangle = .{ .x = x + 80, .y = rect.y - tab.side.offset + toggle_offset, .width = width - 80, .height = 30 };
         const toggle_visible = toggle.y >= body.y and toggle.y + toggle.height <= body.y + body.height;
         if (has_selection and (toggle_visible or tab.methods.open)) {
@@ -309,14 +313,10 @@ pub const AirfoilTab = struct {
         } else tab.methods.open = false;
         const top = tab.side.begin(ui, body);
         var y = top + 10;
-        // as condições de projeto numa linha (editadas na etapa Projetar)
-        const requirements = design.requirements;
-        var bar: [160:0]u8 = undefined;
-        const bar_rect: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = 40 };
-        widgets.rounded(bar_rect, 5, theme.colors.selected);
-        theme.text(ui.fonts.regular, widgets.format(&bar, "partida m = {d} kg · V = {d} m/s · AD {d:.0} m", .{ requirements.mass, requirements.airspeed, requirements.altitude }), x + 8, y + 4, 12, theme.colors.ink);
-        theme.text(ui.fonts.regular, widgets.format(&bar, "(ρ = {d:.3}) · as condições se editam em Projetar", .{core.wing_line.isaDensity(requirements.altitude)}), x + 8, y + 21, 12, theme.colors.label);
-        y += 50;
+        // os requisitos (sempre à vista) e o título da etapa, como em toda etapa do dimensionamento
+        if (ui_kit.stage.reqBar(ui, x, y, width, summary)) design.requirements_open = true;
+        y += bar_height + 8;
+        y += ui_kit.stage.title(ui, x, y, "Perfil", help);
         theme.text(ui.fonts.regular, "Candidatos (todos entram nos gráficos):", x, y, 14, theme.colors.ink);
         y += 22;
         // a lista

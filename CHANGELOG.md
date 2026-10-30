@@ -12,6 +12,14 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   desenhadas; Esc fecha a janela de cima, não o programa. Projetar mostra a asa em 3D primeiro, guarda asas e as
   compara nos gráficos. Todo gráfico liga e desliga curvas pela legenda e, no botão direito, exporta PNG, PDF ou o
   CSV das curvas marcadas; as tabelas de números exportam CSV com uma grandeza por linha.
+- Projetar igual à etapa Asa da GUI em Python: barra de requisitos, título com ajuda, nome, planta trapézio ou
+  tabela de seções (partições com perfil próprio, "+ partição", "− partição", "do trapézio"), diedro, campos
+  desligados pelo modo, ponto neutro no 3D, diagnóstico com as restrições ativas e os resultados. A janela
+  "Condições e restrições…" (Condições, Restrições, Variáveis, Regras de projeto) vale para Perfis e Projetar. No
+  núcleo, `wing_line` aceita a tabela de partições (`planformOfPartitions`, `analyzePlanform`, `totals`,
+  `partitionsFromTrapezoid`, `Planform.aeroCenter`), com teste contra o Python. Peças reutilizáveis: `ui/stage.zig`,
+  `ui/table.zig`, `ui/checks.zig`, dica com o mouse parado (`Ui.tooltip`); a lista de escolha não fecha mais no
+  clique que a abre e o cursor de edição começa no fim do texto.
 - pacote para instalar: `launcher/` (a tela inicial do site, em Zig, que abre o aerosim, o aeroopt e o AeroDrive),
   `tools/package.py` (AppImage e instalador `.exe` com NSIS, com os exemplos, os perfis e a página do site) e o
   workflow `pacotes` (só quando alguém pede ou numa tag).

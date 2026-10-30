@@ -112,6 +112,7 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
             ui.right_clicked = right_clicked;
         }
         plot.overlay(&ui, width, height);
+        ui.drawTip(width, height);
         rl.endDrawing();
         if (shot and frames == 3) {
             const image = try rl.loadImageFromScreen();
