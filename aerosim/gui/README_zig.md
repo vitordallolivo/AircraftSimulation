@@ -105,10 +105,14 @@ Aqui se desenha qualquer subaba, sem conhecer a análise. Uma página é de um d
   regras numa janela por cima; ao fechar, as etapas refazem a conta;
 - ainda sem ponte: o Mini-MDO e o Estudo e ponto de projeto, que só mostram o lugar deles.
 
-A página desenha campos de número, marcador, escolha e texto, gráficos 2D e tabelas de texto (as massas e as
-dimensões de Motores, por exemplo). As tabelas editáveis (as partições da asa, as restrições e as variáveis), os
-campos de arquivo e as vistas 3D ainda ficam só na GUI PyQt: os valores deles seguem o padrão do Python, e a página
-diz quantos gráficos 3D ficaram de fora. Trocar de página pede ela de novo, porque outra página pode ter mudado o
+A página desenha campos de número, marcador, escolha, texto, arquivo (abre o seletor) e lista de números, gráficos
+2D, tabelas de texto (as massas e as dimensões de Motores, por exemplo) e tabelas editáveis, como as partições da
+asa: cada célula editada, linha nova ou apagada vira um pedido de etapa "grid", e o Python devolve a tabela refeita.
+Uma etapa que traz a peça (Projetar, Empenagem, Motores) mostra a vista 3D em cima, com as malhas de
+`aerosim.model.geometry` e os marcadores do ponto neutro e do CG. Uma análise de carga (`loads3d`) mostra a malha do
+método com o mapa de cores por face, as setas e a escala, que se trocam por botões, como na `LoadView` da GUI PyQt.
+Os gráficos de trajetória em 3D e as tabelas de entrada da Missão ainda ficam só na GUI PyQt, e a página diz quantos
+ficaram de fora. Trocar de página pede ela de novo, porque outra página pode ter mudado o
 projeto (uma asa guardada aparece na Empenagem).
 
 ## A tela (`screen.zig`)

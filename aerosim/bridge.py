@@ -37,8 +37,8 @@ from typing import Any
 
 from aerosim.interfaces.simulation import AREAS, CancelledError, ISimulationManager, PlotSpec, SimResult
 
-FORM_KINDS = ("float", "int", "bool", "choice", "str")   # os tipos de campo que a tela em Zig desenha por enquanto
-PLOT_KINDS = ("2d",)                                      # os tipos de gráfico idem (3d e loads3d: só na GUI PyQt)
+FORM_KINDS = ("float", "int", "bool", "choice", "str", "file", "floats")   # os tipos de campo que a tela em Zig desenha por enquanto
+PLOT_KINDS = ("2d", "loads3d")                            # os tipos de gráfico idem (3d: só na GUI PyQt)
 
 # a arrumação das abas, a mesma de `aerosim/gui/main_window.py` e `aerosim/gui/design/__init__.py`
 INSIDE = {"propulsao": "desempenho", "missao": "desempenho"}
@@ -194,6 +194,9 @@ class Bridge:
             stage.delete(int(request.get("index", -1)))
         elif do == "act":
             message = stage.act(request["key"], str(request.get("arg", "")))
+        elif do == "grid":
+            stage.edit_grid(request.get("grid", ""), request.get("edit", "set"), int(request.get("row", -1)),
+                            request.get("key", ""), request.get("value"))
         opened = ""
         if message.startswith("open:"):            # "Mandar para a Montagem": a tela abre o arquivo
             opened, message = message[5:].split("|", 1)
@@ -207,12 +210,14 @@ class Bridge:
         page = {"title": stage.title, "help": stage.help, "keep_label": stage.keep_label, "params": params,
                 "kept": stage.kept(), "actions": [asdict(a) for a in stage.actions()],
                 "requirements": self.stages["requisitos"].ctx.design.requirements.summary(), "open": opened,
-                "message": message}
+                "message": message, "grids": [asdict(g) for g in stage.grids()]}
         if outcome is not None:
             page.update(message=message or outcome.message, summary=outcome.result.summary,
                         checks=[asdict(c) for c in outcome.result.checks],
                         plots=[_plot(spec, outcome.result) for spec in outcome.plots],
                         tables=[asdict(t) for t in outcome.tables])
+            if outcome.aircraft is not None:
+                page["view"] = _view(outcome.aircraft, outcome.markers)
         return page
 
 
@@ -254,6 +259,9 @@ def _plot(spec: PlotSpec, result: SimResult) -> dict:
     """as curvas de um gráfico: uma por tabela e por coluna y (só as colunas que existem e são numéricas)"""
     out = _plot_spec(spec)
     out["curves"] = curves = []
+    if out["kind"] == "loads3d":
+        out["loads"] = _loads(spec, result)
+        return out
     if out["kind"] != "2d":
         return out
     if spec.source == "log":
@@ -301,6 +309,59 @@ def _finite(value: Any):
     if hasattr(value, "tolist") and not isinstance(value, (str, bytes)):
         return _finite(value.tolist())
     return value
+
+
+def _mesh_list(meshes) -> list[dict]:
+    """malhas (vértices, triângulos) com o tipo de cada uma, em listas planas com 5 casas (mm/100 basta para ver)"""
+    import numpy as np
+    out = []
+    for (vertices, faces), kind in meshes:
+        out.append({"kind": kind, "vertices": np.round(np.asarray(vertices, float), 5).ravel().tolist(),
+                    "faces": np.asarray(faces, int).ravel().tolist()})
+    return out
+
+
+def _loads(spec: PlotSpec, result: SimResult) -> dict | None:
+    """a vista 3D de uma análise de carga (a `LoadView` da GUI PyQt), só traduzida: a malha do método em
+    triângulos (cada um com a face de origem), os campos por face com o rótulo e se têm sinal, as camadas de setas, o
+    resto do avião (sem as superfícies, que o método já desenha) e o texto do caso"""
+    import numpy as np
+    from aerosim.interfaces.loads import CAMPOS, LoadResult, label
+    table = result.series.get(spec.source.split(":", 1)[1]) or {}
+    loads = table.get("_result")
+    if not isinstance(loads, LoadResult) or loads.field is None:
+        return None
+    surface = loads.field
+    triangles, origin = surface.triangles()
+    names = [k for k in CAMPOS if k in surface.fields] + [k for k in surface.fields if k not in CAMPOS]
+    fields = [{"name": k, "label": label(k), "signed": bool(CAMPOS.get(k, ("", "", True))[2]),
+               "values": np.asarray(surface.fields[k], float).tolist()} for k in names]
+    vectors = [{"name": layer.name, "unit": layer.unit, "color": list(layer.color),
+                "origins": np.round(np.asarray(layer.origins, float), 5).ravel().tolist(),
+                "vectors": np.asarray(layer.vectors, float).ravel().tolist()} for layer in surface.vectors]
+    rest = []
+    aircraft = table.get("_aircraft")
+    if aircraft is not None:
+        from aerosim.model.geometry import aircraft_meshes
+        rest = _mesh_list([part for parts in aircraft_meshes(aircraft).values() for part in parts
+                           if part[1] not in ("wing", "htail", "vtail", "control", "device")])
+    meta = loads.meta
+    info = [meta.get("caso", "")]
+    if meta.get("modificadores"):
+        info.append("modificadores: " + "; ".join(meta["modificadores"]))
+    info.append(f"fonte: {meta.get('fonte', '?')}")
+    info += ["⚠ " + a for a in meta.get("avisos", [])]
+    return {"vertices": np.round(np.asarray(surface.vertices, float), 5).ravel().tolist(),
+            "triangles": np.asarray(triangles, int).ravel().tolist(), "face": np.asarray(origin, int).tolist(),
+            "fields": fields, "vectors": vectors, "rest": rest, "info": " · ".join(t for t in info if t),
+            "camera": dict(table.get("_camera") or {})}
+
+
+def _view(aircraft, markers: dict | None = None) -> dict:
+    """a vista 3D da GUI PyQt (`AircraftView`): as malhas de `aerosim.model.geometry` e os marcadores"""
+    from aerosim.model.geometry import aircraft_meshes
+    meshes = [part for parts in aircraft_meshes(aircraft).values() for part in parts]
+    return {"meshes": _mesh_list(meshes), "markers": dict(markers or {})}
 
 
 def _plain(value: Any):

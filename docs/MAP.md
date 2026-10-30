@@ -8,7 +8,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/__init__.py` — aerosim — simulador 6GDL de aeronaves em camadas:
 - `aerosim/bridge.py` — Ponte entre a tela em Zig (raylib) e os managers em Python: uma mensagem JSON por linha, na entrada e na saída
-  `class Bridge:46`, `main:311`
+  `class Bridge:50`, `start_in_browser:392`, `call_in_browser:400`, `main:415`
 
 ## Python · `aerosim/aero`
 
@@ -192,7 +192,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/manager/runner.py` — Corrida orientada: começa (no chão, em voo ou de um checkpoint), roda até uma parada
   `class Stop:21`, `class RunOutput:35`, `class Runner:42`
 - `aerosim/manager/stages.py` — As etapas da sprint sem Qt, para a tela em Zig pela ponte (`aerosim/bridge.py`): o mesmo que as páginas de
-  `class Action:35`, `class Table:45`, `class Outcome:53`, `class Context:63`, `only_surfaces:78`, `dims_table:91`, `class Stage:103`, `class AirfoilStage:197`, `class WingStage:294`, `class TailStage:347`, `class PowerStage:395`, `class RequirementsStage:476`
+  `class Action:35`, `class Table:45`, `class Outcome:53`, `class GridColumn:64`, `class Grid:74`, `class Context:86`, `only_surfaces:101`, `dims_table:114`, `class Stage:126`, `class AirfoilStage:228`, `class WingStage:325`, `class TailStage:436`, `class PowerStage:485`, `class RequirementsStage:567`
 - `aerosim/manager/takeoff_opt.py` — Decolagem para a competição: os dois critérios da pista e um de voo.
   `class TakeoffResult:50`, `pitch_control:69`, `judge:76`, `evaluate:140`, `optimize:183`
 - `aerosim/manager/simulations/__init__.py` — Simulações disponíveis (uma aba cada na GUI). Para adicionar outra: crie uma classe
@@ -686,11 +686,11 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `buildMesh:55`, `balance:113`, `load:131`, `fillAirfoilFiles:148`, `parseDat:183`, `findExample:215`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
-  tipos `Kind:29`, `Page:77`
+  tipos `Kind:31`, `Page:171`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
-  tipos `Waiter:18`, `Bridge:34`
+  tipos `Waiter:23`, `Bridge:39`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt
-  tipos `Screen:53`
+  tipos `Screen:58`
 - `aerosim/gui/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos, exportar e a leitura do avião da Montagem.
 
 **aerosim/gui/ui/**
@@ -708,8 +708,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/ui/export.zig` — Gravar o que a tela mostra em arquivo: os dados de um gráfico em CSV, a imagem dele em PNG (pelo raylib) e a
   tipos `Column:8`
   fn `writeCsv:15`, `writeText:33`, `saveCsv:47`, `writePdf:56`, `savePdf:107`, `fileName:115`
-- `aerosim/gui/ui/form.zig` — O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador e escolha. A tela descrev
-  tipos `Kind:13`, `Field:22`, `Group:50`, `Form:60`
+- `aerosim/gui/ui/form.zig` — O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador,
+  tipos `Kind:14`, `Field:25`, `Group:53`, `Form:63`
 - `aerosim/gui/ui/jobs.zig` — As contas longas fora do laço da tela: uma `Job` roda uma função numa thread própria, e a tela continua
   tipos `Job:14`
 - `aerosim/gui/ui/menus.zig` — As peças de escolha que as abas repetem: a lista de itens com um selecionado (a lista de candidatos de Perfis,
@@ -736,8 +736,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `hex:7`, `withAlpha:12`, `plotColor:63`, `spacing:148`, `text:153`, `textWidth:158`
 - `aerosim/gui/ui/ui.zig` — As peças comuns das telas do aerosim e do aeroopt em Zig: cores e fontes, formas, widgets, formulário, gráfico
 - `aerosim/gui/ui/view3d.zig` — Vista 3D dentro de um cartão, com as mesmas ideias da vista do aerosim em Python (`aerosim/gui/widgets/view3d.py`
-  tipos `Kind:17`, `View:59`
-  fn `kindColor:20`, `fraction:34`, `liftColor:39`, `toWorld:44`, `shaded:162`, `triangle:170`, `quad:180`, `segment:197`, `arrow:202`, `floor:214`, `bodyAxes:226`
+  tipos `Kind:17`, `View:100`
+  fn `kindColor:20`, `colorByName:35`, `fieldColor:57`, `fraction:75`, `liftColor:80`, `toWorld:85`, `shaded:203`, `triangle:211`, `quad:221`, `segment:238`, `arrow:243`, `floor:255`, `bodyAxes:267`
 - `aerosim/gui/ui/widgets.zig` — Os pedaços comuns das telas, no desenho do AeroDrive: o contexto de desenho (fontes, logo, mouse), o cabeçalho
   tipos `Ui:10`, `Status:366`
   fn `paragraph:140`, `paragraphHeight:145`, `caretToEnd:191`, `helpMark:202`, `checkBox:211`, `disclosure:226`, `rounded:270`, `roundedLines:275`, `header:280`, `tabBar:301`, `primaryButton:325`, `progressBar:335`, `card:342`, `labeledCard:350`, `statusColor:356`, `tableRow:369`, `format:376`
@@ -817,7 +817,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 75 testes em 11 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 79 testes em 13 arquivo(s)
+- `tests/manager` — 81 testes em 13 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)

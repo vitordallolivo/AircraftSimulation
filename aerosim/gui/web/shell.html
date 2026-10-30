@@ -127,6 +127,7 @@
       const files = python().pyodide.FS;
       copyFile(FS, files, request.path);
       copyFile(FS, files, request.arg);
+      for (const value of Object.values(request.values || {})) copyFile(FS, files, value);
       const line = python().pythonCall(JSON.stringify(request));
       if (line.includes('"open"')) {
         const reply = JSON.parse(line);

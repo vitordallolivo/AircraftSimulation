@@ -7,8 +7,8 @@
 //!                            da etapa, Guardar e a lista dos guardados; cada mudança refaz a conta, como na GUI PyQt
 //!   ainda sem ponte (`todo`) só o lugar da página
 //!
-//! Por enquanto a tela desenha campos de número, marcador, escolha e texto, gráficos 2D e tabelas; as tabelas
-//! editáveis, os arquivos e as vistas 3D ficam com o valor do Python e aparecem só como nota.
+//! A tela desenha campos de número, marcador, escolha e texto, gráficos 2D, tabelas, as tabelas que se editam no
+//! lugar (as partições da asa) e a peça da etapa em 3D (as malhas vêm prontas do Python, `aerosim.model.geometry`).
 const std = @import("std");
 const rl = @import("raylib");
 const ui_kit = @import("ui");
@@ -21,6 +21,8 @@ const scroll = ui_kit.scroll;
 const jobs = ui_kit.jobs;
 const menus = ui_kit.menus;
 const dialogs = ui_kit.dialogs;
+const view3d = ui_kit.view3d;
+const table_mod = ui_kit.table;
 const python_bridge = @import("python_bridge.zig");
 
 const Json = std.json.Value;
@@ -29,7 +31,7 @@ const Arena = std.heap.ArenaAllocator;
 pub const Kind = enum { simulation, stage, todo };
 
 /// como o valor de um campo vai de volta para o Python
-const ValueKind = enum { real, integer, toggle, choice, text };
+const ValueKind = enum { real, integer, toggle, choice, text, file, list };
 
 /// um campo do Python: a chave e o que a tela precisa para devolver o valor
 const Param = struct {
@@ -65,6 +67,98 @@ const Table = struct {
 };
 
 const SummaryRow = [2]plot.Cell;
+
+/// uma tabela que se edita no lugar (as partições da asa): as colunas, as células de agora e os botões dela
+const Grid = struct {
+    name: []const u8,
+    title: [:0]const u8,
+    help: [:0]const u8,
+    note: [:0]const u8,
+    columns: []table_mod.Column,
+    keys: []const []const u8,
+    options: []const []const []const u8, // por coluna, o texto de cada opção (escolha); vazio nas de número
+    rows: []const []const table_mod.Cell,
+    buttons: []const [:0]const u8,
+    operations: []const []const u8, // o que cada botão pede ao Python ("add", "delete", "reset")
+};
+
+/// uma peça no 3D: os vértices (x, y, z no corpo) e os triângulos
+const Mesh = struct {
+    color: rl.Color,
+    vertices: []const f32,
+    faces: []const u32,
+};
+
+/// a peça da etapa em 3D, como a `AircraftView` da GUI PyQt: as malhas e os marcadores (ponto neutro, CG)
+const Scene = struct {
+    meshes: []const Mesh,
+    low: view3d.Body,
+    high: view3d.Body,
+    neutral_x: ?f64 = null,
+    gravity_center: ?view3d.Body = null,
+
+    fn center(scene: *const Scene) view3d.Body {
+        return .{ (scene.low[0] + scene.high[0]) / 2, (scene.low[1] + scene.high[1]) / 2, (scene.low[2] + scene.high[2]) / 2 };
+    }
+
+    fn size(scene: *const Scene) f64 {
+        return @max(@max(scene.high[0] - scene.low[0], scene.high[1] - scene.low[1]), @max(scene.high[2] - scene.low[2], 0.2));
+    }
+};
+
+/// um campo da vista de cargas: um valor por face da malha do método
+const FieldLayer = struct {
+    label: [:0]const u8,
+    signed: bool,
+    values: []const f32,
+};
+
+/// uma camada de setas da vista de cargas (força, sustentação, velocidade induzida...)
+const VectorLayer = struct {
+    name: [:0]const u8,
+    unit: []const u8,
+    color: rl.Color,
+    origins: []const f32,
+    vectors: []const f32,
+    largest: f64,
+};
+
+/// a vista 3D de uma análise de carga, como a `LoadView` da GUI PyQt: a malha do método pintada por um campo, as
+/// setas de uma camada e o resto do avião em transparência
+const LoadsScene = struct {
+    title: [:0]const u8,
+    info: [:0]const u8,
+    vertices: []const f32,
+    triangles: []const u32,
+    face: []const u32, // a face de origem de cada triângulo (o valor do campo vem dela)
+    fields: []const FieldLayer,
+    vectors: []const VectorLayer,
+    rest: []const Mesh,
+    low: view3d.Body,
+    high: view3d.Body,
+    elevation: ?f32 = null,
+    azimuth: ?f32 = null,
+
+    fn size(scene: *const LoadsScene) f64 {
+        return @max(@max(scene.high[0] - scene.low[0], scene.high[1] - scene.low[1]), @max(scene.high[2] - scene.low[2], 0.2));
+    }
+};
+
+/// o que a tela guarda de cada vista de cargas entre os quadros: a câmera, o campo, a camada e a escala escolhidos
+const LoadsState = struct {
+    view: view3d.View = .{},
+    field: usize = 0,
+    vector: usize = 0,
+    symmetric: bool = false, // escala "simétrica em 0" (senão, "mín–máx")
+    area: rl.Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 }, // onde a imagem saiu no quadro anterior
+    camera_title: [96]u8 = undefined, // a câmera foi posta para esta vista (a de cima começa de cima)
+    camera_len: usize = 0,
+};
+
+const max_grids = 4;
+const max_loads = 4;
+const view_height: f32 = 300;
+const loads_view_height: f32 = 440;
 
 /// o que a thread faz
 const Operation = enum { specs, run, stage };
@@ -116,12 +210,20 @@ pub const Page = struct {
     prompt: dialogs.TextPrompt = .{},
     picker: dialogs.FilePicker = .{},
     pending_action: usize = 0,
+    pending_file: ?usize = null, // o campo de arquivo que pediu a janela de escolher
+    file_chosen: bool = false, // escolheu o arquivo de um campo (conta como edição no próximo quadro)
     // o resultado
     result_arena: ?*Arena = null,
     charts: []Chart = &.{},
     checks: []checks_mod.Check = &.{},
     summary: []SummaryRow = &.{},
     tables: []Table = &.{},
+    grids: []const Grid = &.{},
+    grid_tables: [max_grids]table_mod.EditTable = [_]table_mod.EditTable{.{}} ** max_grids,
+    scene: ?Scene = null,
+    view: view3d.View = .{},
+    loads: []const LoadsScene = &.{},
+    loads_states: [max_loads]LoadsState = [_]LoadsState{.{}} ** max_loads,
     skipped_charts: usize = 0,
     checks_panel: checks_mod.ChecksPanel = .{},
     side: scroll.ScrollArea = .{},
@@ -198,7 +300,13 @@ pub const Page = struct {
     /// as janelas da página por cima da tela inteira
     pub fn drawModal(page: *Page, ui: *widgets.Ui, whole: rl.Rectangle) void {
         if (page.prompt.draw(ui, whole)) |answer| page.act(page.actions[page.pending_action].key, answer);
-        if (page.picker.draw(ui, whole)) |path| page.act(page.actions[page.pending_action].key, path);
+        if (page.picker.draw(ui, whole)) |path| {
+            if (page.pending_file) |index| {
+                page.pending_file = null;
+                if (index < page.fields.len) page.fields[index].setText(path);
+                page.file_chosen = true;
+            } else page.act(page.actions[page.pending_action].key, path);
+        }
     }
 
     // ------------------------------------------------------------------ pedidos
@@ -319,7 +427,19 @@ pub const Page = struct {
                 .integer => try writer.print("{d}", .{@as(i64, @intFromFloat(@round(field.number)))}),
                 .toggle => try writer.writeAll(if (field.checked) "true" else "false"),
                 .choice => try writer.print("{f}", .{std.json.fmt(if (param.options.len > 0) param.options[@intCast(field.choice)] else "", .{})}),
-                .text => try writer.print("{f}", .{std.json.fmt(field.textValue(), .{})}),
+                .text, .file => try writer.print("{f}", .{std.json.fmt(field.textValue(), .{})}),
+                .list => {
+                    try writer.writeAll("[");
+                    var items = std.mem.tokenizeAny(u8, field.textValue(), ", ;");
+                    var first = true;
+                    while (items.next()) |item| {
+                        const value = std.fmt.parseFloat(f64, item) catch continue;
+                        if (!first) try writer.writeAll(", ");
+                        try writer.print("{d}", .{value});
+                        first = false;
+                    }
+                    try writer.writeAll("]");
+                },
             }
         }
         try writer.writeAll("}");
@@ -364,6 +484,9 @@ pub const Page = struct {
         page.checks = &.{};
         page.summary = &.{};
         page.tables = &.{};
+        page.loads = &.{};
+        page.grids = try readGrids(memory, reply);
+        page.scene = try readScene(memory, reply);
         try page.readOutcome(memory, reply);
         const opened = stringField(reply, "open");
         if (opened.len > 0) {
@@ -393,7 +516,7 @@ pub const Page = struct {
         var skipped: usize = 0;
         for (items) |item| {
             const kind = stringField(item, "kind");
-            const value_kind = std.meta.stringToEnum(enum { float, int, bool, choice, str }, kind) orelse {
+            const value_kind = std.meta.stringToEnum(enum { float, int, bool, choice, str, file, floats }, kind) orelse {
                 skipped += 1;
                 continue;
             };
@@ -432,6 +555,16 @@ pub const Page = struct {
                     param.kind = .text;
                     field.kind = .text;
                     field.setText(if (default == .string) default.string else "");
+                },
+                .file => {
+                    param.kind = .file;
+                    field.kind = .file;
+                    field.setText(if (default == .string) default.string else "");
+                },
+                .floats => { // uma lista de números: "a, b, c" num campo de texto
+                    param.kind = .list;
+                    field.kind = .text;
+                    field.setText(try valueText(memory, default));
                 },
                 .choice => {
                     param.kind = .choice;
@@ -526,7 +659,12 @@ pub const Page = struct {
         };
         var charts: std.ArrayList(Chart) = .empty;
         page.skipped_charts = 0;
+        var loads: std.ArrayList(LoadsScene) = .empty;
         if (reply.object.get("plots")) |list| for (list.array.items) |item| {
+            if (std.mem.eql(u8, stringField(item, "kind"), "loads3d")) {
+                if (try readLoads(memory, item)) |scene| try loads.append(memory, scene);
+                continue;
+            }
             if (!std.mem.eql(u8, stringField(item, "kind"), "2d")) {
                 page.skipped_charts += 1;
                 continue;
@@ -553,6 +691,7 @@ pub const Page = struct {
         page.checks = found.items;
         page.tables = tables.items;
         page.charts = charts.items;
+        page.loads = loads.items;
     }
 
     // ------------------------------------------------------------------ desenho
@@ -583,9 +722,24 @@ pub const Page = struct {
             changed = page.form.drawAt(ui, body.x, y, body.width - 10);
             y += page.form.contentHeight();
         }
+        var grid_edit: ?GridEdit = null;
+        for (page.grids[0..@min(page.grids.len, max_grids)], 0..) |*grid, g| y = page.drawGrid(ui, grid, g, x, y + 4, width, &grid_edit);
         if (page.kind == .stage) y = page.drawKept(ui, x, y + 4, width);
         page.side.end(ui, body, y + 12);
         changed = page.form.drawOpen(ui) or changed;
+        if (page.form.file_request) |index| {
+            page.form.file_request = null;
+            page.pending_file = index;
+            page.picker.show(page.fields[index].label, "data", &.{ ".txt", ".csv", ".dat", ".pol", ".json" });
+        }
+        if (page.file_chosen) {
+            page.file_chosen = false;
+            changed = true;
+        }
+        for (page.grids[0..@min(page.grids.len, max_grids)], 0..) |grid, g| {
+            if (page.grid_tables[g].drawOpen(ui, grid.columns)) |edit| grid_edit = .{ .grid = g, .edit = edit };
+        }
+        if (grid_edit) |edit| page.sendGridEdit(edit);
         if (changed) {
             if (page.kind == .stage) {
                 page.edit_due = std.Io.Clock.awake.now(clockIo()).nanoseconds + edit_delay_ns;
@@ -650,6 +804,59 @@ pub const Page = struct {
         } else page.act(action.key, "");
     }
 
+    /// uma tabela editável numa caixa com título, como o `QGroupBox` das partições na GUI PyQt: a tabela, a nota (os
+    /// totais) e os botões; devolve onde a caixa acaba
+    fn drawGrid(page: *Page, ui: *widgets.Ui, grid: *const Grid, index: usize, x: f32, top: f32, width: f32, edit: *?GridEdit) f32 {
+        var y = top + 8;
+        const note_height = if (grid.note.len > 0) widgets.paragraphHeight(ui.fonts.regular, grid.note, width - 16, 13) + 6 else 0;
+        const buttons_height: f32 = if (grid.buttons.len > 0) 40 else 4;
+        const box_height = 22 + table_mod.height(grid.rows.len) + 6 + note_height + buttons_height;
+        widgets.roundedLines(.{ .x = x, .y = y, .width = width, .height = box_height }, 5, theme.colors.line);
+        const caption_width = theme.textWidth(ui.fonts.regular, grid.title, 14);
+        rl.drawRectangleRec(.{ .x = x + 8, .y = y - 8, .width = caption_width + 30, .height = 16 }, theme.colors.panel);
+        theme.text(ui.fonts.regular, grid.title, x + 12, y - 8, 14, theme.colors.ink);
+        if (grid.help.len > 0) widgets.helpMark(ui, x + 16 + caption_width, y - 8, grid.help);
+        y += 16;
+        const table = &page.grid_tables[index];
+        if (table.draw(ui, x + 6, y, width - 12, grid.columns, grid.rows)) |cell| edit.* = .{ .grid = index, .edit = cell };
+        y += table_mod.height(grid.rows.len) + 6;
+        if (grid.note.len > 0) y += widgets.paragraph(ui.fonts.regular, grid.note, x + 8, y, width - 16, 13, theme.colors.ink) + 6;
+        if (grid.buttons.len > 0) {
+            var used: f32 = 0;
+            if (menus.buttonGrid(ui, x + 6, y, width - 12, grid.buttons, grid.buttons.len, &used)) |button| {
+                edit.* = .{ .grid = index, .button = button };
+            }
+        }
+        return top + 8 + box_height;
+    }
+
+    /// manda a edição de uma tabela (uma célula ou um botão, este na linha selecionada) e refaz a conta
+    fn sendGridEdit(page: *Page, change: GridEdit) void {
+        if (page.job.running() or change.grid >= page.grids.len) return;
+        const grid = page.grids[change.grid];
+        const selected = page.grid_tables[change.grid].selected orelse grid.rows.len -| 1;
+        var text: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
+        defer text.deinit();
+        const writer = &text.writer;
+        writer.print("\"grid\": {f}", .{std.json.fmt(grid.name, .{})}) catch return;
+        if (change.button) |button| {
+            writer.print(", \"edit\": {f}, \"row\": {d}", .{ std.json.fmt(grid.operations[button], .{}), selected }) catch return;
+        } else if (change.edit) |cell| {
+            writer.print(", \"edit\": \"set\", \"row\": {d}, \"key\": {f}, \"value\": ", .{ cell.row, std.json.fmt(grid.keys[cell.column], .{}) }) catch return;
+            switch (cell.value) {
+                .number => |value| writer.print("{d}", .{value}) catch return,
+                .choice => |choice| {
+                    const options = grid.options[cell.column];
+                    const chosen = if (choice >= 0 and choice < options.len) options[@intCast(choice)] else "";
+                    writer.print("{f}", .{std.json.fmt(chosen, .{})}) catch return;
+                },
+                .text => |value| writer.print("{f}", .{std.json.fmt(value, .{})}) catch return,
+                else => return,
+            }
+        } else return;
+        page.stageRequest("grid", text.written());
+    }
+
     /// Guardar e a lista dos guardados (na etapa Perfis, a lista é a dos candidatos: clicar seleciona)
     fn drawKept(page: *Page, ui: *widgets.Ui, x: f32, top: f32, width: f32) f32 {
         var y = top;
@@ -682,13 +889,23 @@ pub const Page = struct {
     }
 
     fn drawResult(page: *Page, ui: *widgets.Ui, rect: rl.Rectangle) void {
+        // a peça em 3D primeiro, como na `StagePage`; a imagem sai numa textura, feita antes do recorte da coluna
+        const width = rect.width - 2 * gap - 10;
+        const view_card: rl.Rectangle = .{ .x = rect.x + gap, .y = rect.y + gap - page.page.offset, .width = width, .height = view_height };
+        const view_area: rl.Rectangle = .{ .x = view_card.x + 1, .y = view_card.y + 28, .width = view_card.width - 2, .height = view_card.height - 29 };
+        if (page.scene) |*scene| page.renderScene(ui, scene, view_area);
+        for (page.loads[0..@min(page.loads.len, max_loads)], 0..) |*scene, k| renderLoads(ui, scene, &page.loads_states[k]);
         const top = page.page.begin(ui, rect);
         var y = top + gap;
-        const width = rect.width - 2 * gap - 10;
+        if (page.scene != null) {
+            _ = widgets.card(ui, view_card, "A peça em 3D (arraste para girar, roda para aproximar)");
+            page.view.blit(ui, view_area);
+            y += view_height + gap;
+        }
         if (page.kind == .simulation and page.description.len > 0) {
             y += widgets.paragraph(ui.fonts.regular, page.description, rect.x + gap + 4, y, width - 8, 14, theme.colors.label) + gap;
         }
-        if (page.charts.len == 0 and page.summary.len == 0 and page.tables.len == 0 and page.checks.len == 0) {
+        if (page.charts.len == 0 and page.summary.len == 0 and page.tables.len == 0 and page.checks.len == 0 and page.scene == null and page.loads.len == 0) {
             const note: []const u8 = if (page.job.running()) "pedindo ao Python..." else if (page.kind == .simulation) "o resultado aparece aqui depois de Rodar" else std.mem.sliceTo(&page.message, 0);
             _ = widgets.paragraph(ui.fonts.regular, note, rect.x + gap + 4, y + 10, width, 16, theme.colors.muted);
             page.page.end(ui, rect, y + 40);
@@ -702,8 +919,17 @@ pub const Page = struct {
             plot.table(ui, .{ .x = rect.x + gap, .y = y, .width = width, .height = height }, table.title, table.headers, table.rows, table.widths);
             y += height + gap;
         }
-        // os gráficos em duas colunas
+        // as vistas de carga e depois os gráficos, em duas colunas, na ordem dos `PlotSpec` (as vistas vêm primeiro)
         const column_width = (width - gap) / 2;
+        var row_height: f32 = 0;
+        for (page.loads[0..@min(page.loads.len, max_loads)], 0..) |*scene, k| {
+            const x = rect.x + gap + @as(f32, @floatFromInt(k % 2)) * (column_width + gap);
+            row_height = @max(row_height, drawLoads(ui, scene, &page.loads_states[k], x, y, column_width));
+            if (k % 2 == 1 or k + 1 == page.loads.len) {
+                y += row_height + gap;
+                row_height = 0;
+            }
+        }
         for (page.charts, 0..) |chart, k| {
             const x = rect.x + gap + @as(f32, @floatFromInt(k % 2)) * (column_width + gap);
             const chart_y = y + @as(f32, @floatFromInt(k / 2)) * (chart_height + gap);
@@ -730,7 +956,368 @@ pub const Page = struct {
         }
         page.page.end(ui, rect, y);
     }
+
+    /// desenha as malhas na textura da vista, com o chão, os eixos e os marcadores (PN em verde, como a GUI PyQt;
+    /// CG em vermelho)
+    fn renderScene(page: *Page, ui: *widgets.Ui, scene: *const Scene, area: rl.Rectangle) void {
+        page.view.handleInput(ui, area);
+        const size = scene.size();
+        const middle = scene.center();
+        if (!page.view.begin(area, middle, 0.8 * size)) return;
+        defer page.view.end();
+        view3d.floor(.{ middle[0], middle[1], 0 }, scene.high[2] + 0.05 * size, 1.4 * size, 0.25);
+        for (scene.meshes) |mesh| {
+            var k: usize = 0;
+            while (k + 2 < mesh.faces.len) : (k += 3) {
+                const a = vertex(mesh.vertices, mesh.faces[k]) orelse continue;
+                const b = vertex(mesh.vertices, mesh.faces[k + 1]) orelse continue;
+                const c = vertex(mesh.vertices, mesh.faces[k + 2]) orelse continue;
+                view3d.triangle(a, b, c, view3d.shaded(a, b, c, mesh.color));
+            }
+        }
+        const low = scene.low[2] - 0.12 * size;
+        const high = scene.high[2] + 0.04 * size;
+        if (scene.neutral_x) |x| {
+            const marker = view3d.fraction(0.1, 0.6, 0.1);
+            view3d.segment(.{ x, 0, low }, .{ x, 0, high }, marker);
+            page.view.label(.{ x, 0, low }, "PN", marker);
+        }
+        if (scene.gravity_center) |point| {
+            const marker = view3d.fraction(0.9, 0.1, 0.1);
+            view3d.segment(.{ point[0], point[1], point[2] - 0.25 }, .{ point[0], point[1], point[2] + 0.25 }, marker);
+            view3d.segment(.{ point[0] - 0.03 * size, point[1], point[2] }, .{ point[0] + 0.03 * size, point[1], point[2] }, marker);
+            page.view.label(.{ point[0], point[1], point[2] - 0.25 }, "CG", marker);
+        }
+        view3d.bodyAxes(&page.view, .{ scene.low[0] - 0.25 * size, scene.low[1], scene.high[2] }, 0.1 * size);
+    }
 };
+
+/// a imagem de uma vista de cargas, na textura do tamanho em que ela saiu no quadro anterior: a malha do método com a
+/// cor do campo, as setas da camada (a maior com 18 % do tamanho, como na GUI PyQt), o resto do avião em
+/// transparência e os eixos
+fn renderLoads(ui: *widgets.Ui, scene: *const LoadsScene, state: *LoadsState) void {
+    if (state.area.width < 8) return;
+    if (!std.mem.eql(u8, state.camera_title[0..state.camera_len], scene.title)) {
+        state.camera_len = @min(scene.title.len, state.camera_title.len);
+        @memcpy(state.camera_title[0..state.camera_len], scene.title[0..state.camera_len]);
+        state.view.elevation = scene.elevation orelse 28;
+        state.view.azimuth = scene.azimuth orelse -125;
+        state.view.zoom = 1;
+    }
+    state.view.handleInput(ui, state.area);
+    const size = scene.size();
+    const middle: view3d.Body = .{ (scene.low[0] + scene.high[0]) / 2, (scene.low[1] + scene.high[1]) / 2, (scene.low[2] + scene.high[2]) / 2 };
+    // a distância da GUI PyQt (2,9 × o maior |vértice|, com o campo de visão de 60° do pyqtgraph) no campo de 35° daqui
+    if (!state.view.begin(state.area, middle, 1.15 * size)) return;
+    defer state.view.end();
+    for (scene.rest) |mesh| {
+        var color = mesh.color;
+        color.a = 56;
+        var k: usize = 0;
+        while (k + 2 < mesh.faces.len) : (k += 3) {
+            const a = vertex(mesh.vertices, mesh.faces[k]) orelse continue;
+            const b = vertex(mesh.vertices, mesh.faces[k + 1]) orelse continue;
+            const c = vertex(mesh.vertices, mesh.faces[k + 2]) orelse continue;
+            view3d.triangle(a, b, c, color);
+        }
+    }
+    if (scene.fields.len > 0) {
+        const field = scene.fields[@min(state.field, scene.fields.len - 1)];
+        const range = fieldRange(field.values, state.symmetric);
+        var k: usize = 0;
+        var t: usize = 0;
+        while (k + 2 < scene.triangles.len) : ({
+            k += 3;
+            t += 1;
+        }) {
+            const a = vertex(scene.vertices, scene.triangles[k]) orelse continue;
+            const b = vertex(scene.vertices, scene.triangles[k + 1]) orelse continue;
+            const c = vertex(scene.vertices, scene.triangles[k + 2]) orelse continue;
+            const source = if (t < scene.face.len) scene.face[t] else 0;
+            const value: f64 = if (source < field.values.len) field.values[source] else std.math.nan(f64);
+            const position = if (std.math.isFinite(value)) (value - range[0]) / (range[1] - range[0]) else 0;
+            view3d.triangle(a, b, c, view3d.fieldColor(position, state.symmetric));
+        }
+    }
+    if (state.vector < scene.vectors.len) {
+        const layer = scene.vectors[state.vector];
+        if (layer.largest > 1e-12) {
+            const factor = 0.18 * size / layer.largest;
+            var k: usize = 0;
+            while (k + 2 < layer.origins.len and k + 2 < layer.vectors.len) : (k += 3) {
+                const origin: view3d.Body = .{ layer.origins[k], layer.origins[k + 1], layer.origins[k + 2] };
+                const arrow: view3d.Body = .{ layer.vectors[k] * factor, layer.vectors[k + 1] * factor, layer.vectors[k + 2] * factor };
+                view3d.arrow(origin, arrow, 0.022 * size, layer.color);
+            }
+        }
+    }
+    view3d.bodyAxes(&state.view, .{ scene.low[0] - 0.12 * size, scene.low[1] - 0.12 * size, scene.high[2] + 0.04 * size }, 0.14 * size);
+}
+
+/// o cartão de uma vista de cargas: o título, as escolhas (mapa, setas, escala), a imagem, a legenda e o caso;
+/// devolve a altura
+fn drawLoads(ui: *widgets.Ui, scene: *const LoadsScene, state: *LoadsState, x: f32, y: f32, width: f32) f32 {
+    const info_height = widgets.paragraphHeight(ui.fonts.regular, scene.info, width - 24, 13);
+    const height = 28 + 36 + loads_view_height + 46 + info_height + 12;
+    const inner = widgets.card(ui, .{ .x = x, .y = y, .width = width, .height = height }, scene.title);
+    var row_y = y + 34;
+    var buffer: [160]u8 = undefined;
+    // as três escolhas da `LoadView` (mapa, setas, escala), cada uma num botão que passa para a próxima
+    const button_width = (width - 24 - 16) / 3;
+    if (scene.fields.len > 0) {
+        const field = scene.fields[@min(state.field, scene.fields.len - 1)];
+        cycleButton(ui, .{ .x = x + 12, .y = row_y, .width = button_width, .height = 28 }, "mapa", field.label, &state.field, scene.fields.len);
+    }
+    var vector_name: [:0]const u8 = "nenhuma";
+    if (state.vector < scene.vectors.len) vector_name = scene.vectors[state.vector].name;
+    cycleButton(ui, .{ .x = x + 20 + button_width, .y = row_y, .width = button_width, .height = 28 }, "setas", vector_name, &state.vector, scene.vectors.len + 1);
+    var scale: usize = @intFromBool(state.symmetric);
+    cycleButton(ui, .{ .x = x + 28 + 2 * button_width, .y = row_y, .width = button_width, .height = 28 }, "escala", if (state.symmetric) "simétrica em 0" else "mín–máx", &scale, 2);
+    state.symmetric = scale == 1;
+    row_y += 36;
+    state.area = .{ .x = inner.x, .y = row_y, .width = inner.width, .height = loads_view_height };
+    state.view.blit(ui, state.area);
+    row_y += loads_view_height + 6;
+    // a legenda: a barra de cores com o mínimo e o máximo, e o tamanho da maior seta
+    if (scene.fields.len > 0) {
+        const field = scene.fields[@min(state.field, scene.fields.len - 1)];
+        const range = fieldRange(field.values, state.symmetric);
+        const bar: rl.Rectangle = .{ .x = x + 12, .y = row_y + 4, .width = @min(width * 0.45, 420), .height = 12 };
+        const steps: usize = 60;
+        for (0..steps) |k| {
+            const step_width = bar.width / @as(f32, @floatFromInt(steps));
+            rl.drawRectangleRec(.{ .x = bar.x + step_width * @as(f32, @floatFromInt(k)), .y = bar.y, .width = step_width + 1, .height = bar.height }, view3d.fieldColor(@as(f64, @floatFromInt(k)) / @as(f64, @floatFromInt(steps - 1)), state.symmetric));
+        }
+        theme.text(ui.fonts.regular, widgets.format(&buffer, "{d:.3}", .{range[0]}), bar.x, bar.y + 15, 12, theme.colors.label);
+        const high_text = widgets.format(&buffer, "{d:.3}", .{range[1]});
+        theme.text(ui.fonts.regular, high_text, bar.x + bar.width - theme.textWidth(ui.fonts.regular, high_text, 12), bar.y + 15, 12, theme.colors.label);
+        theme.text(ui.fonts.regular, field.label, bar.x + bar.width + 14, bar.y - 2, 13, theme.colors.ink);
+        if (state.vector < scene.vectors.len) {
+            const layer = scene.vectors[state.vector];
+            theme.text(ui.fonts.regular, widgets.format(&buffer, "{s}: maior seta = {d:.3} {s}", .{ layer.name, layer.largest, layer.unit }), bar.x + bar.width + 14, bar.y + 15, 12, theme.colors.label);
+        }
+    }
+    row_y += 40;
+    _ = widgets.paragraph(ui.fonts.regular, scene.info, x + 12, row_y, width - 24, 13, theme.colors.label);
+    return height;
+}
+
+/// "rótulo: valor ▸" em `box`: um clique passa para a próxima opção (`count` opções); o texto inteiro fica na dica
+fn cycleButton(ui: *widgets.Ui, box: rl.Rectangle, caption: []const u8, value: []const u8, index: *usize, count: usize) void {
+    var buffer: [200]u8 = undefined;
+    var whole: [200]u8 = undefined;
+    ui.tooltip(box, widgets.format(&whole, "{s}: {s}", .{ caption, value }));
+    // o valor encurta (com "…") até caber no botão
+    var length = value.len;
+    var text = widgets.format(&buffer, "{s}: {s} ▸", .{ caption, value });
+    while (length > 4 and theme.textWidth(ui.fonts.regular, text, 13) > box.width - 16) {
+        length -= 1;
+        while (length > 0 and value[length] & 0xC0 == 0x80) length -= 1; // não corta um caractere UTF-8 no meio
+        text = widgets.format(&buffer, "{s}: {s}… ▸", .{ caption, value[0..length] });
+    }
+    if (dialogs.button(ui, box, text) and count > 0) index.* = (index.* + 1) % count;
+}
+
+/// o mínimo e o máximo de um campo (só os valores finitos); simétrica: de −máx|v| a +máx|v|
+fn fieldRange(values: []const f32, symmetric: bool) [2]f64 {
+    var low = std.math.inf(f64);
+    var high = -std.math.inf(f64);
+    for (values) |value| if (std.math.isFinite(value)) {
+        low = @min(low, value);
+        high = @max(high, value);
+    };
+    if (!std.math.isFinite(low)) return .{ 0, 1 };
+    if (symmetric) {
+        const largest = @max(@abs(low), @abs(high));
+        return if (largest > 0) .{ -largest, largest } else .{ -1, 1 };
+    }
+    return if (high - low < 1e-12) .{ low, low + 1 } else .{ low, high };
+}
+
+/// uma lista de números do JSON em f32 (o que não é número vira NaN)
+fn floats(memory: std.mem.Allocator, value: ?Json) ![]f32 {
+    const list = value orelse return &.{};
+    if (list != .array) return &.{};
+    const out = try memory.alloc(f32, list.array.items.len);
+    for (list.array.items, 0..) |item, k| out[k] = if (number(item)) |found| @floatCast(found) else std.math.nan(f32);
+    return out;
+}
+
+/// uma lista de índices do JSON
+fn indices(memory: std.mem.Allocator, value: ?Json) ![]u32 {
+    const list = value orelse return &.{};
+    if (list != .array) return &.{};
+    const out = try memory.alloc(u32, list.array.items.len);
+    for (list.array.items, 0..) |item, k| out[k] = @intFromFloat(@max(number(item) orelse 0, 0));
+    return out;
+}
+
+/// a vista de cargas de um gráfico "loads3d" (`aerosim/bridge.py`, `_loads`)
+fn readLoads(memory: std.mem.Allocator, item: Json) !?LoadsScene {
+    const loads = item.object.get("loads") orelse return null;
+    if (loads != .object) return null;
+    const vertices = try floats(memory, loads.object.get("vertices"));
+    var low: view3d.Body = .{ std.math.inf(f64), std.math.inf(f64), std.math.inf(f64) };
+    var high: view3d.Body = .{ -std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64) };
+    for (vertices, 0..) |coordinate, k| {
+        low[k % 3] = @min(low[k % 3], coordinate);
+        high[k % 3] = @max(high[k % 3], coordinate);
+    }
+    if (vertices.len < 3) return null;
+    var fields: std.ArrayList(FieldLayer) = .empty;
+    if (loads.object.get("fields")) |list| for (list.array.items) |field| {
+        try fields.append(memory, .{ .label = try memory.dupeZ(u8, stringField(field, "label")), .signed = flag(field, "signed"), .values = try floats(memory, field.object.get("values")) });
+    };
+    var vectors: std.ArrayList(VectorLayer) = .empty;
+    if (loads.object.get("vectors")) |list| for (list.array.items) |layer| {
+        const values = try floats(memory, layer.object.get("vectors"));
+        var largest: f64 = 0;
+        var k: usize = 0;
+        while (k + 2 < values.len) : (k += 3) largest = @max(largest, @sqrt(values[k] * values[k] + values[k + 1] * values[k + 1] + values[k + 2] * values[k + 2]));
+        const rgba = try floats(memory, layer.object.get("color"));
+        const color = if (rgba.len >= 3) view3d.fraction(rgba[0], rgba[1], rgba[2]) else theme.colors.ink;
+        try vectors.append(memory, .{ .name = try memory.dupeZ(u8, stringField(layer, "name")), .unit = stringField(layer, "unit"), .color = color, .origins = try floats(memory, layer.object.get("origins")), .vectors = values, .largest = largest });
+    };
+    var rest: std.ArrayList(Mesh) = .empty;
+    if (loads.object.get("rest")) |list| for (list.array.items) |mesh| {
+        try rest.append(memory, .{ .color = view3d.colorByName(stringField(mesh, "kind")), .vertices = try floats(memory, mesh.object.get("vertices")), .faces = try indices(memory, mesh.object.get("faces")) });
+    };
+    var scene: LoadsScene = .{
+        .title = try memory.dupeZ(u8, stringField(item, "title")),
+        .info = try memory.dupeZ(u8, stringField(loads, "info")),
+        .vertices = vertices,
+        .triangles = try indices(memory, loads.object.get("triangles")),
+        .face = try indices(memory, loads.object.get("face")),
+        .fields = fields.items,
+        .vectors = vectors.items,
+        .rest = rest.items,
+        .low = low,
+        .high = high,
+    };
+    if (loads.object.get("camera")) |camera| if (camera == .object) {
+        if (number(camera.object.get("elevation"))) |value| scene.elevation = @floatCast(value);
+        if (number(camera.object.get("azimuth"))) |value| scene.azimuth = @floatCast(value);
+    };
+    return scene;
+}
+
+/// o que se fez numa tabela editável neste quadro: uma célula ou um botão
+const GridEdit = struct {
+    grid: usize,
+    edit: ?table_mod.Edit = null,
+    button: ?usize = null,
+};
+
+/// o vértice `index` de uma lista plana x, y, z
+fn vertex(vertices: []const f32, index: u32) ?view3d.Body {
+    const start = @as(usize, index) * 3;
+    if (start + 2 >= vertices.len) return null;
+    return .{ vertices[start], vertices[start + 1], vertices[start + 2] };
+}
+
+/// as tabelas editáveis de uma resposta da etapa ("grids")
+fn readGrids(memory: std.mem.Allocator, reply: Json) ![]const Grid {
+    const list = reply.object.get("grids") orelse return &.{};
+    if (list != .array) return &.{};
+    var grids: std.ArrayList(Grid) = .empty;
+    for (list.array.items) |item| {
+        const columns_json = (item.object.get("columns") orelse continue).array.items;
+        const columns = try memory.alloc(table_mod.Column, columns_json.len);
+        const keys = try memory.alloc([]const u8, columns_json.len);
+        const options = try memory.alloc([]const []const u8, columns_json.len);
+        const choice_texts = try memory.alloc([:0]const u8, columns_json.len);
+        for (columns_json, 0..) |column, c| {
+            const is_choice = std.mem.eql(u8, stringField(column, "kind"), "choice");
+            columns[c] = .{ .title = try memory.dupeZ(u8, stringField(column, "label")), .kind = if (is_choice) .choice else .number, .width = if (is_choice) 0 else 0.13, .help = try memory.dupeZ(u8, stringField(column, "help")) };
+            keys[c] = stringField(column, "key");
+            options[c] = &.{};
+            choice_texts[c] = "";
+            if (is_choice) {
+                const items = (column.object.get("choices") orelse continue).array.items;
+                const texts = try memory.alloc([]const u8, items.len);
+                var joined: std.ArrayList(u8) = .empty;
+                for (items, 0..) |option, k| {
+                    texts[k] = if (option == .string) option.string else "";
+                    if (k > 0) try joined.append(memory, ';');
+                    try appendChoice(memory, &joined, if (texts[k].len > 0) texts[k] else "(o da raiz)");
+                }
+                options[c] = texts;
+                choice_texts[c] = try joined.toOwnedSliceSentinel(memory, 0);
+            }
+        }
+        const rows_json = (item.object.get("rows") orelse continue).array.items;
+        const rows = try memory.alloc([]const table_mod.Cell, rows_json.len);
+        for (rows_json, 0..) |row, r| {
+            const cells = try memory.alloc(table_mod.Cell, columns.len);
+            for (cells, 0..) |*cell, c| {
+                const value = if (c < row.array.items.len) row.array.items[c] else Json.null;
+                cell.* = .{};
+                if (columns[c].kind == .choice) {
+                    cell.choices = choice_texts[c];
+                    const chosen = if (value == .string) value.string else "";
+                    for (options[c], 0..) |option, k| {
+                        if (std.mem.eql(u8, option, chosen)) cell.choice = @intCast(k);
+                    }
+                } else cell.number = number(value) orelse 0;
+            }
+            rows[r] = cells;
+        }
+        var buttons: std.ArrayList([:0]const u8) = .empty;
+        var operations: std.ArrayList([]const u8) = .empty;
+        if (item.object.get("buttons")) |button_list| for (button_list.array.items) |button| {
+            if (button != .array or button.array.items.len < 2) continue;
+            try operations.append(memory, if (button.array.items[0] == .string) button.array.items[0].string else "");
+            try buttons.append(memory, try memory.dupeZ(u8, if (button.array.items[1] == .string) button.array.items[1].string else ""));
+        };
+        try grids.append(memory, .{
+            .name = stringField(item, "name"),
+            .title = try memory.dupeZ(u8, stringField(item, "title")),
+            .help = try memory.dupeZ(u8, stringField(item, "help")),
+            .note = try memory.dupeZ(u8, stringField(item, "note")),
+            .columns = columns,
+            .keys = keys,
+            .options = options,
+            .rows = rows,
+            .buttons = buttons.items,
+            .operations = operations.items,
+        });
+    }
+    return grids.items;
+}
+
+/// a vista 3D de uma resposta ("view": as malhas e os marcadores)
+fn readScene(memory: std.mem.Allocator, reply: Json) !?Scene {
+    const view = reply.object.get("view") orelse return null;
+    if (view != .object) return null;
+    const list = (view.object.get("meshes") orelse return null).array.items;
+    const meshes = try memory.alloc(Mesh, list.len);
+    var low: view3d.Body = .{ std.math.inf(f64), std.math.inf(f64), std.math.inf(f64) };
+    var high: view3d.Body = .{ -std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64) };
+    for (list, 0..) |item, m| {
+        const vertices_json = (item.object.get("vertices") orelse return error.BadReply).array.items;
+        const faces_json = (item.object.get("faces") orelse return error.BadReply).array.items;
+        const vertices = try memory.alloc(f32, vertices_json.len);
+        for (vertices_json, 0..) |value, k| {
+            const coordinate = number(value) orelse 0;
+            vertices[k] = @floatCast(coordinate);
+            low[k % 3] = @min(low[k % 3], coordinate);
+            high[k % 3] = @max(high[k % 3], coordinate);
+        }
+        const faces = try memory.alloc(u32, faces_json.len);
+        for (faces_json, 0..) |value, k| faces[k] = @intFromFloat(@max(number(value) orelse 0, 0));
+        meshes[m] = .{ .color = view3d.colorByName(stringField(item, "kind")), .vertices = vertices, .faces = faces };
+    }
+    if (list.len == 0) low = .{ -0.5, -0.5, -0.1 };
+    if (list.len == 0) high = .{ 0.5, 0.5, 0.1 };
+    var scene: Scene = .{ .meshes = meshes, .low = low, .high = high };
+    if (view.object.get("markers")) |markers| if (markers == .object) {
+        scene.neutral_x = number(markers.object.get("np_x"));
+        if (markers.object.get("cg")) |point| if (point == .array and point.array.items.len == 3) {
+            scene.gravity_center = .{ number(point.array.items[0]) orelse 0, number(point.array.items[1]) orelse 0, number(point.array.items[2]) orelse 0 };
+        };
+    };
+    return scene;
+}
 
 // ---------------------------------------------------------------------- ajudas
 

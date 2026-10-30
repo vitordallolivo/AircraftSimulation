@@ -1,4 +1,5 @@
-//! O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador e escolha. A tela descreve os campos numa lista (o equivalente do `ParamSpec` do
+//! O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador,
+//! escolha, texto e arquivo (o caminho; o clique pede o arquivo a quem desenha, que abre a janela de escolher). A tela descreve os campos numa lista (o equivalente do `ParamSpec` do
 //! aerosim em Python) e o mesmo código desenha o formulário de qualquer aba. A edição de número e a lista de
 //! escolhas são do raygui.
 const std = @import("std");
@@ -10,7 +11,9 @@ const scroll = @import("scroll.zig");
 const numbers = @import("numbers.zig");
 const numberText = numbers.numberText;
 
-pub const Kind = enum { number, toggle, choice, text };
+pub const Kind = enum { number, toggle, choice, text, file };
+
+const text_capacity = 256;
 
 /// a caixa de um valor: branca, de cantos arredondados, borda fina
 fn fieldBox(control: rl.Rectangle) void {
@@ -30,7 +33,7 @@ pub const Field = struct {
     checked: bool = false,
     choices: [:0]const u8 = "", // opções separadas por ";" (o formato do raygui)
     choice: i32 = 0,
-    text: [48:0]u8 = [_:0]u8{0} ** 48, // o valor de um campo de texto (um nome)
+    text: [text_capacity:0]u8 = [_:0]u8{0} ** text_capacity, // o valor de um campo de texto (um nome, um caminho)
     enabled: bool = true, // desligado: aparece em cinza e não edita (o campo que outro modo calcula)
     help: [:0]const u8 = "", // a dica com o mouse em cima do rótulo
 
@@ -41,8 +44,8 @@ pub const Field = struct {
 
     /// troca o texto de um campo de texto
     pub fn setText(field: *Field, value: []const u8) void {
-        field.text = [_:0]u8{0} ** 48;
-        const length = @min(value.len, 47);
+        field.text = [_:0]u8{0} ** text_capacity;
+        const length = @min(value.len, text_capacity - 1);
         @memcpy(field.text[0..length], value[0..length]);
     }
 };
@@ -65,6 +68,7 @@ pub const Form = struct {
     open_choice: ?usize = null, // escolha com a lista aberta
     opening: bool = false, // a lista abriu neste quadro (o raygui veria o mesmo clique e fecharia)
     edit_text: [32:0]u8 = [_:0]u8{0} ** 32,
+    file_request: ?usize = null, // clicou num campo de arquivo: quem desenha abre a janela de escolher e põe o caminho
     origin: rl.Vector2 = .{ .x = 0, .y = 0 }, // onde o formulário foi desenhado no último quadro
     width: f32 = 0,
 
@@ -178,10 +182,21 @@ pub const Form = struct {
                 }
                 return false;
             },
-            .number, .choice, .text => {
+            .number, .choice, .text, .file => {
                 const caption = if (field.unit.len > 0) widgets.format(&buffer, "{s} ({s})", .{ field.label, field.unit }) else field.label;
                 theme.text(ui.fonts.regular, caption, x, y + 7, 14, label_color);
             },
+        }
+        if (field.kind == .file) {
+            fieldBox(control);
+            const shown = std.fs.path.basename(field.textValue());
+            var name_buffer: [96]u8 = undefined;
+            ui.pushClip(control);
+            theme.text(ui.fonts.mono, widgets.format(&name_buffer, "{s}", .{if (shown.len > 0) shown else "escolher…"}), control.x + 6, control.y + 5, 14, if (shown.len > 0) theme.colors.ink else theme.colors.muted);
+            ui.popClip();
+            if (field.textValue().len > 0) ui.tooltip(control, field.text[0..field.textValue().len :0]);
+            if (field.enabled and ui.clickedIn(control)) form.file_request = index;
+            return false;
         }
         if (field.kind == .text) {
             if (form.editing == index) {

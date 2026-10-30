@@ -4,6 +4,19 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## Não lançado
 
+### v0.2.5 (em andamento na `0.2_dev`)
+
+- aerosim no navegador com os menus atuais: a página abre num iframe escondido o Pyodide com o pacote aerosim e o
+  núcleo como side module (`aerosim/gui/web/python.html`), e a tela em Zig chama a mesma ponte na hora
+  (`aerosim.bridge.call_in_browser`). `tools/web_build.py` baixa o Pyodide e o emsdk e monta tudo; `--sem-python`
+  deixa só a Montagem. No navegador ainda não há lltdrek, ASB nem AVL, nem cancelar.
+- páginas em Zig com os mesmos objetos da GUI PyQt na Aerodinâmica: Projetar mostra a peça em 3D com o ponto neutro
+  (a Empenagem e Motores mandam também o CG) e a tabela de partições editável ("+ partição", "− partição", "do
+  trapézio", os totais embaixo), que a ponte edita pelo pedido de etapa "grid" (`Stage.grids`/`edit_grid` em
+  `aerosim/manager/stages.py`); Analisar mostra as vistas 3D da carga (`loads3d`: o mapa de cores por face, as
+  setas de cada camada e a escala, trocados por botões, com a legenda), antes dos gráficos 2D; campos de arquivo
+  (abrem o seletor) e de lista de números.
+
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 
 - interface do aerosim em Zig igual à GUI PyQt, com os managers em Python: as áreas e as subabas vêm do Python na

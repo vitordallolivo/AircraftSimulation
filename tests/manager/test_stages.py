@@ -64,3 +64,30 @@ def test_airfoil_actions(tmp_path):
     assert "já está" in airfoils.act("naca", "0012")
     airfoils.delete(len(airfoils.kept()) - 1)
     assert len(airfoils.kept()) == before
+
+
+def test_partition_table_edits_the_draft(tmp_path):
+    """a tabela de partições da etapa Asa (a mesma de `WingPage` na GUI PyQt): só aparece na planta por tabela, e cada
+    edição volta para o rascunho e refaz os totais"""
+    from aerosim.design import wing as wg
+    ctx = _context(tmp_path)
+    wing = stages.WingStage(ctx)
+    assert wing.grids() == []                                    # trapézio: sem tabela
+    wing.set({"planform": wg.PLANFORMS[1]})
+    grid, = wing.grids()
+    assert [c.key for c in grid.columns] == ["span", "chord", "taper", "airfoil", "offset", "twist"]
+    rows = len(grid.rows)
+    wing.edit_grid(grid.name, "add", rows - 1)
+    assert len(wing.grids()[0].rows) == rows + 1
+    wing.edit_grid(grid.name, "set", 0, "span", 0.9)
+    assert ctx.design.wing_draft.partitions[0].span == 0.9
+    assert wing.grids()[0].note.startswith("envergadura total:")
+    wing.edit_grid(grid.name, "delete", rows)
+    assert len(wing.grids()[0].rows) == rows
+
+
+def test_wing_outcome_has_a_view_and_the_neutral_point(tmp_path):
+    from aerosim import bridge
+    outcome = stages.WingStage(_context(tmp_path)).compute()
+    view = bridge._view(outcome.aircraft, outcome.markers)
+    assert view["meshes"] and "np_x" in view["markers"]

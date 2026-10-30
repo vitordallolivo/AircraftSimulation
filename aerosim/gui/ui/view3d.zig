@@ -30,6 +30,47 @@ pub fn kindColor(kind: Kind) rl.Color {
     };
 }
 
+/// a cor de uma peça pelo nome do tipo, a tabela `COLORS` inteira de `aerosim/gui/widgets/view3d.py` (com a
+/// transparência do disco da hélice e do tanque); um tipo desconhecido sai cinza
+pub fn colorByName(kind: []const u8) rl.Color {
+    if (std.meta.stringToEnum(Kind, kind)) |known| return kindColor(known);
+    const table = [_]struct { name: []const u8, rgba: [4]f32 }{
+        .{ .name = "propdisk", .rgba = .{ 0.9, 0.3, 0.3, 0.25 } },
+        .{ .name = "tank", .rgba = .{ 0.6, 0.85, 0.95, 0.25 } },
+        .{ .name = "liquid", .rgba = .{ 0.15, 0.45, 0.95, 0.75 } },
+        .{ .name = "payload", .rgba = .{ 0.55, 0.35, 0.15, 1 } },
+        .{ .name = "ballast", .rgba = .{ 0.25, 0.25, 0.28, 1 } },
+        .{ .name = "wheel", .rgba = .{ 0.1, 0.1, 0.1, 1 } },
+        .{ .name = "strut", .rgba = .{ 0.3, 0.3, 0.3, 1 } },
+    };
+    for (table) |entry| if (std.mem.eql(u8, entry.name, kind)) {
+        var color = fraction(entry.rgba[0], entry.rgba[1], entry.rgba[2]);
+        color.a = @intFromFloat(entry.rgba[3] * 255);
+        return color;
+    };
+    return fraction(0.7, 0.7, 0.7);
+}
+
+/// a cor de um valor `t` (0 a 1) num mapa de campo, como os da vista de cargas em Python (`load_view.py`): o "turbo"
+/// do Google (Mikhailov, 2019) por um polinômio de quinto grau que circula com ele (a conferir contra a tabela do
+/// turbo) ou, com sinal, um mapa divergente azul–cinza–vermelho no lugar do CET-D1 (a conferir contra a tabela do CET)
+pub fn fieldColor(value: f64, signed: bool) rl.Color {
+    const t = std.math.clamp(value, 0, 1);
+    if (signed) {
+        const blue = [3]f64{ 0.13, 0.40, 0.93 };
+        const middle = [3]f64{ 0.86, 0.86, 0.86 };
+        const red = [3]f64{ 0.90, 0.18, 0.15 };
+        const from = if (t < 0.5) blue else middle;
+        const to = if (t < 0.5) middle else red;
+        const s = if (t < 0.5) t * 2 else (t - 0.5) * 2;
+        return fraction(@floatCast(from[0] + (to[0] - from[0]) * s), @floatCast(from[1] + (to[1] - from[1]) * s), @floatCast(from[2] + (to[2] - from[2]) * s));
+    }
+    const red = 0.13572138 + t * (4.61539260 + t * (-42.66032258 + t * (132.13108234 + t * (-152.94239396 + t * 59.28637943))));
+    const green = 0.09140261 + t * (2.19418839 + t * (4.84296658 + t * (-14.18503333 + t * (4.27729857 + t * 2.82956604))));
+    const blue = 0.10667330 + t * (12.64194608 + t * (-60.58204836 + t * (110.36276771 + t * (-89.90310912 + t * 27.34824973))));
+    return fraction(@floatCast(std.math.clamp(red, 0, 1)), @floatCast(std.math.clamp(green, 0, 1)), @floatCast(std.math.clamp(blue, 0, 1)));
+}
+
 /// cor a partir de frações de 0 a 1 (como no pyqtgraph)
 pub fn fraction(red: f32, green: f32, blue: f32) rl.Color {
     return .{ .r = @intFromFloat(red * 255), .g = @intFromFloat(green * 255), .b = @intFromFloat(blue * 255), .a = 255 };

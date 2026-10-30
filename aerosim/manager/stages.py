@@ -57,6 +57,29 @@ class Outcome:
     tables: list[Table] = field(default_factory=list)
     message: str = ""
     aircraft: Aircraft | None = None
+    markers: dict = field(default_factory=dict)    # no 3D: cg=[x, y, z] e np_x (ponto neutro), como a GUI PyQt
+
+
+@dataclass
+class GridColumn:
+    """uma coluna de tabela editável: o campo, o título, o tipo ("float" ou "choice") e as opções"""
+    key: str
+    label: str
+    kind: str = "float"
+    choices: tuple = ()
+    help: str = ""
+
+
+@dataclass
+class Grid:
+    """uma tabela que se edita no lugar (as partições da asa), com os botões dela; `rows`: os valores por linha"""
+    name: str
+    title: str
+    columns: list
+    rows: list
+    note: str = ""
+    help: str = ""
+    buttons: list = field(default_factory=list)      # [(op, rótulo, dica)]
 
 
 @dataclass
@@ -143,6 +166,14 @@ class Stage:
     def disabled(self) -> tuple:
         """campos que aparecem em cinza (o modo atual calcula eles)"""
         return ()
+
+    def grids(self) -> list[Grid]:
+        """as tabelas editáveis da etapa (as partições da asa)"""
+        return []
+
+    def edit_grid(self, name: str, op: str, row: int, key: str = "", value: Any = None) -> None:
+        """uma edição numa tabela: "set" (a célula `key` da linha `row`) ou um botão dela"""
+        raise KeyError(name)
 
     # comum
     def sanitize(self) -> None:
@@ -334,7 +365,65 @@ class WingStage(Stage):
         others = [w for w in d.wings if w.name != cand.name]
         specs, res, r = R.wing_stage(cand, d.requirements, d.rules, others)
         self.ctx.values.update(rg.wing_values(r))
-        return Outcome(specs, res, aircraft=only_surfaces([r["surface"]]))
+        return Outcome(specs, res, aircraft=only_surfaces([r["surface"]]), markers=dict(np_x=r["planform"]["x_ac"]))
+
+    # a tabela de partições (a mesma de `WingPage` na GUI PyQt)
+    COLUMNS = (("span", "envergadura (m)", "quanto a partição soma na envergadura total (metade de cada lado)"),
+               ("chord", "corda (m)", "corda no começo da partição (do lado do centro)"),
+               ("taper", "afilamento", "corda no fim / corda no começo (1 = reta)"),
+               ("airfoil", "perfil", "perfil no fim da partição (vazio = o da raiz); ao longo dela ele passa do da "
+                                     "anterior para este"),
+               ("offset", "recuo (m)", "quanto o bordo de ataque anda para trás ao longo da partição "
+                                       "(enflechamento): move o centro aerodinâmico, e com ele o CG de projeto. 0 = "
+                                       "bordo de ataque reto"),
+               ("twist", "θ (°)", "torção no fim da partição, em relação à raiz: − = washout, a ponta estola depois "
+                                  "(o aileron continua mandando no estol), custa um pouco de sustentação"))
+    GRID_BUTTONS = (("add", "+ partição", "nova partição depois da selecionada (ou no fim), começando com a corda em "
+                                          "que a anterior termina"),
+                    ("delete", "− partição", "apaga a selecionada (fica pelo menos uma)"),
+                    ("reset", "do trapézio", "refaz a tabela a partir do trapézio atual"))
+
+    def grids(self):
+        p = self.draft()
+        if p.planform != wg.PLANFORMS[1]:
+            return []
+        names = ("",) + tuple(self.ctx.design.airfoil_names())
+        columns = [GridColumn(k, label, "choice" if k == "airfoil" else "float",
+                              names if k == "airfoil" else (), tip) for k, label, tip in self.COLUMNS]
+        extra = tuple(q.airfoil for q in p.partitions if q.airfoil not in names)
+        if extra:
+            columns[3].choices = names + extra
+        b, S = wg.totals(p)
+        note = f"envergadura total: {b:.3f} m · área: {S:.4f} m² · alongamento: " \
+               f"{b * b / S if S > 0 else float('nan'):.2f}"
+        return [Grid("partições", "Partições (do centro para a ponta)", columns,
+                     [[getattr(q, k) for k, _, _ in self.COLUMNS] for q in p.partitions], note,
+                     "uma linha por partição, como na planilha: envergadura, corda, afilamento, perfil, recuo e "
+                     "torção. A envergadura total é a soma das partições. Uma asa reta é uma linha só (afilamento 1).",
+                     list(self.GRID_BUTTONS))]
+
+    def edit_grid(self, name, op, row, key="", value=None):
+        p = self.draft()
+        parts = p.partitions
+        row = row if 0 <= row < len(parts) else len(parts) - 1
+        if op == "set":
+            if key == "airfoil":
+                setattr(parts[row], key, str(value or ""))
+            else:
+                number = float(value)
+                setattr(parts[row], key, max(number, 0.0) if key in ("span", "chord", "taper") else number)
+        elif op == "add":
+            a = parts[row]
+            parts.insert(row + 1, wg.WingPartition(0.2, round(a.chord * a.taper, 4), 1.0, a.airfoil, 0.0, a.twist))
+        elif op == "delete":
+            if len(parts) > 1:
+                parts.pop(row)
+        elif op == "reset":
+            p.partitions = wg.partitions_from_trapezoid(p)
+        else:
+            raise KeyError(op)
+        wg.sync(p)
+        self.ctx.save()
 
     def keep(self):
         d = self.ctx.design
@@ -380,7 +469,8 @@ class TailStage(Stage):
         specs, res, r = R.set_stage(cand, d.requirements, d.rules, d.airfoil_map())
         ac = r["set"]
         return Outcome(specs, res, tables=[dims_table(ac, cg=(r["x_cg"], 0.0, 0.0))],
-                       aircraft=only_surfaces(ac.surfaces, ac.boom))
+                       aircraft=only_surfaces(ac.surfaces, ac.boom), markers=dict(cg=[r["x_cg"], 0.0, 0.0],
+                                                                                  np_x=r["x_np"]))
 
     def keep(self):
         d = self.ctx.design
@@ -425,7 +515,8 @@ class PowerStage(Stage):
         specs, res, ac, asm, pf = R.aircraft_stage(cand, d.requirements, d.rules, self.ctx.catalog,
                                                    self.ctx.backend, d.airfoil_map())
         self.ctx.values.update(rg.aircraft_values(ac, asm, pf, cand.params))
-        return Outcome(specs, res, tables=[self.mass_table(asm, pf), dims_table(ac)], aircraft=ac)
+        return Outcome(specs, res, tables=[self.mass_table(asm, pf), dims_table(ac)], aircraft=ac,
+                       markers=dict(cg=[asm["x_cg_target"], 0.0, 0.0]))
 
     @staticmethod
     def mass_table(asm: dict, pf: dict) -> Table:
