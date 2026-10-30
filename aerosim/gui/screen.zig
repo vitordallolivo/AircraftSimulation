@@ -10,13 +10,14 @@ const view3d = ui_kit.view3d;
 const analyze_tab = @import("analyze_tab.zig");
 const airfoil_tab = @import("airfoil_tab.zig");
 const wing_tab = @import("wing_tab.zig");
+const python_tab = @import("python_tab.zig");
 const design_mod = @import("design.zig");
 const requirements_dialog = @import("requirements_dialog.zig");
 const assembly_mod = @import("assembly.zig");
 const aircraft_model = @import("aircraft_model");
 
 const areas = [_][:0]const u8{ "Dimensionamento", "Aerodinâmica", "Estabilidade", "Desempenho", "Cargas", "Montagem" };
-const aero_tabs = [_][:0]const u8{ "Perfis", "Projetar", "Analisar" };
+const aero_tabs = [_][:0]const u8{ "Perfis", "Projetar", "Analisar", "Pelo Python (teste)" };
 
 pub const Screen = struct {
     area: usize = 1,
@@ -25,6 +26,8 @@ pub const Screen = struct {
     analyze: analyze_tab.AnalyzeTab = .{},
     airfoils: airfoil_tab.AirfoilTab = .{},
     wing: wing_tab.WingTab = .{},
+    python: python_tab.PythonTab = .{}, // as abas do Python pela ponte (teste da arquitetura)
+    io: ?std.Io = null, // a `Io` do processo (o programa a passa em `ui/app.zig`): a ponte abre o Python com ela
     design: design_mod.Design = .{}, // o projeto de dimensionamento (Perfis e Projetar)
     requirements: requirements_dialog.RequirementsDialog = .{}, // "Condições e restrições…", aberta por qualquer etapa
     files: ui_kit.dialogs.FilePicker = .{}, // abrir e salvar o avião (cabeçalho)
@@ -34,8 +37,8 @@ pub const Screen = struct {
     loader: ui_kit.jobs.Job = .{}, // lê o .json fora do laço da tela
     loading: Loading = .{},
 
-    /// abre a aba de área `index` (0 = Dimensionamento ... 5 = Montagem; 6, 7 e 8 = Aerodinâmica → Perfis, Projetar
-    /// e Analisar), para os prints
+    /// abre a aba de área `index` (0 = Dimensionamento ... 5 = Montagem; 6, 7, 8 e 9 = Aerodinâmica → Perfis,
+    /// Projetar, Analisar e Pelo Python), para os prints
     pub fn selectTab(screen: *Screen, index: usize) void {
         if (index >= areas.len) {
             screen.area = 1;
@@ -83,6 +86,8 @@ fn requirementsTab(name: []const u8) ?usize {
         } else if (requirementsTab(name)) |tab| {
             screen.requirements.show();
             screen.requirements.dialog.tab = tab;
+        } else if (std.mem.eql(u8, name, "rodar")) {
+            screen.python.command(name);
         } else if (std.mem.eql(u8, name, "tabela")) {
             screen.wing.command(name);
         } else screen.airfoils.command(name);
@@ -134,6 +139,7 @@ fn requirementsTab(name: []const u8) ?usize {
         if (screen.assembly) |*old| old.deinit();
         screen.assembly = loaded;
         screen.analyze.setAircraft(screen.aircraft());
+        screen.python.setAircraftPath(path);
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · {d} peças · arraste outro .json para a janela para trocar · arraste para girar, roda para aproximar", .{ std.fs.path.basename(path), loaded.mesh.piece_count }) catch {};
     }
 
@@ -180,6 +186,9 @@ fn requirementsTab(name: []const u8) ?usize {
             screen.wing.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top });
         } else if (screen.area == 1 and screen.aero_tab == 2) {
             screen.analyze.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top }, screen.aircraft());
+        } else if (screen.area == 1 and screen.aero_tab == 3) {
+            screen.python.process_io = screen.io;
+            screen.python.draw(ui, .{ .x = 0, .y = top, .width = width, .height = height - top });
         } else if (screen.area == 5) {
             screen.drawAssembly(ui, .{ .x = 0, .y = top, .width = width, .height = height - top });
         } else {

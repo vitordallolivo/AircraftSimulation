@@ -11,7 +11,9 @@ aeroopt: as cores e as fontes, as formas do visual, os widgets (cabeçalho, abas
 lateral, o gráfico, a vista 3D e o laço do programa. Em `screen.zig` fica a tela do aerosim, montada com essas peças, e cada aba
 tem o seu arquivo: `airfoil_tab.zig` (Perfis) com a etapa em `airfoil_stage.zig`, `wing_tab.zig`
 (Projetar), `analyze_tab.zig` (Analisar) com as contas em `wing_analysis.zig`, e `assembly.zig`
-(Montagem). O projeto de dimensionamento que Perfis e Projetar dividem fica em `design.zig`.
+(Montagem). O projeto de dimensionamento que Perfis e Projetar dividem fica em `design.zig`. A aba "Pelo Python
+(teste)" (`python_tab.zig`, com a ponte em `python_bridge.zig`) é o teste do caminho escolhido para a interface: a
+tela em Zig e as contas nos managers em Python.
 
 ## As peças (`ui/`)
 
@@ -175,6 +177,25 @@ como o `refine_surface` em Python. A carga por unidade de envergadura é $L' = q
 dinâmica e $c$ a corda do painel. O teste confere o C_L e o C_L máximo do avião de exemplo contra a GUI em Python
 pelos dois métodos.
 
+## As abas do Python (`python_tab.zig`, `python_bridge.zig`)
+
+Aqui a tela não sabe nada da análise: ela mostra qualquer aba do Simulation Manager em Python, com o mesmo código
+que roda na GUI PyQt (lltdrek, AeroSandbox, o núcleo pelo ctypes). O problema que isso resolve é a fidelidade: as
+abas reescritas à mão em Zig (Analisar, por exemplo) só têm os métodos do núcleo, e cada análise nova precisaria ser
+portada antes de aparecer. Com a ponte, uma aba nova em Python aparece aqui sem mexer no Zig, e o que for passando
+para o núcleo sai do Python depois, uma parte por vez.
+
+A ponte é um processo filho: a tela abre `python -m aerosim.bridge` na pasta do repositório e conversa por uma
+mensagem JSON por linha (os pedidos estão no começo de `aerosim/bridge.py`). Ela pede a lista das abas, os campos
+(`ParamSpec`) e os gráficos (`PlotSpec`) da escolhida, e monta o formulário com eles; mudar um campo que refaz o
+formulário (como "asas de") pede os campos de novo, guardando os valores que já existiam. Rodar manda os valores, e
+a resposta traz o resumo, o diagnóstico e as curvas já separadas por gráfico. A rodada corre numa `Job`, e a barra
+mostra o progresso que o Python manda; Parar cancela no Python. O Python abre o mesmo `.json` da Montagem.
+
+Por enquanto a tela desenha campos de número, marcador e escolha, e gráficos 2D. Tabela, arquivo e as vistas 3D
+ficam com o valor padrão do Python e aparecem só como nota. No navegador ainda não há ponte: lá ela vai ser o
+Pyodide num web worker, com a mesma mensagem.
+
 ## Como chamar
 
 Precisa do Zig 0.16 (`pip install ziglang`) e, no Linux, dos cabeçalhos do sistema de janelas listados no
@@ -190,6 +211,7 @@ python -m ziglang build test                                  # testes sem janel
 python -m ziglang build run                                   # abre o aerosim
 xvfb-run -a python -m ziglang build shot -- aerosim.png       # print sem tela
 xvfb-run -a python -m ziglang build shot -- montagem.png aba=5   # print de outra aba
+xvfb-run -a python -m ziglang build shot -- python.png ../data/aircraft/Asa_voadora.json aba=9 acao=rodar   # a aba do Python, rodada
 python -m ziglang build run -- ../data/aircraft/Asa_voadora.json   # abre um avião
 ```
 

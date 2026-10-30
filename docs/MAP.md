@@ -7,6 +7,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 ## Python · `aerosim`
 
 - `aerosim/__init__.py` — aerosim — simulador 6GDL de aeronaves em camadas:
+- `aerosim/bridge.py` — Ponte entre a tela em Zig (raylib) e os managers em Python: uma mensagem JSON por linha, na entrada e na saída
+  `class Bridge:35`, `main:169`
 
 ## Python · `aerosim/aero`
 
@@ -694,13 +696,17 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Requirements:18`, `Rules:55`, `Power:77`, `Name:88`, `WingPartition:108`, `WingParams:119`, `SavedWing:192`, `Design:198`
   fn `libraryFolder:451`, `readDat:462`, `readPolar:471`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
+- `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
+  tipos `Bridge:14`
+- `aerosim/gui/python_tab.zig` — A aba Aerodinâmica → Pelo Python (teste da arquitetura raylib → managers em Python → núcleo Zig). A tela não
+  tipos `PythonTab:57`
 - `aerosim/gui/registry.zig` — As grandezas do projeto e o que se faz com elas, como `aerosim/design/registry.py`: o que dá para medir
   tipos `Info:11`, `Stage:20`, `Quantity:23`, `Op:93`, `Constraint:109`, `Constraints:186`, `Verdict:234`, `Input:260`, `InputInfo:297`, `Mode:310`, `Variable:319`
   fn `shortNumber:145`, `verdicts:242`, `defaultVariables:357`, `limitedInput:368`, `boundsFromConstraints:379`
 - `aerosim/gui/requirements_dialog.zig` — A janela "Condições e restrições…", como o `RequirementsDialog` da GUI em Python: quatro abas que editam o
   tipos `RequirementsDialog:99`
 - `aerosim/gui/screen.zig` — A tela do aerosim: cabeçalho, abas das áreas e subabas da Aerodinâmica. Cada aba feita mora no arquivo dela
-  tipos `Screen:21`
+  tipos `Screen:22`
 - `aerosim/gui/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos e a asa de exemplo.
 - `aerosim/gui/wing_analysis.zig` — A análise das asas do avião aberto (a aba Aerodinâmica → Analisar), em Zig: o mesmo caminho da simulação "Asas"
   tipos `Method:28`, `Input:31`, `Result:42`
@@ -832,7 +838,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 75 testes em 11 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 70 testes em 11 arquivo(s)
+- `tests/manager` — 74 testes em 12 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)

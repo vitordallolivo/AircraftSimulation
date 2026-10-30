@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.4 (branch `0.2_dev`)
 
+- teste do caminho raylib → managers em Python → núcleo Zig: `aerosim/bridge.py` atende a tela em Zig por JSON
+  (listar as abas, campos e gráficos, rodar, cancelar), e a aba Aerodinâmica → "Pelo Python (teste)" monta o
+  formulário e os gráficos de qualquer aba `ISimulation` a partir das specs, com os mesmos números da GUI PyQt
+  (`tests/manager/test_bridge.py`). Só no PC por enquanto; campos de tabela e arquivo e as vistas 3D ficam no padrão.
 - aerosim e aeroopt em Zig no navegador, para teste: os dois compilam para wasm (`-Dtarget=wasm32-emscripten`), com
   os aviões de exemplo, os perfis de `data/airfoils` e as fontes no pacote; "abrir do computador" ou arrastar o
   arquivo para a página, e salvar baixa o arquivo. `tools/web_build.py` e o workflow do site publicam os três
