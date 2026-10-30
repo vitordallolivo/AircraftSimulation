@@ -48,6 +48,7 @@ const default_fields = [_]form_mod.Field{
 };
 
 const max_choices = design_mod.max_airfoils * 2;
+const summary_rows = 28;
 
 pub const WingTab = struct {
     groups: [3]form_mod.Group = .{ .{ .title = "Planta (trapézio)" }, .{ .title = "Perfis (de Perfis e da biblioteca)" }, .{ .title = "Condições de projeto" } },
@@ -354,7 +355,7 @@ pub const WingTab = struct {
         const column_width = (rect.width - 3 * gap) / 2;
         const row_height: f32 = 300;
         const view_height: f32 = 320;
-        const summary_height: f32 = 380;
+        const summary_height: f32 = plot.tableHeight(summary_rows);
         const content_height = view_height + gap + 3 * (row_height + gap) + summary_height + 2 * gap;
         const x0 = rect.x + gap;
         const x1 = x0 + column_width + gap;
@@ -473,34 +474,62 @@ pub const WingTab = struct {
         }
     }
 
-    fn drawSummary(tab: *WingTab, ui: *widgets.Ui, rect: rl.Rectangle) void {
-        const inner = widgets.labeledCard(ui, rect, "Números da asa");
+    /// os números da asa, um por linha (grandeza, valor, unidade), para a tabela e o CSV
+    fn summaryRows(tab: *WingTab, texts: *[summary_rows][3][48:0]u8, cells: *[summary_rows][3]plot.Cell) void {
         const r = &tab.result;
-        var values: [14][96]u8 = undefined;
-        var airfoil_text: [160]u8 = undefined;
-        const rows = [_][2][:0]const u8{
-            .{ "b, S, AR", widgets.format(&values[0], "{d:.3} m · {d:.4} m² · {d:.3}", .{ r.span, r.area, r.aspect_ratio }) },
-            .{ "corda da raiz, da ponta, CMA (m)", widgets.format(&values[1], "{d:.4} · {d:.4} · {d:.4}", .{ r.root_chord, r.tip_chord, r.mean_chord }) },
-            .{ "perfil (polar por modelo ou arquivo)", if (tab.tip_used) widgets.format(&airfoil_text, "{s} → {s} (Re {d:.0})", .{ std.mem.sliceTo(&tab.root_name, 0), std.mem.sliceTo(&tab.tip_name, 0), r.reynolds }) else widgets.format(&airfoil_text, "{s} (Re {d:.0})", .{ std.mem.sliceTo(&tab.root_name, 0), r.reynolds }) },
-            .{ "C_Lα (1/rad), C_L0, α_L0 (°)", widgets.format(&values[2], "{d:.4} · {d:.4} · {d:.3}", .{ r.lift_slope, r.lift_zero, r.alpha_zero }) },
-            .{ "C_L,max, α de estol (°)", widgets.format(&values[3], "{d:.4} · {d:.3}", .{ r.lift_max, r.alpha_stall }) },
-            .{ "estol começa em (2y/b)", widgets.format(&values[4], "{d:.3}", .{r.stall_fraction}) },
-            .{ "Oswald e (no cruzeiro)", widgets.format(&values[5], "{d:.4}", .{r.oswald}) },
-            .{ "(L/D) máx., C_L nele", widgets.format(&values[6], "{d:.3} · {d:.4}", .{ r.ld_max, r.lift_at_ld }) },
-            .{ "cruzeiro: C_L, α da asa (°), L/D", widgets.format(&values[7], "{d:.4} · {d:.3} · {d:.3}", .{ r.lift_cruise, r.alpha_cruise, r.ld_cruise }) },
-            .{ "incidência da asa (°)", widgets.format(&values[8], "{d:.3}", .{r.incidence}) },
-            .{ "V de estol (massa estimada, m/s)", widgets.format(&values[9], "{d:.3}", .{r.stall_speed}) },
-            .{ "carga alar (kg/m²), massa da asa (kg)", widgets.format(&values[10], "{d:.3} · {d:.3}", .{ r.wing_loading, r.wing_mass }) },
-            .{ "Re na raiz, na ponta", widgets.format(&values[11], "{d:.0} · {d:.0}", .{ r.reynolds_root, r.reynolds_tip }) },
-            .{ "C_m,ac da asa", widgets.format(&values[12], "{d:.4}", .{r.moment}) },
+        const tip = if (tab.tip_used) std.mem.sliceTo(&tab.tip_name, 0) else std.mem.sliceTo(&tab.root_name, 0);
+        const Item = struct { name: []const u8, value: f64, unit: []const u8, decimals: u8 = 4, text: ?[]const u8 = null };
+        const items = [summary_rows]Item{
+            .{ .name = "envergadura b", .value = r.span, .unit = "m", .decimals = 3 },
+            .{ .name = "área S", .value = r.area, .unit = "m²" },
+            .{ .name = "alongamento AR", .value = r.aspect_ratio, .unit = "", .decimals = 3 },
+            .{ .name = "corda da raiz", .value = r.root_chord, .unit = "m" },
+            .{ .name = "corda da ponta", .value = r.tip_chord, .unit = "m" },
+            .{ .name = "corda média (CMA)", .value = r.mean_chord, .unit = "m" },
+            .{ .name = "perfil da raiz", .value = std.math.nan(f64), .unit = "", .text = std.mem.sliceTo(&tab.root_name, 0) },
+            .{ .name = "perfil da ponta", .value = std.math.nan(f64), .unit = "", .text = tip },
+            .{ .name = "Re na corda média", .value = r.reynolds, .unit = "", .decimals = 0 },
+            .{ .name = "C_Lα", .value = r.lift_slope, .unit = "1/rad" },
+            .{ .name = "C_L0", .value = r.lift_zero, .unit = "" },
+            .{ .name = "α_L0", .value = r.alpha_zero, .unit = "°", .decimals = 3 },
+            .{ .name = "C_L,max", .value = r.lift_max, .unit = "" },
+            .{ .name = "α de estol", .value = r.alpha_stall, .unit = "°", .decimals = 3 },
+            .{ .name = "estol começa em", .value = r.stall_fraction, .unit = "2y/b", .decimals = 3 },
+            .{ .name = "Oswald e (cruzeiro)", .value = r.oswald, .unit = "" },
+            .{ .name = "(L/D) máx.", .value = r.ld_max, .unit = "", .decimals = 3 },
+            .{ .name = "C_L no (L/D) máx.", .value = r.lift_at_ld, .unit = "" },
+            .{ .name = "C_L de cruzeiro", .value = r.lift_cruise, .unit = "" },
+            .{ .name = "α da asa no cruzeiro", .value = r.alpha_cruise, .unit = "°", .decimals = 3 },
+            .{ .name = "L/D no cruzeiro", .value = r.ld_cruise, .unit = "", .decimals = 3 },
+            .{ .name = "incidência da asa", .value = r.incidence, .unit = "°", .decimals = 3 },
+            .{ .name = "V de estol (massa estimada)", .value = r.stall_speed, .unit = "m/s", .decimals = 3 },
+            .{ .name = "carga alar", .value = r.wing_loading, .unit = "kg/m²", .decimals = 3 },
+            .{ .name = "massa da asa", .value = r.wing_mass, .unit = "kg", .decimals = 3 },
+            .{ .name = "Re na raiz", .value = r.reynolds_root, .unit = "", .decimals = 0 },
+            .{ .name = "Re na ponta", .value = r.reynolds_tip, .unit = "", .decimals = 0 },
+            .{ .name = "C_m,ac da asa", .value = r.moment, .unit = "" },
         };
-        const columns = [_]f32{ inner.x, inner.x + 340 };
-        const colors = [_]rl.Color{ theme.colors.label, theme.colors.ink };
-        var y = inner.y;
-        for (rows) |row| {
-            widgets.tableRow(ui, y, &columns, &row, &colors, 14);
-            y += 24;
+        for (items, 0..) |item, k| {
+            const value_text = if (item.text) |text| widgets.format(&texts[k][1], "{s}", .{text}) else switch (item.decimals) {
+                0 => widgets.format(&texts[k][1], "{d:.0}", .{item.value}),
+                3 => widgets.format(&texts[k][1], "{d:.3}", .{item.value}),
+                else => widgets.format(&texts[k][1], "{d:.4}", .{item.value}),
+            };
+            cells[k] = .{
+                .{ .text = widgets.format(&texts[k][0], "{s}", .{item.name}) },
+                .{ .text = value_text, .value = if (item.text == null) item.value else null },
+                .{ .text = widgets.format(&texts[k][2], "{s}", .{item.unit}) },
+            };
         }
+    }
+
+    fn drawSummary(tab: *WingTab, ui: *widgets.Ui, rect: rl.Rectangle) void {
+        var texts: [summary_rows][3][48:0]u8 = undefined;
+        var cells: [summary_rows][3]plot.Cell = undefined;
+        tab.summaryRows(&texts, &cells);
+        var rows: [summary_rows][]const plot.Cell = undefined;
+        for (&rows, 0..) |*row, k| row.* = &cells[k];
+        plot.table(ui, rect, "Números da asa", &.{ "grandeza", "valor", "unidade" }, &rows, &.{ 0.4, 0.3 });
     }
 };
 

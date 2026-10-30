@@ -30,6 +30,15 @@ O gráfico (`plot.zig`) faz curvas e nuvens de pontos dentro de um cartão, com 
 1, 2 ou 5 vezes uma potência de dez), grade, a legenda embaixo e a barra de cores na nuvem. As contas dos eixos e
 dos números ficam em `numbers.zig`, que não abre janela e por isso tem teste.
 
+Todo gráfico de linhas se comporta igual, em qualquer tela, sem que a aba precise fazer nada. Um clique num nome
+da legenda liga ou desliga aquela curva: a desligada fica riscada na legenda e sai dos eixos. O botão direito no
+cartão abre um menu com as curvas para marcar e três saídas: a imagem em PNG, a mesma imagem num PDF de uma página
+(as duas desenhadas de novo em escala 2, para sair nítidas impressas) e os dados das curvas marcadas em CSV. O CSV
+é o padrão, com vírgula entre colunas, ponto decimal, uma linha de cabeçalho com o nome da curva e do eixo e os
+números com todas as casas, então abre direto numa planilha ou no pandas. As tabelas de números (`plot.table`)
+têm o mesmo menu: o botão direito grava a tabela em CSV, com uma grandeza por linha e o número inteiro, não o
+arredondado da tela. A gravação (CSV, PDF com a imagem comprimida) fica em `export.zig`, que tem teste.
+
 As janelas por cima da tela ficam em `dialogs.zig`: o seletor de arquivo, que navega pelas pastas e mostra só as
 extensões pedidas (a pasta se digita no campo de cima, com `~` para a pessoal, ou se escolhe pelos atalhos
 Exemplos, Pasta pessoal, Pasta atual e Raiz), para abrir (um clique no arquivo) ou para salvar (com o nome digitado), e a pergunta de um texto

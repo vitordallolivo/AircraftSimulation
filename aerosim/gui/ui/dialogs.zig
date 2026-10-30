@@ -90,6 +90,7 @@ pub const FilePicker = struct {
 
     /// pastas primeiro, depois os arquivos, cada grupo em ordem alfabética
     fn sort(picker: *FilePicker) void {
+        if (picker.count < 2) return; // pasta vazia (ou com um item só): nada a ordenar
         for (1..picker.count) |i| {
             var k = i;
             while (k > 0 and before(picker.is_folder[k], picker.names[k], picker.is_folder[k - 1], picker.names[k - 1])) : (k -= 1) {

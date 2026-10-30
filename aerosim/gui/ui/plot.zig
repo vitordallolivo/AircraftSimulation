@@ -1,11 +1,18 @@
 //! Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
 //! (uma cor por curva, tracejada se pedido) e a legenda embaixo, quebrando em linhas. Também faz nuvem de pontos
 //! colorida por um valor (o mapa do aeroopt).
+//!
+//! Todo gráfico de linhas tem o mesmo comportamento, em qualquer tela: um clique num nome da legenda liga ou
+//! desliga aquela curva (as desligadas ficam apagadas na legenda e saem dos eixos), e o botão direito abre um menu
+//! para marcar as curvas e exportar o gráfico em PNG, em PDF ou só os dados das curvas marcadas em CSV. O estado
+//! de cada gráfico (as curvas desligadas) fica guardado pelo título, entre um quadro e outro.
 const std = @import("std");
 const rl = @import("raylib");
 const theme = @import("theme.zig");
 const widgets = @import("widgets.zig");
 const numbers = @import("numbers.zig");
+const dialogs = @import("dialogs.zig");
+const export_file = @import("export.zig");
 
 /// uma curva: x e y do mesmo tamanho
 pub const Series = struct {
@@ -46,14 +53,33 @@ pub const Frame = struct {
     }
 };
 
-/// cartão com o gráfico das curvas
+/// cartão com o gráfico das curvas (com a legenda que liga e desliga e o menu do botão direito)
 pub fn lines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Series) void {
+    const state = stateFor(axes.title);
+    if (state.pending) |kind| {
+        state.pending = null;
+        exportPlot(ui, rect, axes, series, state, kind);
+    }
+    drawLines(ui, rect, axes, series, state, true);
+    // o botão direito no cartão abre o menu deste gráfico
+    if (ui.right_clicked and ui.hovering(rect)) {
+        menu.open = true;
+        menu.key = state.key;
+        menu.at = ui.mouse;
+        menu.is_table = false;
+        ui.right_clicked = false;
+    }
+    if (menu.open and menu.key == state.key) menu.capture(axes, series, state);
+}
+
+fn drawLines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Series, state: *State, interactive: bool) void {
     const inner = widgets.card(ui, rect, axes.title);
     var x_range: ?numbers.Range = null;
     var y_range: ?numbers.Range = null;
-    // as faixas juntam os dados de todas as curvas; uma reta vertical (x igual) ou horizontal só entra com o
+    // as faixas juntam os dados das curvas ligadas; uma reta vertical (x igual) ou horizontal só entra com o
     // valor dela, sem a meia unidade de folga que `Range.of` dá a um valor único
     for (series) |s| {
+        if (state.isHidden(s.name)) continue;
         const rx = extent(s.xs) orelse continue;
         const ry = extent(s.ys) orelse continue;
         x_range = if (x_range) |r| r.merge(rx) else rx;
@@ -65,6 +91,7 @@ pub fn lines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
     const frame = drawFrame(ui, inner, axes, x_range orelse .{ .low = 0, .high = 1 }, y_range orelse .{ .low = 0, .high = 1 }, legend_height, axes.equal_axes);
     ui.pushClip(.{ .x = frame.area.x, .y = frame.area.y - 1, .width = frame.area.width + 1, .height = frame.area.height + 2 });
     for (series, 0..) |s, i| {
+        if (state.isHidden(s.name)) continue;
         const color = theme.plotColor(s.color_index orelse i);
         const n = @min(s.xs.len, s.ys.len);
         if (s.points) {
@@ -80,7 +107,343 @@ pub fn lines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
         }
     }
     ui.popClip();
-    drawLegend(ui, .{ .x = inner.x + 10, .y = inner.y + inner.height - legend_height + 4, .width = inner.width - 20, .height = legend_height }, series);
+    drawLegend(ui, .{ .x = inner.x + 10, .y = inner.y + inner.height - legend_height + 4, .width = inner.width - 20, .height = legend_height }, series, state, interactive);
+}
+
+// ------------------------------------------------------------------ tabela de dados
+
+/// uma célula: o texto da tela e, se for número, o valor inteiro (o que vai para o CSV)
+pub const Cell = struct {
+    text: [:0]const u8,
+    value: ?f64 = null,
+    color: ?rl.Color = null,
+};
+
+/// cartão com uma tabela de dados: cabeçalho e linhas, em colunas de larguras `widths` (frações da largura; a
+/// última fica com o resto). O botão direito exporta a tabela em CSV, com os números inteiros
+pub fn table(ui: *widgets.Ui, rect: rl.Rectangle, title: [:0]const u8, headers: []const [:0]const u8, rows: []const []const Cell, widths: []const f32) void {
+    const state = stateFor(title);
+    if (state.pending) |_| {
+        state.pending = null;
+        exportTable(state, headers, rows);
+    }
+    const inner = widgets.labeledCard(ui, rect, title);
+    var columns: [24]f32 = undefined;
+    var x = inner.x;
+    for (headers, 0..) |_, k| {
+        if (k >= columns.len) break;
+        columns[k] = x;
+        x += inner.width * (if (k < widths.len) widths[k] else 0);
+    }
+    const count = @min(headers.len, columns.len);
+    for (headers[0..count], 0..) |header, k| theme.text(ui.fonts.regular, header, columns[k], inner.y, 13, theme.colors.accent);
+    var y = inner.y + 24;
+    for (rows) |row| {
+        for (row[0..@min(row.len, count)], 0..) |cell, k| theme.text(ui.fonts.regular, cell.text, columns[k], y, 14, cell.color orelse (if (k == 0) theme.colors.label else theme.colors.ink));
+        y += 24;
+        rl.drawRectangleRec(.{ .x = inner.x, .y = y - 5, .width = inner.width, .height = 1 }, theme.colors.grid);
+    }
+    if (ui.right_clicked and ui.hovering(rect)) {
+        menu.open = true;
+        menu.key = state.key;
+        menu.at = ui.mouse;
+        menu.is_table = true;
+        menu.count = 0;
+        menu.title_len = @min(title.len, menu.title.len);
+        @memcpy(menu.title[0..menu.title_len], title[0..menu.title_len]);
+        ui.right_clicked = false;
+    }
+}
+
+/// a altura de uma tabela com `rows` linhas (para quem arruma os cartões)
+pub fn tableHeight(rows: usize) f32 {
+    return 34 + 8 + 24 + 24 * @as(f32, @floatFromInt(rows)) + 12;
+}
+
+fn exportTable(state: *State, headers: []const [:0]const u8, rows: []const []const Cell) void {
+    const path = state.path[0..state.path_len];
+    var out: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
+    defer out.deinit();
+    writeTable(&out.writer, headers, rows) catch return setNote("não gravou {s}: sem memória", .{std.fs.path.basename(path)});
+    std.Io.Dir.cwd().writeFile(fileIo(), .{ .sub_path = path, .data = out.written() }) catch |err| return setNote("não gravou {s}: {s}", .{ std.fs.path.basename(path), @errorName(err) });
+    setNote("gravado: {s} ({d} linhas)", .{ path, rows.len });
+}
+
+/// a tabela em CSV: o cabeçalho e uma linha por linha, com o número inteiro onde a célula tem valor
+fn writeTable(writer: *std.Io.Writer, headers: []const [:0]const u8, rows: []const []const Cell) !void {
+    for (headers, 0..) |header, k| {
+        if (k > 0) try writer.writeByte(',');
+        try export_file.writeText(writer, header);
+    }
+    try writer.writeAll("\n");
+    for (rows) |row| {
+        for (row, 0..) |cell, k| {
+            if (k > 0) try writer.writeByte(',');
+            if (cell.value) |value| {
+                if (std.math.isFinite(value)) try writer.print("{d}", .{value});
+            } else try export_file.writeText(writer, cell.text);
+        }
+        try writer.writeAll("\n");
+    }
+}
+
+// ------------------------------------------------------------------ o estado de cada gráfico
+
+pub const ExportKind = enum { png, pdf, csv };
+
+const max_hidden = 16;
+
+const State = struct {
+    key: u64 = 0,
+    hidden: [max_hidden]u64 = undefined, // os nomes (o hash) das curvas desligadas
+    hidden_count: usize = 0,
+    pending: ?ExportKind = null, // exportar no próximo quadro, com os dados de então
+    path: [600]u8 = undefined,
+    path_len: usize = 0,
+
+    fn isHidden(state: *const State, name: []const u8) bool {
+        const id = std.hash.Wyhash.hash(0, name);
+        for (state.hidden[0..state.hidden_count]) |hidden| if (hidden == id) return true;
+        return false;
+    }
+
+    fn toggle(state: *State, name: []const u8) void {
+        const id = std.hash.Wyhash.hash(0, name);
+        for (state.hidden[0..state.hidden_count], 0..) |hidden, k| if (hidden == id) {
+            state.hidden[k] = state.hidden[state.hidden_count - 1];
+            state.hidden_count -= 1;
+            return;
+        };
+        if (state.hidden_count < max_hidden) {
+            state.hidden[state.hidden_count] = id;
+            state.hidden_count += 1;
+        }
+    }
+};
+
+var states: [128]State = undefined;
+var state_count: usize = 0;
+var spare_state: State = .{};
+
+fn stateFor(title: []const u8) *State {
+    const key = std.hash.Wyhash.hash(1, title);
+    for (states[0..state_count]) |*state| if (state.key == key) return state;
+    if (state_count == states.len) {
+        spare_state = .{ .key = key };
+        return &spare_state;
+    }
+    states[state_count] = .{ .key = key };
+    state_count += 1;
+    return &states[state_count - 1];
+}
+
+fn findState(key: u64) ?*State {
+    for (states[0..state_count]) |*state| if (state.key == key) return state;
+    return null;
+}
+
+// ------------------------------------------------------------------ o menu do botão direito e a gravação
+
+const max_menu_series = 16;
+
+/// o menu aberto: guarda os nomes das curvas do gráfico (copiados a cada quadro), para desenhar por cima de tudo
+const Menu = struct {
+    open: bool = false,
+    key: u64 = 0,
+    at: rl.Vector2 = .{ .x = 0, .y = 0 },
+    title: [128]u8 = undefined,
+    title_len: usize = 0,
+    names: [max_menu_series][64:0]u8 = undefined,
+    checked: [max_menu_series]bool = undefined,
+    count: usize = 0,
+    is_table: bool = false, // uma tabela: só exportar em CSV
+
+    fn capture(m: *Menu, axes: Axes, series: []const Series, state: *const State) void {
+        m.title_len = @min(axes.title.len, m.title.len);
+        @memcpy(m.title[0..m.title_len], axes.title[0..m.title_len]);
+        m.count = @min(series.len, max_menu_series);
+        for (series[0..m.count], 0..) |s, k| {
+            _ = widgets.format(&m.names[k], "{s}", .{s.name});
+            m.checked[k] = !state.isHidden(s.name);
+        }
+    }
+};
+
+var menu: Menu = .{};
+var saver: dialogs.FilePicker = .{};
+var saver_kind: ExportKind = .png;
+var saver_key: u64 = 0;
+var note: [200:0]u8 = [_:0]u8{0} ** 200; // o resultado da última gravação
+var note_frames: u32 = 0;
+
+const actions = [_][:0]const u8{ "Exportar imagem PNG...", "Exportar PDF...", "Exportar CSV (curvas marcadas)...", "Marcar todas as curvas" };
+const menu_row: f32 = 28;
+const menu_width: f32 = 300;
+
+const table_actions = [_][:0]const u8{"Exportar a tabela em CSV..."};
+
+fn menuActions() []const [:0]const u8 {
+    return if (menu.is_table) &table_actions else &actions;
+}
+
+fn menuRect(screen: rl.Rectangle) rl.Rectangle {
+    const rows: f32 = @floatFromInt(menuActions().len + menu.count);
+    const label_height: f32 = if (menu.is_table) 0 else 26;
+    const height = 12 + menu_row * rows + label_height;
+    return .{ .x = @min(menu.at.x, screen.width - menu_width - 4), .y = @min(menu.at.y, screen.height - height - 4), .width = menu_width, .height = height };
+}
+
+/// verdadeiro enquanto o menu ou o seletor de arquivo está aberto (a tela de baixo não recebe o clique)
+pub fn overlayActive() bool {
+    return menu.open or saver.open;
+}
+
+/// desenha o menu aberto, o seletor de arquivo e o aviso da última gravação; chamar depois da tela
+pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
+    const screen: rl.Rectangle = .{ .x = 0, .y = 0, .width = width, .height = height };
+    if (note_frames > 0) {
+        note_frames -= 1;
+        const text = std.mem.sliceTo(&note, 0);
+        const w = theme.textWidth(ui.fonts.regular, text, 14) + 24;
+        const box: rl.Rectangle = .{ .x = width - w - 16, .y = height - 46, .width = w, .height = 32 };
+        widgets.rounded(box, 8, theme.colors.ink);
+        theme.text(ui.fonts.regular, text, box.x + 12, box.y + 8, 14, theme.colors.on_accent);
+    }
+    if (saver.open) {
+        if (saver.draw(ui, screen)) |path| {
+            if (findState(saver_key)) |state| {
+                state.path_len = @min(path.len, state.path.len);
+                @memcpy(state.path[0..state.path_len], path[0..state.path_len]);
+                state.pending = saver_kind;
+            }
+        }
+        return;
+    }
+    if (!menu.open) return;
+    const area = menuRect(screen);
+    if ((ui.clicked or ui.right_clicked) and !rl.checkCollisionPointRec(ui.mouse, area)) {
+        menu.open = false;
+        return;
+    }
+    if (rl.isKeyPressed(.escape)) {
+        menu.open = false;
+        return;
+    }
+    rl.drawRectangleRounded(.{ .x = area.x + 2, .y = area.y + 3, .width = area.width, .height = area.height }, 0.05, 6, .{ .r = 0, .g = 0, .b = 0, .a = 28 });
+    widgets.rounded(area, 6, theme.colors.field);
+    widgets.roundedLines(area, 6, theme.colors.line);
+    var y = area.y + 6;
+    for (menuActions(), 0..) |caption, k| {
+        const row: rl.Rectangle = .{ .x = area.x + 4, .y = y, .width = area.width - 8, .height = menu_row };
+        if (rl.checkCollisionPointRec(ui.mouse, row)) widgets.rounded(row, 4, theme.colors.hover);
+        theme.text(ui.fonts.regular, caption, row.x + 10, row.y + 6, 14, theme.colors.accent);
+        if (ui.clicked and rl.checkCollisionPointRec(ui.mouse, row)) chooseAction(if (menu.is_table) 2 else k);
+        y += menu_row;
+    }
+    if (menu.is_table) {
+        ui.click_taken = true;
+        return;
+    }
+    theme.text(ui.fonts.regular, "curvas (marcadas = no gráfico e no CSV):", area.x + 12, y + 6, 12, theme.colors.muted);
+    y += 26;
+    for (0..menu.count) |k| {
+        const row: rl.Rectangle = .{ .x = area.x + 4, .y = y, .width = area.width - 8, .height = menu_row };
+        if (rl.checkCollisionPointRec(ui.mouse, row)) widgets.rounded(row, 4, theme.colors.hover);
+        widgets.checkBox(.{ .x = row.x + 8, .y = row.y + 6, .width = 16, .height = 16 }, menu.checked[k]);
+        theme.text(ui.fonts.regular, std.mem.sliceTo(&menu.names[k], 0), row.x + 32, row.y + 6, 13, theme.colors.ink);
+        if (ui.clicked and rl.checkCollisionPointRec(ui.mouse, row)) {
+            if (findState(menu.key)) |state| state.toggle(std.mem.sliceTo(&menu.names[k], 0));
+            menu.checked[k] = !menu.checked[k];
+        }
+        y += menu_row;
+    }
+    ui.click_taken = true;
+}
+
+fn chooseAction(index: usize) void {
+    if (index == 3) {
+        if (findState(menu.key)) |state| state.hidden_count = 0;
+        menu.open = false;
+        return;
+    }
+    const kinds = [_]ExportKind{ .png, .pdf, .csv };
+    const extensions = [_][]const []const u8{ &.{".png"}, &.{".pdf"}, &.{".csv"} };
+    saver_kind = kinds[index];
+    saver_key = menu.key;
+    var name_buffer: [160]u8 = undefined;
+    const name = export_file.fileName(&name_buffer, menu.title[0..menu.title_len], @tagName(saver_kind));
+    const titles = [_][]const u8{ "Exportar o gráfico (PNG)", "Exportar o gráfico (PDF)", "Exportar os dados (CSV)" };
+    saver.showSave(titles[index], ".", extensions[index], name);
+    menu.open = false;
+}
+
+fn setNote(comptime format: []const u8, args: anytype) void {
+    _ = std.fmt.bufPrintZ(&note, format, args) catch {};
+    note_frames = 240;
+}
+
+fn fileIo() std.Io {
+    return std.Io.Threaded.global_single_threaded.io();
+}
+
+/// grava o gráfico: CSV com as curvas marcadas; PNG e PDF com a imagem do cartão desenhada de novo numa textura,
+/// em escala 2 (fica nítida impressa)
+fn exportPlot(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Series, state: *State, kind: ExportKind) void {
+    const path = state.path[0..state.path_len];
+    const gpa = std.heap.page_allocator;
+    if (kind == .csv) {
+        var columns: [2 * 32]export_file.Column = undefined;
+        var headers: [2 * 32][160]u8 = undefined;
+        var count: usize = 0;
+        for (series) |s| {
+            if (state.isHidden(s.name) or count + 2 > columns.len) continue;
+            const n = @min(s.xs.len, s.ys.len);
+            columns[count] = .{ .name = std.fmt.bufPrint(&headers[count], "{s} · {s}", .{ s.name, axes.x_label }) catch s.name, .values = s.xs[0..n] };
+            columns[count + 1] = .{ .name = std.fmt.bufPrint(&headers[count + 1], "{s} · {s}", .{ s.name, axes.y_label }) catch s.name, .values = s.ys[0..n] };
+            count += 2;
+        }
+        export_file.saveCsv(gpa, fileIo(), path, columns[0..count]) catch |err| return setNote("não gravou {s}: {s}", .{ std.fs.path.basename(path), @errorName(err) });
+        return setNote("gravado: {s} ({d} curvas)", .{ path, count / 2 });
+    }
+    const scale: f32 = 2;
+    const width: i32 = @intFromFloat(@ceil(rect.width * scale));
+    const height: i32 = @intFromFloat(@ceil(rect.height * scale));
+    const target = rl.loadRenderTexture(width, height) catch return setNote("não gravou: sem memória de vídeo", .{});
+    defer rl.unloadRenderTexture(target);
+    // desenha o cartão de novo na textura: sem recorte da tela, sem mouse, com a câmera levando o cartão para (0, 0)
+    const clips = ui.suspendClips();
+    const mouse = ui.mouse;
+    const clicked = ui.clicked;
+    ui.mouse = .{ .x = -1e6, .y = -1e6 };
+    ui.clicked = false;
+    ui.clip_origin = .{ .x = rect.x, .y = rect.y };
+    ui.clip_scale = scale;
+    rl.beginTextureMode(target);
+    rl.clearBackground(rl.Color.white);
+    rl.beginMode2D(.{ .offset = .{ .x = 0, .y = 0 }, .target = .{ .x = rect.x, .y = rect.y }, .rotation = 0, .zoom = scale });
+    drawLines(ui, rect, axes, series, state, false);
+    rl.endMode2D();
+    rl.endTextureMode();
+    ui.clip_origin = .{ .x = 0, .y = 0 };
+    ui.clip_scale = 1;
+    ui.mouse = mouse;
+    ui.clicked = clicked;
+    ui.resumeClips(clips);
+    var image = rl.loadImageFromTexture(target.texture) catch return setNote("não gravou: não li a imagem", .{});
+    defer rl.unloadImage(image);
+    rl.imageFlipVertical(&image); // a textura sai de cabeça para baixo
+    if (kind == .png) {
+        var zero_path: [601]u8 = undefined;
+        const text = std.fmt.bufPrintZ(&zero_path, "{s}", .{path}) catch return;
+        if (!rl.exportImage(image, text)) return setNote("não gravou {s}", .{std.fs.path.basename(path)});
+        return setNote("gravado: {s}", .{path});
+    }
+    rl.imageFormat(&image, .uncompressed_r8g8b8);
+    const pixels: [*]const u8 = @ptrCast(image.data);
+    const bytes = pixels[0..@as(usize, @intCast(width * height * 3))];
+    // a página no tamanho do cartão na tela (1 pixel da tela = 0,75 pt, os 96 dpi de costume)
+    export_file.savePdf(gpa, fileIo(), path, bytes, @intCast(width), @intCast(height), rect.width * 0.75, rect.height * 0.75) catch |err| return setNote("não gravou {s}: {s}", .{ std.fs.path.basename(path), @errorName(err) });
+    setNote("gravado: {s}", .{path});
 }
 
 /// o menor e o maior valor finito (null se não houver)
@@ -239,7 +602,7 @@ fn legendHeight(ui: *widgets.Ui, width: f32, series: []const Series) f32 {
     return rows * legend_row + 6;
 }
 
-fn drawLegend(ui: *widgets.Ui, rect: rl.Rectangle, series: []const Series) void {
+fn drawLegend(ui: *widgets.Ui, rect: rl.Rectangle, series: []const Series, state: *State, interactive: bool) void {
     var x = rect.x;
     var y = rect.y;
     for (series, 0..) |s, i| {
@@ -248,9 +611,14 @@ fn drawLegend(ui: *widgets.Ui, rect: rl.Rectangle, series: []const Series) void 
             x = rect.x;
             y += legend_row;
         }
-        const color = theme.plotColor(s.color_index orelse i);
+        const hidden = state.isHidden(s.name);
+        const item: rl.Rectangle = .{ .x = x - 3, .y = y - 2, .width = w - 12, .height = legend_row };
+        if (interactive and ui.hovering(item)) widgets.rounded(item, 4, theme.colors.hover);
+        if (interactive and ui.clickedIn(item)) state.toggle(s.name);
+        const color = if (hidden) theme.colors.line else theme.plotColor(s.color_index orelse i);
         if (s.points) rl.drawCircleV(.{ .x = x + 11, .y = y + 7 }, 3.5, color) else if (s.dashed) dashedLine(.{ .x = x, .y = y + 7 }, .{ .x = x + 22, .y = y + 7 }, color) else rl.drawLineEx(.{ .x = x, .y = y + 7 }, .{ .x = x + 22, .y = y + 7 }, 2.2, color);
-        theme.text(ui.fonts.regular, s.name, x + 28, y, 12, theme.colors.label);
+        theme.text(ui.fonts.regular, s.name, x + 28, y, 12, if (hidden) theme.colors.muted else theme.colors.label);
+        if (hidden) rl.drawLineEx(.{ .x = x + 26, .y = y + 7 }, .{ .x = x + w - 16, .y = y + 7 }, 1, theme.colors.muted);
         x += w;
     }
 }

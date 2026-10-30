@@ -12,6 +12,7 @@ pub const Ui = struct {
     logo: theme.Logo,
     mouse: rl.Vector2 = .{ .x = 0, .y = 0 },
     clicked: bool = false,
+    right_clicked: bool = false, // o botão direito (o menu dos gráficos)
     wheel: f32 = 0,
     // um clique já usado por um widget de cima (ex.: a lista aberta de uma escolha) não vale para os de baixo
     click_taken: bool = false,
@@ -19,6 +20,9 @@ pub const Ui = struct {
     // o mouse, então um campo que rolou para fora da barra lateral não pega o clique das abas
     clips: [8]rl.Rectangle = undefined,
     clip_count: usize = 0,
+    // desenhando numa imagem (exportar um gráfico): o recorte da tela vira o da imagem, (p - origem) · escala
+    clip_origin: rl.Vector2 = .{ .x = 0, .y = 0 },
+    clip_scale: f32 = 1,
 
     /// abre fontes e logo e ajusta o estilo do raygui às cores do tema; precisa da janela aberta
     pub fn init() !Ui {
@@ -37,6 +41,7 @@ pub const Ui = struct {
     pub fn beginFrame(ui: *Ui) void {
         ui.mouse = rl.getMousePosition();
         ui.clicked = rl.isMouseButtonPressed(.left);
+        ui.right_clicked = rl.isMouseButtonPressed(.right);
         ui.wheel = rl.getMouseWheelMove();
         ui.click_taken = false;
     }
@@ -54,14 +59,35 @@ pub const Ui = struct {
             ui.clips[ui.clip_count] = inside;
             ui.clip_count += 1;
         }
-        scissor(inside);
+        ui.scissor(inside);
     }
 
     /// fecha o último recorte e volta ao de fora
     pub fn popClip(ui: *Ui) void {
         if (ui.clip_count == 0) return;
         ui.clip_count -= 1;
-        if (ui.clip_count > 0) scissor(ui.clips[ui.clip_count - 1]) else rl.endScissorMode();
+        if (ui.clip_count > 0) ui.scissor(ui.clips[ui.clip_count - 1]) else rl.endScissorMode();
+    }
+
+    /// guarda os recortes abertos e desliga o recorte (antes de desenhar numa textura); devolve quantos eram
+    pub fn suspendClips(ui: *Ui) usize {
+        const count = ui.clip_count;
+        ui.clip_count = 0;
+        rl.endScissorMode();
+        return count;
+    }
+
+    /// volta aos recortes guardados por `suspendClips`
+    pub fn resumeClips(ui: *Ui, count: usize) void {
+        ui.clip_count = count;
+        if (count > 0) ui.scissor(ui.clips[count - 1]);
+    }
+
+    fn scissor(ui: *const Ui, rect: rl.Rectangle) void {
+        const scale = ui.clip_scale;
+        const x = (rect.x - ui.clip_origin.x) * scale;
+        const y = (rect.y - ui.clip_origin.y) * scale;
+        rl.beginScissorMode(@intFromFloat(@floor(x)), @intFromFloat(@floor(y)), @intFromFloat(@ceil(rect.width * scale)), @intFromFloat(@ceil(rect.height * scale)));
     }
 
     /// verdadeiro se houve clique em `rect` neste quadro (e ninguém usou o clique antes)
@@ -78,10 +104,6 @@ fn intersection(a: rl.Rectangle, b: rl.Rectangle) rl.Rectangle {
     const right = @min(a.x + a.width, b.x + b.width);
     const bottom = @min(a.y + a.height, b.y + b.height);
     return .{ .x = left, .y = top, .width = @max(0, right - left), .height = @max(0, bottom - top) };
-}
-
-fn scissor(rect: rl.Rectangle) void {
-    rl.beginScissorMode(@intFromFloat(@floor(rect.x)), @intFromFloat(@floor(rect.y)), @intFromFloat(@ceil(rect.width)), @intFromFloat(@ceil(rect.height)));
 }
 
 /// a caixa de marcar: azul com o visto desenhado (duas linhas, sem depender de a fonte ter o "✓") ou branca

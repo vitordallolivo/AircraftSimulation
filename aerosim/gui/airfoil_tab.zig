@@ -395,7 +395,7 @@ pub const AirfoilTab = struct {
         const gap: f32 = 12;
         const column_width = (rect.width - 3 * gap) / 2;
         const row_height: f32 = 400;
-        const summary_height: f32 = 90 + 26 * @as(f32, @floatFromInt(tab.shown_count));
+        const summary_height: f32 = plot.tableHeight(tab.shown_count);
         const content_height = 3 * (row_height + gap) + summary_height + 2 * gap;
         const x0 = rect.x + gap;
         const x1 = x0 + column_width + gap;
@@ -482,36 +482,35 @@ pub const AirfoilTab = struct {
     }
 
     fn drawSummary(tab: *AirfoilTab, ui: *widgets.Ui, rect: rl.Rectangle) void {
-        const inner = widgets.labeledCard(ui, rect, "Números de cada perfil (o que segue para a asa)");
         const headers = [_][:0]const u8{ "perfil", "polar por", "c_l,max", "α estol (°)", "(c_l/c_d) máx.", "c_l nele", "a1 (1/rad)", "α_L0 (°)", "c_m", "c_d mín." };
-        var columns: [headers.len]f32 = undefined;
-        const first: f32 = 220;
-        const step = (inner.width - first) / @as(f32, @floatFromInt(headers.len - 1));
-        for (&columns, 0..) |*x, i| x.* = if (i == 0) inner.x else inner.x + first + step * @as(f32, @floatFromInt(i - 1));
-        const header_colors = [_]rl.Color{theme.colors.accent};
-        widgets.tableRow(ui, inner.y, &columns, &headers, &header_colors, 13);
-        var y = inner.y + 26;
+        var texts: [max_shown][headers.len][48:0]u8 = undefined;
+        var cells: [max_shown][headers.len]plot.Cell = undefined;
+        var rows: [max_shown][]const plot.Cell = undefined;
+        var count: usize = 0;
         for (0..tab.shown_count) |k| {
             const metrics = tab.outcomes[k].metrics orelse continue;
-            var buffers: [headers.len][48]u8 = undefined;
-            _ = &buffers[0];
-            const source: []const u8 = @tagName(tab.shown_method[k]);
-            const cells = [_][:0]const u8{
-                std.mem.sliceTo(&tab.shown_names[k], 0),
-                widgets.format(&buffers[1], "{s}", .{source}),
-                widgets.format(&buffers[2], "{d:.3}", .{metrics.cl_max}),
-                widgets.format(&buffers[3], "{d:.1}", .{metrics.alpha_stall}),
-                widgets.format(&buffers[4], "{d:.1}", .{metrics.ld_max}),
-                widgets.format(&buffers[5], "{d:.3}", .{metrics.cl_at_ld}),
-                widgets.format(&buffers[6], "{d:.3}", .{metrics.cl_alpha}),
-                widgets.format(&buffers[7], "{d:.2}", .{metrics.alpha0}),
-                widgets.format(&buffers[8], "{d:.3}", .{metrics.cm}),
-                widgets.format(&buffers[9], "{d:.4}", .{metrics.cd_min}),
-            };
-            const colors = [_]rl.Color{ theme.plotColor(k), theme.colors.label, theme.colors.ink };
-            widgets.tableRow(ui, y, &columns, &cells, &colors, 14);
-            y += 26;
+            const text = &texts[count];
+            const numbers = [_]f64{ metrics.cl_max, metrics.alpha_stall, metrics.ld_max, metrics.cl_at_ld, metrics.cl_alpha, metrics.alpha0, metrics.cm, metrics.cd_min };
+            const formats = [_]u8{ 3, 1, 1, 3, 3, 2, 3, 4 };
+            cells[count][0] = .{ .text = widgets.format(&text[0], "{s}", .{std.mem.sliceTo(&tab.shown_names[k], 0)}), .color = theme.plotColor(k) };
+            cells[count][1] = .{ .text = widgets.format(&text[1], "{s}", .{@tagName(tab.shown_method[k])}) };
+            for (numbers, formats, 0..) |value, decimals, i| {
+                const shown = switch (decimals) {
+                    1 => widgets.format(&text[2 + i], "{d:.1}", .{value}),
+                    2 => widgets.format(&text[2 + i], "{d:.2}", .{value}),
+                    3 => widgets.format(&text[2 + i], "{d:.3}", .{value}),
+                    else => widgets.format(&text[2 + i], "{d:.4}", .{value}),
+                };
+                cells[count][2 + i] = .{ .text = shown, .value = value };
+            }
+            rows[count] = &cells[count];
+            count += 1;
         }
+        const first: f32 = 0.2;
+        const rest = (1 - first) / @as(f32, @floatFromInt(headers.len - 1));
+        var widths: [headers.len]f32 = undefined;
+        for (&widths, 0..) |*w, i| w.* = if (i == 0) first else rest;
+        plot.table(ui, rect, "Números de cada perfil (o que segue para a asa)", &headers, rows[0..count], &widths);
     }
 };
 

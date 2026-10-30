@@ -9,6 +9,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const widgets = @import("widgets.zig");
+const plot = @import("plot.zig");
 
 pub const Args = struct {
     shot: ?[:0]const u8 = null,
@@ -93,7 +94,22 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
         ui.beginFrame();
         if (shot) ui.wheel = 0; // o print não rola sozinho
         rl.beginDrawing();
+        // com o menu de um gráfico ou o seletor de exportar aberto, a tela não recebe o clique nem a roda
+        const busy = plot.overlayActive();
+        const clicked = ui.clicked;
+        const right_clicked = ui.right_clicked;
+        if (busy) {
+            ui.click_taken = true;
+            ui.right_clicked = false;
+            ui.wheel = 0;
+        }
         screen.draw(&ui, width, height);
+        if (busy) {
+            ui.click_taken = false;
+            ui.clicked = clicked;
+            ui.right_clicked = right_clicked;
+        }
+        plot.overlay(&ui, width, height);
         rl.endDrawing();
         if (shot and frames == 3) {
             const image = try rl.loadImageFromScreen();
