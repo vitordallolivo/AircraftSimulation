@@ -29,6 +29,8 @@ pub const Screen = struct {
     assembly_view: view3d.View = .{}, // a vista 3D da Montagem
     assembly: ?assembly_mod.Assembly = null, // o avião aberto
     assembly_note: [240:0]u8 = [_:0]u8{0} ** 240,
+    loader: ui_kit.jobs.Job = .{}, // lê o .json fora do laço da tela
+    loading: Loading = .{},
 
     /// abre a aba de área `index` (0 = Dimensionamento ... 5 = Montagem; 6, 7 e 8 = Aerodinâmica → Perfis, Projetar
     /// e Analisar), para os prints
@@ -88,14 +90,32 @@ pub const Screen = struct {
         screen.openAircraft(path);
     }
 
-    /// abre o avião em `path` (.json) na Montagem
+    /// abre o avião em `path` (.json) na Montagem: a leitura e as peças saem numa thread; a tela segue desenhando e
+    /// troca o avião quando ela acaba (`collectAircraft`)
     fn openAircraft(screen: *Screen, path: []const u8) void {
-        var diagnosis: assembly_mod.Diagnosis = .{};
-        const loaded = assembly_mod.load(std.heap.page_allocator, io(), path, &diagnosis) catch |err| {
-            const reason = if (diagnosis.len > 0) diagnosis.text() else @errorName(err);
-            _ = std.fmt.bufPrintZ(&screen.assembly_note, "não abriu '{s}': {s}", .{ std.fs.path.basename(path), reason }) catch {};
+        if (screen.loader.running()) {
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "ainda abrindo {s}...", .{std.fs.path.basename(screen.loading.pathText())}) catch {};
+            return;
+        }
+        screen.loader.cancel();
+        const copied = @min(path.len, screen.loading.path.len);
+        @memcpy(screen.loading.path[0..copied], path[0..copied]);
+        screen.loading.path_len = copied;
+        _ = std.fmt.bufPrintZ(&screen.assembly_note, "abrindo {s}...", .{std.fs.path.basename(path)}) catch {};
+        _ = screen.loader.start(Loading.work, .{&screen.loading});
+        screen.collectAircraft();
+    }
+
+    /// no quadro em que a leitura acabou: troca o avião aberto (antes, espera a análise que lia o antigo)
+    fn collectAircraft(screen: *Screen) void {
+        if (!screen.loader.finished()) return;
+        const path = screen.loading.pathText();
+        const loaded = screen.loading.result orelse {
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "não abriu '{s}': {s}", .{ std.fs.path.basename(path), screen.loading.reasonText() }) catch {};
             return;
         };
+        screen.loading.result = null;
+        screen.analyze.cancel();
         if (screen.assembly) |*old| old.deinit();
         screen.assembly = loaded;
         screen.analyze.setAircraft(screen.aircraft());
@@ -105,6 +125,7 @@ pub const Screen = struct {
     /// desenha a tela inteira e trata o mouse
     pub fn draw(screen: *Screen, ui: *widgets.Ui, width: f32, height: f32) void {
         rl.clearBackground(theme.colors.background);
+        screen.collectAircraft();
         if (rl.isFileDropped()) {
             const dropped = rl.loadDroppedFiles();
             defer rl.unloadDroppedFiles(dropped);
@@ -192,6 +213,36 @@ pub const Screen = struct {
         _ = widgets.card(ui, card_rect, title);
         if (screen.assembly != null) screen.assembly_view.blit(ui, area);
         theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.assembly_note, 0), area.x + 6, area.y + area.height - 18, 12, theme.colors.muted);
+    }
+};
+
+/// o pedido de leitura de um avião e o que a thread devolve
+const Loading = struct {
+    path: [1024]u8 = undefined,
+    path_len: usize = 0,
+    result: ?assembly_mod.Assembly = null,
+    reason: [200]u8 = undefined,
+    reason_len: usize = 0,
+
+    fn pathText(loading: *const Loading) []const u8 {
+        return loading.path[0..loading.path_len];
+    }
+
+    fn reasonText(loading: *const Loading) []const u8 {
+        return loading.reason[0..loading.reason_len];
+    }
+
+    /// roda na thread: lê o `.json` e monta as peças
+    fn work(loading: *Loading) void {
+        var diagnosis: assembly_mod.Diagnosis = .{};
+        loading.result = assembly_mod.load(std.heap.page_allocator, io(), loading.pathText(), &diagnosis) catch |err| {
+            const reason = if (diagnosis.len > 0) diagnosis.text() else @errorName(err);
+            const copied = @min(reason.len, loading.reason.len);
+            @memcpy(loading.reason[0..copied], reason[0..copied]);
+            loading.reason_len = copied;
+            loading.result = null;
+            return;
+        };
     }
 };
 

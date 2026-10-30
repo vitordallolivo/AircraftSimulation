@@ -61,6 +61,7 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
         std.process.exit(2);
     };
     const shot = args.shot != null;
+    if (shot) @import("jobs.zig").synchronous = true; // o print sai com as contas prontas
     rl.setTraceLogLevel(.err);
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .window_resizable = true, .vsync_hint = !shot });
     rl.initWindow(args.width, args.height, title);

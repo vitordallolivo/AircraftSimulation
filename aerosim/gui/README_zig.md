@@ -37,6 +37,13 @@ curto. Enquanto uma delas está aberta, a tela de baixo não recebe o clique nem
 .json" do cabeçalho, os botões de Perfis e os menus que vierem usam as mesmas; salvar, por enquanto, grava o avião
 como foi lido, porque a edição ainda não existe.
 
+A tela não faz conta: o que demora (a varredura da aba Analisar, a leitura do `.json` e a montagem das peças) roda
+numa thread pela `Job` de `jobs.zig`, e a tela continua desenhando e respondendo ao mouse enquanto isso, com a
+mensagem "rodando no núcleo..." no lugar do resultado. Quando a thread acaba, a tela pega o resultado no quadro
+seguinte e troca de uma vez; a análise guarda dois resultados, o que está na tela e o que está sendo calculado,
+para que um nunca seja lido enquanto o outro é escrito. No print (`--shot`) e na web as contas rodam na hora, sem
+thread, para a foto já sair com o resultado.
+
 As peças de escolha que as abas repetem ficam em `menus.zig`: a lista de itens com um selecionado (`ItemList`), a
 grade de botões de ação embaixo dela (`buttonGrid`) e o menu de marcar (`CheckMenu`), um botão que abre caixas de
 marcar para escolher um ou mais itens, como os métodos de polar de Perfis. O menu funciona em dois tempos porque

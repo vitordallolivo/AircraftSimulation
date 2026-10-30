@@ -13,6 +13,15 @@ const plot = ui_kit.plot;
 const view3d = ui_kit.view3d;
 const analysis = @import("wing_analysis.zig");
 const assembly_mod = @import("assembly.zig");
+const jobs = ui_kit.jobs;
+
+/// uma rodada da análise: os resultados, o 3D do que se simula e a memória deles
+const Run = struct {
+    results: [2]?*analysis.Result = .{ null, null }, // linha sustentadora, faixas
+    arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+    wings: ?assembly_mod.Mesh = null, // o que se simula, em 3D
+    message: [200:0]u8 = [_:0]u8{0} ** 200,
+};
 
 const model = aircraft_model.aircraft;
 const max_owners = analysis.max_owners;
@@ -42,9 +51,12 @@ pub const AnalyzeTab = struct {
     labels: [max_owners][96:0]u8 = undefined,
     surface_count: usize = 0,
     form: form_mod.Form = undefined,
-    results: [2]?*analysis.Result = .{ null, null }, // linha sustentadora, faixas
-    arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator),
-    wings: ?assembly_mod.Mesh = null, // o que se simula, em 3D
+    // duas rodadas: a que aparece e a que a thread está fazendo; quando a thread acaba, elas trocam de lugar
+    runs: [2]Run = .{ .{}, .{} },
+    shown: usize = 0,
+    job: jobs.Job = .{},
+    rerun: bool = false, // algo mudou durante a conta: roda de novo quando ela acabar
+    plane: ?*const model.Aircraft = null,
     message: [200:0]u8 = [_:0]u8{0} ** 200,
     progress: f32 = 0,
     scroll: f32 = 0,
@@ -99,54 +111,83 @@ pub const AnalyzeTab = struct {
         };
     }
 
-    /// roda os métodos marcados no avião `ac`
+    /// roda os métodos marcados no avião `ac`, numa thread (a tela segue respondendo); se uma conta já está rodando,
+    /// roda de novo quando ela acabar
     pub fn run(tab: *AnalyzeTab, ac: ?*const model.Aircraft) void {
-        _ = tab.arena.reset(.retain_capacity);
-        if (tab.wings) |*mesh| mesh.deinit();
-        tab.wings = null;
-        for (&tab.results) |*slot| slot.* = null;
-        tab.progress = 0;
+        tab.plane = ac;
+        if (tab.job.running()) {
+            tab.rerun = true;
+            return;
+        }
         const plane = ac orelse {
+            tab.job.cancel();
+            tab.runs[tab.shown] = clear(&tab.runs[tab.shown]);
             tab.setMessage("abra um avião (arraste um .json para a janela)", .{});
             return;
         };
-        const allocator = tab.arena.allocator();
-        const started = rl.getTime();
         const toggles = [_]bool{ tab.field(.use_lifting_line).checked, tab.field(.use_strips).checked };
-        if (!toggles[0] and !toggles[1]) {
-            tab.setMessage("marque ao menos um método", .{});
+        if (!toggles[0] and !toggles[1]) return tab.setMessage("marque ao menos um método", .{});
+        tab.rerun = false;
+        tab.progress = 0;
+        tab.setMessage("rodando no núcleo...", .{});
+        const spare = &tab.runs[1 - tab.shown];
+        _ = tab.job.start(work, .{ spare, plane, tab.input(), toggles });
+        if (jobs.synchronous) tab.collect();
+    }
+
+    /// a avião foi trocado: espera a conta que lia o anterior e joga o resultado dela fora
+    pub fn cancel(tab: *AnalyzeTab) void {
+        tab.job.cancel();
+        tab.rerun = false;
+    }
+
+    /// chamada a cada quadro: quando a thread acaba, a rodada nova passa a aparecer
+    fn collect(tab: *AnalyzeTab) void {
+        if (!tab.job.finished()) {
+            if (tab.job.running()) tab.progress = @min(0.95, tab.progress + 0.01);
             return;
         }
-        var base = tab.input();
+        tab.shown = 1 - tab.shown;
+        tab.buildSeries();
+        tab.progress = 1;
+        tab.message = tab.runs[tab.shown].message;
+        if (tab.rerun) tab.run(tab.plane);
+    }
+
+    /// a conta (na thread): os métodos marcados e o 3D das superfícies escolhidas, em `out`
+    fn work(out: *Run, plane: *const model.Aircraft, base_input: analysis.Input, toggles: [2]bool) void {
+        out.* = clear(out);
+        const allocator = out.arena.allocator();
+        const started = std.Io.Clock.awake.now(io());
+        var base = base_input;
         for (toggles, 0..) |on, m| {
             if (!on) continue;
-            const result = allocator.create(analysis.Result) catch return tab.setMessage("sem memória", .{});
+            const result = allocator.create(analysis.Result) catch return message(out, "sem memória", .{});
             base.method = if (m == 0) .lifting_line else .strips;
             analysis.run(allocator, plane, base, result) catch |err| {
-                tab.setMessage("não rodou ({s}): {s}", .{ method_names[m], switch (err) {
+                message(out, "não rodou ({s}): {s}", .{ method_names[m], switch (err) {
                     error.NoSurface => "marque ao menos uma superfície",
                     error.BadInput => "confira a velocidade e a faixa de α",
                     else => @errorName(err),
                 } });
                 return;
             };
-            tab.results[m] = result;
+            out.results[m] = result;
         }
         // o que se simula, em 3D (as superfícies escolhidas, sem fuselagem e sem motores)
         var owners: [analysis.max_surfaces]i32 = undefined;
         if (analysis.wingsOnly(allocator, plane, base.chosen, &owners)) |wings| {
             var diagnosis: model.Diag = .{};
-            tab.wings = assembly_mod.buildMesh(std.heap.page_allocator, &wings.aircraft, &diagnosis) catch null;
+            out.wings = assembly_mod.buildMesh(std.heap.page_allocator, &wings.aircraft, &diagnosis) catch null;
         } else |_| {}
-        tab.buildSeries();
-        tab.progress = 1;
-        tab.setMessage("terminado: ok — {d:.0} ms no núcleo", .{(rl.getTime() - started) * 1000});
+        const elapsed = started.durationTo(std.Io.Clock.awake.now(io()));
+        message(out, "terminado: ok — {d} ms no núcleo", .{@divTrunc(elapsed.nanoseconds, std.time.ns_per_ms)});
     }
 
     /// as curvas ao longo da envergadura: uma por superfície e método, em ordem de y
     fn buildSeries(tab: *AnalyzeTab) void {
         tab.span_series = 0;
-        for (tab.results, 0..) |maybe, m| {
+        for (tab.runs[tab.shown].results, 0..) |maybe, m| {
             const result = maybe orelse continue;
             for (0..result.owner_count) |owner| {
                 const s = tab.span_series;
@@ -176,11 +217,12 @@ pub const AnalyzeTab = struct {
 
     /// a primeira rodada que existe (a da linha sustentadora, se marcada)
     fn main(tab: *const AnalyzeTab) ?*analysis.Result {
-        return tab.results[0] orelse tab.results[1];
+        return tab.runs[tab.shown].results[0] orelse tab.runs[tab.shown].results[1];
     }
 
     /// desenha a aba em `rect` (formulário à esquerda, gráficos à direita)
     pub fn draw(tab: *AnalyzeTab, ui: *widgets.Ui, rect: rl.Rectangle, ac: ?*const model.Aircraft) void {
+        tab.collect();
         const sidebar_width: f32 = 360;
         tab.drawSidebar(ui, .{ .x = rect.x, .y = rect.y, .width = sidebar_width, .height = rect.height }, ac);
         tab.drawPlots(ui, .{ .x = rect.x + sidebar_width, .y = rect.y, .width = rect.width - sidebar_width, .height = rect.height });
@@ -214,7 +256,7 @@ pub const AnalyzeTab = struct {
         const top_card: rl.Rectangle = .{ .x = x1, .y = y, .width = column_width, .height = row_height };
         // as vistas 3D usam a roda antes da rolagem da página, e a textura é desenhada fora do recorte
         const main_result = tab.main();
-        if (main_result != null and tab.wings != null) {
+        if (main_result != null and tab.runs[tab.shown].wings != null) {
             tab.view.handleInput(ui, cardInside(view_card));
             tab.top_view.handleInput(ui, cardInside(top_card));
             tab.render(&tab.view, cardInside(view_card), true);
@@ -243,7 +285,7 @@ pub const AnalyzeTab = struct {
         var total_count: usize = 0;
         var surface_series: [max_series]plot.Series = undefined;
         var surface_count: usize = 0;
-        for (tab.results, 0..) |maybe, m| {
+        for (tab.runs[tab.shown].results, 0..) |maybe, m| {
             const r = maybe orelse continue;
             const n = r.alpha_count;
             total_series[total_count] = .{ .name = @ptrCast(method_names[m]), .xs = r.alphas_deg[0..n], .ys = r.total_cl[0..n], .color_index = m, .dashed = m == 1 };
@@ -282,7 +324,7 @@ pub const AnalyzeTab = struct {
     /// direção perpendicular ao vento (no plano x-z do corpo) e do tamanho de L' (a maior seta = 18 % do avião,
     /// como na vista de cargas em Python)
     fn render(tab: *AnalyzeTab, view: *view3d.View, area: rl.Rectangle, arrows: bool) void {
-        const mesh = &(tab.wings orelse return);
+        const mesh = &(tab.runs[tab.shown].wings orelse return);
         const result = tab.main() orelse return;
         const size = mesh.size();
         const middle = mesh.center();
@@ -307,7 +349,7 @@ pub const AnalyzeTab = struct {
         const inner = widgets.labeledCard(ui, rect, "Diagnóstico");
         const columns = [_]f32{ inner.x, inner.x + 56, inner.x + 220 };
         var y = inner.y;
-        for (tab.results, 0..) |maybe, m| {
+        for (tab.runs[tab.shown].results, 0..) |maybe, m| {
             const r = maybe orelse continue;
             theme.text(ui.fonts.regular, @ptrCast(method_names[m]), inner.x, y, 14, theme.colors.accent);
             y += 24;
@@ -356,7 +398,7 @@ pub const AnalyzeTab = struct {
             y += 26;
             rl.drawRectangleRec(.{ .x = inner.x, .y = y - 6, .width = inner.width, .height = 1 }, theme.colors.grid);
         }
-        for (tab.results, 0..) |maybe, m| {
+        for (tab.runs[tab.shown].results, 0..) |maybe, m| {
             const result = maybe orelse continue;
             var label: [96]u8 = undefined;
             var value: [32]u8 = undefined;
@@ -393,4 +435,20 @@ fn largestLoad(result: *const analysis.Result) f64 {
 /// a parte de dentro de um cartão onde vai a imagem 3D (abaixo do título)
 fn cardInside(rect: rl.Rectangle) rl.Rectangle {
     return .{ .x = rect.x + 4, .y = rect.y + 34, .width = rect.width - 8, .height = rect.height - 40 };
+}
+
+/// uma rodada vazia (a memória da anterior é devolvida)
+fn clear(run: *Run) Run {
+    if (run.wings) |*mesh| mesh.deinit();
+    _ = run.arena.reset(.retain_capacity);
+    return .{ .arena = run.arena };
+}
+
+fn message(run: *Run, comptime fmt: []const u8, args: anytype) void {
+    _ = std.fmt.bufPrintZ(&run.message, fmt, args) catch {};
+}
+
+/// o relógio (sem threads de E/S)
+fn io() std.Io {
+    return std.Io.Threaded.global_single_threaded.io();
 }

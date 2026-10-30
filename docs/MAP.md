@@ -284,7 +284,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
-  tipos `math:10`, `physics:18`, `modifiers:31`, `collision:41`, `control:46`, `sim:53`, `loads:64`, `stability:71`, `sizing:75`, `optim:88`, `geometry:102`, `util:107`
+  tipos `math:10`, `physics:18`, `modifiers:31`, `collision:41`, `control:46`, `sim:53`, `loads:64`, `sizing:70`, `optim:83`, `geometry:97`, `util:102`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
@@ -468,12 +468,6 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sizing/wing_line.zig` — A etapa Asa do dimensionamento: do perfil escolhido à asa trapezoidal, pela linha sustentadora de Prandtl
   tipos `Trapezoid:25`, `SectionAirfoil:38`, `Conditions:44`, `Planform:67`, `Result:147`
   fn `isaDensity:53`, `reynolds:59`, `planformOf:127`, `analyze:291`, `modelSection:393`
-
-**core/src/stability/**
-
-- `core/src/stability/static.zig` — Estabilidade estática do avião montado: o que a aba Estabilidade calcula antes da dinâmica. Igual a
-  tipos `Inputs:28`, `Probe:31`, `Sweep:197`
-  fn `cgSweep:210`, `limitCrossing:236`
 
 **core/src/util/**
 
@@ -686,7 +680,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/airfoil_tab.zig` — A aba Aerodinâmica → Perfis: os perfis candidatos e a polar 2D de cada um, como a página Perfis da GUI em
   tipos `AirfoilTab:48`
 - `aerosim/gui/analyze_tab.zig` — A aba Aerodinâmica → Analisar: as asas do avião aberto, como a simulação "Asas" do aerosim em Python. À
-  tipos `AnalyzeTab:39`
+  tipos `AnalyzeTab:48`
 - `aerosim/gui/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
   tipos `Triangle:14`, `Mesh:22`, `Assembly:90`
   fn `buildMesh:55`, `load:110`, `fillAirfoilFiles:127`, `parseDat:162`, `findExample:194`
@@ -714,6 +708,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `button:272`
 - `aerosim/gui/ui/form.zig` — O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador e escolha. A tela descrev
   tipos `Kind:12`, `Field:21`, `Group:34`, `Form:44`
+- `aerosim/gui/ui/jobs.zig` — As contas longas fora do laço da tela: uma `Job` roda uma função numa thread própria, e a tela continua
+  tipos `Job:11`
 - `aerosim/gui/ui/menus.zig` — As peças de escolha que as abas repetem: a lista de itens com um selecionado (a lista de candidatos de Perfis,
   tipos `ItemList:12`, `CheckItem:51`, `CheckMenu:59`
   fn `buttonGrid:36`, `checkedText:111`

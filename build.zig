@@ -8,13 +8,16 @@
 //!   zig build                                compila os três (cada um em <pasta>/zig-out/bin)
 //!   zig build test                           testes do núcleo, das duas interfaces e do AeroDrive
 //!
+//! Os programas saem em ReleaseSafe (as contas com as verificações do Zig, mas otimizadas; em Debug a análise da
+//! asa fica lenta demais para usar); `-Doptimize=Debug` volta ao modo de depuração.
+//!
 //! Com o Zig do pip: `python -m ziglang build aerosim`.
 const std = @import("std");
 
 const programs = [_][]const u8{ "aerosim", "aeroopt", "aerodrive" };
 
 pub fn build(b: *std.Build) void {
-    const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Debug, ReleaseSafe, ReleaseFast ou ReleaseSmall (passa para cada programa)");
+    const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Debug, ReleaseSafe (padrão), ReleaseFast ou ReleaseSmall (passa para cada programa)") orelse .ReleaseSafe;
     const compile_all = b.getInstallStep();
     const test_all = b.step("test", "Testes do núcleo, das interfaces e do AeroDrive");
     for (programs) |name| {
@@ -32,11 +35,17 @@ pub fn build(b: *std.Build) void {
     test_all.dependOn(&child(b, "core", &.{ "build", "test" }, null).step);
 }
 
-/// `zig <arguments>` na pasta `folder`
+/// `zig <arguments>` na pasta `folder`; o modo vai como `--release=...`, porque os builds das pastas têm um modo
+/// preferido (e aí o Zig não aceita `-Doptimize`)
 fn child(b: *std.Build, folder: []const u8, arguments: []const []const u8, optimize: ?std.builtin.OptimizeMode) *std.Build.Step.Run {
     const run = b.addSystemCommand(&.{b.graph.zig_exe});
     run.addArgs(arguments);
-    if (optimize) |mode| run.addArg(b.fmt("-Doptimize={s}", .{@tagName(mode)}));
+    if (optimize) |mode| switch (mode) {
+        .Debug => {},
+        .ReleaseSafe => run.addArg("--release=safe"),
+        .ReleaseFast => run.addArg("--release=fast"),
+        .ReleaseSmall => run.addArg("--release=small"),
+    };
     run.setCwd(b.path(folder));
     run.has_side_effects = true;
     run.stdio = .inherit;
