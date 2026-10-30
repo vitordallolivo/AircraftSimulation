@@ -237,26 +237,26 @@ class WingsSimulation(SimulationBase):
         return out
 
     def _wing_plots(self):
-        return [PlotSpec("v3d", "Vista 3D do que se simula (α da carga)", "superfícies", ("superfícies",), live=False,
+        return [PlotSpec("v3d", "Vista 3D", "superfícies", ("superfícies",), live=False,
                          source="series:v3d", kind="loads3d", height=620),
-                PlotSpec("top", "Vista de cima (α da carga)", "superfícies", ("superfícies",), live=False,
+                PlotSpec("top", "Vista de cima", "superfícies", ("superfícies",), live=False,
                          source="series:top", kind="loads3d", height=520),
-                PlotSpec("CL", "C_L do conjunto × α", "alpha", ("CL",), "α (°)", "C_L (na soma das áreas)",
+                PlotSpec("CL", "$C_L \\times \\alpha$ do conjunto", "alpha", ("CL",), "$\\alpha$ (°)", "$C_L$ (soma das áreas)",
                          live=False, source="series:conjunto_*"),
-                PlotSpec("CL_surf", "C_L de cada superfície × α", "alpha", ("CL",), "α (°)", "C_L (na área dela)",
+                PlotSpec("CL_surf", "$C_L \\times \\alpha$ por superfície", "alpha", ("CL",), "$\\alpha$ (°)", "$C_L$ (área dela)",
                          live=False, source="series:superficie_*"),
-                PlotSpec("cl_span", "c_l ao longo da envergadura (α da carga)", "s", ("cl",), "y (m)", "c_l",
+                PlotSpec("cl_span", "$c_l \\times y$", "s", ("cl",), "$y$ (m)", "$c_l$",
                          live=False, source="series:cl_*"),
-                PlotSpec("L_span", "Carga ao longo da envergadura (α da carga)", "s", ("L",), "y (m)", "L' (N/m)",
+                PlotSpec("L_span", "$L\' \\times y$", "s", ("L",), "$y$ (m)", "$L\'$ (N/m)",
                          live=False, source="series:L_*"),
-                PlotSpec("pol_CL", "Métodos: C_L × α", "alpha", ("CL",), "α (°)", "C_L (na soma das áreas)",
+                PlotSpec("pol_CL", "Métodos: $C_L \\times \\alpha$", "alpha", ("CL",), "$\\alpha$ (°)", "$C_L$ (soma das áreas)",
                          live=False, source="series:polar_*"),
-                PlotSpec("pol_CD", "Métodos: polar de arrasto", "CD", ("CL",), "C_D", "C_L (na soma das áreas)",
+                PlotSpec("pol_CD", "Métodos: $C_L \\times C_D$", "CD", ("CL",), "$C_D$", "$C_L$ (soma das áreas)",
                          live=False, source="series:polar_*"),
-                PlotSpec("pol_Cm", "Métodos: C_m no ponto dos momentos × α", "alpha", ("Cm",), "α (°)",
-                         "C_m (na soma das áreas e na CMA da asa principal)",
+                PlotSpec("pol_Cm", "Métodos: $C_m \\times \\alpha$", "alpha", ("Cm",), "$\\alpha$ (°)",
+                         "$C_m$ (soma das áreas, CMA da principal)",
                          live=False, source="series:polar_*"),
-                PlotSpec("pol_LD", "Métodos: L/D × C_L", "CL", ("LD",), "C_L", "L/D", live=False,
+                PlotSpec("pol_LD", "Métodos: $L/D \\times C_L$", "CL", ("LD",), "$C_L$", "$L/D$", live=False,
                          source="series:ld_*")]
 
     # ------------------------------------------------------------------ o avião que se analisa

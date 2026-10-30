@@ -39,6 +39,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - a divisa entre o formulário e os resultados se arrasta (aerosim e aeroopt, a mesma largura em todas as abas), e um
   campo de número ou célula de tabela ao entrar em edição troca o valor inteiro pelo que se digita (−1 e digitar 0.2
   dá 0.2, não −10.2); apagar ou mover o cursor volta à edição normal.
+- gráficos com menos texto: os títulos dizem só o que se plota, em TeX (`$C_L \times \alpha$`), e a legenda explica
+  (cruzeiro, estol, fim do curso). A tela em Zig desenha o TeX dos títulos, eixos e legendas (`ui/tex.zig`: índice,
+  expoente, letras gregas e operadores), e as retas de referência (`_vline`, `_hline`) chegam nela com nome na
+  legenda. Feito nas etapas (Perfis, Projetar, Empenagem, Motores) e em Analisar.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

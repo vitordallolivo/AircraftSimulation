@@ -14,6 +14,7 @@ const widgets = @import("widgets.zig");
 const numbers = @import("numbers.zig");
 const dialogs = @import("dialogs.zig");
 const export_file = @import("export.zig");
+const tex = @import("tex.zig");
 
 /// uma curva: x e y do mesmo tamanho
 pub const Series = struct {
@@ -23,6 +24,7 @@ pub const Series = struct {
     dashed: bool = false,
     points: bool = false, // só os pontos, sem ligar
     color_index: ?usize = null, // cor fixa da paleta (senão, a ordem da curva)
+    in_legend: bool = true, // falso: a reta repetida (o outro lado do fim do curso) não aparece de novo na legenda
 };
 
 /// pontos coloridos por um valor (azul → laranja), sem legenda de curvas
@@ -556,10 +558,10 @@ pub fn drawFrame(ui: *widgets.Ui, inner: rl.Rectangle, axes: Axes, x_data: numbe
         theme.text(ui.fonts.mono, tick, area.x - w - 8, p.y - 7, 12, theme.colors.muted);
     }
     // rótulos dos eixos
-    const xw = theme.textWidth(ui.fonts.regular, axes.x_label, 13);
-    theme.text(ui.fonts.regular, axes.x_label, area.x + (area.width - xw) / 2, area.y + area.height + 24, 13, theme.colors.label);
-    const yw = theme.textWidth(ui.fonts.regular, axes.y_label, 13);
-    rl.drawTextPro(ui.fonts.regular, axes.y_label, .{ .x = inner.x + 2, .y = area.y + (area.height + yw) / 2 }, .{ .x = 0, .y = 0 }, -90, 13, theme.spacing(13), theme.colors.label);
+    const xw = tex.width(ui.fonts.regular, axes.x_label, 13);
+    _ = tex.draw(ui.fonts.regular, axes.x_label, area.x + (area.width - xw) / 2, area.y + area.height + 24, 13, theme.colors.label);
+    const yw = tex.width(ui.fonts.regular, axes.y_label, 13);
+    tex.drawRotated(ui.fonts.regular, axes.y_label, inner.x + 2, area.y + (area.height + yw) / 2, 13, theme.colors.label);
     return frame;
 }
 
@@ -591,7 +593,7 @@ fn dashedLine(a: rl.Vector2, b: rl.Vector2, color: rl.Color) void {
 const legend_row: f32 = 18;
 
 fn legendItemWidth(ui: *widgets.Ui, name: [:0]const u8) f32 {
-    return 28 + theme.textWidth(ui.fonts.regular, name, 12) + 18;
+    return 28 + tex.width(ui.fonts.regular, name, 12) + 18;
 }
 
 fn legendHeight(ui: *widgets.Ui, width: f32, series: []const Series) f32 {
@@ -599,6 +601,7 @@ fn legendHeight(ui: *widgets.Ui, width: f32, series: []const Series) f32 {
     var rows: f32 = 1;
     var x: f32 = 0;
     for (series) |s| {
+        if (!s.in_legend) continue;
         const w = legendItemWidth(ui, s.name);
         if (x > 0 and x + w > width - 20) {
             rows += 1;
@@ -613,6 +616,7 @@ fn drawLegend(ui: *widgets.Ui, rect: rl.Rectangle, series: []const Series, state
     var x = rect.x;
     var y = rect.y;
     for (series, 0..) |s, i| {
+        if (!s.in_legend) continue;
         const w = legendItemWidth(ui, s.name);
         if (x > rect.x and x + w > rect.x + rect.width) {
             x = rect.x;
@@ -624,7 +628,7 @@ fn drawLegend(ui: *widgets.Ui, rect: rl.Rectangle, series: []const Series, state
         if (interactive and ui.clickedIn(item)) state.toggle(s.name);
         const color = if (hidden) theme.colors.line else theme.plotColor(s.color_index orelse i);
         if (s.points) rl.drawCircleV(.{ .x = x + 11, .y = y + 7 }, 3.5, color) else if (s.dashed) dashedLine(.{ .x = x, .y = y + 7 }, .{ .x = x + 22, .y = y + 7 }, color) else rl.drawLineEx(.{ .x = x, .y = y + 7 }, .{ .x = x + 22, .y = y + 7 }, 2.2, color);
-        theme.text(ui.fonts.regular, s.name, x + 28, y, 12, if (hidden) theme.colors.muted else theme.colors.label);
+        _ = tex.draw(ui.fonts.regular, s.name, x + 28, y, 12, if (hidden) theme.colors.muted else theme.colors.label);
         if (hidden) rl.drawLineEx(.{ .x = x + 26, .y = y + 7 }, .{ .x = x + w - 16, .y = y + 7 }, 1, theme.colors.muted);
         x += w;
     }

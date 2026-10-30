@@ -16,7 +16,9 @@ pub const table = @import("table.zig");
 pub const checks = @import("checks.zig");
 pub const stage = @import("stage.zig");
 pub const system = @import("system.zig");
+pub const tex = @import("tex.zig");
 
 test {
     _ = numbers;
+    _ = tex;
 }

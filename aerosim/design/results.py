@@ -40,10 +40,10 @@ def constraint_checks(req, values: dict, stage: str, group: str, fixes: dict | N
 
 # ------------------------------------------------------------------ Perfil
 AIRFOIL_PLOTS = [
-    PlotSpec("cl", "c_l × α", "alpha", ("cl",), "α (°)", "c_l", live=False, source="series:pol_*"),
-    PlotSpec("polar", "Polar c_l × c_d", "cd", ("cl",), "c_d", "c_l", live=False, source="series:pol_*"),
-    PlotSpec("ld", "Eficiência c_l/c_d × α", "alpha", ("ld",), "α (°)", "c_l/c_d", live=False, source="series:pol_*"),
-    PlotSpec("cm", "c_m × α", "alpha", ("cm",), "α (°)", "c_m", live=False, source="series:pol_*"),
+    PlotSpec("cl", "$c_l \\times \\alpha$", "alpha", ("cl",), "$\\alpha$ (°)", "$c_l$", live=False, source="series:pol_*"),
+    PlotSpec("polar", "$c_l \\times c_d$", "cd", ("cl",), "$c_d$", "$c_l$", live=False, source="series:pol_*"),
+    PlotSpec("ld", "$c_l/c_d \\times \\alpha$", "alpha", ("ld",), "$\\alpha$ (°)", "$c_l/c_d$", live=False, source="series:pol_*"),
+    PlotSpec("cm", "$c_m \\times \\alpha$", "alpha", ("cm",), "$\\alpha$ (°)", "$c_m$", live=False, source="series:pol_*"),
 ]
 CONTOUR_PLOT = PlotSpec("shape", "Contorno", "x", ("y",), "x/c", "y/c", live=False, source="series:shape_*",
                         aspect=True, height=220)
@@ -90,13 +90,13 @@ def airfoil_stage(entries: list[afm.AirfoilEntry], Re: float) -> tuple[list[Plot
 
 # ------------------------------------------------------------------ Asa
 WING_PLOTS = [
-    PlotSpec("CL", "C_L × α da asa (até o estol)", "alpha", ("CL",), "α da raiz (°)", "C_L", live=False,
+    PlotSpec("CL", "$C_L \\times \\alpha$", "alpha", ("CL",), "$\\alpha_{raiz}$ (°)", "$C_L$", live=False,
              source="series:wCL_*"),
-    PlotSpec("pol", "Polar da asa: induzido, perfil e total", "CD", ("CL",), "C_D", "C_L", live=False,
+    PlotSpec("pol", "$C_L \\times C_D$", "CD", ("CL",), "$C_D$", "$C_L$", live=False,
              source="series:wpol_*"),
-    PlotSpec("LD", "L/D × C_L (tracejado: cruzeiro)", "CL", ("LD",), "C_L", "L/D", live=False, source="series:wLD_*"),
-    PlotSpec("span", "c_l na envergadura: onde o estol começa", "eta", ("cl",), "posição na semiasa (2y/b)",
-             "c_l", live=False, source="series:wspan_*"),
+    PlotSpec("LD", "$L/D \\times C_L$", "CL", ("LD",), "$C_L$", "$L/D$", live=False, source="series:wLD_*"),
+    PlotSpec("span", "$c_l \\times 2y/b$", "eta", ("cl",), "$2y/b$",
+             "$c_l$", live=False, source="series:wspan_*"),
 ]
 
 
@@ -106,14 +106,14 @@ def wing_stage(cand: wg.WingCandidate, req, rules, others: list | None = None) -
     lab = cand.name
     S[f"wCL_{lab}"] = dict(alpha=r["alpha"], CL=r["CL"], _width=2.4)
     S[f"wpol_{lab}: total"] = dict(CD=r["CD"], CL=r["CL"], _width=2.4, _color="#000000")
-    S[f"wpol_{lab}: induzido"] = dict(CD=r["CDi"], CL=r["CL"], _color="#1f77b4", _dash="dash")
-    S[f"wpol_{lab}: perfil"] = dict(CD=r["CDp"], CL=r["CL"], _color="#2ca02c", _dash="dash")
+    S[f"wpol_{lab}: induzido $C_{{D,i}}$"] = dict(CD=r["CDi"], CL=r["CL"], _color="#1f77b4", _dash="dash")
+    S[f"wpol_{lab}: perfil $C_{{D,p}}$"] = dict(CD=r["CDp"], CL=r["CL"], _color="#2ca02c", _dash="dash")
     S[f"wLD_{lab}"] = dict(CL=r["CL"], LD=r["LD"], _width=2.4)
-    S["wLD_C_L de cruzeiro"] = dict(_vline=r["CL_cruise"], _color="#7f7f7f")
-    S["wspan_c_l no cruzeiro"] = dict(eta=r["span_eta"], cl=r["cl_cruise"], _color="#1f77b4")
-    S["wspan_c_l no estol"] = dict(eta=r["span_eta"], cl=r["cl_stall"], _color="#d62728", _width=2.2)
-    S["wspan_c_l,max do perfil"] = dict(_hline=r["airfoil"].cl_max, _color="#d62728", _dash="dot")
-    S["wspan_onde começa"] = dict(_vline=r["eta_stall"], _color="#ff7f0e")
+    S["wLD_cruzeiro $C_{L,cr}$"] = dict(_vline=r["CL_cruise"], _color="#7f7f7f")
+    S["wspan_cruzeiro"] = dict(eta=r["span_eta"], cl=r["cl_cruise"], _color="#1f77b4")
+    S["wspan_estol"] = dict(eta=r["span_eta"], cl=r["cl_stall"], _color="#d62728", _width=2.2)
+    S["wspan_$c_{l,max}$ do perfil"] = dict(_hline=r["airfoil"].cl_max, _color="#d62728", _dash="dot")
+    S["wspan_início do estol"] = dict(_vline=r["eta_stall"], _color="#ff7f0e")
     for o in others or []:          # as asas guardadas, para comparar (finas)
         try:
             ro = wg.analyze(o, req, rules)
@@ -165,11 +165,11 @@ def wing_stage(cand: wg.WingCandidate, req, rules, others: list | None = None) -
 
 # ------------------------------------------------------------------ Empenagem
 SET_PLOTS = [
-    PlotSpec("cm", "C_m no CG × α (tem de descer)", "alpha", ("Cm",), "α da raiz da asa (°)", "C_m",
+    PlotSpec("cm", "$C_{m,CG} \\times \\alpha$", "alpha", ("Cm",), "$\\alpha_{raiz}$ (°)", "$C_m$",
              live=False, source="series:cm_*"),
-    PlotSpec("de", "Profundor de equilíbrio × V", "V", ("de",), "V (m/s)", "δe (°, − cabra)",
+    PlotSpec("de", "$\\delta_e \\times V$", "V", ("de",), "$V$ (m/s)", "$\\delta_e$ (°, − cabra)",
              live=False, source="series:de_*"),
-    PlotSpec("cg", "Faixa do CG (% CMA)", "x", ("y",), "% CMA", "", live=False,
+    PlotSpec("cg", "$x_{CG}$ (% CMA)", "x", ("y",), "% CMA", "", live=False,
              source="series:cg_*", height=200),
 ]
 
@@ -186,9 +186,9 @@ def set_stage(cand: tl.SetCandidate, req, rules, airfoils=None) -> tuple[list[Pl
         elif k.startswith("de:"):
             lab = k[3:]
             S[f"de_{lab}"] = dict(V=cv["V"], de=v, _color=colors.get(lab), _width=2.4 if "alvo" in lab else 1.6)
-    S["cm_C_m = 0"] = dict(_hline=0.0, _color="#7f7f7f", _dash="dot")
-    S["de_curso"] = dict(_hline=-rules.de_max, _color="#d62728", _dash="dot")
-    S["de_curso "] = dict(_hline=rules.de_down, _color="#d62728", _dash="dot", _nolegend=1)
+    S["cm_$C_m = 0$"] = dict(_hline=0.0, _color="#7f7f7f", _dash="dot")
+    S["de_fim do curso"] = dict(_hline=-rules.de_max, _color="#d62728", _dash="dot")
+    S["de_fim do curso "] = dict(_hline=rules.de_down, _color="#d62728", _dash="dot", _nolegend=1)
     S["de_cruzeiro"] = dict(_vline=req.V_cruise, _color="#7f7f7f")
     pct = lambda h: 100 * h
     if "h_fwd" in r:
@@ -278,10 +278,10 @@ def set_stage(cand: tl.SetCandidate, req, rules, airfoils=None) -> tuple[list[Pl
 
 # ------------------------------------------------------------------ Motores e montagem
 AIRCRAFT_PLOTS = [
-    PlotSpec("T", "Tração disponível × arrasto", "V", ("N",), "V (m/s)", "N", live=False,
+    PlotSpec("T", "$T, D \\times V$", "V", ("N",), "$V$ (m/s)", "N", live=False,
              source="series:t_*"),
-    PlotSpec("RC", "Razão de subida × V", "V", ("RC",), "V (m/s)", "m/s", live=False, source="series:rc_*"),
-    PlotSpec("to", "Corrida × massa (corta a pista: MTOW)", "m", ("s",), "massa (kg)", "m",
+    PlotSpec("RC", "$R/C \\times V$", "V", ("RC",), "$V$ (m/s)", "m/s", live=False, source="series:rc_*"),
+    PlotSpec("to", "$s_{TO} \\times m$", "m", ("s",), "$m$ (kg)", "m",
              live=False, source="series:to_*"),
 ]
 
@@ -290,8 +290,8 @@ def aircraft_stage(cand: pw.AircraftCandidate, req, rules, catalog=None, backend
     ac, asm = pw.assemble(cand, req, rules, catalog, airfoils)
     pf = pw.performance(ac, asm, req, backend)
     S, summ, checks = {}, {}, []
-    S["t_tração disponível"] = dict(V=pf["V"], N=pf["T"], _color="#1f77b4", _width=2.4)
-    S["t_arrasto"] = dict(V=pf["V"], N=pf["D"], _color="#d62728", _width=2.4)
+    S["t_tração $T$"] = dict(V=pf["V"], N=pf["T"], _color="#1f77b4", _width=2.4)
+    S["t_arrasto $D$"] = dict(V=pf["V"], N=pf["D"], _color="#d62728", _width=2.4)
     S["t_estol"] = dict(_vline=pf["Vs"], _color="#7f7f7f")
     S["t_cruzeiro"] = dict(_vline=req.V_cruise, _color="#2ca02c")
     S["rc_razão de subida"] = dict(V=pf["V"], RC=pf["RC"], _width=2.4)
@@ -299,8 +299,8 @@ def aircraft_stage(cand: pw.AircraftCandidate, req, rules, catalog=None, backend
     s = np.where(np.isfinite(pf["s_curve"]), pf["s_curve"], np.nan)
     S["to_corrida"] = dict(m=pf["masses"], s=s, _width=2.4)
     if rg.active(req.constraints, "s_to", "≤"):
-        S["to_corrida restrita"] = dict(_hline=req.takeoff_run, _color="#d62728")
-    S["to_massa do avião montado"] = dict(_vline=asm["mass"], _color="#000000")
+        S["to_pista"] = dict(_hline=req.takeoff_run, _color="#d62728")
+    S["to_massa do avião"] = dict(_vline=asm["mass"], _color="#000000")
     if math.isfinite(pf["mtow_runway"]):
         S["to_MTOW pela pista"] = dict(_vline=pf["mtow_runway"], _color="#2ca02c")
     summ["PV (vazio), CP (carga paga), total (kg)"] = [asm["empty"], asm["payload"], asm["mass"]]

@@ -689,7 +689,7 @@ pub const Page = struct {
                     try xs.append(memory, x);
                     try ys.append(memory, y);
                 }
-                series[k] = .{ .name = try memory.dupeZ(u8, stringField(curve, "name")), .xs = xs.items, .ys = ys.items, .dashed = flag(curve, "dashed") };
+                series[k] = .{ .name = try memory.dupeZ(u8, stringField(curve, "name")), .xs = xs.items, .ys = ys.items, .dashed = flag(curve, "dashed"), .in_legend = curve.object.get("legend") == null or flag(curve, "legend") };
             }
             try charts.append(memory, .{ .title = try memory.dupeZ(u8, stringField(item, "title")), .x_label = try memory.dupeZ(u8, stringField(item, "xlabel")), .y_label = try memory.dupeZ(u8, stringField(item, "ylabel")), .series = series });
         };

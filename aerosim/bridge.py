@@ -272,7 +272,11 @@ def _plot(spec: PlotSpec, result: SimResult) -> dict:
             tables = [(k[len(name) - 1:], v) for k, v in result.series.items() if k.startswith(name[:-1])]
         else:
             tables = [(name, result.series.get(name))]
+    guides = []
     for label, table in tables:
+        if isinstance(table, dict) and ("_vline" in table or "_hline" in table) and spec.x not in table:
+            guides.append((label, table))                       # as retas de referência vão depois das curvas
+            continue
         if not isinstance(table, dict) or spec.x not in table:
             continue
         for y in spec.ys:
@@ -287,7 +291,30 @@ def _plot(spec: PlotSpec, result: SimResult) -> dict:
             if len(spec.ys) > 1:
                 title = f"{title}: {y}"
             curves.append({"name": title, "x": xs, "y": ys, "dashed": table.get("_dash") is not None})
+    _guides(curves, guides, spec.swap)
     return out
+
+
+def _guides(curves: list, guides: list, swap: bool) -> None:
+    """as retas de referência (`_vline` em x, `_hline` em y: cruzeiro, estol, fim do curso) como curvas de dois
+    pontos que atravessam o que as curvas ocupam, com o nome na legenda (uma vez por nome)"""
+    xs = [v for c in curves for v in c["x"] if v is not None]
+    ys = [v for c in curves for v in c["y"] if v is not None]
+    named = {c["name"] for c in curves}
+    for label, table in guides:
+        vertical = "_vline" in table
+        value = _numbers([table["_vline" if vertical else "_hline"]])
+        if value is None or value[0] is None:
+            continue
+        if swap:
+            vertical = not vertical
+        span = ys if vertical else xs
+        low, high = (min(span), max(span)) if span else (value[0] - 1, value[0] + 1)
+        x, y = ([value[0]] * 2, [low, high]) if vertical else ([low, high], [value[0]] * 2)
+        name = str(table.get("_label") or label).strip()
+        curves.append({"name": name, "x": x, "y": y, "dashed": table.get("_dash") is not None,
+                       "legend": not table.get("_nolegend") and name not in named})
+        named.add(name)
 
 
 def _numbers(column) -> list | None:

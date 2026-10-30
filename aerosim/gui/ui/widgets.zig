@@ -5,6 +5,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const rg = @import("raygui");
 const theme = @import("theme.zig");
+const tex = @import("tex.zig");
 
 /// o que todo widget precisa: fontes, logo e o estado do mouse neste quadro
 pub const Ui = struct {
@@ -402,7 +403,7 @@ pub fn progressBar(rect: rl.Rectangle, fill: f32) void {
 pub fn card(ui: *Ui, rect: rl.Rectangle, title: [:0]const u8) rl.Rectangle {
     rounded(rect, 10, theme.colors.field);
     roundedLines(rect, 10, theme.colors.line);
-    theme.text(ui.fonts.regular, title, rect.x + 16, rect.y + 11, 16, theme.colors.accent);
+    _ = tex.draw(ui.fonts.regular, title, rect.x + 16, rect.y + 11, 16, theme.colors.accent);
     return .{ .x = rect.x + 10, .y = rect.y + 34, .width = rect.width - 20, .height = rect.height - 44 };
 }
 
