@@ -185,3 +185,32 @@ def test_wing_layout_three_wings_and_joined_tips(tmp_path):
     tail.do_keep()
     again = store.load(ctx.folder)
     assert len(again.sets[0].more_wings) == 1 and again.sets[0].more_places[0].dz == 0.7
+
+
+def test_wing_devices_table_puts_each_device_on_its_wing(tmp_path):
+    """a tabela de dispositivos de Projetar: cada um (o `WingDevice` do modelo) preso a uma linha da tabela de asas;
+    a vista 3D, a Empenagem e o conjunto guardado levam cada um na asa dele"""
+    from aerosim.design import store
+    ctx = _context(tmp_path)
+    wing = stages.WingStage(ctx)
+    wing.do_keep()
+    wing.edit_grid("asas", "add", -1)
+    wing.edit_grid("asas", "add", 0)
+    wing.edit_grid("asas", "set", 1, "dz", 0.35)
+    names = [g.name for g in wing.grids()]
+    assert names[:2] == ["asas", "dispositivos"]
+    wing.edit_grid("dispositivos", "add", -1)
+    wing.edit_grid("dispositivos", "add", 0)
+    wing.edit_grid("dispositivos", "set", 1, "wing", "2: asa 1")
+    wing.edit_grid("dispositivos", "set", 1, "kind", "placa")
+    wing.edit_grid("dispositivos", "set", 1, "height", 0.2)
+    rows = [g for g in wing.grids() if g.name == "dispositivos"][0].rows
+    assert [r[:2] for r in rows] == [["1: asa 1", "winglet"], ["2: asa 1", "placa"]]
+    view = wing.compute().aircraft.surfaces
+    assert [d.kind for d in view[0].devices] == ["winglet"] and [d.kind for d in view[1].devices] == ["placa"]
+    ac = stages.TailStage(ctx).compute().aircraft
+    wings = [s for s in ac.surfaces if s.role == "wing"]
+    assert [d.kind for d in wings[0].devices] == ["winglet"] and wings[1].devices[0].height == 0.2
+    stages.TailStage(ctx).do_keep()
+    again = store.load(ctx.folder)
+    assert again.sets[0].devices[1][0].kind == "placa" and again.wing_layout[1].devices[0].kind == "placa"

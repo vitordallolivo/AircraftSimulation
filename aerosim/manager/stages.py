@@ -98,6 +98,11 @@ class Context:
             store.save(self.design, self.folder)
 
 
+def _drop(items: list, item) -> None:
+    """tira `item` da lista por identidade (dois dispositivos iguais são objetos diferentes)"""
+    items[:] = [x for x in items if x is not item]
+
+
 def only_surfaces(surfaces, boom=None) -> Aircraft:
     """um 'avião' só com as peças da etapa (para o 3D e as dimensões)"""
     ac = Aircraft(name="prévia", surfaces=copy.deepcopy(surfaces))
@@ -401,8 +406,46 @@ class WingStage(Stage):
     LAYOUT_BUTTONS = (("add", "+ asa", "mais uma asa guardada, depois da selecionada (ou no fim)"),
                       ("delete", "− asa", "tira a selecionada da lista"))
 
+    # a tabela dos dispositivos das asas do avião (o `WingDevice` do modelo, por linha da tabela de asas)
+    DEVICE_COLUMNS = (("wing", "asa", "em qual linha da tabela 'Asas do avião' ele fica"),
+                      ("kind", "tipo", "winglet: para cima; winglet_baixo: para baixo; placa: metade para cima e "
+                                       "metade para baixo; cerca: placa fina sobre o extradorso"),
+                      ("eta", "posição", "onde, na semienvergadura: 0 = raiz, 1 = ponta"),
+                      ("dx", "recuo (m)", "do bordo de ataque dele em relação ao da asa ali: + para trás"),
+                      ("height", "altura (m)", "na placa, a soma das duas metades"),
+                      ("root_chord", "corda (m)", "na raiz dele; 0 = a corda da asa ali"),
+                      ("taper", "afilamento", "corda da ponta / corda da raiz"),
+                      ("sweep", "enflechamento (°)", "do bordo de ataque"),
+                      ("cant", "inclinação (°)", "a partir da vertical: 0 = vertical, 90 = no plano da asa"),
+                      ("toe", "calagem (°)", "+ bordo de ataque para fora"),
+                      ("profile", "perfil", "o perfil dele"))
+    DEVICE_BUTTONS = (("add", "+ dispositivo", "um winglet na ponta da asa do selecionado (ou da primeira)"),
+                      ("delete", "− dispositivo", "tira o selecionado"))
+
     def grids(self):
-        return self._layout_grid() + self._partition_grid()
+        return self._layout_grid() + self._device_grid() + self._partition_grid()
+
+    def _device_rows(self) -> list:
+        """(linha da tabela de asas, dispositivo), na ordem da tabela"""
+        return [(k, x) for k, r in enumerate(self.ctx.design.wing_layout) for x in r.devices]
+
+    def _device_grid(self):
+        from aerosim.model.aircraft import DEVICE_KINDS
+        d = self.ctx.design
+        if not d.wing_layout:
+            return []
+        wings = tuple(f"{k + 1}: {r.wing}" for k, r in enumerate(d.wing_layout))
+        profiles = tuple(dict.fromkeys(TAIL_AIRFOILS + d.airfoil_names()))
+        rows = self._device_rows()
+        profiles += tuple(x.profile for _, x in rows if x.profile not in profiles)
+        kinds = {"wing": ("choice", wings), "kind": ("choice", DEVICE_KINDS), "profile": ("choice", profiles)}
+        columns = [GridColumn(k, label, kinds.get(k, ("float",))[0], kinds.get(k, (None, ()))[1], tip)
+                   for k, label, tip in self.DEVICE_COLUMNS]
+        return [Grid("dispositivos", "Dispositivos das asas", columns,
+                     [[wings[k] if c == "wing" else getattr(x, c) for c, _, _ in self.DEVICE_COLUMNS] for k, x in rows],
+                     "vão com a configuração guardada; a Empenagem e o avião montado levam cada um na asa dele.",
+                     "winglets, placas de ponta e cercas, cada um preso a uma asa da tabela acima, com a geometria "
+                     "dele. O 3D mostra cada um no lugar.", list(self.DEVICE_BUTTONS))]
 
     def _layout_grid(self):
         d = self.ctx.design
@@ -443,6 +486,8 @@ class WingStage(Stage):
     def edit_grid(self, name, op, row, key="", value=None):
         if name == "asas":
             self._edit_layout(op, row, key, value)
+        elif name == "dispositivos":
+            self._edit_devices(op, row, key, value)
         else:
             self._edit_partitions(op, row, key, value)
         self.ctx.save()
@@ -469,6 +514,33 @@ class WingStage(Stage):
         else:
             raise KeyError(op)
         d.apply_wing_layout()
+
+    def _edit_devices(self, op, row, key, value):
+        from aerosim.model.aircraft import WingDevice
+        layout = self.ctx.design.wing_layout
+        rows = self._device_rows()
+        row = row if 0 <= row < len(rows) else len(rows) - 1
+        if op == "set" and rows:
+            k, x = rows[row]
+            if key == "wing":                                  # muda de asa: "2: asa bi" → a linha 2
+                target = int(str(value).split(":")[0]) - 1
+                if 0 <= target < len(layout) and target != k:
+                    _drop(layout[k].devices, x)
+                    layout[target].devices.append(x)
+            elif key in ("kind", "profile"):
+                setattr(x, key, str(value))
+            else:
+                setattr(x, key, float(value))
+        elif op == "add" and layout:
+            k = rows[row][0] if rows else 0
+            layout[k].devices.append(WingDevice())
+        elif op == "delete":
+            if rows:
+                k, x = rows[row]
+                _drop(layout[k].devices, x)
+        else:
+            raise KeyError(op)
+        self.ctx.design.apply_wing_layout()
 
     def _edit_partitions(self, op, row, key, value):
         p = self.draft()

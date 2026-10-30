@@ -134,6 +134,7 @@ class SetCandidate:
     group: str = ""                         # id que liga as duas asas no avião (sorteado ao guardar)
     more_wings: list[WingCandidate] = field(default_factory=list)       # da terceira asa em diante (cópias)
     more_places: list[WingPlacement] = field(default_factory=list)      # onde cada uma fica em relação à primeira
+    devices: list[list[WingDevice]] = field(default_factory=list)      # da primeira e da segunda asa (as outras: em more_places)
 
     @property
     def name(self) -> str:
@@ -353,6 +354,8 @@ def join_tips(a: LiftingSurface, b: LiftingSurface) -> None:
 
 def _add_wing2(ac: Aircraft, cand: SetCandidate, req: Requirements, rules: DesignRules) -> None:
     """a segunda asa no fim da lista (as contas da etapa leem a asa em [0] e a cauda em [1]), ligada à primeira"""
+    if cand.devices:                                  # os dispositivos da tabela de Projetar (a primeira asa)
+        ac.surfaces[0].devices += copy.deepcopy(cand.devices[0])
     if cand.wing2 is None:
         return
     tp = cand.params
@@ -395,6 +398,8 @@ def _add_wing2(ac: Aircraft, cand: SetCandidate, req: Requirements, rules: Desig
     else:
         w2.incidence = w.incidence + tp.wing2_di
     w2.controls = []                                  # os comandos ficam na primeira (na Montagem, livre)
+    if len(cand.devices) > 1:
+        w2.devices += copy.deepcopy(cand.devices[1])
     ac.surfaces.append(w2)
     ac.link_wings(w, w2)
     if tp.wing2_join:
@@ -411,6 +416,7 @@ def _add_wing2(ac: Aircraft, cand: SetCandidate, req: Requirements, rules: Desig
         if tp.layout == "sem cauda" and place.dx > 0:  # atrás da primeira: sente o downwash dela
             s.downwash, s.eta = True, tp.tail_eta
         s.controls = []
+        s.devices += copy.deepcopy(place.devices)
         ac.surfaces.append(s)
         ac.link_wings(w, s)
         if place.join:

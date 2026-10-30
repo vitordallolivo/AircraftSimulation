@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from aerosim.model.aircraft import LiftingSurface, WingSection
+from aerosim.model.aircraft import LiftingSurface, WingDevice, WingSection
 
 from . import airfoils as afm
 from .fields import F
@@ -62,6 +62,7 @@ class WingPlacement:
     di: float = F(0.0, "decalagem", "°", "incidência dela menos a da referência", -12.0, 8.0, 0.25)
     join: bool = F(False, "pontas ligadas", "", "uma placa liga a ponta dela à da referência (asa em caixa, o "
                    "\"best wing system\" de Prandtl): menos arrasto induzido no mesmo vão")
+    devices: list[WingDevice] = field(default_factory=list)   # os dispositivos dela (winglet, placa, cerca), da tabela
 
 
 @dataclass

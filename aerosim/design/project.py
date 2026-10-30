@@ -134,6 +134,7 @@ class DesignProject:
             s.name = f"{row.wing} ({k + 1})" if k else row.wing
             s.x, s.y, s.z = -row.dx, row.dy, -row.dz           # x e z do corpo: + para a frente, + para baixo
             s.incidence = row.di
+            s.devices += copy.deepcopy(row.devices)
             if k and row.join and surfaces:
                 join_tips(surfaces[0], s)
             surfaces.append(s)
@@ -225,12 +226,14 @@ class DesignProject:
             return None
         n2 = self.tail_draft.wing2
         w2 = w if n2 == SAME_WING else (self.wing(n2) if n2 and n2 != NO_WING2 else None)
-        more = [(self.wing(r.wing), r) for r in self.layout_rows()[2:]]
+        rows = self.layout_rows()
+        more = [(self.wing(r.wing), r) for r in rows[2:]]
         more = [(m, r) for m, r in more if m is not None]
         return SetCandidate(copy.deepcopy(self.tail_draft), copy.deepcopy(w),
                             wing2=wing2_candidate(w2, self.tail_draft, self.airfoil),
                             more_wings=[copy.deepcopy(m) for m, _ in more],
-                            more_places=[copy.deepcopy(r) for _, r in more])
+                            more_places=[copy.deepcopy(r) for _, r in more],
+                            devices=[copy.deepcopy(r.devices) for r in rows[:2]] if any(r.devices for r in rows) else [])
 
     def keep_set(self) -> SetCandidate | None:
         c = self.draft_set()

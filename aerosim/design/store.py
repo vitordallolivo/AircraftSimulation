@@ -26,6 +26,7 @@ import json
 import os
 import re
 
+from aerosim.model.aircraft import WingDevice
 from aerosim.model.serialize import from_dict, to_dict
 
 from .power import AircraftCandidate, PowerParams
@@ -125,6 +126,8 @@ def _set_dict(s: SetCandidate) -> dict:
         d.update(asa2=to_dict(s.wing2), grupo=s.group)
     if s.more_wings:
         d.update(mais_asas=[to_dict(w) for w in s.more_wings], lugares=[to_dict(q) for q in s.more_places])
+    if s.devices:
+        d.update(dispositivos=[[to_dict(x) for x in row] for row in s.devices])
     return d
 
 
@@ -133,7 +136,8 @@ def _set_from(d: dict, wing: WingCandidate) -> SetCandidate:
     return SetCandidate(from_dict(TailParams, d.get("params", {})), copy.deepcopy(wing), d.get("note", ""),
                         from_dict(WingCandidate, w2) if w2 else None, d.get("grupo", ""),
                         [from_dict(WingCandidate, w) for w in d.get("mais_asas", [])],
-                        [from_dict(WingPlacement, q) for q in d.get("lugares", [])])
+                        [from_dict(WingPlacement, q) for q in d.get("lugares", [])],
+                        [[from_dict(WingDevice, x) for x in row] for row in d.get("dispositivos", [])])
 
 
 def run_file(r: dict) -> str:

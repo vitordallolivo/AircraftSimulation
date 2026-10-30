@@ -121,6 +121,12 @@ a segunda asa da configuração para o rascunho dela, e `draft_set` leva as outr
 sprint de antes, com a segunda asa nos campos da Empenagem, abre com essa segunda asa virada numa configuração de
 duas asas (`adopt_second_wing`) e dá o mesmo conjunto. A exceção é a segunda asa escalada (área, envergadura,
 enflechamento ou perfil próprios), que só o aeroopt usa: ela não é uma asa guardada e continua montada como antes.
+Os dispositivos das asas (winglet, winglet para baixo, placa de ponta e cerca) ficam na tabela "Dispositivos das
+asas", logo abaixo. Cada linha é o `WingDevice` do modelo, o mesmo que a Montagem já usava, preso a uma linha da tabela
+de asas (`WingPlacement.devices`), com onde fica na semienvergadura, recuo, altura, corda, afilamento, enflechamento,
+inclinação, calagem e perfil. Eles vão com a configuração guardada, e a Empenagem e o avião montado levam cada um na
+asa dele (`SetCandidate.devices` para as duas primeiras; as outras, pela linha delas).
+
 Como chegar no CG de projeto (tubos, lastro) é da Montagem, não destas etapas.
 
 A análise é a linha sustentadora de Prandtl pela série de Glauert, simétrica (só os termos ímpares; Anderson,

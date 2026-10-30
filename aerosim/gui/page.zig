@@ -1226,9 +1226,15 @@ fn readGrids(memory: std.mem.Allocator, reply: Json) ![]const Grid {
         const keys = try memory.alloc([]const u8, columns_json.len);
         const options = try memory.alloc([]const []const u8, columns_json.len);
         const choice_texts = try memory.alloc([:0]const u8, columns_json.len);
+        // as colunas de número dividem no máximo 60 % da largura, para as de escolha não sumirem numa tabela larga
+        var numbers: f32 = 0;
+        for (columns_json) |column| {
+            if (!std.mem.eql(u8, stringField(column, "kind"), "choice")) numbers += 1;
+        }
+        const number_width: f32 = if (numbers > 0) @min(0.13, 0.6 / numbers) else 0.13;
         for (columns_json, 0..) |column, c| {
             const is_choice = std.mem.eql(u8, stringField(column, "kind"), "choice");
-            columns[c] = .{ .title = try memory.dupeZ(u8, stringField(column, "label")), .kind = if (is_choice) .choice else .number, .width = if (is_choice) 0 else 0.13, .help = try memory.dupeZ(u8, stringField(column, "help")) };
+            columns[c] = .{ .title = try memory.dupeZ(u8, stringField(column, "label")), .kind = if (is_choice) .choice else .number, .width = if (is_choice) 0 else number_width, .help = try memory.dupeZ(u8, stringField(column, "help")) };
             keys[c] = stringField(column, "key");
             options[c] = &.{};
             choice_texts[c] = "";
