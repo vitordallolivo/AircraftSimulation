@@ -63,7 +63,7 @@ pub fn lines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
     if (y_range) |r| y_range = numbers.Range.of(&.{ r.low, r.high }, 0.06);
     const legend_height = legendHeight(ui, inner.width, series);
     const frame = drawFrame(ui, inner, axes, x_range orelse .{ .low = 0, .high = 1 }, y_range orelse .{ .low = 0, .high = 1 }, legend_height, axes.equal_axes);
-    rl.beginScissorMode(@intFromFloat(frame.area.x), @intFromFloat(frame.area.y - 1), @intFromFloat(frame.area.width + 1), @intFromFloat(frame.area.height + 2));
+    ui.pushClip(.{ .x = frame.area.x, .y = frame.area.y - 1, .width = frame.area.width + 1, .height = frame.area.height + 2 });
     for (series, 0..) |s, i| {
         const color = theme.plotColor(s.color_index orelse i);
         const n = @min(s.xs.len, s.ys.len);
@@ -79,7 +79,7 @@ pub fn lines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
             if (s.dashed) dashedLine(a, b, color) else rl.drawLineEx(a, b, 2.2, color);
         }
     }
-    rl.endScissorMode();
+    ui.popClip();
     drawLegend(ui, .{ .x = inner.x + 10, .y = inner.y + inner.height - legend_height + 4, .width = inner.width - 20, .height = legend_height }, series);
 }
 

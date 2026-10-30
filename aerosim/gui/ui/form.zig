@@ -6,6 +6,7 @@ const rl = @import("raylib");
 const rg = @import("raygui");
 const theme = @import("theme.zig");
 const widgets = @import("widgets.zig");
+const scroll = @import("scroll.zig");
 const numbers = @import("numbers.zig");
 const numberText = numbers.numberText;
 
@@ -38,18 +39,20 @@ pub const Group = struct {
 
 const row_height: f32 = 30;
 const band_height: f32 = 30;
-const control_width: f32 = 132;
+const control_width: f32 = 112;
 
 /// estado do formulário entre quadros: rolagem e o campo em edição
 pub const Form = struct {
     groups: []Group,
     fields: []Field,
-    scroll: f32 = 0,
+    area: scroll.ScrollArea = .{},
     editing: ?usize = null, // número sendo digitado
     open_choice: ?usize = null, // escolha com a lista aberta
     edit_text: [32:0]u8 = [_:0]u8{0} ** 32,
+    origin: rl.Vector2 = .{ .x = 0, .y = 0 }, // onde o formulário foi desenhado no último quadro
+    width: f32 = 0,
 
-    /// altura total do conteúdo (para a rolagem)
+    /// altura total do conteúdo
     pub fn contentHeight(form: *const Form) f32 {
         var height: f32 = 8;
         for (form.groups, 0..) |group, g| {
@@ -65,28 +68,34 @@ pub const Form = struct {
         return count;
     }
 
-    /// desenha o formulário em `rect`; devolve verdadeiro se algum valor mudou
+    /// desenha o formulário em `rect`, com a rolagem própria; devolve verdadeiro se algum valor mudou
     pub fn draw(form: *Form, ui: *widgets.Ui, rect: rl.Rectangle) bool {
+        const top = form.area.begin(ui, rect);
+        var changed = form.drawAt(ui, rect.x, top, rect.width);
+        form.area.end(ui, rect, top + form.contentHeight());
+        changed = form.drawOpen(ui) or changed;
+        return changed;
+    }
+
+    /// desenha o formulário a partir de (x, y), sem rolagem própria (dentro de uma área rolável de quem chama, que
+    /// soma `contentHeight` ao y). Depois de fechar o recorte, chamar `drawOpen` para a lista aberta ficar por cima
+    pub fn drawAt(form: *Form, ui: *widgets.Ui, x: f32, top: f32, width: f32) bool {
+        form.origin = .{ .x = x, .y = top };
+        form.width = width;
         var changed = false;
-        // a lista aberta fica por cima de tudo e pega o clique antes dos campos
-        const choice_rect = if (form.open_choice) |i| form.fieldRect(rect, i) else null;
-        if (choice_rect) |r| {
-            const options = std.mem.count(u8, form.fields[form.open_choice.?].choices, ";") + 1;
-            const list: rl.Rectangle = .{ .x = r.x, .y = r.y, .width = r.width, .height = r.height * @as(f32, @floatFromInt(options + 1)) };
-            if (ui.hovering(list) and ui.clicked) ui.click_taken = true;
+        // a lista aberta fica por cima de tudo e pega o clique antes dos campos (mesmo fora do recorte)
+        if (form.open_choice) |index| {
+            if (form.fieldRect(index)) |r| {
+                const options = std.mem.count(u8, form.fields[index].choices, ";") + 1;
+                const list: rl.Rectangle = .{ .x = r.x, .y = r.y, .width = r.width, .height = r.height * @as(f32, @floatFromInt(options + 1)) };
+                if (ui.clicked and rl.checkCollisionPointRec(ui.mouse, list)) ui.click_taken = true;
+            }
         }
-        if (ui.hovering(rect) and form.open_choice == null) {
-            const visible = rect.height;
-            const max_scroll = @max(0, form.contentHeight() - visible);
-            form.scroll = std.math.clamp(form.scroll - ui.wheel * 40, 0, max_scroll);
-        }
-        rl.beginScissorMode(@intFromFloat(rect.x), @intFromFloat(rect.y), @intFromFloat(rect.width), @intFromFloat(rect.height));
-        var y = rect.y + 8 - form.scroll;
+        var y = top + 8;
         for (form.groups, 0..) |*group, g| {
-            const band: rl.Rectangle = .{ .x = rect.x + 10, .y = y, .width = rect.width - 20, .height = band_height };
+            const band: rl.Rectangle = .{ .x = x + 10, .y = y, .width = width - 20, .height = band_height };
             if (ui.hovering(band)) widgets.rounded(band, 7, theme.colors.hover);
-            const arrow: [:0]const u8 = if (group.open) "▼" else "▸";
-            theme.text(ui.fonts.regular, arrow, band.x + 10, band.y + 8, 12, theme.colors.accent);
+            widgets.disclosure(band.x + 14, band.y + band_height / 2, 9, group.open, theme.colors.accent);
             theme.text(ui.fonts.regular, group.title, band.x + 28, band.y + 6, 16, theme.colors.accent);
             if (ui.clickedIn(band)) group.open = !group.open;
             y += band_height;
@@ -103,21 +112,27 @@ pub const Form = struct {
             }
             y += 10;
         }
-        rl.endScissorMode();
-        if (form.open_choice) |i| changed = form.drawOpenChoice(ui, i, rect) or changed;
         return changed;
     }
 
+    /// a lista aberta de uma escolha, por cima do resto (fora de qualquer recorte)
+    pub fn drawOpen(form: *Form, ui: *widgets.Ui) bool {
+        const index = form.open_choice orelse return false;
+        return form.drawOpenChoice(ui, index);
+    }
+
     /// onde fica o controle do campo `index` (para a lista aberta, desenhada por cima)
-    fn fieldRect(form: *const Form, rect: rl.Rectangle, index: usize) ?rl.Rectangle {
-        var y = rect.y + 8 - form.scroll;
+    fn fieldRect(form: *const Form, index: usize) ?rl.Rectangle {
+        const x = form.origin.x + 10;
+        const width = form.width - 20;
+        var y = form.origin.y + 8;
         for (form.groups, 0..) |group, g| {
             y += band_height;
             if (group.open) {
                 y += 3;
                 for (form.fields, 0..) |field, i| {
                     if (field.group != g) continue;
-                    if (i == index) return .{ .x = rect.x + rect.width - 20 - control_width, .y = y + 3, .width = control_width, .height = row_height - 6 };
+                    if (i == index) return .{ .x = x + 10 + width - 20 - control_width, .y = y + 3, .width = control_width, .height = row_height - 6 };
                     y += row_height;
                 }
                 y += 3;
@@ -132,10 +147,7 @@ pub const Form = struct {
         const control: rl.Rectangle = .{ .x = x + width - control_width, .y = y + 3, .width = control_width, .height = row_height - 6 };
         switch (field.kind) {
             .toggle => {
-                const box: rl.Rectangle = .{ .x = x, .y = y + 7, .width = 16, .height = 16 };
-                widgets.rounded(box, 4, if (field.checked) theme.colors.accent else theme.colors.field);
-                if (!field.checked) widgets.roundedLines(box, 4, theme.colors.line);
-                if (field.checked) theme.text(ui.fonts.regular, "✓", box.x + 2, box.y - 1, 15, theme.colors.on_accent);
+                widgets.checkBox(.{ .x = x, .y = y + 7, .width = 16, .height = 16 }, field.checked);
                 theme.text(ui.fonts.regular, field.label, x + 26, y + 7, 14, theme.colors.label);
                 const row: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = row_height };
                 if (ui.clickedIn(row)) {
@@ -159,10 +171,10 @@ pub const Form = struct {
             }
             var text_buffer: [96]u8 = undefined;
             const shown = widgets.format(&text_buffer, "{s}", .{current});
-            rl.beginScissorMode(@intFromFloat(control.x), @intFromFloat(control.y), @intFromFloat(control.width - 18), @intFromFloat(control.height));
+            ui.pushClip(.{ .x = control.x, .y = control.y, .width = control.width - 18, .height = control.height });
             theme.text(ui.fonts.mono, shown, control.x + 6, control.y + 5, 14, theme.colors.ink);
-            rl.endScissorMode();
-            theme.text(ui.fonts.regular, "▼", control.x + control.width - 16, control.y + 6, 11, theme.colors.muted);
+            ui.popClip();
+            widgets.disclosure(control.x + control.width - 11, control.y + control.height / 2, 8, true, theme.colors.muted);
             if (ui.clickedIn(control)) form.open_choice = index;
             return false;
         }
@@ -189,9 +201,9 @@ pub const Form = struct {
         return false;
     }
 
-    fn drawOpenChoice(form: *Form, ui: *widgets.Ui, index: usize, rect: rl.Rectangle) bool {
+    fn drawOpenChoice(form: *Form, ui: *widgets.Ui, index: usize) bool {
         const field = &form.fields[index];
-        const control = form.fieldRect(rect, index) orelse {
+        const control = form.fieldRect(index) orelse {
             form.open_choice = null;
             return false;
         };

@@ -37,6 +37,9 @@ const method_list = [_]struct { method: stage.Source, caption: [:0]const u8 }{
 };
 
 /// uma curva por candidato e método
+const action_captions = [_][:0]const u8{ "+ NACA...", "+ .dat...", "+ só parâmetros", "+ polar XFLR5...", "Remover" };
+const actions = [_]Action{ .naca, .dat, .parameters, .polar, .remove };
+const list_height: f32 = 104; // a lista de candidatos (quatro linhas à vista; o resto rola)
 const max_shown = max_candidates * method_list.len;
 
 /// os botões da lista
@@ -71,6 +74,8 @@ pub const AirfoilTab = struct {
     reynolds: f64 = 0,
     message: [200:0]u8 = [_:0]u8{0} ** 200,
     scroll: f32 = 0,
+    plots: ui_kit.scroll.ScrollArea = .{}, // a coluna dos gráficos
+    side: ui_kit.scroll.ScrollArea = .{}, // a barra lateral
 
     /// liga a aba ao projeto
     pub fn attach(tab: *AirfoilTab, design: *design_mod.Design) void {
@@ -284,13 +289,26 @@ pub const AirfoilTab = struct {
         return tab.drawSidebar(ui, .{ .x = rect.x, .y = rect.y, .width = sidebar_width, .height = rect.height });
     }
 
+    /// a barra lateral: tudo rola junto (condições, lista, botões, métodos e o editor), menos o rodapé com "Rodar"
+    /// e "Usar na asa", que fica sempre à vista
     fn drawSidebar(tab: *AirfoilTab, ui: *widgets.Ui, rect: rl.Rectangle) bool {
         const design = tab.design;
         rl.drawRectangleRec(rect, theme.colors.panel);
         rl.drawRectangleRec(.{ .x = rect.x + rect.width - 1, .y = rect.y, .width = 1, .height = rect.height }, theme.colors.line);
+        const footer_height: f32 = 112;
+        const body: rl.Rectangle = .{ .x = rect.x, .y = rect.y, .width = rect.width - 1, .height = rect.height - footer_height };
         const x = rect.x + 12;
-        const width = rect.width - 24;
-        var y = rect.y + 10;
+        const width = rect.width - 24 - 10; // 10: a barra de rolagem
+        const has_selection = design.airfoil_count > 0;
+        // o botão dos métodos fica numa altura fixa do conteúdo: o clique no menu aberto vale antes de tudo
+        const toggle_offset: f32 = 10 + 50 + 22 + list_height + 8 + 36 * @as(f32, @floatFromInt((action_captions.len + 1) / 2)) + 2 + 22;
+        const toggle: rl.Rectangle = .{ .x = x + 80, .y = rect.y - tab.side.offset + toggle_offset, .width = width - 80, .height = 30 };
+        const toggle_visible = toggle.y >= body.y and toggle.y + toggle.height <= body.y + body.height;
+        if (has_selection and (toggle_visible or tab.methods.open)) {
+            if (tab.methods.update(ui, toggle, method_list.len)) |row| tab.toggleMethod(method_list[row].method);
+        } else tab.methods.open = false;
+        const top = tab.side.begin(ui, body);
+        var y = top + 10;
         // as condições de projeto numa linha (editadas na etapa Projetar)
         const requirements = design.requirements;
         var bar: [160:0]u8 = undefined;
@@ -308,54 +326,54 @@ pub const AirfoilTab = struct {
             var method_text: [48:0]u8 = undefined;
             labels[k] = widgets.format(&label_text[k], "{s}   ({s}, polar: {s})", .{ candidate.name, candidate.origin, methodsText(&method_text, candidate.methods) });
         }
-        if (tab.list.draw(ui, .{ .x = x, .y = y, .width = width, .height = 128 }, labels[0..design.airfoil_count], tab.selected)) |picked| {
+        if (tab.list.draw(ui, .{ .x = x, .y = y, .width = width, .height = list_height }, labels[0..design.airfoil_count], tab.selected)) |picked| {
             tab.selected = picked;
             tab.loadEditor();
         }
-        y += 128 + 8;
+        y += list_height + 8;
         // os botões de ação, dois por linha
-        const captions = [_][:0]const u8{ "+ NACA...", "+ .dat...", "+ só parâmetros", "+ polar XFLR5...", "Remover" };
-        const actions = [_]Action{ .naca, .dat, .parameters, .polar, .remove };
         var grid_height: f32 = 0;
-        if (menus.buttonGrid(ui, x, y, width, &captions, 2, &grid_height)) |pressed| tab.command(@tagName(actions[pressed]));
+        if (menus.buttonGrid(ui, x, y, width, &action_captions, 2, &grid_height)) |pressed| tab.command(@tagName(actions[pressed]));
         y += grid_height + 2;
         var re_text: [96:0]u8 = undefined;
         theme.text(ui.fonts.regular, widgets.format(&re_text, "Re = {d:.0} (cruzeiro, corda média da asa)", .{tab.reynolds}), x, y, 13, theme.colors.label);
         y += 22;
-        // os métodos de polar do selecionado: um botão que abre o menu de marcar (fica com o clique antes do editor)
-        const has_selection = design.airfoil_count > 0;
-        const toggle: rl.Rectangle = .{ .x = x + 80, .y = y, .width = width - 80, .height = 30 };
+        // os métodos de polar do selecionado: o botão aqui, as caixas por cima de tudo no fim
+        var caption: [48:0]u8 = undefined;
         if (has_selection) {
-            if (tab.methods.update(ui, toggle, method_list.len)) |row| tab.toggleMethod(method_list[row].method);
             theme.text(ui.fonts.regular, "polar por:", x, y + 7, 14, theme.colors.label);
+            tab.methods.draw(ui, toggle, methodsText(&caption, design.airfoils[tab.selected].methods));
             y += 40;
         }
         // o editor do selecionado
-        const footer_height: f32 = 128;
-        const editor: rl.Rectangle = .{ .x = rect.x, .y = y, .width = rect.width - 1, .height = rect.y + rect.height - footer_height - y };
-        if (tab.form.fields.len > 0 and tab.form.draw(ui, editor)) tab.saveEditor();
+        if (tab.form.fields.len > 0) {
+            if (tab.form.drawAt(ui, rect.x, y, body.width - 10)) tab.saveEditor();
+            y += tab.form.contentHeight();
+        }
+        tab.side.end(ui, body, y + 8);
+        if (tab.form.fields.len > 0 and tab.form.drawOpen(ui)) tab.saveEditor();
+        // embaixo: rodar e usar na asa
+        const footer: rl.Rectangle = .{ .x = rect.x, .y = rect.y + rect.height - footer_height, .width = rect.width - 1, .height = footer_height };
+        rl.drawRectangleRec(footer, theme.colors.panel);
+        rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 1 }, theme.colors.line);
+        var used = false;
+        if (widgets.primaryButton(ui, .{ .x = footer.x + 12, .y = footer.y + 10, .width = footer.width - 24, .height = 34 }, if (tab.stale) "Rodar  (mudou)" else "Rodar", design.airfoil_count > 0)) tab.run();
+        if (has_selection and dialogs.button(ui, .{ .x = footer.x + 12, .y = footer.y + 50, .width = footer.width - 24, .height = 30 }, "Usar na asa →")) {
+            design.setRoot(design.airfoils[tab.selected].name);
+            used = true;
+        }
+        theme.text(ui.fonts.regular, std.mem.sliceTo(&tab.message, 0), footer.x + 12, footer.y + 88, 13, theme.colors.muted);
+        // o menu aberto dos métodos, por cima do editor e do rodapé
         if (has_selection) {
             const candidate = &design.airfoils[tab.selected];
             var items: [method_list.len]menus.CheckItem = undefined;
             var label_buffers: [method_list.len][64:0]u8 = undefined;
             for (method_list, 0..) |item, k| {
                 const available = item.method != .arquivo or candidate.measured != null;
-                items[k] = .{ .label = if (available) item.caption else widgets.format(&label_buffers[k], "{s}: sem polar lida", .{@tagName(item.method)}), .checked = candidate.methods.contains(item.method), .enabled = available };
+                items[k] = .{ .label = if (available) item.caption else widgets.format(&label_buffers[k], "{s}: abrir polar XFLR5...", .{@tagName(item.method)}), .checked = candidate.methods.contains(item.method), .enabled = available };
             }
-            var caption: [48:0]u8 = undefined;
-            tab.methods.draw(ui, toggle, methodsText(&caption, candidate.methods), &items);
+            tab.methods.drawPopup(ui, toggle, &items);
         }
-        // embaixo: usar na asa
-        const footer: rl.Rectangle = .{ .x = rect.x, .y = rect.y + rect.height - footer_height, .width = rect.width - 1, .height = footer_height };
-        rl.drawRectangleRec(footer, theme.colors.panel);
-        rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 1 }, theme.colors.line);
-        var used = false;
-        if (widgets.primaryButton(ui, .{ .x = footer.x + 12, .y = footer.y + 12, .width = footer.width - 24, .height = 34 }, if (tab.stale) "Rodar  (mudou)" else "Rodar", design.airfoil_count > 0)) tab.run();
-        if (has_selection and dialogs.button(ui, .{ .x = footer.x + 12, .y = footer.y + 54, .width = footer.width - 24, .height = 30 }, "Usar na asa →")) {
-            design.setRoot(design.airfoils[tab.selected].name);
-            used = true;
-        }
-        theme.text(ui.fonts.regular, std.mem.sliceTo(&tab.message, 0), footer.x + 12, footer.y + 96, 13, theme.colors.muted);
         return used;
     }
 
@@ -364,7 +382,10 @@ pub const AirfoilTab = struct {
         const candidate = &tab.design.airfoils[tab.selected];
         var methods = candidate.methods;
         if (methods.contains(method)) methods.remove(method) else methods.insert(method);
-        if (method == .arquivo and candidate.measured == null) return tab.setMessage("este perfil não tem polar de arquivo: use + polar XFLR5", .{});
+        if (method == .arquivo and candidate.measured == null) { // sem polar lida: o item abre o seletor dela
+            tab.methods.open = false;
+            return tab.command("polar");
+        }
         if (methods.count() == 0) return tab.setMessage("marque ao menos um método", .{});
         stage.setMethods(candidate, methods);
         tab.design.touch();
@@ -378,14 +399,18 @@ pub const AirfoilTab = struct {
         const content_height = 3 * (row_height + gap) + summary_height + 2 * gap;
         const x0 = rect.x + gap;
         const x1 = x0 + column_width + gap;
-        if (ui.hovering(rect)) tab.scroll = std.math.clamp(tab.scroll - ui.wheel * 60, 0, @max(0, content_height - rect.height));
-        rl.beginScissorMode(@intFromFloat(rect.x), @intFromFloat(rect.y), @intFromFloat(rect.width), @intFromFloat(rect.height));
-        defer rl.endScissorMode();
+        tab.plots.content_height = content_height;
+        if (tab.scroll > 0) { // a rolagem pedida na linha de comando (prints)
+            tab.plots.offset = tab.scroll;
+            tab.scroll = 0;
+        }
+        const top = tab.plots.begin(ui, rect);
+        defer tab.plots.end(ui, rect, top + content_height);
         if (tab.shown_count == 0) {
             theme.text(ui.fonts.regular, std.mem.sliceTo(&tab.message, 0), rect.x + 40, rect.y + 40, 16, theme.colors.muted);
             return;
         }
-        var y = rect.y + gap - tab.scroll;
+        var y = top + gap;
         var lift: [max_shown]plot.Series = undefined;
         var drag: [max_shown]plot.Series = undefined;
         var efficiency: [max_shown]plot.Series = undefined;

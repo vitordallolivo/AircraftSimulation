@@ -37,6 +37,14 @@ curto. Enquanto uma delas está aberta, a tela de baixo não recebe o clique nem
 .json" do cabeçalho, os botões de Perfis e os menus que vierem usam as mesmas; salvar, por enquanto, grava o avião
 como foi lido, porque a edição ainda não existe.
 
+Tudo o que pode passar da altura da janela rola pela área de `scroll.zig`: a roda do mouse ou a barra fina da
+direita, que dá para arrastar. Ela abre um recorte (`Ui.pushClip`), e o que ficou fora dele nem aparece nem recebe o
+clique; sem isso, um campo que rolou para baixo das abas pegava o clique dela. Uma área dentro de outra (a lista de
+candidatos dentro da barra lateral de Perfis) rola primeiro, e a de fora fica com a roda que sobrou. Em Perfis, a
+barra lateral inteira rola junto e só o rodapé ("Rodar", "Usar na asa") fica parado. As caixas de marcar e as setas
+são desenhadas com linhas e triângulos, sem depender de a fonte do sistema ter o "✓" ou o "▸", e o Esc fecha a
+janela de cima (seletor, pergunta) em vez de fechar o programa.
+
 A tela não faz conta: o que demora (a varredura da aba Analisar, a leitura do `.json` e a montagem das peças) roda
 numa thread pela `Job` de `jobs.zig`, e a tela continua desenhando e respondendo ao mouse enquanto isso, com a
 mensagem "rodando no núcleo..." no lugar do resultado. Quando a thread acaba, a tela pega o resultado no quadro

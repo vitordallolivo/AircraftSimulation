@@ -107,6 +107,10 @@ pub const FilePicker = struct {
     /// desenha o seletor por cima de `screen`; devolve o caminho escolhido (vale até a próxima escolha)
     pub fn draw(picker: *FilePicker, ui: *widgets.Ui, screen: rl.Rectangle) ?[]const u8 {
         if (!picker.open) return null;
+        if (rl.isKeyPressed(.escape)) { // Esc cancela
+            picker.open = false;
+            return null;
+        }
         rl.drawRectangleRec(screen, .{ .r = 20, .g = 30, .b = 50, .a = 90 });
         const box: rl.Rectangle = .{ .x = screen.x + (screen.width - 640) / 2, .y = screen.y + 60, .width = 640, .height = @min(screen.height - 120, 620) };
         const inner = widgets.card(ui, box, std.mem.sliceTo(&picker.title, 0));
@@ -145,21 +149,22 @@ pub const FilePicker = struct {
         if (ui.hovering(list)) picker.scroll = std.math.clamp(picker.scroll - ui.wheel * 3 * row_height, 0, @max(0, total - list.height));
         var picked: ?[]const u8 = null;
         var go_to: ?usize = null; // índice + 1; 0 = subir
-        rl.beginScissorMode(@intFromFloat(list.x), @intFromFloat(list.y), @intFromFloat(list.width), @intFromFloat(list.height));
+        ui.pushClip(list);
         var y = list.y + 2 - picker.scroll;
         for (0..picker.count + 1) |row| {
             const line: rl.Rectangle = .{ .x = list.x + 2, .y = y, .width = list.width - 4, .height = row_height };
             const visible = line.y + line.height > list.y and line.y < list.y + list.height;
             if (visible) {
-                if (ui.hovering(line) and ui.hovering(list)) widgets.rounded(line, 5, theme.colors.hover);
+                if (ui.hovering(line)) widgets.rounded(line, 5, theme.colors.hover);
                 var label: [300:0]u8 = undefined;
-                const text = if (row == 0) widgets.format(&label, "..  (pasta de cima)", .{}) else if (picker.is_folder[row - 1]) widgets.format(&label, "▸  {s}/", .{picker.names[row - 1]}) else widgets.format(&label, "    {s}", .{picker.names[row - 1]});
+                const text = if (row == 0) widgets.format(&label, "..  (pasta de cima)", .{}) else if (picker.is_folder[row - 1]) widgets.format(&label, "    {s}/", .{picker.names[row - 1]}) else widgets.format(&label, "    {s}", .{picker.names[row - 1]});
                 theme.text(ui.fonts.regular, text, line.x + 8, line.y + 5, 14, if (row == 0 or picker.is_folder[row - 1]) theme.colors.accent else theme.colors.ink);
-                if (ui.hovering(list) and ui.clickedIn(line)) go_to = row;
+                if (row > 0 and picker.is_folder[row - 1]) widgets.disclosure(line.x + 14, line.y + line.height / 2, 8, false, theme.colors.accent);
+                if (ui.clickedIn(line)) go_to = row;
             }
             y += row_height;
         }
-        rl.endScissorMode();
+        ui.popClip();
         if (go_to) |row| {
             if (row == 0) {
                 const parent = std.fs.path.dirname(folder) orelse folder;
@@ -229,6 +234,10 @@ pub const TextPrompt = struct {
     /// desenha a pergunta por cima de `screen`; devolve o texto quando se confirma (OK ou Enter)
     pub fn draw(prompt: *TextPrompt, ui: *widgets.Ui, screen: rl.Rectangle) ?[]const u8 {
         if (!prompt.open) return null;
+        if (rl.isKeyPressed(.escape)) { // Esc cancela
+            prompt.open = false;
+            return null;
+        }
         rl.drawRectangleRec(screen, .{ .r = 20, .g = 30, .b = 50, .a = 90 });
         const box: rl.Rectangle = .{ .x = screen.x + (screen.width - 420) / 2, .y = screen.y + 160, .width = 420, .height = 170 };
         const inner = widgets.card(ui, box, std.mem.sliceTo(&prompt.title, 0));

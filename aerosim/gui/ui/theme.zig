@@ -164,8 +164,11 @@ pub const Logo = struct {
     pub fn load() !Logo {
         const image = try rl.loadImageFromMemory(".png", png);
         defer rl.unloadImage(image);
-        const texture = try rl.loadTextureFromImage(image);
-        rl.setTextureFilter(texture, .bilinear);
+        var texture = try rl.loadTextureFromImage(image);
+        // a logo sai em uns 80 px de 800: sem as reduções prontas (mipmaps), a imagem perde traços e o
+        // "Aero Design" vira ruído
+        rl.genTextureMipmaps(&texture);
+        rl.setTextureFilter(texture, .trilinear);
         return .{ .texture = texture };
     }
 

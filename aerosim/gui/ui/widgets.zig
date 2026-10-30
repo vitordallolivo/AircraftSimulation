@@ -15,6 +15,10 @@ pub const Ui = struct {
     wheel: f32 = 0,
     // um clique já usado por um widget de cima (ex.: a lista aberta de uma escolha) não vale para os de baixo
     click_taken: bool = false,
+    // os recortes abertos (uma área rolável dentro de outra): só o que está dentro do último se desenha e recebe
+    // o mouse, então um campo que rolou para fora da barra lateral não pega o clique das abas
+    clips: [8]rl.Rectangle = undefined,
+    clip_count: usize = 0,
 
     /// abre fontes e logo e ajusta o estilo do raygui às cores do tema; precisa da janela aberta
     pub fn init() !Ui {
@@ -37,9 +41,27 @@ pub const Ui = struct {
         ui.click_taken = false;
     }
 
-    /// verdadeiro se o mouse está em `rect`
+    /// verdadeiro se o mouse está em `rect` (e dentro do recorte aberto)
     pub fn hovering(ui: *const Ui, rect: rl.Rectangle) bool {
+        if (ui.clip_count > 0 and !rl.checkCollisionPointRec(ui.mouse, ui.clips[ui.clip_count - 1])) return false;
         return rl.checkCollisionPointRec(ui.mouse, rect);
+    }
+
+    /// abre um recorte: daqui até `popClip` só se desenha dentro de `rect` (e do recorte de fora, se houver)
+    pub fn pushClip(ui: *Ui, rect: rl.Rectangle) void {
+        const inside = if (ui.clip_count > 0) intersection(ui.clips[ui.clip_count - 1], rect) else rect;
+        if (ui.clip_count < ui.clips.len) {
+            ui.clips[ui.clip_count] = inside;
+            ui.clip_count += 1;
+        }
+        scissor(inside);
+    }
+
+    /// fecha o último recorte e volta ao de fora
+    pub fn popClip(ui: *Ui) void {
+        if (ui.clip_count == 0) return;
+        ui.clip_count -= 1;
+        if (ui.clip_count > 0) scissor(ui.clips[ui.clip_count - 1]) else rl.endScissorMode();
     }
 
     /// verdadeiro se houve clique em `rect` neste quadro (e ninguém usou o clique antes)
@@ -49,6 +71,43 @@ pub const Ui = struct {
         return true;
     }
 };
+
+fn intersection(a: rl.Rectangle, b: rl.Rectangle) rl.Rectangle {
+    const left = @max(a.x, b.x);
+    const top = @max(a.y, b.y);
+    const right = @min(a.x + a.width, b.x + b.width);
+    const bottom = @min(a.y + a.height, b.y + b.height);
+    return .{ .x = left, .y = top, .width = @max(0, right - left), .height = @max(0, bottom - top) };
+}
+
+fn scissor(rect: rl.Rectangle) void {
+    rl.beginScissorMode(@intFromFloat(@floor(rect.x)), @intFromFloat(@floor(rect.y)), @intFromFloat(@ceil(rect.width)), @intFromFloat(@ceil(rect.height)));
+}
+
+/// a caixa de marcar: azul com o visto desenhado (duas linhas, sem depender de a fonte ter o "✓") ou branca
+pub fn checkBox(box: rl.Rectangle, checked: bool) void {
+    rounded(box, 4, if (checked) theme.colors.accent else theme.colors.field);
+    if (!checked) {
+        roundedLines(box, 4, theme.colors.line);
+        return;
+    }
+    const left: rl.Vector2 = .{ .x = box.x + box.width * 0.22, .y = box.y + box.height * 0.52 };
+    const bottom: rl.Vector2 = .{ .x = box.x + box.width * 0.42, .y = box.y + box.height * 0.72 };
+    const right: rl.Vector2 = .{ .x = box.x + box.width * 0.78, .y = box.y + box.height * 0.30 };
+    rl.drawLineEx(left, bottom, 2.2, theme.colors.on_accent);
+    rl.drawLineEx(bottom, right, 2.2, theme.colors.on_accent);
+    rl.drawCircleV(bottom, 1.1, theme.colors.on_accent);
+}
+
+/// o triângulo de abrir e fechar: para baixo (aberto) ou para a direita (fechado), centrado em (x, y)
+pub fn disclosure(x: f32, y: f32, size: f32, open: bool, color: rl.Color) void {
+    const half = size / 2;
+    if (open) {
+        rl.drawTriangle(.{ .x = x - half, .y = y - half * 0.6 }, .{ .x = x, .y = y + half * 0.6 }, .{ .x = x + half, .y = y - half * 0.6 }, color);
+    } else {
+        rl.drawTriangle(.{ .x = x - half * 0.6, .y = y - half }, .{ .x = x - half * 0.6, .y = y + half }, .{ .x = x + half * 0.6, .y = y }, color);
+    }
+}
 
 /// cor do raygui no formato dele (0xRRGGBBAA)
 fn rgba(color: rl.Color) i32 {

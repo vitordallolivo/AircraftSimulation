@@ -18,15 +18,20 @@ pub const ItemList = struct {
         widgets.rounded(rect, 6, theme.colors.field);
         widgets.roundedLines(rect, 6, theme.colors.line);
         const total = @as(f32, @floatFromInt(labels.len)) * line_height;
-        if (ui.hovering(rect)) list.scroll = std.math.clamp(list.scroll - ui.wheel * line_height, 0, @max(0, total - rect.height + 4));
+        const limit = @max(0, total - rect.height + 4);
+        if (ui.hovering(rect) and ui.wheel != 0 and limit > 0) { // a lista rola primeiro; a roda não passa para fora
+            list.scroll = std.math.clamp(list.scroll - ui.wheel * line_height, 0, limit);
+            ui.wheel = 0;
+        }
+        list.scroll = std.math.clamp(list.scroll, 0, limit);
         var picked: ?usize = null;
-        rl.beginScissorMode(@intFromFloat(rect.x + 1), @intFromFloat(rect.y + 1), @intFromFloat(rect.width - 2), @intFromFloat(rect.height - 2));
-        defer rl.endScissorMode();
+        ui.pushClip(.{ .x = rect.x + 1, .y = rect.y + 1, .width = rect.width - 2, .height = rect.height - 2 });
+        defer ui.popClip();
         for (labels, 0..) |label, k| {
             const row: rl.Rectangle = .{ .x = rect.x + 3, .y = rect.y + 2 + line_height * @as(f32, @floatFromInt(k)) - list.scroll, .width = rect.width - 6, .height = line_height };
             if (k == selected) widgets.rounded(row, 4, theme.colors.selected) else if (ui.hovering(row) and ui.hovering(rect)) widgets.rounded(row, 4, theme.colors.hover);
             theme.text(ui.fonts.regular, label, row.x + 6, row.y + 4, 14, theme.colors.ink);
-            if (ui.hovering(rect) and ui.clickedIn(row) and k != selected) picked = k;
+            if (ui.clickedIn(row) and k != selected) picked = k;
         }
         return picked;
     }
@@ -54,8 +59,9 @@ pub const CheckItem = struct {
     enabled: bool = true,
 };
 
-/// o botão que abre um menu de caixas de marcar. Em dois tempos, porque o menu aberto cobre o que está embaixo:
-/// `update` antes dos widgets de baixo (fica com o clique e diz qual item trocou) e `draw` depois deles
+/// o botão que abre um menu de caixas de marcar. Em três tempos, porque o menu aberto cobre o que está embaixo:
+/// `update` antes dos widgets de baixo (fica com o clique e diz qual item trocou), `draw` com eles (o botão) e
+/// `drawPopup` por último, fora de qualquer recorte (as caixas por cima de tudo)
 pub const CheckMenu = struct {
     open: bool = false,
     const row_height: f32 = 30;
@@ -83,25 +89,30 @@ pub const CheckMenu = struct {
         return if (row < count) row else null;
     }
 
-    /// desenha o botão com `caption` e, aberto, as caixas dos `items` (um item desligado aparece apagado)
-    pub fn draw(menu: *const CheckMenu, ui: *widgets.Ui, toggle: rl.Rectangle, caption: []const u8, items: []const CheckItem) void {
-        widgets.rounded(toggle, 6, if (ui.hovering(toggle)) theme.colors.hover else theme.colors.field);
+    /// desenha o botão com `caption`
+    pub fn draw(menu: *const CheckMenu, ui: *widgets.Ui, toggle: rl.Rectangle, caption: []const u8) void {
+        widgets.rounded(toggle, 6, if (ui.hovering(toggle) or menu.open) theme.colors.hover else theme.colors.field);
         widgets.roundedLines(toggle, 6, theme.colors.line);
         var text: [96:0]u8 = undefined;
-        const shown = widgets.format(&text, "{s}  ▼", .{caption});
+        const shown = widgets.format(&text, "{s}", .{caption});
         const width = theme.textWidth(ui.fonts.regular, shown, 14);
-        theme.text(ui.fonts.regular, shown, toggle.x + (toggle.width - width) / 2, toggle.y + (toggle.height - 15) / 2, 14, theme.colors.accent);
+        const left = toggle.x + (toggle.width - width - 18) / 2;
+        theme.text(ui.fonts.regular, shown, left, toggle.y + (toggle.height - 15) / 2, 14, theme.colors.accent);
+        widgets.disclosure(left + width + 12, toggle.y + toggle.height / 2, 8, true, theme.colors.accent);
+    }
+
+    /// aberto, as caixas dos `items` embaixo do botão (um item desligado aparece apagado, com o que fazer no rótulo;
+    /// o clique nele ainda chega a quem chama, que pode abrir o que falta)
+    pub fn drawPopup(menu: *const CheckMenu, ui: *widgets.Ui, toggle: rl.Rectangle, items: []const CheckItem) void {
         if (!menu.open) return;
         const area = popup(toggle, items.len);
+        rl.drawRectangleRounded(.{ .x = area.x + 2, .y = area.y + 3, .width = area.width, .height = area.height }, 0.1, 6, .{ .r = 0, .g = 0, .b = 0, .a = 28 });
         widgets.rounded(area, 6, theme.colors.field);
         widgets.roundedLines(area, 6, theme.colors.line);
         for (items, 0..) |item, k| {
             const row: rl.Rectangle = .{ .x = area.x + 4, .y = area.y + 4 + row_height * @as(f32, @floatFromInt(k)), .width = area.width - 8, .height = row_height };
-            if (ui.hovering(row) and item.enabled) widgets.rounded(row, 4, theme.colors.hover);
-            const box: rl.Rectangle = .{ .x = row.x + 6, .y = row.y + 7, .width = 16, .height = 16 };
-            widgets.rounded(box, 4, if (item.checked) theme.colors.accent else theme.colors.field);
-            if (!item.checked) widgets.roundedLines(box, 4, theme.colors.line);
-            if (item.checked) theme.text(ui.fonts.regular, "✓", box.x + 2, box.y - 1, 15, theme.colors.on_accent);
+            if (ui.hovering(row)) widgets.rounded(row, 4, theme.colors.hover);
+            widgets.checkBox(.{ .x = row.x + 6, .y = row.y + 7, .width = 16, .height = 16 }, item.checked);
             theme.text(ui.fonts.regular, item.label, row.x + 30, row.y + 7, 13, if (item.enabled) theme.colors.ink else theme.colors.muted);
         }
     }

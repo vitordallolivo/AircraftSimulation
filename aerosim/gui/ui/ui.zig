@@ -10,6 +10,7 @@ pub const view3d = @import("view3d.zig");
 pub const dialogs = @import("dialogs.zig");
 pub const menus = @import("menus.zig");
 pub const jobs = @import("jobs.zig");
+pub const scroll = @import("scroll.zig");
 
 test {
     _ = numbers;

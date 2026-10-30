@@ -59,6 +59,7 @@ pub const WingTab = struct {
     tip_used: bool = false,
     message: [200:0]u8 = [_:0]u8{0} ** 200,
     scroll: f32 = 0,
+    plots: ui_kit.scroll.ScrollArea = .{}, // a coluna dos gráficos
     // curvas montadas a cada rodada
     cruise_line: [2][2]f64 = undefined, // a reta vertical do C_L de cruzeiro no gráfico de L/D
     max_line: [2][wing_line.stations]f64 = undefined,
@@ -260,16 +261,20 @@ pub const WingTab = struct {
         const content_height = 3 * (row_height + gap) + summary_height + 2 * gap;
         const x0 = rect.x + gap;
         const x1 = x0 + column_width + gap;
-        if (ui.hovering(rect)) tab.scroll = std.math.clamp(tab.scroll - ui.wheel * 60, 0, @max(0, content_height - rect.height));
-        rl.beginScissorMode(@intFromFloat(rect.x), @intFromFloat(rect.y), @intFromFloat(rect.width), @intFromFloat(rect.height));
-        defer rl.endScissorMode();
+        tab.plots.content_height = content_height;
+        if (tab.scroll > 0) { // a rolagem pedida na linha de comando (prints)
+            tab.plots.offset = tab.scroll;
+            tab.scroll = 0;
+        }
+        const top = tab.plots.begin(ui, rect);
+        defer tab.plots.end(ui, rect, top + content_height);
         if (!tab.has_result) {
             theme.text(ui.fonts.regular, std.mem.sliceTo(&tab.message, 0), rect.x + 40, rect.y + 40, 16, theme.colors.muted);
             return;
         }
         const r = &tab.result;
         const n = r.alpha_count;
-        var y = rect.y + gap - tab.scroll;
+        var y = top + gap;
         const name = std.mem.sliceTo(&tab.root_name, 0);
         plot.lines(ui, .{ .x = x0, .y = y, .width = column_width, .height = row_height }, .{ .title = "C_L × α da asa (até o estol)", .x_label = "α da raiz (°)", .y_label = "C_L" }, &.{
             .{ .name = name, .xs = r.alpha[0..n], .ys = r.lift[0..n], .color_index = 0 },

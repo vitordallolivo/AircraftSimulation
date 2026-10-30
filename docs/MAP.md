@@ -678,7 +678,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Source:21`, `Candidate:26`, `Outcome:38`, `default_numbers:100`
   fn `alphas:45`, `evaluate:52`, `setMethods:57`, `evaluateWith:66`, `fromAircraft:79`, `fromOutline:107`, `aircraftCandidates:119`, `maxCamber:134`, `wingSection:181`, `isNaca4:189`, `readPolarText:199`
 - `aerosim/gui/airfoil_tab.zig` — A aba Aerodinâmica → Perfis: os perfis candidatos e a polar 2D de cada um, como a página Perfis da GUI em
-  tipos `AirfoilTab:48`
+  tipos `AirfoilTab:51`
 - `aerosim/gui/analyze_tab.zig` — A aba Aerodinâmica → Analisar: as asas do avião aberto, como a simulação "Asas" do aerosim em Python. À
   tipos `AnalyzeTab:48`
 - `aerosim/gui/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
@@ -704,21 +704,23 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Args:13`
   fn `parseArgs:24`, `run:56`
 - `aerosim/gui/ui/dialogs.zig` — As janelas por cima da tela: o seletor de arquivo (navega pelas pastas e mostra só as extensões pedidas; para
-  tipos `FilePicker:15`, `TextPrompt:213`
-  fn `button:272`
+  tipos `FilePicker:15`, `TextPrompt:218`
+  fn `button:281`
 - `aerosim/gui/ui/form.zig` — O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador e escolha. A tela descrev
-  tipos `Kind:12`, `Field:21`, `Group:34`, `Form:44`
+  tipos `Kind:13`, `Field:22`, `Group:35`, `Form:45`
 - `aerosim/gui/ui/jobs.zig` — As contas longas fora do laço da tela: uma `Job` roda uma função numa thread própria, e a tela continua
   tipos `Job:11`
 - `aerosim/gui/ui/menus.zig` — As peças de escolha que as abas repetem: a lista de itens com um selecionado (a lista de candidatos de Perfis,
-  tipos `ItemList:12`, `CheckItem:51`, `CheckMenu:59`
-  fn `buttonGrid:36`, `checkedText:111`
+  tipos `ItemList:12`, `CheckItem:56`, `CheckMenu:65`
+  fn `buttonGrid:41`, `checkedText:122`
 - `aerosim/gui/ui/numbers.zig` — Números na tela sem janela (testáveis): o texto curto de um campo e as marcas "redondas" dos eixos.
   tipos `Range:38`
   fn `numberText:5`, `niceStep:21`, `decimalsFor:31`
 - `aerosim/gui/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
   tipos `Series:11`, `Cloud:21`, `Axes:29`, `Frame:36`
   fn `lines:50`, `cloud:98`, `ramp:117`, `colorBar:133`, `drawFrame:153`
+- `aerosim/gui/ui/scroll.zig` — A área rolável: tudo o que não cabe na altura (a barra lateral, a coluna dos gráficos) rola pela roda do mouse ou
+  tipos `ScrollArea:13`
 - `aerosim/gui/ui/theme.zig` — O visual da interface, o mesmo do AeroDrive: fundo claro, cantos arredondados, azul nos títulos e pouco texto.
   tipos `Palette:17`, `Fonts:114`, `Logo:158`
   fn `hex:7`, `withAlpha:12`, `plotColor:63`, `spacing:143`, `text:148`, `textWidth:153`
@@ -727,8 +729,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Kind:17`, `View:59`
   fn `kindColor:20`, `fraction:34`, `liftColor:39`, `toWorld:44`, `shaded:162`, `triangle:170`, `quad:180`, `segment:197`, `arrow:202`, `floor:214`, `bodyAxes:226`
 - `aerosim/gui/ui/widgets.zig` — Os pedaços comuns das telas, no desenho do AeroDrive: o contexto de desenho (fontes, logo, mouse), o cabeçalho
-  tipos `Ui:10`, `Status:184`
-  fn `rounded:88`, `roundedLines:93`, `header:98`, `tabBar:119`, `primaryButton:143`, `progressBar:153`, `card:160`, `labeledCard:168`, `statusColor:174`, `tableRow:187`, `format:194`
+  tipos `Ui:10`, `Status:243`
+  fn `checkBox:88`, `disclosure:103`, `rounded:147`, `roundedLines:152`, `header:157`, `tabBar:178`, `primaryButton:202`, `progressBar:212`, `card:219`, `labeledCard:227`, `statusColor:233`, `tableRow:246`, `format:253`
 
 
 ## Zig · interface do aeroopt (`aeroopt`)

@@ -65,6 +65,7 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     rl.setTraceLogLevel(.err);
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .window_resizable = true, .vsync_hint = !shot });
     rl.initWindow(args.width, args.height, title);
+    rl.setExitKey(.null); // o Esc fecha as janelas de dentro (seletor, pergunta), não o programa
     defer rl.closeWindow();
     rl.setTargetFPS(60);
 

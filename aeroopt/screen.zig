@@ -50,6 +50,7 @@ pub const Screen = struct {
     run: example.Run = .{},
     progress: f32 = 1,
     scroll: f32 = 0,
+    plots: ui_kit.scroll.ScrollArea = .{}, // a coluna dos gráficos
     message: [160:0]u8 = [_:0]u8{0} ** 160,
 
     /// liga o formulário e monta a rodada de exemplo (chamar com a tela já no lugar final)
@@ -99,13 +100,17 @@ pub const Screen = struct {
         const column_width = (rect.width - 3 * gap) / 2;
         const row_height: f32 = 400;
         const content_height = 3 * (row_height + gap) + gap;
-        if (ui.hovering(rect)) screen.scroll = std.math.clamp(screen.scroll - ui.wheel * 60, 0, @max(0, content_height - rect.height));
-        rl.beginScissorMode(@intFromFloat(rect.x), @intFromFloat(rect.y), @intFromFloat(rect.width), @intFromFloat(rect.height));
-        defer rl.endScissorMode();
+        screen.plots.content_height = content_height;
+        if (screen.scroll > 0) { // a rolagem pedida na linha de comando (prints)
+            screen.plots.offset = screen.scroll;
+            screen.scroll = 0;
+        }
+        const top = screen.plots.begin(ui, rect);
+        defer screen.plots.end(ui, rect, top + content_height);
         const run = &screen.run;
         const x0 = rect.x + gap;
         const x1 = x0 + column_width + gap;
-        var y = rect.y + gap - screen.scroll;
+        var y = top + gap;
 
         bars(ui, .{ .x = x0, .y = y, .width = column_width, .height = row_height }, "Aviões que passaram em cada etapa", &example.stages, &run.stage_count, "{d:.0}");
         plot.lines(ui, .{ .x = x1, .y = y, .width = column_width, .height = row_height }, .{ .title = "Convergência", .x_label = "geração", .y_label = "nota" }, &.{

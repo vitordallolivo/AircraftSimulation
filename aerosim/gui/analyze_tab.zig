@@ -60,6 +60,7 @@ pub const AnalyzeTab = struct {
     message: [200:0]u8 = [_:0]u8{0} ** 200,
     progress: f32 = 0,
     scroll: f32 = 0,
+    plots: ui_kit.scroll.ScrollArea = .{}, // a coluna dos gráficos
     view: view3d.View = .{},
     top_view: view3d.View = .{ .azimuth = 180, .elevation = 85, .orthographic = true },
     // as curvas desenhadas (montadas depois de cada rodada)
@@ -251,7 +252,13 @@ pub const AnalyzeTab = struct {
         const content_height = rows * (row_height + gap) + gap;
         const x0 = rect.x + gap;
         const x1 = x0 + column_width + gap;
-        var y = rect.y + gap - tab.scroll;
+        tab.plots.content_height = content_height;
+        if (tab.scroll > 0) { // a rolagem pedida na linha de comando (prints)
+            tab.plots.offset = tab.scroll;
+            tab.scroll = 0;
+        }
+        tab.plots.offset = std.math.clamp(tab.plots.offset, 0, @max(0, content_height - rect.height));
+        var y = rect.y + gap - tab.plots.offset;
         const view_card: rl.Rectangle = .{ .x = x0, .y = y, .width = column_width, .height = row_height };
         const top_card: rl.Rectangle = .{ .x = x1, .y = y, .width = column_width, .height = row_height };
         // as vistas 3D usam a roda antes da rolagem da página, e a textura é desenhada fora do recorte
@@ -262,9 +269,8 @@ pub const AnalyzeTab = struct {
             tab.render(&tab.view, cardInside(view_card), true);
             tab.render(&tab.top_view, cardInside(top_card), false);
         }
-        if (ui.hovering(rect)) tab.scroll = std.math.clamp(tab.scroll - ui.wheel * 60, 0, @max(0, content_height - rect.height));
-        rl.beginScissorMode(@intFromFloat(rect.x), @intFromFloat(rect.y), @intFromFloat(rect.width), @intFromFloat(rect.height));
-        defer rl.endScissorMode();
+        const top = tab.plots.begin(ui, rect);
+        defer tab.plots.end(ui, rect, top + content_height);
         const result = main_result orelse {
             theme.text(ui.fonts.regular, std.mem.sliceTo(&tab.message, 0), rect.x + 40, rect.y + 40, 16, theme.colors.muted);
             return;
