@@ -365,7 +365,24 @@ class WingStage(Stage):
         others = [w for w in d.wings if w.name != cand.name]
         specs, res, r = R.wing_stage(cand, d.requirements, d.rules, others)
         self.ctx.values.update(rg.wing_values(r))
+        surfaces = self._layout_surfaces()
+        if len(surfaces) > 1:                  # o ponto neutro do rascunho sozinho não vale para o conjunto
+            return Outcome(specs, res, aircraft=only_surfaces(surfaces))
         return Outcome(specs, res, aircraft=only_surfaces([r["surface"]]), markers=dict(np_x=r["planform"]["x_ac"]))
+
+    def _layout_surfaces(self):
+        """as asas da tabela, cada uma no lugar dela (a vista 3D mostra o avião com todas)"""
+        d = self.ctx.design
+        surfaces = []
+        for k, row in enumerate(d.wing_layout):
+            s = d.wing_surface(row.wing)
+            if s is None:
+                continue
+            s.name = f"{row.wing} ({k + 1})" if k else row.wing
+            s.x, s.y, s.z = -row.dx, row.dy, -row.dz           # x e z do corpo: + para a frente, + para baixo
+            s.incidence += row.di
+            surfaces.append(s)
+        return surfaces
 
     # a tabela de partições (a mesma de `WingPage` na GUI PyQt)
     COLUMNS = (("span", "envergadura (m)", "quanto a partição soma na envergadura total (metade de cada lado)"),
@@ -383,7 +400,34 @@ class WingStage(Stage):
                     ("delete", "− partição", "apaga a selecionada (fica pelo menos uma)"),
                     ("reset", "do trapézio", "refaz a tabela a partir do trapézio atual"))
 
+    # a tabela das asas do avião: quantas asas e onde cada uma fica em relação à primeira (a referência)
+    LAYOUT_COLUMNS = (("wing", "asa", "uma das asas guardadas (a primeira linha é a referência)"),
+                      ("dx", "Δx (m)", "bordo de ataque da raiz em relação ao da referência: + para trás"),
+                      ("dy", "Δy (m)", "+ para a direita"),
+                      ("dz", "Δz (m)", "+ para cima (biplano: o vão entre as asas)"),
+                      ("di", "decalagem (°)", "incidência dela menos a da referência"))
+    LAYOUT_BUTTONS = (("add", "+ asa", "mais uma asa guardada, depois da selecionada (ou no fim)"),
+                      ("delete", "− asa", "tira a selecionada da lista"))
+
     def grids(self):
+        return self._layout_grid() + self._partition_grid()
+
+    def _layout_grid(self):
+        d = self.ctx.design
+        names = tuple(w.name for w in d.wings)
+        if not names:
+            return []
+        extra = tuple(r.wing for r in d.wing_layout if r.wing not in names)
+        columns = [GridColumn(k, label, "choice" if k == "wing" else "float", names + extra if k == "wing" else (),
+                              tip) for k, label, tip in self.LAYOUT_COLUMNS]
+        note = "a primeira linha é a referência (Δ = 0). A Empenagem usa a primeira e a segunda asa."
+        return [Grid("asas", "Asas do avião", columns,
+                     [[getattr(r, k) for k, _, _ in self.LAYOUT_COLUMNS] for r in d.wing_layout], note,
+                     "quantas asas o avião tem e onde fica cada uma, com base na primeira: uma linha é monoplano, "
+                     "duas lado a lado em Δz são um biplano, uma atrás da outra em Δx um tandem.",
+                     list(self.LAYOUT_BUTTONS))]
+
+    def _partition_grid(self):
         p = self.draft()
         if p.planform != wg.PLANFORMS[1]:
             return []
@@ -403,6 +447,34 @@ class WingStage(Stage):
                      list(self.GRID_BUTTONS))]
 
     def edit_grid(self, name, op, row, key="", value=None):
+        if name == "asas":
+            self._edit_layout(op, row, key, value)
+        else:
+            self._edit_partitions(op, row, key, value)
+        self.ctx.save()
+
+    def _edit_layout(self, op, row, key, value):
+        d = self.ctx.design
+        rows = d.wing_layout
+        row = row if 0 <= row < len(rows) else len(rows) - 1
+        if op == "set" and rows:
+            if key == "wing":
+                rows[row].wing = str(value or "")
+            elif row > 0:                                  # a referência fica em Δ = 0
+                setattr(rows[row], key, float(value))
+        elif op == "add":
+            if not rows:
+                rows.append(wg.WingPlacement(d.tail_draft.wing or d.wings[0].name))
+            else:
+                rows.insert(row + 1, wg.WingPlacement(rows[row].wing))
+        elif op == "delete":
+            if rows:
+                rows.pop(row)
+        else:
+            raise KeyError(op)
+        d.apply_wing_layout()
+
+    def _edit_partitions(self, op, row, key, value):
         p = self.draft()
         parts = p.partitions
         row = row if 0 <= row < len(parts) else len(parts) - 1
@@ -423,7 +495,6 @@ class WingStage(Stage):
         else:
             raise KeyError(op)
         wg.sync(p)
-        self.ctx.save()
 
     def keep(self):
         d = self.ctx.design
@@ -433,6 +504,9 @@ class WingStage(Stage):
 
 
 # ====================================================================== Empenagem
+# os campos da Empenagem que a tabela de asas de Projetar decide
+LAYOUT_KEYS = ("wing", "wing2", "wing2_dx", "wing2_dz", "wing2_di", "wing2_area", "wing2_span", "wing2_sweep",
+               "wing2_airfoil")
 class TailStage(Stage):
     name = "empenagem"
     title = "Empenagem e comandos"
@@ -457,6 +531,10 @@ class TailStage(Stage):
 
     def editable(self):
         return ("tail_airfoil", "vtail_airfoil")
+
+    def disabled(self):
+        """com a tabela de asas de Projetar, quais asas e onde ficam vêm de lá"""
+        return LAYOUT_KEYS if self.ctx.design.wing_layout else ()
 
     def kept_items(self):
         return self.ctx.design.sets

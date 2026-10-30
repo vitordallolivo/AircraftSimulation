@@ -122,7 +122,8 @@ def test_payload_options_count_and_old_files():
 
 def test_tandem_neutral_point_uses_both_wings_and_the_rear_wing_pitches(manager):
     """tandem: a asa de trás é a cauda. O ponto neutro fica entre os dois CA (antes era o da asa da frente sozinha),
-    o profundor fica na de trás, ela sente o downwash da da frente e um tubo a liga; o ponto neutro do núcleo fica
+    o profundor fica na de trás e ela sente o downwash da da frente; o tubo que liga as duas é da Montagem, não da
+    etapa; o ponto neutro do núcleo fica
     perto do da sprint (a menos de 15 % da CMA) e o profundor de trás para cima cabra"""
     import copy
     from aerosim.model.universal import build_model
@@ -136,7 +137,7 @@ def test_tandem_neutral_point_uses_both_wings_and_the_rear_wing_pitches(manager)
     ac, asm = pw.assemble(cand, Requirements())
     front, rear = ac.surfaces[0], ac.surfaces[-1]
     assert [c.kind for c in front.controls] == ["aileron"] and [c.kind for c in rear.controls] == ["elevator"]
-    assert rear.downwash and rear.mount == "tubo:0" and ac.boom.enabled
+    assert rear.downwash and rear.mount == "" and not ac.boom.enabled
     m = build_model(ac)
     with manager.backend.session_for(m) as s:
         k1, k2 = s.aero_coeffs(10.0, math.radians(2)), s.aero_coeffs(10.0, math.radians(4))

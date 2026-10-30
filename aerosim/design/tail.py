@@ -209,17 +209,9 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
             w2 = second_wing(ac)
             w2.controls = [ControlSurface("elevator", a0, min(a1, 1.0), tp.aileron_chord)] if rear else []
             # atrás da da frente, ela sente o downwash dela, como uma EH (sem isto o núcleo punha o ponto neutro
-            # na média dos dois CA, bem atrás do da sprint), e um tubo a liga à fuselagem: a massa dele entra e o
-            # lastro, quando falta, vai na ponta dele
+            # na média dos dois CA, bem atrás do da sprint). O que liga as duas asas (tubo, fuselagem) é da
+            # Montagem, não desta etapa (vitor, 2026-10-30)
             w2.downwash, w2.eta = True, tp.tail_eta
-            x_start = w.x - 0.25 * w.sections[0].chord
-            reach = max(x_start - (w2.x - w2.sections[0].chord), 0.05)
-            pitch = math.degrees(math.atan2(-w2.z, reach))   # da fuselagem (z = 0) à altura da asa de trás
-            ac.booms = [TailBoom(name="tubo de cauda", x_start=x_start, length=math.hypot(reach, w2.z),
-                                 diameter=tp.boom_diameter, pitch=pitch)]
-            w2.mount = "tubo:0"
-            ac.apply_constraints()
-            info.update(boom=ac.boom.length, mass_boom=ac.boom.length * rules.boom_density)
         if tp.tip_fin > 0:
             info.update(_tip_fins(ac, cand, tp, airfoils, req))
         ac.apply_constraints()

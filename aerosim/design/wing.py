@@ -52,6 +52,17 @@ class WingPartition:
 
 
 @dataclass
+class WingPlacement:
+    """uma asa do avião na tabela de Projetar (Aerodinâmica decide quantas asas e onde): uma asa guardada e onde fica
+    o bordo de ataque da raiz dela em relação ao da asa de referência (a primeira linha da tabela)"""
+    wing: str = F("", "asa", "", "uma das asas guardadas")
+    dx: float = F(0.0, "Δx", "m", "+ para trás (tandem: a de trás)", -5.0, 5.0, 0.01)
+    dy: float = F(0.0, "Δy", "m", "+ para a direita", -5.0, 5.0, 0.01)
+    dz: float = F(0.0, "Δz", "m", "+ para cima (biplano: o vão entre as asas)", -3.0, 3.0, 0.01)
+    di: float = F(0.0, "decalagem", "°", "incidência dela menos a da referência", -12.0, 8.0, 0.25)
+
+
+@dataclass
 class WingStation:
     """seção da asa (de dentro: sai das partições); entre seções tudo é interpolado"""
     y: float = 0.0                 # da raiz, na semienvergadura (m)

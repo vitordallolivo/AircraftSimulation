@@ -16,6 +16,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   `aerosim/manager/stages.py`); Analisar mostra as vistas 3D da carga (`loads3d`: o mapa de cores por face, as
   setas de cada camada e a escala, trocados por botões, com a legenda), antes dos gráficos 2D; campos de arquivo
   (abrem o seletor) e de lista de números.
+- Projetar decide as asas do avião: a tabela "Asas do avião" (como a das partições, com "+ asa" e "− asa") lista
+  as asas guardadas e onde cada uma fica (Δx, Δy, Δz e decalagem) em relação à primeira, a de referência. A vista
+  3D mostra todas; a Empenagem pega a primeira e a segunda (esses campos ficam em cinza lá), e Analisar começa com
+  as posições da tabela. O tandem não ganha mais o tubo entre as asas na Empenagem: o que liga as asas é da
+  Montagem (vitor: "o CG é apenas de projeto").
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

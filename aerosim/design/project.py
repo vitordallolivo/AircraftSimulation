@@ -25,7 +25,7 @@ from .registry import Variable, default_variables
 from .spec import DesignRules, Requirements
 from .study import StudyParams, StudyRun
 from .tail import NO_WING2, SAME_WING, SetCandidate, TailParams, wing2_candidate
-from .wing import WingCandidate, WingParams
+from .wing import WingCandidate, WingParams, WingPlacement
 
 
 def rg_sae():
@@ -47,6 +47,7 @@ class DesignProject:
     aircraft: list[AircraftCandidate] = field(default_factory=list)
     wing_draft: WingParams = field(default_factory=lambda: WingParams(taper=1.0, rect_frac=1.0))   # retangular
     tail_draft: TailParams = field(default_factory=TailParams)
+    wing_layout: list[WingPlacement] = field(default_factory=list)   # as asas do avião (Projetar); vazia: a Empenagem escolhe
     power_draft: PowerParams = field(default_factory=PowerParams)
     study: StudyParams = field(default_factory=StudyParams)
     studies: list[StudyRun] = field(default_factory=list)       # os estudos rodados (dados de simulação)
@@ -66,6 +67,23 @@ class DesignProject:
         if isinstance(data.get("variables"), list):
             data["variables"] = [v for v in data["variables"] if not isinstance(v, dict) or v.get("key") in INPUTS]
         return data
+
+    def apply_wing_layout(self) -> None:
+        """as asas da tabela de Projetar vão para a Empenagem: a primeira é a asa do conjunto e a segunda, a segunda
+        asa (recuo, desnível e decalagem em relação à primeira). Tabela vazia: a Empenagem fica como está."""
+        rows = self.wing_layout
+        if not rows:
+            return
+        t = self.tail_draft
+        t.wing = rows[0].wing
+        if len(rows) < 2:
+            t.wing2 = NO_WING2
+            return
+        second = rows[1]
+        t.wing2 = SAME_WING if second.wing == rows[0].wing else second.wing
+        t.wing2_dx, t.wing2_dz, t.wing2_di = second.dx, second.dz, second.di
+        # a segunda asa é a guardada, como está: nada de escalar a área, a envergadura, o enflechamento ou o perfil
+        t.wing2_area, t.wing2_span, t.wing2_sweep, t.wing2_airfoil = 1.0, 1.0, 0.0, ""
 
     def summary(self) -> list[tuple[str, str]]:
         """o que está guardado, etapa por etapa (para mostrar ao abrir)"""

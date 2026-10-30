@@ -83,6 +83,15 @@ def sprint_wings(shared) -> list[str]:
     return [w.name for w in getattr(project, "wings", [])]
 
 
+def layout_positions(shared) -> dict[str, tuple[float, float]]:
+    """onde a tabela de asas de Projetar põe cada asa: nome → (x do bordo de ataque, + para a frente; altura)"""
+    project = (shared or {}).get("sprint")
+    out = {}
+    for r in getattr(project, "wing_layout", []):
+        out.setdefault(r.wing, (-r.dx, r.dz))
+    return out
+
+
 def lifting_surfaces(aircraft) -> list:
     """(índice, superfície) das superfícies ligadas do avião"""
     return [(i, s) for i, s in enumerate(aircraft.surfaces) if s.enabled] if aircraft is not None else []
@@ -154,11 +163,15 @@ class WingsSimulation(SimulationBase):
                         help="o avião aberto na Montagem, ou as asas guardadas na etapa Asa da sprint (sem fuselagem)")]
         S = "Superfícies"
         if source == SPRINT:
+            placed = layout_positions(self.shared)
             for i, name in enumerate(sprint):
-                ps += [ParamSpec(f"sprint_{i}", f"incluir: {name}", i == 0, kind="bool", group=S),
-                       ParamSpec(f"x_{i}", f"{name}: x do bordo de ataque da raiz", 0.0, minimum=-5, maximum=5,
-                                 unit="m", group=S, help="tandem e canard: uma asa à frente da outra"),
-                       ParamSpec(f"h_{i}", f"{name}: altura", 0.0, minimum=-3, maximum=3, unit="m", group=S,
+                x, h = placed.get(name, (0.0, 0.0))
+                ps += [ParamSpec(f"sprint_{i}", f"incluir: {name}", name in placed if placed else i == 0, kind="bool",
+                                 group=S),
+                       ParamSpec(f"x_{i}", f"{name}: x do bordo de ataque da raiz", x, minimum=-5, maximum=5,
+                                 unit="m", group=S, help="+ para a frente; tandem e canard: uma asa à frente da outra. "
+                                 "Começa com o da tabela de asas de Projetar"),
+                       ParamSpec(f"h_{i}", f"{name}: altura", h, minimum=-3, maximum=3, unit="m", group=S,
                                  help="biplano: a asa de cima mais alta")]
         else:
             for i, s in lifting_surfaces(ac):

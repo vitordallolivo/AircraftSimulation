@@ -91,3 +91,28 @@ def test_wing_outcome_has_a_view_and_the_neutral_point(tmp_path):
     outcome = stages.WingStage(_context(tmp_path)).compute()
     view = bridge._view(outcome.aircraft, outcome.markers)
     assert view["meshes"] and "np_x" in view["markers"]
+
+
+def test_wing_layout_table_feeds_the_tail_stage(tmp_path):
+    """a tabela de asas de Projetar: quantas asas e onde, com base na primeira; a Empenagem pega a primeira e a
+    segunda e deixa esses campos em cinza"""
+    ctx = _context(tmp_path)
+    wing = stages.WingStage(ctx)
+    wing.do_keep()
+    wing.set({"name": "asa 2", "area": 1.2})
+    wing.do_keep()
+    grid = wing.grids()[0]
+    assert grid.name == "asas" and grid.rows == []
+    wing.edit_grid("asas", "add", -1)
+    wing.edit_grid("asas", "add", 0)
+    wing.edit_grid("asas", "set", 0, "wing", "asa 1")
+    wing.edit_grid("asas", "set", 1, "wing", "asa 2")
+    wing.edit_grid("asas", "set", 1, "dx", 1.4)
+    wing.edit_grid("asas", "set", 0, "dx", 9.0)                 # a referência fica em Δ = 0
+    rows = wing.grids()[0].rows
+    assert rows[0][1] == 0.0 and rows[1][:2] == ["asa 2", 1.4]
+    tail = ctx.design.tail_draft
+    assert (tail.wing, tail.wing2, tail.wing2_dx) == ("asa 1", "asa 2", 1.4)
+    assert "wing2_dx" in stages.TailStage(ctx).disabled()
+    wing.edit_grid("asas", "delete", 1)
+    assert ctx.design.tail_draft.wing2 == "nenhuma"
