@@ -79,7 +79,7 @@ pub const Page = struct {
     name: []const u8 = "", // a análise ou a etapa no Python
     title: [:0]const u8 = "",
     bridge: *python_bridge.Bridge = undefined,
-    process_io: ?std.Io = null, // a `Io` do processo (abre o Python); no navegador não há
+    process_io: ?std.Io = null, // a `Io` do processo (abre o Python); no navegador não há, e o Python é o da página
     job: jobs.Job = .{},
     waiter: python_bridge.Waiter = .{},
     operation: Operation = .specs,
@@ -223,12 +223,8 @@ pub const Page = struct {
         const waiter = &page.waiter;
         waiter.memory = page.reply_arena.?.allocator();
         waiter.failure[0] = 0;
-        const process = page.process_io orelse {
-            setText(&waiter.failure, "no navegador a ponte com o Python ainda não existe (vai ser o Pyodide num web worker)", .{});
-            return;
-        };
         const bridge = page.bridge;
-        bridge.start(process) catch |err| {
+        bridge.start(page.process_io) catch |err| {
             setText(&waiter.failure, "não abriu o Python ({s}): rode da pasta do repositório, com as dependências instaladas", .{@errorName(err)});
             return;
         };

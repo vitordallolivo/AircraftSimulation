@@ -11,6 +11,7 @@
       e a tela abre pelo `app_open_file` (ui/app.zig), como o arquivo da linha de comando no PC
     - downloadFile(caminho): o programa grava na memória e chama isto para a página baixar o arquivo (ui/system.zig)
     - o link de volta à tela inicial (index.html)
+    - no aerosim, o Python das análises (aerosim-python.html, num iframe): o Pyodide carrega enquanto a tela já aparece
 -->
 <style>
   html, body { margin: 0; height: 100%; background: #e9ebef; overflow: hidden; }
@@ -102,6 +103,38 @@
     setStatus: (text) => { if (text) loading.textContent = program + '\n' + text.replace('Downloading data...', 'baixando...'); },
   };
   window.addEventListener('error', (event) => { loading.textContent = program + '\nerro: ' + event.message; });
+  // O aerosim pede as contas ao Python (aerosim/gui/python_bridge.zig), que carrega junto, num iframe escondido
+  // (aerosim-python.html, de aerosim/gui/web/python.html). A tela chama Module.pythonState() e
+  // Module.pythonCall(pedido), e a resposta volta na hora (mesma origem, mesma thread). Os arquivos são de dois
+  // mundos: os do programa (FS, onde caem os arquivos abertos e os aviões de exemplo) e os do Python. Um caminho que
+  // vai no pedido ("path", "arg") é copiado para o Python antes, e o avião que uma etapa manda para a Montagem
+  // ("open" na resposta) volta para o programa.
+  if (program === 'aerosim') {
+    const frame = document.createElement('iframe');
+    frame.src = 'aerosim-python.html';
+    frame.hidden = true;
+    document.body.appendChild(frame);
+    const python = () => frame.contentWindow;
+    const copyFile = (from, to, path) => {
+      if (typeof path !== 'string' || !path.startsWith('/')) return;
+      const found = from.analyzePath(path);
+      if (!found.exists || from.isDir(found.object.mode)) return;
+      to.mkdirTree(path.slice(0, path.lastIndexOf('/')) || '/');
+      to.writeFile(path, from.readFile(path));
+    };
+    Module.pythonState = () => (python() && python().pythonState ? python().pythonState() : 0);
+    Module.pythonCall = (request) => {
+      const files = python().pyodide.FS;
+      copyFile(FS, files, request.path);
+      copyFile(FS, files, request.arg);
+      const line = python().pythonCall(JSON.stringify(request));
+      if (line.includes('"open"')) {
+        const reply = JSON.parse(line);
+        if (reply.open) copyFile(files, FS, reply.open);
+      }
+      return line;
+    };
+  }
 </script>
 {{{ SCRIPT }}}
 </body>

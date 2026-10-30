@@ -33,15 +33,20 @@ const LayoutLoader = struct {
     arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator),
     reply: ?Json = null,
     asked: bool = false,
+    loading: bool = false, // no navegador: a página ainda está carregando o Python (pede de novo no quadro seguinte)
 
     fn work(loader: *LayoutLoader, bridge: *python_bridge.Bridge, process: ?std.Io) void {
         loader.waiter.memory = loader.arena.allocator();
-        const io_process = process orelse {
-            _ = std.fmt.bufPrintZ(&loader.waiter.failure, "no navegador a ponte com o Python ainda não existe; a Montagem funciona", .{}) catch {};
-            return;
-        };
-        bridge.start(io_process) catch |err| {
-            _ = std.fmt.bufPrintZ(&loader.waiter.failure, "não abriu o Python ({s}): rode da pasta do repositório, com as dependências instaladas; a Montagem funciona", .{@errorName(err)}) catch {};
+        bridge.start(process) catch |err| {
+            if (err == error.PythonLoading) {
+                loader.loading = true;
+                return;
+            }
+            if (ui_kit.system.in_browser) {
+                _ = std.fmt.bufPrintZ(&loader.waiter.failure, "o Python da página não carregou (o motivo está no console do navegador); a Montagem funciona", .{}) catch {};
+            } else {
+                _ = std.fmt.bufPrintZ(&loader.waiter.failure, "não abriu o Python ({s}): rode da pasta do repositório, com as dependências instaladas; a Montagem funciona", .{@errorName(err)}) catch {};
+            }
             return;
         };
         loader.reply = bridge.request(&loader.waiter, "\"op\": \"layout\"") catch null;
@@ -194,6 +199,12 @@ pub const Screen = struct {
             _ = loader.job.start(LayoutLoader.work, .{ loader, &screen.bridge, screen.io });
         }
         if (!loader.job.finished()) return;
+        if (loader.loading) {
+            loader.loading = false;
+            loader.asked = false;
+            _ = std.fmt.bufPrintZ(&screen.message, "carregando o Python no navegador (os managers das análises)...", .{}) catch {};
+            return;
+        }
         const reply = loader.reply orelse {
             _ = std.fmt.bufPrintZ(&screen.message, "{s}", .{std.mem.sliceTo(&loader.waiter.failure, 0)}) catch {};
             return;

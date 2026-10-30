@@ -6,11 +6,16 @@
 //! uma a quem pediu (um `Waiter`), porque o Python responde fora de ordem: uma rodada longa não segura as outras abas.
 //! Quem chama `request` está numa `Job` (`ui/jobs.zig`), fora do laço da tela, e espera ali a resposta dele. As
 //! linhas de progresso que chegam antes atualizam o `Waiter`, que a tela lê a cada quadro.
-//! No navegador não há processo filho: lá a ponte vai ser o Pyodide num web worker (a etapa seguinte do plano).
+//! No navegador não há processo filho nem thread: o Pyodide roda o mesmo `aerosim/bridge.py` na página
+//! (`aerosim/gui/web/python.html`, num iframe), e cada pedido é uma chamada ao JavaScript que volta já com a resposta
+//! (`Module.pythonCall`). A tela fica parada enquanto a conta roda, como as outras contas longas no navegador.
 const std = @import("std");
 const ui_kit = @import("ui");
 
-pub const Error = error{ NotStarted, PythonNotFound, BridgeClosed, BadReply, NotInBrowser };
+pub const Error = error{ NotStarted, PythonNotFound, BridgeClosed, BadReply, PythonLoading };
+
+const in_browser = ui_kit.system.in_browser;
+const emscripten = std.os.emscripten;
 
 const max_waiting = 32;
 
@@ -46,11 +51,24 @@ pub const Bridge = struct {
     opened_path: [1024]u8 = undefined, // o avião que o Python já tem aberto
     opened_len: usize = 0,
     open_lock: std.Io.Mutex = .init,
+    browser_ready: bool = false, // no navegador: o Pyodide da página já respondeu que está pronto
 
     /// abre o Python na pasta do repositório (onde está `aerosim/bridge.py`), espera a linha de pronto e põe a
-    /// thread de leitura para rodar; `io` é a do processo (o Python herda o ambiente dela)
-    pub fn start(bridge: *Bridge, io: std.Io) !void {
-        if (ui_kit.system.in_browser) return Error.NotInBrowser;
+    /// thread de leitura para rodar; `process` é a `Io` do processo (o Python herda o ambiente dela). No navegador
+    /// só confere se a página já carregou o Python (`error.PythonLoading` enquanto não)
+    pub fn start(bridge: *Bridge, process: ?std.Io) !void {
+        if (in_browser) {
+            if (bridge.browser_ready) return;
+            bridge.io = ui_kit.system.io();
+            // 1 pronto, 0 carregando, -2 falhou (`aerosim/gui/web/python.html`)
+            switch (emscripten.emscripten_run_script_int("Module.pythonState ? Module.pythonState() : 0")) {
+                1 => bridge.browser_ready = true,
+                0 => return Error.PythonLoading,
+                else => return Error.PythonNotFound,
+            }
+            return;
+        }
+        const io = process orelse return Error.NotStarted;
         bridge.start_lock.lockUncancelable(io);
         defer bridge.start_lock.unlock(io);
         if (bridge.child != null and !bridge.closed.load(.acquire)) return;
@@ -102,6 +120,7 @@ pub const Bridge = struct {
     /// em `waiter.reply`, na `waiter.memory`. Resposta com `"ok": false` vira `error.BadReply`, com o texto em
     /// `waiter.failure`
     pub fn request(bridge: *Bridge, waiter: *Waiter, fields: []const u8) !std.json.Value {
+        if (in_browser) return bridge.requestInPage(waiter, fields);
         const child = bridge.child orelse return Error.NotStarted;
         waiter.id = bridge.next_id.fetchAdd(1, .monotonic);
         waiter.reply = null;
@@ -120,6 +139,26 @@ pub const Bridge = struct {
             };
         }
         while (!waiter.done.load(.acquire)) std.Io.sleep(bridge.io, .fromMilliseconds(2), .awake) catch {};
+        return checkReply(waiter);
+    }
+
+    /// o pedido no navegador: o JSON vai como objeto para `Module.pythonCall` (JSON é JavaScript válido) e a resposta
+    /// volta como texto, na hora
+    fn requestInPage(bridge: *Bridge, waiter: *Waiter, fields: []const u8) !std.json.Value {
+        if (!bridge.browser_ready) return Error.NotStarted;
+        waiter.id = bridge.next_id.fetchAdd(1, .monotonic);
+        waiter.reply = null;
+        waiter.failure[0] = 0;
+        const script = try std.fmt.allocPrintSentinel(waiter.memory, "Module.pythonCall({{\"id\": {d}, {s}}})", .{ waiter.id, fields }, 0);
+        const answer = emscripten.emscripten_run_script_string(script.ptr) orelse return Error.BridgeClosed;
+        const value = std.json.parseFromSliceLeaky(std.json.Value, waiter.memory, std.mem.sliceTo(answer, 0), .{ .allocate = .alloc_always }) catch return Error.BadReply;
+        waiter.reply = if (value == .object) value else return Error.BadReply;
+        waiter.done.store(true, .release);
+        return checkReply(waiter);
+    }
+
+    /// a resposta guardada em `waiter`, ou `error.BadReply` com o texto do erro em `waiter.failure`
+    fn checkReply(waiter: *Waiter) !std.json.Value {
         const reply = waiter.reply orelse return Error.BridgeClosed;
         if (reply.object.get("ok")) |ok| if (ok == .bool and ok.bool) return reply;
         const text = if (reply.object.get("error")) |message| (if (message == .string) message.string else "erro sem texto") else "erro sem texto";
@@ -142,6 +181,7 @@ pub const Bridge = struct {
 
     /// pede para parar a rodada de `waiter` (a resposta dela chega como "cancelado")
     pub fn cancel(bridge: *Bridge, waiter: *const Waiter) void {
+        if (in_browser) return; // no navegador nada roda junto com a conta: não há como pedir
         const child = bridge.child orelse return;
         var text: [64]u8 = undefined;
         const line = std.fmt.bufPrint(&text, "{{\"op\": \"cancel\", \"target\": {d}}}\n", .{waiter.id}) catch return;

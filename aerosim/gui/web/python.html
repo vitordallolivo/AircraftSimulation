@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Python do aerosim</title>
+<!--
+  O Python do aerosim no navegador. A página do aerosim (shell.html) abre esta num iframe escondido: o Pyodide fica
+  aqui, longe das variáveis globais que o programa em Zig (emscripten) cria na página dele, e a tela chama
+  `pythonCall` direto, na hora, porque um iframe da mesma origem roda na mesma thread da página.
+
+  O que se carrega, tudo do próprio site (montado por tools/web_build.py):
+    pyodide/                o Pyodide e os pacotes que o aerosim usa (numpy, scipy)
+    aerosim-python.zip      o pacote aerosim (sem a GUI PyQt) e a pasta data
+    aerosim-core.so         o núcleo compilado como side module (o mesmo ctypes do PC o carrega)
+
+  O que a página do aerosim usa daqui:
+    pythonState()           0 carregando, 1 pronto, -2 falhou (o motivo em pythonError)
+    pythonCall(texto)       um pedido em JSON para `aerosim.bridge.call_in_browser`; volta o texto da resposta
+    pyodide.FS              os arquivos do Python (a página copia para cá os arquivos dos pedidos)
+-->
+</head>
+<body>
+<script type="module">
+  let state = 0;
+  let call = null;
+  window.pythonState = () => state;
+  window.pythonCall = (line) => call(line);
+  const status = (text) => console.log('[python] ' + text);
+
+  async function fetchBytes(name) {
+    const response = await fetch(name);
+    if (!response.ok) throw new Error(name + ': ' + response.status);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  try {
+    const started = performance.now();
+    const { loadPyodide } = await import(new URL('pyodide/pyodide.mjs', location).href);
+    const pyodide = await loadPyodide({ indexURL: new URL('pyodide/', location).href, stdout: status, stderr: status });
+    window.pyodide = pyodide;
+    await pyodide.loadPackage(['numpy', 'scipy'], { messageCallback: status });
+    pyodide.unpackArchive(await fetchBytes('aerosim-python.zip'), 'zip', { extractDir: '/repo' });
+    pyodide.FS.mkdirTree('/corelib');
+    pyodide.FS.writeFile('/corelib/libaerosim.so', await fetchBytes('aerosim-core.so'));
+    pyodide.runPython(`
+import os, sys
+sys.path.insert(0, "/repo")
+sys.dont_write_bytecode = True
+os.chdir("/repo")
+from aerosim import bridge
+bridge.start_in_browser("/corelib/libaerosim.so")
+`);
+    call = pyodide.globals.get('bridge').call_in_browser;
+    state = 1;
+    status('pronto em ' + ((performance.now() - started) / 1000).toFixed(1) + ' s');
+  } catch (error) {
+    state = -2;
+    window.pythonError = String(error);
+    console.error('[python] não carregou:', error);
+  }
+</script>
+</body>
+</html>

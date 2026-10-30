@@ -19,6 +19,10 @@ resolvidas (a tabela de cada `series:<prefixo>*` vira uma curva com nome, x e y)
 `aerosim/gui/widgets/plots.py`.
 
 O que as bibliotecas imprimem na saída padrão (inclusive o C) vai para a saída de erro: a saída padrão é só da ponte.
+
+No navegador não há processo nem thread: o Pyodide roda este módulo na própria página, a página chama
+`start_in_browser` uma vez e depois `call_in_browser` com cada pedido, que responde na hora com a linha da resposta
+(sem as de progresso). A página faz isso em `aerosim/gui/web/python.html`.
 """
 from __future__ import annotations
 
@@ -306,6 +310,45 @@ def _plain(value: Any):
     if isinstance(value, float) and not math.isfinite(value):
         return None
     return str(value)
+
+
+class _Lines:
+    """a saída da ponte no navegador: as linhas ficam numa lista em vez de ir para um arquivo"""
+
+    def __init__(self):
+        self.lines: list[str] = []
+
+    def write(self, text: str) -> None:
+        self.lines.append(text)
+
+    def flush(self) -> None:
+        pass
+
+
+_browser: Bridge | None = None
+
+
+def start_in_browser(core_path: str, design_dir: str | None = None) -> None:
+    """abre a ponte do navegador com o núcleo em `core_path` (o side module que a página carregou)"""
+    global _browser
+    from aerosim.backend.zig import ZigBackend
+    from aerosim.manager import SimulationManager
+    _browser = Bridge(SimulationManager(ZigBackend(core_path)), _Lines(), design_dir)
+
+
+def call_in_browser(line: str) -> str:
+    """um pedido inteiro, na hora (o Pyodide não tem thread): devolve a linha da resposta, sem as de progresso.
+    O cancelamento não tem efeito aqui, porque nada roda enquanto uma conta não acaba"""
+    request = json.loads(line)
+    if request.get("op") == "cancel":
+        return ""
+    out = _browser.out
+    out.lines.clear()
+    _browser.answer(request)
+    for text in reversed(out.lines):
+        if '"progress"' not in text[:40]:
+            return text.strip()
+    return json.dumps({"id": request.get("id"), "ok": False, "error": "sem resposta"})
 
 
 def main() -> None:

@@ -72,7 +72,11 @@ pub fn build(b: *std.Build) void {
     });
     mod.addOptions("build_options", opts);
 
-    const lib = b.addLibrary(.{ .linkage = .dynamic, .name = "aerosim", .root_module = mod });
+    // no navegador (`-Dtarget=wasm32-emscripten`) sai uma biblioteca estática com código relocável: o emcc a liga como
+    // side module, que o Pyodide carrega e o mesmo `ctypes` do PC chama (tools/web_build.py faz isso)
+    const in_browser = target.result.os.tag == .emscripten;
+    if (in_browser) mod.pic = true;
+    const lib = b.addLibrary(.{ .linkage = if (in_browser) .static else .dynamic, .name = "aerosim", .root_module = mod });
 
     // o mesmo núcleo como módulo Zig (`@import("aerosim")`): usado pelo aerodrive
     const zmod = b.addModule("aerosim", .{ .root_source_file = b.path("src/lib.zig"), .target = target, .optimize = optimize });
