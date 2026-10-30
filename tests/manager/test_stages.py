@@ -214,3 +214,34 @@ def test_wing_devices_table_puts_each_device_on_its_wing(tmp_path):
     stages.TailStage(ctx).do_keep()
     again = store.load(ctx.folder)
     assert again.sets[0].devices[1][0].kind == "placa" and again.wing_layout[1].devices[0].kind == "placa"
+
+
+def test_controls_table_is_generic_and_the_rule_is_its_default(tmp_path):
+    """a tabela de comandos da Empenagem: vazia vale a regra; 'da regra' mostra a regra como linhas e o conjunto
+    sai igual; com linhas, ela manda em todas as superfícies (um profundor na asa da frente, à frente do CG, com
+    arfagem −1). Os campos de uma configuração só (arfagem do tandem, onde vão as derivas) saíram do formulário"""
+    from aerosim.model.serialize import to_dict
+    ctx = _context(tmp_path)
+    stages.WingStage(ctx).do_keep()
+    tail = stages.TailStage(ctx)
+    keys = [q.key for q in tail.form()]
+    assert "tandem_pitch" not in keys and "tip_fin_where" not in keys and "controls" not in keys
+    grid = tail.grids()[0]
+    assert grid.name == "comandos" and grid.rows == []
+
+    def controls():
+        return [(s.name, to_dict(c)) for s in tail.compute().aircraft.surfaces for c in s.controls]
+    before = controls()
+    tail.edit_grid("comandos", "rule", -1)
+    rows = tail.grids()[0].rows
+    assert [r[:2] for r in rows] == [["asa", "aileron"], ["EH", "elevator"], ["EV", "rudder"]]
+    assert rows[1][5:] == [1.0, 0.0, 0.0]
+    assert [n for n, _ in controls()] == [n for n, _ in before]
+    assert "elevator" in tail.disabled()
+    tail.edit_grid("comandos", "add", 0)
+    tail.edit_grid("comandos", "set", 3, "kind", "elevon")
+    tail.edit_grid("comandos", "set", 3, "pitch", -1.0)
+    wing = tail.compute().aircraft.surfaces[0]
+    assert [c.gains for c in wing.controls] == [(0.0, 1.0, 0.0), (-1.0, 1.0, 0.0)]
+    tail.edit_grid("comandos", "clear", -1)
+    assert controls() == before

@@ -32,6 +32,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - tabela "Dispositivos das asas" em Projetar: winglet, winglet para baixo, placa e cerca (o `WingDevice` do modelo),
   cada um preso a uma asa da tabela "Asas do avião", com a geometria dele; vão com a configuração até o avião montado.
   Nas tabelas largas da tela em Zig, as colunas de número dividem no máximo 60 % da largura.
+- Empenagem genérica: os comandos viram a tabela "Comandos" (superfície, nome, trecho da envergadura, corda e os
+  ganhos de arfagem, rolagem e guinada), com "da regra", "+ comando", "− comando" e "limpar". Vazia, vale a regra de
+  antes e o conjunto sai igual. Saíram do formulário os campos de uma configuração só ("arfagem do tandem" e
+  "deriva na ponta: onde").
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

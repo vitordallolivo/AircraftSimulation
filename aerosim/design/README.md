@@ -224,9 +224,7 @@ x_n = \frac{a\,S\,x_{ac,1} + \eta\,a_2\,S_2\left(1 - \frac{d\varepsilon}{d\alpha
 ```
 
 Quem trima o tandem é a decalagem, a incidência da asa de trás menos a da da frente (`wing2_di`, negativa: a de trás
-sustenta menos por área). A etapa não liga as asas com tubo: o que une as duas é da Montagem. O
-comando de arfagem (`tandem_pitch`) pode ficar na asa de trás, e aí ele é um profundor comum, na da frente, e aí ele
-desce para cabrar porque está à frente do CG, como um canard, ou nas duas.
+sustenta menos por área). A etapa não liga as asas com tubo: o que une as duas é da Montagem.
 
 As duas asas de um tandem não devem ser iguais. A de trás trabalha no downwash da da frente e, para dividir a
 sustentação, precisa de mais área: com as duas iguais, o CG que dá a margem estática fica perto da asa da frente e
@@ -248,8 +246,16 @@ vertical das duas, com o braço do CG ao centro aerodinâmico delas:
 C_{n\beta} = \frac{S_v\,(x_{CG} - x_{ac,v})}{S\,b}\,a_v
 ```
 
-No tandem a ponta da asa da frente fica quase sobre o CG, sem braço nenhum, então as derivas vão na asa de trás
-(`tip_fin_where`).
+No tandem a ponta da asa da frente fica quase sobre o CG, sem braço nenhum, então as derivas vão na asa de trás.
+
+Os comandos ficam numa tabela, "Comandos" (`TailParams.controls`, uma `SurfaceControl` por linha). Cada linha é o
+`ControlSurface` do modelo numa superfície do conjunto: o trecho da envergadura, a fração da corda e quanto ele
+responde a cada eixo (os ganhos de arfagem, rolagem e guinada, o `mix`). O nome não decide nada; quem diz o que o
+comando faz são os ganhos. Assim nenhuma configuração precisa de campo próprio. Um profundor na asa da frente de um
+tandem, à frente do CG, é uma linha com arfagem −1, porque ali descer o bordo de fuga cabra. Com a tabela vazia vale a
+regra da etapa: aileron ou elevon na asa, profundor na EH, leme na EV e, no tandem, profundor na asa de trás. O botão
+"da regra" escreve essa regra como linhas para editar, e com linhas a tabela manda em todas as superfícies
+(`apply_controls`).
 
 A partir dela:
 

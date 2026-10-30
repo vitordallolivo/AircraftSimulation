@@ -49,6 +49,14 @@ LIVE_LAYOUT = "a tabela de Projetar"               # TailParams.config: as asas 
 
 
 @dataclass
+class SurfaceControl:
+    """um comando da tabela da Empenagem: em qual superfície do conjunto ele fica (pelo nome) e o `ControlSurface` do
+    modelo (tipo, trecho da envergadura, fração da corda e os ganhos de arfagem, rolagem e guinada em `mix`)"""
+    surface: str = ""
+    control: ControlSurface = field(default_factory=ControlSurface)
+
+
+@dataclass
 class TailParams:
     name: str = F("conjunto 1", "nome")
     config: str = F(LIVE_LAYOUT, "configuração", "", "as asas do avião e onde ficam: uma configuração guardada em "
@@ -111,6 +119,7 @@ class TailParams:
     aileron_start: float = F(0.55, "aileron: início", "", "fração da semienvergadura", 0.0, 0.95, 0.01)
     aileron_end: float = F(0.95, "aileron: fim", "", "", 0.1, 1.0, 0.01)
     aileron_chord: float = F(0.25, "aileron (fração da corda)", "", "", 0.1, 0.5, 0.01)
+    controls: list[SurfaceControl] = field(default_factory=list)   # a tabela de comandos; vazia: a regra da etapa
     flap_moment: bool = F(False, "momento próprio dos comandos", "", "o comando também muda o momento no quarto de "
                           "corda da faixa (perfil fino), no núcleo: o elevon da asa voadora cabra o que a teoria dá. "
                           "Liga o modificador comando.momento_flape no avião")
@@ -224,6 +233,7 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
             w2.downwash, w2.eta = True, tp.tail_eta
         if tp.tip_fin > 0:
             info.update(_tip_fins(ac, cand, tp, airfoils, req))
+        apply_controls(ac, tp.controls)
         ac.apply_constraints()
         return ac, info
     l = tp.arm + arm_shift                          # do CA da asa ao da cauda (posição)
@@ -271,10 +281,31 @@ def build_set(cand: SetCandidate, req: Requirements, rules: DesignRules | None =
         tails[1].mount, tails[2].mount = "ponta_dir:1", "ponta_esq:1"
     ac.surfaces += tails
     _add_wing2(ac, cand, req, rules)
+    apply_controls(ac, tp.controls)
     ac.apply_constraints()
     info.update(Sh=Sh, Sv=Sv, bh=bh, hv=hv, arm=l, x_ac_t=x_ac_t, cl_lim_h=lim,
                 boom=ac.boom.length, mass_tail=(Sh + Sv) * rules.tail_density, mass_boom=ac.boom.length * rules.boom_density)
     return ac, info
+
+
+def apply_controls(ac: Aircraft, table: list[SurfaceControl]) -> None:
+    """a tabela de comandos manda em todos: cada superfície fica só com os comandos que a tabela põe nela. Tabela
+    vazia: ficam os da regra da etapa (aileron ou elevon na asa, profundor na EH, leme na EV)"""
+    if not table:
+        return
+    for s in ac.surfaces:
+        s.controls = [copy.deepcopy(row.control) for row in table if row.surface == s.name]
+
+
+def rule_controls(ac: Aircraft) -> list[SurfaceControl]:
+    """os comandos que a regra da etapa pôs, como linhas da tabela (com os ganhos escritos)"""
+    rows = []
+    for s in ac.surfaces:
+        for c in s.controls:
+            c = copy.deepcopy(c)
+            c.mix = [float(v) for v in c.gains]
+            rows.append(SurfaceControl(s.name, c))
+    return rows
 
 
 def _fin_cnb(info: dict, S: float, b: float, x_cg: float) -> float:

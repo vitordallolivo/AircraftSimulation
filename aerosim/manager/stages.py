@@ -619,12 +619,103 @@ class TailStage(Stage):
     def editable(self):
         return ("tail_airfoil", "vtail_airfoil")
 
+    # a tabela de comandos: cada linha é um `ControlSurface` do modelo numa superfície do conjunto
+    CONTROL_COLUMNS = (("surface", "superfície", "em qual superfície do conjunto ele fica"),
+                       ("kind", "nome", "só o nome (aileron, profundor, elevon...): o que ele faz são os ganhos"),
+                       ("span_start", "início", "fração da semienvergadura (0 = raiz)"),
+                       ("span_end", "fim", "fração da semienvergadura (1 = ponta)"),
+                       ("chord_frac", "corda", "fração da corda"),
+                       ("pitch", "arfagem", "ganho de arfagem: +1 desce o bordo de fuga para picar (atrás do CG); −1 "
+                                            "à frente do CG, onde descer cabra"),
+                       ("roll", "rolagem", "ganho de rolagem: os dois lados em sentidos opostos"),
+                       ("yaw", "guinada", "ganho de guinada"))
+    CONTROL_KINDS = ("aileron", "elevator", "rudder", "elevon", "ruddervator", "flaperon", "flap")
+    CONTROL_BUTTONS = (("rule", "da regra", "enche a tabela com os comandos que a regra da etapa põe (aileron ou "
+                                            "elevon na asa, profundor na EH, leme na EV), para editar"),
+                       ("add", "+ comando", "um comando novo na superfície do selecionado"),
+                       ("delete", "− comando", "tira o selecionado"),
+                       ("clear", "limpar", "esvazia a tabela: volta a valer a regra da etapa"))
+    RULE_KEYS = ("elevator", "rudder", "aileron_start", "aileron_end", "aileron_chord")
+
     def exclude(self):
-        return SECOND_WING_KEYS
+        # a segunda asa vem da configuração; onde ficam a arfagem e as derivas de um tandem, da tabela de comandos
+        return SECOND_WING_KEYS + ("controls", "tandem_pitch", "tip_fin_where")
+
+    def _built(self, rule: bool = False):
+        """o conjunto montado (só as superfícies), com a tabela ou, `rule`, com a regra da etapa"""
+        from aerosim.design import tail as tl
+        d = self.ctx.design
+        cand = d.draft_set()
+        if cand is None:
+            return None
+        if rule:
+            cand.params.controls = []
+        return tl.build_set(cand, d.requirements, d.rules, airfoils=d.airfoil_map())[0]
+
+    def grids(self):
+        ac = self._built()
+        if ac is None:
+            return []
+        rows = self.ctx.design.tail_draft.controls
+        names = tuple(s.name for s in ac.surfaces)
+        names += tuple(dict.fromkeys(r.surface for r in rows if r.surface not in names))
+        kinds = self.CONTROL_KINDS + tuple(dict.fromkeys(r.control.kind for r in rows
+                                                         if r.control.kind not in self.CONTROL_KINDS))
+        choice = {"surface": names, "kind": kinds}
+        columns = [GridColumn(k, label, "choice" if k in choice else "float", choice.get(k, ()), tip)
+                   for k, label, tip in self.CONTROL_COLUMNS]
+
+        def cells(r):
+            g = r.control.gains
+            return [r.surface, r.control.kind, r.control.span_start, r.control.span_end, r.control.chord_frac, *g]
+        note = ("vazia: vale a regra da etapa ('da regra' mostra qual é). Com linhas, a tabela manda em todas as "
+                "superfícies.")
+        return [Grid("comandos", "Comandos", columns, [cells(r) for r in rows], note,
+                     "um comando por linha, em qualquer superfície do conjunto: o trecho da envergadura, a fração da "
+                     "corda e quanto ele responde a cada eixo (arfagem, rolagem, guinada). Um profundor à frente do "
+                     "CG leva arfagem −1.", list(self.CONTROL_BUTTONS))]
+
+    def edit_grid(self, name, op, row, key="", value=None):
+        from aerosim.design import tail as tl
+        from aerosim.model.aircraft import ControlSurface
+        if name != "comandos":
+            raise KeyError(name)
+        tp = self.ctx.design.tail_draft
+        rows = tp.controls
+        row = row if 0 <= row < len(rows) else len(rows) - 1
+        if op == "set" and rows:
+            r = rows[row]
+            if key == "surface":
+                r.surface = str(value)
+            elif key == "kind":
+                r.control.kind = str(value)
+            elif key in ("pitch", "roll", "yaw"):
+                g = list(r.control.gains)
+                g[("pitch", "roll", "yaw").index(key)] = float(value)
+                r.control.mix = g
+            else:
+                setattr(r.control, key, float(value))
+        elif op == "rule":
+            ac = self._built(rule=True)
+            tp.controls = tl.rule_controls(ac) if ac is not None else []
+        elif op == "add":
+            ac = self._built()
+            where = rows[row].surface if rows else (ac.surfaces[0].name if ac is not None else "")
+            rows.append(tl.SurfaceControl(where, ControlSurface("aileron", 0.6, 1.0, 0.25, mix=[0.0, 1.0, 0.0])))
+        elif op == "delete":
+            if rows:
+                rows.pop(row)
+        elif op == "clear":
+            tp.controls = []
+        else:
+            raise KeyError(op)
+        self.ctx.save()
 
     def disabled(self):
-        """com uma configuração (ou a tabela de Projetar preenchida), a asa vem de lá"""
-        return ("wing",) if self.ctx.design.layout_rows() else ()
+        """com uma configuração (ou a tabela de Projetar preenchida), a asa vem de lá; com a tabela de comandos, os
+        campos da regra dos comandos não valem"""
+        d = self.ctx.design
+        return (("wing",) if d.layout_rows() else ()) + (self.RULE_KEYS if d.tail_draft.controls else ())
 
     def after_edit(self, changed):
         if "config" not in changed:
