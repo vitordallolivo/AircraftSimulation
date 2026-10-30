@@ -688,8 +688,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/analyze_tab.zig` — A aba Aerodinâmica → Analisar: as asas do avião aberto, como a simulação "Asas" do aerosim em Python. À
   tipos `AnalyzeTab:48`
 - `aerosim/gui/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
-  tipos `Triangle:14`, `Mesh:22`, `Assembly:90`
-  fn `buildMesh:55`, `load:110`, `fillAirfoilFiles:127`, `parseDat:162`, `findExample:194`
+  tipos `Triangle:14`, `Mesh:22`, `Assembly:90`, `Balance:105`
+  fn `buildMesh:55`, `balance:113`, `load:131`, `fillAirfoilFiles:148`, `parseDat:183`, `findExample:215`
 - `aerosim/gui/design.zig` — O projeto de dimensionamento que as etapas compartilham, como o `DesignProject` da GUI em Python
   tipos `Requirements:18`, `Rules:55`, `Power:77`, `Name:88`, `WingPartition:108`, `WingParams:119`, `SavedWing:192`, `Design:198`
   fn `libraryFolder:451`, `readDat:462`, `readPolar:471`

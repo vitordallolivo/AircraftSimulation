@@ -227,6 +227,7 @@ fn requirementsTab(name: []const u8) ?usize {
                 // o chão um pouco abaixo da peça mais baixa (z para baixo), quadriculado de 25 cm
                 view3d.floor(.{ middle[0], middle[1], 0 }, plane.high[2] + 0.02, 1.6 * size, 0.25);
                 plane.draw();
+                drawBalance(&screen.assembly_view, assembly_mod.balance(&opened.loaded.ac), plane.low[2], size);
                 view3d.bodyAxes(&screen.assembly_view, .{ plane.low[0] - 0.12 * size, plane.low[1] - 0.12 * size, plane.high[2] + 0.04 * size }, 0.14 * size);
             }
         }
@@ -275,6 +276,36 @@ fn exampleFolder(memory: std.mem.Allocator) []const u8 {
 /// a leitura de arquivos (sem threads)
 fn io() std.Io {
     return ui_kit.system.io();
+}
+
+/// o CG na Montagem: uma cruz nos três eixos e uma haste até acima do avião com o rótulo (com a carga; o vazio em
+/// cinza quando é outro ponto)
+fn drawBalance(view: *view3d.View, weights: assembly_mod.Balance, top: f64, size: f64) void {
+    const loaded_color = theme.hex(0xd62728);
+    const empty_color = theme.colors.muted;
+    const arm = 0.04 * size;
+    const moved = @abs(weights.cg[0] - weights.empty_cg[0]) + @abs(weights.cg[2] - weights.empty_cg[2]) > 1e-4;
+    if (moved) {
+        cross(weights.empty_cg, arm, empty_color);
+        view.label(.{ weights.empty_cg[0], weights.empty_cg[1], weights.empty_cg[2] + 0.05 * size }, widgets.format(&empty_label, "CG vazio ({d:.2} kg)", .{weights.empty_mass}), empty_color);
+    }
+    cross(weights.cg, arm, loaded_color);
+    view3d.segment(weights.cg, .{ weights.cg[0], weights.cg[1], top - 0.1 * size }, loaded_color);
+    view.label(.{ weights.cg[0], weights.cg[1], top - 0.1 * size }, widgets.format(&loaded_label, "CG  x = {d:.3} m  ({d:.2} kg)", .{ weights.cg[0], weights.mass }), loaded_color);
+}
+
+// os textos dos rótulos ficam vivos até o `blit` da vista
+var empty_label: [64]u8 = undefined;
+var loaded_label: [64]u8 = undefined;
+
+fn cross(center: [3]f64, arm: f64, color: rl.Color) void {
+    for (0..3) |axis| {
+        var from = center;
+        var to = center;
+        from[axis] -= arm;
+        to[axis] += arm;
+        view3d.segment(from, to, color);
+    }
 }
 
 /// a parte de dentro de um cartão onde vai a imagem 3D (abaixo do título)

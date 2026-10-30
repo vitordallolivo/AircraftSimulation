@@ -83,7 +83,10 @@ diagnóstico (C_L máximo, onde o estol começa, Reynolds) e um resumo. A aba Mo
 avião de exemplo de `data/aircraft`, e outro `.json` entra pela linha de comando ou arrastado para a janela. A
 leitura e as peças são as do AeroDrive (`aerodrive/src/model`, pelo `aerodrive/src/aircraft_model.zig`), as
 mesmas formas e cores da GUI em Python; o `assembly.zig` só completa os perfis que o arquivo aponta num `.dat`
-e passa cada triângulo para a vista 3D. As outras abas mostram só o lugar delas.
+e passa cada triângulo para a vista 3D. A Montagem marca também o CG, numa cruz vermelha com a posição em x e a
+massa: é a soma das massas do arquivo pela mesma função do AeroDrive (`params.dryMass`), mais a carga como massa
+pontual; quando a carga muda o CG, o CG vazio aparece em cinza. A posição das peças ainda não se edita aqui: ela vem
+do arquivo (`x`, `y`, `z` de cada superfície, a partir da origem do avião). As outras abas mostram só o lugar delas.
 
 ## Os perfis (`airfoil_tab.zig`, `airfoil_stage.zig`, `design.zig`)
 

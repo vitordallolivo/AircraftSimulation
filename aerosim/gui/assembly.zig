@@ -101,6 +101,27 @@ pub const Assembly = struct {
     }
 };
 
+/// o centro de massa do avião montado, com e sem a carga
+pub const Balance = struct {
+    empty_mass: f64,
+    empty_cg: [3]f64, // sem a carga (a massa seca do AeroDrive: base, itens, lastro e, se o arquivo pede, motores e estrutura)
+    mass: f64,
+    cg: [3]f64, // com a carga, quando o avião leva carga (sem ela, igual ao vazio)
+};
+
+/// o CG pela soma das massas de `params.dryMass` (a mesma do AeroDrive e do núcleo), mais a carga como massa pontual
+pub fn balance(ac: *const model.Aircraft) Balance {
+    const dry = aircraft_model.params.dryMass(ac);
+    var result: Balance = .{ .empty_mass = dry.m, .empty_cg = dry.cg, .mass = dry.m, .cg = dry.cg };
+    const payload = ac.payload;
+    if (payload.enabled and payload.mass > 0) {
+        result.mass = dry.m + payload.mass;
+        const where = [3]f64{ payload.x, payload.y, payload.z };
+        for (0..3) |i| result.cg[i] = (dry.m * dry.cg[i] + payload.mass * where[i]) / result.mass;
+    }
+    return result;
+}
+
 pub const max_file_bytes = 1 << 24;
 
 /// a mensagem do último erro (o nome do componente com problema, como o AeroDrive dá)
