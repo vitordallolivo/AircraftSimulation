@@ -37,7 +37,7 @@ Como usar:
 O que pegar primeiro, lendo o quadro como ele está agora. Tudo o que estava "a revisar" já foi para a `main` no PR #31
 (`v0.2.3`); a tag `v0.2.3` ainda não foi criada (só com o ok do dono).
 
-1. **Suspeitas a resolver primeiro:** T90 (biplano na linha sustentadora: divisão entre as asas e perda do par diferentes do VLM) e T91 (teste de desfazer da GUI quebrado).
+1. **Suspeitas a resolver primeiro:** T90 (biplano na linha sustentadora: divisão entre as asas e perda do par diferentes do VLM) e T91 (teste de desfazer da GUI quebrado), e a massa do CG da Montagem em Zig (`assembly.balance`: `params.dryMass` mais a carga) dar 1 kg a menos que a `mass_props` da sessão do núcleo no tandem de teste (8,32 contra 9,32 kg): achar a massa que falta e usar a mesma conta nos dois.
 1. **Terminar o que está em andamento.** No núcleo: T55 (linha sustentadora nas cargas; a versão não linear feita,
    e o pós-estol feitos, a revisar) e T65 (voar com outro modelo
    aerodinâmico, fase C). No aeroopt: O14, O15, O20, O25, O29, O30, O31 e O36.
