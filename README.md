@@ -57,9 +57,14 @@ Os programas em Zig compilam e abrem a partir da raiz, cada um pelo nome:
 python -m ziglang build aerodrive          # o simulador
 python -m ziglang build aerosim            # a interface do aerosim em Zig
 python -m ziglang build aeroopt            # a interface do aeroopt em Zig
-python -m ziglang build                    # compila os três
-python -m ziglang build test               # testes do núcleo, das interfaces e do AeroDrive
+python -m ziglang build launcher           # a tela inicial (o menu do site), que abre os outros três
+python -m ziglang build                    # compila os quatro
+python -m ziglang build test               # testes do núcleo, das interfaces, da tela inicial e do AeroDrive
 ```
+
+Para instalar sem o repositório, `python tools/package.py` monta o AppImage do Linux e `python tools/package.py
+--alvo windows` o instalador `.exe` do Windows (os dois abrem a tela inicial, o mesmo menu do site). O GitHub Actions
+monta os dois quando alguém pede (workflow `pacotes`).
 
 
 Já para o aerosim você pode:

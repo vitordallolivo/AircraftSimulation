@@ -6,6 +6,16 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.4 (branch `0.2_dev`)
 
+- interface em Zig: as contas longas (a varredura de Analisar, abrir o `.json`) rodam numa thread e a tela segue
+  respondendo; o build da raiz compila em ReleaseSafe. A barra lateral rola inteira (roda ou barra de arrastar) e o
+  que rolou para fora não pega mais o clique; o menu "polar por" abre por cima do rodapé; caixas de marcar e setas
+  desenhadas; Esc fecha a janela de cima, não o programa. Projetar mostra a asa em 3D primeiro, guarda asas e as
+  compara nos gráficos. Todo gráfico liga e desliga curvas pela legenda e, no botão direito, exporta PNG, PDF ou o
+  CSV das curvas marcadas; as tabelas de números exportam CSV com uma grandeza por linha.
+- pacote para instalar: `launcher/` (a tela inicial do site, em Zig, que abre o aerosim, o aeroopt e o AeroDrive),
+  `tools/package.py` (AppImage e instalador `.exe` com NSIS, com os exemplos, os perfis e a página do site) e o
+  workflow `pacotes` (só quando alguém pede ou numa tag).
+
 - compilar e rodar da raiz: `zig build aerosim`, `aeroopt`, `aerodrive`, `zig build` (os três) e `zig build test`
   (`build.zig` na raiz chama o build de cada pasta). O código Zig das interfaces passa para a pasta do módulo, junto
   do Python: `aerosim/gui/` (com `aerosim/build.zig`) e `aeroopt/` (com `aeroopt/build.zig`).

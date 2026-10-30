@@ -258,7 +258,7 @@ pub const TextPrompt = struct {
 };
 
 /// a pasta pessoal ($HOME; no Windows, %USERPROFILE%), ou a atual se não houver
-fn home(buffer: []u8) []const u8 {
+pub fn home(buffer: []u8) []const u8 {
     const value = std.c.getenv("HOME") orelse std.c.getenv("USERPROFILE") orelse return ".";
     const text = std.mem.sliceTo(value, 0);
     const length = @min(text.len, buffer.len);

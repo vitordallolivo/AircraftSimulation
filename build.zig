@@ -5,7 +5,8 @@
 //!   zig build aerosim [-- <avião.json>]     abre o aerosim
 //!   zig build aeroopt                        abre o aeroopt
 //!   zig build aerodrive                      abre o AeroDrive
-//!   zig build                                compila os três (cada um em <pasta>/zig-out/bin)
+//!   zig build launcher                       abre a tela inicial do pacote (o menu do site, que abre os três)
+//!   zig build                                compila os quatro (cada um em <pasta>/zig-out/bin)
 //!   zig build test                           testes do núcleo, das duas interfaces e do AeroDrive
 //!
 //! Os programas saem em ReleaseSafe (as contas com as verificações do Zig, mas otimizadas; em Debug a análise da
@@ -14,12 +15,12 @@
 //! Com o Zig do pip: `python -m ziglang build aerosim`.
 const std = @import("std");
 
-const programs = [_][]const u8{ "aerosim", "aeroopt", "aerodrive" };
+const programs = [_][]const u8{ "aerosim", "aeroopt", "aerodrive", "launcher" };
 
 pub fn build(b: *std.Build) void {
     const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Debug, ReleaseSafe (padrão), ReleaseFast ou ReleaseSmall (passa para cada programa)") orelse .ReleaseSafe;
     const compile_all = b.getInstallStep();
-    const test_all = b.step("test", "Testes do núcleo, das interfaces e do AeroDrive");
+    const test_all = b.step("test", "Testes do núcleo, das interfaces, da tela inicial e do AeroDrive");
     for (programs) |name| {
         // abrir
         const run = child(b, name, &.{ "build", "run" }, optimize);

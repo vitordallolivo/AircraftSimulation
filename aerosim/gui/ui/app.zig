@@ -72,6 +72,8 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
 
     var ui = try widgets.Ui.init();
     defer ui.deinit();
+    // uma tela que abre outros programas (a tela inicial do pacote) recebe o Io do processo
+    if (@hasField(@TypeOf(screen.*), "io")) screen.io = init.io;
     screen.start();
     screen.scroll = args.scroll;
     if (args.file) |path| {

@@ -103,7 +103,7 @@ def build() -> str:
     for k in sorted(pkgs):
         out += section(f"Python · `{k}`", pkgs[k])
     # Zig
-    for base, title in (("core/src", "Zig · núcleo (`core/src`)"), ("aerodrive/src", "Zig · AeroDrive (`aerodrive/src`)"), ("aerosim/gui", "Zig · interface do aerosim (`aerosim/gui`)"), ("aeroopt", "Zig · interface do aeroopt (`aeroopt`)")):
+    for base, title in (("core/src", "Zig · núcleo (`core/src`)"), ("aerodrive/src", "Zig · AeroDrive (`aerodrive/src`)"), ("aerosim/gui", "Zig · interface do aerosim (`aerosim/gui`)"), ("aeroopt", "Zig · interface do aeroopt (`aeroopt`)"), ("launcher", "Zig · tela inicial do pacote (`launcher`)")):
         groups: dict[str, list[str]] = {}
         for p in _walk(os.path.join(ROOT, base), ".zig"):
             r = _rel(p)[len(base) + 1:].split("/")

@@ -373,7 +373,9 @@ fn chooseAction(index: usize) void {
     var name_buffer: [160]u8 = undefined;
     const name = export_file.fileName(&name_buffer, menu.title[0..menu.title_len], @tagName(saver_kind));
     const titles = [_][]const u8{ "Exportar o gráfico (PNG)", "Exportar o gráfico (PDF)", "Exportar os dados (CSV)" };
-    saver.showSave(titles[index], ".", extensions[index], name);
+    // na pasta pessoal: a pasta do programa instalado pode não aceitar escrita
+    var home_buffer: [512]u8 = undefined;
+    saver.showSave(titles[index], dialogs.home(&home_buffer), extensions[index], name);
     menu.open = false;
 }
 

@@ -705,7 +705,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `parseArgs:25`, `run:57`
 - `aerosim/gui/ui/dialogs.zig` — As janelas por cima da tela: o seletor de arquivo (navega pelas pastas e mostra só as extensões pedidas; para
   tipos `FilePicker:15`, `TextPrompt:219`
-  fn `button:282`
+  fn `home:261`, `button:282`
 - `aerosim/gui/ui/export.zig` — Gravar o que a tela mostra em arquivo: os dados de um gráfico em CSV, a imagem dele em PNG (pelo raylib) e a
   tipos `Column:8`
   fn `writeCsv:15`, `writeText:33`, `saveCsv:47`, `writePdf:56`, `savePdf:107`, `fileName:115`
@@ -721,7 +721,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `numberText:5`, `niceStep:21`, `decimalsFor:31`
 - `aerosim/gui/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
   tipos `Series:18`, `Cloud:28`, `Axes:36`, `Frame:43`, `Cell:116`, `ExportKind:192`
-  fn `lines:57`, `table:124`, `tableHeight:159`, `overlayActive:297`, `overlay:302`, `cloud:461`, `ramp:480`, `colorBar:496`, `drawFrame:516`
+  fn `lines:57`, `table:124`, `tableHeight:159`, `overlayActive:297`, `overlay:302`, `cloud:463`, `ramp:482`, `colorBar:498`, `drawFrame:518`
 - `aerosim/gui/ui/scroll.zig` — A área rolável: tudo o que não cabe na altura (a barra lateral, a coluna dos gráficos) rola pela roda do mouse ou
   tipos `ScrollArea:13`
 - `aerosim/gui/ui/theme.zig` — O visual da interface, o mesmo do AeroDrive: fundo claro, cantos arredondados, azul nos títulos e pouco texto.
@@ -752,6 +752,22 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aeroopt/tests.zig` — Os testes sem janela da interface do aeroopt: a rodada de exemplo.
 
 
+## Zig · tela inicial do pacote (`launcher`)
+
+**launcher/**
+
+- `launcher/build.zig` — A tela inicial do programa instalado (o menu do site, no PC), em Zig com raylib. Usa as peças comuns das telas
+  fn `build:10`
+- `launcher/main.zig` — A tela inicial do AircraftSimulation instalado (o mesmo menu do site): escolhe e abre o aerosim, o aeroopt ou
+  fn `main:14`
+- `launcher/places.zig` — Onde estão os programas e os dados, vistos da tela inicial. No pacote instalado (o .exe do Windows, o
+  tipos `Program:8`
+  fn `dataRoot:14`, `candidates:27`, `find:36`
+- `launcher/screen.zig` — A tela inicial do programa instalado: a mesma do site (`web/index.html`), no estilo de uma BIOS (fundo azul,
+  tipos `Screen:37`
+- `launcher/tests.zig` — Os testes sem janela da tela inicial: onde estão os programas e os dados.
+
+
 ## Ferramentas (`tools/`)
 
 - `tools/aeroopt.py` — Roda um problema do aeroopt (.opt.json) e mostra o resultado: o melhor ponto, as restrições e a convergência.
@@ -762,6 +778,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tools/metodos_voa.py` — Qual busca da etapa voa (E&C) do aeroopt acha mais rápido um avião que voa? Compara os métodos de FLY_METHODS.
 - `tools/modcheck.py` — Roda um avião com os modificadores dele e sem cada um (um de cada vez) e mostra a diferença na decolagem.
 - `tools/opt_matrix.py` — Mapa das otimizações em avaliação do núcleo (`-Dopt`): compila cada combinação, mede e compara os resultados
+- `tools/package.py` — Monta o programa instalável: a tela inicial (o menu do site), o aerosim, o aeroopt e o AeroDrive numa pasta só,
 - `tools/pipeline_bench.py` — Compara as estratégias de paralelismo do processo em etapas do aeroopt: o mesmo lote de configurações roda em série,
 - `tools/plot_comparativo.py` — Figuras das abas Aerodinâmica e Estabilidade (PNG), iguais ao que a GUI mostra.
 - `tools/probe.py` — Sonda dos modificadores pela linha de comando: chama o módulo do núcleo (core/src/modifiers/) direto, sem
@@ -831,6 +848,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sim/README.md`
 - `core/src/sizing/README.md`
 - `data/README.md`
+- `launcher/README.md`
 - `tests/README.md`
 - `tools/README.md`
 - `tools/aero/README.md`
