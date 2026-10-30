@@ -53,6 +53,8 @@ pub const EditTable = struct {
     open_choice: ?[2]usize = null, // escolha com a lista aberta
     opening: bool = false, // a lista abriu neste quadro (o raygui veria o mesmo clique e fecharia)
     edit_text: [64:0]u8 = [_:0]u8{0} ** 64,
+    edit_fresh: bool = false, // o valor antigo está todo marcado: digitar troca ele inteiro
+    edit_start: usize = 0,
     // onde a tabela foi desenhada (para a lista aberta, desenhada por cima depois)
     origin: rl.Vector2 = .{ .x = 0, .y = 0 },
     table_width: f32 = 0,
@@ -181,7 +183,9 @@ pub const EditTable = struct {
             },
             .number, .text => {
                 if (editing) {
-                    if (rg.textBox(box, &table.edit_text, true)) {
+                    const done = rg.textBox(box, &table.edit_text, true);
+                    widgets.replaceOnType(ui, box, &table.edit_text, &table.edit_fresh, table.edit_start);
+                    if (done) {
                         table.editing = null;
                         const typed = std.mem.trim(u8, std.mem.sliceTo(&table.edit_text, 0), " ");
                         if (kind == .text) return .{ .text = typed };
@@ -208,6 +212,8 @@ pub const EditTable = struct {
                     const length = @min(shown.len, 63);
                     @memcpy(table.edit_text[0..length], shown[0..length]);
                     widgets.caretToEnd(ui, &table.edit_text);
+                    table.edit_fresh = true;
+                    table.edit_start = length;
                 }
             },
         }

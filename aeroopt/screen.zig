@@ -47,6 +47,7 @@ pub const Screen = struct {
     fields: [initial_fields.len]form_mod.Field = initial_fields,
     form: form_mod.Form = undefined,
     tab: usize = 0,
+    sidebar: widgets.Splitter = .{ .width = 360 }, // a largura do formulário (arrastar a divisa muda)
     run: example.Run = .{},
     progress: f32 = 1,
     scroll: f32 = 0,
@@ -64,10 +65,12 @@ pub const Screen = struct {
     pub fn draw(screen: *Screen, ui: *widgets.Ui, width: f32, height: f32) void {
         rl.clearBackground(theme.colors.background);
         const top = widgets.header_height + 38;
-        const sidebar_width: f32 = 360;
         if (screen.tab == 0) {
+            screen.sidebar.update(ui, 0, top, height - top, 280, width - 360);
+            const sidebar_width = screen.sidebar.width;
             screen.drawSidebar(ui, .{ .x = 0, .y = top, .width = sidebar_width, .height = height - top });
             screen.drawResults(ui, .{ .x = sidebar_width, .y = top, .width = width - sidebar_width, .height = height - top });
+            screen.sidebar.draw(0, top, height - top);
         } else {
             const box: rl.Rectangle = .{ .x = 40, .y = top + 40, .width = 620, .height = 150 };
             const inner = widgets.labeledCard(ui, box, "Sensibilidade");

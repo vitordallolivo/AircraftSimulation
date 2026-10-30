@@ -36,6 +36,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   ganhos de arfagem, rolagem e guinada), com "da regra", "+ comando", "− comando" e "limpar". Vazia, vale a regra de
   antes e o conjunto sai igual. Saíram do formulário os campos de uma configuração só ("arfagem do tandem" e
   "deriva na ponta: onde").
+- a divisa entre o formulário e os resultados se arrasta (aerosim e aeroopt, a mesma largura em todas as abas), e um
+  campo de número ou célula de tabela ao entrar em edição troca o valor inteiro pelo que se digita (−1 e digitar 0.2
+  dá 0.2, não −10.2); apagar ou mover o cursor volta à edição normal.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

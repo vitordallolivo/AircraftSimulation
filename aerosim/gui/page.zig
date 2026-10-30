@@ -163,7 +163,8 @@ const loads_view_height: f32 = 440;
 /// o que a thread faz
 const Operation = enum { specs, run, stage };
 
-const sidebar_width: f32 = 390;
+/// a largura do formulário à esquerda, a mesma em todas as abas; arrastar a divisa muda
+var sidebar: widgets.Splitter = .{ .width = 390 };
 const chart_height: f32 = 360;
 const gap: f32 = 12;
 const edit_delay_ns: i96 = 350 * std.time.ns_per_ms; // a conta da etapa espera a digitação parar (300 ms na GUI PyQt)
@@ -293,8 +294,11 @@ pub const Page = struct {
             page.page.offset = page.scroll_to;
             page.scroll_to = 0;
         }
+        sidebar.update(ui, rect.x, rect.y, rect.height, 280, rect.width - 360);
+        const sidebar_width = sidebar.width;
         page.drawSidebar(ui, .{ .x = rect.x, .y = rect.y, .width = sidebar_width, .height = rect.height });
         page.drawResult(ui, .{ .x = rect.x + sidebar_width, .y = rect.y, .width = rect.width - sidebar_width, .height = rect.height });
+        sidebar.draw(rect.x, rect.y, rect.height);
     }
 
     /// as janelas da página por cima da tela inteira
@@ -597,6 +601,8 @@ pub const Page = struct {
         if (same_shape) {
             page.form.editing = previous.editing;
             page.form.edit_text = previous.edit_text;
+            page.form.edit_fresh = previous.edit_fresh;
+            page.form.edit_start = previous.edit_start;
         }
     }
 

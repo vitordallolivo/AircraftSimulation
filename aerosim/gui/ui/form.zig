@@ -68,6 +68,8 @@ pub const Form = struct {
     open_choice: ?usize = null, // escolha com a lista aberta
     opening: bool = false, // a lista abriu neste quadro (o raygui veria o mesmo clique e fecharia)
     edit_text: [32:0]u8 = [_:0]u8{0} ** 32,
+    edit_fresh: bool = false, // o valor antigo está todo marcado: digitar troca ele inteiro
+    edit_start: usize = 0,
     file_request: ?usize = null, // clicou num campo de arquivo: quem desenha abre a janela de escolher e põe o caminho
     origin: rl.Vector2 = .{ .x = 0, .y = 0 }, // onde o formulário foi desenhado no último quadro
     width: f32 = 0,
@@ -239,6 +241,7 @@ pub const Form = struct {
         // número: o raygui edita o texto; fora da edição, o valor em fonte monoespaçada
         if (form.editing == index) {
             const done = rg.textBox(control, &form.edit_text, true);
+            widgets.replaceOnType(ui, control, &form.edit_text, &form.edit_fresh, form.edit_start);
             if (done) {
                 form.editing = null;
                 const typed = std.mem.sliceTo(&form.edit_text, 0);
@@ -256,6 +259,8 @@ pub const Form = struct {
             const typed = numberText(&buffer, field.number);
             @memcpy(form.edit_text[0..typed.len], typed);
             widgets.caretToEnd(ui, &form.edit_text);
+            form.edit_fresh = true;
+            form.edit_start = typed.len;
         }
         return false;
     }

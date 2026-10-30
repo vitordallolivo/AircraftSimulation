@@ -198,6 +198,66 @@ pub fn caretToEnd(ui: *Ui, buffer: [:0]u8) void {
     ui.popClip();
 }
 
+/// a divisa entre duas áreas lado a lado (o formulário e os resultados): arrastar muda a largura da da esquerda.
+/// Chamar `update` antes de desenhar as áreas (o clique na divisa não chega nelas) e `draw` depois
+pub const Splitter = struct {
+    width: f32,
+    dragging: bool = false,
+    hovered: bool = false,
+
+    const grip_half: f32 = 4;
+
+    /// lê o mouse: arrastando a divisa em `left + width`, a largura segue o mouse entre `minimum` e `maximum`
+    pub fn update(splitter: *Splitter, ui: *Ui, left: f32, top: f32, height: f32, minimum: f32, maximum: f32) void {
+        const grip: rl.Rectangle = .{ .x = left + splitter.width - grip_half, .y = top, .width = 2 * grip_half, .height = height };
+        splitter.hovered = !ui.click_taken and ui.hovering(grip);
+        if (splitter.hovered and ui.clicked) {
+            splitter.dragging = true;
+            ui.click_taken = true;
+        }
+        if (splitter.dragging) {
+            if (rl.isMouseButtonDown(.left)) {
+                splitter.width = std.math.clamp(ui.mouse.x - left, minimum, @max(minimum, maximum));
+            } else splitter.dragging = false;
+        }
+        rl.setMouseCursor(if (splitter.hovered or splitter.dragging) .resize_ew else .default);
+    }
+
+    /// a linha da divisa, marcada com o mouse em cima ou arrastando
+    pub fn draw(splitter: *const Splitter, left: f32, top: f32, height: f32) void {
+        const active = splitter.hovered or splitter.dragging;
+        const thickness: f32 = if (active) 3 else 1;
+        rl.drawRectangleRec(.{ .x = left + splitter.width - thickness / 2, .y = top, .width = thickness, .height = height }, if (active) theme.colors.accent else theme.colors.line);
+    }
+};
+
+/// um campo que acabou de entrar em edição mostra o valor antigo todo marcado: a primeira tecla de texto troca o
+/// valor inteiro pelo que se digita (como selecionar tudo), e apagar ou mover o cursor volta à edição normal.
+/// Chamar logo depois do `rg.textBox` do campo, com o comprimento do texto quando a edição começou
+pub fn replaceOnType(ui: *Ui, box: rl.Rectangle, buffer: [:0]u8, fresh: *bool, start_length: usize) void {
+    if (!fresh.*) return;
+    const length = std.mem.indexOfScalar(u8, buffer, 0) orelse buffer.len;
+    if (length > start_length) {                 // digitou: fica só o que entrou depois do valor antigo
+        const typed = length - start_length;
+        std.mem.copyForwards(u8, buffer[0..typed], buffer[start_length..length]);
+        @memset(buffer[typed..], 0);
+        fresh.* = false;
+        caretToEnd(ui, buffer);
+        return;
+    }
+    if (length < start_length or rl.isKeyPressed(.left) or rl.isKeyPressed(.right) or rl.isKeyPressed(.home) or
+        rl.isKeyPressed(.end))
+    {
+        fresh.* = false;
+        return;
+    }
+    const padding: f32 = @floatFromInt(rg.getStyle(.default, .text_padding));
+    const width: f32 = @floatFromInt(rg.getTextWidth(buffer[0..length :0]));
+    var marked = theme.colors.accent;
+    marked.a = 70;
+    rl.drawRectangleRec(.{ .x = box.x + padding, .y = box.y + 3, .width = @min(width + 2, box.width - 2 * padding), .height = box.height - 6 }, marked);
+}
+
 /// o "?" de ajuda ao lado de um título: a dica `text` com o mouse em cima
 pub fn helpMark(ui: *Ui, x: f32, y: f32, text: [:0]const u8) void {
     const center: rl.Vector2 = .{ .x = x + 8, .y = y + 8 };
