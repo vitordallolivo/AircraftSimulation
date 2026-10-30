@@ -7,7 +7,7 @@
 <title>AircraftSimulation</title>
 <!--
   Tela inicial do site (estilo BIOS): escolhe o programa. Só HTML, CSS e JS, sem nada para baixar.
-  tools/web_build.py copia esta página para a raiz do site, ao lado do aerodrive.html.
+  tools/web_build.py copia esta página para a raiz do site, ao lado do aerodrive.html, do aerosim.html e do aeroopt.html.
 
   "Carregar avião (.json)" guarda o arquivo no IndexedDB "aircraftsimulation", loja "pendente",
   chave "aviao" ({name, bytes}); o aerodrive.html lê, apaga e abre o avião (aerodrive/web/shell.html).
@@ -65,9 +65,9 @@
     <ul id="lista" role="listbox" aria-label="Programas">
       <li><button data-acao="aerodrive" data-ajuda="Simulação em tempo real: escolha um avião de exemplo (ou o seu) e pilote com teclado, controle ou toque.">AeroDrive — pilotar o avião</button></li>
       <li><button data-acao="carregar" data-ajuda="Escolha o .json de um avião feito no aerosim. Ele fica guardado neste navegador e o AeroDrive abre já com ele.">Carregar avião (.json)</button></li>
-      <li class="separador" aria-hidden="true">em breve</li>
-      <li><button disabled data-ajuda="Onde se projeta o avião: dimensionamento, aerodinâmica, desempenho, estabilidade e cargas. Por enquanto só no programa instalado.">aerosim — projetar (em breve)</button></li>
-      <li><button disabled data-ajuda="Otimização do projeto para a competição. Por enquanto só no programa instalado.">aeroopt — otimizar (em breve)</button></li>
+      <li class="separador" aria-hidden="true">em teste</li>
+      <li><button data-acao="aerosim" data-ajuda="Onde se projeta o avião: perfis, asa, montagem e análise. Versão de teste: as contas longas param a página até acabar, e salvar baixa o arquivo.">aerosim — projetar (teste)</button></li>
+      <li><button data-acao="aeroopt" data-ajuda="Otimização do projeto para a competição. Versão de teste: as contas longas param a página até acabar.">aeroopt — otimizar (teste)</button></li>
     </ul>
     <p class="ajuda" id="ajuda" aria-live="polite"></p>
   </div>
@@ -110,6 +110,8 @@
     const botao = botoes[indice];
     if (!botao || botao.disabled) return;
     if (botao.dataset.acao === 'aerodrive') window.location.href = 'aerodrive.html';
+    else if (botao.dataset.acao === 'aerosim') window.location.href = 'aerosim.html';
+    else if (botao.dataset.acao === 'aeroopt') window.location.href = 'aeroopt.html';
     else if (botao.dataset.acao === 'carregar') arquivo.click();
   }
 

@@ -231,6 +231,42 @@ x_k \leftarrow x_k + v_k
 A velocidade é limitada a meia faixa da variável e a posição aos limites. A **busca aleatória** sorteia vetores na
 faixa e serve de referência.
 
+## A asa pela linha sustentadora (`wing_line.zig`)
+
+Aqui se desenha a asa da etapa Projetar: dada a planta trapezoidal (envergadura, área ou corda da raiz, afilamento,
+trecho retangular, enflechamento e torção), o perfil da raiz e, se quiser, o da ponta, saem a curva de C_L até o
+estol, a polar da asa, o L/D, onde o estol começa e o cruzeiro. As contas rápidas da cadeia acima tratam a asa por
+um C_L,max e um Oswald fixos; aqui a distribuição de sustentação ao longo da envergadura aparece, e com ela o lugar
+do estol, que decide se o aileron ainda manda quando a asa estola.
+
+A conta é a linha sustentadora de Prandtl pela série de Glauert, só com os termos ímpares (asa simétrica), em 24
+estações da ponta à raiz:
+
+$$\sum_n A_n \sin(n\theta)\left(\sin\theta + n\mu\right) = \mu\,(\alpha + \varepsilon(y) - \alpha_{L0})\sin\theta, \qquad \mu = \frac{a_1 c}{4b}$$
+
+com $\varepsilon$ a torção, $a_1$ a inclinação do perfil (vezes o cosseno do enflechamento de 1/4 da corda) e $b$
+a envergadura. Daí $C_L = \pi\,AR\,A_1$, $C_{D_i} = \pi\,AR\sum n A_n^2$ e
+$c_l(y) = (4b/c)\sum A_n\sin(n\theta)$ (Anderson, Fundamentals of Aerodynamics, seção 5.3; número da equação a
+conferir no PDF). Como o lado direito é linear em α, o sistema se resolve duas vezes, uma para a parte em α e outra
+para a torção, e o $c_l$ local fica $\alpha g(y) + h(y)$. O estol começa na estação que primeiro chega ao
+$c_{l,\max}$ do perfil dela, e o arrasto de perfil integra o $c_d$ da polar 2D no $c_l$ local. Com perfil na ponta,
+do fim do trecho retangular até a ponta os números do perfil e o $c_d$ são interpolados.
+
+A planta também pode vir da tabela de partições da planilha (`Partition`, até oito): cada linha diz quanto soma na
+envergadura total (metade de cada lado), a corda no começo, o afilamento, o perfil no fim, o recuo do bordo de
+ataque e a torção no fim. É o caminho para a asa que o trapézio não descreve, como um trecho reto, um afilado e uma
+ponta de outro perfil. `planformOfPartitions` faz as seções como `stations` da GUI: onde duas partições têm cordas
+diferentes, a troca acontece num trecho de 0,1 mm, e cada seção leva o seu perfil. Entre seções vizinhas os números
+do perfil e o $c_d$ são interpolados, o mesmo que o trapézio com perfil na ponta faz entre a quebra e a ponta.
+`analyzePlanform` roda a etapa numa planta qualquer, e `analyze` é ela no trapézio. `totals` dá a envergadura e a
+área da tabela, `partitionsFromTrapezoid` a tabela que reproduz o trapézio, e `Planform.aeroCenter` o centro
+aerodinâmico (1/4 da corda média aerodinâmica, atrás do bordo de ataque da raiz), que é o ponto neutro da asa
+sozinha.
+
+A polar 2D e os números ajustados de cada perfil vêm de `physics/section.zig`. A conta é a de
+`aerosim/design/wing.py: analyze`, e os testes conferem três casos contra ela (o trapézio, o trapézio com perfil na
+ponta e uma tabela com degrau de corda e outro perfil na ponta).
+
 ## Como chamar
 
 ```python

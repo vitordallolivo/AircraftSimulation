@@ -32,6 +32,7 @@ class SimulationManager(ISimulationManager):
     def register(self, sim: ISimulation) -> None:
         if not sim.name:
             raise ValueError("simulação sem nome")
+        sim.shared = self.shared
         self._sims[sim.name] = sim
 
     def simulations(self) -> list[ISimulation]:
@@ -46,7 +47,7 @@ class SimulationManager(ISimulationManager):
             cancel: threading.Event | None = None) -> SimResult:
         sim = self.get(name)
         from aerosim.model.templates import not_ready
-        msg = not_ready(aircraft)
+        msg = not_ready(aircraft) if getattr(sim, "needs_aircraft", True) else None
         if msg:
             raise ValueError(msg)
         p = sim.defaults(aircraft, params or {})

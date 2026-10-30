@@ -142,14 +142,14 @@ class ZigTranslator(IModelTranslator):
         return {k: float(raw[k]) for k in raw if k in COEFFS or k in ("CL_wing", "CL_ht", "ratioCL")}
 
 
-AERO_MODELS = {"faixas": 0, "llt": 1, "llt_gh": 1, "tabela": 2}     # core/src/physics/aeromodel.zig
+AERO_MODELS = {"faixas": 0, "llt": 1, "llt_gh": 1, "llt_nl": 1, "tabela": 2}     # core/src/physics/aeromodel.zig
 TABLE_DERIVS = ("CYb", "Clb", "Cnb", "CYp", "Clp", "Cnp", "CLq", "Cmq", "CYr", "Clr", "Cnr", "CLde", "Cmde", "Clda",
                 "Cnda", "CYdr", "Cldr", "Cndr")
 
 
 def aero_native(sim) -> dict:
-    """o modelo aerodinâmico do voo para os `Params` (`aero_model`, `llt_joint`, `llt_blend`, `aero_tab`). "faixas" não
-    escreve nada: os padrões do núcleo são as faixas de sempre"""
+    """o modelo aerodinâmico do voo para os `Params` (`aero_model`, `llt_joint`, `llt_blend`, `llt_nonlinear`,
+    `aero_tab`). "faixas" não escreve nada: os padrões do núcleo são as faixas de sempre"""
     kind = getattr(sim, "aero_model", "faixas") or "faixas"
     if kind not in AERO_MODELS:
         raise ValueError(f"modelo aerodinâmico desconhecido: {kind!r} ({' | '.join(AERO_MODELS)})")
@@ -159,6 +159,9 @@ def aero_native(sim) -> dict:
     if kind == "llt_gh":
         from aerosim.aero.span_loads import GOATES_HUNSAKER
         out.update(GOATES_HUNSAKER)
+    if kind == "llt_nl":
+        from aerosim.aero.span_loads import NONLINEAR
+        out.update(NONLINEAR)
     if kind == "tabela":
         t = sim.aero_table
         if not t:

@@ -4,8 +4,59 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## Não lançado
 
-### v0.2.4 (branch `0.2_dev`)
+### v0.2.4 (`main`, fechada em 2026-10-30)
 
+- interface do aerosim em Zig igual à GUI PyQt, com os managers em Python: as áreas e as subabas vêm do Python na
+  mesma arrumação (`aerosim/bridge.py`, pedido "layout"), e cada subaba é uma página genérica (`aerosim/gui/page.zig`):
+  as análises `ISimulation` (Analisar, Estabilidade, Desempenho, Tração, Missão, Cargas...) e as etapas da sprint
+  (Perfis, Projetar, Empenagem e comandos, Motores e montagem, "Condições e restrições…"), com Guardar, os guardados,
+  os botões da etapa e as tabelas de massa e dimensões. As etapas sem Qt ficam em `aerosim/manager/stages.py`, o
+  formulário de dataclass em `aerosim/manager/forms.py` e os rótulos em `aerosim/manager/form_meta.py` (a GUI PyQt lê
+  os mesmos). A ponte atende várias abas ao mesmo tempo (cada pedido na sua thread, respostas por número). Saem as
+  abas reescritas à mão em Zig (Perfis, Projetar, Analisar e as contas delas) e a aba "Pelo Python". Falta: Mini-MDO,
+  Estudo, tabelas editáveis, campos de arquivo, vistas 3D e a ponte no navegador.
+- aerosim e aeroopt em Zig no navegador, para teste: os dois compilam para wasm (`-Dtarget=wasm32-emscripten`), com
+  os aviões de exemplo, os perfis de `data/airfoils` e as fontes no pacote; "abrir do computador" ou arrastar o
+  arquivo para a página, e salvar baixa o arquivo. `tools/web_build.py` e o workflow do site publicam os três
+  programas, e a tela inicial abre cada um. No navegador as contas longas param a página até acabar.
+- Montagem em Zig: o CG aparece no 3D (cruz e rótulo com x e massa; o vazio em cinza quando a carga o desloca).
+- interface em Zig: as contas longas (a varredura de Analisar, abrir o `.json`) rodam numa thread e a tela segue
+  respondendo; o build da raiz compila em ReleaseSafe. A barra lateral rola inteira (roda ou barra de arrastar) e o
+  que rolou para fora não pega mais o clique; o menu "polar por" abre por cima do rodapé; caixas de marcar e setas
+  desenhadas; Esc fecha a janela de cima, não o programa. Projetar mostra a asa em 3D primeiro, guarda asas e as
+  compara nos gráficos. Todo gráfico liga e desliga curvas pela legenda e, no botão direito, exporta PNG, PDF ou o
+  CSV das curvas marcadas; as tabelas de números exportam CSV com uma grandeza por linha.
+- Projetar igual à etapa Asa da GUI em Python: barra de requisitos, título com ajuda, nome, planta trapézio ou
+  tabela de seções (partições com perfil próprio, "+ partição", "− partição", "do trapézio"), diedro, campos
+  desligados pelo modo, ponto neutro no 3D, diagnóstico com as restrições ativas e os resultados. A janela
+  "Condições e restrições…" (Condições, Restrições, Variáveis, Regras de projeto) vale para Perfis e Projetar. No
+  núcleo, `wing_line` aceita a tabela de partições (`planformOfPartitions`, `analyzePlanform`, `totals`,
+  `partitionsFromTrapezoid`, `Planform.aeroCenter`), com teste contra o Python. Peças reutilizáveis: `ui/stage.zig`,
+  `ui/table.zig`, `ui/checks.zig`, dica com o mouse parado (`Ui.tooltip`); a lista de escolha não fecha mais no
+  clique que a abre e o cursor de edição começa no fim do texto.
+- pacote para instalar: `launcher/` (a tela inicial do site, em Zig, que abre o aerosim, o aeroopt e o AeroDrive),
+  `tools/package.py` (AppImage e instalador `.exe` com NSIS, com os exemplos, os perfis e a página do site) e o
+  workflow `pacotes` (só quando alguém pede ou numa tag).
+
+- compilar e rodar da raiz: `zig build aerosim`, `aeroopt`, `aerodrive`, `zig build` (os três) e `zig build test`
+  (`build.zig` na raiz chama o build de cada pasta). O código Zig das interfaces passa para a pasta do módulo, junto
+  do Python: `aerosim/gui/` (com `aerosim/build.zig`) e `aeroopt/` (com `aeroopt/build.zig`).
+- interface em Zig (W7, começo): `aerosim/gui/` (com as peças comuns em `gui/ui`) e `aeroopt/`, com
+  raylib e raygui, no visual do AeroDrive (fundo claro, cantos arredondados, azul nos títulos). A Montagem mostra o avião
+  inteiro em 3D pelo modelo do AeroDrive. O formulário
+  lateral sai de uma lista de campos, e o gráfico tem marcas redondas, legenda e a paleta de dez cores. No aerosim,
+  Aerodinâmica → Analisar roda a varredura do núcleo no avião aberto (linha sustentadora não linear e
+  faixas), com a escolha das superfícies e o refino da GUI em Python, e os mesmos números. Aerodinâmica → Perfis no formato
+  da GUI em Python: a lista de candidatos do projeto (NACA 2412 e 4412 no começo) com "+ NACA", "+ .dat", "+ só
+  parâmetros", "+ polar XFLR5" e "Remover", o menu "polar por" com um ou mais métodos (cada um uma curva) e o
+  botão Rodar, o seletor de arquivo dentro da janela (abrir e salvar, com a pasta digitada e os atalhos Exemplos,
+  pessoal, atual e raiz; o mesmo de
+  "Abrir avião" e "Salvar .json" do cabeçalho), o editor do selecionado e "Usar
+  na asa", com a polar 2D e os números no núcleo (`core/src/physics/section.zig`, novo, iguais à GUI em Python). Aerodinâmica → Projetar: a asa
+  trapezoidal pela linha sustentadora de Glauert no núcleo (`core/src/sizing/wing_line.zig`, novo, igual à etapa
+  Asa em Python), com perfil na ponta, polar, L/D, onde o estol começa e o cruzeiro. O aeroopt mostra uma rodada de exemplo. A vista da asa tem o 3D com um vetor de carga por painel e a vista de cima. O AeroDrive passa a
+  preencher o quarto de corda dos painéis (`qa`/`qb`), que a linha sustentadora usa. O
+  `tools/codemap.py` passa a mapear as duas pastas.
 - tracking: meta da 1.0 (tudo no navegador, sem instalar nada; o Python em WebAssembly fica para a 1.1) e o quadro
   em dia com a `main` (os itens "a revisar" que já foram no PR #31 passam a "Feito (na `main`)").
 - tracking: seção "Ordem de prioridade" com a fila atual.
@@ -26,9 +77,25 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - AeroDrive no navegador grava vídeo: o G (ou "Gravar" na pausa) liga o MediaRecorder da página junto com os dados.
   Sai .mp4 (Chrome, Edge e Safari recentes) ou .webm (Firefox). No Chrome e no Edge do PC a página pergunta onde
   salvar ao começar e grava direto no arquivo; nos outros, o vídeo é baixado ao parar.
-- CI: `.github/workflows/testes.yml` roda os checks de `tools/checks` (`run.py --tudo`) a cada PR para a `main` e a
-  cada push na `0.2_dev`, em três partes paralelas (núcleo e AeroDrive, regressão bit a bit, testes Python), e deixa
+- CI: `.github/workflows/testes.yml` roda os checks de `tools/checks` (`run.py --tudo`) a cada PR para a `main` (uma
+  rodada por commit), em três partes paralelas (núcleo e AeroDrive, regressão bit a bit, testes Python), e deixa
   o relatório de cada parte como artefato na aba Actions.
+- cargas (T55): linha sustentadora não linear (`Params.llt_nonlinear`; método "linha sustentadora não linear (estol
+  por perfil)", `llt_nl`, na aba Cargas, no `tools/span_load.py` e como `ac.sim.aero_model`). Cada faixa segue a curva
+  do seu perfil com estol, e o sistema de Phillips e Snyder é resolvido por Newton a partir da solução linear. Mostra
+  onde o estol começa e para quanto a carga satura. Depois do estol, viscosidade artificial (Chattot) e continuação em
+  pseudo-tempo deixam a carga suave e convergida. Desligada por padrão: o voo e o AeroDrive ficam iguais.
+- aerodinâmica (T89): subaba Asas, a simulação de aerodinâmica completa de um conjunto de asas (uma asa, biplano,
+  tandem, canard), sem trimar, sem fuselagem e sem hélice, como no túnel. Roda com o avião da Montagem ou com as asas
+  guardadas na sprint, mesmo sem fuselagem e sem massa. Mostra o C_L do conjunto e de cada superfície em α, o C_L
+  máximo, onde o estol começa, a carga ao longo da envergadura, a vista 3D e de cima do que se simula, o Reynolds de
+  cada superfície e as polares de todos os métodos do Avião montado nas superfícies escolhidas. Chapas de ponta
+  opcionais. A varredura em α é do núcleo (`core/src/loads/sweep.zig`), numa chamada, igual ao laço em Python e cerca
+  de dez vezes mais rápida.
+- aerodinâmica: a subaba Avião montado saiu. A Asas faz também a análise do avião completo (polares no CG, profundor e
+  derrapagem, estol × cruzeiro, L/D, pontas de asa) quando o avião aberto está pronto, e a polar continua indo para o
+  Desempenho.
+- aerodinâmica: as subabas passam a se chamar Perfis, Projetar (a etapa da asa) e Analisar (a antiga Asas).
 - celular: no primeiro toque a página vai para a tela cheia e trava deitada; em pé aparece "gire o celular"; o jogo
   acompanha o tamanho da página (tela cheia, barra do navegador, giro).
 - celular, segunda rodada (testada pelo vitor num Galaxy): o jogo desenha numa área de no mínimo 640 px de altura e

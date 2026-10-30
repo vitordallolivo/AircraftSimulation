@@ -1,0 +1,513 @@
+"""As etapas da sprint sem Qt, para a tela em Zig pela ponte (`aerosim/bridge.py`): o mesmo que as páginas de
+`aerosim/gui/design/pages.py` fazem (o rascunho, as escolhas, os guardados, a conta e o "guardar"), chamando as
+mesmas funções de `aerosim.design`. A tela desenha o formulário a partir de `form()` e mostra o que `compute()`
+devolve (gráficos, diagnóstico, resumo e tabelas).
+
+    perfis       Aerodinâmica → Perfis           candidatos e a polar 2D de cada um
+    asa          Aerodinâmica → Projetar         a asa a partir do perfil escolhido
+    empenagem    Estabilidade → Empenagem        cauda, tubo e comandos para a asa guardada
+    motores      Desempenho → Motores            motores, massas, trem → o avião inteiro
+    requisitos   "Condições e restrições…"       condições e regras do projeto (as das etapas)
+
+O projeto (`DesignProject`) fica numa pasta (a mesma "sprint" da GUI PyQt) e é gravado a cada mudança.
+"""
+from __future__ import annotations
+
+import copy
+import os
+from dataclasses import dataclass, field
+from typing import Any
+
+from aerosim.design import airfoils as afm
+from aerosim.design import registry as rg
+from aerosim.design import results as R
+from aerosim.design import wing as wg
+from aerosim.interfaces.simulation import ParamSpec, PlotSpec, SimResult
+from aerosim.model.aircraft import Aircraft
+
+from . import forms
+
+TAIL_AIRFOILS = ("NACA 0012", "NACA 0010", "NACA 0009", "NACA 0008")
+DIMS_HEAD = ("grupo", "item", "Δx (m)", "Δy (m)", "Δz (m)", "valor")
+
+
+@dataclass
+class Action:
+    """um botão da etapa: `arg` diz o que a tela pede antes ("" nada, "text" um texto, "file" um arquivo)"""
+    key: str
+    label: str
+    arg: str = ""
+    help: str = ""
+    default: str = ""
+
+
+@dataclass
+class Table:
+    """uma tabela de números para a tela (massas, dimensões)"""
+    title: str
+    headers: tuple
+    rows: list
+
+
+@dataclass
+class Outcome:
+    """o que uma etapa mostra depois da conta"""
+    plots: list[PlotSpec] = field(default_factory=list)
+    result: SimResult = field(default_factory=SimResult)
+    tables: list[Table] = field(default_factory=list)
+    message: str = ""
+    aircraft: Aircraft | None = None
+
+
+@dataclass
+class Context:
+    """o que as etapas dividem: o projeto, o catálogo, o núcleo e onde se guarda"""
+    design: Any
+    catalog: Any
+    backend: Any
+    projects: Any = None
+    folder: str = ""
+    values: dict = field(default_factory=dict)      # as grandezas da última etapa que rodou (restrições)
+
+    def save(self) -> None:
+        if self.folder:
+            from aerosim.design import store
+            store.save(self.design, self.folder)
+
+
+def only_surfaces(surfaces, boom=None) -> Aircraft:
+    """um 'avião' só com as peças da etapa (para o 3D e as dimensões)"""
+    ac = Aircraft(name="prévia", surfaces=copy.deepcopy(surfaces))
+    ac.fuselage.enabled = False
+    ac.gear.layout = "custom"
+    ac.propulsion = []
+    ac.tanks = []
+    ac.payload.enabled = False
+    if boom is not None:
+        ac.boom = copy.deepcopy(boom)
+    return ac
+
+
+def dims_table(ac, cg=None) -> Table:
+    from aerosim.design.dims import dimensions
+    try:
+        rows = dimensions(ac, cg)
+    except Exception as error:          # avião incompleto: mostra o que der, como a GUI PyQt
+        rows = [("—", f"não deu para medir: {error}", None, None, None, None, "")]
+    text = lambda v: "" if v is None else f"{v:+.3f}"
+    return Table("Dimensões a partir do CG de projeto", DIMS_HEAD,
+                 [[g, item, text(dx), text(dy), text(dz), "" if val is None else f"{val:.3f}"]
+                  for g, item, dx, dy, dz, val, _ in rows])
+
+
+class Stage:
+    name = ""
+    title = ""
+    help = ""
+    keep_label = "Guardar"
+
+    def __init__(self, ctx: Context):
+        self.ctx = ctx
+
+    # o que cada etapa define (os mesmos nomes de `StagePage`)
+    def draft(self):
+        raise NotImplementedError
+
+    def set_draft(self, params) -> None:
+        raise NotImplementedError
+
+    def choices(self) -> dict:
+        return {}
+
+    def editable(self) -> tuple:
+        return ()
+
+    def exclude(self) -> tuple:
+        return ()
+
+    def kept_items(self) -> list:
+        return []
+
+    def compute(self) -> Outcome | None:
+        raise NotImplementedError
+
+    def keep(self) -> str | None:
+        raise NotImplementedError
+
+    def actions(self) -> list[Action]:
+        return []
+
+    def act(self, key: str, arg: str) -> str:
+        raise KeyError(key)
+
+    def disabled(self) -> tuple:
+        """campos que aparecem em cinza (o modo atual calcula eles)"""
+        return ()
+
+    # comum
+    def sanitize(self) -> None:
+        """escolhas que não existem mais viram a primeira disponível (como `StagePage.sanitize`)"""
+        d = self.draft()
+        if d is None:
+            return
+        for k, opts in self.choices().items():
+            if opts and k not in self.editable() and getattr(d, k) not in opts:
+                setattr(d, k, opts[0] if k not in ("set", "wing") else opts[-1])
+
+    def form(self) -> list[ParamSpec]:
+        self.sanitize()
+        d = self.draft()
+        return [] if d is None else forms.specs(d, exclude=self.exclude(), choices=self.choices(),
+                                                editable=self.editable())
+
+    def set(self, values: dict) -> list[str]:
+        d = self.draft()
+        changed = [] if d is None else forms.apply(d, values)
+        if changed:
+            self.after_edit(changed)
+            self.ctx.save()
+        return changed
+
+    def after_edit(self, changed: list[str]) -> None:
+        pass
+
+    def kept(self) -> list[str]:
+        return [it.name for it in self.kept_items()]
+
+    def load(self, index: int) -> None:
+        items = self.kept_items()
+        if 0 <= index < len(items):
+            self.set_draft(copy.deepcopy(items[index].params))
+            self.ctx.save()
+
+    def delete(self, index: int) -> None:
+        items = self.kept_items()
+        if 0 <= index < len(items):
+            items.pop(index)
+            self.ctx.save()
+
+    def do_keep(self) -> str | None:
+        name = self.keep()
+        if name:
+            self.ctx.save()
+        return name
+
+
+# ====================================================================== Perfis
+class AirfoilStage(Stage):
+    name = "perfis"
+    title = "Perfil"
+    help = ("Perfis candidatos e a polar 2D de cada um no Re do cruzeiro. O perfil pode vir de um código NACA, "
+            "de um .dat, só de parâmetros (sem contorno) ou da polar do XFLR5/XFOIL. 'Usar na asa' leva o "
+            "perfil selecionado para a etapa Asa.")
+    keep_label = "Usar na asa →"
+
+    def __init__(self, ctx):
+        super().__init__(ctx)
+        self.selected = 0
+
+    def entries(self):
+        return self.ctx.design.airfoils
+
+    def draft(self):
+        e = self.entries()
+        self.selected = min(max(self.selected, 0), len(e) - 1) if e else 0
+        return e[self.selected] if e else None
+
+    def choices(self):
+        d = self.draft()
+        return {"source": tuple(afm.sources(d))} if d is not None else {}
+
+    def exclude(self):
+        return ("polar_file",)
+
+    def sanitize(self):
+        pass
+
+    def kept(self):
+        return [f"{e.name}   ({afm.kind(e.airfoil)}, polar: {e.source})" for e in self.entries()]
+
+    def load(self, index):                       # aqui a lista é a dos candidatos: carregar = selecionar
+        if 0 <= index < len(self.entries()):
+            self.selected = index
+
+    def delete(self, index):
+        if 0 <= index < len(self.entries()):
+            self.entries().pop(index)
+            self.ctx.save()
+
+    def reynolds(self) -> float:
+        d = self.ctx.design
+        pf = wg.planform(wg.build_wing(d.wing_draft, afm.Airfoil()))
+        return d.requirements.reynolds(pf["mac"])
+
+    def compute(self):
+        Re = self.reynolds()
+        specs, res = R.airfoil_stage(self.entries(), Re)
+        return Outcome(specs, res, message=f"Re = {Re:,.0f}".replace(",", " ") + " (cruzeiro, corda média da asa)")
+
+    def keep(self):
+        e = self.draft()
+        if e is None:
+            return None
+        self.ctx.design.wing_draft.airfoil = e.name
+        return e.name
+
+    def actions(self):
+        return [Action("naca", "+ NACA…", "text", "código de 4 dígitos", "4412"),
+                Action("dat", "+ .dat…", "file", "contorno Selig ou Lednicer"),
+                Action("param", "+ só parâmetros", "", "sem contorno: a1, α_L0, c_l,max, c_d0, c_m"),
+                Action("polar", "+ polar XFLR5…", "file", "polar exportada (texto ou CSV); vai para o perfil selecionado")]
+
+    def _add(self, e) -> str:
+        if e.name in [x.name for x in self.entries()]:
+            return f"'{e.name}' já está na lista."
+        self.entries().append(e)
+        self.selected = len(self.entries()) - 1
+        self.ctx.save()
+        return f"entrou: {e.name}"
+
+    def act(self, key, arg):
+        if key == "naca":
+            if len("".join(c for c in arg if c.isdigit())) != 4:
+                return "o código NACA tem 4 dígitos"
+            return self._add(afm.entry(afm.from_naca(arg)))
+        if key == "dat":
+            return self._add(afm.entry(afm.from_dat(arg)))
+        if key == "param":
+            n = len(self.entries()) + 1
+            return self._add(afm.AirfoilEntry(afm.Airfoil(name=f"perfil {n}", alpha0=-3.0, cm_ac=-0.08, cl_max=1.5)))
+        if key == "polar":
+            p = afm.read_polar_file(arg)
+            e = self.draft()
+            if e is None:
+                e = afm.AirfoilEntry(afm.Airfoil(name=os.path.splitext(os.path.basename(arg))[0]))
+                self.entries().append(e)
+            e.polar_file = arg
+            e.source = "arquivo"
+            self.ctx.save()
+            return f"polar lida: {len(p['alpha'])} pontos, Re {p['Re']:.3g}"
+        return super().act(key, arg)
+
+
+# ====================================================================== Asa
+class WingStage(Stage):
+    name = "asa"
+    title = "Asa"
+    help = ("A asa a partir do perfil escolhido: forma em planta, linha sustentadora, onde o estol começa, polar e "
+            "L/D. A incidência sai do ângulo de cruzeiro. Guarde as asas que quiser comparar: a etapa Empenagem "
+            "parte de uma delas.")
+    keep_label = "Guardar asa"
+    TRAPEZOID_ONLY = ("span", "area", "chord", "size_by", "taper", "rect_frac", "sweep", "twist", "airfoil",
+                      "airfoil_tip")
+
+    def draft(self):
+        return self.ctx.design.wing_draft
+
+    def set_draft(self, params):
+        self.ctx.design.wing_draft = params
+
+    def choices(self):
+        names = self.ctx.design.airfoil_names()
+        return {"airfoil": names, "airfoil_tip": ("",) + names}
+
+    def kept_items(self):
+        return self.ctx.design.wings
+
+    def after_edit(self, changed):
+        p = self.draft()
+        table = p.planform == wg.PLANFORMS[1]
+        if table and not p.partitions:
+            p.partitions = wg.partitions_from_trapezoid(p)
+        if table or any(k in ("planform", "size_by") for k in changed):
+            wg.sync(p)
+
+    def disabled(self):
+        p = self.draft()
+        if p.planform == wg.PLANFORMS[1]:
+            return self.TRAPEZOID_ONLY
+        return ("area",) if p.size_by == wg.SIZE_BY[1] else ("chord",)
+
+    def compute(self):
+        d = self.ctx.design
+        cand = d.draft_wing()
+        others = [w for w in d.wings if w.name != cand.name]
+        specs, res, r = R.wing_stage(cand, d.requirements, d.rules, others)
+        self.ctx.values.update(rg.wing_values(r))
+        return Outcome(specs, res, aircraft=only_surfaces([r["surface"]]))
+
+    def keep(self):
+        d = self.ctx.design
+        c = d.keep_wing()
+        d.tail_draft.wing = c.name
+        return c.name
+
+
+# ====================================================================== Empenagem
+class TailStage(Stage):
+    name = "empenagem"
+    title = "Empenagem e comandos"
+    help = ("As superfícies que acompanham a asa guardada: cauda (convencional, em V ou sem cauda), tubo, "
+            "profundor, leme e aileron, por volume de cauda. Põe o CG na margem pedida e diz a faixa de CG, a "
+            "incidência da EH e se os comandos dão conta. Guarde conjuntos para a etapa Motores.")
+    keep_label = "Guardar conjunto"
+
+    def draft(self):
+        return self.ctx.design.tail_draft
+
+    def set_draft(self, params):
+        self.ctx.design.tail_draft = params
+
+    def choices(self):
+        d = self.ctx.design
+        from aerosim.design.tail import NO_WING2, SAME_WING
+        return {"wing": tuple(w.name for w in d.wings),
+                "wing2": (NO_WING2, SAME_WING) + tuple(w.name for w in d.wings),
+                "tail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + d.airfoil_names())),
+                "vtail_airfoil": tuple(dict.fromkeys(TAIL_AIRFOILS + d.airfoil_names()))}
+
+    def editable(self):
+        return ("tail_airfoil", "vtail_airfoil")
+
+    def kept_items(self):
+        return self.ctx.design.sets
+
+    def compute(self):
+        d = self.ctx.design
+        cand = d.draft_set()
+        if cand is None:
+            return Outcome(message="Guarde uma asa primeiro (Aerodinâmica → Projetar → Guardar asa).")
+        specs, res, r = R.set_stage(cand, d.requirements, d.rules, d.airfoil_map())
+        ac = r["set"]
+        return Outcome(specs, res, tables=[dims_table(ac, cg=(r["x_cg"], 0.0, 0.0))],
+                       aircraft=only_surfaces(ac.surfaces, ac.boom))
+
+    def keep(self):
+        d = self.ctx.design
+        c = d.keep_set()
+        if c is None:
+            return None
+        d.power_draft.set = c.name
+        return c.name
+
+
+# ====================================================================== Motores e montagem
+class PowerStage(Stage):
+    name = "motores"
+    title = "Motores e montagem"
+    help = ("Onde ficam os motores, e com isso a bateria (posta onde o CG cai na margem), a carga paga (no CG), a "
+            "fuselagem e o trem. Mostra o desempenho rápido do avião montado e a massa máxima que a pista permite. "
+            "'Mandar para a Montagem' abre o avião e o salva em 'meus aviões'.")
+    keep_label = "Guardar avião"
+
+    def draft(self):
+        return self.ctx.design.power_draft
+
+    def set_draft(self, params):
+        self.ctx.design.power_draft = params
+
+    def choices(self):
+        cat = self.ctx.catalog
+        return {"set": tuple(s.name for s in self.ctx.design.sets),
+                "motor": tuple(m.name for m in cat.motors), "propeller": tuple(p.name for p in cat.propellers),
+                "battery": tuple(b.name for b in cat.batteries),
+                "thrust_set": tuple(t.name for t in cat.thrust_sets) or ("",)}
+
+    def kept_items(self):
+        return self.ctx.design.aircraft
+
+    def compute(self):
+        d = self.ctx.design
+        cand = d.draft_aircraft()
+        if cand is None:
+            return Outcome(message="Guarde um conjunto primeiro (Estabilidade → Empenagem e comandos → Guardar "
+                                   "conjunto).")
+        specs, res, ac, asm, pf = R.aircraft_stage(cand, d.requirements, d.rules, self.ctx.catalog,
+                                                   self.ctx.backend, d.airfoil_map())
+        self.ctx.values.update(rg.aircraft_values(ac, asm, pf, cand.params))
+        return Outcome(specs, res, tables=[self.mass_table(asm, pf), dims_table(ac)], aircraft=ac)
+
+    @staticmethod
+    def mass_table(asm: dict, pf: dict) -> Table:
+        M = asm["mass"]
+        rows = [[g, n, f"{m:.3f}", f"{x:.3f}", f"{100 * m / M:.1f}"] for g, n, m, x in asm["mass_table"]]
+        rows += [["PV", "peso vazio", f"{asm['empty']:.3f}", "", f"{100 * asm['empty'] / M:.1f}"],
+                 ["CP", "carga paga", f"{asm['payload']:.3f}", "", f"{100 * asm['payload'] / M:.1f}"],
+                 ["", "total", f"{M:.3f}", f"{asm['x_cg_target']:.3f} (CG)", "100"]]
+        mt = pf.get("mtow_runway", float("nan"))
+        if mt == mt:
+            rows.append(["", "MTOW pela pista → CP possível = MTOW − PV", f"{mt:.3f}", "", f"CP {mt - asm['empty']:.2f} kg"])
+        return Table("Distribuição de massa", ("grupo", "item", "massa (kg)", "x (m)", "% do total"), rows)
+
+    def keep(self):
+        c = self.ctx.design.keep_aircraft()
+        return None if c is None else c.name
+
+    def actions(self):
+        return [Action("send", "Mandar para a Montagem →", "",
+                       "abre o avião do rascunho como novo avião e salva em 'meus aviões'")]
+
+    def act(self, key, arg):
+        if key != "send":
+            return super().act(key, arg)
+        from aerosim.design import power as pw
+        from aerosim.design.flight import tune_takeoff
+        d = self.ctx.design
+        cand = d.draft_aircraft()
+        if cand is None:
+            return "Guarde um conjunto primeiro."
+        ac, _ = pw.assemble(cand, d.requirements, d.rules, self.ctx.catalog, d.airfoil_map())
+        try:
+            ok, why = tune_takeoff(ac, self.ctx.backend)
+        except Exception as error:
+            ok, why = False, f"a decolagem não rodou ({error})"
+        store = self.ctx.projects
+        name, k = ac.name, 2
+        while store.exists(name):
+            name = f"{ac.name} ({k})"
+            k += 1
+        ac.name = name
+        path = store.save(ac, name).path
+        note = why if ok else f"⚠ foi sem a decolagem ajustada: {why}. Ajuste em Desempenho → Missão."
+        return f"open:{path}|{ac.name}: {note}"
+
+
+# ====================================================================== Condições e restrições
+class RequirementsStage(Stage):
+    """as condições e as regras do projeto (as abas Condições e Regras da janela "Condições e restrições…")"""
+    name = "requisitos"
+    title = "Condições e restrições"
+    keep_label = ""
+
+    def draft(self):
+        return self.ctx.design.requirements
+
+    def form(self):
+        d = self.ctx.design
+        return (forms.specs(d.requirements, group="Condições", prefix="req.")
+                + forms.specs(d.rules, group="Regras de projeto", prefix="rules."))
+
+    def set(self, values):
+        d = self.ctx.design
+        changed = forms.apply(d.requirements, {k[4:]: v for k, v in values.items() if k.startswith("req.")})
+        changed += forms.apply(d.rules, {k[6:]: v for k, v in values.items() if k.startswith("rules.")})
+        if changed:
+            self.ctx.save()
+        return changed
+
+    def compute(self):
+        return Outcome(message=self.ctx.design.requirements.summary())
+
+    def keep(self):
+        return None
+
+
+STAGES = {cls.name: cls for cls in (AirfoilStage, WingStage, TailStage, PowerStage, RequirementsStage)}
+
+# onde cada etapa entra na janela (a mesma ordem de `aerosim/gui/design/__init__.py`: as etapas antes da análise
+# do avião montado); o título da subaba é o da GUI PyQt
+PLACES = {
+    "aerodinamica": (("Perfis", "perfis"), ("Projetar", "asa")),
+    "estabilidade": (("Empenagem e comandos", "empenagem"),),
+    "desempenho": (("Motores e montagem", "motores"),),
+}

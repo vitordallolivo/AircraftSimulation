@@ -285,17 +285,28 @@ class StripLoadMethod(ILoadMethod):
 # Goates e Hunsaker 2021: junta das pernas (fração da corda) e distância de mistura da linha efetiva (padrões do
 # MachUpX); com os dois em 0 a linha sustentadora do núcleo é a de Phillips e Snyder (core/src/loads/llt.zig)
 GOATES_HUNSAKER = {"llt_joint": 0.15, "llt_blend": 1.0}
+# versão não linear: cada seção segue o c_l(α) do perfil com estol, resolvida por Newton (Phillips e Snyder 2000), com
+# viscosidade artificial depois do estol (ν = 2: o menor que deixou o pós-estol suave e convergido na asa retangular de
+# teste, core/src/loads/llt.zig)
+NONLINEAR = {"llt_nonlinear": 1, "llt_viscosity": 2.0}
 
 
 class CoreLoadMethod(StripLoadMethod):
     """o núcleo: a linha sustentadora (`core/src/loads/llt.zig`; de Phillips e Snyder ou, com `gh`, com as correções
-    de Goates e Hunsaker) ou as faixas da simulação (o C_Lα uniforme de cada superfície). Cada superfície é refinada
-    sozinha até o limite de painéis do núcleo (`refine`)"""
+    de Goates e Hunsaker; com `nonlinear`, a de Phillips e Snyder com o estol de cada perfil) ou as faixas da
+    simulação (o C_Lα uniforme de cada superfície). Cada superfície é refinada sozinha até o limite de painéis do
+    núcleo (`refine`)"""
 
-    def __init__(self, backend, llt: bool = True, refine: bool = True, gh: bool = False):
+    def __init__(self, backend, llt: bool = True, refine: bool = True, gh: bool = False, nonlinear: bool = False):
         self.backend, self.llt, self.refine = backend, llt, refine
         self.overrides = dict(GOATES_HUNSAKER) if (llt and gh) else {}
-        if llt and gh:
+        if llt and nonlinear:
+            self.overrides = dict(NONLINEAR)
+            self.name, self.title = "llt_nl", "linha sustentadora não linear (estol por perfil)"
+            self.source = ("núcleo: linha sustentadora de Phillips e Snyder com o c_l(α) de cada perfil e estol, "
+                           "resolvida por Newton (core/src/loads/llt.zig; Phillips e Snyder 2000)")
+            self.supports = frozenset({"esteira", "solo", "comandos", "estol"})
+        elif llt and gh:
             self.name, self.title = "llt_gh", "linha sustentadora (Goates e Hunsaker)"
             self.source = ("núcleo: linha sustentadora com junta e linha efetiva (core/src/loads/llt.zig; Goates e "
                            "Hunsaker 2021): converge com a malha em derrapagem e com enflechamento")
@@ -315,9 +326,13 @@ class CoreLoadMethod(StripLoadMethod):
         ac = model.aircraft
         notes = []
         if self.llt:
-            notes.append(("carga pela linha sustentadora (ferraduras com junta e linha efetiva, Goates e Hunsaker "
-                          "2021)" if self.overrides else "carga pela linha sustentadora (ferraduras, Phillips e Snyder "
-                          "2000)") + "; α e profundor da trimagem do núcleo, então a soma pode diferir um pouco do peso")
+            if self.name == "llt_nl":
+                kind = "carga pela linha sustentadora não linear (c_l(α) de cada perfil com estol, Phillips e Snyder 2000)"
+            elif self.overrides:
+                kind = "carga pela linha sustentadora (ferraduras com junta e linha efetiva, Goates e Hunsaker 2021)"
+            else:
+                kind = "carga pela linha sustentadora (ferraduras, Phillips e Snyder 2000)"
+            notes.append(kind + "; α e profundor da trimagem do núcleo, então a soma pode diferir um pouco do peso")
         limit = self.backend.schema.limits["surfaces"]
         props = point.props
         a, b = math.radians(point.alpha), math.radians(point.beta)
@@ -349,6 +364,48 @@ class CoreLoadMethod(StripLoadMethod):
                     out.append(_collect(P, rows, sm, point.rho, wash))
                     done.add(sm.name)
         return out, notes
+
+    def sweep(self, model, V, alphas, rho, owners):
+        """a varredura das asas pelo núcleo (`core/src/loads/sweep.zig`): uma chamada por superfície refinada, com
+        todos os α de uma vez"""
+        from aerosim.backend.zig.translator import panel_owners
+        from aerosim.interfaces.loads import WingSweep, owner_of
+        from aerosim.model.universal import build_model
+        ac = model.aircraft
+        alphas = np.asarray(alphas, float)
+        n_o = len(owners)
+        lift = np.zeros((len(alphas), n_o))
+        area, chord = np.zeros(n_o), np.zeros(n_o)
+        cls, own, span, done = [], [], [], set()
+        limit = self.backend.schema.limits["surfaces"]
+        targets = [i for i, x in enumerate(ac.surfaces) if x.enabled] if self.refine else []
+        jobs = [(i, _fit(ac, i, limit, self.llt)) for i in targets] + [(None, ac)]
+        for idx, a_ac in jobs:
+            m = build_model(a_ac)
+            panel_owner = []
+            for name, k in panel_owners(m):
+                sm = m.surfaces[k]
+                o = owner_of(sm.name, owners)
+                ok = (o >= 0 and o not in done and sm.role != "device" and not sm.vertical
+                      and (idx is None or sm.index == idx))
+                panel_owner.append(o if ok else -1)
+            active = sorted({o for o in panel_owner if o >= 0})
+            if not active:
+                continue
+            with self.backend.session_for(m, overrides=self.overrides or None) as s:
+                r = s.wing_sweep(V, np.radians(alphas), panel_owner, n_o, llt=self.llt)
+            cols = [j for j, o in enumerate(panel_owner) if o >= 0]
+            for o in active:
+                lift[:, o] = r["owner_lift"][:, o]
+                area[o], chord[o] = r["owner_area"][o], r["owner_chord"][o]
+                done.add(o)
+            cls.append(r["section_cl"][:, cols])
+            own.append(np.asarray(panel_owner, np.int32)[cols])
+            span.append(r["panel_span"][cols])
+        return WingSweep(alphas, list(owners), lift, area, chord,
+                         np.hstack(cls) if cls else np.zeros((len(alphas), 0)),
+                         np.concatenate(own) if own else np.zeros(0, np.int32),
+                         np.concatenate(span) if span else np.zeros(0))
 
 
 def compute(backend, ac, case: LoadCase | None = None) -> SpanLoads:

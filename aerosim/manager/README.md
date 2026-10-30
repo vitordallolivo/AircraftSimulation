@@ -30,6 +30,7 @@ flowchart LR
         PF["performance.py<br/>envelope + cálculo simples"]
         TH["thrust.py"]
         AE["aerodynamics.py<br/>+ polar da aeronave"]
+        WI["wings.py<br/>só as asas"]
         ST["stability.py"]
         BASE["base.py<br/>prepare, parallel"]
     end
@@ -57,7 +58,7 @@ flowchart LR
     style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
 ```
 
-Abas (`tab = True`): `sizing`, `mission`, `performance`, `thrust`, `aerodynamics`, `stability`, `loads`. As outras
+Abas (`tab = True`): `sizing`, `mission`, `performance`, `thrust`, `wings`, `stability`, `loads`. As outras
 continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram modos ou partes de outra.
 
 | simulação | orientação |
@@ -71,7 +72,8 @@ continuam registradas (`manager.get("takeoff")`...) mas não têm aba: viraram m
 | `climb` | por V: nivela → checkpoint; gradientes crescentes a partir dele |
 | `polar` | coeficientes estáticos, margem estática |
 | `thrust` | tração/potência/corrente × V de cada motor (motor+hélice ou polinômio) |
-| `aerodynamics` | sem tempo: cada solver de `aerosim/aero` (os que estiverem instalados e marcados) na mesma geometria e no mesmo $`x_{CG}`$; um solver que falha vira uma linha de erro no resumo, os outros seguem; estudo de pontas de asa |
+| `aerodynamics` | sem aba (roda dentro da `wings`, parte do avião completo), sem tempo: cada solver de `aerosim/aero` (os que estiverem instalados e marcados) na mesma geometria e no mesmo $`x_{CG}`$; um solver que falha vira uma linha de erro no resumo, os outros seguem; estudo de pontas de asa |
+| `wings` | subaba Analisar da Aerodinâmica, sem tempo: só as superfícies marcadas (uma asa, biplano, tandem, canard), do avião aberto ou das asas guardadas na sprint (`shared["sprint"]`), sem trimar, sem fuselagem e sem hélice; roda sem massa (`needs_aircraft = False`). A varredura em α de cada método de carga (`ILoadMethod.sweep`; no núcleo, `core/src/loads/sweep.zig`) e o resumo do núcleo (`wing_sweep_summary`) dão o C_L do conjunto e de cada superfície, o C_L máximo e onde o estol começa; no α da carga, a distribuição e as vistas 3D e de cima (`loads3d`); depois as polares dos solvers marcados (`compare_solvers`, o mesmo laço da `aerodynamics`), na soma das áreas; com o avião aberto pronto, a `aerodynamics` no avião completo (séries `full_polar_*`, `full_ld_*`, `full_span`, `pa*`, `tip*`; a polar fica em `shared` para o Desempenho). Chapas de ponta opcionais (dispositivo "placa") |
 | `stability` | sem tempo: estática → comandos → tesoura (uma sessão por tamanho de EH) → modelo linear por V |
 
 `Runner` é a ferramenta comum: `start_ground()`, `start_air(seg)`, `start_from(checkpoint)`,
@@ -240,6 +242,16 @@ V_s = \sqrt{\frac{2mg}{\rho\,S\,C_{L,max}}}
 
 O acelerador de equilíbrio vem da trimagem nivelada na velocidade de cruzeiro, e os ganhos das malhas internas do
 `autotune` do núcleo (ver [`core/src/control/README.md`](../../core/src/control/README.md)).
+
+### As etapas da sprint para a tela em Zig (`stages.py`, `forms.py`, `form_meta.py`)
+
+A tela em Zig não tem Qt, então não pode usar as páginas de `aerosim/gui/design/pages.py`. As etapas da sprint
+(Perfis, Asa, Empenagem e comandos, Motores e montagem, e as condições e regras do projeto) ficam também em
+`stages.py`, sem Qt: cada uma diz qual é o rascunho, as escolhas dos campos, o que se guarda, a conta e o que o
+"guardar" faz, chamando as mesmas funções de `aerosim.design` que a página PyQt chama, então os números são os mesmos.
+`forms.py` transforma o rascunho (uma dataclass) em `ParamSpec`, com a mesma leitura dos metadados que o
+`DataclassForm` faz, e grava de volta o que a tela mandou; os rótulos, as faixas e as dicas por nome de campo ficam em
+`form_meta.py`, que a GUI PyQt também lê. Quem usa isso é a ponte (`aerosim/bridge.py`).
 
 ## Um exemplo por arquivo
 

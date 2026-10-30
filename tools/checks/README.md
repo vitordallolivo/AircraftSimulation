@@ -38,7 +38,7 @@ Sai com código 1 se algum check falhar. Os pulados, por exemplo quando falta o 
 
 ## No GitHub Actions
 
-O mesmo `run.py --tudo` roda sozinho a cada PR para a `main` e a cada push na `0.2_dev`
+O mesmo `run.py --tudo` roda sozinho a cada PR para a `main`, uma vez por commit
 (`.github/workflows/testes.yml`). Ele se divide em três partes que correm ao mesmo tempo: núcleo e AeroDrive,
 regressão bit a bit e testes Python. O resultado aparece no PR, e o relatório em Markdown de cada parte fica na aba
 Actions, em Artifacts. Os retratos da regressão ficam no cache do Actions, então o da `main` só se calcula uma vez.

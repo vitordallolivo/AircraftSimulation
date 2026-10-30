@@ -1,0 +1,72 @@
+# Monta o programa instalável (tela inicial, aerosim, aeroopt e AeroDrive): o AppImage do Linux e o instalador .exe
+# do Windows, os dois compilados no Ubuntu (o Zig compila para o Windows daqui). Roda só quando alguém pede (botão
+# "Run workflow" na aba Actions) ou numa tag de versão (v*); os arquivos ficam nos "Artifacts" da execução.
+# Sem chave nem segredo: só compila e empacota. No PC: python tools/package.py [--alvo windows].
+name: pacotes
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# um empacotamento por vez
+concurrency:
+  group: pacotes
+  cancel-in-progress: false
+
+jobs:
+  empacotar:
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      matrix:
+        alvo: [linux, windows]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Zig
+        run: pip install "ziglang==0.16.0"
+
+      # pacotes do Zig (raylib) entre uma execução e outra
+      - uses: actions/cache@v4
+        with:
+          path: |
+            launcher/zig-pkg
+            aerosim/zig-pkg
+            aeroopt/zig-pkg
+            aerodrive/zig-pkg
+            ~/.cache/zig
+          key: zig-pacotes-${{ matrix.alvo }}-${{ hashFiles('*/build.zig.zon') }}
+
+      - name: Bibliotecas do raylib (Linux)
+        if: matrix.alvo == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libgl-dev libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libxext-dev
+
+      - name: appimagetool
+        if: matrix.alvo == 'linux'
+        run: |
+          wget -q -O appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          echo "APPIMAGETOOL=$PWD/appimagetool" >> "$GITHUB_ENV"
+          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
+
+      - name: NSIS
+        if: matrix.alvo == 'windows'
+        run: sudo apt-get update && sudo apt-get install -y nsis
+
+      - name: Empacotar
+        run: python tools/package.py --alvo ${{ matrix.alvo }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AircraftSimulation-${{ matrix.alvo }}
+          path: |
+            dist/*.AppImage
+            dist/*-instalador.exe

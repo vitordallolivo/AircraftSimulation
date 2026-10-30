@@ -1399,7 +1399,7 @@ class StudyPage(QtWidgets.QWidget):
             stage, field = self.sd.VARIABLES[sp.variable]
             target = {"power": d.power_draft, "tail": d.tail_draft, "wing": d.wing_draft}[stage]
             setattr(target, field, float(r["x"]))
-            where = {"power": "Motores e montagem", "tail": "Empenagem e comandos", "wing": "Asa"}[stage]
+            where = {"power": "Motores e montagem", "tail": "Empenagem e comandos", "wing": "Projetar (Aerodinâmica)"}[stage]
             self.msg.setText(f"{sp.variable} = {r['x']:g} no rascunho da etapa {where}"
                              + ("" if stage == "power" else " — guarde de novo lá para seguir"))
         self.state.design_edited("ponto")

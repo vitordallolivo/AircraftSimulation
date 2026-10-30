@@ -195,3 +195,17 @@ def test_lifting_line_total_converges(backend):
         sl.MAX_PER_SIDE = keep
     assert abs(out[2] - out[1]) < 0.005 * out[2]
     assert abs(out[2] - out[1]) < abs(out[1] - out[0])
+
+
+def test_nonlinear_lifting_line_stalls(backend):
+    """linha sustentadora não linear (T55, `llt_nl`): no cruzeiro trimado a asa carrega quase o mesmo que a linear;
+    com o α 14° acima, a linear continua subindo e a não linear passa do estol e carrega menos"""
+    ac = conventional()
+    lin = compute(backend, ac, LoadCase(props=False))
+    nl = compute(backend, ac, LoadCase(props=False, method="llt_nl", alpha=lin.alpha, de=lin.de))
+    assert nl.by_role("wing")[0].lift == pytest.approx(lin.by_role("wing")[0].lift, rel=0.02)
+    high = dict(props=False, alpha=lin.alpha + 14.0, de=lin.de)
+    lin_high = compute(backend, ac, LoadCase(method="llt", **high)).by_role("wing")[0]
+    nl_high = compute(backend, ac, LoadCase(method="llt_nl", **high)).by_role("wing")[0]
+    assert np.all(np.isfinite(nl_high.L))
+    assert nl_high.lift < 0.9 * lin_high.lift

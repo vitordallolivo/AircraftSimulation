@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AircraftSimulation</title>
+<!--
+  Página do aerosim e do aeroopt no navegador (o emcc troca o marcador SCRIPT pelo <programa>.js; a mesma página
+  serve aos dois). O que ela faz, além de mostrar o canvas no tamanho da janela:
+    - "abrir do computador" e arrastar um arquivo para a página: o arquivo vai para /entrada na memória do programa
+      e a tela abre pelo `app_open_file` (ui/app.zig), como o arquivo da linha de comando no PC
+    - downloadFile(caminho): o programa grava na memória e chama isto para a página baixar o arquivo (ui/system.zig)
+    - o link de volta à tela inicial (index.html)
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #e9ebef; overflow: hidden; }
+  canvas { display: block; position: fixed; inset: 0; outline: none; }
+  #bar {
+    position: fixed; top: 4px; right: 8px; z-index: 2; display: flex; gap: 6px;
+    font: 12px/1.4 ui-monospace, "DejaVu Sans Mono", Consolas, monospace;
+  }
+  #bar a, #bar button {
+    padding: 2px 8px; color: #1f2d4d; background: rgba(255, 255, 255, 0.85); border: 1px solid #9aa3b5;
+    border-radius: 3px; text-decoration: none; cursor: pointer; font: inherit;
+  }
+  #bar a:hover, #bar button:hover { background: #1f4fa8; color: #fff; }
+  #loading {
+    position: fixed; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center;
+    background: #1f2d4d; color: #fff; font: 16px/1.5 ui-monospace, "DejaVu Sans Mono", Consolas, monospace;
+    white-space: pre; text-align: center;
+  }
+  #drop {
+    position: fixed; inset: 12px; z-index: 4; display: none; align-items: center; justify-content: center;
+    border: 3px dashed #1f4fa8; background: rgba(233, 235, 239, 0.85); color: #1f4fa8;
+    font: 20px ui-monospace, "DejaVu Sans Mono", Consolas, monospace; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+<div id="bar">
+  <button id="open" type="button" title="Abrir um avião (.json), um perfil (.dat) ou uma polar">abrir do computador</button>
+  <a href="index.html" title="Voltar à tela inicial">◄ início</a>
+</div>
+<div id="loading">carregando...</div>
+<div id="drop">solte o arquivo</div>
+<input id="picker" type="file" accept=".json,.dat,.txt,.csv,.pol" hidden>
+<script>
+  'use strict';
+  const program = (location.pathname.split('/').pop() || 'aerosim.html').replace(/\.html$/, '');
+  document.title = program + ' · AircraftSimulation';
+  const canvas = document.getElementById('canvas');
+  const picker = document.getElementById('picker');
+  const loading = document.getElementById('loading');
+  const dropHint = document.getElementById('drop');
+  loading.textContent = program + '\ncarregando...';
+
+  // o arquivo vai para /entrada (na memória do programa) e a tela abre no próximo quadro
+  async function sendFile(file) {
+    if (!file) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    try { FS.mkdir('/entrada'); } catch (error) { }
+    const name = file.name.replace(/[\/\\']/g, '_');
+    FS.writeFile('/entrada/' + name, bytes);
+    const pointer = stringToNewUTF8('/entrada/' + name);
+    Module._app_open_file(pointer);
+    Module._free(pointer);
+    canvas.focus();
+  }
+
+  document.getElementById('open').addEventListener('click', () => picker.click());
+  picker.addEventListener('change', () => { sendFile(picker.files[0]); picker.value = ''; });
+
+  // arrastar para qualquer lugar da página (na fase de captura: o canvas não recebe)
+  let dragDepth = 0;
+  window.addEventListener('dragenter', (event) => { event.preventDefault(); dragDepth++; dropHint.style.display = 'flex'; }, true);
+  window.addEventListener('dragleave', (event) => { if (--dragDepth <= 0) { dragDepth = 0; dropHint.style.display = 'none'; } }, true);
+  window.addEventListener('dragover', (event) => { event.preventDefault(); event.stopPropagation(); }, true);
+  window.addEventListener('drop', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragDepth = 0;
+    dropHint.style.display = 'none';
+    sendFile(event.dataTransfer.files[0]);
+  }, true);
+
+  var Module = {
+    canvas: canvas,
+    print: (text) => console.log(text),
+    printErr: (text) => console.warn(text),
+    // o programa gravou `path` na memória: a página baixa o arquivo
+    downloadFile: (path) => {
+      const bytes = FS.readFile(path);
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([bytes]));
+      link.download = path.split('/').pop();
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 60000);
+    },
+    postRun: [() => { loading.remove(); canvas.focus(); }],
+    setStatus: (text) => { if (text) loading.textContent = program + '\n' + text.replace('Downloading data...', 'baixando...'); },
+  };
+  window.addEventListener('error', (event) => { loading.textContent = program + '\nerro: ' + event.message; });
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

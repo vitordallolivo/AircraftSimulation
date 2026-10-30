@@ -4,7 +4,7 @@ Feita para caber em 1366 × 768.
 
 As áreas que têm etapas da sprint (gui/design) viram subabas: primeiro as etapas que criam o avião do
 zero (Perfil → Asa → Empenagem → Motores), por último "Avião montado" (a análise detalhada do avião
-aberto). A etapa Motores manda o avião para a Montagem."""
+aberto; na Aerodinâmica, "Analisar", que analisa as asas escolhidas e o avião completo). A etapa Motores manda o avião para a Montagem."""
 from __future__ import annotations
 
 import os
@@ -37,7 +37,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs = QtWidgets.QTabWidget()
         self.setCentralWidget(self.tabs)
         from aerosim.interfaces.simulation import AREAS
-        from .design import LAST_TAB, STAGES
+        from .design import AREA_TAB, LAST_TAB, STAGES
         sims = sorted(state.manager.simulations(),
                       key=lambda s: AREAS.index(s.area) if s.area in AREAS else len(AREAS))
         self.area_tabs: dict = {}               # área → a aba dela (a primeira simulação da área)
@@ -64,7 +64,7 @@ class MainWindow(QtWidgets.QMainWindow):
             i = sub.addTab(SimulationTab(state, sim), LAST_TAB.get(sim.area, "Avião montado"))
             self.area_tabs.setdefault(sim.area, sub)
             self.area_index.setdefault(sim.area, i)
-            self.tabs.addTab(sub, sim.title)
+            self.tabs.addTab(sub, AREA_TAB.get(sim.area, sim.title))
         for sim in later:
             host = self.area_tabs.get(INSIDE[sim.area])
             tab = SimulationTab(state, sim)

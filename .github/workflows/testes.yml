@@ -1,14 +1,12 @@
-# Roda os checks de tools/checks (os mesmos do `python tools/checks/run.py --tudo`) a cada PR para a main e a cada
-# push na 0.2_dev. Três jobs em paralelo, um por parte; cada um sobe o relatório em Markdown como artefato
-# (aba Actions -> a rodada -> Artifacts). No PC, o mesmo:
+# Roda os checks de tools/checks (os mesmos do `python tools/checks/run.py --tudo`) a cada PR para a main (uma rodada
+# por push no PR; o push na 0.2_dev sozinho não dispara, para não rodar duas vezes o mesmo commit). Três jobs em
+# paralelo, um por parte; cada um sobe o relatório em Markdown como artefato (aba Actions -> a rodada -> Artifacts). No PC, o mesmo:
 #   python tools/checks/run.py --tudo --relatorio relatorio.md
 name: testes
 
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [0.2_dev]
   workflow_dispatch: # botão "Run workflow" na aba Actions
 
 permissions:

@@ -183,6 +183,10 @@ class _Lib:
             "aerosim_tube_point_hits": (c_int, [c_int, c_int, c_double, c_double, c_double, vp, c_size, vp]),
             "aerosim_panel_states": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, c_size]),
             "aerosim_panel_states_llt": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, c_size]),
+            "aerosim_wing_sweep": (c_int, [c_int, c_double, c_int, vp, c_size, vp, c_size, vp, vp, vp, vp, vp, c_size]),
+            "aerosim_wing_sweep_summary": (c_int, [c_size, c_size, c_size, vp, vp, c_double, vp, vp, vp, vp, vp,
+                                                   ctypes.POINTER(T["SweepSummary"])]),
+            "aerosim_reynolds": (c_double, [c_double] * 4),
             "aerosim_aero_coeffs_thrust": (c_int, [c_int] + [c_double] * 6 + [vp, vp, c_int, vp, ctypes.POINTER(T["AeroCoeffs"])]),
             "aerosim_aero_coeffs_at": (c_int, [c_int] + [c_double] * 10 + [vp, vp, c_int, vp, ctypes.POINTER(T["AeroCoeffs"])]),
             "aerosim_aero_coeffs_llt": (c_int, [c_int] + [c_double] * 10 + [vp, vp, c_int, vp, ctypes.POINTER(T["AeroCoeffs"])]),
@@ -371,6 +375,21 @@ class ZigSession(ISimSession):
         k = _check(fn(self._slot, V, alpha, beta, de, da, dr, Ta, Qa, n,
                                                       buf.ctypes.data, cap), "painéis")
         return buf[:min(k, cap)].copy()
+
+    def wing_sweep(self, V, alphas, owners, owner_count, llt=True):
+        alphas = np.ascontiguousarray(alphas, dtype=np.float64)
+        cap = self._lib.schema.limits["surfaces"]
+        own = np.full(cap, -1, dtype=np.int32)
+        own[:len(owners)] = owners
+        n_a, n_o = len(alphas), int(owner_count)
+        lift, area, chord = np.zeros(max(n_a * n_o, 1)), np.zeros(max(n_o, 1)), np.zeros(max(n_o, 1))
+        cl, span = np.zeros(max(n_a * cap, 1)), np.zeros(cap)
+        k = _check(self._lib.dll.aerosim_wing_sweep(self._slot, V, 1 if llt else 0, alphas.ctypes.data, n_a,
+                                                    own.ctypes.data, n_o, lift.ctypes.data, area.ctypes.data,
+                                                    chord.ctypes.data, cl.ctypes.data, span.ctypes.data, cap),
+                   "varredura das asas")
+        return dict(owner_lift=lift[:n_a * n_o].reshape(n_a, n_o), owner_area=area[:n_o], owner_chord=chord[:n_o],
+                    section_cl=cl[:n_a * k].reshape(n_a, k), panel_span=span[:k])
 
     def aero_coeffs_ex(self, V, alpha, beta=0.0, p=0.0, q=0.0, r=0.0, de=0.0, da=0.0, dr=0.0, ref=None):
         o = self._lib.schema.types["AeroCoeffs"]()
@@ -795,6 +814,25 @@ class ZigBackend(ISimBackend):
                                                 sg.ctypes.data, n.ctypes.data) < 0:
             raise ValueError(f"Morris: k = {k}, r = {r}")
         return mu, ms, sg, n.astype(int)
+
+    def wing_sweep_summary(self, owner_lift, owner_area, dynamic_pressure, section_cl, panel_owner, panel_span):
+        lift = np.ascontiguousarray(owner_lift, dtype=np.float64)
+        area = np.ascontiguousarray(owner_area, dtype=np.float64)
+        cl = np.ascontiguousarray(section_cl, dtype=np.float64)
+        own = np.ascontiguousarray(panel_owner, dtype=np.int32)
+        span = np.ascontiguousarray(panel_span, dtype=np.float64)
+        n_a, n_o, n_p = lift.shape[0], len(area), len(own)
+        total, per_owner = np.zeros(max(n_a, 1)), np.zeros(max(n_a * n_o, 1))
+        o = self._lib.schema.types["SweepSummary"]()
+        _check(self._lib.dll.aerosim_wing_sweep_summary(n_a, n_o, n_p, lift.ctypes.data, area.ctypes.data,
+                                                        dynamic_pressure, cl.ctypes.data, own.ctypes.data,
+                                                        span.ctypes.data, total.ctypes.data, per_owner.ctypes.data,
+                                                        ctypes.byref(o)), "resumo da varredura das asas")
+        return dict(total_cl=total[:n_a], owner_cl=per_owner[:n_a * n_o].reshape(n_a, n_o), peak=int(o.peak),
+                    lift_max=float(o.lift_max), onset_panel=int(o.onset_panel), onset_fraction=float(o.onset_fraction))
+
+    def reynolds(self, rho, V, chord, altitude):
+        return float(self._lib.dll.aerosim_reynolds(rho, V, chord, altitude))
 
     def simple_performance(self, cfg: dict) -> tuple[dict, dict]:
         T = self._lib.schema.types

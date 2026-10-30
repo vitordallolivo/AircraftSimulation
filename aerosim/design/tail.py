@@ -20,7 +20,7 @@ C_L,max. Rolagem: p b/2V com o aileron todo (faixas, C_lp de asa trapezoidal).
 
 Segunda asa (tandem, biplano): outra asa guardada, ou a mesma, posta a um recuo e a um desnível da primeira e
 ligada a ela (`Aircraft.wing_group`, o id fica no conjunto). A estática analítica acima continua sendo a da asa 1
-com a cauda; com o par, quem dá a margem é o avião inteiro no núcleo (Aerodinâmica → Avião montado).
+com a cauda; com o par, quem dá a margem é o avião inteiro no núcleo (Aerodinâmica → Asas, parte do avião completo).
 """
 from __future__ import annotations
 

@@ -85,10 +85,18 @@ class AppState(QtCore.QObject):
         self._design_save.setSingleShot(True)
         self._design_save.setInterval(1000)
         self._design_save.timeout.connect(self.save_design)
+        self._share_design()
 
     def design_edited(self, stage: str = "design") -> None:
+        self._share_design()
         self._design_save.start()
         self.designChanged.emit(stage)
+
+    def _share_design(self) -> None:
+        """o projeto da sprint visível para as simulações (`shared["sprint"]`, ex.: a subaba Asas)"""
+        shared = getattr(self.manager, "shared", None)
+        if isinstance(shared, dict):
+            shared["sprint"] = self.design
 
     def set_design(self, project, folder: str | None = None) -> None:
         self.design = project

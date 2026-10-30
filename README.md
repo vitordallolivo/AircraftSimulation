@@ -51,13 +51,20 @@ pip install -r requirements-aero.txt   # opcional: lltdrek e AeroSandbox (compar
 
 ## Rodar
 
-Para rodar o aerodrive:
+Os programas em Zig compilam e abrem a partir da raiz, cada um pelo nome:
 
 ```sh
-cd aerodrive
-python -m ziglang build run
-cd ..
+python -m ziglang build aerodrive          # o simulador
+python -m ziglang build aerosim            # a interface do aerosim em Zig
+python -m ziglang build aeroopt            # a interface do aeroopt em Zig
+python -m ziglang build launcher           # a tela inicial (o menu do site), que abre os outros três
+python -m ziglang build                    # compila os quatro
+python -m ziglang build test               # testes do núcleo, das interfaces, da tela inicial e do AeroDrive
 ```
+
+Para instalar sem o repositório, `python tools/package.py` monta o AppImage do Linux e `python tools/package.py
+--alvo windows` o instalador `.exe` do Windows (os dois abrem a tela inicial, o mesmo menu do site). O GitHub Actions
+monta os dois quando alguém pede (workflow `pacotes`).
 
 
 Já para o aerosim você pode:
@@ -97,8 +104,8 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
 - Em cada aba: preencha os campos (o **ⓘ** explica cada um), clique em **▶ Rodar**; os gráficos
   atualizam enquanto roda; no fim vêm o **diagnóstico** (clique numa linha para ver o porquê e o que
   mudar) e a tabela de resultados; **Exportar** grava `.xlsx` ou `.csv`.
-- **Projeto do zero** (subabas de Aerodinâmica, Estabilidade e Desempenho): **Perfil** (candidatos e polar
-  2D: NACA, .dat, só parâmetros ou polar do XFLR5) → **Asa** (planta, linha sustentadora, onde estola,
+- **Projeto do zero** (subabas de Aerodinâmica, Estabilidade e Desempenho): **Perfis** (candidatos e polar
+  2D: NACA, .dat, só parâmetros ou polar do XFLR5) → **Projetar** (a asa: planta, linha sustentadora, onde estola,
   incidência pelo ângulo de cruzeiro) → **Empenagem e comandos** (cauda por volume, tubo, CG na margem
   pedida, faixa de CG, rotação na decolagem) → **Motores e montagem** (motores, distribuição de massa com PV
   e carga paga só como opções — tem LAPES? quantas; tem líquido? quantos tanques; os kg se decidem na Montagem —, bateria no ponto do CG, trem, desempenho e o MTOW pela pista) →
@@ -125,8 +132,8 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   ![Histórico: o enxame da iteração 3](docs/img/mdo2_historico.png)
   ![Seletor de perfis](docs/img/seletor_perfis.png)
 - **Montagem** (última aba): componentes, 3D editável, ambiente (altitude-densidade, vento) e envelope
-  de voo (ângulo de cruzeiro, fator de carga). As subabas "Avião montado" e a Missão (dentro de
-  Desempenho, junto com Tração) mostram o avião atual em 3D acima dos gráficos.
+  de voo (ângulo de cruzeiro, fator de carga). As subabas "Avião montado", Analisar (Aerodinâmica) e a
+  Missão (dentro de Desempenho, junto com Tração) mostram o avião atual em 3D acima dos gráficos.
 - **Vários aviões:** **Arquivo → Abrir ao lado** ou **＋ variante** abre mais um; ◀ ▶ troca, e todas
   as abas rodam o escolhido.
 

@@ -115,6 +115,8 @@ def test_modelo_do_voo_padrao_e_as_faixas():
     assert s.aero_model == "faixas" and aero_native(s) == {}
     s.aero_model = "llt_gh"
     assert aero_native(s)["aero_model"] == 1 and aero_native(s)["llt_joint"] > 0
+    s.aero_model = "llt_nl"
+    assert aero_native(s) == {"aero_model": 1, "llt_nonlinear": 1, "llt_viscosity": 2.0}
     s.aero_model = "xyz"
     with pytest.raises(ValueError):
         aero_native(s)

@@ -16,7 +16,7 @@ pub const version: u32 = 1;
 pub const exported = .{
     types.Surface,     types.PropUnit,    types.Gear,           types.Tank,      types.Segment,      types.Event,      types.Pad,
     types.Payload,     types.Environment, types.Takeoff,        types.Autopilot, types.Pilot,        types.Modifier,   types.AeroTable,
-    types.LltCache,    types.Params,      types.Events,         types.LogRow,    types.AeroCoeffs,   types.PanelState, types.PropPoint,
+    types.LltCache,    types.Params,      types.Events,         types.LogRow,    types.AeroCoeffs,   types.PanelState, types.PropPoint, types.SweepSummary,
     types.MassProps,   types.TrimPoint,   types.PerfRow,        envelope.EnvCfg,  envelope.EnvRow,     linear.LinModel, autotune.Result,
     simple_perf.SimpleCfg,  simple_perf.SimpleRow,  simple_perf.SimpleSummary, sizing_types.VarSpec,  sizing_types.AirfoilData, sizing_types.PropSet,   sizing_types.Constraint,
     sizing_types.LayoutData, sizing_types.SizingCfg,  sizing_types.SizingOut,     sizing_types.OptOpts,  sizing_types.Individual,  optim_types.Tier,      optim_types.Program,

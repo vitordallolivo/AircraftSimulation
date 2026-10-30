@@ -23,6 +23,7 @@ pub const physics = struct {
     pub const gear = @import("physics/gear.zig");
     pub const mass = @import("physics/mass.zig");
     pub const propulsion = @import("physics/propulsion.zig");
+    pub const section = @import("physics/section.zig");
     pub const terrain = @import("physics/terrain.zig");
 };
 
@@ -59,9 +60,10 @@ pub const sim = struct {
     pub const trim = @import("sim/trim.zig");
 };
 
-/// linha sustentadora (cargas ao longo da envergadura)
+/// linha sustentadora (cargas ao longo da envergadura) e a varredura das asas em α
 pub const loads = struct {
     pub const llt = @import("loads/llt.zig");
+    pub const sweep = @import("loads/sweep.zig");
 };
 
 /// dimensionamento inicial (mini-MDO)
@@ -74,6 +76,7 @@ pub const sizing = struct {
     pub const sizing = @import("sizing/sizing.zig");
     pub const stages = @import("sizing/stages.zig");
     pub const types = @import("sizing/types.zig");
+    pub const wing_line = @import("sizing/wing_line.zig");
 };
 
 /// buscas do aeroopt (GA, CMA-ES, DE, RBF, amostragem, sensibilidade)

@@ -7,8 +7,10 @@ estol começa. Ela nasceu para a aba Cargas, e o voo também pode usá-la, escol
 trimagem e o AeroDrive ficam iguais.
 
 O README começa explicando por que esta pasta existe. Depois apresenta o método de Phillips e Snyder, que é o padrão,
-e o de Goates e Hunsaker, uma correção ligável para asas enflechadas e para voo com derrapagem. Em seguida vêm o cache
-que deixa a conta rápida, os limites do método, os testes, como validar e as referências. No fim, como chamar.
+e o de Goates e Hunsaker, uma correção ligável para asas enflechadas e para voo com derrapagem. Depois vem a versão não
+linear, também ligável, em que cada faixa estola pela curva do seu perfil. Em seguida vêm o cache
+que deixa a conta rápida, a varredura das asas em α (`sweep.zig`, a conta da subaba Analisar da Aerodinâmica), os limites do método, os
+testes, como validar e as referências. No fim, como chamar.
 
 ## Por que existe
 
@@ -185,6 +187,99 @@ Para ligar, use `Params.llt_joint` e `Params.llt_blend` (os valores usados estã
 sustentadora (Goates e Hunsaker)" (`llt_gh`). Com os dois em 0 (o padrão), a linha sustentadora é a de Phillips e
 Snyder, com as mesmas contas de antes.
 
+## Versão não linear (ligável, `llt_nonlinear`)
+
+Aqui se liga o estol de cada faixa: com `Params.llt_nonlinear = 1`, a sustentação de cada seção segue a curva
+$`c_l(\alpha)`$ do seu perfil, que sobe em reta e cai depois do estol. Com isso a linha sustentadora mostra onde o estol
+começa ao longo da envergadura e para quanto o $`C_L`$ da asa satura, o que importa para o caso de carga de $`C_{L,max}`$.
+
+Sem ela, a seção é a reta $`c_l = a\,(\alpha - \alpha_0)`$ sem limite. Num α alto a carga continua subindo, a raiz de uma
+asa retangular passa do $`c_{l,max}`$ do perfil sem perder nada e o momento fletor sai maior do que o avião consegue
+produzir. A simulação por faixas tem estol, mas a carga dela é plana, então não diz qual parte da asa estola primeiro.
+
+**A curva da seção.** É a mesma mistura que as faixas usam (Beard e McLain, `aero.sigmaStall`), a reta da seção
+misturada com a placa plana pelo peso $`\sigma`$, que vai de 0 antes do estol a 1 depois:
+
+```math
+c_l(\alpha) = \left(1 - \sigma\right)\,a\,(\alpha - \alpha_0) + \sigma\;2\,\mathrm{sgn}(\alpha)\,\sin^2\alpha\,\cos\alpha
+```
+
+O ângulo de estol de $`\sigma`$ é escolhido, por bisseção, para que o pico da curva seja o $`c_{l,max}`$ do perfil. Esse
+$`c_{l,max}`$ sai do $`C_{L,max}`$ que a faixa recebe do tradutor, desfazendo o fator que ele aplicou (Raymer, *Aircraft
+Design: A Conceptual Approach*, eq. 12.15; número a conferir no PDF):
+
+```math
+c_{l,max} = \frac{C_{L,max}}{0{,}9}
+```
+
+O ângulo de estol de cada painel é calculado uma vez, em `prepare`, e fica no cache.
+
+**O sistema.** Com o $`c_l`$ não linear, a equação de cada painel deixa de ser linear em $`\Gamma`$. O resíduo de cada
+painel é a diferença entre a circulação e a que a seção dá na velocidade que ela vê (Phillips e Snyder 2000, versão não
+linear; Hunsaker e Snyder, eq. 4 a 15; números das equações a conferir no PDF):
+
+```math
+R_i(\Gamma) = \Gamma_i - \tfrac12\,c_i\,\eta_i\,\lVert\vec V_i\rVert\,c_{l,i}(\alpha_i)
+\qquad
+\vec V_i = \vec v_i - \sum_j \Gamma_j\,\vec w_{ij}
+```
+
+Aqui $`\vec v_i`$ é a velocidade do painel sem o que as ferraduras induzem, e $`\alpha_i`$ é o ângulo de $`\vec V_i`$ no plano
+da seção, mais o comando. O Newton parte da solução linear e usa o jacobiano analítico, com $`u = \vec V_i\cdot\hat e_x`$ e
+$`w = \vec V_i\cdot\hat e_z`$:
+
+```math
+\frac{\partial R_i}{\partial \Gamma_j} = \delta_{ij} - \tfrac12\,c_i\,\eta_i\left(c_l\,\frac{\partial\lVert\vec V_i\rVert}{\partial\Gamma_j} + \lVert\vec V_i\rVert\,c_l'\,\frac{\partial\alpha_i}{\partial\Gamma_j}\right)
+\qquad
+\frac{\partial\lVert\vec V_i\rVert}{\partial\Gamma_j} = -\frac{u\,\vec w_{ij}\cdot\hat e_x + w\,\vec w_{ij}\cdot\hat e_z}{\lVert\vec V_i\rVert}
+\qquad
+\frac{\partial\alpha_i}{\partial\Gamma_j} = -\frac{u\,\vec w_{ij}\cdot\hat e_z - w\,\vec w_{ij}\cdot\hat e_x}{\lVert\vec V_i\rVert^2}
+```
+
+A derivada $`c_l'`$ é tirada por diferença central. O passo é amortecido: se o resíduo cresce, ele cai pela metade, até
+dez vezes. Depois do estol a força de cada faixa ganha também o arrasto da placa plana das faixas,
+$`\sigma\,1{,}2\,\sin^2\alpha`$. Com Goates e Hunsaker ligado, a seção é a do plano normal à linha, como na versão
+linear.
+
+**Depois do estol (`llt_viscosity`).** Quando a curva do perfil passa do pico, $`c_l`$ cai com $`\alpha`$ e cada faixa
+tem duas respostas possíveis, uma de cada lado do pico. As faixas se acoplam pelo downwash: uma que estola perde
+$`\Gamma`$ e muda o $`\alpha`$ das vizinhas. O sistema passa a ter muitas soluções. Só com o Newton, metade dos ângulos
+depois do estol não convergia (o passo parava num mínimo local do resíduo) e os que convergiam tinham faixas estoladas
+salteadas, uma sim e outra não, com a sustentação da asa subindo e descendo de um ângulo para o outro. Duas correções
+resolvem isso.
+
+A primeira é a viscosidade artificial de Chattot, que soma ao resíduo um termo que espalha $`\Gamma`$ entre as faixas
+vizinhas e escolhe a solução suave. Na forma discreta, o coeficiente precisa crescer com o quadrado do número de
+faixas para o resultado não mudar com a malha (*Relaxation limits and artificial viscosity for lifting-line
+simulations of uniformly discretized rectangular wings in pre- and post-stall conditions*, 2026; a conferir no PDF).
+Por isso aqui ele entra na forma contínua, com a corda como escala de comprimento, e pesado pela mistura $`\sigma`$ do
+estol, que é quase 0 antes do estol, para o trecho linear ficar como estava:
+
+```math
+R_i \;\to\; R_i - \sigma_i\,\nu\,c_i^2\,\frac{d^2\Gamma}{ds^2}\bigg|_i
+```
+
+$`s`$ é a distância ao longo da envergadura (projetada em y-z) e $`\nu`$ é `llt_viscosity`. A segunda derivada usa a
+diferença de espaçamento desigual entre os centros das faixas vizinhas da mesma asa, com $`\Gamma = 0`$ no nó da ponta.
+A forma contínua e o peso $`\sigma`$ são escolhas nossas; a ideia do termo é a de Chattot.
+
+A segunda é a continuação em pseudo-tempo, usada quando o Newton para sem convergir. Em vez do passo de Newton,
+resolve-se
+
+```math
+\left(\frac{I}{\tau} + J\right)\Delta\Gamma = -R
+```
+
+com $`\tau`$ crescendo à medida que o resíduo cai (Kelley e Keyes, *Convergence analysis of pseudo-transient
+continuation*, SIAM J. Numer. Anal. 35, 1998; regra SER de Mulder e van Leer, 1985; a conferir no PDF). Com $`\tau`$
+pequeno o passo é curto e segue $`-R`$, o que atravessa os mínimos locais; com $`\tau`$ grande vira o Newton.
+
+O $`\nu`$ do método `llt_nl` foi escolhido numa varredura na asa retangular dos testes: o menor valor com que todos os
+ângulos convergiram, nas duas malhas, sem saltos de $`c_l`$ entre faixas vizinhas.
+
+Para ligar, a aba Cargas tem o método "linha sustentadora não linear (estol por perfil)" (`llt_nl`), e o voo usa a
+mesma conta com `ac.sim.aero_model = "llt_nl"`. Com `llt_nonlinear = 0`, o padrão, a conta é a linear de sempre.
+
 ## Cache da geometria (`prepare`, `Params.llt_cache`)
 
 A cada avaliação, a linha sustentadora precisava da influência de cada ferradura $`j`$ em cada ponto de controle $`i`$, e
@@ -206,6 +301,54 @@ Ainda dá para ganhar tempo trocando a ordem das somas, o que muda o último dí
 semi-infinito por fórmula fechada (o 1º termo da eq. 3 de Goates e Hunsaker), uma perna por nó no Phillips e Snyder
 ($`n + 1`$ pernas em vez de $`2n`$) e SIMD no Biot–Savart.
 
+## Varredura das asas em α (`sweep.zig`)
+
+Aqui se analisa um conjunto de asas como num túnel de vento: uma asa sozinha, um biplano, um tandem ou uma asa com
+canard, sem trimar, sem fuselagem e sem hélice. É a conta da subaba Analisar da Aerodinâmica. Antes, o Python chamava
+`aerosim_panel_states_llt` uma vez por α, montava as distribuições e somava a sustentação de cada superfície. Com
+dezenas de α e uma sessão por superfície refinada, isso levava segundos, e o somatório, o $`C_L`$ máximo e o início do
+estol ficavam em Python. A varredura faz tudo isso no núcleo, numa chamada, com o mesmo resultado.
+
+`sweep` recebe os α (em radianos) e um "dono" para cada painel: o índice da superfície a que ele pertence, ou −1 para
+o que fica de fora da conta (a deriva e as placas de ponta). Em cada α, com β = 0, comandos em zero e longe do chão,
+os painéis saem das faixas (`aero.computeTrace`) e, se pedido, a carga sai da linha sustentadora (`apply`), linear ou
+não linear conforme `Params.llt_nonlinear`. A saída é a sustentação $`L_k`$ de cada dono em cada α, a área $`S_k`$ e a
+corda média aerodinâmica de cada dono, o $`c_l`$ de cada painel em cada α e a posição $`y`$ de cada painel.
+
+A corda média aerodinâmica de um dono sai das faixas dele, cada uma com área $`S_i`$ e corda $`c_i`$:
+
+```math
+\bar c_k = \frac{\sum_{i \in k} S_i\, c_i}{\sum_{i \in k} S_i}
+```
+
+que é a forma discreta de $`\bar c = \int c^2\,dy / \int c\,dy`$, porque $`S_i = c_i\, \Delta y_i`$ (Raymer,
+*Aircraft Design: A Conceptual Approach*, seção 7.3 — a conferir no PDF).
+
+`summarize` tira daí o $`C_L`$ de cada dono, na área dele, e o do conjunto, na soma das áreas, com a pressão dinâmica
+$`q = \tfrac12 \rho V^2`$:
+
+```math
+C_{L,k} = \frac{L_k}{q\, S_k}, \qquad C_L = \frac{\sum_k L_k}{q \sum_k S_k}
+```
+
+O $`C_L`$ máximo é o maior valor do conjunto na varredura. O estol começa no painel cujo $`c_l`$ mais cai do α do
+pico para o α seguinte. A posição dele é dada como fração da maior distância $`|y|`$ entre os painéis do mesmo dono
+(0 na raiz, 1 na ponta). Se o pico é o último α, não há início de estol: o método não tem estol ou falta varrer mais.
+
+`reynolds` dá o número de Reynolds de uma corda, $`Re = \rho V c / \mu`$. A viscosidade $`\mu`$ vem da lei de
+Sutherland, com $`\mu_0 = 1{,}716 \times 10^{-5}`$ Pa·s, $`T_0 = 273{,}15`$ K e $`S = 110{,}4`$ K (White, *Viscous
+Fluid Flow*, 3ª ed., eq. 1-36 e tabela 1-2 — a conferir no PDF):
+
+```math
+\mu = \mu_0 \left(\frac{T}{T_0}\right)^{3/2} \frac{T_0 + S}{T + S}
+```
+
+A temperatura é a da atmosfera padrão na altitude-densidade do avião, $`T = 288{,}15 - 0{,}0065\, h`$ (ICAO, *Manual
+of the ICAO Standard Atmosphere*, Doc 7488 — a conferir no PDF).
+
+Como cada superfície é refinada sozinha até o limite de painéis do núcleo (`aerosim/aero/span_loads.py`, `_fit`), o
+Python chama a varredura uma vez por superfície refinada, com todos os α, e junta os donos.
+
 ## Limites conhecidos
 
 - **Quinas (raiz de asa com diedro ou enflechamento):** ali a linha sustentadora de Phillips e Snyder é singular. O
@@ -214,7 +357,10 @@ semi-infinito por fórmula fechada (o 1º termo da eq. 3 de Goates e Hunsaker), 
   sustentadora efetiva de Goates e Hunsaker (acima), ligável. Em derrapagem vale o mesmo para as pernas inclinadas.
 - **Alongamento baixo:** a linha sustentadora superestima o $`C_{L\alpha}`$ (numa EV sozinha de alongamento pequeno, o
   $`C_{Y\beta}`$ fica acima do AVL mesmo convergido).
-- **Linear:** $`c_l = a\,(\alpha - \alpha_0)`$, sem estol. Perto do $`C_{L,max}`$, a carga real é menor.
+- **Estol:** a versão de sempre é linear, $`c_l = a\,(\alpha - \alpha_0)`$, sem estol; perto do $`C_{L,max}`$ a carga real é
+  menor. A versão não linear tem o estol, mas a curva depois dele é a da placa plana, e a seção estolada não tem a
+  histerese nem o arrasto de uma asa real estolando. Bem depois do pico (uns 6° na asa retangular dos testes), a asa
+  pula para a solução toda estolada, e o ângulo em que isso acontece depende da malha.
 - **Pernas retas:** não se enrolam nem se desviam pela esteira da hélice.
 - **Trimagem:** $`\alpha`$ e profundor vêm da trimagem da simulação. A soma das cargas pode ficar um pouco fora do peso,
   e o momento de arfagem não fica exatamente zerado.
@@ -239,12 +385,23 @@ y(t) = y_0 + (y_1 - y_0)\,\sin\frac{\pi t}{2}
   quase não muda e fica perto do MachUpX.
 - Goates e Hunsaker desligado por padrão.
 - Cache da geometria: o mesmo resultado, bit a bit, com e sem o cache.
+- Não linear: a curva da seção tem o pico no $`c_{l,max}`$ pedido; em α pequeno a asa fica com a linear; numa varredura
+  em α o $`C_L`$ para abaixo do $`c_{l,max}`$ da seção e, depois do estol, cai abaixo da linear; a raiz da asa retangular
+  chega ao estol antes da ponta; com e sem o cache, o mesmo resultado bit a bit; desligada por padrão.
+- Viscosidade: o trecho antes do estol fica igual; depois do estol a carga é suave e o $`C_L`$ com 24 e 48 faixas fica
+  perto; sem ela, as faixas estolam salteadas.
+- Varredura (`sweep.zig`): a sustentação de cada dono é a soma das faixas dele, igual à conta painel a painel; a área e
+  a corda média saem das faixas; dono fora da faixa e vetor curto viram erro.
+- Resumo: na asa retangular com a linha sustentadora não linear, o $`C_L`$ máximo fica abaixo do $`c_{l,max}`$ do perfil
+  e o estol começa na raiz; com o pico no último α, não há início de estol.
+- Reynolds: a viscosidade de Sutherland ao nível do mar padrão e o Re de uma corda, com o número esperado no teste.
 
 Em `tests/tools/test_aero_perfis.py`: o $`C_{L\alpha}`$ e o $`C_{l\beta}`$ de Goates e Hunsaker contra o MachUpX nas quatro
 asas de teste, com a tolerância e os números esperados no teste.
 
 Em Python (`tests/aero/test_span_loads.py`):
 - o winglet enflechado da asa voadora descarrega na ponta, com e sem β;
+- a versão não linear carrega quase o mesmo que a linear no cruzeiro e menos que ela 14° acima;
 - o enflechamento tira sustentação (tendência do VLM do AeroSandbox; os números não precisam bater, o VLM resolve a
   corda e a linha sustentadora não);
 - a sustentação da asa converge ao refinar a malha.
@@ -279,6 +436,8 @@ Em Python (`tests/aero/test_span_loads.py`):
 - Katz, J. e Plotkin, A., *Low-Speed Aerodynamics*, 2ª ed., Cambridge, 2001, cap. 10. Segmento de vórtice reto.
 - Vatistas, G. H., Kozel, V. e Mih, W. C., *A simpler model for concentrated vortices*, Experiments in Fluids 11,
   1991. Núcleo de Scully.
+- White, F. M., *Viscous Fluid Flow*, 3ª ed., McGraw-Hill, 2006, eq. 1-36. Lei de Sutherland (a conferir no PDF).
+- ICAO, *Manual of the ICAO Standard Atmosphere*, Doc 7488. Temperatura da atmosfera padrão (a conferir no PDF).
 
 Os PDFs não ficam no repositório (regra 7 do `.claude/CLAUDE.md`): só a citação.
 
@@ -307,3 +466,29 @@ mesmos argumentos de `aerosim_aero_coeffs_at` (taxas p, q, r; altura sobre o ch�
 dos momentos). Ele faz a conta da simulação (`aero.computeTrace`) e troca só as forças dos painéis pelas de `apply`,
 então a fuselagem, o $`c_m`$ das seções, o efeito solo e a esteira continuam os da simulação; o $`C_{Di}`$ sai NaN. No Python,
 `session.aero_coeffs_llt(...)`, e `method="faixas"` dá a carga plana da simulação.
+
+A varredura das asas sai de `aerosim_wing_sweep` (os α, o dono de cada painel e se é a linha sustentadora), o resumo de
+`aerosim_wing_sweep_summary` e o Reynolds de `aerosim_reynolds`. No Python, `method.sweep(...)` de qualquer método de
+carga (`ILoadMethod`; no núcleo, esta varredura), `backend.wing_sweep_summary(...)` e `backend.reynolds(...)`:
+
+```python
+import numpy as np
+from aerosim.aero import load_method
+from aerosim.backend.zig import ZigBackend
+from aerosim.manager.simulations.wings import wings_only
+from aerosim.model.templates import conventional
+from aerosim.model.universal import build_model
+
+backend = ZigBackend()
+ac = wings_only(conventional(), [0, 1])                     # a asa e a EH, sem fuselagem e sem hélice
+alphas = np.arange(0.0, 22.0, 2.0)
+sweep = load_method(backend, "llt_nl").sweep(build_model(ac), 12.0, alphas, ac.environment.rho, ["asa", "EH"])
+q = 0.5 * ac.environment.rho * 12.0 ** 2
+r = backend.wing_sweep_summary(sweep.owner_lift, sweep.owner_area, q, sweep.section_cl, sweep.panel_owner,
+                               sweep.panel_span)
+print(r["lift_max"], alphas[r["peak"]], r["onset_fraction"])
+print(backend.reynolds(ac.environment.rho, 12.0, sweep.owner_chord[0], 0.0))
+```
+
+Para acrescentar uma grandeza ao resumo, ela entra em `summarize` (com um teste em `sweep.zig`) e no `SweepSummary`
+da ABI, e o Python lê o campo novo pelo esquema.

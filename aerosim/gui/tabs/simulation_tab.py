@@ -126,6 +126,8 @@ class SimulationTab(QtWidgets.QWidget):
         self._debounce.timeout.connect(self.reconfigure)
         state.changed.connect(lambda r: self._debounce.start() if r != "catalog" else None)
         state.changed.connect(lambda r: self._show_cached() if r == "load" else None)
+        if hasattr(state, "designChanged"):      # o formulário pode depender da sprint (ex.: as asas guardadas)
+            state.designChanged.connect(lambda *_: self._debounce.start())
         self._loading = False
         self._shown_sig = None               # de que avião é o resultado na tela
         self.reconfigure()

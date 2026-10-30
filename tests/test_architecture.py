@@ -11,7 +11,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1] / "aerosim"
 
 
 def _sources():
-    return [p for p in ROOT.rglob("*.py") if "__pycache__" not in p.parts]
+    # a interface em Zig (aerosim/build.zig) guarda os pacotes baixados (zig-pkg, com .py de terceiros) dentro de aerosim/
+    skip = {"__pycache__", "zig-pkg", ".zig-cache", "zig-out"}
+    return [p for p in ROOT.rglob("*.py") if not skip.intersection(p.parts)]
 
 
 def test_no_geometry_derivation_outside_universal_model():

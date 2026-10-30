@@ -37,7 +37,48 @@ def resolve_cg(backend, model, xcg_mac: float) -> tuple[tuple[float, float, floa
     return (x, 0.0, cg[2]), mp["m"]
 
 
+def compare_solvers(ctx: RunContext, model, case: AeroCase, chosen: list, S_: dict, summ: dict, add,
+                    progress: tuple[float, float] = (0.0, 1.0)) -> tuple[dict, dict, dict, dict | None]:
+    """roda cada solver de `chosen` (`IAeroSolver`) no modelo universal: as polares em `S_` (polar_<método>,
+    ld_<método>), as métricas no resumo e um método que falha vira uma linha do diagnóstico. Devolve as polares, as
+    métricas, a tabela de derivadas e a distribuição do lltdrek (se rodou). `progress`: a faixa da barra (início, fim)"""
+    res, metrics = {}, {}
+    deriv_table = {"derivada": list(DERIVATIVES)}
+    span = None
+    lo, hi = progress
+    for k, so in enumerate(chosen):
+        ctx.check()
+        ctx.on_progress(lo + (hi - lo) * k / (len(chosen) + 1), f"rodando {so.title}")
+        why = so.available()
+        lab = LABEL[so.name]
+        if why:
+            add("info", f"{lab} indisponível", "—", "", why, "", "métodos")
+            continue
+        try:
+            # o arquivo do XFLR5 é lido toda vez (o cache não sabe se ele mudou)
+            pol = so.solve(model, case) if so.name == "xflr5" else aero_service.solve(so, model, case)
+        except Exception as e:      # um método que falha não derruba a comparação
+            add("atencao", f"{lab} falhou", f"{type(e).__name__}", "", str(e)[:200], "", "métodos")
+            continue
+        res[so.name] = pol
+        with np.errstate(divide="ignore", invalid="ignore"):
+            LD = np.where(pol.CD > 0, pol.CL / pol.CD, np.nan)
+        S_[f"polar_{lab}"] = dict(alpha=pol.alpha, CL=pol.CL, CD=pol.CD, Cm=pol.Cm, CDi=pol.CDi, LD=LD)
+        S_[f"ld_{lab}"] = dict(CL=pol.CL, LD=LD)
+        metrics[so.name] = polar_metrics(pol, model, case)
+        for key, v in metrics[so.name].items():
+            summ[f"[{lab}] {key}"] = v
+        summ[f"[{lab}] tempo (s)"] = pol.elapsed
+        summ[f"[{lab}] de onde"] = pol.source
+        deriv_table[lab] = [pol.deriv(d) for d in DERIVATIVES]
+        if pol.span is not None and so.name == "lltdrek":
+            span = pol.span
+    return res, metrics, deriv_table, span
+
+
 class AerodynamicsSimulation(SimulationBase):
+    # sem aba: a subaba Asas (wings.py) roda esta análise na parte "avião completo"; scripts e testes chamam pelo nome
+    tab = False
     name = "aerodynamics"
     title = "Aerodinâmica"
     area = "aerodinamica"
@@ -168,36 +209,7 @@ class AerodynamicsSimulation(SimulationBase):
         if P("use_xflr5"):
             from aerosim.aero import Xflr5PolarFile
             chosen.append(Xflr5PolarFile(str(P("xflr5_file") or "")))
-        res, metrics = {}, {}
-        deriv_table = {"derivada": list(DERIVATIVES)}
-        span = None
-        for k, so in enumerate(chosen):
-            ctx.check()
-            ctx.on_progress(k / (len(chosen) + 1), f"rodando {so.title}")
-            why = so.available()
-            lab = LABEL[so.name]
-            if why:
-                add("info", f"{lab} indisponível", "—", "", why, "", "métodos")
-                continue
-            try:
-                # o arquivo do XFLR5 é lido toda vez (o cache não sabe se ele mudou)
-                pol = so.solve(model, case) if so.name == "xflr5" else aero_service.solve(so, model, case)
-            except Exception as e:      # um método que falha não derruba a comparação
-                add("atencao", f"{lab} falhou", f"{type(e).__name__}", "", str(e)[:200], "", "métodos")
-                continue
-            res[so.name] = pol
-            with np.errstate(divide="ignore", invalid="ignore"):
-                LD = np.where(pol.CD > 0, pol.CL / pol.CD, np.nan)
-            S_[f"polar_{lab}"] = dict(alpha=pol.alpha, CL=pol.CL, CD=pol.CD, Cm=pol.Cm, CDi=pol.CDi, LD=LD)
-            S_[f"ld_{lab}"] = dict(CL=pol.CL, LD=LD)
-            metrics[so.name] = polar_metrics(pol, model, case)
-            for key, v in metrics[so.name].items():
-                summ[f"[{lab}] {key}"] = v
-            summ[f"[{lab}] tempo (s)"] = pol.elapsed
-            summ[f"[{lab}] de onde"] = pol.source
-            deriv_table[lab] = [pol.deriv(d) for d in DERIVATIVES]
-            if pol.span is not None and so.name == "lltdrek":
-                span = pol.span
+        res, metrics, deriv_table, span = compare_solvers(ctx, model, case, chosen, S_, summ, add)
         if any(f"ld_{x}" in S_ for x in LABEL.values()):
             hi = max(np.nanmax(t["LD"]) for k, t in S_.items() if k.startswith("ld_"))
             S_["ld_C_L de cruzeiro"] = {"CL": np.array([CL_cru, CL_cru]), "LD": np.array([0.0, hi]), "_dash": 1}

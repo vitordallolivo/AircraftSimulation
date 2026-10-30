@@ -7,8 +7,8 @@ from aerosim.model import TEMPLATES
 
 def test_registry(manager):
     names = {s.name for s in manager.simulations()}          # as que têm aba
-    assert {"sizing", "mission", "performance", "thrust", "aerodynamics", "stability", "loads", "envelope"} == names
-    for n in ("takeoff", "turn", "climb", "polar"):    # sem aba, mas ainda chamáveis
+    assert {"sizing", "mission", "performance", "thrust", "wings", "stability", "loads", "envelope"} == names
+    for n in ("takeoff", "turn", "climb", "polar", "aerodynamics"):    # sem aba, mas ainda chamáveis
         assert manager.get(n).tab is False
     for s in manager.simulations():
         assert s.parameters() and s.plots()
@@ -63,7 +63,7 @@ def test_sheet_aircraft_with_poly_thrust(manager, desempenho_xlsx, mapping_path)
 
 def test_aero_and_stability_tabs_registered(manager):
     names = [s.name for s in manager.simulations()]
-    assert "aerodynamics" in names and "stability" in names
+    assert "wings" in names and "stability" in names
 
 
 def test_stability_simulation(manager):

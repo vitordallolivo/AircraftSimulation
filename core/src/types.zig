@@ -315,6 +315,8 @@ pub const LltCache = extern struct {
     s2: [limits.max_surfaces * limits.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (limits.max_surfaces * limits.max_surfaces),
     s3: [limits.max_surfaces * limits.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (limits.max_surfaces * limits.max_surfaces),
     bound: [limits.max_surfaces * limits.max_surfaces][3]f64 = [_][3]f64{.{ 0, 0, 0 }} ** (limits.max_surfaces * limits.max_surfaces),
+    nonlinear: i32 = 0, // montado com llt_nonlinear: `stall` vale
+    stall: [limits.max_surfaces]f64 = [_]f64{0} ** limits.max_surfaces, // ângulo de estol da seção de cada painel (rad)
 };
 
 pub const Params = extern struct {
@@ -379,6 +381,8 @@ pub const Params = extern struct {
     aero_tab: AeroTable = .{},
     llt_joint: f64 = 0, // comprimento da junta das pernas, fração da corda no nó (G-H eq. 17)
     llt_blend: f64 = 0, // distância de mistura da linha efetiva, fração da semienvergadura (G-H eq. 7; MachUpX)
+    llt_nonlinear: i32 = 0, // 1: a linha sustentadora resolve com o c_l(α) de cada seção com estol, por Newton (Phillips e Snyder 2000)
+    llt_viscosity: f64 = 0, // viscosidade artificial da não linear (ν, adimensional): suaviza Γ depois do estol (Chattot)
     llt_cache: LltCache = .{}, // montado por llt.prepare na configuração (não vem do Python)
     prop_strike: i32 = 0, // 1: a ponta da pá tocar o chão encerra o voo (`crashed`, Events.tprop); 0 (padrão): só registra
     no_payload: i32 = 0, // começa sem a carga
@@ -411,6 +415,14 @@ pub const PanelState = extern struct {
     vind: [3]f64 = .{ 0, 0, 0 }, // parte dos modificadores (esteira...) em `v` (corpo, m/s)
     ey: [3]f64 = .{ 0, 0, 0 }, // direção da envergadura do painel (corpo)
     ex: [3]f64 = .{ 0, 0, 0 }, // direção da corda, para a frente (corpo; o centro `r` fica a 25 % da corda)
+};
+
+/// resumo da varredura das asas (loads/sweep.zig, `summarize`) na fronteira da ABI
+pub const SweepSummary = extern struct {
+    peak: i32 = 0, // índice do α do C_L máximo do conjunto
+    onset_panel: i32 = -1, // painel onde o estol começa; −1: nenhum (o pico é o último α)
+    lift_max: f64 = 0, // C_L máximo do conjunto
+    onset_fraction: f64 = 0, // |y| do painel / maior |y| do mesmo dono (0 raiz, 1 ponta)
 };
 
 /// medidas acumuladas de uma corrida (o "relatório" de eventos)

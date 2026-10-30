@@ -93,7 +93,8 @@ def result_to_dict(res: SimResult, max_rows: int = MAX_ROWS) -> dict:
     log = None
     if res.log is not None and len(res.log):
         log = _enc(_thin(dict(res.log.columns), max_rows))
-    return dict(log=log, series=_enc(_thin_series(res.series, max_rows)), summary=_enc(res.summary),
+    series = {k: v for k, v in res.series.items() if not (isinstance(v, dict) and "_result" in v)}  # vista 3D: objetos
+    return dict(log=log, series=_enc(_thin_series(series, max_rows)), summary=_enc(res.summary),
                 events=_enc(res.events),
                 status=res.status, checks=[_enc(c) for c in res.checks])
 
