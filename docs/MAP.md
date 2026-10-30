@@ -284,7 +284,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
-  tipos `math:10`, `physics:18`, `modifiers:31`, `collision:41`, `control:46`, `sim:53`, `loads:64`, `sizing:70`, `optim:83`, `geometry:97`, `util:102`
+  tipos `math:10`, `physics:18`, `modifiers:31`, `collision:41`, `control:46`, `sim:53`, `loads:64`, `stability:71`, `sizing:75`, `optim:88`, `geometry:102`, `util:107`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
@@ -468,6 +468,12 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sizing/wing_line.zig` — A etapa Asa do dimensionamento: do perfil escolhido à asa trapezoidal, pela linha sustentadora de Prandtl
   tipos `Trapezoid:37`, `Partition:52`, `SectionAirfoil:62`, `Conditions:68`, `Station:88`, `Planform:94`, `Result:274`
   fn `isaDensity:77`, `reynolds:83`, `planformOf:180`, `planformOfPartitions:201`, `totals:230`, `partitionsFromTrapezoid:243`, `analyze:426`, `analyzePlanform:434`, `modelSection:534`
+
+**core/src/stability/**
+
+- `core/src/stability/static.zig` — Estabilidade estática do avião montado: o que a aba Estabilidade calcula antes da dinâmica. Igual a
+  tipos `Inputs:28`, `Probe:31`, `Sweep:197`
+  fn `cgSweep:210`, `limitCrossing:236`
 
 **core/src/util/**
 
@@ -688,7 +694,6 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Requirements:18`, `Rules:55`, `Power:77`, `Name:88`, `WingPartition:108`, `WingParams:119`, `SavedWing:192`, `Design:198`
   fn `libraryFolder:451`, `readDat:462`, `readPolar:471`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
-  fn `main:15`
 - `aerosim/gui/registry.zig` — As grandezas do projeto e o que se faz com elas, como `aerosim/design/registry.py`: o que dá para medir
   tipos `Info:11`, `Stage:20`, `Quantity:23`, `Op:93`, `Constraint:109`, `Constraints:186`, `Verdict:234`, `Input:260`, `InputInfo:297`, `Mode:310`, `Variable:319`
   fn `shortNumber:145`, `verdicts:242`, `defaultVariables:357`, `limitedInput:368`, `boundsFromConstraints:379`
@@ -707,7 +712,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/gui/ui/app.zig` — O que os dois programas têm igual em volta da tela: a linha de comando, a janela e o laço de desenho, com o
   tipos `Args:14`
-  fn `parseArgs:25`, `run:57`
+  fn `parseArgs:25`, `run:57`, `runBrowser:137`, `openFromPage:166`
+- `aerosim/gui/ui/browser_io.zig` — O `std.Io` das telas no navegador. No Zig 0.16 o `std.Io.Threaded` não compila para emscripten (o mesmo motivo
 - `aerosim/gui/ui/checks.zig` — O diagnóstico de uma etapa, como o `ChecksPanel` da GUI em Python: uma linha por verificação (estado, o que se
   tipos `Check:10`, `ChecksPanel:44`
   fn `statusText:25`
@@ -720,7 +726,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/ui/form.zig` — O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador e escolha. A tela descrev
   tipos `Kind:13`, `Field:22`, `Group:50`, `Form:60`
 - `aerosim/gui/ui/jobs.zig` — As contas longas fora do laço da tela: uma `Job` roda uma função numa thread própria, e a tela continua
-  tipos `Job:11`
+  tipos `Job:14`
 - `aerosim/gui/ui/menus.zig` — As peças de escolha que as abas repetem: a lista de itens com um selecionado (a lista de candidatos de Perfis,
   tipos `ItemList:12`, `CheckItem:56`, `CheckMenu:65`
   fn `buttonGrid:41`, `checkedText:122`
@@ -728,19 +734,21 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Range:38`
   fn `numberText:5`, `niceStep:21`, `decimalsFor:31`, `significant:88`
 - `aerosim/gui/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
-  tipos `Series:18`, `Cloud:28`, `Axes:36`, `Frame:43`, `Cell:116`, `ExportKind:192`
-  fn `lines:57`, `table:124`, `tableHeight:159`, `overlayActive:297`, `overlay:302`, `cloud:463`, `ramp:482`, `colorBar:498`, `drawFrame:518`
+  tipos `Series:19`, `Cloud:29`, `Axes:37`, `Frame:44`, `Cell:117`, `ExportKind:194`
+  fn `lines:58`, `table:125`, `tableHeight:160`, `overlayActive:299`, `overlay:304`, `cloud:468`, `ramp:487`, `colorBar:503`, `drawFrame:523`
 - `aerosim/gui/ui/scroll.zig` — A área rolável: tudo o que não cabe na altura (a barra lateral, a coluna dos gráficos) rola pela roda do mouse ou
   tipos `ScrollArea:13`
 - `aerosim/gui/ui/stage.zig` — As peças que toda etapa do dimensionamento repete, como o `StagePage` da GUI em Python: a barra de requisitos
   tipos `KeptAction:44`, `KeptBox:47`, `TabbedDialog:75`, `ListPicker:113`
   fn `reqBarHeight:18`, `reqBar:25`, `title:37`
+- `aerosim/gui/ui/system.zig` — O que muda entre o programa do PC e o do navegador, num lugar só: a `Io` dos arquivos (a do sistema ou a
+  fn `io:13`, `offerDownload:19`
 - `aerosim/gui/ui/table.zig` — A tabela que se edita no lugar, como o `QTableWidget` da GUI em Python: uma linha por item, colunas de número,
   tipos `Kind:12`, `Column:15`, `Cell:23`, `Edit:35`, `EditTable:50`
   fn `height:45`
 - `aerosim/gui/ui/theme.zig` — O visual da interface, o mesmo do AeroDrive: fundo claro, cantos arredondados, azul nos títulos e pouco texto.
-  tipos `Palette:17`, `Fonts:115`, `Logo:159`
-  fn `hex:7`, `withAlpha:12`, `plotColor:63`, `spacing:144`, `text:149`, `textWidth:154`
+  tipos `Palette:17`, `Fonts:119`, `Logo:163`
+  fn `hex:7`, `withAlpha:12`, `plotColor:63`, `spacing:148`, `text:153`, `textWidth:158`
 - `aerosim/gui/ui/ui.zig` — As peças comuns das telas do aerosim e do aeroopt em Zig: cores e fontes, formas, widgets, formulário, gráfico
 - `aerosim/gui/ui/view3d.zig` — Vista 3D dentro de um cartão, com as mesmas ideias da vista do aerosim em Python (`aerosim/gui/widgets/view3d.py`
   tipos `Kind:17`, `View:59`
@@ -755,9 +763,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aeroopt/**
 
 - `aeroopt/build.zig` — Interface do aeroopt em Zig (raylib e raygui). As peças comuns das telas vêm da interface do aerosim
-  fn `build:11`
+  fn `build:12`
 - `aeroopt/main.zig` — A interface do aeroopt em Zig (raylib e raygui), com as peças da interface do aerosim.
-  fn `main:15`
 - `aeroopt/opt_example.zig` — Dados de exemplo da tela do aeroopt enquanto ela não roda a busca: uma rodada inventada, sempre a mesma (semente
   tipos `Run:16`
   fn `syntheticScore:31`, `generate:38`
@@ -802,7 +809,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tools/sprint_pasta.py` — Exemplo: converte um projeto da sprint antigo (um .json só) para a pasta nova, um arquivo por asa.
 - `tools/sprint_tres_caudas.py` — Exemplo: uma asa só com três opções de superfícies, no formato de pasta (um arquivo por asa).
 - `tools/time_profile.py` — Perfil de tempo: onde uma análise gasta o tempo, no Python e no núcleo Zig ao mesmo tempo.
-- `tools/web_build.py` — Monta o site do AircraftSimulation em zig-out/site/: a tela inicial (web/index.html) e o AeroDrive em WebAssembly.
+- `tools/web_build.py` — Monta o site do AircraftSimulation em zig-out/site/: a tela inicial (web/index.html) e os três programas em
 - `tools/aero/__init__.py`
 - `tools/aero/casos.py` — Perfis de teste da aerodinâmica: aviões simples, só superfícies (sem fuselagem e sem motor), para comparar os
 - `tools/aero/coeficientes.py` — Coeficientes de cada perfil de teste (tools/aero/casos.py) a uma velocidade (padrão 12 m/s), por método, e a

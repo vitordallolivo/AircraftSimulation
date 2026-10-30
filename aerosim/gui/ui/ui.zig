@@ -15,6 +15,7 @@ pub const export_file = @import("export.zig");
 pub const table = @import("table.zig");
 pub const checks = @import("checks.zig");
 pub const stage = @import("stage.zig");
+pub const system = @import("system.zig");
 
 test {
     _ = numbers;

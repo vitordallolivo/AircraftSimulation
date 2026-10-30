@@ -190,6 +190,20 @@ xvfb-run -a python -m ziglang build shot -- montagem.png aba=5   # print de outr
 python -m ziglang build run -- ../data/aircraft/Asa_voadora.json   # abre um avião
 ```
 
+### No navegador
+
+O mesmo programa compila para a web com o emscripten, como o AeroDrive. `python -m ziglang build
+-Dtarget=wasm32-emscripten --release=safe` (aqui ou em `aeroopt/`) gera `zig-out/web/<programa>.html`, `.js`,
+`.wasm` e `.data`, e `python tools/web_build.py` junta os três programas com a tela inicial em `zig-out/site`
+(`python -m http.server -d zig-out/site 8000` e abrir `http://localhost:8000`).
+
+O que muda fica em `ui/system.zig`. No navegador não há pastas do disco nem threads. Os arquivos ficam na memória da
+página: o `.data` leva as fontes e as pastas `data/aircraft` e `data/airfoils` (só lidas), o botão "abrir do
+computador" (ou arrastar o arquivo para a página) põe o arquivo em `/entrada` e a tela abre como abriria pela linha
+de comando, e o que se salva a página baixa. A `Io` dos arquivos é a de `ui/browser_io.zig`, porque a do Zig não
+compila para emscripten. As contas longas rodam na hora, no mesmo quadro, e a tela fica parada até acabar. A página
+é `web/shell.html`, a mesma para o aerosim e o aeroopt.
+
 Para uma tela nova, monte a lista de campos e de grupos dela (veja as listas no começo de `screen.zig`),
 desenhe o formulário com `Form.draw` e os gráficos com `plot.lines` ou `plot.cloud`, dentro do mesmo cabeçalho e
 das mesmas abas.

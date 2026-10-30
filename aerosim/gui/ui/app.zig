@@ -91,29 +91,7 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
 
     var frames: usize = 0;
     while (!rl.windowShouldClose()) : (frames += 1) {
-        const width: f32 = @floatFromInt(rl.getScreenWidth());
-        const height: f32 = @floatFromInt(rl.getScreenHeight());
-        ui.beginFrame();
-        if (shot) ui.wheel = 0; // o print não rola sozinho
-        rl.beginDrawing();
-        // com o menu de um gráfico ou o seletor de exportar aberto, a tela não recebe o clique nem a roda
-        const busy = plot.overlayActive();
-        const clicked = ui.clicked;
-        const right_clicked = ui.right_clicked;
-        if (busy) {
-            ui.click_taken = true;
-            ui.right_clicked = false;
-            ui.wheel = 0;
-        }
-        screen.draw(&ui, width, height);
-        if (busy) {
-            ui.click_taken = false;
-            ui.clicked = clicked;
-            ui.right_clicked = right_clicked;
-        }
-        plot.overlay(&ui, width, height);
-        ui.drawTip(width, height);
-        rl.endDrawing();
+        drawFrame(&ui, screen, shot);
         if (shot and frames == 3) {
             const image = try rl.loadImageFromScreen();
             defer rl.unloadImage(image);
@@ -124,4 +102,74 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
             return;
         }
     }
+}
+
+/// um quadro: a tela, os menus dos gráficos por cima e a dica do mouse
+fn drawFrame(ui: *widgets.Ui, screen: anytype, shot: bool) void {
+    const width: f32 = @floatFromInt(rl.getScreenWidth());
+    const height: f32 = @floatFromInt(rl.getScreenHeight());
+    ui.beginFrame();
+    if (shot) ui.wheel = 0; // o print não rola sozinho
+    rl.beginDrawing();
+    // com o menu de um gráfico ou o seletor de exportar aberto, a tela não recebe o clique nem a roda
+    const busy = plot.overlayActive();
+    const clicked = ui.clicked;
+    const right_clicked = ui.right_clicked;
+    if (busy) {
+        ui.click_taken = true;
+        ui.right_clicked = false;
+        ui.wheel = 0;
+    }
+    screen.draw(ui, width, height);
+    if (busy) {
+        ui.click_taken = false;
+        ui.clicked = clicked;
+        ui.right_clicked = right_clicked;
+    }
+    plot.overlay(ui, width, height);
+    ui.drawTip(width, height);
+    rl.endDrawing();
+}
+
+/// no navegador (`wasm32-emscripten`): abre o canvas no tamanho da página e entrega cada quadro ao navegador
+/// (`emscripten_set_main_loop`; um laço `while` travaria a página). Não há linha de comando: a página manda os
+/// arquivos que a pessoa escolhe por `app_open_file`
+pub fn runBrowser(title: [:0]const u8, screen: anytype) !void {
+    const Screen = @TypeOf(screen.*);
+    const Loop = struct {
+        var ui: widgets.Ui = undefined;
+        var current: *Screen = undefined;
+        fn frame() callconv(.c) void {
+            if (pending_file_length > 0) {
+                const path = pending_file[0..pending_file_length];
+                pending_file_length = 0;
+                if (@hasDecl(Screen, "openFile")) current.openFile(path);
+            }
+            drawFrame(&ui, current, false);
+        }
+    };
+    rl.setTraceLogLevel(.err);
+    rl.setConfigFlags(.{ .msaa_4x_hint = true, .window_resizable = true });
+    rl.initWindow(1500, 950, title);
+    rl.setExitKey(.null);
+    Loop.ui = try widgets.Ui.init();
+    Loop.current = screen;
+    screen.start();
+    std.os.emscripten.emscripten_set_main_loop(Loop.frame, 0, 1);
+}
+
+var pending_file: [std.fs.max_path_bytes]u8 = undefined;
+var pending_file_length: usize = 0;
+
+/// a página manda abrir um arquivo que ela pôs na memória (o seletor "Abrir do computador" de `web/shell.html`);
+/// abre no próximo quadro, pelo `openFile` da tela
+pub fn openFromPage(path: [*:0]const u8) callconv(.c) void {
+    const text = std.mem.sliceTo(path, 0);
+    if (text.len > pending_file.len) return;
+    @memcpy(pending_file[0..text.len], text);
+    pending_file_length = text.len;
+}
+
+comptime {
+    if (@import("builtin").os.tag == .emscripten) @export(&openFromPage, .{ .name = "app_open_file" });
 }

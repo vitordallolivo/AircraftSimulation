@@ -7,6 +7,7 @@
 //! para marcar as curvas e exportar o gráfico em PNG, em PDF ou só os dados das curvas marcadas em CSV. O estado
 //! de cada gráfico (as curvas desligadas) fica guardado pelo título, entre um quadro e outro.
 const std = @import("std");
+const system = @import("system.zig");
 const rl = @import("raylib");
 const theme = @import("theme.zig");
 const widgets = @import("widgets.zig");
@@ -166,6 +167,7 @@ fn exportTable(state: *State, headers: []const [:0]const u8, rows: []const []con
     defer out.deinit();
     writeTable(&out.writer, headers, rows) catch return setNote("não gravou {s}: sem memória", .{std.fs.path.basename(path)});
     std.Io.Dir.cwd().writeFile(fileIo(), .{ .sub_path = path, .data = out.written() }) catch |err| return setNote("não gravou {s}: {s}", .{ std.fs.path.basename(path), @errorName(err) });
+    system.offerDownload(path);
     setNote("gravado: {s} ({d} linhas)", .{ path, rows.len });
 }
 
@@ -385,7 +387,7 @@ fn setNote(comptime format: []const u8, args: anytype) void {
 }
 
 fn fileIo() std.Io {
-    return std.Io.Threaded.global_single_threaded.io();
+    return system.io();
 }
 
 /// grava o gráfico: CSV com as curvas marcadas; PNG e PDF com a imagem do cartão desenhada de novo numa textura,
@@ -405,6 +407,7 @@ fn exportPlot(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const S
             count += 2;
         }
         export_file.saveCsv(gpa, fileIo(), path, columns[0..count]) catch |err| return setNote("não gravou {s}: {s}", .{ std.fs.path.basename(path), @errorName(err) });
+        system.offerDownload(path);
         return setNote("gravado: {s} ({d} curvas)", .{ path, count / 2 });
     }
     const scale: f32 = 2;
@@ -438,6 +441,7 @@ fn exportPlot(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const S
         var zero_path: [601]u8 = undefined;
         const text = std.fmt.bufPrintZ(&zero_path, "{s}", .{path}) catch return;
         if (!rl.exportImage(image, text)) return setNote("não gravou {s}", .{std.fs.path.basename(path)});
+        system.offerDownload(path);
         return setNote("gravado: {s}", .{path});
     }
     rl.imageFormat(&image, .uncompressed_r8g8b8);
@@ -445,6 +449,7 @@ fn exportPlot(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const S
     const bytes = pixels[0..@as(usize, @intCast(width * height * 3))];
     // a página no tamanho do cartão na tela (1 pixel da tela = 0,75 pt, os 96 dpi de costume)
     export_file.savePdf(gpa, fileIo(), path, bytes, @intCast(width), @intCast(height), rect.width * 0.75, rect.height * 0.75) catch |err| return setNote("não gravou {s}: {s}", .{ std.fs.path.basename(path), @errorName(err) });
+    system.offerDownload(path);
     setNote("gravado: {s}", .{path});
 }
 

@@ -5,8 +5,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+/// sem threads neste alvo (a web): as contas rodam sempre na hora
+const no_threads = builtin.single_threaded or builtin.target.cpu.arch.isWasm();
+
 /// verdadeiro: as contas rodam na hora, sem thread (o `--shot` liga, para o print sair com o resultado)
-pub var synchronous: bool = builtin.single_threaded or builtin.target.cpu.arch.isWasm();
+pub var synchronous: bool = no_threads;
 
 pub const Job = struct {
     thread: ?std.Thread = null,
@@ -19,7 +22,7 @@ pub const Job = struct {
         if (job.active) return false;
         job.active = true;
         job.done.store(false, .release);
-        if (synchronous) {
+        if (no_threads or synchronous) {
             @call(.auto, function, args);
             job.done.store(true, .release);
             return true;

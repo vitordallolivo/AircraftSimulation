@@ -484,5 +484,5 @@ fn lessText(_: void, a: []const u8, b: []const u8) bool {
 
 /// a leitura de arquivos (sem threads)
 fn io() std.Io {
-    return std.Io.Threaded.global_single_threaded.io();
+    return @import("ui").system.io();
 }

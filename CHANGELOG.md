@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.4 (branch `0.2_dev`)
 
+- aerosim e aeroopt em Zig no navegador, para teste: os dois compilam para wasm (`-Dtarget=wasm32-emscripten`), com
+  os aviões de exemplo, os perfis de `data/airfoils` e as fontes no pacote; "abrir do computador" ou arrastar o
+  arquivo para a página, e salvar baixa o arquivo. `tools/web_build.py` e o workflow do site publicam os três
+  programas, e a tela inicial abre cada um. No navegador as contas longas param a página até acabar.
 - interface em Zig: as contas longas (a varredura de Analisar, abrir o `.json`) rodam numa thread e a tela segue
   respondendo; o build da raiz compila em ReleaseSafe. A barra lateral rola inteira (roda ou barra de arrastar) e o
   que rolou para fora não pega mais o clique; o menu "polar por" abre por cima do rodapé; caixas de marcar e setas

@@ -65,8 +65,10 @@ pub fn plotColor(index: usize) rl.Color {
 }
 
 
-/// as fontes do sistema que servem (com acentos e letras gregas); sem nenhuma, a do raylib
+/// as fontes do sistema que servem (com acentos e letras gregas); sem nenhuma, a do raylib. As de `/fonts` são as que
+/// vão no pacote do navegador (`aerosim/build.zig`, `webFiles`)
 const regular_candidates = [_][:0]const u8{
+    "/fonts/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",
@@ -74,6 +76,7 @@ const regular_candidates = [_][:0]const u8{
     "/System/Library/Fonts/Supplemental/Arial.ttf",
 };
 const bold_candidates = [_][:0]const u8{
+    "/fonts/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
@@ -81,6 +84,7 @@ const bold_candidates = [_][:0]const u8{
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
 };
 const mono_candidates = [_][:0]const u8{
+    "/fonts/DejaVuSansMono.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
     "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
     "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",

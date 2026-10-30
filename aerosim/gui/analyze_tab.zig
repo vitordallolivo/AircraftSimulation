@@ -456,5 +456,5 @@ fn message(run: *Run, comptime fmt: []const u8, args: anytype) void {
 
 /// o relógio (sem threads de E/S)
 fn io() std.Io {
-    return std.Io.Threaded.global_single_threaded.io();
+    return ui_kit.system.io();
 }

@@ -290,5 +290,5 @@ pub fn button(ui: *widgets.Ui, rect: rl.Rectangle, caption: [:0]const u8) bool {
 
 /// a leitura das pastas (sem threads)
 fn io() std.Io {
-    return std.Io.Threaded.global_single_threaded.io();
+    return @import("system.zig").io();
 }

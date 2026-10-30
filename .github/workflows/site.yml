@@ -1,4 +1,4 @@
-# Publica o site (tela inicial + AeroDrive em WebAssembly) no GitHub Pages a cada push na main.
+# Publica o site (tela inicial + AeroDrive, aerosim e aeroopt em WebAssembly) no GitHub Pages a cada push na main.
 # Endereço: https://<usuario>.github.io/AircraftSimulation/
 # No repositório: Settings -> Pages -> Source: GitHub Actions. Para montar o mesmo site no PC:
 #   python tools/web_build.py && python -m http.server -d zig-out/site 8000
@@ -38,8 +38,10 @@ jobs:
         with:
           path: |
             aerodrive/zig-pkg
+            aerosim/zig-pkg
+            aeroopt/zig-pkg
             ~/.cache/zig
-          key: zig-${{ runner.os }}-${{ hashFiles('aerodrive/build.zig.zon') }}
+          key: zig-${{ runner.os }}-${{ hashFiles('aerodrive/build.zig.zon', 'aerosim/build.zig.zon', 'aeroopt/build.zig.zon') }}
 
       # bibliotecas do sistema que o raylib nativo pede (os testes compilam o programa do PC)
       - name: Bibliotecas do raylib

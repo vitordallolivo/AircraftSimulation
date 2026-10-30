@@ -95,6 +95,7 @@ fn requirementsTab(name: []const u8) ?usize {
             _ = std.fmt.bufPrintZ(&screen.assembly_note, "não salvou '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) }) catch {};
             return;
         };
+        ui_kit.system.offerDownload(path);
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "salvo em {s}", .{path}) catch {};
     }
 
@@ -273,7 +274,7 @@ fn exampleFolder(memory: std.mem.Allocator) []const u8 {
 
 /// a leitura de arquivos (sem threads)
 fn io() std.Io {
-    return std.Io.Threaded.global_single_threaded.io();
+    return ui_kit.system.io();
 }
 
 /// a parte de dentro de um cartão onde vai a imagem 3D (abaixo do título)
