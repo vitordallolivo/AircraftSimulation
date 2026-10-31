@@ -45,6 +45,7 @@ MASS_PLANE, MASS_SAVED, MASS_HAND = MASSES
 # o acionamento do profundor na decolagem: otimizado para a pista (padrão) ou o que se digita
 TRIGGERS = ("otimizado", "na mão")
 GM = "Massa e acionamento"
+GG = "Rajada"
 END = "fim da missão (parada na pista)"
 GP = "Pista"
 CHUNK = 0.5
@@ -61,22 +62,32 @@ LEG_COLS = (("name", "etapa", "str"),
                                          "A próxima etapa segue na direção nova"),
             ("radius", "raio (m)", "float", "raio da curva; vazio = automático (procura o menor que a aeronave faz)"),
             ("h", "altura (m)", "float", "altura ao fim da etapa; vazio = mantém a anterior"),
-            ("V", "velocidade (m/s)", "float", "velocidade ao fim da etapa; vazio = mantém a anterior"))
+            ("V", "velocidade (m/s)", "float", "velocidade ao fim da etapa; vazio = mantém a anterior"),
+            ("gust", "rajada em (m)", "float", "distância dentro da etapa em que a rajada chega; vazio = sem rajada "
+                                               "(o tamanho e a duração ficam no grupo Rajada)"))
 
 
 def _kind(l) -> str:
     return "curva" if l.kind == "turn" else "decolagem" if l.takeoff else "pouso" if l.landing else "reta"
 
 
-def legs_to_rows(legs) -> list[dict]:
+def legs_to_rows(legs, events=()) -> list[dict]:
+    """a tabela da trajetória: uma linha por etapa, com a rajada da etapa (se houver) na coluna "rajada em"."""
+    gusts = {e.leg: e.s for e in events if e.kind == "gust"}
     rows = []
-    for l in legs:
+    for i, l in enumerate(legs):
         k = _kind(l)
         turn = k == "curva"
         rows.append(dict(name=l.name, kind=k, length=None if turn else l.length,
                          turn=(l.side if l.side else 1) * l.angle if turn else None,
-                         radius=(l.radius if l.radius > 0 else None) if turn else None, h=l.h, V=l.V))
+                         radius=(l.radius if l.radius > 0 else None) if turn else None, h=l.h, V=l.V,
+                         gust=gusts.get(i)))
     return rows
+
+
+def rows_to_gusts(rows) -> list[MissionEvent]:
+    """as rajadas da tabela: uma por etapa que tem "rajada em" preenchido"""
+    return [MissionEvent("gust", i, float(r["gust"])) for i, r in enumerate(rows) if r.get("gust") not in (None, "")]
 
 
 def rows_to_legs(rows, old) -> list:
@@ -261,7 +272,7 @@ class MissionSimulation(SimulationBase):
                          ParamSpec("de_hand", "Deflexão", to.de1 if to is not None else -10.0, minimum=-45.0,
                                    maximum=45.0, unit="°", group=GM, help="deflexão do profundor (− cabra)")]
         if mode == M_MIS:
-            P += [ParamSpec("legs", "Trajetória", legs_to_rows(ac.mission.legs) if ac is not None else [],
+            P += [ParamSpec("legs", "Trajetória", legs_to_rows(ac.mission.legs, ac.mission.events) if ac is not None else [],
                             kind="table", columns=LEG_COLS, bound=True,
                             help="uma linha por etapa; passe o mouse no cabeçalho para ver cada coluna"),
                   ParamSpec("start", "Começar de", "chão", kind="choice",
@@ -270,6 +281,16 @@ class MissionSimulation(SimulationBase):
                   ParamSpec("until", "Parar em", END, kind="choice", choices=(END,) + tuple(f"fim: {n}" for n in legs[:-1]),
                             help="para no fim da etapa (salva o checkpoint para continuar dali)")]
             P += pista[:2] + hand    # a pista que a decolagem da missão tem de cumprir (8 m na micro, 55 m na regular...)
+            env = ac.environment if ac is not None else None
+            U = list(env.gust_U) if env is not None else [0.0, 0.0, -2.0]
+            P += [ParamSpec("gust_on", "rajada ligada", bool(env.gust) if env is not None else False, kind="bool",
+                            group=GG, help="liga as rajadas das etapas (coluna \"rajada em\" da Trajetória)"),
+                  ParamSpec("gust_up", "vertical", -U[2], minimum=-20.0, maximum=20.0, unit="m/s", group=GG,
+                            help="para cima é positivo"),
+                  ParamSpec("gust_side", "lateral", U[1], minimum=-20.0, maximum=20.0, unit="m/s", group=GG,
+                            help="para leste é positivo"),
+                  ParamSpec("gust_T", "duração", env.gust_T if env is not None else 1.0, minimum=0.05, maximum=20.0,
+                            unit="s", group=GG, help="a rajada 1 − cos sobe e desce neste tempo")]
         elif mode == M_TO:
             P += pista + hand
         elif mode == M_TURN:
@@ -284,15 +305,33 @@ class MissionSimulation(SimulationBase):
         return P
 
     def commit(self, aircraft, values) -> bool:
+        changed = self._commit_gust(aircraft, values)
         rows = values.get("legs")
         if not rows:
-            return False
+            return changed
         new = rows_to_legs(rows, aircraft.mission.legs)
-        if new == aircraft.mission.legs:
-            return False
         n = len(new)
+        events = [e for e in aircraft.mission.events if e.leg < n]
+        gusts = rows_to_gusts(rows)
+        if sorted((e.leg, e.s) for e in events if e.kind == "gust") != sorted((e.leg, e.s) for e in gusts):
+            events = [e for e in events if e.kind != "gust"] + gusts      # só refaz se a tabela mudou as rajadas
+        if new == aircraft.mission.legs and events == aircraft.mission.events:
+            return changed
         aircraft.mission.legs = new
-        aircraft.mission.events = [e for e in aircraft.mission.events if e.leg < n]
+        aircraft.mission.events = events
+        return True
+
+    @staticmethod
+    def _commit_gust(aircraft, values) -> bool:
+        """o tamanho, a duração e o liga/desliga da rajada (grupo Rajada) no ambiente do avião"""
+        if "gust_on" not in values:
+            return False
+        env = aircraft.environment
+        U = [float(env.gust_U[0]), float(values.get("gust_side", env.gust_U[1])), -float(values.get("gust_up", -env.gust_U[2]))]
+        new = (bool(values["gust_on"]), U, float(values.get("gust_T", env.gust_T)))
+        if new == (bool(env.gust), [float(u) for u in env.gust_U], float(env.gust_T)):
+            return False
+        env.gust, env.gust_U, env.gust_T = new
         return True
 
     # ------------------------------------------------------------------ gráficos
@@ -408,8 +447,8 @@ class MissionSimulation(SimulationBase):
     # ------------------------------------------------------------------ execução
     def run(self, ctx: RunContext) -> SimResult:
         mode = self.param(ctx, "mode")
-        if mode == M_MIS and ctx.params.get("legs"):
-            self.commit(ctx.aircraft, ctx.params)            # a trajetória da tabela
+        if mode == M_MIS:
+            self.commit(ctx.aircraft, ctx.params)            # a trajetória da tabela e a rajada
         p = ctx.params
         xw = float(p.get("x_warning", ctx.aircraft.airfield.x_warning))
         zw = float(p.get("z_warning", ctx.aircraft.airfield.z_warning))

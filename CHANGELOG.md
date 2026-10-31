@@ -95,6 +95,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   automático e a massa escolhida, e a aba mostra no tempo α, β e φ, n_z, o xCG e o ângulo do líquido de cada tanque.
   Com tanques, voa também com o líquido travado, para comparar. A conta é a do núcleo (`core/src/sim/gust.zig`, o
   líquido sai parado no equilíbrio) e anda em fatias a cada quadro, então a tela não trava, nem no navegador.
+- Missão: a rajada escolhida por etapa. A Trajetória ganha a coluna "rajada em (m)" (onde, dentro da etapa, a
+  rajada chega; vazio = sem rajada) e o grupo "Rajada" liga a rajada e dá o tamanho vertical e lateral e a duração.
+  Sem mexer, a missão fica igual (os eventos do arquivo na mesma ordem).
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

@@ -283,3 +283,26 @@ def test_takeoff_by_hand_flies_the_typed_mass_and_trigger():
     assert result.summary["acionamento_m"] == 12.0 and result.summary["deflexao_graus"] == -12.0
     with pytest.raises(RuntimeError, match="MTOW"):
         manager.run("mission", ac, {**values, "mass_source": MASS_SAVED, "x_warning": 7.25})
+
+
+def test_mission_gust_per_leg_from_the_table():
+    """a rajada de cada etapa vem da coluna "rajada em" da Trajetória e o tamanho do grupo Rajada; sem mexer, a
+    missão fica como estava (os eventos na mesma ordem)"""
+    from aerosim.manager.simulations.mission import MissionSimulation, legs_to_rows
+    sim = MissionSimulation()
+    ac = TEMPLATES["conventional"]()
+    before = list(ac.mission.events)
+    rows = legs_to_rows(ac.mission.legs, ac.mission.events)
+    keep = {"legs": rows, "gust_on": ac.environment.gust, "gust_up": -ac.environment.gust_U[2],
+            "gust_side": ac.environment.gust_U[1], "gust_T": ac.environment.gust_T}
+    env_before = (ac.environment.gust, list(ac.environment.gust_U), ac.environment.gust_T)
+    sim.commit(ac, keep)
+    assert ac.mission.events == before
+    assert (ac.environment.gust, list(ac.environment.gust_U), ac.environment.gust_T) == env_before
+    rows = [dict(r, gust=None) for r in rows]
+    rows[1]["gust"], rows[3]["gust"] = 20.0, 5.0
+    assert sim.commit(ac, {**keep, "legs": rows, "gust_on": True, "gust_up": 3.0, "gust_side": -1.0})
+    gusts = sorted((e.leg, e.s) for e in ac.mission.events if e.kind == "gust")
+    assert gusts == [(1, 20.0), (3, 5.0)]
+    assert any(e.kind == "drop" for e in ac.mission.events) == any(e.kind == "drop" for e in before)
+    assert ac.environment.gust and ac.environment.gust_U[1:] == [-1.0, -3.0]
