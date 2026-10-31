@@ -233,6 +233,8 @@ https://claude.ai/artifact/N7e8KMZoDGJXdct46t1gsW (esperando o ok e os PDFs do d
 | G09 | Tela em Zig no navegador: contas longas sem travar a página (worker), cancelar, sprint guardada no navegador, lltdrek/ASB/AVL como pacotes do Pyodide carregados quando pedidos | [ext] | — | B9 | Pronto |
 | G10 | Tela em Zig: editar o avião na Montagem | [GUI] | — | B9 | Pronto |
 | G11 | Motores e montagem: o "lastro de equilíbrio" que a etapa põe quando a bateria não alcança o CG (`aerosim/design/power.py`). Pela regra "o CG é apenas de projeto" (vitor, 2026-10-30) ele também sairia da etapa; esperando a decisão do dono | [ext] | — | B3 | A decidir |
+| G12 | Desempenho: o arquivo .dat da hélice (os dados medidos de tração e potência × J) como entrada da Tração e do resto do Desempenho, pelo seletor de arquivo; sem o arquivo, o modelo de hoje (vitor, 2026-10-30) | [ext] | — | B9 | Pronto |
+| G13 | Desempenho na tela em Zig: as restrições não vieram como na GUI PyQt (vitor, 2026-10-30). Primeiro listar aba por aba o que falta ou mudou em relação à PyQt; depois trazer | [GUI] | G08 | B9 | Pronto |
 
 ### core
 
