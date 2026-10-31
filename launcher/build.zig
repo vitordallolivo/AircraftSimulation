@@ -42,7 +42,13 @@ pub fn build(b: *std.Build) void {
             .{ .name = "ui", .module = ui },
         },
     });
-    const exe = b.addExecutable(.{ .name = "aircraftsimulation", .root_module = program });
+    const exe = b.addExecutable(.{
+        .name = "aircraftsimulation",
+        .root_module = program,
+        // o LLD acusa como erro as .so que o Zig 0.16 põe dentro do libraylib.a; o ligador do próprio Zig não
+        // (é o que os exemplos do raylib fazem fora do Windows)
+        .use_lld = target.result.os.tag == .windows,
+    });
     exe.root_module.linkLibrary(raylib_zig.artifact("raylib"));
     // no Windows, sem a janela preta do console atrás da tela inicial
     if (target.result.os.tag == .windows) exe.subsystem = .windows;
