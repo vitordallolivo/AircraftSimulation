@@ -22,6 +22,8 @@ pub const Simulation = struct {
     description: []const u8,
     /// escreve os campos e os gráficos para o avião e os valores de agora (o avião pode faltar)
     specs: *const fn (out: *Writer, aircraft: ?*const Aircraft, values: Values) anyerror!void,
+    /// uma edição numa tabela da aba (`grids`), guardada pela própria análise até a próxima rodada; nulo: sem tabelas
+    edit: ?*const fn (aircraft: ?*const Aircraft, change: GridEdit) anyerror!void = null,
     /// prepara a rodada em `run` (o avião já foi lido)
     start: *const fn (run: *Run, values: Values) anyerror!void,
     /// avança uma fatia da rodada; verdadeiro quando acabou
@@ -74,6 +76,57 @@ pub const Values = struct {
         const object = values.object orelse return fallback;
         const value = object.get(key) orelse return fallback;
         return if (value == .string) value.string else fallback;
+    }
+};
+
+/// uma edição numa tabela, como a tela manda (`"grid": ..., "edit": "set", "row": n, "key": ..., "value": ...`; os
+/// botões mandam o `operation` deles no lugar de "set")
+pub const GridEdit = struct {
+    grid: []const u8,
+    operation: []const u8,
+    row: ?usize = null, // a linha editada ou a selecionada (nula: nenhuma)
+    key: []const u8 = "",
+    value: Json = .null,
+
+    /// a edição dentro de um pedido da tela (nula se o pedido não é de tabela)
+    pub fn fromRequest(memory: std.mem.Allocator, request: []const u8) ?GridEdit {
+        const whole = std.fmt.allocPrint(memory, "{{{s}}}", .{request}) catch return null;
+        const root = std.json.parseFromSliceLeaky(Json, memory, whole, .{}) catch return null;
+        if (root != .object) return null;
+        const grid = root.object.get("grid") orelse return null;
+        const operation = root.object.get("edit") orelse return null;
+        if (grid != .string or operation != .string) return null;
+        var change: GridEdit = .{ .grid = grid.string, .operation = operation.string };
+        if (root.object.get("row")) |row| if (row == .integer and row.integer >= 0) {
+            change.row = @intCast(row.integer);
+        };
+        if (root.object.get("key")) |key| if (key == .string) {
+            change.key = key.string;
+        };
+        change.value = root.object.get("value") orelse .null;
+        return change;
+    }
+
+    /// o valor editado como número (o texto com vírgula também vale)
+    pub fn number(change: GridEdit) ?f64 {
+        return switch (change.value) {
+            .float => |value| value,
+            .integer => |value| @floatFromInt(value),
+            .string => |value| std.fmt.parseFloat(f64, std.mem.trim(u8, value, " ")) catch blk: {
+                var buffer: [64]u8 = undefined;
+                if (value.len > buffer.len) break :blk null;
+                const dotted = buffer[0..value.len];
+                @memcpy(dotted, value);
+                std.mem.replaceScalar(u8, dotted, ',', '.');
+                break :blk std.fmt.parseFloat(f64, std.mem.trim(u8, dotted, " ")) catch null;
+            },
+            else => null,
+        };
+    }
+
+    /// o valor editado como texto (escolha ou nome)
+    pub fn text(change: GridEdit) []const u8 {
+        return if (change.value == .string) change.value.string else "";
     }
 };
 
@@ -148,8 +201,53 @@ pub const Check = struct {
     group: []const u8 = "",
 };
 
-/// `{"params": [...], "plots": [...], "description": ..., "grids": []}`
-pub fn writeSpecs(out: *Writer, params: []const Param, plots: []const Plot, description: []const u8) !void {
+/// uma coluna de uma tabela editável: número, texto, escolha ou só leitura ("label")
+pub const Column = struct {
+    key: []const u8,
+    label: []const u8,
+    kind: enum { float, text, choice, label } = .float,
+    choices: []const []const u8 = &.{},
+    help: []const u8 = "",
+};
+
+/// uma célula: número ou texto (o texto também vale para as escolhas e as de leitura)
+pub const Cell = union(enum) { number: f64, text: []const u8 };
+
+/// um botão abaixo da tabela: o que ele pede (`GridEdit.operation`) e o rótulo
+pub const Button = struct { operation: []const u8, label: []const u8, help: []const u8 = "" };
+
+/// uma tabela editável da aba (como as `stages.Grid` do Python)
+pub const Grid = struct {
+    name: []const u8,
+    title: []const u8,
+    help: []const u8 = "",
+    note: []const u8 = "",
+    columns: []const Column,
+    rows: []const []const Cell,
+    buttons: []const Button = &.{},
+};
+
+/// uma peça da vista 3D: o tipo (a cor da tela: "wing", "tank", "payload"...) e os triângulos, no corpo
+pub const Mesh = struct {
+    kind: []const u8,
+    vertices: []const [3]f64,
+    faces: []const [3]u32,
+};
+
+/// a vista 3D da aba: as peças e o CG
+pub const View = struct {
+    meshes: []const Mesh,
+    cg: ?[3]f64 = null,
+};
+
+/// o que vem nos campos além do formulário: as tabelas e a vista 3D
+pub const Extras = struct {
+    grids: []const Grid = &.{},
+    view: ?View = null,
+};
+
+/// `{"params": [...], "plots": [...], "description": ..., "grids": [...], "view": {...}}`
+pub fn writeSpecs(out: *Writer, params: []const Param, plots: []const Plot, description: []const u8, extras: Extras) !void {
     try out.writeAll("{\"params\": [");
     for (params, 0..) |param, k| {
         if (k > 0) try out.writeAll(", ");
@@ -176,7 +274,68 @@ pub fn writeSpecs(out: *Writer, params: []const Param, plots: []const Plot, desc
         try writePlotHead(out, plot);
         try out.writeAll("}");
     }
-    try out.print("], \"description\": {f}, \"grids\": []}}", .{str(description)});
+    try out.print("], \"description\": {f}, \"grids\": [", .{str(description)});
+    for (extras.grids, 0..) |grid, k| {
+        if (k > 0) try out.writeAll(", ");
+        try writeGrid(out, grid);
+    }
+    try out.writeAll("]");
+    if (extras.view) |view| try writeView(out, view);
+    try out.writeAll("}");
+}
+
+fn writeGrid(out: *Writer, grid: Grid) !void {
+    try out.print("{{\"name\": {f}, \"title\": {f}, \"help\": {f}, \"note\": {f}, \"columns\": [", .{ str(grid.name), str(grid.title), str(grid.help), str(grid.note) });
+    for (grid.columns, 0..) |column, k| {
+        if (k > 0) try out.writeAll(", ");
+        try out.print("{{\"key\": {f}, \"label\": {f}, \"kind\": \"{s}\", \"help\": {f}, \"choices\": [", .{ str(column.key), str(column.label), @tagName(column.kind), str(column.help) });
+        for (column.choices, 0..) |choice, i| {
+            if (i > 0) try out.writeAll(", ");
+            try out.print("{f}", .{str(choice)});
+        }
+        try out.writeAll("]}");
+    }
+    try out.writeAll("], \"rows\": [");
+    for (grid.rows, 0..) |row, r| {
+        if (r > 0) try out.writeAll(", ");
+        try out.writeAll("[");
+        for (row, 0..) |cell, c| {
+            if (c > 0) try out.writeAll(", ");
+            switch (cell) {
+                .number => |value| if (std.math.isFinite(value)) try out.print("{d}", .{value}) else try out.writeAll("null"),
+                .text => |value| try out.print("{f}", .{str(value)}),
+            }
+        }
+        try out.writeAll("]");
+    }
+    try out.writeAll("], \"buttons\": [");
+    for (grid.buttons, 0..) |button, k| {
+        if (k > 0) try out.writeAll(", ");
+        try out.print("[{f}, {f}, {f}]", .{ str(button.operation), str(button.label), str(button.help) });
+    }
+    try out.writeAll("]}");
+}
+
+/// `, "view": {"meshes": [{"kind", "vertices": [x, y, z, ...], "faces": [a, b, c, ...]}], "markers": {"cg": [...]}}`
+fn writeView(out: *Writer, view: View) !void {
+    try out.writeAll(", \"view\": {\"meshes\": [");
+    for (view.meshes, 0..) |mesh, k| {
+        if (k > 0) try out.writeAll(", ");
+        try out.print("{{\"kind\": {f}, \"vertices\": [", .{str(mesh.kind)});
+        for (mesh.vertices, 0..) |point, i| {
+            if (i > 0) try out.writeAll(", ");
+            try out.print("{d:.4}, {d:.4}, {d:.4}", .{ point[0], point[1], point[2] });
+        }
+        try out.writeAll("], \"faces\": [");
+        for (mesh.faces, 0..) |face, i| {
+            if (i > 0) try out.writeAll(", ");
+            try out.print("{d}, {d}, {d}", .{ face[0], face[1], face[2] });
+        }
+        try out.writeAll("]}");
+    }
+    try out.writeAll("], \"markers\": {");
+    if (view.cg) |point| try out.print("\"cg\": [{d}, {d}, {d}]", .{ point[0], point[1], point[2] });
+    try out.writeAll("}}");
 }
 
 /// o começo do resultado: `{"status": ..., "summary": {...}, "checks": [...], "plots": [` (as curvas vêm depois, com

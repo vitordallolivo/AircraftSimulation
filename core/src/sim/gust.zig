@@ -3,6 +3,9 @@
 //! segue por `span` segundos. Os comandos ficam no equilíbrio (manche fixo, como nos modos de Etkin e Reid, cap. 6) ou
 //! com o piloto automático. O líquido dos tanques pode estar livre (pêndulo de Abramson, NASA SP-106) ou travado.
 //!
+//! Com a carga LAPES no avião (`params.payload`), `release` pede a soltura num instante: a carga desliza pela rampa
+//! (`physics/mass.zig`, `payload`) e sai, e o voo segue só com o resto da massa e a dinâmica dela.
+//!
 //! O registro sai em `log` (as mesmas linhas do `runner.run`): ângulo de ataque, arfagem, rolamento, o xCG
 //! (`xcg`, que anda quando o líquido balança) e o ângulo de cada pêndulo (`slosh_x`, `slosh_y`).
 const std = @import("std");
@@ -26,6 +29,7 @@ pub const Case = struct {
     settle: bool = true, // para antes, quando a resposta estabiliza depois da rajada (`settled`)
     liquid_free: bool = true,
     autopilot: bool = false, // falso: manche fixo no equilíbrio
+    release: ?f64 = null, // s, quando se pede a soltura da LAPES (nulo: ela fica no avião, se houver)
 };
 
 pub const Error = runner.StateError || runner.ConfigError || error{BufferFull};
@@ -94,13 +98,17 @@ fn restLiquid(inst: *runner.Instance) void {
 /// avança até `seconds` segundos de voo (uma fatia, para a tela não parar), somando as linhas em `rows`; verdadeiro
 /// quando o caso acabou
 pub fn advance(inst: *runner.Instance, case: Case, log: []types.LogRow, rows: *usize, seconds: f64) Error!bool {
-    const until = @min(inst.r.t + seconds, case.span) + 1e-9;
+    var until = @min(inst.r.t + seconds, case.span) + 1e-9;
+    const pending = if (case.release) |moment| inst.p.pilot.drop == 0 and inst.r.f.released == 0 and moment < case.span else false;
+    if (pending) until = @min(until, case.release.? + 1e-9); // a fatia para no instante da soltura
     var count: usize = 0;
     const status = runner.run(inst, until, log[rows.*..], &count);
     rows.* += count;
+    if (pending and inst.r.t >= case.release.?) inst.p.pilot.drop = 1; // o runner solta no passo seguinte
+    const dropped = case.release == null or inst.r.f.released != 0 or inst.p.payload.enabled == 0;
     return switch (status) {
         .buffer_full => error.BufferFull,
-        .chunk => inst.r.t >= case.span or (case.settle and inst.r.t > case.start + case.duration and
+        .chunk => inst.r.t >= case.span or (case.settle and dropped and inst.r.t > case.start + case.duration and
             settled(log[0..rows.*], @intCast(inst.p.n_tank), inst.p.dtlog)),
         else => true,
     };

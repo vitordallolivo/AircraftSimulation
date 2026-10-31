@@ -291,3 +291,19 @@ test "rajada em fatias dá o mesmo que de uma vez" {
     try std.testing.expectEqual(last.alpha, sliced[rows - 1].alpha);
     try std.testing.expectEqual(last.beta, sliced[rows - 1].beta);
 }
+
+test "LAPES solta no meio da rajada: sai do avião e a massa que voa cai o peso dela" {
+    // a carga desliza pela rampa com Fext_g·g menos o atrito e sai no fim dela (`physics/mass.zig`); depois disso a
+    // massa do avião é a seca mais o líquido
+    aircraft(&inst.p);
+    inst.p.payload = .{ .enabled = 1, .m = 1.5, .r = .{ -0.1, 0, 0.05 }, .bay = 0.3 };
+    const case = gust.Case{ .vertical = 1, .span = 6, .release = 2, .settle = false };
+    try gust.begin(&inst, case);
+    const loaded = trim.Ctx.init(&inst.p, &inst.r.f).m;
+    var rows: usize = 0;
+    while (!try gust.advance(&inst, case, &log, &rows, 0.25)) {}
+    try std.testing.expect(inst.r.f.released != 0);
+    try std.testing.expect(inst.r.ev.trel > 2.0 and inst.r.ev.trel < 3.0); // a rampa de 0,3 m leva uma fração de segundo
+    const empty = trim.Ctx.init(&inst.p, &inst.r.f).m;
+    try std.testing.expectApproxEqAbs(loaded - 1.5, empty, 1e-9);
+}

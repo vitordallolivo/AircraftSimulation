@@ -253,7 +253,7 @@ pub const Screen = struct {
             var slot = tabs.len;
             for (&manager.all) |*simulation| if (std.mem.eql(u8, simulation.area, area_title)) {
                 const page = try std.heap.page_allocator.create(Page);
-                page.* = .{ .kind = .simulation, .name = simulation.name, .title = simulation.title, .bridge = &screen.bridge, .native = simulation };
+                page.* = .{ .kind = .simulation, .name = simulation.name, .title = simulation.title, .bridge = &screen.bridge, .native = simulation, .grids_beside = true };
                 page.setAircraftPath(path);
                 page.stale = false;
                 tab_labels[slot] = simulation.title;

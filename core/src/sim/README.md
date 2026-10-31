@@ -144,7 +144,11 @@ motor faria o avião rolar sozinho desde o começo.
 
 O voo para sozinho quando a resposta rápida acaba (`settled`): durante um segundo, α, o xCG e o ângulo de cada
 pêndulo quase não mudam e as taxas de rotação ficam pequenas. As tolerâncias estão no código. A fugóide e a espiral,
-lentas, continuam depois disso, e o tempo pedido vira só um limite. A rodada anda em fatias (`begin`, depois
+lentas, continuam depois disso, e o tempo pedido vira só um limite.
+
+Se o avião leva a carga LAPES, dá para pedir que ela saia num instante (`release`). A fatia para nesse instante, a
+soltura é pedida como o piloto pede (`pilot.drop`), a carga desliza pela rampa (`physics/mass.zig`) e sai no fim
+dela. Daí em diante voa só o resto da massa, e o voo não para antes de a carga sair. A rodada anda em fatias (`begin`, depois
 `advance` até acabar), para que a tela siga desenhando enquanto ela roda, inclusive no navegador, onde não há thread.
 
 ## Envelope por altitude (`envelope.zig`)

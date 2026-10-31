@@ -2,6 +2,11 @@
 //! mostra no tempo o ângulo de ataque, a derrapagem, o rolamento, o xCG e o ângulo do líquido de cada tanque. Com
 //! tanques, voa duas vezes, com o líquido livre e travado, para ver o quanto o líquido muda a resposta.
 //!
+//! Os tanques ficam numa tabela da aba (onde estão, o tamanho, o volume e a massa de cada um) e a LAPES num grupo do
+//! formulário (a massa, onde está e se ela sai no meio do voo). Os dois começam como o arquivo do avião diz, a aba
+//! guarda o que se mudou até abrir outro avião, e a vista 3D mostra o avião com eles e o CG. Sem tanques ou sem LAPES,
+//! a análise roda sem essa parte.
+//!
 //! A conta é a do núcleo (`core/src/sim/gust.zig`, a dinâmica 6GDL com o pêndulo de Abramson nos tanques); aqui só se
 //! monta o caso, se avança em fatias e se escreve o resultado.
 const std = @import("std");
@@ -20,6 +25,7 @@ pub const simulation = native.Simulation{
         "tempo: ângulo de ataque, derrapagem, rolamento, o xCG e o ângulo do líquido de cada tanque. Com tanques, voa " ++
         "com o líquido livre e travado, para comparar. Tudo em Zig, no núcleo.",
     .specs = specs,
+    .edit = edit,
     .start = start,
     .advance = advance,
     .result = result,
@@ -45,21 +51,270 @@ fn cruise(aircraft: *const native.Aircraft) f64 {
     return if (speed > 0) speed else aircraft.mission.V0;
 }
 
-/// a massa do avião como o arquivo descreve: a seca, a carga e o líquido dos tanques
-fn totalMass(aircraft: *const native.Aircraft) f64 {
-    var total = params_mod.dryMass(aircraft).m;
-    if (aircraft.payload.enabled) total += aircraft.payload.mass;
-    for (aircraft.tanks) |tank| total += tank.rho * tank.volume / 1000.0;
-    return total;
+// ------------------------------------------------------------------ os tanques e a LAPES da aba
+
+const Tank = aircraft_model.aircraft.Tank;
+const Payload = aircraft_model.aircraft.Payload;
+const max_tanks = core.limits.max_tanks;
+const name_size = 40;
+
+/// os tanques da tabela: começam como os do arquivo e guardam o que se editou, até abrir outro avião (ou o mesmo
+/// mudado na Montagem). Memória fixa, sem alocação: no máximo `max_tanks`, como o núcleo
+const Layout = struct {
+    source: u64 = 0, // a impressão do avião de onde os tanques vieram (`fingerprint`)
+    ready: bool = false,
+    count: usize = 0,
+    tanks: [max_tanks]Tank = undefined,
+    names: [max_tanks][name_size]u8 = undefined,
+    name_lengths: [max_tanks]usize = undefined,
+
+    fn slice(layout: *const Layout) []const Tank {
+        return layout.tanks[0..layout.count];
+    }
+
+    /// os tanques do arquivo
+    fn reset(layout: *Layout, aircraft: *const native.Aircraft) void {
+        layout.count = @min(aircraft.tanks.len, max_tanks);
+        for (aircraft.tanks[0..layout.count], 0..) |tank, i| {
+            layout.tanks[i] = tank;
+            layout.tanks[i].shape = staticShape(tank.shape); // o texto do arquivo some quando o avião lido é solto
+            layout.rename(i, tank.name);
+        }
+        layout.source = fingerprint(aircraft);
+        layout.ready = true;
+    }
+
+    /// volta aos do arquivo se o avião não é mais o mesmo
+    fn sync(layout: *Layout, aircraft: *const native.Aircraft) void {
+        if (!layout.ready or layout.source != fingerprint(aircraft)) layout.reset(aircraft);
+    }
+
+    fn rename(layout: *Layout, i: usize, name: []const u8) void {
+        const length = @min(name.len, name_size);
+        @memcpy(layout.names[i][0..length], name[0..length]);
+        layout.name_lengths[i] = length;
+        layout.tanks[i].name = layout.names[i][0..length];
+    }
+
+    /// um tanque novo logo abaixo de `after` (cópia dele) ou no fim
+    fn add(layout: *Layout, after: ?usize) void {
+        if (layout.count >= max_tanks) return;
+        const at = if (after) |row| @min(row + 1, layout.count) else layout.count;
+        var k = layout.count;
+        while (k > at) : (k -= 1) layout.move(k - 1, k);
+        layout.tanks[at] = if (after != null and at > 0) layout.tanks[at - 1] else .{};
+        layout.count += 1;
+        var name: [name_size]u8 = undefined;
+        layout.rename(at, std.fmt.bufPrint(&name, "tanque {d}", .{layout.count}) catch "tanque");
+    }
+
+    fn delete(layout: *Layout, row: usize) void {
+        if (row >= tanks_table.count) return;
+        for (row + 1..layout.count) |k| layout.move(k, k - 1);
+        layout.count -= 1;
+    }
+
+    fn move(layout: *Layout, from: usize, to: usize) void {
+        layout.tanks[to] = layout.tanks[from];
+        layout.names[to] = layout.names[from];
+        layout.name_lengths[to] = layout.name_lengths[from];
+        layout.tanks[to].name = layout.names[to][0..layout.name_lengths[to]];
+    }
+};
+
+var tanks_table: Layout = .{};
+
+/// o que identifica os tanques de um avião: o nome dele e cada número dos tanques
+fn fingerprint(aircraft: *const native.Aircraft) u64 {
+    var hasher = std.hash.Wyhash.init(0);
+    hasher.update(aircraft.name);
+    for (aircraft.tanks) |tank| {
+        hasher.update(tank.name);
+        hasher.update(tank.shape);
+        for ([_]f64{ tank.x, tank.y, tank.z, tank.side, tank.volume, tank.height, tank.rho, tank.zeta }) |value| hasher.update(std.mem.asBytes(&value));
+    }
+    return hasher.final();
+}
+
+const shapes = [_][]const u8{ "quadrado", "cilindro" };
+
+/// o formato num texto que não depende da memória do avião lido
+fn staticShape(shape: []const u8) []const u8 {
+    return if (std.mem.eql(u8, shape, "square")) "square" else "cylinder";
+}
+
+fn shapeLabel(tank: Tank) []const u8 {
+    return if (std.mem.eql(u8, tank.shape, "square")) shapes[0] else shapes[1];
+}
+
+fn liquidMass(tank: Tank) f64 {
+    return tank.rho * tank.volume / 1000.0;
+}
+
+const tank_columns = [_]native.Column{
+    .{ .key = "name", .label = "nome", .kind = .text },
+    .{ .key = "x", .label = "x (m)", .help = "a partir da referência do avião, para a frente" },
+    .{ .key = "y", .label = "y (m)", .help = "para a direita" },
+    .{ .key = "z", .label = "z (m)", .help = "para baixo" },
+    .{ .key = "side", .label = "lado (m)", .help = "o lado da base quadrada ou o diâmetro do cilindro" },
+    .{ .key = "height", .label = "altura (m)" },
+    .{ .key = "volume", .label = "volume (L)" },
+    .{ .key = "shape", .label = "formato", .kind = .choice, .choices = &shapes },
+    .{ .key = "mass", .label = "massa (kg)", .kind = .label, .help = "a do líquido: densidade × volume" },
+};
+
+/// muda a tabela dos tanques
+fn edit(aircraft: ?*const native.Aircraft, change: native.GridEdit) anyerror!void {
+    if (aircraft) |plane| tanks_table.sync(plane);
+    if (!std.mem.eql(u8, change.grid, "tanks")) return;
+    const operation = std.meta.stringToEnum(enum { set, add, delete, reset }, change.operation) orelse return;
+    switch (operation) {
+        .add => tanks_table.add(change.row),
+        .delete => if (change.row) |row| tanks_table.delete(row),
+        .reset => if (aircraft) |plane| tanks_table.reset(plane) else {
+            tanks_table.count = 0;
+        },
+        .set => {
+            const row = change.row orelse return;
+            if (row >= tanks_table.count) return;
+            const tank = &tanks_table.tanks[row];
+            if (std.mem.eql(u8, change.key, "name")) return tanks_table.rename(row, change.text());
+            if (std.mem.eql(u8, change.key, "shape")) {
+                tank.shape = if (std.mem.eql(u8, change.text(), shapes[0])) "square" else "cylinder";
+                return;
+            }
+            const value = change.number() orelse return;
+            const field = std.meta.stringToEnum(enum { x, y, z, side, height, volume }, change.key) orelse return;
+            switch (field) {
+                .x => tank.x = value,
+                .y => tank.y = value,
+                .z => tank.z = value,
+                .side => tank.side = @max(value, 0.005),
+                .height => tank.height = @max(value, 0.005),
+                .volume => tank.volume = @max(value, 0),
+            }
+        },
+    }
+}
+
+/// a LAPES do formulário (começa como a do arquivo)
+fn payloadFrom(aircraft: *const native.Aircraft, values: native.Values) Payload {
+    var payload = aircraft.payload;
+    payload.enabled = values.toggle("lapes", aircraft.payload.enabled);
+    payload.mass = @max(values.number("lapes_mass", aircraft.payload.mass), 0);
+    payload.x = values.number("lapes_x", aircraft.payload.x);
+    payload.y = values.number("lapes_y", aircraft.payload.y);
+    payload.z = values.number("lapes_z", aircraft.payload.z);
+    if (payload.mass <= 0) payload.enabled = false;
+    return payload;
+}
+
+/// o avião da aba: o do arquivo com os tanques da tabela e a LAPES do formulário
+fn configured(aircraft: *const native.Aircraft, values: native.Values) native.Aircraft {
+    tanks_table.sync(aircraft);
+    var plane = aircraft.*;
+    plane.tanks = tanks_table.slice();
+    plane.payload = payloadFrom(aircraft, values);
+    return plane;
+}
+
+/// a massa pedida para o avião sem o líquido e a LAPES: o que passa da do arquivo entra no CG dele (seco)
+fn withMass(instance: *core.runner.Instance, wanted: f64) void {
+    if (wanted > instance.p.m_dry) instance.p.m_dry = wanted;
+}
+
+/// a massa e o CG do avião da aba, como o núcleo monta
+const Balance = struct { mass: f64, center: [3]f64 };
+
+fn balance(plane: *const native.Aircraft, values: native.Values) ?Balance {
+    const instance = std.heap.page_allocator.create(core.runner.Instance) catch return null;
+    defer std.heap.page_allocator.destroy(instance);
+    instance.* = .{};
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    _ = params_mod.setup(plane, instance, &diagnosis) catch return null;
+    withMass(instance, values.number("mass", 0));
+    const now = core.trim.Ctx.init(&instance.p, &instance.r.f);
+    return .{ .mass = now.m, .center = now.rcg };
+}
+
+/// a tabela dos tanques, com a massa de cada um e a soma na nota
+fn tankGrid(memory: std.mem.Allocator, plane: *const native.Aircraft, mass: ?Balance) !native.Grid {
+    const rows = try memory.alloc([]const native.Cell, plane.tanks.len);
+    var liquid: f64 = 0;
+    for (plane.tanks, 0..) |tank, i| {
+        const cells = try memory.alloc(native.Cell, tank_columns.len);
+        cells[0] = .{ .text = tank.name };
+        cells[1] = .{ .number = tank.x };
+        cells[2] = .{ .number = tank.y };
+        cells[3] = .{ .number = tank.z };
+        cells[4] = .{ .number = tank.side };
+        cells[5] = .{ .number = tank.height };
+        cells[6] = .{ .number = tank.volume };
+        cells[7] = .{ .text = shapeLabel(tank) };
+        cells[8] = .{ .text = try std.fmt.allocPrint(memory, "{d:.3}", .{liquidMass(tank)}) };
+        liquid += liquidMass(tank);
+        rows[i] = cells;
+    }
+    const lapes: f64 = if (plane.payload.enabled) plane.payload.mass else 0;
+    const note = if (mass) |known|
+        try std.fmt.allocPrint(memory, "Líquido: {d:.3} kg em {d} tanques. LAPES: {d:.3} kg. Avião: {d:.3} kg. Total: {d:.3} kg. " ++
+            "As mudanças valem nesta aba; o arquivo do avião não muda.", .{ liquid, plane.tanks.len, lapes, known.mass - liquid - lapes, known.mass })
+    else
+        try std.fmt.allocPrint(memory, "Líquido: {d:.3} kg em {d} tanques. As mudanças valem nesta aba; o arquivo do avião não muda.", .{ liquid, plane.tanks.len });
+    return .{
+        .name = "tanks",
+        .title = "Tanques de líquido",
+        .help = "cada tanque vira um pêndulo equivalente (Abramson, NASA SP-106); sem tanques, a análise roda sem líquido",
+        .note = note,
+        .columns = &tank_columns,
+        .rows = rows,
+        .buttons = &.{
+            .{ .operation = "add", .label = "+ tanque", .help = "copia o selecionado logo abaixo dele" },
+            .{ .operation = "delete", .label = "− tanque", .help = "apaga o selecionado" },
+            .{ .operation = "reset", .label = "como no avião", .help = "volta aos tanques do arquivo" },
+        },
+    };
+}
+
+/// a vista 3D: as peças do avião (`skeleton`, as mesmas da Montagem), com os tanques e a LAPES da aba, e o CG
+fn view(memory: std.mem.Allocator, plane: *const native.Aircraft, mass: ?Balance) !?native.View {
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    const built = aircraft_model.skeleton.build(memory, plane, &diagnosis) catch return null; // na arena da resposta
+    var meshes: std.ArrayList(native.Mesh) = .empty;
+    // as opacas primeiro e as transparentes (tanque, disco da hélice) por cima
+    for ([_]bool{ false, true }) |translucent| for (built.pieces) |piece| {
+        if ((aircraft_model.skeleton.rgba(piece.color)[3] < 1) != translucent) continue;
+        try meshes.append(memory, .{ .kind = @tagName(piece.color), .vertices = piece.mesh.v, .faces = piece.mesh.f });
+    };
+    return .{ .meshes = meshes.items, .cg = if (mass) |known| known.center else null };
 }
 
 fn specs(out: *native.Writer, aircraft: ?*const native.Aircraft, values: native.Values) anyerror!void {
-    _ = values;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
     const speed = if (aircraft) |plane| cruise(plane) else 15.0;
-    const mass = if (aircraft) |plane| @round(totalMass(plane) * 1000.0) / 1000.0 else 0.0;
-    const has_tanks = if (aircraft) |plane| plane.tanks.len > 0 else true;
+    const dry = if (aircraft) |plane| @round(params_mod.dryMass(plane).m * 1000.0) / 1000.0 else 0.0;
+    const file_payload: Payload = if (aircraft) |plane| plane.payload else .{};
+    var extras: native.Extras = .{};
+    var has_tanks = true;
+    if (aircraft) |source| {
+        const plane = configured(source, values);
+        has_tanks = plane.tanks.len > 0;
+        const mass = balance(&plane, values);
+        const grids = try memory.alloc(native.Grid, 1);
+        grids[0] = try tankGrid(memory, &plane, mass);
+        extras = .{ .grids = grids, .view = try view(memory, &plane, mass) };
+    }
     const params = [_]native.Param{
-        .{ .key = "mass", .label = "massa total", .default = .{ .number = mass }, .minimum = 0, .unit = "kg", .group = "Massa", .help = "a do avião; acima dela, o que passa entra no CG (o MTOW, por exemplo)" },
+        .{ .key = "mass", .label = "massa do avião", .default = .{ .number = dry }, .minimum = 0, .unit = "kg", .group = "Massa", .rebuild = true, .help = "sem o líquido e a LAPES; o que passa da do arquivo entra no CG do avião" },
+        .{ .key = "lapes", .label = "LAPES no avião", .kind = .bool, .default = .{ .toggle = file_payload.enabled }, .group = "LAPES", .rebuild = true, .help = "a carga que sai pela rampa; desligada, a análise roda sem ela" },
+        .{ .key = "lapes_mass", .label = "massa da LAPES", .default = .{ .number = file_payload.mass }, .minimum = 0, .unit = "kg", .group = "LAPES", .rebuild = true },
+        .{ .key = "lapes_x", .label = "x da LAPES", .default = .{ .number = file_payload.x }, .unit = "m", .group = "LAPES", .rebuild = true, .help = "o centro da carga, para a frente" },
+        .{ .key = "lapes_y", .label = "y da LAPES", .default = .{ .number = file_payload.y }, .unit = "m", .group = "LAPES", .rebuild = true },
+        .{ .key = "lapes_z", .label = "z da LAPES", .default = .{ .number = file_payload.z }, .unit = "m", .group = "LAPES", .rebuild = true, .help = "para baixo" },
+        .{ .key = "drop", .label = "soltar no voo", .kind = .bool, .default = .{ .toggle = false }, .group = "LAPES", .help = "a LAPES sai pela rampa no instante pedido e o voo segue sem ela" },
+        .{ .key = "drop_t", .label = "soltar em", .default = .{ .number = 4 }, .minimum = 0, .maximum = 120, .unit = "s", .group = "LAPES" },
         .{ .key = "V", .label = "velocidade", .default = .{ .number = speed }, .minimum = 3, .maximum = 80, .unit = "m/s", .group = "Voo" },
         .{ .key = "h", .label = "altura", .default = .{ .number = 50 }, .minimum = 5, .maximum = 3000, .unit = "m", .group = "Voo" },
         .{ .key = "pilot", .label = "comandos", .kind = .choice, .default = .{ .text = pilots[0] }, .choices = &pilots, .group = "Voo", .help = "manche fixo: os comandos ficam no equilíbrio (a resposta do avião); piloto automático: ele reage" },
@@ -70,7 +325,7 @@ fn specs(out: *native.Writer, aircraft: ?*const native.Aircraft, values: native.
         .{ .key = "span", .label = "tempo máximo", .default = .{ .number = 30 }, .minimum = 1, .maximum = 120, .unit = "s", .group = "Rajada", .help = "o voo para antes, quando a resposta estabiliza" },
         .{ .key = "compare", .label = "comparar com o líquido travado", .kind = .bool, .default = .{ .toggle = has_tanks }, .group = "Líquido", .help = "voa de novo com o líquido parado nos tanques (mesma massa)" },
     };
-    try native.writeSpecs(out, &params, &plots, simulation.description);
+    try native.writeSpecs(out, &params, &plots, simulation.description, extras);
 }
 
 /// um voo: o caso, a instância do núcleo e o registro
@@ -92,6 +347,8 @@ const State = struct {
     mac: f64 = 0.3,
     mac_le: f64 = 0, // x do bordo de ataque da CMA (o 0 % da CMA)
     n_tanks: usize = 0,
+    tank_names: [max_tanks][]const u8 = undefined,
+    lapes: f64 = 0, // kg da LAPES no avião (0: sem)
 };
 
 fn start(run: *native.Run, values: native.Values) anyerror!void {
@@ -99,10 +356,9 @@ fn start(run: *native.Run, values: native.Values) anyerror!void {
     const state = try memory.create(State);
     state.* = .{};
     run.state = state;
-    const aircraft = run.aircraft;
     const autopilot = std.mem.eql(u8, values.text("pilot", pilots[0]), pilots[1]);
-    const base = core.gust.Case{
-        .airspeed = values.number("V", cruise(aircraft)),
+    var base = core.gust.Case{
+        .airspeed = values.number("V", cruise(run.aircraft)),
         .height = values.number("h", 50),
         .vertical = values.number("up", 2),
         .lateral = values.number("side", 0),
@@ -111,7 +367,14 @@ fn start(run: *native.Run, values: native.Values) anyerror!void {
         .span = values.number("span", 30),
         .autopilot = autopilot,
     };
+    const plane = try memory.create(native.Aircraft);
+    plane.* = configured(run.aircraft, values);
+    plane.tanks = try memory.dupe(Tank, plane.tanks); // a tabela pode mudar depois; a rodada fica com os de agora
+    const aircraft = plane;
     state.n_tanks = aircraft.tanks.len;
+    for (aircraft.tanks, 0..) |tank, i| state.tank_names[i] = try memory.dupe(u8, tank.name);
+    state.lapes = if (aircraft.payload.enabled) aircraft.payload.mass else 0;
+    if (state.lapes > 0 and values.toggle("drop", false)) base.release = values.number("drop_t", 4);
     state.mac = params_mod.references(aircraft)[1];
     state.mac_le = params_mod.macLeadingEdge(aircraft);
     const compare = values.toggle("compare", true) and state.n_tanks > 0;
@@ -126,22 +389,11 @@ fn start(run: *native.Run, values: native.Values) anyerror!void {
             run.fail("o avião não montou no núcleo: {s} ({s})", .{ diagnosis.text(), @errorName(err) });
             return err;
         };
-        state.mass = withMass(instance, values.number("mass", 0));
+        withMass(instance, values.number("mass", 0));
+        state.mass = core.trim.Ctx.init(&instance.p, &instance.r.f).m;
         const rows = @as(usize, @intFromFloat(@ceil(case.span / instance.p.dtlog))) + 16;
         flight.* = .{ .case = case, .instance = instance, .log = try memory.alloc(core.types.LogRow, rows) };
     }
-}
-
-/// a massa pedida (0 = a do avião): o que passa da do avião entra no CG; devolve a massa que voa
-fn withMass(instance: *core.runner.Instance, wanted: f64) f64 {
-    const params = &instance.p;
-    const now = core.trim.Ctx.init(params, &instance.r.f);
-    const extra = wanted - now.m;
-    if (!(extra > 0)) return now.m;
-    const center: [3]f64 = now.rcg;
-    for (0..3) |i| params.r_dry[i] = (params.m_dry * params.r_dry[i] + extra * center[i]) / (params.m_dry + extra);
-    params.m_dry += extra;
-    return wanted;
 }
 
 fn advance(run: *native.Run) anyerror!bool {
@@ -211,7 +463,7 @@ fn result(run: *native.Run, out: *native.Writer) anyerror!void {
 
     var summary: std.ArrayList([2][]const u8) = .empty;
     var checks: std.ArrayList(native.Check) = .empty;
-    try summary.append(memory, .{ "massa (kg)", try std.fmt.allocPrint(memory, "{d:.2}", .{state.mass}) });
+    try summary.append(memory, .{ "massa (kg)", try std.fmt.allocPrint(memory, "{d:.3}", .{state.mass}) });
     try summary.append(memory, .{ "α de equilíbrio (°)", try std.fmt.allocPrint(memory, "{d:.2}", .{alpha_trim}) });
 
     const alpha_peak = largest(alpha_free, alpha_trim);
@@ -226,10 +478,17 @@ fn result(run: *native.Run, out: *native.Writer) anyerror!void {
         .why = if (back < 0.5) "o curto período amortece a perturbação" else "o avião ainda oscila no fim: aumente o tempo de voo ou veja os modos na aba Avião montado",
         .group = "rajada",
     });
-    const cg_swing = largest(cg_free, cg_free[0]);
+    // o quanto o líquido leva o CG: até a LAPES começar a sair (a rampa e a saída dela mexem muito mais)
+    var before_drop = cg_free.len;
+    if (free.case.release) |moment| for (free.log[0..free.rows], 0..) |row, k| if (row.t >= moment) {
+        before_drop = @max(k, 1);
+        break;
+    };
+    const cg_swing = largest(cg_free[0..before_drop], cg_free[0]);
     if (state.n_tanks > 0) {
-        try checks.append(memory, .{ .status = .info, .item = "xCG", .value = try std.fmt.allocPrint(memory, "{d:.2} % CMA, anda até {d:.3} %", .{ cg_free[0], cg_swing }), .criterion = "líquido livre", .why = "o líquido que balança leva junto o CG", .group = "líquido" });
+        try checks.append(memory, .{ .status = .info, .item = "xCG", .value = try std.fmt.allocPrint(memory, "{d:.2} % CMA, anda até {d:.3} %", .{ cg_free[0], cg_swing }), .criterion = if (before_drop < cg_free.len) "líquido livre, antes da LAPES sair" else "líquido livre", .why = "o líquido que balança leva junto o CG", .group = "líquido" });
     } else try summary.append(memory, .{ "xCG (% CMA)", try std.fmt.allocPrint(memory, "{d:.2}", .{cg_free[0]}) });
+    if (state.lapes > 0) try lapesChecks(memory, state, free, cg_free, &summary, &checks);
     const settled = free.instance.r.t < free.case.span - 1e-6;
     try checks.append(memory, .{
         .status = if (settled) .ok else .atencao,
@@ -252,7 +511,7 @@ fn result(run: *native.Run, out: *native.Writer) anyerror!void {
             roll_swing[k] = row.slosh_y[i] * deg;
             peak = @max(peak, @max(@abs(pitch_swing[k] - pitch_swing[0]), @abs(roll_swing[k] - roll_swing[0])));
         }
-        const name = run.aircraft.tanks[i].name;
+        const name = state.tank_names[i];
         try liquid.append(memory, .{ .name = try std.fmt.allocPrint(memory, "{s}: frente-trás", .{name}), .x = t_free, .y = pitch_swing, .color = palette[i % palette.len] });
         try liquid.append(memory, .{ .name = try std.fmt.allocPrint(memory, "{s}: lado", .{name}), .x = t_free, .y = roll_swing, .color = palette[i % palette.len], .dashed = true });
         try checks.append(memory, .{ .status = .info, .item = try std.fmt.allocPrint(memory, "ângulo do líquido: {s}", .{name}), .value = try std.fmt.allocPrint(memory, "{d:.1}°", .{peak}), .criterion = "maior desvio do repouso", .why = "pêndulo equivalente (Abramson, NASA SP-106)", .group = "líquido" });
@@ -281,6 +540,38 @@ fn result(run: *native.Run, out: *native.Writer) anyerror!void {
     try native.endResult(out);
 }
 
+/// a LAPES: a massa dela e, se saiu, quando, a massa que fica e o quanto o CG anda
+fn lapesChecks(memory: std.mem.Allocator, state: *const State, free: *const Flight, cg_free: []const f64, summary: *std.ArrayList([2][]const u8), checks: *std.ArrayList(native.Check)) !void {
+    try summary.append(memory, .{ "LAPES (kg)", try std.fmt.allocPrint(memory, "{d:.3}", .{state.lapes}) });
+    const asked = free.case.release orelse return;
+    const instance = free.instance;
+    if (instance.r.f.released == 0) {
+        try checks.append(memory, .{ .status = .atencao, .item = "LAPES saiu", .value = "não", .criterion = try std.fmt.allocPrint(memory, "pedida em t = {d:.1} s", .{asked}), .why = "o voo acabou antes de a carga terminar a rampa: aumente o tempo máximo", .group = "LAPES" });
+        return;
+    }
+    const left = core.trim.Ctx.init(&instance.p, &instance.r.f).m;
+    var after: usize = 0;
+    while (after + 1 < free.rows and free.log[after].t < instance.r.ev.trel) after += 1;
+    const cg_after = cg_free[@min(after + 1, cg_free.len - 1)];
+    try summary.append(memory, .{ "massa depois da LAPES (kg)", try std.fmt.allocPrint(memory, "{d:.3}", .{left}) });
+    try checks.append(memory, .{
+        .status = .info,
+        .item = "LAPES saiu",
+        .value = try std.fmt.allocPrint(memory, "em t = {d:.2} s; fica {d:.2} kg", .{ instance.r.ev.trel, left }),
+        .criterion = try std.fmt.allocPrint(memory, "pedida em t = {d:.1} s", .{asked}),
+        .why = "a carga desliza pela rampa e sai; o voo segue com o resto da massa",
+        .group = "LAPES",
+    });
+    try checks.append(memory, .{
+        .status = .info,
+        .item = "xCG sem a LAPES",
+        .value = try std.fmt.allocPrint(memory, "{d:.2} → {d:.2} % CMA", .{ cg_free[0], cg_after }),
+        .criterion = "antes → logo depois da saída",
+        .why = "a massa da LAPES sai de onde ela estava e o CG vai para o lado oposto",
+        .group = "LAPES",
+    });
+}
+
 fn caseName(flight: *const Flight) []const u8 {
     return if (flight.case.liquid_free) "líquido livre" else "líquido travado";
 }
@@ -302,7 +593,15 @@ test "campos e resultado no JSON da ponte; o líquido livre mexe o xCG e o trava
     try specs(&text.writer, &loaded.ac, .{});
     const form = try std.json.parseFromSlice(std.json.Value, gpa, text.written(), .{});
     defer form.deinit();
-    try testing.expectEqual(@as(usize, 10), form.value.object.get("params").?.array.items.len);
+    try testing.expectEqual(@as(usize, 17), form.value.object.get("params").?.array.items.len);
+    // a tabela dos tanques, com a massa do líquido de cada um, e a vista 3D com os tanques e o CG
+    const grid = form.value.object.get("grids").?.array.items[0];
+    const first_row = grid.object.get("rows").?.array.items[0].array.items;
+    const tank = loaded.ac.tanks[0];
+    try testing.expectApproxEqAbs(tank.rho * tank.volume / 1000.0, try std.fmt.parseFloat(f64, first_row[8].string), 1e-3);
+    const view_json = form.value.object.get("view").?.object;
+    try testing.expect(view_json.get("meshes").?.array.items.len > 3);
+    try testing.expectEqual(@as(usize, 3), view_json.get("markers").?.object.get("cg").?.array.items.len);
 
     var run = native.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
     defer run.arena.deinit();
@@ -329,6 +628,49 @@ test "campos e resultado no JSON da ponte; o líquido livre mexe o xCG e o trava
     try testing.expect(locked_moves < 1e-9);
     // o CG em % da CMA bate com o da Estabilidade em Python (27,5 % no S1223 com a carga e o líquido)
     try testing.expectApproxEqAbs(@as(f64, 27.5), jsonNumber(free_cg[0]), 0.6);
+}
+
+test "a tabela dos tanques: soma, edita, apaga e volta ao arquivo; a LAPES solta deixa o resto da massa" {
+    const gpa = testing.allocator;
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/S1223_monomotor_EH_convencional_Joinville.json", gpa, .limited(1 << 24));
+    defer gpa.free(bytes);
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);
+    defer loaded.deinit();
+    const plane = &loaded.ac;
+    tanks_table.reset(plane);
+    const original = plane.tanks.len;
+    try edit(plane, .{ .grid = "tanks", .operation = "add", .row = 0 });
+    try testing.expectEqual(original + 1, tanks_table.count);
+    try edit(plane, .{ .grid = "tanks", .operation = "set", .row = 1, .key = "volume", .value = .{ .string = "0,75" } });
+    try edit(plane, .{ .grid = "tanks", .operation = "set", .row = 1, .key = "y", .value = .{ .float = -0.3 } });
+    try edit(plane, .{ .grid = "tanks", .operation = "set", .row = 1, .key = "shape", .value = .{ .string = "cilindro" } });
+    try testing.expectEqual(@as(f64, 0.75), tanks_table.tanks[1].volume);
+    try testing.expectEqual(@as(f64, -0.3), tanks_table.tanks[1].y);
+    try testing.expectEqualStrings("cylinder", tanks_table.tanks[1].shape);
+    try edit(plane, .{ .grid = "tanks", .operation = "delete", .row = 0 });
+    try testing.expectEqual(original, tanks_table.count);
+    try testing.expectEqual(@as(f64, -0.3), tanks_table.tanks[0].y);
+    try edit(plane, .{ .grid = "tanks", .operation = "reset" });
+    try testing.expectEqual(plane.tanks[0].y, tanks_table.tanks[0].y);
+
+    // sem tanques e com a LAPES solta em 2 s: roda sem a parte do líquido e o voo segue sem a carga
+    for (0..original) |_| try edit(plane, .{ .grid = "tanks", .operation = "delete", .row = 0 });
+    var run = native.Run{ .arena = .init(gpa), .aircraft = plane };
+    defer run.arena.deinit();
+    try start(&run, native.Values.fromRequest(run.memory(), "\"values\": {\"span\": 5, \"lapes\": true, \"lapes_mass\": 1.2, \"drop\": true, \"drop_t\": 2}"));
+    while (!try advance(&run)) {}
+    var text: std.Io.Writer.Allocating = .init(gpa);
+    defer text.deinit();
+    try result(&run, &text.writer);
+    const outcome = try std.json.parseFromSlice(std.json.Value, gpa, text.written(), .{});
+    defer outcome.deinit();
+    try testing.expectEqual(@as(usize, 4), outcome.value.object.get("plots").?.array.items.len); // sem o do líquido
+    const summary = outcome.value.object.get("summary").?.object;
+    const before = try std.fmt.parseFloat(f64, summary.get("massa (kg)").?.string);
+    const after = try std.fmt.parseFloat(f64, summary.get("massa depois da LAPES (kg)").?.string);
+    try testing.expectApproxEqAbs(before - 1.2, after, 2e-3);
+    tanks_table.reset(plane);
 }
 
 fn jsonNumber(value: std.json.Value) f64 {

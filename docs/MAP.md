@@ -431,8 +431,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `EnvCfg:36`, `EnvRow:74`
   fn `density:87`, `compute:300`, `curve:333`
 - `core/src/sim/gust.zig` — Resposta no tempo a uma rajada, em voo nivelado reto: o avião sai equilibrado em `airspeed` e `height`, a rajada
-  tipos `Case:18`
-  fn `begin:34`, `advance:96`, `settled:119`, `respond:146`
+  tipos `Case:21`
+  fn `begin:38`, `advance:100`, `settled:127`, `respond:154`
 - `core/src/sim/linear.zig` — Modelo linear em torno do voo nivelado equilibrado (estabilidade dinâmica).
   tipos `LinModel:28`, `LinSloshModel:230`
   fn `rigid:56`, `linearize:169`, `linearizeSlosh:290`, `residual:331`
@@ -689,7 +689,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `buildMesh:55`, `balance:113`, `loadAircraft:131`, `load:144`, `fillAirfoilFiles:161`, `parseDat:196`, `findExample:228`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
-  tipos `Kind:35`, `Page:227`
+  tipos `Kind:35`, `Page:228`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
   tipos `Waiter:23`, `Bridge:39`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt

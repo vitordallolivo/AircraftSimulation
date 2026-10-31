@@ -93,6 +93,7 @@ const Mesh = struct {
     color: rl.Color,
     vertices: []const f32,
     faces: []const u32,
+    inside: bool = false, // tanque, líquido ou LAPES: desenha por cima do resto
 };
 
 /// a peça da etapa em 3D, como a `AircraftView` da GUI PyQt: as malhas e os marcadores (ponto neutro, CG)
@@ -231,6 +232,7 @@ pub const Page = struct {
     bridge: *python_bridge.Bridge = undefined,
     native: ?*const manager.Simulation = null, // análise em Zig (`manager/native`): sem Python no caminho
     native_run: ?*NativeRun = null, // a rodada em Zig que anda em fatias, um pouco a cada quadro
+    native_specs: ?[]u8 = null, // o pedido de campos em Zig, feito no começo do quadro seguinte (a memória do formulário de agora ainda está na tela)
     process_io: ?std.Io = null, // a `Io` do processo (abre o Python); no navegador não há, e o Python é o da página
     job: jobs.Job = .{},
     waiter: python_bridge.Waiter = .{},
@@ -351,6 +353,7 @@ pub const Page = struct {
     /// desenha a página: a barra lateral à esquerda, o resultado à direita
     pub fn draw(page: *Page, ui: *widgets.Ui, rect: rl.Rectangle) void {
         page.collect();
+        page.answerNativeSpecs();
         page.stepNative();
         if (page.kind == .todo) return page.drawTodo(ui, rect);
         if ((!page.loaded or page.stale) and !page.working()) {
@@ -452,7 +455,7 @@ pub const Page = struct {
         var text: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
         defer text.deinit();
         page.writeRequest(&text.writer, "specs") catch return;
-        if (page.native != null) return page.nativeSpecs(text.written());
+        if (page.native != null) return page.queueNativeSpecs(text.written());
         page.begin(.specs, text.written());
     }
 
@@ -468,6 +471,21 @@ pub const Page = struct {
 
     // ------------------------------------------------------------------ análises em Zig (sem Python)
 
+    /// guarda o pedido de campos em Zig para o começo do próximo quadro: responder agora soltaria a memória do
+    /// formulário que a tela ainda desenha neste quadro (a dica de um botão, por exemplo)
+    fn queueNativeSpecs(page: *Page, request: []const u8) void {
+        const copy = std.heap.page_allocator.dupe(u8, request) catch return;
+        if (page.native_specs) |old| std.heap.page_allocator.free(old);
+        page.native_specs = copy;
+    }
+
+    fn answerNativeSpecs(page: *Page) void {
+        const request = page.native_specs orelse return;
+        page.native_specs = null;
+        defer std.heap.page_allocator.free(request);
+        page.nativeSpecs(request);
+    }
+
     /// os campos de uma análise em Zig, na hora (só lê o avião, sem conta)
     fn nativeSpecs(page: *Page, request: []const u8) void {
         const simulation = page.native.?;
@@ -478,6 +496,9 @@ pub const Page = struct {
         var text: std.Io.Writer.Allocating = .init(memory);
         const values = manager.Values.fromRequest(memory, request);
         var owned: ?*Arena = arena;
+        if (simulation.edit) |edit| if (manager.GridEdit.fromRequest(memory, request)) |change| {
+            edit(if (loaded) |*plane| &plane.ac else null, change) catch setText(&page.message, "a tabela não aceitou a edição", .{});
+        };
         simulation.specs(&text.writer, if (loaded) |*plane| &plane.ac else null, values) catch {
             dropArena(&owned);
             return setText(&page.message, "os campos da análise em Zig não saíram", .{});
@@ -634,6 +655,7 @@ pub const Page = struct {
         const memory = arena.allocator();
         try page.buildForm(memory, reply, true);
         page.grids = try readGrids(memory, reply);
+        page.scene = try readScene(memory, reply); // as análises em Zig mandam o avião em 3D junto dos campos
         page.description = try memory.dupeZ(u8, stringField(reply, "description"));
         dropArena(&page.spec_arena);
         page.spec_arena = arena;
@@ -1083,6 +1105,7 @@ pub const Page = struct {
         const writer = &text.writer;
         page.writeRequest(writer, "table") catch return;
         writer.print(", {s}", .{extra}) catch return;
+        if (page.native != null) return page.queueNativeSpecs(text.written()); // a análise em Zig guarda as linhas ela mesma
         page.begin(.specs, text.written());
     }
 
@@ -1128,7 +1151,7 @@ pub const Page = struct {
         const top = page.page.begin(ui, rect);
         var y = top + gap;
         if (page.scene != null) {
-            _ = widgets.card(ui, view_card, "A peça em 3D (arraste para girar, roda para aproximar)");
+            _ = widgets.card(ui, view_card, if (page.kind == .simulation) "O avião em 3D (arraste para girar, roda para aproximar)" else "A peça em 3D (arraste para girar, roda para aproximar)");
             page.view.blit(ui, view_area);
             y += view_height + gap;
         }
@@ -1211,13 +1234,26 @@ pub const Page = struct {
         if (!page.view.begin(area, middle, 0.8 * size)) return;
         defer page.view.end();
         view3d.floor(.{ middle[0], middle[1], 0 }, scene.high[2] + 0.05 * size, 1.4 * size, 0.25);
-        for (scene.meshes) |mesh| {
-            var k: usize = 0;
-            while (k + 2 < mesh.faces.len) : (k += 3) {
-                const a = vertex(mesh.vertices, mesh.faces[k]) orelse continue;
-                const b = vertex(mesh.vertices, mesh.faces[k + 1]) orelse continue;
-                const c = vertex(mesh.vertices, mesh.faces[k + 2]) orelse continue;
-                view3d.triangle(a, b, c, view3d.shaded(a, b, c, mesh.color));
+        // os tanques, o líquido e a LAPES por último e sem o teste de profundidade: dentro da fuselagem eles sumiriam,
+        // e é onde eles estão que importa na vista
+        for ([_]bool{ false, true }) |inside| {
+            if (inside) {
+                rl.gl.rlDrawRenderBatchActive();
+                rl.gl.rlDisableDepthTest();
+            }
+            for (scene.meshes) |mesh| {
+                if (mesh.inside != inside) continue;
+                var k: usize = 0;
+                while (k + 2 < mesh.faces.len) : (k += 3) {
+                    const a = vertex(mesh.vertices, mesh.faces[k]) orelse continue;
+                    const b = vertex(mesh.vertices, mesh.faces[k + 1]) orelse continue;
+                    const c = vertex(mesh.vertices, mesh.faces[k + 2]) orelse continue;
+                    view3d.triangle(a, b, c, view3d.shaded(a, b, c, mesh.color));
+                }
+            }
+            if (inside) {
+                rl.gl.rlDrawRenderBatchActive();
+                rl.gl.rlEnableDepthTest();
             }
         }
         const low = scene.low[2] - 0.12 * size;
@@ -1763,7 +1799,11 @@ fn readScene(memory: std.mem.Allocator, reply: Json) !?Scene {
         }
         const faces = try memory.alloc(u32, faces_json.len);
         for (faces_json, 0..) |value, k| faces[k] = @intFromFloat(@max(number(value) orelse 0, 0));
-        meshes[m] = .{ .color = view3d.colorByName(stringField(item, "kind")), .vertices = vertices, .faces = faces };
+        const kind = stringField(item, "kind");
+        const inside = for ([_][]const u8{ "tank", "liquid", "payload" }) |name| {
+            if (std.mem.eql(u8, kind, name)) break true;
+        } else false;
+        meshes[m] = .{ .color = view3d.colorByName(kind), .vertices = vertices, .faces = faces, .inside = inside };
     }
     if (list.len == 0) low = .{ -0.5, -0.5, -0.1 };
     if (list.len == 0) high = .{ 0.5, 0.5, 0.1 };
