@@ -67,6 +67,23 @@ pub fn mac(s: *const model.Surface) f64 {
     return if (den > 0) num / den else 0;
 }
 
+/// x (corpo) do bordo de ataque da CMA da asa, onde o CG fica em 0 % da CMA: a CMA está na posição da envergadura
+/// ∫c·y dy / ∫c dy (como `SurfaceModel.mac()["x_le"]` do Python, `aerosim/model/universal.py`)
+pub fn macLeadingEdge(ac: *const Aircraft) f64 {
+    const w = wing(ac) orelse return 0;
+    var buf: [model.limits.sections]model.Section = undefined;
+    const ss = model.sortedSections(w, &buf);
+    var den: f64 = 0;
+    var moment: f64 = 0;
+    if (ss.len > 1) for (ss[0 .. ss.len - 1], ss[1..]) |p, q| {
+        const dy = q.y - p.y;
+        den += dy * (p.chord + q.chord) / 2;
+        moment += dy * (p.chord * (2 * p.y + q.y) + q.chord * (p.y + 2 * q.y)) / 6;
+    };
+    const y_mac = if (den > 0) moment / den else 0;
+    return model.tailOnBoom(ac, w).x - model.sectionAt(ss, y_mac, "x_offset");
+}
+
 fn wing(ac: *const Aircraft) ?*const model.Surface {
     for (ac.surfaces) |*s| if (s.enabled and std.mem.eql(u8, s.role, "wing")) return s;
     return null;

@@ -431,8 +431,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `EnvCfg:36`, `EnvRow:74`
   fn `density:87`, `compute:300`, `curve:333`
 - `core/src/sim/gust.zig` — Resposta no tempo a uma rajada, em voo nivelado reto: o avião sai equilibrado em `airspeed` e `height`, a rajada
-  tipos `Case:15`
-  fn `begin:30`, `advance:72`, `respond:85`
+  tipos `Case:18`
+  fn `begin:34`, `advance:96`, `settled:119`, `respond:146`
 - `core/src/sim/linear.zig` — Modelo linear em torno do voo nivelado equilibrado (estabilidade dinâmica).
   tipos `LinModel:28`, `LinSloshModel:230`
   fn `rigid:56`, `linearize:169`, `linearizeSlosh:290`, `residual:331`
@@ -621,8 +621,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerodrive/src/sim/mission.zig` — Percurso -> segmentos, eventos e mesas/plataformas do núcleo (`aerosim/model/mission.py` e
   fn `autoRadius:13`, `segments:20`, `events:76`, `pads:92`
 - `aerodrive/src/sim/params.zig` — Avião (arquivo da GUI) -> parâmetros do núcleo (`types.Params`), em Zig.
-  tipos `Info:28`, `DryMass:323`
-  fn `area:43`, `span:53`, `mac:57`, `references:76`, `dryMass:350`, `fill:420`, `setup:568`, `staticCharacteristics:598`
+  tipos `Info:28`, `DryMass:340`
+  fn `area:43`, `span:53`, `mac:57`, `macLeadingEdge:72`, `references:93`, `dryMass:367`, `fill:437`, `setup:585`, `staticCharacteristics:615`
 - `aerodrive/src/sim/session.zig` — Sessão de voo: o que o jogador escolhe nos menus antes de voar (cenário, modo, vento, sloshing,
   tipos `Scenario:7`, `Landing:19`, `Mode:31`, `Session:43`
   fn `gearExtent:98`

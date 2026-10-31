@@ -1,4 +1,4 @@
-//! Estabilidade → Rajada e líquido: o avião em voo nivelado recebe uma rajada (vertical, lateral ou as duas) e a aba
+//! Estabilidade → Estabilidade dinâmica: o avião em voo nivelado recebe uma rajada (vertical, lateral ou as duas) e a aba
 //! mostra no tempo o ângulo de ataque, a derrapagem, o rolamento, o xCG e o ângulo do líquido de cada tanque. Com
 //! tanques, voa duas vezes, com o líquido livre e travado, para ver o quanto o líquido muda a resposta.
 //!
@@ -13,8 +13,8 @@ const params_mod = aircraft_model.params;
 const deg = 180.0 / std.math.pi;
 
 pub const simulation = native.Simulation{
-    .name = "rajada_liquido",
-    .title = "Rajada e líquido",
+    .name = "estabilidade_dinamica",
+    .title = "Estabilidade dinâmica",
     .area = "Estabilidade",
     .description = "O avião em voo nivelado recebe uma rajada 1 − cos (vertical, lateral ou as duas) e a resposta sai no " ++
         "tempo: ângulo de ataque, derrapagem, rolamento, o xCG e o ângulo do líquido de cada tanque. Com tanques, voa " ++
@@ -33,7 +33,7 @@ const plots = [_]native.Plot{
     .{ .key = "alpha", .title = "Ângulo de ataque", .xlabel = "t (s)", .ylabel = "α (°)" },
     .{ .key = "lateral", .title = "Derrapagem e rolamento", .xlabel = "t (s)", .ylabel = "°" },
     .{ .key = "load", .title = "Fator de carga", .xlabel = "t (s)", .ylabel = "n_z" },
-    .{ .key = "xcg", .title = "xCG", .xlabel = "t (s)", .ylabel = "Δx_CG (mm)" },
+    .{ .key = "xcg", .title = "xCG", .xlabel = "t (s)", .ylabel = "x_CG (% CMA)" },
     .{ .key = "liquid", .title = "Líquido", .xlabel = "t (s)", .ylabel = "ângulo (°)" },
 };
 
@@ -67,7 +67,7 @@ fn specs(out: *native.Writer, aircraft: ?*const native.Aircraft, values: native.
         .{ .key = "side", .label = "rajada lateral", .default = .{ .number = 0 }, .minimum = -20, .maximum = 20, .unit = "m/s", .group = "Rajada", .help = "positivo empurra para a direita" },
         .{ .key = "Tg", .label = "duração", .default = .{ .number = 1 }, .minimum = 0.05, .maximum = 20, .unit = "s", .group = "Rajada", .help = "a rajada 1 − cos sobe e desce neste tempo" },
         .{ .key = "tg", .label = "chega em", .default = .{ .number = 1 }, .minimum = 0, .maximum = 60, .unit = "s", .group = "Rajada" },
-        .{ .key = "span", .label = "tempo de voo", .default = .{ .number = 10 }, .minimum = 1, .maximum = 120, .unit = "s", .group = "Rajada" },
+        .{ .key = "span", .label = "tempo máximo", .default = .{ .number = 30 }, .minimum = 1, .maximum = 120, .unit = "s", .group = "Rajada", .help = "o voo para antes, quando a resposta estabiliza" },
         .{ .key = "compare", .label = "comparar com o líquido travado", .kind = .bool, .default = .{ .toggle = has_tanks }, .group = "Líquido", .help = "voa de novo com o líquido parado nos tanques (mesma massa)" },
     };
     try native.writeSpecs(out, &params, &plots, simulation.description);
@@ -90,6 +90,7 @@ const State = struct {
     mass: f64 = 0,
     alpha_trim: f64 = 0,
     mac: f64 = 0.3,
+    mac_le: f64 = 0, // x do bordo de ataque da CMA (o 0 % da CMA)
     n_tanks: usize = 0,
 };
 
@@ -107,11 +108,12 @@ fn start(run: *native.Run, values: native.Values) anyerror!void {
         .lateral = values.number("side", 0),
         .duration = values.number("Tg", 1),
         .start = values.number("tg", 1),
-        .span = values.number("span", 10),
+        .span = values.number("span", 30),
         .autopilot = autopilot,
     };
     state.n_tanks = aircraft.tanks.len;
     state.mac = params_mod.references(aircraft)[1];
+    state.mac_le = params_mod.macLeadingEdge(aircraft);
     const compare = values.toggle("compare", true) and state.n_tanks > 0;
     state.count = if (compare) 2 else 1;
     for (state.flights[0..state.count], 0..) |*flight, k| {
@@ -184,8 +186,11 @@ fn bank(row: core.types.LogRow, _: core.types.LogRow) f64 {
 fn load(row: core.types.LogRow, _: core.types.LogRow) f64 {
     return row.nz;
 }
-fn shift(row: core.types.LogRow, first: core.types.LogRow) f64 {
-    return (row.xcg - first.xcg) * 1000.0;
+/// o xCG em % da CMA a partir do bordo de ataque (como no resto da Estabilidade)
+fn cgPercent(memory: std.mem.Allocator, flight: *const Flight, state: *const State) ![]f64 {
+    const values = try memory.alloc(f64, flight.rows);
+    for (flight.log[0..flight.rows], 0..) |row, k| values[k] = 100.0 * (state.mac_le - row.xcg) / state.mac;
+    return values;
 }
 
 fn largest(values: []const f64, reference: f64) f64 {
@@ -201,7 +206,7 @@ fn result(run: *native.Run, out: *native.Writer) anyerror!void {
     if (free.rows < 2) return error.NoRows;
     const t_free = try column(memory, free, time);
     const alpha_free = try column(memory, free, alpha);
-    const shift_free = try column(memory, free, shift);
+    const cg_free = try cgPercent(memory, free, state);
     const alpha_trim = alpha_free[0];
 
     var summary: std.ArrayList([2][]const u8) = .empty;
@@ -221,8 +226,19 @@ fn result(run: *native.Run, out: *native.Writer) anyerror!void {
         .why = if (back < 0.5) "o curto período amortece a perturbação" else "o avião ainda oscila no fim: aumente o tempo de voo ou veja os modos na aba Avião montado",
         .group = "rajada",
     });
-    const shift_peak = largest(shift_free, 0);
-    try checks.append(memory, .{ .status = .info, .item = "xCG anda", .value = try std.fmt.allocPrint(memory, "{d:.2} mm ({d:.3} % CMA)", .{ shift_peak, shift_peak / 10.0 / state.mac }), .criterion = "líquido livre", .why = "o líquido que balança leva junto o CG", .group = "líquido" });
+    const cg_swing = largest(cg_free, cg_free[0]);
+    if (state.n_tanks > 0) {
+        try checks.append(memory, .{ .status = .info, .item = "xCG", .value = try std.fmt.allocPrint(memory, "{d:.2} % CMA, anda até {d:.3} %", .{ cg_free[0], cg_swing }), .criterion = "líquido livre", .why = "o líquido que balança leva junto o CG", .group = "líquido" });
+    } else try summary.append(memory, .{ "xCG (% CMA)", try std.fmt.allocPrint(memory, "{d:.2}", .{cg_free[0]}) });
+    const settled = free.instance.r.t < free.case.span - 1e-6;
+    try checks.append(memory, .{
+        .status = if (settled) .ok else .atencao,
+        .item = "estabilizou",
+        .value = if (settled) try std.fmt.allocPrint(memory, "em t = {d:.1} s", .{free.instance.r.t}) else "não, até o tempo máximo",
+        .criterion = "α, líquido e xCG parados por 1 s",
+        .why = if (settled) "a resposta rápida acabou (a fugóide e a espiral, lentas, seguem)" else "o avião ainda oscila ou diverge: veja os modos na aba Avião montado ou ligue o piloto automático",
+        .group = "rajada",
+    });
 
     // o líquido de cada tanque (só no voo livre: travado fica parado)
     const palette = [_][]const u8{ "#17becf", "#8c564b", "#e377c2", "#7f7f7f", "#1f77b4", "#d62728", "#2ca02c", "#ff7f0e" };
@@ -259,7 +275,7 @@ fn result(run: *native.Run, out: *native.Writer) anyerror!void {
     for (flights) |*flight| curves.appendAssumeCapacity(.{ .name = caseName(flight), .x = try column(memory, flight, time), .y = try column(memory, flight, load), .color = "#ff7f0e", .dashed = !flight.case.liquid_free });
     try native.writePlot(out, plots[2], curves.items, false);
     curves.clearRetainingCapacity();
-    for (flights) |*flight| curves.appendAssumeCapacity(.{ .name = caseName(flight), .x = try column(memory, flight, time), .y = try column(memory, flight, shift), .color = "#9467bd", .dashed = !flight.case.liquid_free });
+    for (flights) |*flight| curves.appendAssumeCapacity(.{ .name = caseName(flight), .x = try column(memory, flight, time), .y = try cgPercent(memory, flight, state), .color = "#9467bd", .dashed = !flight.case.liquid_free });
     try native.writePlot(out, plots[3], curves.items, false);
     if (liquid.items.len > 0) try native.writePlot(out, plots[4], liquid.items, false);
     try native.endResult(out);
@@ -303,12 +319,16 @@ test "campos e resultado no JSON da ponte; o líquido livre mexe o xCG e o trava
     try testing.expectEqual(@as(usize, 5), charts.len);
     const xcg = charts[3].object.get("curves").?.array.items;
     try testing.expectEqual(@as(usize, 2), xcg.len); // livre e travado
+    const free_cg = xcg[0].object.get("y").?.array.items;
+    const locked_cg = xcg[1].object.get("y").?.array.items;
     var free_moves: f64 = 0;
     var locked_moves: f64 = 0;
-    for (xcg[0].object.get("y").?.array.items) |value| free_moves = @max(free_moves, @abs(jsonNumber(value)));
-    for (xcg[1].object.get("y").?.array.items) |value| locked_moves = @max(locked_moves, @abs(jsonNumber(value)));
-    try testing.expect(free_moves > 0.01);
+    for (free_cg) |value| free_moves = @max(free_moves, @abs(jsonNumber(value) - jsonNumber(free_cg[0])));
+    for (locked_cg) |value| locked_moves = @max(locked_moves, @abs(jsonNumber(value) - jsonNumber(locked_cg[0])));
+    try testing.expect(free_moves > 1e-4); // % CMA
     try testing.expect(locked_moves < 1e-9);
+    // o CG em % da CMA bate com o da Estabilidade em Python (27,5 % no S1223 com a carga e o líquido)
+    try testing.expectApproxEqAbs(@as(f64, 27.5), jsonNumber(free_cg[0]), 0.6);
 }
 
 fn jsonNumber(value: std.json.Value) f64 {

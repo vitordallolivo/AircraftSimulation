@@ -7,7 +7,7 @@ chamando o núcleo (`core`) direto. Com isso a aba funciona também no navegador
 cá uma de cada vez.
 
 A pasta tem duas partes. A primeira, `native.zig`, é o contrato que a tela conhece. A segunda são as análises, uma por
-arquivo, e por enquanto há só uma, a da rajada com o líquido dos tanques (`gust_liquid.zig`).
+arquivo, e por enquanto há só uma, a Estabilidade dinâmica (`gust_liquid.zig`), a rajada com o líquido dos tanques.
 
 ## O contrato (`native.zig`)
 
@@ -23,7 +23,7 @@ fatias, uma conta longa travaria a página. O botão "Parar" simplesmente joga f
 
 A tela põe cada análise na aba de cima que ela pede (`area`), depois das subabas que vêm do Python.
 
-## Rajada e líquido (`gust_liquid.zig`)
+## Estabilidade dinâmica (`gust_liquid.zig`)
 
 Aqui se vê, no tempo, o que uma rajada faz com o avião equilibrado em voo nivelado: o ângulo de ataque, a derrapagem,
 o rolamento, o fator de carga, o quanto o CG anda e o ângulo do líquido de cada tanque. A rajada pode ser vertical,
@@ -43,7 +43,7 @@ A tela faz isso sozinha. Para usar de fora, por exemplo num teste:
 
 ```zig
 const native = @import("manager");
-const simulation = native.find("rajada_liquido").?;
+const simulation = native.find("estabilidade_dinamica").?;
 var run = native.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
 defer run.arena.deinit();
 try simulation.start(&run, native.Values.fromRequest(run.memory(), "\"values\": {\"up\": 3}"));

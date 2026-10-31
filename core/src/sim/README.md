@@ -138,7 +138,13 @@ direção do peso visto do corpo, a mesma conta do modelo linear com o líquido:
 \eta_y = \operatorname{atan2}(\sin\phi\cos\theta,\ \cos\phi\cos\theta)
 ```
 
-Sem isso o pêndulo começaria em zero e balançaria antes de a rajada chegar. A rodada anda em fatias (`begin`, depois
+Sem isso o pêndulo começaria em zero e balançaria antes de a rajada chegar. No manche fixo, os comandos ficam no
+equilíbrio completo do modelo linear (α, δe, acelerador, φ, δa e δr); só com o longitudinal equilibrado, o torque do
+motor faria o avião rolar sozinho desde o começo.
+
+O voo para sozinho quando a resposta rápida acaba (`settled`): durante um segundo, α, o xCG e o ângulo de cada
+pêndulo quase não mudam e as taxas de rotação ficam pequenas. As tolerâncias estão no código. A fugóide e a espiral,
+lentas, continuam depois disso, e o tempo pedido vira só um limite. A rodada anda em fatias (`begin`, depois
 `advance` até acabar), para que a tela siga desenhando enquanto ela roda, inclusive no navegador, onde não há thread.
 
 ## Envelope por altitude (`envelope.zig`)
