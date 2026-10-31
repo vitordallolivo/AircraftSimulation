@@ -37,6 +37,12 @@ lateral ou as duas, com a duração e o instante escolhidos. Os comandos ficam n
 do avião sozinho) ou com o piloto automático. A massa pode ser a do avião ou outra maior, como o MTOW. O que passa da
 massa do avião entra no CG dele.
 
+O primeiro gráfico é a própria rajada, que sobe de zero à intensidade pedida e volta a zero na duração escolhida.
+Os dois últimos são os polos do avião equilibrado no começo do voo, $`\lambda = \sigma \pm i\omega`$, todos e só os
+lentos (a fugóide e a espiral, perto da origem). Eles saem com o líquido livre, travado e sem a LAPES, e o diagnóstico
+diz qual é o menos estável. Um polo com $`\sigma > 0`$ cresce e dobra a cada $`\ln 2/\sigma`$ segundos, e é isso
+que explica, por exemplo, o rolamento que cresce devagar no manche fixo (a espiral).
+
 Os tanques ficam numa tabela da aba: o nome, onde cada um está (x, y, z), o lado, a altura, o volume, o formato e a
 massa do líquido (densidade vezes volume), com a soma embaixo. A tabela começa com os tanques do arquivo e guarda o
 que se mudou até abrir outro avião; o arquivo não muda. A LAPES tem um grupo no formulário, com a massa, onde ela está

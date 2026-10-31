@@ -11,7 +11,7 @@ mostra a alternativa sem tabela para o seno. Depois vêm o polinômio de traçã
 |---|---|
 | `fmath.zig` | `sin`, `cos`, `atan2`, `exp`, `log`, `pow`, `tanh`... por tabela e polinômio (`lut`) ou pela std (`ref`) |
 | `vec.zig` | vetores 3D em registradores SIMD (`@Vector`), matrizes 3×3 por linhas, a matriz corpo → NED |
-| `linalg.zig` | álgebra linear de tamanho fixo: LU com pivoteamento parcial, Cholesky, as soluções de A x = b e os autovalores de uma matriz simétrica (Jacobi), para o aeroopt |
+| `linalg.zig` | álgebra linear de tamanho fixo: LU com pivoteamento parcial, Cholesky, as soluções de A x = b e os autovalores de uma matriz simétrica (Jacobi), para o aeroopt, e os de uma matriz qualquer (QR de Francis), para os polos |
 | `poly.zig` | polinômio em duas variáveis de grau N gerado em comptime (`Poly2`), na ordem do MATLAB |
 | `fmath_test.zig` | erro de cada função contra a std em muitos pontos |
 
@@ -197,3 +197,24 @@ const z_axis = vec.cross(x_axis, vec.V3{ 0, 1, 0 });   // (0, 0, 1)
 Pelo Python, só as medições: `python -m pytest -m bench -s tests/core/test_lut.py`.
 
 Testes: `python -m ziglang build test -Dgrupo=math` (dentro de `core/`).
+
+## Autovalores de uma matriz qualquer (`linalg.generalEigen`)
+
+Aqui se acham os autovalores de uma matriz real que não é simétrica, como a matriz $A$ de um modelo linear
+$\dot x = A x$. Os autovalores são os polos $\lambda = \sigma \pm i\omega$: a parte real diz se o modo amortece
+($\sigma < 0$) ou cresce, e a imaginária, se ele oscila. A Estabilidade dinâmica usa isso para mostrar os polos sem
+passar pelo Python.
+
+O caminho é o clássico de Press et al., *Numerical Recipes*, 3ª ed., 2007, seção 11.6 (`balance`, `elmhes` e `hqr`; a
+conferir no PDF). Primeiro a matriz é balanceada, trocando $A$ por $D^{-1} A D$ com $D$ diagonal de potências de 2,
+para as linhas e as colunas ficarem com normas parecidas, o que diminui o erro de arredondamento. Depois ela é reduzida
+à forma de Hessenberg (zeros abaixo da subdiagonal) por eliminação de Gauss com pivô, uma semelhança que não muda os
+autovalores. Por fim, o QR com duplo deslocamento de Francis vai zerando a subdiagonal de baixo para cima: cada bloco
+$1 \times 1$ que se solta é um autovalor real, e cada bloco $2 \times 2$ dá um par, real ou complexo conjugado, pelas
+raízes de
+
+$$\lambda^2 - (a + d)\,\lambda + (a d - b c) = 0.$$
+
+O deslocamento duplo usa os dois autovalores do bloco de baixo de uma vez, então a conta fica toda em números reais
+mesmo quando os polos são complexos. Se um autovalor não se solta em 30 passos, a função devolve falso. O teste confere
+uma matriz companheira com raízes conhecidas, uma triangular e a mesma simétrica do Jacobi.

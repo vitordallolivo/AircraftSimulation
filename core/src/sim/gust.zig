@@ -16,6 +16,8 @@ const state = @import("state.zig");
 const linear = @import("linear.zig");
 const vec = @import("../math/vec.zig");
 const propulsion = @import("../physics/propulsion.zig");
+const atmosphere = @import("../physics/atmosphere.zig");
+const linalg = @import("../math/linalg.zig");
 
 /// o caso: o voo, a rajada e o que fica livre
 pub const Case = struct {
@@ -156,4 +158,53 @@ pub fn respond(inst: *runner.Instance, case: Case, log: []types.LogRow) Error!us
     var rows: usize = 0;
     while (!try advance(inst, case, log, &rows, case.span)) {}
     return rows;
+}
+
+/// a rajada no instante `time`, para o gráfico: (para cima, para a direita) em m/s, a mesma 1 − cos que o voo sente
+/// (`atmosphere.wind`, com o ar parado em volta); `start` é quando ela chegou (`inst.r.tg`, ou o pedido)
+pub fn gustSpeed(params: *const types.Params, time: f64, start: f64) [2]f64 {
+    var calm = params.env;
+    calm.Vw10 = 0;
+    const wind = atmosphere.wind(&calm, time, 0, start);
+    return .{ -wind[2], wind[1] };
+}
+
+/// os polos do avião equilibrado em voo nivelado: os autovalores do modelo linear (`linear.linearize`, o corpo
+/// rígido, com o líquido travado onde está) ou, com `liquid_free` e tanques, do modelo com os pêndulos do líquido
+/// (`linear.linearizeSlosh`). λ = σ ± iω: σ < 0 amortece, σ > 0 cresce
+pub const Poles = struct {
+    ok: bool = false,
+    count: usize = 0,
+    real: [linear.nl_slosh]f64 = undefined,
+    imag: [linear.nl_slosh]f64 = undefined,
+
+    /// a maior parte real (o modo menos estável)
+    pub fn largestReal(set: *const Poles) f64 {
+        var largest = -std.math.inf(f64);
+        for (set.real[0..set.count]) |value| largest = @max(largest, value);
+        return largest;
+    }
+};
+
+/// os polos com a configuração e os estados de `flags` (com `released` ligado, sem a LAPES)
+pub fn poles(params: *const types.Params, flags: *const state.Flags, airspeed: f64, liquid_free: bool) Poles {
+    var out: Poles = .{};
+    var matrix: [linear.nl_slosh][linear.nl_slosh]f64 = undefined;
+    if (liquid_free and params.n_tank > 0 and params.slosh_on != 0) {
+        const model = linear.linearizeSlosh(params, flags, airspeed);
+        if (model.ok == 0) return out;
+        out.count = @intCast(model.n);
+        for (0..out.count) |i| for (0..out.count) |j| {
+            matrix[i][j] = model.A[i * linear.nl_slosh + j];
+        };
+    } else {
+        const model = linear.linearize(params, flags, airspeed);
+        if (model.ok == 0) return out;
+        out.count = linear.nl;
+        for (0..out.count) |i| for (0..out.count) |j| {
+            matrix[i][j] = model.A[i * linear.nl + j];
+        };
+    }
+    out.ok = linalg.generalEigen(linear.nl_slosh, &matrix, out.count, &out.real, &out.imag);
+    return out;
 }

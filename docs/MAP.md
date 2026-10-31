@@ -346,7 +346,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `optOn:22`, `mulAdd:31`, `SinLut:42`, `sincos:283`, `sin:287`, `cos:291`, `tan:295`, `atan:300`, `atan2:304`, `asin:308`, `acos:313`, `exp:318`, `log:322`, `pow:327`, `tanh:332`, `sqrt:336`, `hypot:340`, `sat:346`, `lim:350`, `sgn:354`, `wrap:358`
 - `core/src/math/fmath_test.zig` — Testes só das LUTs e aproximações (independentes de -Dfast_math: comparam `lut` com `ref`).
 - `core/src/math/linalg.zig` — Álgebra linear densa de tamanho fixo: fatoração LU com pivoteamento parcial e de Cholesky, e as
-  fn `luFactor:14`, `luSolve:39`, `cholesky:58`, `cholSolve:76`, `symEigen:93`, `solve:139`
+  fn `luFactor:16`, `luSolve:41`, `cholesky:60`, `cholSolve:78`, `symEigen:95`, `generalEigen:142`, `solve:366`
 - `core/src/math/poly.zig` — Polinômio em duas variáveis de grau N gerado em comptime, na ordem dos ajustes do MATLAB
   fn `Poly2:11`
 - `core/src/math/vec.zig` — Vetores 3D em registradores SIMD (@Vector) e matrizes 3x3 por linhas.
@@ -431,8 +431,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `EnvCfg:36`, `EnvRow:74`
   fn `density:87`, `compute:300`, `curve:333`
 - `core/src/sim/gust.zig` — Resposta no tempo a uma rajada, em voo nivelado reto: o avião sai equilibrado em `airspeed` e `height`, a rajada
-  tipos `Case:21`
-  fn `begin:38`, `advance:100`, `settled:127`, `respond:154`
+  tipos `Case:23`, `Poles:175`
+  fn `begin:40`, `advance:102`, `settled:129`, `respond:156`, `gustSpeed:165`, `poles:190`
 - `core/src/sim/linear.zig` — Modelo linear em torno do voo nivelado equilibrado (estabilidade dinâmica).
   tipos `LinModel:28`, `LinSloshModel:230`
   fn `rigid:56`, `linearize:169`, `linearizeSlosh:290`, `residual:331`

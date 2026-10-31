@@ -6,7 +6,9 @@
 //! 4ª ed., alg. 3.4.1, a conferir no PDF). Cholesky: A = L Lᵀ para A simétrica positiva definida
 //! (idem, alg. 4.2.1, a conferir no PDF). L e U ficam guardadas na própria A. Autovalores e autovetores de uma
 //! simétrica: o método de Jacobi cíclico (idem, seção 8.5, a conferir no PDF), que gira a matriz até a parte fora
-//! da diagonal sumir; para as matrizes pequenas do CMA-ES (até 32) é simples e preciso.
+//! da diagonal sumir; para as matrizes pequenas do CMA-ES (até 32) é simples e preciso. Autovalores de uma matriz
+//! qualquer (os polos de um modelo linear): balanceamento, redução a Hessenberg e QR com duplo deslocamento de Francis
+//! (Press et al., Numerical Recipes, 3ª ed., seção 11.6, `balance`, `elmhes` e `hqr`; a conferir no PDF).
 const std = @import("std");
 
 /// fatora A (n × n) em P A = L U no lugar: abaixo da diagonal, L (diagonal unitária implícita); da
@@ -135,6 +137,231 @@ pub fn symEigen(comptime capacity: usize, matrix: *[capacity][capacity]f64, size
     for (0..size) |i| eigenvalues[i] = matrix[i][i];
 }
 
+/// os autovalores de uma matriz real qualquer (n × n no canto de `matrix`, que é destruída): `real[i] + i imag[i]`,
+/// os pares complexos lado a lado. false se o QR não convergiu em 30 iterações num autovalor
+pub fn generalEigen(comptime capacity: usize, matrix: *[capacity][capacity]f64, size: usize, real: *[capacity]f64, imag: *[capacity]f64) bool {
+    std.debug.assert(size <= capacity);
+    balance(capacity, matrix, size);
+    hessenberg(capacity, matrix, size);
+    return hessenbergQr(capacity, matrix, size, real, imag);
+}
+
+/// troca A por D⁻¹ A D, com D diagonal de potências de 2, até as normas de cada linha e da coluna dela ficarem
+/// parecidas: os autovalores não mudam e o QR perde menos precisão (Numerical Recipes, `balance`)
+fn balance(comptime capacity: usize, matrix: *[capacity][capacity]f64, size: usize) void {
+    const radix: f64 = 2;
+    var done = false;
+    while (!done) {
+        done = true;
+        for (0..size) |i| {
+            var column: f64 = 0;
+            var row: f64 = 0;
+            for (0..size) |j| if (j != i) {
+                column += @abs(matrix[j][i]);
+                row += @abs(matrix[i][j]);
+            };
+            if (column == 0 or row == 0) continue;
+            const total = column + row;
+            var factor: f64 = 1;
+            var limit = row / radix;
+            while (column < limit) {
+                factor *= radix;
+                column *= radix * radix;
+            }
+            limit = row * radix;
+            while (column > limit) {
+                factor /= radix;
+                column /= radix * radix;
+            }
+            if ((column + row) / factor < 0.95 * total) {
+                done = false;
+                for (0..size) |j| matrix[i][j] /= factor;
+                for (0..size) |j| matrix[j][i] *= factor;
+            }
+        }
+    }
+}
+
+/// reduz A à forma de Hessenberg superior (zeros abaixo da subdiagonal) por eliminação de Gauss com pivô, como uma
+/// semelhança: os autovalores não mudam (Numerical Recipes, `elmhes`)
+fn hessenberg(comptime capacity: usize, matrix: *[capacity][capacity]f64, size: usize) void {
+    var column: usize = 1;
+    while (column + 1 < size) : (column += 1) {
+        var pivot: f64 = 0;
+        var pivot_row = column;
+        for (column..size) |j| if (@abs(matrix[j][column - 1]) > @abs(pivot)) {
+            pivot = matrix[j][column - 1];
+            pivot_row = j;
+        };
+        if (pivot_row != column) {
+            for (column - 1..size) |j| std.mem.swap(f64, &matrix[pivot_row][j], &matrix[column][j]);
+            for (0..size) |j| std.mem.swap(f64, &matrix[j][pivot_row], &matrix[j][column]);
+        }
+        if (pivot == 0) continue;
+        for (column + 1..size) |i| {
+            const factor = matrix[i][column - 1] / pivot;
+            if (factor == 0) continue;
+            matrix[i][column - 1] = factor;
+            for (column..size) |j| matrix[i][j] -= factor * matrix[column][j];
+            for (0..size) |j| matrix[j][column] += factor * matrix[j][i];
+        }
+    }
+    for (2..@max(size, 2)) |i| for (0..i - 1) |j| {
+        matrix[i][j] = 0; // os multiplicadores ficaram ali; o QR quer zeros
+    };
+}
+
+/// os autovalores de uma Hessenberg superior pelo QR com duplo deslocamento de Francis (Numerical Recipes, `hqr`): a
+/// matriz vai se partindo em blocos 1 × 1 (um autovalor real) e 2 × 2 (um par, real ou complexo) a partir de baixo
+fn hessenbergQr(comptime capacity: usize, matrix: *[capacity][capacity]f64, size: usize, real: *[capacity]f64, imag: *[capacity]f64) bool {
+    const Index = isize;
+    const at = struct {
+        fn cell(a: *[capacity][capacity]f64, i: Index, j: Index) *f64 {
+            return &a[@intCast(i)][@intCast(j)];
+        }
+    }.cell;
+    const epsilon = std.math.floatEps(f64);
+    var norm: f64 = 0;
+    for (0..size) |i| for (if (i > 0) i - 1 else 0..size) |j| {
+        norm += @abs(matrix[i][j]);
+    };
+    var last: Index = @as(Index, @intCast(size)) - 1;
+    var shift: f64 = 0;
+    while (last >= 0) {
+        var iterations: usize = 0;
+        var low: Index = undefined;
+        while (true) {
+            // o começo do bloco que ainda não se partiu: o primeiro elemento da subdiagonal desprezível
+            low = last;
+            while (low > 0) : (low -= 1) {
+                var scale = @abs(at(matrix, low - 1, low - 1).*) + @abs(at(matrix, low, low).*);
+                if (scale == 0) scale = norm;
+                if (@abs(at(matrix, low, low - 1).*) <= epsilon * scale) {
+                    at(matrix, low, low - 1).* = 0;
+                    break;
+                }
+            }
+            var x = at(matrix, last, last).*;
+            if (low == last) { // um autovalor real
+                real[@intCast(last)] = x + shift;
+                imag[@intCast(last)] = 0;
+                last -= 1;
+                break;
+            }
+            var y = at(matrix, last - 1, last - 1).*;
+            var w = at(matrix, last, last - 1).* * at(matrix, last - 1, last).*;
+            if (low == last - 1) { // um par: as raízes do bloco 2 × 2
+                const p = 0.5 * (y - x);
+                const q = p * p + w;
+                const root = @sqrt(@abs(q));
+                x += shift;
+                const lower: usize = @intCast(last - 1);
+                const upper: usize = @intCast(last);
+                if (q >= 0) {
+                    const z = p + std.math.copysign(root, p);
+                    real[lower] = x + z;
+                    real[upper] = if (z != 0) x - w / z else x + z;
+                    imag[lower] = 0;
+                    imag[upper] = 0;
+                } else {
+                    real[lower] = x + p;
+                    real[upper] = x + p;
+                    imag[lower] = root;
+                    imag[upper] = -root;
+                }
+                last -= 2;
+                break;
+            }
+            if (iterations == 30) return false;
+            if (iterations == 10 or iterations == 20) { // deslocamento excepcional, para sair de um ciclo
+                shift += x;
+                var i: Index = 0;
+                while (i <= last) : (i += 1) at(matrix, i, i).* -= x;
+                const scale = @abs(at(matrix, last, last - 1).*) + @abs(at(matrix, last - 1, last - 2).*);
+                x = 0.75 * scale;
+                y = x;
+                w = -0.4375 * scale * scale;
+            }
+            iterations += 1;
+            // onde começar o passo duplo: dois elementos da subdiagonal pequenos seguidos
+            var start: Index = last - 2;
+            var p: f64 = 0;
+            var q: f64 = 0;
+            var r: f64 = 0;
+            while (start >= low) : (start -= 1) {
+                const z = at(matrix, start, start).*;
+                const rx = x - z;
+                const sy = y - z;
+                p = (rx * sy - w) / at(matrix, start + 1, start).* + at(matrix, start, start + 1).*;
+                q = at(matrix, start + 1, start + 1).* - z - rx - sy;
+                r = at(matrix, start + 2, start + 1).*;
+                const scale = @abs(p) + @abs(q) + @abs(r);
+                p /= scale;
+                q /= scale;
+                r /= scale;
+                if (start == low) break;
+                const u = @abs(at(matrix, start, start - 1).*) * (@abs(q) + @abs(r));
+                const v = @abs(p) * (@abs(at(matrix, start - 1, start - 1).*) + @abs(z) + @abs(at(matrix, start + 1, start + 1).*));
+                if (u <= epsilon * v) break;
+            }
+            var i: Index = start;
+            while (i < last - 1) : (i += 1) {
+                at(matrix, i + 2, i).* = 0;
+                if (i != start) at(matrix, i + 2, i - 1).* = 0;
+            }
+            // o passo QR duplo implícito, com refletores de Householder de 3 elementos
+            var k: Index = start;
+            while (k < last) : (k += 1) {
+                if (k != start) {
+                    p = at(matrix, k, k - 1).*;
+                    q = at(matrix, k + 1, k - 1).*;
+                    r = if (k + 1 != last) at(matrix, k + 2, k - 1).* else 0;
+                    x = @abs(p) + @abs(q) + @abs(r);
+                    if (x != 0) {
+                        p /= x;
+                        q /= x;
+                        r /= x;
+                    }
+                }
+                const s = std.math.copysign(@sqrt(p * p + q * q + r * r), p);
+                if (s == 0) continue;
+                if (k == start) {
+                    if (low != start) at(matrix, k, k - 1).* = -at(matrix, k, k - 1).*;
+                } else at(matrix, k, k - 1).* = -s * x;
+                p += s;
+                x = p / s;
+                y = q / s;
+                const z = r / s;
+                q /= p;
+                r /= p;
+                var j: Index = k;
+                while (j <= last) : (j += 1) {
+                    var sum = at(matrix, k, j).* + q * at(matrix, k + 1, j).*;
+                    if (k + 1 != last) {
+                        sum += r * at(matrix, k + 2, j).*;
+                        at(matrix, k + 2, j).* -= sum * z;
+                    }
+                    at(matrix, k + 1, j).* -= sum * y;
+                    at(matrix, k, j).* -= sum * x;
+                }
+                const bottom = @min(last, k + 3);
+                var row: Index = low;
+                while (row <= bottom) : (row += 1) {
+                    var sum = x * at(matrix, row, k).* + y * at(matrix, row, k + 1).*;
+                    if (k + 1 != last) {
+                        sum += z * at(matrix, row, k + 2).*;
+                        at(matrix, row, k + 2).* -= sum * r;
+                    }
+                    at(matrix, row, k + 1).* -= sum * q;
+                    at(matrix, row, k).* -= sum;
+                }
+            }
+            if (!(low < last - 1)) break; // NR: o bloco ficou pequeno, recomeça a contagem
+        }
+    }
+    return true;
+}
+
 /// A x = b de uma vez (A e b são copiados); false se A é singular
 pub fn solve(comptime capacity: usize, matrix: [capacity][capacity]f64, size: usize, rhs: [capacity]f64, solution: *[capacity]f64) bool {
     var factors = matrix;
@@ -211,4 +438,36 @@ test "Jacobi: A = V diag(w) Vᵀ e V ortogonal" {
         try testing.expectApproxEqAbs(@as(f64, if (i == j) 1 else 0), orthogonality, 1e-10);
     };
     try testing.expectApproxEqAbs(@as(f64, 8), eigenvalues[0] + eigenvalues[1] + eigenvalues[2] + eigenvalues[3], 1e-10); // traço
+}
+
+/// os autovalores achados batem com os esperados, em qualquer ordem
+fn expectEigenvalues(comptime size: usize, matrix: [size][size]f64, expected: []const [2]f64) !void {
+    var work = matrix;
+    var real: [size]f64 = undefined;
+    var imag: [size]f64 = undefined;
+    try testing.expect(generalEigen(size, &work, size, &real, &imag));
+    for (expected) |value| {
+        var closest: f64 = std.math.inf(f64);
+        for (0..size) |i| closest = @min(closest, @abs(real[i] - value[0]) + @abs(imag[i] - value[1]));
+        try testing.expect(closest < 1e-9);
+    }
+}
+
+test "autovalores de uma matriz qualquer: companheira com par complexo, triangular e a simétrica do Jacobi" {
+    // (λ + 1)(λ + 2)(λ² + 2λ + 5) = λ⁴ + 5λ³ + 13λ² + 19λ + 10: raízes −1, −2 e −1 ± 2i
+    const companion = [4][4]f64{ .{ -5, -13, -19, -10 }, .{ 1, 0, 0, 0 }, .{ 0, 1, 0, 0 }, .{ 0, 0, 1, 0 } };
+    try expectEigenvalues(4, companion, &.{ .{ -1, 0 }, .{ -2, 0 }, .{ -1, 2 }, .{ -1, -2 } });
+    // triangular: a própria diagonal
+    const triangular = [3][3]f64{ .{ 3, 7, -1 }, .{ 0, -0.5, 4 }, .{ 0, 0, 2 } };
+    try expectEigenvalues(3, triangular, &.{ .{ 3, 0 }, .{ -0.5, 0 }, .{ 2, 0 } });
+    // uma rotação com amortecimento: −0,2 ± 3i, e um modo instável 0,5
+    const oscillator = [3][3]f64{ .{ -0.2, 3, 0 }, .{ -3, -0.2, 1 }, .{ 0, 0, 0.5 } };
+    try expectEigenvalues(3, oscillator, &.{ .{ -0.2, 3 }, .{ -0.2, -3 }, .{ 0.5, 0 } });
+    // a mesma matriz do teste do Jacobi: os dois métodos dão os mesmos autovalores
+    const symmetric = [4][4]f64{ .{ 4, 1, -2, 2 }, .{ 1, 2, 0, 1 }, .{ -2, 0, 3, -2 }, .{ 2, 1, -2, -1 } };
+    var jacobi = symmetric;
+    var values: [4]f64 = undefined;
+    var vectors: [4][4]f64 = undefined;
+    symEigen(4, &jacobi, 4, &values, &vectors);
+    try expectEigenvalues(4, symmetric, &.{ .{ values[0], 0 }, .{ values[1], 0 }, .{ values[2], 0 }, .{ values[3], 0 } });
 }

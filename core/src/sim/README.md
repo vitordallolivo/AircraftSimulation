@@ -148,7 +148,12 @@ lentas, continuam depois disso, e o tempo pedido vira só um limite.
 
 Se o avião leva a carga LAPES, dá para pedir que ela saia num instante (`release`). A fatia para nesse instante, a
 soltura é pedida como o piloto pede (`pilot.drop`), a carga desliza pela rampa (`physics/mass.zig`) e sai no fim
-dela. Daí em diante voa só o resto da massa, e o voo não para antes de a carga sair. A rodada anda em fatias (`begin`, depois
+dela. Daí em diante voa só o resto da massa, e o voo não para antes de a carga sair.
+
+Para entender a resposta, `poles` dá os polos no mesmo equilíbrio, os autovalores do modelo linear (`linear.zig`): o
+do corpo rígido, com o líquido travado, ou o com os pêndulos do líquido soltos. Com a LAPES já solta nos estados
+(`released`), saem os polos do avião depois da saída. `gustSpeed` dá a rajada no tempo, a mesma que o voo sente, para
+o gráfico. A rodada anda em fatias (`begin`, depois
 `advance` até acabar), para que a tela siga desenhando enquanto ela roda, inclusive no navegador, onde não há thread.
 
 ## Envelope por altitude (`envelope.zig`)

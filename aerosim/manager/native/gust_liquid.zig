@@ -7,6 +7,9 @@
 //! guarda o que se mudou até abrir outro avião, e a vista 3D mostra o avião com eles e o CG. Sem tanques ou sem LAPES,
 //! a análise roda sem essa parte.
 //!
+//! Antes do voo saem os polos no equilíbrio (com o líquido livre, travado e sem a LAPES), para ver qual modo explica
+//! o que o voo mostra: uma espiral instável, por exemplo, é o rolamento que cresce devagar no manche fixo.
+//!
 //! A conta é a do núcleo (`core/src/sim/gust.zig`, a dinâmica 6GDL com o pêndulo de Abramson nos tanques); aqui só se
 //! monta o caso, se avança em fatias e se escreve o resultado.
 const std = @import("std");
@@ -36,12 +39,24 @@ const max_cases = 2;
 const slice_seconds = 0.25; // de voo por fatia (poucos milissegundos de conta)
 
 const plots = [_]native.Plot{
+    .{ .key = "gust", .title = "Rajada", .xlabel = "t (s)", .ylabel = "m/s" },
     .{ .key = "alpha", .title = "Ângulo de ataque", .xlabel = "t (s)", .ylabel = "α (°)" },
     .{ .key = "lateral", .title = "Derrapagem e rolamento", .xlabel = "t (s)", .ylabel = "°" },
     .{ .key = "load", .title = "Fator de carga", .xlabel = "t (s)", .ylabel = "n_z" },
     .{ .key = "xcg", .title = "xCG", .xlabel = "t (s)", .ylabel = "x_CG (% CMA)" },
     .{ .key = "liquid", .title = "Líquido", .xlabel = "t (s)", .ylabel = "ângulo (°)" },
+    .{ .key = "poles", .title = "Polos", .xlabel = "Re (1/s)", .ylabel = "Im (rad/s)" },
+    .{ .key = "slow_poles", .title = "Polos lentos", .xlabel = "Re (1/s)", .ylabel = "Im (rad/s)" },
 };
+const plot_gust = 0;
+const plot_alpha = 1;
+const plot_lateral = 2;
+const plot_load = 3;
+const plot_cg = 4;
+const plot_liquid = 5;
+const plot_poles = 6;
+const plot_slow_poles = 7;
+const slow_radius = 1.5; // rad/s: |λ| abaixo disto vai também no gráfico dos polos lentos (fugóide, espiral)
 
 fn cruise(aircraft: *const native.Aircraft) f64 {
     var speed: f64 = 0;
@@ -349,6 +364,10 @@ const State = struct {
     n_tanks: usize = 0,
     tank_names: [max_tanks][]const u8 = undefined,
     lapes: f64 = 0, // kg da LAPES no avião (0: sem)
+    // os polos no equilíbrio do começo: com o líquido livre (ou o corpo rígido, sem tanques), travado e sem a LAPES
+    poles_free: core.gust.Poles = .{},
+    poles_locked: core.gust.Poles = .{},
+    poles_empty: core.gust.Poles = .{},
 };
 
 fn start(run: *native.Run, values: native.Values) anyerror!void {
@@ -406,6 +425,19 @@ fn advance(run: *native.Run) anyerror!bool {
             run.fail("o voo não começou ({s}): a velocidade dá para voar nivelado?", .{@errorName(err)});
             return err;
         };
+        if (state.current == 0) { // os polos, numa fatia só deles
+            const instance = flight.instance;
+            const airspeed = flight.case.airspeed;
+            state.poles_free = core.gust.poles(&instance.p, &instance.r.f, airspeed, true);
+            if (state.n_tanks > 0) state.poles_locked = core.gust.poles(&instance.p, &instance.r.f, airspeed, false);
+            if (state.lapes > 0) {
+                var empty = instance.r.f;
+                empty.released = 1;
+                state.poles_empty = core.gust.poles(&instance.p, &empty, airspeed, true);
+            }
+            run.say("polos no equilíbrio", .{});
+            return false;
+        }
     }
     flight.done = try core.gust.advance(flight.instance, flight.case, flight.log, &flight.rows, slice_seconds);
     const label: []const u8 = if (flight.case.liquid_free) "líquido livre" else "líquido travado";
@@ -517,26 +549,31 @@ fn result(run: *native.Run, out: *native.Writer) anyerror!void {
         try checks.append(memory, .{ .status = .info, .item = try std.fmt.allocPrint(memory, "ângulo do líquido: {s}", .{name}), .value = try std.fmt.allocPrint(memory, "{d:.1}°", .{peak}), .criterion = "maior desvio do repouso", .why = "pêndulo equivalente (Abramson, NASA SP-106)", .group = "líquido" });
     }
 
+    try poleChecks(memory, state, &checks);
+
     try native.beginResult(out, summary.items, checks.items);
     const flights = state.flights[0..state.count];
     var curves: std.ArrayList(native.Curve) = .empty;
     try curves.ensureTotalCapacity(memory, 2 * flights.len);
+    try native.writePlot(out, plots[plot_gust], try gustCurves(memory, free, t_free), true);
     for (flights) |*flight| curves.appendAssumeCapacity(.{ .name = caseName(flight), .x = try column(memory, flight, time), .y = try column(memory, flight, alpha), .color = "#1f77b4", .dashed = !flight.case.liquid_free });
-    try native.writePlot(out, plots[0], curves.items, true);
+    try native.writePlot(out, plots[plot_alpha], curves.items, false);
     curves.clearRetainingCapacity();
     for (flights) |*flight| {
         const t = try column(memory, flight, time);
         curves.appendAssumeCapacity(.{ .name = try std.fmt.allocPrint(memory, "β {s}", .{caseName(flight)}), .x = t, .y = try column(memory, flight, beta), .color = "#d62728", .dashed = !flight.case.liquid_free });
         curves.appendAssumeCapacity(.{ .name = try std.fmt.allocPrint(memory, "φ {s}", .{caseName(flight)}), .x = t, .y = try column(memory, flight, bank), .color = "#2ca02c", .dashed = !flight.case.liquid_free });
     }
-    try native.writePlot(out, plots[1], curves.items, false);
+    try native.writePlot(out, plots[plot_lateral], curves.items, false);
     curves.clearRetainingCapacity();
     for (flights) |*flight| curves.appendAssumeCapacity(.{ .name = caseName(flight), .x = try column(memory, flight, time), .y = try column(memory, flight, load), .color = "#ff7f0e", .dashed = !flight.case.liquid_free });
-    try native.writePlot(out, plots[2], curves.items, false);
+    try native.writePlot(out, plots[plot_load], curves.items, false);
     curves.clearRetainingCapacity();
     for (flights) |*flight| curves.appendAssumeCapacity(.{ .name = caseName(flight), .x = try column(memory, flight, time), .y = try cgPercent(memory, flight, state), .color = "#9467bd", .dashed = !flight.case.liquid_free });
-    try native.writePlot(out, plots[3], curves.items, false);
-    if (liquid.items.len > 0) try native.writePlot(out, plots[4], liquid.items, false);
+    try native.writePlot(out, plots[plot_cg], curves.items, false);
+    if (liquid.items.len > 0) try native.writePlot(out, plots[plot_liquid], liquid.items, false);
+    try native.writePlot(out, plots[plot_poles], try poleCurves(memory, state, std.math.inf(f64)), false);
+    try native.writePlot(out, plots[plot_slow_poles], try poleCurves(memory, state, slow_radius), false);
     try native.endResult(out);
 }
 
@@ -570,6 +607,82 @@ fn lapesChecks(memory: std.mem.Allocator, state: *const State, free: *const Flig
         .why = "a massa da LAPES sai de onde ela estava e o CG vai para o lado oposto",
         .group = "LAPES",
     });
+}
+
+/// a rajada no tempo do voo: sobe de 0 à intensidade e volta a 0 na duração pedida
+fn gustCurves(memory: std.mem.Allocator, free: *const Flight, t: []const f64) ![]const native.Curve {
+    const instance = free.instance;
+    const arrived = if (instance.r.tg >= 0) instance.r.tg else free.case.start;
+    const up = try memory.alloc(f64, t.len);
+    const side = try memory.alloc(f64, t.len);
+    for (t, 0..) |moment, k| {
+        const speed = core.gust.gustSpeed(&instance.p, moment, arrived);
+        up[k] = speed[0];
+        side[k] = speed[1];
+    }
+    var curves: std.ArrayList(native.Curve) = .empty;
+    if (free.case.vertical != 0 or free.case.lateral == 0) try curves.append(memory, .{ .name = "vertical", .x = t, .y = up, .color = "#1f77b4" });
+    if (free.case.lateral != 0) try curves.append(memory, .{ .name = "lateral", .x = t, .y = side, .color = "#d62728" });
+    return curves.items;
+}
+
+/// os polos de cada caso como pontos (só os com |λ| < `radius`)
+fn poleCurves(memory: std.mem.Allocator, state: *const State, radius: f64) ![]const native.Curve {
+    const Set = struct { poles: *const core.gust.Poles, name: []const u8, color: []const u8, marker: []const u8 };
+    // o travado e o sem a LAPES antes, para o livre (o caso principal) ficar por cima
+    const sets = [_]Set{
+        .{ .poles = &state.poles_locked, .name = "líquido travado", .color = "#7f7f7f", .marker = "o" },
+        .{ .poles = &state.poles_empty, .name = "sem a LAPES", .color = "#ff7f0e", .marker = "+" },
+        .{ .poles = &state.poles_free, .name = if (state.n_tanks > 0) "líquido livre" else "avião", .color = "#1f77b4", .marker = "x" },
+    };
+    var curves: std.ArrayList(native.Curve) = .empty;
+    for (sets) |set| {
+        if (!set.poles.ok) continue;
+        var xs: std.ArrayList(f64) = .empty;
+        var ys: std.ArrayList(f64) = .empty;
+        for (0..set.poles.count) |i| {
+            const re = set.poles.real[i];
+            const im = set.poles.imag[i];
+            if (@sqrt(re * re + im * im) >= radius) continue;
+            try xs.append(memory, re);
+            try ys.append(memory, im);
+        }
+        try curves.append(memory, .{ .name = set.name, .x = xs.items, .y = ys.items, .color = set.color, .marker = set.marker });
+    }
+    return curves.items;
+}
+
+/// o polo menos estável de um conjunto, em palavras: σ, e se oscila, ω
+fn describePole(memory: std.mem.Allocator, poles: *const core.gust.Poles) ![]const u8 {
+    var worst: usize = 0;
+    for (0..poles.count) |i| if (poles.real[i] > poles.real[worst]) {
+        worst = i;
+    };
+    const sigma = poles.real[worst];
+    const omega = @abs(poles.imag[worst]);
+    if (omega > 1e-6) return std.fmt.allocPrint(memory, "σ = {d:.3} 1/s, ω = {d:.2} rad/s", .{ sigma, omega });
+    return std.fmt.allocPrint(memory, "σ = {d:.3} 1/s", .{sigma});
+}
+
+/// o diagnóstico dos polos: algum cresce? e quanto o líquido e a saída da LAPES mudam o menos estável
+fn poleChecks(memory: std.mem.Allocator, state: *const State, checks: *std.ArrayList(native.Check)) !void {
+    const main = &state.poles_free;
+    if (!main.ok) {
+        try checks.append(memory, .{ .status = .atencao, .item = "polos", .value = "não saíram", .criterion = "equilíbrio nivelado", .why = "a trimagem ou o QR não convergiram nesta velocidade", .group = "polos" });
+        return;
+    }
+    const sigma = main.largestReal();
+    const growing = sigma > 1e-4;
+    try checks.append(memory, .{
+        .status = if (growing) .atencao else .ok,
+        .item = "polos",
+        .value = try describePole(memory, main),
+        .criterion = "σ < 0 em todos (o menos estável)",
+        .why = if (growing) try std.fmt.allocPrint(memory, "um modo cresce e dobra a cada {d:.1} s; se ele é lento (espiral, fugóide), o piloto ou o piloto automático seguram", .{@log(2.0) / sigma}) else "todos os modos amortecem",
+        .group = "polos",
+    });
+    if (state.poles_locked.ok) try checks.append(memory, .{ .status = .info, .item = "polos com o líquido travado", .value = try describePole(memory, &state.poles_locked), .criterion = "o menos estável", .why = "a diferença para o livre é o efeito do líquido balançando", .group = "polos" });
+    if (state.poles_empty.ok) try checks.append(memory, .{ .status = .info, .item = "polos sem a LAPES", .value = try describePole(memory, &state.poles_empty), .criterion = "o menos estável", .why = "o avião depois da saída: mais leve e com outro CG", .group = "polos" });
 }
 
 fn caseName(flight: *const Flight) []const u8 {
@@ -615,8 +728,16 @@ test "campos e resultado no JSON da ponte; o líquido livre mexe o xCG e o trava
     const outcome = try std.json.parseFromSlice(std.json.Value, gpa, text.written(), .{});
     defer outcome.deinit();
     const charts = outcome.value.object.get("plots").?.array.items;
-    try testing.expectEqual(@as(usize, 5), charts.len);
-    const xcg = charts[3].object.get("curves").?.array.items;
+    try testing.expectEqual(@as(usize, plots.len), charts.len);
+    const xcg = charts[plot_cg].object.get("curves").?.array.items;
+    // a rajada vai de 0 a 3 m/s e volta a 0; os polos saem para o livre e o travado
+    const gust_up = charts[plot_gust].object.get("curves").?.array.items[0].object.get("y").?.array.items;
+    var gust_peak: f64 = 0;
+    for (gust_up) |value| gust_peak = @max(gust_peak, jsonNumber(value));
+    try testing.expectApproxEqAbs(@as(f64, 3), gust_peak, 0.05);
+    try testing.expectEqual(@as(f64, 0), jsonNumber(gust_up[0]));
+    try testing.expectEqual(@as(f64, 0), jsonNumber(gust_up[gust_up.len - 1]));
+    try testing.expectEqual(@as(usize, if (loaded.ac.payload.enabled) 3 else 2), charts[plot_poles].object.get("curves").?.array.items.len); // livre, travado e sem a LAPES
     try testing.expectEqual(@as(usize, 2), xcg.len); // livre e travado
     const free_cg = xcg[0].object.get("y").?.array.items;
     const locked_cg = xcg[1].object.get("y").?.array.items;
@@ -665,7 +786,7 @@ test "a tabela dos tanques: soma, edita, apaga e volta ao arquivo; a LAPES solta
     try result(&run, &text.writer);
     const outcome = try std.json.parseFromSlice(std.json.Value, gpa, text.written(), .{});
     defer outcome.deinit();
-    try testing.expectEqual(@as(usize, 4), outcome.value.object.get("plots").?.array.items.len); // sem o do líquido
+    try testing.expectEqual(@as(usize, plots.len - 1), outcome.value.object.get("plots").?.array.items.len); // sem o do líquido
     const summary = outcome.value.object.get("summary").?.object;
     const before = try std.fmt.parseFloat(f64, summary.get("massa (kg)").?.string);
     const after = try std.fmt.parseFloat(f64, summary.get("massa depois da LAPES (kg)").?.string);

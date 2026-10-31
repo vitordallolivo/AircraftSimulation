@@ -307,3 +307,30 @@ test "LAPES solta no meio da rajada: sai do avião e a massa que voa cai o peso 
     const empty = trim.Ctx.init(&inst.p, &inst.r.f).m;
     try std.testing.expectApproxEqAbs(loaded - 1.5, empty, 1e-9);
 }
+
+test "polos da rajada: o líquido livre soma um par perto da frequência do pêndulo; a rajada sobe e desce como 1 − cos" {
+    aircraft(&inst.p);
+    inst.p.n_tank = 1;
+    inst.p.tank[0] = .{ .side = 0.12, .fill = 0.07, .rho = 1000, .zeta = 0.03, .r = .{ 0, 0, 0 } };
+    const case = gust.Case{ .vertical = 2, .span = 3 };
+    try gust.begin(&inst, case);
+    const locked = gust.poles(&inst.p, &inst.r.f, case.airspeed, false);
+    const free = gust.poles(&inst.p, &inst.r.f, case.airspeed, true);
+    try std.testing.expect(locked.ok and free.ok);
+    try std.testing.expectEqual(@as(usize, 8), locked.count);
+    try std.testing.expectEqual(@as(usize, 12), free.count);
+    // o avião do teste é estável no curto período: algum par com amortecimento (parte real bem negativa)
+    var short_period = false;
+    for (0..locked.count) |i| short_period = short_period or (locked.real[i] < -2 and locked.imag[i] > 1);
+    try std.testing.expect(short_period);
+    // o pêndulo: ω₁ = √(g k tanh(k h)), k = π / lado (Abramson, NASA SP-106), com ζ pequeno
+    const frequency = inst.p.tank[0].w1;
+    var near_pendulum = false;
+    for (0..free.count) |i| near_pendulum = near_pendulum or @abs(@sqrt(free.real[i] * free.real[i] + free.imag[i] * free.imag[i]) - frequency) < 0.25 * frequency;
+    try std.testing.expect(near_pendulum);
+    // a rajada: zero antes, U no meio da duração, zero depois
+    try std.testing.expectApproxEqAbs(@as(f64, 0), gust.gustSpeed(&inst.p, 0.5, 1)[0], 1e-12);
+    try std.testing.expectApproxEqAbs(@as(f64, 2), gust.gustSpeed(&inst.p, 1.5, 1)[0], 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 0), gust.gustSpeed(&inst.p, 2.5, 1)[0], 1e-12);
+    inst.p.n_tank = 0;
+}

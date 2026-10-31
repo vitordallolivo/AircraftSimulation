@@ -188,6 +188,7 @@ pub const Curve = struct {
     y: []const f64,
     color: []const u8,
     dashed: bool = false,
+    marker: []const u8 = "", // um símbolo em cada ponto, sem a linha ("x", "o", "+"); vazio: só a linha
 };
 
 /// um item do diagnóstico (`Check`)
@@ -363,7 +364,7 @@ pub fn writePlot(out: *Writer, plot: Plot, curves: []const Curve, first: bool) !
     try out.writeAll(", \"curves\": [");
     for (curves, 0..) |curve, k| {
         if (k > 0) try out.writeAll(", ");
-        try out.print("{{\"name\": {f}, \"color\": {f}, \"dashed\": {}, \"x\": ", .{ str(curve.name), str(curve.color), curve.dashed });
+        try out.print("{{\"name\": {f}, \"color\": {f}, \"dashed\": {}, \"marker\": {f}, \"x\": ", .{ str(curve.name), str(curve.color), curve.dashed, str(curve.marker) });
         try numbers(out, curve.x);
         try out.writeAll(", \"y\": ");
         try numbers(out, curve.y);
