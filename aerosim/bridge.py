@@ -38,7 +38,7 @@ from typing import Any
 from aerosim.interfaces.simulation import AREAS, CancelledError, ISimulationManager, PlotSpec, SimResult
 
 FORM_KINDS = ("float", "int", "bool", "choice", "str", "file", "floats")   # os tipos de campo que a tela em Zig desenha por enquanto
-PLOT_KINDS = ("2d", "loads3d")                            # os tipos de gráfico idem (3d: só na GUI PyQt)
+PLOT_KINDS = ("2d", "3d", "loads3d")                      # os tipos de gráfico idem
 
 # a arrumação das abas, a mesma de `aerosim/gui/main_window.py` e `aerosim/gui/design/__init__.py`
 INSIDE = {"propulsao": "desempenho", "missao": "desempenho"}
@@ -264,6 +264,9 @@ def _plot(spec: PlotSpec, result: SimResult) -> dict:
     if out["kind"] == "loads3d":
         out["loads"] = _loads(spec, result)
         return out
+    if out["kind"] == "3d":
+        out["track"] = _track(spec, result)
+        return out
     if out["kind"] != "2d":
         return out
     if spec.source == "log":
@@ -328,6 +331,58 @@ def _plot(spec: PlotSpec, result: SimResult) -> dict:
     for k, curve in enumerate(curves):                     # sem cor pedida: a paleta da GUI PyQt, na mesma ordem
         curve.setdefault("color", PALETTE[k % len(PALETTE)])
     return out
+
+
+MAX_TRACK_POINTS = 3000                                     # por linha da trajetória 3D (o resto é passo maior)
+
+
+def _track(spec: PlotSpec, result: SimResult) -> dict | None:
+    """a trajetória 3D (`kind="3d"`) como a `_Plot3D` da GUI PyQt desenha: uma linha por tabela (uma por etapa da
+    missão, na cor dela), os eventos como pontos, as silhuetas do avião como pares de pontos (`_segments`). A
+    altura sai já exagerada pelo mesmo fator da PyQt (a trajetória tem centenas de metros e poucos de altura)."""
+    import numpy as np
+    name = spec.source.split(":", 1)[1] if ":" in spec.source else ""
+    tables = [(k[len(name) - 1:] if name.endswith("*") else k, v) for k, v in result.series.items()
+              if (k.startswith(name[:-1]) if name.endswith("*") else k == name)]
+    axes = (spec.x, spec.ys[0] if spec.ys else "", spec.z)
+    items = []
+    for label, table in tables:
+        if not isinstance(table, dict) or not all(a in table for a in axes):
+            continue
+        try:
+            points = np.column_stack([np.asarray(table[a], float) for a in axes])
+        except (TypeError, ValueError):
+            continue
+        items.append((label, table, points))
+    finite = [p[np.isfinite(p).all(axis=1)] for _, _, p in items]
+    finite = [p for p in finite if len(p)]
+    if not finite:
+        return None
+    every = np.vstack(finite)
+    low, high = every.min(axis=0), every.max(axis=0)
+    span = float(max(high[0] - low[0], high[1] - low[1], 20.0))
+    scale = max(1.0, round(0.25 * span / max(high[2] - low[2], 1.0)))
+    lines = []
+    for k, (label, table, points) in enumerate(items):
+        points = points * np.array([1.0, 1.0, scale])
+        kind = "segments" if table.get("_segments") else "points" if table.get("_symbol") else "line"
+        if kind == "segments":                    # silhuetas: o centro na escala da trajetória, o desenho em metros
+            points = points + np.column_stack([np.asarray(table[c], float) for c in ("oe", "on", "oh")])
+        elif kind == "line" and len(points) > MAX_TRACK_POINTS:
+            step = int(np.ceil(len(points) / MAX_TRACK_POINTS))
+            points = np.vstack([points[::step], points[-1:]])
+        line = {"name": str(table.get("_label") or label).lstrip("★ ").strip(), "kind": kind,
+                "points": [_finite(v) for v in np.round(points, 3).ravel().tolist()],
+                "width": float(table.get("_width", 1.5 if kind == "segments" else 2.5)),
+                "legend": not table.get("_nolegend"), **_style(table)}
+        if kind == "points":
+            line["marker"] = str(table["_symbol"])
+            line["size"] = float(table.get("_size", 14))
+        line.setdefault("color", PALETTE[k % len(PALETTE)])
+        lines.append(line)
+    stretch = np.array([1.0, 1.0, scale])
+    return {"lines": lines, "scale": scale, "low": (low * stretch).tolist(), "high": (high * stretch).tolist(),
+            "axes": f"eixos: {spec.xlabel}, {spec.ylabel}, {spec.z} (altura exagerada ×{scale:g})"}
 
 
 # a paleta da GUI PyQt (`aerosim/gui/widgets/plots.py`), para os gráficos saírem com as mesmas cores nas duas telas

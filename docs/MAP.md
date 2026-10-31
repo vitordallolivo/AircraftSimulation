@@ -8,7 +8,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/__init__.py` — aerosim — simulador 6GDL de aeronaves em camadas:
 - `aerosim/bridge.py` — Ponte entre a tela em Zig (raylib) e os managers em Python: uma mensagem JSON por linha, na entrada e na saída
-  `class Bridge:50`, `start_in_browser:469`, `call_in_browser:477`, `main:492`
+  `class Bridge:50`, `start_in_browser:524`, `call_in_browser:532`, `main:547`
 
 ## Python · `aerosim/aero`
 
@@ -686,7 +686,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `buildMesh:55`, `balance:113`, `load:131`, `fillAirfoilFiles:148`, `parseDat:183`, `findExample:215`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
-  tipos `Kind:32`, `Page:175`
+  tipos `Kind:32`, `Page:211`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
   tipos `Waiter:23`, `Bridge:39`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt
@@ -722,7 +722,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `numberText:5`, `niceStep:21`, `decimalsFor:31`, `significant:88`
 - `aerosim/gui/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
   tipos `Series:20`, `Marker:47`, `Cloud:69`, `Axes:77`, `Frame:87`, `Cell:183`, `ExportKind:260`
-  fn `lines:101`, `table:191`, `tableHeight:226`, `overlayActive:365`, `overlay:370`, `cloud:627`, `ramp:646`, `colorBar:662`, `drawFrame:682`
+  fn `lines:101`, `table:191`, `tableHeight:226`, `overlayActive:365`, `overlay:370`, `drawMarker:573`, `cloud:627`, `ramp:646`, `colorBar:662`, `drawFrame:682`
 - `aerosim/gui/ui/scroll.zig` — A área rolável: tudo o que não cabe na altura (a barra lateral, a coluna dos gráficos) rola pela roda do mouse ou
   tipos `ScrollArea:13`
 - `aerosim/gui/ui/stage.zig` — As peças que toda etapa do dimensionamento repete, como o `StagePage` da GUI em Python: a barra de requisitos
@@ -741,7 +741,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/ui/ui.zig` — As peças comuns das telas do aerosim e do aeroopt em Zig: cores e fontes, formas, widgets, formulário, gráfico
 - `aerosim/gui/ui/view3d.zig` — Vista 3D dentro de um cartão, com as mesmas ideias da vista do aerosim em Python (`aerosim/gui/widgets/view3d.py`
   tipos `Kind:17`, `View:100`
-  fn `kindColor:20`, `colorByName:35`, `fieldColor:57`, `fraction:75`, `liftColor:80`, `toWorld:85`, `shaded:203`, `triangle:211`, `quad:221`, `segment:238`, `arrow:243`, `floor:255`, `bodyAxes:267`
+  fn `kindColor:20`, `colorByName:35`, `fieldColor:57`, `fraction:75`, `liftColor:80`, `toWorld:85`, `shaded:215`, `triangle:223`, `quad:233`, `segment:250`, `arrow:255`, `floor:267`, `bodyAxes:279`
 - `aerosim/gui/ui/widgets.zig` — Os pedaços comuns das telas, no desenho do AeroDrive: o contexto de desenho (fontes, logo, mouse), o cabeçalho
   tipos `Ui:11`, `Splitter:204`, `Status:427`
   fn `paragraph:141`, `paragraphHeight:146`, `caretToEnd:192`, `replaceOnType:238`, `helpMark:263`, `checkBox:272`, `disclosure:287`, `rounded:331`, `roundedLines:336`, `header:341`, `tabBar:362`, `primaryButton:386`, `progressBar:396`, `card:403`, `labeledCard:411`, `statusColor:417`, `tableRow:430`, `format:437`
@@ -821,7 +821,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 75 testes em 11 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 90 testes em 13 arquivo(s)
+- `tests/manager` — 91 testes em 13 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)

@@ -63,6 +63,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   curvas sem cor pedida saem na paleta da PyQt. As escolhas do formulário ficam largas o bastante para o nome
   inteiro. Motores ganhou "Usar em Desempenho →": abre o avião como "Mandar para a Montagem" e vai direto para
   Desempenho → Avião montado.
+- Missão na tela em Zig: a trajetória 3D, como na GUI PyQt, com cada etapa na cor dela (a mesma das faixas dos
+  gráficos no tempo), os eventos como estrelas, a sombra no chão, as silhuetas do avião e a legenda embaixo; a altura
+  sai exagerada pelo mesmo fator da PyQt. Arrastar gira e a roda aproxima.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

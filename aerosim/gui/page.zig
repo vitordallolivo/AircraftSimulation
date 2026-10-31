@@ -147,6 +147,40 @@ const LoadsScene = struct {
     }
 };
 
+/// uma linha da trajetória 3D: o trecho de uma etapa, os pontos de um evento ou as silhuetas do avião (pares de
+/// pontos), com a cor que o Python pediu
+const TrackLine = struct {
+    name: [:0]const u8,
+    kind: enum { line, points, segments },
+    points: []const f32, // leste, norte, altura (já exagerada), em sequência
+    color: rl.Color,
+    width: f32,
+    marker: plot.Marker = .none,
+    size: f32 = 14,
+    legend: bool = true,
+};
+
+/// a trajetória 3D de uma análise de voo (`kind="3d"`, `aerosim/bridge.py`, `_track`), como a `_Plot3D` da GUI PyQt:
+/// cada etapa na cor dela, os eventos como pontos, o chão quadriculado e a legenda embaixo
+const TrackScene = struct {
+    title: [:0]const u8,
+    axes: [:0]const u8, // "eixos: ..., altura exagerada ×k"
+    lines: []const TrackLine,
+    low: [3]f64, // leste, norte, altura
+    high: [3]f64,
+
+    /// o maior lado no chão (no mínimo 20 m, como na GUI PyQt)
+    fn span(scene: *const TrackScene) f64 {
+        return @max(@max(scene.high[0] - scene.low[0], scene.high[1] - scene.low[1]), 20);
+    }
+};
+
+/// a câmera de cada trajetória e onde a imagem saiu no quadro anterior
+const TrackState = struct {
+    view: view3d.View = .{ .azimuth = -60, .elevation = 25 }, // a câmera inicial da GUI PyQt
+    area: rl.Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+};
+
 /// o que a tela guarda de cada vista de cargas entre os quadros: a câmera, o campo, a camada e a escala escolhidos
 const LoadsState = struct {
     view: view3d.View = .{},
@@ -160,6 +194,8 @@ const LoadsState = struct {
 
 const max_grids = 4;
 const max_loads = 4;
+const max_tracks = 2;
+const track_view_height: f32 = 520;
 const view_height: f32 = 300;
 const loads_view_height: f32 = 440;
 
@@ -231,6 +267,8 @@ pub const Page = struct {
     view: view3d.View = .{},
     loads: []const LoadsScene = &.{},
     loads_states: [max_loads]LoadsState = [_]LoadsState{.{}} ** max_loads,
+    tracks: []const TrackScene = &.{},
+    track_states: [max_tracks]TrackState = [_]TrackState{.{}} ** max_tracks,
     skipped_charts: usize = 0,
     checks_panel: checks_mod.ChecksPanel = .{},
     side: scroll.ScrollArea = .{},
@@ -500,6 +538,7 @@ pub const Page = struct {
         page.summary = &.{};
         page.tables = &.{};
         page.loads = &.{};
+        page.tracks = &.{};
         page.grids = try readGrids(memory, reply);
         page.scene = try readScene(memory, reply);
         try page.readOutcome(memory, reply);
@@ -680,9 +719,14 @@ pub const Page = struct {
         var charts: std.ArrayList(Chart) = .empty;
         page.skipped_charts = 0;
         var loads: std.ArrayList(LoadsScene) = .empty;
+        var tracks: std.ArrayList(TrackScene) = .empty;
         if (reply.object.get("plots")) |list| for (list.array.items) |item| {
             if (std.mem.eql(u8, stringField(item, "kind"), "loads3d")) {
                 if (try readLoads(memory, item)) |scene| try loads.append(memory, scene);
+                continue;
+            }
+            if (std.mem.eql(u8, stringField(item, "kind"), "3d")) {
+                if (try readTrack(memory, item)) |scene| try tracks.append(memory, scene);
                 continue;
             }
             if (!std.mem.eql(u8, stringField(item, "kind"), "2d")) {
@@ -728,6 +772,7 @@ pub const Page = struct {
         page.tables = tables.items;
         page.charts = charts.items;
         page.loads = loads.items;
+        page.tracks = tracks.items;
     }
 
     // ------------------------------------------------------------------ desenho
@@ -936,6 +981,7 @@ pub const Page = struct {
         const view_area: rl.Rectangle = .{ .x = view_card.x + 1, .y = view_card.y + 28, .width = view_card.width - 2, .height = view_card.height - 29 };
         if (page.scene) |*scene| page.renderScene(ui, scene, view_area);
         for (page.loads[0..@min(page.loads.len, max_loads)], 0..) |*scene, k| renderLoads(ui, scene, &page.loads_states[k]);
+        for (page.tracks[0..@min(page.tracks.len, max_tracks)], 0..) |*scene, k| renderTrack(ui, scene, &page.track_states[k]);
         const top = page.page.begin(ui, rect);
         var y = top + gap;
         if (page.scene != null) {
@@ -947,7 +993,7 @@ pub const Page = struct {
             y += widgets.paragraph(ui.fonts.regular, page.description, rect.x + gap + 4, y, width - 8, 14, theme.colors.label) + gap;
         }
         const beside = page.grids_beside and page.grids.len > 0;
-        if (!beside and page.charts.len == 0 and page.summary.len == 0 and page.tables.len == 0 and page.checks.len == 0 and page.scene == null and page.loads.len == 0) {
+        if (!beside and page.charts.len == 0 and page.summary.len == 0 and page.tables.len == 0 and page.checks.len == 0 and page.scene == null and page.loads.len == 0 and page.tracks.len == 0) {
             const note: []const u8 = if (page.job.running()) "pedindo ao Python..." else if (page.kind == .simulation) "o resultado aparece aqui depois de Rodar" else std.mem.sliceTo(&page.message, 0);
             _ = widgets.paragraph(ui.fonts.regular, note, rect.x + gap + 4, y + 10, width, 16, theme.colors.muted);
             page.page.end(ui, rect, y + 40);
@@ -970,6 +1016,10 @@ pub const Page = struct {
             const height = plot.tableHeight(table.rows.len);
             plot.table(ui, .{ .x = rect.x + gap, .y = y, .width = width, .height = height }, table.title, table.headers, table.rows, table.widths);
             y += height + gap;
+        }
+        // as trajetórias 3D na largura toda, como a GUI PyQt (vêm primeiro nos `PlotSpec` da Missão)
+        for (page.tracks[0..@min(page.tracks.len, max_tracks)], 0..) |*scene, k| {
+            y += drawTrack(ui, scene, &page.track_states[k], rect.x + gap, y, width) + gap;
         }
         // as vistas de carga e depois os gráficos, em duas colunas, na ordem dos `PlotSpec` (as vistas vêm primeiro)
         const column_width = (width - gap) / 2;
@@ -1104,6 +1154,163 @@ fn renderLoads(ui: *widgets.Ui, scene: *const LoadsScene, state: *LoadsState) vo
         }
     }
     view3d.bodyAxes(&state.view, .{ scene.low[0] - 0.12 * size, scene.low[1] - 0.12 * size, scene.high[2] + 0.04 * size }, 0.14 * size);
+}
+
+/// o ponto `index` da trajetória no corpo da vista: (leste, norte, altura) do chão com a altura para cima vira
+/// (leste, −norte, −altura), a mesma troca da câmera da GUI PyQt para o corpo; nulo se não é número
+fn trackPoint(points: []const f32, index: usize) ?view3d.Body {
+    const start = index * 3;
+    if (start + 2 >= points.len) return null;
+    const east = points[start];
+    const north = points[start + 1];
+    const height = points[start + 2];
+    if (!std.math.isFinite(east) or !std.math.isFinite(north) or !std.math.isFinite(height)) return null;
+    return .{ east, -north, -height };
+}
+
+/// a imagem da trajetória (só o chão quadriculado: as linhas e os pontos saem por cima em `drawTrack`, com a
+/// espessura pedida), na textura do tamanho em que ela saiu no quadro anterior
+fn renderTrack(ui: *widgets.Ui, scene: *const TrackScene, state: *TrackState) void {
+    if (state.area.width < 8) return;
+    state.view.handleInput(ui, state.area);
+    const span = scene.span();
+    const middle: view3d.Body = .{ (scene.low[0] + scene.high[0]) / 2, -(scene.low[1] + scene.high[1]) / 2, -(scene.low[2] + scene.high[2]) / 2 };
+    // a distância da GUI PyQt (1,5 × o lado, no campo de 60° do pyqtgraph) no campo de 35° daqui
+    if (!state.view.begin(state.area, middle, 1.4 * span)) return;
+    defer state.view.end();
+    // o passo da grade da GUI PyQt: um décimo do lado, arredondado na dezena, no mínimo 5 m
+    const step = @max(5.0, @round(span / 100) * 10);
+    view3d.floor(.{ middle[0], middle[1], 0 }, 0, 1.3 * span, step);
+}
+
+/// o cartão da trajetória: a imagem, as linhas e os pontos por cima, a legenda com a cor de cada etapa e os eixos;
+/// devolve a altura
+fn drawTrack(ui: *widgets.Ui, scene: *const TrackScene, state: *TrackState, x: f32, y: f32, width: f32) f32 {
+    const legend_height = trackLegend(ui, scene, x + 12, 0, width - 24, false);
+    const height = 28 + track_view_height + 8 + legend_height + 22;
+    const inner = widgets.card(ui, .{ .x = x, .y = y, .width = width, .height = height }, scene.title);
+    state.area = .{ .x = inner.x, .y = y + 28, .width = inner.width, .height = track_view_height };
+    state.view.blit(ui, state.area);
+    // as linhas antes dos pontos, para os eventos ficarem por cima
+    for ([_]bool{ false, true }) |points_pass| for (scene.lines) |line| {
+        if ((line.kind == .points) != points_pass) continue;
+        const count = line.points.len / 3;
+        switch (line.kind) {
+            .line => {
+                var k: usize = 0;
+                while (k + 1 < count) : (k += 1) trackSegment(state, line.points, k, k + 1, line.width, line.color);
+            },
+            .segments => {
+                var k: usize = 0;
+                while (k + 1 < count) : (k += 2) trackSegment(state, line.points, k, k + 1, line.width, line.color);
+            },
+            .points => for (0..count) |k| {
+                const at = state.view.project(trackPoint(line.points, k) orelse continue, state.area) orelse continue;
+                if (at.x < state.area.x or at.y < state.area.y or at.x > state.area.x + state.area.width or at.y > state.area.y + state.area.height) continue;
+                plot.drawMarker(line.marker, at, line.size, line.color);
+            },
+        }
+    };
+    const legend_y = y + 28 + track_view_height + 8;
+    _ = trackLegend(ui, scene, x + 12, legend_y, width - 24, true);
+    theme.text(ui.fonts.regular, scene.axes, x + 12, legend_y + legend_height + 2, 12, theme.colors.muted);
+    return height;
+}
+
+/// um trecho da trajetória entre os pontos `first` e `second`, cortado na borda da imagem
+fn trackSegment(state: *const TrackState, points: []const f32, first: usize, second: usize, width: f32, color: rl.Color) void {
+    const a = state.view.project(trackPoint(points, first) orelse return, state.area) orelse return;
+    const b = state.view.project(trackPoint(points, second) orelse return, state.area) orelse return;
+    const inside = clipSegment(a, b, state.area) orelse return;
+    rl.drawLineEx(inside[0], inside[1], width, color);
+}
+
+/// o pedaço do segmento `a`–`b` que fica dentro de `rect` (Liang e Barsky); nulo se fica todo fora
+fn clipSegment(a: rl.Vector2, b: rl.Vector2, rect: rl.Rectangle) ?[2]rl.Vector2 {
+    const delta_x = b.x - a.x;
+    const delta_y = b.y - a.y;
+    var enter: f32 = 0;
+    var leave: f32 = 1;
+    const sides = [_][2]f32{
+        .{ -delta_x, a.x - rect.x },
+        .{ delta_x, rect.x + rect.width - a.x },
+        .{ -delta_y, a.y - rect.y },
+        .{ delta_y, rect.y + rect.height - a.y },
+    };
+    for (sides) |side| {
+        if (side[0] == 0) {
+            if (side[1] < 0) return null;
+            continue;
+        }
+        const at = side[1] / side[0];
+        if (side[0] < 0) enter = @max(enter, at) else leave = @min(leave, at);
+        if (enter > leave) return null;
+    }
+    return .{ .{ .x = a.x + enter * delta_x, .y = a.y + enter * delta_y }, .{ .x = a.x + leave * delta_x, .y = a.y + leave * delta_y } };
+}
+
+/// a legenda da trajetória em linhas corridas (um traço ou o símbolo e o nome); com `draw` falso só mede; devolve a
+/// altura
+fn trackLegend(ui: *widgets.Ui, scene: *const TrackScene, x: f32, y: f32, width: f32, draw: bool) f32 {
+    const row_height: f32 = 20;
+    var column: f32 = 0;
+    var row: f32 = 0;
+    var any = false;
+    for (scene.lines) |line| {
+        if (!line.legend) continue;
+        const item_width = 26 + theme.textWidth(ui.fonts.regular, line.name, 13) + 16;
+        if (column > 0 and column + item_width > width) {
+            column = 0;
+            row += 1;
+        }
+        if (draw) {
+            const middle_y = y + row * row_height + 9;
+            if (line.kind == .points) {
+                plot.drawMarker(line.marker, .{ .x = x + column + 11, .y = middle_y }, 11, line.color);
+            } else {
+                rl.drawLineEx(.{ .x = x + column, .y = middle_y }, .{ .x = x + column + 22, .y = middle_y }, 3, line.color);
+            }
+            theme.text(ui.fonts.regular, line.name, x + column + 26, middle_y - 8, 13, theme.colors.ink);
+        }
+        column += item_width;
+        any = true;
+    }
+    return if (any) (row + 1) * row_height else 0;
+}
+
+/// a trajetória de um gráfico "3d" (`aerosim/bridge.py`, `_track`)
+fn readTrack(memory: std.mem.Allocator, item: Json) !?TrackScene {
+    const track = item.object.get("track") orelse return null;
+    if (track != .object) return null;
+    const list = track.object.get("lines") orelse return null;
+    if (list != .array) return null;
+    var lines: std.ArrayList(TrackLine) = .empty;
+    for (list.array.items) |entry| {
+        const kind = stringField(entry, "kind");
+        var line: TrackLine = .{
+            .name = try memory.dupeZ(u8, stringField(entry, "name")),
+            .kind = if (std.mem.eql(u8, kind, "points")) .points else if (std.mem.eql(u8, kind, "segments")) .segments else .line,
+            .points = try floats(memory, entry.object.get("points")),
+            .color = hexColor(stringField(entry, "color")) orelse theme.colors.ink,
+            .width = if (number(entry.object.get("width"))) |value| @floatCast(value) else 2.5,
+            .legend = if (entry.object.get("legend")) |value| value != .bool or value.bool else true,
+        };
+        if (line.kind == .points) {
+            line.marker = plot.Marker.named(stringField(entry, "marker"));
+            if (number(entry.object.get("size"))) |value| line.size = @floatCast(value);
+        }
+        try lines.append(memory, line);
+    }
+    const low = try numberList(memory, track.object.get("low"), 3);
+    const high = try numberList(memory, track.object.get("high"), 3);
+    if (low.len < 3 or high.len < 3) return null;
+    return .{
+        .title = try memory.dupeZ(u8, stringField(item, "title")),
+        .axes = try memory.dupeZ(u8, stringField(track, "axes")),
+        .lines = lines.items,
+        .low = .{ low[0], low[1], low[2] },
+        .high = .{ high[0], high[1], high[2] },
+    };
 }
 
 /// o cartão de uma vista de cargas: o título, as escolhas (mapa, setas, escala), a imagem, a legenda e o caso;

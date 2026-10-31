@@ -570,7 +570,7 @@ fn defaultMarkerSize(marker: Marker) f32 {
 }
 
 /// um símbolo de `size` pixels centrado em `at`, cheio na cor e com a borda escura (como na GUI PyQt)
-fn drawMarker(marker: Marker, at: rl.Vector2, size: f32, color: rl.Color) void {
+pub fn drawMarker(marker: Marker, at: rl.Vector2, size: f32, color: rl.Color) void {
     const r = size / 2;
     const edge = theme.colors.ink;
     switch (marker) {

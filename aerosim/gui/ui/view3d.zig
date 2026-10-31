@@ -174,6 +174,18 @@ pub const View = struct {
         view.label_count += 1;
     }
 
+    /// onde o ponto `point` aparece na imagem colada em `rect` (pixels da tela); nulo se ele fica atrás da câmera
+    pub fn project(view: *const View, point: Body, rect: rl.Rectangle) ?rl.Vector2 {
+        const target = view.texture orelse return null;
+        const world = toWorld(point);
+        const eye = view.camera.position;
+        const look = view.camera.target;
+        const ahead = (world.x - eye.x) * (look.x - eye.x) + (world.y - eye.y) * (look.y - eye.y) + (world.z - eye.z) * (look.z - eye.z);
+        if (!view.orthographic and ahead <= 0) return null;
+        const at = rl.getWorldToScreenEx(world, view.camera, target.texture.width, target.texture.height);
+        return .{ .x = rect.x + at.x, .y = rect.y + at.y };
+    }
+
     /// cola a imagem em `rect` e escreve os textos
     pub fn blit(view: *const View, ui: *widgets.Ui, rect: rl.Rectangle) void {
         const target = view.texture orelse return;

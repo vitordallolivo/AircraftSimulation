@@ -99,3 +99,24 @@ def test_plot_style_reaches_the_screen():
     assert curves["estol"]["vspan"] and curves["estol"]["x"] == [11.0, 12.0]
     assert out["ylim"] == [0.0, 5.0]
 
+
+
+def test_track_keeps_one_color_per_leg():
+    """a trajetória 3D chega à tela em Zig com uma linha por etapa na cor dela, os eventos como pontos e as
+    silhuetas como pares de pontos, com a altura exagerada como na GUI PyQt"""
+    from aerosim.bridge import _plot
+    from aerosim.interfaces.simulation import PlotSpec, SimResult
+    series = {"t3_decolagem": {"e": [0, 0], "n": [0, 100], "h": [0, 10], "_color": "#d62728"},
+              "t3_cruzeiro": {"e": [0, 50], "n": [100, 200], "h": [10, 10], "_color": "#1f77b4"},
+              "t3_★ decolou": {"e": [0], "n": [50], "h": [1], "_symbol": "star", "_color": "#ffcc00", "_size": 18},
+              "t3_✈ cruzeiro": {"e": [0, 0], "n": [150, 150], "h": [10, 10], "oe": [-1, 1], "on": [0, 0],
+                                "oh": [0, 0], "_segments": 1, "_nolegend": 1, "_color": "#1f77b4"}}
+    spec = PlotSpec("t3", "Trajetória 3D", "e", ("n",), source="series:t3_*", kind="3d", z="h")
+    track = _plot(spec, SimResult(series=series))["track"]
+    lines = {line["name"]: line for line in track["lines"]}
+    assert lines["decolagem"]["color"] == "#d62728" and lines["cruzeiro"]["color"] == "#1f77b4"
+    assert lines["decolou"]["kind"] == "points" and lines["decolou"]["marker"] == "star"
+    assert lines["✈ cruzeiro"]["kind"] == "segments" and not lines["✈ cruzeiro"]["legend"]
+    scale = track["scale"]                                   # 0,25 × 200 m / 10 m = 5
+    assert scale == 5 and lines["cruzeiro"]["points"][2] == 10 * scale
+    assert lines["✈ cruzeiro"]["points"][:3] == [-1.0, 150.0, 10.0 * scale]
