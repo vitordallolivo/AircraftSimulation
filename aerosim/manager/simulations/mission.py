@@ -222,6 +222,7 @@ class MissionSimulation(SimulationBase):
                             help="do checkpoint salvo no início da etapa; se ainda não houver, voa até lá e salva"),
                   ParamSpec("until", "Parar em", END, kind="choice", choices=(END,) + tuple(f"fim: {n}" for n in legs[:-1]),
                             help="para no fim da etapa (salva o checkpoint para continuar dali)")]
+            P += pista[:2]           # a pista que a decolagem da missão tem de cumprir (8 m na micro, 55 m na regular...)
         elif mode == M_TO:
             P += pista
         elif mode == M_TURN:

@@ -66,6 +66,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - Missão na tela em Zig: a trajetória 3D, como na GUI PyQt, com cada etapa na cor dela (a mesma das faixas dos
   gráficos no tempo), os eventos como estrelas, a sombra no chão, as silhuetas do avião e a legenda embaixo; a altura
   sai exagerada pelo mesmo fator da PyQt. Arrastar gira e a roda aproxima.
+- Missão: a tabela das etapas (Trajetória) na tela em Zig, como a da GUI PyQt: decolagem, retas, curvas e pouso,
+  com "+ linha", "− linha", "↑" e "↓"; número vazio é automático (o raio da curva) ou mantém o anterior. A ponte
+  guarda a tabela até rodar (`Bridge.specs`, pedido "table"); vale para qualquer campo de tabela de uma análise (as
+  massas do MTOW). No modo missão aparece a pista (x_warning, z_warning): a decolagem da missão tem de caber nela
+  (8 m na micro 2026, 55 m na regular), e o diagnóstico acusa quando não cabe.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

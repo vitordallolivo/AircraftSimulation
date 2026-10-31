@@ -504,6 +504,7 @@ pub const Page = struct {
     fn readSpecs(page: *Page, arena: *Arena, reply: Json) !void {
         const memory = arena.allocator();
         try page.buildForm(memory, reply, true);
+        page.grids = try readGrids(memory, reply);
         page.description = try memory.dupeZ(u8, stringField(reply, "description"));
         dropArena(&page.spec_arena);
         page.spec_arena = arena;
@@ -574,7 +575,7 @@ pub const Page = struct {
         for (items) |item| {
             const kind = stringField(item, "kind");
             const value_kind = std.meta.stringToEnum(enum { float, int, bool, choice, str, file, floats }, kind) orelse {
-                skipped += 1;
+                if (!std.mem.eql(u8, kind, "table")) skipped += 1; // as tabelas vêm à parte, em "grids"
                 continue;
             };
             const group_name = if (stringField(item, "group").len > 0) stringField(item, "group") else "Geral";
@@ -940,7 +941,18 @@ pub const Page = struct {
                 else => return,
             }
         } else return;
-        page.stageRequest("grid", text.written());
+        if (page.kind == .simulation) page.tableRequest(text.written()) else page.stageRequest("grid", text.written());
+    }
+
+    /// uma edição numa tabela do formulário da análise (as etapas da Missão): a ponte guarda as linhas e devolve o
+    /// formulário, como o pedido dos campos
+    fn tableRequest(page: *Page, extra: []const u8) void {
+        var text: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
+        defer text.deinit();
+        const writer = &text.writer;
+        page.writeRequest(writer, "table") catch return;
+        writer.print(", {s}", .{extra}) catch return;
+        page.begin(.specs, text.written());
     }
 
     /// Guardar e a lista dos guardados (na etapa Perfis, a lista é a dos candidatos: clicar seleciona)

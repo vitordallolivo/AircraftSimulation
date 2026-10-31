@@ -120,3 +120,24 @@ def test_track_keeps_one_color_per_leg():
     scale = track["scale"]                                   # 0,25 × 200 m / 10 m = 5
     assert scale == 5 and lines["cruzeiro"]["points"][2] == 10 * scale
     assert lines["✈ cruzeiro"]["points"][:3] == [-1.0, 150.0, 10.0 * scale]
+
+
+def test_mission_table_is_edited_in_the_bridge_and_runs():
+    """a tabela das etapas da Missão (campo de tabela) chega como tabela editável; a edição fica na ponte e entra na
+    rodada como na GUI PyQt (número vazio = automático); a missão mostra a pista que a decolagem tem de cumprir"""
+    import io
+    from aerosim.bridge import Bridge
+    bridge = Bridge(SimulationManager(), io.StringIO(), str(ROOT / ".nao_existe_sprint"))
+    bridge.aircraft = load_file(str(PLANE))
+    page = bridge.specs({"op": "specs", "name": "mission", "values": {}})
+    assert {"x_warning", "z_warning"} <= {p["key"] for p in page["params"]}
+    grid = next(g for g in page["grids"] if g["name"] == "legs")
+    assert grid["rows"][0][:3] == ["decolagem + subida", "decolagem", "100"]
+    assert [c["kind"] for c in grid["columns"]][:3] == ["text", "choice", "text"]
+    edit = {"op": "table", "name": "mission", "values": {}, "grid": "legs"}
+    page = bridge.specs({**edit, "edit": "set", "row": 0, "key": "length", "value": "80"})
+    page = bridge.specs({**edit, "edit": "delete", "row": 2})
+    rows = bridge.tables[("mission", "legs")]
+    assert rows[0]["length"] == 80.0 and len(rows) == len(grid["rows"]) - 1
+    bridge.specs({**edit, "edit": "set", "row": 1, "key": "radius", "value": ""})
+    assert rows[1]["radius"] is None

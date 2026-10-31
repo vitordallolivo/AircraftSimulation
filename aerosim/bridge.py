@@ -37,7 +37,8 @@ from typing import Any
 
 from aerosim.interfaces.simulation import AREAS, CancelledError, ISimulationManager, PlotSpec, SimResult
 
-FORM_KINDS = ("float", "int", "bool", "choice", "str", "file", "floats")   # os tipos de campo que a tela em Zig desenha por enquanto
+FORM_KINDS = ("float", "int", "bool", "choice", "str", "file", "floats", "table")   # os campos que a tela em Zig desenha
+# (as tabelas vão à parte, em "grids": `Bridge.specs`)
 PLOT_KINDS = ("2d", "3d", "loads3d")                      # os tipos de gráfico idem
 
 # a arrumação das abas, a mesma de `aerosim/gui/main_window.py` e `aerosim/gui/design/__init__.py`
@@ -54,6 +55,7 @@ class Bridge:
         self.write_lock = threading.Lock()
         self.design_lock = threading.Lock()       # as etapas mexem no mesmo projeto: uma de cada vez
         self.runs: dict[Any, threading.Event] = {}
+        self.tables: dict[tuple[str, str], list[dict]] = {}   # as tabelas dos formulários (análise, campo) → linhas
         from aerosim.model.aircraft import Aircraft
         self.aircraft = Aircraft()
         self.stages = self._stages(design_dir)
@@ -108,13 +110,10 @@ class Bridge:
             elif op == "open":
                 from aerosim.data.projects import load_file
                 self.aircraft = load_file(request["path"])
+                self.tables.clear()                         # as tabelas presas ao avião voltam a ser as dele
                 self.reply(request, name=getattr(self.aircraft, "name", "") or os.path.basename(request["path"]))
-            elif op == "specs":
-                sim = self.manager.get(request["name"])
-                values = request.get("values") or {}
-                self.reply(request, params=[_param(p) for p in sim.parameters_for(self.aircraft, values)],
-                           plots=[_plot_spec(p) for p in sim.plots_for(self.aircraft, values)],
-                           description=sim.description)
+            elif op in ("specs", "table"):
+                self.reply(request, **self.specs(request))
             elif op == "run":
                 self.run(request)
             elif op == "stage":
@@ -163,9 +162,30 @@ class Bridge:
         areas.append({"title": "Montagem", "single": True, "tabs": [_tab("Montagem", "assembly", "")]})
         return areas
 
+    def specs(self, request: dict) -> dict:
+        """o formulário e os gráficos de uma análise; "table" antes edita uma tabela do formulário (as etapas da
+        Missão, as massas do MTOW), que a ponte guarda até rodar"""
+        name = request["name"]
+        sim = self.manager.get(name)
+        values = request.get("values") or {}
+        params = sim.parameters_for(self.aircraft, values)
+        tables = {p.key: p for p in params if p.kind == "table"}
+        for key, p in tables.items():
+            self.tables.setdefault((name, key), [dict(row) for row in p.default or []])
+        if request.get("op") == "table" and request.get("grid") in tables:
+            p = tables[request["grid"]]
+            _edit_rows(self.tables[(name, p.key)], p.columns, request.get("edit", "set"), int(request.get("row", -1)),
+                       request.get("key", ""), request.get("value"))
+        return {"params": [_param(p) for p in params],
+                "plots": [_plot_spec(p) for p in sim.plots_for(self.aircraft, values)], "description": sim.description,
+                "grids": [_table_grid(p, self.tables[(name, p.key)]) for p in tables.values()]}
+
     def run(self, request: dict) -> None:
         name = request["name"]
         values = request.get("values") or {}
+        for (sim_name, key), rows in self.tables.items():   # as tabelas editadas na tela entram como na GUI PyQt
+            if sim_name == name:
+                values[key] = [dict(row) for row in rows]
         cancel = self.runs[request.get("id")] = threading.Event()
         progress = lambda fraction, message: self.send({"id": request.get("id"), "progress": float(fraction),
                                                         "message": str(message)})
@@ -250,6 +270,64 @@ def _param(p) -> dict:
             "default": p.default, "minimum": p.minimum, "maximum": p.maximum, "unit": p.unit,
             "choices": [str(c) for c in p.choices], "group": p.group, "help": p.help, "rebuild": p.rebuild,
             "enabled": True}
+
+
+def _table_columns(columns) -> list[dict]:
+    """as colunas de um campo de tabela (`ParamSpec.columns`) no formato das tabelas da tela: número vai como texto
+    (vazio quer dizer "automático" ou "mantém", como na GUI PyQt), uma lista de opções vira escolha"""
+    out = []
+    for column in columns:
+        key, label, kind = column[:3]
+        choices = tuple(str(c) for c in kind) if isinstance(kind, (tuple, list)) else ()
+        out.append({"key": key, "label": label, "kind": "choice" if choices else "label" if kind == "label" else "text",
+                    "choices": list(choices), "help": column[3] if len(column) > 3 else ""})
+    return out
+
+
+def _table_grid(p, rows: list[dict]) -> dict:
+    """um campo de tabela como as tabelas editáveis das etapas (`stages.Grid`), com os botões da GUI PyQt"""
+    columns = _table_columns(p.columns)
+    fixed = any(c["kind"] == "label" for c in columns)          # linhas fixas: sem + / −
+    cells = []
+    for row in rows:
+        line = []
+        for column in columns:
+            value = row.get(column["key"])
+            if column["kind"] == "choice":
+                line.append(str(value) if value is not None else "")
+            elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                line.append(f"{value:g}" if math.isfinite(value) else "")
+            else:
+                line.append("" if value is None else str(value))
+        cells.append(line)
+    buttons = [] if fixed else [("add", "+ linha", "copia a selecionada logo abaixo dela"),
+                                ("delete", "− linha", "apaga a linha selecionada"),
+                                ("up", "↑", "sobe a linha selecionada"), ("down", "↓", "desce a linha selecionada")]
+    return {"name": p.key, "title": p.label, "help": p.help, "note": "", "columns": columns, "rows": cells,
+            "buttons": buttons}
+
+
+def _edit_rows(rows: list[dict], columns, edit: str, row: int, key: str, value) -> None:
+    """uma edição da tela numa tabela do formulário, como a `TableInput` da GUI PyQt: número vazio é None"""
+    kinds = {c[0]: c[2] for c in columns}
+    if edit == "set" and 0 <= row < len(rows) and key in kinds:
+        if kinds[key] == "float":
+            text = str(value if value is not None else "").strip().replace(",", ".")
+            try:
+                rows[row][key] = float(text) if text else None
+            except ValueError:
+                return
+        elif kinds[key] != "label":
+            rows[row][key] = "" if value is None else str(value)
+    elif edit == "add":
+        at = row if 0 <= row < len(rows) else len(rows) - 1
+        rows.insert(at + 1, dict(rows[at]) if rows else {c[0]: None for c in columns})
+    elif edit == "delete" and 0 <= row < len(rows):
+        rows.pop(row)
+    elif edit in ("up", "down") and 0 <= row < len(rows):
+        other = row - 1 if edit == "up" else row + 1
+        if 0 <= other < len(rows):
+            rows[row], rows[other] = rows[other], rows[row]
 
 
 def _plot_spec(p: PlotSpec) -> dict:

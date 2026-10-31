@@ -8,7 +8,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/__init__.py` — aerosim — simulador 6GDL de aeronaves em camadas:
 - `aerosim/bridge.py` — Ponte entre a tela em Zig (raylib) e os managers em Python: uma mensagem JSON por linha, na entrada e na saída
-  `class Bridge:50`, `start_in_browser:524`, `call_in_browser:532`, `main:547`
+  `class Bridge:51`, `start_in_browser:602`, `call_in_browser:610`, `main:625`
 
 ## Python · `aerosim/aero`
 
@@ -821,7 +821,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 75 testes em 11 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 91 testes em 13 arquivo(s)
+- `tests/manager` — 92 testes em 13 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)
