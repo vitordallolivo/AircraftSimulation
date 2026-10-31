@@ -689,7 +689,8 @@ fn locusCurves(memory: std.mem.Allocator, state: *const State, chosen: []const E
     for (chosen) |effect| {
         const color = effect_color.get(effect);
         const loci = state.loci[@intFromEnum(effect)][0..state.samples];
-        var named_line = false;
+        // com mais de um efeito, a legenda leva a cor de cada um (uma curva vazia só com o nome)
+        if (chosen.len > 1) try curves.append(memory, .{ .name = effect_name.get(effect), .x = &.{}, .y = &.{}, .color = color });
         for (std.enums.values(Mode)) |mode| {
             var slots: usize = 0;
             for (loci) |*poles| slots = @max(slots, (try modePoles(memory, poles, mode)).len);
@@ -701,8 +702,9 @@ fn locusCurves(memory: std.mem.Allocator, state: *const State, chosen: []const E
                     xs[k] = if (slot < found.len) found[slot][0] else std.math.nan(f64);
                     ys[k] = if (slot < found.len) found[slot][1] else std.math.nan(f64);
                 }
-                try curves.append(memory, .{ .name = effect_name.get(effect), .x = xs, .y = ys, .color = color, .legend = !named_line and chosen.len > 1 });
-                named_line = true;
+                // o nome diz de qual polo é a curva (o cabeçalho do CSV); fora da legenda
+                const name = try std.fmt.allocPrint(memory, "{s}: {s} {d}", .{ effect_name.get(effect), mode_name.get(mode), slot + 1 });
+                try curves.append(memory, .{ .name = name, .x = xs, .y = ys, .color = color, .legend = false });
             }
             const first = try modePoles(memory, &loci[0], mode);
             if (first.len == 0) continue;
@@ -712,7 +714,8 @@ fn locusCurves(memory: std.mem.Allocator, state: *const State, chosen: []const E
                 xs[i] = pole[0];
                 ys[i] = pole[1];
             }
-            try curves.append(memory, .{ .name = mode_name.get(mode), .x = xs, .y = ys, .color = color, .marker = mode_marker.get(mode), .size = 9, .legend = !in_legend.get(mode) });
+            const name = if (chosen.len > 1) try std.fmt.allocPrint(memory, "{s} ({s})", .{ mode_name.get(mode), effect_name.get(effect) }) else mode_name.get(mode);
+            try curves.append(memory, .{ .name = if (in_legend.get(mode)) name else mode_name.get(mode), .x = xs, .y = ys, .color = color, .marker = mode_marker.get(mode), .size = 9, .legend = !in_legend.get(mode) });
             in_legend.set(mode, true);
         }
     }
