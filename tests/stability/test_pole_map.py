@@ -31,3 +31,17 @@ def test_pole_map_points_span_and_damping_line():
     assert line["re"][1] / line["im"][1] == pytest.approx(-zeta / math.sqrt(1 - zeta ** 2))
     slow = _pole_series(_rows(), crit, SLOW_MODES, "q_")
     assert "q_curto período" not in slow and list(slow["q_espiral"]["re"]) == [0.1, 0.1]
+
+
+def test_release_moves_each_pole_from_with_to_without_payload():
+    """ao soltar a carga: um par de pontos por V (com → sem) e o traço entre eles, cortado por NaN a cada par"""
+    import numpy as np
+    from aerosim.manager.simulations.stability import _release_check, _release_series
+    before = _rows()
+    after = [dict(row, re_curto_periodo=row["re_curto_periodo"] - 1.0) for row in before]
+    series = _release_series(before, after)
+    assert list(series["s_curto período: sem carga"]["re"]) == [-9.0, -11.0]
+    moved = series["s_curto período: movimento"]["re"]
+    assert list(moved[:2]) == [-8.0, -9.0] and np.isnan(moved[2])
+    status, item, value, *_ = _release_check(before, after, 16.0)
+    assert status == "info" and value.startswith("curto período: ζ 0.71 → 0.74")   # −10 + 10i → −11 + 10i

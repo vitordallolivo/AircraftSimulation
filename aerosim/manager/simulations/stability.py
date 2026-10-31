@@ -95,6 +95,44 @@ def _pole_series(rows: list[dict], crit, names=tuple(MODE_LAB), prefix: str = "p
     return S
 
 
+def _release_series(before: list[dict], after: list[dict]) -> dict:
+    """os polos com a carga e sem ela (o modelo linear refeito sem a massa da carga, com o CG e a inércia que ficam),
+    um par por V ligado por um traço fino"""
+    S = {}
+    for nm, label in MODE_LAB.items():
+        color, symbol = MODE_STYLE[nm]
+        pairs = [(b[f"re_{nm}"], b[f"im_{nm}"], a[f"re_{nm}"], a[f"im_{nm}"]) for b, a in zip(before, after)]
+        pairs = [p for p in pairs if all(np.isfinite(p))]
+        if not pairs:
+            continue
+        P = np.array(pairs, float)
+        S[f"s_{label}: com carga"] = {"re": P[:, 0], "im": P[:, 1], "_color": color, "_symbol": symbol, "_size": 9}
+        S[f"s_{label}: sem carga"] = {"re": P[:, 2], "im": P[:, 3], "_color": color, "_symbol": "+", "_size": 12}
+        gap = np.full(len(P), np.nan)                     # um traço por V: antes, depois, NaN (corta a linha)
+        S[f"s_{label}: movimento"] = {"re": np.column_stack([P[:, 0], P[:, 2], gap]).ravel(),
+                                      "im": np.column_stack([P[:, 1], P[:, 3], gap]).ravel(),
+                                      "_color": color, "_width": 1.0, "_nolegend": 1}
+    return S
+
+
+def _release_check(before: list[dict], after: list[dict], V: float):
+    """o que muda nos modos oscilatórios ao soltar a carga, na velocidade da análise (ou na mais perto dela)"""
+    k = int(np.argmin([abs(b["V"] - V) for b in before]))
+    parts = []
+    for nm in ("curto_periodo", "fugoide", "dutch_roll"):
+        lam0 = complex(before[k][f"re_{nm}"], before[k][f"im_{nm}"])
+        lam1 = complex(after[k][f"re_{nm}"], after[k][f"im_{nm}"])
+        if not all(np.isfinite([lam0.real, lam0.imag, lam1.real, lam1.imag])) or lam0.imag <= 0 or lam1.imag <= 0:
+            continue
+        zeta = lambda lam: -lam.real / abs(lam)
+        parts.append(f"{MODE_LAB[nm]}: ζ {zeta(lam0):.2f} → {zeta(lam1):.2f}, ω_n {abs(lam0):.2f} → {abs(lam1):.2f}")
+    if not parts:
+        return None
+    return ("info", "polos ao soltar a carga", "; ".join(parts), f"em V = {before[k]['V']:g} m/s",
+            "sem a carga a massa, o CG e a inércia mudam, e os modos se deslocam (gráfico 'Polos ao soltar a carga')",
+            "")
+
+
 class StabilitySimulation(SimulationBase):
     name = "stability"
     title = "Estabilidade"
@@ -226,6 +264,9 @@ class StabilitySimulation(SimulationBase):
                         "Re λ (1/s)", "Im λ (rad/s)", live=False, source="series:p_*"),
                PlotSpec("polos_lentos", "Polos perto da origem: fugóide, dutch roll e espiral", "re", ("im",),
                         "Re λ (1/s)", "Im λ (rad/s)", live=False, source="series:q_*")]
+        if f is not None and f.payload:
+            ps.append(PlotSpec("solta", "Polos ao soltar a carga (um par por V: com carga → sem carga)", "re", ("im",),
+                               "Re λ (1/s)", "Im λ (rad/s)", live=False, source="series:s_*"))
         if f is None or f.roll_kind == "aileron":
             ps.append(PlotSpec("ail", "Aileron: tempo para inclinar × onde o aileron começa (tracejado: requisito)",
                                "eta_i", ("t",), "início do aileron (fração da semiasa)", "t (s)", live=False,
@@ -690,6 +731,20 @@ class StabilitySimulation(SimulationBase):
             S_["t_rolamento máximo"] = {"V": Vv[[0, -1]], "t": np.full(2, crit.roll_tau_max), "_dash": 1}
             S_.update(_pole_series(rows, crit))
             S_.update(_pole_series(rows, crit, SLOW_MODES, "q_"))
+        if f.payload and rows:                            # os mesmos polos sem a carga (logo depois da soltura)
+            ctx.on_progress(0.85, "modelo linear sem a carga")
+            dropped = ac.copy()
+            dropped.payload.enabled = False
+            after = []
+            for r in rows:
+                ctx.check()
+                md_after, _ = modes_at(ctx.backend, dropped, r["V"])
+                after.append({f"{part}_{nm}": (md_after or {}).get(nm, {}).get(part, np.nan)
+                              for nm in MODE_LAB for part in ("re", "im")})
+            S_.update(_release_series(rows, after))
+            checks_release = _release_check(rows, after, V)
+            if checks_release is not None:
+                add(*checks_release, G)
         md, lm = modes_at(ctx.backend, ac, V)
         if md is None:
             add("falha", "equilíbrio em voo nivelado", f"não convergiu em {V:g} m/s", "trimagem do núcleo",

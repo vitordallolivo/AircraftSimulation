@@ -241,7 +241,7 @@ https://claude.ai/artifact/N7e8KMZoDGJXdct46t1gsW (esperando o ok e os PDFs do d
 | G17 | Abrir e salvar pela janela de arquivo do sistema (`ui/native_dialog.zig`: zenity ou kdialog no Linux, PowerShell no Windows, osascript no macOS, numa thread); sem nenhum deles, no navegador ou no print, o seletor de dentro. Vale para o avião, os arquivos dos campos e a exportação dos gráficos. Feito na `0.2_dev` (f86cfd2), testado com o zenity | [GUI] | — | B9 | A revisar |
 | G18 | `zig build` no Linux: os programas ligam com o ligador do próprio Zig fora do Windows (o LLD acusava como erro as .so que o Zig 0.16 põe dentro do libraylib.a). Feito na `0.2_dev` (af25095); o AppImage sai com `python tools/package.py` | [ext] | — | B9 | A revisar |
 | G19 | READMEs com as telas em Zig: o da raiz com as sete páginas, o `aerosim/gui/README_zig.md` com a divisa, as tabelas, o TeX e a tabela de comandos. Feito na `0.2_dev` (489a40b) | [GUI] | — | B9 | A revisar |
-| G20 | Estabilidade, polos (vitor, 2026-10-31; ok no plano): 1) o mapa dos polos no plano complexo, um ponto por V, a faixa instável e as retas de ζ mínimo (feito); 2) os polos antes e depois da soltura da carga, com uma seta; 3) o sloshing no modelo linear (os estados do pêndulo do `mass.zig`, Abramson SP-106), desligado por padrão | [GUI] | — | B9 | Em andamento |
+| G20 | Estabilidade, polos (vitor, 2026-10-31; ok no plano): 1) o mapa dos polos no plano complexo, um ponto por V, a faixa instável e as retas de ζ mínimo (feito); 2) os polos antes e depois da soltura da carga, um par por V (feito); 3) o sloshing no modelo linear (os estados do pêndulo do `mass.zig`, Abramson SP-106), desligado por padrão | [GUI] | — | B9 | Em andamento |
 
 ### core
 

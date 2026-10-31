@@ -78,6 +78,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - Estabilidade: o mapa dos polos. Os polos de cada modo (curto período, fugóide, dutch roll, rolamento, espiral) no
   plano complexo, um ponto por velocidade da análise dinâmica, com a faixa instável (Re > 0) sombreada e as retas de
   ζ mínimo do nível 1; um segundo gráfico aproxima os polos perto da origem (fugóide, dutch roll, espiral).
+- Estabilidade, polos ao soltar a carga: num avião com carga lançável, o modelo linear é refeito sem a carga (a
+  massa, o CG e a inércia que ficam) e o gráfico liga, para cada V, o polo com carga ao polo sem carga; o diagnóstico
+  diz quanto o ζ e o ω_n de cada modo oscilatório mudam na velocidade da análise.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 
