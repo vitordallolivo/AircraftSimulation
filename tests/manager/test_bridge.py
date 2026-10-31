@@ -78,3 +78,24 @@ def test_curve_is_the_managers(replies):
 
 def test_error_keeps_the_bridge_alive(replies):
     assert replies[5]["ok"] is False and "nao_existe" in replies[5]["error"]
+
+
+def test_plot_style_reaches_the_screen():
+    """os pedidos de desenho da GUI PyQt (_color, _fill, _symbol, _vspan, _ylim) chegam à tela em Zig como campos"""
+    from aerosim.bridge import PALETTE, _plot
+    from aerosim.interfaces.simulation import PlotSpec, SimResult
+    series = {"a": {"V": [10, 20], "P": [1, 2], "_color": "#123456", "_width": 3, "_fill": "Q", "Q": [0, 0],
+                    "_strong": True},
+              "b": {"V": [15], "P": [1.5], "_symbol": "*", "_size": 12, "_nolegend": True},
+              "faixa": {"_vspan": [11, 12], "_label": "estol"},
+              "escala": {"_ylim": [0, 5]}}
+    spec = PlotSpec("p", "P", "V", ("P",), source="series:*")
+    out = _plot(spec, SimResult(series=series))
+    curves = {c["name"]: c for c in out["curves"]}
+    assert curves["a"]["color"] == "#123456" and curves["a"]["width"] == 3.0
+    assert curves["a"]["fill"] == [0.0, 0.0] and curves["a"]["strong"] is True
+    assert curves["b"]["marker"] == "*" and curves["b"]["size"] == 12.0 and curves["b"]["legend"] is False
+    assert curves["b"]["color"] in PALETTE                      # sem cor pedida: a paleta da PyQt
+    assert curves["estol"]["vspan"] and curves["estol"]["x"] == [11.0, 12.0]
+    assert out["ylim"] == [0.0, 5.0]
+

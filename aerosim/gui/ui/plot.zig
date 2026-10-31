@@ -24,7 +24,45 @@ pub const Series = struct {
     dashed: bool = false,
     points: bool = false, // só os pontos, sem ligar
     color_index: ?usize = null, // cor fixa da paleta (senão, a ordem da curva)
+    color: ?rl.Color = null, // a cor que o resultado pediu (vence a da paleta)
+    width: f32 = 2.2,
     in_legend: bool = true, // falso: a reta repetida (o outro lado do fim do curso) não aparece de novo na legenda
+    // região sombreada até a outra borda: `fill_ys` no mesmo x (sobra de potência, subida) ou `fill_xs` no mesmo y
+    // (o envelope de voo, de V_min a V_max em cada altitude)
+    fill_ys: []const f64 = &.{},
+    fill_xs: []const f64 = &.{},
+    strong: bool = false, // a sombra mais forte
+    marker: Marker = .none, // um símbolo em cada ponto (a estrela do máximo)
+    marker_size: f32 = 0, // 0: o padrão do símbolo
+    marker_line: bool = false, // com marcador, liga os pontos também
+    span: bool = false, // faixa vertical sombreada de xs[0] a xs[1] (o trecho do voo nivelado)
+
+    /// a cor desta curva, sendo a `index`-ésima do gráfico
+    pub fn colorAt(s: Series, index: usize) rl.Color {
+        return s.color orelse theme.plotColor(s.color_index orelse index);
+    }
+};
+
+/// os símbolos de ponto, os mesmos nomes da GUI PyQt (`_symbol`): "o", "star", "s", "t", "d", "+", "x"
+pub const Marker = enum {
+    none,
+    circle,
+    star,
+    square,
+    triangle,
+    diamond,
+    plus,
+    cross,
+
+    /// o símbolo pelo nome que vem do Python
+    pub fn named(name: []const u8) Marker {
+        const names = [_]struct { []const u8, Marker }{
+            .{ "o", .circle },  .{ "star", .star },   .{ "s", .square }, .{ "t", .triangle }, .{ "^", .triangle },
+            .{ "v", .triangle }, .{ "d", .diamond }, .{ "+", .plus },   .{ "x", .cross },
+        };
+        for (names) |entry| if (std.mem.eql(u8, entry[0], name)) return entry[1];
+        return if (name.len > 0) .circle else .none;
+    }
 };
 
 /// pontos coloridos por um valor (azul → laranja), sem legenda de curvas
@@ -41,6 +79,9 @@ pub const Axes = struct {
     x_label: [:0]const u8,
     y_label: [:0]const u8,
     equal_axes: bool = false, // a mesma escala em x e em y (um contorno de perfil)
+    // a escala pedida pelo resultado (`_xlim`, `_ylim`): as curvas seguem inteiras, cortadas na borda
+    x_limits: ?numbers.Range = null,
+    y_limits: ?numbers.Range = null,
 };
 
 pub const Frame = struct {
@@ -83,31 +124,54 @@ fn drawLines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
     // valor dela, sem a meia unidade de folga que `Range.of` dá a um valor único
     for (series) |s| {
         if (state.isHidden(s.name)) continue;
-        const rx = extent(s.xs) orelse continue;
-        const ry = extent(s.ys) orelse continue;
+        if (s.span) {
+            if (extent(s.xs)) |rx| x_range = if (x_range) |r| r.merge(rx) else rx;
+            continue;
+        }
+        var rx = extent(s.xs) orelse continue;
+        var ry = extent(s.ys) orelse continue;
+        if (extent(s.fill_xs)) |other| rx = rx.merge(other);
+        if (extent(s.fill_ys)) |other| ry = ry.merge(other);
         x_range = if (x_range) |r| r.merge(rx) else rx;
         y_range = if (y_range) |r| r.merge(ry) else ry;
     }
     if (x_range) |r| x_range = numbers.Range.of(&.{ r.low, r.high }, 0);
     if (y_range) |r| y_range = numbers.Range.of(&.{ r.low, r.high }, 0.06);
+    if (axes.x_limits) |limits| x_range = limits;
+    if (axes.y_limits) |limits| y_range = limits;
     const legend_height = legendHeight(ui, inner.width, series);
     const frame = drawFrame(ui, inner, axes, x_range orelse .{ .low = 0, .high = 1 }, y_range orelse .{ .low = 0, .high = 1 }, legend_height, axes.equal_axes);
     ui.pushClip(.{ .x = frame.area.x, .y = frame.area.y - 1, .width = frame.area.width + 1, .height = frame.area.height + 2 });
+    // as sombras primeiro, embaixo das linhas
     for (series, 0..) |s, i| {
         if (state.isHidden(s.name)) continue;
-        const color = theme.plotColor(s.color_index orelse i);
+        if (s.span and s.xs.len >= 2) {
+            const a = frame.toScreen(s.xs[0], frame.y_range.high);
+            const b = frame.toScreen(s.xs[1], frame.y_range.low);
+            rl.drawRectangleRec(.{ .x = @min(a.x, b.x), .y = a.y, .width = @abs(b.x - a.x), .height = b.y - a.y }, shade(s.colorAt(i), false));
+        }
+        if (s.fill_ys.len > 0 or s.fill_xs.len > 0) fillBetween(frame, s, shade(s.colorAt(i), s.strong));
+    }
+    for (series, 0..) |s, i| {
+        if (state.isHidden(s.name) or s.span) continue;
+        const color = s.colorAt(i);
         const n = @min(s.xs.len, s.ys.len);
+        if (s.marker != .none) {
+            if (s.marker_line) connect(frame, s, color);
+            for (0..n) |k| if (std.math.isFinite(s.xs[k]) and std.math.isFinite(s.ys[k])) drawMarker(s.marker, frame.toScreen(s.xs[k], s.ys[k]), if (s.marker_size > 0) s.marker_size else defaultMarkerSize(s.marker), color);
+            continue;
+        }
+        if (s.fill_ys.len > 0 or s.fill_xs.len > 0) { // a borda da sombra, fina
+            var thin = s;
+            thin.width = 1;
+            connect(frame, thin, color);
+            continue;
+        }
         if (s.points) {
             for (0..n) |k| if (std.math.isFinite(s.ys[k])) rl.drawCircleV(frame.toScreen(s.xs[k], s.ys[k]), 3, color);
             continue;
         }
-        var k: usize = 1;
-        while (k < n) : (k += 1) {
-            if (!std.math.isFinite(s.ys[k - 1]) or !std.math.isFinite(s.ys[k])) continue;
-            const a = frame.toScreen(s.xs[k - 1], s.ys[k - 1]);
-            const b = frame.toScreen(s.xs[k], s.ys[k]);
-            if (s.dashed) dashedLine(a, b, color) else rl.drawLineEx(a, b, 2.2, color);
-        }
+        connect(frame, s, color);
     }
     ui.popClip();
     drawLegend(ui, .{ .x = inner.x + 10, .y = inner.y + inner.height - legend_height + 4, .width = inner.width - 20, .height = legend_height }, series, state, interactive);
@@ -456,6 +520,99 @@ fn exportPlot(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const S
 }
 
 /// o menor e o maior valor finito (null se não houver)
+/// a linha que liga os pontos de `s` (um ponto que não é número corta a linha, como o `connect="finite"` da PyQt)
+fn connect(frame: Frame, s: Series, color: rl.Color) void {
+    const n = @min(s.xs.len, s.ys.len);
+    var k: usize = 1;
+    while (k < n) : (k += 1) {
+        if (!finite2(s.xs[k - 1], s.ys[k - 1]) or !finite2(s.xs[k], s.ys[k])) continue;
+        const a = frame.toScreen(s.xs[k - 1], s.ys[k - 1]);
+        const b = frame.toScreen(s.xs[k], s.ys[k]);
+        if (s.dashed) dashedLine(a, b, color) else rl.drawLineEx(a, b, s.width, color);
+    }
+}
+
+fn finite2(x: f64, y: f64) bool {
+    return std.math.isFinite(x) and std.math.isFinite(y);
+}
+
+/// a cor da sombra: a da curva, transparente (mais forte com `_strong`, como na GUI PyQt)
+fn shade(color: rl.Color, strong: bool) rl.Color {
+    return .{ .r = color.r, .g = color.g, .b = color.b, .a = if (strong) 110 else 45 };
+}
+
+/// a região entre a curva e a outra borda (`fill_ys` no mesmo x ou `fill_xs` no mesmo y), um quadrilátero por trecho
+fn fillBetween(frame: Frame, s: Series, color: rl.Color) void {
+    const along_x = s.fill_ys.len > 0;
+    const other = if (along_x) s.fill_ys else s.fill_xs;
+    const n = @min(@min(s.xs.len, s.ys.len), other.len);
+    var k: usize = 1;
+    while (k < n) : (k += 1) {
+        if (!finite2(s.xs[k - 1], s.ys[k - 1]) or !finite2(s.xs[k], s.ys[k])) continue;
+        if (!std.math.isFinite(other[k - 1]) or !std.math.isFinite(other[k])) continue;
+        const a = frame.toScreen(s.xs[k - 1], s.ys[k - 1]);
+        const b = frame.toScreen(s.xs[k], s.ys[k]);
+        const c = if (along_x) frame.toScreen(s.xs[k], other[k]) else frame.toScreen(other[k], s.ys[k]);
+        const d = if (along_x) frame.toScreen(s.xs[k - 1], other[k - 1]) else frame.toScreen(other[k - 1], s.ys[k - 1]);
+        triangle(a, b, c, color);
+        triangle(a, c, d, color);
+    }
+}
+
+/// um triângulo cheio em qualquer ordem dos vértices (o raylib só desenha os de um sentido)
+fn triangle(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, color: rl.Color) void {
+    const turn = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    if (turn < 0) rl.drawTriangle(a, b, c, color) else rl.drawTriangle(a, c, b, color);
+}
+
+fn defaultMarkerSize(marker: Marker) f32 {
+    return if (marker == .star) 18 else 11;
+}
+
+/// um símbolo de `size` pixels centrado em `at`, cheio na cor e com a borda escura (como na GUI PyQt)
+fn drawMarker(marker: Marker, at: rl.Vector2, size: f32, color: rl.Color) void {
+    const r = size / 2;
+    const edge = theme.colors.ink;
+    switch (marker) {
+        .none => {},
+        .circle => {
+            rl.drawCircleV(at, r, color);
+            rl.drawCircleLinesV(at, r, edge);
+        },
+        .square => {
+            const box: rl.Rectangle = .{ .x = at.x - r, .y = at.y - r, .width = 2 * r, .height = 2 * r };
+            rl.drawRectangleRec(box, color);
+            rl.drawRectangleLinesEx(box, 1, edge);
+        },
+        .triangle, .diamond, .star => {
+            // o contorno: 3 pontas (triângulo), 4 (losango) ou 5 com as reentrâncias (estrela)
+            var corners: [10]rl.Vector2 = undefined;
+            const count: usize = switch (marker) {
+                .triangle => 3,
+                .diamond => 4,
+                else => 10,
+            };
+            for (0..count) |k| {
+                const angle = -std.math.pi / 2.0 + 2.0 * std.math.pi * @as(f32, @floatFromInt(k)) / @as(f32, @floatFromInt(count));
+                const radius = if (marker == .star and k % 2 == 1) r * 0.42 else r;
+                corners[k] = .{ .x = at.x + radius * @cos(angle), .y = at.y + radius * @sin(angle) };
+            }
+            for (0..count) |k| triangle(at, corners[k], corners[(k + 1) % count], color);
+            for (0..count) |k| rl.drawLineEx(corners[k], corners[(k + 1) % count], 1, edge);
+        },
+        .plus, .cross => {
+            const d: f32 = if (marker == .cross) r * 0.7 else r;
+            if (marker == .plus) {
+                rl.drawLineEx(.{ .x = at.x - d, .y = at.y }, .{ .x = at.x + d, .y = at.y }, 2, color);
+                rl.drawLineEx(.{ .x = at.x, .y = at.y - d }, .{ .x = at.x, .y = at.y + d }, 2, color);
+            } else {
+                rl.drawLineEx(.{ .x = at.x - d, .y = at.y - d }, .{ .x = at.x + d, .y = at.y + d }, 2, color);
+                rl.drawLineEx(.{ .x = at.x - d, .y = at.y + d }, .{ .x = at.x + d, .y = at.y - d }, 2, color);
+            }
+        },
+    }
+}
+
 fn extent(values: []const f64) ?numbers.Range {
     var low = std.math.inf(f64);
     var high = -std.math.inf(f64);
@@ -626,8 +783,10 @@ fn drawLegend(ui: *widgets.Ui, rect: rl.Rectangle, series: []const Series, state
         const item: rl.Rectangle = .{ .x = x - 3, .y = y - 2, .width = w - 12, .height = legend_row };
         if (interactive and ui.hovering(item)) widgets.rounded(item, 4, theme.colors.hover);
         if (interactive and ui.clickedIn(item)) state.toggle(s.name);
-        const color = if (hidden) theme.colors.line else theme.plotColor(s.color_index orelse i);
-        if (s.points) rl.drawCircleV(.{ .x = x + 11, .y = y + 7 }, 3.5, color) else if (s.dashed) dashedLine(.{ .x = x, .y = y + 7 }, .{ .x = x + 22, .y = y + 7 }, color) else rl.drawLineEx(.{ .x = x, .y = y + 7 }, .{ .x = x + 22, .y = y + 7 }, 2.2, color);
+        const color = if (hidden) theme.colors.line else s.colorAt(i);
+        if (s.span or s.fill_ys.len > 0 or s.fill_xs.len > 0) {
+            rl.drawRectangleRec(.{ .x = x + 2, .y = y + 2, .width = 18, .height = 10 }, shade(color, true));
+        } else if (s.marker != .none) drawMarker(s.marker, .{ .x = x + 11, .y = y + 7 }, 11, color) else if (s.points) rl.drawCircleV(.{ .x = x + 11, .y = y + 7 }, 3.5, color) else if (s.dashed) dashedLine(.{ .x = x, .y = y + 7 }, .{ .x = x + 22, .y = y + 7 }, color) else rl.drawLineEx(.{ .x = x, .y = y + 7 }, .{ .x = x + 22, .y = y + 7 }, 2.2, color);
         _ = tex.draw(ui.fonts.regular, s.name, x + 28, y, 12, if (hidden) theme.colors.muted else theme.colors.label);
         if (hidden) rl.drawLineEx(.{ .x = x + 26, .y = y + 7 }, .{ .x = x + w - 16, .y = y + 7 }, 1, theme.colors.muted);
         x += w;

@@ -23,6 +23,7 @@ const menus = ui_kit.menus;
 const dialogs = ui_kit.dialogs;
 const view3d = ui_kit.view3d;
 const table_mod = ui_kit.table;
+const numbers_mod = ui_kit.numbers;
 const python_bridge = @import("python_bridge.zig");
 
 const Json = std.json.Value;
@@ -56,6 +57,8 @@ const Chart = struct {
     x_label: [:0]const u8,
     y_label: [:0]const u8,
     series: []plot.Series,
+    x_limits: ?numbers_mod.Range = null, // a escala que o resultado pediu (`_xlim`, `_ylim`)
+    y_limits: ?numbers_mod.Range = null,
 };
 
 /// uma tabela de texto (massas, dimensões)
@@ -208,6 +211,8 @@ pub const Page = struct {
     edited_while_busy: bool = false, // editou enquanto a conta corria: o formulário da resposta não vale
     opened: [1024]u8 = undefined, // "Mandar para a Montagem": o arquivo que a tela abre
     opened_len: usize = 0,
+    go_to: [64]u8 = undefined, // "Usar em Desempenho": a análise que a tela mostra depois de abrir o arquivo
+    go_to_len: usize = 0,
     wants_requirements: bool = false, // apertou "Condições e restrições…"
     prompt: dialogs.TextPrompt = .{},
     picker: dialogs.FilePicker = .{},
@@ -257,6 +262,11 @@ pub const Page = struct {
         const length = page.opened_len;
         page.opened_len = 0;
         return page.opened[0..length];
+    }
+
+    /// a análise para onde a tela vai depois de abrir o arquivo de `takeOpened` (vazio: a Montagem)
+    pub fn goTo(page: *const Page) []const u8 {
+        return page.go_to[0..page.go_to_len];
     }
 
     /// uma janela da página (pergunta, arquivo) está aberta
@@ -498,6 +508,9 @@ pub const Page = struct {
             const length = @min(opened.len, page.opened.len);
             @memcpy(page.opened[0..length], opened[0..length]);
             page.opened_len = length;
+            const target = stringField(reply, "go");
+            page.go_to_len = @min(target.len, page.go_to.len);
+            @memcpy(page.go_to[0..page.go_to_len], target[0..page.go_to_len]);
         }
         setText(&page.message, "{s}", .{stringField(reply, "message")});
         // o formulário antigo (se ficou) ainda aponta para a memória dele: só se solta a que não está em uso
@@ -682,17 +695,33 @@ pub const Page = struct {
             for (curves, 0..) |curve, k| {
                 const xs_json = (curve.object.get("x") orelse return error.BadReply).array.items;
                 const ys_json = (curve.object.get("y") orelse return error.BadReply).array.items;
-                var xs: std.ArrayList(f64) = .empty;
-                var ys: std.ArrayList(f64) = .empty;
-                for (xs_json[0..@min(xs_json.len, ys_json.len)], 0..) |x_json, i| {
-                    const x = number(x_json) orelse continue;
-                    const y = number(ys_json[i]) orelse continue;
-                    try xs.append(memory, x);
-                    try ys.append(memory, y);
+                // um valor que não é número fica NaN: corta a linha ali, como na GUI PyQt, e mantém os índices
+                // alinhados com a outra borda da sombra
+                const count = @min(xs_json.len, ys_json.len);
+                const xs = try memory.alloc(f64, count);
+                const ys = try memory.alloc(f64, count);
+                for (0..count) |i| {
+                    xs[i] = number(xs_json[i]) orelse std.math.nan(f64);
+                    ys[i] = number(ys_json[i]) orelse std.math.nan(f64);
                 }
-                series[k] = .{ .name = try memory.dupeZ(u8, stringField(curve, "name")), .xs = xs.items, .ys = ys.items, .dashed = flag(curve, "dashed"), .in_legend = curve.object.get("legend") == null or flag(curve, "legend") };
+                series[k] = .{
+                    .name = try memory.dupeZ(u8, stringField(curve, "name")),
+                    .xs = xs,
+                    .ys = ys,
+                    .dashed = flag(curve, "dashed"),
+                    .in_legend = curve.object.get("legend") == null or flag(curve, "legend"),
+                    .color = hexColor(stringField(curve, "color")),
+                    .width = if (curve.object.get("width")) |w| @floatCast(number(w) orelse 2.2) else 2.2,
+                    .fill_ys = try numberList(memory, curve.object.get("fill"), count),
+                    .fill_xs = try numberList(memory, curve.object.get("fill_x"), count),
+                    .strong = flag(curve, "strong"),
+                    .marker = plot.Marker.named(stringField(curve, "marker")),
+                    .marker_size = if (curve.object.get("size")) |size| @floatCast(number(size) orelse 0) else 0,
+                    .marker_line = flag(curve, "line"),
+                    .span = flag(curve, "vspan"),
+                };
             }
-            try charts.append(memory, .{ .title = try memory.dupeZ(u8, stringField(item, "title")), .x_label = try memory.dupeZ(u8, stringField(item, "xlabel")), .y_label = try memory.dupeZ(u8, stringField(item, "ylabel")), .series = series });
+            try charts.append(memory, .{ .title = try memory.dupeZ(u8, stringField(item, "title")), .x_label = try memory.dupeZ(u8, stringField(item, "xlabel")), .y_label = try memory.dupeZ(u8, stringField(item, "ylabel")), .series = series, .x_limits = limits(item.object.get("xlim")), .y_limits = limits(item.object.get("ylim")) });
         };
         page.summary = rows.items;
         page.checks = found.items;
@@ -956,7 +985,7 @@ pub const Page = struct {
         for (page.charts, 0..) |chart, k| {
             const x = rect.x + gap + @as(f32, @floatFromInt(k % 2)) * (column_width + gap);
             const chart_y = y + @as(f32, @floatFromInt(k / 2)) * (chart_height + gap);
-            plot.lines(ui, .{ .x = x, .y = chart_y, .width = column_width, .height = chart_height }, .{ .title = chart.title, .x_label = chart.x_label, .y_label = chart.y_label }, chart.series);
+            plot.lines(ui, .{ .x = x, .y = chart_y, .width = column_width, .height = chart_height }, .{ .title = chart.title, .x_label = chart.x_label, .y_label = chart.y_label, .x_limits = chart.x_limits, .y_limits = chart.y_limits }, chart.series);
         }
         y += @as(f32, @floatFromInt((page.charts.len + 1) / 2)) * (chart_height + gap);
         if (page.skipped_charts > 0) {
@@ -1236,6 +1265,31 @@ fn vertex(vertices: []const f32, index: u32) ?view3d.Body {
     const start = @as(usize, index) * 3;
     if (start + 2 >= vertices.len) return null;
     return .{ vertices[start], vertices[start + 1], vertices[start + 2] };
+}
+
+/// "#rrggbb" → cor; outro texto, nula (fica a da paleta)
+fn hexColor(text: []const u8) ?rl.Color {
+    if (text.len != 7 or text[0] != '#') return null;
+    const value = std.fmt.parseInt(u32, text[1..], 16) catch return null;
+    return .{ .r = @intCast(value >> 16), .g = @intCast((value >> 8) & 0xff), .b = @intCast(value & 0xff), .a = 255 };
+}
+
+/// uma lista de números do JSON com `count` itens (o que não é número vira NaN); vazia se não veio
+fn numberList(memory: std.mem.Allocator, value: ?Json, count: usize) ![]const f64 {
+    const list = value orelse return &.{};
+    if (list != .array) return &.{};
+    const out = try memory.alloc(f64, count);
+    for (out, 0..) |*v, i| v.* = if (i < list.array.items.len) number(list.array.items[i]) orelse std.math.nan(f64) else std.math.nan(f64);
+    return out;
+}
+
+/// [mín, máx] do JSON → faixa do eixo
+fn limits(value: ?Json) ?numbers_mod.Range {
+    const list = value orelse return null;
+    if (list != .array or list.array.items.len < 2) return null;
+    const low = number(list.array.items[0]) orelse return null;
+    const high = number(list.array.items[1]) orelse return null;
+    return if (high > low) .{ .low = low, .high = high } else null;
 }
 
 /// o tipo de uma coluna como o Python escreve: "choice", "check", "label" (só leitura), "text" ou número

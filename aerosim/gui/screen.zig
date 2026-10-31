@@ -323,7 +323,7 @@ pub const Screen = struct {
             }
             if (p.takeOpened()) |path| {
                 screen.openAircraft(path);
-                screen.showAssembly();
+                if (screen.findPage(p.goTo())) |target| screen.showPage(target) else screen.showAssembly();
             }
         } else if (screen.areas.len == 0 and screen.area == 0) {
             screen.drawWaiting(ui, content);

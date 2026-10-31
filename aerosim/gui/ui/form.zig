@@ -57,7 +57,8 @@ pub const Group = struct {
 
 const row_height: f32 = 30;
 const band_height: f32 = 30;
-const control_width: f32 = 112;
+/// a caixa do valor: no mínimo isto, e larga o bastante para a maior opção das escolhas (até metade da linha)
+const control_minimum: f32 = 112;
 
 /// estado do formulário entre quadros: rolagem e o campo em edição
 pub const Form = struct {
@@ -73,6 +74,21 @@ pub const Form = struct {
     file_request: ?usize = null, // clicou num campo de arquivo: quem desenha abre a janela de escolher e põe o caminho
     origin: rl.Vector2 = .{ .x = 0, .y = 0 }, // onde o formulário foi desenhado no último quadro
     width: f32 = 0,
+    control_width: f32 = control_minimum, // a largura das caixas de valor neste quadro
+
+    /// a largura das caixas: a maior opção de escolha inteira, sem passar da metade da linha nem de 260 px
+    fn measureControls(form: *Form, ui: *widgets.Ui, width: f32) void {
+        var widest: f32 = control_minimum;
+        for (form.fields) |field| {
+            if (field.kind != .choice) continue;
+            var options = std.mem.splitScalar(u8, field.choices, ';');
+            while (options.next()) |option| {
+                var buffer: [128]u8 = undefined;
+                widest = @max(widest, theme.textWidth(ui.fonts.mono, widgets.format(&buffer, "{s}", .{option}), 14) + 34);
+            }
+        }
+        form.control_width = @max(control_minimum, @min(widest, @min(260, (width - 20) * 0.5)));
+    }
 
     /// altura total do conteúdo
     pub fn contentHeight(form: *const Form) f32 {
@@ -104,6 +120,7 @@ pub const Form = struct {
     pub fn drawAt(form: *Form, ui: *widgets.Ui, x: f32, top: f32, width: f32) bool {
         form.origin = .{ .x = x, .y = top };
         form.width = width;
+        form.measureControls(ui, width);
         var changed = false;
         // a lista aberta fica por cima de tudo e pega o clique antes dos campos (mesmo fora do recorte)
         if (form.open_choice) |index| {
@@ -154,7 +171,7 @@ pub const Form = struct {
                 y += 3;
                 for (form.fields, 0..) |field, i| {
                     if (field.group != g) continue;
-                    if (i == index) return .{ .x = x + 10 + width - 20 - control_width, .y = y + 3, .width = control_width, .height = row_height - 6 };
+                    if (i == index) return .{ .x = x + 10 + width - 20 - form.control_width, .y = y + 3, .width = form.control_width, .height = row_height - 6 };
                     y += row_height;
                 }
                 y += 3;
@@ -180,6 +197,7 @@ pub const Form = struct {
 
     fn drawField(form: *Form, ui: *widgets.Ui, index: usize, field: *Field, x: f32, y: f32, width: f32) bool {
         var buffer: [96]u8 = undefined;
+        const control_width = form.control_width;
         const control: rl.Rectangle = .{ .x = x + width - control_width, .y = y + 3, .width = control_width, .height = row_height - 6 };
         const label_color = if (field.enabled) theme.colors.label else theme.colors.muted;
         ui.tooltip(.{ .x = x, .y = y, .width = width - control_width - 4, .height = row_height }, field.help);

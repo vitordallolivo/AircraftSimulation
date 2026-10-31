@@ -197,9 +197,11 @@ class Bridge:
         elif do == "grid":
             stage.edit_grid(request.get("grid", ""), request.get("edit", "set"), int(request.get("row", -1)),
                             request.get("key", ""), request.get("value"))
-        opened = ""
-        if message.startswith("open:"):            # "Mandar para a Montagem": a tela abre o arquivo
-            opened, message = message[5:].split("|", 1)
+        opened, go = "", ""
+        if message.startswith(("open:", "open@")):  # "Mandar para a Montagem": a tela abre o arquivo
+            head, rest = message.split(":", 1)     # "open@performance:" também vai para essa análise
+            go = head.partition("@")[2]
+            opened, message = rest.split("|", 1)
         disabled = set(stage.disabled())
         params = []
         for p in stage.form():
@@ -209,7 +211,7 @@ class Bridge:
         outcome = stage.compute()
         page = {"title": stage.title, "help": stage.help, "keep_label": stage.keep_label, "params": params,
                 "kept": stage.kept(), "actions": [asdict(a) for a in stage.actions()],
-                "requirements": self.stages["requisitos"].ctx.design.requirements.summary(), "open": opened,
+                "requirements": self.stages["requisitos"].ctx.design.requirements.summary(), "open": opened, "go": go,
                 "message": message, "grids": [asdict(g) for g in stage.grids()]}
         if outcome is not None:
             page.update(message=message or outcome.message, summary=outcome.result.summary,
@@ -277,6 +279,19 @@ def _plot(spec: PlotSpec, result: SimResult) -> dict:
         if isinstance(table, dict) and ("_vline" in table or "_hline" in table) and spec.x not in table:
             guides.append((label, table))                       # as retas de referência vão depois das curvas
             continue
+        if isinstance(table, dict) and ("_ylim" in table or "_xlim" in table):   # a escala do gráfico
+            for key in ("_xlim", "_ylim"):
+                if key in table:
+                    limits = _numbers(table[key])
+                    if limits and None not in limits:
+                        out[key[1:]] = limits[:2]                   # como a GUI PyQt: nos eixos da tela
+            continue
+        if isinstance(table, dict) and "_vspan" in table:        # uma faixa vertical sombreada
+            span = _numbers(table["_vspan"])
+            if span and None not in span:
+                curves.append({"name": str(table.get("_label") or label), "x": span[:2], "y": [0.0, 0.0],
+                               "vspan": True, "legend": not table.get("_nolegend"), **_style(table)})
+            continue
         if not isinstance(table, dict) or spec.x not in table:
             continue
         for y in spec.ys:
@@ -290,9 +305,44 @@ def _plot(spec: PlotSpec, result: SimResult) -> dict:
             title = str(table.get("_label") or label or y)
             if len(spec.ys) > 1:
                 title = f"{title}: {y}"
-            curves.append({"name": title, "x": xs, "y": ys, "dashed": table.get("_dash") is not None})
+            curve = {"name": title, "x": xs, "y": ys, "dashed": table.get("_dash") is not None, **_style(table)}
+            other = table.get("_fill"), table.get("_fillx")
+            if other[0] in table or other[1] in table:            # região sombreada entre esta curva e outra
+                fill_is_y = other[0] in table
+                band = _numbers(table[other[0] if fill_is_y else other[1]])
+                if band is not None:
+                    # "fill": a outra borda em y, no mesmo x; "fill_x": a outra em x, no mesmo y (como a GUI PyQt,
+                    # nos eixos da tela)
+                    curve["fill" if fill_is_y else "fill_x"] = band
+                    curve["strong"] = bool(table.get("_strong"))
+            symbol = table.get("_symbol") or ("o" if table.get("_marker") else None)
+            if symbol:
+                curve["marker"] = str(symbol)
+                curve["line"] = bool(table.get("_line"))
+                if "_size" in table:
+                    curve["size"] = float(table["_size"])
+            if table.get("_nolegend"):
+                curve["legend"] = False
+            curves.append(curve)
     _guides(curves, guides, spec.swap)
+    for k, curve in enumerate(curves):                     # sem cor pedida: a paleta da GUI PyQt, na mesma ordem
+        curve.setdefault("color", PALETTE[k % len(PALETTE)])
     return out
+
+
+# a paleta da GUI PyQt (`aerosim/gui/widgets/plots.py`), para os gráficos saírem com as mesmas cores nas duas telas
+PALETTE = ("#1f77b4", "#d62728", "#2ca02c", "#ff7f0e", "#9467bd", "#8c564b", "#17becf", "#e377c2", "#7f7f7f")
+
+
+def _style(table: dict) -> dict:
+    """a cor (#rrggbb) e a espessura que o resultado pede para a curva, como a GUI PyQt desenha"""
+    style = {}
+    color = table.get("_color")
+    if isinstance(color, str) and color.startswith("#") and len(color) == 7:
+        style["color"] = color
+    if "_width" in table:
+        style["width"] = float(table["_width"])
+    return style
 
 
 def _guides(curves: list, guides: list, swap: bool) -> None:
@@ -313,7 +363,7 @@ def _guides(curves: list, guides: list, swap: bool) -> None:
         x, y = ([value[0]] * 2, [low, high]) if vertical else ([low, high], [value[0]] * 2)
         name = str(table.get("_label") or label).strip()
         curves.append({"name": name, "x": x, "y": y, "dashed": table.get("_dash") is not None,
-                       "legend": not table.get("_nolegend") and name not in named})
+                       "legend": not table.get("_nolegend") and name not in named, **_style(table)})
         named.add(name)
 
 

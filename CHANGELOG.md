@@ -58,6 +58,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   ganharam colunas de marcar, de texto e só de leitura.
 - `zig build` no Linux: os programas ligam com o ligador do próprio Zig; o LLD acusava como erro as .so que o Zig
   0.16 põe dentro do libraylib.a.
+- Desempenho na tela em Zig como na GUI PyQt: os gráficos trazem a área sombreada (a região segura do envelope, a
+  faixa de estol), as cores que o resultado pede (uma por altitude), a estrela no máximo e os limites do eixo, e as
+  curvas sem cor pedida saem na paleta da PyQt. As escolhas do formulário ficam largas o bastante para o nome
+  inteiro. Motores ganhou "Usar em Desempenho →": abre o avião como "Mandar para a Montagem" e vai direto para
+  Desempenho → Avião montado.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

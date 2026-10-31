@@ -282,3 +282,19 @@ def test_requirements_tables_edit_constraints_and_variables(tmp_path):
     req.edit_grid("variaveis", "set", motor_row, "options", "A, B")
     var = ctx.design.variables[motor_row]
     assert var.options == ["A", "B"] and var.mode == "variável"
+
+
+def test_use_in_performance_opens_and_asks_for_the_analysis(tmp_path):
+    """'Usar em Desempenho →' salva e abre o avião como 'Mandar para a Montagem', e pede à tela a análise de
+    Desempenho ("open@performance:"); 'Mandar' continua indo para a Montagem ("open:")"""
+    from aerosim.data.projects import JsonProjectStore
+    ctx = _context(tmp_path)
+    ctx.projects = JsonProjectStore(str(tmp_path / "avioes"))
+    stages.WingStage(ctx).do_keep()
+    stages.TailStage(ctx).do_keep()
+    power = stages.PowerStage(ctx)
+    assert [a.key for a in power.actions()] == ["send", "perf"]
+    sent, used = power.act("send", ""), power.act("perf", "")
+    assert sent.startswith("open:") and used.startswith("open@performance:")
+    path = used.split(":", 1)[1].split("|", 1)[0]
+    assert path.endswith(".json") and (tmp_path / "avioes").is_dir()

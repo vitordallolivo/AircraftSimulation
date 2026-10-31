@@ -756,7 +756,8 @@ class PowerStage(Stage):
     title = "Motores e montagem"
     help = ("Onde ficam os motores, e com isso a bateria (posta onde o CG cai na margem), a carga paga (no CG), a "
             "fuselagem e o trem. Mostra o desempenho rápido do avião montado e a massa máxima que a pista permite. "
-            "'Mandar para a Montagem' abre o avião e o salva em 'meus aviões'.")
+            "'Mandar para a Montagem' abre o avião e o salva em 'meus aviões'; 'Usar em Desempenho' faz o mesmo e vai "
+            "direto para as análises de Desempenho.")
     keep_label = "Guardar avião"
 
     def draft(self):
@@ -805,10 +806,12 @@ class PowerStage(Stage):
 
     def actions(self):
         return [Action("send", "Mandar para a Montagem →", "",
-                       "abre o avião do rascunho como novo avião e salva em 'meus aviões'")]
+                       "abre o avião do rascunho como novo avião e salva em 'meus aviões'"),
+                Action("perf", "Usar em Desempenho →", "",
+                       "abre o avião do rascunho e vai para as análises de Desempenho (decolagem, envelope, subida...)")]
 
     def act(self, key, arg):
-        if key != "send":
+        if key not in ("send", "perf"):
             return super().act(key, arg)
         from aerosim.design import power as pw
         from aerosim.design.flight import tune_takeoff
@@ -829,7 +832,9 @@ class PowerStage(Stage):
         ac.name = name
         path = store.save(ac, name).path
         note = why if ok else f"⚠ foi sem a decolagem ajustada: {why}. Ajuste em Desempenho → Missão."
-        return f"open:{path}|{ac.name}: {note}"
+        # "open@<análise>:" pede à tela que, depois de abrir, vá para essa análise
+        target = "@performance" if key == "perf" else ""
+        return f"open{target}:{path}|{ac.name}: {note}"
 
 
 # ====================================================================== Condições e restrições
