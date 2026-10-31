@@ -41,6 +41,21 @@ números com todas as casas, então abre direto numa planilha ou no pandas. As t
 têm o mesmo menu: o botão direito grava a tabela em CSV, com uma grandeza por linha e o número inteiro, não o
 arredondado da tela. A gravação (CSV, PDF com a imagem comprimida) fica em `export.zig`, que tem teste.
 
+Os textos dos gráficos (título, eixos e legenda) aceitam um pedaço de TeX, desenhado por `tex.zig`: o que fica
+entre `$...$` vira matemática, com índice (`C_L`, `C_{m,CG}`), expoente, letras gregas e operadores com espaço dos
+dois lados (`\times`, `=`). Sem isso, um título precisava de uma frase inteira para dizer o que se plota, e a frase
+não cabia no cartão. Com o TeX, o título diz só a grandeza ($C_L \times \alpha$) e a legenda explica cada curva
+(cruzeiro, estol, fim do curso). As retas de referência que o Python manda (`_vline`, `_hline`) também entram na
+legenda com o nome delas. Não é o TeX inteiro, só o que um rótulo precisa.
+
+![Gráficos de Projetar com os títulos em TeX e a legenda com cada curva](../../docs/img/zig_graficos_tex.png)
+
+Abrir e salvar arquivo usam a janela do próprio sistema (`native_dialog.zig`): o `zenity` ou o `kdialog` no Linux,
+o PowerShell no Windows, o `osascript` no macOS. Ela já conhece os favoritos, as pastas recentes e os discos, e o
+programa não liga em nenhuma biblioteca a mais, porque só chama o que o sistema tem. A janela roda numa thread, e a
+tela fica escurecida enquanto ela está aberta. Sem nenhum desses programas, no navegador ou no print, entra o
+seletor desenhado aqui.
+
 As janelas por cima da tela ficam em `dialogs.zig`: o seletor de arquivo, que navega pelas pastas e mostra só as
 extensões pedidas (a pasta se digita no campo de cima, com `~` para a pessoal, ou se escolhe pelos atalhos
 Exemplos, Pasta pessoal, Pasta atual e Raiz), para abrir (um clique no arquivo) ou para salvar (com o nome digitado), e a pergunta de um texto
@@ -55,6 +70,17 @@ candidatos dentro da barra lateral de Perfis) rola primeiro, e a de fora fica co
 inteira rola junto e só o rodapé ("Rodar" e a mensagem) fica parado. As caixas de marcar e as setas
 são desenhadas com linhas e triângulos, sem depender de a fonte do sistema ter o "✓" ou o "▸", e o Esc fecha a
 janela de cima (seletor, pergunta) em vez de fechar o programa.
+
+A divisa entre o formulário e os resultados se arrasta (`widgets.Splitter`), e a largura vale para todas as abas.
+Ao entrar num campo de número, o valor fica todo marcado e a primeira tecla troca ele inteiro
+(`widgets.replaceOnType`): sem isso, digitar 0.2 num campo com −1 dava −10.2. Nenhum texto fica escondido sob outro.
+O rótulo de um campo que não cabe diminui a letra um pouco e, se nem assim couber, mostra o texto inteiro na dica.
+Numa tabela, cada coluna fica no mínimo do tamanho do título, do maior número e da opção escolhida, e quando não
+cabem todas a tabela rola para o lado, com Shift e a roda ou arrastando a barra embaixo dela.
+
+![A divisa arrastada para a direita: o formulário mais largo](../../docs/img/zig_divisa.png)
+
+![As tabelas de Projetar com os títulos inteiros e a barra de rolar para o lado](../../docs/img/zig_tabelas_projetar.png)
 
 A tela não faz conta: o que demora (os pedidos ao Python, a leitura do `.json` e a montagem das peças) roda
 numa thread pela `Job` de `jobs.zig`, e a tela continua desenhando e respondendo ao mouse enquanto isso, com a
@@ -108,6 +134,14 @@ Aqui se desenha qualquer subaba, sem conhecer a análise. Uma página é de um d
 A página desenha campos de número, marcador, escolha, texto, arquivo (abre o seletor) e lista de números, gráficos
 2D, tabelas de texto (as massas e as dimensões de Motores, por exemplo) e tabelas editáveis, como as partições da
 asa: cada célula editada, linha nova ou apagada vira um pedido de etapa "grid", e o Python devolve a tabela refeita.
+Em Projetar, a tabela "Asas do avião" diz onde fica cada asa em relação à primeira, e "Guardar configuração"
+leva essa tabela com um nome para a Empenagem. Logo abaixo, a tabela "Dispositivos das asas" prende cada
+dispositivo (winglet, placa, cerca) a uma asa. Na Empenagem, a tabela "Comandos" diz qual superfície de qual asa
+comanda arfagem, rolagem e guinada, e "da regra" escreve ali a regra da etapa. Assim nenhuma configuração ganha
+campos só dela.
+
+![A tabela Comandos da Empenagem de um tandem, cheia pela regra](../../docs/img/zig_comandos.png)
+
 Uma etapa que traz a peça (Projetar, Empenagem, Motores) mostra a vista 3D em cima, com as malhas de
 `aerosim.model.geometry` e os marcadores do ponto neutro e do CG. Uma análise de carga (`loads3d`) mostra a malha do
 método com o mapa de cores por face, as setas e a escala, que se trocam por botões, como na `LoadView` da GUI PyQt.

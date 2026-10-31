@@ -306,9 +306,17 @@ fn layout(ui: *const widgets.Ui, columns: []const Column, cells: []const []const
     return minimums + spare;
 }
 
-/// o mais estreito que a coluna pode ficar: o título inteiro e, numa escolha, a opção escolhida mais comprida
+/// o mais estreito que a coluna pode ficar: o título inteiro, o maior número da coluna e, numa escolha, a opção
+/// escolhida mais comprida
 fn minimum(ui: *const widgets.Ui, column: Column, c: usize, cells: []const []const Cell) f32 {
     var narrowest = theme.textWidth(ui.fonts.regular, column.title, 13) + 14;
+    if (column.kind == .number) {
+        var buffer: [64]u8 = undefined;
+        for (cells) |row| {
+            if (c >= row.len) continue;
+            narrowest = @max(narrowest, theme.textWidth(ui.fonts.mono, numbers.numberText(&buffer, row[c].number), 13) + 14);
+        }
+    }
     if (column.kind != .choice) return narrowest;
     for (cells) |row| {
         if (c >= row.len) continue;

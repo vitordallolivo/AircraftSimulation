@@ -48,6 +48,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - abrir e salvar (o avião, os arquivos dos campos, a exportação dos gráficos) usam a janela de arquivo do sistema:
   `zenity` ou `kdialog` no Linux, o PowerShell no Windows, o `osascript` no macOS (`ui/native_dialog.zig`). Sem
   nenhum deles, no navegador ou no print, fica o seletor desenhado na tela.
+- o rótulo de um campo que não cabe diminui a letra (até 11) e, se ainda não couber, mostra o texto inteiro na dica;
+  as colunas de número das tabelas ficam no mínimo do maior número delas.
+- READMEs com as telas em Zig: o da raiz troca as figuras da GUI PyQt pelas sete páginas novas, e o
+  `aerosim/gui/README_zig.md` mostra a divisa, as tabelas, os gráficos com TeX e a tabela de comandos.
 - `zig build` no Linux: os programas ligam com o ligador do próprio Zig; o LLD acusava como erro as .so que o Zig
   0.16 põe dentro do libraylib.a.
 

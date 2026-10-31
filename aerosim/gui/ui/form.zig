@@ -164,6 +164,20 @@ pub const Form = struct {
         return null;
     }
 
+    /// o rótulo de um campo em `room` de largura: se não cabe, a letra diminui um pouco (até 11); se nem assim
+    /// cabe, ele é cortado na borda do campo e a dica mostra o texto inteiro
+    fn fittedLabel(ui: *widgets.Ui, caption: [:0]const u8, x: f32, y: f32, room: f32, color: rl.Color) void {
+        var size: f32 = 14;
+        while (size > 11 and theme.textWidth(ui.fonts.regular, caption, size) > room) size -= 0.5;
+        const fits = theme.textWidth(ui.fonts.regular, caption, size) <= room;
+        if (!fits) ui.pushClip(.{ .x = x, .y = y, .width = room, .height = row_height });
+        theme.text(ui.fonts.regular, caption, x, y + 7 + (14 - size) / 2, size, color);
+        if (!fits) {
+            ui.popClip();
+            ui.tooltip(.{ .x = x, .y = y, .width = room, .height = row_height }, caption);
+        }
+    }
+
     fn drawField(form: *Form, ui: *widgets.Ui, index: usize, field: *Field, x: f32, y: f32, width: f32) bool {
         var buffer: [96]u8 = undefined;
         const control: rl.Rectangle = .{ .x = x + width - control_width, .y = y + 3, .width = control_width, .height = row_height - 6 };
@@ -176,7 +190,7 @@ pub const Form = struct {
         switch (field.kind) {
             .toggle => {
                 widgets.checkBox(.{ .x = x, .y = y + 7, .width = 16, .height = 16 }, field.checked);
-                theme.text(ui.fonts.regular, field.label, x + 26, y + 7, 14, label_color);
+                fittedLabel(ui, field.label, x + 26, y, width - 26, label_color);
                 const row: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = row_height };
                 if (field.enabled and ui.clickedIn(row)) {
                     field.checked = !field.checked;
@@ -186,7 +200,7 @@ pub const Form = struct {
             },
             .number, .choice, .text, .file => {
                 const caption = if (field.unit.len > 0) widgets.format(&buffer, "{s} ({s})", .{ field.label, field.unit }) else field.label;
-                theme.text(ui.fonts.regular, caption, x, y + 7, 14, label_color);
+                fittedLabel(ui, caption, x, y, width - control_width - 6, label_color);
             },
         }
         if (field.kind == .file) {

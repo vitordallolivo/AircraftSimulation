@@ -4,23 +4,19 @@ O Aircraft Simulation nasceu para preencher uma lacuna clássica na engenharia a
 
 Seja para projetar uma aeronave do zero (como competições de Aerodesign, VANTs ou protótipos experimentais), otimizar o peso máximo de decolagem (MTOW) sob restrições severas de pista, ou testar o comportamento dinâmico em tempo real, este ecossistema coloca todo o controle na suas mãos de forma modular.
 
-![Projeto do zero — perfil: S1223 e perfis de cauda](docs/img/estudo_perfil.png)
+![Perfis: a polar de cada perfil e a escolha dos da asa e da cauda](docs/img/zig_perfis.png)
 
-![Projeto do zero — asa S1223](docs/img/estudo_asa.png)
+![Projetar: a asa em 3D com o ponto neutro, a tabela de asas e as curvas](docs/img/zig_projetar.png)
 
-![Projeto do zero — empenagem com EH MH 113 invertido](docs/img/estudo_empenagem.png)
+![Analisar: a carga na envergadura e os métodos lado a lado](docs/img/zig_analisar.png)
 
-![Projeto do zero — motores e distribuição de massa](docs/img/estudo_motores.png)
+![Empenagem: a cauda pelo volume de cauda, a tabela de comandos e a estática](docs/img/zig_empenagem.png)
 
-![Estudo e ponto de projeto — inclinação do motor em Joinville e São José dos Campos, conferido no 6GDL](docs/img/estudo_ponto_de_projeto_graficos.png)
+![Estabilidade do avião montado](docs/img/zig_estabilidade.png)
 
-![Configuração](docs/img/gui_configuracao.png)
+![Motores: a tração, a bateria e onde fica cada massa](docs/img/zig_motores.png)
 
-![Missão: trajetória 3D por etapa](docs/img/gui_missao_3d.png)
-
-![Missão: plano XY com os eventos](docs/img/gui_missao_xy.png)
-
-![Desempenho: envelope de voo](docs/img/gui_desempenho.png)
+![Desempenho: o envelope de voo](docs/img/zig_desempenho.png)
 
 ![AeroDrive: voo em perseguição com minimapa e vento](aerodrive/docs/img/voo_cruzeiro.png)
 
