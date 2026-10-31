@@ -731,8 +731,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/ui/system.zig` — O que muda entre o programa do PC e o do navegador, num lugar só: a `Io` dos arquivos (a do sistema ou a
   fn `io:17`, `offerDownload:23`
 - `aerosim/gui/ui/table.zig` — A tabela que se edita no lugar, como o `QTableWidget` da GUI em Python: uma linha por item, colunas de número,
-  tipos `Kind:12`, `Column:17`, `Cell:25`, `Edit:37`, `EditTable:57`
-  fn `height:52`
+  tipos `Kind:12`, `Column:17`, `Cell:25`, `Edit:38`, `EditTable:60`
+  fn `height:55`
 - `aerosim/gui/ui/tex.zig` — Um pedaço de TeX nos textos dos gráficos: o que fica entre `$...$` vira matemática, com índice (`C_L`,
   fn `draw:37`, `drawRotated:48`, `width:58`, `plain:67`
 - `aerosim/gui/ui/theme.zig` — O visual da interface, o mesmo do AeroDrive: fundo claro, cantos arredondados, azul nos títulos e pouco texto.
@@ -821,7 +821,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 75 testes em 11 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 87 testes em 13 arquivo(s)
+- `tests/manager` — 88 testes em 13 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)

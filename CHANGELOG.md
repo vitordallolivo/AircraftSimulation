@@ -52,6 +52,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   as colunas de número das tabelas ficam no mínimo do maior número delas.
 - READMEs com as telas em Zig: o da raiz troca as figuras da GUI PyQt pelas sete páginas novas, e o
   `aerosim/gui/README_zig.md` mostra a divisa, as tabelas, os gráficos com TeX e a tabela de comandos.
+- "Condições e restrições…" na tela em Zig traz as tabelas Restrições (ativa, grandeza, op., valor, unidade,
+  calculado e situação, com "+ restrição" e "− restrição") e Variáveis (modo, valor, mín., máx. e as opções das
+  listas, com "Limites das restrições"), ao lado das condições e das regras de projeto. As tabelas da tela em Zig
+  ganharam colunas de marcar, de texto e só de leitura.
 - `zig build` no Linux: os programas ligam com o ligador do próprio Zig; o LLD acusava como erro as .so que o Zig
   0.16 põe dentro do libraylib.a.
 

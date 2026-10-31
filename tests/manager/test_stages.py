@@ -245,3 +245,40 @@ def test_controls_table_is_generic_and_the_rule_is_its_default(tmp_path):
     assert [c.gains for c in wing.controls] == [(0.0, 1.0, 0.0), (-1.0, 1.0, 0.0)]
     tail.edit_grid("comandos", "clear", -1)
     assert controls() == before
+
+
+def test_requirements_tables_edit_constraints_and_variables(tmp_path):
+    """a janela das condições traz as restrições e as variáveis como tabelas, como as abas da GUI PyQt: ligar,
+    trocar a grandeza e o valor de uma restrição; 'calculado' e 'situação' vêm da última etapa que rodou; o modo,
+    o valor e as opções de uma variável; 'Limites das restrições' leva a envergadura máxima para o máx."""
+    ctx = _context(tmp_path)
+    stages.WingStage(ctx).compute()
+    req = stages.RequirementsStage(ctx)
+    restrictions, variables = req.grids()
+    assert [c.label for c in restrictions.columns] == ["ativa", "grandeza", "op.", "valor", "unid.", "calculado",
+                                                       "situação"]
+    span = next(r for r in restrictions.rows if r[1] == "envergadura")
+    assert span[0] is True and span[5] != "—" and span[6] in ("✔ cumpre", "✖ não cumpre")
+    row = restrictions.rows.index(span)
+    req.edit_grid("restricoes", "set", row, "value", 1.0)
+    req.edit_grid("restricoes", "set", row, "active", False)
+    c = ctx.design.requirements.constraints[row]
+    assert c.value == 1.0 and not c.active and req.grids()[0].rows[row][6] == "desligada"
+    req.edit_grid("restricoes", "set", row, "active", True)
+    count = len(ctx.design.requirements.constraints)
+    req.edit_grid("restricoes", "add", -1)
+    req.edit_grid("restricoes", "set", count, "key", "teto")
+    assert ctx.design.requirements.constraints[count].key == "ceiling"
+    req.edit_grid("restricoes", "delete", count)
+    assert len(ctx.design.requirements.constraints) == count
+
+    keys = [v.key for v in ctx.design.variables]
+    span_row, motor_row = keys.index("wing.span"), keys.index("power.motor")
+    assert variables.rows[motor_row][3] is None and variables.rows[span_row][5] is None
+    req.edit_grid("variaveis", "set", span_row, "value", "1,8")
+    assert ctx.design.wing_draft.span == 1.8
+    req.edit_grid("variaveis", "bounds", -1)
+    assert ctx.design.variables[span_row].hi == 1.0
+    req.edit_grid("variaveis", "set", motor_row, "options", "A, B")
+    var = ctx.design.variables[motor_row]
+    assert var.options == ["A", "B"] and var.mode == "variável"

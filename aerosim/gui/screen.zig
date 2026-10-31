@@ -64,7 +64,7 @@ pub const Screen = struct {
     areas: []Area = &.{},
     area_labels: []const [:0]const u8 = &waiting_labels,
     shown: ?*Page = null, // a página do último quadro (trocar de página pede ela de novo)
-    requirements: Page = .{ .kind = .stage, .name = "requisitos", .title = "Condições e restrições" },
+    requirements: Page = .{ .kind = .stage, .name = "requisitos", .title = "Condições e restrições", .grids_beside = true },
     requirements_open: bool = false,
     pending_tab: ?usize = null, // aba=N da linha de comando, até as abas chegarem
     pending_run: bool = false, // acao=rodar, idem

@@ -179,6 +179,7 @@ pub const Page = struct {
     waiter: python_bridge.Waiter = .{},
     operation: Operation = .specs,
     loaded: bool = false, // já pediu a página ao Python
+    grids_beside: bool = false, // as tabelas editáveis na coluna larga, ao lado do formulário (a janela das condições)
     stale: bool = false, // algo mudou fora (o avião, outra etapa): pede de novo ao aparecer
     // o pedido (a tela escreve antes de começar a thread) e a resposta (a thread escreve)
     request_text: []const u8 = "",
@@ -729,7 +730,9 @@ pub const Page = struct {
             y += page.form.contentHeight();
         }
         var grid_edit: ?GridEdit = null;
-        for (page.grids[0..@min(page.grids.len, max_grids)], 0..) |*grid, g| y = page.drawGrid(ui, grid, g, x, y + 4, width, &grid_edit);
+        if (!page.grids_beside) {
+            for (page.grids[0..@min(page.grids.len, max_grids)], 0..) |*grid, g| y = page.drawGrid(ui, grid, g, x, y + 4, width, &grid_edit);
+        }
         if (page.kind == .stage) y = page.drawKept(ui, x, y + 4, width);
         page.side.end(ui, body, y + 12);
         changed = page.form.drawOpen(ui) or changed;
@@ -742,8 +745,10 @@ pub const Page = struct {
             page.file_chosen = false;
             changed = true;
         }
-        for (page.grids[0..@min(page.grids.len, max_grids)], 0..) |grid, g| {
-            if (page.grid_tables[g].drawOpen(ui, grid.columns)) |edit| grid_edit = .{ .grid = g, .edit = edit };
+        if (!page.grids_beside) {
+            for (page.grids[0..@min(page.grids.len, max_grids)], 0..) |grid, g| {
+                if (page.grid_tables[g].drawOpen(ui, grid.columns)) |edit| grid_edit = .{ .grid = g, .edit = edit };
+            }
         }
         if (grid_edit) |edit| page.sendGridEdit(edit);
         if (changed) {
@@ -857,6 +862,7 @@ pub const Page = struct {
                     writer.print("{f}", .{std.json.fmt(chosen, .{})}) catch return;
                 },
                 .text => |value| writer.print("{f}", .{std.json.fmt(value, .{})}) catch return,
+                .check => |on| writer.writeAll(if (on) "true" else "false") catch return,
                 else => return,
             }
         } else return;
@@ -911,7 +917,8 @@ pub const Page = struct {
         if (page.kind == .simulation and page.description.len > 0) {
             y += widgets.paragraph(ui.fonts.regular, page.description, rect.x + gap + 4, y, width - 8, 14, theme.colors.label) + gap;
         }
-        if (page.charts.len == 0 and page.summary.len == 0 and page.tables.len == 0 and page.checks.len == 0 and page.scene == null and page.loads.len == 0) {
+        const beside = page.grids_beside and page.grids.len > 0;
+        if (!beside and page.charts.len == 0 and page.summary.len == 0 and page.tables.len == 0 and page.checks.len == 0 and page.scene == null and page.loads.len == 0) {
             const note: []const u8 = if (page.job.running()) "pedindo ao Python..." else if (page.kind == .simulation) "o resultado aparece aqui depois de Rodar" else std.mem.sliceTo(&page.message, 0);
             _ = widgets.paragraph(ui.fonts.regular, note, rect.x + gap + 4, y + 10, width, 16, theme.colors.muted);
             page.page.end(ui, rect, y + 40);
@@ -920,6 +927,16 @@ pub const Page = struct {
         if (page.kind == .stage and page.message[0] != 0) {
             y += widgets.paragraph(ui.fonts.regular, std.mem.sliceTo(&page.message, 0), rect.x + gap + 4, y, width - 8, 14, theme.colors.label) + gap;
         }
+        var grid_edit: ?GridEdit = null;
+        if (beside) {
+            for (page.grids[0..@min(page.grids.len, max_grids)], 0..) |*grid, g| y = page.drawGrid(ui, grid, g, rect.x + gap, y, width, &grid_edit) + gap;
+        }
+        defer if (beside) {
+            for (page.grids[0..@min(page.grids.len, max_grids)], 0..) |grid, g| {
+                if (page.grid_tables[g].drawOpen(ui, grid.columns)) |edit| grid_edit = .{ .grid = g, .edit = edit };
+            }
+            if (grid_edit) |edit| page.sendGridEdit(edit);
+        };
         for (page.tables) |table| {
             const height = plot.tableHeight(table.rows.len);
             plot.table(ui, .{ .x = rect.x + gap, .y = y, .width = width, .height = height }, table.title, table.headers, table.rows, table.widths);
@@ -1221,6 +1238,15 @@ fn vertex(vertices: []const f32, index: u32) ?view3d.Body {
     return .{ vertices[start], vertices[start + 1], vertices[start + 2] };
 }
 
+/// o tipo de uma coluna como o Python escreve: "choice", "check", "label" (só leitura), "text" ou número
+fn columnKind(name: []const u8) table_mod.Kind {
+    if (std.mem.eql(u8, name, "choice")) return .choice;
+    if (std.mem.eql(u8, name, "check")) return .check;
+    if (std.mem.eql(u8, name, "label")) return .label;
+    if (std.mem.eql(u8, name, "text")) return .text;
+    return .number;
+}
+
 /// as tabelas editáveis de uma resposta da etapa ("grids")
 fn readGrids(memory: std.mem.Allocator, reply: Json) ![]const Grid {
     const list = reply.object.get("grids") orelse return &.{};
@@ -1235,12 +1261,13 @@ fn readGrids(memory: std.mem.Allocator, reply: Json) ![]const Grid {
         // as colunas de número dividem no máximo 60 % da largura, para as de escolha não sumirem numa tabela larga
         var numbers: f32 = 0;
         for (columns_json) |column| {
-            if (!std.mem.eql(u8, stringField(column, "kind"), "choice")) numbers += 1;
+            if (columnKind(stringField(column, "kind")) == .number) numbers += 1;
         }
         const number_width: f32 = if (numbers > 0) @min(0.13, 0.6 / numbers) else 0.13;
         for (columns_json, 0..) |column, c| {
-            const is_choice = std.mem.eql(u8, stringField(column, "kind"), "choice");
-            columns[c] = .{ .title = try memory.dupeZ(u8, stringField(column, "label")), .kind = if (is_choice) .choice else .number, .width = if (is_choice) 0 else number_width, .help = try memory.dupeZ(u8, stringField(column, "help")) };
+            const kind = columnKind(stringField(column, "kind"));
+            const is_choice = kind == .choice;
+            columns[c] = .{ .title = try memory.dupeZ(u8, stringField(column, "label")), .kind = kind, .width = if (kind == .number) number_width else 0, .help = try memory.dupeZ(u8, stringField(column, "help")) };
             keys[c] = stringField(column, "key");
             options[c] = &.{};
             choice_texts[c] = "";
@@ -1264,13 +1291,28 @@ fn readGrids(memory: std.mem.Allocator, reply: Json) ![]const Grid {
             for (cells, 0..) |*cell, c| {
                 const value = if (c < row.array.items.len) row.array.items[c] else Json.null;
                 cell.* = .{};
-                if (columns[c].kind == .choice) {
-                    cell.choices = choice_texts[c];
-                    const chosen = if (value == .string) value.string else "";
-                    for (options[c], 0..) |option, k| {
-                        if (std.mem.eql(u8, option, chosen)) cell.choice = @intCast(k);
-                    }
-                } else cell.number = number(value) orelse 0;
+                switch (columns[c].kind) {
+                    .choice => {
+                        cell.choices = choice_texts[c];
+                        const chosen = if (value == .string) value.string else "";
+                        for (options[c], 0..) |option, k| {
+                            if (std.mem.eql(u8, option, chosen)) cell.choice = @intCast(k);
+                        }
+                    },
+                    .check => cell.checked = value == .bool and value.bool,
+                    .label, .text => {
+                        cell.enabled = value != .null; // sem valor: não vale nesta linha (as opções de uma variável de número)
+                        cell.text = try memory.dupeZ(u8, if (value == .string) value.string else "");
+                        // a situação de uma restrição que não se cumpre sai em vermelho, como na GUI PyQt
+                        if (std.mem.startsWith(u8, cell.text, "✖")) cell.color = theme.colors.failure;
+                    },
+                    else => if (value == .null) {
+                        cell.enabled = false; // não vale nesta linha (o mín. e o máx. de uma variável de lista)
+                        cell.blank = true;
+                    } else {
+                        cell.number = number(value) orelse 0;
+                    },
+                }
             }
             rows[r] = cells;
         }

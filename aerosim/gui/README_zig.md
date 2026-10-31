@@ -128,7 +128,8 @@ Aqui se desenha qualquer subaba, sem conhecer a análise. Uma página é de um d
   mudança refaz a conta depois que a digitação para, como na GUI PyQt, e embaixo ficam Guardar e a lista dos
   guardados (em Perfis, a dos candidatos). Os botões da etapa ("+ NACA…", "+ .dat…", "Mandar para a Montagem")
   pedem o texto ou o arquivo antes, quando precisam. "Condições e restrições…" abre a etapa das condições e das
-  regras numa janela por cima; ao fechar, as etapas refazem a conta;
+  regras numa janela por cima, com as tabelas das restrições e das variáveis na coluna larga, ao lado do
+  formulário; ao fechar, as etapas refazem a conta;
 - ainda sem ponte: o Mini-MDO e o Estudo e ponto de projeto, que só mostram o lugar deles.
 
 A página desenha campos de número, marcador, escolha, texto, arquivo (abre o seletor) e lista de números, gráficos

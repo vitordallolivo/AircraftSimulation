@@ -29,6 +29,7 @@ pub const Cell = struct {
     choice: i32 = 0,
     checked: bool = false, // .check
     enabled: bool = true,
+    blank: bool = false, // .number sem valor nesta linha: a caixa fica vazia
     color: ?rl.Color = null, // a cor do texto (ex.: "✖ não cumpre" em vermelho)
     fill: ?rl.Color = null, // o fundo (o estado do diagnóstico)
 };
@@ -47,6 +48,8 @@ pub const bar_height: f32 = 10;
 const max_columns = 16;
 /// a coluna de escolha não passa disso só por causa de uma opção comprida (a dica mostra o resto)
 const choice_maximum: f32 = 170;
+/// nem uma coluna de texto (o nome de uma entrada); o resto aparece na dica
+const text_maximum: f32 = 280;
 
 /// a altura da tabela com `rows` linhas, sem a barra de rolar
 pub fn height(rows: usize) f32 {
@@ -261,7 +264,7 @@ pub const EditTable = struct {
                     return null;
                 }
                 widgets.rounded(box, 4, if (cell.enabled) theme.colors.field else theme.colors.panel);
-                const shown = if (kind == .number) numbers.numberText(&buffer, cell.number) else cell.text;
+                const shown = if (cell.blank) "" else if (kind == .number) numbers.numberText(&buffer, cell.number) else cell.text;
                 ui.pushClip(box);
                 theme.text(ui.fonts.mono, shown, box.x + 5, box.y + 4, 13, ink);
                 ui.popClip();
@@ -314,7 +317,12 @@ fn minimum(ui: *const widgets.Ui, column: Column, c: usize, cells: []const []con
         var buffer: [64]u8 = undefined;
         for (cells) |row| {
             if (c >= row.len) continue;
-            narrowest = @max(narrowest, theme.textWidth(ui.fonts.mono, numbers.numberText(&buffer, row[c].number), 13) + 14);
+            if (!row[c].blank) narrowest = @max(narrowest, theme.textWidth(ui.fonts.mono, numbers.numberText(&buffer, row[c].number), 13) + 14);
+        }
+    }
+    if (column.kind == .label or column.kind == .text) {
+        for (cells) |row| {
+            if (c < row.len) narrowest = @max(narrowest, @min(text_maximum, theme.textWidth(ui.fonts.regular, row[c].text, 13) + 16));
         }
     }
     if (column.kind != .choice) return narrowest;

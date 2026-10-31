@@ -861,6 +861,112 @@ class RequirementsStage(Stage):
     def keep(self):
         return None
 
+    CONSTRAINT_COLUMNS = (("active", "ativa", "check", "ligue ou desligue sem perder o valor"),
+                          ("key", "grandeza", "choice", "o que se limita"),
+                          ("op", "op.", "choice", "≤, ≥ ou = (com a tolerância de 2 %)"),
+                          ("value", "valor", "float", "o limite"),
+                          ("unit", "unid.", "label", ""),
+                          ("calc", "calculado", "label", "o valor da última etapa que rodou"),
+                          ("status", "situação", "label", "desligada, ✔ cumpre ou ✖ não cumpre"))
+    VARIABLE_COLUMNS = (("label", "entrada", "label", ""),
+                        ("mode", "modo", "choice", "fixo: o valor do rascunho; variável: o otimizador procura entre mín. "
+                                                   "e máx. (listas: entre as opções); calculado: sai das contas"),
+                        ("value", "valor (fixo)", "text", "o valor do rascunho da etapa"),
+                        ("lo", "mín.", "float", ""),
+                        ("hi", "máx.", "float", ""),
+                        ("options", "opções (listas)", "text", "os nomes separados por vírgula; vazio = todos"))
+
+    def grids(self):
+        d = self.ctx.design
+        keys = list(rg.QUANTITIES)
+        labels = tuple(rg.QUANTITIES[k].label for k in keys)
+        values = self.ctx.values
+
+        def constraint(c):
+            x = values.get(c.key)
+            status = ("desligada" if not c.active else "—" if x is None
+                      else "✔ cumpre" if c.holds(x) else "✖ não cumpre")
+            return [c.active, c.quantity.label, c.op, c.value, c.quantity.unit,
+                    rg.fmt(x) if x is not None else "—", status]
+        choice = {"key": labels, "op": rg.OPS}
+        restrictions = Grid(
+            "restricoes", "Restrições",
+            [GridColumn(k, label, kind, choice.get(k, ()), tip) for k, label, kind, tip in self.CONSTRAINT_COLUMNS],
+            [constraint(c) for c in d.requirements.constraints],
+            "as etapas conferem as ativas no diagnóstico; o estudo marca como inviável o ponto que não cumpre",
+            "restrições de projeto; 'calculado' é o valor da última etapa que rodou",
+            [("add", "+ restrição", ""), ("delete", "− restrição", "")])
+
+        known = {v.key for v in d.variables}
+        d.variables += [rg.Variable(k, "fixo", i.lo, i.hi) for k, i in rg.INPUTS.items() if k not in known]
+
+        def variable(v):
+            inp = v.input
+            listed = inp.unit == "lista"
+            try:
+                current = rg.get_input(d, v.key)
+            except AttributeError:
+                current = ""
+            label = inp.label + ("" if listed or not inp.unit else f" ({inp.unit})")
+            shown = current if isinstance(current, str) else f"{current:g}"
+            return [label, v.mode, shown, None if listed else v.lo, None if listed else v.hi,
+                    ", ".join(v.options) if listed else None]
+        variables = Grid(
+            "variaveis", "Variáveis",
+            [GridColumn(k, label, kind, rg.MODES if k == "mode" else (), tip)
+             for k, label, kind, tip in self.VARIABLE_COLUMNS],
+            [variable(v) for v in d.variables],
+            "PV e MTOW são saídas. 'Limites das restrições' leva as restrições ativas para o mín. e o máx. "
+            "(envergadura, área, nº de motores)",
+            "entradas de projeto: o que fica fixo, o que o otimizador varia e o que sai das contas",
+            [("bounds", "Limites das restrições", "")])
+        return [restrictions, variables]
+
+    def edit_grid(self, name, op, row, key="", value=None):
+        d = self.ctx.design
+        if name == "restricoes":
+            rows = d.requirements.constraints
+            row = row if 0 <= row < len(rows) else len(rows) - 1
+            if op == "set" and rows:
+                c = rows[row]
+                if key == "active":
+                    c.active = bool(value)
+                elif key == "key":
+                    c.key = next((k for k, q in rg.QUANTITIES.items() if q.label == value), c.key)
+                elif key == "op":
+                    c.op = str(value)
+                elif key == "value":
+                    c.value = float(value)
+            elif op == "add":
+                rows.append(rg.Constraint("S", "≤", 1.0))
+            elif op == "delete":
+                if rows:
+                    rows.pop(row)
+            else:
+                raise KeyError(op)
+        elif name == "variaveis":
+            rows = d.variables
+            if op == "bounds":
+                rg.bounds_from_constraints(d)
+            elif op == "set" and 0 <= row < len(rows):
+                v = rows[row]
+                if key == "mode":
+                    v.mode = str(value)
+                elif key in ("lo", "hi"):
+                    setattr(v, key, float(value))
+                elif key == "value":
+                    current = rg.get_input(d, v.key)
+                    rg.set_input(d, v.key, str(value) if isinstance(current, str) else float(str(value).replace(",", ".")))
+                elif key == "options":
+                    v.options = [x.strip() for x in str(value).split(",") if x.strip()]
+                    if v.mode == "fixo" and v.options:
+                        v.mode = "variável"          # escolheu opções: a busca varia entre elas (como na PyQt)
+            elif op != "set":
+                raise KeyError(op)
+        else:
+            raise KeyError(name)
+        self.ctx.save()
+
 
 STAGES = {cls.name: cls for cls in (AirfoilStage, WingStage, TailStage, PowerStage, RequirementsStage)}
 
