@@ -81,6 +81,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - Estabilidade, polos ao soltar a carga: num avião com carga lançável, o modelo linear é refeito sem a carga (a
   massa, o CG e a inércia que ficam) e o gráfico liga, para cada V, o polo com carga ao polo sem carga; o diagnóstico
   diz quanto o ζ e o ω_n de cada modo oscilatório mudam na velocidade da análise.
+- Estabilidade, sloshing no modelo linear (desligado por padrão): com "sloshing no modelo linear" marcado, a
+  linearização inclui os dois ângulos do pêndulo equivalente de cada tanque (Abramson, NASA SP-106) e as taxas deles
+  (`aerosim_linearize_slosh`). O gráfico "Polos com o líquido" liga, para cada V, o polo de cada modo com o líquido
+  parado ao polo com o líquido oscilando, e marca os modos do próprio líquido; o diagnóstico dá o ω_n e o ζ deles e
+  quanto os modos do avião se deslocam. Os títulos dos gráficos de polos ficaram curtos.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

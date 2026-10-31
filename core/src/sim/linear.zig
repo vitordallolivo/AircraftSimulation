@@ -220,6 +220,113 @@ pub fn linearize(params: *const types.Params, flags: *const state.Flags, airspee
     return model;
 }
 
+// ------------------------------------------------------------------ com o líquido oscilando
+
+/// estados do modelo linear com o líquido: os 8 do corpo rígido e, por tanque com líquido que oscila, (ηx, ηy, η̇x, η̇y)
+pub const nl_slosh = nl + 4 * limits.max_tanks;
+
+/// o modelo linear com os pêndulos do líquido (`mass.slosh`, Abramson, NASA SP-106) acoplados ao corpo rígido:
+/// δẋ = A δx sobre (u, v, w, p, q, r, φ, θ, ηx₀, ηy₀, η̇x₀, η̇y₀, ...); só os `n` primeiros estados valem
+pub const LinSloshModel = extern struct {
+    ok: i32 = 0, // 1: a trimagem convergiu
+    n: i32 = 0, // estados usados: 8 + 4 × tanques com massa que oscila (m1 > 0)
+    A: [nl_slosh * nl_slosh]f64 = [_]f64{0} ** (nl_slosh * nl_slosh), // por linhas, n × n no canto, passo nl_slosh
+};
+
+/// os tanques com massa que oscila (m1 > 0), na ordem dos estados do modelo
+fn sloshingTanks(params: *const types.Params, list: *[limits.max_tanks]usize) usize {
+    var count: usize = 0;
+    for (params.tank[0..@intCast(params.n_tank)], 0..) |tank, i| {
+        if (tank.m1 <= 0) continue;
+        list[count] = i;
+        count += 1;
+    }
+    return count;
+}
+
+/// ẋ do corpo rígido com os pêndulos do líquido, com comandos fixos: a mesma física de `dynamics.derivatives` sem
+/// piloto, trem nem carga (massa, CG e inércia seguem os pêndulos; `mass.slosh` dá a força deles e a aceleração
+/// angular de cada um). `params.slosh_on` tem de estar ligado
+fn withLiquid(params: *const types.Params, flags: *const state.Flags, tanks: []const usize, lin_state: []const f64, controls: [nu]f64, rates: []f64) void {
+    var state_vector = [_]f64{0} ** state.nx;
+    for (tanks, 0..) |tank, k| {
+        state_vector[state.sx(tank)] = lin_state[nl + 4 * k];
+        state_vector[state.sy(tank)] = lin_state[nl + 4 * k + 1];
+        state_vector[state.sxd(tank)] = lin_state[nl + 4 * k + 2];
+        state_vector[state.syd(tank)] = lin_state[nl + 4 * k + 3];
+    }
+    const mass_props = mass.compute(.{ .p = params, .f = flags, .tR = -1, .h_ground = 0, .tg = -1 }, &state_vector);
+    const VB = V3{ lin_state[0], lin_state[1], lin_state[2] };
+    const body_rates = V3{ lin_state[3], lin_state[4], lin_state[5] };
+    const ae = aeromodel.compute(params, VB, body_rates, mass_props.rcg, 100.0, .{ controls[0], controls[1], controls[2] }, &mods.Env.none);
+    var rps = [_]f64{1} ** limits.max_props;
+    for (params.prop[0..@intCast(params.n_prop)], 0..) |*pu, i| rps[i] = prop.equilibriumRps(params, pu, VB, controls[3]);
+    const pr = prop.compute(params, VB, body_rates, mass_props.rcg, &rps, controls[3], controls[2], lin_state[7], 0.0);
+    var force = ae.F + pr.F;
+    var moment = ae.M + pr.M + pr.Mgyro;
+    var slosh_rates = [_]f64{0} ** state.nx;
+    const liquid = mass.slosh(params, &state_vector, force, body_rates, &mass_props, &slosh_rates);
+    force += liquid.F;
+    moment += liquid.M;
+    const roll = fmath.sincos(lin_state[6]);
+    const pitch = fmath.sincos(lin_state[7]);
+    force += V3{ -pitch.s, pitch.c * roll.s, pitch.c * roll.c } * vec.splat(mass_props.m * limits.g0);
+    const acc = force / vec.splat(mass_props.m) - vec.cross(body_rates, VB);
+    const wd = vec.solve3(mass_props.I, moment - vec.cross(body_rates, vec.mul(mass_props.I, body_rates)));
+    const qs_rc = body_rates[1] * roll.s + body_rates[2] * roll.c;
+    const rigid_rates = [nl]f64{ acc[0], acc[1], acc[2], wd[0], wd[1], wd[2], body_rates[0] + qs_rc * pitch.s / pitch.c, body_rates[1] * roll.c - body_rates[2] * roll.s };
+    @memcpy(rates[0..nl], &rigid_rates);
+    for (tanks, 0..) |tank, k| {
+        rates[nl + 4 * k] = slosh_rates[state.sx(tank)];
+        rates[nl + 4 * k + 1] = slosh_rates[state.sy(tank)];
+        rates[nl + 4 * k + 2] = slosh_rates[state.sxd(tank)];
+        rates[nl + 4 * k + 3] = slosh_rates[state.syd(tank)];
+    }
+}
+
+/// trima nivelado em `airspeed` como `linearize` (o líquido parado) e deriva A com os pêndulos do líquido soltos.
+/// O equilíbrio de cada pêndulo é o da gravidade aparente no voo equilibrado (tan ηx = a_x / a_z, tan ηy = a_y / a_z,
+/// da equação de `mass.slosh` com η̈ = η̇ = 0). Pede `params.slosh_on` ligado
+pub fn linearizeSlosh(params: *const types.Params, flags: *const state.Flags, airspeed: f64) LinSloshModel {
+    var model = LinSloshModel{};
+    const rigid_model = linearize(params, flags, airspeed);
+    model.ok = rigid_model.ok;
+    var tanks: [limits.max_tanks]usize = undefined;
+    const tank_count = sloshingTanks(params, &tanks);
+    const count = nl + 4 * tank_count;
+    model.n = @intCast(count);
+    var x0 = [_]f64{0} ** nl_slosh;
+    const rigid_state = stateVector(airspeed, .{ rigid_model.alpha, rigid_model.de, rigid_model.thr, rigid_model.phi, rigid_model.da, rigid_model.dr });
+    @memcpy(x0[0..nl], &rigid_state);
+    const controls = [nu]f64{ rigid_model.de, rigid_model.da, rigid_model.dr, rigid_model.thr };
+    // o pêndulo pendurado na gravidade aparente do equilíbrio: a força externa (sem o peso) é o que segura o avião
+    const xz = [_]f64{0} ** state.nx;
+    const mass_props = mass.compute(.{ .p = params, .f = flags, .tR = -1, .h_ground = 0, .tg = -1 }, &xz);
+    const VB = V3{ x0[0], x0[1], x0[2] };
+    const ae = aeromodel.compute(params, VB, vec.zero, mass_props.rcg, 100.0, .{ controls[0], controls[1], controls[2] }, &mods.Env.none);
+    var rps = [_]f64{1} ** limits.max_props;
+    for (params.prop[0..@intCast(params.n_prop)], 0..) |*pu, i| rps[i] = prop.equilibriumRps(params, pu, VB, controls[3]);
+    const pr = prop.compute(params, VB, vec.zero, mass_props.rcg, &rps, controls[3], controls[2], x0[7], 0.0);
+    const apparent = -(ae.F + pr.F) / vec.splat(mass_props.m);
+    for (0..tank_count) |k| {
+        x0[nl + 4 * k] = std.math.atan2(apparent[0], apparent[2]);
+        x0[nl + 4 * k + 1] = std.math.atan2(apparent[1], apparent[2]);
+    }
+    var plus: [nl_slosh]f64 = undefined;
+    var minus: [nl_slosh]f64 = undefined;
+    for (0..count) |j| {
+        const step: f64 = if (j < 3) 1e-4 * @max(airspeed, 1.0) else 1e-5;
+        var xp = x0;
+        var xm = x0;
+        xp[j] += step;
+        xm[j] -= step;
+        withLiquid(params, flags, tanks[0..tank_count], &xp, controls, &plus);
+        withLiquid(params, flags, tanks[0..tank_count], &xm, controls, &minus);
+        for (0..count) |i| model.A[i * nl_slosh + j] = (plus[i] - minus[i]) / (2 * step);
+    }
+    return model;
+}
+
 /// resíduo |ẋ| no ponto de equilíbrio (para testes)
 pub fn residual(params: *const types.Params, flags: *const state.Flags, lm: *const LinModel) f64 {
     const xz = [_]f64{0} ** state.nx;

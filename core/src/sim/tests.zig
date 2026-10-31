@@ -215,3 +215,32 @@ test "avião que não pode voar: erro claro, sem pane" {
     inst.p.Ixx = std.math.nan(f64);
     try std.testing.expectError(error.BadInertia, runner.resetGround(&inst));
 }
+
+test "linearização com o líquido: sem tanque é a do corpo rígido; o pêndulo tem a frequência de Abramson" {
+    aircraft(&inst.p);
+    inst.p.n_tank = 0;
+    try runner.configure(&inst);
+    const rigid_model = linear.linearize(&inst.p, &inst.r.f, 16);
+    inst.p.slosh_on = 1;
+    const without_tank = linear.linearizeSlosh(&inst.p, &inst.r.f, 16);
+    try std.testing.expect(without_tank.ok == 1 and without_tank.n == linear.nl);
+    for (0..linear.nl) |i| for (0..linear.nl) |j| {
+        const expected = rigid_model.A[i * linear.nl + j];
+        try std.testing.expectApproxEqAbs(expected, without_tank.A[i * linear.nl_slosh + j], 1e-6 * @max(@abs(expected), 1.0));
+    };
+    // um tanque quadrado de 0,12 m com 7 cm de água no CG: o pêndulo equivalente oscila em ω₁ = √(g k tanh(k h)),
+    // k = π / lado (Abramson, NASA SP-106, cap. 6), com o amortecimento 2 ζ ω₁ do tanque
+    inst.p.n_tank = 1;
+    inst.p.tank[0] = .{ .side = 0.12, .fill = 0.07, .rho = 1000, .zeta = 0.03, .r = .{ 0, 0, 0 } };
+    try runner.configure(&inst);
+    const tank = inst.p.tank[0];
+    const wavenumber: f64 = std.math.pi / 0.12;
+    try std.testing.expectApproxEqRel(@sqrt(limits.g0 * wavenumber * std.math.tanh(wavenumber * 0.07)), tank.w1, 1e-9);
+    const with_tank = linear.linearizeSlosh(&inst.p, &inst.r.f, 16);
+    try std.testing.expect(with_tank.ok == 1 and with_tank.n == linear.nl + 4);
+    const swing_row = (linear.nl + 2) * linear.nl_slosh; // η̈x
+    try std.testing.expectApproxEqRel(-tank.w1 * tank.w1, with_tank.A[swing_row + linear.nl], 0.05); // ∂η̈x/∂ηx
+    try std.testing.expectApproxEqRel(-2 * tank.zeta * tank.w1, with_tank.A[swing_row + linear.nl + 2], 0.05); // ∂η̈x/∂η̇x
+    inst.p.slosh_on = 0;
+    inst.p.n_tank = 0;
+}

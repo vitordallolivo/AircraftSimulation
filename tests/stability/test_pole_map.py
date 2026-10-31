@@ -45,3 +45,17 @@ def test_release_moves_each_pole_from_with_to_without_payload():
     assert list(moved[:2]) == [-8.0, -9.0] and np.isnan(moved[2])
     status, item, value, *_ = _release_check(before, after, 16.0)
     assert status == "info" and value.startswith("curto período: ζ 0.71 → 0.74")   # −10 + 10i → −11 + 10i
+
+
+def test_match_poles_keeps_rigid_modes_and_leaves_the_liquid():
+    """com o líquido o modelo cresce: cada modo do corpo rígido fica com o polo mais perto do dele e o par que sobra
+    (aqui −0.5 ± 15i, o pêndulo de um tanque) sai como modo do líquido"""
+    from aerosim.manager.simulations.stability import MODE_LAB, _match_poles
+    row = _rows()[0]
+    eigs = [complex(row[f"re_{nm}"] + 0.01, row[f"im_{nm}"]) for nm in MODE_LAB
+            if math.isfinite(row[f"re_{nm}"]) and math.isfinite(row[f"im_{nm}"])]
+    eigs += [eig.conjugate() for eig in eigs if eig.imag > 0] + [complex(-0.5, 15.0), complex(-0.5, -15.0)]
+    found, liquid = _match_poles(row, eigs)
+    assert found["re_curto_periodo"] == pytest.approx(row["re_curto_periodo"] + 0.01)
+    assert liquid == [complex(-0.5, 15.0)]
+    assert _match_poles(row, None)[1] == []

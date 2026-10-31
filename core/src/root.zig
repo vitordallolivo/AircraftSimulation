@@ -399,6 +399,17 @@ export fn aerosim_linearize(slot: i32, airspeed: f64, out: *linear.LinModel) i32
     return if (out.ok != 0) 0 else abiCode(error.TrimFailed);
 }
 
+/// trima nivelado em V e devolve o modelo linear com o líquido dos tanques oscilando (ver sim/linear.zig,
+/// `linearizeSlosh`), com o sloshing ligado só nesta conta; -4 se a trimagem falhar
+export fn aerosim_linearize_slosh(slot: i32, airspeed: f64, out: *linear.LinSloshModel) i32 {
+    const inst = getConfigured(slot) catch |err| return abiCode(err);
+    const was_on = inst.p.slosh_on;
+    inst.p.slosh_on = 1;
+    defer inst.p.slosh_on = was_on;
+    out.* = linear.linearizeSlosh(&inst.p, &inst.r.f, airspeed);
+    return if (out.ok != 0) 0 else abiCode(error.TrimFailed);
+}
+
 /// ajusta os ganhos do piloto automático pelo modelo linear em V (control/autotune.zig); -4 se a trimagem falhar
 export fn aerosim_autotune(slot: i32, airspeed: f64, out: *autotune.Result) i32 {
     const inst = getConfigured(slot) catch |err| return abiCode(err);

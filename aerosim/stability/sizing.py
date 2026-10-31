@@ -168,6 +168,15 @@ def modes_at(backend, ac, V: float):
     return (modes(lm["A"]) if lm["ok"] else None), lm
 
 
+def slosh_eigs_at(backend, ac, V: float):
+    """os autovalores do modelo linear com o líquido dos tanques oscilando (núcleo: `linearizeSlosh`); None se a
+    trimagem falha"""
+    model = ac if isinstance(ac, AircraftModel) else build_model(ac)
+    with backend.session_for(model) as s:
+        lm = s.linearize_slosh(V)
+    return np.linalg.eigvals(lm["A"]) if lm["ok"] else None
+
+
 def search(backend, make, values, V, ok_fn):
     """primeiro valor (em ordem) em que ok_fn(modos) é verdadeiro; None se nenhum"""
     for v in values:

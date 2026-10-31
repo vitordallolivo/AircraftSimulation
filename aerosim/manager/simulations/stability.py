@@ -32,7 +32,7 @@ from aerosim.stability.criteria import evaluate
 from aerosim.stability.dynamic import doublet, pulse
 from aerosim.stability.scissor import min_tail
 from aerosim.stability.sizing import (cg_sweep, cm0, gear_x_for_rotation, with_elevon, with_washout, limit_crossing, modes_at, rotation_de,
-                                      scale_surfaces, search, stall_speed, trimmed_CLmax, with_dihedral)
+                                      scale_surfaces, search, slosh_eigs_at, stall_speed, trimmed_CLmax, with_dihedral)
 from aerosim.stability.static import analytic_np
 
 from .base import SimulationBase, floats
@@ -95,9 +95,27 @@ def _pole_series(rows: list[dict], crit, names=tuple(MODE_LAB), prefix: str = "p
     return S
 
 
-def _release_series(before: list[dict], after: list[dict]) -> dict:
-    """os polos com a carga e sem ela (o modelo linear refeito sem a massa da carga, com o CG e a inércia que ficam),
-    um par por V ligado por um traço fino"""
+def _match_poles(row: dict, eigs) -> tuple[dict, list]:
+    """os polos de um modelo maior (com o líquido) casados com os modos do corpo rígido da linha `row`: cada modo
+    fica com o autovalor mais perto do dele (metade de cima do plano); o que sobra são os modos do líquido"""
+    found = {f"{part}_{nm}": np.nan for nm in MODE_LAB for part in ("re", "im")}
+    if eigs is None:
+        return found, []
+    free = [complex(lam) for lam in eigs if lam.imag >= -1e-9]
+    for nm in MODE_LAB:
+        lam0 = complex(row[f"re_{nm}"], row[f"im_{nm}"])
+        if not np.isfinite([lam0.real, lam0.imag]).all() or not free:
+            continue
+        k = int(np.argmin([abs(lam - lam0) for lam in free]))
+        lam = free.pop(k)
+        found[f"re_{nm}"], found[f"im_{nm}"] = lam.real, abs(lam.imag)
+    return found, [lam for lam in free if lam.imag > 1e-9]
+
+
+def _release_series(before: list[dict], after: list[dict], prefix: str = "s_",
+                    names: tuple = ("com carga", "sem carga")) -> dict:
+    """os polos de dois modelos lineares, um par por V ligado por um traço fino: com a carga e sem ela (o modelo
+    refeito sem a massa da carga, com o CG e a inércia que ficam) ou com o líquido parado e oscilando"""
     S = {}
     for nm, label in MODE_LAB.items():
         color, symbol = MODE_STYLE[nm]
@@ -106,17 +124,21 @@ def _release_series(before: list[dict], after: list[dict]) -> dict:
         if not pairs:
             continue
         P = np.array(pairs, float)
-        S[f"s_{label}: com carga"] = {"re": P[:, 0], "im": P[:, 1], "_color": color, "_symbol": symbol, "_size": 9}
-        S[f"s_{label}: sem carga"] = {"re": P[:, 2], "im": P[:, 3], "_color": color, "_symbol": "+", "_size": 12}
+        S[f"{prefix}{label}: {names[0]}"] = {"re": P[:, 0], "im": P[:, 1], "_color": color, "_symbol": symbol,
+                                             "_size": 9}
+        S[f"{prefix}{label}: {names[1]}"] = {"re": P[:, 2], "im": P[:, 3], "_color": color, "_symbol": "+",
+                                             "_size": 12}
         gap = np.full(len(P), np.nan)                     # um traço por V: antes, depois, NaN (corta a linha)
-        S[f"s_{label}: movimento"] = {"re": np.column_stack([P[:, 0], P[:, 2], gap]).ravel(),
+        S[f"{prefix}{label}: movimento"] = {"re": np.column_stack([P[:, 0], P[:, 2], gap]).ravel(),
                                       "im": np.column_stack([P[:, 1], P[:, 3], gap]).ravel(),
                                       "_color": color, "_width": 1.0, "_nolegend": 1}
     return S
 
 
-def _release_check(before: list[dict], after: list[dict], V: float):
-    """o que muda nos modos oscilatórios ao soltar a carga, na velocidade da análise (ou na mais perto dela)"""
+def _release_check(before: list[dict], after: list[dict], V: float, item: str = "polos ao soltar a carga",
+                   why: str = "sem a carga a massa, o CG e a inércia mudam, e os modos se deslocam (gráfico 'Polos "
+                              "ao soltar a carga')"):
+    """o que muda nos modos oscilatórios de um modelo para o outro, na velocidade da análise (ou na mais perto)"""
     k = int(np.argmin([abs(b["V"] - V) for b in before]))
     parts = []
     for nm in ("curto_periodo", "fugoide", "dutch_roll"):
@@ -128,9 +150,7 @@ def _release_check(before: list[dict], after: list[dict], V: float):
         parts.append(f"{MODE_LAB[nm]}: ζ {zeta(lam0):.2f} → {zeta(lam1):.2f}, ω_n {abs(lam0):.2f} → {abs(lam1):.2f}")
     if not parts:
         return None
-    return ("info", "polos ao soltar a carga", "; ".join(parts), f"em V = {before[k]['V']:g} m/s",
-            "sem a carga a massa, o CG e a inércia mudam, e os modos se deslocam (gráfico 'Polos ao soltar a carga')",
-            "")
+    return ("info", item, "; ".join(parts), f"em V = {before[k]['V']:g} m/s", why, "")
 
 
 class StabilitySimulation(SimulationBase):
@@ -220,6 +240,10 @@ class StabilitySimulation(SimulationBase):
                ParamSpec("whatif", "procurar a correção", True, kind="bool", group=A_,
                          help="refaz a análise com deriva maior / mais diedro / EH maior para dizer quanto mudar"),
                ParamSpec("resp", "mostrar respostas no tempo", False, kind="bool", group=A_)]
+        if f is not None and f.liquid:
+            ps.append(ParamSpec("slosh_lin", "sloshing no modelo linear", False, kind="bool", group=A_,
+                                help="refaz os polos com o líquido dos tanques oscilando (pêndulo equivalente, "
+                                     "Abramson SP-106): aparecem os modos do líquido e quanto os do avião se deslocam"))
         return ps
 
     def plots(self):
@@ -260,12 +284,15 @@ class StabilitySimulation(SimulationBase):
                         "V (m/s)", "ζ", live=False, source="series:z_*"),
                PlotSpec("tempo", "Rolamento (constante de tempo) e espiral (tempo para dobrar) × V", "V", ("t",),
                         "V (m/s)", "s", live=False, source="series:t_*"),
-               PlotSpec("polos", "Polos dos modos (um ponto por V; tracejado: ζ mínimo do nível 1)", "re", ("im",),
+               PlotSpec("polos", "Polos dos modos", "re", ("im",),
                         "Re λ (1/s)", "Im λ (rad/s)", live=False, source="series:p_*"),
-               PlotSpec("polos_lentos", "Polos perto da origem: fugóide, dutch roll e espiral", "re", ("im",),
+               PlotSpec("polos_lentos", "Polos lentos", "re", ("im",),
                         "Re λ (1/s)", "Im λ (rad/s)", live=False, source="series:q_*")]
+        if f is not None and f.liquid and (values or {}).get("slosh_lin"):
+            ps.append(PlotSpec("liquido", "Polos com o líquido",
+                               "re", ("im",), "Re λ (1/s)", "Im λ (rad/s)", live=False, source="series:w_*"))
         if f is not None and f.payload:
-            ps.append(PlotSpec("solta", "Polos ao soltar a carga (um par por V: com carga → sem carga)", "re", ("im",),
+            ps.append(PlotSpec("solta", "Polos ao soltar a carga", "re", ("im",),
                                "Re λ (1/s)", "Im λ (rad/s)", live=False, source="series:s_*"))
         if f is None or f.roll_kind == "aileron":
             ps.append(PlotSpec("ail", "Aileron: tempo para inclinar × onde o aileron começa (tracejado: requisito)",
@@ -731,6 +758,30 @@ class StabilitySimulation(SimulationBase):
             S_["t_rolamento máximo"] = {"V": Vv[[0, -1]], "t": np.full(2, crit.roll_tau_max), "_dash": 1}
             S_.update(_pole_series(rows, crit))
             S_.update(_pole_series(rows, crit, SLOW_MODES, "q_"))
+        if f.liquid and P("slosh_lin") and rows:        # os mesmos polos com o líquido oscilando
+            ctx.on_progress(0.83, "modelo linear com o líquido oscilando")
+            moving, liquid = [], []
+            for r in rows:
+                ctx.check()
+                found, rest = _match_poles(r, slosh_eigs_at(ctx.backend, ac, r["V"]))
+                moving.append(found)
+                liquid += [(r["V"], lam) for lam in rest]
+            S_.update(_release_series(rows, moving, "w_", ("parado", "oscilando")))
+            if liquid:
+                S_["w_líquido"] = {"re": np.array([lam.real for _, lam in liquid]),
+                                     "im": np.array([lam.imag for _, lam in liquid]), "_symbol": "star",
+                                     "_color": "#17becf", "_size": 14}
+            shifted = _release_check(rows, moving, V, "polos com o líquido oscilando",
+                                     "o líquido que oscila troca forças com o avião e desloca os modos (gráfico "
+                                     "'Polos com o líquido')")
+            if shifted is not None:
+                k = int(np.argmin([abs(r["V"] - V) for r in rows]))
+                own = [lam for v_, lam in liquid if v_ == rows[k]["V"]]
+                if own:
+                    lam = max(own, key=lambda l: l.imag)
+                    shifted = shifted[:4] + (shifted[4] + f"; o líquido: ω_n = {abs(lam):.1f} rad/s, ζ = "
+                                             f"{-lam.real / abs(lam):.3f}",) + shifted[5:]
+                add(*shifted, G)
         if f.payload and rows:                            # os mesmos polos sem a carga (logo depois da soltura)
             ctx.on_progress(0.85, "modelo linear sem a carga")
             dropped = ac.copy()

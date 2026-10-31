@@ -133,6 +133,7 @@ class _Lib:
             "aerosim_aero_coeffs": (c_int, [c_int] + [c_double] * 6 + [ctypes.POINTER(T["AeroCoeffs"])]),
             "aerosim_aero_coeffs_ex": (c_int, [c_int] + [c_double] * 9 + [vp, ctypes.POINTER(T["AeroCoeffs"])]),
             "aerosim_linearize": (c_int, [c_int, c_double, ctypes.POINTER(T["LinModel"])]),
+            "aerosim_linearize_slosh": (c_int, [c_int, c_double, ctypes.POINTER(T["LinSloshModel"])]),
             "aerosim_autotune": (c_int, [c_int, c_double, ctypes.POINTER(T["Result"])]),
             "aerosim_prop_point": (c_int, [c_int, c_int, c_double, c_double, ctypes.POINTER(T["PropPoint"])]),
             "aerosim_trim": (c_int, [c_int, c_int, c_double, c_double, ctypes.POINTER(T["TrimPoint"])]),
@@ -410,6 +411,14 @@ class ZigSession(ISimSession):
         d["A"] = np.array(list(o.A)).reshape(8, 8)
         d["B"] = np.array(list(o.B)).reshape(8, 4)
         return d
+
+    def linearize_slosh(self, V):
+        o = self._lib.schema.types["LinSloshModel"]()
+        st = self._lib.dll.aerosim_linearize_slosh(self._slot, V, ctypes.byref(o))
+        if st not in (0, -4):
+            _check(st, "linearize_slosh")
+        n, stride = int(o.n), int(round(len(o.A) ** 0.5))
+        return {"ok": bool(o.ok), "n": n, "A": np.array(list(o.A)).reshape(stride, stride)[:n, :n]}
 
     def autotune(self, V):
         o = self._lib.schema.types["Result"]()

@@ -118,6 +118,11 @@ class ISimSession(ABC):
         B (8×4) sobre (δe, δa, δr, acelerador), mais o ponto (alpha, de, thr, phi, da, dr, m, I, cg, ok)"""
         raise NotImplementedError
 
+    def linearize_slosh(self, V: float) -> dict[str, Any]:
+        """o modelo linear com o líquido dos tanques oscilando: A (n×n) sobre (u, v, w, p, q, r, φ, θ) e, por tanque
+        com líquido, (ηx, ηy, η̇x, η̇y); devolve ok, n e A"""
+        raise NotImplementedError
+
     def autotune(self, V: float) -> dict[str, Any]:
         """ganhos do piloto automático pelo modelo linear em V, iguais para qualquer avião
         (núcleo: control/autotune.zig); devolve as flags (ok, pitch, roll, yaw, speed) e `gains`"""

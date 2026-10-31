@@ -14,7 +14,7 @@ import numpy as np
 _PRIM = {"f64": ctypes.c_double, "i32": ctypes.c_int32}
 
 # as structs que o Python usa pelo nome: se faltar alguma, a biblioteca é de outra versão do núcleo
-REQUIRED = ("AeroCoeffs", "EnvCfg", "EnvRow", "Events", "Individual", "LinModel", "LogRow", "MassProps", "OptOpts",
+REQUIRED = ("AeroCoeffs", "EnvCfg", "EnvRow", "Events", "Individual", "LinModel", "LinSloshModel", "LogRow", "MassProps", "OptOpts",
             "Params", "PerfRow", "PropPoint", "Result", "SimpleCfg", "SimpleRow", "SimpleSummary", "SizingCfg",
             "SizingOut", "TrimPoint")
 
