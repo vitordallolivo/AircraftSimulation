@@ -6,6 +6,10 @@
 //! desliga aquela curva (as desligadas ficam apagadas na legenda e saem dos eixos), e o botão direito abre um menu
 //! para marcar as curvas e exportar o gráfico em PNG, em PDF ou só os dados das curvas marcadas em CSV. O estado
 //! de cada gráfico (as curvas desligadas) fica guardado pelo título, entre um quadro e outro.
+//!
+//! Para gravar vários de uma vez, o mesmo menu marca o gráfico para a seleção (ele ganha uma marca no canto) ou marca
+//! todos os da tela, e "Salvar os selecionados" grava cada um num arquivo, no formato da extensão escolhida (PNG, PDF
+//! ou CSV), com o título do gráfico no nome.
 const std = @import("std");
 const system = @import("system.zig");
 const rl = @import("raylib");
@@ -100,11 +104,17 @@ pub const Frame = struct {
 /// cartão com o gráfico das curvas (com a legenda que liga e desliga e o menu do botão direito)
 pub fn lines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Series) void {
     const state = stateFor(axes.title);
+    state.is_plot = true;
+    state.seen = frame_count;
     if (state.pending) |kind| {
         state.pending = null;
         exportPlot(ui, rect, axes, series, state, kind);
     }
     drawLines(ui, rect, axes, series, state, true);
+    if (state.selected) { // a marca da seleção no canto do cartão
+        const box: rl.Rectangle = .{ .x = rect.x + rect.width - 30, .y = rect.y + 12, .width = 16, .height = 16 };
+        widgets.checkBox(box, true);
+    }
     // o botão direito no cartão abre o menu deste gráfico
     if (ui.right_clicked and ui.hovering(rect)) {
         menu.open = true;
@@ -268,6 +278,11 @@ const State = struct {
     pending: ?ExportKind = null, // exportar no próximo quadro, com os dados de então
     path: [600]u8 = undefined,
     path_len: usize = 0,
+    selected: bool = false, // na seleção para salvar junto
+    is_plot: bool = false, // um gráfico de linhas (as tabelas não entram na seleção)
+    seen: u64 = 0, // o quadro em que foi desenhado por último (só os da tela entram em "todos")
+    title: [128]u8 = undefined,
+    title_len: usize = 0,
 
     fn isHidden(state: *const State, name: []const u8) bool {
         const id = std.hash.Wyhash.hash(0, name);
@@ -301,6 +316,9 @@ fn stateFor(title: []const u8) *State {
         return &spare_state;
     }
     states[state_count] = .{ .key = key };
+    const length = @min(title.len, states[state_count].title.len);
+    @memcpy(states[state_count].title[0..length], title[0..length]);
+    states[state_count].title_len = length;
     state_count += 1;
     return &states[state_count - 1];
 }
@@ -344,14 +362,45 @@ var saver_key: u64 = 0;
 var note: [200:0]u8 = [_:0]u8{0} ** 200; // o resultado da última gravação
 var note_frames: u32 = 0;
 
-const actions = [_][:0]const u8{ "Exportar imagem PNG...", "Exportar PDF...", "Exportar CSV (curvas marcadas)...", "Marcar todas as curvas" };
+const Action = enum { png, pdf, csv, all_curves, select, select_all, save_selected, clear_selection };
+const action_count = std.meta.fields(Action).len;
+var action_text: [action_count][80:0]u8 = undefined;
+var action_list: [action_count][:0]const u8 = undefined;
+var frame_count: u64 = 1; // conta os quadros (`overlay` avança)
+var batch_total: usize = 0; // os gráficos da última gravação em grupo
+var batch_done: usize = 0;
+var batch_folder: [600]u8 = undefined;
+var batch_folder_len: usize = 0;
+var saving_batch = false;
 const menu_row: f32 = 28;
 const menu_width: f32 = 300;
 
 const table_actions = [_][:0]const u8{"Exportar a tabela em CSV..."};
 
 fn menuActions() []const [:0]const u8 {
-    return if (menu.is_table) &table_actions else &actions;
+    if (menu.is_table) return &table_actions;
+    const selected = selectedCount();
+    const this = findState(menu.key);
+    for (std.enums.values(Action)) |action| {
+        const k = @intFromEnum(action);
+        action_list[k] = switch (action) {
+            .png => "Exportar imagem PNG...",
+            .pdf => "Exportar PDF...",
+            .csv => "Exportar CSV (curvas marcadas)...",
+            .all_curves => "Marcar todas as curvas",
+            .select => if (this != null and this.?.selected) "Tirar este gráfico da seleção" else "Selecionar este gráfico",
+            .select_all => "Selecionar todos os gráficos da tela",
+            .save_selected => std.fmt.bufPrintZ(&action_text[k], "Salvar os {d} selecionados (PNG, PDF ou CSV)...", .{selected}) catch "Salvar os selecionados...",
+            .clear_selection => "Limpar a seleção",
+        };
+    }
+    return &action_list;
+}
+
+fn selectedCount() usize {
+    var count: usize = 0;
+    for (states[0..state_count]) |*state| count += @intFromBool(state.selected);
+    return count;
 }
 
 fn menuRect(screen: rl.Rectangle) rl.Rectangle {
@@ -377,8 +426,13 @@ pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
         widgets.rounded(box, 8, theme.colors.ink);
         theme.text(ui.fonts.regular, text, box.x + 12, box.y + 8, 14, theme.colors.on_accent);
     }
+    frame_count += 1;
     if (saver.open) {
         if (saver.draw(ui, screen)) |path| {
+            if (saving_batch) {
+                saving_batch = false;
+                return saveSelected(path);
+            }
             if (findState(saver_key)) |state| {
                 state.path_len = @min(path.len, state.path.len);
                 @memcpy(state.path[0..state.path_len], path[0..state.path_len]);
@@ -405,7 +459,7 @@ pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
         const row: rl.Rectangle = .{ .x = area.x + 4, .y = y, .width = area.width - 8, .height = menu_row };
         if (rl.checkCollisionPointRec(ui.mouse, row)) widgets.rounded(row, 4, theme.colors.hover);
         theme.text(ui.fonts.regular, caption, row.x + 10, row.y + 6, 14, theme.colors.accent);
-        if (ui.clicked and rl.checkCollisionPointRec(ui.mouse, row)) chooseAction(if (menu.is_table) 2 else k);
+        if (ui.clicked and rl.checkCollisionPointRec(ui.mouse, row)) chooseAction(if (menu.is_table) .csv else @enumFromInt(k));
         y += menu_row;
     }
     if (menu.is_table) {
@@ -428,12 +482,40 @@ pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
     ui.click_taken = true;
 }
 
-fn chooseAction(index: usize) void {
-    if (index == 3) {
-        if (findState(menu.key)) |state| state.hidden_count = 0;
-        menu.open = false;
-        return;
+fn chooseAction(action: Action) void {
+    menu.open = false;
+    switch (action) {
+        .png, .pdf, .csv => {},
+        .all_curves => {
+            if (findState(menu.key)) |state| state.hidden_count = 0;
+            return;
+        },
+        .select => {
+            if (findState(menu.key)) |state| state.selected = !state.selected;
+            return;
+        },
+        .select_all => {
+            for (states[0..state_count]) |*state| {
+                if (state.is_plot and state.seen + 2 >= frame_count) state.selected = true;
+            }
+            return;
+        },
+        .clear_selection => {
+            for (states[0..state_count]) |*state| state.selected = false;
+            return;
+        },
+        .save_selected => {
+            if (selectedCount() == 0) return setNote("nenhum gráfico selecionado (botão direito: Selecionar este gráfico)", .{});
+            var title_buffer: [96]u8 = undefined;
+            const title = std.fmt.bufPrint(&title_buffer, "Salvar os {d} gráficos (a extensão escolhe o formato)", .{selectedCount()}) catch "Salvar os gráficos";
+            var home_buffer: [512]u8 = undefined;
+            saver.showSave(title, dialogs.home(&home_buffer), &.{ ".png", ".pdf", ".csv" }, "graficos.png");
+            saving_batch = true;
+            return;
+        },
     }
+    saving_batch = false;
+    const index = @intFromEnum(action);
     const kinds = [_]ExportKind{ .png, .pdf, .csv };
     const extensions = [_][]const []const u8{ &.{".png"}, &.{".pdf"}, &.{".csv"} };
     saver_kind = kinds[index];
@@ -444,7 +526,38 @@ fn chooseAction(index: usize) void {
     // na pasta pessoal: a pasta do programa instalado pode não aceitar escrita
     var home_buffer: [512]u8 = undefined;
     saver.showSave(titles[index], dialogs.home(&home_buffer), extensions[index], name);
-    menu.open = false;
+}
+
+/// grava os gráficos selecionados: `path` dá a pasta, o começo do nome e o formato (pela extensão); cada gráfico vira
+/// `<começo>_<título>.<ext>`, gravado no quadro seguinte, quando ele for desenhado de novo
+fn saveSelected(path: []const u8) void {
+    const extension = std.fs.path.extension(path);
+    const kind: ExportKind = if (std.ascii.eqlIgnoreCase(extension, ".pdf")) .pdf else if (std.ascii.eqlIgnoreCase(extension, ".csv")) .csv else .png;
+    const folder = std.fs.path.dirname(path) orelse ".";
+    const stem = std.fs.path.stem(path);
+    batch_folder_len = @min(folder.len, batch_folder.len);
+    @memcpy(batch_folder[0..batch_folder_len], folder[0..batch_folder_len]);
+    batch_total = 0;
+    batch_done = 0;
+    for (states[0..state_count]) |*state| {
+        if (!state.selected) continue;
+        var name_buffer: [160]u8 = undefined;
+        const name = export_file.fileName(&name_buffer, state.title[0..state.title_len], @tagName(kind));
+        const full = std.fmt.bufPrint(&state.path, "{s}/{s}_{s}", .{ folder, stem, name }) catch continue;
+        state.path_len = full.len;
+        state.pending = kind;
+        batch_total += 1;
+    }
+    setNote("gravando {d} gráficos em {s}", .{ batch_total, folder });
+}
+
+/// o aviso de um arquivo gravado: sozinho, o caminho; na gravação em grupo, quantos já foram
+fn noteSaved(path: []const u8) void {
+    if (batch_total > 0 and batch_done < batch_total) {
+        batch_done += 1;
+        return setNote("gravados {d} de {d} em {s}", .{ batch_done, batch_total, batch_folder[0..batch_folder_len] });
+    }
+    setNote("gravado: {s}", .{path});
 }
 
 fn setNote(comptime format: []const u8, args: anytype) void {
@@ -474,7 +587,7 @@ fn exportPlot(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const S
         }
         export_file.saveCsv(gpa, fileIo(), path, columns[0..count]) catch |err| return setNote("não gravou {s}: {s}", .{ std.fs.path.basename(path), @errorName(err) });
         system.offerDownload(path);
-        return setNote("gravado: {s} ({d} curvas)", .{ path, count / 2 });
+        return noteSaved(path);
     }
     const scale: f32 = 2;
     const width: i32 = @intFromFloat(@ceil(rect.width * scale));
@@ -508,7 +621,7 @@ fn exportPlot(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const S
         const text = std.fmt.bufPrintZ(&zero_path, "{s}", .{path}) catch return;
         if (!rl.exportImage(image, text)) return setNote("não gravou {s}", .{std.fs.path.basename(path)});
         system.offerDownload(path);
-        return setNote("gravado: {s}", .{path});
+        return noteSaved(path);
     }
     rl.imageFormat(&image, .uncompressed_r8g8b8);
     const pixels: [*]const u8 = @ptrCast(image.data);
@@ -516,7 +629,7 @@ fn exportPlot(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const S
     // a página no tamanho do cartão na tela (1 pixel da tela = 0,75 pt, os 96 dpi de costume)
     export_file.savePdf(gpa, fileIo(), path, bytes, @intCast(width), @intCast(height), rect.width * 0.75, rect.height * 0.75) catch |err| return setNote("não gravou {s}: {s}", .{ std.fs.path.basename(path), @errorName(err) });
     system.offerDownload(path);
-    setNote("gravado: {s}", .{path});
+    noteSaved(path);
 }
 
 /// o menor e o maior valor finito (null se não houver)

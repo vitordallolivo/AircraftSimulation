@@ -41,6 +41,11 @@ números com todas as casas, então abre direto numa planilha ou no pandas. As t
 têm o mesmo menu: o botão direito grava a tabela em CSV, com uma grandeza por linha e o número inteiro, não o
 arredondado da tela. A gravação (CSV, PDF com a imagem comprimida) fica em `export.zig`, que tem teste.
 
+Para gravar vários gráficos de uma vez, o mesmo menu põe o gráfico na seleção (ele ganha uma marca no canto do
+cartão) ou põe todos os da tela, e "Salvar os selecionados" pede um nome só. A extensão desse nome escolhe o formato
+(PNG, PDF ou CSV), e cada gráfico vai para um arquivo próprio na mesma pasta, com o começo do nome e o título dele
+(`graficos_Ângulo_de_ataque.pdf`). "Limpar a seleção" desmarca todos.
+
 Os textos dos gráficos (título, eixos e legenda) aceitam um pedaço de TeX, desenhado por `tex.zig`: o que fica
 entre `$...$` vira matemática, com índice (`C_L`, `C_{m,CG}`), expoente, letras gregas e operadores com espaço dos
 dois lados (`\times`, `=`). Sem isso, um título precisava de uma frase inteira para dizer o que se plota, e a frase
