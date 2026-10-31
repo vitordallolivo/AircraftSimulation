@@ -97,6 +97,14 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   líquido sai parado no equilíbrio) e anda em fatias a cada quadro, então a tela não trava, nem no navegador.
   O xCG sai em % da CMA, o voo para quando a resposta estabiliza (o tempo vira um limite) e o manche fixo segura o
   equilíbrio completo (com φ, δa e δr), para o avião não rolar sozinho antes da rajada.
+- Estabilidade dinâmica: o avião em 3D com os tanques, o líquido e a carga (desenhados por cima da fuselagem), a
+  tabela de tanques com a massa de cada um e a LAPES com soltura no voo (o avião segue sem a carga). A rajada aparece
+  tracejada, em graus, nos gráficos que ela mexe (α e, com rajada lateral, β). Os polos saem por modo (um símbolo por
+  modo, o ponto do começo do voo em destaque e uma linha até onde ele anda durante o voo) em quatro gráficos: sem
+  efeitos, com sloshing, com a LAPES e todos juntos. O núcleo ganhou o autovalor de uma matriz qualquer
+  (`linalg.generalEigen`) e `gust.poles`, que dá o modo de cada polo; no CSV, cada curva diz o efeito e o modo.
+- Gráficos (tela em Zig): o botão direito põe o gráfico na seleção ou seleciona todos da tela, e "Salvar os
+  selecionados" grava cada um num arquivo; a extensão do nome escolhe PNG, PDF ou CSV.
 - Missão: a rajada escolhida por etapa. A Trajetória ganha a coluna "rajada em (m)" (onde, dentro da etapa, a
   rajada chega; vazio = sem rajada) e o grupo "Rajada" liga a rajada e dá o tamanho vertical e lateral e a duração.
   Sem mexer, a missão fica igual (os eventos do arquivo na mesma ordem).

@@ -168,7 +168,9 @@ pela linha de comando, pelo botão do cabeçalho ou arrastado para a janela. A l
 `assembly.zig` só completa os perfis que o arquivo aponta num `.dat` e passa cada triângulo para a vista 3D. A
 Montagem marca também o CG, numa cruz vermelha com a posição em x e a massa: é a soma das massas do arquivo pela
 mesma função do AeroDrive (`params.dryMass`), mais a carga como massa pontual; quando a carga muda o CG, o CG vazio
-aparece em cinza. A posição das peças ainda não se edita aqui. O avião aberto vai também para o Python, que abre o
+aparece em cinza. Por enquanto a Montagem só mostra: nada se edita aqui. Na GUI PyQt ela tem também o vento, a
+lista de componentes com os botões de acrescentar e remover, o resumo de massa e CG, o arraste das peças no 3D com
+"Acertar o CG" e o editor do componente escolhido; trazer isso é a tarefa G10 de `docs/TRACKING.md`. O avião aberto vai também para o Python, que abre o
 mesmo arquivo antes do próximo pedido; um `.dat` ou uma polar arrastados vão para a etapa Perfis.
 
 ## Como chamar
