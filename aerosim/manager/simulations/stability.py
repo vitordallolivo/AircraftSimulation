@@ -39,6 +39,9 @@ from .base import SimulationBase, floats
 
 MODE_LAB = {"curto_periodo": "curto período", "fugoide": "fugóide", "dutch_roll": "dutch roll",
             "rolamento": "rolamento", "espiral": "espiral"}
+# a cor e o símbolo de cada modo no mapa dos polos (as cores da paleta da GUI)
+MODE_STYLE = {"curto_periodo": ("#1f77b4", "o"), "fugoide": ("#ff7f0e", "s"), "dutch_roll": ("#9467bd", "d"),
+              "rolamento": ("#2ca02c", "t"), "espiral": ("#d62728", "x")}
 
 
 def _cruise_speed(ac) -> float:
@@ -54,6 +57,42 @@ def _fmt(v, nd=3):
             return "∞" if v > 0 else "—"
         return f"{v:.{nd}g}"
     return str(v)
+
+
+SLOW_MODES = ("fugoide", "dutch_roll", "espiral")     # os polos perto da origem, num gráfico só deles
+
+
+def _pole_series(rows: list[dict], crit, names=tuple(MODE_LAB), prefix: str = "p_") -> dict:
+    """o mapa dos polos: λ = Re + i Im de cada modo em cada V (a metade de cima do plano complexo), a faixa instável
+    (Re > 0) e as retas de ζ constante dos mínimos do nível 1. Um polo λ = −ζ ω_n ± i ω_n √(1 − ζ²) fica na reta
+    que sai da origem com cos θ = ζ (Etkin e Reid, Dynamics of Flight, 3ª ed., cap. 6; a conferir no PDF)"""
+    S, reach, right, high = {}, 0.0, 0.0, 0.0
+    for nm in names:
+        label = MODE_LAB[nm]
+        re_ = np.array([r[f"re_{nm}"] for r in rows], float)
+        im_ = np.array([r[f"im_{nm}"] for r in rows], float)
+        ok = np.isfinite(re_) & np.isfinite(im_)
+        if not ok.any():
+            continue
+        color, symbol = MODE_STYLE[nm]
+        S[f"{prefix}{label}"] = {"re": re_[ok], "im": im_[ok], "_color": color, "_symbol": symbol, "_line": 1, "_size": 9}
+        reach = max(reach, float(np.max(np.hypot(re_[ok], im_[ok]))))
+        right = max(right, float(np.max(re_[ok])))
+        high = max(high, float(np.max(im_[ok])))
+    if not S:
+        return S
+    span = 1.1 * max(reach, 1e-3)
+    S[f"{prefix}instável (Re > 0)"] = {"_vspan": [0.0, max(right, 0.0) + 0.08 * span], "_color": "#d62728"}
+    for nm, zeta in (("curto_periodo", crit.sp_zeta_min), ("fugoide", crit.ph_zeta_min),
+                     ("dutch_roll", crit.dr_zeta_min)):
+        if nm in names and 0 < zeta < 1:
+            # a reta vai até a altura do polo mais alto, para não esticar o gráfico
+            top = 1.15 * max(high, 1e-3)
+            length = top / math.sqrt(1 - zeta ** 2)
+            S[f"{prefix}ζ = {zeta:g} ({MODE_LAB[nm]})"] = {"re": np.array([0.0, -zeta * length]),
+                                                         "im": np.array([0.0, top]),
+                                                         "_color": MODE_STYLE[nm][0], "_dash": 1, "_width": 1.0}
+    return S
 
 
 class StabilitySimulation(SimulationBase):
@@ -182,7 +221,11 @@ class StabilitySimulation(SimulationBase):
         ps += [PlotSpec("zeta", "Amortecimento dos modos oscilatórios × V (tracejado: mínimo do nível 1)", "V", ("ζ",),
                         "V (m/s)", "ζ", live=False, source="series:z_*"),
                PlotSpec("tempo", "Rolamento (constante de tempo) e espiral (tempo para dobrar) × V", "V", ("t",),
-                        "V (m/s)", "s", live=False, source="series:t_*")]
+                        "V (m/s)", "s", live=False, source="series:t_*"),
+               PlotSpec("polos", "Polos dos modos (um ponto por V; tracejado: ζ mínimo do nível 1)", "re", ("im",),
+                        "Re λ (1/s)", "Im λ (rad/s)", live=False, source="series:p_*"),
+               PlotSpec("polos_lentos", "Polos perto da origem: fugóide, dutch roll e espiral", "re", ("im",),
+                        "Re λ (1/s)", "Im λ (rad/s)", live=False, source="series:q_*")]
         if f is None or f.roll_kind == "aileron":
             ps.append(PlotSpec("ail", "Aileron: tempo para inclinar × onde o aileron começa (tracejado: requisito)",
                                "eta_i", ("t",), "início do aileron (fração da semiasa)", "t (s)", live=False,
@@ -628,6 +671,9 @@ class StabilitySimulation(SimulationBase):
             for nm in MODE_LAB:
                 mm_ = md.get(nm) or {}
                 r[f"z_{nm}"] = mm_.get("zeta", np.nan) if mm_.get("im", 0) > 0 else np.nan
+            for nm in MODE_LAB:                           # o polo de cada modo (a metade de cima do plano)
+                mm_ = md.get(nm) or {}
+                r[f"re_{nm}"], r[f"im_{nm}"] = mm_.get("re", np.nan), mm_.get("im", np.nan)
             r["tau_r"] = (md.get("rolamento") or {}).get("tau", np.nan)
             es = md.get("espiral") or {}
             r["t2"] = es.get("t_double", np.nan) if es.get("re", -1) > 0 else np.nan
@@ -642,6 +688,8 @@ class StabilitySimulation(SimulationBase):
             S_["t_espiral: tempo para dobrar"] = {"V": Vv, "t": np.array([r["t2"] for r in rows])}
             S_["t_espiral mínimo"] = {"V": Vv[[0, -1]], "t": np.full(2, crit.spiral_t2_min), "_dash": 1}
             S_["t_rolamento máximo"] = {"V": Vv[[0, -1]], "t": np.full(2, crit.roll_tau_max), "_dash": 1}
+            S_.update(_pole_series(rows, crit))
+            S_.update(_pole_series(rows, crit, SLOW_MODES, "q_"))
         md, lm = modes_at(ctx.backend, ac, V)
         if md is None:
             add("falha", "equilíbrio em voo nivelado", f"não convergiu em {V:g} m/s", "trimagem do núcleo",

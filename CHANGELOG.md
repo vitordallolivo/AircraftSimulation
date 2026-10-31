@@ -75,6 +75,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   a missão, a decolagem e as curvas voam com a massa do avião (padrão), com esse MTOW ("MTOW salvo desta pista") ou
   com uma digitada. Na missão e na decolagem, o acionamento do profundor pode ser o otimizado (padrão) ou um
   digitado (onde e quanto), sem procurar. O padrão continua igual ao de antes.
+- Estabilidade: o mapa dos polos. Os polos de cada modo (curto período, fugóide, dutch roll, rolamento, espiral) no
+  plano complexo, um ponto por velocidade da análise dinâmica, com a faixa instável (Re > 0) sombreada e as retas de
+  ζ mínimo do nível 1; um segundo gráfico aproxima os polos perto da origem (fugóide, dutch roll, espiral).
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 
