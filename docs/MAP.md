@@ -207,7 +207,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/manager/simulations/loads.py` — Cargas: a carga aerodinâmica ao longo de cada superfície num ponto de operação (velocidade, fator de carga, α),
   `class LoadsSimulation:31`
 - `aerosim/manager/simulations/mission.py` — Missão (simulação 6GDL) por etapa do voo (corrida no chão, cada perna do percurso, rolagem).
-  `legs_to_rows:71`, `rows_to_legs:82`, `xcg_pct:102`, `total_mass:107`, `mtow_rows:114`, `mass_variant:133`, `class MissionSimulation:196`
+  `legs_to_rows:71`, `rows_to_legs:82`, `xcg_pct:102`, `total_mass:107`, `mtow_rows:114`, `saved_mtows:138`, `mass_variant:147`, `class MissionSimulation:210`
 - `aerosim/manager/simulations/performance.py` — Desempenho por cálculo (como na planilha de desempenho): nada é simulado e não há piloto.
   `core_polar:39`, `class PerformanceSimulation:51`
 - `aerosim/manager/simulations/polar.py` — Polar estática: C_L, C_D, C_m em α e C_Y, C_l, C_n em β (sem integração no tempo).
@@ -215,7 +215,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/manager/simulations/sizing.py` — Aba Dimensionamento inicial — diagrama de restrições T/W × W/S (e P/m × W/S para hélice).
   `class SizingSimulation:34`
 - `aerosim/manager/simulations/stability.py` — Aba Estabilidade — diz se a configuração serve, por quê, e o que mudar.
-  `class StabilitySimulation:156`
+  `class StabilitySimulation:200`
 - `aerosim/manager/simulations/takeoff.py` — Decolagem: uma corrida em tempo real e, opcionalmente, o mapa s_R × δe1 com as
   `class TakeoffSimulation:17`
 - `aerosim/manager/simulations/thrust.py` — Tração × velocidade de cada unidade propulsora (equilíbrio de rotação do motor).
@@ -824,7 +824,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/manager` — 93 testes em 13 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
-- `tests/stability` — 15 testes em 2 arquivo(s)
+- `tests/stability` — 16 testes em 2 arquivo(s)
 - `tests/test_architecture.py` — 5 testes em 1 arquivo(s)
 - `tests/tools` — 29 testes em 6 arquivo(s)
 - `tests/validation` — 2 testes em 1 arquivo(s)

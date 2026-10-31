@@ -86,6 +86,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   (`aerosim_linearize_slosh`). O gráfico "Polos com o líquido" liga, para cada V, o polo de cada modo com o líquido
   parado ao polo com o líquido oscilando, e marca os modos do próprio líquido; o diagnóstico dá o ω_n e o ζ deles e
   quanto os modos do avião se deslocam. Os títulos dos gráficos de polos ficaram curtos.
+- Estabilidade, massa do voo: o grupo "Massa" escolhe a do avião (padrão, igual a antes), um MTOW que a Missão
+  achou para uma pista ("pista do MTOW" lista as pistas salvas deste avião, enquanto o programa está aberto) ou uma
+  digitada (o que passa da massa do avião entra no CG). O diagnóstico diz qual massa voou; sem MTOW salvo, diz para
+  rodar Desempenho → Missão no modo MTOW. Os MTOW salvos ficam num lugar só (`SAVED_MTOW`), lidos pelas duas abas.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

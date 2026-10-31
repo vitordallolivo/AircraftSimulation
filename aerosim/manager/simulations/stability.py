@@ -36,6 +36,7 @@ from aerosim.stability.sizing import (cg_sweep, cm0, gear_x_for_rotation, with_e
 from aerosim.stability.static import analytic_np
 
 from .base import SimulationBase, floats
+from .mission import mass_variant, saved_mtows, total_mass
 
 MODE_LAB = {"curto_periodo": "curto período", "fugoide": "fugóide", "dutch_roll": "dutch roll",
             "rolamento": "rolamento", "espiral": "espiral"}
@@ -153,6 +154,49 @@ def _release_check(before: list[dict], after: list[dict], V: float, item: str = 
     return ("info", item, "; ".join(parts), f"em V = {before[k]['V']:g} m/s", why, "")
 
 
+MASS_FROM = ("a do avião", "MTOW salvo", "na mão")
+
+
+def _mass_params(ac, values: dict) -> list:
+    """a massa do voo: a do avião, um MTOW que a Missão achou para uma pista (guardado enquanto o programa está
+    aberto) ou a digitada"""
+    M_ = "Massa"
+    ps = [ParamSpec("mass_source", "massa do voo", MASS_FROM[0], kind="choice", choices=MASS_FROM, rebuild=True,
+                    group=M_, help="a do avião; o MTOW que o modo MTOW da Missão achou para uma pista; ou a digitada")]
+    if values.get("mass_source") == MASS_FROM[1]:
+        runs = tuple(label for label, _ in saved_mtows(ac)) if ac is not None else ()
+        ps.append(ParamSpec("mtow_run", "pista do MTOW", runs[0] if runs else "nenhum salvo", kind="choice",
+                            choices=runs or ("nenhum salvo",), group=M_,
+                            help="distância de decolagem e MTOW achado (Desempenho → Missão, modo MTOW)"))
+    elif values.get("mass_source") == MASS_FROM[2]:
+        ps.append(ParamSpec("mass_hand", "massa total", round(total_mass(ac), 3) if ac is not None else 5.0,
+                            minimum=0.1, maximum=500.0, unit="kg", group=M_,
+                            help="o que passa da massa do avião entra como massa no CG"))
+    return ps
+
+
+def _flight_mass(ctx: RunContext):
+    """a cópia do avião com a massa escolhida e, quando não é a dele, o aviso de qual massa voou (ou a falha, sem
+    MTOW salvo)"""
+    source = ctx.params.get("mass_source", MASS_FROM[0])
+    if source == MASS_FROM[1]:
+        runs = dict(saved_mtows(ctx.aircraft))
+        found = runs.get(ctx.params.get("mtow_run"))
+        if found is None:
+            return None, Check("falha", "massa do voo", "nenhum MTOW salvo", "MTOW de uma pista",
+                               "ainda não há MTOW salvo para este avião",
+                               "rodar Desempenho → Missão no modo MTOW com a pista desejada", "Massa")
+        ac = found.copy()
+    elif source == MASS_FROM[2]:
+        m = float(ctx.params.get("mass_hand", total_mass(ctx.aircraft)))
+        ac, _ = mass_variant(ctx.aircraft, {"tot": (m, m)}, 0.0)
+    else:
+        return ctx.aircraft.copy(), None
+    note = ctx.params.get("mtow_run", "") if source == MASS_FROM[1] else source
+    return ac, Check("info", "massa do voo", f"{total_mass(ac):.2f} kg", note,
+                     f"a do avião é {total_mass(ctx.aircraft):.2f} kg", "", "Massa")
+
+
 class StabilitySimulation(SimulationBase):
     name = "stability"
     title = "Estabilidade"
@@ -175,7 +219,8 @@ class StabilitySimulation(SimulationBase):
         vl = ", ".join(f"{v:g}" for v in np.round(np.linspace(0.75 * Vc, 1.5 * Vc, 7)))
         apl = ac.autopilot if ac is not None else None
         V_, C_, G_, A_ = "Voo", "Critérios de aprovação", "Faixa de CG", "Análises"
-        ps = [ParamSpec("V", "velocidade de cruzeiro", round(Vc, 1), minimum=3, maximum=80, unit="m/s", group=V_),
+        ps = _mass_params(ac, values)
+        ps += [ParamSpec("V", "velocidade de cruzeiro", round(Vc, 1), minimum=3, maximum=80, unit="m/s", group=V_),
               ParamSpec("CL_frac", "C_L no pouso", 0.9, minimum=0.3, maximum=1.0,
                         group=V_, help="fração do C_Lmax que o profundor tem de equilibrar no pouso")]
         if f is None or (f.gear and f.pitch):
@@ -316,12 +361,14 @@ class StabilitySimulation(SimulationBase):
 
     # ------------------------------------------------------------------ análise
     def run(self, ctx: RunContext) -> SimResult:
-        ac = ctx.aircraft.copy()
+        ac, mass_check = _flight_mass(ctx)
+        if ac is None:
+            return SimResult(checks=[mass_check])
         ac.apply_constraints()
         P = lambda k: self.param(ctx, k)
         f = features(ac)
         V = P("V")
-        S_, summ, checks = {}, {}, []
+        S_, summ, checks = {}, {}, [mass_check] if mass_check is not None else []
         add = lambda *a, **k: checks.append(_short(Check(*a, **k)))
         pk = lambda k, d: ctx.params.get(k, d)
         de_max = math.radians(pk("de_max", ac.autopilot.de_max))

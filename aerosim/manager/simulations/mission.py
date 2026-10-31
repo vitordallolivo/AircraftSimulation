@@ -130,6 +130,20 @@ def mtow_rows(ac) -> list[dict]:
     return rows
 
 
+# os MTOW que o modo MTOW achou enquanto o programa está aberto, por (avião, x_warning, z_warning): (cópia com as
+# massas, sobreposições do CG, massa total). A missão, a decolagem, as curvas e a Estabilidade leem daqui.
+SAVED_MTOW: dict = {}
+
+
+def saved_mtows(ac) -> list[tuple[str, object]]:
+    """os MTOW salvos deste avião, cada um com um rótulo curto da pista ("55 m · 12.51 kg") e a cópia com as massas"""
+    name = getattr(ac, "name", "")
+    mine = sorted((key[1:], found) for key, found in SAVED_MTOW.items() if key[0] == name)
+    twice = {xw for (xw, _), _ in mine if sum(other[0][0] == xw for other in mine) > 1}
+    return [(f"{xw:g} m" + (f" (z {zw:g} m)" if xw in twice else "") + f" · {found[2]:.2f} kg", found[0])
+            for (xw, zw), found in mine]
+
+
 def mass_variant(ac, ranges: dict, t: float):
     """cópia com cada massa em mín + t (máx − mín); devolve (cópia, valores por item)"""
     v = ac.copy()
@@ -420,9 +434,7 @@ class MissionSimulation(SimulationBase):
     def _saved(self) -> dict:
         """os MTOW achados nesta sessão, por (avião, x_warning, z_warning): (cópia com as massas, sobreposições do CG,
         massa total)"""
-        if not hasattr(self, "_mtows"):
-            self._mtows = {}
-        return self._mtows
+        return SAVED_MTOW
 
     @staticmethod
     def _runway(ac, xw: float, zw: float) -> tuple:

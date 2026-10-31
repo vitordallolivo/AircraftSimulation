@@ -136,3 +136,30 @@ def test_norm_can_be_disabled(manager):
                                                   "size_tail": False})
     sp = next(c for c in r.checks if c.item.startswith("espiral: tempo"))
     assert sp.status == "info"
+
+
+def test_flight_mass_by_hand_and_saved_mtow():
+    """a massa do voo na Estabilidade: a digitada (o que passa entra no CG) ou um MTOW que a Missão salvou para uma
+    pista; sem MTOW salvo, a falha diz onde rodar"""
+    from aerosim.manager import SimulationManager
+    from aerosim.manager.simulations.mission import SAVED_MTOW, mass_variant, total_mass
+    from aerosim.manager.simulations.stability import MASS_FROM
+    from aerosim.model.templates import TEMPLATES
+    manager = SimulationManager()
+    ac = TEMPLATES["conventional"]()
+    quick = {"whatif": False, "Vs_list": [15.0]}
+    heavy = total_mass(ac) + 1.0
+    result = manager.run("stability", ac, {**quick, "mass_source": MASS_FROM[2], "mass_hand": heavy})
+    assert next(c for c in result.checks if c.item == "massa do voo").value == f"{heavy:.2f} kg"
+    empty = manager.run("stability", ac, {**quick, "mass_source": MASS_FROM[1]})
+    assert [c.status for c in empty.checks] == ["falha"] and "Missão" in empty.checks[0].fix
+    variant, _ = mass_variant(ac, {"tot": (heavy + 1.0, heavy + 1.0)}, 0.0)
+    SAVED_MTOW[(ac.name, 55.0, 0.7)] = (variant, None, total_mass(variant))
+    try:
+        sim = manager.get("stability")
+        runs = next(p for p in sim.parameters_for(ac, {"mass_source": MASS_FROM[1]}) if p.key == "mtow_run")
+        assert runs.choices == (f"55 m · {heavy + 1.0:.2f} kg",)
+        saved = manager.run("stability", ac, {**quick, "mass_source": MASS_FROM[1], "mtow_run": runs.choices[0]})
+        assert next(c for c in saved.checks if c.item == "massa do voo").value == f"{heavy + 1.0:.2f} kg"
+    finally:
+        SAVED_MTOW.clear()
