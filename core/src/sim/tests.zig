@@ -319,10 +319,21 @@ test "polos da rajada: o líquido livre soma um par perto da frequência do pên
     try std.testing.expect(locked.ok and free.ok);
     try std.testing.expectEqual(@as(usize, 8), locked.count);
     try std.testing.expectEqual(@as(usize, 12), free.count);
-    // o avião do teste é estável no curto período: algum par com amortecimento (parte real bem negativa)
-    var short_period = false;
-    for (0..locked.count) |i| short_period = short_period or (locked.real[i] < -2 and locked.imag[i] > 1);
-    try std.testing.expect(short_period);
+    // o avião do teste é estável no curto período: o par com amortecimento (parte real bem negativa) é ele; os oito
+    // polos rígidos têm dois de cada modo longitudinal e o dutch roll em par, o rolamento e a espiral sozinhos
+    var count = std.EnumArray(gust.Mode, usize).initFill(0);
+    for (0..locked.count) |i| {
+        count.getPtr(locked.mode[i]).* += 1;
+        if (locked.real[i] < -2 and locked.imag[i] > 1) try std.testing.expectEqual(gust.Mode.short_period, locked.mode[i]);
+    }
+    try std.testing.expectEqual(@as(usize, 2), count.get(.short_period));
+    try std.testing.expectEqual(@as(usize, 2), count.get(.phugoid));
+    try std.testing.expectEqual(@as(usize, 2), count.get(.dutch_roll));
+    try std.testing.expectEqual(@as(usize, 1), count.get(.roll));
+    try std.testing.expectEqual(@as(usize, 1), count.get(.spiral));
+    var liquid_count: usize = 0;
+    for (0..free.count) |i| liquid_count += @intFromBool(free.mode[i] == .liquid);
+    try std.testing.expectEqual(@as(usize, 4), liquid_count);
     // o pêndulo: ω₁ = √(g k tanh(k h)), k = π / lado (Abramson, NASA SP-106), com ζ pequeno
     const frequency = inst.p.tank[0].w1;
     var near_pendulum = false;

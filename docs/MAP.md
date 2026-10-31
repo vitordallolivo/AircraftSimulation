@@ -431,8 +431,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `EnvCfg:36`, `EnvRow:74`
   fn `density:87`, `compute:300`, `curve:333`
 - `core/src/sim/gust.zig` — Resposta no tempo a uma rajada, em voo nivelado reto: o avião sai equilibrado em `airspeed` e `height`, a rajada
-  tipos `Case:23`, `Poles:175`
-  fn `begin:40`, `advance:102`, `settled:129`, `respond:156`, `gustSpeed:165`, `poles:190`
+  tipos `Case:23`, `Mode:173`, `Poles:178`
+  fn `begin:40`, `advance:102`, `settled:129`, `respond:156`, `gustSpeed:165`, `poles:201`
 - `core/src/sim/linear.zig` — Modelo linear em torno do voo nivelado equilibrado (estabilidade dinâmica).
   tipos `LinModel:28`, `LinSloshModel:230`
   fn `rigid:56`, `linearize:169`, `linearizeSlosh:290`, `residual:331`

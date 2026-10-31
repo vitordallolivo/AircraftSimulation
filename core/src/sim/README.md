@@ -152,7 +152,11 @@ dela. Daí em diante voa só o resto da massa, e o voo não para antes de a carg
 
 Para entender a resposta, `poles` dá os polos no mesmo equilíbrio, os autovalores do modelo linear (`linear.zig`): o
 do corpo rígido, com o líquido travado, ou o com os pêndulos do líquido soltos. Com a LAPES já solta nos estados
-(`released`), saem os polos do avião depois da saída. `gustSpeed` dá a rajada no tempo, a mesma que o voo sente, para
+(`released`), saem os polos do avião depois da saída. Cada polo leva o modo dele: os oito do corpo rígido saem dos
+blocos longitudinal (u, w, q, θ) e látero-direcional (v, p, r, φ) separados, com a regra da Estabilidade em Python
+(os dois de |λ| maior no longitudinal são o curto período; no látero-direcional, o par complexo é o dutch roll, a raiz
+mais negativa o rolamento e a outra a espiral). Cada um fica com o polo mais perto dele no modelo inteiro, e o que
+sobra é o líquido. `gustSpeed` dá a rajada no tempo, a mesma que o voo sente, para
 o gráfico. A rodada anda em fatias (`begin`, depois
 `advance` até acabar), para que a tela siga desenhando enquanto ela roda, inclusive no navegador, onde não há thread.
 

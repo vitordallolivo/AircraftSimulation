@@ -169,26 +169,39 @@ pub fn gustSpeed(params: *const types.Params, time: f64, start: f64) [2]f64 {
     return .{ -wind[2], wind[1] };
 }
 
+/// os modos de um avião rígido (Etkin e Reid, cap. 6) e o do líquido, que é o que sobra com os pêndulos soltos
+pub const Mode = enum { short_period, phugoid, dutch_roll, roll, spiral, liquid };
+
 /// os polos do avião equilibrado em voo nivelado: os autovalores do modelo linear (`linear.linearize`, o corpo
 /// rígido, com o líquido travado onde está) ou, com `liquid_free` e tanques, do modelo com os pêndulos do líquido
-/// (`linear.linearizeSlosh`). λ = σ ± iω: σ < 0 amortece, σ > 0 cresce
+/// (`linear.linearizeSlosh`). λ = σ ± iω: σ < 0 amortece, σ > 0 cresce. Cada polo leva o modo dele
 pub const Poles = struct {
     ok: bool = false,
     count: usize = 0,
     real: [linear.nl_slosh]f64 = undefined,
     imag: [linear.nl_slosh]f64 = undefined,
+    mode: [linear.nl_slosh]Mode = undefined,
 
-    /// a maior parte real (o modo menos estável)
+    /// o polo de maior parte real (o modo menos estável)
+    pub fn leastStable(set: *const Poles) usize {
+        var worst: usize = 0;
+        for (0..set.count) |i| if (set.real[i] > set.real[worst]) {
+            worst = i;
+        };
+        return worst;
+    }
+
+    /// a maior parte real
     pub fn largestReal(set: *const Poles) f64 {
-        var largest = -std.math.inf(f64);
-        for (set.real[0..set.count]) |value| largest = @max(largest, value);
-        return largest;
+        return set.real[set.leastStable()];
     }
 };
 
 /// os polos com a configuração e os estados de `flags` (com `released` ligado, sem a LAPES)
 pub fn poles(params: *const types.Params, flags: *const state.Flags, airspeed: f64, liquid_free: bool) Poles {
     var out: Poles = .{};
+    const rigid = linear.linearize(params, flags, airspeed);
+    if (rigid.ok == 0) return out;
     var matrix: [linear.nl_slosh][linear.nl_slosh]f64 = undefined;
     if (liquid_free and params.n_tank > 0 and params.slosh_on != 0) {
         const model = linear.linearizeSlosh(params, flags, airspeed);
@@ -198,13 +211,105 @@ pub fn poles(params: *const types.Params, flags: *const state.Flags, airspeed: f
             matrix[i][j] = model.A[i * linear.nl_slosh + j];
         };
     } else {
-        const model = linear.linearize(params, flags, airspeed);
-        if (model.ok == 0) return out;
         out.count = linear.nl;
         for (0..out.count) |i| for (0..out.count) |j| {
-            matrix[i][j] = model.A[i * linear.nl + j];
+            matrix[i][j] = rigid.A[i * linear.nl + j];
         };
     }
     out.ok = linalg.generalEigen(linear.nl_slosh, &matrix, out.count, &out.real, &out.imag);
+    if (out.ok) nameModes(&rigid.A, &out);
     return out;
+}
+
+/// dá o modo de cada polo: os oito do corpo rígido saem dos blocos longitudinal (u, w, q, θ) e látero-direcional
+/// (v, p, r, φ) desacoplados, com a regra da Estabilidade em Python (`aerosim/stability/dynamic.py`, `modes`); cada um
+/// fica com o polo mais perto dele no modelo inteiro, e o que sobra é o líquido
+fn nameModes(rigid: *const [linear.nl * linear.nl]f64, out: *Poles) void {
+    var reference_real: [linear.nl]f64 = undefined;
+    var reference_imag: [linear.nl]f64 = undefined;
+    var reference_mode: [linear.nl]Mode = undefined;
+    const longitudinal = [4]usize{ 0, 2, 4, 7 };
+    const lateral = [4]usize{ 1, 3, 5, 6 };
+    for ([_][4]usize{ longitudinal, lateral }, 0..) |block, b| {
+        var matrix: [4][4]f64 = undefined;
+        for (block, 0..) |row, i| for (block, 0..) |col, j| {
+            matrix[i][j] = rigid[row * linear.nl + col];
+        };
+        var real: [4]f64 = undefined;
+        var imag: [4]f64 = undefined;
+        if (!linalg.generalEigen(4, &matrix, 4, &real, &imag)) {
+            for (0..out.count) |i| out.mode[i] = .liquid;
+            return;
+        }
+        var modes: [4]Mode = undefined;
+        if (b == 0) longitudinalModes(&real, &imag, &modes) else lateralModes(&real, &imag, &modes);
+        for (0..4) |i| {
+            reference_real[4 * b + i] = real[i];
+            reference_imag[4 * b + i] = imag[i];
+            reference_mode[4 * b + i] = modes[i];
+        }
+    }
+    var taken = [_]bool{false} ** linear.nl_slosh;
+    for (0..out.count) |i| out.mode[i] = .liquid;
+    for (0..linear.nl) |r| {
+        var nearest: ?usize = null;
+        var distance = std.math.inf(f64);
+        for (0..out.count) |i| {
+            if (taken[i]) continue;
+            const gap = std.math.hypot(out.real[i] - reference_real[r], out.imag[i] - reference_imag[r]);
+            if (gap < distance) {
+                distance = gap;
+                nearest = i;
+            }
+        }
+        if (nearest) |i| {
+            taken[i] = true;
+            out.mode[i] = reference_mode[r];
+        }
+    }
+}
+
+/// u, w, q, θ: os dois de |λ| maior são o curto período e os dois menores, a fugóide (com dois pares, o par de ω
+/// maior é o curto período; com um par e duas raízes reais, o par vai para o lado do |λ| dele)
+fn longitudinalModes(real: *const [4]f64, imag: *const [4]f64, modes: *[4]Mode) void {
+    var size: [4]f64 = undefined;
+    for (0..4) |i| size[i] = std.math.hypot(real[i], imag[i]);
+    var order = [4]usize{ 0, 1, 2, 3 };
+    std.mem.sort(usize, &order, &size, ascending);
+    modes[order[0]] = .phugoid;
+    modes[order[1]] = .phugoid;
+    modes[order[2]] = .short_period;
+    modes[order[3]] = .short_period;
+}
+
+/// v, p, r, φ: o par complexo é o dutch roll; das raízes reais, a mais negativa é o rolamento e a mais perto de zero,
+/// a espiral (sem par, as duas do meio ficam com o dutch roll)
+fn lateralModes(real: *const [4]f64, imag: *const [4]f64, modes: *[4]Mode) void {
+    var order = [4]usize{ 0, 1, 2, 3 };
+    std.mem.sort(usize, &order, real, ascending);
+    var complex_count: usize = 0;
+    for (0..4) |i| {
+        if (@abs(imag[i]) > 1e-9) {
+            modes[i] = .dutch_roll;
+            complex_count += 1;
+        }
+    }
+    if (complex_count == 0) {
+        modes[order[0]] = .roll;
+        modes[order[1]] = .dutch_roll;
+        modes[order[2]] = .dutch_roll;
+        modes[order[3]] = .spiral;
+        return;
+    }
+    var first = true;
+    for (order) |i| {
+        if (@abs(imag[i]) > 1e-9) continue;
+        modes[i] = if (first) .roll else .spiral;
+        first = false;
+    }
+}
+
+/// ordena índices pelo valor que cada um aponta
+fn ascending(values: *const [4]f64, a: usize, b: usize) bool {
+    return values[a] < values[b];
 }

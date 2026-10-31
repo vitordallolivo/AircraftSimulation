@@ -39,24 +39,32 @@ const max_cases = 2;
 const slice_seconds = 0.25; // de voo por fatia (poucos milissegundos de conta)
 
 const plots = [_]native.Plot{
-    .{ .key = "gust", .title = "Rajada", .xlabel = "t (s)", .ylabel = "m/s" },
     .{ .key = "alpha", .title = "Ângulo de ataque", .xlabel = "t (s)", .ylabel = "α (°)" },
     .{ .key = "lateral", .title = "Derrapagem e rolamento", .xlabel = "t (s)", .ylabel = "°" },
     .{ .key = "load", .title = "Fator de carga", .xlabel = "t (s)", .ylabel = "n_z" },
     .{ .key = "xcg", .title = "xCG", .xlabel = "t (s)", .ylabel = "x_CG (% CMA)" },
     .{ .key = "liquid", .title = "Líquido", .xlabel = "t (s)", .ylabel = "ângulo (°)" },
-    .{ .key = "poles", .title = "Polos", .xlabel = "Re (1/s)", .ylabel = "Im (rad/s)" },
-    .{ .key = "slow_poles", .title = "Polos lentos", .xlabel = "Re (1/s)", .ylabel = "Im (rad/s)" },
+    .{ .key = "poles_plain", .title = "Polos", .xlabel = "Re (1/s)", .ylabel = "Im (rad/s)" },
+    .{ .key = "poles_sloshing", .title = "Polos com sloshing", .xlabel = "Re (1/s)", .ylabel = "Im (rad/s)" },
+    .{ .key = "poles_lapes", .title = "Polos com a LAPES", .xlabel = "Re (1/s)", .ylabel = "Im (rad/s)" },
+    .{ .key = "poles_all", .title = "Todos os polos", .xlabel = "Re (1/s)", .ylabel = "Im (rad/s)" },
 };
-const plot_gust = 0;
-const plot_alpha = 1;
-const plot_lateral = 2;
-const plot_load = 3;
-const plot_cg = 4;
-const plot_liquid = 5;
-const plot_poles = 6;
-const plot_slow_poles = 7;
-const slow_radius = 1.5; // rad/s: |λ| abaixo disto vai também no gráfico dos polos lentos (fugóide, espiral)
+const plot_alpha = 0;
+const plot_lateral = 1;
+const plot_load = 2;
+const plot_cg = 3;
+const plot_liquid = 4;
+const plot_poles = 5; // os três dos efeitos (`Effect`) e o de todos, nesta ordem
+
+/// os polos ao longo do voo, cada um num modelo: sem efeitos (o corpo rígido, com o líquido travado e a LAPES a bordo),
+/// com o líquido balançando (sloshing) e com a saída da LAPES
+const Effect = enum { plain, sloshing, lapes };
+const effect_color = std.EnumArray(Effect, []const u8).init(.{ .plain = "#7f7f7f", .sloshing = "#1f77b4", .lapes = "#ff7f0e" });
+const effect_name = std.EnumArray(Effect, []const u8).init(.{ .plain = "sem efeitos", .sloshing = "sloshing", .lapes = "LAPES" });
+const max_samples = 24; // instantes do voo em que se refazem os polos
+const Mode = core.gust.Mode;
+const mode_marker = std.EnumArray(Mode, []const u8).init(.{ .short_period = "o", .phugoid = "s", .dutch_roll = "d", .roll = "t", .spiral = "+", .liquid = "x" });
+const mode_name = std.EnumArray(Mode, []const u8).init(.{ .short_period = "curto período", .phugoid = "fugóide", .dutch_roll = "dutch roll", .roll = "rolamento", .spiral = "espiral", .liquid = "líquido" });
 
 fn cruise(aircraft: *const native.Aircraft) f64 {
     var speed: f64 = 0;
@@ -364,11 +372,16 @@ const State = struct {
     n_tanks: usize = 0,
     tank_names: [max_tanks][]const u8 = undefined,
     lapes: f64 = 0, // kg da LAPES no avião (0: sem)
-    // os polos no equilíbrio do começo: com o líquido livre (ou o corpo rígido, sem tanques), travado e sem a LAPES
-    poles_free: core.gust.Poles = .{},
-    poles_locked: core.gust.Poles = .{},
-    poles_empty: core.gust.Poles = .{},
+    // os polos ao longo do voo livre, em `max_samples` instantes, para cada efeito (`Effect`); o primeiro é o
+    // equilíbrio do começo
+    loci: [std.meta.fields(Effect).len][max_samples]core.gust.Poles = undefined,
+    samples: usize = 0,
 };
+
+/// os efeitos que valem neste voo: sem efeitos sempre; o sloshing com tanques; a LAPES se ela sai no voo
+fn effects(state: *const State, free: *const Flight) std.EnumArray(Effect, bool) {
+    return .init(.{ .plain = true, .sloshing = state.n_tanks > 0, .lapes = state.lapes > 0 and free.case.release != null and free.instance.r.f.released != 0 });
+}
 
 fn start(run: *native.Run, values: native.Values) anyerror!void {
     const memory = run.memory();
@@ -417,7 +430,7 @@ fn start(run: *native.Run, values: native.Values) anyerror!void {
 
 fn advance(run: *native.Run) anyerror!bool {
     const state: *State = @ptrCast(@alignCast(run.state.?));
-    if (state.current >= state.count) return true;
+    if (state.current >= state.count) return samplePoles(run, state);
     const flight = &state.flights[state.current];
     if (!flight.started) {
         flight.started = true;
@@ -425,19 +438,6 @@ fn advance(run: *native.Run) anyerror!bool {
             run.fail("o voo não começou ({s}): a velocidade dá para voar nivelado?", .{@errorName(err)});
             return err;
         };
-        if (state.current == 0) { // os polos, numa fatia só deles
-            const instance = flight.instance;
-            const airspeed = flight.case.airspeed;
-            state.poles_free = core.gust.poles(&instance.p, &instance.r.f, airspeed, true);
-            if (state.n_tanks > 0) state.poles_locked = core.gust.poles(&instance.p, &instance.r.f, airspeed, false);
-            if (state.lapes > 0) {
-                var empty = instance.r.f;
-                empty.released = 1;
-                state.poles_empty = core.gust.poles(&instance.p, &empty, airspeed, true);
-            }
-            run.say("polos no equilíbrio", .{});
-            return false;
-        }
     }
     flight.done = try core.gust.advance(flight.instance, flight.case, flight.log, &flight.rows, slice_seconds);
     const label: []const u8 = if (flight.case.liquid_free) "líquido livre" else "líquido travado";
@@ -445,7 +445,37 @@ fn advance(run: *native.Run) anyerror!bool {
     run.progress = @floatCast((@as(f64, @floatFromInt(state.current)) + fraction) / @as(f64, @floatFromInt(state.count)));
     run.say("{s}: t = {d:.1} s de {d:.0}", .{ label, flight.instance.r.t, flight.case.span });
     if (flight.done) state.current += 1;
-    return state.current >= state.count;
+    return false; // os polos vêm depois dos voos
+}
+
+/// um instante do voo livre por fatia: os polos de cada efeito na velocidade daquele instante e com o que está a
+/// bordo (a LAPES sai no instante em que saiu no voo); verdadeiro depois do último
+fn samplePoles(run: *native.Run, state: *State) bool {
+    if (state.samples >= max_samples) return true;
+    const free = &state.flights[0];
+    const instance = free.instance;
+    const last = free.log[free.rows - 1].t;
+    const moment = last * @as(f64, @floatFromInt(state.samples)) / @as(f64, max_samples - 1);
+    var row = free.log[0];
+    for (free.log[0..free.rows]) |line| {
+        if (line.t > moment) break;
+        row = line;
+    }
+    const airspeed = if (row.Va > 1) row.Va else free.case.airspeed;
+    const active = effects(state, free);
+    var aboard = instance.r.f;
+    aboard.released = 0;
+    aboard.extracting = 0;
+    var after = aboard;
+    after.released = @intFromBool(instance.r.f.released != 0 and moment >= instance.r.ev.trel);
+    const k = state.samples;
+    state.loci[@intFromEnum(Effect.plain)][k] = core.gust.poles(&instance.p, &aboard, airspeed, false);
+    if (active.get(.sloshing)) state.loci[@intFromEnum(Effect.sloshing)][k] = core.gust.poles(&instance.p, &aboard, airspeed, true);
+    if (active.get(.lapes)) state.loci[@intFromEnum(Effect.lapes)][k] = core.gust.poles(&instance.p, &after, airspeed, false);
+    state.samples += 1;
+    run.progress = 1;
+    run.say("polos em t = {d:.1} s", .{moment});
+    return state.samples >= max_samples;
 }
 
 /// uma coluna do registro de um voo, já na unidade do gráfico
@@ -554,16 +584,20 @@ fn result(run: *native.Run, out: *native.Writer) anyerror!void {
     try native.beginResult(out, summary.items, checks.items);
     const flights = state.flights[0..state.count];
     var curves: std.ArrayList(native.Curve) = .empty;
-    try curves.ensureTotalCapacity(memory, 2 * flights.len);
-    try native.writePlot(out, plots[plot_gust], try gustCurves(memory, free, t_free), true);
+    try curves.ensureTotalCapacity(memory, 2 * flights.len + 1);
+    // a rajada tracejada junto da resposta que ela causa, como o comando nos gráficos do relatório: em graus, o
+    // ângulo que ela soma ao vento relativo, atan(U/V)
+    const gust_angles = try gustAngles(memory, free, t_free);
     for (flights) |*flight| curves.appendAssumeCapacity(.{ .name = caseName(flight), .x = try column(memory, flight, time), .y = try column(memory, flight, alpha), .color = "#1f77b4", .dashed = !flight.case.liquid_free });
-    try native.writePlot(out, plots[plot_alpha], curves.items, false);
+    curves.appendAssumeCapacity(.{ .name = "rajada", .x = t_free, .y = gust_angles[0], .color = "#d62728", .dashed = true });
+    try native.writePlot(out, plots[plot_alpha], curves.items, true);
     curves.clearRetainingCapacity();
     for (flights) |*flight| {
         const t = try column(memory, flight, time);
         curves.appendAssumeCapacity(.{ .name = try std.fmt.allocPrint(memory, "β {s}", .{caseName(flight)}), .x = t, .y = try column(memory, flight, beta), .color = "#d62728", .dashed = !flight.case.liquid_free });
         curves.appendAssumeCapacity(.{ .name = try std.fmt.allocPrint(memory, "φ {s}", .{caseName(flight)}), .x = t, .y = try column(memory, flight, bank), .color = "#2ca02c", .dashed = !flight.case.liquid_free });
     }
+    if (free.case.lateral != 0) try curves.append(memory, .{ .name = "rajada", .x = t_free, .y = gust_angles[1], .color = "#000000", .dashed = true });
     try native.writePlot(out, plots[plot_lateral], curves.items, false);
     curves.clearRetainingCapacity();
     for (flights) |*flight| curves.appendAssumeCapacity(.{ .name = caseName(flight), .x = try column(memory, flight, time), .y = try column(memory, flight, load), .color = "#ff7f0e", .dashed = !flight.case.liquid_free });
@@ -572,8 +606,17 @@ fn result(run: *native.Run, out: *native.Writer) anyerror!void {
     for (flights) |*flight| curves.appendAssumeCapacity(.{ .name = caseName(flight), .x = try column(memory, flight, time), .y = try cgPercent(memory, flight, state), .color = "#9467bd", .dashed = !flight.case.liquid_free });
     try native.writePlot(out, plots[plot_cg], curves.items, false);
     if (liquid.items.len > 0) try native.writePlot(out, plots[plot_liquid], liquid.items, false);
-    try native.writePlot(out, plots[plot_poles], try poleCurves(memory, state, std.math.inf(f64)), false);
-    try native.writePlot(out, plots[plot_slow_poles], try poleCurves(memory, state, slow_radius), false);
+    const active = effects(state, free);
+    var shown: usize = 0;
+    for (std.enums.values(Effect)) |effect| if (active.get(effect)) {
+        try native.writePlot(out, plots[plot_poles + @as(usize, @intFromEnum(effect))], try locusCurves(memory, state, &.{effect}), false);
+        shown += 1;
+    };
+    if (shown > 1) {
+        var all: std.ArrayList(Effect) = .empty;
+        for (std.enums.values(Effect)) |effect| if (active.get(effect)) try all.append(memory, effect);
+        try native.writePlot(out, plots[plot_poles + 3], try locusCurves(memory, state, all.items), false);
+    }
     try native.endResult(out);
 }
 
@@ -609,64 +652,89 @@ fn lapesChecks(memory: std.mem.Allocator, state: *const State, free: *const Flig
     });
 }
 
-/// a rajada no tempo do voo: sobe de 0 à intensidade e volta a 0 na duração pedida
-fn gustCurves(memory: std.mem.Allocator, free: *const Flight, t: []const f64) ![]const native.Curve {
+/// a rajada no tempo do voo como o ângulo que ela soma ao vento relativo (°): a vertical em α e a lateral em β. Sobe de
+/// 0 ao pico e volta a 0 na duração pedida (a 1 − cos do núcleo)
+fn gustAngles(memory: std.mem.Allocator, free: *const Flight, t: []const f64) ![2][]f64 {
     const instance = free.instance;
     const arrived = if (instance.r.tg >= 0) instance.r.tg else free.case.start;
     const up = try memory.alloc(f64, t.len);
     const side = try memory.alloc(f64, t.len);
     for (t, 0..) |moment, k| {
         const speed = core.gust.gustSpeed(&instance.p, moment, arrived);
-        up[k] = speed[0];
-        side[k] = speed[1];
+        up[k] = std.math.atan(speed[0] / free.case.airspeed) * deg;
+        side[k] = std.math.atan(speed[1] / free.case.airspeed) * deg;
     }
-    var curves: std.ArrayList(native.Curve) = .empty;
-    if (free.case.vertical != 0 or free.case.lateral == 0) try curves.append(memory, .{ .name = "vertical", .x = t, .y = up, .color = "#1f77b4" });
-    if (free.case.lateral != 0) try curves.append(memory, .{ .name = "lateral", .x = t, .y = side, .color = "#d62728" });
-    return curves.items;
+    return .{ up, side };
 }
 
-/// os polos de cada caso como pontos (só os com |λ| < `radius`)
-fn poleCurves(memory: std.mem.Allocator, state: *const State, radius: f64) ![]const native.Curve {
-    const Set = struct { poles: *const core.gust.Poles, name: []const u8, color: []const u8, marker: []const u8 };
-    // o travado e o sem a LAPES antes, para o livre (o caso principal) ficar por cima
-    const sets = [_]Set{
-        .{ .poles = &state.poles_locked, .name = "líquido travado", .color = "#7f7f7f", .marker = "o" },
-        .{ .poles = &state.poles_empty, .name = "sem a LAPES", .color = "#ff7f0e", .marker = "+" },
-        .{ .poles = &state.poles_free, .name = if (state.n_tanks > 0) "líquido livre" else "avião", .color = "#1f77b4", .marker = "x" },
-    };
-    var curves: std.ArrayList(native.Curve) = .empty;
-    for (sets) |set| {
-        if (!set.poles.ok) continue;
-        var xs: std.ArrayList(f64) = .empty;
-        var ys: std.ArrayList(f64) = .empty;
-        for (0..set.poles.count) |i| {
-            const re = set.poles.real[i];
-            const im = set.poles.imag[i];
-            if (@sqrt(re * re + im * im) >= radius) continue;
-            try xs.append(memory, re);
-            try ys.append(memory, im);
+/// os polos de um instante de um modo, na ordem de cima para baixo (a mesma ordem em todos os instantes liga cada
+/// polo ao seguinte)
+fn modePoles(memory: std.mem.Allocator, poles: *const core.gust.Poles, mode: Mode) ![]const [2]f64 {
+    var list: std.ArrayList([2]f64) = .empty;
+    if (!poles.ok) return list.items;
+    for (0..poles.count) |i| if (poles.mode[i] == mode) try list.append(memory, .{ poles.real[i], poles.imag[i] });
+    std.mem.sort([2]f64, list.items, {}, struct {
+        fn above(_: void, a: [2]f64, b: [2]f64) bool {
+            return if (a[1] != b[1]) a[1] > b[1] else a[0] < b[0];
         }
-        try curves.append(memory, .{ .name = set.name, .x = xs.items, .y = ys.items, .color = set.color, .marker = set.marker });
+    }.above);
+    return list.items;
+}
+
+/// os polos de cada efeito ao longo do voo: uma curva fina por polo, que mostra para onde ele anda, e o ponto do começo
+/// destacado com o símbolo do modo. A cor é a do efeito
+fn locusCurves(memory: std.mem.Allocator, state: *const State, chosen: []const Effect) ![]const native.Curve {
+    var curves: std.ArrayList(native.Curve) = .empty;
+    var in_legend = std.EnumArray(Mode, bool).initFill(false); // cada símbolo uma vez na legenda
+    for (chosen) |effect| {
+        const color = effect_color.get(effect);
+        const loci = state.loci[@intFromEnum(effect)][0..state.samples];
+        var named_line = false;
+        for (std.enums.values(Mode)) |mode| {
+            var slots: usize = 0;
+            for (loci) |*poles| slots = @max(slots, (try modePoles(memory, poles, mode)).len);
+            for (0..slots) |slot| {
+                const xs = try memory.alloc(f64, loci.len);
+                const ys = try memory.alloc(f64, loci.len);
+                for (loci, 0..) |*poles, k| {
+                    const found = try modePoles(memory, poles, mode);
+                    xs[k] = if (slot < found.len) found[slot][0] else std.math.nan(f64);
+                    ys[k] = if (slot < found.len) found[slot][1] else std.math.nan(f64);
+                }
+                try curves.append(memory, .{ .name = effect_name.get(effect), .x = xs, .y = ys, .color = color, .legend = !named_line and chosen.len > 1 });
+                named_line = true;
+            }
+            const first = try modePoles(memory, &loci[0], mode);
+            if (first.len == 0) continue;
+            const xs = try memory.alloc(f64, first.len);
+            const ys = try memory.alloc(f64, first.len);
+            for (first, 0..) |pole, i| {
+                xs[i] = pole[0];
+                ys[i] = pole[1];
+            }
+            try curves.append(memory, .{ .name = mode_name.get(mode), .x = xs, .y = ys, .color = color, .marker = mode_marker.get(mode), .size = 9, .legend = !in_legend.get(mode) });
+            in_legend.set(mode, true);
+        }
     }
     return curves.items;
 }
 
-/// o polo menos estável de um conjunto, em palavras: σ, e se oscila, ω
+/// o polo menos estável em palavras: o modo, σ e, se oscila, ω
 fn describePole(memory: std.mem.Allocator, poles: *const core.gust.Poles) ![]const u8 {
-    var worst: usize = 0;
-    for (0..poles.count) |i| if (poles.real[i] > poles.real[worst]) {
-        worst = i;
-    };
+    const worst = poles.leastStable();
     const sigma = poles.real[worst];
     const omega = @abs(poles.imag[worst]);
-    if (omega > 1e-6) return std.fmt.allocPrint(memory, "σ = {d:.3} 1/s, ω = {d:.2} rad/s", .{ sigma, omega });
-    return std.fmt.allocPrint(memory, "σ = {d:.3} 1/s", .{sigma});
+    const name = mode_name.get(poles.mode[worst]);
+    if (omega > 1e-6) return std.fmt.allocPrint(memory, "{s}: σ = {d:.3} 1/s, ω = {d:.2} rad/s", .{ name, sigma, omega });
+    return std.fmt.allocPrint(memory, "{s}: σ = {d:.3} 1/s", .{ name, sigma });
 }
 
-/// o diagnóstico dos polos: algum cresce? e quanto o líquido e a saída da LAPES mudam o menos estável
+/// o diagnóstico dos polos no começo do voo: algum cresce? e quanto o líquido e a saída da LAPES mudam o menos estável
 fn poleChecks(memory: std.mem.Allocator, state: *const State, checks: *std.ArrayList(native.Check)) !void {
-    const main = &state.poles_free;
+    if (state.samples == 0) return;
+    const free = &state.flights[0];
+    const active = effects(state, free);
+    const main = &state.loci[@intFromEnum(if (active.get(.sloshing)) Effect.sloshing else Effect.plain)][0];
     if (!main.ok) {
         try checks.append(memory, .{ .status = .atencao, .item = "polos", .value = "não saíram", .criterion = "equilíbrio nivelado", .why = "a trimagem ou o QR não convergiram nesta velocidade", .group = "polos" });
         return;
@@ -681,8 +749,14 @@ fn poleChecks(memory: std.mem.Allocator, state: *const State, checks: *std.Array
         .why = if (growing) try std.fmt.allocPrint(memory, "um modo cresce e dobra a cada {d:.1} s; se ele é lento (espiral, fugóide), o piloto ou o piloto automático seguram", .{@log(2.0) / sigma}) else "todos os modos amortecem",
         .group = "polos",
     });
-    if (state.poles_locked.ok) try checks.append(memory, .{ .status = .info, .item = "polos com o líquido travado", .value = try describePole(memory, &state.poles_locked), .criterion = "o menos estável", .why = "a diferença para o livre é o efeito do líquido balançando", .group = "polos" });
-    if (state.poles_empty.ok) try checks.append(memory, .{ .status = .info, .item = "polos sem a LAPES", .value = try describePole(memory, &state.poles_empty), .criterion = "o menos estável", .why = "o avião depois da saída: mais leve e com outro CG", .group = "polos" });
+    if (active.get(.sloshing)) {
+        const plain = &state.loci[@intFromEnum(Effect.plain)][0];
+        if (plain.ok) try checks.append(memory, .{ .status = .info, .item = "polos sem efeitos", .value = try describePole(memory, plain), .criterion = "o menos estável", .why = "o líquido travado: a diferença para o sloshing é o efeito do líquido balançando", .group = "polos" });
+    }
+    if (active.get(.lapes)) {
+        const after = &state.loci[@intFromEnum(Effect.lapes)][state.samples - 1];
+        if (after.ok) try checks.append(memory, .{ .status = .info, .item = "polos sem a LAPES", .value = try describePole(memory, after), .criterion = "o menos estável, no fim do voo", .why = "o avião depois da saída: mais leve e com outro CG", .group = "polos" });
+    }
 }
 
 fn caseName(flight: *const Flight) []const u8 {
@@ -728,17 +802,19 @@ test "campos e resultado no JSON da ponte; o líquido livre mexe o xCG e o trava
     const outcome = try std.json.parseFromSlice(std.json.Value, gpa, text.written(), .{});
     defer outcome.deinit();
     const charts = outcome.value.object.get("plots").?.array.items;
-    try testing.expectEqual(@as(usize, plots.len), charts.len);
+    // com tanques e sem soltar a LAPES: os gráficos no tempo e os polos sem efeitos, com sloshing e todos juntos
+    try testing.expectEqual(@as(usize, 5 + 3), charts.len);
     const xcg = charts[plot_cg].object.get("curves").?.array.items;
-    // a rajada vai de 0 a 3 m/s e volta a 0; os polos saem para o livre e o travado
-    const gust_up = charts[plot_gust].object.get("curves").?.array.items[0].object.get("y").?.array.items;
+    // a rajada tracejada no α: em graus, sobe de 0 a atan(3/V) e volta a 0
+    const alpha_curves = charts[plot_alpha].object.get("curves").?.array.items;
+    const gust_angle = alpha_curves[alpha_curves.len - 1].object.get("y").?.array.items;
     var gust_peak: f64 = 0;
-    for (gust_up) |value| gust_peak = @max(gust_peak, jsonNumber(value));
-    try testing.expectApproxEqAbs(@as(f64, 3), gust_peak, 0.05);
-    try testing.expectEqual(@as(f64, 0), jsonNumber(gust_up[0]));
-    try testing.expectEqual(@as(f64, 0), jsonNumber(gust_up[gust_up.len - 1]));
-    try testing.expectEqual(@as(usize, if (loaded.ac.payload.enabled) 3 else 2), charts[plot_poles].object.get("curves").?.array.items.len); // livre, travado e sem a LAPES
-    try testing.expectEqual(@as(usize, 2), xcg.len); // livre e travado
+    for (gust_angle) |value| gust_peak = @max(gust_peak, jsonNumber(value));
+    try testing.expectApproxEqAbs(std.math.atan(3.0 / cruise(&loaded.ac)) * deg, gust_peak, 0.05);
+    try testing.expectEqual(@as(f64, 0), jsonNumber(gust_angle[0]));
+    try testing.expectEqual(@as(f64, 0), jsonNumber(gust_angle[gust_angle.len - 1]));
+    try testing.expectEqualStrings("Polos com sloshing", charts[6].object.get("title").?.string);
+    try testing.expectEqualStrings("Todos os polos", charts[7].object.get("title").?.string);
     const free_cg = xcg[0].object.get("y").?.array.items;
     const locked_cg = xcg[1].object.get("y").?.array.items;
     var free_moves: f64 = 0;
@@ -786,7 +862,7 @@ test "a tabela dos tanques: soma, edita, apaga e volta ao arquivo; a LAPES solta
     try result(&run, &text.writer);
     const outcome = try std.json.parseFromSlice(std.json.Value, gpa, text.written(), .{});
     defer outcome.deinit();
-    try testing.expectEqual(@as(usize, plots.len - 1), outcome.value.object.get("plots").?.array.items.len); // sem o do líquido
+    try testing.expectEqual(@as(usize, 4 + 3), outcome.value.object.get("plots").?.array.items.len); // sem o do líquido; polos sem efeitos, com a LAPES e todos
     const summary = outcome.value.object.get("summary").?.object;
     const before = try std.fmt.parseFloat(f64, summary.get("massa (kg)").?.string);
     const after = try std.fmt.parseFloat(f64, summary.get("massa depois da LAPES (kg)").?.string);
