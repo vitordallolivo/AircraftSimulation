@@ -9,7 +9,10 @@
 //! No navegador não há processo filho nem thread: o Pyodide roda o mesmo `aerosim/bridge.py` na página
 //! (`aerosim/gui/web/python.html`, num iframe), e cada pedido é uma chamada ao JavaScript que volta já com a resposta
 //! (`Module.pythonCall`). A tela fica parada enquanto a conta roda, como as outras contas longas no navegador.
+//! No pacote instalável (`tools/package.py`) o Python vem junto, na pasta `app/` ao lado do programa (`app/python`,
+//! com o pacote `aerosim` e o núcleo já compilado); a ponte usa esse antes do Python do sistema.
 const std = @import("std");
+const builtin = @import("builtin");
 const ui_kit = @import("ui");
 
 pub const Error = error{ NotStarted, PythonNotFound, BridgeClosed, BadReply, PythonLoading };
@@ -18,6 +21,9 @@ const in_browser = ui_kit.system.in_browser;
 const emscripten = std.os.emscripten;
 
 const max_waiting = 32;
+
+/// o Python que o pacote instalável leva, relativo à pasta `app/`
+const bundled_python = if (builtin.os.tag == .windows) "python/python.exe" else "python/bin/python3";
 
 /// um pedido em andamento: a resposta chega aqui, na memória de quem pediu
 pub const Waiter = struct {
@@ -78,11 +84,15 @@ pub const Bridge = struct {
             std.debug.print("ponte: não achei aerosim/bridge.py subindo da pasta atual\n", .{});
             return Error.PythonNotFound;
         };
-        const candidates = [_][]const u8{ "python3", "python" };
+        var bundled_buffer: [std.fs.max_path_bytes]u8 = undefined;
+        const bundled = std.fmt.bufPrint(&bundled_buffer, "{s}/{s}", .{ root, bundled_python }) catch "";
+        const has_bundled = bundled.len > 0 and if (std.Io.Dir.cwd().access(io, bundled, .{})) |_| true else |_| false;
+        const candidates = [_][]const u8{ if (has_bundled) bundled else "python3", "python3", "python" };
         for (candidates) |program| {
             const child = std.process.spawn(io, .{
                 .argv = &.{ program, "-m", "aerosim.bridge" },
                 .cwd = .{ .path = root },
+                .create_no_window = true, // no Windows, o Python não abre uma janela de console
                 .stdin = .pipe,
                 .stdout = .pipe,
                 .stderr = .inherit,
@@ -279,8 +289,18 @@ fn isProgress(line: []const u8) bool {
     return std.mem.indexOf(u8, line[0..@min(line.len, 40)], "\"progress\":") != null;
 }
 
-/// a pasta do repositório: a primeira, subindo a partir da atual, que tem `aerosim/bridge.py`
+/// a pasta onde está `aerosim/bridge.py`: a `app/` ao lado do programa (o pacote instalável) ou a primeira, subindo
+/// a partir da atual (o repositório)
 fn findRepository(io: std.Io, buffer: []u8) ?[]const u8 {
+    if (std.process.executableDirPath(io, buffer)) |length| {
+        if (std.fmt.bufPrint(buffer[length..], "/app", .{})) |added| {
+            const app = buffer[0 .. length + added.len];
+            var probe: [std.fs.max_path_bytes]u8 = undefined;
+            if (std.fmt.bufPrint(&probe, "{s}/aerosim/bridge.py", .{app})) |path| {
+                if (std.Io.Dir.cwd().access(io, path, .{})) |_| return app else |_| {}
+            } else |_| {}
+        } else |_| {}
+    } else |_| {}
     const length = std.process.currentPath(io, buffer) catch return null;
     var folder: []const u8 = buffer[0..length];
     while (true) {

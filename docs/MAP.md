@@ -55,7 +55,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/backend/zig/abi.py` — Monta as estruturas ctypes a partir do esquema que o núcleo Zig exporta.
   `class AbiMismatch:22`, `fnv1a64:26`, `check:35`, `class FieldInfo:47`, `class StructInfo:55`, `class Schema:63`, `parse:74`, `write:130`, `read:154`
 - `aerosim/backend/zig/backend.py` — Implementação de ISimBackend com o núcleo em Zig (libaerosim, via ctypes).
-  `lib_path:24`, `build:47`, `class CoreError:74`, `class ZigSession:217`, `class ZigBackend:495`
+  `lib_path:24`, `build:47`, `class CoreError:76`, `class ZigSession:219`, `class ZigBackend:497`
 - `aerosim/backend/zig/geometry.py` — Tradutor da checagem de geometria: o modelo universal vira as peças simples do núcleo (`core/src/geometry`),
   `scene:114`, `report:165`, `class ZigGeometry:191`
 - `aerosim/backend/zig/translator.py` — Tradutor modelo universal -> núcleo Zig (SimSpec: dicionário com os campos das structs extern).
@@ -691,7 +691,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
   tipos `Kind:35`, `Page:228`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
-  tipos `Waiter:23`, `Bridge:39`
+  tipos `Waiter:29`, `Bridge:45`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt
   tipos `Screen:59`
 - `aerosim/gui/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos, exportar e a leitura do avião da Montagem.
@@ -724,8 +724,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Range:38`
   fn `numberText:5`, `niceStep:21`, `decimalsFor:31`, `significant:88`
 - `aerosim/gui/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
-  tipos `Series:20`, `Marker:47`, `Cloud:69`, `Axes:77`, `Frame:87`, `Cell:183`, `ExportKind:260`
-  fn `lines:101`, `table:191`, `tableHeight:226`, `overlayActive:365`, `overlay:370`, `drawMarker:573`, `cloud:627`, `ramp:646`, `colorBar:662`, `drawFrame:682`
+  tipos `Series:24`, `Marker:51`, `Cloud:73`, `Axes:81`, `Frame:91`, `Cell:193`, `ExportKind:270`
+  fn `lines:105`, `table:201`, `tableHeight:236`, `overlayActive:414`, `overlay:419`, `drawMarker:686`, `cloud:740`, `ramp:759`, `colorBar:775`, `drawFrame:795`
 - `aerosim/gui/ui/scroll.zig` — A área rolável: tudo o que não cabe na altura (a barra lateral, a coluna dos gráficos) rola pela roda do mouse ou
   tipos `ScrollArea:13`
 - `aerosim/gui/ui/stage.zig` — As peças que toda etapa do dimensionamento repete, como o `StagePage` da GUI em Python: a barra de requisitos
@@ -862,6 +862,45 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sim/README.md`
 - `core/src/sizing/README.md`
 - `data/README.md`
+- `dist/AircraftSimulation-linux/app/data/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_2D/airfoil_optimizer/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_3D/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_3D/test_aero_3D/test_aero_buildup/test_low_ar_wings_validation/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/utilities/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/visualization/default_assets/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/library/datasets/turbine_engines/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/numpy/test_numpy/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/tools/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/tools/pretty_plots/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/tools/pretty_plots/labellines/README.md`
+- `dist/AircraftSimulation-windows/app/data/README.md`
+- `dist/AircraftSimulation-windows/app/python/Lib/site-packages/aerosandbox/README.md`
+- `dist/AircraftSimulation-windows/app/python/Lib/site-packages/aerosandbox/aerodynamics/aero_2D/airfoil_optimizer/README.md`
+- `dist/AircraftSimulation-windows/app/python/Lib/site-packages/aerosandbox/aerodynamics/aero_3D/README.md`
+- `dist/AircraftSimulation-windows/app/python/Lib/site-packages/aerosandbox/aerodynamics/aero_3D/test_aero_3D/test_aero_buildup/test_low_ar_wings_validation/README.md`
+- `dist/AircraftSimulation-windows/app/python/Lib/site-packages/aerosandbox/dynamics/README.md`
+- `dist/AircraftSimulation-windows/app/python/Lib/site-packages/aerosandbox/dynamics/utilities/README.md`
+- `dist/AircraftSimulation-windows/app/python/Lib/site-packages/aerosandbox/dynamics/visualization/default_assets/README.md`
+- `dist/AircraftSimulation-windows/app/python/Lib/site-packages/aerosandbox/library/datasets/turbine_engines/README.md`
+- `dist/AircraftSimulation-windows/app/python/Lib/site-packages/aerosandbox/numpy/test_numpy/README.md`
+- `dist/AircraftSimulation-windows/app/python/Lib/site-packages/aerosandbox/tools/README.md`
+- `dist/AircraftSimulation-windows/app/python/Lib/site-packages/aerosandbox/tools/pretty_plots/README.md`
+- `dist/AircraftSimulation-windows/app/python/Lib/site-packages/aerosandbox/tools/pretty_plots/labellines/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/data/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_2D/airfoil_optimizer/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_3D/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_3D/test_aero_3D/test_aero_buildup/test_low_ar_wings_validation/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/utilities/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/visualization/default_assets/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/library/datasets/turbine_engines/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/numpy/test_numpy/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/tools/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/tools/pretty_plots/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/tools/pretty_plots/labellines/README.md`
 - `launcher/README.md`
 - `tests/README.md`
 - `tools/README.md`

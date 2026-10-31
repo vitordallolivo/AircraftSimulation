@@ -31,5 +31,13 @@ python tools/package.py                # o AppImage (Linux); --alvo windows faz 
 O pacote (`tools/package.py`) compila os quatro programas em ReleaseSafe, junta numa pasta com `data/aircraft`,
 `data/airfoils` e a página do site em `site/`, e daí faz o AppImage (com o `appimagetool`) ou o instalador do
 Windows (com o `makensis`, do NSIS), que instala em Arquivos de Programas, com atalhos no menu Iniciar e na área de trabalho e o desinstalador. O
-instalador não tem assinatura digital, então o Windows avisa na primeira vez. Um programa novo
+instalador não tem assinatura digital, então o Windows avisa na primeira vez.
+
+O aerosim desenha a tela em Zig, mas as abas vêm dos managers em Python (`aerosim/bridge.py`). Sem um Python com o
+numpy no PC, ele abriria só a Montagem. Por isso o pacote leva o Python junto, na pasta `app/`: um Python portátil
+(`app/python`, do python-build-standalone) com o numpy, o openpyxl e os métodos opcionais da Aerodinâmica
+(aerosandbox, lltdrek, optvl; o que o pip não achar para o alvo fica de fora e a aba usa só o núcleo), o pacote
+`aerosim` sem a GUI PyQt, o núcleo já compilado (`app/core/zig-out`) e uma cópia de `data/`. A tela do aerosim procura
+`app/` ao lado dela antes do Python do sistema (`aerosim/gui/python_bridge.zig`). Com tudo isso o pacote fica grande
+(os métodos opcionais pesam mais que o resto); `--sem-python` monta sem ele. Um programa novo
 entra na lista `PROGRAMS` do `tools/package.py`, num item de `screen.zig` e em `places.Program`.

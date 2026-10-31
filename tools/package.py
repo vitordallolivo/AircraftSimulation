@@ -11,6 +11,12 @@ dados (`data/aircraft`, `data/airfoils`) ao lado deles. A página do site (`web/
 O appimagetool vem de https://github.com/AppImage/appimagetool (variável APPIMAGETOOL ou no PATH); o makensis, do
 pacote `nsis` (apt) ou de https://nsis.sourceforge.io. Sem eles, fica só a pasta (e um .zip dela no Windows).
 O GitHub Actions (.github/workflows/pacotes.yml) roda este script quando alguém pede, sem chave nenhuma.
+
+O aerosim pede os managers em Python (`aerosim/bridge.py`), então o pacote leva, na pasta `app/`, um Python
+portátil (`app/python`, python-build-standalone, https://github.com/astral-sh/python-build-standalone), com o numpy e o
+openpyxl, mais os métodos opcionais (aerosandbox, lltdrek, optvl) quando o pip acha o pacote para o alvo; ao lado vão
+o pacote `aerosim` sem a GUI PyQt, o núcleo já compilado (`app/core/zig-out`) e uma cópia de `data/`. A tela do aerosim acha esse Python
+sozinha (`aerosim/gui/python_bridge.zig`). `--sem-python` monta sem ele (o aerosim abre só a Montagem).
 """
 from __future__ import annotations
 
@@ -20,6 +26,8 @@ import shutil
 import stat
 import subprocess
 import sys
+import tarfile
+import urllib.request
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DIST = os.path.join(ROOT, "dist")
@@ -28,6 +36,12 @@ PROGRAMS = (("launcher", "aircraftsimulation"), ("aerosim", "aerosim"), ("aeroop
 DATA = ("aircraft", "airfoils")
 TARGETS = {"linux": "x86_64-linux-gnu", "windows": "x86_64-windows-gnu"}
 ICON = os.path.join(ROOT, "aerosim", "gui", "ui", "albatroz.png")
+CACHE = os.path.join(DIST, "cache")
+# o Python portátil: a versão e o nome do arquivo de cada alvo na release do python-build-standalone
+PYTHON_VERSION, PYTHON_RELEASE = "3.12.7", "20241016"
+PYTHON_FILES = {"linux": "x86_64-unknown-linux-gnu", "windows": "x86_64-pc-windows-msvc"}
+PYTHON_NEEDED = ("numpy", "openpyxl")                 # o que os managers importam sempre
+PYTHON_OPTIONAL = ("aerosandbox", "optvl", "git+https://github.com/kuodrek/lltdrek.git")   # requirements-aero.txt
 
 
 def compile_programs(target: str) -> None:
@@ -63,6 +77,78 @@ def assemble(target: str) -> str:
             shutil.copy2(os.path.join(web, name), os.path.join(out, "site", name))
     print(f"pasta montada: {os.path.relpath(out, ROOT)}")
     return out
+
+
+def compile_core(target: str) -> str:
+    """Compila o núcleo como biblioteca (a que o Python do aerosim carrega) para o alvo; devolve o caminho dela."""
+    where = ["-Dcpu=baseline"] if target == "linux" else [f"-Dtarget={TARGETS[target]}"]
+    prefix = os.path.join("zig-out", target)
+    print(f"compilando o núcleo ({target})")
+    subprocess.run([sys.executable, "-m", "ziglang", "build", "--release=fast", *where, "--prefix", prefix],
+                   cwd=os.path.join(ROOT, "core"), check=True)
+    name = os.path.join("bin", "aerosim.dll") if target == "windows" else os.path.join("lib", "libaerosim.so")
+    return os.path.join(ROOT, "core", prefix, name)
+
+
+def portable_python(target: str) -> str:
+    """O Python portátil do alvo, baixado uma vez para dist/cache; devolve o .tar.gz."""
+    name = f"cpython-{PYTHON_VERSION}+{PYTHON_RELEASE}-{PYTHON_FILES[target]}-install_only.tar.gz"
+    path = os.path.join(CACHE, name)
+    if not os.path.isfile(path):
+        os.makedirs(CACHE, exist_ok=True)
+        url = f"https://github.com/astral-sh/python-build-standalone/releases/download/{PYTHON_RELEASE}/{name}"
+        print("baixando", url)
+        urllib.request.urlretrieve(url, path + ".parte")
+        os.replace(path + ".parte", path)
+    return path
+
+
+def pip_install(target: str, out: str, packages: list[str]) -> bool:
+    """Instala `packages` no Python do pacote (`out` é a pasta `app/`). No Linux, pelo próprio Python portátil; no Windows (compilado daqui),
+    pelo pip de quem roda o script, só com wheels do Windows, direto no site-packages. Devolve se deu certo."""
+    if target == "linux":
+        command = [os.path.join(out, "python", "bin", "python3"), "-m", "pip", "install", "--no-warn-script-location"]
+    else:
+        short = "".join(PYTHON_VERSION.split(".")[:2])
+        command = [sys.executable, "-m", "pip", "install", "--target", os.path.join(out, "python", "Lib", "site-packages"),
+                   "--platform", "win_amd64", "--python-version", short, "--implementation", "cp",
+                   "--only-binary=:all:", "--upgrade"]
+    return subprocess.run(command + ["--disable-pip-version-check", "-q", *packages]).returncode == 0
+
+
+def add_python(target: str, folder: str) -> None:
+    """Põe no pacote, na pasta `app/`, o Python portátil com as dependências, o pacote `aerosim` (sem a GUI PyQt), o
+    núcleo compilado e o `data/` inteiro (os managers leem também o catálogo e os mapas de planilha). Fica numa pasta
+    à parte porque no Linux o programa `aerosim` e a pasta `aerosim/` do Python teriam o mesmo nome."""
+    out = os.path.join(folder, "app")
+    os.makedirs(out)
+    with tarfile.open(portable_python(target)) as archive:   # o arquivo traz a pasta python/
+        archive.extractall(out, filter="tar")
+    if not pip_install(target, out, list(PYTHON_NEEDED)):
+        sys.exit("o pip não instalou " + ", ".join(PYTHON_NEEDED))
+    for package in PYTHON_OPTIONAL:          # opcionais: sem eles, a Aerodinâmica usa só o núcleo
+        if package.startswith("git+") and target == "windows":   # do git: a wheel pura primeiro, depois a instalação
+            wheels = os.path.join(CACHE, "wheels")
+            done = subprocess.run([sys.executable, "-m", "pip", "wheel", "--no-deps", "-q", "-w", wheels, package])
+            found = sorted(f for f in os.listdir(wheels) if f.endswith(".whl")) if done.returncode == 0 else []
+            ok = bool(found) and pip_install(target, out, [os.path.join(wheels, f) for f in found])
+        else:
+            ok = pip_install(target, out, [package])
+        print(("instalado: " if ok else "pulado (o pip não achou para este alvo): ") + package)
+    tracked = subprocess.run(["git", "ls-files", "aerosim", "data"], cwd=ROOT, check=True, capture_output=True,
+                             text=True).stdout.split()
+    for name in tracked:   # como no site (tools/web_build.py): o Python do aerosim sem a GUI PyQt, e o data/ inteiro
+        if name.startswith("data/") or name.endswith(".py") and not name.startswith("aerosim/gui/"):
+            destination = os.path.join(out, name)
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
+            shutil.copy2(os.path.join(ROOT, name), destination)
+    library = compile_core(target)
+    place = os.path.join(out, "core", "zig-out", "bin" if target == "windows" else "lib")
+    os.makedirs(place, exist_ok=True)
+    shutil.copy2(library, place)
+    if sys.version_info[:2] == tuple(int(x) for x in PYTHON_VERSION.split(".")[:2]):   # .pyc prontos (o AppImage
+        subprocess.run([sys.executable, "-m", "compileall", "-q", os.path.join(out, "aerosim")])   # é só leitura)
+    print("Python do aerosim:", os.path.relpath(os.path.join(out, "python"), ROOT))
 
 
 def appimage(folder: str) -> None:
@@ -146,10 +232,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--alvo", choices=sorted(TARGETS), default="windows" if os.name == "nt" else "linux")
     parser.add_argument("--sem-compilar", action="store_true", help="usa o que já está em <pasta>/zig-out/<alvo>")
+    parser.add_argument("--sem-python", action="store_true", help="sem o Python do aerosim (abre só a Montagem)")
     options = parser.parse_args()
     if not options.sem_compilar:
         compile_programs(options.alvo)
     folder = assemble(options.alvo)
+    if not options.sem_python:
+        add_python(options.alvo, folder)
     if options.alvo == "linux":
         appimage(folder)
     else:

@@ -47,6 +47,8 @@ def _sources_mtime() -> float:
 def build(fast_math: bool = True, force: bool = False) -> str:
     """compila o núcleo se a biblioteca não existir ou estiver desatualizada"""
     path = lib_path()
+    if not os.path.isdir(os.path.join(CORE, "src")):     # pacote instalável: o núcleo vem já compilado, sem fontes
+        return path
     if force or not os.path.exists(path) or os.path.getmtime(path) < _sources_mtime():
         cmd = _zig_cmd() + ["build", "--release=fast", f"-Dfast_math={'true' if fast_math else 'false'}"]
         subprocess.run(cmd, cwd=CORE, check=True)

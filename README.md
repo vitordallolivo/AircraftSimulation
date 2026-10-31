@@ -60,7 +60,8 @@ python -m ziglang build test               # testes do núcleo, das interfaces, 
 
 Para instalar sem o repositório, `python tools/package.py` monta o AppImage do Linux e `python tools/package.py
 --alvo windows` o instalador `.exe` do Windows (os dois abrem a tela inicial, o mesmo menu do site). O GitHub Actions
-monta os dois quando alguém pede (workflow `pacotes`).
+monta os dois quando alguém pede (workflow `pacotes`). O pacote leva um Python portátil para as abas do aerosim, então
+não precisa instalar o Python.
 
 
 Já para o aerosim você pode:

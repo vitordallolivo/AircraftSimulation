@@ -105,6 +105,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   (`linalg.generalEigen`) e `gust.poles`, que dá o modo de cada polo; no CSV, cada curva diz o efeito e o modo.
 - Gráficos (tela em Zig): o botão direito põe o gráfico na seleção ou seleciona todos da tela, e "Salvar os
   selecionados" grava cada um num arquivo; a extensão do nome escolhe PNG, PDF ou CSV.
+- Instalável (AppImage e .exe) com o Python do aerosim: o pacote leva, na pasta `app/`, um Python portátil com o
+  numpy, o openpyxl e os métodos opcionais (aerosandbox, lltdrek, optvl), o pacote `aerosim` sem a GUI PyQt e o
+  núcleo compilado; a tela do aerosim usa esse Python, então todas as abas abrem sem instalar nada. Antes, sem o
+  repositório, só a Montagem abria. `--sem-python` monta como antes.
 - Missão: a rajada escolhida por etapa. A Trajetória ganha a coluna "rajada em (m)" (onde, dentro da etapa, a
   rajada chega; vazio = sem rajada) e o grupo "Rajada" liga a rajada e dá o tamanho vertical e lateral e a duração.
   Sem mexer, a missão fica igual (os eventos do arquivo na mesma ordem).
