@@ -30,6 +30,17 @@ pub fn build(b: *std.Build) void {
     aircraft_model.addOptions("build_options", fuzz_options);
     aircraft_model.addImport("aerosim", core);
 
+    // ---- os managers em Zig (manager/native): as análises que rodam sem Python
+    const manager = b.createModule(.{
+        .root_source_file = b.path("manager/native/native.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "aerosim", .module = core },
+            .{ .name = "aircraft_model", .module = aircraft_model },
+        },
+    });
+
     // ---- testes: só o que não abre janela (escalas dos gráficos, a asa de exemplo)
     const tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("gui/tests.zig"),
@@ -38,9 +49,15 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "aerosim", .module = core },
             .{ .name = "aircraft_model", .module = aircraft_model },
+            .{ .name = "manager", .module = manager },
         },
     }) });
-    b.step("test", "Testes (sem janela)").dependOn(&b.addRunArtifact(tests).step);
+    const test_step = b.step("test", "Testes (sem janela)");
+    test_step.dependOn(&b.addRunArtifact(tests).step);
+    // os managers em Zig são outro módulo: os testes deles rodam à parte, da pasta do aerosim (os aviões em ../data)
+    const manager_tests = b.addRunArtifact(b.addTest(.{ .root_module = manager }));
+    manager_tests.setCwd(b.path("."));
+    test_step.dependOn(&manager_tests.step);
 
     // ---- o programa (gui/main.zig)
     const display = b.option(enum { X11, Wayland, Both }, "display", "Linux: X11 (padrão), Wayland ou Both") orelse .X11;
@@ -70,6 +87,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "ui", .module = ui },
             .{ .name = "aerosim", .module = core },
             .{ .name = "aircraft_model", .module = aircraft_model },
+            .{ .name = "manager", .module = manager },
         },
     });
     if (target.result.os.tag == .emscripten) return buildWeb(b, raylib_zig, program);

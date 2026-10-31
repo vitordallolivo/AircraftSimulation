@@ -291,7 +291,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
-  tipos `math:10`, `physics:18`, `modifiers:31`, `collision:41`, `control:46`, `sim:53`, `loads:64`, `sizing:70`, `optim:83`, `geometry:97`, `util:102`
+  tipos `math:10`, `physics:18`, `modifiers:31`, `collision:41`, `control:46`, `sim:53`, `loads:65`, `sizing:71`, `optim:84`, `geometry:98`, `util:103`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
@@ -430,6 +430,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sim/envelope.zig` — Envelope de voo por altitude (sem integrar no tempo).
   tipos `EnvCfg:36`, `EnvRow:74`
   fn `density:87`, `compute:300`, `curve:333`
+- `core/src/sim/gust.zig` — Resposta no tempo a uma rajada, em voo nivelado reto: o avião sai equilibrado em `airspeed` e `height`, a rajada
+  tipos `Case:15`
+  fn `begin:30`, `advance:72`, `respond:85`
 - `core/src/sim/linear.zig` — Modelo linear em torno do voo nivelado equilibrado (estabilidade dinâmica).
   tipos `LinModel:28`, `LinSloshModel:230`
   fn `rigid:56`, `linearize:169`, `linearizeSlosh:290`, `residual:331`
@@ -683,14 +686,14 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/gui/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
   tipos `Triangle:14`, `Mesh:22`, `Assembly:90`, `Balance:105`
-  fn `buildMesh:55`, `balance:113`, `load:131`, `fillAirfoilFiles:148`, `parseDat:183`, `findExample:215`
+  fn `buildMesh:55`, `balance:113`, `loadAircraft:131`, `load:144`, `fillAirfoilFiles:161`, `parseDat:196`, `findExample:228`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
-  tipos `Kind:32`, `Page:211`
+  tipos `Kind:35`, `Page:227`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
   tipos `Waiter:23`, `Bridge:39`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt
-  tipos `Screen:58`
+  tipos `Screen:59`
 - `aerosim/gui/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos, exportar e a leitura do avião da Montagem.
 
 **aerosim/gui/ui/**
@@ -842,6 +845,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/README.md`
 - `aerosim/interfaces/README.md`
 - `aerosim/manager/README.md`
+- `aerosim/manager/native/README.md`
 - `aerosim/model/README.md`
 - `aerosim/parallel/README.md`
 - `aerosim/sizing/README.md`

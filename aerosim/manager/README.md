@@ -345,6 +345,12 @@ with Runner(ZigBackend(), ac) as r:
 print(out.status, float(out.log["h"][-1]), ck.t)
 ```
 
+## Análises em Zig (`native/`)
+
+Algumas abas já não passam pelo Python: a tela em Zig roda as análises de `native/` direto, com o mesmo contrato
+(campos, gráficos e diagnóstico). A primeira é Estabilidade → Rajada e líquido. O README de `native/` explica como
+funciona e como acrescentar uma.
+
 ## Nova simulação
 
 ```python

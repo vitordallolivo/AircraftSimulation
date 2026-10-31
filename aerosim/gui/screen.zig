@@ -13,6 +13,7 @@ const page_mod = @import("page.zig");
 const python_bridge = @import("python_bridge.zig");
 const assembly_mod = @import("assembly.zig");
 const aircraft_model = @import("aircraft_model");
+const manager = @import("manager");
 
 const Page = page_mod.Page;
 const Json = std.json.Value;
@@ -225,8 +226,12 @@ pub const Screen = struct {
         const path = if (screen.assembly) |*opened| opened.path else "";
         for (items, 0..) |item, a| {
             const tabs = (item.object.get("tabs") orelse return error.BadReply).array.items;
-            const tab_labels = try memory.alloc([:0]const u8, tabs.len);
-            const pages = try memory.alloc(?*Page, tabs.len);
+            const area_title = stringField(item, "title");
+            // as análises em Zig desta área entram depois das do Python (`manager/native`)
+            var natives: usize = 0;
+            for (&manager.all) |*simulation| natives += @intFromBool(std.mem.eql(u8, simulation.area, area_title));
+            const tab_labels = try memory.alloc([:0]const u8, tabs.len + natives);
+            const pages = try memory.alloc(?*Page, tabs.len + natives);
             for (tabs, 0..) |tab, k| {
                 tab_labels[k] = try memory.dupeZ(u8, stringField(tab, "title"));
                 const kind_text = stringField(tab, "kind");
@@ -245,6 +250,16 @@ pub const Screen = struct {
                 page.stale = false;
                 pages[k] = page;
             }
+            var slot = tabs.len;
+            for (&manager.all) |*simulation| if (std.mem.eql(u8, simulation.area, area_title)) {
+                const page = try std.heap.page_allocator.create(Page);
+                page.* = .{ .kind = .simulation, .name = simulation.name, .title = simulation.title, .bridge = &screen.bridge, .native = simulation };
+                page.setAircraftPath(path);
+                page.stale = false;
+                tab_labels[slot] = simulation.title;
+                pages[slot] = page;
+                slot += 1;
+            };
             labels[a] = try memory.dupeZ(u8, stringField(item, "title"));
             areas[a] = .{ .title = labels[a], .single = flag(item, "single"), .labels = tab_labels, .pages = pages };
         }

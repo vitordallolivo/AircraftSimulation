@@ -244,3 +244,50 @@ test "linearização com o líquido: sem tanque é a do corpo rígido; o pêndul
     inst.p.slosh_on = 0;
     inst.p.n_tank = 0;
 }
+
+const gust = @import("gust.zig");
+
+test "rajada vertical em manche fixo: α sobe perto de U/V e volta; sem rajada fica no equilíbrio; o líquido balança só livre" {
+    // α = atan(w/u): uma rajada vertical U soma no máximo atan(U/V) ao ângulo de ataque (definição de α, Etkin e
+    // Reid, cap. 4); com a 1 − cos de 1 s o avião já arfa junto, então o pico fica abaixo disso
+    aircraft(&inst.p);
+    const quiet = try gust.respond(&inst, .{ .vertical = 0, .span = 6 }, &log);
+    const alpha_trim = log[0].alpha;
+    for (log[0..quiet]) |row| {
+        try std.testing.expectApproxEqAbs(alpha_trim, row.alpha, 0.2 * deg);
+        try std.testing.expectApproxEqAbs(log[0].slosh_x[0], row.slosh_x[0], 0.2 * deg); // o líquido sai parado (só segue a arfagem lenta)
+    }
+
+    aircraft(&inst.p);
+    const case = gust.Case{ .vertical = 2, .span = 8 };
+    const rows = try gust.respond(&inst, case, &log);
+    var peak: f64 = 0;
+    var swing: f64 = 0;
+    for (log[0..rows]) |row| {
+        peak = @max(peak, row.alpha - alpha_trim);
+        swing = @max(swing, @abs(row.slosh_x[0] - log[0].slosh_x[0]));
+    }
+    const kinematic = std.math.atan(case.vertical / case.airspeed);
+    try std.testing.expect(peak > 0.3 * kinematic and peak < 1.05 * kinematic);
+    try std.testing.expectApproxEqAbs(alpha_trim, log[rows - 1].alpha, 0.5 * deg);
+    try std.testing.expect(swing > 1e-4);
+
+    aircraft(&inst.p);
+    const locked = try gust.respond(&inst, .{ .vertical = 2, .span = 8, .liquid_free = false }, &log);
+    for (log[0..locked]) |row| try std.testing.expectEqual(log[0].slosh_x[0], row.slosh_x[0]);
+}
+
+test "rajada em fatias dá o mesmo que de uma vez" {
+    aircraft(&inst.p);
+    const case = gust.Case{ .vertical = 1, .lateral = 1, .span = 4 };
+    const whole = try gust.respond(&inst, case, &log);
+    const last = log[whole - 1];
+    aircraft(&inst2.p);
+    try gust.begin(&inst2, case);
+    var rows: usize = 0;
+    var sliced: [4096]types.LogRow = undefined;
+    while (!try gust.advance(&inst2, case, &sliced, &rows, 0.3)) {}
+    try std.testing.expectEqual(whole, rows);
+    try std.testing.expectEqual(last.alpha, sliced[rows - 1].alpha);
+    try std.testing.expectEqual(last.beta, sliced[rows - 1].beta);
+}

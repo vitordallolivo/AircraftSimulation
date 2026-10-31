@@ -127,6 +127,19 @@ pub const max_file_bytes = 1 << 24;
 /// a mensagem do último erro (o nome do componente com problema, como o AeroDrive dá)
 pub const Diagnosis = model.Diag;
 
+/// lê o avião em `path` com os perfis que o arquivo só aponta (as análises em Zig usam este, sem as malhas)
+pub fn loadAircraft(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) !model.Loaded {
+    const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(max_file_bytes)) catch |err| {
+        diagnosis.set("não consegui abrir '{s}' ({s})", .{ path, @errorName(err) });
+        return err;
+    };
+    defer gpa.free(bytes);
+    var loaded = try model.parse(gpa, bytes, diagnosis);
+    errdefer loaded.deinit();
+    try fillAirfoilFiles(loaded.arena.allocator(), io, path, bytes, &loaded.ac);
+    return loaded;
+}
+
 /// lê o avião em `path` e monta as peças
 pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) !Assembly {
     const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(max_file_bytes)) catch |err| {

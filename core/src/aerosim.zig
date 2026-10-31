@@ -53,6 +53,7 @@ pub const control = struct {
 pub const sim = struct {
     pub const dynamics = @import("sim/dynamics.zig");
     pub const envelope = @import("sim/envelope.zig");
+    pub const gust = @import("sim/gust.zig");
     pub const linear = @import("sim/linear.zig");
     pub const runner = @import("sim/runner.zig");
     pub const simple_perf = @import("sim/simple_perf.zig");

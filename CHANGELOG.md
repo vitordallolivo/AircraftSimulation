@@ -90,6 +90,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   achou para uma pista ("pista do MTOW" lista as pistas salvas deste avião, enquanto o programa está aberto) ou uma
   digitada (o que passa da massa do avião entra no CG). O diagnóstico diz qual massa voou; sem MTOW salvo, diz para
   rodar Desempenho → Missão no modo MTOW. Os MTOW salvos ficam num lugar só (`SAVED_MTOW`), lidos pelas duas abas.
+- Estabilidade → Rajada e líquido, a primeira aba feita toda em Zig, sem Python no caminho (`aerosim/manager/native`):
+  o avião equilibrado em voo nivelado recebe uma rajada 1 − cos vertical e/ou lateral, com manche fixo ou piloto
+  automático e a massa escolhida, e a aba mostra no tempo α, β e φ, n_z, o xCG e o ângulo do líquido de cada tanque.
+  Com tanques, voa também com o líquido travado, para comparar. A conta é a do núcleo (`core/src/sim/gust.zig`, o
+  líquido sai parado no equilíbrio) e anda em fatias a cada quadro, então a tela não trava, nem no navegador.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

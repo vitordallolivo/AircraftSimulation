@@ -4,6 +4,7 @@ pub const types = @import("types.zig");
 pub const limits = @import("limits.zig");
 pub const runner = @import("sim/runner.zig");
 pub const trim = @import("sim/trim.zig");
+pub const gust = @import("sim/gust.zig");
 pub const aero = @import("physics/aero.zig");
 pub const section = @import("physics/section.zig");
 pub const wing_line = @import("sizing/wing_line.zig");

@@ -17,6 +17,7 @@ como numa planilha.
 | `runner.zig` | eventos, paradas, registro em fatias e checkpoint (o estado inteiro é POD: copiar os bytes basta) |
 | `trim.zig` | equilíbrio longitudinal por Newton e a tabela de desempenho por V |
 | `linear.zig` | trimagem nivelada e as matrizes A, B por diferenças centrais |
+| `gust.zig` | resposta no tempo a uma rajada em voo nivelado, com o líquido livre ou travado, em fatias |
 | `envelope.zig` | $`V_{min}`$, $`V_{max}`$, $`V_e`$, V*, $`V_{cru}`$ e teto por altitude |
 | `simple_perf.zig` | polar parabólica, potências, subida, planeio, curva e bateria por fórmula |
 | `tests.zig` | testes do grupo "sim" (decolagem, checkpoint, trimagem) |
@@ -118,6 +119,27 @@ A_{:,j} = \frac{f(x + h\,e_j) - f(x - h\,e_j)}{2h}
 O ponto de equilíbrio é achado por Levenberg–Marquardt em seis incógnitas ($`\alpha`$, $`\delta_e`$, acelerador, $`\phi`$,
 $`\delta_a`$, $`\delta_r`$), zerando as acelerações do corpo rígido. Sem leme, o látero-direcional fica equilibrado o
 melhor possível; o sucesso é o longitudinal equilibrado.
+
+## Resposta a uma rajada (`gust.zig`)
+
+Aqui se pergunta o que acontece com o avião, já equilibrado em voo nivelado, quando passa por uma rajada: quanto o
+ângulo de ataque sobe, se ele volta, quanto o líquido dos tanques balança e quanto isso mexe no CG. A conta é a
+própria corrida (`runner.zig`) num trecho reto, com a rajada discreta "1 − cos" de `physics/atmosphere.zig` chegando
+num instante escolhido. Os comandos podem ficar no equilíbrio (manche fixo, o que mostra a resposta do avião sozinho)
+ou com o piloto automático, e o líquido pode estar livre (o pêndulo equivalente de cada tanque) ou travado na mesma
+massa, para comparar.
+
+O líquido sai parado no equilíbrio. Num voo equilibrado, a força externa segura o peso, então o pêndulo pende na
+direção do peso visto do corpo, a mesma conta do modelo linear com o líquido:
+
+```math
+\eta_x = \operatorname{atan2}(-\sin\theta,\ \cos\phi\cos\theta)
+\qquad
+\eta_y = \operatorname{atan2}(\sin\phi\cos\theta,\ \cos\phi\cos\theta)
+```
+
+Sem isso o pêndulo começaria em zero e balançaria antes de a rajada chegar. A rodada anda em fatias (`begin`, depois
+`advance` até acabar), para que a tela siga desenhando enquanto ela roda, inclusive no navegador, onde não há thread.
 
 ## Envelope por altitude (`envelope.zig`)
 
