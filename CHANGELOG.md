@@ -71,6 +71,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   guarda a tabela até rodar (`Bridge.specs`, pedido "table"); vale para qualquer campo de tabela de uma análise (as
   massas do MTOW). No modo missão aparece a pista (x_warning, z_warning): a decolagem da missão tem de caber nela
   (8 m na micro 2026, 55 m na regular), e o diagnóstico acusa quando não cabe.
+- Missão, massa e acionamento: o modo MTOW guarda o MTOW achado para a pista (enquanto o programa está aberto), e
+  a missão, a decolagem e as curvas voam com a massa do avião (padrão), com esse MTOW ("MTOW salvo desta pista") ou
+  com uma digitada. Na missão e na decolagem, o acionamento do profundor pode ser o otimizado (padrão) ou um
+  digitado (onde e quanto), sem procurar. O padrão continua igual ao de antes.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

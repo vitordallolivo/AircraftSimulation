@@ -9,7 +9,12 @@ Modos:
   só decolagem          otimiza o ponto de acionamento do profundor (ou elevon) e mostra a decolagem
   curvas: raio mínimo   para cada V, o menor raio em curva nivelada (complementa a aba Desempenho)
   MTOW                  bisseção na massa: a maior que decola com x_warning e z_warning, otimizando o
-                        acionamento do profundor (e o xCG, se pedido) em cada massa
+                        acionamento do profundor (e o xCG, se pedido) em cada massa. O MTOW achado fica guardado
+                        (enquanto o programa está aberto) para a pista: os outros modos voam com ele em
+                        Massa → "MTOW salvo desta pista"
+
+Nos modos missão, decolagem e curvas a massa pode ser a do avião (padrão), o MTOW salvo ou uma digitada, e o
+acionamento do profundor (missão e decolagem) o otimizado (padrão) ou um digitado.
 
 Critérios da decolagem: os da pista e o de não estolar (manager/takeoff_opt.py).
 """
@@ -27,11 +32,19 @@ from aerosim.model.universal import build_model
 from .. import flightplots as FP
 from .. import takeoff_opt as TO
 from ..analysis import columns, evaluate_turn, min_radius, stage_table
+from ..calibration import calibrate
 from ..runner import Runner, Stop
 from .base import SimulationBase, floats
 
 MODES = ("missão", "só decolagem", "curvas: raio mínimo", "MTOW (x_warning e z_warning)")
 M_MIS, M_TO, M_TURN, M_MTOW = MODES
+# a massa com que a missão, a decolagem e as curvas voam: a do avião (padrão), o MTOW que o modo MTOW achou para esta
+# pista (guardado enquanto o programa está aberto) ou uma digitada
+MASSES = ("a do avião", "MTOW salvo desta pista", "na mão")
+MASS_PLANE, MASS_SAVED, MASS_HAND = MASSES
+# o acionamento do profundor na decolagem: otimizado para a pista (padrão) ou o que se digita
+TRIGGERS = ("otimizado", "na mão")
+GM = "Massa e acionamento"
 END = "fim da missão (parada na pista)"
 GP = "Pista"
 CHUNK = 0.5
@@ -213,6 +226,26 @@ class MissionSimulation(SimulationBase):
                            group=GP, help="só na bisseção: aceita errar o acionamento até isto do x_warning e desiste "
                                           "cedo da massa que nem com o comando todo cabrando sai do chão a tempo. "
                                           "0 = a busca de sempre")]
+        hand = []                                   # massa e acionamento: da missão, da decolagem e das curvas
+        if mode != M_MTOW:
+            hand.append(ParamSpec("mass_source", "Massa", MASS_PLANE, kind="choice", choices=MASSES, rebuild=True,
+                                  group=GM, help="a do avião; o MTOW que o modo MTOW achou para esta pista (x_warning e "
+                                                 "z_warning), guardado enquanto o programa está aberto; ou a digitada"))
+            if values.get("mass_source") == MASS_HAND:
+                hand.append(ParamSpec("mass_hand", "Massa total", round(total_mass(ac), 3) if ac is not None else 5.0,
+                                      minimum=0.1, maximum=500.0, unit="kg", group=GM,
+                                      help="o que passa da massa do avião entra como massa no CG"))
+        if mode in (M_MIS, M_TO):
+            hand.append(ParamSpec("trigger", "Acionamento do profundor", TRIGGERS[0], kind="choice", choices=TRIGGERS,
+                                  rebuild=True, group=GM,
+                                  help="otimizado para a pista ou o que se digita (sem procurar)"))
+            if values.get("trigger") == TRIGGERS[1]:
+                to = ac.takeoff if ac is not None else None
+                hand += [ParamSpec("s_hand", "Acionamento em", to.sR if to is not None and to.sR < 1e6 else 10.0,
+                                   minimum=0.0, maximum=2000.0, unit="m", group=GM,
+                                   help="distância da corrida em que o profundor é acionado"),
+                         ParamSpec("de_hand", "Deflexão", to.de1 if to is not None else -10.0, minimum=-45.0,
+                                   maximum=45.0, unit="°", group=GM, help="deflexão do profundor (− cabra)")]
         if mode == M_MIS:
             P += [ParamSpec("legs", "Trajetória", legs_to_rows(ac.mission.legs) if ac is not None else [],
                             kind="table", columns=LEG_COLS, bound=True,
@@ -222,11 +255,11 @@ class MissionSimulation(SimulationBase):
                             help="do checkpoint salvo no início da etapa; se ainda não houver, voa até lá e salva"),
                   ParamSpec("until", "Parar em", END, kind="choice", choices=(END,) + tuple(f"fim: {n}" for n in legs[:-1]),
                             help="para no fim da etapa (salva o checkpoint para continuar dali)")]
-            P += pista[:2]           # a pista que a decolagem da missão tem de cumprir (8 m na micro, 55 m na regular...)
+            P += pista[:2] + hand    # a pista que a decolagem da missão tem de cumprir (8 m na micro, 55 m na regular...)
         elif mode == M_TO:
-            P += pista
+            P += pista + hand
         elif mode == M_TURN:
-            P += [ParamSpec("V_list", "Velocidades", "13, 15, 17", kind="floats", unit="m/s",
+            P += pista[:2] + hand + [ParamSpec("V_list", "Velocidades", "13, 15, 17", kind="floats", unit="m/s",
                             help="para cada V testa raios de inclinação 70° a 20° (R = V²/(g tan φ)) e acha o menor que "
                                  "a aeronave faz sem estolar, sem perder mais de 3 m e seguindo o raio")]
         else:
@@ -363,18 +396,67 @@ class MissionSimulation(SimulationBase):
         mode = self.param(ctx, "mode")
         if mode == M_MIS and ctx.params.get("legs"):
             self.commit(ctx.aircraft, ctx.params)            # a trajetória da tabela
-        ac, info = self.prepare(ctx)
         p = ctx.params
-        xw = float(p.get("x_warning", ac.airfield.x_warning))
-        zw = float(p.get("z_warning", ac.airfield.z_warning))
+        xw = float(p.get("x_warning", ctx.aircraft.airfield.x_warning))
+        zw = float(p.get("z_warning", ctx.aircraft.airfield.z_warning))
+        if mode == M_MTOW:
+            ac, info = self.prepare(ctx)
+            return self._mtow(ctx, ac, info, _refs(ac, info, xw, zw))
+        ac, info, over = self._with_mass(ctx, xw, zw)
         refs = _refs(ac, info, xw, zw)
         if mode == M_TO:
-            return self._takeoff(ctx, ac, info, refs)
-        if mode == M_TURN:
-            return self._turns(ctx, ac, info, refs)
-        if mode == M_MTOW:
-            return self._mtow(ctx, ac, info, refs)
-        return self._mission(ctx, ac, info, refs)
+            result = self._takeoff(ctx, ac, info, refs, over)
+        elif mode == M_TURN:
+            result = self._turns(ctx, ac, info, refs, over)
+        else:
+            result = self._mission(ctx, ac, info, refs, over)
+        source = ctx.params.get("mass_source", MASS_PLANE)
+        if source != MASS_PLANE:                    # a massa que voou, quando não é a do avião
+            result.checks.insert(0, Check("info", "massa do voo", f"{total_mass(ac):.2f} kg", source,
+                                          f"a do avião é {total_mass(ctx.aircraft):.2f} kg", "", "Massa"))
+        return result
+
+    # ------------------------------------------------------------------ massa e acionamento
+    def _saved(self) -> dict:
+        """os MTOW achados nesta sessão, por (avião, x_warning, z_warning): (cópia com as massas, sobreposições do CG,
+        massa total)"""
+        if not hasattr(self, "_mtows"):
+            self._mtows = {}
+        return self._mtows
+
+    @staticmethod
+    def _runway(ac, xw: float, zw: float) -> tuple:
+        return getattr(ac, "name", ""), round(xw, 3), round(zw, 3)
+
+    def _with_mass(self, ctx, xw: float, zw: float):
+        """a cópia calibrada com a massa escolhida e as sobreposições do núcleo que ela pede (o CG do MTOW)"""
+        source = self.param(ctx, "mass_source") if "mass_source" in ctx.params else MASS_PLANE
+        if source == MASS_PLANE:
+            ac, info = self.prepare(ctx)
+            return ac, info, None
+        if source == MASS_SAVED:
+            found = self._saved().get(self._runway(ctx.aircraft, xw, zw))
+            if found is None:
+                raise RuntimeError(f"ainda não há MTOW salvo para x_warning = {xw:g} m e z_warning = {zw:g} m: rode "
+                                   f"antes o modo MTOW com esta pista")
+            variant, over, _ = found
+            ac = variant.copy()
+        else:
+            m = float(ctx.params.get("mass_hand", total_mass(ctx.aircraft)))
+            ac, _ = mass_variant(ctx.aircraft, {"tot": (m, m)}, 0.0)
+            over = None
+        ctx.on_progress(0.0, "calibrando o piloto pela polar")
+        return ac, calibrate(ctx.backend, ac), over
+
+    def _choose(self, ctx, ac, refs, over=None):
+        """o acionamento da decolagem: otimizado para a pista ou o digitado (avaliado uma vez)"""
+        if ctx.params.get("trigger") != TRIGGERS[1]:
+            return self._optimize(ctx, ac, refs, over)
+        ctx.on_progress(0.0, "decolagem com o acionamento digitado")
+        s_hand = float(ctx.params.get("s_hand", ac.takeoff.sR))
+        best = TO.evaluate(ctx.backend, ac, s_hand if TO.pitch_control(ac) else None,
+                           float(ctx.params.get("de_hand", ac.takeoff.de1)), refs["x_warning"], refs["z_warning"], over)
+        return best, [best]
 
     # ------------------------------------------------------------------ decolagem
     def _optimize(self, ctx, ac, refs, overrides=None):
@@ -436,12 +518,12 @@ class MissionSimulation(SimulationBase):
                            "a aeronave não tem profundor/elevon: não há acionamento a otimizar", "", G))
         return C
 
-    def _takeoff(self, ctx, ac, info, refs) -> SimResult:
-        best, tried = self._optimize(ctx, ac, refs)
+    def _takeoff(self, ctx, ac, info, refs, over=None) -> SimResult:
+        best, tried = self._choose(ctx, ac, refs, over)
         ctrl = TO.pitch_control(ac)
         ctx.on_progress(0.9, "decolagem escolhida")
         res, log = TO.evaluate(ctx.backend, ac, best.s if ctrl else None, best.de, refs["x_warning"],
-                               refs["z_warning"], dtlog=0.005, log=True, de0=best.de0)
+                               refs["z_warning"], over, dtlog=0.005, log=True, de0=best.de0)
         ctx.on_chunk(log)
         ev = res.events
         S = self._opt_series(tried, best, refs)
@@ -466,7 +548,7 @@ class MissionSimulation(SimulationBase):
         return S
 
     # ------------------------------------------------------------------ missão
-    def _mission(self, ctx, ac, info, refs) -> SimResult:
+    def _mission(self, ctx, ac, info, refs, over=None) -> SimResult:
         mission = ac.mission
         legs = mission.names()
         nseg = len(legs)
@@ -485,7 +567,7 @@ class MissionSimulation(SimulationBase):
         radii = {}
         need_takeoff = k0 == 0 or not store.has(key(k0))
         if need_takeoff:
-            best, tried = self._optimize(ctx, ac, refs)
+            best, tried = self._choose(ctx, ac, refs, over)
             series.update(self._opt_series(tried, best, refs))
             if TO.pitch_control(ac) and np.isfinite(best.s):
                 ac.takeoff.sR, ac.takeoff.de1 = best.s, best.de
@@ -494,7 +576,7 @@ class MissionSimulation(SimulationBase):
             checks += self._takeoff_checks(ac, best, refs, TO.pitch_control(ac))
         parts: list[LogChunk] = []
         out = None
-        with Runner(ctx.backend, ac, mission, None, ctx) as r:
+        with Runner(ctx.backend, ac, mission, over, ctx) as r:
             if k0 > 0 and store.has(key(k0)):
                 r.start_from(store.get(key(k0)))
             else:
@@ -516,7 +598,7 @@ class MissionSimulation(SimulationBase):
                 ck = store.get(key(k))
                 leg = mission.legs[k]
                 if leg.kind == "turn" and leg.radius <= 0:
-                    mission, R, why = self._auto_turn(ctx, ac, mission, ck, k, info)
+                    mission, R, why = self._auto_turn(ctx, ac, mission, ck, k, info, over)
                     checks.append(Check("info" if why == "ok" else "atencao", f"raio automático — {legs[k]}",
                                         f"R = {R:.1f} m", "menor raio que a aeronave faz",
                                         "" if why == "ok" else f"nenhum raio testado passou ({why}); usou o maior",
@@ -525,7 +607,7 @@ class MissionSimulation(SimulationBase):
                     r.reconfigure(mission)
                     r.start_from(ck)
                 if aim and k == k_drop:
-                    mission, hist = self._aim(ctx, ac, mission, ck, k)
+                    mission, hist = self._aim(ctx, ac, mission, ck, k, over)
                     series.update(hist)
                     r.reconfigure(mission)
                     r.start_from(ck)
@@ -607,7 +689,7 @@ class MissionSimulation(SimulationBase):
             summary["observação"] = "; ".join(notes)
         return SimResult(log=log, series=series, summary=summary, events=ev, status=st, checks=checks)
 
-    def _auto_turn(self, ctx, ac, mission, ck, k, info):
+    def _auto_turn(self, ctx, ac, mission, ck, k, info, over=None):
         """curva sem raio: do checkpoint, testa raios do φ máx. do piloto automático para baixo e fica com o
         menor que passa"""
         seg = mission.segments()[k]
@@ -618,7 +700,7 @@ class MissionSimulation(SimulationBase):
         def one(R):
             m = mission.with_leg(k, radius=R)
             sg = m.segments()[k]
-            with Runner(ctx.backend, ac, m, None) as rr:
+            with Runner(ctx.backend, ac, m, over) as rr:
                 rr.start_from(ck)
                 o = rr.run(Stop(segment=k + 1, t=ck.t + 20 + 3 * sg["L"] / max(V, 1.0)), live=False)
             res = evaluate_turn(o.log, sg, k, R, info["Vs"], ac.autopilot.kCL)
@@ -631,7 +713,7 @@ class MissionSimulation(SimulationBase):
         why = "ok" if ok else outs[-1].get("motivo", "falha")
         return mission.with_leg(k, radius=R), R, why
 
-    def _aim(self, ctx, ac, mission, ck, k):
+    def _aim(self, ctx, ac, mission, ck, k, over=None):
         """bisseção no ponto de soltura s (perna k) para a carga cair no alvo (n)"""
         seg = mission.segments()[k]
         alvo = ac.payload.target_n
@@ -640,7 +722,7 @@ class MissionSimulation(SimulationBase):
 
         def impact(sx):
             m = mission.with_events(others + [MissionEvent("drop", k, sx)])
-            with Runner(ctx.backend, ac, m, dict(tmax=ck.t + 300)) as rr:
+            with Runner(ctx.backend, ac, m, dict(over or {}, tmax=ck.t + 300)) as rr:
                 rr.start_from(ck)
                 o = rr.run(Stop(segment=k + 1), live=False, log=False)
                 if o.events["trel"] > 0 and o.events["pk_t"] <= 0:      # carga ainda no ar
@@ -712,10 +794,10 @@ class MissionSimulation(SimulationBase):
         return C
 
     # ------------------------------------------------------------------ curvas
-    def _turns(self, ctx, ac, info, refs) -> SimResult:
+    def _turns(self, ctx, ac, info, refs, mass_over=None) -> SimResult:
         side, ang, phimax = 1, 240.0, 75.0
         h, hloss = 30.0, 3.0
-        over = dict(tmax=1e6, ap=dict(phimax=math.radians(phimax)))
+        over = dict(mass_over or {}, tmax=1e6, ap=dict(phimax=math.radians(phimax)))
         Vs_list = floats(self.param(ctx, "V_list"))
 
         series, checks, rmin_rows, all_cases = {}, [], [], []
@@ -910,6 +992,8 @@ class MissionSimulation(SimulationBase):
         if np.isfinite(tm):
             mt = best.m_tot
             summary["MTOW (kg)"] = mt
+            # guardado para a missão, a decolagem e as curvas desta pista ("Massa": "MTOW salvo desta pista")
+            self._saved()[self._runway(ctx.aircraft, refs["x_warning"], refs["z_warning"])] = (best.variant, best.over, mt)
             for k, m in best.masses.items():
                 summary[f"MTOW: {names[k]}"] = m
             summary.update({"MTOW: xCG (m)": best.xcg, "MTOW: xCG (% CMA)": xcg_pct(model, best.xcg), "acionamento (m)": best.s, "δe (°)": best.de,
@@ -920,7 +1004,7 @@ class MissionSimulation(SimulationBase):
             parts = ", ".join(f"{names[k]} = {m:.2f}" for k, m in best.masses.items())
             checks.append(Check("info", "MTOW", f"{mt:.2f} kg", "x e z atendidos",
                                 f"{parts}; xCG = {xcg_pct(model, best.xcg):.1f} % CMA ({best.xcg:.3f} m); acionamento em {best.s:.1f} m, δe = {best.de:g}°",
-                                "", "MTOW"))
+                                "salvo: na missão, na decolagem e nas curvas, Massa → 'MTOW salvo desta pista'", "MTOW"))
             S.update(self._opt_series(saved.get(tm, []), best, refs))
             v = best.variant
             res, log = TO.evaluate(ctx.backend, v, best.s if ctrl else None, best.de, refs["x_warning"], refs["z_warning"],

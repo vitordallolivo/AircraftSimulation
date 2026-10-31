@@ -263,3 +263,23 @@ def test_turns_show_load_factor(manager):
     n = r.summary["n no R_min @ 15 m/s"]
     assert np.isfinite(n) and n > 1.0
     assert any(c.item == "fator de carga no raio mínimo a 15 m/s" for c in r.checks)
+
+
+def test_takeoff_by_hand_flies_the_typed_mass_and_trigger():
+    """decolagem "na mão": a massa digitada (o que passa entra no CG) e o acionamento digitado, sem otimizar; sem
+    MTOW salvo para a pista, "MTOW salvo desta pista" avisa que falta rodar o modo MTOW"""
+    from aerosim.manager.simulations.mission import MASS_HAND, MASS_SAVED, M_TO, TRIGGERS, total_mass
+    manager = SimulationManager()
+    sim = manager.get("mission")
+    ac = TEMPLATES["conventional"]()
+    keys = [p.key for p in sim.parameters_for(ac, {"mode": M_TO, "mass_source": MASS_HAND, "trigger": TRIGGERS[1]})]
+    assert {"mass_source", "mass_hand", "trigger", "s_hand", "de_hand"} <= set(keys)
+    heavy = total_mass(ac) + 1.0
+    values = {"mode": M_TO, "mass_source": MASS_HAND, "mass_hand": heavy, "trigger": TRIGGERS[1], "s_hand": 12.0,
+              "de_hand": -12.0, "x_warning": 60.0}
+    result = manager.run("mission", ac, values)
+    mass = next(c for c in result.checks if c.item == "massa do voo")
+    assert mass.value == f"{heavy:.2f} kg"
+    assert result.summary["acionamento_m"] == 12.0 and result.summary["deflexao_graus"] == -12.0
+    with pytest.raises(RuntimeError, match="MTOW"):
+        manager.run("mission", ac, {**values, "mass_source": MASS_SAVED, "x_warning": 7.25})

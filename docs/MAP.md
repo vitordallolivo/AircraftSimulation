@@ -207,7 +207,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/manager/simulations/loads.py` — Cargas: a carga aerodinâmica ao longo de cada superfície num ponto de operação (velocidade, fator de carga, α),
   `class LoadsSimulation:31`
 - `aerosim/manager/simulations/mission.py` — Missão (simulação 6GDL) por etapa do voo (corrida no chão, cada perna do percurso, rolagem).
-  `legs_to_rows:58`, `rows_to_legs:69`, `xcg_pct:89`, `total_mass:94`, `mtow_rows:101`, `mass_variant:120`, `class MissionSimulation:183`
+  `legs_to_rows:71`, `rows_to_legs:82`, `xcg_pct:102`, `total_mass:107`, `mtow_rows:114`, `mass_variant:133`, `class MissionSimulation:196`
 - `aerosim/manager/simulations/performance.py` — Desempenho por cálculo (como na planilha de desempenho): nada é simulado e não há piloto.
   `core_polar:39`, `class PerformanceSimulation:51`
 - `aerosim/manager/simulations/polar.py` — Polar estática: C_L, C_D, C_m em α e C_Y, C_l, C_n em β (sem integração no tempo).
@@ -821,7 +821,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tests/data` — 12 testes em 4 arquivo(s)
 - `tests/design` — 75 testes em 11 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 92 testes em 13 arquivo(s)
+- `tests/manager` — 93 testes em 13 arquivo(s)
 - `tests/model` — 51 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 12 testes em 1 arquivo(s)
