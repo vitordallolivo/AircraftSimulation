@@ -8,7 +8,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/__init__.py` — aerosim — simulador 6GDL de aeronaves em camadas:
 - `aerosim/bridge.py` — Ponte entre a tela em Zig (raylib) e os managers em Python: uma mensagem JSON por linha, na entrada e na saída
-  `class Bridge:50`, `start_in_browser:392`, `call_in_browser:400`, `main:415`
+  `class Bridge:50`, `start_in_browser:419`, `call_in_browser:427`, `main:442`
 
 ## Python · `aerosim/aero`
 
@@ -686,7 +686,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `buildMesh:55`, `balance:113`, `load:131`, `fillAirfoilFiles:148`, `parseDat:183`, `findExample:215`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
-  tipos `Kind:31`, `Page:171`
+  tipos `Kind:31`, `Page:172`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
   tipos `Waiter:23`, `Bridge:39`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt
@@ -697,14 +697,14 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/gui/ui/app.zig` — O que os dois programas têm igual em volta da tela: a linha de comando, a janela e o laço de desenho, com o
   tipos `Args:14`
-  fn `parseArgs:25`, `run:57`, `runBrowser:137`, `openFromPage:166`
+  fn `parseArgs:25`, `run:57`, `runBrowser:138`, `openFromPage:167`
 - `aerosim/gui/ui/browser_io.zig` — O `std.Io` das telas no navegador. No Zig 0.16 o `std.Io.Threaded` não compila para emscripten (o mesmo motivo
 - `aerosim/gui/ui/checks.zig` — O diagnóstico de uma etapa, como o `ChecksPanel` da GUI em Python: uma linha por verificação (estado, o que se
   tipos `Check:10`, `ChecksPanel:44`
   fn `statusText:25`
 - `aerosim/gui/ui/dialogs.zig` — As janelas por cima da tela: o seletor de arquivo (navega pelas pastas e mostra só as extensões pedidas; para
-  tipos `FilePicker:15`, `TextPrompt:219`
-  fn `home:261`, `button:282`
+  tipos `FilePicker:18`, `TextPrompt:259`
+  fn `home:301`, `button:322`
 - `aerosim/gui/ui/export.zig` — Gravar o que a tela mostra em arquivo: os dados de um gráfico em CSV, a imagem dele em PNG (pelo raylib) e a
   tipos `Column:8`
   fn `writeCsv:15`, `writeText:33`, `saveCsv:47`, `writePdf:56`, `savePdf:107`, `fileName:115`
@@ -715,32 +715,36 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/ui/menus.zig` — As peças de escolha que as abas repetem: a lista de itens com um selecionado (a lista de candidatos de Perfis,
   tipos `ItemList:12`, `CheckItem:56`, `CheckMenu:65`
   fn `buttonGrid:41`, `checkedText:122`
+- `aerosim/gui/ui/native_dialog.zig` — A janela de abrir e de salvar arquivo do próprio sistema (a do GNOME, do KDE, do Windows ou do macOS), no lugar
+  tipos `State:11`, `Dialog:13`
 - `aerosim/gui/ui/numbers.zig` — Números na tela sem janela (testáveis): o texto curto de um campo e as marcas "redondas" dos eixos.
   tipos `Range:38`
   fn `numberText:5`, `niceStep:21`, `decimalsFor:31`, `significant:88`
 - `aerosim/gui/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
-  tipos `Series:19`, `Cloud:29`, `Axes:37`, `Frame:44`, `Cell:117`, `ExportKind:194`
-  fn `lines:58`, `table:125`, `tableHeight:160`, `overlayActive:299`, `overlay:304`, `cloud:468`, `ramp:487`, `colorBar:503`, `drawFrame:523`
+  tipos `Series:20`, `Cloud:31`, `Axes:39`, `Frame:46`, `Cell:119`, `ExportKind:196`
+  fn `lines:60`, `table:127`, `tableHeight:162`, `overlayActive:301`, `overlay:306`, `cloud:470`, `ramp:489`, `colorBar:505`, `drawFrame:525`
 - `aerosim/gui/ui/scroll.zig` — A área rolável: tudo o que não cabe na altura (a barra lateral, a coluna dos gráficos) rola pela roda do mouse ou
   tipos `ScrollArea:13`
 - `aerosim/gui/ui/stage.zig` — As peças que toda etapa do dimensionamento repete, como o `StagePage` da GUI em Python: a barra de requisitos
   tipos `KeptAction:44`, `KeptBox:47`, `TabbedDialog:75`, `ListPicker:113`
   fn `reqBarHeight:18`, `reqBar:25`, `title:37`
 - `aerosim/gui/ui/system.zig` — O que muda entre o programa do PC e o do navegador, num lugar só: a `Io` dos arquivos (a do sistema ou a
-  fn `io:13`, `offerDownload:19`
+  fn `io:17`, `offerDownload:23`
 - `aerosim/gui/ui/table.zig` — A tabela que se edita no lugar, como o `QTableWidget` da GUI em Python: uma linha por item, colunas de número,
-  tipos `Kind:12`, `Column:15`, `Cell:23`, `Edit:35`, `EditTable:50`
-  fn `height:45`
+  tipos `Kind:12`, `Column:17`, `Cell:25`, `Edit:37`, `EditTable:57`
+  fn `height:52`
+- `aerosim/gui/ui/tex.zig` — Um pedaço de TeX nos textos dos gráficos: o que fica entre `$...$` vira matemática, com índice (`C_L`,
+  fn `draw:37`, `drawRotated:48`, `width:58`, `plain:67`
 - `aerosim/gui/ui/theme.zig` — O visual da interface, o mesmo do AeroDrive: fundo claro, cantos arredondados, azul nos títulos e pouco texto.
-  tipos `Palette:17`, `Fonts:119`, `Logo:163`
-  fn `hex:7`, `withAlpha:12`, `plotColor:63`, `spacing:148`, `text:153`, `textWidth:158`
+  tipos `Palette:17`, `Fonts:121`, `Logo:165`
+  fn `hex:7`, `withAlpha:12`, `plotColor:63`, `spacing:150`, `text:155`, `textWidth:160`
 - `aerosim/gui/ui/ui.zig` — As peças comuns das telas do aerosim e do aeroopt em Zig: cores e fontes, formas, widgets, formulário, gráfico
 - `aerosim/gui/ui/view3d.zig` — Vista 3D dentro de um cartão, com as mesmas ideias da vista do aerosim em Python (`aerosim/gui/widgets/view3d.py`
   tipos `Kind:17`, `View:100`
   fn `kindColor:20`, `colorByName:35`, `fieldColor:57`, `fraction:75`, `liftColor:80`, `toWorld:85`, `shaded:203`, `triangle:211`, `quad:221`, `segment:238`, `arrow:243`, `floor:255`, `bodyAxes:267`
 - `aerosim/gui/ui/widgets.zig` — Os pedaços comuns das telas, no desenho do AeroDrive: o contexto de desenho (fontes, logo, mouse), o cabeçalho
-  tipos `Ui:10`, `Status:366`
-  fn `paragraph:140`, `paragraphHeight:145`, `caretToEnd:191`, `helpMark:202`, `checkBox:211`, `disclosure:226`, `rounded:270`, `roundedLines:275`, `header:280`, `tabBar:301`, `primaryButton:325`, `progressBar:335`, `card:342`, `labeledCard:350`, `statusColor:356`, `tableRow:369`, `format:376`
+  tipos `Ui:11`, `Splitter:204`, `Status:427`
+  fn `paragraph:141`, `paragraphHeight:146`, `caretToEnd:192`, `replaceOnType:238`, `helpMark:263`, `checkBox:272`, `disclosure:287`, `rounded:331`, `roundedLines:336`, `header:341`, `tabBar:362`, `primaryButton:386`, `progressBar:396`, `card:403`, `labeledCard:411`, `statusColor:417`, `tableRow:430`, `format:437`
 
 
 ## Zig · interface do aeroopt (`aeroopt`)

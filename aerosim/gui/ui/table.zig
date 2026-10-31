@@ -11,7 +11,9 @@ const numbers = @import("numbers.zig");
 
 pub const Kind = enum { number, text, choice, check, button, label };
 
-/// uma coluna: o título, o tipo das células, a largura (fração da tabela; 0 = divide o que sobra) e a dica
+/// uma coluna: o título, o tipo das células, a largura (fração da tabela; 0 = divide o que sobra) e a dica. Nenhuma
+/// coluna fica mais estreita que o título dela (ou que a maior opção, numa escolha): se não cabem todas, a tabela
+/// fica mais larga que a caixa e rola para o lado
 pub const Column = struct {
     title: [:0]const u8,
     kind: Kind,
@@ -40,8 +42,13 @@ pub const Edit = struct {
 
 pub const row_height: f32 = 28;
 pub const header_height: f32 = 28;
+/// a barra de rolar para o lado, embaixo da tabela, quando as colunas não cabem
+pub const bar_height: f32 = 10;
+const max_columns = 16;
+/// a coluna de escolha não passa disso só por causa de uma opção comprida (a dica mostra o resto)
+const choice_maximum: f32 = 170;
 
-/// a altura da tabela com `rows` linhas
+/// a altura da tabela com `rows` linhas, sem a barra de rolar
 pub fn height(rows: usize) f32 {
     return header_height + row_height * @as(f32, @floatFromInt(rows)) + 2;
 }
@@ -59,6 +66,18 @@ pub const EditTable = struct {
     origin: rl.Vector2 = .{ .x = 0, .y = 0 },
     table_width: f32 = 0,
     open_cell: Cell = .{},
+    // as colunas como foram desenhadas neste quadro (já com a rolagem), para a lista aberta
+    lefts: [max_columns]f32 = undefined,
+    widths: [max_columns]f32 = undefined,
+    // rolagem para o lado: quanto as colunas passam da caixa e onde se está
+    overflow: f32 = 0,
+    scroll: f32 = 0,
+    dragging_bar: bool = false,
+
+    /// a altura da tabela com `rows` linhas, com a barra de rolar se as colunas não couberam no último quadro
+    pub fn fullHeight(table: *const EditTable, rows: usize) f32 {
+        return height(rows) + if (table.overflow > 0) bar_height + 2 else 0;
+    }
 
     /// desenha a tabela a partir de (x, y) na largura `width`; devolve a edição feita neste quadro, se houver.
     /// Depois de fechar os recortes, chamar `drawOpen` (a lista aberta de uma escolha fica por cima)
@@ -68,9 +87,16 @@ pub const EditTable = struct {
         if (table.selected) |row| {
             if (row >= cells.len) table.selected = if (cells.len > 0) cells.len - 1 else null;
         }
-        var lefts: [16]f32 = undefined;
-        var widths: [16]f32 = undefined;
-        layout(columns, x, width, &lefts, &widths);
+        const natural = layout(ui, columns, cells, width, &table.widths);
+        table.overflow = @max(0, natural - width);
+        table.scrollSideways(ui, x, y, width, cells.len);
+        var left = x - table.scroll;
+        for (columns, 0..) |_, c| {
+            table.lefts[c] = left;
+            left += table.widths[c];
+        }
+        const lefts = table.lefts;
+        const widths = table.widths;
         // a lista aberta pega o clique antes das células de baixo
         if (table.open_choice) |place| {
             if (place[0] < cells.len) {
@@ -83,6 +109,7 @@ pub const EditTable = struct {
         const frame: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = height(cells.len) };
         widgets.rounded(frame, 5, theme.colors.field);
         rl.drawRectangleRec(.{ .x = x, .y = y, .width = width, .height = header_height }, theme.colors.panel);
+        ui.pushClip(frame);
         for (columns, 0..) |column, c| {
             ui.pushClip(.{ .x = lefts[c], .y = y, .width = widths[c] - 2, .height = header_height });
             theme.text(ui.fonts.regular, column.title, lefts[c] + 6, y + 6, 13, theme.colors.label);
@@ -102,8 +129,43 @@ pub const EditTable = struct {
                 if (table.drawCell(ui, column.kind, cell, box, r, c)) |value| edit = .{ .row = r, .column = c, .value = value };
             }
         }
+        ui.popClip();
         widgets.roundedLines(frame, 5, theme.colors.line);
+        if (table.overflow > 0) table.drawBar(x, y + height(cells.len) + 2, width);
         return edit;
+    }
+
+    /// a roda do mouse com Shift (ou a roda de lado) e o arrasto da barra rolam as colunas
+    fn scrollSideways(table: *EditTable, ui: *widgets.Ui, x: f32, y: f32, width: f32, rows: usize) void {
+        if (table.overflow <= 0) {
+            table.scroll = 0;
+            return;
+        }
+        const whole: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = height(rows) + bar_height + 2 };
+        if (ui.hovering(whole)) {
+            const sideways = rl.getMouseWheelMoveV().x;
+            const shift = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
+            if (sideways != 0) table.scroll -= sideways * 40;
+            if (shift and ui.wheel != 0) {
+                table.scroll -= ui.wheel * 40;
+                ui.wheel = 0; // não rola a barra lateral junto
+            }
+        }
+        const bar: rl.Rectangle = .{ .x = x, .y = y + height(rows) + 2, .width = width, .height = bar_height };
+        if (ui.clickedIn(bar)) table.dragging_bar = true;
+        if (!rl.isMouseButtonDown(.left)) table.dragging_bar = false;
+        if (table.dragging_bar) {
+            const knob = width * width / (width + table.overflow);
+            table.scroll = (ui.mouse.x - x - knob / 2) / (width - knob) * table.overflow;
+        }
+        table.scroll = std.math.clamp(table.scroll, 0, table.overflow);
+    }
+
+    fn drawBar(table: *const EditTable, x: f32, y: f32, width: f32) void {
+        const knob = width * width / (width + table.overflow);
+        const start = x + (width - knob) * table.scroll / table.overflow;
+        widgets.rounded(.{ .x = x, .y = y, .width = width, .height = bar_height }, 4, theme.colors.panel);
+        widgets.rounded(.{ .x = start, .y = y + 1, .width = knob, .height = bar_height - 2 }, 4, if (table.dragging_bar) theme.colors.accent else theme.colors.line);
     }
 
     /// a lista aberta de uma escolha, por cima de tudo; devolve a escolha feita
@@ -124,11 +186,9 @@ pub const EditTable = struct {
     }
 
     fn cellRect(table: *const EditTable, columns: []const Column, row: usize, column: usize) rl.Rectangle {
-        var lefts: [16]f32 = undefined;
-        var widths: [16]f32 = undefined;
-        layout(columns, table.origin.x, table.table_width, &lefts, &widths);
+        _ = columns;
         const top = table.origin.y + header_height + row_height * @as(f32, @floatFromInt(row));
-        return .{ .x = lefts[column] + 2, .y = top + 2, .width = widths[column] - 4, .height = row_height - 4 };
+        return .{ .x = table.lefts[column] + 2, .y = top + 2, .width = table.widths[column] - 4, .height = row_height - 4 };
     }
 
     fn drawCell(table: *EditTable, ui: *widgets.Ui, kind: Kind, cell: Cell, box: rl.Rectangle, row: usize, column: usize) ?@FieldType(Edit, "value") {
@@ -221,19 +281,45 @@ pub const EditTable = struct {
     }
 };
 
-/// as posições e larguras das colunas: as de largura dada em fração, as outras dividem o que sobra
-fn layout(columns: []const Column, x: f32, width: f32, lefts: *[16]f32, widths: *[16]f32) void {
+/// as larguras das colunas: cada uma tem o mínimo que mostra o título inteiro (ou a opção escolhida, numa escolha),
+/// e o que sobra da caixa se divide pelas frações (as de largura dada, e as outras em partes iguais do resto);
+/// devolve a largura somada, que passa de `width` quando nem os mínimos cabem
+fn layout(ui: *const widgets.Ui, columns: []const Column, cells: []const []const Cell, width: f32, widths: *[max_columns]f32) f32 {
     var fixed: f32 = 0;
     var free: f32 = 0;
     for (columns) |column| {
         if (column.width > 0) fixed += column.width else free += 1;
     }
     const rest = @max(0, 1 - fixed);
-    var left = x;
+    var shares: f32 = 0;
+    var minimums: f32 = 0;
     for (columns, 0..) |column, c| {
-        const fraction = if (column.width > 0) column.width else rest / @max(free, 1);
-        lefts[c] = left;
-        widths[c] = fraction * width;
-        left += widths[c];
+        widths[c] = minimum(ui, column, c, cells);
+        minimums += widths[c];
+        shares += if (column.width > 0) column.width else rest / @max(free, 1);
     }
+    const spare = @max(0, width - minimums);
+    for (columns, 0..) |column, c| {
+        const share = if (column.width > 0) column.width else rest / @max(free, 1);
+        widths[c] += spare * share / @max(shares, 1e-6);
+    }
+    return minimums + spare;
+}
+
+/// o mais estreito que a coluna pode ficar: o título inteiro e, numa escolha, a opção escolhida mais comprida
+fn minimum(ui: *const widgets.Ui, column: Column, c: usize, cells: []const []const Cell) f32 {
+    var narrowest = theme.textWidth(ui.fonts.regular, column.title, 13) + 14;
+    if (column.kind != .choice) return narrowest;
+    for (cells) |row| {
+        if (c >= row.len) continue;
+        var options = std.mem.splitScalar(u8, row[c].choices, ';');
+        var k: i32 = 0;
+        while (options.next()) |option| : (k += 1) {
+            if (k != row[c].choice) continue;
+            var buffer: [128]u8 = undefined;
+            const shown = widgets.format(&buffer, "{s}", .{option});
+            narrowest = @max(narrowest, @min(choice_maximum, theme.textWidth(ui.fonts.regular, shown, 13) + 30));
+        }
+    }
+    return narrowest;
 }

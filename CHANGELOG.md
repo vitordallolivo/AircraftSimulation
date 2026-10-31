@@ -43,6 +43,13 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   (cruzeiro, estol, fim do curso). A tela em Zig desenha o TeX dos títulos, eixos e legendas (`ui/tex.zig`: índice,
   expoente, letras gregas e operadores), e as retas de referência (`_vline`, `_hline`) chegam nela com nome na
   legenda. Feito nas etapas (Perfis, Projetar, Empenagem, Motores) e em Analisar.
+- tabelas da tela em Zig sem título cortado: cada coluna fica no mínimo do tamanho do título (e da opção escolhida,
+  numa escolha); quando não cabem todas, a tabela rola para o lado (Shift+roda ou a barra embaixo dela).
+- abrir e salvar (o avião, os arquivos dos campos, a exportação dos gráficos) usam a janela de arquivo do sistema:
+  `zenity` ou `kdialog` no Linux, o PowerShell no Windows, o `osascript` no macOS (`ui/native_dialog.zig`). Sem
+  nenhum deles, no navegador ou no print, fica o seletor desenhado na tela.
+- `zig build` no Linux: os programas ligam com o ligador do próprio Zig; o LLD acusava como erro as .so que o Zig
+  0.16 põe dentro do libraylib.a.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

@@ -816,16 +816,16 @@ pub const Page = struct {
         var y = top + 8;
         const note_height = if (grid.note.len > 0) widgets.paragraphHeight(ui.fonts.regular, grid.note, width - 16, 13) + 6 else 0;
         const buttons_height: f32 = if (grid.buttons.len > 0) 40 else 4;
-        const box_height = 22 + table_mod.height(grid.rows.len) + 6 + note_height + buttons_height;
+        const table = &page.grid_tables[index];
+        const box_height = 22 + table.fullHeight(grid.rows.len) + 6 + note_height + buttons_height;
         widgets.roundedLines(.{ .x = x, .y = y, .width = width, .height = box_height }, 5, theme.colors.line);
         const caption_width = theme.textWidth(ui.fonts.regular, grid.title, 14);
         rl.drawRectangleRec(.{ .x = x + 8, .y = y - 8, .width = caption_width + 30, .height = 16 }, theme.colors.panel);
         theme.text(ui.fonts.regular, grid.title, x + 12, y - 8, 14, theme.colors.ink);
         if (grid.help.len > 0) widgets.helpMark(ui, x + 16 + caption_width, y - 8, grid.help);
         y += 16;
-        const table = &page.grid_tables[index];
         if (table.draw(ui, x + 6, y, width - 12, grid.columns, grid.rows)) |cell| edit.* = .{ .grid = index, .edit = cell };
-        y += table_mod.height(grid.rows.len) + 6;
+        y += table.fullHeight(grid.rows.len) + 6;
         if (grid.note.len > 0) y += widgets.paragraph(ui.fonts.regular, grid.note, x + 8, y, width - 16, 13, theme.colors.ink) + 6;
         if (grid.buttons.len > 0) {
             var used: f32 = 0;

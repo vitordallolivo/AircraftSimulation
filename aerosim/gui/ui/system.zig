@@ -9,6 +9,10 @@ pub const in_browser = builtin.os.tag == .emscripten;
 
 const browser_io = if (in_browser) @import("browser_io.zig") else struct {};
 
+/// a `Io` do processo (a do `main`), para abrir outros programas, como a janela de arquivo do sistema; nula no
+/// navegador e no print (`--shot`), que ficam com o seletor de dentro
+pub var process_io: ?std.Io = null;
+
 /// a `Io` dos arquivos (sem threads)
 pub fn io() std.Io {
     return if (in_browser) browser_io.io else std.Io.Threaded.global_single_threaded.io();
