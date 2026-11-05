@@ -47,6 +47,7 @@
   li button::before { content: "  "; }
   li button.ativo, li button:focus-visible { background: var(--texto); color: var(--fundo); }
   li button.ativo::before { content: "> "; }
+  li button.doc { padding-left: 2ch; }
   li button:disabled { color: var(--apagado); cursor: default; }
   li button:disabled.ativo { background: var(--apagado); color: var(--fundo); }
   .separador { color: var(--apagado); padding: 0.4em 1ch 0.2em; }
@@ -64,10 +65,13 @@
     <p class="sub">dimensionar uma aeronave e voar o resultado</p>
     <ul id="lista" role="listbox" aria-label="Programas">
       <li><button data-acao="aerodrive" data-ajuda="Simulação em tempo real: escolha um avião de exemplo (ou o seu) e pilote com teclado, controle ou toque.">AeroDrive — pilotar o avião</button></li>
+      <li><button class="doc" data-acao="doc" data-pagina="aerodrive/README.md" data-ajuda="Abre o livro no capítulo do AeroDrive: como o voo é simulado, os controles e como compilar.">└ documentação do AeroDrive</button></li>
       <li><button data-acao="carregar" data-ajuda="Escolha o .json de um avião feito no aerosim. Ele fica guardado neste navegador e o AeroDrive abre já com ele.">Carregar avião (.json)</button></li>
       <li class="separador" aria-hidden="true">em teste</li>
       <li><button data-acao="aerosim" data-ajuda="Onde se projeta o avião: perfis, asa, montagem e análise. Versão de teste: as contas longas param a página até acabar, e salvar baixa o arquivo.">aerosim — projetar (teste)</button></li>
+      <li><button class="doc" data-acao="doc" data-pagina="aerosim/gui/README.md" data-ajuda="Abre o livro no capítulo do aerosim: as abas, o que cada uma calcula e como usar.">└ documentação do aerosim</button></li>
       <li><button data-acao="aeroopt" data-ajuda="Otimização do projeto para a competição. Versão de teste: as contas longas param a página até acabar.">aeroopt — otimizar (teste)</button></li>
+      <li><button class="doc" data-acao="doc" data-pagina="aeroopt/README.md" data-ajuda="Abre o livro no capítulo do aeroopt: o que se otimiza, as restrições e como rodar.">└ documentação do aeroopt</button></li>
       <li class="separador" aria-hidden="true">projeto</li>
       <li><button data-acao="livro" data-ajuda="Toda a documentação do projeto num livro: o que cada parte faz, as equações e como usar.">Livro — a documentação</button></li>
       <li><button data-acao="tracking" data-ajuda="O quadro de tarefas: o que está em andamento, o que falta, as dependências e as suspeitas de erro.">Tracking — o que falta fazer</button></li>
@@ -116,6 +120,7 @@
     else if (botao.dataset.acao === 'aerosim') window.location.href = 'aerosim.html';
     else if (botao.dataset.acao === 'aeroopt') window.location.href = 'aeroopt.html';
     else if (botao.dataset.acao === 'livro') window.location.href = 'livro.html';
+    else if (botao.dataset.acao === 'doc') window.location.href = 'livro.html#' + botao.dataset.pagina;
     else if (botao.dataset.acao === 'tracking') window.location.href = 'tracking.html';
     else if (botao.dataset.acao === 'carregar') arquivo.click();
   }
