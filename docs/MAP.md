@@ -704,7 +704,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/gui/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
   tipos `Triangle:14`, `Mesh:22`, `Assembly:90`, `Balance:105`
-  fn `buildMesh:55`, `balance:113`, `loadAircraft:131`, `load:144`, `fillAirfoilFiles:161`, `parseDat:196`, `findExample:228`
+  fn `buildMesh:55`, `balance:115`, `loadAircraft:140`, `load:153`, `fillAirfoilFiles:170`, `parseDat:205`, `findExample:237`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
   tipos `Kind:35`, `Page:258`

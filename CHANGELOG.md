@@ -30,6 +30,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   limites de CG, a área da empenagem horizontal, a estabilidade direcional e lateral, o tamanho dos comandos, a asa
   voadora e os modos dinâmicos contra a MIL-F-8785C, com a correção sugerida quando um modo não passa. O diagnóstico,
   o resumo e as curvas são os mesmos do Python.
+- Antes, o CG da Montagem na interface em Zig deixava de fora a água dos tanques e saía com 2 kg a menos. Agora a
+  massa e o CG são os mesmos da Montagem em Python.
 - Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
   referência e a trajetória 3D do voo.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).

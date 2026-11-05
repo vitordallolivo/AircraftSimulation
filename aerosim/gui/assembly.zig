@@ -101,24 +101,33 @@ pub const Assembly = struct {
     }
 };
 
-/// o centro de massa do avião montado, com e sem a carga
+/// o centro de massa do avião montado, sem e com o que vai a bordo
 pub const Balance = struct {
     empty_mass: f64,
-    empty_cg: [3]f64, // sem a carga (a massa seca do AeroDrive: base, itens, lastro e, se o arquivo pede, motores e estrutura)
+    empty_cg: [3]f64, // a massa seca do AeroDrive: base, itens, lastro e, se o arquivo pede, motores e estrutura
     mass: f64,
-    cg: [3]f64, // com a carga, quando o avião leva carga (sem ela, igual ao vazio)
+    cg: [3]f64, // com o líquido dos tanques e a carga (sem eles, igual ao vazio)
 };
 
-/// o CG pela soma das massas de `params.dryMass` (a mesma do AeroDrive e do núcleo), mais a carga como massa pontual
+/// o CG pela soma das massas de `params.dryMass` (a mesma do AeroDrive e do núcleo), mais o líquido de cada tanque
+/// (densidade × volume, parado no ponto do tanque, como o núcleo o põe em `mass.initTanks`) e a carga, como massas
+/// pontuais. É a "massa total" e o "CG" da Montagem em Python (`info_html`)
 pub fn balance(ac: *const model.Aircraft) Balance {
     const dry = aircraft_model.params.dryMass(ac);
     var result: Balance = .{ .empty_mass = dry.m, .empty_cg = dry.cg, .mass = dry.m, .cg = dry.cg };
+    var moment = [3]f64{ dry.m * dry.cg[0], dry.m * dry.cg[1], dry.m * dry.cg[2] };
+    for (ac.tanks) |tank| {
+        const liquid = tank.rho * tank.volume / 1000.0;
+        if (!(liquid > 0)) continue;
+        result.mass += liquid;
+        for (&moment, [3]f64{ tank.x, tank.y, tank.z }) |*sum, where| sum.* += liquid * where;
+    }
     const payload = ac.payload;
     if (payload.enabled and payload.mass > 0) {
-        result.mass = dry.m + payload.mass;
-        const where = [3]f64{ payload.x, payload.y, payload.z };
-        for (0..3) |i| result.cg[i] = (dry.m * dry.cg[i] + payload.mass * where[i]) / result.mass;
+        result.mass += payload.mass;
+        for (&moment, [3]f64{ payload.x, payload.y, payload.z }) |*sum, where| sum.* += payload.mass * where;
     }
+    for (&result.cg, moment) |*center, sum| center.* = sum / result.mass;
     return result;
 }
 
@@ -247,4 +256,17 @@ test "perfil .dat: Selig e Lednicer" {
     try std.testing.expectEqual(@as(f64, 1.0), lednicer[0][0]);
     try std.testing.expectEqual(@as(f64, 0.0), lednicer[2][0]);
     try std.testing.expectEqual(@as(f64, -0.05), lednicer[3][1]);
+}
+
+test "a massa e o CG da Montagem são os do Python: seca, líquido e carga" {
+    var diagnosis: Diagnosis = .{};
+    var loaded = try loadAircraft(std.testing.allocator, std.testing.io, "../data/aircraft/Convencional_original.json", &diagnosis);
+    defer loaded.deinit();
+    const weights = balance(&loaded.ac);
+    // a Montagem em Python: massa total 12,390 kg (8,390 seca, 2,000 de líquido, 2,000 de LAPES), CG (0,008; 0; 0,021) m
+    try std.testing.expectApproxEqAbs(@as(f64, 8.390), weights.empty_mass, 5e-4);
+    try std.testing.expectApproxEqAbs(@as(f64, 12.390), weights.mass, 5e-4);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.008), weights.cg[0], 5e-4);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.0), weights.cg[1], 5e-4);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.021), weights.cg[2], 5e-4);
 }
