@@ -234,11 +234,11 @@ pub const Screen = struct {
         for (items, 0..) |item, a| {
             const tabs = (item.object.get("tabs") orelse return error.BadReply).array.items;
             const area_title = stringField(item, "title");
-            // as análises em Zig desta área entram depois das do Python (`manager/native`)
-            var natives: usize = 0;
-            for (&manager.all) |*simulation| natives += @intFromBool(std.mem.eql(u8, simulation.area, area_title));
-            const tab_labels = try memory.alloc([:0]const u8, tabs.len + natives);
-            const pages = try memory.alloc(?*Page, tabs.len + natives);
+            // as análises em Zig desta área entram depois das do Python (`manager/manager.zig`)
+            var zig_analyses: usize = 0;
+            for (&manager.all) |*simulation| zig_analyses += @intFromBool(std.mem.eql(u8, simulation.area, area_title));
+            const tab_labels = try memory.alloc([:0]const u8, tabs.len + zig_analyses);
+            const pages = try memory.alloc(?*Page, tabs.len + zig_analyses);
             for (tabs, 0..) |tab, k| {
                 tab_labels[k] = try memory.dupeZ(u8, stringField(tab, "title"));
                 const kind_text = stringField(tab, "kind");
@@ -260,7 +260,7 @@ pub const Screen = struct {
             var slot = tabs.len;
             for (&manager.all) |*simulation| if (std.mem.eql(u8, simulation.area, area_title)) {
                 const page = try std.heap.page_allocator.create(Page);
-                page.* = .{ .kind = .simulation, .name = simulation.name, .title = simulation.title, .bridge = &screen.bridge, .native = simulation, .grids_beside = true };
+                page.* = .{ .kind = .simulation, .name = simulation.name, .title = simulation.title, .bridge = &screen.bridge, .analysis = simulation, .grids_beside = true };
                 page.setAircraftPath(path);
                 page.stale = false;
                 tab_labels[slot] = simulation.title;

@@ -207,17 +207,17 @@ const loads_view_height: f32 = 440;
 const Operation = enum { specs, run, stage };
 
 /// uma rodada de análise em Zig: o avião lido e a rodada do manager
-const NativeRun = struct {
+const AnalysisRun = struct {
     loaded: aircraft_model.aircraft.Loaded,
     run: manager.Run,
 
     /// o motivo da falha que a análise deixou (ou um texto geral)
-    fn failureText(job: *const NativeRun) []const u8 {
+    fn failureText(job: *const AnalysisRun) []const u8 {
         const said = std.mem.sliceTo(&job.run.failure, 0);
         return if (said.len > 0) said else "a análise em Zig parou com erro";
     }
 };
-const native_slice_ns: i96 = 6 * std.time.ns_per_ms; // de conta por quadro: a tela segue a 60 quadros por segundo
+const analysis_slice_ns: i96 = 6 * std.time.ns_per_ms; // de conta por quadro: a tela segue a 60 quadros por segundo
 
 /// a largura do formulário à esquerda, a mesma em todas as abas; arrastar a divisa muda
 var sidebar: widgets.Splitter = .{ .width = 390 };
@@ -230,9 +230,9 @@ pub const Page = struct {
     name: []const u8 = "", // a análise ou a etapa no Python
     title: [:0]const u8 = "",
     bridge: *python_bridge.Bridge = undefined,
-    native: ?*const manager.Simulation = null, // análise em Zig (`manager/native`): sem Python no caminho
-    native_run: ?*NativeRun = null, // a rodada em Zig que anda em fatias, um pouco a cada quadro
-    native_specs: ?[]u8 = null, // o pedido de campos em Zig, feito no começo do quadro seguinte (a memória do formulário de agora ainda está na tela)
+    analysis: ?*const manager.Simulation = null, // análise em Zig (`manager/manager.zig`): sem Python no caminho
+    analysis_run: ?*AnalysisRun = null, // a rodada em Zig que anda em fatias, um pouco a cada quadro
+    analysis_specs: ?[]u8 = null, // o pedido de campos em Zig, feito no começo do quadro seguinte (a memória do formulário de agora ainda está na tela)
     process_io: ?std.Io = null, // a `Io` do processo (abre o Python); no navegador não há, e o Python é o da página
     job: jobs.Job = .{},
     waiter: python_bridge.Waiter = .{},
@@ -311,7 +311,7 @@ pub const Page = struct {
 
     /// uma conta está andando (na thread do Python ou em fatias, em Zig)
     fn working(page: *const Page) bool {
-        return page.job.running() or page.native_run != null;
+        return page.job.running() or page.analysis_run != null;
     }
 
     /// a página ainda vai mudar sozinha: uma conta andando ou um "rodar" esperando os campos (os prints esperam)
@@ -460,7 +460,7 @@ pub const Page = struct {
         var text: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
         defer text.deinit();
         page.writeRequest(&text.writer, "specs") catch return;
-        if (page.native != null) return page.queueNativeSpecs(text.written());
+        if (page.analysis != null) return page.queueAnalysisSpecs(text.written());
         page.begin(.specs, text.written());
     }
 
@@ -470,7 +470,7 @@ pub const Page = struct {
         defer text.deinit();
         page.writeRequest(&text.writer, "run") catch return;
         setText(&page.message, "rodando...", .{});
-        if (page.native != null) return page.nativeStart(text.written());
+        if (page.analysis != null) return page.analysisStart(text.written());
         page.begin(.run, text.written());
     }
 
@@ -478,22 +478,22 @@ pub const Page = struct {
 
     /// guarda o pedido de campos em Zig para o começo do próximo quadro: responder agora soltaria a memória do
     /// formulário que a tela ainda desenha neste quadro (a dica de um botão, por exemplo)
-    fn queueNativeSpecs(page: *Page, request: []const u8) void {
+    fn queueAnalysisSpecs(page: *Page, request: []const u8) void {
         const copy = std.heap.page_allocator.dupe(u8, request) catch return;
-        if (page.native_specs) |old| std.heap.page_allocator.free(old);
-        page.native_specs = copy;
+        if (page.analysis_specs) |old| std.heap.page_allocator.free(old);
+        page.analysis_specs = copy;
     }
 
     fn answerNativeSpecs(page: *Page) void {
-        const request = page.native_specs orelse return;
-        page.native_specs = null;
+        const request = page.analysis_specs orelse return;
+        page.analysis_specs = null;
         defer std.heap.page_allocator.free(request);
-        page.nativeSpecs(request);
+        page.analysisSpecs(request);
     }
 
     /// os campos de uma análise em Zig, na hora (só lê o avião, sem conta)
-    fn nativeSpecs(page: *Page, request: []const u8) void {
-        const simulation = page.native.?;
+    fn analysisSpecs(page: *Page, request: []const u8) void {
+        const simulation = page.analysis.?;
         const arena = newArena() orelse return;
         const memory = arena.allocator();
         var loaded = page.loadNativeAircraft();
@@ -526,34 +526,34 @@ pub const Page = struct {
     }
 
     /// começa a rodada em Zig; ela anda em fatias a cada quadro (`stepNative`), sem thread, também no navegador
-    fn nativeStart(page: *Page, request: []const u8) void {
+    fn analysisStart(page: *Page, request: []const u8) void {
         if (page.working()) return;
-        const simulation = page.native.?;
+        const simulation = page.analysis.?;
         const loaded = page.loadNativeAircraft() orelse {
             if (page.aircraft_len == 0) setText(&page.message, "abra um avião (Montagem) para rodar", .{});
             return;
         };
-        const job = std.heap.page_allocator.create(NativeRun) catch return;
+        const job = std.heap.page_allocator.create(AnalysisRun) catch return;
         job.* = .{ .loaded = loaded, .run = undefined };
         job.run = .{ .arena = .init(std.heap.page_allocator), .aircraft = &job.loaded.ac };
-        page.native_run = job;
+        page.analysis_run = job;
         page.operation = .run;
         page.started_at = std.Io.Clock.awake.now(clockIo()).nanoseconds;
         page.waiter.progress.store(0, .release);
         page.waiter.progress_text[0] = 0;
         const values = manager.Values.fromRequest(job.run.memory(), request);
-        simulation.start(&job.run, values) catch return page.stopNative(job.failureText());
+        simulation.start(&job.run, values) catch return page.stopAnalysis(job.failureText());
     }
 
     /// uma fatia da rodada em Zig: avança até uns milissegundos de conta e devolve a tela; no fim, mostra o resultado
     fn stepNative(page: *Page) void {
-        const job = page.native_run orelse return;
-        const simulation = page.native.?;
+        const job = page.analysis_run orelse return;
+        const simulation = page.analysis.?;
         const clock_start = std.Io.Clock.awake.now(clockIo()).nanoseconds;
         var finished = false;
         while (!finished) {
-            finished = simulation.advance(&job.run) catch return page.stopNative(job.failureText());
-            if (std.Io.Clock.awake.now(clockIo()).nanoseconds - clock_start > native_slice_ns) break;
+            finished = simulation.advance(&job.run) catch return page.stopAnalysis(job.failureText());
+            if (std.Io.Clock.awake.now(clockIo()).nanoseconds - clock_start > analysis_slice_ns) break;
         }
         page.waiter.progress.store(@intFromFloat(@round(@min(job.run.progress, 1.0) * 1000)), .release);
         const said = std.mem.sliceTo(&job.run.message, 0);
@@ -561,16 +561,16 @@ pub const Page = struct {
         @memcpy(page.waiter.progress_text[0..length], said[0..length]);
         page.waiter.progress_text[length] = 0;
         if (!finished) return;
-        const arena = newArena() orelse return page.stopNative("sem memória");
+        const arena = newArena() orelse return page.stopAnalysis("sem memória");
         var owned: ?*Arena = arena;
         var text: std.Io.Writer.Allocating = .init(arena.allocator());
         simulation.result(&job.run, &text.writer) catch {
             dropArena(&owned);
-            return page.stopNative("o resultado da análise em Zig não saiu");
+            return page.stopAnalysis("o resultado da análise em Zig não saiu");
         };
         const reply = std.json.parseFromSliceLeaky(Json, arena.allocator(), text.written(), .{}) catch {
             dropArena(&owned);
-            return page.stopNative("resultado da análise em Zig fora do esperado");
+            return page.stopAnalysis("resultado da análise em Zig fora do esperado");
         };
         const elapsed = std.Io.Clock.awake.now(clockIo()).nanoseconds - page.started_at;
         page.seconds = @as(f64, @floatFromInt(elapsed)) / 1e9;
@@ -582,17 +582,17 @@ pub const Page = struct {
     }
 
     /// para a rodada em Zig com o motivo
-    fn stopNative(page: *Page, why: []const u8) void {
+    fn stopAnalysis(page: *Page, why: []const u8) void {
         setText(&page.message, "{s}", .{why});
         page.dropNative();
     }
 
     fn dropNative(page: *Page) void {
-        const job = page.native_run orelse return;
+        const job = page.analysis_run orelse return;
         job.run.arena.deinit();
         job.loaded.deinit();
         std.heap.page_allocator.destroy(job);
-        page.native_run = null;
+        page.analysis_run = null;
     }
 
     /// um pedido da etapa: "show", "set" (com os valores), "keep", "load" e "delete" (com `extra`: "\"index\": n")
@@ -1001,7 +1001,7 @@ pub const Page = struct {
             const running = busy and page.operation == .run;
             if (running) {
                 if (widgets.primaryButton(ui, button, "Parar", true)) {
-                    if (page.native_run != null) page.stopNative("parado") else page.bridge.cancel(&page.waiter);
+                    if (page.analysis_run != null) page.stopAnalysis("parado") else page.bridge.cancel(&page.waiter);
                 }
             } else if (widgets.primaryButton(ui, button, "Rodar", page.fields.len > 0 and !busy)) page.run();
             widgets.progressBar(.{ .x = footer.x + 12, .y = footer.y + 56, .width = footer.width - 24, .height = 6 }, if (running) page.waiter.fraction() else 0);
@@ -1110,7 +1110,7 @@ pub const Page = struct {
         const writer = &text.writer;
         page.writeRequest(writer, "table") catch return;
         writer.print(", {s}", .{extra}) catch return;
-        if (page.native != null) return page.queueNativeSpecs(text.written()); // a análise em Zig guarda as linhas ela mesma
+        if (page.analysis != null) return page.queueAnalysisSpecs(text.written()); // a análise em Zig guarda as linhas ela mesma
         page.begin(.specs, text.written());
     }
 
@@ -1165,7 +1165,7 @@ pub const Page = struct {
         }
         const beside = page.grids_beside and page.grids.len > 0;
         if (!beside and page.charts.len == 0 and page.summary.len == 0 and page.tables.len == 0 and page.checks.len == 0 and page.scene == null and page.loads.len == 0 and page.tracks.len == 0) {
-            const note: []const u8 = if (page.working()) (if (page.native != null) "calculando..." else "pedindo ao Python...") else if (page.kind == .simulation) "o resultado aparece aqui depois de Rodar" else std.mem.sliceTo(&page.message, 0);
+            const note: []const u8 = if (page.working()) (if (page.analysis != null) "calculando..." else "pedindo ao Python...") else if (page.kind == .simulation) "o resultado aparece aqui depois de Rodar" else std.mem.sliceTo(&page.message, 0);
             _ = widgets.paragraph(ui.fonts.regular, note, rect.x + gap + 4, y + 10, width, 16, theme.colors.muted);
             page.page.end(ui, rect, y + 40);
             return;

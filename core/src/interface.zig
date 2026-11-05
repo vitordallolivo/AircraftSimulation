@@ -4,7 +4,7 @@
 //! com as mesmas assinaturas. Quem consome percorre a lista com `inline for` e nunca pergunta "de que tipo é este?".
 //! Faltar uma declaração ou errar uma assinatura é erro de compilação, com o nome do tipo e do que falta, em vez de
 //! um erro na hora de rodar. Usam este molde os tipos de aeronave do dimensionamento (`sizing/kinds.zig`) e as
-//! análises das telas (`aerosim/manager/native`).
+//! análises das telas (`aerosim/interfaces/simulation.zig`).
 const std = @import("std");
 
 /// uma declaração que o tipo tem de ter: o nome e o tipo exato (ou `null`, qualquer tipo)

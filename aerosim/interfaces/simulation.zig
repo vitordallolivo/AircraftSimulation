@@ -1,10 +1,10 @@
-//! O framework das análises em Zig, sem Python no caminho: a página da tela (`aerosim/gui/page.zig`) pede os campos e
-//! roda pelo mesmo contrato da ponte com o Python (`aerosim/bridge.py`), só que aqui mesmo, também no navegador.
+//! O contrato das análises em Zig (o par de `simulation.py`): a página da tela (`aerosim/gui/page.zig`) pede os
+//! campos e roda pelo mesmo JSON da ponte com o Python (`aerosim/bridge.py`), só que sem Python, também no navegador.
 //!
 //! Uma análise é um tipo com declarações conhecidas (o molde de `core.interface`, o mesmo dos tipos de aeronave do
 //! dimensionamento): o nome, o título, a aba, a descrição, o estado da rodada (`State`) e as funções `specs`, `start`,
-//! `advance`, `result` e, se a aba tem tabelas, `edit`. Ela entra em `analyses` e `register` monta a tabela que a tela
-//! usa; falta ou assinatura errada é erro de compilação. O estado da rodada é tipado: o framework cria o `State` na
+//! `advance`, `result` e, se a aba tem tabelas, `edit`. O manager (`aerosim/manager/manager.zig`) lista as análises
+//! e `register` monta a tabela que a tela usa; falta ou assinatura errada é erro de compilação. O estado da rodada é tipado: o framework cria o `State` na
 //! memória da rodada e cada função recebe `*State`, sem conversão de ponteiro na análise.
 //!
 //! Os métodos de cálculo (modelo do voo, linha sustentadora, refino; `core.methods`) são campos prontos
@@ -18,7 +18,6 @@
 const std = @import("std");
 const aircraft_model = @import("aircraft_model");
 const core = @import("aerosim");
-const gust_liquid = @import("gust_liquid.zig");
 
 pub const Aircraft = aircraft_model.aircraft.Aircraft;
 pub const Methods = core.methods.Methods;
@@ -45,16 +44,6 @@ pub const Simulation = struct {
     advance: *const fn (run: *Run) Error!bool,
     /// escreve o resultado da rodada que acabou
     result: *const fn (run: *Run, out: *Writer) Error!void,
-};
-
-/// as análises em Zig, na ordem das subabas: um tipo por análise, com a interface de `check`
-pub const analyses = .{gust_liquid.Analysis};
-
-/// a tabela que a tela usa, montada das `analyses`
-pub const all = blk: {
-    var table: [analyses.len]Simulation = undefined;
-    for (analyses, 0..) |Analysis, i| table[i] = register(Analysis);
-    break :blk table;
 };
 
 /// confere em comptime que `Analysis` tem a interface de uma análise
@@ -117,12 +106,6 @@ pub const method_params = [_]Param{
     .{ .key = "slipstream_chord_samples", .label = "esteira: amostras na corda", .kind = .int, .default = .{ .number = 3 }, .minimum = 1, .maximum = 64, .group = "Métodos", .help = "refino da esteira da hélice (só com a esteira ligada)" },
     .{ .key = "slipstream_span_samples", .label = "esteira: amostras na envergadura", .kind = .int, .default = .{ .number = 16 }, .minimum = 1, .maximum = 64, .group = "Métodos", .help = "refino da esteira da hélice (só com a esteira ligada)" },
 };
-
-/// a análise em Zig com este nome
-pub fn find(name: []const u8) ?*const Simulation {
-    for (&all) |*simulation| if (std.mem.eql(u8, simulation.name, name)) return simulation;
-    return null;
-}
 
 /// os valores do formulário, como a tela manda (`{"chave": valor}`)
 pub const Values = struct {
@@ -504,13 +487,8 @@ fn str(text: []const u8) std.json.Formatter([]const u8) {
     return std.json.fmt(text, .{});
 }
 
-test {
-    _ = gust_liquid;
-}
 
-test "a tabela vem das análises, e os métodos saem dos campos pelo nome" {
-    try std.testing.expectEqual(analyses.len, all.len);
-    try std.testing.expect(find("estabilidade_dinamica") != null);
+test "os métodos saem dos campos pelo nome" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const values = Values.fromRequest(arena.allocator(), "\"values\": {\"aero_model\": \"lifting_line\", \"slipstream_span_samples\": 99}");

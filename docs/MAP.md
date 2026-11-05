@@ -857,7 +857,6 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/README.md`
 - `aerosim/interfaces/README.md`
 - `aerosim/manager/README.md`
-- `aerosim/manager/native/README.md`
 - `aerosim/model/README.md`
 - `aerosim/parallel/README.md`
 - `aerosim/sizing/README.md`

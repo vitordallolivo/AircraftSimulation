@@ -30,14 +30,24 @@ pub fn build(b: *std.Build) void {
     aircraft_model.addOptions("build_options", fuzz_options);
     aircraft_model.addImport("aerosim", core);
 
-    // ---- os managers em Zig (manager/native): as análises que rodam sem Python
-    const manager = b.createModule(.{
-        .root_source_file = b.path("manager/native/native.zig"),
+    // ---- o contrato das análises em Zig (interfaces/simulation.zig) e o manager com as análises (manager/manager.zig)
+    const simulation = b.createModule(.{
+        .root_source_file = b.path("interfaces/simulation.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
             .{ .name = "aerosim", .module = core },
             .{ .name = "aircraft_model", .module = aircraft_model },
+        },
+    });
+    const manager = b.createModule(.{
+        .root_source_file = b.path("manager/manager.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "aerosim", .module = core },
+            .{ .name = "aircraft_model", .module = aircraft_model },
+            .{ .name = "simulation", .module = simulation },
         },
     });
 
@@ -58,6 +68,8 @@ pub fn build(b: *std.Build) void {
     const manager_tests = b.addRunArtifact(b.addTest(.{ .root_module = manager }));
     manager_tests.setCwd(b.path("."));
     test_step.dependOn(&manager_tests.step);
+    const simulation_tests = b.addRunArtifact(b.addTest(.{ .root_module = simulation }));
+    test_step.dependOn(&simulation_tests.step);
 
     // ---- o programa (gui/main.zig)
     const display = b.option(enum { X11, Wayland, Both }, "display", "Linux: X11 (padrão), Wayland ou Both") orelse .X11;

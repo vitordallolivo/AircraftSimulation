@@ -60,6 +60,44 @@ detalhado). É só para o código (filtros, otimização, testes) — a GUI não
 `SimSpec` é um dicionário aninhado em SI/radianos com os nomes dos campos do núcleo; quem o monta é
 `aerosim/backend/zig/translator.py` (o tradutor do núcleo Zig, a partir do modelo universal).
 
+## O contrato em Zig (`simulation.zig`)
+
+Aqui se registra uma análise nova. Ela é um tipo com declarações de nome conhecido: `name`, `title`, `area` e
+`description` (os textos), `State` (o que a rodada guarda entre uma fatia e outra) e as funções `specs`, `start`,
+`advance` e `result`, mais `edit` se a aba tem tabelas. O tipo entra na lista `analyses` (em `aerosim/manager/manager.zig`), e `register` monta a tabela
+que a tela usa. Antes, cada análise guardava o próprio estado num ponteiro sem tipo e o convertia em cada função, e
+um erro de assinatura só aparecia rodando; agora o framework cria o `State` na memória da rodada e passa `*State` já
+com o tipo, e uma declaração que falta ou uma assinatura errada não compila, com o nome da análise na mensagem. O
+molde é o mesmo dos tipos de aeronave do dimensionamento (`core.interface`). Os erros também têm nome:
+`simulation.Error` junta os da memória, da escrita, da montagem do avião e do voo do núcleo, e a mensagem para a tela vai
+em `Run.fail`.
+
+Os métodos de cálculo do voo (o modelo aerodinâmico, a variante da linha sustentadora e o refino da esteira) vêm
+prontos em `method_params`, no grupo "Métodos" do formulário, e `Values.methods` lê o que o usuário escolheu como um
+`core.methods.Methods`. As opções saem dos próprios `enum` do núcleo, com o nome em português, então um método novo
+no núcleo aparece na tela sem mexer aqui. O AeroDrive usa os mesmos `Methods`, só que fixos
+(`aerodrive/src/sim/methods.zig`), e o tradutor do avião é o mesmo para os dois (`params.setupWith`).
+
+### O JSON da tela
+
+Aqui se define o que uma análise em Zig precisa ter para virar uma subaba. São quatro coisas: os campos e os
+gráficos, o começo de uma rodada, um passo da rodada e o resultado. O formato é o mesmo JSON da ponte com o Python
+(`aerosim/bridge.py`). Os campos saem como `{"params": [...], "plots": [...], "description": ...}` e o resultado
+como `{"summary": {...}, "checks": [...], "plots": [...]}`, com os nomes da `ISimulation`
+(`aerosim/interfaces/simulation.py`). Por isso a tela desenha uma aba daqui sem saber de onde ela veio.
+
+Além do formulário, os campos podem trazer tabelas editáveis (`grids`, `simulation.Grid`) e o avião em 3D (`view`,
+`simulation.View`, as peças do `skeleton` com o CG). Uma edição numa tabela chega em `edit` (`simulation.GridEdit`: a célula
+mudada ou o botão apertado), e a própria análise guarda as linhas até a rodada, sem a ponte. A tela responde a essa
+edição no começo do quadro seguinte, porque responder no meio do desenho soltaria a memória do formulário que ainda
+está na tela.
+
+A rodada anda em fatias. A tela chama `advance` uma vez por quadro e para depois de uns poucos milissegundos de
+conta, então ela continua desenhando e respondendo enquanto a análise roda. No navegador não há thread: sem as
+fatias, uma conta longa travaria a página. O botão "Parar" simplesmente joga fora a rodada.
+
+A tela põe cada análise na aba de cima que ela pede (`area`), depois das subabas que vêm do Python.
+
 ## Convenções que todas as camadas seguem
 
 Todo tradutor devolve os coeficientes no formato universal: eixos do corpo (x à frente, z para baixo), forças por
