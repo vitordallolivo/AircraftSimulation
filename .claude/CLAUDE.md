@@ -72,23 +72,15 @@ as configurações.
    - Quando faz sentido, uma ferramenta de linha de comando em `tools/` que imprime e plota.
    - Sempre que possível, validar contra a literatura, com o número esperado escrito no teste.
 9. **Textos em português**: mensagens, gráficos, documentação, commits. Os comentários seguem o estilo do arquivo.
-10. **Como escrever um README.** Escreva como uma pessoa explica para outra, em três tempos:
-    - **Começa simples.** O primeiro parágrafo diz o que é a pasta e para que serve no projeto, sem supor que o leitor
-      já sabe do que se trata. Por exemplo: "este é o núcleo de simulação e controle da aeronave". Diga o que se
-      define ali e o que se tira disso: "aqui se define a geometria da asa, e com isso saem a polar, as derivadas e
-      onde o estol começa".
-    - **Depois apresenta as partes.** Um parágrafo em texto corrido conta como a pasta se divide, na ordem em que as
-      partes aparecem. Em seguida vem uma seção para cada parte.
-    - **Fica específico no meio.** As equações (cada uma num parágrafo dela, em LaTeX, com a fonte), os limites e os
-      detalhes de implementação vêm aqui. Cada seção começa dizendo o que dá para fazer, por exemplo "aqui se define
-      a quantidade de partições, até N". Depois vêm os parâmetros básicos e, por último, as imagens.
-    - **Termina simples.** Como chamar, um exemplo que roda e como acrescentar algo.
-    - **Prefira texto corrido a tópicos.** Use lista só quando os itens são de fato uma lista (comandos, arquivos,
-      passos).
-    - **Explique cada termo uma vez,** na primeira vez que ele aparece. Depois, use sem explicar de novo, porque a essa
-      altura o leitor já sabe o que é (derrapagem, CMA, washout...).
-    - **Justifique um método pelo problema que ele resolve,** em palavras do usuário. Diga o que dava errado sem ele e
-      em que situação. Uma citação solta de artigo, sem esse contexto, não explica nada.
+10. **Como escrever um README: curto, no jeito do AeroSandbox.** O git não é lugar para aprender a teoria; o README
+    mostra o que a pasta faz e como usar. Cinco partes, nesta ordem:
+    - **O que é** (um parágrafo): o que se define ali e o que sai disso.
+    - **Para que serve**: as aplicações, em poucas linhas (aqui uma lista curta vale).
+    - **Como funciona**: um fluxograma (mermaid) com estruturas e métodos, não arquivos, e no máximo uma tabela.
+    - **Exemplo**: código que roda, curto.
+    - **O que isso influencia**: um gráfico ou imagem do resultado e onde ele é usado no resto do projeto.
+    - Equações e detalhes de implementação só quando são o essencial do módulo; o resto fica no código (com a fonte,
+      regra 4) ou num link para o README do núcleo que tem a conta.
     - **Números específicos** (tempos de máquina, resultados de um caso só) não vão no README. Eles ficam em
       `core/OTIMIZACOES.md` ou no teste.
 
