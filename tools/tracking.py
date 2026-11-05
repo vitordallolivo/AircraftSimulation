@@ -2,20 +2,20 @@
 
     python tools/tracking.py                   # grava a página em zig-out/site/tracking.html
     python tools/tracking.py --html x.html     # em outro lugar
-    python tools/tracking.py --check           # só confere se toda linha das tabelas tem as 7 colunas
+    python tools/tracking.py --check           # só confere se toda linha das tabelas tem as 6 colunas
     python tools/tracking.py --feito G26 dc19cf2   # marca a tarefa como Terminado, com o commit (sem ele, o HEAD)
     python tools/tracking.py --estado G27 "Em andamento"
     python tools/tracking.py --issue corpo.txt     # aplica uma issue "[tracking] ..." (o que a Action faz)
 
 O TRACKING.md continua sendo a fonte: cada "### segmento" do Quadro, com o parágrafo que o descreve e a tabela
-(ID, Tarefa, Tipo, Depende de, Bloco, Prioridade, Estado). Uma tarefa nova é uma linha nova na tabela. Uma tarefa resolvida
+(ID, Tarefa, Nível, Depende de, Prioridade, Estado). Uma tarefa nova é uma linha nova na tabela. Uma tarefa resolvida
 fica "Terminado (commit abc1234)": a página risca o título, põe o link do commit e tira a tarefa da sequência dos
 próximos (dá para escrever à mão ou com `--feito`).
 
 A página também muda o .md sem colar nada: "Confirmar terminado" e "+ Nova tarefa" abrem uma issue "[tracking] ..." já
 preenchida, e a Action .github/workflows/tracking.yml (só para issues do dono do repositório) roda `--issue` com o
 corpo dela, faz o commit na 0.2_dev e fecha a issue. O corpo é "chave: valor" por linha (acao feito|nova, id, commit,
-segmento, tipo, depende, bloco, prioridade, estado), depois "---" e o texto livre. A página mostra também a
+segmento, nivel, depende, prioridade, estado), depois "---" e o texto livre. A página mostra também a
 "Ordem de prioridade" e o "Progresso" do TRACKING.md e as tabelas do docs/AREAS.md (o que cada aba faz e o que já está
 em Zig). O tools/web_build.py chama este script, então o site publicado sai sempre do .md da `main`.
 """
@@ -63,13 +63,13 @@ def board(text: str) -> tuple[dict, list[str]]:
             continue
         if ROW.match(line):
             parts = cells(line)
-            if len(parts) != 7:
-                problems.append(f"{parts[0]}: {len(parts)} colunas em vez de 7")
+            if len(parts) != 6:
+                problems.append(f"{parts[0]}: {len(parts)} colunas em vez de 6")
                 continue
-            ident, task, kind, depends, block, priority, state = parts
+            ident, task, level, depends, priority, state = parts
             if state.split(" (")[0] not in STATES:
                 problems.append(f"{ident}: estado '{state}' (use {', '.join(STATES)})")
-            item = {"id": ident, "tarefa": task, "tipo": kind, "bloco": block, "prioridade": priority,
+            item = {"id": ident, "tarefa": task, "nivel": level, "prioridade": priority,
                     "depende": [d.strip() for d in re.split(r"[,;]", depends) if re.match(r"^[A-Z]+[0-9]+$", d.strip())]}
             match = re.match(r"^(.*?) \((.*)\)$", state)
             item["estado"], item["obs"] = (match.group(1), match.group(2)) if match else (state, "")
@@ -90,9 +90,9 @@ def set_state(text: str, ident: str, state: str) -> str:
     for i, line in enumerate(lines):
         if line.startswith(f"| {ident} |"):
             parts = cells(line)
-            if len(parts) != 7:
-                sys.exit(f"{ident}: a linha não tem as 7 colunas")
-            parts[6] = state
+            if len(parts) != 6:
+                sys.exit(f"{ident}: a linha não tem as 6 colunas")
+            parts[5] = state
             lines[i] = "| " + " | ".join(parts) + " |"
             return "\n".join(lines)
     sys.exit(f"{ident}: não está no Quadro")
@@ -128,7 +128,7 @@ def apply_issue(text: str, fields: dict) -> tuple[str, str]:
                 parts = cells(line)
                 if fields["texto"]:
                     parts[1] += f" Feito: {fields['texto']}"
-                parts[6] = f"Terminado (commit {fields['commit']})" if fields.get("commit") else "Terminado"
+                parts[5] = f"Terminado (commit {fields['commit']})" if fields.get("commit") else "Terminado"
                 lines[i] = "| " + " | ".join(parts) + " |"
                 return "\n".join(lines), f"{ident} terminado"
         sys.exit(f"{ident}: não está no Quadro")
@@ -142,8 +142,8 @@ def apply_issue(text: str, fields: dict) -> tuple[str, str]:
                    if ROW.match(line))
         ident = next_id(text, segment)
         depends = ", ".join(d for d in re.split(r"[,;\s]+", fields.get("depende", "").upper()) if re.match(r"^[A-Z]+[0-9]+$", d)) or "—"
-        row = (f"| {ident} | {fields['texto'] or '(sem texto)'} | {fields.get('tipo') or '[ext]'} | {depends} | "
-               f"{fields.get('bloco') or '—'} | {fields.get('prioridade') or '—'} | {fields.get('estado') or 'Não iniciado'} |")
+        row = (f"| {ident} | {fields['texto'] or '(sem texto)'} | {fields.get('nivel') or 'Análise'} | {depends} | "
+               f"{fields.get('prioridade') or '—'} | {fields.get('estado') or 'Não iniciado'} |")
         lines.insert(last + 1, row)
         return text[:heading + 1] + "\n".join(lines), f"{ident} nova em {segment}"
     sys.exit(f"ação desconhecida: {action!r} (feito ou nova)")
@@ -155,13 +155,13 @@ def head_commit() -> str:
                           check=True).stdout.strip()
 
 
-def blocks(text: str) -> dict:
-    """a tabela "Blocos de trabalho": bloco → o que junta e as tarefas típicas (para o (?) da página)"""
+def levels(text: str) -> dict:
+    """a tabela "Níveis": nível → o que ele é (para o (?) da página)"""
     result = {}
-    for line in section(text, "Blocos de trabalho").split("\n"):
-        match = re.match(r"^\| \*\*(B[0-9+]+)\*\* \| (.*?) \| (.*?) \|$", line)
+    for line in section(text, "Níveis").split("\n"):
+        match = re.match(r"^\| \*\*(.+?)\*\* \| (.*?) \|$", line)
         if match:
-            result[match.group(1)] = {"nome": match.group(2), "tarefas": match.group(3)}
+            result[match.group(1)] = match.group(2)
     return result
 
 
@@ -181,7 +181,7 @@ def page(tracking: str, data: dict) -> str:
         "prioridade": section(tracking, "Ordem de prioridade"),
         "progresso": section(tracking, "Progresso da lista"),
         "areas": areas.split("\n", 1)[1].strip(),       # sem o título "# Áreas e submódulos"
-        "blocos": blocks(tracking),
+        "niveis": levels(tracking),
         "gerado": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     with open(os.path.join(os.path.dirname(__file__), "tracking_page.html"), encoding="utf-8") as f:
