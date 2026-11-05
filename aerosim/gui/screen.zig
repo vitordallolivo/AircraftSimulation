@@ -618,7 +618,8 @@ pub const Screen = struct {
         if (screen.assembly) |*opened| {
             const plane = &opened.mesh;
             title = widgets.format(&title_buffer, "Montagem: {s}", .{opened.name});
-            const size = plane.size();
+            // na lateral (cortada no plano de simetria), o zoom é no comprimento e na altura, sem a envergadura
+            const size = if (screen.assembly_angle == .side) @max(plane.high[0] - plane.low[0], plane.high[2] - plane.low[2]) else plane.size();
             const middle = plane.center();
             // a vista mais estreita (com o resumo ao lado) afasta a câmera para caberem o avião e os eixos
             const narrow: f64 = if (screen.assembly_angle != .free) 1.0 else @max(1.0, 1.6 * area.height / @max(area.width, 1));
@@ -626,7 +627,8 @@ pub const Screen = struct {
                 defer screen.assembly_view.end();
                 // o chão um pouco abaixo da peça mais baixa (z para baixo), quadriculado de 25 cm
                 view3d.floor(.{ middle[0], middle[1], 0 }, plane.high[2] + 0.02, 1.6 * size, 0.25);
-                plane.draw();
+                // a lateral é um corte: só a metade do lado de lá do plano de simetria (y ≥ 0), vista de dentro
+                if (screen.assembly_angle == .side) plane.drawCut(1, 0) else plane.draw();
                 const weights = assembly_mod.balance(&opened.loaded.ac);
                 // o CG e as cotas por cima das peças (sem o teste de profundidade), para se verem atrás da asa
                 rl.gl.rlDrawRenderBatchActive();
@@ -646,8 +648,8 @@ pub const Screen = struct {
             if (screen.assembly_view.project(weights.cg, area)) |at| {
                 ui.pushClip(area);
                 defer ui.popClip();
-                drawCgSymbol(at, 13);
-                theme.text(ui.fonts.bold, "CG", at.x + 19, at.y - 9, 16, theme.hex(0xd62728));
+                drawCgSymbol(at, 7);
+                theme.text(ui.fonts.bold, "CG", at.x + 12, at.y - 8, 14, theme.hex(0xd62728));
             }
             // numa vista em escala, as coordenadas do CG que ela mostra, a partir da referência (0, 0, 0)
             const axes: ?[2]usize = switch (screen.assembly_angle) {
@@ -977,7 +979,7 @@ const ViewAngle = enum {
 
 /// o símbolo do centro de gravidade: um círculo em quatro quartos, pretos e brancos alternados, com a borda vermelha
 fn drawCgSymbol(center: rl.Vector2, radius: f32) void {
-    rl.drawCircleV(center, radius + 4, theme.hex(0xd62728));
+    rl.drawCircleV(center, radius + 2, theme.hex(0xd62728));
     for (0..4) |quarter| {
         const start: f32 = 90 * @as(f32, @floatFromInt(quarter));
         rl.drawCircleSector(center, radius, start, start + 90, 16, if (quarter % 2 == 0) rl.Color.black else rl.Color.white);

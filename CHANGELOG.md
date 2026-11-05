@@ -47,7 +47,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   mostra as pernas, a massa mostra as massas pontuais e o percurso mostra os eventos, todos com "+" e "−". Uma
   edição que deixa o avião inválido é desfeita, com o motivo embaixo do 3D.
 - A Montagem em Zig ganha as vistas lateral, superior e frontal, em escala e sem perspectiva, além do 3D livre. Cada
-  uma mostra as duas coordenadas do CG que se veem nela, a partir da referência (0, 0, 0).
+  uma mostra as duas coordenadas do CG que se veem nela, a partir da referência (0, 0, 0). A lateral é um corte no
+  plano de simetria: a metade da frente sai, o que está dentro da fuselagem aparece, e o zoom vai no comprimento e na
+  altura. O CG aparece por cima de tudo, com o símbolo de centro de gravidade.
 - Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
   referência e a trajetória 3D do voo.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).

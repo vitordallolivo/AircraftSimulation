@@ -49,7 +49,39 @@ pub const Mesh = struct {
         for (mesh.solid) |t| view3d.triangle(t.a, t.b, t.c, t.color);
         for (mesh.translucent) |t| view3d.triangle(t.a, t.b, t.c, t.color);
     }
+
+    /// desenha só o que fica do lado `point[axis] >= at` do plano (o corte: a vista lateral cortada no plano de
+    /// simetria, sem a metade da frente). O triângulo que o plano atravessa é recortado nele
+    pub fn drawCut(mesh: *const Mesh, axis: usize, at: f64) void {
+        for (mesh.solid) |t| cutTriangle(t, axis, at);
+        for (mesh.translucent) |t| cutTriangle(t, axis, at);
+    }
 };
+
+/// o pedaço do triângulo do lado de cá do plano (Sutherland–Hodgman com um plano só): sobra nada, um triângulo ou
+/// um quadrilátero (dois triângulos)
+fn cutTriangle(t: Triangle, axis: usize, at: f64) void {
+    const corners = [3]view3d.Body{ t.a, t.b, t.c };
+    var kept: [4]view3d.Body = undefined;
+    var count: usize = 0;
+    for (0..3) |i| {
+        const here = corners[i];
+        const next = corners[(i + 1) % 3];
+        const here_in = here[axis] >= at;
+        const next_in = next[axis] >= at;
+        if (here_in) {
+            kept[count] = here;
+            count += 1;
+        }
+        if (here_in != next_in) {
+            const fraction = (at - here[axis]) / (next[axis] - here[axis]);
+            kept[count] = .{ here[0] + fraction * (next[0] - here[0]), here[1] + fraction * (next[1] - here[1]), here[2] + fraction * (next[2] - here[2]) };
+            count += 1;
+        }
+    }
+    if (count >= 3) view3d.triangle(kept[0], kept[1], kept[2], t.color);
+    if (count == 4) view3d.triangle(kept[0], kept[2], kept[3], t.color);
+}
 
 /// as peças do avião `ac` pelo esqueleto do AeroDrive
 pub fn buildMesh(gpa: std.mem.Allocator, ac: *const model.Aircraft, diagnosis: *Diagnosis) !Mesh {
