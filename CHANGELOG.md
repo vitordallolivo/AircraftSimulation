@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- O quadro de tarefas ficou difícil de ler como tabelas longas em Markdown. Agora as tarefas moram num arquivo de
+  dados, de onde sai tanto o quadro do `TRACKING.md` quanto uma página no site: as tarefas em colunas por estado, com
+  busca e filtro por segmento, as suspeitas de erro à parte, o grafo das dependências, a ordem de prioridade e o que
+  cada área já tem. A página aparece também como artefato de cada PR, para ver antes do merge.
 - Antes, a escolha do método de cálculo e os efeitos extras se misturavam, e um número mágico decidia que linha
   sustentadora usar. Agora o método se escolhe pelo nome (faixas, Phillips e Snyder, Goates e Hunsaker ou a não
   linear), e os efeitos (efeito solo, esteira da hélice, interferência entre asas, momento do comando) ligam e

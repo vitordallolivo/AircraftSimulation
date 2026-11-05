@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0000aa">
+<title>Tracking do projeto</title>
+<!--
+  Modelo da página do tracking. O tools/tracking.py troca o marcador DADOS pelo docs/tracking.json (mais a ordem de
+  prioridade do TRACKING.md e o AREAS.md) e grava a página pronta; tudo o que aparece é desenhado pelo script abaixo.
+-->
+<style>
+  :root {
+    --azul: #0000aa; --ciano: #00aaaa; --fundo: #f4f4f7; --cartao: #ffffff; --texto: #1d1d26; --apagado: #6a6a7a;
+    --linha: #d9d9e3; --mono: ui-monospace, "DejaVu Sans Mono", "Cascadia Mono", Consolas, monospace;
+    --feito: #2e7d32; --pronto: #1565c0; --andamento: #ef6c00; --revisar: #6a1b9a; --bloqueado: #9e9e9e;
+    --afazer: #00838f; --decidir: #ad1457; --fora: #bdbdbd; --suspeita: #c62828;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--fundo); color: var(--texto); }
+  body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--azul); color: #fff; padding: 12px 16px 0; position: sticky; top: 0; z-index: 5; }
+  header h1 { font: 18px var(--mono); margin: 0 0 4px; }
+  header .sub { color: #b8b8ee; font-size: 13px; margin-bottom: 8px; }
+  header a { color: #fff; }
+  nav { display: flex; gap: 2px; overflow-x: auto; }
+  nav button { all: unset; cursor: pointer; padding: 6px 12px; font: 14px var(--mono); color: #c0c0c0; white-space: nowrap; }
+  nav button.ativo { background: var(--fundo); color: var(--azul); }
+  main { padding: 16px; max-width: 1500px; margin: 0 auto; }
+  .barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .barra input { flex: 1 1 220px; padding: 6px 10px; border: 1px solid var(--linha); border-radius: 6px; font: inherit; }
+  .chip { all: unset; cursor: pointer; padding: 3px 10px; border: 1px solid var(--linha); border-radius: 999px; font-size: 13px; background: var(--cartao); }
+  .chip.ativo { background: var(--azul); color: #fff; border-color: var(--azul); }
+  .resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 16px; }
+  .resumo div { background: var(--cartao); border: 1px solid var(--linha); border-radius: 8px; padding: 8px 10px; }
+  .resumo b { display: block; font: 22px var(--mono); }
+  .resumo span { font-size: 12px; color: var(--apagado); }
+  .barra-total { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 16px; background: var(--linha); }
+  .colunas { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-items: start; }
+  .coluna { background: #e9e9f0; border-radius: 8px; padding: 8px; }
+  .coluna h2 { font: 14px var(--mono); margin: 2px 4px 8px; display: flex; justify-content: space-between; }
+  .coluna, .cartao { min-width: 0; overflow-wrap: anywhere; }
+  .cartao { background: var(--cartao); border: 1px solid var(--linha); border-left: 4px solid var(--cor, var(--linha)); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; cursor: pointer; }
+  .cartao:hover { border-color: var(--azul); border-left-color: var(--cor); }
+  .cartao .topo { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 12px; color: var(--apagado); }
+  .cartao .id { font: 13px var(--mono); color: var(--texto); font-weight: 600; }
+  .cartao .titulo { margin-top: 4px; font-size: 14px; }
+  .cartao .deps { margin-top: 6px; font-size: 12px; }
+  .tag { font: 11px var(--mono); padding: 0 6px; border-radius: 4px; background: #eef; color: var(--azul); }
+  .tag.suspeita { background: #fde8e8; color: var(--suspeita); }
+  .estado { font: 11px var(--mono); padding: 1px 6px; border-radius: 4px; color: #fff; background: var(--cor); white-space: nowrap; }
+  .dep { font: 12px var(--mono); padding: 0 5px; border-radius: 4px; border: 1px solid var(--cor); color: var(--cor); cursor: pointer; margin-right: 3px; white-space: nowrap; }
+  .vazio { color: var(--apagado); font-style: italic; padding: 4px; }
+  code { font: 0.9em var(--mono); background: #ececf3; padding: 0 4px; border-radius: 3px; }
+  .texto { background: var(--cartao); border: 1px solid var(--linha); border-radius: 8px; padding: 12px 20px; max-width: 980px; }
+  .texto table, .tabela { border-collapse: collapse; width: 100%; margin: 8px 0 16px; font-size: 14px; }
+  .texto th, .texto td { border-bottom: 1px solid var(--linha); padding: 4px 8px; text-align: left; vertical-align: top; }
+  .texto th { font-weight: 600; background: #f0f0f6; }
+  .texto h2 { font: 16px var(--mono); color: var(--azul); margin: 20px 0 6px; }
+  .texto h3 { font-size: 15px; margin: 14px 0 4px; }
+  .rolar { overflow-x: auto; }
+  /* janela do item */
+  #detalhe { position: fixed; inset: 0; background: rgba(0,0,40,.35); display: none; align-items: flex-start; justify-content: center; padding: 6vh 16px; z-index: 10; overflow-y: auto; }
+  #detalhe.aberto { display: flex; }
+  #detalhe .caixa { background: var(--cartao); border-radius: 10px; max-width: 760px; width: 100%; padding: 16px 20px; border-top: 6px solid var(--cor); }
+  #detalhe h2 { margin: 0 0 6px; font: 18px var(--mono); }
+  #detalhe .fechar { float: right; all: unset; cursor: pointer; font: 20px var(--mono); color: var(--apagado); float: right; }
+  #detalhe .grupo { margin-top: 12px; }
+  #detalhe .grupo h3 { font-size: 13px; color: var(--apagado); margin: 0 0 4px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  /* dependências */
+  #grafo svg { display: block; background: var(--cartao); border: 1px solid var(--linha); border-radius: 8px; }
+  #grafo .no rect { stroke: var(--cor); stroke-width: 1.5; fill: #fff; rx: 4; }
+  #grafo .no text { font: 11px var(--mono); fill: var(--texto); }
+  #grafo .no { cursor: pointer; }
+  #grafo .no:hover rect { fill: #eef; }
+  #grafo path { fill: none; stroke: #9a9ab0; stroke-width: 1.2; }
+  #grafo .realce path.on { stroke: var(--azul); stroke-width: 2.2; }
+  #grafo .realce .no.off { opacity: .25; }
+  #grafo .realce path:not(.on) { opacity: .15; }
+  .legenda { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0; font-size: 12px; }
+  .legenda span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--cor); margin-right: 4px; vertical-align: -1px; }
+  @media (max-width: 600px) { main { padding: 10px; } .colunas { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>AircraftSimulation — tracking</h1>
+  <div class="sub">O quadro de tarefas do <code style="background:none;color:#fff">docs/tracking.json</code>. <a href="index.html">voltar ao site</a></div>
+  <nav id="abas"></nav>
+</header>
+<main id="conteudo"></main>
+<div id="detalhe"><div class="caixa" id="caixa"></div></div>
+
+<script>
+const DADOS = /*DADOS*/null;
+
+// estados na ordem do fluxo, com a cor de cada um
+const ESTADOS = [
+  ['Em andamento', 'andamento'], ['Fazendo', 'andamento'], ['A revisar', 'revisar'], ['Pronto', 'pronto'],
+  ['A fazer', 'afazer'], ['A decidir', 'decidir'], ['Bloqueado', 'bloqueado'], ['Feito', 'feito'], ['Fora do foco', 'fora'],
+];
+const COR = Object.fromEntries(ESTADOS.map(([nome, cor]) => [nome, `var(--${cor})`]));
+const COLUNAS = ['Em andamento', 'A revisar', 'Pronto', 'A fazer', 'A decidir', 'Bloqueado', 'Feito', 'Fora do foco'];
+const coluna = estado => estado === 'Fazendo' ? 'Em andamento' : estado;
+
+// todos os itens, com o segmento, quem depende dele e se é suspeita de erro
+const ITENS = [];
+for (const seg of DADOS.segmentos) for (const it of seg.itens) ITENS.push({ ...it, segmento: seg.nome, bloqueia: [] });
+const POR_ID = Object.fromEntries(ITENS.map(it => [it.id, it]));
+for (const it of ITENS) for (const dep of it.depende) if (POR_ID[dep]) POR_ID[dep].bloqueia.push(it.id);
+const SUSPEITA = /suspeit|\bbug\b|quebrad|errad|não bate|dar? .* a menos|corrigir/i;
+for (const it of ITENS) it.suspeita = it.tipo === '[fix]' || SUSPEITA.test(it.tarefa);
+const aberto = it => !['Feito', 'Fora do foco'].includes(it.estado);
+
+// ---------- Markdown curto (o que o TRACKING.md e o AREAS.md usam) ----------
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function inline(s) {
+  const codigos = [];
+  s = esc(s).replace(/`([^`]+)`/g, (_, c) => (codigos.push(c), `\u0000${codigos.length - 1}\u0000`));
+  s = s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+       .replace(/(https?:\/\/[^\s)]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')
+       .replace(/\b([TGO]\d{2,3})\b/g, (m) => POR_ID[m] ? `<a href="#" data-item="${m}">${m}</a>` : m);
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codigos[i]}</code>`);
+}
+function markdown(texto) {
+  const linhas = texto.split('\n'); let out = ''; let i = 0;
+  while (i < linhas.length) {
+    const l = linhas[i];
+    if (!l.trim() || l.trim() === '---') { i++; continue; }
+    let m;
+    if ((m = l.match(/^(#{2,4}) (.*)/))) { out += `<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`; i++; continue; }
+    if (l.startsWith('|')) {
+      const linhasTab = []; while (i < linhas.length && linhas[i].startsWith('|')) linhasTab.push(linhas[i++]);
+      const cel = r => r.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      out += '<div class="rolar"><table><tr>' + cel(linhasTab[0]).map(c => `<th>${inline(c)}</th>`).join('') + '</tr>';
+      for (const r of linhasTab.slice(2)) out += '<tr>' + cel(r).map(c => `<td>${inline(c)}</td>`).join('') + '</tr>';
+      out += '</table></div>'; continue;
+    }
+    if ((m = l.match(/^(\s*)([-*]|\d+\.) /))) {
+      const ordenada = /\d/.test(m[2]); const itens = [];
+      while (i < linhas.length && linhas[i].trim() && !linhas[i].startsWith('|') && !linhas[i].startsWith('#')) {
+        const li = linhas[i].match(/^\s*(?:[-*]|\d+\.) (.*)/);
+        if (li) itens.push(li[1]); else itens[itens.length - 1] += ' ' + linhas[i].trim();
+        i++;
+      }
+      const tag = ordenada ? 'ol' : 'ul';
+      out += `<${tag}>` + itens.map(t => `<li>${inline(t)}</li>`).join('') + `</${tag}>`; continue;
+    }
+    const par = []; while (i < linhas.length && linhas[i].trim() && !/^(\||#|\s*([-*]|\d+\.) )/.test(linhas[i])) par.push(linhas[i++]);
+    out += `<p>${inline(par.join(' '))}</p>`;
+  }
+  return out;
+}
+
+// ---------- pedaços ----------
+const estadoHtml = it => `<span class="estado" style="--cor:${COR[it.estado]}">${esc(it.estado)}</span>`;
+const depHtml = id => { const d = POR_ID[id]; return `<span class="dep" data-item="${id}" style="--cor:${d ? COR[d.estado] : '#999'}" title="${d ? esc(d.estado) : 'fora do quadro'}">${id}</span>`; };
+function titulo(it) {
+  // a primeira frase da tarefa (até o primeiro ponto, dois-pontos ou parêntese), para o cartão
+  const t = it.tarefa.replace(/\*\*/g, ''); const m = t.match(/^(.{20,160}?)(?:[.:(]\s|$)/);
+  return m ? m[1] : t.slice(0, 160) + (t.length > 160 ? '…' : '');
+}
+function cartao(it) {
+  const deps = it.depende.length ? `<div class="deps">depende de ${it.depende.map(depHtml).join('')}</div>` : '';
+  return `<div class="cartao" data-item="${it.id}" style="--cor:${COR[it.estado]}">
+    <div class="topo"><span class="id">${it.id}</span><span class="tag">${esc(it.tipo)}</span><span>${it.bloco}</span><span>${esc(it.segmento)}</span>${it.suspeita ? '<span class="tag suspeita">suspeita</span>' : ''}</div>
+    <div class="titulo">${inline(titulo(it))}</div>${deps}</div>`;
+}
+function abrir(id) {
+  const it = POR_ID[id]; if (!it) return;
+  const caixa = document.getElementById('caixa'); caixa.style.setProperty('--cor', COR[it.estado]);
+  // a cadeia inteira do que falta antes deste item
+  const antes = new Set(); const visita = x => (POR_ID[x]?.depende || []).forEach(d => { if (!antes.has(d)) { antes.add(d); visita(d); } }); visita(id);
+  caixa.innerHTML = `<button class="fechar" aria-label="fechar">×</button>
+    <h2>${it.id} ${estadoHtml(it)}</h2>
+    <div class="topo" style="font-size:13px;color:var(--apagado)">${esc(it.segmento)} · ${esc(it.tipo)} · bloco ${it.bloco}${it.obs ? ' · ' + inline(it.obs) : ''}</div>
+    <div class="grupo"><p>${inline(it.tarefa)}</p></div>
+    <div class="grupo"><h3>Depende de</h3>${it.depende.length ? it.depende.map(depHtml).join('') : '<span class="vazio">nada</span>'}</div>
+    ${antes.size > it.depende.length ? `<div class="grupo"><h3>Cadeia inteira antes dele</h3>${[...antes].map(depHtml).join('')}</div>` : ''}
+    <div class="grupo"><h3>Libera</h3>${it.bloqueia.length ? it.bloqueia.map(depHtml).join('') : '<span class="vazio">nada depende dele</span>'}</div>`;
+  document.getElementById('detalhe').classList.add('aberto');
+}
+document.getElementById('detalhe').addEventListener('click', e => {
+  if (e.target.id === 'detalhe' || e.target.classList.contains('fechar')) e.currentTarget.classList.remove('aberto');
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('detalhe').classList.remove('aberto'); });
+document.addEventListener('click', e => {
+  const alvo = e.target.closest('[data-item]'); if (!alvo) return;
+  e.preventDefault(); abrir(alvo.dataset.item);
+});
+
+// ---------- abas ----------
+const filtro = { segmento: 'todos', busca: '', feitos: false };
+function filtrar(lista) {
+  const q = filtro.busca.toLowerCase();
+  return lista.filter(it => (filtro.segmento === 'todos' || it.segmento === filtro.segmento)
+    && (!q || (it.id + ' ' + it.tarefa).toLowerCase().includes(q)));
+}
+function barraFiltro() {
+  const segs = ['todos', ...DADOS.segmentos.map(s => s.nome)];
+  return `<div class="barra"><input id="busca" placeholder="buscar (id ou texto)" value="${esc(filtro.busca)}">
+    ${segs.map(s => `<button class="chip ${filtro.segmento === s ? 'ativo' : ''}" data-seg="${s}">${s}</button>`).join('')}</div>`;
+}
+function ligarFiltro(redesenha) {
+  const busca = document.getElementById('busca');
+  busca.addEventListener('input', () => { filtro.busca = busca.value; redesenha(); const b = document.getElementById('busca'); b.focus(); b.setSelectionRange(b.value.length, b.value.length); });
+  document.querySelectorAll('[data-seg]').forEach(b => b.addEventListener('click', () => { filtro.segmento = b.dataset.seg; redesenha(); }));
+}
+
+function abaQuadro() {
+  const lista = filtrar(ITENS);
+  const conta = n => lista.filter(it => coluna(it.estado) === n).length;
+  const resumo = COLUNAS.map(n => `<div style="border-top:3px solid ${COR[n]}"><b>${conta(n)}</b><span>${n}</span></div>`).join('');
+  const barra = COLUNAS.map(n => `<div title="${n}: ${conta(n)}" style="background:${COR[n]};flex:${conta(n)}"></div>`).join('');
+  const colunas = COLUNAS.filter(n => n !== 'Feito' && n !== 'Fora do foco' || filtro.feitos).map(n => {
+    const its = lista.filter(it => coluna(it.estado) === n);
+    return `<section class="coluna"><h2><span style="color:${COR[n]}">■</span> ${n}<span>${its.length}</span></h2>
+      ${its.map(cartao).join('') || '<div class="vazio">nenhum</div>'}</section>`;
+  }).join('');
+  return barraFiltro() + `<div class="resumo">${resumo}</div><div class="barra-total">${barra}</div>
+    <div class="barra"><button class="chip ${filtro.feitos ? 'ativo' : ''}" id="feitos">mostrar Feito e Fora do foco</button></div>
+    <div class="colunas">${colunas}</div>`;
+}
+function abaSuspeitas() {
+  const lista = filtrar(ITENS.filter(it => it.suspeita && aberto(it)));
+  return barraFiltro() + `<p>Tarefas abertas que falam de suspeita de erro, de algo quebrado ou de conta que não bate. A regra do projeto é que uma suspeita vira o próximo item a resolver.</p>
+    <div class="colunas">${lista.map(cartao).join('') || '<div class="vazio">nenhuma</div>'}</div>`;
+}
+function abaDependencias() {
+  // camadas: cada item fica uma coluna à direita da mais funda das suas dependências
+  const ligados = ITENS.filter(it => it.depende.some(d => POR_ID[d]) || it.bloqueia.length);
+  const nivel = {};
+  const profundidade = id => {
+    if (nivel[id] !== undefined) return nivel[id];
+    nivel[id] = 0; const deps = POR_ID[id].depende.filter(d => POR_ID[d]);
+    return nivel[id] = deps.length ? 1 + Math.max(...deps.map(profundidade)) : 0;
+  };
+  ligados.forEach(it => profundidade(it.id));
+  const camadas = []; for (const it of ligados) (camadas[nivel[it.id]] ||= []).push(it);
+  for (const c of camadas) c.sort((a, b) => a.id.localeCompare(b.id, 'pt', { numeric: true }));
+  const L = 52, A = 22, DX = 96, DY = 28, M = 12;
+  const pos = {};
+  camadas.forEach((c, x) => c.forEach((it, y) => pos[it.id] = [M + x * DX, M + y * DY]));
+  const largura = M * 2 + (camadas.length - 1) * DX + L, altura = M * 2 + Math.max(...camadas.map(c => c.length)) * DY;
+  let arestas = '';
+  for (const it of ligados) for (const d of it.depende) if (pos[d]) {
+    const [x1, y1] = pos[d], [x2, y2] = pos[it.id];
+    arestas += `<path data-de="${d}" data-para="${it.id}" d="M${x1 + L},${y1 + A / 2} C${x1 + L + 30},${y1 + A / 2} ${x2 - 30},${y2 + A / 2} ${x2},${y2 + A / 2}"/>`;
+  }
+  const nos = ligados.map(it => { const [x, y] = pos[it.id];
+    return `<g class="no" data-no="${it.id}" style="--cor:${COR[it.estado]}" transform="translate(${x},${y})"><rect width="${L}" height="${A}" rx="4"/><rect width="5" height="${A}" style="fill:var(--cor);stroke:none"/><text x="11" y="15">${it.id}</text><title>${it.id} (${esc(it.estado)}): ${esc(titulo(it))}</title></g>`; }).join('');
+  const legenda = COLUNAS.map(n => `<span style="--cor:${COR[n]}">${n}</span>`).join('');
+  return `<p>Cada coluna espera a da esquerda. Passe o mouse num item para ver a cadeia dele; clique para abrir.</p>
+    <div class="legenda">${legenda}</div>
+    <div id="grafo" class="rolar"><svg width="${largura}" height="${altura}">${arestas}${nos}</svg></div>
+    ${DADOS.notas.length ? `<div class="texto" style="margin-top:12px">${markdown(DADOS.notas.join('\n\n'))}</div>` : ''}`;
+}
+function ligarGrafo() {
+  const svg = document.querySelector('#grafo svg'); if (!svg) return;
+  const cadeia = (id, chave, campo, set) => { (POR_ID[id]?.[campo] || []).forEach(x => { if (!set.has(x)) { set.add(x); cadeia(x, chave, campo, set); } }); return set; };
+  svg.querySelectorAll('.no').forEach(no => {
+    no.addEventListener('mouseenter', () => {
+      const id = no.dataset.no; const set = new Set([id]);
+      cadeia(id, 0, 'depende', set); cadeia(id, 0, 'bloqueia', set);
+      svg.classList.add('realce');
+      svg.querySelectorAll('.no').forEach(n => n.classList.toggle('off', !set.has(n.dataset.no)));
+      svg.querySelectorAll('path').forEach(p => p.classList.toggle('on', set.has(p.dataset.de) && set.has(p.dataset.para)));
+    });
+    no.addEventListener('mouseleave', () => svg.classList.remove('realce'));
+    no.addEventListener('click', () => abrir(no.dataset.no));
+  });
+}
+function abaSegmentos() {
+  return DADOS.segmentos.map(s => {
+    const abertos = s.itens.filter(aberto).length;
+    return `<div class="texto" style="margin-bottom:12px"><h2>${esc(s.nome)} <span style="color:var(--apagado);font-size:13px">${abertos} abertas de ${s.itens.length}</span></h2>
+      <p>${inline(s.descricao)}</p></div>`;
+  }).join('');
+}
+const ABAS = [
+  ['Quadro', abaQuadro],
+  ['Prioridade', () => `<div class="texto">${markdown(DADOS.prioridade)}</div>`],
+  ['Suspeitas', abaSuspeitas],
+  ['Dependências', abaDependencias],
+  ['Áreas', () => `<div class="texto">${markdown(DADOS.areas)}</div>`],
+  ['Segmentos', abaSegmentos],
+  ['Progresso', () => `<div class="texto">${markdown(DADOS.progresso)}</div>`],
+];
+let atual = 0;
+const abaDoEndereco = () => { try { atual = Math.max(0, ABAS.findIndex(([n]) => n === decodeURIComponent(location.hash.slice(1)))); } catch (e) {} };
+abaDoEndereco();
+window.addEventListener('hashchange', () => { abaDoEndereco(); document.getElementById('detalhe').classList.remove('aberto'); desenha(); });
+function desenha() {
+  document.getElementById('abas').innerHTML = ABAS.map(([n], i) => `<button class="${i === atual ? 'ativo' : ''}" data-aba="${i}">${n}</button>`).join('');
+  document.querySelectorAll('[data-aba]').forEach(b => b.addEventListener('click', () => { atual = +b.dataset.aba; history.replaceState(null, '', '#' + ABAS[atual][0]); desenha(); }));
+  document.getElementById('conteudo').innerHTML = ABAS[atual][1]();
+  if (document.getElementById('busca')) ligarFiltro(desenha);
+  const feitos = document.getElementById('feitos');
+  if (feitos) feitos.addEventListener('click', () => { filtro.feitos = !filtro.feitos; desenha(); });
+  ligarGrafo();
+}
+desenha();
+</script>
+</body>
+</html>

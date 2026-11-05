@@ -68,6 +68,8 @@
       <li class="separador" aria-hidden="true">em teste</li>
       <li><button data-acao="aerosim" data-ajuda="Onde se projeta o avião: perfis, asa, montagem e análise. Versão de teste: as contas longas param a página até acabar, e salvar baixa o arquivo.">aerosim — projetar (teste)</button></li>
       <li><button data-acao="aeroopt" data-ajuda="Otimização do projeto para a competição. Versão de teste: as contas longas param a página até acabar.">aeroopt — otimizar (teste)</button></li>
+      <li class="separador" aria-hidden="true">projeto</li>
+      <li><button data-acao="tracking" data-ajuda="O quadro de tarefas: o que está em andamento, o que falta, as dependências e as suspeitas de erro.">Tracking — o que falta fazer</button></li>
     </ul>
     <p class="ajuda" id="ajuda" aria-live="polite"></p>
   </div>
@@ -112,6 +114,7 @@
     if (botao.dataset.acao === 'aerodrive') window.location.href = 'aerodrive.html';
     else if (botao.dataset.acao === 'aerosim') window.location.href = 'aerosim.html';
     else if (botao.dataset.acao === 'aeroopt') window.location.href = 'aeroopt.html';
+    else if (botao.dataset.acao === 'tracking') window.location.href = 'tracking.html';
     else if (botao.dataset.acao === 'carregar') arquivo.click();
   }
 

@@ -85,3 +85,20 @@ jobs:
           name: relatorio-${{ matrix.arquivo }}
           path: relatorio.md
           if-no-files-found: ignore
+
+  # a página do tracking (docs/tracking.json) como artefato, para ver antes do merge; é a mesma que o site.yml publica
+  tracking:
+    name: página do tracking
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Gerar a página
+        run: python tools/tracking.py --check && python tools/tracking.py --html tracking/tracking.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tracking
+          path: tracking/tracking.html

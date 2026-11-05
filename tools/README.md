@@ -165,6 +165,7 @@ O que deixou a linha sustentadora rápida está em `core/OTIMIZACOES.md`.
 |---|---|
 | `checks/run.py` | os checks: núcleo, AeroDrive, mapa do código, regressão bit a bit dos exemplos contra a `main`, testes por área (`--tudo` inclui os lentos). Ver `checks/README.md` |
 | `codemap.py` | refaz `docs/MAP.md` a partir do código (`--check` só confere) |
+| `tracking.py` | gera a página do tracking (`tracking.html`, a partir de `docs/tracking.json` e do modelo `tracking_page.html`) e refaz o Quadro do `docs/TRACKING.md` (`--check` só confere) |
 | `capturas.py` | fotos de todas as abas (roda cada simulação com os padrões) |
 | `plot_comparativo.py` | as figuras das abas Aerodinâmica e Estabilidade, iguais às da GUI |
 
