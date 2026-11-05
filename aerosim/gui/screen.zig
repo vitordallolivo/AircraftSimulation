@@ -628,8 +628,13 @@ pub const Screen = struct {
                 view3d.floor(.{ middle[0], middle[1], 0 }, plane.high[2] + 0.02, 1.6 * size, 0.25);
                 plane.draw();
                 const weights = assembly_mod.balance(&opened.loaded.ac);
+                // o CG e as cotas por cima das peças (sem o teste de profundidade), para se verem atrás da asa
+                rl.gl.rlDrawRenderBatchActive();
+                rl.gl.rlDisableDepthTest();
                 drawBalance(&screen.assembly_view, weights, plane.low[2], size);
                 if (screen.assembly_angle != .free) drawCgDimensions(&screen.assembly_view, screen.assembly_angle, weights.cg, size);
+                rl.gl.rlDrawRenderBatchActive();
+                rl.gl.rlEnableDepthTest();
                 view3d.bodyAxes(&screen.assembly_view, .{ plane.low[0] - 0.12 * size, plane.low[1] - 0.12 * size, plane.high[2] + 0.04 * size }, 0.14 * size);
             }
         }
