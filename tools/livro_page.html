@@ -50,8 +50,6 @@
   article th { background: #f0f0f6; }
   article blockquote { margin: 0; padding: 4px 16px; border-left: 4px solid var(--linha); color: var(--apagado); }
   .equacao { overflow-x: auto; padding: 4px 0; }
-  .caminho { font: 12px var(--mono); color: var(--apagado); margin: 12px 0 0; }
-  .caminho a { color: var(--apagado); }
   .passos { display: flex; justify-content: space-between; gap: 12px; max-width: 980px; margin-top: 16px; }
   .passos a { flex: 1; background: var(--cartao); border: 1px solid var(--linha); border-radius: 8px; padding: 10px 14px; text-decoration: none; color: var(--texto); }
   .passos a small { display: block; color: var(--apagado); font-size: 12px; }
@@ -127,7 +125,7 @@ function resolve(base, alvo) {
 function abre(caminho, ancora) {
   const pagina = POR_CAMINHO[caminho] || PAGINAS[0];
   const artigo = document.getElementById('pagina');
-  artigo.innerHTML = `<p class="caminho"><a href="${LIVRO.github}${pagina.caminho}" target="_blank" rel="noopener">${esc(pagina.caminho)}</a></p>` + desenhaMd(pagina.md);
+  artigo.innerHTML = desenhaMd(pagina.md);
   // ids nos títulos (para os links #seção) e os links e imagens relativos ao .md
   artigo.querySelectorAll('h1, h2, h3, h4').forEach(h => { h.id = slug(h.textContent); });
   artigo.querySelectorAll('img').forEach(img => {
@@ -168,7 +166,7 @@ function sumario(busca) {
     if (!paginas.length) continue;
     html += `<h2>${esc(g.nome)}</h2>` + paginas.map(p => {
       const vezes = q ? p.md.toLowerCase().split(q).length - 1 : 0;
-      return `<a href="#${p.caminho}" data-caminho="${p.caminho}">${esc(p.titulo)}<small>${esc(p.caminho)}${vezes ? ` · ${vezes}×` : ''}</small></a>`;
+      return `<a href="#${p.caminho}" data-caminho="${p.caminho}">${esc(p.titulo)}${vezes ? `<small>${vezes}×</small>` : ''}</a>`;
     }).join('');
   }
   document.getElementById('sumario').innerHTML = html || '<p class="resultado">nada encontrado</p>';

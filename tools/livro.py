@@ -62,8 +62,14 @@ def order_key(path: str) -> tuple:
 
 
 def title_of(text: str, path: str) -> str:
+    """o primeiro "# título", sem a pasta na frente ("aerosim/aero — aerodinâmica" vira "Aerodinâmica"): onde o
+    arquivo está é assunto do docs/MAP.md"""
     match = re.search(r"^# (.+)$", text, re.M)
-    return match.group(1).strip() if match else path
+    if not match:
+        return path
+    title = re.sub(r"^`?[\w./-]+/[\w./-]*`?\s+[—–-]\s+", "", match.group(1).strip())
+    title = re.sub(r"\s*\(`[\w./-]+/`\)$", "", title)
+    return title[:1].upper() + title[1:]
 
 
 def book(paths: list[str]) -> dict:
