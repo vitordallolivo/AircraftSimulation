@@ -86,7 +86,7 @@ jobs:
           path: relatorio.md
           if-no-files-found: ignore
 
-  # a página do tracking (docs/tracking.json) como artefato, para ver antes do merge; é a mesma que o site.yml publica
+  # a página do tracking (as tabelas do docs/TRACKING.md) como artefato, para ver antes do merge; é a mesma que o site.yml publica
   tracking:
     name: página do tracking
     runs-on: ubuntu-latest

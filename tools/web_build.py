@@ -76,7 +76,7 @@ def assemble() -> None:
     for folder, name in PROGRAMS:
         for extension in EXTENSIONS:
             shutil.copy2(os.path.join(web_folder(folder), name + extension), os.path.join(SITE, name + extension))
-    # o tracking do projeto (docs/tracking.json) como página do site
+    # o tracking do projeto (as tabelas do docs/TRACKING.md) como página do site
     subprocess.run([sys.executable, os.path.join(ROOT, "tools", "tracking.py"), "--html", os.path.join(SITE, "tracking.html")],
                    check=True)
     # o GitHub Pages não passa a pasta pelo Jekyll (que esconderia arquivos e atrasaria a publicação)

@@ -170,15 +170,13 @@ O quadro tem uma tabela por segmento; o segmento é onde fica o grosso do trabal
 com uma aba que a mostra fica no **core**, e a aba vira outra tarefa no **aerosim**). As dependências cruzam os
 segmentos. As tarefas do aeroopt usam o prefixo **O**, e as da GUI, o **G**.
 
-As tabelas abaixo saem do `docs/tracking.json` (`python tools/tracking.py`), que também gera a página `tracking.html` do site.
+A página `tracking.html` do site sai destas tabelas (`python tools/tracking.py`; o build do site roda sozinho): para acrescentar uma tarefa, basta uma linha nova na tabela do segmento.
 
 Tipos de tarefa:
 - **[GUI]**: só ligar na interface.
 - **[ext]**: estende um módulo existente.
 - **[novo]**: módulo novo numa arquitetura existente.
 - **[zero]**: arquitetura nova.
-
-<!-- quadro: gerado por tools/tracking.py a partir de docs/tracking.json; editar o json, não aqui -->
 
 ### aerosim
 
@@ -248,7 +246,7 @@ A interface do aerosim (a tela em Zig com os managers em Python, e a GUI PyQt en
 | G23 | Todas as análises em Zig, sem Python (vitor, 2026-11-05): cada `.py` de `aerosim/manager/simulations` ganha o `.zig` ao lado, com o teste nos números do Python, e a tela usa o `.zig` na mesma subaba. Feito: Estabilidade dinâmica, Estabilidade (Avião montado), Tração, Voo nivelado e envelopes, Avião montado e Missão (os quatro modos). Falta: Dimensionamento, Analisar (`wings`), Aerodinâmica, Cargas, as sem aba (polar, subida, curva, decolagem), as etapas da sprint (`stages.py`) e o `aerosim/design`; depois, os solvers VLM, AVL e lltdrek no núcleo | [GUI] | G20 | B9 | Em andamento |
 | G24 | As análises em Zig pareciam mais lentas que as do Python (2026-11-05). Medido: era o build Debug da tela; em release a Missão leva 9,2 s (Python 10,3 s). Feito: a conta numa thread, com a caixa de mensagens sem trava (`ui/jobs.zig`, `Mailbox`), sem travar a janela; a grade da decolagem em todos os núcleos (4 núcleos: 4,0 → 1,0 s nas 16 decolagens). Falta: o raio automático das curvas em paralelo; as threads no navegador viraram a G25 | [GUI] | G23 | B9 | Em andamento |
 | G25 | Threads no navegador (vitor, 2026-11-05): hoje, na web, a conta longa roda em fatias de 6 ms dentro do quadro e num núcleo só. Com os pthreads do emscripten (memória compartilhada, `SharedArrayBuffer`) a mesma thread e a grade em vários núcleos do desktop valem no navegador. O GitHub Pages não manda os cabeçalhos COOP/COEP que liberam o `SharedArrayBuffer`, então o site publicado ganha o `coi-serviceworker`, que os põe pelo service worker; **mexe no site publicado** (a página recarrega uma vez na primeira visita). Ver também o alocador, porque a memória compartilhada não encolhe | [web] | G24 | B9 | A fazer |
-| G26 | Tracking em HTML (vitor, 2026-11-05): o `docs/TRACKING.md` ficou difícil de ler. Plano: os itens num `docs/tracking.json`, um script que gera uma página HTML (quadro por estado, dependências, bugs) e o `site.yml` publica essa página junto do site quando o PR entra na `main`, com a página também como artefato do PR para ver antes do merge. A página mostra também o que tem em cada área (o conteúdo do `docs/AREAS.md`: o que cada aba faz, o que já está em Zig e o que falta) Feito: `docs/tracking.json` é a fonte do Quadro, `python tools/tracking.py` refaz o Quadro do `TRACKING.md` e grava a página (abas Quadro, Prioridade, Suspeitas, Dependências, Áreas, Segmentos, Progresso), o `web_build.py` põe a página no site como `tracking.html`, com um botão na tela inicial, e o `testes.yml` sobe a página como artefato do PR | [ext] | — | B9 | A revisar |
+| G26 | Tracking em HTML (vitor, 2026-11-05): o `docs/TRACKING.md` ficou difícil de ler. Feito: `python tools/tracking.py` lê as tabelas do Quadro deste arquivo (e a prioridade, o progresso e o `docs/AREAS.md`) e grava a página `tracking.html` (abas Quadro, Prioridade, Suspeitas, Dependências, Áreas, Segmentos, Progresso). O `web_build.py` a põe no site, com um botão na tela inicial, e o `testes.yml` a sobe como artefato do PR. Para acrescentar uma tarefa, basta uma linha nova na tabela | [ext] | — | B9 | A revisar |
 | G27 | Testes de otimização (vitor, 2026-11-05; depois da G26): uma ferramenta própria em `tools/` que mede cada técnica contra o código de hoje, no mesmo caso e em release, e só a que ganhar entra. A medida pega o melhor de N rodadas, com o `doNotOptimizeAway` para o resultado não sumir, e as instruções no Callgrind quando o tempo oscila. Candidatas: struct of arrays no lugar de array of structs nos laços que leem poucos campos (o log do voo, as faixas da aerodinâmica); `@branchHint(.unlikely)` nos caminhos de erro dos laços quentes; `FixedBufferAllocator` ou buffer na pilha nas contas curtas que hoje alocam; conferir no disassembly (objdump) se os laços das faixas vetorizam e, se não, tentar `@Vector`. O resultado de cada uma vai para o `core/OTIMIZACOES.md` | [ext] | G26 | B9 | A fazer |
 
 ### core
@@ -384,7 +382,6 @@ Ferramentas, checks, documentação e git, que valem para os quatro segmentos.
 
 **Caminho crítico:** T38 → T13 → T15 → T21 → T24 → T25/T26 → T32. Estruturas e aeroelasticidade esperam por ele.
 
-<!-- fim do quadro gerado -->
 
 ---
 

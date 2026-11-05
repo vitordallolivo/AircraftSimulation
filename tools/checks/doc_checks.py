@@ -1,5 +1,5 @@
-"""Documentação: o mapa do código (docs/MAP.md) tem de estar em dia com o código, e o Quadro do docs/TRACKING.md com o
-docs/tracking.json."""
+"""Documentação: o mapa do código (docs/MAP.md) tem de estar em dia com o código, e as tabelas do Quadro do
+docs/TRACKING.md têm de estar legíveis para a página do tracking."""
 from __future__ import annotations
 
 import os
@@ -16,9 +16,9 @@ def codemap_up_to_date() -> Result:
     return Result(True, "em dia")
 
 
-@check("fundação", "Quadro do TRACKING.md igual ao tracking.json")
+@check("fundação", "tabelas do Quadro do TRACKING.md legíveis")
 def tracking_up_to_date() -> Result:
     code, out, _ = sh([sys.executable, os.path.join(ROOT, "tools", "tracking.py"), "--check"], cwd=ROOT, timeout=60)
     if code != 0:
-        return Result(False, "desatualizado: rode python tools/tracking.py", out.strip().splitlines()[-2:])
+        return Result(False, "linha com colunas a mais ou a menos", out.strip().splitlines()[-2:])
     return Result(True, "em dia")
