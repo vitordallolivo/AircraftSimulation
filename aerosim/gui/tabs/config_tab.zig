@@ -399,7 +399,9 @@ pub const Spec = struct {
     checked: bool = false,
     text: []const u8 = "",
     choices: []const []const u8 = &.{},
-    target: ?usize = null, // um campo de um item da lista da peça (os modificadores: qual deles)
+    target: ?usize = null, // o item da lista `container` (ou dos modificadores) a que o campo pertence
+    container: []const u8 = "", // "" o objeto da peça; senão a chave, nele, do objeto (o perfil) ou da lista (seções...)
+    group: usize = 0, // o bloco do formulário (`Layout.groups`)
 };
 
 /// os campos que o Python deixa de fora de cada peça (`_edit`): têm editores próprios
@@ -425,11 +427,21 @@ fn contains(list: []const []const u8, name: []const u8) bool {
 /// marcador e texto (escolha quando `form_meta` tem as opções); listas e structs dentro ficam de fora (editores
 /// próprios), como em `forms.specs`
 fn fieldsOf(memory: std.mem.Allocator, list: *std.ArrayList(Spec), value: anytype, exclude: []const []const u8) !void {
+    return itemFieldsOf(memory, list, value, exclude, .{ .name = "", .label = "", .kind = .number }, null);
+}
+
+/// `fieldsOf` com o endereço do campo no arquivo (`template`: bloco, objeto ou item da lista) e as opções de "kind",
+/// que dependem da lista (tipos de comando, de perna, de evento)
+fn itemFieldsOf(memory: std.mem.Allocator, list: *std.ArrayList(Spec), value: anytype, exclude: []const []const u8, template: Spec, kinds: ?[]const []const u8) !void {
     inline for (std.meta.fields(@TypeOf(value))) |field| {
         if (!contains(exclude, field.name)) {
             const current = @field(value, field.name);
-            const base: Spec = .{ .name = field.name, .label = form_meta.label(field.name), .unit = form_meta.unit(field.name), .help = form_meta.help(field.name), .kind = .number };
-            var spec = base;
+            var spec = template;
+            spec.name = field.name;
+            spec.label = form_meta.label(field.name);
+            spec.unit = form_meta.unit(field.name);
+            spec.help = form_meta.help(field.name);
+            spec.kind = .number;
             const known = switch (field.type) {
                 f64 => blk: {
                     spec.number = current;
@@ -454,7 +466,8 @@ fn fieldsOf(memory: std.mem.Allocator, list: *std.ArrayList(Spec), value: anytyp
                 []const u8 => blk: {
                     spec.text = current;
                     spec.kind = .text;
-                    if (form_meta.choices(field.name)) |options| {
+                    const listed = if (kinds != null and std.mem.eql(u8, field.name, "kind")) kinds else form_meta.choices(field.name);
+                    if (listed) |options| {
                         spec.kind = .choice;
                         spec.choices = options;
                         if (!contains(options, current) and current.len > 0) { // o valor que saiu da lista fica como opção
@@ -501,6 +514,76 @@ pub fn specs(memory: std.mem.Allocator, aircraft: *const Aircraft, component: Co
     return list.items;
 }
 
+/// uma lista da peça que o editor mostra item a item, com "+" e "−" (o `_list_editor` do Python)
+pub const EditableList = struct { key: []const u8, item: []const u8 };
+
+/// o formulário inteiro da peça: os campos simples (bloco 0), o perfil e as listas, um bloco por item
+pub const Layout = struct {
+    specs: []Spec,
+    groups: []const []const u8, // o título de cada bloco ("" no 0: quem desenha põe o nome da peça)
+    lists: []const EditableList,
+};
+
+/// os blocos de uma lista (`items`) da peça: um por item, com o título "seção 1", "seção 2"...
+fn listBlocks(memory: std.mem.Allocator, fields: *std.ArrayList(Spec), groups: *std.ArrayList([]const u8), lists: *std.ArrayList(EditableList), items: anytype, key: []const u8, item: []const u8, exclude: []const []const u8, kinds: ?[]const []const u8) !void {
+    try lists.append(memory, .{ .key = key, .item = item });
+    for (items, 0..) |entry, i| {
+        try groups.append(memory, try std.fmt.allocPrint(memory, "{s} {d}", .{ item, i + 1 }));
+        try itemFieldsOf(memory, fields, entry, exclude, .{ .name = "", .label = "", .kind = .number, .container = key, .target = i, .group = groups.items.len - 1 }, kinds);
+    }
+}
+
+/// o formulário da peça: `specs` mais o perfil, as seções e os comandos (superfície), as pernas (trem "custom"), as
+/// massas pontuais (massa) e os eventos (percurso), como os editores do Python (`_edit`)
+pub fn layout(memory: std.mem.Allocator, aircraft: *const Aircraft, component: Component) !Layout {
+    var fields: std.ArrayList(Spec) = .empty;
+    try fields.appendSlice(memory, try specs(memory, aircraft, component));
+    var groups: std.ArrayList([]const u8) = .empty;
+    try groups.append(memory, "");
+    var lists: std.ArrayList(EditableList) = .empty;
+    switch (component.part) {
+        .surface => {
+            const surface = aircraft.surfaces[component.index];
+            try groups.append(memory, "perfil");
+            try itemFieldsOf(memory, &fields, surface.airfoil, &.{ "coords", "path" }, .{ .name = "", .label = "", .kind = .number, .container = "airfoil", .group = groups.items.len - 1 }, null);
+            try listBlocks(memory, &fields, &groups, &lists, surface.sections, "sections", "seção", &.{}, null);
+            try listBlocks(memory, &fields, &groups, &lists, surface.controls, "controls", "comando", &.{}, &form_meta.control_kinds);
+        },
+        .gear => if (std.mem.eql(u8, aircraft.gear.layout, "custom"))
+            try listBlocks(memory, &fields, &groups, &lists, aircraft.gear.custom, "custom", "perna", &.{}, &form_meta.gear_kinds),
+        .mass => try listBlocks(memory, &fields, &groups, &lists, aircraft.mass.items, "items", "massa pontual", &.{}, null),
+        .mission => try listBlocks(memory, &fields, &groups, &lists, aircraft.mission.events, "events", "evento", &.{}, &form_meta.event_kinds),
+        else => {},
+    }
+    return .{ .specs = fields.items, .groups = groups.items, .lists = lists.items };
+}
+
+/// a lista `key` da peça no arquivo (criada vazia se não há)
+fn itemList(memory: std.mem.Allocator, document: *std.json.Value, component: Component, key: []const u8) !*std.json.Array {
+    const node = try partNode(memory, document, component);
+    const entry = try node.getOrPut(memory, key);
+    if (!entry.found_existing or entry.value_ptr.* != .array) entry.value_ptr.* = .{ .array = std.json.Array.init(memory) };
+    return &entry.value_ptr.array;
+}
+
+/// "+" de uma lista: um item novo, cópia do último (a seção nova 0,2 m além dele, para as seções não coincidirem);
+/// a lista vazia ganha um item com os valores padrão
+pub fn addItem(memory: std.mem.Allocator, document: *std.json.Value, component: Component, key: []const u8) !void {
+    const items = try itemList(memory, document, component, key);
+    if (items.items.len == 0 or items.items[items.items.len - 1] != .object) return items.append(.{ .object = .empty });
+    var copy = try clone(memory, items.items[items.items.len - 1]);
+    if (std.mem.eql(u8, key, "sections")) try copy.object.put(memory, "y", .{ .float = numberOf(copy.object, "y") + 0.2 });
+    try items.append(copy);
+}
+
+/// "−" de uma lista: tira o último item; falso se a lista já está vazia
+pub fn removeItem(memory: std.mem.Allocator, document: *std.json.Value, component: Component, key: []const u8) !bool {
+    const items = try itemList(memory, document, component, key);
+    if (items.items.len == 0) return false;
+    _ = items.pop();
+    return true;
+}
+
 /// o nó do avião no arquivo (a chave "aeronave" dos arquivos da sprint, ou a raiz)
 fn aircraftNode(document: *std.json.Value) !*std.json.ObjectMap {
     if (document.* != .object) return error.NoAircraft;
@@ -535,8 +618,9 @@ fn partNode(memory: std.mem.Allocator, document: *std.json.Value, component: Com
 /// altitude-densidade grava junto o ρ da atmosfera padrão, como `set_density_altitude`
 pub fn apply(memory: std.mem.Allocator, document: *std.json.Value, component: Component, fields: []const Spec) !void {
     if (component.part == .modifiers) return applyModifiers(memory, document, fields);
-    const node = try partNode(memory, document, component);
+    const part_node = try partNode(memory, document, component);
     for (fields) |spec| {
+        const node = try fieldNode(memory, part_node, spec);
         const value: std.json.Value = switch (spec.kind) {
             .number => .{ .float = spec.number },
             .optional_number => if (spec.automatic) .null else .{ .float = spec.number },
@@ -548,6 +632,20 @@ pub fn apply(memory: std.mem.Allocator, document: *std.json.Value, component: Co
         if (component.part == .environment and std.mem.eql(u8, spec.name, "density_altitude"))
             try node.put(memory, "rho", .{ .float = model.Environment.densityAt(spec.number) });
     }
+}
+
+/// o objeto onde o campo mora: o da peça, o objeto dentro dela (o perfil) ou o item da lista
+fn fieldNode(memory: std.mem.Allocator, part_node: *std.json.ObjectMap, spec: Spec) !*std.json.ObjectMap {
+    if (spec.container.len == 0) return part_node;
+    const entry = try part_node.getOrPut(memory, spec.container);
+    if (spec.target) |index| {
+        if (entry.value_ptr.* != .array or index >= entry.value_ptr.array.items.len) return error.MissingPart;
+        const item = &entry.value_ptr.array.items[index];
+        if (item.* != .object) item.* = .{ .object = .empty };
+        return &item.object;
+    }
+    if (!entry.found_existing or entry.value_ptr.* != .object) entry.value_ptr.* = .{ .object = .empty };
+    return &entry.value_ptr.object;
 }
 
 /// liga e desliga os modificadores; o arquivo sem a lista ganha a do padrão (o efeito solo de McCormick)
@@ -854,4 +952,43 @@ test "acrescentar, remover e trazer peças de outro arquivo" {
     try std.testing.expectEqual(loaded.ac.surfaces.len + 3, final.ac.surfaces.len);
     try std.testing.expectEqualStrings(other_loaded.ac.surfaces[0].name, final.ac.surfaces[imported.index].name);
     try std.testing.expectEqual(other_loaded.ac.surfaces[0].sections.len, final.ac.surfaces[imported.index].sections.len);
+}
+
+test "o editor da asa tem o perfil, as seções e os comandos, com + e −" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
+    defer loaded.deinit();
+    const wing: Component = .{ .part = .surface, .index = 0, .label = "" };
+    const form = try layout(memory, &loaded.ac, wing);
+    // blocos: a peça, o perfil, as 2 seções e o aileron
+    try std.testing.expectEqual(@as(usize, 2 + loaded.ac.surfaces[0].sections.len + loaded.ac.surfaces[0].controls.len), form.groups.len);
+    try std.testing.expectEqualStrings("seção 2", form.groups[3]);
+    try std.testing.expectEqual(@as(usize, 2), form.lists.len);
+    // a corda da ponta e o tipo do comando, gravados e lidos de novo
+    var document = try std.json.parseFromSliceLeaky(std.json.Value, memory, bytes, .{});
+    const edited = try memory.dupe(Spec, form.specs);
+    for (edited) |*spec| {
+        if (std.mem.eql(u8, spec.container, "sections") and spec.target == 1 and std.mem.eql(u8, spec.name, "chord")) spec.number = 0.25;
+        if (std.mem.eql(u8, spec.container, "controls") and std.mem.eql(u8, spec.name, "kind")) {
+            try std.testing.expectEqual(form_meta.control_kinds.len, spec.choices.len);
+            spec.text = "flaperon";
+        }
+    }
+    try apply(memory, &document, wing, edited);
+    try addItem(memory, &document, wing, "sections");
+    var again = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
+    defer again.deinit();
+    const sections = again.ac.surfaces[0].sections;
+    try std.testing.expectEqual(@as(f64, 0.25), sections[1].chord);
+    try std.testing.expectEqual(@as(usize, 3), sections.len);
+    try std.testing.expectApproxEqAbs(sections[1].y + 0.2, sections[2].y, 1e-12);
+    try std.testing.expectEqualStrings("flaperon", again.ac.surfaces[0].controls[0].kind);
+    try std.testing.expect(try removeItem(memory, &document, wing, "sections"));
+    var third = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
+    defer third.deinit();
+    try std.testing.expectEqual(@as(usize, 2), third.ac.surfaces[0].sections.len);
 }

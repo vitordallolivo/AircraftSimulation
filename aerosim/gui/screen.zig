@@ -162,7 +162,12 @@ pub const Screen = struct {
             break :blk null;
         };
         if (failed) |reason| {
-            _ = std.fmt.bufPrintZ(&screen.assembly_note, "a edição não vale: {s}", .{reason}) catch {};
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "a edição não vale e foi desfeita: {s}", .{reason}) catch {};
+            // a árvore volta a ser a do último avião que valeu (e o formulário, os valores dele)
+            if (std.json.parseFromSliceLeaky(std.json.Value, opened.document_arena.allocator(), opened.source, .{})) |previous| {
+                opened.document = previous;
+            } else |_| {}
+            editor.rebuild(&opened.loaded.ac) catch {};
             return;
         }
         if (screen.assembly_panel) |*old| old.deinit();
@@ -224,6 +229,22 @@ pub const Screen = struct {
                 screen.importPart(index);
             } else for (part_buttons, 0..) |caption, i| if (std.mem.eql(u8, caption, step)) screen.partButton(i);
         }
+    }
+
+    /// "+" ou "−" de uma lista da peça (seções, comandos...)
+    fn listButton(screen: *Screen, pressed: usize) void {
+        const opened = &(screen.assembly orelse return);
+        const editor = &(screen.assembly_editor orelse return);
+        const list = editor.lists[pressed / 2];
+        const component = editor.list[editor.selected];
+        const memory = opened.document_arena.allocator();
+        if (pressed % 2 == 0) {
+            config_tab.addItem(memory, &opened.document, component, list.key) catch return;
+        } else {
+            const removed = config_tab.removeItem(memory, &opened.document, component, list.key) catch false;
+            if (!removed) return;
+        }
+        screen.commitDocument(null);
     }
 
     /// abriu o arquivo de onde trazer a peça: mostra as peças dele no lugar da lista
@@ -578,7 +599,9 @@ pub const Screen = struct {
         if (editor_width > 0) {
             const editor = &screen.assembly_editor.?;
             const editor_rect: rl.Rectangle = .{ .x = rect.x + rect.width - 12 - editor_width + 6, .y = rect.y + 12, .width = editor_width - 6, .height = rect.height - 24 };
-            if (editor.drawForm(ui, editor_rect)) screen.applyEdit();
+            var list_button: ?usize = null;
+            if (editor.drawForm(ui, editor_rect, &list_button)) screen.applyEdit();
+            if (list_button) |pressed| screen.listButton(pressed);
         }
         const card_rect: rl.Rectangle = .{ .x = rect.x + 12 + side_width, .y = rect.y + 12, .width = rect.width - 24 - side_width - editor_width, .height = rect.height - 24 };
         const area = cardInside(card_rect);
@@ -619,6 +642,8 @@ const AssemblyEditor = struct {
     form: ui_kit.form.Form = .{ .groups = &.{}, .fields = &.{} },
     list_scroll: ui_kit.scroll.ScrollArea = .{},
     title: [:0]const u8 = "",
+    lists: []const config_tab.EditableList = &.{}, // as listas da peça (seções, comandos...), com "+" e "−"
+    list_buttons: []const [:0]const u8 = &.{},
     want_rebuild: bool = false, // escolheu outra peça: refazer o formulário no quadro
     importing: ?ImportSource = null, // o outro avião de onde trazer uma peça (a lista mostra as peças dele)
 
@@ -639,7 +664,15 @@ const AssemblyEditor = struct {
         if (editor.selected >= editor.list.len) editor.selected = 0;
         const component = editor.list[editor.selected];
         editor.title = labels[editor.selected];
-        editor.specs = try memory.dupe(config_tab.Spec, try config_tab.specs(memory, aircraft, component));
+        const form_layout = try config_tab.layout(memory, aircraft, component);
+        editor.specs = form_layout.specs;
+        editor.lists = form_layout.lists;
+        const captions = try memory.alloc([:0]const u8, 2 * form_layout.lists.len);
+        for (form_layout.lists, 0..) |list, k| {
+            captions[2 * k] = try std.fmt.allocPrintSentinel(memory, "+ {s}", .{list.item}, 0);
+            captions[2 * k + 1] = try std.fmt.allocPrintSentinel(memory, "− {s}", .{list.item}, 0);
+        }
+        editor.list_buttons = captions;
         var fields: std.ArrayList(ui_kit.form.Field) = .empty;
         editor.first_field = try memory.alloc(usize, editor.specs.len);
         for (editor.specs, editor.first_field) |spec, *first| {
@@ -647,11 +680,11 @@ const AssemblyEditor = struct {
             const label = try memory.dupeZ(u8, spec.label);
             const unit = try memory.dupeZ(u8, spec.unit);
             const help = try memory.dupeZ(u8, spec.help);
-            var field: ui_kit.form.Field = .{ .label = label, .unit = unit, .help = help, .group = 0 };
+            var field: ui_kit.form.Field = .{ .label = label, .unit = unit, .help = help, .group = spec.group };
             switch (spec.kind) {
                 .number, .integer => field.number = spec.number,
                 .optional_number => {
-                    try fields.append(memory, .{ .label = try std.fmt.allocPrintSentinel(memory, "{s}: auto", .{spec.label}, 0), .help = help, .group = 0, .kind = .toggle, .checked = spec.automatic });
+                    try fields.append(memory, .{ .label = try std.fmt.allocPrintSentinel(memory, "{s}: auto", .{spec.label}, 0), .help = help, .group = spec.group, .kind = .toggle, .checked = spec.automatic });
                     field.number = spec.number;
                     field.enabled = !spec.automatic;
                 },
@@ -673,8 +706,8 @@ const AssemblyEditor = struct {
             }
             try fields.append(memory, field);
         }
-        const groups = try memory.alloc(ui_kit.form.Group, 1);
-        groups[0] = .{ .title = editor.title };
+        const groups = try memory.alloc(ui_kit.form.Group, form_layout.groups.len);
+        for (groups, form_layout.groups, 0..) |*group, title, g| group.* = .{ .title = if (g == 0) editor.title else try memory.dupeZ(u8, title) };
         editor.form.groups = groups;
         editor.form.fields = fields.items;
         editor.form.editing = null;
@@ -722,9 +755,14 @@ const AssemblyEditor = struct {
         };
     }
 
-    /// o formulário da peça; verdadeiro se um valor mudou
-    fn drawForm(editor: *AssemblyEditor, ui: *widgets.Ui, rect: rl.Rectangle) bool {
-        const changed = editor.form.draw(ui, rect);
+    /// o formulário da peça e, embaixo, o "+" e o "−" de cada lista; verdadeiro se um valor mudou (`list_button` diz
+    /// qual botão foi apertado)
+    fn drawForm(editor: *AssemblyEditor, ui: *widgets.Ui, rect: rl.Rectangle, list_button: *?usize) bool {
+        var buttons_height: f32 = 36 * @as(f32, @floatFromInt(editor.lists.len));
+        var form_rect = rect;
+        form_rect.height -= buttons_height + (if (editor.lists.len > 0) @as(f32, 8) else 0);
+        if (editor.lists.len > 0) list_button.* = ui_kit.menus.buttonGrid(ui, rect.x, form_rect.y + form_rect.height + 8, rect.width, editor.list_buttons, 2, &buttons_height);
+        const changed = editor.form.draw(ui, form_rect);
         // o número opcional: a caixa só edita fora do "auto"
         for (editor.specs, editor.first_field) |spec, first| if (spec.kind == .optional_number) {
             editor.form.fields[first + 1].enabled = !editor.form.fields[first].checked;

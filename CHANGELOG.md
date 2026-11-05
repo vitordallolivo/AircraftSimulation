@@ -43,6 +43,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - A Montagem em Zig ganha os botões do Python para acrescentar asa, EH, EV, motor, tubo e tanque e para remover a peça
   escolhida. Ganha também "Trazer de .json": abre outro avião, mostra as peças dele, e a escolhida entra no avião
   aberto.
+- No editor da Montagem em Zig, a superfície mostra também o perfil, cada seção e cada comando. O trem "custom"
+  mostra as pernas, a massa mostra as massas pontuais e o percurso mostra os eventos, todos com "+" e "−". Uma
+  edição que deixa o avião inválido é desfeita, com o motivo embaixo do 3D.
 - Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
   referência e a trajetória 3D do voo.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).
