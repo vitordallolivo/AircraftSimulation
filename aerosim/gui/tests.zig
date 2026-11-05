@@ -3,4 +3,5 @@ test {
     _ = @import("ui/numbers.zig");
     _ = @import("ui/export.zig");
     _ = @import("assembly.zig");
+    _ = @import("tabs/config_tab.zig");
 }

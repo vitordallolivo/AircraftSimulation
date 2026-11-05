@@ -12,6 +12,7 @@ const jobs = ui_kit.jobs;
 const page_mod = @import("page.zig");
 const python_bridge = @import("python_bridge.zig");
 const assembly_mod = @import("assembly.zig");
+const config_tab = @import("tabs/config_tab.zig");
 const aircraft_model = @import("aircraft_model");
 const manager = @import("manager");
 
@@ -75,6 +76,8 @@ pub const Screen = struct {
     assembly_view: view3d.View = .{}, // a vista 3D da Montagem
     assembly: ?assembly_mod.Assembly = null, // o avião aberto
     assembly_note: [240:0]u8 = [_:0]u8{0} ** 240,
+    assembly_panel: ?AssemblyPanel = null, // o resumo ao lado do 3D (`config_tab.panel`), refeito ao abrir
+    assembly_scroll: ui_kit.scroll.ScrollArea = .{},
     loader: ui_kit.jobs.Job = .{}, // lê o .json fora do laço da tela
     loading: Loading = .{},
     message: [240:0]u8 = [_:0]u8{0} ** 240,
@@ -194,6 +197,8 @@ pub const Screen = struct {
         screen.loading.result = null;
         if (screen.assembly) |*old| old.deinit();
         screen.assembly = loaded;
+        if (screen.assembly_panel) |*old| old.deinit();
+        screen.assembly_panel = AssemblyPanel.build(&screen.assembly.?.loaded.ac) catch null;
         for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| page.setAircraftPath(loaded.path);
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · {d} peças · arraste outro .json para a janela para trocar · arraste para girar, roda para aproximar", .{ std.fs.path.basename(path), loaded.mesh.piece_count }) catch {};
     }
@@ -412,9 +417,12 @@ pub const Screen = struct {
         _ = widgets.paragraph(ui.fonts.regular, std.mem.sliceTo(&screen.message, 0), inner.x, inner.y + 10, inner.width, 15, theme.colors.label);
     }
 
-    /// a Montagem: o avião aberto em 3D, todas as peças nas cores da GUI, com o chão e os eixos do corpo
+    /// a Montagem: à esquerda o resumo do avião (massa e CG, dimensões, aerodinâmica...), à direita o avião aberto em
+    /// 3D, todas as peças nas cores da GUI, com o chão e os eixos do corpo
     fn drawAssembly(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
-        const card_rect: rl.Rectangle = .{ .x = rect.x + 12, .y = rect.y + 12, .width = rect.width - 24, .height = rect.height - 24 };
+        const side_width: f32 = if (screen.assembly_panel != null) @min(600, rect.width * 0.4) else 0;
+        if (screen.assembly_panel) |*shown| shown.draw(ui, &screen.assembly_scroll, .{ .x = rect.x + 12, .y = rect.y + 12, .width = side_width - 6, .height = rect.height - 24 });
+        const card_rect: rl.Rectangle = .{ .x = rect.x + 12 + side_width, .y = rect.y + 12, .width = rect.width - 24 - side_width, .height = rect.height - 24 };
         const area = cardInside(card_rect);
         screen.assembly_view.handleInput(ui, area);
         var title_buffer: [160]u8 = undefined;
@@ -424,7 +432,9 @@ pub const Screen = struct {
             title = widgets.format(&title_buffer, "Montagem: {s}", .{opened.name});
             const size = plane.size();
             const middle = plane.center();
-            if (screen.assembly_view.begin(area, middle, 1.1 * size)) {
+            // a vista mais estreita (com o resumo ao lado) afasta a câmera para caberem o avião e os eixos
+            const narrow = @max(1.0, 1.6 * area.height / @max(area.width, 1));
+            if (screen.assembly_view.begin(area, middle, 1.1 * size * narrow)) {
                 defer screen.assembly_view.end();
                 // o chão um pouco abaixo da peça mais baixa (z para baixo), quadriculado de 25 cm
                 view3d.floor(.{ middle[0], middle[1], 0 }, plane.high[2] + 0.02, 1.6 * size, 0.25);
@@ -527,3 +537,58 @@ fn flag(value: Json, key: []const u8) bool {
     const found = value.object.get(key) orelse return false;
     return found == .bool and found.bool;
 }
+
+/// o resumo da Montagem pronto para desenhar: o texto do painel em células da tabela, numa arena só dele
+const AssemblyPanel = struct {
+    arena: std.heap.ArenaAllocator,
+    name: [:0]const u8,
+    summary: []const u8,
+    titles: []const [:0]const u8,
+    tables: []const []const []const ui_kit.plot.Cell,
+    warnings: []const []const u8,
+
+    fn build(aircraft: *const aircraft_model.aircraft.Aircraft) !AssemblyPanel {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        errdefer arena.deinit();
+        const memory = arena.allocator();
+        const panel = try config_tab.panel(memory, aircraft);
+        const titles = try memory.alloc([:0]const u8, panel.sections.len);
+        const tables = try memory.alloc([]const []const ui_kit.plot.Cell, panel.sections.len);
+        for (panel.sections, titles, tables) |section, *title, *table| {
+            title.* = try memory.dupeZ(u8, section.title);
+            const rows = try memory.alloc([]const ui_kit.plot.Cell, section.rows.len);
+            for (section.rows, rows) |row, *cells| {
+                const pair = try memory.alloc(ui_kit.plot.Cell, 2);
+                pair[0] = .{ .text = try memory.dupeZ(u8, row.item) };
+                pair[1] = .{ .text = try memory.dupeZ(u8, row.value), .color = if (row.warning) theme.hex(0xbb0000) else null };
+                cells.* = pair;
+            }
+            table.* = rows;
+        }
+        return .{ .arena = arena, .name = try memory.dupeZ(u8, panel.name), .summary = panel.summary, .titles = titles, .tables = tables, .warnings = panel.warnings };
+    }
+
+    fn deinit(shown: *AssemblyPanel) void {
+        shown.arena.deinit();
+    }
+
+    /// os blocos um embaixo do outro, com a rolagem
+    fn draw(shown: *const AssemblyPanel, ui: *widgets.Ui, area: *ui_kit.scroll.ScrollArea, rect: rl.Rectangle) void {
+        var y = area.begin(ui, rect);
+        const width = rect.width - 14;
+        theme.text(ui.fonts.bold, shown.name, rect.x + 4, y + 4, 18, theme.colors.ink);
+        y += 30;
+        y += widgets.paragraph(ui.fonts.regular, shown.summary, rect.x + 4, y, width - 8, 14, theme.colors.label) + 10;
+        for (shown.titles, shown.tables) |title, rows| {
+            const height = ui_kit.plot.tableHeight(rows.len);
+            ui_kit.plot.table(ui, .{ .x = rect.x, .y = y, .width = width, .height = height }, title, &.{ "item", "valor" }, rows, &.{ 0.52, 0.48 });
+            y += height + 10;
+        }
+        if (shown.warnings.len > 0) {
+            theme.text(ui.fonts.bold, "Avisos", rect.x + 4, y, 16, theme.hex(0xbb0000));
+            y += 24;
+            for (shown.warnings) |warning| y += widgets.paragraph(ui.fonts.regular, warning, rect.x + 12, y, width - 16, 14, theme.hex(0xbb0000)) + 4;
+        }
+        area.end(ui, rect, y + 10);
+    }
+};

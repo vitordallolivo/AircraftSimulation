@@ -834,12 +834,12 @@ fn checkLabel(check: qualities.Check) []const u8 {
 // ------------------------------------------------------------------ o que o avião tem
 
 /// um comando: a superfície e qual dos comandos dela
-const ControlRef = struct { surface: usize, control: usize };
+pub const ControlRef = struct { surface: usize, control: usize };
 
 /// o que a aeronave tem para a Estabilidade (`features` de `aerosim/model/features.py`): a asa, a EH, as derivas e as
 /// da ponta da asa, os comandos de cada eixo, o líquido, a carga e os motores
-const Configuration = struct {
-    const max_list = 16;
+pub const Configuration = struct {
+    pub const max_list = 16;
     wing: ?usize = null,
     htail: ?usize = null,
     fins: [max_list]usize = undefined, // derivas (sem as da ponta)
@@ -876,7 +876,7 @@ fn usable(surface: *const model.Surface) bool {
     return surface.enabled and surface.sections.len > 1;
 }
 
-fn detectConfiguration(aircraft: *const Aircraft) Configuration {
+pub fn detectConfiguration(aircraft: *const Aircraft) Configuration {
     var out: Configuration = .{};
     for (aircraft.surfaces, 0..) |*surface, i| {
         if (!usable(surface)) continue;
@@ -942,7 +942,7 @@ fn findControl(aircraft: *const Aircraft, kinds: []const []const u8) ?ControlRef
 }
 
 /// o resumo da configuração (`Features.summary`)
-fn configurationSummary(memory: std.mem.Allocator, aircraft: *const Aircraft, configuration: Configuration) ![]const u8 {
+pub fn configurationSummary(memory: std.mem.Allocator, aircraft: *const Aircraft, configuration: Configuration) ![]const u8 {
     var parts: std.ArrayList([]const u8) = .empty;
     if (configuration.wing_group > 1) {
         var names: std.ArrayList(u8) = .empty;
@@ -978,7 +978,7 @@ fn configurationSummary(memory: std.mem.Allocator, aircraft: *const Aircraft, co
 // ------------------------------------------------------------------ números no texto
 
 /// um número como o `{:g}` do Python (6 algarismos significativos, sem zeros no fim)
-fn general(memory: std.mem.Allocator, value: f64) ![]const u8 {
+pub fn general(memory: std.mem.Allocator, value: f64) ![]const u8 {
     return significantText(memory, value, 6);
 }
 
@@ -1030,9 +1030,9 @@ fn signedWhole(memory: std.mem.Allocator, value: f64) ![]const u8 {
 
 /// a CMA de uma superfície: o tamanho, a posição na envergadura e o x do centro aerodinâmico (25 %), como
 /// `SurfaceModel.mac()`
-const MeanChord = struct { chord: f64, station: f64, x_leading: f64, x_center: f64 };
+pub const MeanChord = struct { chord: f64, station: f64, x_leading: f64, x_center: f64 };
 
-fn meanChord(aircraft: *const Aircraft, surface: *const model.Surface) MeanChord {
+pub fn meanChord(aircraft: *const Aircraft, surface: *const model.Surface) MeanChord {
     var buffer: [model.limits.sections]model.Section = undefined;
     const sections = model.sortedSections(surface, &buffer);
     var squares: f64 = 0;
@@ -1070,20 +1070,31 @@ fn analyticNeutralPoint(aircraft: *const Aircraft, area: f64, chord: f64) f64 {
     return if (slope > 0) sum / slope + chord * fuselage_moment / slope else std.math.nan(f64);
 }
 
+/// os volumes de cauda e o que entra neles: as áreas das caudas e os braços do CG ao CA de cada uma (o da última
+/// cauda de cada tipo, como no Python)
+pub const TailVolumes = struct { horizontal: f64 = 0, vertical: f64 = 0, horizontal_arm: f64 = 0, vertical_arm: f64 = 0, horizontal_area: f64 = 0, vertical_area: f64 = 0 };
+
 /// os volumes de cauda V_H = S_h l_h / (S c) e V_V = S_v l_v / (S b), com os braços do CG ao CA de cada cauda
 /// (`tail_volumes`)
-fn tailVolumes(aircraft: *const Aircraft, x_cg: f64, references: [3]f64) [2]f64 {
-    var horizontal: f64 = 0;
-    var vertical: f64 = 0;
+pub fn tailVolumes(aircraft: *const Aircraft, x_cg: f64, references: [3]f64) TailVolumes {
+    var out: TailVolumes = .{};
     for (aircraft.surfaces) |*surface| {
         if (!surface.enabled) continue;
         const is_htail = std.mem.eql(u8, surface.role, "htail");
         if (!is_htail and !std.mem.eql(u8, surface.role, "vtail")) continue;
         const arm = x_cg - meanChord(aircraft, surface).x_center;
         const surface_area = params_mod.area(surface);
-        if (is_htail) horizontal += surface_area * arm / (references[0] * references[1]) else vertical += surface_area * arm / (references[0] * references[2]);
+        if (is_htail) {
+            out.horizontal += surface_area * arm / (references[0] * references[1]);
+            out.horizontal_arm = arm;
+            out.horizontal_area += surface_area;
+        } else {
+            out.vertical += surface_area * arm / (references[0] * references[2]);
+            out.vertical_arm = arm;
+            out.vertical_area += surface_area;
+        }
     }
-    return .{ horizontal, vertical };
+    return out;
 }
 
 /// a velocidade de cruzeiro: a maior das pernas que não são decolagem nem pouso (15 m/s sem pernas), como
@@ -2039,7 +2050,8 @@ fn longitudinal(run: *simulation.Run, state: *StaticState) !void {
         const positive = moment_zero > 0;
         try addCheck(memory, state, .{ .status = if (positive) .ok else .falha, .item = "asa voadora: C_m na sustentação nula (C_m0)", .value = try std.fmt.allocPrint(memory, "{d:.4}", .{moment_zero}), .criterion = "C_m0 > 0 para equilibrar com C_L > 0 e ser estável sem cauda (Nickel & Wohlfahrt, Tailless Aircraft)", .why = if (positive) "" else "o perfil/torção dá momento picador: para voar estável o elevon fica cabrado e come curso de rolagem", .fix = if (positive) "" else "perfil reflexo, mais torção negativa na ponta (washout) ou mais enflechamento", .group = group });
     } else {
-        const volumes = tailVolumes(&state.plane, probe.cg[0], references);
+        const tails = tailVolumes(&state.plane, probe.cg[0], references);
+        const volumes = [2]f64{ tails.horizontal, tails.vertical };
         try state.summary.append(memory, .{ "volumes de cauda V_H, V_V", try numbersText(memory, &volumes) });
         try addCheck(memory, state, .{ .status = .info, .item = "volume de cauda horizontal V_H", .value = try std.fmt.allocPrint(memory, "{d:.3}", .{volumes[0]}), .criterion = "típicos (Raymer tab. 6.4): planador 0,50, experimental 0,50, aviação geral 0,70", .why = "referência histórica de partida; quem decide é a margem e os limites de CG acima", .group = group });
     }

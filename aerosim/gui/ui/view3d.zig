@@ -191,6 +191,9 @@ pub const View = struct {
         const target = view.texture orelse return;
         const texture = target.texture;
         rl.drawTextureRec(texture, .{ .x = 0, .y = 0, .width = @floatFromInt(texture.width), .height = @floatFromInt(-texture.height) }, .{ .x = rect.x, .y = rect.y }, .white);
+        // os textos ficam dentro da vista: um ponto fora dela não escreve por cima do que está ao lado
+        ui.pushClip(rect);
+        defer ui.popClip();
         for (view.labels[0..view.label_count]) |item| {
             const at = rl.getWorldToScreenEx(item.position, view.camera, texture.width, texture.height);
             theme.text(ui.fonts.regular, item.text, rect.x + at.x, rect.y + at.y - 7, 13, item.color);

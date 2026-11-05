@@ -3,7 +3,8 @@
 //! `manager/simulations/`, ao lado do `.py` da mesma área (a Estabilidade em `stability.zig`).
 const std = @import("std");
 const simulation = @import("simulation");
-const stability = @import("simulations/stability.zig");
+/// a Estabilidade: a Montagem usa dela o que a aeronave tem (`Configuration`) e a geometria das caudas
+pub const stability = @import("simulations/stability.zig");
 const thrust = @import("simulations/thrust.zig");
 const envelope = @import("simulations/envelope.zig");
 const performance = @import("simulations/performance.zig");

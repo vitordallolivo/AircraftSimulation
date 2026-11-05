@@ -173,6 +173,7 @@ pub const Battery = struct {
     }
 };
 pub const ThrustPoly = struct {
+    name: []const u8 = "",
     coefs: []const f64 = &.{},
     x_var: []const u8 = "V",
     y_var: []const u8 = "none",
@@ -259,7 +260,7 @@ pub const Payload = struct {
     target_e: f64 = 0,
     aim: bool = true, // a Missão procura onde soltar para a carga cair no alvo
 };
-pub const PointMass = struct { mass: f64 = 0.1, x: f64 = 0, y: f64 = 0, z: f64 = 0 };
+pub const PointMass = struct { name: []const u8 = "", mass: f64 = 0.1, x: f64 = 0, y: f64 = 0, z: f64 = 0 };
 pub const Mass = struct {
     base_mass: f64 = 8.39,
     base_cg: [3]f64 = .{ 0, 0, 0 },
@@ -433,6 +434,7 @@ pub const Aircraft = struct {
     Sref: ?f64 = null, // null ou 0: da asa
     cref: ?f64 = null,
     bref: ?f64 = null,
+    design_cg: ?[3]f64 = null, // o CG de projeto (x, y, z) que a sprint grava: as dimensões da Montagem se medem dele
 
     /// os tubos, dos dois formatos: `booms` (novo) ou o `boom` único (antigo)
     pub fn allBooms(ac: *const Aircraft) []const Boom {

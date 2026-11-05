@@ -32,6 +32,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   o resumo e as curvas são os mesmos do Python.
 - Antes, o CG da Montagem na interface em Zig deixava de fora a água dos tanques e saía com 2 kg a menos. Agora a
   massa e o CG são os mesmos da Montagem em Python.
+- A Montagem na interface em Zig ganha, ao lado do 3D, o resumo do avião que a Montagem em Python mostra: massa e
+  CG (com o líquido, a carga e depois da soltura), dimensões a partir do CG, aerodinâmica, cargas, propulsão, trem,
+  pista, LAPES, percurso e os avisos.
 - Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
   referência e a trajetória 3D do voo.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).

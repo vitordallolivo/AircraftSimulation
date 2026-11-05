@@ -51,6 +51,17 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // ---- o que o design calcula para a tela (design/dims.zig: as dimensões a partir do CG)
+    const design = b.createModule(.{
+        .root_source_file = b.path("design/dims.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "aircraft_model", .module = aircraft_model },
+            .{ .name = "manager", .module = manager },
+        },
+    });
+
     // os testes lentos dos managers (o MTOW da Missão, minutos) só rodam com -Dlento; -Dfiltro=<nome> escolhe os testes
     const test_options = b.addOptions();
     test_options.addOption(bool, "slow", b.option(bool, "lento", "roda também os testes lentos dos managers") orelse false);
@@ -66,6 +77,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "aerosim", .module = core },
             .{ .name = "aircraft_model", .module = aircraft_model },
             .{ .name = "manager", .module = manager },
+            .{ .name = "design", .module = design },
         },
     }) });
     const test_step = b.step("test", "Testes (sem janela)");
@@ -106,6 +118,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "aerosim", .module = core },
             .{ .name = "aircraft_model", .module = aircraft_model },
             .{ .name = "manager", .module = manager },
+            .{ .name = "design", .module = design },
         },
     });
     if (target.result.os.tag == .emscripten) return buildWeb(b, raylib_zig, program);

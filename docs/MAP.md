@@ -572,8 +572,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/model/**
 
 - `aerodrive/src/model/aircraft.zig` — Leitura do arquivo do avião salvo pela GUI (`data/aircraft/*.json`, "meus aviões").
-  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:116`, `Boom:133`, `Propeller:162`, `Motor:163`, `Battery:164`, `ThrustPoly:175`, `Propulsion:187`, `GearLeg:204`, `Gear:205`, `Tank:228`, `Payload:248`, `PointMass:262`, `Mass:263`, `Environment:274`, `Takeoff:295`, `SimSettings:296`, `Autopilot:298`, `Leg:343`, `MissionEvent:356`, `Mission:357`, `Ballast:367`, `Airfield:368`, `Modifier:386`, `Performance:401`, `Aircraft:412`, `limits:445`, `Diag:469`, `Loaded:483`
-  fn `mixedAirfoils:14`, `kindGains:48`, `parse:493`, `validate:552`, `semispan:639`, `sortedSections:646`, `sectionAt:658`, `tailOnBoom:671`
+  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:116`, `Boom:133`, `Propeller:162`, `Motor:163`, `Battery:164`, `ThrustPoly:175`, `Propulsion:188`, `GearLeg:205`, `Gear:206`, `Tank:229`, `Payload:249`, `PointMass:263`, `Mass:264`, `Environment:275`, `Takeoff:296`, `SimSettings:297`, `Autopilot:299`, `Leg:344`, `MissionEvent:357`, `Mission:358`, `Ballast:368`, `Airfield:369`, `Modifier:387`, `Performance:402`, `Aircraft:413`, `limits:447`, `Diag:471`, `Loaded:485`
+  fn `mixedAirfoils:14`, `kindGains:48`, `parse:495`, `validate:554`, `semispan:641`, `sortedSections:648`, `sectionAt:660`, `tailOnBoom:673`
 - `aerodrive/src/model/airfoil.zig` — Perfil 2D (x/c, y/c): NACA de 4 dígitos pelo nome ou as coordenadas do arquivo do avião.
   tipos `Profile:13`
   fn `nacaDigits:23`, `naca4:39`, `forDrawing:79`, `invert:95`, `full:102`, `thinAirfoil:126`, `flapEffectiveness:176`, `helmbold:183`, `split:190`
@@ -711,8 +711,14 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
   tipos `Waiter:29`, `Bridge:45`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt
-  tipos `Screen:59`
+  tipos `Screen:60`
 - `aerosim/gui/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos, exportar e a leitura do avião da Montagem.
+
+**aerosim/gui/tabs/**
+
+- `aerosim/gui/tabs/config_tab.zig` — O painel da Montagem, o par de `info_html` (`config_tab.py`): tudo o que dá para saber da configuração sem
+  tipos `Row:20`, `Section:22`, `Panel:25`
+  fn `panel:49`
 
 **aerosim/gui/ui/**
 
@@ -763,7 +769,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/ui/ui.zig` — As peças comuns das telas do aerosim e do aeroopt em Zig: cores e fontes, formas, widgets, formulário, gráfico
 - `aerosim/gui/ui/view3d.zig` — Vista 3D dentro de um cartão, com as mesmas ideias da vista do aerosim em Python (`aerosim/gui/widgets/view3d.py`
   tipos `Kind:17`, `View:100`
-  fn `kindColor:20`, `colorByName:35`, `fieldColor:57`, `fraction:75`, `liftColor:80`, `toWorld:85`, `shaded:215`, `triangle:223`, `quad:233`, `segment:250`, `arrow:255`, `floor:267`, `bodyAxes:279`
+  fn `kindColor:20`, `colorByName:35`, `fieldColor:57`, `fraction:75`, `liftColor:80`, `toWorld:85`, `shaded:218`, `triangle:226`, `quad:236`, `segment:253`, `arrow:258`, `floor:270`, `bodyAxes:282`
 - `aerosim/gui/ui/widgets.zig` — Os pedaços comuns das telas, no desenho do AeroDrive: o contexto de desenho (fontes, logo, mouse), o cabeçalho
   tipos `Ui:11`, `Splitter:204`, `Status:427`
   fn `paragraph:141`, `paragraphHeight:146`, `caretToEnd:192`, `replaceOnType:238`, `helpMark:263`, `checkBox:272`, `disclosure:287`, `rounded:331`, `roundedLines:336`, `header:341`, `tabBar:362`, `primaryButton:386`, `progressBar:396`, `card:403`, `labeledCard:411`, `statusColor:417`, `tableRow:430`, `format:437`
