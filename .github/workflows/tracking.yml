@@ -1,0 +1,65 @@
+# Aplica no docs/TRACKING.md da 0.2_dev as mudanças feitas pela página do tracking (botões "Confirmar feito" e
+# "+ Nova tarefa"): a página abre uma issue "[tracking] ..." já preenchida; aqui o tools/tracking.py --issue lê o corpo,
+# grava a mudança, faz o commit e fecha a issue. Só roda para issues do dono do repositório (o repositório é público).
+# Sem chave nenhuma: usa o token que o próprio GitHub dá a cada rodada. Um push deste token não dispara outras Actions.
+name: tracking
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+# uma mudança por vez, na ordem em que as issues chegam
+concurrency:
+  group: tracking
+  cancel-in-progress: false
+
+jobs:
+  aplicar:
+    if: startsWith(github.event.issue.title, '[tracking]') && github.event.issue.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 0.2_dev
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Aplicar a issue
+        id: aplicar
+        env:
+          CORPO: ${{ github.event.issue.body }}
+        run: |
+          printf '%s' "$CORPO" > "$RUNNER_TEMP/issue.txt"
+          python tools/tracking.py --issue "$RUNNER_TEMP/issue.txt" --html "$RUNNER_TEMP/tracking.html" | tee "$RUNNER_TEMP/saida.txt"
+          python tools/tracking.py --check
+          echo "resumo=$(grep -m1 'docs/TRACKING.md:' "$RUNNER_TEMP/saida.txt" | cut -d: -f2- | xargs)" >> "$GITHUB_OUTPUT"
+
+      - name: Commit na 0.2_dev
+        env:
+          RESUMO: ${{ steps.aplicar.outputs.resumo }}
+          NUMERO: ${{ github.event.issue.number }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Tracking: $RESUMO (#$NUMERO)"
+          git push origin 0.2_dev
+
+      - name: Fechar a issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESUMO: ${{ steps.aplicar.outputs.resumo }}
+          NUMERO: ${{ github.event.issue.number }}
+        run: gh issue close "$NUMERO" --repo "$GITHUB_REPOSITORY" --comment "Feito no docs/TRACKING.md da 0.2_dev: $RESUMO."
+
+      - if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMERO: ${{ github.event.issue.number }}
+        run: gh issue comment "$NUMERO" --repo "$GITHUB_REPOSITORY" --body "Não deu para aplicar no TRACKING.md; veja o log da Action ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}."

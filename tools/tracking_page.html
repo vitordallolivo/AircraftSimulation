@@ -105,6 +105,7 @@
     <button class="chip" id="nova" style="margin-left:8px">+ Nova tarefa</button></div>
   <nav id="abas"></nav>
 </header>
+<div id="aviso" class="sub" style="padding:0 16px;color:var(--andamento)"></div>
 <main id="conteudo"></main>
 <div id="detalhe"><div class="caixa" id="caixa"></div></div>
 
@@ -120,18 +121,28 @@ const COR = Object.fromEntries(ESTADOS.map(([nome, cor]) => [nome, `var(--${cor}
 const COLUNAS = ['Em andamento', 'A revisar', 'Pronto', 'A fazer', 'A decidir', 'Bloqueado', 'Feito', 'Fora do foco'];
 const coluna = estado => estado === 'Fazendo' ? 'Em andamento' : estado;
 
-// todos os itens, com o segmento, quem depende dele e se é suspeita de erro
+// todos os itens, com o segmento, quem depende dele, os commits e se é suspeita de erro (refeito quando chega uma
+// mudança das issues, ver `aplicaIssues`)
 const ITENS = [];
-for (const seg of DADOS.segmentos) for (const it of seg.itens) ITENS.push({ ...it, segmento: seg.nome, bloqueia: [] });
-const POR_ID = Object.fromEntries(ITENS.map(it => [it.id, it]));
-for (const it of ITENS) for (const dep of it.depende) if (POR_ID[dep]) POR_ID[dep].bloqueia.push(it.id);
+const POR_ID = {};
 const SUSPEITA = /suspeit|\bbug\b|quebrad|errad|não bate|corrigir/i;
-for (const it of ITENS) it.suspeita = it.tipo === '[fix]' || SUSPEITA.test(it.tarefa);
 const aberto = it => !['Feito', 'Fora do foco'].includes(it.estado);
 // commits citados na observação do estado ("Feito (commit abc1234)") ou no texto: viram links para o GitHub
-const REPO = 'https://github.com/vitordallolivo/AircraftSimulation/commit/';
+const GITHUB = 'https://github.com/vitordallolivo/AircraftSimulation';
+const REPO = GITHUB + '/commit/';
 const HASH = /\b[0-9a-f]{7,40}\b/g;
-for (const it of ITENS) it.commits = [...new Set(((it.obs || '') + ' ' + it.tarefa).match(HASH) || [])].filter(h => /\d/.test(h) && /[a-f]/.test(h));
+function monta() {
+  ITENS.length = 0;
+  for (const k in POR_ID) delete POR_ID[k];
+  for (const seg of DADOS.segmentos) for (const it of seg.itens) ITENS.push({ ...it, segmento: seg.nome, bloqueia: [] });
+  for (const it of ITENS) POR_ID[it.id] = it;
+  for (const it of ITENS) for (const dep of it.depende) if (POR_ID[dep]) POR_ID[dep].bloqueia.push(it.id);
+  for (const it of ITENS) {
+    it.suspeita = it.tipo === '[fix]' || SUSPEITA.test(it.tarefa);
+    it.commits = [...new Set(((it.obs || '') + ' ' + it.tarefa).match(HASH) || [])].filter(h => /\d/.test(h) && /[a-f]/.test(h));
+  }
+}
+monta();
 const commitsHtml = it => it.commits.map(h => `<a class="commit" href="${REPO}${h}" target="_blank" rel="noopener">${h.slice(0, 7)}</a>`).join(' ');
 
 // ---------- Markdown curto (o que o TRACKING.md e o AREAS.md usam) ----------
@@ -206,33 +217,56 @@ function abrir(id) {
     ${it.estado !== 'Feito' ? `<div class="grupo form"><h3>Confirmar feito</h3>
       <label for="f-desc">O que foi feito (entra no fim do texto da tarefa)</label><textarea id="f-desc"></textarea>
       <label for="f-commit">Commit</label><input id="f-commit" placeholder="abc1234">
-      <div class="botoes"><button class="botao" id="f-gerar">Gerar a linha</button></div>
-      <div id="f-saida"></div></div>` : ''}`;
+      <div class="botoes"><button class="botao" id="f-enviar">Confirmar</button></div>
+      <p class="ajuda">Abre no GitHub uma issue já preenchida: aperte "Create" e o TRACKING.md da 0.2_dev é atualizado sozinho
+      (.github/workflows/tracking.yml). Esta página já mostra a mudança na próxima vez que abrir.</p></div>` : ''}`;
   document.getElementById('detalhe').classList.add('aberto');
-  const gerar = document.getElementById('f-gerar');
-  if (gerar) gerar.addEventListener('click', () => {
-    const desc = limpa(document.getElementById('f-desc').value);
-    const commit = limpa(document.getElementById('f-commit').value);
-    const tarefa = it.tarefa + (desc ? ` Feito: ${desc}` : '');
-    const estado = commit ? `Feito (commit ${commit})` : 'Feito';
-    mostraLinha('f-saida', linhaMd(it.id, tarefa, it.tipo, it.depende, it.bloco, estado),
-      `Troque a linha do ${it.id} no docs/TRACKING.md (tabela "${it.segmento}") por esta:`);
-  });
+  const enviar = document.getElementById('f-enviar');
+  if (enviar) enviar.addEventListener('click', () => abreIssue(`${it.id} feito`, {
+    acao: 'feito', id: it.id, commit: limpa(document.getElementById('f-commit').value),
+  }, document.getElementById('f-desc').value));
 }
 
-// ---------- gerar a linha do .md (a página não grava nada: copia-se e cola-se no TRACKING.md) ----------
+// ---------- mudanças pela página: uma issue "[tracking] ..." que a Action aplica no TRACKING.md ----------
+// O corpo é "chave: valor" por linha, depois "---" e o texto livre (o que foi feito, ou a tarefa nova). O mesmo
+// formato é lido pelo tools/tracking.py --issue.
 const limpa = s => s.replace(/\s+/g, ' ').replace(/\|/g, '/').trim();
-const linhaMd = (id, tarefa, tipo, depende, bloco, estado) =>
-  `| ${id} | ${tarefa} | ${tipo} | ${depende.length ? depende.join(', ') : '—'} | ${bloco} | ${estado} |`;
-function mostraLinha(onde, linha, ajuda) {
-  const alvo = document.getElementById(onde);
-  alvo.innerHTML = `<p class="ajuda">${esc(ajuda)}</p><div class="linha-md" id="${onde}-md">${esc(linha)}</div>
-    <div class="botoes"><button class="botao" id="${onde}-copiar">Copiar</button></div>`;
-  document.getElementById(`${onde}-copiar`).addEventListener('click', async e => {
-    try { await navigator.clipboard.writeText(linha); }
-    catch (erro) { const r = document.createRange(); r.selectNodeContents(document.getElementById(`${onde}-md`)); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand('copy'); }
-    e.target.textContent = 'Copiado';
-  });
+function abreIssue(titulo, campos, texto) {
+  const corpo = Object.entries(campos).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n---\n' + limpa(texto);
+  window.open(`${GITHUB}/issues/new?title=${encodeURIComponent('[tracking] ' + titulo)}&body=${encodeURIComponent(corpo)}`, '_blank', 'noopener');
+}
+function leCorpo(corpo) {
+  const [cabeca, ...resto] = (corpo || '').replace(/\r/g, '').split('\n---\n');
+  const campos = {};
+  for (const linha of cabeca.split('\n')) { const m = linha.match(/^(\w+):\s*(.*)$/); if (m) campos[m[1]] = m[2].trim(); }
+  campos.texto = limpa(resto.join('\n---\n'));
+  return campos;
+}
+// aplica nos dados da página as issues abertas depois que ela foi gerada (a Action já gravou ou está gravando no
+// .md, mas o site só é refeito no próximo merge na main)
+function aplicaIssues(issues) {
+  let mudou = 0;
+  for (const issue of issues.slice().reverse()) {
+    if (!issue.title.startsWith('[tracking]') || issue.pull_request || new Date(issue.created_at) < new Date(DADOS.gerado)) continue;
+    const c = leCorpo(issue.body);
+    if (c.acao === 'feito') {
+      for (const seg of DADOS.segmentos) for (const it of seg.itens) if (it.id === c.id) {
+        if (c.texto) it.tarefa += ` Feito: ${c.texto}`;
+        it.estado = 'Feito'; it.obs = c.commit ? `commit ${c.commit}` : '';
+        mudou++;
+      }
+    } else if (c.acao === 'nova') {
+      const seg = DADOS.segmentos.find(s => s.nome === c.segmento); if (!seg) continue;
+      const id = proximoId(c.segmento);
+      seg.itens.push({ id, tarefa: c.texto || '(sem texto)', tipo: c.tipo || '[ext]', bloco: c.bloco || '—', estado: c.estado || 'A fazer', obs: '',
+        depende: (c.depende || '').split(/[,;\s]+/).filter(d => /^[A-Z]+\d+$/.test(d)) });
+      monta(); mudou++;
+    }
+  }
+  if (!mudou) return;
+  monta();
+  document.getElementById('aviso').textContent = `${mudou} mudança(s) feitas pela página, já no TRACKING.md da 0.2_dev; o site é refeito no próximo merge.`;
+  desenha();
 }
 // o próximo número livre: O no aeroopt, G na GUI, T no resto (os T são um contador só para os outros segmentos)
 function proximoId(segmento) {
@@ -253,16 +287,18 @@ function novaTarefa() {
       <label for="n-dep">Depende de (ids separados por vírgula)</label><input id="n-dep" placeholder="G26, T13">
       <label for="n-bloco">Bloco</label><select id="n-bloco">${opcoes(blocos)}</select>
       <label for="n-estado">Estado</label><select id="n-estado">${opcoes(['A fazer', 'Pronto', 'Em andamento', 'Bloqueado', 'A decidir'])}</select>
-      <div class="botoes"><button class="botao" id="n-gerar">Gerar a linha</button></div>
-      <div id="n-saida"></div></div>`;
+      <div class="botoes"><button class="botao" id="n-enviar">Criar</button></div>
+      <p class="ajuda">Abre no GitHub uma issue já preenchida: aperte "Create" e a tarefa entra no fim da tabela do segmento, com o
+      próximo número livre, no TRACKING.md da 0.2_dev.</p></div>`;
   document.getElementById('detalhe').classList.add('aberto');
-  document.getElementById('n-gerar').addEventListener('click', () => {
+  document.getElementById('n-enviar').addEventListener('click', () => {
     const segmento = document.getElementById('n-seg').value;
     const depende = document.getElementById('n-dep').value.split(/[,;\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
-    const id = proximoId(segmento);
-    mostraLinha('n-saida', linhaMd(id, limpa(document.getElementById('n-tarefa').value) || '(sem texto)', document.getElementById('n-tipo').value,
-      depende, document.getElementById('n-bloco').value, document.getElementById('n-estado').value),
-      `Cole esta linha no fim da tabela "${segmento}" do Quadro, no docs/TRACKING.md:`);
+    const texto = document.getElementById('n-tarefa').value;
+    abreIssue(`nova em ${segmento}: ${limpa(texto).slice(0, 60)}`, {
+      acao: 'nova', segmento, tipo: document.getElementById('n-tipo').value, depende: depende.join(', '),
+      bloco: document.getElementById('n-bloco').value, estado: document.getElementById('n-estado').value,
+    }, texto);
   });
 }
 document.getElementById('nova').addEventListener('click', novaTarefa);
@@ -409,6 +445,9 @@ function desenha() {
   ligarGrafo();
 }
 desenha();
+// as mudanças feitas pela página depois que ela foi gerada (API pública do GitHub, sem chave; sem rede, nada muda)
+fetch(`https://api.github.com/repos/vitordallolivo/AircraftSimulation/issues?state=all&per_page=50&since=${encodeURIComponent(DADOS.gerado)}`)
+  .then(r => r.ok ? r.json() : []).then(aplicaIssues).catch(() => {});
 </script>
 </body>
 </html>

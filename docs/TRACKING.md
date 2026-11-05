@@ -170,7 +170,7 @@ O quadro tem uma tabela por segmento; o segmento é onde fica o grosso do trabal
 com uma aba que a mostra fica no **core**, e a aba vira outra tarefa no **aerosim**). As dependências cruzam os
 segmentos. As tarefas do aeroopt usam o prefixo **O**, e as da GUI, o **G**.
 
-A página `tracking.html` do site sai destas tabelas (`python tools/tracking.py`; o build do site roda sozinho): para acrescentar uma tarefa, basta uma linha nova na tabela do segmento. Uma tarefa resolvida fica `Feito (commit abc1234)` (à mão ou com `python tools/tracking.py --feito G26 abc1234`): a página risca o título, liga o commit no GitHub e a tira da aba Próximos, que mostra as abertas em ondas, na ordem em que dá para fazê-las. Na página, "Confirmar feito" (em cada tarefa) e "+ Nova tarefa" geram a linha pronta para copiar e colar aqui.
+A página `tracking.html` do site sai destas tabelas (`python tools/tracking.py`; o build do site roda sozinho): para acrescentar uma tarefa, basta uma linha nova na tabela do segmento. Uma tarefa resolvida fica `Feito (commit abc1234)` (à mão ou com `python tools/tracking.py --feito G26 abc1234`): a página risca o título, liga o commit no GitHub e a tira da aba Próximos, que mostra as abertas em ondas, na ordem em que dá para fazê-las. Na página, "Confirmar feito" (em cada tarefa) e "+ Nova tarefa" abrem uma issue já preenchida, e a Action `tracking.yml` grava a mudança aqui na `0.2_dev` sozinha.
 
 Tipos de tarefa:
 - **[GUI]**: só ligar na interface.
