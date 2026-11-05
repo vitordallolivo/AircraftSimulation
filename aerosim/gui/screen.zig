@@ -641,6 +641,14 @@ pub const Screen = struct {
         _ = widgets.card(ui, card_rect, title);
         if (screen.assembly) |*opened| {
             screen.assembly_view.blit(ui, area);
+            // o símbolo do CG por cima de tudo (na imagem já colada): o círculo em quartos preto e branco
+            const weights = assembly_mod.balance(&opened.loaded.ac);
+            if (screen.assembly_view.project(weights.cg, area)) |at| {
+                ui.pushClip(area);
+                defer ui.popClip();
+                drawCgSymbol(at, 13);
+                theme.text(ui.fonts.bold, "CG", at.x + 19, at.y - 9, 16, theme.hex(0xd62728));
+            }
             // numa vista em escala, as coordenadas do CG que ela mostra, a partir da referência (0, 0, 0)
             const axes: ?[2]usize = switch (screen.assembly_angle) {
                 .side => .{ 0, 2 },
@@ -966,6 +974,15 @@ const ViewAngle = enum {
         view.elevation = direction[1];
     }
 };
+
+/// o símbolo do centro de gravidade: um círculo em quatro quartos, pretos e brancos alternados, com a borda vermelha
+fn drawCgSymbol(center: rl.Vector2, radius: f32) void {
+    rl.drawCircleV(center, radius + 4, theme.hex(0xd62728));
+    for (0..4) |quarter| {
+        const start: f32 = 90 * @as(f32, @floatFromInt(quarter));
+        rl.drawCircleSector(center, radius, start, start + 90, 16, if (quarter % 2 == 0) rl.Color.black else rl.Color.white);
+    }
+}
 
 /// as cotas do CG numa vista em escala: da referência (0, 0, 0) até o CG pelos dois eixos que a vista mostra
 fn drawCgDimensions(view: *view3d.View, angle: ViewAngle, cg: [3]f64, size: f64) void {
