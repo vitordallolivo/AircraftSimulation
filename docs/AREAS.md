@@ -36,7 +36,7 @@ desenvolvido" até ser feito) · ⚠ cálculo em Python que, pela regra 2 do `.c
 | Submódulo | Estado | Onde | Tarefa |
 |---|---|---|---|
 | Empenagem e comandos | ✅ ⚠ | `design/tail.py`, `stability/controls.py` | — |
-| Avião montado: estática, tesoura, comandos, dinâmica, qualidades de voo | ✅ ⚠ | `manager/simulations/stability.py`, `stability/*.py` | — |
+| Avião montado: estática, tesoura, comandos, dinâmica, qualidades de voo | ✅ Zig | `manager/simulations/stability.zig`, `core/src/sim/static.zig`, `core/src/sim/modes.zig` | G23 |
 | Estabilidade dinâmica: rajada, líquido, LAPES e polos no tempo | ✅ Zig | `manager/simulations/stability.zig`, `core/src/sim/gust.zig` | G20 |
 | Normas e critérios como preset do usuário | ⬜ | `stability/criteria.py` | T37 |
 | Estabilidade não linear (Lyapunov, região de atração, sloshing, vento) | ⬜ | — | T05 |

@@ -365,12 +365,12 @@ const Checkpoints = struct {
 var checkpoints: Checkpoints = .{};
 
 /// a massa e o CG com que o avião voa: o que passa da massa montada entra no CG seco, e o CG pode ser levado a um x
-const Loading = struct {
+pub const Loading = struct {
     mass: ?f64 = null, // a massa total (kg)
     center_x: ?f64 = null, // o x do CG do avião inteiro (m, corpo)
 
     /// muda os parâmetros já preenchidos (`fill`), antes do configure
-    fn apply(loading: Loading, params: *types.Params) void {
+    pub fn apply(loading: Loading, params: *types.Params) void {
         var scratch: types.Params = params.*;
         var scratch_run: core.runner.Instance = .{ .p = scratch };
         _ = &scratch_run;
@@ -387,7 +387,7 @@ const Loading = struct {
 };
 
 /// o MTOW que o modo MTOW achou para uma pista (o avião, x_warning e z_warning)
-const SavedMtow = struct { source: u64, x_warning: f64, z_warning: f64, loading: Loading, mass: f64 };
+pub const SavedMtow = struct { source: u64, x_warning: f64, z_warning: f64, loading: Loading, mass: f64 };
 var saved_mtows: [8]?SavedMtow = [_]?SavedMtow{null} ** 8;
 
 fn savedFor(aircraft: *const Aircraft, x_warning: f64, z_warning: f64) ?SavedMtow {
@@ -396,6 +396,22 @@ fn savedFor(aircraft: *const Aircraft, x_warning: f64, z_warning: f64) ?SavedMto
         if (saved.source == source and @abs(saved.x_warning - x_warning) < 1e-3 and @abs(saved.z_warning - z_warning) < 1e-3) return saved;
     };
     return null;
+}
+
+/// os MTOW salvos deste avião, na ordem da pista (x_warning, depois z_warning), como `saved_mtows` do Python
+pub fn savedMtows(aircraft: *const Aircraft, out: *[saved_mtows.len]SavedMtow) []SavedMtow {
+    const source = fingerprint(aircraft);
+    var count: usize = 0;
+    for (saved_mtows) |entry| if (entry) |saved| if (saved.source == source) {
+        out[count] = saved;
+        count += 1;
+    };
+    std.mem.sort(SavedMtow, out[0..count], {}, struct {
+        fn before(_: void, a: SavedMtow, b: SavedMtow) bool {
+            return if (a.x_warning != b.x_warning) a.x_warning < b.x_warning else a.z_warning < b.z_warning;
+        }
+    }.before);
+    return out[0..count];
 }
 
 fn saveMtow(entry: SavedMtow) void {

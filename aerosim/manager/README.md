@@ -387,6 +387,22 @@ do líquido. A conta é a do núcleo (`core/src/sim/gust.zig`, que explica a raj
 diagnóstico dá o pico do ângulo de ataque contra $`\operatorname{atan}(U/V)`$, se ele volta ao equilíbrio, quanto o CG
 anda e o maior desvio do líquido.
 
+### Estabilidade do avião montado (`simulations/stability.zig`, `Stability`)
+
+A subaba Estabilidade → Avião montado diz se a configuração serve, por quê e o que mudar, na ordem do
+dimensionamento. Primeiro vem a estática longitudinal: o ponto neutro, a margem e o profundor de equilíbrio ao longo
+do CG, os limites do CG e a faixa prevista (com e sem a carga e o líquido). Depois vêm a área da empenagem horizontal
+pela faixa de CG, a estática látero-direcional (C_nβ, C_lβ e a espiral) e os comandos (rolagem, profundor e leme). Na
+asa voadora entram a torção na ponta e o tamanho do elevon. Por último vem a dinâmica do modelo linear em várias
+velocidades contra os critérios da norma, com a correção procurada quando um modo não passa (por exemplo, quantos
+graus de diedro levam a espiral ao nível 1).
+
+A conta é a do núcleo (`core/src/sim/static.zig` e `modes.zig`, explicados no README de lá). Aqui ficam o formulário,
+as variações do avião que a análise testa (outra empenagem, outro diedro, sem carga, sem líquido) e o texto do
+diagnóstico. Os campos e os gráficos seguem o que o avião tem, sem nenhum tipo de avião fixo: sem trem não há
+rotação, sem empenagem horizontal entra a asa voadora, sem carga não há os polos ao soltar a carga. O teste roda a aba
+inteira no Convencional_original e confere o diagnóstico, o resumo e as curvas com os da versão em Python.
+
 ### Tração, voo nivelado e desempenho (`simulations/thrust.zig`, `envelope.zig`, `performance.zig`)
 
 As três subabas de Desempenho que vinham do Python agora são calculadas em Zig, com as mesmas contas do núcleo e os

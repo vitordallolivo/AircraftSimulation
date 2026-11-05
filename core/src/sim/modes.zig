@@ -16,6 +16,8 @@
 const std = @import("std");
 const linalg = @import("../math/linalg.zig");
 const linear = @import("linear.zig");
+const types = @import("../types.zig");
+const state = @import("state.zig");
 
 /// os cinco modos do avião rígido
 pub const Mode = enum { short_period, phugoid, dutch_roll, roll, spiral };
@@ -143,6 +145,20 @@ fn blockEigen(matrix: *const [linear.nl * linear.nl]f64, block: [4]usize, real: 
 
 fn bySize(values: *const [4]f64, a: usize, b: usize) bool {
     return values[a] < values[b];
+}
+
+/// os autovalores do modelo linear com o líquido dos tanques oscilando (`linear.linearizeSlosh`, como
+/// `slosh_eigs_at`); devolve quantos, ou null se a trimagem ou o autovalor falham
+pub fn liquidPoles(params: *const types.Params, flags: *const state.Flags, airspeed: f64, real: *[linear.nl_slosh]f64, imag: *[linear.nl_slosh]f64) ?usize {
+    const model = linear.linearizeSlosh(params, flags, airspeed);
+    if (model.ok == 0) return null;
+    const size: usize = @intCast(model.n);
+    var matrix: [linear.nl_slosh][linear.nl_slosh]f64 = undefined;
+    for (0..size) |i| for (0..size) |j| {
+        matrix[i][j] = model.A[i * linear.nl_slosh + j];
+    };
+    if (!linalg.generalEigen(linear.nl_slosh, &matrix, size, real, imag)) return null;
+    return size;
 }
 
 // ------------------------------------------------------------------ critérios

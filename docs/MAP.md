@@ -446,8 +446,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `LinModel:28`, `LinSloshModel:230`
   fn `rigid:56`, `linearize:169`, `linearizeSlosh:290`, `residual:331`
 - `core/src/sim/modes.zig` — Os modos dinâmicos do avião equilibrado e as qualidades de voo: o que a aba Estabilidade mostra depois da
-  tipos `Mode:21`, `Pole:24`, `Class:151`, `Phase:153`, `Check:155`, `Criteria:169`, `Row:226`, `Input:331`
-  fn `classify:65`, `rollRequirement:158`, `mil8785c:192`, `noCriteria:220`, `evaluate:235`, `passes:322`, `respond:352`
+  tipos `Mode:23`, `Pole:26`, `Class:167`, `Phase:169`, `Check:171`, `Criteria:185`, `Row:242`, `Input:347`
+  fn `classify:67`, `liquidPoles:152`, `rollRequirement:174`, `mil8785c:208`, `noCriteria:236`, `evaluate:251`, `passes:338`, `respond:368`
 - `core/src/sim/runner.zig` — Executor de uma corrida: eventos discretos, paradas, registro e checkpoints.
   tipos `Status:26`, `Instance:37`
   fn `stateText:65`, `configure:95`, `handover:162`, `resetGround:184`, `resetAir:238`, `run:391`
@@ -458,8 +458,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Entry:7`, `Flags:87`, `Run:103`, `Ctx:119`
   fn `index:57`, `rps:66`, `sx:70`, `sy:74`, `sxd:78`, `syd:82`
 - `core/src/sim/static.zig` — Estabilidade estática do avião montado: o que a aba Estabilidade calcula antes da dinâmica. É a mesma conta de
-  tipos `Inputs:31`, `Probe:34`, `Sweep:213`
-  fn `cgSweep:226`, `limitCrossing:253`, `gearForRotation:267`
+  tipos `Inputs:31`, `Probe:34`, `Sweep:213`, `Variable:290`, `Limits:370`, `WingStrip:433`, `Aileron:436`, `RollSizing:449`, `ElevatorSizing:525`, `RudderSizing:571`
+  fn `cgSweep:226`, `limitCrossing:253`, `gearForRotation:267`, `derivative:294`, `rollDamping:327`, `yawDamping:333`, `alphaForLift:341`, `scissorLimits:374`, `minTail:399`, `timeToBank:414`, `aileronSizing:461`, `interpolate:505`, `elevatorSizing:534`, `rudderSizing:584`
 - `core/src/sim/tests.zig` — Testes de integração do núcleo: aeronave monomotora convencional (a do código
 - `core/src/sim/trim.zig` — Equilíbrio (trimagem) e desempenho por velocidade, sem integração no tempo.
   tipos `Ctx:25`

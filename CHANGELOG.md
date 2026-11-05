@@ -26,6 +26,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   Avião montado e Missão. Os números são os mesmos do Python, e um teste confere cada uma. A Missão tem os quatro
   modos: só a decolagem, a missão etapa por etapa (com checkpoints, raio automático das curvas e a busca do ponto de
   soltura da carga LAPES), o raio mínimo de curva e o MTOW.
+- A Estabilidade do avião montado também roda na interface em Zig sem passar pelo Python: a margem estática e os
+  limites de CG, a área da empenagem horizontal, a estabilidade direcional e lateral, o tamanho dos comandos, a asa
+  voadora e os modos dinâmicos contra a MIL-F-8785C, com a correção sugerida quando um modo não passa. O diagnóstico,
+  o resumo e as curvas são os mesmos do Python.
 - Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
   referência e a trajetória 3D do voo.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).

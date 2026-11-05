@@ -160,6 +160,72 @@ sobra é o líquido. `gustSpeed` dá a rajada no tempo, a mesma que o voo sente,
 o gráfico. A rodada anda em fatias (`begin`, depois
 `advance` até acabar), para que a tela siga desenhando enquanto ela roda, inclusive no navegador, onde não há thread.
 
+## Estabilidade estática e comandos (`static.zig`)
+
+Aqui se responde se o avião montado fica estável e controlável parado no ar, antes de olhar a dinâmica: onde fica o
+ponto neutro, entre que posições o CG pode ficar, qual o C_L máximo que o profundor ainda consegue equilibrar, quanto
+de profundor a decolagem pede e se o aileron, o profundor e o leme dão conta do que se pede deles. É a conta da aba
+Estabilidade (Avião montado), a mesma do `aerosim/stability` em Python, para a aba rodar sem Python.
+
+Tudo sai de uma sonda (`Probe`): o avião configurado no núcleo, de onde se pedem os coeficientes a um α, a uma
+derrapagem e a uma deflexão, com o momento em qualquer ponto de referência. O ponto neutro com o manche fixo é o ponto
+em que o momento de arfagem não muda com α. Com a referência em x = 0, ele fica em
+
+```math
+x_{np} = c\,\frac{\partial C_m/\partial\alpha}{\partial C_L/\partial\alpha}
+```
+
+com as derivadas centrais de meio grau (Etkin e Reid, Dynamics of Flight, cap. 2; a conferir no PDF). A margem
+estática é a distância do CG até ele, em % da corda média aerodinâmica (a CMA, a corda que representa a asa inteira).
+O limite traseiro do CG é a margem mínima. O dianteiro é onde o profundor chega ao fim do curso para equilibrar o
+pouso ou para rodar a decolagem sobre o trem principal. Para rodar, o momento em volta do trem principal tem de vencer
+a inércia com a aceleração de arfagem pedida:
+
+```math
+x_{CG} \le x_{tp} + \frac{q S c\, C_{m,tp} + T\,(z_T - z_{tp}) - I_{tp}\,\ddot\theta}{W}
+```
+
+(Torenbeek, Synthesis of Subsonic Airplane Design, cap. 9; Sadraey, Aircraft Design, cap. 6; a conferir no PDF). A
+varredura do CG (`cgSweep`) dá a margem e as deflexões de equilíbrio em cada posição, e a tesoura (`scissorLimits` com
+`minTail`) repete isso para vários tamanhos de empenagem horizontal até achar o menor que deixa a faixa de CG prevista
+caber entre os dois limites.
+
+Os comandos se dimensionam pelo que cada um tem de fazer. O aileron tem de inclinar o avião a um ângulo num tempo da
+norma. A taxa de rolamento em regime e a constante de tempo saem do amortecimento de rolamento C_lp:
+
+```math
+p_{ss} = -\frac{C_{l\delta_a}}{C_{lp}}\,\delta_a\,\frac{2V}{b}
+\qquad
+\tau_R = -\frac{2V\,I_{xx}}{q S b^2\,C_{lp}}
+```
+
+(Sadraey, Aircraft Design, cap. 12; Roskam, Airplane Design VI; a conferir no PDF), e o tempo para chegar ao ângulo é
+achado por bisseção (`timeToBank`). O profundor tem de equilibrar o pouso e rodar a decolagem com o CG mais
+dianteiro. O leme tem de segurar o vento cruzado no pouso, com a derrapagem $`\beta = \operatorname{atan}(V_w/V)`$:
+
+```math
+\delta_r = \frac{C_{n\beta}\,\beta}{C_{n\delta_r}}
+```
+
+(FAR 23.233), e, com mais de um motor, também o motor mais afastado parado na velocidade mínima de controle.
+
+## Modos e qualidades de voo (`modes.zig`)
+
+Aqui se diz como o avião responde quando sai do equilíbrio e se isso passa na norma. O modelo linear (`linear.zig`)
+separa em dois blocos de quatro estados. O longitudinal (u, w, q, θ) dá o curto período, a oscilação rápida de
+arfagem, e a fugóide, a troca lenta de altura e velocidade. O látero-direcional (v, p, r, φ) dá o dutch roll, a
+oscilação de guinada com rolamento, o rolamento, que é a raiz real mais rápida, e a espiral, a mais lenta (Etkin e
+Reid, Dynamics of Flight, cap. 6; Nelson, Flight Stability and Automatic Control, cap. 5). `classify` acha qual polo é
+qual. De um polo $`\lambda = \sigma \pm i\omega`$ saem
+
+```math
+\omega_n = |\lambda|,\quad \zeta = -\frac{\sigma}{\omega_n},\quad T = \frac{2\pi}{\omega},\quad t_2 = \frac{\ln 2}{\sigma},\quad \tau = -\frac{1}{\sigma}
+```
+
+e `evaluate` compara cada um com os limites dos níveis 1, 2 e 3 da MIL-F-8785C, por classe de avião e fase de voo (a
+conferir no PDF da norma). `respond` dá a resposta no tempo a um doublet ou a um pulso no comando, e `liquidPoles` os
+polos com o líquido dos tanques balançando.
+
 ## Envelope por altitude (`envelope.zig`)
 
 Para cada altitude $`h`$, a densidade e onde a tração disponível cruza a requerida ($`P_d = P_r`$): $`V_{min}`$ e $`V_{max}`$. O

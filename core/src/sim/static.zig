@@ -284,6 +284,339 @@ pub fn gearForRotation(probe: *const Probe, rotation_speed: f64, x: f64, pitch_a
     return .{ .gear_x = high, .tip_x = tip_x };
 }
 
+// ------------------------------------------------------------------ derivadas e equilíbrio
+
+/// a variável de uma derivada central
+pub const Variable = enum { alpha, beta, roll_rate, pitch_rate, yaw_rate, elevator, aileron, rudder };
+
+/// as derivadas centrais dos coeficientes em relação a `variable` (passo `size`, rad ou rad/s), com o resto zerado e
+/// o momento em `ref` (null: o CG), como `Probe.deriv`; só CL, CD, CY, Cl, Cm, Cn e CN
+pub fn derivative(probe: *const Probe, airspeed: f64, alpha: f64, variable: Variable, ref: ?V3, size: f64) types.AeroCoeffs {
+    var plus_alpha = alpha;
+    var minus_alpha = alpha;
+    var plus: Inputs = .{};
+    var minus: Inputs = .{};
+    switch (variable) {
+        .alpha => {
+            plus_alpha += size;
+            minus_alpha -= size;
+        },
+        inline else => |which| {
+            const field = switch (which) {
+                .beta => "beta",
+                .roll_rate => "roll_rate",
+                .pitch_rate => "pitch_rate",
+                .yaw_rate => "yaw_rate",
+                .elevator => "elevator",
+                .aileron => "aileron",
+                .rudder => "rudder",
+                .alpha => unreachable,
+            };
+            @field(plus, field) = size;
+            @field(minus, field) = -size;
+        },
+    }
+    const high = probe.coeffs(airspeed, plus_alpha, ref, plus);
+    const low = probe.coeffs(airspeed, minus_alpha, ref, minus);
+    var out: types.AeroCoeffs = .{};
+    inline for (.{ "CL", "CD", "CY", "Cl", "Cm", "Cn", "CN" }) |field| @field(out, field) = (@field(high, field) - @field(low, field)) / (2 * size);
+    return out;
+}
+
+/// C_lp (1/rad) a V e α = 2°, com o passo de 0,01 em p b / 2V, como em `aileron_sizing`
+pub fn rollDamping(probe: *const Probe, airspeed: f64) f64 {
+    const scale = 2 * airspeed / probe.span;
+    return derivative(probe, airspeed, 2 * rad, .roll_rate, null, 0.01 * scale).Cl * scale;
+}
+
+/// C_nr e C_lr (1/rad) a V e α = 2° (passo de 0,01 em r b / 2V)
+pub fn yawDamping(probe: *const Probe, airspeed: f64) [2]f64 {
+    const scale = 2 * airspeed / probe.span;
+    const slope = derivative(probe, airspeed, 2 * rad, .yaw_rate, null, 0.01 * scale);
+    return .{ slope.Cn * scale, slope.Cl * scale };
+}
+
+/// α com o C_L pedido e o comando `elevator`: bisseção no ramo linear, de −10° até o pico (de 0,5° em 0,5°); null
+/// se o C_L passa do pico (`alpha_for_CL`)
+pub fn alphaForLift(probe: *const Probe, airspeed: f64, lift: f64, elevator: f64) ?f64 {
+    var peak_alpha: f64 = -10 * rad;
+    var peak = -std.math.inf(f64);
+    var k: usize = 0;
+    while (k <= 80) : (k += 1) {
+        const alpha = (-10.0 + 0.5 * @as(f64, @floatFromInt(k))) * rad;
+        const value = probe.coeffs(airspeed, alpha, null, .{ .elevator = elevator }).CL;
+        if (value > peak) {
+            peak = value;
+            peak_alpha = alpha;
+        }
+    }
+    if (lift > peak) return null;
+    var low: f64 = -10 * rad;
+    var high = peak_alpha;
+    for (0..50) |_| {
+        const middle = 0.5 * (low + high);
+        if (probe.coeffs(airspeed, middle, null, .{ .elevator = elevator }).CL < lift) low = middle else high = middle;
+    }
+    return 0.5 * (low + high);
+}
+
+// ------------------------------------------------------------------ tesoura (área do EH × faixa de CG)
+
+/// os limites do CG (% CMA) de uma área de EH: o ponto neutro, o traseiro pela margem mínima e os dianteiros por
+/// controle no pouso e pela rotação (`scissor.limits`). Dianteiro no pouso: o equilíbrio em C_L = k C_Lmax com o
+/// comando todo cabrado, x_CG = x_P + c C_m,P / C_N; na rotação, com o comando cabrado em V_R e θ = 0,
+/// x_CG ≤ x_tp + (q S c C_m,tp + T (z_T − z_tp) − I_tp θ̈) / W (Torenbeek, Synthesis of Subsonic Airplane Design,
+/// cap. 9; Sadraey, Aircraft Design, cap. 6; a conferir no PDF)
+pub const Limits = struct { neutral: f64, aft: f64, forward_control: f64, forward_rotation: f64, forward: f64 };
+
+/// os limites com a margem mínima `margin_min` (fração da CMA), o C_L de pouso `lift_fraction` C_Lmax e o curso
+/// `elevator_max` (rad)
+pub fn scissorLimits(probe: *const Probe, airspeed: f64, margin_min: f64, lift_fraction: f64, elevator_max: f64, rotation_speed: f64, pitch_acceleration: f64) Limits {
+    const neutral = probe.fraction(probe.neutralPoint(airspeed));
+    var out: Limits = .{ .neutral = neutral, .aft = neutral - 100 * margin_min, .forward_control = std.math.nan(f64), .forward_rotation = 0, .forward = 0 };
+    const lift_max = probe.liftMax(airspeed, -elevator_max);
+    if (alphaForLift(probe, airspeed, lift_fraction * lift_max, -elevator_max)) |alpha| {
+        const point: V3 = .{ 0, 0, probe.cg[2] };
+        const at = probe.coeffs(airspeed, alpha, point, .{ .elevator = -elevator_max });
+        out.forward_control = probe.fraction(point[0] + probe.chord * at.Cm / at.CN);
+    }
+    const gear = probe.mainGear();
+    const dynamic_pressure = 0.5 * probe.density * rotation_speed * rotation_speed;
+    const at_gear = probe.coeffs(rotation_speed, 0, gear, .{ .elevator = -elevator_max });
+    const pushing = probe.thrust(rotation_speed, 1);
+    const dx = probe.cg[0] - gear[0];
+    const dz = probe.cg[2] - gear[2];
+    const inertia = probe.inertia[1][1] + probe.mass * (dx * dx + dz * dz);
+    const cg_limit = gear[0] + (dynamic_pressure * probe.area * probe.chord * at_gear.Cm + pushing[0] * (pushing[1] - gear[2]) - inertia * pitch_acceleration * rad) / probe.weight;
+    out.forward_rotation = probe.fraction(cg_limit);
+    // `np.nanmax`: o maior dos dois que existe
+    out.forward = if (std.math.isNan(out.forward_control)) out.forward_rotation else @max(out.forward_control, out.forward_rotation);
+    return out;
+}
+
+/// o menor S_h/S com o dianteiro ≤ `cg_forward` e o traseiro ≥ `cg_aft` (interpolado); NaN se nenhum serve
+/// (`min_tail`)
+pub fn minTail(ratios: []const f64, forward: []const f64, aft: []const f64, cg_forward: f64, cg_aft: f64) f64 {
+    for (ratios, 0..) |ratio, i| {
+        if (!(forward[i] <= cg_forward and aft[i] >= cg_aft)) continue;
+        if (i == 0) return ratio;
+        const before = @min(cg_forward - forward[i - 1], aft[i - 1] - cg_aft);
+        const now = @min(cg_forward - forward[i], aft[i] - cg_aft);
+        return if (now != before) ratios[i - 1] + (0 - before) * (ratio - ratios[i - 1]) / (now - before) else ratio;
+    }
+    return std.math.nan(f64);
+}
+
+// ------------------------------------------------------------------ comandos
+
+/// o tempo para inclinar até `angle` (rad) com a resposta de 1ª ordem φ(t) = P_ss [t − τ_R (1 − e^{−t/τ_R})]
+/// (Sadraey, Aircraft Design, cap. 12; a conferir no PDF), por bisseção até 100 s; ∞ se não chega (`time_to_bank`)
+pub fn timeToBank(rate: f64, time_constant: f64, angle: f64) f64 {
+    const inf = std.math.inf(f64);
+    if (rate <= 0) return inf;
+    const bank = struct {
+        fn at(steady: f64, tau: f64, target: f64, time: f64) f64 {
+            return steady * (time - tau * (1 - @exp(-time / tau))) - target;
+        }
+    };
+    var low: f64 = 0;
+    var high: f64 = 100;
+    if (bank.at(rate, time_constant, angle, high) < 0) return inf;
+    for (0..80) |_| {
+        const middle = 0.5 * (low + high);
+        if (bank.at(rate, time_constant, angle, middle) < 0) low = middle else high = middle;
+    }
+    return 0.5 * (low + high);
+}
+
+/// a asa para o aileron: C_Lα (1/rad, 3D), o comprimento da semiasa e as seções (y, corda) em ordem
+pub const WingStrip = struct { lift_slope: f64, length: f64, y: []const f64, chord: []const f64 };
+
+/// o aileron atual: o começo e o fim (fração da semiasa) e o τ
+pub const Aileron = struct { start: f64, end: f64, effectiveness: f64 };
+
+/// as cordas do aileron testadas e onde ele começa
+pub const aileron_chords = [_]f64{ 0.15, 0.20, 0.25, 0.30 };
+pub const aileron_starts = blk: { // `np.linspace(0.30, 0.90, 13)`, com os mesmos arredondamentos
+    var starts: [13]f64 = undefined;
+    for (&starts, 0..) |*start, i| start.* = 0.30 + @as(f64, @floatFromInt(i)) * ((0.90 - 0.30) / 12.0);
+    break :blk starts;
+};
+
+/// o dimensionamento do aileron pela teoria das faixas: C_lδa = (2 C_Lα τ / (S b)) ∫ c(y) y dy, P_ss = −(C_lδa /
+/// C_lp) δa (2V / b), τ_R = −2V I_xx / (q S b² C_lp) (Sadraey, Aircraft Design, cap. 12; Roskam, Airplane Design VI;
+/// a conferir no PDF), como `aileron_sizing`
+pub const RollSizing = struct {
+    damping: f64, // C_lp (1/rad)
+    time_constant: f64, // τ_R (s)
+    times: [aileron_chords.len][aileron_starts.len]f64, // tempo para inclinar (s)
+    rates: [aileron_chords.len][aileron_starts.len]f64, // P_ss (°/s)
+    best_start: [aileron_chords.len]f64, // o começo mais externo que cumpre (NaN: nenhum)
+    current_rate: f64 = std.math.nan(f64), // °/s, do aileron atual pelo núcleo
+    current_time: f64 = std.math.nan(f64),
+};
+
+/// o aileron a V com o curso `aileron_max` (rad) e o fim em `end` (fração da semiasa); `chord_effectiveness`: o τ
+/// de cada corda de `aileron_chords`; `requirement`: (φ °, t s)
+pub fn aileronSizing(probe: *const Probe, airspeed: f64, wing: WingStrip, aileron_max: f64, end: f64, chord_effectiveness: [aileron_chords.len]f64, requirement: [2]f64, current: ?Aileron) RollSizing {
+    const scale = 2 * airspeed / probe.span;
+    const damping = rollDamping(probe, airspeed);
+    const dynamic_pressure = 0.5 * probe.density * airspeed * airspeed;
+    const roll_inertia = probe.inertia[0][0];
+    const time_constant = if (damping < 0) -2 * airspeed * roll_inertia / (dynamic_pressure * probe.area * probe.span * probe.span * damping) else std.math.inf(f64);
+    var out: RollSizing = .{ .damping = damping, .time_constant = time_constant, .times = undefined, .rates = undefined, .best_start = undefined };
+    const samples = 400;
+    for (aileron_chords, 0..) |_, k| {
+        out.best_start[k] = std.math.nan(f64);
+        for (aileron_starts, 0..) |start, j| {
+            const moment = chordMoment(wing, samples, start * wing.length, end * wing.length, 0);
+            const control_slope = 2 * wing.lift_slope * chord_effectiveness[k] / (probe.area * probe.span) * moment;
+            const rate = -(control_slope / damping) * aileron_max * scale;
+            out.rates[k][j] = rate / rad;
+            out.times[k][j] = timeToBank(rate, time_constant, requirement[0] * rad);
+            if (out.times[k][j] <= requirement[1]) out.best_start[k] = start;
+        }
+    }
+    if (current != null) {
+        const control_slope = derivative(probe, airspeed, 2 * rad, .aileron, null, step).Cl;
+        const rate = -(control_slope / damping) * aileron_max * scale;
+        out.current_rate = rate / rad;
+        out.current_time = timeToBank(rate, time_constant, requirement[0] * rad);
+    }
+    return out;
+}
+
+/// ∫ c(y) y dy de `from` a `to` pelos trapézios em `samples` pontos de 0 ao comprimento (os que caem na faixa,
+/// com a folga `slack`), como o `_trapz` com a máscara de `aileron_sizing`
+fn chordMoment(wing: WingStrip, comptime samples: usize, from: f64, to: f64, slack: f64) f64 {
+    var sum: f64 = 0;
+    var previous: ?[2]f64 = null;
+    for (0..samples) |i| {
+        const station = wing.length * @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(samples - 1));
+        if (station < from - slack or station > to + slack) continue;
+        const value = interpolate(wing.y, wing.chord, station) * station;
+        if (previous) |last| sum += 0.5 * (last[1] + value) * (station - last[0]);
+        previous = .{ station, value };
+    }
+    return sum;
+}
+
+/// interpolação linear com as pontas presas (`np.interp`)
+pub fn interpolate(xs: []const f64, ys: []const f64, x: f64) f64 {
+    if (x <= xs[0]) return ys[0];
+    for (xs[1..], ys[1..], 1..) |high_x, high_y, i| {
+        if (x <= high_x) {
+            const low_x = xs[i - 1];
+            return if (high_x > low_x) ys[i - 1] + (x - low_x) / (high_x - low_x) * (high_y - ys[i - 1]) else high_y;
+        }
+    }
+    return ys[ys.len - 1];
+}
+
+/// as cordas móveis testadas no profundor e no leme (fração da corda da superfície)
+pub const control_ratios = blk: {
+    var ratios: [15]f64 = undefined;
+    for (&ratios, 0..) |*ratio, i| ratio.* = 0.15 + (0.5 - 0.15) * @as(f64, @floatFromInt(i)) / 14.0;
+    break :blk ratios;
+};
+
+/// o profundor: δe (°) para equilibrar o C_L de pouso com o CG mais dianteiro e para rodar em V_R, por corda móvel
+/// (C_mδe ∝ τ_e), como `elevator_sizing`; `scale`: τ(corda) / τ atual de cada `control_ratios`
+pub const ElevatorSizing = struct {
+    landing: [control_ratios.len]f64, // NaN sem α para o C_L de pouso
+    rotation: [control_ratios.len]f64,
+    landing_now: f64, // com a corda atual
+    rotation_now: f64,
+    smallest: f64, // a menor corda que cumpre os dois (NaN: nenhuma)
+};
+
+/// o profundor com o CG em `cg_forward` (% CMA)
+pub fn elevatorSizing(probe: *const Probe, landing_speed: f64, rotation_speed: f64, cg_forward: f64, landing_lift: f64, elevator_max: f64, pitch_acceleration: f64, scale: [control_ratios.len]f64) ElevatorSizing {
+    const nan = std.math.nan(f64);
+    var out: ElevatorSizing = .{ .landing = @splat(nan), .rotation = undefined, .landing_now = nan, .rotation_now = 0, .smallest = nan };
+    const x_forward = probe.xAt(cg_forward);
+    const ref: V3 = .{ x_forward, 0, probe.cg[2] };
+    if (alphaForLift(probe, landing_speed, landing_lift, 0)) |alpha| {
+        const at = probe.coeffs(landing_speed, alpha, ref, .{});
+        const slope = derivative(probe, landing_speed, alpha, .elevator, ref, step).Cm;
+        for (scale, 0..) |factor, i| out.landing[i] = -at.Cm / (slope * factor) / rad;
+        out.landing_now = -at.Cm / slope / rad;
+    }
+    const gear = probe.mainGear();
+    const dynamic_pressure = 0.5 * probe.density * rotation_speed * rotation_speed;
+    const at_gear = probe.coeffs(rotation_speed, 0, gear, .{});
+    const slope_gear = derivative(probe, rotation_speed, 0, .elevator, gear, step).Cm;
+    const pushing = probe.thrust(rotation_speed, 1);
+    const dx = x_forward - gear[0];
+    const dz = probe.cg[2] - gear[2];
+    const inertia = probe.inertia[1][1] + probe.mass * (dx * dx + dz * dz);
+    const reference = dynamic_pressure * probe.area * probe.chord;
+    const moment = reference * at_gear.Cm - probe.weight * (x_forward - gear[0]) + pushing[0] * (pushing[1] - gear[2]);
+    const need = inertia * pitch_acceleration * rad - moment;
+    for (scale, 0..) |factor, i| out.rotation[i] = need / (reference * slope_gear * factor) / rad;
+    out.rotation_now = need / (reference * slope_gear) / rad;
+    const limit = elevator_max / rad;
+    for (control_ratios, 0..) |ratio, i| {
+        const landing_ok = std.math.isNan(out.landing_now) or @abs(out.landing[i]) <= limit;
+        if (landing_ok and @abs(out.rotation[i]) <= limit) {
+            out.smallest = ratio;
+            break;
+        }
+    }
+    return out;
+}
+
+/// o leme: δr (°) para o vento cruzado, δr = C_nβ β / C_nδr com β = atan(V_w / V) (FAR 23.233), e com o motor mais
+/// afastado parado, δr = T y_T / (q S b C_nδr) em V_MC, como `rudder_sizing`
+pub const RudderSizing = struct {
+    yaw_stability: f64, // C_nβ
+    control_slope: f64, // C_nδr
+    sideslip: f64, // β do vento (°)
+    crosswind: [control_ratios.len]f64,
+    crosswind_now: f64,
+    engine_out: ?[control_ratios.len]f64 = null,
+    engine_out_now: f64 = std.math.nan(f64),
+    smallest: f64,
+};
+
+/// o leme na aproximação a `approach_speed` com o vento `crosswind`; `engine`: (tração em V_MC, y) do motor mais
+/// afastado quando há mais de um
+pub fn rudderSizing(probe: *const Probe, approach_speed: f64, crosswind: f64, minimum_control_speed: f64, rudder_max: f64, scale: [control_ratios.len]f64, engine: ?[2]f64) RudderSizing {
+    const alpha = 2 * rad;
+    const yaw_stability = derivative(probe, approach_speed, alpha, .beta, null, step).Cn;
+    const control_slope = derivative(probe, approach_speed, alpha, .rudder, null, step).Cn;
+    const sideslip = std.math.atan2(crosswind, approach_speed);
+    var out: RudderSizing = .{
+        .yaw_stability = yaw_stability,
+        .control_slope = control_slope,
+        .sideslip = sideslip / rad,
+        .crosswind = undefined,
+        .crosswind_now = @abs(yaw_stability * sideslip / control_slope) / rad,
+        .smallest = std.math.nan(f64),
+    };
+    for (scale, 0..) |factor, i| out.crosswind[i] = @abs(yaw_stability * sideslip / (control_slope * factor)) / rad;
+    if (engine) |unit| {
+        const dynamic_pressure = 0.5 * probe.density * minimum_control_speed * minimum_control_speed;
+        var stopped: [control_ratios.len]f64 = undefined;
+        var nearest: usize = 0;
+        for (scale, 0..) |factor, i| {
+            stopped[i] = @abs(unit[0] * unit[1] / (dynamic_pressure * probe.area * probe.span * control_slope * factor)) / rad;
+            if (@abs(factor - 1) < @abs(scale[nearest] - 1)) nearest = i;
+        }
+        out.engine_out = stopped;
+        out.engine_out_now = stopped[nearest];
+    }
+    const limit = rudder_max / rad;
+    for (control_ratios, 0..) |ratio, i| {
+        const engine_ok = if (out.engine_out) |stopped| stopped[i] <= limit else true;
+        if (out.crosswind[i] <= limit and engine_ok) {
+            out.smallest = ratio;
+            break;
+        }
+    }
+    return out;
+}
+
 test "limitCrossing interpola onde |y| entra no limite" {
     const xs = [_]f64{ 0, 1, 2, 3 };
     const ys = [_]f64{ 30, 25, 15, 5 };

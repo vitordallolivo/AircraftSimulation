@@ -512,6 +512,7 @@ pub const Check = struct {
     why: []const u8 = "",
     fix: []const u8 = "",
     group: []const u8 = "",
+    source: []const u8 = "",
 };
 
 /// uma coluna de uma tabela editável: número, texto, escolha ou só leitura ("label")
@@ -662,8 +663,8 @@ pub fn beginResult(out: *Writer, summary: []const [2][]const u8, checks: []const
     try out.writeAll("}, \"checks\": [");
     for (checks, 0..) |item, k| {
         if (k > 0) try out.writeAll(", ");
-        try out.print("{{\"status\": \"{s}\", \"item\": {f}, \"value\": {f}, \"criterion\": {f}, \"why\": {f}, \"fix\": {f}, \"group\": {f}}}", .{
-            @tagName(item.status), str(item.item), str(item.value), str(item.criterion), str(item.why), str(item.fix), str(item.group),
+        try out.print("{{\"status\": \"{s}\", \"item\": {f}, \"value\": {f}, \"criterion\": {f}, \"why\": {f}, \"fix\": {f}, \"group\": {f}, \"source\": {f}}}", .{
+            @tagName(item.status), str(item.item), str(item.value), str(item.criterion), str(item.why), str(item.fix), str(item.group), str(item.source),
         });
     }
     try out.writeAll("], \"plots\": [");
