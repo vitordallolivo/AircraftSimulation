@@ -91,12 +91,14 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     }
 
     var frames: usize = 0;
+    var quiet: usize = 0; // quadros seguidos sem rodada: as vistas 3D desenham na textura o tamanho do quadro anterior
     while (!rl.windowShouldClose()) : (frames += 1) {
         drawFrame(&ui, screen, shot);
         // o print sai no 3º quadro, ou depois, quando a tela para de mudar sozinha (`busy`: uma rodada pedida com
-        // acao=rodar), até uns minutos de quadros
+        // acao=rodar), até uns minutos de quadros, e mais três quadros para as vistas 3D do resultado
         const settling = @hasDecl(@TypeOf(screen.*), "busy") and screen.busy() and frames < 200_000;
-        if (shot and frames >= 3 and !settling) {
+        quiet = if (settling) 0 else quiet + 1;
+        if (shot and frames >= 3 and quiet >= 3) {
             const image = try rl.loadImageFromScreen();
             defer rl.unloadImage(image);
             if (!rl.exportImage(image, args.shot.?)) {

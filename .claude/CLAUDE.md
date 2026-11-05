@@ -127,7 +127,8 @@ as configurações.
   1. Mesclar a `main` na `0.2_dev`.
   2. `python tools/checks/run.py --tudo`.
   3. `python tools/codemap.py`.
-  4. Atualizar `docs/TRACKING.md` e `CHANGELOG.md`.
+  4. Atualizar `docs/TRACKING.md` e `CHANGELOG.md`. O changelog diz o que mudou para quem usa, em frases ("antes,
+     ...; agora ..."), sem nomes de código, sem decisões, etapas ou itens do tracking.
   5. Abrir o PR `0.2_dev` → `main` e parar.
 - **Versão:**
   - A `main` está em `v0.2.4`.

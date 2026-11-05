@@ -398,6 +398,23 @@ curvas por altitude (potência, subida, planeio, curvas, V-n e bateria), com a �
 última é sempre a do núcleo, porque a da aba Aerodinâmica ainda vem do Python. Cada teste confere os números com os da
 versão em Python.
 
+### Missão (`simulations/mission.zig`)
+
+A Missão é o voo simulado em 6GDL, com piloto automático, e roda num destes quatro modos:
+- **Só decolagem:** acha onde acionar o profundor para sair dentro da pista. A pista é dada por x_warning, o comprimento, e z_warning, a altura que conta como decolado.
+- **Missão:** voa etapa por etapa e guarda um checkpoint no começo de cada uma, para a próxima rodada poder começar dali.
+- **Raio mínimo de curva:** testa o menor raio que o avião faz em cada velocidade.
+- **MTOW:** acha por bisseção a maior massa que ainda decola na pista.
+
+Ela é dividida em partes, cada uma ao lado do `.py` correspondente:
+- `runner.zig` voa o núcleo em pedaços até uma parada (tempo, etapa, piloto ou decolagem).
+- `takeoff_opt.zig` faz a busca do acionamento, em grade ou por bisseção.
+- `analysis.zig` faz as contas sobre o log, como a tabela por etapa e o julgamento de uma curva.
+- `flightplots.zig` monta os gráficos de voo.
+
+Na missão, a soltura da carga LAPES é procurada por bisseção no ponto da perna, até a carga cair no alvo. Esse
+evento fica no mesmo lugar da lista de eventos, porque o checkpoint marca os eventos já feitos pela posição.
+
 ### Como chamar uma análise em Zig
 
 A tela faz isso sozinha. Para usar de fora, por exemplo num teste:

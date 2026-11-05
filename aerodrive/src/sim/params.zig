@@ -611,6 +611,13 @@ pub fn setupWith(ac: *const Aircraft, inst: *core.runner.Instance, diag: *model.
         diag.set("o núcleo recusou a configuração ({s})", .{@errorName(e)});
         return error.CoreConfig;
     };
+    return calibrate(ac, inst, diag);
+}
+
+/// as características estáticas e a calibração do piloto (C_L0, C_Lα, o acelerador de equilíbrio e os ganhos) de um
+/// avião já configurado em `inst`; quem muda os parâmetros antes (uma massa a mais, o CG) chama `fill`, muda,
+/// configura e chama esta
+pub fn calibrate(ac: *const Aircraft, inst: *core.runner.Instance, diag: *model.Diag) Error!Info {
     var info = staticCharacteristics(inst, ac);
     if (ac.autopilot.auto_calibrate) {
         if (!std.math.isFinite(info.CL0) or !std.math.isFinite(info.CLa) or !(info.CLa > 0)) {

@@ -566,8 +566,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/model/**
 
 - `aerodrive/src/model/aircraft.zig` — Leitura do arquivo do avião salvo pela GUI (`data/aircraft/*.json`, "meus aviões").
-  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:116`, `Boom:133`, `Propeller:162`, `Motor:163`, `Battery:164`, `ThrustPoly:175`, `Propulsion:187`, `GearLeg:204`, `Gear:205`, `Tank:228`, `Payload:248`, `PointMass:259`, `Mass:260`, `Environment:271`, `Takeoff:292`, `SimSettings:293`, `Autopilot:295`, `Leg:340`, `MissionEvent:353`, `Mission:354`, `Ballast:364`, `Airfield:365`, `Modifier:382`, `Performance:397`, `Aircraft:408`, `limits:441`, `Diag:465`, `Loaded:479`
-  fn `mixedAirfoils:14`, `kindGains:48`, `parse:489`, `validate:548`, `semispan:635`, `sortedSections:642`, `sectionAt:654`, `tailOnBoom:667`
+  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:116`, `Boom:133`, `Propeller:162`, `Motor:163`, `Battery:164`, `ThrustPoly:175`, `Propulsion:187`, `GearLeg:204`, `Gear:205`, `Tank:228`, `Payload:248`, `PointMass:262`, `Mass:263`, `Environment:274`, `Takeoff:295`, `SimSettings:296`, `Autopilot:298`, `Leg:343`, `MissionEvent:356`, `Mission:357`, `Ballast:367`, `Airfield:368`, `Modifier:386`, `Performance:401`, `Aircraft:412`, `limits:445`, `Diag:469`, `Loaded:483`
+  fn `mixedAirfoils:14`, `kindGains:48`, `parse:493`, `validate:552`, `semispan:639`, `sortedSections:646`, `sectionAt:658`, `tailOnBoom:671`
 - `aerodrive/src/model/airfoil.zig` — Perfil 2D (x/c, y/c): NACA de 4 dígitos pelo nome ou as coordenadas do arquivo do avião.
   tipos `Profile:13`
   fn `nacaDigits:23`, `naca4:39`, `forDrawing:79`, `invert:95`, `full:102`, `thinAirfoil:126`, `flapEffectiveness:176`, `helmbold:183`, `split:190`
@@ -634,7 +634,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `fill:38`
 - `aerodrive/src/sim/params.zig` — Avião (arquivo da GUI) -> parâmetros do núcleo (`types.Params`), em Zig.
   tipos `Info:30`, `Coeffs:118`, `DryMass:353`
-  fn `area:47`, `span:57`, `mac:61`, `macLeadingEdge:76`, `firstSurface:96`, `references:102`, `coeffs:179`, `wingDownwash:201`, `dryMass:380`, `fill:450`, `setup:601`, `setupWith:607`, `staticCharacteristics:638`
+  fn `area:47`, `span:57`, `mac:61`, `macLeadingEdge:76`, `firstSurface:96`, `references:102`, `coeffs:179`, `wingDownwash:201`, `dryMass:380`, `fill:450`, `setup:601`, `setupWith:607`, `calibrate:620`, `staticCharacteristics:645`
 - `aerodrive/src/sim/session.zig` — Sessão de voo: o que o jogador escolhe nos menus antes de voar (cenário, modo, vento, sloshing,
   tipos `Scenario:7`, `Landing:19`, `Mode:31`, `Session:43`
   fn `gearExtent:98`
@@ -712,7 +712,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/gui/ui/app.zig` — O que os dois programas têm igual em volta da tela: a linha de comando, a janela e o laço de desenho, com o
   tipos `Args:14`
-  fn `parseArgs:25`, `run:57`, `runBrowser:141`, `openFromPage:170`
+  fn `parseArgs:25`, `run:57`, `runBrowser:143`, `openFromPage:172`
 - `aerosim/gui/ui/browser_io.zig` — O `std.Io` das telas no navegador. No Zig 0.16 o `std.Io.Threaded` não compila para emscripten (o mesmo motivo
 - `aerosim/gui/ui/checks.zig` — O diagnóstico de uma etapa, como o `ChecksPanel` da GUI em Python: uma linha por verificação (estado, o que se
   tipos `Check:10`, `ChecksPanel:44`

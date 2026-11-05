@@ -263,7 +263,7 @@ pub const Screen = struct {
                     .title = tab_labels[k],
                     .bridge = &screen.bridge,
                     .analysis = in_zig, // já portada para o Zig: roda sem o Python
-                    .grids_beside = in_zig != null,
+                    .grids_beside = false,
                 };
                 page.setAircraftPath(path);
                 page.stale = false;

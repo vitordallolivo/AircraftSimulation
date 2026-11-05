@@ -4,7 +4,8 @@ O que cada área tem hoje (subaba na GUI, módulo no código) e o que ainda vai 
 em `docs/TRACKING.md`; aqui fica **onde cada coisa mora**, para não fazer a mesma análise em dois lugares.
 
 Estado: ✅ existe e aparece na GUI · 🟡 existe só no código ou em parte · ⬜ previsto (vai para o módulo "não
-desenvolvido" até ser feito) · ⚠ cálculo em Python que, pela regra 2 do `.claude/CLAUDE.md`, deveria estar no núcleo.
+desenvolvido" até ser feito) · ⚠ cálculo em Python que, pela regra 2 do `.claude/CLAUDE.md`, deveria estar no núcleo ·
+**Zig** a análise já roda em Zig na tela nova, sem Python (o `.zig` fica ao lado do `.py`, em `aerosim/manager/simulations/`).
 
 ## 1. Dimensionamento inicial
 
@@ -36,6 +37,7 @@ desenvolvido" até ser feito) · ⚠ cálculo em Python que, pela regra 2 do `.c
 |---|---|---|---|
 | Empenagem e comandos | ✅ ⚠ | `design/tail.py`, `stability/controls.py` | — |
 | Avião montado: estática, tesoura, comandos, dinâmica, qualidades de voo | ✅ ⚠ | `manager/simulations/stability.py`, `stability/*.py` | — |
+| Estabilidade dinâmica: rajada, líquido, LAPES e polos no tempo | ✅ Zig | `manager/simulations/stability.zig`, `core/src/sim/gust.zig` | G20 |
 | Normas e critérios como preset do usuário | ⬜ | `stability/criteria.py` | T37 |
 | Estabilidade não linear (Lyapunov, região de atração, sloshing, vento) | ⬜ | — | T05 |
 | Diedro elástico | ⬜ | depende de Aeroelasticidade | T27 |
@@ -49,14 +51,15 @@ núcleo) juntas. A missão completa continua, encadeando as etapas. O V-n **não
 |---|---|---|---|---|
 | Motores e montagem | — | — | ✅ | — |
 | Estudo e ponto de projeto | — | — | ✅ | — |
-| Tração | equilíbrio de rotação | — | ✅ | — |
-| Decolagem | corrida analítica | 6GDL + otimizador do profundor (`takeoff_opt`) | 🟡 | `takeoff.py`, Missão "só decolagem" e "MTOW" |
+| Tração | equilíbrio de rotação | — | ✅ Zig (`thrust.zig`) | — |
+| Decolagem | corrida analítica | 6GDL + otimizador do profundor (`takeoff_opt`) | 🟡 (Missão "só decolagem" e "MTOW" em Zig) | `takeoff.py`, Missão "só decolagem" e "MTOW" |
 | Subida | RC e γ × V | subida simulada | 🟡 (a simulada está errada: γ obtido não segue o pedido) | `climb.py` |
-| Voo nivelado e envelopes | potências e trações; envelopes × altitude | modelo completo | 🟡 (`envelope.py` sem aba) | `envelope.py` e o envelope de `performance.py` |
-| Curva | R × φ, limites de estol e tração | raio mínimo simulado, fator de carga no tempo | ✅ | `turn.py`, Missão "curvas" |
+| Voo nivelado e envelopes | potências e trações; envelopes × altitude | modelo completo | ✅ Zig (`envelope.zig`) | `envelope.py` e o envelope de `performance.py` |
+| Avião montado | polar, potências, subida, planeio, curvas, V-n e bateria por altitude (`simple_perf`) | — | ✅ Zig (`performance.zig`) | — |
+| Curva | R × φ, limites de estol e tração | raio mínimo simulado, fator de carga no tempo | ✅ (Missão "curvas" em Zig) | `turn.py`, Missão "curvas" |
 | Descida e planeio | planeio | ⬜ | 🟡 | — |
 | Pouso | `landingRun` | etapa de pouso da Missão | 🟡 | — |
-| Missão completa | — | a missão de hoje | ✅ | — |
+| Missão completa | — | a missão de hoje | ✅ Zig (`mission.zig`) | — |
 | Vento cruzado, Dryden, Monte Carlo | | | ⬜ | T31, T30, T29 |
 
 **MTOW (dentro da Decolagem, não é modo avulso):** uma caixa "achar o MTOW para o comprimento de pista". A massa
@@ -112,11 +115,11 @@ de cauda e na fuselagem, e a tabela de casos (de onde veio cada carga).
 | D1 | Diagrama V-n | `performance.py` (`_vn`), `envelope.py` (sem aba), e a subaba de Cargas (T13) | um V-n só, no núcleo, dono Cargas; Desempenho lê |
 | D2 | Curvas: raio mínimo | `turn.py` (sem aba) e a Missão "curvas: raio mínimo" (mesmo `evaluate_turn`, laço repetido) | subaba Curva única (analítica + numérica) |
 | D3 | Decolagem | `takeoff.py` (sem aba), Missão "só decolagem" e "MTOW", e `design/flight.py` (todos usam `takeoff_opt`) | subaba Decolagem única, com o MTOW como caixa de marcar |
-| D4 | Envelope de voo | `envelope.py` (sem aba, "Envelope_main original") e `performance.py` (`simple_perf`) | subaba Voo nivelado e envelopes, com todos os envelopes plotados |
+| D4 | Envelope de voo | `envelope.py`/`envelope.zig` ("Envelope_main original") e `performance.py`/`performance.zig` (`simple_perf`) | subaba Voo nivelado e envelopes, com todos os envelopes plotados |
 | D5 | Polar estática | `polar.py` (sem aba) e Aerodinâmica → Analisar (avião completo) | conferir quem usa `polar.py` |
 | D6 | Distribuição ao longo da envergadura | T09 (Aerodinâmica) e Cargas → Distribuição (T12) | T09 fecha com a subaba de Cargas (ou a Aerodinâmica mostra o mesmo `LoadResult`) |
 | D7 | Requisitos do projeto | `design/spec.py` e `sizing/constraints.py`: duas classes `Requirements`, campos repetidos com padrões diferentes (V de cruzeiro 15 × 16 m/s) | uma classe só; os limites viram preset do usuário (T37) |
 | D8 | Helmbold (C_Lα 3D) | `model/airfoil.py` (Python) e o tradutor/núcleo | uma fórmula só, no núcleo |
 
-As "sem aba" (`turn`, `envelope`, `climb`, `takeoff`, `polar`) ainda são chamadas por scripts e testes: antes de tirar
+As "sem aba" (`turn`, `climb`, `takeoff`, `polar`) ainda são chamadas por scripts e testes: antes de tirar
 qualquer uma, conferir quem chama.

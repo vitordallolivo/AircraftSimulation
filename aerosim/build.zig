@@ -5,7 +5,7 @@
 //!   zig build run                                abre o aerosim
 //!   zig build run -- <avião.json>                abre um avião na Montagem
 //!   zig build shot -- <saída.png> [LxA]          desenha a tela e salva uma imagem (sem interação)
-//!   zig build test                               testes (sem janela)
+//!   zig build test                               testes (sem janela); -Dlento inclui os lentos, -Dfiltro=<nome> escolhe
 //!   zig build -Dtarget=wasm32-emscripten         versão para o navegador em zig-out/web/ (aerosim.html, .js, .wasm, .data)
 //!
 //! O raylib vem pelo raylib-zig (build.zig.zon), compilado junto, como no AeroDrive.
@@ -51,6 +51,12 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // os testes lentos dos managers (o MTOW da Missão, minutos) só rodam com -Dlento; -Dfiltro=<nome> escolhe os testes
+    const test_options = b.addOptions();
+    test_options.addOption(bool, "slow", b.option(bool, "lento", "roda também os testes lentos dos managers") orelse false);
+    manager.addOptions("test_options", test_options);
+    const filter = b.option([]const u8, "filtro", "só os testes dos managers com este texto no nome");
+
     // ---- testes: só o que não abre janela (escalas dos gráficos, a asa de exemplo)
     const tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("gui/tests.zig"),
@@ -65,7 +71,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Testes (sem janela)");
     test_step.dependOn(&b.addRunArtifact(tests).step);
     // os managers em Zig são outro módulo: os testes deles rodam à parte, da pasta do aerosim (os aviões em ../data)
-    const manager_tests = b.addRunArtifact(b.addTest(.{ .root_module = manager }));
+    const manager_tests = b.addRunArtifact(b.addTest(.{ .root_module = manager, .filters = if (filter) |text| &.{text} else &.{} }));
     manager_tests.setCwd(b.path("."));
     test_step.dependOn(&manager_tests.step);
     const simulation_tests = b.addRunArtifact(b.addTest(.{ .root_module = simulation }));

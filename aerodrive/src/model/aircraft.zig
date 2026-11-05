@@ -255,6 +255,9 @@ pub const Payload = struct {
     Fext_g: f64 = 2,
     mu_b: f64 = 0.3,
     CdS_chute: f64 = 0.45,
+    target_n: f64 = 0, // o alvo da carga no chão (m, norte)
+    target_e: f64 = 0,
+    aim: bool = true, // a Missão procura onde soltar para a carga cair no alvo
 };
 pub const PointMass = struct { mass: f64 = 0.1, x: f64 = 0, y: f64 = 0, z: f64 = 0 };
 pub const Mass = struct {
@@ -375,6 +378,7 @@ pub const Airfield = struct {
     platform_start: f64 = 50.0,
     x_warning: f64 = 60.0,
     z_warning: f64 = 1.0,
+    landing_max: f64 = 0, // a distância máxima de pouso (m); 0: não verifica
 };
 
 /// um modificador da GUI (`aerosim/model/modifiers.py: Modifier`): o tipo pelo nome da GUI ("solo.mccormick",

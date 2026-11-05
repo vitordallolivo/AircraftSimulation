@@ -26,7 +26,8 @@ pub const Writer = std.Io.Writer;
 
 /// o que dá errado numa análise: memória, escrita do JSON, montagem do avião no núcleo e o voo do núcleo. A
 /// mensagem para a tela vai em `Run.fail`; o erro só diz que parou
-pub const Error = error{ OutOfMemory, WriteFailed, NoRows } || std.Io.Writer.Error || aircraft_model.params.Error || core.gust.Error;
+/// `Failed`: a rodada parou e o motivo já está em `Run.failure`, escrito por `Run.fail`
+pub const Error = error{ OutOfMemory, WriteFailed, NoRows, Failed } || std.Io.Writer.Error || aircraft_model.params.Error || core.gust.Error;
 
 /// uma análise registrada, como a tela usa: os textos e as funções já com o estado da rodada por trás (`register`)
 pub const Simulation = struct {
