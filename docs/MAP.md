@@ -566,8 +566,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/model/**
 
 - `aerodrive/src/model/aircraft.zig` — Leitura do arquivo do avião salvo pela GUI (`data/aircraft/*.json`, "meus aviões").
-  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:116`, `Boom:133`, `Propeller:162`, `Motor:163`, `Battery:164`, `ThrustPoly:175`, `Propulsion:187`, `GearLeg:204`, `Gear:205`, `Tank:228`, `Payload:248`, `PointMass:259`, `Mass:260`, `Environment:271`, `Takeoff:281`, `SimSettings:282`, `Autopilot:284`, `Leg:329`, `MissionEvent:342`, `Mission:343`, `Ballast:353`, `Airfield:354`, `Modifier:371`, `Aircraft:385`, `limits:417`, `Diag:441`, `Loaded:455`
-  fn `mixedAirfoils:14`, `kindGains:48`, `parse:465`, `validate:524`, `semispan:611`, `sortedSections:618`, `sectionAt:630`, `tailOnBoom:643`
+  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:116`, `Boom:133`, `Propeller:162`, `Motor:163`, `Battery:164`, `ThrustPoly:175`, `Propulsion:187`, `GearLeg:204`, `Gear:205`, `Tank:228`, `Payload:248`, `PointMass:259`, `Mass:260`, `Environment:271`, `Takeoff:281`, `SimSettings:282`, `Autopilot:284`, `Leg:329`, `MissionEvent:342`, `Mission:343`, `Ballast:353`, `Airfield:354`, `Modifier:371`, `Performance:386`, `Aircraft:397`, `limits:430`, `Diag:454`, `Loaded:468`
+  fn `mixedAirfoils:14`, `kindGains:48`, `parse:478`, `validate:537`, `semispan:624`, `sortedSections:631`, `sectionAt:643`, `tailOnBoom:656`
 - `aerodrive/src/model/airfoil.zig` — Perfil 2D (x/c, y/c): NACA de 4 dígitos pelo nome ou as coordenadas do arquivo do avião.
   tipos `Profile:13`
   fn `nacaDigits:23`, `naca4:39`, `forDrawing:79`, `invert:95`, `full:102`, `thinAirfoil:126`, `flapEffectiveness:176`, `helmbold:183`, `split:190`
@@ -633,8 +633,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerodrive/src/sim/modifiers.zig` — Os modificadores do arquivo do avião -> os campos do núcleo (`Params.ground`, `Params.mods`), em Zig.
   fn `fill:38`
 - `aerodrive/src/sim/params.zig` — Avião (arquivo da GUI) -> parâmetros do núcleo (`types.Params`), em Zig.
-  tipos `Info:30`, `DryMass:343`
-  fn `area:45`, `span:55`, `mac:59`, `macLeadingEdge:74`, `references:95`, `dryMass:370`, `fill:440`, `setup:591`, `setupWith:597`, `staticCharacteristics:628`
+  tipos `Info:30`, `Coeffs:118`, `DryMass:353`
+  fn `area:47`, `span:57`, `mac:61`, `macLeadingEdge:76`, `firstSurface:96`, `references:102`, `coeffs:179`, `wingDownwash:201`, `dryMass:380`, `fill:450`, `setup:601`, `setupWith:607`, `staticCharacteristics:638`
 - `aerodrive/src/sim/session.zig` — Sessão de voo: o que o jogador escolhe nos menus antes de voar (cenário, modo, vento, sloshing,
   tipos `Scenario:7`, `Landing:19`, `Mode:31`, `Session:43`
   fn `gearExtent:98`

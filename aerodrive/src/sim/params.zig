@@ -35,6 +35,8 @@ pub const Info = struct {
     alpha_stall_deg: f64 = 0,
     Vs: f64 = 0,
     Dtrim: f64 = 0,
+    /// margem estática, −dC_m/dC_L na mesma faixa do ajuste (−2° a 8°)
+    static_margin: f64 = 0,
 };
 
 // ------------------------------------------------------------------ geometria das superfícies
@@ -87,7 +89,12 @@ pub fn macLeadingEdge(ac: *const Aircraft) f64 {
 }
 
 fn wing(ac: *const Aircraft) ?*const model.Surface {
-    for (ac.surfaces) |*s| if (s.enabled and std.mem.eql(u8, s.role, "wing")) return s;
+    return firstSurface(ac, "wing");
+}
+
+/// a primeira superfície ligada com o papel `role` ("wing", "htail", "vtail"), como `AircraftModel.wing`/`htail`
+pub fn firstSurface(ac: *const Aircraft, role: []const u8) ?*const model.Surface {
+    for (ac.surfaces) |*s| if (s.enabled and std.mem.eql(u8, s.role, role)) return s;
     return null;
 }
 
@@ -106,7 +113,9 @@ pub fn references(ac: *const Aircraft) [3]f64 {
     };
 }
 
-const Coeffs = struct { AR: f64, CLa: f64, CL0: f64, CLmax: f64, CD0: f64, Cmac: f64 };
+/// os coeficientes da superfície inteira (os do `SurfaceModel` da GUI): alongamento, C_Lα (1/rad), C_L0, C_Lmáx,
+/// C_D0 e C_m,ac, com a média por área quando as seções têm perfis diferentes
+pub const Coeffs = struct { AR: f64, CLa: f64, CL0: f64, CLmax: f64, CD0: f64, Cmac: f64 };
 
 /// (c_lα 1/rad, α_L0 graus, c_l máx, c_d0, c_m,ac) do perfil — `_props2d` da GUI
 const P2 = [5]f64;
@@ -166,7 +175,8 @@ fn propsAt(sp: []const SecProps, y: f64) P2 {
     return sp[sp.len - 1].p;
 }
 
-fn coeffs(s: *const model.Surface) Error!Coeffs {
+/// os coeficientes da superfície `s` (ver `Coeffs`)
+pub fn coeffs(s: *const model.Surface) Error!Coeffs {
     const AR = aspect(s);
     if (!model.mixedAirfoils(s) or s.sections.len < 2) return coeffsFrom(s, AR, try props2d(s.airfoil));
     // perfil por seção: média pela área de cada trecho entre seções (no meio do trecho), como `_coeffs`
@@ -188,7 +198,7 @@ fn coeffs(s: *const model.Surface) Error!Coeffs {
 }
 
 /// ε0, dε/dα da asa principal (rad)
-fn wingDownwash(ac: *const Aircraft) Error![2]f64 {
+pub fn wingDownwash(ac: *const Aircraft) Error![2]f64 {
     const w = wing(ac) orelse return .{ 0, 0 };
     const co = try coeffs(w);
     const CLw0 = co.CL0 + co.CLa * w.incidence * D2R;
@@ -632,6 +642,9 @@ pub fn staticCharacteristics(inst: *core.runner.Instance, ac: *const Aircraft) I
     var sxx: f64 = 0;
     var sxy: f64 = 0;
     var n: f64 = 0;
+    var cm_sum: f64 = 0; // o ajuste de C_m contra C_L (margem estática)
+    var cm_cl_sum: f64 = 0;
+    var cl_squares: f64 = 0;
     var best: f64 = -1e9;
     var a_best: f64 = 0;
     var i: usize = 0;
@@ -643,6 +656,9 @@ pub fn staticCharacteristics(inst: *core.runner.Instance, ac: *const Aircraft) I
             sy += co.CL;
             sxx += a * a;
             sxy += a * co.CL;
+            cm_sum += co.Cm;
+            cm_cl_sum += co.CL * co.Cm;
+            cl_squares += co.CL * co.CL;
             n += 1;
         }
         if (co.CL > best) {
@@ -652,6 +668,7 @@ pub fn staticCharacteristics(inst: *core.runner.Instance, ac: *const Aircraft) I
     }
     const CLa = (n * sxy - sx * sy) / (n * sxx - sx * sx);
     const CL0 = (sy - CLa * sx) / n;
+    const dCm_dCL = (n * cm_cl_sum - sy * cm_sum) / (n * cl_squares - sy * sy);
     const S = references(ac)[0];
     return .{
         .mass = tc.m,
@@ -659,6 +676,7 @@ pub fn staticCharacteristics(inst: *core.runner.Instance, ac: *const Aircraft) I
         .CLa = CLa,
         .CLmax = best,
         .alpha_stall_deg = a_best / D2R,
+        .static_margin = -dCm_dCL,
         .Vs = if (best > 0) @sqrt(2 * tc.m * G0 / (ac.environment.rho * S * best)) else std.math.nan(f64),
     };
 }

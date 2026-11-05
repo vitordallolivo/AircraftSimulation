@@ -382,6 +382,18 @@ pub const Modifier = struct {
     }
 };
 
+/// os dados do envelope "como na planilha" (`PerformanceData` da GUI; Envelope_main original)
+pub const Performance = struct {
+    alpha_cruise: f64 = 2.0, // graus
+    load_factor: f64 = 2.0, // n de projeto: V* = V_e √n
+    rho0: f64 = 1.225,
+    cdp_x: f64 = 12.0, // C_Dp = c1 · cdp_x + c2
+    cdp_wing: [2]f64 = .{ 0.0, 0.012 },
+    cdp_htail: [2]f64 = .{ 0.0, 0.012 },
+    K: ?f64 = null, // C_Di = K C_L²; null: 1/(π e AR) da asa
+    ceiling_min: f64 = 500.0,
+};
+
 pub const Aircraft = struct {
     name: []const u8 = "aeronave",
     surfaces: []const Surface = &.{},
@@ -400,6 +412,7 @@ pub const Aircraft = struct {
     autopilot: Autopilot = .{},
     sim: SimSettings = .{},
     mission: Mission = .{},
+    performance: Performance = .{},
     modifiers: ?[]const Modifier = null, // null (arquivo sem a chave): o padrão da GUI, só o efeito solo de McCormick
     shared_battery: bool = false,
     Sref: ?f64 = null, // null ou 0: da asa

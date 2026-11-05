@@ -44,6 +44,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - Desempenho → Tração em Zig (`aerosim/manager/simulations/thrust.zig`), com os números do Python no teste; uma
   análise em Zig com o nome de uma do Python toma o lugar dela na mesma subaba, e os campos `floats` (lista de
   números) passam a valer nas análises em Zig.
+- Desempenho → Voo nivelado e envelopes em Zig (`aerosim/manager/simulations/envelope.zig`): o método da planilha e
+  o da trimagem da aeronave completa (`core.envelope`), as potências ao nível do mar e perto do teto, o acelerador, a
+  razão de subida e o raio de curva, mais a tabela de desempenho ao nível do mar; o teste confere os números do Python.
+  A configuração ganha o bloco `performance` (o mesmo da GUI em Python) e `Info.static_margin`.
 - a pasta `aerosim/manager/native` sai (o nome dizia pouco e ela era só da Estabilidade): o contrato vai para
   `aerosim/interfaces/simulation.zig`, a lista das análises para `aerosim/manager/manager.zig` e a rajada para
   `aerosim/manager/simulations/stability.zig`, ao lado do `.py` de cada um. Cada análise do Python ganha o `.zig` ao
