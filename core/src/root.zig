@@ -189,8 +189,8 @@ export fn aerosim_panel_states(slot: i32, airspeed: f64, alpha: f64, beta: f64, 
     return panelStates(slot, airspeed, alpha, beta, de, da, dr, thrusts, torques, prop_count, out, cap, false);
 }
 
-/// `aerosim_panel_states`; `no_pair`: sem a interferência entre asas ligadas (a linha sustentadora vem depois)
-fn panelStates(slot: i32, airspeed: f64, alpha: f64, beta: f64, de: f64, da: f64, dr: f64, thrusts: [*]const f64, torques: [*]const f64, prop_count: i32, out: [*]types.PanelState, cap: usize, no_pair: bool) i32 {
+/// `aerosim_panel_states`; `no_interference`: sem a interferência entre asas (a linha sustentadora vem depois)
+fn panelStates(slot: i32, airspeed: f64, alpha: f64, beta: f64, de: f64, da: f64, dr: f64, thrusts: [*]const f64, torques: [*]const f64, prop_count: i32, out: [*]types.PanelState, cap: usize, no_interference: bool) i32 {
     const inst = getConfigured(slot) catch |err| return abiCode(err);
     if (prop_count != 0 and prop_count != inst.p.n_prop) return abiCode(error.BadIndex);
     const alpha_sc = fmath.sincos(alpha);
@@ -198,7 +198,7 @@ fn panelStates(slot: i32, airspeed: f64, alpha: f64, beta: f64, de: f64, da: f64
     const Vr = vec.V3{ airspeed * alpha_sc.c * beta_sc.c, airspeed * beta_sc.s, airspeed * alpha_sc.s * beta_sc.c };
     const prop_len: usize = @intCast(prop_count);
     var env = if (prop_count > 0) modifiers.envFrom(&inst.p, Vr, vec.zero, thrusts[0..prop_len], torques[0..prop_len]) else modifiers.Env.none;
-    env.no_pair = no_pair;
+    env.no_interference = no_interference;
     const surf_count: usize = @intCast(inst.p.n_surf);
     const written = @min(cap, surf_count);
     const rcg = trim.Ctx.init(&inst.p, &inst.r.f).rcg;
@@ -255,7 +255,7 @@ export fn aerosim_reynolds(density: f64, airspeed: f64, chord: f64, altitude: f6
 }
 
 /// `aerosim_aero_coeffs_at` com a carga da linha sustentadora (loads/llt.zig, `coeffs`): as forças dos painéis
-/// trocadas pelas da linha sustentadora (Phillips e Snyder; Goates e Hunsaker com `llt_joint`, `llt_blend`); a
+/// trocadas pelas da linha sustentadora (Phillips e Snyder; Goates e Hunsaker ou a não linear, por `llt_method`); a
 /// fuselagem, o c_m das seções e os modificadores ficam os da simulação. Só para análise
 export fn aerosim_aero_coeffs_llt(slot: i32, airspeed: f64, alpha: f64, beta: f64, pr: f64, qr: f64, rr: f64, de: f64, da: f64, dr: f64, height: f64, thrusts: [*]const f64, torques: [*]const f64, prop_count: i32, ref: ?*const [3]f64, out: *types.AeroCoeffs) i32 {
     const inst = getConfigured(slot) catch |err| return abiCode(err);

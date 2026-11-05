@@ -59,7 +59,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/backend/zig/geometry.py` — Tradutor da checagem de geometria: o modelo universal vira as peças simples do núcleo (`core/src/geometry`),
   `scene:114`, `report:165`, `class ZigGeometry:191`
 - `aerosim/backend/zig/translator.py` — Tradutor modelo universal -> núcleo Zig (SimSpec: dicionário com os campos das structs extern).
-  `prop_native:26`, `surface_panels:42`, `panel_owners:75`, `class ZigTranslator:84`, `aero_native:150`, `native_spec:188`
+  `prop_native:26`, `surface_panels:42`, `panel_owners:75`, `class ZigTranslator:84`, `aero_native:152`, `native_spec:190`
 
 ## Python · `aerosim/data`
 
@@ -247,7 +247,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/model/mission.py` — Percurso como uma corrente de pernas (retas e curvas).
   `auto_radius:20`, `class Leg:26`, `class MissionEvent:41`, `class Mission:48`, `circuit:121`, `short_circuit:145`, `takeoff_runway:156`, `level_turn:161`
 - `aerosim/model/modifiers.py` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro (efeito solo, esteira
-  `class ParamInfo:28`, `class KindInfo:37`, `class Modifier:87`, `default_modifiers:105`, `active:110`, `ground_method:114`, `additive:120`, `problems:124`, `describe:137`, `is_default:148`, `not_exported:154`, `native:162`
+  `class ParamInfo:28`, `class KindInfo:37`, `class Modifier:87`, `default_modifiers:105`, `active:110`, `ground_method:114`, `additive:120`, `problems:124`, `describe:137`, `is_default:148`, `not_exported:154`, `native:179`
 - `aerosim/model/serialize.py` — dataclass <-> dicionário (genérico, guiado pelas anotações de tipo).
   `to_dict:10`, `from_dict:52`
 - `aerosim/model/templates.py` — Aeronaves prontas para começar.
@@ -306,7 +306,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   **ABI (79 exports)** `aerosim_abi_version`, `aerosim_schema`, `aerosim_probe_ground`, `aerosim_probe_slipstream`, `aerosim_aero_coeffs_thrust`, `aerosim_aero_coeffs_at`, `aerosim_tube_panel_hits`, `aerosim_tube_point_hits`, `aerosim_prop_state`, `aerosim_panel_states`, `aerosim_panel_states_llt`, `aerosim_wing_sweep`, `aerosim_wing_sweep_summary`, `aerosim_reynolds`, `aerosim_aero_coeffs_llt`, `aerosim_schema_hash`, `aerosim_acquire`, `aerosim_release`, `aerosim_params`, `aerosim_params_reset`, `aerosim_configure`, `aerosim_reset_ground`, `aerosim_reset_air`, `aerosim_run`, `aerosim_events`, `aerosim_time`, `aerosim_snapshot_size`, `aerosim_snapshot_save`, `aerosim_snapshot_load`, `aerosim_mass_props`, `aerosim_aero_coeffs`, `aerosim_aero_coeffs_ex`, `aerosim_linearize`, `aerosim_linearize_slosh`, `aerosim_autotune`, `aerosim_prop_point`, `aerosim_trim`, `aerosim_performance`, `aerosim_envelope`, `aerosim_envelope_curve`, `aerosim_simple_perf`, `aerosim_bench_math`, `aerosim_bench_dynamics`, `aerosim_fast_math`, `aerosim_expr_check`, `aerosim_expr_eval`, `aerosim_ground_runs`, `aerosim_ground_mtow`, `aerosim_motor_prop_thrust`, `aerosim_sizing_eval`, `aerosim_sizing_optimize`, `aerosim_sizing_name`, `aerosim_sizing_defaults`, `aerosim_geometry_check`, `aerosim_ga_init`, `aerosim_ga_next`, `aerosim_cma_init`, `aerosim_cma_ask`, `aerosim_cma_tell`, `aerosim_de_init`, `aerosim_de_trials`, `aerosim_de_select`, `aerosim_local_fit`, `aerosim_rbf_fit`, `aerosim_rbf_eval`, `aerosim_lhs`, `aerosim_repair_step`, `aerosim_eps_level`, `aerosim_eps_worse`, `aerosim_bandit_state_len`, `aerosim_bandit_init`, `aerosim_bandit_pick`, `aerosim_bandit_update`, `aerosim_normative`, `aerosim_lem_box`, `aerosim_box_sample`, `aerosim_sens_tolerance`, `aerosim_morris_design`, `aerosim_morris_effects`
 - `core/src/tests.zig` — Todos os testes do núcleo, por grupo. `zig build test` roda tudo; `-Dgrupo=math` roda só um grupo e
 - `core/src/types.zig` — Estruturas trocadas com o Python (C ABI, `extern struct`).
-  tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `Surface:58`, `PropUnit:93`, `GearKind:134`, `Gear:144`, `TankShape:153`, `Tank:166`, `Segment:182`, `EventKind:203`, `Event:212`, `Pad:216`, `Payload:225`, `Environment:236`, `Takeoff:248`, `Pilot:266`, `Autopilot:276`, `AeroTable:325`, `LltCache:358`, `Params:372`, `PanelState:451`, `SweepSummary:471`, `Events:479`, `LogRow:521`, `AeroCoeffs:635`, `PropPoint:650`, `MassProps:662`, `TrimKind:670`, `TrimPoint:681`, `PerfRow:698`
+  tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `LiftingLineMethod:56`, `Surface:69`, `PropUnit:106`, `GearKind:147`, `Gear:157`, `TankShape:166`, `Tank:179`, `Segment:195`, `EventKind:216`, `Event:225`, `Pad:229`, `Payload:238`, `Environment:249`, `Takeoff:261`, `Pilot:279`, `Autopilot:289`, `AeroTable:338`, `LltCache:371`, `Params:385`, `PanelState:479`, `SweepSummary:499`, `Events:507`, `LogRow:549`, `AeroCoeffs:663`, `PropPoint:678`, `MassProps:690`, `TrimKind:698`, `TrimPoint:709`, `PerfRow:726`
 
 **core/src/collision/**
 
@@ -360,17 +360,17 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `thetaOf:16`, `cmDelta:29`
 - `core/src/modifiers/ground.zig` — Efeito solo: métodos para o fator do arrasto induzido perto do chão.
   fn `factor:13`, `mccormick:21`
+- `core/src/modifiers/interference.zig` — Interferência entre as asas da configuração no modelo de faixas, para quantas asas houver.
+  fn `active:29`, `induced:39`
 - `core/src/modifiers/mod.zig` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro sem mexer no resto
   tipos `Env:22`
-  fn `envFrom:37`, `stripOf:58`, `induced:65`, `inducedNoPair:70`, `flapCm:90`
+  fn `envFrom:37`, `stripOf:58`, `induced:65`, `inducedAlone:70`, `flapCm:90`
 - `core/src/modifiers/slipstream.zig` — Esteira da hélice por disco atuador (modificador `esteira.disco`).
   tipos `TubeShape:32`, `Point:82`
   fn `shape:49`, `diskInduced:54`, `axialAt:62`, `radiusAt:67`, `swirlRate:75`, `at:90`
 - `core/src/modifiers/types.zig` — Tipos dos modificadores trocados com o Python (C ABI, `extern struct`; o esquema sai de `abi.zig`).
-  tipos `Ground:27`, `Kind:34`, `SlipstreamParam:43`, `PairParam:52`, `Modifier:63`
-  fn `panelSet:17`
-- `core/src/modifiers/wingpair.zig` — Interferência entre duas asas ligadas (tandem, biplano) no modelo de faixas.
-  fn `active:29`, `induced:39`
+  tipos `Ground:29`, `Kind:39`, `Flags:54`, `SlipstreamSettings:65`, `InterferenceSettings:73`, `FlapMomentSettings:79`, `Modifier:88`
+  fn `panelSet:19`
 
 **core/src/optim/**
 

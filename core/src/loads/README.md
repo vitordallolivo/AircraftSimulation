@@ -2,7 +2,7 @@
 
 Esta é a parte do núcleo que diz como a sustentação se distribui ao longo da asa e da cauda, da raiz até a ponta. Essa
 distribuição é o que importa para a estrutura (o momento fletor na raiz, a carga em cada nervura) e para saber onde o
-estol começa. Ela nasceu para a aba Cargas, e o voo também pode usá-la, escolhendo `Params.aero_model = 1`
+estol começa. Ela nasceu para a aba Cargas, e o voo também pode usá-la, escolhendo `Params.aero_model = .lifting_line`
 (`physics/aeromodel.zig`). Com o padrão, que são as faixas, a simulação não chama nada daqui, e as corridas, a
 trimagem e o AeroDrive ficam iguais.
 
@@ -27,7 +27,7 @@ cada chamada:
 
 ```mermaid
 flowchart TD
-    P[/"Params: painéis (r, c, S, eixos, C_Lα, C_L0, C_D0),<br/>nós qa e qb, llt_joint, llt_blend"/] --> PREP
+    P[/"Params: painéis (r, c, S, eixos, C_Lα, C_L0, C_D0),<br/>nós qa e qb, llt_method, llt_joint, llt_blend"/] --> PREP
     PREP["prepare: nós, juntas e segmentos ligados<br/>(uma vez por configuração, llt_cache)"] --> LOOP
     E[/"ponto de voo: V, α, β, p, q, r, comandos,<br/>altura, tração e torque de cada motor"/] --> VEL
     VEL["velocidade local de cada painel<br/>(vento + rotação + modificadores)"] --> LOOP
@@ -118,7 +118,7 @@ velocidade absurda, que cresce como $`1/h`$. Numa faixa larga de $`k`$ o resulta
 superfície não há núcleo, porque a queda na ponta depende das pernas das faixas vizinhas, mais estreitas que qualquer
 núcleo dessa ordem.
 
-## Método de Goates e Hunsaker (ligável, `llt_joint` e `llt_blend`)
+## Método de Goates e Hunsaker (ligável, `llt_method = .goates_hunsaker`)
 
 O método de Phillips e Snyder tem um problema em duas situações comuns, e a correção de Goates e Hunsaker existe para
 elas. A primeira é o voo com derrapagem, quando o vento chega de lado no avião (o ângulo $`\beta`$), como numa curva mal
@@ -138,7 +138,7 @@ Goates e Hunsaker (*Practical Implementation of a General Numerical Lifting-Line
 prática do método de Reid e Hunsaker 2020) resolvem isso com três correções, implementadas também pelos autores no
 MachUpX (github.com/usuaero/MachUpX), que serviu de referência nos testes.
 
-**As três correções** (só com `Params.llt_joint > 0` ou `Params.llt_blend > 0`):
+**As três correções** (só com `Params.llt_method = .goates_hunsaker`):
 
 1. **Junta** (eq. 3 e 17). Cada perna sai do nó por um trecho de comprimento $`\delta\,c_{nó}`$ no plano da asa,
    perpendicular à linha sustentadora ($`\hat u_{a\Lambda}`$, eq. 12–15), e só depois segue o escoamento livre.
@@ -182,14 +182,14 @@ Snyder em derrapagem não convergem. Os números esperados estão em `tests/tool
 positivo da asa plana é do modelo de esteira alinhada ao vento (o MachUpX dá o mesmo); o AVL e o VLM põem a esteira no
 eixo x e dão zero.
 
-Para ligar, use `Params.llt_joint` e `Params.llt_blend` (os valores usados estão em
-`aerosim.aero.span_loads.GOATES_HUNSAKER`, que vai como `overrides` da sessão); a aba Cargas tem o método "linha
-sustentadora (Goates e Hunsaker)" (`llt_gh`). Com os dois em 0 (o padrão), a linha sustentadora é a de Phillips e
-Snyder, com as mesmas contas de antes.
+Para ligar, escolha `Params.llt_method = .goates_hunsaker`; `llt_joint` e `llt_blend` são os parâmetros do método
+(os padrões, 0,15 e 1, são os de `aerosim.aero.span_loads.GOATES_HUNSAKER`, que vai como `overrides` da sessão). A aba
+Cargas tem o método "linha sustentadora (Goates e Hunsaker)" (`llt_gh`). Com o padrão (`.phillips_snyder`) os dois
+números não entram, e a linha sustentadora é a de Phillips e Snyder, com as mesmas contas de antes.
 
-## Versão não linear (ligável, `llt_nonlinear`)
+## Versão não linear (ligável, `llt_method = .nonlinear`)
 
-Aqui se liga o estol de cada faixa: com `Params.llt_nonlinear = 1`, a sustentação de cada seção segue a curva
+Aqui se liga o estol de cada faixa: com `Params.llt_method = .nonlinear`, a sustentação de cada seção segue a curva
 $`c_l(\alpha)`$ do seu perfil, que sobe em reta e cai depois do estol. Com isso a linha sustentadora mostra onde o estol
 começa ao longo da envergadura e para quanto o $`C_L`$ da asa satura, o que importa para o caso de carga de $`C_{L,max}`$.
 
@@ -278,7 +278,7 @@ O $`\nu`$ do método `llt_nl` foi escolhido numa varredura na asa retangular dos
 ângulos convergiram, nas duas malhas, sem saltos de $`c_l`$ entre faixas vizinhas.
 
 Para ligar, a aba Cargas tem o método "linha sustentadora não linear (estol por perfil)" (`llt_nl`), e o voo usa a
-mesma conta com `ac.sim.aero_model = "llt_nl"`. Com `llt_nonlinear = 0`, o padrão, a conta é a linear de sempre.
+mesma conta com `ac.sim.aero_model = "llt_nl"`. Com o padrão (`llt_method = .phillips_snyder`), a conta é a linear de sempre.
 
 ## Cache da geometria (`prepare`, `Params.llt_cache`)
 
@@ -312,7 +312,7 @@ estol ficavam em Python. A varredura faz tudo isso no núcleo, numa chamada, com
 `sweep` recebe os α (em radianos) e um "dono" para cada painel: o índice da superfície a que ele pertence, ou −1 para
 o que fica de fora da conta (a deriva e as placas de ponta). Em cada α, com β = 0, comandos em zero e longe do chão,
 os painéis saem das faixas (`aero.computeTrace`) e, se pedido, a carga sai da linha sustentadora (`apply`), linear ou
-não linear conforme `Params.llt_nonlinear`. A saída é a sustentação $`L_k`$ de cada dono em cada α, a área $`S_k`$ e a
+não linear conforme `Params.llt_method`. A saída é a sustentação $`L_k`$ de cada dono em cada α, a área $`S_k`$ e a
 corda média aerodinâmica de cada dono, o $`c_l`$ de cada painel em cada α e a posição $`y`$ de cada painel.
 
 A corda média aerodinâmica de um dono sai das faixas dele, cada uma com área $`S_i`$ e corda $`c_i`$:

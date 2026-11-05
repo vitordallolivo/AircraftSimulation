@@ -14,6 +14,13 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   (`ThrustModel`, `PolyVariable`, `GearKind`, `TankShape`, `EventKind`, `TrimKind`, `AeroModel`, `limits.Group`, os do
   envelope, da geometria e do dimensionamento, com `variable(.span)` e `quantity(.mtow)` no lugar dos índices), sem
   mudar número nenhum na ABI.
+- método e efeito separados: a linha sustentadora se escolhe por nome (`Params.llt_method`: Phillips e Snyder, Goates e
+  Hunsaker ou a não linear), e `llt_joint`/`llt_blend` viram parâmetros do Goates e Hunsaker, sem decidir o método.
+  Nos modificadores, `enabled` vira `flags` (bits com nome: ligado, axial, giro) e os `params` se leem por structs de
+  ajustes (`SlipstreamSettings`, `InterferenceSettings`, `FlapMomentSettings`). A interferência entre asas
+  (`modifiers/interference.zig`, no lugar de `wingpair.zig`) vale para todas as asas ligadas, quantas houver: cada
+  painel guarda o dono (`Surface.owner`) e sente os painéis das outras asas. O Python acompanha
+  (`modifiers.native`, o tradutor e `span_loads`).
 
 ### v0.2.5 (em andamento na `0.2_dev`)
 

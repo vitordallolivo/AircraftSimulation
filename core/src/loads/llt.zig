@@ -1,6 +1,6 @@
 //! Linha sustentadora numérica (vórtices em ferradura) para a distribuição de carga ao longo da envergadura.
 //!
-//! Para as cargas e, com `Params.aero_model = 1` (physics/aeromodel.zig), para o voo. Com o padrão (0) a simulação
+//! Para as cargas e, com `Params.aero_model = .lifting_line` (physics/aeromodel.zig), para o voo. Com o padrão (`.strips`) a simulação
 //! não chama este arquivo: o AeroDrive e as corridas ficam iguais.
 //!
 //! Fonte: Phillips, W. F. e Snyder, D. O., "Modern Adaptation of Prandtl's Classic Lifting-Line Theory",
@@ -27,7 +27,7 @@
 //! a_i: inclinação 2D tirada do C_Lα 3D do núcleo invertendo Helmbold (o tradutor fez C_Lα = helmbold(a, AR)):
 //!     C_Lα = a/(√(1+k²)+k), k = a/(πAR)   ⇒   a = C_Lα / √(1 − 2 C_Lα/(πAR))
 //!
-//! Versão não linear (`Params.llt_nonlinear = 1`, desligada por padrão): cada seção segue a sua curva c_l(α) com estol
+//! Versão não linear (`Params.llt_method = .nonlinear`, desligada por padrão): cada seção segue a sua curva c_l(α) com estol
 //! (a reta acima misturada com a placa plana, como nas faixas: Beard e McLain, `aero.sigmaStall`), e o sistema
 //!
 //!     R_i(Γ) = Γ_i − ½ c_i η_i |V_i| c_l,i(α_i) = 0,   V_i = v_i − Σ_j Γ_j w_ij,   α_i = atan2(V_i·ez_i, V_i·ex_i) + comando
@@ -172,7 +172,7 @@ fn nodes(surface: *const types.Surface, panel: *const types.PanelState) Node {
     return if (vec.dot(node_line, centered.d) >= 0) .{ .A = qa, .B = qb, .d = centered.d } else .{ .A = qb, .B = qa, .d = centered.d };
 }
 
-/// os nós da ferradura de um painel só com a geometria dele (para quem não tem o `PanelState`: modifiers/wingpair.zig)
+/// os nós da ferradura de um painel só com a geometria dele (para quem não tem o `PanelState`: modifiers/interference.zig)
 pub fn surfaceNodes(surface: *const types.Surface) Node {
     const panel = types.PanelState{ .r = surface.r, .S = surface.S, .c = surface.c, .group = surface.group, .side = surface.side, .ey = surface.ey, .ex = surface.ex };
     return nodes(surface, &panel);
@@ -305,8 +305,8 @@ fn ghRow(params: *const types.Params, panels: []const types.PanelState, n_panels
     const tangent_rate = node_line / vec.splat(@max(yz(node_line), 1e-12)); // d r / d s em i (s projetado em y-z)
     const cosL = yz(node_line) / @max(vec.norm(node_line), 1e-12);
     const si = 0.5 * (wings.sA[i] + wings.sB[i]);
-    const den = wings.bseg[i] * params.llt_blend * cosL;
-    const sigma = if (params.llt_blend > 0 and den > 1e-12) (2.0 / den) * (2.0 / den) else 0.0;
+    const den = wings.bseg[i] * params.lltBlend() * cosL;
+    const sigma = if (params.lltBlend() > 0 and den > 1e-12) (2.0 / den) * (2.0 / den) else 0.0;
     const uai = -vec.v3(panels[i].ex);
     for (0..n_panels) |j| {
         node_a[j] = wings.g[j].A;
@@ -328,8 +328,8 @@ fn ghRow(params: *const types.Params, panels: []const types.PanelState, n_panels
         const dir_j = unit(node_b[j] - node_a[j]);
         const tangent_a = if (wings.prev[j]) |neighbor| unit(dir_j + unit(node_b[neighbor] - node_a[neighbor])) else dir_j; // tangente nos nós (média dos vizinhos)
         const tangent_b = if (wings.next[j]) |neighbor| unit(dir_j + unit(node_b[neighbor] - node_a[neighbor])) else dir_j;
-        joint_a[j] = node_a[j] + jointDir(ua[j], tangent_a) * vec.splat(params.llt_joint * wings.cA[j]);
-        joint_b[j] = node_b[j] + jointDir(ua[j], tangent_b) * vec.splat(params.llt_joint * wings.cB[j]);
+        joint_a[j] = node_a[j] + jointDir(ua[j], tangent_a) * vec.splat(params.lltJoint() * wings.cA[j]);
+        joint_b[j] = node_b[j] + jointDir(ua[j], tangent_b) * vec.splat(params.lltJoint() * wings.cB[j]);
     }
 }
 
@@ -342,15 +342,15 @@ fn geometryPanels(params: *const types.Params, n_panels: usize, panels: []types.
 }
 
 /// monta `Params.llt_cache` (chamado em `runner.configure`, depois de `aero.init`): de onde saem as pernas livres e
-/// os segmentos fixos de cada par (i, j), para Phillips e Snyder ou Goates e Hunsaker conforme `llt_joint`,
-/// `llt_blend`. Não muda nenhuma conta: `apply` com e sem o cache dá o mesmo resultado, bit a bit
+/// os segmentos fixos de cada par (i, j), para Phillips e Snyder ou Goates e Hunsaker conforme `llt_method`,
+/// com `llt_joint` e `llt_blend`. Não muda nenhuma conta: `apply` com e sem o cache dá o mesmo resultado, bit a bit
 pub fn prepare(params: *types.Params) void {
     const cache = &params.llt_cache;
     cache.ok = 0;
     const n_panels: usize = @intCast(@min(@max(params.n_surf, 0), @as(i32, n_max)));
     var panels: [n_max]types.PanelState = undefined;
     geometryPanels(params, n_panels, panels[0..n_panels]);
-    const gh = params.llt_joint > 0 or params.llt_blend > 0;
+    const gh = params.lltJoint() > 0 or params.lltBlend() > 0;
     const wings = if (gh) Wings.build(params, panels[0..n_panels], n_panels) else Wings{};
     for (0..n_panels) |j| cache.used[j] = @intFromBool(used_geom(panels[0..n_panels], j));
     var node_a: [n_max]V3 = undefined;
@@ -383,7 +383,7 @@ pub fn prepare(params: *types.Params) void {
         }
     }
     cache.nonlinear = 0;
-    if (params.llt_nonlinear != 0) {
+    if (params.lltNonlinear()) {
         for (0..n_panels) |i| {
             const cosL = if (gh) sweptSection(&params.surf[i], &panels[i]).cosL else 1.0;
             cache.stall[i] = panelStall(params, &params.surf[i], cosL);
@@ -470,15 +470,15 @@ pub fn apply(params: *const types.Params, Vr: V3, deflections: V3, panels: []typ
     var rhs: [n_max]f64 = undefined;
     var used: [n_max]bool = undefined;
     var k_i: [n_max]f64 = undefined; // ½ c η a
-    // versão não linear (llt_nonlinear): o que o Newton precisa de cada painel
-    const nonlinear = params.llt_nonlinear != 0;
+    // versão não linear (`llt_method = .nonlinear`): o que o Newton precisa de cada painel
+    const nonlinear = params.lltNonlinear();
     var sections: [n_max]Section = undefined;
     var controls: [n_max]f64 = undefined;
     var curves: [n_max]Curve = undefined;
     var half_chords: [n_max]f64 = undefined; // ½ c cos Λ η
-    // Goates e Hunsaker (llt_joint, llt_blend > 0): a geometria muda com o ponto de controle; a influência fica
+    // Goates e Hunsaker (`llt_method = .goates_hunsaker`, com llt_joint e llt_blend): a geometria muda com o ponto de controle; a influência fica
     // guardada para a segunda volta. Com os dois em 0, as contas são as de Phillips e Snyder, como sempre
-    const gh = params.llt_joint > 0 or params.llt_blend > 0;
+    const gh = params.lltJoint() > 0 or params.lltBlend() > 0;
     var infl: [n_max][n_max]V3 = undefined;
     const cached = cacheFits(params, panels, n_panels, gh); // a geometria fixa já montada (prepare): só as pernas livres
     const wings = if (gh and !cached) Wings.build(params, panels, n_panels) else Wings{};
@@ -605,7 +605,7 @@ pub fn compute(params: *const types.Params, Vr: V3, body_rates: V3, rcg: V3, hei
     const n_panels: usize = @intCast(@min(params.n_surf, @as(i32, n_max)));
     var panels: [n_max]types.PanelState = undefined;
     var env_ll = env.*;
-    env_ll.no_pair = true; // a interferência entre asas ligadas sai do sistema daqui, não do modifier das faixas
+    env_ll.no_interference = true; // a interferência entre asas sai do sistema daqui, não do modifier das faixas
     var out = aero.computeTrace(params, Vr, body_rates, rcg, height, deflections, &env_ll, panels[0..n_panels]);
     // tira as forças das faixas...
     for (panels[0..n_panels]) |panel| {
@@ -1027,8 +1027,7 @@ test "derrapagem: Phillips e Snyder não converge; Goates e Hunsaker converge e 
     const ps20 = rectClb(&params, 20, 0.08);
     const ps40 = rectClb(&params, 40, 0.08);
     try testing.expect(@abs(ps40 - ps20) > 0.1 * @abs(ps40)); // P-S: cresce com a malha (G-H §II.A)
-    params.llt_joint = 0.15;
-    params.llt_blend = 1.0;
+    params.llt_method = .goates_hunsaker;
     const gh20 = rectClb(&params, 20, 0.08);
     const gh40 = rectClb(&params, 40, 0.08);
     try testing.expectApproxEqRel(gh40, gh20, 0.03); // converge
@@ -1037,7 +1036,7 @@ test "derrapagem: Phillips e Snyder não converge; Goates e Hunsaker converge e 
 
 test "Goates e Hunsaker desligado por padrão (a linha sustentadora de sempre)" {
     const params = types.Params{};
-    try testing.expect(params.llt_joint == 0 and params.llt_blend == 0);
+    try testing.expect(params.llt_method == .phillips_snyder and params.lltJoint() == 0 and params.lltBlend() == 0);
 }
 
 test "coeffs: o avião com a carga da linha sustentadora (asa retangular AR 8)" {
@@ -1088,10 +1087,7 @@ test "cache da geometria (prepare): o mesmo resultado, bit a bit, que a conta in
             params.surf[i].r = panels[i].r;
             params.surf[i].side = panels[i].side;
         }
-        if (gh) {
-            params.llt_joint = 0.15;
-            params.llt_blend = 1.0;
-        }
+        if (gh) params.llt_method = .goates_hunsaker;
         const be = 0.06;
         const Vr = V3{ airspeed * @cos(al) * @cos(be), airspeed * @sin(be), airspeed * @sin(al) * @cos(be) };
         for (panels[0..24]) |*panel| panel.v = Vr;
@@ -1121,7 +1117,7 @@ fn rectLift(params: *types.Params, panels: []types.PanelState, wing_span: f64, c
 
 test "não linear desligado por padrão" {
     const params = types.Params{};
-    try testing.expect(params.llt_nonlinear == 0);
+    try testing.expect(!params.lltNonlinear());
 }
 
 test "curva da seção: reta antes do estol e pico igual ao c_l,max pedido" {
@@ -1144,7 +1140,7 @@ test "não linear: em α pequeno fica com a linear; perto do estol o C_L para ab
     const chord = 0.25;
     const airspeed = 12.0;
     const linear_small = rectLift(&params, &panels, wing_span, chord, airspeed, 0.04);
-    params.llt_nonlinear = 1;
+    params.llt_method = .nonlinear;
     const nonlinear_small = rectLift(&params, &panels, wing_span, chord, airspeed, 0.04);
     try testing.expectApproxEqRel(linear_small, nonlinear_small, 0.01);
     // varredura em α: a linear cresce sempre; a não linear tem um máximo abaixo do c_l,max da seção (1,2 / 0,9)
@@ -1155,7 +1151,7 @@ test "não linear: em α pequeno fica com a linear; perto do estol o C_L para ab
     while (alpha < 0.45) : (alpha += 0.02) largest = @max(largest, rectLift(&params, &panels, wing_span, chord, airspeed, alpha));
     try testing.expect(largest < section_clmax and largest > 0.8 * section_clmax);
     const late = rectLift(&params, &panels, wing_span, chord, airspeed, 0.44);
-    params.llt_nonlinear = 0;
+    params.llt_method = .phillips_snyder;
     const late_linear = rectLift(&params, &panels, wing_span, chord, airspeed, 0.44);
     try testing.expect(late < 0.8 * late_linear);
     for (panels) |panel| try testing.expect(std.math.isFinite(panel.L));
@@ -1164,7 +1160,7 @@ test "não linear: em α pequeno fica com a linear; perto do estol o C_L para ab
 test "não linear: na asa retangular a raiz chega ao estol antes da ponta" {
     var params = types.Params{};
     var panels: [32]types.PanelState = undefined;
-    params.llt_nonlinear = 1;
+    params.llt_method = .nonlinear;
     _ = rectLift(&params, &panels, 2.0, 0.25, 12.0, 0.2);
     try testing.expect(panels[16].CL > panels[1].CL); // c_l da raiz acima do da ponta: ela estola primeiro
 }
@@ -1179,7 +1175,7 @@ test "não linear com o cache da geometria: o mesmo resultado, bit a bit" {
         params.surf[i].r = panels[i].r;
         params.surf[i].side = panels[i].side;
     }
-    params.llt_nonlinear = 1;
+    params.llt_method = .nonlinear;
     const Vr = V3{ airspeed * @cos(alpha), 0, airspeed * @sin(alpha) };
     var cached = panels;
     var full = panels;
@@ -1194,7 +1190,7 @@ test "não linear com o cache da geometria: o mesmo resultado, bit a bit" {
 /// C_L e o maior salto de c_l entre faixas vizinhas da asa retangular de `rectWing`, com a não linear e viscosidade `viscosity`
 fn stalledWing(panels: []types.PanelState, alpha: f64, viscosity: f64) struct { lift: f64, jump: f64 } {
     var params = types.Params{};
-    params.llt_nonlinear = 1;
+    params.llt_method = .nonlinear;
     params.llt_viscosity = viscosity;
     const lift = rectLift(&params, panels, 2.0, 0.25, 12.0, alpha);
     var jump: f64 = 0;

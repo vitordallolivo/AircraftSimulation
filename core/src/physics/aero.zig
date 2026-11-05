@@ -147,7 +147,7 @@ fn pairGamma(params: *const types.Params, Vr: V3, body_rates: V3, deflections: V
     const n_surf: usize = @intCast(params.n_surf);
     for (params.surf[0..n_surf], 0..) |*surface, i| {
         env.gamma[i] = 0;
-        const local = Vr + vec.cross(body_rates, vec.v3(surface.r)) + mods.inducedNoPair(params, env, i, surface);
+        const local = Vr + vec.cross(body_rates, vec.v3(surface.r)) + mods.inducedAlone(params, env, i, surface);
         const u_local = vec.dot(local, vec.v3(surface.ex));
         const ww = vec.dot(local, vec.v3(surface.ez));
         const V2 = u_local * u_local + ww * ww;
@@ -167,10 +167,10 @@ fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_r
     const alfa = fmath.atan2(Vr[2], Vr[0]);
     const n_surf: usize = @intCast(params.n_surf);
     const with_mods = params.n_mod > 0;
-    // par de asas ligadas (modifiers/wingpair.zig): as circulações de antes da interferência, numa cópia do Env
+    // interferência entre asas (modifiers/interference.zig): as circulações de antes da interferência, numa cópia do Env
     var env_pair: mods.Env = undefined;
     var envp = env;
-    if (with_mods and !env.no_pair and mods.wingpair.active(params)) {
+    if (with_mods and !env.no_interference and mods.interference.active(params)) {
         env_pair = env.*;
         pairGamma(params, Vr, body_rates, deflections, &env_pair);
         envp = &env_pair;

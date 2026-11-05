@@ -13,7 +13,7 @@ const V3 = vec.V3;
 pub const types = @import("types.zig");
 pub const ground = @import("ground.zig");
 pub const slipstream = @import("slipstream.zig");
-pub const wingpair = @import("wingpair.zig");
+pub const interference = @import("interference.zig");
 pub const flapmoment = @import("flapmoment.zig");
 const core_types = @import("../types.zig");
 const prop = @import("../physics/propulsion.zig");
@@ -25,10 +25,10 @@ pub const Env = struct {
     Q: [limits.max_props]f64 = [_]f64{0} ** limits.max_props, // torque (N·m)
     Vax: [limits.max_props]f64 = [_]f64{0} ** limits.max_props, // velocidade do ar ao longo do eixo, no cubo (m/s)
     eT: [limits.max_props]V3 = [_]V3{vec.zero} ** limits.max_props, // eixo de tração (corpo)
-    // par de asas ligadas (wingpair.zig): circulação de cada painel e para onde o ar vai; a aerodinâmica preenche
+    // interferência entre asas (interference.zig): circulação de cada painel e para onde o ar vai; a aerodinâmica preenche
     gamma: [limits.max_surfaces]f64 = [_]f64{0} ** limits.max_surfaces,
     u: V3 = vec.zero,
-    no_pair: bool = false, // a linha sustentadora vem depois (loads/llt.zig): o par já está no sistema dela
+    no_interference: bool = false, // a linha sustentadora vem depois (loads/llt.zig): a interferência já está no sistema dela
 
     pub const none: Env = .{};
 };
@@ -66,19 +66,19 @@ pub fn induced(params: *const core_types.Params, env: *const Env, i: usize, surf
     return inducedWith(true, params, env, i, surface);
 }
 
-/// `induced` sem o par de asas (o α de cada painel antes da interferência, para as circulações do par)
-pub fn inducedNoPair(params: *const core_types.Params, env: *const Env, i: usize, surface: *const core_types.Surface) V3 {
+/// `induced` sem a interferência entre asas (o α de cada painel antes dela, para as circulações)
+pub fn inducedAlone(params: *const core_types.Params, env: *const Env, i: usize, surface: *const core_types.Surface) V3 {
     return inducedWith(false, params, env, i, surface);
 }
 
-fn inducedWith(comptime pair: bool, params: *const core_types.Params, env: *const Env, i: usize, surface: *const core_types.Surface) V3 {
+fn inducedWith(comptime with_interference: bool, params: *const core_types.Params, env: *const Env, i: usize, surface: *const core_types.Surface) V3 {
     var velocity = vec.zero;
     const n_mods: usize = @intCast(params.n_mod);
     for (params.mods[0..n_mods]) |*modifier| {
-        if (modifier.enabled == 0 or !modifier.affectsPanel(i)) continue;
-        velocity += switch (modifier.kindOf()) {
+        if (!modifier.flags.enabled or !modifier.affectsPanel(i)) continue;
+        velocity += switch (modifier.kind) {
             .slipstream_disk => slipstreamStrip(params, env, modifier, surface),
-            .wing_pair => if (pair and params.aero_model == .strips) wingpair.induced(params, modifier, env.gamma[0..], env.u, i) else vec.zero,
+            .wing_interference => if (with_interference and params.aero_model == .strips) interference.induced(params, modifier, env.gamma[0..], env.u, i) else vec.zero,
             .flap_moment, .none, _ => vec.zero, // tipo vazio ou desconhecido: nada
         };
     }
@@ -91,8 +91,8 @@ pub fn flapCm(params: *const core_types.Params, i: usize, surface: *const core_t
     var delta_cm: f64 = 0.0;
     const n_mods: usize = @intCast(params.n_mod);
     for (params.mods[0..n_mods]) |*modifier| {
-        if (modifier.enabled == 0 or modifier.kindOf() != .flap_moment or !modifier.affectsPanel(i)) continue;
-        delta_cm += flapmoment.cmDelta(surface.tau, modifier.params[0]) * vec.dot(vec.v3(surface.mix), deflections);
+        if (!modifier.isOn(.flap_moment) or !modifier.affectsPanel(i)) continue;
+        delta_cm += flapmoment.cmDelta(surface.tau, modifier.settings(types.FlapMomentSettings).factor) * vec.dot(vec.v3(surface.mix), deflections);
     }
     return delta_cm;
 }
@@ -110,8 +110,9 @@ fn slipstreamStrip(params: *const core_types.Params, env: *const Env, modifier: 
 /// soma das esteiras dos motores da máscara no ponto `position` (superposição, slipstream.zig)
 fn slipstreamAt(params: *const core_types.Params, env: *const Env, modifier: *const types.Modifier, position: V3) V3 {
     var velocity = vec.zero;
-    const use_axial = modifier.slip(.axial_on) != 0;
-    const use_swirl = modifier.slip(.swirl_on) != 0;
+    const use_axial = modifier.flags.axial;
+    const use_swirl = modifier.flags.swirl;
+    const gains = modifier.settings(types.SlipstreamSettings);
     for (0..env.n_prop) |j| {
         if (!modifier.affectsProp(j) or env.T[j] <= 0) continue;
         const prop_unit = &params.prop[j];
@@ -119,7 +120,7 @@ fn slipstreamAt(params: *const core_types.Params, env: *const Env, modifier: *co
             position - vec.v3(prop_unit.r), use_axial, use_swirl);
         if (!wake.inside) continue;
         // ar empurrado para trás (−eT) e girando: o painel vê +axial eT e −giro
-        velocity += env.eT[j] * vec.splat(modifier.slip(.axial_gain) * wake.axial) - wake.swirl * vec.splat(modifier.slip(.swirl_gain));
+        velocity += env.eT[j] * vec.splat(gains.axial_gain * wake.axial) - wake.swirl * vec.splat(gains.swirl_gain);
     }
     return velocity;
 }
@@ -139,6 +140,6 @@ test "conjunto de painéis e de motores" {
 test {
     _ = ground;
     _ = slipstream;
-    _ = wingpair;
+    _ = interference;
     _ = flapmoment;
 }

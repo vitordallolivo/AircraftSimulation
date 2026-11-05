@@ -52,6 +52,17 @@ pub const AeroModel = enum(i32) {
     _,
 };
 
+/// a linha sustentadora que o núcleo resolve (cargas, varredura e o voo por `AeroModel.lifting_line`)
+pub const LiftingLineMethod = enum(i32) {
+    /// Phillips e Snyder (2000): ferraduras dos nós no 1/4 de corda (o de sempre)
+    phillips_snyder = 0,
+    /// Goates e Hunsaker (2021): junta das pernas e linha efetiva por ponto de controle (`llt_joint`, `llt_blend`)
+    goates_hunsaker = 1,
+    /// Phillips e Snyder com o c_l(α) de cada seção com estol, por Newton (`llt_viscosity`)
+    nonlinear = 2,
+    _,
+};
+
 /// Painel sustentador (faixa de meia asa, EH, EV...). A deflexão vista pelo painel é
 ///   δ = tau · (mix[0] δe + mix[1] δa + mix[2] δr)
 /// o que cobre profundor, aileron, leme, elevon, ruddervator, flaperon etc.
@@ -77,6 +88,8 @@ pub const Surface = extern struct {
     vertical: i32 = 0, // normal para +y
     side: i32 = 0, // +1 direita, -1 esquerda, 0 centro
     downwash: i32 = 0, // sente o downwash da asa
+    owner: i32 = -1, // a superfície de onde o painel veio (índice na lista do avião); −1: não informado
+    _pad: i32 = 0,
     // pontos de 1/4 de corda nas duas bordas da faixa (corpo, m): os nós da ferradura na linha sustentadora das
     // cargas (loads/llt.zig). Zero nos dois: a ferradura sai do centro r ± (S/c)/2 ao longo da envergadura.
     // A simulação (aero.zig) não usa
@@ -429,10 +442,10 @@ pub const Params = extern struct {
     // sustentadora (loads/llt.zig, com llt_joint e llt_blend), 2 = tabela (aero_tab)
     aero_model: AeroModel = .strips,
     aero_tab: AeroTable = .{},
-    llt_joint: f64 = 0, // comprimento da junta das pernas, fração da corda no nó (G-H eq. 17)
-    llt_blend: f64 = 0, // distância de mistura da linha efetiva, fração da semienvergadura (G-H eq. 7; MachUpX)
-    llt_nonlinear: i32 = 0, // 1: a linha sustentadora resolve com o c_l(α) de cada seção com estol, por Newton (Phillips e Snyder 2000)
-    llt_viscosity: f64 = 0, // viscosidade artificial da não linear (ν, adimensional): suaviza Γ depois do estol (Chattot)
+    llt_joint: f64 = 0.15, // Goates e Hunsaker: comprimento da junta das pernas, fração da corda no nó (G-H eq. 17)
+    llt_blend: f64 = 1.0, // Goates e Hunsaker: distância de mistura da linha efetiva, fração da semienvergadura (G-H eq. 7; MachUpX)
+    llt_method: LiftingLineMethod = .phillips_snyder,
+    llt_viscosity: f64 = 0, // não linear: viscosidade artificial (ν, adimensional), suaviza Γ depois do estol (Chattot)
     llt_cache: LltCache = .{}, // montado por llt.prepare na configuração (não vem do Python)
     prop_strike: i32 = 0, // 1: a ponta da pá tocar o chão encerra o voo (`crashed`, Events.tprop); 0 (padrão): só registra
     no_payload: i32 = 0, // começa sem a carga
@@ -445,6 +458,21 @@ pub const Params = extern struct {
     // derivados
     steer_sign: f64 = 1, // −1 se a roda direcionável está atrás das principais (convencional)
     alpha_guard_lim: f64 = 0, // α da proteção de α na decolagem (rad; `runner.guardAlpha`); 0: ap.alpha_max
+
+    /// a junta das pernas que a linha sustentadora usa (fração da corda; 0 fora do Goates e Hunsaker)
+    pub inline fn lltJoint(self: *const Params) f64 {
+        return if (self.llt_method == .goates_hunsaker) self.llt_joint else 0;
+    }
+
+    /// a distância de mistura da linha efetiva (fração da semienvergadura; 0 fora do Goates e Hunsaker)
+    pub inline fn lltBlend(self: *const Params) f64 {
+        return if (self.llt_method == .goates_hunsaker) self.llt_blend else 0;
+    }
+
+    /// a linha sustentadora resolve com o estol de cada seção?
+    pub inline fn lltNonlinear(self: *const Params) bool {
+        return self.llt_method == .nonlinear;
+    }
 };
 
 /// estado de um painel num instante (saída de `aero.computeTrace`): para ver a carga ao longo da envergadura

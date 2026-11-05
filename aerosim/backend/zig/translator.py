@@ -104,8 +104,10 @@ class ZigTranslator(IModelTranslator):
         m = mission if mission is not None else model.mission
         P = ac.payload
         surf, owner = [], []
-        for s in model.surfaces:
+        for index, s in enumerate(model.surfaces):
             pn = surface_panels(s)
+            for panel in pn:
+                panel["owner"] = index                          # o dono do painel (interferência entre asas)
             surf += pn
             owner += [s.name] * len(pn)
         spec = dict(

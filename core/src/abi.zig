@@ -4,6 +4,7 @@
 //! verdade para o layout (nada de copiar structs à mão nos dois lados).
 //!   struct <Nome> <tamanho> <alinhamento>
 //!   field <nome> <tipo> <contagem> <offset>      tipo: f64 | i32 | <Nome de struct>
+//! Um `enum(i32)` e um `packed struct(u32)` (bits com nome) vão como `i32`.
 //!   end
 const std = @import("std");
 const types = @import("types.zig");
@@ -46,7 +47,10 @@ fn typeTag(comptime Ty: type) struct { []const u8, usize } {
         .int => .{ "i32", 1 },
         .@"enum" => |enum_info| if (enum_info.tag_type == i32) .{ "i32", 1 } else @compileError("enum da ABI tem de ser enum(i32): " ++ @typeName(Ty)),
         .array => |array_info| .{ typeTag(array_info.child)[0], array_info.len * typeTag(array_info.child)[1] },
-        .@"struct" => .{ shortName(Ty), 1 },
+        .@"struct" => |struct_info| if (struct_info.layout == .@"packed")
+            (if (struct_info.backing_integer == u32) .{ "i32", 1 } else @compileError("struct packed da ABI tem de ser de 32 bits: " ++ @typeName(Ty)))
+        else
+            .{ shortName(Ty), 1 },
         else => @compileError("tipo não suportado no ABI: " ++ @typeName(Ty)),
     };
 }

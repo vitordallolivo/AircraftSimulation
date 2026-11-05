@@ -64,13 +64,13 @@ KINDS: dict[str, KindInfo] = {
          ParamInfo("ganho_axial", "ganho da axial", 1.0, "", "calibração (1 = a teoria)"),
          ParamInfo("ganho_giro", "ganho do giro", 1.0, "", "calibração (1 = a teoria)"))),
     "interferencia.asas": KindInfo(
-        "interferencia.asas", "interferência entre asas ligadas (tandem, biplano)", "aditivo", 2,
+        "interferencia.asas", "interferência entre as asas da configuração", "aditivo", 2,
         "ferraduras de Γ = ½ V c η c_l (Kutta–Joukowski) e Biot–Savart de segmento reto (Katz e Plotkin, "
         "Low-Speed Aerodynamics, 2ª ed., cap. 10; a conferir no PDF), como na linha sustentadora do núcleo "
-        "(Phillips e Snyder 2000), numa passada e só entre as duas asas",
-        "nas faixas, cada asa do par sente a velocidade induzida pela outra: a de trás do tandem voa no downwash "
-        "da da frente, e as asas do biplano se induzem. Só age com o voo pelas faixas e com asas ligadas "
-        "(as duas primeiras do grupo da asa principal). Desligado por padrão",
+        "(Phillips e Snyder 2000), numa passada e só entre asas diferentes",
+        "nas faixas, cada asa da configuração sente a velocidade induzida pelas outras, quantas houver: a que "
+        "está atrás voa no downwash das da frente, e asas uma sobre a outra se induzem. Só age com o voo pelas "
+        "faixas e com duas asas ligadas ou mais. Desligado por padrão",
         (ParamInfo("ganho", "ganho da induzida", 1.0, "", "calibração (1 = a teoria)"),)),
     "comando.momento_flape": KindInfo(
         "comando.momento_flape", "momento próprio dos comandos (flape, profundor, elevon)", "aditivo", 3,
@@ -159,53 +159,49 @@ def not_exported(ac, path: str) -> list[str]:
             "formato: ao abrir de novo volta o padrão (efeito solo de McCormick). Grave em .json para guardar."]
 
 
+# core/src/modifiers/types.zig: Modifier.flags (bit 0 ligado, bit 1 axial, bit 2 giro)
+FLAG_ENABLED, FLAG_AXIAL, FLAG_SWIRL = 1, 2, 4
+# os ajustes de cada tipo, na ordem da struct de ajustes do núcleo (SlipstreamSettings, InterferenceSettings,
+# FlapMomentSettings); as chaves que ligam e desligam vão nos flags
+SETTINGS = {"esteira.disco": ("ganho_axial", "ganho_giro"), "interferencia.asas": ("ganho",),
+            "comando.momento_flape": ("fator",)}
+
+
+def _flags(m: Modifier) -> int:
+    flags = FLAG_ENABLED
+    if m.kind != "esteira.disco" or m.value("axial") != 0:
+        flags |= FLAG_AXIAL
+    if m.kind != "esteira.disco" or m.value("giro") != 0:
+        flags |= FLAG_SWIRL
+    return flags
+
+
 def native(ac, panel_owner: list[str], prop_count: int, max_mods: int = MAX_MODS) -> dict:
     """os campos do núcleo: `ground`, `n_mod`, `mods` (lista de dicionários `Modifier` do Zig).
     `panel_owner[i]`: nome da superfície do painel i (para a máscara de superfícies)"""
     mods = []
     for m in additive(ac)[:max_mods]:
         inf = KINDS[m.kind]
+        targets = m.targets
+        if m.kind == "interferencia.asas":          # as asas da configuração: cada uma sente as outras
+            wings = [w.name for w in ac.wing_group()] if hasattr(ac, "wing_group") else []
+            if len(set(wings)) < 2:
+                continue                                                     # uma asa só: nada a fazer
+            targets = [t for t in wings if not m.targets or t in m.targets]
         mask = [0, 0]
-        if m.targets:
+        if targets:
             for i, owner in enumerate(panel_owner):
-                if owner in m.targets:
+                if owner in targets and i < 64:
                     mask[i // 32] |= 1 << (i % 32)
-            mask = [v - (1 << 32) if v >= 1 << 31 else v for v in mask]      # i32 com sinal
+            mask = [_i32(v) for v in mask]
             if mask == [0, 0]:
                 continue                                                     # nenhum painel: nada a fazer
         pmask = sum(1 << i for i in m.props if 0 <= i < prop_count)
-        vals = [m.value(p.key) for p in inf.params] + [0.0] * (16 - len(inf.params))
-        if m.kind == "interferencia.asas":            # as máscaras dos painéis de cada asa do par (types.zig, PairParam)
-            pair = _pair_masks(ac, panel_owner)
-            if pair is None:
-                continue                                                     # sem asas ligadas: nada a fazer
-            a, b = pair
-            vals[1:5] = [float(a[0]), float(a[1]), float(b[0]), float(b[1])]
-            mask = [_i32(_u32(a[0]) | _u32(b[0])), _i32(_u32(a[1]) | _u32(b[1]))]
-        mods.append(dict(kind=inf.core_id, enabled=1, surf_mask=mask, prop_mask=pmask, params=vals[:16]))
+        vals = [m.value(k) for k in SETTINGS.get(m.kind, ())]
+        mods.append(dict(kind=inf.core_id, flags=_flags(m), surf_mask=mask, prop_mask=pmask,
+                         params=(vals + [0.0] * 16)[:16]))
     return dict(ground=ground_method(ac), n_mod=len(mods), mods=mods)
-
-
-def _u32(v: int) -> int:
-    return v & 0xFFFFFFFF
 
 
 def _i32(v: int) -> int:
     return v - (1 << 32) if v >= 1 << 31 else v
-
-
-def _pair_masks(ac, panel_owner: list[str]):
-    """(máscara da asa A, da asa B) dos painéis das duas primeiras asas do grupo da asa principal; None sem par"""
-    ws = ac.wing_group() if hasattr(ac, "wing_group") else []
-    if len(ws) < 2:
-        return None
-    out = []
-    for w in ws[:2]:
-        m = [0, 0]
-        for i, owner in enumerate(panel_owner):
-            if owner == w.name and i < 64:
-                m[i // 32] |= 1 << (i % 32)
-        out.append([_i32(v) for v in m])
-    if out[0] == [0, 0] or out[1] == [0, 0] or ws[0].name == ws[1].name:
-        return None
-    return out[0], out[1]

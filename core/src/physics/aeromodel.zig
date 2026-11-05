@@ -1,7 +1,7 @@
 //! O modelo aerodinâmico do voo, escolhido por `Params.aero_model` (`types.AeroModel`): quem a dinâmica, a trimagem e
 //! a linearização chamam. `.strips` = faixas (`aero.computeEnv`, o de sempre: as contas são exatamente as de antes, e o
 //! AeroDrive, que monta os `Params` com os padrões, fica igual); `.lifting_line` = linha sustentadora (`loads/llt.zig`,
-//! `compute`; Phillips e Snyder ou Goates e Hunsaker conforme `llt_joint` e `llt_blend`); `.table` = tabela
+//! `compute`; Phillips e Snyder, Goates e Hunsaker ou a não linear conforme `llt_method`); `.table` = tabela
 //! (`aerotable.zig`) mais a fuselagem do núcleo se a tabela não a tem.
 const types = @import("../types.zig");
 const limits = @import("../limits.zig");

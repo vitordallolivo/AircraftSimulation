@@ -111,11 +111,11 @@ o que o AeroDrive usa. A **linha sustentadora** troca as forças dos painéis pe
 enxerga a interação entre as superfícies; é mais lenta, e serve para conferir as faixas. A **tabela** voa com os
 coeficientes de qualquer outro método (lltdrek, AeroSandbox, AVL), montados antes pelo Python.
 
-| `aero_model` | modelo | onde |
+| `aero_model` (`AeroModel`) | modelo | onde |
 |---|---|---|
-| 0 (padrão) | faixas | `physics/aero.zig` |
-| 1 | linha sustentadora (Phillips e Snyder; Goates e Hunsaker com `llt_joint`, `llt_blend`) | `loads/llt.zig` (`compute`) |
-| 2 | tabela do avião inteiro ($`C_L`$, $`C_D`$, $`C_m`$ em α e derivadas lineares) mais a fuselagem do núcleo | `physics/aerotable.zig` |
+| `.strips` = 0 (padrão) | faixas | `physics/aero.zig` |
+| `.lifting_line` = 1 | linha sustentadora, a de `llt_method` (`LiftingLineMethod`: Phillips e Snyder, Goates e Hunsaker ou a não linear) | `loads/llt.zig` (`compute`) |
+| `.table` = 2 | tabela do avião inteiro ($`C_L`$, $`C_D`$, $`C_m`$ em α e derivadas lineares) mais a fuselagem do núcleo | `physics/aerotable.zig` |
 
 Com o padrão, as contas são as de sempre, bit a bit, e a regressão dos exemplos confere isso. No Python, o campo é
 `ac.sim.aero_model` ("faixas", "llt", "llt_gh", "tabela"), e a tabela vem de `aerosim/aero/flight_table.py`. Para

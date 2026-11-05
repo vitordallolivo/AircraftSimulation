@@ -34,7 +34,7 @@ pub const modifiers = struct {
     pub const mod = @import("modifiers/mod.zig");
     pub const slipstream = @import("modifiers/slipstream.zig");
     pub const types = @import("modifiers/types.zig");
-    pub const wingpair = @import("modifiers/wingpair.zig");
+    pub const interference = @import("modifiers/interference.zig");
 };
 
 /// tubo da esteira contra os painéis

@@ -1,10 +1,12 @@
 //! Tipos dos modificadores trocados com o Python (C ABI, `extern struct`; o esquema sai de `abi.zig`).
 //!
-//! Dois jeitos de um modificador entrar:
-//!   - método de um efeito que sempre existe (efeito solo): um campo seletor em `Params` (`ground`);
-//!     o padrão é o comportamento de antes, então arquivos antigos e o AeroDrive não mudam;
-//!   - efeito a mais (esteira da hélice, tabela de correção...): um item em `Params.mods`, desligado
-//!     por padrão (`n_mod = 0`: o laço nem roda).
+//! Duas perguntas separadas:
+//!   - qual MÉTODO calcula um efeito que sempre existe (um por vez): um `enum` seletor em `Params`. Aqui, o efeito
+//!     solo (`Params.ground`); o modelo do voo (`Params.aero_model`) e a linha sustentadora (`Params.llt_method`)
+//!     ficam em `types.zig`. O padrão é o comportamento de antes, então arquivos antigos e o AeroDrive não mudam;
+//!   - quais EFEITOS A MAIS estão ligados (somam; esteira da hélice, interferência entre asas, momento do comando):
+//!     um item em `Params.mods` com `kind`, `flags` e os ajustes com nome, desligado por padrão (`n_mod = 0`: o
+//!     laço nem roda).
 const std = @import("std");
 const limits = @import("../limits.zig");
 
@@ -25,44 +27,67 @@ pub fn panelSet(words: [2]i32) PanelSet {
 
 /// efeito solo: um método por vez (`Params.ground`)
 pub const Ground = enum(i32) {
-    off = 0, // sem efeito solo
-    mccormick = 1, // φ(h/b) de McCormick no arrasto induzido (o de sempre; padrão)
-    _, // número de outra versão: tratado como desligado
+    /// sem efeito solo
+    off = 0,
+    /// φ(h/b) de McCormick no arrasto induzido (o de sempre; padrão)
+    mccormick = 1,
+    /// número de outra versão: tratado como desligado
+    _,
 };
 
 /// efeitos a mais (`Modifier.kind`)
 pub const Kind = enum(i32) {
-    none = 0, // item vazio (ignorado)
-    slipstream_disk = 1, // esteira da hélice por disco atuador (slipstream.zig); parâmetros em `SlipstreamParam`
-    wing_pair = 2, // interferência entre duas asas ligadas (tandem, biplano; wingpair.zig); parâmetros em `PairParam`
-    flap_moment = 3, // momento próprio do comando no quarto de corda da faixa (flapmoment.zig); params[0] = k
-    _, // tipo de outra versão: ignorado
+    /// item vazio (ignorado)
+    none = 0,
+    /// esteira da hélice por disco atuador (slipstream.zig); ajustes em `SlipstreamSettings`
+    slipstream_disk = 1,
+    /// interferência entre as asas da configuração, quantas houver (interference.zig); ajustes em
+    /// `InterferenceSettings`. Cada painel marcado sente os painéis marcados das outras asas (`Surface.owner`)
+    wing_interference = 2,
+    /// momento próprio do comando no quarto de corda da faixa (flapmoment.zig); ajustes em `FlapMomentSettings`
+    flap_moment = 3,
+    /// tipo de outra versão: ignorado
+    _,
 };
 
-/// o que cada `Modifier.params[k]` quer dizer em `Kind.slipstream_disk` (o valor é o índice k)
-pub const SlipstreamParam = enum(u8) {
-    axial_on = 0, // velocidade axial ligada (1/0)
-    swirl_on = 1, // giro ligado (1/0)
-    axial_gain = 2, // ganho da axial (1 = a teoria)
-    swirl_gain = 3, // ganho do giro (1 = a teoria)
+/// o que se liga e desliga num modificador. Na ABI é um `i32`: bit 0 ligado, bit 1 axial, bit 2 giro
+pub const Flags = packed struct(u32) {
+    /// o modificador vale
+    enabled: bool = true,
+    /// esteira: a velocidade axial entra
+    axial: bool = true,
+    /// esteira: o giro entra
+    swirl: bool = true,
+    _unused: u29 = 0,
 };
 
-/// o que cada `Modifier.params[k]` quer dizer em `Kind.wing_pair`. As máscaras são as dos painéis de cada asa do
-/// par (bits de um i32 com sinal, guardados num f64: exatos), na mesma convenção de `surf_mask`
-pub const PairParam = enum(u8) {
-    gain = 0, // ganho da velocidade induzida (1 = a teoria)
-    a_lo = 1, // painéis da asa A, bits 0..31
-    a_hi = 2, // painéis da asa A, bits 32..63
-    b_lo = 3, // painéis da asa B, bits 0..31
-    b_hi = 4, // painéis da asa B, bits 32..63
+/// ajustes da esteira (`Kind.slipstream_disk`), nos primeiros `Modifier.params`
+pub const SlipstreamSettings = extern struct {
+    /// ganho da velocidade axial (1 = a teoria)
+    axial_gain: f64 = 1,
+    /// ganho do giro (1 = a teoria)
+    swirl_gain: f64 = 1,
+};
+
+/// ajustes da interferência entre asas (`Kind.wing_interference`)
+pub const InterferenceSettings = extern struct {
+    /// ganho da velocidade induzida (1 = a teoria)
+    gain: f64 = 1,
+};
+
+/// ajustes do momento do comando (`Kind.flap_moment`)
+pub const FlapMomentSettings = extern struct {
+    /// o fator empírico k do τ (o mesmo de `aerosim/model/airfoil.py: flap_effectiveness`)
+    factor: f64 = 0.85,
 };
 
 pub const n_params = 16;
 
-/// um efeito a mais. O que cada parâmetro quer dizer depende de `kind` (ver README.md desta pasta).
+/// um efeito a mais. Os ajustes ficam nos primeiros `params`, na ordem da struct de ajustes do tipo
+/// (`settings`); ver README.md desta pasta.
 pub const Modifier = extern struct {
-    kind: i32 = @intFromEnum(Kind.none),
-    enabled: i32 = 1,
+    kind: Kind = .none,
+    flags: Flags = .{},
     // superfícies afetadas (painéis do núcleo, bit i = painel i; 0 nos dois = todos)
     surf_mask: [2]i32 = .{ 0, 0 },
     // motores envolvidos (bit i = motor i; 0 = todos)
@@ -70,32 +95,26 @@ pub const Modifier = extern struct {
     _pad: i32 = 0,
     params: [n_params]f64 = [_]f64{0} ** n_params,
 
-    /// o tipo pelo nome (número desconhecido vira um valor sem nome, que o `switch` ignora)
-    pub inline fn kindOf(self: *const Modifier) Kind {
-        return @enumFromInt(self.kind);
+    /// os ajustes do modificador lidos como a struct `Settings` do tipo dele
+    pub inline fn settings(self: *const Modifier, comptime Settings: type) Settings {
+        comptime if (@sizeOf(Settings) > @sizeOf(@TypeOf(self.params))) @compileError("ajustes não cabem em params");
+        return std.mem.bytesToValue(Settings, std.mem.asBytes(&self.params)[0..@sizeOf(Settings)]);
     }
 
-    /// o parâmetro `param` de um modificador do tipo `Kind.slipstream_disk`
-    pub inline fn slip(self: *const Modifier, param: SlipstreamParam) f64 {
-        return self.params[@intFromEnum(param)];
+    /// o modificador está ligado e é do tipo `kind`?
+    pub inline fn isOn(self: *const Modifier, kind: Kind) bool {
+        return self.flags.enabled and self.kind == kind;
     }
 
-    /// o parâmetro `param` de um modificador do tipo `Kind.wing_pair`
-    pub inline fn pair(self: *const Modifier, param: PairParam) f64 {
-        return self.params[@intFromEnum(param)];
-    }
-
-    /// os painéis da asa A (`wing_a` = true) ou B do par
-    pub inline fn pairPanels(self: *const Modifier, wing_a: bool) PanelSet {
-        const lo = self.pair(if (wing_a) .a_lo else .b_lo);
-        const hi = self.pair(if (wing_a) .a_hi else .b_hi);
-        return panelSet(.{ @intFromFloat(lo), @intFromFloat(hi) });
+    /// os painéis que o modificador pega (vazio = todos)
+    pub inline fn panels(self: *const Modifier) PanelSet {
+        return panelSet(self.surf_mask);
     }
 
     /// o modificador pega o painel `i`? (sem painéis marcados: pega todos)
     pub inline fn affectsPanel(self: *const Modifier, i: usize) bool {
-        const panels = panelSet(self.surf_mask);
-        return panels.mask == 0 or panels.isSet(i);
+        const marked = self.panels();
+        return marked.mask == 0 or marked.isSet(i);
     }
 
     /// o modificador usa o motor `j`? (sem motores marcados: usa todos)
@@ -108,6 +127,4 @@ pub const Modifier = extern struct {
 comptime {
     if (limits.max_surfaces > 64) @compileError("surf_mask cobre até 64 painéis");
     if (limits.max_props > 31) @compileError("prop_mask cobre até 31 motores");
-    for (@typeInfo(SlipstreamParam).@"enum".fields) |field| if (field.value >= n_params) @compileError("parâmetro fora de params");
-    for (@typeInfo(PairParam).@"enum".fields) |field| if (field.value >= n_params) @compileError("parâmetro fora de params");
 }

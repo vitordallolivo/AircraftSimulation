@@ -1,10 +1,12 @@
 # core/src/modifiers — modificadores
 
 Os modificadores são métodos da literatura que mudam a aerodinâmica do avião inteiro e que se ligam ou desligam por
-avião, sem mexer no resto do núcleo. Hoje são dois. O primeiro é o efeito solo: perto do chão, a asa produz menos
-arrasto induzido, e isso muda a decolagem e o pouso. O segundo é a esteira da hélice: o ar que a hélice joga para trás
-passa mais rápido e girando sobre a asa e a cauda, o que muda a sustentação e o momento dessas superfícies com o
-motor ligado. Depois podem vir tabelas de correção (VSPAERO, CFD, túnel).
+avião, sem mexer no resto do núcleo. Eles respondem a duas perguntas diferentes. A primeira é qual **método** calcula
+um efeito que sempre existe, um por vez: o efeito solo é o caso daqui (perto do chão, a asa produz menos arrasto
+induzido, e isso muda a decolagem e o pouso); o modelo do voo e a linha sustentadora seguem a mesma ideia em
+`types.zig` (`AeroModel`, `LiftingLineMethod`). A segunda é quais **efeitos a mais** estão ligados, somados: a esteira
+da hélice (o ar que a hélice joga para trás passa mais rápido e girando sobre a asa e a cauda), a interferência entre as
+asas da configuração e o momento próprio dos comandos. Depois podem vir tabelas de correção (VSPAERO, CFD, túnel).
 
 O avião descreve os modificadores numa lista (`Aircraft.modifiers`, em `aerosim/model/modifiers.py`), que a GUI
 edita na Montagem. O tradutor (`aerosim/backend/zig/translator.py`) leva essa lista para os campos `ground`, `n_mod` e
@@ -51,30 +53,34 @@ flowchart TD
 
 | arquivo | o que tem |
 |---|---|
-| `types.zig` | `Modifier` (extern struct: `kind`, `enabled`, `surf_mask[2]`, `prop_mask`, `params[16]`) e os enums que dão nome aos números: `Ground` (método do efeito solo), `Kind` (tipo do efeito a mais) e `SlipstreamParam` (o que cada `params[k]` da esteira quer dizer) |
+| `types.zig` | `Modifier` (extern struct: `kind`, `flags`, `surf_mask[2]`, `prop_mask`, `params[16]`), os enums `Ground` (método do efeito solo) e `Kind` (tipo do efeito a mais), os `Flags` (o que se liga e desliga, um bit com nome cada), as structs de ajustes de cada tipo (`SlipstreamSettings`, `InterferenceSettings`, `FlapMomentSettings`) e os conjuntos `PanelSet`/`PropSet` (bitset) |
 | `ground.zig` | métodos do efeito solo (`factor`, `mccormick`) |
 | `slipstream.zig` | esteira por disco atuador (`diskInduced`, `axialAt`, `radiusAt`, `swirlRate`, `at`); `shape`/`TubeShape.tube` montam o tubo que contrai para `collision/` |
 | `flapmoment.zig` | momento próprio do comando no quarto de corda da faixa (teoria do perfil fino; Anderson, a conferir no PDF): `thetaOf` acha θ_f a partir do τ da faixa, e `cmDelta` dá dΔc_m/dδ. Entra no momento de cada faixa pelo `flapCm` de `mod.zig`, só com o modificador `comando.momento_flape` ligado |
-| `mod.zig` | entrada do módulo: `Env` (tração, torque, eixo e velocidade axial de cada motor no instante; `envFrom`), `induced` (soma dos efeitos a mais por painel, como média de uma grade `chord_samples × strip_samples` de pontos da faixa; quem está dentro do tubo é dito por `collision/`), `hits` / `hitsProp` (máscaras) |
+| `interference.zig` | interferência entre as asas da configuração nas faixas, para N asas (`active`, `induced`) |
+| `mod.zig` | entrada do módulo: `Env` (tração, torque, eixo e velocidade axial de cada motor no instante; `envFrom`), `induced` (soma dos efeitos a mais por painel, como média de uma grade `chord_samples × strip_samples` de pontos da faixa; quem está dentro do tubo é dito por `collision/`), `flapCm` |
 | `README.md` | este arquivo |
 
 ## Números na ABI, nomes no núcleo
 
-O Python escreve números (`Params.ground`, `Modifier.kind`, `params[k]`), porque a ABI só leva tipos C. Dentro do núcleo
-cada número vira um enum, e o código decide por nome:
+O Python escreve números (`Params.ground`, `Modifier.kind`, `flags`, `params[k]`), porque a ABI só leva tipos C. Dentro
+do núcleo cada campo tem o tipo com nome (um `enum(i32)`, um `packed struct(u32)` de bits, uma struct de ajustes), e o
+código decide por nome:
 
 ```zig
-switch (m.kindOf()) {                        // Modifier.kind → Kind
+switch (m.kind) {                                     // Kind
     .slipstream_disk => slipstreamStrip(p, env, m, s),
-    .none, _ => vec.zero,                    // vazio ou de outra versão: nada
+    .none, _ => vec.zero,                             // vazio ou de outra versão: nada
 }
-const ax = m.slip(.axial_on) != 0;           // params[0], pelo nome
+const axial = m.flags.axial;                          // bit 1 dos flags
+const gain = m.settings(types.SlipstreamSettings).axial_gain;   // params[0], pelo nome
 ```
 
 Número desconhecido (um arquivo de uma versão mais nova) cai no `_` do enum e é ignorado. Um tipo novo é um campo novo
 no fim do enum, com o próximo número, e o mesmo número em `aerosim/model/modifiers.py` (`KINDS[...].core_id`).
 
-As máscaras `surf_mask` e `prop_mask` são outra coisa: o bit $`i`$ é o painel (ou o motor) $`i`$, e zero quer dizer todos.
+As máscaras `surf_mask` e `prop_mask` são conjuntos: o bit $`i`$ é o painel (ou o motor) $`i`$, e vazio quer dizer todos.
+Dentro do núcleo elas são lidas como `PanelSet` e `PropSet` (`Modifier.affectsPanel`, `affectsProp`).
 
 ## Dois jeitos de entrar
 
@@ -158,7 +164,7 @@ Q = \int_A \rho\,(V + w_0)\,v_t\,r\,dA
 O giro tem o sentido da rotação da hélice (só atrás do disco).
 
 **5. No painel.** A velocidade que o painel vê soma a axial ao longo do eixo de tração $`\hat e_T`$ e tira o giro, com os
-ganhos de calibração (`SlipstreamParam.axial_gain`, `swirl_gain`; 1 é a teoria), em média nos pontos da faixa dentro do
+ganhos de calibração (`SlipstreamSettings.axial_gain`, `swirl_gain`; 1 é a teoria), em média nos pontos da faixa dentro do
 tubo (`collision/`). N motores somam por superposição:
 
 ```math
@@ -175,10 +181,11 @@ teoria do momento).
 
 ### `interferencia.asas` (aditivo, desligado por padrão)
 
-As faixas tratam cada painel sozinho. Num tandem, isso quer dizer que a asa de trás não sente o downwash da da frente;
-num biplano, que as duas asas não se induzem. A linha sustentadora do núcleo (`loads/llt.zig`) resolve as circulações
-de todos os painéis juntas e já tem esse efeito. Este modificador traz para as faixas só a parte entre as duas asas
-ligadas (as duas primeiras do grupo da asa principal), numa passada, sem montar o sistema.
+As faixas tratam cada painel sozinho. Quando o avião tem mais de uma asa, isso quer dizer que uma asa atrás da outra
+não sente o downwash da da frente, e que asas uma sobre a outra não se induzem. A linha sustentadora do núcleo
+(`loads/llt.zig`) resolve as circulações de todos os painéis juntas e já tem esse efeito. Este modificador traz para as
+faixas só a parte entre asas diferentes, para todas as asas ligadas da configuração (quantas houver), numa passada, sem
+montar o sistema. "Outra asa" quer dizer outro dono: cada painel guarda a superfície de onde veio (`Surface.owner`).
 
 **1. Circulação de cada painel.** Pela relação de Kutta–Joukowski, a sustentação por unidade de envergadura é
 $`\rho V \Gamma`$, e a da faixa é $`\tfrac12 \rho V^2 c\,\eta\,c_l`$. Igualando as duas (o mesmo passo da linha
@@ -191,11 +198,12 @@ sustentadora em `llt.zig`):
 com o $`\alpha`$ do painel calculado sem esta interferência (os outros modificadores, o downwash empírico e os comandos
 entram).
 
-**2. Velocidade induzida pela outra asa.** Cada painel $`j`$ é uma ferradura: o segmento ligado no quarto da corda e as
-duas pernas retas na direção do vento relativo. No ponto de controle $`i`$ de uma asa somam-se só as ferraduras da outra:
+**2. Velocidade induzida pelas outras asas.** Cada painel $`j`$ é uma ferradura: o segmento ligado no quarto da corda e
+as duas pernas retas na direção do vento relativo. No ponto de controle $`i`$ de uma asa somam-se só as ferraduras das
+outras:
 
 ```math
-\vec w_i = \sum_{j \,\in\, \text{outra asa}} \Gamma_j\,\vec w_{ij}
+\vec w_i = \sum_{j \,:\, \text{dono}(j) \neq \text{dono}(i)} \Gamma_j\,\vec w_{ij}
 ```
 
 $`\vec w_{ij}`$ é a velocidade de uma ferradura de circulação unitária, pela lei de Biot–Savart de segmento reto (Katz e
@@ -203,14 +211,15 @@ Plotkin, *Low-Speed Aerodynamics*, 2ª ed., cap. 10; número da equação a conf
 entre superfícies de `llt.core_frac`.
 
 **3. No painel.** O painel vê $`\vec v = \vec V_{ar} + \vec\omega\times\vec r - k\,\vec w_i`$, com $`k`$ o ganho
-(`PairParam.gain`; 1 é a teoria). Daí sai outro $`\alpha`$ e a força girada; o arrasto induzido da interferência vem
+(`InterferenceSettings.gain`; 1 é a teoria). Daí sai outro $`\alpha`$ e a força girada; o arrasto induzido da interferência vem
 da inclinação da sustentação, como na linha sustentadora.
 
 A própria asa fica de fora, porque a faixa já tem o seu $`C_{D_i} = C_L^2/(\pi e A\!R)`$. Com o voo pela linha
-sustentadora (`aero_model` ≠ 0) o modificador não faz nada, e a comparação com a linha sustentadora em `llt.compute`
-o desliga (`Env.no_pair`) para não contar o efeito duas vezes.
+sustentadora (`aero_model` ≠ `.strips`) o modificador não faz nada, e a comparação com a linha sustentadora em
+`llt.compute` o desliga (`Env.no_interference`) para não contar o efeito duas vezes.
 
-Números de referência (avião de teste em tandem, C_Lα por radiano e ponto neutro em % da CMA de referência):
+Números de referência (avião de teste com duas asas, uma atrás da outra; C_Lα por radiano e ponto neutro em % da CMA
+de referência):
 
 | modelo | C_Lα | ponto neutro |
 |---|---|---|
@@ -218,7 +227,7 @@ Números de referência (avião de teste em tandem, C_Lα por radiano e ponto ne
 | faixas, com o modificador | 3,48 | −21 % |
 | linha sustentadora (Goates e Hunsaker) | 3,44 | −23 % |
 
-Testes: `wingpair.zig` (as máscaras de cada asa do par).
+Testes: `mod.zig` (os conjuntos de painéis e de motores).
 
 ### Limites conhecidos do `solo.mccormick`
 
@@ -233,7 +242,7 @@ São as razões para ter outros métodos depois:
 - velocidade axial do eixo aplicada igual em toda a seção do tubo (perfil "chapéu"; Conway 1995 dá a carga
   não uniforme);
 - o tubo segue o eixo do motor: não é desviado pelo α nem pela asa;
-- sem interação hélice → hélice (tandem: a de trás não vê a esteira da da frente no J dela) e asa → hélice
+- sem interação hélice → hélice (uma atrás da outra: a de trás não vê a esteira da da frente no J dela) e asa → hélice
   (upwash, força normal na hélice);
 - só onde há tração do instante: na simulação (decolagem, missão) sim; trimagem, linearização e envelope
   ainda chamam a aerodinâmica sem motores (`Env.none`), então não veem a esteira;
@@ -243,11 +252,10 @@ São as razões para ter outros métodos depois:
 
 ### Limites conhecidos do `interferencia.asas`
 
-- uma passada: a asa da frente do tandem não recebe de volta o efeito da de trás pelo próprio $`\alpha`$; no biplano,
-  onde a influência é mútua, a passada é só a primeira iteração do sistema da linha sustentadora;
-- só as duas primeiras asas do grupo (um triplano usa as duas primeiras);
+- uma passada: uma asa não recebe de volta, pelo próprio $`\alpha`$, o efeito que causou na outra; quando a influência é
+  mútua (asas uma sobre a outra), a passada é só a primeira iteração do sistema da linha sustentadora;
 - as pernas da ferradura são retas na direção do vento relativo: a esteira não enrola nem desce com o downwash;
-- no biplano as faixas sem o modificador já ficam abaixo do VLM e da linha sustentadora no $`C_{L\alpha}`$; com ele, o
+- com asas uma sobre a outra, as faixas sem o modificador já ficam abaixo do VLM e da linha sustentadora no $`C_{L\alpha}`$; com ele, o
   valor cai entre os dois, mas a diferença entre os métodos ainda é grande (a conferir com dados de túnel).
 
 ### Próximos tipos (planejados; só entram com a fonte conferida)
@@ -304,13 +312,13 @@ Testes do módulo: `zig build test -Dgrupo=physics` (inclui `modifiers/`), `pyte
 ## Como adicionar um modificador
 
 1. **Fonte primeiro:** obra, equação, página. Sem isso não entra.
-2. Em `types.zig`: um campo novo em `Kind` (aditivo) ou em `Ground` (solo), com o próximo número, e um enum com o que
-   cada `params[k]` quer dizer (como `SlipstreamParam`).
+2. Em `types.zig`: um campo novo em `Kind` (aditivo) ou em `Ground` (solo), com o próximo número, e a struct de ajustes
+   do tipo (como `SlipstreamSettings`); o que liga e desliga vira um bit com nome em `Flags`.
 3. Em `mod.zig` (aditivo, um caso no `switch` de `induced`) ou em `ground.zig` (solo, um caso em `factor`):
    a fórmula, com a referência no comentário. Teste Zig que reproduz um número publicado.
 4. Uma sonda em `root.zig` (`aerosim_probe_*`) e o subcomando em `tools/probe.py`.
 5. Em `aerosim/model/modifiers.py`: a entrada em `KINDS` (título, categoria, `core_id`, referência,
-   parâmetros com unidade).
+   parâmetros com unidade) e em `SETTINGS` (as chaves na ordem da struct de ajustes).
 6. Testes de invariância (desligado = sem efeito; sentido invertido espelha; simetria; superposição).
 7. Uma linha na tabela "Métodos e referências" acima.
 
