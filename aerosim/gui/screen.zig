@@ -901,6 +901,7 @@ pub const Screen = struct {
                 rl.gl.rlDisableDepthTest();
                 drawBalance(&screen.assembly_view, weights, plane.low[2], size);
                 drawWind(&screen.assembly_view, opened.loaded.ac.environment, middle, plane.low[2], size);
+                if (screen.assembly_panel) |shown| drawNeutralPoint(&screen.assembly_view, shown.neutral_x, size);
                 if (screen.assembly_angle != .free) drawCgDimensions(&screen.assembly_view, screen.assembly_angle, weights.cg, size);
                 rl.gl.rlDrawRenderBatchActive();
                 rl.gl.rlEnableDepthTest();
@@ -1329,6 +1330,16 @@ const PieceDrag = struct {
 
 /// a seta do vento (azul, como na Montagem em Python): acima do avião, apontando para onde o vento sopra; o ângulo é
 /// de onde ele vem, 0 = de frente (+x), 90 = da direita (+y)
+/// o ponto neutro: um traço vertical verde em x_NP, no plano de simetria (o `_draw_markers` do Python, ±0,3 m)
+fn drawNeutralPoint(view: *view3d.View, neutral_x: f64, size: f64) void {
+    if (!std.math.isFinite(neutral_x)) return;
+    const color = theme.hex(0x1a9a1a);
+    const half = @max(0.3, 0.12 * size);
+    view3d.segment(.{ neutral_x, 0, -half }, .{ neutral_x, 0, half }, color);
+    view3d.segment(.{ neutral_x + 0.004 * size, 0, -half }, .{ neutral_x + 0.004 * size, 0, half }, color);
+    view.label(.{ neutral_x, 0, -half - 0.02 * size }, "PN", color);
+}
+
 fn drawWind(view: *view3d.View, environment: aircraft_model.aircraft.Environment, center: [3]f64, top: f64, size: f64) void {
     if (!(environment.wind_speed > 0)) return;
     const color = theme.hex(0x1f77b4);
@@ -1416,6 +1427,7 @@ const AssemblyPanel = struct {
     titles: []const [:0]const u8,
     tables: []const []const []const ui_kit.plot.Cell,
     warnings: []const []const u8,
+    neutral_x: f64, // o ponto neutro (o traço verde no 3D, como o `set_markers` do Python)
 
     fn build(aircraft: *const aircraft_model.aircraft.Aircraft) !AssemblyPanel {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -1435,7 +1447,7 @@ const AssemblyPanel = struct {
             }
             table.* = rows;
         }
-        return .{ .arena = arena, .name = try memory.dupeZ(u8, panel.name), .summary = panel.summary, .titles = titles, .tables = tables, .warnings = panel.warnings };
+        return .{ .arena = arena, .name = try memory.dupeZ(u8, panel.name), .summary = panel.summary, .titles = titles, .tables = tables, .warnings = panel.warnings, .neutral_x = panel.neutral_x };
     }
 
     fn deinit(shown: *AssemblyPanel) void {
