@@ -6,6 +6,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- A documentação estava espalhada em dezenas de README, cada um numa pasta. Agora o site junta todos os `.md` num
+  livro, com sumário por parte do projeto, busca, as equações e os diagramas desenhados e as imagens, e o tracking
+  numa aba ao lado. Um `.md` novo entra no livro sozinho.
 - O quadro de tarefas ficou difícil de ler como tabelas longas em Markdown. Agora as mesmas tabelas viram também
   uma página no site, sem mudar o jeito de escrever (uma tarefa nova continua sendo uma linha na tabela): as tarefas em colunas por estado, com
   busca e filtro por segmento, as suspeitas de erro à parte, o grafo das dependências, a ordem de prioridade e o que

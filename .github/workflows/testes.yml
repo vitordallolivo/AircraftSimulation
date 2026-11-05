@@ -86,9 +86,9 @@ jobs:
           path: relatorio.md
           if-no-files-found: ignore
 
-  # a página do tracking (as tabelas do docs/TRACKING.md) como artefato, para ver antes do merge; é a mesma que o site.yml publica
+  # o livro (todos os .md) e a página do tracking como artefato, para ver antes do merge; são os mesmos que o site.yml publica
   tracking:
-    name: página do tracking
+    name: livro e tracking
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -97,8 +97,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: Gerar a página
-        run: python tools/tracking.py --check && python tools/tracking.py --html tracking/tracking.html
+        run: python tools/tracking.py --check && python tools/livro.py --saida livro
       - uses: actions/upload-artifact@v4
         with:
-          name: tracking
-          path: tracking/tracking.html
+          name: livro
+          path: livro
