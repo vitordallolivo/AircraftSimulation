@@ -560,8 +560,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/model/**
 
 - `aerodrive/src/model/aircraft.zig` — Leitura do arquivo do avião salvo pela GUI (`data/aircraft/*.json`, "meus aviões").
-  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:115`, `Boom:132`, `Propeller:161`, `Motor:162`, `Battery:163`, `ThrustPoly:174`, `Propulsion:186`, `GearLeg:203`, `Gear:204`, `Tank:227`, `Payload:247`, `PointMass:258`, `Mass:259`, `Environment:270`, `Takeoff:280`, `SimSettings:281`, `Autopilot:283`, `Leg:328`, `MissionEvent:341`, `Mission:342`, `Ballast:352`, `Airfield:353`, `Aircraft:368`, `limits:399`, `Diag:423`, `Loaded:437`
-  fn `mixedAirfoils:14`, `kindGains:48`, `parse:447`, `validate:506`, `semispan:593`, `sortedSections:600`, `sectionAt:612`, `tailOnBoom:625`
+  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:116`, `Boom:133`, `Propeller:162`, `Motor:163`, `Battery:164`, `ThrustPoly:175`, `Propulsion:187`, `GearLeg:204`, `Gear:205`, `Tank:228`, `Payload:248`, `PointMass:259`, `Mass:260`, `Environment:271`, `Takeoff:281`, `SimSettings:282`, `Autopilot:284`, `Leg:329`, `MissionEvent:342`, `Mission:343`, `Ballast:353`, `Airfield:354`, `Modifier:371`, `Aircraft:385`, `limits:417`, `Diag:441`, `Loaded:455`
+  fn `mixedAirfoils:14`, `kindGains:48`, `parse:465`, `validate:524`, `semispan:611`, `sortedSections:618`, `sectionAt:630`, `tailOnBoom:643`
 - `aerodrive/src/model/airfoil.zig` — Perfil 2D (x/c, y/c): NACA de 4 dígitos pelo nome ou as coordenadas do arquivo do avião.
   tipos `Profile:13`
   fn `nacaDigits:23`, `naca4:39`, `forDrawing:79`, `invert:95`, `full:102`, `thinAirfoil:126`, `flapEffectiveness:176`, `helmbold:183`, `split:190`
@@ -621,11 +621,16 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerodrive/src/sim/drive_manager.zig` — drive_manager: dono da simulação durante o voo. A cada quadro avança o núcleo até o tempo do
   tipos `Commands:25`, `Phase:27`, `Frame:30`, `DriveManager:51`
+- `aerodrive/src/sim/methods.zig` — Os métodos fixos do AeroDrive, num lugar só.
+  tipos `Methods:11`
+  fn `apply:22`
 - `aerodrive/src/sim/mission.zig` — Percurso -> segmentos, eventos e mesas/plataformas do núcleo (`aerosim/model/mission.py` e
   fn `autoRadius:13`, `segments:20`, `events:76`, `pads:92`
+- `aerodrive/src/sim/modifiers.zig` — Os modificadores do arquivo do avião -> os campos do núcleo (`Params.ground`, `Params.mods`), em Zig.
+  fn `fill:38`
 - `aerodrive/src/sim/params.zig` — Avião (arquivo da GUI) -> parâmetros do núcleo (`types.Params`), em Zig.
-  tipos `Info:28`, `DryMass:340`
-  fn `area:43`, `span:53`, `mac:57`, `macLeadingEdge:72`, `references:93`, `dryMass:367`, `fill:437`, `setup:585`, `staticCharacteristics:615`
+  tipos `Info:30`, `DryMass:343`
+  fn `area:45`, `span:55`, `mac:59`, `macLeadingEdge:74`, `references:95`, `dryMass:370`, `fill:440`, `setup:590`, `staticCharacteristics:620`
 - `aerodrive/src/sim/session.zig` — Sessão de voo: o que o jogador escolhe nos menus antes de voar (cenário, modo, vento, sloshing,
   tipos `Scenario:7`, `Landing:19`, `Mode:31`, `Session:43`
   fn `gearExtent:98`

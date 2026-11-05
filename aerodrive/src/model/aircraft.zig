@@ -86,6 +86,7 @@ pub const Airfoil = struct {
 pub const Surface = struct {
     name: []const u8 = "asa",
     role: []const u8 = "wing",
+    group: []const u8 = "", // asas com o mesmo grupo voam juntas (a interferência entre asas pega o grupo da asa principal)
     x: f64 = 0,
     y: f64 = 0,
     z: f64 = 0,
@@ -365,6 +366,22 @@ pub const Airfield = struct {
     z_warning: f64 = 1.0,
 };
 
+/// um modificador da GUI (`aerosim/model/modifiers.py: Modifier`): o tipo pelo nome da GUI ("solo.mccormick",
+/// "esteira.disco"...), os ajustes pelo nome e as superfícies e motores que ele pega (vazio = todos)
+pub const Modifier = struct {
+    kind: []const u8 = "solo.mccormick",
+    enabled: bool = true,
+    name: []const u8 = "",
+    params: std.json.ArrayHashMap(f64) = .{},
+    targets: []const []const u8 = &.{},
+    props: []const i64 = &.{},
+
+    /// um ajuste pelo nome (o padrão se o arquivo não tem)
+    pub fn value(modifier: *const Modifier, key: []const u8, fallback: f64) f64 {
+        return modifier.params.map.get(key) orelse fallback;
+    }
+};
+
 pub const Aircraft = struct {
     name: []const u8 = "aeronave",
     surfaces: []const Surface = &.{},
@@ -383,6 +400,7 @@ pub const Aircraft = struct {
     autopilot: Autopilot = .{},
     sim: SimSettings = .{},
     mission: Mission = .{},
+    modifiers: ?[]const Modifier = null, // null (arquivo sem a chave): o padrão da GUI, só o efeito solo de McCormick
     shared_battery: bool = false,
     Sref: ?f64 = null, // null ou 0: da asa
     cref: ?f64 = null,

@@ -93,6 +93,12 @@ escolha do menu Voar.
 O piloto automático ajusta os próprios ganhos para cada avião (modelo linear do núcleo), e assume do
 jeito que o avião estiver: no ar, retoma o percurso pela perna de cruzeiro mais perto.
 
+**Física igual à da GUI, com os métodos do tempo real.** Os efeitos que você liga no avião pela GUI (efeito solo,
+esteira da hélice, interferência entre as asas, momento do comando) vêm do arquivo e valem aqui do mesmo jeito
+(`src/sim/modifiers.zig`). Já o modelo aerodinâmico do voo e o refino das contas ficam fixos, porque o voo tem de
+caber em 120 passos de física por segundo: o AeroDrive voa sempre pelas faixas, com o refino padrão do núcleo. Essas
+escolhas ficam num arquivo só, `src/sim/methods.zig`; trocar um método do AeroDrive é mudar ali.
+
 Comandos (menu Controle → Comandos: escolha o esquema, ou "Personalizado" para pôr cada canal em
 qualquer eixo, gatilho ou LB/RB):
 

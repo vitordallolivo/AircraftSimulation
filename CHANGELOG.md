@@ -36,6 +36,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   (`aero_model="lifting_line"`, `flags=["enabled", "axial"]`), e somem os números copiados à mão (`core_id`,
   `GEAR_KIND`, `GROUP`, `AERO_MODELS`, os bits dos flags, os índices do dimensionamento). As análises em Zig
   (`aerosim/manager/native`) devolvem `native.Error`, um conjunto de erros com nome, no lugar de `anyerror`.
+- AeroDrive com a física do arquivo: o tradutor em Zig (`aerodrive/src/sim/params.zig`) lê os modificadores do avião
+  (`sim/modifiers.zig`, porta de `modifiers.native`: efeito solo, esteira, interferência entre as asas do grupo da asa
+  principal, momento do comando), marca o dono de cada painel (`Surface.owner`) e lê o `group` das superfícies. O
+  modelo do voo e o refino ficam fixos num arquivo só, `sim/methods.zig` (faixas e o refino padrão), por causa do
+  tempo real. Arquivo sem modificadores: o efeito solo de McCormick de sempre.
 
 ### v0.2.5 (em andamento na `0.2_dev`)
 

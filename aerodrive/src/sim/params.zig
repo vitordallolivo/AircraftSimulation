@@ -13,6 +13,8 @@ const airfoil = @import("../model/airfoil.zig");
 const sk = @import("../model/skeleton.zig");
 const v3 = @import("../math/vec3.zig");
 const mission = @import("mission.zig");
+const methods = @import("methods.zig");
+const modifiers = @import("modifiers.zig");
 const fz = @import("../util/fuzz.zig");
 
 const T = core.types;
@@ -214,7 +216,7 @@ const Panels = struct {
     }
 };
 
-fn surfacePanels(out: Panels, ac: *const Aircraft, s: *const model.Surface, dw: [2]f64) Error!void {
+fn surfacePanels(out: Panels, ac: *const Aircraft, s: *const model.Surface, owner: usize, dw: [2]f64) Error!void {
     const co = try coeffs(s);
     var sbuf: [model.limits.sections * 3]sk.Station = undefined;
     const st = sk.stations(ac, s, &sbuf);
@@ -264,6 +266,7 @@ fn surfacePanels(out: Panels, ac: *const Aircraft, s: *const model.Surface, dw: 
                 .eps0 = if (s.downwash) (if (s.eps0) |x| x * D2R else dw[0]) else 0,
                 .depsda = if (s.downwash) (s.depsda orelse dw[1]) else 0,
                 .group = group(s.role),
+                .owner = @intCast(owner), // a superfície do painel (interferência entre asas)
                 .vertical = @intFromBool(s.vertical),
                 .side = @intFromFloat(side),
                 .downwash = @intFromBool(s.downwash),
@@ -465,9 +468,9 @@ pub fn fill(ac: *const Aircraft, p: *T.Params, diag: *model.Diag) Error!void {
 
     const dw = try wingDownwash(ac);
     const out: Panels = .{ .p = p, .diag = diag };
-    for (ac.surfaces) |*s| {
+    for (ac.surfaces, 0..) |*s, owner| {
         if (!s.enabled or s.sections.len < 2) continue;
-        surfacePanels(out, ac, s, dw) catch |e| {
+        surfacePanels(out, ac, s, owner, dw) catch |e| {
             if (e == error.InvalidAirfoil or e == error.TooManyPoints) diag.set("{s}: perfil inválido", .{s.name});
             return e;
         };
@@ -579,6 +582,8 @@ pub fn fill(ac: *const Aircraft, p: *T.Params, diag: *model.Diag) Error!void {
     p.n_seg = @intCast(ns);
     p.n_event = @intCast(try mission.events(&ac.mission, &p.event, diag));
     p.n_pad = @intCast(mission.pads(&ac.airfield, p.seg[0..ns], &p.pads));
+    methods.apply(methods.fixed, p); // o modelo do voo e o refino: fixos no AeroDrive (methods.zig)
+    modifiers.fill(ac, p); // efeito solo e efeitos a mais: do arquivo, como na GUI
 }
 
 /// parâmetros + configuração do núcleo + calibração do piloto (como `prepare` da GUI)
@@ -740,7 +745,7 @@ test "perfil por seção: faixas iguais às do tradutor da GUI" {
     const p = try testing.allocator.create(T.Params);
     defer testing.allocator.destroy(p);
     p.* = .{};
-    try surfacePanels(.{ .p = p, .diag = &d }, &l.ac, &l.ac.surfaces[0], .{ 0, 0 });
+    try surfacePanels(.{ .p = p, .diag = &d }, &l.ac, &l.ac.surfaces[0], 0, .{ 0, 0 });
     // números do aerosim (universal + translator.surface_panels), um por faixa (direita e esquerda iguais)
     const ref = [_][5]f64{
         .{ 4.736215888000, 0.349680860090, 1.440, 0.0120, -0.105505584582 },
