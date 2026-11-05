@@ -415,6 +415,17 @@ Ela é dividida em partes, cada uma ao lado do `.py` correspondente:
 Na missão, a soltura da carga LAPES é procurada por bisseção no ponto da perna, até a carga cair no alvo. Esse
 evento fica no mesmo lugar da lista de eventos, porque o checkpoint marca os eventos já feitos pela posição.
 
+### A conta fora da tela e em vários núcleos
+
+A tela não roda a conta. No programa instalado, cada rodada vai para uma thread própria, que conta o progresso e o
+fim por uma caixa de mensagens de um produtor e um consumidor, sem trava (`aerosim/gui/ui/jobs.zig`, `Mailbox`): a
+thread só escreve, a tela só lê a cada quadro, e nenhuma espera a outra. No navegador, que ainda não tem threads,
+a rodada anda em fatias de alguns milissegundos por quadro.
+
+A busca da decolagem (`takeoff_opt.zig`) voa os pontos de cada nível da grade em paralelo, um núcleo por ponto, cada
+um com a sua cópia da instância do núcleo. Como cada decolagem começa do mesmo estado e não lê nada das outras, o
+resultado é igual ao da busca em série com qualquer número de núcleos.
+
 ### Como chamar uma análise em Zig
 
 A tela faz isso sozinha. Para usar de fora, por exemplo num teste:

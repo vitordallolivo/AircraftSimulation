@@ -701,7 +701,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `buildMesh:55`, `balance:113`, `loadAircraft:131`, `load:144`, `fillAirfoilFiles:161`, `parseDat:196`, `findExample:228`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
-  tipos `Kind:35`, `Page:228`
+  tipos `Kind:35`, `Page:258`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
   tipos `Waiter:29`, `Bridge:45`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt
@@ -727,6 +727,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Kind:14`, `Field:25`, `Group:53`, `Form:64`
 - `aerosim/gui/ui/jobs.zig` — As contas longas fora do laço da tela: uma `Job` roda uma função numa thread própria, e a tela continua
   tipos `Job:14`
+  fn `Mailbox:73`
 - `aerosim/gui/ui/menus.zig` — As peças de escolha que as abas repetem: a lista de itens com um selecionado (a lista de candidatos de Perfis,
   tipos `ItemList:12`, `CheckItem:56`, `CheckMenu:65`
   fn `buttonGrid:41`, `checkedText:122`

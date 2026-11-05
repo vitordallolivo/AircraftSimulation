@@ -13,6 +13,7 @@
 //! testa 8 pontos na pista e refina em volta do melhor pela seção áurea; a bisseção parte de onde o avião sai do chão
 //! sem acionar e divide a faixa até achar a janela.
 const std = @import("std");
+const builtin = @import("builtin");
 const core = @import("aerosim");
 const aircraft_model = @import("aircraft_model");
 const runner = @import("runner.zig");
@@ -164,6 +165,7 @@ pub const Takeoffs = struct {
     deflection_max: f64,
     control: ?[]const u8,
     log: std.ArrayList(types.LogRow) = .empty,
+    crew: []Takeoffs = &.{}, // as cópias que voam as decolagens de uma grade em paralelo, uma por núcleo a mais
 
     /// configura a pista da decolagem para o avião, com o piloto já calibrado (`autopilot`); `dtlog` é o passo do
     /// registro (0,01 s na busca)
@@ -242,6 +244,65 @@ pub const Takeoffs = struct {
     }
 };
 
+/// sem threads neste alvo (a web): a grade voa em série
+const no_threads = builtin.single_threaded or builtin.target.cpu.arch.isWasm();
+
+/// voa as decolagens de `positions` (a mesma deflexão e o mesmo `hold`) e põe cada uma em `results`, na ordem. Cada
+/// núcleo voa uma cópia da instância, então o resultado é o mesmo da série, bit a bit, com qualquer número de núcleos
+fn evaluateMany(takeoffs: *Takeoffs, positions: []const f64, deflection: f64, hold: ?f64, results: []Result) !void {
+    const cores = if (no_threads) 1 else std.Thread.getCpuCount() catch 1;
+    const workers = @min(cores, positions.len);
+    if (no_threads or workers <= 1) {
+        for (positions, results) |position, *result| result.* = try takeoffs.evaluate(position, deflection, hold);
+        return;
+    }
+    if (comptime no_threads) unreachable; // o resto (as threads) nem compila onde não há threads
+    if (takeoffs.crew.len < workers - 1) {
+        takeoffs.crew = try takeoffs.memory.alloc(Takeoffs, workers - 1);
+        for (takeoffs.crew) |*member| {
+            member.* = takeoffs.*;
+            member.crew = &.{};
+            member.log = .empty;
+            member.instance = try takeoffs.memory.create(core.runner.Instance);
+        }
+    }
+    const Shift = struct {
+        takeoffs: *Takeoffs,
+        first: usize,
+        stride: usize,
+        failure: ?anyerror = null,
+        fn fly(shift: *@This(), all: []const f64, flown_deflection: f64, flown_hold: ?f64, out: []Result) void {
+            var index = shift.first;
+            while (index < all.len) : (index += shift.stride) {
+                out[index] = shift.takeoffs.evaluate(all[index], flown_deflection, flown_hold) catch |err| {
+                    shift.failure = err;
+                    return;
+                };
+            }
+        }
+    };
+    var shifts: [64]Shift = undefined;
+    var threads: [64]?std.Thread = [_]?std.Thread{null} ** 64;
+    const count = @min(workers, shifts.len);
+    for (0..count) |k| {
+        const member = if (k == 0) takeoffs else &takeoffs.crew[k - 1];
+        if (k > 0) {
+            // a cópia da instância de agora (o configure e a carga que quem chamou já aplicou)
+            member.instance.* = takeoffs.instance.*;
+            member.takeoff = takeoffs.takeoff;
+        }
+        shifts[k] = .{ .takeoffs = member, .first = k, .stride = count };
+    }
+    for (1..count) |k| threads[k] = std.Thread.spawn(.{}, Shift.fly, .{ &shifts[k], positions, deflection, hold, results }) catch null;
+    shifts[0].fly(positions, deflection, hold, results);
+    for (1..count) |k| {
+        if (threads[k]) |thread| thread.join() else shifts[k].fly(positions, deflection, hold, results); // sem thread: voa aqui
+    }
+    for (shifts[0..count]) |shift| if (shift.failure) |err| return @as(EvaluateError, @errorCast(err));
+}
+
+const EvaluateError = @typeInfo(@typeInfo(@TypeOf(Takeoffs.evaluate)).@"fn".return_type.?).error_union.error_set;
+
 /// o melhor acionamento e todas as decolagens testadas
 pub const Outcome = struct {
     best: Result,
@@ -286,8 +347,9 @@ fn gridSearch(takeoffs: *Takeoffs, tried: *std.ArrayList(Result)) !?Result {
     holds: for ([_]?f64{ null, 0.25 * deflection_max, 0.5 * deflection_max }) |hold| {
         for (levels) |level| {
             var best_here: ?Result = null;
-            for (grid) |position| {
-                const result = try takeoffs.evaluate(position, -level * deflection_max, hold);
+            var flown: [grid_points]Result = undefined;
+            try evaluateMany(takeoffs, &grid, -level * deflection_max, hold, &flown);
+            for (flown) |result| {
                 try tried.append(memory, result);
                 if (result.ok and (best_here == null or result.margin > best_here.?.margin)) best_here = result;
             }

@@ -31,6 +31,12 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).
 - A carga LAPES ganha o alvo no chão, e a pista ganha a distância máxima de pouso.
 - Os prints da interface em Zig (`--shot`) esperam a rodada acabar e as vistas 3D desenharem.
+- Antes, as análises em Zig andavam em fatias dentro do quadro da tela, e um passo longo (a busca da decolagem)
+  travava a janela por uns 3 s. Agora a conta roda numa thread própria e só manda mensagens para a tela, que as lê a
+  cada quadro, sem trava entre as duas; a janela não trava mais. No navegador, por enquanto, continuam as fatias.
+- A busca da decolagem voa os pontos da grade em todos os núcleos, cada um com a sua cópia do avião, com o mesmo
+  resultado da busca em série. Com 4 núcleos, a grade sai umas quatro vezes mais rápida, e a Missão "só decolagem",
+  de 4,3 s para 2,7 s.
 - Sai o simulador antigo em C (`legacy/`).
 
 ### v0.2.5 (em andamento na `0.2_dev`)

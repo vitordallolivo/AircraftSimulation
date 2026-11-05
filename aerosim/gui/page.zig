@@ -210,6 +210,36 @@ const Operation = enum { specs, run, stage };
 const AnalysisRun = struct {
     loaded: aircraft_model.aircraft.Loaded,
     run: manager.Run,
+    // a rodada numa thread (onde há): a conta só manda notas pela caixa, a tela só lê
+    thread: ?std.Thread = null,
+    outbox: jobs.Mailbox(Note, 64) = .{},
+    stop: std.atomic.Value(bool) = .init(false),
+
+    /// o que a thread da conta conta para a tela
+    const Note = struct {
+        kind: enum { progress, finished, failed, stopped },
+        fraction: f32 = 0,
+        text: [96:0]u8 = [_:0]u8{0} ** 96,
+    };
+
+    /// a rodada inteira, na thread da conta: avança até acabar, falhar ou a tela pedir para parar
+    fn work(job: *AnalysisRun, simulation: *const manager.Simulation) void {
+        while (true) {
+            if (job.stop.load(.monotonic)) return job.finalNote(.stopped);
+            const finished = simulation.advance(&job.run) catch return job.finalNote(.failed);
+            if (finished) return job.finalNote(.finished);
+            var note: Note = .{ .kind = .progress, .fraction = @floatCast(@min(job.run.progress, 1.0)) };
+            const said = std.mem.sliceTo(&job.run.message, 0);
+            const length = @min(said.len, note.text.len);
+            @memcpy(note.text[0..length], said[0..length]);
+            _ = job.outbox.push(note); // cheia: este progresso se perde, o próximo vai
+        }
+    }
+
+    /// a última nota não se perde: espera a tela abrir espaço
+    fn finalNote(job: *AnalysisRun, kind: @FieldType(Note, "kind")) void {
+        while (!job.outbox.push(.{ .kind = kind })) std.Thread.yield() catch {};
+    }
 
     /// o motivo da falha que a análise deixou (ou um texto geral)
     fn failureText(job: *const AnalysisRun) []const u8 {
@@ -525,7 +555,8 @@ pub const Page = struct {
         };
     }
 
-    /// começa a rodada em Zig; ela anda em fatias a cada quadro (`stepNative`), sem thread, também no navegador
+    /// começa a rodada em Zig: numa thread, que só conversa com a tela pela caixa de notas (`AnalysisRun.work`); onde
+    /// não há threads (o navegador), em fatias a cada quadro (`stepNative`)
     fn analysisStart(page: *Page, request: []const u8) void {
         if (page.working()) return;
         const simulation = page.analysis.?;
@@ -543,12 +574,41 @@ pub const Page = struct {
         page.waiter.progress_text[0] = 0;
         const values = manager.Values.fromRequest(job.run.memory(), request);
         simulation.start(&job.run, values) catch return page.stopAnalysis(job.failureText());
+        if (jobs.threads_available) job.thread = std.Thread.spawn(.{}, AnalysisRun.work, .{ job, simulation }) catch null;
+    }
+
+    /// lê as notas da thread da conta; devolve verdadeiro quando a rodada acabou bem (o resultado sai em seguida)
+    fn readNotes(page: *Page, job: *AnalysisRun) bool {
+        while (job.outbox.pop()) |note| switch (note.kind) {
+            .progress => {
+                page.waiter.progress.store(@intFromFloat(@round(note.fraction * 1000)), .release);
+                const length = std.mem.sliceTo(&note.text, 0).len;
+                @memcpy(page.waiter.progress_text[0..length], note.text[0..length]);
+                page.waiter.progress_text[length] = 0;
+            },
+            .finished => {
+                job.thread.?.join();
+                job.thread = null;
+                return true;
+            },
+            .failed, .stopped => {
+                job.thread.?.join();
+                job.thread = null;
+                page.stopAnalysis(if (note.kind == .failed) job.failureText() else "parado");
+                return false;
+            },
+        };
+        return false;
     }
 
     /// uma fatia da rodada em Zig: avança até uns milissegundos de conta e devolve a tela; no fim, mostra o resultado
     fn stepNative(page: *Page) void {
         const job = page.analysis_run orelse return;
         const simulation = page.analysis.?;
+        if (job.thread != null) {
+            if (!page.readNotes(job)) return;
+            return page.showNative(job, simulation);
+        }
         const clock_start = std.Io.Clock.awake.now(clockIo()).nanoseconds;
         var finished = false;
         while (!finished) {
@@ -561,6 +621,11 @@ pub const Page = struct {
         @memcpy(page.waiter.progress_text[0..length], said[0..length]);
         page.waiter.progress_text[length] = 0;
         if (!finished) return;
+        page.showNative(job, simulation);
+    }
+
+    /// a rodada acabou: o JSON do resultado vira a página
+    fn showNative(page: *Page, job: *AnalysisRun, simulation: *const manager.Simulation) void {
         const arena = newArena() orelse return page.stopAnalysis("sem memória");
         var owned: ?*Arena = arena;
         var text: std.Io.Writer.Allocating = .init(arena.allocator());
@@ -583,6 +648,14 @@ pub const Page = struct {
 
     /// para a rodada em Zig com o motivo
     fn stopAnalysis(page: *Page, why: []const u8) void {
+        if (page.analysis_run) |job| if (job.thread != null) {
+            // a thread ainda roda: pede para parar; ela termina o passo em que está e avisa ("parado")
+            job.stop.store(true, .monotonic);
+            const text = "parando...";
+            @memcpy(page.waiter.progress_text[0..text.len], text);
+            page.waiter.progress_text[text.len] = 0;
+            return;
+        };
         setText(&page.message, "{s}", .{why});
         page.dropNative();
     }
