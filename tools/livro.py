@@ -79,7 +79,9 @@ def book(paths: list[str]) -> dict:
     for path in sorted(paths, key=order_key):
         with open(os.path.join(ROOT, path), encoding="utf-8") as f:
             text = f.read()
-        chapters[group_of(path)].append({"caminho": path, "titulo": title_of(text, path), "md": text})
+        title = title_of(text, path)
+        text = re.sub(r"^# .+$", lambda _: "# " + title, text, count=1, flags=re.M)   # o título simples no texto também
+        chapters[group_of(path)].append({"caminho": path, "titulo": title, "md": text})
     # o README da raiz abre o livro
     first = chapters["Projeto"]
     first.sort(key=lambda page: (page["caminho"] != "README.md", order_key(page["caminho"])))
