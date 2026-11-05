@@ -712,7 +712,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/gui/ui/app.zig` — O que os dois programas têm igual em volta da tela: a linha de comando, a janela e o laço de desenho, com o
   tipos `Args:14`
-  fn `parseArgs:25`, `run:57`, `runBrowser:138`, `openFromPage:167`
+  fn `parseArgs:25`, `run:57`, `runBrowser:141`, `openFromPage:170`
 - `aerosim/gui/ui/browser_io.zig` — O `std.Io` das telas no navegador. No Zig 0.16 o `std.Io.Threaded` não compila para emscripten (o mesmo motivo
 - `aerosim/gui/ui/checks.zig` — O diagnóstico de uma etapa, como o `ChecksPanel` da GUI em Python: uma linha por verificação (estado, o que se
   tipos `Check:10`, `ChecksPanel:44`

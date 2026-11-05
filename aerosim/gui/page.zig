@@ -314,6 +314,11 @@ pub const Page = struct {
         return page.job.running() or page.native_run != null;
     }
 
+    /// a página ainda vai mudar sozinha: uma conta andando ou um "rodar" esperando os campos (os prints esperam)
+    pub fn settling(page: *const Page) bool {
+        return page.working() or page.run_when_ready;
+    }
+
     /// a página precisa ser pedida de novo na próxima vez que aparecer
     pub fn markStale(page: *Page) void {
         page.stale = true;

@@ -93,7 +93,10 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     var frames: usize = 0;
     while (!rl.windowShouldClose()) : (frames += 1) {
         drawFrame(&ui, screen, shot);
-        if (shot and frames == 3) {
+        // o print sai no 3º quadro, ou depois, quando a tela para de mudar sozinha (`busy`: uma rodada pedida com
+        // acao=rodar), até uns minutos de quadros
+        const settling = @hasDecl(@TypeOf(screen.*), "busy") and screen.busy() and frames < 200_000;
+        if (shot and frames >= 3 and !settling) {
             const image = try rl.loadImageFromScreen();
             defer rl.unloadImage(image);
             if (!rl.exportImage(image, args.shot.?)) {

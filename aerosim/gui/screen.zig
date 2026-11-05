@@ -84,6 +84,13 @@ pub const Screen = struct {
         screen.pending_tab = index;
     }
 
+    /// a tela ainda vai mudar sozinha (aba ou "rodar" pendente, uma conta andando): o print espera
+    pub fn busy(screen: *const Screen) bool {
+        if (screen.pending_tab != null or screen.pending_run) return true;
+        const page = screen.shown orelse return false;
+        return page.settling();
+    }
+
     /// pede as abas ao Python e abre o avião de exemplo (chamar com a janela aberta)
     pub fn start(screen: *Screen) void {
         screen.requirements.bridge = &screen.bridge;
