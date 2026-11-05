@@ -89,7 +89,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/design/flight.py` — O avião só sai da sprint se voar: a decolagem do núcleo 6GDL (o mesmo otimizador da aba Missão) acha o
   `tune_takeoff:19`
 - `aerosim/design/mdo.py` — Dimensionamento inicial como mini-MDO: monta a configuração do núcleo (`core/src/sizing`) a partir do
-  `class MdoParams:40`, `class MdoRun:60`, `airfoil_catalog:81`, `available:104`, `airfoil_data:134`, `build:144`, `tip_varies:225`, `at_bounds:235`, `opts_of:249`, `decode:254`, `history:269`, `run:280`, `evaluate:293`, `apply:305`, `planform:327`, `sketch:338`, `check_6dof:389`, `full_envelope:417`, `constraint_diagram:438`
+  `kind_and_wings:40`, `class MdoParams:48`, `class MdoRun:70`, `airfoil_catalog:91`, `available:114`, `airfoil_data:144`, `build:154`, `tip_varies:236`, `at_bounds:246`, `opts_of:260`, `decode:265`, `history:280`, `run:291`, `evaluate:304`, `apply:316`, `planform:338`, `sketch:349`, `check_6dof:401`, `full_envelope:429`, `constraint_diagram:450`
 - `aerosim/design/power.py` — Etapa Motores e montagem: onde ficam os motores (e por consequência a bateria, a carga e o trem) e o
   `class PowerParams:35`, `class AircraftCandidate:78`, `motor_counts:88`, `assemble:123`, `ground_pitch:309`, `trimmed_clmax:317`, `thrust_trim:338`, `thrust_of:458`, `motor_prop_spec:486`, `performance:505`, `trim_drag:558`, `design_point:580`
 - `aerosim/design/project.py` — O projeto da sprint: requisitos, regras e o que cada etapa guardou (perfis, asas, conjuntos, aviões).
@@ -239,7 +239,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/model/devices.py` — Geometria dos dispositivos de asa (winglet, winglet para baixo, placa de ponta, cerca).
   `class Leg:22`, `attach_point:44`, `legs:52`, `device_area:77`
 - `aerosim/model/features.py` — O que a aeronave tem — as abas de análise usam isto para decidir o que mostrar.
-  `class Features:14`, `features:97`
+  `class Features:14`, `features:89`
 - `aerosim/model/geometry.py` — Malhas 3D para a GUI (a partir do modelo universal) e posição/arraste dos componentes na
   `surface_mesh:47`, `control_meshes:73`, `ellipsoid_body:94`, `cylinder:109`, `box:122`, `thrust_axis:131`, `aircraft_meshes:136`, `component_position:178`, `move_component:202`
 - `aerosim/model/massprops.py` — Massa seca da aeronave: base (com inércia própria) + massas pontuais (Steiner).
@@ -462,8 +462,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `GroundRun:23`
   fn `interp:50`, `rotSpeed:77`, `run:87`, `mtow:112`
 - `core/src/sizing/kinds.zig` — Tipos de aeronave do dimensionamento: cada um é um tipo Zig com a mesma interface, conferida em
-  tipos `Hover:19`, `Monoplane:21`, `Biplane:50`, `FlyingWing:73`, `Tailsitter:96`, `Vtol:119`
-  fn `biplaneSigma:45`, `check:146`
+  tipos `Hover:19`, `Conventional:48`, `FlyingWing:75`, `Tailsitter:101`, `Vtol:127`
+  fn `pairSigma:24`, `wingsInducedFactor:36`, `check:157`
 - `core/src/sizing/motorprop.zig` — Tração em regime de um conjunto motor + hélice + bateria com acelerador cheio, para a curva T(V) da sprint
   tipos `MotorProp:22`
   fn `thrust:46`, `curve:79`
@@ -473,10 +473,10 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sizing/sizing.zig` — Dimensionamento inicial (mini-MDO) no núcleo: avalia um vetor de projeto e otimiza.
   fn `eval:20`, `fitness:29`, `optimize:49`, `name:59`
 - `core/src/sizing/stages.zig` — Estágios da cadeia de dimensionamento, cada um uma função pura com entradas e saídas pequenas:
-  tipos `Curve:18`, `Geo:42`, `Polar:67`, `Env:82`, `Mass:211`
-  fn `geometry:45`, `blendAirfoils:55`, `polar:70`, `stallSpeed:94`, `envelope:99`, `sustainedN:132`, `isaRho:141`, `isaAltitude:146`, `ceiling:151`, `landingRun:175`, `takeoffRun:181`, `canHover:206`, `emptyMass:214`, `linearCurve:228`
+  tipos `Curve:18`, `Geo:42`, `Polar:68`, `Env:83`, `Mass:212`
+  fn `geometry:45`, `blendAirfoils:56`, `polar:71`, `stallSpeed:95`, `envelope:100`, `sustainedN:133`, `isaRho:142`, `isaAltitude:147`, `ceiling:152`, `landingRun:176`, `takeoffRun:182`, `canHover:207`, `emptyMass:215`, `linearCurve:229`
 - `core/src/sizing/types.zig` — Tipos do dimensionamento inicial (mini-MDO): a configuração que vem do Python, o vetor de
-  tipos `Variable:15`, `VarKind:49`, `VarSpec:57`, `Quantity:65`, `Comparison:136`, `Constraint:146`, `AirfoilData:164`, `LayoutData:175`, `PropSet:185`, `Objective:198`, `SizingCfg:206`, `SizingOut:247`, `SearchMethod:264`, `OptOpts:273`, `Individual:285`
+  tipos `Variable:15`, `VarKind:49`, `VarSpec:57`, `Quantity:65`, `Comparison:136`, `Constraint:146`, `AirfoilData:164`, `LayoutData:175`, `PropSet:185`, `AircraftKind:193`, `Objective:206`, `SizingCfg:214`, `SizingOut:257`, `SearchMethod:274`, `OptOpts:283`, `Individual:295`
   fn `variable:44`, `quantity:116`, `massDependent:123`, `constrained:131`, `violation:154`
 - `core/src/sizing/wing_line.zig` — A etapa Asa do dimensionamento: do perfil escolhido à asa trapezoidal, pela linha sustentadora de Prandtl
   tipos `Trapezoid:37`, `Partition:52`, `SectionAirfoil:62`, `Conditions:68`, `Station:88`, `Planform:94`, `Result:274`

@@ -21,6 +21,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   (`modifiers/interference.zig`, no lugar de `wingpair.zig`) vale para todas as asas ligadas, quantas houver: cada
   painel guarda o dono (`Surface.owner`) e sente os painéis das outras asas. O Python acompanha
   (`modifiers.native`, o tradutor e `span_loads`).
+- N asas no dimensionamento: `Monoplane` e `Biplane` viram um tipo só, `Conventional`, com `SizingCfg.wing_count`
+  (`types.AircraftKind`: convencional, asa voadora, tailsitter, VTOL). O arrasto induzido de N asas sai da soma de
+  Prandtl (NACA TN 182) sobre os pares; uma asa dá 1 e duas dão o (1 + σ)/2 de antes. No Python, `MdoParams` ganha
+  `wings` (os projetos com "monoplano" e "biplano" abrem como convencional com 1 e 2 asas) e `Features.arrangement`
+  ("tandem"/"biplano") sai: o resumo diz quantas asas há.
 
 ### v0.2.5 (em andamento na `0.2_dev`)
 

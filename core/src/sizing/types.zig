@@ -188,11 +188,19 @@ pub const PropSet = extern struct {
     P_max: f64 = 0, // potência elétrica máxima de um motor (W)
 };
 
-pub const kind_monoplane = 0;
-pub const kind_biplane = 1;
-pub const kind_flying_wing = 2;
-pub const kind_tailsitter = 3;
-pub const kind_vtol = 4;
+/// o tipo de aeronave do dimensionamento (`SizingCfg.kind`), na ordem de `kinds.all`. Quantas asas o convencional
+/// tem é `SizingCfg.wing_count`: uma asa, duas, três... é o mesmo tipo e a mesma conta
+pub const AircraftKind = enum(i32) {
+    /// asas com empenagem (`kinds.Conventional`)
+    conventional = 0,
+    /// sem empenagem
+    flying_wing = 1,
+    /// decola na vertical, sentado na cauda
+    tailsitter = 2,
+    /// paira se a tração deixar
+    vtol = 3,
+    _,
+};
 
 /// o que a busca otimiza (`SizingCfg.objective`)
 pub const Objective = enum(i32) {
@@ -204,8 +212,10 @@ pub const Objective = enum(i32) {
 };
 
 pub const SizingCfg = extern struct {
-    kind: i32 = kind_monoplane,
+    kind: AircraftKind = .conventional,
     objective: Objective = .mtow,
+    wing_count: i32 = 1, // asas de mesma envergadura dividindo a área (convencional)
+    _pad_wings: i32 = 0,
     rho: f64 = 1.156,
     mu: f64 = 0.04, // atrito de rolamento
     m_max: f64 = 60, // teto da busca do MTOW (kg)
@@ -216,7 +226,7 @@ pub const SizingCfg = extern struct {
     fuselage_CDS: f64 = 0.012, // C_D·S da fuselagem e do trem (m²)
     tail_area_frac: f64 = 0.25, // área da empenagem / área da asa (asa voadora: 0)
     tail_drag_frac: f64 = 1.0, // arrasto parasita da empenagem relativo ao da asa por área
-    gap_ratio: f64 = 0.15, // biplano: vão entre asas / envergadura
+    gap_ratio: f64 = 0.15, // mais de uma asa: desnível entre asas vizinhas / envergadura
     trim_clmax_factor: f64 = 0.8, // asa voadora: perda de C_L,max no equilíbrio sem EH
     // massas
     wing_density: f64 = 1.1, // kg/m²

@@ -20,7 +20,7 @@ pub const types = sizing_types;
 pub fn eval(cfg: *const sizing_types.SizingCfg, params: *core_types.Params, design_vars: []const f64) sizing_types.SizingOut {
     var thrust: chain.CoreThrust = .{ .p = params, .rho = cfg.rho };
     inline for (kinds.all, 0..) |Kind, i| {
-        if (cfg.kind == i) return chain.Chain(Kind, chain.CoreThrust).eval(cfg, &thrust, design_vars);
+        if (@intFromEnum(cfg.kind) == i) return chain.Chain(Kind, chain.CoreThrust).eval(cfg, &thrust, design_vars);
     }
     return chain.Chain(kinds.all[0], chain.CoreThrust).eval(cfg, &thrust, design_vars);
 }
@@ -85,6 +85,6 @@ test {
 
 test "nomes para o Python" {
     try std.testing.expectEqualStrings("mtow", std.mem.span(name(0, sizing_types.quantity(.mtow)).?));
-    try std.testing.expectEqualStrings("biplano", std.mem.span(name(2, sizing_types.kind_biplane).?));
+    try std.testing.expectEqualStrings("asa voadora", std.mem.span(name(2, @intFromEnum(sizing_types.AircraftKind.flying_wing)).?));
     try std.testing.expect(name(2, 99) == null and name(3, 0) != null);
 }

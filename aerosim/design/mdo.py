@@ -31,16 +31,26 @@ from .fields import F
 from .power import LAYOUTS
 from .tail import NO_WING2, SAME_WING
 
-KINDS = ("monoplano", "biplano", "asa voadora", "tailsitter", "VTOL")     # a ordem de core/src/sizing/kinds.zig
+KINDS = ("convencional", "asa voadora", "tailsitter", "VTOL")     # a ordem de core/src/sizing/kinds.zig (AircraftKind)
+OLD_KINDS = {"monoplano": ("convencional", 1), "biplano": ("convencional", 2)}   # projetos de antes da 0.2.6
 OBJECTIVES = ("MTOW", "EE")
 METHODS = ("PSO (enxame de partículas)", "busca aleatória")              # a ordem de optimize.zig
 
 
+def kind_and_wings(mp) -> tuple[str, int]:
+    """o tipo do núcleo e quantas asas (um projeto antigo com "monoplano" ou "biplano" vira convencional com 1 ou 2)"""
+    if mp.kind in OLD_KINDS:
+        return OLD_KINDS[mp.kind]
+    return mp.kind, max(1, int(getattr(mp, "wings", 1))) if mp.kind == "convencional" else 1
+
+
 @dataclass
 class MdoParams:
-    kind: str = F("monoplano", "tipo de aeronave", "", "biplano: duas asas de mesma envergadura dividindo a área "
-                  "(interferência de Prandtl); asa voadora/tailsitter: sem EH, C_L,max de equilíbrio menor; "
-                  "tailsitter decola na vertical; VTOL paira se a tração deixar", choices=KINDS)
+    kind: str = F("convencional", "tipo de aeronave", "", "convencional: asas com empenagem; asa voadora/tailsitter: "
+                  "sem EH, C_L,max de equilíbrio menor; tailsitter decola na vertical; VTOL paira se a tração deixar",
+                  choices=KINDS)
+    wings: int = F(1, "asas", "", "convencional: quantas asas de mesma envergadura dividem a área (interferência de "
+                   "Prandtl entre elas)", 1, 8, 1)
     objective: str = F("MTOW", "maximizar", "", "MTOW ou EE = CP/PV (a pontuação de competição fica de fora: "
                        "as duas saem guardadas para recalcular)", choices=OBJECTIVES)
     method: str = F("PSO (enxame de partículas)", "otimizador", "", "a busca aleatória serve de referência",
@@ -209,7 +219,8 @@ def build(project, mp: MdoParams | None = None, catalog=None, backend=None) -> t
             cons.append(dict(q=qn.index(c.key), op=rg.OPS.index(c.op), value=c.value, tol=c.tol))
         else:
             skipped.append(c.text())
-    cfg = dict(kind=KINDS.index(mp.kind), objective=OBJECTIVES.index(mp.objective), rho=req.rho, mu=req.mu_roll,
+    kind, wings = kind_and_wings(mp)
+    cfg = dict(kind=KINDS.index(kind), wing_count=wings, objective=OBJECTIVES.index(mp.objective), rho=req.rho, mu=req.mu_roll,
                V_turn=req.V_turn or req.V_cruise, mu_brake=req.mu_brake,
                m_max=mp.m_max, tail_area_frac=mp.tail_area_frac, fuselage_CDS=mp.fuselage_CDS,
                wing_density=project.rules.wing_density, tail_density=project.rules.tail_density,
@@ -309,7 +320,7 @@ def apply(project, row: dict) -> None:
     for n in {row["airfoil"], row["airfoil_tip"]}:          # perfil da pasta: entra nos perfis do projeto
         if project.airfoil(n) is None and n in cat:
             project.airfoils.append(copy.deepcopy(cat[n]))
-    bi = project.mdo.kind == "biplano"
+    bi = kind_and_wings(project.mdo)[1] > 1          # a sprint em Python só monta a segunda asa (wing2); N asas, pela configuração de Projetar
     wd.span, wd.taper = round(row["span"], 3), round(row["taper"], 3)
     wd.area = round(row["area"] / (2 if bi else 1), 3)        # biplano: duas asas iguais dividem a área
     td = project.tail_draft
@@ -345,18 +356,19 @@ def sketch(project, row: dict, catalog=None):
     cat = catalog or builtin_catalog()
     ac = empty()
     ac.name = f"MDO it {row['iter']}"
-    wp = wg.WingParams(span=row["span"], area=row["area"] / (2 if mp.kind == "biplano" else 1), taper=row["taper"],
+    kind, wings = kind_and_wings(mp)
+    wp = wg.WingParams(span=row["span"], area=row["area"] / wings, taper=row["taper"],
                        rect_frac=0.0)
     af = amap[row["airfoil"]].airfoil if row["airfoil"] in amap else project.airfoils[0].airfoil
     tip = amap[row["airfoil_tip"]].airfoil if row["airfoil_tip"] in amap and \
         row["airfoil_tip"] != row["airfoil"] else None
-    zs = (-0.15, 0.15) if mp.kind == "biplano" else (0.0,)
+    zs = tuple(0.3 * (k - (wings - 1) / 2) for k in range(wings))         # empilhadas, 0,3 m uma da outra
     for k, z in enumerate(zs):
         w = wg.build_wing(wp, af, af_tip=tip)
         w.name, w.z, w.x = f"asa {k + 1}", z - 0.05, 0.1 + 0.05 * k
         ac.surfaces.append(w)
     c = row["area"] / row["span"]
-    tail = mp.kind in ("monoplano", "biplano", "VTOL")
+    tail = kind in ("convencional", "VTOL")
     if tail:
         Sh = mp.tail_area_frac * row["area"] * 0.7
         bh = math.sqrt(Sh * 4)

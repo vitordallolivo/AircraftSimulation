@@ -41,12 +41,13 @@ pub const Curve = struct {
 // ------------------------------------------------------------------ geometria
 pub const Geo = struct { S: f64, b: f64, AR: f64, AR_eq: f64, c: f64 };
 
-/// `area` é a área total das asas (o biplano a divide em duas de mesma envergadura)
-pub fn geometry(comptime AircraftKind: type, span: f64, area: f64) Geo {
+/// `area` é a área total das asas (com N asas, dividida em N de mesma envergadura)
+pub fn geometry(comptime AircraftKind: type, cfg: *const sizing_types.SizingCfg, span: f64, area: f64) Geo {
+    const wing_count: f64 = @floatFromInt(AircraftKind.wings(cfg));
     const wing_span = @max(span, 1e-3);
     const Sw = @max(area, 1e-4);
     const AR_eq = wing_span * wing_span / Sw; // monoplano equivalente (mesma envergadura e área total)
-    return .{ .S = Sw, .b = wing_span, .AR = AR_eq * @as(f64, AircraftKind.wings), .AR_eq = AR_eq, .c = Sw / (wing_span * @as(f64, AircraftKind.wings)) };
+    return .{ .S = Sw, .b = wing_span, .AR = AR_eq * wing_count, .AR_eq = AR_eq, .c = Sw / (wing_span * wing_count) };
 }
 
 // ------------------------------------------------------------------ perfil da asa (raiz → ponta)
@@ -285,7 +286,7 @@ fn fuzzStages(_: void, src: *fuzz.Src) !void {
     const cfg: sizing_types.SizingCfg = .{ .oswald = src.range(0.3, 1), .clmax_factor = src.range(0.5, 1), .cl_ground = src.range(0, 1), .fuselage_CDS = src.range(0, 0.05) };
     const af: sizing_types.AirfoilData = .{ .clmax = src.range(0.8, 2.4), .cd0 = src.range(0.005, 0.03) };
     inline for (kinds.all) |AircraftKind| {
-        const geo = geometry(AircraftKind, src.range(0.3, 5), src.range(0.05, 3));
+        const geo = geometry(AircraftKind, &cfg, src.range(0.3, 5), src.range(0.05, 3));
         const aero_polar = polar(AircraftKind, &cfg, geo, af, src.range(0, 0.02));
         try testing.expect(aero_polar.CD0 > 0 and aero_polar.K > 0 and aero_polar.CLmax > 0 and aero_polar.CLg <= aero_polar.CLmax);
         const curve = linearCurve(src.range(0, 200), src.range(5, 80));

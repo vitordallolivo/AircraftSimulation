@@ -374,7 +374,8 @@ class MdoPage(QtWidgets.QWidget):
             return
         k = min(max(k, 0), len(self.hist) - 1)
         h = self.hist[k]
-        wings = 2 if self.state.design.mdo.kind == "biplano" else 1
+        from aerosim.design.mdo import kind_and_wings
+        wings = kind_and_wings(self.state.design.mdo)[1]
         swarm = [r for r in self.rows if r["iter"] == h["iter"]]
         for r in swarm:                                     # cada partícula da iteração: a asa que ela testou
             p = mdo.planform(r, wings)

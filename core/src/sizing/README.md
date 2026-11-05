@@ -15,7 +15,7 @@ segue essa ordem e termina no otimizador, que trata a cadeia como uma caixa-pret
 |---|---|
 | `types.zig` | `SizingCfg`, `OptOpts`, `SizingOut` e os índices das grandezas, variáveis e restrições |
 | `stages.zig` | os estágios da cadeia, cada um uma função pura: geometria, polar, envelope, decolagem, pouso, teto, massa |
-| `kinds.zig` | os tipos de aeronave (monoplano, biplano, asa voadora, tailsitter, VTOL), com a interface conferida em comptime |
+| `kinds.zig` | os tipos de aeronave (convencional com N asas, asa voadora, tailsitter, VTOL), com a interface conferida em comptime |
 | `chain.zig` | a cadeia de um tipo e de um provedor de tração, gerada em comptime; o MTOW por bisseção na massa |
 | `optimize.zig` | os otimizadores atrás de uma interface só (PSO, busca aleatória) |
 | `ground.zig` | a corrida de decolagem rápida da sprint (etapa Motores do aerosim), com a espera pela rotação do profundor e a bisseção do MTOW na pista |
@@ -35,8 +35,8 @@ flowchart LR
 
 ## Geometria e perfil (`stages.geometry`, `stages.blendAirfoils`)
 
-Com envergadura $`b`$ e área total $`S`$ (o biplano divide a área em duas asas de mesma envergadura), o alongamento do
-monoplano equivalente e a corda média são:
+Com envergadura $`b`$ e área total $`S`$ (com $`n_{asas}`$ asas, a área se divide entre elas, todas de mesma envergadura), o
+alongamento da asa única equivalente e a corda média são:
 
 ```math
 AR_{eq} = \frac{b^2}{S} \qquad \bar c = \frac{S}{b\,n_{asas}}
@@ -65,15 +65,33 @@ K = \frac{k_{tipo}}{\pi\,AR_{eq}\,e}
 
 $`C_{L,max}`$ é o $`c_{l,max}`$ do perfil vezes o fator do tipo (a asa voadora perde parte para se equilibrar sem EH).
 
-**Biplano.** Com a mesma envergadura e a mesma área total, o arrasto induzido do biplano é o do monoplano vezes
-$`(1 + \sigma)/2`$, com $`\sigma`$ o fator de interferência de Prandtl, ajustado pela razão vão/envergadura $`G/b`$ (forma
-do ajuste a conferir no PDF):
+**N asas.** Um avião com uma, duas ou mais asas é o mesmo tipo (`Conventional`, com `SizingCfg.wing_count`), porque a
+conta é a mesma. O problema que ela resolve: duas asas dividindo a área têm cada uma o dobro do alongamento, mas uma
+induz arrasto na outra, e só olhar o alongamento daria um ganho que não existe. Prandtl (NACA TN 182, p. 3) escreve o
+arrasto induzido de um sistema de $`n`$ asas como a soma de $`n^2`$ parcelas, a de cada asa sozinha e a de cada par:
 
 ```math
-k_{tipo} = \frac{1 + \sigma}{2}
-\qquad
+D_i = \sum_{i=1}^{n}\sum_{j=1}^{n} \sigma_{ij}\,\frac{L_i\,L_j}{\pi\,q\,b^2}
+\qquad \sigma_{ii} = 1
+```
+
+Com a sustentação dividida igual ($`L_i = L/n`$) e as asas empilhadas a um desnível $`G`$ uma da outra (o par $`i, j`$ fica a
+$`|i-j|\,G`$), o fator sobre o arrasto induzido de uma asa só com a mesma envergadura e a mesma área fica:
+
+```math
+k_{tipo} = \frac{n + 2\sum_{k=1}^{n-1} (n-k)\,\sigma(k\,G/b)}{n^2}
+```
+
+Com uma asa dá 1, e com duas dá $`(1 + \sigma)/2`$, o biplano de Prandtl. O $`\sigma`$ de um par sai da aproximação de
+Prandtl pela razão desnível/envergadura, válida de $`G/b = 1/15`$ a $`1/2`$ (o 1,055 a conferir no PDF, cujo OCR lê 1,05):
+
+```math
 \sigma \approx \frac{1 - 0{,}66\,G/b}{1{,}055 + 3{,}7\,G/b}
 ```
+
+Pelo teorema do escalonamento de Munk, o recuo entre as asas não muda o arrasto induzido total; por isso uma asa atrás
+da outra entra só com o desnível entre elas. Com mais de uma asa, o $`C_{L,max}`$ perde 5 % (interferência) e cada
+ligação entre asas soma 10 % da massa da fuselagem (montantes e estais).
 
 ## Envelope (`stages.envelope`)
 
@@ -285,7 +303,7 @@ Testes: `python -m ziglang build test -Dgrupo=sizing` (dentro de `core/`), com f
 ## Como acrescentar
 
 - **Tipo de aeronave:** um struct com `name`, `wings`, `tail`, `hover`, `inducedFactor`, `clmaxFactor`, `extraMass` e
-  `surfaces`, posto em `kinds.all`; `kinds.check` confere a interface em comptime, e a ABI e o Python passam a aceitá-lo
+  `surfaces`, posto em `kinds.all` e em `types.AircraftKind`, na mesma ordem; `kinds.check` confere a interface em comptime, e a ABI e o Python passam a aceitá-lo
   pelo índice.
 - **Otimizador:** um struct com `name` e `run`, posto em `optimize.all` (o índice é `OptOpts.method`).
 - **Tração:** qualquer tipo com `fn curve(self, set, n_motor) stages.Curve` (`chain.checkThrust`); os testes usam mocks

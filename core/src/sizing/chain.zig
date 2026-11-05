@@ -154,7 +154,7 @@ pub fn Chain(comptime AircraftKind: type, comptime ThrustProvider: type) type {
             const n_motor = out.x[sizing_types.variable(.motors)];
             const lay = cfg.layouts[@intFromFloat(out.x[sizing_types.variable(.layout)])];
             var model: Model = undefined;
-            model.geo = stages.geometry(AircraftKind, out.x[sizing_types.variable(.span)], out.x[sizing_types.variable(.area)]);
+            model.geo = stages.geometry(AircraftKind, cfg, out.x[sizing_types.variable(.span)], out.x[sizing_types.variable(.area)]);
             model.pol = stages.polar(AircraftKind, cfg, model.geo, af, n_motor * lay.nacelle_CDS);
             model.curve = thrust.curve(set, n_motor);
             for (&model.curve.T) |*thrust_value| thrust_value.* *= std.math.clamp(lay.thrust_factor, 0.0, 1.5); // instalação do arranjo
@@ -188,7 +188,7 @@ pub fn Chain(comptime AircraftKind: type, comptime ThrustProvider: type) type {
             out.q[sizing_types.quantity(.span)] = model.geo.b;
             out.q[sizing_types.quantity(.aspect_ratio)] = model.geo.AR;
             out.q[sizing_types.quantity(.root_chord)] = 2.0 * model.geo.c / (1.0 + std.math.clamp(out.x[sizing_types.variable(.taper)], 0.05, 1.0)); // c média → raiz
-            out.q[sizing_types.quantity(.surface_count)] = @floatFromInt(AircraftKind.surfaces());
+            out.q[sizing_types.quantity(.surface_count)] = @floatFromInt(AircraftKind.surfaces(cfg));
             out.q[sizing_types.quantity(.motor_power)] = set.P_max * n_motor;
             out.q[sizing_types.quantity(.motor_count)] = n_motor;
             out.q[sizing_types.quantity(.mass)] = mtow;
@@ -233,7 +233,7 @@ fn baseCfg() sizing_types.SizingCfg {
 test "MTOW pela corrida: no MTOW a corrida bate a restrição" {
     var cfg = baseCfg();
     var thrust: LinearThrust = .{};
-    const out = Chain(kinds.Monoplane, LinearThrust).eval(&cfg, &thrust, &.{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0, 0 });
+    const out = Chain(kinds.Conventional, LinearThrust).eval(&cfg, &thrust, &.{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0, 0 });
     try testing.expect(out.feasible == 1);
     try testing.expectApproxEqRel(@as(f64, 40), out.q[sizing_types.quantity(.takeoff_run)], 0.01);
     try testing.expectApproxEqAbs(out.q[sizing_types.quantity(.mtow)] - out.q[sizing_types.quantity(.empty_mass)], out.q[sizing_types.quantity(.payload)], 1e-12);
@@ -245,7 +245,7 @@ test "corrida de 3 m: monoplano não cumpre; VTOL que paira decola na vertical" 
     cfg.sets[0].mass = 3; // tração estática de 75 N por motor no mock
     var thrust: LinearThrust = .{};
     const design_vars = [_]f64{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0, 0 };
-    const mono = Chain(kinds.Monoplane, LinearThrust).eval(&cfg, &thrust, &design_vars);
+    const mono = Chain(kinds.Conventional, LinearThrust).eval(&cfg, &thrust, &design_vars);
     const vtol = Chain(kinds.Vtol, LinearThrust).eval(&cfg, &thrust, &design_vars);
     try testing.expect(mono.feasible == 0);
     try testing.expect(vtol.feasible == 1 and vtol.hover == 1 and vtol.q[sizing_types.quantity(.takeoff_run)] == 0);
@@ -253,17 +253,19 @@ test "corrida de 3 m: monoplano não cumpre; VTOL que paira decola na vertical" 
     try testing.expectApproxEqRel(75.0 / (cfg.hover_margin * stages.g0), vtol.q[sizing_types.quantity(.mtow)], 1e-3);
 }
 
-test "biplano: mesma envergadura e área, menos arrasto induzido → mais subida" {
+test "duas asas: mesma envergadura e área, menos arrasto induzido → mais L/D" {
     var cfg = baseCfg();
     var thrust: LinearThrust = .{};
     const design_vars = [_]f64{ 1.5, 0.9, 0.6, 0, 0, 1, 0, 0, 0 };
-    const mono = Chain(kinds.Monoplane, LinearThrust).eval(&cfg, &thrust, &design_vars);
+    const mono = Chain(kinds.Conventional, LinearThrust).eval(&cfg, &thrust, &design_vars);
     var c2 = cfg;
     c2.n_cons = 0;
     c2.m_max = mono.q[sizing_types.quantity(.mtow)]; // compara na mesma massa
-    const mono_same = Chain(kinds.Monoplane, LinearThrust).eval(&c2, &thrust, &design_vars);
-    const biplane = Chain(kinds.Biplane, LinearThrust).eval(&c2, &thrust, &design_vars);
-    try testing.expect(biplane.q[sizing_types.quantity(.max_lift_to_drag)] > mono_same.q[sizing_types.quantity(.max_lift_to_drag)]);
+    const mono_same = Chain(kinds.Conventional, LinearThrust).eval(&c2, &thrust, &design_vars);
+    var c3 = c2;
+    c3.wing_count = 2;
+    const two_wings = Chain(kinds.Conventional, LinearThrust).eval(&c3, &thrust, &design_vars);
+    try testing.expect(two_wings.q[sizing_types.quantity(.max_lift_to_drag)] > mono_same.q[sizing_types.quantity(.max_lift_to_drag)]);
 }
 
 fn fuzzChain(_: void, src: *fuzz.Src) !void {
@@ -326,7 +328,7 @@ test "fuzz: cadeia inteira com tração mock, todos os tipos" {
 test "curva sustentada como restrição: n ≥ 2 baixa o MTOW" {
     var cfg = baseCfg();
     var thrust: LinearThrust = .{};
-    const MonoChain = Chain(kinds.Monoplane, LinearThrust);
+    const MonoChain = Chain(kinds.Conventional, LinearThrust);
     const design_vars = [_]f64{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0, 0 };
     const free = MonoChain.eval(&cfg, &thrust, &design_vars);
     cfg.cons[1] = .{ .q = .turn_load_factor, .op = .at_least, .value = 2.0 };
@@ -340,7 +342,7 @@ test "curva sustentada como restrição: n ≥ 2 baixa o MTOW" {
 test "corda da raiz: retangular = S/b; afilada é maior" {
     var cfg = baseCfg();
     var thrust: LinearThrust = .{};
-    const MonoChain = Chain(kinds.Monoplane, LinearThrust);
+    const MonoChain = Chain(kinds.Conventional, LinearThrust);
     cfg.vars[sizing_types.variable(.taper)] = .{ .lo = 1, .hi = 1 };
     const rect = MonoChain.eval(&cfg, &thrust, &.{ 2.0, 0.8, 1.0, 0, 0, 1, 0, 0, 0 });
     try testing.expectApproxEqAbs(@as(f64, 0.4), rect.q[sizing_types.quantity(.root_chord)], 1e-12);
@@ -358,7 +360,7 @@ test "arranjo: propulsora na esteira perde tração; naceles somam arrasto e mas
     cfg.vars[sizing_types.variable(.motors)] = .{ .lo = 1, .hi = 4, .kind = .integer };
     cfg.vars[sizing_types.variable(.layout)] = .{ .lo = 0, .hi = 2, .kind = .list };
     var thrust: LinearThrust = .{};
-    const MonoChain = Chain(kinds.Monoplane, LinearThrust);
+    const MonoChain = Chain(kinds.Conventional, LinearThrust);
     const nose = MonoChain.eval(&cfg, &thrust, &.{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0, 0 });
     const push = MonoChain.eval(&cfg, &thrust, &.{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0, 2 });
     const wing = MonoChain.eval(&cfg, &thrust, &.{ 2.0, 0.8, 0.6, 0, 0, 1, 0, 0, 1 }); // pediu 1: na asa vira 2
