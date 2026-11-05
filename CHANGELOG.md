@@ -60,6 +60,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - Os campos com número pequeno (abaixo de 0,001) aparecem em notação científica, em vez de 0.
 - A Montagem em Zig ganha "Restaurar", que volta o avião ao arquivo como foi aberto, e "Acertar o CG", que move a
   bateria (ou o lastro ligado) até o CG com a carga voltar ao de projeto, sem sair da fuselagem, como no Python.
+- A Montagem em Zig ganha a caixa do vento (velocidade a 10 m e de onde vem, de 1 m/s e de 15° por clique) e a seta
+  azul do vento no 3D.
 - Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
   referência e a trajetória 3D do voo.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).

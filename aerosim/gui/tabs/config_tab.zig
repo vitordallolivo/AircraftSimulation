@@ -1051,6 +1051,13 @@ pub fn importPart(memory: std.mem.Allocator, document: *std.json.Value, source: 
     return .{ .part = component.part, .label = "" };
 }
 
+/// grava o vento do ambiente (a caixa "Vento" da Montagem): a velocidade a 10 m (m/s) e de onde vem (graus)
+pub fn setWind(memory: std.mem.Allocator, document: *std.json.Value, speed: f64, from: f64) !void {
+    const environment = try partNode(memory, document, .{ .part = .environment, .label = "" });
+    try environment.put(memory, "wind_speed", .{ .float = speed });
+    try environment.put(memory, "wind_from", .{ .float = from });
+}
+
 /// o texto do arquivo a gravar (indentado como o Python grava)
 pub fn serialize(memory: std.mem.Allocator, document: std.json.Value) ![]u8 {
     return std.json.Stringify.valueAlloc(memory, document, .{ .whitespace = .indent_2 });

@@ -652,9 +652,31 @@ pub const Screen = struct {
             editor.want_rebuild = false;
             editor.rebuild(&opened.loaded.ac) catch {};
         };
-        if (screen.assembly_editor) |*editor| if (screen.assembly != null) {
+        if (screen.assembly_editor) |*editor| if (screen.assembly) |*opened| {
+            // o vento (a caixa "Vento" do Python): a velocidade a 10 m e de onde vem, de 1 m/s e de 15° por clique
+            const environment = opened.loaded.ac.environment;
+            var wind_buffer: [96]u8 = undefined;
+            theme.text(ui.fonts.bold, widgets.format(&wind_buffer, "Vento: {d:.1} m/s a 10 m, vem de {d:.0}°", .{ environment.wind_speed, environment.wind_from }), rect.x + 16, rect.y + 12, 15, theme.colors.ink);
+            var wind_height: f32 = 0;
+            const wind_buttons = [_][:0]const u8{ "− 1 m/s", "+ 1 m/s", "−15°", "+15°" };
+            if (ui_kit.menus.buttonGrid(ui, rect.x + 12, rect.y + 34, side_width - 6, &wind_buttons, 4, &wind_height)) |pressed| {
+                const speed = @max(0, environment.wind_speed + switch (pressed) {
+                    0 => @as(f64, -1),
+                    1 => 1,
+                    else => 0,
+                });
+                const turned = environment.wind_from + switch (pressed) {
+                    2 => @as(f64, -15),
+                    3 => 15,
+                    else => 0,
+                };
+                const from = @mod(turned + 180, 360) - 180; // −180 a 180, como o mostrador do Python
+                config_tab.setWind(opened.document_arena.allocator(), &opened.document, speed, from) catch {};
+                screen.commitDocument(null);
+            }
+            const top = 34 + wind_height + 8;
             list_height = @min(300, rect.height * 0.32);
-            const list_rect: rl.Rectangle = .{ .x = rect.x + 12, .y = rect.y + 12, .width = side_width - 6, .height = list_height };
+            const list_rect: rl.Rectangle = .{ .x = rect.x + 12, .y = rect.y + top, .width = side_width - 6, .height = list_height };
             var buttons_height: f32 = 0;
             if (editor.importing) |*source| {
                 if (source.drawList(ui, list_rect)) |picked| screen.importPart(picked);
@@ -663,7 +685,7 @@ pub const Screen = struct {
                 editor.drawList(ui, list_rect);
                 if (ui_kit.menus.buttonGrid(ui, list_rect.x, list_rect.y + list_height + 8, list_rect.width, &part_buttons, 4, &buttons_height)) |pressed| screen.partButton(pressed);
             }
-            list_height += 8 + buttons_height + 6;
+            list_height += top - 12 + 8 + buttons_height + 6;
         };
         if (screen.assembly_panel) |*shown| shown.draw(ui, &screen.assembly_scroll, .{ .x = rect.x + 12, .y = rect.y + 12 + list_height, .width = side_width - 6, .height = rect.height - 24 - list_height });
         if (editor_width > 0) {
@@ -700,6 +722,7 @@ pub const Screen = struct {
                 rl.gl.rlDrawRenderBatchActive();
                 rl.gl.rlDisableDepthTest();
                 drawBalance(&screen.assembly_view, weights, plane.low[2], size);
+                drawWind(&screen.assembly_view, opened.loaded.ac.environment, middle, plane.low[2], size);
                 if (screen.assembly_angle != .free) drawCgDimensions(&screen.assembly_view, screen.assembly_angle, weights.cg, size);
                 rl.gl.rlDrawRenderBatchActive();
                 rl.gl.rlEnableDepthTest();
@@ -1053,6 +1076,28 @@ const ViewAngle = enum {
         view.elevation = direction[1];
     }
 };
+
+/// a seta do vento (azul, como na Montagem em Python): acima do avião, apontando para onde o vento sopra; o ângulo é
+/// de onde ele vem, 0 = de frente (+x), 90 = da direita (+y)
+fn drawWind(view: *view3d.View, environment: aircraft_model.aircraft.Environment, center: [3]f64, top: f64, size: f64) void {
+    if (!(environment.wind_speed > 0)) return;
+    const color = theme.hex(0x1f77b4);
+    const from = std.math.degreesToRadians(environment.wind_from);
+    const toward = [2]f64{ -@cos(from), -@sin(from) }; // para onde sopra
+    const length = 0.35 * size;
+    const height = top - 0.15 * size;
+    const tip: [3]f64 = .{ center[0] + 0.5 * length * toward[0], center[1] + 0.5 * length * toward[1], height };
+    const tail: [3]f64 = .{ tip[0] - length * toward[0], tip[1] - length * toward[1], height };
+    view3d.segment(tail, tip, color);
+    const head = 0.08 * size;
+    for ([2]f64{ 1, -1 }) |side| {
+        const back: [3]f64 = .{ tip[0] - head * toward[0] - side * 0.5 * head * toward[1], tip[1] - head * toward[1] + side * 0.5 * head * toward[0], height };
+        view3d.segment(tip, back, color);
+    }
+    view.label(tail, widgets.format(&wind_label, "vento {d:.1} m/s", .{environment.wind_speed}), color);
+}
+
+var wind_label: [40]u8 = undefined;
 
 /// o símbolo do centro de gravidade: um círculo em quatro quartos, pretos e brancos alternados, com a borda vermelha
 fn drawCgSymbol(center: rl.Vector2, radius: f32) void {
