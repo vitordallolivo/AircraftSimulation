@@ -23,7 +23,7 @@ segue essa ordem e termina no otimizador, que trata a cadeia como uma caixa-pret
 | `sizing.zig` | a entrada: escolhe a cadeia pelo índice do tipo e o otimizador pelo índice do método |
 
 ```mermaid
-flowchart LR
+flowchart TB
     X["x: envergadura, área, afilamento,<br/>perfil da raiz e da ponta, conjunto,<br/>n motores, inclinação"] --> G["geometry"] --> P["polar<br/>(tipo de aeronave)"]
     X --> TH["Thrust.curve<br/>(motor + hélice do núcleo)"]
     P --> MT["MTOW: bisseção na massa<br/>(restrições que dependem da massa)"]

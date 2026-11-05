@@ -33,15 +33,13 @@ Cada pasta tem o seu README, com as equações, a fonte de cada uma e como chama
 | [`src/sizing/`](src/sizing/README.md) | dimensionamento inicial (mini-MDO) e os otimizadores |
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph API["Interface (C ABI)"]
-        direction TB
         ROOT["root.zig<br/>funções aerosim_*"]
         ABI["abi.zig<br/>esquema gerado em comptime"]
         TYP["types.zig<br/>structs extern"]
     end
     subgraph SIM["sim/"]
-        direction TB
         RUN["runner.zig<br/>eventos, paradas, fatias, checkpoint"]
         DYN["dynamics.zig<br/>f(t,x) e RK4 em SIMD"]
         TRIM["trim.zig<br/>Newton, desempenho"]
@@ -52,12 +50,10 @@ flowchart LR
         BENCH["bench.zig<br/>medições"]
     end
     subgraph CTL["control/"]
-        direction TB
         GD["guidance.zig"]
         AP["autopilot.zig"]
     end
     subgraph PHY["physics/"]
-        direction TB
         AEROM["aeromodel.zig<br/>modelo do voo: faixas (padrão),<br/>linha sustentadora, tabela"]
         AERO["aero.zig<br/>painéis + fuselagem"]
         AEROT["aerotable.zig<br/>tabela de qualquer método"]
@@ -68,7 +64,6 @@ flowchart LR
         ATM["atmosphere.zig<br/>vento, rajada"]
     end
     subgraph MOD["modifiers/"]
-        direction TB
         GRD["ground.zig<br/>efeito solo (McCormick)"]
         MODM["mod.zig<br/>efeitos a mais por painel"]
     end
@@ -76,7 +71,6 @@ flowchart LR
     AEROM --> AEROT
     AERO --> MOD
     subgraph MATH["math/"]
-        direction TB
         FM["fmath.zig<br/>LUT sin/cos/atan, exp/log"]
         POLY["poly.zig<br/>Poly2 em comptime"]
         VEC["vec.zig<br/>@Vector"]

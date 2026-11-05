@@ -55,9 +55,8 @@ Todo método recebe o mesmo modelo universal do avião (`aerosim/model`) e devol
 dentro.
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph IF["aerosim/interfaces/aero.py"]
-        direction TB
         I1["IAeroSolver<br/>solve(aeronave, caso) → AeroPolar"]
         I2["AeroCase / AeroPolar<br/>DERIVATIVES"]
         I3["ISectionPolar<br/>polar 2D de perfil"]

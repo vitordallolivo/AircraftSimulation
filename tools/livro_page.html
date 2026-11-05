@@ -45,6 +45,12 @@
   article pre { background: #f0f0f6; border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 13px; }
   article code { font: 0.9em var(--mono); background: #ececf3; padding: 0 4px; border-radius: 3px; }
   article pre code { background: none; padding: 0; }
+  article pre.mermaid { text-align: center; background: #f7f7fb; cursor: zoom-in; position: relative; }
+  article pre.mermaid[data-processed]::after { content: "clique para ampliar"; position: absolute; right: 10px; bottom: 6px;
+    font: 11px var(--mono); color: #8a8aa0; }
+  #zoom { display: none; position: fixed; inset: 0; z-index: 50; background: #fff; overflow: auto; padding: 24px;
+    cursor: zoom-out; }
+  #zoom.aberto { display: block; }
   article table { border-collapse: collapse; display: block; overflow-x: auto; font-size: 14px; margin: 12px 0; }
   article th, article td { border: 1px solid var(--linha); padding: 4px 8px; text-align: left; vertical-align: top; }
   article th { background: #f0f0f6; }
@@ -81,6 +87,26 @@ const POR_CAMINHO = Object.fromEntries(PAGINAS.map(p => [p.caminho, p]));
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+
+// um diagrama largo fica pequeno na página: clicar abre ele no tamanho natural, com rolagem; Esc ou clique fecha
+const zoom = document.createElement('div');
+zoom.id = 'zoom';
+document.body.appendChild(zoom);
+zoom.addEventListener('click', () => { zoom.classList.remove('aberto'); zoom.innerHTML = ''; });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') zoom.click(); });
+document.addEventListener('click', e => {
+  const diagrama = e.target.closest('article pre.mermaid');
+  const svg = diagrama && diagrama.querySelector('svg');
+  if (!svg) return;
+  const copia = svg.cloneNode(true);
+  const caixa = svg.viewBox.baseVal;
+  copia.style.maxWidth = 'none';
+  copia.setAttribute('width', caixa.width);
+  copia.setAttribute('height', caixa.height);
+  zoom.innerHTML = '';
+  zoom.appendChild(copia);
+  zoom.classList.add('aberto');
+});
 
 // ---------- Markdown com equações e diagramas ----------
 // O marked não conhece LaTeX: as equações (```math, $$...$$, $`...`$ e $...$) e os diagramas (```mermaid) saem do texto antes,

@@ -29,9 +29,8 @@ condições, restrições e variáveis, e o mini-MDO. No fim, como chamar e um e
 ## Como funciona
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph P["project.py — DesignProject"]
-        direction TB
         RQ["spec.py · registry.py<br/>condições · restrições · variáveis · regras"]
         AF["airfoils<br/>AirfoilEntry"]
         WC["wings<br/>WingCandidate"]

@@ -17,9 +17,8 @@ como a decolagem é julgada e otimizada, como uma curva é avaliada, como o enve
 ## Como funciona
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph API["interface"]
-        direction TB
         ISM["ISimulationManager<br/>(manager.py: SimulationManager)"]
         ISI["ISimulation<br/>parameters · plots · run"]
     end
