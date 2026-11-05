@@ -5,7 +5,20 @@
 //!     o padrão é o comportamento de antes, então arquivos antigos e o AeroDrive não mudam;
 //!   - efeito a mais (esteira da hélice, tabela de correção...): um item em `Params.mods`, desligado
 //!     por padrão (`n_mod = 0`: o laço nem roda).
+const std = @import("std");
 const limits = @import("../limits.zig");
+
+/// conjunto de painéis do núcleo (bit i = painel i), até 64
+pub const PanelSet = std.bit_set.IntegerBitSet(64);
+/// conjunto de motores (bit j = motor j), até 32
+pub const PropSet = std.bit_set.IntegerBitSet(32);
+
+/// o conjunto de painéis que a ABI guarda em dois `i32` (bits 0..31 e 32..63)
+pub fn panelSet(words: [2]i32) PanelSet {
+    const low: u32 = @bitCast(words[0]);
+    const high: u32 = @bitCast(words[1]);
+    return .{ .mask = @as(u64, high) << 32 | low };
+}
 
 // Na ABI os seletores são `i32` (o Python escreve o número); dentro do núcleo viram estes enums, e o `switch`
 // sobre eles diz por nome o que cada número liga. Número novo = um campo novo no enum, no fim.
@@ -72,11 +85,23 @@ pub const Modifier = extern struct {
         return self.params[@intFromEnum(param)];
     }
 
-    /// a máscara de painéis da asa A (`wing_a` = true) ou B do par
-    pub inline fn pairMask(self: *const Modifier, wing_a: bool) [2]i32 {
+    /// os painéis da asa A (`wing_a` = true) ou B do par
+    pub inline fn pairPanels(self: *const Modifier, wing_a: bool) PanelSet {
         const lo = self.pair(if (wing_a) .a_lo else .b_lo);
         const hi = self.pair(if (wing_a) .a_hi else .b_hi);
-        return .{ @intFromFloat(lo), @intFromFloat(hi) };
+        return panelSet(.{ @intFromFloat(lo), @intFromFloat(hi) });
+    }
+
+    /// o modificador pega o painel `i`? (sem painéis marcados: pega todos)
+    pub inline fn affectsPanel(self: *const Modifier, i: usize) bool {
+        const panels = panelSet(self.surf_mask);
+        return panels.mask == 0 or panels.isSet(i);
+    }
+
+    /// o modificador usa o motor `j`? (sem motores marcados: usa todos)
+    pub inline fn affectsProp(self: *const Modifier, j: usize) bool {
+        const props: PropSet = .{ .mask = @bitCast(self.prop_mask) };
+        return props.mask == 0 or props.isSet(j);
     }
 };
 

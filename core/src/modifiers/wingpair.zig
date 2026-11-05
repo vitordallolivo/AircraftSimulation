@@ -35,22 +35,16 @@ pub fn active(params: *const core_types.Params) bool {
     return false;
 }
 
-/// verdadeiro se o bit `i` (painel i) está ligado na máscara de 64 bits
-inline fn has(mask: [2]i32, i: usize) bool {
-    const word: u32 = @bitCast(mask[i / 32]);
-    return (word >> @intCast(i % 32)) & 1 != 0;
-}
-
 /// −ganho · w_i no painel i (o que entra na velocidade dele); `gamma`: Γ de cada painel; `flow_dir`: para onde o ar vai
 pub fn induced(params: *const core_types.Params, modifier: *const types.Modifier, gamma: []const f64, flow_dir: V3, i: usize) V3 {
-    const mask_a = modifier.pairMask(true);
-    const mask_b = modifier.pairMask(false);
-    const src = if (has(mask_a, i)) mask_b else if (has(mask_b, i)) mask_a else return vec.zero;
+    const wing_a = modifier.pairPanels(true);
+    const wing_b = modifier.pairPanels(false);
+    const other_wing = if (wing_a.isSet(i)) wing_b else if (wing_b.isSet(i)) wing_a else return vec.zero;
     const control_point = vec.v3(params.surf[i].r);
     const n_surf: usize = @intCast(params.n_surf);
     var induced_sum = vec.zero;
     for (0..n_surf) |j| {
-        if (!has(src, j) or gamma[j] == 0) continue;
+        if (!other_wing.isSet(j) or gamma[j] == 0) continue;
         const surface = &params.surf[j];
         const nodes = llt.surfaceNodes(surface);
         induced_sum += llt.horseshoe(control_point, nodes.A, nodes.B, flow_dir, true, llt.core_frac * surface.c) * vec.splat(gamma[j]);
@@ -58,10 +52,3 @@ pub fn induced(params: *const core_types.Params, modifier: *const types.Modifier
     return -induced_sum * vec.splat(modifier.pair(.gain));
 }
 
-const testing = std.testing;
-
-test "máscara do par: bit a bit" {
-    try testing.expect(has(.{ 0b110, 0 }, 1));
-    try testing.expect(!has(.{ 0b110, 0 }, 0));
-    try testing.expect(has(.{ 0, 1 }, 32));
-}

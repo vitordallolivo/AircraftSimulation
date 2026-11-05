@@ -362,14 +362,15 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `factor:13`, `mccormick:21`
 - `core/src/modifiers/mod.zig` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro sem mexer no resto
   tipos `Env:22`
-  fn `envFrom:37`, `hits:51`, `hitsProp:58`, `stripOf:72`, `induced:79`, `inducedNoPair:84`, `flapCm:104`
+  fn `envFrom:37`, `stripOf:58`, `induced:65`, `inducedNoPair:70`, `flapCm:90`
 - `core/src/modifiers/slipstream.zig` — Esteira da hélice por disco atuador (modificador `esteira.disco`).
   tipos `TubeShape:32`, `Point:82`
   fn `shape:49`, `diskInduced:54`, `axialAt:62`, `radiusAt:67`, `swirlRate:75`, `at:90`
 - `core/src/modifiers/types.zig` — Tipos dos modificadores trocados com o Python (C ABI, `extern struct`; o esquema sai de `abi.zig`).
-  tipos `Ground:14`, `Kind:21`, `SlipstreamParam:30`, `PairParam:39`, `Modifier:50`
+  tipos `Ground:27`, `Kind:34`, `SlipstreamParam:43`, `PairParam:52`, `Modifier:63`
+  fn `panelSet:17`
 - `core/src/modifiers/wingpair.zig` — Interferência entre duas asas ligadas (tandem, biplano) no modelo de faixas.
-  fn `active:29`, `induced:45`
+  fn `active:29`, `induced:39`
 
 **core/src/optim/**
 

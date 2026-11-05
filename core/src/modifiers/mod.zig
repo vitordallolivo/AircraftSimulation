@@ -47,20 +47,6 @@ pub fn envFrom(params: *const core_types.Params, Vr: V3, body_rates: V3, thrusts
     return env;
 }
 
-/// o painel `i` está na máscara?
-pub inline fn hits(mask: [2]i32, i: usize) bool {
-    if (mask[0] == 0 and mask[1] == 0) return true;
-    const word: u32 = @bitCast(mask[i / 32]);
-    return (word >> @intCast(i % 32)) & 1 != 0;
-}
-
-/// o motor `j` está na máscara?
-pub inline fn hitsProp(mask: i32, j: usize) bool {
-    if (mask == 0) return true;
-    const word: u32 = @bitCast(mask);
-    return (word >> @intCast(j)) & 1 != 0;
-}
-
 /// grade de pontos em cada faixa onde a esteira é avaliada: na corda (do bordo de ataque ao de fuga) e na
 /// envergadura (a faixa pode estar só em parte dentro do tubo, acima ou abaixo da linha de tração: a média dá a
 /// parte imersa). A grade é a do modelo de colisão (collision/collision.zig)
@@ -89,7 +75,7 @@ fn inducedWith(comptime pair: bool, params: *const core_types.Params, env: *cons
     var velocity = vec.zero;
     const n_mods: usize = @intCast(params.n_mod);
     for (params.mods[0..n_mods]) |*modifier| {
-        if (modifier.enabled == 0 or !hits(modifier.surf_mask, i)) continue;
+        if (modifier.enabled == 0 or !modifier.affectsPanel(i)) continue;
         velocity += switch (modifier.kindOf()) {
             .slipstream_disk => slipstreamStrip(params, env, modifier, surface),
             .wing_pair => if (pair and params.aero_model == .strips) wingpair.induced(params, modifier, env.gamma[0..], env.u, i) else vec.zero,
@@ -105,7 +91,7 @@ pub fn flapCm(params: *const core_types.Params, i: usize, surface: *const core_t
     var delta_cm: f64 = 0.0;
     const n_mods: usize = @intCast(params.n_mod);
     for (params.mods[0..n_mods]) |*modifier| {
-        if (modifier.enabled == 0 or modifier.kindOf() != .flap_moment or !hits(modifier.surf_mask, i)) continue;
+        if (modifier.enabled == 0 or modifier.kindOf() != .flap_moment or !modifier.affectsPanel(i)) continue;
         delta_cm += flapmoment.cmDelta(surface.tau, modifier.params[0]) * vec.dot(vec.v3(surface.mix), deflections);
     }
     return delta_cm;
@@ -127,7 +113,7 @@ fn slipstreamAt(params: *const core_types.Params, env: *const Env, modifier: *co
     const use_axial = modifier.slip(.axial_on) != 0;
     const use_swirl = modifier.slip(.swirl_on) != 0;
     for (0..env.n_prop) |j| {
-        if (!hitsProp(modifier.prop_mask, j) or env.T[j] <= 0) continue;
+        if (!modifier.affectsProp(j) or env.T[j] <= 0) continue;
         const prop_unit = &params.prop[j];
         const wake = slipstream.at(env.T[j], env.Q[j], env.Vax[j], 0.5 * prop_unit.D, params.env.rho, prop_unit.sense, env.eT[j],
             position - vec.v3(prop_unit.r), use_axial, use_swirl);
@@ -140,12 +126,14 @@ fn slipstreamAt(params: *const core_types.Params, env: *const Env, modifier: *co
 
 const testing = std.testing;
 
-test "máscara de painéis" {
-    try testing.expect(hits(.{ 0, 0 }, 40)); // vazia = todos
-    try testing.expect(hits(.{ 0b101, 0 }, 2));
-    try testing.expect(!hits(.{ 0b101, 0 }, 1));
-    try testing.expect(hits(.{ 0, 1 }, 32));
-    try testing.expect(!hits(.{ 0, 1 }, 33));
+test "conjunto de painéis e de motores" {
+    const empty: types.Modifier = .{};
+    try testing.expect(empty.affectsPanel(40) and empty.affectsProp(3)); // vazio = todos
+    const some: types.Modifier = .{ .surf_mask = .{ 0b101, 1 }, .prop_mask = 0b10 };
+    try testing.expect(some.affectsPanel(2) and !some.affectsPanel(1));
+    try testing.expect(some.affectsPanel(32) and !some.affectsPanel(33));
+    try testing.expect(some.affectsProp(1) and !some.affectsProp(0));
+    try testing.expect(types.panelSet(.{ -1, 0 }).isSet(31)); // o bit de sinal do i32 é o painel 31
 }
 
 test {
