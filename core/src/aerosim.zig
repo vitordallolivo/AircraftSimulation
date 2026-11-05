@@ -63,6 +63,7 @@ pub const sim = struct {
     pub const simple_perf = @import("sim/simple_perf.zig");
     pub const state = @import("sim/state.zig");
     pub const static = @import("sim/static.zig");
+    pub const modes = @import("sim/modes.zig");
     pub const trim = @import("sim/trim.zig");
 };
 

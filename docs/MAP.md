@@ -291,7 +291,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
-  tipos `math:14`, `physics:22`, `modifiers:35`, `collision:45`, `control:50`, `sim:57`, `loads:70`, `sizing:76`, `optim:89`, `geometry:103`, `util:108`
+  tipos `math:14`, `physics:22`, `modifiers:35`, `collision:45`, `control:50`, `sim:57`, `loads:71`, `sizing:77`, `optim:90`, `geometry:104`, `util:109`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
@@ -445,6 +445,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sim/linear.zig` — Modelo linear em torno do voo nivelado equilibrado (estabilidade dinâmica).
   tipos `LinModel:28`, `LinSloshModel:230`
   fn `rigid:56`, `linearize:169`, `linearizeSlosh:290`, `residual:331`
+- `core/src/sim/modes.zig` — Os modos dinâmicos do avião equilibrado e as qualidades de voo: o que a aba Estabilidade mostra depois da
+  tipos `Mode:21`, `Pole:24`, `Class:151`, `Phase:153`, `Check:155`, `Criteria:169`, `Row:226`, `Input:331`
+  fn `classify:65`, `rollRequirement:158`, `mil8785c:192`, `noCriteria:220`, `evaluate:235`, `passes:322`, `respond:352`
 - `core/src/sim/runner.zig` — Executor de uma corrida: eventos discretos, paradas, registro e checkpoints.
   tipos `Status:26`, `Instance:37`
   fn `stateText:65`, `configure:95`, `handover:162`, `resetGround:184`, `resetAir:238`, `run:391`

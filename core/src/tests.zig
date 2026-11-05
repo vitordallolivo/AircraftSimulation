@@ -51,6 +51,7 @@ comptime {
         _ = @import("sim/envelope.zig");
         _ = @import("sim/simple_perf.zig");
         _ = @import("sim/static.zig");
+        _ = @import("sim/modes.zig");
         _ = @import("abi.zig");
         _ = @import("bench.zig");
     }

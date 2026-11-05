@@ -950,3 +950,33 @@ test "a sonda da estabilidade estática dá os números do Python no Convenciona
 }
 
 
+
+test "os modos e a MIL-F-8785C dão os números do Python no Convencional_original" {
+    const gpa = testing.allocator;
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    defer gpa.free(bytes);
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);
+    defer loaded.deinit();
+    const instance = try gpa.create(core.runner.Instance);
+    defer gpa.destroy(instance);
+    instance.* = .{};
+    _ = try params_mod.setup(&loaded.ac, instance, &diagnosis);
+    const flight_modes = core.flight_modes;
+    const model = core.linear.linearize(&instance.p, &instance.r.f, 15);
+    try testing.expect(model.ok != 0);
+    const found = flight_modes.classify(&model.A).?;
+    // `modes_at(backend, ac, 15)` de `aerosim/stability/sizing.py`
+    try testing.expectApproxEqAbs(@as(f64, 0.10900043636240692), found.get(.phugoid).?.damping, 1e-9);
+    try testing.expectApproxEqAbs(@as(f64, 7.909808315900555), found.get(.short_period).?.natural, 1e-9);
+    try testing.expectApproxEqAbs(@as(f64, 0.30326852752838535), found.get(.dutch_roll).?.damping, 1e-9);
+    try testing.expectApproxEqAbs(@as(f64, 0.04463527080988007), found.get(.roll).?.time_constant, 1e-9);
+    try testing.expectApproxEqAbs(@as(f64, 5.727028645879708), found.get(.spiral).?.double_time, 1e-9);
+    var rows: [5]flight_modes.Row = undefined;
+    const criteria = flight_modes.mil8785c(.I, .B);
+    const evaluated = flight_modes.evaluate(&found, &criteria, &rows);
+    try testing.expectEqual(@as(usize, 5), evaluated.len);
+    for (evaluated[0..4]) |row| try testing.expectEqual(@as(?u8, 1), row.level);
+    try testing.expectEqual(@as(?bool, false), evaluated[4].ok);
+    try testing.expectEqual(@as(?u8, 3), evaluated[4].level);
+}

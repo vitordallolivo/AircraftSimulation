@@ -22,3 +22,4 @@ pub const vec = @import("math/vec.zig");
 pub const autotune = @import("control/autotune.zig");
 pub const linear = @import("sim/linear.zig");
 pub const static_stability = @import("sim/static.zig");
+pub const flight_modes = @import("sim/modes.zig");
