@@ -50,8 +50,16 @@ pub fn envFrom(params: *const core_types.Params, Vr: V3, body_rates: V3, thrusts
 /// grade de pontos em cada faixa onde a esteira é avaliada: na corda (do bordo de ataque ao de fuga) e na
 /// envergadura (a faixa pode estar só em parte dentro do tubo, acima ou abaixo da linha de tração: a média dá a
 /// parte imersa). A grade é a do modelo de colisão (collision/collision.zig)
-pub const chord_samples = 3;
-pub const strip_samples = 16;
+/// o maior número de pontos de amostra da esteira em cada direção da faixa
+pub const max_samples = 64;
+
+/// a grade de amostra da esteira na faixa (corda × envergadura), do refino pedido, entre 1 e `max_samples`
+pub fn slipstreamGrid(refinement: core_types.Refinement) struct { chord: usize, span: usize } {
+    return .{
+        .chord = @intCast(std.math.clamp(refinement.slipstream_chord_samples, 1, max_samples)),
+        .span = @intCast(std.math.clamp(refinement.slipstream_span_samples, 1, max_samples)),
+    };
+}
 const collision = @import("../collision/collision.zig");
 
 /// a faixa do painel `surface` como forma de colisão
@@ -97,14 +105,15 @@ pub fn flapCm(params: *const core_types.Params, i: usize, surface: *const core_t
     return delta_cm;
 }
 
-/// média da esteira na faixa, na grade chord_samples × strip_samples (corda × envergadura)
+/// média da esteira na faixa, na grade do refino (`Params.refinement`, corda × envergadura)
 fn slipstreamStrip(params: *const core_types.Params, env: *const Env, modifier: *const types.Modifier, surface: *const core_types.Surface) V3 {
     const strip = stripOf(surface);
     var velocity = vec.zero;
-    for (0..chord_samples) |i| {
-        for (0..strip_samples) |j| velocity += slipstreamAt(params, env, modifier, strip.sample(i, j, chord_samples, strip_samples));
+    const grid = slipstreamGrid(params.refinement);
+    for (0..grid.chord) |i| {
+        for (0..grid.span) |j| velocity += slipstreamAt(params, env, modifier, strip.sample(i, j, grid.chord, grid.span));
     }
-    return velocity / vec.splat(@as(f64, chord_samples * strip_samples));
+    return velocity / vec.splat(@as(f64, @floatFromInt(grid.chord * grid.span)));
 }
 
 /// soma das esteiras dos motores da máscara no ponto `position` (superposição, slipstream.zig)

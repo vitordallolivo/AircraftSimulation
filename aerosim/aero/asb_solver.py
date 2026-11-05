@@ -79,6 +79,7 @@ class _AsbBase(AeroSolverBase):
     method = "vlm"
     induced_only = True
     translator = AsbTranslator()
+    n_chord = 6                  # refino padrão do VLM: painéis na corda (`AeroCase.n_chord` troca)
 
     def available(self):
         try:
@@ -91,7 +92,7 @@ class _AsbBase(AeroSolverBase):
         import aerosandbox as asb
         if self.method == "vlm":
             return asb.VortexLatticeMethod(airplane=ap, op_point=op, spanwise_resolution=max(4, case.n_span // 2),
-                                           chordwise_resolution=6)
+                                           chordwise_resolution=int(case.n_chord) or self.n_chord)
         if self.method == "buildup":
             return asb.AeroBuildup(airplane=ap, op_point=op)
         return asb.LiftingLine(airplane=ap, op_point=op, spanwise_resolution=max(4, case.n_span // 2))
@@ -182,7 +183,11 @@ class AsbVLMLoads(StripLoadMethod):
     source = "AeroSandbox: VLM (Sharpe, MIT; aerosim/aero/asb_solver.py)"
     supports = frozenset({"comandos", "corda"})
     backend = None
-    n_span, n_chord = 40, 6
+    n_span, n_chord = 40, 6                     # refino padrão (faixas por lado, painéis na corda)
+
+    def __init__(self, n_span: int = 0, n_chord: int = 0):
+        """o refino: faixas por lado da maior superfície e painéis na corda (0: o padrão)"""
+        self.n_span, self.n_chord = int(n_span) or self.n_span, int(n_chord) or self.n_chord
 
     def available(self):
         try:

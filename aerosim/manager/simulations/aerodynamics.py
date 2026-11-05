@@ -109,6 +109,8 @@ class AerodynamicsSimulation(SimulationBase):
                         choices=("modelo", "neuralfoil"),
                         help="modelo: a mesma polar do simulador; neuralfoil: a rede neural sobre o contorno .dat"),
               ParamSpec("n_span", "painéis por semiasa", 12, kind="int", minimum=4, maximum=40),
+              ParamSpec("n_chord", "painéis na corda (VLM, AVL)", 0, kind="int", minimum=0, maximum=40,
+                         help="refino; 0: o padrão de cada método (VLM 6, AVL 8)"),
               ParamSpec("use_lltdrek", "lltdrek (método principal)", True, kind="bool"),
               ParamSpec("use_zig", "comparar: modelo interno", True, kind="bool", help="o modelo que a simulação usa"),
               ParamSpec("use_zig_llt_gh", "comparar: linha sustentadora do núcleo (Goates e Hunsaker)", False,
@@ -198,7 +200,7 @@ class AerodynamicsSimulation(SimulationBase):
         CL_cru = mass * G0 / (0.5 * rho * V * V * S)
         alphas = np.arange(P("a0"), P("a1") + 1e-9, P("da"))
         case = AeroCase(V=V, alphas=alphas, alpha_d=P("alpha_d"), ref=ref, rho=rho, section=P("section"),
-                        n_span=int(P("n_span")))
+                        n_span=int(P("n_span")), n_chord=int(P("n_chord")))
         S_, summ, checks = {}, {}, []
         add = lambda *a, **k: checks.append(Check(*a, **k))
         summ["configuração"] = f.summary()

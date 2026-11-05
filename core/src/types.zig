@@ -63,6 +63,15 @@ pub const LiftingLineMethod = enum(i32) {
     _,
 };
 
+/// o refino dos métodos do núcleo (quantos pontos de amostra, estações...): entrada do usuário, com os valores de
+/// sempre como padrão. Quem lê limita a faixa (`slipstreamGrid`)
+pub const Refinement = extern struct {
+    /// esteira: pontos de amostra ao longo da corda de cada faixa
+    slipstream_chord_samples: i32 = 3,
+    /// esteira: pontos de amostra ao longo da envergadura de cada faixa
+    slipstream_span_samples: i32 = 16,
+};
+
 /// Painel sustentador (faixa de meia asa, EH, EV...). A deflexão vista pelo painel é
 ///   δ = tau · (mix[0] δe + mix[1] δa + mix[2] δr)
 /// o que cobre profundor, aileron, leme, elevon, ruddervator, flaperon etc.
@@ -455,6 +464,7 @@ pub const Params = extern struct {
     ground: modifier_types.Ground = .mccormick,
     n_mod: i32 = 0,
     mods: [limits.max_mods]Modifier = [_]Modifier{.{}} ** limits.max_mods,
+    refinement: Refinement = .{},
     // derivados
     steer_sign: f64 = 1, // −1 se a roda direcionável está atrás das principais (convencional)
     alpha_guard_lim: f64 = 0, // α da proteção de α na decolagem (rad; `runner.guardAlpha`); 0: ap.alpha_max

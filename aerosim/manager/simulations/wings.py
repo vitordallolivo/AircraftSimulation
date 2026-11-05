@@ -49,7 +49,7 @@ SOLVERS = (("lltdrek", "lltdrek (linha sustentadora não linear)", True),
            ("avl", "AVL", False))
 WHOLE = "Avião completo (fuselagem, massa e CG)"
 # campos da análise do avião completo (AerodynamicsSimulation) que vêm da própria aba Asas
-SHARED_KEYS = {"V", "a0", "a1", "da", "section", "n_span"} | {f"use_{k}" for k, _, _ in SOLVERS}
+SHARED_KEYS = {"V", "a0", "a1", "da", "section", "n_span", "n_chord"} | {f"use_{k}" for k, _, _ in SOLVERS}
 # séries do avião completo que mudam de nome para não se misturar com as das superfícies escolhidas
 RENAMED = (("polar_", "full_polar_"), ("ld_", "full_ld_"), ("span", "full_span"))
 
@@ -146,7 +146,7 @@ class WingsSimulation(SimulationBase):
     area = "aerodinamica"
     needs_aircraft = False
     show_aircraft = True             # o avião aberto em 3D no topo (com a troca entre aviões abertos)
-    detailed = tuple(f"use_{k}" for k, _, _ in SOLVERS) + ("section", "n_span", "compare")
+    detailed = tuple(f"use_{k}" for k, _, _ in SOLVERS) + ("section", "n_span", "n_chord", "compare")
     description = ("Aerodinâmica só das superfícies escolhidas (uma asa, biplano, tandem, canard), sem trimar, sem "
                    "fuselagem e sem hélice, como no túnel: C_L em α de cada superfície e do conjunto, C_L máximo, "
                    "onde o estol começa, a carga em 3D e a comparação dos métodos. Roda com o avião da Montagem ou "
@@ -190,7 +190,11 @@ class WingsSimulation(SimulationBase):
                          help="em % da corda média da asa principal, a partir do bordo de ataque dela")]
         L = "Carga ao longo da envergadura"
         ps += [ParamSpec("method", "método", _default_method(), kind="choice", choices=_titles(), group=L),
-               ParamSpec("compare", "comparar com", NENHUM, kind="choice", choices=(NENHUM,) + _titles(), group=L)]
+               ParamSpec("compare", "comparar com", NENHUM, kind="choice", choices=(NENHUM,) + _titles(), group=L),
+               ParamSpec("vlm_span", "VLM: faixas por lado", 0, kind="int", minimum=0, maximum=200,
+                         group=L, help="refino do VLM nas cargas; 0: o padrão (40)"),
+               ParamSpec("vlm_chord", "VLM: painéis na corda", 0, kind="int", minimum=0, maximum=40,
+                         group=L, help="refino do VLM nas cargas; 0: o padrão (6)")]
         if source == OPEN:
             whole = values.get("whole", _whole_default(ac))
             ps.append(ParamSpec("whole", "analisar também o avião completo", _whole_default(ac), kind="bool",
@@ -214,7 +218,9 @@ class WingsSimulation(SimulationBase):
         ps += [ParamSpec("section", "polar 2D dos perfis no lltdrek", "modelo", kind="choice",
                          choices=("modelo", "neuralfoil"), group=M,
                          help="modelo: a mesma polar do simulador; neuralfoil: a rede neural sobre o contorno .dat"),
-               ParamSpec("n_span", "painéis por semiasa", 12, kind="int", minimum=4, maximum=40, group=M)]
+               ParamSpec("n_span", "painéis por semiasa", 12, kind="int", minimum=4, maximum=40, group=M),
+               ParamSpec("n_chord", "painéis na corda (VLM, AVL)", 0, kind="int", minimum=0, maximum=40,
+                         group=M, help="refino; 0: o padrão de cada método (VLM 6, AVL 8)")]
         return ps
 
     def plots(self):
@@ -307,7 +313,7 @@ class WingsSimulation(SimulationBase):
         alphas = np.arange(P("a0"), P("a1") + 1e-9, P("da"))
         a_load = float(P("alpha_load"))
         names = [P("method")] + ([P("compare")] if P("compare") not in (NENHUM, P("method")) else [])
-        methods = [load_method(ctx.backend, n) for n in names]
+        methods = [load_method(ctx.backend, n, n_span=int(P("vlm_span")), n_chord=int(P("vlm_chord"))) for n in names]
         first = None                                   # a varredura do método principal (Reynolds)
         for k_m, m in enumerate(methods):
             ctx.check()
@@ -372,7 +378,7 @@ class WingsSimulation(SimulationBase):
         chosen = [s for s in all_solvers(ctx.backend) if P(f"use_{s.name}")]
         if chosen and model.wing is not None:
             case = AeroCase(V=V, alphas=alphas, alpha_d=a_load, ref=(model.x_at_mac(float(P("xref")) / 100), 0.0, 0.0),
-                            rho=rho, section=P("section"), n_span=int(P("n_span")))
+                            rho=rho, section=P("section"), n_span=int(P("n_span")), n_chord=int(P("n_chord")))
             summ["métricas dos métodos ([...] C_L0, C_Lmax...): na área da asa principal (m²)"] = model.S
             before = set(series)
             whole = P("source") == OPEN and bool(P("whole"))

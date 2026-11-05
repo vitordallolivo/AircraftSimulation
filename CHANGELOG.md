@@ -26,6 +26,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   Prandtl (NACA TN 182) sobre os pares; uma asa dá 1 e duas dão o (1 + σ)/2 de antes. No Python, `MdoParams` ganha
   `wings` (os projetos com "monoplano" e "biplano" abrem como convencional com 1 e 2 asas) e `Features.arrangement`
   ("tandem"/"biplano") sai: o resumo diz quantas asas há.
+- refino como entrada do usuário: o que é só discretização sai das constantes e vira parâmetro, com o padrão de sempre.
+  No núcleo, `Params.refinement` (amostras da esteira na corda e na envergadura, até 64) e
+  `wing_line.Conditions.stations` (estações da linha sustentadora do dimensionamento, até 64). No Python,
+  `AeroCase.n_chord` (painéis na corda do VLM e do AVL) e, nas cargas, `vlm_span`/`vlm_chord`; 0 deixa o padrão de
+  cada método.
 
 ### v0.2.5 (em andamento na `0.2_dev`)
 

@@ -22,17 +22,18 @@ def all_solvers(backend) -> list[IAeroSolver]:
             AvlSolver(), CoreLLTSolver(backend), CoreLLTSolver(backend, gh=True)]
 
 
-def all_load_methods(backend, refine: bool = True) -> list:
-    """os métodos de carga ao longo das superfícies (interfaces/loads.py: ILoadMethod), na ordem da aba Cargas"""
+def all_load_methods(backend, refine: bool = True, n_span: int = 0, n_chord: int = 0) -> list:
+    """os métodos de carga ao longo das superfícies (interfaces/loads.py: ILoadMethod), na ordem da aba Cargas.
+    `n_span`, `n_chord`: o refino do VLM (faixas por lado, painéis na corda; 0: o padrão)"""
     from .span_loads import CoreLoadMethod
     return [CoreLoadMethod(backend, llt=True, refine=refine), CoreLoadMethod(backend, llt=True, refine=refine, gh=True),
             CoreLoadMethod(backend, llt=True, refine=refine, nonlinear=True),
-            CoreLoadMethod(backend, llt=False, refine=refine), AsbVLMLoads()]
+            CoreLoadMethod(backend, llt=False, refine=refine), AsbVLMLoads(n_span, n_chord)]
 
 
-def load_method(backend, name: str, refine: bool = True):
+def load_method(backend, name: str, refine: bool = True, n_span: int = 0, n_chord: int = 0):
     """o método de carga pelo nome ou pelo título"""
-    ms = all_load_methods(backend, refine)
+    ms = all_load_methods(backend, refine, n_span, n_chord)
     m = next((m for m in ms if name in (m.name, m.title)), None)
     if m is None:
         raise ValueError(f"método de carga desconhecido: {name!r} ({' | '.join(x.name for x in ms)})")

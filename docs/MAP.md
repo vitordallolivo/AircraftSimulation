@@ -13,11 +13,11 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 ## Python · `aerosim/aero`
 
 - `aerosim/aero/__init__.py` — Aerodinâmica a partir da geometria: comparação de métodos (modelo interno, lltdrek,
-  `all_solvers:20`, `all_load_methods:25`, `load_method:33`, `parabolic_polar:42`, `solver_by_name:51`, `polar_metrics:55`
+  `all_solvers:20`, `all_load_methods:25`, `load_method:34`, `parabolic_polar:43`, `solver_by_name:52`, `polar_metrics:56`
 - `aerosim/aero/asb_solver.py` — AeroSandbox (Sharpe, MIT): três métodos sobre o mesmo modelo universal.
-  `class AsbTranslator:32`, `class AsbVLMSolver:110`, `class AsbBuildupSolver:120`, `class AsbLiftingLineSolver:129`, `class AsbVLMLoads:175`
+  `class AsbTranslator:32`, `class AsbVLMSolver:111`, `class AsbBuildupSolver:121`, `class AsbLiftingLineSolver:130`, `class AsbVLMLoads:176`
 - `aerosim/aero/avl_solver.py` — AVL (Drela e Youngren, MIT; GPL): malha de vórtices em ferradura com superfícies de comando.
-  `avl_exe:42`, `has_optvl:49`, `class AvlTranslator:66`, `class AvlSolver:134`
+  `avl_exe:44`, `has_optvl:51`, `class AvlTranslator:68`, `class AvlSolver:136`
 - `aerosim/aero/base.py` — Polar e derivadas comuns a todos os solvers: cada um só implementa `evaluate` (pontos de voo
   `class AeroSolverBase:23`
 - `aerosim/aero/collision.py` — Quem o tubo de cada hélice atinge: superfícies (fração da área de cada uma) e objetos (fuselagem, tubos de cauda,
@@ -151,7 +151,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/interfaces/__init__.py` — Interfaces entre as camadas:  GUI -> Simulation Manager -> Sim  (+ Aircraft Data).
 - `aerosim/interfaces/aero.py` — Interface dos solvers aerodinâmicos (comparativo da aba Aerodinâmica).
-  `class FlightPoint:26`, `class AeroCase:39`, `class AeroPolar:53`, `class IAeroSolver:71`, `class ISectionPolar:100`
+  `class FlightPoint:26`, `class AeroCase:39`, `class AeroPolar:54`, `class IAeroSolver:72`, `class ISectionPolar:101`
 - `aerosim/interfaces/aircraft_source.py` — Interface "Aircraft Data": de onde vem (e para onde vai) a aeronave.
   `class IAircraftSource:17`, `class ICatalogSource:29`
 - `aerosim/interfaces/backend.py` — Interface da camada Sim (núcleo numérico).
@@ -306,7 +306,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   **ABI (79 exports)** `aerosim_abi_version`, `aerosim_schema`, `aerosim_probe_ground`, `aerosim_probe_slipstream`, `aerosim_aero_coeffs_thrust`, `aerosim_aero_coeffs_at`, `aerosim_tube_panel_hits`, `aerosim_tube_point_hits`, `aerosim_prop_state`, `aerosim_panel_states`, `aerosim_panel_states_llt`, `aerosim_wing_sweep`, `aerosim_wing_sweep_summary`, `aerosim_reynolds`, `aerosim_aero_coeffs_llt`, `aerosim_schema_hash`, `aerosim_acquire`, `aerosim_release`, `aerosim_params`, `aerosim_params_reset`, `aerosim_configure`, `aerosim_reset_ground`, `aerosim_reset_air`, `aerosim_run`, `aerosim_events`, `aerosim_time`, `aerosim_snapshot_size`, `aerosim_snapshot_save`, `aerosim_snapshot_load`, `aerosim_mass_props`, `aerosim_aero_coeffs`, `aerosim_aero_coeffs_ex`, `aerosim_linearize`, `aerosim_linearize_slosh`, `aerosim_autotune`, `aerosim_prop_point`, `aerosim_trim`, `aerosim_performance`, `aerosim_envelope`, `aerosim_envelope_curve`, `aerosim_simple_perf`, `aerosim_bench_math`, `aerosim_bench_dynamics`, `aerosim_fast_math`, `aerosim_expr_check`, `aerosim_expr_eval`, `aerosim_ground_runs`, `aerosim_ground_mtow`, `aerosim_motor_prop_thrust`, `aerosim_sizing_eval`, `aerosim_sizing_optimize`, `aerosim_sizing_name`, `aerosim_sizing_defaults`, `aerosim_geometry_check`, `aerosim_ga_init`, `aerosim_ga_next`, `aerosim_cma_init`, `aerosim_cma_ask`, `aerosim_cma_tell`, `aerosim_de_init`, `aerosim_de_trials`, `aerosim_de_select`, `aerosim_local_fit`, `aerosim_rbf_fit`, `aerosim_rbf_eval`, `aerosim_lhs`, `aerosim_repair_step`, `aerosim_eps_level`, `aerosim_eps_worse`, `aerosim_bandit_state_len`, `aerosim_bandit_init`, `aerosim_bandit_pick`, `aerosim_bandit_update`, `aerosim_normative`, `aerosim_lem_box`, `aerosim_box_sample`, `aerosim_sens_tolerance`, `aerosim_morris_design`, `aerosim_morris_effects`
 - `core/src/tests.zig` — Todos os testes do núcleo, por grupo. `zig build test` roda tudo; `-Dgrupo=math` roda só um grupo e
 - `core/src/types.zig` — Estruturas trocadas com o Python (C ABI, `extern struct`).
-  tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `LiftingLineMethod:56`, `Surface:69`, `PropUnit:106`, `GearKind:147`, `Gear:157`, `TankShape:166`, `Tank:179`, `Segment:195`, `EventKind:216`, `Event:225`, `Pad:229`, `Payload:238`, `Environment:249`, `Takeoff:261`, `Pilot:279`, `Autopilot:289`, `AeroTable:338`, `LltCache:371`, `Params:385`, `PanelState:479`, `SweepSummary:499`, `Events:507`, `LogRow:549`, `AeroCoeffs:663`, `PropPoint:678`, `MassProps:690`, `TrimKind:698`, `TrimPoint:709`, `PerfRow:726`
+  tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `LiftingLineMethod:56`, `Refinement:68`, `Surface:78`, `PropUnit:115`, `GearKind:156`, `Gear:166`, `TankShape:175`, `Tank:188`, `Segment:204`, `EventKind:225`, `Event:234`, `Pad:238`, `Payload:247`, `Environment:258`, `Takeoff:270`, `Pilot:288`, `Autopilot:298`, `AeroTable:347`, `LltCache:380`, `Params:394`, `PanelState:489`, `SweepSummary:509`, `Events:517`, `LogRow:559`, `AeroCoeffs:673`, `PropPoint:688`, `MassProps:700`, `TrimKind:708`, `TrimPoint:719`, `PerfRow:736`
 
 **core/src/collision/**
 
@@ -364,7 +364,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `active:29`, `induced:39`
 - `core/src/modifiers/mod.zig` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro sem mexer no resto
   tipos `Env:22`
-  fn `envFrom:37`, `stripOf:58`, `induced:65`, `inducedAlone:70`, `flapCm:90`
+  fn `envFrom:37`, `slipstreamGrid:57`, `stripOf:66`, `induced:73`, `inducedAlone:78`, `flapCm:98`
 - `core/src/modifiers/slipstream.zig` — Esteira da hélice por disco atuador (modificador `esteira.disco`).
   tipos `TubeShape:32`, `Point:82`
   fn `shape:49`, `diskInduced:54`, `axialAt:62`, `radiusAt:67`, `swirlRate:75`, `at:90`
@@ -479,8 +479,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Variable:15`, `VarKind:49`, `VarSpec:57`, `Quantity:65`, `Comparison:136`, `Constraint:146`, `AirfoilData:164`, `LayoutData:175`, `PropSet:185`, `AircraftKind:193`, `Objective:206`, `SizingCfg:214`, `SizingOut:257`, `SearchMethod:274`, `OptOpts:283`, `Individual:295`
   fn `variable:44`, `quantity:116`, `massDependent:123`, `constrained:131`, `violation:154`
 - `core/src/sizing/wing_line.zig` — A etapa Asa do dimensionamento: do perfil escolhido à asa trapezoidal, pela linha sustentadora de Prandtl
-  tipos `Trapezoid:37`, `Partition:52`, `SectionAirfoil:62`, `Conditions:68`, `Station:88`, `Planform:94`, `Result:274`
-  fn `isaDensity:77`, `reynolds:83`, `planformOf:180`, `planformOfPartitions:201`, `totals:230`, `partitionsFromTrapezoid:243`, `analyze:426`, `analyzePlanform:434`, `modelSection:534`
+  tipos `Trapezoid:39`, `Partition:54`, `SectionAirfoil:64`, `Conditions:70`, `Station:91`, `Planform:97`, `Result:277`
+  fn `isaDensity:80`, `reynolds:86`, `planformOf:183`, `planformOfPartitions:204`, `totals:233`, `partitionsFromTrapezoid:246`, `analyze:432`, `analyzePlanform:440`, `modelSection:541`
 
 **core/src/util/**
 

@@ -19,8 +19,10 @@ const std = @import("std");
 const linalg = @import("../math/linalg.zig");
 const section = @import("../physics/section.zig");
 
-/// estações da linha sustentadora (o `n` de `lifting_line`)
-pub const stations = 24;
+/// o máximo de estações da linha sustentadora (o `n` de `lifting_line`)
+pub const max_stations = 64;
+/// as estações de sempre: o refino padrão (`Conditions.stations`)
+pub const default_stations = 24;
 /// o máximo de ângulos na curva da asa
 pub const max_alphas = 256;
 const g0 = 9.80665;
@@ -70,6 +72,7 @@ pub const Conditions = struct {
     airspeed: f64 = 15, // m/s, cruzeiro
     density: f64 = 1.225, // kg/m³
     wing_density: f64 = 1.1, // kg/m²
+    stations: usize = default_stations, // refino: estações da linha sustentadora, de 2 a `max_stations`
 };
 
 /// densidade da atmosfera padrão na altitude-densidade `altitude` (m): ρ0 (1 − 2,25577·10⁻⁵ h)^4,25588, a
@@ -309,27 +312,29 @@ pub const Result = struct {
     drag: [max_alphas]f64 = undefined,
     ld: [max_alphas]f64 = undefined,
     // ao longo da envergadura (da raiz para a ponta)
-    span_fraction: [stations]f64 = undefined,
-    cl_cruise: [stations]f64 = undefined,
-    cl_stall: [stations]f64 = undefined,
-    cl_max_local: [stations]f64 = undefined,
-    chord: [stations]f64 = undefined,
+    span_fraction: [max_stations]f64 = undefined,
+    cl_cruise: [max_stations]f64 = undefined,
+    cl_stall: [max_stations]f64 = undefined,
+    cl_max_local: [max_stations]f64 = undefined,
+    chord: [max_stations]f64 = undefined,
+    station_count: usize = 0, // quantas estações valem nos vetores acima
 };
 
 /// a linha sustentadora: a parte em α e a da torção, c_l(y) = α g + h, e os números locais do perfil
 const Line = struct {
-    y: [stations]f64,
-    chord: [stations]f64,
-    slope_part: [stations]f64, // A_α
-    twist_part: [stations]f64, // A_t
-    lift_rate: [stations]f64, // g
-    lift_base: [stations]f64, // h
-    cl_max: [stations]f64,
-    moment: [stations]f64,
-    place: [stations]Between, // entre que seções cada estação cai (o perfil local mistura os das duas)
+    y: [max_stations]f64,
+    chord: [max_stations]f64,
+    slope_part: [max_stations]f64, // A_α
+    twist_part: [max_stations]f64, // A_t
+    lift_rate: [max_stations]f64, // g
+    lift_base: [max_stations]f64, // h
+    cl_max: [max_stations]f64,
+    moment: [max_stations]f64,
+    place: [max_stations]Between, // entre que seções cada estação cai (o perfil local mistura os das duas)
     aspect_ratio: f64,
     area: f64,
     span: f64,
+    count: usize, // estações que valem
 };
 
 fn odd(j: usize) f64 {
@@ -337,19 +342,20 @@ fn odd(j: usize) f64 {
 }
 
 /// a linha sustentadora de Glauert na planta `planform` (estações da ponta para a raiz)
-fn liftingLine(planform: *const Planform, airfoils: []const *const SectionAirfoil) Line {
+fn liftingLine(planform: *const Planform, airfoils: []const *const SectionAirfoil, station_count: usize) Line {
     var line: Line = undefined;
+    line.count = std.math.clamp(station_count, 2, max_stations);
     const semispan = planform.semispan;
     line.span = 2 * semispan;
     line.area = planform.area();
     line.aspect_ratio = line.span * line.span / line.area;
     const sweep_cos = @cos(planform.quarterChordSweep());
-    var matrix: [stations][stations]f64 = undefined;
-    var rhs_slope: [stations]f64 = undefined;
-    var rhs_twist: [stations]f64 = undefined;
-    var theta: [stations]f64 = undefined;
-    for (0..stations) |i| {
-        theta[i] = @as(f64, @floatFromInt(i + 1)) * std.math.pi / (2 * @as(f64, stations));
+    var matrix: [max_stations][max_stations]f64 = undefined;
+    var rhs_slope: [max_stations]f64 = undefined;
+    var rhs_twist: [max_stations]f64 = undefined;
+    var theta: [max_stations]f64 = undefined;
+    for (0..line.count) |i| {
+        theta[i] = @as(f64, @floatFromInt(i + 1)) * std.math.pi / (2 * @as(f64, @floatFromInt(line.count)));
         const y = semispan * @cos(theta[i]);
         // o perfil local: o das duas seções vizinhas, interpolado
         const place = planform.between(y);
@@ -365,16 +371,16 @@ fn liftingLine(planform: *const Planform, airfoils: []const *const SectionAirfoi
         line.moment[i] = inner.cm_ac + weight * (outer.cm_ac - inner.cm_ac);
         const twist = std.math.degreesToRadians(planform.at(y, "twist"));
         const mu = slope * line.chord[i] / (4 * line.span);
-        for (0..stations) |j| matrix[i][j] = @sin(theta[i] * odd(j)) * (@sin(theta[i]) + odd(j) * mu);
+        for (0..line.count) |j| matrix[i][j] = @sin(theta[i] * odd(j)) * (@sin(theta[i]) + odd(j) * mu);
         rhs_slope[i] = mu * @sin(theta[i]);
         rhs_twist[i] = mu * (twist - zero_lift) * @sin(theta[i]);
     }
-    _ = linalg.solve(stations, matrix, stations, rhs_slope, &line.slope_part);
-    _ = linalg.solve(stations, matrix, stations, rhs_twist, &line.twist_part);
-    for (0..stations) |i| {
+    _ = linalg.solve(max_stations, matrix, line.count, rhs_slope, &line.slope_part);
+    _ = linalg.solve(max_stations, matrix, line.count, rhs_twist, &line.twist_part);
+    for (0..line.count) |i| {
         var rate: f64 = 0;
         var base: f64 = 0;
-        for (0..stations) |j| {
+        for (0..line.count) |j| {
             rate += @sin(theta[i] * odd(j)) * line.slope_part[j];
             base += @sin(theta[i] * odd(j)) * line.twist_part[j];
         }
@@ -387,7 +393,7 @@ fn liftingLine(planform: *const Planform, airfoils: []const *const SectionAirfoi
 /// C_Di/(π AR) num ângulo: Σ n A_n²
 fn inducedSum(line: *const Line, alpha: f64) f64 {
     var sum: f64 = 0;
-    for (0..stations) |j| {
+    for (0..line.count) |j| {
         const coefficient = alpha * line.slope_part[j] + line.twist_part[j];
         sum += odd(j) * coefficient * coefficient;
     }
@@ -400,7 +406,7 @@ fn profileDrag(planform: *const Planform, line: *const Line, alpha: f64, airfoil
     var previous_y: f64 = 0;
     var previous_value: f64 = 0;
     var last_cd: f64 = 0;
-    var i: usize = stations;
+    var i: usize = line.count;
     var first = true;
     while (i > 0) {
         i -= 1;
@@ -432,12 +438,13 @@ pub fn analyze(trapezoid: Trapezoid, root: *const SectionAirfoil, tip: ?*const S
 /// a etapa Asa numa planta qualquer (trapézio ou tabela): `airfoils` são os perfis das seções (o 0 é o da raiz;
 /// `Station.airfoil` aponta para eles) e `alpha_cruise` o ângulo da fuselagem no cruzeiro (graus)
 pub fn analyzePlanform(planform: *const Planform, airfoils: []const *const SectionAirfoil, alpha_cruise_body: f64, conditions: Conditions, out: *Result) void {
-    const line = liftingLine(planform, airfoils);
+    const line = liftingLine(planform, airfoils, conditions.stations);
+    out.station_count = line.count;
     const aspect = line.aspect_ratio;
     // a seção crítica: o menor α em que alguma estação chega ao c_l,max dela
     var critical: usize = 0;
     var stall = std.math.inf(f64);
-    for (0..stations) |i| {
+    for (0..line.count) |i| {
         const angle = if (line.lift_rate[i] > 0) (line.cl_max[i] - line.lift_base[i]) / line.lift_rate[i] else std.math.inf(f64);
         if (angle < stall) {
             stall = angle;
@@ -503,8 +510,8 @@ pub fn analyzePlanform(planform: *const Planform, airfoils: []const *const Secti
     out.reynolds_root = reynolds(conditions, planform.chordAt(0));
     out.reynolds_tip = reynolds(conditions, planform.chordAt(planform.semispan));
     // ao longo da envergadura, da raiz para a ponta
-    for (0..stations) |k| {
-        const i = stations - 1 - k;
+    for (0..line.count) |k| {
+        const i = line.count - 1 - k;
         out.span_fraction[k] = line.y[i] / planform.semispan;
         out.cl_cruise[k] = alpha_cruise * line.lift_rate[i] + line.lift_base[i];
         out.cl_stall[k] = stall * line.lift_rate[i] + line.lift_base[i];
@@ -518,8 +525,8 @@ pub fn analyzePlanform(planform: *const Planform, airfoils: []const *const Secti
     } else {
         var weighted: f64 = 0;
         var total: f64 = 0;
-        for (1..stations) |k| {
-            const i = stations - 1 - k;
+        for (1..line.count) |k| {
+            const i = line.count - 1 - k;
             const step = out.span_fraction[k] - out.span_fraction[k - 1];
             const a = line.chord[i + 1] * line.chord[i + 1];
             const b = line.chord[i] * line.chord[i];

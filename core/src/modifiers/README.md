@@ -58,7 +58,7 @@ flowchart TD
 | `slipstream.zig` | esteira por disco atuador (`diskInduced`, `axialAt`, `radiusAt`, `swirlRate`, `at`); `shape`/`TubeShape.tube` montam o tubo que contrai para `collision/` |
 | `flapmoment.zig` | momento próprio do comando no quarto de corda da faixa (teoria do perfil fino; Anderson, a conferir no PDF): `thetaOf` acha θ_f a partir do τ da faixa, e `cmDelta` dá dΔc_m/dδ. Entra no momento de cada faixa pelo `flapCm` de `mod.zig`, só com o modificador `comando.momento_flape` ligado |
 | `interference.zig` | interferência entre as asas da configuração nas faixas, para N asas (`active`, `induced`) |
-| `mod.zig` | entrada do módulo: `Env` (tração, torque, eixo e velocidade axial de cada motor no instante; `envFrom`), `induced` (soma dos efeitos a mais por painel, como média de uma grade `chord_samples × strip_samples` de pontos da faixa; quem está dentro do tubo é dito por `collision/`), `flapCm` |
+| `mod.zig` | entrada do módulo: `Env` (tração, torque, eixo e velocidade axial de cada motor no instante; `envFrom`), `induced` (soma dos efeitos a mais por painel, como média de uma grade de pontos da faixa, com o tamanho de `Params.refinement` (3 × 16 por padrão, `slipstreamGrid`); quem está dentro do tubo é dito por `collision/`), `flapCm` |
 | `README.md` | este arquivo |
 
 ## Números na ABI, nomes no núcleo

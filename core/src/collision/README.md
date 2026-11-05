@@ -69,7 +69,7 @@ pega numa asa alta de um avião com o motor baixo. A EH e a EV que ficam atrás,
 
 | onde | para quê |
 |---|---|
-| `modifiers/mod.zig` | `stripOf` faz a faixa de cada painel. A esteira é a média de uma grade `chord_samples × strip_samples` da faixa; os pontos fora do tubo não somam nada |
+| `modifiers/mod.zig` | `stripOf` faz a faixa de cada painel. A esteira é a média de uma grade da faixa, do tamanho de `Params.refinement` (`mod.slipstreamGrid`); os pontos fora do tubo não somam nada |
 | `root.zig` → `aerosim_tube_panel_hits` | fração de cada painel dentro do tubo do motor `idx`; `T = 0` dá o cilindro, `T > 0` o tubo que contrai |
 | `root.zig` → `aerosim_tube_point_hits` | se cada ponto dado está dentro do tubo (para objetos: fuselagem, trem, carga) |
 | `aerosim/aero/collision.py` | `tube_hits(backend, ac)`: lista do que cada hélice pega, superfícies (fração de área) e objetos (fração de vértices do modelo da GUI) |

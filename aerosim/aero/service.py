@@ -47,7 +47,7 @@ def polar_key(solver: IAeroSolver, model, case: AeroCase) -> str:
     h.update(json.dumps(to_dict(model.aircraft), sort_keys=True, default=str).encode())
     h.update(repr((VERSION, solver.name, getattr(solver, "version", 1), float(case.V), float(case.alpha_d),
                    tuple(round(float(x), 9) for x in case.ref), round(float(case.rho), 9), case.section,
-                   int(case.n_span))).encode())
+                   int(case.n_span), int(getattr(case, "n_chord", 0)))).encode())
     h.update(np.asarray(case.alphas, float).round(9).tobytes())
     return h.hexdigest()
 

@@ -48,7 +48,11 @@ class LoadsSimulation(SimulationBase):
                                "esteira do avião); sem: as superfícies não veem a hélice"),
                 ParamSpec("method", "Método", _titles()[0], kind="choice", choices=_titles()),
                 ParamSpec("compare", "Comparar com", NENHUM, kind="choice", choices=(NENHUM,) + _titles(),
-                          help="outro método no mesmo ponto de voo (mesmo α e profundor), sobreposto nos gráficos")]
+                          help="outro método no mesmo ponto de voo (mesmo α e profundor), sobreposto nos gráficos"),
+                ParamSpec("vlm_span", "VLM: faixas por lado", 0, kind="int", minimum=0, maximum=200,
+                          help="refino do VLM nas cargas; 0: o padrão (40)"),
+                ParamSpec("vlm_chord", "VLM: painéis na corda", 0, kind="int", minimum=0, maximum=40,
+                          help="refino do VLM nas cargas; 0: o padrão (6)")]
 
     def plots(self):
         return self.plots_for(None, {})
@@ -74,7 +78,7 @@ class LoadsSimulation(SimulationBase):
         P = lambda k: self.param(ctx, k)
         alpha = P("alpha") if P("alpha_mode") == "imposto" else None
         names = [P("method")] + ([P("compare")] if P("compare") not in (NENHUM, P("method")) else [])
-        methods = [load_method(ctx.backend, n) for n in names]
+        methods = [load_method(ctx.backend, n, n_span=int(P("vlm_span")), n_chord=int(P("vlm_chord"))) for n in names]
         cases = {"com hélice": [True], "sem hélice": [False], HELICE[2]: [True, False]}[P("helice")]
         has_prop = any(u.enabled for u in ac.propulsion)
         slip_on = any("esteira" in m.kind for m in ac.modifiers if getattr(m, "enabled", True))

@@ -38,6 +38,8 @@ CONTROLS = ("pitch", "roll", "yaw")          # D1, D2, D3 no AVL
 SGN_DUP = {"pitch": 1.0, "roll": -1.0, "yaw": 1.0}
 TIMEOUT = 120.0
 
+N_CHORD = 8                    # refino padrão: painéis na corda (`AeroCase.n_chord` troca)
+
 
 def avl_exe() -> str | None:
     p = os.environ.get("AVL_PATH")
@@ -74,7 +76,7 @@ class AvlTranslator(IModelTranslator):
              _fmt(model.parasite_cd()), ""]
         written: dict[str, str] = {}
         for i, s in enumerate(model.surfaces):
-            L += ["SURFACE", s.name or f"superficie {i}", f"8 1.0 {max(4, int(case.n_span))} {-2.0 if s.mirror else 1.0}"]
+            L += ["SURFACE", s.name or f"superficie {i}", f"{int(case.n_chord) or N_CHORD} 1.0 {max(4, int(case.n_span))} {-2.0 if s.mirror else 1.0}"]
             if s.mirror:
                 L += ["YDUPLICATE", "0.0"]
             ctl = s.strip_controls
