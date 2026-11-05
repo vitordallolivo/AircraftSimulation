@@ -41,7 +41,7 @@ flowchart LR
         CL["climb.py"]
         PO["polar.py"]
     end
-    FP["flightplots.py<br/>séries no estilo do legacy"]
+    FP["flightplots.py<br/>séries no estilo do simulador em C"]
     RUN["runner.py<br/>Runner, Stop: corrida em fatias"]
     CK["checkpoints.py<br/>CheckpointStore"]
     CAL["calibration.py<br/>polar → piloto"]

@@ -182,7 +182,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   `static_characteristics:22`, `calibrate:41`
 - `aerosim/manager/checkpoints.py` — Checkpoints: o estado inteiro de uma corrida num ponto (bytes do núcleo + metadados).
   `class Checkpoint:16`, `class CheckpointStore:24`
-- `aerosim/manager/flightplots.py` — Séries de gráfico de um voo simulado, no estilo dos gráficos do código original (legacy/py/graficos.py):
+- `aerosim/manager/flightplots.py` — Séries de gráfico de um voo simulado, no estilo dos gráficos do simulador original em C:
   `stage_names:32`, `stage_color:36`, `by_stage:50`, `stage_spans:71`, `events_points:86`, `event_stars:98`, `payload_path:112`, `terrain_profile:124`, `trajectory:133`, `time_series:155`, `cg_series:233`, `takeoff_window:254`, `ground_clearance:323`, `landing_window:354`, `lapes_window:391`, `aircraft_glyphs:448`, `battery_by_stage:479`, `takeoff_angles:522`, `takeoff_time:540`
 - `aerosim/manager/form_meta.py` — Rótulo, unidade, faixa, opções e dica dos campos de dataclass que não trazem os metadados de
 - `aerosim/manager/forms.py` — O formulário de uma dataclass em `ParamSpec`, sem Qt: a mesma leitura que `DataclassForm`

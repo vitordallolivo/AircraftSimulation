@@ -1,4 +1,4 @@
-"""Séries de gráfico de um voo simulado, no estilo dos gráficos do código original (legacy/py/graficos.py):
+"""Séries de gráfico de um voo simulado, no estilo dos gráficos do simulador original em C:
 uma cor por etapa do voo (corrida no chão, cada perna do percurso, rolagem), fundo colorido por
 etapa nos gráficos no tempo, estrelas nos eventos (decolou, piloto automático, soltura, impacto,
 toque, parada), e janelas ampliadas da decolagem, do pouso e da soltura da carga (LAPES).

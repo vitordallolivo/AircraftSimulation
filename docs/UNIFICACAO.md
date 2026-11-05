@@ -212,16 +212,30 @@ o aerosim em Zig usa o mesmo. O Python fica como está, mesmo que quebre, até a
 Regras que continuam valendo durante a refatoração: as faixas com McCormick ficam bit a bit iguais (a regressão de
 `tools/checks` confere), os `.json` antigos abrem iguais e o AeroDrive compila e roda a cada commit do núcleo.
 
-**Ordem sugerida para a etapa 2**, um commit por passo:
+## 6. Plano da etapa 2 (aprovado pelo dono em 2026-11-05)
 
-1. `enum` no lugar das constantes soltas do núcleo (`types.zig`, `aeromodel.zig`, `envelope.zig`), sem mudar número.
-2. Bitset para painéis e motores, uma função só para ler.
-3. Separar método e efeito: `AeroMethod` com a variante da linha sustentadora, efeitos em flags, parâmetros com nome.
-4. Interferência entre N asas no lugar do par.
-5. Nomes dos `enum` no esquema da ABI.
-6. Conjuntos de erro por módulo.
-7. O tradutor em Zig lendo modifiers e modelo do voo.
-8. Os nomes fora da regra 11.
+O dono aprovou a análise e acrescentou quatro decisões. Primeiro, todo número que é refino de método (quantidade de
+painéis, faixas, pontos de amostra) vira entrada do usuário, com o valor de hoje como padrão. Segundo, o AeroDrive pode
+ter métodos fixos, mas eles ficam num arquivo só, escrito com o framework, que diz quais são. Terceiro, a prioridade é
+unificar as frentes e apagar o código morto (como o simulador antigo em C de `legacy/`), sem apagar os testes. Quarto, o
+biplano, o tandem e o canard são só um avião com N asas: se a conta é a mesma, ela é uma só, e nada tem nome de arranjo.
 
-Ficam para decidir com o dono: se `Biplane` sai do dimensionamento (virando "N asas" com o σ de cada par) e como
-juntar os seis contratos de manager, que é a etapa 3.
+Nesta etapa a regressão não roda: as coisas podem quebrar, e consertar isso é outra tarefa. O núcleo e o AeroDrive
+continuam compilando a cada passo. Um commit por passo:
+
+1. **Código morto.** Sai `legacy/` (o simulador em C e os scripts em Python dele); os testes que o usam ficam.
+2. **`enum` no lugar das constantes soltas** do núcleo (`types.zig`, `aeromodel.zig`, `envelope.zig`, `sizing/types.zig`).
+3. **Conjuntos por bitset.** Painéis e motores afetados num tipo só, com uma função só para ler.
+4. **Método e efeito separados.** `AeroMethod` com as variantes da linha sustentadora por nome (os números de junta e
+   de mistura viram parâmetros dela); efeitos a mais como flags num `packed struct`; parâmetros de cada efeito com nome.
+5. **N asas.** A interferência entre asas vale para todas as asas da configuração (cada uma sente as outras); no
+   dimensionamento, `Monoplane` e `Biplane` viram um tipo só com N asas; sai `Features.arrangement` e o que for preso à
+   "segunda asa".
+6. **Refino como entrada.** Uma struct de refino no núcleo (amostras da esteira na corda e na envergadura, estações da
+   linha de asa...) e no Python (faixas por lado, painéis na corda do VLM e do AVL), com os padrões de hoje.
+7. **ABI.** Os nomes dos `enum` no esquema (o Python lê de lá) e conjuntos de erro por módulo, sem `anyerror`.
+8. **Um avião em Zig.** O tradutor do AeroDrive lê os modifiers, o método e o refino do `.json`; os métodos fixos do
+   AeroDrive ficam em `aerodrive/src/sim/methods.zig`.
+9. **Nomes** fora da regra 11.
+
+Depois disso vem a etapa 3: juntar os seis contratos de manager num framework só.
