@@ -179,18 +179,20 @@ nem esteira: é de voo livre.
 Aqui se tira a polar de um perfil sozinho, sem asa em volta, e os números que a asa vai usar. Serve para comparar
 perfis candidatos antes de desenhar a asa: qual sustenta mais, onde estola, quanto arrasta. A polar do modelo é a
 mesma hipótese das faixas acima, só que em 2D: a reta até perto do estol, misturada com a placa plana pela sigmoide
-de Beard e McLain, com o α de transição $\alpha_0$ achado por bisseção para o pico da curva ser o $c_{l,\max}$ do
+de Beard e McLain, com o α de transição $`\alpha_0`$ achado por bisseção para o pico da curva ser o $`c_{l,\max}`$ do
 perfil:
 
-$$c_l(\alpha) = (1 - \sigma)\,a\,(\alpha - \alpha_{L0}) + \sigma\,2\,\mathrm{sgn}(\alpha)\,\sin^2\alpha\cos\alpha$$
+```math
+c_l(\alpha) = (1 - \sigma)\,a\,(\alpha - \alpha_{L0}) + \sigma\,2\,\mathrm{sgn}(\alpha)\,\sin^2\alpha\cos\alpha
+```
 
-com $\sigma$ a mistura de `aero.sigmaStall` e $a$ a inclinação 2D (Beard e McLain, Small Unmanned Aircraft, 2012,
-eq. 4.10). O arrasto é $c_{d0}$ mais a parte da placa plana, $\sigma\,1{,}2\sin^2\alpha$, e o $c_m$ é o do perfil.
-Esse modelo não tem o balde de arrasto de um perfil real, então o $c_l/c_d$ dele não serve para comparar perfis; para
+com $`\sigma`$ a mistura de `aero.sigmaStall` e $`a`$ a inclinação 2D (Beard e McLain, Small Unmanned Aircraft, 2012,
+eq. 4.10). O arrasto é $`c_{d0}`$ mais a parte da placa plana, $`\sigma\,1{,}2\sin^2\alpha`$, e o $`c_m`$ é o do perfil.
+Esse modelo não tem o balde de arrasto de um perfil real, então o $`c_l/c_d`$ dele não serve para comparar perfis; para
 isso entra a polar medida (do XFLR5), lida nos mesmos ângulos por `interpolate`.
 
-De qualquer polar, `metrics` tira o $c_{l,\max}$ e o α de estol, o $(c_l/c_d)$ máximo, o $c_d$ mínimo e, no trecho
-colado (c_l entre 15 % e 70 % do máximo), a inclinação e o $\alpha_{L0}$ pela reta de Theil-Sen: a mediana das
+De qualquer polar, `metrics` tira o $`c_{l,\max}`$ e o α de estol, o $`(c_l/c_d)`$ máximo, o $`c_d`$ mínimo e, no trecho
+colado (c_l entre 15 % e 70 % do máximo), a inclinação e o $`\alpha_{L0}`$ pela reta de Theil-Sen: a mediana das
 inclinações de todos os pares de pontos. Uma reta de mínimos quadrados se deixa puxar pelo salto de uma bolha de
 separação, comum em Reynolds baixo (o S1223 tem um); a mediana não. As contas são as de `aerosim/aero/sections.py` e
 `aerosim/design/airfoils.py`, e o teste confere os números contra elas.

@@ -156,8 +156,8 @@ x = \frac{(a_2\times a_3)\,b_1 + (a_3\times a_1)\,b_2 + (a_1\times a_2)\,b_3}{a_
 
 ## Autovalores de uma matriz simétrica (`linalg.symEigen`)
 
-Aqui se decompõe uma matriz simétrica $A$ de até $N \times N$ nos autovalores $w$ e nos autovetores $V$, com
-$A = V \operatorname{diag}(w)\, V^\top$. Quem usa isso é o CMA-ES do aeroopt (`../optim/cmaes.zig`). A cada
+Aqui se decompõe uma matriz simétrica $`A`$ de até $`N \times N`$ nos autovalores $`w`$ e nos autovetores $`V`$, com
+$`A = V \operatorname{diag}(w)\, V^\top`$. Quem usa isso é o CMA-ES do aeroopt (`../optim/cmaes.zig`). A cada
 geração ele precisa dos eixos e dos comprimentos da elipse de sorteio, que são os autovetores e os autovalores da
 matriz de covariância.
 
@@ -167,20 +167,22 @@ poucas linhas sem alocar nada. Os métodos mais rápidos para matrizes grandes (
 compensam bem acima desse tamanho. O Jacobi também devolve autovetores ortogonais com precisão de máquina, mesmo com
 autovalores quase iguais, e isso é o que mantém a elipse do CMA-ES bem formada.
 
-A ideia é zerar os termos fora da diagonal um par de cada vez. Para cada par $(p, q)$, uma rotação de Givens $J$ no
-plano $p, q$ escolhida para zerar $A_{pq}$ troca $A$ por $J^\top A J$. Essa troca não muda os autovalores. O ângulo
+A ideia é zerar os termos fora da diagonal um par de cada vez. Para cada par $`(p, q)`$, uma rotação de Givens $`J`$ no
+plano $`p, q`$ escolhida para zerar $`A_{pq}`$ troca $`A`$ por $`J^\top A J`$. Essa troca não muda os autovalores. O ângulo
 sai de
 
-$$\tau = \frac{A_{qq} - A_{pp}}{2 A_{pq}}, \qquad t = \frac{\operatorname{sinal}(\tau)}{\lvert\tau\rvert + \sqrt{1 + \tau^2}}, \qquad c = \frac{1}{\sqrt{1 + t^2}}, \qquad s = t\, c,$$
+```math
+\tau = \frac{A_{qq} - A_{pp}}{2 A_{pq}}, \qquad t = \frac{\operatorname{sinal}(\tau)}{\lvert\tau\rvert + \sqrt{1 + \tau^2}}, \qquad c = \frac{1}{\sqrt{1 + t^2}}, \qquad s = t\, c,
+```
 
-onde $t$ é a tangente do ângulo, e a raiz menor de $t^2 + 2\tau t - 1 = 0$ é a que se escolhe, porque com ela a
+onde $`t`$ é a tangente do ângulo, e a raiz menor de $`t^2 + 2\tau t - 1 = 0`$ é a que se escolhe, porque com ela a
 rotação é a menor possível (abaixo de 45°) e o arredondamento não cresce. Zerar um par desfaz um pouco os pares já
 zerados, mas a soma dos quadrados fora da diagonal sempre cai. Por isso se varre todos os pares várias vezes (as
 varreduras), e cada uma deixa essa soma bem menor que a anterior. A busca para quando a soma fica abaixo de
-$10^{-30}$ vezes a soma de todos os quadrados de $A$, ou depois de 64 varreduras. As mesmas rotações, acumuladas em
-$V$ (que começa na identidade), dão os autovetores nas colunas. Os autovalores são a diagonal que sobra.
+$`10^{-30}`$ vezes a soma de todos os quadrados de $`A`$, ou depois de 64 varreduras. As mesmas rotações, acumuladas em
+$`V`$ (que começa na identidade), dão os autovetores nas colunas. Os autovalores são a diagonal que sobra.
 
-O teste monta uma matriz 4 × 4 simétrica e confere que $V$ é ortogonal ($V^\top V = I$), que $V
+O teste monta uma matriz 4 × 4 simétrica e confere que $`V`$ é ortogonal ($`V^\top V = I`$), que $V
 \operatorname{diag}(w)\, V^\top$ devolve a matriz original e que a soma dos autovalores é o traço.
 
 ## Como chamar
@@ -200,20 +202,22 @@ Testes: `python -m ziglang build test -Dgrupo=math` (dentro de `core/`).
 
 ## Autovalores de uma matriz qualquer (`linalg.generalEigen`)
 
-Aqui se acham os autovalores de uma matriz real que não é simétrica, como a matriz $A$ de um modelo linear
-$\dot x = A x$. Os autovalores são os polos $\lambda = \sigma \pm i\omega$: a parte real diz se o modo amortece
-($\sigma < 0$) ou cresce, e a imaginária, se ele oscila. A Estabilidade dinâmica usa isso para mostrar os polos sem
+Aqui se acham os autovalores de uma matriz real que não é simétrica, como a matriz $`A`$ de um modelo linear
+$`\dot x = A x`$. Os autovalores são os polos $`\lambda = \sigma \pm i\omega`$: a parte real diz se o modo amortece
+($`\sigma < 0`$) ou cresce, e a imaginária, se ele oscila. A Estabilidade dinâmica usa isso para mostrar os polos sem
 passar pelo Python.
 
 O caminho é o clássico de Press et al., *Numerical Recipes*, 3ª ed., 2007, seção 11.6 (`balance`, `elmhes` e `hqr`; a
-conferir no PDF). Primeiro a matriz é balanceada, trocando $A$ por $D^{-1} A D$ com $D$ diagonal de potências de 2,
+conferir no PDF). Primeiro a matriz é balanceada, trocando $`A`$ por $`D^{-1} A D`$ com $`D`$ diagonal de potências de 2,
 para as linhas e as colunas ficarem com normas parecidas, o que diminui o erro de arredondamento. Depois ela é reduzida
 à forma de Hessenberg (zeros abaixo da subdiagonal) por eliminação de Gauss com pivô, uma semelhança que não muda os
 autovalores. Por fim, o QR com duplo deslocamento de Francis vai zerando a subdiagonal de baixo para cima: cada bloco
-$1 \times 1$ que se solta é um autovalor real, e cada bloco $2 \times 2$ dá um par, real ou complexo conjugado, pelas
+$`1 \times 1`$ que se solta é um autovalor real, e cada bloco $`2 \times 2`$ dá um par, real ou complexo conjugado, pelas
 raízes de
 
-$$\lambda^2 - (a + d)\,\lambda + (a d - b c) = 0.$$
+```math
+\lambda^2 - (a + d)\,\lambda + (a d - b c) = 0.
+```
 
 O deslocamento duplo usa os dois autovalores do bloco de baixo de uma vez, então a conta fica toda em números reais
 mesmo quando os polos são complexos. Se um autovalor não se solta em 30 passos, a função devolve falso. O teste confere

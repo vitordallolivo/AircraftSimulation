@@ -49,7 +49,7 @@ cartão) ou põe todos os da tela, e "Salvar os selecionados" pede um nome só. 
 Os textos dos gráficos (título, eixos e legenda) aceitam um pedaço de TeX, desenhado por `tex.zig`: o que fica
 entre `$...$` vira matemática, com índice (`C_L`, `C_{m,CG}`), expoente, letras gregas e operadores com espaço dos
 dois lados (`\times`, `=`). Sem isso, um título precisava de uma frase inteira para dizer o que se plota, e a frase
-não cabia no cartão. Com o TeX, o título diz só a grandeza ($C_L \times \alpha$) e a legenda explica cada curva
+não cabia no cartão. Com o TeX, o título diz só a grandeza ($`C_L \times \alpha`$) e a legenda explica cada curva
 (cruzeiro, estol, fim do curso). As retas de referência que o Python manda (`_vline`, `_hline`) também entram na
 legenda com o nome delas. Não é o TeX inteiro, só o que um rótulo precisa.
 

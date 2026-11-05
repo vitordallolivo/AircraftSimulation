@@ -28,12 +28,14 @@ qual duas caixas se encostam e se os pedaços soltos reprovam (`need_connected`)
 Duas caixas se cruzam pelo teorema do eixo separador: se existe uma direção em que as sombras das duas não se
 sobrepõem, elas estão separadas. Para duas caixas bastam 15 direções, os 3 eixos de cada uma e os 9 produtos
 vetoriais entre eles (Gottschalk, Lin e Manocha, "OBBTree", SIGGRAPH 1996; Ericson, *Real-Time Collision Detection*,
-2005, seção 4.4.1; página a conferir no PDF). A sombra de uma caixa de meias medidas $h_i$ e eixos $\mathbf{a}_i$ na
-direção $\mathbf{u}$ tem meia largura
+2005, seção 4.4.1; página a conferir no PDF). A sombra de uma caixa de meias medidas $`h_i`$ e eixos $`\mathbf{a}_i`$ na
+direção $`\mathbf{u}`$ tem meia largura
 
-$$r(\mathbf{u}) = \sum_{i=1}^{3} h_i \, |\mathbf{a}_i \cdot \mathbf{u}|$$
+```math
+r(\mathbf{u}) = \sum_{i=1}^{3} h_i \, |\mathbf{a}_i \cdot \mathbf{u}|
+```
 
-e as duas caixas estão separadas na direção $\mathbf{u}$ quando a distância entre os centros projetada passa da soma
+e as duas caixas estão separadas na direção $`\mathbf{u}`$ quando a distância entre os centros projetada passa da soma
 das meias larguras (mais a tolerância de contato).
 
 O disco contra uma caixa usa o corte. O plano do disco corta a caixa num polígono convexo (os pontos em que as 12
@@ -55,23 +57,29 @@ os pedaços só são contados.
 
 ## O chão
 
-O chão é o plano que passa pelo pivô. Com o avião girado de $\theta$ (nariz para cima) em volta do eixo y do pivô, a
-altura de um ponto que está a $(\Delta x, \Delta z)$ do pivô é
+O chão é o plano que passa pelo pivô. Com o avião girado de $`\theta`$ (nariz para cima) em volta do eixo y do pivô, a
+altura de um ponto que está a $`(\Delta x, \Delta z)`$ do pivô é
 
-$$h = \Delta x \sin\theta - \Delta z \cos\theta$$
+```math
+h = \Delta x \sin\theta - \Delta z \cos\theta
+```
 
 (z para baixo). Ela é linear no ponto, então o mínimo sobre uma peça sai exato, sem amostrar: na caixa, a altura do
-centro menos $r(\mathbf{g})$ com $\mathbf{g} = (\sin\theta, 0, -\cos\theta)$; no disco de raio $R$ e eixo $\mathbf{n}$,
+centro menos $`r(\mathbf{g})`$ com $`\mathbf{g} = (\sin\theta, 0, -\cos\theta)`$; no disco de raio $`R`$ e eixo $`\mathbf{n}`$,
 a altura do centro menos
 
-$$R \sqrt{|\mathbf{g}|^2 - (\mathbf{g}\cdot\mathbf{n})^2}$$
+```math
+R \sqrt{|\mathbf{g}|^2 - (\mathbf{g}\cdot\mathbf{n})^2}
+```
 
 Quando alguma peça fica abaixo da folga pedida, o relatório diz também quanto descer as rodas, todas juntas, para
-tudo livrar o chão (`gear_raise`). Descer as rodas $\Delta$ desce o pivô $\Delta$ no corpo; como as duas pernas descem
-juntas, a atitude parada não muda, e a altura de todo ponto girado de $\theta$ sobe $\Delta\cos\theta$. Com a pior
-folga $f < 0$ em cada atitude, basta
+tudo livrar o chão (`gear_raise`). Descer as rodas $`\Delta`$ desce o pivô $`\Delta`$ no corpo; como as duas pernas descem
+juntas, a atitude parada não muda, e a altura de todo ponto girado de $`\theta`$ sobe $`\Delta\cos\theta`$. Com a pior
+folga $`f < 0`$ em cada atitude, basta
 
-$$\Delta = \max_\theta \frac{-f(\theta)}{\cos\theta}$$
+```math
+\Delta = \max_\theta \frac{-f(\theta)}{\cos\theta}
+```
 
 A atitude parada vem do trem (a bequilha ou a roda de cauda no chão); a da rotação é a maior entre a parada e o ângulo
 pedido. O trem não entra como peça: é ele que define o chão. O MDO antigo da equipe fazia a mesma conta só para a

@@ -109,16 +109,20 @@ Roda-se então a área de estabilidade e controle, inicialmente não tem como sa
 do projeto se faz uma otimização junto a decolagem a fim de avaliar qual a melhor cauda para esta aeronave, fora as otimizações
 já existentes em desempenho. 
 
-Porém uma falha não deve aqui imediatamente negar o individuo então cria-se um termo da violação $V$, onde basicamente
+Porém uma falha não deve aqui imediatamente negar o individuo então cria-se um termo da violação $`V`$, onde basicamente
 podemos ter multiplas falhas. 
 
-$$V(x) = \sum_t v_t(x), \qquad V = 0 \iff \text{voa}$$
+```math
+V(x) = \sum_t v_t(x), \qquad V = 0 \iff \text{voa}
+```
 
 Usa-se as regras de Deb (Computer Methods in Applied Mechanics and Engineering 186, 2000, seção
 3, a conferir no PDF): quem voa ganha de quem não voa; entre dois que voam ganha o de maior MTOW; entre dois que não
 voam ganha o que viola menos. A busca então anda primeiro para onde o avião passa a voar, e só depois procura MTOW.
 
-$$\text{rank}(x) = \begin{cases} (1,\ \text{MTOW}) & V(x) = 0 \\ (0,\ -V(x)) & V(x) > 0 \end{cases}$$
+```math
+\text{rank}(x) = \begin{cases} (1,\ \text{MTOW}) & V(x) = 0 \\ (0,\ -V(x)) & V(x) > 0 \end{cases}
+```
 
 E cada individuo sabe onde falha (deriva pequena, carga paga fora do lugar, profundor que não trima), e por isso sabe
 quais variáveis precisamos consertar. Ou seja torna-se uma busca guiada pela falha. No gráfico da direita, com doze variáveis em que só duas consertam as duas falhas, a
@@ -159,7 +163,9 @@ do bloco anterior é aproximada; esta voa o avião com o piloto. A massa sai por
 massa e o segundo na maior, e cada voo seguinte é no meio da faixa que sobrou. Decolou, o MTOW está acima; não
 decolou, está abaixo. São nove cortes, e a faixa final é 1/512 da inicial.
 
-$$m_{k+1} = \tfrac12 (m_{lo} + m_{hi}), \qquad \text{decolou: } m_{lo} \leftarrow m_{k+1}, \quad \text{não: } m_{hi} \leftarrow m_{k+1}$$
+```math
+m_{k+1} = \tfrac12 (m_{lo} + m_{hi}), \qquad \text{decolou: } m_{lo} \leftarrow m_{k+1}, \quad \text{não: } m_{hi} \leftarrow m_{k+1}
+```
 
 Cada voo também acha o melhor momento de puxar o profundor na corrida. A decolagem é sempre com a proteção de α do
 piloto, que pica o nariz antes do estol, e a que estola é reprovada mesmo passando a pista. Sem isso, quase todos
@@ -172,10 +178,12 @@ do chão.
 ### Nota
 
 Aqui a carga paga, o MTOW do 6GDL menos o peso vazio, entra na fórmula do regulamento. Na Regular 2026 a parte
-principal é a eficiência estrutural $EE = CP/PV$, corrigida pelo número de superfícies e pela envergadura, com
+principal é a eficiência estrutural $`EE = CP/PV`$, corrigida pelo número de superfícies e pela envergadura, com
 penalidade depois de 4 m (Regulamento SAE BRASIL AeroDesign 2026, seção 7, eqs. 7.2 a 7.5):
 
-$$N = 1{,}10 \cdot 50\,EE \cdot F_N \cdot 1{,}15^{-b} - P_D$$
+```math
+N = 1{,}10 \cdot 50\,EE \cdot F_N \cdot 1{,}15^{-b} - P_D
+```
 
 É isso que faz a busca não ir só atrás de MTOW: um avião mais pesado com envergadura maior pode valer menos.
 
