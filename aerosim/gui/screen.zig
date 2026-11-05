@@ -15,6 +15,7 @@ const assembly_mod = @import("assembly.zig");
 const config_tab = @import("tabs/config_tab.zig");
 const aircraft_model = @import("aircraft_model");
 const manager = @import("manager");
+const design = @import("design");
 
 const Page = page_mod.Page;
 const Json = std.json.Value;
@@ -191,6 +192,41 @@ pub const Screen = struct {
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · editado (Salvar grava) · {d} peças", .{ std.fs.path.basename(opened.path), opened.mesh.piece_count }) catch {};
     }
 
+    /// "Restaurar": o avião volta a ser o do arquivo como foi aberto (desfaz todas as edições)
+    fn restoreAircraft(screen: *Screen) void {
+        const opened = &(screen.assembly orelse return);
+        opened.document = std.json.parseFromSliceLeaky(std.json.Value, opened.document_arena.allocator(), opened.original, .{}) catch return;
+        screen.commitDocument(null);
+        _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · restaurado como foi aberto", .{std.fs.path.basename(opened.path)}) catch {};
+    }
+
+    /// "Acertar o CG" (`design.balance.rebalance`): move a bateria ou o lastro para o CG voltar ao de projeto
+    fn fitCg(screen: *Screen) void {
+        const opened = &(screen.assembly orelse return);
+        const memory = opened.document_arena.allocator();
+        const result = design.balance.rebalance(memory, &opened.loaded.ac) catch return;
+        if (result.mover) |mover| {
+            const written = blk: {
+                const node = if (opened.document.object.getPtr("aeronave")) |inner| &inner.object else &opened.document.object;
+                switch (mover) {
+                    .item => |index| {
+                        const mass = node.getPtr("mass") orelse break :blk false;
+                        const items = mass.object.getPtr("items") orelse break :blk false;
+                        if (index >= items.array.items.len) break :blk false;
+                        items.array.items[index].object.put(memory, "x", .{ .float = result.x }) catch break :blk false;
+                    },
+                    .ballast => {
+                        const ballast = node.getPtr("ballast") orelse break :blk false;
+                        ballast.object.put(memory, "x", .{ .float = result.x }) catch break :blk false;
+                    },
+                }
+                break :blk true;
+            };
+            if (written) screen.commitDocument(null);
+        }
+        _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s}{s}", .{ if (result.ok) "CG acertado: " else "CG não acertado: ", result.message }) catch {};
+    }
+
     /// um botão embaixo da lista: acrescenta uma peça, remove a escolhida ou abre outro arquivo para trazer uma peça dele
     fn partButton(screen: *Screen, pressed: usize) void {
         const opened = &(screen.assembly orelse return);
@@ -257,6 +293,10 @@ pub const Screen = struct {
                 screen.startImport(step[7..hash]);
                 const index = std.fmt.parseInt(usize, step[hash + 1 ..], 10) catch continue;
                 screen.importPart(index);
+            } else if (std.mem.eql(u8, step, "Restaurar")) {
+                screen.restoreAircraft();
+            } else if (std.mem.eql(u8, step, "Acertar o CG")) {
+                screen.fitCg();
             } else for (part_buttons, 0..) |caption, i| if (std.mem.eql(u8, caption, step)) screen.partButton(i);
         }
     }
@@ -642,7 +682,8 @@ pub const Screen = struct {
         var title: [:0]const u8 = "Montagem: nenhum avião aberto (arraste um .json para a janela)";
         if (screen.assembly) |*opened| {
             const plane = &opened.mesh;
-            title = widgets.format(&title_buffer, "Montagem: {s}", .{opened.name});
+            // o nome do avião está no resumo; o título curto deixa lugar para os botões
+            title = widgets.format(&title_buffer, "Montagem", .{});
             // na lateral (cortada no plano de simetria), o zoom é no comprimento e na altura, sem a envergadura
             const size = if (screen.assembly_angle == .side) @max(plane.high[0] - plane.low[0], plane.high[2] - plane.low[2]) else plane.size();
             const middle = plane.center();
@@ -689,6 +730,17 @@ pub const Screen = struct {
                 var buffer: [160]u8 = undefined;
                 const text = widgets.format(&buffer, "{s}_CG = {d:.3} m     {s}_CG = {d:.3} m     (a partir da referência, a cruz cinza)", .{ names[shown[0]], cg[shown[0]], names[shown[1]], cg[shown[1]] });
                 theme.text(ui.fonts.bold, text, area.x + 10, area.y + 8, 16, theme.hex(0xd62728));
+            }
+        }
+        // "Restaurar" e "Acertar o CG", antes dos botões das vistas
+        if (screen.assembly != null) {
+            const actions = [_][:0]const u8{ "Restaurar", "Acertar o CG" };
+            for (actions, 0..) |caption, k| {
+                const button_width: f32 = 110;
+                const button: rl.Rectangle = .{ .x = card_rect.x + card_rect.width - 8 - 4 * (86 + 6) - 12 - (2 - @as(f32, @floatFromInt(k))) * (button_width + 6), .y = card_rect.y + 5, .width = button_width, .height = 26 };
+                if (ui_kit.dialogs.button(ui, button, caption)) {
+                    if (k == 0) screen.restoreAircraft() else screen.fitCg();
+                }
             }
         }
         // os botões das vistas, à direita do título (por cima do cartão); arrastar volta ao 3D livre

@@ -86,6 +86,10 @@ pub fn build(b: *std.Build) void {
     const manager_tests = b.addRunArtifact(b.addTest(.{ .root_module = manager, .filters = if (filter) |text| &.{text} else &.{} }));
     manager_tests.setCwd(b.path("."));
     test_step.dependOn(&manager_tests.step);
+    // o design (dimensões, Acertar o CG), da pasta do aerosim (os aviões em ../data)
+    const design_tests = b.addRunArtifact(b.addTest(.{ .root_module = design }));
+    design_tests.setCwd(b.path("."));
+    test_step.dependOn(&design_tests.step);
     const simulation_tests = b.addRunArtifact(b.addTest(.{ .root_module = simulation }));
     test_step.dependOn(&simulation_tests.step);
 

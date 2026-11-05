@@ -703,15 +703,15 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/**
 
 - `aerosim/gui/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
-  tipos `Triangle:14`, `Mesh:22`, `Assembly:122`, `Balance:164`
-  fn `buildMesh:87`, `balance:174`, `loadAircraft:199`, `load:212`, `fillAirfoilFiles:234`, `parseDat:269`, `findExample:301`
+  tipos `Triangle:15`, `Mesh:23`, `Assembly:123`, `Balance:166`
+  fn `buildMesh:88`, `balance:176`, `loadAircraft:188`, `load:201`, `fillAirfoilFiles:224`, `parseDat:259`, `findExample:291`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
   tipos `Kind:35`, `Page:258`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
   tipos `Waiter:29`, `Bridge:45`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt
-  tipos `Screen:60`
+  tipos `Screen:61`
 - `aerosim/gui/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos, exportar e a leitura do avião da Montagem.
 
 **aerosim/gui/tabs/**

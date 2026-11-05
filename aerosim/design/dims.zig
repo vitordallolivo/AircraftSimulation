@@ -4,6 +4,8 @@
 //! direita, z + para baixo, em metros; nenhuma quando não se aplica), o valor "de planilha" com o sinal que ela usa
 //! (x_TDP > 0 = trem atrás do CG, por exemplo) e uma nota. O chão é o das rodas principais com o avião nivelado.
 const std = @import("std");
+/// o CG com a carga e o "Acertar o CG" (`balance.py`)
+pub const balance = @import("balance.zig");
 const aircraft_model = @import("aircraft_model");
 const manager = @import("manager");
 
@@ -192,4 +194,8 @@ pub fn dimensions(memory: std.mem.Allocator, aircraft: *const Aircraft, center: 
 /// a altura ao chão de um ponto em z (nenhuma sem chão)
 fn heightOf(ground: ?f64, z: f64) ?f64 {
     return if (ground) |floor| floor - z else null;
+}
+
+test {
+    _ = balance;
 }

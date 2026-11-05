@@ -58,6 +58,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   cerca). O motor mostra o modelo de tração e, conforme ele, motor, hélice e bateria ou o polinômio de tração. A
   LAPES ganha a soltura: ligar, a perna e a distância nela, que viram o evento de soltura do percurso.
 - Os campos com número pequeno (abaixo de 0,001) aparecem em notação científica, em vez de 0.
+- A Montagem em Zig ganha "Restaurar", que volta o avião ao arquivo como foi aberto, e "Acertar o CG", que move a
+  bateria (ou o lastro ligado) até o CG com a carga voltar ao de projeto, sem sair da fuselagem, como no Python.
 - Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
   referência e a trajetória 3D do voo.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).

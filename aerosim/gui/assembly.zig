@@ -7,6 +7,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const aircraft_model = @import("aircraft_model");
 const view3d = @import("ui").view3d;
+const design = @import("design");
 
 const model = aircraft_model.aircraft;
 const skeleton = aircraft_model.skeleton;
@@ -128,6 +129,7 @@ pub const Assembly = struct {
     document_arena: *std.heap.ArenaAllocator, // a árvore do arquivo, que a edição muda (guarda o que o modelo não lê); fora
     // da struct, porque as listas da árvore guardam o ponteiro do alocador e a `Assembly` muda de lugar
     document: std.json.Value,
+    original: []const u8, // o texto do arquivo como foi aberto ("Restaurar" volta a ele)
 
     /// libera tudo
     pub fn deinit(assembly: *Assembly) void {
@@ -173,21 +175,8 @@ pub const Balance = struct {
 /// pontuais. É a "massa total" e o "CG" da Montagem em Python (`info_html`)
 pub fn balance(ac: *const model.Aircraft) Balance {
     const dry = aircraft_model.params.dryMass(ac);
-    var result: Balance = .{ .empty_mass = dry.m, .empty_cg = dry.cg, .mass = dry.m, .cg = dry.cg };
-    var moment = [3]f64{ dry.m * dry.cg[0], dry.m * dry.cg[1], dry.m * dry.cg[2] };
-    for (ac.tanks) |tank| {
-        const liquid = tank.rho * tank.volume / 1000.0;
-        if (!(liquid > 0)) continue;
-        result.mass += liquid;
-        for (&moment, [3]f64{ tank.x, tank.y, tank.z }) |*sum, where| sum.* += liquid * where;
-    }
-    const payload = ac.payload;
-    if (payload.enabled and payload.mass > 0) {
-        result.mass += payload.mass;
-        for (&moment, [3]f64{ payload.x, payload.y, payload.z }) |*sum, where| sum.* += payload.mass * where;
-    }
-    for (&result.cg, moment) |*center, sum| center.* = sum / result.mass;
-    return result;
+    const loaded = design.balance.fullCg(ac, true);
+    return .{ .empty_mass = dry.m, .empty_cg = dry.cg, .mass = loaded.mass, .cg = loaded.cg };
 }
 
 pub const max_file_bytes = 1 << 24;
@@ -226,7 +215,8 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Di
     document_arena.* = std.heap.ArenaAllocator.init(gpa);
     errdefer document_arena.deinit();
     const document = try std.json.parseFromSliceLeaky(std.json.Value, document_arena.allocator(), bytes, .{});
-    return .{ .loaded = loaded, .mesh = mesh, .name = try allocator.dupeZ(u8, loaded.ac.name), .source = try allocator.dupe(u8, bytes), .path = try allocator.dupe(u8, path), .document_arena = document_arena, .document = document };
+    const original = try document_arena.allocator().dupe(u8, bytes);
+    return .{ .loaded = loaded, .mesh = mesh, .name = try allocator.dupeZ(u8, loaded.ac.name), .source = try allocator.dupe(u8, bytes), .path = try allocator.dupe(u8, path), .document_arena = document_arena, .document = document, .original = original };
 }
 
 /// os perfis das superfícies que o arquivo só aponta (`airfoil.path`, sem `coords`): lê o `.dat`. O caminho é
