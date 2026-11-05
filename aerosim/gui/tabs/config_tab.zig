@@ -312,3 +312,327 @@ fn withoutDigits(text: []const u8, buffer: *[256]u8) []const u8 {
     };
     return buffer[0..length];
 }
+
+// ------------------------------------------------------------------ a lista de componentes e o editor da peça
+
+const form_meta = manager.form_meta;
+
+/// o tipo de peça da lista (`_fill_list`): as peças do avião e, depois, os dados que não são geometria
+pub const Part = enum { surface, prop, tank, fuselage, boom, payload, ballast, gear, modifiers, airfield, mass, environment, performance, takeoff, autopilot, sim, mission };
+
+/// uma linha da lista de componentes: a peça, qual delas (nas listas) e o texto
+pub const Component = struct { part: Part, index: usize = 0, label: []const u8 };
+
+/// os dados que não são geometria, na ordem e com o texto do Python (`NONGEOM`)
+const nongeometric = [_]struct { Part, []const u8 }{
+    .{ .airfield, "Pista: chão, mesa e plataforma" },
+    .{ .mass, "Massa e inércia" },
+    .{ .environment, "Ambiente: altitude-densidade (AD) e vento" },
+    .{ .performance, "Envelope de voo: ângulo de cruzeiro, fator de carga" },
+    .{ .takeoff, "Decolagem (acionamento do profundor)" },
+    .{ .autopilot, "Piloto automático" },
+    .{ .sim, "Integração" },
+    .{ .mission, "Percurso: partida e eventos" },
+};
+
+/// os tubos que a lista mostra: os do formato novo ou o tubo único do formato antigo, se ligado
+fn listedBooms(aircraft: *const Aircraft) []const model.Boom {
+    if (aircraft.booms.len > 0) return aircraft.booms;
+    return if (aircraft.boom.enabled) @as(*const [1]model.Boom, &aircraft.boom) else &.{};
+}
+
+/// a lista de componentes do avião, na ordem do Python (sem os ícones, que a fonte não tem)
+pub fn components(memory: std.mem.Allocator, aircraft: *const Aircraft) ![]Component {
+    var list: std.ArrayList(Component) = .empty;
+    const off = struct {
+        fn text(enabled: bool) []const u8 {
+            return if (enabled) "" else " (desligado)";
+        }
+    }.text;
+    for (aircraft.surfaces, 0..) |surface, i| {
+        var label: std.ArrayList(u8) = .empty;
+        try label.print(memory, "{s} ({s})", .{ surface.name, surface.role });
+        // as asas ligadas (mesmo grupo), como `wing_group`
+        if (std.mem.eql(u8, surface.role, "wing") and surface.group.len > 0) {
+            var first = true;
+            for (aircraft.surfaces, 0..) |other, k| {
+                if (k == i or !other.enabled or !std.mem.eql(u8, other.role, "wing") or !std.mem.eql(u8, other.group, surface.group)) continue;
+                try label.print(memory, "{s}{s}", .{ if (first) " ligada a " else ", ", other.name });
+                first = false;
+            }
+        }
+        try list.append(memory, .{ .part = .surface, .index = i, .label = label.items });
+    }
+    for (aircraft.propulsion, 0..) |unit, i| try list.append(memory, .{ .part = .prop, .index = i, .label = unit.name });
+    for (aircraft.tanks, 0..) |tank, i| try list.append(memory, .{ .part = .tank, .index = i, .label = tank.name });
+    try list.append(memory, .{ .part = .fuselage, .label = try std.fmt.allocPrint(memory, "fuselagem{s}", .{off(aircraft.fuselage.enabled)}) });
+    for (listedBooms(aircraft), 0..) |boom, i| try list.append(memory, .{ .part = .boom, .index = i, .label = try std.fmt.allocPrint(memory, "{s}{s}", .{ boom.name, off(boom.enabled) }) });
+    try list.append(memory, .{ .part = .payload, .label = try std.fmt.allocPrint(memory, "LAPES: carga e soltura{s}", .{off(aircraft.payload.enabled)}) });
+    const ballast = aircraft.ballast;
+    try list.append(memory, .{ .part = .ballast, .label = if (ballast.enabled) try std.fmt.allocPrint(memory, "Lastro ({s} kg)", .{try geometry.general(memory, ballast.mass)}) else "Lastro (desligado)" });
+    try list.append(memory, .{ .part = .gear, .label = try std.fmt.allocPrint(memory, "trem de pouso ({s})", .{aircraft.gear.layout}) });
+    try list.append(memory, .{ .part = .modifiers, .label = try std.fmt.allocPrint(memory, "Modificadores ({d} ligado(s))", .{activeModifiers(aircraft)}) });
+    for (nongeometric) |entry| try list.append(memory, .{ .part = entry[0], .label = entry[1] });
+    return list.items;
+}
+
+/// os modificadores ligados; o arquivo sem a chave tem o padrão da GUI (só o efeito solo de McCormick, ligado)
+fn activeModifiers(aircraft: *const Aircraft) usize {
+    const list = aircraft.modifiers orelse return 1;
+    var count: usize = 0;
+    for (list) |modifier| count += @intFromBool(modifier.enabled);
+    return count;
+}
+
+/// como um campo aparece no editor (o `ParamSpec` de `forms.py`)
+pub const FieldKind = enum { number, optional_number, integer, toggle, choice, text };
+
+/// um campo do editor: o nome no arquivo, o texto da tela e o valor atual
+pub const Spec = struct {
+    name: []const u8,
+    label: []const u8,
+    unit: []const u8 = "",
+    help: []const u8 = "",
+    kind: FieldKind,
+    number: f64 = 0,
+    automatic: bool = false, // número opcional: "auto" (null no arquivo)
+    checked: bool = false,
+    text: []const u8 = "",
+    choices: []const []const u8 = &.{},
+    target: ?usize = null, // um campo de um item da lista da peça (os modificadores: qual deles)
+};
+
+/// os campos que o Python deixa de fora de cada peça (`_edit`): têm editores próprios
+fn excluded(part: Part) []const []const u8 {
+    return switch (part) {
+        .surface => &.{ "sections", "controls", "airfoil", "devices", "group" },
+        .prop => &.{ "motor", "propeller", "battery" },
+        .takeoff => &.{ "VR", "de0", "rate_de", "rate_thr" },
+        .gear => &.{"custom"},
+        .mass => &.{"items"},
+        .mission => &.{ "legs", "events" },
+        .environment => &.{"rho"},
+        else => &.{},
+    };
+}
+
+fn contains(list: []const []const u8, name: []const u8) bool {
+    for (list) |item| if (std.mem.eql(u8, item, name)) return true;
+    return false;
+}
+
+/// os campos de um valor de struct, pela ordem dos campos (a mesma da dataclass): número, número opcional, inteiro,
+/// marcador e texto (escolha quando `form_meta` tem as opções); listas e structs dentro ficam de fora (editores
+/// próprios), como em `forms.specs`
+fn fieldsOf(memory: std.mem.Allocator, list: *std.ArrayList(Spec), value: anytype, exclude: []const []const u8) !void {
+    inline for (std.meta.fields(@TypeOf(value))) |field| {
+        if (!contains(exclude, field.name)) {
+            const current = @field(value, field.name);
+            const base: Spec = .{ .name = field.name, .label = form_meta.label(field.name), .unit = form_meta.unit(field.name), .help = form_meta.help(field.name), .kind = .number };
+            var spec = base;
+            const known = switch (field.type) {
+                f64 => blk: {
+                    spec.number = current;
+                    break :blk true;
+                },
+                ?f64 => blk: {
+                    spec.kind = .optional_number;
+                    spec.automatic = current == null;
+                    spec.number = current orelse 0;
+                    break :blk true;
+                },
+                i64 => blk: {
+                    spec.kind = .integer;
+                    spec.number = @floatFromInt(current);
+                    break :blk true;
+                },
+                bool => blk: {
+                    spec.kind = .toggle;
+                    spec.checked = current;
+                    break :blk true;
+                },
+                []const u8 => blk: {
+                    spec.text = current;
+                    spec.kind = .text;
+                    if (form_meta.choices(field.name)) |options| {
+                        spec.kind = .choice;
+                        spec.choices = options;
+                        if (!contains(options, current) and current.len > 0) { // o valor que saiu da lista fica como opção
+                            const widened = try memory.alloc([]const u8, options.len + 1);
+                            @memcpy(widened[0..options.len], options);
+                            widened[options.len] = current;
+                            spec.choices = widened;
+                        }
+                    }
+                    break :blk true;
+                },
+                else => false,
+            };
+            if (known) try list.append(memory, spec);
+        }
+    }
+}
+
+/// os campos da peça escolhida, com os valores do avião
+pub fn specs(memory: std.mem.Allocator, aircraft: *const Aircraft, component: Component) ![]Spec {
+    var list: std.ArrayList(Spec) = .empty;
+    const exclude = excluded(component.part);
+    switch (component.part) {
+        .surface => try fieldsOf(memory, &list, aircraft.surfaces[component.index], exclude),
+        .prop => try fieldsOf(memory, &list, aircraft.propulsion[component.index], exclude),
+        .tank => try fieldsOf(memory, &list, aircraft.tanks[component.index], exclude),
+        .boom => try fieldsOf(memory, &list, listedBooms(aircraft)[component.index], exclude),
+        .modifiers => {
+            const defaults = [_]model.Modifier{.{}};
+            const list_of = aircraft.modifiers orelse &defaults;
+            for (list_of, 0..) |modifier, i| {
+                const name = if (modifier.name.len > 0) modifier.name else modifier.kind;
+                try list.append(memory, .{ .name = "enabled", .label = name, .kind = .toggle, .checked = modifier.enabled, .target = i, .help = modifier.kind });
+            }
+        },
+        inline else => |part| try fieldsOf(memory, &list, @field(aircraft, @tagName(part)), exclude),
+    }
+    // a altitude-densidade é o número que se edita (o ρ sai dela ao gravar); o arquivo antigo, sem ela, a tira do ρ
+    if (component.part == .environment) for (list.items) |*spec| if (std.mem.eql(u8, spec.name, "density_altitude")) {
+        spec.kind = .number;
+        spec.automatic = false;
+        spec.number = aircraft.environment.densityAltitude();
+    };
+    return list.items;
+}
+
+/// o nó do avião no arquivo (a chave "aeronave" dos arquivos da sprint, ou a raiz)
+fn aircraftNode(document: *std.json.Value) !*std.json.ObjectMap {
+    if (document.* != .object) return error.NoAircraft;
+    if (document.object.getPtr("aeronave")) |node| if (node.* == .object) return &node.object;
+    return &document.object;
+}
+
+/// o objeto da peça no arquivo (criado vazio se o arquivo não tem a chave)
+fn partNode(memory: std.mem.Allocator, document: *std.json.Value, component: Component) !*std.json.ObjectMap {
+    const node = try aircraftNode(document);
+    const list_key: ?[]const u8 = switch (component.part) {
+        .surface => "surfaces",
+        .prop => "propulsion",
+        .tank => "tanks",
+        .boom => if (node.get("booms")) |found| (if (found == .array and found.array.items.len > 0) "booms" else null) else null,
+        else => null,
+    };
+    if (list_key) |key| {
+        const items = node.getPtr(key) orelse return error.MissingPart;
+        if (items.* != .array or component.index >= items.array.items.len) return error.MissingPart;
+        const item = &items.array.items[component.index];
+        if (item.* != .object) return error.MissingPart;
+        return &item.object;
+    }
+    const key = if (component.part == .boom) "boom" else @tagName(component.part);
+    const entry = try node.getOrPut(memory, key);
+    if (!entry.found_existing or entry.value_ptr.* != .object) entry.value_ptr.* = .{ .object = .empty };
+    return &entry.value_ptr.object;
+}
+
+/// grava os valores dos campos no arquivo (a árvore JSON, que guarda também o que o modelo do Zig não lê); a
+/// altitude-densidade grava junto o ρ da atmosfera padrão, como `set_density_altitude`
+pub fn apply(memory: std.mem.Allocator, document: *std.json.Value, component: Component, fields: []const Spec) !void {
+    if (component.part == .modifiers) return applyModifiers(memory, document, fields);
+    const node = try partNode(memory, document, component);
+    for (fields) |spec| {
+        const value: std.json.Value = switch (spec.kind) {
+            .number => .{ .float = spec.number },
+            .optional_number => if (spec.automatic) .null else .{ .float = spec.number },
+            .integer => .{ .integer = @intFromFloat(@round(spec.number)) },
+            .toggle => .{ .bool = spec.checked },
+            .choice, .text => .{ .string = try memory.dupe(u8, spec.text) },
+        };
+        try node.put(memory, spec.name, value);
+        if (component.part == .environment and std.mem.eql(u8, spec.name, "density_altitude"))
+            try node.put(memory, "rho", .{ .float = model.Environment.densityAt(spec.number) });
+    }
+}
+
+/// liga e desliga os modificadores; o arquivo sem a lista ganha a do padrão (o efeito solo de McCormick)
+fn applyModifiers(memory: std.mem.Allocator, document: *std.json.Value, fields: []const Spec) !void {
+    const node = try aircraftNode(document);
+    const entry = try node.getOrPut(memory, "modifiers");
+    if (!entry.found_existing or entry.value_ptr.* != .array) {
+        var item: std.json.ObjectMap = .empty;
+        try item.put(memory, "kind", .{ .string = (model.Modifier{}).kind });
+        try item.put(memory, "enabled", .{ .bool = true });
+        var items = std.json.Array.init(memory);
+        try items.append(.{ .object = item });
+        entry.value_ptr.* = .{ .array = items };
+    }
+    const items = entry.value_ptr.array.items;
+    for (fields) |spec| {
+        const index = spec.target orelse continue;
+        if (index >= items.len or items[index] != .object) continue;
+        try items[index].object.put(memory, "enabled", .{ .bool = spec.checked });
+    }
+}
+
+/// o texto do arquivo a gravar (indentado como o Python grava)
+pub fn serialize(memory: std.mem.Allocator, document: std.json.Value) ![]u8 {
+    return std.json.Stringify.valueAlloc(memory, document, .{ .whitespace = .indent_2 });
+}
+
+test "a lista de componentes e o editor da asa, como no Python" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
+    defer loaded.deinit();
+    const list = try components(memory, &loaded.ac);
+    // a lista do Python (sem os ícones): asa, EH, EV, motor, tanque, fuselagem, LAPES, lastro, trem, modificadores e
+    // os oito dados que não são geometria
+    const expected = [_][]const u8{ "asa (wing)", "EH (htail)", "EV (vtail)", "motor 1", "tanque 1", "fuselagem", "LAPES: carga e soltura", "Lastro (desligado)", "trem de pouso (tricycle)", "Modificadores (1 ligado(s))" };
+    for (expected, 0..) |text, i| try std.testing.expectEqualStrings(text, list[i].label);
+    try std.testing.expectEqual(expected.len + nongeometric.len, list.len);
+    // a asa: os campos do formulário do Python, na ordem (sem "presa em", que o modelo do Zig não lê)
+    const wing = try specs(memory, &loaded.ac, list[0]);
+    const names = [_][]const u8{ "name", "role", "x", "y", "z", "dihedral", "incidence", "symmetric", "vertical", "oswald", "eta", "downwash", "enabled", "CLa", "CL0", "CLmax", "CD0", "Cmac", "eps0", "depsda", "mass" };
+    try std.testing.expectEqual(names.len, wing.len);
+    for (names, wing) |name, spec| try std.testing.expectEqualStrings(name, spec.name);
+    try std.testing.expectEqualStrings("diedro", wing[5].label);
+    try std.testing.expectEqual(@as(f64, 3), wing[5].number);
+    try std.testing.expect(wing[13].automatic and !wing[14].automatic); // CLa auto, CL0 = 0,3
+    try std.testing.expectEqual(@as(f64, 0.3), wing[14].number);
+
+    // editar o diedro e pôr o CL0 em auto: o arquivo muda só nisso e lê de novo
+    var document = try std.json.parseFromSliceLeaky(std.json.Value, memory, bytes, .{});
+    const edited = try memory.dupe(Spec, wing);
+    edited[5].number = 5;
+    edited[14].automatic = true;
+    try apply(memory, &document, list[0], edited);
+    const text = try serialize(memory, document);
+    var again = try model.parse(std.testing.allocator, text, &diagnosis);
+    defer again.deinit();
+    try std.testing.expectEqual(@as(f64, 5), again.ac.surfaces[0].dihedral);
+    try std.testing.expect(again.ac.surfaces[0].CL0 == null);
+    try std.testing.expectEqual(loaded.ac.surfaces[0].x, again.ac.surfaces[0].x);
+    try std.testing.expectEqual(loaded.ac.surfaces[1].incidence, again.ac.surfaces[1].incidence);
+
+    // a altitude-densidade grava o ρ junto
+    const environment_at = for (list, 0..) |component, i| {
+        if (component.part == .environment) break i;
+    } else unreachable;
+    const environment = try memory.dupe(Spec, try specs(memory, &again.ac, list[environment_at]));
+    for (environment) |*spec| if (std.mem.eql(u8, spec.name, "density_altitude")) {
+        spec.number = 1000;
+    };
+    try apply(memory, &document, list[environment_at], environment);
+    var third = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
+    defer third.deinit();
+    try std.testing.expectApproxEqAbs(@as(f64, 1.1117), third.ac.environment.rho, 1e-4); // ISA a 1000 m
+
+    // toda peça da lista abre e grava sem mudar o avião (o arquivo relido dá a mesma massa e o mesmo CG)
+    for (list) |component| try apply(memory, &document, component, try specs(memory, &third.ac, component));
+    var fourth = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
+    defer fourth.deinit();
+    const before = params.dryMass(&third.ac);
+    const after = params.dryMass(&fourth.ac);
+    try std.testing.expectEqual(before.m, after.m);
+    try std.testing.expectEqual(before.cg, after.cg);
+    try std.testing.expectEqual(third.ac.environment.rho, fourth.ac.environment.rho);
+}

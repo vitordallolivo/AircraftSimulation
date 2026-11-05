@@ -5,6 +5,8 @@ const std = @import("std");
 const simulation = @import("simulation");
 /// a Estabilidade: a Montagem usa dela o que a aeronave tem (`Configuration`) e a geometria das caudas
 pub const stability = @import("simulations/stability.zig");
+/// rótulo, unidade, dica e opções dos campos do avião (o par de `form_meta.py`), para os formulários da tela
+pub const form_meta = @import("form_meta.zig");
 const thrust = @import("simulations/thrust.zig");
 const envelope = @import("simulations/envelope.zig");
 const performance = @import("simulations/performance.zig");
@@ -44,6 +46,7 @@ comptime {
         _ = envelope;
         _ = performance;
         _ = mission;
+        _ = form_meta;
         _ = @import("takeoff_opt.zig");
         _ = @import("analysis.zig");
         _ = @import("flightplots.zig");

@@ -35,6 +35,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - A Montagem na interface em Zig ganha, ao lado do 3D, o resumo do avião que a Montagem em Python mostra: massa e
   CG (com o líquido, a carga e depois da soltura), dimensões a partir do CG, aerodinâmica, cargas, propulsão, trem,
   pista, LAPES, percurso e os avisos.
+- Antes, a Montagem na interface em Zig só mostrava o avião. Agora ela tem a lista de componentes do Python (asas,
+  motores, tanques, fuselagem, tubos, LAPES, lastro, trem, modificadores e os dados de pista, massa, ambiente,
+  envelope, decolagem, piloto automático, integração e percurso). Clicar numa peça abre o formulário dela, com os
+  rótulos e as unidades do Python. Cada edição refaz o 3D e o resumo, e "Salvar" grava o avião editado sem perder
+  o que o arquivo tinha. No ambiente se edita a altitude-densidade, e a densidade do ar sai dela.
 - Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
   referência e a trajetória 3D do voo.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).

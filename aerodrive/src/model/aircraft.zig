@@ -292,6 +292,13 @@ pub const Environment = struct {
         if (!(rho > 0) or !std.math.isFinite(rho)) return 0;
         return (1 - std.math.pow(f64, rho / 1.225, 1.0 / 4.25588)) / 2.25577e-5;
     }
+
+    /// a densidade (kg/m³) da atmosfera padrão na altitude-densidade `height` (m): a conta inversa de
+    /// `densityAltitude`, ρ = ρ0 (1 − 2,25577·10⁻⁵ h)^4,25588 (troposfera ISA, `aerosim/model/atmosphere.py`)
+    pub fn densityAt(height: f64) f64 {
+        const clamped = std.math.clamp(height, -2000.0, 11000.0); // a troposfera, como `isa_density`
+        return 1.225 * std.math.pow(f64, 1 - 2.25577e-5 * clamped, 4.25588);
+    }
 };
 pub const Takeoff = struct { VR: f64 = 12.5, sR: f64 = 37.5, de0: f64 = 0, de1: f64 = -6, rate_de: f64 = 60, ht: f64 = 2, rate_thr: f64 = 2, h_end: f64 = 6 };
 pub const SimSettings = struct { dt: f64 = 1e-3, tmax: f64 = 400, dtlog: f64 = 0.02, Mst: f64 = 50, slosh: bool = true };

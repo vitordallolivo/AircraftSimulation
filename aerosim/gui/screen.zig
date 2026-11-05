@@ -78,6 +78,7 @@ pub const Screen = struct {
     assembly_note: [240:0]u8 = [_:0]u8{0} ** 240,
     assembly_panel: ?AssemblyPanel = null, // o resumo ao lado do 3D (`config_tab.panel`), refeito ao abrir
     assembly_scroll: ui_kit.scroll.ScrollArea = .{},
+    assembly_editor: ?AssemblyEditor = null, // a lista de componentes e o editor da peça escolhida
     loader: ui_kit.jobs.Job = .{}, // lê o .json fora do laço da tela
     loading: Loading = .{},
     message: [240:0]u8 = [_:0]u8{0} ** 240,
@@ -121,6 +122,31 @@ pub const Screen = struct {
         } else if (std.mem.eql(u8, name, "condicoes")) {
             screen.requirements_open = true;
         }
+    }
+
+    /// a edição do formulário vai para o arquivo aberto: grava na árvore, lê o avião de novo e refaz o 3D, o resumo e
+    /// o formulário (o que "Salvar" grava passa a ser o texto editado)
+    fn applyEdit(screen: *Screen) void {
+        const opened = &(screen.assembly orelse return);
+        const editor = &(screen.assembly_editor orelse return);
+        editor.readBack();
+        const component = editor.list[editor.selected];
+        var diagnosis: assembly_mod.Diagnosis = .{};
+        const failed = blk: {
+            config_tab.apply(opened.document_arena.allocator(), &opened.document, component, editor.specs) catch |err| break :blk @errorName(err);
+            const text = config_tab.serialize(std.heap.page_allocator, opened.document) catch |err| break :blk @errorName(err);
+            defer std.heap.page_allocator.free(text);
+            opened.reload(std.heap.page_allocator, io(), text, &diagnosis) catch |err| break :blk if (diagnosis.len > 0) diagnosis.text() else @errorName(err);
+            break :blk null;
+        };
+        if (failed) |reason| {
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "a edição não vale: {s}", .{reason}) catch {};
+            return;
+        }
+        if (screen.assembly_panel) |*old| old.deinit();
+        screen.assembly_panel = AssemblyPanel.build(&opened.loaded.ac) catch null;
+        editor.rebuild(&opened.loaded.ac) catch {};
+        _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · editado (Salvar grava) · {d} peças", .{ std.fs.path.basename(opened.path), opened.mesh.piece_count }) catch {};
     }
 
     /// grava o avião aberto em `path`; enquanto não há edição, é o texto do arquivo como foi lido
@@ -199,6 +225,9 @@ pub const Screen = struct {
         screen.assembly = loaded;
         if (screen.assembly_panel) |*old| old.deinit();
         screen.assembly_panel = AssemblyPanel.build(&screen.assembly.?.loaded.ac) catch null;
+        if (screen.assembly_editor == null) screen.assembly_editor = .{};
+        screen.assembly_editor.?.selected = 0;
+        screen.assembly_editor.?.rebuild(&screen.assembly.?.loaded.ac) catch {};
         for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| page.setAircraftPath(loaded.path);
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · {d} peças · arraste outro .json para a janela para trocar · arraste para girar, roda para aproximar", .{ std.fs.path.basename(path), loaded.mesh.piece_count }) catch {};
     }
@@ -420,9 +449,26 @@ pub const Screen = struct {
     /// a Montagem: à esquerda o resumo do avião (massa e CG, dimensões, aerodinâmica...), à direita o avião aberto em
     /// 3D, todas as peças nas cores da GUI, com o chão e os eixos do corpo
     fn drawAssembly(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
-        const side_width: f32 = if (screen.assembly_panel != null) @min(600, rect.width * 0.4) else 0;
-        if (screen.assembly_panel) |*shown| shown.draw(ui, &screen.assembly_scroll, .{ .x = rect.x + 12, .y = rect.y + 12, .width = side_width - 6, .height = rect.height - 24 });
-        const card_rect: rl.Rectangle = .{ .x = rect.x + 12 + side_width, .y = rect.y + 12, .width = rect.width - 24 - side_width, .height = rect.height - 24 };
+        // à esquerda a lista de componentes e o resumo embaixo; à direita o editor da peça; no meio o 3D
+        const side_width: f32 = if (screen.assembly_panel != null) @min(460, rect.width * 0.3) else 0;
+        const editor_width: f32 = if (screen.assembly_editor != null and screen.assembly != null) @min(400, rect.width * 0.26) else 0;
+        var list_height: f32 = 0;
+        if (screen.assembly_editor) |*editor| if (screen.assembly) |*opened| if (editor.want_rebuild) {
+            editor.want_rebuild = false;
+            editor.rebuild(&opened.loaded.ac) catch {};
+        };
+        if (screen.assembly_editor) |*editor| if (screen.assembly != null) {
+            list_height = @min(300, rect.height * 0.35);
+            editor.drawList(ui, .{ .x = rect.x + 12, .y = rect.y + 12, .width = side_width - 6, .height = list_height });
+            list_height += 10;
+        };
+        if (screen.assembly_panel) |*shown| shown.draw(ui, &screen.assembly_scroll, .{ .x = rect.x + 12, .y = rect.y + 12 + list_height, .width = side_width - 6, .height = rect.height - 24 - list_height });
+        if (editor_width > 0) {
+            const editor = &screen.assembly_editor.?;
+            const editor_rect: rl.Rectangle = .{ .x = rect.x + rect.width - 12 - editor_width + 6, .y = rect.y + 12, .width = editor_width - 6, .height = rect.height - 24 };
+            if (editor.drawForm(ui, editor_rect)) screen.applyEdit();
+        }
+        const card_rect: rl.Rectangle = .{ .x = rect.x + 12 + side_width, .y = rect.y + 12, .width = rect.width - 24 - side_width - editor_width, .height = rect.height - 24 };
         const area = cardInside(card_rect);
         screen.assembly_view.handleInput(ui, area);
         var title_buffer: [160]u8 = undefined;
@@ -446,6 +492,125 @@ pub const Screen = struct {
         _ = widgets.card(ui, card_rect, title);
         if (screen.assembly != null) screen.assembly_view.blit(ui, area);
         theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.assembly_note, 0), area.x + 6, area.y + area.height - 18, 12, theme.colors.muted);
+    }
+};
+
+/// a lista de componentes da Montagem e o formulário da peça escolhida (`_fill_list` e `_edit` do Python): os campos
+/// saem de `config_tab.specs`, a edição vai para a árvore do arquivo (`config_tab.apply`) e o avião é lido de novo
+const AssemblyEditor = struct {
+    arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+    list: []const config_tab.Component = &.{},
+    labels: []const [:0]const u8 = &.{},
+    selected: usize = 0,
+    specs: []config_tab.Spec = &.{},
+    first_field: []usize = &.{}, // o primeiro campo do formulário de cada `specs[i]` (o número opcional tem dois)
+    form: ui_kit.form.Form = .{ .groups = &.{}, .fields = &.{} },
+    list_scroll: ui_kit.scroll.ScrollArea = .{},
+    title: [:0]const u8 = "",
+    want_rebuild: bool = false, // escolheu outra peça: refazer o formulário no quadro
+
+    /// refaz a lista e os campos da peça escolhida com os valores de `aircraft`
+    fn rebuild(editor: *AssemblyEditor, aircraft: *const aircraft_model.aircraft.Aircraft) !void {
+        _ = editor.arena.reset(.retain_capacity);
+        const memory = editor.arena.allocator();
+        editor.list = try config_tab.components(memory, aircraft);
+        const labels = try memory.alloc([:0]const u8, editor.list.len);
+        for (editor.list, labels) |component, *label| label.* = try memory.dupeZ(u8, component.label);
+        editor.labels = labels;
+        if (editor.selected >= editor.list.len) editor.selected = 0;
+        const component = editor.list[editor.selected];
+        editor.title = labels[editor.selected];
+        editor.specs = try memory.dupe(config_tab.Spec, try config_tab.specs(memory, aircraft, component));
+        var fields: std.ArrayList(ui_kit.form.Field) = .empty;
+        editor.first_field = try memory.alloc(usize, editor.specs.len);
+        for (editor.specs, editor.first_field) |spec, *first| {
+            first.* = fields.items.len;
+            const label = try memory.dupeZ(u8, spec.label);
+            const unit = try memory.dupeZ(u8, spec.unit);
+            const help = try memory.dupeZ(u8, spec.help);
+            var field: ui_kit.form.Field = .{ .label = label, .unit = unit, .help = help, .group = 0 };
+            switch (spec.kind) {
+                .number, .integer => field.number = spec.number,
+                .optional_number => {
+                    try fields.append(memory, .{ .label = try std.fmt.allocPrintSentinel(memory, "{s}: auto", .{spec.label}, 0), .help = help, .group = 0, .kind = .toggle, .checked = spec.automatic });
+                    field.number = spec.number;
+                    field.enabled = !spec.automatic;
+                },
+                .toggle => {
+                    field.kind = .toggle;
+                    field.checked = spec.checked;
+                },
+                .choice => {
+                    field.kind = .choice;
+                    field.choices = try std.mem.joinZ(memory, ";", spec.choices);
+                    for (spec.choices, 0..) |option, k| if (std.mem.eql(u8, option, spec.text)) {
+                        field.choice = @intCast(k);
+                    };
+                },
+                .text => {
+                    field.kind = .text;
+                    field.setText(spec.text);
+                },
+            }
+            try fields.append(memory, field);
+        }
+        const groups = try memory.alloc(ui_kit.form.Group, 1);
+        groups[0] = .{ .title = editor.title };
+        editor.form.groups = groups;
+        editor.form.fields = fields.items;
+        editor.form.editing = null;
+        editor.form.open_choice = null;
+    }
+
+    /// os valores do formulário de volta nos campos
+    fn readBack(editor: *AssemblyEditor) void {
+        const fields = editor.form.fields;
+        for (editor.specs, editor.first_field) |*spec, first| {
+            switch (spec.kind) {
+                .number, .integer => spec.number = fields[first].number,
+                .optional_number => {
+                    spec.automatic = fields[first].checked;
+                    spec.number = fields[first + 1].number;
+                },
+                .toggle => spec.checked = fields[first].checked,
+                .choice => spec.text = if (fields[first].choice >= 0 and fields[first].choice < spec.choices.len) spec.choices[@intCast(fields[first].choice)] else spec.text,
+                .text => spec.text = fields[first].textValue(),
+            }
+        }
+    }
+
+    /// a lista de componentes, um por linha; o clique escolhe a peça
+    fn drawList(editor: *AssemblyEditor, ui: *widgets.Ui, rect: rl.Rectangle) void {
+        const row_height: f32 = 22;
+        theme.text(ui.fonts.bold, "Componentes", rect.x + 4, rect.y, 16, theme.colors.ink);
+        const box: rl.Rectangle = .{ .x = rect.x, .y = rect.y + 24, .width = rect.width, .height = rect.height - 24 };
+        rl.drawRectangleRec(box, theme.colors.field);
+        rl.drawRectangleLinesEx(box, 1, theme.colors.line);
+        var y = editor.list_scroll.begin(ui, box);
+        var picked: ?usize = null;
+        for (editor.labels, 0..) |label, i| {
+            const row: rl.Rectangle = .{ .x = box.x + 1, .y = y, .width = box.width - 14, .height = row_height };
+            if (i == editor.selected) rl.drawRectangleRec(row, theme.colors.accent_hover) else if (ui.hovering(row)) rl.drawRectangleRec(row, theme.colors.hover);
+            theme.text(ui.fonts.regular, label, row.x + 6, row.y + 3, 14, if (i == editor.selected) theme.colors.on_accent else theme.colors.ink);
+            if (ui.clickedIn(row)) picked = i;
+            y += row_height;
+        }
+        editor.list_scroll.end(ui, box, y + 4);
+        if (picked) |index| if (index != editor.selected) {
+            editor.selected = index;
+            editor.form.area = .{};
+            editor.want_rebuild = true;
+        };
+    }
+
+    /// o formulário da peça; verdadeiro se um valor mudou
+    fn drawForm(editor: *AssemblyEditor, ui: *widgets.Ui, rect: rl.Rectangle) bool {
+        const changed = editor.form.draw(ui, rect);
+        // o número opcional: a caixa só edita fora do "auto"
+        for (editor.specs, editor.first_field) |spec, first| if (spec.kind == .optional_number) {
+            editor.form.fields[first + 1].enabled = !editor.form.fields[first].checked;
+        };
+        return changed;
     }
 };
 

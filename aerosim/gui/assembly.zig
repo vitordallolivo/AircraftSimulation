@@ -91,13 +91,37 @@ pub const Assembly = struct {
     loaded: model.Loaded,
     mesh: Mesh,
     name: [:0]const u8,
-    source: []const u8, // o texto do arquivo, como foi lido (o que "Salvar" grava enquanto não há edição)
+    source: []const u8, // o texto do arquivo: como foi lido ou, depois de uma edição, o que "Salvar" grava
     path: []const u8,
+    document_arena: std.heap.ArenaAllocator, // a árvore do arquivo, que a edição muda (guarda o que o modelo não lê)
+    document: std.json.Value,
 
     /// libera tudo
     pub fn deinit(assembly: *Assembly) void {
         assembly.mesh.deinit();
         assembly.loaded.deinit();
+        assembly.document_arena.deinit();
+    }
+
+    /// lê de novo o avião do texto `bytes` (a árvore editada) e refaz as peças; se o texto não vale, fica o avião
+    /// anterior e o motivo vai em `diagnosis`
+    pub fn reload(assembly: *Assembly, gpa: std.mem.Allocator, io: std.Io, bytes: []const u8, diagnosis: *Diagnosis) !void {
+        var loaded = try model.parse(gpa, bytes, diagnosis);
+        errdefer loaded.deinit();
+        const allocator = loaded.arena.allocator();
+        try fillAirfoilFiles(allocator, io, assembly.path, bytes, &loaded.ac);
+        var mesh = try buildMesh(gpa, &loaded.ac, diagnosis);
+        errdefer mesh.deinit();
+        const name = try allocator.dupeZ(u8, loaded.ac.name);
+        const source = try allocator.dupe(u8, bytes);
+        const path = try allocator.dupe(u8, assembly.path);
+        assembly.mesh.deinit();
+        assembly.loaded.deinit();
+        assembly.loaded = loaded;
+        assembly.mesh = mesh;
+        assembly.name = name;
+        assembly.source = source;
+        assembly.path = path;
     }
 };
 
@@ -162,7 +186,10 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Di
     try fillAirfoilFiles(allocator, io, path, bytes, &loaded.ac);
     var mesh = try buildMesh(gpa, &loaded.ac, diagnosis);
     errdefer mesh.deinit();
-    return .{ .loaded = loaded, .mesh = mesh, .name = try allocator.dupeZ(u8, loaded.ac.name), .source = try allocator.dupe(u8, bytes), .path = try allocator.dupe(u8, path) };
+    var document_arena = std.heap.ArenaAllocator.init(gpa);
+    errdefer document_arena.deinit();
+    const document = try std.json.parseFromSliceLeaky(std.json.Value, document_arena.allocator(), bytes, .{});
+    return .{ .loaded = loaded, .mesh = mesh, .name = try allocator.dupeZ(u8, loaded.ac.name), .source = try allocator.dupe(u8, bytes), .path = try allocator.dupe(u8, path), .document_arena = document_arena, .document = document };
 }
 
 /// os perfis das superfícies que o arquivo só aponta (`airfoil.path`, sem `coords`): lê o `.dat`. O caminho é
