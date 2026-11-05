@@ -291,14 +291,20 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
-  tipos `math:10`, `physics:18`, `modifiers:31`, `collision:41`, `control:46`, `sim:53`, `loads:65`, `sizing:71`, `optim:84`, `geometry:98`, `util:103`
+  tipos `math:14`, `physics:22`, `modifiers:35`, `collision:45`, `control:50`, `sim:57`, `loads:69`, `sizing:75`, `optim:88`, `geometry:102`, `util:107`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
+- `core/src/interface.zig` — A interface conferida em comptime: o molde dos registros do projeto.
+  tipos `Declaration:11`
+  fn `require:18`, `has:33`
 - `core/src/lib.zig` — O núcleo como módulo Zig (para programas em Zig, como o aerodrive): os mesmos tipos e funções
 - `core/src/limits.zig` — Limites de compilação. Toda a memória do núcleo é estática e dimensionada aqui:
   tipos `Group:18`
   fn `groupIndex:30`
+- `core/src/methods.zig` — Os métodos de cálculo do voo, juntos: quem dá as forças, qual linha sustentadora e quanto refino.
+  tipos `Methods:12`
+  fn `label:34`, `choices:53`, `byName:64`
 - `core/src/opt.zig` — Otimizações em avaliação (`-Dopt`): cada uma é um bit, desligado por padrão (ver core/OTIMIZACOES.md).
   tipos `Opt:5`
 - `core/src/root.zig` — Interface C ABI do núcleo (o que o Python chama via ctypes).
@@ -462,8 +468,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `GroundRun:23`
   fn `interp:50`, `rotSpeed:77`, `run:87`, `mtow:112`
 - `core/src/sizing/kinds.zig` — Tipos de aeronave do dimensionamento: cada um é um tipo Zig com a mesma interface, conferida em
-  tipos `Hover:19`, `Conventional:48`, `FlyingWing:75`, `Tailsitter:101`, `Vtol:127`
-  fn `pairSigma:24`, `wingsInducedFactor:36`, `check:157`
+  tipos `Hover:20`, `Conventional:49`, `FlyingWing:76`, `Tailsitter:102`, `Vtol:128`
+  fn `pairSigma:25`, `wingsInducedFactor:37`, `check:158`
 - `core/src/sizing/motorprop.zig` — Tração em regime de um conjunto motor + hélice + bateria com acelerador cheio, para a curva T(V) da sprint
   tipos `MotorProp:22`
   fn `thrust:46`, `curve:79`
@@ -622,15 +628,13 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerodrive/src/sim/drive_manager.zig` — drive_manager: dono da simulação durante o voo. A cada quadro avança o núcleo até o tempo do
   tipos `Commands:25`, `Phase:27`, `Frame:30`, `DriveManager:51`
 - `aerodrive/src/sim/methods.zig` — Os métodos fixos do AeroDrive, num lugar só.
-  tipos `Methods:11`
-  fn `apply:22`
 - `aerodrive/src/sim/mission.zig` — Percurso -> segmentos, eventos e mesas/plataformas do núcleo (`aerosim/model/mission.py` e
   fn `autoRadius:13`, `segments:20`, `events:76`, `pads:92`
 - `aerodrive/src/sim/modifiers.zig` — Os modificadores do arquivo do avião -> os campos do núcleo (`Params.ground`, `Params.mods`), em Zig.
   fn `fill:38`
 - `aerodrive/src/sim/params.zig` — Avião (arquivo da GUI) -> parâmetros do núcleo (`types.Params`), em Zig.
   tipos `Info:30`, `DryMass:343`
-  fn `area:45`, `span:55`, `mac:59`, `macLeadingEdge:74`, `references:95`, `dryMass:370`, `fill:440`, `setup:590`, `staticCharacteristics:620`
+  fn `area:45`, `span:55`, `mac:59`, `macLeadingEdge:74`, `references:95`, `dryMass:370`, `fill:440`, `setup:591`, `setupWith:597`, `staticCharacteristics:628`
 - `aerodrive/src/sim/session.zig` — Sessão de voo: o que o jogador escolhe nos menus antes de voar (cenário, modo, vento, sloshing,
   tipos `Scenario:7`, `Landing:19`, `Mode:31`, `Session:43`
   fn `gearExtent:98`

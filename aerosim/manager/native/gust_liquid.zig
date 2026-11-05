@@ -20,18 +20,20 @@ const native = @import("native.zig");
 const params_mod = aircraft_model.params;
 const deg = 180.0 / std.math.pi;
 
-pub const simulation = native.Simulation{
-    .name = "estabilidade_dinamica",
-    .title = "Estabilidade dinâmica",
-    .area = "Estabilidade",
-    .description = "O avião em voo nivelado recebe uma rajada 1 − cos (vertical, lateral ou as duas) e a resposta sai no " ++
+/// a análise, com a interface de `native.check`
+pub const Analysis = struct {
+    pub const name: []const u8 = "estabilidade_dinamica";
+    pub const title: [:0]const u8 = "Estabilidade dinâmica";
+    pub const area: []const u8 = "Estabilidade";
+    pub const description: []const u8 = "O avião em voo nivelado recebe uma rajada 1 − cos (vertical, lateral ou as duas) e a resposta sai no " ++
         "tempo: ângulo de ataque, derrapagem, rolamento, o xCG e o ângulo do líquido de cada tanque. Com tanques, voa " ++
-        "com o líquido livre e travado, para comparar. Tudo em Zig, no núcleo.",
-    .specs = specs,
-    .edit = edit,
-    .start = start,
-    .advance = advance,
-    .result = result,
+        "com o líquido livre e travado, para comparar. Tudo em Zig, no núcleo.";
+    pub const State = RunState;
+    pub const specs = writeFields;
+    pub const edit = editTanks;
+    pub const start = startRun;
+    pub const advance = advanceRun;
+    pub const result = writeResult;
 };
 
 const pilots = [_][]const u8{ "manche fixo", "piloto automático" };
@@ -187,7 +189,7 @@ const tank_columns = [_]native.Column{
 };
 
 /// muda a tabela dos tanques
-fn edit(aircraft: ?*const native.Aircraft, change: native.GridEdit) native.Error!void {
+fn editTanks(aircraft: ?*const native.Aircraft, change: native.GridEdit) native.Error!void {
     if (aircraft) |plane| tanks_table.sync(plane);
     if (!std.mem.eql(u8, change.grid, "tanks")) return;
     const operation = std.meta.stringToEnum(enum { set, add, delete, reset }, change.operation) orelse return;
@@ -312,7 +314,7 @@ fn view(memory: std.mem.Allocator, plane: *const native.Aircraft, mass: ?Balance
     return .{ .meshes = meshes.items, .cg = if (mass) |known| known.center else null };
 }
 
-fn specs(out: *native.Writer, aircraft: ?*const native.Aircraft, values: native.Values) native.Error!void {
+fn writeFields(out: *native.Writer, aircraft: ?*const native.Aircraft, values: native.Values) native.Error!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const memory = arena.allocator();
@@ -348,7 +350,7 @@ fn specs(out: *native.Writer, aircraft: ?*const native.Aircraft, values: native.
         .{ .key = "span", .label = "tempo máximo", .default = .{ .number = 30 }, .minimum = 1, .maximum = 120, .unit = "s", .group = "Rajada", .help = "o voo para antes, quando a resposta estabiliza" },
         .{ .key = "compare", .label = "comparar com o líquido travado", .kind = .bool, .default = .{ .toggle = has_tanks }, .group = "Líquido", .help = "voa de novo com o líquido parado nos tanques (mesma massa)" },
     };
-    try native.writeSpecs(out, &params, &plots, simulation.description, extras);
+    try native.writeSpecs(out, &(params ++ native.method_params), &plots, Analysis.description, extras);
 }
 
 /// um voo: o caso, a instância do núcleo e o registro
@@ -361,7 +363,7 @@ const Flight = struct {
     done: bool = false,
 };
 
-const State = struct {
+const RunState = struct {
     flights: [max_cases]Flight = undefined,
     count: usize = 0,
     current: usize = 0,
@@ -379,15 +381,12 @@ const State = struct {
 };
 
 /// os efeitos que valem neste voo: sem efeitos sempre; o sloshing com tanques; a LAPES se ela sai no voo
-fn effects(state: *const State, free: *const Flight) std.EnumArray(Effect, bool) {
+fn effects(state: *const RunState, free: *const Flight) std.EnumArray(Effect, bool) {
     return .init(.{ .plain = true, .sloshing = state.n_tanks > 0, .lapes = state.lapes > 0 and free.case.release != null and free.instance.r.f.released != 0 });
 }
 
-fn start(run: *native.Run, values: native.Values) native.Error!void {
+fn startRun(run: *native.Run, state: *RunState, values: native.Values) native.Error!void {
     const memory = run.memory();
-    const state = try memory.create(State);
-    state.* = .{};
-    run.state = state;
     const autopilot = std.mem.eql(u8, values.text("pilot", pilots[0]), pilots[1]);
     var base = core.gust.Case{
         .airspeed = values.number("V", cruise(run.aircraft)),
@@ -417,7 +416,7 @@ fn start(run: *native.Run, values: native.Values) native.Error!void {
         const instance = try memory.create(core.runner.Instance);
         instance.* = .{};
         var diagnosis: aircraft_model.aircraft.Diag = .{};
-        _ = params_mod.setup(aircraft, instance, &diagnosis) catch |err| {
+        _ = params_mod.setupWith(aircraft, instance, &diagnosis, values.methods()) catch |err| {
             run.fail("o avião não montou no núcleo: {s} ({s})", .{ diagnosis.text(), @errorName(err) });
             return err;
         };
@@ -428,8 +427,7 @@ fn start(run: *native.Run, values: native.Values) native.Error!void {
     }
 }
 
-fn advance(run: *native.Run) native.Error!bool {
-    const state: *State = @ptrCast(@alignCast(run.state.?));
+fn advanceRun(run: *native.Run, state: *RunState) native.Error!bool {
     if (state.current >= state.count) return samplePoles(run, state);
     const flight = &state.flights[state.current];
     if (!flight.started) {
@@ -450,7 +448,7 @@ fn advance(run: *native.Run) native.Error!bool {
 
 /// um instante do voo livre por fatia: os polos de cada efeito na velocidade daquele instante e com o que está a
 /// bordo (a LAPES sai no instante em que saiu no voo); verdadeiro depois do último
-fn samplePoles(run: *native.Run, state: *State) bool {
+fn samplePoles(run: *native.Run, state: *RunState) bool {
     if (state.samples >= max_samples) return true;
     const free = &state.flights[0];
     const instance = free.instance;
@@ -501,7 +499,7 @@ fn load(row: core.types.LogRow, _: core.types.LogRow) f64 {
     return row.nz;
 }
 /// o xCG em % da CMA a partir do bordo de ataque (como no resto da Estabilidade)
-fn cgPercent(memory: std.mem.Allocator, flight: *const Flight, state: *const State) ![]f64 {
+fn cgPercent(memory: std.mem.Allocator, flight: *const Flight, state: *const RunState) ![]f64 {
     const values = try memory.alloc(f64, flight.rows);
     for (flight.log[0..flight.rows], 0..) |row, k| values[k] = 100.0 * (state.mac_le - row.xcg) / state.mac;
     return values;
@@ -513,9 +511,8 @@ fn largest(values: []const f64, reference: f64) f64 {
     return peak;
 }
 
-fn result(run: *native.Run, out: *native.Writer) native.Error!void {
+fn writeResult(run: *native.Run, state: *RunState, out: *native.Writer) native.Error!void {
     const memory = run.memory();
-    const state: *State = @ptrCast(@alignCast(run.state.?));
     const free = &state.flights[0];
     if (free.rows < 2) return error.NoRows;
     const t_free = try column(memory, free, time);
@@ -621,7 +618,7 @@ fn result(run: *native.Run, out: *native.Writer) native.Error!void {
 }
 
 /// a LAPES: a massa dela e, se saiu, quando, a massa que fica e o quanto o CG anda
-fn lapesChecks(memory: std.mem.Allocator, state: *const State, free: *const Flight, cg_free: []const f64, summary: *std.ArrayList([2][]const u8), checks: *std.ArrayList(native.Check)) !void {
+fn lapesChecks(memory: std.mem.Allocator, state: *const RunState, free: *const Flight, cg_free: []const f64, summary: *std.ArrayList([2][]const u8), checks: *std.ArrayList(native.Check)) !void {
     try summary.append(memory, .{ "LAPES (kg)", try std.fmt.allocPrint(memory, "{d:.3}", .{state.lapes}) });
     const asked = free.case.release orelse return;
     const instance = free.instance;
@@ -683,7 +680,7 @@ fn modePoles(memory: std.mem.Allocator, poles: *const core.gust.Poles, mode: Mod
 
 /// os polos de cada efeito ao longo do voo: uma curva fina por polo, que mostra para onde ele anda, e o ponto do começo
 /// destacado com o símbolo do modo. A cor é a do efeito
-fn locusCurves(memory: std.mem.Allocator, state: *const State, chosen: []const Effect) ![]const native.Curve {
+fn locusCurves(memory: std.mem.Allocator, state: *const RunState, chosen: []const Effect) ![]const native.Curve {
     var curves: std.ArrayList(native.Curve) = .empty;
     var in_legend = std.EnumArray(Mode, bool).initFill(false); // cada símbolo uma vez na legenda
     for (chosen) |effect| {
@@ -733,7 +730,7 @@ fn describePole(memory: std.mem.Allocator, poles: *const core.gust.Poles) ![]con
 }
 
 /// o diagnóstico dos polos no começo do voo: algum cresce? e quanto o líquido e a saída da LAPES mudam o menos estável
-fn poleChecks(memory: std.mem.Allocator, state: *const State, checks: *std.ArrayList(native.Check)) !void {
+fn poleChecks(memory: std.mem.Allocator, state: *const RunState, checks: *std.ArrayList(native.Check)) !void {
     if (state.samples == 0) return;
     const free = &state.flights[0];
     const active = effects(state, free);
@@ -769,6 +766,9 @@ fn caseName(flight: *const Flight) []const u8 {
 // ------------------------------------------------------------------ testes
 const testing = std.testing;
 
+/// a análise como a tela a vê (o `State` criado pelo framework)
+const registered = native.register(Analysis);
+
 test "campos e resultado no JSON da ponte; o líquido livre mexe o xCG e o travado não" {
     const gpa = testing.allocator;
     const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/S1223_monomotor_EH_convencional_Joinville.json", gpa, .limited(1 << 24));
@@ -780,10 +780,10 @@ test "campos e resultado no JSON da ponte; o líquido livre mexe o xCG e o trava
 
     var text: std.Io.Writer.Allocating = .init(gpa);
     defer text.deinit();
-    try specs(&text.writer, &loaded.ac, .{});
+    try writeFields(&text.writer, &loaded.ac, .{});
     const form = try std.json.parseFromSlice(std.json.Value, gpa, text.written(), .{});
     defer form.deinit();
-    try testing.expectEqual(@as(usize, 17), form.value.object.get("params").?.array.items.len);
+    try testing.expectEqual(@as(usize, 17 + native.method_params.len), form.value.object.get("params").?.array.items.len);
     // a tabela dos tanques, com a massa do líquido de cada um, e a vista 3D com os tanques e o CG
     const grid = form.value.object.get("grids").?.array.items[0];
     const first_row = grid.object.get("rows").?.array.items[0].array.items;
@@ -796,12 +796,12 @@ test "campos e resultado no JSON da ponte; o líquido livre mexe o xCG e o trava
     var run = native.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
     defer run.arena.deinit();
     const values = native.Values.fromRequest(run.memory(), "\"op\": \"run\", \"values\": {\"span\": 4, \"up\": 3}");
-    try start(&run, values);
+    try registered.start(&run, values);
     var slices: usize = 0;
-    while (!try advance(&run)) slices += 1;
+    while (!try registered.advance(&run)) slices += 1;
     try testing.expect(slices > 4); // andou em fatias
     text.clearRetainingCapacity();
-    try result(&run, &text.writer);
+    try registered.result(&run, &text.writer);
     const outcome = try std.json.parseFromSlice(std.json.Value, gpa, text.written(), .{});
     defer outcome.deinit();
     const charts = outcome.value.object.get("plots").?.array.items;
@@ -840,29 +840,29 @@ test "a tabela dos tanques: soma, edita, apaga e volta ao arquivo; a LAPES solta
     const plane = &loaded.ac;
     tanks_table.reset(plane);
     const original = plane.tanks.len;
-    try edit(plane, .{ .grid = "tanks", .operation = "add", .row = 0 });
+    try editTanks(plane, .{ .grid = "tanks", .operation = "add", .row = 0 });
     try testing.expectEqual(original + 1, tanks_table.count);
-    try edit(plane, .{ .grid = "tanks", .operation = "set", .row = 1, .key = "volume", .value = .{ .string = "0,75" } });
-    try edit(plane, .{ .grid = "tanks", .operation = "set", .row = 1, .key = "y", .value = .{ .float = -0.3 } });
-    try edit(plane, .{ .grid = "tanks", .operation = "set", .row = 1, .key = "shape", .value = .{ .string = "cilindro" } });
+    try editTanks(plane, .{ .grid = "tanks", .operation = "set", .row = 1, .key = "volume", .value = .{ .string = "0,75" } });
+    try editTanks(plane, .{ .grid = "tanks", .operation = "set", .row = 1, .key = "y", .value = .{ .float = -0.3 } });
+    try editTanks(plane, .{ .grid = "tanks", .operation = "set", .row = 1, .key = "shape", .value = .{ .string = "cilindro" } });
     try testing.expectEqual(@as(f64, 0.75), tanks_table.tanks[1].volume);
     try testing.expectEqual(@as(f64, -0.3), tanks_table.tanks[1].y);
     try testing.expectEqualStrings("cylinder", tanks_table.tanks[1].shape);
-    try edit(plane, .{ .grid = "tanks", .operation = "delete", .row = 0 });
+    try editTanks(plane, .{ .grid = "tanks", .operation = "delete", .row = 0 });
     try testing.expectEqual(original, tanks_table.count);
     try testing.expectEqual(@as(f64, -0.3), tanks_table.tanks[0].y);
-    try edit(plane, .{ .grid = "tanks", .operation = "reset" });
+    try editTanks(plane, .{ .grid = "tanks", .operation = "reset" });
     try testing.expectEqual(plane.tanks[0].y, tanks_table.tanks[0].y);
 
     // sem tanques e com a LAPES solta em 2 s: roda sem a parte do líquido e o voo segue sem a carga
-    for (0..original) |_| try edit(plane, .{ .grid = "tanks", .operation = "delete", .row = 0 });
+    for (0..original) |_| try editTanks(plane, .{ .grid = "tanks", .operation = "delete", .row = 0 });
     var run = native.Run{ .arena = .init(gpa), .aircraft = plane };
     defer run.arena.deinit();
-    try start(&run, native.Values.fromRequest(run.memory(), "\"values\": {\"span\": 5, \"lapes\": true, \"lapes_mass\": 1.2, \"drop\": true, \"drop_t\": 2}"));
-    while (!try advance(&run)) {}
+    try registered.start(&run, native.Values.fromRequest(run.memory(), "\"values\": {\"span\": 5, \"lapes\": true, \"lapes_mass\": 1.2, \"drop\": true, \"drop_t\": 2}"));
+    while (!try registered.advance(&run)) {}
     var text: std.Io.Writer.Allocating = .init(gpa);
     defer text.deinit();
-    try result(&run, &text.writer);
+    try registered.result(&run, &text.writer);
     const outcome = try std.json.parseFromSlice(std.json.Value, gpa, text.written(), .{});
     defer outcome.deinit();
     try testing.expectEqual(@as(usize, 4 + 3), outcome.value.object.get("plots").?.array.items.len); // sem o do líquido; polos sem efeitos, com a LAPES e todos
@@ -871,6 +871,29 @@ test "a tabela dos tanques: soma, edita, apaga e volta ao arquivo; a LAPES solta
     const after = try std.fmt.parseFloat(f64, summary.get("massa depois da LAPES (kg)").?.string);
     try testing.expectApproxEqAbs(before - 1.2, after, 2e-3);
     tanks_table.reset(plane);
+}
+
+test "o método escolhido no formulário vale na rodada: a linha sustentadora voa" {
+    const gpa = testing.allocator;
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    defer gpa.free(bytes);
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);
+    defer loaded.deinit();
+    tanks_table.reset(&loaded.ac);
+    var run = native.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
+    defer run.arena.deinit();
+    try registered.start(&run, native.Values.fromRequest(run.memory(), "\"values\": {\"span\": 3, \"compare\": false, \"aero_model\": \"linha sustentadora\"}"));
+    const state: *RunState = @ptrCast(@alignCast(run.state.?));
+    try testing.expectEqual(core.types.AeroModel.lifting_line, state.flights[0].instance.p.aero_model);
+    while (!try registered.advance(&run)) {}
+    var text: std.Io.Writer.Allocating = .init(gpa);
+    defer text.deinit();
+    try registered.result(&run, &text.writer);
+    const outcome = try std.json.parseFromSlice(std.json.Value, gpa, text.written(), .{});
+    defer outcome.deinit();
+    const summary = outcome.value.object.get("summary").?.object;
+    try testing.expect(std.math.isFinite(try std.fmt.parseFloat(f64, summary.get("α de equilíbrio (°)").?.string)));
 }
 
 fn jsonNumber(value: std.json.Value) f64 {

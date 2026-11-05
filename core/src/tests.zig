@@ -28,6 +28,8 @@ comptime {
         _ = @import("physics/mass.zig");
         _ = @import("physics/terrain.zig");
         _ = @import("modifiers/mod.zig");
+        _ = @import("methods.zig");
+        _ = @import("interface.zig");
         _ = @import("collision/collision.zig");
         _ = @import("loads/llt.zig");
         _ = @import("loads/sweep.zig");

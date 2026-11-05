@@ -6,10 +6,29 @@ chamando o núcleo (`core`) direto. Com isso a aba funciona também no navegador
 é a primeira peça da troca dos managers em Python por Zig. Uma análise nova pode nascer aqui, e as antigas vêm para
 cá uma de cada vez.
 
-A pasta tem duas partes. A primeira, `native.zig`, é o contrato que a tela conhece. A segunda são as análises, uma por
-arquivo, e por enquanto há só uma, a Estabilidade dinâmica (`gust_liquid.zig`), a rajada com o líquido dos tanques.
+A pasta tem duas partes. A primeira, `native.zig`, é o framework: o contrato que a tela conhece e o registro das
+análises. A segunda são as análises, uma por arquivo, e por enquanto há só uma, a Estabilidade dinâmica
+(`gust_liquid.zig`), a rajada com o líquido dos tanques.
 
-## O contrato (`native.zig`)
+## O framework (`native.zig`)
+
+Aqui se registra uma análise nova. Ela é um tipo com declarações de nome conhecido: `name`, `title`, `area` e
+`description` (os textos), `State` (o que a rodada guarda entre uma fatia e outra) e as funções `specs`, `start`,
+`advance` e `result`, mais `edit` se a aba tem tabelas. O tipo entra na lista `analyses`, e `register` monta a tabela
+que a tela usa. Antes, cada análise guardava o próprio estado num ponteiro sem tipo e o convertia em cada função, e
+um erro de assinatura só aparecia rodando; agora o framework cria o `State` na memória da rodada e passa `*State` já
+com o tipo, e uma declaração que falta ou uma assinatura errada não compila, com o nome da análise na mensagem. O
+molde é o mesmo dos tipos de aeronave do dimensionamento (`core.interface`). Os erros também têm nome:
+`native.Error` junta os da memória, da escrita, da montagem do avião e do voo do núcleo, e a mensagem para a tela vai
+em `Run.fail`.
+
+Os métodos de cálculo do voo (o modelo aerodinâmico, a variante da linha sustentadora e o refino da esteira) vêm
+prontos em `method_params`, no grupo "Métodos" do formulário, e `Values.methods` lê o que o usuário escolheu como um
+`core.methods.Methods`. As opções saem dos próprios `enum` do núcleo, com o nome em português, então um método novo
+no núcleo aparece na tela sem mexer aqui. O AeroDrive usa os mesmos `Methods`, só que fixos
+(`aerodrive/src/sim/methods.zig`), e o tradutor do avião é o mesmo para os dois (`params.setupWith`).
+
+### O contrato com a tela
 
 Aqui se define o que uma análise em Zig precisa ter para virar uma subaba. São quatro coisas: os campos e os
 gráficos, o começo de uma rodada, um passo da rodada e o resultado. O formato é o mesmo JSON da ponte com o Python
@@ -82,7 +101,23 @@ Os testes rodam com os da tela: `cd aerosim && python -m ziglang build test`.
 
 ## Nova análise
 
-Escreva um arquivo com uma `native.Simulation` (os campos com `native.writeSpecs`, que também leva as tabelas e o 3D
-em `native.Extras`, o resultado com
-`native.beginResult`, `native.writePlot` e `native.endResult`) e ponha-a em `native.all`. A conta em si vai no núcleo,
-com teste em Zig. Aqui fica só a montagem do caso, as fatias e o texto do resultado.
+Escreva um arquivo com um tipo da análise e ponha o tipo em `native.analyses`:
+
+```zig
+pub const Analysis = struct {
+    pub const name: []const u8 = "minha_analise";
+    pub const title: [:0]const u8 = "Minha análise";
+    pub const area: []const u8 = "Desempenho";
+    pub const description: []const u8 = "o que ela mostra";
+    pub const State = struct { instance: ?*core.runner.Instance = null };   // começa com os padrões
+    pub const specs = writeFields;    // fn (*native.Writer, ?*const native.Aircraft, native.Values) native.Error!void
+    pub const start = startRun;       // fn (*native.Run, *State, native.Values) native.Error!void
+    pub const advance = advanceRun;   // fn (*native.Run, *State) native.Error!bool
+    pub const result = writeResult;   // fn (*native.Run, *State, *native.Writer) native.Error!void
+};
+```
+
+Os campos saem com `native.writeSpecs` (junte `native.method_params` se a análise voa o avião; as tabelas e o 3D vão
+em `native.Extras`), o avião se monta com `params.setupWith(avião, instância, &diagnóstico, values.methods())`, e o
+resultado sai com `native.beginResult`, `native.writePlot` e `native.endResult`. A conta em si vai no núcleo, com teste
+em Zig. Aqui fica só a montagem do caso, as fatias e o texto do resultado.

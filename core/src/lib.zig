@@ -2,6 +2,8 @@
 //! que a ABI C de `root.zig` usa, sem passar pela ABI.
 pub const types = @import("types.zig");
 pub const limits = @import("limits.zig");
+pub const methods = @import("methods.zig");
+pub const interface = @import("interface.zig");
 pub const runner = @import("sim/runner.zig");
 pub const trim = @import("sim/trim.zig");
 pub const gust = @import("sim/gust.zig");

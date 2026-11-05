@@ -15,6 +15,7 @@
 //! Novo tipo: escreva o struct e ponha em `all`; a ABI e o Python passam a aceitá-lo pelo índice.
 const std = @import("std");
 const sizing_types = @import("types.zig");
+const interface = @import("../interface.zig");
 
 pub const Hover = enum { none, optional, required };
 
@@ -155,15 +156,17 @@ pub const all = .{ Conventional, FlyingWing, Tailsitter, Vtol };
 
 /// confere em comptime que `K` tem a interface de um tipo de aeronave
 pub fn check(comptime Kind: type) void {
-    inline for (.{ "name", "wings", "tail", "hover", "inducedFactor", "clmaxFactor", "extraMass", "surfaces" }) |decl_name| {
-        if (!@hasDecl(Kind, decl_name)) @compileError("tipo de aeronave " ++ @typeName(Kind) ++ " sem `" ++ decl_name ++ "`");
-    }
-    if (@TypeOf(Kind.hover) != Hover) @compileError(@typeName(Kind) ++ ".hover tem de ser kinds.Hover");
-    _ = @as(fn (*const sizing_types.SizingCfg) u32, Kind.wings);
-    _ = @as(fn (*const sizing_types.SizingCfg) u32, Kind.surfaces);
-    _ = @as(fn (*const sizing_types.SizingCfg) f64, Kind.inducedFactor);
-    _ = @as(fn (*const sizing_types.SizingCfg) f64, Kind.clmaxFactor);
-    _ = @as(fn (*const sizing_types.SizingCfg, f64) f64, Kind.extraMass);
+    const Cfg = *const sizing_types.SizingCfg;
+    interface.require(Kind, "tipo de aeronave", &.{
+        .{ .name = "name" },
+        .{ .name = "tail" },
+        .{ .name = "hover", .type = Hover },
+        .{ .name = "wings", .type = fn (Cfg) u32 },
+        .{ .name = "surfaces", .type = fn (Cfg) u32 },
+        .{ .name = "inducedFactor", .type = fn (Cfg) f64 },
+        .{ .name = "clmaxFactor", .type = fn (Cfg) f64 },
+        .{ .name = "extraMass", .type = fn (Cfg, f64) f64 },
+    });
 }
 
 comptime {

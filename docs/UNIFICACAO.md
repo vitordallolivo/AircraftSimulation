@@ -245,3 +245,19 @@ do AeroDrive) ficam para quando cada arquivo for mexido. A regressão não rodou
 são esperadas e são outra tarefa.
 
 Depois disso vem a etapa 3: juntar os seis contratos de manager num framework só.
+
+## 7. Etapa 3: o framework em Zig (começou em 2026-11-05)
+
+O alvo é o aerosim e o AeroDrive em Zig, para o app no navegador rodar sem Python. Das partes comuns que a etapa 2
+deixou iguais, saíram três peças. `core.interface` é o molde de registro (uma lista de tipos com as mesmas
+declarações, conferida em comptime), que o dimensionamento e as análises das telas usam. `core.methods.Methods` junta
+as escolhas exclusivas de método do voo (modelo, linha sustentadora, refino), com os nomes em português para a tela; a
+interface deixa o usuário escolher e o AeroDrive fixa os seus em `aerodrive/src/sim/methods.zig`. E o framework das
+análises (`aerosim/manager/native/native.zig`) registra cada análise como um tipo, com o estado da rodada tipado e os
+campos de métodos prontos.
+
+O `drive_manager` do AeroDrive fica de fora do registro de análises: ele é o laço de tempo real (um passo por quadro,
+sem formulário nem resultado), e o que ele divide com as análises é o tradutor do avião e os `Methods`. As contas em
+Python (as treze `ISimulation`, as etapas da sprint e `aerosim/design`) entram no framework uma de cada vez, cada uma
+portando a conta para o núcleo.
+

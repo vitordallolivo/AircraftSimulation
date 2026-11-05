@@ -41,6 +41,13 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   principal, momento do comando), marca o dono de cada painel (`Surface.owner`) e lê o `group` das superfícies. O
   modelo do voo e o refino ficam fixos num arquivo só, `sim/methods.zig` (faixas e o refino padrão), por causa do
   tempo real. Arquivo sem modificadores: o efeito solo de McCormick de sempre.
+- etapa 3, o framework em Zig para o aerosim e o AeroDrive (o caminho para o navegador sem Python):
+  `core.interface` é o molde de registro conferido em comptime (o dimensionamento passa a usá-lo), `core.methods`
+  junta o modelo do voo, a variante da linha sustentadora e o refino num `Methods` com os nomes em português para a
+  tela, e as análises em Zig (`aerosim/manager/native`) viram tipos registrados (`analyses`, `register`), com o
+  `State` da rodada tipado e os campos de métodos prontos (`method_params`, `Values.methods`). A Estabilidade dinâmica
+  ganha o grupo "Métodos" (faixas por padrão) e o AeroDrive fixa os seus com o mesmo `Methods`
+  (`params.setupWith`).
 - nomes pela regra 11: os enums de nome genérico ganham nome próprio no esquema (`ModifierKind`, `EnvelopeMethod`), os
   `const T`/`const L` do AeroDrive viram `types`/`limits`, e o `fill` do tradutor do AeroDrive perde os nomes de uma
   letra.

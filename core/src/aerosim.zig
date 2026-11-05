@@ -3,6 +3,10 @@
 
 pub const types = @import("types.zig");
 pub const limits = @import("limits.zig");
+/// os métodos de cálculo do voo juntos (modelo, linha sustentadora, refino)
+pub const methods = @import("methods.zig");
+/// a interface conferida em comptime (o molde dos registros)
+pub const interface = @import("interface.zig");
 pub const abi = @import("abi.zig");
 pub const opt = @import("opt.zig");
 

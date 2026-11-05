@@ -582,13 +582,21 @@ pub fn fill(ac: *const Aircraft, params: *types.Params, diag: *model.Diag) Error
     params.n_seg = @intCast(segment_count);
     params.n_event = @intCast(try mission.events(&ac.mission, &params.event, diag));
     params.n_pad = @intCast(mission.pads(&ac.airfield, params.seg[0..segment_count], &params.pads));
-    methods.apply(methods.fixed, params); // o modelo do voo environment o refino: fixos no AeroDrive (methods.zig)
-    modifiers.fill(ac, params); // efeito solo environment efeitos a mais: do arquivo, como na GUI
+    methods.fixed.apply(params); // o modelo do voo e o refino: fixos no AeroDrive (methods.zig)
+    modifiers.fill(ac, params); // efeito solo e efeitos a mais: do arquivo, como na GUI
 }
 
-/// parâmetros + configuração do núcleo + calibração do piloto (como `prepare` da GUI)
+/// parâmetros + configuração do núcleo + calibração do piloto (como `prepare` da GUI), com os métodos fixos do
+/// AeroDrive (`methods.zig`)
 pub fn setup(ac: *const Aircraft, inst: *core.runner.Instance, diag: *model.Diag) Error!Info {
+    return setupWith(ac, inst, diag, methods.fixed);
+}
+
+/// como `setup`, com os métodos de cálculo escolhidos (`core.methods`; as análises da interface deixam o usuário
+/// escolher)
+pub fn setupWith(ac: *const Aircraft, inst: *core.runner.Instance, diag: *model.Diag, chosen: core.methods.Methods) Error!Info {
     try fill(ac, &inst.p, diag);
+    chosen.apply(&inst.p);
     core.runner.configure(inst) catch |e| {
         diag.set("o núcleo recusou a configuração ({s})", .{@errorName(e)});
         return error.CoreConfig;

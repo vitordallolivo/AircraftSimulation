@@ -1,6 +1,15 @@
-//! As análises feitas só em Zig, sem Python no caminho: a página da tela (`aerosim/gui/page.zig`) pede os campos e
-//! roda pelo mesmo contrato da ponte com o Python (`aerosim/bridge.py`), só que aqui mesmo. É a primeira peça da troca
-//! dos managers em Python por Zig: uma análise nova implementa `Simulation` e entra em `all`, e a tela não muda.
+//! O framework das análises em Zig, sem Python no caminho: a página da tela (`aerosim/gui/page.zig`) pede os campos e
+//! roda pelo mesmo contrato da ponte com o Python (`aerosim/bridge.py`), só que aqui mesmo, também no navegador.
+//!
+//! Uma análise é um tipo com declarações conhecidas (o molde de `core.interface`, o mesmo dos tipos de aeronave do
+//! dimensionamento): o nome, o título, a aba, a descrição, o estado da rodada (`State`) e as funções `specs`, `start`,
+//! `advance`, `result` e, se a aba tem tabelas, `edit`. Ela entra em `analyses` e `register` monta a tabela que a tela
+//! usa; falta ou assinatura errada é erro de compilação. O estado da rodada é tipado: o framework cria o `State` na
+//! memória da rodada e cada função recebe `*State`, sem conversão de ponteiro na análise.
+//!
+//! Os métodos de cálculo (modelo do voo, linha sustentadora, refino; `core.methods`) são campos prontos
+//! (`method_params`, lidos com `Values.methods`): uma análise que voa o avião põe esses campos e o usuário escolhe.
+//! O AeroDrive usa os mesmos `core.methods`, fixos (`aerodrive/src/sim/methods.zig`).
 //!
 //! O contrato é o JSON da ponte. Os campos saem como `{"params": [...], "plots": [...], "description": ...}` e o
 //! resultado como `{"summary": {...}, "checks": [...], "plots": [...]}`, com os mesmos nomes da `ISimulation`
@@ -12,6 +21,7 @@ const core = @import("aerosim");
 const gust_liquid = @import("gust_liquid.zig");
 
 pub const Aircraft = aircraft_model.aircraft.Aircraft;
+pub const Methods = core.methods.Methods;
 pub const Json = std.json.Value;
 pub const Writer = std.Io.Writer;
 
@@ -19,7 +29,7 @@ pub const Writer = std.Io.Writer;
 /// mensagem para a tela vai em `Run.fail`; o erro só diz que parou
 pub const Error = error{ OutOfMemory, WriteFailed, NoRows } || std.Io.Writer.Error || aircraft_model.params.Error || core.gust.Error;
 
-/// uma análise em Zig: o que a tela mostra e como roda
+/// uma análise registrada, como a tela usa: os textos e as funções já com o estado da rodada por trás (`register`)
 pub const Simulation = struct {
     name: []const u8, // o nome que a página guarda (como `ISimulation.name`)
     title: [:0]const u8, // o rótulo da subaba
@@ -37,8 +47,76 @@ pub const Simulation = struct {
     result: *const fn (run: *Run, out: *Writer) Error!void,
 };
 
-/// as análises em Zig, na ordem das subabas
-pub const all = [_]Simulation{gust_liquid.simulation};
+/// as análises em Zig, na ordem das subabas: um tipo por análise, com a interface de `check`
+pub const analyses = .{gust_liquid.Analysis};
+
+/// a tabela que a tela usa, montada das `analyses`
+pub const all = blk: {
+    var table: [analyses.len]Simulation = undefined;
+    for (analyses, 0..) |Analysis, i| table[i] = register(Analysis);
+    break :blk table;
+};
+
+/// confere em comptime que `Analysis` tem a interface de uma análise
+pub fn check(comptime Analysis: type) void {
+    const State = if (@hasDecl(Analysis, "State")) Analysis.State else @compileError("análise " ++ @typeName(Analysis) ++ " sem `State`");
+    core.interface.require(Analysis, "análise", &.{
+        .{ .name = "name", .type = []const u8 },
+        .{ .name = "title", .type = [:0]const u8 },
+        .{ .name = "area", .type = []const u8 },
+        .{ .name = "description", .type = []const u8 },
+        .{ .name = "specs", .type = fn (*Writer, ?*const Aircraft, Values) Error!void },
+        .{ .name = "start", .type = fn (*Run, *State, Values) Error!void },
+        .{ .name = "advance", .type = fn (*Run, *State) Error!bool },
+        .{ .name = "result", .type = fn (*Run, *State, *Writer) Error!void },
+    });
+    if (core.interface.has(Analysis, "edit")) core.interface.require(Analysis, "análise", &.{
+        .{ .name = "edit", .type = fn (?*const Aircraft, GridEdit) Error!void },
+    });
+}
+
+/// a tabela de uma análise: os textos dela e as funções que criam e passam o `State` da rodada
+pub fn register(comptime Analysis: type) Simulation {
+    check(Analysis);
+    const State = Analysis.State;
+    const wrapped = struct {
+        fn state(run: *Run) *State {
+            return @ptrCast(@alignCast(run.state.?));
+        }
+        fn start(run: *Run, values: Values) Error!void {
+            const created = try run.memory().create(State);
+            created.* = .{};
+            run.state = created;
+            return Analysis.start(run, created, values);
+        }
+        fn advance(run: *Run) Error!bool {
+            return Analysis.advance(run, state(run));
+        }
+        fn result(run: *Run, out: *Writer) Error!void {
+            return Analysis.result(run, state(run), out);
+        }
+    };
+    return .{
+        .name = Analysis.name,
+        .title = Analysis.title,
+        .area = Analysis.area,
+        .description = Analysis.description,
+        .specs = Analysis.specs,
+        .edit = if (core.interface.has(Analysis, "edit")) Analysis.edit else null,
+        .start = wrapped.start,
+        .advance = wrapped.advance,
+        .result = wrapped.result,
+    };
+}
+
+/// os campos dos métodos de cálculo (`core.methods.Methods`), no grupo "Métodos"; as escolhas saem dos nomes dos
+/// `enum` do núcleo, e o padrão é o de sempre
+pub const method_params = [_]Param{
+    .{ .key = "aero_model", .label = "modelo aerodinâmico", .kind = .choice, .default = .{ .text = "faixas" }, .choices = core.methods.choices(core.types.AeroModel), .group = "Métodos", .help = "quem dá as forças no voo: faixas (o de sempre), linha sustentadora ou a tabela do avião" },
+    .{ .key = "llt_method", .label = "linha sustentadora", .kind = .choice, .default = .{ .text = "Phillips e Snyder" }, .choices = core.methods.choices(core.types.LiftingLineMethod), .group = "Métodos", .help = "a variante, quando o modelo é a linha sustentadora" },
+    .{ .key = "slipstream_chord_samples", .label = "esteira: amostras na corda", .kind = .int, .default = .{ .number = 3 }, .minimum = 1, .maximum = 64, .group = "Métodos", .help = "refino da esteira da hélice (só com a esteira ligada)" },
+    .{ .key = "slipstream_span_samples", .label = "esteira: amostras na envergadura", .kind = .int, .default = .{ .number = 16 }, .minimum = 1, .maximum = 64, .group = "Métodos", .help = "refino da esteira da hélice (só com a esteira ligada)" },
+};
 
 /// a análise em Zig com este nome
 pub fn find(name: []const u8) ?*const Simulation {
@@ -82,7 +160,27 @@ pub const Values = struct {
         const value = object.get(key) orelse return fallback;
         return if (value == .string) value.string else fallback;
     }
+
+    /// os métodos de cálculo dos campos de `method_params` (o que faltar ou não existir: o padrão)
+    pub fn methods(values: Values) Methods {
+        const defaults: Methods = .{};
+        const default_refinement = defaults.refinement;
+        return .{
+            .aero_model = core.methods.byName(core.types.AeroModel, values.text("aero_model", "")) orelse defaults.aero_model,
+            .llt_method = core.methods.byName(core.types.LiftingLineMethod, values.text("llt_method", "")) orelse defaults.llt_method,
+            .refinement = .{
+                .slipstream_chord_samples = sampleCount(values.number("slipstream_chord_samples", @floatFromInt(default_refinement.slipstream_chord_samples))),
+                .slipstream_span_samples = sampleCount(values.number("slipstream_span_samples", @floatFromInt(default_refinement.slipstream_span_samples))),
+            },
+        };
+    }
 };
+
+/// um número de amostras do formulário, inteiro de 1 a 64
+fn sampleCount(value: f64) i32 {
+    if (!std.math.isFinite(value)) return 1;
+    return @intFromFloat(std.math.clamp(@round(value), 1, 64));
+}
 
 /// uma edição numa tabela, como a tela manda (`"grid": ..., "edit": "set", "row": n, "key": ..., "value": ...`; os
 /// botões mandam o `operation` deles no lugar de "set")
@@ -355,10 +453,10 @@ pub fn beginResult(out: *Writer, summary: []const [2][]const u8, checks: []const
         try out.print("{f}: {f}", .{ str(row[0]), str(row[1]) });
     }
     try out.writeAll("}, \"checks\": [");
-    for (checks, 0..) |check, k| {
+    for (checks, 0..) |item, k| {
         if (k > 0) try out.writeAll(", ");
         try out.print("{{\"status\": \"{s}\", \"item\": {f}, \"value\": {f}, \"criterion\": {f}, \"why\": {f}, \"fix\": {f}, \"group\": {f}}}", .{
-            @tagName(check.status), str(check.item), str(check.value), str(check.criterion), str(check.why), str(check.fix), str(check.group),
+            @tagName(item.status), str(item.item), str(item.value), str(item.criterion), str(item.why), str(item.fix), str(item.group),
         });
     }
     try out.writeAll("], \"plots\": [");
@@ -408,4 +506,17 @@ fn str(text: []const u8) std.json.Formatter([]const u8) {
 
 test {
     _ = gust_liquid;
+}
+
+test "a tabela vem das análises, e os métodos saem dos campos pelo nome" {
+    try std.testing.expectEqual(analyses.len, all.len);
+    try std.testing.expect(find("estabilidade_dinamica") != null);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const values = Values.fromRequest(arena.allocator(), "\"values\": {\"aero_model\": \"lifting_line\", \"slipstream_span_samples\": 99}");
+    const methods = values.methods();
+    try std.testing.expectEqual(core.types.AeroModel.lifting_line, methods.aero_model);
+    try std.testing.expectEqual(core.types.LiftingLineMethod.phillips_snyder, methods.llt_method);
+    try std.testing.expectEqual(@as(i32, 64), methods.refinement.slipstream_span_samples);
+    try std.testing.expectEqual(Methods{}, (Values{}).methods());
 }
