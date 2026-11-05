@@ -112,6 +112,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - Missão: a rajada escolhida por etapa. A Trajetória ganha a coluna "rajada em (m)" (onde, dentro da etapa, a
   rajada chega; vazio = sem rajada) e o grupo "Rajada" liga a rajada e dá o tamanho vertical e lateral e a duração.
   Sem mexer, a missão fica igual (os eventos do arquivo na mesma ordem).
+- Tracking: o EC-13 (polos com sloshing) virou ✅ (40 de 85); a G06 passou para "Em andamento" com o que a G20 já
+  fez; novos itens da tela em Zig, G21 (os menus Arquivo, Projeto da sprint e Editar da PyQt) e G22 (o instalável com
+  o Python); o começo da G05 (estabilidade estática em Zig, fora do git) ficou guardado com o que falta.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 

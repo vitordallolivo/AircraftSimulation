@@ -226,8 +226,8 @@ https://claude.ai/artifact/N7e8KMZoDGJXdct46t1gsW (esperando o ok e os PDFs do d
 | G02 | Aerodinâmica entrega uma configuração: "Guardar configuração" em Projetar grava a tabela "Asas do avião" com nome (`WingConfig`, `DesignProject.configs`); a Empenagem escolhe uma guardada ou a tabela como está (`TailParams.config`) e não tem mais campos de segunda asa; as sprints com `wing2_*` viram uma configuração de duas asas ao carregar (`adopt_second_wing`, o mesmo conjunto). Falta: os dispositivos com nome entram com a G03, e o aeroopt passa a mexer nas linhas da configuração (a segunda asa escalada dele vira uma asa guardada; regressão conferida antes) | [ext] | G01 | B3 | A revisar |
 | G03 | Dispositivos de ponta com menu próprio em Projetar: a tabela "Dispositivos das asas" (feita: o `WingDevice` do modelo por linha da tabela de asas, `WingPlacement.devices`, com tipo, posição, recuo, altura, corda, afilamento, enflechamento, inclinação, calagem e perfil; vai com a configuração até o avião montado). Falta: a coluna "pontas ligadas" virar um dispositivo "ligar a" outra asa, e os tipos, as formas e as contas discutidos com o dono a partir dos PDFs (Whitcomb, Prandtl). Resolve a T96 | [ext] | G02 | B3 | A revisar |
 | G04 | Estabilidade genérica: a tabela "Comandos" da Empenagem (feita: `TailParams.controls`, uma `SurfaceControl` por linha com o `ControlSurface` do modelo: superfície, nome, trecho, corda e os ganhos do `mix`; "da regra" escreve a regra como linhas; vazia, a regra de antes, igual). Saíram do formulário `tandem_pitch`, `tip_fin_where` e a segunda asa. Cobre a antiga T84 (profundor à frente do CG: arfagem −1). Falta a estática da configuração inteira, que é a G05 (o tandem do print tem C_mα > 0 na estática de hoje) | [ext] | G02 | B3 | A revisar |
-| G05 | Estabilidade → subaba Estática: ponto neutro da configuração inteira no núcleo, CG de projeto pela ME pedida (x_CG = x_PN − ME c̄), derivadas no CG (C_Lα, C_mα, C_mδe, C_nβ, C_lβ, C_Yβ), δe de equilíbrio × V e a varredura da ME. Conta em Zig com teste e interface | [novo] | G02, G04 | B3 | Pronto (plano) |
-| G06 | Estabilidade → subaba Dinâmica: modos longitudinais e látero-direcionais, polos no plano s (MIL-F-8785C de referência, caminho dos polos em V), polos antes e depois do LAPES e com sloshing. O sloshing e a extração da carga já estão no núcleo (`core/src/physics/mass.zig`, vitor 2026-10-30); o que falta é a linearização (`core/src/sim/linear.zig`, hoje sem sloshing nem carga) levar esses estados, e o Abramson (SP-106) só confere as equações. A varredura da posição do tanque segue na T86 | [novo] | G05 | B3 | Pronto (plano) |
+| G05 | Estabilidade → subaba Estática: ponto neutro da configuração inteira no núcleo, CG de projeto pela ME pedida (x_CG = x_PN − ME c̄), derivadas no CG (C_Lα, C_mα, C_mδe, C_nβ, C_lβ, C_Yβ), δe de equilíbrio × V e a varredura da ME. Conta em Zig com teste e interface. Começo (2026-10-30, fora do git): `core/src/stability/static.zig`, o `probe.py` e o `sizing.py` em Zig, compila mas sem teste próprio, sem export e sem uso; guardado em `/mnt/project-files/handoff/g05_estabilidade_estatica_wip/` com o que falta | [novo] | G02, G04 | B3 | Pronto (plano) |
+| G06 | Estabilidade → subaba Dinâmica: modos longitudinais e látero-direcionais, polos no plano s (MIL-F-8785C de referência, caminho dos polos em V), polos antes e depois do LAPES e com sloshing. O sloshing e a extração da carga já estão no núcleo (`core/src/physics/mass.zig`, vitor 2026-10-30); o que falta é a linearização (`core/src/sim/linear.zig`, hoje sem sloshing nem carga) levar esses estados, e o Abramson (SP-106) só confere as equações. A varredura da posição do tanque segue na T86. Feito pela G20 (2026-10-31): os polos no plano s com o caminho em V, antes e depois da LAPES e com o sloshing na linearização, e a subaba Estabilidade dinâmica em Zig; falta separar a Estabilidade em duas subabas da configuração inteira (EC-18) | [novo] | G05 | B3 | Em andamento |
 | G07 | Tela em Zig: Mini-MDO e Estudo e ponto de projeto pela ponte (hoje só mostram o lugar) | [GUI] | — | B9 | Pronto |
 | G08 | Tela em Zig: as tabelas das restrições e das variáveis ("Condições e restrições…": feitas, ao lado das condições e das regras, `RequirementsStage.grids`), as trajetórias 3D e as tabelas de entrada da Missão, rótulos com TeX (feito nos gráficos). A trajetória 3D da Missão (uma cor por etapa) está feita. Falta: a escolha das opções de uma variável de lista por uma lista com busca (hoje se digitam os nomes). Feito também: as tabelas de entrada da Missão (etapas, massas; campos de tabela pela ponte) e a pista no modo missão | [GUI] | — | B9 | Em andamento |
 | G09 | Tela em Zig no navegador: contas longas sem travar a página (worker), cancelar, sprint guardada no navegador, lltdrek/ASB/AVL como pacotes do Pyodide carregados quando pedidos | [ext] | — | B9 | Pronto |
@@ -452,11 +452,11 @@ pista) é ajuste de interface e está em "Fora da conta".
 | EC-10 | Dinâmica: modos e respostas | ✅ | ✅ | — | |
 | EC-11 | Qualidades de voo (MIL-F-8785C) | ✅ | ✅ | — | |
 | EC-12 | Vento lateral/frontal nos polos | ❌ | ❌ | T05 | |
-| EC-13 | Polos com sloshing | ❌ | ❌ | G06 | junto com os polos antes e depois do LAPES |
+| EC-13 | Polos com sloshing | ✅ | ✅ | — | Estabilidade: "sloshing no modelo linear" (polos com o líquido, desligado por padrão) e Estabilidade dinâmica (polos por modo ao longo do voo, com sloshing e com a LAPES) |
 | EC-14 | Diedro elástico | ❌ | ❌ | T27 | |
 | EC-15 | Comparação com voo real | ❌ | ❌ | T35 | |
 | EC-16 | Inverter a rotação de qualquer motor | ✅ | ✅ | — | Configuração: botão de sentido (±1) por motor |
-| EC-17 | Posição e ângulo do tanque de líquido × modos | ❌ | ❌ | T86 | distância ao CG, embaixo da asa, inclinação |
+| EC-17 | Posição e ângulo do tanque de líquido × modos | ❌ | ❌ | T86, G20 | distância ao CG, embaixo da asa, inclinação. Já dá para pôr os tanques onde quiser na tabela da Estabilidade dinâmica e ver os polos; falta a inclinação e a varredura (G20, passo 6) |
 | EC-18 | Estabilidade em duas subabas, estática e dinâmica, da configuração inteira | ❌ | ❌ | G05, G06 | sem campos de uma configuração só (G04) |
 
 ### 4. Cargas
@@ -557,19 +557,19 @@ A Missão mostra só o que a simulação já calcula: a corrente média e a de p
 
 São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
-**Onde foi medido:** na `main` (`v0.2.2`; a contagem ainda não foi refeita na `v0.2.3`), com os ❓ do T01 já conferidos no código. Na `0.2_dev` entraram os itens AE-19 a AE-22 (código feito, GUI não), que só aumentam o total.
+**Onde foi medido:** na `main` (`v0.2.2`; a contagem ainda não foi refeita na `v0.2.3`), com os ❓ do T01 já conferidos no código. Na `0.2_dev` entraram os itens AE-19 a AE-22 (código feito, GUI não), que só aumentam o total. Na `0.2_dev` (2026-11-05) o EC-13, polos com sloshing, virou ✅ e já está somado.
 
 | Seção | ✅ na GUI / itens |
 |---|---|
 | 1. Aerodinâmica | 6 / 19 |
 | 2. Desempenho | 8 / 14 |
-| 3. Estabilidade e Controle | 12 / 18 |
+| 3. Estabilidade e Controle | 13 / 18 |
 | 4. Cargas | 3 / 11 |
 | 5. Aeroelasticidade | 0 / 4 |
 | 6. Estruturas | 1 / 5 |
 | 8. Integração | 8 / 12 |
 | 9. Controle | 1 / 2 |
-| **Total** | **39 / 85 (46 %)** |
+| **Total** | **40 / 85 (47 %)** |
 
 ---
 
