@@ -224,6 +224,13 @@ pub const Screen = struct {
         screen.message[0] = 0;
     }
 
+    /// a análise em Zig entra como subaba nova nesta área (é da área e nenhuma subaba do Python tem o nome dela)
+    fn appended(simulation: *const manager.Simulation, area_title: []const u8, tabs: []const Json) bool {
+        if (!std.mem.eql(u8, simulation.area, area_title)) return false;
+        for (tabs) |tab| if (std.mem.eql(u8, stringField(tab, "name"), simulation.name)) return false;
+        return true;
+    }
+
     /// as áreas e as páginas a partir da resposta "layout"
     fn buildAreas(screen: *Screen, reply: Json) !void {
         const memory = screen.layout.arena.allocator();
@@ -234,9 +241,10 @@ pub const Screen = struct {
         for (items, 0..) |item, a| {
             const tabs = (item.object.get("tabs") orelse return error.BadReply).array.items;
             const area_title = stringField(item, "title");
-            // as análises em Zig desta área entram depois das do Python (`manager/manager.zig`)
+            // uma análise em Zig com o nome de uma do Python toma o lugar dela na mesma subaba; as outras em Zig desta
+            // área entram depois das do Python (`manager/manager.zig`)
             var zig_analyses: usize = 0;
-            for (&manager.all) |*simulation| zig_analyses += @intFromBool(std.mem.eql(u8, simulation.area, area_title));
+            for (&manager.all) |*simulation| zig_analyses += @intFromBool(appended(simulation, area_title, tabs));
             const tab_labels = try memory.alloc([:0]const u8, tabs.len + zig_analyses);
             const pages = try memory.alloc(?*Page, tabs.len + zig_analyses);
             for (tabs, 0..) |tab, k| {
@@ -247,18 +255,22 @@ pub const Screen = struct {
                     continue;
                 }
                 const page = try std.heap.page_allocator.create(Page);
+                const is_simulation = std.mem.eql(u8, kind_text, "sim");
+                const in_zig = if (is_simulation) manager.find(stringField(tab, "name")) else null;
                 page.* = .{
-                    .kind = if (std.mem.eql(u8, kind_text, "sim")) .simulation else if (std.mem.eql(u8, kind_text, "stage")) .stage else .todo,
+                    .kind = if (is_simulation) .simulation else if (std.mem.eql(u8, kind_text, "stage")) .stage else .todo,
                     .name = try memory.dupe(u8, stringField(tab, "name")),
                     .title = tab_labels[k],
                     .bridge = &screen.bridge,
+                    .analysis = in_zig, // já portada para o Zig: roda sem o Python
+                    .grids_beside = in_zig != null,
                 };
                 page.setAircraftPath(path);
                 page.stale = false;
                 pages[k] = page;
             }
             var slot = tabs.len;
-            for (&manager.all) |*simulation| if (std.mem.eql(u8, simulation.area, area_title)) {
+            for (&manager.all) |*simulation| if (appended(simulation, area_title, tabs)) {
                 const page = try std.heap.page_allocator.create(Page);
                 page.* = .{ .kind = .simulation, .name = simulation.name, .title = simulation.title, .bridge = &screen.bridge, .analysis = simulation, .grids_beside = true };
                 page.setAircraftPath(path);

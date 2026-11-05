@@ -59,7 +59,7 @@ pub fn check(comptime Analysis: type) void {
         .{ .name = "advance", .type = fn (*Run, *State) Error!bool },
         .{ .name = "result", .type = fn (*Run, *State, *Writer) Error!void },
     });
-    if (core.interface.has(Analysis, "edit")) core.interface.require(Analysis, "análise", &.{
+    if (comptime core.interface.has(Analysis, "edit")) core.interface.require(Analysis, "análise", &.{
         .{ .name = "edit", .type = fn (?*const Aircraft, GridEdit) Error!void },
     });
 }
@@ -91,7 +91,7 @@ pub fn register(comptime Analysis: type) Simulation {
         .area = Analysis.area,
         .description = Analysis.description,
         .specs = Analysis.specs,
-        .edit = if (core.interface.has(Analysis, "edit")) Analysis.edit else null,
+        .edit = if (comptime core.interface.has(Analysis, "edit")) Analysis.edit else null,
         .start = wrapped.start,
         .advance = wrapped.advance,
         .result = wrapped.result,
@@ -142,6 +142,34 @@ pub const Values = struct {
         const object = values.object orelse return fallback;
         const value = object.get(key) orelse return fallback;
         return if (value == .string) value.string else fallback;
+    }
+
+    /// uma lista de números de um campo `floats` (a tela manda `[1, 0.75]`; um texto "1, 0.75" também vale), em
+    /// `buffer`; sem nenhum número vale `fallback`
+    pub fn numbers(values: Values, key: []const u8, buffer: []f64, fallback: []const f64) []const f64 {
+        const object = values.object orelse return fallback;
+        var count: usize = 0;
+        switch (object.get(key) orelse return fallback) {
+            .array => |list| for (list.items) |item| {
+                if (count >= buffer.len) break;
+                buffer[count] = switch (item) {
+                    .float => |value| value,
+                    .integer => |value| @floatFromInt(value),
+                    else => continue,
+                };
+                count += 1;
+            },
+            .string => |written| {
+                var pieces = std.mem.tokenizeAny(u8, written, ", ;");
+                while (pieces.next()) |piece| {
+                    if (count >= buffer.len) break;
+                    buffer[count] = std.fmt.parseFloat(f64, piece) catch continue;
+                    count += 1;
+                }
+            },
+            else => {},
+        }
+        return if (count > 0) buffer[0..count] else fallback;
     }
 
     /// os métodos de cálculo dos campos de `method_params` (o que faltar ou não existir: o padrão)
@@ -248,7 +276,7 @@ pub const Run = struct {
 pub const Param = struct {
     key: []const u8,
     label: []const u8,
-    kind: enum { float, int, bool, choice } = .float,
+    kind: enum { float, int, bool, choice, floats } = .float, // floats: uma lista de números num texto ("1, 0.75")
     default: union(enum) { number: f64, toggle: bool, text: []const u8 } = .{ .number = 0 },
     minimum: ?f64 = null,
     maximum: ?f64 = null,
@@ -497,4 +525,8 @@ test "os métodos saem dos campos pelo nome" {
     try std.testing.expectEqual(core.types.LiftingLineMethod.phillips_snyder, methods.llt_method);
     try std.testing.expectEqual(@as(i32, 64), methods.refinement.slipstream_span_samples);
     try std.testing.expectEqual(Methods{}, (Values{}).methods());
+    var buffer: [8]f64 = undefined;
+    const list = Values.fromRequest(arena.allocator(), "\"values\": {\"thr\": [1.0, 0.75, 0.5]}").numbers("thr", &buffer, &.{1});
+    try std.testing.expectEqualSlices(f64, &.{ 1.0, 0.75, 0.5 }, list);
+    try std.testing.expectEqualSlices(f64, &.{1}, (Values{}).numbers("thr", &buffer, &.{1}));
 }

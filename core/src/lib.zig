@@ -9,6 +9,7 @@ pub const trim = @import("sim/trim.zig");
 pub const gust = @import("sim/gust.zig");
 pub const aero = @import("physics/aero.zig");
 pub const section = @import("physics/section.zig");
+pub const propulsion = @import("physics/propulsion.zig");
 pub const wing_line = @import("sizing/wing_line.zig");
 pub const modifiers = @import("modifiers/mod.zig");
 pub const collision = @import("collision/collision.zig");

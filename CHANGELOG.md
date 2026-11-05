@@ -41,6 +41,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   principal, momento do comando), marca o dono de cada painel (`Surface.owner`) e lê o `group` das superfícies. O
   modelo do voo e o refino ficam fixos num arquivo só, `sim/methods.zig` (faixas e o refino padrão), por causa do
   tempo real. Arquivo sem modificadores: o efeito solo de McCormick de sempre.
+- Desempenho → Tração em Zig (`aerosim/manager/simulations/thrust.zig`), com os números do Python no teste; uma
+  análise em Zig com o nome de uma do Python toma o lugar dela na mesma subaba, e os campos `floats` (lista de
+  números) passam a valer nas análises em Zig.
 - a pasta `aerosim/manager/native` sai (o nome dizia pouco e ela era só da Estabilidade): o contrato vai para
   `aerosim/interfaces/simulation.zig`, a lista das análises para `aerosim/manager/manager.zig` e a rajada para
   `aerosim/manager/simulations/stability.zig`, ao lado do `.py` de cada um. Cada análise do Python ganha o `.zig` ao
