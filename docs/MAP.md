@@ -53,13 +53,13 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   `default_backend:4`
 - `aerosim/backend/zig/__init__.py` — Núcleo de simulação em Zig (core/) exposto como ISimBackend.
 - `aerosim/backend/zig/abi.py` — Monta as estruturas ctypes a partir do esquema que o núcleo Zig exporta.
-  `class AbiMismatch:22`, `fnv1a64:26`, `check:35`, `class FieldInfo:47`, `class StructInfo:55`, `class Schema:63`, `parse:74`, `write:130`, `read:154`
+  `class AbiMismatch:26`, `fnv1a64:30`, `check:39`, `class FieldInfo:51`, `class StructInfo:60`, `class Schema:68`, `parse:81`, `number:144`, `write:160`, `read:187`
 - `aerosim/backend/zig/backend.py` — Implementação de ISimBackend com o núcleo em Zig (libaerosim, via ctypes).
   `lib_path:24`, `build:47`, `class CoreError:76`, `class ZigSession:219`, `class ZigBackend:497`
 - `aerosim/backend/zig/geometry.py` — Tradutor da checagem de geometria: o modelo universal vira as peças simples do núcleo (`core/src/geometry`),
   `scene:114`, `report:165`, `class ZigGeometry:191`
 - `aerosim/backend/zig/translator.py` — Tradutor modelo universal -> núcleo Zig (SimSpec: dicionário com os campos das structs extern).
-  `prop_native:26`, `surface_panels:42`, `panel_owners:75`, `class ZigTranslator:84`, `aero_native:152`, `native_spec:190`
+  `prop_native:28`, `surface_panels:44`, `panel_owners:77`, `class ZigTranslator:86`, `aero_native:155`, `native_spec:193`
 
 ## Python · `aerosim/data`
 
@@ -89,7 +89,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/design/flight.py` — O avião só sai da sprint se voar: a decolagem do núcleo 6GDL (o mesmo otimizador da aba Missão) acha o
   `tune_takeoff:19`
 - `aerosim/design/mdo.py` — Dimensionamento inicial como mini-MDO: monta a configuração do núcleo (`core/src/sizing`) a partir do
-  `kind_and_wings:40`, `class MdoParams:48`, `class MdoRun:70`, `airfoil_catalog:91`, `available:114`, `airfoil_data:144`, `build:154`, `tip_varies:236`, `at_bounds:246`, `opts_of:260`, `decode:265`, `history:280`, `run:291`, `evaluate:304`, `apply:316`, `planform:338`, `sketch:349`, `check_6dof:401`, `full_envelope:429`, `constraint_diagram:450`
+  `kind_and_wings:45`, `class MdoParams:53`, `class MdoRun:75`, `airfoil_catalog:96`, `available:119`, `airfoil_data:149`, `build:159`, `tip_varies:241`, `at_bounds:251`, `opts_of:265`, `decode:270`, `history:285`, `run:296`, `evaluate:309`, `apply:321`, `planform:343`, `sketch:354`, `check_6dof:406`, `full_envelope:434`, `constraint_diagram:455`
 - `aerosim/design/power.py` — Etapa Motores e montagem: onde ficam os motores (e por consequência a bateria, a carga e o trem) e o
   `class PowerParams:35`, `class AircraftCandidate:78`, `motor_counts:88`, `assemble:123`, `ground_pitch:309`, `trimmed_clmax:317`, `thrust_trim:338`, `thrust_of:458`, `motor_prop_spec:486`, `performance:505`, `trim_drag:558`, `design_point:580`
 - `aerosim/design/project.py` — O projeto da sprint: requisitos, regras e o que cada etapa guardou (perfis, asas, conjuntos, aviões).
@@ -247,13 +247,13 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/model/mission.py` — Percurso como uma corrente de pernas (retas e curvas).
   `auto_radius:20`, `class Leg:26`, `class MissionEvent:41`, `class Mission:48`, `circuit:121`, `short_circuit:145`, `takeoff_runway:156`, `level_turn:161`
 - `aerosim/model/modifiers.py` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro (efeito solo, esteira
-  `class ParamInfo:28`, `class KindInfo:37`, `class Modifier:87`, `default_modifiers:105`, `active:110`, `ground_method:114`, `additive:120`, `problems:124`, `describe:137`, `is_default:148`, `not_exported:154`, `native:179`
+  `class ParamInfo:28`, `class KindInfo:37`, `class Modifier:87`, `default_modifiers:105`, `active:110`, `ground_method:114`, `additive:120`, `problems:124`, `describe:137`, `is_default:148`, `not_exported:154`, `native:178`
 - `aerosim/model/serialize.py` — dataclass <-> dicionário (genérico, guiado pelas anotações de tipo).
   `to_dict:10`, `from_dict:52`
 - `aerosim/model/templates.py` — Aeronaves prontas para começar.
   `conventional:26`, `flying_wing:75`, `twin_boom:111`, `empty:149`, `is_empty:163`, `not_ready:168`
 - `aerosim/model/universal.py` — Modelo universal da aeronave — construído UMA vez a partir da configuração (`Aircraft`) e
-  `class Control:32`, `class Station:42`, `class SurfaceModel:51`, `class AircraftModel:130`, `strip_coeffs:247`, `wing_downwash:290`, `build_model:363`
+  `class Control:31`, `class Station:41`, `class SurfaceModel:50`, `class AircraftModel:129`, `strip_coeffs:246`, `wing_downwash:289`, `build_model:362`
 
 ## Python · `aerosim/parallel`
 

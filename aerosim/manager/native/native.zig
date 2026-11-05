@@ -8,11 +8,16 @@
 //! navegador, onde não há thread.
 const std = @import("std");
 const aircraft_model = @import("aircraft_model");
+const core = @import("aerosim");
 const gust_liquid = @import("gust_liquid.zig");
 
 pub const Aircraft = aircraft_model.aircraft.Aircraft;
 pub const Json = std.json.Value;
 pub const Writer = std.Io.Writer;
+
+/// o que dá errado numa análise: memória, escrita do JSON, montagem do avião no núcleo e o voo do núcleo. A
+/// mensagem para a tela vai em `Run.fail`; o erro só diz que parou
+pub const Error = error{ OutOfMemory, WriteFailed, NoRows } || std.Io.Writer.Error || aircraft_model.params.Error || core.gust.Error;
 
 /// uma análise em Zig: o que a tela mostra e como roda
 pub const Simulation = struct {
@@ -21,15 +26,15 @@ pub const Simulation = struct {
     area: []const u8, // a aba de cima onde a subaba entra ("Estabilidade")
     description: []const u8,
     /// escreve os campos e os gráficos para o avião e os valores de agora (o avião pode faltar)
-    specs: *const fn (out: *Writer, aircraft: ?*const Aircraft, values: Values) anyerror!void,
+    specs: *const fn (out: *Writer, aircraft: ?*const Aircraft, values: Values) Error!void,
     /// uma edição numa tabela da aba (`grids`), guardada pela própria análise até a próxima rodada; nulo: sem tabelas
-    edit: ?*const fn (aircraft: ?*const Aircraft, change: GridEdit) anyerror!void = null,
+    edit: ?*const fn (aircraft: ?*const Aircraft, change: GridEdit) Error!void = null,
     /// prepara a rodada em `run` (o avião já foi lido)
-    start: *const fn (run: *Run, values: Values) anyerror!void,
+    start: *const fn (run: *Run, values: Values) Error!void,
     /// avança uma fatia da rodada; verdadeiro quando acabou
-    advance: *const fn (run: *Run) anyerror!bool,
+    advance: *const fn (run: *Run) Error!bool,
     /// escreve o resultado da rodada que acabou
-    result: *const fn (run: *Run, out: *Writer) anyerror!void,
+    result: *const fn (run: *Run, out: *Writer) Error!void,
 };
 
 /// as análises em Zig, na ordem das subabas

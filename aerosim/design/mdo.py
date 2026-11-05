@@ -35,6 +35,11 @@ KINDS = ("convencional", "asa voadora", "tailsitter", "VTOL")     # a ordem de c
 OLD_KINDS = {"monoplano": ("convencional", 1), "biplano": ("convencional", 2)}   # projetos de antes da 0.2.6
 OBJECTIVES = ("MTOW", "EE")
 METHODS = ("PSO (enxame de partículas)", "busca aleatória")              # a ordem de optimize.zig
+# os nomes do Python para os do núcleo; o esquema da ABI traz os números (core/src/sizing/types.zig)
+CORE_KINDS = dict(zip(KINDS, ("conventional", "flying_wing", "tailsitter", "vtol")))          # AircraftKind
+CORE_OBJECTIVES = dict(zip(OBJECTIVES, ("mtow", "structural_efficiency")))                     # Objective
+CORE_METHODS = dict(zip(METHODS, ("particle_swarm", "random")))                                 # SearchMethod
+COMPARISON = {"≤": "at_most", "≥": "at_least", "=": "equal"}                                    # Comparison
 
 
 def kind_and_wings(mp) -> tuple[str, int]:
@@ -194,19 +199,19 @@ def build(project, mp: MdoParams | None = None, catalog=None, backend=None) -> t
     # variáveis
     def cont(key):
         lo, hi = _range(project, key)
-        return dict(lo=lo, hi=hi, kind=0)
+        return dict(lo=lo, hi=hi, kind="continuous")
     if not tip_var and wd.airfoil_tip and wd.airfoil_tip in amap and wd.airfoil_tip not in names:
         names.append(wd.airfoil_tip)                       # ponta fixa com outro perfil
     tip_fixed = bool(wd.airfoil_tip) and wd.airfoil_tip in names and wd.airfoil_tip != wd.airfoil
     tip_idx = names.index(wd.airfoil_tip) if wd.airfoil_tip in names else 0
     mlo, mhi = _range(project, "power.motors")
     vars_ = [cont("wing.span"), cont("wing.area"), cont("wing.taper"),
-             dict(lo=0, hi=len(root) - 1, kind=2),
-             dict(lo=0, hi=len(sets) - 1, kind=2),
-             dict(lo=mlo, hi=mhi, kind=1),
+             dict(lo=0, hi=len(root) - 1, kind="list"),
+             dict(lo=0, hi=len(sets) - 1, kind="list"),
+             dict(lo=mlo, hi=mhi, kind="integer"),
              cont("power.tilt"),
-             dict(lo=0, hi=len(names) - 1, kind=2) if tip_var else dict(lo=tip_idx, hi=tip_idx, kind=2),
-             dict(lo=0, hi=len(lays) - 1, kind=2)]
+             dict(lo=0, hi=len(names) - 1, kind="list") if tip_var else dict(lo=tip_idx, hi=tip_idx, kind="list"),
+             dict(lo=0, hi=len(lays) - 1, kind="list")]
     # restrições ativas que o dimensionamento inicial calcula
     qn = (backend.sizing_names()["quantities"] if backend is not None else
           ["S", "b", "AR", "V_S", "n_surf", "P_motor", "n_motor", "s_to", "V_max", "RC", "TW", "mass", "pv", "cp",
@@ -216,11 +221,11 @@ def build(project, mp: MdoParams | None = None, catalog=None, backend=None) -> t
         if not c.active:
             continue
         if c.key in qn:
-            cons.append(dict(q=qn.index(c.key), op=rg.OPS.index(c.op), value=c.value, tol=c.tol))
+            cons.append(dict(q=qn.index(c.key), op=COMPARISON[c.op], value=c.value, tol=c.tol))
         else:
             skipped.append(c.text())
     kind, wings = kind_and_wings(mp)
-    cfg = dict(kind=KINDS.index(kind), wing_count=wings, objective=OBJECTIVES.index(mp.objective), rho=req.rho, mu=req.mu_roll,
+    cfg = dict(kind=CORE_KINDS[kind], wing_count=wings, objective=CORE_OBJECTIVES[mp.objective], rho=req.rho, mu=req.mu_roll,
                V_turn=req.V_turn or req.V_cruise, mu_brake=req.mu_brake,
                m_max=mp.m_max, tail_area_frac=mp.tail_area_frac, fuselage_CDS=mp.fuselage_CDS,
                wing_density=project.rules.wing_density, tail_density=project.rules.tail_density,
@@ -258,7 +263,7 @@ def at_bounds(row: dict, bounds: dict, tol: float = 1e-3) -> list[str]:
 
 
 def opts_of(mp: MdoParams) -> dict:
-    return dict(method=METHODS.index(mp.method), particles=mp.particles, iterations=mp.iterations, seed=mp.seed,
+    return dict(method=CORE_METHODS[mp.method], particles=mp.particles, iterations=mp.iterations, seed=mp.seed,
                 penalty=mp.penalty)
 
 

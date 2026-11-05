@@ -187,7 +187,7 @@ const tank_columns = [_]native.Column{
 };
 
 /// muda a tabela dos tanques
-fn edit(aircraft: ?*const native.Aircraft, change: native.GridEdit) anyerror!void {
+fn edit(aircraft: ?*const native.Aircraft, change: native.GridEdit) native.Error!void {
     if (aircraft) |plane| tanks_table.sync(plane);
     if (!std.mem.eql(u8, change.grid, "tanks")) return;
     const operation = std.meta.stringToEnum(enum { set, add, delete, reset }, change.operation) orelse return;
@@ -312,7 +312,7 @@ fn view(memory: std.mem.Allocator, plane: *const native.Aircraft, mass: ?Balance
     return .{ .meshes = meshes.items, .cg = if (mass) |known| known.center else null };
 }
 
-fn specs(out: *native.Writer, aircraft: ?*const native.Aircraft, values: native.Values) anyerror!void {
+fn specs(out: *native.Writer, aircraft: ?*const native.Aircraft, values: native.Values) native.Error!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const memory = arena.allocator();
@@ -383,7 +383,7 @@ fn effects(state: *const State, free: *const Flight) std.EnumArray(Effect, bool)
     return .init(.{ .plain = true, .sloshing = state.n_tanks > 0, .lapes = state.lapes > 0 and free.case.release != null and free.instance.r.f.released != 0 });
 }
 
-fn start(run: *native.Run, values: native.Values) anyerror!void {
+fn start(run: *native.Run, values: native.Values) native.Error!void {
     const memory = run.memory();
     const state = try memory.create(State);
     state.* = .{};
@@ -428,7 +428,7 @@ fn start(run: *native.Run, values: native.Values) anyerror!void {
     }
 }
 
-fn advance(run: *native.Run) anyerror!bool {
+fn advance(run: *native.Run) native.Error!bool {
     const state: *State = @ptrCast(@alignCast(run.state.?));
     if (state.current >= state.count) return samplePoles(run, state);
     const flight = &state.flights[state.current];
@@ -513,7 +513,7 @@ fn largest(values: []const f64, reference: f64) f64 {
     return peak;
 }
 
-fn result(run: *native.Run, out: *native.Writer) anyerror!void {
+fn result(run: *native.Run, out: *native.Writer) native.Error!void {
     const memory = run.memory();
     const state: *State = @ptrCast(@alignCast(run.state.?));
     const free = &state.flights[0];

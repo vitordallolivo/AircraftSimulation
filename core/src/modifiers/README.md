@@ -77,7 +77,8 @@ const gain = m.settings(types.SlipstreamSettings).axial_gain;   // params[0], pe
 ```
 
 Número desconhecido (um arquivo de uma versão mais nova) cai no `_` do enum e é ignorado. Um tipo novo é um campo novo
-no fim do enum, com o próximo número, e o mesmo número em `aerosim/model/modifiers.py` (`KINDS[...].core_id`).
+no fim do enum, com o próximo número. O Python escreve o tipo pelo nome (`KINDS[...].core`): o esquema da ABI traz
+os nomes e os números de cada enum, então nenhum número se copia à mão.
 
 As máscaras `surf_mask` e `prop_mask` são conjuntos: o bit $`i`$ é o painel (ou o motor) $`i`$, e vazio quer dizer todos.
 Dentro do núcleo elas são lidas como `PanelSet` e `PropSet` (`Modifier.affectsPanel`, `affectsProp`).
@@ -317,7 +318,7 @@ Testes do módulo: `zig build test -Dgrupo=physics` (inclui `modifiers/`), `pyte
 3. Em `mod.zig` (aditivo, um caso no `switch` de `induced`) ou em `ground.zig` (solo, um caso em `factor`):
    a fórmula, com a referência no comentário. Teste Zig que reproduz um número publicado.
 4. Uma sonda em `root.zig` (`aerosim_probe_*`) e o subcomando em `tools/probe.py`.
-5. Em `aerosim/model/modifiers.py`: a entrada em `KINDS` (título, categoria, `core_id`, referência,
+5. Em `aerosim/model/modifiers.py`: a entrada em `KINDS` (título, categoria, `core` com o nome do enum, referência,
    parâmetros com unidade) e em `SETTINGS` (as chaves na ordem da struct de ajustes).
 6. Testes de invariância (desligado = sem efeito; sentido invertido espelha; simetria; superposição).
 7. Uma linha na tabela "Métodos e referências" acima.

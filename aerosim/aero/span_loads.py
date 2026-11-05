@@ -283,12 +283,12 @@ class StripLoadMethod(ILoadMethod):
 
 
 # Goates e Hunsaker 2021: junta das pernas (fração da corda) e distância de mistura da linha efetiva (padrões do
-# MachUpX); com os dois em 0 a linha sustentadora do núcleo é a de Phillips e Snyder (core/src/loads/llt.zig)
-GOATES_HUNSAKER = {"llt_method": 1, "llt_joint": 0.15, "llt_blend": 1.0}   # core/src/types.zig: LiftingLineMethod
+# MachUpX); só valem com `llt_method = "goates_hunsaker"` (sem ele, Phillips e Snyder; core/src/loads/llt.zig)
+GOATES_HUNSAKER = {"llt_method": "goates_hunsaker", "llt_joint": 0.15, "llt_blend": 1.0}   # core/src/types.zig: LiftingLineMethod
 # versão não linear: cada seção segue o c_l(α) do perfil com estol, resolvida por Newton (Phillips e Snyder 2000), com
 # viscosidade artificial depois do estol (ν = 2: o menor que deixou o pós-estol suave e convergido na asa retangular de
 # teste, core/src/loads/llt.zig)
-NONLINEAR = {"llt_method": 2, "llt_viscosity": 2.0}
+NONLINEAR = {"llt_method": "nonlinear", "llt_viscosity": 2.0}
 
 
 class CoreLoadMethod(StripLoadMethod):

@@ -3,6 +3,10 @@
 Nenhum layout é escrito à mão aqui: `aerosim_schema()` descreve cada struct (campos,
 tipos, contagens, offsets) e este módulo cria as classes ctypes e confere tamanho e
 offsets de cada campo. Se o núcleo mudar, o Python acompanha sozinho.
+
+Os enums e os flags do núcleo também vêm no esquema, com nome e número: um campo enum se escreve pelo nome
+(`{"aero_model": "lifting_line"}`) e um campo de flags pela lista dos bits ligados (`{"flags": ["enabled", "axial"]}`),
+sem copiar número nenhum à mão.
 """
 from __future__ import annotations
 
@@ -49,6 +53,7 @@ class FieldInfo:
     kind: str
     count: int
     offset: int
+    named: str = ""                     # o enum ou os flags do campo (`i32` no layout)
 
 
 @dataclass
@@ -67,6 +72,8 @@ class Schema:
     snapshot_size: int = 0
     poly_terms: list[str] = field(default_factory=list)   # ordem dos coeficientes do polinômio de tração
     structs: dict[str, StructInfo] = field(default_factory=dict)
+    enums: dict[str, dict[str, int]] = field(default_factory=dict)   # nome do enum -> {valor: número}
+    flags: dict[str, dict[str, int]] = field(default_factory=dict)   # nome dos flags -> {bit: posição}
     types: dict[str, type] = field(default_factory=dict)       # ctypes
     dtypes: dict[str, np.dtype] = field(default_factory=dict)  # numpy (structs planas)
 
@@ -74,6 +81,7 @@ class Schema:
 def parse(text: str) -> Schema:
     sc = Schema(hash=fnv1a64(text.encode()))
     cur: StructInfo | None = None
+    names: dict[str, int] | None = None          # o enum ou os flags que se está lendo
     for line in text.splitlines():
         tok = line.split()
         if not tok:
@@ -90,11 +98,16 @@ def parse(text: str) -> Schema:
             cur = StructInfo(tok[1], int(tok[2]), int(tok[3]))
         elif tok[0] == "field":
             assert cur is not None
-            cur.fields.append(FieldInfo(tok[1], tok[2], int(tok[3]), int(tok[4])))
+            cur.fields.append(FieldInfo(tok[1], tok[2], int(tok[3]), int(tok[4]), tok[5] if len(tok) > 5 else ""))
+        elif tok[0] in ("enum", "flags"):
+            names = (sc.enums if tok[0] == "enum" else sc.flags).setdefault(tok[1], {})
+        elif tok[0] in ("value", "bit"):
+            assert names is not None
+            names[tok[1]] = int(tok[2])
         elif tok[0] == "end":
-            assert cur is not None
-            sc.structs[cur.name] = cur
-            cur = None
+            if cur is not None:
+                sc.structs[cur.name] = cur
+            cur = names = None
     for name, st in sc.structs.items():
         sc.types[name] = _build(sc, st)
         if all(f.kind in _PRIM for f in st.fields):
@@ -112,7 +125,8 @@ def _build(sc: Schema, st: StructInfo) -> type:
     for f in st.fields:
         base = _PRIM.get(f.kind) or sc.types[f.kind]
         fields.append((f.name, base * f.count if f.count > 1 else base))
-    cls = type(st.name, (ctypes.Structure,), {"_fields_": fields})
+    named = {f.name: sc.enums.get(f.named) or {"flags": sc.flags.get(f.named, {})} for f in st.fields if f.named}
+    cls = type(st.name, (ctypes.Structure,), {"_fields_": fields, "_named_": named})
     if ctypes.sizeof(cls) != st.size:
         raise RuntimeError(f"ABI: {st.name} tem {ctypes.sizeof(cls)} bytes no Python e {st.size} no núcleo")
     for f in st.fields:
@@ -127,8 +141,25 @@ def _is_struct(v) -> bool:
     return isinstance(v, ctypes.Structure)
 
 
+def number(obj: ctypes.Structure, key: str, value, path: str = ""):
+    """o número de um campo enum ou de flags escrito pelo nome (o resto passa igual)"""
+    names = getattr(obj, "_named_", {}).get(key)
+    if names is None or not isinstance(value, (str, list, tuple, set, frozenset)):
+        return value
+    if "flags" in names:                                        # flags: a lista dos bits ligados
+        bits = names["flags"]
+        unknown = [b for b in value if b not in bits]
+        if isinstance(value, str) or unknown:
+            raise ValueError(f"{path}{key}: bits {unknown or value!r} não existem ({' | '.join(bits)})")
+        return sum(1 << bits[b] for b in value)
+    if not isinstance(value, str) or value not in names:
+        raise ValueError(f"{path}{key}: {value!r} não existe ({' | '.join(names)})")
+    return names[value]
+
+
 def write(obj: ctypes.Structure, spec: dict, path: str = "") -> None:
-    """escreve um SimSpec (dicionário aninhado) na struct; chave desconhecida é erro"""
+    """escreve um SimSpec (dicionário aninhado) na struct; chave desconhecida é erro. Campo enum aceita o nome e
+    campo de flags a lista dos bits ligados (ver `number`)"""
     names = {n for n, _ in obj._fields_}
     for k, v in spec.items():
         if k not in names:
@@ -146,8 +177,10 @@ def write(obj: ctypes.Structure, spec: dict, path: str = "") -> None:
                 vals = list(v) if hasattr(v, "__len__") else [v]
                 if len(vals) > len(cur):
                     raise ValueError(f"{path}{k}: {len(vals)} valores, limite {len(cur)}")
+                vals = [number(obj, k, x, path) for x in vals]
                 cur[:len(vals)] = [float(x) if isinstance(cur[0], float) else int(x) for x in vals]
         else:
+            v = number(obj, k, v, path)
             setattr(obj, k, type(cur)(v) if isinstance(cur, int) else float(v))
 
 

@@ -17,10 +17,12 @@ from aerosim.interfaces.translator import COEFFS, IModelTranslator
 from aerosim.model.aircraft import ANGLE_KEYS_AP, panel_mix
 from aerosim.model import modifiers
 from aerosim.model.catalog import POLY_VARS
-from aerosim.model.universal import GROUP, AircraftModel, SurfaceModel, build_model
+from aerosim.model.universal import AircraftModel, SurfaceModel, build_model
 
-GEAR_KIND = {"steer": 0, "main": 1, "skid": 2}
 D2R = math.pi / 180.0
+# os nomes do Python para os do núcleo; o esquema da ABI traz os números (core/src/types.zig: Group, PolyVariable)
+GROUP = {"wing": "wing", "htail": "htail", "vtail": "vtail", "device": "vtail"}
+POLY_VARIABLE = dict(zip(POLY_VARS, ("none", "airspeed", "throttle", "height", "density", "constant")))
 
 
 def prop_native(u, rint_factor: float = 1.0) -> dict:
@@ -30,8 +32,8 @@ def prop_native(u, rint_factor: float = 1.0) -> dict:
     n = min(len(pr.J), 64)
     tp = u.thrust_poly
     return dict(
-        model=1 if u.thrust_model == "poly" else 0, poly=(list(tp.coefs) + [0.0] * 21)[:21],
-        poly_x=POLY_VARS.index(tp.x_var), poly_y=POLY_VARS.index(tp.y_var), poly_gain=tp.gain,
+        model="polynomial" if u.thrust_model == "poly" else "motor", poly=(list(tp.coefs) + [0.0] * 21)[:21],
+        poly_x=POLY_VARIABLE[tp.x_var], poly_y=POLY_VARIABLE[tp.y_var], poly_gain=tp.gain,
         poly_rho_exp=tp.rho_exp, poly_rho0=tp.rho0, poly_xmax=tp.xmax, poly_ymax=tp.ymax,
         poly_xc=tp.x_const, poly_yc=tp.y_const,
         r=[u.x, u.y, u.z], tilt=u.tilt * D2R, toe=u.toe * D2R, tilt_range=u.tilt_range * D2R, sense=float(u.sense),
@@ -67,7 +69,7 @@ def surface_panels(s: SurfaceModel) -> list[dict]:
                 r=r, S=S, c=cm, AR=s.AR, e=s.oswald, dihedral=math.radians(s.dihedral), incidence=math.radians(inc),
                 CLa=co["CLa"], CL0=co["CL0"], CLmax=co["CLmax"], CD0=co["CD0"], Cmac=co["Cmac"], tau=tau,
                 mix=panel_mix(ctl.gains, side) if ctl is not None else [0.0, 0.0, 0.0], eta=s.eta,
-                eps0=s.eps0, depsda=s.depsda, group=GROUP.get(s.role, 0), vertical=int(s.vertical), side=side,
+                eps0=s.eps0, depsda=s.depsda, group=GROUP.get(s.role, "wing"), vertical=int(s.vertical), side=side,
                 downwash=int(s.downwash)))
     return out
 
@@ -116,9 +118,9 @@ class ZigTranslator(IModelTranslator):
             fus_CDS=CDS, fus_Cma=f.Cma if f.enabled else 0.0, fus_Cnb=f.Cnb if f.enabled else 0.0,
             fus_CYb=f.CYb if f.enabled else 0.0, fus_r=list(fus_r),
             surf=surf, prop=props,
-            gear=[dict(r=[q.x, q.y, q.z], k=q.k, c=q.c, kind=GEAR_KIND[q.kind]) for q in g.legs()],
+            gear=[dict(r=[q.x, q.y, q.z], k=q.k, c=q.c, kind=q.kind) for q in g.legs()],
             tank=[dict(r=[t.x, t.y, t.z], side=t.side, fill=t.fill, rho=t.rho, zeta=t.zeta,
-                       shape=0 if t.shape == "square" else 1) for t in ac.tanks],
+                       shape=t.shape) for t in ac.tanks],
             slosh_on=int(ac.sim.slosh), prop_strike=int(ac.sim.prop_strike),
             mu_roll=g.mu_roll, mu_lat=g.mu_lat, mu_brake=g.mu_brake, mu_skid=g.mu_skid, mu_landing=g.mu_landing,
             payload=dict(enabled=int(P.enabled), m=P.mass, r=[P.x, P.y, P.z], bay=P.bay, Fext_g=P.Fext_g,
@@ -144,13 +146,14 @@ class ZigTranslator(IModelTranslator):
         return {k: float(raw[k]) for k in raw if k in COEFFS or k in ("CL_wing", "CL_ht", "ratioCL")}
 
 
-AERO_MODELS = {"faixas": 0, "llt": 1, "llt_gh": 1, "llt_nl": 1, "tabela": 2}     # core/src/physics/aeromodel.zig
+AERO_MODELS = {"faixas": "strips", "llt": "lifting_line", "llt_gh": "lifting_line", "llt_nl": "lifting_line",
+               "tabela": "table"}                                     # core/src/types.zig: AeroModel
 TABLE_DERIVS = ("CYb", "Clb", "Cnb", "CYp", "Clp", "Cnp", "CLq", "Cmq", "CYr", "Clr", "Cnr", "CLde", "Cmde", "Clda",
                 "Cnda", "CYdr", "Cldr", "Cndr")
 
 
 def aero_native(sim) -> dict:
-    """o modelo aerodinâmico do voo para os `Params` (`aero_model`, `llt_joint`, `llt_blend`, `llt_nonlinear`,
+    """o modelo aerodinâmico do voo para os `Params` (`aero_model`, `llt_method`, `llt_joint`, `llt_blend`,
     `aero_tab`). "faixas" não escreve nada: os padrões do núcleo são as faixas de sempre"""
     kind = getattr(sim, "aero_model", "faixas") or "faixas"
     if kind not in AERO_MODELS:

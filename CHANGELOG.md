@@ -31,6 +31,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   `wing_line.Conditions.stations` (estações da linha sustentadora do dimensionamento, até 64). No Python,
   `AeroCase.n_chord` (painéis na corda do VLM e do AVL) e, nas cargas, `vlm_span`/`vlm_chord`; 0 deixa o padrão de
   cada método.
+- os enums no esquema da ABI: cada campo enum ou de flags leva o nome do tipo, e o esquema lista os nomes e os números
+  (`enum AeroModel` / `value lifting_line 1`; `flags Flags` / `bit axial 1`). O Python escreve pelo nome
+  (`aero_model="lifting_line"`, `flags=["enabled", "axial"]`), e somem os números copiados à mão (`core_id`,
+  `GEAR_KIND`, `GROUP`, `AERO_MODELS`, os bits dos flags, os índices do dimensionamento). As análises em Zig
+  (`aerosim/manager/native`) devolvem `native.Error`, um conjunto de erros com nome, no lugar de `anyerror`.
 
 ### v0.2.5 (em andamento na `0.2_dev`)
 

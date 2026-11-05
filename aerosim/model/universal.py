@@ -25,7 +25,6 @@ import numpy as np
 from .aircraft import Aircraft, LiftingSurface
 from .airfoil import Airfoil, flap_effectiveness, helmbold, naca4
 
-GROUP = {"wing": 0, "htail": 1, "vtail": 2, "device": 2}
 
 
 @dataclass

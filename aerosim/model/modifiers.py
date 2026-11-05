@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-GROUND_OFF = 0                 # core/src/modifiers/types.zig: Ground.off
+GROUND_OFF = "off"             # core/src/modifiers/types.zig: Ground (o esquema da ABI traz os nomes)
 MAX_MODS = 8                   # core/src/limits.zig: max_mods (conferido contra o esquema nos testes)
 
 
@@ -38,7 +38,7 @@ class KindInfo:
     kind: str
     title: str
     category: str              # "solo" | "aditivo"
-    core_id: int               # o número no núcleo (types.zig: Ground para "solo", Kind para "aditivo")
+    core: str                  # o nome no núcleo (types.zig: Ground para "solo", Kind para "aditivo")
     reference: str             # de onde vem a fórmula (obra e equação)
     description: str = ""
     params: tuple[ParamInfo, ...] = ()
@@ -46,13 +46,13 @@ class KindInfo:
 
 KINDS: dict[str, KindInfo] = {
     "solo.mccormick": KindInfo(
-        "solo.mccormick", "efeito solo: McCormick", "solo", 1,
+        "solo.mccormick", "efeito solo: McCormick", "solo", "mccormick",
         "B. W. McCormick, Aerodynamics, Aeronautics, and Flight Mechanics (Wiley); a mesma expressão em "
         "J. D. Anderson, Aircraft Performance and Design (McGraw-Hill)",
         "φ = (16h/b)² / (1 + (16h/b)²) multiplica o arrasto induzido de cada painel horizontal, com h a altura "
         "do painel acima do chão a cada passo"),
     "esteira.disco": KindInfo(
-        "esteira.disco", "esteira da hélice: disco atuador", "aditivo", 1,
+        "esteira.disco", "esteira da hélice: disco atuador", "aditivo", "slipstream_disk",
         "teoria do momento de Rankine–Froude (McCormick; Glauert em Durand, Aerodynamic Theory IV, 1935); "
         "w(x) = w0 (1 + x/√(x² + R²)) do disco atuador (McCormick, Aerodynamics of V/STOL Flight; Veldhuis, "
         "ICAS 2004 / tese TU Delft 2005); giro pelo balanço de momento angular (Glauert)",
@@ -64,7 +64,7 @@ KINDS: dict[str, KindInfo] = {
          ParamInfo("ganho_axial", "ganho da axial", 1.0, "", "calibração (1 = a teoria)"),
          ParamInfo("ganho_giro", "ganho do giro", 1.0, "", "calibração (1 = a teoria)"))),
     "interferencia.asas": KindInfo(
-        "interferencia.asas", "interferência entre as asas da configuração", "aditivo", 2,
+        "interferencia.asas", "interferência entre as asas da configuração", "aditivo", "wing_interference",
         "ferraduras de Γ = ½ V c η c_l (Kutta–Joukowski) e Biot–Savart de segmento reto (Katz e Plotkin, "
         "Low-Speed Aerodynamics, 2ª ed., cap. 10; a conferir no PDF), como na linha sustentadora do núcleo "
         "(Phillips e Snyder 2000), numa passada e só entre asas diferentes",
@@ -73,7 +73,7 @@ KINDS: dict[str, KindInfo] = {
         "faixas e com duas asas ligadas ou mais. Desligado por padrão",
         (ParamInfo("ganho", "ganho da induzida", 1.0, "", "calibração (1 = a teoria)"),)),
     "comando.momento_flape": KindInfo(
-        "comando.momento_flape", "momento próprio dos comandos (flape, profundor, elevon)", "aditivo", 3,
+        "comando.momento_flape", "momento próprio dos comandos (flape, profundor, elevon)", "aditivo", "flap_moment",
         "teoria do perfil fino com flape: Δc_m,c/4 = −½ sen θ_f (1 − cos θ_f) δ, cos θ_f = 2 c_f/c − 1 (J. D. "
         "Anderson, Fundamentals of Aerodynamics, seção do flape na teoria do perfil fino; a conferir no PDF)",
         "nas faixas, o comando também muda o momento no quarto de corda da faixa, além do C_L. Sem isso o elevon "
@@ -111,10 +111,10 @@ def active(ac) -> list[Modifier]:
     return [m for m in getattr(ac, "modifiers", []) if m.enabled and m.kind in KINDS]
 
 
-def ground_method(ac) -> int:
+def ground_method(ac) -> str:
     """o método do efeito solo para o núcleo (o primeiro "solo" ligado; nenhum: desligado)"""
     m = next((m for m in active(ac) if KINDS[m.kind].category == "solo"), None)
-    return KINDS[m.kind].core_id if m is not None else GROUND_OFF
+    return KINDS[m.kind].core if m is not None else GROUND_OFF
 
 
 def additive(ac) -> list[Modifier]:
@@ -159,20 +159,19 @@ def not_exported(ac, path: str) -> list[str]:
             "formato: ao abrir de novo volta o padrão (efeito solo de McCormick). Grave em .json para guardar."]
 
 
-# core/src/modifiers/types.zig: Modifier.flags (bit 0 ligado, bit 1 axial, bit 2 giro)
-FLAG_ENABLED, FLAG_AXIAL, FLAG_SWIRL = 1, 2, 4
 # os ajustes de cada tipo, na ordem da struct de ajustes do núcleo (SlipstreamSettings, InterferenceSettings,
 # FlapMomentSettings); as chaves que ligam e desligam vão nos flags
 SETTINGS = {"esteira.disco": ("ganho_axial", "ganho_giro"), "interferencia.asas": ("ganho",),
             "comando.momento_flape": ("fator",)}
 
 
-def _flags(m: Modifier) -> int:
-    flags = FLAG_ENABLED
+def _flags(m: Modifier) -> list[str]:
+    """os bits ligados de `Modifier.flags` (core/src/modifiers/types.zig: Flags), pelo nome"""
+    flags = ["enabled"]
     if m.kind != "esteira.disco" or m.value("axial") != 0:
-        flags |= FLAG_AXIAL
+        flags.append("axial")
     if m.kind != "esteira.disco" or m.value("giro") != 0:
-        flags |= FLAG_SWIRL
+        flags.append("swirl")
     return flags
 
 
@@ -198,7 +197,7 @@ def native(ac, panel_owner: list[str], prop_count: int, max_mods: int = MAX_MODS
                 continue                                                     # nenhum painel: nada a fazer
         pmask = sum(1 << i for i in m.props if 0 <= i < prop_count)
         vals = [m.value(k) for k in SETTINGS.get(m.kind, ())]
-        mods.append(dict(kind=inf.core_id, flags=_flags(m), surf_mask=mask, prop_mask=pmask,
+        mods.append(dict(kind=inf.core, flags=_flags(m), surf_mask=mask, prop_mask=pmask,
                          params=(vals + [0.0] * 16)[:16]))
     return dict(ground=ground_method(ac), n_mod=len(mods), mods=mods)
 

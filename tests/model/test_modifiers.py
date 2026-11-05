@@ -21,7 +21,7 @@ def test_examples_open_with_the_default(name):
     ac = load_aircraft(os.path.join(ROOT, "data", "aircraft", name))
     assert mods.is_default(ac) and [m.kind for m in ac.modifiers] == ["solo.mccormick"]
     sp = native_spec(ac)
-    assert sp["ground"] == 1 and sp["n_mod"] == 0 and sp["mods"] == []
+    assert sp["ground"] == "mccormick" and sp["n_mod"] == 0 and sp["mods"] == []
 
 
 def test_json_round_trip_keeps_the_list(tmp_path):
@@ -46,7 +46,7 @@ def test_old_file_without_the_key(tmp_path):
 
 def test_translator_and_limits(backend):
     ac = conventional()
-    assert native_spec(ac)["ground"] == 1
+    assert native_spec(ac)["ground"] == "mccormick"
     ac.modifiers = []
     assert native_spec(ac)["ground"] == mods.GROUND_OFF
     ac.modifiers = [mods.Modifier("solo.mccormick", enabled=False)]
@@ -62,7 +62,7 @@ def test_problems_and_export_warning():
     pr = mods.problems(ac)
     assert any("desconhecido" in p for p in pr) and any("2 métodos" in p for p in pr)
     assert mods.not_exported(ac, "x.cfg") and not mods.not_exported(ac, "x.json")
-    assert native_spec(ac)["ground"] == 1                # o desconhecido é ignorado
+    assert native_spec(ac)["ground"] == "mccormick"                # o desconhecido é ignorado
 
 
 def test_ground_effect_switch_changes_the_takeoff(manager):
