@@ -8,6 +8,7 @@ const ui_kit = @import("ui");
 const theme = ui_kit.theme;
 const widgets = ui_kit.widgets;
 const view3d = ui_kit.view3d;
+const templates = @import("templates");
 const jobs = ui_kit.jobs;
 const page_mod = @import("page.zig");
 const python_bridge = @import("python_bridge.zig");
@@ -84,6 +85,7 @@ pub const Screen = struct {
     assembly_panel: ?AssemblyPanel = null, // o resumo ao lado do 3D (`config_tab.panel`), refeito ao abrir
     assembly_scroll: ui_kit.scroll.ScrollArea = .{},
     assembly_drag: ?PieceDrag = null, // a peça sendo arrastada no 3D
+    restore_open: bool = false, // o menu do "Restaurar" aberto: como foi aberto ou um modelo padrão
     assembly_angle: ViewAngle = .free, // a vista da Montagem: 3D livre ou lateral, superior e frontal em escala
     assembly_editor: ?AssemblyEditor = null, // a lista de componentes e o editor da peça escolhida
     pending_assembly: [256]u8 = undefined, // acao=montagem:...: botões ("+ EH"), "peca=N", "editar=campo=valor", "trazer=arquivo#N" ou "vista=Lateral", até o avião abrir
@@ -244,6 +246,18 @@ pub const Screen = struct {
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · restaurado como foi aberto", .{std.fs.path.basename(opened.path)}) catch {};
     }
 
+    /// "Restaurar → modelo padrão": o avião vira o modelo `index` de `templates.all` (as edições se perdem, como no
+    /// Python); "Salvar" grava o modelo no arquivo aberto
+    fn restoreTemplate(screen: *Screen, index: usize) void {
+        const opened = &(screen.assembly orelse return);
+        if (index >= templates.all.len) return;
+        const chosen = templates.all[index];
+        opened.document = std.json.parseFromSliceLeaky(std.json.Value, opened.document_arena.allocator(), chosen.json, .{}) catch return;
+        screen.showSwitched();
+        screen.commitDocument(null);
+        _ = std.fmt.bufPrintZ(&screen.assembly_note, "modelo padrão: {s} (Salvar grava)", .{chosen.name}) catch {};
+    }
+
     /// "Acertar o CG" (`design.balance.rebalance`): move a bateria ou o lastro para o CG voltar ao de projeto
     fn fitCg(screen: *Screen) void {
         const opened = &(screen.assembly orelse return);
@@ -346,6 +360,10 @@ pub const Screen = struct {
                 const opened = &screen.assembly.?;
                 const moved = config_tab.moveBy(opened.document_arena.allocator(), &opened.document, &opened.loaded.ac, editor.list[editor.selected], offset) catch false;
                 if (moved) screen.commitDocument(null);
+            } else if (std.mem.startsWith(u8, step, "modelo=")) { // Restaurar → modelo padrão N
+                screen.restoreTemplate(std.fmt.parseInt(usize, step[7..], 10) catch continue);
+            } else if (std.mem.eql(u8, step, "menu restaurar")) {
+                screen.restore_open = true;
             } else if (std.mem.eql(u8, step, "Restaurar")) {
                 screen.restoreAircraft();
             } else if (std.mem.eql(u8, step, "Acertar o CG")) {
@@ -903,14 +921,16 @@ pub const Screen = struct {
             }
         }
         // "Restaurar" e "Acertar o CG", antes dos botões das vistas
+        var restore_at: ?rl.Vector2 = null;
         if (screen.assembly != null) {
             const actions = [_][:0]const u8{ "Restaurar", "Acertar o CG" };
             for (actions, 0..) |caption, k| {
                 const button_width: f32 = 110;
                 const button: rl.Rectangle = .{ .x = card_rect.x + card_rect.width - 8 - 4 * (86 + 6) - 12 - (2 - @as(f32, @floatFromInt(k))) * (button_width + 6), .y = card_rect.y + 5, .width = button_width, .height = 26 };
                 if (ui_kit.dialogs.button(ui, button, caption)) {
-                    if (k == 0) screen.restoreAircraft() else screen.fitCg();
+                    if (k == 0) screen.restore_open = !screen.restore_open else screen.fitCg();
                 }
+                if (k == 0 and screen.restore_open) restore_at = .{ .x = button.x, .y = button.y + button.height + 4 };
             }
         }
         // os botões das vistas, à direita do título (por cima do cartão); arrastar volta ao 3D livre
@@ -921,6 +941,22 @@ pub const Screen = struct {
             if (screen.assembly_angle == angle) rl.drawRectangleLinesEx(button, 2, theme.colors.accent);
         }
         theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.assembly_note, 0), area.x + 6, area.y + area.height - 18, 12, theme.colors.muted);
+        // o menu do "Restaurar", por cima de tudo: como foi aberto ou um dos modelos padrão
+        if (restore_at) |corner| {
+            var captions: [1 + templates.all.len][:0]const u8 = undefined;
+            var caption_buffers: [templates.all.len][96]u8 = undefined;
+            captions[0] = "como estava ao abrir";
+            for (templates.all, 0..) |template, k| captions[k + 1] = widgets.format(&caption_buffers[k], "modelo padrão: {s}", .{template.name});
+            const menu_width: f32 = 400;
+            const box: rl.Rectangle = .{ .x = corner.x, .y = corner.y, .width = menu_width, .height = @as(f32, @floatFromInt(captions.len)) * 34 + 8 };
+            rl.drawRectangleRec(box, theme.colors.panel);
+            rl.drawRectangleLinesEx(box, 1, theme.colors.muted);
+            var used: f32 = 0;
+            if (ui_kit.menus.buttonGrid(ui, box.x + 4, box.y + 4, menu_width - 8, &captions, 1, &used)) |pressed| {
+                screen.restore_open = false;
+                if (pressed == 0) screen.restoreAircraft() else screen.restoreTemplate(pressed - 1);
+            }
+        }
     }
 };
 

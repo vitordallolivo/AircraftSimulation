@@ -112,11 +112,14 @@ pub fn build(b: *std.Build) void {
             .{ .name = "raygui", .module = raygui },
         },
     });
+    // os modelos padrão do avião (gerados de `model/templates.py`), para o "Restaurar" da Montagem
+    const templates = b.createModule(.{ .root_source_file = b.path("model/templates.zig"), .target = target, .optimize = optimize });
     const program = b.createModule(.{
         .root_source_file = b.path("gui/main.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
+            .{ .name = "templates", .module = templates },
             .{ .name = "raylib", .module = raylib },
             .{ .name = "ui", .module = ui },
             .{ .name = "aerosim", .module = core },
