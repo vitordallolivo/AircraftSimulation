@@ -80,7 +80,7 @@ pub const Screen = struct {
     assembly_scroll: ui_kit.scroll.ScrollArea = .{},
     assembly_angle: ViewAngle = .free, // a vista da Montagem: 3D livre ou lateral, superior e frontal em escala
     assembly_editor: ?AssemblyEditor = null, // a lista de componentes e o editor da peça escolhida
-    pending_assembly: [256]u8 = undefined, // acao=montagem:...: botões ("+ EH"), "peca=N", "trazer=arquivo#N" ou "vista=Lateral", até o avião abrir
+    pending_assembly: [256]u8 = undefined, // acao=montagem:...: botões ("+ EH"), "peca=N", "editar=campo=valor", "trazer=arquivo#N" ou "vista=Lateral", até o avião abrir
     pending_assembly_len: usize = 0,
     importing_file: bool = false, // a janela de arquivos aberta é a de trazer uma peça de outro avião
     loader: ui_kit.jobs.Job = .{}, // lê o .json fora do laço da tela
@@ -160,6 +160,13 @@ pub const Screen = struct {
             const text = config_tab.serialize(std.heap.page_allocator, opened.document) catch |err| break :blk @errorName(err);
             defer std.heap.page_allocator.free(text);
             opened.reload(std.heap.page_allocator, io(), text, &diagnosis) catch |err| break :blk if (diagnosis.len > 0) diagnosis.text() else @errorName(err);
+            // as superfícies presas ("presa em") vão para o ponto delas, e o avião é lido de novo
+            const moved = config_tab.placeMounted(opened.document_arena.allocator(), &opened.document, &opened.loaded.ac) catch |err| break :blk @errorName(err);
+            if (moved) {
+                const placed = config_tab.serialize(std.heap.page_allocator, opened.document) catch |err| break :blk @errorName(err);
+                defer std.heap.page_allocator.free(placed);
+                opened.reload(std.heap.page_allocator, io(), placed, &diagnosis) catch |err| break :blk if (diagnosis.len > 0) diagnosis.text() else @errorName(err);
+            }
             break :blk null;
         };
         if (failed) |reason| {
@@ -222,6 +229,24 @@ pub const Screen = struct {
                 for (std.enums.values(ViewAngle)) |angle| if (std.ascii.eqlIgnoreCase(angle.caption(), step[6..])) {
                     screen.assembly_angle = angle;
                 };
+            } else if (std.mem.startsWith(u8, step, "editar=")) { // editar=campo=valor na peça escolhida
+                const rest = step[7..];
+                const equal = std.mem.indexOfScalar(u8, rest, '=') orelse continue;
+                const editor = &screen.assembly_editor.?;
+                const opened = &screen.assembly.?;
+                for (editor.specs) |*spec| if (std.mem.eql(u8, spec.name, rest[0..equal]) and spec.container.len == 0) {
+                    const value = rest[equal + 1 ..];
+                    switch (spec.kind) {
+                        .number, .integer, .optional_number => {
+                            spec.number = std.fmt.parseFloat(f64, value) catch spec.number;
+                            spec.automatic = false;
+                        },
+                        .toggle => spec.checked = std.mem.eql(u8, value, "sim"),
+                        .choice, .text => spec.text = value,
+                    }
+                };
+                config_tab.apply(opened.document_arena.allocator(), &opened.document, editor.list[editor.selected], editor.specs) catch continue;
+                screen.commitDocument(null);
             } else if (std.mem.startsWith(u8, step, "peca=")) {
                 const index = std.fmt.parseInt(usize, step[5..], 10) catch continue;
                 const editor = &screen.assembly_editor.?;

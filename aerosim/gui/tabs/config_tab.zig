@@ -505,6 +505,12 @@ pub fn specs(memory: std.mem.Allocator, aircraft: *const Aircraft, component: Co
         },
         inline else => |part| try fieldsOf(memory, &list, @field(aircraft, @tagName(part)), exclude),
     }
+    // "presa em": solta, a ponta de cada tubo ou a ponta de cada outra superfície (`mount_choices`)
+    if (component.part == .surface) for (list.items) |*spec| if (std.mem.eql(u8, spec.name, "mount")) {
+        spec.kind = .choice;
+        spec.choices = try mountChoices(memory, aircraft, component.index);
+        if (spec.text.len == 0) spec.text = "solta";
+    };
     // a altitude-densidade é o número que se edita (o ρ sai dela ao gravar); o arquivo antigo, sem ela, a tira do ρ
     if (component.part == .environment) for (list.items) |*spec| if (std.mem.eql(u8, spec.name, "density_altitude")) {
         spec.kind = .number;
@@ -512,6 +518,44 @@ pub fn specs(memory: std.mem.Allocator, aircraft: *const Aircraft, component: Co
         spec.number = aircraft.environment.densityAltitude();
     };
     return list.items;
+}
+
+/// onde a superfície `index` pode se prender (`mount_choices`): solta, na ponta de cada tubo, na ponta de cada outra
+/// superfície e, nas espelhadas e não verticais, em cada uma das duas pontas (cauda em H)
+fn mountChoices(memory: std.mem.Allocator, aircraft: *const Aircraft, index: usize) ![]const []const u8 {
+    var options: std.ArrayList([]const u8) = .empty;
+    try options.append(memory, "solta");
+    for (0..aircraft.booms.len) |i| try options.append(memory, try std.fmt.allocPrint(memory, "tubo:{d}", .{i}));
+    for (aircraft.surfaces, 0..) |other, j| {
+        if (j == index) continue;
+        try options.append(memory, try std.fmt.allocPrint(memory, "ponta:{d}", .{j}));
+        if (other.symmetric and !other.vertical) {
+            try options.append(memory, try std.fmt.allocPrint(memory, "ponta_dir:{d}", .{j}));
+            try options.append(memory, try std.fmt.allocPrint(memory, "ponta_esq:{d}", .{j}));
+        }
+    }
+    const current = aircraft.surfaces[index].mount;
+    if (current.len > 0 and !contains(options.items, current)) try options.append(memory, current);
+    return options.items;
+}
+
+/// leva as superfícies presas (`mount`) para o ponto delas (`model.applyMounts`) e grava x, y e z no arquivo;
+/// devolve verdadeiro se alguma mudou de lugar (então o avião precisa ser lido de novo)
+pub fn placeMounted(memory: std.mem.Allocator, document: *std.json.Value, aircraft: *const Aircraft) !bool {
+    const placed = try memory.dupe(model.Surface, aircraft.surfaces);
+    model.applyMounts(aircraft, placed);
+    const surfaces = try listNode(memory, document, "surfaces");
+    var moved = false;
+    for (placed, aircraft.surfaces, 0..) |after, before, i| {
+        if (after.x == before.x and after.y == before.y and after.z == before.z) continue;
+        if (i >= surfaces.items.len or surfaces.items[i] != .object) continue;
+        const object = &surfaces.items[i].object;
+        try object.put(memory, "x", .{ .float = after.x });
+        try object.put(memory, "y", .{ .float = after.y });
+        try object.put(memory, "z", .{ .float = after.z });
+        moved = true;
+    }
+    return moved;
 }
 
 /// uma lista da peça que o editor mostra item a item, com "+" e "−" (o `_list_editor` do Python)
@@ -868,9 +912,9 @@ test "a lista de componentes e o editor da asa, como no Python" {
     const expected = [_][]const u8{ "asa (wing)", "EH (htail)", "EV (vtail)", "motor 1", "tanque 1", "fuselagem", "LAPES: carga e soltura", "Lastro (desligado)", "trem de pouso (tricycle)", "Modificadores (1 ligado(s))" };
     for (expected, 0..) |text, i| try std.testing.expectEqualStrings(text, list[i].label);
     try std.testing.expectEqual(expected.len + nongeometric.len, list.len);
-    // a asa: os campos do formulário do Python, na ordem (sem "presa em", que o modelo do Zig não lê)
+    // a asa: os campos do formulário do Python, na ordem
     const wing = try specs(memory, &loaded.ac, list[0]);
-    const names = [_][]const u8{ "name", "role", "x", "y", "z", "dihedral", "incidence", "symmetric", "vertical", "oswald", "eta", "downwash", "enabled", "CLa", "CL0", "CLmax", "CD0", "Cmac", "eps0", "depsda", "mass" };
+    const names = [_][]const u8{ "name", "role", "x", "y", "z", "dihedral", "incidence", "symmetric", "vertical", "oswald", "eta", "downwash", "enabled", "CLa", "CL0", "CLmax", "CD0", "Cmac", "eps0", "depsda", "mass", "mount" };
     try std.testing.expectEqual(names.len, wing.len);
     for (names, wing) |name, spec| try std.testing.expectEqualStrings(name, spec.name);
     try std.testing.expectEqualStrings("diedro", wing[5].label);
@@ -991,4 +1035,33 @@ test "o editor da asa tem o perfil, as seções e os comandos, com + e −" {
     var third = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
     defer third.deinit();
     try std.testing.expectEqual(@as(usize, 2), third.ac.surfaces[0].sections.len);
+}
+
+test "presa em: a EH na ponta do tubo e a EV na ponta direita da EH, como no Python" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    var document = try std.json.parseFromSliceLeaky(std.json.Value, memory, bytes, .{});
+    const node = try aircraftNode(&document);
+    try node.put(memory, "booms", try literal(memory, "[{{\"name\":\"tubo 1\",\"enabled\":true,\"x_start\":-0.2,\"length\":0.8,\"y\":0.0,\"z\":-0.02,\"pitch\":3.0,\"yaw\":0.0,\"diameter\":0.03}}]", .{}));
+    const surfaces = node.getPtr("surfaces").?.array.items;
+    try surfaces[1].object.put(memory, "mount", .{ .string = "tubo:0" });
+    try surfaces[2].object.put(memory, "mount", .{ .string = "ponta_dir:1" });
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
+    defer loaded.deinit();
+    try std.testing.expect(try placeMounted(memory, &document, &loaded.ac));
+    var placed = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
+    defer placed.deinit();
+    // `Aircraft.apply_constraints` no Python, no mesmo avião
+    const expected = [_][3]f64{ .{ 0.135, 0.0, -0.12 }, .{ -0.7752968300536802, 0.0, -0.06186876499435508 }, .{ -0.7752968300536802, 0.4472135954999579, -0.06186876499435508 } };
+    for (expected, placed.ac.surfaces) |point, surface| {
+        try std.testing.expectApproxEqAbs(point[0], surface.x, 1e-12);
+        try std.testing.expectApproxEqAbs(point[1], surface.y, 1e-12);
+        try std.testing.expectApproxEqAbs(point[2], surface.z, 1e-12);
+    }
+    const options = try mountChoices(memory, &placed.ac, 2);
+    try std.testing.expectEqualStrings("tubo:0", options[1]);
+    try std.testing.expectEqualStrings("ponta_dir:1", options[6]); // solta, tubo:0, ponta:0 (e as duas pontas da asa), ponta:1
 }

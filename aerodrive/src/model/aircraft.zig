@@ -111,6 +111,8 @@ pub const Surface = struct {
     eps0: ?f64 = null, // graus
     depsda: ?f64 = null,
     mass: f64 = 0,
+    /// onde a raiz fica presa (`mount` da GUI): "" ou "solta", "tubo:i", "ponta:j", "ponta_dir:j", "ponta_esq:j"
+    mount: []const u8 = "",
 };
 
 pub const Fuselage = struct {
@@ -688,6 +690,56 @@ pub fn tailOnBoom(ac: *const Aircraft, s: *const Surface) struct { x: f64, z: f6
         return .{ .x = b.xEnd() + root.chord, .z = if (std.mem.eql(u8, s.role, "htail")) b.z else b.z - b.diameter / 2 };
     }
     return .{ .x = s.x, .z = s.z };
+}
+
+/// onde a raiz da superfície `index` fica presa (`Aircraft.mount_point` da GUI): "tubo:i" põe o bordo de fuga da
+/// raiz na ponta do tubo i; "ponta:j" põe o bordo de ataque da raiz no da ponta da superfície j (cauda em T,
+/// winglet), no plano de simetria se j é espelhada; "ponta_dir:j" e "ponta_esq:j" numa das duas pontas. `surfaces`
+/// são as posições atuais (a GUI move em ordem, então uma EH presa numa EV presa num tubo segue as duas). Nulo:
+/// solta
+pub fn mountPoint(ac: *const Aircraft, surfaces: []const Surface, index: usize) ?[3]f64 {
+    const surface = surfaces[index];
+    const colon = std.mem.indexOfScalar(u8, surface.mount, ':') orelse return null;
+    const kind = surface.mount[0..colon];
+    const target = std.fmt.parseInt(usize, surface.mount[colon + 1 ..], 10) catch return null;
+    if (surface.sections.len == 0) return null;
+    var root = surface.sections[0];
+    for (surface.sections) |section| if (section.y < root.y) {
+        root = section;
+    };
+    if (std.mem.eql(u8, kind, "tubo")) {
+        if (target >= ac.booms.len or !ac.booms[target].enabled) return null;
+        const boom = ac.booms[target];
+        const tip = boom.end();
+        return .{ tip[0] + root.chord, tip[1], if (surface.vertical) tip[2] - boom.diameter / 2 else tip[2] };
+    }
+    const on_tip = std.mem.eql(u8, kind, "ponta") or std.mem.eql(u8, kind, "ponta_dir") or std.mem.eql(u8, kind, "ponta_esq");
+    if (!on_tip or target >= surfaces.len or target == index) return null;
+    const other = surfaces[target];
+    if (other.sections.len == 0) return null;
+    const tip_station = semispan(&other);
+    var buffer: [limits.sections]Section = undefined;
+    const sections = sortedSections(&other, &buffer);
+    const tip_offset = sectionAt(sections, tip_station, "x_offset");
+    if (other.vertical) return .{ other.x - tip_offset, other.y, other.z - tip_station };
+    const dihedral = std.math.degreesToRadians(other.dihedral);
+    var side = other.y + tip_station * @cos(dihedral);
+    if (std.mem.eql(u8, kind, "ponta_esq") and other.symmetric) side = other.y - tip_station * @cos(dihedral);
+    if (std.mem.eql(u8, kind, "ponta") and other.symmetric) side = other.y;
+    return .{ other.x - tip_offset, side, other.z - tip_station * @sin(dihedral) };
+}
+
+/// as amarrações da GUI (`Aircraft.apply_constraints`): cada superfície presa vai para o ponto dela (x e z; y também
+/// se ela é vertical ou não espelhada), em duas passadas pela lista. Escreve em `surfaces` (uma cópia das do avião)
+pub fn applyMounts(ac: *const Aircraft, surfaces: []Surface) void {
+    for (0..2) |_| {
+        for (surfaces, 0..) |*surface, i| {
+            const point = mountPoint(ac, surfaces, i) orelse continue;
+            surface.x = point[0];
+            surface.z = point[2];
+            if (surface.vertical or !surface.symmetric) surface.y = point[1];
+        }
+    }
 }
 
 // ------------------------------------------------------------------ testes

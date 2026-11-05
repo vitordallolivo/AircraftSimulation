@@ -572,8 +572,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/model/**
 
 - `aerodrive/src/model/aircraft.zig` — Leitura do arquivo do avião salvo pela GUI (`data/aircraft/*.json`, "meus aviões").
-  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:116`, `Boom:133`, `Propeller:162`, `Motor:163`, `Battery:164`, `ThrustPoly:175`, `Propulsion:188`, `GearLeg:205`, `Gear:206`, `Tank:229`, `Payload:249`, `PointMass:263`, `Mass:264`, `Environment:275`, `Takeoff:303`, `SimSettings:304`, `Autopilot:306`, `Leg:351`, `MissionEvent:364`, `Mission:365`, `Ballast:375`, `Airfield:376`, `Modifier:394`, `Performance:409`, `Aircraft:420`, `limits:454`, `Diag:478`, `Loaded:492`
-  fn `mixedAirfoils:14`, `kindGains:48`, `parse:502`, `validate:561`, `semispan:648`, `sortedSections:655`, `sectionAt:667`, `tailOnBoom:680`
+  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:118`, `Boom:135`, `Propeller:164`, `Motor:165`, `Battery:166`, `ThrustPoly:177`, `Propulsion:190`, `GearLeg:207`, `Gear:208`, `Tank:231`, `Payload:251`, `PointMass:265`, `Mass:266`, `Environment:277`, `Takeoff:305`, `SimSettings:306`, `Autopilot:308`, `Leg:353`, `MissionEvent:366`, `Mission:367`, `Ballast:377`, `Airfield:378`, `Modifier:396`, `Performance:411`, `Aircraft:422`, `limits:456`, `Diag:480`, `Loaded:494`
+  fn `mixedAirfoils:14`, `kindGains:48`, `parse:504`, `validate:563`, `semispan:650`, `sortedSections:657`, `sectionAt:669`, `tailOnBoom:682`, `mountPoint:700`, `applyMounts:734`
 - `aerodrive/src/model/airfoil.zig` — Perfil 2D (x/c, y/c): NACA de 4 dígitos pelo nome ou as coordenadas do arquivo do avião.
   tipos `Profile:13`
   fn `nacaDigits:23`, `naca4:39`, `forDrawing:79`, `invert:95`, `full:102`, `thinAirfoil:126`, `flapEffectiveness:176`, `helmbold:183`, `split:190`
@@ -717,8 +717,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/tabs/**
 
 - `aerosim/gui/tabs/config_tab.zig` — O painel da Montagem, o par de `info_html` (`config_tab.py`): tudo o que dá para saber da configuração sem
-  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:388`, `Spec:391`, `EditableList:518`, `Layout:521`, `NewPart:672`
-  fn `panel:49`, `components:345`, `specs:490`, `layout:538`, `addItem:571`, `removeItem:580`, `apply:619`, `add:723`, `remove:782`, `importPart:835`, `serialize:853`
+  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:388`, `Spec:391`, `EditableList:562`, `Layout:565`, `NewPart:716`
+  fn `panel:49`, `components:345`, `specs:490`, `placeMounted:544`, `layout:582`, `addItem:615`, `removeItem:624`, `apply:663`, `add:767`, `remove:826`, `importPart:879`, `serialize:897`
 
 **aerosim/gui/ui/**
 
