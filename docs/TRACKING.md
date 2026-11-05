@@ -590,4 +590,7 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 **Situação atual das branches**
 - `main`: `v0.2.4` (2026-10-30). Tudo o que estava na `0.2_dev` até a interface em Zig com os managers em Python vai nela.
 - `0.2_dev`: igual à `main` depois do merge; o que vier entra sob a próxima versão quando o dono disser.
+- `0.2.6` (aberta pelo dono em 2026-11-05, por cima da 0.2.5 que ainda não foi para a `main`): um objetivo só, limpar e
+  unificar os managers e os modifiers (avaliar, normalizar, extrair o framework). O levantamento e a proposta estão em
+  `docs/UNIFICACAO.md`.
 - As branches antigas foram apagadas aqui; no GitHub, o dono apaga (a sessão não tem permissão).

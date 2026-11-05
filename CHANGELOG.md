@@ -4,6 +4,13 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## Não lançado
 
+### v0.2.6 (em andamento na `0.2_dev`)
+
+- objetivo único: limpar e unificar os managers e os modifiers, em três etapas (avaliar todos juntos, normalizar
+  refatorando até terem a mesma fundação, só então extrair o framework). Etapa 1: o levantamento em
+  `docs/UNIFICACAO.md`, com os seletores de método, a configuração, os seis estilos de manager, as confusões achadas
+  e a proposta de fundação comum (`enum`, flags em `packed struct`, bitset, erros por módulo), esperando o ok.
+
 ### v0.2.5 (em andamento na `0.2_dev`)
 
 - aerosim no navegador com os menus atuais: a página abre num iframe escondido o Pyodide com o pacote aerosim e o
