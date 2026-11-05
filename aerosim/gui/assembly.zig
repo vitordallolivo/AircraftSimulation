@@ -17,6 +17,7 @@ pub const Triangle = struct {
     b: view3d.Body,
     c: view3d.Body,
     color: rl.Color,
+    component: u16 = 0, // a peça da GUI a que o triângulo pertence (`Mesh.components`)
 };
 
 /// as peças de um avião prontas para a vista 3D: cada triângulo com a cor e a sombra
@@ -28,6 +29,7 @@ pub const Mesh = struct {
     low: view3d.Body, // caixa que envolve o avião (corpo)
     high: view3d.Body,
     piece_count: usize,
+    components: []const []const u8 = &.{}, // as chaves da GUI das peças ("surface:0", "prop:1", "gear"...)
 
     /// libera tudo
     pub fn deinit(mesh: *Mesh) void {
@@ -47,8 +49,29 @@ pub const Mesh = struct {
 
     /// desenha os triângulos (dentro de `View.begin`/`end`)
     pub fn draw(mesh: *const Mesh) void {
-        for (mesh.solid) |t| view3d.triangle(t.a, t.b, t.c, t.color);
-        for (mesh.translucent) |t| view3d.triangle(t.a, t.b, t.c, t.color);
+        mesh.drawMoving(null, .{ 0, 0, 0 });
+    }
+
+    /// desenha com a peça `moving` deslocada de `offset` (o arraste, antes de soltar o mouse)
+    pub fn drawMoving(mesh: *const Mesh, moving: ?u16, offset: view3d.Body) void {
+        for ([2][]Triangle{ mesh.solid, mesh.translucent }) |list| for (list) |t| {
+            if (moving != null and moving.? == t.component) {
+                view3d.triangle(add(t.a, offset), add(t.b, offset), add(t.c, offset), t.color);
+            } else view3d.triangle(t.a, t.b, t.c, t.color);
+        };
+    }
+
+    /// a peça que um raio pegou e a distância do olho até ela
+    pub const Hit = struct { component: u16, distance: f64 };
+
+    /// a peça mais perto do olho que o raio (`View.ray`) cruza, e a distância até ela; nulo se não pega nenhuma
+    pub fn pick(mesh: *const Mesh, ray: [2]view3d.Body) ?Hit {
+        var best: ?Hit = null;
+        for ([2][]Triangle{ mesh.solid, mesh.translucent }) |list| for (list) |t| {
+            const distance = rayHits(ray, .{ t.a, t.b, t.c }) orelse continue;
+            if (best == null or distance < best.?.distance) best = .{ .component = t.component, .distance = distance };
+        };
+        return best;
     }
 
     /// desenha só o que fica do lado `point[axis] >= at` do plano (o corte: a vista lateral cortada no plano de
@@ -58,6 +81,43 @@ pub const Mesh = struct {
         for (mesh.translucent) |t| cutTriangle(t, axis, at);
     }
 };
+
+fn add(a: view3d.Body, b: view3d.Body) view3d.Body {
+    return .{ a[0] + b[0], a[1] + b[1], a[2] + b[2] };
+}
+
+/// a distância ao longo do raio (origem, direção) até o triângulo `corners`, ou nulo se não cruza (Möller e Trumbore,
+/// "Fast, minimum storage ray-triangle intersection", J. Graphics Tools 2(1), 1997). A distância sai nas unidades da
+/// direção (metros, se ela é unitária)
+fn rayHits(ray: [2][3]f64, corners: [3][3]f64) ?f64 {
+    const origin, const direction = ray;
+    const edge1 = difference(corners[1], corners[0]);
+    const edge2 = difference(corners[2], corners[0]);
+    const across = crossOf(direction, edge2);
+    const determinant = dotOf(edge1, across);
+    if (@abs(determinant) < 1e-12) return null; // o raio corre paralelo ao triângulo
+    const inverse = 1 / determinant;
+    const from_corner = difference(origin, corners[0]);
+    const weight1 = inverse * dotOf(from_corner, across); // as coordenadas baricêntricas do ponto em que o raio cruza
+    if (weight1 < 0 or weight1 > 1) return null;
+    const turned = crossOf(from_corner, edge1);
+    const weight2 = inverse * dotOf(direction, turned);
+    if (weight2 < 0 or weight1 + weight2 > 1) return null;
+    const distance = inverse * dotOf(edge2, turned);
+    return if (distance > 0) distance else null;
+}
+
+fn difference(a: [3]f64, b: [3]f64) [3]f64 {
+    return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2] };
+}
+
+fn dotOf(a: [3]f64, b: [3]f64) f64 {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+fn crossOf(a: [3]f64, b: [3]f64) [3]f64 {
+    return .{ a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] };
+}
 
 /// o pedaço do triângulo do lado de cá do plano (Sutherland–Hodgman com um plano só): sobra nada, um triângulo ou
 /// um quadrilátero (dois triângulos)
@@ -95,7 +155,13 @@ pub fn buildMesh(gpa: std.mem.Allocator, ac: *const model.Aircraft, diagnosis: *
     var translucent: std.ArrayList(Triangle) = .empty;
     var low: view3d.Body = .{ std.math.inf(f64), std.math.inf(f64), std.math.inf(f64) };
     var high: view3d.Body = .{ -std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64) };
+    var keys: std.ArrayList([]const u8) = .empty;
     for (built.pieces) |piece| {
+        const component: u16 = blk: {
+            for (keys.items, 0..) |key, k| if (std.mem.eql(u8, key, piece.component)) break :blk @intCast(k);
+            try keys.append(allocator, try allocator.dupe(u8, piece.component));
+            break :blk @intCast(keys.items.len - 1);
+        };
         const rgba = skeleton.rgba(piece.color);
         const color: rl.Color = .{ .r = @intFromFloat(rgba[0] * 255), .g = @intFromFloat(rgba[1] * 255), .b = @intFromFloat(rgba[2] * 255), .a = @intFromFloat(rgba[3] * 255) };
         const list = if (rgba[3] < 1) &translucent else &solid;
@@ -103,7 +169,7 @@ pub fn buildMesh(gpa: std.mem.Allocator, ac: *const model.Aircraft, diagnosis: *
             const a = piece.mesh.v[face[0]];
             const b = piece.mesh.v[face[1]];
             const c = piece.mesh.v[face[2]];
-            try list.append(allocator, .{ .a = a, .b = b, .c = c, .color = view3d.shaded(a, b, c, color) });
+            try list.append(allocator, .{ .a = a, .b = b, .c = c, .color = view3d.shaded(a, b, c, color), .component = component });
         }
         for (piece.mesh.v) |point| {
             for (0..3) |k| {
@@ -116,7 +182,7 @@ pub fn buildMesh(gpa: std.mem.Allocator, ac: *const model.Aircraft, diagnosis: *
         low = .{ -0.5, -0.5, -0.1 };
         high = .{ 0.5, 0.5, 0.1 };
     }
-    return .{ .skeleton = built, .arena = arena, .solid = solid.items, .translucent = translucent.items, .low = low, .high = high, .piece_count = built.pieces.len };
+    return .{ .skeleton = built, .arena = arena, .solid = solid.items, .translucent = translucent.items, .low = low, .high = high, .piece_count = built.pieces.len, .components = keys.items };
 }
 
 /// o avião aberto: o que o arquivo diz e as peças dele
@@ -323,4 +389,13 @@ test "a massa e o CG da Montagem são os do Python: seca, líquido e carga" {
     try std.testing.expectApproxEqAbs(@as(f64, 0.008), weights.cg[0], 5e-4);
     try std.testing.expectApproxEqAbs(@as(f64, 0.0), weights.cg[1], 5e-4);
     try std.testing.expectApproxEqAbs(@as(f64, 0.021), weights.cg[2], 5e-4);
+}
+
+test "o raio cruza o triângulo na distância certa e passa ao lado dele" {
+    const floor = [3][3]f64{ .{ 0, 0, 0 }, .{ 1, 0, 0 }, .{ 0, 1, 0 } }; // no plano z = 0
+    // de 2 m acima (z para baixo no corpo: z = −2), descendo: cruza a 2 m
+    try std.testing.expectApproxEqAbs(@as(f64, 2), rayHits(.{ .{ 0.2, 0.2, -2 }, .{ 0, 0, 1 } }, floor).?, 1e-12);
+    try std.testing.expect(rayHits(.{ .{ 0.8, 0.8, -2 }, .{ 0, 0, 1 } }, floor) == null); // fora (u + v > 1)
+    try std.testing.expect(rayHits(.{ .{ 0.2, 0.2, -2 }, .{ 0, 0, -1 } }, floor) == null); // o triângulo fica atrás
+    try std.testing.expect(rayHits(.{ .{ 0.2, 0.2, -2 }, .{ 1, 0, 0 } }, floor) == null); // paralelo
 }

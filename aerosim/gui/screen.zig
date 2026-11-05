@@ -79,6 +79,7 @@ pub const Screen = struct {
     assembly_note: [240:0]u8 = [_:0]u8{0} ** 240,
     assembly_panel: ?AssemblyPanel = null, // o resumo ao lado do 3D (`config_tab.panel`), refeito ao abrir
     assembly_scroll: ui_kit.scroll.ScrollArea = .{},
+    assembly_drag: ?PieceDrag = null, // a peça sendo arrastada no 3D
     assembly_angle: ViewAngle = .free, // a vista da Montagem: 3D livre ou lateral, superior e frontal em escala
     assembly_editor: ?AssemblyEditor = null, // a lista de componentes e o editor da peça escolhida
     pending_assembly: [256]u8 = undefined, // acao=montagem:...: botões ("+ EH"), "peca=N", "editar=campo=valor", "trazer=arquivo#N" ou "vista=Lateral", até o avião abrir
@@ -192,6 +193,45 @@ pub const Screen = struct {
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · editado (Salvar grava) · {d} peças", .{ std.fs.path.basename(opened.path), opened.mesh.piece_count }) catch {};
     }
 
+    /// clicar numa peça no 3D escolhe ela na lista; arrastar move ela no plano da tela, e soltar grava a posição.
+    /// Clicar fora das peças gira a vista, como antes
+    fn dragPiece(screen: *Screen, ui: *widgets.Ui, area: rl.Rectangle) void {
+        const opened = &(screen.assembly orelse return);
+        const editor = &(screen.assembly_editor orelse return);
+        if (screen.assembly_drag) |*drag| {
+            if (rl.isMouseButtonDown(.left)) {
+                const axes = screen.assembly_view.screenAxes();
+                const scale = screen.assembly_view.metersPerPixel(area, drag.depth);
+                const dx: f64 = ui.mouse.x - drag.start.x;
+                const dy: f64 = ui.mouse.y - drag.start.y;
+                for (&drag.offset, axes[0], axes[1]) |*moved, right, up| moved.* = scale * (dx * right - dy * up);
+                return;
+            }
+            // soltou: grava
+            const offset = drag.offset;
+            const component = config_tab.componentOf(opened.mesh.components[drag.component]);
+            screen.assembly_drag = null;
+            if (@abs(offset[0]) + @abs(offset[1]) + @abs(offset[2]) < 1e-4) return;
+            const target = component orelse return;
+            const moved = config_tab.moveBy(opened.document_arena.allocator(), &opened.document, &opened.loaded.ac, target, offset) catch false;
+            if (moved) screen.commitDocument(null);
+            return;
+        }
+        if (!ui.clicked or ui.click_taken or !ui.hovering(area)) return;
+        const ray = screen.assembly_view.ray(ui.mouse, area) orelse return;
+        const hit = opened.mesh.pick(ray) orelse return;
+        ui.click_taken = true; // a vista não gira
+        const key = opened.mesh.components[hit.component];
+        if (config_tab.componentOf(key)) |component| {
+            for (editor.list, 0..) |row, i| if (row.part == component.part and row.index == component.index and i != editor.selected) {
+                editor.selected = i;
+                editor.form.area = .{};
+                editor.want_rebuild = true;
+            };
+        }
+        screen.assembly_drag = .{ .component = hit.component, .start = ui.mouse, .depth = hit.distance };
+    }
+
     /// "Restaurar": o avião volta a ser o do arquivo como foi aberto (desfaz todas as edições)
     fn restoreAircraft(screen: *Screen) void {
         const opened = &(screen.assembly orelse return);
@@ -293,6 +333,14 @@ pub const Screen = struct {
                 screen.startImport(step[7..hash]);
                 const index = std.fmt.parseInt(usize, step[hash + 1 ..], 10) catch continue;
                 screen.importPart(index);
+            } else if (std.mem.startsWith(u8, step, "mover=")) { // mover=dx dy dz na peça escolhida (o que o arraste grava)
+                var offset: view3d.Body = .{ 0, 0, 0 };
+                var numbers = std.mem.tokenizeScalar(u8, step[6..], ' ');
+                for (&offset) |*moved| moved.* = std.fmt.parseFloat(f64, numbers.next() orelse "0") catch 0;
+                const editor = &screen.assembly_editor.?;
+                const opened = &screen.assembly.?;
+                const moved = config_tab.moveBy(opened.document_arena.allocator(), &opened.document, &opened.loaded.ac, editor.list[editor.selected], offset) catch false;
+                if (moved) screen.commitDocument(null);
             } else if (std.mem.eql(u8, step, "Restaurar")) {
                 screen.restoreAircraft();
             } else if (std.mem.eql(u8, step, "Acertar o CG")) {
@@ -697,6 +745,7 @@ pub const Screen = struct {
         }
         const card_rect: rl.Rectangle = .{ .x = rect.x + 12 + side_width, .y = rect.y + 12, .width = rect.width - 24 - side_width - editor_width, .height = rect.height - 24 };
         const area = cardInside(card_rect);
+        screen.dragPiece(ui, area);
         screen.assembly_view.handleInput(ui, area);
         if (screen.assembly_view.dragging) screen.assembly_angle = .free;
         screen.assembly_angle.aim(&screen.assembly_view);
@@ -716,7 +765,9 @@ pub const Screen = struct {
                 // o chão um pouco abaixo da peça mais baixa (z para baixo), quadriculado de 25 cm
                 view3d.floor(.{ middle[0], middle[1], 0 }, plane.high[2] + 0.02, 1.6 * size, 0.25);
                 // a lateral é um corte: só a metade do lado de lá do plano de simetria (y ≥ 0), vista de dentro
-                if (screen.assembly_angle == .side) plane.drawCut(1, 0) else plane.draw();
+                const moving: ?u16 = if (screen.assembly_drag) |drag| drag.component else null;
+                const offset: [3]f64 = if (screen.assembly_drag) |drag| drag.offset else .{ 0, 0, 0 };
+                if (screen.assembly_angle == .side) plane.drawCut(1, 0) else plane.drawMoving(moving, offset);
                 const weights = assembly_mod.balance(&opened.loaded.ac);
                 // o CG e as cotas por cima das peças (sem o teste de profundidade), para se verem atrás da asa
                 rl.gl.rlDrawRenderBatchActive();
@@ -1075,6 +1126,14 @@ const ViewAngle = enum {
         view.azimuth = direction[0];
         view.elevation = direction[1];
     }
+};
+
+/// a peça sendo arrastada no 3D: onde o mouse apertou, a que distância do olho ela está e quanto já andou (m)
+const PieceDrag = struct {
+    component: u16,
+    start: rl.Vector2,
+    depth: f64,
+    offset: [3]f64 = .{ 0, 0, 0 },
 };
 
 /// a seta do vento (azul, como na Montagem em Python): acima do avião, apontando para onde o vento sopra; o ângulo é

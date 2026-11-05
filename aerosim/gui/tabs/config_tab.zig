@@ -1051,6 +1051,42 @@ pub fn importPart(memory: std.mem.Allocator, document: *std.json.Value, source: 
     return .{ .part = component.part, .label = "" };
 }
 
+/// a linha da lista de uma peça do 3D pela chave dela no esqueleto ("surface:0", "prop:1", "fuselage", "gear"...)
+pub fn componentOf(key: []const u8) ?Component {
+    const colon = std.mem.indexOfScalar(u8, key, ':');
+    const name = if (colon) |at| key[0..at] else key;
+    const index = if (colon) |at| std.fmt.parseInt(usize, key[at + 1 ..], 10) catch return null else 0;
+    const part = std.meta.stringToEnum(Part, name) orelse return null;
+    return .{ .part = part, .index = index, .label = "" };
+}
+
+/// arrasta a peça `delta` metros (eixos do corpo): a posição dela no arquivo anda isso. A superfície espelhada e não
+/// vertical fica no plano de simetria (só x e z); a fuselagem anda pelo nariz (x e z); o tubo, pelo início. Devolve
+/// falso se a peça não se arrasta (o trem, os dados que não são geometria)
+pub fn moveBy(memory: std.mem.Allocator, document: *std.json.Value, aircraft: *const Aircraft, component: Component, delta: [3]f64) !bool {
+    const start: [3]f64, const keys: [3]?[]const u8 = switch (component.part) {
+        .surface => blk: {
+            const surface = aircraft.surfaces[component.index];
+            break :blk .{ .{ surface.x, surface.y, surface.z }, .{ "x", if (surface.symmetric and !surface.vertical) null else "y", "z" } };
+        },
+        .prop => .{ .{ aircraft.propulsion[component.index].x, aircraft.propulsion[component.index].y, aircraft.propulsion[component.index].z }, .{ "x", "y", "z" } },
+        .tank => .{ .{ aircraft.tanks[component.index].x, aircraft.tanks[component.index].y, aircraft.tanks[component.index].z }, .{ "x", "y", "z" } },
+        .payload => .{ .{ aircraft.payload.x, aircraft.payload.y, aircraft.payload.z }, .{ "x", "y", "z" } },
+        .ballast => .{ .{ aircraft.ballast.x, aircraft.ballast.y, aircraft.ballast.z }, .{ "x", "y", "z" } },
+        .fuselage => .{ .{ aircraft.fuselage.x_nose, 0, aircraft.fuselage.z }, .{ "x_nose", null, "z" } },
+        .boom => blk: {
+            const listed = listedBooms(aircraft);
+            if (component.index >= listed.len) return false;
+            const boom = listed[component.index];
+            break :blk .{ .{ boom.x_start, boom.y, boom.z }, .{ "x_start", "y", "z" } };
+        },
+        else => return false,
+    };
+    const node = try partNode(memory, document, component);
+    for (keys, start, delta) |key, from, step| if (key) |name| try node.put(memory, name, .{ .float = from + step });
+    return true;
+}
+
 /// grava o vento do ambiente (a caixa "Vento" da Montagem): a velocidade a 10 m (m/s) e de onde vem (graus)
 pub fn setWind(memory: std.mem.Allocator, document: *std.json.Value, speed: f64, from: f64) !void {
     const environment = try partNode(memory, document, .{ .part = .environment, .label = "" });
@@ -1301,4 +1337,25 @@ test "o motor mostra motor, hélice e bateria; a LAPES escreve a soltura no perc
         try std.testing.expectEqual(@as(f64, 30), event.s);
     };
     try std.testing.expectEqual(@as(usize, 1), drops);
+}
+
+test "arrastar: a asa anda em x e z e fica no plano de simetria; a chave do 3D acha a peça" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
+    defer loaded.deinit();
+    var document = try std.json.parseFromSliceLeaky(std.json.Value, memory, bytes, .{});
+    const wing = componentOf("surface:0").?;
+    try std.testing.expectEqual(Part.surface, wing.part);
+    try std.testing.expect(componentOf("gear") != null and componentOf("nada:1") == null);
+    try std.testing.expect(try moveBy(memory, &document, &loaded.ac, wing, .{ 0.1, 0.2, -0.05 }));
+    try std.testing.expect(!try moveBy(memory, &document, &loaded.ac, componentOf("gear").?, .{ 0.1, 0, 0 }));
+    var moved = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
+    defer moved.deinit();
+    try std.testing.expectApproxEqAbs(loaded.ac.surfaces[0].x + 0.1, moved.ac.surfaces[0].x, 1e-12);
+    try std.testing.expectEqual(loaded.ac.surfaces[0].y, moved.ac.surfaces[0].y);
+    try std.testing.expectApproxEqAbs(loaded.ac.surfaces[0].z - 0.05, moved.ac.surfaces[0].z, 1e-12);
 }

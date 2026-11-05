@@ -186,6 +186,39 @@ pub const View = struct {
         return .{ .x = rect.x + at.x, .y = rect.y + at.y };
     }
 
+    /// o raio do olho pelo ponto `point` da tela (a imagem colada em `rect`), nos eixos do corpo: a origem e a direção
+    /// (unitária). Serve para saber qual peça está embaixo do mouse
+    pub fn ray(view: *const View, point: rl.Vector2, rect: rl.Rectangle) ?[2]Body {
+        const target = view.texture orelse return null;
+        const world = rl.getScreenToWorldRayEx(.{ .x = point.x - rect.x, .y = point.y - rect.y }, view.camera, target.texture.width, target.texture.height);
+        return .{ toBody(world.position), toBody(world.direction) };
+    }
+
+    /// as direções da tela no corpo: para a direita e para cima (unitárias), para arrastar uma peça no plano da tela
+    pub fn screenAxes(view: *const View) [2]Body {
+        const eye = toBody(view.camera.position);
+        const look = toBody(view.camera.target);
+        const ahead = normalized(subtract(look, eye));
+        const up_world: Body = .{ 0, 0, -1 }; // o "para cima" da câmera (y do raylib) é −z do corpo
+        const right = normalized(cross(ahead, up_world));
+        const up = cross(right, ahead);
+        return .{ right, up };
+    }
+
+    /// quantos metros vale um pixel da tela a `depth` metros do olho (na vista em escala, o mesmo em toda parte)
+    pub fn metersPerPixel(view: *const View, rect: rl.Rectangle, depth: f64) f64 {
+        const height: f64 = @max(rect.height, 1);
+        if (view.orthographic) return view.camera.fovy / height;
+        return 2 * depth * @tan(std.math.degreesToRadians(@as(f64, view.camera.fovy)) / 2) / height;
+    }
+
+    /// a distância do olho até o ponto `point` do corpo
+    pub fn depthOf(view: *const View, point: Body) f64 {
+        const eye = toBody(view.camera.position);
+        const offset = subtract(point, eye);
+        return @sqrt(offset[0] * offset[0] + offset[1] * offset[1] + offset[2] * offset[2]);
+    }
+
     /// cola a imagem em `rect` e escreve os textos
     pub fn blit(view: *const View, ui: *widgets.Ui, rect: rl.Rectangle) void {
         const target = view.texture orelse return;
@@ -200,6 +233,17 @@ pub const View = struct {
         }
     }
 };
+
+/// do raylib (y para cima) para o corpo: a volta de `toWorld`
+pub fn toBody(point: rl.Vector3) Body {
+    return .{ -@as(f64, point.z), @as(f64, point.x), -@as(f64, point.y) };
+}
+
+fn normalized(vector: Body) Body {
+    const length = @sqrt(vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]);
+    if (!(length > 0)) return vector;
+    return .{ vector[0] / length, vector[1] / length, vector[2] / length };
+}
 
 fn subtract(a: Body, b: Body) Body {
     return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2] };

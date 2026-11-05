@@ -703,8 +703,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/**
 
 - `aerosim/gui/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
-  tipos `Triangle:15`, `Mesh:23`, `Assembly:123`, `Balance:166`
-  fn `buildMesh:88`, `balance:176`, `loadAircraft:188`, `load:201`, `fillAirfoilFiles:224`, `parseDat:259`, `findExample:291`
+  tipos `Triangle:15`, `Mesh:24`, `Assembly:189`, `Balance:232`
+  fn `buildMesh:148`, `balance:242`, `loadAircraft:254`, `load:267`, `fillAirfoilFiles:290`, `parseDat:325`, `findExample:357`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
   tipos `Kind:35`, `Page:258`
@@ -718,7 +718,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/gui/tabs/config_tab.zig` — O painel da Montagem, o par de `info_html` (`config_tab.py`): tudo o que dá para saber da configuração sem
   tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:388`, `Spec:391`, `EditableList:668`, `Layout:671`, `NewPart:874`
-  fn `panel:49`, `components:345`, `specs:490`, `placeMounted:650`, `layout:688`, `addItem:761`, `removeItem:776`, `apply:815`, `add:925`, `remove:984`, `importPart:1037`, `setWind:1055`, `serialize:1062`
+  fn `panel:49`, `components:345`, `specs:490`, `placeMounted:650`, `layout:688`, `addItem:761`, `removeItem:776`, `apply:815`, `add:925`, `remove:984`, `importPart:1037`, `componentOf:1055`, `moveBy:1066`, `setWind:1091`, `serialize:1098`
 
 **aerosim/gui/ui/**
 
@@ -769,7 +769,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/ui/ui.zig` — As peças comuns das telas do aerosim e do aeroopt em Zig: cores e fontes, formas, widgets, formulário, gráfico
 - `aerosim/gui/ui/view3d.zig` — Vista 3D dentro de um cartão, com as mesmas ideias da vista do aerosim em Python (`aerosim/gui/widgets/view3d.py`
   tipos `Kind:17`, `View:100`
-  fn `kindColor:20`, `colorByName:35`, `fieldColor:57`, `fraction:75`, `liftColor:80`, `toWorld:85`, `shaded:218`, `triangle:226`, `quad:236`, `segment:253`, `arrow:258`, `floor:270`, `bodyAxes:282`
+  fn `kindColor:20`, `colorByName:35`, `fieldColor:57`, `fraction:75`, `liftColor:80`, `toWorld:85`, `toBody:238`, `shaded:262`, `triangle:270`, `quad:280`, `segment:297`, `arrow:302`, `floor:314`, `bodyAxes:326`
 - `aerosim/gui/ui/widgets.zig` — Os pedaços comuns das telas, no desenho do AeroDrive: o contexto de desenho (fontes, logo, mouse), o cabeçalho
   tipos `Ui:11`, `Splitter:204`, `Status:427`
   fn `paragraph:141`, `paragraphHeight:146`, `caretToEnd:192`, `replaceOnType:238`, `helpMark:263`, `checkBox:272`, `disclosure:287`, `rounded:331`, `roundedLines:336`, `header:341`, `tabBar:362`, `primaryButton:386`, `progressBar:396`, `card:403`, `labeledCard:411`, `statusColor:417`, `tableRow:430`, `format:437`
