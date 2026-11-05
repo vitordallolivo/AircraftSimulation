@@ -66,6 +66,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   a posição nova vai para o arquivo.
 - A Montagem em Zig abre vários aviões ao mesmo tempo. "+ Variante" faz uma cópia do avião atual, com as edições, para
   variar a partir dela; "Anterior" e "Próximo" trocam entre os abertos, e "Fechar" fecha o atual.
+- Na Montagem em Zig, o motor com tração por polinômio mostra a tabela dos coeficientes (p00 a p05), e cada um se
+  edita ali.
 - Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
   referência e a trajetória 3D do voo.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).

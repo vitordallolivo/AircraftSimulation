@@ -718,6 +718,17 @@ pub fn layout(memory: std.mem.Allocator, aircraft: *const Aircraft, component: C
                     spec.kind = .choice;
                     spec.choices = &form_meta.poly_variables;
                 };
+                // a tabela dos coeficientes (`POLY_TERMS`): um campo por termo, o que falta no arquivo vale 0
+                try groups.append(memory, "coeficientes do polinômio");
+                for (poly_terms, 0..) |term, k| try fields.append(memory, .{
+                    .name = term,
+                    .label = term,
+                    .kind = .number,
+                    .number = if (k < unit.thrust_poly.coefs.len) unit.thrust_poly.coefs[k] else 0,
+                    .container = "thrust_poly",
+                    .target = k,
+                    .group = groups.items.len - 1,
+                });
             } else inline for (nested, titles) |key, title| {
                 try groups.append(memory, title);
                 try itemFieldsOf(memory, &fields, @field(unit, key), &.{ "J", "CT", "CP" }, .{ .name = "", .label = "", .kind = .number, .container = key, .group = groups.items.len - 1 }, null);
@@ -822,6 +833,10 @@ pub fn apply(memory: std.mem.Allocator, document: *std.json.Value, component: Co
             try linkWing(memory, document, component.index, spec.text);
             continue;
         }
+        if (component.part == .prop and std.mem.eql(u8, spec.container, "thrust_poly") and spec.target != null) {
+            try putCoefficient(memory, part_node, spec.target.?, spec.number);
+            continue;
+        }
         const node = try fieldNode(memory, part_node, spec);
         const value: std.json.Value = switch (spec.kind) {
             .number => .{ .float = spec.number },
@@ -834,6 +849,21 @@ pub fn apply(memory: std.mem.Allocator, document: *std.json.Value, component: Co
         if (component.part == .environment and std.mem.eql(u8, spec.name, "density_altitude"))
             try node.put(memory, "rho", .{ .float = model.Environment.densityAt(spec.number) });
     }
+}
+
+/// os termos do polinômio de tração na ordem dos coeficientes (`POLY_TERMS` de `aerosim/model/catalog.py`): p_ij é
+/// o termo x^i · y^j
+pub const poly_terms = [_][]const u8{ "p00", "p10", "p01", "p20", "p11", "p02", "p30", "p21", "p12", "p03", "p40", "p31", "p22", "p13", "p04", "p50", "p41", "p32", "p23", "p14", "p05" };
+
+/// grava o coeficiente `index` do polinômio de tração da peça (a lista cresce com zeros até ele, como no Python)
+fn putCoefficient(memory: std.mem.Allocator, part_node: *std.json.ObjectMap, index: usize, value: f64) !void {
+    const poly = try part_node.getOrPut(memory, "thrust_poly");
+    if (!poly.found_existing or poly.value_ptr.* != .object) poly.value_ptr.* = .{ .object = .empty };
+    const coefs = try poly.value_ptr.object.getOrPut(memory, "coefs");
+    if (!coefs.found_existing or coefs.value_ptr.* != .array) coefs.value_ptr.* = .{ .array = std.json.Array.init(memory) };
+    const list = &coefs.value_ptr.array;
+    while (list.items.len < poly_terms.len) try list.append(.{ .float = 0 });
+    list.items[index] = .{ .float = value };
 }
 
 /// o objeto onde o campo mora: o da peça, o objeto dentro dela (o perfil) ou o item da lista

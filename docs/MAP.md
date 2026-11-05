@@ -717,8 +717,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/tabs/**
 
 - `aerosim/gui/tabs/config_tab.zig` — O painel da Montagem, o par de `info_html` (`config_tab.py`): tudo o que dá para saber da configuração sem
-  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:388`, `Spec:391`, `EditableList:668`, `Layout:671`, `NewPart:874`
-  fn `panel:49`, `components:345`, `specs:490`, `placeMounted:650`, `layout:688`, `addItem:761`, `removeItem:776`, `apply:815`, `add:925`, `remove:984`, `importPart:1037`, `componentOf:1055`, `moveBy:1066`, `setWind:1091`, `rename:1098`, `serialize:1104`
+  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:388`, `Spec:391`, `EditableList:668`, `Layout:671`, `NewPart:904`
+  fn `panel:49`, `components:345`, `specs:490`, `placeMounted:650`, `layout:688`, `addItem:772`, `removeItem:787`, `apply:826`, `add:955`, `remove:1014`, `importPart:1067`, `componentOf:1085`, `moveBy:1096`, `setWind:1121`, `rename:1128`, `serialize:1134`
 
 **aerosim/gui/ui/**
 

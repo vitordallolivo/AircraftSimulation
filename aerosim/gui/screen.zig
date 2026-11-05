@@ -314,7 +314,7 @@ pub const Screen = struct {
                 const equal = std.mem.indexOfScalar(u8, rest, '=') orelse continue;
                 const editor = &screen.assembly_editor.?;
                 const opened = &screen.assembly.?;
-                for (editor.specs) |*spec| if (std.mem.eql(u8, spec.name, rest[0..equal]) and spec.container.len == 0) {
+                for (editor.specs) |*spec| if (std.mem.eql(u8, spec.name, rest[0..equal])) {
                     const value = rest[equal + 1 ..];
                     switch (spec.kind) {
                         .number, .integer, .optional_number => {
@@ -324,6 +324,7 @@ pub const Screen = struct {
                         .toggle => spec.checked = std.mem.eql(u8, value, "sim"),
                         .choice, .text => spec.text = value,
                     }
+                    break;
                 };
                 config_tab.apply(opened.document_arena.allocator(), &opened.document, editor.list[editor.selected], editor.specs) catch continue;
                 screen.commitDocument(null);
