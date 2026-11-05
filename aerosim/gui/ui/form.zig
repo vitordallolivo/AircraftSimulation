@@ -284,11 +284,11 @@ pub const Form = struct {
             return false;
         }
         if (field.enabled) fieldBox(control) else widgets.rounded(control, 5, theme.colors.panel);
-        theme.text(ui.fonts.mono, numberText(&buffer, field.number), control.x + 6, control.y + 5, 14, if (field.enabled) theme.colors.ink else theme.colors.muted);
+        theme.text(ui.fonts.mono, numbers.fieldText(&buffer, field.number), control.x + 6, control.y + 5, 14, if (field.enabled) theme.colors.ink else theme.colors.muted);
         if (field.enabled and ui.clickedIn(control)) {
             form.editing = index;
             form.edit_text = [_:0]u8{0} ** 32;
-            const typed = numberText(&buffer, field.number);
+            const typed = numbers.fieldText(&buffer, field.number);
             @memcpy(form.edit_text[0..typed.len], typed);
             widgets.caretToEnd(ui, &form.edit_text);
             form.edit_fresh = true;

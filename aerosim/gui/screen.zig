@@ -269,7 +269,7 @@ pub const Screen = struct {
         const component = editor.list[editor.selected];
         const memory = opened.document_arena.allocator();
         if (pressed % 2 == 0) {
-            config_tab.addItem(memory, &opened.document, component, list.key) catch return;
+            config_tab.addItem(memory, &opened.document, &opened.loaded.ac, component, list.key) catch return;
         } else {
             const removed = config_tab.removeItem(memory, &opened.document, component, list.key) catch false;
             if (!removed) return;

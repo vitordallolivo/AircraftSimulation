@@ -54,6 +54,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   ponta de outra superfície (cauda em T, winglet), e vai para lá sozinha a cada edição, como na Montagem em Python.
 - Uma asa pode ser ligada a outra no editor da Montagem em Zig (tandem, biplano), como no Python. Ao desligar, a
   que sobra sozinha também sai do conjunto.
+- No editor da Montagem em Zig, a superfície ganha os dispositivos de ponta (winglet, winglet para baixo, placa,
+  cerca). O motor mostra o modelo de tração e, conforme ele, motor, hélice e bateria ou o polinômio de tração. A
+  LAPES ganha a soltura: ligar, a perna e a distância nela, que viram o evento de soltura do percurso.
+- Os campos com número pequeno (abaixo de 0,001) aparecem em notação científica, em vez de 0.
 - Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
   referência e a trajetória 3D do voo.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).

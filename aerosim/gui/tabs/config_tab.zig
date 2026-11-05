@@ -533,6 +533,41 @@ pub fn specs(memory: std.mem.Allocator, aircraft: *const Aircraft, component: Co
     return list.items;
 }
 
+/// os campos da soltura da LAPES: não são chaves da carga, são o evento "drop" do percurso que eles escrevem
+const drop_on = "soltura: ligada";
+const drop_leg = "soltura: perna";
+const drop_distance = "soltura: distância";
+
+/// troca o evento "drop" do percurso pelo dos campos da soltura (`_drop_editor`: sem ele, a carga não sai)
+fn applyDrop(memory: std.mem.Allocator, document: *std.json.Value, fields: []const Spec) !void {
+    var on = false;
+    var leg: i64 = 0;
+    var distance: f64 = 0;
+    for (fields) |spec| {
+        if (std.mem.eql(u8, spec.name, drop_on)) on = spec.checked;
+        if (std.mem.eql(u8, spec.name, drop_leg)) leg = std.fmt.parseInt(i64, spec.text[0 .. std.mem.indexOfScalar(u8, spec.text, ':') orelse spec.text.len], 10) catch 0;
+        if (std.mem.eql(u8, spec.name, drop_distance)) distance = spec.number;
+    }
+    const mission = try partNode(memory, document, .{ .part = .mission, .label = "" });
+    const entry = try mission.getOrPut(memory, "events");
+    if (!entry.found_existing or entry.value_ptr.* != .array) entry.value_ptr.* = .{ .array = std.json.Array.init(memory) };
+    const events = &entry.value_ptr.array;
+    var k: usize = 0;
+    while (k < events.items.len) { // os outros eventos ficam; o "drop" sai
+        const event = events.items[k];
+        const kind = if (event == .object) event.object.get("kind") else null;
+        if (kind != null and kind.? == .string and std.mem.eql(u8, kind.?.string, "drop")) {
+            _ = events.orderedRemove(k);
+        } else k += 1;
+    }
+    if (!on) return;
+    var drop: std.json.ObjectMap = .empty;
+    try drop.put(memory, "kind", .{ .string = "drop" });
+    try drop.put(memory, "leg", .{ .integer = leg });
+    try drop.put(memory, "s", .{ .float = distance });
+    try events.append(.{ .object = drop });
+}
+
 /// o campo "ligada a" das asas: não é uma chave do arquivo, é o grupo (`group`) que ele muda
 const linked_field = "ligada a";
 
@@ -663,6 +698,46 @@ pub fn layout(memory: std.mem.Allocator, aircraft: *const Aircraft, component: C
             try itemFieldsOf(memory, &fields, surface.airfoil, &.{ "coords", "path" }, .{ .name = "", .label = "", .kind = .number, .container = "airfoil", .group = groups.items.len - 1 }, null);
             try listBlocks(memory, &fields, &groups, &lists, surface.sections, "sections", "seção", &.{}, null);
             try listBlocks(memory, &fields, &groups, &lists, surface.controls, "controls", "comando", &.{}, &form_meta.control_kinds);
+            if (!surface.vertical) try listBlocks(memory, &fields, &groups, &lists, surface.devices, "devices", "dispositivo", &.{}, &form_meta.device_kinds);
+        },
+        .prop => {
+            // o modelo de tração (`_propulsion_choice`): motor, hélice e bateria, ou o polinômio do conjunto
+            const unit = aircraft.propulsion[component.index];
+            for (fields.items) |*spec| if (std.mem.eql(u8, spec.name, "thrust_model")) {
+                spec.kind = .choice;
+                spec.label = "modelo de tração";
+                spec.choices = &form_meta.thrust_models;
+            };
+            const nested = .{ "motor", "propeller", "battery" };
+            const titles = .{ "motor", "hélice", "bateria" };
+            if (std.mem.eql(u8, unit.thrust_model, "poly")) {
+                try groups.append(memory, "polinômio de tração");
+                const start = fields.items.len;
+                try itemFieldsOf(memory, &fields, unit.thrust_poly, &.{ "coefs", "name" }, .{ .name = "", .label = "", .kind = .number, .container = "thrust_poly", .group = groups.items.len - 1 }, null);
+                for (fields.items[start..]) |*spec| if (std.mem.eql(u8, spec.name, "x_var") or std.mem.eql(u8, spec.name, "y_var")) {
+                    spec.kind = .choice;
+                    spec.choices = &form_meta.poly_variables;
+                };
+            } else inline for (nested, titles) |key, title| {
+                try groups.append(memory, title);
+                try itemFieldsOf(memory, &fields, @field(unit, key), &.{ "J", "CT", "CP" }, .{ .name = "", .label = "", .kind = .number, .container = key, .group = groups.items.len - 1 }, null);
+            }
+        },
+        .payload => {
+            // a soltura (`_drop_editor`): o evento "drop" do percurso, com a perna e a distância nela
+            try groups.append(memory, "soltura (evento do percurso)");
+            const group = groups.items.len - 1;
+            var drop: ?model.MissionEvent = null;
+            for (aircraft.mission.events) |event| if (drop == null and std.mem.eql(u8, event.kind, "drop")) {
+                drop = event;
+            };
+            var legs: std.ArrayList([]const u8) = .empty;
+            for (aircraft.mission.legs, 0..) |leg, i| try legs.append(memory, try std.fmt.allocPrint(memory, "{d}: {s}", .{ i, leg.name }));
+            if (legs.items.len == 0) try legs.append(memory, "0: perna");
+            const leg_index: usize = if (drop) |event| @intCast(std.math.clamp(event.leg, 0, @as(i64, @intCast(legs.items.len - 1)))) else 0;
+            try fields.append(memory, .{ .name = drop_on, .label = "soltar a carga nesta missão", .kind = .toggle, .checked = drop != null, .group = group });
+            try fields.append(memory, .{ .name = drop_leg, .label = "perna", .kind = .choice, .choices = legs.items, .text = legs.items[leg_index], .group = group });
+            try fields.append(memory, .{ .name = drop_distance, .label = "distância na perna", .unit = "m", .kind = .number, .number = if (drop) |event| event.s else 0, .group = group });
         },
         .gear => if (std.mem.eql(u8, aircraft.gear.layout, "custom"))
             try listBlocks(memory, &fields, &groups, &lists, aircraft.gear.custom, "custom", "perna", &.{}, &form_meta.gear_kinds),
@@ -683,8 +758,14 @@ fn itemList(memory: std.mem.Allocator, document: *std.json.Value, component: Com
 
 /// "+" de uma lista: um item novo, cópia do último (a seção nova 0,2 m além dele, para as seções não coincidirem);
 /// a lista vazia ganha um item com os valores padrão
-pub fn addItem(memory: std.mem.Allocator, document: *std.json.Value, component: Component, key: []const u8) !void {
+pub fn addItem(memory: std.mem.Allocator, document: *std.json.Value, aircraft: *const Aircraft, component: Component, key: []const u8) !void {
     const items = try itemList(memory, document, component, key);
+    if (std.mem.eql(u8, key, "devices") and component.part == .surface) { // um winglet desligado, de altura 10 % da envergadura
+        const surface = aircraft.surfaces[component.index];
+        const span = if (surface.symmetric) 2 * model.semispan(&surface) else model.semispan(&surface);
+        const height = @round(1000 * 0.1 * @max(span, 0.5)) / 1000;
+        return items.append(try literal(memory, "{{\"kind\":\"winglet\",\"height\":{d},\"enabled\":false}}", .{height}));
+    }
     if (items.items.len == 0 or items.items[items.items.len - 1] != .object) return items.append(.{ .object = .empty });
     var copy = try clone(memory, items.items[items.items.len - 1]);
     if (std.mem.eql(u8, key, "sections")) try copy.object.put(memory, "y", .{ .float = numberOf(copy.object, "y") + 0.2 });
@@ -734,7 +815,9 @@ fn partNode(memory: std.mem.Allocator, document: *std.json.Value, component: Com
 pub fn apply(memory: std.mem.Allocator, document: *std.json.Value, component: Component, fields: []const Spec) !void {
     if (component.part == .modifiers) return applyModifiers(memory, document, fields);
     const part_node = try partNode(memory, document, component);
+    if (component.part == .payload) try applyDrop(memory, document, fields);
     for (fields) |spec| {
+        if (std.mem.startsWith(u8, spec.name, "soltura: ")) continue;
         if (component.part == .surface and std.mem.eql(u8, spec.name, linked_field)) {
             try linkWing(memory, document, component.index, spec.text);
             continue;
@@ -1084,9 +1167,9 @@ test "o editor da asa tem o perfil, as seções e os comandos, com + e −" {
     const wing: Component = .{ .part = .surface, .index = 0, .label = "" };
     const form = try layout(memory, &loaded.ac, wing);
     // blocos: a peça, o perfil, as 2 seções e o aileron
-    try std.testing.expectEqual(@as(usize, 2 + loaded.ac.surfaces[0].sections.len + loaded.ac.surfaces[0].controls.len), form.groups.len);
+    try std.testing.expectEqual(@as(usize, 2 + loaded.ac.surfaces[0].sections.len + loaded.ac.surfaces[0].controls.len + loaded.ac.surfaces[0].devices.len), form.groups.len);
     try std.testing.expectEqualStrings("seção 2", form.groups[3]);
-    try std.testing.expectEqual(@as(usize, 2), form.lists.len);
+    try std.testing.expectEqual(@as(usize, 3), form.lists.len);
     // a corda da ponta e o tipo do comando, gravados e lidos de novo
     var document = try std.json.parseFromSliceLeaky(std.json.Value, memory, bytes, .{});
     const edited = try memory.dupe(Spec, form.specs);
@@ -1098,7 +1181,7 @@ test "o editor da asa tem o perfil, as seções e os comandos, com + e −" {
         }
     }
     try apply(memory, &document, wing, edited);
-    try addItem(memory, &document, wing, "sections");
+    try addItem(memory, &document, &loaded.ac, wing, "sections");
     var again = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
     defer again.deinit();
     const sections = again.ac.surfaces[0].sections;
@@ -1173,4 +1256,42 @@ test "asas ligadas: ligar duas asas e desligar, como link_wings e unlink_wing" {
     defer alone.deinit();
     try std.testing.expectEqualStrings("", alone.ac.surfaces[0].group);
     try std.testing.expectEqualStrings("", alone.ac.surfaces[3].group);
+}
+
+test "o motor mostra motor, hélice e bateria; a LAPES escreve a soltura no percurso" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
+    defer loaded.deinit();
+    var document = try std.json.parseFromSliceLeaky(std.json.Value, memory, bytes, .{});
+    const motor: Component = .{ .part = .prop, .index = 0, .label = "" };
+    const form = try layout(memory, &loaded.ac, motor);
+    try std.testing.expectEqualStrings("hélice", form.groups[2]);
+    const edited = try memory.dupe(Spec, form.specs);
+    for (edited) |*spec| if (std.mem.eql(u8, spec.container, "propeller") and std.mem.eql(u8, spec.name, "D")) {
+        spec.number = 0.4;
+    };
+    try apply(memory, &document, motor, edited);
+    // a soltura na perna 1, a 30 m
+    const payload: Component = .{ .part = .payload, .label = "" };
+    const drop = try memory.dupe(Spec, (try layout(memory, &loaded.ac, payload)).specs);
+    for (drop) |*spec| {
+        if (std.mem.eql(u8, spec.name, drop_on)) spec.checked = true;
+        if (std.mem.eql(u8, spec.name, drop_leg)) spec.text = spec.choices[@min(1, spec.choices.len - 1)];
+        if (std.mem.eql(u8, spec.name, drop_distance)) spec.number = 30;
+    }
+    try apply(memory, &document, payload, drop);
+    var again = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
+    defer again.deinit();
+    try std.testing.expectEqual(@as(f64, 0.4), again.ac.propulsion[0].propeller.D);
+    try std.testing.expectEqual(loaded.ac.propulsion[0].propeller.J.len, again.ac.propulsion[0].propeller.J.len); // a curva da hélice fica
+    var drops: usize = 0;
+    for (again.ac.mission.events) |event| if (std.mem.eql(u8, event.kind, "drop")) {
+        drops += 1;
+        try std.testing.expectEqual(@as(f64, 30), event.s);
+    };
+    try std.testing.expectEqual(@as(usize, 1), drops);
 }

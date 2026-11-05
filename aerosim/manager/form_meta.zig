@@ -276,6 +276,11 @@ const choice_lists = std.StaticStringMap([]const []const u8).initComptime([_]Opt
 pub const control_kinds = [_][]const u8{ "aileron", "elevator", "rudder", "elevon", "ruddervator", "flaperon", "flap" };
 pub const gear_kinds = [_][]const u8{ "steer", "main", "skid" };
 pub const leg_kinds = [_][]const u8{ "straight", "turn" };
+pub const device_kinds = [_][]const u8{ "winglet", "winglet_baixo", "placa", "cerca" };
+/// as variáveis do polinômio de tração (`POLY_VARS` de `aerosim/model/catalog.py`)
+pub const poly_variables = [_][]const u8{ "none", "V", "throttle", "h", "rho", "const" };
+/// os modelos de tração de um motor: o motor e a hélice do catálogo ou o polinômio de um conjunto medido
+pub const thrust_models = [_][]const u8{ "motor", "poly" };
 pub const event_kinds = [_][]const u8{ "drop", "gust" };
 
 /// o rótulo do campo (o próprio nome se não há)

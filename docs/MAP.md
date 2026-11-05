@@ -717,8 +717,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/tabs/**
 
 - `aerosim/gui/tabs/config_tab.zig` — O painel da Montagem, o par de `info_html` (`config_tab.py`): tudo o que dá para saber da configuração sem
-  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:388`, `Spec:391`, `EditableList:633`, `Layout:636`, `NewPart:791`
-  fn `panel:49`, `components:345`, `specs:490`, `placeMounted:615`, `layout:653`, `addItem:686`, `removeItem:695`, `apply:734`, `add:842`, `remove:901`, `importPart:954`, `serialize:972`
+  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:388`, `Spec:391`, `EditableList:668`, `Layout:671`, `NewPart:874`
+  fn `panel:49`, `components:345`, `specs:490`, `placeMounted:650`, `layout:688`, `addItem:761`, `removeItem:776`, `apply:815`, `add:925`, `remove:984`, `importPart:1037`, `serialize:1055`
 
 **aerosim/gui/ui/**
 
@@ -746,8 +746,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/ui/native_dialog.zig` — A janela de abrir e de salvar arquivo do próprio sistema (a do GNOME, do KDE, do Windows ou do macOS), no lugar
   tipos `State:11`, `Dialog:13`
 - `aerosim/gui/ui/numbers.zig` — Números na tela sem janela (testáveis): o texto curto de um campo e as marcas "redondas" dos eixos.
-  tipos `Range:38`
-  fn `numberText:5`, `niceStep:21`, `decimalsFor:31`, `significant:88`
+  tipos `Range:45`
+  fn `fieldText:7`, `numberText:12`, `niceStep:28`, `decimalsFor:38`, `significant:95`
 - `aerosim/gui/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
   tipos `Series:24`, `Marker:51`, `Cloud:73`, `Axes:81`, `Frame:91`, `Cell:193`, `ExportKind:270`
   fn `lines:105`, `table:201`, `tableHeight:236`, `overlayActive:414`, `overlay:419`, `drawMarker:686`, `cloud:740`, `ramp:759`, `colorBar:775`, `drawFrame:795`
