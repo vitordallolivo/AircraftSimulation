@@ -70,6 +70,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   edita ali.
 - O "Restaurar" da Montagem em Zig abre um menu: volta ao avião como estava ao abrir ou a um dos modelos padrão
   (convencional, asa voadora, bimotor com tubo e cauda em V), como no Python.
+- O arraste das peças na Montagem em Zig pode andar só em x, só em y ou só em z, além do plano da tela. O resumo
+  ao lado do 3D deixou de cortar as linhas longas (o CG depois da soltura).
 - Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
   referência e a trajetória 3D do voo.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).

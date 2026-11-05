@@ -85,6 +85,7 @@ pub const Screen = struct {
     assembly_panel: ?AssemblyPanel = null, // o resumo ao lado do 3D (`config_tab.panel`), refeito ao abrir
     assembly_scroll: ui_kit.scroll.ScrollArea = .{},
     assembly_drag: ?PieceDrag = null, // a peça sendo arrastada no 3D
+    drag_lock: DragLock = .screen, // por onde a peça arrastada anda: no plano da tela ou só num eixo
     restore_open: bool = false, // o menu do "Restaurar" aberto: como foi aberto ou um modelo padrão
     assembly_angle: ViewAngle = .free, // a vista da Montagem: 3D livre ou lateral, superior e frontal em escala
     assembly_editor: ?AssemblyEditor = null, // a lista de componentes e o editor da peça escolhida
@@ -211,6 +212,12 @@ pub const Screen = struct {
                 const dx: f64 = ui.mouse.x - drag.start.x;
                 const dy: f64 = ui.mouse.y - drag.start.y;
                 for (&drag.offset, axes[0], axes[1]) |*moved, right, up| moved.* = scale * (dx * right - dy * up);
+                // a trava ("só x", "só y", "só z"): fica só a parte do movimento ao longo do eixo
+                if (screen.drag_lock.axis()) |kept| {
+                    for (&drag.offset, 0..) |*moved, k| if (k != kept) {
+                        moved.* = 0;
+                    };
+                }
                 return;
             }
             // soltou: grava
@@ -224,6 +231,8 @@ pub const Screen = struct {
             return;
         }
         if (!ui.clicked or ui.click_taken or !ui.hovering(area)) return;
+        // a faixa de baixo (a trava do arraste e a nota) e o menu do "Restaurar" aberto não pegam peça
+        if (screen.restore_open or ui.mouse.y > area.y + area.height - 62) return;
         const ray = screen.assembly_view.ray(ui.mouse, area) orelse return;
         const hit = opened.mesh.pick(ray) orelse return;
         ui.click_taken = true; // a vista não gira
@@ -362,6 +371,10 @@ pub const Screen = struct {
                 if (moved) screen.commitDocument(null);
             } else if (std.mem.startsWith(u8, step, "modelo=")) { // Restaurar → modelo padrão N
                 screen.restoreTemplate(std.fmt.parseInt(usize, step[7..], 10) catch continue);
+            } else if (std.mem.startsWith(u8, step, "arraste=")) {
+                for (std.enums.values(DragLock)) |lock| if (std.mem.eql(u8, lock.caption(), step[8..])) {
+                    screen.drag_lock = lock;
+                };
             } else if (std.mem.eql(u8, step, "menu restaurar")) {
                 screen.restore_open = true;
             } else if (std.mem.eql(u8, step, "Restaurar")) {
@@ -941,6 +954,19 @@ pub const Screen = struct {
             if (screen.assembly_angle == angle) rl.drawRectangleLinesEx(button, 2, theme.colors.accent);
         }
         theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.assembly_note, 0), area.x + 6, area.y + area.height - 18, 12, theme.colors.muted);
+        // a trava do arraste, no canto de baixo à direita do 3D
+        if (screen.assembly != null) {
+            const lock_width: f32 = 96;
+            const locks = std.enums.values(DragLock);
+            const row_x = area.x + area.width - @as(f32, @floatFromInt(locks.len)) * (lock_width + 4) - 4;
+            const row_y = area.y + area.height - 58;
+            theme.text(ui.fonts.regular, "arraste:", row_x - 62, row_y + 6, 13, theme.colors.muted);
+            for (locks, 0..) |lock, k| {
+                const button: rl.Rectangle = .{ .x = row_x + @as(f32, @floatFromInt(k)) * (lock_width + 4), .y = row_y, .width = lock_width, .height = 26 };
+                if (ui_kit.dialogs.button(ui, button, lock.caption())) screen.drag_lock = lock;
+                if (screen.drag_lock == lock) rl.drawRectangleLinesEx(button, 2, theme.colors.accent);
+            }
+        }
         // o menu do "Restaurar", por cima de tudo: como foi aberto ou um dos modelos padrão
         if (restore_at) |corner| {
             var captions: [1 + templates.all.len][:0]const u8 = undefined;
@@ -1103,6 +1129,34 @@ const AssemblyEditor = struct {
 
 /// os botões embaixo da lista de componentes, na ordem do Python, mais o de trazer uma peça de outro arquivo
 const new_parts = [_]config_tab.NewPart{ .wing, .htail, .vtail, .motor, .boom, .tank };
+/// por onde a peça arrastada no 3D anda (o "arraste:" do Python): no plano da tela ou só ao longo de um eixo
+const DragLock = enum {
+    screen,
+    x,
+    y,
+    z,
+
+    /// o texto do botão
+    fn caption(lock: DragLock) [:0]const u8 {
+        return switch (lock) {
+            .screen => "plano da tela",
+            .x => "só x",
+            .y => "só y",
+            .z => "só z",
+        };
+    }
+
+    /// o eixo que fica (nulo: os três, no plano da tela)
+    fn axis(lock: DragLock) ?usize {
+        return switch (lock) {
+            .screen => null,
+            .x => 0,
+            .y => 1,
+            .z => 2,
+        };
+    }
+};
+
 /// a barra dos aviões abertos na Montagem
 const fleet_buttons = [_][:0]const u8{ "Anterior", "Próximo", "+ Variante", "Fechar" };
 /// quantos aviões ficam abertos ao mesmo tempo
@@ -1397,7 +1451,7 @@ const AssemblyPanel = struct {
         y += widgets.paragraph(ui.fonts.regular, shown.summary, rect.x + 4, y, width - 8, 14, theme.colors.label) + 10;
         for (shown.titles, shown.tables) |title, rows| {
             const height = ui_kit.plot.tableHeight(rows.len);
-            ui_kit.plot.table(ui, .{ .x = rect.x, .y = y, .width = width, .height = height }, title, &.{ "item", "valor" }, rows, &.{ 0.52, 0.48 });
+            ui_kit.plot.table(ui, .{ .x = rect.x, .y = y, .width = width, .height = height }, title, &.{ "item", "valor" }, rows, &.{ 0.36, 0.64 });
             y += height + 10;
         }
         if (shown.warnings.len > 0) {
