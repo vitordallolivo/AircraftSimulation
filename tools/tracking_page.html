@@ -53,6 +53,14 @@
   .sequencia li { display: flex; gap: 12px; align-items: flex-start; }
   .sequencia .passo { font: 13px var(--mono); color: var(--apagado); min-width: 2.5em; text-align: right; padding-top: 10px; }
   .sequencia .cartao { flex: 1; }
+  .form label { display: block; font-size: 13px; color: var(--apagado); margin: 8px 0 2px; }
+  .form input, .form textarea, .form select { width: 100%; padding: 6px 8px; border: 1px solid var(--linha); border-radius: 6px; font: inherit; }
+  .form textarea { min-height: 70px; resize: vertical; }
+  .form .linha-md { font: 12px var(--mono); background: #f0f0f6; border: 1px solid var(--linha); border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; margin: 8px 0; }
+  .form .botoes { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .form .botao { all: unset; cursor: pointer; padding: 6px 14px; border-radius: 6px; background: var(--azul); color: #fff; font-size: 14px; }
+  .form .botao.leve { background: #e9e9f0; color: var(--texto); }
+  .form .ajuda { font-size: 13px; color: var(--apagado); }
   .onda { font: 13px var(--mono); color: var(--azul); margin: 16px 0 6px; }
   .tag { font: 11px var(--mono); padding: 0 6px; border-radius: 4px; background: #eef; color: var(--azul); }
   .tag.suspeita { background: #fde8e8; color: var(--suspeita); }
@@ -93,7 +101,8 @@
 <body>
 <header>
   <h1>AircraftSimulation — tracking</h1>
-  <div class="sub">O quadro de tarefas do <code style="background:none;color:#fff">docs/TRACKING.md</code>. <a href="index.html">voltar ao site</a></div>
+  <div class="sub">O quadro de tarefas do <code style="background:none;color:#fff">docs/TRACKING.md</code>. <a href="index.html">voltar ao site</a>
+    <button class="chip" id="nova" style="margin-left:8px">+ Nova tarefa</button></div>
   <nav id="abas"></nav>
 </header>
 <main id="conteudo"></main>
@@ -193,9 +202,70 @@ function abrir(id) {
     ${it.commits.length ? `<div class="grupo"><h3>Commits</h3>${commitsHtml(it)}</div>` : ''}
     <div class="grupo"><h3>Depende de</h3>${it.depende.length ? it.depende.map(depHtml).join('') : '<span class="vazio">nada</span>'}</div>
     ${antes.size > it.depende.length ? `<div class="grupo"><h3>Cadeia inteira antes dele</h3>${[...antes].map(depHtml).join('')}</div>` : ''}
-    <div class="grupo"><h3>Libera</h3>${it.bloqueia.length ? it.bloqueia.map(depHtml).join('') : '<span class="vazio">nada depende dele</span>'}</div>`;
+    <div class="grupo"><h3>Libera</h3>${it.bloqueia.length ? it.bloqueia.map(depHtml).join('') : '<span class="vazio">nada depende dele</span>'}</div>
+    ${it.estado !== 'Feito' ? `<div class="grupo form"><h3>Confirmar feito</h3>
+      <label for="f-desc">O que foi feito (entra no fim do texto da tarefa)</label><textarea id="f-desc"></textarea>
+      <label for="f-commit">Commit</label><input id="f-commit" placeholder="abc1234">
+      <div class="botoes"><button class="botao" id="f-gerar">Gerar a linha</button></div>
+      <div id="f-saida"></div></div>` : ''}`;
   document.getElementById('detalhe').classList.add('aberto');
+  const gerar = document.getElementById('f-gerar');
+  if (gerar) gerar.addEventListener('click', () => {
+    const desc = limpa(document.getElementById('f-desc').value);
+    const commit = limpa(document.getElementById('f-commit').value);
+    const tarefa = it.tarefa + (desc ? ` Feito: ${desc}` : '');
+    const estado = commit ? `Feito (commit ${commit})` : 'Feito';
+    mostraLinha('f-saida', linhaMd(it.id, tarefa, it.tipo, it.depende, it.bloco, estado),
+      `Troque a linha do ${it.id} no docs/TRACKING.md (tabela "${it.segmento}") por esta:`);
+  });
 }
+
+// ---------- gerar a linha do .md (a página não grava nada: copia-se e cola-se no TRACKING.md) ----------
+const limpa = s => s.replace(/\s+/g, ' ').replace(/\|/g, '/').trim();
+const linhaMd = (id, tarefa, tipo, depende, bloco, estado) =>
+  `| ${id} | ${tarefa} | ${tipo} | ${depende.length ? depende.join(', ') : '—'} | ${bloco} | ${estado} |`;
+function mostraLinha(onde, linha, ajuda) {
+  const alvo = document.getElementById(onde);
+  alvo.innerHTML = `<p class="ajuda">${esc(ajuda)}</p><div class="linha-md" id="${onde}-md">${esc(linha)}</div>
+    <div class="botoes"><button class="botao" id="${onde}-copiar">Copiar</button></div>`;
+  document.getElementById(`${onde}-copiar`).addEventListener('click', async e => {
+    try { await navigator.clipboard.writeText(linha); }
+    catch (erro) { const r = document.createRange(); r.selectNodeContents(document.getElementById(`${onde}-md`)); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand('copy'); }
+    e.target.textContent = 'Copiado';
+  });
+}
+// o próximo número livre: O no aeroopt, G na GUI, T no resto (os T são um contador só para os outros segmentos)
+function proximoId(segmento) {
+  const prefixo = segmento === 'aeroopt' ? 'O' : segmento === 'GUI' ? 'G' : 'T';
+  const maior = Math.max(0, ...ITENS.filter(it => it.id.startsWith(prefixo)).map(it => +it.id.slice(1)));
+  return prefixo + String(maior + 1).padStart(2, '0');
+}
+function novaTarefa() {
+  const caixa = document.getElementById('caixa'); caixa.style.setProperty('--cor', 'var(--azul)');
+  const opcoes = lista => lista.map(x => `<option>${esc(x)}</option>`).join('');
+  const tipos = [...new Set(ITENS.map(it => it.tipo))].sort();
+  const blocos = [...new Set(ITENS.map(it => it.bloco))].sort((a, b) => a.localeCompare(b, 'pt', { numeric: true }));
+  caixa.innerHTML = `<button class="fechar" aria-label="fechar">×</button><h2>Nova tarefa</h2>
+    <div class="form">
+      <label for="n-seg">Segmento</label><select id="n-seg">${opcoes(DADOS.segmentos.map(s => s.nome))}</select>
+      <label for="n-tarefa">Tarefa</label><textarea id="n-tarefa"></textarea>
+      <label for="n-tipo">Tipo</label><select id="n-tipo">${opcoes(tipos)}</select>
+      <label for="n-dep">Depende de (ids separados por vírgula)</label><input id="n-dep" placeholder="G26, T13">
+      <label for="n-bloco">Bloco</label><select id="n-bloco">${opcoes(blocos)}</select>
+      <label for="n-estado">Estado</label><select id="n-estado">${opcoes(['A fazer', 'Pronto', 'Em andamento', 'Bloqueado', 'A decidir'])}</select>
+      <div class="botoes"><button class="botao" id="n-gerar">Gerar a linha</button></div>
+      <div id="n-saida"></div></div>`;
+  document.getElementById('detalhe').classList.add('aberto');
+  document.getElementById('n-gerar').addEventListener('click', () => {
+    const segmento = document.getElementById('n-seg').value;
+    const depende = document.getElementById('n-dep').value.split(/[,;\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+    const id = proximoId(segmento);
+    mostraLinha('n-saida', linhaMd(id, limpa(document.getElementById('n-tarefa').value) || '(sem texto)', document.getElementById('n-tipo').value,
+      depende, document.getElementById('n-bloco').value, document.getElementById('n-estado').value),
+      `Cole esta linha no fim da tabela "${segmento}" do Quadro, no docs/TRACKING.md:`);
+  });
+}
+document.getElementById('nova').addEventListener('click', novaTarefa);
 document.getElementById('detalhe').addEventListener('click', e => {
   if (e.target.id === 'detalhe' || e.target.classList.contains('fechar')) e.currentTarget.classList.remove('aberto');
 });

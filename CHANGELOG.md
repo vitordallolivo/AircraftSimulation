@@ -9,7 +9,7 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - O quadro de tarefas ficou difícil de ler como tabelas longas em Markdown. Agora as mesmas tabelas viram também
   uma página no site, sem mudar o jeito de escrever (uma tarefa nova continua sendo uma linha na tabela): as tarefas em colunas por estado, com
   busca e filtro por segmento, as suspeitas de erro à parte, o grafo das dependências, a ordem de prioridade e o que
-  cada área já tem. Uma tarefa resolvida leva o commit no estado e aparece riscada, com o link; as abertas aparecem também em sequência, na ordem em que as dependências deixam fazer. A página aparece também como artefato de cada PR, para ver antes do merge.
+  cada área já tem. Uma tarefa resolvida leva o commit no estado e aparece riscada, com o link; as abertas aparecem também em sequência, na ordem em que as dependências deixam fazer. Na própria página, confirmar uma tarefa como feita (com o que foi feito e o commit) ou criar uma nova gera a linha pronta para colar no `TRACKING.md`. A página aparece também como artefato de cada PR, para ver antes do merge.
 - Antes, a escolha do método de cálculo e os efeitos extras se misturavam, e um número mágico decidia que linha
   sustentadora usar. Agora o método se escolhe pelo nome (faixas, Phillips e Snyder, Goates e Hunsaker ou a não
   linear), e os efeitos (efeito solo, esteira da hélice, interferência entre asas, momento do comando) ligam e
