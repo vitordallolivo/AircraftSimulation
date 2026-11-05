@@ -17,7 +17,7 @@
 //! A própria asa fica de fora (a faixa já tem o seu C_Di = C_L²/(π e AR)). Por ser uma passada, a de trás não
 //! devolve o efeito para a da frente pelo α dela (no tandem a asa da frente quase não sente a de trás; no biplano a
 //! influência é mútua e a passada é a primeira iteração do sistema). Com o modelo da linha sustentadora no voo
-//! (`aero_model` ≠ 0) não faz nada: lá a interferência já está no sistema.
+//! (`aero_model` ≠ `.strips`) não faz nada: lá a interferência já está no sistema.
 const std = @import("std");
 const vec = @import("../math/vec.zig");
 const core_types = @import("../types.zig");
@@ -27,7 +27,7 @@ const V3 = vec.V3;
 
 /// algum par ligado e o voo pelas faixas: a aerodinâmica precisa das circulações antes do laço dos painéis
 pub fn active(params: *const core_types.Params) bool {
-    if (params.aero_model != 0) return false;
+    if (params.aero_model != .strips) return false;
     const n_mods: usize = @intCast(params.n_mod);
     for (params.mods[0..n_mods]) |*modifier| {
         if (modifier.enabled != 0 and modifier.kindOf() == .wing_pair) return true;

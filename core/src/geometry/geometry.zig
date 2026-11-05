@@ -25,12 +25,19 @@ pub const max_parts = 96;
 pub const max_report = 16;
 pub const max_attitudes = 2;
 
-pub const BOX: i32 = 0;
-pub const DISC: i32 = 1;
-pub const POINT: i32 = 2;
+/// o que uma peça da cena é (`Part.kind`)
+pub const PartKind = enum(i32) {
+    /// caixa orientada (estrutura, fuselagem)
+    box = 0,
+    /// disco (hélice)
+    disc = 1,
+    /// ponto (massa concentrada)
+    point = 2,
+    _,
+};
 
 pub const Part = extern struct {
-    kind: i32 = BOX,
+    kind: PartKind = .box,
     owner: i32 = 0, // o componente de onde a peça vem: o disco não colide com uma caixa do mesmo dono (o motor dele)
     c: [3]f64 = @splat(0), // centro (ponto: a posição; disco: o centro do disco)
     ax: [9]f64 = .{ 1, 0, 0, 0, 1, 0, 0, 0, 1 }, // eixos da caixa, unitários (linhas); disco: ax[0..3] = eixo
@@ -231,8 +238,8 @@ pub fn lowest(part: *const Part, pivot: V3, theta: f64) f64 {
     const down_dir: V3 = .{ @sin(theta), 0, -@cos(theta) };
     const h0 = dot(toV3(part.c) - pivot, down_dir);
     return switch (part.kind) {
-        BOX => h0 - radiusAlong(part, down_dir),
-        DISC => blk: {
+        .box => h0 - radiusAlong(part, down_dir),
+        .disc => blk: {
             const axis_cos = dot(down_dir, axis(part, 0));
             break :blk h0 - part.h[0] * @sqrt(@max(dot(down_dir, down_dir) - axis_cos * axis_cos, 0));
         },
@@ -243,7 +250,7 @@ pub fn lowest(part: *const Part, pivot: V3, theta: f64) f64 {
 /// alguma caixa do dono `owner` tem o centro do disco a menos de `hub`?
 fn mountedOn(parts: []const Part, disc: *const Part, owner: i32, hub: f64) bool {
     for (parts) |*box| {
-        if (box.kind == BOX and box.owner == owner and pointNearBox(toV3(disc.c), box, hub)) return true;
+        if (box.kind == .box and box.owner == owner and pointNearBox(toV3(disc.c), box, hub)) return true;
     }
     return false;
 }
@@ -262,12 +269,12 @@ pub fn check(scene: *const Scene) Report {
     // 1. hélice × peça; a peça onde a hélice está presa (o centro dela a menos de um cubo) não conta: é o nariz da
     // fuselagem com o motor, a nacele na asa, o tubo que segura a propulsora
     for (parts, 0..) |*part_a, i| {
-        if (part_a.kind != DISC) continue;
+        if (part_a.kind != .disc) continue;
         for (parts, 0..) |*part_b, j| {
-            if (j == i or part_b.kind == POINT or part_b.owner == part_a.owner) continue;
-            if (part_b.kind == BOX and mountedOn(parts, part_a, part_b.owner, scene.hub)) continue;
-            if (part_b.kind == DISC and j < i) continue;
-            const hit = if (part_b.kind == DISC) discsTouch(part_a, part_b) else discHitsBox(part_a, part_b);
+            if (j == i or part_b.kind == .point or part_b.owner == part_a.owner) continue;
+            if (part_b.kind == .box and mountedOn(parts, part_a, part_b.owner, scene.hub)) continue;
+            if (part_b.kind == .disc and j < i) continue;
+            const hit = if (part_b.kind == .disc) discsTouch(part_a, part_b) else discHitsBox(part_a, part_b);
             if (hit) {
                 if (report.n_hits < max_report) {
                     report.hit_a[@intCast(report.n_hits)] = @intCast(i);
@@ -279,10 +286,10 @@ pub fn check(scene: *const Scene) Report {
     }
     // 2. massas dentro de alguma caixa
     for (parts, 0..) |*part_a, i| {
-        if (part_a.kind != POINT) continue;
+        if (part_a.kind != .point) continue;
         var in = false;
         for (parts) |*part_b| {
-            if (part_b.kind == BOX and pointInBox(toV3(part_a.c), part_b)) {
+            if (part_b.kind == .box and pointInBox(toV3(part_a.c), part_b)) {
                 in = true;
                 break;
             }
@@ -296,9 +303,9 @@ pub fn check(scene: *const Scene) Report {
     var parent: [max_parts]i32 = undefined;
     for (0..count) |i| parent[i] = @intCast(i);
     for (parts, 0..) |*part_a, i| {
-        if (part_a.kind != BOX) continue;
+        if (part_a.kind != .box) continue;
         for (parts[i + 1 ..], i + 1..) |*part_b, j| {
-            if (part_b.kind != BOX) continue;
+            if (part_b.kind != .box) continue;
             if (part_a.owner == part_b.owner or boxesTouch(part_a, part_b, scene.contact_tol)) {
                 const ra = find(parent[0..count], i);
                 const rb = find(parent[0..count], j);
@@ -307,9 +314,9 @@ pub fn check(scene: *const Scene) Report {
         }
     }
     for (parts, 0..) |*part_a, i| { // o disco: com a primeira caixa do mesmo dono
-        if (part_a.kind != DISC) continue;
+        if (part_a.kind != .disc) continue;
         for (parts, 0..) |*part_b, j| {
-            if (part_b.kind == BOX and part_b.owner == part_a.owner) {
+            if (part_b.kind == .box and part_b.owner == part_a.owner) {
                 parent[find(parent[0..count], i)] = @intCast(find(parent[0..count], j));
                 break;
             }
@@ -317,7 +324,7 @@ pub fn check(scene: *const Scene) Report {
     }
     var label: [max_parts]i32 = @splat(-1);
     for (parts, 0..) |*part_a, i| {
-        if (part_a.kind == POINT) continue;
+        if (part_a.kind == .point) continue;
         const root = find(parent[0..count], i);
         if (label[root] < 0) {
             label[root] = report.n_groups;
@@ -331,8 +338,8 @@ pub fn check(scene: *const Scene) Report {
     for (0..attitude_count) |k| {
         var best = std.math.inf(f64);
         for (parts, 0..) |*part_a, i| {
-            if (part_a.kind == POINT) continue;
-            const need = if (part_a.kind == DISC) scene.prop_clearance else scene.clearance;
+            if (part_a.kind == .point) continue;
+            const need = if (part_a.kind == .disc) scene.prop_clearance else scene.clearance;
             const gap = lowest(part_a, pv, scene.att[k]) - need;
             if (gap < best) {
                 best = gap;
@@ -357,11 +364,11 @@ pub fn checkMany(scenes: []const Scene, out: []Report) void {
 
 // ------------------------------------------------------------------ testes
 fn boxAt(center: [3]f64, half: [3]f64, owner: i32) Part {
-    return .{ .kind = BOX, .owner = owner, .c = center, .h = half };
+    return .{ .kind = .box, .owner = owner, .c = center, .h = half };
 }
 
 fn discAt(center: [3]f64, normal: [3]f64, radius: f64, owner: i32) Part {
-    return .{ .kind = DISC, .owner = owner, .c = center, .ax = .{ normal[0], normal[1], normal[2], 0, 0, 0, 0, 0, 0 }, .h = .{ radius, 0, 0 } };
+    return .{ .kind = .disc, .owner = owner, .c = center, .ax = .{ normal[0], normal[1], normal[2], 0, 0, 0, 0, 0, 0 }, .h = .{ radius, 0, 0 } };
 }
 
 test "caixas: encostam, se cruzam e ficam longe" {
@@ -434,7 +441,7 @@ test "cena: pedaço solto, massa fora e cauda no chão" {
     scene.parts[0] = boxAt(.{ 0, 0, 0 }, .{ 0.4, 0.06, 0.06 }, 0); // fuselagem
     scene.parts[1] = boxAt(.{ 0, 0, -0.07 }, .{ 0.12, 0.8, 0.01 }, 1); // asa sobre ela
     scene.parts[2] = boxAt(.{ -1.0, 0, 0 }, .{ 0.1, 0.3, 0.005 }, 2); // EH solta, sem tubo
-    scene.parts[3] = .{ .kind = POINT, .owner = 3, .c = .{ 0.1, 0, 0 } }; // bateria na fuselagem
+    scene.parts[3] = .{ .kind = .point, .owner = 3, .c = .{ 0.1, 0, 0 } }; // bateria na fuselagem
     var report = check(&scene);
     try std.testing.expectEqual(@as(i32, 2), report.n_groups);
     try std.testing.expectEqual(@as(i32, 0), report.n_outside);

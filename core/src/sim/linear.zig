@@ -170,7 +170,7 @@ pub fn linearize(params: *const types.Params, flags: *const state.Flags, airspee
     const xz = [_]f64{0} ** state.nx;
     const mass_props = mass.compute(.{ .p = params, .f = flags, .tR = -1, .h_ground = 0, .tg = -1 }, &xz);
     const body = Body{ .ctx = .{ .p = params, .m = mass_props.m, .rcg = mass_props.rcg }, .inertia = mass_props.I };
-    const tp = trim.solve(body.ctx, types.trim_level, airspeed, 1, null);
+    const tp = trim.solve(body.ctx, types.TrimKind.level, airspeed, 1, null);
     var model = LinModel{
         .ok = tp.ok,
         .V = airspeed,

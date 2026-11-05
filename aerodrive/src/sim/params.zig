@@ -193,10 +193,10 @@ fn wingDownwash(ac: *const Aircraft) Error![2]f64 {
     return .{ 2 * CLw0 / (std.math.pi * co.AR), 2 * co.CLa / (std.math.pi * co.AR) };
 }
 
-fn group(role: []const u8) i32 {
-    if (std.mem.eql(u8, role, "wing")) return 0;
-    if (std.mem.eql(u8, role, "htail")) return 1;
-    return 2;
+fn group(role: []const u8) L.Group {
+    if (std.mem.eql(u8, role, "wing")) return .wing;
+    if (std.mem.eql(u8, role, "htail")) return .htail;
+    return .vtail;
 }
 
 const Panels = struct {
@@ -325,7 +325,7 @@ fn devicePanels(out: Panels, ac: *const Aircraft, s: *const model.Surface) Error
                         .CLmax = 1,
                         .CD0 = d.cd0,
                         .Cmac = 0,
-                        .group = 2,
+                        .group = .vtail,
                         .side = @intFromFloat(side),
                     });
                 }
@@ -428,9 +428,9 @@ pub fn dryMass(ac: *const Aircraft) DryMass {
 // ------------------------------------------------------------------ montagem
 const poly_vars = [_][]const u8{ "none", "V", "throttle", "h", "rho", "const" };
 
-fn polyVar(name: []const u8) i32 {
-    for (poly_vars, 0..) |v, i| if (std.mem.eql(u8, v, name)) return @intCast(i);
-    return T.pvar_none;
+fn polyVar(name: []const u8) T.PolyVariable {
+    for (poly_vars, 0..) |v, i| if (std.mem.eql(u8, v, name)) return @enumFromInt(i);
+    return .none;
 }
 
 /// escreve os parâmetros do núcleo (sem calibrar)
@@ -486,7 +486,7 @@ pub fn fill(ac: *const Aircraft, p: *T.Params, diag: *model.Diag) Error!void {
         const pr = u.propeller;
         const tp = u.thrust_poly;
         var pu: T.PropUnit = .{
-            .model = if (std.mem.eql(u8, u.thrust_model, "poly")) T.prop_poly else T.prop_motor,
+            .model = if (std.mem.eql(u8, u.thrust_model, "poly")) T.ThrustModel.polynomial else T.ThrustModel.motor,
             .poly_x = polyVar(tp.x_var),
             .poly_y = polyVar(tp.y_var),
             .poly_gain = tp.gain,
@@ -535,21 +535,21 @@ pub fn fill(ac: *const Aircraft, p: *T.Params, diag: *model.Diag) Error!void {
     const custom = std.mem.eql(u8, g.layout, "custom");
     for (legs[0..nl], 0..) |q, i| {
         // pernas padrão: 0 bequilha, 1-2 principais, 3 patim (igual a LandingGear.legs)
-        const kind: i32, const k: f64, const cc: f64 = if (custom) .{
-            if (std.mem.eql(u8, g.custom[i].kind, "steer")) T.gear_steer else if (std.mem.eql(u8, g.custom[i].kind, "skid")) T.gear_skid else T.gear_main,
+        const kind: T.GearKind, const k: f64, const cc: f64 = if (custom) .{
+            if (std.mem.eql(u8, g.custom[i].kind, "steer")) T.GearKind.steer else if (std.mem.eql(u8, g.custom[i].kind, "skid")) T.GearKind.skid else T.GearKind.main,
             g.custom[i].k,
             g.custom[i].c,
         } else switch (i) {
-            0 => .{ T.gear_steer, g.steer_k, g.steer_c },
-            1, 2 => .{ T.gear_main, g.main_k, g.main_c },
-            else => .{ T.gear_skid, g.skid_k, g.skid_c },
+            0 => .{ T.GearKind.steer, g.steer_k, g.steer_c },
+            1, 2 => .{ T.GearKind.main, g.main_k, g.main_c },
+            else => .{ T.GearKind.skid, g.skid_k, g.skid_c },
         };
         p.gear[i] = .{ .r = .{ q.x, q.y, q.z }, .k = k, .c = cc, .kind = kind };
     }
     p.n_gear = @intCast(nl);
 
     for (ac.tanks, 0..) |t, i| {
-        p.tank[i] = .{ .r = .{ t.x, t.y, t.z }, .side = t.side, .fill = t.fill(), .rho = t.rho, .zeta = t.zeta, .shape = if (std.mem.eql(u8, t.shape, "square")) T.tank_square else T.tank_cylinder };
+        p.tank[i] = .{ .r = .{ t.x, t.y, t.z }, .side = t.side, .fill = t.fill(), .rho = t.rho, .zeta = t.zeta, .shape = if (std.mem.eql(u8, t.shape, "square")) T.TankShape.square else T.TankShape.cylinder };
     }
     p.n_tank = @intCast(ac.tanks.len);
     p.slosh_on = @intFromBool(ac.sim.slosh);
@@ -601,7 +601,7 @@ pub fn setup(ac: *const Aircraft, inst: *core.runner.Instance, diag: *model.Diag
             Vc = 0;
             for (inst.p.seg[0..@intCast(inst.p.n_seg)]) |sg| Vc = @max(Vc, sg.V1);
         }
-        const tp = core.trim.solve(core.trim.Ctx.init(&inst.p, &inst.r.f), T.trim_level, Vc, 1.0, null);
+        const tp = core.trim.solve(core.trim.Ctx.init(&inst.p, &inst.r.f), T.TrimKind.level, Vc, 1.0, null);
         if (tp.ok != 0 and tp.thr > 0.05 and tp.thr < 1.0) inst.p.ap.Dtrim = tp.thr;
         // ganhos das malhas internas pelo modelo linear do próprio avião (iguais para qualquer um)
         _ = core.autotune.tune(&inst.p, &inst.r.f, Vc);

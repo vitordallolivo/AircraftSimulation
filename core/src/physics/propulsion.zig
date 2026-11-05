@@ -80,13 +80,13 @@ fn coef(prop_unit: *const types.PropUnit, advance: f64, CT: *f64, CP: *f64) void
 }
 
 /// o valor da variável `code` do polinômio de tração (V, acelerador, altura, densidade ou constante)
-fn polyVar(code: i32, constant: f64, airspeed: f64, thr: f64, height: f64, rho: f64) f64 {
+fn polyVar(code: types.PolyVariable, constant: f64, airspeed: f64, thr: f64, height: f64, rho: f64) f64 {
     return switch (code) {
-        types.pvar_V => airspeed,
-        types.pvar_throttle => thr,
-        types.pvar_h => height,
-        types.pvar_rho => rho,
-        types.pvar_const => constant,
+        types.PolyVariable.airspeed => airspeed,
+        types.PolyVariable.throttle => thr,
+        types.PolyVariable.height => height,
+        types.PolyVariable.density => rho,
+        types.PolyVariable.constant => constant,
         else => 0.0,
     };
 }
@@ -103,7 +103,7 @@ pub fn polyRaw(params: *const types.Params, prop_unit: *const types.PropUnit, ai
     const y_value = clampRange(polyVar(prop_unit.poly_y, prop_unit.poly_yc, airspeed, thr, height, rho), prop_unit.poly_ymax);
     var Tp = prop_unit.poly_gain * types.ThrustPoly.eval(&prop_unit.poly, x_value, y_value);
     if (prop_unit.poly_rho_exp != 0) Tp *= fmath.pow(rho / prop_unit.poly_rho0, prop_unit.poly_rho_exp);
-    if (prop_unit.poly_x != types.pvar_throttle and prop_unit.poly_y != types.pvar_throttle) Tp *= thr;
+    if (prop_unit.poly_x != types.PolyVariable.throttle and prop_unit.poly_y != types.PolyVariable.throttle) Tp *= thr;
     return Tp;
 }
 
@@ -131,7 +131,7 @@ pub fn axis(params: *const types.Params, prop_unit: *const types.PropUnit) V3 {
 /// estado da unidade com rotação `rps` e acelerador `thr`: hélice pela tabela, motor e bateria
 pub fn unit(params: *const types.Params, prop_unit: *const types.PropUnit, eT: V3, Vr: V3, body_rates: V3, rps: f64, thr: f64, height: f64) Unit {
     @setFloatMode(fmath.float_mode);
-    if (prop_unit.model == types.prop_poly) return polyUnit(params, prop_unit, eT, Vr, body_rates, thr, height);
+    if (prop_unit.model == types.ThrustModel.polynomial) return polyUnit(params, prop_unit, eT, Vr, body_rates, thr, height);
     var out = Unit{};
     const rps_used = if (rps > 1.0) rps else 1.0;
     const wm = 2.0 * fmath.pi * rps_used;
@@ -193,7 +193,7 @@ pub fn compute(params: *const types.Params, Vr: V3, body_rates: V3, rcg: V3, rps
 /// única em [1, 600] rps: regula falsi com a modificação de Illinois (converge em ~10 passos).
 pub fn equilibriumRps(params: *const types.Params, prop_unit: *const types.PropUnit, Vr: V3, thr: f64) f64 {
     @setFloatMode(fmath.float_mode);
-    if (prop_unit.model == types.prop_poly) return 1.0;
+    if (prop_unit.model == types.ThrustModel.polynomial) return 1.0;
     var rps_low: f64 = 1.0;
     var rps_high: f64 = 600.0;
     var rate_low = unit(params, prop_unit, vec.v3(prop_unit.eT), Vr, vec.zero, rps_low, thr, 0).drps;
@@ -260,7 +260,7 @@ test "rotação de equilíbrio: dn/dt ≈ 0" {
 test "eixo móvel: comando 0 = eixo fixo; comando 1 = tilt + faixa" {
     var params = types.Params{};
     params.n_prop = 1;
-    params.prop[0] = .{ .tilt = 0.05, .tilt_range = std.math.pi / 2.0 - 0.05, .model = types.prop_poly, .poly_x = types.pvar_const, .poly_gain = 1 };
+    params.prop[0] = .{ .tilt = 0.05, .tilt_range = std.math.pi / 2.0 - 0.05, .model = types.ThrustModel.polynomial, .poly_x = types.PolyVariable.constant, .poly_gain = 1 };
     params.prop[0].poly[0] = 10;
     init(&params);
     const fixed = axis(&params, &params.prop[0]);
@@ -300,7 +300,7 @@ test "tração polinomial: T(V) com acelerador e correção de densidade" {
     var params = types.Params{};
     params.n_prop = 1;
     var prop_unit = &params.prop[0];
-    prop_unit.* = .{ .model = types.prop_poly, .poly_x = types.pvar_V, .poly_y = types.pvar_none };
+    prop_unit.* = .{ .model = types.ThrustModel.polynomial, .poly_x = types.PolyVariable.airspeed, .poly_y = types.PolyVariable.none };
     prop_unit.poly[0] = 30; // p00
     prop_unit.poly[1] = -1; // p10 · V
     prop_unit.poly[3] = -0.02; // p20 · V²
@@ -320,7 +320,7 @@ test "tração como na planilha: x = n constante, y = V, T0 no lugar de p00, g·
     var params = types.Params{};
     params.n_prop = 1;
     var prop_unit = &params.prop[0];
-    prop_unit.* = .{ .model = types.prop_poly, .poly_x = types.pvar_const, .poly_xc = 2.0, .poly_y = types.pvar_V, .poly_gain = limits.g0, .poly_rho_exp = 1.0, .poly_rho0 = 1.225 };
+    prop_unit.* = .{ .model = types.ThrustModel.polynomial, .poly_x = types.PolyVariable.constant, .poly_xc = 2.0, .poly_y = types.PolyVariable.airspeed, .poly_gain = limits.g0, .poly_rho_exp = 1.0, .poly_rho0 = 1.225 };
     prop_unit.poly[0] = 3.0; // T0
     prop_unit.poly[1] = 0.1; // p10 · n
     prop_unit.poly[2] = -0.05; // p01 · V
@@ -336,7 +336,7 @@ test "tração polinomial com o acelerador como variável y" {
     var params = types.Params{};
     params.n_prop = 1;
     var prop_unit = &params.prop[0];
-    prop_unit.* = .{ .model = types.prop_poly, .poly_x = types.pvar_V, .poly_y = types.pvar_throttle };
+    prop_unit.* = .{ .model = types.ThrustModel.polynomial, .poly_x = types.PolyVariable.airspeed, .poly_y = types.PolyVariable.throttle };
     prop_unit.poly[2] = 20; // p01 · thr
     init(&params);
     try testing.expectApproxEqAbs(@as(f64, 14), point(&params, &params.prop[0], 5.0, 0.7).T, 1e-9);

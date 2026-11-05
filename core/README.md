@@ -123,7 +123,7 @@ comparar os voos com cada modelo: `tools/aero/missao.py`.
 
 ## Tração polinomial (comptime)
 
-Cada unidade propulsora escolhe entre `prop_motor` (motor e hélice, com a rotação como estado) e `prop_poly` (um
+Cada unidade propulsora escolhe entre `ThrustModel.motor` (motor e hélice, com a rotação como estado) e `ThrustModel.polynomial` (um
 polinômio da tração em duas variáveis, ajustado de ensaio). O polinômio é gerado pelo compilador: `math/poly.zig`
 define `Poly2(grau)` com a tabela de expoentes na ordem do `poly55` do MATLAB, e em execução sobra só a sequência de
 multiplicações. As equações estão em [`src/physics/README.md`](src/physics/README.md) e

@@ -27,15 +27,28 @@ const prop = @import("../physics/propulsion.zig");
 const aero = @import("../physics/aero.zig");
 const trim = @import("trim.zig");
 
-pub const method_sheet = 0;
-pub const method_model = 1;
-pub const atmos_isa = 0;
-pub const atmos_sheet = 1;
+/// de onde vêm a polar e a tração do envelope (`EnvCfg.method`)
+pub const Method = enum(i32) {
+    /// as contas da planilha da equipe
+    sheet = 0,
+    /// o modelo do núcleo (trimagem)
+    model = 1,
+    _,
+};
+
+/// a atmosfera do envelope (`EnvCfg.atmos`)
+pub const Atmosphere = enum(i32) {
+    /// atmosfera padrão
+    isa = 0,
+    /// a densidade da planilha
+    sheet = 1,
+    _,
+};
 
 /// a configuração do envelope: método, atmosfera, faixas de h e V e os dados da planilha
 pub const EnvCfg = extern struct {
-    method: i32 = method_sheet,
-    atmos: i32 = atmos_isa,
+    method: Method = .sheet,
+    atmos: Atmosphere = .isa,
     faithful: i32 = 1, // planilha: 1 = arrasto com ρ/ρ0 como no original
     _pad: i32 = 0,
     h_step: f64 = 50,
@@ -88,7 +101,7 @@ pub fn density(cfg: *const EnvCfg, height: f64) f64 {
     const lam = 0.0065;
     const Rg = 287.053;
     const T0 = 288.15;
-    return if (cfg.atmos == atmos_sheet)
+    return if (cfg.atmos == .sheet)
         // expressão do Envelope_main original
         cfg.rho0 * fmath.pow(1.0 + lam * height / T0, -limits.g0 / (lam * Rg) - 1.0)
     else
@@ -110,7 +123,7 @@ const Alt = struct {
     fn thrust(self: *const Alt, airspeed: f64) f64 {
         var Td: f64 = 0;
         for (self.params.prop[0..@intCast(self.params.n_prop)]) |*prop_unit| {
-            Td += if (self.raw and prop_unit.model == types.prop_poly) prop.polyRaw(&self.params, prop_unit, airspeed, 1.0, 0) else prop.point(&self.params, prop_unit, airspeed, 1.0).T;
+            Td += if (self.raw and prop_unit.model == types.ThrustModel.polynomial) prop.polyRaw(&self.params, prop_unit, airspeed, 1.0, 0) else prop.point(&self.params, prop_unit, airspeed, 1.0).T;
         }
         return Td;
     }
@@ -130,14 +143,14 @@ fn sheetDrag(cfg: *const EnvCfg, alt: *const Alt, airspeed: f64, Td: f64) f64 {
 
 /// excesso de tração T_d − T_r (mesmo sinal de P_d − P_r)
 fn excess(cfg: *const EnvCfg, alt: *const Alt, airspeed: f64, guess: *[3]f64) f64 {
-    if (cfg.method == method_sheet) {
+    if (cfg.method == .sheet) {
         const Td = alt.thrust(airspeed);
         return Td - sheetDrag(cfg, alt, airspeed, Td);
     }
     // modelo completo: 1 − acelerador de equilíbrio (fora do envelope se não trima ou estola)
     if (airspeed < 0.98 * alt.Vstall) return if (alt.below) excessBelow(alt, airspeed, guess) else -1.0;
     const tc = trim.Ctx.init(&alt.params, &no_flags);
-    const tp = trim.solve(tc, types.trim_level, airspeed, 1.0, guess);
+    const tp = trim.solve(tc, types.TrimKind.level, airspeed, 1.0, guess);
     if (tp.ok == 0 or tp.ratioCL > 1.0) {
         guess.* = .{ 0.1, -0.05, 0.5 };
         return if (alt.below) excessBelow(alt, airspeed, guess) else -1.0;
@@ -147,7 +160,7 @@ fn excess(cfg: *const EnvCfg, alt: *const Alt, airspeed: f64, guess: *[3]f64) f6
 
 /// abaixo do estol (só com `below`): o mesmo equilíbrio na polar sem estol
 fn excessBelow(alt: *const Alt, airspeed: f64, guess: *[3]f64) f64 {
-    const tp = trim.solve(trim.Ctx.init(&alt.plin, &no_flags), types.trim_level, airspeed, 1.0, guess);
+    const tp = trim.solve(trim.Ctx.init(&alt.plin, &no_flags), types.TrimKind.level, airspeed, 1.0, guess);
     if (tp.ok == 0) {
         guess.* = .{ 0.1, -0.05, 0.5 };
         return -1.0;
@@ -172,7 +185,7 @@ fn bisect(cfg: *const EnvCfg, alt: *const Alt, lo0: f64, hi0: f64) f64 {
     var guess = [3]f64{ 0.1, -0.05, 0.5 };
     const flo = excess(cfg, alt, lo, &guess) > 0;
     // a trimagem converge a ~1e-9; abaixo de 1e-3 m/s não muda nada no modelo completo
-    const tol = if (cfg.method == method_model) @max(cfg.tol, 1e-3) else @max(cfg.tol, 1e-10);
+    const tol = if (cfg.method == .model) @max(cfg.tol, 1e-3) else @max(cfg.tol, 1e-10);
     var it: usize = 0;
     while (hi - lo > tol and it < 100) : (it += 1) {
         const mid = 0.5 * (lo + hi);
@@ -224,10 +237,10 @@ fn crossings(cfg: *const EnvCfg, alt: *const Alt) Cross {
 
 /// o contexto da altitude `height`: ρ, cópia dos parâmetros e, no modelo, o V de estol
 fn altitude(params: *const types.Params, cfg: *const EnvCfg, height: f64, weight: f64, CLmax_ac: f64) Alt {
-    var alt = Alt{ .params = params.*, .weight = weight, .rho = density(cfg, height), .raw = cfg.method == method_sheet and cfg.faithful != 0 };
+    var alt = Alt{ .params = params.*, .weight = weight, .rho = density(cfg, height), .raw = cfg.method == .sheet and cfg.faithful != 0 };
     alt.params.env.rho = alt.rho;
-    if (cfg.method == method_model) alt.Vstall = @sqrt(2.0 * weight / (alt.rho * params.Sref * CLmax_ac));
-    if (cfg.method == method_model and cfg.below_stall != 0) {
+    if (cfg.method == .model) alt.Vstall = @sqrt(2.0 * weight / (alt.rho * params.Sref * CLmax_ac));
+    if (cfg.method == .model and cfg.below_stall != 0) {
         alt.below = true;
         alt.plin = noStall(&alt.params);
     }
@@ -243,7 +256,7 @@ fn row(params: *const types.Params, cfg: *const EnvCfg, height: f64, weight: f64
     result.ok = if (cross.any) 1 else 0;
     result.Vmin = cross.vmin;
     result.Vmax = cross.vmax;
-    if (cfg.method == method_sheet) {
+    if (cfg.method == .sheet) {
         result.Ve = @sqrt(2.0 * weight / (alt.rho * (cfg.Sw * cfg.CLmax_w + cfg.Sh * cfg.CLmax_h)));
         const alphah = cfg.alpha_cruise * (1.0 - cfg.depsda) - cfg.eps0 + cfg.ih;
         const CLw = cfg.CL0_w + cfg.CLa_w * (cfg.iw + cfg.alpha_cruise);
@@ -264,7 +277,7 @@ fn cruiseSpeed(cfg: *const EnvCfg, alt: *const Alt, Vlo: f64, Vhi: f64) f64 {
     const Fn = struct {
         fn alphaError(trim_ctx: trim.Ctx, airspeed: f64, target_alpha: f64) ?f64 {
             var guess = [3]f64{ 0.1, -0.05, 0.5 };
-            const tp = trim.solve(trim_ctx, types.trim_level, airspeed, 1.0, &guess);
+            const tp = trim.solve(trim_ctx, types.TrimKind.level, airspeed, 1.0, &guess);
             return if (tp.ok != 0) tp.alpha - target_alpha else null;
         }
     };
@@ -341,14 +354,14 @@ pub fn curve(params: *const types.Params, cfg: *const EnvCfg, height: f64, speed
         const airspeed = cfg.V_lo + (cfg.V_hi - cfg.V_lo) * @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(@max(count, 2) - 1));
         speeds[i] = airspeed;
         Td[i] = alt.thrust(airspeed);
-        if (cfg.method == method_sheet) {
+        if (cfg.method == .sheet) {
             Tr[i] = sheetDrag(cfg, &alt, airspeed, Td[i]);
         } else {
             // tração requerida = tração no equilíbrio nivelado
-            var tp = trim.solve(trim.Ctx.init(&alt.params, &no_flags), types.trim_level, airspeed, 1.0, &guess);
+            var tp = trim.solve(trim.Ctx.init(&alt.params, &no_flags), types.TrimKind.level, airspeed, 1.0, &guess);
             if (alt.below and (airspeed < 0.98 * alt.Vstall or tp.ok == 0 or tp.ratioCL > 1.0)) {
                 if (tp.ok == 0) guess = .{ 0.1, -0.05, 0.5 };
-                tp = trim.solve(trim.Ctx.init(&alt.plin, &no_flags), types.trim_level, airspeed, 1.0, &guess);
+                tp = trim.solve(trim.Ctx.init(&alt.plin, &no_flags), types.TrimKind.level, airspeed, 1.0, &guess);
             }
             Tr[i] = if (tp.ok != 0) tp.T else std.math.nan(f64);
             if (tp.ok == 0) guess = .{ 0.1, -0.05, 0.5 };
@@ -361,7 +374,7 @@ const testing = std.testing;
 
 test "ISA e a fórmula da planilha" {
     const isa = EnvCfg{};
-    const sh = EnvCfg{ .atmos = atmos_sheet };
+    const sh = EnvCfg{ .atmos = .sheet };
     try testing.expectApproxEqRel(@as(f64, 1.225 * 0.9075), density(&isa, 1000), 2e-3);
     try testing.expectApproxEqRel(@as(f64, 1.225 * 0.8698), density(&sh, 1000), 2e-3);
     try testing.expectEqual(@as(f64, 1.225), density(&isa, 0));
@@ -370,7 +383,7 @@ test "ISA e a fórmula da planilha" {
 test "envelope da planilha: V_min < V_max, teto finito, ρ cai" {
     var params = types.Params{ .m_dry = 8.0, .Sref = 0.6 };
     params.n_prop = 1;
-    params.prop[0] = .{ .model = types.prop_poly, .poly_x = types.pvar_V, .poly_gain = 1, .poly_rho_exp = 1 };
+    params.prop[0] = .{ .model = types.ThrustModel.polynomial, .poly_x = types.PolyVariable.airspeed, .poly_gain = 1, .poly_rho_exp = 1 };
     params.prop[0].poly[0] = 25; // T(V) = 25 − 0,04 V²
     params.prop[0].poly[3] = -0.04;
     prop.init(&params);

@@ -493,7 +493,7 @@ pub fn apply(params: *const types.Params, Vr: V3, deflections: V3, panels: []typ
         const uu = vec.dot(velocity, ex);
         const ww = vec.dot(velocity, ez);
         const Vp = @sqrt(uu * uu + ww * ww);
-        used[i] = panel.group >= 0 and Vp > 1e-3 and panel.S > 0;
+        used[i] = panel.group != .none and Vp > 1e-3 and panel.S > 0;
         for (0..n_panels) |j| matrix[i][j] = if (i == j) 1 else 0;
         rhs[i] = 0;
         if (!used[i]) continue;
@@ -609,22 +609,22 @@ pub fn compute(params: *const types.Params, Vr: V3, body_rates: V3, rcg: V3, hei
     var out = aero.computeTrace(params, Vr, body_rates, rcg, height, deflections, &env_ll, panels[0..n_panels]);
     // tira as forças das faixas...
     for (panels[0..n_panels]) |panel| {
-        if (panel.group < 0) continue;
+        if (panel.group == .none) continue;
         const force = vec.v3(panel.F);
         out.F -= force;
         out.M -= vec.cross(vec.v3(panel.r) - rcg, force);
-        out.Fg[@intCast(panel.group)] -= force;
-        out.Mg[@intCast(panel.group)] -= vec.cross(vec.v3(panel.r) - rcg, force);
+        out.Fg[limits.groupIndex(panel.group)] -= force;
+        out.Mg[limits.groupIndex(panel.group)] -= vec.cross(vec.v3(panel.r) - rcg, force);
     }
     _ = apply(params, Vr, deflections, panels[0..n_panels]);
     // ... e põe as da linha sustentadora
     for (panels[0..n_panels]) |panel| {
-        if (panel.group < 0) continue;
+        if (panel.group == .none) continue;
         const force = vec.v3(panel.F);
         out.F += force;
         out.M += vec.cross(vec.v3(panel.r) - rcg, force);
-        out.Fg[@intCast(panel.group)] += force;
-        out.Mg[@intCast(panel.group)] += vec.cross(vec.v3(panel.r) - rcg, force);
+        out.Fg[limits.groupIndex(panel.group)] += force;
+        out.Mg[limits.groupIndex(panel.group)] += vec.cross(vec.v3(panel.r) - rcg, force);
     }
     return out;
 }
@@ -647,8 +647,8 @@ pub fn coeffs(params: *const types.Params, airspeed: f64, alpha: f64, beta: f64,
         .Cl = out.M[0] / (qS * params.bref),
         .Cm = out.M[1] / (qS * params.cref),
         .Cn = out.M[2] / (qS * params.bref),
-        .CL_wing = (-out.Fg[limits.group_wing][2] * sc_alpha.c + out.Fg[limits.group_wing][0] * sc_alpha.s) / qS,
-        .CL_ht = (-out.Fg[limits.group_htail][2] * sc_alpha.c + out.Fg[limits.group_htail][0] * sc_alpha.s) / qS,
+        .CL_wing = (-out.Fg[limits.groupIndex(.wing)][2] * sc_alpha.c + out.Fg[limits.groupIndex(.wing)][0] * sc_alpha.s) / qS,
+        .CL_ht = (-out.Fg[limits.groupIndex(.htail)][2] * sc_alpha.c + out.Fg[limits.groupIndex(.htail)][0] * sc_alpha.s) / qS,
         .ratioCL = out.ratioCL,
         .CDi = std.math.nan(f64),
         .CN = -out.F[2] / qS,
@@ -667,7 +667,7 @@ fn coreOf(panels: []const types.PanelState, i: usize, j: usize) f64 {
 
 /// verdadeiro se o painel j tem geometria (grupo, área e corda)
 fn used_geom(panels: []const types.PanelState, j: usize) bool {
-    return panels[j].group >= 0 and panels[j].S > 0 and panels[j].c > 0;
+    return panels[j].group != .none and panels[j].S > 0 and panels[j].c > 0;
 }
 
 /// resolve matrix · solution = rhs por eliminação de Gauss com pivô parcial (size ≤ max_surfaces)
@@ -913,7 +913,7 @@ fn rectWing(params: *types.Params, panels: []types.PanelState, n_panels: usize, 
         params.surf[i] = .{ .S = width * chord, .c = chord, .AR = AR, .CLa = slope / (@sqrt(1 + ratio * ratio) + ratio), .CL0 = 0, .CD0 = 0, .eta = 1,
             .ex = .{ 1, 0, 0 }, .ey = .{ 0, 1, 0 }, .ez = .{ 0, 0, 1 },
             .qa = .{ 0, y_center - 0.5 * width, 0 }, .qb = .{ 0, y_center + 0.5 * width, 0 } };
-        panels[i] = .{ .r = .{ 0, y_center, 0 }, .S = width * chord, .c = chord, .group = 0, .side = if (y_center > 0) 1 else -1, .ex = .{ 1, 0, 0 },
+        panels[i] = .{ .r = .{ 0, y_center, 0 }, .S = width * chord, .c = chord, .group = .wing, .side = if (y_center > 0) 1 else -1, .ex = .{ 1, 0, 0 },
             .ey = .{ 0, 1, 0 }, .v = .{ airspeed * @cos(alpha), 0, airspeed * @sin(alpha) } };
     }
 }
@@ -979,7 +979,7 @@ test "cauda em T: a perna da raiz da EV não explode na EH" {
     const al = 0.05;
     const airspeed = 12.0;
     rectWing(&params, &panels, 20, 0.8, 0.2, 2 * fmath.pi, airspeed, al); // EH em z = 0
-    for (0..20) |i| panels[i].group = 1;
+    for (0..20) |i| panels[i].group = .htail;
     // EV: 10 painéis de z = 0 até 0,3 m para cima, raiz em cima da EH, em x = 0, a 2 mm do ponto de controle de um
     // painel da EH (como nos aviões com a EV encostada na EH); com β para ter carga
     const height_step = 0.03;
@@ -989,7 +989,7 @@ test "cauda em T: a perna da raiz da EV não explode na EH" {
         params.surf[i].ez = .{ 0, 1, 0 };
         params.surf[i].S = height_step * 0.2;
         panels[i] = panels[0];
-        panels[i].group = 2;
+        panels[i].group = .vtail;
         panels[i].S = height_step * 0.2;
         panels[i].r = .{ 0, panels[10].r[1] + 0.002, -(index + 0.5) * height_step };
         panels[i].v = .{ airspeed * @cos(al), airspeed * 0.15, airspeed * @sin(al) };

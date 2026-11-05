@@ -39,7 +39,7 @@ const Ctx = struct {
     fn evaluate(ctx: *anyopaque, design_vars: []const f64) optimizer.Eval {
         const self: *Ctx = @ptrCast(@alignCast(ctx));
         const result = eval(self.cfg, self.p, design_vars);
-        var ind: sizing_types.Individual = .{ .x = result.x, .feasible = result.feasible, .score = result.score, .violation = result.violation, .mtow = result.q[sizing_types.q_mtow], .ee = result.q[sizing_types.q_ee], .pv = result.q[sizing_types.q_pv] };
+        var ind: sizing_types.Individual = .{ .x = result.x, .feasible = result.feasible, .score = result.score, .violation = result.violation, .mtow = result.q[sizing_types.quantity(.mtow)], .ee = result.q[sizing_types.quantity(.structural_efficiency)], .pv = result.q[sizing_types.quantity(.empty_mass)] };
         ind.fitness = fitness(&result, self.penalty);
         return .{ .fitness = ind.fitness, .ind = ind };
     }
@@ -84,7 +84,7 @@ test {
 }
 
 test "nomes para o Python" {
-    try std.testing.expectEqualStrings("mtow", std.mem.span(name(0, sizing_types.q_mtow).?));
+    try std.testing.expectEqualStrings("mtow", std.mem.span(name(0, sizing_types.quantity(.mtow)).?));
     try std.testing.expectEqualStrings("biplano", std.mem.span(name(2, sizing_types.kind_biplane).?));
     try std.testing.expect(name(2, 99) == null and name(3, 0) != null);
 }

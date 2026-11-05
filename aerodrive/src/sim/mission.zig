@@ -83,7 +83,7 @@ pub fn events(m: *const model.Mission, out: *[L.max_events]T.Event, diag: *model
             diag.set("percurso: evento '{s}' fora das pernas", .{ev.kind});
             return error.BadLeg;
         }
-        out[k] = .{ .kind = if (std.mem.eql(u8, ev.kind, "drop")) T.event_drop else T.event_gust, .seg = @intCast(ev.leg), .s = ev.s };
+        out[k] = .{ .kind = if (std.mem.eql(u8, ev.kind, "drop")) T.EventKind.drop else T.EventKind.gust, .seg = @intCast(ev.leg), .s = ev.s };
     }
     return m.events.len;
 }

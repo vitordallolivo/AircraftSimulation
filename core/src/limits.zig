@@ -14,11 +14,21 @@ pub const max_tab = 64; // pontos em α da tabela aerodinâmica (Params.aero_tab
 pub const max_mods = 8; // modificadores ligados ao mesmo tempo (esteira, tabela...; ver modifiers/)
 pub const max_pads = 4; // mesas e plataformas (decolagem/pouso) acima do chão // simulações simultâneas (uma por thread)
 
-/// grupos aerodinâmicos para separar forças e momentos
+/// grupo aerodinâmico de um painel, para separar forças e momentos (`Surface.group`, `PanelState.group`)
+pub const Group = enum(i32) {
+    /// painel sem escoamento (só em `PanelState`)
+    none = -1,
+    wing = 0,
+    htail = 1,
+    vtail = 2,
+    fuselage = 3,
+    _,
+};
 pub const n_groups = 4;
-pub const group_wing = 0;
-pub const group_htail = 1;
-pub const group_vtail = 2;
-pub const group_fuselage = 3;
+
+/// a posição do grupo `group` nos vetores por grupo (`aero.Out.Fg`, `Mg`)
+pub inline fn groupIndex(group: Group) usize {
+    return @intCast(@intFromEnum(group));
+}
 
 pub const g0 = 9.80665;

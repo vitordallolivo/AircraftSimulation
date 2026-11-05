@@ -216,13 +216,13 @@ fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_r
             if (i < out.len) out[i] = .{ .r = surface.r, .S = surface.S, .c = surface.c, .group = surface.group, .side = surface.side, .alpha = al,
                 .V = Vp, .CL = CL, .CD = CD, .L = qS * CL, .D = qS * CD, .F = force, .v = local, .vind = vind, .ey = surface.ey, .ex = surface.ex };
         }
-        const group: usize = @intCast(surface.group);
+        const group = limits.groupIndex(surface.group);
         result.Fg[group] += force;
         result.Mg[group] += moment;
         result.F += force;
         result.M += moment;
         result.Fi += Fi;
-        if (surface.group == limits.group_wing and surface.CLmax > 0) result.ratioCL = @max(result.ratioCL, CL / surface.CLmax);
+        if (surface.group == limits.Group.wing and surface.CLmax > 0) result.ratioCL = @max(result.ratioCL, CL / surface.CLmax);
     }
     // fuselagem (a mesma conta de `fuselage`, escrita aqui para as faixas ficarem bit a bit iguais: fora da função
     // o compilador reordena as somas no modo de ponto flutuante otimizado)
@@ -234,8 +234,8 @@ fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_r
         var moment = vec.cross(vec.v3(params.fus_r) - rcg, force);
         moment[1] += qS * params.cref * params.fus_Cma * alfa;
         moment[2] += qS * params.bref * params.fus_Cnb * be;
-        result.Fg[limits.group_fuselage] += force;
-        result.Mg[limits.group_fuselage] += moment;
+        result.Fg[limits.groupIndex(.fuselage)] += force;
+        result.Mg[limits.groupIndex(.fuselage)] += moment;
         result.F += force;
         result.M += moment;
     }
@@ -288,8 +288,8 @@ pub fn coeffsAt(params: *const types.Params, airspeed: f64, alpha: f64, beta: f6
         .Cl = out.M[0] / (qS * params.bref),
         .Cm = out.M[1] / (qS * params.cref),
         .Cn = out.M[2] / (qS * params.bref),
-        .CL_wing = (-out.Fg[limits.group_wing][2] * sc_alpha.c + out.Fg[limits.group_wing][0] * sc_alpha.s) / qS,
-        .CL_ht = (-out.Fg[limits.group_htail][2] * sc_alpha.c + out.Fg[limits.group_htail][0] * sc_alpha.s) / qS,
+        .CL_wing = (-out.Fg[limits.groupIndex(.wing)][2] * sc_alpha.c + out.Fg[limits.groupIndex(.wing)][0] * sc_alpha.s) / qS,
+        .CL_ht = (-out.Fg[limits.groupIndex(.htail)][2] * sc_alpha.c + out.Fg[limits.groupIndex(.htail)][0] * sc_alpha.s) / qS,
         .ratioCL = out.ratioCL,
         .CDi = -(out.Fi[0] * sc_alpha.c * sc_beta.c + out.Fi[1] * sc_beta.s + out.Fi[2] * sc_alpha.s * sc_beta.c) / qS,
         .CN = -out.F[2] / qS,

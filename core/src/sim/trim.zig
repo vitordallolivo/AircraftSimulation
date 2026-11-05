@@ -36,11 +36,11 @@ pub const Ctx = struct {
 };
 
 /// o caso de equilíbrio: tipo, V, e o que fica fixo (acelerador, γ ou fator de carga)
-const Case = struct { kind: i32, V: f64, thr: f64 = 1, gam: f64 = 0, n: f64 = 1 };
+const Case = struct { kind: types.TrimKind, V: f64, thr: f64 = 1, gam: f64 = 0, n: f64 = 1 };
 
 /// verdadeiro se o acelerador é incógnita no caso (nivelado e curva); senão a incógnita é γ
-fn thrFree(kind: i32) bool {
-    return kind == types.trim_level or kind == types.trim_turn;
+fn thrFree(kind: types.TrimKind) bool {
+    return kind == types.TrimKind.level or kind == types.TrimKind.turn;
 }
 
 /// os três resíduos do equilíbrio (forças nos eixos do vento e momento) para as incógnitas; com `point_out`, o
@@ -128,14 +128,14 @@ fn newton(ctx: Ctx, case: Case, unknowns: *[3]f64, point_out: ?*types.TrimPoint)
 }
 
 /// um ponto de equilíbrio. guess: chute (α, δe, z) que é atualizado (continuação)
-pub fn solve(ctx: Ctx, kind: i32, airspeed: f64, load_factor: f64, guess: ?*[3]f64) types.TrimPoint {
+pub fn solve(ctx: Ctx, kind: types.TrimKind, airspeed: f64, load_factor: f64, guess: ?*[3]f64) types.TrimPoint {
     var u_init: [3]f64 = switch (kind) {
-        types.trim_climb => .{ 0.1, -0.05, 0.1 },
-        types.trim_glide => .{ 0.1, -0.05, -0.1 },
+        types.TrimKind.climb => .{ 0.1, -0.05, 0.1 },
+        types.TrimKind.glide => .{ 0.1, -0.05, -0.1 },
         else => .{ 0.1, -0.05, 0.5 },
     };
     const unknowns = guess orelse &u_init;
-    const case = Case{ .kind = kind, .V = airspeed, .n = load_factor, .thr = if (kind == types.trim_glide) 0.0 else 1.0 };
+    const case = Case{ .kind = kind, .V = airspeed, .n = load_factor, .thr = if (kind == types.TrimKind.glide) 0.0 else 1.0 };
     var point = types.TrimPoint{};
     point.ok = if (newton(ctx, case, unknowns, &point)) 1 else 0;
     return point;
@@ -150,9 +150,9 @@ pub fn performance(ctx: Ctx, V_hi: f64, V_lo: f64, dV: f64, rows: []types.PerfRo
     var row: usize = 0;
     var airspeed = V_hi;
     while (airspeed >= V_lo - 1e-9 and row < rows.len) : (airspeed -= dV) {
-        const en = solve(ctx, types.trim_level, airspeed, 1, &un);
-        const ec = solve(ctx, types.trim_climb, airspeed, 1, &uc);
-        const eg = solve(ctx, types.trim_glide, airspeed, 1, &ug);
+        const en = solve(ctx, types.TrimKind.level, airspeed, 1, &un);
+        const ec = solve(ctx, types.TrimKind.climb, airspeed, 1, &uc);
+        const eg = solve(ctx, types.TrimKind.glide, airspeed, 1, &ug);
         // ponto que não convergiu não serve de chute para o próximo
         const un_used = un;
         const uc_used = uc;
@@ -171,7 +171,7 @@ pub fn performance(ctx: Ctx, V_hi: f64, V_lo: f64, dV: f64, rows: []types.PerfRo
             for (0..40) |_| {
                 const nm = 0.5 * (lo + hi);
                 var ut = unknowns;
-                const et = solve(ctx, types.trim_turn, airspeed, nm, &ut);
+                const et = solve(ctx, types.TrimKind.turn, airspeed, nm, &ut);
                 const inside = et.ok != 0 and et.ratioCL <= kCL and (tipo == 0 or ut[2] <= 1.0);
                 if (inside) {
                     lo = nm;

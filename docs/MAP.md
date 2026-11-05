@@ -297,6 +297,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `math:80`, `dynamics:98`
 - `core/src/lib.zig` — O núcleo como módulo Zig (para programas em Zig, como o aerodrive): os mesmos tipos e funções
 - `core/src/limits.zig` — Limites de compilação. Toda a memória do núcleo é estática e dimensionada aqui:
+  tipos `Group:18`
+  fn `groupIndex:30`
 - `core/src/opt.zig` — Otimizações em avaliação (`-Dopt`): cada uma é um bit, desligado por padrão (ver core/OTIMIZACOES.md).
   tipos `Opt:5`
 - `core/src/root.zig` — Interface C ABI do núcleo (o que o Python chama via ctypes).
@@ -304,7 +306,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   **ABI (79 exports)** `aerosim_abi_version`, `aerosim_schema`, `aerosim_probe_ground`, `aerosim_probe_slipstream`, `aerosim_aero_coeffs_thrust`, `aerosim_aero_coeffs_at`, `aerosim_tube_panel_hits`, `aerosim_tube_point_hits`, `aerosim_prop_state`, `aerosim_panel_states`, `aerosim_panel_states_llt`, `aerosim_wing_sweep`, `aerosim_wing_sweep_summary`, `aerosim_reynolds`, `aerosim_aero_coeffs_llt`, `aerosim_schema_hash`, `aerosim_acquire`, `aerosim_release`, `aerosim_params`, `aerosim_params_reset`, `aerosim_configure`, `aerosim_reset_ground`, `aerosim_reset_air`, `aerosim_run`, `aerosim_events`, `aerosim_time`, `aerosim_snapshot_size`, `aerosim_snapshot_save`, `aerosim_snapshot_load`, `aerosim_mass_props`, `aerosim_aero_coeffs`, `aerosim_aero_coeffs_ex`, `aerosim_linearize`, `aerosim_linearize_slosh`, `aerosim_autotune`, `aerosim_prop_point`, `aerosim_trim`, `aerosim_performance`, `aerosim_envelope`, `aerosim_envelope_curve`, `aerosim_simple_perf`, `aerosim_bench_math`, `aerosim_bench_dynamics`, `aerosim_fast_math`, `aerosim_expr_check`, `aerosim_expr_eval`, `aerosim_ground_runs`, `aerosim_ground_mtow`, `aerosim_motor_prop_thrust`, `aerosim_sizing_eval`, `aerosim_sizing_optimize`, `aerosim_sizing_name`, `aerosim_sizing_defaults`, `aerosim_geometry_check`, `aerosim_ga_init`, `aerosim_ga_next`, `aerosim_cma_init`, `aerosim_cma_ask`, `aerosim_cma_tell`, `aerosim_de_init`, `aerosim_de_trials`, `aerosim_de_select`, `aerosim_local_fit`, `aerosim_rbf_fit`, `aerosim_rbf_eval`, `aerosim_lhs`, `aerosim_repair_step`, `aerosim_eps_level`, `aerosim_eps_worse`, `aerosim_bandit_state_len`, `aerosim_bandit_init`, `aerosim_bandit_pick`, `aerosim_bandit_update`, `aerosim_normative`, `aerosim_lem_box`, `aerosim_box_sample`, `aerosim_sens_tolerance`, `aerosim_morris_design`, `aerosim_morris_effects`
 - `core/src/tests.zig` — Todos os testes do núcleo, por grupo. `zig build test` roda tudo; `-Dgrupo=math` roda só um grupo e
 - `core/src/types.zig` — Estruturas trocadas com o Python (C ABI, `extern struct`).
-  tipos `Surface:29`, `PropUnit:64`, `Gear:108`, `Tank:124`, `Segment:140`, `Event:162`, `Pad:166`, `Payload:175`, `Environment:186`, `Takeoff:198`, `Pilot:216`, `Autopilot:226`, `AeroTable:275`, `LltCache:308`, `Params:322`, `PanelState:401`, `SweepSummary:421`, `Events:429`, `LogRow:471`, `AeroCoeffs:585`, `PropPoint:600`, `MassProps:612`, `TrimPoint:624`, `PerfRow:641`
+  tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `Surface:58`, `PropUnit:93`, `GearKind:134`, `Gear:144`, `TankShape:153`, `Tank:166`, `Segment:182`, `EventKind:203`, `Event:212`, `Pad:216`, `Payload:225`, `Environment:236`, `Takeoff:248`, `Pilot:266`, `Autopilot:276`, `AeroTable:325`, `LltCache:358`, `Params:372`, `PanelState:451`, `SweepSummary:471`, `Events:479`, `LogRow:521`, `AeroCoeffs:635`, `PropPoint:650`, `MassProps:662`, `TrimKind:670`, `TrimPoint:681`, `PerfRow:698`
 
 **core/src/collision/**
 
@@ -327,8 +329,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/geometry/**
 
 - `core/src/geometry/geometry.zig` — Geometria do avião montado: se as peças cabem juntas antes de qualquer conta de aerodinâmica.
-  tipos `Part:32`, `Scene:40`, `Report:53`
-  fn `boxesTouch:91`, `pointInBox:109`, `pointNearBox:114`, `discHitsBox:123`, `discsTouch:197`, `lowest:229`, `check:258`, `checkMany:354`
+  tipos `PartKind:29`, `Part:39`, `Scene:47`, `Report:60`
+  fn `boxesTouch:98`, `pointInBox:116`, `pointNearBox:121`, `discHitsBox:130`, `discsTouch:204`, `lowest:236`, `check:265`, `checkMany:361`
 
 **core/src/loads/**
 
@@ -401,8 +403,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/physics/aero.zig` — Aerodinâmica por componentes.
   tipos `Out:18`
   fn `sigmaStall:28`, `init:93`, `compute:126`, `computeEnv:131`, `computeTrace:136`, `fuselage:247`, `coeffs:262`, `coeffsEx:267`, `coeffsEnv:272`, `coeffsAt:277`
-- `core/src/physics/aeromodel.zig` — O modelo aerodinâmico do voo, escolhido por `Params.aero_model`: quem a dinâmica, a trimagem e a linearização
-  fn `compute:20`
+- `core/src/physics/aeromodel.zig` — O modelo aerodinâmico do voo, escolhido por `Params.aero_model` (`types.AeroModel`): quem a dinâmica, a trimagem e
+  fn `compute:18`
 - `core/src/physics/aerotable.zig` — Modelo aerodinâmico por tabela (Params.aero_model = 2): os coeficientes do avião inteiro vêm de `Params.aero_tab`,
   fn `coeffs:34`, `compute:50`
 - `core/src/physics/atmosphere.zig` — Vento 3D numa direção (perfil 1/7 com a altura) e rajada 1-cos.
@@ -428,8 +430,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Out:26`
   fn `derivatives:87`, `rk4:248`
 - `core/src/sim/envelope.zig` — Envelope de voo por altitude (sem integrar no tempo).
-  tipos `EnvCfg:36`, `EnvRow:74`
-  fn `density:87`, `compute:300`, `curve:333`
+  tipos `Method:31`, `Atmosphere:40`, `EnvCfg:49`, `EnvRow:87`
+  fn `density:100`, `compute:313`, `curve:346`
 - `core/src/sim/gust.zig` — Resposta no tempo a uma rajada, em voo nivelado reto: o avião sai equilibrado em `airspeed` e `height`, a rajada
   tipos `Case:23`, `Mode:173`, `Poles:178`
   fn `begin:40`, `advance:102`, `settled:129`, `respond:156`, `gustSpeed:165`, `poles:201`
@@ -473,8 +475,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Curve:18`, `Geo:42`, `Polar:67`, `Env:82`, `Mass:211`
   fn `geometry:45`, `blendAirfoils:55`, `polar:70`, `stallSpeed:94`, `envelope:99`, `sustainedN:132`, `isaRho:141`, `isaAltitude:146`, `ceiling:151`, `landingRun:175`, `takeoffRun:181`, `canHover:206`, `emptyMass:214`, `linearCurve:228`
 - `core/src/sizing/types.zig` — Tipos do dimensionamento inicial (mini-MDO): a configuração que vem do Python, o vetor de
-  tipos `VarSpec:30`, `Constraint:76`, `AirfoilData:94`, `LayoutData:105`, `PropSet:115`, `SizingCfg:130`, `SizingOut:171`, `OptOpts:191`, `Individual:203`
-  fn `massDependent:65`, `violation:84`
+  tipos `Variable:15`, `VarKind:49`, `VarSpec:57`, `Quantity:65`, `Comparison:136`, `Constraint:146`, `AirfoilData:164`, `LayoutData:175`, `PropSet:185`, `Objective:198`, `SizingCfg:206`, `SizingOut:247`, `SearchMethod:264`, `OptOpts:273`, `Individual:285`
+  fn `variable:44`, `quantity:116`, `massDependent:123`, `constrained:131`, `violation:154`
 - `core/src/sizing/wing_line.zig` — A etapa Asa do dimensionamento: do perfil escolhido à asa trapezoidal, pela linha sustentadora de Prandtl
   tipos `Trapezoid:37`, `Partition:52`, `SectionAirfoil:62`, `Conditions:68`, `Station:88`, `Planform:94`, `Result:274`
   fn `isaDensity:77`, `reynolds:83`, `planformOf:180`, `planformOfPartitions:201`, `totals:230`, `partitionsFromTrapezoid:243`, `analyze:426`, `analyzePlanform:434`, `modelSection:534`

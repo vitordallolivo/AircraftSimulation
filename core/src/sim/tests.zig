@@ -44,8 +44,8 @@ fn aircraft(params: *types.Params) void {
     params.surf[3].side = -1;
     params.surf[3].mix = .{ 0, 1, 0 };
     const CLw0 = 0.3 + CLaw * 2 * deg;
-    params.surf[4] = .{ .group = limits.group_htail, .r = .{ -1.05, 0, -0.05 }, .S = 0.2, .c = @sqrt(0.2 / 4.0), .AR = 4, .incidence = -2 * deg, .CLa = helmbold(5.9, 4), .CLmax = 1.0, .CD0 = 0.012, .tau = 0.5, .mix = .{ 1, 0, 0 }, .eta = 0.9, .downwash = 1, .eps0 = 2 * CLw0 / (std.math.pi * ARw), .depsda = 2 * CLaw / (std.math.pi * ARw) };
-    params.surf[5] = .{ .group = limits.group_vtail, .vertical = 1, .r = .{ -1.1, 0, -0.22 }, .S = 0.12, .c = @sqrt(0.12 / 1.6), .AR = 1.6, .CLa = helmbold(5.9, 1.6), .CLmax = 1.0, .CD0 = 0.012, .tau = 0.5, .mix = .{ 0, 0, -1 }, .eta = 0.9 };
+    params.surf[4] = .{ .group = limits.Group.htail, .r = .{ -1.05, 0, -0.05 }, .S = 0.2, .c = @sqrt(0.2 / 4.0), .AR = 4, .incidence = -2 * deg, .CLa = helmbold(5.9, 4), .CLmax = 1.0, .CD0 = 0.012, .tau = 0.5, .mix = .{ 1, 0, 0 }, .eta = 0.9, .downwash = 1, .eps0 = 2 * CLw0 / (std.math.pi * ARw), .depsda = 2 * CLaw / (std.math.pi * ARw) };
+    params.surf[5] = .{ .group = limits.Group.vtail, .vertical = 1, .r = .{ -1.1, 0, -0.22 }, .S = 0.12, .c = @sqrt(0.12 / 1.6), .AR = 1.6, .CLa = helmbold(5.9, 1.6), .CLmax = 1.0, .CD0 = 0.012, .tau = 0.5, .mix = .{ 0, 0, -1 }, .eta = 0.9 };
     params.n_prop = 1;
     var prop_unit = &params.prop[0];
     prop_unit.* = .{ .r = .{ 0.55, 0, 0 }, .tilt = 3 * deg, .D = 0.381, .Ip = 5.4e-4, .Jm = 1e-4, .Kv = 310, .Rm = 0.0204, .B = 32.4e-6, .tauc = 0.0155, .Imax = 80, .Voc = 22.2, .Rint = 0.035 };
@@ -57,12 +57,12 @@ fn aircraft(params: *types.Params) void {
         prop_unit.CP[i] = table_row[2];
     }
     params.n_gear = 4;
-    params.gear[0] = .{ .kind = types.gear_steer, .r = .{ 0.45, 0, 0.22 }, .k = 2000, .c = 60 };
-    params.gear[1] = .{ .kind = types.gear_main, .r = .{ -0.05, -0.3, 0.22 }, .k = 4000, .c = 120 };
-    params.gear[2] = .{ .kind = types.gear_main, .r = .{ -0.05, 0.3, 0.22 }, .k = 4000, .c = 120 };
-    params.gear[3] = .{ .kind = types.gear_skid, .r = .{ -1.1, 0, 0 }, .k = 6000, .c = 150 };
+    params.gear[0] = .{ .kind = types.GearKind.steer, .r = .{ 0.45, 0, 0.22 }, .k = 2000, .c = 60 };
+    params.gear[1] = .{ .kind = types.GearKind.main, .r = .{ -0.05, -0.3, 0.22 }, .k = 4000, .c = 120 };
+    params.gear[2] = .{ .kind = types.GearKind.main, .r = .{ -0.05, 0.3, 0.22 }, .k = 4000, .c = 120 };
+    params.gear[3] = .{ .kind = types.GearKind.skid, .r = .{ -1.1, 0, 0 }, .k = 6000, .c = 150 };
     params.n_tank = 1;
-    params.tank[0] = .{ .r = .{ 0.1, 0, 0.05 }, .shape = types.tank_cylinder, .side = 0.16, .fill = 0.08 };
+    params.tank[0] = .{ .r = .{ 0.1, 0, 0.05 }, .shape = types.TankShape.cylinder, .side = 0.16, .fill = 0.08 };
     params.payload = .{ .enabled = 1, .m = 2, .r = .{ -0.05, 0, 0.08 }, .bay = 0.35 };
     params.takeoff = .{ .sR = 37.5, .de1 = -3 * deg, .rate_de = 60 * deg };
     params.ap.CL0 = 0.398;
@@ -169,7 +169,7 @@ test "fatias de tempo continuam sem perder passos" {
 test "trimagem nivelada e começo em voo" {
     aircraft(&inst.p);
     try runner.configure(&inst);
-    const tp = trim.solve(trim.Ctx.init(&inst.p, &inst.r.f), types.trim_level, 15, 1, null);
+    const tp = trim.solve(trim.Ctx.init(&inst.p, &inst.r.f), types.TrimKind.level, 15, 1, null);
     try std.testing.expect(tp.ok == 1);
     try std.testing.expect(tp.thr > 0 and tp.thr < 1);
     try runner.resetAir(&inst, 1);

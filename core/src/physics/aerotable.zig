@@ -77,8 +77,8 @@ fn computeCmd(params: *const types.Params, Vr: V3, body_rates: V3, rcg: V3, alph
     var CLmax: f64 = 0;
     for (table.CL[0..count]) |value| CLmax = @max(CLmax, value);
     if (CLmax > 0) out.ratioCL = coefs[0] / CLmax;
-    out.Fg[limits.group_wing] = force; // a tabela não separa as superfícies
-    out.Mg[limits.group_wing] = moment;
+    out.Fg[limits.groupIndex(.wing)] = force; // a tabela não separa as superfícies
+    out.Mg[limits.groupIndex(.wing)] = moment;
     return out;
 }
 

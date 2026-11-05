@@ -188,7 +188,7 @@ pub fn derivatives(ctx: state.Ctx, time: f64, state_vector: []const f64, state_r
         result.CDi = -(ae.Fi[0] * sa.c * sb.c + ae.Fi[1] * sb.s + ae.Fi[2] * sa.s * sb.c) / qS;
         result.CY = ae.F[1] / qS;
         for (0..limits.n_groups) |k| result.CLgr[k] = (-ae.Fg[k][2] * sa.c + ae.Fg[k][0] * sa.s) / qS;
-        result.CLgr[limits.group_vtail] = ae.Fg[limits.group_vtail][1] / qS; // EV: força lateral
+        result.CLgr[limits.groupIndex(.vtail)] = ae.Fg[limits.groupIndex(.vtail)][1] / qS; // EV: força lateral
     }
     result.ratioCL = ae.ratioCL;
     result.Mgr = ae.Mg;
@@ -211,15 +211,15 @@ pub fn derivatives(ctx: state.Ctx, time: f64, state_vector: []const f64, state_r
     var xn: f64 = 0;
     const ng: usize = @intCast(params.n_gear);
     for (params.gear[0..ng]) |*gear_point| {
-        if (gear_point.kind == types.gear_skid) {
+        if (gear_point.kind == types.GearKind.skid) {
             const pc = vec.mul(body_to_ned, vec.v3(gear_point.r));
             result.htail = @min(result.htail, -(state_vector[state.index(.down)] + pc[2]) - terrain.height(params, state_vector[state.index(.north)] + pc[0], state_vector[state.index(.east)] + pc[1]));
         }
-        if (gear_point.kind == types.gear_main) {
+        if (gear_point.kind == types.GearKind.main) {
             xm += gear_point.r[0];
             nm += 1;
         }
-        if (gear_point.kind == types.gear_steer) xn = gear_point.r[0];
+        if (gear_point.kind == types.GearKind.steer) xn = gear_point.r[0];
     }
     // folga da ponta da pá: o ponto mais baixo do disco de cada hélice. O disco (raio D/2) fica no plano normal ao
     // eixo; o ponto mais baixo está na direção da vertical projetada nesse plano (geometria, sem fórmula de fonte)

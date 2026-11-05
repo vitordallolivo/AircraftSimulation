@@ -92,7 +92,7 @@ fn inducedWith(comptime pair: bool, params: *const core_types.Params, env: *cons
         if (modifier.enabled == 0 or !hits(modifier.surf_mask, i)) continue;
         velocity += switch (modifier.kindOf()) {
             .slipstream_disk => slipstreamStrip(params, env, modifier, surface),
-            .wing_pair => if (pair and params.aero_model == 0) wingpair.induced(params, modifier, env.gamma[0..], env.u, i) else vec.zero,
+            .wing_pair => if (pair and params.aero_model == .strips) wingpair.induced(params, modifier, env.gamma[0..], env.u, i) else vec.zero,
             .flap_moment, .none, _ => vec.zero, // tipo vazio ou desconhecido: nada
         };
     }

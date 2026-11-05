@@ -10,6 +10,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   refatorando até terem a mesma fundação, só então extrair o framework). Etapa 1: o levantamento em
   `docs/UNIFICACAO.md`, com os seletores de método, a configuração, os seis estilos de manager, as confusões achadas
   e a proposta de fundação comum (`enum`, flags em `packed struct`, bitset, erros por módulo), esperando o ok.
+- etapa 2, já com o ok: sai `legacy/` (o simulador antigo em C); no núcleo, os códigos soltos viram `enum(i32)`
+  (`ThrustModel`, `PolyVariable`, `GearKind`, `TankShape`, `EventKind`, `TrimKind`, `AeroModel`, `limits.Group`, os do
+  envelope, da geometria e do dimensionamento, com `variable(.span)` e `quantity(.mtow)` no lugar dos índices), sem
+  mudar número nenhum na ABI.
 
 ### v0.2.5 (em andamento na `0.2_dev`)
 

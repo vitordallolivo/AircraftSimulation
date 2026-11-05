@@ -109,10 +109,10 @@ pub fn configure(inst: *Instance) ConfigError!void {
     var xs: f64 = 0;
     var ns: f64 = 0;
     for (params.gear[0..@intCast(params.n_gear)]) |*gear_point| {
-        if (gear_point.kind == types.gear_main) {
+        if (gear_point.kind == types.GearKind.main) {
             xm += gear_point.r[0];
             nm += 1;
-        } else if (gear_point.kind == types.gear_steer) {
+        } else if (gear_point.kind == types.GearKind.steer) {
             xs += gear_point.r[0];
             ns += 1;
         }
@@ -193,10 +193,10 @@ pub fn resetGround(inst: *Instance) StateError!void {
     var xr: f64 = 0.0;
     var nose: ?[3]f64 = null;
     for (params.gear[0..@intCast(params.n_gear)]) |*gear_point| {
-        if (gear_point.kind == types.gear_main) {
+        if (gear_point.kind == types.GearKind.main) {
             zr = gear_point.r[2];
             xr = gear_point.r[0];
-        } else if (gear_point.kind == types.gear_steer) nose = gear_point.r;
+        } else if (gear_point.kind == types.GearKind.steer) nose = gear_point.r;
     }
     const h0 = terrain.height(params, 0, 0); // mesa: começa em cima dela
     run_state.x[state.index(.down)] = -zr - h0;
@@ -244,13 +244,13 @@ pub fn resetAir(inst: *Instance, seg: i32) StateError!void {
     const run_state = &inst.r;
     const segment = &params.seg[@intCast(seg)];
     const airspeed = segment.V0;
-    const tp = trim.solve(trim.Ctx.init(params, &run_state.f), types.trim_level, airspeed, 1.0, null);
+    const tp = trim.solve(trim.Ctx.init(params, &run_state.f), types.TrimKind.level, airspeed, 1.0, null);
     if (tp.ok == 0) return error.TrimFailed;
     run_state.f.seg = seg;
     run_state.f.airborne = 1;
     run_state.f.autop = 1;
     run_state.h_ground = 0;
-    for (params.gear[0..@intCast(params.n_gear)]) |*gear_point| if (gear_point.kind == types.gear_main) {
+    for (params.gear[0..@intCast(params.n_gear)]) |*gear_point| if (gear_point.kind == types.GearKind.main) {
         run_state.h_rest = gear_point.r[2];
     };
     run_state.x[state.index(.north)] = segment.n0;
@@ -334,8 +334,8 @@ fn writeRow(inst: *const Instance, row: *types.LogRow, out: *const dynamics.Out)
     for (params.gear[0..@intCast(params.n_gear)], 0..) |*gear_point, i| {
         row.Ngear[i] = out.N[i];
         switch (gear_point.kind) {
-            types.gear_steer => row.N_steer += out.N[i],
-            types.gear_main => row.N_main += out.N[i],
+            types.GearKind.steer => row.N_steer += out.N[i],
+            types.GearKind.main => row.N_main += out.N[i],
             else => row.N_skid += out.N[i],
         }
     }
@@ -414,8 +414,8 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         for (params.gear[0..@intCast(params.n_gear)], 0..) |*gear_point, i| {
             if (out.N[i] > 0.0) {
                 contact = true;
-                if (gear_point.kind == types.gear_steer) steer = true;
-                if (gear_point.kind == types.gear_main) main = true;
+                if (gear_point.kind == types.GearKind.steer) steer = true;
+                if (gear_point.kind == types.GearKind.main) main = true;
             }
         }
         const segment = &params.seg[@intCast(run_state.f.seg)];
@@ -481,9 +481,9 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         if (!switched) {
             for (params.event[0..@intCast(params.n_event)], 0..) |*event, k| {
                 if (run_state.f.ev_done[k] != 0 or run_state.f.seg != event.seg or out.guide.s < event.s) continue;
-                if (params.pilot.manual != 0 and event.kind != types.event_gust) continue; // no manual, quem solta é o piloto
+                if (params.pilot.manual != 0 and event.kind != types.EventKind.gust) continue; // no manual, quem solta é o piloto
                 run_state.f.ev_done[k] = 1;
-                if (event.kind == types.event_gust) {
+                if (event.kind == types.EventKind.gust) {
                     run_state.tg = time;
                     events.tg = time;
                 } else if (run_state.f.released == 0) {

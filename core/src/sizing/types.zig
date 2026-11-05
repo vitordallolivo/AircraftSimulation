@@ -11,71 +11,141 @@ pub const max_cons = 24;
 pub const n_curve = 40; // pontos da curva de tração/arrasto
 
 // ------------------------------------------------------------------ variáveis de projeto (índices em x)
-pub const v_span = 0; // envergadura (m)
-pub const v_area = 1; // área total das asas (m²)
-pub const v_taper = 2; // afilamento (só entra na massa/geometria de desenho)
-pub const v_airfoil = 3; // perfil da raiz: índice na lista de perfis
-pub const v_set = 4; // índice na lista de conjuntos de tração
-pub const v_motors = 5; // número de motores
-pub const v_tilt = 6; // inclinação do motor (graus)
-pub const v_airfoil_tip = 7; // perfil da ponta (a mesma asa com dois perfis; entre eles, interpolado)
-pub const v_layout = 8; // arranjo dos motores: índice na lista de arranjos
-pub const n_vars = 9;
-pub const var_names = [n_vars][:0]const u8{ "span", "area", "taper", "airfoil", "set", "motors", "tilt", "airfoil_tip", "layout" };
+/// variável de projeto; o número é a posição dela em `x` e em `SizingCfg.vars`, e o nome é o do Python
+pub const Variable = enum(usize) {
+    /// envergadura (m)
+    span,
+    /// área total das asas (m²)
+    area,
+    /// afilamento (só entra na massa/geometria de desenho)
+    taper,
+    /// perfil da raiz: índice na lista de perfis
+    airfoil,
+    /// índice na lista de conjuntos de tração
+    set,
+    /// número de motores
+    motors,
+    /// inclinação do motor (graus)
+    tilt,
+    /// perfil da ponta (a mesma asa com dois perfis; entre eles, interpolado)
+    airfoil_tip,
+    /// arranjo dos motores: índice na lista de arranjos
+    layout,
+};
+pub const n_vars = @typeInfo(Variable).@"enum".fields.len;
+/// os nomes das variáveis na ordem de `x` (os do Python)
+pub const var_names: [n_vars][:0]const u8 = blk: {
+    var names: [n_vars][:0]const u8 = undefined;
+    for (@typeInfo(Variable).@"enum".fields, 0..) |field, i| names[i] = field.name;
+    break :blk names;
+};
 
-pub const var_continuous = 0;
-pub const var_integer = 1;
-pub const var_list = 2; // índice 0..hi numa lista
+/// a posição da variável `which` em `x`
+pub inline fn variable(which: Variable) usize {
+    return @intFromEnum(which);
+}
+
+/// como a variável anda na busca (`VarSpec.kind`)
+pub const VarKind = enum(i32) {
+    continuous = 0,
+    integer = 1,
+    /// índice 0..hi numa lista
+    list = 2,
+    _,
+};
 
 pub const VarSpec = extern struct {
     lo: f64 = 0,
     hi: f64 = 0, // lo = hi: fixa
-    kind: i32 = var_continuous,
+    kind: VarKind = .continuous,
 };
 
 // ------------------------------------------------------------------ grandezas (índices em `Out.q`)
-pub const q_S = 0;
-pub const q_b = 1;
-pub const q_AR = 2;
-pub const q_VS = 3;
-pub const q_n_surf = 4;
-pub const q_P = 5; // potência elétrica máxima dos motores (W)
-pub const q_n_motor = 6;
-pub const q_s_to = 7;
-pub const q_Vmax = 8;
-pub const q_RC = 9;
-pub const q_TW = 10;
-pub const q_mass = 11; // massa de projeto = MTOW
-pub const q_pv = 12;
-pub const q_cp = 13;
-pub const q_ee = 14;
-pub const q_mtow = 15;
-pub const q_V_LD = 16; // V de (L/D) máx.
-pub const q_LD = 17;
-pub const q_c_root = 18; // corda da raiz (a maior): a asa cabe num retângulo b × c
-pub const q_n_turn = 19; // fator de carga sustentado na V da curva (tração e estol)
-pub const q_grad = 20; // gradiente de subida máximo (%)
-pub const q_ceiling = 21; // teto: altitude-densidade em que a subida máxima cai a roc_ceiling (m)
-pub const q_s_land = 22; // corrida de pouso (m): toque a 1,15 V_S, frenagem μ_f
+/// grandeza que o dimensionamento calcula; o número é a posição dela em `SizingOut.q`
+pub const Quantity = enum(i32) {
+    /// área de referência S (m²)
+    area = 0,
+    /// envergadura b (m)
+    span = 1,
+    /// alongamento AR
+    aspect_ratio = 2,
+    /// velocidade de estol V_S (m/s)
+    stall_speed = 3,
+    /// superfícies sustentadoras e de controle
+    surface_count = 4,
+    /// potência elétrica máxima dos motores (W)
+    motor_power = 5,
+    motor_count = 6,
+    /// corrida de decolagem (m)
+    takeoff_run = 7,
+    /// velocidade máxima (m/s)
+    max_speed = 8,
+    /// razão de subida (m/s)
+    climb_rate = 9,
+    /// tração / peso
+    thrust_to_weight = 10,
+    /// massa de projeto = MTOW (kg)
+    mass = 11,
+    /// peso vazio (kg)
+    empty_mass = 12,
+    /// carga paga (kg)
+    payload = 13,
+    /// eficiência estrutural: carga paga / peso vazio
+    structural_efficiency = 14,
+    /// massa máxima de decolagem (kg)
+    mtow = 15,
+    /// V de (L/D) máx. (m/s)
+    best_glide_speed = 16,
+    /// (L/D) máx.
+    max_lift_to_drag = 17,
+    /// corda da raiz (a maior): a asa cabe num retângulo b × c
+    root_chord = 18,
+    /// fator de carga sustentado na V da curva (tração e estol)
+    turn_load_factor = 19,
+    /// gradiente de subida máximo (%)
+    climb_gradient = 20,
+    /// teto: altitude-densidade em que a subida máxima cai a roc_ceiling (m)
+    ceiling = 21,
+    /// corrida de pouso (m): toque a 1,15 V_S, frenagem μ_f
+    landing_run = 22,
+    _,
+};
 pub const n_q = 23;
+
+/// a posição da grandeza `which` em `SizingOut.q`
+pub inline fn quantity(which: Quantity) usize {
+    return @intCast(@intFromEnum(which));
+}
 /// os mesmos nomes do registro do aerosim (`design/registry.QUANTITIES`)
 pub const q_names = [n_q][:0]const u8{ "S", "b", "AR", "V_S", "n_surf", "P_motor", "n_motor", "s_to", "V_max", "RC", "TW", "mass", "pv", "cp", "ee", "mtow", "V_LD", "LD", "c_root", "n_turn", "grad", "ceiling", "s_land" };
 
 /// a grandeza depende da massa (entra na busca do MTOW) ou é só da geometria/carga
-pub fn massDependent(quantity: usize) bool {
-    return switch (quantity) {
-        q_VS, q_s_to, q_Vmax, q_RC, q_TW, q_n_turn, q_grad, q_ceiling, q_s_land => true,
+pub fn massDependent(which: Quantity) bool {
+    return switch (which) {
+        .stall_speed, .takeoff_run, .max_speed, .climb_rate, .thrust_to_weight, .turn_load_factor, .climb_gradient, .ceiling, .landing_run => true,
         else => false,
     };
 }
 
-pub const op_le = 0;
-pub const op_ge = 1;
-pub const op_eq = 2;
+/// a grandeza que a restrição olha; um número fora da lista vira a mais próxima (como antes do `enum`)
+pub fn constrained(constraint: Constraint) Quantity {
+    return @enumFromInt(std.math.clamp(@intFromEnum(constraint.q), 0, n_q - 1));
+}
+
+/// o sentido da restrição (`Constraint.op`)
+pub const Comparison = enum(i32) {
+    /// valor ≤ limite
+    at_most = 0,
+    /// valor ≥ limite
+    at_least = 1,
+    /// valor = limite, com a tolerância `tol`
+    equal = 2,
+    _,
+};
 
 pub const Constraint = extern struct {
-    q: i32 = q_s_to,
-    op: i32 = op_le,
+    q: Quantity = .takeoff_run,
+    op: Comparison = .at_most,
     value: f64 = 0,
     tol: f64 = 0.02, // "=": tolerância relativa
 };
@@ -85,9 +155,9 @@ pub fn violation(constraint: Constraint, value_now: f64) f64 {
     if (!std.math.isFinite(value_now)) return 1.0;
     const scale = @max(@abs(constraint.value), 1e-6);
     return switch (constraint.op) {
-        op_le => @max(value_now - constraint.value, 0) / scale,
-        op_ge => @max(constraint.value - value_now, 0) / scale,
-        else => @max(@abs(value_now - constraint.value) - constraint.tol * scale, 0) / scale,
+        .at_most => @max(value_now - constraint.value, 0) / scale,
+        .at_least => @max(constraint.value - value_now, 0) / scale,
+        .equal, _ => @max(@abs(value_now - constraint.value) - constraint.tol * scale, 0) / scale,
     };
 }
 
@@ -124,12 +194,18 @@ pub const kind_flying_wing = 2;
 pub const kind_tailsitter = 3;
 pub const kind_vtol = 4;
 
-pub const obj_mtow = 0;
-pub const obj_ee = 1;
+/// o que a busca otimiza (`SizingCfg.objective`)
+pub const Objective = enum(i32) {
+    /// a maior massa de decolagem
+    mtow = 0,
+    /// a maior eficiência estrutural
+    structural_efficiency = 1,
+    _,
+};
 
 pub const SizingCfg = extern struct {
     kind: i32 = kind_monoplane,
-    objective: i32 = obj_mtow,
+    objective: Objective = .mtow,
     rho: f64 = 1.156,
     mu: f64 = 0.04, // atrito de rolamento
     m_max: f64 = 60, // teto da busca do MTOW (kg)
@@ -184,12 +260,18 @@ pub const SizingOut = extern struct {
     D: [n_curve]f64 = [_]f64{0} ** n_curve,
 };
 
-pub const method_pso = 0;
-pub const method_random = 1;
+/// o otimizador da busca (`OptOpts.method`)
+pub const SearchMethod = enum(i32) {
+    /// enxame de partículas
+    particle_swarm = 0,
+    /// amostras aleatórias
+    random = 1,
+    _,
+};
 
 /// opções do otimizador (comuns a todos; cada método usa as que fazem sentido para ele)
 pub const OptOpts = extern struct {
-    method: i32 = method_pso,
+    method: SearchMethod = .particle_swarm,
     particles: i32 = 24, // população (PSO: partículas; busca aleatória: amostras por iteração)
     iterations: i32 = 40,
     seed: f64 = 1,

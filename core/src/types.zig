@@ -12,16 +12,45 @@ pub const Modifier = modifier_types.Modifier;
 /// polinômio de tração (gerado em comptime a partir do grau em limits.zig)
 pub const ThrustPoly = poly.Poly2(limits.thrust_poly_deg);
 
-pub const prop_motor = 0; // motor BLDC + hélice por tabela J, C_T, C_P (com dinâmica de rotação)
-pub const prop_poly = 1; // tração por polinômio T(x, y) ajustado (sem motor/bateria)
+// Os códigos trocados com o Python são `enum(i32)`: na ABI continuam números (o esquema diz `i32`), e dentro do
+// núcleo o `switch` diz por nome o que cada número liga. Número novo = um campo novo no fim; `_` = número de outra
+// versão, tratado como o padrão.
 
-/// variáveis do polinômio de tração
-pub const pvar_none = 0;
-pub const pvar_V = 1; // velocidade do ar no eixo do motor (m/s)
-pub const pvar_throttle = 2; // acelerador 0..1
-pub const pvar_h = 3; // altura (m)
-pub const pvar_rho = 4; // densidade (kg/m³)
-pub const pvar_const = 5; // constante (poly_xc / poly_yc), ex.: a rotação n do conjunto
+/// como a unidade propulsora dá a tração (`PropUnit.model`)
+pub const ThrustModel = enum(i32) {
+    /// motor BLDC + hélice por tabela J, C_T, C_P (com dinâmica de rotação)
+    motor = 0,
+    /// tração por polinômio T(x, y) ajustado (sem motor/bateria)
+    polynomial = 1,
+    _,
+};
+
+/// variável do polinômio de tração (`PropUnit.poly_x`, `poly_y`)
+pub const PolyVariable = enum(i32) {
+    none = 0,
+    /// velocidade do ar no eixo do motor (m/s)
+    airspeed = 1,
+    /// acelerador 0..1
+    throttle = 2,
+    /// altura (m)
+    height = 3,
+    /// densidade (kg/m³)
+    density = 4,
+    /// constante (poly_xc / poly_yc), ex.: a rotação n do conjunto
+    constant = 5,
+    _,
+};
+
+/// o modelo aerodinâmico do voo (`Params.aero_model`, `physics/aeromodel.zig`)
+pub const AeroModel = enum(i32) {
+    /// faixas (`aero.computeEnv`, o de sempre; o AeroDrive usa este)
+    strips = 0,
+    /// linha sustentadora (`loads/llt.zig`, com `llt_joint` e `llt_blend`)
+    lifting_line = 1,
+    /// tabela de coeficientes (`aero_tab`)
+    table = 2,
+    _,
+};
 
 /// Painel sustentador (faixa de meia asa, EH, EV...). A deflexão vista pelo painel é
 ///   δ = tau · (mix[0] δe + mix[1] δa + mix[2] δr)
@@ -44,7 +73,7 @@ pub const Surface = extern struct {
     eta: f64 = 1,
     eps0: f64 = 0,
     depsda: f64 = 0,
-    group: i32 = 0, // limits.group_*
+    group: limits.Group = .wing,
     vertical: i32 = 0, // normal para +y
     side: i32 = 0, // +1 direita, -1 esquerda, 0 centro
     downwash: i32 = 0, // sente o downwash da asa
@@ -78,17 +107,17 @@ pub const PropUnit = extern struct {
     Voc: f64 = 11.1,
     Rint: f64 = 0.02,
     yaw_mix: f64 = 0, // acelerador diferencial: thr_i = thr + yaw_mix δr
-    model: i32 = prop_motor,
+    model: ThrustModel = .motor,
     n_pts: i32 = 0,
     // tração polinomial: T = gain · P(x, y) · (ρ/ρ0)^rho_exp  (× acelerador se nem x nem y for o acelerador)
-    poly_x: i32 = pvar_V,
-    poly_y: i32 = pvar_none,
+    poly_x: PolyVariable = .airspeed,
+    poly_y: PolyVariable = .none,
     poly_gain: f64 = 1,
     poly_rho_exp: f64 = 0,
     poly_rho0: f64 = 1.225,
     poly_xmax: f64 = 0, // > 0: x limitado a [0, xmax] (faixa do ajuste)
     poly_ymax: f64 = 0,
-    poly_xc: f64 = 0, // valor de x quando poly_x = pvar_const
+    poly_xc: f64 = 0, // valor de x quando poly_x = .constant
     poly_yc: f64 = 0,
     poly: [ThrustPoly.n_coef]f64 = [_]f64{0} ** ThrustPoly.n_coef,
     J: [limits.max_prop_pts]f64 = [_]f64{0} ** limits.max_prop_pts,
@@ -101,20 +130,33 @@ pub const PropUnit = extern struct {
     Ke: f64 = 0,
 };
 
-pub const gear_steer = 0; // direcionável (bequilha do triciclo ou do convencional)
-pub const gear_main = 1; // principal (com freio)
-pub const gear_skid = 2; // patim/ponto de cauda
+/// tipo de ponto de contato do trem (`Gear.kind`)
+pub const GearKind = enum(i32) {
+    /// direcionável (bequilha do triciclo ou do convencional)
+    steer = 0,
+    /// principal (com freio)
+    main = 1,
+    /// patim/ponto de cauda
+    skid = 2,
+    _,
+};
 
 pub const Gear = extern struct {
     r: [3]f64 = .{ 0, 0, 0 },
     k: f64 = 3000,
     c: f64 = 80,
-    kind: i32 = gear_main,
+    kind: GearKind = .main,
     _pad: i32 = 0,
 };
 
-pub const tank_square = 0;
-pub const tank_cylinder = 1;
+/// forma do tanque (`Tank.shape`)
+pub const TankShape = enum(i32) {
+    /// base quadrada de lado `side`
+    square = 0,
+    /// cilindro de diâmetro `side`
+    cylinder = 1,
+    _,
+};
 
 /// Tanque de base quadrada (lado `side`) ou cilíndrico (diâmetro `side`), líquido com
 /// altura `fill`. Pêndulo equivalente do 1º modo (Abramson, NASA SP-106):
@@ -123,7 +165,7 @@ pub const tank_cylinder = 1;
 ///   l = g / ω²,  m0 = m − m1
 pub const Tank = extern struct {
     r: [3]f64 = .{ 0, 0, 0 }, // centro do líquido em repouso
-    shape: i32 = tank_square,
+    shape: TankShape = .square,
     _pad: i32 = 0,
     side: f64 = 0.1,
     fill: f64 = 0.05,
@@ -157,9 +199,17 @@ pub const Segment = extern struct {
     clearance: f64 = 0,
 };
 
-pub const event_drop = 0;
-pub const event_gust = 1;
-pub const Event = extern struct { kind: i32 = 0, seg: i32 = 0, s: f64 = 0 };
+/// o que acontece num evento do percurso (`Event.kind`)
+pub const EventKind = enum(i32) {
+    /// soltura da carga
+    drop = 0,
+    /// rajada
+    gust = 1,
+    _,
+};
+
+/// um evento no percurso: no segmento `seg`, a `s` metros do começo dele
+pub const Event = extern struct { kind: EventKind = .drop, seg: i32 = 0, s: f64 = 0 };
 
 /// mesa/plataforma: retângulo elevado. Começa em (n0, e0) na linha de centro, vai L metros
 /// no rumo chi, largura W centrada, topo a h metros do chão.
@@ -377,7 +427,7 @@ pub const Params = extern struct {
     // llt_blend = 1 = Goates e Hunsaker (2021): ferraduras com junta e linha sustentadora efetiva por ponto de controle
     // modelo aerodinâmico do voo (physics/aeromodel.zig): 0 = faixas (o de sempre; o AeroDrive usa este), 1 = linha
     // sustentadora (loads/llt.zig, com llt_joint e llt_blend), 2 = tabela (aero_tab)
-    aero_model: i32 = 0,
+    aero_model: AeroModel = .strips,
     aero_tab: AeroTable = .{},
     llt_joint: f64 = 0, // comprimento da junta das pernas, fração da corda no nó (G-H eq. 17)
     llt_blend: f64 = 0, // distância de mistura da linha efetiva, fração da semienvergadura (G-H eq. 7; MachUpX)
@@ -389,7 +439,7 @@ pub const Params = extern struct {
     n_pad: i32 = 0, // mesas/plataformas
     pads: [limits.max_pads]Pad = [_]Pad{.{}} ** limits.max_pads,
     // modificadores (modifiers/): método do efeito solo e efeitos a mais (desligados por padrão)
-    ground: i32 = @intFromEnum(modifier_types.Ground.mccormick),
+    ground: modifier_types.Ground = .mccormick,
     n_mod: i32 = 0,
     mods: [limits.max_mods]Modifier = [_]Modifier{.{}} ** limits.max_mods,
     // derivados
@@ -402,7 +452,7 @@ pub const PanelState = extern struct {
     r: [3]f64 = .{ 0, 0, 0 }, // centro do painel (corpo, m)
     S: f64 = 0,
     c: f64 = 0,
-    group: i32 = -1, // limits.group_*; −1: painel sem escoamento
+    group: limits.Group = .none,
     side: i32 = 0,
     alpha: f64 = 0, // α local, já com downwash e comando (rad)
     V: f64 = 0, // velocidade local no plano do perfil (m/s)
@@ -616,10 +666,17 @@ pub const MassProps = extern struct {
     m_liq: f64 = 0,
 };
 
-pub const trim_level = 0; // α, δe, acelerador   (γ = 0, n = 1)
-pub const trim_climb = 1; // α, δe, γ            (acelerador = 1)
-pub const trim_glide = 2; // α, δe, γ            (acelerador = 0)
-pub const trim_turn = 3; // α, δe, acelerador   (γ = 0, n dado)
+/// o voo que a trimagem procura, e quais incógnitas ela resolve
+pub const TrimKind = enum(i32) {
+    /// α, δe, acelerador   (γ = 0, n = 1)
+    level = 0,
+    /// α, δe, γ            (acelerador = 1)
+    climb = 1,
+    /// α, δe, γ            (acelerador = 0)
+    glide = 2,
+    /// α, δe, acelerador   (γ = 0, n dado)
+    turn = 3,
+};
 
 pub const TrimPoint = extern struct {
     ok: i32 = 0,

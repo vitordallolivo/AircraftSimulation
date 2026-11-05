@@ -43,7 +43,7 @@ pub fn begin(inst: *runner.Instance, case: Case) Error!void {
     params.n_seg = 1;
     params.seg[0] = .{ .L = length, .h0 = case.height, .h1 = case.height, .V0 = case.airspeed, .V1 = case.airspeed };
     params.n_event = 1;
-    params.event[0] = .{ .kind = types.event_gust, .seg = 0, .s = case.airspeed * case.start };
+    params.event[0] = .{ .kind = types.EventKind.gust, .seg = 0, .s = case.airspeed * case.start };
     params.n_pad = 0;
     params.env.Vw10 = 0; // ar parado: só a rajada mexe
     params.env.gust_on = 1;
@@ -66,7 +66,7 @@ fn holdFullTrim(inst: *runner.Instance, airspeed: f64) void {
     const params = &inst.p;
     const full = linear.linearize(params, &inst.r.f, airspeed);
     if (full.ok == 0) {
-        const point = trim.solve(trim.Ctx.init(params, &inst.r.f), types.trim_level, airspeed, 1.0, null);
+        const point = trim.solve(trim.Ctx.init(params, &inst.r.f), types.TrimKind.level, airspeed, 1.0, null);
         params.pilot = .{ .manual = 1, .de = point.de, .thr = point.thr };
         return;
     }

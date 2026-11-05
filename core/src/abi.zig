@@ -44,6 +44,7 @@ fn typeTag(comptime Ty: type) struct { []const u8, usize } {
     return switch (@typeInfo(Ty)) {
         .float => .{ "f64", 1 },
         .int => .{ "i32", 1 },
+        .@"enum" => |enum_info| if (enum_info.tag_type == i32) .{ "i32", 1 } else @compileError("enum da ABI tem de ser enum(i32): " ++ @typeName(Ty)),
         .array => |array_info| .{ typeTag(array_info.child)[0], array_info.len * typeTag(array_info.child)[1] },
         .@"struct" => .{ shortName(Ty), 1 },
         else => @compileError("tipo não suportado no ABI: " ++ @typeName(Ty)),

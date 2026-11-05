@@ -96,7 +96,7 @@ export fn aerosim_schema() [*:0]const u8 {
 
 /// sonda dos modificadores (sem simulação): fator do efeito solo do método `method` a `height` (m), envergadura `span` (m)
 export fn aerosim_probe_ground(method: i32, height: f64, span: f64) f64 {
-    return modifiers.ground.factor(method, height, span);
+    return modifiers.ground.factor(@enumFromInt(method), height, span);
 }
 
 /// sonda da esteira (sem simulação): um motor de diâmetro D com tração T, torque Q e sentido `sense`, eixo +x,
@@ -428,7 +428,8 @@ export fn aerosim_prop_point(slot: i32, prop_index: i32, airspeed: f64, thr: f64
 /// trima no tipo `kind` (nivelado, curva, ...) a `airspeed` com o fator de carga `load_factor`; -4 se falhar
 export fn aerosim_trim(slot: i32, kind: i32, airspeed: f64, load_factor: f64, out: *types.TrimPoint) i32 {
     const inst = getConfigured(slot) catch |err| return abiCode(err);
-    out.* = trim.solve(trim.Ctx.init(&inst.p, &inst.r.f), kind, airspeed, load_factor, null);
+    const trim_kind = std.enums.fromInt(types.TrimKind, kind) orelse return abiCode(error.BadIndex);
+    out.* = trim.solve(trim.Ctx.init(&inst.p, &inst.r.f), trim_kind, airspeed, load_factor, null);
     return if (out.ok != 0) 0 else abiCode(error.TrimFailed);
 }
 
