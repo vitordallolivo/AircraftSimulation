@@ -256,12 +256,12 @@ fn text(memory: std.mem.Allocator, comptime format: []const u8, args: anytype) !
 }
 
 /// as curvas e as retas de referência de um gráfico
-const Lines = struct {
-    curves: std.ArrayList(simulation.Curve) = .empty,
-    guides: std.ArrayList(simulation.Guide) = .empty,
-    plot: simulation.Plot,
-};
-const Charts = std.EnumArray(Chart, Lines);
+const Lines = simulation.Figures.Figure;
+
+/// o gráfico de `chart` entre os do resultado
+fn figure(figures: simulation.Figures, chart: Chart) *Lines {
+    return figures.get(plots.get(chart).key).?;
+}
 
 /// uma coluna das linhas, com NaN onde `shown` é falso
 fn column(memory: std.mem.Allocator, rows: []const simple_perf.SimpleRow, comptime field: []const u8, shown: ?[]const bool) ![]f64 {
@@ -293,9 +293,8 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
     try summary.append(memory, .{ "S (m²)", try text(memory, "{d:.4}", .{state.area}) });
     try summary.append(memory, .{ "teto absoluto (m)", if (state.envelope.ceiling) |ceiling| try text(memory, "{d:.0}", .{ceiling}) else "> 9000" });
 
-    var charts: Charts = undefined;
-    for (std.enums.values(Chart)) |chart| charts.set(chart, .{ .plot = plots.get(chart) });
-    try envelopeChart(memory, state, charts.getPtr(.envelope));
+    const figures = try simulation.Figures.init(memory, plots.values[0..]);
+    try envelopeChart(memory, state, figure(figures, .envelope));
 
     for (state.altitudes, 0..) |altitude, j| {
         const facts = altitude.summary;
@@ -321,21 +320,17 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
             try summary.append(memory, .{ try text(memory, "{s}{s}", .{ prefix, entry[0] }), written.items });
         }
         try altitudeChecks(memory, altitude, &checks);
-        try altitudeCurves(memory, &charts, altitude, j);
+        try altitudeCurves(memory, figures, altitude, j);
         if (j == 0) {
-            try turnChart(memory, charts.getPtr(.turns), facts, state.bank_limit_deg);
-            try vnChart(memory, charts.getPtr(.vn), altitude, state.load_factor);
+            try turnChart(memory, figure(figures, .turns), facts, state.bank_limit_deg);
+            try vnChart(memory, figure(figures, .vn), altitude, state.load_factor);
         }
     }
     if (state.envelope.ceiling) |ceiling|
         try checks.append(memory, .{ .status = .info, .item = "teto absoluto", .value = try text(memory, "≈ {d:.0} m", .{ceiling}), .criterion = "V_min = V_max", .group = "envelope" });
 
     try simulation.beginResult(out, summary.items, checks.items);
-    for (std.enums.values(Chart), 0..) |chart, k| {
-        const lines = charts.getPtr(chart);
-        const curves = try simulation.withGuides(memory, lines.curves.items, lines.guides.items);
-        try simulation.writePlot(out, lines.plot, curves, k == 0);
-    }
+    try figures.write(out, true);
     try simulation.endResult(out);
 }
 
@@ -397,7 +392,7 @@ fn altitudeChecks(memory: std.mem.Allocator, altitude: Altitude, checks: *std.Ar
 }
 
 /// as curvas de uma altitude nos gráficos de potência, tração, subida, planeio e bateria
-fn altitudeCurves(memory: std.mem.Allocator, charts: *Charts, altitude: Altitude, j: usize) !void {
+fn altitudeCurves(memory: std.mem.Allocator, figures: simulation.Figures, altitude: Altitude, j: usize) !void {
     const rows = altitude.rows;
     const facts = altitude.summary;
     const color = altitude_colors[j % altitude_colors.len];
@@ -414,13 +409,13 @@ fn altitudeCurves(memory: std.mem.Allocator, charts: *Charts, altitude: Altitude
         if (band_start == null) band_start = k;
         band_end = k + 1;
     };
-    const power = charts.getPtr(.power);
-    const thrust = charts.getPtr(.thrust);
-    const climb = charts.getPtr(.climb);
-    const climb_angle = charts.getPtr(.climb_angle);
-    const glide = charts.getPtr(.glide);
-    const endurance = charts.getPtr(.endurance);
-    const range = charts.getPtr(.range);
+    const power = figure(figures, .power);
+    const thrust = figure(figures, .thrust);
+    const climb = figure(figures, .climb);
+    const climb_angle = figure(figures, .climb_angle);
+    const glide = figure(figures, .glide);
+    const endurance = figure(figures, .endurance);
+    const range = figure(figures, .range);
     const available_power = try column(memory, rows, "Pd", null);
     const climb_rate = try column(memory, rows, "RC", shown);
     if (band_start) |start| {

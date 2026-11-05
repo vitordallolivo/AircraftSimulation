@@ -295,6 +295,7 @@ pub const Plot = struct {
     ylabel: []const u8,
     x_limits: ?[2]f64 = null, // a janela do eixo x (null: a das curvas)
     y_limits: ?[2]f64 = null,
+    kind: enum { flat, track } = .flat, // track: a trajetória em 3D (x, y e a altura)
 };
 
 /// uma curva de um gráfico do resultado
@@ -326,6 +327,138 @@ pub const Guide = struct {
     legend: bool = true,
     width: f64 = 0,
 };
+
+/// uma linha da trajetória em 3D: os pontos (x, y, altura) em sequência, em metros
+pub const TrackLine = struct {
+    name: []const u8,
+    kind: enum { line, points, segments } = .line, // segments: pares de pontos (a silhueta do avião)
+    points: []const f64,
+    offsets: []const f64 = &.{}, // segments: o desenho em metros em volta de cada ponto (a altura não é esticada)
+    color: []const u8,
+    width: f64 = 0, // 0: a padrão (1,5 nos segmentos, 2,5 nas linhas)
+    legend: bool = true,
+    marker: []const u8 = "star", // points
+    size: f64 = 14,
+};
+
+/// os gráficos de um resultado, cada um com as curvas, as retas de referência e (no 3D) as linhas da trajetória,
+/// na ordem dos `plots`; uma curva para um gráfico que não está na lista é ignorada
+pub const Figures = struct {
+    memory: std.mem.Allocator,
+    list: []Figure,
+
+    pub const Figure = struct {
+        plot: Plot,
+        curves: std.ArrayList(Curve) = .empty,
+        guides: std.ArrayList(Guide) = .empty,
+        lines: std.ArrayList(TrackLine) = .empty,
+    };
+
+    /// um gráfico vazio para cada `plots`
+    pub fn init(memory: std.mem.Allocator, plots: []const Plot) !Figures {
+        const list = try memory.alloc(Figure, plots.len);
+        for (plots, list) |plot, *figure| figure.* = .{ .plot = plot };
+        return .{ .memory = memory, .list = list };
+    }
+
+    /// o gráfico com esta chave
+    pub fn get(figures: Figures, key: []const u8) ?*Figure {
+        for (figures.list) |*figure| if (std.mem.eql(u8, figure.plot.key, key)) return figure;
+        return null;
+    }
+
+    /// uma curva no gráfico `key`
+    pub fn curve(figures: Figures, key: []const u8, item: Curve) !void {
+        if (figures.get(key)) |figure| try figure.curves.append(figures.memory, item);
+    }
+
+    /// uma reta de referência no gráfico `key`
+    pub fn guide(figures: Figures, key: []const u8, item: Guide) !void {
+        if (figures.get(key)) |figure| try figure.guides.append(figures.memory, item);
+    }
+
+    /// uma linha da trajetória no gráfico 3D `key`
+    pub fn line(figures: Figures, key: []const u8, item: TrackLine) !void {
+        if (figures.get(key)) |figure| try figure.lines.append(figures.memory, item);
+    }
+
+    /// escreve todos os gráficos (`first`: é o primeiro da lista do resultado)
+    pub fn write(figures: Figures, out: *Writer, first: bool) !void {
+        for (figures.list, 0..) |*figure, k| {
+            if (figure.plot.kind == .track) {
+                try writeTrack(out, figure.plot, figure.lines.items, first and k == 0);
+                continue;
+            }
+            const curves = try withGuides(figures.memory, figure.curves.items, figure.guides.items);
+            try writePlot(out, figure.plot, curves, first and k == 0);
+        }
+    }
+};
+
+const max_track_points = 3000; // por linha da trajetória 3D (o resto é passo maior)
+
+/// a trajetória 3D como a ponte do Python a escreve (`bridge._track`): a altura exagerada para a trajetória, que tem
+/// centenas de metros e poucos de altura, não sair chata
+pub fn writeTrack(out: *Writer, plot: Plot, lines: []const TrackLine, first: bool) !void {
+    if (!first) try out.writeAll(", ");
+    try writePlotHead(out, plot);
+    var low = [3]f64{ std.math.inf(f64), std.math.inf(f64), std.math.inf(f64) };
+    var high = [3]f64{ -std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64) };
+    for (lines) |item| {
+        var k: usize = 0;
+        while (k + 2 < item.points.len) : (k += 3) {
+            const point = item.points[k .. k + 3];
+            if (!(std.math.isFinite(point[0]) and std.math.isFinite(point[1]) and std.math.isFinite(point[2]))) continue;
+            for (0..3) |axis| {
+                low[axis] = @min(low[axis], point[axis]);
+                high[axis] = @max(high[axis], point[axis]);
+            }
+        }
+    }
+    if (!(low[0] <= high[0])) {
+        try out.writeAll(", \"track\": null}");
+        return;
+    }
+    const span = @max(@max(high[0] - low[0], high[1] - low[1]), 20);
+    const scale = @max(1, @round(0.25 * span / @max(high[2] - low[2], 1)));
+    try out.writeAll(", \"track\": {\"lines\": [");
+    for (lines, 0..) |item, index| {
+        if (index > 0) try out.writeAll(", ");
+        var name = item.name;
+        if (std.mem.startsWith(u8, name, "★ ")) name = name["★ ".len..];
+        const kind = @tagName(item.kind);
+        const width: f64 = if (item.width > 0) item.width else if (item.kind == .segments) 1.5 else 2.5;
+        try out.print("{{\"name\": {f}, \"kind\": \"{s}\", \"color\": {f}, \"width\": {d}, \"legend\": {}", .{ str(std.mem.trim(u8, name, " ")), kind, str(item.color), width, item.legend });
+        if (item.kind == .points) try out.print(", \"marker\": {f}, \"size\": {d}", .{ str(item.marker), item.size });
+        try out.writeAll(", \"points\": [");
+        const count = item.points.len / 3;
+        const step: usize = if (item.kind == .line and count > max_track_points) (count + max_track_points - 1) / max_track_points else 1;
+        var written: usize = 0;
+        var point_index: usize = 0;
+        while (point_index < count) : (point_index += step) {
+            try writeTrackPoint(out, item, point_index, scale, written > 0);
+            written += 1;
+            if (step > 1 and point_index + step >= count and point_index != count - 1) try writeTrackPoint(out, item, count - 1, scale, true);
+        }
+        try out.writeAll("]}");
+    }
+    try out.print("], \"scale\": {d}, \"low\": [{d}, {d}, {d}], \"high\": [{d}, {d}, {d}], \"axes\": ", .{ scale, low[0], low[1], low[2] * scale, high[0], high[1], high[2] * scale });
+    var axes: [200]u8 = undefined;
+    const text = std.fmt.bufPrint(&axes, "eixos: {s}, {s}, h (altura exagerada ×{d})", .{ plot.xlabel, plot.ylabel, scale }) catch "eixos";
+    try out.print("{f}}}}}", .{str(text)});
+}
+
+fn writeTrackPoint(out: *Writer, item: TrackLine, index: usize, scale: f64, comma: bool) !void {
+    var point = [3]f64{ item.points[3 * index], item.points[3 * index + 1], item.points[3 * index + 2] * scale };
+    if (item.kind == .segments and item.offsets.len >= 3 * index + 3) {
+        for (0..3) |axis| point[axis] += item.offsets[3 * index + axis];
+    }
+    if (comma) try out.writeAll(", ");
+    for (point, 0..) |value, axis| {
+        if (axis > 0) try out.writeAll(", ");
+        if (std.math.isFinite(value)) try out.print("{d:.3}", .{value}) else try out.writeAll("null");
+    }
+}
 
 /// junta as retas de referência às curvas, como curvas de dois pontos de uma borda à outra do que as curvas
 /// ocupam; um nome que já está na legenda não entra de novo
@@ -569,7 +702,7 @@ pub fn endResult(out: *Writer) !void {
 }
 
 fn writePlotHead(out: *Writer, plot: Plot) !void {
-    try out.print("{{\"key\": {f}, \"title\": {f}, \"xlabel\": {f}, \"ylabel\": {f}, \"kind\": \"2d\"", .{ str(plot.key), str(plot.title), str(plot.xlabel), str(plot.ylabel) });
+    try out.print("{{\"key\": {f}, \"title\": {f}, \"xlabel\": {f}, \"ylabel\": {f}, \"kind\": \"{s}\"", .{ str(plot.key), str(plot.title), str(plot.xlabel), str(plot.ylabel), if (plot.kind == .track) "3d" else "2d" });
     if (plot.x_limits) |window| try out.print(", \"xlim\": [{d}, {d}]", .{ window[0], window[1] });
     if (plot.y_limits) |window| try out.print(", \"ylim\": [{d}, {d}]", .{ window[0], window[1] });
 }

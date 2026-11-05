@@ -37,4 +37,6 @@ test "a tabela vem das análises" {
     _ = envelope;
     _ = performance;
     _ = @import("takeoff_opt.zig");
+    _ = @import("analysis.zig");
+    _ = @import("flightplots.zig");
 }
