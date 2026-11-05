@@ -511,6 +511,19 @@ pub fn specs(memory: std.mem.Allocator, aircraft: *const Aircraft, component: Co
         spec.choices = try mountChoices(memory, aircraft, component.index);
         if (spec.text.len == 0) spec.text = "solta";
     };
+    // asas ligadas (`_group_editor`): com qual outra asa esta forma um conjunto (tandem, biplano)
+    if (component.part == .surface and std.mem.eql(u8, aircraft.surfaces[component.index].role, "wing")) {
+        const surface = aircraft.surfaces[component.index];
+        var options: std.ArrayList([]const u8) = .empty;
+        try options.append(memory, "(nenhuma)");
+        var current: []const u8 = "(nenhuma)";
+        for (aircraft.surfaces, 0..) |other, j| {
+            if (j == component.index or !std.mem.eql(u8, other.role, "wing")) continue;
+            try options.append(memory, other.name);
+            if (surface.group.len > 0 and std.mem.eql(u8, current, "(nenhuma)") and other.enabled and std.mem.eql(u8, other.group, surface.group)) current = other.name;
+        }
+        try list.append(memory, .{ .name = linked_field, .label = "ligada a", .kind = .choice, .text = current, .choices = options.items, .help = "asas ligadas formam um conjunto só: a área de referência é a soma, a CMA é a média pela área e a margem estática se mede nela. A linha sustentadora e o VLM já calculam a interferência entre elas" });
+    }
     // a altitude-densidade é o número que se edita (o ρ sai dela ao gravar); o arquivo antigo, sem ela, a tira do ρ
     if (component.part == .environment) for (list.items) |*spec| if (std.mem.eql(u8, spec.name, "density_altitude")) {
         spec.kind = .number;
@@ -518,6 +531,64 @@ pub fn specs(memory: std.mem.Allocator, aircraft: *const Aircraft, component: Co
         spec.number = aircraft.environment.densityAltitude();
     };
     return list.items;
+}
+
+/// o campo "ligada a" das asas: não é uma chave do arquivo, é o grupo (`group`) que ele muda
+const linked_field = "ligada a";
+
+/// liga a superfície `index` à asa chamada `mate` (`link_wings`), ou desliga se `mate` é "(nenhuma)" (`unlink_wing`:
+/// a última que sobra sozinha no grupo também sai dele). O grupo novo ganha um id que nenhuma asa usa
+fn linkWing(memory: std.mem.Allocator, document: *std.json.Value, index: usize, mate: []const u8) !void {
+    const surfaces = (try listNode(memory, document, "surfaces")).items;
+    const groupOf = struct {
+        fn of(value: std.json.Value) []const u8 {
+            if (value != .object) return "";
+            const found = value.object.get("group") orelse return "";
+            return if (found == .string) found.string else "";
+        }
+    }.of;
+    const nameOf = struct {
+        fn of(value: std.json.Value) []const u8 {
+            if (value != .object) return "";
+            const found = value.object.get("name") orelse return "";
+            return if (found == .string) found.string else "";
+        }
+    }.of;
+    if (index >= surfaces.len or surfaces[index] != .object) return error.MissingPart;
+    const old_group = groupOf(surfaces[index]);
+    // qual asa é a outra (a primeira com o nome, fora esta)
+    var target: ?usize = null;
+    for (surfaces, 0..) |surface, j| if (j != index and target == null and std.mem.eql(u8, nameOf(surface), mate)) {
+        target = j;
+    };
+    if (target) |j| if (old_group.len > 0 and std.mem.eql(u8, groupOf(surfaces[j]), old_group)) return; // já ligadas
+    // desliga: sai do grupo, e a que sobrar sozinha também
+    try surfaces[index].object.put(memory, "group", .{ .string = "" });
+    if (old_group.len > 0) {
+        var rest: ?usize = null;
+        var count: usize = 0;
+        for (surfaces, 0..) |surface, j| if (std.mem.eql(u8, groupOf(surface), old_group)) {
+            rest = j;
+            count += 1;
+        };
+        if (count == 1) try surfaces[rest.?].object.put(memory, "group", .{ .string = "" });
+    }
+    const j = target orelse return;
+    var group = groupOf(surfaces[j]);
+    if (group.len == 0) { // um id novo: o primeiro "gN" que ninguém usa
+        var number: usize = 1;
+        while (true) : (number += 1) {
+            const candidate = try std.fmt.allocPrint(memory, "g{d}", .{number});
+            var taken = false;
+            for (surfaces) |surface| taken = taken or std.mem.eql(u8, groupOf(surface), candidate);
+            if (!taken) {
+                group = candidate;
+                break;
+            }
+        }
+        try surfaces[j].object.put(memory, "group", .{ .string = group });
+    }
+    try surfaces[index].object.put(memory, "group", .{ .string = group });
 }
 
 /// onde a superfície `index` pode se prender (`mount_choices`): solta, na ponta de cada tubo, na ponta de cada outra
@@ -664,6 +735,10 @@ pub fn apply(memory: std.mem.Allocator, document: *std.json.Value, component: Co
     if (component.part == .modifiers) return applyModifiers(memory, document, fields);
     const part_node = try partNode(memory, document, component);
     for (fields) |spec| {
+        if (component.part == .surface and std.mem.eql(u8, spec.name, linked_field)) {
+            try linkWing(memory, document, component.index, spec.text);
+            continue;
+        }
         const node = try fieldNode(memory, part_node, spec);
         const value: std.json.Value = switch (spec.kind) {
             .number => .{ .float = spec.number },
@@ -914,7 +989,7 @@ test "a lista de componentes e o editor da asa, como no Python" {
     try std.testing.expectEqual(expected.len + nongeometric.len, list.len);
     // a asa: os campos do formulário do Python, na ordem
     const wing = try specs(memory, &loaded.ac, list[0]);
-    const names = [_][]const u8{ "name", "role", "x", "y", "z", "dihedral", "incidence", "symmetric", "vertical", "oswald", "eta", "downwash", "enabled", "CLa", "CL0", "CLmax", "CD0", "Cmac", "eps0", "depsda", "mass", "mount" };
+    const names = [_][]const u8{ "name", "role", "x", "y", "z", "dihedral", "incidence", "symmetric", "vertical", "oswald", "eta", "downwash", "enabled", "CLa", "CL0", "CLmax", "CD0", "Cmac", "eps0", "depsda", "mass", "mount", linked_field };
     try std.testing.expectEqual(names.len, wing.len);
     for (names, wing) |name, spec| try std.testing.expectEqualStrings(name, spec.name);
     try std.testing.expectEqualStrings("diedro", wing[5].label);
@@ -1064,4 +1139,38 @@ test "presa em: a EH na ponta do tubo e a EV na ponta direita da EH, como no Pyt
     const options = try mountChoices(memory, &placed.ac, 2);
     try std.testing.expectEqualStrings("tubo:0", options[1]);
     try std.testing.expectEqualStrings("ponta_dir:1", options[6]); // solta, tubo:0, ponta:0 (e as duas pontas da asa), ponta:1
+}
+
+test "asas ligadas: ligar duas asas e desligar, como link_wings e unlink_wing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
+    defer loaded.deinit();
+    var document = try std.json.parseFromSliceLeaky(std.json.Value, memory, bytes, .{});
+    const added = try add(memory, &document, &loaded.ac, .wing);
+    var grown = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
+    defer grown.deinit();
+    const wing = try memory.dupe(Spec, try specs(memory, &grown.ac, added));
+    for (wing) |*spec| if (std.mem.eql(u8, spec.name, linked_field)) {
+        try std.testing.expectEqualStrings("(nenhuma)", spec.text);
+        spec.text = "asa";
+    };
+    try apply(memory, &document, added, wing);
+    var linked = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
+    defer linked.deinit();
+    try std.testing.expectEqualStrings("g1", linked.ac.surfaces[0].group);
+    try std.testing.expectEqualStrings("g1", linked.ac.surfaces[3].group);
+    const list = try components(memory, &linked.ac);
+    try std.testing.expectEqualStrings("asa (wing) ligada a asa 3", list[0].label);
+    for (wing) |*spec| if (std.mem.eql(u8, spec.name, linked_field)) {
+        spec.text = "(nenhuma)";
+    };
+    try apply(memory, &document, added, wing);
+    var alone = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
+    defer alone.deinit();
+    try std.testing.expectEqualStrings("", alone.ac.surfaces[0].group);
+    try std.testing.expectEqualStrings("", alone.ac.surfaces[3].group);
 }
