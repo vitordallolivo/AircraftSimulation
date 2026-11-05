@@ -78,8 +78,9 @@ pub const Screen = struct {
     assembly_note: [240:0]u8 = [_:0]u8{0} ** 240,
     assembly_panel: ?AssemblyPanel = null, // o resumo ao lado do 3D (`config_tab.panel`), refeito ao abrir
     assembly_scroll: ui_kit.scroll.ScrollArea = .{},
+    assembly_angle: ViewAngle = .free, // a vista da Montagem: 3D livre ou lateral, superior e frontal em escala
     assembly_editor: ?AssemblyEditor = null, // a lista de componentes e o editor da peça escolhida
-    pending_assembly: [256]u8 = undefined, // acao=montagem:...: botões ("+ EH"), "peca=N" ou "trazer=arquivo#N", até o avião abrir
+    pending_assembly: [256]u8 = undefined, // acao=montagem:...: botões ("+ EH"), "peca=N", "trazer=arquivo#N" ou "vista=Lateral", até o avião abrir
     pending_assembly_len: usize = 0,
     importing_file: bool = false, // a janela de arquivos aberta é a de trazer uma peça de outro avião
     loader: ui_kit.jobs.Job = .{}, // lê o .json fora do laço da tela
@@ -217,7 +218,11 @@ pub const Screen = struct {
         screen.pending_assembly_len = 0;
         var steps = std.mem.tokenizeScalar(u8, pending[0..length], ';');
         while (steps.next()) |step| {
-            if (std.mem.startsWith(u8, step, "peca=")) {
+            if (std.mem.startsWith(u8, step, "vista=")) {
+                for (std.enums.values(ViewAngle)) |angle| if (std.ascii.eqlIgnoreCase(angle.caption(), step[6..])) {
+                    screen.assembly_angle = angle;
+                };
+            } else if (std.mem.startsWith(u8, step, "peca=")) {
                 const index = std.fmt.parseInt(usize, step[5..], 10) catch continue;
                 const editor = &screen.assembly_editor.?;
                 editor.selected = index;
@@ -606,6 +611,8 @@ pub const Screen = struct {
         const card_rect: rl.Rectangle = .{ .x = rect.x + 12 + side_width, .y = rect.y + 12, .width = rect.width - 24 - side_width - editor_width, .height = rect.height - 24 };
         const area = cardInside(card_rect);
         screen.assembly_view.handleInput(ui, area);
+        if (screen.assembly_view.dragging) screen.assembly_angle = .free;
+        screen.assembly_angle.aim(&screen.assembly_view);
         var title_buffer: [160]u8 = undefined;
         var title: [:0]const u8 = "Montagem: nenhum avião aberto (arraste um .json para a janela)";
         if (screen.assembly) |*opened| {
@@ -614,18 +621,43 @@ pub const Screen = struct {
             const size = plane.size();
             const middle = plane.center();
             // a vista mais estreita (com o resumo ao lado) afasta a câmera para caberem o avião e os eixos
-            const narrow = @max(1.0, 1.6 * area.height / @max(area.width, 1));
+            const narrow: f64 = if (screen.assembly_angle != .free) 1.0 else @max(1.0, 1.6 * area.height / @max(area.width, 1));
             if (screen.assembly_view.begin(area, middle, 1.1 * size * narrow)) {
                 defer screen.assembly_view.end();
                 // o chão um pouco abaixo da peça mais baixa (z para baixo), quadriculado de 25 cm
                 view3d.floor(.{ middle[0], middle[1], 0 }, plane.high[2] + 0.02, 1.6 * size, 0.25);
                 plane.draw();
-                drawBalance(&screen.assembly_view, assembly_mod.balance(&opened.loaded.ac), plane.low[2], size);
+                const weights = assembly_mod.balance(&opened.loaded.ac);
+                drawBalance(&screen.assembly_view, weights, plane.low[2], size);
+                if (screen.assembly_angle != .free) drawCgDimensions(&screen.assembly_view, screen.assembly_angle, weights.cg, size);
                 view3d.bodyAxes(&screen.assembly_view, .{ plane.low[0] - 0.12 * size, plane.low[1] - 0.12 * size, plane.high[2] + 0.04 * size }, 0.14 * size);
             }
         }
         _ = widgets.card(ui, card_rect, title);
-        if (screen.assembly != null) screen.assembly_view.blit(ui, area);
+        if (screen.assembly) |*opened| {
+            screen.assembly_view.blit(ui, area);
+            // numa vista em escala, as coordenadas do CG que ela mostra, a partir da referência (0, 0, 0)
+            const axes: ?[2]usize = switch (screen.assembly_angle) {
+                .side => .{ 0, 2 },
+                .top => .{ 0, 1 },
+                .front => .{ 1, 2 },
+                .free => null,
+            };
+            if (axes) |shown| {
+                const cg = assembly_mod.balance(&opened.loaded.ac).cg;
+                const names = [3][]const u8{ "x", "y", "z" };
+                var buffer: [160]u8 = undefined;
+                const text = widgets.format(&buffer, "{s}_CG = {d:.3} m     {s}_CG = {d:.3} m     (a partir da referência, a cruz cinza)", .{ names[shown[0]], cg[shown[0]], names[shown[1]], cg[shown[1]] });
+                theme.text(ui.fonts.bold, text, area.x + 10, area.y + 8, 16, theme.hex(0xd62728));
+            }
+        }
+        // os botões das vistas, à direita do título (por cima do cartão); arrastar volta ao 3D livre
+        for (std.enums.values(ViewAngle), 0..) |angle, k| {
+            const button_width: f32 = 86;
+            const button: rl.Rectangle = .{ .x = card_rect.x + card_rect.width - 8 - (4 - @as(f32, @floatFromInt(k))) * (button_width + 6), .y = card_rect.y + 5, .width = button_width, .height = 26 };
+            if (ui_kit.dialogs.button(ui, button, angle.caption())) screen.assembly_angle = angle;
+            if (screen.assembly_angle == angle) rl.drawRectangleLinesEx(button, 2, theme.colors.accent);
+        }
         theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.assembly_note, 0), area.x + 6, area.y + area.height - 18, 12, theme.colors.muted);
     }
 };
@@ -890,6 +922,62 @@ fn drawBalance(view: *view3d.View, weights: assembly_mod.Balance, top: f64, size
     cross(weights.cg, arm, loaded_color);
     view3d.segment(weights.cg, .{ weights.cg[0], weights.cg[1], top - 0.1 * size }, loaded_color);
     view.label(.{ weights.cg[0], weights.cg[1], top - 0.1 * size }, widgets.format(&loaded_label, "CG  x = {d:.3} m  ({d:.2} kg)", .{ weights.cg[0], weights.mass }), loaded_color);
+}
+
+/// de onde se olha a Montagem: o 3D livre (arrastar gira) ou uma vista em escala, sem perspectiva, para ler o CG
+const ViewAngle = enum {
+    free,
+    side, // de lado (do −y): x e z
+    top, // de cima: x e y
+    front, // de frente: y e z
+
+    fn caption(angle: ViewAngle) [:0]const u8 {
+        return switch (angle) {
+            .free => "3D",
+            .side => "Lateral",
+            .top => "Superior",
+            .front => "Frontal",
+        };
+    }
+
+    /// põe a câmera na direção da vista (azimute e elevação de `View.begin`)
+    fn aim(angle: ViewAngle, view: *view3d.View) void {
+        if (angle == .free) {
+            if (view.orthographic) {
+                view.orthographic = false;
+                view.azimuth = -130;
+                view.elevation = 22;
+            }
+            return;
+        }
+        view.orthographic = true;
+        const direction: [2]f32 = switch (angle) {
+            .side => .{ 90, 0 },
+            .top => .{ 180, 89.9 }, // quase a pino: a câmera de cima com o nariz para cima na tela
+            .front => .{ 0, 0 },
+            .free => unreachable,
+        };
+        view.azimuth = direction[0];
+        view.elevation = direction[1];
+    }
+};
+
+/// as cotas do CG numa vista em escala: da referência (0, 0, 0) até o CG pelos dois eixos que a vista mostra
+fn drawCgDimensions(view: *view3d.View, angle: ViewAngle, cg: [3]f64, size: f64) void {
+    const color = theme.hex(0xd62728);
+    const origin: [3]f64 = .{ 0, 0, 0 };
+    const axes: [2]usize = switch (angle) {
+        .side => .{ 0, 2 },
+        .top => .{ 0, 1 },
+        .front => .{ 1, 2 },
+        .free => return,
+    };
+    var corner = origin;
+    corner[axes[0]] = cg[axes[0]];
+    view3d.segment(origin, corner, color);
+    view3d.segment(corner, cg, color);
+    cross(origin, 0.03 * size, theme.colors.muted);
+    _ = view;
 }
 
 // os textos dos rótulos ficam vivos até o `blit` da vista
