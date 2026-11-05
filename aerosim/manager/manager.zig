@@ -36,4 +36,5 @@ test "a tabela vem das análises" {
     _ = thrust;
     _ = envelope;
     _ = performance;
+    _ = @import("takeoff_opt.zig");
 }
