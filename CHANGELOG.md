@@ -40,6 +40,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   envelope, decolagem, piloto automático, integração e percurso). Clicar numa peça abre o formulário dela, com os
   rótulos e as unidades do Python. Cada edição refaz o 3D e o resumo, e "Salvar" grava o avião editado sem perder
   o que o arquivo tinha. No ambiente se edita a altitude-densidade, e a densidade do ar sai dela.
+- A Montagem em Zig ganha os botões do Python para acrescentar asa, EH, EV, motor, tubo e tanque e para remover a peça
+  escolhida. Ganha também "Trazer de .json": abre outro avião, mostra as peças dele, e a escolhida entra no avião
+  aberto.
 - Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
   referência e a trajetória 3D do voo.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).

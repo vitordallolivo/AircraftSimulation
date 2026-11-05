@@ -570,6 +570,187 @@ fn applyModifiers(memory: std.mem.Allocator, document: *std.json.Value, fields: 
     }
 }
 
+/// as peças que os botões "+" criam (`_add_wing`, `_add_tail`, `_add_motor`, `_add_boom`, `_add_tank`)
+pub const NewPart = enum { wing, htail, vtail, motor, boom, tank };
+
+/// a lista do arquivo onde mora cada tipo de peça que se acrescenta ou remove
+fn listKey(part: Part) ?[]const u8 {
+    return switch (part) {
+        .surface => "surfaces",
+        .prop => "propulsion",
+        .tank => "tanks",
+        .boom => "booms",
+        else => null,
+    };
+}
+
+/// a lista `key` do avião no arquivo (criada vazia se não há)
+fn listNode(memory: std.mem.Allocator, document: *std.json.Value, key: []const u8) !*std.json.Array {
+    const node = try aircraftNode(document);
+    const entry = try node.getOrPut(memory, key);
+    if (!entry.found_existing or entry.value_ptr.* != .array) entry.value_ptr.* = .{ .array = std.json.Array.init(memory) };
+    return &entry.value_ptr.array;
+}
+
+/// uma cópia funda de um valor JSON (a peça copiada não divide memória com a original)
+fn clone(memory: std.mem.Allocator, value: std.json.Value) !std.json.Value {
+    return switch (value) {
+        .string => |text| .{ .string = try memory.dupe(u8, text) },
+        .number_string => |text| .{ .number_string = try memory.dupe(u8, text) },
+        .array => |items| blk: {
+            var copy = std.json.Array.init(memory);
+            for (items.items) |item| try copy.append(try clone(memory, item));
+            break :blk .{ .array = copy };
+        },
+        .object => |object| blk: {
+            var copy: std.json.ObjectMap = .empty;
+            var entries = object.iterator();
+            while (entries.next()) |entry| try copy.put(memory, try memory.dupe(u8, entry.key_ptr.*), try clone(memory, entry.value_ptr.*));
+            break :blk .{ .object = copy };
+        },
+        else => value,
+    };
+}
+
+fn numberOf(object: std.json.ObjectMap, key: []const u8) f64 {
+    const found = object.get(key) orelse return 0;
+    return switch (found) {
+        .float => |number| number,
+        .integer => |number| @floatFromInt(number),
+        else => 0,
+    };
+}
+
+/// acrescenta uma peça nova com os valores de partida do Python e devolve a linha dela na lista
+pub fn add(memory: std.mem.Allocator, document: *std.json.Value, aircraft: *const Aircraft, new: NewPart) !Component {
+    const key: []const u8 = switch (new) {
+        .wing, .htail, .vtail => "surfaces",
+        .motor => "propulsion",
+        .boom => "booms",
+        .tank => "tanks",
+    };
+    const items = try listNode(memory, document, key);
+    const count = items.items.len;
+    const old_boom = aircraft.boom;
+    const tail_x = if (old_boom.enabled) old_boom.xEnd() + 0.2 else -0.9;
+    var value: std.json.Value = undefined;
+    switch (new) {
+        .wing => value = try literal(memory, "{{\"name\":\"asa {d}\",\"role\":\"wing\",\"x\":0.1,\"z\":-0.1,\"incidence\":2.0,\"sections\":[{{\"y\":0.0,\"chord\":0.3}},{{\"y\":1.0,\"chord\":0.3}}],\"controls\":[{{\"kind\":\"aileron\",\"span_start\":0.6,\"span_end\":0.95,\"chord_frac\":0.25}}]}}", .{count}),
+        .htail => value = try literal(memory, "{{\"name\":\"EH\",\"role\":\"htail\",\"x\":{d},\"sections\":[{{\"y\":0.0,\"chord\":0.2}},{{\"y\":0.4,\"chord\":0.2}}],\"incidence\":-1.0,\"airfoil\":{{\"name\":\"NACA 0012\"}},\"controls\":[{{\"kind\":\"elevator\",\"span_start\":0.0,\"span_end\":1.0,\"chord_frac\":0.35}}],\"eta\":0.9,\"downwash\":true}}", .{tail_x}),
+        .vtail => value = try literal(memory, "{{\"name\":\"EV\",\"role\":\"vtail\",\"x\":{d},\"sections\":[{{\"y\":0.0,\"chord\":0.22}},{{\"y\":0.3,\"chord\":0.22}}],\"symmetric\":false,\"vertical\":true,\"airfoil\":{{\"name\":\"NACA 0012\"}},\"controls\":[{{\"kind\":\"rudder\",\"span_start\":0.0,\"span_end\":1.0,\"chord_frac\":0.35}}],\"eta\":0.9}}", .{tail_x}),
+        .tank => value = try literal(memory, "{{\"name\":\"tanque {d}\",\"x\":0.05,\"y\":0.0,\"z\":0.0,\"side\":0.1,\"volume\":2.0,\"height\":0.08}}", .{count + 1}),
+        .motor => {
+            // a cópia do último motor (motor, hélice e bateria iguais), do outro lado e girando ao contrário
+            if (count > 0 and items.items[count - 1] == .object) {
+                value = try clone(memory, items.items[count - 1]);
+                const base = items.items[count - 1].object;
+                const side = numberOf(base, "y");
+                try value.object.put(memory, "y", .{ .float = if (side != 0) -side else 0.5 });
+                try value.object.put(memory, "sense", .{ .float = -(if (base.get("sense") != null) numberOf(base, "sense") else 1) });
+            } else value = try literal(memory, "{{\"x\":0.5,\"y\":0.0,\"z\":0.0,\"sense\":1.0}}", .{});
+            try value.object.put(memory, "name", .{ .string = try std.fmt.allocPrint(memory, "motor {d}", .{count + 1}) });
+        },
+        .boom => {
+            // a cópia do último tubo, espelhada (o par do tubo duplo) ou ao lado
+            if (count > 0 and items.items[count - 1] == .object) {
+                value = try clone(memory, items.items[count - 1]);
+                const base = items.items[count - 1].object;
+                const side = numberOf(base, "y");
+                const yaw = numberOf(base, "yaw");
+                const mirrored = side != 0 or yaw != 0;
+                try value.object.put(memory, "y", .{ .float = if (mirrored) -side else side + 0.3 });
+                try value.object.put(memory, "yaw", .{ .float = if (mirrored) -yaw else yaw });
+            } else value = try literal(memory, "{{\"enabled\":true,\"x_start\":-0.2,\"length\":0.8}}", .{});
+            try value.object.put(memory, "name", .{ .string = try std.fmt.allocPrint(memory, "tubo {d}", .{count + 1}) });
+        },
+    }
+    try items.append(value);
+    return .{ .part = switch (new) {
+        .wing, .htail, .vtail => .surface,
+        .motor => .prop,
+        .boom => .boom,
+        .tank => .tank,
+    }, .index = count, .label = "" };
+}
+
+/// um objeto JSON a partir do texto
+fn literal(memory: std.mem.Allocator, comptime format: []const u8, args: anytype) !std.json.Value {
+    return std.json.parseFromSliceLeaky(std.json.Value, memory, try std.fmt.allocPrint(memory, format, args), .{});
+}
+
+/// remove a peça (`_remove`): as das listas saem do arquivo; a fuselagem e a LAPES só desligam. Uma asa que sai
+/// do grupo deixa a última que sobra sozinha sem grupo; quem estava preso num tubo removido fica solto e os outros
+/// tubos são renumerados. Devolve falso se a peça não se remove (os dados que não são geometria)
+pub fn remove(memory: std.mem.Allocator, document: *std.json.Value, component: Component) !bool {
+    const node = try aircraftNode(document);
+    switch (component.part) {
+        .fuselage, .payload => {
+            const object = try partNode(memory, document, component);
+            try object.put(memory, "enabled", .{ .bool = false });
+            return true;
+        },
+        .surface, .prop, .tank, .boom => {},
+        else => return false,
+    }
+    if (component.part == .boom and node.get("booms") == null) { // o tubo único do formato antigo: desliga
+        const object = try partNode(memory, document, component);
+        try object.put(memory, "enabled", .{ .bool = false });
+        return true;
+    }
+    const items = try listNode(memory, document, listKey(component.part).?);
+    if (component.index >= items.items.len) return false;
+    const removed = items.orderedRemove(component.index);
+    const surfaces = try listNode(memory, document, "surfaces");
+    if (component.part == .surface and removed == .object) {
+        const group = if (removed.object.get("group")) |found| (if (found == .string) found.string else "") else "";
+        if (group.len > 0) {
+            var rest: ?*std.json.ObjectMap = null;
+            var count: usize = 0;
+            for (surfaces.items) |*surface| if (surface.* == .object) {
+                const other = surface.object.get("group") orelse continue;
+                if (other == .string and std.mem.eql(u8, other.string, group)) {
+                    rest = &surface.object;
+                    count += 1;
+                }
+            };
+            if (count == 1) try rest.?.put(memory, "group", .{ .string = "" });
+        }
+    }
+    if (component.part == .boom) {
+        for (surfaces.items) |*surface| if (surface.* == .object) {
+            const mount = surface.object.get("mount") orelse continue;
+            if (mount != .string or !std.mem.startsWith(u8, mount.string, "tubo:")) continue;
+            const index = std.fmt.parseInt(usize, mount.string[5..], 10) catch continue;
+            if (index == component.index) {
+                try surface.object.put(memory, "mount", .{ .string = "" });
+            } else if (index > component.index) {
+                try surface.object.put(memory, "mount", .{ .string = try std.fmt.allocPrint(memory, "tubo:{d}", .{index - 1}) });
+            }
+        };
+    }
+    return true;
+}
+
+/// traz a peça `component` de outro arquivo (`source`): as das listas entram no fim da lista (uma superfície chega
+/// solta e sem grupo, porque o tubo e as asas a que se prendia são do outro avião); as outras trocam a do avião
+/// aberto. Devolve a linha dela na lista
+pub fn importPart(memory: std.mem.Allocator, document: *std.json.Value, source: *std.json.Value, component: Component) !Component {
+    const original = try partNode(memory, source, component);
+    var copy = try clone(memory, .{ .object = original.* });
+    if (listKey(component.part)) |key| {
+        if (component.part == .surface) {
+            try copy.object.put(memory, "group", .{ .string = "" });
+            try copy.object.put(memory, "mount", .{ .string = "" });
+        }
+        const items = try listNode(memory, document, key);
+        try items.append(copy);
+        return .{ .part = component.part, .index = items.items.len - 1, .label = "" };
+    }
+    const node = try aircraftNode(document);
+    try node.put(memory, if (component.part == .boom) "boom" else @tagName(component.part), copy);
+    return .{ .part = component.part, .label = "" };
+}
+
 /// o texto do arquivo a gravar (indentado como o Python grava)
 pub fn serialize(memory: std.mem.Allocator, document: std.json.Value) ![]u8 {
     return std.json.Stringify.valueAlloc(memory, document, .{ .whitespace = .indent_2 });
@@ -635,4 +816,42 @@ test "a lista de componentes e o editor da asa, como no Python" {
     try std.testing.expectEqual(before.m, after.m);
     try std.testing.expectEqual(before.cg, after.cg);
     try std.testing.expectEqual(third.ac.environment.rho, fourth.ac.environment.rho);
+}
+
+test "acrescentar, remover e trazer peças de outro arquivo" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
+    defer loaded.deinit();
+    var document = try std.json.parseFromSliceLeaky(std.json.Value, memory, bytes, .{});
+    // um de cada: o arquivo relido tem as peças novas com os valores do Python
+    for (std.enums.values(NewPart)) |new| _ = try add(memory, &document, &loaded.ac, new);
+    var grown = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
+    defer grown.deinit();
+    try std.testing.expectEqual(loaded.ac.surfaces.len + 3, grown.ac.surfaces.len);
+    try std.testing.expectEqualStrings("asa 3", grown.ac.surfaces[3].name);
+    try std.testing.expectEqual(@as(f64, 1.0), grown.ac.surfaces[3].sections[1].y);
+    try std.testing.expectEqualStrings("rudder", grown.ac.surfaces[5].controls[0].kind);
+    try std.testing.expectEqual(loaded.ac.propulsion.len + 1, grown.ac.propulsion.len);
+    try std.testing.expectEqual(-loaded.ac.propulsion[0].sense, grown.ac.propulsion[1].sense);
+    try std.testing.expectEqual(loaded.ac.propulsion[0].motor.Kv, grown.ac.propulsion[1].motor.Kv);
+    try std.testing.expectEqual(@as(usize, 1), grown.ac.booms.len);
+    try std.testing.expectEqualStrings("tanque 2", grown.ac.tanks[1].name);
+    // remover a asa nova volta ao número de antes
+    try std.testing.expect(try remove(memory, &document, .{ .part = .surface, .index = 3, .label = "" }));
+    try std.testing.expect(!try remove(memory, &document, .{ .part = .environment, .label = "" }));
+    // trazer a EH de outro avião
+    const other_bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Asa_voadora.json", memory, .limited(1 << 22));
+    var other = try std.json.parseFromSliceLeaky(std.json.Value, memory, other_bytes, .{});
+    var other_loaded = try model.parse(std.testing.allocator, other_bytes, &diagnosis);
+    defer other_loaded.deinit();
+    const imported = try importPart(memory, &document, &other, .{ .part = .surface, .index = 0, .label = "" });
+    var final = try model.parse(std.testing.allocator, try serialize(memory, document), &diagnosis);
+    defer final.deinit();
+    try std.testing.expectEqual(loaded.ac.surfaces.len + 3, final.ac.surfaces.len);
+    try std.testing.expectEqualStrings(other_loaded.ac.surfaces[0].name, final.ac.surfaces[imported.index].name);
+    try std.testing.expectEqual(other_loaded.ac.surfaces[0].sections.len, final.ac.surfaces[imported.index].sections.len);
 }

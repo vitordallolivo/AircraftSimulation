@@ -93,14 +93,17 @@ pub const Assembly = struct {
     name: [:0]const u8,
     source: []const u8, // o texto do arquivo: como foi lido ou, depois de uma edição, o que "Salvar" grava
     path: []const u8,
-    document_arena: std.heap.ArenaAllocator, // a árvore do arquivo, que a edição muda (guarda o que o modelo não lê)
+    document_arena: *std.heap.ArenaAllocator, // a árvore do arquivo, que a edição muda (guarda o que o modelo não lê); fora
+    // da struct, porque as listas da árvore guardam o ponteiro do alocador e a `Assembly` muda de lugar
     document: std.json.Value,
 
     /// libera tudo
     pub fn deinit(assembly: *Assembly) void {
         assembly.mesh.deinit();
         assembly.loaded.deinit();
+        const gpa = assembly.document_arena.child_allocator;
         assembly.document_arena.deinit();
+        gpa.destroy(assembly.document_arena);
     }
 
     /// lê de novo o avião do texto `bytes` (a árvore editada) e refaz as peças; se o texto não vale, fica o avião
@@ -186,7 +189,9 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Di
     try fillAirfoilFiles(allocator, io, path, bytes, &loaded.ac);
     var mesh = try buildMesh(gpa, &loaded.ac, diagnosis);
     errdefer mesh.deinit();
-    var document_arena = std.heap.ArenaAllocator.init(gpa);
+    const document_arena = try gpa.create(std.heap.ArenaAllocator);
+    errdefer gpa.destroy(document_arena);
+    document_arena.* = std.heap.ArenaAllocator.init(gpa);
     errdefer document_arena.deinit();
     const document = try std.json.parseFromSliceLeaky(std.json.Value, document_arena.allocator(), bytes, .{});
     return .{ .loaded = loaded, .mesh = mesh, .name = try allocator.dupeZ(u8, loaded.ac.name), .source = try allocator.dupe(u8, bytes), .path = try allocator.dupe(u8, path), .document_arena = document_arena, .document = document };

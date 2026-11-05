@@ -79,6 +79,9 @@ pub const Screen = struct {
     assembly_panel: ?AssemblyPanel = null, // o resumo ao lado do 3D (`config_tab.panel`), refeito ao abrir
     assembly_scroll: ui_kit.scroll.ScrollArea = .{},
     assembly_editor: ?AssemblyEditor = null, // a lista de componentes e o editor da peça escolhida
+    pending_assembly: [256]u8 = undefined, // acao=montagem:...: botões ("+ EH"), "peca=N" ou "trazer=arquivo#N", até o avião abrir
+    pending_assembly_len: usize = 0,
+    importing_file: bool = false, // a janela de arquivos aberta é a de trazer uma peça de outro avião
     loader: ui_kit.jobs.Job = .{}, // lê o .json fora do laço da tela
     loading: Loading = .{},
     message: [240:0]u8 = [_:0]u8{0} ** 240,
@@ -90,7 +93,7 @@ pub const Screen = struct {
 
     /// a tela ainda vai mudar sozinha (aba ou "rodar" pendente, uma conta andando): o print espera
     pub fn busy(screen: *const Screen) bool {
-        if (screen.pending_tab != null or screen.pending_run) return true;
+        if (screen.pending_tab != null or screen.pending_run or screen.pending_assembly_len > 0) return true;
         const page = screen.shown orelse return false;
         return page.settling();
     }
@@ -119,6 +122,14 @@ pub const Screen = struct {
             screen.files.showSave("Salvar avião (.json)", std.fs.path.dirname(opened.path) orelse ".", &.{".json"}, std.fs.path.basename(opened.path));
         } else if (std.mem.eql(u8, name, "rodar")) {
             screen.pending_run = true;
+        } else if (std.mem.startsWith(u8, name, "montagem:")) { // um botão da Montagem pelo nome, para os prints
+            const length = @min(name.len - 9, screen.pending_assembly.len - screen.pending_assembly_len);
+            @memcpy(screen.pending_assembly[screen.pending_assembly_len..][0..length], name[9..][0..length]);
+            screen.pending_assembly_len += length;
+            if (screen.pending_assembly_len < screen.pending_assembly.len) {
+                screen.pending_assembly[screen.pending_assembly_len] = ';';
+                screen.pending_assembly_len += 1;
+            }
         } else if (std.mem.eql(u8, name, "condicoes")) {
             screen.requirements_open = true;
         }
@@ -131,9 +142,20 @@ pub const Screen = struct {
         const editor = &(screen.assembly_editor orelse return);
         editor.readBack();
         const component = editor.list[editor.selected];
+        config_tab.apply(opened.document_arena.allocator(), &opened.document, component, editor.specs) catch |err| {
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "a edição não vale: {s}", .{@errorName(err)}) catch {};
+            return;
+        };
+        screen.commitDocument(null);
+    }
+
+    /// lê de novo o avião da árvore do arquivo (depois de editar, acrescentar, remover ou trazer uma peça) e refaz o
+    /// 3D, o resumo e a lista; `select` é a peça a deixar escolhida (null: a mesma linha)
+    fn commitDocument(screen: *Screen, select: ?config_tab.Component) void {
+        const opened = &(screen.assembly orelse return);
+        const editor = &(screen.assembly_editor orelse return);
         var diagnosis: assembly_mod.Diagnosis = .{};
         const failed = blk: {
-            config_tab.apply(opened.document_arena.allocator(), &opened.document, component, editor.specs) catch |err| break :blk @errorName(err);
             const text = config_tab.serialize(std.heap.page_allocator, opened.document) catch |err| break :blk @errorName(err);
             defer std.heap.page_allocator.free(text);
             opened.reload(std.heap.page_allocator, io(), text, &diagnosis) catch |err| break :blk if (diagnosis.len > 0) diagnosis.text() else @errorName(err);
@@ -145,8 +167,86 @@ pub const Screen = struct {
         }
         if (screen.assembly_panel) |*old| old.deinit();
         screen.assembly_panel = AssemblyPanel.build(&opened.loaded.ac) catch null;
+        if (select) |wanted| {
+            const fresh = config_tab.components(editor.arena.allocator(), &opened.loaded.ac) catch &.{};
+            for (fresh, 0..) |component, i| if (component.part == wanted.part and component.index == wanted.index) {
+                editor.selected = i;
+            };
+            editor.form.area = .{};
+        }
         editor.rebuild(&opened.loaded.ac) catch {};
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · editado (Salvar grava) · {d} peças", .{ std.fs.path.basename(opened.path), opened.mesh.piece_count }) catch {};
+    }
+
+    /// um botão embaixo da lista: acrescenta uma peça, remove a escolhida ou abre outro arquivo para trazer uma peça dele
+    fn partButton(screen: *Screen, pressed: usize) void {
+        const opened = &(screen.assembly orelse return);
+        const editor = &(screen.assembly_editor orelse return);
+        const memory = opened.document_arena.allocator();
+        if (pressed < new_parts.len) {
+            const added = config_tab.add(memory, &opened.document, &opened.loaded.ac, new_parts[pressed]) catch |err| {
+                _ = std.fmt.bufPrintZ(&screen.assembly_note, "não acrescentou: {s}", .{@errorName(err)}) catch {};
+                return;
+            };
+            return screen.commitDocument(added);
+        }
+        if (pressed == new_parts.len) { // Remover
+            const component = editor.list[editor.selected];
+            const removed = config_tab.remove(memory, &opened.document, component) catch false;
+            if (!removed) {
+                _ = std.fmt.bufPrintZ(&screen.assembly_note, "'{s}' não se remove (é um dado do avião, não uma peça)", .{component.label}) catch {};
+                return;
+            }
+            if (editor.selected > 0 and editor.selected + 1 >= editor.list.len) editor.selected -= 1;
+            return screen.commitDocument(null);
+        }
+        screen.importing_file = true; // Trazer de outro .json
+        screen.files.show("Trazer uma peça de outro avião (.json)", std.fs.path.dirname(opened.path) orelse ".", &.{".json"});
+    }
+
+    /// os comandos da Montagem pedidos na linha de comando, agora que o avião abriu
+    fn runPendingAssembly(screen: *Screen) void {
+        var pending: [256]u8 = undefined;
+        const length = screen.pending_assembly_len;
+        @memcpy(pending[0..length], screen.pending_assembly[0..length]);
+        screen.pending_assembly_len = 0;
+        var steps = std.mem.tokenizeScalar(u8, pending[0..length], ';');
+        while (steps.next()) |step| {
+            if (std.mem.startsWith(u8, step, "peca=")) {
+                const index = std.fmt.parseInt(usize, step[5..], 10) catch continue;
+                const editor = &screen.assembly_editor.?;
+                editor.selected = index;
+                editor.rebuild(&screen.assembly.?.loaded.ac) catch {};
+            } else if (std.mem.startsWith(u8, step, "trazer=")) {
+                const hash = std.mem.lastIndexOfScalar(u8, step, '#') orelse continue;
+                screen.startImport(step[7..hash]);
+                const index = std.fmt.parseInt(usize, step[hash + 1 ..], 10) catch continue;
+                screen.importPart(index);
+            } else for (part_buttons, 0..) |caption, i| if (std.mem.eql(u8, caption, step)) screen.partButton(i);
+        }
+    }
+
+    /// abriu o arquivo de onde trazer a peça: mostra as peças dele no lugar da lista
+    fn startImport(screen: *Screen, path: []const u8) void {
+        const editor = &(screen.assembly_editor orelse return);
+        editor.stopImport();
+        editor.importing = ImportSource.read(path) catch |err| {
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "não abriu '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) }) catch {};
+            return;
+        };
+    }
+
+    /// traz a peça `index` do arquivo aberto para importar
+    fn importPart(screen: *Screen, index: usize) void {
+        const opened = &(screen.assembly orelse return);
+        const editor = &(screen.assembly_editor orelse return);
+        const source = &(editor.importing orelse return);
+        const imported = config_tab.importPart(opened.document_arena.allocator(), &opened.document, &source.document, source.list[index]) catch |err| {
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "não trouxe a peça: {s}", .{@errorName(err)}) catch {};
+            return;
+        };
+        editor.stopImport();
+        screen.commitDocument(imported);
     }
 
     /// grava o avião aberto em `path`; enquanto não há edição, é o texto do arquivo como foi lido
@@ -415,7 +515,10 @@ pub const Screen = struct {
             if (screen.requirements_open) screen.drawRequirements(ui, whole);
             const saving = screen.files.saving;
             if (screen.files.draw(ui, whole)) |path| {
-                if (saving) screen.save(path) else {
+                if (saving) screen.save(path) else if (screen.importing_file) {
+                    screen.importing_file = false;
+                    screen.startImport(path);
+                } else {
                     screen.openAircraft(path);
                     screen.showAssembly();
                 }
@@ -453,14 +556,23 @@ pub const Screen = struct {
         const side_width: f32 = if (screen.assembly_panel != null) @min(460, rect.width * 0.3) else 0;
         const editor_width: f32 = if (screen.assembly_editor != null and screen.assembly != null) @min(400, rect.width * 0.26) else 0;
         var list_height: f32 = 0;
+        if (screen.pending_assembly_len > 0 and screen.assembly != null and screen.assembly_editor != null) screen.runPendingAssembly();
         if (screen.assembly_editor) |*editor| if (screen.assembly) |*opened| if (editor.want_rebuild) {
             editor.want_rebuild = false;
             editor.rebuild(&opened.loaded.ac) catch {};
         };
         if (screen.assembly_editor) |*editor| if (screen.assembly != null) {
-            list_height = @min(300, rect.height * 0.35);
-            editor.drawList(ui, .{ .x = rect.x + 12, .y = rect.y + 12, .width = side_width - 6, .height = list_height });
-            list_height += 10;
+            list_height = @min(300, rect.height * 0.32);
+            const list_rect: rl.Rectangle = .{ .x = rect.x + 12, .y = rect.y + 12, .width = side_width - 6, .height = list_height };
+            var buttons_height: f32 = 0;
+            if (editor.importing) |*source| {
+                if (source.drawList(ui, list_rect)) |picked| screen.importPart(picked);
+                if (ui_kit.menus.buttonGrid(ui, list_rect.x, list_rect.y + list_height + 8, list_rect.width, &.{"Cancelar"}, 1, &buttons_height) != null) editor.stopImport();
+            } else {
+                editor.drawList(ui, list_rect);
+                if (ui_kit.menus.buttonGrid(ui, list_rect.x, list_rect.y + list_height + 8, list_rect.width, &part_buttons, 4, &buttons_height)) |pressed| screen.partButton(pressed);
+            }
+            list_height += 8 + buttons_height + 6;
         };
         if (screen.assembly_panel) |*shown| shown.draw(ui, &screen.assembly_scroll, .{ .x = rect.x + 12, .y = rect.y + 12 + list_height, .width = side_width - 6, .height = rect.height - 24 - list_height });
         if (editor_width > 0) {
@@ -508,6 +620,13 @@ const AssemblyEditor = struct {
     list_scroll: ui_kit.scroll.ScrollArea = .{},
     title: [:0]const u8 = "",
     want_rebuild: bool = false, // escolheu outra peça: refazer o formulário no quadro
+    importing: ?ImportSource = null, // o outro avião de onde trazer uma peça (a lista mostra as peças dele)
+
+    /// fecha o outro avião sem trazer nada
+    fn stopImport(editor: *AssemblyEditor) void {
+        if (editor.importing) |*source| source.deinit();
+        editor.importing = null;
+    }
 
     /// refaz a lista e os campos da peça escolhida com os valores de `aircraft`
     fn rebuild(editor: *AssemblyEditor, aircraft: *const aircraft_model.aircraft.Aircraft) !void {
@@ -611,6 +730,70 @@ const AssemblyEditor = struct {
             editor.form.fields[first + 1].enabled = !editor.form.fields[first].checked;
         };
         return changed;
+    }
+};
+
+/// os botões embaixo da lista de componentes, na ordem do Python, mais o de trazer uma peça de outro arquivo
+const new_parts = [_]config_tab.NewPart{ .wing, .htail, .vtail, .motor, .boom, .tank };
+const part_buttons = [_][:0]const u8{ "+ Asa", "+ EH", "+ EV", "+ Motor", "+ Tubo", "+ Tanque", "Remover", "Trazer de .json" };
+
+/// o outro avião aberto para trazer uma peça dele: a árvore do arquivo e a lista das peças
+const ImportSource = struct {
+    arena: *std.heap.ArenaAllocator, // fora da struct: as listas da árvore guardam o ponteiro do alocador
+    document: std.json.Value,
+    list: []const config_tab.Component,
+    labels: []const [:0]const u8,
+    title: [:0]const u8,
+    scroll: ui_kit.scroll.ScrollArea = .{},
+
+    fn read(path: []const u8) !ImportSource {
+        const arena = try std.heap.page_allocator.create(std.heap.ArenaAllocator);
+        errdefer std.heap.page_allocator.destroy(arena);
+        arena.* = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        errdefer arena.deinit();
+        const memory = arena.allocator();
+        const bytes = try std.Io.Dir.cwd().readFileAlloc(io(), path, memory, .limited(assembly_mod.max_file_bytes));
+        var diagnosis: assembly_mod.Diagnosis = .{};
+        var loaded = try aircraft_model.aircraft.parse(std.heap.page_allocator, bytes, &diagnosis);
+        defer loaded.deinit();
+        const list = try config_tab.components(memory, &loaded.ac);
+        const labels = try memory.alloc([:0]const u8, list.len);
+        for (list, labels) |*component, *label| {
+            component.label = try memory.dupe(u8, component.label);
+            label.* = try memory.dupeZ(u8, component.label);
+        }
+        return .{
+            .arena = arena,
+            .document = try std.json.parseFromSliceLeaky(std.json.Value, memory, bytes, .{}),
+            .list = list,
+            .labels = labels,
+            .title = try std.fmt.allocPrintSentinel(memory, "Trazer de {s}", .{loaded.ac.name}, 0),
+        };
+    }
+
+    fn deinit(source: *ImportSource) void {
+        source.arena.deinit();
+        std.heap.page_allocator.destroy(source.arena);
+    }
+
+    /// as peças do outro avião; devolve a clicada
+    fn drawList(source: *ImportSource, ui: *widgets.Ui, rect: rl.Rectangle) ?usize {
+        const row_height: f32 = 22;
+        theme.text(ui.fonts.bold, source.title, rect.x + 4, rect.y, 16, theme.colors.accent);
+        const box: rl.Rectangle = .{ .x = rect.x, .y = rect.y + 24, .width = rect.width, .height = rect.height - 24 };
+        rl.drawRectangleRec(box, theme.colors.field);
+        rl.drawRectangleLinesEx(box, 1, theme.colors.accent);
+        var y = source.scroll.begin(ui, box);
+        var picked: ?usize = null;
+        for (source.labels, 0..) |label, i| {
+            const row: rl.Rectangle = .{ .x = box.x + 1, .y = y, .width = box.width - 14, .height = row_height };
+            if (ui.hovering(row)) rl.drawRectangleRec(row, theme.colors.hover);
+            theme.text(ui.fonts.regular, label, row.x + 6, row.y + 3, 14, theme.colors.ink);
+            if (ui.clickedIn(row)) picked = i;
+            y += row_height;
+        }
+        source.scroll.end(ui, box, y + 4);
+        return picked;
     }
 };
 

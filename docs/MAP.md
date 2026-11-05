@@ -703,8 +703,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/**
 
 - `aerosim/gui/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
-  tipos `Triangle:14`, `Mesh:22`, `Assembly:90`, `Balance:129`
-  fn `buildMesh:55`, `balance:139`, `loadAircraft:164`, `load:177`, `fillAirfoilFiles:197`, `parseDat:232`, `findExample:264`
+  tipos `Triangle:14`, `Mesh:22`, `Assembly:90`, `Balance:132`
+  fn `buildMesh:55`, `balance:142`, `loadAircraft:167`, `load:180`, `fillAirfoilFiles:202`, `parseDat:237`, `findExample:269`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
   tipos `Kind:35`, `Page:258`
@@ -717,8 +717,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/tabs/**
 
 - `aerosim/gui/tabs/config_tab.zig` — O painel da Montagem, o par de `info_html` (`config_tab.py`): tudo o que dá para saber da configuração sem
-  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:388`, `Spec:391`
-  fn `panel:49`, `components:345`, `specs:477`, `apply:536`, `serialize:574`
+  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:388`, `Spec:391`, `NewPart:574`
+  fn `panel:49`, `components:345`, `specs:477`, `apply:536`, `add:625`, `remove:684`, `importPart:737`, `serialize:755`
 
 **aerosim/gui/ui/**
 
