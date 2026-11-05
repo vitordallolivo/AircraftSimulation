@@ -13,7 +13,8 @@
   :root {
     --azul: #0000aa; --ciano: #00aaaa; --fundo: #f4f4f7; --cartao: #ffffff; --texto: #1d1d26; --apagado: #6a6a7a;
     --linha: #d9d9e3; --mono: ui-monospace, "DejaVu Sans Mono", "Cascadia Mono", Consolas, monospace;
-    --feito: #2e7d32; --pronto: #1565c0; --andamento: #ef6c00; --revisar: #6a1b9a; --bloqueado: #9e9e9e;
+    --feito: #2e7d32; --pronto: #1565c0; --andamento: #ef6c00; --revisar: #6a1b9a; --bloqueado: #9e9e9e; --naoiniciado: #1565c0;
+    --alta: #c62828; --media: #ef6c00; --baixa: #757575;
     --afazer: #00838f; --decidir: #ad1457; --fora: #bdbdbd; --suspeita: #c62828;
   }
   * { box-sizing: border-box; }
@@ -61,6 +62,8 @@
   .form .botao { all: unset; cursor: pointer; padding: 6px 14px; border-radius: 6px; background: var(--azul); color: #fff; font-size: 14px; }
   .form .botao.leve { background: #e9e9f0; color: var(--texto); }
   .form .ajuda { font-size: 13px; color: var(--apagado); }
+  .bloco { cursor: help; white-space: nowrap; }
+  .interroga { color: var(--azul); cursor: pointer; font-size: 11px; }
   .onda { font: 13px var(--mono); color: var(--azul); margin: 16px 0 6px; }
   .tag { font: 11px var(--mono); padding: 0 6px; border-radius: 4px; background: #eef; color: var(--azul); }
   .tag.suspeita { background: #fde8e8; color: var(--suspeita); }
@@ -102,7 +105,7 @@
 <header>
   <h1>AircraftSimulation — tracking</h1>
   <div class="sub">O quadro de tarefas do <code style="background:none;color:#fff">docs/TRACKING.md</code>. <a href="index.html">voltar ao site</a>
-    <button class="chip" id="nova" style="margin-left:8px">+ Nova tarefa</button></div>
+    <button class="chip" id="nova" style="margin-left:8px;color:var(--azul);font-weight:600">+ Nova tarefa</button></div>
   <nav id="abas"></nav>
 </header>
 <div id="aviso" class="sub" style="padding:0 16px;color:var(--andamento)"></div>
@@ -113,21 +116,25 @@
 const DADOS = /*DADOS*/null;
 
 // estados na ordem do fluxo, com a cor de cada um
-const ESTADOS = [
-  ['Em andamento', 'andamento'], ['Fazendo', 'andamento'], ['A revisar', 'revisar'], ['Pronto', 'pronto'],
-  ['A fazer', 'afazer'], ['A decidir', 'decidir'], ['Bloqueado', 'bloqueado'], ['Feito', 'feito'], ['Fora do foco', 'fora'],
-];
+const ESTADOS = [['Não iniciado', 'naoiniciado'], ['Em andamento', 'andamento'], ['Terminado', 'feito']];
 const COR = Object.fromEntries(ESTADOS.map(([nome, cor]) => [nome, `var(--${cor})`]));
-const COLUNAS = ['Em andamento', 'A revisar', 'Pronto', 'A fazer', 'A decidir', 'Bloqueado', 'Feito', 'Fora do foco'];
-const coluna = estado => estado === 'Fazendo' ? 'Em andamento' : estado;
+const COLUNAS = ['Não iniciado', 'Em andamento', 'Terminado'];
+const coluna = estado => COLUNAS.includes(estado) ? estado : 'Não iniciado';
+// prioridade: alta, média, baixa (— sem prioridade); ordena a coluna e a sequência dos próximos
+const PRIORIDADES = ['alta', 'média', 'baixa'];
+const peso = it => { const i = PRIORIDADES.indexOf((it.prioridade || '').toLowerCase()); return i < 0 ? 3 : i; };
+const prioridadeHtml = it => peso(it) < 3 ? `<span class="tag" style="background:none;border:1px solid var(--${['alta', 'media', 'baixa'][peso(it)]});color:var(--${['alta', 'media', 'baixa'][peso(it)]})">${esc(it.prioridade)}</span>` : '';
+// os blocos de trabalho (tabela "Blocos de trabalho" do TRACKING.md): o (?) ao lado do bloco explica
+const BLOCOS = DADOS.blocos || {};
+const blocoHtml = b => BLOCOS[b] ? `<span class="bloco" title="${esc(b + ': ' + BLOCOS[b].nome + ' (' + BLOCOS[b].tarefas + ')')}" data-bloco="${esc(b)}">${esc(b)} <span class="interroga">(?)</span></span>` : esc(b);
 
 // todos os itens, com o segmento, quem depende dele, os commits e se é suspeita de erro (refeito quando chega uma
 // mudança das issues, ver `aplicaIssues`)
 const ITENS = [];
 const POR_ID = {};
 const SUSPEITA = /suspeit|\bbug\b|quebrad|errad|não bate|corrigir/i;
-const aberto = it => !['Feito', 'Fora do foco'].includes(it.estado);
-// commits citados na observação do estado ("Feito (commit abc1234)") ou no texto: viram links para o GitHub
+const aberto = it => it.estado !== 'Terminado';
+// commits citados na observação do estado ("Terminado (commit abc1234)") ou no texto: viram links para o GitHub
 const GITHUB = 'https://github.com/vitordallolivo/AircraftSimulation';
 const REPO = GITHUB + '/commit/';
 const HASH = /\b[0-9a-f]{7,40}\b/g;
@@ -195,10 +202,10 @@ function titulo(it) {
 }
 function cartao(it) {
   const deps = it.depende.length ? `<div class="deps">depende de ${it.depende.map(depHtml).join('')}</div>` : '';
-  const feito = it.estado === 'Feito';
+  const feito = it.estado === 'Terminado';
   const commits = it.commits.length ? `<div class="deps">${feito ? 'resolvido em ' : 'commits '}${commitsHtml(it)}</div>` : '';
   return `<div class="cartao ${feito ? 'feito' : ''}" data-item="${it.id}" style="--cor:${COR[it.estado]}">
-    <div class="topo"><span class="id">${it.id}</span><span class="tag">${esc(it.tipo)}</span><span>${it.bloco}</span><span>${esc(it.segmento)}</span>${it.suspeita && aberto(it) ? '<span class="tag suspeita">suspeita</span>' : ''}</div>
+    <div class="topo"><span class="id">${it.id}</span><span class="tag">${esc(it.tipo)}</span>${prioridadeHtml(it)}<span>${blocoHtml(it.bloco)}</span><span>${esc(it.segmento)}</span>${it.suspeita && aberto(it) ? '<span class="tag suspeita">suspeita</span>' : ''}</div>
     <div class="titulo">${inline(titulo(it))}</div>${deps}${commits}</div>`;
 }
 function abrir(id) {
@@ -208,13 +215,13 @@ function abrir(id) {
   const antes = new Set(); const visita = x => (POR_ID[x]?.depende || []).forEach(d => { if (!antes.has(d)) { antes.add(d); visita(d); } }); visita(id);
   caixa.innerHTML = `<button class="fechar" aria-label="fechar">×</button>
     <h2>${it.id} ${estadoHtml(it)}</h2>
-    <div class="topo" style="font-size:13px;color:var(--apagado)">${esc(it.segmento)} · ${esc(it.tipo)} · bloco ${it.bloco}${it.obs ? ' · ' + inline(it.obs) : ''}</div>
+    <div class="topo" style="font-size:13px;color:var(--apagado)">${esc(it.segmento)} · ${esc(it.tipo)} · bloco ${blocoHtml(it.bloco)} ${prioridadeHtml(it)}${it.obs ? ' · ' + inline(it.obs) : ''}</div>
     <div class="grupo"><p>${inline(it.tarefa)}</p></div>
     ${it.commits.length ? `<div class="grupo"><h3>Commits</h3>${commitsHtml(it)}</div>` : ''}
     <div class="grupo"><h3>Depende de</h3>${it.depende.length ? it.depende.map(depHtml).join('') : '<span class="vazio">nada</span>'}</div>
     ${antes.size > it.depende.length ? `<div class="grupo"><h3>Cadeia inteira antes dele</h3>${[...antes].map(depHtml).join('')}</div>` : ''}
     <div class="grupo"><h3>Libera</h3>${it.bloqueia.length ? it.bloqueia.map(depHtml).join('') : '<span class="vazio">nada depende dele</span>'}</div>
-    ${it.estado !== 'Feito' ? `<div class="grupo form"><h3>Confirmar feito</h3>
+    ${it.estado !== 'Terminado' ? `<div class="grupo form"><h3>Confirmar terminado</h3>
       <label for="f-desc">O que foi feito (entra no fim do texto da tarefa)</label><textarea id="f-desc"></textarea>
       <label for="f-commit">Commit</label><input id="f-commit" placeholder="abc1234">
       <div class="botoes"><button class="botao" id="f-enviar">Confirmar</button></div>
@@ -252,13 +259,13 @@ function aplicaIssues(issues) {
     if (c.acao === 'feito') {
       for (const seg of DADOS.segmentos) for (const it of seg.itens) if (it.id === c.id) {
         if (c.texto) it.tarefa += ` Feito: ${c.texto}`;
-        it.estado = 'Feito'; it.obs = c.commit ? `commit ${c.commit}` : '';
+        it.estado = 'Terminado'; it.obs = c.commit ? `commit ${c.commit}` : '';
         mudou++;
       }
     } else if (c.acao === 'nova') {
       const seg = DADOS.segmentos.find(s => s.nome === c.segmento); if (!seg) continue;
       const id = proximoId(c.segmento);
-      seg.itens.push({ id, tarefa: c.texto || '(sem texto)', tipo: c.tipo || '[ext]', bloco: c.bloco || '—', estado: c.estado || 'A fazer', obs: '',
+      seg.itens.push({ id, tarefa: c.texto || '(sem texto)', tipo: c.tipo || '[ext]', bloco: c.bloco || '—', prioridade: c.prioridade || '—', estado: c.estado || 'Não iniciado', obs: '',
         depende: (c.depende || '').split(/[,;\s]+/).filter(d => /^[A-Z]+\d+$/.test(d)) });
       monta(); mudou++;
     }
@@ -274,6 +281,11 @@ function proximoId(segmento) {
   const maior = Math.max(0, ...ITENS.filter(it => it.id.startsWith(prefixo)).map(it => +it.id.slice(1)));
   return prefixo + String(maior + 1).padStart(2, '0');
 }
+// os blocos em texto: o que cada um junta e as tarefas típicas
+function listaBlocos() {
+  return Object.entries(BLOCOS).map(([b, info]) => `<p><b>${esc(b)}</b> — ${inline(info.nome)}. <span style="color:var(--apagado)">${inline(info.tarefas)}</span></p>`).join('')
+    + '<p>Os blocos só ordenam a lista (do B1, a fundação, ao B10, o aeroopt); não são versões.</p>';
+}
 function novaTarefa() {
   const caixa = document.getElementById('caixa'); caixa.style.setProperty('--cor', 'var(--azul)');
   const opcoes = lista => lista.map(x => `<option>${esc(x)}</option>`).join('');
@@ -285,19 +297,23 @@ function novaTarefa() {
       <label for="n-tarefa">Tarefa</label><textarea id="n-tarefa"></textarea>
       <label for="n-tipo">Tipo</label><select id="n-tipo">${opcoes(tipos)}</select>
       <label for="n-dep">Depende de (ids separados por vírgula)</label><input id="n-dep" placeholder="G26, T13">
-      <label for="n-bloco">Bloco</label><select id="n-bloco">${opcoes(blocos)}</select>
-      <label for="n-estado">Estado</label><select id="n-estado">${opcoes(['A fazer', 'Pronto', 'Em andamento', 'Bloqueado', 'A decidir'])}</select>
+      <label for="n-prio">Prioridade</label><select id="n-prio">${opcoes(PRIORIDADES)}</select>
+      <label for="n-bloco">Bloco <span class="interroga" id="n-bloco-ajuda">(?)</span></label>
+      <select id="n-bloco">${blocos.map(b => `<option value="${esc(b)}">${esc(b)}${BLOCOS[b] ? ' — ' + esc(BLOCOS[b].nome) : ''}</option>`).join('')}</select>
+      <div id="n-blocos" class="ajuda" hidden>${listaBlocos()}</div>
+      <label for="n-estado">Estado</label><select id="n-estado">${opcoes(['Não iniciado', 'Em andamento'])}</select>
       <div class="botoes"><button class="botao" id="n-enviar">Criar</button></div>
       <p class="ajuda">Abre no GitHub uma issue já preenchida: aperte "Create" e a tarefa entra no fim da tabela do segmento, com o
       próximo número livre, no TRACKING.md da 0.2_dev.</p></div>`;
   document.getElementById('detalhe').classList.add('aberto');
+  document.getElementById('n-bloco-ajuda').addEventListener('click', () => { const l = document.getElementById('n-blocos'); l.hidden = !l.hidden; });
   document.getElementById('n-enviar').addEventListener('click', () => {
     const segmento = document.getElementById('n-seg').value;
     const depende = document.getElementById('n-dep').value.split(/[,;\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
     const texto = document.getElementById('n-tarefa').value;
     abreIssue(`nova em ${segmento}: ${limpa(texto).slice(0, 60)}`, {
       acao: 'nova', segmento, tipo: document.getElementById('n-tipo').value, depende: depende.join(', '),
-      bloco: document.getElementById('n-bloco').value, estado: document.getElementById('n-estado').value,
+      bloco: document.getElementById('n-bloco').value, prioridade: document.getElementById('n-prio').value, estado: document.getElementById('n-estado').value,
     }, texto);
   });
 }
@@ -308,6 +324,8 @@ document.getElementById('detalhe').addEventListener('click', e => {
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('detalhe').classList.remove('aberto'); });
 document.addEventListener('click', e => {
   if (e.target.closest('a.commit')) return;
+  const bloco = e.target.closest('[data-bloco]');
+  if (bloco && e.target.classList.contains('interroga')) { e.preventDefault(); e.stopPropagation(); alert(bloco.title); return; }
   const alvo = e.target.closest('[data-item]'); if (!alvo) return;
   e.preventDefault(); abrir(alvo.dataset.item);
 });
@@ -335,13 +353,13 @@ function abaQuadro() {
   const conta = n => lista.filter(it => coluna(it.estado) === n).length;
   const resumo = COLUNAS.map(n => `<div style="border-top:3px solid ${COR[n]}"><b>${conta(n)}</b><span>${n}</span></div>`).join('');
   const barra = COLUNAS.map(n => `<div title="${n}: ${conta(n)}" style="background:${COR[n]};flex:${conta(n)}"></div>`).join('');
-  const colunas = COLUNAS.filter(n => n !== 'Feito' && n !== 'Fora do foco' || filtro.feitos).map(n => {
-    const its = lista.filter(it => coluna(it.estado) === n);
+  const colunas = COLUNAS.filter(n => n !== 'Terminado' || filtro.feitos).map(n => {
+    const its = lista.filter(it => coluna(it.estado) === n).sort((a, b) => peso(a) - peso(b));
     return `<section class="coluna"><h2><span style="color:${COR[n]}">■</span> ${n}<span>${its.length}</span></h2>
       ${its.map(cartao).join('') || '<div class="vazio">nenhum</div>'}</section>`;
   }).join('');
   return barraFiltro() + `<div class="resumo">${resumo}</div><div class="barra-total">${barra}</div>
-    <div class="barra"><button class="chip ${filtro.feitos ? 'ativo' : ''}" id="feitos">mostrar Feito e Fora do foco</button></div>
+    <div class="barra"><button class="chip ${filtro.feitos ? 'ativo' : ''}" id="feitos">mostrar Terminado</button></div>
     <div class="colunas">${colunas}</div>`;
 }
 function abaSuspeitas() {
@@ -394,15 +412,15 @@ function ligarGrafo() {
   });
 }
 function abaSegmentos() {
-  return DADOS.segmentos.map(s => {
+  return `<div class="texto" style="margin-bottom:12px"><h2>Blocos de trabalho</h2>${listaBlocos()}</div>` + DADOS.segmentos.map(s => {
     const abertos = s.itens.filter(aberto).length;
     return `<div class="texto" style="margin-bottom:12px"><h2>${esc(s.nome)} <span style="color:var(--apagado);font-size:13px">${abertos} abertas de ${s.itens.length}</span></h2>
       <p>${inline(s.descricao)}</p></div>`;
   }).join('');
 }
 // a sequência dos próximos: as tarefas abertas em ondas; cada onda só tem tarefas cujas dependências estão feitas ou
-// numa onda anterior. Dentro da onda, o que já está em andamento vem primeiro, depois o que está a revisar, pronto...
-const ORDEM = ['Em andamento', 'Fazendo', 'A revisar', 'Pronto', 'A fazer', 'A decidir', 'Bloqueado'];
+// numa onda anterior. Dentro da onda, o que já está em andamento vem primeiro, depois por prioridade.
+const ORDEM = ['Em andamento', 'Não iniciado'];
 function abaProximos() {
   const abertos = filtrar(ITENS.filter(aberto));
   const resto = new Set(abertos.map(it => it.id));
@@ -410,14 +428,14 @@ function abaProximos() {
   while (resto.size) {
     const onda = [...resto].map(id => POR_ID[id]).filter(it => it.depende.every(d => !resto.has(d)));
     if (!onda.length) { ondas.push([...resto].map(id => POR_ID[id])); break; } // ciclo: o resto junto
-    onda.sort((a, b) => ORDEM.indexOf(a.estado) - ORDEM.indexOf(b.estado) || a.id.localeCompare(b.id, 'pt', { numeric: true }));
+    onda.sort((a, b) => ORDEM.indexOf(a.estado) - ORDEM.indexOf(b.estado) || peso(a) - peso(b) || a.id.localeCompare(b.id, 'pt', { numeric: true }));
     onda.forEach(it => resto.delete(it.id));
     ondas.push(onda);
   }
   let passo = 0;
   const html = ondas.map((onda, i) => `<div class="onda">${i === 0 ? 'Agora (nada a esperar)' : `Depois da onda ${i}`}</div>
     <ol class="sequencia">${onda.map(it => `<li><span class="passo">${++passo}</span>${cartao(it)}</li>`).join('')}</ol>`).join('');
-  const feitos = ITENS.filter(it => it.estado === 'Feito' && it.commits.length);
+  const feitos = ITENS.filter(it => it.estado === 'Terminado' && it.commits.length);
   return barraFiltro() + `<p>As tarefas abertas na ordem em que dá para fazê-las: a primeira onda não espera nada; cada onda seguinte espera alguma da anterior.</p>${html}
     ${feitos.length ? `<div class="onda">Resolvidas com commit</div><div class="colunas">${filtrar(feitos).map(cartao).join('')}</div>` : ''}`;
 }
@@ -428,7 +446,7 @@ const ABAS = [
   ['Suspeitas', abaSuspeitas],
   ['Dependências', abaDependencias],
   ['Áreas', () => `<div class="texto">${markdown(DADOS.areas)}</div>`],
-  ['Segmentos', abaSegmentos],
+  ['Segmentos e blocos', abaSegmentos],
   ['Progresso', () => `<div class="texto">${markdown(DADOS.progresso)}</div>`],
 ];
 let atual = 0;
