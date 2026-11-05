@@ -48,6 +48,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   o da trimagem da aeronave completa (`core.envelope`), as potências ao nível do mar e perto do teto, o acelerador, a
   razão de subida e o raio de curva, mais a tabela de desempenho ao nível do mar; o teste confere os números do Python.
   A configuração ganha o bloco `performance` (o mesmo da GUI em Python) e `Info.static_margin`.
+- Desempenho → Avião montado em Zig (`aerosim/manager/simulations/performance.zig`): a polar do núcleo, a tração
+  somada dos motores, o envelope de voo até o teto e as curvas por altitude (potência, tração, subida, planeio,
+  curvas, V-n, bateria) pelo núcleo (`core.simple_perf`), com o teste nos números do Python. As curvas das análises
+  em Zig ganham sombra (`fill`, `fill_x`), faixa vertical, espessura, a janela dos eixos e as retas de referência
+  (`simulation.withGuides`); a configuração lê a altitude-densidade (`Environment.densityAltitude`).
 - a pasta `aerosim/manager/native` sai (o nome dizia pouco e ela era só da Estabilidade): o contrato vai para
   `aerosim/interfaces/simulation.zig`, a lista das análises para `aerosim/manager/manager.zig` e a rajada para
   `aerosim/manager/simulations/stability.zig`, ao lado do `.py` de cada um. Cada análise do Python ganha o `.zig` ao

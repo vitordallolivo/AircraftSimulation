@@ -293,6 +293,8 @@ pub const Plot = struct {
     title: []const u8,
     xlabel: []const u8,
     ylabel: []const u8,
+    x_limits: ?[2]f64 = null, // a janela do eixo x (null: a das curvas)
+    y_limits: ?[2]f64 = null,
 };
 
 /// uma curva de um gráfico do resultado
@@ -305,7 +307,67 @@ pub const Curve = struct {
     marker: []const u8 = "", // um símbolo em cada ponto, sem a linha ("x", "o", "+"); vazio: só a linha
     size: f64 = 0, // o tamanho do símbolo (0: o padrão)
     legend: bool = true, // falso: a curva não entra na legenda
+    width: f64 = 0, // a espessura (0: a padrão)
+    fill: []const f64 = &.{}, // a região sombreada até esta outra borda em y, no mesmo x
+    fill_x: []const f64 = &.{}, // ou até esta outra borda em x, no mesmo y
+    strong: bool = false, // a sombra mais forte
+    vspan: bool = false, // uma faixa vertical sombreada de x[0] a x[1] (y é ignorado)
+    line: bool = false, // com `marker`: liga os símbolos com a linha
 };
+
+/// uma reta de referência (cruzeiro, estol, teto): vertical em `value` de x ou horizontal em `value` de y, que
+/// atravessa o que as curvas do gráfico ocupam
+pub const Guide = struct {
+    name: []const u8,
+    value: f64,
+    vertical: bool,
+    color: []const u8,
+    dashed: bool = false,
+    legend: bool = true,
+    width: f64 = 0,
+};
+
+/// junta as retas de referência às curvas, como curvas de dois pontos de uma borda à outra do que as curvas
+/// ocupam; um nome que já está na legenda não entra de novo
+pub fn withGuides(memory: std.mem.Allocator, curves: []const Curve, guides: []const Guide) ![]Curve {
+    var low_x = std.math.inf(f64);
+    var high_x = -std.math.inf(f64);
+    var low_y = std.math.inf(f64);
+    var high_y = -std.math.inf(f64);
+    for (curves) |curve| {
+        if (curve.vspan) continue;
+        for (curve.x) |value| if (std.math.isFinite(value)) {
+            low_x = @min(low_x, value);
+            high_x = @max(high_x, value);
+        };
+        for (curve.y) |value| if (std.math.isFinite(value)) {
+            low_y = @min(low_y, value);
+            high_y = @max(high_y, value);
+        };
+    }
+    const all = try memory.alloc(Curve, curves.len + guides.len);
+    @memcpy(all[0..curves.len], curves);
+    for (guides, all[curves.len..], 0..) |guide, *curve, k| {
+        const low = if (guide.vertical) low_y else low_x;
+        const high = if (guide.vertical) high_y else high_x;
+        const span: [2]f64 = if (low <= high) .{ low, high } else .{ guide.value - 1, guide.value + 1 };
+        const across = try memory.dupe(f64, &span);
+        const at = try memory.dupe(f64, &.{ guide.value, guide.value });
+        const named = for (all[0 .. curves.len + k]) |other| {
+            if (other.legend and std.mem.eql(u8, other.name, guide.name)) break true;
+        } else false;
+        curve.* = .{
+            .name = guide.name,
+            .x = if (guide.vertical) at else across,
+            .y = if (guide.vertical) across else at,
+            .color = guide.color,
+            .dashed = guide.dashed,
+            .legend = guide.legend and !named,
+            .width = guide.width,
+        };
+    }
+    return all;
+}
 
 /// um item do diagnóstico (`Check`)
 pub const Check = struct {
@@ -484,6 +546,18 @@ pub fn writePlot(out: *Writer, plot: Plot, curves: []const Curve, first: bool) !
         try numbers(out, curve.x);
         try out.writeAll(", \"y\": ");
         try numbers(out, curve.y);
+        if (curve.width > 0) try out.print(", \"width\": {d}", .{curve.width});
+        if (curve.fill.len > 0) {
+            try out.writeAll(", \"fill\": ");
+            try numbers(out, curve.fill);
+        }
+        if (curve.fill_x.len > 0) {
+            try out.writeAll(", \"fill_x\": ");
+            try numbers(out, curve.fill_x);
+        }
+        if (curve.strong) try out.writeAll(", \"strong\": true");
+        if (curve.vspan) try out.writeAll(", \"vspan\": true");
+        if (curve.line) try out.writeAll(", \"line\": true");
         try out.writeAll("}");
     }
     try out.writeAll("]}");
@@ -496,6 +570,8 @@ pub fn endResult(out: *Writer) !void {
 
 fn writePlotHead(out: *Writer, plot: Plot) !void {
     try out.print("{{\"key\": {f}, \"title\": {f}, \"xlabel\": {f}, \"ylabel\": {f}, \"kind\": \"2d\"", .{ str(plot.key), str(plot.title), str(plot.xlabel), str(plot.ylabel) });
+    if (plot.x_limits) |window| try out.print(", \"xlim\": [{d}, {d}]", .{ window[0], window[1] });
+    if (plot.y_limits) |window| try out.print(", \"ylim\": [{d}, {d}]", .{ window[0], window[1] });
 }
 
 fn numbers(out: *Writer, values: []const f64) !void {

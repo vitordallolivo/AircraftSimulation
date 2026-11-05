@@ -566,8 +566,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/model/**
 
 - `aerodrive/src/model/aircraft.zig` — Leitura do arquivo do avião salvo pela GUI (`data/aircraft/*.json`, "meus aviões").
-  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:116`, `Boom:133`, `Propeller:162`, `Motor:163`, `Battery:164`, `ThrustPoly:175`, `Propulsion:187`, `GearLeg:204`, `Gear:205`, `Tank:228`, `Payload:248`, `PointMass:259`, `Mass:260`, `Environment:271`, `Takeoff:281`, `SimSettings:282`, `Autopilot:284`, `Leg:329`, `MissionEvent:342`, `Mission:343`, `Ballast:353`, `Airfield:354`, `Modifier:371`, `Performance:386`, `Aircraft:397`, `limits:430`, `Diag:454`, `Loaded:468`
-  fn `mixedAirfoils:14`, `kindGains:48`, `parse:478`, `validate:537`, `semispan:624`, `sortedSections:631`, `sectionAt:643`, `tailOnBoom:656`
+  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:116`, `Boom:133`, `Propeller:162`, `Motor:163`, `Battery:164`, `ThrustPoly:175`, `Propulsion:187`, `GearLeg:204`, `Gear:205`, `Tank:228`, `Payload:248`, `PointMass:259`, `Mass:260`, `Environment:271`, `Takeoff:292`, `SimSettings:293`, `Autopilot:295`, `Leg:340`, `MissionEvent:353`, `Mission:354`, `Ballast:364`, `Airfield:365`, `Modifier:382`, `Performance:397`, `Aircraft:408`, `limits:441`, `Diag:465`, `Loaded:479`
+  fn `mixedAirfoils:14`, `kindGains:48`, `parse:489`, `validate:548`, `semispan:635`, `sortedSections:642`, `sectionAt:654`, `tailOnBoom:667`
 - `aerodrive/src/model/airfoil.zig` — Perfil 2D (x/c, y/c): NACA de 4 dígitos pelo nome ou as coordenadas do arquivo do avião.
   tipos `Profile:13`
   fn `nacaDigits:23`, `naca4:39`, `forDrawing:79`, `invert:95`, `full:102`, `thinAirfoil:126`, `flapEffectiveness:176`, `helmbold:183`, `split:190`

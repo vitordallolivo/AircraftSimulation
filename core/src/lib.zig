@@ -7,6 +7,7 @@ pub const interface = @import("interface.zig");
 pub const runner = @import("sim/runner.zig");
 pub const trim = @import("sim/trim.zig");
 pub const envelope = @import("sim/envelope.zig");
+pub const simple_perf = @import("sim/simple_perf.zig");
 pub const gust = @import("sim/gust.zig");
 pub const aero = @import("physics/aero.zig");
 pub const section = @import("physics/section.zig");

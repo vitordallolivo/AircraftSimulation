@@ -387,13 +387,24 @@ do líquido. A conta é a do núcleo (`core/src/sim/gust.zig`, que explica a raj
 diagnóstico dá o pico do ângulo de ataque contra $`\operatorname{atan}(U/V)`$, se ele volta ao equilíbrio, quanto o CG
 anda e o maior desvio do líquido.
 
+### Tração, voo nivelado e desempenho (`simulations/thrust.zig`, `envelope.zig`, `performance.zig`)
+
+As três subabas de Desempenho que vinham do Python agora são calculadas em Zig, com as mesmas contas do núcleo e os
+mesmos gráficos. Tração varre a velocidade em cada motor ligado e em cada acelerador pedido, no equilíbrio de rotação
+do motor com a hélice. Voo nivelado e envelopes roda o método da planilha e o da trimagem completa, que estão
+descritos acima, mais a tabela de desempenho ao nível do mar. Avião montado faz os cálculos da planilha de
+desempenho: a polar parabólica do avião inteiro, a tração somada dos motores, o envelope de voo até o teto e as
+curvas por altitude (potência, subida, planeio, curvas, V-n e bateria), com a área segura sombreada. A polar desta
+última é sempre a do núcleo, porque a da aba Aerodinâmica ainda vem do Python. Cada teste confere os números com os da
+versão em Python.
+
 ### Como chamar uma análise em Zig
 
 A tela faz isso sozinha. Para usar de fora, por exemplo num teste:
 
 ```zig
 const manager = @import("manager");
-const simulation = simulation.find("estabilidade_dinamica").?;
+const analysis = manager.find("estabilidade_dinamica").?;
 var run = manager.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
 defer run.arena.deinit();
 try analysis.start(&run, manager.Values.fromRequest(run.memory(), "\"values\": {\"up\": 3}"));

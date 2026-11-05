@@ -96,7 +96,14 @@ A rodada anda em fatias. A tela chama `advance` uma vez por quadro e para depois
 conta, então ela continua desenhando e respondendo enquanto a análise roda. No navegador não há thread: sem as
 fatias, uma conta longa travaria a página. O botão "Parar" simplesmente joga fora a rodada.
 
-A tela põe cada análise na aba de cima que ela pede (`area`), depois das subabas que vêm do Python.
+A tela põe cada análise na aba de cima que ela pede (`area`), depois das subabas que vêm do Python. Uma análise com o
+mesmo `name` de uma do Python toma o lugar dela, na mesma subaba.
+
+Uma curva (`simulation.Curve`) pode trazer, além da linha, a região sombreada até outra borda (`fill` no mesmo x,
+`fill_x` no mesmo y), uma faixa vertical (`vspan`), a espessura e os símbolos. O gráfico (`simulation.Plot`) pode
+trazer a janela dos eixos (`x_limits`, `y_limits`). As retas de referência, como o estol ou o teto, entram por
+`withGuides`: cada `simulation.Guide` vira uma curva de dois pontos que atravessa o que as outras curvas ocupam, como
+a ponte faz com as do Python.
 
 ## Convenções que todas as camadas seguem
 
