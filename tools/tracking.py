@@ -3,9 +3,13 @@
     python tools/tracking.py                   # grava a página em zig-out/site/tracking.html
     python tools/tracking.py --html x.html     # em outro lugar
     python tools/tracking.py --check           # só confere se toda linha das tabelas tem as 6 colunas
+    python tools/tracking.py --feito G26 dc19cf2   # marca a tarefa como Feito, com o commit (sem ele, o HEAD)
+    python tools/tracking.py --estado G27 "Em andamento"
 
 O TRACKING.md continua sendo a fonte: cada "### segmento" do Quadro, com o parágrafo que o descreve e a tabela
-(ID, Tarefa, Tipo, Depende de, Bloco, Estado). Uma tarefa nova é uma linha nova na tabela. A página mostra também a
+(ID, Tarefa, Tipo, Depende de, Bloco, Estado). Uma tarefa nova é uma linha nova na tabela. Uma tarefa resolvida
+fica "Feito (commit abc1234)": a página risca o título, põe o link do commit e tira a tarefa da sequência dos
+próximos (dá para escrever à mão ou com `--feito`). A página mostra também a
 "Ordem de prioridade" e o "Progresso" do TRACKING.md e as tabelas do docs/AREAS.md (o que cada aba faz e o que já está
 em Zig). O tools/web_build.py chama este script, então o site publicado sai sempre do .md da `main`.
 """
@@ -70,6 +74,26 @@ def board(text: str) -> tuple[dict, list[str]]:
     return {"segmentos": segments, "notas": notes}, problems
 
 
+def set_state(text: str, ident: str, state: str) -> str:
+    """o TRACKING.md com a coluna Estado da tarefa `ident` trocada por `state`"""
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if line.startswith(f"| {ident} |"):
+            parts = cells(line)
+            if len(parts) != 6:
+                sys.exit(f"{ident}: a linha não tem as 6 colunas")
+            parts[5] = state
+            lines[i] = "| " + " | ".join(parts) + " |"
+            return "\n".join(lines)
+    sys.exit(f"{ident}: não está no Quadro")
+
+
+def head_commit() -> str:
+    import subprocess
+    return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True,
+                          check=True).stdout.strip()
+
+
 def section(text: str, title: str) -> str:
     """o corpo de uma seção '## título' do Markdown, até a próxima '## ' ou '---'"""
     match = re.search(rf"^## {re.escape(title)}.*?$(.*?)(?=^## |^---$)", text, re.S | re.M)
@@ -97,10 +121,22 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--html", default=PAGE, help="onde gravar a página (padrão: zig-out/site/tracking.html)")
     parser.add_argument("--check", action="store_true", help="só confere as tabelas do Quadro")
+    parser.add_argument("--feito", nargs="+", metavar=("ID", "COMMIT"), help="marca a tarefa como Feito (commit; padrão: HEAD)")
+    parser.add_argument("--estado", nargs=2, metavar=("ID", "ESTADO"), help="troca o estado da tarefa")
     args = parser.parse_args()
 
     with open(TRACKING, encoding="utf-8") as f:
         text = f.read()
+    if args.feito or args.estado:
+        if args.feito:
+            ident = args.feito[0]
+            state = f"Feito (commit {args.feito[1] if len(args.feito) > 1 else head_commit()})"
+        else:
+            ident, state = args.estado
+        text = set_state(text, ident, state)
+        with open(TRACKING, "w", encoding="utf-8") as f:
+            f.write(text)
+        print(f"docs/TRACKING.md: {ident} → {state}")
     data, problems = board(text)
     for problem in problems:
         print("docs/TRACKING.md:", problem)
