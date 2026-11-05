@@ -41,6 +41,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   principal, momento do comando), marca o dono de cada painel (`Surface.owner`) e lê o `group` das superfícies. O
   modelo do voo e o refino ficam fixos num arquivo só, `sim/methods.zig` (faixas e o refino padrão), por causa do
   tempo real. Arquivo sem modificadores: o efeito solo de McCormick de sempre.
+- nomes pela regra 11: os enums de nome genérico ganham nome próprio no esquema (`ModifierKind`, `EnvelopeMethod`), os
+  `const T`/`const L` do AeroDrive viram `types`/`limits`, e o `fill` do tradutor do AeroDrive perde os nomes de uma
+  letra.
 
 ### v0.2.5 (em andamento na `0.2_dev`)
 

@@ -238,4 +238,10 @@ continuam compilando a cada passo. Um commit por passo:
    AeroDrive ficam em `aerodrive/src/sim/methods.zig`.
 9. **Nomes** fora da regra 11.
 
+Os nove passos estão feitos na `0.2_dev` (um commit por passo). Duas coisas ficaram de fora de propósito. O AeroDrive
+lê do arquivo só os modifiers: o modelo do voo e o refino ficam fixos em `methods.zig`, porque o voo tem de caber nos
+120 Hz. E os nomes de uma letra que sobram nos arquivos que esta etapa não abriu (o resto de `params.zig`, a geometria
+do AeroDrive) ficam para quando cada arquivo for mexido. A regressão não rodou nesta etapa: as quebras do Python
+são esperadas e são outra tarefa.
+
 Depois disso vem a etapa 3: juntar os seis contratos de manager num framework só.

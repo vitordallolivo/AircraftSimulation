@@ -369,7 +369,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `TubeShape:32`, `Point:82`
   fn `shape:49`, `diskInduced:54`, `axialAt:62`, `radiusAt:67`, `swirlRate:75`, `at:90`
 - `core/src/modifiers/types.zig` — Tipos dos modificadores trocados com o Python (C ABI, `extern struct`; o esquema sai de `abi.zig`).
-  tipos `Ground:29`, `Kind:39`, `Flags:54`, `SlipstreamSettings:65`, `InterferenceSettings:73`, `FlapMomentSettings:79`, `Modifier:88`
+  tipos `Ground:29`, `ModifierKind:39`, `Flags:54`, `SlipstreamSettings:65`, `InterferenceSettings:73`, `FlapMomentSettings:79`, `Modifier:88`
   fn `panelSet:19`
 
 **core/src/optim/**
@@ -431,7 +431,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Out:26`
   fn `derivatives:87`, `rk4:248`
 - `core/src/sim/envelope.zig` — Envelope de voo por altitude (sem integrar no tempo).
-  tipos `Method:31`, `Atmosphere:40`, `EnvCfg:49`, `EnvRow:87`
+  tipos `EnvelopeMethod:31`, `Atmosphere:40`, `EnvCfg:49`, `EnvRow:87`
   fn `density:100`, `compute:313`, `curve:346`
 - `core/src/sim/gust.zig` — Resposta no tempo a uma rajada, em voo nivelado reto: o avião sai equilibrado em `airspeed` e `height`, a rajada
   tipos `Case:23`, `Mode:173`, `Poles:178`

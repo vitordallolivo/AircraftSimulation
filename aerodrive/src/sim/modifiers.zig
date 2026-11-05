@@ -17,7 +17,7 @@ const Entry = union(enum) {
     /// um método do efeito solo (`Params.ground`)
     ground: modifier_types.Ground,
     /// um efeito a mais (`Params.mods`)
-    additive: modifier_types.Kind,
+    additive: modifier_types.ModifierKind,
 };
 
 /// os tipos da GUI (`aerosim/model/modifiers.py: KINDS`) pelo nome
@@ -60,7 +60,7 @@ pub fn fill(aircraft: *const model.Aircraft, params: *types.Params) void {
 }
 
 /// um efeito a mais como item do núcleo; null quando não pega nenhum painel
-fn item(aircraft: *const model.Aircraft, params: *const types.Params, modifier: *const model.Modifier, kind: modifier_types.Kind) ?types.Modifier {
+fn item(aircraft: *const model.Aircraft, params: *const types.Params, modifier: *const model.Modifier, kind: modifier_types.ModifierKind) ?types.Modifier {
     var built: types.Modifier = .{ .kind = kind };
     switch (kind) {
         .slipstream_disk => {
@@ -149,7 +149,7 @@ test "lista vazia: solo desligado; interferência só com duas asas no grupo" {
     fill(&.{ .surfaces = &surfaces, .modifiers = &interference }, &params);
     try testing.expectEqual(modifier_types.Ground.off, params.ground);
     try testing.expectEqual(@as(i32, 1), params.n_mod);
-    try testing.expectEqual(modifier_types.Kind.wing_interference, params.mods[0].kind);
+    try testing.expectEqual(modifier_types.ModifierKind.wing_interference, params.mods[0].kind);
     try testing.expectEqual(@as(i32, 0b011), params.mods[0].surf_mask[0]);
     try testing.expectEqual(@as(f64, 1), params.mods[0].settings(modifier_types.InterferenceSettings).gain);
 

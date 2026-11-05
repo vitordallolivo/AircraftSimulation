@@ -28,7 +28,7 @@ const aero = @import("../physics/aero.zig");
 const trim = @import("trim.zig");
 
 /// de onde vêm a polar e a tração do envelope (`EnvCfg.method`)
-pub const Method = enum(i32) {
+pub const EnvelopeMethod = enum(i32) {
     /// as contas da planilha da equipe
     sheet = 0,
     /// o modelo do núcleo (trimagem)
@@ -47,7 +47,7 @@ pub const Atmosphere = enum(i32) {
 
 /// a configuração do envelope: método, atmosfera, faixas de h e V e os dados da planilha
 pub const EnvCfg = extern struct {
-    method: Method = .sheet,
+    method: EnvelopeMethod = .sheet,
     atmos: Atmosphere = .isa,
     faithful: i32 = 1, // planilha: 1 = arrasto com ρ/ρ0 como no original
     _pad: i32 = 0,

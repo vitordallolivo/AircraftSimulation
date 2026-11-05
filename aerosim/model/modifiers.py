@@ -38,7 +38,7 @@ class KindInfo:
     kind: str
     title: str
     category: str              # "solo" | "aditivo"
-    core: str                  # o nome no núcleo (types.zig: Ground para "solo", Kind para "aditivo")
+    core: str                  # o nome no núcleo (types.zig: Ground para "solo", ModifierKind para "aditivo")
     reference: str             # de onde vem a fórmula (obra e equação)
     description: str = ""
     params: tuple[ParamInfo, ...] = ()

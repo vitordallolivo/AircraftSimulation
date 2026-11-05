@@ -16,8 +16,8 @@ const v3 = @import("../math/vec3.zig");
 const fz = @import("../util/fuzz.zig");
 const session = @import("session.zig");
 
-const T = core.types;
-const L = core.limits;
+const types = core.types;
+const limits = core.limits;
 
 pub const Mode = session.Mode;
 
@@ -55,10 +55,10 @@ pub const DriveManager = struct {
     mode: Mode = .manual,
     reset_error: []const u8 = "", // por que o núcleo não pôs o avião na pista (vazio: pôs)
     t: f64 = 0,
-    last: ?T.LogRow = null,
+    last: ?types.LogRow = null,
     frame: Frame = .{},
     status: core.runner.Status = .chunk,
-    buf: [256]T.LogRow = undefined,
+    buf: [256]types.LogRow = undefined,
     prop_angle: [pose.max_units]f64 = @splat(0),
     n_seg: usize = 0,
 
@@ -158,7 +158,7 @@ pub const DriveManager = struct {
             }
             dm.t = t_target;
             if (dm.last) |row| {
-                for (0..@min(pose.max_units, L.max_props)) |i| { // rpm -> ângulo da pá (rad)
+                for (0..@min(pose.max_units, limits.max_props)) |i| { // rpm -> ângulo da pá (rad)
                     dm.prop_angle[i] += row.rpm[i] * 2 * std.math.pi / 60.0 * dt;
                     dm.prop_angle[i] = @mod(dm.prop_angle[i], 2 * std.math.pi);
                 }
@@ -182,7 +182,7 @@ pub const DriveManager = struct {
             .seg = @intFromFloat(std.math.clamp(row.seg, 0, 1e6)),
         };
         f.drive = .{ .de = row.de, .da = row.da, .dr = row.dr, .prop_angle = dm.prop_angle, .payload_released = ev.trel > 0 };
-        for (0..@min(pose.max_tanks, L.max_tanks)) |i| f.drive.slosh_tilt[i] = .{ row.slosh_y[i], -row.slosh_x[i] };
+        for (0..@min(pose.max_tanks, limits.max_tanks)) |i| f.drive.slosh_tilt[i] = .{ row.slosh_y[i], -row.slosh_x[i] };
         if (ev.trel > 0) f.payload_ned = .{ row.pk_n, row.pk_e, -row.pk_h };
         f.mode = dm.mode;
         f.rpm = row.rpm[0];

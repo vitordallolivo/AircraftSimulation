@@ -5,8 +5,8 @@ const core = @import("aerosim");
 const model = @import("../model/aircraft.zig");
 const fz = @import("../util/fuzz.zig");
 
-const T = core.types;
-const L = core.limits;
+const types = core.types;
+const limits = core.limits;
 
 pub const auto_phi_deg = 45.0; // raio automático (perna com raio 0): R = V²/(g tan φ)
 
@@ -17,9 +17,9 @@ pub fn autoRadius(V: f64) f64 {
 pub const Error = error{ TooManySegments, TooManyEvents, BadLeg };
 
 /// segmentos do núcleo (SI, rad); devolve quantos
-pub fn segments(m: *const model.Mission, out: *[L.max_segments]T.Segment, diag: *model.Diag) Error!usize {
-    if (m.legs.len > L.max_segments) {
-        diag.set("percurso: {d} pernas (máximo {d})", .{ m.legs.len, L.max_segments });
+pub fn segments(m: *const model.Mission, out: *[limits.max_segments]types.Segment, diag: *model.Diag) Error!usize {
+    if (m.legs.len > limits.max_segments) {
+        diag.set("percurso: {d} pernas (máximo {d})", .{ m.legs.len, limits.max_segments });
         return error.TooManySegments;
     }
     var n = m.n0;
@@ -36,7 +36,7 @@ pub fn segments(m: *const model.Mission, out: *[L.max_segments]T.Segment, diag: 
                 return error.BadLeg;
             }
         }
-        var sg: T.Segment = .{ .h0 = h, .h1 = h1, .V0 = V, .V1 = V1, .takeoff = @intFromBool(p.takeoff), .landing = @intFromBool(p.landing), .clearance = p.clearance };
+        var sg: types.Segment = .{ .h0 = h, .h1 = h1, .V0 = V, .V1 = V1, .takeoff = @intFromBool(p.takeoff), .landing = @intFromBool(p.landing), .clearance = p.clearance };
         if (!std.mem.eql(u8, p.kind, "turn")) {
             sg.arc = 0;
             sg.n0 = n;
@@ -73,9 +73,9 @@ pub fn segments(m: *const model.Mission, out: *[L.max_segments]T.Segment, diag: 
     return m.legs.len;
 }
 
-pub fn events(m: *const model.Mission, out: *[L.max_events]T.Event, diag: *model.Diag) Error!usize {
-    if (m.events.len > L.max_events) {
-        diag.set("percurso: {d} eventos (máximo {d})", .{ m.events.len, L.max_events });
+pub fn events(m: *const model.Mission, out: *[limits.max_events]types.Event, diag: *model.Diag) Error!usize {
+    if (m.events.len > limits.max_events) {
+        diag.set("percurso: {d} eventos (máximo {d})", .{ m.events.len, limits.max_events });
         return error.TooManyEvents;
     }
     for (m.events, 0..) |ev, k| {
@@ -83,13 +83,13 @@ pub fn events(m: *const model.Mission, out: *[L.max_events]T.Event, diag: *model
             diag.set("percurso: evento '{s}' fora das pernas", .{ev.kind});
             return error.BadLeg;
         }
-        out[k] = .{ .kind = if (std.mem.eql(u8, ev.kind, "drop")) T.EventKind.drop else T.EventKind.gust, .seg = @intCast(ev.leg), .s = ev.s };
+        out[k] = .{ .kind = if (std.mem.eql(u8, ev.kind, "drop")) types.EventKind.drop else types.EventKind.gust, .seg = @intCast(ev.leg), .s = ev.s };
     }
     return m.events.len;
 }
 
 /// mesa (decolagem) e plataforma (na última perna de pouso reta)
-pub fn pads(af: *const model.Airfield, segs: []const T.Segment, out: *[L.max_pads]T.Pad) usize {
+pub fn pads(af: *const model.Airfield, segs: []const types.Segment, out: *[limits.max_pads]types.Pad) usize {
     var k: usize = 0;
     if (std.mem.eql(u8, af.takeoff_from, "mesa") and af.table_height > 0) {
         out[k] = .{ .n0 = -af.table_back, .e0 = 0, .chi = 0, .L = af.table_back + af.table_length, .W = af.table_width, .h = af.table_height };
@@ -120,7 +120,7 @@ test "circuito: curva de 180° volta paralela; perna seguinte começa no fim da 
         .{ .kind = "turn", .radius = 50, .angle = 180, .side = 1 },
         .{ .kind = "straight", .length = 100, .landing = true },
     };
-    var out: [L.max_segments]T.Segment = undefined;
+    var out: [limits.max_segments]types.Segment = undefined;
     var d: model.Diag = .{};
     const m: model.Mission = .{ .legs = &legs, .h0 = 15, .V0 = 15 };
     const n = try segments(&m, &out, &d);
@@ -128,7 +128,7 @@ test "circuito: curva de 180° volta paralela; perna seguinte começa no fim da 
     try testing.expectApproxEqAbs(@as(f64, 100), out[2].n0, 1e-9);
     try testing.expectApproxEqAbs(@as(f64, 100), out[2].e0, 1e-9);
     try testing.expectApproxEqAbs(std.math.pi, out[2].chi0, 1e-12);
-    var pd: [L.max_pads]T.Pad = undefined;
+    var pd: [limits.max_pads]types.Pad = undefined;
     const af: model.Airfield = .{ .takeoff_from = "mesa", .landing_on = "plataforma", .platform_start = 50 };
     try testing.expectEqual(@as(usize, 2), pads(&af, out[0..n], &pd));
     try testing.expectApproxEqAbs(@as(f64, 50), pd[1].n0, 1e-9);
@@ -149,14 +149,14 @@ fn fuzzMission(_: void, src: *fz.Src) anyerror!void {
         .landing = src.boolean(),
     };
     const m: model.Mission = .{ .legs = legs[0..nl], .h0 = src.mostly(0, 50), .V0 = src.mostly(5, 30) };
-    var out: [L.max_segments]T.Segment = undefined;
+    var out: [limits.max_segments]types.Segment = undefined;
     var d: model.Diag = .{};
     const n = segments(&m, &out, &d) catch {
         try testing.expect(d.len > 0);
         return;
     };
     for (out[0..n]) |s| inline for (.{ "n0", "e0", "chi0", "L", "R", "h0", "h1", "V0", "V1" }) |f| try testing.expect(std.math.isFinite(@field(s, f)));
-    var pd: [L.max_pads]T.Pad = undefined;
+    var pd: [limits.max_pads]types.Pad = undefined;
     _ = pads(&.{ .takeoff_from = "mesa", .landing_on = "plataforma" }, out[0..n], &pd);
 }
 

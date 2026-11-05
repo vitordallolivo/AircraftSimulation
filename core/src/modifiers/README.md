@@ -53,7 +53,7 @@ flowchart TD
 
 | arquivo | o que tem |
 |---|---|
-| `types.zig` | `Modifier` (extern struct: `kind`, `flags`, `surf_mask[2]`, `prop_mask`, `params[16]`), os enums `Ground` (método do efeito solo) e `Kind` (tipo do efeito a mais), os `Flags` (o que se liga e desliga, um bit com nome cada), as structs de ajustes de cada tipo (`SlipstreamSettings`, `InterferenceSettings`, `FlapMomentSettings`) e os conjuntos `PanelSet`/`PropSet` (bitset) |
+| `types.zig` | `Modifier` (extern struct: `kind`, `flags`, `surf_mask[2]`, `prop_mask`, `params[16]`), os enums `Ground` (método do efeito solo) e `ModifierKind` (tipo do efeito a mais), os `Flags` (o que se liga e desliga, um bit com nome cada), as structs de ajustes de cada tipo (`SlipstreamSettings`, `InterferenceSettings`, `FlapMomentSettings`) e os conjuntos `PanelSet`/`PropSet` (bitset) |
 | `ground.zig` | métodos do efeito solo (`factor`, `mccormick`) |
 | `slipstream.zig` | esteira por disco atuador (`diskInduced`, `axialAt`, `radiusAt`, `swirlRate`, `at`); `shape`/`TubeShape.tube` montam o tubo que contrai para `collision/` |
 | `flapmoment.zig` | momento próprio do comando no quarto de corda da faixa (teoria do perfil fino; Anderson, a conferir no PDF): `thetaOf` acha θ_f a partir do τ da faixa, e `cmDelta` dá dΔc_m/dδ. Entra no momento de cada faixa pelo `flapCm` de `mod.zig`, só com o modificador `comando.momento_flape` ligado |
@@ -68,7 +68,7 @@ do núcleo cada campo tem o tipo com nome (um `enum(i32)`, um `packed struct(u32
 código decide por nome:
 
 ```zig
-switch (m.kind) {                                     // Kind
+switch (m.kind) {                                     // ModifierKind
     .slipstream_disk => slipstreamStrip(p, env, m, s),
     .none, _ => vec.zero,                             // vazio ou de outra versão: nada
 }
@@ -88,7 +88,7 @@ Dentro do núcleo elas são lidas como `PanelSet` e `PropSet` (`Modifier.affects
 | categoria | onde | padrão | exemplo |
 |---|---|---|---|
 | **solo**: método de um efeito que sempre existe; um por vez | `Params.ground` (número de `Ground`) | `Ground.mccormick` (o que o núcleo sempre fez) | `solo.mccormick`; sem nenhum na lista = desligado |
-| **aditivo**: efeito a mais, somado em cada painel | `Params.mods[0..n_mod]` (`kind` = número de `Kind`) | nenhum (`n_mod = 0`: o laço nem roda) | `esteira.disco`, `tabela` (próxima etapa) |
+| **aditivo**: efeito a mais, somado em cada painel | `Params.mods[0..n_mod]` (`kind` = número de `ModifierKind`) | nenhum (`n_mod = 0`: o laço nem roda) | `esteira.disco`, `tabela` (próxima etapa) |
 
 ## Compatibilidade (nada muda sem pedir)
 
@@ -313,7 +313,7 @@ Testes do módulo: `zig build test -Dgrupo=physics` (inclui `modifiers/`), `pyte
 ## Como adicionar um modificador
 
 1. **Fonte primeiro:** obra, equação, página. Sem isso não entra.
-2. Em `types.zig`: um campo novo em `Kind` (aditivo) ou em `Ground` (solo), com o próximo número, e a struct de ajustes
+2. Em `types.zig`: um campo novo em `ModifierKind` (aditivo) ou em `Ground` (solo), com o próximo número, e a struct de ajustes
    do tipo (como `SlipstreamSettings`); o que liga e desliga vira um bit com nome em `Flags`.
 3. Em `mod.zig` (aditivo, um caso no `switch` de `induced`) ou em `ground.zig` (solo, um caso em `factor`):
    a fórmula, com a referência no comentário. Teste Zig que reproduz um número publicado.

@@ -36,7 +36,7 @@ pub const Ground = enum(i32) {
 };
 
 /// efeitos a mais (`Modifier.kind`)
-pub const Kind = enum(i32) {
+pub const ModifierKind = enum(i32) {
     /// item vazio (ignorado)
     none = 0,
     /// esteira da hélice por disco atuador (slipstream.zig); ajustes em `SlipstreamSettings`
@@ -61,7 +61,7 @@ pub const Flags = packed struct(u32) {
     _unused: u29 = 0,
 };
 
-/// ajustes da esteira (`Kind.slipstream_disk`), nos primeiros `Modifier.params`
+/// ajustes da esteira (`ModifierKind.slipstream_disk`), nos primeiros `Modifier.params`
 pub const SlipstreamSettings = extern struct {
     /// ganho da velocidade axial (1 = a teoria)
     axial_gain: f64 = 1,
@@ -69,13 +69,13 @@ pub const SlipstreamSettings = extern struct {
     swirl_gain: f64 = 1,
 };
 
-/// ajustes da interferência entre asas (`Kind.wing_interference`)
+/// ajustes da interferência entre asas (`ModifierKind.wing_interference`)
 pub const InterferenceSettings = extern struct {
     /// ganho da velocidade induzida (1 = a teoria)
     gain: f64 = 1,
 };
 
-/// ajustes do momento do comando (`Kind.flap_moment`)
+/// ajustes do momento do comando (`ModifierKind.flap_moment`)
 pub const FlapMomentSettings = extern struct {
     /// o fator empírico k do τ (o mesmo de `aerosim/model/airfoil.py: flap_effectiveness`)
     factor: f64 = 0.85,
@@ -86,7 +86,7 @@ pub const n_params = 16;
 /// um efeito a mais. Os ajustes ficam nos primeiros `params`, na ordem da struct de ajustes do tipo
 /// (`settings`); ver README.md desta pasta.
 pub const Modifier = extern struct {
-    kind: Kind = .none,
+    kind: ModifierKind = .none,
     flags: Flags = .{},
     // superfícies afetadas (painéis do núcleo, bit i = painel i; 0 nos dois = todos)
     surf_mask: [2]i32 = .{ 0, 0 },
@@ -102,7 +102,7 @@ pub const Modifier = extern struct {
     }
 
     /// o modificador está ligado e é do tipo `kind`?
-    pub inline fn isOn(self: *const Modifier, kind: Kind) bool {
+    pub inline fn isOn(self: *const Modifier, kind: ModifierKind) bool {
         return self.flags.enabled and self.kind == kind;
     }
 
