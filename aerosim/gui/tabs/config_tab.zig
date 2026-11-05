@@ -1094,6 +1094,12 @@ pub fn setWind(memory: std.mem.Allocator, document: *std.json.Value, speed: f64,
     try environment.put(memory, "wind_from", .{ .float = from });
 }
 
+/// dá ao avião o nome `name` (a variante nova: "nome (variante N)", como o Python)
+pub fn rename(memory: std.mem.Allocator, document: *std.json.Value, name: []const u8) !void {
+    const node = try aircraftNode(document);
+    try node.put(memory, "name", .{ .string = try memory.dupe(u8, name) });
+}
+
 /// o texto do arquivo a gravar (indentado como o Python grava)
 pub fn serialize(memory: std.mem.Allocator, document: std.json.Value) ![]u8 {
     return std.json.Stringify.valueAlloc(memory, document, .{ .whitespace = .indent_2 });

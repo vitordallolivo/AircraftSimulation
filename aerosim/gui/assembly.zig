@@ -270,6 +270,12 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Di
         return err;
     };
     defer gpa.free(bytes);
+    return fromBytes(gpa, io, path, bytes, diagnosis);
+}
+
+/// monta o avião do texto `bytes` (de um arquivo em `path`, de onde se acham os perfis): a variante nova sai assim,
+/// do texto do avião atual
+pub fn fromBytes(gpa: std.mem.Allocator, io: std.Io, path: []const u8, bytes: []const u8, diagnosis: *Diagnosis) !Assembly {
     var loaded = try model.parse(gpa, bytes, diagnosis);
     errdefer loaded.deinit();
     const allocator = loaded.arena.allocator();

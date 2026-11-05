@@ -76,6 +76,10 @@ pub const Screen = struct {
     files: ui_kit.dialogs.FilePicker = .{}, // abrir e salvar o avião (cabeçalho)
     assembly_view: view3d.View = .{}, // a vista 3D da Montagem
     assembly: ?assembly_mod.Assembly = null, // o avião aberto
+    fleet: [max_fleet]?assembly_mod.Assembly = [_]?assembly_mod.Assembly{null} ** max_fleet, // os outros aviões
+    // abertos (as variantes); o lugar `fleet_current` fica vazio, porque esse está em `assembly`
+    fleet_count: usize = 0,
+    fleet_current: usize = 0,
     assembly_note: [240:0]u8 = [_:0]u8{0} ** 240,
     assembly_panel: ?AssemblyPanel = null, // o resumo ao lado do 3D (`config_tab.panel`), refeito ao abrir
     assembly_scroll: ui_kit.scroll.ScrollArea = .{},
@@ -345,7 +349,20 @@ pub const Screen = struct {
                 screen.restoreAircraft();
             } else if (std.mem.eql(u8, step, "Acertar o CG")) {
                 screen.fitCg();
-            } else for (part_buttons, 0..) |caption, i| if (std.mem.eql(u8, caption, step)) screen.partButton(i);
+            } else {
+                for (part_buttons, 0..) |caption, i| if (std.mem.eql(u8, caption, step)) screen.partButton(i);
+                for (fleet_buttons, 0..) |caption, i| if (std.mem.eql(u8, caption, step)) screen.fleetButton(i);
+            }
+        }
+    }
+
+    /// um botão da barra dos aviões abertos (`fleet_buttons`)
+    fn fleetButton(screen: *Screen, pressed: usize) void {
+        switch (pressed) {
+            0 => if (screen.fleet_current > 0) screen.selectAircraft(screen.fleet_current - 1),
+            1 => screen.selectAircraft(screen.fleet_current + 1),
+            2 => screen.addVariant(),
+            else => screen.closeAircraft(),
         }
     }
 
@@ -462,13 +479,82 @@ pub const Screen = struct {
         screen.loading.result = null;
         if (screen.assembly) |*old| old.deinit();
         screen.assembly = loaded;
-        if (screen.assembly_panel) |*old| old.deinit();
-        screen.assembly_panel = AssemblyPanel.build(&screen.assembly.?.loaded.ac) catch null;
-        if (screen.assembly_editor == null) screen.assembly_editor = .{};
-        screen.assembly_editor.?.selected = 0;
-        screen.assembly_editor.?.rebuild(&screen.assembly.?.loaded.ac) catch {};
-        for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| page.setAircraftPath(loaded.path);
+        if (screen.fleet_count == 0) screen.fleet_count = 1; // abrir troca o avião atual; os outros ficam
+        screen.showSwitched();
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · {d} peças · arraste outro .json para a janela para trocar · arraste para girar, roda para aproximar", .{ std.fs.path.basename(path), loaded.mesh.piece_count }) catch {};
+    }
+
+    /// depois de trocar o avião atual (abrir, variante, troca, fechar): o resumo, a lista e o editor são do novo, e as
+    /// páginas passam a usar o arquivo dele
+    fn showSwitched(screen: *Screen) void {
+        const opened = &(screen.assembly orelse return);
+        if (screen.assembly_panel) |*old| old.deinit();
+        screen.assembly_panel = AssemblyPanel.build(&opened.loaded.ac) catch null;
+        if (screen.assembly_editor == null) screen.assembly_editor = .{};
+        const editor = &screen.assembly_editor.?;
+        editor.stopImport();
+        editor.selected = 0;
+        editor.form.area = .{};
+        editor.rebuild(&opened.loaded.ac) catch {};
+        screen.assembly_drag = null;
+        for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| page.setAircraftPath(opened.path);
+    }
+
+    /// passa para o avião aberto `index` (a barra "Anterior", "Próximo"); o atual fica guardado como está
+    fn selectAircraft(screen: *Screen, index: usize) void {
+        if (index >= screen.fleet_count or index == screen.fleet_current or screen.assembly == null) return;
+        screen.fleet[screen.fleet_current] = screen.assembly;
+        screen.assembly = screen.fleet[index];
+        screen.fleet[index] = null;
+        screen.fleet_current = index;
+        screen.showSwitched();
+        screen.fleetNote("aberto");
+    }
+
+    /// "+ Variante": uma cópia do avião atual, com as edições dele, para variar a partir dele, e passa para ela
+    fn addVariant(screen: *Screen) void {
+        const opened = &(screen.assembly orelse return);
+        if (screen.fleet_count >= max_fleet) {
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "já há {d} aviões abertos; feche um antes", .{max_fleet}) catch {};
+            return;
+        }
+        var diagnosis: assembly_mod.Diagnosis = .{};
+        const copy = assembly_mod.fromBytes(std.heap.page_allocator, io(), opened.path, opened.source, &diagnosis) catch |err| {
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "a variante não abriu: {s}", .{if (diagnosis.len > 0) diagnosis.text() else @errorName(err)}) catch {};
+            return;
+        };
+        var name_buffer: [160]u8 = undefined;
+        const name = std.fmt.bufPrint(&name_buffer, "{s} (variante {d})", .{ opened.loaded.ac.name, screen.fleet_count + 1 }) catch opened.loaded.ac.name;
+        screen.fleet[screen.fleet_current] = screen.assembly;
+        screen.assembly = copy;
+        screen.fleet_current = screen.fleet_count;
+        screen.fleet_count += 1;
+        const fresh = &screen.assembly.?;
+        config_tab.rename(fresh.document_arena.allocator(), &fresh.document, name) catch {};
+        screen.showSwitched();
+        screen.commitDocument(null);
+        screen.fleetNote("variante nova");
+    }
+
+    /// "Fechar": fecha o avião atual e passa para o vizinho (o último que sobra não fecha)
+    fn closeAircraft(screen: *Screen) void {
+        if (screen.fleet_count <= 1) return;
+        if (screen.assembly) |*old| old.deinit();
+        const removed = screen.fleet_current;
+        for (removed..screen.fleet_count - 1) |slot| screen.fleet[slot] = screen.fleet[slot + 1];
+        screen.fleet_count -= 1;
+        screen.fleet[screen.fleet_count] = null;
+        screen.fleet_current = @min(removed, screen.fleet_count - 1);
+        screen.assembly = screen.fleet[screen.fleet_current];
+        screen.fleet[screen.fleet_current] = null;
+        screen.showSwitched();
+        screen.fleetNote("aberto");
+    }
+
+    /// a nota embaixo do 3D: qual avião é este entre os abertos
+    fn fleetNote(screen: *Screen, what: []const u8) void {
+        const opened = &(screen.assembly orelse return);
+        _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s}: {s} ({d} de {d}) · {d} peças", .{ what, opened.loaded.ac.name, screen.fleet_current + 1, screen.fleet_count, opened.mesh.piece_count }) catch {};
     }
 
     /// pede as abas na primeira vez e monta as áreas quando a resposta chega
@@ -701,13 +787,22 @@ pub const Screen = struct {
             editor.rebuild(&opened.loaded.ac) catch {};
         };
         if (screen.assembly_editor) |*editor| if (screen.assembly) |*opened| {
+            // os aviões abertos (a barra das variantes do Python): qual é este, trocar, uma variante nova e fechar
+            var fleet_buffer: [200]u8 = undefined;
+            theme.text(ui.fonts.bold, widgets.format(&fleet_buffer, "Avião {d} de {d}: {s}", .{ screen.fleet_current + 1, screen.fleet_count, opened.loaded.ac.name }), rect.x + 16, rect.y + 12, 15, theme.colors.ink);
+            var fleet_height: f32 = 0;
+            if (ui_kit.menus.buttonGrid(ui, rect.x + 12, rect.y + 34, side_width - 6, &fleet_buttons, 4, &fleet_height)) |pressed| {
+                screen.fleetButton(pressed);
+                return;
+            }
+            const wind_top = 34 + fleet_height + 10;
             // o vento (a caixa "Vento" do Python): a velocidade a 10 m e de onde vem, de 1 m/s e de 15° por clique
             const environment = opened.loaded.ac.environment;
             var wind_buffer: [96]u8 = undefined;
-            theme.text(ui.fonts.bold, widgets.format(&wind_buffer, "Vento: {d:.1} m/s a 10 m, vem de {d:.0}°", .{ environment.wind_speed, environment.wind_from }), rect.x + 16, rect.y + 12, 15, theme.colors.ink);
+            theme.text(ui.fonts.bold, widgets.format(&wind_buffer, "Vento: {d:.1} m/s a 10 m, vem de {d:.0}°", .{ environment.wind_speed, environment.wind_from }), rect.x + 16, rect.y + wind_top, 15, theme.colors.ink);
             var wind_height: f32 = 0;
             const wind_buttons = [_][:0]const u8{ "− 1 m/s", "+ 1 m/s", "−15°", "+15°" };
-            if (ui_kit.menus.buttonGrid(ui, rect.x + 12, rect.y + 34, side_width - 6, &wind_buttons, 4, &wind_height)) |pressed| {
+            if (ui_kit.menus.buttonGrid(ui, rect.x + 12, rect.y + wind_top + 22, side_width - 6, &wind_buttons, 4, &wind_height)) |pressed| {
                 const speed = @max(0, environment.wind_speed + switch (pressed) {
                     0 => @as(f64, -1),
                     1 => 1,
@@ -722,7 +817,7 @@ pub const Screen = struct {
                 config_tab.setWind(opened.document_arena.allocator(), &opened.document, speed, from) catch {};
                 screen.commitDocument(null);
             }
-            const top = 34 + wind_height + 8;
+            const top = wind_top + 22 + wind_height + 8;
             list_height = @min(300, rect.height * 0.32);
             const list_rect: rl.Rectangle = .{ .x = rect.x + 12, .y = rect.y + top, .width = side_width - 6, .height = list_height };
             var buttons_height: f32 = 0;
@@ -971,6 +1066,11 @@ const AssemblyEditor = struct {
 
 /// os botões embaixo da lista de componentes, na ordem do Python, mais o de trazer uma peça de outro arquivo
 const new_parts = [_]config_tab.NewPart{ .wing, .htail, .vtail, .motor, .boom, .tank };
+/// a barra dos aviões abertos na Montagem
+const fleet_buttons = [_][:0]const u8{ "Anterior", "Próximo", "+ Variante", "Fechar" };
+/// quantos aviões ficam abertos ao mesmo tempo
+const max_fleet = 8;
+
 const part_buttons = [_][:0]const u8{ "+ Asa", "+ EH", "+ EV", "+ Motor", "+ Tubo", "+ Tanque", "Remover", "Trazer de .json" };
 
 /// o outro avião aberto para trazer uma peça dele: a árvore do arquivo e a lista das peças

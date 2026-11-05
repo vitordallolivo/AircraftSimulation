@@ -62,6 +62,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   bateria (ou o lastro ligado) até o CG com a carga voltar ao de projeto, sem sair da fuselagem, como no Python.
 - A Montagem em Zig ganha a caixa do vento (velocidade a 10 m e de onde vem, de 1 m/s e de 15° por clique) e a seta
   azul do vento no 3D.
+- Na Montagem em Zig, clicar numa peça no 3D escolhe ela na lista, e arrastar move a peça no plano da tela. Ao soltar,
+  a posição nova vai para o arquivo.
+- A Montagem em Zig abre vários aviões ao mesmo tempo. "+ Variante" faz uma cópia do avião atual, com as edições, para
+  variar a partir dela; "Anterior" e "Próximo" trocam entre os abertos, e "Fechar" fecha o atual.
 - Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
   referência e a trajetória 3D do voo.
 - A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).
