@@ -291,7 +291,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
-  tipos `math:14`, `physics:22`, `modifiers:35`, `collision:45`, `control:50`, `sim:57`, `loads:69`, `sizing:75`, `optim:88`, `geometry:102`, `util:107`
+  tipos `math:14`, `physics:22`, `modifiers:35`, `collision:45`, `control:50`, `sim:57`, `loads:70`, `sizing:76`, `optim:89`, `geometry:103`, `util:108`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
@@ -454,6 +454,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sim/state.zig` — Layout do vetor de estados (definido em comptime a partir dos limites)
   tipos `Entry:7`, `Flags:87`, `Run:103`, `Ctx:119`
   fn `index:57`, `rps:66`, `sx:70`, `sy:74`, `sxd:78`, `syd:82`
+- `core/src/sim/static.zig` — Estabilidade estática do avião montado: o que a aba Estabilidade calcula antes da dinâmica. É a mesma conta de
+  tipos `Inputs:31`, `Probe:34`, `Sweep:213`
+  fn `cgSweep:226`, `limitCrossing:253`, `gearForRotation:267`
 - `core/src/sim/tests.zig` — Testes de integração do núcleo: aeronave monomotora convencional (a do código
 - `core/src/sim/trim.zig` — Equilíbrio (trimagem) e desempenho por velocidade, sem integração no tempo.
   tipos `Ctx:25`

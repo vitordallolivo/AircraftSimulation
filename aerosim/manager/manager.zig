@@ -33,12 +33,18 @@ pub fn find(name: []const u8) ?*const Simulation {
 test "a tabela vem das análises" {
     try std.testing.expectEqual(analyses.len, all.len);
     try std.testing.expect(find("estabilidade_dinamica") != null);
-    _ = stability;
-    _ = thrust;
-    _ = envelope;
-    _ = performance;
-    _ = mission;
-    _ = @import("takeoff_opt.zig");
-    _ = @import("analysis.zig");
-    _ = @import("flightplots.zig");
+}
+
+// os testes de cada análise entram mesmo com -Dfiltro (um teste filtrado não analisa o que ele importa)
+comptime {
+    if (@import("builtin").is_test) {
+        _ = stability;
+        _ = thrust;
+        _ = envelope;
+        _ = performance;
+        _ = mission;
+        _ = @import("takeoff_opt.zig");
+        _ = @import("analysis.zig");
+        _ = @import("flightplots.zig");
+    }
 }

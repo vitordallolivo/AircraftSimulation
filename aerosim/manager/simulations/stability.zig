@@ -903,3 +903,50 @@ fn jsonNumber(value: std.json.Value) f64 {
         else => 0,
     };
 }
+
+test "a sonda da estabilidade estática dá os números do Python no Convencional_original" {
+    const gpa = testing.allocator;
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    defer gpa.free(bytes);
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);
+    defer loaded.deinit();
+    const instance = try gpa.create(core.runner.Instance);
+    defer gpa.destroy(instance);
+    instance.* = .{};
+    _ = try params_mod.setup(&loaded.ac, instance, &diagnosis);
+    const static = core.static_stability;
+    const probe = static.Probe.init(instance, params_mod.macLeadingEdge(&loaded.ac));
+    // `Probe` e `sizing` de `aerosim/stability` no mesmo avião (V = 15 m/s; pouso a 1,3 V_S e 0,9 C_Lmax)
+    try testing.expectApproxEqAbs(@as(f64, 12.39), probe.mass, 1e-9);
+    try testing.expectApproxEqAbs(@as(f64, 48.36782672897627), probe.fraction(probe.neutralPoint(15)), 1e-6);
+    const lift_max = probe.liftMax(15, 0);
+    try testing.expectApproxEqAbs(@as(f64, 1.648057806495107), lift_max, 1e-9);
+    const stall = probe.stallSpeed(lift_max);
+    try testing.expectApproxEqAbs(@as(f64, 10.971265478835653), stall, 1e-9);
+    const x = probe.xAt(20);
+    const trim = probe.trimAtLift(1.3 * stall, 0.9 * lift_max, x, .{ 0.1, 0 }).?;
+    try testing.expectApproxEqAbs(@as(f64, 0.2650868051482738), trim[0], 1e-6);
+    try testing.expectApproxEqAbs(@as(f64, -0.4001110553485697), trim[1], 1e-6);
+    try testing.expectApproxEqAbs(@as(f64, 1.4123720945165297), probe.trimmedLiftMax(1.3 * stall, x, 20.0 / deg), 1e-6);
+    try testing.expectApproxEqAbs(@as(f64, 19.54218481272443), probe.thrust(1.1 * stall, 1)[0], 1e-9);
+    try testing.expectApproxEqAbs(@as(f64, -0.15254812054957279), probe.rotationElevator(1.1 * stall, probe.cg[0], 10, null), 1e-9);
+    try testing.expectApproxEqAbs(@as(f64, 0.156088315180844), probe.momentAtZeroLift(15), 1e-9);
+    const gear = static.gearForRotation(&probe, 1.1 * stall, probe.cg[0], 10, 20.0 / deg);
+    try testing.expectApproxEqAbs(@as(f64, -0.11201892172952546), gear.gear_x.?, 1e-9);
+    try testing.expectApproxEqAbs(@as(f64, -0.04525497326042473), gear.tip_x, 1e-9);
+    var sweep: static.Sweep = .{};
+    const percents = [_]f64{ 0, 5, 10, 15, 20, 25, 30, 35, 40 };
+    static.cgSweep(&probe, &percents, 15, 1.3 * stall, 0.9 * lift_max, 1.1 * stall, 10, &sweep);
+    const landing = [_]f64{ std.math.nan(f64), std.math.nan(f64), std.math.nan(f64), std.math.nan(f64), -22.92467480799833, -16.910687817981156, -11.199861041713897, -5.6408980607050765, -0.18091965150705688 };
+    const cruise_elevator = [_]f64{ -18.12784747771461, -14.976612471563344, -11.843088956333636, -8.723575648897665, -5.616004044621141, -2.51878779840007, 0.5694704232969388, 3.6500572700390252, 6.7241730647298175 };
+    const rotation = [_]f64{ -37.76040471766294, -33.179097701074504, -28.60103190971707, -24.026207343590606, -19.454624002695123, -14.886281887030625, -10.321180996597107, -5.7593213313945695, -1.2007028914230011 };
+    for (0..percents.len) |k| {
+        try testing.expectEqual(std.math.isNan(landing[k]), std.math.isNan(sweep.landing[k]));
+        if (!std.math.isNan(landing[k])) try testing.expectApproxEqAbs(landing[k], sweep.landing[k], 1e-5);
+        try testing.expectApproxEqAbs(cruise_elevator[k], sweep.cruise[k], 1e-5);
+        try testing.expectApproxEqAbs(rotation[k], sweep.rotation[k], 1e-7);
+    }
+}
+
+
