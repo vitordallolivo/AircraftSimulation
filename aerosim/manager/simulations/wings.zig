@@ -34,17 +34,18 @@ pub const Wings = struct {
 
 const open_source = "avião aberto (Montagem)";
 const sources = [_][]const u8{ open_source, "asas guardadas na sprint", "asas do avião (tabela de Projetar)" };
-const none = "nenhum";
+pub const none = "nenhum";
 
 /// os métodos de carga, com os mesmos títulos do Python (`aerosim.aero.all_load_methods`)
-const LoadMethod = enum {
+pub const LoadMethod = enum {
     llt,
     llt_gh,
     llt_nl,
     faixas,
     vlm_asb,
 
-    fn title(method: LoadMethod) []const u8 {
+    /// o título na tela (o mesmo do Python)
+    pub fn title(method: LoadMethod) []const u8 {
         return switch (method) {
             .llt => "linha sustentadora (Phillips e Snyder)",
             .llt_gh => "linha sustentadora (Goates e Hunsaker)",
@@ -54,24 +55,27 @@ const LoadMethod = enum {
         };
     }
 
-    fn fromTitle(shown: []const u8) ?LoadMethod {
+    /// o método pelo título da tela
+    pub fn fromTitle(shown: []const u8) ?LoadMethod {
         for (std.enums.values(LoadMethod)) |method| if (std.mem.eql(u8, method.title(), shown)) return method;
         return null;
     }
 
     /// o núcleo faz este método (senão ele é do Python)
-    fn inCore(method: LoadMethod) bool {
+    pub fn inCore(method: LoadMethod) bool {
         return method != .vlm_asb;
     }
 };
 
-const method_titles = blk: {
+/// os títulos dos métodos, na ordem do Python
+pub const method_titles = blk: {
     var titles: [std.enums.values(LoadMethod).len][]const u8 = undefined;
     for (std.enums.values(LoadMethod), 0..) |method, i| titles[i] = method.title();
     const frozen = titles;
     break :blk frozen;
 };
-const compare_titles = [_][]const u8{none} ++ method_titles;
+/// "nenhum" e os métodos, para o campo de comparar
+pub const compare_titles = [_][]const u8{none} ++ method_titles;
 
 /// os solvers da comparação dos métodos (os mesmos do Python, `SOLVERS`): todos pelo Python
 const solvers = [_][2][]const u8{
@@ -269,7 +273,7 @@ fn fits(plane: *const simulation.Aircraft, params: *core.types.Params) bool {
 }
 
 /// a maior divisão da superfície que cabe no limite de painéis do núcleo (busca binária, como `_fit` do Python)
-fn fitted(memory: std.mem.Allocator, plane: simulation.Aircraft, index: usize, tip: bool, params: *core.types.Params) !simulation.Aircraft {
+pub fn fitted(memory: std.mem.Allocator, plane: simulation.Aircraft, index: usize, tip: bool, params: *core.types.Params) !simulation.Aircraft {
     var low: usize = 1;
     var high: usize = max_per_side;
     var best = plane;
@@ -286,7 +290,7 @@ fn fitted(memory: std.mem.Allocator, plane: simulation.Aircraft, index: usize, t
 
 /// os parâmetros do núcleo para o método (a linha sustentadora com as escolhas do Python: `GOATES_HUNSAKER`,
 /// `NONLINEAR` de `span_loads.py`)
-fn configure(run: *simulation.Run, instance: *core.runner.Instance, plane: *const simulation.Aircraft, method: LoadMethod) !void {
+pub fn configure(run: *simulation.Run, instance: *core.runner.Instance, plane: *const simulation.Aircraft, method: LoadMethod) !void {
     var diagnosis: model.Diag = .{};
     params_mod.fill(plane, &instance.p, &diagnosis) catch |err| {
         run.fail("as asas não montaram no núcleo: {s} ({s})", .{ diagnosis.text(), @errorName(err) });

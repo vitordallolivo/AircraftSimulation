@@ -13,6 +13,7 @@ const performance = @import("simulations/performance.zig");
 const mission = @import("simulations/mission.zig");
 const sizing = @import("simulations/sizing.zig");
 const wings = @import("simulations/wings.zig");
+const loads = @import("simulations/loads.zig");
 
 pub const Simulation = simulation.Simulation;
 pub const Run = simulation.Run;
@@ -20,7 +21,7 @@ pub const Values = simulation.Values;
 pub const GridEdit = simulation.GridEdit;
 
 /// as análises em Zig, na ordem das subabas: um tipo por análise, com a interface de `simulation.check`
-pub const analyses = .{ sizing.Sizing, wings.Wings, stability.Stability, stability.DynamicStability, thrust.Thrust, envelope.Envelope, performance.Performance, mission.Mission };
+pub const analyses = .{ sizing.Sizing, wings.Wings, loads.Loads, stability.Stability, stability.DynamicStability, thrust.Thrust, envelope.Envelope, performance.Performance, mission.Mission };
 
 /// a tabela que a tela usa, montada das `analyses`
 pub const all = blk: {
@@ -95,6 +96,7 @@ comptime {
         _ = mission;
         _ = sizing;
         _ = wings;
+        _ = loads;
         _ = form_meta;
         _ = @import("takeoff_opt.zig");
         _ = @import("analysis.zig");
