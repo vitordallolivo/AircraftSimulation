@@ -111,10 +111,13 @@ pub fn lines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
         exportPlot(ui, rect, axes, series, state, kind);
     }
     drawLines(ui, rect, axes, series, state, true);
-    if (state.selected) { // a marca da seleção no canto do cartão
-        const box: rl.Rectangle = .{ .x = rect.x + rect.width - 30, .y = rect.y + 12, .width = 16, .height = 16 };
-        widgets.checkBox(box, true);
-    }
+    // a caixa da seleção no canto do cartão, sempre à vista: clicar marca ou desmarca o gráfico (para salvar os
+    // marcados juntos pelo botão direito); antes ela só aparecia depois de marcar pelo menu
+    const box: rl.Rectangle = .{ .x = rect.x + rect.width - 30, .y = rect.y + 12, .width = 16, .height = 16 };
+    const area: rl.Rectangle = .{ .x = box.x - 4, .y = box.y - 4, .width = box.width + 8, .height = box.height + 8 };
+    if (ui.clickedIn(area)) state.selected = !state.selected;
+    widgets.checkBox(box, state.selected);
+    if (ui.hovering(area) and !state.selected) widgets.roundedLines(box, 4, theme.colors.accent);
     // o botão direito no cartão abre o menu deste gráfico
     if (ui.right_clicked and ui.hovering(rect)) {
         menu.open = true;
