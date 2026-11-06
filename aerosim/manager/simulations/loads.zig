@@ -89,6 +89,7 @@ const SurfaceLoad = struct {
     fields: std.EnumArray(Field, []f64),
     lift: f64, // N
     drag: f64, // N
+    panels: []core.types.PanelState, // as faixas na mesma ordem, para a vista 3D
 };
 
 /// uma rodada: um método, com ou sem hélice
@@ -226,8 +227,10 @@ fn strips(run: *simulation.Run, state: *const RunState, method: LoadMethod, prop
             for (std.enums.values(Field)) |field| fields.set(field, try memory.alloc(f64, rows.items.len));
             var lift: f64 = 0;
             var drag: f64 = 0;
+            const kept = try memory.alloc(core.types.PanelState, rows.items.len);
             for (rows.items, 0..) |i, j| {
                 const panel = panels[i];
+                kept[j] = panel;
                 const width = panel.S / @max(panel.c, 1e-12);
                 position[j] = if (vertical) -panel.r[2] else panel.r[1];
                 fields.getPtr(.L).*[j] = panel.L / width;
@@ -236,7 +239,7 @@ fn strips(run: *simulation.Run, state: *const RunState, method: LoadMethod, prop
                 lift += panel.L;
                 drag += panel.D;
             }
-            try out.append(memory, .{ .name = surface.name, .role = role, .position = position, .fields = fields, .lift = lift, .drag = drag });
+            try out.append(memory, .{ .name = surface.name, .role = role, .position = position, .fields = fields, .lift = lift, .drag = drag, .panels = kept });
             done[k] = true;
         }
     }
@@ -379,7 +382,133 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
     try summary.append(memory, .{ "métodos", "núcleo (core/src/loads/llt.zig e core/src/physics/aero.zig)" });
     try simulation.beginResult(out, summary.items, checks.items);
     try figures.write(out, true);
+    if (state.cases.len > 0) {
+        const view = try loadsView(memory, run.aircraft, state, state.cases[0]);
+        try simulation.writeLoads(out, .{ .key = "v3d", .title = "Vista 3D da carga", .xlabel = "", .ylabel = "" }, view, plot_list.items.len == 0);
+    }
     try simulation.endResult(out);
+}
+
+// ------------------------------------------------------------------ a vista 3D
+
+fn dot(a: [3]f64, b: [3]f64) f64 {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+fn scaled(a: [3]f64, factor: f64) [3]f64 {
+    return .{ a[0] * factor, a[1] * factor, a[2] * factor };
+}
+
+fn minus(a: [3]f64, b: [3]f64) [3]f64 {
+    return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2] };
+}
+
+fn plus(a: [3]f64, b: [3]f64) [3]f64 {
+    return .{ a[0] + b[0], a[1] + b[1], a[2] + b[2] };
+}
+
+fn normalized(a: [3]f64) [3]f64 {
+    return scaled(a, 1 / @max(@sqrt(dot(a, a)), 1e-12));
+}
+
+fn cross(a: [3]f64, b: [3]f64) [3]f64 {
+    return .{ a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] };
+}
+
+/// os campos da vista, na ordem de `CAMPOS` do Python (`aerosim/interfaces/loads.py`)
+const ViewField = enum { carga, L, alpha_ef, V_rel, cl, cd, q, D };
+const view_labels = std.EnumArray(ViewField, struct { []const u8, bool }).init(.{
+    .carga = .{ "carga alar local (sustentação por área) (N/m²)", true },
+    .L = .{ "sustentação por metro de envergadura (N/m)", true },
+    .alpha_ef = .{ "ângulo de ataque efetivo (°)", true },
+    .V_rel = .{ "velocidade local / V∞", false },
+    .cl = .{ "c_l local", true },
+    .cd = .{ "c_d local", false },
+    .q = .{ "pressão dinâmica local (Pa)", false },
+    .D = .{ "arrasto por metro de envergadura (N/m)", false },
+});
+
+/// a malha das faixas (uma face por faixa: bordo de ataque a 25 % da corda à frente do centro, bordo de fuga a 75 %
+/// atrás, ± meia largura na envergadura), os campos por face, as setas e o resto do avião (`to_result` do Python)
+fn loadsView(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, state: *const RunState, case: Case) !simulation.LoadsView {
+    var count: usize = 0;
+    for (case.surfaces) |surface| count += surface.panels.len;
+    const vertices = try memory.alloc(f64, count * 12);
+    const triangles = try memory.alloc(u32, count * 6);
+    const face = try memory.alloc(u32, count * 2);
+    var values = std.EnumArray(ViewField, []f64).initUndefined();
+    for (std.enums.values(ViewField)) |field| values.set(field, try memory.alloc(f64, count));
+    var layers: [4][2][]f64 = undefined;
+    for (&layers) |*layer| for (layer) |*list| {
+        list.* = try memory.alloc(f64, count * 3);
+    };
+    const density = aircraft.environment.rho;
+    var index: usize = 0;
+    for (case.surfaces) |surface| for (surface.panels) |panel| {
+        const width = panel.S / @max(panel.c, 1e-12);
+        const leading = plus(panel.r, scaled(panel.ex, 0.25 * panel.c));
+        const trailing = minus(panel.r, scaled(panel.ex, 0.75 * panel.c));
+        const side = scaled(panel.ey, 0.5 * width);
+        const corners = [4][3]f64{ minus(leading, side), plus(leading, side), plus(trailing, side), minus(trailing, side) };
+        for (corners, 0..) |corner, c| @memcpy(vertices[(index * 4 + c) * 3 ..][0..3], &corner);
+        const first: u32 = @intCast(index * 4);
+        @memcpy(triangles[index * 3 ..][0..3], &[3]u32{ first, first + 1, first + 2 });
+        @memcpy(triangles[(count + index) * 3 ..][0..3], &[3]u32{ first, first + 2, first + 3 });
+        face[index] = @intCast(index);
+        face[count + index] = @intCast(index);
+        const lift_per_meter = panel.L / width;
+        values.getPtr(.carga).*[index] = lift_per_meter / @max(panel.c, 1e-12);
+        values.getPtr(.L).*[index] = lift_per_meter;
+        values.getPtr(.alpha_ef).*[index] = panel.alpha * deg;
+        values.getPtr(.V_rel).*[index] = panel.V / state.airspeed;
+        values.getPtr(.cl).*[index] = panel.CL;
+        values.getPtr(.cd).*[index] = panel.CD;
+        values.getPtr(.q).*[index] = 0.5 * density * panel.V * panel.V;
+        values.getPtr(.D).*[index] = panel.D / width;
+        // a força por metro e as partes dela: perpendicular ao vento local (no plano do perfil) e normal à superfície
+        const force = scaled(panel.F, 1 / width);
+        const in_plane = minus(panel.v, scaled(panel.ey, dot(panel.v, panel.ey)));
+        const along = normalized(in_plane);
+        const lift = minus(force, scaled(along, dot(force, along)));
+        const normal_direction = normalized(cross(panel.ex, panel.ey));
+        const normal = scaled(normal_direction, dot(force, normal_direction));
+        const arrows = [4][3]f64{ force, lift, normal, panel.vind };
+        for (&layers, arrows) |*layer, arrow| {
+            @memcpy(layer[0][index * 3 ..][0..3], &panel.r);
+            @memcpy(layer[1][index * 3 ..][0..3], &arrow);
+        }
+        index += 1;
+    };
+    const fields = try memory.alloc(simulation.LoadsField, std.enums.values(ViewField).len);
+    for (std.enums.values(ViewField), fields) |field, *out| out.* = .{ .name = @tagName(field), .label = view_labels.get(field)[0], .signed = view_labels.get(field)[1], .values = values.get(field) };
+    const names = [4][]const u8{ "força total", "sustentação (⟂ ao vento local)", "força normal à superfície", "velocidade induzida" };
+    const units = [4][]const u8{ "N/m", "N/m", "N/m", "m/s" };
+    const colors_rgba = [4][4]f64{ .{ 0.05, 0.15, 0.45, 1 }, .{ 0.05, 0.45, 0.15, 1 }, .{ 0.45, 0.05, 0.40, 1 }, .{ 0.85, 0.35, 0.05, 1 } };
+    const vectors = try memory.alloc(simulation.LoadsVectors, 4);
+    for (vectors, 0..) |*layer, k| layer.* = .{ .name = names[k], .unit = units[k], .color = colors_rgba[k], .origins = layers[k][0], .vectors = layers[k][1] };
+
+    // o resto do avião, sem as superfícies (o método já as desenha)
+    var rest: std.ArrayList(simulation.LoadsMesh) = .empty;
+    var diagnosis: model.Diag = .{};
+    if (aircraft_model.skeleton.build(memory, aircraft, &diagnosis)) |built| {
+        for (built.pieces) |piece| {
+            switch (piece.color) {
+                .wing, .htail, .vtail, .control, .device => continue,
+                else => {},
+            }
+            const flat = try memory.alloc(f64, piece.mesh.v.len * 3);
+            for (piece.mesh.v, 0..) |point, k| @memcpy(flat[k * 3 ..][0..3], &point);
+            const faces = try memory.alloc(u32, piece.mesh.f.len * 3);
+            for (piece.mesh.f, 0..) |triangle, k| @memcpy(faces[k * 3 ..][0..3], &triangle);
+            try rest.append(memory, .{ .kind = @tagName(piece.color), .vertices = flat, .faces = faces });
+        }
+    } else |_| {}
+
+    var info: std.ArrayList(u8) = .empty;
+    try info.print(memory, "V = {d} m/s, n = {d}, α = {d:.2}°{s}, δe = {d:.1}°", .{ state.airspeed, state.load_factor, state.alpha, if (state.imposed) "" else " (trimagem)", state.elevator });
+    for (state.propellers, 0..) |propeller, k| try info.print(memory, "{s}{s} {d:.0} rpm {d:.1} N", .{ if (k == 0) "; " else ", ", propeller.name, propeller.rpm, propeller.thrust });
+    try info.print(memory, " · {s}", .{case.label});
+    return .{ .vertices = vertices, .triangles = triangles, .face = face, .fields = fields, .vectors = vectors, .rest = rest.items, .info = info.items };
 }
 
 const testing = std.testing;

@@ -678,6 +678,78 @@ pub fn beginResult(out: *Writer, summary: []const [2][]const u8, checks: []const
 }
 
 /// um gráfico do resultado com as curvas (`first`: é o primeiro da lista)
+/// um campo pintado nas faces da vista de cargas (um valor por face)
+pub const LoadsField = struct { name: []const u8, label: []const u8, signed: bool, values: []const f64 };
+/// uma camada de setas da vista de cargas (origens e vetores em listas planas x, y, z)
+pub const LoadsVectors = struct { name: []const u8, unit: []const u8, color: [4]f64, origins: []const f64, vectors: []const f64 };
+/// uma malha do resto do avião (fuselagem, motor...), desenhada sem campo
+pub const LoadsMesh = struct { kind: []const u8, vertices: []const f64, faces: []const u32 };
+
+/// a vista 3D de uma análise de carga (a `LoadView` da GUI PyQt, o `_loads` da ponte): a malha das faixas em
+/// triângulos, a face de origem de cada triângulo, os campos por face, as setas, o resto do avião e o texto do caso
+pub const LoadsView = struct {
+    vertices: []const f64,
+    triangles: []const u32,
+    face: []const u32,
+    fields: []const LoadsField,
+    vectors: []const LoadsVectors,
+    rest: []const LoadsMesh = &.{},
+    info: []const u8 = "",
+    elevation: ?f64 = null,
+    azimuth: ?f64 = null,
+};
+
+fn indexList(out: *Writer, values: []const u32) !void {
+    try out.writeAll("[");
+    for (values, 0..) |value, k| {
+        if (k > 0) try out.writeAll(", ");
+        try out.print("{d}", .{value});
+    }
+    try out.writeAll("]");
+}
+
+/// um gráfico "loads3d" com a vista de cargas
+pub fn writeLoads(out: *Writer, plot: Plot, view: LoadsView, first: bool) !void {
+    if (!first) try out.writeAll(", ");
+    try out.print("{{\"key\": {f}, \"title\": {f}, \"xlabel\": \"\", \"ylabel\": \"\", \"kind\": \"loads3d\", \"loads\": {{\"vertices\": ", .{ str(plot.key), str(plot.title) });
+    try numbers(out, view.vertices);
+    try out.writeAll(", \"triangles\": ");
+    try indexList(out, view.triangles);
+    try out.writeAll(", \"face\": ");
+    try indexList(out, view.face);
+    try out.writeAll(", \"fields\": [");
+    for (view.fields, 0..) |field, k| {
+        if (k > 0) try out.writeAll(", ");
+        try out.print("{{\"name\": {f}, \"label\": {f}, \"signed\": {}, \"values\": ", .{ str(field.name), str(field.label), field.signed });
+        try numbers(out, field.values);
+        try out.writeAll("}");
+    }
+    try out.writeAll("], \"vectors\": [");
+    for (view.vectors, 0..) |layer, k| {
+        if (k > 0) try out.writeAll(", ");
+        try out.print("{{\"name\": {f}, \"unit\": {f}, \"color\": ", .{ str(layer.name), str(layer.unit) });
+        try numbers(out, &layer.color);
+        try out.writeAll(", \"origins\": ");
+        try numbers(out, layer.origins);
+        try out.writeAll(", \"vectors\": ");
+        try numbers(out, layer.vectors);
+        try out.writeAll("}");
+    }
+    try out.writeAll("], \"rest\": [");
+    for (view.rest, 0..) |mesh, k| {
+        if (k > 0) try out.writeAll(", ");
+        try out.print("{{\"kind\": {f}, \"vertices\": ", .{str(mesh.kind)});
+        try numbers(out, mesh.vertices);
+        try out.writeAll(", \"faces\": ");
+        try indexList(out, mesh.faces);
+        try out.writeAll("}");
+    }
+    try out.print("], \"info\": {f}, \"camera\": {{", .{str(view.info)});
+    if (view.elevation) |value| try out.print("\"elevation\": {d}", .{value});
+    if (view.azimuth) |value| try out.print("{s}\"azimuth\": {d}", .{ if (view.elevation != null) ", " else "", value });
+    try out.writeAll("}}}");
+}
+
 pub fn writePlot(out: *Writer, plot: Plot, curves: []const Curve, first: bool) !void {
     if (!first) try out.writeAll(", ");
     try writePlotHead(out, plot);
