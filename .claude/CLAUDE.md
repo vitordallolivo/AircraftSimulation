@@ -72,17 +72,16 @@ as configurações.
    - Quando faz sentido, uma ferramenta de linha de comando em `tools/` que imprime e plota.
    - Sempre que possível, validar contra a literatura, com o número esperado escrito no teste.
 9. **Textos em português**: mensagens, gráficos, documentação, commits. Os comentários seguem o estilo do arquivo.
-10. **Como escrever um README: curto, no jeito do AeroSandbox.** O git não é lugar para aprender a teoria; o README
-    mostra o que a pasta faz e como usar. Cinco partes, nesta ordem:
-    - **O que é** (um parágrafo): o que se define ali e o que sai disso.
-    - **Para que serve**: as aplicações, em poucas linhas (aqui uma lista curta vale).
-    - **Como funciona**: um fluxograma (mermaid) com estruturas e métodos, não arquivos, e no máximo uma tabela.
-    - **Exemplo**: código que roda, curto.
-    - **O que isso influencia**: um gráfico ou imagem do resultado e onde ele é usado no resto do projeto.
-    - Equações e detalhes de implementação só quando são o essencial do módulo; o resto fica no código (com a fonte,
-      regra 4) ou num link para o README do núcleo que tem a conta.
-    - **Números específicos** (tempos de máquina, resultados de um caso só) não vão no README. Eles ficam em
-      `core/OTIMIZACOES.md` ou no teste.
+10. **Como escrever um README: curto, no jeito do AeroSandbox, lido corrido como um livro.** O git não é lugar para
+    aprender a teoria; o README mostra o que a pasta faz e como usar. Sem quebrar em várias seções: um título e o texto
+    seguido, nesta ordem:
+    - o que é e para que serve (as aplicações), em um ou dois parágrafos;
+    - um fluxograma (mermaid) com estruturas e métodos, não arquivos, e no máximo uma tabela;
+    - um exemplo curto que roda, **com a saída que ele imprime logo abaixo** (o resultado, não só o código);
+    - um gráfico ou imagem do que isso influencia e onde é usado no resto do projeto.
+    - Equações só quando são o essencial do módulo; o resto fica no código (com a fonte, regra 4) ou num link para o
+      README do núcleo que tem a conta.
+    - **Números de máquina** (tempos) não vão no README; ficam em `core/OTIMIZACOES.md` ou no teste.
 
 11. **Nomes no Zig dizem o que a coisa é.**
     - Nada de nome de uma letra, a não ser os iteradores de laço simples (`i`, `j`, `k`). Parâmetro, variável local,
