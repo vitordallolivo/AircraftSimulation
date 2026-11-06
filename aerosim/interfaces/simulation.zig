@@ -396,6 +396,12 @@ pub const Curve = struct {
     fill: []const f64 = &.{}, // a região sombreada até esta outra borda em y, no mesmo x
     fill_x: []const f64 = &.{}, // ou até esta outra borda em x, no mesmo y
     strong: bool = false, // a sombra mais forte
+    /// a escolha ligada entre gráficos: os pontos são itens do grupo `pick`, o k-ésimo é o item `ids[k]`; clicar num
+    /// deles (ou arrastar por cima) escolhe o item em todos os gráficos do grupo
+    pick: []const u8 = "",
+    ids: []const f64 = &.{},
+    /// a curva só aparece quando o item `shows` do grupo `pick` está escolhido (-1: quando nenhum está)
+    shows: ?f64 = null,
     vspan: bool = false, // uma faixa vertical sombreada de x[0] a x[1] (y é ignorado)
     line: bool = false, // com `marker`: liga os símbolos com a linha
 };
@@ -986,6 +992,12 @@ pub fn writePlot(out: *Writer, plot: Plot, curves: []const Curve, first: bool) !
         if (curve.strong) try out.writeAll(", \"strong\": true");
         if (curve.vspan) try out.writeAll(", \"vspan\": true");
         if (curve.line) try out.writeAll(", \"line\": true");
+        if (curve.pick.len > 0) try out.print(", \"pick\": {f}", .{str(curve.pick)});
+        if (curve.ids.len > 0) {
+            try out.writeAll(", \"ids\": ");
+            try numbers(out, curve.ids);
+        }
+        if (curve.shows) |id| try out.print(", \"shows\": {d}", .{id});
         try out.writeAll("}");
     }
     try out.writeAll("]}");

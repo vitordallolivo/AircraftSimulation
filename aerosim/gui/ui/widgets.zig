@@ -13,6 +13,7 @@ pub const Ui = struct {
     logo: theme.Logo,
     mouse: rl.Vector2 = .{ .x = 0, .y = 0 },
     clicked: bool = false,
+    held: bool = false, // o botão esquerdo apertado (arrastar)
     right_clicked: bool = false, // o botão direito (o menu dos gráficos)
     wheel: f32 = 0,
     // um clique já usado por um widget de cima (ex.: a lista aberta de uma escolha) não vale para os de baixo
@@ -46,6 +47,7 @@ pub const Ui = struct {
     pub fn beginFrame(ui: *Ui) void {
         ui.mouse = rl.getMousePosition();
         ui.clicked = rl.isMouseButtonPressed(.left);
+        ui.held = rl.isMouseButtonDown(.left);
         ui.right_clicked = rl.isMouseButtonPressed(.right);
         ui.wheel = rl.getMouseWheelMove();
         ui.click_taken = false;

@@ -2,10 +2,11 @@
 //! print sem interação do `--shot`.
 //!
 //!   <programa> [LxA]
-//!   <programa> --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME]
+//!   <programa> --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME] [clique=X,Y]
 //!
 //! `arquivo` vai para o `openFile` da tela (.json, .dat ou uma polar); `acao=NOME` (ou `acao=A,B`) chama `command` da tela para cada nome,
-//! se ela tiver (abre um diálogo para o print, por exemplo).
+//! se ela tiver (abre um diálogo para o print, por exemplo). `clique=X,Y` clica no pixel (X, Y) quando a tela para de
+//! mudar e tira o print depois (a leitura de um gráfico, a escolha de um ponto).
 const std = @import("std");
 const rl = @import("raylib");
 const widgets = @import("widgets.zig");
@@ -20,7 +21,11 @@ pub const Args = struct {
     tab: ?usize = null, // aba aberta no começo (aba=N), se a tela tiver `selectTab`
     file: ?[:0]const u8 = null, // um arquivo para abrir, se a tela tiver `openFile`
     action: ?[:0]const u8 = null, // acao=NOME, se a tela tiver `command`
+    click: ?rl.Vector2 = null, // clique=X,Y: um clique no print, depois que a tela para de mudar
 };
+
+/// o clique do print (`clique=X,Y`) que o próximo quadro recebe
+var injected_click: ?rl.Vector2 = null;
 
 /// lê a linha de comando (o primeiro item é o nome do programa)
 pub fn parseArgs(argv: []const [:0]const u8) !Args {
@@ -38,6 +43,9 @@ pub fn parseArgs(argv: []const [:0]const u8) !Args {
             args.file = value;
         } else if (std.mem.startsWith(u8, value, "aba=")) {
             args.tab = std.fmt.parseInt(usize, value[4..], 10) catch return error.BadArgs;
+        } else if (std.mem.startsWith(u8, value, "clique=")) {
+            const cut = std.mem.indexOfScalar(u8, value, ',') orelse return error.BadArgs;
+            args.click = .{ .x = std.fmt.parseFloat(f32, value[7..cut]) catch return error.BadArgs, .y = std.fmt.parseFloat(f32, value[cut + 1 ..]) catch return error.BadArgs };
         } else if (std.mem.startsWith(u8, value, "rolar=")) {
             args.scroll = std.fmt.parseFloat(f32, value[6..]) catch return error.BadArgs;
         } else if (std.mem.indexOfScalar(u8, value, 'x')) |cut| {
@@ -58,7 +66,7 @@ fn isFile(value: []const u8) bool {
 pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     const arena = init.arena.allocator();
     const argv = try init.minimal.args.toSlice(arena);
-    const args = parseArgs(argv) catch {
+    var args = parseArgs(argv) catch {
         std.debug.print("uso: {s} [LxA]\n     {s} --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME]\n", .{ title, title });
         std.process.exit(2);
     };
@@ -99,6 +107,12 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
         // acao=rodar), até uns minutos de quadros, e mais três quadros para as vistas 3D do resultado
         const settling = @hasDecl(@TypeOf(screen.*), "busy") and screen.busy() and frames < 200_000;
         quiet = if (settling) 0 else quiet + 1;
+        if (shot and frames >= 3 and quiet >= 3 and args.click != null) {
+            injected_click = args.click;
+            args.click = null;
+            quiet = 0;
+            continue;
+        }
         if (shot and frames >= 3 and quiet >= 3) {
             const image = try rl.loadImageFromScreen();
             defer rl.unloadImage(image);
@@ -117,6 +131,12 @@ fn drawFrame(ui: *widgets.Ui, screen: anytype, shot: bool) void {
     const height: f32 = @floatFromInt(rl.getScreenHeight());
     ui.beginFrame();
     if (shot) ui.wheel = 0; // o print não rola sozinho
+    if (injected_click) |at| { // o clique=X,Y do print
+        ui.mouse = at;
+        ui.clicked = true;
+        ui.held = true;
+        injected_click = null;
+    }
     rl.beginDrawing();
     // com o menu de um gráfico ou o seletor de exportar aberto, a tela não recebe o clique nem a roda
     const busy = plot.overlayActive();

@@ -40,6 +40,12 @@ pub const Series = struct {
     marker_size: f32 = 0, // 0: o padrão do símbolo
     marker_line: bool = false, // com marcador, liga os pontos também
     span: bool = false, // faixa vertical sombreada de xs[0] a xs[1] (o trecho do voo nivelado)
+    // a escolha ligada entre gráficos: os pontos são itens do grupo `pick` (o hash do nome; 0: nenhum), o k-ésimo é o
+    // item `ids[k]`; clicar num deles escolhe o item em todos os gráficos do grupo
+    pick: u64 = 0,
+    ids: []const f64 = &.{},
+    // a curva só aparece com o item `shows` do grupo escolhido (-1: quando nenhum está; a asa do melhor)
+    shows: ?f64 = null,
 
     /// a cor desta curva, sendo a `index`-ésima do gráfico
     pub fn colorAt(s: Series, index: usize) rl.Color {
@@ -93,6 +99,13 @@ pub const Frame = struct {
     x_range: numbers.Range,
     y_range: numbers.Range,
 
+    /// pixel → ponto dos dados
+    pub fn toData(frame: Frame, at: rl.Vector2) [2]f64 {
+        const fx: f64 = (at.x - frame.area.x) / frame.area.width;
+        const fy: f64 = (frame.area.y + frame.area.height - at.y) / frame.area.height;
+        return .{ frame.x_range.low + fx * (frame.x_range.high - frame.x_range.low), frame.y_range.low + fy * (frame.y_range.high - frame.y_range.low) };
+    }
+
     /// ponto dos dados → pixel
     pub fn toScreen(frame: Frame, x: f64, y: f64) rl.Vector2 {
         const fx = (x - frame.x_range.low) / (frame.x_range.high - frame.x_range.low);
@@ -133,10 +146,12 @@ fn drawLines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
     const inner = widgets.card(ui, rect, axes.title);
     var x_range: ?numbers.Range = null;
     var y_range: ?numbers.Range = null;
+    const matched = hasShownCurve(series);
+    legend_matched = matched;
     // as faixas juntam os dados das curvas ligadas; uma reta vertical (x igual) ou horizontal só entra com o
     // valor dela, sem a meia unidade de folga que `Range.of` dá a um valor único
     for (series) |s| {
-        if (state.isHidden(s.name)) continue;
+        if (state.isHidden(s.name) or !present(s, matched)) continue;
         if (s.span) {
             if (extent(s.xs)) |rx| x_range = if (x_range) |r| r.merge(rx) else rx;
             continue;
@@ -157,7 +172,7 @@ fn drawLines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
     ui.pushClip(.{ .x = frame.area.x, .y = frame.area.y - 1, .width = frame.area.width + 1, .height = frame.area.height + 2 });
     // as sombras primeiro, embaixo das linhas
     for (series, 0..) |s, i| {
-        if (state.isHidden(s.name)) continue;
+        if (state.isHidden(s.name) or !present(s, matched)) continue;
         if (s.span and s.xs.len >= 2) {
             const a = frame.toScreen(s.xs[0], frame.y_range.high);
             const b = frame.toScreen(s.xs[1], frame.y_range.low);
@@ -166,7 +181,7 @@ fn drawLines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
         if (s.fill_ys.len > 0 or s.fill_xs.len > 0) fillBetween(frame, s, shade(s.colorAt(i), s.strong));
     }
     for (series, 0..) |s, i| {
-        if (state.isHidden(s.name) or s.span) continue;
+        if (state.isHidden(s.name) or s.span or !present(s, matched)) continue;
         const color = s.colorAt(i);
         const n = @min(s.xs.len, s.ys.len);
         if (s.marker != .none) {
@@ -186,6 +201,9 @@ fn drawLines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
         }
         connect(frame, s, color);
     }
+    drawPicked(frame, series, state);
+    if (interactive) updateProbe(ui, frame, series, state, matched);
+    if (state.probe) |probe| if (interactive) drawProbe(ui, frame, series, probe);
     ui.popClip();
     drawLegend(ui, .{ .x = inner.x + 10, .y = inner.y + inner.height - legend_height + 4, .width = inner.width - 20, .height = legend_height }, series, state, interactive);
 }
@@ -286,6 +304,8 @@ const State = struct {
     seen: u64 = 0, // o quadro em que foi desenhado por último (só os da tela entram em "todos")
     title: [128]u8 = undefined,
     title_len: usize = 0,
+    probe: ?Probe = null, // o ponto clicado: o valor de x e y aparece ao lado (como no AeroDrive)
+    dragging: bool = false, // o clique começou no gráfico: arrastar leva a leitura junto
 
     fn isHidden(state: *const State, name: []const u8) bool {
         const id = std.hash.Wyhash.hash(0, name);
@@ -306,6 +326,43 @@ const State = struct {
         }
     }
 };
+
+/// a leitura de um gráfico: o ponto dos dados e, se caiu numa curva, qual e o índice do ponto nela
+const Probe = struct { x: f64, y: f64, series: ?usize = null, index: usize = 0 };
+
+/// o item escolhido de um grupo de escolha (um indivíduo do Mini-MDO): vale para todos os gráficos do grupo
+const Pick = struct { group: u64, id: f64 };
+var pick: ?Pick = null;
+
+/// o hash do nome de um grupo de escolha (0: sem grupo)
+pub fn pickGroup(name: []const u8) u64 {
+    if (name.len == 0) return 0;
+    return std.hash.Wyhash.hash(7, name) | 1;
+}
+
+/// esquece o item escolhido (um resultado novo)
+pub fn clearPick() void {
+    pick = null;
+}
+
+/// o item escolhido de um grupo
+fn pickedIn(group: u64) ?f64 {
+    const chosen = pick orelse return null;
+    return if (chosen.group == group) chosen.id else null;
+}
+
+/// se o gráfico tem a curva do item escolhido (senão, as de "nenhum escolhido" seguem à vista)
+fn hasShownCurve(series: []const Series) bool {
+    for (series) |s| if (s.shows) |id| if (pickedIn(s.pick)) |chosen| if (id == chosen) return true;
+    return false;
+}
+
+/// a curva aparece agora (as que dependem do item escolhido só com ele)
+fn present(s: Series, matched: bool) bool {
+    const id = s.shows orelse return true;
+    if (matched) return if (pickedIn(s.pick)) |chosen| id == chosen else false;
+    return id < 0;
+}
 
 var states: [128]State = undefined;
 var state_count: usize = 0;
@@ -864,6 +921,114 @@ fn dashedLine(a: rl.Vector2, b: rl.Vector2, color: rl.Color) void {
 }
 
 const legend_row: f32 = 18;
+/// se o gráfico que se desenha agora tem a curva do item escolhido (a legenda segue as curvas à vista)
+var legend_matched = false;
+
+// ------------------------------------------------------------------ a leitura do ponto e a escolha ligada
+/// o raio (pixels) em que um clique pega o ponto de uma curva
+const probe_reach: f32 = 22;
+
+/// clicar (ou arrastar) no gráfico lê o ponto da curva mais perto do mouse, ou o lugar do mouse se não há curva
+/// perto; clicar de novo em cima da leitura a apaga. Um ponto de um grupo de escolha escolhe o item dele
+fn updateProbe(ui: *widgets.Ui, frame: Frame, series: []const Series, state: *State, matched: bool) void {
+    const inside = ui.hovering(frame.area) and !ui.click_taken and !menu.open;
+    if (ui.clicked and inside) {
+        if (state.probe) |probe| {
+            const at = frame.toScreen(probe.x, probe.y);
+            if (@abs(at.x - ui.mouse.x) < 6 and @abs(at.y - ui.mouse.y) < 6) {
+                state.probe = null;
+                state.dragging = false;
+                return;
+            }
+        }
+        state.dragging = true;
+    }
+    if (!ui.held) state.dragging = false;
+    if (!state.dragging or !inside) return;
+    var best: ?Probe = null;
+    var best_distance: f32 = probe_reach * probe_reach;
+    for (series, 0..) |s, i| {
+        if (state.isHidden(s.name) or s.span or !present(s, matched)) continue;
+        const count = @min(s.xs.len, s.ys.len);
+        for (0..count) |k| {
+            if (!finite2(s.xs[k], s.ys[k])) continue;
+            const at = frame.toScreen(s.xs[k], s.ys[k]);
+            const distance = (at.x - ui.mouse.x) * (at.x - ui.mouse.x) + (at.y - ui.mouse.y) * (at.y - ui.mouse.y);
+            if (distance < best_distance) {
+                best_distance = distance;
+                best = .{ .x = s.xs[k], .y = s.ys[k], .series = i, .index = k };
+            }
+        }
+    }
+    if (best) |found| {
+        state.probe = found;
+        const s = series[found.series.?];
+        if (s.pick != 0 and found.index < s.ids.len) pick = .{ .group = s.pick, .id = s.ids[found.index] };
+    } else {
+        const at = frame.toData(ui.mouse);
+        state.probe = .{ .x = at[0], .y = at[1] };
+    }
+}
+
+/// o item escolhido do grupo, maior e com um anel, em todo gráfico que tem os pontos dele
+fn drawPicked(frame: Frame, series: []const Series, state: *State) void {
+    for (series, 0..) |s, i| {
+        if (s.pick == 0 or state.isHidden(s.name) or s.shows != null) continue;
+        const chosen = pickedIn(s.pick) orelse continue;
+        for (s.ids, 0..) |id, k| {
+            if (id != chosen or k >= @min(s.xs.len, s.ys.len) or !finite2(s.xs[k], s.ys[k])) continue;
+            const at = frame.toScreen(s.xs[k], s.ys[k]);
+            rl.drawCircleV(at, 7, s.colorAt(i));
+            rl.drawCircleLinesV(at, 10, theme.colors.ink);
+        }
+    }
+}
+
+/// um número para a leitura: 4 a 1 casas conforme o tamanho; em notação científica se for muito grande ou pequeno
+fn probeNumber(buffer: []u8, value: f64) []const u8 {
+    const magnitude = @abs(value);
+    if (magnitude != 0 and (magnitude < 1e-3 or magnitude >= 1e5)) return std.fmt.bufPrint(buffer, "{e:.3}", .{value}) catch "";
+    return (if (magnitude >= 1000)
+        std.fmt.bufPrint(buffer, "{d:.1}", .{value})
+    else if (magnitude >= 100)
+        std.fmt.bufPrint(buffer, "{d:.2}", .{value})
+    else if (magnitude >= 10)
+        std.fmt.bufPrint(buffer, "{d:.3}", .{value})
+    else
+        std.fmt.bufPrint(buffer, "{d:.4}", .{value})) catch "";
+}
+
+/// a leitura: as linhas até os eixos, o anel no ponto e a caixa com o nome da curva e os valores
+fn drawProbe(ui: *widgets.Ui, frame: Frame, series: []const Series, probe: Probe) void {
+    const at = frame.toScreen(probe.x, probe.y);
+    if (!rl.checkCollisionPointRec(at, .{ .x = frame.area.x - 1, .y = frame.area.y - 1, .width = frame.area.width + 2, .height = frame.area.height + 2 })) return;
+    const guide = theme.colors.muted;
+    rl.drawLineEx(at, .{ .x = at.x, .y = frame.area.y + frame.area.height }, 1, guide);
+    rl.drawLineEx(.{ .x = frame.area.x, .y = at.y }, at, 1, guide);
+    const color = if (probe.series) |i| series[i].colorAt(i) else theme.colors.ink;
+    rl.drawCircleLinesV(at, 6, theme.colors.ink);
+    rl.drawCircleV(at, 2.5, color);
+    var x_text: [32]u8 = undefined;
+    var y_text: [32]u8 = undefined;
+    var line: [200]u8 = undefined;
+    const values = std.fmt.bufPrintZ(&line, "x = {s}   y = {s}", .{ probeNumber(&x_text, probe.x), probeNumber(&y_text, probe.y) }) catch return;
+    const name: [:0]const u8 = if (probe.series) |i| series[i].name else "";
+    const width = @max(theme.textWidth(ui.fonts.mono, values, 12), tex.width(ui.fonts.regular, name, 12)) + 16;
+    const height: f32 = if (name.len > 0) 40 else 24;
+    var box_x = at.x + 12;
+    var box_y = at.y - height - 8;
+    if (box_x + width > frame.area.x + frame.area.width) box_x = at.x - width - 12;
+    if (box_y < frame.area.y) box_y = at.y + 10;
+    const box: rl.Rectangle = .{ .x = box_x, .y = box_y, .width = width, .height = height };
+    widgets.rounded(box, 4, theme.hex(0xfffbe6));
+    widgets.roundedLines(box, 4, theme.colors.line);
+    var y = box_y + 5;
+    if (name.len > 0) {
+        _ = tex.draw(ui.fonts.regular, name, box_x + 8, y, 12, theme.colors.label);
+        y += 16;
+    }
+    theme.text(ui.fonts.mono, values, box_x + 8, y, 12, theme.colors.ink);
+}
 
 fn legendItemWidth(ui: *widgets.Ui, name: [:0]const u8) f32 {
     return 28 + tex.width(ui.fonts.regular, name, 12) + 18;
@@ -874,7 +1039,7 @@ fn legendHeight(ui: *widgets.Ui, width: f32, series: []const Series) f32 {
     var rows: f32 = 1;
     var x: f32 = 0;
     for (series) |s| {
-        if (!s.in_legend) continue;
+        if (!s.in_legend or !present(s, legend_matched)) continue;
         const w = legendItemWidth(ui, s.name);
         if (x > 0 and x + w > width - 20) {
             rows += 1;
@@ -889,7 +1054,7 @@ fn drawLegend(ui: *widgets.Ui, rect: rl.Rectangle, series: []const Series, state
     var x = rect.x;
     var y = rect.y;
     for (series, 0..) |s, i| {
-        if (!s.in_legend) continue;
+        if (!s.in_legend or !present(s, legend_matched)) continue;
         const w = legendItemWidth(ui, s.name);
         if (x > rect.x and x + w > rect.x + rect.width) {
             x = rect.x;

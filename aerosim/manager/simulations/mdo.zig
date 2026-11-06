@@ -152,11 +152,13 @@ fn airfoilNamed(memory: std.mem.Allocator, name: []const u8) !aircraft_model.air
 const plots = [_]simulation.Plot{
     .{ .key = "mdo_hist", .title = "Objetivo por iteração (linha: o melhor até ali)", .xlabel = "iteração", .ylabel = "objetivo" },
     .{ .key = "mdo_cloud", .title = "Indivíduos: MTOW × área da asa", .xlabel = "área da asa (m²)", .ylabel = "MTOW (kg)" },
-    .{ .key = "mdo_plan", .title = "Asa do melhor indivíduo (vista de cima)", .xlabel = "y (m)", .ylabel = "x (m)" },
+    .{ .key = "mdo_plan", .title = "Asa do indivíduo (clique num ponto acima; sem escolha, a do melhor)", .xlabel = "y (m)", .ylabel = "x (m)" },
     .{ .key = "mdo_TD", .title = "Tração e arrasto no MTOW", .xlabel = "V (m/s)", .ylabel = "força (N)" },
 };
 
 const color_feasible = "#1f77b4";
+/// o grupo de escolha dos indivíduos nos gráficos
+const pick_group = "indivíduo";
 const color_infeasible = "#b0b0b0";
 const color_best = "#d62728";
 const color_drag = "#eb6834";
@@ -508,6 +510,8 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
     var cloud_feasible_y: std.ArrayList(f64) = .empty;
     var cloud_infeasible_x: std.ArrayList(f64) = .empty;
     var cloud_infeasible_y: std.ArrayList(f64) = .empty;
+    var feasible_ids: std.ArrayList(f64) = .empty;
+    var infeasible_ids: std.ArrayList(f64) = .empty;
     var history_x: std.ArrayList(f64) = .empty;
     var history_y: std.ArrayList(f64) = .empty;
     var leader: ?sizing_types.Individual = null;
@@ -516,12 +520,15 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
         const objective = if (mtow_objective) individual.mtow else individual.ee;
         const iter: f64 = @floatFromInt(individual.iter);
         const area = individual.x[sizing_types.variable(.area)];
+        const id: f64 = @floatFromInt(i);
         if (individual.feasible != 0) {
+            try feasible_ids.append(memory, id);
             try feasible_x.append(memory, iter);
             try feasible_y.append(memory, objective);
             try cloud_feasible_x.append(memory, area);
             try cloud_feasible_y.append(memory, individual.mtow);
         } else {
+            try infeasible_ids.append(memory, id);
             try infeasible_x.append(memory, iter);
             try infeasible_y.append(memory, objective);
             try cloud_infeasible_x.append(memory, area);
@@ -535,15 +542,31 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
             if (i + 1 < individuals.len) iteration = individuals[i + 1].iter;
         }
     }
-    try figures.curve("mdo_hist", .{ .name = "inviáveis", .x = infeasible_x.items, .y = infeasible_y.items, .marker = "x", .size = 4, .color = color_infeasible });
-    try figures.curve("mdo_hist", .{ .name = "viáveis", .x = feasible_x.items, .y = feasible_y.items, .marker = "o", .size = 4, .color = color_feasible });
+    // os indivíduos são um grupo de escolha: clicar (ou arrastar) num ponto mostra a asa dele
+    try figures.curve("mdo_hist", .{ .name = "inviáveis", .x = infeasible_x.items, .y = infeasible_y.items, .marker = "x", .size = 4, .color = color_infeasible, .pick = pick_group, .ids = infeasible_ids.items });
+    try figures.curve("mdo_hist", .{ .name = "viáveis", .x = feasible_x.items, .y = feasible_y.items, .marker = "o", .size = 4, .color = color_feasible, .pick = pick_group, .ids = feasible_ids.items });
     try figures.curve("mdo_hist", .{ .name = try text(memory, "melhor ({s})", .{objective_label}), .x = history_x.items, .y = history_y.items, .width = 2, .color = color_best });
-    try figures.curve("mdo_cloud", .{ .name = "inviáveis", .x = cloud_infeasible_x.items, .y = cloud_infeasible_y.items, .marker = "x", .size = 4, .color = color_infeasible });
-    try figures.curve("mdo_cloud", .{ .name = "viáveis", .x = cloud_feasible_x.items, .y = cloud_feasible_y.items, .marker = "o", .size = 4, .color = color_feasible });
+    try figures.curve("mdo_cloud", .{ .name = "inviáveis", .x = cloud_infeasible_x.items, .y = cloud_infeasible_y.items, .marker = "x", .size = 4, .color = color_infeasible, .pick = pick_group, .ids = infeasible_ids.items });
+    try figures.curve("mdo_cloud", .{ .name = "viáveis", .x = cloud_feasible_x.items, .y = cloud_feasible_y.items, .marker = "o", .size = 4, .color = color_feasible, .pick = pick_group, .ids = feasible_ids.items });
     try figures.curve("mdo_cloud", .{ .name = "melhor", .x = try memory.dupe(f64, &.{x[sizing_types.variable(.area)]}), .y = try memory.dupe(f64, &.{quantity(best, .mtow)}), .marker = "o", .size = 9, .color = color_best });
 
     const outline = try planform(memory, x[sizing_types.variable(.span)], x[sizing_types.variable(.area)] / state.wing_count, x[sizing_types.variable(.taper)]);
-    try figures.curve("mdo_plan", .{ .name = try text(memory, "b = {d:.2} m, S = {d:.3} m²", .{ x[sizing_types.variable(.span)], x[sizing_types.variable(.area)] / state.wing_count }), .x = outline[0], .y = outline[1], .width = 2, .color = color_feasible });
+    try figures.curve("mdo_plan", .{ .name = try text(memory, "melhor: b = {d:.2} m, S = {d:.3} m²", .{ x[sizing_types.variable(.span)], x[sizing_types.variable(.area)] / state.wing_count }), .x = outline[0], .y = outline[1], .width = 2, .color = color_feasible, .pick = pick_group, .shows = -1 });
+    // a asa de cada indivíduo, que aparece quando ele é escolhido num dos gráficos de cima
+    for (individuals, 0..) |individual, i| {
+        const span = individual.x[sizing_types.variable(.span)];
+        const area = individual.x[sizing_types.variable(.area)] / state.wing_count;
+        const shape = try planform(memory, span, area, individual.x[sizing_types.variable(.taper)]);
+        try figures.curve("mdo_plan", .{
+            .name = try text(memory, "#{d} ({s}): b = {d:.2} m, S = {d:.3} m², MTOW = {d:.2} kg, {s}, {s}", .{ i, if (individual.feasible != 0) "viável" else "inviável", span, area, individual.mtow, listItem(state.airfoil_names, individual.x[sizing_types.variable(.airfoil)]), listItem(state.set_names, individual.x[sizing_types.variable(.set)]) }),
+            .x = shape[0],
+            .y = shape[1],
+            .width = 2,
+            .color = if (individual.feasible != 0) color_feasible else color_infeasible,
+            .pick = pick_group,
+            .shows = @floatFromInt(i),
+        });
+    }
 
     var curve_points: usize = sizing_types.n_curve;
     while (curve_points > 1 and best.V[curve_points - 1] == 0) curve_points -= 1;

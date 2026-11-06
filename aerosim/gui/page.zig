@@ -1209,6 +1209,9 @@ pub const Page = struct {
                     .marker_size = if (curve.object.get("size")) |size| @floatCast(number(size) orelse 0) else 0,
                     .marker_line = flag(curve, "line"),
                     .span = flag(curve, "vspan"),
+                    .pick = plot.pickGroup(stringField(curve, "pick")),
+                    .ids = try numberList(memory, curve.object.get("ids"), count),
+                    .shows = if (curve.object.get("shows")) |id| number(id) else null,
                 };
             }
             try charts.append(memory, .{ .title = try memory.dupeZ(u8, stringField(item, "title")), .x_label = try memory.dupeZ(u8, stringField(item, "xlabel")), .y_label = try memory.dupeZ(u8, stringField(item, "ylabel")), .series = series, .x_limits = limits(item.object.get("xlim")), .y_limits = limits(item.object.get("ylim")) });
@@ -1217,6 +1220,11 @@ pub const Page = struct {
         page.checks = found.items;
         page.tables = tables.items;
         page.charts = charts.items;
+        // um resultado novo com escolha ligada (os indivíduos do Mini-MDO): a escolha de antes não vale mais
+        for (charts.items) |chart| for (chart.series) |s| if (s.pick != 0) {
+            plot.clearPick();
+            break;
+        };
         page.loads = loads.items;
         page.tracks = tracks.items;
     }

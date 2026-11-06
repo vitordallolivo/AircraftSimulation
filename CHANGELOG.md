@@ -6,6 +6,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- Nos gráficos da tela em Zig não dava para ler um valor. Agora clicar num gráfico mostra o x e o y do ponto da
+  curva mais perto (ou do lugar do clique), com linhas até os eixos, e arrastar leva a leitura junto; clicar de novo
+  em cima apaga. No Mini-MDO, clicar ou arrastar sobre os indivíduos (no histórico ou na nuvem) marca o mesmo
+  indivíduo nos dois gráficos e mostra a asa dele, com envergadura, área, MTOW, perfil e motor.
 - Não dava para acrescentar motores e hélices ao programa pela tela em Zig, e um perfil .dat trazido ficava só no
   projeto. Agora há uma aba Biblioteca no topo, com Perfis, Motores e Hélices: um motor novo sai do formulário ou de
   um arquivo, uma hélice vem de um .dat padrão (cabeçalho com nome e diâmetro e as linhas J, C_T, C_P, que também lê
