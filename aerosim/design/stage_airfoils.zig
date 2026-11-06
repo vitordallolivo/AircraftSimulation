@@ -44,7 +44,7 @@ const airfoil_fields = [_]registry.Field{
 };
 
 /// a lista de perfis do projeto (o padrão do Python, NACA 2412 e 4412, se ainda não existe)
-fn entries(project: *store.Project) !*std.json.Array {
+pub fn entries(project: *store.Project) !*std.json.Array {
     const list = project.list("airfoils");
     if (list.items.len == 0) {
         for ([_][]const u8{ "NACA 2412", "NACA 4412" }) |name| try list.append(try newEntry(project.memory(), name, &.{}, null));
@@ -82,6 +82,75 @@ fn newEntry(memory: std.mem.Allocator, name: []const u8, coords: []const [2]f64,
     try entry.put(memory, "source", .{ .string = "modelo" });
     try entry.put(memory, "polar_file", .{ .string = "" });
     return .{ .object = entry };
+}
+
+/// os perfis da biblioteca (os .dat de `data/airfoils`, fora os NACA de 4 dígitos), lidos uma vez
+pub fn library(context: *stages.Context) []const Value {
+    if (context.library) |known| return known;
+    const memory = context.project.memory();
+    var out: std.ArrayList(Value) = .empty;
+    for ([_][]const u8{ "data/airfoils", "../data/airfoils" }) |folder| {
+        var dir = std.Io.Dir.cwd().openDir(context.io, folder, .{ .iterate = true }) catch continue;
+        defer dir.close(context.io);
+        var files: std.ArrayList([]const u8) = .empty;
+        var walker = dir.iterate();
+        while (walker.next(context.io) catch null) |item| {
+            if (item.kind != .file or !std.ascii.endsWithIgnoreCase(item.name, ".dat")) continue;
+            files.append(memory, memory.dupe(u8, item.name) catch continue) catch continue;
+        }
+        std.mem.sort([]const u8, files.items, {}, struct {
+            fn less(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.less);
+        for (files.items) |name| {
+            const path = std.fs.path.join(memory, &.{ folder, name }) catch continue;
+            const read = readDat(memory, context.io, path) catch continue;
+            if (std.mem.eql(u8, kindOf(.{ .name = read.name }, ""), "naca")) continue;
+            var entry = newEntry(memory, read.name, read.points, null) catch continue;
+            if (airfoilObject(&entry)) |object| object.put(memory, "path", .{ .string = path }) catch {};
+            out.append(memory, entry) catch continue;
+        }
+        break;
+    }
+    context.library = out.items;
+    return out.items;
+}
+
+/// os nomes dos perfis: os da etapa Perfis primeiro, depois os da biblioteca (`airfoil_names`)
+pub fn names(context: *stages.Context, memory: std.mem.Allocator) ![]const []const u8 {
+    var out: std.ArrayList([]const u8) = .empty;
+    for ((try entries(&context.project)).items) |entry| try appendNew(memory, &out, entryName(entry));
+    for (library(context)) |entry| try appendNew(memory, &out, entryName(entry));
+    return out.items;
+}
+
+fn appendNew(memory: std.mem.Allocator, list: *std.ArrayList([]const u8), name: []const u8) !void {
+    for (list.items) |known| if (std.mem.eql(u8, known, name)) return;
+    try list.append(memory, name);
+}
+
+/// o nome do perfil de um candidato
+pub fn entryName(entry: Value) []const u8 {
+    if (entry != .object) return "";
+    const airfoil = entry.object.get("airfoil") orelse return "";
+    return if (airfoil == .object) store.text(&airfoil.object, "name", "") else "";
+}
+
+/// o candidato com este nome: o da etapa Perfis, senão o da biblioteca (`DesignProject.airfoil`)
+pub fn lookup(context: *stages.Context, name: []const u8) ?Value {
+    const list = entries(&context.project) catch return null;
+    for (list.items) |entry| if (std.mem.eql(u8, entryName(entry), name)) return entry;
+    for (library(context)) |entry| if (std.mem.eql(u8, entryName(entry), name)) return entry;
+    return null;
+}
+
+/// o perfil de uma seção da asa para a linha sustentadora: os números do perfil ajustados na polar do modelo
+pub fn sectionOf(memory: std.mem.Allocator, entry: ?Value) !core.wing_line.SectionAirfoil {
+    const airfoil = if (entry) |known| try airfoilOf(memory, known) else Airfoil{};
+    const numbers = aircraft_model.params.props2d(airfoil) catch [5]f64{ airfoil.cl_alpha, 0, airfoil.cl_max, airfoil.cd0, 0 };
+    const symmetric = @abs(numbers[1]) < 1e-9 and @abs(numbers[4]) < 1e-9;
+    return core.wing_line.modelSection(.{ .cl_alpha = numbers[0], .alpha0 = numbers[1], .cl_max = numbers[2], .cd0 = numbers[3], .cm_ac = numbers[4] }, symmetric);
 }
 
 /// o perfil de um candidato, como o modelo do avião lê

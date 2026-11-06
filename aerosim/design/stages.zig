@@ -14,6 +14,7 @@ const simulation = @import("simulation");
 const store = @import("store.zig");
 const registry = @import("registry.zig");
 const airfoil_stage = @import("stage_airfoils.zig");
+const wing_stage = @import("stage_wing.zig");
 const requirements_stage = @import("stage_requirements.zig");
 
 const Value = std.json.Value;
@@ -25,6 +26,8 @@ pub const Context = struct {
     io: std.Io,
     /// o perfil selecionado na etapa Perfis
     selected_airfoil: usize = 0,
+    /// os perfis da biblioteca (`data/airfoils`), lidos uma vez, como candidatos do projeto
+    library: ?[]const Value = null,
 
     /// grava o projeto (uma falha de gravação não derruba a etapa: a mensagem avisa)
     pub fn save(context: *Context) bool {
@@ -58,6 +61,7 @@ pub const Stage = struct {
 pub const all = [_]Stage{
     .{ .name = "requisitos", .apply = requirements_stage.apply, .page = requirements_stage.page },
     .{ .name = "perfis", .apply = airfoil_stage.apply, .page = airfoil_stage.page },
+    .{ .name = "asa", .apply = wing_stage.apply, .page = wing_stage.page },
 };
 
 /// a etapa em Zig com este nome (nulo: ela segue pelo Python)
@@ -162,6 +166,52 @@ pub fn applyFields(project: *store.Project, section: *ObjectMap, fields: []const
         changed += 1;
     }
     return changed;
+}
+
+/// o próximo nome livre: "asa 1" → "asa 2" (`next_name` de project.py)
+pub fn nextName(memory: std.mem.Allocator, name: []const u8, taken: []const []const u8) ![]const u8 {
+    var base = name;
+    var number: usize = 1;
+    if (std.mem.lastIndexOfScalar(u8, name, ' ')) |space| {
+        if (std.fmt.parseInt(usize, name[space + 1 ..], 10)) |parsed| {
+            base = name[0..space];
+            number = parsed;
+        } else |_| {}
+    }
+    while (true) : (number += 1) {
+        const candidate = try std.fmt.allocPrint(memory, "{s} {d}", .{ base, number });
+        var used = false;
+        for (taken) |other| used = used or std.mem.eql(u8, other, candidate);
+        if (!used) return candidate;
+    }
+}
+
+/// guarda `candidate` na lista (o mesmo nome em `params.name` substitui)
+pub fn put(list: *std.json.Array, candidate: Value) !void {
+    const name = store.nameOf(candidate);
+    for (list.items) |*item| if (std.mem.eql(u8, store.nameOf(item.*), name)) {
+        item.* = candidate;
+        return;
+    };
+    try list.append(candidate);
+}
+
+/// uma cópia funda de um valor JSON (as etapas guardam cópias: mudar o rascunho depois não muda o guardado)
+pub fn clone(memory: std.mem.Allocator, value: Value) !Value {
+    return switch (value) {
+        .object => |object| blk: {
+            var out: ObjectMap = .empty;
+            var iterator = object.iterator();
+            while (iterator.next()) |entry| try out.put(memory, entry.key_ptr.*, try clone(memory, entry.value_ptr.*));
+            break :blk .{ .object = out };
+        },
+        .array => |array| blk: {
+            var out = std.json.Array.init(memory);
+            for (array.items) |item| try out.append(try clone(memory, item));
+            break :blk .{ .array = out };
+        },
+        else => value,
+    };
 }
 
 /// o índice pedido dentro de `count` itens (nulo: fora)
