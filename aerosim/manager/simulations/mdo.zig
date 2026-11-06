@@ -360,7 +360,18 @@ fn advanceRun(run: *simulation.Run, state: *RunState) simulation.Error!bool {
     const memory = run.memory();
     const work = try memory.create(core.types.Params);
     work.* = .{};
-    sizing.optimize(&state.cfg, &state.opts, work, state.individuals, &state.evaluated, &state.best, null, null);
+    // a cada iteração: o progresso, e o "Parar" corta a busca ali mesmo (fica o melhor até então)
+    const watch = struct {
+        fn onIteration(context: ?*anyopaque, iteration: i32, recorded: usize) callconv(.c) i32 {
+            const watched: *simulation.Run = @ptrCast(@alignCast(context.?));
+            const watched_state: *RunState = @ptrCast(@alignCast(watched.state.?));
+            const total: f32 = @floatFromInt(@max(watched_state.individuals.len, 1));
+            watched.progress = 0.05 + 0.9 * @min(@as(f32, @floatFromInt(recorded)) / total, 1.0);
+            watched.say("otimizando: iteração {d}, {d} avaliações", .{ iteration, recorded });
+            return @intFromBool(watched.cancelled());
+        }
+    };
+    sizing.optimize(&state.cfg, &state.opts, work, state.individuals, &state.evaluated, &state.best, watch.onIteration, run);
     state.done = true;
     run.progress = 1;
     return true;

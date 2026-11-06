@@ -117,6 +117,18 @@ pub const Bridge = struct {
         return Error.PythonNotFound;
     }
 
+    /// o "Parar" de emergência: mata o Python no meio da conta (o pedido que esperava volta sem resposta); o
+    /// próximo pedido abre outro
+    pub fn kill(bridge: *Bridge) void {
+        if (in_browser) return;
+        var child = bridge.child orelse return;
+        bridge.child = null;
+        bridge.write_lock.lockUncancelable(bridge.io);
+        defer bridge.write_lock.unlock(bridge.io);
+        child.kill(bridge.io);
+        bridge.opened_len = 0; // o avião aberto morreu junto
+    }
+
     /// fecha a entrada do Python (ele sai sozinho) e espera o processo
     pub fn stop(bridge: *Bridge) void {
         var child = bridge.child orelse return;

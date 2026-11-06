@@ -311,9 +311,17 @@ pub const Run = struct {
     progress: f32 = 0, // de 0 a 1
     message: [160:0]u8 = [_:0]u8{0} ** 160,
     failure: [240:0]u8 = [_:0]u8{0} ** 240,
+    /// o "Parar" da tela; uma conta longa dentro de um `advance` olha `cancelled` e sai no meio
+    stop: ?*const std.atomic.Value(bool) = null,
 
     pub fn memory(run: *Run) std.mem.Allocator {
         return run.arena.allocator();
+    }
+
+    /// a tela pediu para parar: a conta pode sair agora, mesmo pela metade
+    pub fn cancelled(run: *const Run) bool {
+        const flag = run.stop orelse return false;
+        return flag.load(.monotonic);
     }
 
     /// o texto do progresso

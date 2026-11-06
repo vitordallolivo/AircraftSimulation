@@ -229,6 +229,11 @@ const AnalysisRun = struct {
     thread: ?std.Thread = null,
     outbox: jobs.Mailbox(Note, 64) = .{},
     stop: std.atomic.Value(bool) = .init(false),
+    // quem cuida da memória da rodada: a tela (`running`, `finished`) ou, depois do "Parar" de emergência, a própria
+    // thread (`abandoned`), que libera tudo quando o passo em que está acabar
+    owner: std.atomic.Value(Owner) = .init(.running),
+
+    const Owner = enum(u8) { running, finished, abandoned };
 
     /// o que a thread da conta conta para a tela
     const Note = struct {
@@ -251,9 +256,18 @@ const AnalysisRun = struct {
         }
     }
 
-    /// a última nota não se perde: espera a tela abrir espaço
+    /// a última nota não se perde: espera a tela abrir espaço. Se a tela já largou a rodada ("Parar"), ninguém lê:
+    /// a thread libera a memória dela e sai
     fn finalNote(job: *AnalysisRun, kind: @FieldType(Note, "kind")) void {
+        if (job.owner.cmpxchgStrong(.running, .finished, .acq_rel, .acquire) != null) return job.release();
         while (!job.outbox.push(.{ .kind = kind })) std.Thread.yield() catch {};
+    }
+
+    /// a memória da rodada (o avião lido, a arena da conta e a própria rodada)
+    fn release(job: *AnalysisRun) void {
+        job.run.arena.deinit();
+        job.loaded.deinit();
+        std.heap.page_allocator.destroy(job);
     }
 
     /// o motivo da falha que a análise deixou (ou um texto geral)
@@ -315,6 +329,7 @@ pub const Page = struct {
     go_to: [64]u8 = undefined, // "Usar em Desempenho": a análise que a tela mostra depois de abrir o arquivo
     go_to_len: usize = 0,
     wants_requirements: bool = false, // apertou "Condições e restrições…"
+    user_stopped: bool = false, // apertou "Parar" numa conta do Python (a falha que volta é o próprio parar)
     prompt: dialogs.TextPrompt = .{},
     picker: dialogs.FilePicker = .{},
     pending_action: usize = 0,
@@ -595,7 +610,10 @@ pub const Page = struct {
         page.seconds = @as(f64, @floatFromInt(elapsed)) / 1e9;
         const reply = page.reply orelse {
             dropArena(&page.reply_arena);
-            setText(&page.message, "{s}", .{std.mem.sliceTo(&page.waiter.failure, 0)});
+            if (page.user_stopped) {
+                page.user_stopped = false;
+                setText(&page.message, "parado", .{});
+            } else page.reportFailure(std.mem.sliceTo(&page.waiter.failure, 0));
             return;
         };
         const arena = page.reply_arena.?;
@@ -709,7 +727,7 @@ pub const Page = struct {
         };
         const job = std.heap.page_allocator.create(AnalysisRun) catch return;
         job.* = .{ .loaded = loaded, .run = undefined };
-        job.run = .{ .arena = .init(std.heap.page_allocator), .aircraft = &job.loaded.ac };
+        job.run = .{ .arena = .init(std.heap.page_allocator), .aircraft = &job.loaded.ac, .stop = &job.stop };
         page.analysis_run = job;
         page.operation = .run;
         page.started_at = std.Io.Clock.awake.now(clockIo()).nanoseconds;
@@ -793,25 +811,36 @@ pub const Page = struct {
         setText(&page.message, "rodou em {d:.1} s", .{page.seconds});
     }
 
+    /// uma falha: fica no rodapé e aparece por cima da janela, como os avisos (o que deu errado salta aos olhos)
+    fn reportFailure(page: *Page, why: []const u8) void {
+        const text = if (why.len > 0) why else "algo deu errado (sem detalhe)";
+        setText(&page.message, "{s}", .{text});
+        ui_kit.toast.show(text);
+    }
+
     /// para a rodada em Zig com o motivo
     fn stopAnalysis(page: *Page, why: []const u8) void {
-        if (page.analysis_run) |job| if (job.thread != null) {
-            // a thread ainda roda: pede para parar; ela termina o passo em que está e avisa ("parado")
+        if (page.analysis_run) |job| if (job.thread) |thread| {
+            // o "Parar" de emergência: a conta recebe o pedido (as longas saem no meio) e a tela larga a rodada na
+            // hora, sem esperar; a thread libera a memória quando o passo em que está acabar
             job.stop.store(true, .monotonic);
-            const text = "parando...";
-            @memcpy(page.waiter.progress_text[0..text.len], text);
-            page.waiter.progress_text[text.len] = 0;
-            return;
+            if (job.owner.cmpxchgStrong(.running, .abandoned, .acq_rel, .acquire) == null) {
+                thread.detach();
+                page.analysis_run = null;
+                setText(&page.message, "{s}", .{why});
+                return;
+            }
+            // a thread já tinha acabado: segue o caminho normal
+            thread.join();
+            job.thread = null;
         };
-        setText(&page.message, "{s}", .{why});
+        if (std.mem.eql(u8, why, "parado")) setText(&page.message, "{s}", .{why}) else page.reportFailure(why);
         page.dropNative();
     }
 
     fn dropNative(page: *Page) void {
         const job = page.analysis_run orelse return;
-        job.run.arena.deinit();
-        job.loaded.deinit();
-        std.heap.page_allocator.destroy(job);
+        job.release();
         page.analysis_run = null;
     }
 
@@ -1232,7 +1261,11 @@ pub const Page = struct {
             const running = busy and page.operation == .run;
             if (running) {
                 if (widgets.primaryButton(ui, button, "Parar", true)) {
-                    if (page.analysis_run != null) page.stopAnalysis("parado") else page.bridge.cancel(&page.waiter);
+                    if (page.analysis_run != null) page.stopAnalysis("parado") else {
+                        // a conta no Python: o processo morre na hora (o próximo pedido abre outro)
+                        page.user_stopped = true;
+                        page.bridge.kill();
+                    }
                 }
             } else if (widgets.primaryButton(ui, button, "Rodar", page.fields.len > 0 and !busy)) page.run();
             widgets.progressBar(.{ .x = footer.x + 12, .y = footer.y + 56, .width = footer.width - 24, .height = 6 }, if (running) page.waiter.fraction() else 0);
