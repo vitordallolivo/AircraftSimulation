@@ -6,6 +6,16 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- Em Empenagem e comandos, o comando novo pedia a superfície antes do tipo, e clicar num comando não mostrava onde
+  ele estava. Agora escolhe-se primeiro o tipo e depois a superfície (ou "sem superfície"), e clicar ou criar um
+  comando aproxima a vista 3D dele. Uma tabela nova, "Superfícies a mais", põe uma EV ou uma EH em qualquer ponto de
+  qualquer superfície: na ponta da asa no lugar do winglet, no meio dela, de um lado só ou nos dois.
+- A altura dos gráficos e da vista 3D era fixa. Agora cada uma tem uma alça embaixo para arrastar, como a da barra
+  lateral.
+- Em Desempenho, "Avião montado" repetia o envelope, a potência e a subida de "Voo nivelado e envelopes". Agora os
+  dois são uma página só, com os campos da planilha num grupo à parte e sem os gráficos repetidos. O estudo do ponto
+  de projeto no voo simulado é agora um modo da Missão: o MTOW enquanto uma variável (ângulo do motor ou incidência)
+  vai de um valor a outro. O estudo rápido da sprint continua, no fim da lista do Desempenho.
 - Nos gráficos da tela em Zig não dava para ler um valor. Agora clicar num gráfico mostra o x e o y do ponto da
   curva mais perto (ou do lugar do clique), com linhas até os eixos, e arrastar leva a leitura junto; clicar de novo
   em cima apaga. No Mini-MDO, clicar ou arrastar sobre os indivíduos (no histórico ou na nuvem) marca o mesmo

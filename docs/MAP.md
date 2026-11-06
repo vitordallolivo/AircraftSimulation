@@ -719,7 +719,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `buildMesh:149`, `balance:245`, `loadAircraft:257`, `load:270`, `fromBytes:281`, `fillAirfoilFiles:299`, `parseDat:334`, `findExample:366`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
-  tipos `Kind:36`, `Page:297`
+  tipos `Kind:36`, `Page:302`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
   tipos `Waiter:29`, `Bridge:45`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt
@@ -735,8 +735,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/ui/**
 
 - `aerosim/gui/ui/app.zig` — O que os dois programas têm igual em volta da tela: a linha de comando, a janela e o laço de desenho, com o
-  tipos `Args:15`
-  fn `parseArgs:26`, `run:58`, `runBrowser:146`, `openFromPage:175`
+  tipos `Args:16`
+  fn `parseArgs:31`, `run:66`, `runBrowser:166`, `openFromPage:195`
 - `aerosim/gui/ui/browser_io.zig` — O `std.Io` das telas no navegador. No Zig 0.16 o `std.Io.Threaded` não compila para emscripten (o mesmo motivo
 - `aerosim/gui/ui/checks.zig` — O diagnóstico de uma etapa, como o `ChecksPanel` da GUI em Python: uma linha por verificação (estado, o que se
   tipos `Check:10`, `ChecksPanel:44`
@@ -761,8 +761,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Range:45`
   fn `fieldText:7`, `numberText:12`, `niceStep:28`, `decimalsFor:38`, `significant:95`
 - `aerosim/gui/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
-  tipos `Series:24`, `Marker:51`, `Cloud:73`, `Axes:81`, `Frame:91`, `Cell:196`, `ExportKind:273`
-  fn `lines:105`, `table:204`, `tableHeight:239`, `overlayActive:417`, `overlay:422`, `drawMarker:689`, `cloud:743`, `ramp:762`, `colorBar:778`, `drawFrame:798`
+  tipos `Series:24`, `Marker:57`, `Cloud:79`, `Axes:87`, `Frame:97`, `Cell:214`, `ExportKind:291`
+  fn `lines:118`, `table:222`, `tableHeight:257`, `pickGroup:338`, `clearPick:344`, `overlayActive:474`, `overlay:479`, `drawMarker:746`, `cloud:800`, `ramp:819`, `colorBar:835`, `drawFrame:855`
 - `aerosim/gui/ui/scroll.zig` — A área rolável: tudo o que não cabe na altura (a barra lateral, a coluna dos gráficos) rola pela roda do mouse ou
   tipos `ScrollArea:13`
 - `aerosim/gui/ui/stage.zig` — As peças que toda etapa do dimensionamento repete, como o `StagePage` da GUI em Python: a barra de requisitos
@@ -788,8 +788,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Kind:17`, `View:100`
   fn `kindColor:20`, `colorByName:35`, `fieldColor:57`, `fraction:75`, `liftColor:80`, `toWorld:85`, `toBody:238`, `shaded:262`, `triangle:270`, `gradientTriangle:280`, `litTriangle:292`, `quad:298`, `segment:315`, `arrow:320`, `floor:332`, `bodyAxes:344`
 - `aerosim/gui/ui/widgets.zig` — Os pedaços comuns das telas, no desenho do AeroDrive: o contexto de desenho (fontes, logo, mouse), o cabeçalho
-  tipos `Ui:11`, `Splitter:204`, `Status:427`
-  fn `paragraph:141`, `paragraphHeight:146`, `caretToEnd:192`, `replaceOnType:238`, `helpMark:263`, `checkBox:272`, `disclosure:287`, `rounded:331`, `roundedLines:336`, `header:341`, `tabBar:362`, `primaryButton:386`, `progressBar:396`, `card:403`, `labeledCard:411`, `statusColor:417`, `tableRow:430`, `format:437`
+  tipos `Ui:11`, `Splitter:206`, `HeightGrip:239`, `Status:475`
+  fn `paragraph:143`, `paragraphHeight:148`, `caretToEnd:194`, `replaceOnType:286`, `helpMark:311`, `checkBox:320`, `disclosure:335`, `rounded:379`, `roundedLines:384`, `header:389`, `tabBar:410`, `primaryButton:434`, `progressBar:444`, `card:451`, `labeledCard:459`, `statusColor:465`, `tableRow:478`, `format:485`
 
 
 ## Zig · interface do aeroopt (`aeroopt`)

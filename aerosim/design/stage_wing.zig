@@ -394,6 +394,8 @@ pub fn apply(context: *stages.Context, memory: std.mem.Allocator, request: stage
     const params = draft(project);
     // a vista aproxima do dispositivo só enquanto é ele que se edita
     if (!std.mem.eql(u8, request.do, "show") and !(std.mem.eql(u8, request.do, "set") and request.values == null)) context.focus_device = null;
+    // clicar numa linha da tabela dos dispositivos aproxima a vista dele
+    if (context.takeSelection("dispositivos")) |row| context.focus_device = row;
     if (std.mem.eql(u8, request.do, "set")) {
         const values = request.values orelse return "";
         const before_planform = store.text(params, "planform", planforms[0]);

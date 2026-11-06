@@ -36,6 +36,12 @@ pub const Context = struct {
     history: std.ArrayList([]u8) = .empty,
     /// o dispositivo de ponta (a linha da tabela de Projetar) que se está editando: a vista 3D aproxima dele
     focus_device: ?usize = null,
+    /// o comando (a linha da tabela de Empenagem e comandos) que se está editando: a vista 3D aproxima dele
+    focus_command: ?usize = null,
+    /// a linha que se clicou numa tabela (o pedido "select"), até a etapa dela usar
+    selected_grid: [32]u8 = undefined,
+    selected_grid_len: usize = 0,
+    selected_row: ?usize = null,
     /// os perfis da biblioteca (`data/airfoils`), lidos uma vez, como candidatos do projeto
     library: ?[]const Value = null,
     /// o projeto tem pasta escolhida (aberto ou criado por "Novo projeto…"); sem ela, nada é gravado e a tela pede a
@@ -59,6 +65,14 @@ pub const Context = struct {
         context.focus_device = null;
         _ = context.save();
         return true;
+    }
+
+    /// a linha clicada na tabela `grid`, se foi nela; a escolha é usada uma vez
+    pub fn takeSelection(context: *Context, grid: []const u8) ?usize {
+        const row = context.selected_row orelse return null;
+        if (!std.mem.eql(u8, context.selected_grid[0..context.selected_grid_len], grid)) return null;
+        context.selected_row = null;
+        return row;
     }
 
     /// grava o projeto (uma falha de gravação não derruba a etapa: a mensagem avisa)
@@ -397,6 +411,14 @@ pub fn handle(memory: std.mem.Allocator, io: std.Io, fields: []const u8) !Value 
     while (!lock.tryLock()) std.atomic.spinLoopHint();
     defer lock.unlock();
     const current = try opened(io);
+    // clicar numa linha de tabela não muda o projeto: a etapa só fica sabendo (a vista aproxima do item) e mostra
+    if (std.mem.eql(u8, request.do, "grid") and std.mem.eql(u8, request.edit, "select")) {
+        const length = @min(request.grid.len, current.selected_grid.len);
+        @memcpy(current.selected_grid[0..length], request.grid[0..length]);
+        current.selected_grid_len = length;
+        current.selected_row = if (request.row >= 0) @intCast(request.row) else null;
+        request.do = "show";
+    }
     // Ctrl+Z: o projeto volta ao de antes do último pedido que mudou algo; os outros pedidos guardam o de antes
     // "Novo projeto…" ou a pasta pedida antes do primeiro "Guardar": vale para qualquer etapa
     if (std.mem.eql(u8, request.do, "project")) {

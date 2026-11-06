@@ -149,6 +149,71 @@ fn tailAirfoil(context: *stages.Context, memory: std.mem.Allocator, name: []cons
 // ------------------------------------------------------------------ os comandos
 const Command = struct { surface: []const u8, control: model.Control };
 
+/// uma superfície a mais (EV ou EH) presa em qualquer superfície do conjunto, numa fração da semienvergadura dela:
+/// uma EV na ponta da asa no lugar do winglet, no meio, ou duas (uma de cada lado)
+const Extra = struct { kind: []const u8, host: []const u8, station: f64, sides: []const u8, size: f64, chord: f64, taper: f64 };
+const extra_kinds = [_][]const u8{ "EV", "EH" };
+const extra_sides = [_][]const u8{ "os dois lados", "direita", "esquerda" };
+
+fn extraRows(memory: std.mem.Allocator, params: *const ObjectMap) ![]Extra {
+    var out: std.ArrayList(Extra) = .empty;
+    const list = params.get("extras") orelse return out.items;
+    if (list != .array) return out.items;
+    for (list.array.items) |item| {
+        if (item != .object) continue;
+        const row = &item.object;
+        try out.append(memory, .{ .kind = store.text(row, "kind", "EV"), .host = store.text(row, "host", ""), .station = store.number(row, "station", 1), .sides = store.text(row, "sides", extra_sides[0]), .size = store.number(row, "size", 0.2), .chord = store.number(row, "chord", 0.15), .taper = store.number(row, "taper", 0.7) });
+    }
+    return out.items;
+}
+
+/// o ponto (x, y, z) a uma fração da semienvergadura de `host`, do lado direito (`side` = 1) ou esquerdo (−1), no
+/// bordo de ataque
+fn stationPoint(host: model.Surface, station: f64, side: f64) [3]f64 {
+    var buffer: [model.limits.sections]model.Section = undefined;
+    const sections = model.sortedSections(&host, &buffer);
+    const along = std.math.clamp(station, 0, 1) * model.semispan(&host);
+    const offset = model.sectionAt(sections, along, "x_offset");
+    if (host.vertical) return .{ host.x - offset, host.y, host.z - along };
+    const dihedral = std.math.degreesToRadians(host.dihedral);
+    const lateral = if (host.symmetric) host.y + side * along * @cos(dihedral) else host.y + along * @cos(dihedral);
+    return .{ host.x - offset, lateral, host.z - along * @sin(dihedral) };
+}
+
+/// as superfícies a mais da tabela, presas no lugar
+fn extraSurfaces(memory: std.mem.Allocator, rows: []const Extra, surfaces: []const model.Surface, fin_model: model.Airfoil, tail_model: model.Airfoil) ![]model.Surface {
+    var out: std.ArrayList(model.Surface) = .empty;
+    for (rows, 0..) |row, k| {
+        const host = for (surfaces) |surface| {
+            if (std.mem.eql(u8, surface.name, row.host)) break surface;
+        } else continue;
+        if (row.size <= 0 or row.chord <= 0) continue;
+        const vertical = std.mem.eql(u8, row.kind, "EV");
+        if (!vertical) {
+            // uma EH a mais é inteira (as duas metades), centrada na linha do avião, na altura do ponto da raiz
+            const at = stationPoint(host, 0, 1);
+            const tip = row.chord * row.taper;
+            try out.append(memory, .{ .name = try std.fmt.allocPrint(memory, "EH extra {d}", .{k + 1}), .role = "htail", .x = at[0], .z = at[2], .airfoil = tail_model, .eta = 0.9, .sections = try memory.dupe(model.Section, &.{ .{ .y = 0, .chord = row.chord }, .{ .y = row.size / 2, .chord = tip, .x_offset = (row.chord - tip) / 4 } }) });
+            continue;
+        }
+        const both = std.mem.eql(u8, row.sides, extra_sides[0]);
+        const left_only = std.mem.eql(u8, row.sides, extra_sides[2]);
+        for ([_]f64{ 1, -1 }) |side| {
+            if (!both and ((side > 0) == left_only)) continue;
+            const at = stationPoint(host, row.station, side);
+            var fin = try verticalSurface(memory, try std.fmt.allocPrint(memory, "EV extra {d}{s}", .{ k + 1, if (!both) "" else if (side > 0) " dir" else " esq" }), row.size, row.chord, row.taper, fin_model);
+            fin.x = at[0];
+            fin.y = at[1];
+            fin.z = at[2];
+            try out.append(memory, fin);
+        }
+    }
+    return out.items;
+}
+
+/// a superfície de um comando que ainda não tem uma (ele não entra no avião até escolher)
+const no_surface = "(sem superfície)";
+
 /// os comandos da regra da etapa (aileron ou elevon na asa, profundor na EH, leme na EV) para as superfícies
 fn ruleCommands(memory: std.mem.Allocator, params: *const ObjectMap, surfaces: []const model.Surface) ![]Command {
     var out: std.ArrayList(Command) = .empty;
@@ -352,6 +417,8 @@ pub fn build(context: *stages.Context, memory: std.mem.Allocator, params: *const
             try surfaces.append(memory, fin);
         }
     }
+    // as superfícies a mais (EV ou EH em qualquer lugar), antes dos comandos para elas poderem ter os seus
+    try surfaces.appendSlice(memory, try extraSurfaces(memory, try extraRows(memory, params), surfaces.items, fin_model, tail_model));
     // os comandos nas superfícies (a regra da cauda vale para as que acabaram de entrar)
     const all_commands = if (table.len > 0) table else try ruleCommands(memory, params, surfaces.items);
     for (surfaces.items) |*surface| {
@@ -376,6 +443,33 @@ fn viewOf(memory: std.mem.Allocator, built: Built) !?simulation.View {
     return .{ .meshes = meshes.items, .cg = .{ -built.result.x_cg, 0, 0 } };
 }
 
+/// a caixa em volta de um comando (só o lado direito; numa superfície vertical, ela toda): a vista 3D aproxima dele
+fn commandFocus(memory: std.mem.Allocator, built: Built, command: Command) !?simulation.Focus {
+    const host = for (built.surfaces) |surface| {
+        if (std.mem.eql(u8, surface.name, command.surface)) break surface;
+    } else return null;
+    var surface = host;
+    surface.controls = try memory.dupe(model.Control, &.{command.control});
+    surface.devices = &.{};
+    const plane: model.Aircraft = .{ .name = "comando", .surfaces = &.{surface} };
+    var diagnosis: model.Diag = .{};
+    const pieces = aircraft_model.skeleton.build(memory, &plane, &diagnosis) catch return null;
+    var low: [3]f64 = @splat(std.math.inf(f64));
+    var high: [3]f64 = @splat(-std.math.inf(f64));
+    for (pieces.pieces) |piece| {
+        if (piece.color != .control) continue;
+        for (piece.mesh.v) |point| {
+            if (point[1] < -1e-6) continue;
+            for (0..3) |i| {
+                low[i] = @min(low[i], point[i]);
+                high[i] = @max(high[i], point[i]);
+            }
+        }
+    }
+    if (!std.math.isFinite(low[0])) return null;
+    return .{ .low = low, .high = high };
+}
+
 // ------------------------------------------------------------------ pedidos
 fn numberOf(value: Value) ?f64 {
     return switch (value) {
@@ -390,6 +484,9 @@ fn numberOf(value: Value) ?f64 {
 pub fn apply(context: *stages.Context, memory: std.mem.Allocator, request: stages.Request) ![]const u8 {
     const project = &context.project;
     const params = draft(project);
+    // a vista aproxima do comando só enquanto é ele que se edita ou que se clicou na tabela
+    if (!std.mem.eql(u8, request.do, "show") and !std.mem.eql(u8, request.do, "grid")) context.focus_command = null;
+    if (context.takeSelection("comandos")) |row| context.focus_command = row;
     if (std.mem.eql(u8, request.do, "set")) {
         const values = request.values orelse return "";
         if (try stages.applyFields(project, params, &tail_fields, "", values) > 0) _ = context.save();
@@ -412,8 +509,7 @@ pub fn apply(context: *stages.Context, memory: std.mem.Allocator, request: stage
     }
     if (std.mem.eql(u8, request.do, "keep")) return keepSet(context, memory);
     if (std.mem.eql(u8, request.do, "grid")) {
-        if (!std.mem.eql(u8, request.grid, "comandos")) return error.UnknownGrid;
-        try editCommands(context, memory, request);
+        if (std.mem.eql(u8, request.grid, "comandos")) try editCommands(context, memory, request) else if (std.mem.eql(u8, request.grid, "extras")) try editExtras(context, memory, request) else return error.UnknownGrid;
         _ = context.save();
     }
     return "";
@@ -458,6 +554,41 @@ fn commandValue(memory: std.mem.Allocator, command: Command) !Value {
     return .{ .object = row };
 }
 
+fn editExtras(context: *stages.Context, memory: std.mem.Allocator, request: stages.Request) !void {
+    const project = &context.project;
+    const owned = project.memory();
+    const params = draft(project);
+    const entry = try params.getOrPut(owned, "extras");
+    if (!entry.found_existing or entry.value_ptr.* != .array) entry.value_ptr.* = .{ .array = std.json.Array.init(owned) };
+    const rows = &entry.value_ptr.array;
+    if (std.mem.eql(u8, request.edit, "add")) {
+        // uma EV em cada ponta da primeira asa: o caso mais comum (no lugar do winglet)
+        var host: []const u8 = "";
+        if (try build(context, memory, params, false)) |built| host = built.surfaces[0].name;
+        var row: ObjectMap = .empty;
+        try row.put(owned, "kind", .{ .string = "EV" });
+        try row.put(owned, "host", .{ .string = try owned.dupe(u8, host) });
+        try row.put(owned, "station", .{ .float = 1 });
+        try row.put(owned, "sides", .{ .string = extra_sides[0] });
+        try row.put(owned, "size", .{ .float = 0.2 });
+        try row.put(owned, "chord", .{ .float = 0.15 });
+        try row.put(owned, "taper", .{ .float = 0.7 });
+        try rows.append(.{ .object = row });
+        return;
+    }
+    if (rows.items.len == 0) return;
+    const index: usize = stages.within(request.row, rows.items.len) orelse rows.items.len - 1;
+    if (std.mem.eql(u8, request.edit, "delete")) {
+        _ = rows.orderedRemove(index);
+        return;
+    }
+    if (!std.mem.eql(u8, request.edit, "set")) return error.UnknownEdit;
+    const row = &rows.items[index].object;
+    if (request.value == .string) return store.setText(project, row, request.key, request.value.string);
+    const number = numberOf(request.value) orelse return;
+    try store.setNumber(project, row, request.key, number);
+}
+
 fn editCommands(context: *stages.Context, memory: std.mem.Allocator, request: stages.Request) !void {
     const project = &context.project;
     const owned = project.memory();
@@ -466,6 +597,7 @@ fn editCommands(context: *stages.Context, memory: std.mem.Allocator, request: st
     if (!entry.found_existing or entry.value_ptr.* != .array) entry.value_ptr.* = .{ .array = std.json.Array.init(owned) };
     const rows = &entry.value_ptr.array;
     const index: usize = stages.within(request.row, rows.items.len) orelse if (rows.items.len > 0) rows.items.len - 1 else 0;
+    context.focus_command = null;
     if (std.mem.eql(u8, request.edit, "rule")) {
         const built = try build(context, memory, params, true) orelse return;
         rows.clearRetainingCapacity();
@@ -474,9 +606,11 @@ fn editCommands(context: *stages.Context, memory: std.mem.Allocator, request: st
     }
     if (std.mem.eql(u8, request.edit, "clear")) return rows.clearRetainingCapacity();
     if (std.mem.eql(u8, request.edit, "add")) {
-        var where: []const u8 = "";
-        if (rows.items.len > 0) where = store.text(&rows.items[index].object, "surface", "") else if (try build(context, memory, params, false)) |built| where = built.surfaces[0].name;
-        return rows.append(try commandValue(owned, .{ .surface = try owned.dupe(u8, where), .control = .{ .kind = "aileron", .span_start = 0.6, .span_end = 1, .chord_frac = 0.25, .mix = .{ 0, 1, 0 } } }));
+        // primeiro o tipo, depois a superfície: o comando novo nasce sem superfície e a vista aproxima dele quando
+        // ela é escolhida
+        try rows.append(try commandValue(owned, .{ .surface = "", .control = .{ .kind = "aileron", .span_start = 0.6, .span_end = 1, .chord_frac = 0.25, .mix = .{ 0, 1, 0 } } }));
+        context.focus_command = rows.items.len - 1;
+        return;
     }
     if (rows.items.len == 0) return;
     if (std.mem.eql(u8, request.edit, "delete")) {
@@ -484,9 +618,10 @@ fn editCommands(context: *stages.Context, memory: std.mem.Allocator, request: st
         return;
     }
     if (!std.mem.eql(u8, request.edit, "set")) return error.UnknownEdit;
+    context.focus_command = index;
     const row = &rows.items[index].object;
     if (std.mem.eql(u8, request.key, "surface")) {
-        if (request.value == .string) try store.setText(project, row, "surface", request.value.string);
+        if (request.value == .string) try store.setText(project, row, "surface", if (std.mem.eql(u8, request.value.string, no_surface)) "" else request.value.string);
         return;
     }
     const control = store.child(row, "control") orelse return;
@@ -648,9 +783,11 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
 
     // a tabela de comandos
     var surface_names: std.ArrayList([]const u8) = .empty;
+    try surface_names.append(memory, no_surface);
     for (built.surfaces) |surface| try surface_names.append(memory, surface.name);
     const table_rows = try tableCommands(memory, params);
     for (table_rows) |command| {
+        if (command.surface.len == 0) continue;
         var known = false;
         for (surface_names.items) |name| known = known or std.mem.eql(u8, name, command.surface);
         if (!known) try surface_names.append(memory, command.surface);
@@ -658,8 +795,8 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     var kinds: std.ArrayList([]const u8) = .empty;
     for (control_kinds) |kind| try kinds.append(memory, kind);
     const columns = try memory.dupe(simulation.Column, &.{
-        .{ .key = "surface", .label = "superfície", .kind = .choice, .choices = surface_names.items, .help = "em qual superfície do conjunto ele fica" },
-        .{ .key = "kind", .label = "nome", .kind = .choice, .choices = kinds.items, .help = "só o nome (aileron, profundor, elevon...): o que ele faz são os ganhos" },
+        .{ .key = "kind", .label = "tipo", .kind = .choice, .choices = kinds.items, .help = "só o nome (aileron, profundor, elevon...): o que ele faz são os ganhos" },
+        .{ .key = "surface", .label = "superfície", .kind = .choice, .choices = surface_names.items, .help = "em qual superfície do conjunto ele fica; sem superfície, ele não entra no avião" },
         .{ .key = "span_start", .label = "início", .help = "fração da semienvergadura (0 = raiz)" },
         .{ .key = "span_end", .label = "fim", .help = "fração da semienvergadura (1 = ponta)" },
         .{ .key = "chord_frac", .label = "corda", .help = "fração da corda" },
@@ -670,9 +807,25 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     const rows = try memory.alloc([]const simulation.Cell, table_rows.len);
     for (table_rows, rows) |command, *cells| {
         const gains = command.control.gains();
-        cells.* = try memory.dupe(simulation.Cell, &.{ .{ .text = command.surface }, .{ .text = command.control.kind }, .{ .number = command.control.span_start }, .{ .number = command.control.span_end }, .{ .number = command.control.chord_frac }, .{ .number = gains[0] }, .{ .number = gains[1] }, .{ .number = gains[2] } });
+        cells.* = try memory.dupe(simulation.Cell, &.{ .{ .text = command.control.kind }, .{ .text = if (command.surface.len == 0) no_surface else command.surface }, .{ .number = command.control.span_start }, .{ .number = command.control.span_end }, .{ .number = command.control.chord_frac }, .{ .number = gains[0] }, .{ .number = gains[1] }, .{ .number = gains[2] } });
     }
-    const grids = try memory.dupe(simulation.Grid, &.{.{ .name = "comandos", .title = "Comandos", .columns = columns, .rows = rows, .note = "vazia: vale a regra da etapa ('da regra' mostra qual é). Com linhas, a tabela manda em todas as superfícies.", .help = "um comando por linha, em qualquer superfície do conjunto: o trecho da envergadura, a fração da corda e quanto ele responde a cada eixo (arfagem, rolagem, guinada). Um profundor à frente do CG leva arfagem −1.", .buttons = &.{ .{ .operation = "rule", .label = "da regra", .help = "enche a tabela com os comandos que a regra da etapa põe (aileron ou elevon na asa, profundor na EH, leme na EV), para editar" }, .{ .operation = "add", .label = "+ comando", .help = "um comando novo na superfície do selecionado" }, .{ .operation = "delete", .label = "− comando", .help = "tira o selecionado" }, .{ .operation = "clear", .label = "limpar", .help = "esvazia a tabela: volta a valer a regra da etapa" } } }});
+    // as superfícies a mais: presas em qualquer superfície que não seja uma delas
+    var hosts: std.ArrayList([]const u8) = .empty;
+    for (built.surfaces) |surface| if (!std.mem.startsWith(u8, surface.name, "EV extra") and !std.mem.startsWith(u8, surface.name, "EH extra")) try hosts.append(memory, surface.name);
+    const extra_rows = try extraRows(memory, params);
+    const extra_cells = try memory.alloc([]const simulation.Cell, extra_rows.len);
+    for (extra_rows, extra_cells) |extra, *cells| cells.* = try memory.dupe(simulation.Cell, &.{ .{ .text = extra.kind }, .{ .text = extra.host }, .{ .number = extra.station }, .{ .text = extra.sides }, .{ .number = extra.size }, .{ .number = extra.chord }, .{ .number = extra.taper } });
+    const extra_columns = try memory.dupe(simulation.Column, &.{
+        .{ .key = "kind", .label = "tipo", .kind = .choice, .choices = &extra_kinds, .help = "EV: vertical; EH: horizontal inteira (as duas metades), centrada" },
+        .{ .key = "host", .label = "presa em", .kind = .choice, .choices = hosts.items, .help = "a superfície onde ela fica" },
+        .{ .key = "station", .label = "posição", .help = "fração da semienvergadura de onde está presa (0 = raiz, 1 = ponta); a EH usa a raiz" },
+        .{ .key = "sides", .label = "lados", .kind = .choice, .choices = &extra_sides, .help = "os dois lados: duas EV, uma de cada lado" },
+        .{ .key = "size", .label = "altura/env. (m)", .help = "a altura da EV ou a envergadura da EH" },
+        .{ .key = "chord", .label = "corda (m)", .help = "a corda da raiz" },
+        .{ .key = "taper", .label = "afilamento" },
+    });
+
+    const grids = try memory.dupe(simulation.Grid, &.{ .{ .name = "extras", .title = "Superfícies a mais", .columns = extra_columns, .rows = extra_cells, .note = "uma EV na ponta da asa no lugar do winglet, no meio dela, ou duas EV (ou EH) além da cauda. Elas entram no avião e na tabela de comandos; a conta do volume de cauda acima é a da cauda da regra.", .buttons = &.{ .{ .operation = "add", .label = "+ superfície", .help = "uma EV em cada ponta da asa, para editar" }, .{ .operation = "delete", .label = "− superfície", .help = "tira a selecionada" } } }, .{ .name = "comandos", .title = "Comandos", .columns = columns, .rows = rows, .note = "vazia: vale a regra da etapa ('da regra' mostra qual é). Com linhas, a tabela manda em todas as superfícies.", .help = "um comando por linha, em qualquer superfície do conjunto: o trecho da envergadura, a fração da corda e quanto ele responde a cada eixo (arfagem, rolagem, guinada). Um profundor à frente do CG leva arfagem −1.", .buttons = &.{ .{ .operation = "rule", .label = "da regra", .help = "enche a tabela com os comandos que a regra da etapa põe (aileron ou elevon na asa, profundor na EH, leme na EV), para editar" }, .{ .operation = "add", .label = "+ comando", .help = "um comando novo: escolha o tipo e depois a superfície" }, .{ .operation = "delete", .label = "− comando", .help = "tira o selecionado" }, .{ .operation = "clear", .label = "limpar", .help = "esvazia a tabela: volta a valer a regra da etapa" } } } });
 
     var out = base;
     out.grids = grids;
@@ -680,5 +833,8 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     out.checks = checks.items;
     out.figures = figures;
     out.view = try viewOf(memory, built);
+    if (out.view) |*scene| if (context.focus_command) |focus| if (focus < table_rows.len) {
+        scene.focus = try commandFocus(memory, built, table_rows[focus]);
+    };
     return out;
 }

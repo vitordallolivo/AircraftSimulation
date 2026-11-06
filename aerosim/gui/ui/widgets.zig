@@ -234,6 +234,52 @@ pub const Splitter = struct {
     }
 };
 
+/// a borda de baixo de um cartão (a vista 3D, uma fileira de gráficos): arrastar muda a altura dele, como a divisa
+/// da barra lateral muda a largura. `row` é quantas alturas iguais há acima da borda (a borda segue o mouse)
+pub const HeightGrip = struct {
+    height: f32,
+    dragging: bool = false,
+    start_mouse: f32 = 0,
+    start_height: f32 = 0,
+    rows: f32 = 1,
+
+    const grip_half: f32 = 5;
+
+    /// lê o mouse na borda (de `left` a `left + width`, em `edge`); verdadeiro com o mouse em cima ou arrastando
+    pub fn update(grip: *HeightGrip, ui: *Ui, left: f32, width: f32, edge: f32, row: usize, minimum: f32, maximum: f32) bool {
+        const area: rl.Rectangle = .{ .x = left, .y = edge - grip_half, .width = width, .height = 2 * grip_half };
+        const hovered = !ui.click_taken and ui.hovering(area);
+        if (hovered and ui.clicked and !grip.dragging) {
+            grip.dragging = true;
+            grip.start_mouse = ui.mouse.y;
+            grip.start_height = grip.height;
+            grip.rows = @floatFromInt(row + 1);
+            ui.click_taken = true;
+        }
+        if (grip.dragging) {
+            if (rl.isMouseButtonDown(.left)) {
+                grip.height = std.math.clamp(grip.start_height + (ui.mouse.y - grip.start_mouse) / grip.rows, minimum, maximum);
+            } else grip.dragging = false;
+        }
+        const active = hovered or grip.dragging;
+        if (active) rl.setMouseCursor(.resize_ns);
+        return active;
+    }
+
+    /// a marca da borda: três traços no meio, e a borda inteira em destaque com o mouse em cima
+    pub fn draw(left: f32, width: f32, edge: f32, active: bool) void {
+        if (active) {
+            rl.drawRectangleRec(.{ .x = left + 6, .y = edge - 1.5, .width = width - 12, .height = 3 }, theme.colors.accent);
+            return;
+        }
+        const middle = left + width / 2;
+        for (0..3) |k| {
+            const offset: f32 = @as(f32, @floatFromInt(k)) * 3 - 3;
+            rl.drawLineEx(.{ .x = middle - 10, .y = edge - 4 + offset }, .{ .x = middle + 10, .y = edge - 4 + offset }, 1, theme.colors.line);
+        }
+    }
+};
+
 /// um campo que acabou de entrar em edição mostra o valor antigo todo marcado: a primeira tecla de texto troca o
 /// valor inteiro pelo que se digita (como selecionar tudo), e apagar ou mover o cursor volta à edição normal.
 /// Chamar logo depois do `rg.textBox` do campo, com o comprimento do texto quando a edição começou

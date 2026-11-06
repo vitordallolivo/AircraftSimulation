@@ -290,6 +290,11 @@ fn projectsFolder(buffer: []u8) []const u8 {
 
 /// a largura do formulário à esquerda, a mesma em todas as abas; arrastar a divisa muda
 var sidebar: widgets.Splitter = .{ .width = 390 };
+// as alturas que se arrastam pela borda de baixo (valem para todas as páginas, como a largura da barra lateral)
+var view_size: widgets.HeightGrip = .{ .height = view_height };
+var chart_size: widgets.HeightGrip = .{ .height = chart_height };
+var track_size: widgets.HeightGrip = .{ .height = track_view_height };
+var loads_size: widgets.HeightGrip = .{ .height = loads_view_height };
 const chart_height: f32 = 360;
 const gap: f32 = 12;
 const edit_delay_ns: i96 = 350 * std.time.ns_per_ms; // a conta da etapa espera a digitação parar (300 ms na GUI PyQt)
@@ -1411,7 +1416,10 @@ pub const Page = struct {
         theme.text(ui.fonts.regular, grid.title, x + 12, y - 8, 14, theme.colors.ink);
         if (grid.help.len > 0) widgets.helpMark(ui, x + 16 + caption_width, y - 8, grid.help);
         y += 16;
+        const before = table.selected;
         if (table.draw(ui, x + 6, y, width - 12, grid.columns, grid.rows)) |cell| edit.* = .{ .grid = index, .edit = cell };
+        // clicar numa linha da tabela de uma etapa avisa a etapa (a vista 3D aproxima do item dela)
+        if (edit.* == null and page.kind == .stage and table.selected != null and !std.meta.eql(before, table.selected)) edit.* = .{ .grid = index, .select = table.selected.? };
         y += table.fullHeight(grid.rows.len) + 6;
         if (grid.note.len > 0) y += widgets.paragraph(ui.fonts.regular, grid.note, x + 8, y, width - 16, 13, theme.colors.ink) + 6;
         if (grid.buttons.len > 0) {
@@ -1432,7 +1440,9 @@ pub const Page = struct {
         defer text.deinit();
         const writer = &text.writer;
         writer.print("\"grid\": {f}", .{std.json.fmt(grid.name, .{})}) catch return;
-        if (change.button) |button| {
+        if (change.select) |row| {
+            writer.print(", \"edit\": \"select\", \"row\": {d}", .{row}) catch return;
+        } else if (change.button) |button| {
             writer.print(", \"edit\": {f}, \"row\": {d}", .{ std.json.fmt(grid.operations[button], .{}), selected }) catch return;
         } else if (change.edit) |cell| {
             writer.print(", \"edit\": \"set\", \"row\": {d}, \"key\": {f}, \"value\": ", .{ cell.row, std.json.fmt(grid.keys[cell.column], .{}) }) catch return;
@@ -1500,7 +1510,7 @@ pub const Page = struct {
     fn drawResult(page: *Page, ui: *widgets.Ui, rect: rl.Rectangle) void {
         // a peça em 3D primeiro, como na `StagePage`; a imagem sai numa textura, feita antes do recorte da coluna
         const width = rect.width - 2 * gap - 10;
-        const view_card: rl.Rectangle = .{ .x = rect.x + gap, .y = rect.y + gap - page.page.offset, .width = width, .height = view_height };
+        const view_card: rl.Rectangle = .{ .x = rect.x + gap, .y = rect.y + gap - page.page.offset, .width = width, .height = view_size.height };
         const view_area: rl.Rectangle = .{ .x = view_card.x + 1, .y = view_card.y + 28, .width = view_card.width - 2, .height = view_card.height - 29 };
         if (page.scene) |*scene| page.renderScene(ui, scene, view_area);
         for (page.loads[0..@min(page.loads.len, max_loads)], 0..) |*scene, k| renderLoads(ui, scene, &page.loads_states[k]);
@@ -1518,7 +1528,9 @@ pub const Page = struct {
                     page.view.zoom = 1;
                 }
             }
-            y += view_height + gap;
+            const active = view_size.update(ui, view_card.x, view_card.width, view_card.y + view_card.height + gap / 2, 0, 160, 1400);
+            widgets.HeightGrip.draw(view_card.x, view_card.width, view_card.y + view_card.height + gap / 2, active);
+            y += view_size.height + gap;
         }
         if (page.kind == .simulation and page.description.len > 0) {
             y += widgets.paragraph(ui.fonts.regular, page.description, rect.x + gap + 4, y, width - 8, 14, theme.colors.label) + gap;
@@ -1551,6 +1563,8 @@ pub const Page = struct {
         // as trajetórias 3D na largura toda, como a GUI PyQt (vêm primeiro nos `PlotSpec` da Missão)
         for (page.tracks[0..@min(page.tracks.len, max_tracks)], 0..) |*scene, k| {
             y += drawTrack(ui, scene, &page.track_states[k], rect.x + gap, y, width) + gap;
+            const active = track_size.update(ui, rect.x + gap, width, y - gap / 2, 0, 200, 1400);
+            widgets.HeightGrip.draw(rect.x + gap, width, y - gap / 2, active);
         }
         // as vistas de carga e depois os gráficos, em duas colunas, na ordem dos `PlotSpec` (as vistas vêm primeiro)
         const column_width = (width - gap) / 2;
@@ -1563,14 +1577,27 @@ pub const Page = struct {
             if (k % 2 == 1 or k + 1 == page.loads.len) {
                 y += row_height + gap;
                 row_height = 0;
+                const active = loads_size.update(ui, rect.x + gap, width, y - gap / 2, 0, 200, 1400);
+                widgets.HeightGrip.draw(rect.x + gap, width, y - gap / 2, active);
             }
+        }
+        // a borda de baixo de cada fileira de gráficos muda a altura de todos
+        const chart_rows = (page.charts.len + 1) / 2;
+        var chart_grip: ?usize = null;
+        for (0..chart_rows) |row| {
+            const edge = y + @as(f32, @floatFromInt(row + 1)) * (chart_size.height + gap) - gap / 2;
+            if (chart_size.update(ui, rect.x + gap, width, edge, row, 200, 1400)) chart_grip = row;
         }
         for (page.charts, 0..) |chart, k| {
             const x = rect.x + gap + @as(f32, @floatFromInt(k % 2)) * (column_width + gap);
-            const chart_y = y + @as(f32, @floatFromInt(k / 2)) * (chart_height + gap);
-            plot.lines(ui, .{ .x = x, .y = chart_y, .width = column_width, .height = chart_height }, .{ .title = chart.title, .x_label = chart.x_label, .y_label = chart.y_label, .x_limits = chart.x_limits, .y_limits = chart.y_limits }, chart.series);
+            const chart_y = y + @as(f32, @floatFromInt(k / 2)) * (chart_size.height + gap);
+            plot.lines(ui, .{ .x = x, .y = chart_y, .width = column_width, .height = chart_size.height }, .{ .title = chart.title, .x_label = chart.x_label, .y_label = chart.y_label, .x_limits = chart.x_limits, .y_limits = chart.y_limits }, chart.series);
         }
-        y += @as(f32, @floatFromInt((page.charts.len + 1) / 2)) * (chart_height + gap);
+        for (0..chart_rows) |row| {
+            const edge = y + @as(f32, @floatFromInt(row + 1)) * (chart_size.height + gap) - gap / 2;
+            widgets.HeightGrip.draw(rect.x + gap, width, edge, chart_grip == row);
+        }
+        y += @as(f32, @floatFromInt(chart_rows)) * (chart_size.height + gap);
         if (page.skipped_charts > 0) {
             var note: [96]u8 = undefined;
             theme.text(ui.fonts.regular, widgets.format(&note, "{d} vistas 3D ainda só na GUI PyQt", .{page.skipped_charts}), rect.x + gap + 4, y, 13, theme.colors.muted);
@@ -1803,9 +1830,9 @@ fn renderTrack(ui: *widgets.Ui, scene: *const TrackScene, state: *TrackState) vo
 /// devolve a altura
 fn drawTrack(ui: *widgets.Ui, scene: *const TrackScene, state: *TrackState, x: f32, y: f32, width: f32) f32 {
     const legend_height = trackLegend(ui, scene, x + 12, 0, width - 24, false);
-    const height = 28 + track_view_height + 8 + legend_height + 22;
+    const height = 28 + track_size.height + 8 + legend_height + 22;
     const inner = widgets.card(ui, .{ .x = x, .y = y, .width = width, .height = height }, scene.title);
-    state.area = .{ .x = inner.x, .y = y + 28, .width = inner.width, .height = track_view_height };
+    state.area = .{ .x = inner.x, .y = y + 28, .width = inner.width, .height = track_size.height };
     state.view.blit(ui, state.area);
     // as linhas antes dos pontos, para os eventos ficarem por cima
     for ([_]bool{ false, true }) |points_pass| for (scene.lines) |line| {
@@ -1827,7 +1854,7 @@ fn drawTrack(ui: *widgets.Ui, scene: *const TrackScene, state: *TrackState, x: f
             },
         }
     };
-    const legend_y = y + 28 + track_view_height + 8;
+    const legend_y = y + 28 + track_size.height + 8;
     _ = trackLegend(ui, scene, x + 12, legend_y, width - 24, true);
     theme.text(ui.fonts.regular, scene.axes, x + 12, legend_y + legend_height + 2, 12, theme.colors.muted);
     return height;
@@ -1933,7 +1960,7 @@ fn readTrack(memory: std.mem.Allocator, item: Json) !?TrackScene {
 /// devolve a altura
 fn drawLoads(ui: *widgets.Ui, scene: *const LoadsScene, state: *LoadsState, x: f32, y: f32, width: f32) f32 {
     const info_height = widgets.paragraphHeight(ui.fonts.regular, scene.info, width - 24, 13);
-    const height = 28 + 36 + loads_view_height + 46 + info_height + 12;
+    const height = 28 + 36 + loads_size.height + 46 + info_height + 12;
     const inner = widgets.card(ui, .{ .x = x, .y = y, .width = width, .height = height }, scene.title);
     var row_y = y + 34;
     var buffer: [160]u8 = undefined;
@@ -1950,9 +1977,9 @@ fn drawLoads(ui: *widgets.Ui, scene: *const LoadsScene, state: *LoadsState, x: f
     cycleButton(ui, .{ .x = x + 28 + 2 * button_width, .y = row_y, .width = button_width, .height = 28 }, "escala", if (state.symmetric) "simétrica em 0" else "mín–máx", &scale, 2);
     state.symmetric = scale == 1;
     row_y += 36;
-    state.area = .{ .x = inner.x, .y = row_y, .width = inner.width, .height = loads_view_height };
+    state.area = .{ .x = inner.x, .y = row_y, .width = inner.width, .height = loads_size.height };
     state.view.blit(ui, state.area);
-    row_y += loads_view_height + 6;
+    row_y += loads_size.height + 6;
     // a legenda: a barra de cores com o mínimo e o máximo, e o tamanho da maior seta
     if (scene.fields.len > 0) {
         const field = scene.fields[@min(state.field, scene.fields.len - 1)];
@@ -2136,6 +2163,7 @@ const GridEdit = struct {
     grid: usize,
     edit: ?table_mod.Edit = null,
     button: ?usize = null,
+    select: ?usize = null, // a linha que se clicou (a etapa aproxima a vista dela)
 };
 
 /// o vértice `index` de uma lista plana x, y, z
