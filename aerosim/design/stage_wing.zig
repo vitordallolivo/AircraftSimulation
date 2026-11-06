@@ -265,10 +265,45 @@ fn layoutSurfaces(context: *stages.Context, memory: std.mem.Allocator) ![]const 
     const draft_params = draft(project);
     const draft_name = store.text(draft_params, "name", "asa 1");
     var out: std.ArrayList(model.Surface) = .empty;
-    for (0..project.list("wing_layout").items.len) |k| {
-        if (try rowSurface(context, memory, k, draft_params, draft_name)) |surface| try out.append(memory, surface);
+    const rows = project.list("wing_layout").items;
+    for (rows, 0..) |row, k| {
+        const surface = (try rowSurface(context, memory, k, draft_params, draft_name)) orelse continue;
+        try out.append(memory, surface);
+        // "pontas ligadas": a placa da ponta desta até a da referência (a primeira linha)
+        const joined = k > 0 and row == .object and store.flag(&row.object, "join", false);
+        if (joined and out.items.len > 1) try joinTips(memory, &out.items[0], &out.items[out.items.len - 1]);
     }
     return out.items;
+}
+
+/// liga as pontas de `first` e `second` (biplano ou tandem em caixa, `join_tips` de `tail.py`): uma placa vertical
+/// sai da ponta da asa de baixo e sobe até a de cima, inclinada para trás ou para a frente quando uma está deslocada
+/// da outra em x. É o sistema em caixa de Prandtl ("Induced drag of multiplanes", NACA TN 182, 1924): no mesmo vão,
+/// o arrasto induzido cai com a altura da caixa (Kroo, Annu. Rev. Fluid Mech. 33, 2001, fig. 7). A altura é a do vão
+/// na raiz; com envergaduras diferentes a placa fica na ponta da de baixo
+pub fn joinTips(memory: std.mem.Allocator, first: *model.Surface, second: *model.Surface) !void {
+    // z do corpo para baixo: a de baixo tem o z maior
+    const lower, const upper = if (first.z >= second.z) .{ first, second } else .{ second, first };
+    const gap = lower.z - upper.z;
+    if (gap <= 1e-6 or lower.sections.len == 0 or upper.sections.len == 0) return;
+    const lower_tip = lower.sections[lower.sections.len - 1];
+    const upper_tip = upper.sections[upper.sections.len - 1];
+    // bordo de ataque da ponta (x do corpo, + para a frente): quanto a de cima está atrás da de baixo
+    const back = (lower.x - lower_tip.x_offset) - (upper.x - upper_tip.x_offset);
+    const plate: model.Device = .{
+        .kind = "winglet",
+        .eta = 1.0,
+        .height = std.math.hypot(gap, back),
+        .root_chord = 0,
+        .taper = upper_tip.chord / @max(lower_tip.chord, 1e-6),
+        .sweep = std.math.radiansToDegrees(std.math.atan2(back, gap)),
+        .cant = 0,
+        .profile = "NACA 0010",
+    };
+    const devices = try memory.alloc(model.Device, lower.devices.len + 1);
+    @memcpy(devices[0..lower.devices.len], lower.devices);
+    devices[lower.devices.len] = plate;
+    lower.devices = devices;
 }
 
 /// a superfície da linha `k` da tabela, no lugar dela e com os dispositivos dela (nula: a asa da linha não existe)

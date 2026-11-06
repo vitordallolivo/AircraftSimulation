@@ -264,6 +264,7 @@ pub fn build(context: *stages.Context, memory: std.mem.Allocator, params: *const
             surface.devices = std.json.parseFromValueLeaky([]const model.Device, memory, devices, .{ .ignore_unknown_fields = true }) catch &.{};
         };
         try surfaces.append(memory, surface);
+        if (k > 0 and placed.join) try wing_stage.joinTips(memory, &surfaces.items[0], &surfaces.items[surfaces.items.len - 1]);
     }
 
     // a conta do núcleo
