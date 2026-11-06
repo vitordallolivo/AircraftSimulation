@@ -19,17 +19,29 @@ const kind_main = "aerosim-sprint";
 const kind_wing = "aerosim-sprint-asa";
 const version = 2;
 const split_keys = [_][]const u8{ "wings", "sets", "aircraft" };
+/// as partes que a raiz do projeto comporta sem mudar de lugar (o projeto do Python tem umas 20)
+const root_capacity = 128;
 
 pub const Error = error{ NotProject, OutOfMemory } || std.Io.Dir.WriteFileError || std.Io.Dir.DeleteFileError || std.Io.Dir.CreateDirPathError;
 
 /// o projeto aberto: a árvore (como o `DesignProject` em JSON) e a pasta onde ele grava
 pub const Project = struct {
-    arena: std.heap.ArenaAllocator,
+    arena: *std.heap.ArenaAllocator, // fora da struct: as listas e os mapas da árvore guardam o ponteiro do alocador, e o
+    // `Project` muda de lugar (volta de `open`, vai para o contexto das etapas)
     root: Value,
     folder: []const u8,
 
     pub fn deinit(project: *Project) void {
+        const gpa = project.arena.child_allocator;
         project.arena.deinit();
+        gpa.destroy(project.arena);
+    }
+
+    /// reserva lugar na raiz para todas as partes: `section` e `list` devolvem ponteiros para dentro dela, e uma
+    /// parte criada depois mudaria a raiz de lugar, deixando os ponteiros de antes soltos (o projeto vazio cria as
+    /// partes uma a uma)
+    pub fn reserve(project: *Project) !void {
+        try project.root.object.ensureTotalCapacity(project.memory(), root_capacity);
     }
 
     /// a memória das mudanças (vive até `deinit`)
@@ -125,7 +137,7 @@ pub fn nameOf(candidate: Value) []const u8 {
 /// abre a pasta (formato novo; senão o `projeto.json` antigo dela) ou um `.json` antigo (`load` de `store.py`). A
 /// pasta onde o projeto grava é a própria pasta ou, para um `.json` solto, uma pasta com o nome dele ao lado
 pub fn open(gpa: std.mem.Allocator, io: std.Io, path: []const u8) !Project {
-    var project: Project = .{ .arena = .init(gpa), .root = undefined, .folder = "" };
+    var project: Project = .{ .arena = try newArena(gpa), .root = undefined, .folder = "" };
     errdefer project.deinit();
     const memory = project.arena.allocator();
     const dir = std.Io.Dir.cwd();
@@ -155,15 +167,25 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, path: []const u8) !Project {
         project.folder = try std.fs.path.join(memory, &.{ folder, stem });
     }
     if (project.root != .object) return error.NotProject;
+    try project.reserve();
     return project;
 }
 
 /// um projeto vazio que grava em `folder` (o Python completa os padrões ao abrir)
 pub fn empty(gpa: std.mem.Allocator, folder: []const u8) !Project {
-    var project: Project = .{ .arena = .init(gpa), .root = undefined, .folder = "" };
+    var project: Project = .{ .arena = try newArena(gpa), .root = undefined, .folder = "" };
+    errdefer project.deinit();
     project.root = .{ .object = .empty };
     project.folder = try project.arena.allocator().dupe(u8, folder);
+    try project.reserve();
     return project;
+}
+
+/// a memória de um projeto, num lugar fixo
+fn newArena(gpa: std.mem.Allocator) !*std.heap.ArenaAllocator {
+    const arena = try gpa.create(std.heap.ArenaAllocator);
+    arena.* = .init(gpa);
+    return arena;
 }
 
 fn readJson(memory: std.mem.Allocator, io: std.Io, path: []const u8) !?Value {

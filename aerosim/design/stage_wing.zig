@@ -10,6 +10,7 @@ const store = @import("store.zig");
 const registry = @import("registry.zig");
 const stages = @import("stages.zig");
 const airfoils = @import("stage_airfoils.zig");
+const alert_rules = @import("manager").alerts;
 
 const Value = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
@@ -239,25 +240,82 @@ pub fn keptWing(project: *store.Project, name: []const u8) ?*ObjectMap {
     return null;
 }
 
-/// as asas da tabela "Asas do avião" como superfícies, cada uma no lugar dela (`layout_surfaces`)
+/// a asa de uma linha da tabela "Asas do avião": a guardada com este nome ou, se ainda não foi guardada, o rascunho
+/// (a asa que se está criando entra na configuração antes de "Guardar asa")
+pub fn wingOrDraft(project: *store.Project, name: []const u8) ?*ObjectMap {
+    if (keptWing(project, name)) |kept| return kept;
+    const params = draft(project);
+    return if (std.mem.eql(u8, store.text(params, "name", "asa 1"), name)) params else null;
+}
+
+/// a linha da tabela usa o rascunho (o nome dele)
+fn usesDraft(project: *store.Project) bool {
+    const name = store.text(draft(project), "name", "asa 1");
+    for (project.list("wing_layout").items) |row| {
+        if (row == .object and std.mem.eql(u8, store.text(&row.object, "wing", ""), name)) return true;
+    }
+    return false;
+}
+
+/// as asas da tabela "Asas do avião" como superfícies, cada uma no lugar dela (`layout_surfaces`); a linha com o
+/// nome do rascunho mostra o rascunho como está agora (sem precisar guardar), para ver a asa que se está criando
+/// junto das outras (um biplano, um tandem)
 fn layoutSurfaces(context: *stages.Context, memory: std.mem.Allocator) ![]const model.Surface {
     const project = &context.project;
+    const draft_params = draft(project);
+    const draft_name = store.text(draft_params, "name", "asa 1");
     var out: std.ArrayList(model.Surface) = .empty;
-    for (project.list("wing_layout").items, 0..) |row, k| {
-        if (row != .object) continue;
-        const object = &row.object;
-        const name = store.text(object, "wing", "");
-        const params = keptWing(project, name) orelse continue;
-        var surface = try surfaceOf(context, memory, params, if (k > 0) try std.fmt.allocPrint(memory, "{s} ({d})", .{ name, k + 1 }) else name, store.number(object, "di", 0));
-        surface.x = -store.number(object, "dx", 0);
-        surface.y = store.number(object, "dy", 0);
-        surface.z = -store.number(object, "dz", 0);
-        if (object.get("devices")) |devices| if (devices == .array and devices.array.items.len > 0) {
-            surface.devices = try std.json.parseFromValueLeaky([]const model.Device, memory, devices, .{ .ignore_unknown_fields = true });
-        };
-        try out.append(memory, surface);
+    for (0..project.list("wing_layout").items.len) |k| {
+        if (try rowSurface(context, memory, k, draft_params, draft_name)) |surface| try out.append(memory, surface);
     }
     return out.items;
+}
+
+/// a superfície da linha `k` da tabela, no lugar dela e com os dispositivos dela (nula: a asa da linha não existe)
+fn rowSurface(context: *stages.Context, memory: std.mem.Allocator, k: usize, draft_params: *const ObjectMap, draft_name: []const u8) !?model.Surface {
+    const row = context.project.list("wing_layout").items[k];
+    if (row != .object) return null;
+    const object = &row.object;
+    const name = store.text(object, "wing", "");
+    const params = if (std.mem.eql(u8, name, draft_name)) draft_params else keptWing(&context.project, name) orelse return null;
+    var surface = try surfaceOf(context, memory, params, if (k > 0) try std.fmt.allocPrint(memory, "{s} ({d})", .{ name, k + 1 }) else name, store.number(object, "di", 0));
+    surface.x = -store.number(object, "dx", 0);
+    surface.y = store.number(object, "dy", 0);
+    surface.z = -store.number(object, "dz", 0);
+    if (object.get("devices")) |devices| if (devices == .array and devices.array.items.len > 0) {
+        surface.devices = try std.json.parseFromValueLeaky([]const model.Device, memory, devices, .{ .ignore_unknown_fields = true });
+    };
+    return surface;
+}
+
+/// a caixa em volta do dispositivo `focus` (a linha dele na tabela "Dispositivos das asas"), do lado direito: a
+/// vista 3D aproxima dele enquanto ele é criado ou editado
+fn deviceFocus(context: *stages.Context, memory: std.mem.Allocator, focus: usize) !?simulation.Focus {
+    const project = &context.project;
+    const rows = try deviceRows(memory, project);
+    if (focus >= rows.len) return null;
+    const at = rows[focus];
+    const draft_params = draft(project);
+    var surface = (try rowSurface(context, memory, at[0], draft_params, store.text(draft_params, "name", "asa 1"))) orelse return null;
+    if (at[1] >= surface.devices.len) return null;
+    surface.devices = surface.devices[at[1] .. at[1] + 1];
+    const plane: model.Aircraft = .{ .name = "dispositivo", .surfaces = &.{surface} };
+    var diagnosis: model.Diag = .{};
+    const built = aircraft_model.skeleton.build(memory, &plane, &diagnosis) catch return null;
+    var low: [3]f64 = @splat(std.math.inf(f64));
+    var high: [3]f64 = @splat(-std.math.inf(f64));
+    for (built.pieces) |piece| {
+        if (piece.color != .device) continue;
+        for (piece.mesh.v) |point| {
+            if (point[1] < -1e-6) continue; // só o da direita (o da esquerda é o espelho)
+            for (0..3) |i| {
+                low[i] = @min(low[i], point[i]);
+                high[i] = @max(high[i], point[i]);
+            }
+        }
+    }
+    if (!std.math.isFinite(low[0])) return null;
+    return .{ .low = low, .high = high };
 }
 
 // ------------------------------------------------------------------ pedidos
@@ -275,6 +333,8 @@ fn numberOf(value: Value) ?f64 {
 pub fn apply(context: *stages.Context, memory: std.mem.Allocator, request: stages.Request) ![]const u8 {
     const project = &context.project;
     const params = draft(project);
+    // a vista aproxima do dispositivo só enquanto é ele que se edita
+    if (!std.mem.eql(u8, request.do, "show") and !(std.mem.eql(u8, request.do, "set") and request.values == null)) context.focus_device = null;
     if (std.mem.eql(u8, request.do, "set")) {
         const values = request.values orelse return "";
         const before_planform = store.text(params, "planform", planforms[0]);
@@ -313,7 +373,7 @@ pub fn apply(context: *stages.Context, memory: std.mem.Allocator, request: stage
         return keepConfig(context, memory, request.arg);
     }
     if (std.mem.eql(u8, request.do, "grid")) {
-        if (std.mem.eql(u8, request.grid, "asas")) try editLayout(project, request) else if (std.mem.eql(u8, request.grid, "dispositivos")) try editDevices(project, request) else try editPartitions(project, params, request);
+        if (std.mem.eql(u8, request.grid, "asas")) try editLayout(project, request) else if (std.mem.eql(u8, request.grid, "dispositivos")) try editDevices(context, request) else try editPartitions(project, params, request);
         _ = context.save();
     }
     return "";
@@ -354,6 +414,8 @@ fn keepConfig(context: *stages.Context, memory: std.mem.Allocator, given: []cons
     const project = &context.project;
     const layout = project.list("wing_layout");
     if (layout.items.len == 0) return "A tabela 'Asas do avião' está vazia: ponha pelo menos uma asa (+ asa).";
+    // o rascunho que está na tabela é guardado junto (a configuração só leva asas guardadas)
+    if (usesDraft(project) and keptWing(project, store.text(draft(project), "name", "asa 1")) == null) _ = try keepWing(context);
     const configs = project.list("configs");
     var taken: std.ArrayList([]const u8) = .empty;
     for (configs.items) |item| if (item == .object) try taken.append(memory, store.text(&item.object, "name", ""));
@@ -381,7 +443,9 @@ fn editLayout(project: *store.Project, request: stages.Request) !void {
     if (std.mem.eql(u8, request.edit, "add")) {
         var row: ObjectMap = .empty;
         const index = stages.within(request.row, rows.items.len);
-        const name = if (index) |k| store.text(&rows.items[k].object, "wing", "") else if (wings.items.len > 0) store.text(project.section("tail_draft"), "wing", store.nameOf(wings.items[0])) else "";
+        // a primeira linha é a última asa guardada; as outras, o rascunho (a asa que se está criando, vista ao vivo)
+        const draft_name = store.text(draft(project), "name", "asa 1");
+        const name = if (rows.items.len == 0 and wings.items.len > 0) store.text(project.section("tail_draft"), "wing", store.nameOf(wings.items[0])) else draft_name;
         try row.put(memory, "wing", .{ .string = name });
         for ([_][]const u8{ "dx", "dy", "dz", "di" }) |key| try row.put(memory, key, .{ .float = 0 });
         try row.put(memory, "join", .{ .bool = false });
@@ -424,28 +488,37 @@ fn devicesOf(project: *store.Project, row: usize) !*std.json.Array {
     return &gop.value_ptr.array;
 }
 
-fn editDevices(project: *store.Project, request: stages.Request) !void {
+fn editDevices(context: *stages.Context, request: stages.Request) !void {
+    const project = &context.project;
     const memory = project.memory();
     const layout = project.list("wing_layout");
     const rows = try deviceRows(memory, project);
     if (std.mem.eql(u8, request.edit, "add")) {
         if (layout.items.len == 0) return;
         const row = if (stages.within(request.row, rows.len)) |k| rows[k][0] else 0;
+
         var device: ObjectMap = .empty;
         const defaults: model.Device = .{};
         try device.put(memory, "kind", .{ .string = defaults.kind });
         inline for (.{ "eta", "dx", "height", "root_chord", "taper", "sweep", "cant", "toe", "cl_alpha", "cd0", "oswald" }) |key| try device.put(memory, key, .{ .float = @field(defaults, key) });
         try device.put(memory, "profile", .{ .string = defaults.profile });
-        try (try devicesOf(project, row)).append(.{ .object = device });
+        const list = try devicesOf(project, row);
+        try list.append(.{ .object = device });
+        // o novo é o último da asa dele: a vista aproxima dele
+        for (try deviceRows(memory, project), 0..) |pair, k| if (pair[0] == row and pair[1] + 1 == list.items.len) {
+            context.focus_device = k;
+        };
         return;
     }
     if (rows.len == 0) return;
-    const at = rows[stages.within(request.row, rows.len) orelse rows.len - 1];
+    const index = stages.within(request.row, rows.len) orelse rows.len - 1;
+    const at = rows[index];
     const list = try devicesOf(project, at[0]);
     if (std.mem.eql(u8, request.edit, "delete")) {
         _ = list.orderedRemove(at[1]);
         return;
     }
+    context.focus_device = index;
     const object = &list.items[at[1]].object;
     if (std.mem.eql(u8, request.key, "wing")) {
         if (request.value != .string) return;
@@ -608,11 +681,23 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     }
     if (result.lift_cruise > 0.85 * result.lift_max) try checks.append(memory, .{ .status = .falha, .item = "cruzeiro abaixo do estol", .value = try text(memory, "C_L {d:.2} de {d:.2}", .{ result.lift_cruise, result.lift_max }), .criterion = "≤ 85 %", .why = "a asa cruza quase estolada", .fix = "mais área ou mais velocidade", .group = group });
     if (result.reynolds_tip < 8e4) try checks.append(memory, .{ .status = .atencao, .item = "Re na ponta", .value = try text(memory, "{d:.0}", .{result.reynolds_tip}), .criterion = "≥ 80 000", .why = "a ponta voa num Re em que o perfil perde c_l,max", .fix = "afilamento menor ou corda maior", .group = group });
+    // a linha sustentadora numa asa curta (`manager.alerts`): o aviso por cima da janela e a linha no diagnóstico
+    var alerts: []const []const u8 = &.{};
+    if (result.aspect_ratio < alert_rules.min_aspect_ratio) {
+        const warning = try text(memory, "Rodar a linha sustentadora com AR = {d:.1} em '{s}' (menor que {d:.0}) pode fazer os valores divergirem: a linha sustentadora é para asas alongadas.", .{ result.aspect_ratio, draft_name, alert_rules.min_aspect_ratio });
+        alerts = try memory.dupe([]const u8, &.{warning});
+        try checks.append(memory, .{ .status = .atencao, .item = "alongamento para a linha sustentadora", .value = try text(memory, "AR = {d:.2}", .{result.aspect_ratio}), .criterion = try text(memory, "≥ {d:.0}", .{alert_rules.min_aspect_ratio}), .why = "abaixo disso a corda pesa e a linha sustentadora erra (pode não convergir)", .fix = "confira em Analisar com as faixas ou o VLM", .group = group, .source = "Anderson, Fundamentals of Aerodynamics, cap. 5 (a conferir no PDF)" });
+    }
     try checks.append(memory, .{ .status = .info, .item = "método", .value = "linha sustentadora (Glauert)", .criterion = "—", .why = "seção crítica para o estol; c_d da polar 2D no c_l local; sem fuselagem", .group = group });
 
-    // a vista 3D: as asas da tabela (se houver mais de uma), senão o rascunho
+    // a vista 3D: as asas da tabela (se houver mais de uma ou se o rascunho está nela), senão o rascunho
     const layout = try layoutSurfaces(context, memory);
-    const shown: []const model.Surface = if (layout.len > 1) layout else &.{try surfaceOf(context, memory, params, draft_name, result.incidence)};
+    const with_devices = (try deviceRows(memory, project)).len > 0;
+    const shown: []const model.Surface = if (layout.len > 1 or (layout.len == 1 and (usesDraft(project) or with_devices))) layout else &.{try surfaceOf(context, memory, params, draft_name, result.incidence)};
+    var view = try viewOf(memory, shown);
+    if (view) |*scene| if (context.focus_device) |focus| {
+        scene.focus = try deviceFocus(context, memory, focus);
+    };
 
     // os guardados e as tabelas
     var kept: std.ArrayList([]const u8) = .empty;
@@ -622,7 +707,8 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
         try wing_names.append(memory, store.nameOf(item));
     }
     var grids: std.ArrayList(simulation.Grid) = .empty;
-    if (wing_names.items.len > 0) {
+    try appendNew(memory, &wing_names, draft_name); // o rascunho também entra na tabela, antes de ser guardado
+    {
         const layout_rows = project.list("wing_layout").items;
         for (layout_rows) |row| if (row == .object) {
             const name = store.text(&row.object, "wing", "");
@@ -643,7 +729,7 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
             const object = &row.object;
             cells.* = try memory.dupe(simulation.Cell, &.{ .{ .text = store.text(object, "wing", "") }, .{ .number = store.number(object, "dx", 0) }, .{ .number = store.number(object, "dy", 0) }, .{ .number = store.number(object, "dz", 0) }, .{ .number = store.number(object, "di", 0) }, .{ .text = join_choices[@intFromBool(store.flag(object, "join", false))] } });
         }
-        try grids.append(memory, .{ .name = "asas", .title = "Asas do avião", .columns = columns, .rows = rows, .note = "a primeira linha é a referência (Δ = 0); 'Guardar configuração' leva estas asas para a Empenagem.", .help = "quantas asas o avião tem e onde fica cada uma, com base na primeira: uma linha é monoplano, duas lado a lado em Δz são um biplano, uma atrás da outra em Δx um tandem.", .buttons = &.{ .{ .operation = "add", .label = "+ asa", .help = "mais uma asa guardada, depois da selecionada (ou no fim)" }, .{ .operation = "delete", .label = "− asa", .help = "tira a selecionada da lista" } } });
+        try grids.append(memory, .{ .name = "asas", .title = "Asas do avião", .columns = columns, .rows = rows, .note = try text(memory, "a primeira linha é a referência (Δ = 0). A linha '{s}' é o rascunho: a vista mostra ele como está agora, e 'Guardar configuração' guarda ele junto e leva estas asas para a Empenagem.", .{draft_name}), .help = "quantas asas o avião tem e onde fica cada uma, com base na primeira: uma linha é monoplano, duas lado a lado em Δz são um biplano, uma atrás da outra em Δx um tandem.", .buttons = &.{ .{ .operation = "add", .label = "+ asa", .help = "mais uma asa guardada, depois da selecionada (ou no fim)" }, .{ .operation = "delete", .label = "− asa", .help = "tira a selecionada da lista" } } });
 
         if (layout_rows.len > 0) {
             const wing_labels = try memory.alloc([]const u8, layout_rows.len);
@@ -712,7 +798,8 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
         .summary = summary.items,
         .checks = checks.items,
         .figures = figures,
-        .view = try viewOf(memory, shown),
+        .view = view,
+        .alerts = alerts,
     };
 }
 

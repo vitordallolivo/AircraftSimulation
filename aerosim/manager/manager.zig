@@ -7,6 +7,8 @@ const simulation = @import("simulation");
 pub const stability = @import("simulations/stability.zig");
 /// rótulo, unidade, dica e opções dos campos do avião (o par de `form_meta.py`), para os formulários da tela
 pub const form_meta = @import("form_meta.zig");
+/// os avisos que a tela mostra na hora de rodar (a linha sustentadora numa asa curta)
+pub const alerts = @import("alerts.zig");
 const thrust = @import("simulations/thrust.zig");
 const envelope = @import("simulations/envelope.zig");
 const performance = @import("simulations/performance.zig");
@@ -77,6 +79,7 @@ pub fn find(name: []const u8) ?*const Simulation {
 test "a tabela vem das análises" {
     try std.testing.expectEqual(analyses.len, all.len);
     try std.testing.expect(find("estabilidade_dinamica") != null);
+    _ = alerts;
 }
 
 test "toda análise em Zig tem a área dela nas abas" {

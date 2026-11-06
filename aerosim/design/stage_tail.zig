@@ -105,7 +105,7 @@ pub fn placedWings(project: *store.Project, memory: std.mem.Allocator) ![]const 
         if (row != .object) continue;
         const object = &row.object;
         const name = store.text(object, "wing", "");
-        const params = wing_stage.keptWing(project, name) orelse continue;
+        const params = wing_stage.wingOrDraft(project, name) orelse continue;
         try out.append(memory, .{ .name = name, .params = params, .dx = store.number(object, "dx", 0), .dy = store.number(object, "dy", 0), .dz = store.number(object, "dz", 0), .di = store.number(object, "di", 0), .join = store.flag(object, "join", false), .devices = object.get("devices") });
     }
     if (out.items.len > 0) return out.items;

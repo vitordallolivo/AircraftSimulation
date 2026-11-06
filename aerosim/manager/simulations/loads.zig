@@ -10,6 +10,7 @@ const std = @import("std");
 const core = @import("aerosim");
 const aircraft_model = @import("aircraft_model");
 const simulation = @import("simulation");
+const alert_rules = @import("../alerts.zig");
 const wings = @import("wings.zig");
 
 const params_mod = aircraft_model.params;
@@ -33,6 +34,7 @@ pub const Loads = struct {
     pub const advance = advanceRun;
     pub const result = writeResult;
     pub const python = needsPython;
+    pub const alerts = runAlerts;
 };
 
 const propeller_choices = [_][]const u8{ "com hélice", "sem hélice", "comparar com e sem" };
@@ -152,6 +154,17 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         }
     }
     try simulation.writeSpecs(out, &params, buffer[0..count], Loads.description, .{});
+}
+
+/// o aviso da linha sustentadora (o método, a comparação) numa asa curta (`alerts.shortWing`)
+fn runAlerts(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, values: simulation.Values) simulation.Error![]const []const u8 {
+    var methods: std.ArrayList([]const u8) = .empty;
+    for ([_][]const u8{ "method", "compare" }) |key| if (LoadMethod.fromTitle(values.text(key, wings.none))) |method| {
+        if (method == .llt or method == .llt_gh or method == .llt_nl) try methods.append(memory, method.title());
+    };
+    if (methods.items.len == 0) return &.{};
+    const warning = (try alert_rules.shortWing(memory, aircraft, methods.items[0], null)) orelse return &.{};
+    return memory.dupe([]const u8, &.{warning});
 }
 
 /// a rodada precisa do Python: um método de fora do núcleo

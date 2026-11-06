@@ -48,6 +48,9 @@ pub const Simulation = struct {
     /// a rodada com estes valores precisa de um método de fora do núcleo (lltdrek, AeroSandbox, AVL): ela vai pela
     /// ponte com o Python, que no site só baixa o pacote do método nessa hora; nulo: tudo no núcleo
     python: ?*const fn (values: Values) bool = null,
+    /// os avisos da rodada com estes valores (um método fora do que ele calcula bem, como a linha sustentadora numa
+    /// asa curta): a tela mostra cada um por cima da janela e roda igual; nulo: nenhum aviso próprio
+    alerts: ?*const fn (memory: std.mem.Allocator, aircraft: *const Aircraft, values: Values) Error![]const []const u8 = null,
 };
 
 /// confere em comptime que `Analysis` tem a interface de uma análise
@@ -68,6 +71,9 @@ pub fn check(comptime Analysis: type) void {
     });
     if (comptime core.interface.has(Analysis, "python")) core.interface.require(Analysis, "análise", &.{
         .{ .name = "python", .type = fn (Values) bool },
+    });
+    if (comptime core.interface.has(Analysis, "alerts")) core.interface.require(Analysis, "análise", &.{
+        .{ .name = "alerts", .type = fn (std.mem.Allocator, *const Aircraft, Values) Error![]const []const u8 },
     });
 }
 
@@ -100,6 +106,7 @@ pub fn register(comptime Analysis: type) Simulation {
         .specs = Analysis.specs,
         .edit = if (comptime core.interface.has(Analysis, "edit")) Analysis.edit else null,
         .python = if (comptime core.interface.has(Analysis, "python")) Analysis.python else null,
+        .alerts = if (comptime core.interface.has(Analysis, "alerts")) Analysis.alerts else null,
         .start = wrapped.start,
         .advance = wrapped.advance,
         .result = wrapped.result,
@@ -555,10 +562,14 @@ pub const Mesh = struct {
     faces: []const [3]u32,
 };
 
-/// a vista 3D da aba: as peças e o CG
+/// uma caixa da vista 3D para onde a câmera aproxima (o dispositivo de ponta que se está criando)
+pub const Focus = struct { low: [3]f64, high: [3]f64 };
+
+/// a vista 3D da aba: as peças, o CG e, se houver, a peça em foco
 pub const View = struct {
     meshes: []const Mesh,
     cg: ?[3]f64 = null,
+    focus: ?Focus = null,
 };
 
 /// o que vem nos campos além do formulário: as tabelas e a vista 3D
@@ -640,6 +651,8 @@ pub const StagePage = struct {
     checks: []const Check = &.{},
     figures: ?Figures = null,
     view: ?View = null,
+    /// avisos que a tela mostra por cima da janela quando aparecem (a linha sustentadora numa asa curta)
+    alerts: []const []const u8 = &.{},
 };
 
 /// a página da etapa em JSON, no formato que a tela lê
@@ -650,6 +663,11 @@ pub fn writeStagePage(out: *Writer, page: StagePage) !void {
     for (page.kept, 0..) |name, k| {
         if (k > 0) try out.writeAll(", ");
         try out.print("{f}", .{str(name)});
+    }
+    try out.writeAll("], \"alerts\": [");
+    for (page.alerts, 0..) |text, k| {
+        if (k > 0) try out.writeAll(", ");
+        try out.print("{f}", .{str(text)});
     }
     try out.writeAll("], \"actions\": [");
     for (page.actions, 0..) |action, k| {
@@ -753,6 +771,7 @@ fn writeView(out: *Writer, view: View) !void {
     }
     try out.writeAll("], \"markers\": {");
     if (view.cg) |point| try out.print("\"cg\": [{d}, {d}, {d}]", .{ point[0], point[1], point[2] });
+    if (view.focus) |box| try out.print("{s}\"focus\": [{d}, {d}, {d}, {d}, {d}, {d}]", .{ if (view.cg != null) ", " else "", box.low[0], box.low[1], box.low[2], box.high[0], box.high[1], box.high[2] });
     try out.writeAll("}}");
 }
 

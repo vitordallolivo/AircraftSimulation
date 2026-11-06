@@ -14,6 +14,7 @@ const std = @import("std");
 const core = @import("aerosim");
 const aircraft_model = @import("aircraft_model");
 const simulation = @import("simulation");
+const alert_rules = @import("../alerts.zig");
 const aerodynamics = @import("aerodynamics.zig");
 
 const params_mod = aircraft_model.params;
@@ -34,6 +35,7 @@ pub const Wings = struct {
     pub const advance = advanceRun;
     pub const result = writeResult;
     pub const python = needsPython;
+    pub const alerts = runAlerts;
 };
 
 const open_source = "avião aberto (Montagem)";
@@ -188,6 +190,25 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "n_chord", .label = "painéis na corda (VLM, AVL)", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .group = methods },
     });
     try simulation.writeSpecs(out, params.items, &plots, Wings.description, .{});
+}
+
+/// o aviso da linha sustentadora (o método, a comparação ou uma polar) numa asa curta (`alerts.shortWing`)
+fn runAlerts(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, values: simulation.Values) simulation.Error![]const []const u8 {
+    var methods: std.ArrayList([]const u8) = .empty;
+    for ([_][]const u8{ "method", "compare" }) |key| if (LoadMethod.fromTitle(values.text(key, none))) |method| {
+        if (method == .llt or method == .llt_gh or method == .llt_nl) try methods.append(memory, method.title());
+    };
+    // as caixas da comparação dos métodos (polares) que são linha sustentadora
+    var buffer: [32]u8 = undefined;
+    for (solvers) |solver| {
+        const lifting = std.mem.indexOf(u8, solver.label, "linha sustentadora") != null or std.mem.eql(u8, solver.key, "asb_ll");
+        if (!lifting) continue;
+        const key = std.fmt.bufPrint(&buffer, "use_{s}", .{solver.key}) catch continue;
+        if (values.toggle(key, solver.on)) try methods.append(memory, solver.label);
+    }
+    if (methods.items.len == 0) return &.{};
+    const warning = (try alert_rules.shortWing(memory, aircraft, methods.items[0], values)) orelse return &.{};
+    return memory.dupe([]const u8, &.{warning});
 }
 
 /// a rodada precisa do Python: uma fonte de asas, um método ou uma comparação de fora do núcleo

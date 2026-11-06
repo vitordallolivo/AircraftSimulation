@@ -17,8 +17,11 @@ pub const checks = @import("checks.zig");
 pub const stage = @import("stage.zig");
 pub const system = @import("system.zig");
 pub const tex = @import("tex.zig");
+pub const undo = @import("undo.zig");
+pub const toast = @import("toast.zig");
 
 test {
     _ = numbers;
     _ = tex;
+    _ = undo;
 }

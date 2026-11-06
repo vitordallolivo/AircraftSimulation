@@ -10,6 +10,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const widgets = @import("widgets.zig");
 const plot = @import("plot.zig");
+const toast = @import("toast.zig");
 
 pub const Args = struct {
     shot: ?[:0]const u8 = null,
@@ -126,6 +127,7 @@ fn drawFrame(ui: *widgets.Ui, screen: anytype, shot: bool) void {
         ui.right_clicked = false;
         ui.wheel = 0;
     }
+    toast.takeClick(ui);
     screen.draw(ui, width, height);
     if (busy) {
         ui.click_taken = false;
@@ -133,6 +135,7 @@ fn drawFrame(ui: *widgets.Ui, screen: anytype, shot: bool) void {
         ui.right_clicked = right_clicked;
     }
     plot.overlay(ui, width, height);
+    toast.draw(ui, width, height);
     ui.drawTip(width, height);
     rl.endDrawing();
 }

@@ -33,6 +33,14 @@ xvfb-run -a ./aerosim/zig-out/bin/aerosim --shot estudo.png data/aircraft/Conven
 
 ![Estudo e ponto de projeto, rodado pelo print: os aviões guardados comparados nas duas altitudes](../../docs/img/zig_estudo.png)
 
+A janela abre vazia: nenhum avião e um projeto da sprint novo, numa pasta própria, gravado na primeira mudança;
+"Abrir" traz um avião ou um projeto que já existe. O Ctrl+Z desfaz a última mudança do que está na tela: na Montagem,
+o avião volta ao texto de antes (`ui/undo.zig`); numa etapa, o projeto volta ao de antes do último pedido; numa
+análise, o formulário volta aos valores de antes. Quando uma rodada sai do que o método calcula bem (a linha
+sustentadora numa asa de alongamento menor que 4, `aerosim/manager/alerts.zig`), um aviso aparece por cima da janela
+(`ui/toast.zig`) e a conta roda igual. Em Projetar, a linha da tabela "Asas do avião" com o nome do rascunho mostra a
+asa que se está criando, ao vivo, e a vista aproxima do dispositivo de ponta que se cria ou edita.
+
 Para o navegador, `python -m ziglang build -Dtarget=wasm32-emscripten --release=safe` e `python tools/web_build.py`
 montam o site, onde os arquivos ficam na memória da página e o que se salva é baixado. Uma análise nova é um `.zig`
 ao lado da análise em Python, posto no registro de `aerosim/manager/manager.zig`, e aparece na área dela.

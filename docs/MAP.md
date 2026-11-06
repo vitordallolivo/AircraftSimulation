@@ -715,11 +715,11 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/**
 
 - `aerosim/gui/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
-  tipos `Triangle:15`, `Mesh:24`, `Assembly:189`, `Balance:232`
-  fn `buildMesh:148`, `balance:242`, `loadAircraft:254`, `load:267`, `fromBytes:278`, `fillAirfoilFiles:296`, `parseDat:331`, `findExample:363`
+  tipos `Triangle:16`, `Mesh:25`, `Assembly:190`, `Balance:235`
+  fn `buildMesh:149`, `balance:245`, `loadAircraft:257`, `load:270`, `fromBytes:281`, `fillAirfoilFiles:299`, `parseDat:334`, `findExample:366`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
-  tipos `Kind:36`, `Page:272`
+  tipos `Kind:36`, `Page:273`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
   tipos `Waiter:29`, `Bridge:45`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt
@@ -735,8 +735,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/ui/**
 
 - `aerosim/gui/ui/app.zig` — O que os dois programas têm igual em volta da tela: a linha de comando, a janela e o laço de desenho, com o
-  tipos `Args:14`
-  fn `parseArgs:25`, `run:57`, `runBrowser:143`, `openFromPage:172`
+  tipos `Args:15`
+  fn `parseArgs:26`, `run:58`, `runBrowser:146`, `openFromPage:175`
 - `aerosim/gui/ui/browser_io.zig` — O `std.Io` das telas no navegador. No Zig 0.16 o `std.Io.Threaded` não compila para emscripten (o mesmo motivo
 - `aerosim/gui/ui/checks.zig` — O diagnóstico de uma etapa, como o `ChecksPanel` da GUI em Python: uma linha por verificação (estado, o que se
   tipos `Check:10`, `ChecksPanel:44`
@@ -778,7 +778,12 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/ui/theme.zig` — O visual da interface, o mesmo do AeroDrive: fundo claro, cantos arredondados, azul nos títulos e pouco texto.
   tipos `Palette:17`, `Fonts:122`, `Logo:166`
   fn `hex:7`, `withAlpha:12`, `plotColor:63`, `spacing:151`, `text:156`, `textWidth:161`
+- `aerosim/gui/ui/toast.zig` — Os avisos por cima da janela: uma caixa laranja no canto de cima à direita, que some sozinha depois de uns
+  fn `show:26`, `count:44`, `takeClick:49`, `draw:60`
 - `aerosim/gui/ui/ui.zig` — As peças comuns das telas do aerosim e do aeroopt em Zig: cores e fontes, formas, widgets, formulário, gráfico
+- `aerosim/gui/ui/undo.zig` — O histórico do Ctrl+Z: cada mudança guarda antes uma cópia do estado em texto (o `.json` do avião, os valores
+  tipos `History:13`
+  fn `pressed:50`
 - `aerosim/gui/ui/view3d.zig` — Vista 3D dentro de um cartão, com as mesmas ideias da vista do aerosim em Python (`aerosim/gui/widgets/view3d.py`
   tipos `Kind:17`, `View:100`
   fn `kindColor:20`, `colorByName:35`, `fieldColor:57`, `fraction:75`, `liftColor:80`, `toWorld:85`, `toBody:238`, `shaded:262`, `triangle:270`, `gradientTriangle:280`, `litTriangle:292`, `quad:298`, `segment:315`, `arrow:320`, `floor:332`, `bodyAxes:344`

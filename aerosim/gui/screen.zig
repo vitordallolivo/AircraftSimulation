@@ -66,6 +66,8 @@ pub const Screen = struct {
     assembly_editor: ?AssemblyEditor = null, // a lista de componentes e o editor da peça escolhida
     pending_assembly: [256]u8 = undefined, // acao=montagem:...: botões ("+ EH"), "peca=N", "editar=campo=valor", "trazer=arquivo#N" ou "vista=Lateral", até o avião abrir
     pending_assembly_len: usize = 0,
+    pending_undo: usize = 0, // acao=desfazer: Ctrl+Z pelos prints, quando a tela estiver pronta
+    undoing: bool = false, // o Ctrl+Z está refazendo o avião (essa mudança não vai para o histórico)
     importing_file: bool = false, // a janela de arquivos aberta é a de trazer uma peça de outro avião
     loader: ui_kit.jobs.Job = .{}, // lê o .json fora do laço da tela
     loading: Loading = .{},
@@ -78,17 +80,15 @@ pub const Screen = struct {
 
     /// a tela ainda vai mudar sozinha (aba ou "rodar" pendente, uma conta andando): o print espera
     pub fn busy(screen: *const Screen) bool {
-        if (screen.pending_tab != null or screen.pending_run or screen.pending_stage_len > 0 or screen.pending_assembly_len > 0) return true;
+        if (screen.pending_tab != null or screen.pending_run or screen.pending_stage_len > 0 or screen.pending_assembly_len > 0 or screen.pending_undo > 0) return true;
         const page = screen.shown orelse return false;
         return page.settling();
     }
 
-    /// pede as abas ao Python e abre o avião de exemplo (chamar com a janela aberta)
+    /// prepara a tela (chamar com a janela aberta). Abre vazia: nenhum avião e um projeto novo, sem nada guardado;
+    /// "Abrir" traz um avião ou um projeto da sprint
     pub fn start(screen: *Screen) void {
         screen.requirements.bridge = &screen.bridge;
-        var buffer: [512]u8 = undefined;
-        var fixed = std.heap.FixedBufferAllocator.init(&buffer);
-        if (assembly_mod.findExample(fixed.allocator(), io())) |path| screen.openFile(path);
     }
 
     /// um comando pelo nome (`acao=` da linha de comando, para os prints): "abrir", "salvar", "rodar" (roda a análise
@@ -120,7 +120,46 @@ pub const Screen = struct {
             }
         } else if (std.mem.eql(u8, name, "condicoes")) {
             screen.requirements_open = true;
+        } else if (std.mem.startsWith(u8, name, "projeto:")) { // abre um projeto da sprint (prints)
+            screen.openProject(name[8..]);
+        } else if (std.mem.eql(u8, name, "desfazer")) {
+            screen.pending_undo += 1;
         }
+    }
+
+    /// abre o projeto da sprint em `path` no lugar do aberto; as etapas pedem a página de novo
+    fn openProject(screen: *Screen, path: []const u8) void {
+        design.stages.openProject(io(), path) catch |err| {
+            _ = std.fmt.bufPrintZ(&screen.message, "não abriu o projeto '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) }) catch {};
+            return;
+        };
+        for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| if (page.kind == .stage) page.markStale();
+        screen.requirements.markStale();
+        _ = std.fmt.bufPrintZ(&screen.assembly_note, "projeto aberto: {s}", .{path}) catch {};
+    }
+
+    /// Ctrl+Z: desfaz a última mudança do que está na tela (a janela das condições, a página aberta ou a Montagem)
+    fn undo(screen: *Screen) void {
+        if (screen.files.open) return;
+        if (screen.requirements_open) return screen.requirements.undo();
+        const page: ?*Page = if (screen.areas.len > 0) screen.areas[screen.area].pages[screen.areas[screen.area].active] else null;
+        if (page) |p| return p.undo();
+        screen.undoAssembly();
+    }
+
+    /// desfaz a última mudança no avião da Montagem (mover, editar, acrescentar, remover, vento, restaurar)
+    fn undoAssembly(screen: *Screen) void {
+        const opened = &(screen.assembly orelse return);
+        const previous = opened.history.pop() orelse {
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "nada para desfazer", .{}) catch {};
+            return;
+        };
+        defer opened.history.release(previous);
+        opened.document = std.json.parseFromSliceLeaky(std.json.Value, opened.document_arena.allocator(), previous, .{ .allocate = .alloc_always }) catch return;
+        screen.undoing = true;
+        defer screen.undoing = false;
+        screen.commitDocument(null);
+        _ = std.fmt.bufPrintZ(&screen.assembly_note, "desfeito (Ctrl+Z) · {d} passo{s} para trás ainda", .{ opened.history.count, if (opened.history.count == 1) "" else "s" }) catch {};
     }
 
     /// a edição do formulário vai para o arquivo aberto: grava na árvore, lê o avião de novo e refaz o 3D, o resumo e
@@ -143,6 +182,9 @@ pub const Screen = struct {
         const opened = &(screen.assembly orelse return);
         const editor = &(screen.assembly_editor orelse return);
         var diagnosis: assembly_mod.Diagnosis = .{};
+        // o avião de antes vai para o Ctrl+Z (sai de novo se a edição não vale ou não mudou nada)
+        const remembered = !screen.undoing;
+        if (remembered) opened.history.push(opened.source);
         const failed = blk: {
             const text = config_tab.serialize(std.heap.page_allocator, opened.document) catch |err| break :blk @errorName(err);
             defer std.heap.page_allocator.free(text);
@@ -155,6 +197,9 @@ pub const Screen = struct {
                 opened.reload(std.heap.page_allocator, io(), placed, &diagnosis) catch |err| break :blk if (diagnosis.len > 0) diagnosis.text() else @errorName(err);
             }
             break :blk null;
+        };
+        if (remembered) if (opened.history.count > 0 and std.mem.eql(u8, opened.history.steps[opened.history.count - 1], opened.source)) {
+            opened.history.release(opened.history.pop().?); // nada mudou (ou não valeu): não é um passo
         };
         if (failed) |reason| {
             _ = std.fmt.bufPrintZ(&screen.assembly_note, "a edição não vale e foi desfeita: {s}", .{reason}) catch {};
@@ -426,9 +471,15 @@ pub const Screen = struct {
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "salvo em {s}", .{path}) catch {};
     }
 
-    /// abre o arquivo `path`: um `.json` é o avião (Montagem); um `.dat` ou uma polar vão para a etapa Perfis
+    /// abre o arquivo `path`: um `.json` é o avião (Montagem) ou um projeto da sprint; um `.dat` ou uma polar vão
+    /// para a etapa Perfis
     pub fn openFile(screen: *Screen, path: []const u8) void {
-        if (std.mem.endsWith(u8, path, ".json")) return screen.openAircraft(path);
+        if (std.mem.endsWith(u8, path, ".json")) {
+            const bytes = std.Io.Dir.cwd().readFileAlloc(io(), path, std.heap.page_allocator, .limited(assembly_mod.max_file_bytes)) catch return screen.openAircraft(path);
+            defer std.heap.page_allocator.free(bytes);
+            if (design.stages.isProject(bytes)) return screen.openProject(path);
+            return screen.openAircraft(path);
+        }
         const perfis = screen.findPage("perfis") orelse {
             const length = @min(path.len, screen.pending_file.len);
             @memcpy(screen.pending_file[0..length], path[0..length]);
@@ -668,6 +719,7 @@ pub const Screen = struct {
                 if (std.mem.endsWith(u8, path, ".json")) screen.showAssembly();
             }
         }
+        if (ui_kit.undo.pressed()) screen.undo();
         // a página aberta
         const page: ?*Page = if (screen.areas.len > 0) screen.areas[screen.area].pages[screen.areas[screen.area].active] else null;
         const single = screen.areas.len == 0 or screen.areas[screen.area].single;
@@ -714,6 +766,11 @@ pub const Screen = struct {
         } else {
             screen.shown = null;
             screen.drawAssembly(ui, content);
+        }
+        // acao=desfazer (prints): um Ctrl+Z quando o que estava pendente acabou
+        if (screen.pending_undo > 0 and screen.pending_stage_len == 0 and screen.pending_assembly_len == 0 and screen.pending_tab == null and !(if (page) |p| p.settling() else false)) {
+            screen.pending_undo -= 1;
+            screen.undo();
         }
         if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião (.json)", "Salvar .json" }, "abas e contas em Zig; os métodos de fora pelo Python só quando escolhidos")) |button| {
             if (button == 0) screen.command("abrir") else screen.command("salvar");

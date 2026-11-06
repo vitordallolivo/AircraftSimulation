@@ -211,7 +211,7 @@ fn targetOf(context: *stages.Context, memory: std.mem.Allocator, power: *ObjectM
             _ = set;
             const wings = try tail_stage.placedWings(project, memory);
             if (wings.len == 0) break :blk null;
-            break :blk wing_stage.keptWing(project, wings[0].name);
+            break :blk wing_stage.wingOrDraft(project, wings[0].name);
         },
     };
 }

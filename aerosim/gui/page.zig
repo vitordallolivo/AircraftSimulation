@@ -104,6 +104,7 @@ const Scene = struct {
     high: view3d.Body,
     neutral_x: ?f64 = null,
     gravity_center: ?view3d.Body = null,
+    focus: ?[2]view3d.Body = null, // a caixa da peça que se está criando (o dispositivo de ponta): a câmera aproxima dela
 
     fn center(scene: *const Scene) view3d.Body {
         return .{ (scene.low[0] + scene.high[0]) / 2, (scene.low[1] + scene.high[1]) / 2, (scene.low[2] + scene.high[2]) / 2 };
@@ -329,6 +330,8 @@ pub const Page = struct {
     grid_tables: [max_grids]table_mod.EditTable = [_]table_mod.EditTable{.{}} ** max_grids,
     scene: ?Scene = null,
     view: view3d.View = .{},
+    view_whole: bool = false, // "ver tudo": a vista ignora a peça em foco
+    last_focus: ?[2]view3d.Body = null, // a peça em foco do quadro anterior (uma nova volta a aproximar)
     loads: []const LoadsScene = &.{},
     loads_states: [max_loads]LoadsState = [_]LoadsState{.{}} ** max_loads,
     tracks: []const TrackScene = &.{},
@@ -343,6 +346,9 @@ pub const Page = struct {
     run_when_ready: bool = false, // "rodar" da linha de comando (prints): roda assim que os campos chegam
     pending_act: [64]u8 = undefined, // "etapa:<botão>" da linha de comando: aperta o botão da etapa quando ela abrir
     pending_act_len: usize = 0,
+    form_history: ui_kit.undo.History = .{}, // os valores do formulário de antes de cada edição (Ctrl+Z da análise)
+    form_state: ?[]u8 = null, // os valores de agora, em JSON: o que entra no histórico na próxima edição
+    last_form_edit: i96 = 0, // quando foi a última edição (a digitação seguida é um passo só)
     scroll_to: f32 = 0, // rolagem pedida na linha de comando (prints)
     scroll_frames: u8 = 0,
 
@@ -397,6 +403,87 @@ pub const Page = struct {
         page.begin(.stage, text.written());
     }
 
+    /// Ctrl+Z: numa etapa, o projeto volta ao de antes do último pedido (a etapa guarda o histórico); numa análise,
+    /// o formulário volta aos valores de antes da última edição
+    pub fn undo(page: *Page) void {
+        page.collect(); // uma resposta que chegou neste quadro entra antes (senão o pedido novo a jogaria fora)
+        if (page.kind == .stage) {
+            if (page.edit_due != null) { // a digitação ainda não foi mandada: só volta o formulário ao da etapa
+                page.edit_due = null;
+                if (!page.working()) page.stageRequest("show", "");
+                return;
+            }
+            if (!page.working()) page.stageRequest("undo", "");
+            return;
+        }
+        if (page.kind != .simulation or page.working()) return;
+        const previous = page.form_history.pop() orelse return setText(&page.message, "nada para desfazer", .{});
+        defer page.form_history.release(previous);
+        const rebuild = page.applyValues(previous);
+        page.rememberForm();
+        setText(&page.message, "desfeito (Ctrl+Z) · {d} passo{s} para trás ainda", .{ page.form_history.count, if (page.form_history.count == 1) "" else "s" });
+        if (rebuild) page.askSpecs();
+    }
+
+    /// os valores de agora passam a ser o estado do formulário (o que o próximo Ctrl+Z guarda)
+    fn rememberForm(page: *Page) void {
+        var text: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
+        page.writeValues(&text.writer) catch {
+            text.deinit();
+            return;
+        };
+        if (page.form_state) |old| std.heap.page_allocator.free(old);
+        page.form_state = text.toOwnedSlice() catch null;
+    }
+
+    /// uma edição no formulário da análise: o estado de antes vai para o histórico (a digitação seguida, em menos
+    /// de um segundo, é um passo só)
+    fn formEdited(page: *Page) void {
+        const now = std.Io.Clock.awake.now(clockIo()).nanoseconds;
+        if (page.form_state) |before| if (now - page.last_form_edit > std.time.ns_per_s) page.form_history.push(before);
+        page.last_form_edit = now;
+        page.rememberForm();
+    }
+
+    /// põe nos campos os valores de `text` (`{"chave": valor}`, como `writeValues` escreve); verdadeiro se mudou um
+    /// campo que refaz o formulário
+    fn applyValues(page: *Page, text: []const u8) bool {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const parsed = std.json.parseFromSliceLeaky(Json, arena.allocator(), text, .{}) catch return false;
+        if (parsed != .object) return false;
+        var rebuild = false;
+        for (page.params, page.fields) |param, *field| {
+            const value = parsed.object.get(param.key) orelse continue;
+            const before = snapshot(field);
+            switch (param.kind) {
+                .real, .integer => field.number = number(value) orelse field.number,
+                .toggle => if (value == .bool) {
+                    field.checked = value.bool;
+                },
+                .choice => if (value == .string) for (param.options, 0..) |option, index| {
+                    if (std.mem.eql(u8, option, value.string)) field.choice = @intCast(index);
+                },
+                .text, .file => if (value == .string) field.setText(value.string),
+                .list => field.setText(valueText(arena.allocator(), value) catch continue),
+            }
+            if (param.rebuild and snapshot(field) != before) rebuild = true;
+        }
+        return rebuild;
+    }
+
+    /// "etapa:grade:<tabela>:<operação>" da linha de comando (prints): aperta o botão da tabela (o "+ dispositivo"
+    /// de "dispositivos", por exemplo) na última linha
+    fn gridCommand(page: *Page, text: []const u8) void {
+        const colon = std.mem.indexOfScalar(u8, text, ':') orelse return;
+        for (page.grids, 0..) |grid, g| {
+            if (!std.mem.eql(u8, grid.name, text[0..colon])) continue;
+            for (grid.operations, 0..) |operation, button| if (std.mem.eql(u8, operation, text[colon + 1 ..])) {
+                return page.sendGridEdit(.{ .grid = g, .button = button });
+            };
+        }
+    }
+
     /// um comando pelo nome (`acao=` da linha de comando): "rodar" roda a análise assim que os campos chegarem
     pub fn command(page: *Page, name: []const u8) void {
         if (std.mem.eql(u8, name, "rodar")) page.run_when_ready = true;
@@ -423,7 +510,7 @@ pub const Page = struct {
             page.run_when_ready = false;
             const key = page.pending_act[0..page.pending_act_len];
             page.pending_act_len = 0;
-            page.act(key, "");
+            if (std.mem.startsWith(u8, key, "grade:")) page.gridCommand(key[6..]) else page.act(key, "");
         }
         if (page.run_when_ready and page.kind == .simulation and !page.working() and page.fields.len > 0) {
             page.run_when_ready = false;
@@ -460,7 +547,7 @@ pub const Page = struct {
 
     /// começa um pedido na thread (`fields`: o JSON do pedido sem o id, copiado aqui)
     fn begin(page: *Page, operation: Operation, fields: []const u8) void {
-        if (page.job.running()) return;
+        if (page.job.active) return; // rodando, ou acabou e a resposta ainda não foi recolhida (`collect`)
         const request = newArena() orelse return;
         page.request_text = request.allocator().dupe(u8, fields) catch return;
         dropArena(&page.request_arena);
@@ -622,6 +709,10 @@ pub const Page = struct {
         page.waiter.progress.store(0, .release);
         page.waiter.progress_text[0] = 0;
         const values = manager.Values.fromRequest(job.run.memory(), request);
+        // os avisos da rodada (a linha sustentadora numa asa curta) aparecem por cima da janela; a conta roda igual
+        if (manager.alerts.forRun(job.run.memory(), simulation, &job.loaded.ac, values)) |said| {
+            for (said) |text| ui_kit.toast.show(text);
+        } else |_| {}
         simulation.start(&job.run, values) catch return page.stopAnalysis(job.failureText());
         if (jobs.threads_available) job.thread = std.Thread.spawn(.{}, AnalysisRun.work, .{ job, simulation }) catch null;
     }
@@ -786,6 +877,7 @@ pub const Page = struct {
         page.description = try memory.dupeZ(u8, stringField(reply, "description"));
         dropArena(&page.spec_arena);
         page.spec_arena = arena;
+        page.rememberForm();
         if (page.charts.len == 0) setText(&page.message, "{d} campos ({d} ainda só na GUI PyQt) · clique em Rodar", .{ page.params.len, page.skipped });
     }
 
@@ -831,6 +923,10 @@ pub const Page = struct {
             @memcpy(page.go_to[0..page.go_to_len], target[0..page.go_to_len]);
         }
         setText(&page.message, "{s}", .{stringField(reply, "message")});
+        // os avisos da etapa (a linha sustentadora da asa com AR < 4): por cima da janela quando aparecem
+        if (reply.object.get("alerts")) |list| if (list == .array) for (list.array.items) |item| {
+            if (item == .string) ui_kit.toast.show(item.string);
+        };
         // o formulário antigo (se ficou) ainda aponta para a memória dele: só se solta a que não está em uso
         if (keep_form) {
             dropArena(&page.result_arena);
@@ -1104,6 +1200,7 @@ pub const Page = struct {
             }
         }
         if (grid_edit) |edit| page.sendGridEdit(edit);
+        if (changed and page.kind == .simulation) page.formEdited();
         if (changed) {
             if (page.kind == .stage) {
                 page.edit_due = std.Io.Clock.awake.now(clockIo()).nanoseconds + edit_delay_ns;
@@ -1280,6 +1377,14 @@ pub const Page = struct {
         if (page.scene != null) {
             _ = widgets.card(ui, view_card, if (page.kind == .simulation) "O avião em 3D (arraste para girar, roda para aproximar)" else "A peça em 3D (arraste para girar, roda para aproximar)");
             page.view.blit(ui, view_area);
+            // com uma peça em foco (o dispositivo que se está criando): trocar entre ela e o avião inteiro
+            if (page.scene.?.focus != null) {
+                const button: rl.Rectangle = .{ .x = view_card.x + view_card.width - 168, .y = view_card.y + 3, .width = 160, .height = 22 };
+                if (dialogs.button(ui, button, if (page.view_whole) "ver o dispositivo" else "ver tudo")) {
+                    page.view_whole = !page.view_whole;
+                    page.view.zoom = 1;
+                }
+            }
             y += view_height + gap;
         }
         if (page.kind == .simulation and page.description.len > 0) {
@@ -1360,8 +1465,18 @@ pub const Page = struct {
         page.view.handleInput(ui, area);
         const size = scene.size();
         const middle = scene.center();
-        if (!page.view.begin(area, middle, 0.8 * size)) return;
+        // a peça em foco (um dispositivo novo ou editado): a câmera vai até ela, com o zoom de volta ao inicial
+        const focus = if (page.view_whole) null else scene.focus;
+        if (!std.meta.eql(scene.focus, page.last_focus)) {
+            page.last_focus = scene.focus;
+            page.view_whole = false;
+            if (scene.focus != null) page.view.zoom = 1;
+        }
+        const camera_center: view3d.Body = if (focus) |box| .{ (box[0][0] + box[1][0]) / 2, (box[0][1] + box[1][1]) / 2, (box[0][2] + box[1][2]) / 2 } else middle;
+        const camera_size = if (focus) |box| @max(3 * @max(@max(box[1][0] - box[0][0], box[1][1] - box[0][1]), box[1][2] - box[0][2]), 0.12) else 0.8 * size;
+        if (!page.view.begin(area, camera_center, camera_size)) return;
         defer page.view.end();
+        defer if (focus) |box| drawBox(box, view3d.fraction(0.95, 0.45, 0.05));
         view3d.floor(.{ middle[0], middle[1], 0 }, scene.high[2] + 0.05 * size, 1.4 * size, 0.25);
         // os tanques, o líquido e a LAPES por último e sem o teste de profundidade: dentro da fuselagem eles sumiriam,
         // e é onde eles estão que importa na vista
@@ -1401,6 +1516,27 @@ pub const Page = struct {
         view3d.bodyAxes(&page.view, .{ scene.low[0] - 0.25 * size, scene.low[1], scene.high[2] }, 0.1 * size);
     }
 };
+
+/// as 12 arestas de uma caixa (low, high), por cima das peças
+fn drawBox(box: [2]view3d.Body, color: rl.Color) void {
+    rl.gl.rlDrawRenderBatchActive();
+    rl.gl.rlDisableDepthTest();
+    defer {
+        rl.gl.rlDrawRenderBatchActive();
+        rl.gl.rlEnableDepthTest();
+    }
+    const margin = 0.08 * @max(box[1][0] - box[0][0], @max(box[1][1] - box[0][1], box[1][2] - box[0][2]));
+    const low: view3d.Body = .{ box[0][0] - margin, box[0][1] - margin, box[0][2] - margin };
+    const high: view3d.Body = .{ box[1][0] + margin, box[1][1] + margin, box[1][2] + margin };
+    for (0..8) |corner| for (0..3) |axis| {
+        if (corner & (@as(usize, 1) << @intCast(axis)) != 0) continue; // cada aresta uma vez, a partir do canto de baixo
+        var start: view3d.Body = undefined;
+        for (0..3) |i| start[i] = if (corner & (@as(usize, 1) << @intCast(i)) != 0) high[i] else low[i];
+        var end = start;
+        end[axis] = high[axis];
+        view3d.segment(start, end, color);
+    };
+}
 
 /// a imagem de uma vista de cargas, na textura do tamanho em que ela saiu no quadro anterior: a malha do método com a
 /// cor do campo, as setas da camada (a maior com 18 % do tamanho, como na GUI PyQt), o resto do avião em
@@ -2035,6 +2171,11 @@ fn readScene(memory: std.mem.Allocator, reply: Json) !?Scene {
         scene.neutral_x = number(markers.object.get("np_x"));
         if (markers.object.get("cg")) |point| if (point == .array and point.array.items.len == 3) {
             scene.gravity_center = .{ number(point.array.items[0]) orelse 0, number(point.array.items[1]) orelse 0, number(point.array.items[2]) orelse 0 };
+        };
+        if (markers.object.get("focus")) |box| if (box == .array and box.array.items.len == 6) {
+            var corners: [6]f64 = undefined;
+            for (&corners, box.array.items) |*corner, item| corner.* = number(item) orelse 0;
+            scene.focus = .{ corners[0..3].*, corners[3..6].* };
         };
     };
     return scene;

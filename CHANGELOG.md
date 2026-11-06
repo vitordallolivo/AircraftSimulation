@@ -6,6 +6,18 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- Na tela em Zig, ao montar um biplano em Projetar, a vista mostrava a asa guardada e não a que se estava criando.
+  Agora a asa em edição entra na tabela "Asas do avião" e aparece ao vivo junto das outras; "Guardar configuração"
+  guarda ela junto. Ao criar ou editar um dispositivo de ponta, a vista aproxima dele, com um botão para ver o avião
+  inteiro.
+- Não havia como desfazer. Agora o Ctrl+Z desfaz a última mudança na Montagem (mover uma peça, editar, acrescentar,
+  remover, vento), nas etapas da sprint e nos formulários das análises.
+- A janela abria com um avião de exemplo e com o projeto da sprint da última vez, então a Empenagem já aparecia com
+  um conjunto que ninguém tinha feito. Agora ela abre vazia, com um projeto novo numa pasta própria, e "Abrir" traz
+  um avião ou um projeto da sprint.
+- Rodar a linha sustentadora numa asa de alongamento menor que 4 não avisava nada, e os números podem divergir. Agora
+  aparece um aviso por cima da janela na hora de rodar, no Analisar, nas Cargas, no modelo do voo e em Projetar.
+
 - Antes, na interface em Zig, o Mini-MDO e o Estudo e ponto de projeto só mostravam o lugar, e as etapas da sprint
   (Perfis, Projetar, Empenagem e comandos, Motores e montagem) dependiam do Python. Agora tudo isso roda em Zig, com
   as mesmas páginas, botões e o mesmo arquivo de projeto: o Mini-MDO otimiza com o catálogo de motores, hélices e

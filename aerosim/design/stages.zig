@@ -6,8 +6,10 @@
 //!     requisitos   "Condições e restrições"        condições, regras, restrições e variáveis do projeto
 //!     perfis       Aerodinâmica → Perfis           candidatos e a polar 2D de cada um
 //!
-//! O projeto fica na pasta da sprint (a mesma do Python: `$AEROSIM_PROJETOS/sprint`, senão
-//! `~/aerosim_aeronaves/sprint`) e é gravado a cada mudança.
+//! O programa abre com um projeto vazio, numa pasta nova (`$AEROSIM_PROJETOS/projetos/projeto_<data>`, senão
+//! `~/aerosim_aeronaves/projetos/...`), criada só na primeira mudança; o que se muda é gravado na hora. Um projeto
+//! que já existe (o `sprint.json` de uma pasta, como a do Python em `~/aerosim_aeronaves/sprint`) abre por
+//! `openProject`.
 const std = @import("std");
 const builtin = @import("builtin");
 const simulation = @import("simulation");
@@ -29,8 +31,31 @@ pub const Context = struct {
     io: std.Io,
     /// o perfil selecionado na etapa Perfis
     selected_airfoil: usize = 0,
+    /// os estados anteriores do projeto (o JSON inteiro), para o Ctrl+Z ("undo"); o último é o mais recente
+    history: std.ArrayList([]u8) = .empty,
+    /// o dispositivo de ponta (a linha da tabela de Projetar) que se está editando: a vista 3D aproxima dele
+    focus_device: ?usize = null,
     /// os perfis da biblioteca (`data/airfoils`), lidos uma vez, como candidatos do projeto
     library: ?[]const Value = null,
+
+    /// guarda `before` (o projeto antes de um pedido que o mudou) para o Ctrl+Z
+    fn remember(context: *Context, before: []u8) void {
+        const gpa = std.heap.page_allocator;
+        if (context.history.items.len >= undo_capacity) gpa.free(context.history.orderedRemove(0));
+        context.history.append(gpa, before) catch gpa.free(before);
+    }
+
+    /// volta o projeto ao estado de antes do último pedido que o mudou; falso: nada para desfazer
+    fn undo(context: *Context) !bool {
+        const previous = context.history.pop() orelse return false;
+        defer std.heap.page_allocator.free(previous);
+        const memory = context.project.memory();
+        context.project.root = try std.json.parseFromSliceLeaky(Value, memory, previous, .{ .allocate = .alloc_always });
+        try context.project.reserve();
+        context.focus_device = null;
+        _ = context.save();
+        return true;
+    }
 
     /// grava o projeto (uma falha de gravação não derruba a etapa: a mensagem avisa)
     pub fn save(context: *Context) bool {
@@ -76,35 +101,72 @@ pub fn find(name: []const u8) ?*const Stage {
     return null;
 }
 
+/// quantos pedidos dá para desfazer em cada projeto
+const undo_capacity = 64;
+
 var shared: ?Context = null;
 var lock: std.atomic.Mutex = .unlocked;
 
-/// a pasta da sprint (a do Python: `default_root()` + "sprint")
-fn defaultFolder(memory: std.mem.Allocator) ![]const u8 {
+/// a pasta dos projetos (a do Python: `default_root()`)
+fn projectsRoot(memory: std.mem.Allocator) ![]const u8 {
     if (builtin.link_libc) {
-        if (std.c.getenv("AEROSIM_PROJETOS")) |root| return std.fs.path.join(memory, &.{ std.mem.span(root), "sprint" });
-        if (std.c.getenv("HOME") orelse std.c.getenv("USERPROFILE")) |home| return std.fs.path.join(memory, &.{ std.mem.span(home), "aerosim_aeronaves", "sprint" });
+        if (std.c.getenv("AEROSIM_PROJETOS")) |root| return memory.dupe(u8, std.mem.span(root));
+        if (std.c.getenv("HOME") orelse std.c.getenv("USERPROFILE")) |home| return std.fs.path.join(memory, &.{ std.mem.span(home), "aerosim_aeronaves" });
     }
-    return memory.dupe(u8, "aerosim_aeronaves/sprint");
+    return memory.dupe(u8, "aerosim_aeronaves");
 }
 
-/// o contexto aberto (o projeto da pasta da sprint, ou um vazio que grava lá)
+/// a pasta de um projeto novo: `projetos/projeto_AAAA-MM-DD_HHMMSS` (UTC), para nunca gravar por cima de outro
+fn newFolder(memory: std.mem.Allocator, io: std.Io) ![]const u8 {
+    const now = std.Io.Clock.real.now(io).nanoseconds;
+    const seconds: u64 = @intCast(@max(@divFloor(now, std.time.ns_per_s), 0));
+    const epoch: std.time.epoch.EpochSeconds = .{ .secs = seconds };
+    const year_day = epoch.getEpochDay().calculateYearDay();
+    const month_day = year_day.calculateMonthDay();
+    const day = epoch.getDaySeconds();
+    const name = try std.fmt.allocPrint(memory, "projeto_{d}-{d:0>2}-{d:0>2}_{d:0>2}{d:0>2}{d:0>2}", .{ year_day.year, month_day.month.numeric(), month_day.day_index + 1, day.getHoursIntoDay(), day.getMinutesIntoHour(), day.getSecondsIntoMinute() });
+    return std.fs.path.join(memory, &.{ try projectsRoot(memory), "projetos", name });
+}
+
+/// o contexto aberto: o projeto aberto por `openProject` ou, no começo, um vazio (nada guardado, nenhuma asa nem
+/// conjunto) que grava numa pasta nova
 fn opened(io: std.Io) !*Context {
     if (shared) |*existing| return existing;
     const gpa = std.heap.page_allocator;
     var scratch = std.heap.ArenaAllocator.init(gpa);
     defer scratch.deinit();
-    const folder = try defaultFolder(scratch.allocator());
-    const project = store.open(gpa, io, folder) catch try store.empty(gpa, folder);
-    shared = .{ .project = project, .io = io };
+    shared = .{ .project = try store.empty(gpa, try newFolder(scratch.allocator(), io)), .io = io };
     return &shared.?;
+}
+
+/// abre o projeto em `path` (a pasta, o `sprint.json` dela ou um `.json` antigo) no lugar do aberto; o Ctrl+Z
+/// começa do zero
+pub fn openProject(io: std.Io, path: []const u8) !void {
+    const project = try store.open(std.heap.page_allocator, io, path);
+    use(project, io);
+}
+
+/// o `.json` em `bytes` é um projeto da sprint (e não um avião): o `sprint.json` novo, um arquivo de asa dele ou
+/// o `.json` antigo de um arquivo só, com os requisitos e as asas guardadas
+pub fn isProject(bytes: []const u8) bool {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const parsed = std.json.parseFromSliceLeaky(Value, arena.allocator(), bytes, .{}) catch return false;
+    if (parsed != .object) return false;
+    const format = store.text(&parsed.object, "format", "");
+    if (std.mem.startsWith(u8, format, "aerosim-sprint")) return true;
+    return parsed.object.get("requirements") != null and parsed.object.get("wings") != null;
 }
 
 /// troca o projeto (abrir outra pasta; os testes usam um projeto da pasta `data`)
 pub fn use(project: store.Project, io: std.Io) void {
     while (!lock.tryLock()) std.atomic.spinLoopHint();
     defer lock.unlock();
-    if (shared) |*existing| existing.project.deinit();
+    if (shared) |*existing| {
+        existing.project.deinit();
+        for (existing.history.items) |state| std.heap.page_allocator.free(state);
+        existing.history.deinit(std.heap.page_allocator);
+    }
     shared = .{ .project = project, .io = io };
 }
 
@@ -123,7 +185,22 @@ pub fn handle(memory: std.mem.Allocator, io: std.Io, fields: []const u8) !Value 
     while (!lock.tryLock()) std.atomic.spinLoopHint();
     defer lock.unlock();
     const current = try opened(io);
-    const message = try stage.apply(current, memory, request);
+    // Ctrl+Z: o projeto volta ao de antes do último pedido que mudou algo; os outros pedidos guardam o de antes
+    const message = if (std.mem.eql(u8, request.do, "undo"))
+        (if (try current.undo()) "desfeito" else "nada para desfazer")
+    else if (std.mem.eql(u8, request.do, "show"))
+        try stage.apply(current, memory, request)
+    else blk: {
+        const gpa = std.heap.page_allocator;
+        const before = try std.json.Stringify.valueAlloc(gpa, current.project.root, .{});
+        const said = stage.apply(current, memory, request) catch |err| {
+            gpa.free(before);
+            return err;
+        };
+        const after = try std.json.Stringify.valueAlloc(memory, current.project.root, .{});
+        if (std.mem.eql(u8, before, after)) gpa.free(before) else current.remember(before);
+        break :blk said;
+    };
     var page = try stage.page(current, memory);
     page.requirements = try registry.requirementsSummary(memory, &current.project);
     if (message.len > 0) page.message = message;
@@ -247,4 +324,36 @@ test "etapas em Zig: cada uma monta a página do projeto de exemplo, com a conta
         const summary = reply.object.get("summary") orelse return error.SemConta;
         try std.testing.expect(summary == .array or summary == .object);
     }
+}
+
+test "Ctrl+Z da etapa: o projeto volta ao de antes do último pedido que mudou algo" {
+    const io = std.testing.io;
+    var project = try store.open(std.heap.page_allocator, io, "../data/sprint/projeto_s1223.json");
+    project.folder = ".zig-cache/teste_desfazer"; // nunca gravar em data/
+    use(project, io);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    _ = try handle(memory, io, "\"name\": \"asa\", \"do\": \"grid\", \"grid\": \"asas\", \"edit\": \"add\", \"row\": -1");
+    _ = try handle(memory, io, "\"name\": \"asa\", \"do\": \"grid\", \"grid\": \"dispositivos\", \"edit\": \"add\", \"row\": -1");
+    const devices = struct {
+        fn count() usize {
+            const rows = shared.?.project.list("wing_layout").items;
+            var total: usize = 0;
+            for (rows) |row| if (row.object.get("devices")) |list| {
+                total += list.array.items.len;
+            };
+            return total;
+        }
+    }.count;
+    try std.testing.expectEqual(@as(usize, 1), devices());
+    try std.testing.expect(shared.?.focus_device != null); // a vista aproxima do dispositivo novo
+    const page = try handle(memory, io, "\"name\": \"asa\", \"do\": \"undo\"");
+    try std.testing.expectEqualStrings("desfeito", page.object.get("message").?.string);
+    try std.testing.expectEqual(@as(usize, 0), devices());
+    try std.testing.expectEqual(@as(usize, 1), shared.?.project.list("wing_layout").items.len);
+    _ = try handle(memory, io, "\"name\": \"asa\", \"do\": \"undo\"");
+    try std.testing.expectEqual(@as(usize, 0), shared.?.project.list("wing_layout").items.len);
+    const nothing = try handle(memory, io, "\"name\": \"asa\", \"do\": \"undo\"");
+    try std.testing.expectEqualStrings("nada para desfazer", nothing.object.get("message").?.string);
 }
