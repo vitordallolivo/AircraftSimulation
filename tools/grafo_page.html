@@ -123,7 +123,10 @@ let foco = null;            // { modulo, simbolo, chama:Set(mod), chamado:Set(mo
 let sobre = null;           // módulo sob o mouse
 const ligadas = new Set(Object.keys(AREAS));
 
-fetch('grafo.json').then(r => r.json()).then(iniciar).catch(e => {
+// o tools/livro.py embute o grafo aqui, para a página abrir também direto do disco (file://, a tela inicial do PC),
+// onde o navegador não deixa ler o grafo.json; sem ele, lê o grafo.json ao lado
+const EMBUTIDO = /*GRAFO*/null;
+(EMBUTIDO ? Promise.resolve(EMBUTIDO) : fetch('grafo.json').then(r => r.json())).then(iniciar).catch(e => {
   document.getElementById('carregando').textContent = 'não deu para ler o grafo.json (' + e + ')';
 });
 

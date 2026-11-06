@@ -5,12 +5,17 @@
 //!   zig build aerosim [-- <avião.json>]     abre o aerosim
 //!   zig build aeroopt                        abre o aeroopt
 //!   zig build aerodrive                      abre o AeroDrive
-//!   zig build launcher                       abre a tela inicial do pacote (o menu do site, que abre os três)
-//!   zig build                                compila os quatro (cada um em <pasta>/zig-out/bin)
+//!   zig build launcher                       monta a documentação e abre a tela inicial do pacote (o menu do site,
+//!                                            que abre os três e a documentação)
+//!   zig build docs                           monta o site da documentação em zig-out/site (livro, mapa, tracking)
+//!   zig build                                compila os quatro (cada um em <pasta>/zig-out/bin) e monta a documentação
 //!   zig build test                           testes do núcleo, das duas interfaces e do AeroDrive
 //!
 //! Os programas saem em ReleaseSafe (as contas com as verificações do Zig, mas otimizadas; em Debug a análise da
 //! asa fica lenta demais para usar); `-Doptimize=Debug` volta ao modo de depuração.
+//!
+//! A documentação é o `tools/livro.py` (que chama o `grafo.py` e o `tracking.py`), então precisa de um Python no PATH:
+//! `-Dpython=<executável>` escolhe outro e `-Ddocs=false` deixa a documentação de fora.
 //!
 //! Com o Zig do pip: `python -m ziglang build aerosim`.
 const std = @import("std");
@@ -21,6 +26,12 @@ pub fn build(b: *std.Build) void {
     const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Debug, ReleaseSafe (padrão), ReleaseFast ou ReleaseSmall (passa para cada programa)") orelse .ReleaseSafe;
     const compile_all = b.getInstallStep();
     const test_all = b.step("test", "Testes do núcleo, das interfaces, da tela inicial e do AeroDrive");
+    const with_docs = b.option(bool, "docs", "Monta a documentação junto do build e do launcher (padrão: sim)") orelse true;
+    const python = b.option([]const u8, "python", "O Python que monta a documentação (padrão: python no Windows, python3 nos outros)") orelse
+        (if (b.graph.host.result.os.tag == .windows) "python" else "python3");
+    const docs = docsSite(b, python);
+    b.step("docs", "Monta o site da documentação em zig-out/site (livro, mapa do código e tracking)").dependOn(&docs.step);
+    if (with_docs) compile_all.dependOn(&docs.step);
     for (programs) |name| {
         // abrir
         const run = child(b, name, &.{ "build", "run" }, optimize);
@@ -28,12 +39,24 @@ pub fn build(b: *std.Build) void {
             run.addArg("--");
             run.addArgs(args);
         }
+        // a tela inicial abre a documentação, então ela é montada antes
+        if (with_docs and std.mem.eql(u8, name, "launcher")) run.step.dependOn(&docs.step);
         b.step(name, b.fmt("Compila e abre o {s}", .{name})).dependOn(&run.step);
         // compilar e testar
         compile_all.dependOn(&child(b, name, &.{"build"}, optimize).step);
         test_all.dependOn(&child(b, name, &.{ "build", "test" }, null).step);
     }
     test_all.dependOn(&child(b, "core", &.{ "build", "test" }, null).step);
+}
+
+/// `<python> tools/livro.py --saida zig-out/site`: o livro com todos os .md, o mapa do código (`grafo.py`) e a página
+/// do tracking (`tracking.py`), na pasta em que a tela inicial procura a documentação
+fn docsSite(b: *std.Build, python: []const u8) *std.Build.Step.Run {
+    const run = b.addSystemCommand(&.{ python, "tools/livro.py", "--saida", "zig-out/site" });
+    run.setCwd(b.path("."));
+    run.has_side_effects = true;
+    run.stdio = .inherit;
+    return run;
 }
 
 /// `zig <arguments>` na pasta `folder`; o modo vai como `--release=...`, porque os builds das pastas têm um modo

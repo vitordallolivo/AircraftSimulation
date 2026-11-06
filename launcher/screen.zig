@@ -1,6 +1,7 @@
 //! A tela inicial do programa instalado: a mesma do site (`web/index.html`), no estilo de uma BIOS (fundo azul,
 //! moldura dupla, letra de máquina de escrever), agora abrindo os programas do PC. Escolhe-se com as setas ou o
-//! mouse e abre-se com Enter ou clique: o aerosim, o aeroopt, o AeroDrive, ou o AeroDrive já com um avião (.json).
+//! mouse e abre-se com Enter ou clique: o aerosim, o aeroopt, o AeroDrive, o AeroDrive já com um avião (.json) ou a
+//! documentação, no navegador.
 //! Os programas abrem em processos próprios, com a pasta dos dados (`data/`) como pasta de trabalho.
 const std = @import("std");
 const rl = @import("raylib");
@@ -15,7 +16,7 @@ const gray = theme.hex(0xc0c0c0);
 const white = theme.hex(0xffffff);
 const faded = theme.hex(0x7f7fd4);
 
-const Action = enum { aerosim, aeroopt, aerodrive, load, quit };
+const Action = enum { aerosim, aeroopt, aerodrive, load, docs, quit };
 
 const Item = struct {
     caption: [:0]const u8,
@@ -28,6 +29,7 @@ const items = [_]Item{
     .{ .caption = "aeroopt — otimizar", .help = "Otimização do projeto para a competição.", .action = .aeroopt },
     .{ .caption = "AeroDrive — pilotar o avião", .help = "Simulação em tempo real: escolha um avião e pilote com teclado ou controle.", .action = .aerodrive },
     .{ .caption = "Carregar avião (.json)", .help = "Escolha o .json de um avião feito no aerosim; o AeroDrive abre já com ele.", .action = .load },
+    .{ .caption = "Documentação", .help = "Abre no navegador o livro com todos os .md, o mapa do código e o tracking.", .action = .docs },
     .{ .caption = "Sair", .help = "Fecha a tela inicial (os programas abertos continuam).", .action = .quit },
 };
 
@@ -72,6 +74,17 @@ pub const Screen = struct {
         screen.setMessage("abrindo o {s}...", .{@tagName(program)});
     }
 
+    /// abre a documentação (`livro.html`) no navegador padrão
+    fn openDocs(screen: *Screen) void {
+        const gpa = std.heap.page_allocator;
+        const page = places.findDocs(gpa, io(), screen.exe_dir, screen.root) orelse
+            return screen.setMessage("não achei a documentação: rode python -m ziglang build docs", .{});
+        const command = places.opener(page);
+        _ = std.process.spawn(screen.io orelse io(), .{ .argv = command[0..places.opener_len] }) catch |err|
+            return screen.setMessage("não abriu o navegador: {s}", .{@errorName(err)});
+        screen.setMessage("abrindo a documentação no navegador...", .{});
+    }
+
     fn activate(screen: *Screen, index: usize) void {
         switch (items[index].action) {
             .aerosim => screen.launch(.aerosim, null),
@@ -82,6 +95,7 @@ pub const Screen = struct {
                 const folder = if (screen.root) |root| std.fmt.bufPrint(&buffer, "{s}/data/aircraft", .{root}) catch "." else ".";
                 screen.files.show("Carregar avião (.json)", folder, &.{".json"});
             },
+            .docs => screen.openDocs(),
             .quit => std.process.exit(0),
         }
     }

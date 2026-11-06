@@ -811,10 +811,10 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `launcher/main.zig` — A tela inicial do AircraftSimulation instalado (o mesmo menu do site): escolhe e abre o aerosim, o aeroopt ou
   fn `main:14`
 - `launcher/places.zig` — Onde estão os programas e os dados, vistos da tela inicial. No pacote instalado (o .exe do Windows, o
-  tipos `Program:8`
-  fn `dataRoot:14`, `candidates:27`, `find:36`
+  tipos `Program:9`
+  fn `dataRoot:15`, `candidates:28`, `find:37`, `docsCandidates:43`, `findDocs:50`, `opener:72`
 - `launcher/screen.zig` — A tela inicial do programa instalado: a mesma do site (`web/index.html`), no estilo de uma BIOS (fundo azul,
-  tipos `Screen:37`
+  tipos `Screen:39`
 - `launcher/tests.zig` — Os testes sem janela da tela inicial: onde estão os programas e os dados.
 
 

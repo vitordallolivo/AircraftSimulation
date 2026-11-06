@@ -3,6 +3,7 @@
     python tools/livro.py                      # grava zig-out/site/livro.html, as imagens e o tracking.html
     python tools/livro.py --saida pasta        # em outra pasta
     python -m http.server -d zig-out/site 8000 # e abrir http://localhost:8000/livro.html
+    python -m ziglang build docs               # o mesmo, pelo build da raiz (que também roda no build launcher)
 
 Os capítulos se acham sozinhos: todo .md que está no git (fora de `data/` e do próprio TRACKING.md, que é a aba
 Tracking) entra, agrupado pela pasta de cima (Projeto, aerosim, Núcleo, AeroDrive, aeroopt, Ferramentas e testes).
@@ -122,9 +123,15 @@ def main() -> int:
     pages = [page for group in data["grupos"] for page in group["paginas"]]
     images = copy_images(pages, args.saida)
     # a aba Mapa: o grafo do código, extraído agora do Zig e do Python
-    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "grafo.py"), "--saida",
-                    os.path.join(args.saida, "grafo.json")], check=True)
-    shutil.copy2(os.path.join(ROOT, "tools", "grafo_page.html"), os.path.join(args.saida, "mapa.html"))
+    graph = os.path.join(args.saida, "grafo.json")
+    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "grafo.py"), "--saida", graph], check=True)
+    # o grafo vai também embutido no mapa.html, que assim abre direto do disco (sem servidor)
+    with open(os.path.join(ROOT, "tools", "grafo_page.html"), encoding="utf-8") as f:
+        page = f.read()
+    with open(graph, encoding="utf-8") as f:
+        graph_blob = f.read().replace("</", "<\\/")
+    with open(os.path.join(args.saida, "mapa.html"), "w", encoding="utf-8") as f:
+        f.write(page.replace("/*GRAFO*/null", graph_blob))
     # a aba Tracking: a página do tracking ao lado do livro
     subprocess.run([sys.executable, os.path.join(ROOT, "tools", "tracking.py"), "--html",
                     os.path.join(args.saida, "tracking.html")], check=True)

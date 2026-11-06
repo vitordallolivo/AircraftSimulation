@@ -24,6 +24,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - A documentação estava espalhada em dezenas de README, cada um numa pasta. Agora o site junta todos os `.md` num
   livro, com sumário por parte do projeto, busca, as equações e os diagramas desenhados e as imagens, e o tracking
   numa aba ao lado. Um `.md` novo entra no livro sozinho.
+- A documentação só existia no site, e a tela inicial do PC não tinha como chegar nela. Agora o build da raiz monta o
+  site da documentação junto (o livro, o mapa do código e o tracking), há um passo só para ela
+  (`python -m ziglang build docs`), e a tela inicial tem a opção Documentação, que abre o livro no navegador. O
+  pacote instalável leva a documentação junto, e o mapa do código abre direto do disco, sem servidor.
 - O quadro de tarefas ficou difícil de ler como tabelas longas em Markdown. Agora as mesmas tabelas viram também
   uma página no site, sem mudar o jeito de escrever (uma tarefa nova continua sendo uma linha na tabela): as tarefas em colunas por estado, com
   busca e filtro por segmento, as suspeitas de erro à parte, o grafo das dependências, a ordem de prioridade e o que
