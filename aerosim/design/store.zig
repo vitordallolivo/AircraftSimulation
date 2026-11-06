@@ -40,14 +40,14 @@ pub const Project = struct {
     /// uma parte do projeto ("requirements", "rules", "wing_draft"...), criada vazia se não existe (o Python
     /// completa com os padrões)
     pub fn section(project: *Project, key: []const u8) *ObjectMap {
-        const gop = project.root.object.getOrPut(key) catch unreachable;
-        if (!gop.found_existing or gop.value_ptr.* != .object) gop.value_ptr.* = .{ .object = .init(project.memory()) };
+        const gop = project.root.object.getOrPut(project.memory(), key) catch unreachable;
+        if (!gop.found_existing or gop.value_ptr.* != .object) gop.value_ptr.* = .{ .object = .empty };
         return &gop.value_ptr.object;
     }
 
     /// uma lista do projeto ("wings", "sets", "aircraft", "airfoils", "variables"...), criada vazia se não existe
     pub fn list(project: *Project, key: []const u8) *Array {
-        const gop = project.root.object.getOrPut(key) catch unreachable;
+        const gop = project.root.object.getOrPut(project.memory(), key) catch unreachable;
         if (!gop.found_existing or gop.value_ptr.* != .array) gop.value_ptr.* = .{ .array = .init(project.memory()) };
         return &gop.value_ptr.array;
     }
@@ -104,13 +104,13 @@ pub fn child(object: *const ObjectMap, key: []const u8) ?*ObjectMap {
 }
 
 /// escreve um número num campo
-pub fn setNumber(object: *ObjectMap, key: []const u8, value: f64) !void {
-    try object.put(key, .{ .float = value });
+pub fn setNumber(project: *Project, object: *ObjectMap, key: []const u8, value: f64) !void {
+    try object.put(project.memory(), key, .{ .float = value });
 }
 
 /// escreve um texto num campo (copiado para a memória do projeto)
 pub fn setText(project: *Project, object: *ObjectMap, key: []const u8, value: []const u8) !void {
-    try object.put(key, .{ .string = try project.memory().dupe(u8, value) });
+    try object.put(project.memory(), key, .{ .string = try project.memory().dupe(u8, value) });
 }
 
 /// o nome de um candidato guardado (asa, conjunto, avião): `params.name`
@@ -141,7 +141,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, path: []const u8) !Project {
         } else if (try readJson(memory, io, try std.fs.path.join(memory, &.{ path, legacy_name }))) |legacy| {
             project.root = legacy;
         } else {
-            project.root = try join(memory, .{ .object = .init(memory) }, try wingFiles(memory, io, path));
+            project.root = try join(memory, .{ .object = .empty }, try wingFiles(memory, io, path));
         }
     } else {
         const read = (try readJson(memory, io, path)) orelse return error.NotProject;
@@ -161,7 +161,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, path: []const u8) !Project {
 /// um projeto vazio que grava em `folder` (o Python completa os padrões ao abrir)
 pub fn empty(gpa: std.mem.Allocator, folder: []const u8) !Project {
     var project: Project = .{ .arena = .init(gpa), .root = undefined, .folder = "" };
-    project.root = .{ .object = .init(project.arena.allocator()) };
+    project.root = .{ .object = .empty };
     project.folder = try project.arena.allocator().dupe(u8, folder);
     return project;
 }
@@ -207,41 +207,41 @@ fn wingFiles(memory: std.mem.Allocator, io: std.Io, folder: []const u8) ![]File 
 
 /// um conjunto do arquivo da asa → o conjunto do projeto (`_set_from`): a cópia da asa do arquivo e os nomes do Python
 fn setFrom(memory: std.mem.Allocator, stored: Value, wing: Value) !Value {
-    var out: ObjectMap = .init(memory);
-    const source = if (stored == .object) stored.object else ObjectMap.init(memory);
-    try out.put("params", source.get("params") orelse .{ .object = .init(memory) });
-    try out.put("wing", wing);
-    try out.put("note", source.get("note") orelse .{ .string = "" });
-    try out.put("wing2", source.get("asa2") orelse .null);
-    try out.put("group", source.get("grupo") orelse .{ .string = "" });
-    try out.put("more_wings", source.get("mais_asas") orelse .{ .array = .init(memory) });
-    try out.put("more_places", source.get("lugares") orelse .{ .array = .init(memory) });
-    try out.put("devices", source.get("dispositivos") orelse .{ .array = .init(memory) });
+    var out: ObjectMap = .empty;
+    const source = if (stored == .object) stored.object else ObjectMap.empty;
+    try out.put(memory, "params", source.get("params") orelse .{ .object = .empty });
+    try out.put(memory, "wing", wing);
+    try out.put(memory, "note", source.get("note") orelse .{ .string = "" });
+    try out.put(memory, "wing2", source.get("asa2") orelse .null);
+    try out.put(memory, "group", source.get("grupo") orelse .{ .string = "" });
+    try out.put(memory, "more_wings", source.get("mais_asas") orelse .{ .array = .init(memory) });
+    try out.put(memory, "more_places", source.get("lugares") orelse .{ .array = .init(memory) });
+    try out.put(memory, "devices", source.get("dispositivos") orelse .{ .array = .init(memory) });
     return .{ .object = out };
 }
 
 /// o conjunto do projeto → o do arquivo da asa (`_set_dict`)
 fn setDict(memory: std.mem.Allocator, set: Value) !Value {
-    var out: ObjectMap = .init(memory);
+    var out: ObjectMap = .empty;
     const source = set.object;
-    try out.put("params", source.get("params") orelse .{ .object = .init(memory) });
-    try out.put("note", source.get("note") orelse .{ .string = "" });
+    try out.put(memory, "params", source.get("params") orelse .{ .object = .empty });
+    try out.put(memory, "note", source.get("note") orelse .{ .string = "" });
     if (source.get("wing2")) |second| if (second != .null) {
-        try out.put("asa2", second);
-        try out.put("grupo", source.get("group") orelse .{ .string = "" });
+        try out.put(memory, "asa2", second);
+        try out.put(memory, "grupo", source.get("group") orelse .{ .string = "" });
     };
     if (source.get("more_wings")) |more| if (more == .array and more.array.items.len > 0) {
-        try out.put("mais_asas", more);
-        try out.put("lugares", source.get("more_places") orelse .{ .array = .init(memory) });
+        try out.put(memory, "mais_asas", more);
+        try out.put(memory, "lugares", source.get("more_places") orelse .{ .array = .init(memory) });
     };
-    if (source.get("devices")) |devices| if (devices == .array and devices.array.items.len > 0) try out.put("dispositivos", devices);
+    if (source.get("devices")) |devices| if (devices == .array and devices.array.items.len > 0) try out.put(memory, "dispositivos", devices);
     return .{ .object = out };
 }
 
 /// (sprint.json, arquivos das asas) → o projeto (`join` de `store.py`): as asas guardadas, os conjuntos e os aviões
 /// na ordem gravada e, depois, os dos arquivos copiados para a pasta
 fn join(memory: std.mem.Allocator, main: Value, files: []const File) !Value {
-    var root: ObjectMap = .init(memory);
+    var root: ObjectMap = .empty;
     if (main == .object) {
         var iterator = main.object.iterator();
         while (iterator.next()) |entry| {
@@ -249,7 +249,7 @@ fn join(memory: std.mem.Allocator, main: Value, files: []const File) !Value {
             if (std.mem.eql(u8, key, "format") or std.mem.eql(u8, key, "version") or std.mem.eql(u8, key, "order")) continue;
             var skip = false;
             for (split_keys) |split_key| skip = skip or std.mem.eql(u8, key, split_key);
-            if (!skip) try root.put(key, entry.value_ptr.*);
+            if (!skip) try root.put(memory, key, entry.value_ptr.*);
         }
     }
     // por arquivo: a asa, os conjuntos e os aviões
@@ -268,16 +268,16 @@ fn join(memory: std.mem.Allocator, main: Value, files: []const File) !Value {
             const set = if (plane.object.get("superficie_copia")) |copy| try setFrom(memory, copy, wing.?) else found: {
                 const wanted = text(&plane.object, "superficie", "");
                 for (sets.items) |set| if (std.mem.eql(u8, nameOf(set), wanted)) break :found set;
-                var params: ObjectMap = .init(memory);
-                try params.put("name", .{ .string = wanted });
-                var bare: ObjectMap = .init(memory);
-                try bare.put("params", .{ .object = params });
+                var params: ObjectMap = .empty;
+                try params.put(memory, "name", .{ .string = wanted });
+                var bare: ObjectMap = .empty;
+                try bare.put(memory, "params", .{ .object = params });
                 break :found try setFrom(memory, .{ .object = bare }, wing.?);
             };
-            var candidate: ObjectMap = .init(memory);
-            try candidate.put("params", plane.object.get("params") orelse .{ .object = .init(memory) });
-            try candidate.put("set", set);
-            try candidate.put("note", plane.object.get("note") orelse .{ .string = "" });
+            var candidate: ObjectMap = .empty;
+            try candidate.put(memory, "params", plane.object.get("params") orelse .{ .object = .empty });
+            try candidate.put(memory, "set", set);
+            try candidate.put(memory, "note", plane.object.get("note") orelse .{ .string = "" });
             try planes.append(memory, .{ .object = candidate });
         };
         entry.sets = sets.items;
@@ -327,7 +327,7 @@ fn join(memory: std.mem.Allocator, main: Value, files: []const File) !Value {
             taken.* = true;
             try out.append(item(entry, pick.kind, index));
         };
-        try root.put(pick.key, .{ .array = out });
+        try root.put(memory, pick.key, .{ .array = out });
     }
     return .{ .object = root };
 }
@@ -432,47 +432,47 @@ fn split(memory: std.mem.Allocator, root: Value) !Parts {
         try group.planes.append(memory, plane);
         try order_planes.append(try pair(memory, group.file, nameOf(plane)));
     };
-    var main: ObjectMap = .init(memory);
-    try main.put("format", .{ .string = kind_main });
-    try main.put("version", .{ .integer = version });
-    var order: ObjectMap = .init(memory);
-    try order.put("wings", .{ .array = order_wings });
-    try order.put("sets", .{ .array = order_sets });
-    try order.put("aircraft", .{ .array = order_planes });
-    try main.put("order", .{ .object = order });
+    var main: ObjectMap = .empty;
+    try main.put(memory, "format", .{ .string = kind_main });
+    try main.put(memory, "version", .{ .integer = version });
+    var order: ObjectMap = .empty;
+    try order.put(memory, "wings", .{ .array = order_wings });
+    try order.put(memory, "sets", .{ .array = order_sets });
+    try order.put(memory, "aircraft", .{ .array = order_planes });
+    try main.put(memory, "order", .{ .object = order });
     var iterator = object.iterator();
     while (iterator.next()) |entry| {
         var skip = false;
         for (split_keys) |key| skip = skip or std.mem.eql(u8, entry.key_ptr.*, key);
-        if (!skip) try main.put(entry.key_ptr.*, entry.value_ptr.*);
+        if (!skip) try main.put(memory, entry.key_ptr.*, entry.value_ptr.*);
     }
     var files: std.ArrayList(File) = .empty;
     for (groups.items) |group| {
         var planes: Array = .init(memory);
         for (group.planes.items) |plane| {
-            var stored: ObjectMap = .init(memory);
-            try stored.put("params", plane.object.get("params") orelse .{ .object = .init(memory) });
-            try stored.put("note", plane.object.get("note") orelse .{ .string = "" });
+            var stored: ObjectMap = .empty;
+            try stored.put(memory, "params", plane.object.get("params") orelse .{ .object = .empty });
+            try stored.put(memory, "note", plane.object.get("note") orelse .{ .string = "" });
             const set = plane.object.get("set").?;
-            try stored.put("superficie", .{ .string = nameOf(set) });
+            try stored.put(memory, "superficie", .{ .string = nameOf(set) });
             var own: ?Value = null;
             for (group.sets.items) |candidate| if (std.mem.eql(u8, nameOf(candidate), nameOf(set))) {
                 own = candidate;
                 break;
             };
-            if (own == null or !same(own.?, set)) try stored.put("superficie_copia", try setDict(memory, set));
+            if (own == null or !same(own.?, set)) try stored.put(memory, "superficie_copia", try setDict(memory, set));
             try planes.append(.{ .object = stored });
         }
         var sets: Array = .init(memory);
         for (group.sets.items) |set| try sets.append(try setDict(memory, set));
-        var file: ObjectMap = .init(memory);
-        try file.put("format", .{ .string = kind_wing });
-        try file.put("version", .{ .integer = version });
-        try file.put("nome", .{ .string = nameOf(group.wing) });
-        try file.put("guardada", .{ .bool = group.kept });
-        try file.put("asa", group.wing);
-        try file.put("superficies", .{ .array = sets });
-        try file.put("avioes", .{ .array = planes });
+        var file: ObjectMap = .empty;
+        try file.put(memory, "format", .{ .string = kind_wing });
+        try file.put(memory, "version", .{ .integer = version });
+        try file.put(memory, "nome", .{ .string = nameOf(group.wing) });
+        try file.put(memory, "guardada", .{ .bool = group.kept });
+        try file.put(memory, "asa", group.wing);
+        try file.put(memory, "superficies", .{ .array = sets });
+        try file.put(memory, "avioes", .{ .array = planes });
         try files.append(memory, .{ .name = group.file, .value = .{ .object = file } });
     }
     return .{ .main = .{ .object = main }, .files = files.items };

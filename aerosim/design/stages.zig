@@ -1,0 +1,175 @@
+//! As etapas da sprint em Zig (o par de `aerosim/manager/stages.py`): cada etapa mexe no projeto (`store.Project`) e
+//! devolve a página inteira (formulário, guardados, botões, tabelas editáveis e a conta) no mesmo formato da ponte
+//! do Python, então a tela desenha igual. A tela chama `handle` com o pedido; uma etapa que ainda não está aqui
+//! segue pelo Python (`find` devolve nulo).
+//!
+//!     requisitos   "Condições e restrições"        condições, regras, restrições e variáveis do projeto
+//!     perfis       Aerodinâmica → Perfis           candidatos e a polar 2D de cada um
+//!
+//! O projeto fica na pasta da sprint (a mesma do Python: `$AEROSIM_PROJETOS/sprint`, senão
+//! `~/aerosim_aeronaves/sprint`) e é gravado a cada mudança.
+const std = @import("std");
+const builtin = @import("builtin");
+const simulation = @import("simulation");
+const store = @import("store.zig");
+const registry = @import("registry.zig");
+const airfoil_stage = @import("stage_airfoils.zig");
+const requirements_stage = @import("stage_requirements.zig");
+
+const Value = std.json.Value;
+const ObjectMap = std.json.ObjectMap;
+
+/// o que as etapas dividem: o projeto aberto, onde ele grava e a `Io` dos arquivos
+pub const Context = struct {
+    project: store.Project,
+    io: std.Io,
+    /// o perfil selecionado na etapa Perfis
+    selected_airfoil: usize = 0,
+
+    /// grava o projeto (uma falha de gravação não derruba a etapa: a mensagem avisa)
+    pub fn save(context: *Context) bool {
+        context.project.save(context.io) catch return false;
+        return true;
+    }
+};
+
+/// um pedido da tela a uma etapa (`do`: show, set, keep, load, delete, act, grid)
+pub const Request = struct {
+    do: []const u8 = "show",
+    values: ?*const ObjectMap = null,
+    index: i64 = -1,
+    key: []const u8 = "",
+    arg: []const u8 = "",
+    grid: []const u8 = "",
+    edit: []const u8 = "set",
+    row: i64 = -1,
+    value: Value = .null,
+};
+
+/// uma etapa: o que ela responde a cada pedido. `page` monta a página depois do pedido; o resto muda o projeto e
+/// devolve a mensagem para a tela
+pub const Stage = struct {
+    name: []const u8,
+    apply: *const fn (context: *Context, memory: std.mem.Allocator, request: Request) anyerror![]const u8,
+    page: *const fn (context: *Context, memory: std.mem.Allocator) anyerror!simulation.StagePage,
+};
+
+/// as etapas que já estão em Zig
+pub const all = [_]Stage{
+    .{ .name = "requisitos", .apply = requirements_stage.apply, .page = requirements_stage.page },
+    .{ .name = "perfis", .apply = airfoil_stage.apply, .page = airfoil_stage.page },
+};
+
+/// a etapa em Zig com este nome (nulo: ela segue pelo Python)
+pub fn find(name: []const u8) ?*const Stage {
+    for (&all) |*stage| if (std.mem.eql(u8, stage.name, name)) return stage;
+    return null;
+}
+
+var shared: ?Context = null;
+var lock: std.atomic.Mutex = .unlocked;
+
+/// a pasta da sprint (a do Python: `default_root()` + "sprint")
+fn defaultFolder(memory: std.mem.Allocator) ![]const u8 {
+    if (builtin.link_libc) {
+        if (std.c.getenv("AEROSIM_PROJETOS")) |root| return std.fs.path.join(memory, &.{ std.mem.span(root), "sprint" });
+        if (std.c.getenv("HOME") orelse std.c.getenv("USERPROFILE")) |home| return std.fs.path.join(memory, &.{ std.mem.span(home), "aerosim_aeronaves", "sprint" });
+    }
+    return memory.dupe(u8, "aerosim_aeronaves/sprint");
+}
+
+/// o contexto aberto (o projeto da pasta da sprint, ou um vazio que grava lá)
+fn opened(io: std.Io) !*Context {
+    if (shared) |*existing| return existing;
+    const gpa = std.heap.page_allocator;
+    var scratch = std.heap.ArenaAllocator.init(gpa);
+    defer scratch.deinit();
+    const folder = try defaultFolder(scratch.allocator());
+    const project = store.open(gpa, io, folder) catch try store.empty(gpa, folder);
+    shared = .{ .project = project, .io = io };
+    return &shared.?;
+}
+
+/// troca o projeto (abrir outra pasta; os testes usam um projeto da pasta `data`)
+pub fn use(project: store.Project, io: std.Io) void {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    if (shared) |*existing| existing.project.deinit();
+    shared = .{ .project = project, .io = io };
+}
+
+/// atende o pedido (`fields`: o JSON do pedido sem as chaves, como a tela manda à ponte) e devolve a página em JSON,
+/// já lida, na memória `memory`
+pub fn handle(memory: std.mem.Allocator, io: std.Io, fields: []const u8) !Value {
+    const text = try std.fmt.allocPrint(memory, "{{{s}}}", .{fields});
+    const parsed = try std.json.parseFromSliceLeaky(Value, memory, text, .{});
+    if (parsed != .object) return error.BadRequest;
+    const object = &parsed.object;
+    const name = store.text(object, "name", "");
+    const stage = find(name) orelse return error.UnknownStage;
+    var request: Request = .{ .do = store.text(object, "do", "show"), .key = store.text(object, "key", ""), .arg = store.text(object, "arg", ""), .grid = store.text(object, "grid", ""), .edit = store.text(object, "edit", "set"), .index = @intFromFloat(store.number(object, "index", -1)), .row = @intFromFloat(store.number(object, "row", -1)), .value = object.get("value") orelse .null };
+    if (store.child(object, "values")) |values| request.values = values;
+
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = try opened(io);
+    const message = try stage.apply(current, memory, request);
+    var page = try stage.page(current, memory);
+    page.requirements = try registry.requirementsSummary(memory, &current.project);
+    if (message.len > 0) page.message = message;
+    var out: std.Io.Writer.Allocating = .init(memory);
+    try simulation.writeStagePage(&out.writer, page);
+    return std.json.parseFromSliceLeaky(Value, memory, out.written(), .{});
+}
+
+// ------------------------------------------------------------------ ajudas das etapas
+/// um campo de uma seção do projeto no formulário (`forms.specs`): o valor de agora como padrão
+pub fn fieldParam(section: *const ObjectMap, field: registry.Field, prefix: []const u8, group: []const u8, memory: std.mem.Allocator) !simulation.Param {
+    const key = try std.fmt.allocPrint(memory, "{s}{s}", .{ prefix, field.key });
+    return switch (field.default) {
+        .number => |fallback| .{ .key = key, .label = field.label, .kind = if (field.integer) .int else .float, .default = .{ .number = store.number(section, field.key, fallback) }, .minimum = field.minimum, .maximum = field.maximum, .unit = field.unit, .help = field.help, .group = group },
+        .toggle => |fallback| .{ .key = key, .label = field.label, .kind = .bool, .default = .{ .toggle = store.flag(section, field.key, fallback) }, .help = field.help, .group = group },
+        .text => |fallback| .{ .key = key, .label = field.label, .kind = if (field.choices.len > 0) .choice else .str, .default = .{ .text = store.text(section, field.key, fallback) }, .choices = field.choices, .help = field.help, .group = group },
+    };
+}
+
+/// grava na seção os valores do formulário com este prefixo (`forms.apply`); devolve quantos mudaram
+pub fn applyFields(project: *store.Project, section: *ObjectMap, fields: []const registry.Field, prefix: []const u8, values: *const ObjectMap) !usize {
+    var changed: usize = 0;
+    for (fields) |field| {
+        var buffer: [96]u8 = undefined;
+        const key = std.fmt.bufPrint(&buffer, "{s}{s}", .{ prefix, field.key }) catch continue;
+        const value = values.get(key) orelse continue;
+        switch (field.default) {
+            .number => |fallback| {
+                const number = switch (value) {
+                    .float => |x| x,
+                    .integer => |x| @as(f64, @floatFromInt(x)),
+                    else => continue,
+                };
+                if (store.number(section, field.key, fallback) == number) continue;
+                try store.setNumber(project, section, field.key, number);
+            },
+            .toggle => |fallback| {
+                if (value != .bool or store.flag(section, field.key, fallback) == value.bool) continue;
+                try section.put(project.memory(), field.key, .{ .bool = value.bool });
+            },
+            .text => |fallback| {
+                if (value != .string or std.mem.eql(u8, store.text(section, field.key, fallback), value.string)) continue;
+                try store.setText(project, section, field.key, value.string);
+            },
+        }
+        changed += 1;
+    }
+    return changed;
+}
+
+/// o índice pedido dentro de `count` itens (nulo: fora)
+pub fn within(index: i64, count: usize) ?usize {
+    if (index < 0 or index >= count) return null;
+    return @intCast(index);
+}
+
+test {
+    _ = registry;
+}

@@ -27,6 +27,7 @@ const numbers_mod = ui_kit.numbers;
 const python_bridge = @import("python_bridge.zig");
 const assembly = @import("assembly.zig");
 const manager = @import("manager");
+const design = @import("design");
 const aircraft_model = @import("aircraft_model");
 
 const Json = std.json.Value;
@@ -464,6 +465,14 @@ pub const Page = struct {
         const waiter = &page.waiter;
         waiter.memory = page.reply_arena.?.allocator();
         waiter.failure[0] = 0;
+        // a etapa que já está em Zig responde aqui, sem o Python
+        if (page.operation == .stage and design.stages.find(page.name) != null) {
+            page.reply = design.stages.handle(waiter.memory, clockIo(), page.request_text) catch |err| {
+                setText(&waiter.failure, "a etapa falhou: {s}", .{@errorName(err)});
+                return;
+            };
+            return;
+        }
         const bridge = page.bridge;
         bridge.start(page.process_io) catch |err| {
             setText(&waiter.failure, "não abriu o Python ({s}): rode da pasta do repositório, com as dependências instaladas", .{@errorName(err)});

@@ -284,7 +284,7 @@ pub const Run = struct {
 pub const Param = struct {
     key: []const u8,
     label: []const u8,
-    kind: enum { float, int, bool, choice, floats } = .float, // floats: uma lista de números num texto ("1, 0.75")
+    kind: enum { float, int, bool, choice, floats, str } = .float, // floats: uma lista de números num texto ("1, 0.75"); str: um texto livre
     default: union(enum) { number: f64, toggle: bool, text: []const u8 } = .{ .number = 0 },
     minimum: ?f64 = null,
     maximum: ?f64 = null,
@@ -526,13 +526,13 @@ pub const Check = struct {
 pub const Column = struct {
     key: []const u8,
     label: []const u8,
-    kind: enum { float, text, choice, label } = .float,
+    kind: enum { float, text, choice, label, check } = .float,
     choices: []const []const u8 = &.{},
     help: []const u8 = "",
 };
 
-/// uma célula: número ou texto (o texto também vale para as escolhas e as de leitura)
-pub const Cell = union(enum) { number: f64, text: []const u8 };
+/// uma célula: número, texto (o texto também vale para as escolhas e as de leitura) ou sim/não (as de marcar)
+pub const Cell = union(enum) { number: f64, text: []const u8, flag: bool, empty };
 
 /// um botão abaixo da tabela: o que ele pede (`GridEdit.operation`) e o rótulo
 pub const Button = struct { operation: []const u8, label: []const u8, help: []const u8 = "" };
@@ -570,6 +570,25 @@ pub const Extras = struct {
 /// `{"params": [...], "plots": [...], "description": ..., "grids": [...], "view": {...}}`
 pub fn writeSpecs(out: *Writer, params: []const Param, plots: []const Plot, description: []const u8, extras: Extras) !void {
     try out.writeAll("{\"params\": [");
+    try writeParams(out, params, &.{});
+    try out.writeAll("], \"plots\": [");
+    for (plots, 0..) |plot, k| {
+        if (k > 0) try out.writeAll(", ");
+        try writePlotHead(out, plot);
+        try out.writeAll("}");
+    }
+    try out.print("], \"description\": {f}, \"grids\": [", .{str(description)});
+    for (extras.grids, 0..) |grid, k| {
+        if (k > 0) try out.writeAll(", ");
+        try writeGrid(out, grid);
+    }
+    try out.writeAll("]");
+    if (extras.view) |view| try writeView(out, view);
+    try out.writeAll("}");
+}
+
+/// os campos do formulário, separados por vírgula; os de `disabled` aparecem em cinza
+fn writeParams(out: *Writer, params: []const Param, disabled: []const []const u8) !void {
     for (params, 0..) |param, k| {
         if (k > 0) try out.writeAll(", ");
         try out.print("{{\"key\": {f}, \"label\": {f}, \"kind\": \"{s}\", \"default\": ", .{ str(param.key), str(param.label), @tagName(param.kind) });
@@ -587,21 +606,97 @@ pub fn writeSpecs(out: *Writer, params: []const Param, plots: []const Plot, desc
             if (i > 0) try out.writeAll(", ");
             try out.print("{f}", .{str(choice)});
         }
-        try out.print("], \"group\": {f}, \"help\": {f}, \"rebuild\": {}, \"enabled\": true}}", .{ str(param.group), str(param.help), param.rebuild });
+        var enabled = true;
+        for (disabled) |key| enabled = enabled and !std.mem.eql(u8, key, param.key);
+        try out.print("], \"group\": {f}, \"help\": {f}, \"rebuild\": {}, \"enabled\": {}}}", .{ str(param.group), str(param.help), param.rebuild, enabled });
     }
-    try out.writeAll("], \"plots\": [");
-    for (plots, 0..) |plot, k| {
+}
+
+// ------------------------------------------------------------------ as etapas da sprint
+
+/// um botão da etapa: `arg` diz o que a tela pede antes ("" nada, "text" um texto, "file" um arquivo)
+pub const StageAction = struct { key: []const u8, label: []const u8, arg: []const u8 = "", help: []const u8 = "", default: []const u8 = "" };
+
+/// uma tabela de leitura (massas, dimensões): os títulos e as linhas em texto
+pub const Table = struct { title: []const u8, headers: []const []const u8, rows: []const []const []const u8 };
+
+/// a página inteira de uma etapa (a resposta de `Bridge.stage` do Python): o formulário, os guardados, os botões,
+/// as tabelas editáveis e a conta
+pub const StagePage = struct {
+    title: []const u8,
+    help: []const u8 = "",
+    keep_label: []const u8 = "Guardar",
+    params: []const Param = &.{},
+    disabled: []const []const u8 = &.{},
+    kept: []const []const u8 = &.{},
+    actions: []const StageAction = &.{},
+    requirements: []const u8 = "",
+    message: []const u8 = "",
+    open: []const u8 = "",
+    go: []const u8 = "",
+    grids: []const Grid = &.{},
+    tables: []const Table = &.{},
+    summary: []const [2][]const u8 = &.{},
+    checks: []const Check = &.{},
+    figures: ?Figures = null,
+    view: ?View = null,
+};
+
+/// a página da etapa em JSON, no formato que a tela lê
+pub fn writeStagePage(out: *Writer, page: StagePage) !void {
+    try out.print("{{\"title\": {f}, \"help\": {f}, \"keep_label\": {f}, \"requirements\": {f}, \"message\": {f}, \"open\": {f}, \"go\": {f}, \"params\": [", .{ str(page.title), str(page.help), str(page.keep_label), str(page.requirements), str(page.message), str(page.open), str(page.go) });
+    try writeParams(out, page.params, page.disabled);
+    try out.writeAll("], \"kept\": [");
+    for (page.kept, 0..) |name, k| {
         if (k > 0) try out.writeAll(", ");
-        try writePlotHead(out, plot);
-        try out.writeAll("}");
+        try out.print("{f}", .{str(name)});
     }
-    try out.print("], \"description\": {f}, \"grids\": [", .{str(description)});
-    for (extras.grids, 0..) |grid, k| {
+    try out.writeAll("], \"actions\": [");
+    for (page.actions, 0..) |action, k| {
+        if (k > 0) try out.writeAll(", ");
+        try out.print("{{\"key\": {f}, \"label\": {f}, \"arg\": {f}, \"help\": {f}, \"default\": {f}}}", .{ str(action.key), str(action.label), str(action.arg), str(action.help), str(action.default) });
+    }
+    try out.writeAll("], \"grids\": [");
+    for (page.grids, 0..) |grid, k| {
         if (k > 0) try out.writeAll(", ");
         try writeGrid(out, grid);
     }
+    try out.writeAll("], \"tables\": [");
+    for (page.tables, 0..) |table, k| {
+        if (k > 0) try out.writeAll(", ");
+        try out.print("{{\"title\": {f}, \"headers\": [", .{str(table.title)});
+        for (table.headers, 0..) |header, i| {
+            if (i > 0) try out.writeAll(", ");
+            try out.print("{f}", .{str(header)});
+        }
+        try out.writeAll("], \"rows\": [");
+        for (table.rows, 0..) |row, r| {
+            if (r > 0) try out.writeAll(", ");
+            try out.writeAll("[");
+            for (row, 0..) |cell, c| {
+                if (c > 0) try out.writeAll(", ");
+                try out.print("{f}", .{str(cell)});
+            }
+            try out.writeAll("]");
+        }
+        try out.writeAll("]}");
+    }
+    try out.writeAll("], \"summary\": {");
+    for (page.summary, 0..) |row, k| {
+        if (k > 0) try out.writeAll(", ");
+        try out.print("{f}: {f}", .{ str(row[0]), str(row[1]) });
+    }
+    try out.writeAll("}, \"checks\": [");
+    for (page.checks, 0..) |item, k| {
+        if (k > 0) try out.writeAll(", ");
+        try out.print("{{\"status\": \"{s}\", \"item\": {f}, \"value\": {f}, \"criterion\": {f}, \"why\": {f}, \"fix\": {f}, \"group\": {f}, \"source\": {f}}}", .{
+            @tagName(item.status), str(item.item), str(item.value), str(item.criterion), str(item.why), str(item.fix), str(item.group), str(item.source),
+        });
+    }
+    try out.writeAll("], \"plots\": [");
+    if (page.figures) |figures| try figures.write(out, true);
     try out.writeAll("]");
-    if (extras.view) |view| try writeView(out, view);
+    if (page.view) |view| try writeView(out, view);
     try out.writeAll("}");
 }
 
@@ -625,6 +720,8 @@ fn writeGrid(out: *Writer, grid: Grid) !void {
             switch (cell) {
                 .number => |value| if (std.math.isFinite(value)) try out.print("{d}", .{value}) else try out.writeAll("null"),
                 .text => |value| try out.print("{f}", .{str(value)}),
+                .flag => |value| try out.writeAll(if (value) "true" else "false"),
+                .empty => try out.writeAll("null"),
             }
         }
         try out.writeAll("]");

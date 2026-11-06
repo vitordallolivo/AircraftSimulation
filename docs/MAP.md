@@ -716,7 +716,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `buildMesh:148`, `balance:242`, `loadAircraft:254`, `load:267`, `fromBytes:278`, `fillAirfoilFiles:296`, `parseDat:331`, `findExample:363`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
-  tipos `Kind:35`, `Page:271`
+  tipos `Kind:36`, `Page:272`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
   tipos `Waiter:29`, `Bridge:45`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt

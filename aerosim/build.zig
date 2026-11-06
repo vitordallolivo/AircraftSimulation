@@ -60,8 +60,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
+            .{ .name = "aerosim", .module = core },
             .{ .name = "aircraft_model", .module = aircraft_model },
             .{ .name = "manager", .module = manager },
+            .{ .name = "simulation", .module = simulation },
         },
     });
 

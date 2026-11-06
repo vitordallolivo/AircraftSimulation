@@ -8,6 +8,10 @@ const std = @import("std");
 pub const balance = @import("balance.zig");
 /// o projeto da sprint: abrir e gravar a pasta (`store.py`)
 pub const store = @import("store.zig");
+/// o registro do projeto: grandezas, restrições, variáveis e os campos das condições e das regras
+pub const registry = @import("registry.zig");
+/// as etapas da sprint que já estão em Zig (a tela chama `stages.handle`)
+pub const stages = @import("stages.zig");
 const aircraft_model = @import("aircraft_model");
 const manager = @import("manager");
 
