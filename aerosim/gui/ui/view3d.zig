@@ -275,6 +275,19 @@ pub fn triangle(a: Body, b: Body, c: Body, color: rl.Color) void {
     rl.drawTriangle3D(wa, wc, wb, color);
 }
 
+/// triângulo com uma cor por vértice (o raylib interpola entre elas), dos dois lados: o `smooth=True` com
+/// `vertexColors` da vista de cargas em Python
+pub fn gradientTriangle(a: Body, b: Body, c: Body, color_a: rl.Color, color_b: rl.Color, color_c: rl.Color) void {
+    const corners = [3]rl.Vector3{ toWorld(a), toWorld(b), toWorld(c) };
+    const colors = [3]rl.Color{ color_a, color_b, color_c };
+    rl.gl.rlBegin(rl.gl.rl_triangles);
+    for ([2][3]usize{ .{ 0, 1, 2 }, .{ 0, 2, 1 } }) |order| for (order) |k| {
+        rl.gl.rlColor4ub(colors[k].r, colors[k].g, colors[k].b, colors[k].a);
+        rl.gl.rlVertex3f(corners[k].x, corners[k].y, corners[k].z);
+    };
+    rl.gl.rlEnd();
+}
+
 /// quadrilátero plano `a b c d` sombreado dos dois lados como no shader `aero_twosided` da vista em Python:
 /// cor × (0,45 + 0,6 |n·luz|)
 pub fn quad(a: Body, b: Body, c: Body, d: Body, color: rl.Color) void {

@@ -118,6 +118,8 @@ const FieldLayer = struct {
     label: [:0]const u8,
     signed: bool,
     values: []const f32,
+    /// o valor em cada vértice: a média das faces que tocam aquele ponto, para pintar em degradê
+    at_vertices: []const f32,
 };
 
 /// uma camada de setas da vista de cargas (força, sustentação, velocidade induzida...)
@@ -201,7 +203,7 @@ const max_loads = 4;
 const max_tracks = 2;
 const track_view_height: f32 = 520;
 const view_height: f32 = 300;
-const loads_view_height: f32 = 440;
+const loads_view_height: f32 = 520;
 
 /// o que a thread faz
 const Operation = enum { specs, run, stage };
@@ -1278,8 +1280,10 @@ pub const Page = struct {
         const column_width = (width - gap) / 2;
         var row_height: f32 = 0;
         for (page.loads[0..@min(page.loads.len, max_loads)], 0..) |*scene, k| {
+            // uma vista só ocupa a largura toda, como a `LoadView` da GUI PyQt
+            const alone = page.loads.len == 1;
             const x = rect.x + gap + @as(f32, @floatFromInt(k % 2)) * (column_width + gap);
-            row_height = @max(row_height, drawLoads(ui, scene, &page.loads_states[k], x, y, column_width));
+            row_height = @max(row_height, drawLoads(ui, scene, &page.loads_states[k], x, y, if (alone) width else column_width));
             if (k % 2 == 1 or k + 1 == page.loads.len) {
                 y += row_height + gap;
                 row_height = 0;
@@ -1375,8 +1379,9 @@ fn renderLoads(ui: *widgets.Ui, scene: *const LoadsScene, state: *LoadsState) vo
     state.view.handleInput(ui, state.area);
     const size = scene.size();
     const middle: view3d.Body = .{ (scene.low[0] + scene.high[0]) / 2, (scene.low[1] + scene.high[1]) / 2, (scene.low[2] + scene.high[2]) / 2 };
-    // a distância da GUI PyQt (2,9 × o maior |vértice|, com o campo de visão de 60° do pyqtgraph) no campo de 35° daqui
-    if (!state.view.begin(state.area, middle, 1.15 * size)) return;
+    // o pyqtgraph da GUI PyQt mede o campo de visão (60°) na horizontal e o raylib (35°) na vertical; numa vista
+    // larga como esta, 1,3 × a extensão enquadra o avião e as setas como na GUI PyQt
+    if (!state.view.begin(state.area, middle, 1.3 * size)) return;
     defer state.view.end();
     for (scene.rest) |mesh| {
         var color = mesh.color;
@@ -1402,9 +1407,16 @@ fn renderLoads(ui: *widgets.Ui, scene: *const LoadsScene, state: *LoadsState) vo
             const b = vertex(scene.vertices, scene.triangles[k + 1]) orelse continue;
             const c = vertex(scene.vertices, scene.triangles[k + 2]) orelse continue;
             const source = if (t < scene.face.len) scene.face[t] else 0;
-            const value: f64 = if (source < field.values.len) field.values[source] else std.math.nan(f64);
-            const position = if (std.math.isFinite(value)) (value - range[0]) / (range[1] - range[0]) else 0;
-            view3d.triangle(a, b, c, view3d.fieldColor(position, state.symmetric));
+            const flat: f64 = if (source < field.values.len) field.values[source] else std.math.nan(f64);
+            // a cor de cada canto vem da média das faces vizinhas (degradê, como a GUI PyQt); sem ela, a da face
+            var colors: [3]rl.Color = undefined;
+            for (&colors, 0..) |*color, corner| {
+                const index = scene.triangles[k + corner];
+                const value: f64 = if (index < field.at_vertices.len and std.math.isFinite(field.at_vertices[index])) field.at_vertices[index] else flat;
+                const position = if (std.math.isFinite(value)) (value - range[0]) / (range[1] - range[0]) else 0;
+                color.* = view3d.fieldColor(position, state.symmetric);
+            }
+            view3d.gradientTriangle(a, b, c, colors[0], colors[1], colors[2]);
         }
     }
     if (state.vector < scene.vectors.len) {
@@ -1691,7 +1703,8 @@ fn readLoads(memory: std.mem.Allocator, item: Json) !?LoadsScene {
     if (vertices.len < 3) return null;
     var fields: std.ArrayList(FieldLayer) = .empty;
     if (loads.object.get("fields")) |list| for (list.array.items) |field| {
-        try fields.append(memory, .{ .label = try memory.dupeZ(u8, stringField(field, "label")), .signed = flag(field, "signed"), .values = try floats(memory, field.object.get("values")) });
+        const values = try floats(memory, field.object.get("values"));
+        try fields.append(memory, .{ .label = try memory.dupeZ(u8, stringField(field, "label")), .signed = flag(field, "signed"), .values = values, .at_vertices = &.{} });
     };
     var vectors: std.ArrayList(VectorLayer) = .empty;
     if (loads.object.get("vectors")) |list| for (list.array.items) |layer| {
@@ -1707,12 +1720,16 @@ fn readLoads(memory: std.mem.Allocator, item: Json) !?LoadsScene {
     if (loads.object.get("rest")) |list| for (list.array.items) |mesh| {
         try rest.append(memory, .{ .color = view3d.colorByName(stringField(mesh, "kind")), .vertices = try floats(memory, mesh.object.get("vertices")), .faces = try indices(memory, mesh.object.get("faces")) });
     };
+    const triangles = try indices(memory, loads.object.get("triangles"));
+    const face = try indices(memory, loads.object.get("face"));
+    const same = try samePoints(memory, vertices);
+    for (fields.items) |*field| field.at_vertices = try vertexValues(memory, field.values, triangles, face, same);
     var scene: LoadsScene = .{
         .title = try memory.dupeZ(u8, stringField(item, "title")),
         .info = try memory.dupeZ(u8, stringField(loads, "info")),
         .vertices = vertices,
-        .triangles = try indices(memory, loads.object.get("triangles")),
-        .face = try indices(memory, loads.object.get("face")),
+        .triangles = triangles,
+        .face = face,
         .fields = fields.items,
         .vectors = vectors.items,
         .rest = rest.items,
@@ -1724,6 +1741,46 @@ fn readLoads(memory: std.mem.Allocator, item: Json) !?LoadsScene {
         if (number(camera.object.get("azimuth"))) |value| scene.azimuth = @floatCast(value);
     };
     return scene;
+}
+
+/// para cada vértice, o primeiro vértice no mesmo ponto: a malha do método repete os cantos entre faixas vizinhas
+fn samePoints(memory: std.mem.Allocator, vertices: []const f32) ![]u32 {
+    const count = vertices.len / 3;
+    const first = try memory.alloc(u32, count);
+    for (0..count) |k| {
+        first[k] = @intCast(k);
+        for (0..k) |j| {
+            if (first[j] != j) continue;
+            const distance = @abs(vertices[3 * k] - vertices[3 * j]) + @abs(vertices[3 * k + 1] - vertices[3 * j + 1]) + @abs(vertices[3 * k + 2] - vertices[3 * j + 2]);
+            if (distance < 1e-6) {
+                first[k] = @intCast(j);
+                break;
+            }
+        }
+    }
+    return first;
+}
+
+/// o valor de um campo em cada vértice: a média dos valores (finitos) das faces dos triângulos que tocam o ponto
+fn vertexValues(memory: std.mem.Allocator, values: []const f32, triangles: []const u32, face: []const u32, same: []const u32) ![]f32 {
+    const sums = try memory.alloc(f32, same.len);
+    const counts = try memory.alloc(u32, same.len);
+    defer memory.free(counts);
+    @memset(sums, 0);
+    @memset(counts, 0);
+    for (triangles, 0..) |corner, k| {
+        if (corner >= same.len or k / 3 >= face.len or face[k / 3] >= values.len) continue;
+        const value = values[face[k / 3]];
+        if (!std.math.isFinite(value)) continue;
+        sums[same[corner]] += value;
+        counts[same[corner]] += 1;
+    }
+    const averages = try memory.alloc(f32, same.len);
+    for (averages, same) |*average, point| {
+        average.* = if (counts[point] > 0) sums[point] / @as(f32, @floatFromInt(counts[point])) else std.math.nan(f32);
+    }
+    memory.free(sums);
+    return averages;
 }
 
 /// o que se fez numa tabela editável neste quadro: uma célula ou um botão
