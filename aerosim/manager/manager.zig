@@ -12,6 +12,7 @@ const envelope = @import("simulations/envelope.zig");
 const performance = @import("simulations/performance.zig");
 const mission = @import("simulations/mission.zig");
 const sizing = @import("simulations/sizing.zig");
+const mdo = @import("simulations/mdo.zig");
 const wings = @import("simulations/wings.zig");
 const loads = @import("simulations/loads.zig");
 
@@ -21,7 +22,7 @@ pub const Values = simulation.Values;
 pub const GridEdit = simulation.GridEdit;
 
 /// as análises em Zig, na ordem das subabas: um tipo por análise, com a interface de `simulation.check`
-pub const analyses = .{ sizing.Sizing, wings.Wings, loads.Loads, stability.Stability, stability.DynamicStability, thrust.Thrust, envelope.Envelope, performance.Performance, mission.Mission };
+pub const analyses = .{ mdo.Mdo, sizing.Sizing, wings.Wings, loads.Loads, stability.Stability, stability.DynamicStability, thrust.Thrust, envelope.Envelope, performance.Performance, mission.Mission };
 
 /// a tabela que a tela usa, montada das `analyses`
 pub const all = blk: {
@@ -43,7 +44,7 @@ pub const Area = struct { title: [:0]const u8, single: bool = false, tabs: []con
 /// a janela abre sem o Python. As análises em Zig de uma área que não estão aqui (`analyses`) entram no fim dela
 pub const layout = [_]Area{
     .{ .title = "Dimensionamento inicial", .tabs = &.{
-        .{ .title = "Mini-MDO (otimizador)", .kind = .todo },
+        .{ .title = "Mini-MDO (otimizador)", .kind = .simulation, .name = "mdo" },
         .{ .title = "Diagrama de restrições", .kind = .simulation, .name = "sizing" },
     } },
     .{ .title = "Aerodinâmica", .tabs = &.{

@@ -14,6 +14,8 @@ pub const section = @import("physics/section.zig");
 pub const propulsion = @import("physics/propulsion.zig");
 pub const wing_line = @import("sizing/wing_line.zig");
 pub const constraints = @import("sizing/constraints.zig");
+/// o dimensionamento inicial (mini-MDO): avaliar um vetor de projeto e otimizar
+pub const sizing = @import("sizing/sizing.zig");
 pub const modifiers = @import("modifiers/mod.zig");
 pub const collision = @import("collision/collision.zig");
 pub const geometry = @import("geometry/geometry.zig");

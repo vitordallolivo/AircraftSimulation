@@ -118,9 +118,10 @@ pub fn references(ac: *const Aircraft) [3]f64 {
 pub const Coeffs = struct { AR: f64, CLa: f64, CL0: f64, CLmax: f64, CD0: f64, Cmac: f64 };
 
 /// (c_lα 1/rad, α_L0 graus, c_l máx, c_d0, c_m,ac) do perfil — `_props2d` da GUI
-const P2 = [5]f64;
+pub const P2 = [5]f64;
 
-fn props2d(af: model.Airfoil) Error!P2 {
+/// os números 2D do perfil (α_L0 e c_m,ac pela teoria do perfil fino quando o perfil não os traz)
+pub fn props2d(af: model.Airfoil) Error!P2 {
     var thin: ?[2]f64 = null;
     if (af.alpha0 == null or af.cm_ac == null) {
         var p: airfoil.Profile = .{};

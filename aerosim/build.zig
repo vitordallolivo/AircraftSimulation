@@ -40,6 +40,8 @@ pub fn build(b: *std.Build) void {
             .{ .name = "aircraft_model", .module = aircraft_model },
         },
     });
+    // o catálogo de motores, hélices e baterias (model/catalog.zig, o par de `catalog.py`)
+    const catalog = b.createModule(.{ .root_source_file = b.path("model/catalog.zig"), .target = target, .optimize = optimize });
     const manager = b.createModule(.{
         .root_source_file = b.path("manager/manager.zig"),
         .target = target,
@@ -48,6 +50,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "aerosim", .module = core },
             .{ .name = "aircraft_model", .module = aircraft_model },
             .{ .name = "simulation", .module = simulation },
+            .{ .name = "catalog", .module = catalog },
         },
     });
 

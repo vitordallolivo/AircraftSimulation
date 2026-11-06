@@ -348,6 +348,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/loads/sweep.zig` — Varredura das asas em α (subaba Asas da Aerodinâmica): só as superfícies escolhidas, sem trimar, sem fuselagem e
   tipos `Method:27`, `Output:33`, `Summary:84`
   fn `sweep:49`, `summarize:93`, `isaTemperature:135`, `airViscosity:141`, `reynolds:150`
+- `core/src/loads/trefftz.zig` — Dispositivos de ponta de asa pelo arrasto induzido mínimo no plano de Trefftz (o par de
+  tipos `Segment:24`, `Kind:27`, `Workspace:47`, `Loading:56`, `Study:211`, `StudyPoint:223`
+  fn `trace:91`, `optimal:127`, `efficiency:196`, `raymerOswald:206`, `studyPoint:232`
 
 **core/src/math/**
 
@@ -645,8 +648,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerodrive/src/sim/modifiers.zig` — Os modificadores do arquivo do avião -> os campos do núcleo (`Params.ground`, `Params.mods`), em Zig.
   fn `fill:38`
 - `aerodrive/src/sim/params.zig` — Avião (arquivo da GUI) -> parâmetros do núcleo (`types.Params`), em Zig.
-  tipos `Info:30`, `Coeffs:118`, `DryMass:353`
-  fn `area:47`, `span:57`, `mac:61`, `macLeadingEdge:76`, `firstSurface:96`, `references:102`, `coeffs:179`, `wingDownwash:201`, `dryMass:380`, `fill:450`, `setup:601`, `setupWith:607`, `calibrate:620`, `staticCharacteristics:645`
+  tipos `Info:30`, `Coeffs:118`, `DryMass:354`
+  fn `area:47`, `span:57`, `mac:61`, `macLeadingEdge:76`, `firstSurface:96`, `references:102`, `props2d:124`, `coeffs:180`, `wingDownwash:202`, `dryMass:381`, `fill:451`, `setup:602`, `setupWith:608`, `calibrate:621`, `staticCharacteristics:646`
 - `aerodrive/src/sim/session.zig` — Sessão de voo: o que o jogador escolhe nos menus antes de voar (cenário, modo, vento, sloshing,
   tipos `Scenario:7`, `Landing:19`, `Mode:31`, `Session:43`
   fn `gearExtent:98`
