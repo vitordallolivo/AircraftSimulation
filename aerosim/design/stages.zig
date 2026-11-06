@@ -357,3 +357,40 @@ test "Ctrl+Z da etapa: o projeto volta ao de antes do último pedido que mudou a
     const nothing = try handle(memory, io, "\"name\": \"asa\", \"do\": \"undo\"");
     try std.testing.expectEqualStrings("nada para desfazer", nothing.object.get("message").?.string);
 }
+
+test "pedidos em sequência, cada um com a memória dele liberada depois (como a tela): o projeto não guarda nada dela" {
+    const io = std.testing.io;
+    use(try store.empty(std.heap.page_allocator, ".zig-cache/teste_memoria"), io);
+    const requests = [_][]const u8{
+        "\"name\": \"asa\", \"do\": \"keep\"", // o projeto vazio: o rascunho ainda sem nome
+        "\"name\": \"asa\", \"do\": \"set\", \"values\": {\"name\": \"asa de cima\", \"span\": 2.0}",
+        "\"name\": \"asa\", \"do\": \"keep\"",
+        "\"name\": \"asa\", \"do\": \"grid\", \"grid\": \"asas\", \"edit\": \"add\", \"row\": -1",
+        "\"name\": \"asa\", \"do\": \"grid\", \"grid\": \"asas\", \"edit\": \"add\", \"row\": -1",
+        "\"name\": \"asa\", \"do\": \"grid\", \"grid\": \"asas\", \"edit\": \"set\", \"row\": 1, \"key\": \"wing\", \"value\": \"asa de cima\"",
+        "\"name\": \"asa\", \"do\": \"grid\", \"grid\": \"asas\", \"edit\": \"set\", \"row\": 1, \"key\": \"dz\", \"value\": 0.3",
+        "\"name\": \"asa\", \"do\": \"grid\", \"grid\": \"asas\", \"edit\": \"set\", \"row\": 1, \"key\": \"novo\", \"value\": 0.3",
+        "\"name\": \"asa\", \"do\": \"grid\", \"grid\": \"dispositivos\", \"edit\": \"add\", \"row\": -1",
+        "\"name\": \"asa\", \"do\": \"grid\", \"grid\": \"dispositivos\", \"edit\": \"set\", \"row\": 0, \"key\": \"kind\", \"value\": \"cerca\"",
+        "\"name\": \"asa\", \"do\": \"grid\", \"grid\": \"dispositivos\", \"edit\": \"set\", \"row\": 0, \"key\": \"wing\", \"value\": \"2: asa de cima\"",
+        "\"name\": \"asa\", \"do\": \"act\", \"key\": \"config\", \"arg\": \"biplano\"",
+        "\"name\": \"requisitos\", \"do\": \"grid\", \"grid\": \"restricoes\", \"edit\": \"set\", \"row\": 0, \"key\": \"op\", \"value\": \"≥\"",
+        "\"name\": \"requisitos\", \"do\": \"grid\", \"grid\": \"variaveis\", \"edit\": \"set\", \"row\": 0, \"key\": \"options\", \"value\": \"a, b\"",
+        "\"name\": \"empenagem\", \"do\": \"keep\"",
+        "\"name\": \"motores\", \"do\": \"keep\"",
+        "\"name\": \"asa\", \"do\": \"undo\"",
+        "\"name\": \"asa\", \"do\": \"keep\"",
+    };
+    for (requests) |request| {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        const text = try arena.allocator().dupe(u8, request);
+        _ = handle(arena.allocator(), io, text) catch {};
+        @memset(text, 0xaa);
+        arena.deinit();
+        // nenhum texto do projeto pode apontar para a memória do pedido que acabou
+        const written = try std.json.Stringify.valueAlloc(std.testing.allocator, shared.?.project.root, .{});
+        defer std.testing.allocator.free(written);
+        try std.testing.expect(std.unicode.utf8ValidateSlice(written));
+    }
+    for (shared.?.project.list("wings").items) |wing| try std.testing.expect(store.nameOf(wing).len > 0);
+}

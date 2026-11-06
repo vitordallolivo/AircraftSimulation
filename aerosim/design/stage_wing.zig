@@ -385,6 +385,8 @@ fn keepWing(context: *stages.Context) ![]const u8 {
     const memory = project.memory();
     const params = draft(project);
     try sync(project, params);
+    // o projeto vazio começa com o rascunho sem nome: a asa guardada ganharia nome vazio (a lista em branco)
+    if (store.text(params, "name", "").len == 0) try store.setText(project, params, "name", "asa 1");
     var candidate: ObjectMap = .empty;
     try candidate.put(memory, "params", try stages.clone(memory, .{ .object = params.* }));
     const root = store.text(params, "airfoil", "NACA 2412");

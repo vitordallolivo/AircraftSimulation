@@ -117,12 +117,23 @@ pub fn child(object: *const ObjectMap, key: []const u8) ?*ObjectMap {
 
 /// escreve um número num campo
 pub fn setNumber(project: *Project, object: *ObjectMap, key: []const u8, value: f64) !void {
-    try object.put(project.memory(), key, .{ .float = value });
+    (try slot(project, object, key)).* = .{ .float = value };
 }
 
 /// escreve um texto num campo (copiado para a memória do projeto)
 pub fn setText(project: *Project, object: *ObjectMap, key: []const u8, value: []const u8) !void {
-    try object.put(project.memory(), key, .{ .string = try project.memory().dupe(u8, value) });
+    const copy = try project.memory().dupe(u8, value);
+    (try slot(project, object, key)).* = .{ .string = copy };
+}
+
+/// o lugar de um campo; um campo novo leva uma cópia do nome na memória do projeto. O nome pode vir do pedido da
+/// tela (a coluna editada), cuja memória some ao fim do pedido: guardado sem copiar, a próxima gravação lia
+/// memória solta e o aerosim caía
+fn slot(project: *Project, object: *ObjectMap, key: []const u8) !*Value {
+    if (object.getPtr(key)) |existing| return existing;
+    const owned = try project.memory().dupe(u8, key);
+    const gop = try object.getOrPut(project.memory(), owned);
+    return gop.value_ptr;
 }
 
 /// o nome de um candidato guardado (asa, conjunto, avião): `params.name`
