@@ -341,6 +341,8 @@ pub const Page = struct {
     started_at: i96 = 0,
     message: [240:0]u8 = [_:0]u8{0} ** 240,
     run_when_ready: bool = false, // "rodar" da linha de comando (prints): roda assim que os campos chegam
+    pending_act: [64]u8 = undefined, // "etapa:<botão>" da linha de comando: aperta o botão da etapa quando ela abrir
+    pending_act_len: usize = 0,
     scroll_to: f32 = 0, // rolagem pedida na linha de comando (prints)
     scroll_frames: u8 = 0,
 
@@ -398,6 +400,11 @@ pub const Page = struct {
     /// um comando pelo nome (`acao=` da linha de comando): "rodar" roda a análise assim que os campos chegarem
     pub fn command(page: *Page, name: []const u8) void {
         if (std.mem.eql(u8, name, "rodar")) page.run_when_ready = true;
+        if (std.mem.startsWith(u8, name, "etapa:")) {
+            page.pending_act_len = @min(name.len - 6, page.pending_act.len);
+            @memcpy(page.pending_act[0..page.pending_act_len], name[6..][0..page.pending_act_len]);
+            page.run_when_ready = true;
+        }
     }
 
     /// desenha a página: a barra lateral à esquerda, o resultado à direita
@@ -412,6 +419,12 @@ pub const Page = struct {
             if (page.kind == .simulation) page.askSpecs() else page.stageRequest("show", "");
         }
         if (page.kind == .stage) page.sendEdits();
+        if (page.run_when_ready and page.kind == .stage and page.loaded and !page.working() and page.fields.len > 0 and page.pending_act_len > 0) {
+            page.run_when_ready = false;
+            const key = page.pending_act[0..page.pending_act_len];
+            page.pending_act_len = 0;
+            page.act(key, "");
+        }
         if (page.run_when_ready and page.kind == .simulation and !page.working() and page.fields.len > 0) {
             page.run_when_ready = false;
             page.run();

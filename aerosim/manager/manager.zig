@@ -58,7 +58,7 @@ pub const layout = [_]Area{
     } },
     .{ .title = "Desempenho", .tabs = &.{
         .{ .title = "Motores e montagem", .kind = .stage, .name = "motores" },
-        .{ .title = "Estudo e ponto de projeto", .kind = .todo },
+        .{ .title = "Estudo e ponto de projeto", .kind = .stage, .name = "estudo" },
         .{ .title = "Avião montado", .kind = .simulation, .name = "performance" },
         .{ .title = "Voo nivelado e envelopes", .kind = .simulation, .name = "envelope" },
         .{ .title = "Tração", .kind = .simulation, .name = "thrust" },

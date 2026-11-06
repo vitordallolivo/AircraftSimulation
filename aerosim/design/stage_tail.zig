@@ -99,7 +99,7 @@ fn layoutRows(project: *store.Project) []const Value {
 }
 
 /// as asas do conjunto: a primeira da configuração (ou a do campo 'asa', senão a última guardada) e as outras
-fn placedWings(project: *store.Project, memory: std.mem.Allocator) ![]const Placed {
+pub fn placedWings(project: *store.Project, memory: std.mem.Allocator) ![]const Placed {
     var out: std.ArrayList(Placed) = .empty;
     for (layoutRows(project)) |row| {
         if (row != .object) continue;

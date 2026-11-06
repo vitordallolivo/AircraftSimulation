@@ -18,6 +18,7 @@ const wing_stage = @import("stage_wing.zig");
 const requirements_stage = @import("stage_requirements.zig");
 const tail_stage = @import("stage_tail.zig");
 const power_stage = @import("stage_power.zig");
+const study_stage = @import("stage_study.zig");
 
 const Value = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
@@ -66,6 +67,7 @@ pub const all = [_]Stage{
     .{ .name = "asa", .apply = wing_stage.apply, .page = wing_stage.page },
     .{ .name = "empenagem", .apply = tail_stage.apply, .page = tail_stage.page },
     .{ .name = "motores", .apply = power_stage.apply, .page = power_stage.page },
+    .{ .name = "estudo", .apply = study_stage.apply, .page = study_stage.page },
 };
 
 /// a etapa em Zig com este nome (nulo: ela segue pelo Python)

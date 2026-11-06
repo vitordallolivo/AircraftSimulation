@@ -45,6 +45,8 @@ pub const Screen = struct {
     requirements_open: bool = false,
     pending_tab: ?usize = null, // aba=N da linha de comando, até as abas chegarem
     pending_run: bool = false, // acao=rodar, idem
+    pending_stage: [64]u8 = undefined, // acao=etapa:<botão>: aperta o botão da etapa quando ela abrir
+    pending_stage_len: usize = 0,
     pending_file: [1024]u8 = undefined, // um perfil arrastado antes de as abas chegarem
     pending_file_len: usize = 0,
     files: ui_kit.dialogs.FilePicker = .{}, // abrir e salvar o avião (cabeçalho)
@@ -76,7 +78,7 @@ pub const Screen = struct {
 
     /// a tela ainda vai mudar sozinha (aba ou "rodar" pendente, uma conta andando): o print espera
     pub fn busy(screen: *const Screen) bool {
-        if (screen.pending_tab != null or screen.pending_run or screen.pending_assembly_len > 0) return true;
+        if (screen.pending_tab != null or screen.pending_run or screen.pending_stage_len > 0 or screen.pending_assembly_len > 0) return true;
         const page = screen.shown orelse return false;
         return page.settling();
     }
@@ -105,6 +107,9 @@ pub const Screen = struct {
             screen.files.showSave("Salvar avião (.json)", std.fs.path.dirname(opened.path) orelse ".", &.{".json"}, std.fs.path.basename(opened.path));
         } else if (std.mem.eql(u8, name, "rodar")) {
             screen.pending_run = true;
+        } else if (std.mem.startsWith(u8, name, "etapa:")) {
+            screen.pending_stage_len = @min(name.len, screen.pending_stage.len);
+            @memcpy(screen.pending_stage[0..screen.pending_stage_len], name[0..screen.pending_stage_len]);
         } else if (std.mem.startsWith(u8, name, "montagem:")) { // um botão da Montagem pelo nome, para os prints
             const length = @min(name.len - 9, screen.pending_assembly.len - screen.pending_assembly_len);
             @memcpy(screen.pending_assembly[screen.pending_assembly_len..][0..length], name[9..][0..length]);
@@ -685,6 +690,10 @@ pub const Screen = struct {
             if (screen.pending_run) {
                 p.command("rodar");
                 screen.pending_run = false;
+            }
+            if (screen.pending_stage_len > 0) {
+                p.command(screen.pending_stage[0..screen.pending_stage_len]);
+                screen.pending_stage_len = 0;
             }
             if (screen.scroll > 0) {
                 p.scroll_to = screen.scroll;

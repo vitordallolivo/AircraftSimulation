@@ -122,7 +122,7 @@ fn surfaceArea(surface: model.Surface) f64 {
 }
 
 /// o avião montado e as contas da montagem e do desempenho
-const Assembled = struct {
+pub const Assembled = struct {
     plane: model.Aircraft,
     built: tail_stage.Built,
     x_target: f64, // CG de projeto (x para a frente)
@@ -169,10 +169,11 @@ const Assembled = struct {
     runway_mtow: f64 = std.math.nan(f64),
     masses: []const f64 = &.{},
     runs: []const f64 = &.{},
+    cruise_trim_drag: f64 = 0, // C_D,trim da EH no cruzeiro
 };
 
 /// o conjunto guardado com este nome (senão o último)
-fn chosenSet(project: *store.Project, params: *const ObjectMap) ?*ObjectMap {
+pub fn chosenSet(project: *store.Project, params: *const ObjectMap) ?*ObjectMap {
     const sets = project.list("sets").items;
     if (sets.len == 0) return null;
     const wanted = store.text(params, "set", "");
@@ -180,7 +181,7 @@ fn chosenSet(project: *store.Project, params: *const ObjectMap) ?*ObjectMap {
     return if (sets[sets.len - 1] == .object) store.child(&sets[sets.len - 1].object, "params") else null;
 }
 
-fn assemble(context: *stages.Context, memory: std.mem.Allocator, params: *const ObjectMap) !?*Assembled {
+pub fn assemble(context: *stages.Context, memory: std.mem.Allocator, params: *const ObjectMap) !?*Assembled {
     const project = &context.project;
     const set_params = chosenSet(project, params) orelse return null;
     const built = try tail_stage.build(context, memory, set_params, false) orelse return null;
@@ -421,7 +422,7 @@ fn assemble(context: *stages.Context, memory: std.mem.Allocator, params: *const 
     return out;
 }
 
-fn firstConstraint(project: *store.Project, key: []const u8, fallback: f64) f64 {
+pub fn firstConstraint(project: *store.Project, key: []const u8, fallback: f64) f64 {
     for ((registry.constraintList(project) catch return fallback).items) |item| {
         const constraint = registry.readConstraint(item);
         if (constraint.active and std.mem.eql(u8, constraint.key, key)) return constraint.value;
@@ -577,6 +578,8 @@ fn performance(context: *stages.Context, memory: std.mem.Allocator, assembled: *
     const cruise_lift = wing.lift_cruise;
     const cruise_drag = zero + factor * cruise_lift * cruise_lift;
     var best: usize = 0;
+    var nearest: usize = 0;
+    var trims: [count]f64 = undefined;
     for (0..count) |i| {
         const speed = first + (last - first) * @as(f64, @floatFromInt(i)) / (count - 1);
         speeds[i] = speed;
@@ -594,10 +597,13 @@ fn performance(context: *stages.Context, memory: std.mem.Allocator, assembled: *
             trim = result.tail_area_share * tail_lift * tail_lift / (std.math.pi * 0.8 * tail_aspect);
         }
         drag[i] = dynamic * area * (untrimmed + trim);
+        if (@abs(speed - cruise) < @abs(speeds[nearest] - cruise)) nearest = i;
+        trims[i] = trim;
         climb[i] = (total * @cos(tilt) - drag[i]) * speed / weight;
         if (total * @cos(tilt) >= drag[i]) assembled.max_speed = speed;
         if (climb[i] > climb[best]) best = i;
     }
+    assembled.cruise_trim_drag = trims[nearest];
     assembled.speeds = speeds;
     assembled.thrust = thrust;
     assembled.drag = drag;
