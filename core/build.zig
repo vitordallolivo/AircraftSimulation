@@ -90,6 +90,21 @@ pub fn build(b: *std.Build) void {
     const install_docs = b.addInstallDirectory(.{ .source_dir = docs_obj.getEmittedDocs(), .install_dir = .prefix, .install_subdir = "docs" });
     b.step("docs", "Gera a documentação HTML em zig-out/docs (servir com `python -m http.server`)").dependOn(&install_docs.step);
 
+    // bancada das técnicas de otimização (tools/tecnicas.py): em release e com símbolos, para o objdump achar as funções
+    const bench_module = b.createModule(.{
+        .root_source_file = b.path("src/tecnicas.zig"),
+        .target = target,
+        .optimize = if (optimize == .Debug) .ReleaseFast else optimize, // medir em Debug não diz nada
+        .strip = false,
+    });
+    bench_module.addOptions("build_options", opts);
+    const bench_exe = b.addExecutable(.{ .name = "tecnicas", .root_module = bench_module });
+    const bench_run = b.addRunArtifact(bench_exe);
+    if (b.args) |args| bench_run.addArgs(args);
+    const bench_step = b.step("tecnicas", "Mede uma técnica de otimização: zig build tecnicas -- <técnica> <variante> [rodadas]");
+    bench_step.dependOn(&b.addInstallArtifact(bench_exe, .{}).step);
+    bench_step.dependOn(&bench_run.step);
+
     // testes: um binário só (src/tests.zig); o grupo e o filtro vêm do CLI
     const test_group = b.option([]const u8, "grupo", "grupo de testes: " ++ test_group_list ++ " (padrão: tudo)") orelse "tudo";
     if (!isTestGroup(test_group)) std.debug.panic("-Dgrupo: '{s}' não existe; use {s}", .{ test_group, test_group_list });

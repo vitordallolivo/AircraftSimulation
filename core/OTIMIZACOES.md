@@ -251,3 +251,29 @@ segue bit a bit igual (regressão 9/9); no navegador os números diferem do PC n
 
 O resto do decolar no navegador é o `peakCL` (4500 avaliações de `clPanel` por superfície); o `-Dopt=peak` já reduz
 isso, mas muda os números e fica para o dono decidir.
+
+## Testes de técnicas (G27, 2026-11-06)
+
+A bancada `core/src/tecnicas.zig` mede cada técnica candidata contra o código de hoje, no mesmo caso e em release, e
+confere se a conta continua a mesma. Quem chama, alterna as duas e escreve a tabela é o `tools/tecnicas.py`
+(`--instrucoes` conta também as instruções no Callgrind, que não oscilam). Medido nesta máquina da sessão, melhor de 7
+rodadas, 3 vezes alternando:
+
+| Técnica | Hoje | Candidata | Ganho | Mesma conta | Instruções hoje | Instruções candidata |
+|---|---|---|---|---|---|---|
+| log em colunas (SoA) no `gust.settled` | 16,4 µs | 33,8 µs | 0,49x | bit a bit | 163.743 | 291.406 |
+| faixas em colunas, 4 por vez (`@Vector`) | 75,6 µs | 46,3 µs | 1,63x | até 1e-9 | 603.971 | 354.057 |
+| `@branchHint(.unlikely)` nos caminhos raros do `runner.run` | 87,0 ms | 110,7 ms | 0,79x | bit a bit | 831.373.460 | 831.380.402 |
+| `FixedBufferAllocator` no lugar do `page_allocator` no `sizing.eval` | 77,3 µs | 19,0 µs | 4,07x | bit a bit | 111.488 | 111.460 |
+
+**Entrou:** a memória de trabalho do dimensionamento. As instruções são as mesmas, e o tempo cai a um quarto: o que se
+perdia era a chamada ao sistema que o `page_allocator` faz a cada avaliação. No `root.zig` o `Params` de trabalho
+agora é um por thread, fora da pilha, e a regressão segue bit a bit igual (9/9).
+
+**Não entrou:**
+- **Log em colunas:** o `settled` lê só 7 campos da linha, mas copiar para colunas e varrer cada coluna custa o dobro
+  das instruções. A linha inteira já fica no cache.
+- **Dica dos ramos:** as instruções são as mesmas, e o tempo piora 20 % (o compilador muda a ordem dos blocos e o
+  laço quente sai pior). O bit `-Dopt=hint` fica só para a bancada.
+- **Faixas em colunas com `@Vector`:** ganha 1,6x, mas muda o último dígito das contas (a soma em outra ordem), então
+  quebraria a regressão bit a bit. Fica como proposta, para entrar como bit de `-Dopt` desligado se o dono quiser.

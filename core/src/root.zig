@@ -532,26 +532,25 @@ export fn aerosim_motor_prop_thrust(motor_prop: *const motorprop.MotorProp, airs
 const sizing = @import("sizing/sizing.zig");
 const sizing_types = sizing.types;
 
-/// parâmetros de trabalho do dimensionamento, no heap (a struct é grande para a pilha)
-fn workParams() ?*types.Params {
-    const params = std.heap.page_allocator.create(types.Params) catch return null;
-    params.* = .{};
-    return params;
+/// parâmetros de trabalho do dimensionamento: um por thread, fora da pilha (a struct é grande para ela). Pedir ao
+/// sistema a cada chamada (`page_allocator`) custava 3/4 do `aerosim_sizing_eval` (G27, `tools/tecnicas.py`
+/// alocacao, em core/OTIMIZACOES.md)
+threadlocal var work_params: types.Params = .{};
+
+fn workParams() *types.Params {
+    work_params = .{};
+    return &work_params;
 }
 
 /// avalia o dimensionamento nas variáveis de projeto `design_vars`
 export fn aerosim_sizing_eval(cfg: *const sizing_types.SizingCfg, design_vars: [*]const f64, out: *sizing_types.SizingOut) i32 {
-    const params = workParams() orelse return abiCode(error.OutOfMemory);
-    defer std.heap.page_allocator.destroy(params);
-    out.* = sizing.eval(cfg, params, design_vars[0..sizing_types.n_vars]);
+    out.* = sizing.eval(cfg, workParams(), design_vars[0..sizing_types.n_vars]);
     return 0;
 }
 
 /// `progress(ctx, iteração, avaliações no buffer)` ao fim de cada iteração (≠ 0 para parar); pode ser nulo
 export fn aerosim_sizing_optimize(cfg: *const sizing_types.SizingCfg, opts: *const sizing_types.OptOpts, buf: [*]sizing_types.Individual, cap: usize, evaluated: *usize, best: *sizing_types.SizingOut, progress: ?*const fn (?*anyopaque, i32, usize) callconv(.c) i32, pctx: ?*anyopaque) i32 {
-    const params = workParams() orelse return abiCode(error.OutOfMemory);
-    defer std.heap.page_allocator.destroy(params);
-    sizing.optimize(cfg, opts, params, buf[0..cap], evaluated, best, progress, pctx);
+    sizing.optimize(cfg, opts, workParams(), buf[0..cap], evaluated, best, progress, pctx);
     return 0;
 }
 

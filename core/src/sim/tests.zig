@@ -14,7 +14,8 @@ fn helmbold(a0: f64, AR: f64) f64 {
     return a0 / (@sqrt(1.0 + k * k) + k);
 }
 
-fn aircraft(params: *types.Params) void {
+/// o avião monomotor convencional dos testes (também é o caso do `tecnicas.zig`)
+pub fn aircraft(params: *types.Params) void {
     params.* = .{ .m_dry = 8.39, .Ixx = 0.9, .Iyy = 1.2, .Izz = 1.9, .Ixz = 0.04, .Sref = 1.0, .cref = 0.4, .bref = 2.5 };
     params.fus_CDS = 0.03;
     params.fus_Cma = 0.1;

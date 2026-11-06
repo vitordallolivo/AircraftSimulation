@@ -310,6 +310,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/root.zig` — Interface C ABI do núcleo (o que o Python chama via ctypes).
   fn `abiCode:49`
   **ABI (79 exports)** `aerosim_abi_version`, `aerosim_schema`, `aerosim_probe_ground`, `aerosim_probe_slipstream`, `aerosim_aero_coeffs_thrust`, `aerosim_aero_coeffs_at`, `aerosim_tube_panel_hits`, `aerosim_tube_point_hits`, `aerosim_prop_state`, `aerosim_panel_states`, `aerosim_panel_states_llt`, `aerosim_wing_sweep`, `aerosim_wing_sweep_summary`, `aerosim_reynolds`, `aerosim_aero_coeffs_llt`, `aerosim_schema_hash`, `aerosim_acquire`, `aerosim_release`, `aerosim_params`, `aerosim_params_reset`, `aerosim_configure`, `aerosim_reset_ground`, `aerosim_reset_air`, `aerosim_run`, `aerosim_events`, `aerosim_time`, `aerosim_snapshot_size`, `aerosim_snapshot_save`, `aerosim_snapshot_load`, `aerosim_mass_props`, `aerosim_aero_coeffs`, `aerosim_aero_coeffs_ex`, `aerosim_linearize`, `aerosim_linearize_slosh`, `aerosim_autotune`, `aerosim_prop_point`, `aerosim_trim`, `aerosim_performance`, `aerosim_envelope`, `aerosim_envelope_curve`, `aerosim_simple_perf`, `aerosim_bench_math`, `aerosim_bench_dynamics`, `aerosim_fast_math`, `aerosim_expr_check`, `aerosim_expr_eval`, `aerosim_ground_runs`, `aerosim_ground_mtow`, `aerosim_motor_prop_thrust`, `aerosim_sizing_eval`, `aerosim_sizing_optimize`, `aerosim_sizing_name`, `aerosim_sizing_defaults`, `aerosim_geometry_check`, `aerosim_ga_init`, `aerosim_ga_next`, `aerosim_cma_init`, `aerosim_cma_ask`, `aerosim_cma_tell`, `aerosim_de_init`, `aerosim_de_trials`, `aerosim_de_select`, `aerosim_local_fit`, `aerosim_rbf_fit`, `aerosim_rbf_eval`, `aerosim_lhs`, `aerosim_repair_step`, `aerosim_eps_level`, `aerosim_eps_worse`, `aerosim_bandit_state_len`, `aerosim_bandit_init`, `aerosim_bandit_pick`, `aerosim_bandit_update`, `aerosim_normative`, `aerosim_lem_box`, `aerosim_box_sample`, `aerosim_sens_tolerance`, `aerosim_morris_design`, `aerosim_morris_effects`
+- `core/src/tecnicas.zig` — Bancada das técnicas de otimização (tarefa G27): cada técnica roda a conta de hoje do núcleo e a candidata no
+  fn `main:433`
 - `core/src/tests.zig` — Todos os testes do núcleo, por grupo. `zig build test` roda tudo; `-Dgrupo=math` roda só um grupo e
 - `core/src/types.zig` — Estruturas trocadas com o Python (C ABI, `extern struct`).
   tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `LiftingLineMethod:56`, `Refinement:68`, `Surface:78`, `PropUnit:115`, `GearKind:156`, `Gear:166`, `TankShape:175`, `Tank:188`, `Segment:204`, `EventKind:225`, `Event:234`, `Pad:238`, `Payload:247`, `Environment:258`, `Takeoff:270`, `Pilot:288`, `Autopilot:298`, `AeroTable:347`, `LltCache:380`, `Params:394`, `PanelState:489`, `SweepSummary:509`, `Events:517`, `LogRow:559`, `AeroCoeffs:673`, `PropPoint:688`, `MassProps:700`, `TrimKind:708`, `TrimPoint:719`, `PerfRow:736`
@@ -450,7 +452,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `classify:67`, `liquidPoles:152`, `rollRequirement:174`, `mil8785c:208`, `noCriteria:236`, `evaluate:251`, `passes:338`, `respond:368`
 - `core/src/sim/runner.zig` — Executor de uma corrida: eventos discretos, paradas, registro e checkpoints.
   tipos `Status:26`, `Instance:37`
-  fn `stateText:65`, `configure:95`, `handover:162`, `resetGround:184`, `resetAir:238`, `run:391`
+  fn `stateText:65`, `configure:95`, `handover:162`, `resetGround:184`, `resetAir:238`, `run:394`
 - `core/src/sim/simple_perf.zig` — Desempenho por cálculo simples (sem simulação no tempo), como na "planilha suprema":
   tipos `SimpleCfg:23`, `SimpleRow:52`, `SimpleSummary:76`
   fn `density:108`, `compute:132`
@@ -461,6 +463,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Inputs:31`, `Probe:34`, `Sweep:213`, `Variable:290`, `Limits:370`, `WingStrip:433`, `Aileron:436`, `RollSizing:449`, `ElevatorSizing:525`, `RudderSizing:571`
   fn `cgSweep:226`, `limitCrossing:253`, `gearForRotation:267`, `derivative:294`, `rollDamping:327`, `yawDamping:333`, `alphaForLift:341`, `scissorLimits:374`, `minTail:399`, `timeToBank:414`, `aileronSizing:461`, `interpolate:505`, `elevatorSizing:534`, `rudderSizing:584`
 - `core/src/sim/tests.zig` — Testes de integração do núcleo: aeronave monomotora convencional (a do código
+  fn `aircraft:18`
 - `core/src/sim/trim.zig` — Equilíbrio (trimagem) e desempenho por velocidade, sem integração no tempo.
   tipos `Ctx:25`
   fn `solve:131`, `performance:145`
@@ -830,6 +833,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tools/span_load.py` — Carga ao longo das superfícies (asa, EH, EV) num ponto de operação — velocidade, α e rotação dos motores — com e
 - `tools/sprint_pasta.py` — Exemplo: converte um projeto da sprint antigo (um .json só) para a pasta nova, um arquivo por asa.
 - `tools/sprint_tres_caudas.py` — Exemplo: uma asa só com três opções de superfícies, no formato de pasta (um arquivo por asa).
+- `tools/tecnicas.py` — Testes de otimização (G27): mede cada técnica candidata contra o código de hoje do núcleo, no mesmo caso e em
 - `tools/templates_zig.py` — Gera `aerosim/model/templates.zig`: os modelos padrão de `aerosim/model/templates.py` como o texto .json que o
 - `tools/time_profile.py` — Perfil de tempo: onde uma análise gasta o tempo, no Python e no núcleo Zig ao mesmo tempo.
 - `tools/tracking.py` — Tracking em HTML: as tabelas do Quadro do docs/TRACKING.md viram uma página só (sem nada para baixar).

@@ -387,6 +387,9 @@ fn writeRow(inst: *const Instance, row: *types.LogRow, out: *const dynamics.Out)
     }
 }
 
+/// a dica dos caminhos raros do laço (decolou, trocou de etapa, soltou a carga...): `.unlikely` só com `-Dopt=hint`
+const rare: std.builtin.BranchHint = if (fmath.optOn(.hint)) .unlikely else .none;
+
 /// avança a corrida até uma parada, até `t_limit` ou até encher `log`; `nrows` = linhas escritas
 pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) Status {
     nrows.* = 0;
@@ -403,7 +406,10 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
     while (true) {
         const log_due = run_state.t >= run_state.next_log - 1e-9;
         if (run_state.t >= t_limit) return .chunk;
-        if (log_due and nrows.* >= log.len and log.len > 0) return .buffer_full;
+        if (log_due and nrows.* >= log.len and log.len > 0) {
+            @branchHint(rare);
+            return .buffer_full;
+        }
 
         dynamics.derivatives(inst.ctx(), run_state.t, state_vector, &state_rates, &out);
         const time = run_state.t;
@@ -433,6 +439,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
             events.nRot = state_vector[state.index(.north)];
         }
         if (run_state.f.airborne == 0 and !contact and hw > 0.005) {
+            @branchHint(rare);
             run_state.f.airborne = 1;
             events.tLO = time;
             events.nLO = state_vector[state.index(.north)];
@@ -445,6 +452,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         }
         var switched_on = false;
         if (run_state.f.airborne != 0 and run_state.f.autop == 0 and hw >= params.takeoff.ht) {
+            @branchHint(rare);
             run_state.f.autop = 1;
             state_vector[state.index(.ref_height)] = altitude;
             switched_on = true;
@@ -468,11 +476,13 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         // ---- percurso e eventos ----
         var switched = false;
         if (segment.landing == 0 and run_state.f.seg < params.n_seg - 1 and out.guide.s >= segment.L) {
+            @branchHint(rare);
             if (segment.takeoff != 0) events.E_to = state_vector[state.index(.energy)] / 3600.0;
             run_state.f.seg += 1;
             switched = true;
         }
         if (params.pilot.drop != 0 and run_state.f.released == 0 and run_state.f.extracting == 0) { // soltura pedida de fora
+            @branchHint(rare);
             run_state.f.extracting = 1;
             events.tdrop = time;
             events.ndrop = state_vector[state.index(.north)];
@@ -495,6 +505,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
             }
         }
         if (run_state.f.extracting != 0 and run_state.f.released == 0 and state_vector[state.index(.cargo_slide)] >= params.payload.bay) {
+            @branchHint(rare);
             run_state.f.released = 1;
             events.trel = time;
             const body_to_ned = vec.rotation(state_vector[state.index(.roll)], state_vector[state.index(.pitch)], state_vector[state.index(.yaw)]);
@@ -517,6 +528,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
                 run_state.pk[i] += run_state.pk[3 + i] * params.dt;
             }
             if (run_state.pk[2] >= 0.0) {
+                @branchHint(rare);
                 run_state.f.pk_flying = 0;
                 events.pk_n = run_state.pk[0];
                 events.pk_e = run_state.pk[1];
@@ -525,6 +537,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         }
         if (segment.landing != 0 and hw < params.ap.hflare) run_state.f.flare = 1;
         if (segment.landing != 0 and run_state.f.landed == 0 and main) {
+            @branchHint(rare);
             run_state.f.landed = 1;
             events.tTD = time;
             events.nTD = state_vector[state.index(.north)];

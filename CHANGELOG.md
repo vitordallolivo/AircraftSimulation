@@ -6,6 +6,13 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- A tela em Zig abria vazia sem o Python, porque a lista de abas vinha dele. Agora as abas são do Zig, e o Diagrama
+  de restrições, o Analisar e as Cargas também rodam em Zig, com os mesmos números do Python. Os métodos de fora do
+  núcleo (lltdrek, AeroSandbox, AVL) continuam na lista; quando um deles é marcado, a rodada vai para o Python, e no
+  site o pacote dele só é baixado nessa hora.
+- Uma bancada mede cada técnica de otimização contra o código de hoje, no mesmo caso, e diz se a conta continua a
+  mesma. Das quatro medidas, entrou a que ganhou sem mudar os números: o dimensionamento deixa de pedir memória ao
+  sistema a cada avaliação e fica quatro vezes mais rápido.
 - A documentação estava espalhada em dezenas de README, cada um numa pasta. Agora o site junta todos os `.md` num
   livro, com sumário por parte do projeto, busca, as equações e os diagramas desenhados e as imagens, e o tracking
   numa aba ao lado. Um `.md` novo entra no livro sozinho.
