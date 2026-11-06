@@ -341,6 +341,7 @@ pub const Page = struct {
     message: [240:0]u8 = [_:0]u8{0} ** 240,
     run_when_ready: bool = false, // "rodar" da linha de comando (prints): roda assim que os campos chegam
     scroll_to: f32 = 0, // rolagem pedida na linha de comando (prints)
+    scroll_frames: u8 = 0,
 
     /// o avião aberto na Montagem (o Python abre o mesmo arquivo antes do próximo pedido); a análise pede os
     /// campos de novo, porque eles dependem do avião
@@ -414,9 +415,13 @@ pub const Page = struct {
             page.run_when_ready = false;
             page.run();
         }
-        if (page.scroll_to > 0) {
-            page.page.offset = page.scroll_to;
-            page.scroll_to = 0;
+        // a rolagem do print espera o resultado (antes dele a página é curta e a rolagem não chega lá)
+        if (page.scroll_to > 0 and !page.run_when_ready and !page.working() and page.charts.len > 0) {
+            page.scroll_frames += 1; // um quadro com o resultado desenhado, para a altura da página valer
+            if (page.scroll_frames > 2) {
+                page.page.offset = page.scroll_to;
+                page.scroll_to = 0;
+            }
         }
         sidebar.update(ui, rect.x, rect.y, rect.height, 280, rect.width - 360);
         const sidebar_width = sidebar.width;
