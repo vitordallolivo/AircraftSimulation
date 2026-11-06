@@ -127,6 +127,11 @@ pub const Planform = struct {
         return planform.at(y, "chord");
     }
 
+    /// o recuo do bordo de ataque em y (m)
+    pub fn offsetAt(planform: *const Planform, y: f64) f64 {
+        return planform.at(y, "offset");
+    }
+
     /// a área das duas semiasas (m²)
     pub fn area(planform: *const Planform) f64 {
         var half: f64 = 0;

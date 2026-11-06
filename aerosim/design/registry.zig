@@ -284,7 +284,7 @@ pub const rule_fields = [_]Field{
 
 /// o valor do campo na seção (ou o padrão do campo)
 pub fn fieldNumber(section: *const ObjectMap, comptime fields: []const Field, key: []const u8) f64 {
-    inline for (fields) |field| if (std.mem.eql(u8, field.key, key)) return store.number(section, key, field.default.number);
+    inline for (fields) |field| if (field.default == .number and std.mem.eql(u8, field.key, key)) return store.number(section, key, field.default.number);
     return store.number(section, key, 0);
 }
 

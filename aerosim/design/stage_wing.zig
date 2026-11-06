@@ -114,7 +114,7 @@ fn partitionsOf(memory: std.mem.Allocator, params: *const ObjectMap, out: *[wing
 }
 
 /// a planta e os nomes dos perfis das seções (0 = o da raiz) dos parâmetros de uma asa
-const Shape = struct { planform: wing_line.Planform, names: []const []const u8 };
+pub const Shape = struct { planform: wing_line.Planform, names: []const []const u8 };
 
 fn shapeOf(memory: std.mem.Allocator, params: *const ObjectMap) !Shape {
     var names: std.ArrayList([]const u8) = .empty;
@@ -181,7 +181,7 @@ fn resetPartitions(project: *store.Project, params: *ObjectMap) !void {
 
 // ------------------------------------------------------------------ a conta
 /// a análise de uma asa (os parâmetros dela) com os perfis do projeto
-fn analyze(context: *stages.Context, memory: std.mem.Allocator, params: *const ObjectMap, result: *wing_line.Result) !Shape {
+pub fn analyze(context: *stages.Context, memory: std.mem.Allocator, params: *const ObjectMap, result: *wing_line.Result) !Shape {
     const project = &context.project;
     const shape = try shapeOf(memory, params);
     const sections = try memory.alloc(wing_line.SectionAirfoil, shape.names.len);
@@ -202,7 +202,7 @@ fn analyze(context: *stages.Context, memory: std.mem.Allocator, params: *const O
 }
 
 /// a superfície do modelo do avião para a vista 3D (bordo de ataque da raiz em x = 0)
-fn surfaceOf(context: *stages.Context, memory: std.mem.Allocator, params: *const ObjectMap, name: []const u8, incidence: f64) !model.Surface {
+pub fn surfaceOf(context: *stages.Context, memory: std.mem.Allocator, params: *const ObjectMap, name: []const u8, incidence: f64) !model.Surface {
     const shape = try shapeOf(memory, params);
     const planform = shape.planform;
     const sections = try memory.alloc(model.Section, planform.count);
@@ -231,7 +231,7 @@ fn viewOf(memory: std.mem.Allocator, surfaces: []const model.Surface) !?simulati
 }
 
 /// a asa guardada com este nome
-fn keptWing(project: *store.Project, name: []const u8) ?*ObjectMap {
+pub fn keptWing(project: *store.Project, name: []const u8) ?*ObjectMap {
     for (project.list("wings").items) |*item| {
         if (item.* != .object) continue;
         if (std.mem.eql(u8, store.nameOf(item.*), name)) return store.child(&item.object, "params");

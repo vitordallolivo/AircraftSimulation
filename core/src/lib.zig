@@ -13,6 +13,7 @@ pub const aero = @import("physics/aero.zig");
 pub const section = @import("physics/section.zig");
 pub const propulsion = @import("physics/propulsion.zig");
 pub const wing_line = @import("sizing/wing_line.zig");
+pub const tail = @import("sizing/tail.zig");
 pub const constraints = @import("sizing/constraints.zig");
 /// o dimensionamento inicial (mini-MDO): avaliar um vetor de projeto e otimizar
 pub const sizing = @import("sizing/sizing.zig");
