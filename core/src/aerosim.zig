@@ -75,6 +75,7 @@ pub const loads = struct {
 
 /// dimensionamento inicial (mini-MDO)
 pub const sizing = struct {
+    pub const constraints = @import("sizing/constraints.zig");
     pub const chain = @import("sizing/chain.zig");
     pub const ground = @import("sizing/ground.zig");
     pub const kinds = @import("sizing/kinds.zig");

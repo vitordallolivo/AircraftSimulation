@@ -291,7 +291,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
-  tipos `math:14`, `physics:22`, `modifiers:35`, `collision:45`, `control:50`, `sim:57`, `loads:71`, `sizing:77`, `optim:90`, `geometry:104`, `util:109`
+  tipos `math:14`, `physics:22`, `modifiers:35`, `collision:45`, `control:50`, `sim:57`, `loads:71`, `sizing:77`, `optim:91`, `geometry:105`, `util:110`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
@@ -470,6 +470,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sizing/chain.zig` — A cadeia do mini-MDO para um tipo de aeronave e um provedor de tração, gerada em comptime:
   tipos `CoreThrust:24`, `LinearThrust:47`
   fn `checkThrust:18`, `decode:58`, `motorsFor:80`, `Chain:96`
+- `core/src/sizing/constraints.zig` — O diagrama de restrições do dimensionamento inicial (o par de `aerosim/sizing/constraints.py`): a razão
+  tipos `ParabolicPolar:25`, `Requirements:44`, `Kind:63`, `Limit:97`, `DesignPoint:188`
+  fn `estimatePolar:36`, `isaRho:115`, `conditionSpeed:120`, `requiredThrustWeight:132`, `limitLoading:165`, `envelope:173`, `designPoint:201`
 - `core/src/sizing/ground.zig` — Corrida de decolagem rápida da sprint (etapa Motores, `aerosim/design/power.py: performance`): a mesma
   tipos `GroundRun:23`
   fn `interp:50`, `rotSpeed:77`, `run:87`, `mtow:112`

@@ -51,7 +51,7 @@ const plots = std.EnumArray(Chart, simulation.Plot).init(.{
 });
 
 const max_altitudes = 6;
-const polar_speed = 12.0; // a velocidade da polar do núcleo (m/s), como `core_polar`
+pub const polar_speed = 12.0; // a velocidade da polar do núcleo (m/s), como `core_polar`
 const top_speed = 35.0; // a maior V das curvas (m/s)
 const envelope_step = 50.0; // o passo do envelope de voo (m)
 const envelope_top = 9000.0;
@@ -106,7 +106,7 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
 
 /// C_D0, K e C_Lmax do avião inteiro pelo núcleo: C_L e C_D de −4° a 24° a 12 m/s e a reta de C_D contra C_L² de −2°
 /// a 8° (como `core_polar` do Python), sem trimar
-fn corePolar(params: *const core.types.Params, tc: core.trim.Ctx) Polar {
+pub fn corePolar(params: *const core.types.Params, tc: core.trim.Ctx) Polar {
     var sx: f64 = 0;
     var sy: f64 = 0;
     var sxx: f64 = 0;
