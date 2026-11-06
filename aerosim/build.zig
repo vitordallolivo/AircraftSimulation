@@ -54,6 +54,8 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // os modelos padrão do avião (gerados de `model/templates.py`), para o "Restaurar" da Montagem
+    const templates = b.createModule(.{ .root_source_file = b.path("model/templates.zig"), .target = target, .optimize = optimize });
     // ---- o que o design calcula para a tela (design/dims.zig: as dimensões a partir do CG)
     const design = b.createModule(.{
         .root_source_file = b.path("design/dims.zig"),
@@ -64,6 +66,8 @@ pub fn build(b: *std.Build) void {
             .{ .name = "aircraft_model", .module = aircraft_model },
             .{ .name = "manager", .module = manager },
             .{ .name = "simulation", .module = simulation },
+            .{ .name = "catalog", .module = catalog },
+            .{ .name = "templates", .module = templates },
         },
     });
 
@@ -117,8 +121,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "raygui", .module = raygui },
         },
     });
-    // os modelos padrão do avião (gerados de `model/templates.py`), para o "Restaurar" da Montagem
-    const templates = b.createModule(.{ .root_source_file = b.path("model/templates.zig"), .target = target, .optimize = optimize });
     const program = b.createModule(.{
         .root_source_file = b.path("gui/main.zig"),
         .target = target,

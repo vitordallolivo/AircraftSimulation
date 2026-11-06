@@ -182,6 +182,17 @@ pub const Result = struct {
     speed: [curve_speeds]f64 = undefined,
     elevator: [3][curve_speeds]f64 = undefined,
     with_limits: bool = false, // as curvas [0] e [2] (CG à frente e atrás) valem
+    statics: ?Statics = null, // nulo: sem cauda
+    incidence_rad: f64 = 0, // a incidência da EH (rad)
+    tail_area_share: f64 = 0, // S_h / S
+
+    /// o momento de arfagem da cauda (ou do comando, sem cauda) em torno do trem principal em `gear` (m atrás do bordo
+    /// de ataque da raiz), em coeficiente da asa, com o C_L da asa `lift`, o comando `deflection` (rad) e a EH
+    /// retrimada de `extra_incidence` (rad)
+    pub fn groundMoment(result: *const Result, lift: f64, deflection: f64, gear: f64, extra_incidence: f64) f64 {
+        const statics = result.statics orelse return result.moment_elevator * (deflection + extra_incidence);
+        return statics.eta * result.tail_area_share * statics.tailLift(lift, deflection, result.incidence_rad + extra_incidence) * (gear - result.tail_center) / statics.wing.mean_chord;
+    }
 };
 
 /// a conta da etapa (com o braço medido do CG, a cauda anda até a distância do CG ao CA dela ser o braço pedido:
@@ -310,6 +321,9 @@ fn analyzeAt(wing: Wing, others: []const OtherWing, strips: []const PitchStrip, 
     out.h_fwd = h_fwd;
     out.h_aft = h_n - input.margin_min / 100;
     out.arm_cg = out.tail_center - out.x_cg;
+    out.statics = statics;
+    out.incidence_rad = incidence;
+    out.tail_area_share = volume * chord / arm;
 
     // rotação: a cauda no braço até o trem principal
     const gear = out.x_cg + input.gear_aft;
@@ -338,7 +352,8 @@ fn analyzeAt(wing: Wing, others: []const OtherWing, strips: []const PitchStrip, 
     curves(wing, input, dynamic, out, statics, incidence);
 }
 
-const Statics = struct {
+/// o que a conta da cauda guarda para os momentos depois (a etapa Motores retrima com a tração)
+pub const Statics = struct {
     wing: Wing,
     slope: f64,
     tail_slope: f64,

@@ -74,7 +74,7 @@ fn field(params: *const ObjectMap, key: []const u8) f64 {
     return registry.fieldNumber(params, &tail_fields, key);
 }
 
-fn layoutOf(params: *const ObjectMap) tail.Layout {
+pub fn layoutOf(params: *const ObjectMap) tail.Layout {
     const name = store.text(params, "layout", layouts[0]);
     if (std.mem.eql(u8, name, "em V")) return .v_tail;
     if (std.mem.eql(u8, name, "sem cauda")) return .tailless;
@@ -203,7 +203,7 @@ fn tableCommands(memory: std.mem.Allocator, params: *const ObjectMap) ![]Command
 
 // ------------------------------------------------------------------ o conjunto
 /// o conjunto montado: as superfícies (asas no lugar, cauda e tubo), a conta e as asas analisadas
-const Built = struct {
+pub const Built = struct {
     surfaces: []model.Surface,
     booms: []const model.Boom,
     result: *tail.Result,
@@ -218,7 +218,7 @@ fn verticalSurface(memory: std.mem.Allocator, name: []const u8, height: f64, roo
     return .{ .name = name, .role = "vtail", .vertical = true, .symmetric = false, .airfoil = airfoil, .eta = 0.9, .sections = try memory.dupe(model.Section, &.{ .{ .y = 0, .chord = root_chord }, .{ .y = height, .chord = tip, .x_offset = (root_chord - tip) / 4 } }) };
 }
 
-fn build(context: *stages.Context, memory: std.mem.Allocator, params: *const ObjectMap, use_rule: bool) !?Built {
+pub fn build(context: *stages.Context, memory: std.mem.Allocator, params: *const ObjectMap, use_rule: bool) !?Built {
     const project = &context.project;
     const wings = try placedWings(project, memory);
     if (wings.len == 0) return null;

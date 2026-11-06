@@ -497,8 +497,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Curve:18`, `Geo:42`, `Polar:68`, `Env:83`, `Mass:212`
   fn `geometry:45`, `blendAirfoils:56`, `polar:71`, `stallSpeed:95`, `envelope:100`, `sustainedN:133`, `isaRho:142`, `isaAltitude:147`, `ceiling:152`, `landingRun:176`, `takeoffRun:182`, `canHover:207`, `emptyMass:215`, `linearCurve:229`
 - `core/src/sizing/tail.zig` — A empenagem da etapa "Empenagem e comandos" (`aerosim/design/tail.py`): áreas por volume de cauda, estática
-  tipos `Layout:20`, `Wing:46`, `OtherWing:65`, `PitchStrip:73`, `TailAirfoil:83`, `Input:91`, `Result:131`
-  fn `helmbold:33`, `flapEffectiveness:39`, `analyze:189`
+  tipos `Layout:20`, `Wing:46`, `OtherWing:65`, `PitchStrip:73`, `TailAirfoil:83`, `Input:91`, `Result:131`, `Statics:356`
+  fn `helmbold:33`, `flapEffectiveness:39`, `analyze:200`
 - `core/src/sizing/types.zig` — Tipos do dimensionamento inicial (mini-MDO): a configuração que vem do Python, o vetor de
   tipos `Variable:15`, `VarKind:49`, `VarSpec:57`, `Quantity:65`, `Comparison:136`, `Constraint:146`, `AirfoilData:164`, `LayoutData:175`, `PropSet:185`, `AircraftKind:193`, `Objective:206`, `SizingCfg:214`, `SizingOut:257`, `SearchMethod:274`, `OptOpts:283`, `Individual:295`
   fn `variable:44`, `quantity:116`, `massDependent:123`, `constrained:131`, `violation:154`
