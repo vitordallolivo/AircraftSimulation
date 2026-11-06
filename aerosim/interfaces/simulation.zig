@@ -84,6 +84,12 @@ pub const Sprint = struct {
     wing_names: *const fn (memory: std.mem.Allocator) Error![]const []const u8,
     /// a asa guardada com este nome, como superfície do avião (bordo de ataque da raiz em x = 0); nula: não existe
     wing: *const fn (memory: std.mem.Allocator, name: []const u8) Error!?aircraft_model.aircraft.Surface,
+    /// os nomes das configurações guardadas em Projetar ("Guardar configuração")
+    config_names: *const fn (memory: std.mem.Allocator) Error![]const []const u8,
+    /// as asas de uma configuração, cada uma no lugar dela, com os dispositivos e as pontas ligadas
+    config: *const fn (memory: std.mem.Allocator, name: []const u8) Error![]const Surface,
+    /// o nome do projeto (a pasta); vazio se ainda não tem pasta
+    project_name: *const fn (memory: std.mem.Allocator) Error![]const u8,
     /// as restrições ligadas
     constraints: *const fn (memory: std.mem.Allocator) Error![]const SprintConstraint,
     /// as condições (altitude-densidade, atritos, V da curva, cruzeiro)

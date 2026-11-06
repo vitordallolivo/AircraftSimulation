@@ -211,11 +211,46 @@ pub fn isProject(bytes: []const u8) bool {
 
 // ------------------------------------------------------------------ o projeto para as análises
 /// o que as análises leem do projeto aberto (`simulation.sprint`): a tela liga ao abrir
-pub const sprint_source: simulation.Sprint = .{ .wing_names = sprintWingNames, .wing = sprintWing, .constraints = sprintConstraints, .conditions = sprintConditions };
+pub const sprint_source: simulation.Sprint = .{ .wing_names = sprintWingNames, .wing = sprintWing, .config_names = sprintConfigNames, .config = sprintConfig, .project_name = sprintProjectName, .constraints = sprintConstraints, .conditions = sprintConditions };
+
+fn sprintConfigNames(memory: std.mem.Allocator) simulation.Error![]const []const u8 {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = if (shared) |*existing| existing else return &.{};
+    var names: std.ArrayList([]const u8) = .empty;
+    for (current.project.list("configs").items) |item| {
+        if (item != .object) continue;
+        const name = store.text(&item.object, "name", "");
+        if (name.len > 0) try names.append(memory, try memory.dupe(u8, name));
+    }
+    return names.items;
+}
+
+fn sprintConfig(memory: std.mem.Allocator, name: []const u8) simulation.Error![]const simulation.Surface {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = if (shared) |*existing| existing else return &.{};
+    return wing_stage.configSurfaces(current, memory, name) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => error.Failed,
+    };
+}
+
+fn sprintProjectName(memory: std.mem.Allocator) simulation.Error![]const u8 {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = if (shared) |*existing| existing else return "";
+    if (!current.named) return "";
+    return memory.dupe(u8, std.fs.path.basename(current.project.folder));
+}
 
 /// liga o projeto aberto às análises (o Analisar lista as asas guardadas; o Mini-MDO usa as restrições)
-pub fn connect() void {
+pub fn connect(io: std.Io) void {
     simulation.sprint = sprint_source;
+    // o projeto abre já (o último, de onde parou): o Analisar e o Mini-MDO leem ele antes de qualquer etapa
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    _ = opened(io) catch {};
 }
 
 fn sprintWingNames(memory: std.mem.Allocator) simulation.Error![]const []const u8 {

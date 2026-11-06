@@ -308,7 +308,31 @@ pub fn joinTips(memory: std.mem.Allocator, first: *model.Surface, second: *model
 
 /// a superfície da linha `k` da tabela, no lugar dela e com os dispositivos dela (nula: a asa da linha não existe)
 fn rowSurface(context: *stages.Context, memory: std.mem.Allocator, k: usize, draft_params: *const ObjectMap, draft_name: []const u8) !?model.Surface {
-    const row = context.project.list("wing_layout").items[k];
+    return placedSurface(context, memory, context.project.list("wing_layout").items[k], k, draft_params, draft_name);
+}
+
+/// as asas de uma configuração guardada (as linhas dela, como a tabela "Asas do avião"), no lugar, com os
+/// dispositivos e as pontas ligadas; vazio se a configuração não existe
+pub fn configSurfaces(context: *stages.Context, memory: std.mem.Allocator, name: []const u8) ![]const model.Surface {
+    const draft_params = draft(&context.project);
+    const draft_name = store.text(draft_params, "name", "asa 1");
+    for (context.project.list("configs").items) |config| {
+        if (config != .object or !std.mem.eql(u8, store.text(&config.object, "name", ""), name)) continue;
+        const rows = config.object.get("wings") orelse return &.{};
+        if (rows != .array) return &.{};
+        var out: std.ArrayList(model.Surface) = .empty;
+        for (rows.array.items, 0..) |row, k| {
+            const surface = (try placedSurface(context, memory, row, k, draft_params, draft_name)) orelse continue;
+            try out.append(memory, surface);
+            if (k > 0 and row == .object and store.flag(&row.object, "join", false) and out.items.len > 1) try joinTips(memory, &out.items[0], &out.items[out.items.len - 1]);
+        }
+        return out.items;
+    }
+    return &.{};
+}
+
+/// a superfície de uma linha da tabela de asas (a guardada com o nome da linha, ou o rascunho), no lugar dela
+fn placedSurface(context: *stages.Context, memory: std.mem.Allocator, row: Value, k: usize, draft_params: *const ObjectMap, draft_name: []const u8) !?model.Surface {
     if (row != .object) return null;
     const object = &row.object;
     const name = store.text(object, "wing", "");

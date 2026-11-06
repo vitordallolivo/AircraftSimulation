@@ -39,9 +39,18 @@ pub const Wings = struct {
     pub const standalone = fromSprint;
 };
 
-const open_source = "avião aberto (Montagem)";
-const sprint_source = "asas guardadas na sprint";
-const sources = [_][]const u8{ open_source, sprint_source, "asas do avião (tabela de Projetar)" };
+/// de onde vêm as asas: o avião aberto na Montagem, as asas guardadas do projeto (cada uma no x e na altura do
+/// formulário) ou uma configuração guardada em Projetar (as asas no lugar delas, como a tabela "Asas do avião")
+const SourceKind = enum { open, wings, config };
+const open_prefix = "avião aberto";
+const wings_prefix = "asas guardadas";
+const config_prefix = "configuração: ";
+
+fn kindOf(source: []const u8) SourceKind {
+    if (std.mem.startsWith(u8, source, wings_prefix)) return .wings;
+    if (std.mem.startsWith(u8, source, config_prefix)) return .config;
+    return .open;
+}
 
 /// as asas guardadas na etapa Asa (vazio sem projeto)
 fn sprintNames(memory: std.mem.Allocator) ![]const []const u8 {
@@ -49,35 +58,76 @@ fn sprintNames(memory: std.mem.Allocator) ![]const []const u8 {
     return sprint.wing_names(memory);
 }
 
-/// a fonte das asas: a escolhida; sem escolha, o avião aberto, ou as asas da sprint quando não há avião aberto
-fn sourceOf(memory: std.mem.Allocator, aircraft: ?*const simulation.Aircraft, values: simulation.Values) []const u8 {
-    const has_plane = if (aircraft) |plane| plane.surfaces.len > 0 else false;
-    const names = sprintNames(memory) catch &.{};
-    return values.text("source", if (has_plane or names.len == 0) open_source else sprint_source);
+/// as opções da fonte, pelo nome: o avião aberto, as asas guardadas e cada configuração do projeto
+fn sourceChoices(memory: std.mem.Allocator, aircraft: ?*const simulation.Aircraft) ![]const []const u8 {
+    var choices: std.ArrayList([]const u8) = .empty;
+    if (aircraft) |plane| if (plane.surfaces.len > 0) try choices.append(memory, try std.fmt.allocPrint(memory, "{s}: {s}", .{ open_prefix, plane.name }));
+    if (simulation.sprint) |sprint| {
+        const project = try sprint.project_name(memory);
+        const names = try sprint.wing_names(memory);
+        // as configurações primeiro: são o avião como Projetar montou
+        for (try sprint.config_names(memory)) |name| try choices.append(memory, try std.fmt.allocPrint(memory, "{s}{s}", .{ config_prefix, name }));
+        if (names.len > 0) try choices.append(memory, if (project.len > 0) try std.fmt.allocPrint(memory, "{s} do projeto {s} ({d})", .{ wings_prefix, project, names.len }) else try std.fmt.allocPrint(memory, "{s} do projeto ({d})", .{ wings_prefix, names.len }));
+    }
+    if (choices.items.len == 0) try choices.append(memory, "nenhum avião aberto nem asa guardada");
+    return choices.items;
 }
 
-/// as asas da sprint rodam sem o avião aberto
+/// a fonte escolhida (a primeira das opções se a de antes sumiu)
+fn sourceOf(memory: std.mem.Allocator, aircraft: ?*const simulation.Aircraft, values: simulation.Values) ![]const u8 {
+    const choices = try sourceChoices(memory, aircraft);
+    const chosen = values.text("source", choices[0]);
+    for (choices) |choice| if (std.mem.eql(u8, choice, chosen)) return choice;
+    // a de antes pelo tipo (o nome do avião ou o número de asas mudou)
+    for (choices) |choice| if (kindOf(choice) == kindOf(chosen) and kindOf(chosen) != .config) return choice;
+    return choices[0];
+}
+
+/// a prévia 3D das superfícies que entram (as peças da Montagem, só as de asa, cauda, comando e dispositivo)
+fn previewOf(memory: std.mem.Allocator, plane: *const simulation.Aircraft) ?simulation.View {
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    const built = aircraft_model.skeleton.build(memory, plane, &diagnosis) catch return null;
+    var meshes: std.ArrayList(simulation.Mesh) = .empty;
+    for (built.pieces) |piece| switch (piece.color) {
+        .wing, .htail, .vtail, .control, .device => meshes.append(memory, .{ .kind = @tagName(piece.color), .vertices = piece.mesh.v, .faces = piece.mesh.f }) catch return null,
+        else => {},
+    };
+    return .{ .meshes = meshes.items };
+}
+
+/// as asas do projeto rodam sem o avião aberto
 fn fromSprint(values: simulation.Values) bool {
-    return std.mem.eql(u8, values.text("source", open_source), sprint_source);
+    return kindOf(values.text("source", open_prefix)) != .open;
 }
 
-/// o avião com as asas da sprint marcadas, cada uma no x e na altura do formulário (`sprint_aircraft` do Python):
-/// o resto (ambiente) vem de `base`
-fn sprintAircraft(memory: std.mem.Allocator, base: *const simulation.Aircraft, values: simulation.Values) !simulation.Aircraft {
+/// o avião com as asas da fonte escolhida (`sprint_aircraft` do Python para as asas guardadas); o resto (ambiente)
+/// vem de `base`
+fn sourceAircraft(memory: std.mem.Allocator, base: *const simulation.Aircraft, source: []const u8, values: simulation.Values) !simulation.Aircraft {
+    const kind = kindOf(source);
+    if (kind == .open) return base.*;
     var plane = base.*;
     const sprint = simulation.sprint orelse return error.Failed;
     var surfaces: std.ArrayList(model.Surface) = .empty;
-    for (try sprintNames(memory), 0..) |name, i| {
-        if (!values.toggle(try std.fmt.allocPrint(memory, "sprint_{d}", .{i}), i == 0)) continue;
-        var surface = (try sprint.wing(memory, name)) orelse continue;
-        surface.x = values.number(try std.fmt.allocPrint(memory, "x_{d}", .{i}), 0);
-        surface.z = -values.number(try std.fmt.allocPrint(memory, "h_{d}", .{i}), 0); // z do corpo para baixo
-        surface.incidence = 0; // α da varredura = α da corda da raiz
-        surface.role = "wing";
-        try surfaces.append(memory, surface);
+    if (kind == .config) {
+        for (try sprint.config(memory, source[config_prefix.len..])) |surface| {
+            var placed = surface;
+            placed.role = "wing";
+            try surfaces.append(memory, placed);
+        }
+        plane.name = source;
+    } else {
+        for (try sprintNames(memory), 0..) |name, i| {
+            if (!values.toggle(try std.fmt.allocPrint(memory, "sprint_{d}", .{i}), i == 0)) continue;
+            var surface = (try sprint.wing(memory, name)) orelse continue;
+            surface.x = values.number(try std.fmt.allocPrint(memory, "x_{d}", .{i}), 0);
+            surface.z = -values.number(try std.fmt.allocPrint(memory, "h_{d}", .{i}), 0); // z do corpo para baixo
+            surface.incidence = 0; // α da varredura = α da corda da raiz
+            surface.role = "wing";
+            try surfaces.append(memory, surface);
+        }
+        plane.name = "asas guardadas";
     }
     plane.surfaces = surfaces.items;
-    plane.name = "asas da sprint";
     return plane;
 }
 pub const none = "nenhum";
@@ -195,22 +245,32 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
     defer arena.deinit();
     const memory = arena.allocator();
     var params: std.ArrayList(simulation.Param) = .empty;
-    const source = sourceOf(memory, aircraft, values);
+    const source = try sourceOf(memory, aircraft, values);
+    const kind = kindOf(source);
     const where = "De onde vêm as asas";
-    try params.append(memory, .{ .key = "source", .label = "asas de", .kind = .choice, .default = .{ .text = source }, .choices = &sources, .group = where, .rebuild = true, .help = "o avião aberto na Montagem ou as asas guardadas na etapa Asa (sem avião aberto); a tabela de Projetar roda pelo Python" });
-    if (std.mem.eql(u8, source, sprint_source)) {
+    try params.append(memory, .{ .key = "source", .label = "asas de", .kind = .choice, .default = .{ .text = source }, .choices = try sourceChoices(memory, aircraft), .group = where, .rebuild = true, .help = "o avião aberto na Montagem, as asas guardadas do projeto (sem avião aberto) ou uma configuração guardada em Projetar; a vista mostra o que entra" });
+    if (kind == .wings) {
         const names = try sprintNames(memory);
-        if (names.len == 0) try params.append(memory, .{ .key = "sprint_none", .label = "nenhuma asa guardada (guarde em Aerodinâmica → Projetar)", .kind = .bool, .default = .{ .toggle = false }, .group = "Superfícies" });
         for (names, 0..) |name, i| try params.appendSlice(memory, &.{
-            .{ .key = try std.fmt.allocPrint(memory, "sprint_{d}", .{i}), .label = try std.fmt.allocPrint(memory, "incluir: {s}", .{name}), .kind = .bool, .default = .{ .toggle = i == 0 }, .group = "Superfícies" },
-            .{ .key = try std.fmt.allocPrint(memory, "x_{d}", .{i}), .label = try std.fmt.allocPrint(memory, "{s}: x do bordo de ataque da raiz", .{name}), .default = .{ .number = 0 }, .minimum = -5, .maximum = 5, .unit = "m", .group = "Superfícies", .help = "+ para a frente; tandem e canard: uma asa à frente da outra" },
-            .{ .key = try std.fmt.allocPrint(memory, "h_{d}", .{i}), .label = try std.fmt.allocPrint(memory, "{s}: altura", .{name}), .default = .{ .number = 0 }, .minimum = -3, .maximum = 3, .unit = "m", .group = "Superfícies", .help = "biplano: a asa de cima mais alta" },
+            .{ .key = try std.fmt.allocPrint(memory, "sprint_{d}", .{i}), .label = try std.fmt.allocPrint(memory, "incluir: {s}", .{name}), .kind = .bool, .default = .{ .toggle = i == 0 }, .group = "Superfícies", .rebuild = true },
+            .{ .key = try std.fmt.allocPrint(memory, "x_{d}", .{i}), .label = try std.fmt.allocPrint(memory, "{s}: x do bordo de ataque da raiz", .{name}), .default = .{ .number = 0 }, .minimum = -5, .maximum = 5, .unit = "m", .group = "Superfícies", .rebuild = true, .help = "+ para a frente; tandem e canard: uma asa à frente da outra" },
+            .{ .key = try std.fmt.allocPrint(memory, "h_{d}", .{i}), .label = try std.fmt.allocPrint(memory, "{s}: altura", .{name}), .default = .{ .number = 0 }, .minimum = -3, .maximum = 3, .unit = "m", .group = "Superfícies", .rebuild = true, .help = "biplano: a asa de cima mais alta" },
         });
     }
-    if (std.mem.eql(u8, source, open_source)) if (aircraft) |plane| for (plane.surfaces, 0..) |surface, i| {
+    // as superfícies da fonte, para marcar quais entram (no avião aberto: as asas marcadas, as caudas não)
+    const empty_plane: simulation.Aircraft = .{};
+    const base = aircraft orelse &empty_plane;
+    const plane = sourceAircraft(memory, base, source, values) catch base.*;
+    if (kind != .wings) for (plane.surfaces, 0..) |surface, i| {
         if (!surface.enabled) continue;
-        try params.append(memory, .{ .key = try surfaceKey(memory, i), .label = try std.fmt.allocPrint(memory, "incluir: {s}", .{surface.name}), .kind = .bool, .default = .{ .toggle = std.mem.eql(u8, surface.role, "wing") }, .group = "Superfícies" });
+        try params.append(memory, .{ .key = try surfaceKey(memory, i), .label = try std.fmt.allocPrint(memory, "incluir: {s}", .{surface.name}), .kind = .bool, .default = .{ .toggle = std.mem.eql(u8, surface.role, "wing") }, .group = "Superfícies", .rebuild = true });
     };
+    // a prévia: só as superfícies que entram, sem fuselagem nem hélice
+    const shown = wingsOnly(memory, &plane, values) catch plane;
+    var marked: std.ArrayList(model.Surface) = .empty;
+    for (shown.surfaces) |surface| if (surface.enabled) try marked.append(memory, surface);
+    const bare: simulation.Aircraft = .{ .name = "prévia", .surfaces = marked.items };
+    const preview = previewOf(memory, &bare);
     const case = "Caso";
     const loads = "Carga ao longo da envergadura";
     try params.appendSlice(memory, &.{
@@ -226,8 +286,8 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "vlm_span", .label = "VLM: faixas por lado", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 200, .group = loads, .help = "refino do VLM; 0: o padrão (40)" },
         .{ .key = "vlm_chord", .label = "VLM: painéis na corda", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .group = loads, .help = "refino do VLM; 0: o padrão (6)" },
     });
-    if (std.mem.eql(u8, source, open_source)) {
-        const whole = values.toggle("whole", if (aircraft) |plane| aerodynamics.ready(plane) else false);
+    if (kind == .open) {
+        const whole = values.toggle("whole", if (aircraft) |opened| aerodynamics.ready(opened) else false);
         try params.append(memory, .{ .key = "whole", .label = "analisar também o avião completo", .kind = .bool, .default = .{ .toggle = whole }, .group = aerodynamics.group, .rebuild = true, .help = "o avião aberto inteiro, como voa: polares no CG, profundor e derrapagem, estol × cruzeiro, L/D" });
         if (whole) try aerodynamics.appendFields(memory, &params, aircraft);
     }
@@ -238,7 +298,7 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "n_span", .label = "painéis por semiasa", .kind = .int, .default = .{ .number = 12 }, .minimum = 4, .maximum = 40, .group = methods },
         .{ .key = "n_chord", .label = "painéis na corda (VLM, AVL)", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .group = methods },
     });
-    try simulation.writeSpecs(out, params.items, &plots, Wings.description, .{});
+    try simulation.writeSpecs(out, params.items, &plots, Wings.description, .{ .view = preview });
 }
 
 /// o aviso da linha sustentadora (o método, a comparação ou uma polar) numa asa curta (`alerts.shortWing`)
@@ -262,8 +322,7 @@ fn runAlerts(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, va
 
 /// a rodada precisa do Python: uma fonte de asas, um método ou uma comparação de fora do núcleo
 fn needsPython(values: simulation.Values) bool {
-    const source = values.text("source", open_source);
-    if (!std.mem.eql(u8, source, open_source) and !std.mem.eql(u8, source, sprint_source)) return true;
+
     if (values.number("endplate", 0) > 0) return true;
     for ([_][]const u8{ "method", "compare" }) |key| if (LoadMethod.fromTitle(values.text(key, none))) |method| {
         if (!method.inCore()) return true;
@@ -511,7 +570,7 @@ fn sweepMethod(run: *simulation.Run, state: *RunState, plane: simulation.Aircraf
 
 fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) simulation.Error!void {
     const memory = run.memory();
-    const source_plane = if (fromSprint(values)) try sprintAircraft(memory, run.aircraft, values) else run.aircraft.*;
+    const source_plane = try sourceAircraft(memory, run.aircraft, values.text("source", open_prefix), values);
     const plane = try wingsOnly(memory, &source_plane, values);
     state.airspeed = values.number("V", 12);
     state.density = plane.environment.rho;
