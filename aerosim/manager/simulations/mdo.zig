@@ -25,13 +25,19 @@ pub const Mdo = struct {
     pub const name: []const u8 = "mdo";
     pub const title: [:0]const u8 = "Mini-MDO (otimizador)";
     pub const area: []const u8 = "Dimensionamento inicial";
-    pub const description: []const u8 = "Dimensionamento inicial como otimização: envergadura, área, afilamento, perfis, motor × hélice, número de motores, inclinação e arranjo saem juntos do otimizador do núcleo (PSO ou busca aleatória), que maximiza o MTOW ou a eficiência estrutural com as restrições ligadas. A empenagem entra como fração da área da asa.";
+    pub const description: []const u8 = "Dimensionamento inicial como otimização, sem precisar de avião aberto (é ele que se procura): envergadura, área, afilamento, perfis, motor × hélice, número de motores, inclinação e arranjo saem juntos do otimizador do núcleo (PSO ou busca aleatória), que maximiza o MTOW ou a eficiência estrutural. As condições, as regras de massa e as restrições são as de Condições e restrições…; uma restrição que o melhor não cumpre fica em vermelho no diagnóstico. A empenagem entra como fração da área da asa.";
     pub const State = RunState;
     pub const specs = writeFields;
     pub const start = startRun;
     pub const advance = advanceRun;
     pub const result = writeResult;
+    pub const standalone = withoutAircraft;
 };
+
+/// o Mini-MDO procura o avião: roda sem avião aberto
+fn withoutAircraft(_: simulation.Values) bool {
+    return true;
+}
 
 // ------------------------------------------------------------------ escolhas (a ordem do núcleo)
 const kinds = [_][]const u8{ "convencional", "asa voadora", "tailsitter", "VTOL" }; // AircraftKind
@@ -49,24 +55,39 @@ const layouts = [_]Layout{
 /// os NACA de 4 dígitos que entram na lista além dos perfis da aeronave
 const extra_airfoils = [_][]const u8{ "NACA 0012", "NACA 2412", "NACA 4412", "NACA 6412" };
 
-/// uma restrição do formulário: a grandeza do núcleo, o sentido e o valor de partida (0 desliga)
-const ConstraintField = struct { key: []const u8, quantity: Quantity, op: sizing_types.Comparison, default: f64, label: []const u8, unit: []const u8 };
-const constraint_fields = [_]ConstraintField{
-    .{ .key = "c_V_S", .quantity = .stall_speed, .op = .at_most, .default = 11, .label = "V de estol ≤", .unit = "m/s" },
-    .{ .key = "c_b", .quantity = .span, .op = .at_most, .default = 2.5, .label = "envergadura ≤", .unit = "m" },
-    .{ .key = "c_s_to", .quantity = .takeoff_run, .op = .at_most, .default = 50, .label = "corrida de decolagem ≤", .unit = "m" },
-    .{ .key = "c_RC", .quantity = .climb_rate, .op = .at_least, .default = 1, .label = "razão de subida ≥", .unit = "m/s" },
-    .{ .key = "c_S", .quantity = .area, .op = .at_most, .default = 0, .label = "área ≤", .unit = "m²" },
-    .{ .key = "c_P_motor", .quantity = .motor_power, .op = .at_most, .default = 0, .label = "potência dos motores ≤", .unit = "W" },
-    .{ .key = "c_n_motor", .quantity = .motor_count, .op = .at_most, .default = 0, .label = "nº de motores ≤", .unit = "" },
-    .{ .key = "c_ee", .quantity = .structural_efficiency, .op = .at_least, .default = 0, .label = "EE ≥", .unit = "" },
-    .{ .key = "c_V_max", .quantity = .max_speed, .op = .at_least, .default = 0, .label = "V máx. ≥", .unit = "m/s" },
-    .{ .key = "c_n_turn", .quantity = .turn_load_factor, .op = .at_least, .default = 0, .label = "fator de carga na curva ≥", .unit = "" },
-    .{ .key = "c_grad", .quantity = .climb_gradient, .op = .at_least, .default = 0, .label = "gradiente de subida ≥", .unit = "%" },
-    .{ .key = "c_ceiling", .quantity = .ceiling, .op = .at_least, .default = 0, .label = "teto ≥", .unit = "m" },
-    .{ .key = "c_s_land", .quantity = .landing_run, .op = .at_most, .default = 0, .label = "corrida de pouso ≤", .unit = "m" },
-    .{ .key = "c_c_root", .quantity = .root_chord, .op = .at_most, .default = 0, .label = "corda da raiz ≤", .unit = "m" },
+/// as restrições de partida quando não há projeto aberto (os testes): as ligadas de `registry.default_constraints`
+const default_constraints = [_]simulation.SprintConstraint{
+    .{ .key = "V_S", .label = "velocidade de estol", .unit = "m/s", .op = "≤", .value = 11 },
+    .{ .key = "b", .label = "envergadura", .unit = "m", .op = "≤", .value = 2.5 },
+    .{ .key = "s_to", .label = "corrida de decolagem", .unit = "m", .op = "≤", .value = 50 },
+    .{ .key = "RC", .label = "razão de subida máxima", .unit = "m/s", .op = "≥", .value = 1 },
 };
+
+/// a grandeza do núcleo com a chave do registro ("S", "b", "V_S"...: `sizing_types.q_names`); nula: fora do
+/// dimensionamento inicial (comprimento, cargas pagas, margem estática: as etapas conferem)
+fn quantityOf(name_key: []const u8) ?Quantity {
+    for (sizing_types.q_names, 0..) |name, i| if (std.mem.eql(u8, name, name_key)) return @enumFromInt(@as(i32, @intCast(i)));
+    return null;
+}
+
+/// o sentido da restrição do projeto ("≤", "≥", "=")
+fn comparisonOf(op: []const u8) sizing_types.Comparison {
+    if (std.mem.eql(u8, op, "≥")) return .at_least;
+    if (std.mem.eql(u8, op, "=")) return .equal;
+    return .at_most;
+}
+
+/// as restrições ligadas de "Condições e restrições" (sem projeto: as de partida)
+fn projectConstraints(memory: std.mem.Allocator) ![]const simulation.SprintConstraint {
+    const sprint = simulation.sprint orelse return &default_constraints;
+    return sprint.constraints(memory);
+}
+
+/// as condições e as regras de "Condições e restrições" (sem projeto: as de partida)
+fn projectConditions() simulation.SprintConditions {
+    const sprint = simulation.sprint orelse return .{};
+    return sprint.conditions();
+}
 
 /// uma variável contínua do formulário: a faixa de partida (`INPUTS` do Python); mínimo = máximo deixa fixa
 const RangeField = struct { variable: Variable, key: []const u8, label: []const u8, unit: []const u8, low: f64, high: f64, minimum: f64, maximum: f64, integer: bool = false };
@@ -93,6 +114,7 @@ const color_drag = "#eb6834";
 const RunState = struct {
     cfg: sizing_types.SizingCfg = .{},
     opts: sizing_types.OptOpts = .{},
+    constraints: []const simulation.SprintConstraint = &.{}, // as de "Condições e restrições", na ordem de `cfg.cons`
     airfoil_names: [][]const u8 = &.{},
     set_names: [][]const u8 = &.{},
     layout_names: [][]const u8 = &.{},
@@ -138,10 +160,7 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
     const memory = arena.allocator();
     var params: std.ArrayList(simulation.Param) = .empty;
     const search = "Busca";
-    const conditions = "Condições";
-    const rules = "Regras de massa";
     const variables = "Variáveis (mínimo = máximo: fixa)";
-    const restrictions = "Restrições (0 desliga)";
     const lists = "Listas (marcadas entram na busca)";
     const kind = values.text("kind", kinds[0]);
     try params.append(memory, .{ .key = "kind", .label = "tipo de aeronave", .kind = .choice, .default = .{ .text = kinds[0] }, .choices = &kinds, .group = search, .rebuild = true, .help = "convencional: asas com empenagem; asa voadora/tailsitter: sem EH, C_L,max de equilíbrio menor; tailsitter decola na vertical; VTOL paira se a tração deixar" });
@@ -156,22 +175,12 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "penalty", .label = "penalidade", .default = .{ .number = 10 }, .minimum = 0, .maximum = 1000, .group = search, .help = "pontuação perdida por violação relativa das restrições" },
         .{ .key = "tail_area_frac", .label = "empenagem / asa (área)", .default = .{ .number = 0.25 }, .minimum = 0, .maximum = 1, .group = search, .help = "fração usada na massa e no arrasto" },
         .{ .key = "fuselage_CDS", .label = "C_D·S da fuselagem e trem", .default = .{ .number = 0.012 }, .minimum = 0, .maximum = 0.2, .unit = "m²", .group = search },
-        .{ .key = "density_altitude", .label = "altitude-densidade", .default = .{ .number = 600 }, .minimum = -500, .maximum = 4000, .unit = "m", .group = conditions, .help = "atmosfera padrão com a densidade do dia" },
-        .{ .key = "mu_roll", .label = "atrito de rolamento", .default = .{ .number = if (aircraft) |plane| plane.gear.mu_roll else 0.04 }, .minimum = 0, .maximum = 0.3, .group = conditions, .help = "pista: grama ≈ 0,08, asfalto ≈ 0,03" },
-        .{ .key = "V_turn", .label = "V da curva", .default = .{ .number = if (aircraft) |plane| @round(aerodynamics.cruise(plane) * 10) / 10 else 15 }, .minimum = 0, .maximum = 60, .unit = "m/s", .group = conditions, .help = "a velocidade da curva sustentada (restrição de fator de carga)" },
-        .{ .key = "mu_brake", .label = "atrito na frenagem", .default = .{ .number = if (aircraft) |plane| plane.gear.mu_brake else 0.3 }, .minimum = 0.05, .maximum = 1, .group = conditions },
-        .{ .key = "wing_density", .label = "massa da asa por área", .default = .{ .number = 1.1 }, .minimum = 0.1, .maximum = 6, .unit = "kg/m²", .group = rules, .help = "estrutura + entelagem" },
-        .{ .key = "tail_density", .label = "massa da empenagem por área", .default = .{ .number = 0.7 }, .minimum = 0.1, .maximum = 6, .unit = "kg/m²", .group = rules },
-        .{ .key = "fuselage_density", .label = "massa da fuselagem por metro", .default = .{ .number = 0.7 }, .minimum = 0.05, .maximum = 5, .unit = "kg/m", .group = rules, .help = "a fuselagem do dimensionamento tem 0,8 m" },
-        .{ .key = "systems_mass", .label = "sistemas", .default = .{ .number = 0.35 }, .minimum = 0, .maximum = 5, .unit = "kg", .group = rules, .help = "receptor, servos, fiação" },
-        .{ .key = "gear_mass", .label = "trem de pouso", .default = .{ .number = 0.35 }, .minimum = 0, .maximum = 5, .unit = "kg", .group = rules },
     });
     for (range_fields) |field| {
         const kind_of: @TypeOf(params.items[0].kind) = if (field.integer) .int else .float;
         try params.append(memory, .{ .key = try std.fmt.allocPrint(memory, "{s}_lo", .{field.key}), .label = try std.fmt.allocPrint(memory, "{s}: mínimo", .{field.label}), .kind = kind_of, .default = .{ .number = field.low }, .minimum = field.minimum, .maximum = field.maximum, .unit = field.unit, .group = variables });
         try params.append(memory, .{ .key = try std.fmt.allocPrint(memory, "{s}_hi", .{field.key}), .label = try std.fmt.allocPrint(memory, "{s}: máximo", .{field.label}), .kind = kind_of, .default = .{ .number = field.high }, .minimum = field.minimum, .maximum = field.maximum, .unit = field.unit, .group = variables });
     }
-    for (constraint_fields) |field| try params.append(memory, .{ .key = field.key, .label = field.label, .default = .{ .number = field.default }, .minimum = 0, .maximum = 1e5, .unit = field.unit, .group = restrictions });
 
     const wing_airfoil = wingAirfoil(aircraft);
     for (try airfoilCandidates(memory, aircraft), 0..) |airfoil, i|
@@ -217,24 +226,25 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     const kind = choiceIndex(&kinds, values.text("kind", kinds[0]));
     const wing_count: i32 = if (kind == 0) @intFromFloat(@max(1, @round(values.number("wings", 1)))) else 1;
     state.wing_count = @floatFromInt(wing_count);
-    const cruise_speed = aerodynamics.cruise(aircraft);
-    const turn_speed = values.number("V_turn", cruise_speed);
+    // as condições e as regras de massa são as de "Condições e restrições" (as mesmas das etapas)
+    const conditions = projectConditions();
+    const cruise_speed = if (conditions.V_cruise > 0) conditions.V_cruise else aerodynamics.cruise(aircraft);
     cfg.* = .{
         .kind = @enumFromInt(@as(i32, @intCast(kind))),
         .objective = @enumFromInt(@as(i32, @intCast(choiceIndex(&objectives, values.text("objective", objectives[0]))))),
         .wing_count = wing_count,
-        .rho = core.constraints.isaRho(values.number("density_altitude", 600)),
-        .mu = values.number("mu_roll", aircraft.gear.mu_roll),
-        .V_turn = if (turn_speed > 0) turn_speed else cruise_speed,
-        .mu_brake = values.number("mu_brake", aircraft.gear.mu_brake),
+        .rho = core.constraints.isaRho(conditions.density_altitude),
+        .mu = conditions.mu_roll,
+        .V_turn = if (conditions.V_turn > 0) conditions.V_turn else cruise_speed,
+        .mu_brake = conditions.mu_brake,
         .m_max = values.number("m_max", 30),
         .tail_area_frac = values.number("tail_area_frac", 0.25),
         .fuselage_CDS = values.number("fuselage_CDS", 0.012),
-        .wing_density = values.number("wing_density", 1.1),
-        .tail_density = values.number("tail_density", 0.7),
-        .fuselage_mass = values.number("fuselage_density", 0.7) * 0.8,
-        .systems_mass = values.number("systems_mass", 0.35),
-        .gear_mass = values.number("gear_mass", 0.35),
+        .wing_density = conditions.wing_density,
+        .tail_density = conditions.tail_density,
+        .fuselage_mass = conditions.fuselage_density * 0.8,
+        .systems_mass = conditions.systems_mass,
+        .gear_mass = conditions.gear_mass,
     };
     state.opts = .{
         .method = @enumFromInt(@as(i32, @intCast(choiceIndex(&methods, values.text("method", methods[0]))))),
@@ -315,15 +325,22 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     cfg.vars[sizing_types.variable(.set)] = .{ .lo = 0, .hi = @floatFromInt(set_names.items.len - 1), .kind = .list };
     cfg.vars[sizing_types.variable(.layout)] = .{ .lo = 0, .hi = @floatFromInt(layout_names.items.len - 1), .kind = .list };
 
-    // restrições ligadas
+    // as restrições ligadas de "Condições e restrições"; as que o dimensionamento inicial não calcula ficam para as
+    // etapas
     var count: usize = 0;
-    for (constraint_fields) |field| {
-        const limit = values.number(field.key, field.default);
-        if (limit == 0 or count >= sizing_types.max_cons) continue;
-        cfg.cons[count] = .{ .q = field.quantity, .op = field.op, .value = limit };
+    var used: std.ArrayList(simulation.SprintConstraint) = .empty;
+    for (try projectConstraints(memory)) |constraint| {
+        const which = quantityOf(constraint.key) orelse {
+            try skipped.print(memory, "restrição {s} (as etapas conferem); ", .{constraint.label});
+            continue;
+        };
+        if (count >= sizing_types.max_cons) break;
+        cfg.cons[count] = .{ .q = which, .op = comparisonOf(constraint.op), .value = constraint.value, .tol = constraint.tol };
+        try used.append(memory, constraint);
         count += 1;
     }
     cfg.n_cons = @intCast(count);
+    state.constraints = used.items;
     state.skipped = skipped.items;
 
     const capacity: usize = @intCast(@as(i64, state.opts.particles) * state.opts.iterations);
@@ -406,17 +423,14 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
 
     // as restrições no melhor
     const group = "restrições no melhor indivíduo";
-    for (state.cfg.cons[0..@intCast(state.cfg.n_cons)]) |constraint| {
-        const field = for (constraint_fields) |candidate| {
-            if (candidate.quantity == constraint.q and candidate.op == constraint.op) break candidate;
-        } else continue;
+    for (state.cfg.cons[0..@intCast(state.cfg.n_cons)], state.constraints) |constraint, field| {
         const value = quantity(best, constraint.q);
         const ok = sizing_types.violation(constraint, value) == 0;
         try checks.append(memory, .{
             .status = if (ok) .ok else .falha,
-            .item = field.label[0 .. field.label.len - 4],
+            .item = field.label,
             .value = try text(memory, "{d:.3} {s}", .{ value, field.unit }),
-            .criterion = try text(memory, "{s} {d} {s}", .{ field.label, constraint.value, field.unit }),
+            .criterion = try text(memory, "{s} {s} {d} {s}", .{ field.label, field.op, constraint.value, field.unit }),
             .why = if (ok) "" else "o otimizador não achou um indivíduo que cumpra tudo",
             .fix = if (ok) "" else "abrir a faixa das variáveis, marcar mais perfis ou conjuntos, ou afrouxar a restrição",
             .group = group,

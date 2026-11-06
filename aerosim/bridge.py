@@ -630,6 +630,9 @@ def main() -> None:
     from aerosim.manager import SimulationManager
     bridge = Bridge(SimulationManager(), out, os.environ.get("AEROSIM_SPRINT") or None)
     bridge.send({"id": 0, "ok": True, "ready": True})
+    # a tela manda UTF-8; no Windows a entrada padrão lia na página de código do sistema e os acentos chegavam
+    # trocados ("nÃ£o"), e um título com acento não casava com nenhum método
+    sys.stdin.reconfigure(encoding="utf-8")
     for line in sys.stdin:
         line = line.strip()
         if not line:

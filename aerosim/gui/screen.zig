@@ -89,6 +89,7 @@ pub const Screen = struct {
     /// "Abrir" traz um avião ou um projeto da sprint
     pub fn start(screen: *Screen) void {
         screen.requirements.bridge = &screen.bridge;
+        design.stages.connect();
     }
 
     /// um comando pelo nome (`acao=` da linha de comando, para os prints): "abrir", "salvar", "rodar" (roda a análise

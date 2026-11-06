@@ -71,7 +71,10 @@ pub const ChecksPanel = struct {
         for (order[0..count], 0..) |index, k| {
             const check = checks[index];
             const line: rl.Rectangle = .{ .x = inner.x, .y = y, .width = inner.width, .height = row_height };
+            // a linha que falha fica toda em vermelho (uma restrição que o avião não cumpre salta aos olhos)
+            if (check.status == .falha) rl.drawRectangleRec(line, theme.withAlpha(theme.colors.failure, 0.12));
             if (k == panel.selected) rl.drawRectangleRec(line, theme.colors.selected);
+            const ink = if (check.status == .falha) theme.colors.failure else theme.colors.ink;
             widgets.rounded(.{ .x = columns[0], .y = y + 3, .width = 72, .height = row_height - 6 }, 4, theme.withAlpha(widgets.statusColor(check.status), 0.25));
             theme.text(ui.fonts.regular, statusText(check.status), columns[0] + 8, y + 5, 13, theme.colors.ink);
             const cells = [_][]const u8{ check.item, check.value, check.criterion };
@@ -79,7 +82,7 @@ pub const ChecksPanel = struct {
                 const right = if (c + 1 < columns.len) columns[c + 1] else inner.x + inner.width;
                 const box: rl.Rectangle = .{ .x = columns[c], .y = y, .width = right - columns[c] - 6, .height = row_height };
                 ui.pushClip(box);
-                theme.text(ui.fonts.regular, widgets.format(&texts[c - 1], "{s}", .{cell}), columns[c] + 4, y + 5, 13, theme.colors.ink);
+                theme.text(ui.fonts.regular, widgets.format(&texts[c - 1], "{s}", .{cell}), columns[c] + 4, y + 5, 13, ink);
                 ui.popClip();
             }
             if (ui.clickedIn(line)) panel.selected = k;

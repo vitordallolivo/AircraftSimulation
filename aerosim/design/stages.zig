@@ -158,6 +158,77 @@ pub fn isProject(bytes: []const u8) bool {
     return parsed.object.get("requirements") != null and parsed.object.get("wings") != null;
 }
 
+// ------------------------------------------------------------------ o projeto para as análises
+/// o que as análises leem do projeto aberto (`simulation.sprint`): a tela liga ao abrir
+pub const sprint_source: simulation.Sprint = .{ .wing_names = sprintWingNames, .wing = sprintWing, .constraints = sprintConstraints, .conditions = sprintConditions };
+
+/// liga o projeto aberto às análises (o Analisar lista as asas guardadas; o Mini-MDO usa as restrições)
+pub fn connect() void {
+    simulation.sprint = sprint_source;
+}
+
+fn sprintWingNames(memory: std.mem.Allocator) simulation.Error![]const []const u8 {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = if (shared) |*existing| existing else return &.{};
+    var names: std.ArrayList([]const u8) = .empty;
+    for (current.project.list("wings").items) |item| {
+        const name = store.nameOf(item);
+        if (name.len > 0) try names.append(memory, try memory.dupe(u8, name));
+    }
+    return names.items;
+}
+
+fn sprintWing(memory: std.mem.Allocator, name: []const u8) simulation.Error!?simulation.Surface {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = if (shared) |*existing| existing else return null;
+    const params = wing_stage.keptWing(&current.project, name) orelse return null;
+    return wing_stage.surfaceOf(current, memory, params, try memory.dupe(u8, name), 0) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => error.Failed,
+    };
+}
+
+fn sprintConstraints(memory: std.mem.Allocator) simulation.Error![]const simulation.SprintConstraint {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    var out: std.ArrayList(simulation.SprintConstraint) = .empty;
+    const add = struct {
+        fn one(list: *std.ArrayList(simulation.SprintConstraint), gpa: std.mem.Allocator, constraint: registry.Constraint) !void {
+            if (!constraint.active) return;
+            const info = registry.quantity(constraint.key);
+            try list.append(gpa, .{ .key = try gpa.dupe(u8, constraint.key), .label = info.label, .unit = info.unit, .op = try gpa.dupe(u8, constraint.op), .value = constraint.value, .tol = constraint.tol });
+        }
+    }.one;
+    if (shared) |*current| {
+        for ((try registry.constraintList(&current.project)).items) |item| try add(&out, memory, registry.readConstraint(item));
+    } else for (registry.default_constraints) |constraint| try add(&out, memory, constraint);
+    return out.items;
+}
+
+fn sprintConditions() simulation.SprintConditions {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = if (shared) |*existing| existing else return .{};
+    const requirements = current.project.section("requirements");
+    const rules = current.project.section("rules");
+    const fields = &registry.requirement_fields;
+    const rule_fields = &registry.rule_fields;
+    return .{
+        .wing_density = registry.fieldNumber(rules, rule_fields, "wing_density"),
+        .tail_density = registry.fieldNumber(rules, rule_fields, "tail_density"),
+        .fuselage_density = registry.fieldNumber(rules, rule_fields, "fuselage_density"),
+        .systems_mass = registry.fieldNumber(rules, rule_fields, "systems_mass"),
+        .gear_mass = registry.fieldNumber(rules, rule_fields, "gear_mass"),
+        .density_altitude = registry.fieldNumber(requirements, fields, "density_altitude"),
+        .mu_roll = registry.fieldNumber(requirements, fields, "mu_roll"),
+        .V_turn = registry.fieldNumber(requirements, fields, "V_turn"),
+        .mu_brake = registry.fieldNumber(requirements, fields, "mu_brake"),
+        .V_cruise = registry.fieldNumber(requirements, fields, "V_cruise"),
+    };
+}
+
 /// troca o projeto (abrir outra pasta; os testes usam um projeto da pasta `data`)
 pub fn use(project: store.Project, io: std.Io) void {
     while (!lock.tryLock()) std.atomic.spinLoopHint();

@@ -696,9 +696,16 @@ pub const Page = struct {
     fn analysisStart(page: *Page, request: []const u8) void {
         if (page.working()) return;
         const simulation = page.analysis.?;
-        const loaded = page.loadNativeAircraft() orelse {
-            if (page.aircraft_len == 0) setText(&page.message, "abra um avião (Montagem) para rodar", .{});
-            return;
+        const loaded = page.loadNativeAircraft() orelse empty: {
+            // a análise que não precisa do avião aberto (o Mini-MDO procura o avião) roda com um avião vazio
+            var probe = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            defer probe.deinit();
+            const standalone = if (simulation.standalone) |check| check(manager.Values.fromRequest(probe.allocator(), request)) else false;
+            if (!standalone) {
+                if (page.aircraft_len == 0) setText(&page.message, "abra um avião (Montagem) para rodar", .{});
+                return;
+            }
+            break :empty aircraft_model.aircraft.Loaded{ .arena = .init(std.heap.page_allocator), .ac = .{ .name = "sem avião" } };
         };
         const job = std.heap.page_allocator.create(AnalysisRun) catch return;
         job.* = .{ .loaded = loaded, .run = undefined };
@@ -1171,6 +1178,11 @@ pub const Page = struct {
         const x = body.x + 12;
         const width = body.width - 24;
         if (page.kind == .stage) y = page.drawStageTop(ui, x, y, width);
+        // o Mini-MDO usa as condições, as regras e as restrições do projeto: o mesmo botão das etapas
+        if (page.kind == .simulation and std.mem.eql(u8, page.name, "mdo")) {
+            if (dialogs.button(ui, .{ .x = x, .y = y, .width = width, .height = 30 }, "Condições e restrições…")) page.wants_requirements = true;
+            y += 40;
+        }
         var changed = false;
         var before: [128]i32 = undefined;
         for (page.params[0..@min(page.params.len, before.len)], 0..) |param, k| before[k] = if (param.rebuild) snapshot(&page.fields[k]) else 0;

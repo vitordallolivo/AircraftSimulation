@@ -6,6 +6,19 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- A tela em Zig caía ao editar uma célula de tabela numa coluna que a linha ainda não tinha (em Empenagem e comandos,
+  num biplano), porque o nome da coluna ficava apontando para uma memória que já tinha sido liberada. Agora não cai.
+  A asa guardada num projeto novo, antes de dar nome ao rascunho, também aparecia sem nome na lista Guardados.
+- O Mini-MDO só rodava com um avião aberto, mas é ele que procura o avião. Agora roda sem avião. As condições, as
+  regras de massa e as restrições passam a ser as de "Condições e restrições…", com o botão na própria página, e
+  uma restrição que o melhor avião não cumpre fica com a linha inteira em vermelho no diagnóstico.
+- No Analisar, as asas guardadas na sprint iam pelo Python, que nem via o projeto aberto na tela e, no Windows,
+  recebia os acentos trocados ("método de carga desconhecido"). Agora elas rodam em Zig, sem avião aberto: cada asa
+  guardada aparece para marcar, com o x e a altura dela. A ponte com o Python lê a entrada em UTF-8.
+- "Pontas ligadas" na tabela de asas de Projetar não fazia nada na versão em Zig. Agora a placa liga a ponta da
+  asa à da referência, na vista e no avião da Empenagem, como na versão em Python.
+- Marcar um gráfico para salvar junto só dava pelo menu do botão direito, e a caixa do canto só aparecia depois.
+  Agora a caixa fica sempre no canto, e clicar nela marca ou desmarca o gráfico.
 - Na tela em Zig, ao montar um biplano em Projetar, a vista mostrava a asa guardada e não a que se estava criando.
   Agora a asa em edição entra na tabela "Asas do avião" e aparece ao vivo junto das outras; "Guardar configuração"
   guarda ela junto. Ao criar ou editar um dispositivo de ponta, a vista aproxima dele, com um botão para ver o avião

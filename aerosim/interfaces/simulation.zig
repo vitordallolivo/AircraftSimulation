@@ -20,6 +20,7 @@ const aircraft_model = @import("aircraft_model");
 const core = @import("aerosim");
 
 pub const Aircraft = aircraft_model.aircraft.Aircraft;
+pub const Surface = aircraft_model.aircraft.Surface;
 pub const Methods = core.methods.Methods;
 pub const Json = std.json.Value;
 pub const Writer = std.Io.Writer;
@@ -51,7 +52,46 @@ pub const Simulation = struct {
     /// os avisos da rodada com estes valores (um método fora do que ele calcula bem, como a linha sustentadora numa
     /// asa curta): a tela mostra cada um por cima da janela e roda igual; nulo: nenhum aviso próprio
     alerts: ?*const fn (memory: std.mem.Allocator, aircraft: *const Aircraft, values: Values) Error![]const []const u8 = null,
+    /// a rodada com estes valores não precisa do avião aberto (o Mini-MDO procura o avião; o Analisar com as asas
+    /// da sprint): sem avião aberto, ela recebe um avião vazio; nulo: precisa do avião
+    standalone: ?*const fn (values: Values) bool = null,
 };
+
+// ------------------------------------------------------------------ o projeto da sprint, para as análises
+/// uma restrição de "Condições e restrições" (a chave da grandeza, como `design/registry.zig`, o sentido e o
+/// limite), só as ligadas
+pub const SprintConstraint = struct { key: []const u8, label: []const u8, unit: []const u8, op: []const u8, value: f64, tol: f64 = 0.02 };
+
+/// as condições e as regras de massa de "Condições e restrições" que as análises usam (os padrões: os de
+/// `design/registry.zig`)
+pub const SprintConditions = struct {
+    density_altitude: f64 = 600,
+    mu_roll: f64 = 0.04,
+    V_turn: f64 = 0,
+    mu_brake: f64 = 0.3,
+    V_cruise: f64 = 15,
+    wing_density: f64 = 1.1,
+    tail_density: f64 = 0.7,
+    fuselage_density: f64 = 0.7,
+    systems_mass: f64 = 0.35,
+    gear_mass: f64 = 0.35,
+};
+
+/// o que as análises leem do projeto da sprint, sem depender das etapas (`design`, que preenche `sprint` ao abrir
+/// a tela): as asas guardadas na etapa Asa e as condições e restrições. Tudo copiado para `memory`
+pub const Sprint = struct {
+    /// os nomes das asas guardadas
+    wing_names: *const fn (memory: std.mem.Allocator) Error![]const []const u8,
+    /// a asa guardada com este nome, como superfície do avião (bordo de ataque da raiz em x = 0); nula: não existe
+    wing: *const fn (memory: std.mem.Allocator, name: []const u8) Error!?aircraft_model.aircraft.Surface,
+    /// as restrições ligadas
+    constraints: *const fn (memory: std.mem.Allocator) Error![]const SprintConstraint,
+    /// as condições (altitude-densidade, atritos, V da curva, cruzeiro)
+    conditions: *const fn () SprintConditions,
+};
+
+/// o projeto da sprint aberto na tela; nulo: sem etapas (os testes dos managers)
+pub var sprint: ?Sprint = null;
 
 /// confere em comptime que `Analysis` tem a interface de uma análise
 pub fn check(comptime Analysis: type) void {
@@ -74,6 +114,9 @@ pub fn check(comptime Analysis: type) void {
     });
     if (comptime core.interface.has(Analysis, "alerts")) core.interface.require(Analysis, "análise", &.{
         .{ .name = "alerts", .type = fn (std.mem.Allocator, *const Aircraft, Values) Error![]const []const u8 },
+    });
+    if (comptime core.interface.has(Analysis, "standalone")) core.interface.require(Analysis, "análise", &.{
+        .{ .name = "standalone", .type = fn (Values) bool },
     });
 }
 
@@ -107,6 +150,7 @@ pub fn register(comptime Analysis: type) Simulation {
         .edit = if (comptime core.interface.has(Analysis, "edit")) Analysis.edit else null,
         .python = if (comptime core.interface.has(Analysis, "python")) Analysis.python else null,
         .alerts = if (comptime core.interface.has(Analysis, "alerts")) Analysis.alerts else null,
+        .standalone = if (comptime core.interface.has(Analysis, "standalone")) Analysis.standalone else null,
         .start = wrapped.start,
         .advance = wrapped.advance,
         .result = wrapped.result,

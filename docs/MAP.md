@@ -761,8 +761,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Range:45`
   fn `fieldText:7`, `numberText:12`, `niceStep:28`, `decimalsFor:38`, `significant:95`
 - `aerosim/gui/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
-  tipos `Series:24`, `Marker:51`, `Cloud:73`, `Axes:81`, `Frame:91`, `Cell:193`, `ExportKind:270`
-  fn `lines:105`, `table:201`, `tableHeight:236`, `overlayActive:414`, `overlay:419`, `drawMarker:686`, `cloud:740`, `ramp:759`, `colorBar:775`, `drawFrame:795`
+  tipos `Series:24`, `Marker:51`, `Cloud:73`, `Axes:81`, `Frame:91`, `Cell:196`, `ExportKind:273`
+  fn `lines:105`, `table:204`, `tableHeight:239`, `overlayActive:417`, `overlay:422`, `drawMarker:689`, `cloud:743`, `ramp:762`, `colorBar:778`, `drawFrame:798`
 - `aerosim/gui/ui/scroll.zig` — A área rolável: tudo o que não cabe na altura (a barra lateral, a coluna dos gráficos) rola pela roda do mouse ou
   tipos `ScrollArea:13`
 - `aerosim/gui/ui/stage.zig` — As peças que toda etapa do dimensionamento repete, como o `StagePage` da GUI em Python: a barra de requisitos
