@@ -278,6 +278,16 @@ const AnalysisRun = struct {
 };
 const analysis_slice_ns: i96 = 6 * std.time.ns_per_ms; // de conta por quadro: a tela segue a 60 quadros por segundo
 
+/// a pasta dos projetos da sprint (`projetos` dentro da raiz dos projetos), para a janela de arquivo
+fn projectsFolder(buffer: []u8) []const u8 {
+    var fixed = std.heap.FixedBufferAllocator.init(buffer);
+    const memory = fixed.allocator();
+    const root = design.stages.projectsRoot(memory) catch return ".";
+    const folder = std.fs.path.join(memory, &.{ root, "projetos" }) catch return root;
+    std.Io.Dir.cwd().createDirPath(clockIo(), folder) catch {};
+    return folder;
+}
+
 /// a largura do formulário à esquerda, a mesma em todas as abas; arrastar a divisa muda
 var sidebar: widgets.Splitter = .{ .width = 390 };
 const chart_height: f32 = 360;
@@ -322,6 +332,10 @@ pub const Page = struct {
     actions: []Action = &.{},
     action_captions: []const [:0]const u8 = &.{},
     requirements: [:0]const u8 = "",
+    project: [:0]const u8 = "", // a pasta do projeto da sprint
+    project_named: bool = true, // falso: projeto novo sem pasta (pede antes de guardar)
+    pending_project: enum { none, create, create_then_keep, open } = .none, // a janela de arquivo é para o projeto
+    pending_keep: bool = false, // guardar assim que a pasta do projeto foi criada
     edit_due: ?i96 = null, // quando mandar o que se editou
     edited_while_busy: bool = false, // editou enquanto a conta corria: o formulário da resposta não vale
     opened: [1024]u8 = undefined, // "Mandar para a Montagem": o arquivo que a tela abre
@@ -521,6 +535,11 @@ pub const Page = struct {
             if (page.kind == .simulation) page.askSpecs() else page.stageRequest("show", "");
         }
         if (page.kind == .stage) page.sendEdits();
+        // a pasta do projeto acabou de ser criada pelo "Guardar": agora guarda
+        if (page.pending_keep and page.kind == .stage and !page.working() and page.project_named) {
+            page.pending_keep = false;
+            page.stageRequest("keep", "");
+        }
         if (page.run_when_ready and page.kind == .stage and page.loaded and !page.working() and page.fields.len > 0 and page.pending_act_len > 0) {
             page.run_when_ready = false;
             const key = page.pending_act[0..page.pending_act_len];
@@ -550,6 +569,9 @@ pub const Page = struct {
     pub fn drawModal(page: *Page, ui: *widgets.Ui, whole: rl.Rectangle) void {
         if (page.prompt.draw(ui, whole)) |answer| page.act(page.actions[page.pending_action].key, answer);
         if (page.picker.draw(ui, whole)) |path| {
+            const for_project = page.pending_project;
+            page.pending_project = .none;
+            if (for_project != .none) return page.projectChosen(for_project, path);
             if (page.pending_file) |index| {
                 page.pending_file = null;
                 if (index < page.fields.len) page.fields[index].setText(path);
@@ -925,6 +947,8 @@ pub const Page = struct {
         page.description = try memory.dupeZ(u8, stringField(reply, "help"));
         page.keep_label = try memory.dupeZ(u8, stringField(reply, "keep_label"));
         page.requirements = try memory.dupeZ(u8, stringField(reply, "requirements"));
+        page.project = try memory.dupeZ(u8, stringField(reply, "project"));
+        page.project_named = if (reply.object.get("project_named")) |named| named != .bool or named.bool else true;
         var kept: std.ArrayList([:0]const u8) = .empty;
         if (reply.object.get("kept")) |list| for (list.array.items) |item| {
             try kept.append(memory, try memory.dupeZ(u8, if (item == .string) item.string else ""));
@@ -1282,6 +1306,7 @@ pub const Page = struct {
         var y = top;
         // a janela "Condições e restrições…" é ela mesma: sem a linha dos requisitos nem o botão
         if (std.mem.eql(u8, page.name, "requisitos")) return y + 4;
+        y = page.drawProject(ui, x, y, width);
         const bar_height = widgets.paragraphHeight(ui.fonts.regular, page.requirements, width - 12, 12) + 10;
         widgets.rounded(.{ .x = x, .y = y, .width = width, .height = bar_height }, 4, theme.colors.hover);
         _ = widgets.paragraph(ui.fonts.regular, page.requirements, x + 6, y + 5, width - 12, 12, theme.colors.label);
@@ -1297,6 +1322,44 @@ pub const Page = struct {
             y += used + 4;
         }
         return y;
+    }
+
+    /// a linha do projeto no topo da etapa: a pasta (ou o aviso de que ainda não tem) e os botões de criar e abrir
+    fn drawProject(page: *Page, ui: *widgets.Ui, x: f32, top: f32, width: f32) f32 {
+        var y = top;
+        var line: [600]u8 = undefined;
+        const caption = if (page.project_named) widgets.format(&line, "Projeto: {s}", .{std.fs.path.basename(page.project)}) else "Projeto novo, ainda sem pasta: nada é gravado até escolher uma (o primeiro Guardar pede)";
+        y += widgets.paragraph(ui.fonts.regular, caption, x, y, width, 12, if (page.project_named) theme.colors.label else theme.colors.failure) + 4;
+        const half = (width - 8) / 2;
+        if (dialogs.button(ui, .{ .x = x, .y = y, .width = half, .height = 28 }, "Novo projeto…")) page.askProject(.create);
+        if (dialogs.button(ui, .{ .x = x + half + 8, .y = y, .width = half, .height = 28 }, "Abrir projeto…")) page.askProject(.open);
+        return y + 36;
+    }
+
+    /// abre a janela de arquivo para criar a pasta de um projeto ou abrir um
+    fn askProject(page: *Page, what: @FieldType(Page, "pending_project")) void {
+        page.pending_project = what;
+        var buffer: [512]u8 = undefined;
+        const folder = projectsFolder(&buffer);
+        if (what == .open) {
+            page.picker.show("Abrir projeto: o sprint.json da pasta (ou um .json antigo)", folder, &.{".json"});
+        } else page.picker.showSave("Pasta do novo projeto (o nome é a pasta)", folder, &.{}, "meu_projeto");
+    }
+
+    /// a pasta escolhida na janela do projeto
+    fn projectChosen(page: *Page, what: @FieldType(Page, "pending_project"), path: []const u8) void {
+        if (what == .open) {
+            design.stages.openProject(clockIo(), path) catch |err| {
+                var text: [160]u8 = undefined;
+                return page.reportFailure(widgets.format(&text, "não abriu o projeto ({s})", .{@errorName(err)}));
+            };
+            return page.stageRequest("show", "");
+        }
+        var text: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
+        defer text.deinit();
+        text.writer.print("\"key\": \"new\", \"arg\": {f}", .{std.json.fmt(path, .{})}) catch return;
+        page.pending_keep = what == .create_then_keep;
+        page.stageRequest("project", text.written());
     }
 
     /// um botão da etapa: pede o texto ou o arquivo antes, se for o caso
@@ -1384,7 +1447,10 @@ pub const Page = struct {
         const busy = page.working();
         const candidates = std.mem.eql(u8, page.name, "perfis");
         if (page.keep_label.len > 0) {
-            if (widgets.primaryButton(ui, .{ .x = x, .y = y, .width = width, .height = 32 }, page.keep_label, !busy)) page.stageRequest("keep", "");
+            if (widgets.primaryButton(ui, .{ .x = x, .y = y, .width = width, .height = 32 }, page.keep_label, !busy)) {
+                // projeto sem pasta: primeiro a pasta, depois guarda
+                if (page.project_named) page.stageRequest("keep", "") else page.askProject(.create_then_keep);
+            }
             y += 42;
         }
         if (!candidates and page.keep_label.len == 0) return y;

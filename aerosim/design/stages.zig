@@ -37,6 +37,9 @@ pub const Context = struct {
     focus_device: ?usize = null,
     /// os perfis da biblioteca (`data/airfoils`), lidos uma vez, como candidatos do projeto
     library: ?[]const Value = null,
+    /// o projeto tem pasta escolhida (aberto ou criado por "Novo projeto…"); sem ela, nada é gravado e a tela pede a
+    /// pasta antes de guardar
+    named: bool = true,
 
     /// guarda `before` (o projeto antes de um pedido que o mudou) para o Ctrl+Z
     fn remember(context: *Context, before: []u8) void {
@@ -59,6 +62,7 @@ pub const Context = struct {
 
     /// grava o projeto (uma falha de gravação não derruba a etapa: a mensagem avisa)
     pub fn save(context: *Context) bool {
+        if (!context.named) return true; // ainda sem pasta: fica na memória até a tela pedir uma
         context.project.save(context.io) catch return false;
         return true;
     }
@@ -108,7 +112,7 @@ var shared: ?Context = null;
 var lock: std.atomic.Mutex = .unlocked;
 
 /// a pasta dos projetos (a do Python: `default_root()`)
-fn projectsRoot(memory: std.mem.Allocator) ![]const u8 {
+pub fn projectsRoot(memory: std.mem.Allocator) ![]const u8 {
     if (builtin.link_libc) {
         if (std.c.getenv("AEROSIM_PROJETOS")) |root| return memory.dupe(u8, std.mem.span(root));
         if (std.c.getenv("HOME") orelse std.c.getenv("USERPROFILE")) |home| return std.fs.path.join(memory, &.{ std.mem.span(home), "aerosim_aeronaves" });
@@ -135,14 +139,61 @@ fn opened(io: std.Io) !*Context {
     const gpa = std.heap.page_allocator;
     var scratch = std.heap.ArenaAllocator.init(gpa);
     defer scratch.deinit();
-    shared = .{ .project = try store.empty(gpa, try newFolder(scratch.allocator(), io)), .io = io };
+    // volta ao último projeto, de onde parou; senão, um vazio sem pasta
+    if (try lastProject(scratch.allocator(), io)) |path| {
+        if (store.open(gpa, io, path)) |project| {
+            shared = .{ .project = project, .io = io };
+            return &shared.?;
+        } else |_| {}
+    }
+    shared = .{ .project = try store.empty(gpa, try newFolder(scratch.allocator(), io)), .io = io, .named = false };
     return &shared.?;
+}
+
+/// o arquivo que guarda a pasta do último projeto aberto ou criado
+fn lastProjectFile(memory: std.mem.Allocator) ![]const u8 {
+    return std.fs.path.join(memory, &.{ try projectsRoot(memory), "ultimo_projeto.txt" });
+}
+
+/// a pasta do último projeto, se ela ainda tem o projeto
+fn lastProject(memory: std.mem.Allocator, io: std.Io) !?[]const u8 {
+    const bytes = std.Io.Dir.cwd().readFileAlloc(io, try lastProjectFile(memory), memory, .limited(4096)) catch return null;
+    const path = std.mem.trim(u8, bytes, " \r\n");
+    if (path.len == 0) return null;
+    for ([_][]const u8{ store.main_name, store.legacy_name }) |name| {
+        const file = try std.fs.path.join(memory, &.{ path, name });
+        if (std.Io.Dir.cwd().access(io, file, .{})) |_| return path else |_| {}
+    }
+    return null;
+}
+
+/// lembra a pasta do projeto para a próxima vez
+fn rememberProject(io: std.Io, folder: []const u8) void {
+    var scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer scratch.deinit();
+    const memory = scratch.allocator();
+    const file = lastProjectFile(memory) catch return;
+    if (std.fs.path.dirname(file)) |parent| std.Io.Dir.cwd().createDirPath(io, parent) catch {};
+    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = file, .data = folder }) catch {};
+}
+
+/// "Novo projeto…" / a pasta pedida antes de guardar: o projeto de agora passa a gravar em `folder`, que vira o
+/// projeto da próxima vez
+fn nameProject(context: *Context, folder: []const u8) ![]const u8 {
+    const trimmed = std.mem.trim(u8, folder, " ");
+    if (trimmed.len == 0) return "nenhuma pasta escolhida";
+    context.project.folder = try context.project.memory().dupe(u8, trimmed);
+    context.named = true;
+    context.project.save(context.io) catch return "não deu para gravar nessa pasta";
+    rememberProject(context.io, context.project.folder);
+    return "projeto gravado nesta pasta; ao abrir de novo, ele volta daqui";
 }
 
 /// abre o projeto em `path` (a pasta, o `sprint.json` dela ou um `.json` antigo) no lugar do aberto; o Ctrl+Z
 /// começa do zero
 pub fn openProject(io: std.Io, path: []const u8) !void {
     const project = try store.open(std.heap.page_allocator, io, path);
+    rememberProject(io, project.folder);
     use(project, io);
 }
 
@@ -257,6 +308,18 @@ pub fn handle(memory: std.mem.Allocator, io: std.Io, fields: []const u8) !Value 
     defer lock.unlock();
     const current = try opened(io);
     // Ctrl+Z: o projeto volta ao de antes do último pedido que mudou algo; os outros pedidos guardam o de antes
+    // "Novo projeto…" ou a pasta pedida antes do primeiro "Guardar": vale para qualquer etapa
+    if (std.mem.eql(u8, request.do, "project")) {
+        const said = if (std.mem.eql(u8, request.key, "new")) try nameProject(current, request.arg) else "";
+        var page = try stage.page(current, memory);
+        page.requirements = try registry.requirementsSummary(memory, &current.project);
+        page.project = current.project.folder;
+        page.project_named = current.named;
+        if (said.len > 0) page.message = said;
+        var out: std.Io.Writer.Allocating = .init(memory);
+        try simulation.writeStagePage(&out.writer, page);
+        return std.json.parseFromSliceLeaky(Value, memory, out.written(), .{});
+    }
     const message = if (std.mem.eql(u8, request.do, "undo"))
         (if (try current.undo()) "desfeito" else "nada para desfazer")
     else if (std.mem.eql(u8, request.do, "show"))
@@ -274,6 +337,8 @@ pub fn handle(memory: std.mem.Allocator, io: std.Io, fields: []const u8) !Value 
     };
     var page = try stage.page(current, memory);
     page.requirements = try registry.requirementsSummary(memory, &current.project);
+    page.project = current.project.folder;
+    page.project_named = current.named;
     if (message.len > 0) page.message = message;
     var out: std.Io.Writer.Allocating = .init(memory);
     try simulation.writeStagePage(&out.writer, page);
