@@ -56,12 +56,6 @@ tem o exemplo em [`core/src/sizing/README.md`](../../core/src/sizing/README.md).
 
 O avião que sai daqui é a entrada de todo o resto: as análises do avião montado, a Missão 6GDL, o AeroDrive e o
 aeroopt. No estudo do ponto de projeto, o MTOW em função da inclinação do motor, pela conta rápida e conferido no
-6GDL:
+6GDL; na tela, os aviões guardados comparados nas altitudes pedidas:
 
-![MTOW × inclinação do motor: conta rápida e 6GDL](../../docs/img/estudo_ponto_de_projeto_graficos.png)
-
-As etapas Empenagem e comandos e Motores e montagem na interface em Zig, com o avião em 3D e o CG:
-
-![Empenagem e comandos em Zig](../../docs/img/zig_empenagem.png)
-
-![Motores e montagem em Zig](../../docs/img/zig_motores.png)
+![Estudo e ponto de projeto](../../docs/img/zig_estudo.png)

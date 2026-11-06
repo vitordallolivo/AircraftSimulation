@@ -57,8 +57,6 @@ struct com `name` e `run` em `optimize.all`, e os testes rodam com `cd core && p
 O resultado é o ponto de partida do projeto: a asa que a sprint detalha e o que o aeroopt refina. O MTOW de cada
 avaliação ao longo das iterações e o diagrama de restrições do melhor:
 
-![Mini-MDO na interface em Zig: o objetivo por iteração, os indivíduos, a asa do melhor e a tração no MTOW](../../../docs/img/zig_mini_mdo.png)
-
-![Mini-MDO: MTOW de cada avaliação por iteração](../../../docs/img/fig/mdo_convergencia.png)
+![Mini-MDO: o objetivo por iteração, os indivíduos, a asa do melhor e a tração no MTOW](../../../docs/img/zig_mini_mdo.png)
 
 ![Mini-MDO: diagrama de restrições do melhor indivíduo](../../../docs/img/fig/mdo_diagrama.png)

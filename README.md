@@ -4,8 +4,6 @@ O Aircraft Simulation nasceu para preencher uma lacuna clássica na engenharia a
 
 Seja para projetar uma aeronave do zero (como competições de Aerodesign, VANTs ou protótipos experimentais), otimizar o peso máximo de decolagem (MTOW) sob restrições severas de pista, ou testar o comportamento dinâmico em tempo real, este ecossistema coloca todo o controle na suas mãos de forma modular.
 
-![Mini-MDO: o otimizador do dimensionamento inicial, com o MTOW de cada avaliação](docs/img/zig_mini_mdo.png)
-
 ![Perfis: a polar de cada perfil e a escolha dos da asa e da cauda](docs/img/zig_perfis.png)
 
 ![Projetar: a asa em 3D com o ponto neutro, a tabela de asas e as curvas](docs/img/zig_projetar.png)
@@ -17,8 +15,6 @@ Seja para projetar uma aeronave do zero (como competições de Aerodesign, VANTs
 ![Estabilidade do avião montado](docs/img/zig_estabilidade.png)
 
 ![Motores: a tração, a bateria e onde fica cada massa](docs/img/zig_motores.png)
-
-![Estudo e ponto de projeto: os aviões guardados comparados nas altitudes pedidas](docs/img/zig_estudo.png)
 
 ![Desempenho: o envelope de voo](docs/img/zig_desempenho.png)
 
@@ -97,29 +93,26 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
 - **Eixo de motor móvel (tilt-rotor):** cada motor tem **eixo móvel: faixa**; a inclinação vai de
   'inclinação' até 'inclinação + faixa' pelo comando de inclinação (0 a 1) do núcleo.
 
-![Montagem vazia](docs/img/montagem_vazia.png)
-![Tubo duplo inclinado, duas EV e EH em T, montados na interface](docs/img/montagem_tubo_duplo_cauda_em_T.png)
-![S1223 na raiz, NACA 0012 na ponta; aileron com mistura de arfagem (elevon 0,5 : 1)](docs/img/montagem_perfil_por_secao_mistura.png)
+![Montagem: a lista de peças, o avião em 3D com o CG e o vento, e o editor da peça](docs/img/zig_montagem.png)
+![Montagem de um bimotor com tubo e cauda em V](docs/img/zig_montagem_bimotor.png)
 
 - **💾 Salvar avião / 📂 Meus aviões** guardam seus aviões (pasta `~/aerosim_aeronaves`, ou a variável
   `AEROSIM_PROJETOS`). Exemplos prontos em `data/aircraft/`.
 - Em cada aba: preencha os campos (o **ⓘ** explica cada um), clique em **▶ Rodar**; os gráficos
   atualizam enquanto roda; no fim vêm o **diagnóstico** (clique numa linha para ver o porquê e o que
   mudar) e a tabela de resultados; **Exportar** grava `.xlsx` ou `.csv`.
-- **Projeto do zero** (subabas de Aerodinâmica, Estabilidade e Desempenho): **Perfis** (candidatos e polar
-  2D: NACA, .dat, só parâmetros ou polar do XFLR5) → **Projetar** (a asa: planta, linha sustentadora, onde estola,
-  incidência pelo ângulo de cruzeiro) → **Empenagem e comandos** (cauda por volume, tubo, CG na margem
-  pedida, faixa de CG, rotação na decolagem) → **Motores e montagem** (motores, distribuição de massa com PV
-  e carga paga só como opções — tem LAPES? quantas; tem líquido? quantos tanques; os kg se decidem na Montagem —, bateria no ponto do CG, trem, desempenho e o MTOW pela pista) →
-  **Mandar para a Montagem** ou **Usar em Desempenho** (sem exigir que decole: se não decolar, vai com o aviso); **Estudo e ponto de projeto** (Desempenho) acopla as áreas e varre uma variável (ex.: inclinação do motor) nas altitudes-densidade pedidas (exemplos prontos: `data/aircraft/S1223_*.json` e `data/sprint/projeto_s1223.json`). Cada etapa guarda candidatos com nome; o programa compara,
-  não escolhe. **Condições e restrições…** (em toda etapa): condições de partida (massa estimada, velocidade, AD,
-  atrito), **restrições** que se ligam e desligam com operador ≤ ≥ = (envergadura, área, estol, corrida — decolar
-  em 3 m é só `corrida ≤ 3` —, potência, número de superfícies e de motores, EE, massa de líquido e de LAPES,
-  subida...), **variáveis** (fixo, variável com mín./máx. ou lista de opções, calculado) e regras. PV, CP, EE e
-  MTOW são saídas.
+- **Projeto do zero** (subabas de Aerodinâmica, Estabilidade e Desempenho), uma etapa depois da outra:
+  - **Perfis**: escolher e comparar os perfis.
+  - **Projetar**: desenhar a asa e ver como ela voa.
+  - **Empenagem e comandos**: dimensionar a cauda e ver se o avião fica estável.
+  - **Motores e montagem**: escolher motor, hélice e bateria, montar o avião e ver se ele decola.
+  - **Estudo e ponto de projeto**: comparar os aviões guardados ou variar uma escolha.
+  - **Condições e restrições…** (em toda etapa): de onde o projeto parte e o que ele precisa cumprir.
 
-  ![Restrições](docs/img/condicoes_restricoes.png)
-  ![Variáveis](docs/img/variaveis.png)
+  Cada etapa guarda as opções com nome; o programa compara, quem projeta escolhe.
+
+  ![Condições e restrições](docs/img/zig_condicoes.png)
+  ![Estudo e ponto de projeto](docs/img/zig_estudo.png)
 
   Detalhes em [aerosim/design](aerosim/design/README.md).
 
@@ -129,10 +122,9 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
   Todo e qualquer projeto tem seus limites/restrições para isso temos uma aba somente com a capacidade de escolher as restrições, ligando ou
   as desligando as tabelas de cada área de projeto são atualizados, bem como permite otimizar de uma forma mais consistente a aeronave com base nisso.
 
-  ![Envelope completo](docs/img/mdo2_envelope.png)
-  ![Diagrama de restrições do indivíduo](docs/img/mdo2_diagrama.png)
-  ![Histórico: o enxame da iteração 3](docs/img/mdo2_historico.png)
-  ![Seletor de perfis](docs/img/seletor_perfis.png)
+  ![Mini-MDO: o objetivo por iteração e os indivíduos](docs/img/zig_mini_mdo.png)
+  ![Mini-MDO: o diagnóstico e o resumo do melhor](docs/img/zig_mini_mdo_resumo.png)
+  ![Diagrama de restrições](docs/img/zig_diagrama.png)
 - **Montagem** (última aba): componentes, 3D editável, ambiente (altitude-densidade, vento) e envelope
   de voo (ângulo de cruzeiro, fator de carga). As subabas "Avião montado", Analisar (Aerodinâmica) e a
   Missão (dentro de Desempenho, junto com Tração) mostram o avião atual em 3D acima dos gráficos.

@@ -51,4 +51,4 @@ C_{L\alpha} = \frac{\pi\,AR}{1 + \sqrt{1 + \left(\dfrac{\pi\,AR}{a_0}\right)^2}}
 Tudo o que o projeto calcula parte deste modelo: a aerodinâmica, a estabilidade, a missão, as cargas e o voo no
 AeroDrive. A Montagem é onde ele se edita na GUI:
 
-![Montagem: tubo duplo e cauda em T](../../docs/img/montagem_tubo_duplo_cauda_em_T.png)
+![Montagem: bimotor com tubo e cauda em V](../../docs/img/zig_montagem_bimotor.png)
