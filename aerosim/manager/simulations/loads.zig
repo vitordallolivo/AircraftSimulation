@@ -488,27 +488,60 @@ fn loadsView(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, st
     for (vectors, 0..) |*layer, k| layer.* = .{ .name = names[k], .unit = units[k], .color = colors_rgba[k], .origins = layers[k][0], .vectors = layers[k][1] };
 
     // o resto do avião, sem as superfícies (o método já as desenha)
+    // o resto do avião em transparência e as superfícies do desenho (com espessura), cada vértice destas com a face
+    // do método mais perto, como a `LoadView` da GUI PyQt
     var rest: std.ArrayList(simulation.LoadsMesh) = .empty;
+    var surfaces: std.ArrayList(simulation.LoadsMesh) = .empty;
     var diagnosis: model.Diag = .{};
     if (aircraft_model.skeleton.build(memory, aircraft, &diagnosis)) |built| {
         for (built.pieces) |piece| {
-            switch (piece.color) {
-                .wing, .htail, .vtail, .control, .device => continue,
-                else => {},
-            }
             const flat = try memory.alloc(f64, piece.mesh.v.len * 3);
             for (piece.mesh.v, 0..) |point, k| @memcpy(flat[k * 3 ..][0..3], &point);
             const faces = try memory.alloc(u32, piece.mesh.f.len * 3);
             for (piece.mesh.f, 0..) |triangle, k| @memcpy(faces[k * 3 ..][0..3], &triangle);
-            try rest.append(memory, .{ .kind = @tagName(piece.color), .vertices = flat, .faces = faces });
+            switch (piece.color) {
+                .wing, .htail, .vtail, .control, .device => {
+                    const nearest = try memory.alloc(u32, piece.mesh.v.len);
+                    for (piece.mesh.v, nearest) |point, *face_index| face_index.* = nearestFace(case, point);
+                    try surfaces.append(memory, .{ .kind = @tagName(piece.color), .vertices = flat, .faces = faces, .nearest = nearest });
+                },
+                else => try rest.append(memory, .{ .kind = @tagName(piece.color), .vertices = flat, .faces = faces }),
+            }
         }
     } else |_| {}
+    const alpha = state.alpha / deg;
+    const wind: [3]f64 = .{ -@cos(alpha), 0, -@sin(alpha) }; // para onde o ar vai, nos eixos do corpo (sem derrapagem)
+    const wind_label = try std.fmt.allocPrint(memory, "vento relativo ({d} m/s, α = {d:.1}°)", .{ state.airspeed, state.alpha });
 
     var info: std.ArrayList(u8) = .empty;
     try info.print(memory, "V = {d} m/s, n = {d}, α = {d:.2}°{s}, δe = {d:.1}°", .{ state.airspeed, state.load_factor, state.alpha, if (state.imposed) "" else " (trimagem)", state.elevator });
     for (state.propellers, 0..) |propeller, k| try info.print(memory, "{s}{s} {d:.0} rpm {d:.1} N", .{ if (k == 0) "; " else ", ", propeller.name, propeller.rpm, propeller.thrust });
     try info.print(memory, " · {s}", .{case.label});
-    return .{ .vertices = vertices, .triangles = triangles, .face = face, .fields = fields, .vectors = vectors, .rest = rest.items, .info = info.items };
+    return .{ .vertices = vertices, .triangles = triangles, .face = face, .fields = fields, .vectors = vectors, .rest = rest.items, .surfaces = surfaces.items, .wind = wind, .wind_label = wind_label, .info = info.items };
+}
+
+/// a face do método (faixa) mais perto de um ponto: a distância fora do retângulo da faixa (envergadura e corda)
+/// mais um quarto da distância na normal, para um vértice do perfil grosso cair na faixa certa (`nearest_face` de
+/// `aerosim/gui/widgets/load_view.py`)
+fn nearestFace(case: Case, point: [3]f64) u32 {
+    var best: u32 = 0;
+    var best_distance = std.math.inf(f64);
+    var index: u32 = 0;
+    for (case.surfaces) |surface| for (surface.panels) |panel| {
+        const half_width = 0.5 * panel.S / @max(panel.c, 1e-12);
+        const center = minus(panel.r, scaled(panel.ex, 0.25 * panel.c));
+        const offset = minus(point, center);
+        const along_span = @max(@abs(dot(offset, panel.ey)) - half_width, 0);
+        const along_chord = @max(@abs(dot(offset, panel.ex)) - 0.5 * panel.c, 0);
+        const along_normal = dot(offset, cross(panel.ex, panel.ey));
+        const distance = along_span * along_span + along_chord * along_chord + 0.25 * along_normal * along_normal;
+        if (distance < best_distance) {
+            best_distance = distance;
+            best = index;
+        }
+        index += 1;
+    };
+    return best;
 }
 
 const testing = std.testing;

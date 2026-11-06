@@ -288,6 +288,11 @@ pub fn gradientTriangle(a: Body, b: Body, c: Body, color_a: rl.Color, color_b: r
     rl.gl.rlEnd();
 }
 
+/// `gradientTriangle` com a sombra de `shaded`: o volume das superfícies com espessura
+pub fn litTriangle(a: Body, b: Body, c: Body, color_a: rl.Color, color_b: rl.Color, color_c: rl.Color) void {
+    gradientTriangle(a, b, c, shaded(a, b, c, color_a), shaded(a, b, c, color_b), shaded(a, b, c, color_c));
+}
+
 /// quadrilátero plano `a b c d` sombreado dos dois lados como no shader `aero_twosided` da vista em Python:
 /// cor × (0,45 + 0,6 |n·luz|)
 pub fn quad(a: Body, b: Body, c: Body, d: Body, color: rl.Color) void {

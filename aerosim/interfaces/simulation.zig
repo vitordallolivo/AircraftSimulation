@@ -683,7 +683,9 @@ pub const LoadsField = struct { name: []const u8, label: []const u8, signed: boo
 /// uma camada de setas da vista de cargas (origens e vetores em listas planas x, y, z)
 pub const LoadsVectors = struct { name: []const u8, unit: []const u8, color: [4]f64, origins: []const f64, vectors: []const f64 };
 /// uma malha do resto do avião (fuselagem, motor...), desenhada sem campo
-pub const LoadsMesh = struct { kind: []const u8, vertices: []const f64, faces: []const u32 };
+/// uma malha do desenho do avião na vista de cargas; numa superfície, `nearest` diz a face do método mais perto de
+/// cada vértice (a cor vem dela)
+pub const LoadsMesh = struct { kind: []const u8, vertices: []const f64, faces: []const u32, nearest: []const u32 = &.{} };
 
 /// a vista 3D de uma análise de carga (a `LoadView` da GUI PyQt, o `_loads` da ponte): a malha das faixas em
 /// triângulos, a face de origem de cada triângulo, os campos por face, as setas, o resto do avião e o texto do caso
@@ -694,6 +696,11 @@ pub const LoadsView = struct {
     fields: []const LoadsField,
     vectors: []const LoadsVectors,
     rest: []const LoadsMesh = &.{},
+    /// as superfícies do desenho do avião, com espessura (pintadas pela face do método mais perto)
+    surfaces: []const LoadsMesh = &.{},
+    /// para onde o ar vai, nos eixos do corpo, e o texto da seta do vento relativo
+    wind: ?[3]f64 = null,
+    wind_label: []const u8 = "",
     info: []const u8 = "",
     elevation: ?f64 = null,
     azimuth: ?f64 = null,
@@ -744,7 +751,24 @@ pub fn writeLoads(out: *Writer, plot: Plot, view: LoadsView, first: bool) !void 
         try indexList(out, mesh.faces);
         try out.writeAll("}");
     }
-    try out.print("], \"info\": {f}, \"camera\": {{", .{str(view.info)});
+    try out.writeAll("], \"surfaces\": [");
+    for (view.surfaces, 0..) |mesh, k| {
+        if (k > 0) try out.writeAll(", ");
+        try out.print("{{\"kind\": {f}, \"vertices\": ", .{str(mesh.kind)});
+        try numbers(out, mesh.vertices);
+        try out.writeAll(", \"faces\": ");
+        try indexList(out, mesh.faces);
+        try out.writeAll(", \"nearest\": ");
+        try indexList(out, mesh.nearest);
+        try out.writeAll("}");
+    }
+    try out.writeAll("]");
+    if (view.wind) |direction| {
+        try out.writeAll(", \"wind\": {\"direction\": ");
+        try numbers(out, &direction);
+        try out.print(", \"label\": {f}}}", .{str(view.wind_label)});
+    }
+    try out.print(", \"info\": {f}, \"camera\": {{", .{str(view.info)});
     if (view.elevation) |value| try out.print("\"elevation\": {d}", .{value});
     if (view.azimuth) |value| try out.print("{s}\"azimuth\": {d}", .{ if (view.elevation != null) ", " else "", value });
     try out.writeAll("}}}");

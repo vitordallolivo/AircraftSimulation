@@ -132,6 +132,13 @@ const VectorLayer = struct {
     largest: f64,
 };
 
+/// uma superfície do desenho do avião na vista de cargas, com a face do método mais perto de cada vértice
+const SurfaceMesh = struct {
+    vertices: []const f32,
+    faces: []const u32,
+    nearest: []const u32,
+};
+
 /// a vista 3D de uma análise de carga, como a `LoadView` da GUI PyQt: a malha do método pintada por um campo, as
 /// setas de uma camada e o resto do avião em transparência
 const LoadsScene = struct {
@@ -143,6 +150,10 @@ const LoadsScene = struct {
     fields: []const FieldLayer,
     vectors: []const VectorLayer,
     rest: []const Mesh,
+    /// as superfícies do desenho do avião (com espessura) e, para cada vértice, a face do método que dá a cor
+    surfaces: []const SurfaceMesh = &.{},
+    wind: ?view3d.Body = null,
+    wind_label: [:0]const u8 = "",
     low: view3d.Body,
     high: view3d.Body,
     elevation: ?f32 = null,
@@ -1397,9 +1408,31 @@ fn renderLoads(ui: *widgets.Ui, scene: *const LoadsScene, state: *LoadsState) vo
     if (scene.fields.len > 0) {
         const field = scene.fields[@min(state.field, scene.fields.len - 1)];
         const range = fieldRange(field.values, state.symmetric);
+        // com o desenho do avião, as superfícies com espessura (a cor de cada vértice vem da face mais perto); sem
+        // ele (a vista vinda do Python), a malha do método
+        for (scene.surfaces) |mesh| {
+            var corner: usize = 0;
+            while (corner + 2 < mesh.faces.len) : (corner += 3) {
+                var points: [3]view3d.Body = undefined;
+                var colors: [3]rl.Color = undefined;
+                var complete = true;
+                for (0..3) |j| {
+                    const index = mesh.faces[corner + j];
+                    points[j] = vertex(mesh.vertices, index) orelse {
+                        complete = false;
+                        break;
+                    };
+                    const source = if (index < mesh.nearest.len) mesh.nearest[index] else 0;
+                    const value: f64 = if (source < field.values.len) field.values[source] else std.math.nan(f64);
+                    const position = if (std.math.isFinite(value)) (value - range[0]) / (range[1] - range[0]) else 0;
+                    colors[j] = view3d.fieldColor(position, state.symmetric);
+                }
+                if (complete) view3d.litTriangle(points[0], points[1], points[2], colors[0], colors[1], colors[2]);
+            }
+        }
         var k: usize = 0;
         var t: usize = 0;
-        while (k + 2 < scene.triangles.len) : ({
+        while (scene.surfaces.len == 0 and k + 2 < scene.triangles.len) : ({
             k += 3;
             t += 1;
         }) {
@@ -1430,6 +1463,15 @@ fn renderLoads(ui: *widgets.Ui, scene: *const LoadsScene, state: *LoadsState) vo
                 view3d.arrow(origin, arrow, 0.022 * size, layer.color);
             }
         }
+    }
+    if (scene.wind) |direction| {
+        // a seta do vento relativo à frente e acima do avião, chegando na ponta (como a GUI PyQt)
+        const length = 0.3 * size;
+        const tip: view3d.Body = .{ scene.high[0] + 0.12 * size, 0, scene.low[2] - 0.12 * size };
+        const start: view3d.Body = .{ tip[0] - length * direction[0], tip[1] - length * direction[1], tip[2] - length * direction[2] };
+        const color = view3d.fraction(0.30, 0.30, 0.34);
+        view3d.arrow(start, .{ length * direction[0], length * direction[1], length * direction[2] }, 0.05 * size, color);
+        state.view.label(.{ start[0], start[1], start[2] - 0.04 * size }, scene.wind_label, color);
     }
     view3d.bodyAxes(&state.view, .{ scene.low[0] - 0.12 * size, scene.low[1] - 0.12 * size, scene.high[2] + 0.04 * size }, 0.14 * size);
 }
@@ -1720,6 +1762,10 @@ fn readLoads(memory: std.mem.Allocator, item: Json) !?LoadsScene {
     if (loads.object.get("rest")) |list| for (list.array.items) |mesh| {
         try rest.append(memory, .{ .color = view3d.colorByName(stringField(mesh, "kind")), .vertices = try floats(memory, mesh.object.get("vertices")), .faces = try indices(memory, mesh.object.get("faces")) });
     };
+    var surfaces: std.ArrayList(SurfaceMesh) = .empty;
+    if (loads.object.get("surfaces")) |list| if (list == .array) for (list.array.items) |mesh| {
+        try surfaces.append(memory, .{ .vertices = try floats(memory, mesh.object.get("vertices")), .faces = try indices(memory, mesh.object.get("faces")), .nearest = try indices(memory, mesh.object.get("nearest")) });
+    };
     const triangles = try indices(memory, loads.object.get("triangles"));
     const face = try indices(memory, loads.object.get("face"));
     const same = try samePoints(memory, vertices);
@@ -1735,6 +1781,12 @@ fn readLoads(memory: std.mem.Allocator, item: Json) !?LoadsScene {
         .rest = rest.items,
         .low = low,
         .high = high,
+    };
+    scene.surfaces = surfaces.items;
+    if (loads.object.get("wind")) |wind| if (wind == .object) {
+        const direction = try floats(memory, wind.object.get("direction"));
+        if (direction.len >= 3) scene.wind = .{ direction[0], direction[1], direction[2] };
+        scene.wind_label = try memory.dupeZ(u8, stringField(wind, "label"));
     };
     if (loads.object.get("camera")) |camera| if (camera == .object) {
         if (number(camera.object.get("elevation"))) |value| scene.elevation = @floatCast(value);
