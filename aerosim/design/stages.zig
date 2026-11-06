@@ -21,6 +21,7 @@ const requirements_stage = @import("stage_requirements.zig");
 const tail_stage = @import("stage_tail.zig");
 const power_stage = @import("stage_power.zig");
 const study_stage = @import("stage_study.zig");
+const library_stage = @import("stage_library.zig");
 
 const Value = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
@@ -87,6 +88,8 @@ pub const Stage = struct {
     name: []const u8,
     apply: *const fn (context: *Context, memory: std.mem.Allocator, request: Request) anyerror![]const u8,
     page: *const fn (context: *Context, memory: std.mem.Allocator) anyerror!simulation.StagePage,
+    /// a etapa é do programa, não do projeto (a biblioteca): guardar não pede a pasta do projeto
+    program: bool = false,
 };
 
 /// as etapas que já estão em Zig
@@ -97,6 +100,8 @@ pub const all = [_]Stage{
     .{ .name = "empenagem", .apply = tail_stage.apply, .page = tail_stage.page },
     .{ .name = "motores", .apply = power_stage.apply, .page = power_stage.page },
     .{ .name = "estudo", .apply = study_stage.apply, .page = study_stage.page },
+    .{ .name = "biblioteca_motores", .apply = library_stage.applyMotors, .page = library_stage.motorPage, .program = true },
+    .{ .name = "biblioteca_helices", .apply = library_stage.applyPropellers, .page = library_stage.propellerPage, .program = true },
 };
 
 /// a etapa em Zig com este nome (nulo: ela segue pelo Python)
@@ -295,6 +300,8 @@ fn sprintProjectName(memory: std.mem.Allocator) simulation.Error![]const u8 {
 /// liga o projeto aberto às análises (o Analisar lista as asas guardadas; o Mini-MDO usa as restrições)
 pub fn connect(io: std.Io) void {
     simulation.sprint = sprint_source;
+    // os motores e as hélices da biblioteca do usuário entram no catálogo
+    library_stage.reload(io);
     // o projeto abre já (o último, de onde parou): o Analisar e o Mini-MDO leem ele antes de qualquer etapa
     while (!lock.tryLock()) std.atomic.spinLoopHint();
     defer lock.unlock();
@@ -421,7 +428,11 @@ pub fn handle(memory: std.mem.Allocator, io: std.Io, fields: []const u8) !Value 
     var page = try stage.page(current, memory);
     page.requirements = try registry.requirementsSummary(memory, &current.project);
     page.project = current.project.folder;
-    page.project_named = current.named;
+    page.project_named = current.named or stage.program;
+    if (stage.program) {
+        page.project = "";
+        page.requirements = "";
+    }
     if (message.len > 0) page.message = message;
     var out: std.Io.Writer.Allocating = .init(memory);
     try simulation.writeStagePage(&out.writer, page);

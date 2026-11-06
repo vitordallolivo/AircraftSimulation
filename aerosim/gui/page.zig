@@ -326,6 +326,7 @@ pub const Page = struct {
     description: [:0]const u8 = "",
     // a etapa
     keep_label: [:0]const u8 = "",
+    kept_title: []const u8 = "", // não vazio: a lista é de escolha (Perfis, Biblioteca), com este título
     kept: []const [:0]const u8 = &.{},
     kept_selected: usize = 0,
     kept_list: menus.ItemList = .{},
@@ -946,6 +947,7 @@ pub const Page = struct {
         if (!keep_form) try page.buildForm(memory, reply, false);
         page.description = try memory.dupeZ(u8, stringField(reply, "help"));
         page.keep_label = try memory.dupeZ(u8, stringField(reply, "keep_label"));
+        page.kept_title = try memory.dupe(u8, stringField(reply, "kept_title"));
         page.requirements = try memory.dupeZ(u8, stringField(reply, "requirements"));
         page.project = try memory.dupeZ(u8, stringField(reply, "project"));
         page.project_named = if (reply.object.get("project_named")) |named| named != .bool or named.bool else true;
@@ -1146,9 +1148,18 @@ pub const Page = struct {
                 for (row.array.items, 0..) |cell, c| cells[c] = .{ .text = try valueText(memory, cell) };
                 table_rows[r] = cells;
             }
-            // a coluna do nome (a segunda) fica com o que sobra
+            // cada coluna na proporção do texto mais longo dela (cabeçalho ou célula), com um mínimo
             const widths = try memory.alloc(f32, headers.len);
-            for (widths, 0..) |*width, k| width.* = if (headers.len <= 1) 1 else if (k == 1) 0.4 else 0.6 / @as(f32, @floatFromInt(headers.len - 1));
+            var total: f32 = 0;
+            for (widths, 0..) |*width, k| {
+                var longest = std.unicode.utf8CountCodepoints(headers[k]) catch headers[k].len;
+                for (table_rows) |row| if (k < row.len) {
+                    longest = @max(longest, std.unicode.utf8CountCodepoints(row[k].text) catch row[k].text.len);
+                };
+                width.* = @floatFromInt(@max(longest, 6));
+                total += width.*;
+            }
+            for (widths) |*width| width.* /= total;
             try tables.append(memory, .{ .title = try memory.dupeZ(u8, stringField(item, "title")), .headers = headers, .rows = table_rows, .widths = widths });
         };
         var charts: std.ArrayList(Chart) = .empty;
@@ -1306,13 +1317,16 @@ pub const Page = struct {
         var y = top;
         // a janela "Condições e restrições…" é ela mesma: sem a linha dos requisitos nem o botão
         if (std.mem.eql(u8, page.name, "requisitos")) return y + 4;
-        y = page.drawProject(ui, x, y, width);
-        const bar_height = widgets.paragraphHeight(ui.fonts.regular, page.requirements, width - 12, 12) + 10;
-        widgets.rounded(.{ .x = x, .y = y, .width = width, .height = bar_height }, 4, theme.colors.hover);
-        _ = widgets.paragraph(ui.fonts.regular, page.requirements, x + 6, y + 5, width - 12, 12, theme.colors.label);
-        y += bar_height + 6;
-        if (dialogs.button(ui, .{ .x = x, .y = y, .width = width, .height = 30 }, "Condições e restrições…")) page.wants_requirements = true;
-        y += 40;
+        // as etapas da biblioteca são do programa, não do projeto: sem a linha do projeto e dos requisitos
+        if (page.project.len > 0) {
+            y = page.drawProject(ui, x, y, width);
+            const bar_height = widgets.paragraphHeight(ui.fonts.regular, page.requirements, width - 12, 12) + 10;
+            widgets.rounded(.{ .x = x, .y = y, .width = width, .height = bar_height }, 4, theme.colors.hover);
+            _ = widgets.paragraph(ui.fonts.regular, page.requirements, x + 6, y + 5, width - 12, 12, theme.colors.label);
+            y += bar_height + 6;
+            if (dialogs.button(ui, .{ .x = x, .y = y, .width = width, .height = 30 }, "Condições e restrições…")) page.wants_requirements = true;
+            y += 40;
+        }
         theme.text(ui.fonts.regular, page.title, x, y, 17, theme.colors.accent);
         if (page.description.len > 0) widgets.helpMark(ui, x + theme.textWidth(ui.fonts.regular, page.title, 17) + 8, y + 2, page.description);
         y += 30;
@@ -1445,7 +1459,7 @@ pub const Page = struct {
     fn drawKept(page: *Page, ui: *widgets.Ui, x: f32, top: f32, width: f32) f32 {
         var y = top;
         const busy = page.working();
-        const candidates = std.mem.eql(u8, page.name, "perfis");
+        const candidates = page.kept_title.len > 0;
         if (page.keep_label.len > 0) {
             if (widgets.primaryButton(ui, .{ .x = x, .y = y, .width = width, .height = 32 }, page.keep_label, !busy)) {
                 // projeto sem pasta: primeiro a pasta, depois guarda
@@ -1455,7 +1469,7 @@ pub const Page = struct {
         }
         if (!candidates and page.keep_label.len == 0) return y;
         var title: [64]u8 = undefined;
-        theme.text(ui.fonts.regular, widgets.format(&title, "{s} ({d})", .{ if (candidates) "Candidatos" else "Guardados", page.kept.len }), x, y, 15, theme.colors.accent);
+        theme.text(ui.fonts.regular, widgets.format(&title, "{s} ({d})", .{ if (candidates) page.kept_title else "Guardados", page.kept.len }), x, y, 15, theme.colors.accent);
         y += 24;
         const rows: f32 = @floatFromInt(@max(@min(page.kept.len, 5), 1));
         const list: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = rows * menus.ItemList.line_height + 6 };

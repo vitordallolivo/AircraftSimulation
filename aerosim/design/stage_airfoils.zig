@@ -9,6 +9,7 @@ const simulation = @import("simulation");
 const store = @import("store.zig");
 const registry = @import("registry.zig");
 const stages = @import("stages.zig");
+const library_stage = @import("stage_library.zig");
 
 const Value = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
@@ -84,37 +85,49 @@ fn newEntry(memory: std.mem.Allocator, name: []const u8, coords: []const [2]f64,
     return .{ .object = entry };
 }
 
-/// os perfis da biblioteca (os .dat de `data/airfoils`, fora os NACA de 4 dígitos), lidos uma vez
+/// os perfis da biblioteca: os .dat de `data/airfoils` (fora os NACA de 4 dígitos) e os que o usuário pôs na
+/// biblioteca do programa (`biblioteca/perfis`), lidos uma vez
 pub fn library(context: *stages.Context) []const Value {
     if (context.library) |known| return known;
     const memory = context.project.memory();
     var out: std.ArrayList(Value) = .empty;
     for ([_][]const u8{ "data/airfoils", "../data/airfoils" }) |folder| {
-        var dir = std.Io.Dir.cwd().openDir(context.io, folder, .{ .iterate = true }) catch continue;
-        defer dir.close(context.io);
-        var files: std.ArrayList([]const u8) = .empty;
-        var walker = dir.iterate();
-        while (walker.next(context.io) catch null) |item| {
-            if (item.kind != .file or !std.ascii.endsWithIgnoreCase(item.name, ".dat")) continue;
-            files.append(memory, memory.dupe(u8, item.name) catch continue) catch continue;
-        }
-        std.mem.sort([]const u8, files.items, {}, struct {
-            fn less(_: void, a: []const u8, b: []const u8) bool {
-                return std.mem.lessThan(u8, a, b);
-            }
-        }.less);
-        for (files.items) |name| {
-            const path = std.fs.path.join(memory, &.{ folder, name }) catch continue;
-            const read = readDat(memory, context.io, path) catch continue;
-            if (std.mem.eql(u8, kindOf(.{ .name = read.name }, ""), "naca")) continue;
-            var entry = newEntry(memory, read.name, read.points, null) catch continue;
-            if (airfoilObject(&entry)) |object| object.put(memory, "path", .{ .string = path }) catch {};
-            out.append(memory, entry) catch continue;
-        }
+        const files = library_stage.datFiles(memory, context.io, folder) catch continue;
+        if (files.len == 0) continue;
+        appendDats(context, memory, files, &out);
         break;
     }
+    if (library_stage.folder(memory, .airfoils)) |folder| {
+        appendDats(context, memory, library_stage.datFiles(memory, context.io, folder) catch &.{}, &out);
+    } else |_| {}
     context.library = out.items;
     return out.items;
+}
+
+/// os perfis destes .dat na lista (um nome que já está fica de fora)
+fn appendDats(context: *stages.Context, memory: std.mem.Allocator, files: []const []const u8, out: *std.ArrayList(Value)) void {
+    for (files) |path| {
+        const read = readDat(memory, context.io, path) catch continue;
+        if (std.mem.eql(u8, kindOf(.{ .name = read.name }, ""), "naca")) continue;
+        const known = for (out.items) |entry| {
+            if (std.mem.eql(u8, entryName(entry), read.name)) break true;
+        } else false;
+        if (known) continue;
+        var entry = newEntry(memory, read.name, read.points, null) catch continue;
+        if (airfoilObject(&entry)) |object| object.put(memory, "path", .{ .string = path }) catch {};
+        out.append(memory, entry) catch continue;
+    }
+}
+
+/// guarda uma cópia do .dat na biblioteca do programa, para ele aparecer em todos os projetos
+fn keepInLibrary(context: *stages.Context, memory: std.mem.Allocator, path: []const u8, name: []const u8) bool {
+    const bytes = std.Io.Dir.cwd().readFileAlloc(context.io, path, memory, .limited(1 << 22)) catch return false;
+    const folder = library_stage.folder(memory, .airfoils) catch return false;
+    std.Io.Dir.cwd().createDirPath(context.io, folder) catch return false;
+    const file = std.fs.path.join(memory, &.{ folder, library_stage.fileName(memory, name) catch return false }) catch return false;
+    std.Io.Dir.cwd().writeFile(context.io, .{ .sub_path = file, .data = bytes }) catch return false;
+    context.library = null;
+    return true;
 }
 
 /// os nomes dos perfis: os da etapa Perfis primeiro, depois os da biblioteca (`airfoil_names`)
@@ -287,7 +300,8 @@ pub fn apply(context: *stages.Context, memory: std.mem.Allocator, request: stage
         if (std.mem.eql(u8, request.key, "dat")) {
             const read = readDat(project.memory(), context.io, request.arg) catch return "não deu para ler o .dat";
             const said = try addEntry(context, try newEntry(project.memory(), read.name, read.points, null), read.name);
-            return std.fmt.allocPrint(memory, "{s}: {s}", .{ said, read.name });
+            const kept = keepInLibrary(context, memory, request.arg, read.name);
+            return std.fmt.allocPrint(memory, "{s}: {s}{s}", .{ said, read.name, if (kept) " (e na biblioteca do programa)" else "" });
         }
         if (std.mem.eql(u8, request.key, "param")) {
             const name = try std.fmt.allocPrint(project.memory(), "perfil {d}", .{list.items.len + 1});
@@ -391,8 +405,9 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
 
     return .{
         .title = "Perfil",
-        .help = "Perfis candidatos e a polar 2D de cada um no Re do cruzeiro. O perfil pode vir de um código NACA, de um .dat ou só de parâmetros (sem contorno). 'Usar na asa' leva o perfil selecionado para a etapa Asa.",
+        .help = "Perfis candidatos e a polar 2D de cada um no Re do cruzeiro. O perfil pode vir de um código NACA, de um .dat ou só de parâmetros (sem contorno); um .dat trazido aqui também fica na biblioteca do programa e aparece nos outros projetos. 'Usar na asa' leva o perfil selecionado para a etapa Asa.",
         .keep_label = "Usar na asa →",
+        .kept_title = "Candidatos",
         .params = params.items,
         .kept = kept.items,
         .actions = &actions,

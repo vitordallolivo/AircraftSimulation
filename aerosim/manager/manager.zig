@@ -45,12 +45,16 @@ pub const Area = struct { title: [:0]const u8, single: bool = false, tabs: []con
 /// as áreas e as subabas na ordem da GUI PyQt (`MainWindow.__init__`, o pedido "layout" de `aerosim/bridge.py`):
 /// a janela abre sem o Python. As análises em Zig de uma área que não estão aqui (`analyses`) entram no fim dela
 pub const layout = [_]Area{
+    .{ .title = "Biblioteca", .tabs = &.{
+        .{ .title = "Perfis", .kind = .stage, .name = "perfis" },
+        .{ .title = "Motores", .kind = .stage, .name = "biblioteca_motores" },
+        .{ .title = "Hélices", .kind = .stage, .name = "biblioteca_helices" },
+    } },
     .{ .title = "Dimensionamento inicial", .tabs = &.{
         .{ .title = "Mini-MDO (otimizador)", .kind = .simulation, .name = "mdo" },
         .{ .title = "Diagrama de restrições", .kind = .simulation, .name = "sizing" },
     } },
     .{ .title = "Aerodinâmica", .tabs = &.{
-        .{ .title = "Perfis", .kind = .stage, .name = "perfis" },
         .{ .title = "Projetar", .kind = .stage, .name = "asa" },
         .{ .title = "Analisar", .kind = .simulation, .name = "wings" },
     } },

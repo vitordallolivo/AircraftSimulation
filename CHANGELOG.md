@@ -6,6 +6,12 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- Não dava para acrescentar motores e hélices ao programa pela tela em Zig, e um perfil .dat trazido ficava só no
+  projeto. Agora há uma aba Biblioteca no topo, com Perfis, Motores e Hélices: um motor novo sai do formulário ou de
+  um arquivo, uma hélice vem de um .dat padrão (cabeçalho com nome e diâmetro e as linhas J, C_T, C_P, que também lê
+  a base da UIUC), e um perfil .dat trazido em Perfis fica guardado para todos os projetos. Os itens da biblioteca
+  aparecem em Motores e montagem, nas variáveis do projeto e no Mini-MDO. Um arquivo que não dá para ler aparece
+  num aviso com o motivo. O cabeçalho da janela não fala mais da linguagem em que o programa é feito.
 - O Mini-MDO tinha as próprias faixas de mínimo e máximo, uma massa máxima e listas de perfis, motores, hélices e
   arranjos, repetindo o que o projeto já guarda. Agora ele lê tudo de "Condições e restrições → Variáveis": uma
   variável marcada como variável entra com a faixa ou a lista dela, uma fixa entra com o valor do rascunho, e a massa

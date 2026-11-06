@@ -53,6 +53,12 @@ const layouts = [_]Layout{
     .{ .name = "propulsora atrás da asa", .data = .{ .n_min = 1, .n_max = 1, .n_step = 1, .thrust_factor = 0.9, .nacelle_CDS = 0.0, .mass_per_motor = 0.05 } },
 };
 
+const layout_list = blk: {
+    var names: [layouts.len][]const u8 = undefined;
+    for (layouts, 0..) |layout, i| names[i] = layout.name;
+    break :blk names;
+};
+
 /// os NACA de 4 dígitos que entram na lista além dos perfis da aeronave
 const extra_airfoils = [_][]const u8{ "NACA 0012", "NACA 2412", "NACA 4412", "NACA 6412" };
 
@@ -125,10 +131,14 @@ fn rangeOf(variables: []const simulation.SprintVariable, field: RangeVariable) [
     return .{ field.low, field.high };
 }
 
-/// os itens de uma lista do projeto: as opções se ela é "variável", senão o escolhido no rascunho; vazio sem nada
-fn listOf(memory: std.mem.Allocator, variables: []const simulation.SprintVariable, name: []const u8) ![]const []const u8 {
+/// os itens de uma lista do projeto: as opções se ela é "variável" (sem opções: `everything`, "vazio = todos"),
+/// senão o escolhido no rascunho; vazio sem nada
+fn listOf(memory: std.mem.Allocator, variables: []const simulation.SprintVariable, name: []const u8, everything: []const []const u8) ![]const []const u8 {
     const variable = findVariable(variables, name) orelse return &.{};
-    if (varies(variable) and variable.options.len > 0) return variable.options;
+    if (varies(variable)) {
+        if (variable.options.len > 0) return variable.options;
+        if (everything.len > 0) return everything;
+    }
     if (variable.text.len > 0) return memory.dupe([]const u8, &.{variable.text});
     return &.{};
 }
@@ -256,7 +266,7 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
 
     // perfis: os da lista do projeto (sem lista: o da asa); a ponta, se varia, entra na mesma lista
     var airfoil_list: std.ArrayList([]const u8) = .empty;
-    try airfoil_list.appendSlice(memory, try listOf(memory, variables, "wing.airfoil"));
+    try airfoil_list.appendSlice(memory, try listOf(memory, variables, "wing.airfoil", &.{}));
     if (airfoil_list.items.len == 0) try airfoil_list.append(memory, wingAirfoil(aircraft));
     const tip_varies = if (findVariable(variables, "wing.airfoil_tip")) |tip| varies(tip) and tip.options.len > 0 else false;
     if (tip_varies) for (findVariable(variables, "wing.airfoil_tip").?.options) |tip| {
@@ -287,13 +297,13 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     const battery_name = if (simulation.sprint) |sprint| try sprint.field_text(memory, "power_draft.battery") else "";
     const battery = if (catalog.find(catalog.Battery, &catalog.batteries, battery_name)) |found| found.* else catalog.batteries[0];
     var motors: std.ArrayList(catalog.Motor) = .empty;
-    for (try listOf(memory, variables, "power.motor")) |motor_name| {
-        if (catalog.find(catalog.Motor, &catalog.motors, motor_name)) |motor| try motors.append(memory, motor.*) else try skipped.print(memory, "motor {s} (fora do catálogo); ", .{motor_name});
+    for (try listOf(memory, variables, "power.motor", try catalog.motorNames(memory))) |motor_name| {
+        if (catalog.findMotor(motor_name)) |motor| try motors.append(memory, motor) else try skipped.print(memory, "motor {s} (fora do catálogo); ", .{motor_name});
     }
     if (motors.items.len == 0) try motors.append(memory, catalog.motors[0]);
     var propellers: std.ArrayList(catalog.Propeller) = .empty;
-    for (try listOf(memory, variables, "power.propeller")) |propeller_name| {
-        if (catalog.find(catalog.Propeller, &catalog.propellers, propeller_name)) |propeller| try propellers.append(memory, propeller.*) else try skipped.print(memory, "hélice {s} (fora do catálogo); ", .{propeller_name});
+    for (try listOf(memory, variables, "power.propeller", try catalog.propellerNames(memory))) |propeller_name| {
+        if (catalog.findPropeller(propeller_name)) |propeller| try propellers.append(memory, propeller) else try skipped.print(memory, "hélice {s} (fora do catálogo); ", .{propeller_name});
     }
     if (propellers.items.len == 0) try propellers.append(memory, catalog.propellers[0]);
     var set_names: std.ArrayList([]const u8) = .empty;
@@ -307,7 +317,7 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
 
     // arranjos: os da lista do projeto que o dimensionamento inicial conhece
     var layout_names: std.ArrayList([]const u8) = .empty;
-    for (try listOf(memory, variables, "power.layout")) |layout_name| {
+    for (try listOf(memory, variables, "power.layout", &layout_list)) |layout_name| {
         const layout = for (layouts) |candidate| {
             if (std.mem.eql(u8, candidate.name, layout_name)) break candidate;
         } else {

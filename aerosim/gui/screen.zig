@@ -773,7 +773,7 @@ pub const Screen = struct {
             screen.pending_undo -= 1;
             screen.undo();
         }
-        if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião (.json)", "Salvar .json" }, "abas e contas em Zig; os métodos de fora pelo Python só quando escolhidos")) |button| {
+        if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião (.json)", "Salvar .json" }, "")) |button| {
             if (button == 0) screen.command("abrir") else screen.command("salvar");
         }
         _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, screen.area_labels, &screen.area, 14);

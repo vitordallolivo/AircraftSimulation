@@ -101,6 +101,8 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&design_tests.step);
     const simulation_tests = b.addRunArtifact(b.addTest(.{ .root_module = simulation }));
     test_step.dependOn(&simulation_tests.step);
+    // o catálogo e os arquivos da biblioteca do usuário
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = catalog })).step);
 
     // ---- o programa (gui/main.zig)
     const display = b.option(enum { X11, Wayland, Both }, "display", "Linux: X11 (padrão), Wayland ou Both") orelse .X11;

@@ -84,8 +84,8 @@ fn motorCounts(params: *const ObjectMap) [3]usize {
 
 fn unitOf(params: *const ObjectMap, name: []const u8, x: f64, y: f64, z: f64, sense: f64) model.Propulsion {
     var unit: model.Propulsion = .{ .name = name, .x = x, .y = y, .z = z, .tilt = field(params, "tilt"), .sense = sense };
-    if (catalog.find(catalog.Motor, &catalog.motors, store.text(params, "motor", ""))) |motor| unit.motor = .{ .Kv = motor.Kv, .Rm = motor.Rm, .B = motor.B, .tauc = motor.tauc, .Imax = motor.Imax, .Jm = motor.Jm, .mass = motor.mass };
-    if (catalog.find(catalog.Propeller, &catalog.propellers, store.text(params, "propeller", ""))) |propeller| unit.propeller = .{ .D = propeller.D, .Ip = propeller.Ip, .mass = propeller.mass, .J = propeller.J, .CT = propeller.CT, .CP = propeller.CP };
+    if (catalog.findMotor(store.text(params, "motor", ""))) |motor| unit.motor = .{ .Kv = motor.Kv, .Rm = motor.Rm, .B = motor.B, .tauc = motor.tauc, .Imax = motor.Imax, .Jm = motor.Jm, .mass = motor.mass };
+    if (catalog.findPropeller(store.text(params, "propeller", ""))) |propeller| unit.propeller = .{ .D = propeller.D, .Ip = propeller.Ip, .mass = propeller.mass, .J = propeller.J, .CT = propeller.CT, .CP = propeller.CP };
     if (catalog.find(catalog.Battery, &catalog.batteries, store.text(params, "battery", ""))) |battery| unit.battery = .{ .cells = battery.cells, .V_cell = battery.V_cell, .Rint = battery.Rint, .capacity_mAh = battery.capacity_mAh, .mass = battery.mass };
     return unit;
 }
@@ -760,16 +760,14 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     const params = draft(project);
     var set_names: std.ArrayList([]const u8) = .empty;
     for (project.list("sets").items) |item| try set_names.append(memory, store.nameOf(item));
-    var motors: std.ArrayList([]const u8) = .empty;
-    for (catalog.motors) |item| try motors.append(memory, item.name);
-    var propellers: std.ArrayList([]const u8) = .empty;
-    for (catalog.propellers) |item| try propellers.append(memory, item.name);
+    const motors = try catalog.motorNames(memory);
+    const propellers = try catalog.propellerNames(memory);
     var batteries: std.ArrayList([]const u8) = .empty;
     for (catalog.batteries) |item| try batteries.append(memory, item.name);
     var form: std.ArrayList(simulation.Param) = .empty;
     for (power_fields) |item| {
         var param = try stages.fieldParam(params, item, "", "", memory);
-        const choices: ?[]const []const u8 = if (std.mem.eql(u8, item.key, "set")) set_names.items else if (std.mem.eql(u8, item.key, "motor")) motors.items else if (std.mem.eql(u8, item.key, "propeller")) propellers.items else if (std.mem.eql(u8, item.key, "battery")) batteries.items else null;
+        const choices: ?[]const []const u8 = if (std.mem.eql(u8, item.key, "set")) set_names.items else if (std.mem.eql(u8, item.key, "motor")) motors else if (std.mem.eql(u8, item.key, "propeller")) propellers else if (std.mem.eql(u8, item.key, "battery")) batteries.items else null;
         if (choices) |list| {
             param.kind = .choice;
             param.choices = list;

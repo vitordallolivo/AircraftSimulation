@@ -706,6 +706,8 @@ pub const StagePage = struct {
     title: []const u8,
     help: []const u8 = "",
     keep_label: []const u8 = "Guardar",
+    /// não vazio: a lista é de escolha (clicar seleciona, "Remover" tira) com este título, como a de Perfis
+    kept_title: []const u8 = "",
     params: []const Param = &.{},
     disabled: []const []const u8 = &.{},
     kept: []const []const u8 = &.{},
@@ -729,7 +731,7 @@ pub const StagePage = struct {
 
 /// a página da etapa em JSON, no formato que a tela lê
 pub fn writeStagePage(out: *Writer, page: StagePage) !void {
-    try out.print("{{\"title\": {f}, \"help\": {f}, \"keep_label\": {f}, \"requirements\": {f}, \"project\": {f}, \"project_named\": {}, \"message\": {f}, \"open\": {f}, \"go\": {f}, \"params\": [", .{ str(page.title), str(page.help), str(page.keep_label), str(page.requirements), str(page.project), page.project_named, str(page.message), str(page.open), str(page.go) });
+    try out.print("{{\"title\": {f}, \"help\": {f}, \"keep_label\": {f}, \"kept_title\": {f}, \"requirements\": {f}, \"project\": {f}, \"project_named\": {}, \"message\": {f}, \"open\": {f}, \"go\": {f}, \"params\": [", .{ str(page.title), str(page.help), str(page.keep_label), str(page.kept_title), str(page.requirements), str(page.project), page.project_named, str(page.message), str(page.open), str(page.go) });
     try writeParams(out, page.params, page.disabled);
     try out.writeAll("], \"kept\": [");
     for (page.kept, 0..) |name, k| {
