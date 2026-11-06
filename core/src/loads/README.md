@@ -2,18 +2,11 @@
 
 Esta parte do núcleo diz como a sustentação se distribui ao longo da asa e da cauda, da raiz até a ponta. É a linha
 sustentadora numérica: cada faixa vira uma ferradura de vórtice, e a circulação de todas sai de um sistema linear. A
-simulação por faixas dá a mesma inclinação a toda a superfície, e por isso a carga dela sai plana. Aqui a ponta
-descarrega, como numa asa real.
-
-## Para que serve
-
-- **Cargas na estrutura.** O momento fletor na raiz e a carga em cada nervura saem desta distribuição (aba Cargas).
-- **Onde o estol começa.** Na versão não linear, cada faixa segue a curva do seu perfil e estola sozinha.
-- **Voar com ela.** Com `Params.aero_model = .lifting_line`, a simulação usa estas forças. O padrão continua sendo as
-  faixas, e com ele nada daqui é chamado.
-- **Analisar asas como num túnel.** A varredura em α de uma asa, de um biplano ou de um tandem (subaba Analisar).
-
-## Como funciona
+simulação por faixas dá a mesma inclinação a toda a superfície, e a carga dela sai plana; aqui a ponta descarrega,
+como numa asa real. Daqui saem o momento fletor na raiz e a carga em cada nervura (aba Cargas), onde o estol começa
+ao longo da asa (na versão não linear) e a varredura em α de uma asa, de um biplano ou de um tandem (subaba Analisar).
+A simulação também pode voar com estas forças (`Params.aero_model = .lifting_line`); com o padrão, que são as faixas,
+nada daqui é chamado.
 
 ```mermaid
 flowchart TB
@@ -35,15 +28,13 @@ induzido por todas as ferraduras (Phillips e Snyder, *Journal of Aircraft* 37(4)
 \vec w_i = \sum_j \Gamma_j\,\vec w_{ij}
 ```
 
-Há três métodos, escolhidos em `Params.llt_method`:
-
-| método | quando usar |
+| `Params.llt_method` | quando usar |
 |---|---|
 | `.phillips_snyder` (padrão) | asa reta, sem derrapagem |
 | `.goates_hunsaker` | asa enflechada ou com diedro, e voo com derrapagem: converge com a malha e fica perto do MachUpX (Goates e Hunsaker, 2021) |
 | `.nonlinear` | carga de $`C_{L,max}`$: cada seção segue a curva $`c_l(\alpha)`$ do perfil, com estol (Beard e McLain) |
 
-## Exemplo
+A mesma asa a 14 m/s e α = 4°, pelas faixas e pela linha sustentadora:
 
 ```python
 import numpy as np
@@ -54,18 +45,19 @@ from aerosim.model.universal import build_model
 with ZigBackend().session_for(build_model(conventional())) as s:
     faixas = s.panel_states(14.0, np.radians(4.0))               # carga plana da simulação
     linha = s.panel_states(14.0, np.radians(4.0), llt=True)      # linha sustentadora
-print(faixas["L"].sum(), linha["L"].sum())
+print("sustentação total: faixas", round(faixas["L"].sum(), 1), "N, linha sustentadora", round(linha["L"].sum(), 1), "N")
 ```
 
-Os exports são `aerosim_panel_states_llt` (a carga por painel), `aerosim_aero_coeffs_llt` (os coeficientes do avião)
-e `aerosim_wing_sweep` (a varredura em α). Testes: `cd core && python -m ziglang build test -Dgrupo=physics`.
+```
+sustentação total: faixas 87.7 N, linha sustentadora 95.7 N
+```
 
-## O que isso influencia
+O total muda pouco; o que muda é onde a carga está. Os exports são `aerosim_panel_states_llt` (a carga por painel),
+`aerosim_aero_coeffs_llt` (os coeficientes do avião) e `aerosim_wing_sweep` (a varredura em α), e os testes rodam com
+`cd core && python -m ziglang build test -Dgrupo=physics`.
 
-A forma da carga muda o momento fletor na raiz, que é o que dimensiona a longarina. A mesma asa, no voo nivelado:
-pelas faixas a carga é plana, e pela linha sustentadora ela é maior na raiz e cai na ponta.
+A forma da carga muda o momento fletor na raiz, que é o que dimensiona a longarina. No voo nivelado, pelas faixas a
+carga é plana, e pela linha sustentadora ela é maior na raiz e cai na ponta. Isso alimenta a aba Cargas, a vista 3D
+das forças e o voo com `aero_model = .lifting_line`:
 
 ![Carga na asa: faixas contra a linha sustentadora](../../../docs/img/fig/carga_envergadura.png)
-
-Ela alimenta a aba Cargas (`aerosim/aero/span_loads.py`), a vista 3D das forças e o voo com
-`aero_model = .lifting_line`.
