@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0000aa">
+<title>Mapa do código</title>
+<!--
+  O mapa do código, no jeito do Obsidian: cada módulo é um ponto e cada linha é "um chama o outro". Tudo sai do
+  grafo.json, que o tools/grafo.py extrai do Zig e do Python sozinho; nada aqui é escrito à mão.
+-->
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<style>
+  :root {
+    --azul: #0000aa; --fundo: #f4f4f7; --cartao: #ffffff; --texto: #1d1d26; --apagado: #6a6a7a; --linha: #d9d9e3;
+    --chama: #1f6fd1; --chamado: #d1641f; --mono: ui-monospace, "DejaVu Sans Mono", "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--fundo); color: var(--texto); }
+  body { font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; }
+  header { background: var(--azul); color: #fff; padding: 12px 16px 0; }
+  header h1 { font: 18px var(--mono); margin: 0 0 8px; }
+  nav { display: flex; gap: 2px; }
+  nav a { padding: 6px 12px; font: 14px var(--mono); color: #c0c0c0; text-decoration: none; }
+  nav a.ativo { background: var(--fundo); color: var(--azul); }
+  .corpo { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 400px; min-height: 0; }
+  #tela { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+  canvas.sobre { cursor: pointer; }
+  .barra { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; pointer-events: none; }
+  .barra > * { pointer-events: auto; }
+  #busca { width: 260px; max-width: 100%; padding: 7px 10px; border: 1px solid var(--linha); border-radius: 7px; font: inherit; background: #fff; }
+  #achados { position: absolute; top: 44px; left: 10px; width: 360px; max-width: calc(100% - 20px); background: #fff; border: 1px solid var(--linha);
+    border-radius: 7px; max-height: 50vh; overflow-y: auto; display: none; z-index: 3; box-shadow: 0 6px 20px #0002; }
+  #achados a { display: block; padding: 5px 10px; color: var(--texto); text-decoration: none; font: 12px var(--mono); }
+  #achados a small { color: var(--apagado); margin-left: 6px; }
+  #achados a:hover, #achados a.ativo { background: #eef0fb; }
+  .areas { display: flex; gap: 4px; flex-wrap: wrap; }
+  .areas label { background: #fff; border: 1px solid var(--linha); border-radius: 14px; padding: 3px 10px 3px 6px; font-size: 12px; cursor: pointer; user-select: none; }
+  .areas input { vertical-align: -2px; }
+  .areas i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 4px 0 2px; }
+  .legenda { position: absolute; left: 10px; bottom: 10px; font-size: 12px; color: var(--apagado); background: #ffffffd0; padding: 4px 8px; border-radius: 6px; }
+  .legenda b.c { color: var(--chama); } .legenda b.p { color: var(--chamado); }
+
+  aside { border-left: 1px solid var(--linha); background: var(--cartao); overflow-y: auto; padding: 14px 16px 30px; min-height: 0; }
+  aside h2 { font: 600 16px var(--mono); margin: 0 0 2px; word-break: break-word; }
+  aside .sub { color: var(--apagado); font-size: 12px; margin-bottom: 10px; }
+  aside h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--apagado); margin: 16px 0 6px; }
+  aside p.doc { margin: 6px 0; }
+  .assinatura { font: 12px var(--mono); background: #f0f0f6; border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; }
+  .lista a { display: block; padding: 2px 6px; border-radius: 4px; font: 12px var(--mono); color: var(--texto); text-decoration: none; word-break: break-word; }
+  .lista a:hover { background: #eef0fb; }
+  .lista a small { color: var(--apagado); }
+  .lista a.c { border-left: 3px solid var(--chama); } .lista a.p { border-left: 3px solid var(--chamado); }
+  .dono { margin-top: 8px; font: 600 12px var(--mono); color: var(--azul); cursor: pointer; }
+  .dono small { color: var(--apagado); font-weight: 400; }
+  .vazio { color: var(--apagado); font-size: 12px; font-style: italic; }
+  button.espiar { margin-top: 10px; border: 1px solid var(--azul); background: #fff; color: var(--azul); border-radius: 6px; padding: 5px 12px; font: inherit; cursor: pointer; }
+  button.espiar:hover { background: var(--azul); color: #fff; }
+
+  #codigo { display: none; position: fixed; inset: 6vh 6vw; z-index: 20; background: #fff; border-radius: 10px; box-shadow: 0 10px 50px #0005; flex-direction: column; }
+  #codigo.aberto { display: flex; }
+  #codigo header { background: #1d1d26; border-radius: 10px 10px 0 0; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  #codigo header span { font: 13px var(--mono); }
+  #codigo header button { all: unset; cursor: pointer; font: 13px var(--mono); color: #c0c0c0; padding: 2px 8px; }
+  #codigo header button:hover { color: #fff; }
+  #codigo pre { margin: 0; overflow: auto; flex: 1; font: 12.5px/1.5 var(--mono); padding: 10px 0; counter-reset: l; }
+  #codigo pre .ln { display: block; padding: 0 14px 0 0; white-space: pre; }
+  #codigo pre .ln::before { content: attr(data-n); display: inline-block; width: 52px; padding-right: 12px; text-align: right; color: #a0a0b0; user-select: none; }
+  #codigo pre .ln.foco { background: #fff8d8; }
+  .k { color: #7a1fa8; } .s { color: #2f7d32; } .cm { color: #8a8a99; font-style: italic; } .n { color: #b5541a; }
+  .ir { color: var(--chama); text-decoration: underline dotted; cursor: pointer; }
+  #fundo { display: none; position: fixed; inset: 0; background: #0004; z-index: 19; }
+  #fundo.aberto { display: block; }
+  #carregando { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--apagado); }
+
+  @media (max-width: 860px) {
+    .corpo { grid-template-columns: 1fr; grid-template-rows: 58vh auto; }
+    aside { border-left: 0; border-top: 1px solid var(--linha); }
+    #codigo { inset: 2vh 2vw; }
+    #busca { width: 100%; }
+    .legenda { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>AircraftSimulation</h1>
+  <nav><a href="livro.html">Livro</a><a href="mapa.html" class="ativo">Mapa</a><a href="tracking.html">Tracking</a><a href="index.html">Programas</a></nav>
+</header>
+<div class="corpo">
+  <div id="tela">
+    <canvas id="grafo"></canvas>
+    <div class="barra">
+      <input id="busca" placeholder="buscar módulo, struct ou função" autocomplete="off">
+      <div class="areas" id="areas"></div>
+    </div>
+    <div id="achados"></div>
+    <div class="legenda">clique num ponto · arraste para mover · roda para aproximar · <b class="c">azul</b> é chamado por ele · <b class="p">laranja</b> chama ele</div>
+    <div id="carregando">lendo o código…</div>
+  </div>
+  <aside id="painel"></aside>
+</div>
+<div id="fundo"></div>
+<div id="codigo"><header><span id="codigo-titulo"></span><span><button id="codigo-tudo">arquivo inteiro</button><button id="codigo-fechar">fechar ✕</button></span></header><pre id="codigo-texto"></pre></div>
+
+<script>
+const AREAS = {
+  core:      { nome: 'núcleo', cor: '#3b2f8f' },
+  aerosim:   { nome: 'aerosim', cor: '#2f6fb0' },
+  aeroopt:   { nome: 'aeroopt', cor: '#c8641e' },
+  aerodrive: { nome: 'AeroDrive', cor: '#3f7f2a' },
+  tools:     { nome: 'ferramentas', cor: '#8a8a99' },
+};
+const areaOf = m => m.nome.split('.')[0];
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const painel = document.getElementById('painel');
+const canvas = document.getElementById('grafo');
+const ctx = canvas.getContext('2d');
+
+let dados, nodes, links, porId, sim, transform = d3.zoomIdentity;
+let foco = null;            // { modulo, simbolo, chama:Set(mod), chamado:Set(mod) }
+let sobre = null;           // módulo sob o mouse
+const ligadas = new Set(Object.keys(AREAS));
+
+fetch('grafo.json').then(r => r.json()).then(iniciar).catch(e => {
+  document.getElementById('carregando').textContent = 'não deu para ler o grafo.json (' + e + ')';
+});
+
+function iniciar(json) {
+  dados = json;
+  document.getElementById('carregando').remove();
+  porId = new Map();
+  nodes = dados.modulos.map(m => {
+    const no = { ...m, area: areaOf(m), r: 3 + Math.sqrt(m.linhas) / 4 };
+    porId.set(m.id, no);
+    return no;
+  });
+  links = dados.ligacoes.map(l => ({ source: porId.get(l.de), target: porId.get(l.para), n: l.n }));
+  // quem tem mais ligações aparece com o nome antes dos outros
+  for (const l of links) { l.source.grau = (l.source.grau || 0) + 1; l.target.grau = (l.target.grau || 0) + 1; }
+
+  const areas = document.getElementById('areas');
+  for (const [chave, a] of Object.entries(AREAS)) {
+    const total = nodes.filter(n => n.area === chave).length;
+    areas.insertAdjacentHTML('beforeend', `<label><input type="checkbox" checked data-area="${chave}"><i style="background:${a.cor}"></i>${a.nome} <small>${total}</small></label>`);
+  }
+  areas.addEventListener('change', e => {
+    const chave = e.target.dataset.area;
+    e.target.checked ? ligadas.add(chave) : ligadas.delete(chave);
+    reiniciar();
+  });
+
+  sim = d3.forceSimulation()
+    .force('link', d3.forceLink().id(d => d.id).distance(l => 30 + 6 * Math.sqrt(l.source.r + l.target.r)).strength(l => Math.min(0.6, 0.08 + l.n / 40)))
+    .force('carga', d3.forceManyBody().strength(d => -40 - d.r * 6).distanceMax(600))
+    .force('x', d3.forceX().strength(0.045))
+    .force('y', d3.forceY().strength(0.045))
+    .force('colisao', d3.forceCollide(d => d.r + 3))
+    .on('tick', desenhar);
+  reiniciar();
+
+  const zoom = d3.zoom().scaleExtent([0.08, 8]).on('zoom', e => { transform = e.transform; desenhar(); });
+  d3.select(canvas)
+    .call(d3.drag().container(canvas).subject(e => achar(e.x, e.y))
+      .on('start', e => { if (!e.active) sim.alphaTarget(0.2).restart(); e.subject.fx = e.subject.x; e.subject.fy = e.subject.y; })
+      .on('drag', e => { const [x, y] = transform.invert([e.x, e.y]); e.subject.fx = x; e.subject.fy = y; })
+      .on('end', e => { if (!e.active) sim.alphaTarget(0); e.subject.fx = null; e.subject.fy = null; }))
+    .call(zoom)
+    .on('dblclick.zoom', null);
+  canvas.addEventListener('mousemove', e => {
+    const no = achar(e.offsetX, e.offsetY);
+    if (no !== sobre) { sobre = no; canvas.classList.toggle('sobre', !!no); desenhar(); }
+  });
+  canvas.addEventListener('click', e => {
+    const no = achar(e.offsetX, e.offsetY);
+    if (no) abrirModulo(no.id); else { foco = null; mostrarInicio(); desenhar(); }
+  });
+  new ResizeObserver(redimensionar).observe(canvas);
+  redimensionar();
+  const inicial = d3.zoomIdentity.translate(canvas.clientWidth / 2, canvas.clientHeight / 2).scale(0.62);
+  d3.select(canvas).call(zoom.transform, inicial);
+  window.irPara = (no, escala) => {
+    const k = Math.max(transform.k, escala || 1.3);
+    d3.select(canvas).transition().duration(600).call(zoom.transform,
+      d3.zoomIdentity.translate(canvas.clientWidth / 2 - no.x * k, canvas.clientHeight / 2 - no.y * k).scale(k));
+  };
+  buscaPronta();
+  mostrarInicio();
+  const pedido = decodeURIComponent(location.hash.slice(1));
+  if (pedido && dados.simbolos[pedido]) abrirSimbolo(pedido);
+  else if (pedido && porId.has(pedido)) abrirModulo(pedido);
+}
+
+function visiveis() { return nodes.filter(n => ligadas.has(n.area)); }
+function reiniciar() {
+  const vis = new Set(visiveis());
+  sim.nodes([...vis]);
+  sim.force('link').links(links.filter(l => vis.has(l.source.id ? l.source : porId.get(l.source)) && vis.has(l.target.id ? l.target : porId.get(l.target))));
+  sim.alpha(0.6).restart();
+}
+function redimensionar() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.clientWidth * dpr; canvas.height = canvas.clientHeight * dpr;
+  desenhar();
+}
+function achar(px, py) {
+  const [x, y] = transform.invert([px, py]);
+  let melhor = null, dist = Infinity;
+  for (const n of sim.nodes()) {
+    const d = Math.hypot(n.x - x, n.y - y);
+    if (d < n.r + 4 / transform.k && d < dist) { melhor = n; dist = d; }
+  }
+  return melhor;
+}
+
+function destaque(n) {
+  if (!foco) return sobre ? (n === sobre || vizinhos(sobre).has(n.id) ? 1 : 0.25) : 1;
+  if (n.id === foco.modulo) return 1;
+  if (foco.chama.has(n.id) || foco.chamado.has(n.id)) return 1;
+  return 0.12;
+}
+const vizCache = new Map();
+function vizinhos(no) {
+  if (!vizCache.has(no.id)) {
+    const s = new Set();
+    for (const l of links) { if (l.source === no) s.add(l.target.id); if (l.target === no) s.add(l.source.id); }
+    vizCache.set(no.id, s);
+  }
+  return vizCache.get(no.id);
+}
+
+function desenhar() {
+  if (!sim) return;
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+  ctx.translate(transform.x, transform.y);
+  ctx.scale(transform.k, transform.k);
+  const k = transform.k;
+  for (const l of sim.force('link').links()) {
+    let cor = '#9a9ab0', alfa = foco || sobre ? 0.06 : 0.22, largura = 0.6 + Math.log1p(l.n) * 0.35;
+    if (foco) {
+      if (l.source.id === foco.modulo && foco.chama.has(l.target.id)) { cor = getCss('--chama'); alfa = 0.85; }
+      else if (l.target.id === foco.modulo && foco.chamado.has(l.source.id)) { cor = getCss('--chamado'); alfa = 0.85; }
+    } else if (sobre && (l.source === sobre || l.target === sobre)) { alfa = 0.7; cor = '#55556a'; }
+    ctx.globalAlpha = alfa; ctx.strokeStyle = cor; ctx.lineWidth = largura / Math.sqrt(k);
+    ctx.beginPath(); ctx.moveTo(l.source.x, l.source.y); ctx.lineTo(l.target.x, l.target.y); ctx.stroke();
+  }
+  for (const n of sim.nodes()) {
+    ctx.globalAlpha = destaque(n);
+    ctx.fillStyle = AREAS[n.area].cor;
+    ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, 2 * Math.PI); ctx.fill();
+    if (foco && n.id !== foco.modulo && (foco.chama.has(n.id) || foco.chamado.has(n.id))) {
+      ctx.lineWidth = 2.5 / k; ctx.strokeStyle = foco.chama.has(n.id) ? getCss('--chama') : getCss('--chamado');
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 2.5 / k, 0, 2 * Math.PI); ctx.stroke();
+    }
+    if (foco && n.id === foco.modulo) {
+      ctx.lineWidth = 3 / k; ctx.strokeStyle = '#111';
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 3 / k, 0, 2 * Math.PI); ctx.stroke();
+    }
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (const n of sim.nodes()) {
+    const realce = destaque(n);
+    const mostrar = n === sobre || (foco && realce === 1) || k > 1.6 || (k > 0.7 && (n.grau || 0) > 14) || (k > 0.35 && (n.grau || 0) > 30);
+    if (!mostrar) continue;
+    const tam = Math.max(10, 12 / k) * (n === sobre || (foco && n.id === foco.modulo) ? 1.15 : 1);
+    ctx.font = `${n === sobre || (foco && n.id === foco.modulo) ? 600 : 400} ${tam}px system-ui, sans-serif`;
+    ctx.globalAlpha = Math.max(realce, 0.5);
+    const texto = n.nome.split('.').slice(1).join('.') || n.nome;
+    ctx.lineWidth = 3 / k; ctx.strokeStyle = '#f4f4f7'; ctx.strokeText(texto, n.x, n.y + n.r + 2 / k);
+    ctx.fillStyle = '#1d1d26'; ctx.fillText(texto, n.x, n.y + n.r + 2 / k);
+  }
+  ctx.globalAlpha = 1;
+}
+const cssCache = {};
+function getCss(v) { return cssCache[v] || (cssCache[v] = getComputedStyle(document.documentElement).getPropertyValue(v).trim()); }
+
+// ------------------------------------------------------------ painel
+
+function nomeCurto(id) {
+  const s = dados.simbolos[id];
+  return s.dono && !s.nome.includes('.') ? `${s.dono.split('.').pop()}.${s.nome}` : s.nome;
+}
+function moduloDe(id) { return porId.get(dados.simbolos[id].modulo); }
+function linkSimbolo(id, classe) {
+  const s = dados.simbolos[id];
+  return `<a href="#${esc(id)}" data-simbolo="${esc(id)}" class="${classe || ''}">${esc(nomeCurto(id))} <small>${esc(moduloDe(id).nome)}</small></a>`;
+}
+
+function mostrarInicio() {
+  const funcoes = Object.values(dados.simbolos).filter(s => s.tipo === 'função' || s.tipo === 'método');
+  const chamadas = funcoes.reduce((t, s) => t + s.chama.length, 0);
+  const mais = funcoes.slice().sort((a, b) => b.chamado_por.length - a.chamado_por.length).slice(0, 15);
+  painel.innerHTML = `<h2>O código inteiro</h2>
+    <div class="sub">${nodes.length} módulos · ${funcoes.length} funções e métodos · ${chamadas} chamadas, lidos do Zig e do Python</div>
+    <p class="doc">Cada ponto é um módulo (no Zig, um arquivo já é uma struct). O tamanho é o número de linhas, e cada linha
+      liga um módulo a outro que ele chama. Clique num ponto para ver as structs e as funções dele, e numa função para ver o
+      tipo, quem ela chama, quem a chama e o código.</p>
+    <h3>Mais chamadas no projeto</h3><div class="lista">${mais.map(s => linkSimbolo(s.id)).join('')}</div>`;
+}
+
+function abrirModulo(id) {
+  const m = porId.get(id);
+  const simbolos = m.simbolos.map(s => dados.simbolos[s]);
+  const chama = new Set(), chamado = new Set();
+  for (const s of simbolos) {
+    for (const c of s.chama) { const mc = dados.simbolos[c].modulo; if (mc !== id) chama.add(mc); }
+    for (const c of s.chamado_por) { const mc = dados.simbolos[c].modulo; if (mc !== id) chamado.add(mc); }
+  }
+  foco = { modulo: id, simbolo: null, chama, chamado };
+  const tipos = simbolos.filter(s => !['função', 'método'].includes(s.tipo));
+  const soltas = simbolos.filter(s => s.tipo === 'função');
+  let html = `<h2>${esc(m.nome)}</h2><div class="sub">${m.lang === 'zig' ? 'Zig' : 'Python'} · ${m.linhas} linhas · ${AREAS[m.area].nome}</div>`;
+  for (const t of tipos) {
+    const metodos = simbolos.filter(s => s.tipo === 'método' && s.dono === (t.id.split('#')[1]));
+    html += `<div class="dono" data-simbolo="${esc(t.id)}">${esc(t.nome)} <small>${esc(t.tipo)}${t.doc ? ' · ' + esc(t.doc.slice(0, 90)) : ''}</small></div>`;
+    html += `<div class="lista">${metodos.map(s => `<a href="#${esc(s.id)}" data-simbolo="${esc(s.id)}">· ${esc(s.nome)} <small>${s.chamado_por.length}←</small></a>`).join('')}</div>`;
+  }
+  if (soltas.length) {
+    html += `<div class="dono">funções do módulo</div><div class="lista">${soltas.map(s => `<a href="#${esc(s.id)}" data-simbolo="${esc(s.id)}">· ${esc(s.nome)} <small>${s.chamado_por.length}←</small></a>`).join('')}</div>`;
+  }
+  html += `<h3>Chama (${chama.size})</h3><div class="lista">${[...chama].map(x => `<a class="c" href="#${esc(x)}" data-modulo="${esc(x)}">${esc(porId.get(x).nome)}</a>`).join('') || '<span class="vazio">nenhum</span>'}</div>`;
+  html += `<h3>Chamado por (${chamado.size})</h3><div class="lista">${[...chamado].map(x => `<a class="p" href="#${esc(x)}" data-modulo="${esc(x)}">${esc(porId.get(x).nome)}</a>`).join('') || '<span class="vazio">ninguém de fora</span>'}</div>`;
+  html += `<button class="espiar" data-espiar-modulo="${esc(id)}">espiar o código</button>`;
+  painel.innerHTML = html;
+  painel.scrollTop = 0;
+  history.replaceState(null, '', '#' + id);
+  if (!ligadas.has(m.area)) { ligadas.add(m.area); document.querySelector(`[data-area="${m.area}"]`).checked = true; reiniciar(); }
+  irPara(m);
+  desenhar();
+}
+
+function abrirSimbolo(id) {
+  const s = dados.simbolos[id];
+  const m = porId.get(s.modulo);
+  const chama = new Set(s.chama.map(c => dados.simbolos[c].modulo).filter(x => x !== s.modulo));
+  const chamado = new Set(s.chamado_por.map(c => dados.simbolos[c].modulo).filter(x => x !== s.modulo));
+  foco = { modulo: s.modulo, simbolo: id, chama, chamado };
+  const eFuncao = s.tipo === 'função' || s.tipo === 'método';
+  let html = `<h2>${esc(nomeCurto(id))}</h2>
+    <div class="sub">${esc(s.tipo)} em <a href="#${esc(m.id)}" data-modulo="${esc(m.id)}">${esc(m.nome)}</a> · linhas ${s.inicio}–${s.fim}</div>
+    <div class="assinatura">${esc(s.assinatura)}</div>${s.doc ? `<p class="doc">${esc(s.doc)}</p>` : ''}`;
+  if (!eFuncao) {
+    const dono = id.split('#')[1];
+    const metodos = m.simbolos.map(x => dados.simbolos[x]).filter(x => x.dono === dono);
+    html += `<h3>Métodos (${metodos.length})</h3><div class="lista">${metodos.map(x => linkSimbolo(x.id)).join('') || '<span class="vazio">nenhum</span>'}</div>`;
+  }
+  html += `<h3>Chama (${s.chama.length})</h3><div class="lista">${s.chama.map(c => linkSimbolo(c, 'c')).join('') || '<span class="vazio">nada que se resolva</span>'}</div>`;
+  html += `<h3>Chamado por (${s.chamado_por.length})</h3><div class="lista">${s.chamado_por.map(c => linkSimbolo(c, 'p')).join('') || '<span class="vazio">ninguém achado</span>'}</div>`;
+  html += `<button class="espiar" data-espiar="${esc(id)}">espiar o código</button>`;
+  painel.innerHTML = html;
+  painel.scrollTop = 0;
+  history.replaceState(null, '', '#' + id);
+  if (!ligadas.has(m.area)) { ligadas.add(m.area); document.querySelector(`[data-area="${m.area}"]`).checked = true; reiniciar(); }
+  irPara(m);
+  desenhar();
+}
+
+document.addEventListener('click', e => {
+  const alvo = e.target.closest('[data-simbolo],[data-modulo],[data-espiar],[data-espiar-modulo],[data-ir]');
+  if (!alvo) return;
+  e.preventDefault();
+  if (alvo.dataset.simbolo) { fecharCodigo(); abrirSimbolo(alvo.dataset.simbolo); }
+  else if (alvo.dataset.modulo) { fecharCodigo(); abrirModulo(alvo.dataset.modulo); }
+  else if (alvo.dataset.espiar) espiar(alvo.dataset.espiar);
+  else if (alvo.dataset.espiarModulo) espiarArquivo(alvo.dataset.espiarModulo, 0, 0);
+  else if (alvo.dataset.ir) { fecharCodigo(); abrirSimbolo(alvo.dataset.ir); }
+});
+
+// ------------------------------------------------------------ espiar o código
+
+const PALAVRAS = new Set(('const var fn pub return if else while for switch break continue try catch orelse defer errdefer struct enum union ' +
+  'extern export inline comptime error and or true false null undefined test def class import from as in not is None True False self ' +
+  'with yield lambda pass raise except finally elif async await global nonlocal assert del').split(' '));
+let espiando = null;
+function colorir(linha, lang, chamadas) {
+  const marca = lang === 'zig' ? '//' : '#';
+  let saida = '', i = 0;
+  const re = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\b\d[\w.]*|[A-Za-z_@][\w]*)/g;
+  const fimCodigo = (() => { // começo do comentário fora de aspas
+    let aspas = null;
+    for (let j = 0; j < linha.length; j++) {
+      const c = linha[j];
+      if (aspas) { if (c === '\\') j++; else if (c === aspas) aspas = null; }
+      else if (c === '"' || c === "'") aspas = c;
+      else if (linha.startsWith(marca, j)) return j;
+    }
+    return linha.length;
+  })();
+  const codigo = linha.slice(0, fimCodigo);
+  let m;
+  while ((m = re.exec(codigo))) {
+    saida += esc(codigo.slice(i, m.index));
+    const t = m[0];
+    if (t[0] === '"' || t[0] === "'") saida += `<span class="s">${esc(t)}</span>`;
+    else if (/^\d/.test(t)) saida += `<span class="n">${esc(t)}</span>`;
+    else if (PALAVRAS.has(t)) saida += `<span class="k">${t}</span>`;
+    else if (chamadas.has(t) && codigo[m.index + t.length] === '(') {
+      // com dois alvos de mesmo nome (aero.init, prop.init), vale o que tem o nome antes do ponto
+      const antes = (codigo.slice(0, m.index).match(/(\w+)\.$/) || [])[1];
+      const opcoes = chamadas.get(t);
+      const alvo = opcoes.find(c => antes && (porId.get(dados.simbolos[c].modulo).nome.endsWith('.' + antes) || (dados.simbolos[c].dono || '').endsWith(antes))) || opcoes[0];
+      saida += `<span class="ir" data-ir="${esc(alvo)}" title="abrir ${esc(nomeCurto(alvo))}">${esc(t)}</span>`;
+    }
+    else saida += esc(t);
+    i = m.index + t.length;
+  }
+  saida += esc(codigo.slice(i));
+  if (fimCodigo < linha.length) saida += `<span class="cm">${esc(linha.slice(fimCodigo))}</span>`;
+  return saida;
+}
+function espiar(id) {
+  const s = dados.simbolos[id];
+  espiarArquivo(s.modulo, s.inicio, s.fim, id);
+}
+function espiarArquivo(modulo, inicio, fim, id) {
+  const m = porId.get(modulo);
+  const linhas = dados.fontes[modulo].split('\n');
+  const de = inicio ? Math.max(1, inicio - 3) : 1, ate = fim ? Math.min(linhas.length, fim + 1) : linhas.length;
+  const chamadas = new Map();
+  for (const c of id ? dados.simbolos[id].chama : m.simbolos.flatMap(x => dados.simbolos[x].chama)) {
+    const nome = dados.simbolos[c].nome.split('.').pop();
+    chamadas.set(nome, [...(chamadas.get(nome) || []), c]);
+  }
+  let html = '';
+  for (let n = de; n <= ate; n++) {
+    const foco = inicio && n >= inicio && n <= fim && fim - inicio < 400;
+    html += `<span class="ln${foco ? ' foco' : ''}" data-n="${n}">${colorir(linhas[n - 1] || '', m.lang, chamadas) || ' '}</span>`;
+  }
+  espiando = { modulo, id };
+  document.getElementById('codigo-titulo').textContent = `${m.nome}${id ? ' · ' + nomeCurto(id) : ''} · linhas ${de}–${ate}`;
+  document.getElementById('codigo-tudo').style.display = inicio ? '' : 'none';
+  const pre = document.getElementById('codigo-texto');
+  pre.innerHTML = html;
+  document.getElementById('codigo').classList.add('aberto');
+  document.getElementById('fundo').classList.add('aberto');
+  if (!inicio) pre.scrollTop = 0;
+  else if (de === 1 || ate === linhas.length) pre.scrollTop = 0;
+}
+function fecharCodigo() {
+  document.getElementById('codigo').classList.remove('aberto');
+  document.getElementById('fundo').classList.remove('aberto');
+}
+document.getElementById('codigo-fechar').onclick = fecharCodigo;
+document.getElementById('fundo').onclick = fecharCodigo;
+document.getElementById('codigo-tudo').onclick = () => {
+  const s = espiando.id && dados.simbolos[espiando.id];
+  espiarArquivo(espiando.modulo, 0, 0, espiando.id);
+  if (s) {
+    const alvo = document.querySelector(`#codigo-texto .ln[data-n="${s.inicio}"]`);
+    document.querySelectorAll('#codigo-texto .ln').forEach(el => { const n = +el.dataset.n; el.classList.toggle('foco', n >= s.inicio && n <= s.fim); });
+    if (alvo) alvo.scrollIntoView({ block: 'start' });
+  }
+};
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharCodigo(); });
+
+// ------------------------------------------------------------ busca
+
+function buscaPronta() {
+  const campo = document.getElementById('busca'), caixa = document.getElementById('achados');
+  const itens = [
+    ...nodes.map(n => ({ texto: n.nome, sub: 'módulo', modulo: n.id })),
+    ...Object.values(dados.simbolos).map(s => ({ texto: nomeCurto(s.id), sub: `${s.tipo} · ${porId.get(s.modulo).nome}`, simbolo: s.id })),
+  ];
+  let ativo = 0, achados = [];
+  const render = () => {
+    caixa.innerHTML = achados.map((a, i) => `<a href="#" class="${i === ativo ? 'ativo' : ''}" ${a.modulo ? `data-modulo="${esc(a.modulo)}"` : `data-simbolo="${esc(a.simbolo)}"`}>${esc(a.texto)}<small>${esc(a.sub)}</small></a>`).join('');
+    caixa.style.display = achados.length ? 'block' : 'none';
+  };
+  campo.addEventListener('input', () => {
+    const q = campo.value.trim().toLowerCase();
+    if (!q) { achados = []; render(); return; }
+    const pontua = a => { const t = a.texto.toLowerCase(); return t === q ? 0 : t.endsWith('.' + q) ? 1 : t.startsWith(q) ? 2 : t.includes(q) ? 3 : 9; };
+    achados = itens.map(a => [pontua(a), a]).filter(([p]) => p < 9).sort((a, b) => a[0] - b[0] || a[1].texto.length - b[1].texto.length).slice(0, 40).map(([, a]) => a);
+    ativo = 0; render();
+  });
+  campo.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { ativo = Math.min(achados.length - 1, ativo + 1); render(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { ativo = Math.max(0, ativo - 1); render(); e.preventDefault(); }
+    else if (e.key === 'Enter' && achados[ativo]) { const a = achados[ativo]; a.modulo ? abrirModulo(a.modulo) : abrirSimbolo(a.simbolo); caixa.style.display = 'none'; }
+    else if (e.key === 'Escape') { caixa.style.display = 'none'; }
+  });
+  caixa.addEventListener('click', () => { caixa.style.display = 'none'; });
+}
+</script>
+</body>
+</html>

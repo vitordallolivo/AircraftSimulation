@@ -121,8 +121,10 @@ def main() -> int:
         f.write(template.replace("/*LIVRO*/null", blob))
     pages = [page for group in data["grupos"] for page in group["paginas"]]
     images = copy_images(pages, args.saida)
-    # a aba Mapa: o diagrama de cima do projeto, pronto em HTML
-    shutil.copy2(os.path.join(ROOT, "tools", "mapa_page.html"), os.path.join(args.saida, "mapa.html"))
+    # a aba Mapa: o grafo do código, extraído agora do Zig e do Python
+    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "grafo.py"), "--saida",
+                    os.path.join(args.saida, "grafo.json")], check=True)
+    shutil.copy2(os.path.join(ROOT, "tools", "grafo_page.html"), os.path.join(args.saida, "mapa.html"))
     # a aba Tracking: a página do tracking ao lado do livro
     subprocess.run([sys.executable, os.path.join(ROOT, "tools", "tracking.py"), "--html",
                     os.path.join(args.saida, "tracking.html")], check=True)

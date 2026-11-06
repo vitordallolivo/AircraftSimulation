@@ -812,6 +812,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tools/banco_otimizadores.py` — Banco de comparação dos otimizadores do aeroopt: qual busca acha o melhor avião, com quantos pontos, em que tipo de
 - `tools/capturas.py` — Fotos de todas as abas (roda cada simulação com os padrões).
 - `tools/codemap.py` — Mapa do código: gera docs/MAP.md a partir do próprio código (nunca editar o MAP.md à mão).
+- `tools/grafo.py` — Grafo do código: lê o Zig e o Python do repositório e devolve quem é quem e quem chama quem, sem lista feita à mão.
 - `tools/livro.py` — Livro do projeto: todos os .md do repositório num site só, como capítulos de um livro, ao lado do tracking.
 - `tools/load_view.py` — Vista 3D da carga aerodinâmica de um avião num ponto de operação: as superfícies pintadas pela carga alar local
 - `tools/metodos_voa.py` — Qual busca da etapa voa (E&C) do aeroopt acha mais rápido um avião que voa? Compara os métodos de FLY_METHODS.
