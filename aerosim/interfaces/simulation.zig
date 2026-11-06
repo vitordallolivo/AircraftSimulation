@@ -45,6 +45,9 @@ pub const Simulation = struct {
     advance: *const fn (run: *Run) Error!bool,
     /// escreve o resultado da rodada que acabou
     result: *const fn (run: *Run, out: *Writer) Error!void,
+    /// a rodada com estes valores precisa de um método de fora do núcleo (lltdrek, AeroSandbox, AVL): ela vai pela
+    /// ponte com o Python, que no site só baixa o pacote do método nessa hora; nulo: tudo no núcleo
+    python: ?*const fn (values: Values) bool = null,
 };
 
 /// confere em comptime que `Analysis` tem a interface de uma análise
@@ -62,6 +65,9 @@ pub fn check(comptime Analysis: type) void {
     });
     if (comptime core.interface.has(Analysis, "edit")) core.interface.require(Analysis, "análise", &.{
         .{ .name = "edit", .type = fn (?*const Aircraft, GridEdit) Error!void },
+    });
+    if (comptime core.interface.has(Analysis, "python")) core.interface.require(Analysis, "análise", &.{
+        .{ .name = "python", .type = fn (Values) bool },
     });
 }
 
@@ -93,6 +99,7 @@ pub fn register(comptime Analysis: type) Simulation {
         .description = Analysis.description,
         .specs = Analysis.specs,
         .edit = if (comptime core.interface.has(Analysis, "edit")) Analysis.edit else null,
+        .python = if (comptime core.interface.has(Analysis, "python")) Analysis.python else null,
         .start = wrapped.start,
         .advance = wrapped.advance,
         .result = wrapped.result,

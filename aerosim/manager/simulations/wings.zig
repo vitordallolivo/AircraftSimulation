@@ -1,0 +1,570 @@
+//! Analisar em Zig (o par de `wings.py`): a aerodinâmica só das superfícies escolhidas do avião aberto (uma asa, um
+//! biplano, um tandem, asa e canard), sem trimar, sem fuselagem e sem hélice, como num túnel de vento. Cada α imposto
+//! dá a sustentação de cada superfície pela varredura do núcleo (`core/src/loads/sweep.zig`), e o resumo do núcleo
+//! tira o C_L do conjunto e de cada uma, o C_L máximo e onde o estol começa. No α da carga sai a distribuição ao longo
+//! da envergadura, e o Reynolds de cada superfície entra no diagnóstico.
+//!
+//! O que vem de fora do núcleo roda pelo Python, só quando é pedido (`python`): as asas da sprint ou da tabela de
+//! Projetar, as chapas de ponta, o VLM do AeroSandbox como método de carga, a comparação dos métodos (lltdrek,
+//! AeroSandbox, AVL...) e o avião completo. No site, o pacote desses métodos só é baixado quando um deles é marcado.
+const std = @import("std");
+const core = @import("aerosim");
+const aircraft_model = @import("aircraft_model");
+const simulation = @import("simulation");
+
+const params_mod = aircraft_model.params;
+const model = aircraft_model.aircraft;
+const sweep = core.sweep;
+const max_panels = core.limits.max_surfaces;
+const rad = std.math.pi / 180.0;
+
+/// a análise, com a interface de `simulation.check`
+pub const Wings = struct {
+    pub const name: []const u8 = "wings";
+    pub const title: [:0]const u8 = "Analisar";
+    pub const area: []const u8 = "Aerodinâmica";
+    pub const description: []const u8 = "Aerodinâmica só das superfícies escolhidas (uma asa, biplano, tandem, canard), sem trimar, sem fuselagem e sem hélice, como no túnel: C_L em α de cada superfície e do conjunto, C_L máximo, onde o estol começa e a carga ao longo da envergadura. Os métodos de fora (AeroSandbox, lltdrek, AVL) e o avião completo rodam pelo Python quando marcados.";
+    pub const State = RunState;
+    pub const specs = writeFields;
+    pub const start = startRun;
+    pub const advance = advanceRun;
+    pub const result = writeResult;
+    pub const python = needsPython;
+};
+
+const open_source = "avião aberto (Montagem)";
+const sources = [_][]const u8{ open_source, "asas guardadas na sprint", "asas do avião (tabela de Projetar)" };
+const none = "nenhum";
+
+/// os métodos de carga, com os mesmos títulos do Python (`aerosim.aero.all_load_methods`)
+const LoadMethod = enum {
+    llt,
+    llt_gh,
+    llt_nl,
+    faixas,
+    vlm_asb,
+
+    fn title(method: LoadMethod) []const u8 {
+        return switch (method) {
+            .llt => "linha sustentadora (Phillips e Snyder)",
+            .llt_gh => "linha sustentadora (Goates e Hunsaker)",
+            .llt_nl => "linha sustentadora não linear (estol por perfil)",
+            .faixas => "faixas (o C_Lα da simulação)",
+            .vlm_asb => "VLM do AeroSandbox",
+        };
+    }
+
+    fn fromTitle(shown: []const u8) ?LoadMethod {
+        for (std.enums.values(LoadMethod)) |method| if (std.mem.eql(u8, method.title(), shown)) return method;
+        return null;
+    }
+
+    /// o núcleo faz este método (senão ele é do Python)
+    fn inCore(method: LoadMethod) bool {
+        return method != .vlm_asb;
+    }
+};
+
+const method_titles = blk: {
+    var titles: [std.enums.values(LoadMethod).len][]const u8 = undefined;
+    for (std.enums.values(LoadMethod), 0..) |method, i| titles[i] = method.title();
+    const frozen = titles;
+    break :blk frozen;
+};
+const compare_titles = [_][]const u8{none} ++ method_titles;
+
+/// os solvers da comparação dos métodos (os mesmos do Python, `SOLVERS`): todos pelo Python
+const solvers = [_][2][]const u8{
+    .{ "lltdrek", "lltdrek (linha sustentadora não linear)" },
+    .{ "zig", "modelo interno (faixas da simulação)" },
+    .{ "zig_llt_gh", "linha sustentadora do núcleo (Goates e Hunsaker)" },
+    .{ "zig_llt", "linha sustentadora do núcleo (Phillips e Snyder)" },
+    .{ "asb_vlm", "AeroSandbox VLM" },
+    .{ "asb_buildup", "AeroSandbox AeroBuildup" },
+    .{ "asb_ll", "AeroSandbox LiftingLine" },
+    .{ "avl", "AVL" },
+};
+
+/// Reynolds crítico dos perfis de aeromodelo: abaixo dele a bolha laminar tende a não recolar (Lissaman,
+/// "Low-Reynolds-number airfoils", Annual Review of Fluid Mechanics 15, 1983; valor a conferir no PDF)
+const critical_reynolds = 7e4;
+const colors = [_][]const u8{ "#1f4e8c", "#d95f02", "#2ca02c", "#9467bd" };
+const surface_colors = [_][]const u8{ "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#17becf" };
+const max_per_side = 40; // `MAX_PER_SIDE` do Python
+
+const plots = [_]simulation.Plot{
+    .{ .key = "CL", .title = "C_L × α do conjunto", .xlabel = "α (°)", .ylabel = "C_L (soma das áreas)" },
+    .{ .key = "CL_surf", .title = "C_L × α por superfície", .xlabel = "α (°)", .ylabel = "C_L (área dela)" },
+    .{ .key = "cl_span", .title = "c_l × y", .xlabel = "y (m)", .ylabel = "c_l" },
+    .{ .key = "L_span", .title = "L' × y", .xlabel = "y (m)", .ylabel = "L' (N/m)" },
+};
+
+/// um método varrido: o C_L do conjunto e de cada dono em cada α, o resumo e a carga no α da carga
+const MethodRun = struct {
+    method: LoadMethod,
+    total_cl: []f64,
+    owner_cl: []f64, // α × dono
+    summary: sweep.Summary,
+    panel_owner: []i32,
+    load_owner: []i32, // o dono de cada painel no α da carga
+    load_span: []f64,
+    load_cl: []f64,
+    load_chord: []f64,
+};
+
+const RunState = struct {
+    alphas: []f64 = &.{},
+    alpha_load: f64 = 10,
+    airspeed: f64 = 12,
+    density: f64 = 1.225,
+    owners: []const []const u8 = &.{},
+    owner_area: []f64 = &.{},
+    owner_chord: []f64 = &.{},
+    runs: []MethodRun = &.{},
+    density_altitude: f64 = 0,
+    failure: []const u8 = "",
+};
+
+/// as superfícies ligadas do avião (as que dá para escolher)
+fn surfaceKey(memory: std.mem.Allocator, index: usize) ![]const u8 {
+    return std.fmt.allocPrint(memory, "surf_{d}", .{index});
+}
+
+fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, values: simulation.Values) simulation.Error!void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    var params: std.ArrayList(simulation.Param) = .empty;
+    const source = values.text("source", open_source);
+    const where = "De onde vêm as asas";
+    try params.append(memory, .{ .key = "source", .label = "asas de", .kind = .choice, .default = .{ .text = source }, .choices = &sources, .group = where, .rebuild = true, .help = "o avião aberto na Montagem; as asas da sprint e a tabela de Projetar rodam pelo Python" });
+    if (std.mem.eql(u8, source, open_source)) if (aircraft) |plane| for (plane.surfaces, 0..) |surface, i| {
+        if (!surface.enabled) continue;
+        try params.append(memory, .{ .key = try surfaceKey(memory, i), .label = try std.fmt.allocPrint(memory, "incluir: {s}", .{surface.name}), .kind = .bool, .default = .{ .toggle = std.mem.eql(u8, surface.role, "wing") }, .group = "Superfícies" });
+    };
+    const case = "Caso";
+    const loads = "Carga ao longo da envergadura";
+    const others = "Pelo Python (baixado só quando marcado)";
+    try params.appendSlice(memory, &.{
+        .{ .key = "V", .label = "velocidade", .default = .{ .number = 12 }, .minimum = 2, .maximum = 80, .unit = "m/s", .group = case },
+        .{ .key = "a0", .label = "α inicial", .default = .{ .number = -4 }, .minimum = -20, .maximum = 10, .unit = "°", .group = case },
+        .{ .key = "a1", .label = "α final", .default = .{ .number = 22 }, .minimum = 2, .maximum = 40, .unit = "°", .group = case },
+        .{ .key = "da", .label = "passo de α", .default = .{ .number = 1 }, .minimum = 0.25, .maximum = 5, .unit = "°", .group = case },
+        .{ .key = "alpha_load", .label = "α da carga", .default = .{ .number = 10 }, .minimum = -10, .maximum = 40, .unit = "°", .group = case },
+        .{ .key = "endplate", .label = "chapas nas pontas (altura / corda da ponta)", .default = .{ .number = 0 }, .minimum = 0, .maximum = 5, .group = case, .help = "0: sem chapas; > 0 roda pelo Python" },
+        .{ .key = "xref", .label = "ponto dos momentos", .default = .{ .number = 25 }, .minimum = 0, .maximum = 100, .unit = "% CMA", .group = case },
+        .{ .key = "method", .label = "método", .kind = .choice, .default = .{ .text = LoadMethod.llt_nl.title() }, .choices = &method_titles, .group = loads, .help = "o VLM do AeroSandbox roda pelo Python" },
+        .{ .key = "compare", .label = "comparar com", .kind = .choice, .default = .{ .text = none }, .choices = &compare_titles, .group = loads },
+        .{ .key = "vlm_span", .label = "VLM: faixas por lado", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 200, .group = loads, .help = "refino do VLM; 0: o padrão (40)" },
+        .{ .key = "vlm_chord", .label = "VLM: painéis na corda", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .group = loads, .help = "refino do VLM; 0: o padrão (6)" },
+        .{ .key = "whole", .label = "analisar também o avião completo", .kind = .bool, .default = .{ .toggle = false }, .group = others, .help = "o avião aberto inteiro, como voa (polares no CG, profundor, derrapagem, L/D)" },
+    });
+    for (solvers) |solver| try params.append(memory, .{ .key = try std.fmt.allocPrint(memory, "use_{s}", .{solver[0]}), .label = solver[1], .kind = .bool, .default = .{ .toggle = false }, .group = others });
+    try params.appendSlice(memory, &.{
+        .{ .key = "section", .label = "polar 2D dos perfis no lltdrek", .kind = .choice, .default = .{ .text = "modelo" }, .choices = &.{ "modelo", "neuralfoil" }, .group = others },
+        .{ .key = "n_span", .label = "painéis por semiasa", .kind = .int, .default = .{ .number = 12 }, .minimum = 4, .maximum = 40, .group = others },
+        .{ .key = "n_chord", .label = "painéis na corda (VLM, AVL)", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .group = others },
+    });
+    try simulation.writeSpecs(out, params.items, &plots, Wings.description, .{});
+}
+
+/// a rodada precisa do Python: uma fonte de asas, um método ou uma comparação de fora do núcleo
+fn needsPython(values: simulation.Values) bool {
+    if (!std.mem.eql(u8, values.text("source", open_source), open_source)) return true;
+    if (values.number("endplate", 0) > 0 or values.toggle("whole", false)) return true;
+    for ([_][]const u8{ "method", "compare" }) |key| if (LoadMethod.fromTitle(values.text(key, none))) |method| {
+        if (!method.inCore()) return true;
+    };
+    var buffer: [32]u8 = undefined;
+    for (solvers) |solver| {
+        const key = std.fmt.bufPrint(&buffer, "use_{s}", .{solver[0]}) catch continue;
+        if (values.toggle(key, false)) return true;
+    }
+    return false;
+}
+
+// ------------------------------------------------------------------ o avião só com as asas
+
+/// o avião só com as superfícies escolhidas: sem fuselagem, sem motores, sem tanques e sem carga
+fn wingsOnly(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, values: simulation.Values) !simulation.Aircraft {
+    var plane = aircraft.*;
+    plane.fuselage.enabled = false;
+    const units = try memory.dupe(model.Propulsion, aircraft.propulsion);
+    for (units) |*unit| unit.enabled = false;
+    plane.propulsion = units;
+    plane.tanks = &.{};
+    plane.payload.enabled = false;
+    plane.gear.layout = "custom";
+    const surfaces = try memory.dupe(model.Surface, aircraft.surfaces);
+    for (surfaces, 0..) |*surface, i| {
+        if (!surface.enabled) continue;
+        surface.enabled = values.toggle(try surfaceKey(memory, i), std.mem.eql(u8, surface.role, "wing"));
+    }
+    plane.surfaces = surfaces;
+    return plane;
+}
+
+/// cópia do avião com a superfície `index` em `per_side` faixas da mesma geometria (`refine_surface` do Python); com
+/// `tip`, faixas mais estreitas na ponta (y = y0 + (y1 − y0) sen(π t/2), o espaçamento que Phillips e Snyder (2000)
+/// recomendam para a linha sustentadora convergir)
+fn refined(memory: std.mem.Allocator, plane: simulation.Aircraft, index: usize, per_side: usize, tip: bool) !simulation.Aircraft {
+    const surface = plane.surfaces[index];
+    if (surface.sections.len < 2 or model.mixedAirfoils(&surface)) return plane;
+    const sorted = try memory.dupe(model.Section, surface.sections);
+    std.mem.sort(model.Section, sorted, {}, struct {
+        fn less(_: void, a: model.Section, b: model.Section) bool {
+            return a.y < b.y;
+        }
+    }.less);
+    const first = sorted[0].y;
+    const last = sorted[sorted.len - 1].y;
+    var candidates: std.ArrayList(f64) = .empty;
+    for (0..per_side + 1) |k| {
+        var t = @as(f64, @floatFromInt(k)) / @as(f64, @floatFromInt(per_side));
+        if (tip) t = @sin(0.5 * std.math.pi * t);
+        try candidates.append(memory, first + (last - first) * t);
+    }
+    for (sorted) |section| try candidates.append(memory, section.y);
+    std.mem.sort(f64, candidates.items, {}, std.sort.asc(f64));
+    var stations: std.ArrayList(f64) = .empty;
+    for (candidates.items) |y| {
+        if (stations.items.len == 0 or y - stations.items[stations.items.len - 1] > 1e-9) {
+            try stations.append(memory, y);
+        } else for (sorted) |section| if (@abs(y - section.y) < 1e-12) {
+            stations.items[stations.items.len - 1] = y; // as seções originais ficam exatas
+            break;
+        };
+    }
+    const ys = try memory.alloc(f64, sorted.len);
+    for (sorted, ys) |section, *y| y.* = section.y;
+    const column = struct {
+        fn of(scratch: std.mem.Allocator, all: []const model.Section, comptime field: []const u8) ![]f64 {
+            const out = try scratch.alloc(f64, all.len);
+            for (all, out) |section, *value| value.* = @field(section, field);
+            return out;
+        }
+    };
+    const chords = try column.of(memory, sorted, "chord");
+    const offsets = try column.of(memory, sorted, "x_offset");
+    const twists = try column.of(memory, sorted, "twist");
+    const sections = try memory.alloc(model.Section, stations.items.len);
+    for (sections, stations.items) |*section, y| section.* = .{
+        .y = y,
+        .chord = core.constraints.interp(y, ys, chords),
+        .x_offset = core.constraints.interp(y, ys, offsets),
+        .twist = core.constraints.interp(y, ys, twists),
+    };
+    const surfaces = try memory.dupe(model.Surface, plane.surfaces);
+    surfaces[index].sections = sections;
+    var out = plane;
+    out.surfaces = surfaces;
+    return out;
+}
+
+/// o núcleo aceita este avião (cabe no limite de painéis)
+fn fits(plane: *const simulation.Aircraft, params: *core.types.Params) bool {
+    var diagnosis: model.Diag = .{};
+    params_mod.fill(plane, params, &diagnosis) catch return false;
+    return params.n_surf <= max_panels;
+}
+
+/// a maior divisão da superfície que cabe no limite de painéis do núcleo (busca binária, como `_fit` do Python)
+fn fitted(memory: std.mem.Allocator, plane: simulation.Aircraft, index: usize, tip: bool, params: *core.types.Params) !simulation.Aircraft {
+    var low: usize = 1;
+    var high: usize = max_per_side;
+    var best = plane;
+    while (low <= high) {
+        const middle = (low + high) / 2;
+        const candidate = try refined(memory, plane, index, middle, tip);
+        if (fits(&candidate, params)) {
+            best = candidate;
+            low = middle + 1;
+        } else high = middle - 1;
+    }
+    return best;
+}
+
+/// os parâmetros do núcleo para o método (a linha sustentadora com as escolhas do Python: `GOATES_HUNSAKER`,
+/// `NONLINEAR` de `span_loads.py`)
+fn configure(run: *simulation.Run, instance: *core.runner.Instance, plane: *const simulation.Aircraft, method: LoadMethod) !void {
+    var diagnosis: model.Diag = .{};
+    params_mod.fill(plane, &instance.p, &diagnosis) catch |err| {
+        run.fail("as asas não montaram no núcleo: {s} ({s})", .{ diagnosis.text(), @errorName(err) });
+        return err;
+    };
+    switch (method) {
+        .llt_gh => {
+            instance.p.llt_method = .goates_hunsaker;
+            instance.p.llt_joint = 0.15;
+            instance.p.llt_blend = 1.0;
+        },
+        .llt_nl => {
+            instance.p.llt_method = .nonlinear;
+            instance.p.llt_viscosity = 2.0;
+        },
+        .llt => instance.p.llt_method = .phillips_snyder,
+        else => {},
+    }
+    core.runner.configure(instance) catch |err| {
+        run.fail("o núcleo recusou as asas ({s})", .{@errorName(err)});
+        return err;
+    };
+}
+
+/// a varredura de um método: uma chamada por superfície refinada sozinha, mais uma do avião sem refino para o que
+/// sobrou (`CoreLoadMethod.sweep` do Python); devolve também o c_l de cada painel no α da carga
+fn sweepMethod(run: *simulation.Run, state: *RunState, plane: simulation.Aircraft, owner_of_surface: []const i32, method: LoadMethod) !MethodRun {
+    const memory = run.memory();
+    const owner_count = state.owners.len;
+    const alpha_count = state.alphas.len;
+    const lifting_line = method != .faixas;
+    const radians = try memory.alloc(f64, alpha_count);
+    for (radians, state.alphas) |*angle, alpha| angle.* = alpha * rad;
+    const lift = try memory.alloc(f64, alpha_count * owner_count);
+    @memset(lift, 0);
+    const done = try memory.alloc(bool, owner_count);
+    @memset(done, false);
+    var section_cl: std.ArrayList([]f64) = .empty; // por job: α × painel com dono
+    var panel_owner: std.ArrayList(i32) = .empty;
+    var panel_span: std.ArrayList(f64) = .empty;
+    var load_cl: std.ArrayList(f64) = .empty;
+    var load_chord: std.ArrayList(f64) = .empty;
+    const instance = try memory.create(core.runner.Instance);
+    var jobs: std.ArrayList(?usize) = .empty;
+    for (plane.surfaces, 0..) |surface, i| if (surface.enabled) try jobs.append(memory, i);
+    try jobs.append(memory, null);
+    for (jobs.items) |job| {
+        instance.* = .{};
+        const job_plane = if (job) |index| try fitted(memory, plane, index, lifting_line, &instance.p) else plane;
+        instance.* = .{};
+        try configure(run, instance, &job_plane, method);
+        const params = &instance.p;
+        const panel_count: usize = @intCast(params.n_surf);
+        var owners: [max_panels]i32 = undefined;
+        var any = false;
+        for (params.surf[0..panel_count], owners[0..panel_count]) |panel, *owner| {
+            owner.* = -1;
+            if (panel.owner < 0 or panel.vertical != 0) continue;
+            const index: usize = @intCast(panel.owner);
+            if (index >= owner_of_surface.len or owner_of_surface[index] < 0) continue;
+            const candidate = owner_of_surface[index];
+            if (done[@intCast(candidate)] or (job != null and job.? != index)) continue;
+            owner.* = candidate;
+            any = true;
+        }
+        if (!any) continue;
+        const job_lift = try memory.alloc(f64, alpha_count * owner_count);
+        const area = try memory.alloc(f64, owner_count);
+        const chord = try memory.alloc(f64, owner_count);
+        const cl = try memory.alloc(f64, alpha_count * panel_count);
+        const span = try memory.alloc(f64, panel_count);
+        const kind: sweep.Method = if (lifting_line) .lifting_line else .strips;
+        sweep.sweep(params, state.airspeed, radians, owners[0..panel_count], owner_count, kind, .{ .owner_lift = job_lift, .owner_area = area, .owner_chord = chord, .section_cl = cl, .panel_span = span }) catch {
+            run.fail("a varredura do núcleo recusou as asas", .{});
+            return error.Failed;
+        };
+        // a carga no α da carga, painel a painel
+        const at_load = [_]f64{state.alpha_load * rad};
+        const load_lift = try memory.alloc(f64, owner_count);
+        const load_cls = try memory.alloc(f64, panel_count);
+        sweep.sweep(params, state.airspeed, &at_load, owners[0..panel_count], owner_count, kind, .{ .owner_lift = load_lift, .owner_area = try memory.alloc(f64, owner_count), .owner_chord = try memory.alloc(f64, owner_count), .section_cl = load_cls, .panel_span = try memory.alloc(f64, panel_count) }) catch {
+            run.fail("a varredura do núcleo recusou as asas", .{});
+            return error.Failed;
+        };
+        var columns: std.ArrayList(usize) = .empty;
+        for (owners[0..panel_count], 0..) |owner, i| if (owner >= 0) try columns.append(memory, i);
+        for (0..owner_count) |o| {
+            const tag: i32 = @intCast(o);
+            const active = for (owners[0..panel_count]) |owner| {
+                if (owner == tag) break true;
+            } else false;
+            if (!active) continue;
+            for (0..alpha_count) |a| lift[a * owner_count + o] = job_lift[a * owner_count + o];
+            state.owner_area[o] = area[o];
+            state.owner_chord[o] = chord[o];
+            done[o] = true;
+        }
+        const block = try memory.alloc(f64, alpha_count * columns.items.len);
+        for (0..alpha_count) |a| for (columns.items, 0..) |panel, j| {
+            block[a * columns.items.len + j] = cl[a * panel_count + panel];
+        };
+        try section_cl.append(memory, block);
+        for (columns.items) |panel| {
+            try panel_owner.append(memory, owners[panel]);
+            try panel_span.append(memory, span[panel]);
+            try load_cl.append(memory, load_cls[panel]);
+            try load_chord.append(memory, params.surf[panel].c);
+        }
+    }
+    // os painéis de todos os jobs lado a lado (`np.hstack`)
+    const panel_total = panel_owner.items.len;
+    const all_cl = try memory.alloc(f64, alpha_count * panel_total);
+    var offset: usize = 0;
+    for (section_cl.items) |block| {
+        const width = block.len / @max(alpha_count, 1);
+        for (0..alpha_count) |a| @memcpy(all_cl[a * panel_total + offset ..][0..width], block[a * width ..][0..width]);
+        offset += width;
+    }
+    const total_cl = try memory.alloc(f64, alpha_count);
+    const owner_cl = try memory.alloc(f64, alpha_count * owner_count);
+    const dynamic_pressure = 0.5 * state.density * state.airspeed * state.airspeed;
+    const summary = sweep.summarize(lift, state.owner_area, dynamic_pressure, all_cl, panel_owner.items, panel_span.items, total_cl, owner_cl) catch {
+        run.fail("o resumo da varredura não saiu", .{});
+        return error.Failed;
+    };
+    return .{ .method = method, .total_cl = total_cl, .owner_cl = owner_cl, .summary = summary, .panel_owner = panel_owner.items, .load_owner = panel_owner.items, .load_span = panel_span.items, .load_cl = load_cl.items, .load_chord = load_chord.items };
+}
+
+fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) simulation.Error!void {
+    const memory = run.memory();
+    const plane = try wingsOnly(memory, run.aircraft, values);
+    state.airspeed = values.number("V", 12);
+    state.density = plane.environment.rho;
+    state.density_altitude = plane.environment.densityAltitude();
+    state.alpha_load = values.number("alpha_load", 10);
+    const first = values.number("a0", -4);
+    const last = values.number("a1", 22);
+    const step = @max(values.number("da", 1), 0.05);
+    const count: usize = @intFromFloat(@floor((last - first + 1e-9) / step) + 1);
+    state.alphas = try memory.alloc(f64, count);
+    for (state.alphas, 0..) |*alpha, k| alpha.* = first + step * @as(f64, @floatFromInt(k));
+
+    // os donos: as superfícies horizontais escolhidas, na ordem do avião
+    const owner_of_surface = try memory.alloc(i32, plane.surfaces.len);
+    var owners: std.ArrayList([]const u8) = .empty;
+    for (plane.surfaces, owner_of_surface) |surface, *owner| {
+        owner.* = -1;
+        if (!surface.enabled or surface.vertical) continue;
+        owner.* = @intCast(owners.items.len);
+        try owners.append(memory, surface.name);
+    }
+    if (owners.items.len == 0) {
+        state.failure = "nenhuma superfície marcada";
+        run.progress = 1;
+        return;
+    }
+    state.owners = owners.items;
+    state.owner_area = try memory.alloc(f64, owners.items.len);
+    state.owner_chord = try memory.alloc(f64, owners.items.len);
+
+    const main = LoadMethod.fromTitle(values.text("method", LoadMethod.llt_nl.title())) orelse .llt_nl;
+    const other = LoadMethod.fromTitle(values.text("compare", none));
+    var runs: std.ArrayList(MethodRun) = .empty;
+    try runs.append(memory, try sweepMethod(run, state, plane, owner_of_surface, main));
+    run.progress = 0.5;
+    if (other) |method| if (method != main) try runs.append(memory, try sweepMethod(run, state, plane, owner_of_surface, method));
+    state.runs = runs.items;
+    run.progress = 1;
+}
+
+fn advanceRun(_: *simulation.Run, _: *RunState) simulation.Error!bool {
+    return true; // a varredura sai inteira no começo (frações de segundo)
+}
+
+fn text(memory: std.mem.Allocator, comptime format: []const u8, args: anytype) ![]const u8 {
+    return std.fmt.allocPrint(memory, format, args);
+}
+
+fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) simulation.Error!void {
+    const memory = run.memory();
+    var summary: std.ArrayList([2][]const u8) = .empty;
+    var checks: std.ArrayList(simulation.Check) = .empty;
+    const group = "asas";
+    const figures = try simulation.Figures.init(memory, &plots);
+    if (state.failure.len > 0) {
+        try checks.append(memory, .{ .status = .falha, .item = "superfícies", .value = state.failure, .fix = "marque ao menos uma superfície", .group = group });
+    }
+    const dynamic_pressure = 0.5 * state.density * state.airspeed * state.airspeed;
+    const owner_count = state.owners.len;
+    for (state.runs, 0..) |method_run, m| {
+        const title = method_run.method.title();
+        const color = colors[m % colors.len];
+        try figures.curve("CL", .{ .name = title, .x = state.alphas, .y = method_run.total_cl, .color = color, .width = 2 });
+        for (state.owners, 0..) |owner, k| {
+            if (!(state.owner_area[k] > 0)) continue;
+            const column = try memory.alloc(f64, state.alphas.len);
+            for (column, 0..) |*value, a| value.* = method_run.owner_cl[a * owner_count + k];
+            try figures.curve("CL_surf", .{ .name = try text(memory, "{s} · {s}", .{ owner, title }), .x = state.alphas, .y = column, .color = surface_colors[(k + m * owner_count) % surface_colors.len], .dashed = m > 0 });
+        }
+        const facts = method_run.summary;
+        const prefix = try text(memory, "[{s}] ", .{title});
+        try summary.append(memory, .{ try text(memory, "{s}C_L máximo, α dele (°)", .{prefix}), try text(memory, "{d:.4}, {d}", .{ facts.lift_max, state.alphas[facts.peak] }) });
+        if (facts.peak == state.alphas.len - 1) {
+            try checks.append(memory, .{ .status = .info, .item = try text(memory, "C_L máximo {s}", .{title}), .value = try text(memory, "no fim da varredura ({d}°)", .{state.alphas[state.alphas.len - 1]}), .why = "o C_L ainda sobe no último α (o método não tem estol, ou falta varrer mais)", .fix = "aumente o α final ou use a linha sustentadora não linear", .group = group });
+        } else if (facts.onset_panel) |panel| {
+            const fraction = facts.onset_fraction;
+            const part: []const u8 = if (fraction < 1.0 / 3.0) "raiz" else if (fraction < 2.0 / 3.0) "meio" else "ponta";
+            const where = try text(memory, "{s}: {s} (y/b/2 = {d:.2})", .{ state.owners[@intCast(method_run.panel_owner[panel])], part, fraction });
+            try summary.append(memory, .{ try text(memory, "{s}onde o estol começa", .{prefix}), where });
+            const tip = std.mem.eql(u8, part, "ponta");
+            try checks.append(memory, .{ .status = if (tip) .atencao else .ok, .item = try text(memory, "início do estol {s}", .{title}), .value = where, .criterion = "da raiz para fora", .why = if (tip) "o estol na ponta tira o aileron e derruba a asa" else "", .fix = if (tip) "torção negativa na ponta, menos afilamento ou um perfil de c_l,max maior na ponta" else "", .group = group });
+        }
+        // a carga ao longo da envergadura no α da carga, por superfície, em ordem de y
+        for (state.owners, 0..) |owner, k| {
+            var order: std.ArrayList(usize) = .empty;
+            for (method_run.load_owner, 0..) |panel_owner, i| if (panel_owner == @as(i32, @intCast(k))) try order.append(memory, i);
+            if (order.items.len == 0) continue;
+            std.mem.sort(usize, order.items, method_run.load_span, struct {
+                fn less(span: []const f64, a: usize, b: usize) bool {
+                    return span[a] < span[b];
+                }
+            }.less);
+            const ys = try memory.alloc(f64, order.items.len);
+            const cls = try memory.alloc(f64, order.items.len);
+            const lifts = try memory.alloc(f64, order.items.len);
+            for (order.items, ys, cls, lifts) |i, *y, *cl, *lift| {
+                y.* = method_run.load_span[i];
+                cl.* = method_run.load_cl[i];
+                lift.* = dynamic_pressure * method_run.load_chord[i] * method_run.load_cl[i];
+            }
+            const name = try text(memory, "{s} · {s}", .{ owner, title });
+            try figures.curve("cl_span", .{ .name = name, .x = ys, .y = cls, .color = surface_colors[(k + m * owner_count) % surface_colors.len], .dashed = m > 0 });
+            try figures.curve("L_span", .{ .name = name, .x = ys, .y = lifts, .color = surface_colors[(k + m * owner_count) % surface_colors.len], .dashed = m > 0 });
+        }
+    }
+    if (state.runs.len > 0) {
+        var total_area: f64 = 0;
+        for (state.owners, 0..) |owner, k| {
+            total_area += state.owner_area[k];
+            const reynolds = sweep.reynolds(state.density, state.airspeed, state.owner_chord[k], state.density_altitude);
+            try summary.append(memory, .{ try text(memory, "{s}: Reynolds (corda média) a {d} m/s", .{ owner, state.airspeed }), try text(memory, "{d:.0}", .{reynolds}) });
+            if (reynolds < critical_reynolds) try checks.append(memory, .{ .status = .atencao, .item = try text(memory, "Reynolds {s}", .{owner}), .value = try text(memory, "{d:.3}", .{reynolds}), .criterion = "≥ 7e+04", .why = "abaixo do Reynolds crítico dos perfis de aeromodelo a bolha laminar pode não recolar: o perfil perde sustentação, e a polar do perfil não mostra isso", .fix = "confira a polar do perfil nesse Reynolds", .group = group });
+        }
+        try summary.append(memory, .{ "área de referência (soma das horizontais, m²)", try text(memory, "{d:.4}", .{total_area}) });
+    }
+    try summary.append(memory, .{ "métodos de carga", "núcleo (core/src/loads/sweep.zig)" });
+    try simulation.beginResult(out, summary.items, checks.items);
+    try figures.write(out, true);
+    try simulation.endResult(out);
+}
+
+const testing = std.testing;
+
+test "Analisar: o C_L máximo da asa do Convencional bate com o Python" {
+    const gpa = testing.allocator;
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    defer gpa.free(bytes);
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(gpa, bytes, &diagnosis);
+    defer loaded.deinit();
+    const registered = simulation.register(Wings);
+    try testing.expect(!needsPython(.{}));
+    for (expected) |case| {
+        var run = simulation.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
+        defer run.arena.deinit();
+        const request = try std.fmt.allocPrint(run.memory(), "\"values\": {{\"method\": \"{s}\"}}", .{case.method.title()});
+        try registered.start(&run, simulation.Values.fromRequest(run.memory(), request));
+        const state: *RunState = @ptrCast(@alignCast(run.state.?));
+        try testing.expectApproxEqAbs(case.lift_max, state.runs[0].summary.lift_max, 1e-6);
+        try testing.expectEqual(case.peak, state.runs[0].summary.peak);
+        var written: std.Io.Writer.Allocating = .init(gpa);
+        defer written.deinit();
+        try registered.result(&run, &written.writer);
+    }
+}
+
+// os números do Python (`wings.py`, Convencional_original, só a asa, campos padrão): C_L máximo e o índice do α dele
+const expected = [_]struct { method: LoadMethod, lift_max: f64, peak: usize }{
+    .{ .method = .faixas, .lift_max = 1.5989062801644256, .peak = 20 },
+    .{ .method = .llt_nl, .lift_max = 1.6516222836382326, .peak = 20 },
+};

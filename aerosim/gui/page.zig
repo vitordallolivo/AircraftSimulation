@@ -500,11 +500,20 @@ pub const Page = struct {
         defer text.deinit();
         page.writeRequest(&text.writer, "run") catch return;
         setText(&page.message, "rodando...", .{});
-        if (page.analysis != null) return page.analysisStart(text.written());
+        if (page.analysis) |analysis| if (!page.viaPython(analysis, text.written())) return page.analysisStart(text.written());
         page.begin(.run, text.written());
     }
 
     // ------------------------------------------------------------------ análises em Zig (sem Python)
+
+    /// a análise em Zig manda esta rodada para o Python (um método de fora do núcleo marcado no formulário)
+    fn viaPython(page: *Page, analysis: *const manager.Simulation, request: []const u8) bool {
+        _ = page;
+        const asks = analysis.python orelse return false;
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        return asks(manager.Values.fromRequest(arena.allocator(), request));
+    }
 
     /// guarda o pedido de campos em Zig para o começo do próximo quadro: responder agora soltaria a memória do
     /// formulário que a tela ainda desenha neste quadro (a dica de um botão, por exemplo)
