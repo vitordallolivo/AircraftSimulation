@@ -70,6 +70,7 @@
       <li><button data-acao="aeroopt" data-ajuda="Otimização do projeto para a competição. Versão de teste: as contas longas param a página até acabar.">aeroopt — otimizar (teste)</button></li>
       <li class="separador" aria-hidden="true">projeto</li>
       <li><button data-acao="livro" data-ajuda="Todos os .md do projeto.">Documentação</button></li>
+      <li><button data-acao="mapa" data-ajuda="O projeto inteiro num diagrama.">Mapa</button></li>
       <li><button data-acao="tracking" data-ajuda="O que falta fazer.">Tracking</button></li>
     </ul>
     <p class="ajuda" id="ajuda" aria-live="polite"></p>
@@ -116,6 +117,7 @@
     else if (botao.dataset.acao === 'aerosim') window.location.href = 'aerosim.html';
     else if (botao.dataset.acao === 'aeroopt') window.location.href = 'aeroopt.html';
     else if (botao.dataset.acao === 'livro') window.location.href = 'livro.html';
+    else if (botao.dataset.acao === 'mapa') window.location.href = 'mapa.html';
     else if (botao.dataset.acao === 'tracking') window.location.href = 'tracking.html';
     else if (botao.dataset.acao === 'carregar') arquivo.click();
   }
