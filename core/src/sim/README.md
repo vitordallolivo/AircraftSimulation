@@ -1,330 +1,71 @@
 # core/src/sim — integração no tempo, equilíbrio, modelo linear e desempenho
 
-Esta é a parte do núcleo que transforma forças em voo. As forças de `physics/` e os comandos de `control/` entram, e
-saem o movimento do avião ao longo do tempo, o equilíbrio em cada velocidade, o modelo linear para estudar a
-estabilidade, o envelope de voo por altitude e o desempenho por fórmula. É aqui que uma missão inteira, da corrida na
-pista ao pouso, é simulada.
-
-O README começa pelas equações do movimento e pelo integrador, que são a base de tudo. Depois vem a corrida, que
-organiza uma simulação em eventos, paradas e checkpoints. As seções seguintes respondem perguntas sem integrar no
-tempo: o equilíbrio (trimagem), o modelo linear, o envelope por altitude e, por último, o desempenho por fórmula,
-como numa planilha.
-
-| arquivo | o que faz |
-|---|---|
-| `state.zig` | layout do vetor de estados (em comptime, a partir dos limites) e o estado discreto de uma corrida |
-| `dynamics.zig` | a equação mestre $`\dot x = f(t, x)`$ e o passo RK4 |
-| `runner.zig` | eventos, paradas, registro em fatias e checkpoint (o estado inteiro é POD: copiar os bytes basta) |
-| `trim.zig` | equilíbrio longitudinal por Newton e a tabela de desempenho por V |
-| `linear.zig` | trimagem nivelada e as matrizes A, B por diferenças centrais |
-| `gust.zig` | resposta no tempo a uma rajada em voo nivelado, com o líquido livre ou travado, em fatias |
-| `envelope.zig` | $`V_{min}`$, $`V_{max}`$, $`V_e`$, V*, $`V_{cru}`$ e teto por altitude |
-| `simple_perf.zig` | polar parabólica, potências, subida, planeio, curva e bateria por fórmula |
-| `tests.zig` | testes do grupo "sim" (decolagem, checkpoint, trimagem) |
-
-## Uma corrida, passo a passo
-
-Uma corrida começa com os parâmetros escritos numa instância e segue em passos fixos até uma condição de parada:
+Esta parte do núcleo transforma forças em voo. As forças de `physics/` e os comandos de `control/` entram, e saem o
+movimento do avião ao longo do tempo (uma missão inteira, da corrida na pista ao pouso), o equilíbrio em cada
+velocidade (a trimagem), o modelo linear com que a Estabilidade acha os modos de voo, a resposta a uma rajada, o
+envelope de voo por altitude e o desempenho por fórmula, como numa planilha. Uma corrida se organiza em eventos
+(decolou, soltou a carga, tocou o chão), paradas e checkpoints: o estado inteiro é uma struct sem ponteiros, então
+copiar os bytes basta para guardar e retomar.
 
 ```mermaid
-flowchart TD
-    P[/"Params: avião, missão, piloto,<br/>dt, tmax, dtlog, paradas"/] --> CF["configure: derivados<br/>(estações, massas, cache da linha sustentadora)"]
+flowchart TB
+    P["Params: avião, missão, piloto, dt, paradas"] --> CF["Instance.configure<br/>derivados: estações, massas, caches"]
     CF --> R0{"começo"}
-    R0 -->|"reset_ground"| G["parado na pista"]
-    R0 -->|"reset_air(perna)"| A["voo equilibrado (trimagem)"]
-    R0 -->|"snapshot_load"| K["checkpoint"]
-    G --> STEP
-    A --> STEP
-    K --> STEP
-    STEP["passo RK4: quatro avaliações de f(t, x)<br/>(control → physics → equações do movimento)"] --> EV["eventos: decolou, piloto automático,<br/>soltura, toque, parada"]
-    EV --> LOG["registro a cada dtlog<br/>(em fatias para a GUI)"]
-    LOG --> STOP{"parada?<br/>fim da missão, evento pedido,<br/>t_limit, buffer cheio, queda"}
+    R0 -->|"resetGround"| STEP
+    R0 -->|"resetAir: voo trimado"| STEP
+    R0 -->|"snapshot_load: checkpoint"| STEP
+    STEP["dynamics.rk4<br/>control → physics → equações do movimento"] --> EV["eventos e registro a cada dtlog"]
+    EV --> STOP{"parada?"}
     STOP -->|"não"| STEP
-    STOP -->|"sim"| OUT[/"RunStatus + registro<br/>(e checkpoint, se pedido)"/]
+    STOP -->|"sim"| OUT["RunStatus + registro"]
+    CF --> TR["trim: Newton em α, δe, acelerador"]
+    TR --> LIN["linear: A e B por diferenças centrais"]
+    CF --> ENV["envelope e simple_perf<br/>sem integrar no tempo"]
 ```
 
-## Equações do movimento (`dynamics.zig`)
-
-O avião é um corpo rígido de massa variável (a carga sai, o líquido oscila) escrito no CG do instante. Newton e Euler
-nos eixos do corpo (Etkin e Reid, *Dynamics of Flight*, cap. 4, a conferir no PDF):
-
-```math
-m\left(\frac{d\vec V}{dt} + \vec\omega\times\vec V\right) = \vec F_{aero} + \vec F_{prop} + \vec F_{solo} + \vec F_{líquido} + \vec F_{carga} + m\,\vec g
-```
+O avião é um corpo rígido de massa variável (a carga sai, o líquido oscila), escrito no CG do instante, com Newton e
+Euler nos eixos do corpo (Etkin e Reid, *Dynamics of Flight*, cap. 4), integrado por Runge–Kutta de 4ª ordem com passo
+fixo:
 
 ```math
+m\left(\frac{d\vec V}{dt} + \vec\omega\times\vec V\right) = \sum \vec F + m\,\vec g
+\qquad
 \mathbf I_{cg}\,\frac{d\vec\omega}{dt} + \vec\omega\times(\mathbf I_{cg}\,\vec\omega) = \sum \vec M_{cg}
 ```
 
-$`\vec V = (u, v, w)`$ e $`\vec\omega = (p, q, r)`$ estão nos eixos do corpo; a soma dos momentos inclui o giroscópico dos
-rotores. A atitude vem dos ângulos de Euler $`(\phi, \theta, \psi)`$ e a posição da navegação em NED. O vetor de estados
-também leva a rotação de cada motor, os pêndulos dos tanques, a posição da carga na baia e os integradores do piloto.
-
-**Integração.** Runge–Kutta de 4ª ordem com passo fixo $`\Delta t`$, feita sobre vetores SIMD do tamanho do estado:
-
-```math
-k_1 = f(t, x) \quad k_2 = f(t + \tfrac{\Delta t}{2}, x + \tfrac{\Delta t}{2}k_1) \quad k_3 = f(t + \tfrac{\Delta t}{2}, x + \tfrac{\Delta t}{2}k_2) \quad k_4 = f(t + \Delta t, x + \Delta t\,k_3)
-```
-
-```math
-x_{n+1} = x_n + \frac{\Delta t}{6}\,(k_1 + 2k_2 + 2k_3 + k_4)
-```
-
-![RK4: as quatro inclinações e o passo](../../../docs/img/fig/rk4_inclinacoes.png)
-
-## Corrida (`runner.zig`)
-
-`run` avança até uma condição de parada (pousou, caiu, fim do segmento, tempo máximo), até `t_limit` (uma fatia para
-a GUI desenhar em tempo real) ou até o registro encher, e pode ser chamada de novo para continuar. Os eventos
-discretos (soltar a carga, rajada, arredondamento, freio) mudam só entre passos. Os parâmetros não vão no checkpoint:
-ao retomar, vêm da configuração nova, e é assim que se mudam as etapas seguintes de uma missão.
-
-## Equilíbrio (`trim.zig`)
-
-Para cada velocidade, Newton com jacobiano numérico e passo amortecido zera o equilíbrio longitudinal nos eixos do
-vento (forças da aerodinâmica e dos motores, momento no CG):
-
-```math
-X_w - m g\sin\gamma = 0 \qquad Z_w + n\,m g\cos\gamma = 0 \qquad M_{cg} = 0
-```
-
-São três incógnitas por caso: nivelado ($`\alpha`$, $`\delta_e`$, acelerador), subida máxima ($`\alpha`$, $`\delta_e`$,
-$`\gamma`$ com acelerador cheio), planeio ($`\alpha`$, $`\delta_e`$, $`\gamma`$ com acelerador zero) e curva ($`\alpha`$,
-$`\delta_e`$, acelerador com $`n`$ dado). Em curva nivelada o raio sai do fator de carga:
-
-```math
-R = \frac{V^2}{g\sqrt{n^2 - 1}}
-```
-
-O $`n`$ máximo é limitado pelo estol da asa ($`C_L / C_{L,max}`$) e, em curva sustentada, pelo acelerador cheio.
-
-## Modelo linear (`linear.zig`)
-
-Em torno do voo nivelado equilibrado, com os comandos congelados (sem piloto, trem, sloshing nem carga solta):
-
-```math
-\delta\dot x = A\,\delta x + B\,\delta u
-\qquad
-x = (u, v, w, p, q, r, \phi, \theta)
-\qquad
-u = (\delta_e, \delta_a, \delta_r, \text{acelerador})
-```
-
-Cada coluna de $`A`$ e de $`B`$ vem de diferenças centrais da mesma física de $`f(t, x)`$:
-
-```math
-A_{:,j} = \frac{f(x + h\,e_j) - f(x - h\,e_j)}{2h}
-```
-
-O ponto de equilíbrio é achado por Levenberg–Marquardt em seis incógnitas ($`\alpha`$, $`\delta_e`$, acelerador, $`\phi`$,
-$`\delta_a`$, $`\delta_r`$), zerando as acelerações do corpo rígido. Sem leme, o látero-direcional fica equilibrado o
-melhor possível; o sucesso é o longitudinal equilibrado.
-
-## Resposta a uma rajada (`gust.zig`)
-
-Aqui se pergunta o que acontece com o avião, já equilibrado em voo nivelado, quando passa por uma rajada: quanto o
-ângulo de ataque sobe, se ele volta, quanto o líquido dos tanques balança e quanto isso mexe no CG. A conta é a
-própria corrida (`runner.zig`) num trecho reto, com a rajada discreta "1 − cos" de `physics/atmosphere.zig` chegando
-num instante escolhido. Os comandos podem ficar no equilíbrio (manche fixo, o que mostra a resposta do avião sozinho)
-ou com o piloto automático, e o líquido pode estar livre (o pêndulo equivalente de cada tanque) ou travado na mesma
-massa, para comparar.
-
-O líquido sai parado no equilíbrio. Num voo equilibrado, a força externa segura o peso, então o pêndulo pende na
-direção do peso visto do corpo, a mesma conta do modelo linear com o líquido:
-
-```math
-\eta_x = \operatorname{atan2}(-\sin\theta,\ \cos\phi\cos\theta)
-\qquad
-\eta_y = \operatorname{atan2}(\sin\phi\cos\theta,\ \cos\phi\cos\theta)
-```
-
-Sem isso o pêndulo começaria em zero e balançaria antes de a rajada chegar. No manche fixo, os comandos ficam no
-equilíbrio completo do modelo linear (α, δe, acelerador, φ, δa e δr); só com o longitudinal equilibrado, o torque do
-motor faria o avião rolar sozinho desde o começo.
-
-O voo para sozinho quando a resposta rápida acaba (`settled`): durante um segundo, α, o xCG e o ângulo de cada
-pêndulo quase não mudam e as taxas de rotação ficam pequenas. As tolerâncias estão no código. A fugóide e a espiral,
-lentas, continuam depois disso, e o tempo pedido vira só um limite.
-
-Se o avião leva a carga LAPES, dá para pedir que ela saia num instante (`release`). A fatia para nesse instante, a
-soltura é pedida como o piloto pede (`pilot.drop`), a carga desliza pela rampa (`physics/mass.zig`) e sai no fim
-dela. Daí em diante voa só o resto da massa, e o voo não para antes de a carga sair.
-
-Para entender a resposta, `poles` dá os polos no mesmo equilíbrio, os autovalores do modelo linear (`linear.zig`): o
-do corpo rígido, com o líquido travado, ou o com os pêndulos do líquido soltos. Com a LAPES já solta nos estados
-(`released`), saem os polos do avião depois da saída. Cada polo leva o modo dele: os oito do corpo rígido saem dos
-blocos longitudinal (u, w, q, θ) e látero-direcional (v, p, r, φ) separados, com a regra da Estabilidade em Python
-(os dois de |λ| maior no longitudinal são o curto período; no látero-direcional, o par complexo é o dutch roll, a raiz
-mais negativa o rolamento e a outra a espiral). Cada um fica com o polo mais perto dele no modelo inteiro, e o que
-sobra é o líquido. `gustSpeed` dá a rajada no tempo, a mesma que o voo sente, para
-o gráfico. A rodada anda em fatias (`begin`, depois
-`advance` até acabar), para que a tela siga desenhando enquanto ela roda, inclusive no navegador, onde não há thread.
-
-## Estabilidade estática e comandos (`static.zig`)
-
-Aqui se responde se o avião montado fica estável e controlável parado no ar, antes de olhar a dinâmica: onde fica o
-ponto neutro, entre que posições o CG pode ficar, qual o C_L máximo que o profundor ainda consegue equilibrar, quanto
-de profundor a decolagem pede e se o aileron, o profundor e o leme dão conta do que se pede deles. É a conta da aba
-Estabilidade (Avião montado), a mesma do `aerosim/stability` em Python, para a aba rodar sem Python.
-
-Tudo sai de uma sonda (`Probe`): o avião configurado no núcleo, de onde se pedem os coeficientes a um α, a uma
-derrapagem e a uma deflexão, com o momento em qualquer ponto de referência. O ponto neutro com o manche fixo é o ponto
-em que o momento de arfagem não muda com α. Com a referência em x = 0, ele fica em
-
-```math
-x_{np} = c\,\frac{\partial C_m/\partial\alpha}{\partial C_L/\partial\alpha}
-```
-
-com as derivadas centrais de meio grau (Etkin e Reid, Dynamics of Flight, cap. 2; a conferir no PDF). A margem
-estática é a distância do CG até ele, em % da corda média aerodinâmica (a CMA, a corda que representa a asa inteira).
-O limite traseiro do CG é a margem mínima. O dianteiro é onde o profundor chega ao fim do curso para equilibrar o
-pouso ou para rodar a decolagem sobre o trem principal. Para rodar, o momento em volta do trem principal tem de vencer
-a inércia com a aceleração de arfagem pedida:
-
-```math
-x_{CG} \le x_{tp} + \frac{q S c\, C_{m,tp} + T\,(z_T - z_{tp}) - I_{tp}\,\ddot\theta}{W}
-```
-
-(Torenbeek, Synthesis of Subsonic Airplane Design, cap. 9; Sadraey, Aircraft Design, cap. 6; a conferir no PDF). A
-varredura do CG (`cgSweep`) dá a margem e as deflexões de equilíbrio em cada posição, e a tesoura (`scissorLimits` com
-`minTail`) repete isso para vários tamanhos de empenagem horizontal até achar o menor que deixa a faixa de CG prevista
-caber entre os dois limites.
-
-Os comandos se dimensionam pelo que cada um tem de fazer. O aileron tem de inclinar o avião a um ângulo num tempo da
-norma. A taxa de rolamento em regime e a constante de tempo saem do amortecimento de rolamento C_lp:
-
-```math
-p_{ss} = -\frac{C_{l\delta_a}}{C_{lp}}\,\delta_a\,\frac{2V}{b}
-\qquad
-\tau_R = -\frac{2V\,I_{xx}}{q S b^2\,C_{lp}}
-```
-
-(Sadraey, Aircraft Design, cap. 12; Roskam, Airplane Design VI; a conferir no PDF), e o tempo para chegar ao ângulo é
-achado por bisseção (`timeToBank`). O profundor tem de equilibrar o pouso e rodar a decolagem com o CG mais
-dianteiro. O leme tem de segurar o vento cruzado no pouso, com a derrapagem $`\beta = \operatorname{atan}(V_w/V)`$:
-
-```math
-\delta_r = \frac{C_{n\beta}\,\beta}{C_{n\delta_r}}
-```
-
-(FAR 23.233), e, com mais de um motor, também o motor mais afastado parado na velocidade mínima de controle.
-
-## Modos e qualidades de voo (`modes.zig`)
-
-Aqui se diz como o avião responde quando sai do equilíbrio e se isso passa na norma. O modelo linear (`linear.zig`)
-separa em dois blocos de quatro estados. O longitudinal (u, w, q, θ) dá o curto período, a oscilação rápida de
-arfagem, e a fugóide, a troca lenta de altura e velocidade. O látero-direcional (v, p, r, φ) dá o dutch roll, a
-oscilação de guinada com rolamento, o rolamento, que é a raiz real mais rápida, e a espiral, a mais lenta (Etkin e
-Reid, Dynamics of Flight, cap. 6; Nelson, Flight Stability and Automatic Control, cap. 5). `classify` acha qual polo é
-qual. De um polo $`\lambda = \sigma \pm i\omega`$ saem
-
-```math
-\omega_n = |\lambda|,\quad \zeta = -\frac{\sigma}{\omega_n},\quad T = \frac{2\pi}{\omega},\quad t_2 = \frac{\ln 2}{\sigma},\quad \tau = -\frac{1}{\sigma}
-```
-
-e `evaluate` compara cada um com os limites dos níveis 1, 2 e 3 da MIL-F-8785C, por classe de avião e fase de voo (a
-conferir no PDF da norma). `respond` dá a resposta no tempo a um doublet ou a um pulso no comando, e `liquidPoles` os
-polos com o líquido dos tanques balançando.
-
-## Envelope por altitude (`envelope.zig`)
-
-Para cada altitude $`h`$, a densidade e onde a tração disponível cruza a requerida ($`P_d = P_r`$): $`V_{min}`$ e $`V_{max}`$. O
-teto absoluto é a altitude em que os dois se encontram (bisseção em $`h`$). A densidade é a da troposfera ISA (gradiente
-$`\lambda`$, temperatura ao nível do mar $`T_0`$, constante do ar $`R`$):
-
-```math
-\rho(h) = \rho_0\left(1 - \frac{\lambda h}{T_0}\right)^{\frac{g}{\lambda R} - 1}
-```
-
-O método "planilha" reproduz o `Envelope_main` original (polar parabólica e a mesma expressão de densidade da planilha);
-o "modelo completo" trima o avião inteiro em cada $`(h, V)`$, e o acelerador de equilíbrio cruza 1 em $`V_{min}`$ e
-$`V_{max}`$. A velocidade de estol e a de manobra:
-
-```math
-V_e = \sqrt{\frac{2W}{\rho S C_{L,max}}} \qquad V^* = V_e\sqrt{n}
-```
-
-Abaixo do estol, se `below_stall` estiver ligado, a curva de potência continua numa cópia sem estol, só para achar onde
-$`P_d = P_r`$; esse trecho não é voável, e o mínimo voável é $`\max(V_{min}, V_e)`$ (Anderson, *Aircraft Performance and
-Design*, cap. 5, a conferir no PDF).
-
-## Desempenho por fórmula (`simple_perf.zig`)
-
-Como na "planilha suprema": polar parabólica, tração por tabela ao nível do mar corrigida pela densidade, sem simular.
-Para cada V numa altitude (Anderson, *Aircraft Performance and Design*, cap. 5 e 6, a conferir no PDF):
-
-**Potências.** O $`C_L`$ do voo nivelado desconta a parte do peso que a tração inclinada ($`\phi_T`$) sustenta:
-
-```math
-C_L = \frac{2\,(W - T\sin\phi_T)}{\rho S V^2}
-\qquad
-C_D = C_{D0} + K C_L^2
-\qquad
-T_r = W\,\frac{C_D}{C_L}
-\qquad
-P_r = T_r V \qquad P_d = T_d V
-```
-
-A tração disponível ao nível do mar é corrigida por $`T_d = T_{d,0}\,(\rho/\rho_0)^m`$.
-
-**Subida.**
-
-```math
-RC = \frac{P_d - P_r}{W} \qquad \gamma = \arcsin\frac{RC}{V}
-```
-
-**Planeio** no $`C_L`$ do ponto:
-
-```math
-E = \frac{C_L}{C_D}
-\qquad
-\gamma = \arctan\frac{1}{E}
-\qquad
-V = \sqrt{\frac{2W\cos\gamma}{\rho S C_L}}
-\qquad
-\dot h = V\sin\gamma
-```
-
-**Curva.** Raio para cada inclinação $`\phi`$, e os dois limites do fator de carga: estol e tração (curva sustentada):
-
-```math
-R = \frac{V^2}{g\tan\phi}
-\qquad
-n_{estol} = \frac{q\,S\,C_{L,max}}{W}
-\qquad
-n_{sust} = \sqrt{\frac{q}{K\,W/S}\left(\frac{T}{W} - \frac{q\,C_{D0}}{W/S}\right)}
-```
-
-**Bateria.** Autonomia pela lei de Peukert na forma de Traub (*Calculation of Constant Power Lithium Battery Discharge
-Curves*, J. Aircraft 48(2), 2011, doi 10.2514/1.C031027), com $`R_t`$ o tempo de descarga nominal, $`n`$ o expoente de
-Peukert, $`\eta`$ a eficiência, $`V_{bat}`$ a tensão, $`C`$ a capacidade e $`P`$ a potência elétrica:
-
-```math
-t = R_t^{\,1-n}\left(\frac{\eta\,V_{bat}\,C}{P}\right)^{n}
-\qquad
-\text{alcance} = t\,V
-```
-
-O resumo junta $`V_e`$, $`V^*`$, $`V_{min}`$ e $`V_{max}`$, a subida máxima, o maior $`E`$, a menor razão de descida, o raio
-mínimo, a autonomia e o alcance.
-
-## Como chamar
+Vinte segundos de decolagem a partir da cabeceira, o equilíbrio a 14 m/s e os autovalores do modelo linear ali:
 
 ```python
+import numpy as np
 from aerosim.backend.zig import ZigBackend
 from aerosim.interfaces.backend import TrimKind
 from aerosim.model.mission import takeoff_runway
 from aerosim.model.templates import conventional
 from aerosim.model.universal import build_model
 
-ac = conventional()
-be = ZigBackend()
-with be.session_for(build_model(ac), takeoff_runway()) as s:
-    s.reset_ground()                                   # parado na cabeceira
-    status, log = s.run(t_limit=20.0)                  # dynamics + runner: 20 s de corrida
-    print(status, len(log), log["Va"][-1])          # canais: ZigBackend().log_channels()
-    eq = s.trim(TrimKind.LEVEL, 14.0)                  # trim.zig: α, δe e acelerador a 14 m/s
-    lin = s.linearize(14.0)                            # linear.zig: A (8×8), B (8×4)
+with ZigBackend().session_for(build_model(conventional()), takeoff_runway()) as s:
+    s.reset_ground()
+    status, log = s.run(t_limit=20.0)
+    print("20 s depois:", "V =", round(float(log["Va"][-1]), 1), "m/s  h =", round(float(log["h"][-1]), 1), "m")
+    eq = s.trim(TrimKind.LEVEL, 14.0)
+    print("trimado a 14 m/s: α =", round(np.degrees(eq["alpha"]), 2), "°  δe =", round(np.degrees(eq["de"]), 2),
+          "°  acelerador =", round(eq["thr"], 2))
+    print("autovalores de A:", np.round(np.linalg.eigvals(s.linearize(14.0)["A"]), 2))
 ```
 
-Testes: `python -m ziglang build test -Dgrupo=sim` (dentro de `core/`).
+```
+20 s depois: V = 14.2 m/s  h = 9.3 m
+trimado a 14 m/s: α = 7.18 °  δe = 0.12 °  acelerador = 0.88
+autovalores de A: [-20.93+0.j    -4.29+6.27j  -4.29-6.27j  -1.23+3.53j  -1.23-3.53j
+  -0.08+0.81j  -0.08-0.81j   0.15+0.j  ]
+```
+
+Cada par complexo é um modo de voo (período curto, rolagem holandesa, fugóide) e a parte real negativa diz que ele
+amortece; o único real positivo, pequeno, é a espiral, que diverge devagar e é comum num avião sem piloto automático.
+Os canais do registro saem de `ZigBackend().log_channels()`, e os testes rodam com `cd core && python -m ziglang build
+test -Dgrupo=sim`.
+
+Daqui saem a Missão 6GDL, a decolagem otimizada, a Estabilidade dinâmica, o envelope do Desempenho e o voo do
+AeroDrive, que chama o mesmo passo a 120 Hz. O passo do RK4, com as quatro inclinações:
+
+![RK4: as quatro inclinações e o passo](../../../docs/img/fig/rk4_inclinacoes.png)
