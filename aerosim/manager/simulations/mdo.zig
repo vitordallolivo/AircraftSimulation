@@ -4,7 +4,8 @@
 //! eficiência estrutural com as restrições ligadas. Aqui só se monta a configuração e se escreve o resultado.
 //!
 //! A empenagem não é dimensionada: entra como fração da área da asa (massa e arrasto).
-//! Os perfis são os da aeronave aberta e os NACA de 4 dígitos do código, com os números 2D do próprio perfil
+//! As faixas e as listas (perfis, motores, hélices, arranjos) são as variáveis do projeto, em Condições e
+//! restrições. Cada perfil entra com os números 2D do próprio perfil
 //! (a fonte "modelo" do Python; a polar do NeuralFoil no Re da asa fica de fora).
 const std = @import("std");
 const core = @import("aerosim");
@@ -25,7 +26,7 @@ pub const Mdo = struct {
     pub const name: []const u8 = "mdo";
     pub const title: [:0]const u8 = "Mini-MDO (otimizador)";
     pub const area: []const u8 = "Dimensionamento inicial";
-    pub const description: []const u8 = "Dimensionamento inicial como otimização, sem precisar de avião aberto (é ele que se procura): envergadura, área, afilamento, perfis, motor × hélice, número de motores, inclinação e arranjo saem juntos do otimizador do núcleo (PSO ou busca aleatória), que maximiza o MTOW ou a eficiência estrutural. As condições, as regras de massa e as restrições são as de Condições e restrições…; uma restrição que o melhor não cumpre fica em vermelho no diagnóstico. A empenagem entra como fração da área da asa.";
+    pub const description: []const u8 = "Dimensionamento inicial como otimização, sem precisar de avião aberto (é ele que se procura): envergadura, área, afilamento, perfis, motor × hélice, número de motores, inclinação e arranjo saem juntos do otimizador do núcleo (PSO ou busca aleatória), que maximiza o MTOW ou a eficiência estrutural. As variáveis (faixas e listas de perfis, motores, hélices e arranjos), as condições, as regras de massa e as restrições são as de Condições e restrições…; uma restrição que o melhor não cumpre fica em vermelho no diagnóstico. A empenagem entra como fração da área da asa.";
     pub const State = RunState;
     pub const specs = writeFields;
     pub const start = startRun;
@@ -89,15 +90,54 @@ fn projectConditions() simulation.SprintConditions {
     return sprint.conditions();
 }
 
-/// uma variável contínua do formulário: a faixa de partida (`INPUTS` do Python); mínimo = máximo deixa fixa
-const RangeField = struct { variable: Variable, key: []const u8, label: []const u8, unit: []const u8, low: f64, high: f64, minimum: f64, maximum: f64, integer: bool = false };
-const range_fields = [_]RangeField{
-    .{ .variable = .span, .key = "span", .label = "envergadura", .unit = "m", .low = 1.0, .high = 3.0, .minimum = 0.2, .maximum = 10 },
-    .{ .variable = .area, .key = "area", .label = "área da asa", .unit = "m²", .low = 0.3, .high = 1.5, .minimum = 0.02, .maximum = 10 },
-    .{ .variable = .taper, .key = "taper", .label = "afilamento", .unit = "", .low = 0.3, .high = 1.0, .minimum = 0.05, .maximum = 1 },
-    .{ .variable = .tilt, .key = "tilt", .label = "inclinação do motor", .unit = "°", .low = 0, .high = 0, .minimum = -10, .maximum = 20 },
-    .{ .variable = .motors, .key = "motors", .label = "nº de motores", .unit = "", .low = 1, .high = 1, .minimum = 1, .maximum = 8, .integer = true },
+/// uma variável contínua da busca: a entrada do projeto (Condições e restrições → Variáveis) e a faixa de partida
+/// quando não há projeto (`INPUTS` do Python)
+const RangeVariable = struct { variable: Variable, key: []const u8, label: []const u8, unit: []const u8, low: f64, high: f64, integer: bool = false };
+const range_variables = [_]RangeVariable{
+    .{ .variable = .span, .key = "wing.span", .label = "envergadura", .unit = "m", .low = 1.0, .high = 3.0 },
+    .{ .variable = .area, .key = "wing.area", .label = "área da asa", .unit = "m²", .low = 0.3, .high = 1.5 },
+    .{ .variable = .taper, .key = "wing.taper", .label = "afilamento", .unit = "", .low = 0.3, .high = 1.0 },
+    .{ .variable = .tilt, .key = "power.tilt", .label = "inclinação do motor", .unit = "°", .low = 0, .high = 0 },
+    .{ .variable = .motors, .key = "power.motors", .label = "nº de motores", .unit = "", .low = 1, .high = 1, .integer = true },
 };
+
+/// as variáveis do projeto (sem projeto: nenhuma, e a busca usa as faixas de partida)
+fn projectVariables(memory: std.mem.Allocator) ![]const simulation.SprintVariable {
+    const sprint = simulation.sprint orelse return &.{};
+    return sprint.variables(memory);
+}
+
+fn findVariable(variables: []const simulation.SprintVariable, name: []const u8) ?simulation.SprintVariable {
+    for (variables) |variable| if (std.mem.eql(u8, variable.key, name)) return variable;
+    return null;
+}
+
+fn varies(variable: simulation.SprintVariable) bool {
+    return std.mem.eql(u8, variable.mode, "variável");
+}
+
+/// a faixa de uma variável contínua: a do projeto se ela é "variável", o valor do rascunho se é fixa; sem projeto,
+/// a de partida
+fn rangeOf(variables: []const simulation.SprintVariable, field: RangeVariable) [2]f64 {
+    const variable = findVariable(variables, field.key) orelse return .{ field.low, field.high };
+    if (varies(variable)) return .{ @min(variable.lo, variable.hi), @max(variable.lo, variable.hi) };
+    if (std.math.isFinite(variable.number)) return .{ variable.number, variable.number };
+    return .{ field.low, field.high };
+}
+
+/// os itens de uma lista do projeto: as opções se ela é "variável", senão o escolhido no rascunho; vazio sem nada
+fn listOf(memory: std.mem.Allocator, variables: []const simulation.SprintVariable, name: []const u8) ![]const []const u8 {
+    const variable = findVariable(variables, name) orelse return &.{};
+    if (varies(variable) and variable.options.len > 0) return variable.options;
+    if (variable.text.len > 0) return memory.dupe([]const u8, &.{variable.text});
+    return &.{};
+}
+
+/// um perfil pelo nome: o do projeto ou da biblioteca; sem ele, o NACA pelo nome
+fn airfoilNamed(memory: std.mem.Allocator, name: []const u8) !aircraft_model.aircraft.Airfoil {
+    if (simulation.sprint) |sprint| if (try sprint.airfoil(memory, name)) |found| return found;
+    return .{ .name = name };
+}
 
 const plots = [_]simulation.Plot{
     .{ .key = "mdo_hist", .title = "Objetivo por iteração (linha: o melhor até ali)", .xlabel = "iteração", .ylabel = "objetivo" },
@@ -127,41 +167,19 @@ const RunState = struct {
 };
 
 // ------------------------------------------------------------------ campos
-fn key(memory: std.mem.Allocator, prefix: []const u8, index: usize) ![]const u8 {
-    return std.fmt.allocPrint(memory, "{s}{d}", .{ prefix, index });
-}
-
-/// os perfis candidatos: os das superfícies da aeronave (sem repetir o nome) e os NACA do código
-fn airfoilCandidates(memory: std.mem.Allocator, aircraft: ?*const simulation.Aircraft) ![]aircraft_model.aircraft.Airfoil {
-    var out: std.ArrayList(aircraft_model.aircraft.Airfoil) = .empty;
-    if (aircraft) |plane| for (plane.surfaces) |surface| {
-        if (!surface.enabled or surface.vertical) continue;
-        if (!contains(out.items, surface.airfoil.name)) try out.append(memory, surface.airfoil);
-    };
-    for (extra_airfoils) |naca| if (!contains(out.items, naca)) try out.append(memory, .{ .name = naca });
-    return out.items;
-}
-
-fn contains(items: []const aircraft_model.aircraft.Airfoil, name: []const u8) bool {
-    for (items) |item| if (std.mem.eql(u8, item.name, name)) return true;
-    return false;
-}
-
-/// o perfil da primeira asa (marcado por padrão)
+/// o perfil da primeira asa (sem lista no projeto)
 fn wingAirfoil(aircraft: ?*const simulation.Aircraft) []const u8 {
     const plane = aircraft orelse return extra_airfoils[1];
     const wing = params_mod.firstSurface(plane, "wing") orelse return extra_airfoils[1];
     return wing.airfoil.name;
 }
 
-fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, values: simulation.Values) simulation.Error!void {
+fn writeFields(out: *simulation.Writer, _: ?*const simulation.Aircraft, values: simulation.Values) simulation.Error!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const memory = arena.allocator();
     var params: std.ArrayList(simulation.Param) = .empty;
     const search = "Busca";
-    const variables = "Variáveis (mínimo = máximo: fixa)";
-    const lists = "Listas (marcadas entram na busca)";
     const kind = values.text("kind", kinds[0]);
     try params.append(memory, .{ .key = "kind", .label = "tipo de aeronave", .kind = .choice, .default = .{ .text = kinds[0] }, .choices = &kinds, .group = search, .rebuild = true, .help = "convencional: asas com empenagem; asa voadora/tailsitter: sem EH, C_L,max de equilíbrio menor; tailsitter decola na vertical; VTOL paira se a tração deixar" });
     if (std.mem.eql(u8, kind, kinds[0])) try params.append(memory, .{ .key = "wings", .label = "asas", .kind = .int, .default = .{ .number = 1 }, .minimum = 1, .maximum = 8, .group = search, .help = "asas de mesma envergadura que dividem a área (interferência de Prandtl entre elas)" });
@@ -171,30 +189,10 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "particles", .label = "população", .kind = .int, .default = .{ .number = 24 }, .minimum = 2, .maximum = 256, .group = search, .help = "PSO: partículas por iteração" },
         .{ .key = "iterations", .label = "iterações", .kind = .int, .default = .{ .number = 40 }, .minimum = 1, .maximum = 2000, .group = search },
         .{ .key = "seed", .label = "semente", .kind = .int, .default = .{ .number = 1 }, .minimum = 0, .maximum = 1e6, .group = search, .help = "a mesma semente repete o resultado" },
-        .{ .key = "m_max", .label = "massa máxima na busca", .default = .{ .number = 30 }, .minimum = 1, .maximum = 200, .unit = "kg", .group = search, .help = "teto da busca do MTOW" },
         .{ .key = "penalty", .label = "penalidade", .default = .{ .number = 10 }, .minimum = 0, .maximum = 1000, .group = search, .help = "pontuação perdida por violação relativa das restrições" },
         .{ .key = "tail_area_frac", .label = "empenagem / asa (área)", .default = .{ .number = 0.25 }, .minimum = 0, .maximum = 1, .group = search, .help = "fração usada na massa e no arrasto" },
         .{ .key = "fuselage_CDS", .label = "C_D·S da fuselagem e trem", .default = .{ .number = 0.012 }, .minimum = 0, .maximum = 0.2, .unit = "m²", .group = search },
     });
-    for (range_fields) |field| {
-        const kind_of: @TypeOf(params.items[0].kind) = if (field.integer) .int else .float;
-        try params.append(memory, .{ .key = try std.fmt.allocPrint(memory, "{s}_lo", .{field.key}), .label = try std.fmt.allocPrint(memory, "{s}: mínimo", .{field.label}), .kind = kind_of, .default = .{ .number = field.low }, .minimum = field.minimum, .maximum = field.maximum, .unit = field.unit, .group = variables });
-        try params.append(memory, .{ .key = try std.fmt.allocPrint(memory, "{s}_hi", .{field.key}), .label = try std.fmt.allocPrint(memory, "{s}: máximo", .{field.label}), .kind = kind_of, .default = .{ .number = field.high }, .minimum = field.minimum, .maximum = field.maximum, .unit = field.unit, .group = variables });
-    }
-
-    const wing_airfoil = wingAirfoil(aircraft);
-    for (try airfoilCandidates(memory, aircraft), 0..) |airfoil, i|
-        try params.append(memory, .{ .key = try key(memory, "af", i), .label = try std.fmt.allocPrint(memory, "perfil: {s}", .{airfoil.name}), .kind = .bool, .default = .{ .toggle = std.mem.eql(u8, airfoil.name, wing_airfoil) }, .group = lists });
-    try params.append(memory, .{ .key = "tip_varies", .label = "perfil da ponta também varia", .kind = .bool, .default = .{ .toggle = false }, .group = lists, .help = "a mesma asa com dois perfis; entre eles, interpolado" });
-    for (catalog.motors, 0..) |motor, i|
-        try params.append(memory, .{ .key = try key(memory, "mo", i), .label = try std.fmt.allocPrint(memory, "motor: {s}", .{motor.name}), .kind = .bool, .default = .{ .toggle = i == 0 }, .group = lists });
-    for (catalog.propellers, 0..) |propeller, i|
-        try params.append(memory, .{ .key = try key(memory, "pr", i), .label = try std.fmt.allocPrint(memory, "hélice: {s}", .{propeller.name}), .kind = .bool, .default = .{ .toggle = i == 0 }, .group = lists });
-    var battery_names: [catalog.batteries.len][]const u8 = undefined;
-    for (catalog.batteries, 0..) |battery, i| battery_names[i] = battery.name;
-    try params.append(memory, .{ .key = "battery", .label = "bateria", .kind = .choice, .default = .{ .text = battery_names[0] }, .choices = &battery_names, .group = lists });
-    for (layouts, 0..) |layout, i|
-        try params.append(memory, .{ .key = try key(memory, "ly", i), .label = try std.fmt.allocPrint(memory, "arranjo: {s}", .{layout.name}), .kind = .bool, .default = .{ .toggle = i == 0 }, .group = lists });
     try simulation.writeSpecs(out, params.items, &plots, Mdo.description, .{});
 }
 
@@ -221,6 +219,8 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     const memory = run.memory();
     const aircraft = run.aircraft;
     const cfg = &state.cfg;
+    // as variáveis e as listas são as de "Condições e restrições → Variáveis" (as mesmas das etapas)
+    const variables = try projectVariables(memory);
     var skipped: std.ArrayList(u8) = .empty;
 
     const kind = choiceIndex(&kinds, values.text("kind", kinds[0]));
@@ -237,7 +237,7 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
         .mu = conditions.mu_roll,
         .V_turn = if (conditions.V_turn > 0) conditions.V_turn else cruise_speed,
         .mu_brake = conditions.mu_brake,
-        .m_max = values.number("m_max", 30),
+        .m_max = massCeiling(variables),
         .tail_area_frac = values.number("tail_area_frac", 0.25),
         .fuselage_CDS = values.number("fuselage_CDS", 0.012),
         .wing_density = conditions.wing_density,
@@ -254,19 +254,23 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
         .penalty = values.number("penalty", 10),
     };
 
-    // perfis: os marcados (nenhum marcado: o da asa)
-    const candidates = try airfoilCandidates(memory, aircraft);
-    const wing_airfoil = wingAirfoil(aircraft);
+    // perfis: os da lista do projeto (sem lista: o da asa); a ponta, se varia, entra na mesma lista
+    var airfoil_list: std.ArrayList([]const u8) = .empty;
+    try airfoil_list.appendSlice(memory, try listOf(memory, variables, "wing.airfoil"));
+    if (airfoil_list.items.len == 0) try airfoil_list.append(memory, wingAirfoil(aircraft));
+    const tip_varies = if (findVariable(variables, "wing.airfoil_tip")) |tip| varies(tip) and tip.options.len > 0 else false;
+    if (tip_varies) for (findVariable(variables, "wing.airfoil_tip").?.options) |tip| {
+        if (!containsName(airfoil_list.items, tip)) try airfoil_list.append(memory, tip);
+    };
     var names: std.ArrayList([]const u8) = .empty;
-    for (candidates, 0..) |airfoil, i| {
-        if (!values.toggle(try key(memory, "af", i), std.mem.eql(u8, airfoil.name, wing_airfoil))) continue;
+    for (airfoil_list.items) |airfoil_name| {
         if (names.items.len >= sizing_types.max_airfoils) break;
-        const numbers = params_mod.props2d(airfoil) catch {
-            try skipped.print(memory, "perfil {s} (contorno inválido); ", .{airfoil.name});
+        const numbers = params_mod.props2d(try airfoilNamed(memory, airfoil_name)) catch {
+            try skipped.print(memory, "perfil {s} (sem contorno válido); ", .{airfoil_name});
             continue;
         };
         cfg.airfoils[names.items.len] = .{ .cla = numbers[0], .a0_deg = numbers[1], .clmax = numbers[2], .cd0 = numbers[3], .cm = numbers[4] };
-        try names.append(memory, airfoil.name);
+        try names.append(memory, airfoil_name);
     }
     if (names.items.len == 0) {
         const fallback: aircraft_model.aircraft.Airfoil = .{ .name = extra_airfoils[1] };
@@ -277,33 +281,40 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     state.airfoil_names = names.items;
     cfg.n_airfoils = @intCast(names.items.len);
     const last_airfoil: f64 = @floatFromInt(names.items.len - 1);
-    const tip_varies = values.toggle("tip_varies", false);
     cfg.tip_same = if (tip_varies) 0 else 1;
 
-    // conjuntos de tração: motor × hélice marcados, com a bateria escolhida
-    const battery = catalog.batteries[choiceIndex(&batteryNames(), values.text("battery", catalog.batteries[0].name))];
+    // conjuntos de tração: cada motor × cada hélice das listas do projeto, com a bateria do rascunho
+    const battery_name = if (simulation.sprint) |sprint| try sprint.field_text(memory, "power_draft.battery") else "";
+    const battery = if (catalog.find(catalog.Battery, &catalog.batteries, battery_name)) |found| found.* else catalog.batteries[0];
+    var motors: std.ArrayList(catalog.Motor) = .empty;
+    for (try listOf(memory, variables, "power.motor")) |motor_name| {
+        if (catalog.find(catalog.Motor, &catalog.motors, motor_name)) |motor| try motors.append(memory, motor.*) else try skipped.print(memory, "motor {s} (fora do catálogo); ", .{motor_name});
+    }
+    if (motors.items.len == 0) try motors.append(memory, catalog.motors[0]);
+    var propellers: std.ArrayList(catalog.Propeller) = .empty;
+    for (try listOf(memory, variables, "power.propeller")) |propeller_name| {
+        if (catalog.find(catalog.Propeller, &catalog.propellers, propeller_name)) |propeller| try propellers.append(memory, propeller.*) else try skipped.print(memory, "hélice {s} (fora do catálogo); ", .{propeller_name});
+    }
+    if (propellers.items.len == 0) try propellers.append(memory, catalog.propellers[0]);
     var set_names: std.ArrayList([]const u8) = .empty;
-    for (catalog.motors, 0..) |motor, i| {
-        if (!values.toggle(try key(memory, "mo", i), i == 0)) continue;
-        for (catalog.propellers, 0..) |propeller, j| {
-            if (!values.toggle(try key(memory, "pr", j), j == 0)) continue;
-            if (set_names.items.len >= sizing_types.max_sets) break;
-            cfg.sets[set_names.items.len] = .{ .unit = propUnit(motor, propeller, battery), .mass = motor.mass + propeller.mass + battery.mass, .P_max = motor.Imax * battery.voc() };
-            try set_names.append(memory, try std.fmt.allocPrint(memory, "{s} | {s}", .{ motor.name, propeller.name }));
-        }
-    }
-    if (set_names.items.len == 0) {
-        cfg.sets[0] = .{ .unit = propUnit(catalog.motors[0], catalog.propellers[0], battery), .mass = catalog.motors[0].mass + catalog.propellers[0].mass + battery.mass, .P_max = catalog.motors[0].Imax * battery.voc() };
-        try set_names.append(memory, try std.fmt.allocPrint(memory, "{s} | {s}", .{ catalog.motors[0].name, catalog.propellers[0].name }));
-        try skipped.appendSlice(memory, "nenhum motor × hélice marcado: o primeiro do catálogo; ");
-    }
+    for (motors.items) |motor| for (propellers.items) |propeller| {
+        if (set_names.items.len >= sizing_types.max_sets) break;
+        cfg.sets[set_names.items.len] = .{ .unit = propUnit(motor, propeller, battery), .mass = motor.mass + propeller.mass + battery.mass, .P_max = motor.Imax * battery.voc() };
+        try set_names.append(memory, try std.fmt.allocPrint(memory, "{s} | {s}", .{ motor.name, propeller.name }));
+    };
     state.set_names = set_names.items;
     cfg.n_sets = @intCast(set_names.items.len);
 
-    // arranjos
+    // arranjos: os da lista do projeto que o dimensionamento inicial conhece
     var layout_names: std.ArrayList([]const u8) = .empty;
-    for (layouts, 0..) |layout, i| {
-        if (!values.toggle(try key(memory, "ly", i), i == 0)) continue;
+    for (try listOf(memory, variables, "power.layout")) |layout_name| {
+        const layout = for (layouts) |candidate| {
+            if (std.mem.eql(u8, candidate.name, layout_name)) break candidate;
+        } else {
+            try skipped.print(memory, "arranjo {s} (as etapas conferem); ", .{layout_name});
+            continue;
+        };
+        if (containsName(layout_names.items, layout.name)) continue;
         cfg.layouts[layout_names.items.len] = layout.data;
         try layout_names.append(memory, layout.name);
     }
@@ -314,11 +325,10 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     state.layout_names = layout_names.items;
     cfg.n_layouts = @intCast(layout_names.items.len);
 
-    // variáveis
-    for (range_fields) |field| {
-        const low = values.number(try std.fmt.allocPrint(memory, "{s}_lo", .{field.key}), field.low);
-        const high = values.number(try std.fmt.allocPrint(memory, "{s}_hi", .{field.key}), field.high);
-        cfg.vars[sizing_types.variable(field.variable)] = .{ .lo = @min(low, high), .hi = @max(low, high), .kind = if (field.integer) .integer else .continuous };
+    // variáveis contínuas
+    for (range_variables) |field| {
+        const range = rangeOf(variables, field);
+        cfg.vars[sizing_types.variable(field.variable)] = .{ .lo = range[0], .hi = range[1], .kind = if (field.integer) .integer else .continuous };
     }
     cfg.vars[sizing_types.variable(.airfoil)] = .{ .lo = 0, .hi = last_airfoil, .kind = .list };
     cfg.vars[sizing_types.variable(.airfoil_tip)] = .{ .lo = 0, .hi = if (tip_varies) last_airfoil else 0, .kind = .list };
@@ -349,10 +359,15 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     run.progress = 0.05;
 }
 
-fn batteryNames() [catalog.batteries.len][]const u8 {
-    var out: [catalog.batteries.len][]const u8 = undefined;
-    for (catalog.batteries, 0..) |battery, i| out[i] = battery.name;
-    return out;
+/// o teto da busca do MTOW: o máximo da massa do projeto se ela é "variável"; senão 30 kg
+fn massCeiling(variables: []const simulation.SprintVariable) f64 {
+    const mass = findVariable(variables, "req.mass") orelse return 30;
+    return if (varies(mass)) @max(mass.lo, mass.hi) else 30;
+}
+
+fn containsName(items: []const []const u8, name: []const u8) bool {
+    for (items) |item| if (std.mem.eql(u8, item, name)) return true;
+    return false;
 }
 
 fn advanceRun(run: *simulation.Run, state: *RunState) simulation.Error!bool {
@@ -443,12 +458,12 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
             .value = try text(memory, "{d:.3} {s}", .{ value, field.unit }),
             .criterion = try text(memory, "{s} {s} {d} {s}", .{ field.label, field.op, constraint.value, field.unit }),
             .why = if (ok) "" else "o otimizador não achou um indivíduo que cumpra tudo",
-            .fix = if (ok) "" else "abrir a faixa das variáveis, marcar mais perfis ou conjuntos, ou afrouxar a restrição",
+            .fix = if (ok) "" else "em Condições e restrições: abrir a faixa das variáveis, pôr mais perfis, motores ou hélices nas listas, ou afrouxar a restrição",
             .group = group,
         });
     }
     // variáveis encostadas no limite (por que a asa parou de mudar)
-    for (range_fields) |field| {
+    for (range_variables) |field| {
         const spec = state.cfg.vars[sizing_types.variable(field.variable)];
         if (spec.hi - spec.lo <= 1e-12) continue;
         const value = x[sizing_types.variable(field.variable)];
@@ -460,7 +475,7 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
             .value = try text(memory, "{d:.3} {s}", .{ value, field.unit }),
             .criterion = try text(memory, "faixa {d} a {d} {s}", .{ spec.lo, spec.hi, field.unit }),
             .why = "o otimizador quer ir além da faixa",
-            .fix = "abrir a faixa, se a regra deixar",
+            .fix = "abrir a faixa em Condições e restrições → Variáveis, se a regra deixar",
             .group = "variáveis",
         });
     }

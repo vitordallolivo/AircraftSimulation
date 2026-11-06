@@ -21,6 +21,7 @@ const core = @import("aerosim");
 
 pub const Aircraft = aircraft_model.aircraft.Aircraft;
 pub const Surface = aircraft_model.aircraft.Surface;
+pub const Airfoil = aircraft_model.aircraft.Airfoil;
 pub const Methods = core.methods.Methods;
 pub const Json = std.json.Value;
 pub const Writer = std.Io.Writer;
@@ -77,6 +78,10 @@ pub const SprintConditions = struct {
     gear_mass: f64 = 0.35,
 };
 
+/// uma variável de "Condições e restrições → Variáveis": a entrada (`wing.span`, `power.motor`...), o modo ("fixo",
+/// "variável", "calculado"), a faixa, o valor de agora (número ou texto) e as opções das listas
+pub const SprintVariable = struct { key: []const u8, mode: []const u8, lo: f64, hi: f64, number: f64 = 0, text: []const u8 = "", options: []const []const u8 = &.{} };
+
 /// o que as análises leem do projeto da sprint, sem depender das etapas (`design`, que preenche `sprint` ao abrir
 /// a tela): as asas guardadas na etapa Asa e as condições e restrições. Tudo copiado para `memory`
 pub const Sprint = struct {
@@ -90,6 +95,12 @@ pub const Sprint = struct {
     config: *const fn (memory: std.mem.Allocator, name: []const u8) Error![]const Surface,
     /// o nome do projeto (a pasta); vazio se ainda não tem pasta
     project_name: *const fn (memory: std.mem.Allocator) Error![]const u8,
+    /// as variáveis do projeto (todas as entradas, com o modo de cada uma)
+    variables: *const fn (memory: std.mem.Allocator) Error![]const SprintVariable,
+    /// um perfil do projeto ou da biblioteca pelo nome; nulo: não existe
+    airfoil: *const fn (memory: std.mem.Allocator, name: []const u8) Error!?aircraft_model.aircraft.Airfoil,
+    /// o texto de um campo do projeto ("power_draft.battery"); vazio se não tem
+    field_text: *const fn (memory: std.mem.Allocator, path: []const u8) Error![]const u8,
     /// as restrições ligadas
     constraints: *const fn (memory: std.mem.Allocator) Error![]const SprintConstraint,
     /// as condições (altitude-densidade, atritos, V da curva, cruzeiro)

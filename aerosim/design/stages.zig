@@ -211,7 +211,7 @@ pub fn isProject(bytes: []const u8) bool {
 
 // ------------------------------------------------------------------ o projeto para as análises
 /// o que as análises leem do projeto aberto (`simulation.sprint`): a tela liga ao abrir
-pub const sprint_source: simulation.Sprint = .{ .wing_names = sprintWingNames, .wing = sprintWing, .config_names = sprintConfigNames, .config = sprintConfig, .project_name = sprintProjectName, .constraints = sprintConstraints, .conditions = sprintConditions };
+pub const sprint_source: simulation.Sprint = .{ .wing_names = sprintWingNames, .wing = sprintWing, .config_names = sprintConfigNames, .config = sprintConfig, .project_name = sprintProjectName, .variables = sprintVariables, .airfoil = sprintAirfoil, .field_text = sprintFieldText, .constraints = sprintConstraints, .conditions = sprintConditions };
 
 fn sprintConfigNames(memory: std.mem.Allocator) simulation.Error![]const []const u8 {
     while (!lock.tryLock()) std.atomic.spinLoopHint();
@@ -234,6 +234,54 @@ fn sprintConfig(memory: std.mem.Allocator, name: []const u8) simulation.Error![]
         error.OutOfMemory => error.OutOfMemory,
         else => error.Failed,
     };
+}
+
+fn sprintVariables(memory: std.mem.Allocator) simulation.Error![]const simulation.SprintVariable {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = if (shared) |*existing| existing else return &.{};
+    const project = &current.project;
+    var out: std.ArrayList(simulation.SprintVariable) = .empty;
+    for ((try registry.variableList(project)).items) |item| {
+        if (item != .object) continue;
+        const object = &item.object;
+        const input = registry.input(store.text(object, "key", "")) orelse continue;
+        const place = registry.inputPlace(input);
+        const section = project.section(place[0]);
+        var options: std.ArrayList([]const u8) = .empty;
+        if (object.get("options")) |list| if (list == .array) for (list.array.items) |option| {
+            if (option == .string) try options.append(memory, try memory.dupe(u8, option.string));
+        };
+        try out.append(memory, .{
+            .key = try memory.dupe(u8, input.key),
+            .mode = try memory.dupe(u8, store.text(object, "mode", "fixo")),
+            .lo = store.number(object, "lo", input.lo),
+            .hi = store.number(object, "hi", input.hi),
+            .number = store.number(section, place[1], std.math.nan(f64)),
+            .text = try memory.dupe(u8, store.text(section, place[1], "")),
+            .options = options.items,
+        });
+    }
+    return out.items;
+}
+
+fn sprintAirfoil(memory: std.mem.Allocator, name: []const u8) simulation.Error!?simulation.Airfoil {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = if (shared) |*existing| existing else return null;
+    const entry = airfoil_stage.lookup(current, name) orelse return null;
+    return airfoil_stage.airfoilOf(memory, entry) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => error.Failed,
+    };
+}
+
+fn sprintFieldText(memory: std.mem.Allocator, path: []const u8) simulation.Error![]const u8 {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = if (shared) |*existing| existing else return "";
+    const dot = std.mem.indexOfScalar(u8, path, '.') orelse return "";
+    return memory.dupe(u8, store.text(current.project.section(path[0..dot]), path[dot + 1 ..], ""));
 }
 
 fn sprintProjectName(memory: std.mem.Allocator) simulation.Error![]const u8 {

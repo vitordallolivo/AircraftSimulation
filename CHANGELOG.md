@@ -6,6 +6,16 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- O Mini-MDO tinha as próprias faixas de mínimo e máximo, uma massa máxima e listas de perfis, motores, hélices e
+  arranjos, repetindo o que o projeto já guarda. Agora ele lê tudo de "Condições e restrições → Variáveis": uma
+  variável marcada como variável entra com a faixa ou a lista dela, uma fixa entra com o valor do rascunho, e a massa
+  máxima da busca é o máximo da massa do projeto. O que o otimizador não conhece aparece em "fora da busca".
+- No Analisar, a fonte do avião era uma lista escrita. Agora ela é escolhida pelo nome da configuração guardada ou da
+  asa, e a página mostra uma vista da aeronave escolhida.
+- Criar uma asa num projeto sem nome não guardava nada, e ao reabrir o programa o trabalho não estava lá. Agora o
+  programa pede a pasta do projeto ao criar e, ao abrir de novo, volta no último projeto.
+- O botão Parar esperava o cálculo terminar. Agora ele corta na hora, como uma parada de emergência, e uma falha
+  aparece num aviso na tela, como o do alongamento baixo.
 - A tela em Zig caía ao editar uma célula de tabela numa coluna que a linha ainda não tinha (em Empenagem e comandos,
   num biplano), porque o nome da coluna ficava apontando para uma memória que já tinha sido liberada. Agora não cai.
   A asa guardada num projeto novo, antes de dar nome ao rascunho, também aparecia sem nome na lista Guardados.
