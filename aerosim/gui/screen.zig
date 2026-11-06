@@ -30,41 +30,14 @@ const Area = struct {
     active: usize = 0,
 };
 
-/// o pedido das abas ao Python, na thread
-const LayoutLoader = struct {
-    job: jobs.Job = .{},
-    waiter: python_bridge.Waiter = .{},
-    arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator),
-    reply: ?Json = null,
-    asked: bool = false,
-    loading: bool = false, // no navegador: a página ainda está carregando o Python (pede de novo no quadro seguinte)
-
-    fn work(loader: *LayoutLoader, bridge: *python_bridge.Bridge, process: ?std.Io) void {
-        loader.waiter.memory = loader.arena.allocator();
-        bridge.start(process) catch |err| {
-            if (err == error.PythonLoading) {
-                loader.loading = true;
-                return;
-            }
-            if (ui_kit.system.in_browser) {
-                _ = std.fmt.bufPrintZ(&loader.waiter.failure, "o Python da página não carregou (o motivo está no console do navegador); a Montagem funciona", .{}) catch {};
-            } else {
-                _ = std.fmt.bufPrintZ(&loader.waiter.failure, "não abriu o Python ({s}): rode da pasta do repositório, com as dependências instaladas; a Montagem funciona", .{@errorName(err)}) catch {};
-            }
-            return;
-        };
-        loader.reply = bridge.request(&loader.waiter, "\"op\": \"layout\"") catch null;
-    }
-};
-
-const waiting_labels = [_][:0]const u8{ "Python…", "Montagem" };
+const waiting_labels = [_][:0]const u8{"Montagem"};
 
 pub const Screen = struct {
     area: usize = 0,
     scroll: f32 = 0, // rolagem inicial (prints), passada à página aberta
     io: ?std.Io = null, // a `Io` do processo (o programa a passa em `ui/app.zig`): a ponte abre o Python com ela
     bridge: python_bridge.Bridge = .{},
-    layout: LayoutLoader = .{},
+    layout_memory: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator), // as áreas e os títulos
     areas: []Area = &.{},
     area_labels: []const [:0]const u8 = &waiting_labels,
     shown: ?*Page = null, // a página do último quadro (trocar de página pede ela de novo)
@@ -589,89 +562,66 @@ pub const Screen = struct {
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s}: {s} ({d} de {d}) · {d} peças", .{ what, opened.loaded.ac.name, screen.fleet_current + 1, screen.fleet_count, opened.mesh.piece_count }) catch {};
     }
 
-    /// pede as abas na primeira vez e monta as áreas quando a resposta chega
+    /// monta as áreas na primeira vez, da tabela em Zig (`manager.layout`): nada vem do Python
     fn collectLayout(screen: *Screen) void {
-        const loader = &screen.layout;
-        if (!loader.asked) {
-            loader.asked = true;
-            _ = std.fmt.bufPrintZ(&screen.message, "abrindo o Python (os managers das análises)...", .{}) catch {};
-            _ = loader.job.start(LayoutLoader.work, .{ loader, &screen.bridge, screen.io });
-        }
-        if (!loader.job.finished()) return;
-        if (loader.loading) {
-            loader.loading = false;
-            loader.asked = false;
-            _ = std.fmt.bufPrintZ(&screen.message, "carregando o Python no navegador (os managers das análises)...", .{}) catch {};
-            return;
-        }
-        const reply = loader.reply orelse {
-            _ = std.fmt.bufPrintZ(&screen.message, "{s}", .{std.mem.sliceTo(&loader.waiter.failure, 0)}) catch {};
-            return;
+        if (screen.areas.len > 0) return;
+        screen.buildAreas() catch {
+            _ = std.fmt.bufPrintZ(&screen.message, "sem memória para as abas", .{}) catch {};
         };
-        screen.buildAreas(reply) catch {
-            _ = std.fmt.bufPrintZ(&screen.message, "as abas vieram fora do esperado", .{}) catch {};
-            return;
-        };
-        screen.message[0] = 0;
     }
 
-    /// a análise em Zig entra como subaba nova nesta área (é da área e nenhuma subaba do Python tem o nome dela)
-    fn appended(simulation: *const manager.Simulation, area_title: []const u8, tabs: []const Json) bool {
-        if (!std.mem.eql(u8, simulation.area, area_title)) return false;
-        for (tabs) |tab| if (std.mem.eql(u8, stringField(tab, "name"), simulation.name)) return false;
+    /// a análise em Zig entra como subaba nova nesta área (é da área e nenhuma subaba da tabela tem o nome dela)
+    fn appended(simulation: *const manager.Simulation, area: manager.Area) bool {
+        if (!std.mem.eql(u8, simulation.area, area.title)) return false;
+        for (area.tabs) |tab| if (std.mem.eql(u8, tab.name, simulation.name)) return false;
         return true;
     }
 
-    /// as áreas e as páginas a partir da resposta "layout"
-    fn buildAreas(screen: *Screen, reply: Json) !void {
-        const memory = screen.layout.arena.allocator();
-        const items = (reply.object.get("areas") orelse return error.BadReply).array.items;
-        const areas = try memory.alloc(Area, items.len);
-        const labels = try memory.alloc([:0]const u8, items.len);
+    /// uma página nova (`null` é a Montagem)
+    fn newPage(screen: *Screen, tab: manager.Tab, path: []const u8, grids_beside: bool) !?*Page {
+        if (tab.kind == .assembly) return null;
+        const page = try std.heap.page_allocator.create(Page);
+        const in_zig = if (tab.kind == .simulation) manager.find(tab.name) else null;
+        page.* = .{
+            .kind = switch (tab.kind) {
+                .simulation => .simulation,
+                .stage => .stage,
+                else => .todo,
+            },
+            .name = tab.name,
+            .title = tab.title,
+            .bridge = &screen.bridge,
+            .analysis = in_zig, // já portada para o Zig: roda sem o Python
+            .grids_beside = grids_beside,
+        };
+        page.setAircraftPath(path);
+        page.stale = false;
+        return page;
+    }
+
+    /// as áreas e as páginas a partir de `manager.layout`, com as análises em Zig que não estão nela no fim da área
+    fn buildAreas(screen: *Screen) !void {
+        const memory = screen.layout_memory.allocator();
+        const areas = try memory.alloc(Area, manager.layout.len);
+        const labels = try memory.alloc([:0]const u8, manager.layout.len);
         const path = if (screen.assembly) |*opened| opened.path else "";
-        for (items, 0..) |item, a| {
-            const tabs = (item.object.get("tabs") orelse return error.BadReply).array.items;
-            const area_title = stringField(item, "title");
-            // uma análise em Zig com o nome de uma do Python toma o lugar dela na mesma subaba; as outras em Zig desta
-            // área entram depois das do Python (`manager/manager.zig`)
+        for (manager.layout, 0..) |area, a| {
             var zig_analyses: usize = 0;
-            for (&manager.all) |*simulation| zig_analyses += @intFromBool(appended(simulation, area_title, tabs));
-            const tab_labels = try memory.alloc([:0]const u8, tabs.len + zig_analyses);
-            const pages = try memory.alloc(?*Page, tabs.len + zig_analyses);
-            for (tabs, 0..) |tab, k| {
-                tab_labels[k] = try memory.dupeZ(u8, stringField(tab, "title"));
-                const kind_text = stringField(tab, "kind");
-                if (std.mem.eql(u8, kind_text, "assembly")) {
-                    pages[k] = null;
-                    continue;
-                }
-                const page = try std.heap.page_allocator.create(Page);
-                const is_simulation = std.mem.eql(u8, kind_text, "sim");
-                const in_zig = if (is_simulation) manager.find(stringField(tab, "name")) else null;
-                page.* = .{
-                    .kind = if (is_simulation) .simulation else if (std.mem.eql(u8, kind_text, "stage")) .stage else .todo,
-                    .name = try memory.dupe(u8, stringField(tab, "name")),
-                    .title = tab_labels[k],
-                    .bridge = &screen.bridge,
-                    .analysis = in_zig, // já portada para o Zig: roda sem o Python
-                    .grids_beside = false,
-                };
-                page.setAircraftPath(path);
-                page.stale = false;
-                pages[k] = page;
+            for (&manager.all) |*simulation| zig_analyses += @intFromBool(appended(simulation, area));
+            const tab_labels = try memory.alloc([:0]const u8, area.tabs.len + zig_analyses);
+            const pages = try memory.alloc(?*Page, area.tabs.len + zig_analyses);
+            for (area.tabs, 0..) |tab, k| {
+                tab_labels[k] = tab.title;
+                pages[k] = try screen.newPage(tab, path, false);
             }
-            var slot = tabs.len;
-            for (&manager.all) |*simulation| if (appended(simulation, area_title, tabs)) {
-                const page = try std.heap.page_allocator.create(Page);
-                page.* = .{ .kind = .simulation, .name = simulation.name, .title = simulation.title, .bridge = &screen.bridge, .analysis = simulation, .grids_beside = true };
-                page.setAircraftPath(path);
-                page.stale = false;
+            var slot = area.tabs.len;
+            for (&manager.all) |*simulation| if (appended(simulation, area)) {
                 tab_labels[slot] = simulation.title;
-                pages[slot] = page;
+                pages[slot] = try screen.newPage(.{ .title = simulation.title, .kind = .simulation, .name = simulation.name }, path, true);
                 slot += 1;
             };
-            labels[a] = try memory.dupeZ(u8, stringField(item, "title"));
-            areas[a] = .{ .title = labels[a], .single = flag(item, "single"), .labels = tab_labels, .pages = pages };
+            labels[a] = area.title;
+            areas[a] = .{ .title = area.title, .single = area.single, .labels = tab_labels, .pages = pages };
         }
         screen.areas = areas;
         screen.area_labels = labels;
@@ -756,7 +706,7 @@ pub const Screen = struct {
             screen.shown = null;
             screen.drawAssembly(ui, content);
         }
-        if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião (.json)", "Salvar .json" }, "managers em Python, contas no núcleo em Zig")) |button| {
+        if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião (.json)", "Salvar .json" }, "abas e contas em Zig; algumas subabas ainda pelo Python")) |button| {
             if (button == 0) screen.command("abrir") else screen.command("salvar");
         }
         _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, screen.area_labels, &screen.area, 14);
@@ -1404,19 +1354,6 @@ fn cross(center: [3]f64, arm: f64, color: rl.Color) void {
 /// a parte de dentro de um cartão onde vai a imagem 3D (abaixo do título)
 fn cardInside(rect: rl.Rectangle) rl.Rectangle {
     return .{ .x = rect.x + 4, .y = rect.y + 34, .width = rect.width - 8, .height = rect.height - 40 };
-}
-
-/// o texto de `key` num objeto JSON ("" se não há)
-fn stringField(value: Json, key: []const u8) []const u8 {
-    if (value != .object) return "";
-    const found = value.object.get(key) orelse return "";
-    return if (found == .string) found.string else "";
-}
-
-fn flag(value: Json, key: []const u8) bool {
-    if (value != .object) return false;
-    const found = value.object.get(key) orelse return false;
-    return found == .bool and found.bool;
 }
 
 /// o resumo da Montagem pronto para desenhar: o texto do painel em células da tabela, numa arena só dele
