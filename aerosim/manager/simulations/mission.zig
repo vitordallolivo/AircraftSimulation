@@ -44,6 +44,7 @@ const Mode = enum {
     takeoff,
     turns,
     mtow,
+    study,
 
     fn label(mode: Mode) []const u8 {
         return switch (mode) {
@@ -51,6 +52,7 @@ const Mode = enum {
             .takeoff => "só decolagem",
             .turns => "curvas: raio mínimo",
             .mtow => "MTOW (x_warning e z_warning)",
+            .study => "estudo e ponto de projeto: MTOW × uma variável",
         };
     }
 
@@ -59,7 +61,55 @@ const Mode = enum {
         return .mission;
     }
 };
-const mode_labels = [_][]const u8{ Mode.mission.label(), Mode.takeoff.label(), Mode.turns.label(), Mode.mtow.label() };
+const mode_labels = [_][]const u8{ Mode.mission.label(), Mode.takeoff.label(), Mode.turns.label(), Mode.mtow.label(), Mode.study.label() };
+
+/// o que o estudo varia no avião, um valor por vez, achando o MTOW da pista em cada um
+const StudyVariable = enum {
+    tilt,
+    incidence,
+
+    fn label(variable: StudyVariable) []const u8 {
+        return switch (variable) {
+            .tilt => "inclinação dos motores (°)",
+            .incidence => "incidência da asa (°)",
+        };
+    }
+
+    fn named(text: []const u8) StudyVariable {
+        for (std.enums.values(StudyVariable)) |variable| if (std.mem.eql(u8, variable.label(), text)) return variable;
+        return .tilt;
+    }
+
+    /// o valor de agora no avião (o do primeiro motor, o da primeira asa)
+    fn current(variable: StudyVariable, aircraft: *const Aircraft) f64 {
+        return switch (variable) {
+            .tilt => if (aircraft.propulsion.len > 0) aircraft.propulsion[0].tilt else 0,
+            .incidence => if (params_mod.firstSurface(aircraft, "wing")) |wing| wing.incidence else 0,
+        };
+    }
+
+    /// o avião com este valor (todos os motores; as asas principais)
+    fn applied(variable: StudyVariable, memory: std.mem.Allocator, aircraft: Aircraft, value: f64) !Aircraft {
+        var out = aircraft;
+        switch (variable) {
+            .tilt => {
+                const units = try memory.dupe(model.Propulsion, aircraft.propulsion);
+                for (units) |*unit| unit.tilt = value;
+                out.propulsion = units;
+            },
+            .incidence => {
+                const surfaces = try memory.dupe(model.Surface, aircraft.surfaces);
+                for (surfaces) |*surface| if (std.mem.eql(u8, surface.role, "wing")) {
+                    surface.incidence = value;
+                };
+                out.surfaces = surfaces;
+            },
+        }
+        return out;
+    }
+};
+const study_labels = [_][]const u8{ StudyVariable.tilt.label(), StudyVariable.incidence.label() };
+const group_study = "Estudo";
 
 /// com que massa o voo sai
 const MassSource = enum { plane, saved, hand };
@@ -503,6 +553,18 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
             try params.appendSlice(memory, &runway);
             try grids.append(memory, try massGrid(memory));
         },
+        .study => {
+            const variable = StudyVariable.named(values.text("study_variable", study_labels[0]));
+            const now = if (aircraft) |plane| variable.current(plane) else 0;
+            try params.appendSlice(memory, &.{
+                .{ .key = "study_variable", .label = "variar", .kind = .choice, .default = .{ .text = study_labels[0] }, .choices = &study_labels, .rebuild = true, .group = group_study, .help = "para cada valor, o MTOW desta pista (a mesma busca do modo MTOW); o melhor é o ponto de projeto" },
+                .{ .key = "study_from", .label = "de", .default = .{ .number = now - 4 }, .minimum = -45, .maximum = 45, .unit = "°", .group = group_study },
+                .{ .key = "study_to", .label = "até", .default = .{ .number = now + 4 }, .minimum = -45, .maximum = 45, .unit = "°", .group = group_study },
+                .{ .key = "study_steps", .label = "valores", .kind = .int, .default = .{ .number = 5 }, .minimum = 2, .maximum = 21, .group = group_study, .help = "cada valor é um MTOW inteiro (uns segundos cada)" },
+            });
+            try params.appendSlice(memory, &runway);
+            try grids.append(memory, try massGrid(memory));
+        },
     }
     try simulation.writeSpecs(out, params.items, try plotsFor(memory, mode, aircraft), Mission.description, .{ .grids = grids.items });
 }
@@ -547,6 +609,10 @@ const mtow_plots = [_]simulation.Plot{
     plot("mc", "Massas × massa de decolagem", "m (kg)", "kg ou L"),
     plot("ma", "Acionamento, δ_e e xCG × massa", "m (kg)", "m / ° / % CMA"),
 };
+const study_plots = [_]simulation.Plot{
+    plot("sm", "Estudo: MTOW × variável (★ ponto de projeto)", "variável", "MTOW (kg)"),
+    plot("sd", "Estudo: corrida até decolar no MTOW", "variável", "n_dec (m)"),
+};
 const turn_plots = [_]simulation.Plot{
     plot("cv", "Curvas: trajetórias", "e (m)", "n (m)"),
     plot("cr", "C_L/C_Lmax × raio", "R (m)", "—"),
@@ -590,6 +656,7 @@ fn plotsFor(memory: std.mem.Allocator, mode: Mode, aircraft: ?*const Aircraft) !
             try list.append(memory, optimization_plot);
             try list.appendSlice(memory, &rest_plots);
         },
+        .study => try list.appendSlice(memory, &study_plots),
         .mtow => {
             try list.appendSlice(memory, &first_plots);
             try list.appendSlice(memory, &mtow_plots);
@@ -684,6 +751,15 @@ const RunState = struct {
     center_options: []const f64 = &.{},
     cases: std.ArrayList(MtowCase) = .empty,
     bisection: struct { low: f64 = 0, high: f64 = 1, step: usize = 0, best: ?usize = null, mtow_fraction: ?f64 = null, stage: enum { low, high, bisect, done } = .low } = .{},
+    // estudo: os valores da variável e o MTOW de cada um (NaN: não decola nem com a menor massa)
+    study: struct {
+        variable: StudyVariable = .tilt,
+        base: Aircraft = .{},
+        values: []const f64 = &.{},
+        index: usize = 0,
+        mtow: std.ArrayList(f64) = .empty,
+        run_length: std.ArrayList(f64) = .empty,
+    } = .{},
 };
 
 fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) simulation.Error!void {
@@ -699,7 +775,7 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     state.aircraft = run.aircraft.*;
     if (state.mode == .mission) try applyTable(memory, &state.aircraft, values);
     // a massa do voo: a do avião, o MTOW salvo desta pista ou a digitada
-    if (state.mode != .mtow) {
+    if (state.mode != .mtow and state.mode != .study) {
         const source = values.text("mass_source", mass_labels[0]);
         if (std.mem.eql(u8, source, mass_labels[1])) {
             const saved = savedFor(run.aircraft, state.x_warning, state.z_warning) orelse {
@@ -724,7 +800,7 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
             var buffer: [16]f64 = undefined;
             state.speeds = try memory.dupe(f64, values.numbers("V_list", &buffer, &.{ 13, 15, 17 }));
         },
-        .mtow => {
+        .mtow, .study => {
             mass_table.sync(run.aircraft);
             var centers: std.ArrayList(f64) = .empty;
             const leading = params_mod.macLeadingEdge(&state.aircraft);
@@ -737,10 +813,11 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
             }
             std.mem.sort(f64, centers.items, {}, std.sort.asc(f64));
             state.center_options = centers.items;
+            if (state.mode == .study) try startStudy(run, state, values);
         },
         .takeoff => {},
     }
-    if (state.loading.mass != null and state.mode != .mtow)
+    if (state.loading.mass != null and state.mode != .mtow and state.mode != .study)
         try state.checks.append(memory, .{ .status = .info, .item = "massa do voo", .value = try printed(memory, "{d:.2} kg", .{state.info.mass}), .criterion = values.text("mass_source", ""), .group = "Massa" });
 }
 
@@ -815,6 +892,7 @@ fn advanceRun(run: *simulation.Run, state: *RunState) simulation.Error!bool {
         .mission => return advanceMission(run, state),
         .turns => return advanceTurns(run, state),
         .mtow => return advanceMtow(run, state),
+        .study => return advanceStudy(run, state),
     }
 }
 
@@ -1693,6 +1771,100 @@ fn advanceMtow(run: *simulation.Run, state: *RunState) simulation.Error!bool {
     }
 }
 
+// ------------------------------------------------------------------ estudo e ponto de projeto
+
+/// os valores da variável (de, até, quantos) e o avião do primeiro
+fn startStudy(run: *simulation.Run, state: *RunState, values: simulation.Values) !void {
+    const memory = state.memory;
+    const study = &state.study;
+    study.variable = StudyVariable.named(values.text("study_variable", study_labels[0]));
+    study.base = state.aircraft;
+    const now = study.variable.current(&state.aircraft);
+    const from = values.number("study_from", now - 4);
+    const to = values.number("study_to", now + 4);
+    const count: usize = @intFromFloat(@max(2, @min(21, @round(values.number("study_steps", 5)))));
+    const list = try memory.alloc(f64, count);
+    for (list, 0..) |*value, i| value.* = from + (to - from) * @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(count - 1));
+    study.values = list;
+    try useStudyValue(run, state);
+}
+
+/// o avião do valor de agora, calibrado de novo, e a busca do MTOW do começo
+fn useStudyValue(run: *simulation.Run, state: *RunState) !void {
+    const study = &state.study;
+    state.aircraft = try study.variable.applied(state.memory, study.base, study.values[study.index]);
+    var diagnosis: model.Diag = .{};
+    state.calibrated.* = .{};
+    state.info = calibrateWith(&state.aircraft, state.calibrated, .{}, &diagnosis) catch |err| {
+        run.fail("com {s} = {d}, o avião não montou no núcleo: {s} ({s})", .{ study.variable.label(), study.values[study.index], diagnosis.text(), @errorName(err) });
+        return err;
+    };
+    state.cases.clearRetainingCapacity();
+    state.bisection = .{};
+}
+
+/// um passo da busca do MTOW do valor de agora; ao fim dela, guarda o MTOW e passa ao próximo valor
+fn advanceStudy(run: *simulation.Run, state: *RunState) simulation.Error!bool {
+    const study = &state.study;
+    if (study.index >= study.values.len) {
+        try finishStudy(state);
+        run.progress = 1;
+        return true;
+    }
+    if (state.bisection.stage != .done) {
+        _ = try advanceMtow(run, state);
+        const total: f64 = @floatFromInt(study.values.len);
+        run.progress = @floatCast((@as(f64, @floatFromInt(study.index)) + @as(f64, @floatFromInt(state.bisection.step)) / 10) / total);
+        var step_text: [160]u8 = undefined;
+        const step = std.mem.sliceTo(&run.message, 0);
+        @memcpy(step_text[0..step.len], step);
+        run.say("estudo: {s} = {d:.2} ({d}/{d}), {s}", .{ study.variable.label(), study.values[study.index], study.index + 1, study.values.len, step_text[0..step.len] });
+        return false;
+    }
+    const decolou = state.bisection.mtow_fraction != null;
+    const best = state.cases.items[state.bisection.best.?];
+    try study.mtow.append(state.memory, if (decolou) best.mass else std.math.nan(f64));
+    try study.run_length.append(state.memory, if (decolou) best.best.takeoff_point else std.math.nan(f64));
+    study.index += 1;
+    if (study.index < study.values.len) try useStudyValue(run, state);
+    return false;
+}
+
+/// os gráficos do estudo e o ponto de projeto (o maior MTOW)
+fn finishStudy(state: *RunState) !void {
+    const memory = state.memory;
+    const study = &state.study;
+    const figures = state.figures;
+    const label = study.variable.label();
+    var best: ?usize = null;
+    for (study.mtow.items, 0..) |mtow, i| {
+        if (!std.math.isFinite(mtow)) continue;
+        if (best == null or mtow > study.mtow.items[best.?]) best = i;
+    }
+    try figures.curve("sm", .{ .name = "MTOW", .x = study.values, .y = study.mtow.items, .color = "#2ca02c", .marker = "o", .size = 9, .line = true });
+    try figures.curve("sd", .{ .name = "n_dec no MTOW", .x = study.values, .y = study.run_length.items, .color = "#1f77b4", .marker = "o", .size = 9, .line = true });
+    try figures.guide("sd", .{ .name = try printed(memory, "x_warning = {d} m", .{state.x_warning}), .value = state.x_warning, .vertical = false, .color = "#d62728", .width = 2 });
+    for (study.values, study.mtow.items) |value, mtow| try state.summary.append(memory, .{ try printed(memory, "MTOW (kg), {s} = {d:.2}", .{ label, value }), if (std.math.isFinite(mtow)) try printed(memory, "{d:.4}", .{mtow}) else "não decola" });
+    const chosen = best orelse {
+        try state.checks.append(memory, .{ .status = .falha, .item = "nenhum valor decola", .value = label, .criterion = try printed(memory, "x ≤ {d} m, z = {d} m", .{ state.x_warning, state.z_warning }), .fix = "abra a faixa, baixe os mínimos da tabela de massas ou aumente a pista", .group = "Estudo" });
+        return;
+    };
+    const value = study.values[chosen];
+    const mtow = study.mtow.items[chosen];
+    try figures.curve("sm", .{ .name = "★ ponto de projeto", .x = try memory.dupe(f64, &.{value}), .y = try memory.dupe(f64, &.{mtow}), .color = "#ffcc00", .marker = "star", .size = 24 });
+    try state.summary.append(memory, .{ "ponto de projeto", try printed(memory, "{s} = {d:.2}, MTOW = {d:.3} kg", .{ label, value, mtow }) });
+    const edge = chosen == 0 or chosen + 1 == study.values.len;
+    try state.checks.append(memory, .{
+        .status = if (edge) .atencao else .info,
+        .item = "ponto de projeto",
+        .value = try printed(memory, "{s} = {d:.2}", .{ label, value }),
+        .criterion = try printed(memory, "maior MTOW: {d:.2} kg", .{mtow}),
+        .why = if (edge) "o melhor está na ponta da faixa: o máximo pode estar fora dela" else "",
+        .fix = if (edge) "abra a faixa para esse lado" else "leve o valor para o avião (Montagem ou Motores e montagem)",
+        .group = "Estudo",
+    });
+}
+
 fn finishMtow(run: *simulation.Run, state: *RunState) !void {
     const memory = state.memory;
     const figures = state.figures;
@@ -1877,4 +2049,22 @@ test "Missão: MTOW igual ao do Python (lento: -Dlento -Dfiltro=MTOW)" {
     defer parsed.deinit();
     try testing.expectApproxEqAbs(@as(f64, 13.4446875), try summaryNumber(parsed, "MTOW (kg)"), 1e-3);
     try testing.expectApproxEqAbs(@as(f64, 59.7988483968584), try summaryNumber(parsed, "n_dec (m)"), 1e-4);
+}
+
+test "Missão: o estudo no valor de agora dá o MTOW do modo MTOW (lento: -Dlento -Dfiltro=estudo)" {
+    if (!@import("test_options").slow) return error.SkipZigTest;
+    const gpa = testing.allocator;
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    defer gpa.free(bytes);
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(gpa, bytes, &diagnosis);
+    defer loaded.deinit();
+    const tilt = StudyVariable.tilt.current(&loaded.ac);
+    var request: [256]u8 = undefined;
+    const text = try std.fmt.bufPrint(&request, "\"values\": {{\"mode\": \"{s}\", \"study_from\": {d}, \"study_to\": {d}, \"study_steps\": 2}}", .{ Mode.study.label(), tilt, tilt + 4 });
+    const parsed = try summaryOf(gpa, &loaded.ac, text);
+    defer parsed.deinit();
+    var key: [128]u8 = undefined;
+    // o mesmo avião do modo MTOW: o mesmo MTOW (13,4446875 kg, o do teste do MTOW)
+    try testing.expectApproxEqAbs(@as(f64, 13.4446875), try summaryNumber(parsed, try std.fmt.bufPrint(&key, "MTOW (kg), {s} = {d:.2}", .{ StudyVariable.tilt.label(), tilt })), 1e-3);
 }

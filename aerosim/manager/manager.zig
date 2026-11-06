@@ -17,6 +17,18 @@ const sizing = @import("simulations/sizing.zig");
 const mdo = @import("simulations/mdo.zig");
 const wings = @import("simulations/wings.zig");
 const loads = @import("simulations/loads.zig");
+const combined = @import("combined.zig");
+
+/// "Voo nivelado e envelopes" com o desempenho da planilha (subida, planeio, curvas, V-n, bateria), que antes era a
+/// subaba "Avião montado" e repetia o envelope, a potência e a subida
+const Flight = combined.Combined(envelope.Envelope, performance.Performance, .{
+    .name = "envelope",
+    .title = "Voo nivelado e envelopes",
+    .area = "Desempenho",
+    .description = envelope.Envelope.description ++ " Junto, o desempenho da planilha: tração, ângulo de subida, planeio, envelope de curvas, V-n e bateria.",
+    .second_group = "Desempenho da planilha",
+    .skip_second = &.{ "env", "spot", "ssub" },
+});
 
 pub const Simulation = simulation.Simulation;
 pub const Run = simulation.Run;
@@ -24,7 +36,7 @@ pub const Values = simulation.Values;
 pub const GridEdit = simulation.GridEdit;
 
 /// as análises em Zig, na ordem das subabas: um tipo por análise, com a interface de `simulation.check`
-pub const analyses = .{ mdo.Mdo, sizing.Sizing, wings.Wings, loads.Loads, stability.Stability, stability.DynamicStability, thrust.Thrust, envelope.Envelope, performance.Performance, mission.Mission };
+pub const analyses = .{ mdo.Mdo, sizing.Sizing, wings.Wings, loads.Loads, stability.Stability, stability.DynamicStability, thrust.Thrust, Flight, mission.Mission };
 
 /// a tabela que a tela usa, montada das `analyses`
 pub const all = blk: {
@@ -64,11 +76,11 @@ pub const layout = [_]Area{
     } },
     .{ .title = "Desempenho", .tabs = &.{
         .{ .title = "Motores e montagem", .kind = .stage, .name = "motores" },
-        .{ .title = "Estudo e ponto de projeto", .kind = .stage, .name = "estudo" },
-        .{ .title = "Avião montado", .kind = .simulation, .name = "performance" },
         .{ .title = "Voo nivelado e envelopes", .kind = .simulation, .name = "envelope" },
         .{ .title = "Tração", .kind = .simulation, .name = "thrust" },
         .{ .title = "Missão", .kind = .simulation, .name = "mission" },
+        // o estudo rápido da sprint (o ponto acoplado, sem 6GDL); o estudo no voo simulado é o modo da Missão
+        .{ .title = "Estudo rápido (sprint)", .kind = .stage, .name = "estudo" },
     } },
     .{ .title = "Cargas", .single = true, .tabs = &.{.{ .title = "Cargas", .kind = .simulation, .name = "loads" }} },
     .{ .title = "Montagem", .single = true, .tabs = &.{.{ .title = "Montagem", .kind = .assembly }} },
@@ -111,4 +123,34 @@ comptime {
         _ = @import("flightplots.zig");
         _ = @import("simulations/aerodynamics.zig");
     }
+}
+
+test "Voo nivelado e envelopes junta o desempenho da planilha sem os gráficos repetidos" {
+    const gpa = std.testing.allocator;
+    const aircraft_model = @import("aircraft_model");
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    defer gpa.free(bytes);
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);
+    defer loaded.deinit();
+    const registered = find("envelope").?;
+    var run = simulation.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
+    defer run.arena.deinit();
+    try registered.start(&run, Values.fromRequest(run.memory(), "\"values\": {\"method\": \"planilha\"}"));
+    var steps: usize = 0;
+    while (!try registered.advance(&run)) steps += 1;
+    var written: std.Io.Writer.Allocating = .init(gpa);
+    defer written.deinit();
+    try registered.result(&run, &written.writer);
+    const parsed = try std.json.parseFromSlice(std.json.Value, gpa, written.written(), .{});
+    defer parsed.deinit();
+    var keys: std.ArrayList([]const u8) = .empty;
+    defer keys.deinit(gpa);
+    for (parsed.value.object.get("plots").?.array.items) |plot| try keys.append(gpa, plot.object.get("key").?.string);
+    var has_vn = false;
+    for (keys.items) |key| {
+        try std.testing.expect(!std.mem.eql(u8, key, "env") and !std.mem.eql(u8, key, "spot") and !std.mem.eql(u8, key, "ssub"));
+        has_vn = has_vn or std.mem.eql(u8, key, "snv");
+    }
+    try std.testing.expect(has_vn);
 }

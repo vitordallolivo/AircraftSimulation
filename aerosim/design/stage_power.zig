@@ -736,7 +736,7 @@ fn send(context: *stages.Context, memory: std.mem.Allocator, performance_next: b
     const length = @min(path.len, sent_path.len);
     @memcpy(sent_path[0..length], path[0..length]);
     sent_len = length;
-    sent_go = if (performance_next) "performance" else "";
+    sent_go = if (performance_next) "envelope" else "";
     return std.fmt.allocPrint(memory, "{s}: gravado em {s} (a decolagem ainda não foi ajustada: ajuste em Desempenho → Missão)", .{ assembled.plane.name, path });
 }
 
