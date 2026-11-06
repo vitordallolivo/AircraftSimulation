@@ -204,4 +204,6 @@ fn heightOf(ground: ?f64, z: f64) ?f64 {
 
 test {
     _ = balance;
+    _ = store;
+    _ = stages;
 }

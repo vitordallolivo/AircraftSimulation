@@ -8,7 +8,9 @@ escolhe. O que sai é um avião completo, o mesmo arquivo que a Montagem edita, 
 
 Cada etapa parte do candidato que a anterior guardou e leva uma cópia dele, então mudar algo numa etapa anterior não
 altera o que já foi guardado. Na GUI as etapas ficam nas subabas de Aerodinâmica (Perfil, Asa), Estabilidade
-(Empenagem e comandos) e Desempenho (Motores e montagem, Estudo e ponto de projeto).
+(Empenagem e comandos) e Desempenho (Motores e montagem, Estudo e ponto de projeto). Na interface em Zig cada etapa
+é um `stage_*.zig` ao lado do `.py` dela, com a mesma página e o mesmo arquivo de projeto, e as contas vêm do núcleo
+([`core/src/sizing`](../../core/src/sizing/README.md)); a polar do NeuralFoil e a de arquivo seguem pelo Python.
 
 ```mermaid
 flowchart TB
@@ -57,3 +59,9 @@ aeroopt. No estudo do ponto de projeto, o MTOW em função da inclinação do mo
 6GDL:
 
 ![MTOW × inclinação do motor: conta rápida e 6GDL](../../docs/img/estudo_ponto_de_projeto_graficos.png)
+
+As etapas Empenagem e comandos e Motores e montagem na interface em Zig, com o avião em 3D e o CG:
+
+![Empenagem e comandos em Zig](../../docs/img/zig_empenagem.png)
+
+![Motores e montagem em Zig](../../docs/img/zig_motores.png)

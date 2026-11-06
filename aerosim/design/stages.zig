@@ -229,3 +229,22 @@ pub fn within(index: i64, count: usize) ?usize {
 test {
     _ = registry;
 }
+
+test "etapas em Zig: cada uma monta a página do projeto de exemplo, com a conta" {
+    const io = std.testing.io;
+    var project = try store.open(std.heap.page_allocator, io, "../data/sprint/projeto_s1223.json");
+    project.folder = ".zig-cache/teste_sprint"; // nunca gravar em data/
+    use(project, io);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    for (all) |stage| {
+        const request = try std.fmt.allocPrint(memory, "\"name\": \"{s}\", \"do\": \"show\"", .{stage.name});
+        const reply = try handle(memory, io, request);
+        try std.testing.expect(reply == .object);
+        try std.testing.expect(reply.object.get("params") != null);
+        if (std.mem.eql(u8, stage.name, "estudo") or std.mem.eql(u8, stage.name, "requisitos")) continue;
+        const summary = reply.object.get("summary") orelse return error.SemConta;
+        try std.testing.expect(summary == .array or summary == .object);
+    }
+}

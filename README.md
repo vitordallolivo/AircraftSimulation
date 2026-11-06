@@ -4,6 +4,8 @@ O Aircraft Simulation nasceu para preencher uma lacuna clássica na engenharia a
 
 Seja para projetar uma aeronave do zero (como competições de Aerodesign, VANTs ou protótipos experimentais), otimizar o peso máximo de decolagem (MTOW) sob restrições severas de pista, ou testar o comportamento dinâmico em tempo real, este ecossistema coloca todo o controle na suas mãos de forma modular.
 
+![Mini-MDO: o otimizador do dimensionamento inicial, com o MTOW de cada avaliação](docs/img/zig_mini_mdo.png)
+
 ![Perfis: a polar de cada perfil e a escolha dos da asa e da cauda](docs/img/zig_perfis.png)
 
 ![Projetar: a asa em 3D com o ponto neutro, a tabela de asas e as curvas](docs/img/zig_projetar.png)
@@ -16,6 +18,8 @@ Seja para projetar uma aeronave do zero (como competições de Aerodesign, VANTs
 
 ![Motores: a tração, a bateria e onde fica cada massa](docs/img/zig_motores.png)
 
+![Estudo e ponto de projeto: os aviões guardados comparados nas altitudes pedidas](docs/img/zig_estudo.png)
+
 ![Desempenho: o envelope de voo](docs/img/zig_desempenho.png)
 
 ![AeroDrive: voo em perseguição com minimapa e vento](aerodrive/docs/img/voo_cruzeiro.png)
@@ -24,8 +28,9 @@ Seja para projetar uma aeronave do zero (como competições de Aerodesign, VANTs
 
 
 O programa é divido em dois modos, o aerodrive e o aerosim, o aerodrive é uma simulação de tempo real que permite controlar a aeronave que você acaba de projetar e o
-aerosim é justamente o local onde você irá projetar. Desenvolvido em duas linguagens de programação em python para as interfaces e zig para calculos mais proximos de tempo real
-possível.
+aerosim é justamente o local onde você irá projetar. A interface em Zig (raylib) faz todas as abas e as contas sem o
+Python, das etapas da sprint ao Mini-MDO; o Python fica com a GUI antiga em PyQt e com os métodos de fora do núcleo
+(lltdrek, AeroSandbox, AVL, NeuralFoil), chamados só quando escolhidos.
 
 
 ## Instalar
@@ -60,8 +65,8 @@ python -m ziglang build test               # testes do núcleo, das interfaces, 
 
 Para instalar sem o repositório, `python tools/package.py` monta o AppImage do Linux e `python tools/package.py
 --alvo windows` o instalador `.exe` do Windows (os dois abrem a tela inicial, o mesmo menu do site). O GitHub Actions
-monta os dois quando alguém pede (workflow `pacotes`). O pacote leva um Python portátil para as abas do aerosim, então
-não precisa instalar o Python.
+monta os dois quando alguém pede (workflow `pacotes`). O pacote leva um Python portátil para os métodos de fora do
+núcleo, então não precisa instalar o Python.
 
 
 Já para o aerosim você pode:

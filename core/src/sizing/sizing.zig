@@ -81,6 +81,8 @@ test {
     _ = @import("optimize.zig");
     _ = @import("ground.zig");
     _ = @import("motorprop.zig");
+    _ = @import("wing_line.zig");
+    _ = @import("tail.zig");
 }
 
 test "nomes para o Python" {

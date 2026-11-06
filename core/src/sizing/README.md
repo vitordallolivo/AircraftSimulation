@@ -4,8 +4,10 @@ Esta parte do núcleo procura um avião bom antes de existir um avião. Dados os
 e as faixas de cada variável de projeto (envergadura, área, afilamento, perfis, motor), ela avalia cada combinação com
 contas rápidas e devolve o avião resultante: área, velocidade de estol, corrida, MTOW e carga paga. Um otimizador
 percorre as combinações em busca do maior MTOW ou da melhor eficiência estrutural, e como cada avaliação é curta, ele
-volta em tempo real na GUI. É a conta do mini-MDO da sprint e a base do aeroopt; a corrida rápida e a tração
-motor + hélice da etapa Motores também moram aqui.
+volta em tempo real na GUI. É a conta do mini-MDO da sprint e a base do aeroopt; as contas das etapas da sprint também
+moram aqui: a linha sustentadora da etapa Projetar (`wing_line`), a empenagem por volume de cauda com a estática, a
+faixa de CG, a rotação e a rolagem (`tail`), e a corrida rápida e a tração motor + hélice da etapa Motores (`ground`,
+`motorprop`).
 
 O cálculo de um avião é uma cadeia de estágios, cada um uma função pura que parte do anterior, gerada em comptime
 para o tipo de aeronave (convencional com N asas, asa voadora, tailsitter, VTOL) e para o provedor de tração. O MTOW
@@ -54,6 +56,8 @@ struct com `name` e `run` em `optimize.all`, e os testes rodam com `cd core && p
 
 O resultado é o ponto de partida do projeto: a asa que a sprint detalha e o que o aeroopt refina. O MTOW de cada
 avaliação ao longo das iterações e o diagrama de restrições do melhor:
+
+![Mini-MDO na interface em Zig: o objetivo por iteração, os indivíduos, a asa do melhor e a tração no MTOW](../../../docs/img/zig_mini_mdo.png)
 
 ![Mini-MDO: MTOW de cada avaliação por iteração](../../../docs/img/fig/mdo_convergencia.png)
 

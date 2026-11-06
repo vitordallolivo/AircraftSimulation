@@ -6,6 +6,14 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- Antes, na interface em Zig, o Mini-MDO e o Estudo e ponto de projeto só mostravam o lugar, e as etapas da sprint
+  (Perfis, Projetar, Empenagem e comandos, Motores e montagem) dependiam do Python. Agora tudo isso roda em Zig, com
+  as mesmas páginas, botões e o mesmo arquivo de projeto: o Mini-MDO otimiza com o catálogo de motores, hélices e
+  baterias; a Empenagem dimensiona a cauda pelo volume de cauda, com a estática, a faixa de CG, a rotação e a tabela
+  de comandos; Motores e montagem monta o avião, calcula a tração, a corrida e o MTOW pela pista e manda o avião para
+  a Montagem; o Estudo varre uma variável ou compara os aviões guardados nas altitudes pedidas. A janela abre e
+  trabalha sem o Python, que só entra quando se escolhe um método de fora do núcleo. A polar do NeuralFoil nas etapas
+  ainda não chega à versão em Zig, que usa a polar do modelo.
 - A tela em Zig abria vazia sem o Python, porque a lista de abas vinha dele. Agora as abas são do Zig, e o Diagrama
   de restrições, o Analisar e as Cargas também rodam em Zig, com os mesmos números do Python. Os métodos de fora do
   núcleo (lltdrek, AeroSandbox, AVL) continuam na lista; quando um deles é marcado, a rodada vai para o Python, e no
