@@ -6,6 +6,8 @@
 const std = @import("std");
 /// o CG com a carga e o "Acertar o CG" (`balance.py`)
 pub const balance = @import("balance.zig");
+/// o projeto da sprint: abrir e gravar a pasta (`store.py`)
+pub const store = @import("store.zig");
 const aircraft_model = @import("aircraft_model");
 const manager = @import("manager");
 
