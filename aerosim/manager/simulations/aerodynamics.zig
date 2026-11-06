@@ -3,13 +3,16 @@
 //! de cada polar (C_Lα, C_Lmax, L/D, Oswald, ponto neutro), o diagnóstico (estol × cruzeiro, cruzeiro × L/D máximo,
 //! concordância dos métodos) e as curvas do avião inteiro com o profundor e a derrapagem, como a simulação usa.
 //!
-//! Os métodos de fora do núcleo (lltdrek, AeroSandbox, AVL) e o estudo das pontas de asa rodam pelo Python quando
-//! são marcados (`wings.zig`, `needsPython`).
+//! O estudo das pontas de asa (winglet, placa, caixa e asa em C pelo plano de Trefftz, com o atrito descontado) é o
+//! do núcleo (`core/src/loads/trefftz.zig`). Os métodos de fora do núcleo (lltdrek, AeroSandbox, AVL) rodam pelo
+//! Python quando são marcados (`wings.zig`, `needsPython`).
 const std = @import("std");
 const core = @import("aerosim");
 const aircraft_model = @import("aircraft_model");
 const simulation = @import("simulation");
 const wings = @import("wings.zig");
+const stability = @import("stability.zig");
+const trefftz = core.trefftz;
 
 const params_mod = aircraft_model.params;
 const model = aircraft_model.aircraft;
@@ -263,16 +266,13 @@ pub fn metrics(memory: std.mem.Allocator, polar: Polar, geometry: Reference, ref
     return out;
 }
 
-/// o fator de Oswald de Raymer: e = 1,78 (1 − 0,045 AR^0,68) − 0,64 (Raymer, "Aircraft Design: A Conceptual Approach",
-/// eq. 12.49; `raymer_oswald` de `aerosim/aero/tipdevices.py`)
-fn raymerOswald(aspect: f64) f64 {
-    return 1.78 * (1 - 0.045 * std.math.pow(f64, aspect, 0.68)) - 0.64;
-}
+const raymerOswald = trefftz.raymerOswald;
 
 // ------------------------------------------------------------------ os campos e os gráficos do avião completo
 
 pub const group = "Avião completo (fuselagem, massa e CG)";
 const group_full = "Avião completo (fuselagem, massa e CG): polar da aeronave completa (núcleo 6GDL)";
+const group_tips = "Avião completo (fuselagem, massa e CG): dispositivos de asa";
 const group_criteria = "Avião completo (fuselagem, massa e CG): critérios de aprovação";
 
 /// a velocidade de cruzeiro do avião: a maior da missão (`_cruise_speed` de `stability.py`)
@@ -299,7 +299,10 @@ pub fn appendFields(memory: std.mem.Allocator, params: *std.ArrayList(simulation
         .{ .key = "full", .label = "aeronave inteira (δe e β)", .kind = .bool, .default = .{ .toggle = true }, .group = group_full, .help = "curvas da aeronave inteira com profundor e derrapagem, como a simulação usa" },
         .{ .key = "de", .label = "δe para comparar", .default = .{ .number = 10 }, .minimum = 0, .maximum = 30, .unit = "°", .group = group_full },
         .{ .key = "alpha_beta", .label = "α da varredura em β", .default = .{ .number = 4 }, .minimum = -5, .maximum = 15, .unit = "°", .group = group_full },
-        .{ .key = "tips", .label = "explorar pontas de asa (pelo Python)", .kind = .bool, .default = .{ .toggle = false }, .group = group_full, .help = "winglet, placa, caixa e asa em C pelo plano de Trefftz, com o atrito descontado" },
+        .{ .key = "tips", .label = "explorar pontas de asa", .kind = .bool, .default = .{ .toggle = false }, .group = group_tips, .help = "winglet, placa, caixa e asa em C pelo plano de Trefftz, com o atrito descontado" },
+        .{ .key = "hb_max", .label = "altura máxima estudada (h/b)", .default = .{ .number = 0.25 }, .minimum = 0.05, .maximum = 1, .group = group_tips },
+        .{ .key = "Cf", .label = "coeficiente de atrito do dispositivo", .default = .{ .number = 0.006 }, .minimum = 0, .maximum = 0.05, .group = group_tips },
+        .{ .key = "dev_gain", .label = "ganho mín. do dispositivo", .default = .{ .number = 0.5 }, .minimum = 0, .maximum = 20, .unit = "%", .group = group_criteria, .help = "o dispositivo de ponta compensa se reduzir o arrasto ao menos isto" },
         .{ .key = "tol_CLa", .label = "tolerância C_Lα e C_Lmax", .default = .{ .number = 12 }, .minimum = 1, .maximum = 100, .unit = "%", .group = group_criteria, .help = "diferença aceita entre os métodos" },
         .{ .key = "tol_np", .label = "tolerância ponto neutro", .default = .{ .number = 5 }, .minimum = 0.5, .maximum = 50, .unit = "% CMA", .group = group_criteria, .help = "diferença aceita entre os métodos" },
         .{ .key = "Vs_ratio", .label = "V de cruzeiro / V de estol mínima", .default = .{ .number = 1.3 }, .minimum = 1, .maximum = 3, .group = group_criteria },
@@ -317,6 +320,8 @@ pub const plots = [_]simulation.Plot{
     .{ .key = "ac_pa_Cm", .title = "Aeronave completa: C_m no CG × α com o profundor", .xlabel = "α (°)", .ylabel = "C_m" },
     .{ .key = "ac_pa_CD", .title = "Aeronave completa: polar de arrasto", .xlabel = "C_D", .ylabel = "C_L" },
     .{ .key = "ac_pa_b", .title = "Aeronave completa: látero-direcional × β", .xlabel = "β (°)", .ylabel = "coeficiente (—)" },
+    .{ .key = "ac_tip_e", .title = "Avião completo: ganho de eficiência de envergadura × altura do dispositivo", .xlabel = "altura do dispositivo / envergadura (h/b)", .ylabel = "e / e sem dispositivo" },
+    .{ .key = "ac_tip_d", .title = "Avião completo: variação do arrasto total no cruzeiro × altura (com atrito)", .xlabel = "altura do dispositivo / envergadura (h/b)", .ylabel = "ΔD (% do arrasto total)" },
 };
 
 const solver_colors = [_][]const u8{ "#000000", "#1f77b4", "#d62728" };
@@ -402,6 +407,93 @@ pub fn analyze(run: *simulation.Run, values: simulation.Values, chosen: []const 
     }
     try diagnose(memory, values, polars.items, all_metrics.items, .{ .cruise_lift = cruise_lift, .airspeed = airspeed, .density = density, .mass = mass, .area = geometry.area, .aspect = aspect }, checks);
     if (values.toggle("full", true)) try fullCurves(run, values, airspeed, output);
+    if (values.toggle("tips", false)) {
+        const drag_min = found_min: {
+            var least = std.math.inf(f64);
+            for (polars.items[0].drag) |drag| if (std.math.isFinite(drag)) {
+                least = @min(least, drag);
+            };
+            break :found_min if (std.math.isFinite(least)) least else 0.03;
+        };
+        const planform = @min(all_metrics.items[0].oswald orelse raymerOswald(aspect), 1.0);
+        try tipStudy(run, values, geometry, cruise_lift, drag_min, planform, output);
+    }
+}
+
+/// a corda da ponta da asa principal (a última seção)
+fn tipChord(aircraft: *const simulation.Aircraft, fallback: f64) f64 {
+    const wing = params_mod.firstSurface(aircraft, "wing") orelse return fallback;
+    var outer: ?model.Section = null;
+    for (wing.sections) |section| if (outer == null or section.y > outer.?.y) {
+        outer = section;
+    };
+    return if (outer) |section| section.chord else fallback;
+}
+
+/// o estudo das pontas de asa pelo plano de Trefftz (`_tips` de `aerodynamics.py`): o e ideal de cada dispositivo
+/// genérico e a variação do arrasto total no cruzeiro, com o atrito da área molhada, contra as extensões de ponta
+fn tipStudy(run: *simulation.Run, values: simulation.Values, geometry: Reference, cruise_lift: f64, drag_min: f64, planform: f64, output: Output) !void {
+    const memory = run.memory();
+    const devices_group = "dispositivos de asa";
+    const configuration = stability.detectConfiguration(run.aircraft);
+    var has_devices = configuration.tip_count > 0;
+    if (params_mod.firstSurface(run.aircraft, "wing")) |wing| has_devices = has_devices or wing.devices.len > 0;
+    const aspect = geometry.span * geometry.span / geometry.area;
+    const induced = cruise_lift * cruise_lift / (std.math.pi * aspect * planform);
+    const share = induced / (drag_min + induced);
+    const gain = values.number("dev_gain", 0.5);
+    const work = try memory.create(trefftz.Workspace);
+    const study: trefftz.Study = .{ .span = geometry.span, .area = geometry.area, .lift = cruise_lift, .tip_chord = tipChord(run.aircraft, geometry.chord), .planform = planform, .friction = values.number("Cf", 0.006) };
+    const count = 11;
+    const heights = try memory.alloc(f64, count);
+    const kinds = [_]trefftz.Kind{ .winglet, .placa, .caixa, .asa_c };
+    var factor_columns: [kinds.len][]f64 = undefined;
+    var drag_columns: [kinds.len][]f64 = undefined;
+    for (&factor_columns, &drag_columns) |*factors, *drags| {
+        factors.* = try memory.alloc(f64, count);
+        drags.* = try memory.alloc(f64, count);
+    }
+    const same_moment = try memory.alloc(f64, count);
+    const top = values.number("hb_max", 0.25);
+    for (heights, 0..) |*height, k| {
+        height.* = top * @as(f64, @floatFromInt(k)) / @as(f64, @floatFromInt(count - 1));
+        const point = trefftz.studyPoint(work, study, height.*) catch |err| {
+            try output.checks.append(memory, .{ .status = .atencao, .item = "estudo das pontas", .value = @errorName(err), .why = "o traço passou do limite de painéis do núcleo", .fix = "diminua a altura máxima estudada", .group = devices_group });
+            return;
+        };
+        for (kinds, 0..) |kind, j| {
+            factor_columns[j][k] = point.efficiency.get(kind);
+            drag_columns[j][k] = point.drag_change.get(kind) * share;
+        }
+        same_moment[k] = point.extension_same_moment * share;
+    }
+    const kind_colors = [_][]const u8{ "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728" };
+    for (kinds, kind_colors, 0..) |kind, color, j| {
+        const name = try text(memory, "{s} (genérico)", .{kind.title()});
+        try output.figures.curve("ac_tip_e", .{ .name = name, .x = heights, .y = factor_columns[j], .color = color });
+        try output.figures.curve("ac_tip_d", .{ .name = name, .x = heights, .y = drag_columns[j], .color = color });
+    }
+    try output.figures.curve("ac_tip_d", .{ .name = "extensão de ponta (mesmo momento na raiz)", .x = heights, .y = same_moment, .color = "#7f7f7f", .dashed = true });
+    try output.figures.curve("ac_tip_d", .{ .name = "sem dispositivo", .x = try memory.dupe(f64, &.{ heights[0], heights[count - 1] }), .y = try memory.dupe(f64, &.{ 0, 0 }), .color = "#000000", .dashed = true });
+    if (has_devices) {
+        try output.checks.append(memory, .{ .status = .info, .item = "os dispositivos da asa compensam?", .value = "não avaliado aqui", .why = "a avaliação dos dispositivos que o avião já tem (o traço deles no plano de Trefftz) ainda é a do Python; o estudo genérico vale", .group = devices_group });
+        return;
+    }
+    var best: usize = 0;
+    for (drag_columns[0], 0..) |value, k| if (value < drag_columns[0][best]) {
+        best = k;
+    };
+    const best_change = drag_columns[0][best];
+    try output.checks.append(memory, .{
+        .status = .info,
+        .item = "vale a pena pôr winglet?",
+        .value = if (best_change < -gain) try text(memory, "melhor h/b ≈ {d:.2} → ΔD = {d:.1} %", .{ heights[best], best_change }) else "não neste C_L de cruzeiro",
+        .criterion = try text(memory, "ΔD ≤ −{d} %", .{gain}),
+        .why = try text(memory, "induzido = {d:.0} % do arrasto de cruzeiro", .{100 * share}),
+        .fix = "para testar: Configuração → asa → dispositivos → + adicionar",
+        .group = devices_group,
+        .source = "Trefftz (Munk; Kroo 2001)",
+    });
 }
 
 fn appendMetrics(memory: std.mem.Allocator, summary: *std.ArrayList([2][]const u8), prefix: []const u8, found: Metrics) !void {
@@ -619,7 +711,7 @@ test "Avião completo: as métricas do modelo interno e o C_nβ batem com o Pyth
     var summary: std.ArrayList([2][]const u8) = .empty;
     var checks: std.ArrayList(simulation.Check) = .empty;
     const figures = try simulation.Figures.init(memory, &plots);
-    const values = simulation.Values.fromRequest(memory, "\"values\": {\"V_cruise\": 15}");
+    const values = simulation.Values.fromRequest(memory, "\"values\": {\"V_cruise\": 15, \"tips\": true}");
     try analyze(&run, values, &.{.zig}, .{ .summary = &summary, .checks = &checks, .figures = figures });
     const wanted = [_]struct { key: []const u8, value: f64 }{
         .{ .key = "avião completo · [modelo interno] CL0", .value = 0.39785187456477183 },
@@ -641,4 +733,12 @@ test "Avião completo: as métricas do modelo interno e o C_nβ batem com o Pyth
         direction = true;
     };
     try testing.expect(direction);
+    // o estudo das pontas (Python: "melhor h/b ≈ 0.25 → ΔD = -9.4 %", induzido 46 % do arrasto de cruzeiro)
+    var winglet = false;
+    for (checks.items) |check| if (std.mem.eql(u8, check.item, "vale a pena pôr winglet?")) {
+        try testing.expectEqualStrings("melhor h/b ≈ 0.25 → ΔD = -9.4 %", check.value);
+        try testing.expectEqualStrings("induzido = 46 % do arrasto de cruzeiro", check.why);
+        winglet = true;
+    };
+    try testing.expect(winglet);
 }

@@ -33,6 +33,7 @@ comptime {
         _ = @import("collision/collision.zig");
         _ = @import("loads/llt.zig");
         _ = @import("loads/sweep.zig");
+        _ = @import("loads/trefftz.zig");
     }
 }
 

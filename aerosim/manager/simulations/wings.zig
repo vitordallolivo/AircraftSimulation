@@ -9,7 +9,7 @@
 //!
 //! O que vem de fora do núcleo roda pelo Python, só quando é pedido (`python`): as asas da sprint ou da tabela de
 //! Projetar, as chapas de ponta, o VLM do AeroSandbox como método de carga, os métodos de polar de fora (lltdrek,
-//! AeroSandbox, AVL) e o estudo das pontas. No site, o pacote desses métodos só é baixado quando um deles é marcado.
+//! AeroSandbox, AVL). No site, o pacote desses métodos só é baixado quando um deles é marcado.
 const std = @import("std");
 const core = @import("aerosim");
 const aircraft_model = @import("aircraft_model");
@@ -194,7 +194,6 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
 fn needsPython(values: simulation.Values) bool {
     if (!std.mem.eql(u8, values.text("source", open_source), open_source)) return true;
     if (values.number("endplate", 0) > 0) return true;
-    if (values.toggle("whole", false) and values.toggle("tips", false)) return true;
     for ([_][]const u8{ "method", "compare" }) |key| if (LoadMethod.fromTitle(values.text(key, none))) |method| {
         if (!method.inCore()) return true;
     };
