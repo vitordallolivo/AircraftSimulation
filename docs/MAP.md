@@ -796,9 +796,12 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aeroopt/opt_example.zig` — Dados de exemplo da tela do aeroopt enquanto ela não roda a busca: uma rodada inventada, sempre a mesma (semente
   tipos `Run:16`
   fn `syntheticScore:31`, `generate:38`
+- `aeroopt/problem.zig` — O problema do aeroopt como arquivo (`.opt.json`, formato "aeroopt/1"): o que pode variar no avião e entre que
+  tipos `VariableKind:15`, `Comparison:40`, `Variable:65`, `Constraint:76`, `Problem:85`
+  fn `parse:127`, `load:153`, `write:159`
 - `aeroopt/screen.zig` — A tela do aeroopt: à esquerda o problema (pontuação, variáveis, restrições e configuração, cada um num grupo
   tipos `Screen:45`
-- `aeroopt/tests.zig` — Os testes sem janela da interface do aeroopt: a rodada de exemplo.
+- `aeroopt/tests.zig` — Os testes sem janela da interface do aeroopt: a rodada de exemplo e o problema (`.opt.json`).
 
 
 ## Zig · tela inicial do pacote (`launcher`)
