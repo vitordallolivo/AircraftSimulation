@@ -6,6 +6,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- Empenagem e comandos só tinha a estática clássica, por volume de cauda. Agora uma opção, desligada por padrão,
+  roda um VLM no conjunto inteiro, com todas as asas, a cauda e as superfícies a mais. Ele mostra C_L, C_m, C_Lα,
+  C_mα, o ponto neutro, a margem estática e as derivadas laterais C_Yβ, C_lβ e C_nβ. Também mostra a convergência
+  de malha: os coeficientes contra o número de painéis, o valor estimado para a malha infinita e um aviso quando a
+  malha mais fina ainda muda o resultado.
 - A busca do MTOW da Missão otimizava o profundor em cada massa e em cada posição do CG, e nunca voava a missão.
   Agora ela acha a massa só com a decolagem, parando no primeiro acionamento que passa, e otimiza o profundor só na
   massa achada. Depois voa a missão inteira nela. Se a missão não completa, a busca volta e procura a massa que decola

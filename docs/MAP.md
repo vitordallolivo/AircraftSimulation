@@ -291,7 +291,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
-  tipos `math:14`, `physics:22`, `modifiers:35`, `collision:45`, `control:50`, `sim:57`, `loads:71`, `sizing:77`, `optim:91`, `geometry:105`, `util:110`
+  tipos `math:14`, `physics:22`, `modifiers:35`, `collision:45`, `control:50`, `sim:57`, `loads:71`, `sizing:78`, `optim:92`, `geometry:106`, `util:111`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
@@ -351,6 +351,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/loads/trefftz.zig` — Dispositivos de ponta de asa pelo arrasto induzido mínimo no plano de Trefftz (o par de
   tipos `Segment:24`, `Kind:27`, `Workspace:47`, `Loading:56`, `Study:211`, `StudyPoint:223`
   fn `trace:91`, `optimal:127`, `efficiency:196`, `raymerOswald:206`, `studyPoint:232`
+- `core/src/loads/vlm.zig` — Método dos vórtices em malha (VLM) do avião: cada faixa sustentadora do núcleo (`Params.surf`) vira uma malha de
+  tipos `Grid:33`, `Panel:36`, `Buffers:55`, `Loads:65`, `Coefficients:72`, `Derivatives:84`
+  fn `panelCount:104`, `lattice:152`, `factor:210`, `solve:243`, `loads:264`, `velocityAt:282`, `coefficients:289`, `derivatives:310`
 
 **core/src/math/**
 

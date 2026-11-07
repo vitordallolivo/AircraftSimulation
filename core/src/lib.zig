@@ -23,6 +23,8 @@ pub const geometry = @import("geometry/geometry.zig");
 pub const llt = @import("loads/llt.zig");
 pub const sweep = @import("loads/sweep.zig");
 pub const trefftz = @import("loads/trefftz.zig");
+/// o VLM do avião (ferraduras em malha corda × envergadura): coeficientes e derivadas do escoamento potencial
+pub const vlm = @import("loads/vlm.zig");
 pub const vec = @import("math/vec.zig");
 pub const autotune = @import("control/autotune.zig");
 pub const linear = @import("sim/linear.zig");

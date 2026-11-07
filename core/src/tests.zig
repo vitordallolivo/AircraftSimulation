@@ -34,6 +34,7 @@ comptime {
         _ = @import("loads/llt.zig");
         _ = @import("loads/sweep.zig");
         _ = @import("loads/trefftz.zig");
+        _ = @import("loads/vlm.zig");
     }
 }
 

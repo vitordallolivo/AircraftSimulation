@@ -55,6 +55,7 @@ const tail_fields = [_]registry.Field{
     .{ .key = "sm_min", .label = "margem estática mínima", .unit = "% CMA", .help = "limite traseiro do CG", .default = .{ .number = 5 }, .minimum = 0, .maximum = 20 },
     .{ .key = "tail_eta", .label = "η da cauda", .help = "pressão dinâmica na cauda / a do voo livre", .default = .{ .number = 0.9 }, .minimum = 0.5, .maximum = 1 },
     .{ .key = "boom_diameter", .label = "diâmetro do tubo", .unit = "m", .default = .{ .number = 0.025 }, .minimum = 0.005, .maximum = 0.1 },
+    .{ .key = "vlm", .label = "VLM e convergência", .help = "roda o VLM do núcleo no conjunto inteiro (todas as superfícies, com as de a mais) em malhas cada vez mais finas: C_Lα, C_mα, ponto neutro, derivadas laterais e o quanto mudam com a malha. Desligado por padrão (leva alguns segundos)", .default = .{ .toggle = false } },
     .{ .key = "boom_pitch", .label = "inclinação do tubo", .unit = "°", .help = "+ ponta de trás para cima: a cauda sobe (sai da esteira da asa); o braço continua medido na horizontal", .default = .{ .number = 0 }, .minimum = -10, .maximum = 20 },
 };
 
@@ -63,6 +64,45 @@ const plots = [_]simulation.Plot{
     .{ .key = "de", .title = "δe × V", .xlabel = "V (m/s)", .ylabel = "δe (°, − cabra)" },
     .{ .key = "cg", .title = "x_CG (% CMA)", .xlabel = "% CMA", .ylabel = "" },
 };
+const vlm_plots = [_]simulation.Plot{
+    .{ .key = "vlm_slope", .title = "VLM: C_Lα e C_mα × painéis", .xlabel = "painéis", .ylabel = "1/rad" },
+    .{ .key = "vlm_np", .title = "VLM: ponto neutro × painéis", .xlabel = "painéis", .ylabel = "% CMA" },
+    .{ .key = "vlm_lateral", .title = "VLM: derivadas laterais × painéis", .xlabel = "painéis", .ylabel = "1/rad" },
+};
+/// as malhas da convergência (corda × envergadura em cada faixa), da mais grossa para a mais fina
+/// (primeiro na corda, depois na envergadura, onde o VLM converge devagar, com o erro ∝ 1/n)
+const vlm_grids = [_]core.vlm.Grid{ .{ .chordwise = 1, .spanwise = 1 }, .{ .chordwise = 2, .spanwise = 1 }, .{ .chordwise = 4, .spanwise = 1 }, .{ .chordwise = 4, .spanwise = 2 }, .{ .chordwise = 4, .spanwise = 3 }, .{ .chordwise = 4, .spanwise = 4 }, .{ .chordwise = 4, .spanwise = 6 } };
+const vlm_max_panels = 1200;
+
+/// o VLM do conjunto em cada malha de `vlm_grids` (as que cabem em `vlm_max_panels`), momentos no CG do alvo
+fn vlmStudy(memory: std.mem.Allocator, built: Built) ![]const core.vlm.Derivatives {
+    const plane: model.Aircraft = .{ .name = "conjunto", .surfaces = built.surfaces, .booms = built.booms };
+    const params = try memory.create(core.types.Params);
+    params.* = .{};
+    var diagnosis: model.Diag = .{};
+    try aircraft_model.params.fill(&plane, params, &diagnosis);
+    core.aero.init(params);
+    var largest: usize = 0;
+    for (vlm_grids) |grid| {
+        const count = core.vlm.panelCount(params, grid);
+        if (count <= vlm_max_panels) largest = @max(largest, count);
+    }
+    if (largest == 0) return &.{};
+    const buffers: core.vlm.Buffers = .{ .panels = try memory.alloc(core.vlm.Panel, largest), .matrix = try memory.alloc(f64, largest * largest), .pivots = try memory.alloc(usize, largest), .gamma = try memory.alloc(f64, largest) };
+    var out: std.ArrayList(core.vlm.Derivatives) = .empty;
+    for (vlm_grids) |grid| {
+        if (core.vlm.panelCount(params, grid) > vlm_max_panels) continue;
+        try out.append(memory, try core.vlm.derivatives(params, grid, 0, .{ -built.result.x_cg, 0, 0 }, buffers));
+    }
+    return out.items;
+}
+
+/// a posição (% CMA) de um x do corpo, pela CMA da conta clássica (x_cg e x_np dela, atrás do bordo da raiz)
+fn percentOf(result: *const tail.Result, body_x: f64) f64 {
+    const chord = if (result.h_n != result.h_cg) (result.x_np - result.x_cg) / (result.h_n - result.h_cg) else 1;
+    return 100 * (result.h_cg + (-body_x - result.x_cg) / chord);
+}
+
 const place_colors = [3][]const u8{ "#2ca02c", "#000000", "#d62728" };
 const place_names = [3][]const u8{ "CG à frente (limite)", "CG no alvo", "CG atrás (limite)" };
 
@@ -713,7 +753,8 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     const de_down = registry.fieldNumber(rules, &registry.rule_fields, "de_down");
 
     // os gráficos
-    const figures = try simulation.Figures.init(memory, &plots);
+    const with_vlm = store.flag(params, "vlm", false);
+    const figures = try simulation.Figures.init(memory, if (with_vlm) &(plots ++ vlm_plots) else &plots);
     const count = result.alpha_count;
     for (0..3) |k| {
         if (!result.with_limits and k != 1) continue;
@@ -779,6 +820,72 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     try checks.append(memory, .{ .status = status(rotates, finite and result.rotation_speed <= result.liftoff_speed), .item = "rotação na decolagem", .value = if (finite) try text(memory, "roda a partir de {d:.1} m/s", .{result.rotation_speed}) else "não roda", .criterion = try text(memory, "≤ 0,9 × V de sair do chão ({d:.1})", .{result.liftoff_speed}), .why = if (rotates) "" else "o profundor só levanta o nariz perto (ou depois) da velocidade de sair do chão: a corrida cresce e a rotação fica brusca", .fix = if (rotates) "" else "EH com perfil invertido (momento cabrador já com δe = 0), mais área de profundor, trem principal mais perto do CG ou CG mais para trás", .group = group, .source = "momentos no trem principal" });
     const rolls = result.roll_rate >= 0.07;
     try checks.append(memory, .{ .status = status(rolls, true), .item = "efetividade do aileron", .value = try text(memory, "p b/2V = {d:.3}", .{result.roll_rate}), .criterion = "≥ 0,07", .why = if (rolls) "" else "rola devagar", .fix = if (rolls) "" else "aileron mais longo ou de corda maior", .group = group });
+    if (with_vlm) vlm: {
+        const found = vlmStudy(memory, built) catch |err| {
+            try checks.append(memory, .{ .status = .atencao, .item = "VLM", .value = @errorName(err), .criterion = "—", .why = "o conjunto não montou no núcleo para o VLM", .group = "VLM" });
+            break :vlm;
+        };
+        if (found.len == 0) break :vlm;
+        const panels = try memory.alloc(f64, found.len);
+        const lift_slope = try memory.alloc(f64, found.len);
+        const moment_slope = try memory.alloc(f64, found.len);
+        const neutral = try memory.alloc(f64, found.len);
+        const side_force = try memory.alloc(f64, found.len);
+        const roll = try memory.alloc(f64, found.len);
+        const yaw = try memory.alloc(f64, found.len);
+        for (found, 0..) |item, k| {
+            panels[k] = @floatFromInt(item.panels);
+            lift_slope[k] = item.CLa;
+            moment_slope[k] = item.Cma;
+            neutral[k] = percentOf(result, item.neutral_x);
+            side_force[k] = item.CYb;
+            roll[k] = item.Clb;
+            yaw[k] = item.Cnb;
+        }
+        try figures.curve("vlm_slope", .{ .name = "C_Lα", .x = panels, .y = lift_slope, .color = "#1f77b4", .marker = "o", .line = true });
+        try figures.curve("vlm_slope", .{ .name = "C_mα (CG no alvo)", .x = panels, .y = moment_slope, .color = "#d62728", .marker = "s", .line = true });
+        try figures.curve("vlm_np", .{ .name = "ponto neutro (VLM)", .x = panels, .y = neutral, .color = "#1f77b4", .marker = "o", .line = true });
+        try figures.guide("vlm_np", .{ .name = "ponto neutro (clássico)", .value = 100 * result.h_n, .vertical = false, .color = "#d62728", .dashed = true });
+        try figures.guide("vlm_np", .{ .name = "CG no alvo", .value = 100 * result.h_cg, .vertical = false, .color = "#000000" });
+        try figures.curve("vlm_lateral", .{ .name = "C_Yβ", .x = panels, .y = side_force, .color = "#2ca02c", .marker = "o", .line = true });
+        try figures.curve("vlm_lateral", .{ .name = "C_lβ", .x = panels, .y = roll, .color = "#9467bd", .marker = "s", .line = true });
+        try figures.curve("vlm_lateral", .{ .name = "C_nβ", .x = panels, .y = yaw, .color = "#ff7f0e", .marker = "d", .line = true });
+        const fine = found[found.len - 1];
+        const fine_np = percentOf(result, fine.neutral_x);
+        try summary.appendSlice(memory, &.{
+            .{ "VLM: painéis da malha mais fina", try text(memory, "{d}", .{fine.panels}) },
+            .{ "VLM: C_L e C_m no α = 0 do corpo", try text(memory, "{d:.4}, {d:.4}", .{ fine.at.CL, fine.at.Cm }) },
+            .{ "VLM: C_L da asa e da EH no α = 0", try text(memory, "{d:.4}, {d:.4}", .{ fine.at.CL_wing, fine.at.CL_htail }) },
+            .{ "VLM: C_Lα, C_mα (1/rad)", try text(memory, "{d:.3}, {d:.3}", .{ fine.CLa, fine.Cma }) },
+            .{ "VLM: ponto neutro (% CMA), margem estática (% CMA)", try text(memory, "{d:.1}, {d:.1}", .{ fine_np, fine_np - 100 * result.h_cg }) },
+            .{ "VLM: C_Yβ, C_lβ, C_nβ (1/rad)", try text(memory, "{d:.4}, {d:.4}, {d:.4}", .{ fine.CYb, fine.Clb, fine.Cnb }) },
+            .{ "VLM: k de C_Di = k C_L²", try text(memory, "{d:.4}", .{fine.induced_factor}) },
+        });
+        // Richardson nas duas malhas mais finas (mesma corda, erro ∝ 1/n na envergadura): o valor da malha infinita
+        // v∞ = (n₂ v₂ − n₁ v₁)/(n₂ − n₁) (Roache, "Verification and Validation in Computational Science", cap. 5 — a
+        // conferir no PDF)
+        var limit_lift = fine.CLa;
+        var limit_np = fine_np;
+        var limit_moment = fine.Cma;
+        if (found.len >= 2 and vlm_grids[found.len - 2].chordwise == vlm_grids[found.len - 1].chordwise) {
+            const before = found[found.len - 2];
+            const n1: f64 = @floatFromInt(vlm_grids[found.len - 2].spanwise);
+            const n2: f64 = @floatFromInt(vlm_grids[found.len - 1].spanwise);
+            limit_lift = (n2 * fine.CLa - n1 * before.CLa) / (n2 - n1);
+            limit_moment = (n2 * fine.Cma - n1 * before.Cma) / (n2 - n1);
+            limit_np = (n2 * fine_np - n1 * percentOf(result, before.neutral_x)) / (n2 - n1);
+            const change = 100 * @abs(fine.CLa - limit_lift) / @max(@abs(limit_lift), 1e-9);
+            const np_change = @abs(fine_np - limit_np);
+            const converged = change <= 2 and np_change <= 1;
+            try checks.append(memory, .{ .status = if (converged) .ok else .atencao, .item = "VLM: convergência de malha", .value = try text(memory, "malha mais fina a {d:.2} % do C_Lα e a {d:.2} % CMA do ponto neutro da malha infinita", .{ change, np_change }), .criterion = "≤ 2 % e ≤ 1 % CMA", .why = if (converged) "" else "a malha mais fina ainda muda o resultado: vale o valor da malha infinita (Richardson)", .fix = if (converged) "" else "se o ponto neutro pula de uma malha para outra, alguma superfície está em cima de outra ou da esteira dela (uma EH a mais no plano da asa, por exemplo)", .group = "VLM" });
+            try figures.guide("vlm_slope", .{ .name = "C_Lα da malha infinita", .value = limit_lift, .vertical = false, .color = "#1f77b4", .dashed = true });
+            try figures.guide("vlm_np", .{ .name = "malha infinita", .value = limit_np, .vertical = false, .color = "#1f77b4", .dashed = true });
+            try summary.append(memory, .{ "VLM na malha infinita: C_Lα, C_mα (1/rad), ponto neutro (% CMA)", try text(memory, "{d:.3}, {d:.3}, {d:.1}", .{ limit_lift, limit_moment, limit_np }) });
+        }
+        const stable = limit_moment < 0 and limit_np > 100 * result.h_cg;
+        try checks.append(memory, .{ .status = if (stable) .ok else .falha, .item = "VLM: estável em arfagem no CG do alvo", .value = try text(memory, "C_mα = {d:.3} /rad; margem {d:.1} % CMA", .{ limit_moment, limit_np - 100 * result.h_cg }), .criterion = "C_mα < 0", .why = if (stable) "" else "com o conjunto inteiro no VLM, o ponto neutro fica à frente do CG", .fix = if (stable) "" else "mais V_H ou CG mais à frente", .group = "VLM" });
+        try checks.append(memory, .{ .status = .info, .item = "VLM × clássico: ponto neutro", .value = try text(memory, "{d:.1} × {d:.1} % CMA (diferença {d:.1})", .{ limit_np, 100 * result.h_n, limit_np - 100 * result.h_n }), .criterion = "—", .why = "o VLM vê todas as superfícies juntas (downwash e interferência de verdade, sem estol nem fuselagem); o clássico usa dε/dα = 2a/(π AR)", .group = "VLM", .source = "Katz e Plotkin, seção 12.3" });
+    }
     try checks.append(memory, .{ .status = .info, .item = "método", .value = "estática clássica (volume de cauda)", .criterion = "—", .why = "sem fuselagem (entra na etapa Motores); dε/dα = 2a/(π AR); a_h de Helmbold", .group = group });
 
     // a tabela de comandos

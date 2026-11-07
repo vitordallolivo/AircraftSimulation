@@ -71,6 +71,7 @@ pub const sim = struct {
 pub const loads = struct {
     pub const llt = @import("loads/llt.zig");
     pub const sweep = @import("loads/sweep.zig");
+    pub const vlm = @import("loads/vlm.zig");
 };
 
 /// dimensionamento inicial (mini-MDO)
