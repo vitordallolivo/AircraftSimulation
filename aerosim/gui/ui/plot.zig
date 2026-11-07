@@ -403,6 +403,7 @@ const Menu = struct {
     checked: [max_menu_series]bool = undefined,
     count: usize = 0,
     is_table: bool = false, // uma tabela: só exportar em CSV
+    export_open: bool = false, // o submenu de "Exportar" (PNG, PDF ou CSV) aberto
 
     fn capture(m: *Menu, axes: Axes, series: []const Series, state: *const State) void {
         m.title_len = @min(axes.title.len, m.title.len);
@@ -422,7 +423,11 @@ var saver_key: u64 = 0;
 var note: [200:0]u8 = [_:0]u8{0} ** 200; // o resultado da última gravação
 var note_frames: u32 = 0;
 
-const Action = enum { png, pdf, csv, all_curves, select, select_all, save_selected, clear_selection };
+const Action = enum { export_menu, all_curves, select, select_all, save_selected, clear_selection };
+/// os tipos do submenu "Exportar"
+const export_kinds = [_]ExportKind{ .png, .pdf, .csv };
+const export_captions = [_][:0]const u8{ "Imagem PNG...", "PDF...", "Dados em CSV (curvas marcadas)..." };
+const submenu_width: f32 = 250;
 const action_count = std.meta.fields(Action).len;
 var action_text: [action_count][80:0]u8 = undefined;
 var action_list: [action_count][:0]const u8 = undefined;
@@ -433,7 +438,7 @@ var batch_folder: [600]u8 = undefined;
 var batch_folder_len: usize = 0;
 var saving_batch = false;
 const menu_row: f32 = 28;
-const menu_width: f32 = 300;
+const menu_width: f32 = 340;
 
 const table_actions = [_][:0]const u8{"Exportar a tabela em CSV..."};
 
@@ -444,9 +449,7 @@ fn menuActions() []const [:0]const u8 {
     for (std.enums.values(Action)) |action| {
         const k = @intFromEnum(action);
         action_list[k] = switch (action) {
-            .png => "Exportar imagem PNG...",
-            .pdf => "Exportar PDF...",
-            .csv => "Exportar CSV (curvas marcadas)...",
+            .export_menu => "Exportar  ▸",
             .all_curves => "Marcar todas as curvas",
             .select => if (this != null and this.?.selected) "Tirar este gráfico da seleção" else "Selecionar este gráfico",
             .select_all => "Selecionar todos os gráficos da tela",
@@ -471,6 +474,14 @@ fn menuRect(screen: rl.Rectangle) rl.Rectangle {
 }
 
 /// verdadeiro enquanto o menu ou o seletor de arquivo está aberto (a tela de baixo não recebe o clique)
+/// o submenu "Exportar", ao lado da linha dele (à direita, ou à esquerda se não cabe)
+fn submenuRect(screen: rl.Rectangle, area: rl.Rectangle) rl.Rectangle {
+    const height = 12 + menu_row * @as(f32, @floatFromInt(export_kinds.len));
+    const right = area.x + area.width - 4;
+    const x = if (right + submenu_width <= screen.width - 4) right else area.x - submenu_width + 4;
+    return .{ .x = x, .y = @min(area.y + 6, screen.height - height - 4), .width = submenu_width, .height = height };
+}
+
 pub fn overlayActive() bool {
     return menu.open or saver.open;
 }
@@ -503,8 +514,11 @@ pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
     }
     if (!menu.open) return;
     const area = menuRect(screen);
-    if ((ui.clicked or ui.right_clicked) and !rl.checkCollisionPointRec(ui.mouse, area)) {
+    const submenu = submenuRect(screen, area);
+    const in_submenu = menu.export_open and rl.checkCollisionPointRec(ui.mouse, submenu);
+    if ((ui.clicked or ui.right_clicked) and !rl.checkCollisionPointRec(ui.mouse, area) and !in_submenu) {
         menu.open = false;
+        menu.export_open = false;
         return;
     }
     if (rl.isKeyPressed(.escape)) {
@@ -517,9 +531,15 @@ pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
     var y = area.y + 6;
     for (menuActions(), 0..) |caption, k| {
         const row: rl.Rectangle = .{ .x = area.x + 4, .y = y, .width = area.width - 8, .height = menu_row };
-        if (rl.checkCollisionPointRec(ui.mouse, row)) widgets.rounded(row, 4, theme.colors.hover);
+        const over = rl.checkCollisionPointRec(ui.mouse, row);
+        const is_export = !menu.is_table and @as(Action, @enumFromInt(k)) == .export_menu;
+        // passar o mouse em "Exportar" abre o submenu; passar em outra linha do menu fecha
+        if (over and !menu.is_table) menu.export_open = is_export;
+        if (over or (is_export and menu.export_open)) widgets.rounded(row, 4, theme.colors.hover);
         theme.text(ui.fonts.regular, caption, row.x + 10, row.y + 6, 14, theme.colors.accent);
-        if (ui.clicked and rl.checkCollisionPointRec(ui.mouse, row)) chooseAction(if (menu.is_table) .csv else @enumFromInt(k));
+        if (ui.clicked and over) {
+            if (menu.is_table) chooseExport(.csv) else if (is_export) menu.export_open = true else chooseAction(@enumFromInt(k));
+        }
         y += menu_row;
     }
     if (menu.is_table) {
@@ -539,13 +559,28 @@ pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
         }
         y += menu_row;
     }
+    if (menu.export_open) {
+        rl.drawRectangleRounded(.{ .x = submenu.x + 2, .y = submenu.y + 3, .width = submenu.width, .height = submenu.height }, 0.05, 6, .{ .r = 0, .g = 0, .b = 0, .a = 28 });
+        widgets.rounded(submenu, 6, theme.colors.field);
+        widgets.roundedLines(submenu, 6, theme.colors.line);
+        var row_y = submenu.y + 6;
+        for (export_kinds, export_captions) |kind, caption| {
+            const row: rl.Rectangle = .{ .x = submenu.x + 4, .y = row_y, .width = submenu.width - 8, .height = menu_row };
+            const over = rl.checkCollisionPointRec(ui.mouse, row);
+            if (over) widgets.rounded(row, 4, theme.colors.hover);
+            theme.text(ui.fonts.regular, caption, row.x + 10, row.y + 6, 14, theme.colors.accent);
+            if (ui.clicked and over) chooseExport(kind);
+            row_y += menu_row;
+        }
+    }
     ui.click_taken = true;
 }
 
 fn chooseAction(action: Action) void {
     menu.open = false;
+    menu.export_open = false;
     switch (action) {
-        .png, .pdf, .csv => {},
+        .export_menu => return,
         .all_curves => {
             if (findState(menu.key)) |state| state.hidden_count = 0;
             return;
@@ -574,9 +609,19 @@ fn chooseAction(action: Action) void {
             return;
         },
     }
+}
+
+/// um tipo do submenu "Exportar" (ou o CSV da tabela): pergunta onde gravar
+fn chooseExport(kind: ExportKind) void {
+    menu.open = false;
+    menu.export_open = false;
     saving_batch = false;
-    const index = @intFromEnum(action);
-    const kinds = [_]ExportKind{ .png, .pdf, .csv };
+    const index: usize = switch (kind) {
+        .png => 0,
+        .pdf => 1,
+        .csv => 2,
+    };
+    const kinds = export_kinds;
     const extensions = [_][]const []const u8{ &.{".png"}, &.{".pdf"}, &.{".csv"} };
     saver_kind = kinds[index];
     saver_key = menu.key;
@@ -694,16 +739,51 @@ fn exportPlot(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const S
 
 /// o menor e o maior valor finito (null se não houver)
 /// a linha que liga os pontos de `s` (um ponto que não é número corta a linha, como o `connect="finite"` da PyQt)
+/// tracejada, o traço segue de um trecho para o outro (`Dashes`): numa curva de muitos pontos cada trecho tem menos
+/// de um pixel, e recomeçar o traço em cada um fazia a curva sair cheia (ou sumir, com trechos de menos de meio pixel)
 fn connect(frame: Frame, s: Series, color: rl.Color) void {
     const n = @min(s.xs.len, s.ys.len);
+    var dashes: Dashes = .{ .width = s.width };
     var k: usize = 1;
     while (k < n) : (k += 1) {
-        if (!finite2(s.xs[k - 1], s.ys[k - 1]) or !finite2(s.xs[k], s.ys[k])) continue;
+        if (!finite2(s.xs[k - 1], s.ys[k - 1]) or !finite2(s.xs[k], s.ys[k])) {
+            dashes.travelled = 0;
+            continue;
+        }
         const a = frame.toScreen(s.xs[k - 1], s.ys[k - 1]);
         const b = frame.toScreen(s.xs[k], s.ys[k]);
-        if (s.dashed) dashedLine(a, b, color) else rl.drawLineEx(a, b, s.width, color);
+        if (s.dashed) dashes.segment(a, b, color) else rl.drawLineEx(a, b, s.width, color);
     }
 }
+
+/// o traço de uma linha tracejada ao longo de vários trechos: `travelled` é quanto já se andou no padrão
+/// (traço de `dash` pixels, vão do mesmo tamanho)
+const Dashes = struct {
+    width: f32,
+    travelled: f32 = 0,
+    const dash: f32 = 7;
+
+    fn segment(dashes: *Dashes, a: rl.Vector2, b: rl.Vector2, color: rl.Color) void {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const length = @sqrt(dx * dx + dy * dy);
+        if (length <= 0) return;
+        var at: f32 = 0;
+        while (at < length) {
+            const phase = @mod(dashes.travelled, 2 * dash);
+            const drawing = phase < dash;
+            const step = @min((if (drawing) dash else 2 * dash) - phase, length - at);
+            if (drawing) rl.drawLineEx(
+                .{ .x = a.x + dx * at / length, .y = a.y + dy * at / length },
+                .{ .x = a.x + dx * (at + step) / length, .y = a.y + dy * (at + step) / length },
+                @max(dashes.width, 1.2),
+                color,
+            );
+            at += step;
+            dashes.travelled += step;
+        }
+    }
+};
 
 fn finite2(x: f64, y: f64) bool {
     return std.math.isFinite(x) and std.math.isFinite(y);
@@ -907,17 +987,10 @@ fn tickText(buffer: []u8, value: f64, step: f64) [:0]const u8 {
     } catch "…";
 }
 
+/// uma reta tracejada sozinha (a amostra da legenda, as guias)
 fn dashedLine(a: rl.Vector2, b: rl.Vector2, color: rl.Color) void {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const length = @sqrt(dx * dx + dy * dy);
-    if (length < 0.5) return;
-    const dash: f32 = 7;
-    var s: f32 = 0;
-    while (s < length) : (s += dash * 2) {
-        const e = @min(s + dash, length);
-        rl.drawLineEx(.{ .x = a.x + dx * s / length, .y = a.y + dy * s / length }, .{ .x = a.x + dx * e / length, .y = a.y + dy * e / length }, 2.2, color);
-    }
+    var dashes: Dashes = .{ .width = 2.2 };
+    dashes.segment(a, b, color);
 }
 
 const legend_row: f32 = 18;

@@ -55,6 +55,7 @@ const tail_fields = [_]registry.Field{
     .{ .key = "sm_min", .label = "margem estática mínima", .unit = "% CMA", .help = "limite traseiro do CG", .default = .{ .number = 5 }, .minimum = 0, .maximum = 20 },
     .{ .key = "tail_eta", .label = "η da cauda", .help = "pressão dinâmica na cauda / a do voo livre", .default = .{ .number = 0.9 }, .minimum = 0.5, .maximum = 1 },
     .{ .key = "boom_diameter", .label = "diâmetro do tubo", .unit = "m", .default = .{ .number = 0.025 }, .minimum = 0.005, .maximum = 0.1 },
+    .{ .key = "cg_count", .label = "xCG para a Decolagem (valores)", .help = "quantos xCG, do limite da frente ao de trás da faixa de CG, a Decolagem (Desempenho) testa: o MTOW de cada um, com os coeficientes do VLM", .default = .{ .number = 5 }, .minimum = 2, .maximum = 15 },
     .{ .key = "vlm", .label = "VLM e convergência", .help = "roda o VLM do núcleo no conjunto inteiro (todas as superfícies, com as de a mais) em malhas cada vez mais finas: C_Lα, C_mα, ponto neutro, derivadas laterais e o quanto mudam com a malha. Desligado por padrão (leva alguns segundos)", .default = .{ .toggle = false } },
     .{ .key = "boom_pitch", .label = "inclinação do tubo", .unit = "°", .help = "+ ponta de trás para cima: a cauda sobe (sai da esteira da asa); o braço continua medido na horizontal", .default = .{ .number = 0 }, .minimum = -10, .maximum = 20 },
 };
@@ -64,6 +65,7 @@ const plots = [_]simulation.Plot{
     .{ .key = "de", .title = "δe × V", .xlabel = "V (m/s)", .ylabel = "δe (°, − cabra)" },
     .{ .key = "cg", .title = "x_CG (% CMA)", .xlabel = "% CMA", .ylabel = "" },
 };
+const cg_plot: simulation.Plot = .{ .key = "cg_list", .title = "xCG da Decolagem: C_mα (VLM)", .xlabel = "xCG (% CMA)", .ylabel = "C_mα (1/rad)" };
 const vlm_plots = [_]simulation.Plot{
     .{ .key = "vlm_slope", .title = "VLM: C_Lα e C_mα × painéis", .xlabel = "painéis", .ylabel = "1/rad" },
     .{ .key = "vlm_np", .title = "VLM: ponto neutro × painéis", .xlabel = "painéis", .ylabel = "% CMA" },
@@ -74,14 +76,56 @@ const vlm_plots = [_]simulation.Plot{
 const vlm_grids = [_]core.vlm.Grid{ .{ .chordwise = 1, .spanwise = 1 }, .{ .chordwise = 2, .spanwise = 1 }, .{ .chordwise = 4, .spanwise = 1 }, .{ .chordwise = 4, .spanwise = 2 }, .{ .chordwise = 4, .spanwise = 3 }, .{ .chordwise = 4, .spanwise = 4 }, .{ .chordwise = 4, .spanwise = 6 } };
 const vlm_max_panels = 1200;
 
-/// o VLM do conjunto em cada malha de `vlm_grids` (as que cabem em `vlm_max_panels`), momentos no CG do alvo
-fn vlmStudy(memory: std.mem.Allocator, built: Built) ![]const core.vlm.Derivatives {
+/// a malha da lista de xCG: 4 painéis na corda e 2 na envergadura de cada faixa (a do meio de `vlm_grids`)
+const cg_grid: core.vlm.Grid = .{ .chordwise = 4, .spanwise = 2 };
+
+/// os parâmetros do núcleo do conjunto (as superfícies e o tubo), para o VLM
+fn vlmParams(memory: std.mem.Allocator, built: Built) !*core.types.Params {
     const plane: model.Aircraft = .{ .name = "conjunto", .surfaces = built.surfaces, .booms = built.booms };
     const params = try memory.create(core.types.Params);
     params.* = .{};
     var diagnosis: model.Diag = .{};
     try aircraft_model.params.fill(&plane, params, &diagnosis);
     core.aero.init(params);
+    return params;
+}
+
+/// os xCG (% CMA) que a Decolagem testa: `count` valores igualmente espaçados do limite da frente ao de trás da faixa
+/// de CG; sem a faixa (sem cauda), só o CG do alvo
+pub fn cgList(memory: std.mem.Allocator, result: *const tail.Result, count: usize) ![]f64 {
+    if (!result.with_limits or !(result.h_aft > result.h_fwd)) return memory.dupe(f64, &.{100 * result.h_cg});
+    const out = try memory.alloc(f64, @max(count, 2));
+    for (out, 0..) |*percent, i| percent.* = 100 * (result.h_fwd + (result.h_aft - result.h_fwd) * @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(out.len - 1)));
+    return out;
+}
+
+/// o x do corpo de uma posição em % CMA (o inverso de `percentOf`)
+fn bodyOf(result: *const tail.Result, percent: f64) f64 {
+    const chord = if (result.h_n != result.h_cg) (result.x_np - result.x_cg) / (result.h_n - result.h_cg) else 1;
+    return -(result.x_cg + (percent / 100 - result.h_cg) * chord);
+}
+
+/// o VLM do conjunto (malha `cg_grid`) com os momentos em cada xCG da lista
+fn vlmAtCenters(memory: std.mem.Allocator, built: Built, percents: []const f64) ![]const core.vlm.Derivatives {
+    const params = try vlmParams(memory, built);
+    const count = core.vlm.panelCount(params, cg_grid);
+    if (count == 0 or count > vlm_max_panels) return &.{};
+    const buffers: core.vlm.Buffers = .{ .panels = try memory.alloc(core.vlm.Panel, count), .matrix = try memory.alloc(f64, count * count), .pivots = try memory.alloc(usize, count), .gamma = try memory.alloc(f64, count) };
+    const out = try memory.alloc(core.vlm.Derivatives, percents.len);
+    for (percents, out) |percent, *item| item.* = try core.vlm.derivatives(params, cg_grid, 0, .{ bodyOf(built.result, percent), 0, 0 }, buffers);
+    return out;
+}
+
+/// a lista de xCG da Decolagem do projeto aberto (o rascunho de agora); vazia se ainda não há conjunto
+pub fn projectCgList(context: *stages.Context, memory: std.mem.Allocator) ![]const f64 {
+    const params = draft(&context.project);
+    const built = try build(context, memory, params, false) orelse return &.{};
+    return cgList(memory, built.result, @intFromFloat(@round(field(params, "cg_count"))));
+}
+
+/// o VLM do conjunto em cada malha de `vlm_grids` (as que cabem em `vlm_max_panels`), momentos no CG do alvo
+fn vlmStudy(memory: std.mem.Allocator, built: Built) ![]const core.vlm.Derivatives {
+    const params = try vlmParams(memory, built);
     var largest: usize = 0;
     for (vlm_grids) |grid| {
         const count = core.vlm.panelCount(params, grid);
@@ -754,7 +798,7 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
 
     // os gráficos
     const with_vlm = store.flag(params, "vlm", false);
-    const figures = try simulation.Figures.init(memory, if (with_vlm) &(plots ++ vlm_plots) else &plots);
+    const figures = try simulation.Figures.init(memory, if (with_vlm) &(plots ++ [_]simulation.Plot{cg_plot} ++ vlm_plots) else &(plots ++ [_]simulation.Plot{cg_plot}));
     const count = result.alpha_count;
     for (0..3) |k| {
         if (!result.with_limits and k != 1) continue;
@@ -768,6 +812,18 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     if (result.with_limits) try figures.curve("cg", .{ .name = "faixa possível", .x = try memory.dupe(f64, &.{ 100 * result.h_fwd, 100 * result.h_aft }), .y = try memory.dupe(f64, &.{ 0, 0 }), .fill = try memory.dupe(f64, &.{ 1, 1 }), .color = "#2ca02c" });
     try figures.guide("cg", .{ .name = "ponto neutro", .value = 100 * result.h_n, .vertical = true, .color = "#d62728" });
     try figures.guide("cg", .{ .name = "CG no alvo", .value = 100 * result.h_cg, .vertical = true, .color = "#000000", .width = 2.4 });
+    // a lista de xCG que a Decolagem testa, com o C_mα do VLM em cada um
+    const cg_percents = try cgList(memory, result, @intFromFloat(@round(field(params, "cg_count"))));
+    const cg_heights = try memory.alloc(f64, cg_percents.len);
+    @memset(cg_heights, 0.5);
+    try figures.curve("cg", .{ .name = "xCG da Decolagem", .x = cg_percents, .y = cg_heights, .color = "#1f77b4", .marker = "o", .size = 8 });
+    const cg_vlm = vlmAtCenters(memory, built, cg_percents) catch &.{};
+    if (cg_vlm.len == cg_percents.len) {
+        const moment_slopes = try memory.alloc(f64, cg_vlm.len);
+        for (cg_vlm, moment_slopes) |item, *slope| slope.* = item.Cma;
+        try figures.curve("cg_list", .{ .name = "C_mα", .x = cg_percents, .y = moment_slopes, .color = "#d62728", .marker = "o", .line = true });
+        try figures.guide("cg_list", .{ .name = "C_mα = 0", .value = 0, .vertical = false, .color = "#7f7f7f", .dashed = true });
+    }
 
     // o resumo
     var summary: std.ArrayList([2][]const u8) = .empty;
@@ -785,6 +841,11 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     try summary.append(memory, .{ "ponto neutro (% CMA)", try text(memory, "{d:.1}", .{100 * result.h_n}) });
     try summary.append(memory, .{ "CG no alvo (% CMA; x em m)", try text(memory, "{d:.1}; {d:.3}", .{ 100 * result.h_cg, result.x_cg }) });
     if (result.with_limits) try summary.append(memory, .{ "faixa do CG (% CMA)", try text(memory, "{d:.1} a {d:.1}", .{ 100 * result.h_fwd, 100 * result.h_aft }) });
+    {
+        var list: std.Io.Writer.Allocating = .init(memory);
+        for (cg_percents, 0..) |percent, k| try list.writer.print("{s}{d:.1}", .{ if (k > 0) ", " else "", percent });
+        try summary.append(memory, .{ "xCG da Decolagem (% CMA)", list.written() });
+    }
     try summary.append(memory, .{ "δe no cruzeiro, no C_L,max (°)", try text(memory, "{d:.2}, {d:.2}", .{ result.elevator_cruise, result.elevator_max_lift }) });
     try summary.append(memory, .{ "rolagem: p b/2V com o aileron todo", try text(memory, "{d:.3}", .{result.roll_rate}) });
     try summary.append(memory, .{ "rotação: V com profundor todo, V com δe = 0, V de sair do chão (m/s)", try text(memory, "{d:.1}, {d:.1}, {d:.1}", .{ result.rotation_speed, result.rotation_speed_neutral, result.liftoff_speed }) });

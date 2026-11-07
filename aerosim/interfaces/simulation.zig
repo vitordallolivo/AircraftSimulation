@@ -105,7 +105,14 @@ pub const Sprint = struct {
     constraints: *const fn (memory: std.mem.Allocator) Error![]const SprintConstraint,
     /// as condições (altitude-densidade, atritos, V da curva, cruzeiro)
     conditions: *const fn () SprintConditions,
+    /// os xCG (% CMA, do bordo de ataque da CMA) que a Decolagem testa, criados em Empenagem e comandos (do limite da
+    /// frente ao de trás da faixa de CG); vazio: o projeto ainda não tem conjunto
+    cg_list: *const fn (memory: std.mem.Allocator) Error![]const f64 = noCgList,
 };
+
+fn noCgList(_: std.mem.Allocator) Error![]const f64 {
+    return &.{};
+}
 
 /// o projeto da sprint aberto na tela; nulo: sem etapas (os testes dos managers)
 pub var sprint: ?Sprint = null;
@@ -330,6 +337,9 @@ pub const Run = struct {
     failure: [240:0]u8 = [_:0]u8{0} ** 240,
     /// o "Parar" da tela; uma conta longa dentro de um `advance` olha `cancelled` e sai no meio
     stop: ?*const std.atomic.Value(bool) = null,
+    /// a análise tem um resultado parcial novo (a Decolagem acabou um xCG): a tela pede o `result` agora e mostra os
+    /// gráficos enquanto a rodada continua; a tela desliga depois de ler
+    partial: bool = false,
 
     pub fn memory(run: *Run) std.mem.Allocator {
         return run.arena.allocator();

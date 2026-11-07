@@ -230,7 +230,17 @@ pub fn isProject(bytes: []const u8) bool {
 
 // ------------------------------------------------------------------ o projeto para as análises
 /// o que as análises leem do projeto aberto (`simulation.sprint`): a tela liga ao abrir
-pub const sprint_source: simulation.Sprint = .{ .wing_names = sprintWingNames, .wing = sprintWing, .config_names = sprintConfigNames, .config = sprintConfig, .project_name = sprintProjectName, .variables = sprintVariables, .airfoil = sprintAirfoil, .field_text = sprintFieldText, .constraints = sprintConstraints, .conditions = sprintConditions };
+pub const sprint_source: simulation.Sprint = .{ .wing_names = sprintWingNames, .wing = sprintWing, .config_names = sprintConfigNames, .config = sprintConfig, .project_name = sprintProjectName, .variables = sprintVariables, .airfoil = sprintAirfoil, .field_text = sprintFieldText, .constraints = sprintConstraints, .conditions = sprintConditions, .cg_list = sprintCgList };
+
+fn sprintCgList(memory: std.mem.Allocator) simulation.Error![]const f64 {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = if (shared) |*existing| existing else return &.{};
+    return tail_stage.projectCgList(current, memory) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => error.Failed,
+    };
+}
 
 fn sprintConfigNames(memory: std.mem.Allocator) simulation.Error![]const []const u8 {
     while (!lock.tryLock()) std.atomic.spinLoopHint();

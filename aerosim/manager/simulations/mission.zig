@@ -1,10 +1,11 @@
 //! Missão em Zig (o par de `mission.py`): o voo simulado (6GDL) por etapa, a corrida no chão, cada perna do percurso
 //! e a rolagem. São quatro modos. "missão": a decolagem otimizada para a pista (x_warning e z_warning) e depois o
 //! resto, etapa por etapa; uma curva sem raio procura o menor que o avião faz, e cada etapa salva um checkpoint no
-//! começo dela, para parar no fim de qualquer etapa, mudar o percurso dali para frente e continuar. "só decolagem":
-//! o acionamento do profundor otimizado e a decolagem de perto. "curvas: raio mínimo": para cada V, o menor raio em
-//! curva nivelada. "MTOW": a bisseção na massa, a maior que decola com x_warning e z_warning, otimizando o
-//! acionamento (e testando o xCG da tabela) em cada massa; o MTOW achado fica guardado para os outros modos.
+//! começo dela, para parar no fim de qualquer etapa, mudar o percurso dali para frente e continuar. "decolagem": para
+//! cada xCG da lista que Empenagem e comandos cria (do limite da frente ao de trás da faixa de CG), a bisseção na
+//! massa acha a maior que decola com x_warning e z_warning (o MTOW daquele xCG), com os coeficientes do VLM em cada
+//! xCG; o maior MTOW fica guardado para os outros modos e a decolagem dele é mostrada de perto. "curvas: raio
+//! mínimo": para cada V, o menor raio em curva nivelada.
 const std = @import("std");
 const core = @import("aerosim");
 const aircraft_model = @import("aircraft_model");
@@ -43,15 +44,13 @@ const Mode = enum {
     mission,
     takeoff,
     turns,
-    mtow,
     study,
 
     fn label(mode: Mode) []const u8 {
         return switch (mode) {
             .mission => "missão",
-            .takeoff => "só decolagem",
+            .takeoff => "decolagem: MTOW em cada xCG",
             .turns => "curvas: raio mínimo",
-            .mtow => "MTOW (x_warning e z_warning)",
             .study => "estudo e ponto de projeto: MTOW × uma variável",
         };
     }
@@ -61,7 +60,7 @@ const Mode = enum {
         return .mission;
     }
 };
-const mode_labels = [_][]const u8{ Mode.mission.label(), Mode.takeoff.label(), Mode.turns.label(), Mode.mtow.label(), Mode.study.label() };
+const mode_labels = [_][]const u8{ Mode.mission.label(), Mode.takeoff.label(), Mode.turns.label(), Mode.study.label() };
 
 /// o que o estudo varia no avião, um valor por vez, achando o MTOW da pista em cada um
 const StudyVariable = enum {
@@ -299,10 +298,9 @@ fn legGrid(memory: std.mem.Allocator) !simulation.Grid {
 
 // ------------------------------------------------------------------ a tabela das massas do MTOW
 
-/// mínimo, nominal e máximo da massa total (kg) e do xCG (% da CMA)
+/// mínimo, nominal e máximo da massa total (kg); o xCG vem da lista de Empenagem e comandos
 const MassTable = struct {
     total: [3]f64 = .{ 0, 0, 0 },
-    center: [3]f64 = .{ 25, 25, 25 },
     source: u64 = 0,
     ready: bool = false,
 
@@ -311,9 +309,7 @@ const MassTable = struct {
         table.ready = true;
         const loaded = baseline(aircraft) orelse return;
         const mass = round(loaded.mass, 1e3);
-        const percent = round(loaded.dry_center_percent, 1e2);
         table.total = .{ mass, mass, round(mass + 6, 1e3) };
-        table.center = .{ round(percent - 5, 1e2), percent, round(percent + 5, 1e2) };
     }
 
     fn sync(table: *MassTable, aircraft: *const Aircraft) void {
@@ -334,22 +330,69 @@ const mass_columns = [_]simulation.Column{
     .{ .key = "max", .label = "máximo" },
 };
 
-fn massGrid(memory: std.mem.Allocator) !simulation.Grid {
-    const rows = try memory.alloc([]const simulation.Cell, 2);
-    for ([_]struct { []const u8, [3]f64 }{ .{ "Massa total (kg)", mass_table.total }, .{ "xCG (% CMA)", mass_table.center } }, 0..) |line, i| {
-        const cells = try memory.alloc(simulation.Cell, 4);
-        cells[0] = .{ .text = line[0] };
-        for (0..3) |k| cells[k + 1] = .{ .number = line[1][k] };
-        rows[i] = cells;
-    }
+fn massGrid(memory: std.mem.Allocator, centers_note: []const u8) !simulation.Grid {
+    const rows = try memory.alloc([]const simulation.Cell, 1);
+    const cells = try memory.alloc(simulation.Cell, 4);
+    cells[0] = .{ .text = "Massa total (kg)" };
+    for (0..3) |k| cells[k + 1] = .{ .number = mass_table.total[k] };
+    rows[0] = cells;
     return .{
         .name = "masses",
         .title = "Massas",
-        .help = "a massa total vai do mínimo ao máximo (o que passa da montada entra no CG); o xCG, em % da CMA a partir do bordo de ataque, é testado nos três valores",
+        .help = "a massa total vai do mínimo ao máximo (o que passa da montada entra no CG); em cada xCG a bisseção acha a maior que decola",
+        .note = centers_note,
         .columns = &mass_columns,
         .rows = rows,
-        .buttons = &.{.{ .operation = "reset", .label = "como no avião", .help = "volta à massa e ao CG do avião" }},
+        .buttons = &.{.{ .operation = "reset", .label = "como no avião", .help = "volta à massa do avião" }},
     };
+}
+
+// ------------------------------------------------------------------ os xCG da decolagem
+
+/// de onde vêm os xCG testados
+const CenterSource = enum { tail_stage, aircraft };
+
+/// os xCG (% CMA) da Decolagem: a lista de Empenagem e comandos (do limite da frente ao de trás da faixa de CG); sem
+/// ela (sem projeto ou sem conjunto), só o xCG do avião
+fn centerPercents(memory: std.mem.Allocator, aircraft: ?*const Aircraft) !struct { values: []const f64, source: CenterSource } {
+    if (simulation.sprint) |sprint| {
+        const list = sprint.cg_list(memory) catch &.{};
+        if (list.len > 0) return .{ .values = list, .source = .tail_stage };
+    }
+    const plane = aircraft orelse return .{ .values = &.{}, .source = .aircraft };
+    const loaded = baseline(plane) orelse return .{ .values = &.{}, .source = .aircraft };
+    return .{ .values = try memory.dupe(f64, &.{round(loaded.dry_center_percent, 1e2)}), .source = .aircraft };
+}
+
+/// o texto embaixo da tabela de massas: os xCG que serão testados e de onde vêm
+fn centersNote(memory: std.mem.Allocator, aircraft: ?*const Aircraft) ![]const u8 {
+    const found = try centerPercents(memory, aircraft);
+    var text: std.Io.Writer.Allocating = .init(memory);
+    try text.writer.writeAll(switch (found.source) {
+        .tail_stage => "xCG (% CMA) de Empenagem e comandos: ",
+        .aircraft => "sem a faixa de CG de Empenagem e comandos: só o xCG do avião (% CMA): ",
+    });
+    for (found.values, 0..) |percent, k| try text.writer.print("{s}{d:.1}", .{ if (k > 0) "; " else "", percent });
+    return text.written();
+}
+
+/// a malha do VLM em cada xCG: 4 painéis na corda e 2 na envergadura de cada faixa
+const vlm_grid: core.vlm.Grid = .{ .chordwise = 4, .spanwise = 2 };
+const vlm_max_panels = 1200;
+
+/// o VLM do avião com os momentos em cada x do CG (corpo); vazio se a malha não cabe
+fn vlmAtCenters(memory: std.mem.Allocator, aircraft: *const Aircraft, centers: []const f64) ![]const core.vlm.Derivatives {
+    const params = try memory.create(types.Params);
+    params.* = .{};
+    var diagnosis: model.Diag = .{};
+    try params_mod.fill(aircraft, params, &diagnosis);
+    core.aero.init(params);
+    const count = core.vlm.panelCount(params, vlm_grid);
+    if (count == 0 or count > vlm_max_panels) return &.{};
+    const buffers: core.vlm.Buffers = .{ .panels = try memory.alloc(core.vlm.Panel, count), .matrix = try memory.alloc(f64, count * count), .pivots = try memory.alloc(usize, count), .gamma = try memory.alloc(f64, count) };
+    const out = try memory.alloc(core.vlm.Derivatives, centers.len);
+    for (centers, out) |x, *item| item.* = try core.vlm.derivatives(params, vlm_grid, 0, .{ x, 0, 0 }, buffers);
+    return out;
 }
 
 fn editGrid(aircraft: ?*const simulation.Aircraft, change: simulation.GridEdit) simulation.Error!void {
@@ -367,11 +410,10 @@ fn editGrid(aircraft: ?*const simulation.Aircraft, change: simulation.GridEdit) 
         switch (operation) {
             .reset => if (aircraft) |plane| mass_table.reset(plane),
             .set => {
-                const row = change.row orelse return;
+                if (change.row != 0) return;
                 const column = std.meta.stringToEnum(enum { min, nom, max }, change.key) orelse return;
                 const value = change.number() orelse return;
-                const line = if (row == 0) &mass_table.total else &mass_table.center;
-                line[@intFromEnum(column)] = value;
+                mass_table.total[@intFromEnum(column)] = value;
             },
             else => {},
         }
@@ -499,14 +541,14 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "tolerancia", .label = "Tolerância da bisseção", .default = .{ .number = 0 }, .minimum = 0, .maximum = 20, .unit = "% x_warning", .group = group_runway, .help = "só na bisseção: aceita errar o acionamento até isto do x_warning e desiste cedo da massa que nem com o comando todo cabrando sai do chão a tempo. 0 = a busca de sempre" },
     };
     var hand: std.ArrayList(simulation.Param) = .empty;
-    if (mode != .mtow) {
+    if (mode == .mission or mode == .turns) {
         try hand.append(memory, .{ .key = "mass_source", .label = "Massa", .kind = .choice, .default = .{ .text = mass_labels[0] }, .choices = &mass_labels, .rebuild = true, .group = group_mass, .help = "a do avião; o MTOW que o modo MTOW achou para esta pista (x_warning e z_warning), guardado enquanto o programa está aberto; ou a digitada" });
         if (std.mem.eql(u8, values.text("mass_source", ""), mass_labels[2])) {
             const total = if (aircraft) |plane| if (baseline(plane)) |known| round(known.mass, 1e3) else 5.0 else 5.0;
             try hand.append(memory, .{ .key = "mass_hand", .label = "Massa total", .default = .{ .number = total }, .minimum = 0.1, .maximum = 500, .unit = "kg", .group = group_mass, .help = "o que passa da massa do avião entra como massa no CG" });
         }
     }
-    if (mode == .mission or mode == .takeoff) {
+    if (mode == .mission) {
         try hand.append(memory, .{ .key = "trigger", .label = "Acionamento do profundor", .kind = .choice, .default = .{ .text = trigger_labels[0] }, .choices = &trigger_labels, .rebuild = true, .group = group_mass, .help = "otimizado para a pista ou o que se digita (sem procurar)" });
         if (std.mem.eql(u8, values.text("trigger", ""), trigger_labels[1])) {
             const takeoff = if (aircraft) |plane| plane.takeoff else model.Takeoff{};
@@ -542,28 +584,24 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         },
         .takeoff => {
             try params.appendSlice(memory, &runway);
-            try params.appendSlice(memory, hand.items);
+            try grids.append(memory, try massGrid(memory, try centersNote(memory, aircraft)));
         },
         .turns => {
             try params.appendSlice(memory, runway[0..2]);
             try params.appendSlice(memory, hand.items);
             try params.append(memory, .{ .key = "V_list", .label = "Velocidades", .kind = .floats, .default = .{ .text = "13, 15, 17" }, .unit = "m/s", .help = "para cada V testa raios de inclinação 70° a 14° (R = V²/(g tan φ)) e acha o menor que a aeronave faz sem estolar, sem perder mais de 3 m e seguindo o raio" });
         },
-        .mtow => {
-            try params.appendSlice(memory, &runway);
-            try grids.append(memory, try massGrid(memory));
-        },
         .study => {
             const variable = StudyVariable.named(values.text("study_variable", study_labels[0]));
             const now = if (aircraft) |plane| variable.current(plane) else 0;
             try params.appendSlice(memory, &.{
-                .{ .key = "study_variable", .label = "variar", .kind = .choice, .default = .{ .text = study_labels[0] }, .choices = &study_labels, .rebuild = true, .group = group_study, .help = "para cada valor, o MTOW desta pista (a mesma busca do modo MTOW); o melhor é o ponto de projeto" },
+                .{ .key = "study_variable", .label = "variar", .kind = .choice, .default = .{ .text = study_labels[0] }, .choices = &study_labels, .rebuild = true, .group = group_study, .help = "para cada valor, o MTOW desta pista (a mesma busca da Decolagem, no xCG do avião); o melhor é o ponto de projeto" },
                 .{ .key = "study_from", .label = "de", .default = .{ .number = now - 4 }, .minimum = -45, .maximum = 45, .unit = "°", .group = group_study },
                 .{ .key = "study_to", .label = "até", .default = .{ .number = now + 4 }, .minimum = -45, .maximum = 45, .unit = "°", .group = group_study },
                 .{ .key = "study_steps", .label = "valores", .kind = .int, .default = .{ .number = 5 }, .minimum = 2, .maximum = 21, .group = group_study, .help = "cada valor é um MTOW inteiro (uns segundos cada)" },
             });
             try params.appendSlice(memory, &runway);
-            try grids.append(memory, try massGrid(memory));
+            try grids.append(memory, try massGrid(memory, "o estudo usa o xCG do avião"));
         },
     }
     try simulation.writeSpecs(out, params.items, try plotsFor(memory, mode, aircraft), Mission.description, .{ .grids = grids.items });
@@ -604,10 +642,13 @@ const first_plots = [_]simulation.Plot{
     plot("tmM", "Decolagem: arfagem M e δ_e", "t (s)", "N·m / °"), plot("tmN", "Decolagem: guinada N e δ_r", "t (s)", "N·m / °"),
 };
 const rest_plots = [_]simulation.Plot{ takeoff_plots[1], takeoff_plots[2], takeoff_plots[3], takeoff_plots[4], takeoff_plots[6], trajectory_plots[0] };
-const mtow_plots = [_]simulation.Plot{
-    plot("mt", "MTOW: n_dec × massa (★ MTOW)", "m (kg)", "n_dec (m)"),
-    plot("mc", "Massas × massa de decolagem", "m (kg)", "kg ou L"),
-    plot("ma", "Acionamento, δ_e e xCG × massa", "m (kg)", "m / ° / % CMA"),
+/// os gráficos da Decolagem que se atualizam a cada xCG terminado
+const center_plots = [_]simulation.Plot{
+    plot("xm", "MTOW × xCG", "xCG (% CMA)", "MTOW (kg)"),
+    plot("mt", "n_dec × massa", "m (kg)", "n_dec (m)"),
+    plot("xn", "n_dec no MTOW × xCG", "xCG (% CMA)", "n_dec (m)"),
+    plot("xv", "C_mα (VLM) × xCG", "xCG (% CMA)", "C_mα (1/rad)"),
+    plot("ma", "Acionamento e δe no MTOW × xCG", "xCG (% CMA)", "m / °"),
 };
 const study_plots = [_]simulation.Plot{
     plot("sm", "Estudo: MTOW × variável (★ ponto de projeto)", "variável", "MTOW (kg)"),
@@ -652,17 +693,12 @@ fn plotsFor(memory: std.mem.Allocator, mode: Mode, aircraft: ?*const Aircraft) !
     var list: std.ArrayList(simulation.Plot) = .empty;
     switch (mode) {
         .takeoff => {
+            try list.appendSlice(memory, &center_plots);
             try list.appendSlice(memory, &first_plots);
             try list.append(memory, optimization_plot);
             try list.appendSlice(memory, &rest_plots);
         },
         .study => try list.appendSlice(memory, &study_plots),
-        .mtow => {
-            try list.appendSlice(memory, &first_plots);
-            try list.appendSlice(memory, &mtow_plots);
-            try list.append(memory, optimization_plot);
-            try list.appendSlice(memory, &rest_plots);
-        },
         .turns => try list.appendSlice(memory, &turn_plots),
         .mission => {
             try list.appendSlice(memory, &trajectory_plots);
@@ -706,6 +742,17 @@ const MtowCase = struct {
     tried: []takeoff_opt.Result,
 };
 
+/// um xCG terminado: o MTOW dele (nulo: não decola nem com a menor massa), o caso do MTOW, as massas testadas e o VLM
+const CenterResult = struct {
+    percent: f64,
+    center_x: f64,
+    mtow: ?f64,
+    best: MtowCase,
+    cases: []const MtowCase,
+    vlm: ?core.vlm.Derivatives,
+    simulations: usize,
+};
+
 /// uma curva testada
 const TurnCase = struct { speed: f64, turn: analysis.Turn, rows: []const types.LogRow };
 
@@ -747,15 +794,21 @@ const RunState = struct {
     speeds: []const f64 = &.{},
     turns: std.ArrayList(TurnCase) = .empty,
     turn_index: usize = 0,
-    // MTOW
-    center_options: []const f64 = &.{},
+    // decolagem: os xCG (x do corpo e % CMA), o de agora, os terminados e o VLM em cada um
+    centers: []const f64 = &.{},
+    center_percents: []const f64 = &.{},
+    center_source: CenterSource = .aircraft,
+    center_index: usize = 0,
+    center_results: std.ArrayList(CenterResult) = .empty,
+    center_vlm: []const core.vlm.Derivatives = &.{},
+    total_simulations: usize = 0,
+    finished: bool = false,
     cases: std.ArrayList(MtowCase) = .empty,
     bisection: struct { low: f64 = 0, high: f64 = 1, step: usize = 0, best: ?usize = null, mtow_fraction: ?f64 = null, stage: enum { low, high, bisect, refine, mission, done } = .low } = .{},
     // a busca do MTOW em duas fases: só a decolagem até achar a massa; depois a missão inteira nela. Se a missão
     // não completa, a bisseção volta com "decola e completa a missão" como critério
     with_mission: bool = false,
-    good_center: ?f64 = null, // o xCG que decolou por último: o primeiro a tentar na massa seguinte
-    simulations: usize = 0, // decolagens e missões voadas na busca (o limite é `simulation_limit`)
+    simulations: usize = 0, // decolagens e missões voadas na busca do xCG de agora (o limite é `simulation_limit`)
     // estudo: os valores da variável e o MTOW de cada um (NaN: não decola nem com a menor massa)
     study: struct {
         variable: StudyVariable = .tilt,
@@ -780,11 +833,11 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     state.aircraft = run.aircraft.*;
     if (state.mode == .mission) try applyTable(memory, &state.aircraft, values);
     // a massa do voo: a do avião, o MTOW salvo desta pista ou a digitada
-    if (state.mode != .mtow and state.mode != .study) {
+    if (state.mode != .takeoff and state.mode != .study) {
         const source = values.text("mass_source", mass_labels[0]);
         if (std.mem.eql(u8, source, mass_labels[1])) {
             const saved = savedFor(run.aircraft, state.x_warning, state.z_warning) orelse {
-                run.fail("ainda não há MTOW salvo para x_warning = {d} m e z_warning = {d} m: rode antes o modo MTOW com esta pista", .{ state.x_warning, state.z_warning });
+                run.fail("ainda não há MTOW salvo para x_warning = {d} m e z_warning = {d} m: rode antes a Decolagem com esta pista", .{ state.x_warning, state.z_warning });
                 return error.Failed;
             };
             state.loading = saved.loading;
@@ -805,24 +858,27 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
             var buffer: [16]f64 = undefined;
             state.speeds = try memory.dupe(f64, values.numbers("V_list", &buffer, &.{ 13, 15, 17 }));
         },
-        .mtow, .study => {
+        .takeoff, .study => {
             mass_table.sync(run.aircraft);
-            var centers: std.ArrayList(f64) = .empty;
+            // a Decolagem testa a lista de E&C; o estudo, só o xCG do avião
+            var percents: []const f64 = &.{};
+            if (state.mode == .takeoff) {
+                const found = try centerPercents(memory, &state.aircraft);
+                percents = found.values;
+                state.center_source = found.source;
+            }
+            if (percents.len == 0) percents = try memory.dupe(f64, &.{if (baseline(&state.aircraft)) |known| known.dry_center_percent else 25});
+            state.center_percents = percents;
             const leading = params_mod.macLeadingEdge(&state.aircraft);
             const chord = params_mod.references(&state.aircraft)[1];
-            for (mass_table.center) |percent| {
-                const x = leading - percent / 100 * chord;
-                for (centers.items) |known| {
-                    if (known == x) break;
-                } else try centers.append(memory, x);
-            }
-            std.mem.sort(f64, centers.items, {}, std.sort.asc(f64));
-            state.center_options = centers.items;
+            const centers = try memory.alloc(f64, percents.len);
+            for (percents, centers) |percent, *x| x.* = leading - percent / 100 * chord;
+            state.centers = centers;
+            if (state.mode == .takeoff) state.center_vlm = vlmAtCenters(memory, &state.aircraft, centers) catch &.{};
             if (state.mode == .study) try startStudy(run, state, values);
         },
-        .takeoff => {},
     }
-    if (state.loading.mass != null and state.mode != .mtow and state.mode != .study)
+    if (state.loading.mass != null and state.mode != .takeoff and state.mode != .study)
         try state.checks.append(memory, .{ .status = .info, .item = "massa do voo", .value = try printed(memory, "{d:.2} kg", .{state.info.mass}), .criterion = values.text("mass_source", ""), .group = "Massa" });
 }
 
@@ -893,10 +949,9 @@ fn printed(memory: std.mem.Allocator, comptime format: []const u8, args: anytype
 
 fn advanceRun(run: *simulation.Run, state: *RunState) simulation.Error!bool {
     switch (state.mode) {
-        .takeoff => return advanceTakeoff(run, state),
+        .takeoff => return advanceCenters(run, state),
         .mission => return advanceMission(run, state),
         .turns => return advanceTurns(run, state),
-        .mtow => return advanceMtow(run, state),
         .study => return advanceStudy(run, state),
     }
 }
@@ -935,44 +990,6 @@ fn loggedTakeoff(state: *RunState, aircraft: *const Aircraft, loading: Loading, 
     const hold: ?f64 = if (std.math.isFinite(best.hold)) best.hold else null;
     const result = try takeoffs.evaluate(position, best.deflection, hold);
     return .{ .result = result, .rows = try state.memory.dupe(types.LogRow, takeoffs.log.items) };
-}
-
-fn advanceTakeoff(run: *simulation.Run, state: *RunState) simulation.Error!bool {
-    switch (state.phase) {
-        .search => {
-            run.say("otimizando o acionamento do profundor", .{});
-            const outcome = try chooseTakeoff(state, &state.aircraft, state.loading);
-            state.best = outcome.best;
-            state.tried = outcome.tried;
-            state.phase = .finish;
-            run.progress = 0.9;
-            return false;
-        },
-        else => {
-            const best = state.best.?;
-            const flown = try loggedTakeoff(state, &state.aircraft, state.loading, best);
-            try optimizationSeries(state, state.tried, best);
-            if (flown.rows.len > 0) try takeoffSeries(state, flown.rows, flown.result.events);
-            const memory = state.memory;
-            const events = flown.result.events;
-            try state.summary.appendSlice(memory, &.{
-                .{ "status", flown.result.status.text() },
-                .{ "x_warning", try printed(memory, "{d}", .{state.x_warning}) },
-                .{ "z_warning", try printed(memory, "{d}", .{state.z_warning}) },
-                .{ "n_dec", try printed(memory, "{d:.4}", .{flown.result.takeoff_point}) },
-                .{ "folga_de_pista", try printed(memory, "{d:.4}", .{state.x_warning - flown.result.takeoff_point}) },
-                .{ "acionamento_m", try printed(memory, "{d:.4}", .{best.position}) },
-                .{ "deflexao_graus", try printed(memory, "{d}", .{best.deflection}) },
-                .{ "V_ao_sair_do_chao", try printed(memory, "{d:.4}", .{events.VLO}) },
-                .{ "n_saiu_do_chao", try printed(memory, "{d:.4}", .{events.nLO}) },
-                .{ "massa", try printed(memory, "{d:.4}", .{state.info.mass}) },
-            });
-            try takeoffChecks(state, &state.aircraft, best);
-            state.phase = .done;
-            run.progress = 1;
-            return true;
-        },
-    }
 }
 
 /// as decolagens testadas: uma linha por deflexão, ○ as que passam e × as que não, a estrela na escolhida
@@ -1716,28 +1733,19 @@ fn finishTurns(state: *RunState) !void {
 /// o máximo de simulações (decolagens e missões) da busca do MTOW: ao bater nele a busca para com o que achou
 const simulation_limit = 10_000;
 
-/// a decolagem numa massa (fração t entre o mínimo e o máximo), com o melhor xCG da tabela. `refine` falso é a
-/// busca rápida da bisseção: o xCG que decolou por último vem primeiro e a primeira decolagem que passa basta
+/// a massa total da fração t entre o mínimo e o máximo da tabela
+fn massAt(fraction: f64) f64 {
+    return mass_table.total[0] + fraction * (mass_table.total[2] - mass_table.total[0]);
+}
+
+/// a decolagem numa massa (fração t entre o mínimo e o máximo) no xCG de agora. `refine` falso é a busca rápida da
+/// bisseção (o primeiro acionamento que passa basta); verdadeiro, o melhor acionamento
 fn mtowCase(state: *RunState, fraction: f64, refine: bool) !MtowCase {
-    const total = mass_table.total[0] + fraction * (mass_table.total[2] - mass_table.total[0]);
-    var order: std.ArrayList(f64) = .empty;
-    const first = if (refine) null else state.good_center;
-    if (first) |center| try order.append(state.memory, center);
-    for (state.center_options) |center| if (first == null or center != first.?) try order.append(state.memory, center);
-    var chosen: ?MtowCase = null;
-    for (order.items) |center| {
-        const loading: Loading = .{ .mass = total, .center_x = center };
-        const outcome = try searchTakeoff(state, &state.aircraft, loading, refine);
-        state.simulations += outcome.tried.len;
-        const better = if (chosen) |known| rank(outcome.best) > rank(known.best) else true;
-        if (better) chosen = .{ .fraction = fraction, .mass = total, .best = outcome.best, .center_x = center, .tried = outcome.tried };
-        // a busca rápida: passou, basta; e com um xCG que já decolou numa massa menor, ele decide sozinho (uma massa
-        // maior não decola com um xCG que a menor nem precisou)
-        if (!refine and (outcome.best.ok or first != null)) break;
-        if (state.simulations >= simulation_limit) break;
-    }
-    if (chosen.?.best.ok) state.good_center = chosen.?.center_x;
-    return chosen.?;
+    const total = massAt(fraction);
+    const center = state.centers[state.center_index];
+    const outcome = try searchTakeoff(state, &state.aircraft, .{ .mass = total, .center_x = center }, refine);
+    state.simulations += outcome.tried.len;
+    return .{ .fraction = fraction, .mass = total, .best = outcome.best, .center_x = center, .tried = outcome.tried };
 }
 
 /// guarda o caso na lista (os gráficos) e devolve o índice
@@ -1811,7 +1819,7 @@ fn advanceMtow(run: *simulation.Run, state: *RunState) simulation.Error!bool {
     const phase_name = if (state.with_mission) "decolagem e missão" else "só a decolagem";
     switch (bisection.stage) {
         .low => {
-            run.say("MTOW ({s}): a menor massa", .{phase_name});
+            run.say("{s}: a menor massa, {d:.2} kg", .{ phase_name, massAt(0) });
             const case = try mtowCase(state, 0, false);
             const ok = try passes(state, case);
             const k = try keepCase(state, case);
@@ -1827,7 +1835,7 @@ fn advanceMtow(run: *simulation.Run, state: *RunState) simulation.Error!bool {
             return false;
         },
         .high => {
-            run.say("MTOW ({s}): a maior massa", .{phase_name});
+            run.say("{s}: a maior massa, {d:.2} kg", .{ phase_name, massAt(1) });
             const case = try mtowCase(state, 1, false);
             const ok = try passes(state, case);
             const k = try keepCase(state, case);
@@ -1846,11 +1854,8 @@ fn advanceMtow(run: *simulation.Run, state: *RunState) simulation.Error!bool {
                 return false;
             }
             bisection.step += 1;
-            run.say("MTOW ({s}): bisseção {d}/9", .{ phase_name, bisection.step });
-            const share: f64 = if (state.with_mission) 0.5 else 0.9; // a segunda fase fica com a metade de cima
-            const offset: f64 = if (state.with_mission) 0.5 else 0;
-            run.progress = @floatCast(offset + share * @as(f64, @floatFromInt(bisection.step)) / 9);
             const middle = 0.5 * (bisection.low + bisection.high);
+            run.say("{s}: bisseção {d}/9, {d:.2} kg", .{ phase_name, bisection.step, massAt(middle) });
             const case = try mtowCase(state, middle, false);
             const ok = try passes(state, case);
             const k = try keepCase(state, case);
@@ -1863,7 +1868,7 @@ fn advanceMtow(run: *simulation.Run, state: *RunState) simulation.Error!bool {
         .refine => {
             // o profundor otimizado na massa achada (a mesma conta do modo Decolagem); a busca rápida só garantiu
             // que alguma decolagem passa
-            run.say("MTOW: otimizando o profundor na massa achada", .{});
+            run.say("otimizando o profundor em {d:.2} kg", .{massAt(bisection.mtow_fraction.?)});
             const fraction = bisection.mtow_fraction.?;
             const refined = try mtowCase(state, fraction, true);
             const k = bisection.best.?;
@@ -1881,7 +1886,7 @@ fn advanceMtow(run: *simulation.Run, state: *RunState) simulation.Error!bool {
         },
         .mission => {
             const case = state.cases.items[bisection.best.?];
-            run.say("MTOW: a missão inteira com {d:.2} kg", .{case.mass});
+            run.say("a missão inteira com {d:.2} kg", .{case.mass});
             if (try missionCompletes(state, case)) {
                 try state.checks.append(state.memory, .{ .status = .ok, .item = "missão inteira no MTOW", .value = try printed(state.memory, "{d:.2} kg", .{case.mass}), .criterion = "pousar e parar", .group = "MTOW" });
                 bisection.stage = .done;
@@ -1893,13 +1898,66 @@ fn advanceMtow(run: *simulation.Run, state: *RunState) simulation.Error!bool {
             bisection.* = .{ .high = bisection.mtow_fraction.? };
             return false;
         },
-        .done => {
-            try finishMtow(run, state);
-            try state.summary.append(state.memory, .{ "simulações da busca", try printed(state.memory, "{d}", .{state.simulations}) });
-            run.progress = 1;
-            return true;
-        },
+        .done => return true,
     }
+}
+
+/// quanto da busca do xCG de agora já foi (0 a 1), pela etapa da bisseção
+fn searchFraction(state: *const RunState) f64 {
+    const bisection = &state.bisection;
+    const steps: f64 = @floatFromInt(bisection.step);
+    const inside: f64 = switch (bisection.stage) {
+        .low => 0,
+        .high => 0.05,
+        .bisect => 0.1 + 0.8 * steps / 9,
+        .refine, .mission => 0.92,
+        .done => 1,
+    };
+    // a segunda fase (com a missão) fica com a metade de cima
+    return if (state.with_mission) 0.5 + 0.5 * inside else inside;
+}
+
+/// a Decolagem: a busca do MTOW em cada xCG da lista, um de cada vez; ao terminar um, o resultado parcial vai para a
+/// tela (os gráficos de MTOW × xCG crescem enquanto a rodada segue)
+fn advanceCenters(run: *simulation.Run, state: *RunState) simulation.Error!bool {
+    const count = state.centers.len;
+    if (state.center_index >= count) {
+        try finishTakeoff(run, state);
+        state.finished = true;
+        run.progress = 1;
+        return true;
+    }
+    if (state.bisection.stage != .done) {
+        _ = try advanceMtow(run, state);
+        const done: f64 = @floatFromInt(state.center_index);
+        run.progress = @floatCast((done + searchFraction(state)) / @as(f64, @floatFromInt(count)));
+        var step_text: [160]u8 = undefined;
+        const step = std.mem.sliceTo(&run.message, 0);
+        @memcpy(step_text[0..step.len], step);
+        run.say("xCG {d}/{d} = {d:.1} % CMA · {s} · {d} simulações", .{ state.center_index + 1, count, state.center_percents[state.center_index], step_text[0..step.len], state.total_simulations + state.simulations });
+        return false;
+    }
+    // o xCG de agora terminou: guarda e passa ao próximo
+    const index = state.center_index;
+    const takes_off = state.bisection.mtow_fraction != null;
+    const best = state.cases.items[state.bisection.best.?];
+    try state.center_results.append(state.memory, .{
+        .percent = state.center_percents[index],
+        .center_x = state.centers[index],
+        .mtow = if (takes_off) best.mass else null,
+        .best = best,
+        .cases = try state.memory.dupe(MtowCase, state.cases.items),
+        .vlm = if (index < state.center_vlm.len) state.center_vlm[index] else null,
+        .simulations = state.simulations,
+    });
+    state.total_simulations += state.simulations;
+    state.center_index += 1;
+    state.cases.clearRetainingCapacity();
+    state.bisection = .{};
+    state.with_mission = false;
+    state.simulations = 0;
+    run.partial = true;
+    return false;
 }
 
 // ------------------------------------------------------------------ estudo e ponto de projeto
@@ -1933,7 +1991,6 @@ fn useStudyValue(run: *simulation.Run, state: *RunState) !void {
     state.cases.clearRetainingCapacity();
     state.bisection = .{};
     state.with_mission = false;
-    state.good_center = null;
     state.simulations = 0;
 }
 
@@ -1999,79 +2056,141 @@ fn finishStudy(state: *RunState) !void {
     });
 }
 
-fn finishMtow(run: *simulation.Run, state: *RunState) !void {
+/// a posição em % CMA de um x do corpo (do bordo de ataque da CMA para trás)
+fn percentOf(aircraft: *const Aircraft, x: f64) f64 {
+    return 100 * (params_mod.macLeadingEdge(aircraft) - x) / params_mod.references(aircraft)[1];
+}
+
+/// a margem estática do VLM num xCG (% CMA): do CG ao ponto neutro
+fn vlmMargin(aircraft: *const Aircraft, result: CenterResult) ?f64 {
+    const found = result.vlm orelse return null;
+    return percentOf(aircraft, found.neutral_x) - result.percent;
+}
+
+/// os gráficos dos xCG terminados (MTOW, n_dec, C_mα e o acionamento × xCG; n_dec × massa de cada xCG) e o resumo
+/// de cada um; os mesmos no meio da rodada e no fim
+fn centerSeries(state: *RunState, figures: simulation.Figures, summary: *std.ArrayList([2][]const u8)) !void {
+    const memory = state.memory;
+    const results = state.center_results.items;
+    const colors = [_][]const u8{ "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#17becf" };
+    const percents = try memory.alloc(f64, results.len);
+    const mtows = try memory.alloc(f64, results.len);
+    const run_lengths = try memory.alloc(f64, results.len);
+    const slopes = try memory.alloc(f64, results.len);
+    const positions = try memory.alloc(f64, results.len);
+    const deflections = try memory.alloc(f64, results.len);
+    var best: ?usize = null;
+    for (results, 0..) |result, i| {
+        const nan = std.math.nan(f64);
+        percents[i] = result.percent;
+        mtows[i] = result.mtow orelse nan;
+        run_lengths[i] = if (result.mtow != null) result.best.best.takeoff_point else nan;
+        slopes[i] = if (result.vlm) |found| found.Cma else nan;
+        positions[i] = if (result.mtow != null) result.best.best.position else nan;
+        deflections[i] = if (result.mtow != null) result.best.best.deflection else nan;
+        if (result.mtow) |mass| if (best == null or mass > results[best.?].mtow.?) {
+            best = i;
+        };
+        // n_dec × massa: as massas que a bisseção testou neste xCG (○ decola, × não)
+        const color = colors[i % colors.len];
+        var pass_mass: std.ArrayList(f64) = .empty;
+        var pass_point: std.ArrayList(f64) = .empty;
+        var fail_mass: std.ArrayList(f64) = .empty;
+        var fail_point: std.ArrayList(f64) = .empty;
+        const cases = try memory.dupe(MtowCase, result.cases);
+        std.mem.sort(MtowCase, cases, {}, struct {
+            fn less(_: void, left: MtowCase, right: MtowCase) bool {
+                return left.mass < right.mass;
+            }
+        }.less);
+        for (cases) |item| {
+            const point = if (std.math.isFinite(item.best.takeoff_point)) item.best.takeoff_point else nan;
+            if (item.best.ok) {
+                try pass_mass.append(memory, item.mass);
+                try pass_point.append(memory, point);
+            } else {
+                try fail_mass.append(memory, item.mass);
+                try fail_point.append(memory, point);
+            }
+        }
+        const label = try printed(memory, "xCG {d:.1} %", .{result.percent});
+        try figures.curve("mt", .{ .name = label, .x = pass_mass.items, .y = pass_point.items, .color = color, .marker = "o", .size = 9, .line = true });
+        try figures.curve("mt", .{ .name = try printed(memory, "{s}: não decola", .{label}), .x = fail_mass.items, .y = fail_point.items, .color = color, .marker = "x", .size = 11, .legend = false });
+        // o resumo de cada xCG
+        const margin = vlmMargin(&state.aircraft, result);
+        try summary.append(memory, .{
+            try printed(memory, "xCG {d:.1} % CMA: MTOW (kg), n_dec (m), C_mα (1/rad), ME (% CMA)", .{result.percent}),
+            if (result.mtow) |mass| try printed(memory, "{d:.3}, {d:.2}, {d:.3}, {d:.1}", .{ mass, result.best.best.takeoff_point, if (result.vlm) |found| found.Cma else std.math.nan(f64), margin orelse std.math.nan(f64) }) else "não decola",
+        });
+    }
+    try figures.curve("xm", .{ .name = "MTOW", .x = percents, .y = mtows, .color = "#2ca02c", .marker = "o", .size = 9, .line = true });
+    try figures.curve("xn", .{ .name = "n_dec no MTOW", .x = percents, .y = run_lengths, .color = "#1f77b4", .marker = "o", .size = 9, .line = true });
+    try figures.curve("xv", .{ .name = "C_mα", .x = percents, .y = slopes, .color = "#d62728", .marker = "o", .size = 9, .line = true });
+    try figures.curve("ma", .{ .name = "acionamento (m)", .x = percents, .y = positions, .color = "#2ca02c", .marker = "o", .line = true });
+    try figures.curve("ma", .{ .name = "δe (°)", .x = percents, .y = deflections, .color = "#1f77b4", .marker = "s", .line = true });
+    const runway = try printed(memory, "x_warning = {d} m", .{state.x_warning});
+    try figures.guide("xn", .{ .name = runway, .value = state.x_warning, .vertical = false, .color = "#d62728", .width = 2 });
+    try figures.guide("mt", .{ .name = runway, .value = state.x_warning, .vertical = false, .color = "#d62728", .width = 2 });
+    try figures.guide("xv", .{ .name = "C_mα = 0", .value = 0, .vertical = false, .color = "#7f7f7f", .dashed = true });
+    if (best) |k| {
+        try figures.curve("xm", .{ .name = "★ maior MTOW", .x = try memory.dupe(f64, &.{percents[k]}), .y = try memory.dupe(f64, &.{mtows[k]}), .color = "#ffcc00", .marker = "star", .size = 24 });
+        try figures.guide("mt", .{ .name = try printed(memory, "MTOW = {d:.2} kg", .{mtows[k]}), .value = mtows[k], .vertical = true, .color = "#ffcc00", .width = 3 });
+    }
+}
+
+/// o melhor xCG terminado (o maior MTOW)
+fn bestCenter(state: *const RunState) ?usize {
+    var best: ?usize = null;
+    for (state.center_results.items, 0..) |result, i| if (result.mtow) |mass| if (best == null or mass > state.center_results.items[best.?].mtow.?) {
+        best = i;
+    };
+    return best;
+}
+
+/// o fim da Decolagem: os gráficos de todos os xCG, o maior MTOW salvo para os outros modos e a decolagem dele de perto
+fn finishTakeoff(run: *simulation.Run, state: *RunState) !void {
     const memory = state.memory;
     const figures = state.figures;
-    const leading = params_mod.macLeadingEdge(&state.aircraft);
-    const chord = params_mod.references(&state.aircraft)[1];
-    const percent = struct {
-        fn of(leading_: f64, chord_: f64, x: f64) f64 {
-            return 100 * (leading_ - x) / chord_;
-        }
-    }.of;
-    const cases = try memory.dupe(MtowCase, state.cases.items);
-    std.mem.sort(MtowCase, cases, {}, struct {
-        fn less(_: void, left: MtowCase, right: MtowCase) bool {
-            return left.mass < right.mass;
-        }
-    }.less);
-    var pass_mass: std.ArrayList(f64) = .empty;
-    var pass_point: std.ArrayList(f64) = .empty;
-    var fail_mass: std.ArrayList(f64) = .empty;
-    var fail_point: std.ArrayList(f64) = .empty;
-    var all_mass: std.ArrayList(f64) = .empty;
-    var positions: std.ArrayList(f64) = .empty;
-    var deflections: std.ArrayList(f64) = .empty;
-    var centers: std.ArrayList(f64) = .empty;
-    for (cases) |item| {
-        try all_mass.append(memory, item.mass);
-        if (item.best.ok) {
-            try pass_mass.append(memory, item.mass);
-            try pass_point.append(memory, item.best.takeoff_point);
-            try positions.append(memory, item.best.position);
-            try deflections.append(memory, item.best.deflection);
-            try centers.append(memory, percent(leading, chord, item.center_x));
-        } else {
-            try fail_mass.append(memory, item.mass);
-            try fail_point.append(memory, if (std.math.isFinite(item.best.takeoff_point)) item.best.takeoff_point else std.math.nan(f64));
-        }
-    }
-    try figures.curve("mt", .{ .name = "decola", .x = pass_mass.items, .y = pass_point.items, .color = "#2ca02c", .marker = "o", .size = 10 });
-    try figures.curve("mt", .{ .name = "não decola", .x = fail_mass.items, .y = fail_point.items, .color = "#d62728", .marker = "x", .size = 12 });
-    try figures.guide("mt", .{ .name = try printed(memory, "x_warning = {d} m", .{state.x_warning}), .value = state.x_warning, .vertical = false, .color = "#d62728", .width = 3 });
-    try figures.curve("mc", .{ .name = "Massa total (kg)", .x = all_mass.items, .y = all_mass.items, .color = "#ff7f0e", .marker = "o", .line = true });
-    try figures.curve("ma", .{ .name = "acionamento (m)", .x = pass_mass.items, .y = positions.items, .color = "#2ca02c", .marker = "o", .line = true });
-    try figures.curve("ma", .{ .name = "δe (°)", .x = pass_mass.items, .y = deflections.items, .color = "#1f77b4", .marker = "s", .line = true });
-    try figures.curve("ma", .{ .name = "xCG (% CMA)", .x = pass_mass.items, .y = centers.items, .color = "#9467bd", .marker = "d", .line = true });
     try state.summary.appendSlice(memory, &.{
         .{ "massa_atual", try printed(memory, "{d:.4}", .{state.info.mass}) },
         .{ "x_warning", try printed(memory, "{d}", .{state.x_warning}) },
         .{ "z_warning", try printed(memory, "{d}", .{state.z_warning}) },
     });
-    const best = state.cases.items[state.bisection.best.?];
-    if (state.bisection.mtow_fraction == null) {
-        if (state.with_mission) return; // o motivo (a missão não completa) já está no diagnóstico
-        try state.checks.append(memory, .{ .status = .falha, .item = "não decola nem com tudo no mínimo", .value = "x_warning ou z_warning", .criterion = try printed(memory, "x ≤ {d} m, z = {d} m", .{ state.x_warning, state.z_warning }), .fix = "baixe os mínimos, aumente a tração, a área de asa ou a pista", .group = "MTOW" });
+    try centerSeries(state, figures, &state.summary);
+    try state.summary.append(memory, .{ "simulações da busca", try printed(memory, "{d}", .{state.total_simulations}) });
+    try state.checks.append(memory, .{
+        .status = if (state.center_source == .tail_stage) .info else .atencao,
+        .item = "xCG testados",
+        .value = try printed(memory, "{d} valores, de {d:.1} a {d:.1} % CMA", .{ state.center_percents.len, state.center_percents[0], state.center_percents[state.center_percents.len - 1] }),
+        .criterion = "a faixa de CG de Empenagem e comandos",
+        .why = if (state.center_source == .tail_stage) "do limite da frente ao de trás, com os coeficientes do VLM em cada um" else "o projeto não tem conjunto em Empenagem e comandos: só o xCG do avião",
+        .fix = if (state.center_source == .tail_stage) "" else "monte a empenagem em Estabilidade → Empenagem e comandos",
+        .group = "MTOW",
+    });
+    for (state.center_results.items) |result| if (result.vlm) |found| if (found.Cma >= 0) {
+        try state.checks.append(memory, .{ .status = .falha, .item = try printed(memory, "instável em arfagem no xCG {d:.1} %", .{result.percent}), .value = try printed(memory, "C_mα = {d:.3} /rad (VLM)", .{found.Cma}), .criterion = "C_mα < 0", .why = "o CG está atrás do ponto neutro do VLM", .fix = "a faixa de CG de Empenagem e comandos (margem mínima)", .group = "MTOW" });
+    };
+    const k = bestCenter(state) orelse {
+        try state.checks.append(memory, .{ .status = .falha, .item = "não decola nem com a menor massa em nenhum xCG", .value = "x_warning ou z_warning", .criterion = try printed(memory, "x ≤ {d} m, z = {d} m", .{ state.x_warning, state.z_warning }), .fix = "baixe o mínimo da massa, aumente a tração, a área de asa ou a pista", .group = "MTOW" });
         return;
-    }
-    const mtow = best.mass;
-    const center_percent = percent(leading, chord, best.center_x);
-    saveMtow(.{ .source = fingerprint(run.aircraft), .x_warning = state.x_warning, .z_warning = state.z_warning, .loading = .{ .mass = mtow, .center_x = best.center_x }, .mass = mtow });
+    };
+    const chosen = state.center_results.items[k];
+    const mtow = chosen.mtow.?;
+    const best = chosen.best;
+    saveMtow(.{ .source = fingerprint(run.aircraft), .x_warning = state.x_warning, .z_warning = state.z_warning, .loading = .{ .mass = mtow, .center_x = chosen.center_x }, .mass = mtow });
     try state.summary.appendSlice(memory, &.{
         .{ "MTOW (kg)", try printed(memory, "{d:.4}", .{mtow}) },
-        .{ "MTOW: Massa total (kg)", try printed(memory, "{d:.4}", .{mtow}) },
-        .{ "MTOW: xCG (m)", try printed(memory, "{d:.4}", .{best.center_x}) },
-        .{ "MTOW: xCG (% CMA)", try printed(memory, "{d:.4}", .{center_percent}) },
+        .{ "MTOW: xCG (m)", try printed(memory, "{d:.4}", .{chosen.center_x}) },
+        .{ "MTOW: xCG (% CMA)", try printed(memory, "{d:.4}", .{chosen.percent}) },
         .{ "acionamento (m)", try printed(memory, "{d:.4}", .{best.best.position}) },
         .{ "δe (°)", try printed(memory, "{d}", .{best.best.deflection}) },
         .{ "n_dec (m)", try printed(memory, "{d:.4}", .{best.best.takeoff_point}) },
     });
-    const mtow_label = try printed(memory, "MTOW = {d:.2} kg", .{mtow});
-    for ([_][]const u8{ "mt", "mc", "ma" }) |key| try figures.guide(key, .{ .name = mtow_label, .value = mtow, .vertical = true, .color = "#ffcc00", .width = 3 });
-    try figures.curve("mt", .{ .name = "★ MTOW", .x = try memory.dupe(f64, &.{mtow}), .y = try memory.dupe(f64, &.{best.best.takeoff_point}), .color = "#ffcc00", .marker = "star", .size = 24 });
-    try state.checks.append(memory, .{ .status = .info, .item = "MTOW", .value = try printed(memory, "{d:.2} kg", .{mtow}), .criterion = "x e z atendidos", .why = try printed(memory, "Massa total (kg) = {d:.2}; xCG = {d:.1} % CMA ({d:.3} m); acionamento em {d:.1} m, δe = {d}°", .{ mtow, center_percent, best.center_x, best.best.position, best.best.deflection }), .fix = "salvo: na missão, na decolagem e nas curvas, Massa → 'MTOW salvo desta pista'", .group = "MTOW" });
+    if (state.center_results.items.len > 1 and (k == 0 or k + 1 == state.center_results.items.len))
+        try state.checks.append(memory, .{ .status = .info, .item = "o maior MTOW está numa ponta da faixa de CG", .value = try printed(memory, "xCG = {d:.1} % CMA", .{chosen.percent}), .criterion = "—", .why = "o limite da faixa (de Empenagem e comandos) segura o MTOW", .fix = "a faixa de CG muda com a empenagem e a margem mínima", .group = "MTOW" });
+    try state.checks.append(memory, .{ .status = .info, .item = "MTOW", .value = try printed(memory, "{d:.2} kg", .{mtow}), .criterion = "x e z atendidos", .why = try printed(memory, "xCG = {d:.1} % CMA ({d:.3} m); acionamento em {d:.1} m, δe = {d}°", .{ chosen.percent, chosen.center_x, best.best.position, best.best.deflection }), .fix = "salvo: na missão e nas curvas, Massa → 'MTOW salvo desta pista'", .group = "MTOW" });
     try optimizationSeries(state, best.tried, best.best);
-    const loading: Loading = .{ .mass = mtow, .center_x = best.center_x };
+    const loading: Loading = .{ .mass = mtow, .center_x = chosen.center_x };
     const flown = try loggedTakeoff(state, &state.aircraft, loading, best.best);
     if (flown.rows.len > 0) try takeoffSeries(state, flown.rows, flown.result.events);
     try takeoffChecks(state, &state.aircraft, best.best);
@@ -2081,6 +2200,16 @@ fn finishMtow(run: *simulation.Run, state: *RunState) !void {
 
 fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) simulation.Error!void {
     _ = run;
+    if (state.mode == .takeoff and !state.finished) {
+        // no meio da Decolagem: só os gráficos dos xCG terminados, montados de novo a cada vez
+        const figures = try simulation.Figures.init(state.memory, &center_plots);
+        var summary: std.ArrayList([2][]const u8) = .empty;
+        try centerSeries(state, figures, &summary);
+        try simulation.beginResult(out, summary.items, &.{});
+        try figures.write(out, true);
+        try simulation.endResult(out);
+        return;
+    }
     try simulation.beginResult(out, state.summary.items, state.checks.items);
     try state.figures.write(out, true);
     try simulation.endResult(out);
@@ -2088,7 +2217,7 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
 
 const testing = std.testing;
 
-test "Missão: só decolagem e a missão inteira no Convencional_original" {
+test "Missão: a decolagem otimizada e a missão inteira no Convencional_original" {
     const gpa = testing.allocator;
     const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
@@ -2099,24 +2228,11 @@ test "Missão: só decolagem e a missão inteira no Convencional_original" {
     {
         var run = simulation.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
         defer run.arena.deinit();
-        try registered.start(&run, simulation.Values.fromRequest(run.memory(), "\"values\": {\"mode\": \"só decolagem\"}"));
+        try registered.start(&run, simulation.Values.fromRequest(run.memory(), "\"values\": {\"mode\": \"missão\"}"));
         while (!try registered.advance(&run)) {}
         const state: *RunState = @ptrCast(@alignCast(run.state.?));
         // o mesmo acionamento que a busca do Python acha (`takeoff_opt.optimize`, grade)
         try testing.expectApproxEqAbs(@as(f64, 33.58612463677029), state.best.?.position, 1e-6);
-        var written: std.Io.Writer.Allocating = .init(gpa);
-        defer written.deinit();
-        try registered.result(&run, &written.writer);
-        const outcome = try std.json.parseFromSlice(std.json.Value, gpa, written.written(), .{});
-        defer outcome.deinit();
-        try testing.expect(outcome.value.object.get("plots").?.array.items.len > 10);
-    }
-    {
-        var run = simulation.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
-        defer run.arena.deinit();
-        try registered.start(&run, simulation.Values.fromRequest(run.memory(), "\"values\": {\"mode\": \"missão\"}"));
-        while (!try registered.advance(&run)) {}
-        const state: *RunState = @ptrCast(@alignCast(run.state.?));
         try testing.expect(state.log.items.len > 100);
         // os números da Missão do Python no mesmo avião (`SimulationManager.run("mission", ...)`): o fim do voo e
         // o impacto da carga LAPES depois da busca do ponto de soltura
@@ -2130,6 +2246,7 @@ test "Missão: só decolagem e a missão inteira no Convencional_original" {
         const outcome = try std.json.parseFromSlice(std.json.Value, gpa, written.written(), .{});
         defer outcome.deinit();
         try testing.expect(outcome.value.object.get("summary").?.object.get("status") != null);
+        try testing.expect(outcome.value.object.get("plots").?.array.items.len > 10);
     }
 }
 
@@ -2172,7 +2289,7 @@ test "Missão: raio mínimo de curva igual ao do Python" {
     try testing.expectApproxEqAbs(@as(f64, 1.0749520553674288), try summaryNumber(parsed, "n no R_min @ 13 m/s"), 1e-3); // o resumo sai com 4 casas
 }
 
-test "Missão: MTOW igual ao do Python (lento: -Dlento -Dfiltro=MTOW)" {
+test "Missão: Decolagem no xCG do avião, MTOW igual ao do Python (lento: -Dlento -Dfiltro=MTOW)" {
     if (!@import("test_options").slow) return error.SkipZigTest;
     const gpa = testing.allocator;
     const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
@@ -2180,7 +2297,8 @@ test "Missão: MTOW igual ao do Python (lento: -Dlento -Dfiltro=MTOW)" {
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(gpa, bytes, &diagnosis);
     defer loaded.deinit();
-    const parsed = try summaryOf(gpa, &loaded.ac, "\"values\": {\"mode\": \"MTOW (x_warning e z_warning)\"}");
+    var request: [128]u8 = undefined;
+    const parsed = try summaryOf(gpa, &loaded.ac, try std.fmt.bufPrint(&request, "\"values\": {{\"mode\": \"{s}\"}}", .{Mode.takeoff.label()}));
     defer parsed.deinit();
     try testing.expectApproxEqAbs(@as(f64, 13.4446875), try summaryNumber(parsed, "MTOW (kg)"), 1e-3);
     try testing.expectApproxEqAbs(@as(f64, 59.7988483968584), try summaryNumber(parsed, "n_dec (m)"), 1e-4);

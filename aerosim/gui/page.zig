@@ -237,9 +237,10 @@ const AnalysisRun = struct {
 
     /// o que a thread da conta conta para a tela
     const Note = struct {
-        kind: enum { progress, finished, failed, stopped },
+        kind: enum { progress, partial, finished, failed, stopped },
         fraction: f32 = 0,
-        text: [96:0]u8 = [_:0]u8{0} ** 96,
+        text: [160:0]u8 = [_:0]u8{0} ** 160,
+        reply: ?[]u8 = null, // `partial`: o JSON do resultado parcial (do `page_allocator`; a tela libera)
     };
 
     /// a rodada inteira, na thread da conta: avança até acabar, falhar ou a tela pedir para parar
@@ -253,7 +254,22 @@ const AnalysisRun = struct {
             const length = @min(said.len, note.text.len);
             @memcpy(note.text[0..length], said[0..length]);
             _ = job.outbox.push(note); // cheia: este progresso se perde, o próximo vai
+            if (job.run.partial) {
+                job.run.partial = false;
+                const reply = partialReply(&job.run, simulation) orelse continue;
+                if (!job.outbox.push(.{ .kind = .partial, .reply = reply })) std.heap.page_allocator.free(reply);
+            }
         }
+    }
+
+    /// o resultado de agora, no meio da rodada (o JSON, do `page_allocator`)
+    fn partialReply(run: *manager.Run, simulation: *const manager.Simulation) ?[]u8 {
+        var text: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
+        simulation.result(run, &text.writer) catch {
+            text.deinit();
+            return null;
+        };
+        return text.toOwnedSlice() catch null;
     }
 
     /// a última nota não se perde: espera a tela abrir espaço. Se a tela já largou a rodada ("Parar"), ninguém lê:
@@ -522,10 +538,35 @@ pub const Page = struct {
     /// um comando pelo nome (`acao=` da linha de comando): "rodar" roda a análise assim que os campos chegarem
     pub fn command(page: *Page, name: []const u8) void {
         if (std.mem.eql(u8, name, "rodar")) page.run_when_ready = true;
+        if (std.mem.startsWith(u8, name, "campo:")) { // campo:<chave>=<valor> num formulário de análise (prints)
+            page.pending_act_len = @min(name.len - 6, page.pending_act.len);
+            @memcpy(page.pending_act[0..page.pending_act_len], name[6..][0..page.pending_act_len]);
+        }
         if (std.mem.startsWith(u8, name, "etapa:")) {
             page.pending_act_len = @min(name.len - 6, page.pending_act.len);
             @memcpy(page.pending_act[0..page.pending_act_len], name[6..][0..page.pending_act_len]);
             page.run_when_ready = true;
+        }
+    }
+
+    /// muda o campo `key` do formulário pelo texto (a opção de uma escolha, um número, um texto)
+    fn setFieldText(page: *Page, key: []const u8, value: []const u8) void {
+        for (page.params[0..@min(page.params.len, page.fields.len)], 0..) |param, k| {
+            if (!std.mem.eql(u8, param.key, key)) continue;
+            const field = &page.fields[k];
+            switch (field.kind) {
+                .choice => {
+                    var options = std.mem.splitScalar(u8, field.choices, ';');
+                    var index: i32 = 0;
+                    while (options.next()) |option| : (index += 1) if (std.mem.eql(u8, option, value)) {
+                        field.choice = index;
+                    };
+                },
+                .number => field.number = std.fmt.parseFloat(f64, value) catch field.number,
+                .toggle => field.checked = std.mem.eql(u8, value, "sim"),
+                else => field.setText(value),
+            }
+            return;
         }
     }
 
@@ -552,7 +593,14 @@ pub const Page = struct {
             page.pending_act_len = 0;
             if (std.mem.startsWith(u8, key, "grade:")) page.gridCommand(key[6..]) else page.act(key, "");
         }
-        if (page.run_when_ready and page.kind == .simulation and !page.working() and page.fields.len > 0) {
+        // campo:<chave>=<valor> (prints): muda o campo e pede o formulário de novo antes de rodar
+        if (page.kind == .simulation and page.pending_act_len > 0 and !page.working() and page.fields.len > 0) {
+            const text = page.pending_act[0..page.pending_act_len];
+            page.pending_act_len = 0;
+            var pairs = std.mem.splitScalar(u8, text, ';'); // campo:a=1;b=2
+            while (pairs.next()) |pair| if (std.mem.indexOfScalar(u8, pair, '=')) |equal| page.setFieldText(pair[0..equal], pair[equal + 1 ..]);
+            page.askSpecs();
+        } else if (page.run_when_ready and page.kind == .simulation and !page.working() and page.fields.len > 0) {
             page.run_when_ready = false;
             page.run();
         }
@@ -779,6 +827,10 @@ pub const Page = struct {
                 @memcpy(page.waiter.progress_text[0..length], note.text[0..length]);
                 page.waiter.progress_text[length] = 0;
             },
+            .partial => if (note.reply) |reply| {
+                defer std.heap.page_allocator.free(reply);
+                page.showPartial(reply);
+            },
             .finished => {
                 job.thread.?.join();
                 job.thread = null;
@@ -813,8 +865,26 @@ pub const Page = struct {
         const length = @min(said.len, page.waiter.progress_text.len - 1);
         @memcpy(page.waiter.progress_text[0..length], said[0..length]);
         page.waiter.progress_text[length] = 0;
-        if (!finished) return;
+        if (!finished) {
+            if (job.run.partial) {
+                job.run.partial = false;
+                const reply = AnalysisRun.partialReply(&job.run, simulation) orelse return;
+                defer std.heap.page_allocator.free(reply);
+                page.showPartial(reply);
+            }
+            return;
+        }
         page.showNative(job, simulation);
+    }
+
+    /// o resultado parcial no meio da rodada: os gráficos e o resumo de agora, e a rodada segue
+    fn showPartial(page: *Page, reply_text: []const u8) void {
+        const arena = newArena() orelse return;
+        var owned: ?*Arena = arena;
+        const reply = std.json.parseFromSliceLeaky(Json, arena.allocator(), reply_text, .{}) catch return dropArena(&owned);
+        dropArena(&page.result_arena);
+        page.result_arena = arena;
+        page.readOutcome(arena.allocator(), reply) catch {};
     }
 
     /// a rodada acabou: o JSON do resultado vira a página
@@ -1317,7 +1387,13 @@ pub const Page = struct {
                 }
             } else if (widgets.primaryButton(ui, button, "Rodar", page.fields.len > 0 and !busy)) page.run();
             widgets.progressBar(.{ .x = footer.x + 12, .y = footer.y + 56, .width = footer.width - 24, .height = 6 }, if (running) page.waiter.fraction() else 0);
-            const status: []const u8 = if (running) std.mem.sliceTo(&page.waiter.progress_text, 0) else std.mem.sliceTo(&page.message, 0);
+            // rodando: o que a conta diz agora, a fração feita e o tempo desde o Rodar
+            var status_buffer: [260]u8 = undefined;
+            const status: []const u8 = if (running) running_text: {
+                const elapsed: f64 = @as(f64, @floatFromInt(std.Io.Clock.awake.now(clockIo()).nanoseconds - page.started_at)) / 1e9;
+                const said = std.mem.sliceTo(&page.waiter.progress_text, 0);
+                break :running_text std.fmt.bufPrint(&status_buffer, "{d:.0} % · {d:.0} s{s}{s}", .{ 100 * page.waiter.fraction(), elapsed, if (said.len > 0) " · " else "", said }) catch said;
+            } else std.mem.sliceTo(&page.message, 0);
             _ = widgets.paragraph(ui.fonts.regular, status, footer.x + 12, footer.y + 68, footer.width - 24, 13, theme.colors.muted);
         } else {
             const status: []const u8 = if (busy) "calculando..." else std.mem.sliceTo(&page.message, 0);

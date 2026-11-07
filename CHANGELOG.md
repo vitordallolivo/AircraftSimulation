@@ -6,6 +6,18 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- Em Desempenho, a Missão tinha um modo "só decolagem" que voava uma massa só e um modo MTOW que testava três
+  posições de CG tiradas do nada (a do avião e 5 % para cada lado). Agora os dois viram um modo só, Decolagem. Ele
+  pega a lista de xCG que Empenagem e comandos cria, do limite da frente ao de trás da faixa de CG (o campo novo
+  diz quantos valores), e acha o MTOW de cada um. Em cada xCG o VLM dá o C_mα, e os gráficos mostram o MTOW, a
+  corrida, o acionamento e o C_mα contra o xCG. O maior MTOW fica guardado para a missão e as curvas, e a decolagem
+  dele aparece de perto. Os gráficos se atualizam na tela a cada xCG terminado, e a barra embaixo do Parar mostra o
+  quanto já foi, o tempo e o que está sendo testado (o xCG, a massa e as simulações).
+- As curvas tracejadas dos gráficos saíam cheias quando tinham muitos pontos, e sumiam de vez quando o gráfico
+  tinha uma escala grande (nas curvas da Missão, a trajetória de raio grande escondia as de raio pequeno). O traço
+  recomeçava em cada trecho entre dois pontos; agora ele continua de um trecho para o outro.
+- O menu do botão direito dos gráficos tinha três linhas de exportar. Agora tem uma, Exportar, que abre ao lado os
+  tipos: imagem PNG, PDF ou os dados em CSV.
 - O repositório guardava muito Python que o programa não usava mais: as ferramentas de linha de comando de estudo e
   medida, o Mini-MDO antigo do aeroopt, a colisão da hélice, a tabela de voo e os gráficos de carga em Python, e a
   entrada da GUI antiga em PyQt do aerosim. Agora isso saiu, junto com os testes e os tutoriais dos READMEs que

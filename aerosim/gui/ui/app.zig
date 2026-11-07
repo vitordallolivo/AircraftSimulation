@@ -2,7 +2,7 @@
 //! print sem interação do `--shot`.
 //!
 //!   <programa> [LxA]
-//!   <programa> --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME] [clique=X,Y]
+//!   <programa> --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME] [clique=X,Y] [apos=SEGUNDOS]
 //!
 //! `arquivo` vai para o `openFile` da tela (.json, .dat ou uma polar); `acao=NOME` (ou `acao=A,B`) chama `command` da tela para cada nome,
 //! se ela tiver (abre um diálogo para o print, por exemplo). `clique=X,Y` clica no pixel (X, Y) quando a tela para de
@@ -21,11 +21,17 @@ pub const Args = struct {
     tab: ?usize = null, // aba aberta no começo (aba=N), se a tela tiver `selectTab`
     file: ?[:0]const u8 = null, // um arquivo para abrir, se a tela tiver `openFile`
     action: ?[:0]const u8 = null, // acao=NOME, se a tela tiver `command`
-    click: ?rl.Vector2 = null, // clique=X,Y: um clique no print, depois que a tela para de mudar
+    clicks: [max_clicks]Click = undefined, // clique=X,Y (ou dX,Y: o botão direito; vários com ";"): um por vez, cada um
+    click_count: usize = 0, // depois que a tela para de mudar
+    after: ?f64 = null, // apos=SEGUNDOS: o print sai nesse tempo mesmo com a rodada no meio (o progresso, os parciais)
 };
 
+/// um clique do print: onde e se é o botão direito
+pub const Click = struct { at: rl.Vector2, right: bool = false };
+const max_clicks = 4;
+
 /// o clique do print (`clique=X,Y`) que o próximo quadro recebe
-var injected_click: ?rl.Vector2 = null;
+var injected_click: ?Click = null;
 
 /// lê a linha de comando (o primeiro item é o nome do programa)
 pub fn parseArgs(argv: []const [:0]const u8) !Args {
@@ -44,8 +50,17 @@ pub fn parseArgs(argv: []const [:0]const u8) !Args {
         } else if (std.mem.startsWith(u8, value, "aba=")) {
             args.tab = std.fmt.parseInt(usize, value[4..], 10) catch return error.BadArgs;
         } else if (std.mem.startsWith(u8, value, "clique=")) {
-            const cut = std.mem.indexOfScalar(u8, value, ',') orelse return error.BadArgs;
-            args.click = .{ .x = std.fmt.parseFloat(f32, value[7..cut]) catch return error.BadArgs, .y = std.fmt.parseFloat(f32, value[cut + 1 ..]) catch return error.BadArgs };
+            var list = std.mem.splitScalar(u8, value[7..], ';');
+            while (list.next()) |item| {
+                if (args.click_count >= max_clicks) return error.BadArgs;
+                const right = std.mem.startsWith(u8, item, "d");
+                const point = if (right) item[1..] else item;
+                const cut = std.mem.indexOfScalar(u8, point, ',') orelse return error.BadArgs;
+                args.clicks[args.click_count] = .{ .right = right, .at = .{ .x = std.fmt.parseFloat(f32, point[0..cut]) catch return error.BadArgs, .y = std.fmt.parseFloat(f32, point[cut + 1 ..]) catch return error.BadArgs } };
+                args.click_count += 1;
+            }
+        } else if (std.mem.startsWith(u8, value, "apos=")) {
+            args.after = std.fmt.parseFloat(f64, value[5..]) catch return error.BadArgs;
         } else if (std.mem.startsWith(u8, value, "rolar=")) {
             args.scroll = std.fmt.parseFloat(f32, value[6..]) catch return error.BadArgs;
         } else if (std.mem.indexOfScalar(u8, value, 'x')) |cut| {
@@ -66,7 +81,7 @@ fn isFile(value: []const u8) bool {
 pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     const arena = init.arena.allocator();
     const argv = try init.minimal.args.toSlice(arena);
-    var args = parseArgs(argv) catch {
+    const args = parseArgs(argv) catch {
         std.debug.print("uso: {s} [LxA]\n     {s} --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME]\n", .{ title, title });
         std.process.exit(2);
     };
@@ -100,16 +115,18 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     }
 
     var frames: usize = 0;
+    var next_click: usize = 0;
     var quiet: usize = 0; // quadros seguidos sem rodada: as vistas 3D desenham na textura o tamanho do quadro anterior
     while (!rl.windowShouldClose()) : (frames += 1) {
         drawFrame(&ui, screen, shot);
         // o print sai no 3º quadro, ou depois, quando a tela para de mudar sozinha (`busy`: uma rodada pedida com
         // acao=rodar), até uns minutos de quadros, e mais três quadros para as vistas 3D do resultado
-        const settling = @hasDecl(@TypeOf(screen.*), "busy") and screen.busy() and frames < 200_000;
+        const late = if (args.after) |seconds| rl.getTime() >= seconds else false;
+        const settling = @hasDecl(@TypeOf(screen.*), "busy") and screen.busy() and frames < 200_000 and !late;
         quiet = if (settling) 0 else quiet + 1;
-        if (shot and frames >= 3 and quiet >= 3 and args.click != null) {
-            injected_click = args.click;
-            args.click = null;
+        if (shot and frames >= 3 and quiet >= 3 and next_click < args.click_count) {
+            injected_click = args.clicks[next_click];
+            next_click += 1;
             quiet = 0;
             continue;
         }
@@ -131,10 +148,12 @@ fn drawFrame(ui: *widgets.Ui, screen: anytype, shot: bool) void {
     const height: f32 = @floatFromInt(rl.getScreenHeight());
     ui.beginFrame();
     if (shot) ui.wheel = 0; // o print não rola sozinho
-    if (injected_click) |at| { // o clique=X,Y do print
-        ui.mouse = at;
-        ui.clicked = true;
-        ui.held = true;
+    if (injected_click) |click| { // o clique=X,Y do print
+        ui.mouse = click.at;
+        if (click.right) ui.right_clicked = true else {
+            ui.clicked = true;
+            ui.held = true;
+        }
         injected_click = null;
     }
     rl.beginDrawing();

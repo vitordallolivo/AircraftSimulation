@@ -713,7 +713,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `buildMesh:149`, `balance:245`, `loadAircraft:257`, `load:270`, `fromBytes:281`, `fillAirfoilFiles:299`, `parseDat:334`, `findExample:366`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
-  tipos `Kind:36`, `Page:302`
+  tipos `Kind:36`, `Page:318`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
   tipos `Waiter:29`, `Bridge:45`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da antiga GUI PyQt.
@@ -729,8 +729,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/ui/**
 
 - `aerosim/gui/ui/app.zig` — O que os dois programas têm igual em volta da tela: a linha de comando, a janela e o laço de desenho, com o
-  tipos `Args:16`
-  fn `parseArgs:31`, `run:66`, `runBrowser:166`, `openFromPage:195`
+  tipos `Args:16`, `Click:30`
+  fn `parseArgs:37`, `run:81`, `runBrowser:185`, `openFromPage:214`
 - `aerosim/gui/ui/browser_io.zig` — O `std.Io` das telas no navegador. No Zig 0.16 o `std.Io.Threaded` não compila para emscripten (o mesmo motivo
 - `aerosim/gui/ui/checks.zig` — O diagnóstico de uma etapa, como o `ChecksPanel` da GUI em Python: uma linha por verificação (estado, o que se
   tipos `Check:10`, `ChecksPanel:44`
@@ -756,7 +756,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `fieldText:7`, `numberText:12`, `niceStep:28`, `decimalsFor:38`, `significant:95`
 - `aerosim/gui/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
   tipos `Series:24`, `Marker:57`, `Cloud:79`, `Axes:87`, `Frame:97`, `Cell:214`, `ExportKind:291`
-  fn `lines:118`, `table:222`, `tableHeight:257`, `pickGroup:338`, `clearPick:344`, `overlayActive:474`, `overlay:479`, `drawMarker:746`, `cloud:800`, `ramp:819`, `colorBar:835`, `drawFrame:855`
+  fn `lines:118`, `table:222`, `tableHeight:257`, `pickGroup:338`, `clearPick:344`, `overlayActive:485`, `overlay:490`, `drawMarker:826`, `cloud:880`, `ramp:899`, `colorBar:915`, `drawFrame:935`
 - `aerosim/gui/ui/scroll.zig` — A área rolável: tudo o que não cabe na altura (a barra lateral, a coluna dos gráficos) rola pela roda do mouse ou
   tipos `ScrollArea:13`
 - `aerosim/gui/ui/stage.zig` — As peças que toda etapa do dimensionamento repete, como o `StagePage` da GUI em Python: a barra de requisitos

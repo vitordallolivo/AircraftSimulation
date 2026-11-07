@@ -107,7 +107,7 @@ pub const Screen = struct {
             screen.files.showSave("Salvar avião (.json)", std.fs.path.dirname(opened.path) orelse ".", &.{".json"}, std.fs.path.basename(opened.path));
         } else if (std.mem.eql(u8, name, "rodar")) {
             screen.pending_run = true;
-        } else if (std.mem.startsWith(u8, name, "etapa:")) {
+        } else if (std.mem.startsWith(u8, name, "etapa:") or std.mem.startsWith(u8, name, "campo:")) {
             screen.pending_stage_len = @min(name.len, screen.pending_stage.len);
             @memcpy(screen.pending_stage[0..screen.pending_stage_len], name[0..screen.pending_stage_len]);
         } else if (std.mem.startsWith(u8, name, "montagem:")) { // um botão da Montagem pelo nome, para os prints

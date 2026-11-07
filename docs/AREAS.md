@@ -52,7 +52,7 @@ núcleo) juntas. A missão completa continua, encadeando as etapas. O V-n **não
 | Motores e montagem | — | — | ✅ | — |
 | Estudo e ponto de projeto | — | — | ✅ | — |
 | Tração | equilíbrio de rotação | — | ✅ Zig (`thrust.zig`) | — |
-| Decolagem | corrida analítica | 6GDL + otimizador do profundor (`takeoff_opt`) | 🟡 (Missão "só decolagem" e "MTOW" em Zig) | `takeoff.py`, Missão "só decolagem" e "MTOW" |
+| Decolagem | corrida analítica | 6GDL + otimizador do profundor (`takeoff_opt`) | 🟡 (Missão → Decolagem, o MTOW em cada xCG de E&C, em Zig) | `takeoff.py`, Missão → Decolagem |
 | Subida | RC e γ × V | subida simulada | 🟡 (a simulada está errada: γ obtido não segue o pedido) | `climb.py` |
 | Voo nivelado e envelopes | potências e trações; envelopes × altitude | modelo completo | ✅ Zig (`envelope.zig`) | `envelope.py` e o envelope de `performance.py` |
 | Avião montado | polar, potências, subida, planeio, curvas, V-n e bateria por altitude (`simple_perf`) | — | ✅ Zig (`performance.zig`) | — |
@@ -114,7 +114,7 @@ de cauda e na fuselagem, e a tabela de casos (de onde veio cada carga).
 |---|---|---|---|
 | D1 | Diagrama V-n | `performance.py` (`_vn`), `envelope.py` (sem aba), e a subaba de Cargas (T13) | um V-n só, no núcleo, dono Cargas; Desempenho lê |
 | D2 | Curvas: raio mínimo | `turn.py` (sem aba) e a Missão "curvas: raio mínimo" (mesmo `evaluate_turn`, laço repetido) | subaba Curva única (analítica + numérica) |
-| D3 | Decolagem | `takeoff.py` (sem aba), Missão "só decolagem" e "MTOW", e `design/flight.py` (todos usam `takeoff_opt`) | subaba Decolagem única, com o MTOW como caixa de marcar |
+| D3 | Decolagem | `takeoff.py` (sem aba), Missão → Decolagem, e `design/flight.py` (todos usam `takeoff_opt`) | subaba Decolagem única, com o MTOW como caixa de marcar |
 | D4 | Envelope de voo | `envelope.py`/`envelope.zig` ("Envelope_main original") e `performance.py`/`performance.zig` (`simple_perf`) | subaba Voo nivelado e envelopes, com todos os envelopes plotados |
 | D5 | Polar estática | `polar.py` (sem aba) e Aerodinâmica → Analisar (avião completo) | conferir quem usa `polar.py` |
 | D6 | Distribuição ao longo da envergadura | T09 (Aerodinâmica) e Cargas → Distribuição (T12) | T09 fecha com a subaba de Cargas (ou a Aerodinâmica mostra o mesmo `LoadResult`) |
