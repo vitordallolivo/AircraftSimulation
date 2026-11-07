@@ -72,7 +72,6 @@ pega numa asa alta de um avião com o motor baixo. A EH e a EV que ficam atrás,
 | `modifiers/mod.zig` | `stripOf` faz a faixa de cada painel. A esteira é a média de uma grade da faixa, do tamanho de `Params.refinement` (`mod.slipstreamGrid`); os pontos fora do tubo não somam nada |
 | `root.zig` → `aerosim_tube_panel_hits` | fração de cada painel dentro do tubo do motor `idx`; `T = 0` dá o cilindro, `T > 0` o tubo que contrai |
 | `root.zig` → `aerosim_tube_point_hits` | se cada ponto dado está dentro do tubo (para objetos: fuselagem, trem, carga) |
-| `aerosim/aero/collision.py` | `tube_hits(backend, ac)`: lista do que cada hélice pega, superfícies (fração de área) e objetos (fração de vértices do modelo da GUI) |
 
 ## Testes
 
@@ -80,22 +79,3 @@ pega numa asa alta de um avião com o motor baixo. A EH e a EV que ficam atrás,
 - ponto dentro, fora, à frente do disco e além do comprimento;
 - faixa inteira dentro, inteira fora, metade dentro e acima da linha de tração;
 - tubo que contrai, com o raio vindo de quem chama.
-
-Em Python, os testes estão em `tests/aero/test_collision.py`:
-- o cilindro do Convencional pega parte da asa, a EH, a EV e a fuselagem;
-- uma superfície acima da linha de tração fica fora;
-- numa pusher, só o que está atrás;
-- o tubo que contrai pega menos;
-- num bimotor, a colisão é simétrica.
-
-## Como chamar
-
-```python
-from aerosim.aero.collision import tube_hits
-from aerosim.backend.zig import ZigBackend
-from aerosim.model.templates import conventional
-
-ac = conventional()
-for h in tube_hits(ZigBackend(), ac):          # o que cada hélice pega: superfícies (fração da área) e objetos
-    print(h)
-```

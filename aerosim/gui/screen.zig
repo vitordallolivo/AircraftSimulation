@@ -1,7 +1,6 @@
-//! A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt
-//! (`aerosim/gui/main_window.py`). As abas vêm do Python (`python_bridge.zig`, pedido "layout"): cada subaba é uma
-//! `Page` (`page.zig`), uma análise do Simulation Manager ou uma etapa da sprint, que a tela desenha a partir do que
-//! o Python descreve. A Montagem é daqui mesmo: o avião aberto em 3D (`assembly.zig`), com o CG.
+//! A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da antiga GUI PyQt.
+//! As abas vêm de `manager.layout` (`aerosim/manager/manager.zig`): cada subaba é uma
+//! `Page` (`page.zig`), uma análise do Simulation Manager ou uma etapa da sprint. A Montagem é daqui mesmo: o avião aberto em 3D (`assembly.zig`), com o CG.
 const std = @import("std");
 const rl = @import("raylib");
 const ui_kit = @import("ui");

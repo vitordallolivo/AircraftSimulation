@@ -1,178 +1,23 @@
-# tools — ferramentas de linha de comando
+# tools — ferramentas do repositório
 
-Scripts que usam o programa (manager → núcleo) sem a GUI: imprimem, gravam tabelas e gráficos e servem de teste
-rápido. Nenhum faz conta própria. O cálculo é do núcleo (`core/`) ou dos métodos de `aerosim/aero`; a ferramenta
-orquestra e desenha. O que elas gravam (gráficos, tabelas, voos) fica fora do git, em `perfis/` ou na pasta que você
-passar, e só as figuras escolhidas vão para `docs/img`.
-
-## Otimizador (`tools/aeroopt.py`)
-
-Roda um problema do aeroopt (`.opt.json`) pelo núcleo e imprime o melhor ponto, as grandezas e as restrições; com
-`--png`, grava a convergência. `--isolar asa` (ou chaves e grupos separados por vírgula) deixa livres só essas
-variáveis. Com `--etapas --sensibilidade`, no fim imprime a sensibilidade do melhor: a inclinação e a curvatura da
-nota em cada contínua livre, tiradas dos pontos que a busca já avaliou, e a nota prevista a ±10 % da faixa
-(`--sensibilidade eixos` ou `morris` troca o método; `--tolerancia 1` dá a perda com 1 % em cada medida; `--limites`
-refaz o melhor com cada limite do problema mudado). Detalhes no [README do aeroopt](../aeroopt/README.md).
-
-```sh
-python tools/aeroopt.py --exemplo perfis/exemplo.opt.json
-python tools/aeroopt.py perfis/exemplo.opt.json --isolar asa --png perfis/convergencia.png
-python tools/aeroopt.py problema.opt.json --etapas --projeto p.json --sem-6gdl --sensibilidade
-```
-
-## Rotação na pista (`tools/rotacao.py`)
-
-Responde se o comando de arfagem consegue levantar o nariz na corrida, pelas duas contas que o projeto tem: a
-analítica da sprint e a do núcleo (o mesmo modelo da decolagem 6GDL). O avião é o do exemplo do aeroopt, com a
-categoria e os valores passados. A ferramenta imprime a velocidade em que cada conta roda o avião, a de sair do chão,
-cada momento em torno do trem principal (o aerodinâmico, o da sustentação, o da tração e o do peso) e o C_mδ das
-duas. Serve para achar qual termo segura o nariz no chão. `--png` desenha o momento pela velocidade e o C_m do núcleo
-pelo curso do comando; `--varre chave=início:fim:pontos` repete a conta mexendo uma variável.
-
-```sh
-python tools/rotacao.py "asa voadora" tail.aileron_chord=0.48 --png perfis/rotacao.png
-python tools/rotacao.py monoplano --varre rules.main_gear_aft=0:0.1:6
-```
-
-## Paralelismo do otimizador (`tools/pipeline_bench.py`)
-
-Compara as formas de rodar o processo em etapas do aeroopt em paralelo. O mesmo lote de configurações roda em série, em
-threads e em processos (fork, spawn, forkserver), e a ferramenta imprime o tempo de cada etapa e o ganho sobre a série.
-Ela também confere se cada estratégia deu o mesmo resultado da série. Da fração que não paraleliza (Karp e Flatt)
-sai quanto de cada etapa fica preso ao GIL, a trava do Python que deixa só uma thread rodar código Python por vez.
-`--png` grava o ganho por etapa. Com `--geracoes N` o lote passa N vezes, como nas gerações do otimizador: os
-processos ficam vivos a rodada inteira (`aerosim/parallel`), e as estratégias com "-novo" no nome abrem um pool novo
-a cada etapa, como era antes, para mostrar o custo de nascer. `--sintetico S` troca as contas do avião pelos dados de
-teste do aeroopt (`aeroopt/synthetic.py`), com S segundos por ponto, e mede só o paralelismo.
-
-```sh
-python tools/pipeline_bench.py --exemplo
-python tools/pipeline_bench.py --exemplo --geracoes 4 --estrategias serie,threads,spawn,spawn-novo
-python tools/pipeline_bench.py --projeto p.json --problema q.opt.json --configs 12 --processos 2,4 --png perfis/bench.png
-```
-
-## Banco dos otimizadores (`tools/banco_otimizadores.py`)
-
-Diz qual busca do aeroopt acha o melhor avião, com quantos pontos, em que tipo de problema. Serve de linha de base
-para escolher o otimizador padrão e para medir um método novo contra os de hoje. Tudo roda nos dados de teste do
-aeroopt (`aeroopt/synthetic.py`), que têm o ótimo sabido e levam segundos, em três formas de problema: a tigela, em
-que as variáveis não se misturam; a acoplada, em que andar num eixo por vez é ruim porque as variáveis andam juntas;
-e a multimodal, com mínimos locais onde a busca local para. Para cada forma, método e semente sai a fração do ótimo
-(o maior MTOW que fecha sobre o do ótimo) ao longo dos pontos. `--voa` junta a etapa voa no caso com remédio de
-`tools/metodos_voa.py`, e `--png` grava as curvas e as barras.
-
-```sh
-python tools/banco_otimizadores.py --sementes 5 --avaliacoes 48 --variaveis 6 --voa --png perfis/banco.png
-python tools/banco_otimizadores.py --formas acoplada --metodos coordenadas,cma-es --sementes 10
-```
-
-## Aerodinâmica e voo com cada modelo (`tools/aero/`)
-
-Detalhes, comandos e resultados no [README da pasta](aero/README.md).
-
-| ferramenta | o que faz |
-|---|---|
-| `aero/coeficientes.py` | os coeficientes de aviões simples, só superfícies, a 12 m/s, por todos os métodos: faixas, linha sustentadora (Phillips e Snyder; Goates e Hunsaker), lltdrek, ASB, AVL. Distância até qualquer referência, matriz entre os métodos, varredura de malha e de V, perfil por `.dat` |
-| `aero/decolagem.py` | a decolagem da GUI reavaliada em cada instante com cada método, no mesmo estado: o erro de cada coeficiente no tempo |
-| `aero/missao.py` | a decolagem ou a missão inteira **voada** com cada modelo (`ac.sim.aero_model`). Erro ao longo do percurso contra qualquer referência, mapa de proximidade dos voos, tempo de conta, voos em paralelo, `--carregar` sem voar de novo |
-| `aero/casos.py` | os aviões de teste (retangulares, trapezoidal, enflechada, diedro, torcida, asa + EH, convencional) |
-
-```sh
-python tools/aero/coeficientes.py --matriz --pasta perfis/aero                       # coeficientes de todos os métodos
-python tools/aero/decolagem.py --puro --metodos nucleo_gh,lltdrek,asb_vlm,avl --pasta perfis/decolagem
-python tools/aero/missao.py --puro --ref faixas --ref llt_gh --pasta perfis/missao    # missão com cada modelo
-python tools/aero/missao.py --carregar perfis/missao --ref tabela:avl                 # outra referência, sem voar
-```
-
-### Mapas de proximidade
-
-Os três mapas medem o quanto cada método fica perto de cada outro, em três níveis.
-
-```sh
-python tools/aero/coeficientes.py --matriz --pasta perfis/aero                  # coeficientes (matriz.png)
-python tools/aero/missao.py --puro --pasta perfis/missao                         # missão voada (matriz.png)
-python tools/aero/missao.py --puro --analise decolagem --pasta perfis/decolagem  # decolagem voada
-python tools/aero/missao.py --carregar perfis/missao                             # refaz o mapa sem voar de novo
-```
-
-**Coeficientes** (`coeficientes.py --matriz`): a mediana de |erro| (%) da linha tomando a coluna como referência, em
-todos os casos e coeficientes. Não é simétrica, porque o erro relativo divide pelo valor da referência.
-
-![proximidade dos métodos nos coeficientes](../docs/img/aero_matriz.png)
-
-**Missão voada** (`missao.py`): o desvio médio do percurso (m) entre cada par de voos. É simétrico e independe do
-tempo.
-
-![proximidade dos voos na missão](../docs/img/aero_missao_matriz.png)
-
-**Decolagem voada** (`missao.py --analise decolagem`):
-
-![proximidade dos voos na decolagem](../docs/img/aero_decolagem_matriz.png)
-
-**Leitura:**
-- **Na missão, três grupos:**
-  1. o núcleo (faixas, a tabela das faixas e as duas linhas sustentadoras), a menos de 1 m entre si;
-  2. AVL, VLM e buildup do ASB, a ~1,5 m do núcleo;
-  3. o lltdrek, sozinho, a ~3 m.
-- **O lltdrek muda de lugar conforme o nível:** nos coeficientes da asa sozinha, ele fica a ~1 % da nossa linha
-  sustentadora; no avião inteiro em voo, se afasta, porque o $`C_m`$ dele com a cauda é outro e ele não trata β.
-
-### Tempo de conta
-
-![tempo de conta por modelo na missão](../docs/img/aero_tempo.png)
-
-Medido em sequência (`missao.py --jobs 1`), na missão de 165 s do `conventional`, cada modelo sozinho:
-
-| modelo | tempo |
-|---|---|
-| faixas (`faixas`) | 4 s |
-| faixas refinadas (`faixas_fino`) | 17 s |
-| linha sustentadora de Phillips e Snyder (`llt`) | 261 s |
-| linha sustentadora de Goates e Hunsaker (`llt_gh`) | 258 s |
-| tabelas dos métodos de fora (`tabela:*`, com o cache em disco) | 3–9 s cada |
-| **os 9 modelos** | **9 min 37 s** em sequência; 5 min 15 s em paralelo (`--jobs`, 4 núcleos) |
-
-A linha sustentadora custa ~65× as faixas. Antes do cache da geometria, a missão levava 52 min com o `llt_gh` e
-10 min com o `llt` (numa máquina anterior).
-
-O que deixou a linha sustentadora rápida está em `core/OTIMIZACOES.md`.
-
-## Validação
-
-| ferramenta | o que faz |
-|---|---|
-| `validacao/navion.py` | o Ryan Navion montado com os números da NASA TN D-6643 e as derivadas de cada método contra as tiradas do voo |
-
-## Cargas e modificadores
-
-| ferramenta | o que faz |
-|---|---|
-| `span_load.py` | a carga ao longo das superfícies num ponto de operação, com e sem um modificador (ex.: a esteira) |
-| `load_view.py` | a vista 3D da carga (superfícies pintadas, setas de força e de induzida, esteira); janela ou PNG (`xvfb-run`) |
-| `modcheck.py` | a decolagem com os modificadores do avião e sem cada um, um de cada vez |
-| `probe.py` | o módulo de modificadores do núcleo chamado direto, sem simulação: CSV e gráfico |
-
-## Desempenho do programa
-
-| ferramenta | o que faz |
-|---|---|
-| `time_profile.py` | onde uma análise gasta o tempo, no Python e no núcleo ao mesmo tempo (py-spy; `--exato` com o Callgrind): tabela por função e por módulo, flame graph |
-| `opt_matrix.py` | as variantes do núcleo em avaliação (`-Dopt`), medidas por tempo ou por instruções e comparadas com o núcleo de sempre |
-
-## Regressão, mapa do código e figuras
+Estes scripts montam o site e o pacote, refazem o mapa do código e rodam os checks. Nenhum deles faz conta do avião:
+o cálculo fica no núcleo (`core/`) e nas telas em Zig. O que eles gravam fica fora do git (`zig-out/`, `dist/` ou a
+pasta que você passar), com exceção do `docs/MAP.md`, que entra no git.
 
 | ferramenta | o que faz |
 |---|---|
 | `checks/run.py` | os checks: núcleo, AeroDrive, mapa do código, regressão bit a bit dos exemplos contra a `main`, testes por área (`--tudo` inclui os lentos). Ver `checks/README.md` |
 | `codemap.py` | refaz `docs/MAP.md` a partir do código (`--check` só confere) |
+| `grafo.py` | o mapa do código do site: o grafo das funções de Zig e de Python, com quem chama quem |
 | `livro.py` | monta o livro do site (`livro.html`): todos os `.md` do repositório como capítulos, com equações (KaTeX), diagramas (mermaid) e imagens, mais o tracking ao lado |
-| `tracking.py` | gera a página do tracking (`tracking.html`) das tabelas do Quadro do `docs/TRACKING.md`, com o modelo `tracking_page.html` (`--check` só confere as tabelas; `--feito`, `--estado` e `--issue` mudam o .md, o `--issue` é o que a Action `tracking.yml` usa) |
-| `capturas.py` | fotos de todas as abas (roda cada simulação com os padrões) |
-| `plot_comparativo.py` | as figuras das abas Aerodinâmica e Estabilidade, iguais às da GUI |
+| `tracking.py` | gera a página do tracking (`tracking.html`) das tabelas do Quadro do `docs/TRACKING.md` (`--check` só confere as tabelas; `--feito`, `--estado` e `--issue` mudam o .md, o `--issue` é o que a Action `tracking.yml` usa) |
+| `web_build.py` | compila o AeroDrive, o aerosim e o aeroopt para o navegador e monta o site |
+| `package.py` | monta o programa instalável (AppImage do Linux, instalador do Windows) |
+| `templates_zig.py` | gera `aerosim/model/templates.zig`, os aviões de exemplo da Montagem |
 
-## Exemplos de projeto da sprint
-
-| ferramenta | o que faz |
-|---|---|
-| `sprint_pasta.py` | converte um projeto antigo (um `.json` só) para a pasta nova, um arquivo por asa |
-| `sprint_tres_caudas.py` | uma asa com três opções de superfícies, no formato de pasta |
+```sh
+python tools/checks/run.py            # os checks rápidos
+python tools/codemap.py               # refaz o mapa do código
+python tools/web_build.py             # o site em zig-out/site
+python tools/package.py               # o pacote do Linux em dist/
+```

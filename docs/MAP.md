@@ -20,10 +20,6 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   `avl_exe:44`, `has_optvl:51`, `class AvlTranslator:68`, `class AvlSolver:136`
 - `aerosim/aero/base.py` — Polar e derivadas comuns a todos os solvers: cada um só implementa `evaluate` (pontos de voo
   `class AeroSolverBase:23`
-- `aerosim/aero/collision.py` — Quem o tubo de cada hélice atinge: superfícies (fração da área de cada uma) e objetos (fuselagem, tubos de cauda,
-  `class Hit:23`, `tube_hits:30`
-- `aerosim/aero/flight_table.py` — Tabela aerodinâmica de voo a partir de qualquer método (`IAeroSolver`): o avião voa com ela no núcleo
-  `table:29`
 - `aerosim/aero/geometry.py` — Utilidades dos tradutores: eixos dos solvers externos, viscosidade/Reynolds, tabela de volumes
   `nu_air:34`, `reynolds:38`, `to_xz_up:42`
 - `aerosim/aero/llt_solver.py` — A linha sustentadora do núcleo (`core/src/loads/llt.zig`) como método de polar e derivadas: a conta da simulação
@@ -32,8 +28,6 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   `class LltdrekTranslator:89`, `class LltdrekSolver:138`
 - `aerosim/aero/load_geometry.py` — Geometria das setas da vista de carga (sem Qt, sem conta aerodinâmica): setas com ponta (linhas + cones).
   `arrow_meshes:10`
-- `aerosim/aero/load_plots.py` — Gráficos de carga ao longo da envergadura a partir da entrada padrão (`aerosim.interfaces.loads.LoadResult`):
-  `span_figure:15`
 - `aerosim/aero/sections.py` — Polar 2D dos perfis (camada abaixo dos métodos 3D): uma fonte por `ISectionPolar` e um cache só.
   `model_polar:58`, `neuralfoil_polar:69`, `read_polar_file:77`, `class ModelSection:115`, `class NeuralFoilSection:122`, `class FileSection:138`, `cache_dir:165`, `airfoil_key:169`, `clear_cache:221`, `section_polar:232`, `write_lltdrek_polar:254`
 - `aerosim/aero/service.py` — Polar da aeronave para quem precisa dela, com cache (a mesma pergunta não roda de novo).
@@ -112,9 +106,6 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 ## Python · `aerosim/gui`
 
 - `aerosim/gui/__init__.py` — GUI em PyQt6 + pyqtgraph: aba de configuração 3D e uma aba por simulação.
-- `aerosim/gui/__main__.py`
-- `aerosim/gui/app.py` — Ponto de entrada da GUI:  python -m aerosim.gui [aeronave.cfg|.json|.xlsx | projeto.json]
-  `main:26`
 - `aerosim/gui/main_window.py` — Janela principal: uma aba por área (na ordem do projeto: dimensionamento, aerodinâmica, estabilidade,
   `class MainWindow:28`, `class ProjectsDialog:365`
 - `aerosim/gui/state.py` — Estado compartilhado da GUI: a aeronave em edição, o catálogo e o Simulation Manager.
@@ -725,8 +716,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Kind:36`, `Page:302`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
   tipos `Waiter:29`, `Bridge:45`
-- `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da GUI PyQt
-  tipos `Screen:35`
+- `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da antiga GUI PyQt.
+  tipos `Screen:34`
 - `aerosim/gui/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos, exportar e a leitura do avião da Montagem.
 
 **aerosim/gui/tabs/**
@@ -828,35 +819,13 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 ## Ferramentas (`tools/`)
 
-- `tools/aeroopt.py` — Roda um problema do aeroopt (.opt.json) e mostra o resultado: o melhor ponto, as restrições e a convergência.
-- `tools/banco_otimizadores.py` — Banco de comparação dos otimizadores do aeroopt: qual busca acha o melhor avião, com quantos pontos, em que tipo de
-- `tools/capturas.py` — Fotos de todas as abas (roda cada simulação com os padrões).
 - `tools/codemap.py` — Mapa do código: gera docs/MAP.md a partir do próprio código (nunca editar o MAP.md à mão).
 - `tools/grafo.py` — Grafo do código: lê o Zig e o Python do repositório e devolve quem é quem e quem chama quem, sem lista feita à mão.
 - `tools/livro.py` — Livro do projeto: todos os .md do repositório num site só, como capítulos de um livro, ao lado do tracking.
-- `tools/load_view.py` — Vista 3D da carga aerodinâmica de um avião num ponto de operação: as superfícies pintadas pela carga alar local
-- `tools/metodos_voa.py` — Qual busca da etapa voa (E&C) do aeroopt acha mais rápido um avião que voa? Compara os métodos de FLY_METHODS.
-- `tools/modcheck.py` — Roda um avião com os modificadores dele e sem cada um (um de cada vez) e mostra a diferença na decolagem.
-- `tools/opt_matrix.py` — Mapa das otimizações em avaliação do núcleo (`-Dopt`): compila cada combinação, mede e compara os resultados
 - `tools/package.py` — Monta o programa instalável: a tela inicial (o menu do site), o aerosim, o aeroopt e o AeroDrive numa pasta só,
-- `tools/pipeline_bench.py` — Compara as estratégias de paralelismo do processo em etapas do aeroopt: o mesmo lote de configurações roda em série,
-- `tools/plot_comparativo.py` — Figuras das abas Aerodinâmica e Estabilidade (PNG), iguais ao que a GUI mostra.
-- `tools/probe.py` — Sonda dos modificadores pela linha de comando: chama o módulo do núcleo (core/src/modifiers/) direto, sem
-- `tools/rotacao.py` — O comando de arfagem roda o avião na pista? A conta da sprint contra a do núcleo, termo a termo.
-- `tools/sementes.py` — A etapa voa (E&C) do aeroopt com sementes, inícios e partidas diferentes: todos caem no mesmo avião?
-- `tools/span_load.py` — Carga ao longo das superfícies (asa, EH, EV) num ponto de operação — velocidade, α e rotação dos motores — com e
-- `tools/sprint_pasta.py` — Exemplo: converte um projeto da sprint antigo (um .json só) para a pasta nova, um arquivo por asa.
-- `tools/sprint_tres_caudas.py` — Exemplo: uma asa só com três opções de superfícies, no formato de pasta (um arquivo por asa).
-- `tools/tecnicas.py` — Testes de otimização (G27): mede cada técnica candidata contra o código de hoje do núcleo, no mesmo caso e em
 - `tools/templates_zig.py` — Gera `aerosim/model/templates.zig`: os modelos padrão de `aerosim/model/templates.py` como o texto .json que o
-- `tools/time_profile.py` — Perfil de tempo: onde uma análise gasta o tempo, no Python e no núcleo Zig ao mesmo tempo.
 - `tools/tracking.py` — Tracking em HTML: as tabelas do Quadro do docs/TRACKING.md viram uma página só (sem nada para baixar).
 - `tools/web_build.py` — Monta o site do AircraftSimulation em zig-out/site/: a tela inicial (web/index.html) e os três programas em
-- `tools/aero/__init__.py`
-- `tools/aero/casos.py` — Perfis de teste da aerodinâmica: aviões simples, só superfícies (sem fuselagem e sem motor), para comparar os
-- `tools/aero/coeficientes.py` — Coeficientes de cada perfil de teste (tools/aero/casos.py) a uma velocidade (padrão 12 m/s), por método, e a
-- `tools/aero/decolagem.py` — O erro de cada modelo aerodinâmico ao longo de uma decolagem (fase A: sem mudar a simulação nem o AeroDrive).
-- `tools/aero/missao.py` — Voar a missão inteira (ou só a decolagem) com cada modelo aerodinâmico e comparar os voos (T65, fase B).
 - `tools/checks/doc_checks.py` — Documentação: o mapa do código (docs/MAP.md) tem de estar em dia com o código, e as tabelas do Quadro do
 - `tools/checks/golden.py` — Regressão bit a bit: retrata os aviões de exemplo no código atual e numa referência (um commit, padrão a `main`)
 - `tools/checks/pytest_checks.py` — Os testes Python por área: uma pasta de `tests/` por check, para saber qual área quebrou e quanto cada uma demora.
@@ -864,23 +833,20 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tools/checks/run.py` — Checks de regressão: confere que nada quebrou antes de um PR.
 - `tools/checks/snapshot.py` — Retrato numérico dos aviões de exemplo, para comparar duas versões do código bit a bit.
 - `tools/checks/zig_checks.py` — Fundação e AeroDrive: os testes do núcleo Zig e a compilação + testes do AeroDrive (que importa o núcleo).
-- `tools/validacao/navion.py` — Validação contra um avião real: o Ryan Navion (monomotor a pistão, anos 1940) montado com os números publicados e as
 
 ## Testes (`tests/`)
 
-- `tests/aero` — 60 testes em 9 arquivo(s)
-- `tests/aeroopt` — 78 testes em 8 arquivo(s)
-- `tests/core` — 34 testes em 9 arquivo(s)
+- `tests/aero` — 53 testes em 8 arquivo(s)
+- `tests/aeroopt` — 74 testes em 8 arquivo(s)
+- `tests/core` — 33 testes em 9 arquivo(s)
 - `tests/data` — 12 testes em 4 arquivo(s)
-- `tests/design` — 75 testes em 11 arquivo(s)
+- `tests/design` — 68 testes em 9 arquivo(s)
 - `tests/gui` — 23 testes em 1 arquivo(s)
 - `tests/manager` — 94 testes em 13 arquivo(s)
-- `tests/model` — 51 testes em 9 arquivo(s)
+- `tests/model` — 50 testes em 9 arquivo(s)
 - `tests/parallel` — 8 testes em 1 arquivo(s)
 - `tests/stability` — 16 testes em 2 arquivo(s)
 - `tests/test_architecture.py` — 5 testes em 1 arquivo(s)
-- `tests/tools` — 29 testes em 6 arquivo(s)
-- `tests/validation` — 2 testes em 1 arquivo(s)
 
 ## README por pasta
 
@@ -914,5 +880,4 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `launcher/README.md`
 - `tests/README.md`
 - `tools/README.md`
-- `tools/aero/README.md`
 - `tools/checks/README.md`

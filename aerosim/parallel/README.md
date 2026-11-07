@@ -20,8 +20,7 @@ tudo de novo) e para mandar cada item de um lado para o outro (*pickle*).
 
 `SerialExecutor` roda na linha de quem chama: é a referência e o que se usa com um trabalhador só. `ThreadExecutor`
 serve para contas que vivem no núcleo. `ProcessExecutor` serve para contas com muito Python, e é o padrão do
-aeroopt. A ferramenta `tools/pipeline_bench.py` mede as três no mesmo lote e diz quanto de cada etapa fica preso ao
-GIL.
+aeroopt.
 
 ## O pool que dura a rodada
 

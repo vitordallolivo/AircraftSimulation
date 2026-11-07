@@ -2,8 +2,7 @@
 
 Esta pasta transforma a geometria do avião (superfícies, perfis, fuselagem e comandos) no que ele faz no ar: a polar
 ($`C_L`$, $`C_D`$ e $`C_m`$ em função de α), as derivadas de estabilidade, o estol, o L/D máximo e o ponto neutro. Com
-ela se escolhe a asa (reta ou trapezoidal, com ou sem washout), se confere um método de cálculo contra outro, se gera
-a tabela com que a simulação 6GDL pode voar e se tira a carga ao longo da envergadura para a estrutura. Também se vê
+ela se escolhe a asa (reta ou trapezoidal, com ou sem washout), se confere um método de cálculo contra outro, e se tira a carga ao longo da envergadura para a estrutura. Também se vê
 quanto um winglet ou uma placa de ponta ganha de arrasto induzido e se isso paga o atrito que ele traz.
 
 Todo método recebe o mesmo modelo universal do avião e devolve a mesma polar. Por isso a aba **Aerodinâmica** compara
@@ -19,7 +18,6 @@ flowchart TB
     end
     S --> P["AeroPolar<br/>C_L, C_D, C_m, derivadas"]
     P --> MT["polar_metrics<br/>estol, L/D máx, ponto neutro"]
-    P --> FT["flight_table<br/>o núcleo voa com ela"]
     P --> GUI["aba Aerodinâmica"]
 ```
 

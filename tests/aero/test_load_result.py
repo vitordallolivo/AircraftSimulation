@@ -5,7 +5,6 @@ import os
 import numpy as np
 import pytest
 
-from aerosim.aero.load_plots import span_figure
 from aerosim.aero.span_loads import LoadCase, compute, to_result
 from aerosim.interfaces.loads import LoadResult, SpanDistribution, SurfaceField, VectorLayer
 from aerosim.model import modifiers as mods
@@ -63,14 +62,6 @@ def test_triangles_from_quads_and_tris():
     assert tri.shape == (2, 3) and list(src) == [0, 0]
     t = fake_cfd().field
     assert t.triangles()[0].shape == t.faces.shape
-
-
-def test_plots_take_any_method(backend, tmp_path):
-    _, _, res = core_result(backend)
-    fig = span_figure([("núcleo", res), ("CFD de teste", fake_cfd())], fields=("carga", "L", "alpha_ef"))
-    p = tmp_path / "f.png"
-    fig.savefig(p)
-    assert p.stat().st_size > 10000
 
 
 def test_3d_view_takes_any_method(backend, tmp_path):

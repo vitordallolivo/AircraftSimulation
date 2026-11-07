@@ -7,7 +7,7 @@ WebAssembly (AeroDrive, aerosim e aeroopt), mais o livro com todos os .md e o tr
     python -m http.server -d zig-out/site 8000   # e abrir http://localhost:8000
 
 O aerosim pede as contas aos managers em Python, e no navegador quem roda o Python é o Pyodide. Por isso o site leva
-também, para o aerosim: o Pyodide com o numpy e o scipy (pasta pyodide/), o pacote aerosim sem a GUI PyQt mais a
+também, para o aerosim: o Pyodide com o numpy e o scipy (pasta pyodide/), o pacote aerosim mais a
 pasta data (aerosim-python.zip), o núcleo como side module do emscripten (aerosim-core.so, que o mesmo `ctypes` do PC
 carrega) e a página que carrega tudo isso num iframe (aerosim-python.html). O Pyodide sai do release dele no GitHub e o side module é
 ligado pelo emsdk da mesma versão do emscripten do Pyodide; os dois são baixados uma vez para zig-out/cache-web (ou
@@ -145,7 +145,7 @@ def build_core(emsdk: str) -> str:
 
 
 def python_archive(target: str) -> None:
-    """o pacote aerosim (sem a GUI, que é PyQt) e a pasta data, como estão no git, num zip para o Pyodide abrir"""
+    """o pacote aerosim e a pasta data, como estão no git, num zip para o Pyodide abrir"""
     tracked = subprocess.run(["git", "ls-files", "aerosim", "data"], cwd=ROOT, check=True, capture_output=True,
                              text=True).stdout.split()
     files = [name for name in tracked if name.startswith("data/")

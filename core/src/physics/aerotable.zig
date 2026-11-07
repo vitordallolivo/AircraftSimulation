@@ -1,5 +1,5 @@
 //! Modelo aerodinâmico por tabela (Params.aero_model = 2): os coeficientes do avião inteiro vêm de `Params.aero_tab`,
-//! montada por qualquer método (VLM, AVL, lltdrek, o próprio núcleo...; `aerosim/aero/flight_table.py`).
+//! montada por qualquer método (VLM, AVL, lltdrek, o próprio núcleo...).
 //!
 //! Por instante, com α = atan2(w, u), β = asin(v / V) e as taxas adimensionais p̂ = p b/2V, q̂ = q c/2V, r̂ = r b/2V:
 //!     C_L = C_L(α) + C_Lq q̂ + C_Lδe δe              C_D = C_D(α)              C_m = C_m(α) + C_mq q̂ + C_mδe δe

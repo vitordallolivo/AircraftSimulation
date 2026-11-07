@@ -118,17 +118,3 @@ def test_panel_states_show_the_slipstream(backend):
     assert P1["L"][wing].sum() > P0["L"][wing].sum()
     qS = 0.5 * ac.environment.rho * 100.0 * build_model(ac).S
     assert P1["L"].sum() == pytest.approx(c1["CL"] * qS, rel=0.05)
-
-
-def test_span_load_tool(tmp_path):
-    import subprocess
-    import sys
-    import os
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    out = tmp_path / "c.csv"
-    r = subprocess.run([sys.executable, os.path.join(root, "tools", "span_load.py"),
-                        os.path.join(root, "data", "aircraft", "Bimotor_convencional_tubo_cauda_em_V.json"),
-                        "--com", "esteira.disco", "--csv", str(out), "--png", str(tmp_path / "c.png")],
-                       capture_output=True, text=True)
-    assert r.returncode == 0, r.stderr
-    assert "sustentação =" in r.stdout and "rpm" in r.stdout and out.read_text().count("\n") > 20

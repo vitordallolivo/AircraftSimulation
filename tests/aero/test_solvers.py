@@ -67,7 +67,7 @@ def test_lltdrek_handles_control_breaks(backend, case):
 
 def test_core_llt_registrado_e_perto_do_nucleo(backend, case):
     """a linha sustentadora do núcleo (Goates e Hunsaker) está em `all_solvers` e, no avião completo, fica perto das
-    faixas no C_Lα e no C_mα (a validação contra o MachUpX está em tests/tools/test_aero_perfis.py)"""
+    faixas no C_Lα e no C_mα"""
     from aerosim.aero import CoreLLTSolver, all_solvers
     nomes = {s.name for s in all_solvers(backend)}
     assert {"zig_llt", "zig_llt_gh"} <= nomes

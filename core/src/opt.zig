@@ -10,7 +10,7 @@ pub const Opt = enum(u8) {
     cse = 16, // o painel calcula sigmaStall e sincos(α) uma vez só (physics/aero.zig)
     minimax = 32, // sin/cos por polinômio minimax, sem tabela (math/fmath.zig)
     estrin = 64, // o polinômio do exp por Estrin no lugar do Horner (math/fmath.zig)
-    hint = 128, // `@branchHint(.unlikely)` nos caminhos raros do laço do voo (sim/runner.zig), medido pelo tools/tecnicas.py
+    hint = 128, // `@branchHint(.unlikely)` nos caminhos raros do laço do voo (sim/runner.zig)
 
     /// o bit da otimização (o mesmo número do campo)
     pub inline fn bit(self: Opt) u8 {

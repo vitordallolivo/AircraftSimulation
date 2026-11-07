@@ -342,7 +342,7 @@ pub const Autopilot = extern struct {
 
 /// tabela aerodinâmica do avião inteiro (Params.aero_model = 2): C_L, C_D, C_m em α (β = 0, sem taxas nem comandos,
 /// momentos em `ref`) mais as derivadas lineares (por rad; taxas por p b/2V, q c/2V, r b/2V). Vem de qualquer método
-/// (VLM, AVL, lltdrek...: `aerosim/aero/flight_table.py`). `fus` = 0: o núcleo soma a fuselagem por cima (os métodos
+/// (VLM, AVL, lltdrek...). `fus` = 0: o núcleo soma a fuselagem por cima (os métodos
 /// de fora não a têm); 1: a tabela já a inclui
 pub const AeroTable = extern struct {
     n: i32 = 0,

@@ -49,10 +49,7 @@ print(describe(ac), [round(float(x), 3) for x in phi])
 ['efeito solo: McCormick (padrão)', 'esteira da hélice: disco atuador'] [0.346, 0.93, 0.995]
 ```
 
-A 10 cm do chão o arrasto induzido cai para um terço, e a 2 m o efeito já some. `python tools/probe.py solo --b 2.2
---h 0.02:1.0:0.02 --png solo.png` e `python tools/probe.py esteira --T 30 --Q 1.2 --D 0.38 --V 10 --png esteira.png`
-desenham as duas curvas, e `python tools/modcheck.py <avião> --com esteira.disco` mostra quanto a decolagem muda com
-cada modificador. Um modificador novo só entra com a fonte (obra, equação, página), um caso no `switch` de
+A 10 cm do chão o arrasto induzido cai para um terço, e a 2 m o efeito já some. Um modificador novo só entra com a fonte (obra, equação, página), um caso no `switch` de
 `mod.induced` ou de `ground.factor`, a entrada em `aerosim/model/modifiers.py` e um teste que reproduz um número
 publicado.
 

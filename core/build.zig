@@ -90,7 +90,7 @@ pub fn build(b: *std.Build) void {
     const install_docs = b.addInstallDirectory(.{ .source_dir = docs_obj.getEmittedDocs(), .install_dir = .prefix, .install_subdir = "docs" });
     b.step("docs", "Gera a documentação HTML em zig-out/docs (servir com `python -m http.server`)").dependOn(&install_docs.step);
 
-    // bancada das técnicas de otimização (tools/tecnicas.py): em release e com símbolos, para o objdump achar as funções
+    // bancada das técnicas de otimização: em release e com símbolos, para o objdump achar as funções
     const bench_module = b.createModule(.{
         .root_source_file = b.path("src/tecnicas.zig"),
         .target = target,

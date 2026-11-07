@@ -16,7 +16,7 @@ O GitHub Actions (.github/workflows/pacotes.yml) roda este script quando alguém
 O aerosim pede os managers em Python (`aerosim/bridge.py`), então o pacote leva, na pasta `app/`, um Python
 portátil (`app/python`, python-build-standalone, https://github.com/astral-sh/python-build-standalone), com o numpy e o
 openpyxl, mais os métodos opcionais (aerosandbox, lltdrek, optvl) quando o pip acha o pacote para o alvo; ao lado vão
-o pacote `aerosim` sem a GUI PyQt, o núcleo já compilado (`app/core/zig-out`) e uma cópia de `data/`. A tela do aerosim acha esse Python
+o pacote `aerosim` (o Python dos métodos de fora do núcleo), o núcleo já compilado (`app/core/zig-out`) e uma cópia de `data/`. A tela do aerosim acha esse Python
 sozinha (`aerosim/gui/python_bridge.zig`). `--sem-python` monta sem ele (o aerosim abre só a Montagem).
 """
 from __future__ import annotations
@@ -120,7 +120,7 @@ def pip_install(target: str, out: str, packages: list[str]) -> bool:
 
 
 def add_python(target: str, folder: str) -> None:
-    """Põe no pacote, na pasta `app/`, o Python portátil com as dependências, o pacote `aerosim` (sem a GUI PyQt), o
+    """Põe no pacote, na pasta `app/`, o Python portátil com as dependências, o pacote `aerosim`, o
     núcleo compilado e o `data/` inteiro (os managers leem também o catálogo e os mapas de planilha). Fica numa pasta
     à parte porque no Linux o programa `aerosim` e a pasta `aerosim/` do Python teriam o mesmo nome."""
     out = os.path.join(folder, "app")
@@ -140,7 +140,7 @@ def add_python(target: str, folder: str) -> None:
         print(("instalado: " if ok else "pulado (o pip não achou para este alvo): ") + package)
     tracked = subprocess.run(["git", "ls-files", "aerosim", "data"], cwd=ROOT, check=True, capture_output=True,
                              text=True).stdout.split()
-    for name in tracked:   # como no site (tools/web_build.py): o Python do aerosim sem a GUI PyQt, e o data/ inteiro
+    for name in tracked:   # como no site (tools/web_build.py): o Python do aerosim e o data/ inteiro
         if name.startswith("data/") or name.endswith(".py") and not name.startswith("aerosim/gui/"):
             destination = os.path.join(out, name)
             os.makedirs(os.path.dirname(destination), exist_ok=True)

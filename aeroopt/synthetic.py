@@ -20,8 +20,7 @@ O que acontece com cada configuração é fixo e sai do nome dela (`zlib.crc32`,
 Então o melhor ponto de toda configuração é $u_k = 0{,}7$ (70 % da faixa de cada contínua), a melhor configuração é a
 de maior $f$ e as de $f < 0{,}6286$ voam inválidas até no melhor ponto.
 
-O $d^2$ acima é a "tigela" (`forma`, o padrão), fácil para qualquer busca. Para comparar as buscas (o banco,
-`tools/banco_otimizadores.py`) há mais duas formas, com o mesmo ótimo em $u_k = 0{,}7$ e $d^2 = 0$ nele, então
+O $d^2$ acima é a "tigela" (`forma`, o padrão), fácil para qualquer busca. Para comparar as buscas há mais duas formas, com o mesmo ótimo em $u_k = 0{,}7$ e $d^2 = 0$ nele, então
 `expected` vale para as três. Com $z_k = u_k - 0{,}7$ e $n$ contínuas:
 
 - "acoplada": o elipsoide girado (a $f_{10}$ do BBOB, Hansen et al., "Real-parameter black-box optimization

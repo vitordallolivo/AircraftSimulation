@@ -522,7 +522,7 @@ def _analyze(cand, req, rules, airfoils, wr, arm_shift) -> dict:
         # do flape no quarto de corda (perfil fino: Δc_m,c/4 = −½ sen θ_f (1 − cos θ_f) δ, cos θ_f = 2 c_f/c − 1;
         # Anderson, "Fundamentals of Aerodynamics", seção do flape na teoria do perfil fino, a conferir no PDF),
         # com o mesmo fator empírico 0,85 de `flap_effectiveness`. Antes o Δc_l ia todo a 3/4 da corda, o que dava
-        # uns 4 vezes o C_mδ do núcleo (O16 no tracking; tools/rotacao.py compara)
+        # uns 4 vezes o C_mδ do núcleo (O16 no tracking)
         x_c = info["x_le_mac"] - h_cg * c
         # cada comando com arfagem soma, com o ganho dele (no tandem: o profundor da de trás, o da frente com −1)
         Cmd = 0.0

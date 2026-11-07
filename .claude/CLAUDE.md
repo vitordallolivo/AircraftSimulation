@@ -10,8 +10,8 @@ código, gerado a partir dele (`python tools/codemap.py`). O que falta fazer e e
 
 Ferramenta para **dimensionar uma aeronave** (AeroDesign, VANT, protótipo) e voar o resultado.
 
-- **`aerosim`**: onde se projeta. É a GUI em PyQt6, com dimensionamento, aerodinâmica, desempenho, estabilidade,
-  missão 6GDL e cargas.
+- **`aerosim`**: onde se projeta. É a GUI em Zig (raylib), com dimensionamento, aerodinâmica, desempenho,
+  estabilidade, missão 6GDL e cargas. O Python só entra nos métodos de fora do núcleo (lltdrek, AeroSandbox, AVL).
 - **`aerodrive`**: simulação em tempo real (Zig + raylib) para pilotar o avião projetado.
 - **`core`**: núcleo físico em Zig, compartilhado pelos dois. Memória estática, sem alocação em tempo de execução.
 
@@ -30,7 +30,7 @@ Ferramenta para **dimensionar uma aeronave** (AeroDesign, VANT, protótipo) e vo
 | Interfaces | Contratos entre as camadas (só classes abstratas e tipos) | `aerosim/interfaces/` |
 | Simulação (aba) | Uma `ISimulation` por análise: campos, gráficos, `run` → `SimResult` com `checks` | `aerosim/manager/simulations/` |
 | Modifier | Método da literatura ligável por avião (efeito solo, esteira), desligado por padrão | `core/src/modifiers/`, `aerosim/model/modifiers.py` |
-| Modelo aerodinâmico do voo | Quem dá as forças na dinâmica, na trimagem e na linearização: faixas (padrão; o AeroDrive usa este), linha sustentadora (Phillips e Snyder; Goates e Hunsaker) ou tabela de qualquer método. `ac.sim.aero_model` → `Params.aero_model` | `core/src/physics/aeromodel.zig`, `aerosim/aero/flight_table.py` |
+| Modelo aerodinâmico do voo | Quem dá as forças na dinâmica, na trimagem e na linearização: faixas (padrão; o AeroDrive usa este), linha sustentadora (Phillips e Snyder; Goates e Hunsaker) ou tabela de qualquer método. `ac.sim.aero_model` → `Params.aero_model` | `core/src/physics/aeromodel.zig` |
 | `LoadResult` | Entrada padrão das análises de carga: qualquer método (núcleo, VLM, CFD) entrega isso e os gráficos e o 3D leem | `aerosim/interfaces/loads.py` |
 | Método de carga (`ILoadMethod`) | Recebe o modelo universal e o `LoadPoint` (trimagem e hélices, resolvido uma vez por `span_loads.prepare`) e devolve o `LoadResult`. Registro: `aerosim.aero.all_load_methods`; método novo = uma classe nova | `aerosim/interfaces/loads.py`, `aerosim/aero/span_loads.py`, `aerosim/aero/asb_solver.py` |
 | ABI do núcleo | Funções `export fn` de `core/src/root.zig`, chamadas por ctypes; esquema com hash conferido ao carregar | `core/src/root.zig`, `aerosim/backend/zig/` |
@@ -69,7 +69,6 @@ as configurações.
    - Diagramas não vão para o git.
 8. **Teste simples de rodar.**
    - Cada funcionalidade tem teste em `tests/<área>`.
-   - Quando faz sentido, uma ferramenta de linha de comando em `tools/` que imprime e plota.
    - Sempre que possível, validar contra a literatura, com o número esperado escrito no teste.
 9. **Textos em português**: mensagens, gráficos, documentação, commits. Os comentários seguem o estilo do arquivo.
 10. **Como escrever um README: curto, no jeito do AeroSandbox, lido corrido como um livro.** O git não é lugar para
@@ -148,11 +147,8 @@ python tools/checks/run.py                       # checks rápidos; --tudo inclu
 cd core && python -m ziglang build test          # testes do núcleo; -Dgrupo=math (ou physics, sim...) e -Dfiltro=<nome>
 cd core && python -m ziglang build docs          # documentação do Zig (dos `///`) em zig-out/docs; servir com `python -m http.server -d zig-out/docs`
 cd aerodrive && python -m ziglang build test     # testes do AeroDrive; build run abre o jogo
-QT_QPA_PLATFORM=offscreen python -m pytest -q tests/<área>
-python tools/time_profile.py loads --exato       # perfil: flame graph, tabela por função e por módulo (perfis/)
-python tools/opt_matrix.py --instrucoes          # combinações de -Dopt por instruções (Callgrind); sem a flag, tempo
-python -m aerosim.gui [arquivo ou pasta]         # a GUI
-xvfb-run -a python tools/load_view.py <avião> --png x.png   # imagem da vista 3D sem tela
+python -m pytest -q tests/<área>
+python -m ziglang build aerosim                  # a GUI (da raiz; aerodrive, aeroopt e launcher do mesmo jeito)
 ```
 
 O backend Python compila o núcleo sozinho quando o código Zig muda (`aerosim/backend/zig/backend.py`, `build`).
@@ -177,10 +173,8 @@ O container começa sem as dependências, e tudo o que se instala some quando el
 |---|---|
 | Núcleo (`core`, `zig build test`) e o backend Python | `pip install ziglang` (0.16.0 = `minimum_zig_version`) |
 | Testes Python (`tests/`), `tools/checks`, a GUI | `pip install -r requirements.txt -r requirements-aero.txt pytest` (o `requirements-aero.txt` traz o `optvl`: o AVL sem executável) |
-| Testes de GUI e de aero (Qt/pyqtgraph sem tela) | `apt-get install -y libegl1 libgl1 libxkbcommon0` |
 | AeroDrive (`zig build`: raylib) | `apt-get install -y libgl-dev libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libxext-dev`, mais as dependências do Zig (abaixo) |
-| Perfil e mapa de otimizações (`tools/time_profile.py`, `tools/opt_matrix.py`) | `pip install py-spy`; `apt-get install -y valgrind` (o `--exato` e o `--instrucoes`) |
-| Prints com 3D (`xvfb-run`) | `apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0 libgl1-mesa-dri` (o `xvfb-run` já vem no container) |
+| Prints da tela sem monitor (`xvfb-run`) | as bibliotecas do AeroDrive e `apt-get install -y libgl1-mesa-dri` (o `xvfb-run` já vem no container) |
 
 **Dependências do AeroDrive pelo `git`** (o `zig fetch` não passa pelo proxy da sessão). Numa pasta fora do
 repositório (ex.: o scratchpad), um pacote por vez; o commit ou a tag de cada um está no `build.zig.zon` de quem pede:
@@ -205,10 +199,7 @@ funciona: raylib-zig → raylib → raygui → emsdk → os dois zemscripten.
   `raygui`, `emsdk` 4.0.9 e os dois commits do `zemscripten` (um no `build.zig.zon` do raylib-zig, outro no do raylib).
 - **O Zig 0.16 guarda os pacotes em `aerodrive/zig-pkg/`** (ignorada pelo git). Tirar a pasta do lugar obriga a baixar
   tudo de novo.
-- **Sem tela:** `QT_QPA_PLATFORM=offscreen` não tem OpenGL (vista 3D sai vazia). Para print com 3D:
-  `xvfb-run -a -s "-screen 0 1920x1200x24" python ...` (precisa das bibliotecas xcb acima).
-- **`tools/capturas.py` não entra em subabas** (Desempenho → Missão etc.): falha com `QTabWidget has no attribute
-  start`. Para essas, achar a aba pelo `sim.name` dentro do `QTabWidget`.
-- **`python -I` quebra o pyqtgraph** (`No module named 'colorama'`): rodar os scripts da GUI sem `-I`.
+- **Sem tela:** print da tela em Zig com `xvfb-run -a -s "-screen 0 1920x1200x24" python -m ziglang build shot --
+  x.png [avião.json]` de dentro de `aerosim/` (ou `aeroopt/`).
 - **`run.py --tudo` leva uns 10 min** (o `tests/manager` sozinho, uns 6): rodar em segundo plano, nunca dois ao mesmo
   tempo, e não editar código no meio (o resultado deixa de valer).

@@ -533,7 +533,7 @@ const sizing = @import("sizing/sizing.zig");
 const sizing_types = sizing.types;
 
 /// parâmetros de trabalho do dimensionamento: um por thread, fora da pilha (a struct é grande para ela). Pedir ao
-/// sistema a cada chamada (`page_allocator`) custava 3/4 do `aerosim_sizing_eval` (G27, `tools/tecnicas.py`
+/// sistema a cada chamada (`page_allocator`) custava 3/4 do `aerosim_sizing_eval` (G27,
 /// alocacao, em core/OTIMIZACOES.md)
 threadlocal var work_params: types.Params = .{};
 

@@ -84,7 +84,6 @@ CMA-ES, a evolução diferencial, a busca guiada pela falha, o substituto, a not
 | `gui.py`, `export.py`, `pcoords.py` | a janela, os CSV e o caminho da busca |
 | `sensitivity.py` | a sensibilidade do melhor |
 | `synthetic.py` | os dados de teste, com o resultado sabido de antemão |
-| `mini_mdo.py` | o mini-MDO do núcleo, a primeira versão, que fica como alternativa |
 
 ## Como funciona
 
@@ -203,8 +202,7 @@ longe. Uma configuração que já apareceu vem da memória, por isso as geraçõ
 A sensibilidade diz o quanto a nota do melhor avião depende de cada variável: se ele está num morro largo ou na
 beira de um precipício (a aba Sensibilidade, acima). Para testar a máquina sem esperar as contas do avião, os dados
 de teste trocam as contas por funções simples em que já se sabe a resposta, em três formas: a tigela (fácil), a
-acoplada (as variáveis puxam juntas) e a multimodal (com vales falsos). O banco dos otimizadores
-(`tools/banco_otimizadores.py`) compara as buscas nelas.
+acoplada (as variáveis puxam juntas) e a multimodal (com vales falsos).
 
 ## Como abrir
 
@@ -212,7 +210,6 @@ acoplada (as variáveis puxam juntas) e a multimodal (com vales falsos). O banco
 python -m aeroopt --exemplo                            # a janela com um projeto de exemplo
 python -m aeroopt meu_projeto.json problema.opt.json   # partindo de um projeto da sprint
 python -m aeroopt --exemplo --sintetico                # a janela com os dados de teste: a rodada em segundos
-python tools/aeroopt.py problema.opt.json --etapas --projeto meu_projeto.json   # sem janela
 python -m pytest -q tests/aeroopt                      # os testes
 ```
 

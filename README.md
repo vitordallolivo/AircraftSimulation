@@ -25,8 +25,8 @@ Seja para projetar uma aeronave do zero (como competições de Aerodesign, VANTs
 
 O programa é divido em dois modos, o aerodrive e o aerosim, o aerodrive é uma simulação de tempo real que permite controlar a aeronave que você acaba de projetar e o
 aerosim é justamente o local onde você irá projetar. A interface em Zig (raylib) faz todas as abas e as contas sem o
-Python, das etapas da sprint ao Mini-MDO; o Python fica com a GUI antiga em PyQt e com os métodos de fora do núcleo
-(lltdrek, AeroSandbox, AVL, NeuralFoil), chamados só quando escolhidos.
+Python, das etapas da sprint ao Mini-MDO; o Python fica só com os métodos de fora do núcleo (lltdrek, AeroSandbox,
+AVL, NeuralFoil), chamados só quando escolhidos.
 
 
 ## Instalar
@@ -65,14 +65,7 @@ monta os dois quando alguém pede (workflow `pacotes`). O pacote leva um Python 
 núcleo, então não precisa instalar o Python.
 
 
-Já para o aerosim você pode:
-
-```sh
-python -m aerosim.gui                                              # volta ao último projeto (ou Montagem vazia)
-python -m aerosim.gui ~/sprint                                     # abre a pasta da sprint (um arquivo por asa)
-python -m aerosim.gui data/sprint/projeto_s1223.json               # projeto antigo: abre e grava em <meus aviões>/sprint/
-python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avião (.json, .cfg ou .xlsx)
-```
+O aerosim (`python -m ziglang build aerosim`) volta ao último projeto aberto, ou começa com a Montagem vazia.
 
 - **Projeto da sprint numa pasta** (linha de comando, **Projeto da sprint → Abrir pasta da sprint…** ou
   arrastar a pasta para a janela): um arquivo por asa (a asa + as superfícies feitas para ela + os aviões) e
@@ -134,29 +127,6 @@ python -m aerosim.gui data/aircraft/Asa_voadora.json               # abre um avi
 
 
 Instalação e comandos em [aerodrive/README.md](aerodrive/README.md).
-
-### Pelo Python (sem GUI)
-
-Rode da raiz do repositório:
-
-```python
-from aerosim.manager import SimulationManager
-from aerosim.data import load_aircraft
-
-m = SimulationManager()
-ac = load_aircraft("data/aircraft/Convencional_original.json")
-
-r = m.run("mission", ac, {"mode": "só decolagem"})   # decolagem otimizada para x_warning e z_warning
-print(r.status, r.summary["n_dec"])                  # COMPLETED 51.4
-
-r = m.run("mission", ac)                             # missão inteira, etapa por etapa
-print(r.log["t"][-1], r.summary["energia_Wh"])
-for c in r.checks:                                   # o diagnóstico
-    print(c.status, c.item, c.value)
-```
-
-Simulações: `sizing`, `mission`, `performance`, `thrust`, `aerodynamics`, `stability` (mais detalhes em
-[aerosim/manager/README.md](aerosim/manager/README.md)).
 
 ### Testes
 

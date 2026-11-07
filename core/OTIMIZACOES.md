@@ -18,8 +18,7 @@ python -m ziglang build test -Dopt=minimax,estrin             # os testes com as
 python -m ziglang build --release=fast                        # volta ao núcleo de sempre (-Dopt=0)
 ```
 
-O backend Python carrega a biblioteca que estiver em `zig-out/lib`: depois de medir, compilar de novo com `-Dopt=0`
-(o `tools/opt_matrix.py` já faz isso no fim). O AeroDrive usa o núcleo como dependência sem `-Dopt`: fica sempre no
+O backend Python carrega a biblioteca que estiver em `zig-out/lib`: depois de medir, compilar de novo com `-Dopt=0`. O AeroDrive usa o núcleo como dependência sem `-Dopt`: fica sempre no
 de sempre.
 
 | bit | nome | o que muda | onde |
@@ -58,9 +57,6 @@ nunca multiplica polinômios em tempo de execução: a tração polinomial é mo
 ## Como medir
 
 ```sh
-python tools/opt_matrix.py --instrucoes                  # tabela binária inteira, contagem de instruções
-python tools/opt_matrix.py --bits peak,cse,minimax,estrin --rodadas 5   # tempo de parede das análises
-python tools/opt_matrix.py --std                         # acrescenta a linha com a std (-Dfast_math=false)
 python -m pytest -m bench -s tests/core/test_lut.py      # cada função isolada, em ns
 ```
 

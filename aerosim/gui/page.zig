@@ -1,5 +1,5 @@
 //! Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
-//! nenhuma análise nem etapa, como a `SimulationTab` e a `StagePage` da GUI PyQt, das quais esta é a cópia.
+//! nenhuma análise nem etapa, como a `SimulationTab` e a `StagePage` da antiga GUI PyQt, das quais esta é a cópia.
 //!
 //!   análise (`simulation`)   uma `ISimulation` do manager: o formulário sai dos `ParamSpec`, Rodar manda os valores
 //!                            e a resposta traz o resumo, o diagnóstico e as curvas
@@ -942,7 +942,7 @@ pub const Page = struct {
         dropArena(&page.spec_arena);
         page.spec_arena = arena;
         page.rememberForm();
-        if (page.charts.len == 0) setText(&page.message, "{d} campos ({d} ainda só na GUI PyQt) · clique em Rodar", .{ page.params.len, page.skipped });
+        if (page.charts.len == 0) setText(&page.message, "{d} campos ({d} sem editor nesta tela) · clique em Rodar", .{ page.params.len, page.skipped });
     }
 
     /// a página inteira da etapa: formulário, guardados, botões e a conta
@@ -1239,7 +1239,7 @@ pub const Page = struct {
     fn drawTodo(page: *Page, ui: *widgets.Ui, rect: rl.Rectangle) void {
         const box: rl.Rectangle = .{ .x = rect.x + 40, .y = rect.y + 40, .width = @min(rect.width - 80, 680), .height = 150 };
         const inner = widgets.labeledCard(ui, box, page.title);
-        _ = widgets.paragraph(ui.fonts.regular, "esta página ainda não passou para a ponte com o Python; por enquanto ela está só na GUI PyQt (python -m aerosim.gui)", inner.x, inner.y + 10, inner.width, 15, theme.colors.label);
+        _ = widgets.paragraph(ui.fonts.regular, "esta página ainda não existe nesta tela", inner.x, inner.y + 10, inner.width, 15, theme.colors.label);
     }
 
     fn drawSidebar(page: *Page, ui: *widgets.Ui, rect: rl.Rectangle) void {
@@ -1600,7 +1600,7 @@ pub const Page = struct {
         y += @as(f32, @floatFromInt(chart_rows)) * (chart_size.height + gap);
         if (page.skipped_charts > 0) {
             var note: [96]u8 = undefined;
-            theme.text(ui.fonts.regular, widgets.format(&note, "{d} vistas 3D ainda só na GUI PyQt", .{page.skipped_charts}), rect.x + gap + 4, y, 13, theme.colors.muted);
+            theme.text(ui.fonts.regular, widgets.format(&note, "{d} vistas 3D sem desenho nesta tela", .{page.skipped_charts}), rect.x + gap + 4, y, 13, theme.colors.muted);
             y += 24;
         }
         if (page.checks.len > 0) {

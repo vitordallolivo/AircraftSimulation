@@ -170,7 +170,7 @@ def aero_native(sim) -> dict:
     if kind == "tabela":
         t = sim.aero_table
         if not t:
-            raise ValueError("aero_model = 'tabela' sem aero_table (aerosim/aero/flight_table.py monta uma)")
+            raise ValueError("aero_model = 'tabela' sem aero_table")
         a = np.radians(np.asarray(t["alpha"], float))
         o = np.argsort(a)
         tab = dict(n=len(a), fus=int(bool(t.get("fus", False))), alpha=a[o].tolist(), ref=list(t.get("ref", (0, 0, 0))),

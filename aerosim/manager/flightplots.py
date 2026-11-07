@@ -4,7 +4,7 @@ etapa nos gráficos no tempo, estrelas nos eventos (decolou, piloto automático,
 toque, parada), e janelas ampliadas da decolagem, do pouso e da soltura da carga (LAPES).
 
 Tudo aqui é função pura: registro + eventos -> {nome da série: colunas e estilo}. Quem desenha é a
-GUI (LivePlots) ou tools/plot_comparativo.py; quem decide quais gráficos existem é a simulação.
+GUI (LivePlots); quem decide quais gráficos existem é a simulação.
 """
 from __future__ import annotations
 

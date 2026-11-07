@@ -1,6 +1,6 @@
 //! Bancada das técnicas de otimização (tarefa G27): cada técnica roda a conta de hoje do núcleo e a candidata no
 //! mesmo caso, em release, e imprime uma linha JSON com o melhor tempo de N rodadas e uma soma do resultado (para
-//! conferir que a candidata dá a mesma conta). Quem chama, compara e escreve a tabela é o `tools/tecnicas.py`.
+//! conferir que a candidata dá a mesma conta).
 //!
 //!   zig build tecnicas -- <técnica> <variante> [rodadas] [repetições fixas]   (ReleaseFast; -Dopt=hint: dica dos ramos)
 //!

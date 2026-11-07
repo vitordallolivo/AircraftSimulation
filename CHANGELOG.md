@@ -6,6 +6,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- O repositório guardava muito Python que o programa não usava mais: as ferramentas de linha de comando de estudo e
+  medida, o Mini-MDO antigo do aeroopt, a colisão da hélice, a tabela de voo e os gráficos de carga em Python, e a
+  entrada da GUI antiga em PyQt do aerosim. Agora isso saiu, junto com os testes e os tutoriais dos READMEs que
+  ensinavam a usar esses arquivos. Fica o Python que a janela do aeroopt usa e a ponte que a tela do aerosim chama
+  quando se marca um método de fora do núcleo (lltdrek, AeroSandbox, AVL). O aerosim abre só pela tela nova.
 - Empenagem e comandos só tinha a estática clássica, por volume de cauda. Agora uma opção, desligada por padrão,
   roda um VLM no conjunto inteiro, com todas as asas, a cauda e as superfícies a mais. Ele mostra C_L, C_m, C_Lα,
   C_mα, o ponto neutro, a margem estática e as derivadas laterais C_Yβ, C_lβ e C_nβ. Também mostra a convergência
