@@ -12,7 +12,7 @@
 //! `stages.takeoffRun` (ver o README desta pasta; a fonte a conferir no PDF).
 //!
 //! As contas seguem a mesma ordem das do Python e a interpolação é a do `numpy.interp`, então a corrida sai bit a
-//! bit igual à de antes (o teste em `tests/design` confere).
+//! bit igual à de antes.
 const std = @import("std");
 
 pub const g0 = 9.80665; // o mesmo G0 de aerosim/design/spec.py

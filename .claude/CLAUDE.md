@@ -54,7 +54,6 @@ as configurações.
        no Python do manager.
 3. **O modelo universal é construído uma vez.**
    - Formatos nativos (SimSpec do núcleo, Wing do lltdrek, Airplane do ASB) só aparecem nos tradutores.
-   - `tests/test_architecture.py` fiscaliza isso.
 4. **Fórmula só com fonte.** Obra, equação e página no comentário ou no README. Sem confirmação no PDF, escrever
    "a conferir no PDF". Nada de fórmula inventada.
 5. **Física nova não muda o que existe.**
@@ -68,7 +67,7 @@ as configurações.
    - Relatórios e dados de terceiros nunca entram no git. As planilhas e os PDFs do usuário ficam fora do repositório.
    - Diagramas não vão para o git.
 8. **Teste simples de rodar.**
-   - Cada funcionalidade tem teste em `tests/<área>`.
+   - Cada funcionalidade tem teste em Zig, ao lado do código (`zig build test`).
    - Sempre que possível, validar contra a literatura, com o número esperado escrito no teste.
 9. **Textos em português**: mensagens, gráficos, documentação, commits. Os comentários seguem o estilo do arquivo.
 10. **Como escrever um README: curto, no jeito do AeroSandbox, lido corrido como um livro.** O git não é lugar para
@@ -137,7 +136,7 @@ as configurações.
 | Histórico por versão | `CHANGELOG.md` |
 | Regressão: núcleo, AeroDrive, exemplos bit a bit contra a `main`, testes por área | `python tools/checks/run.py` (`--tudo`, `--lista`, `--relatorio x.md`) |
 | Contagem de testes por área, ABI do núcleo, funções públicas | `docs/MAP.md` |
-| Tempo (benchmarks) | `pytest -m bench -s`; `core/src/bench.zig` (export `aerosim_bench_*`) |
+| Tempo (benchmarks) | `core/src/bench.zig` (export `aerosim_bench_*`) |
 
 ## 7. Comandos
 
@@ -147,7 +146,6 @@ python tools/checks/run.py                       # checks rápidos; --tudo inclu
 cd core && python -m ziglang build test          # testes do núcleo; -Dgrupo=math (ou physics, sim...) e -Dfiltro=<nome>
 cd core && python -m ziglang build docs          # documentação do Zig (dos `///`) em zig-out/docs; servir com `python -m http.server -d zig-out/docs`
 cd aerodrive && python -m ziglang build test     # testes do AeroDrive; build run abre o jogo
-python -m pytest -q tests/<área>
 python -m ziglang build aerosim                  # a GUI (da raiz; aerodrive, aeroopt e launcher do mesmo jeito)
 ```
 
@@ -172,7 +170,7 @@ O container começa sem as dependências, e tudo o que se instala some quando el
 | Para rodar | Instalar |
 |---|---|
 | Núcleo (`core`, `zig build test`) e o backend Python | `pip install ziglang` (0.16.0 = `minimum_zig_version`) |
-| Testes Python (`tests/`), `tools/checks`, a GUI | `pip install -r requirements.txt -r requirements-aero.txt pytest` (o `requirements-aero.txt` traz o `optvl`: o AVL sem executável) |
+| `tools/checks` e o Python do aeroopt | `pip install -r requirements.txt -r requirements-aero.txt` (o `requirements-aero.txt` traz o `optvl`: o AVL sem executável) |
 | AeroDrive (`zig build`: raylib) | `apt-get install -y libgl-dev libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libxext-dev`, mais as dependências do Zig (abaixo) |
 | Prints da tela sem monitor (`xvfb-run`) | as bibliotecas do AeroDrive e `apt-get install -y libgl1-mesa-dri` (o `xvfb-run` já vem no container) |
 
@@ -201,5 +199,5 @@ funciona: raylib-zig → raylib → raygui → emsdk → os dois zemscripten.
   tudo de novo.
 - **Sem tela:** print da tela em Zig com `xvfb-run -a -s "-screen 0 1920x1200x24" python -m ziglang build shot --
   x.png [avião.json]` de dentro de `aerosim/` (ou `aeroopt/`).
-- **`run.py --tudo` leva uns 10 min** (o `tests/manager` sozinho, uns 6): rodar em segundo plano, nunca dois ao mesmo
+- **`run.py --tudo` leva alguns minutos** (a regressão é a parte longa): rodar em segundo plano, nunca dois ao mesmo
   tempo, e não editar código no meio (o resultado deixa de valer).

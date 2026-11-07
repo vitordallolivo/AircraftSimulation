@@ -828,25 +828,10 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tools/web_build.py` — Monta o site do AircraftSimulation em zig-out/site/: a tela inicial (web/index.html) e os três programas em
 - `tools/checks/doc_checks.py` — Documentação: o mapa do código (docs/MAP.md) tem de estar em dia com o código, e as tabelas do Quadro do
 - `tools/checks/golden.py` — Regressão bit a bit: retrata os aviões de exemplo no código atual e numa referência (um commit, padrão a `main`)
-- `tools/checks/pytest_checks.py` — Os testes Python por área: uma pasta de `tests/` por check, para saber qual área quebrou e quanto cada uma demora.
 - `tools/checks/registry.py` — Registro dos checks: cada check é uma função que devolve um `Result`, com nome e grupo.
 - `tools/checks/run.py` — Checks de regressão: confere que nada quebrou antes de um PR.
 - `tools/checks/snapshot.py` — Retrato numérico dos aviões de exemplo, para comparar duas versões do código bit a bit.
 - `tools/checks/zig_checks.py` — Fundação e AeroDrive: os testes do núcleo Zig e a compilação + testes do AeroDrive (que importa o núcleo).
-
-## Testes (`tests/`)
-
-- `tests/aero` — 53 testes em 8 arquivo(s)
-- `tests/aeroopt` — 74 testes em 8 arquivo(s)
-- `tests/core` — 33 testes em 9 arquivo(s)
-- `tests/data` — 12 testes em 4 arquivo(s)
-- `tests/design` — 68 testes em 9 arquivo(s)
-- `tests/gui` — 23 testes em 1 arquivo(s)
-- `tests/manager` — 94 testes em 13 arquivo(s)
-- `tests/model` — 50 testes em 9 arquivo(s)
-- `tests/parallel` — 8 testes em 1 arquivo(s)
-- `tests/stability` — 16 testes em 2 arquivo(s)
-- `tests/test_architecture.py` — 5 testes em 1 arquivo(s)
 
 ## README por pasta
 
@@ -878,6 +863,5 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sizing/README.md`
 - `data/README.md`
 - `launcher/README.md`
-- `tests/README.md`
 - `tools/README.md`
 - `tools/checks/README.md`

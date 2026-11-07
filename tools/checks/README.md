@@ -6,7 +6,6 @@ Confere que nada quebrou antes de um PR (milestone 0.1, tarefa T00 em `docs/TRAC
 python tools/checks/run.py                 # fundação, AeroDrive, regressão bit a bit, testes rápidos
 python tools/checks/run.py --tudo          # + testes lentos (GUI, design, manager)
 python tools/checks/run.py --grupos aerodrive
-python tools/checks/run.py --so tests/aero
 python tools/checks/run.py --ref feature/aero --rapido
 python tools/checks/run.py --lista
 python tools/checks/run.py --relatorio checks.md
@@ -21,7 +20,6 @@ Sai com código 1 se algum check falhar. Os pulados, por exemplo quando falta o 
 | fundação | `zig build test` no `core/`; `docs/MAP.md` em dia com o código (`tools/codemap.py --check`) |
 | aerodrive | `zig build` e `zig build test` no `aerodrive/`; o AeroDrive importa o núcleo, então isso pega quebra de API |
 | regressão | os exemplos de `data/aircraft` retratados no código atual e numa referência, comparados número a número |
-| testes | uma pasta de `tests/` por check; uma pasta nova vira check sozinha |
 
 ## Regressão bit a bit
 

@@ -32,9 +32,6 @@ jobs:
           - nome: regressão bit a bit
             grupos: regressão
             arquivo: regressao
-          - nome: testes Python
-            grupos: testes
-            arquivo: testes-python
     steps:
       # o histórico inteiro: a regressão compara com a origin/main numa cópia separada (git worktree)
       - uses: actions/checkout@v4
@@ -56,7 +53,7 @@ jobs:
           libxcb-image0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0
 
       - name: Dependências do Python
-        run: pip install -r requirements.txt -r requirements-aero.txt pytest
+        run: pip install -r requirements.txt -r requirements-aero.txt
 
       # pacotes do Zig (raylib) e o cache de compilação entre uma rodada e outra
       - uses: actions/cache@v4

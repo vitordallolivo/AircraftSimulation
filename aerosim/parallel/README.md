@@ -103,4 +103,4 @@ terminam (é por ele que a GUI mostra o andamento ao vivo).
 
 Para acrescentar uma forma nova de rodar (um conjunto de máquinas, o Python sem GIL), basta uma classe que
 implemente `IExecutor` e um nome novo em `KINDS` e em `make_executor`; o processo em etapas e as gerações não mudam.
-Os testes ficam em `tests/parallel`.
+

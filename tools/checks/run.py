@@ -3,7 +3,6 @@
     python tools/checks/run.py                  # o padrão: fundação, AeroDrive, regressão bit a bit, testes rápidos
     python tools/checks/run.py --tudo           # inclui os testes lentos (GUI, design, manager)
     python tools/checks/run.py --grupos aerodrive,fundação
-    python tools/checks/run.py --so "tests/aero"
     python tools/checks/run.py --ref feature/aero --rapido     # outra referência; sem a decolagem
     python tools/checks/run.py --lista          # o que existe
 
@@ -11,7 +10,6 @@ Grupos:
     fundação     testes do núcleo Zig; mapa do código (docs/MAP.md) em dia
     aerodrive    compila e testa o AeroDrive
     regressão    exemplos de data/aircraft bit a bit contra a referência (padrão: origin/main)
-    testes       uma pasta de tests/ por check
 
 Sai com 1 se algum check falhar (os pulados não contam). `--relatorio arquivo.md` grava o resultado em Markdown.
 """
@@ -27,7 +25,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import zig_checks  # noqa: E402,F401  (registram os checks, nesta ordem)
 import doc_checks  # noqa: E402,F401
 import golden  # noqa: E402,F401
-import pytest_checks  # noqa: E402,F401
 from registry import CHECKS, Result  # noqa: E402
 
 

@@ -50,4 +50,4 @@ igual. Um núcleo novo implementa `ISimBackend` e `ISimSession`; um método aero
 quem o produziu.
 
 É por isso que dá para trocar o núcleo nos testes por um falso, comparar sete métodos na mesma aba e começar a passar
-as análises para Zig uma a uma sem a GUI perceber. `tests/test_architecture.py` confere que ninguém pula um contrato.
+as análises para Zig uma a uma sem a GUI perceber.

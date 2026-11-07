@@ -51,8 +51,7 @@ média [0.7 0.7 0.7] passo 0.00052
 
 A nota vem com cada termo do regulamento, e o CMA-ES chega ao ótimo com o passo já pequeno. Os outros métodos seguem
 o mesmo jeito (`be.ga_init` e `ga_next`, `be.de_init`, `de_trials` e `de_select`, `be.lhs`, `be.rbf_fit`,
-`be.local_fit`, `be.morris_design`), e os testes rodam com `cd core && python -m ziglang build test -Dgrupo=optim` e
-`python -m pytest -q tests/aeroopt`.
+`be.local_fit`, `be.morris_design`), e os testes rodam com `cd core && python -m ziglang build test -Dgrupo=optim`.
 
 É isso que decide quais aviões o aeroopt avalia e qual ele entrega. O CMA-ES num vale inclinado como o de envergadura
 e área, com a elipse deitando no vale e encolhendo perto do ótimo:

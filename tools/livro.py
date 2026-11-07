@@ -37,7 +37,7 @@ GROUPS = (
     ("Núcleo (core)", ("core/",)),
     ("AeroDrive", ("aerodrive/",)),
     ("aeroopt", ("aeroopt/",)),
-    ("Ferramentas e testes", ("tools/", "tests/", "launcher/")),
+    ("Ferramentas e testes", ("tools/", "launcher/")),
 )
 LEFT_OUT = ("docs/TRACKING.md",)           # o tracking tem a aba própria
 IMAGE = re.compile(r"!\[[^\]]*\]\(([^)\s]+)")

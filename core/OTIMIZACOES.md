@@ -56,10 +56,6 @@ nunca multiplica polinômios em tempo de execução: a tração polinomial é mo
 
 ## Como medir
 
-```sh
-python -m pytest -m bench -s tests/core/test_lut.py      # cada função isolada, em ns
-```
-
 - **Tempo de parede**: as análises do manager (envelope, missão, cargas, desempenho), a menor de N rodadas. Neste
   container o ruído é de uns ±10 %: diferenças menores que isso não querem dizer nada.
 - **Instruções** (`--instrucoes`): uma carga fixa do núcleo sob o Callgrind (configurar o avião, que roda o
@@ -100,7 +96,7 @@ envelope, missão, cargas e desempenho, a menor de 5 rodadas. O ruído do tempo 
   entre elas a diferença é ruído. Sem `peak`, nenhuma passa de +16 %.
 - Os bits se somam quase sem interferência: 8 + 16 dá +19,4 % em instruções (7,8 + 11,6).
 
-### Cada função isolada (`pytest -m bench -s tests/core/test_lut.py`, ns por chamada, entradas aleatórias)
+### Cada função isolada (ns por chamada, entradas aleatórias)
 
 | função | tabela / Horner | minimax / Estrin | std |
 |---|---|---|---|
@@ -132,7 +128,7 @@ aleatórias) e a avaliação de f(t, x). Nesta máquina (Xeon 2,1 GHz, L1d 48 KB
   instruções que a std, mas o tempo das duas fica parecido: o gargalo é a cadeia de dependências do
   laço dos painéis em `aero.zig`, não as funções matemáticas.
 
-Para reproduzir: `python -m pytest -m bench -s`.
+
 
 Rotação de equilíbrio do motor (trimagem, curva de tração, envelope): `dn/dt` cai com n, então a
 raiz é única em [1, 600] rps; *regula falsi* com a modificação de Illinois em vez de bisseção (≈10

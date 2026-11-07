@@ -210,7 +210,6 @@ acoplada (as variáveis puxam juntas) e a multimodal (com vales falsos).
 python -m aeroopt --exemplo                            # a janela com um projeto de exemplo
 python -m aeroopt meu_projeto.json problema.opt.json   # partindo de um projeto da sprint
 python -m aeroopt --exemplo --sintetico                # a janela com os dados de teste: a rodada em segundos
-python -m pytest -q tests/aeroopt                      # os testes
 ```
 
 Um regulamento novo é um `.toml` novo em `pontuacao/`, com a fonte e um teste com uma nota calculada à mão.

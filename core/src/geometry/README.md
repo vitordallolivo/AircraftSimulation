@@ -100,6 +100,5 @@ r = ZigGeometry().check(build_model(conventional()), GeometryParams(rotation=12.
 print(r.ok, r.why())          # o modelo convencional não tem tubo: a cauda aparece solta
 ```
 
-Testes: `python -m ziglang build test -Dgrupo=geometry` (dentro de `core/`) e `python -m pytest -q
-tests/model/test_geometry_check.py`. Um tipo de peça novo entra como uma constante de `kind`, nas funções de
+Testes: `python -m ziglang build test -Dgrupo=geometry` (dentro de `core/`). Um tipo de peça novo entra como uma constante de `kind`, nas funções de
 interseção e em `lowest`, e no tradutor.

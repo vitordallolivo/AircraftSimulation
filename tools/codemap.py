@@ -121,16 +121,6 @@ def build() -> str:
             doc = ""
         tools.append(f"- `{_rel(p)}`" + (f" — {doc}" if doc else ""))
     out += section("Ferramentas (`tools/`)", tools)
-    # testes
-    tests = []
-    tdir = os.path.join(ROOT, "tests")
-    for name in sorted(os.listdir(tdir)):
-        p = os.path.join(tdir, name)
-        files = list(_walk(p, ".py")) if os.path.isdir(p) else ([p] if name.endswith(".py") else [])
-        n = sum(len(re.findall(r"^def test_", open(f, encoding="utf-8").read(), re.M)) for f in files)
-        if n:
-            tests.append(f"- `tests/{name}` — {n} testes em {len(files)} arquivo(s)")
-    out += section("Testes (`tests/`)", tests)
     # READMEs
     readmes = []
     for d, dirs, files in os.walk(ROOT):

@@ -131,8 +131,6 @@ Instalação e comandos em [aerodrive/README.md](aerodrive/README.md).
 ### Testes
 
 ```sh
-python -m pytest                       # tudo (~3 min)
-python -m pytest tests/manager         # uma parte
 (cd core && python -m ziglang build test)        # testes do núcleo em Zig
 (cd aerodrive && python -m ziglang build test)   # testes e fuzzing do aerodrive
 ```

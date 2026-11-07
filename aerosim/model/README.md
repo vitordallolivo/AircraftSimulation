@@ -9,7 +9,7 @@ unidades SI, ângulos em graus, superfícies por seções. O modelo universal (`
 por `build_model`: as superfícies já viraram estações 3D com o lado espelhado, os dispositivos de ponta já são
 superfícies, e estão prontas as referências (área, corda média aerodinâmica, envergadura), a massa seca com o CG e a
 inércia, e o downwash. Todo método de cálculo recebe esse modelo pelo seu tradutor, então uma conta de geometria nunca
-é feita duas vezes de jeitos diferentes (`tests/test_architecture.py` fiscaliza).
+é feita duas vezes de jeitos diferentes.
 
 ```mermaid
 flowchart TB

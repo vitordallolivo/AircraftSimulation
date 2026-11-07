@@ -11,7 +11,7 @@
 //! ω ∈ [1, V_oc k_v] acha Q_m = Q_p; a tração é T = max(C_T(J) ρ n² D⁴, 0), com C_T = 0 depois do fim da tabela.
 //!
 //! As contas seguem a mesma ordem das do Python de antes e a interpolação é a do `numpy.interp`, então a curva sai
-//! bit a bit igual (o teste em `tests/design/test_motor_prop.py` confere). D⁴ e D⁵ vêm prontos do Python, como o
+//! bit a bit igual. D⁴ e D⁵ vêm prontos do Python, como o
 //! seno e o cosseno da corrida em `ground.zig`, porque a potência do Python e a do Zig podem diferir no último bit.
 const std = @import("std");
 const ground = @import("ground.zig");
