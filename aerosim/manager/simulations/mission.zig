@@ -750,7 +750,12 @@ const RunState = struct {
     // MTOW
     center_options: []const f64 = &.{},
     cases: std.ArrayList(MtowCase) = .empty,
-    bisection: struct { low: f64 = 0, high: f64 = 1, step: usize = 0, best: ?usize = null, mtow_fraction: ?f64 = null, stage: enum { low, high, bisect, done } = .low } = .{},
+    bisection: struct { low: f64 = 0, high: f64 = 1, step: usize = 0, best: ?usize = null, mtow_fraction: ?f64 = null, stage: enum { low, high, bisect, refine, mission, done } = .low } = .{},
+    // a busca do MTOW em duas fases: só a decolagem até achar a massa; depois a missão inteira nela. Se a missão
+    // não completa, a bisseção volta com "decola e completa a missão" como critério
+    with_mission: bool = false,
+    good_center: ?f64 = null, // o xCG que decolou por último: o primeiro a tentar na massa seguinte
+    simulations: usize = 0, // decolagens e missões voadas na busca (o limite é `simulation_limit`)
     // estudo: os valores da variável e o MTOW de cada um (NaN: não decola nem com a menor massa)
     study: struct {
         variable: StudyVariable = .tilt,
@@ -900,6 +905,12 @@ fn advanceRun(run: *simulation.Run, state: *RunState) simulation.Error!bool {
 
 /// a decolagem com o acionamento otimizado para a pista ou o digitado (avaliado uma vez)
 fn chooseTakeoff(state: *RunState, aircraft: *const Aircraft, loading: Loading) !takeoff_opt.Outcome {
+    return searchTakeoff(state, aircraft, loading, true);
+}
+
+/// a decolagem numa massa: `refine` falso só procura um acionamento que passa (a bisseção do MTOW), verdadeiro
+/// procura o melhor
+fn searchTakeoff(state: *RunState, aircraft: *const Aircraft, loading: Loading, refine: bool) !takeoff_opt.Outcome {
     var diagnosis: model.Diag = .{};
     var takeoffs = try takeoff_opt.Takeoffs.init(state.memory, aircraft, state.calibrated.p.ap, state.x_warning, state.z_warning, 0.01, &diagnosis);
     loading.apply(&takeoffs.instance.p);
@@ -910,7 +921,7 @@ fn chooseTakeoff(state: *RunState, aircraft: *const Aircraft, loading: Loading) 
         const tried = try state.memory.dupe(takeoff_opt.Result, &.{result});
         return .{ .best = result, .tried = tried };
     }
-    return takeoff_opt.optimize(&takeoffs, state.search, state.tolerance);
+    return if (refine) takeoff_opt.optimize(&takeoffs, state.search, state.tolerance) else takeoff_opt.feasible(&takeoffs, state.search, state.tolerance);
 }
 
 /// a decolagem escolhida voada de novo com o registro fino (0,005 s), para os gráficos
@@ -1702,18 +1713,80 @@ fn finishTurns(state: *RunState) !void {
 
 // ------------------------------------------------------------------ MTOW
 
-/// a decolagem otimizada numa massa (fração t entre o mínimo e o máximo), com o melhor xCG da tabela
-fn mtowCase(state: *RunState, fraction: f64) !usize {
+/// o máximo de simulações (decolagens e missões) da busca do MTOW: ao bater nele a busca para com o que achou
+const simulation_limit = 10_000;
+
+/// a decolagem numa massa (fração t entre o mínimo e o máximo), com o melhor xCG da tabela. `refine` falso é a
+/// busca rápida da bisseção: o xCG que decolou por último vem primeiro e a primeira decolagem que passa basta
+fn mtowCase(state: *RunState, fraction: f64, refine: bool) !MtowCase {
     const total = mass_table.total[0] + fraction * (mass_table.total[2] - mass_table.total[0]);
+    var order: std.ArrayList(f64) = .empty;
+    const first = if (refine) null else state.good_center;
+    if (first) |center| try order.append(state.memory, center);
+    for (state.center_options) |center| if (first == null or center != first.?) try order.append(state.memory, center);
     var chosen: ?MtowCase = null;
-    for (state.center_options) |center| {
+    for (order.items) |center| {
         const loading: Loading = .{ .mass = total, .center_x = center };
-        const outcome = try chooseTakeoff(state, &state.aircraft, loading);
+        const outcome = try searchTakeoff(state, &state.aircraft, loading, refine);
+        state.simulations += outcome.tried.len;
         const better = if (chosen) |known| rank(outcome.best) > rank(known.best) else true;
         if (better) chosen = .{ .fraction = fraction, .mass = total, .best = outcome.best, .center_x = center, .tried = outcome.tried };
+        // a busca rápida: passou, basta; e com um xCG que já decolou numa massa menor, ele decide sozinho (uma massa
+        // maior não decola com um xCG que a menor nem precisou)
+        if (!refine and (outcome.best.ok or first != null)) break;
+        if (state.simulations >= simulation_limit) break;
     }
-    try state.cases.append(state.memory, chosen.?);
+    if (chosen.?.best.ok) state.good_center = chosen.?.center_x;
+    return chosen.?;
+}
+
+/// guarda o caso na lista (os gráficos) e devolve o índice
+fn keepCase(state: *RunState, case: MtowCase) !usize {
+    try state.cases.append(state.memory, case);
     return state.cases.items.len - 1;
+}
+
+/// voa a missão inteira na massa e no xCG do caso, com o acionamento do profundor achado: completa quando pousa e
+/// para, sem bater no chão nem estourar o tempo. As curvas de raio automático usam o raio do φ máx. do piloto
+fn missionCompletes(state: *RunState, case: MtowCase) !bool {
+    const memory = state.memory;
+    var plane = state.aircraft;
+    if (takeoff_opt.pitchControl(&plane) != null and std.math.isFinite(case.best.position)) {
+        plane.takeoff.sR = case.best.position;
+        plane.takeoff.de1 = case.best.deflection;
+        if (std.math.isFinite(case.best.hold)) plane.takeoff.de0 = case.best.hold;
+    }
+    const loading: Loading = .{ .mass = case.mass, .center_x = case.center_x };
+    const instance = try memory.create(core.runner.Instance);
+    instance.* = .{};
+    try configureFlight(&plane, instance, state.calibrated.p.ap, loading);
+    const legs = try memory.dupe(Leg, plane.mission.legs);
+    var automatic = false;
+    for (legs, 0..) |*leg, k| if (std.mem.eql(u8, leg.kind, "turn") and leg.radius <= 0) {
+        const segment = instance.p.seg[k];
+        leg.radius = @round(autoRadius(@max(segment.V0, segment.V1), plane.autopilot.phimax) * 10) / 10;
+        automatic = true;
+    };
+    if (automatic) {
+        plane.mission.legs = legs;
+        instance.* = .{};
+        try configureFlight(&plane, instance, state.calibrated.p.ap, loading);
+    }
+    try core.runner.resetGround(instance);
+    const flown = try runner.fly(instance, .{}, memory, null);
+    state.simulations += 1;
+    return flown.status == .completed;
+}
+
+/// a rodada bateu no limite de simulações: avisa e termina com o que achou
+fn stopAtLimit(state: *RunState) !void {
+    const bisection = &state.bisection;
+    try state.checks.append(state.memory, .{ .status = .atencao, .item = "limite de simulações da busca do MTOW", .value = try printed(state.memory, "{d} simulações", .{state.simulations}), .criterion = try printed(state.memory, "≤ {d}", .{simulation_limit}), .why = "a busca não fechou dentro do limite: possivelmente não existe massa que decola e completa a missão com estes x_warning e z_warning", .fix = "confira a pista, a tração e a missão; o MTOW mostrado é o melhor achado até o limite", .group = "MTOW" });
+    bisection.mtow_fraction = null;
+    if (bisection.best) |k| if (state.cases.items[k].best.ok) {
+        bisection.mtow_fraction = state.cases.items[k].fraction;
+    };
+    bisection.stage = .done;
 }
 
 /// a ordem das decolagens: passa antes de não passar, depois a folga (ou o quanto faltou)
@@ -1721,50 +1794,108 @@ fn rank(result: takeoff_opt.Result) f64 {
     return if (result.ok) 1e6 + result.margin else -(result.x_excess + result.z_short);
 }
 
+/// passa no critério da fase: decola e, na segunda fase, completa a missão também
+fn passes(state: *RunState, case: MtowCase) !bool {
+    if (!case.best.ok) return false;
+    if (!state.with_mission) return true;
+    return missionCompletes(state, case);
+}
+
+/// a busca do MTOW: (1) bisseção só com a decolagem (rápida: o primeiro acionamento que passa); (2) na massa achada,
+/// o profundor otimizado e a missão inteira; (3) se a missão não completa, a bisseção de novo, de baixo até essa
+/// massa, com "decola e completa a missão" como critério. Tudo até `simulation_limit` simulações
 fn advanceMtow(run: *simulation.Run, state: *RunState) simulation.Error!bool {
     const bisection = &state.bisection;
     const same = mass_table.total[0] == mass_table.total[2];
+    if (bisection.stage != .done and state.simulations >= simulation_limit) try stopAtLimit(state);
+    const phase_name = if (state.with_mission) "decolagem e missão" else "só a decolagem";
     switch (bisection.stage) {
         .low => {
-            run.say("MTOW: a menor massa", .{});
-            const k = try mtowCase(state, 0);
+            run.say("MTOW ({s}): a menor massa", .{phase_name});
+            const case = try mtowCase(state, 0, false);
+            const ok = try passes(state, case);
+            const k = try keepCase(state, case);
             bisection.best = k;
-            if (same) {
-                bisection.mtow_fraction = if (state.cases.items[k].best.ok) 0 else null;
+            if (!ok) {
+                bisection.mtow_fraction = null;
+                if (state.with_mission) try state.checks.append(state.memory, .{ .status = .falha, .item = "a missão não completa nem com a menor massa", .value = try printed(state.memory, "{d:.2} kg", .{case.mass}), .criterion = "pousar e parar", .fix = "veja a missão desta massa no modo Missão", .group = "MTOW" });
                 bisection.stage = .done;
-            } else if (!state.cases.items[k].best.ok) bisection.stage = .done else bisection.stage = .high;
+            } else if (same) {
+                bisection.mtow_fraction = 0;
+                bisection.stage = .refine;
+            } else bisection.stage = if (state.with_mission) .bisect else .high; // a de cima já não completou
             return false;
         },
         .high => {
-            run.say("MTOW: a maior massa", .{});
-            const k = try mtowCase(state, 1);
-            if (state.cases.items[k].best.ok) {
+            run.say("MTOW ({s}): a maior massa", .{phase_name});
+            const case = try mtowCase(state, 1, false);
+            const ok = try passes(state, case);
+            const k = try keepCase(state, case);
+            if (ok) {
                 bisection.best = k;
                 bisection.mtow_fraction = 1;
                 try state.checks.append(state.memory, .{ .status = .atencao, .item = "MTOW acima da tabela", .value = "decola com tudo no máximo", .criterion = "dentro", .fix = "aumente os máximos", .group = "MTOW" });
-                bisection.stage = .done;
+                bisection.stage = .refine;
             } else bisection.stage = .bisect;
             return false;
         },
         .bisect => {
             if (bisection.step >= 9) {
                 bisection.mtow_fraction = bisection.low;
-                bisection.stage = .done;
+                bisection.stage = .refine;
                 return false;
             }
             bisection.step += 1;
-            run.say("MTOW: bisseção {d}/9", .{bisection.step});
-            run.progress = @floatCast(@as(f64, @floatFromInt(bisection.step)) / 9);
+            run.say("MTOW ({s}): bisseção {d}/9", .{ phase_name, bisection.step });
+            const share: f64 = if (state.with_mission) 0.5 else 0.9; // a segunda fase fica com a metade de cima
+            const offset: f64 = if (state.with_mission) 0.5 else 0;
+            run.progress = @floatCast(offset + share * @as(f64, @floatFromInt(bisection.step)) / 9);
             const middle = 0.5 * (bisection.low + bisection.high);
-            const k = try mtowCase(state, middle);
-            if (state.cases.items[k].best.ok) {
+            const case = try mtowCase(state, middle, false);
+            const ok = try passes(state, case);
+            const k = try keepCase(state, case);
+            if (ok) {
                 bisection.low = middle;
                 bisection.best = k;
             } else bisection.high = middle;
             return false;
         },
+        .refine => {
+            // o profundor otimizado na massa achada (a mesma conta do modo Decolagem); a busca rápida só garantiu
+            // que alguma decolagem passa
+            run.say("MTOW: otimizando o profundor na massa achada", .{});
+            const fraction = bisection.mtow_fraction.?;
+            const refined = try mtowCase(state, fraction, true);
+            const k = bisection.best.?;
+            const quick = state.cases.items[k];
+            if (refined.best.ok) state.cases.items[k] = refined;
+            if (!state.with_mission) {
+                bisection.stage = .mission;
+                return false;
+            }
+            // o refinado decola de outro jeito: se ele não completa a missão, fica o da bisseção, que completou
+            if (refined.best.ok and !try missionCompletes(state, refined)) state.cases.items[k] = quick;
+            try state.checks.append(state.memory, .{ .status = .ok, .item = "missão inteira no MTOW", .value = try printed(state.memory, "{d:.2} kg", .{state.cases.items[k].mass}), .criterion = "pousar e parar", .group = "MTOW" });
+            bisection.stage = .done;
+            return false;
+        },
+        .mission => {
+            const case = state.cases.items[bisection.best.?];
+            run.say("MTOW: a missão inteira com {d:.2} kg", .{case.mass});
+            if (try missionCompletes(state, case)) {
+                try state.checks.append(state.memory, .{ .status = .ok, .item = "missão inteira no MTOW", .value = try printed(state.memory, "{d:.2} kg", .{case.mass}), .criterion = "pousar e parar", .group = "MTOW" });
+                bisection.stage = .done;
+                return false;
+            }
+            // a missão não completa na massa só de decolagem: volta à bisseção, de baixo até ela, com a missão junto
+            try state.notes.append(state.memory, try printed(state.memory, "com {d:.2} kg decola mas não completa a missão: a busca voltou com a missão no critério", .{case.mass}));
+            state.with_mission = true;
+            bisection.* = .{ .high = bisection.mtow_fraction.? };
+            return false;
+        },
         .done => {
             try finishMtow(run, state);
+            try state.summary.append(state.memory, .{ "simulações da busca", try printed(state.memory, "{d}", .{state.simulations}) });
             run.progress = 1;
             return true;
         },
@@ -1801,6 +1932,9 @@ fn useStudyValue(run: *simulation.Run, state: *RunState) !void {
     };
     state.cases.clearRetainingCapacity();
     state.bisection = .{};
+    state.with_mission = false;
+    state.good_center = null;
+    state.simulations = 0;
 }
 
 /// um passo da busca do MTOW do valor de agora; ao fim dela, guarda o MTOW e passa ao próximo valor
@@ -1916,6 +2050,7 @@ fn finishMtow(run: *simulation.Run, state: *RunState) !void {
     });
     const best = state.cases.items[state.bisection.best.?];
     if (state.bisection.mtow_fraction == null) {
+        if (state.with_mission) return; // o motivo (a missão não completa) já está no diagnóstico
         try state.checks.append(memory, .{ .status = .falha, .item = "não decola nem com tudo no mínimo", .value = "x_warning ou z_warning", .criterion = try printed(memory, "x ≤ {d} m, z = {d} m", .{ state.x_warning, state.z_warning }), .fix = "baixe os mínimos, aumente a tração, a área de asa ou a pista", .group = "MTOW" });
         return;
     }

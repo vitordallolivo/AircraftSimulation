@@ -6,6 +6,12 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- A busca do MTOW da Missão otimizava o profundor em cada massa e em cada posição do CG, e nunca voava a missão.
+  Agora ela acha a massa só com a decolagem, parando no primeiro acionamento que passa, e otimiza o profundor só na
+  massa achada. Depois voa a missão inteira nela. Se a missão não completa, a busca volta e procura a massa que decola
+  e completa a missão. No avião de exemplo o MTOW é o mesmo e a busca caiu de uns 4 min para pouco mais de 1 min (o
+  estudo de duas variáveis, de 7 para 2 min). Com 10 000 simulações a busca para e avisa que possivelmente não existe
+  uma massa que cumpra tudo.
 - Em Empenagem e comandos, o comando novo pedia a superfície antes do tipo, e clicar num comando não mostrava onde
   ele estava. Agora escolhe-se primeiro o tipo e depois a superfície (ou "sem superfície"), e clicar ou criar um
   comando aproxima a vista 3D dele. Uma tabela nova, "Superfícies a mais", põe uma EV ou uma EH em qualquer ponto de

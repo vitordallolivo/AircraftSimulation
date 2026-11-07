@@ -312,6 +312,16 @@ pub const Outcome = struct {
 /// o melhor ponto de acionamento (e a maior deflexão que funciona); `tolerance` (fração do x_warning, só na bisseção;
 /// 0 = a busca de sempre) aceita errar um pouco para voar menos
 pub fn optimize(takeoffs: *Takeoffs, search: Search, tolerance: f64) !Outcome {
+    return searchWith(takeoffs, search, tolerance, true);
+}
+
+/// só se decola: a grade para no primeiro acionamento que passa, sem refinar o ponto (a busca do MTOW usa isto em
+/// cada massa e refina só na massa achada)
+pub fn feasible(takeoffs: *Takeoffs, search: Search, tolerance: f64) !Outcome {
+    return searchWith(takeoffs, search, tolerance, false);
+}
+
+fn searchWith(takeoffs: *Takeoffs, search: Search, tolerance: f64, refine: bool) !Outcome {
     var tried: std.ArrayList(Result) = .empty;
     const memory = takeoffs.memory;
     if (takeoffs.control == null) {
@@ -319,7 +329,7 @@ pub fn optimize(takeoffs: *Takeoffs, search: Search, tolerance: f64) !Outcome {
         return .{ .best = tried.items[0], .tried = tried.items };
     }
     const best = switch (search) {
-        .grid => try gridSearch(takeoffs, &tried),
+        .grid => try gridSearch(takeoffs, &tried, refine),
         .bisection => try bisect(takeoffs, &tried, tolerance),
     };
     return .{ .best = best orelse leastBad(tried.items), .tried = tried.items };
@@ -336,7 +346,7 @@ fn leastBad(tried: []const Result) Result {
 const grid_points = 8;
 const refine_steps = 5;
 
-fn gridSearch(takeoffs: *Takeoffs, tried: *std.ArrayList(Result)) !?Result {
+fn gridSearch(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), refine: bool) !?Result {
     const memory = takeoffs.memory;
     const deflection_max = takeoffs.deflection_max;
     var grid: [grid_points]f64 = undefined;
@@ -360,6 +370,7 @@ fn gridSearch(takeoffs: *Takeoffs, tried: *std.ArrayList(Result)) !?Result {
         }
     }
     const start = found orelse return null;
+    if (!refine) return start;
     // refina s (seção áurea) em volta do melhor, na mesma deflexão
     const spacing = grid[1] - grid[0];
     var low = @max(0, start.position - spacing);
