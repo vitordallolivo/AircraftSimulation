@@ -76,6 +76,7 @@ pub const loads = struct {
     pub const internal = @import("loads/internal.zig");
     pub const aeroelastic = @import("loads/aeroelastic.zig");
     pub const flutter = @import("loads/flutter.zig");
+    pub const stall = @import("loads/stall.zig");
 };
 
 /// estruturas: seção composta (EI, tensões e margens)

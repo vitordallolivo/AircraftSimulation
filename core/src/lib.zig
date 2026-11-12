@@ -30,6 +30,8 @@ pub const vn = @import("loads/vn.zig");
 pub const internal_loads = @import("loads/internal.zig");
 pub const aeroelastic = @import("loads/aeroelastic.zig");
 pub const flutter = @import("loads/flutter.zig");
+/// estol por estação: o VLM com a polar 2D de cada estação no seu Reynolds (correção de α)
+pub const stall = @import("loads/stall.zig");
 pub const vec = @import("math/vec.zig");
 pub const autotune = @import("control/autotune.zig");
 pub const linear = @import("sim/linear.zig");

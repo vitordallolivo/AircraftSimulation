@@ -17,6 +17,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   - a velocidade de divergência e a de reversão do aileron;
   - o flutter;
   - o trem de pouso, com o esforço em cada tubo e o impacto do pouso.
+- Antes, o VLM era linear e não estolava. Agora o núcleo tem um método novo que acopla o VLM à polar do perfil em
+  cada ponto da asa, no Reynolds daquele ponto. Ele dá o C_L máximo da asa a partir das polares reais e diz onde, ao
+  longo da envergadura, o estol começa. Fica desligado e ainda não tem tela.
 - O efeito solo só reduzia o arrasto induzido (o fator de McCormick), que perto do chão corta demais e não muda a
   sustentação nem o momento de arfagem. Agora há um segundo método, o VLM com o chão espelhado. Ele roda uma vez ao
   carregar o avião e monta uma tabela por altura e ângulo de ataque com a sustentação a mais, o induzido a menos e o

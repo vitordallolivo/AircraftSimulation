@@ -91,6 +91,14 @@ comptime {
 comptime {
     if (wanted("structures")) {
         _ = @import("structures/section.zig");
+        // sem testes ainda (ficam para o final): só confere que compila
+        std.testing.refAllDecls(@import("structures/buckling.zig"));
+        std.testing.refAllDecls(@import("structures/gear.zig"));
+        std.testing.refAllDecls(@import("loads/vn.zig"));
+        std.testing.refAllDecls(@import("loads/internal.zig"));
+        std.testing.refAllDecls(@import("loads/aeroelastic.zig"));
+        std.testing.refAllDecls(@import("loads/flutter.zig"));
+        std.testing.refAllDecls(@import("loads/stall.zig"));
     }
 }
 

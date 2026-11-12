@@ -52,7 +52,7 @@ pub const Panel = struct {
     strip: usize, // a faixa de onde veio (o comando dela)
 
     /// a normal girada por α0 e pelo comando: V_r · n = |V| sen(α_g − α0 + τ δ) (placa plana equivalente)
-    fn normal(panel: *const Panel, control: f64) V3 {
+    pub fn normal(panel: *const Panel, control: f64) V3 {
         const turn = fmath.sincos(panel.zero_lift - control);
         return panel.up * vec.splat(turn.c) - panel.chord_dir * vec.splat(turn.s);
     }
@@ -273,6 +273,12 @@ pub fn solve(params: *const types.Params, panels: []const Panel, matrix: []const
         const control = surface.tau * vec.dot(vec.v3(surface.mix), deflections);
         gamma[i] = vec.dot(velocity, panel.normal(control));
     }
+    substitute(matrix, pivots, gamma[0..count]);
+}
+
+/// resolve no lugar o sistema já fatorado por `factor`: `gamma` entra com V_r · n de cada painel e sai com Γ
+pub fn substitute(matrix: []const f64, pivots: []const usize, gamma: []f64) void {
+    const count = gamma.len;
     for (0..count) |row| {
         std.mem.swap(f64, &gamma[row], &gamma[pivots[row]]);
         for (0..row) |k| gamma[row] -= matrix[row * count + k] * gamma[k];

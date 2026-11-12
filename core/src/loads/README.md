@@ -54,7 +54,8 @@ sustentação total: faixas 87.7 N, linha sustentadora 95.7 N
 
 A pasta também tem as cargas que dimensionam a estrutura: o diagrama V-n com a rajada de Pratt e os casos de carga
 (`vn.zig`), o cortante, o fletor, o torsor, a flecha e o giro ao longo da envergadura (`internal.zig`), a divergência e
-a reversão do aileron (`aeroelastic.zig`) e o flutter por p-k com a aerodinâmica de Theodorsen (`flutter.zig`). A
+a reversão do aileron (`aeroelastic.zig`) o flutter por p-k com a aerodinâmica de Theodorsen (`flutter.zig`) e o estol por estação, que acopla o VLM à polar 2D
+de cada estação no seu Reynolds e diz o $`C_{L,max}`$ e onde o estol começa (`stall.zig`). A
 norma, as rajadas e os materiais vêm sempre do usuário.
 
 O total muda pouco; o que muda é onde a carga está. Os exports são `aerosim_panel_states_llt` (a carga por painel),

@@ -282,7 +282,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
-  tipos `math:14`, `physics:22`, `modifiers:35`, `collision:45`, `control:50`, `sim:57`, `loads:71`, `structures:82`, `sizing:89`, `optim:103`, `geometry:119`, `util:124`
+  tipos `math:14`, `physics:22`, `modifiers:35`, `collision:45`, `control:50`, `sim:57`, `loads:71`, `structures:83`, `sizing:90`, `optim:104`, `geometry:120`, `util:125`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
@@ -290,7 +290,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Declaration:11`
   fn `require:18`, `has:33`
 - `core/src/lib.zig` — O núcleo como módulo Zig (para programas em Zig, como o aerodrive): os mesmos tipos e funções
-  tipos `structures:41`, `optim:47`
+  tipos `structures:43`, `optim:49`
 - `core/src/limits.zig` — Limites de compilação. Toda a memória do núcleo é estática e dimensionada aqui:
   tipos `Group:18`
   fn `groupIndex:30`
@@ -345,6 +345,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/loads/llt.zig` — Linha sustentadora numérica (vórtices em ferradura) para a distribuição de carga ao longo da envergadura.
   tipos `Curve:79`, `Node:265`
   fn `sectionSlope:67`, `sectionLift:83`, `stallAngle:116`, `segment:128`, `horseshoe:145`, `surfaceNodes:176`, `prepare:347`, `apply:464`, `compute:604`, `coeffs:636`
+- `core/src/loads/stall.zig` — Estol por estação: o VLM (`vlm.zig`) acoplado à polar 2D de cada estação no seu Reynolds, pela correção de α
+  tipos `Family:34`, `Sections:40`, `Station:46`, `Work:59`, `Point:70`, `Sweep:78`
+  fn `stationCount:90`, `point:320`, `sweep:345`
 - `core/src/loads/sweep.zig` — Varredura das asas em α (subaba Asas da Aerodinâmica): só as superfícies escolhidas, sem trimar, sem fuselagem e
   tipos `Method:27`, `Output:33`, `Summary:84`
   fn `sweep:49`, `summarize:93`, `isaTemperature:135`, `airViscosity:141`, `reynolds:150`
@@ -353,7 +356,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `trace:91`, `optimal:127`, `efficiency:196`, `raymerOswald:206`, `studyPoint:232`
 - `core/src/loads/vlm.zig` — Método dos vórtices em malha (VLM) do avião: cada faixa sustentadora do núcleo (`Params.surf`) vira uma malha de
   tipos `Grid:40`, `Panel:43`, `Buffers:62`, `Loads:72`, `Coefficients:79`, `Derivatives:91`
-  fn `panelCount:111`, `lattice:159`, `factor:230`, `solve:268`, `loads:289`, `velocityAt:312`, `coefficients:319`, `derivatives:340`, `groundCoefficients:380`
+  fn `panelCount:111`, `lattice:159`, `factor:230`, `solve:268`, `substitute:280`, `loads:295`, `velocityAt:318`, `coefficients:325`, `derivatives:346`, `groundCoefficients:386`
 - `core/src/loads/vn.zig` — Diagrama V-n: o envelope de manobra e o de rajada, e os casos de carga que saem dele.
   tipos `VnNorm:20`, `VnAircraft:31`, `LoadCase:41`, `CaseKind:50`, `VnResult:55`
   fn `gustAlleviation:76`, `gustIncrement:82`, `maneuverLimits:88`, `envelope:95`, `diagram:111`
