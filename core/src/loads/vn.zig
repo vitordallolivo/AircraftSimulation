@@ -141,3 +141,61 @@ pub fn diagram(norm: VnNorm, aircraft: VnAircraft) Error!VnResult {
     return result;
 }
 
+
+// ------------------------------------------------------------------ testes
+const testing = std.testing;
+const plot = @import("../util/plot.zig");
+
+/// um avião de AeroDesign (W/S = 60 N/m², C_L,max = 1,8, C_L,min = −0,8, C_Lα = 4,8, c̄ = 0,4 m, ρ = 1,1) e uma norma de
+/// teste (n de 2,5 a −1, V_C = 15 com 5 m/s, V_D = 20 com 2,5 m/s, segurança 1,5): números só para conferir a conta
+const test_aircraft: VnAircraft = .{ .wing_loading = 60, .lift_max = 1.8, .lift_min = -0.8, .lift_slope = 4.8, .mean_chord = 0.4, .density = 1.1 };
+const test_norm: VnNorm = .{ .n_max = 2.5, .n_min = -1, .cruise_speed = 15, .dive_speed = 20, .cruise_gust = 5, .dive_gust = 2.5, .safety_factor = 1.5 };
+
+test "V-n: velocidades de referência e rajada de Pratt contra a conta à mão" {
+    const found = try diagram(test_norm, test_aircraft);
+    // V_S = √(2·60/(1,1·1,8)) = 7,785 m/s; V_A = V_S √2,5 = 12,309 m/s
+    try testing.expectApproxEqRel(@as(f64, 7.7850), found.stall_speed, 1e-4);
+    try testing.expectApproxEqRel(@as(f64, 12.3091), found.maneuver_speed, 1e-4);
+    // μ_g = 2·60/(1,1·0,4·4,8·9,80665) = 5,7938; K_g = 0,88 μ/(5,3 + μ) = 0,45959
+    try testing.expectApproxEqRel(@as(f64, 5.7938), found.mass_ratio, 1e-4);
+    try testing.expectApproxEqRel(@as(f64, 0.45959), found.gust_alleviation, 1e-4);
+    // Δn = ρ K_g U V C_Lα/(2 W/S): 1,5166 em V_C e 1,0111 em V_D
+    try testing.expectApproxEqRel(@as(f64, 1.5166), found.cruise_gust_increment, 1e-4);
+    try testing.expectApproxEqRel(@as(f64, 1.0111), found.dive_gust_increment, 1e-4);
+    // 4 casos de manobra e 4 de rajada, cada um com o fator de segurança
+    try testing.expectEqual(@as(i32, 8), found.case_count);
+    for (found.cases[0..8]) |case| try testing.expectApproxEqRel(1.5 * case.load_factor, case.ultimate, 1e-12);
+    // em V_C a manobra negativa é o n_min (q C_L,min = −2,48 passa do −1)
+    try testing.expectApproxEqRel(@as(f64, -1), found.cases[2].load_factor, 1e-12);
+}
+
+test "V-n: sem norma ou sem avião a conta é recusada" {
+    try testing.expectError(error.NoNorm, diagram(.{}, test_aircraft));
+    try testing.expectError(error.NoAircraft, diagram(test_norm, .{}));
+}
+
+test "V-n: o envelope segue q C_L até o n_max e a rajada passa por cima em V_C" {
+    var speeds: [81]f64 = undefined;
+    var upper: [81]f64 = undefined;
+    var lower: [81]f64 = undefined;
+    for (&speeds, 0..) |*speed, i| speed.* = 0.25 * @as(f64, @floatFromInt(i));
+    envelope(test_norm, test_aircraft, &speeds, &upper, &lower);
+    // em 10 m/s: manobra q C_L/(W/S) = 0,5·1,1·100·1,8/60 = 1,65; rajada 1 + Δn(10) = 1 + 1,5166·10/15 = 2,011
+    try testing.expectApproxEqRel(@as(f64, 1 + 1.5166 * 10.0 / 15.0), upper[40], 1e-4);
+    // em V_D: max(n_max, 1 + 1,0111) = 2,5
+    try testing.expectApproxEqRel(@as(f64, 2.5), upper[80], 1e-12);
+    // e em baixo: min(n_min, 1 − 1,0111) = −1
+    try testing.expectApproxEqRel(@as(f64, -1), lower[80], 1e-12);
+    const found = try diagram(test_norm, test_aircraft);
+    var case_speed: [max_cases]f64 = undefined;
+    var case_factor: [max_cases]f64 = undefined;
+    for (found.cases[0..8], 0..) |case, i| {
+        case_speed[i] = case.speed;
+        case_factor[i] = case.load_factor;
+    }
+    try plot.fromTest("vn_envelope", .{ .title = "Diagrama V-n", .x_label = "V (m/s)", .y_label = "n", .series = &.{
+        .{ .label = "n máximo", .x = &speeds, .y = &upper },
+        .{ .label = "n mínimo", .x = &speeds, .y = &lower },
+        .{ .label = "casos de carga", .x = case_speed[0..8], .y = case_factor[0..8], .style = .points },
+    } });
+}

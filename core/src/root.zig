@@ -637,7 +637,10 @@ export fn aerosim_flutter(elements: [*]const load_flutter.Element, count: usize,
     const element_list = elements[0..count];
     const found = load_flutter.modes(element_list, mode_count) catch return abiCode(error.BadStructureInput);
     for (speeds[0..speed_count], 0..) |speed, index| {
-        load_flutter.pk(element_list, &found, density, speed, points[index * found.count .. (index + 1) * found.count]) catch return abiCode(error.BadStructureInput);
+        const row = points[index * found.count .. (index + 1) * found.count];
+        // continuação: o chute de cada modo é a frequência dele na velocidade anterior
+        if (index == 0) @memset(row, .{}) else @memcpy(row, points[(index - 1) * found.count .. index * found.count]);
+        load_flutter.pk(element_list, &found, density, speed, row) catch return abiCode(error.BadStructureInput);
     }
     out.* = load_flutter.flutter(element_list, mode_count, density, speeds[0..speed_count]) catch return abiCode(error.BadStructureInput);
     return 0;

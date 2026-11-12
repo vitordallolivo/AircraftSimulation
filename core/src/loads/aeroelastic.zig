@@ -144,3 +144,75 @@ pub fn analyze(stations: []const Station, density: f64, pressure_limit: f64) Err
     result.reversal_speed = @sqrt(2 * result.reversal_pressure / density);
     return result;
 }
+
+// ------------------------------------------------------------------ testes
+const testing = std.testing;
+const plot = @import("../util/plot.zig");
+
+/// semiasa reta uniforme de 1 m em `count` faixas: corda 0,25 m, c_lα = 2π, braço 0,05 m, GJ = 60 N·m², aileron de
+/// 25 % da corda em toda a envergadura
+fn uniformWing(comptime count: usize) [count]Station {
+    var out: [count]Station = undefined;
+    const flap = flapDerivatives(0.25);
+    for (&out, 0..) |*station, i| {
+        station.* = .{
+            .position = (@as(f64, @floatFromInt(i)) + 0.5) / @as(f64, count),
+            .width = 1.0 / @as(f64, count),
+            .chord = 0.25,
+            .lift_slope = 2 * fmath.pi,
+            .offset = 0.05,
+            .torsional_stiffness = 60,
+            .control_lift = flap.lift,
+            .control_moment = flap.moment,
+        };
+    }
+    return out;
+}
+
+test "aeroelasticidade: divergência da asa uniforme bate com q_D = π² GJ/(4 c a e L²)" {
+    // Wright e Cooper, "Introduction to Aircraft Aeroelasticity and Loads", divergência da asa uniforme em faixas (a
+    // conferir no PDF): GJ θ'' + q c a e θ = 0 com θ(0) = 0 e θ'(L) = 0 dá λ L = π/2
+    const stations = uniformWing(40);
+    const expected = fmath.pi * fmath.pi * 60 / (4 * 0.25 * 2 * fmath.pi * 0.05 * 1);
+    try testing.expectApproxEqRel(expected, try divergencePressure(&stations), 0.01);
+    // sem braço (centro aerodinâmico no eixo elástico) não diverge
+    var balanced = stations;
+    for (&balanced) |*station| station.offset = 0;
+    try testing.expect(std.math.isInf(try divergencePressure(&balanced)));
+}
+
+test "aeroelasticidade: flap de perfil fino com c_f/c = 1 é a placa inteira (c_lδ = 2π, c_mδ = 0)" {
+    const whole = flapDerivatives(1);
+    try testing.expectApproxEqRel(2 * fmath.pi, whole.lift, 1e-9);
+    try testing.expectApproxEqAbs(@as(f64, 0), whole.moment, 1e-9);
+    // c_f/c = 0,25: θ_f = acos(−0,5) = 2π/3; c_lδ = 2 (π/3 + √3/2) = 3,826; c_mδ = −½ (√3/2)(1,5) = −0,6495
+    const quarter = flapDerivatives(0.25);
+    try testing.expectApproxEqRel(@as(f64, 3.8264), quarter.lift, 1e-4);
+    try testing.expectApproxEqRel(@as(f64, -0.6495), quarter.moment, 1e-4);
+}
+
+test "aeroelasticidade: a eficiência do aileron começa em 1, cai com q e zera na reversão" {
+    // com o braço de 0,05 m, o c_lδ e puxa o nariz para cima mais do que o c_mδ c o abaixa (3,83·0,05 > 0,65·0,25): a
+    // asa torce a favor e o aileron fica mais eficiente, sem reversão
+    const nose_up = uniformWing(40);
+    try testing.expect(try rollEffectiveness(&nose_up, 500) > 1);
+    try testing.expect(std.math.isInf((try analyze(&nose_up, 1.225, 1e6)).reversal_pressure));
+    // com 0,02 m o c_mδ ganha (3,83·0,02 < 0,65·0,25): a asa torce contra e reverte antes de divergir
+    var stations = nose_up;
+    for (&stations) |*station| station.offset = 0.02;
+    try testing.expectApproxEqRel(@as(f64, 1), try rollEffectiveness(&stations, 0), 1e-12);
+    const found = try analyze(&stations, 1.225, 1e6);
+    try testing.expect(found.reversal_pressure < found.divergence_pressure);
+    try testing.expectApproxEqAbs(@as(f64, 0), try rollEffectiveness(&stations, found.reversal_pressure), 1e-4);
+    var pressures: [60]f64 = undefined;
+    var effectiveness: [60]f64 = undefined;
+    for (&pressures, &effectiveness, 0..) |*pressure, *value, i| {
+        pressure.* = 0.97 * found.divergence_pressure * @as(f64, @floatFromInt(i)) / 59;
+        value.* = try rollEffectiveness(&stations, pressure.*);
+        if (i > 0) try testing.expect(value.* < effectiveness[i - 1]);
+    }
+    try plot.fromTest("aeroelastico_eficiencia_aileron", .{ .title = "Eficiência do aileron", .x_label = "q (Pa)", .y_label = "rolamento flexível / rígido", .series = &.{
+        .{ .label = "eficiência", .x = &pressures, .y = &effectiveness },
+        .{ .label = "reversão", .x = &.{found.reversal_pressure}, .y = &.{0}, .style = .points },
+    } });
+}

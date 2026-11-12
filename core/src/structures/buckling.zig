@@ -98,3 +98,53 @@ pub fn ribsNeeded(material: Orthotropic, span: f64, width: f64, thickness: f64, 
     }
     return null;
 }
+
+// ------------------------------------------------------------------ testes
+const testing = std.testing;
+const plot = @import("../util/plot.zig");
+
+/// um material isotrópico de teste (alumínio: E = 72 GPa, ν = 0,33), escrito como ortotrópico
+const isotropic: Orthotropic = .{ .modulus_1 = 72e9, .modulus_2 = 72e9, .shear_modulus = 72e9 / (2 * 1.33), .poisson_12 = 0.33 };
+
+test "flambagem: placa isotrópica com a/b inteiro dá k = 4 (Timoshenko e Gere)" {
+    const thickness = 0.001;
+    const width = 0.1;
+    const flexural = isotropic.modulus_1 * thickness * thickness * thickness / (12 * (1 - 0.33 * 0.33));
+    const expected = 4 * fmath.pi * fmath.pi * flexural / (thickness * width * width);
+    try testing.expectApproxEqRel(expected, flatPlate(isotropic, 0.3, width, thickness), 1e-12);
+    // a/b = 1,5: o mínimo cai entre m = 1 e 2, k = (2/1,5 + 1,5/2)² = 4,34
+    try testing.expectApproxEqRel(expected * 4.340277777777778 / 4, flatPlate(isotropic, 0.15, width, thickness), 1e-12);
+}
+
+test "flambagem: o painel curvo de raio enorme é a placa plana, e a curvatura só aumenta σ_cr" {
+    const flat = flatPlate(isotropic, 0.2, 0.1, 0.001);
+    try testing.expectApproxEqRel(flat, curvedPanel(isotropic, 0.2, 0.1, 0.001, 1e9, 1), 1e-9);
+    var radii: [40]f64 = undefined;
+    var critical: [40]f64 = undefined;
+    for (&radii, &critical, 0..) |*radius, *stress, i| {
+        radius.* = 0.05 + 0.025 * @as(f64, @floatFromInt(i));
+        stress.* = curvedPanel(isotropic, 0.2, 0.1, 0.001, radius.*, 1) / 1e6;
+        try testing.expect(stress.* * 1e6 > flat);
+    }
+    // o raio do arco: corda 2 e flecha 1 é o semicírculo de raio 1
+    try testing.expectApproxEqRel(@as(f64, 1), arcRadius(2, 1), 1e-12);
+    var flat_line: [40]f64 = undefined;
+    @memset(&flat_line, flat / 1e6);
+    try plot.fromTest("flambagem_painel_curvo", .{ .title = "Painel curvo × raio", .x_label = "R (m)", .y_label = "σ_cr (MPa)", .series = &.{
+        .{ .label = "curvo (Donnell)", .x = &radii, .y = &critical },
+        .{ .label = "plano", .x = &radii, .y = &flat_line, .style = .dashed },
+    } });
+}
+
+test "flambagem: alma quadrada em cisalhamento tem k = 9,34 e as nervuras param no primeiro vão que aguenta" {
+    const flexural_part = fmath.pi * fmath.pi * isotropic.modulus_1 / (12 * (1 - 0.33 * 0.33));
+    try testing.expectApproxEqRel(9.34 * flexural_part * 0.0001, webShear(isotropic, 0.1, 0.1, 0.001), 1e-12);
+    // muito comprida: k → 5,34
+    try testing.expectApproxEqRel(5.34 * flexural_part * 0.0001, webShear(isotropic, 0.1, 1e6, 0.001), 1e-6);
+    const stress = 3 * flatPlate(isotropic, 1.0, 0.1, 0.001);
+    const ribs = ribsNeeded(isotropic, 1.0, 0.1, 0.001, stress, 50) orelse return error.TestUnexpectedResult;
+    const length = 1.0 / @as(f64, @floatFromInt(ribs + 1));
+    try testing.expect(flatPlate(isotropic, length, 0.1, 0.001) >= stress);
+    if (ribs > 0) try testing.expect(flatPlate(isotropic, 1.0 / @as(f64, @floatFromInt(ribs)), 0.1, 0.001) < stress);
+    try testing.expectEqual(@as(?usize, null), ribsNeeded(isotropic, 1.0, 0.1, 0.001, 1e12, 5));
+}

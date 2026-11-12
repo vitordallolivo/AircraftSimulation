@@ -262,11 +262,12 @@ fn modalAero(elements: []const Element, found: *const Modes, density: f64, speed
     }
 }
 
-/// o p-k numa velocidade: frequência e amortecimento de cada modo em `out`
+/// o p-k numa velocidade: frequência e amortecimento de cada modo em `out`. Se `out` já traz a frequência de cada modo
+/// na velocidade anterior (continuação), ela é o chute; com zero, o chute é a frequência estrutural
 pub fn pk(elements: []const Element, found: *const Modes, density: f64, speed: f64, out: []ModePoint) Error!void {
     const count = found.count;
     for (0..count) |mode| {
-        var omega = @max(found.frequency[mode], 1e-3);
+        var omega = @max(if (out[mode].frequency > 0) out[mode].frequency else found.frequency[mode], 1e-3);
         var point: ModePoint = .{};
         for (0..60) |_| {
             var real: ModeMatrix = undefined;
@@ -307,8 +308,8 @@ pub fn pk(elements: []const Element, found: *const Modes, density: f64, speed: f
 /// algum modo troca de sinal, interpolada entre os dois pontos; `modes_count` modos
 pub fn flutter(elements: []const Element, modes_count: usize, density: f64, speeds: []const f64) Error!FlutterResult {
     const found = try modes(elements, modes_count);
-    var previous: [max_modes]ModePoint = undefined;
-    var current: [max_modes]ModePoint = undefined;
+    var previous: [max_modes]ModePoint = [_]ModePoint{.{}} ** max_modes;
+    var current: [max_modes]ModePoint = [_]ModePoint{.{}} ** max_modes;
     for (speeds, 0..) |speed, index| {
         try pk(elements, &found, density, speed, current[0..found.count]);
         if (index > 0) {
@@ -329,4 +330,86 @@ pub fn flutter(elements: []const Element, modes_count: usize, density: f64, spee
         previous = current;
     }
     return .{};
+}
+
+// ------------------------------------------------------------------ testes
+const testing = std.testing;
+const plot = @import("../util/plot.zig");
+
+/// uma viga uniforme de `length` m em `count` elementos com as propriedades de `element`
+fn uniformBeam(comptime count: usize, length: f64, element: Element) [count]Element {
+    var out: [count]Element = undefined;
+    for (&out, 0..) |*piece, i| {
+        piece.* = element;
+        piece.start = length * @as(f64, @floatFromInt(i)) / @as(f64, count);
+        piece.end = length * @as(f64, @floatFromInt(i + 1)) / @as(f64, count);
+    }
+    return out;
+}
+
+test "flutter: viga em balanço uniforme sem acoplamento dá as frequências fechadas de flexão e torção" {
+    // flexão: ω1 = 1,8751² √(EI/(m L⁴)); torção: ω1 = (π/2) √(GJ/(I_α L²)) (Meirovitch, "Elements of Vibration
+    // Analysis", viga em balanço; a conferir no PDF)
+    const beam = uniformBeam(12, 2, .{ .bending_stiffness = 400, .torsional_stiffness = 60, .mass = 1.5, .gyration = 0.05, .chord = 0.3 });
+    const found = try modes(&beam, 4);
+    const bending = 1.8751 * 1.8751 * @sqrt(400.0 / (1.5 * 16.0));
+    const torsion = fmath.pi / 2.0 * @sqrt(60.0 / (1.5 * 0.05 * 0.05 * 4.0));
+    try testing.expectApproxEqRel(bending, found.frequency[0], 1e-3);
+    var closest: f64 = std.math.inf(f64);
+    for (found.frequency[0..found.count]) |frequency| closest = @min(closest, @abs(frequency - torsion) / torsion);
+    try testing.expect(closest < 1e-3);
+}
+
+test "flutter: a asa de Goland flutua perto de 137 m/s e 70 rad/s" {
+    // a asa de Goland (Goland, Journal of the Aeronautical Sciences 12(4), 1945; dados como em Patil, Hodges e Cesnik,
+    // Journal of Aircraft 38(1), 2001, a conferir no PDF): semienvergadura 6,096 m, corda 1,8288 m, eixo elástico a 33 %
+    // e CG a 43 % da corda, m = 35,71 kg/m, I = 8,64 kg·m em torno do eixo elástico, EI = 9,77e6 e GJ = 0,987e6 N·m².
+    // Patil et al. dão os modos 49,6, 97,0 e 248,9 rad/s e o flutter em 137 m/s com 70,7 rad/s
+    const chord = 1.8288;
+    const beam = uniformBeam(12, 6.096, .{
+        .bending_stiffness = 9.77e6,
+        .torsional_stiffness = 0.987e6,
+        .mass = 35.71,
+        .cg_offset = 0.10 * chord,
+        .gyration = @sqrt(8.64 / 35.71 - 0.10 * chord * 0.10 * chord), // I em torno do CG = I_EA − m x_α²
+        .chord = chord,
+        .axis = (0.33 - 0.5) / 0.5,
+    });
+    var speeds: [60]f64 = undefined;
+    for (&speeds, 0..) |*speed, i| speed.* = 40 + 2.5 * @as(f64, @floatFromInt(i));
+    const vibration = try modes(&beam, 3);
+    for ([_]f64{ 49.6, 97.0, 248.9 }, vibration.frequency[0..3]) |expected, frequency| try testing.expectApproxEqRel(expected, frequency, 0.04);
+    const found = try flutter(&beam, 4, 1.225, &speeds);
+    try testing.expectEqual(@as(i32, 1), found.found);
+    try testing.expectApproxEqRel(@as(f64, 137), found.speed, 0.02);
+    try testing.expectApproxEqRel(@as(f64, 70.7), found.frequency, 0.03);
+    // o V-g: frequência e amortecimento dos dois primeiros modos
+    const shapes = try modes(&beam, 4);
+    var damping: [2][60]f64 = undefined;
+    var frequency: [2][60]f64 = undefined;
+    var points: [max_modes]ModePoint = [_]ModePoint{.{}} ** max_modes;
+    for (speeds, 0..) |speed, i| {
+        try pk(&beam, &shapes, 1.225, speed, points[0..shapes.count]);
+        for (0..2) |mode| {
+            damping[mode][i] = points[mode].damping;
+            frequency[mode][i] = points[mode].frequency;
+        }
+    }
+    try plot.fromTest("flutter_goland_amortecimento", .{ .title = "Asa de Goland: V-g", .x_label = "V (m/s)", .y_label = "ζ", .series = &.{
+        .{ .label = "modo 1 (flexão)", .x = &speeds, .y = &damping[0] },
+        .{ .label = "modo 2 (torção)", .x = &speeds, .y = &damping[1] },
+    } });
+    try plot.fromTest("flutter_goland_frequencia", .{ .title = "Asa de Goland: V-ω", .x_label = "V (m/s)", .y_label = "ω (rad/s)", .series = &.{
+        .{ .label = "modo 1 (flexão)", .x = &speeds, .y = &frequency[0] },
+        .{ .label = "modo 2 (torção)", .x = &speeds, .y = &frequency[1] },
+    } });
+}
+
+test "flutter: C(k) de Jones vale 1 em k = 0 e tende a 1/2 com k grande" {
+    try testing.expectApproxEqRel(@as(f64, 1), theodorsen(0).re, 1e-12);
+    try testing.expectApproxEqRel(@as(f64, 0.5), theodorsen(1e6).re, 1e-4);
+    // em k = 0,1 a tabela de Theodorsen dá C ≈ 0,832 − 0,172 i; a de Jones erra ~0,5 % na parte real e ~6 % na imaginária
+    const value = theodorsen(0.1);
+    try testing.expectApproxEqRel(@as(f64, 0.832), value.re, 0.01);
+    try testing.expectApproxEqRel(@as(f64, -0.172), value.im, 0.07);
 }

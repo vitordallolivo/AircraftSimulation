@@ -302,3 +302,84 @@ pub fn landing(drop: Drop) DropResult {
     }
     return result;
 }
+
+// ------------------------------------------------------------------ testes
+const testing = std.testing;
+const plot = @import("../util/plot.zig");
+
+/// tubo de alumínio de teste (Megson; só para o teste, o núcleo não tem material padrão)
+const aluminium: section.Material = .{ .modulus = 72e9, .shear_modulus = 27e9, .density = 2770, .tension = 400e6, .compression = 400e6, .shear = 250e6 };
+
+test "trem: tubo em balanço com força na ponta dá M = F L no engaste e Euler com K = 2" {
+    const materials = [_]section.Material{aluminium};
+    const nodes = [_]Node{
+        .{ .position = .{ 0, 0, 0 }, .fixed = 1 },
+        .{ .position = .{ 0, 0, 0.3 }, .force = .{ 50, 0, 200 } }, // z do corpo para baixo: +200 puxa a ponta para longe do engaste
+    };
+    const members = [_]Member{.{ .node_a = 0, .node_b = 1, .outer = 0.012, .inner = 0.010, .length_factor = 2 }};
+    var out: [1]MemberResult = undefined;
+    try solveFrame(&materials, &nodes, &members, &out);
+    try testing.expectApproxEqRel(@as(f64, 50 * 0.3), out[0].bending, 1e-6);
+    try testing.expectApproxEqRel(@as(f64, 50), out[0].shear, 1e-6);
+    try testing.expectApproxEqRel(@as(f64, 200), out[0].axial, 1e-6); // tração
+    try testing.expect(std.math.isInf(out[0].buckling_margin));
+    // para cima (−z) empurra a ponta contra o engaste e comprime: P_cr = π² E I/(2 L)²
+    var pushed = nodes;
+    pushed[1].force = .{ 0, 0, -200 };
+    try solveFrame(&materials, &pushed, &members, &out);
+    const tube = section.SectionPart.tube(0, 0.012, 0.010, 0);
+    const critical = fmath.pi * fmath.pi * aluminium.modulus * tube.own_inertia / (0.6 * 0.6);
+    try testing.expectApproxEqRel(@as(f64, -200), out[0].axial, 1e-6);
+    try testing.expectApproxEqRel(critical / 200 - 1, out[0].buckling_margin, 1e-6);
+}
+
+test "trem: o V de dois tubos leva P/(2 cos θ) em cada um" {
+    const materials = [_]section.Material{aluminium};
+    // os dois tubos a 30° da vertical, presos na fuselagem em cima; a roda embaixo empurra para cima com 300 N
+    const half_width = 0.15 * @tan(30.0 * fmath.pi / 180.0);
+    const nodes = [_]Node{
+        .{ .position = .{ 0, -half_width, 0 }, .fixed = 1 },
+        .{ .position = .{ 0, half_width, 0 }, .fixed = 1 },
+        .{ .position = .{ 0, 0, 0.15 }, .force = .{ 0, 0, -300 } },
+    };
+    const members = [_]Member{
+        .{ .node_a = 0, .node_b = 2, .outer = 0.010, .inner = 0.008 },
+        .{ .node_a = 1, .node_b = 2, .outer = 0.010, .inner = 0.008 },
+    };
+    var out: [2]MemberResult = undefined;
+    try solveFrame(&materials, &nodes, &members, &out);
+    // os nós rígidos levam um pouco de flexão, mas o grosso é axial
+    const expected = -300.0 / (2 * @cos(30.0 * fmath.pi / 180.0));
+    for (out) |result| try testing.expectApproxEqRel(expected, result.axial, 0.01);
+    try testing.expectApproxEqRel(out[0].axial, out[1].axial, 1e-9);
+}
+
+test "trem: sem amortecimento o pico é 1 + √(1 + k v²/(m g²)) e o avião quica; com ζ alto, não" {
+    // energia: m g x + ½ m v² = ½ k x² no curso máximo
+    const drop: Drop = .{ .mass = 10, .tire_stiffness = 2e4, .leg_stiffness = 2e4, .sink_speed = 1.5, .step = 1e-4, .duration = 0.4 };
+    const found = landing(drop);
+    const gravity = 9.80665;
+    const spring = 1e4;
+    const expected = 1 + @sqrt(1 + spring * 1.5 * 1.5 / (10 * gravity * gravity));
+    try testing.expectApproxEqRel(expected, found.peak_load_factor, 1e-3);
+    try testing.expectEqual(@as(i32, 1), found.bounced);
+    var damped = drop;
+    damped.damping_ratio = 1.2;
+    try testing.expectEqual(@as(i32, 0), landing(damped).bounced);
+    // o pico contra a velocidade de descida, sem e com amortecimento
+    var sinks: [30]f64 = undefined;
+    var peaks: [2][30]f64 = undefined;
+    for (&sinks, 0..) |*sink, i| {
+        sink.* = 0.1 * @as(f64, @floatFromInt(i + 1));
+        for ([_]f64{ 0, 0.3 }, 0..) |ratio, row| {
+            var case = drop;
+            case.sink_speed = sink.*;
+            case.damping_ratio = ratio;
+            peaks[row][i] = landing(case).peak_load_factor;
+        }
+    }
+    try plot.fromTest("trem_pico_pouso", .{ .title = "Pico do pouso", .x_label = "velocidade de descida (m/s)", .y_label = "n de pico", .series = &.{
+        .{ .label = "ζ = 0", .x = &sinks, .y = &peaks[0] },
+        .{ .label = "ζ = 0,3", .x = &sinks, .y = &peaks[1] },
+    } });
+}

@@ -138,7 +138,8 @@ pub fn writeSvg(writer: *std.Io.Writer, figure: Figure) !void {
 fn rounded(value: f64, step: f64) f64 {
     const digits = @max(0, -@floor(std.math.log10(step)) + 1);
     const factor = std.math.pow(f64, 10, digits);
-    return @round(value * factor) / factor;
+    const result = @round(value * factor) / factor;
+    return if (result == 0) 0 else result; // sem o "-0"
 }
 
 /// o texto com &, < e > escapados

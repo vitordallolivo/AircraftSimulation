@@ -370,3 +370,129 @@ pub fn sweep(params: *const types.Params, grid: vlm.Grid, sections: Sections, al
     }
     return result;
 }
+
+// ------------------------------------------------------------------ testes
+const testing = std.testing;
+const plot = @import("../util/plot.zig");
+
+const test_strips = 16;
+const test_grid: vlm.Grid = .{ .chordwise = 4, .spanwise = 1 };
+const test_panels = test_strips * 4;
+
+/// asa retangular de 1,5 m × 0,25 m em `test_strips` faixas, com o perfil de α0 = −2° (C_L0 = C_Lα·2°)
+fn cambered(params: *types.Params) void {
+    const span = 1.5;
+    const chord = 0.25;
+    params.* = .{};
+    params.n_surf = test_strips;
+    params.Sref = span * chord;
+    params.cref = chord;
+    params.bref = span;
+    for (0..test_strips) |i| {
+        const y0 = -0.5 * span + span * @as(f64, @floatFromInt(i)) / test_strips;
+        const y1 = -0.5 * span + span * @as(f64, @floatFromInt(i + 1)) / test_strips;
+        const side: i32 = if (0.5 * (y0 + y1) > 0) 1 else -1;
+        params.surf[i] = .{
+            .r = .{ -0.25 * chord, 0.5 * (y0 + y1), 0 },
+            .S = (y1 - y0) * chord,
+            .c = chord,
+            .AR = 6,
+            .CLa = 4.5,
+            .CL0 = 4.5 * 2 * degree,
+            .side = side,
+            .qa = .{ -0.25 * chord, if (side > 0) y0 else y1, 0 },
+            .qb = .{ -0.25 * chord, if (side > 0) y1 else y0, 0 },
+        };
+    }
+    @import("../physics/aero.zig").init(params);
+}
+
+/// duas polares do modelo (c_lα = 2π, α0 = −2°) em Re 1e5 (c_l,max 1,2) e 3e5 (1,4), de −10° a 30°
+fn testFamily(polars: *[2]section.Polar) Family {
+    var alphas: [81]f64 = undefined;
+    for (&alphas, 0..) |*alpha, i| alpha.* = -10 + 0.5 * @as(f64, @floatFromInt(i));
+    for (polars, [_]f64{ 1.2, 1.4 }) |*polar, lift_max| {
+        section.modelPolar(.{ .cl_alpha = two_pi, .alpha0 = -2, .cl_max = lift_max, .cd0 = 0.01, .cm_ac = 0 }, &alphas, polar);
+    }
+    return .{ .reynolds = &.{ 1e5, 3e5 }, .polars = polars };
+}
+
+/// a memória do método para a asa de teste
+const TestMemory = struct {
+    panels: [test_panels]vlm.Panel = undefined,
+    matrix: [test_panels * test_panels]f64 = undefined,
+    pivots: [test_panels]usize = undefined,
+    gamma: [test_panels]f64 = undefined,
+    delta: [test_strips]f64 = undefined,
+    residual: [test_strips]f64 = undefined,
+    trial: [test_strips]f64 = undefined,
+    jacobian: [test_strips * test_strips]f64 = undefined,
+    station_pivots: [test_strips]usize = undefined,
+    scratch: [test_panels]f64 = undefined,
+    stations: [test_strips]Station = undefined,
+
+    fn buffers(memory: *TestMemory) vlm.Buffers {
+        return .{ .panels = &memory.panels, .matrix = &memory.matrix, .pivots = &memory.pivots, .gamma = &memory.gamma };
+    }
+    fn work(memory: *TestMemory) Work {
+        return .{ .delta = &memory.delta, .residual = &memory.residual, .trial = &memory.trial, .jacobian = &memory.jacobian, .pivots = &memory.station_pivots, .scratch = &memory.scratch, .stations = &memory.stations };
+    }
+};
+
+test "estol por estação: perfil curvo em α = 0 pede δ ≈ 0 e o C_L é o do VLM linear (o α0 entra igual nas duas contas)" {
+    var params: types.Params = undefined;
+    cambered(&params);
+    var polars: [2]section.Polar = undefined;
+    const sections: Sections = .{ .families = &.{testFamily(&polars)} };
+    const memory = try testing.allocator.create(TestMemory);
+    defer testing.allocator.destroy(memory);
+    for ([_]f64{ 0, 3 * degree }) |alpha| {
+        const found = try point(&params, test_grid, sections, alpha, 12, 1.2, vec.zero, memory.buffers(), memory.work());
+        try testing.expect(found.converged);
+        const linear = try vlm.derivatives(&params, test_grid, alpha, vec.zero, memory.buffers());
+        // a polar do modelo tem c_lα = 2π na parte reta, a mesma do VLM: só a curvinha antes do estol tira um pouco
+        try testing.expectApproxEqRel(linear.at.CL, found.coefficients.CL, 2e-3);
+        for (memory.stations) |station| try testing.expect(@abs(station.delta) < 2e-3);
+        try testing.expect(!memory.stations[0].outside_reynolds);
+    }
+}
+
+test "estol por estação: a varredura acha o C_L,max abaixo do c_l,max 2D e o estol começa perto da raiz da asa retangular" {
+    var params: types.Params = undefined;
+    cambered(&params);
+    var polars: [2]section.Polar = undefined;
+    const sections: Sections = .{ .families = &.{testFamily(&polars)} };
+    const memory = try testing.allocator.create(TestMemory);
+    defer testing.allocator.destroy(memory);
+    var alphas: [37]f64 = undefined;
+    var degrees: [37]f64 = undefined;
+    var lift: [37]f64 = undefined;
+    var linear: [37]f64 = undefined;
+    for (&alphas, &degrees, 0..) |*alpha, *value, i| {
+        value.* = -2 + 0.5 * @as(f64, @floatFromInt(i));
+        alpha.* = value.* * degree;
+    }
+    const found = try sweep(&params, test_grid, sections, &alphas, 12, 1.2, vec.zero, memory.buffers(), memory.work(), &lift);
+    // Re = 1,2·12·0,25/1,81e-5 ≈ 2e5: a polar fica entre as de 1e5 e 3e5, c_l,max ≈ 1,3
+    try testing.expect(found.lift_max > 0.9 and found.lift_max < 1.3);
+    try testing.expect(found.alpha_onset != null);
+    // a asa retangular estola primeiro perto da raiz (Anderson, "Fundamentals of Aerodynamics", carga da asa
+    // retangular; a conferir no PDF)
+    try testing.expect(found.onset_position < 0.5);
+    for (alphas, &linear) |alpha, *value| value.* = (try vlm.derivatives(&params, test_grid, alpha, vec.zero, memory.buffers())).at.CL;
+    try plot.fromTest("estol_por_estacao_cl", .{ .title = "C_L da asa × α", .x_label = "α (°)", .y_label = "C_L", .series = &.{
+        .{ .label = "VLM + polar", .x = &degrees, .y = &lift },
+        .{ .label = "VLM linear", .x = &degrees, .y = &linear, .style = .dashed },
+    } });
+    // o c_l e o α efetivo ao longo da envergadura no C_L,max
+    _ = try point(&params, test_grid, sections, found.alpha_max, 12, 1.2, vec.zero, memory.buffers(), memory.work());
+    var span: [test_strips]f64 = undefined;
+    var section_lift: [test_strips]f64 = undefined;
+    for (memory.stations, &span, &section_lift, 0..) |station, *position, *value, i| {
+        position.* = if (i < test_strips / 2) -station.span_position else station.span_position;
+        value.* = station.cl;
+    }
+    try plot.fromTest("estol_por_estacao_envergadura", .{ .title = "c_l ao longo da envergadura no C_L,max", .x_label = "2y/b", .y_label = "c_l", .series = &.{
+        .{ .label = "c_l", .x = &span, .y = &section_lift },
+    } });
+}

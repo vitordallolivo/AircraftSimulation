@@ -339,9 +339,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `flapDerivatives:49`, `divergencePressure:74`, `rollEffectiveness:94`, `analyze:128`
 - `core/src/loads/flutter.zig` — Flutter de uma semiasa: viga de elementos finitos (flexão e torção acopladas pela massa), reduzida aos primeiros
   tipos `Element:39`, `ModePoint:52`, `FlutterResult:58`, `Modes:71`
-  fn `modes:151`, `theodorsen:200`, `pk:266`, `flutter:308`
+  fn `modes:151`, `theodorsen:200`, `pk:267`, `flutter:309`
 - `core/src/loads/internal.zig` — Esforços internos ao longo da envergadura de uma semiasa (ou de um tubo de cauda), da ponta para a raiz: cortante,
-  fn `shareByArea:27`, `efforts:35`, `deflection:56`, `twist:69`
+  fn `shareByArea:27`, `efforts:35`, `deflection:56`, `twist:70`
 - `core/src/loads/llt.zig` — Linha sustentadora numérica (vórtices em ferradura) para a distribuição de carga ao longo da envergadura.
   tipos `Curve:79`, `Node:265`
   fn `sectionSlope:67`, `sectionLift:83`, `stallAngle:116`, `segment:128`, `horseshoe:145`, `surfaceNodes:176`, `prepare:347`, `apply:464`, `compute:604`, `coeffs:636`
@@ -541,7 +541,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `check:60`, `checkScaled:69`
 - `core/src/util/plot.zig` — Gráficos de linha em SVG, sem nenhuma dependência: os testes do núcleo desenham o que calcularam, para o dono
   tipos `Series:11`, `Style:18`, `Figure:21`
-  fn `writeSvg:63`, `save:155`, `fromTest:166`
+  fn `writeSvg:63`, `save:156`, `fromTest:167`
 
 
 ## Zig · AeroDrive (`aerodrive/src`)

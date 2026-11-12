@@ -63,6 +63,4 @@ tubo de baixo: 58.1 / 93.9 MPa, margem 11.78
 Os tubos, 37 vezes mais rígidos que a balsa, levam quase todo o momento, e a alma fica com pouca tensão. Os testes
 rodam com `cd core && python -m ziglang build test -Dgrupo=structures`. O EI daqui vai para a flecha da asa, e as
 margens vão para a verificação da longarina e do tubo de cauda, a partir das cargas de
-[`loads`](../loads/README.md):
-
-![Seção composta e tensão ao longo da altura](../../../docs/img/fig/secao_composta.png)
+[`loads`](../loads/README.md).

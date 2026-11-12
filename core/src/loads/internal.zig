@@ -65,13 +65,94 @@ pub fn deflection(positions: []const f64, bending: []const f64, stiffness: []con
     }
 }
 
-/// o giro de torção (rad) de cada estação, ∫ T/GJ da raiz engastada (`stiffness` = GJ, N·m²)
+/// o giro de torção (rad) de cada estação, ∫ T/GJ da raiz engastada (`stiffness` = GJ, N·m²), com o torsor de cada
+/// trecho constante (os torques são concentrados nas estações)
 pub fn twist(positions: []const f64, torsion: []const f64, stiffness: []const f64, angle: []f64) Error!void {
     try check(positions, &.{ torsion.len, stiffness.len, angle.len });
     if (positions.len == 0) return;
     angle[0] = 0;
     for (1..positions.len) |i| {
         const step = positions[i] - positions[i - 1];
-        angle[i] = angle[i - 1] + 0.5 * step * (torsion[i - 1] / stiffness[i - 1] + torsion[i] / stiffness[i]);
+        // entre as estações i − 1 e i o torsor é o das estações de i para fora, T(y_i): constante no trecho
+        angle[i] = angle[i - 1] + 0.5 * step * torsion[i] * (1 / stiffness[i - 1] + 1 / stiffness[i]);
     }
+}
+
+// ------------------------------------------------------------------ testes
+const testing = std.testing;
+const plot = @import("../util/plot.zig");
+
+const stations = 201;
+
+/// uma viga de 1 m com a carga `per_length` (N/m) repartida pelas estações (meia nas pontas, como no trapézio)
+fn uniformBeam(per_length: f64, positions: *[stations]f64, loads: *[stations]f64) void {
+    const step = 1.0 / @as(f64, stations - 1);
+    for (positions, loads, 0..) |*position, *load, i| {
+        position.* = step * @as(f64, @floatFromInt(i));
+        load.* = per_length * step * (if (i == 0 or i == stations - 1) @as(f64, 0.5) else 1);
+    }
+}
+
+test "esforços: viga em balanço com carga uniforme dá V = wL, M = wL²/2 na raiz e flecha wL⁴/(8 EI) na ponta" {
+    var positions: [stations]f64 = undefined;
+    var lifts: [stations]f64 = undefined;
+    uniformBeam(100, &positions, &lifts);
+    const masses = [_]f64{0} ** stations;
+    var shear: [stations]f64 = undefined;
+    var bending: [stations]f64 = undefined;
+    var torsion: [stations]f64 = undefined;
+    try efforts(&positions, &lifts, &masses, &.{}, 1, &shear, &bending, &torsion);
+    // Megson, viga em balanço: V(0) = w L = 100 N; M(0) = w L²/2 = 50 N·m
+    try testing.expectApproxEqRel(@as(f64, 100), shear[0], 1e-12);
+    try testing.expectApproxEqRel(@as(f64, 50), bending[0], 1e-4);
+    try testing.expectApproxEqAbs(@as(f64, 0), bending[stations - 1], 1e-12);
+    const stiffness = [_]f64{1000} ** stations;
+    var slope: [stations]f64 = undefined;
+    var displacement: [stations]f64 = undefined;
+    try deflection(&positions, &bending, &stiffness, &slope, &displacement);
+    // δ = w L⁴/(8 EI) = 100/8000 = 0,0125 m; θ = w L³/(6 EI) = 0,016667
+    try testing.expectApproxEqRel(@as(f64, 0.0125), displacement[stations - 1], 1e-3);
+    try testing.expectApproxEqRel(@as(f64, 100.0 / 6000.0), slope[stations - 1], 1e-3);
+    try plot.fromTest("esforcos_balanco", .{ .title = "Viga em balanço, carga uniforme", .x_label = "y (m)", .y_label = "V (N), M (N·m), flecha (mm)", .series = &.{
+        .{ .label = "cortante", .x = &positions, .y = &shear },
+        .{ .label = "fletor", .x = &positions, .y = &bending },
+        .{ .label = "flecha × 1000", .x = &positions, .y = &scaled(displacement, 1000) },
+    } });
+}
+
+/// uma cópia de `values` vezes `factor` (para o gráfico)
+fn scaled(values: [stations]f64, factor: f64) [stations]f64 {
+    var out = values;
+    for (&out) |*value| value.* *= factor;
+    return out;
+}
+
+test "esforços: o alívio de inércia que iguala a sustentação zera tudo, e o torsor uniforme dá giro tL²/(2 GJ)" {
+    var positions: [stations]f64 = undefined;
+    var lifts: [stations]f64 = undefined;
+    uniformBeam(100, &positions, &lifts);
+    var masses: [stations]f64 = undefined;
+    for (&masses, lifts) |*mass, lift| mass.* = lift / (2.5 * gravity);
+    var torques: [stations]f64 = undefined;
+    uniformBeam(4, &positions, &torques);
+    var shear: [stations]f64 = undefined;
+    var bending: [stations]f64 = undefined;
+    var torsion: [stations]f64 = undefined;
+    try efforts(&positions, &lifts, &masses, &torques, 2.5, &shear, &bending, &torsion);
+    for (shear, bending) |force, moment| {
+        try testing.expectApproxEqAbs(@as(f64, 0), force, 1e-9);
+        try testing.expectApproxEqAbs(@as(f64, 0), moment, 1e-9);
+    }
+    try testing.expectApproxEqRel(@as(f64, 4), torsion[0], 1e-12);
+    const stiffness = [_]f64{50} ** stations;
+    var angle: [stations]f64 = undefined;
+    try twist(&positions, &torsion, &stiffness, &angle);
+    // θ = t L²/(2 GJ) = 4/100 = 0,04 rad
+    try testing.expectApproxEqRel(@as(f64, 0.04), angle[stations - 1], 1e-3);
+}
+
+test "esforços: tamanhos que não batem e estações fora de ordem dão erro" {
+    var out: [3]f64 = undefined;
+    try testing.expectError(error.SizeMismatch, efforts(&.{ 0, 1, 2 }, &.{ 1, 1 }, &.{ 0, 0, 0 }, &.{}, 1, &out, &out, &out));
+    try testing.expectError(error.NotOrdered, efforts(&.{ 0, 2, 1 }, &.{ 1, 1, 1 }, &.{ 0, 0, 0 }, &.{}, 1, &out, &out, &out));
 }

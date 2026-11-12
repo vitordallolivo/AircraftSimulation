@@ -235,3 +235,18 @@ test "seção: sem parte, material fora da lista ou sem módulo dá erro" {
     try testing.expectError(error.BadMaterial, properties(&[_]Material{.{}}, &[_]SectionPart{SectionPart.rectangle(0, 0.01, 0.01, 0)}));
     try testing.expectApproxEqRel(@as(f64, 1000.0 / (0.05 * 0.002)), webShear(1000, 0.05, 0.002), 1e-12);
 }
+
+test "torção: a célula fechada circular fina é o tubo fino, e a parede aberta é G b t³/3" {
+    const materials = [_]Material{aluminium};
+    const radius = 0.05;
+    const thickness = 0.0005;
+    const circle = [_]Wall{.{ .length = 2 * fmath.pi * radius, .thickness = thickness }};
+    const closed = try closedCellTorsion(&materials, &circle, fmath.pi * radius * radius);
+    // Bredt–Batho no círculo: 2π R³ t G; o tubo exato com R médio difere em (t/2R)²
+    try testing.expectApproxEqRel(2 * fmath.pi * radius * radius * radius * thickness * aluminium.shear_modulus, closed, 1e-12);
+    try testing.expectApproxEqRel(tubeTorsion(aluminium.shear_modulus, 2 * radius + thickness, 2 * radius - thickness), closed, 1e-4);
+    const open = try openTorsion(&materials, &[_]Wall{.{ .length = 0.1, .thickness = 0.002 }});
+    try testing.expectApproxEqRel(aluminium.shear_modulus * 0.1 * 0.002 * 0.002 * 0.002 / 3, open, 1e-12);
+    // a mesma parede aberta é ~10⁴ vezes menos rígida que fechada: por isso a caixa D
+    try testing.expect(closed > 1000 * (try openTorsion(&materials, &circle)));
+}
