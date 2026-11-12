@@ -641,6 +641,14 @@ export fn aerosim_de_trials(dims: usize, pop_size: usize, pop: [*]const f64, wei
     return if (diff_evolution.trials(dims, pop_size, pop[0 .. pop_size * dims], weight, cr, seed, generation, out[0 .. pop_size * dims])) 0 else abiCode(error.OutOfRange);
 }
 
+/// os testes da geração com a estratégia (0 rand/1, 1 current-to-best/1) e a borda (0 cortar, 1 refletir); `fit` são
+/// as notas da população (a current-to-best lê)
+export fn aerosim_de_trials_with(dims: usize, pop_size: usize, pop: [*]const f64, fit: [*]const f64, weight: f64, cr: f64, strategy: diff_evolution.Strategy, bound: diff_evolution.Bound, seed: u64, generation: u64, out: [*]f64) i32 {
+    if (dims == 0 or dims > diff_evolution.max_n or pop_size > diff_evolution.max_np) return abiCode(error.OutOfRange);
+    const options: diff_evolution.Options = .{ .weight = weight, .cr = cr, .strategy = strategy, .bound = bound };
+    return if (diff_evolution.trialsWith(dims, pop_size, pop[0 .. pop_size * dims], fit[0..pop_size], options, seed, generation, out[0 .. pop_size * dims])) 0 else abiCode(error.OutOfRange);
+}
+
 /// a seleção: o teste que não é pior entra no lugar (muda `pop` e `fit`); devolve quantos entraram
 export fn aerosim_de_select(dims: usize, pop_size: usize, pop: [*]f64, fit: [*]f64, trial: [*]const f64, tfit: [*]const f64) i32 {
     if (dims == 0 or dims > diff_evolution.max_n or pop_size < 4 or pop_size > diff_evolution.max_np) return abiCode(error.OutOfRange);

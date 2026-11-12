@@ -163,6 +163,7 @@ class _Lib:
             "aerosim_cma_tell": (c_int, [ctypes.POINTER(T["CmaState"]), vp, vp]),
             "aerosim_de_init": (c_int, [c_size, c_size, vp, ctypes.c_uint64, vp]),
             "aerosim_de_trials": (c_int, [c_size, c_size, vp, c_double, c_double, ctypes.c_uint64, ctypes.c_uint64, vp]),
+            "aerosim_de_trials_with": (c_int, [c_size, c_size, vp, vp, c_double, c_double, c_int, c_int, ctypes.c_uint64, ctypes.c_uint64, vp]),
             "aerosim_de_select": (c_int, [c_size, c_size, vp, vp, vp, vp]),
             "aerosim_local_fit": (c_int, [c_size, c_size, vp, vp, vp, c_double, c_int, vp, vp, vp]),
             "aerosim_sens_tolerance": (c_double, [c_size, vp, vp, vp, c_double, vp, vp, vp, vp]),

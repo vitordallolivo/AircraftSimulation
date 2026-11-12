@@ -99,6 +99,7 @@ pub const optim = struct {
     pub const rbf = @import("optim/rbf.zig");
     pub const sampling = @import("optim/sampling.zig");
     pub const scalar = @import("optim/scalar.zig");
+    pub const topology = @import("optim/topology.zig");
     pub const sensmethods = @import("optim/sensmethods.zig");
     pub const types = @import("optim/types.zig");
 };

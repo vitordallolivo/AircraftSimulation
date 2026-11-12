@@ -81,6 +81,7 @@ comptime {
         _ = @import("optim/sensmethods.zig");
         _ = @import("optim/sampling.zig");
         _ = @import("optim/scalar.zig");
+        _ = @import("optim/topology.zig");
         _ = @import("optim/guided.zig");
         _ = @import("math/linalg.zig");
     }

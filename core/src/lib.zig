@@ -35,6 +35,8 @@ pub const state = @import("sim/state.zig");
 /// as buscas do núcleo: as do aeroopt e as de uma variável que os managers usam (bisseção, seção áurea, secante)
 pub const optim = struct {
     pub const scalar = @import("optim/scalar.zig");
+    pub const topology = @import("optim/topology.zig");
+    pub const guided = @import("optim/guided.zig");
     pub const de = @import("optim/de.zig");
     pub const ga = @import("optim/ga.zig");
     pub const cmaes = @import("optim/cmaes.zig");
