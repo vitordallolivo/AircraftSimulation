@@ -91,6 +91,7 @@ comptime {
 comptime {
     if (wanted("structures")) {
         _ = @import("structures/section.zig");
+        _ = @import("util/plot.zig");
         // sem testes ainda (ficam para o final): só confere que compila
         std.testing.refAllDecls(@import("structures/buckling.zig"));
         std.testing.refAllDecls(@import("structures/gear.zig"));

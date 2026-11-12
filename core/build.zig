@@ -4,6 +4,8 @@
 //!   zig build test                 -> todos os testes (src/tests.zig)
 //!   zig build test -Dgrupo=math    -> só um grupo: math, physics, control, sim, sizing, optim, geometry, structures
 //!   zig build test -Dfiltro=trim   -> só os testes cujo nome contém o texto (junta com -Dgrupo)
+//!   zig build test -Darquivo=loads/vn.zig      -> só os testes desse arquivo (compila só ele e o que ele importa)
+//!   zig build test -Dgraficos=graficos         -> os testes que desenham gravam os SVG nessa pasta
 //!   zig build test -Dfuzz=N -Dseed=S -> fuzzing mais longo das interfaces (padrão 2000 entradas por teste)
 //!   zig build -Dfast_math=false    -> troca LUT/polinômios por std.math (referência)
 //!   zig build -Dopt=peak,cse       -> otimizações em avaliação (ver core/OTIMIZACOES.md)
@@ -111,8 +113,18 @@ pub fn build(b: *std.Build) void {
     const test_filter = b.option([]const u8, "filtro", "só os testes cujo nome contém este texto");
     const test_opts = b.addOptions();
     test_opts.addOption([]const u8, "test_group", test_group);
+    // -Dgraficos=<pasta>: os testes que desenham (`util/plot.zig`, `fromTest`) gravam os SVG ali
+    test_opts.addOption([]const u8, "plot_dir", b.option([]const u8, "graficos", "pasta onde os testes gravam os gráficos em SVG (padrão: nenhum gráfico)") orelse "");
+    // -Darquivo=loads/vn.zig: compila e roda só os testes desse arquivo. O Zig não deixa um módulo importar acima da
+    // pasta dele, então a raiz é uma cópia de src/ com um arquivo que importa o pedido
+    const test_file = b.option([]const u8, "arquivo", "só os testes deste arquivo, relativo a src/ (ex.: loads/vn.zig)");
+    const test_root = if (test_file) |file| blk: {
+        const files = b.addWriteFiles();
+        _ = files.addCopyDirectory(b.path("src"), "src", .{});
+        break :blk files.add("teste_arquivo.zig", b.fmt("test {{\n    _ = @import(\"src/{s}\");\n}}\n", .{file}));
+    } else b.path("src/tests.zig");
     const test_module = b.createModule(.{
-        .root_source_file = b.path("src/tests.zig"),
+        .root_source_file = test_root,
         .target = target,
         .optimize = .Debug,
     });

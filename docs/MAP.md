@@ -539,6 +539,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/util/fuzz.zig` — Fuzzing dos módulos.
   tipos `Src:15`
   fn `check:60`, `checkScaled:69`
+- `core/src/util/plot.zig` — Gráficos de linha em SVG, sem nenhuma dependência: os testes do núcleo desenham o que calcularam, para o dono
+  tipos `Series:11`, `Style:18`, `Figure:21`
+  fn `writeSvg:63`, `save:155`, `fromTest:166`
 
 
 ## Zig · AeroDrive (`aerodrive/src`)
