@@ -23,6 +23,7 @@ const Entry = union(enum) {
 /// os tipos da GUI (`aerosim/model/modifiers.py: KINDS`) pelo nome
 const entries = std.StaticStringMap(Entry).initComptime(.{
     .{ "solo.mccormick", Entry{ .ground = .mccormick } },
+    .{ "solo.vlm_imagem", Entry{ .ground = .vlm_image } },
     .{ "esteira.disco", Entry{ .additive = .slipstream_disk } },
     .{ "interferencia.asas", Entry{ .additive = .wing_interference } },
     .{ "comando.momento_flape", Entry{ .additive = .flap_moment } },

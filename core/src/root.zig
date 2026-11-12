@@ -65,6 +65,7 @@ pub fn abiCode(err: AbiError) i32 {
         error.BadTimeStep => -16,
         error.BadMass => -17,
         error.TooManyPropPoints => -18,
+        error.GroundTable => -19,
         // os otimizadores sempre devolveram −1 para "não cabe"; o Python só olha o sinal
         error.OutOfRange, error.OutOfMemory, error.SingularSystem => -1,
     };

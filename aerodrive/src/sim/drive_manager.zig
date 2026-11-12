@@ -276,3 +276,24 @@ fn fuzzSteps(_: void, src: *fz.Src) anyerror!void {
 test "fuzz: passos do drive_manager" {
     try fz.checkScaled({}, fuzzSteps, .{}, 40); // cada caso calibra um avião
 }
+
+test "efeito solo pela imagem no VLM: a tabela sai na configuração e o Convencional decola" {
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", testing.allocator, .limited(1 << 24));
+    defer testing.allocator.free(bytes);
+    var d: model.Diag = .{};
+    var l = try model.parse(testing.allocator, bytes, &d);
+    defer l.deinit();
+    const list = [_]model.Modifier{.{ .kind = "solo.vlm_imagem" }};
+    l.ac.modifiers = &list;
+    var dm = try DriveManager.init(testing.allocator, &l.ac, &d, .autopilot);
+    defer dm.deinit();
+    const table = &dm.inst.p.ground_table;
+    try testing.expect(dm.inst.p.ground == .vlm_image and table.n_height > 0);
+    // perto do chão: mais C_L, menos induzido e o nariz para baixo (a cauda sai do downwash); longe, quase nada
+    const near = core.modifiers.ground.lookup(table, table.height[0], 4 * std.math.pi / 180.0);
+    try testing.expect(near.lift > 0.05 and near.induced < 0.8 and near.moment < -0.03);
+    const far = core.modifiers.ground.lookup(table, table.height[table.height.len - 1], 4 * std.math.pi / 180.0);
+    try testing.expect(@abs(far.lift) < 1e-3 and @abs(far.induced - 1) < 1e-2);
+    for (0..60 * 20) |_| _ = dm.step(1.0 / 60.0);
+    try testing.expect(dm.frame.phase == .flying);
+}

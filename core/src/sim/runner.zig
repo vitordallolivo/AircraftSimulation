@@ -56,6 +56,8 @@ pub const ConfigError = error{
     BadTimeStep,
     BadMass,
     TooManyPropPoints,
+    /// a tabela do efeito solo (VLM com o chão espelhado) não fechou: malha singular
+    GroundTable,
 };
 
 /// o que `resetGround` e `resetAir` recusam
@@ -120,6 +122,7 @@ pub fn configure(inst: *Instance) ConfigError!void {
     params.steer_sign = if (nm > 0 and ns > 0 and xs / ns < xm / nm) -1.0 else 1.0;
     aero.init(params);
     llt.prepare(params); // a geometria fixa da linha sustentadora (cargas e aero_model = 1)
+    if (params.ground == .vlm_image) mods.ground.buildTable(params) catch return error.GroundTable; // efeito solo: a tabela do VLM com o chão
     prop.init(params);
     mass.initTanks(params);
     params.alpha_guard_lim = guardAlpha(params);

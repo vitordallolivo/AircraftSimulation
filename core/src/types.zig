@@ -111,6 +111,21 @@ pub const Surface = extern struct {
     ez: [3]f64 = .{ 0, 0, 0 },
 };
 
+/// a tabela do efeito solo pelo VLM com o chão espelhado (`modifiers/ground.zig`, método `vlm_image`): em cada
+/// altura da origem do corpo sobre o chão (m) e cada α (rad), o ΔC_L e o ΔC_m no CG seco em relação ao voo sem chão;
+/// o fator do induzido só pela altura (C_Di/C_L² com chão sobre o sem chão)
+pub const GroundTable = extern struct {
+    pub const heights = 9;
+    pub const alphas = 6;
+    n_height: i32 = 0, // 0: tabela vazia (sem efeito)
+    n_alpha: i32 = 0,
+    height: [heights]f64 = [_]f64{0} ** heights,
+    alpha: [alphas]f64 = [_]f64{0} ** alphas,
+    induced: [heights]f64 = [_]f64{1} ** heights,
+    lift: [heights * alphas]f64 = [_]f64{0} ** (heights * alphas),
+    moment: [heights * alphas]f64 = [_]f64{0} ** (heights * alphas),
+};
+
 /// Motor BLDC + hélice (tabela) + bateria. Cada unidade é independente.
 pub const PropUnit = extern struct {
     r: [3]f64 = .{ 0, 0, 0 }, // cubo da hélice (m)
@@ -463,6 +478,7 @@ pub const Params = extern struct {
     pads: [limits.max_pads]Pad = [_]Pad{.{}} ** limits.max_pads,
     // modificadores (modifiers/): método do efeito solo e efeitos a mais (desligados por padrão)
     ground: modifier_types.Ground = .mccormick,
+    ground_table: GroundTable = .{}, // montada por runner.configure quando `ground` = vlm_image (não vem do Python)
     n_mod: i32 = 0,
     mods: [limits.max_mods]Modifier = [_]Modifier{.{}} ** limits.max_mods,
     refinement: Refinement = .{},

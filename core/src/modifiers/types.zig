@@ -31,6 +31,9 @@ pub const Ground = enum(i32) {
     off = 0,
     /// φ(h/b) de McCormick no arrasto induzido (o de sempre; padrão)
     mccormick = 1,
+    /// o VLM com o chão espelhado: uma tabela em (altura, α), feita ao configurar, com ΔC_L, o fator do induzido e
+    /// ΔC_m (`ground.zig`)
+    vlm_image = 2,
     /// número de outra versão: tratado como desligado
     _,
 };

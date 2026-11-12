@@ -49,7 +49,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/backend/zig/abi.py` — Monta as estruturas ctypes a partir do esquema que o núcleo Zig exporta.
   `class AbiMismatch:26`, `fnv1a64:30`, `check:39`, `class FieldInfo:51`, `class StructInfo:60`, `class Schema:68`, `parse:81`, `number:144`, `write:160`, `read:187`
 - `aerosim/backend/zig/backend.py` — Implementação de ISimBackend com o núcleo em Zig (libaerosim, via ctypes).
-  `lib_path:24`, `build:47`, `class CoreError:76`, `class ZigSession:220`, `class ZigBackend:498`
+  `lib_path:24`, `build:47`, `class CoreError:77`, `class ZigSession:221`, `class ZigBackend:499`
 - `aerosim/backend/zig/geometry.py` — Tradutor da checagem de geometria: o modelo universal vira as peças simples do núcleo (`core/src/geometry`),
   `scene:114`, `report:165`, `class ZigGeometry:191`
 - `aerosim/backend/zig/translator.py` — Tradutor modelo universal -> núcleo Zig (SimSpec: dicionário com os campos das structs extern).
@@ -305,7 +305,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `main:433`
 - `core/src/tests.zig` — Todos os testes do núcleo, por grupo. `zig build test` roda tudo; `-Dgrupo=math` roda só um grupo e
 - `core/src/types.zig` — Estruturas trocadas com o Python (C ABI, `extern struct`).
-  tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `LiftingLineMethod:56`, `Refinement:68`, `Surface:78`, `PropUnit:115`, `GearKind:157`, `Gear:167`, `TankShape:176`, `Tank:189`, `Segment:205`, `EventKind:226`, `Event:235`, `Pad:239`, `Payload:248`, `Environment:259`, `Takeoff:271`, `Pilot:289`, `Autopilot:299`, `AeroTable:348`, `LltCache:381`, `Params:395`, `PanelState:490`, `SweepSummary:510`, `Events:518`, `LogRow:560`, `AeroCoeffs:674`, `PropPoint:689`, `MassProps:701`, `TrimKind:709`, `TrimPoint:720`, `PerfRow:737`
+  tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `LiftingLineMethod:56`, `Refinement:68`, `Surface:78`, `GroundTable:117`, `PropUnit:130`, `GearKind:172`, `Gear:182`, `TankShape:191`, `Tank:204`, `Segment:220`, `EventKind:241`, `Event:250`, `Pad:254`, `Payload:263`, `Environment:274`, `Takeoff:286`, `Pilot:304`, `Autopilot:314`, `AeroTable:363`, `LltCache:396`, `Params:410`, `PanelState:506`, `SweepSummary:526`, `Events:534`, `LogRow:576`, `AeroCoeffs:690`, `PropPoint:705`, `MassProps:717`, `TrimKind:725`, `TrimPoint:736`, `PerfRow:753`
 
 **core/src/collision/**
 
@@ -364,7 +364,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/modifiers/flapmoment.zig` — Momento próprio do comando (flape, profundor, elevon) no quarto de corda da faixa.
   fn `thetaOf:16`, `cmDelta:29`
 - `core/src/modifiers/ground.zig` — Efeito solo: métodos para o fator do arrasto induzido perto do chão.
-  fn `factor:13`, `mccormick:21`
+  tipos `Effect:109`
+  fn `factor:25`, `mccormick:33`, `buildTable:68`, `lookup:112`
 - `core/src/modifiers/interference.zig` — Interferência entre as asas da configuração no modelo de faixas, para quantas asas houver.
   fn `active:29`, `induced:39`
 - `core/src/modifiers/mod.zig` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro sem mexer no resto
@@ -374,7 +375,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `TubeShape:32`, `Point:82`
   fn `shape:49`, `diskInduced:54`, `axialAt:62`, `radiusAt:67`, `swirlRate:75`, `at:90`
 - `core/src/modifiers/types.zig` — Tipos dos modificadores trocados com o Python (C ABI, `extern struct`; o esquema sai de `abi.zig`).
-  tipos `Ground:29`, `ModifierKind:39`, `Flags:54`, `SlipstreamSettings:65`, `InterferenceSettings:73`, `FlapMomentSettings:79`, `Modifier:88`
+  tipos `Ground:29`, `ModifierKind:42`, `Flags:57`, `SlipstreamSettings:68`, `InterferenceSettings:76`, `FlapMomentSettings:82`, `Modifier:91`
   fn `panelSet:19`
 
 **core/src/optim/**
@@ -408,7 +409,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/physics/aero.zig` — Aerodinâmica por componentes.
   tipos `Out:18`
-  fn `sigmaStall:28`, `init:93`, `compute:126`, `computeEnv:131`, `computeTrace:136`, `fuselage:247`, `coeffs:262`, `coeffsEx:267`, `coeffsEnv:272`, `coeffsAt:277`
+  fn `sigmaStall:28`, `init:93`, `compute:126`, `computeEnv:131`, `computeTrace:136`, `fuselage:264`, `coeffs:279`, `coeffsEx:284`, `coeffsEnv:289`, `coeffsAt:294`
 - `core/src/physics/aeromodel.zig` — O modelo aerodinâmico do voo, escolhido por `Params.aero_model` (`types.AeroModel`): quem a dinâmica, a trimagem e
   fn `compute:18`
 - `core/src/physics/aerotable.zig` — Modelo aerodinâmico por tabela (Params.aero_model = 2): os coeficientes do avião inteiro vêm de `Params.aero_tab`,
@@ -449,7 +450,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `classify:67`, `liquidPoles:152`, `rollRequirement:174`, `mil8785c:208`, `noCriteria:236`, `evaluate:251`, `passes:338`, `respond:368`
 - `core/src/sim/runner.zig` — Executor de uma corrida: eventos discretos, paradas, registro e checkpoints.
   tipos `Status:26`, `Instance:37`
-  fn `stateText:65`, `configure:95`, `handover:162`, `resetGround:184`, `resetAir:238`, `run:394`
+  fn `stateText:67`, `configure:97`, `handover:165`, `resetGround:187`, `resetAir:241`, `run:397`
 - `core/src/sim/simple_perf.zig` — Desempenho por cálculo simples (sem simulação no tempo), como na "planilha suprema":
   tipos `SimpleCfg:23`, `SimpleRow:52`, `SimpleSummary:76`
   fn `density:108`, `compute:132`
@@ -643,7 +644,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerodrive/src/sim/mission.zig` — Percurso -> segmentos, eventos e mesas/plataformas do núcleo (`aerosim/model/mission.py` e
   fn `autoRadius:13`, `segments:20`, `events:76`, `pads:92`
 - `aerodrive/src/sim/modifiers.zig` — Os modificadores do arquivo do avião -> os campos do núcleo (`Params.ground`, `Params.mods`), em Zig.
-  fn `fill:38`
+  fn `fill:39`
 - `aerodrive/src/sim/params.zig` — Avião (arquivo da GUI) -> parâmetros do núcleo (`types.Params`), em Zig.
   tipos `Info:30`, `Coeffs:118`, `DryMass:354`
   fn `area:47`, `span:57`, `mac:61`, `macLeadingEdge:76`, `firstSurface:96`, `references:102`, `props2d:124`, `coeffs:180`, `wingDownwash:202`, `dryMass:381`, `fill:451`, `setup:603`, `setupWith:609`, `calibrate:622`, `staticCharacteristics:647`

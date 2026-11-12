@@ -175,6 +175,10 @@ fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_r
         pairGamma(params, Vr, body_rates, deflections, &env_pair);
         envp = &env_pair;
     }
+    // efeito solo pela tabela do VLM com o chão espelhado (modifiers/ground.zig): o fator do induzido em cada painel,
+    // e ΔC_L e ΔC_m do avião inteiro somados depois dos painéis
+    const imaged = params.ground == .vlm_image;
+    const image_effect: mods.ground.Effect = if (imaged) mods.ground.lookup(&params.ground_table, height, alfa) else .{};
     for (params.surf[0..n_surf], 0..) |*surface, i| {
         const position = vec.v3(surface.r);
         const ex = vec.v3(surface.ex);
@@ -198,7 +202,7 @@ fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_r
         const scl = if (fmath.optOn(.cse)) fmath.sincos(al) else undefined;
         const CL = if (fmath.optOn(.cse)) clPanelWith(surface, al, sg, scl) else clPanel(surface, al, params.Mst);
         var fge: f64 = 1.0;
-        if (surface.vertical == 0) fge = mods.ground.factor(params.ground, height - surface.r[2], params.bref); // efeito solo (modifiers/ground.zig)
+        if (surface.vertical == 0) fge = if (imaged) image_effect.induced else mods.ground.factor(params.ground, height - surface.r[2], params.bref); // efeito solo (modifiers/ground.zig)
         const CDi = (1.0 - sg) * CL * CL / (fmath.pi * surface.e * surface.AR) * fge;
         const sa = if (fmath.optOn(.cse)) scl.s else fmath.sin(al);
         const CD = surface.CD0 + CDi + sg * 1.2 * sa * sa;
@@ -223,6 +227,19 @@ fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_r
         result.M += moment;
         result.Fi += Fi;
         if (surface.group == limits.Group.wing and surface.CLmax > 0) result.ratioCL = @max(result.ratioCL, CL / surface.CLmax);
+    }
+    if (imaged and Va > 0.1) {
+        // ΔC_L na direção da sustentação (perpendicular ao vento, no plano de simetria) e ΔC_m em torno do CG
+        const qS = 0.5 * params.env.rho * Va * Va * params.Sref;
+        const plane_speed = @sqrt(Vr[0] * Vr[0] + Vr[2] * Vr[2]);
+        if (plane_speed > 1e-9) {
+            const force = V3{ Vr[2], 0, -Vr[0] } * vec.splat(qS * image_effect.lift / plane_speed);
+            result.Fg[limits.groupIndex(.wing)] += force;
+            result.F += force;
+            const moment = V3{ 0, qS * params.cref * image_effect.moment, 0 };
+            result.Mg[limits.groupIndex(.wing)] += moment;
+            result.M += moment;
+        }
     }
     // fuselagem (a mesma conta de `fuselage`, escrita aqui para as faixas ficarem bit a bit iguais: fora da função
     // o compilador reordena as somas no modo de ponto flutuante otimizado)

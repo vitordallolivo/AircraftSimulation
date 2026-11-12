@@ -66,7 +66,7 @@ pub const Buffers = struct {
     gamma: []f64,
 };
 
-pub const Error = error{ NoPanels, TooSmall, Singular };
+pub const Error = error{ NoPanels, TooSmall, Singular, BelowGround };
 
 /// as forças e os momentos do avião (no corpo, com ρ = 1 e |V| = 1) e as forças por grupo
 pub const Loads = struct {
@@ -375,7 +375,7 @@ pub fn derivatives(params: *const types.Params, grid: Grid, alpha: f64, ref: V3,
 }
 
 /// os coeficientes em `alpha` com o ponto de referência `ref` a `height` m acima do chão (método das imagens; ver o
-/// cabeçalho). `height` infinita: sem chão, mas com a geometria girada e a esteira no vento. Os momentos são em
+/// cabeçalho). Uma malha que encosta no chão (a menos de 5 % da corda do painel) é recusada (`BelowGround`). `height` infinita: sem chão, mas com a geometria girada e a esteira no vento. Os momentos são em
 /// torno de `ref`; C_L e C_Di nos eixos do vento
 pub fn groundCoefficients(params: *const types.Params, grid: Grid, alpha: f64, height: f64, ref: V3, buffers: Buffers) Error!Coefficients {
     const panels = try lattice(params, grid, buffers.panels);
@@ -391,6 +391,11 @@ pub fn groundCoefficients(params: *const types.Params, grid: Grid, alpha: f64, h
         panel.up = pitchAbout(panel.up, vec.zero, turn.c, turn.s);
     }
     const ground_z: ?f64 = if (std.math.isFinite(height)) ref[2] + height else null;
+    // a malha não pode encostar no chão: o vórtice e a imagem dele se anulam e a matriz fica singular
+    if (ground_z) |plane| for (panels) |*panel| {
+        const clearance = 0.05 * panel.chord;
+        if (panel.a[2] > plane - clearance or panel.b[2] > plane - clearance or panel.control[2] > plane - clearance) return error.BelowGround;
+    };
     try factorWith(panels, ground_z, buffers.matrix, buffers.pivots);
     const gamma = buffers.gamma[0..count];
     const velocity = V3{ 1, 0, 0 };
