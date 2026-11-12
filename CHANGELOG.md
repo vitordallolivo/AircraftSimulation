@@ -9,8 +9,14 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - O projeto não tinha nenhuma conta de estrutura. Agora o núcleo calcula a seção de uma viga feita de várias partes,
   como a alma de balsa com tubos de carbono de uma longarina, cada uma do seu material. A conta dá a linha neutra, a
   rigidez à flexão e a massa por metro. Sob um momento fletor, ela dá também a tensão em cada parte e a margem contra
-  a resistência. O material é sempre o que o usuário informa. Ainda não há tela para isso, e é o primeiro passo das
-  estruturas.
+  a resistência. O material é sempre o que o usuário informa. O núcleo também ganhou as outras contas de estrutura e de carga, ainda sem tela:
+  - o diagrama V-n com a rajada e os casos de carga, com a norma do usuário;
+  - o cortante, o fletor e o torsor ao longo da asa, com a flecha e o giro;
+  - a rigidez à torção da caixa D e dos tubos;
+  - a flambagem do chapeado e da alma, com as nervuras que cada vão precisa;
+  - a velocidade de divergência e a de reversão do aileron;
+  - o flutter;
+  - o trem de pouso, com o esforço em cada tubo e o impacto do pouso.
 - O efeito solo só reduzia o arrasto induzido (o fator de McCormick), que perto do chão corta demais e não muda a
   sustentação nem o momento de arfagem. Agora há um segundo método, o VLM com o chão espelhado. Ele roda uma vez ao
   carregar o avião e monta uma tabela por altura e ângulo de ataque com a sustentação a mais, o induzido a menos e o

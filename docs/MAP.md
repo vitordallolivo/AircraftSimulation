@@ -49,7 +49,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/backend/zig/abi.py` — Monta as estruturas ctypes a partir do esquema que o núcleo Zig exporta.
   `class AbiMismatch:26`, `fnv1a64:30`, `check:39`, `class FieldInfo:51`, `class StructInfo:60`, `class Schema:68`, `parse:81`, `number:144`, `write:160`, `read:187`
 - `aerosim/backend/zig/backend.py` — Implementação de ISimBackend com o núcleo em Zig (libaerosim, via ctypes).
-  `lib_path:24`, `build:47`, `class CoreError:77`, `class ZigSession:223`, `class ZigBackend:501`
+  `lib_path:24`, `build:47`, `class CoreError:77`, `class ZigSession:233`, `class ZigBackend:511`
 - `aerosim/backend/zig/geometry.py` — Tradutor da checagem de geometria: o modelo universal vira as peças simples do núcleo (`core/src/geometry`),
   `scene:114`, `report:165`, `class ZigGeometry:191`
 - `aerosim/backend/zig/translator.py` — Tradutor modelo universal -> núcleo Zig (SimSpec: dicionário com os campos das structs extern).
@@ -282,7 +282,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/abi.zig` — Esquema das estruturas exportadas, gerado em comptime por reflexão.
 - `core/src/aerosim.zig` — Documentação do núcleo do aerosim (`zig build docs`): todas as pastas de `core/src`, uma por seção.
-  tipos `math:14`, `physics:22`, `modifiers:35`, `collision:45`, `control:50`, `sim:57`, `loads:71`, `structures:78`, `sizing:83`, `optim:97`, `geometry:113`, `util:118`
+  tipos `math:14`, `physics:22`, `modifiers:35`, `collision:45`, `control:50`, `sim:57`, `loads:71`, `structures:82`, `sizing:89`, `optim:103`, `geometry:119`, `util:124`
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
@@ -290,7 +290,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Declaration:11`
   fn `require:18`, `has:33`
 - `core/src/lib.zig` — O núcleo como módulo Zig (para programas em Zig, como o aerodrive): os mesmos tipos e funções
-  tipos `structures:36`, `optim:40`
+  tipos `structures:41`, `optim:47`
 - `core/src/limits.zig` — Limites de compilação. Toda a memória do núcleo é estática e dimensionada aqui:
   tipos `Group:18`
   fn `groupIndex:30`
@@ -300,8 +300,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/opt.zig` — Otimizações em avaliação (`-Dopt`): cada uma é um bit, desligado por padrão (ver core/OTIMIZACOES.md).
   tipos `Opt:5`
 - `core/src/root.zig` — Interface C ABI do núcleo (o que o Python chama via ctypes).
-  fn `abiCode:49`
-  **ABI (82 exports)** `aerosim_abi_version`, `aerosim_schema`, `aerosim_probe_ground`, `aerosim_probe_slipstream`, `aerosim_aero_coeffs_thrust`, `aerosim_aero_coeffs_at`, `aerosim_tube_panel_hits`, `aerosim_tube_point_hits`, `aerosim_prop_state`, `aerosim_panel_states`, `aerosim_panel_states_llt`, `aerosim_wing_sweep`, `aerosim_wing_sweep_summary`, `aerosim_reynolds`, `aerosim_aero_coeffs_llt`, `aerosim_schema_hash`, `aerosim_acquire`, `aerosim_release`, `aerosim_params`, `aerosim_params_reset`, `aerosim_configure`, `aerosim_reset_ground`, `aerosim_reset_air`, `aerosim_run`, `aerosim_events`, `aerosim_time`, `aerosim_snapshot_size`, `aerosim_snapshot_save`, `aerosim_snapshot_load`, `aerosim_mass_props`, `aerosim_aero_coeffs`, `aerosim_aero_coeffs_ex`, `aerosim_linearize`, `aerosim_linearize_slosh`, `aerosim_autotune`, `aerosim_prop_point`, `aerosim_trim`, `aerosim_performance`, `aerosim_envelope`, `aerosim_envelope_curve`, `aerosim_simple_perf`, `aerosim_bench_math`, `aerosim_bench_dynamics`, `aerosim_fast_math`, `aerosim_expr_check`, `aerosim_expr_eval`, `aerosim_ground_runs`, `aerosim_ground_mtow`, `aerosim_motor_prop_thrust`, `aerosim_motor_prop_points`, `aerosim_section_check`, `aerosim_sizing_eval`, `aerosim_sizing_optimize`, `aerosim_sizing_name`, `aerosim_sizing_defaults`, `aerosim_geometry_check`, `aerosim_ga_init`, `aerosim_ga_next`, `aerosim_cma_init`, `aerosim_cma_ask`, `aerosim_cma_tell`, `aerosim_de_init`, `aerosim_de_trials`, `aerosim_de_trials_with`, `aerosim_de_select`, `aerosim_local_fit`, `aerosim_rbf_fit`, `aerosim_rbf_eval`, `aerosim_lhs`, `aerosim_repair_step`, `aerosim_eps_level`, `aerosim_eps_worse`, `aerosim_bandit_state_len`, `aerosim_bandit_init`, `aerosim_bandit_pick`, `aerosim_bandit_update`, `aerosim_normative`, `aerosim_lem_box`, `aerosim_box_sample`, `aerosim_sens_tolerance`, `aerosim_morris_design`, `aerosim_morris_effects`
+  fn `abiCode:51`
+  **ABI (92 exports)** `aerosim_abi_version`, `aerosim_schema`, `aerosim_probe_ground`, `aerosim_probe_slipstream`, `aerosim_aero_coeffs_thrust`, `aerosim_aero_coeffs_at`, `aerosim_tube_panel_hits`, `aerosim_tube_point_hits`, `aerosim_prop_state`, `aerosim_panel_states`, `aerosim_panel_states_llt`, `aerosim_wing_sweep`, `aerosim_wing_sweep_summary`, `aerosim_reynolds`, `aerosim_aero_coeffs_llt`, `aerosim_schema_hash`, `aerosim_acquire`, `aerosim_release`, `aerosim_params`, `aerosim_params_reset`, `aerosim_configure`, `aerosim_reset_ground`, `aerosim_reset_air`, `aerosim_run`, `aerosim_events`, `aerosim_time`, `aerosim_snapshot_size`, `aerosim_snapshot_save`, `aerosim_snapshot_load`, `aerosim_mass_props`, `aerosim_aero_coeffs`, `aerosim_aero_coeffs_ex`, `aerosim_linearize`, `aerosim_linearize_slosh`, `aerosim_autotune`, `aerosim_prop_point`, `aerosim_trim`, `aerosim_performance`, `aerosim_envelope`, `aerosim_envelope_curve`, `aerosim_simple_perf`, `aerosim_bench_math`, `aerosim_bench_dynamics`, `aerosim_fast_math`, `aerosim_expr_check`, `aerosim_expr_eval`, `aerosim_ground_runs`, `aerosim_ground_mtow`, `aerosim_motor_prop_thrust`, `aerosim_motor_prop_points`, `aerosim_section_check`, `aerosim_section_torsion`, `aerosim_buckling`, `aerosim_gear_frame`, `aerosim_gear_landing`, `aerosim_vn_diagram`, `aerosim_vn_envelope`, `aerosim_span_internal`, `aerosim_aeroelastic`, `aerosim_beam_modes`, `aerosim_flutter`, `aerosim_sizing_eval`, `aerosim_sizing_optimize`, `aerosim_sizing_name`, `aerosim_sizing_defaults`, `aerosim_geometry_check`, `aerosim_ga_init`, `aerosim_ga_next`, `aerosim_cma_init`, `aerosim_cma_ask`, `aerosim_cma_tell`, `aerosim_de_init`, `aerosim_de_trials`, `aerosim_de_trials_with`, `aerosim_de_select`, `aerosim_local_fit`, `aerosim_rbf_fit`, `aerosim_rbf_eval`, `aerosim_lhs`, `aerosim_repair_step`, `aerosim_eps_level`, `aerosim_eps_worse`, `aerosim_bandit_state_len`, `aerosim_bandit_init`, `aerosim_bandit_pick`, `aerosim_bandit_update`, `aerosim_normative`, `aerosim_lem_box`, `aerosim_box_sample`, `aerosim_sens_tolerance`, `aerosim_morris_design`, `aerosim_morris_effects`
 - `core/src/tecnicas.zig` — Bancada das técnicas de otimização (tarefa G27): cada técnica roda a conta de hoje do núcleo e a candidata no
   fn `main:433`
 - `core/src/tests.zig` — Todos os testes do núcleo, por grupo. `zig build test` roda tudo; `-Dgrupo=math` roda só um grupo e
@@ -334,6 +334,14 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 **core/src/loads/**
 
+- `core/src/loads/aeroelastic.zig` — Aeroelasticidade estática de uma semiasa em faixas: divergência em torção e reversão do aileron.
+  tipos `Station:25`, `Aeroelastic:37`
+  fn `flapDerivatives:49`, `divergencePressure:74`, `rollEffectiveness:94`, `analyze:128`
+- `core/src/loads/flutter.zig` — Flutter de uma semiasa: viga de elementos finitos (flexão e torção acopladas pela massa), reduzida aos primeiros
+  tipos `Element:39`, `ModePoint:52`, `FlutterResult:58`, `Modes:71`
+  fn `modes:151`, `theodorsen:200`, `pk:266`, `flutter:308`
+- `core/src/loads/internal.zig` — Esforços internos ao longo da envergadura de uma semiasa (ou de um tubo de cauda), da ponta para a raiz: cortante,
+  fn `shareByArea:27`, `efforts:35`, `deflection:56`, `twist:69`
 - `core/src/loads/llt.zig` — Linha sustentadora numérica (vórtices em ferradura) para a distribuição de carga ao longo da envergadura.
   tipos `Curve:79`, `Node:265`
   fn `sectionSlope:67`, `sectionLift:83`, `stallAngle:116`, `segment:128`, `horseshoe:145`, `surfaceNodes:176`, `prepare:347`, `apply:464`, `compute:604`, `coeffs:636`
@@ -346,6 +354,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/loads/vlm.zig` — Método dos vórtices em malha (VLM) do avião: cada faixa sustentadora do núcleo (`Params.surf`) vira uma malha de
   tipos `Grid:40`, `Panel:43`, `Buffers:62`, `Loads:72`, `Coefficients:79`, `Derivatives:91`
   fn `panelCount:111`, `lattice:159`, `factor:230`, `solve:268`, `loads:289`, `velocityAt:312`, `coefficients:319`, `derivatives:340`, `groundCoefficients:380`
+- `core/src/loads/vn.zig` — Diagrama V-n: o envelope de manobra e o de rajada, e os casos de carga que saem dele.
+  tipos `VnNorm:20`, `VnAircraft:31`, `LoadCase:41`, `CaseKind:50`, `VnResult:55`
+  fn `gustAlleviation:76`, `gustIncrement:82`, `maneuverLimits:88`, `envelope:95`, `diagram:111`
 
 **core/src/math/**
 
@@ -510,9 +521,15 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 **core/src/structures/**
 
+- `core/src/structures/buckling.zig` — Flambagem do chapeado e da alma, e quantas nervuras um vão precisa para o chapeado não flambar.
+  tipos `Orthotropic:23`
+  fn `flatPlate:43`, `curvedPanel:55`, `arcRadius:78`, `webShear:83`, `ribsNeeded:94`
+- `core/src/structures/gear.zig` — Trem de pouso: a treliça de tubos como pórtico 3D de elementos finitos (6 graus por nó), as margens de cada tubo e o
+  tipos `Node:28`, `Member:37`, `MemberResult:48`, `Drop:243`, `DropResult:257`
+  fn `solveFrame:143`, `landing:275`
 - `core/src/structures/section.zig` — Seção composta de uma viga (longarina, tubo de cauda): a seção é uma soma de partes (alma, mesas, tubos, chapeado),
-  tipos `Material:23`, `SectionPart:35`, `SectionProperties:63`, `PartStress:71`
-  fn `properties:88`, `bendingStress:112`, `normalMargin:117`, `stresses:124`, `webShear:134`, `shearMargin:139`
+  tipos `Material:23`, `SectionPart:35`, `SectionProperties:63`, `PartStress:71`, `Wall:150`
+  fn `properties:88`, `bendingStress:112`, `normalMargin:117`, `stresses:124`, `webShear:134`, `shearMargin:139`, `closedCellTorsion:158`, `openTorsion:171`, `tubeTorsion:181`
 
 **core/src/util/**
 

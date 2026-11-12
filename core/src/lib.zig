@@ -25,6 +25,11 @@ pub const sweep = @import("loads/sweep.zig");
 pub const trefftz = @import("loads/trefftz.zig");
 /// o VLM do avião (ferraduras em malha corda × envergadura): coeficientes e derivadas do escoamento potencial
 pub const vlm = @import("loads/vlm.zig");
+/// V-n e rajada, esforços ao longo da envergadura, divergência e reversão, e flutter
+pub const vn = @import("loads/vn.zig");
+pub const internal_loads = @import("loads/internal.zig");
+pub const aeroelastic = @import("loads/aeroelastic.zig");
+pub const flutter = @import("loads/flutter.zig");
 pub const vec = @import("math/vec.zig");
 pub const autotune = @import("control/autotune.zig");
 pub const linear = @import("sim/linear.zig");
@@ -35,6 +40,8 @@ pub const state = @import("sim/state.zig");
 /// estruturas: seção composta (EI, tensões e margens)
 pub const structures = struct {
     pub const section = @import("structures/section.zig");
+    pub const buckling = @import("structures/buckling.zig");
+    pub const gear = @import("structures/gear.zig");
 };
 /// as buscas do núcleo: as do aeroopt e as de uma variável que os managers usam (bisseção, seção áurea, secante)
 pub const optim = struct {

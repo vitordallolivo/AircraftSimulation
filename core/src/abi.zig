@@ -30,7 +30,15 @@ pub const exported = .{
     sizing_types.LayoutData, sizing_types.SizingCfg,  sizing_types.SizingOut,     sizing_types.OptOpts,  sizing_types.Individual,  optim_types.Tier,      optim_types.Program,
     sizing_ground.GroundRun,  geometry.Part,      geometry.Scene,       geometry.Report,  genetic.GaCfg,      cmaes.CmaState,  motorprop.MotorProp,
     structure_section.Material, structure_section.SectionPart, structure_section.SectionProperties, structure_section.PartStress,
+    structure_section.Wall, structure_buckling.Orthotropic, structure_gear.Node, structure_gear.Member, structure_gear.MemberResult,
+    structure_gear.Drop, structure_gear.DropResult, load_vn.VnNorm, load_vn.VnAircraft, load_vn.LoadCase, load_vn.VnResult,
+    load_aeroelastic.Station, load_aeroelastic.Aeroelastic, load_flutter.Element, load_flutter.ModePoint, load_flutter.FlutterResult,
 };
+const structure_buckling = @import("structures/buckling.zig");
+const structure_gear = @import("structures/gear.zig");
+const load_vn = @import("loads/vn.zig");
+const load_aeroelastic = @import("loads/aeroelastic.zig");
+const load_flutter = @import("loads/flutter.zig");
 const structure_section = @import("structures/section.zig");
 const sizing_types = @import("sizing/types.zig");
 const optim_types = @import("optim/types.zig");

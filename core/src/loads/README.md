@@ -52,6 +52,11 @@ print("sustentação total: faixas", round(faixas["L"].sum(), 1), "N, linha sust
 sustentação total: faixas 87.7 N, linha sustentadora 95.7 N
 ```
 
+A pasta também tem as cargas que dimensionam a estrutura: o diagrama V-n com a rajada de Pratt e os casos de carga
+(`vn.zig`), o cortante, o fletor, o torsor, a flecha e o giro ao longo da envergadura (`internal.zig`), a divergência e
+a reversão do aileron (`aeroelastic.zig`) e o flutter por p-k com a aerodinâmica de Theodorsen (`flutter.zig`). A
+norma, as rajadas e os materiais vêm sempre do usuário.
+
 O total muda pouco; o que muda é onde a carga está. Os exports são `aerosim_panel_states_llt` (a carga por painel),
 `aerosim_aero_coeffs_llt` (os coeficientes do avião) e `aerosim_wing_sweep` (a varredura em α), e os testes rodam com
 `cd core && python -m ziglang build test -Dgrupo=physics`.

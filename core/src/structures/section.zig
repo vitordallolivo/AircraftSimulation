@@ -141,6 +141,49 @@ pub fn shearMargin(material: Material, stress: f64) f64 {
     return material.shear / @abs(stress) - 1;
 }
 
+// ------------------------------------------------------------------ torção
+// Rigidez à torção (Megson, "Aircraft Structures for Engineering Students", torção de seções fechadas e abertas;
+// a conferir no PDF). Célula fechada (a caixa D com o chapeado até a longarina), Bredt–Batho: GJ = 4 A²/∮ ds/(G t).
+// Paredes abertas: GJ = Σ G b t³/3. Tubo: GJ = G π (D⁴ − d⁴)/32.
+
+/// uma parede da seção: o material, o comprimento ao longo do contorno e a espessura (m)
+pub const Wall = extern struct {
+    material: i32 = 0,
+    _pad: i32 = 0,
+    length: f64 = 0,
+    thickness: f64 = 0,
+};
+
+/// GJ (N·m²) da célula fechada de área interna `enclosed` (m²) pelas paredes `walls` (Bredt–Batho)
+pub fn closedCellTorsion(materials: []const Material, walls: []const Wall, enclosed: f64) Error!f64 {
+    if (walls.len == 0) return error.NoParts;
+    var compliance: f64 = 0;
+    for (walls) |wall| {
+        if (wall.material < 0 or wall.material >= materials.len) return error.BadMaterial;
+        const modulus = materials[@intCast(wall.material)].shear_modulus;
+        if (!(modulus > 0) or !(wall.thickness > 0)) return error.NoStiffness;
+        compliance += wall.length / (modulus * wall.thickness);
+    }
+    return 4 * enclosed * enclosed / compliance;
+}
+
+/// GJ (N·m²) das paredes abertas `walls`, Σ G b t³/3
+pub fn openTorsion(materials: []const Material, walls: []const Wall) Error!f64 {
+    var stiffness: f64 = 0;
+    for (walls) |wall| {
+        if (wall.material < 0 or wall.material >= materials.len) return error.BadMaterial;
+        stiffness += materials[@intCast(wall.material)].shear_modulus * wall.length * wall.thickness * wall.thickness * wall.thickness / 3;
+    }
+    return stiffness;
+}
+
+/// GJ (N·m²) de um tubo de diâmetros `outer` e `inner` com módulo de cisalhamento `shear_modulus`
+pub fn tubeTorsion(shear_modulus: f64, outer: f64, inner: f64) f64 {
+    const outer2 = outer * outer;
+    const inner2 = inner * inner;
+    return shear_modulus * fmath.pi / 32.0 * (outer2 * outer2 - inner2 * inner2);
+}
+
 // ------------------------------------------------------------------ testes
 const testing = std.testing;
 

@@ -4,9 +4,11 @@ Esta parte do núcleo verifica se a estrutura aguenta as cargas que o resto do p
 composta de uma viga, como uma longarina com alma de balsa e tubos de carbono, ou um tubo de cauda. Cada parte da
 seção tem o seu material. Daqui saem a linha neutra, a rigidez à flexão EI e a massa por metro. Sob um momento fletor
 saem também a tensão nas fibras extremas de cada parte e a margem contra a resistência do material. O material é
-sempre dado pelo usuário, e o núcleo não tem valor padrão. Os próximos passos são o diagrama V-n com a rajada,
-o cortante e o fletor ao longo da envergadura, a flambagem, a torção com divergência e reversão, o flutter e o trem de
-pouso.
+sempre dado pelo usuário, e o núcleo não tem valor padrão. A pasta também tem a rigidez à torção (caixa D por
+Bredt–Batho, paredes abertas e tubos), a flambagem do chapeado plano e curvo e da alma, com as nervuras que cada vão
+precisa, e o trem de pouso (pórtico 3D de tubos com margens e o impacto do pouso). O que é carga fica em
+[`loads`](../loads/README.md): o V-n com a rajada, os esforços ao longo da envergadura, a divergência, a reversão e o
+flutter.
 
 ```mermaid
 flowchart LR

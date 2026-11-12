@@ -72,11 +72,17 @@ pub const loads = struct {
     pub const llt = @import("loads/llt.zig");
     pub const sweep = @import("loads/sweep.zig");
     pub const vlm = @import("loads/vlm.zig");
+    pub const vn = @import("loads/vn.zig");
+    pub const internal = @import("loads/internal.zig");
+    pub const aeroelastic = @import("loads/aeroelastic.zig");
+    pub const flutter = @import("loads/flutter.zig");
 };
 
 /// estruturas: seção composta (EI, tensões e margens)
 pub const structures = struct {
     pub const section = @import("structures/section.zig");
+    pub const buckling = @import("structures/buckling.zig");
+    pub const gear = @import("structures/gear.zig");
 };
 
 /// dimensionamento inicial (mini-MDO)
