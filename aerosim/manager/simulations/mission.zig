@@ -804,7 +804,7 @@ const RunState = struct {
     total_simulations: usize = 0,
     finished: bool = false,
     cases: std.ArrayList(MtowCase) = .empty,
-    bisection: struct { low: f64 = 0, high: f64 = 1, step: usize = 0, best: ?usize = null, mtow_fraction: ?f64 = null, stage: enum { low, high, bisect, refine, mission, done } = .low } = .{},
+    bisection: struct { interval: core.optim.scalar.Bisection = .{ .low = 0, .high = 1 }, best: ?usize = null, mtow_fraction: ?f64 = null, stage: enum { low, high, bisect, refine, mission, done } = .low } = .{},
     // a busca do MTOW em duas fases: só a decolagem até achar a massa; depois a missão inteira nela. Se a missão
     // não completa, a bisseção volta com "decola e completa a missão" como critério
     with_mission: bool = false,
@@ -1342,24 +1342,19 @@ fn aimDrop(state: *RunState, k: usize, snapshot: *const Snapshot) !void {
             return outcome.events.pk_n - target_;
         }
     };
-    var low = 0.05 * length;
-    var high = 0.95 * length;
-    var at_low = try Impact.at(state, k, snapshot, drop_index, instance, low, &history, target);
+    const low = 0.05 * length;
+    const high = 0.95 * length;
+    const at_low = try Impact.at(state, k, snapshot, drop_index, instance, low, &history, target);
     const at_high = try Impact.at(state, k, snapshot, drop_index, instance, high, &history, target);
     var chosen: f64 = undefined;
-    if ((at_low > 0) == (at_high > 0)) {
-        chosen = if (@abs(at_low) < @abs(at_high)) low else high;
-    } else {
+    if (core.optim.scalar.SignBisection.init(low, high, at_low, at_high)) |found| {
+        var search = found;
         for (0..8) |_| {
-            const middle = 0.5 * (low + high);
-            const at_middle = try Impact.at(state, k, snapshot, drop_index, instance, middle, &history, target);
-            if ((at_middle > 0) == (at_low > 0)) {
-                low = middle;
-                at_low = at_middle;
-            } else high = middle;
+            const middle = search.middle();
+            search.update(middle, try Impact.at(state, k, snapshot, drop_index, instance, middle, &history, target));
         }
-        chosen = 0.5 * (low + high);
-    }
+        chosen = search.middle();
+    } else chosen = if (@abs(at_low) < @abs(at_high)) low else high;
     std.mem.sort([2]f64, history.items, {}, struct {
         fn less(_: void, left: [2]f64, right: [2]f64) bool {
             return left[0] < right[0];
@@ -1848,21 +1843,18 @@ fn advanceMtow(run: *simulation.Run, state: *RunState) simulation.Error!bool {
             return false;
         },
         .bisect => {
-            if (bisection.step >= 9) {
-                bisection.mtow_fraction = bisection.low;
+            if (bisection.interval.step >= 9) {
+                bisection.mtow_fraction = bisection.interval.low;
                 bisection.stage = .refine;
                 return false;
             }
-            bisection.step += 1;
-            const middle = 0.5 * (bisection.low + bisection.high);
-            run.say("{s}: bisseção {d}/9, {d:.2} kg", .{ phase_name, bisection.step, massAt(middle) });
+            const middle = bisection.interval.middle();
+            run.say("{s}: bisseção {d}/9, {d:.2} kg", .{ phase_name, bisection.interval.step + 1, massAt(middle) });
             const case = try mtowCase(state, middle, false);
             const ok = try passes(state, case);
             const k = try keepCase(state, case);
-            if (ok) {
-                bisection.low = middle;
-                bisection.best = k;
-            } else bisection.high = middle;
+            if (ok) bisection.best = k;
+            bisection.interval.move(middle, if (ok) .raise else .lower);
             return false;
         },
         .refine => {
@@ -1895,7 +1887,7 @@ fn advanceMtow(run: *simulation.Run, state: *RunState) simulation.Error!bool {
             // a missão não completa na massa só de decolagem: volta à bisseção, de baixo até ela, com a missão junto
             try state.notes.append(state.memory, try printed(state.memory, "com {d:.2} kg decola mas não completa a missão: a busca voltou com a missão no critério", .{case.mass}));
             state.with_mission = true;
-            bisection.* = .{ .high = bisection.mtow_fraction.? };
+            bisection.* = .{ .interval = .{ .low = 0, .high = bisection.mtow_fraction.? } };
             return false;
         },
         .done => return true,
@@ -1905,7 +1897,7 @@ fn advanceMtow(run: *simulation.Run, state: *RunState) simulation.Error!bool {
 /// quanto da busca do xCG de agora já foi (0 a 1), pela etapa da bisseção
 fn searchFraction(state: *const RunState) f64 {
     const bisection = &state.bisection;
-    const steps: f64 = @floatFromInt(bisection.step);
+    const steps: f64 = @floatFromInt(bisection.interval.step);
     const inside: f64 = switch (bisection.stage) {
         .low => 0,
         .high => 0.05,
@@ -2005,7 +1997,7 @@ fn advanceStudy(run: *simulation.Run, state: *RunState) simulation.Error!bool {
     if (state.bisection.stage != .done) {
         _ = try advanceMtow(run, state);
         const total: f64 = @floatFromInt(study.values.len);
-        run.progress = @floatCast((@as(f64, @floatFromInt(study.index)) + @as(f64, @floatFromInt(state.bisection.step)) / 10) / total);
+        run.progress = @floatCast((@as(f64, @floatFromInt(study.index)) + @as(f64, @floatFromInt(state.bisection.interval.step)) / 10) / total);
         var step_text: [160]u8 = undefined;
         const step = std.mem.sliceTo(&run.message, 0);
         @memcpy(step_text[0..step.len], step);

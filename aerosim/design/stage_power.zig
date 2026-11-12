@@ -535,17 +535,19 @@ fn thrustTrim(context: *stages.Context, memory: std.mem.Allocator, assembled: *A
     };
     const neutral = aero(wing, result, ground_lift, 0, gear_aft, change);
     if (Lifts.any(&early_speeds, &early_thrust, 0.95 * liftoff, density, area, chord, neutral, units, gear_x, gear_z, weight, weight_arm)) {
-        var low: f64 = 0;
-        var high = de_down;
+        const low: f64 = 0;
+        const high = de_down;
         if (Lifts.any(&early_speeds, &early_thrust, 0.95 * liftoff, density, area, chord, aero(wing, result, ground_lift, high, gear_aft, change), units, gear_x, gear_z, weight, weight_arm)) {
             assembled.hold = rule(project, "de_down");
             assembled.hold_ok = false;
         } else {
+            var bisection: core.optim.scalar.Bisection = .{ .low = low, .high = high };
             for (0..30) |_| {
-                const middle = 0.5 * (low + high);
-                if (Lifts.any(&early_speeds, &early_thrust, 0.95 * liftoff, density, area, chord, aero(wing, result, ground_lift, middle, gear_aft, change), units, gear_x, gear_z, weight, weight_arm)) low = middle else high = middle;
+                const middle = bisection.middle();
+                const lifts = Lifts.any(&early_speeds, &early_thrust, 0.95 * liftoff, density, area, chord, aero(wing, result, ground_lift, middle, gear_aft, change), units, gear_x, gear_z, weight, weight_arm);
+                bisection.move(middle, if (lifts) .raise else .lower);
             }
-            assembled.hold = std.math.radiansToDegrees(high);
+            assembled.hold = std.math.radiansToDegrees(bisection.high);
         }
         plane.takeoff.de0 = @round(assembled.hold * 100) / 100;
     }

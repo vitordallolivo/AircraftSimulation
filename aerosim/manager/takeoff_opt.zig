@@ -19,6 +19,7 @@ const aircraft_model = @import("aircraft_model");
 const runner = @import("runner.zig");
 
 const types = core.types;
+const scalar = core.optim.scalar;
 const params_mod = aircraft_model.params;
 const Aircraft = aircraft_model.aircraft.Aircraft;
 const rad = std.math.pi / 180.0;
@@ -373,30 +374,22 @@ fn gridSearch(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), refine: bool) 
     if (!refine) return start;
     // refina s (seção áurea) em volta do melhor, na mesma deflexão
     const spacing = grid[1] - grid[0];
-    var low = @max(0, start.position - spacing);
-    var high = start.position + spacing;
-    const golden = (@sqrt(5.0) - 1.0) / 2.0;
+    var search = scalar.GoldenSection.init(@max(0, start.position - spacing), start.position + spacing);
     const hold: ?f64 = if (std.math.isFinite(start.hold)) start.hold else null;
-    var left_point = high - golden * (high - low);
-    var right_point = low + golden * (high - low);
-    var left = try takeoffs.evaluate(left_point, start.deflection, hold);
-    var right = try takeoffs.evaluate(right_point, start.deflection, hold);
+    var left = try takeoffs.evaluate(search.left, start.deflection, hold);
+    var right = try takeoffs.evaluate(search.right, start.deflection, hold);
     try tried.append(memory, left);
     try tried.append(memory, right);
     for (0..refine_steps) |_| {
-        if (left.margin >= right.margin) {
-            high = right_point;
-            right_point = left_point;
+        const left_better = left.margin >= right.margin;
+        const point = search.shrink(left_better);
+        if (left_better) {
             right = left;
-            left_point = high - golden * (high - low);
-            left = try takeoffs.evaluate(left_point, start.deflection, hold);
+            left = try takeoffs.evaluate(point, start.deflection, hold);
             try tried.append(memory, left);
         } else {
-            low = left_point;
-            left_point = right_point;
             left = right;
-            right_point = low + golden * (high - low);
-            right = try takeoffs.evaluate(right_point, start.deflection, hold);
+            right = try takeoffs.evaluate(point, start.deflection, hold);
             try tried.append(memory, right);
         }
     }
@@ -419,20 +412,19 @@ fn bisect(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), tolerance: f64) !?
         const top = if (std.math.isFinite(lift_off)) @min(lift_off, x_warning) else x_warning;
         var early = false;
         for (levels) |level| {
-            var low: f64 = 0;
-            var high = top;
+            var bisection: scalar.Bisection = .{ .low = 0, .high = top };
             var good: ?Result = null;
             early = false;
-            while (high - low > @max(position_tolerance, tolerance * x_warning)) {
-                const result = try takeoffs.evaluate(0.5 * (low + high), -level * deflection_max, hold);
+            while (bisection.width() > @max(position_tolerance, tolerance * x_warning)) {
+                const result = try takeoffs.evaluate(bisection.middle(), -level * deflection_max, hold);
                 try tried.append(memory, result);
                 if (result.ok) {
                     if (good == null or result.margin > good.?.margin) good = result;
-                    high = result.position; // passa: tenta antes, para ganhar folga
+                    bisection.move(result.position, .lower); // passa: tenta antes, para ganhar folga
                 } else if (result.early()) {
-                    low = result.position;
+                    bisection.move(result.position, .raise);
                     early = true;
-                } else high = result.position;
+                } else bisection.move(result.position, .lower);
             }
             if (good) |found| return found;
             if (tolerance > 0 and !early) break; // nem todo cabrando sai do chão a tempo: o resto só atrasa

@@ -32,3 +32,10 @@ pub const static_stability = @import("sim/static.zig");
 pub const flight_modes = @import("sim/modes.zig");
 pub const mass = @import("physics/mass.zig");
 pub const state = @import("sim/state.zig");
+/// as buscas do núcleo: as do aeroopt e as de uma variável que os managers usam (bisseção, seção áurea, secante)
+pub const optim = struct {
+    pub const scalar = @import("optim/scalar.zig");
+    pub const de = @import("optim/de.zig");
+    pub const ga = @import("optim/ga.zig");
+    pub const cmaes = @import("optim/cmaes.zig");
+};

@@ -98,6 +98,7 @@ pub const optim = struct {
     pub const localfit = @import("optim/localfit.zig");
     pub const rbf = @import("optim/rbf.zig");
     pub const sampling = @import("optim/sampling.zig");
+    pub const scalar = @import("optim/scalar.zig");
     pub const sensmethods = @import("optim/sensmethods.zig");
     pub const types = @import("optim/types.zig");
 };

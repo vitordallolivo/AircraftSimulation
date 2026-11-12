@@ -2166,14 +2166,13 @@ fn controls(memory: std.mem.Allocator, state: *StaticState, session: *const Sess
             trim_part[i] = if (point.ok != 0) @abs(point.de / rad) else std.math.nan(f64);
             const dynamic_pressure = 0.5 * probe.density * speed * speed;
             const time_constant = -2 * speed * probe.inertia[0][0] / (dynamic_pressure * probe.area * probe.span * probe.span * damping);
-            var low: f64 = 0;
-            var high: f64 = 60 * rad;
+            var bisection: core.optim.scalar.Bisection = .{ .low = 0, .high = 60 * rad };
             for (0..40) |_| {
-                const middle = 0.5 * (low + high);
+                const middle = bisection.middle();
                 const rate = -(control_slope / damping) * middle * 2 * speed / probe.span;
-                if (sizing.timeToBank(rate, time_constant, requirement[0] * rad) > requirement[1]) low = middle else high = middle;
+                bisection.move(middle, if (sizing.timeToBank(rate, time_constant, requirement[0] * rad) > requirement[1]) .raise else .lower);
             }
-            roll_part[i] = high / rad;
+            roll_part[i] = bisection.high / rad;
             total[i] = trim_part[i] + roll_part[i];
         }
         try addCurve(state, "elv", "equilíbrio", speeds, trim_part, .{});

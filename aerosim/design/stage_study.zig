@@ -5,6 +5,7 @@
 //! guardados na etapa Motores. O estudo marca o maior MTOW viável de cada altitude; "Usar o ponto marcado" leva o
 //! valor para o rascunho da etapa certa. (A conferência no 6GDL fica para a aba Missão.)
 const std = @import("std");
+const core = @import("aerosim");
 const simulation = @import("simulation");
 const store = @import("store.zig");
 const registry = @import("registry.zig");
@@ -146,10 +147,8 @@ fn designPoint(context: *stages.Context, memory: std.mem.Allocator, power: *cons
         for (0..10) |_| {
             const previous = history.items[history.items.len - 2];
             const current = history.items[history.items.len - 1];
-            const before = previous[1] - previous[0];
-            const now = current[1] - current[0];
-            if (now == before) break;
-            mass = @max(current[0] - now * (current[0] - previous[0]) / (now - before), floor);
+            const next = core.optim.scalar.secant(.{ previous[0], previous[1] - previous[0] }, .{ current[0], current[1] - current[0] }) orelse break;
+            mass = @max(next, floor);
             const assembled = try At.run(context, memory, power, mass) orelse break;
             last = assembled;
             floor = assembled.empty;
