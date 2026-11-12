@@ -274,6 +274,7 @@ pub const group = "Avião completo (fuselagem, massa e CG)";
 const group_full = "Avião completo (fuselagem, massa e CG): polar da aeronave completa (núcleo 6GDL)";
 const group_tips = "Avião completo (fuselagem, massa e CG): dispositivos de asa";
 const group_criteria = "Avião completo (fuselagem, massa e CG): critérios de aprovação";
+const group_ground = "Avião completo (fuselagem, massa e CG): efeito solo";
 
 /// a velocidade de cruzeiro do avião: a maior da missão (`_cruise_speed` de `stability.py`)
 pub fn cruise(aircraft: *const simulation.Aircraft) f64 {
@@ -302,6 +303,9 @@ pub fn appendFields(memory: std.mem.Allocator, params: *std.ArrayList(simulation
         .{ .key = "tips", .label = "explorar pontas de asa", .kind = .bool, .default = .{ .toggle = false }, .group = group_tips, .help = "winglet, placa, caixa e asa em C pelo plano de Trefftz, com o atrito descontado" },
         .{ .key = "hb_max", .label = "altura máxima estudada (h/b)", .default = .{ .number = 0.25 }, .minimum = 0.05, .maximum = 1, .group = group_tips },
         .{ .key = "Cf", .label = "coeficiente de atrito do dispositivo", .default = .{ .number = 0.006 }, .minimum = 0, .maximum = 0.05, .group = group_tips },
+        .{ .key = "ground", .label = "estudar o efeito solo", .kind = .bool, .default = .{ .toggle = false }, .group = group_ground, .help = "C_L, C_Di e C_m do avião inteiro contra a altura da asa ao chão, pelo VLM com o chão espelhado, comparados com o fator de McCormick que a simulação usa" },
+        .{ .key = "alpha_ground", .label = "α no solo", .default = .{ .number = 4 }, .minimum = -5, .maximum = 15, .unit = "°", .group = group_ground, .help = "o ângulo de ataque do avião durante o estudo (o da corrida ou da rotação)" },
+        .{ .key = "hb_ground_max", .label = "altura máxima da asa (h/b)", .default = .{ .number = 1 }, .minimum = 0.1, .maximum = 3, .group = group_ground },
         .{ .key = "dev_gain", .label = "ganho mín. do dispositivo", .default = .{ .number = 0.5 }, .minimum = 0, .maximum = 20, .unit = "%", .group = group_criteria, .help = "o dispositivo de ponta compensa se reduzir o arrasto ao menos isto" },
         .{ .key = "tol_CLa", .label = "tolerância C_Lα e C_Lmax", .default = .{ .number = 12 }, .minimum = 1, .maximum = 100, .unit = "%", .group = group_criteria, .help = "diferença aceita entre os métodos" },
         .{ .key = "tol_np", .label = "tolerância ponto neutro", .default = .{ .number = 5 }, .minimum = 0.5, .maximum = 50, .unit = "% CMA", .group = group_criteria, .help = "diferença aceita entre os métodos" },
@@ -321,6 +325,8 @@ pub const plots = [_]simulation.Plot{
     .{ .key = "ac_pa_CD", .title = "Aeronave completa: polar de arrasto", .xlabel = "C_D", .ylabel = "C_L" },
     .{ .key = "ac_pa_b", .title = "Aeronave completa: látero-direcional × β", .xlabel = "β (°)", .ylabel = "coeficiente (—)" },
     .{ .key = "ac_tip_e", .title = "Avião completo: ganho de eficiência de envergadura × altura do dispositivo", .xlabel = "altura do dispositivo / envergadura (h/b)", .ylabel = "e / e sem dispositivo" },
+    .{ .key = "ac_gnd_CL", .title = "Efeito solo: C_L e C_Di relativos × altura", .xlabel = "altura da asa / envergadura (h/b)", .ylabel = "com chão / sem chão" },
+    .{ .key = "ac_gnd_Cm", .title = "Efeito solo: ΔC_m no CG × altura", .xlabel = "altura da asa / envergadura (h/b)", .ylabel = "ΔC_m" },
     .{ .key = "ac_tip_d", .title = "Avião completo: variação do arrasto total no cruzeiro × altura (com atrito)", .xlabel = "altura do dispositivo / envergadura (h/b)", .ylabel = "ΔD (% do arrasto total)" },
 };
 
@@ -407,6 +413,10 @@ pub fn analyze(run: *simulation.Run, values: simulation.Values, chosen: []const 
     }
     try diagnose(memory, values, polars.items, all_metrics.items, .{ .cruise_lift = cruise_lift, .airspeed = airspeed, .density = density, .mass = mass, .area = geometry.area, .aspect = aspect }, checks);
     if (values.toggle("full", true)) try fullCurves(run, values, airspeed, output);
+    if (values.toggle("ground", false)) groundStudy(run, values, geometry, reference_point, output) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => try checks.append(memory, .{ .status = .atencao, .item = "efeito solo", .value = @errorName(err), .why = "o VLM com o chão não rodou", .group = "efeito solo" }),
+    };
     if (values.toggle("tips", false)) {
         const drag_min = found_min: {
             var least = std.math.inf(f64);
@@ -418,6 +428,76 @@ pub fn analyze(run: *simulation.Run, values: simulation.Values, chosen: []const 
         const planform = @min(all_metrics.items[0].oswald orelse raymerOswald(aspect), 1.0);
         try tipStudy(run, values, geometry, cruise_lift, drag_min, planform, output);
     }
+}
+
+/// a malha do VLM do estudo do efeito solo e o maior número de painéis que ele aceita
+const ground_grid: core.vlm.Grid = .{ .chordwise = 4, .spanwise = 2 };
+const ground_max_panels = 1200;
+
+/// o estudo do efeito solo: o VLM com o chão espelhado (`core.vlm.groundCoefficients`) em várias alturas da asa,
+/// com o avião girado pelo α no solo em torno do CG. Mostra C_L e C_Di relativos aos de sem chão, o fator de McCormick
+/// que a simulação usa no induzido, e a variação do C_m no CG (que muda a rotação)
+fn groundStudy(run: *simulation.Run, values: simulation.Values, geometry: Reference, reference_point: [3]f64, output: Output) !void {
+    const memory = run.memory();
+    const params = try memory.create(core.types.Params);
+    params.* = .{};
+    var diagnosis: model.Diag = .{};
+    try params_mod.fill(run.aircraft, params, &diagnosis);
+    core.aero.init(params);
+    const count = core.vlm.panelCount(params, ground_grid);
+    if (count == 0 or count > ground_max_panels) {
+        try output.checks.append(memory, .{ .status = .atencao, .item = "efeito solo", .value = "não estudado", .why = try text(memory, "a malha do VLM teria {d} painéis (o limite é {d})", .{ count, ground_max_panels }), .group = "efeito solo" });
+        return;
+    }
+    const buffers: core.vlm.Buffers = .{ .panels = try memory.alloc(core.vlm.Panel, count), .matrix = try memory.alloc(f64, count * count), .pivots = try memory.alloc(usize, count), .gamma = try memory.alloc(f64, count) };
+    const alpha = values.number("alpha_ground", 4) * rad;
+    const ref: core.vec.V3 = reference_point;
+    // a altura da asa: a do centro de área das faixas da asa, girado por α em torno do CG
+    var area: f64 = 0;
+    var center: core.vec.V3 = core.vec.zero;
+    const n_surf: usize = @intCast(@max(params.n_surf, 0));
+    for (params.surf[0..n_surf]) |*surface| if (surface.group == .wing) {
+        area += surface.S;
+        center += core.vec.v3(surface.r) * core.vec.splat(surface.S);
+    };
+    if (area <= 0) return;
+    center /= core.vec.splat(area);
+    const relative = center - ref;
+    const wing_above_cg = @sin(alpha) * relative[0] - @cos(alpha) * relative[2]; // z para baixo: acima é −z girado
+    const free = try core.vlm.groundCoefficients(params, ground_grid, alpha, std.math.inf(f64), ref, buffers);
+    const points = 16;
+    const top = values.number("hb_ground_max", 1);
+    const heights = try memory.alloc(f64, points);
+    const lift_ratio = try memory.alloc(f64, points);
+    const induced_ratio = try memory.alloc(f64, points);
+    const mccormick_ratio = try memory.alloc(f64, points);
+    const moment_change = try memory.alloc(f64, points);
+    const tail_change = try memory.alloc(f64, points);
+    const lowest = 0.05;
+    for (0..points) |k| {
+        // mais pontos perto do chão, onde o efeito muda depressa
+        const t = @as(f64, @floatFromInt(k)) / @as(f64, @floatFromInt(points - 1));
+        const height_ratio = lowest + (top - lowest) * t * t;
+        const wing_height = height_ratio * geometry.span;
+        const near = try core.vlm.groundCoefficients(params, ground_grid, alpha, wing_height + wing_above_cg, ref, buffers);
+        heights[k] = height_ratio;
+        lift_ratio[k] = near.CL / free.CL;
+        induced_ratio[k] = (near.CDi / (near.CL * near.CL)) / (free.CDi / (free.CL * free.CL));
+        mccormick_ratio[k] = core.modifiers.ground.mccormick(wing_height, geometry.span);
+        moment_change[k] = near.Cm - free.Cm;
+        tail_change[k] = near.CL_htail - free.CL_htail;
+    }
+    const one = try memory.dupe(f64, &.{ heights[0], heights[points - 1] });
+    try output.figures.curve("ac_gnd_CL", .{ .name = "C_L (VLM com chão)", .x = heights, .y = lift_ratio, .color = "#1f77b4", .width = 2 });
+    try output.figures.curve("ac_gnd_CL", .{ .name = "C_Di/C_L² (VLM com chão)", .x = heights, .y = induced_ratio, .color = "#d62728", .width = 2 });
+    try output.figures.curve("ac_gnd_CL", .{ .name = "McCormick (o da simulação)", .x = heights, .y = mccormick_ratio, .color = "#d62728", .dashed = true });
+    try output.figures.curve("ac_gnd_CL", .{ .name = "sem chão", .x = one, .y = try memory.dupe(f64, &.{ 1, 1 }), .color = "#7f7f7f", .dashed = true, .legend = false });
+    try output.figures.curve("ac_gnd_Cm", .{ .name = "ΔC_m no CG", .x = heights, .y = moment_change, .color = "#1f77b4", .width = 2 });
+    try output.figures.curve("ac_gnd_Cm", .{ .name = "ΔC_L da EH", .x = heights, .y = tail_change, .color = "#2ca02c", .width = 2 });
+    const prefix = "efeito solo · ";
+    try output.summary.append(memory, .{ prefix ++ "α, altura da asa acima do CG (m)", try text(memory, "{d:.1}°, {d:.3}", .{ alpha / rad, wing_above_cg }) });
+    try output.summary.append(memory, .{ prefix ++ "C_L, C_Di, C_m sem chão (VLM)", try text(memory, "{d:.4}, {d:.5}, {d:.4}", .{ free.CL, free.CDi, free.Cm }) });
+    try output.summary.append(memory, .{ prefix ++ "no h/b mais baixo: C_L, C_Di/C_L² (VLM), McCormick, ΔC_m", try text(memory, "×{d:.3}, ×{d:.3}, ×{d:.3}, {d:.4}", .{ lift_ratio[0], induced_ratio[0], mccormick_ratio[0], moment_change[0] }) });
 }
 
 /// a corda da ponta da asa principal (a última seção)
@@ -741,4 +821,32 @@ test "Avião completo: as métricas do modelo interno e o C_nβ batem com o Pyth
         winglet = true;
     };
     try testing.expect(winglet);
+}
+
+test "Efeito solo: no avião original, perto do chão o C_L sobe, o induzido cai e longe volta a 1" {
+    const gpa = testing.allocator;
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    defer gpa.free(bytes);
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(gpa, bytes, &diagnosis);
+    defer loaded.deinit();
+    var run = simulation.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
+    defer run.arena.deinit();
+    const memory = run.memory();
+    var summary: std.ArrayList([2][]const u8) = .empty;
+    var checks: std.ArrayList(simulation.Check) = .empty;
+    const figures = try simulation.Figures.init(memory, &plots);
+    const values = simulation.Values.fromRequest(memory, "\"values\": {\"ground\": true, \"alpha_ground\": 4, \"hb_ground_max\": 2}");
+    const geometry = reference(&loaded.ac);
+    try groundStudy(&run, values, geometry, .{ geometry.mac_le - 0.3 * geometry.chord, 0, 0 }, .{ .summary = &summary, .checks = &checks, .figures = figures });
+    try testing.expectEqual(@as(usize, 3), summary.items.len);
+    try testing.expectEqual(@as(usize, 0), checks.items.len);
+    const lift = figures.get("ac_gnd_CL").?.curves.items;
+    // perto do chão: C_L maior e induzido menor que sem chão; a 2 envergaduras, quase sem efeito
+    const last = lift[0].y.len - 1;
+    try testing.expect(lift[0].y[0] > 1.05 and lift[1].y[0] < 0.8);
+    try testing.expectApproxEqAbs(@as(f64, 1), lift[0].y[last], 0.01);
+    try testing.expectApproxEqAbs(@as(f64, 1), lift[1].y[last], 0.02);
+    // o C_L cresce sempre que a asa desce
+    for (1..lift[0].y.len) |k| try testing.expect(lift[0].y[k] <= lift[0].y[k - 1]);
 }

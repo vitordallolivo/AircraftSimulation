@@ -20,6 +20,13 @@
 //! cauda) os vórtices têm o núcleo de Scully da linha sustentadora (`llt.core_frac`), para a perna da asa não passar
 //! em cima de um ponto de controle da cauda.
 //!
+//! Efeito solo pelo método das imagens (`groundCoefficients`): o chão é um plano onde o ar não atravessa, e isso se
+//! consegue com uma malha espelhada no plano, com a circulação trocada de sinal (Katz e Plotkin, "Low-Speed
+//! Aerodynamics", método das imagens, a conferir no PDF). Para a imagem valer, a geometria é que gira pelo α em torno
+//! do ponto de referência, e o vento fica na horizontal: girar o vento deixaria a asa na posição errada em relação
+//! ao chão. As pernas livres saem na horizontal, ao longo do vento, e as da imagem também. Longe do chão a conta
+//! volta à do VLM sem chão (com a esteira no vento, e não no corpo).
+//!
 //! Nada aloca: quem chama passa a malha, a matriz e os vetores (`Buffers`), com o tamanho de `panelCount`.
 const std = @import("std");
 const types = @import("../types.zig");
@@ -206,13 +213,31 @@ fn coreRadius(target: *const Panel, source: *const Panel) f64 {
     return if (target.group != source.group) llt.core_frac * source.chord else 0;
 }
 
+/// a ferradura `source` (Γ = 1) induzida em `point`; com o chão em z = `ground_z` (corpo girado, z para baixo), soma a
+/// imagem: os nós espelhados no plano e a circulação trocada de sinal
+fn influence(point: V3, source: *const Panel, include_bound: bool, core_radius: f64, ground_z: ?f64) V3 {
+    const induced = llt.horseshoe(point, source.a, source.b, trailing, include_bound, core_radius);
+    const plane = ground_z orelse return induced;
+    return induced - llt.horseshoe(point, mirror(source.a, plane), mirror(source.b, plane), trailing, true, core_radius);
+}
+
+/// o ponto espelhado no plano z = `plane`
+fn mirror(point: V3, plane: f64) V3 {
+    return .{ point[0], point[1], 2 * plane - point[2] };
+}
+
 /// a matriz de influência w_ij · n_i, fatorada (LU com pivô parcial) em `matrix`
 pub fn factor(panels: []const Panel, matrix: []f64, pivots: []usize) Error!void {
+    return factorWith(panels, null, matrix, pivots);
+}
+
+/// a matriz de influência com o chão em z = `ground_z` (null: sem chão), fatorada em `matrix`
+fn factorWith(panels: []const Panel, ground_z: ?f64, matrix: []f64, pivots: []usize) Error!void {
     const count = panels.len;
     if (matrix.len < count * count or pivots.len < count) return error.TooSmall;
     for (panels, 0..) |*target, i| {
         for (panels, 0..) |*source, j| {
-            const induced = llt.horseshoe(target.control, source.a, source.b, trailing, true, coreRadius(target, source));
+            const induced = influence(target.control, source, true, coreRadius(target, source), ground_z);
             matrix[i * count + j] = vec.dot(induced, target.normal(0));
         }
     }
@@ -262,13 +287,18 @@ pub fn solve(params: *const types.Params, panels: []const Panel, matrix: []const
 
 /// Kutta–Joukowski em cada segmento ligado, com a velocidade local (a do voo mais a induzida no meio do segmento)
 pub fn loads(panels: []const Panel, gamma: []const f64, velocity: V3) Loads {
+    return loadsWith(panels, gamma, velocity, null);
+}
+
+/// `loads` com o chão em z = `ground_z` (null: sem chão): a velocidade local inclui a induzida pelas imagens
+fn loadsWith(panels: []const Panel, gamma: []const f64, velocity: V3, ground_z: ?f64) Loads {
     var out: Loads = .{};
     for (panels, 0..) |*target, i| {
         const middle = (target.a + target.b) * vec.splat(0.5);
         var air = -velocity;
         for (panels, 0..) |*source, j| {
             if (gamma[j] == 0) continue;
-            air += llt.horseshoe(middle, source.a, source.b, trailing, i != j, coreRadius(target, source)) * vec.splat(gamma[j]);
+            air += influence(middle, source, i != j, coreRadius(target, source), ground_z) * vec.splat(gamma[j]);
         }
         const force = vec.cross(air, target.b - target.a) * vec.splat(gamma[i]);
         out.force += force;
@@ -342,6 +372,36 @@ pub fn derivatives(params: *const types.Params, grid: Grid, alpha: f64, ref: V3,
         .neutral_x = neutral_x,
         .panels = count,
     };
+}
+
+/// os coeficientes em `alpha` com o ponto de referência `ref` a `height` m acima do chão (método das imagens; ver o
+/// cabeçalho). `height` infinita: sem chão, mas com a geometria girada e a esteira no vento. Os momentos são em
+/// torno de `ref`; C_L e C_Di nos eixos do vento
+pub fn groundCoefficients(params: *const types.Params, grid: Grid, alpha: f64, height: f64, ref: V3, buffers: Buffers) Error!Coefficients {
+    const panels = try lattice(params, grid, buffers.panels);
+    const count = panels.len;
+    if (buffers.gamma.len < count) return error.TooSmall;
+    // girar o avião por α em torno de ref, com o nariz para cima: a velocidade do avião vira (1, 0, 0)
+    const turn = fmath.sincos(alpha);
+    for (panels) |*panel| {
+        panel.a = pitchAbout(panel.a, ref, turn.c, turn.s);
+        panel.b = pitchAbout(panel.b, ref, turn.c, turn.s);
+        panel.control = pitchAbout(panel.control, ref, turn.c, turn.s);
+        panel.chord_dir = pitchAbout(panel.chord_dir, vec.zero, turn.c, turn.s);
+        panel.up = pitchAbout(panel.up, vec.zero, turn.c, turn.s);
+    }
+    const ground_z: ?f64 = if (std.math.isFinite(height)) ref[2] + height else null;
+    try factorWith(panels, ground_z, buffers.matrix, buffers.pivots);
+    const gamma = buffers.gamma[0..count];
+    const velocity = V3{ 1, 0, 0 };
+    solve(params, panels, buffers.matrix, buffers.pivots, velocity, vec.zero, gamma);
+    return coefficients(params, loadsWith(panels, gamma, velocity, ground_z), 0, 0, ref);
+}
+
+/// o ponto girado em arfagem em torno de `pivot` (cosseno e seno de α): x' = c x + s z, z' = −s x + c z
+fn pitchAbout(point: V3, pivot: V3, cosine: f64, sine: f64) V3 {
+    const relative = point - pivot;
+    return pivot + V3{ cosine * relative[0] + sine * relative[2], relative[1], -sine * relative[0] + cosine * relative[2] };
 }
 
 // ------------------------------------------------------------------ testes
@@ -425,3 +485,48 @@ test "VLM: asa enflechada de Bertin e Cummings (AR 5, Λ = 45°, 4 ferraduras na
     try testing.expectApproxEqRel(@as(f64, 3.443), found.CLa, 1e-3);
 }
 
+
+test "VLM com chão: sem chão e em α = 0 é o VLM de sempre; longe do chão volta a ele" {
+    var params: types.Params = undefined;
+    rectangularWing(&params, 16, 1.2, 0.2);
+    var panels: [16 * 4]Panel = undefined;
+    var matrix: [64 * 64]f64 = undefined;
+    var pivots: [64]usize = undefined;
+    var gamma: [64]f64 = undefined;
+    const buffers: Buffers = .{ .panels = &panels, .matrix = &matrix, .pivots = &pivots, .gamma = &gamma };
+    const grid: Grid = .{ .chordwise = 4, .spanwise = 1 };
+    const free = try derivatives(&params, grid, 0.0, vec.zero, buffers);
+    const level = try groundCoefficients(&params, grid, 0.0, std.math.inf(f64), vec.zero, buffers);
+    try testing.expectEqual(free.at.CL, level.CL);
+    try testing.expectEqual(free.at.Cm, level.Cm);
+    // em α a esteira vai no vento (aqui) e não no corpo (no VLM de sempre): em α = 0,1 rad a diferença é de ~2 %
+    const tilted = try derivatives(&params, grid, 0.1, vec.zero, buffers);
+    const away = try groundCoefficients(&params, grid, 0.1, std.math.inf(f64), vec.zero, buffers);
+    try testing.expectApproxEqRel(tilted.at.CL, away.CL, 0.03);
+    // a 50 envergaduras do chão a imagem quase não pesa
+    const far = try groundCoefficients(&params, grid, 0.1, 60.0, vec.zero, buffers);
+    try testing.expectApproxEqRel(away.CL, far.CL, 1e-4);
+    try testing.expectApproxEqRel(away.CDi, far.CDi, 1e-3);
+}
+
+test "VLM com chão: perto do chão a sustentação sobe e o induzido por C_L² cai" {
+    var params: types.Params = undefined;
+    rectangularWing(&params, 16, 1.2, 0.2);
+    var panels: [16 * 4]Panel = undefined;
+    var matrix: [64 * 64]f64 = undefined;
+    var pivots: [64]usize = undefined;
+    var gamma: [64]f64 = undefined;
+    const buffers: Buffers = .{ .panels = &panels, .matrix = &matrix, .pivots = &pivots, .gamma = &gamma };
+    const grid: Grid = .{ .chordwise = 4, .spanwise = 1 };
+    const away = try groundCoefficients(&params, grid, 0.08, std.math.inf(f64), vec.zero, buffers);
+    var previous_lift = away.CL;
+    var previous_ratio = away.CDi / (away.CL * away.CL);
+    for ([_]f64{ 0.6, 0.24, 0.12 }) |height| { // h/b = 0,5; 0,2; 0,1
+        const near = try groundCoefficients(&params, grid, 0.08, height, vec.zero, buffers);
+        const ratio = near.CDi / (near.CL * near.CL);
+        try testing.expect(near.CL > previous_lift);
+        try testing.expect(ratio < previous_ratio);
+        previous_lift = near.CL;
+        previous_ratio = ratio;
+    }
+}
