@@ -6,6 +6,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- Algumas regras de competição limitam a potência que o motor tira da bateria, e outras não. Antes, a tração saía
+  sempre com o acelerador cheio. Agora as regras do Projetar têm um limite de potência do motor, que fica vazio por
+  padrão. Quando ele é preenchido, a rotação de cada motor cai até a potência tirada da bateria bater no limite, e
+  daí sai a tração. Isso vale na curva de tração, na corrida e no voo, inclusive no AeroDrive. O gráfico T × V
+  mostra a tração sem o limite, tracejada, e marca as velocidades em que o limite cortou a tração.
 - Em Desempenho, a Missão tinha um modo "só decolagem" que voava uma massa só e um modo MTOW que testava três
   posições de CG tiradas do nada (a do avião e 5 % para cada lado). Agora os dois viram um modo só, Decolagem. Ele
   pega a lista de xCG que Empenagem e comandos cria, do limite da frente ao de trás da faixa de CG (o campo novo

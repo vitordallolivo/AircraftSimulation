@@ -440,6 +440,7 @@ pub const Aircraft = struct {
     performance: Performance = .{},
     modifiers: ?[]const Modifier = null, // null (arquivo sem a chave): o padrão da GUI, só o efeito solo de McCormick
     shared_battery: bool = false,
+    power_limit: f64 = 0, // limite da potência tirada da bateria pelo avião todo (W), dividido igual entre os motores; 0 = sem limite
     Sref: ?f64 = null, // null ou 0: da asa
     cref: ?f64 = null,
     bref: ?f64 = null,

@@ -10,11 +10,27 @@
 //! e a hélice pede Q_p = C_P(J)/(2π) ρ n² D⁵, com n = ω/2π e J = V/(n D). A bisseção de 60 passos em
 //! ω ∈ [1, V_oc k_v] acha Q_m = Q_p; a tração é T = max(C_T(J) ρ n² D⁴, 0), com C_T = 0 depois do fim da tabela.
 //!
+//! Limite de potência (opcional, `P_lim` > 0). Algumas regras de competição limitam a potência elétrica que o
+//! motor tira da bateria (um limitador entre a bateria e o controlador); outras não limitam, e o valor muda de ano
+//! para ano. Por isso o limite é um dado do projeto, vazio por padrão. Com o controlador ideal (sem perdas no PWM), a
+//! potência na saída da bateria, U I_bat, é a que chega aos terminais do motor no mesmo modelo de Drela:
+//!
+//!   P = I (ω/k_v + I R_m)
+//!
+//! Ela cresce com I, então o limite é uma corrente máxima que depende da rotação, a raiz positiva de
+//! R_m I² + (ω/k_v) I − P_lim = 0:
+//!
+//!   I_lim = (−ω/k_v + √((ω/k_v)² + 4 R_m P_lim)) / (2 R_m)
+//!
+//! e a corrente do motor passa a ser min(acelerador cheio, I_max, I_lim). A mesma bisseção em ω acha o novo
+//! equilíbrio, e o ponto diz o que limitou (`Limit`). Com `P_lim` = 0 o ramo nem roda e a curva fica bit a bit igual.
+//!
 //! As contas seguem a mesma ordem das do Python de antes e a interpolação é a do `numpy.interp`, então a curva sai
 //! bit a bit igual. D⁴ e D⁵ vêm prontos do Python, como o
 //! seno e o cosseno da corrida em `ground.zig`, porque a potência do Python e a do Zig podem diferir no último bit.
 const std = @import("std");
 const ground = @import("ground.zig");
+const propulsion = @import("../physics/propulsion.zig");
 
 pub const max_pts = 256;
 pub const iterations = 60;
@@ -27,6 +43,7 @@ pub const MotorProp = extern struct {
     Imax: f64 = 1e9, // corrente máxima (A)
     Voc: f64 = 11.1, // tensão em aberto da bateria (V)
     Rint: f64 = 0, // resistência interna da bateria (Ω)
+    P_lim: f64 = 0, // limite da potência tirada da bateria (W); 0 = sem limite
     D: f64 = 0.25, // diâmetro da hélice (m)
     D4: f64 = 0, // D⁴ e D⁵ (do Python)
     D5: f64 = 0,
@@ -42,10 +59,44 @@ fn interpRight(query: f64, xp: []const f64, fp: []const f64, right_value: f64) f
     return ground.interp(query, xp, fp);
 }
 
-/// a tração (N) na velocidade `V` (m/s) com densidade `rho`; 0 sem tabela
-pub fn thrust(motor_prop: *const MotorProp, airspeed: f64, rho: f64) f64 {
+/// o que limitou o ponto de operação
+pub const Limit = enum(i32) {
+    /// o acelerador cheio (o equilíbrio livre do motor com a hélice)
+    throttle = 0,
+    /// a corrente máxima do motor (`Imax`)
+    current = 1,
+    /// o limite de potência do projeto (`P_lim`)
+    power = 2,
+};
+
+/// o ponto de operação numa velocidade: tração, rotação, corrente, potência tirada da bateria e o que limitou
+pub const Point = struct {
+    thrust: f64 = 0, // N
+    omega: f64 = 0, // rad/s
+    current: f64 = 0, // corrente do motor (A)
+    power: f64 = 0, // U I_bat = I (ω/k_v + I R_m) (W)
+    limit: Limit = .throttle,
+};
+
+/// a corrente do motor na rotação `omega` com acelerador cheio, e o que a limitou
+fn motorCurrent(motor_prop: *const MotorProp, kv_rad: f64, resistance: f64, omega: f64) struct { value: f64, limit: Limit } {
+    const free_current = (motor_prop.Voc - omega / kv_rad) / resistance;
+    var current = if (motor_prop.Imax < free_current) motor_prop.Imax else free_current; // o min do Python
+    var limit: Limit = if (motor_prop.Imax < free_current) .current else .throttle;
+    if (motor_prop.P_lim > 0) {
+        const limited = propulsion.powerLimitedCurrent(omega / kv_rad, motor_prop.Rm, motor_prop.P_lim);
+        if (limited < current) {
+            current = limited;
+            limit = .power;
+        }
+    }
+    return .{ .value = current, .limit = limit };
+}
+
+/// o ponto de operação na velocidade `airspeed` (m/s) com densidade `rho`; tudo zero sem tabela
+pub fn point(motor_prop: *const MotorProp, airspeed: f64, rho: f64) Point {
     const np: usize = @intCast(std.math.clamp(motor_prop.n, 0, max_pts));
-    if (np == 0) return 0;
+    if (np == 0) return .{};
     const tJ = motor_prop.J[0..np];
     const two_pi = 2 * std.math.pi;
     const kv = motor_prop.Kv * 2 * std.math.pi / 60;
@@ -53,8 +104,7 @@ pub fn thrust(motor_prop: *const MotorProp, airspeed: f64, rho: f64) f64 {
     const Res = struct { residual: f64, rev_per_s: f64, advance: f64 };
     const resid = struct {
         fn evaluate(mp: *const MotorProp, tab: []const f64, cp: []const f64, kv_rad: f64, resistance: f64, speed: f64, rh: f64, omega: f64) Res {
-            const free_current = (mp.Voc - omega / kv_rad) / resistance;
-            const current = if (mp.Imax < free_current) mp.Imax else free_current; // o min do Python
+            const current = motorCurrent(mp, kv_rad, resistance, omega).value;
             const Qm = current / kv_rad - mp.tauc - mp.B * omega;
             const rev_per_s = omega / two_pi;
             const advance = if (rev_per_s > 0) speed / (rev_per_s * mp.D) else 0.0;
@@ -69,15 +119,38 @@ pub fn thrust(motor_prop: *const MotorProp, airspeed: f64, rho: f64) f64 {
         const mid = 0.5 * (lo + hi);
         if (resid(motor_prop, tJ, cp, kv, total_resistance, airspeed, rho, mid).residual > 0) lo = mid else hi = mid;
     }
-    const solution = resid(motor_prop, tJ, cp, kv, total_resistance, airspeed, rho, 0.5 * (lo + hi));
+    const omega = 0.5 * (lo + hi);
+    const solution = resid(motor_prop, tJ, cp, kv, total_resistance, airspeed, rho, omega);
     const CT = interpRight(solution.advance, tJ, motor_prop.CT[0..np], 0.0);
     const thrust_value = CT * rho * solution.rev_per_s * solution.rev_per_s * motor_prop.D4;
-    return if (0.0 > thrust_value) 0.0 else thrust_value; // o max do Python
+    const current = motorCurrent(motor_prop, kv, total_resistance, omega);
+    return .{
+        .thrust = if (0.0 > thrust_value) 0.0 else thrust_value, // o max do Python
+        .omega = omega,
+        .current = current.value,
+        .power = current.value * (omega / kv + current.value * motor_prop.Rm),
+        .limit = current.limit,
+    };
+}
+
+/// a tração (N) na velocidade `V` (m/s) com densidade `rho`; 0 sem tabela
+pub fn thrust(motor_prop: *const MotorProp, airspeed: f64, rho: f64) f64 {
+    return point(motor_prop, airspeed, rho).thrust;
 }
 
 /// a curva: `out[i]` = tração em `airspeeds[i]`
 pub fn curve(motor_prop: *const MotorProp, airspeeds: []const f64, rho: f64, out: []f64) void {
     for (airspeeds, out) |airspeed, *out_value| out_value.* = thrust(motor_prop, airspeed, rho);
+}
+
+/// a curva com o ponto inteiro: tração, potência tirada da bateria e o que limitou em cada `airspeeds[i]`
+pub fn curvePoints(motor_prop: *const MotorProp, airspeeds: []const f64, rho: f64, thrust_out: []f64, power_out: []f64, limit_out: []Limit) void {
+    for (airspeeds, thrust_out, power_out, limit_out) |airspeed, *thrust_value, *power_value, *limit_value| {
+        const operating = point(motor_prop, airspeed, rho);
+        thrust_value.* = operating.thrust;
+        power_value.* = operating.power;
+        limit_value.* = operating.limit;
+    }
 }
 
 // ------------------------------------------------------------------ testes
@@ -123,3 +196,31 @@ test "motor × hélice: a corrente máxima limita a tração parada" {
     motor_prop.Imax = 5;
     try std.testing.expect(thrust(&motor_prop, 0, 1.2) < free);
 }
+
+test "limite de potência: vazio ou acima do acelerador cheio, a curva não muda" {
+    var motor_prop = sample();
+    const speeds = [_]f64{ 0, 3, 6, 9, 12, 15 };
+    var before: [speeds.len]f64 = undefined;
+    for (speeds, &before) |speed, *value| value.* = thrust(&motor_prop, speed, 1.2);
+    var peak: f64 = 0;
+    for (speeds) |speed| peak = @max(peak, point(&motor_prop, speed, 1.2).power);
+    motor_prop.P_lim = 1.01 * peak;
+    for (speeds, before) |speed, value| try std.testing.expectEqual(value, thrust(&motor_prop, speed, 1.2));
+}
+
+test "limite de potência: abaixo do acelerador cheio, U·I = P_lim nos pontos limitados" {
+    var motor_prop = sample();
+    motor_prop.Imax = 1e9; // sem o limite de corrente, para o acelerador cheio ser o que limita
+    const free = point(&motor_prop, 0, 1.2);
+    try std.testing.expect(free.limit == .throttle);
+    motor_prop.P_lim = 0.5 * free.power;
+    for ([_]f64{ 0, 4, 8 }) |speed| {
+        const limited = point(&motor_prop, speed, 1.2);
+        if (limited.limit != .power) continue;
+        try std.testing.expectApproxEqRel(motor_prop.P_lim, limited.power, 1e-9);
+    }
+    const limited = point(&motor_prop, 0, 1.2);
+    try std.testing.expect(limited.limit == .power);
+    try std.testing.expect(limited.thrust < free.thrust and limited.thrust > 0);
+}
+

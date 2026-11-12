@@ -49,7 +49,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/backend/zig/abi.py` — Monta as estruturas ctypes a partir do esquema que o núcleo Zig exporta.
   `class AbiMismatch:26`, `fnv1a64:30`, `check:39`, `class FieldInfo:51`, `class StructInfo:60`, `class Schema:68`, `parse:81`, `number:144`, `write:160`, `read:187`
 - `aerosim/backend/zig/backend.py` — Implementação de ISimBackend com o núcleo em Zig (libaerosim, via ctypes).
-  `lib_path:24`, `build:47`, `class CoreError:76`, `class ZigSession:219`, `class ZigBackend:497`
+  `lib_path:24`, `build:47`, `class CoreError:76`, `class ZigSession:220`, `class ZigBackend:498`
 - `aerosim/backend/zig/geometry.py` — Tradutor da checagem de geometria: o modelo universal vira as peças simples do núcleo (`core/src/geometry`),
   `scene:114`, `report:165`, `class ZigGeometry:191`
 - `aerosim/backend/zig/translator.py` — Tradutor modelo universal -> núcleo Zig (SimSpec: dicionário com os campos das structs extern).
@@ -300,12 +300,12 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Opt:5`
 - `core/src/root.zig` — Interface C ABI do núcleo (o que o Python chama via ctypes).
   fn `abiCode:49`
-  **ABI (79 exports)** `aerosim_abi_version`, `aerosim_schema`, `aerosim_probe_ground`, `aerosim_probe_slipstream`, `aerosim_aero_coeffs_thrust`, `aerosim_aero_coeffs_at`, `aerosim_tube_panel_hits`, `aerosim_tube_point_hits`, `aerosim_prop_state`, `aerosim_panel_states`, `aerosim_panel_states_llt`, `aerosim_wing_sweep`, `aerosim_wing_sweep_summary`, `aerosim_reynolds`, `aerosim_aero_coeffs_llt`, `aerosim_schema_hash`, `aerosim_acquire`, `aerosim_release`, `aerosim_params`, `aerosim_params_reset`, `aerosim_configure`, `aerosim_reset_ground`, `aerosim_reset_air`, `aerosim_run`, `aerosim_events`, `aerosim_time`, `aerosim_snapshot_size`, `aerosim_snapshot_save`, `aerosim_snapshot_load`, `aerosim_mass_props`, `aerosim_aero_coeffs`, `aerosim_aero_coeffs_ex`, `aerosim_linearize`, `aerosim_linearize_slosh`, `aerosim_autotune`, `aerosim_prop_point`, `aerosim_trim`, `aerosim_performance`, `aerosim_envelope`, `aerosim_envelope_curve`, `aerosim_simple_perf`, `aerosim_bench_math`, `aerosim_bench_dynamics`, `aerosim_fast_math`, `aerosim_expr_check`, `aerosim_expr_eval`, `aerosim_ground_runs`, `aerosim_ground_mtow`, `aerosim_motor_prop_thrust`, `aerosim_sizing_eval`, `aerosim_sizing_optimize`, `aerosim_sizing_name`, `aerosim_sizing_defaults`, `aerosim_geometry_check`, `aerosim_ga_init`, `aerosim_ga_next`, `aerosim_cma_init`, `aerosim_cma_ask`, `aerosim_cma_tell`, `aerosim_de_init`, `aerosim_de_trials`, `aerosim_de_select`, `aerosim_local_fit`, `aerosim_rbf_fit`, `aerosim_rbf_eval`, `aerosim_lhs`, `aerosim_repair_step`, `aerosim_eps_level`, `aerosim_eps_worse`, `aerosim_bandit_state_len`, `aerosim_bandit_init`, `aerosim_bandit_pick`, `aerosim_bandit_update`, `aerosim_normative`, `aerosim_lem_box`, `aerosim_box_sample`, `aerosim_sens_tolerance`, `aerosim_morris_design`, `aerosim_morris_effects`
+  **ABI (80 exports)** `aerosim_abi_version`, `aerosim_schema`, `aerosim_probe_ground`, `aerosim_probe_slipstream`, `aerosim_aero_coeffs_thrust`, `aerosim_aero_coeffs_at`, `aerosim_tube_panel_hits`, `aerosim_tube_point_hits`, `aerosim_prop_state`, `aerosim_panel_states`, `aerosim_panel_states_llt`, `aerosim_wing_sweep`, `aerosim_wing_sweep_summary`, `aerosim_reynolds`, `aerosim_aero_coeffs_llt`, `aerosim_schema_hash`, `aerosim_acquire`, `aerosim_release`, `aerosim_params`, `aerosim_params_reset`, `aerosim_configure`, `aerosim_reset_ground`, `aerosim_reset_air`, `aerosim_run`, `aerosim_events`, `aerosim_time`, `aerosim_snapshot_size`, `aerosim_snapshot_save`, `aerosim_snapshot_load`, `aerosim_mass_props`, `aerosim_aero_coeffs`, `aerosim_aero_coeffs_ex`, `aerosim_linearize`, `aerosim_linearize_slosh`, `aerosim_autotune`, `aerosim_prop_point`, `aerosim_trim`, `aerosim_performance`, `aerosim_envelope`, `aerosim_envelope_curve`, `aerosim_simple_perf`, `aerosim_bench_math`, `aerosim_bench_dynamics`, `aerosim_fast_math`, `aerosim_expr_check`, `aerosim_expr_eval`, `aerosim_ground_runs`, `aerosim_ground_mtow`, `aerosim_motor_prop_thrust`, `aerosim_motor_prop_points`, `aerosim_sizing_eval`, `aerosim_sizing_optimize`, `aerosim_sizing_name`, `aerosim_sizing_defaults`, `aerosim_geometry_check`, `aerosim_ga_init`, `aerosim_ga_next`, `aerosim_cma_init`, `aerosim_cma_ask`, `aerosim_cma_tell`, `aerosim_de_init`, `aerosim_de_trials`, `aerosim_de_select`, `aerosim_local_fit`, `aerosim_rbf_fit`, `aerosim_rbf_eval`, `aerosim_lhs`, `aerosim_repair_step`, `aerosim_eps_level`, `aerosim_eps_worse`, `aerosim_bandit_state_len`, `aerosim_bandit_init`, `aerosim_bandit_pick`, `aerosim_bandit_update`, `aerosim_normative`, `aerosim_lem_box`, `aerosim_box_sample`, `aerosim_sens_tolerance`, `aerosim_morris_design`, `aerosim_morris_effects`
 - `core/src/tecnicas.zig` — Bancada das técnicas de otimização (tarefa G27): cada técnica roda a conta de hoje do núcleo e a candidata no
   fn `main:433`
 - `core/src/tests.zig` — Todos os testes do núcleo, por grupo. `zig build test` roda tudo; `-Dgrupo=math` roda só um grupo e
 - `core/src/types.zig` — Estruturas trocadas com o Python (C ABI, `extern struct`).
-  tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `LiftingLineMethod:56`, `Refinement:68`, `Surface:78`, `PropUnit:115`, `GearKind:156`, `Gear:166`, `TankShape:175`, `Tank:188`, `Segment:204`, `EventKind:225`, `Event:234`, `Pad:238`, `Payload:247`, `Environment:258`, `Takeoff:270`, `Pilot:288`, `Autopilot:298`, `AeroTable:347`, `LltCache:380`, `Params:394`, `PanelState:489`, `SweepSummary:509`, `Events:517`, `LogRow:559`, `AeroCoeffs:673`, `PropPoint:688`, `MassProps:700`, `TrimKind:708`, `TrimPoint:719`, `PerfRow:736`
+  tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `LiftingLineMethod:56`, `Refinement:68`, `Surface:78`, `PropUnit:115`, `GearKind:157`, `Gear:167`, `TankShape:176`, `Tank:189`, `Segment:205`, `EventKind:226`, `Event:235`, `Pad:239`, `Payload:248`, `Environment:259`, `Takeoff:271`, `Pilot:289`, `Autopilot:299`, `AeroTable:348`, `LltCache:381`, `Params:395`, `PanelState:490`, `SweepSummary:510`, `Events:518`, `LogRow:560`, `AeroCoeffs:674`, `PropPoint:689`, `MassProps:701`, `TrimKind:709`, `TrimPoint:720`, `PerfRow:737`
 
 **core/src/collision/**
 
@@ -422,8 +422,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Mass:49`, `Load:105`
   fn `initTanks:17`, `compute:58`, `slosh:109`, `payload:138`
 - `core/src/physics/propulsion.zig` — K unidades propulsoras: hélice por tabela C_T(J), C_P(J) + motor BLDC + bateria.
-  tipos `Unit:16`, `Out:28`
-  fn `init:42`, `polyRaw:100`, `tiltNow:117`, `axis:124`, `unit:132`, `compute:156`, `equilibriumRps:194`, `point:224`
+  tipos `Unit:21`, `Out:33`
+  fn `init:47`, `polyRaw:105`, `tiltNow:122`, `axis:129`, `unit:137`, `powerLimitedCurrent:169`, `compute:186`, `equilibriumRps:224`, `point:254`
 - `core/src/physics/section.zig` — Polar 2D de um perfil e os números que saem dela, a etapa Perfis do dimensionamento.
   tipos `Airfoil:21`, `Polar:30`, `Metrics:92`, `DragBranch:211`
   fn `stallAngle:45`, `modelPolar:58`, `interpolate:73`, `metrics:114`, `reynolds:206`, `dragBranch:232`, `fitted:263`
@@ -480,8 +480,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Hover:20`, `Conventional:49`, `FlyingWing:76`, `Tailsitter:102`, `Vtol:128`
   fn `pairSigma:25`, `wingsInducedFactor:37`, `check:158`
 - `core/src/sizing/motorprop.zig` — Tração em regime de um conjunto motor + hélice + bateria com acelerador cheio, para a curva T(V) da sprint
-  tipos `MotorProp:22`
-  fn `thrust:46`, `curve:79`
+  tipos `MotorProp:38`, `Limit:63`, `Point:73`
+  fn `point:97`, `thrust:137`, `curve:142`, `curvePoints:147`
 - `core/src/sizing/optimize.zig` — Otimizadores do mini-MDO atrás de uma interface só.
   tipos `Eval:16`, `Problem:21`, `Recorder:50`, `Result:79`, `Pso:100`, `RandomSearch:156`
   fn `check:188`, `run:198`
@@ -578,8 +578,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/model/**
 
 - `aerodrive/src/model/aircraft.zig` — Leitura do arquivo do avião salvo pela GUI (`data/aircraft/*.json`, "meus aviões").
-  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:118`, `Boom:135`, `Propeller:164`, `Motor:165`, `Battery:166`, `ThrustPoly:177`, `Propulsion:190`, `GearLeg:207`, `Gear:208`, `Tank:231`, `Payload:251`, `PointMass:265`, `Mass:266`, `Environment:277`, `Takeoff:305`, `SimSettings:306`, `Autopilot:308`, `Leg:353`, `MissionEvent:366`, `Mission:367`, `Ballast:377`, `Airfield:378`, `Modifier:396`, `Performance:411`, `Aircraft:422`, `limits:456`, `Diag:480`, `Loaded:494`
-  fn `mixedAirfoils:14`, `kindGains:48`, `parse:504`, `validate:563`, `semispan:650`, `sortedSections:657`, `sectionAt:669`, `tailOnBoom:682`, `mountPoint:700`, `applyMounts:734`
+  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:118`, `Boom:135`, `Propeller:164`, `Motor:165`, `Battery:166`, `ThrustPoly:177`, `Propulsion:190`, `GearLeg:207`, `Gear:208`, `Tank:231`, `Payload:251`, `PointMass:265`, `Mass:266`, `Environment:277`, `Takeoff:305`, `SimSettings:306`, `Autopilot:308`, `Leg:353`, `MissionEvent:366`, `Mission:367`, `Ballast:377`, `Airfield:378`, `Modifier:396`, `Performance:411`, `Aircraft:422`, `limits:457`, `Diag:481`, `Loaded:495`
+  fn `mixedAirfoils:14`, `kindGains:48`, `parse:505`, `validate:564`, `semispan:651`, `sortedSections:658`, `sectionAt:670`, `tailOnBoom:683`, `mountPoint:701`, `applyMounts:735`
 - `aerodrive/src/model/airfoil.zig` — Perfil 2D (x/c, y/c): NACA de 4 dígitos pelo nome ou as coordenadas do arquivo do avião.
   tipos `Profile:13`
   fn `nacaDigits:23`, `naca4:39`, `forDrawing:79`, `invert:95`, `full:102`, `thinAirfoil:126`, `flapEffectiveness:176`, `helmbold:183`, `split:190`
@@ -646,7 +646,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `fill:38`
 - `aerodrive/src/sim/params.zig` — Avião (arquivo da GUI) -> parâmetros do núcleo (`types.Params`), em Zig.
   tipos `Info:30`, `Coeffs:118`, `DryMass:354`
-  fn `area:47`, `span:57`, `mac:61`, `macLeadingEdge:76`, `firstSurface:96`, `references:102`, `props2d:124`, `coeffs:180`, `wingDownwash:202`, `dryMass:381`, `fill:451`, `setup:602`, `setupWith:608`, `calibrate:621`, `staticCharacteristics:646`
+  fn `area:47`, `span:57`, `mac:61`, `macLeadingEdge:76`, `firstSurface:96`, `references:102`, `props2d:124`, `coeffs:180`, `wingDownwash:202`, `dryMass:381`, `fill:451`, `setup:603`, `setupWith:609`, `calibrate:622`, `staticCharacteristics:647`
 - `aerodrive/src/sim/session.zig` — Sessão de voo: o que o jogador escolhe nos menus antes de voar (cenário, modo, vento, sloshing,
   tipos `Scenario:7`, `Landing:19`, `Mode:31`, `Session:43`
   fn `gearExtent:98`

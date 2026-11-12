@@ -153,6 +153,7 @@ class _Lib:
             "aerosim_ground_runs": (c_int, [ctypes.POINTER(T["GroundRun"]), vp, c_size, vp]),
             "aerosim_ground_mtow": (c_double, [ctypes.POINTER(T["GroundRun"]), c_double, c_double, c_double]),
             "aerosim_motor_prop_thrust": (c_int, [ctypes.POINTER(T["MotorProp"]), vp, c_size, c_double, vp]),
+            "aerosim_motor_prop_points": (c_int, [ctypes.POINTER(T["MotorProp"]), vp, c_size, c_double, vp, vp, vp]),
             "aerosim_geometry_check": (c_int, [vp, c_size, vp]),
             "aerosim_ga_init": (c_int, [ctypes.POINTER(T["GaCfg"]), vp]),
             "aerosim_ga_next": (c_int, [ctypes.POINTER(T["GaCfg"]), vp, vp, vp]),

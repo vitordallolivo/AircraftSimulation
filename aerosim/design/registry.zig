@@ -279,6 +279,7 @@ pub const rule_fields = [_]Field{
     .{ .key = "de_max", .label = "profundor: curso para cabrar", .unit = "°", .help = "bordo de fuga para cima (rotação, C_L,max)", .default = .{ .number = 20.0 }, .minimum = 5, .maximum = 40 },
     .{ .key = "de_down", .label = "profundor: curso para picar", .unit = "°", .help = "cursos assimétricos: picar costuma ser menor; segura o nariz na corrida do motor inclinado", .default = .{ .number = 15.0 }, .minimum = 2, .maximum = 40 },
     .{ .key = "da_max", .label = "aileron: curso para cima", .unit = "°", .default = .{ .number = 20.0 }, .minimum = 5, .maximum = 40 },
+    .{ .key = "power_limit", .label = "limite de potência do motor", .unit = "W", .help = "potência máxima que o avião todo pode tirar da bateria (um limitador, quando a regra pede); é dividida igual entre os motores. 0 = sem limite", .default = .{ .number = 0.0 }, .minimum = 0, .maximum = 20000 },
     .{ .key = "da_down", .label = "aileron: curso para baixo", .unit = "°", .help = "aileron diferencial: desce menos do que sobe (menos guinada adversa)", .default = .{ .number = 12.0 }, .minimum = 2, .maximum = 40 },
 };
 

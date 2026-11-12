@@ -525,6 +525,7 @@ pub fn fill(ac: *const Aircraft, params: *types.Params, diag: *model.Diag) Error
             .Imax = unit.motor.Imax,
             .Voc = unit.battery.voc(),
             .Rint = unit.battery.Rint * (if (ac.shared_battery) unit_count else 1),
+            .P_lim = if (ac.power_limit > 0) ac.power_limit / unit_count else 0,
             .yaw_mix = unit.yaw_mix,
         };
         for (thrust_poly.coefs[0..@min(thrust_poly.coefs.len, prop_unit.poly.len)], 0..) |coefficient, i| prop_unit.poly[i] = coefficient;

@@ -5,6 +5,11 @@
 //!   I = (u V_oc − K_e ω) / (R_m + u² R_int)      (u: acelerador)
 //!   (J_m + I_p) 2π dn/dt = K_e I − B ω − τ_c − Q
 //! Força T e_T no cubo; momento r × F − sentido Q e_T; giroscópico −ω × H.
+//!
+//! Limite de potência (opcional, `P_lim` > 0): o limitador corta o acelerador até a potência tirada da bateria,
+//! U I_bat = I (K_e ω + I R_m), chegar a `P_lim`. A corrente fica na raiz positiva da quadrática
+//! (`powerLimitedCurrent`) e o acelerador efetivo u sai de I R_int u² − V_oc u + (K_e ω + I R_m) = 0, a
+//! raiz menor. Com `P_lim` = 0 o ramo nem roda.
 const std = @import("std");
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
@@ -144,11 +149,36 @@ pub fn unit(params: *const types.Params, prop_unit: *const types.PropUnit, eT: V
     out.T = CT * rn2 * prop_unit.D4;
     out.Q = CP / (2.0 * fmath.pi) * rn2 * prop_unit.D5;
     out.I = fmath.lim((thr * prop_unit.Voc - prop_unit.Ke * wm) / (prop_unit.Rm + thr * thr * prop_unit.Rint), 0.0, prop_unit.Imax);
-    out.Ibat = thr * out.I;
+    var throttle = thr;
+    if (prop_unit.P_lim > 0) {
+        const back_emf = prop_unit.Ke * wm;
+        const limited = powerLimitedCurrent(back_emf, prop_unit.Rm, prop_unit.P_lim);
+        if (limited < out.I) {
+            out.I = limited;
+            throttle = limitedThrottle(prop_unit, back_emf, limited);
+        }
+    }
+    out.Ibat = throttle * out.I;
     out.Vbus = prop_unit.Voc - prop_unit.Rint * out.Ibat;
     out.P = out.Vbus * out.Ibat;
     out.drps = (prop_unit.Ke * out.I - prop_unit.B * wm - prop_unit.tauc - out.Q) / (2.0 * fmath.pi * (prop_unit.Jm + prop_unit.Ip));
     return out;
+}
+
+/// a corrente do motor em que a potência elétrica I (`back_emf` + I R_m) chega a `power_limit` (a raiz positiva)
+pub fn powerLimitedCurrent(back_emf: f64, motor_resistance: f64, power_limit: f64) f64 {
+    if (motor_resistance <= 0) return if (back_emf > 0) power_limit / back_emf else std.math.inf(f64);
+    return (-back_emf + @sqrt(back_emf * back_emf + 4 * motor_resistance * power_limit)) / (2 * motor_resistance);
+}
+
+/// o acelerador que dá a corrente `current` com a força contraeletromotriz `back_emf`: a raiz menor de
+/// I R_int u² − V_oc u + (K_e ω + I R_m) = 0 (a mesma equação da corrente de `unit`, resolvida para u)
+fn limitedThrottle(prop_unit: *const types.PropUnit, back_emf: f64, current: f64) f64 {
+    const quadratic = current * prop_unit.Rint;
+    const constant = back_emf + current * prop_unit.Rm;
+    if (quadratic <= 0) return constant / prop_unit.Voc;
+    const discriminant = @max(prop_unit.Voc * prop_unit.Voc - 4 * quadratic * constant, 0.0);
+    return 2 * constant / (prop_unit.Voc + @sqrt(discriminant));
 }
 
 /// força e momento de todos os motores; rps: rotação de cada unidade (vem do vetor de estados); dr: leme
@@ -340,4 +370,31 @@ test "tração polinomial com o acelerador como variável y" {
     prop_unit.poly[2] = 20; // p01 · thr
     init(&params);
     try testing.expectApproxEqAbs(@as(f64, 14), point(&params, &params.prop[0], 5.0, 0.7).T, 1e-9);
+}
+
+test "limite de potência: a corrente do limite resolve a quadrática" {
+    const current = powerLimitedCurrent(8.0, 0.1, 300);
+    try testing.expectApproxEqRel(@as(f64, 300), current * (8.0 + current * 0.1), 1e-12);
+    try testing.expectApproxEqRel(@as(f64, 300.0 / 8.0), powerLimitedCurrent(8.0, 0, 300), 1e-12);
+}
+
+test "limite de potência no voo: o limitador corta o acelerador e U·I_bat = P_lim" {
+    var params = types.Params{};
+    params.n_prop = 1;
+    var prop_unit = &params.prop[0];
+    prop_unit.* = .{ .D = 0.381, .Ip = 5.4e-4, .Jm = 1e-4, .Kv = 310, .Rm = 0.0204, .B = 32.4e-6, .tauc = 0.0155, .Imax = 80, .Voc = 22.2, .Rint = 0.035, .n_pts = 2 };
+    prop_unit.J[1] = 0.68;
+    prop_unit.CT[0] = 0.09;
+    prop_unit.CP[0] = 0.03;
+    prop_unit.CP[1] = 0.006;
+    init(&params);
+    const free = point(&params, &params.prop[0], 5.0, 1.0);
+    params.prop[0].P_lim = 0.6 * free.P_elec;
+    const limited = point(&params, &params.prop[0], 5.0, 1.0);
+    try testing.expectApproxEqRel(params.prop[0].P_lim, limited.P_elec, 1e-6);
+    try testing.expect(limited.T < free.T);
+    // acima da potência livre o limite não muda o equilíbrio (a busca da rotação passa por pontos limitados, então
+    // a igualdade é até o erro da busca; com P_lim = 0 o ramo nem roda)
+    params.prop[0].P_lim = 1.5 * free.P_elec;
+    try testing.expectApproxEqRel(free.T, point(&params, &params.prop[0], 5.0, 1.0).T, 1e-6);
 }

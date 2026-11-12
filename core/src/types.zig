@@ -128,6 +128,7 @@ pub const PropUnit = extern struct {
     Imax: f64 = 50,
     Voc: f64 = 11.1,
     Rint: f64 = 0.02,
+    P_lim: f64 = 0, // limite da potência tirada da bateria por esta unidade (W); 0 = sem limite
     yaw_mix: f64 = 0, // acelerador diferencial: thr_i = thr + yaw_mix δr
     model: ThrustModel = .motor,
     n_pts: i32 = 0,

@@ -90,9 +90,20 @@ fn unitOf(params: *const ObjectMap, name: []const u8, x: f64, y: f64, z: f64, se
     return unit;
 }
 
+/// o limite de potência de um motor (W): o do avião dividido igual entre os motores; 0 = sem limite
+fn unitPowerLimit(plane: model.Aircraft) f64 {
+    if (plane.power_limit <= 0 or plane.propulsion.len == 0) return 0;
+    return plane.power_limit / @as(f64, @floatFromInt(plane.propulsion.len));
+}
+
 /// a tração de um motor (N) com acelerador cheio (o equilíbrio motor + hélice do núcleo)
-fn unitThrust(unit: model.Propulsion, airspeed: f64, density: f64) f64 {
-    var spec: motorprop.MotorProp = .{ .Kv = unit.motor.Kv, .Rm = unit.motor.Rm, .B = unit.motor.B, .tauc = unit.motor.tauc, .Imax = unit.motor.Imax, .Voc = unit.battery.voc(), .Rint = unit.battery.Rint, .D = unit.propeller.D };
+fn unitThrust(unit: model.Propulsion, airspeed: f64, density: f64, power_limit: f64) f64 {
+    return unitPoint(unit, airspeed, density, power_limit).thrust;
+}
+
+/// o ponto de operação de um motor com acelerador cheio: tração, potência e o que limitou
+fn unitPoint(unit: model.Propulsion, airspeed: f64, density: f64, power_limit: f64) motorprop.Point {
+    var spec: motorprop.MotorProp = .{ .Kv = unit.motor.Kv, .Rm = unit.motor.Rm, .B = unit.motor.B, .tauc = unit.motor.tauc, .Imax = unit.motor.Imax, .Voc = unit.battery.voc(), .Rint = unit.battery.Rint, .P_lim = power_limit, .D = unit.propeller.D };
     spec.D4 = std.math.pow(f64, spec.D, 4);
     spec.D5 = spec.D4 * spec.D;
     const count = @min(unit.propeller.J.len, motorprop.max_pts);
@@ -100,7 +111,7 @@ fn unitThrust(unit: model.Propulsion, airspeed: f64, density: f64) f64 {
     @memcpy(spec.J[0..count], unit.propeller.J[0..count]);
     @memcpy(spec.CT[0..count], unit.propeller.CT[0..count]);
     @memcpy(spec.CP[0..count], unit.propeller.CP[0..count]);
-    return motorprop.thrust(&spec, airspeed, density);
+    return motorprop.point(&spec, airspeed, density);
 }
 
 /// o momento de arfagem (+ cabra) da tração de cada motor em torno de (px, pz): eixo inclinado e fora do ponto
@@ -155,6 +166,9 @@ pub const Assembled = struct {
     // desempenho
     speeds: []const f64 = &.{},
     thrust: []const f64 = &.{},
+    free_thrust: []const f64 = &.{}, // a tração sem o limite de potência (igual à `thrust` sem limite)
+    electric_power: []const f64 = &.{}, // a potência tirada da bateria por todos os motores (W)
+    limited_by_power: []const bool = &.{}, // em que V o limite de potência cortou a tração
     drag: []const f64 = &.{},
     climb: []const f64 = &.{},
     max_speed: f64 = std.math.nan(f64),
@@ -211,6 +225,7 @@ pub fn assemble(context: *stages.Context, memory: std.mem.Allocator, params: *co
     plane.tanks = &.{};
     plane.payload.enabled = false;
     plane.environment.density_altitude = requirement(project, "density_altitude");
+    plane.power_limit = rule(project, "power_limit");
     plane.environment.rho = density;
     plane.airfield.x_warning = firstConstraint(project, "s_to", plane.airfield.x_warning);
     plane.airfield.z_warning = requirement(project, "obstacle_h");
@@ -507,7 +522,7 @@ fn thrustTrim(context: *stages.Context, memory: std.mem.Allocator, assembled: *A
     var early_thrust: [steps]f64 = undefined;
     for (0..steps) |i| {
         early_speeds[i] = 0.5 + (1.6 * liftoff - 0.5) * @as(f64, @floatFromInt(i)) / (steps - 1);
-        early_thrust[i] = unitThrust(units[0], early_speeds[i], density);
+        early_thrust[i] = unitThrust(units[0], early_speeds[i], density, unitPowerLimit(plane.*));
     }
     const Lifts = struct {
         fn any(speeds: []const f64, thrusts: []const f64, limit: f64, rho: f64, s: f64, c: f64, cm: f64, list: []const model.Propulsion, gx: f64, gz: f64, w: f64, arm: f64) bool {
@@ -569,6 +584,11 @@ fn performance(context: *stages.Context, memory: std.mem.Allocator, assembled: *
     const thrust = try memory.alloc(f64, count);
     const drag = try memory.alloc(f64, count);
     const climb = try memory.alloc(f64, count);
+    const free_thrust = try memory.alloc(f64, count);
+    const electric = try memory.alloc(f64, count);
+    @memset(electric, 0);
+    const limited_by_power = try memory.alloc(bool, count);
+    @memset(limited_by_power, false);
     const first = @max(0.8 * stall, 2.0);
     const last = @max(3.0 * stall, cruise * 1.8);
     var tilt: f64 = 0;
@@ -584,7 +604,15 @@ fn performance(context: *stages.Context, memory: std.mem.Allocator, assembled: *
         const speed = first + (last - first) * @as(f64, @floatFromInt(i)) / (count - 1);
         speeds[i] = speed;
         var total: f64 = 0;
-        for (units) |unit| total += unitThrust(unit, speed, density);
+        var free_total: f64 = 0;
+        for (units) |unit| {
+            const operating = unitPoint(unit, speed, density, unitPowerLimit(plane));
+            total += operating.thrust;
+            electric[i] += operating.power;
+            if (operating.limit == .power) limited_by_power[i] = true;
+            if (operating.limit == .power) free_total += unitThrust(unit, speed, density, 0) else free_total += operating.thrust;
+        }
+        free_thrust[i] = free_total;
         thrust[i] = total;
         const dynamic = 0.5 * density * speed * speed;
         const lift = weight / (dynamic * area);
@@ -606,6 +634,9 @@ fn performance(context: *stages.Context, memory: std.mem.Allocator, assembled: *
     assembled.cruise_trim_drag = trims[nearest];
     assembled.speeds = speeds;
     assembled.thrust = thrust;
+    assembled.free_thrust = free_thrust;
+    assembled.electric_power = electric;
+    assembled.limited_by_power = limited_by_power;
     assembled.drag = drag;
     assembled.climb = climb;
     assembled.climb_max = climb[best];
@@ -614,7 +645,7 @@ fn performance(context: *stages.Context, memory: std.mem.Allocator, assembled: *
     assembled.ld_max = 0.5 / @sqrt(factor * zero);
     assembled.ld_speed = @sqrt(2 * weight / (density * area) * @sqrt(factor / zero));
     var static_thrust: f64 = 0;
-    for (units) |unit| static_thrust += unitThrust(unit, 0, density);
+    for (units) |unit| static_thrust += unitThrust(unit, 0, density, unitPowerLimit(plane));
     assembled.static_thrust = static_thrust;
     assembled.thrust_weight = static_thrust / weight;
 
@@ -637,7 +668,7 @@ fn performance(context: *stages.Context, memory: std.mem.Allocator, assembled: *
         for (0..rotation_points) |i| {
             const speed = 0.5 + (40.0 - 0.5) * @as(f64, @floatFromInt(i)) / (rotation_points - 1);
             run.rot_V[i] = speed;
-            run.rot_a[i] = 0.5 * density * speed * speed * area * chord * full + thrustMoment(units, unitThrust(units[0], speed, density), gear_x, gear_z);
+            run.rot_a[i] = 0.5 * density * speed * speed * area * chord * full + thrustMoment(units, unitThrust(units[0], speed, density, unitPowerLimit(plane)), gear_x, gear_z);
         }
         var pitch: f64 = 0;
         if (plane.gear.steer_x != gear_x) pitch = std.math.atan((plane.gear.steer_z - gear_z) / (plane.gear.steer_x - gear_x));
@@ -802,6 +833,17 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     const figures = try simulation.Figures.init(memory, &plots);
     try figures.curve("T", .{ .name = "tração T", .x = assembled.speeds, .y = assembled.thrust, .color = "#1f77b4", .width = 2.4 });
     try figures.curve("T", .{ .name = "arrasto D", .x = assembled.speeds, .y = assembled.drag, .color = "#d62728", .width = 2.4 });
+    if (assembled.plane.power_limit > 0) {
+        // o limite de potência: a tração sem ele (tracejada) e os V em que ele cortou a tração
+        try figures.curve("T", .{ .name = "T sem o limite", .x = assembled.speeds, .y = assembled.free_thrust, .color = "#1f77b4", .dashed = true });
+        var limited_x: std.ArrayList(f64) = .empty;
+        var limited_y: std.ArrayList(f64) = .empty;
+        for (assembled.speeds, assembled.thrust, assembled.limited_by_power) |speed, value, limited| if (limited) {
+            try limited_x.append(memory, speed);
+            try limited_y.append(memory, value);
+        };
+        if (limited_x.items.len > 0) try figures.curve("T", .{ .name = "limitada pela potência", .x = limited_x.items, .y = limited_y.items, .color = "#ff7f0e", .marker = "o", .size = 4 });
+    }
     try figures.guide("T", .{ .name = "estol", .value = assembled.stall_speed, .vertical = true, .color = "#7f7f7f" });
     try figures.guide("T", .{ .name = "cruzeiro", .value = cruise, .vertical = true, .color = "#2ca02c" });
     try figures.curve("RC", .{ .name = "razão de subida", .x = assembled.speeds, .y = assembled.climb, .color = "#1f77b4", .width = 2.4 });
@@ -821,6 +863,19 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     try summary.append(memory, .{ "V de estol, V máx. (m/s)", try text(memory, "{d:.2}, {d:.2}", .{ assembled.stall_speed, assembled.max_speed }) });
     try summary.append(memory, .{ "subida máx. (m/s) em V", try text(memory, "{d:.2} em {d:.1}", .{ assembled.climb_max, assembled.climb_speed }) });
     try summary.append(memory, .{ "C_D0, (L/D) máx., V de L/D máx.", try text(memory, "{d:.4}, {d:.2}, {d:.2}", .{ assembled.zero_drag, assembled.ld_max, assembled.ld_speed }) });
+    if (assembled.plane.power_limit > 0) {
+        var peak: f64 = 0;
+        var first_limited: f64 = std.math.nan(f64);
+        var last_limited: f64 = std.math.nan(f64);
+        for (assembled.speeds, assembled.electric_power, assembled.limited_by_power) |speed, power, limited| {
+            peak = @max(peak, power);
+            if (!limited) continue;
+            if (std.math.isNan(first_limited)) first_limited = speed;
+            last_limited = speed;
+        }
+        try summary.append(memory, .{ "limite de potência (W), maior potência tirada da bateria (W)", try text(memory, "{d:.0}, {d:.0}", .{ assembled.plane.power_limit, peak }) });
+        try summary.append(memory, .{ "o limite corta a tração de V a V (m/s)", if (std.math.isNan(first_limited)) "em nenhuma V" else try text(memory, "{d:.1} a {d:.1}", .{ first_limited, last_limited }) });
+    }
     try summary.append(memory, .{ "tração estática (N), T/W", try text(memory, "{d:.2}, {d:.3}", .{ assembled.static_thrust, assembled.thrust_weight }) });
     try summary.append(memory, .{ "corrida de decolagem (m)", try text(memory, "{d:.2}", .{assembled.takeoff_run}) });
     try summary.append(memory, .{ "MTOW pela pista (kg); CP possível = MTOW − PV (kg)", try text(memory, "{d:.3}; {d:.3}", .{ assembled.runway_mtow, assembled.runway_mtow - assembled.empty }) });

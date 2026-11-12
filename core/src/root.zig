@@ -528,6 +528,13 @@ export fn aerosim_motor_prop_thrust(motor_prop: *const motorprop.MotorProp, airs
     return 0;
 }
 
+/// o ponto inteiro em cada `V[0..n]`: tração (N), potência tirada da bateria (W) e o que limitou (0 acelerador,
+/// 1 corrente máxima, 2 limite de potência `P_lim`)
+export fn aerosim_motor_prop_points(motor_prop: *const motorprop.MotorProp, airspeeds: [*]const f64, count: usize, rho: f64, thrust_out: [*]f64, power_out: [*]f64, limit_out: [*]motorprop.Limit) i32 {
+    motorprop.curvePoints(motor_prop, airspeeds[0..count], rho, thrust_out[0..count], power_out[0..count], limit_out[0..count]);
+    return 0;
+}
+
 // ------------------------------------------------------------------ dimensionamento inicial (mini-MDO)
 const sizing = @import("sizing/sizing.zig");
 const sizing_types = sizing.types;
