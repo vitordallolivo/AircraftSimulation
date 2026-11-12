@@ -87,6 +87,13 @@ comptime {
     }
 }
 
+// structures: seção composta e, depois, V-n, cargas, flambagem, aeroelasticidade e trem
+comptime {
+    if (wanted("structures")) {
+        _ = @import("structures/section.zig");
+    }
+}
+
 // geometry: hélice × peças, massas fora, pedaços soltos, chão
 comptime {
     if (wanted("geometry")) {

@@ -156,6 +156,7 @@ class _Lib:
             "aerosim_motor_prop_thrust": (c_int, [ctypes.POINTER(T["MotorProp"]), vp, c_size, c_double, vp]),
             "aerosim_motor_prop_points": (c_int, [ctypes.POINTER(T["MotorProp"]), vp, c_size, c_double, vp, vp, vp]),
             "aerosim_geometry_check": (c_int, [vp, c_size, vp]),
+            "aerosim_section_check": (c_int, [vp, c_size, vp, c_size, c_double, ctypes.POINTER(T["SectionProperties"]), vp]),
             "aerosim_ga_init": (c_int, [ctypes.POINTER(T["GaCfg"]), vp]),
             "aerosim_ga_next": (c_int, [ctypes.POINTER(T["GaCfg"]), vp, vp, vp]),
             "aerosim_cma_init": (c_int, [ctypes.POINTER(T["CmaState"]), c_int, vp, c_double, c_int, c_int]),

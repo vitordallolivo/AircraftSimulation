@@ -277,7 +277,7 @@ O núcleo físico em Zig (`core/`): dinâmica, aerodinâmica, cargas, estruturas
 | T16 | Manobras dinâmicas (o 6GDL monta os casos) | Cálculo | T13 | — | Não iniciado |
 | T17 | Momento de dobradiça (distribuição na corda, método da literatura) | Cálculo | T38 | — | Não iniciado |
 | T18 | Cargas no solo | Cálculo | T38 | — | Não iniciado |
-| T20 | Arquitetura de estruturas + banco de materiais (os dados vêm do usuário ou da literatura) | Fundação | — | — | Não iniciado |
+| T20 | Arquitetura de estruturas + banco de materiais (os dados vêm do usuário ou da literatura) | Fundação | — | — | Em andamento |
 | T21 | Longarina | Fundação | T15, T20 | — | Não iniciado |
 | T22 | Tubo de cauda | Fundação | T15, T20 | — | Não iniciado |
 | T23 | Trem (eixo, garfo) | Fundação | T18, T20 | — | Não iniciado |
@@ -492,7 +492,7 @@ pista) é ajuste de interface e está em "Fora da conta".
 | ES-01 | Massas e inércias | ✅ | ✅ | — | Montagem |
 | ES-02 | Longarina | ❌ | ❌ | T21 | |
 | ES-03 | Tubo de cauda | ❌ | ❌ | T22 | |
-| ES-04 | Materiais | ❌ | ❌ | T20 | nunca dos relatórios de referência |
+| ES-04 | Materiais | 🟡 | ❌ | T20 | material dado pelo usuário no núcleo; nunca dos relatórios de referência |
 | ES-05 | Trem | ❌ | ❌ | T23 | |
 
 ### 7. Elétrica — fora do escopo

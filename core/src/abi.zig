@@ -29,7 +29,9 @@ pub const exported = .{
     simple_perf.SimpleCfg,  simple_perf.SimpleRow,  simple_perf.SimpleSummary, sizing_types.VarSpec,  sizing_types.AirfoilData, sizing_types.PropSet,   sizing_types.Constraint,
     sizing_types.LayoutData, sizing_types.SizingCfg,  sizing_types.SizingOut,     sizing_types.OptOpts,  sizing_types.Individual,  optim_types.Tier,      optim_types.Program,
     sizing_ground.GroundRun,  geometry.Part,      geometry.Scene,       geometry.Report,  genetic.GaCfg,      cmaes.CmaState,  motorprop.MotorProp,
+    structure_section.Material, structure_section.SectionPart, structure_section.SectionProperties, structure_section.PartStress,
 };
+const structure_section = @import("structures/section.zig");
 const sizing_types = @import("sizing/types.zig");
 const optim_types = @import("optim/types.zig");
 const sizing_ground = @import("sizing/ground.zig");

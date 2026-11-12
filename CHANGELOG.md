@@ -6,6 +6,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- O projeto não tinha nenhuma conta de estrutura. Agora o núcleo calcula a seção de uma viga feita de várias partes,
+  como a alma de balsa com tubos de carbono de uma longarina, cada uma do seu material. A conta dá a linha neutra, a
+  rigidez à flexão e a massa por metro. Sob um momento fletor, ela dá também a tensão em cada parte e a margem contra
+  a resistência. O material é sempre o que o usuário informa. Ainda não há tela para isso, e é o primeiro passo das
+  estruturas.
 - O efeito solo só reduzia o arrasto induzido (o fator de McCormick), que perto do chão corta demais e não muda a
   sustentação nem o momento de arfagem. Agora há um segundo método, o VLM com o chão espelhado. Ele roda uma vez ao
   carregar o avião e monta uma tabela por altura e ângulo de ataque com a sustentação a mais, o induzido a menos e o

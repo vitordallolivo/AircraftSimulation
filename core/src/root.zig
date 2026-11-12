@@ -29,7 +29,7 @@ var used: [limits.max_instances]std.atomic.Value(bool) = [_]std.atomic.Value(boo
 
 /// tudo o que uma função da ABI pode devolver como erro: os da configuração e do estado (sim/runner.zig) e os da
 /// própria fronteira
-pub const AbiError = runner.ConfigError || runner.StateError || error{
+pub const AbiError = runner.ConfigError || runner.StateError || structure_section.Error || error{
     /// slot fora da faixa ou não reservado
     InvalidSlot,
     /// todas as `max_instances` simulações estão em uso
@@ -66,6 +66,9 @@ pub fn abiCode(err: AbiError) i32 {
         error.BadMass => -17,
         error.TooManyPropPoints => -18,
         error.GroundTable => -19,
+        error.NoParts => -20,
+        error.BadMaterial => -21,
+        error.NoStiffness => -22,
         // os otimizadores sempre devolveram −1 para "não cabe"; o Python só olha o sinal
         error.OutOfRange, error.OutOfMemory, error.SingularSystem => -1,
     };
@@ -533,6 +536,20 @@ export fn aerosim_motor_prop_thrust(motor_prop: *const motorprop.MotorProp, airs
 /// 1 corrente máxima, 2 limite de potência `P_lim`)
 export fn aerosim_motor_prop_points(motor_prop: *const motorprop.MotorProp, airspeeds: [*]const f64, count: usize, rho: f64, thrust_out: [*]f64, power_out: [*]f64, limit_out: [*]motorprop.Limit) i32 {
     motorprop.curvePoints(motor_prop, airspeeds[0..count], rho, thrust_out[0..count], power_out[0..count], limit_out[0..count]);
+    return 0;
+}
+
+// ------------------------------------------------------------------ estruturas
+const structure_section = @import("structures/section.zig");
+
+/// a seção composta `parts[0..part_count]` (materiais em `materials[0..material_count]`): linha neutra, EA, EI e massa
+/// por comprimento em `out`, e, sob o momento fletor `moment` (N·m), a tensão nas fibras extremas e a margem de cada
+/// parte em `stress_out` (pode ser nulo); −20 sem parte, −21 material inválido, −22 sem rigidez
+export fn aerosim_section_check(materials: [*]const structure_section.Material, material_count: usize, parts: [*]const structure_section.SectionPart, part_count: usize, moment: f64, out: *structure_section.SectionProperties, stress_out: ?[*]structure_section.PartStress) i32 {
+    const material_list = materials[0..material_count];
+    const part_list = parts[0..part_count];
+    out.* = structure_section.properties(material_list, part_list) catch |err| return abiCode(err);
+    if (stress_out) |stress| structure_section.stresses(material_list, part_list, out.*, moment, stress[0..part_count]) catch |err| return abiCode(err);
     return 0;
 }
 

@@ -2,7 +2,7 @@
 //!
 //!   zig build --release=fast       -> zig-out/lib/libaerosim.so (C ABI, usada pelo Python)
 //!   zig build test                 -> todos os testes (src/tests.zig)
-//!   zig build test -Dgrupo=math    -> só um grupo: math, physics, control, sim, sizing, optim, geometry
+//!   zig build test -Dgrupo=math    -> só um grupo: math, physics, control, sim, sizing, optim, geometry, structures
 //!   zig build test -Dfiltro=trim   -> só os testes cujo nome contém o texto (junta com -Dgrupo)
 //!   zig build test -Dfuzz=N -Dseed=S -> fuzzing mais longo das interfaces (padrão 2000 entradas por teste)
 //!   zig build -Dfast_math=false    -> troca LUT/polinômios por std.math (referência)
@@ -33,8 +33,8 @@ fn optBits(text: []const u8) u8 {
 }
 
 /// os grupos de `-Dgrupo` (cada um é um bloco `test` em src/tests.zig)
-const test_groups = .{ "tudo", "math", "physics", "control", "sim", "sizing", "optim", "geometry" };
-const test_group_list = "tudo, math, physics, control, sim, sizing, optim, geometry";
+const test_groups = .{ "tudo", "math", "physics", "control", "sim", "sizing", "optim", "geometry", "structures" };
+const test_group_list = "tudo, math, physics, control, sim, sizing, optim, geometry, structures";
 
 /// verdadeiro se `name` é um dos `test_groups`
 fn isTestGroup(name: []const u8) bool {

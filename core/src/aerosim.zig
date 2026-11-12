@@ -74,6 +74,11 @@ pub const loads = struct {
     pub const vlm = @import("loads/vlm.zig");
 };
 
+/// estruturas: seção composta (EI, tensões e margens)
+pub const structures = struct {
+    pub const section = @import("structures/section.zig");
+};
+
 /// dimensionamento inicial (mini-MDO)
 pub const sizing = struct {
     pub const constraints = @import("sizing/constraints.zig");
