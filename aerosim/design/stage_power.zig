@@ -21,7 +21,6 @@ const ground = core.sizing.ground;
 const motorprop = core.sizing.motorprop;
 
 const gravity = 9.80665;
-const munk = 0.9; // k2 − k1 de um corpo alongado (fineza ~ 6 a 8)
 const layouts = [_][]const u8{ "tratora no nariz", "dois motores na asa", "propulsora atrás da asa", "livre: nariz + asa + atrás" };
 const gears = [_][]const u8{ "triciclo", "convencional" };
 
@@ -265,6 +264,7 @@ pub fn assemble(context: *stages.Context, memory: std.mem.Allocator, params: *co
     for (units.items) |unit| diameter = @max(diameter, unit.propeller.D);
     const volume = std.math.pi / 6.0 * width * height * length;
     const wetted = std.math.pi * 0.5 * (width + height) * length * 0.75;
+    const munk = rule(project, "fuselage_munk");
     plane.fuselage = .{ .enabled = true, .x_nose = x_nose, .length = length, .width = width, .height = height, .z = 0, .CDS = rule(project, "fuselage_cd_wet") * wetted, .Cma = 2 * munk * volume / (area * chord), .Cnb = -2 * munk * volume / (area * span), .CYb = -0.15 };
 
     // o CG com a fuselagem (a margem continua a pedida)
@@ -517,11 +517,14 @@ fn thrustTrim(context: *stages.Context, memory: std.mem.Allocator, assembled: *A
     }.of;
     const de_max = std.math.degreesToRadians(rule(project, "de_max"));
     const de_down = std.math.degreesToRadians(rule(project, "de_down"));
-    const steps = 64;
-    var early_speeds: [steps]f64 = undefined;
-    var early_thrust: [steps]f64 = undefined;
+    const steps: usize = @intFromFloat(std.math.clamp(@round(rule(project, "ref_corrida_pontos")), 2, ground.max_grid));
+    const last_step: f64 = @floatFromInt(steps - 1);
+    var speed_buffer: [ground.max_grid]f64 = undefined;
+    var thrust_buffer: [ground.max_grid]f64 = undefined;
+    const early_speeds = speed_buffer[0..steps];
+    const early_thrust = thrust_buffer[0..steps];
     for (0..steps) |i| {
-        early_speeds[i] = 0.5 + (1.6 * liftoff - 0.5) * @as(f64, @floatFromInt(i)) / (steps - 1);
+        early_speeds[i] = 0.5 + (1.6 * liftoff - 0.5) * @as(f64, @floatFromInt(i)) / last_step;
         early_thrust[i] = unitThrust(units[0], early_speeds[i], density, unitPowerLimit(plane.*));
     }
     const Lifts = struct {
@@ -534,17 +537,17 @@ fn thrustTrim(context: *stages.Context, memory: std.mem.Allocator, assembled: *A
         }
     };
     const neutral = aero(wing, result, ground_lift, 0, gear_aft, change);
-    if (Lifts.any(&early_speeds, &early_thrust, 0.95 * liftoff, density, area, chord, neutral, units, gear_x, gear_z, weight, weight_arm)) {
+    if (Lifts.any(early_speeds, early_thrust, 0.95 * liftoff, density, area, chord, neutral, units, gear_x, gear_z, weight, weight_arm)) {
         const low: f64 = 0;
         const high = de_down;
-        if (Lifts.any(&early_speeds, &early_thrust, 0.95 * liftoff, density, area, chord, aero(wing, result, ground_lift, high, gear_aft, change), units, gear_x, gear_z, weight, weight_arm)) {
+        if (Lifts.any(early_speeds, early_thrust, 0.95 * liftoff, density, area, chord, aero(wing, result, ground_lift, high, gear_aft, change), units, gear_x, gear_z, weight, weight_arm)) {
             assembled.hold = rule(project, "de_down");
             assembled.hold_ok = false;
         } else {
             var bisection: core.optim.scalar.Bisection = .{ .low = low, .high = high };
-            for (0..30) |_| {
+            for (0..@intFromFloat(@max(@round(rule(project, "ref_bissecoes")), 1))) |_| {
                 const middle = bisection.middle();
-                const lifts = Lifts.any(&early_speeds, &early_thrust, 0.95 * liftoff, density, area, chord, aero(wing, result, ground_lift, middle, gear_aft, change), units, gear_x, gear_z, weight, weight_arm);
+                const lifts = Lifts.any(early_speeds, early_thrust, 0.95 * liftoff, density, area, chord, aero(wing, result, ground_lift, middle, gear_aft, change), units, gear_x, gear_z, weight, weight_arm);
                 bisection.move(middle, if (lifts) .raise else .lower);
             }
             assembled.hold = std.math.radiansToDegrees(bisection.high);
@@ -581,7 +584,8 @@ fn performance(context: *stages.Context, memory: std.mem.Allocator, assembled: *
     const factor = inducedFactor(assembled);
     const cruise = requirement(project, "V_cruise");
     const stall = assembled.stall_speed;
-    const count = 120;
+    const count: usize = @intFromFloat(@max(@round(rule(project, "ref_curvas_pontos")), 2));
+    const last_point: f64 = @floatFromInt(count - 1);
     const speeds = try memory.alloc(f64, count);
     const thrust = try memory.alloc(f64, count);
     const drag = try memory.alloc(f64, count);
@@ -601,9 +605,9 @@ fn performance(context: *stages.Context, memory: std.mem.Allocator, assembled: *
     const cruise_drag = zero + factor * cruise_lift * cruise_lift;
     var best: usize = 0;
     var nearest: usize = 0;
-    var trims: [count]f64 = undefined;
+    const trims = try memory.alloc(f64, count);
     for (0..count) |i| {
-        const speed = first + (last - first) * @as(f64, @floatFromInt(i)) / (count - 1);
+        const speed = first + (last - first) * @as(f64, @floatFromInt(i)) / last_point;
         speeds[i] = speed;
         var total: f64 = 0;
         var free_total: f64 = 0;
@@ -663,12 +667,13 @@ fn performance(context: *stages.Context, memory: std.mem.Allocator, assembled: *
     run.n = @intCast(grid);
     if (std.mem.eql(u8, plane.gear.layout, "tricycle") and units.len > 0) {
         // a rotação: o momento do profundor todo cabrando mais o da tração, sem o do peso
-        const rotation_points = 160;
+        const rotation_points: usize = @intFromFloat(std.math.clamp(@round(rule(project, "ref_rotacao_pontos")), 2, ground.max_grid));
+        const last_rotation: f64 = @floatFromInt(rotation_points - 1);
         const gear_x = plane.gear.main_x;
         const gear_z = plane.gear.main_z;
         const full = wing.moment + run.CLg * (-gear_x - wing.aero_center) / chord + result.groundMoment(run.CLg, -std.math.degreesToRadians(rule(project, "de_max")), -gear_x, std.math.degreesToRadians(assembled.incidence_change));
         for (0..rotation_points) |i| {
-            const speed = 0.5 + (40.0 - 0.5) * @as(f64, @floatFromInt(i)) / (rotation_points - 1);
+            const speed = 0.5 + (40.0 - 0.5) * @as(f64, @floatFromInt(i)) / last_rotation;
             run.rot_V[i] = speed;
             run.rot_a[i] = 0.5 * density * speed * speed * area * chord * full + thrustMoment(units, unitThrust(units[0], speed, density, unitPowerLimit(plane)), gear_x, gear_z);
         }
@@ -677,20 +682,21 @@ fn performance(context: *stages.Context, memory: std.mem.Allocator, assembled: *
         var weight_arm = assembled.x_target - gear_x;
         if (pitch > 0) weight_arm = weight_arm * @cos(pitch) - (gear_z - plane.design_cg.?[2]) * @sin(pitch);
         run.rot_arm = weight_arm;
-        run.n_rot = rotation_points;
+        run.n_rot = @intCast(rotation_points);
         run.rot_on = 1;
     }
     assembled.takeoff_run = ground.run(&run, assembled.mass);
     const runway = firstConstraint(project, "s_to", 50);
     const low = @max(assembled.empty, 0.1);
     assembled.runway_mtow = ground.mtow(&run, low, @max(4 * assembled.mass, 1.0), runway);
-    const sweep = 25;
+    const sweep: usize = @intFromFloat(@max(@round(rule(project, "ref_massa_pontos")), 2));
+    const last_mass: f64 = @floatFromInt(sweep - 1);
     const masses = try memory.alloc(f64, sweep);
     const runs = try memory.alloc(f64, sweep);
     const heaviest = @max(2.2 * assembled.mass, if (std.math.isFinite(assembled.runway_mtow)) assembled.runway_mtow else 0) * 1.05;
     const lightest = @max(assembled.empty, 0.5);
     for (masses, runs, 0..) |*item, *distance, i| {
-        item.* = lightest + (heaviest - lightest) * @as(f64, @floatFromInt(i)) / (sweep - 1);
+        item.* = lightest + (heaviest - lightest) * @as(f64, @floatFromInt(i)) / last_mass;
         const value = ground.run(&run, item.*);
         distance.* = if (std.math.isFinite(value)) value else std.math.nan(f64);
     }

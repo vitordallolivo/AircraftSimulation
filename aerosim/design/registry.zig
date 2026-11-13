@@ -268,6 +268,7 @@ pub const rule_fields = [_]Field{
     .{ .key = "fuselage_width", .label = "largura da fuselagem", .unit = "m", .help = "pod do nariz até o bordo de fuga da asa", .default = .{ .number = 0.14 }, .minimum = 0.03, .maximum = 0.6 },
     .{ .key = "fuselage_height", .label = "altura da fuselagem", .unit = "m", .default = .{ .number = 0.16 }, .minimum = 0.03, .maximum = 0.6 },
     .{ .key = "fuselage_cd_wet", .label = "C_D da fuselagem (área molhada)", .help = "pod curto com trem: ≈ 0,04", .default = .{ .number = 0.04 }, .minimum = 0.005, .maximum = 0.2 },
+    .{ .key = "fuselage_munk", .label = "fator de massa aparente da fuselagem (k2 − k1)", .help = "entra no momento de arfagem e de guinada da fuselagem; corpo alongado de fineza 6 a 8: ≈ 0,9", .default = .{ .number = 0.9 }, .minimum = 0.3, .maximum = 1 },
     .{ .key = "fuselage_density", .label = "massa da fuselagem por metro", .unit = "kg/m", .default = .{ .number = 0.7 }, .minimum = 0.05, .maximum = 5 },
     .{ .key = "systems_mass", .label = "sistemas", .unit = "kg", .help = "receptor, servos, fiação", .default = .{ .number = 0.35 }, .minimum = 0, .maximum = 5 },
     .{ .key = "gear_mass", .label = "trem de pouso", .unit = "kg", .default = .{ .number = 0.35 }, .minimum = 0, .maximum = 5 },
@@ -280,6 +281,14 @@ pub const rule_fields = [_]Field{
     .{ .key = "de_down", .label = "profundor: curso para picar", .unit = "°", .help = "cursos assimétricos: picar costuma ser menor; segura o nariz na corrida do motor inclinado", .default = .{ .number = 15.0 }, .minimum = 2, .maximum = 40 },
     .{ .key = "da_max", .label = "aileron: curso para cima", .unit = "°", .default = .{ .number = 20.0 }, .minimum = 5, .maximum = 40 },
     .{ .key = "power_limit", .label = "limite de potência do motor", .unit = "W", .help = "potência máxima que o avião todo pode tirar da bateria (um limitador, quando a regra pede); é dividida igual entre os motores. 0 = sem limite", .default = .{ .number = 0.0 }, .minimum = 0, .maximum = 20000 },
+    // o refino das contas das etapas (os padrões são os de sempre)
+    .{ .key = "ref_corrida_pontos", .label = "refino: velocidades testadas na corrida", .help = "a etapa Motores procura em que velocidade o nariz levanta sozinho e em qual o profundor roda o avião, nestas velocidades de 0,5 m/s a 1,6 × a de decolagem (até 256)", .default = .{ .number = 64 }, .minimum = 4, .maximum = 256 },
+    .{ .key = "ref_bissecoes", .label = "refino: bisseções do profundor na corrida", .help = "a deflexão que segura o nariz no chão sai de uma busca por metades", .default = .{ .number = 30 }, .minimum = 1, .maximum = 100 },
+    .{ .key = "ref_curvas_pontos", .label = "refino: pontos das curvas de tração e arrasto", .default = .{ .number = 120 }, .minimum = 4, .maximum = 5000 },
+    .{ .key = "ref_rotacao_pontos", .label = "refino: velocidades da rotação", .help = "a velocidade de rotação é a primeira, de 0,5 a 40 m/s, em que o profundor todo cabrando levanta o nariz (até 256)", .default = .{ .number = 160 }, .minimum = 4, .maximum = 256 },
+    .{ .key = "ref_massa_pontos", .label = "refino: massas da curva corrida × massa", .default = .{ .number = 25 }, .minimum = 3, .maximum = 500 },
+    .{ .key = "ref_massa_tol", .label = "refino: tolerância da massa de projeto", .unit = "kg", .help = "o Estudo anda a massa de projeto até o MTOW da pista e para quando os dois diferem menos que isto", .default = .{ .number = 0.02 }, .minimum = 0.0001, .maximum = 5 },
+    .{ .key = "ref_massa_voltas", .label = "refino: voltas da massa de projeto", .help = "voltas da média e, depois, da secante (método que segue a inclinação entre os dois últimos pontos)", .default = .{ .number = 10 }, .minimum = 1, .maximum = 100 },
     .{ .key = "da_down", .label = "aileron: curso para baixo", .unit = "°", .help = "aileron diferencial: desce menos do que sobe (menos guinada adversa)", .default = .{ .number = 12.0 }, .minimum = 2, .maximum = 40 },
 };
 

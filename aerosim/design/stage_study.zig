@@ -122,7 +122,8 @@ const Swap = struct {
 fn designPoint(context: *stages.Context, memory: std.mem.Allocator, power: *const ObjectMap) !?struct { assembled: *power_stage.Assembled, mass: f64, converged: bool } {
     const project = &context.project;
     const requirements = project.section("requirements");
-    const tolerance = 0.02;
+    const tolerance = registry.fieldNumber(project.section("rules"), &registry.rule_fields, "ref_massa_tol");
+    const rounds: usize = @intFromFloat(@max(@round(registry.fieldNumber(project.section("rules"), &registry.rule_fields, "ref_massa_voltas")), 1));
     var mass = registry.fieldNumber(requirements, &registry.requirement_fields, "mass");
     var history: std.ArrayList([2]f64) = .empty;
     var last: ?*power_stage.Assembled = null;
@@ -134,7 +135,7 @@ fn designPoint(context: *stages.Context, memory: std.mem.Allocator, power: *cons
             return power_stage.assemble(ctx, mem, power_params);
         }
     };
-    for (0..10) |_| {
+    for (0..rounds) |_| {
         const assembled = try At.run(context, memory, power, mass) orelse return null;
         last = assembled;
         floor = assembled.empty;
@@ -144,7 +145,7 @@ fn designPoint(context: *stages.Context, memory: std.mem.Allocator, power: *cons
     }
     // quando o MTOW anda quase junto com a massa, a média demora: secante em g(m) = MTOW(m) − m
     if (history.items.len >= 2 and std.math.isFinite(history.items[history.items.len - 1][1]) and @abs(history.items[history.items.len - 1][1] - history.items[history.items.len - 1][0]) >= tolerance) {
-        for (0..10) |_| {
+        for (0..rounds) |_| {
             const previous = history.items[history.items.len - 2];
             const current = history.items[history.items.len - 1];
             const next = core.optim.scalar.secant(.{ previous[0], previous[1] - previous[0] }, .{ current[0], current[1] - current[0] }) orelse break;
