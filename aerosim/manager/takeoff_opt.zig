@@ -13,8 +13,9 @@
 //! testa `Settings.grid_points` pontos na pista; se nenhum passa, divide ao meio o trecho entre um acionamento cedo
 //! demais e o seguinte, tarde demais (a janela que funciona pode ser mais estreita que a grade), e procura pela seção
 //! áurea o acionamento que decola mais cedo em volta do melhor ponto (o mínimo pode cair entre dois pontos da grade);
-//! depois refina em volta do melhor pela seção áurea. A bisseção parte de onde o avião sai do chão sem acionar e divide a faixa até achar a
-//! janela. Todos os ajustes (`Settings`) e o erro aceito nos dois requisitos vêm da tela.
+//! depois refina em volta do melhor pela seção áurea. Se ainda nada passa, a busca por coordenadas varia os três
+//! comandos (acionamento, deflexão de cabrar e profundor na corrida), um de cada vez, pela seção áurea. A bisseção
+//! parte de onde o avião sai do chão sem acionar e divide a faixa até achar a janela. Todos os ajustes (`Settings`) e o erro aceito nos dois requisitos vêm da tela.
 const std = @import("std");
 const builtin = @import("builtin");
 const core = @import("aerosim");
@@ -37,6 +38,10 @@ pub const Settings = struct {
     position_tolerance: f64 = 0.25, // a janela do acionamento é dividida até ficar menor que isto (m)
     x_error: f64 = 0, // quanto o ponto de decolagem pode passar do x_warning e ainda contar como passou (m)
     z_error: f64 = 0, // quanto pode faltar de altura (z_warning) e ainda contar como passou (m)
+    // quando nada passa: voltas da busca por coordenadas, que varia o acionamento, a deflexão de cabrar e o profundor
+    // na corrida, um de cada vez, pela seção áurea (0 = não varia)
+    coordinate_rounds: usize = 2,
+    angle_tolerance: f64 = 0.25, // a seção áurea nos ângulos para quando a faixa fica menor que isto (graus)
 
     pub const max_grid_points = 64;
 };
@@ -408,6 +413,11 @@ fn gridSearch(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), refine: bool) 
             }
         }
     }
+    // nada passou com as deflexões e os profundores fixos da lista: a busca por coordenadas varia os três comandos
+    // (acionamento, deflexão de cabrar, profundor na corrida) a partir da decolagem mais cedo que não afundou
+    if (found == null and settings.coordinate_rounds > 0) {
+        if (closest(tried.items)) |seed| found = try coordinateSearch(takeoffs, tried, seed, grid[1] - grid[0]);
+    }
     const start = found orelse return null;
     if (!refine) return start;
     // refina s (seção áurea) em volta do melhor, na mesma deflexão
@@ -453,12 +463,7 @@ fn closest(flown: []const Result) ?Result {
 /// primeiro que passa, ou null
 fn earliestNear(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), center: f64, spacing: f64, deflection: f64, hold: ?f64) !?Result {
     const settings = takeoffs.settings;
-    const score = struct {
-        fn of(result: Result, z_error: f64) f64 {
-            if (result.status != .completed or result.z_short > z_error or !std.math.isFinite(result.takeoff_point)) return -std.math.inf(f64);
-            return -result.takeoff_point;
-        }
-    }.of;
+    const score = earliness;
     var search = scalar.GoldenSection.init(@max(0, center - spacing), center + spacing);
     var left = try takeoffs.evaluate(search.left, deflection, hold);
     var right = try takeoffs.evaluate(search.right, deflection, hold);
@@ -480,6 +485,90 @@ fn earliestNear(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), center: f64,
             try tried.append(takeoffs.memory, right);
         }
     }
+}
+
+/// os três comandos da decolagem que a busca por coordenadas varia
+const Command = struct {
+    position: f64, // o ponto de acionamento (m)
+    deflection: f64, // a deflexão de cabrar (graus, − cabra)
+    hold: f64, // o profundor na corrida (graus, + pica)
+
+    const Axis = enum { position, deflection, hold };
+
+    fn with(command: Command, axis: Axis, value: f64) Command {
+        var changed = command;
+        switch (axis) {
+            .position => changed.position = value,
+            .deflection => changed.deflection = value,
+            .hold => changed.hold = value,
+        }
+        return changed;
+    }
+
+    fn of(result: Result) Command {
+        return .{ .position = result.position, .deflection = result.deflection, .hold = result.hold };
+    }
+};
+
+/// a nota da seção áurea: decolar mais cedo é melhor; afundar, estolar ou cair é o pior
+fn earliness(result: Result, z_error: f64) f64 {
+    if (result.status != .completed or result.z_short > z_error or !std.math.isFinite(result.takeoff_point)) return -std.math.inf(f64);
+    return -result.takeoff_point;
+}
+
+/// a busca por coordenadas (varia um comando de cada vez, com os outros parados): em cada volta, a seção áurea no
+/// acionamento (± `spacing` em volta do de agora), na deflexão de cabrar (0 ao máximo) e no profundor na corrida
+/// (0 a metade do máximo, picando). Devolve a primeira decolagem que passa, ou null depois de `coordinate_rounds`
+fn coordinateSearch(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), seed: Result, spacing: f64) !?Result {
+    const settings = takeoffs.settings;
+    const deflection_max = takeoffs.deflection_max;
+    var current: Command = .{
+        .position = seed.position,
+        .deflection = seed.deflection,
+        .hold = if (std.math.isFinite(seed.hold)) seed.hold else takeoffs.takeoff.de0 / rad,
+    };
+    var best_score = earliness(seed, settings.z_error);
+    for (0..settings.coordinate_rounds) |_| {
+        for ([_]Command.Axis{ .position, .deflection, .hold }) |axis| {
+            const low: f64, const high: f64, const tolerance: f64 = switch (axis) {
+                .position => .{ @max(0, current.position - spacing), current.position + spacing, settings.position_tolerance },
+                .deflection => .{ -deflection_max, 0, settings.angle_tolerance },
+                .hold => .{ 0, 0.5 * deflection_max, settings.angle_tolerance },
+            };
+            var search = scalar.GoldenSection.init(low, high);
+            var left = try flyCommand(takeoffs, tried, current.with(axis, search.left));
+            var right = try flyCommand(takeoffs, tried, current.with(axis, search.right));
+            while (true) {
+                if (left.ok) return left;
+                if (right.ok) return right;
+                if (search.high - search.low <= tolerance) break;
+                const left_better = earliness(left, settings.z_error) >= earliness(right, settings.z_error);
+                const point = search.shrink(left_better);
+                if (left_better) {
+                    right = left;
+                    left = try flyCommand(takeoffs, tried, current.with(axis, point));
+                } else {
+                    left = right;
+                    right = try flyCommand(takeoffs, tried, current.with(axis, point));
+                }
+            }
+            // fica o melhor dos dois últimos, se ele decola mais cedo que o de agora
+            const better = if (earliness(left, settings.z_error) >= earliness(right, settings.z_error)) left else right;
+            const score = earliness(better, settings.z_error);
+            if (score > best_score) {
+                best_score = score;
+                current = Command.of(better);
+            }
+        }
+    }
+    return null;
+}
+
+/// voa uma decolagem com os três comandos e a guarda na lista das testadas
+fn flyCommand(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), command: Command) !Result {
+    const result = try takeoffs.evaluate(command.position, command.deflection, command.hold);
+    try tried.append(takeoffs.memory, result);
+    return result;
 }
 
 /// a janela do acionamento entre `early_at` (cedo demais) e `late_at` (tarde demais), dividida ao meio até a

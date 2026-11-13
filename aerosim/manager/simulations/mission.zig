@@ -543,6 +543,8 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "z_erro", .label = "Erro aceito no z_warning", .default = .{ .number = 0 }, .minimum = 0, .maximum = 10, .unit = "m", .group = group_runway, .help = "quanto pode faltar de altura (ou afundar a mais na mesa) e ainda contar como decolou. 0 = o requisito exato" },
         .{ .key = "grade_pontos", .label = "Pontos da grade (varredura do acionamento)", .default = .{ .number = 8 }, .minimum = 3, .maximum = 64, .group = group_runway, .help = "quantos pontos de acionamento do profundor a grade testa, de 0 a 95 % do x_warning, em cada deflexão" },
         .{ .key = "janela_tolerancia", .label = "Tolerância do acionamento (bisseção e seção áurea)", .default = .{ .number = 0.25 }, .minimum = 0.01, .maximum = 10, .unit = "m", .group = group_runway, .help = "quando nenhum ponto da grade passa, a faixa de acionamento em volta do melhor é dividida (bisseção: busca por metades; seção áurea: busca do mínimo que reaproveita pontos) até ficar menor que isto; abaixo disso, a massa conta como não decola" },
+        .{ .key = "coordenadas_voltas", .label = "Voltas da busca por coordenadas (varia um comando por vez)", .default = .{ .number = 2 }, .minimum = 0, .maximum = 10, .group = group_runway, .help = "quando nem a grade nem a seção áurea acham uma decolagem que passa, varia o acionamento, a deflexão de cabrar (0 ao máximo) e o profundor na corrida (0 a metade do máximo, picando), um de cada vez, por seção áurea. 0 = só as deflexões fixas da lista" },
+        .{ .key = "angulo_tolerancia", .label = "Tolerância dos ângulos (seção áurea)", .default = .{ .number = 0.25 }, .minimum = 0.01, .maximum = 5, .unit = "°", .group = group_runway, .help = "a seção áurea na deflexão e no profundor da corrida para quando a faixa fica menor que isto" },
         .{ .key = "massa_passos", .label = "Passos da bisseção da massa (busca do MTOW)", .default = .{ .number = 9 }, .minimum = 1, .maximum = 30, .group = group_runway, .help = "quantas vezes a faixa de massa da tabela é dividida ao meio; a precisão do MTOW é (máximo − mínimo) / 2^passos" },
     };
     var hand: std.ArrayList(simulation.Param) = .empty;
@@ -840,6 +842,8 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
         .position_tolerance = values.number("janela_tolerancia", 0.25),
         .x_error = values.number("x_erro", 0),
         .z_error = values.number("z_erro", 0),
+        .coordinate_rounds = @intFromFloat(@round(values.number("coordenadas_voltas", 2))),
+        .angle_tolerance = values.number("angulo_tolerancia", 0.25),
     };
     state.mass_steps = @intFromFloat(@round(values.number("massa_passos", 9)));
     if (std.mem.eql(u8, values.text("trigger", ""), trigger_labels[1]))
