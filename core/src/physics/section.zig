@@ -90,6 +90,143 @@ pub fn interpolate(source: *const Polar, alphas: []const f64, out: *Polar) void 
     }
 }
 
+/// a polar de uma família (as polares de um perfil em Reynolds crescente) no Reynolds `reynolds_value`, lida nos
+/// ângulos `alphas`: linear em Re entre as duas vizinhas. Fora da faixa de Re da família usa a mais próxima e
+/// devolve `true`: nada é extrapolado
+pub fn atReynolds(family_reynolds: []const f64, family: []const Polar, reynolds_value: f64, alphas: []const f64, out: *Polar) bool {
+    const count = @min(family_reynolds.len, family.len);
+    if (count == 0) {
+        out.count = 0;
+        return true;
+    }
+    if (count == 1 or reynolds_value <= family_reynolds[0] or reynolds_value >= family_reynolds[count - 1]) {
+        const nearest: usize = if (count == 1 or reynolds_value <= family_reynolds[0]) 0 else count - 1;
+        interpolate(&family[nearest], alphas, out);
+        return reynolds_value != family_reynolds[nearest];
+    }
+    var upper: usize = 1;
+    while (family_reynolds[upper] < reynolds_value) upper += 1;
+    const share = (reynolds_value - family_reynolds[upper - 1]) / (family_reynolds[upper] - family_reynolds[upper - 1]);
+    var above: Polar = .{};
+    interpolate(&family[upper - 1], alphas, out);
+    interpolate(&family[upper], alphas, &above);
+    for (0..out.count) |i| {
+        out.cl[i] += share * (above.cl[i] - out.cl[i]);
+        out.cd[i] += share * (above.cd[i] - out.cd[i]);
+        out.cm[i] += share * (above.cm[i] - out.cm[i]);
+    }
+    return false;
+}
+
+/// o Reynolds escrito numa linha de cabeçalho ("Re = 0.200 e 6" do XFLR5 e do XFOIL, ou "Re = 200000")
+fn lineReynolds(line: []const u8) ?f64 {
+    var start: usize = 0;
+    while (std.mem.indexOfPos(u8, line, start, "Re")) |found| : (start = found + 2) {
+        if (found > 0 and std.ascii.isAlphabetic(line[found - 1])) continue;
+        var cursor = found + 2;
+        while (cursor < line.len and line[cursor] == ' ') cursor += 1;
+        if (cursor >= line.len or line[cursor] != '=') continue;
+        cursor += 1;
+        while (cursor < line.len and line[cursor] == ' ') cursor += 1;
+        const mantissa_start = cursor;
+        while (cursor < line.len and (std.ascii.isDigit(line[cursor]) or line[cursor] == '.')) cursor += 1;
+        const mantissa = std.fmt.parseFloat(f64, line[mantissa_start..cursor]) catch continue;
+        while (cursor < line.len and line[cursor] == ' ') cursor += 1;
+        if (cursor >= line.len or (line[cursor] != 'e' and line[cursor] != 'E')) return mantissa;
+        cursor += 1;
+        while (cursor < line.len and line[cursor] == ' ') cursor += 1;
+        const exponent_start = cursor;
+        if (cursor < line.len and (line[cursor] == '+' or line[cursor] == '-')) cursor += 1;
+        while (cursor < line.len and std.ascii.isDigit(line[cursor])) cursor += 1;
+        const exponent = std.fmt.parseInt(i32, line[exponent_start..cursor], 10) catch return mantissa;
+        return mantissa * std.math.pow(f64, 10, @floatFromInt(exponent));
+    }
+    return null;
+}
+
+/// as colunas da tabela de uma polar em texto (null: o arquivo não tem a coluna)
+const PolarColumns = struct { alpha: usize, cl: usize, cd: ?usize = null, cm: ?usize = null };
+
+/// as colunas pelo cabeçalho "alpha CL CD ... Cm" (maiúsculas ou não), ou null se a linha não é o cabeçalho
+fn polarHeader(line: []const u8) ?PolarColumns {
+    var alpha: ?usize = null;
+    var cl: ?usize = null;
+    var columns: PolarColumns = .{ .alpha = 0, .cl = 0 };
+    var names = std.mem.tokenizeAny(u8, line, ", \t;");
+    var index: usize = 0;
+    while (names.next()) |name| : (index += 1) {
+        if (std.ascii.eqlIgnoreCase(name, "alpha")) alpha = index;
+        if (std.ascii.eqlIgnoreCase(name, "cl")) cl = index;
+        if (std.ascii.eqlIgnoreCase(name, "cd")) columns.cd = index;
+        if (std.ascii.eqlIgnoreCase(name, "cm")) columns.cm = index;
+    }
+    columns.alpha = alpha orelse return null;
+    columns.cl = cl orelse return null;
+    return columns;
+}
+
+/// uma passada pelo texto da polar: conta as linhas de números depois do cabeçalho e, com `out`, guarda uma a cada
+/// `stride`. Devolve o total de linhas e o Reynolds do cabeçalho (NaN: o arquivo não diz)
+fn scanPolar(text: []const u8, out: ?*Polar, stride: usize) struct { rows: usize, reynolds: f64 } {
+    var reynolds_found = std.math.nan(f64);
+    var columns: ?PolarColumns = null;
+    var rows: usize = 0;
+    var lines = std.mem.tokenizeAny(u8, text, "\r\n");
+    while (lines.next()) |line| {
+        if (columns == null) {
+            if (lineReynolds(line)) |found| reynolds_found = found;
+            columns = polarHeader(line);
+            continue;
+        }
+        const known = columns.?;
+        var row = [4]f64{ std.math.nan(f64), std.math.nan(f64), std.math.nan(f64), 0 };
+        var numbers = std.mem.tokenizeAny(u8, line, ", \t;");
+        var index: usize = 0;
+        var valid = true;
+        while (numbers.next()) |number| : (index += 1) {
+            const value = std.fmt.parseFloat(f64, number) catch {
+                valid = false;
+                break;
+            };
+            if (index == known.alpha) row[0] = value;
+            if (index == known.cl) row[1] = value;
+            if (known.cd != null and index == known.cd.?) row[2] = value;
+            if (known.cm != null and index == known.cm.?) row[3] = value;
+        }
+        if (!valid or std.math.isNan(row[0]) or std.math.isNan(row[1])) continue;
+        if (out) |polar| if (rows % stride == 0 and polar.count < max_points) {
+            polar.alpha[polar.count] = row[0];
+            polar.cl[polar.count] = row[1];
+            polar.cd[polar.count] = row[2];
+            polar.cm[polar.count] = row[3];
+            polar.count += 1;
+        };
+        rows += 1;
+    }
+    return .{ .rows = rows, .reynolds = reynolds_found };
+}
+
+/// lê uma polar 2D exportada em texto (XFLR5, XFOIL, ou CSV com o cabeçalho "alpha, CL, CD, Cm"), em ordem de α;
+/// devolve o Reynolds do cabeçalho (NaN: o arquivo não diz). Com mais linhas do que `max_points`, guarda uma a
+/// cada n. Igual a `read_polar_file` de `aerosim/aero/sections.py`
+pub fn parsePolar(text: []const u8, out: *Polar) error{NoTable}!f64 {
+    out.count = 0;
+    const counted = scanPolar(text, null, 1);
+    if (counted.rows == 0) return error.NoTable;
+    const stride = (counted.rows + max_points - 1) / max_points;
+    _ = scanPolar(text, out, stride);
+    for (1..out.count) |i| { // ordena por α (inserção: os arquivos já vêm quase em ordem)
+        var j = i;
+        while (j > 0 and out.alpha[j - 1] > out.alpha[j]) : (j -= 1) {
+            std.mem.swap(f64, &out.alpha[j - 1], &out.alpha[j]);
+            std.mem.swap(f64, &out.cl[j - 1], &out.cl[j]);
+            std.mem.swap(f64, &out.cd[j - 1], &out.cd[j]);
+            std.mem.swap(f64, &out.cm[j - 1], &out.cm[j]);
+        }
+    }
+    return counted.reynolds;
+}
+
 /// os números de uma polar (o lado útil é o do c_l negativo quando o perfil está invertido)
 pub const Metrics = struct {
     cl_max: f64,
@@ -299,4 +436,44 @@ test "polar do modelo e números: iguais à GUI em Python" {
     try std.testing.expect(std.math.isNan(read.cl[0]));
     try std.testing.expectApproxEqAbs(@as(f64, 0.3), read.cl[1], 1e-12);
     try std.testing.expectApproxEqAbs(@as(f64, 0.014), read.cd[2], 1e-12);
+}
+
+test "polar em texto do XFLR5: o Reynolds, as colunas e a ordem em α" {
+    const text =
+        \\XFLR5 v6.47
+        \\ Calculated polar for: NACA 4412
+        \\ Mach =   0.000     Re =     0.200 e 6     Ncrit =   9.000
+        \\
+        \\  alpha     CL        CD       CDp       Cm    Top Xtr Bot Xtr
+        \\ ------- -------- --------- --------- -------- ------- -------
+        \\   2.000   0.6900   0.01020   0.00410  -0.1020  0.6200  1.0000
+        \\  -2.000   0.2500   0.00980   0.00350  -0.1050  0.8100  0.4000
+        \\   0.000   0.4700   0.00950   0.00330  -0.1040  0.7200  1.0000
+    ;
+    var polar: Polar = .{};
+    const found = try parsePolar(text, &polar);
+    try std.testing.expectApproxEqAbs(@as(f64, 2e5), found, 1e-6);
+    try std.testing.expectEqual(@as(usize, 3), polar.count);
+    try std.testing.expectEqual(@as(f64, -2), polar.alpha[0]);
+    try std.testing.expectEqual(@as(f64, 0.25), polar.cl[0]);
+    try std.testing.expectEqual(@as(f64, 0.0102), polar.cd[2]);
+    try std.testing.expectEqual(@as(f64, -0.104), polar.cm[1]);
+    try std.testing.expectError(error.NoTable, parsePolar("sem tabela aqui", &polar));
+}
+
+test "polar entre dois Reynolds: linear em Re, e a mais próxima fora da faixa" {
+    var family: [2]Polar = .{ .{}, .{} };
+    for (&family, [2]f64{ 1.0, 1.4 }) |*polar, lift| {
+        polar.count = 2;
+        polar.alpha[0..2].* = .{ 0, 10 };
+        polar.cl[0..2].* = .{ 0, lift };
+        polar.cd[0..2].* = .{ 0.02, 0.02 };
+        polar.cm[0..2].* = .{ 0, 0 };
+    }
+    var out: Polar = .{};
+    try std.testing.expect(!atReynolds(&.{ 1e5, 3e5 }, &family, 2e5, &.{ 5, 10 }, &out));
+    try std.testing.expectApproxEqAbs(@as(f64, 0.6), out.cl[0], 1e-12);
+    try std.testing.expectApproxEqAbs(@as(f64, 1.2), out.cl[1], 1e-12);
+    try std.testing.expect(atReynolds(&.{ 1e5, 3e5 }, &family, 5e5, &.{10}, &out));
+    try std.testing.expectApproxEqAbs(@as(f64, 1.4), out.cl[0], 1e-12);
 }
