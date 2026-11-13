@@ -836,6 +836,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aeroopt/build.zig` — Interface do aeroopt em Zig (raylib e raygui). As peças comuns das telas vêm da interface do aerosim
   fn `build:12`
+- `aeroopt/inputs.zig` — O catálogo das entradas do aeroopt: tudo o que se escolhe nas etapas do projeto (a chave do `.opt.json`, o
+  tipos `Group:8`, `Source:37`, `Input:40`
+  fn `find:149`, `label:155`, `groupOf:160`
 - `aeroopt/main.zig` — A interface do aeroopt em Zig (raylib e raygui), com as peças da interface do aerosim.
 - `aeroopt/opt_example.zig` — Dados de exemplo da tela do aeroopt enquanto ela não roda a busca: uma rodada inventada, sempre a mesma (semente
   tipos `Run:16`
@@ -843,9 +846,14 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aeroopt/problem.zig` — O problema do aeroopt como arquivo (`.opt.json`, formato "aeroopt/1"): o que pode variar no avião e entre que
   tipos `VariableKind:15`, `Comparison:40`, `Variable:65`, `Constraint:76`, `Problem:85`
   fn `parse:127`, `load:153`, `write:159`
-- `aeroopt/screen.zig` — A tela do aeroopt: à esquerda o problema (pontuação, variáveis, restrições e configuração, cada um num grupo
-  tipos `Screen:45`
-- `aeroopt/tests.zig` — Os testes sem janela da interface do aeroopt: a rodada de exemplo e o problema (`.opt.json`).
+- `aeroopt/problem_panel.zig` — A esquerda do aeroopt: o projeto da sprint, abrir e gravar o problema (`.opt.json`), um botão por parte do
+  tipos `Request:41`, `Panel:43`
+- `aeroopt/screen.zig` — A tela do aeroopt: à esquerda o problema (`problem_panel.zig`: o projeto, abrir e gravar o `.opt.json`, um botão
+  tipos `Screen:18`
+- `aeroopt/summary.zig` — O que a esquerda do aeroopt mostra do problema sem desenhar nada: os nomes dos métodos de cada etapa, as
+  tipos `Part:12`, `Method:43`
+  fn `isolate:69`, `categoryLabel:78`, `hasCategory:83`, `choiceList:91`, `methodIndex:99`, `methodLabel:104`, `section_of:109`, `text:114`, `number:119`, `boolean:128`, `writeSummary:151`
+- `aeroopt/tests.zig` — Os testes sem janela da interface do aeroopt: a rodada de exemplo, o problema (`.opt.json`), o catálogo das
 
 
 ## Zig · tela inicial do pacote (`launcher`)

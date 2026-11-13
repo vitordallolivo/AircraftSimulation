@@ -1,101 +1,84 @@
-//! A tela do aeroopt: à esquerda o problema (pontuação, variáveis, restrições e configuração, cada um num grupo
-//! que abre e fecha) e o botão Otimizar; à direita a rodada: quantos aviões passaram em cada etapa, a
+//! A tela do aeroopt: à esquerda o problema (`problem_panel.zig`: o projeto, abrir e gravar o `.opt.json`, um botão
+//! por parte com o resumo ao lado e Otimizar/Parar); à direita a rodada: quantos aviões passaram em cada etapa, a
 //! convergência, o mapa dos aviões colorido pela nota, o MTOW de cada ponto, a nota de cada configuração e a
-//! tabela dos melhores. Por enquanto com uma rodada de exemplo (`opt_example.zig`).
+//! tabela dos melhores. A rodada ainda é a de exemplo (`opt_example.zig`).
 const std = @import("std");
 const rl = @import("raylib");
 const ui_kit = @import("ui");
 const theme = ui_kit.theme;
 const widgets = ui_kit.widgets;
-const form_mod = ui_kit.form;
 const plot = ui_kit.plot;
 const numbers = ui_kit.numbers;
 const example = @import("opt_example.zig");
 
+const panel_mod = @import("problem_panel.zig");
+
 const tabs = [_][:0]const u8{ "Otimizar", "Sensibilidade" };
 
-const Group = enum(usize) { score, variables, constraints, settings };
-
-fn g(group: Group) usize {
-    return @intFromEnum(group);
-}
-
-const initial_groups = [_]form_mod.Group{ .{ .title = "Pontuação", .open = false }, .{ .title = "Variáveis" }, .{ .title = "Restrições", .open = false }, .{ .title = "Configuração" } };
-
-const initial_fields = [_]form_mod.Field{
-    .{ .label = "regulamento", .group = g(.score), .kind = .choice, .choices = "Regular 2026;Micro 2026;Avançada 2026" },
-    .{ .label = "pista", .unit = "m", .group = g(.score), .number = 50, .minimum = 10, .maximum = 200 },
-    .{ .label = "envergadura, 1,6 a 2,8 m", .group = g(.variables), .kind = .toggle, .checked = true },
-    .{ .label = "corda na raiz, 0,25 a 0,55 m", .group = g(.variables), .kind = .toggle, .checked = true },
-    .{ .label = "afilamento", .group = g(.variables), .kind = .toggle },
-    .{ .label = "área da EH", .group = g(.variables), .kind = .toggle },
-    .{ .label = "braço da EH", .group = g(.variables), .kind = .toggle },
-    .{ .label = "perfil da asa (lista)", .group = g(.variables), .kind = .toggle },
-    .{ .label = "motor e hélice (lista)", .group = g(.variables), .kind = .toggle },
-    .{ .label = "decola na pista", .group = g(.constraints), .kind = .toggle, .checked = true },
-    .{ .label = "margem estática ≥ 5 %", .group = g(.constraints), .kind = .toggle, .checked = true },
-    .{ .label = "voo válido no 6GDL", .group = g(.constraints), .kind = .toggle, .checked = true },
-    .{ .label = "método das superfícies", .group = g(.settings), .kind = .choice, .choices = "GA;CMA-ES;DE;coordenadas" },
-    .{ .label = "população", .group = g(.settings), .number = 20, .minimum = 4, .maximum = 400 },
-    .{ .label = "gerações", .group = g(.settings), .number = 12, .minimum = 1, .maximum = 500 },
-    .{ .label = "processos", .group = g(.settings), .number = 4, .minimum = 1, .maximum = 64 },
-    .{ .label = "sensibilidade", .group = g(.settings), .kind = .choice, .choices = "modelo local;um por vez;Morris" },
-};
-
 pub const Screen = struct {
-    groups: [initial_groups.len]form_mod.Group = initial_groups,
-    fields: [initial_fields.len]form_mod.Field = initial_fields,
-    form: form_mod.Form = undefined,
+    panel: panel_mod.Panel = .{},
     tab: usize = 0,
-    sidebar: widgets.Splitter = .{ .width = 360 }, // a largura do formulário (arrastar a divisa muda)
+    sidebar: widgets.Splitter = .{ .width = 420 }, // a largura da esquerda (arrastar a divisa muda)
     run: example.Run = .{},
-    progress: f32 = 1,
     scroll: f32 = 0,
     plots: ui_kit.scroll.ScrollArea = .{}, // a coluna dos gráficos
-    message: [160:0]u8 = [_:0]u8{0} ** 160,
 
-    /// liga o formulário e monta a rodada de exemplo (chamar com a tela já no lugar final)
+    /// monta a rodada de exemplo (chamar com a tela já no lugar final)
     pub fn start(screen: *Screen) void {
-        screen.form = .{ .groups = &screen.groups, .fields = &screen.fields };
         example.generate(&screen.run);
-        _ = std.fmt.bufPrintZ(&screen.message, "rodada de exemplo: {d} aviões, {d} gerações", .{ example.evaluation_count, example.generation_count }) catch {};
+        _ = widgets.format(&screen.panel.message, "abra um problema (.opt.json); os gráficos são de uma rodada de exemplo", .{});
+    }
+
+    /// abre um problema (`.opt.json`) pela linha de comando ou pela página
+    pub fn openFile(screen: *Screen, path: []const u8) void {
+        screen.panel.openFile(path);
+    }
+
+    /// os prints: `acao=pontuacao`, `variaveis`, `restricoes`, `categorias` ou `configuracao` abre o submenu
+    pub fn command(screen: *Screen, action: []const u8) void {
+        const names = [_][]const u8{ "pontuacao", "variaveis", "restricoes", "categorias", "configuracao" };
+        for (names, 0..) |name, i| if (std.mem.eql(u8, name, action)) screen.panel.openPart(@enumFromInt(i));
     }
 
     /// desenha a tela inteira e trata o mouse
     pub fn draw(screen: *Screen, ui: *widgets.Ui, width: f32, height: f32) void {
         rl.clearBackground(theme.colors.background);
+        // com um submenu ou a janela de arquivo aberta, a tela de baixo não recebe o clique nem a roda
+        const modal = screen.panel.modal();
+        const clicked = ui.clicked;
+        const wheel = ui.wheel;
+        if (modal) {
+            ui.clicked = false;
+            ui.wheel = 0;
+        }
         const top = widgets.header_height + 38;
         if (screen.tab == 0) {
-            screen.sidebar.update(ui, 0, top, height - top, 280, width - 360);
+            screen.sidebar.update(ui, 0, top, height - top, 320, width - 360);
             const sidebar_width = screen.sidebar.width;
-            screen.drawSidebar(ui, .{ .x = 0, .y = top, .width = sidebar_width, .height = height - top });
+            switch (screen.panel.drawSidebar(ui, .{ .x = 0, .y = top, .width = sidebar_width, .height = height - top })) {
+                .optimize => {
+                    example.generate(&screen.run);
+                    screen.panel.progress = 1;
+                    _ = widgets.format(&screen.panel.message, "a busca de verdade entra na próxima etapa (exemplo refeito)", .{});
+                },
+                .stop, .none => {},
+            }
             screen.drawResults(ui, .{ .x = sidebar_width, .y = top, .width = width - sidebar_width, .height = height - top });
             screen.sidebar.draw(0, top, height - top);
         } else {
             const box: rl.Rectangle = .{ .x = 40, .y = top + 40, .width = 620, .height = 150 };
             const inner = widgets.labeledCard(ui, box, "Sensibilidade");
-            theme.text(ui.fonts.regular, "esta aba ainda não foi feita em Zig; o desenho segue o mesmo tema", inner.x, inner.y + 10, 15, theme.colors.label);
+            theme.text(ui.fonts.regular, "esta aba ainda não foi feita; o desenho segue o mesmo tema", inner.x, inner.y + 10, 15, theme.colors.label);
         }
-        if (widgets.header(ui, width, "AeroOpt", &.{ "Abrir problema (.opt.json)", "Salvar" }, "dados de exemplo · desenho da interface em Zig")) |_|
-            _ = std.fmt.bufPrintZ(&screen.message, "abrir e salvar o problema entram na próxima etapa", .{}) catch {};
+        var subtitle_buffer: [160]u8 = undefined;
+        const subtitle = if (screen.panel.path_len > 0) widgets.format(&subtitle_buffer, "{s} · gráficos de uma rodada de exemplo", .{screen.panel.fileName()}) else widgets.format(&subtitle_buffer, "nenhum problema aberto · gráficos de uma rodada de exemplo", .{});
+        _ = widgets.header(ui, width, "AeroOpt", &.{}, subtitle);
         _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, &tabs, &screen.tab, 14);
-    }
-
-    fn drawSidebar(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
-        rl.drawRectangleRec(rect, theme.colors.panel);
-        rl.drawRectangleRec(.{ .x = rect.x + rect.width - 1, .y = rect.y, .width = 1, .height = rect.height }, theme.colors.line);
-        const footer_height: f32 = 92;
-        const footer: rl.Rectangle = .{ .x = rect.x, .y = rect.y + rect.height - footer_height, .width = rect.width - 3, .height = footer_height };
-        rl.drawRectangleRec(footer, theme.colors.panel);
-        rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 1 }, theme.colors.line);
-        if (widgets.primaryButton(ui, .{ .x = footer.x + 12, .y = footer.y + 14, .width = footer.width - 24, .height = 34 }, "Otimizar", true)) {
-            example.generate(&screen.run);
-            screen.progress = 1;
-            _ = std.fmt.bufPrintZ(&screen.message, "a busca de verdade entra na próxima etapa (exemplo refeito)", .{}) catch {};
+        if (modal) {
+            ui.clicked = clicked;
+            ui.wheel = wheel;
         }
-        widgets.progressBar(.{ .x = footer.x + 12, .y = footer.y + 54, .width = footer.width - 24, .height = 7 }, screen.progress);
-        theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.message, 0), footer.x + 12, footer.y + 68, 13, theme.colors.muted);
-        _ = screen.form.draw(ui, .{ .x = rect.x, .y = rect.y + 4, .width = rect.width - 3, .height = rect.height - footer_height - 4 });
+        screen.panel.drawModal(ui, .{ .x = 0, .y = 0, .width = width, .height = height });
     }
 
     fn drawResults(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
