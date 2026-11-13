@@ -18,6 +18,7 @@
 //! potência pode ficar abaixo do V_e, e o mínimo voável é max(V_min, V_e) (Anderson, Aircraft Performance and
 //! Design, cap. 5; a conferir no PDF).
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
 const state = @import("state.zig");
@@ -187,7 +188,7 @@ fn bisect(cfg: *const EnvCfg, alt: *const Alt, lo0: f64, hi0: f64) f64 {
     // a trimagem converge a ~1e-9; abaixo de 1e-3 m/s não muda nada no modelo completo
     const tol = if (cfg.method == .model) @max(cfg.tol, 1e-3) else @max(cfg.tol, 1e-10);
     var it: usize = 0;
-    while (hi - lo > tol and it < 100) : (it += 1) {
+    while (hi - lo > tol and it < numerics.count(numerics.active.envelope_speed_bisections)) : (it += 1) {
         const mid = 0.5 * (lo + hi);
         if ((excess(cfg, alt, mid, &guess) > 0) == flo) lo = mid else hi = mid;
     }
@@ -293,7 +294,7 @@ fn cruiseSpeed(cfg: *const EnvCfg, alt: *const Alt, Vlo: f64, Vhi: f64) f64 {
     const ahi = Fn.alphaError(tc, hi, cfg.alpha_cruise) orelse return std.math.nan(f64);
     if ((alo > 0) == (ahi > 0)) return std.math.nan(f64); // ângulo de cruzeiro fora do envelope
     var it: usize = 0;
-    while (hi - lo > 1e-3 and it < 60) : (it += 1) {
+    while (hi - lo > numerics.active.envelope_alpha_tolerance and it < numerics.count(numerics.active.envelope_alpha_bisections)) : (it += 1) {
         const mid = 0.5 * (lo + hi);
         const alpha_error = Fn.alphaError(tc, mid, cfg.alpha_cruise) orelse return std.math.nan(f64);
         if ((alpha_error > 0) == (alo > 0)) lo = mid else hi = mid;
@@ -326,7 +327,7 @@ pub fn compute(params: *const types.Params, cfg: *const EnvCfg, rows: []EnvRow, 
             var hi = height;
             if (count == 0) return 0;
             var it: usize = 0;
-            while (hi - lo > 0.5 and it < 60) : (it += 1) {
+            while (hi - lo > numerics.active.envelope_ceiling_tolerance and it < numerics.count(numerics.active.envelope_ceiling_bisections)) : (it += 1) {
                 const mid = 0.5 * (lo + hi);
                 alt = altitude(params, cfg, mid, weight, CLmax_ac);
                 const cross = crossings(cfg, &alt);

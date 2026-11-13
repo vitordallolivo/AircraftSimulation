@@ -11,6 +11,7 @@
 //! (`powerLimitedCurrent`) e o acelerador efetivo u sai de I R_int u² − V_oc u + (K_e ω + I R_m) = 0, a
 //! raiz menor. Com `P_lim` = 0 o ramo nem roda.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
 const fmath = @import("../math/fmath.zig");
@@ -225,13 +226,13 @@ pub fn equilibriumRps(params: *const types.Params, prop_unit: *const types.PropU
     @setFloatMode(fmath.float_mode);
     if (prop_unit.model == types.ThrustModel.polynomial) return 1.0;
     var rps_low: f64 = 1.0;
-    var rps_high: f64 = 600.0;
+    var rps_high: f64 = numerics.active.prop_rps_max;
     var rate_low = unit(params, prop_unit, vec.v3(prop_unit.eT), Vr, vec.zero, rps_low, thr, 0).drps;
     if (rate_low <= 0.0) return rps_low;
     var rate_high = unit(params, prop_unit, vec.v3(prop_unit.eT), Vr, vec.zero, rps_high, thr, 0).drps;
     if (rate_high >= 0.0) return rps_high;
     var side: i32 = 0;
-    for (0..80) |_| {
+    for (0..numerics.count(numerics.active.prop_iterations)) |_| {
         const rps_mid = (rps_low * rate_high - rps_high * rate_low) / (rate_high - rate_low);
         const rate_mid = unit(params, prop_unit, vec.v3(prop_unit.eT), Vr, vec.zero, rps_mid, thr, 0).drps;
         if (@abs(rate_mid) < 1e-9 or rps_high - rps_low < 1e-10 * rps_high) return rps_mid;

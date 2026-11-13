@@ -11,6 +11,7 @@
 //! As posições são distâncias para trás do bordo de ataque da raiz da asa de referência (m); `h` é a fração da CMA
 //! atrás do bordo de ataque dela.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const wing_line = @import("wing_line.zig");
 
 const pi = std.math.pi;
@@ -200,7 +201,7 @@ pub const Result = struct {
 pub fn analyze(wing: Wing, others: []const OtherWing, strips: []const PitchStrip, input: Input, out: *Result) void {
     if (input.layout == .tailless or !input.arm_from_cg) return analyzeAt(wing, others, strips, input, 0, out);
     var shift: f64 = 0;
-    for (0..30) |_| {
+    for (0..numerics.count(numerics.active.tail_arm_iterations)) |_| {
         analyzeAt(wing, others, strips, input, shift, out);
         const miss = input.arm - out.arm_cg;
         if (@abs(miss) < 1e-6) break;
@@ -209,16 +210,17 @@ pub fn analyze(wing: Wing, others: []const OtherWing, strips: []const PitchStrip
 }
 
 fn integrate(planform: *const wing_line.Planform, start: f64, end: f64, context: anytype, comptime term: fn (@TypeOf(context), f64, f64) f64) f64 {
-    const count = 60;
+    const count = @max(numerics.count(numerics.active.tail_span_strips), 2);
+    const intervals: f64 = @floatFromInt(count - 1);
     const semispan = planform.semispan;
     const low = start * semispan;
     const high = @min(end, 1.0) * semispan;
     var sum: f64 = 0;
     var previous = term(context, low, planform.chordAt(low));
     for (1..count) |i| {
-        const y = low + (high - low) * @as(f64, @floatFromInt(i)) / @as(f64, count - 1);
+        const y = low + (high - low) * @as(f64, @floatFromInt(i)) / intervals;
         const value = term(context, y, planform.chordAt(y));
-        sum += 0.5 * (previous + value) * (high - low) / @as(f64, count - 1);
+        sum += 0.5 * (previous + value) * (high - low) / intervals;
         previous = value;
     }
     return sum;

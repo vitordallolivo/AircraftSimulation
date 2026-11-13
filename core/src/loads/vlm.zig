@@ -29,6 +29,7 @@
 //!
 //! Nada aloca: quem chama passa a malha, a matriz e os vetores (`Buffers`), com o tamanho de `panelCount`.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const types = @import("../types.zig");
 const limits = @import("../limits.zig");
 const vec = @import("../math/vec.zig");
@@ -210,7 +211,7 @@ const trailing = V3{ -1, 0, 0 };
 
 /// o núcleo de Scully entre grupos diferentes (`llt.core_frac` da corda de quem solta)
 fn coreRadius(target: *const Panel, source: *const Panel) f64 {
-    return if (target.group != source.group) llt.core_frac * source.chord else 0;
+    return if (target.group != source.group) numerics.active.vortex_core_fraction * source.chord else 0;
 }
 
 /// a ferradura `source` (Γ = 1) induzida em `point`; com o chão em z = `ground_z` (corpo girado, z para baixo), soma a

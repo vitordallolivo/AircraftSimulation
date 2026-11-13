@@ -9,6 +9,7 @@
 //! A tração entra como uma curva T(V) já calculada (`Curve`): quem a calcula é um `Thrust`
 //! (o do núcleo, `CoreThrust`, ou um mock nos testes) — ver chain.zig.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const sizing_types = @import("types.zig");
 const kinds = @import("kinds.zig");
 
@@ -164,7 +165,7 @@ pub fn ceiling(aero_polar: Polar, curve: *const Curve, weight: f64, Sw: f64, rho
     var lo = h0;
     var hi = h0 + 9000.0;
     if (rcAt(aero_polar, curve, weight, Sw, rho, hi) >= roc) return hi;
-    for (0..30) |_| {
+    for (0..numerics.count(numerics.active.stage_ceiling_bisections)) |_| {
         const mid = 0.5 * (lo + hi);
         if (rcAt(aero_polar, curve, weight, Sw, rho, mid) >= roc) lo = mid else hi = mid;
     }
@@ -186,9 +187,9 @@ pub fn takeoffRun(aero_polar: Polar, curve: *const Curve, mass: f64, Sw: f64, rh
     const st = @sin(tilt);
     var speed: f64 = 0;
     var distance: f64 = 0;
-    const dt = 0.01;
+    const dt = numerics.active.stage_time_step;
     var k: usize = 0;
-    while (k < 12000) : (k += 1) {
+    while (k < numerics.count(numerics.active.stage_max_steps)) : (k += 1) {
         const dyn_pressure = 0.5 * rho * speed * speed;
         const thrust = curve.at(speed);
         const lift = dyn_pressure * Sw * aero_polar.CLg + thrust * st;

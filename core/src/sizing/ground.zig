@@ -14,6 +14,7 @@
 //! As contas seguem a mesma ordem das do Python e a interpolação é a do `numpy.interp`, então a corrida sai bit a
 //! bit igual à de antes.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 
 pub const g0 = 9.80665; // o mesmo G0 de aerosim/design/spec.py
 pub const max_grid = 256;
@@ -91,15 +92,16 @@ pub fn run(ground_run: *const GroundRun, mass: f64) f64 {
     const vg, const tg = curve(ground_run);
     var distance: f64 = 0;
     var speed: f64 = 0;
-    for (0..max_steps) |_| {
+    const time_step = numerics.active.ground_time_step;
+    for (0..numerics.count(numerics.active.ground_max_steps)) |_| {
         const dyn_pressure = 0.5 * ground_run.rho * speed * speed;
         const thrust = interp(speed, vg, tg);
         const lift = dyn_pressure * ground_run.S * ground_run.CLg + thrust * ground_run.sin_tl;
         const drag = dyn_pressure * ground_run.S * (ground_run.CD0 + ground_run.K * ground_run.CLg * ground_run.CLg);
         const accel = (thrust * ground_run.cos_tl - drag - ground_run.mu * @max(mass * g0 - lift, 0.0)) / mass;
         if (accel <= 0) return inf;
-        speed += accel * dt;
-        distance += speed * dt;
+        speed += accel * time_step;
+        distance += speed * time_step;
         if (speed >= v_rot and 0.5 * ground_run.rho * speed * speed * ground_run.S * ground_run.CLmax >= 1.21 * (mass * g0 - interp(speed, vg, tg) * ground_run.sin_tl))
             return distance;
         if (ground_run.lift_off != 0 and 0.5 * ground_run.rho * speed * speed * ground_run.S * ground_run.CLg + interp(speed, vg, tg) * ground_run.sin_tl >= mass * g0)
@@ -113,7 +115,7 @@ pub fn mtow(ground_run: *const GroundRun, lo0: f64, hi0: f64, runway: f64) f64 {
     var lo = lo0;
     var hi = hi0;
     if (run(ground_run, lo) > runway) return std.math.nan(f64);
-    for (0..40) |_| {
+    for (0..numerics.count(numerics.active.ground_mtow_bisections)) |_| {
         const mid = 0.5 * (lo + hi);
         if (run(ground_run, mid) <= runway) lo = mid else hi = mid;
     }

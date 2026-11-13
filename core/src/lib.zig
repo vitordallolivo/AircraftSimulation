@@ -3,6 +3,8 @@
 pub const types = @import("types.zig");
 pub const limits = @import("limits.zig");
 pub const methods = @import("methods.zig");
+/// o refino numérico dos solvers (iterações, tolerâncias, passos): `numerics.active`
+pub const numerics = @import("numerics.zig");
 pub const interface = @import("interface.zig");
 pub const runner = @import("sim/runner.zig");
 pub const trim = @import("sim/trim.zig");

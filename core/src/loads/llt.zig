@@ -46,6 +46,7 @@
 //!   - continuação em pseudo-tempo quando o Newton para: (I/τ + J) ΔΓ = −R, τ crescendo com a queda do resíduo
 //!     (Kelley e Keyes, SIAM J. Numer. Anal. 35, 1998; regra SER de Mulder e van Leer 1985 — a conferir no PDF).
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
 const fmath = @import("../math/fmath.zig");
@@ -103,7 +104,7 @@ fn peakLift(curve: Curve, steepness: f64) f64 {
     const golden = 0.6180339887498949;
     var low = @max(best - 0.01, 0.0);
     var high = @min(best + 0.01, 0.9);
-    for (0..40) |_| {
+    for (0..numerics.count(numerics.active.peak_golden_iterations)) |_| {
         const left = high - golden * (high - low);
         const right = low + golden * (high - low);
         if (sectionLift(curve, left, steepness) < sectionLift(curve, right, steepness)) low = left else high = right;
@@ -117,7 +118,7 @@ pub fn stallAngle(slope: f64, zero_lift: f64, clmax: f64, steepness: f64) f64 {
     if (clmax <= 0) return 0;
     var low: f64 = 0.02;
     var high: f64 = 0.8;
-    for (0..50) |_| {
+    for (0..numerics.count(numerics.active.stall_angle_bisections)) |_| {
         const stall = 0.5 * (low + high);
         if (peakLift(.{ .slope = slope, .zero_lift = zero_lift, .stall = stall }, steepness) > clmax) high = stall else low = stall;
     }
@@ -662,7 +663,7 @@ fn withBound(i: usize, j: usize) bool {
 
 /// núcleo de Scully só entre superfícies diferentes (ver `core_frac`)
 fn coreOf(panels: []const types.PanelState, i: usize, j: usize) f64 {
-    return if (panels[j].group != panels[i].group) core_frac * panels[j].c else 0;
+    return if (panels[j].group != panels[i].group) numerics.active.vortex_core_fraction * panels[j].c else 0;
 }
 
 /// verdadeiro se o painel j tem geometria (grupo, área e corda)
@@ -780,15 +781,16 @@ fn newton(input: NewtonInput, gamma: *[n_max]f64) f64 {
     var negative: [n_max]f64 = undefined;
     // 1) Newton com o passo cortado ao meio quando o resíduo cresce
     var stuck = false;
-    for (0..50) |_| {
-        if (largest <= 1e-12 * scale) return largest / scale;
+    const tolerance = numerics.active.llt_tolerance;
+    for (0..numerics.count(numerics.active.llt_newton_iterations)) |_| {
+        if (largest <= tolerance * scale) return largest / scale;
         buildJacobian(input, gamma, &residual, &jacobian, &negative);
         solve(n_panels, &jacobian, &negative, &step);
         var trial: [n_max]f64 = undefined;
         var fraction: f64 = 1;
         var trial_residual: [n_max]f64 = undefined;
         var trial_largest: f64 = largest;
-        for (0..11) |_| {
+        for (0..numerics.count(numerics.active.llt_step_halvings)) |_| {
             for (0..n_panels) |i| trial[i] = gamma[i] + fraction * step[i];
             trial_largest = residuals(input, &trial, &trial_residual);
             if (trial_largest < largest) break;
@@ -802,13 +804,13 @@ fn newton(input: NewtonInput, gamma: *[n_max]f64) f64 {
         residual = trial_residual;
         largest = trial_largest;
     }
-    if (!stuck or largest <= 1e-12 * scale) return largest / scale;
+    if (!stuck or largest <= tolerance * scale) return largest / scale;
     // 2) parado num mínimo local do resíduo (depois do estol): continuação em pseudo-tempo, (I/τ + J) ΔΓ = −R, com τ
     // crescendo quando o resíduo cai (Kelley e Keyes 1998; regra SER de Mulder e van Leer 1985 — a conferir no PDF).
     // Com τ grande vira o Newton; com τ pequeno, um passo curto ao longo de −R, que atravessa os mínimos locais
-    var pseudo_step: f64 = 0.5;
-    for (0..300) |_| {
-        if (largest <= 1e-12 * scale) break;
+    var pseudo_step: f64 = numerics.active.llt_pseudo_step;
+    for (0..numerics.count(numerics.active.llt_pseudo_iterations)) |_| {
+        if (largest <= tolerance * scale) break;
         buildJacobian(input, gamma, &residual, &jacobian, &negative);
         for (0..n_panels) |i| jacobian[i][i] += 1.0 / pseudo_step;
         solve(n_panels, &jacobian, &negative, &step);
@@ -838,7 +840,7 @@ fn buildJacobian(input: NewtonInput, gamma: *const [n_max]f64, residual: *const 
         const flow = sectionFlow(input, i, gamma);
         const curve = input.curves[i];
         const lift = sectionLift(curve, flow.alpha, input.steepness);
-        const delta = 1e-6;
+        const delta = numerics.active.llt_jacobian_step;
         const lift_slope = (sectionLift(curve, flow.alpha + delta, input.steepness) - sectionLift(curve, flow.alpha - delta, input.steepness)) / (2 * delta);
         const speed = @max(flow.speed, 1e-12);
         for (0..n_panels) |j| {

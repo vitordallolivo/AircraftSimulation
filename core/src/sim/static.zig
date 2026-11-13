@@ -12,6 +12,7 @@
 //! CG é a margem mínima; o dianteiro é onde o comando de arfagem chega ao fim do curso para equilibrar no pouso, no
 //! cruzeiro ou para rodar na decolagem.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const types = @import("../types.zig");
 const vec = @import("../math/vec.zig");
 const aero = @import("../physics/aero.zig");
@@ -108,10 +109,10 @@ pub const Probe = struct {
         const ref: V3 = .{ x, 0, probe.cg[2] };
         var alpha = guess[0];
         var elevator = guess[1];
-        for (0..30) |_| {
+        for (0..numerics.count(numerics.active.static_trim_iterations)) |_| {
             const base = probe.trimResidual(airspeed, lift, ref, alpha, elevator);
             if (@abs(base[0]) + @abs(base[1]) < 1e-8) return .{ alpha, elevator };
-            const h = 1e-5;
+            const h = numerics.active.static_trim_step;
             const by_alpha = probe.trimResidual(airspeed, lift, ref, alpha + h, elevator);
             const by_elevator = probe.trimResidual(airspeed, lift, ref, alpha, elevator + h);
             const lift_alpha = (by_alpha[0] - base[0]) / h;
@@ -141,7 +142,7 @@ pub const Probe = struct {
         var high = probe.liftMax(airspeed, 0) * 1.05;
         const guess: [2]f64 = .{ 0.05, 0 };
         if (!probe.trimWithin(airspeed, low, x, elevator_max, guess)) return std.math.nan(f64);
-        for (0..30) |_| {
+        for (0..numerics.count(numerics.active.static_lift_max_bisections)) |_| {
             const middle = 0.5 * (low + high);
             if (probe.trimWithin(airspeed, middle, x, elevator_max, guess)) low = middle else high = middle;
         }
@@ -200,7 +201,7 @@ pub const Probe = struct {
     pub fn momentAtZeroLift(probe: *const Probe, airspeed: f64) f64 {
         var low: f64 = -15.0 * rad;
         var high: f64 = 10.0 * rad;
-        for (0..50) |_| {
+        for (0..numerics.count(numerics.active.static_zero_lift_bisections)) |_| {
             const middle = 0.5 * (low + high);
             if (probe.coeffs(airspeed, middle, null, .{}).CL < 0) low = middle else high = middle;
         }
@@ -277,7 +278,7 @@ pub fn gearForRotation(probe: *const Probe, rotation_speed: f64, x: f64, pitch_a
     };
     if (excess.at(probe, rotation_speed, x, pitch_acceleration, gear[2], elevator_max, high) < 0) return .{ .gear_x = null, .tip_x = tip_x };
     if (excess.at(probe, rotation_speed, x, pitch_acceleration, gear[2], elevator_max, low) > 0) return .{ .gear_x = low, .tip_x = tip_x };
-    for (0..40) |_| {
+    for (0..numerics.count(numerics.active.static_gear_bisections)) |_| {
         const middle = 0.5 * (low + high);
         if (excess.at(probe, rotation_speed, x, pitch_acceleration, gear[2], elevator_max, middle) > 0) high = middle else low = middle;
     }
@@ -353,7 +354,7 @@ pub fn alphaForLift(probe: *const Probe, airspeed: f64, lift: f64, elevator: f64
     if (lift > peak) return null;
     var low: f64 = -10 * rad;
     var high = peak_alpha;
-    for (0..50) |_| {
+    for (0..numerics.count(numerics.active.static_alpha_bisections)) |_| {
         const middle = 0.5 * (low + high);
         if (probe.coeffs(airspeed, middle, null, .{ .elevator = elevator }).CL < lift) low = middle else high = middle;
     }
@@ -422,7 +423,7 @@ pub fn timeToBank(rate: f64, time_constant: f64, angle: f64) f64 {
     var low: f64 = 0;
     var high: f64 = 100;
     if (bank.at(rate, time_constant, angle, high) < 0) return inf;
-    for (0..80) |_| {
+    for (0..numerics.count(numerics.active.static_bank_time_bisections)) |_| {
         const middle = 0.5 * (low + high);
         if (bank.at(rate, time_constant, angle, middle) < 0) low = middle else high = middle;
     }
@@ -465,7 +466,7 @@ pub fn aileronSizing(probe: *const Probe, airspeed: f64, wing: WingStrip, ailero
     const roll_inertia = probe.inertia[0][0];
     const time_constant = if (damping < 0) -2 * airspeed * roll_inertia / (dynamic_pressure * probe.area * probe.span * probe.span * damping) else std.math.inf(f64);
     var out: RollSizing = .{ .damping = damping, .time_constant = time_constant, .times = undefined, .rates = undefined, .best_start = undefined };
-    const samples = 400;
+    const samples = @max(numerics.count(numerics.active.static_roll_samples), 2);
     for (aileron_chords, 0..) |_, k| {
         out.best_start[k] = std.math.nan(f64);
         for (aileron_starts, 0..) |start, j| {
@@ -488,7 +489,7 @@ pub fn aileronSizing(probe: *const Probe, airspeed: f64, wing: WingStrip, ailero
 
 /// ∫ c(y) y dy de `from` a `to` pelos trapézios em `samples` pontos de 0 ao comprimento (os que caem na faixa,
 /// com a folga `slack`), como o `_trapz` com a máscara de `aileron_sizing`
-fn chordMoment(wing: WingStrip, comptime samples: usize, from: f64, to: f64, slack: f64) f64 {
+fn chordMoment(wing: WingStrip, samples: usize, from: f64, to: f64, slack: f64) f64 {
     var sum: f64 = 0;
     var previous: ?[2]f64 = null;
     for (0..samples) |i| {

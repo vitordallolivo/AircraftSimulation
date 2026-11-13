@@ -4,6 +4,7 @@
 //! aerodrive usa são lidos; o resto é ignorado. Depois de ler, `validate` confere tudo o que pode
 //! quebrar o desenho e devolve um erro com o nome do componente em `Diag` (nunca trava).
 const std = @import("std");
+const core = @import("aerosim");
 const fz = @import("../util/fuzz.zig");
 
 // ------------------------------------------------------------------ esquema (nomes iguais aos do JSON)
@@ -436,6 +437,7 @@ pub const Aircraft = struct {
     takeoff: Takeoff = .{},
     autopilot: Autopilot = .{},
     sim: SimSettings = .{},
+    numerics: core.numerics.Numerics = .{}, // o refino dos solvers do núcleo (iterações, tolerâncias, passos); sem a chave: o de sempre
     mission: Mission = .{},
     performance: Performance = .{},
     modifiers: ?[]const Modifier = null, // null (arquivo sem a chave): o padrão da GUI, só o efeito solo de McCormick

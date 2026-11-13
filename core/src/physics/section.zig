@@ -10,6 +10,7 @@
 //! inclinações de todos os pares), que não se deixa levar pelos saltos de bolha de Re baixo. Igual a `metrics`
 //! de `aerosim/design/airfoils.py`.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const aero = @import("aero.zig");
 
 /// a inclinação da sigmoide de estol (o `M_BLEND` da GUI)
@@ -45,10 +46,11 @@ fn modelCl(angle: f64, slope: f64, cl_zero: f64, stall: f64) f64 {
 pub fn stallAngle(slope: f64, cl_zero: f64, cl_max: f64) f64 {
     var low: f64 = 0.02;
     var high: f64 = 0.8;
-    for (0..50) |_| {
+    const peak_points = @max(numerics.count(numerics.active.section_peak_points), 2);
+    for (0..numerics.count(numerics.active.stall_angle_bisections)) |_| {
         const middle = 0.5 * (low + high);
         var peak: f64 = -std.math.inf(f64);
-        for (0..3000) |i| peak = @max(peak, modelCl(0.9 * @as(f64, @floatFromInt(i)) / 2999.0, slope, cl_zero, middle));
+        for (0..peak_points) |i| peak = @max(peak, modelCl(0.9 * @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(peak_points - 1)), slope, cl_zero, middle));
         if (peak > cl_max) high = middle else low = middle;
     }
     return 0.5 * (low + high);

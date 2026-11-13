@@ -10,6 +10,7 @@
 //! A faixa guarda só τ, então θ_f sai de τ = k (1 − (θ_f − sen θ_f)/π), com k o fator empírico do τ (0,85 em
 //! `aerosim/model/airfoil.py: flap_effectiveness`), e o Δc_m leva o mesmo k.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const fmath = @import("../math/fmath.zig");
 
 /// θ_f (rad) do flape simples cujo τ (com o fator empírico `factor`) é `tau`: bisseção em [0, π], onde τ cai com θ_f
@@ -17,7 +18,7 @@ pub fn thetaOf(tau: f64, factor: f64) f64 {
     const target = @min(@max(tau / factor, 0.0), 1.0);
     var lo: f64 = 0.0;
     var hi: f64 = fmath.pi;
-    for (0..48) |_| {
+    for (0..numerics.count(numerics.active.flap_theta_bisections)) |_| {
         const mid = 0.5 * (lo + hi);
         const tau_mid = 1.0 - (mid - @sin(mid)) / fmath.pi;
         if (tau_mid > target) lo = mid else hi = mid;

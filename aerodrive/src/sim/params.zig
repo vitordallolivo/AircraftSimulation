@@ -589,6 +589,7 @@ pub fn fill(ac: *const Aircraft, params: *types.Params, diag: *model.Diag) Error
         } else false;
         @field(params.ap, field.name) = if (angle) value * D2R else value;
     }
+    core.numerics.active = ac.numerics; // o refino dos solvers: do arquivo do avião (padrão: o de sempre)
     params.dt = ac.sim.dt;
     params.tmax = ac.sim.tmax;
     params.dtlog = ac.sim.dtlog;

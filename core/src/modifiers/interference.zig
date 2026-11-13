@@ -19,6 +19,7 @@
 //! passada, uma asa não devolve o efeito para a outra pelo α dela (é a primeira iteração do sistema). Com outro
 //! modelo do voo que não as faixas não faz nada: na linha sustentadora a interferência já está no sistema.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const vec = @import("../math/vec.zig");
 const core_types = @import("../types.zig");
 const types = @import("types.zig");
@@ -46,7 +47,7 @@ pub fn induced(params: *const core_types.Params, modifier: *const types.Modifier
         const surface = &params.surf[j];
         if (surface.owner < 0 or surface.owner == owner or !modifier.affectsPanel(j) or gamma[j] == 0) continue;
         const nodes = llt.surfaceNodes(surface);
-        induced_sum += llt.horseshoe(control_point, nodes.A, nodes.B, flow_dir, true, llt.core_frac * surface.c) * vec.splat(gamma[j]);
+        induced_sum += llt.horseshoe(control_point, nodes.A, nodes.B, flow_dir, true, numerics.active.vortex_core_fraction * surface.c) * vec.splat(gamma[j]);
     }
     return -induced_sum * vec.splat(modifier.settings(types.InterferenceSettings).gain);
 }

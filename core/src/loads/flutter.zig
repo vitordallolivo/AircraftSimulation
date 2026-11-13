@@ -22,6 +22,7 @@
 //! (Q_I/ω) ẋ = 0, com Q = Q_R + i Q_I avaliado na frequência ω do próprio modo. Para cada V e cada modo, itera ω até
 //! a parte imaginária do autovalor bater com ela. O flutter é a menor V em que o amortecimento de um modo troca de sinal.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const fmath = @import("../math/fmath.zig");
 const linalg = @import("../math/linalg.zig");
 
@@ -269,7 +270,7 @@ pub fn pk(elements: []const Element, found: *const Modes, density: f64, speed: f
     for (0..count) |mode| {
         var omega = @max(if (out[mode].frequency > 0) out[mode].frequency else found.frequency[mode], 1e-3);
         var point: ModePoint = .{};
-        for (0..60) |_| {
+        for (0..numerics.count(numerics.active.flutter_iterations)) |_| {
             var real: ModeMatrix = undefined;
             var imaginary: ModeMatrix = undefined;
             modalAero(elements, found, density, speed, omega, &real, &imaginary);

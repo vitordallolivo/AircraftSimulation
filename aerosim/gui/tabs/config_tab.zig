@@ -318,7 +318,7 @@ fn withoutDigits(text: []const u8, buffer: *[256]u8) []const u8 {
 const form_meta = manager.form_meta;
 
 /// o tipo de peça da lista (`_fill_list`): as peças do avião e, depois, os dados que não são geometria
-pub const Part = enum { surface, prop, tank, fuselage, boom, payload, ballast, gear, modifiers, airfield, mass, environment, performance, takeoff, autopilot, sim, mission };
+pub const Part = enum { surface, prop, tank, fuselage, boom, payload, ballast, gear, modifiers, airfield, mass, environment, performance, takeoff, autopilot, sim, numerics, mission };
 
 /// uma linha da lista de componentes: a peça, qual delas (nas listas) e o texto
 pub const Component = struct { part: Part, index: usize = 0, label: []const u8 };
@@ -332,6 +332,7 @@ const nongeometric = [_]struct { Part, []const u8 }{
     .{ .takeoff, "Decolagem (acionamento do profundor)" },
     .{ .autopilot, "Piloto automático" },
     .{ .sim, "Integração" },
+    .{ .numerics, "Refino numérico (solvers)" },
     .{ .mission, "Percurso: partida e eventos" },
 };
 
@@ -498,7 +499,7 @@ fn itemFieldsOf(memory: std.mem.Allocator, list: *std.ArrayList(Spec), value: an
                     spec.number = current orelse 0;
                     break :blk true;
                 },
-                i64 => blk: {
+                i64, i32 => blk: {
                     spec.kind = .integer;
                     spec.number = @floatFromInt(current);
                     break :blk true;
@@ -802,6 +803,14 @@ pub fn layout(memory: std.mem.Allocator, aircraft: *const Aircraft, component: C
             try listBlocks(memory, &fields, &groups, &lists, aircraft.gear.custom, "custom", "perna", &.{}, &form_meta.gear_kinds),
         .mass => try listBlocks(memory, &fields, &groups, &lists, aircraft.mass.items, "items", "massa pontual", &.{}, null),
         .mission => try listBlocks(memory, &fields, &groups, &lists, aircraft.mission.events, "events", "evento", &.{}, &form_meta.event_kinds),
+        // o refino numérico: um bloco por solver. O rótulo de cada campo vem como "solver: o que é"
+        .numerics => for (fields.items) |*field| {
+            const cut = std.mem.indexOf(u8, field.label, ": ") orelse continue;
+            const solver = field.label[0..cut];
+            if (!std.mem.eql(u8, groups.items[groups.items.len - 1], solver)) try groups.append(memory, solver);
+            field.group = groups.items.len - 1;
+            field.label = field.label[cut + 2 ..];
+        },
         else => {},
     }
     return .{ .specs = fields.items, .groups = groups.items, .lists = lists.items };

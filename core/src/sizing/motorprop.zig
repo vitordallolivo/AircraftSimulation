@@ -29,6 +29,7 @@
 //! bit a bit igual. D⁴ e D⁵ vêm prontos do Python, como o
 //! seno e o cosseno da corrida em `ground.zig`, porque a potência do Python e a do Zig podem diferir no último bit.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const ground = @import("ground.zig");
 const propulsion = @import("../physics/propulsion.zig");
 
@@ -115,7 +116,7 @@ pub fn point(motor_prop: *const MotorProp, airspeed: f64, rho: f64) Point {
     const cp = motor_prop.CP[0..np];
     var lo: f64 = 1.0;
     var hi: f64 = motor_prop.Voc * kv;
-    for (0..iterations) |_| {
+    for (0..numerics.count(numerics.active.motorprop_iterations)) |_| {
         const mid = 0.5 * (lo + hi);
         if (resid(motor_prop, tJ, cp, kv, total_resistance, airspeed, rho, mid).residual > 0) lo = mid else hi = mid;
     }

@@ -9,6 +9,7 @@
 //! Fator de carga máximo em curva: estol da asa (C_L/C_Lmax = kCL) e, sustentada,
 //! motor (acelerador = 1). Raio R = V² / (g √(n² − 1)).
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
 const state = @import("state.zig");
@@ -91,7 +92,7 @@ fn newton(ctx: Ctx, case: Case, unknowns: *[3]f64, point_out: ?*types.TrimPoint)
     const lo = [3]f64{ -0.2, -0.35, if (free) 0.02 else -0.7 };
     const hi = [3]f64{ 0.45, 0.35, if (free) 3.0 else 0.7 };
     const step = [3]f64{ 0.08, 0.08, 0.25 };
-    for (0..120) |_| {
+    for (0..numerics.count(numerics.active.trim_iterations)) |_| {
         var res: [3]f64 = undefined;
         residual(ctx, case, unknowns.*, &res, null);
         const nr = nrm(res);
@@ -110,7 +111,7 @@ fn newton(ctx: Ctx, case: Case, unknowns: *[3]f64, point_out: ?*types.TrimPoint)
             du[i] = fmath.sat(du[i], step[i]);
         }
         var fraction: f64 = 1.0;
-        for (0..12) |k| { // passo amortecido
+        for (0..numerics.count(numerics.active.trim_step_halvings)) |k| { // passo amortecido
             var ut: [3]f64 = undefined;
             for (0..3) |i| ut[i] = fmath.lim(unknowns[i] + fraction * du[i], lo[i], hi[i]);
             var rt: [3]f64 = undefined;
@@ -168,7 +169,7 @@ pub fn performance(ctx: Ctx, V_hi: f64, V_lo: f64, dV: f64, rows: []types.PerfRo
             var lo: f64 = 1.0;
             var hi: f64 = 6.0;
             var unknowns = un_used;
-            for (0..40) |_| {
+            for (0..numerics.count(numerics.active.trim_turn_bisections)) |_| {
                 const nm = 0.5 * (lo + hi);
                 var ut = unknowns;
                 const et = solve(ctx, types.TrimKind.turn, airspeed, nm, &ut);

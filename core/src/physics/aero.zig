@@ -7,6 +7,7 @@
 //!   L = q S CL(α) ⟂ v;  D = q S (CD0 + CL²/(π e AR) φ(h))
 //! A fuselagem entra com área de arrasto e C_mα, C_nβ, C_Yβ próprios.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
 const fmath = @import("../math/fmath.zig");
@@ -71,7 +72,7 @@ fn peakGolden(surface: *const types.Surface, steepness: f64) f64 {
     var x2 = low + gr * (high - low);
     var f1 = clPanel(surface, x1, steepness);
     var f2 = clPanel(surface, x2, steepness);
-    for (0..40) |_| {
+    for (0..numerics.count(numerics.active.peak_golden_iterations)) |_| {
         if (f1 < f2) {
             low = x1;
             x1 = x2;
@@ -114,7 +115,7 @@ pub fn init(params: *types.Params) void {
         surface.ey = vec.cross(ez, ex);
         var lo: f64 = 0.02;
         var hi: f64 = 0.8;
-        for (0..50) |_| {
+        for (0..numerics.count(numerics.active.stall_angle_bisections)) |_| {
             surface.a0 = 0.5 * (lo + hi);
             if (peakCL(surface, params.Mst) > surface.CLmax) hi = surface.a0 else lo = surface.a0;
         }

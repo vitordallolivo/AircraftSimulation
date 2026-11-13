@@ -8,6 +8,7 @@
 //! `Thrust` é uma interface (`checkThrust`): `fn curve(self, set, n_motor) stages.Curve`.
 //! `CoreThrust` usa o motor + hélice + bateria do núcleo (physics/propulsion); os testes usam mocks.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const types = @import("../types.zig");
 const prop = @import("../physics/propulsion.zig");
 const sizing_types = @import("types.zig");
@@ -171,7 +172,7 @@ pub fn Chain(comptime AircraftKind: type, comptime ThrustProvider: type) type {
                 } else {
                     var lo = pv;
                     var hi = top;
-                    for (0..40) |_| {
+                    for (0..numerics.count(numerics.active.chain_bisections)) |_| {
                         const mid = 0.5 * (lo + hi);
                         if (massFeasible(cfg, &model, mid)) lo = mid else hi = mid;
                         if (hi - lo < 1e-4 * hi) break;

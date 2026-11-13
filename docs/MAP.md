@@ -290,13 +290,16 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Declaration:11`
   fn `require:18`, `has:33`
 - `core/src/lib.zig` — O núcleo como módulo Zig (para programas em Zig, como o aerodrive): os mesmos tipos e funções
-  tipos `structures:43`, `optim:49`
+  tipos `structures:45`, `optim:51`
 - `core/src/limits.zig` — Limites de compilação. Toda a memória do núcleo é estática e dimensionada aqui:
   tipos `Group:18`
   fn `groupIndex:30`
 - `core/src/methods.zig` — Os métodos de cálculo do voo, juntos: quem dá as forças, qual linha sustentadora e quanto refino.
   tipos `Methods:12`
   fn `label:34`, `choices:53`, `byName:64`
+- `core/src/numerics.zig` — O refino numérico dos solvers do núcleo num lugar só: quantas iterações, que tolerância, que passo.
+  tipos `Numerics:12`
+  fn `count:142`
 - `core/src/opt.zig` — Otimizações em avaliação (`-Dopt`): cada uma é um bit, desligado por padrão (ver core/OTIMIZACOES.md).
   tipos `Opt:5`
 - `core/src/root.zig` — Interface C ABI do núcleo (o que o Python chama via ctypes).
@@ -338,13 +341,13 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Station:25`, `Aeroelastic:37`
   fn `flapDerivatives:49`, `divergencePressure:74`, `rollEffectiveness:94`, `analyze:128`
 - `core/src/loads/flutter.zig` — Flutter de uma semiasa: viga de elementos finitos (flexão e torção acopladas pela massa), reduzida aos primeiros
-  tipos `Element:39`, `ModePoint:52`, `FlutterResult:58`, `Modes:71`
-  fn `modes:151`, `theodorsen:200`, `pk:267`, `flutter:309`
+  tipos `Element:40`, `ModePoint:53`, `FlutterResult:59`, `Modes:72`
+  fn `modes:152`, `theodorsen:201`, `pk:268`, `flutter:310`
 - `core/src/loads/internal.zig` — Esforços internos ao longo da envergadura de uma semiasa (ou de um tubo de cauda), da ponta para a raiz: cortante,
   fn `shareByArea:27`, `efforts:35`, `deflection:56`, `twist:70`
 - `core/src/loads/llt.zig` — Linha sustentadora numérica (vórtices em ferradura) para a distribuição de carga ao longo da envergadura.
-  tipos `Curve:79`, `Node:265`
-  fn `sectionSlope:67`, `sectionLift:83`, `stallAngle:116`, `segment:128`, `horseshoe:145`, `surfaceNodes:176`, `prepare:347`, `apply:464`, `compute:604`, `coeffs:636`
+  tipos `Curve:80`, `Node:266`
+  fn `sectionSlope:68`, `sectionLift:84`, `stallAngle:117`, `segment:129`, `horseshoe:146`, `surfaceNodes:177`, `prepare:348`, `apply:465`, `compute:605`, `coeffs:637`
 - `core/src/loads/stall.zig` — Estol por estação: o VLM (`vlm.zig`) acoplado à polar 2D de cada estação no seu Reynolds, pela correção de α
   tipos `Family:34`, `Settings:40`, `Sections:48`, `Station:55`, `Work:68`, `Point:79`, `Sweep:87`
   fn `stationCount:99`, `point:330`, `next:342`, `sweep:366`
@@ -355,8 +358,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Segment:24`, `Kind:27`, `Workspace:47`, `Loading:56`, `Study:211`, `StudyPoint:223`
   fn `trace:91`, `optimal:127`, `efficiency:196`, `raymerOswald:206`, `studyPoint:232`
 - `core/src/loads/vlm.zig` — Método dos vórtices em malha (VLM) do avião: cada faixa sustentadora do núcleo (`Params.surf`) vira uma malha de
-  tipos `Grid:40`, `Panel:43`, `Buffers:62`, `Loads:72`, `Coefficients:79`, `Derivatives:91`
-  fn `panelCount:111`, `lattice:159`, `factor:230`, `solve:268`, `substitute:280`, `loads:295`, `velocityAt:318`, `coefficients:325`, `derivatives:346`, `groundCoefficients:386`, `groundCoefficientsWith:391`
+  tipos `Grid:41`, `Panel:44`, `Buffers:63`, `Loads:73`, `Coefficients:80`, `Derivatives:92`
+  fn `panelCount:112`, `lattice:160`, `factor:231`, `solve:269`, `substitute:281`, `loads:296`, `velocityAt:319`, `coefficients:326`, `derivatives:347`, `groundCoefficients:387`, `groundCoefficientsWith:392`
 - `core/src/loads/vn.zig` — Diagrama V-n: o envelope de manobra e o de rajada, e os casos de carga que saem dele.
   tipos `VnNorm:20`, `VnAircraft:31`, `LoadCase:41`, `CaseKind:50`, `VnResult:55`
   fn `gustAlleviation:76`, `gustIncrement:82`, `maneuverLimits:88`, `envelope:95`, `diagram:111`
@@ -377,12 +380,12 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/modifiers/**
 
 - `core/src/modifiers/flapmoment.zig` — Momento próprio do comando (flape, profundor, elevon) no quarto de corda da faixa.
-  fn `thetaOf:16`, `cmDelta:29`
+  fn `thetaOf:17`, `cmDelta:30`
 - `core/src/modifiers/ground.zig` — Efeito solo: métodos para o fator do arrasto induzido perto do chão.
   tipos `Effect:120`
   fn `factor:25`, `mccormick:33`, `buildTable:65`, `lookup:129`
 - `core/src/modifiers/interference.zig` — Interferência entre as asas da configuração no modelo de faixas, para quantas asas houver.
-  fn `active:29`, `induced:39`
+  fn `active:30`, `induced:40`
 - `core/src/modifiers/mod.zig` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro sem mexer no resto
   tipos `Env:22`
   fn `envFrom:37`, `slipstreamGrid:57`, `stripOf:66`, `induced:73`, `inducedAlone:78`, `flapCm:98`
@@ -429,8 +432,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/physics/**
 
 - `core/src/physics/aero.zig` — Aerodinâmica por componentes.
-  tipos `Out:18`
-  fn `sigmaStall:28`, `init:93`, `compute:126`, `computeEnv:131`, `computeTrace:136`, `fuselage:266`, `coeffs:281`, `coeffsEx:286`, `coeffsEnv:291`, `coeffsAt:296`
+  tipos `Out:19`
+  fn `sigmaStall:29`, `init:94`, `compute:127`, `computeEnv:132`, `computeTrace:137`, `fuselage:267`, `coeffs:282`, `coeffsEx:287`, `coeffsEnv:292`, `coeffsAt:297`
 - `core/src/physics/aeromodel.zig` — O modelo aerodinâmico do voo, escolhido por `Params.aero_model` (`types.AeroModel`): quem a dinâmica, a trimagem e
   fn `compute:18`
 - `core/src/physics/aerotable.zig` — Modelo aerodinâmico por tabela (Params.aero_model = 2): os coeficientes do avião inteiro vêm de `Params.aero_tab`,
@@ -444,11 +447,11 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Mass:49`, `Load:105`
   fn `initTanks:17`, `compute:58`, `slosh:109`, `payload:138`
 - `core/src/physics/propulsion.zig` — K unidades propulsoras: hélice por tabela C_T(J), C_P(J) + motor BLDC + bateria.
-  tipos `Unit:21`, `Out:33`
-  fn `init:47`, `polyRaw:105`, `tiltNow:122`, `axis:129`, `unit:137`, `powerLimitedCurrent:169`, `compute:186`, `equilibriumRps:224`, `point:254`
+  tipos `Unit:22`, `Out:34`
+  fn `init:48`, `polyRaw:106`, `tiltNow:123`, `axis:130`, `unit:138`, `powerLimitedCurrent:170`, `compute:187`, `equilibriumRps:225`, `point:255`
 - `core/src/physics/section.zig` — Polar 2D de um perfil e os números que saem dela, a etapa Perfis do dimensionamento.
-  tipos `Airfoil:21`, `Polar:30`, `Metrics:92`, `DragBranch:211`
-  fn `stallAngle:45`, `modelPolar:58`, `interpolate:73`, `metrics:114`, `reynolds:206`, `dragBranch:232`, `fitted:263`
+  tipos `Airfoil:22`, `Polar:31`, `Metrics:94`, `DragBranch:213`
+  fn `stallAngle:46`, `modelPolar:60`, `interpolate:75`, `metrics:116`, `reynolds:208`, `dragBranch:234`, `fitted:265`
 - `core/src/physics/terrain.zig` — Terreno: chão plano (h = 0) com mesas/plataformas retangulares elevadas.
   fn `height:9`
 
@@ -458,20 +461,20 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Out:26`
   fn `derivatives:87`, `rk4:248`
 - `core/src/sim/envelope.zig` — Envelope de voo por altitude (sem integrar no tempo).
-  tipos `EnvelopeMethod:31`, `Atmosphere:40`, `EnvCfg:49`, `EnvRow:87`
-  fn `density:100`, `compute:313`, `curve:346`
+  tipos `EnvelopeMethod:32`, `Atmosphere:41`, `EnvCfg:50`, `EnvRow:88`
+  fn `density:101`, `compute:314`, `curve:347`
 - `core/src/sim/gust.zig` — Resposta no tempo a uma rajada, em voo nivelado reto: o avião sai equilibrado em `airspeed` e `height`, a rajada
-  tipos `Case:23`, `Mode:173`, `Poles:178`
-  fn `begin:40`, `advance:102`, `settled:129`, `respond:156`, `gustSpeed:165`, `poles:201`
+  tipos `Case:24`, `Mode:180`, `Poles:185`
+  fn `begin:41`, `advance:103`, `settled:129`, `respond:163`, `gustSpeed:172`, `poles:208`
 - `core/src/sim/linear.zig` — Modelo linear em torno do voo nivelado equilibrado (estabilidade dinâmica).
-  tipos `LinModel:28`, `LinSloshModel:230`
-  fn `rigid:56`, `linearize:169`, `linearizeSlosh:290`, `residual:331`
+  tipos `LinModel:29`, `LinSloshModel:231`
+  fn `rigid:57`, `linearize:170`, `linearizeSlosh:291`, `residual:332`
 - `core/src/sim/modes.zig` — Os modos dinâmicos do avião equilibrado e as qualidades de voo: o que a aba Estabilidade mostra depois da
   tipos `Mode:23`, `Pole:26`, `Class:167`, `Phase:169`, `Check:171`, `Criteria:185`, `Row:242`, `Input:347`
   fn `classify:67`, `liquidPoles:152`, `rollRequirement:174`, `mil8785c:208`, `noCriteria:236`, `evaluate:251`, `passes:338`, `respond:368`
 - `core/src/sim/runner.zig` — Executor de uma corrida: eventos discretos, paradas, registro e checkpoints.
-  tipos `Status:26`, `Instance:37`
-  fn `stateText:67`, `configure:97`, `handover:165`, `resetGround:187`, `resetAir:241`, `run:397`
+  tipos `Status:27`, `Instance:38`
+  fn `stateText:68`, `configure:98`, `handover:166`, `resetGround:188`, `resetAir:242`, `run:398`
 - `core/src/sim/simple_perf.zig` — Desempenho por cálculo simples (sem simulação no tempo), como na "planilha suprema":
   tipos `SimpleCfg:23`, `SimpleRow:52`, `SimpleSummary:76`
   fn `density:108`, `compute:132`
@@ -479,42 +482,42 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Entry:7`, `Flags:87`, `Run:103`, `Ctx:119`
   fn `index:57`, `rps:66`, `sx:70`, `sy:74`, `sxd:78`, `syd:82`
 - `core/src/sim/static.zig` — Estabilidade estática do avião montado: o que a aba Estabilidade calcula antes da dinâmica. É a mesma conta de
-  tipos `Inputs:31`, `Probe:34`, `Sweep:213`, `Variable:290`, `Limits:370`, `WingStrip:433`, `Aileron:436`, `RollSizing:449`, `ElevatorSizing:525`, `RudderSizing:571`
-  fn `cgSweep:226`, `limitCrossing:253`, `gearForRotation:267`, `derivative:294`, `rollDamping:327`, `yawDamping:333`, `alphaForLift:341`, `scissorLimits:374`, `minTail:399`, `timeToBank:414`, `aileronSizing:461`, `interpolate:505`, `elevatorSizing:534`, `rudderSizing:584`
+  tipos `Inputs:32`, `Probe:35`, `Sweep:214`, `Variable:291`, `Limits:371`, `WingStrip:434`, `Aileron:437`, `RollSizing:450`, `ElevatorSizing:526`, `RudderSizing:572`
+  fn `cgSweep:227`, `limitCrossing:254`, `gearForRotation:268`, `derivative:295`, `rollDamping:328`, `yawDamping:334`, `alphaForLift:342`, `scissorLimits:375`, `minTail:400`, `timeToBank:415`, `aileronSizing:462`, `interpolate:506`, `elevatorSizing:535`, `rudderSizing:585`
 - `core/src/sim/tests.zig` — Testes de integração do núcleo: aeronave monomotora convencional (a do código
   fn `aircraft:18`
 - `core/src/sim/trim.zig` — Equilíbrio (trimagem) e desempenho por velocidade, sem integração no tempo.
-  tipos `Ctx:25`
-  fn `solve:131`, `performance:145`
+  tipos `Ctx:26`
+  fn `solve:132`, `performance:146`
 
 **core/src/sizing/**
 
 - `core/src/sizing/chain.zig` — A cadeia do mini-MDO para um tipo de aeronave e um provedor de tração, gerada em comptime:
-  tipos `CoreThrust:24`, `LinearThrust:47`
-  fn `checkThrust:18`, `decode:58`, `motorsFor:80`, `Chain:96`
+  tipos `CoreThrust:25`, `LinearThrust:48`
+  fn `checkThrust:19`, `decode:59`, `motorsFor:81`, `Chain:97`
 - `core/src/sizing/constraints.zig` — O diagrama de restrições do dimensionamento inicial (o par de `aerosim/sizing/constraints.py`): a razão
   tipos `ParabolicPolar:25`, `Requirements:44`, `Kind:63`, `Limit:97`, `DesignPoint:188`
   fn `estimatePolar:36`, `isaRho:115`, `conditionSpeed:120`, `requiredThrustWeight:132`, `limitLoading:165`, `envelope:173`, `designPoint:201`
 - `core/src/sizing/ground.zig` — Corrida de decolagem rápida da sprint (etapa Motores, `aerosim/design/power.py: performance`): a mesma
-  tipos `GroundRun:23`
-  fn `interp:50`, `rotSpeed:77`, `run:87`, `mtow:112`
+  tipos `GroundRun:24`
+  fn `interp:51`, `rotSpeed:78`, `run:88`, `mtow:114`
 - `core/src/sizing/kinds.zig` — Tipos de aeronave do dimensionamento: cada um é um tipo Zig com a mesma interface, conferida em
   tipos `Hover:20`, `Conventional:49`, `FlyingWing:76`, `Tailsitter:102`, `Vtol:128`
   fn `pairSigma:25`, `wingsInducedFactor:37`, `check:158`
 - `core/src/sizing/motorprop.zig` — Tração em regime de um conjunto motor + hélice + bateria com acelerador cheio, para a curva T(V) da sprint
-  tipos `MotorProp:38`, `Limit:63`, `Point:73`
-  fn `point:97`, `thrust:137`, `curve:142`, `curvePoints:147`
+  tipos `MotorProp:39`, `Limit:64`, `Point:74`
+  fn `point:98`, `thrust:138`, `curve:143`, `curvePoints:148`
 - `core/src/sizing/optimize.zig` — Otimizadores do mini-MDO atrás de uma interface só.
   tipos `Eval:16`, `Problem:21`, `Recorder:50`, `Result:79`, `Pso:100`, `RandomSearch:156`
   fn `check:188`, `run:198`
 - `core/src/sizing/sizing.zig` — Dimensionamento inicial (mini-MDO) no núcleo: avalia um vetor de projeto e otimiza.
   fn `eval:20`, `fitness:29`, `optimize:49`, `name:59`
 - `core/src/sizing/stages.zig` — Estágios da cadeia de dimensionamento, cada um uma função pura com entradas e saídas pequenas:
-  tipos `Curve:18`, `Geo:42`, `Polar:68`, `Env:83`, `Mass:212`
-  fn `geometry:45`, `blendAirfoils:56`, `polar:71`, `stallSpeed:95`, `envelope:100`, `sustainedN:133`, `isaRho:142`, `isaAltitude:147`, `ceiling:152`, `landingRun:176`, `takeoffRun:182`, `canHover:207`, `emptyMass:215`, `linearCurve:229`
+  tipos `Curve:19`, `Geo:43`, `Polar:69`, `Env:84`, `Mass:213`
+  fn `geometry:46`, `blendAirfoils:57`, `polar:72`, `stallSpeed:96`, `envelope:101`, `sustainedN:134`, `isaRho:143`, `isaAltitude:148`, `ceiling:153`, `landingRun:177`, `takeoffRun:183`, `canHover:208`, `emptyMass:216`, `linearCurve:230`
 - `core/src/sizing/tail.zig` — A empenagem da etapa "Empenagem e comandos" (`aerosim/design/tail.py`): áreas por volume de cauda, estática
-  tipos `Layout:20`, `Wing:46`, `OtherWing:65`, `PitchStrip:73`, `TailAirfoil:83`, `Input:91`, `Result:131`, `Statics:356`
-  fn `helmbold:33`, `flapEffectiveness:39`, `analyze:200`
+  tipos `Layout:21`, `Wing:47`, `OtherWing:66`, `PitchStrip:74`, `TailAirfoil:84`, `Input:92`, `Result:132`, `Statics:358`
+  fn `helmbold:34`, `flapEffectiveness:40`, `analyze:201`
 - `core/src/sizing/types.zig` — Tipos do dimensionamento inicial (mini-MDO): a configuração que vem do Python, o vetor de
   tipos `Variable:15`, `VarKind:49`, `VarSpec:57`, `Quantity:65`, `Comparison:136`, `Constraint:146`, `AirfoilData:164`, `LayoutData:175`, `PropSet:185`, `AircraftKind:193`, `Objective:206`, `SizingCfg:214`, `SizingOut:257`, `SearchMethod:274`, `OptOpts:283`, `Individual:295`
   fn `variable:44`, `quantity:116`, `massDependent:123`, `constrained:131`, `violation:154`
@@ -525,8 +528,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/structures/**
 
 - `core/src/structures/buckling.zig` — Flambagem do chapeado e da alma, e quantas nervuras um vão precisa para o chapeado não flambar.
-  tipos `Orthotropic:23`
-  fn `flatPlate:43`, `curvedPanel:55`, `arcRadius:78`, `webShear:83`, `ribsNeeded:94`
+  tipos `Orthotropic:24`
+  fn `flatPlate:44`, `curvedPanel:56`, `arcRadius:79`, `webShear:84`, `ribsNeeded:95`
 - `core/src/structures/gear.zig` — Trem de pouso: a treliça de tubos como pórtico 3D de elementos finitos (6 graus por nó), as margens de cada tubo e o
   tipos `Node:28`, `Member:37`, `MemberResult:48`, `Drop:243`, `DropResult:257`
   fn `solveFrame:143`, `landing:275`
@@ -615,8 +618,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/model/**
 
 - `aerodrive/src/model/aircraft.zig` — Leitura do arquivo do avião salvo pela GUI (`data/aircraft/*.json`, "meus aviões").
-  tipos `Section:11`, `Control:19`, `Device:58`, `Airfoil:75`, `Surface:86`, `Fuselage:118`, `Boom:135`, `Propeller:164`, `Motor:165`, `Battery:166`, `ThrustPoly:177`, `Propulsion:190`, `GearLeg:207`, `Gear:208`, `Tank:231`, `Payload:251`, `PointMass:265`, `Mass:266`, `Environment:277`, `Takeoff:305`, `SimSettings:306`, `Autopilot:308`, `Leg:353`, `MissionEvent:366`, `Mission:367`, `Ballast:377`, `Airfield:378`, `Modifier:396`, `Performance:411`, `Aircraft:422`, `limits:457`, `Diag:481`, `Loaded:495`
-  fn `mixedAirfoils:14`, `kindGains:48`, `parse:505`, `validate:564`, `semispan:651`, `sortedSections:658`, `sectionAt:670`, `tailOnBoom:683`, `mountPoint:701`, `applyMounts:735`
+  tipos `Section:12`, `Control:20`, `Device:59`, `Airfoil:76`, `Surface:87`, `Fuselage:119`, `Boom:136`, `Propeller:165`, `Motor:166`, `Battery:167`, `ThrustPoly:178`, `Propulsion:191`, `GearLeg:208`, `Gear:209`, `Tank:232`, `Payload:252`, `PointMass:266`, `Mass:267`, `Environment:278`, `Takeoff:306`, `SimSettings:307`, `Autopilot:309`, `Leg:354`, `MissionEvent:367`, `Mission:368`, `Ballast:378`, `Airfield:379`, `Modifier:397`, `Performance:412`, `Aircraft:423`, `limits:459`, `Diag:483`, `Loaded:497`
+  fn `mixedAirfoils:15`, `kindGains:49`, `parse:507`, `validate:566`, `semispan:653`, `sortedSections:660`, `sectionAt:672`, `tailOnBoom:685`, `mountPoint:703`, `applyMounts:737`
 - `aerodrive/src/model/airfoil.zig` — Perfil 2D (x/c, y/c): NACA de 4 dígitos pelo nome ou as coordenadas do arquivo do avião.
   tipos `Profile:13`
   fn `nacaDigits:23`, `naca4:39`, `forDrawing:79`, `invert:95`, `full:102`, `thinAirfoil:126`, `flapEffectiveness:176`, `helmbold:183`, `split:190`
@@ -683,7 +686,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `fill:39`, `groundSettings:66`
 - `aerodrive/src/sim/params.zig` — Avião (arquivo da GUI) -> parâmetros do núcleo (`types.Params`), em Zig.
   tipos `Info:32`, `Coeffs:120`, `DryMass:356`
-  fn `area:49`, `span:59`, `mac:63`, `macLeadingEdge:78`, `firstSurface:98`, `references:104`, `props2d:126`, `coeffs:182`, `wingDownwash:204`, `dryMass:383`, `fill:453`, `setup:605`, `setupWith:611`, `calibrate:624`, `staticCharacteristics:649`
+  fn `area:49`, `span:59`, `mac:63`, `macLeadingEdge:78`, `firstSurface:98`, `references:104`, `props2d:126`, `coeffs:182`, `wingDownwash:204`, `dryMass:383`, `fill:453`, `setup:606`, `setupWith:612`, `calibrate:625`, `staticCharacteristics:650`
 - `aerodrive/src/sim/session.zig` — Sessão de voo: o que o jogador escolhe nos menus antes de voar (cenário, modo, vento, sloshing,
   tipos `Scenario:7`, `Landing:19`, `Mode:31`, `Session:43`
   fn `gearExtent:98`
@@ -760,8 +763,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/tabs/**
 
 - `aerosim/gui/tabs/config_tab.zig` — O painel da Montagem, o par de `info_html` (`config_tab.py`): tudo o que dá para saber da configuração sem
-  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:433`, `Spec:436`, `EditableList:716`, `Layout:719`, `NewPart:969`
-  fn `panel:49`, `components:345`, `specs:535`, `placeMounted:698`, `layout:736`, `addItem:820`, `removeItem:835`, `apply:874`, `add:1020`, `remove:1079`, `importPart:1132`, `componentOf:1150`, `moveBy:1161`, `setWind:1186`, `rename:1193`, `serialize:1199`
+  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:434`, `Spec:437`, `EditableList:717`, `Layout:720`, `NewPart:978`
+  fn `panel:49`, `components:346`, `specs:536`, `placeMounted:699`, `layout:737`, `addItem:829`, `removeItem:844`, `apply:883`, `add:1029`, `remove:1088`, `importPart:1141`, `componentOf:1159`, `moveBy:1170`, `setWind:1195`, `rename:1202`, `serialize:1208`
 
 **aerosim/gui/ui/**
 

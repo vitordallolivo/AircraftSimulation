@@ -17,6 +17,7 @@
 //!
 //!     τ_cr = k π² E/(12 (1 − ν²)) (t/h)²,  k = 5,34 + 4 (h/a)²  (a ≥ h)
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const fmath = @import("../math/fmath.zig");
 
 /// um material ortotrópico de placa: módulos na direção 1 (a da compressão) e 2, cisalhamento e Poisson ν12 (Pa)
@@ -43,7 +44,7 @@ fn bendingStiffness(material: Orthotropic, thickness: f64) struct { d11: f64, d2
 pub fn flatPlate(material: Orthotropic, length: f64, width: f64, thickness: f64) f64 {
     const stiffness = bendingStiffness(material, thickness);
     var lowest = std.math.inf(f64);
-    for (1..max_waves + 1) |waves| {
+    for (1..numerics.count(numerics.active.buckling_waves) + 1) |waves| {
         const ratio = @as(f64, @floatFromInt(waves)) * width / length;
         const value = stiffness.d11 * ratio * ratio + 2 * (stiffness.d12 + 2 * stiffness.d66) + stiffness.d22 / (ratio * ratio);
         lowest = @min(lowest, value);
@@ -60,10 +61,10 @@ pub fn curvedPanel(material: Orthotropic, length: f64, width: f64, thickness: f6
     const s12 = -material.poisson_12 / (material.modulus_1 * thickness);
     const s66 = 1 / (material.shear_modulus * thickness);
     var lowest = std.math.inf(f64);
-    for (1..max_waves + 1) |m| {
+    for (1..numerics.count(numerics.active.buckling_waves) + 1) |m| {
         const lambda = @as(f64, @floatFromInt(m)) * fmath.pi / length;
         const lambda2 = lambda * lambda;
-        for (1..max_waves + 1) |n| {
+        for (1..numerics.count(numerics.active.buckling_waves) + 1) |n| {
             const mu = @as(f64, @floatFromInt(n)) * fmath.pi / width;
             const mu2 = mu * mu;
             const plate = (stiffness.d11 * lambda2 * lambda2 + 2 * (stiffness.d12 + 2 * stiffness.d66) * lambda2 * mu2 + stiffness.d22 * mu2 * mu2) / (thickness * lambda2);

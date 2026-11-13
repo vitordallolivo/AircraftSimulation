@@ -5,6 +5,7 @@
 //! continuar de onde parou. O estado inteiro está em `Run` (POD): copiar seus bytes é
 //! o checkpoint.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const guidance = @import("../control/guidance.zig");
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
@@ -134,7 +135,7 @@ pub fn configure(inst: *Instance) ConfigError!void {
 /// 0,25 em 0,25°. É o estol de cada avião, não um número fixo: o alpha_max do piloto (11°) segura um monoplano que
 /// sai do chão a 14° e deixa passar uma asa que estola antes. Sem chegar a kCL até 30°: ap.alpha_max
 fn guardAlpha(params: *const types.Params) f64 {
-    const step = 0.25 * std.math.rad_per_deg;
+    const step = @max(numerics.active.guard_alpha_step, 0.01) * std.math.rad_per_deg;
     var al: f64 = 0;
     while (al <= 30.0 * std.math.rad_per_deg) : (al += step) {
         const sa = fmath.sincos(al);

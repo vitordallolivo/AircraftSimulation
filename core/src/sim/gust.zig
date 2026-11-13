@@ -9,6 +9,7 @@
 //! O registro sai em `log` (as mesmas linhas do `runner.run`): ângulo de ataque, arfagem, rolamento, o xCG
 //! (`xcg`, que anda quando o líquido balança) e o ângulo de cada pêndulo (`slosh_x`, `slosh_y`).
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const types = @import("../types.zig");
 const runner = @import("runner.zig");
 const trim = @import("trim.zig");
@@ -121,19 +122,25 @@ pub const settle_window = 1.0; // s
 const settle_alpha = 0.05 * std.math.pi / 180.0; // rad
 const settle_rate = 0.5 * std.math.pi / 180.0; // rad/s, de p, q e r
 const settle_liquid = 0.1 * std.math.pi / 180.0; // rad, de cada pêndulo
-const settle_cg = 0.05e-3; // m, do xCG
 
 /// a resposta estabilizou: no último `settle_window` o ângulo de ataque, o líquido e o xCG quase não mudam e as taxas
 /// de rotação são pequenas. A fugóide e a espiral, lentas, seguem depois disso; o que acabou foi a resposta rápida
 /// (curto período, dutch roll, rolamento e o balanço do líquido)
 pub fn settled(log: []const types.LogRow, n_tanks: usize, log_step: f64) bool {
-    const window: usize = @intFromFloat(@ceil(settle_window / log_step));
+    const refinement = &numerics.active;
+    const window: usize = @intFromFloat(@ceil(refinement.settle_window / log_step));
+    // os padrões ficam com a conta de sempre (o mesmo último bit); um valor da tela é convertido aqui
+    const radians = std.math.pi / 180.0;
+    const alpha_limit = if (refinement.settle_alpha == 0.05) settle_alpha else refinement.settle_alpha * radians;
+    const rate_limit = if (refinement.settle_rate == 0.5) settle_rate else refinement.settle_rate * radians;
+    const liquid_limit = if (refinement.settle_liquid == 0.1) settle_liquid else refinement.settle_liquid * radians;
+    const cg_limit = refinement.settle_cg;
     if (log.len < window + 1) return false;
     const recent = log[log.len - window ..];
     var low = recent[0];
     var high = recent[0];
     for (recent) |row| {
-        if (@abs(row.p) > settle_rate or @abs(row.q) > settle_rate or @abs(row.r) > settle_rate) return false;
+        if (@abs(row.p) > rate_limit or @abs(row.q) > rate_limit or @abs(row.r) > rate_limit) return false;
         low.alpha = @min(low.alpha, row.alpha);
         high.alpha = @max(high.alpha, row.alpha);
         low.xcg = @min(low.xcg, row.xcg);
@@ -145,9 +152,9 @@ pub fn settled(log: []const types.LogRow, n_tanks: usize, log_step: f64) bool {
             high.slosh_y[i] = @max(high.slosh_y[i], row.slosh_y[i]);
         }
     }
-    if (high.alpha - low.alpha > settle_alpha or high.xcg - low.xcg > settle_cg) return false;
+    if (high.alpha - low.alpha > alpha_limit or high.xcg - low.xcg > cg_limit) return false;
     for (0..n_tanks) |i| {
-        if (high.slosh_x[i] - low.slosh_x[i] > settle_liquid or high.slosh_y[i] - low.slosh_y[i] > settle_liquid) return false;
+        if (high.slosh_x[i] - low.slosh_x[i] > liquid_limit or high.slosh_y[i] - low.slosh_y[i] > liquid_limit) return false;
     }
     return true;
 }

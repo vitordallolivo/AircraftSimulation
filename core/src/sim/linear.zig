@@ -6,6 +6,7 @@
 //!   δẋ = A δx + B δu,   x = (u, v, w, p, q, r, φ, θ),   u = (δe, δa, δr, acelerador)
 //! ψ e a posição não entram (não mudam as forças com ρ constante).
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
 const state = @import("state.zig");
@@ -95,7 +96,7 @@ fn res6(body: *const Body, airspeed: f64, unknowns: [6]f64) [6]f64 {
 /// e então o látero-direcional é equilibrado o melhor possível. Sucesso = longitudinal equilibrado.
 fn full(body: *const Body, airspeed: f64, unknowns: *[6]f64) bool {
     var res = res6(body, airspeed, unknowns.*);
-    for (0..60) |_| {
+    for (0..numerics.count(numerics.active.equilibrium_iterations)) |_| {
         var nr: f64 = 0;
         for (res) |value| nr += value * value;
         if (nr < 1e-22) break;
@@ -121,7 +122,7 @@ fn full(body: *const Body, airspeed: f64, unknowns: *[6]f64) bool {
         const dz = gauss6(&normal) orelse return false;
         var fraction: f64 = 1.0;
         var better = false;
-        for (0..10) |_| { // passo amortecido
+        for (0..numerics.count(numerics.active.equilibrium_step_halvings)) |_| { // passo amortecido
             var zt = unknowns.*;
             for (0..6) |i| zt[i] += fraction * fmath.sat(dz[i], 0.1);
             const rt = res6(body, airspeed, zt);
@@ -208,7 +209,7 @@ pub fn linearize(params: *const types.Params, flags: *const state.Flags, airspee
         for (0..nl) |i| model.A[i * nl + j] = (fp[i] - fn_[i]) / (2 * step);
     }
     for (0..nu) |j| {
-        const step: f64 = 1e-5;
+        const step: f64 = numerics.active.linear_step;
         var up = uc;
         var um = uc;
         up[j] += step;
