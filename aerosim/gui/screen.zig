@@ -44,7 +44,7 @@ pub const Screen = struct {
     requirements_open: bool = false,
     pending_tab: ?usize = null, // aba=N da linha de comando, até as abas chegarem
     pending_run: bool = false, // acao=rodar, idem
-    pending_stage: [64]u8 = undefined, // acao=etapa:<botão>: aperta o botão da etapa quando ela abrir
+    pending_stage: [512]u8 = undefined, // acao=etapa:<botão>: aperta o botão da etapa quando ela abrir
     pending_stage_len: usize = 0,
     pending_file: [1024]u8 = undefined, // um perfil arrastado antes de as abas chegarem
     pending_file_len: usize = 0,

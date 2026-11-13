@@ -489,7 +489,7 @@ pub const Page = struct {
     started_at: i96 = 0,
     message: [240:0]u8 = [_:0]u8{0} ** 240,
     run_when_ready: bool = false, // "rodar" da linha de comando (prints): roda assim que os campos chegam
-    pending_act: [64]u8 = undefined, // "etapa:<botão>" da linha de comando: aperta o botão da etapa quando ela abrir
+    pending_act: [512]u8 = undefined, // "etapa:<botão>" da linha de comando: aperta o botão da etapa quando ela abrir
     pending_act_len: usize = 0,
     form_history: ui_kit.undo.History = .{}, // os valores do formulário de antes de cada edição (Ctrl+Z da análise)
     form_state: ?[]u8 = null, // os valores de agora, em JSON: o que entra no histórico na próxima edição
@@ -689,7 +689,8 @@ pub const Page = struct {
             page.run_when_ready = false;
             const key = page.pending_act[0..page.pending_act_len];
             page.pending_act_len = 0;
-            if (std.mem.startsWith(u8, key, "grade:")) page.gridCommand(key[6..]) else page.act(key, "");
+            // etapa:<botão>=<texto ou arquivo> manda o botão com o que ele pede (prints)
+            if (std.mem.startsWith(u8, key, "grade:")) page.gridCommand(key[6..]) else if (std.mem.indexOfScalar(u8, key, '=')) |equal| page.act(key[0..equal], key[equal + 1 ..]) else page.act(key, "");
         }
         // campo:<chave>=<valor> (prints): muda o campo e pede o formulário de novo antes de rodar
         if (page.kind == .simulation and page.pending_act_len > 0 and !page.working() and page.fields.len > 0) {

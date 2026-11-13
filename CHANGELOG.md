@@ -6,6 +6,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- Em Biblioteca → Perfis, a polar de cada perfil só existia no Reynolds do cruzeiro e vinha de um modelo que não
+  muda com o Reynolds. Agora dá para trazer as polares do XFLR5 ou do XFOIL, uma por Reynolds, e ver o perfil
+  selecionado em cada Reynolds de uma lista que o usuário edita: sustentação, polar de arrasto, eficiência e uma
+  tabela com o c_l máximo, o ângulo de estol e o c_d mínimo. Entre duas polares trazidas a curva é interpolada; fora
+  da faixa delas vale a mais próxima, tracejada e com aviso, porque nada é extrapolado.
 - Muitos ajustes de conta ficavam escondidos: quantas iterações cada método faz, que tolerância aceita, que passo e
   que grade usa. Agora todos ficam na tela, com o valor de antes como padrão, então nada muda até alguém mexer. Os
   de cada análise ficam nela mesma, numa janela que o botão "Refino dos Solvers" abre: os da própria análise e os
