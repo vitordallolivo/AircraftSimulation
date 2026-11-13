@@ -290,7 +290,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Declaration:11`
   fn `require:18`, `has:33`
 - `core/src/lib.zig` — O núcleo como módulo Zig (para programas em Zig, como o aerodrive): os mesmos tipos e funções
-  tipos `structures:45`, `optim:51`
+  tipos `structures:49`, `optim:55`
 - `core/src/limits.zig` — Limites de compilação. Toda a memória do núcleo é estática e dimensionada aqui:
   tipos `Group:18`
   fn `groupIndex:30`
@@ -341,8 +341,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Station:25`, `Aeroelastic:37`
   fn `flapDerivatives:49`, `divergencePressure:74`, `rollEffectiveness:94`, `analyze:128`
 - `core/src/loads/flutter.zig` — Flutter de uma semiasa: viga de elementos finitos (flexão e torção acopladas pela massa), reduzida aos primeiros
-  tipos `Element:40`, `ModePoint:53`, `FlutterResult:59`, `Modes:72`
-  fn `modes:152`, `theodorsen:201`, `pk:268`, `flutter:310`
+  tipos `Element:42`, `ModePoint:55`, `FlutterResult:61`, `Modes:74`
+  fn `modes:154`, `theodorsen:203`, `pk:270`, `flutter:312`
 - `core/src/loads/internal.zig` — Esforços internos ao longo da envergadura de uma semiasa (ou de um tubo de cauda), da ponta para a raiz: cortante,
   fn `shareByArea:27`, `efforts:35`, `deflection:56`, `twist:70`
 - `core/src/loads/llt.zig` — Linha sustentadora numérica (vórtices em ferradura) para a distribuição de carga ao longo da envergadura.
@@ -370,10 +370,14 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `SinCos:39`, `lut:83`, `ref:180`, `minimax:238`
   fn `optOn:22`, `mulAdd:31`, `SinLut:42`, `sincos:283`, `sin:287`, `cos:291`, `tan:295`, `atan:300`, `atan2:304`, `asin:308`, `acos:313`, `exp:318`, `log:322`, `pow:327`, `tanh:332`, `sqrt:336`, `hypot:340`, `sat:346`, `lim:350`, `sgn:354`, `wrap:358`
 - `core/src/math/fmath_test.zig` — Testes só das LUTs e aproximações (independentes de -Dfast_math: comparam `lut` com `ref`).
+- `core/src/math/interpolation.zig` — Interpolação polinomial num trecho [0, 1]: as funções de forma que dizem quanto cada valor nos extremos pesa num
+  fn `linear:13`, `linearSlope:18`, `hermite:23`, `hermiteCurvature:30`
 - `core/src/math/linalg.zig` — Álgebra linear densa de tamanho fixo: fatoração LU com pivoteamento parcial e de Cholesky, e as
   fn `luFactor:16`, `luSolve:41`, `cholesky:60`, `cholSolve:78`, `symEigen:95`, `generalEigen:142`, `solve:366`
 - `core/src/math/poly.zig` — Polinômio em duas variáveis de grau N gerado em comptime, na ordem dos ajustes do MATLAB
   fn `Poly2:11`
+- `core/src/math/quadrature.zig` — Integral numérica por Gauss-Legendre: ∫ f ≈ Σ w_i f(x_i), com n pontos x_i e pesos w_i escolhidos para a soma
+  fn `Rule:12`, `gaussLegendre:31`, `gaussLegendreUnit:39`
 - `core/src/math/vec.zig` — Vetores 3D em registradores SIMD (@Vector) e matrizes 3x3 por linhas.
   fn `v3:11`, `arr:15`, `splat:19`, `dot:23`, `norm:27`, `cross:31`, `mul:40`, `mulT:44`, `rotation:49`, `solve3:67`
 

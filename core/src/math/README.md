@@ -13,6 +13,8 @@ mostra a alternativa sem tabela para o seno. Depois vêm o polinômio de traçã
 | `vec.zig` | vetores 3D em registradores SIMD (`@Vector`), matrizes 3×3 por linhas, a matriz corpo → NED |
 | `linalg.zig` | álgebra linear de tamanho fixo: LU com pivoteamento parcial, Cholesky, as soluções de A x = b e os autovalores de uma matriz simétrica (Jacobi), para o aeroopt, e os de uma matriz qualquer (QR de Francis), para os polos |
 | `poly.zig` | polinômio em duas variáveis de grau N gerado em comptime (`Poly2`), na ordem do MATLAB |
+| `quadrature.zig` | integral numérica por Gauss-Legendre de n pontos: as raízes de Legendre e os pesos, calculados pelo compilador (`gaussLegendre`, `gaussLegendreUnit`) |
+| `interpolation.zig` | funções de forma num trecho [0, 1]: linear e Hermite cúbica, com as derivadas (as da viga) |
 | `fmath_test.zig` | erro de cada função contra a std em muitos pontos |
 
 As funções públicas usam `lut` ou `ref` conforme `-Dfast_math` (padrão: `lut`). As otimizações em avaliação

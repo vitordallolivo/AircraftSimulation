@@ -35,6 +35,10 @@ pub const flutter = @import("loads/flutter.zig");
 /// estol por estação: o VLM com a polar 2D de cada estação no seu Reynolds (correção de α)
 pub const stall = @import("loads/stall.zig");
 pub const vec = @import("math/vec.zig");
+/// integral numérica por Gauss-Legendre (pontos e pesos calculados pelo compilador)
+pub const quadrature = @import("math/quadrature.zig");
+/// funções de forma: linear e Hermite cúbica
+pub const interpolation = @import("math/interpolation.zig");
 pub const autotune = @import("control/autotune.zig");
 pub const linear = @import("sim/linear.zig");
 pub const static_stability = @import("sim/static.zig");

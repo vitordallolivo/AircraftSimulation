@@ -25,6 +25,8 @@ const std = @import("std");
 const numerics = @import("../numerics.zig");
 const fmath = @import("../math/fmath.zig");
 const linalg = @import("../math/linalg.zig");
+const quadrature = @import("../math/quadrature.zig");
+const interpolation_math = @import("../math/interpolation.zig");
 
 const Complex = std.math.Complex(f64);
 
@@ -76,19 +78,18 @@ pub const Modes = struct {
     shapes: [max_dofs][max_modes]f64 = undefined,
 };
 
-/// pontos e pesos de Gauss de 4 pontos em [0, 1]
-const gauss_points = [4]f64{ 0.5 - 0.5 * 0.8611363115940526, 0.5 - 0.5 * 0.3399810435848563, 0.5 + 0.5 * 0.3399810435848563, 0.5 + 0.5 * 0.8611363115940526 };
-const gauss_weights = [4]f64{ 0.5 * 0.3478548451374538, 0.5 * 0.6521451548625461, 0.5 * 0.6521451548625461, 0.5 * 0.3478548451374538 };
+/// Gauss-Legendre de 4 pontos em [0, 1]: exato até o grau 7, e o maior produto de funções de forma é de grau 6
+const gauss = quadrature.gaussLegendreUnit(4);
+const gauss_points = gauss.points;
+const gauss_weights = gauss.weights;
 
 /// funções de forma no ponto `xi` ∈ [0, 1] de um elemento de comprimento `length`: Hermite (w1, w1', w2, w2') e
 /// suas segundas derivadas em x, e as lineares da torção (θ1, θ2)
 fn shape(xi: f64, length: f64) struct { bending: [4]f64, curvature: [4]f64, torsion: [2]f64 } {
-    const xi2 = xi * xi;
-    const xi3 = xi2 * xi;
     return .{
-        .bending = .{ 1 - 3 * xi2 + 2 * xi3, length * (xi - 2 * xi2 + xi3), 3 * xi2 - 2 * xi3, length * (xi3 - xi2) },
-        .curvature = .{ (-6 + 12 * xi) / (length * length), (-4 + 6 * xi) / length, (6 - 12 * xi) / (length * length), (6 * xi - 2) / length },
-        .torsion = .{ 1 - xi, xi },
+        .bending = interpolation_math.hermite(xi, length),
+        .curvature = interpolation_math.hermiteCurvature(xi, length),
+        .torsion = interpolation_math.linear(xi),
     };
 }
 
@@ -105,7 +106,8 @@ fn elementDofs(index: usize) [6]?usize {
     return out;
 }
 
-/// os 6 graus do elemento na ordem (w1, w1', θ1, w2, w2', θ2) a partir das funções de forma: o vetor de w e o de θ
+/// espalha as funções de forma nos 6 graus do elemento, na ordem (w1, w1', θ1, w2, w2', θ2): a flexão w só depende
+/// de (w, w') e a torção θ só de θ, então cada vetor tem zero nos graus do outro
 fn interpolation(form: anytype) struct { w: [6]f64, theta: [6]f64 } {
     return .{
         .w = .{ form.bending[0], form.bending[1], 0, form.bending[2], form.bending[3], 0 },

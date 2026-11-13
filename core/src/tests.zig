@@ -14,6 +14,8 @@ comptime {
         _ = @import("math/fmath_test.zig");
         _ = @import("math/vec.zig");
         _ = @import("math/poly.zig");
+        _ = @import("math/quadrature.zig");
+        _ = @import("math/interpolation.zig");
     }
 }
 
