@@ -13,26 +13,17 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
 
-    // as grandezas do projeto (os nomes das restrições), de ../aerosim/design/registry.zig, que só usa a std
-    const registry = b.createModule(.{
-        .root_source_file = b.path("../aerosim/design/registry.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // o catálogo de motores, hélices e baterias (../aerosim/model/catalog.zig, só a std): as listas do problema
-    const catalog = b.createModule(.{
-        .root_source_file = b.path("../aerosim/model/catalog.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
+    // ---- o projeto da sprint e as etapas dele (../aerosim/design), com o que elas pedem: o núcleo, o modelo do
+    // avião do AeroDrive, o contrato das análises, o manager, o catálogo e os modelos padrão (como no aerosim)
+    const design = designModule(b, target, optimize);
+    const catalog = design.import_table.get("catalog").?;
 
     // ---- testes: só o que não abre janela (a rodada de exemplo, o problema, o catálogo e os resumos)
     const tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("tests.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{ .{ .name = "registry", .module = registry }, .{ .name = "catalog", .module = catalog } },
+        .imports = &.{ .{ .name = "design", .module = design }, .{ .name = "catalog", .module = catalog } },
     }) });
     b.step("test", "Testes (sem janela)").dependOn(&b.addRunArtifact(tests).step);
 
@@ -62,7 +53,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "raylib", .module = raylib },
             .{ .name = "ui", .module = ui },
-            .{ .name = "registry", .module = registry },
+            .{ .name = "design", .module = design },
             .{ .name = "catalog", .module = catalog },
         },
     });
@@ -86,6 +77,46 @@ pub fn build(b: *std.Build) void {
     shot.addArg("--shot");
     if (b.args) |args| shot.addArgs(args);
     b.step("shot", "Desenha a tela e salva uma imagem").dependOn(&shot.step);
+}
+
+/// o módulo `design` do aerosim (design/dims.zig: o projeto, o registro e as etapas), montado como no
+/// `aerosim/build.zig`
+fn designModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
+    const core = b.dependency("aerosim", .{ .target = target, .release = true }).module("aerosim");
+    const fuzz_options = b.addOptions(); // o módulo de fuzzing do AeroDrive pede estas opções
+    fuzz_options.addOption(usize, "fuzz_iterations", 2000);
+    fuzz_options.addOption(u64, "fuzz_seed", 1);
+    const aircraft_model = b.createModule(.{ .root_source_file = b.path("../aerodrive/src/aircraft_model.zig"), .target = target, .optimize = optimize });
+    aircraft_model.addOptions("build_options", fuzz_options);
+    aircraft_model.addImport("aerosim", core);
+    const simulation = b.createModule(.{ .root_source_file = b.path("../aerosim/interfaces/simulation.zig"), .target = target, .optimize = optimize, .imports = &.{
+        .{ .name = "aerosim", .module = core },
+        .{ .name = "aircraft_model", .module = aircraft_model },
+    } });
+    const catalog = b.createModule(.{ .root_source_file = b.path("../aerosim/model/catalog.zig"), .target = target, .optimize = optimize });
+    const manager = b.createModule(.{ .root_source_file = b.path("../aerosim/manager/manager.zig"), .target = target, .optimize = optimize, .imports = &.{
+        .{ .name = "aerosim", .module = core },
+        .{ .name = "aircraft_model", .module = aircraft_model },
+        .{ .name = "simulation", .module = simulation },
+        .{ .name = "catalog", .module = catalog },
+    } });
+    const test_options = b.addOptions();
+    test_options.addOption(bool, "slow", false);
+    manager.addOptions("test_options", test_options);
+    const data_sources = b.createModule(.{ .root_source_file = b.path("../aerosim/data/sources.zig"), .target = target, .optimize = optimize, .imports = &.{
+        .{ .name = "aerosim", .module = core },
+        .{ .name = "catalog", .module = catalog },
+    } });
+    const templates = b.createModule(.{ .root_source_file = b.path("../aerosim/model/templates.zig"), .target = target, .optimize = optimize });
+    return b.createModule(.{ .root_source_file = b.path("../aerosim/design/dims.zig"), .target = target, .optimize = optimize, .imports = &.{
+        .{ .name = "aerosim", .module = core },
+        .{ .name = "aircraft_model", .module = aircraft_model },
+        .{ .name = "manager", .module = manager },
+        .{ .name = "simulation", .module = simulation },
+        .{ .name = "catalog", .module = catalog },
+        .{ .name = "templates", .module = templates },
+        .{ .name = "data_sources", .module = data_sources },
+    } });
 }
 
 /// Navegador: o programa vira uma biblioteca estática em wasm e o emcc (do emsdk que vem com o raylib-zig) liga tudo

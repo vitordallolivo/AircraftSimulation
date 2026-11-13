@@ -3,8 +3,6 @@
 //! condições e das regras de projeto. As etapas e o Mini-MDO leem o projeto (`store.Project`) por aqui.
 const std = @import("std");
 const store = @import("store.zig");
-/// o projeto da sprint (para quem importa só o registro, como o aeroopt)
-pub const project_store = store;
 
 const ObjectMap = std.json.ObjectMap;
 const Value = std.json.Value;

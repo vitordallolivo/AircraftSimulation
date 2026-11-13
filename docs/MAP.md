@@ -839,6 +839,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aeroopt/build.zig` — Interface do aeroopt em Zig (raylib e raygui). As peças comuns das telas vêm da interface do aerosim
   fn `build:12`
+- `aeroopt/evaluate.zig` — Um candidato do aeroopt avaliado em Zig (o `SurfaceSizing.point` do Python, sem a geometria e a estabilidade
+  tipos `Assignment:15`, `Point:18`
+  fn `assign:31`, `point:56`
 - `aeroopt/inputs.zig` — O catálogo das entradas do aeroopt: tudo o que se escolhe nas etapas do projeto (a chave do `.opt.json`, o
   tipos `Group:8`, `Source:37`, `Input:40`
   fn `find:150`, `label:156`, `groupOf:161`
@@ -850,14 +853,14 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `VariableKind:15`, `Comparison:40`, `Variable:65`, `Constraint:76`, `Problem:85`
   fn `parse:127`, `load:153`, `write:159`
 - `aeroopt/problem_panel.zig` — A esquerda do aeroopt: o projeto da sprint, abrir e gravar o problema (`.opt.json`), um botão por parte do
-  tipos `Request:43`, `Panel:48`
+  tipos `Request:44`, `Panel:49`
 - `aeroopt/project_link.zig` — O problema e o projeto da sprint: o valor que o avião tem em cada entrada (a coluna "valor do avião"), o que
-  fn `field:25`, `valueText:33`, `valueNumber:45`, `available:56`, `fromProject:116`, `foldBounds:156`
+  fn `field:26`, `valueText:34`, `valueNumber:46`, `available:57`, `fromProject:117`, `foldBounds:157`
 - `aeroopt/screen.zig` — A tela do aeroopt: à esquerda o problema (`problem_panel.zig`: o projeto, abrir e gravar o `.opt.json`, um botão
   tipos `Screen:18`
 - `aeroopt/summary.zig` — O que a esquerda do aeroopt mostra do problema sem desenhar nada: os nomes dos métodos de cada etapa, as
-  tipos `Part:12`, `Method:43`
-  fn `isolate:69`, `categoryLabel:78`, `hasCategory:83`, `choiceList:91`, `methodIndex:99`, `methodLabel:104`, `section_of:109`, `text:114`, `number:119`, `boolean:128`, `writeSummary:151`
+  tipos `Part:13`, `Method:44`
+  fn `isolate:70`, `categoryLabel:79`, `hasCategory:84`, `choiceList:92`, `methodIndex:100`, `methodLabel:105`, `section_of:110`, `text:115`, `number:120`, `boolean:129`, `writeSummary:152`
 - `aeroopt/tests.zig` — Os testes sem janela da interface do aeroopt: a rodada de exemplo, o problema (`.opt.json`), o catálogo das
 
 

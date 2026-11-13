@@ -119,7 +119,7 @@ const Swap = struct {
 };
 
 /// o ponto de projeto acoplado (`design_point`): a massa de projeto anda até o MTOW pela pista
-fn designPoint(context: *stages.Context, memory: std.mem.Allocator, power: *const ObjectMap) !?struct { assembled: *power_stage.Assembled, mass: f64, converged: bool } {
+pub fn designPoint(context: *stages.Context, memory: std.mem.Allocator, power: *const ObjectMap) !?struct { assembled: *power_stage.Assembled, mass: f64, converged: bool } {
     const project = &context.project;
     const requirements = project.section("requirements");
     const tolerance = registry.fieldNumber(project.section("rules"), &registry.rule_fields, "ref_massa_tol");
@@ -161,8 +161,8 @@ fn designPoint(context: *stages.Context, memory: std.mem.Allocator, power: *cons
     return .{ .assembled = last.?, .mass = final[0], .converged = history.items.len > 1 and std.math.isFinite(final[1]) and @abs(final[1] - final[0]) < tolerance };
 }
 
-/// viável: converge e a estabilidade fecha nessa massa (`feasibility`)
-fn feasibility(context: *stages.Context, memory: std.mem.Allocator, assembled: *const power_stage.Assembled, converged: bool, set_params: *const ObjectMap) ![]const u8 {
+/// viável: converge e a estabilidade fecha nessa massa (`feasibility`); devolve os motivos (vazio: viável)
+pub fn feasibility(context: *stages.Context, memory: std.mem.Allocator, assembled: *const power_stage.Assembled, converged: bool, set_params: *const ObjectMap) ![]const u8 {
     var why: std.ArrayList(u8) = .empty;
     const Add = struct {
         fn add(list: *std.ArrayList(u8), mem: std.mem.Allocator, text: []const u8) !void {

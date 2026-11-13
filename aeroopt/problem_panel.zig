@@ -9,12 +9,13 @@ const widgets = ui_kit.widgets;
 const dialogs = ui_kit.dialogs;
 const table = ui_kit.table;
 const form_mod = ui_kit.form;
-const registry = @import("registry");
+const design = @import("design");
+const registry = design.registry;
 const problem_mod = @import("problem.zig");
 const inputs = @import("inputs.zig");
 const summaries = @import("summary.zig");
 const link = @import("project_link.zig");
-const store = registry.project_store;
+const store = design.store;
 
 const Problem = problem_mod.Problem;
 const Value = std.json.Value;

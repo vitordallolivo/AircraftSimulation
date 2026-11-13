@@ -12,6 +12,10 @@ pub const store = @import("store.zig");
 pub const registry = @import("registry.zig");
 /// as etapas da sprint que já estão em Zig (a tela chama `stages.handle`)
 pub const stages = @import("stages.zig");
+/// o ponto de projeto acoplado e a viabilidade dele (o estudo de Motores; o aeroopt avalia cada candidato por aqui)
+pub const study = @import("stage_study.zig");
+/// a montagem do avião a partir do conjunto e dos motores
+pub const power = @import("stage_power.zig");
 const aircraft_model = @import("aircraft_model");
 const manager = @import("manager");
 

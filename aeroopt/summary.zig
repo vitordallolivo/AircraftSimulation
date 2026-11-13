@@ -2,7 +2,8 @@
 //! categorias, os resumos ao lado dos botões e o "isolar" de um grupo de variáveis (separado da tela para os testes
 //! rodarem sem janela).
 const std = @import("std");
-const registry = @import("registry");
+const design = @import("design");
+const registry = design.registry;
 const problem_mod = @import("problem.zig");
 const inputs = @import("inputs.zig");
 

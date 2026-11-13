@@ -3,12 +3,13 @@
 //! das variáveis do projeto e a restrição que vira limite de uma variável (como `from_project`, `available` e
 //! `fold_bounds` do aeroopt em Python).
 const std = @import("std");
-const registry = @import("registry");
+const design = @import("design");
+const registry = design.registry;
 const catalog = @import("catalog");
 const problem_mod = @import("problem.zig");
 const inputs = @import("inputs.zig");
 
-const store = registry.project_store;
+const store = design.store;
 const Problem = problem_mod.Problem;
 const Value = std.json.Value;
 
