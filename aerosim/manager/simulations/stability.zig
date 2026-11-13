@@ -2815,7 +2815,14 @@ test "campos e resultado no JSON da ponte; o líquido livre mexe o xCG e o trava
     try writeFields(&text.writer, &loaded.ac, .{});
     const form = try std.json.parseFromSlice(std.json.Value, gpa, text.written(), .{});
     defer form.deinit();
-    try testing.expectEqual(@as(usize, 17 + simulation.method_params.len), form.value.object.get("params").?.array.items.len);
+    // os campos da análise e dos métodos; os de "Refino dos Solvers" (trimagem, equilíbrio, rajada) vêm à parte
+    var own_fields: usize = 0;
+    var refine_fields: usize = 0;
+    for (form.value.object.get("params").?.array.items) |param| {
+        if (std.mem.startsWith(u8, param.object.get("key").?.string, simulation.refine_key)) refine_fields += 1 else own_fields += 1;
+    }
+    try testing.expectEqual(@as(usize, 18 + simulation.method_params.len), own_fields); // 18 com os instantes dos polos
+    try testing.expect(refine_fields > 0);
     // a tabela dos tanques, com a massa do líquido de cada um, e a vista 3D com os tanques e o CG
     const grid = form.value.object.get("grids").?.array.items[0];
     const first_row = grid.object.get("rows").?.array.items[0].array.items;
