@@ -306,7 +306,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `main:433`
 - `core/src/tests.zig` — Todos os testes do núcleo, por grupo. `zig build test` roda tudo; `-Dgrupo=math` roda só um grupo e
 - `core/src/types.zig` — Estruturas trocadas com o Python (C ABI, `extern struct`).
-  tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `LiftingLineMethod:56`, `Refinement:68`, `Surface:78`, `GroundTable:117`, `PropUnit:134`, `GearKind:176`, `Gear:186`, `TankShape:195`, `Tank:208`, `Segment:224`, `EventKind:245`, `Event:254`, `Pad:258`, `Payload:267`, `Environment:278`, `Takeoff:290`, `Pilot:308`, `Autopilot:318`, `AeroTable:367`, `LltCache:400`, `Params:414`, `PanelState:510`, `SweepSummary:530`, `Events:538`, `LogRow:580`, `AeroCoeffs:694`, `PropPoint:709`, `MassProps:721`, `TrimKind:729`, `TrimPoint:740`, `PerfRow:757`
+  tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `LiftingLineMethod:56`, `Refinement:68`, `Surface:78`, `GroundSettings:116`, `GroundTable:132`, `PropUnit:149`, `GearKind:191`, `Gear:201`, `TankShape:210`, `Tank:223`, `Segment:239`, `EventKind:260`, `Event:269`, `Pad:273`, `Payload:282`, `Environment:293`, `Takeoff:305`, `Pilot:323`, `Autopilot:333`, `AeroTable:382`, `LltCache:415`, `Params:429`, `PanelState:526`, `SweepSummary:546`, `Events:554`, `LogRow:596`, `AeroCoeffs:710`, `PropPoint:725`, `MassProps:737`, `TrimKind:745`, `TrimPoint:756`, `PerfRow:773`
 
 **core/src/collision/**
 
@@ -379,8 +379,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/modifiers/flapmoment.zig` — Momento próprio do comando (flape, profundor, elevon) no quarto de corda da faixa.
   fn `thetaOf:16`, `cmDelta:29`
 - `core/src/modifiers/ground.zig` — Efeito solo: métodos para o fator do arrasto induzido perto do chão.
-  tipos `Effect:119`
-  fn `factor:25`, `mccormick:33`, `buildTable:71`, `lookup:128`
+  tipos `Effect:120`
+  fn `factor:25`, `mccormick:33`, `buildTable:65`, `lookup:129`
 - `core/src/modifiers/interference.zig` — Interferência entre as asas da configuração no modelo de faixas, para quantas asas houver.
   fn `active:29`, `induced:39`
 - `core/src/modifiers/mod.zig` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro sem mexer no resto
@@ -680,10 +680,10 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerodrive/src/sim/mission.zig` — Percurso -> segmentos, eventos e mesas/plataformas do núcleo (`aerosim/model/mission.py` e
   fn `autoRadius:13`, `segments:20`, `events:76`, `pads:92`
 - `aerodrive/src/sim/modifiers.zig` — Os modificadores do arquivo do avião -> os campos do núcleo (`Params.ground`, `Params.mods`), em Zig.
-  fn `fill:39`
+  fn `fill:39`, `groundSettings:66`
 - `aerodrive/src/sim/params.zig` — Avião (arquivo da GUI) -> parâmetros do núcleo (`types.Params`), em Zig.
-  tipos `Info:30`, `Coeffs:118`, `DryMass:354`
-  fn `area:47`, `span:57`, `mac:61`, `macLeadingEdge:76`, `firstSurface:96`, `references:102`, `props2d:124`, `coeffs:180`, `wingDownwash:202`, `dryMass:381`, `fill:451`, `setup:603`, `setupWith:609`, `calibrate:622`, `staticCharacteristics:647`
+  tipos `Info:32`, `Coeffs:120`, `DryMass:356`
+  fn `area:49`, `span:59`, `mac:63`, `macLeadingEdge:78`, `firstSurface:98`, `references:104`, `props2d:126`, `coeffs:182`, `wingDownwash:204`, `dryMass:383`, `fill:453`, `setup:605`, `setupWith:611`, `calibrate:624`, `staticCharacteristics:649`
 - `aerodrive/src/sim/session.zig` — Sessão de voo: o que o jogador escolhe nos menus antes de voar (cenário, modo, vento, sloshing,
   tipos `Scenario:7`, `Landing:19`, `Mode:31`, `Session:43`
   fn `gearExtent:98`
@@ -760,8 +760,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/tabs/**
 
 - `aerosim/gui/tabs/config_tab.zig` — O painel da Montagem, o par de `info_html` (`config_tab.py`): tudo o que dá para saber da configuração sem
-  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:388`, `Spec:391`, `EditableList:668`, `Layout:671`, `NewPart:904`
-  fn `panel:49`, `components:345`, `specs:490`, `placeMounted:650`, `layout:688`, `addItem:772`, `removeItem:787`, `apply:826`, `add:955`, `remove:1014`, `importPart:1067`, `componentOf:1085`, `moveBy:1096`, `setWind:1121`, `rename:1128`, `serialize:1134`
+  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:433`, `Spec:436`, `EditableList:716`, `Layout:719`, `NewPart:969`
+  fn `panel:49`, `components:345`, `specs:535`, `placeMounted:698`, `layout:736`, `addItem:820`, `removeItem:835`, `apply:874`, `add:1020`, `remove:1079`, `importPart:1132`, `componentOf:1150`, `moveBy:1161`, `setWind:1186`, `rename:1193`, `serialize:1199`
 
 **aerosim/gui/ui/**
 
@@ -805,10 +805,10 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Kind:12`, `Column:17`, `Cell:25`, `Edit:38`, `EditTable:60`
   fn `height:55`
 - `aerosim/gui/ui/tex.zig` — Um pedaço de TeX nos textos dos gráficos: o que fica entre `$...$` vira matemática, com índice (`C_L`,
-  fn `draw:37`, `drawRotated:48`, `width:58`, `plain:67`
+  fn `draw:54`, `drawRotated:65`, `width:75`, `plain:84`
 - `aerosim/gui/ui/theme.zig` — O visual da interface, o mesmo do AeroDrive: fundo claro, cantos arredondados, azul nos títulos e pouco texto.
-  tipos `Palette:17`, `Fonts:122`, `Logo:166`
-  fn `hex:7`, `withAlpha:12`, `plotColor:63`, `spacing:151`, `text:156`, `textWidth:161`
+  tipos `Palette:17`, `Fonts:186`, `Logo:236`
+  fn `hex:7`, `withAlpha:12`, `plotColor:63`, `spacing:219`, `text:224`, `textWidth:230`
 - `aerosim/gui/ui/toast.zig` — Os avisos por cima da janela: uma caixa laranja no canto de cima à direita, que some sozinha depois de uns
   fn `show:26`, `count:44`, `takeClick:49`, `draw:60`
 - `aerosim/gui/ui/ui.zig` — As peças comuns das telas do aerosim e do aeroopt em Zig: cores e fontes, formas, widgets, formulário, gráfico

@@ -47,6 +47,7 @@ pub fn fill(aircraft: *const model.Aircraft, params: *types.Params) void {
             .ground => |method| if (!ground_found) {
                 params.ground = method;
                 ground_found = true;
+                if (method == .vlm_image) params.ground_settings = groundSettings(modifier);
             },
             .additive => |kind| {
                 if (count >= limits.max_mods) continue;
@@ -58,6 +59,19 @@ pub fn fill(aircraft: *const model.Aircraft, params: *types.Params) void {
         }
     }
     params.n_mod = @intCast(count);
+}
+
+/// a malha, as alturas e os α da tabela do chão pelo VLM ("malha_corda", "malha_envergadura", "altura_1".."altura_9"
+/// em envergaduras, "alpha_1".."alpha_6" e "alpha_induzido" em graus); o que falta fica no padrão do núcleo
+pub fn groundSettings(modifier: *const model.Modifier) types.GroundSettings {
+    var settings: types.GroundSettings = .{};
+    settings.chordwise = @intFromFloat(@round(modifier.value("malha_corda", @floatFromInt(settings.chordwise))));
+    settings.spanwise = @intFromFloat(@round(modifier.value("malha_envergadura", @floatFromInt(settings.spanwise))));
+    var name: [16]u8 = undefined;
+    for (&settings.heights, 1..) |*height, k| height.* = modifier.value(std.fmt.bufPrint(&name, "altura_{d}", .{k}) catch unreachable, height.*);
+    for (&settings.alphas, 1..) |*alpha, k| alpha.* = modifier.value(std.fmt.bufPrint(&name, "alpha_{d}", .{k}) catch unreachable, alpha.*);
+    settings.induced_alpha = modifier.value("alpha_induzido", settings.induced_alpha);
+    return settings;
 }
 
 /// um efeito a mais como item do núcleo; null quando não pega nenhum painel

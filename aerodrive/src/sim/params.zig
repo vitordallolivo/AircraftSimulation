@@ -15,6 +15,8 @@ const v3 = @import("../math/vec3.zig");
 const mission = @import("mission.zig");
 const methods = @import("methods.zig");
 const modifiers = @import("modifiers.zig");
+/// a malha, as alturas e os α da tabela do chão lidos de um modificador (para a GUI mostrar os valores em uso)
+pub const groundSettings = modifiers.groundSettings;
 const fz = @import("../util/fuzz.zig");
 
 const types = core.types;

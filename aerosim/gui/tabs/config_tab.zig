@@ -389,6 +389,33 @@ const ground_kind_titles = blk: {
 };
 
 /// o índice do método do chão de um modificador, ou null se ele não é do chão
+/// os ajustes da tabela do chão pelo VLM: a malha, as alturas (em envergaduras) e os α, com os valores em uso
+fn groundTableFields(memory: std.mem.Allocator, list: *std.ArrayList(Spec), modifier: *const model.Modifier, target: usize) !void {
+    const settings = params.groundSettings(modifier);
+    try list.append(memory, .{ .name = "malha_corda", .label = "painéis na corda", .kind = .integer, .number = @floatFromInt(settings.chordwise), .target = target, .help = "a malha do VLM com o chão espelhado: painéis na corda de cada faixa (1 a 8)" });
+    try list.append(memory, .{ .name = "malha_envergadura", .label = "painéis na envergadura", .kind = .integer, .number = @floatFromInt(settings.spanwise), .target = target, .help = "painéis na envergadura de cada faixa (as faixas já dividem a asa); painéis na corda × na envergadura até 8" });
+    try list.append(memory, .{ .name = "alturas", .label = "alturas", .unit = "b", .kind = .text, .text = try joined(memory, &settings.heights), .target = target, .help = "9 alturas acima da do avião parado no trem, em envergaduras, crescentes, separadas por ;" });
+    try list.append(memory, .{ .name = "alphas", .label = "ângulos α", .unit = "°", .kind = .text, .text = try joined(memory, &settings.alphas), .target = target, .help = "6 ângulos de ataque, crescentes, separados por ;" });
+    try list.append(memory, .{ .name = "alpha_induzido", .label = "α do induzido", .unit = "°", .kind = .number, .number = settings.induced_alpha, .target = target, .help = "o fator do arrasto induzido é medido na coluna de α mais perto deste (C_L longe de zero)" });
+}
+
+fn joined(memory: std.mem.Allocator, values: []const f64) ![]const u8 {
+    var text: std.Io.Writer.Allocating = .init(memory);
+    for (values, 0..) |value, k| try text.writer.print("{s}{d}", .{ if (k > 0) "; " else "", value });
+    return text.written();
+}
+
+/// escreve os números de `text` (separados por ; ou espaço) como "prefixo_1", "prefixo_2"... nos ajustes do modificador
+fn putIndexed(memory: std.mem.Allocator, settings: *std.json.ObjectMap, prefix: []const u8, text: []const u8, count: usize) !void {
+    var parts = std.mem.tokenizeAny(u8, text, "; \t");
+    var k: usize = 1;
+    while (parts.next()) |part| : (k += 1) {
+        if (k > count) break;
+        const value = std.fmt.parseFloat(f64, std.mem.trim(u8, part, ",")) catch continue;
+        try settings.put(memory, try std.fmt.allocPrint(memory, "{s}_{d}", .{ prefix, k }), .{ .float = value });
+    }
+}
+
 fn groundKindIndex(kind: []const u8) ?usize {
     for (ground_kinds, 0..) |known, i| if (std.mem.eql(u8, known[0], kind)) return i;
     return null;
@@ -521,6 +548,7 @@ pub fn specs(memory: std.mem.Allocator, aircraft: *const Aircraft, component: Co
                 try list.append(memory, .{ .name = "enabled", .label = name, .kind = .toggle, .checked = modifier.enabled, .target = i, .help = modifier.kind });
                 // o efeito do chão: o método que o voo usa
                 if (groundKindIndex(modifier.kind)) |current| try list.append(memory, .{ .name = "kind", .label = "método do chão", .kind = .choice, .text = ground_kinds[current][1], .choices = &ground_kind_titles, .target = i, .help = "McCormick (fórmula empírica): só reduz o arrasto induzido perto do chão. VLM com imagem (malha de vórtices espelhada no chão): muda a sustentação, o induzido e o momento, por uma tabela montada uma vez ao carregar o avião. Compare os dois em Aerodinâmica → Analisar → Efeito do chão" });
+                if (std.mem.eql(u8, modifier.kind, ground_kinds[1][0])) try groundTableFields(memory, &list, &modifier, i);
             }
         },
         inline else => |part| try fieldsOf(memory, &list, @field(aircraft, @tagName(part)), exclude),
@@ -920,6 +948,17 @@ fn applyModifiers(memory: std.mem.Allocator, document: *std.json.Value, fields: 
             for (ground_kinds) |known| if (std.mem.eql(u8, known[1], spec.text)) {
                 try items[index].object.put(memory, "kind", .{ .string = known[0] });
             };
+            continue;
+        }
+        const numbered = std.mem.startsWith(u8, spec.name, "malha_") or std.mem.eql(u8, spec.name, "alpha_induzido");
+        const listed = std.mem.eql(u8, spec.name, "alturas") or std.mem.eql(u8, spec.name, "alphas");
+        if (numbered or listed) {
+            const slot = try items[index].object.getOrPut(memory, "params");
+            if (!slot.found_existing or slot.value_ptr.* != .object) slot.value_ptr.* = .{ .object = .empty };
+            const settings = &slot.value_ptr.object;
+            if (numbered) try settings.put(memory, spec.name, .{ .float = spec.number });
+            if (std.mem.eql(u8, spec.name, "alturas")) try putIndexed(memory, settings, "altura", spec.text, core.types.GroundTable.heights);
+            if (std.mem.eql(u8, spec.name, "alphas")) try putIndexed(memory, settings, "alpha", spec.text, core.types.GroundTable.alphas);
             continue;
         }
         try items[index].object.put(memory, "enabled", .{ .bool = spec.checked });

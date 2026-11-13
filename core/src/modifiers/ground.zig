@@ -35,14 +35,8 @@ pub inline fn mccormick(height: f64, span: f64) f64 {
     return r16 * r16 / (1.0 + r16 * r16);
 }
 
-/// a malha do VLM da tabela: 2 painéis na corda de cada faixa (as faixas já dividem a envergadura)
-const table_grid: vlm.Grid = .{ .chordwise = 2, .spanwise = 1 };
-const max_panels = limits.max_surfaces * 2;
-/// as alturas da tabela acima da do avião parado no trem, em envergaduras, e os α (graus)
-const lift_heights = [types.GroundTable.heights]f64{ 0, 0.03, 0.07, 0.12, 0.2, 0.35, 0.6, 1.2, 3.0 };
-const table_alphas = [types.GroundTable.alphas]f64{ -4, 0, 4, 8, 12, 16 };
-/// o α (graus) em que o fator do induzido é medido (C_L longe de zero)
-const induced_alpha = 8.0;
+/// o máximo de painéis da tabela (malha e alturas vêm de `Params.ground_settings`): até 8 painéis por faixa
+const max_panels = limits.max_surfaces * 8;
 
 /// a memória do VLM da tabela, uma por thread (a conta roda uma vez, ao configurar)
 threadlocal var work_panels: [max_panels]vlm.Panel = undefined;
@@ -75,9 +69,16 @@ pub fn buildTable(params: *types.Params) vlm.Error!void {
     const cg = vec.v3(params.r_dry);
     const table = &params.ground_table;
     const width = types.GroundTable.alphas;
+    const settings = &params.ground_settings;
+    const table_grid: vlm.Grid = .{ .chordwise = @intCast(@max(settings.chordwise, 1)), .spanwise = @intCast(@max(settings.spanwise, 1)) };
+    if (vlm.panelCount(params, table_grid) > max_panels) return error.TooSmall;
     const rest = restingHeight(params);
-    for (lift_heights, 0..) |ratio, i| table.height[i] = rest + ratio * params.bref;
-    for (table_alphas, 0..) |alpha_degrees, j| table.alpha[j] = alpha_degrees * std.math.pi / 180.0;
+    for (settings.heights, 0..) |ratio, i| table.height[i] = rest + ratio * params.bref;
+    for (settings.alphas, 0..) |alpha_degrees, j| table.alpha[j] = alpha_degrees * std.math.pi / 180.0;
+    var induced_column: usize = 0;
+    for (settings.alphas, 0..) |alpha_degrees, j| {
+        if (@abs(alpha_degrees - settings.induced_alpha) < @abs(settings.alphas[induced_column] - settings.induced_alpha)) induced_column = j;
+    }
     for (table.alpha, 0..) |alpha, j| {
         const free = try vlm.groundCoefficients(params, table_grid, alpha, std.math.inf(f64), cg, buffers);
         const free_elevator = try vlm.groundCoefficientsWith(params, table_grid, alpha, std.math.inf(f64), cg, elevator_step, buffers);
@@ -96,7 +97,7 @@ pub fn buildTable(params: *types.Params) vlm.Error!void {
                         table.moment[cell] = table.moment[cell + width];
                         table.lift_elevator[cell] = table.lift_elevator[cell + width];
                         table.moment_elevator[cell] = table.moment_elevator[cell + width];
-                        if (table_alphas[j] == induced_alpha) table.induced[row] = table.induced[row + 1];
+                        if (j == induced_column) table.induced[row] = table.induced[row + 1];
                     }
                     continue;
                 },
@@ -108,7 +109,7 @@ pub fn buildTable(params: *types.Params) vlm.Error!void {
             const near_elevator = try vlm.groundCoefficientsWith(params, table_grid, alpha, table.height[row] + origin_below_cg, cg, elevator_step, buffers);
             table.lift_elevator[cell] = ((near_elevator.CL - free_elevator.CL) - table.lift[cell]) / elevator_step[0];
             table.moment_elevator[cell] = ((near_elevator.Cm - free_elevator.Cm) - table.moment[cell]) / elevator_step[0];
-            if (table_alphas[j] == induced_alpha) table.induced[row] = (near.CDi / (near.CL * near.CL)) / (free.CDi / (free.CL * free.CL));
+            if (j == induced_column) table.induced[row] = (near.CDi / (near.CL * near.CL)) / (free.CDi / (free.CL * free.CL));
         }
     }
     table.n_height = types.GroundTable.heights;

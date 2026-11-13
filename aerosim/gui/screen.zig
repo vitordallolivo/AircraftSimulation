@@ -698,6 +698,8 @@ pub const Screen = struct {
             };
             screen.pending_tab = null;
         }
+        // acao=montagem:... (prints): os comandos só rodam com a Montagem na tela
+        if (screen.pending_assembly_len > 0 and screen.assembly != null and screen.areas.len > 0) screen.showAssembly();
         if (screen.pending_file_len > 0) {
             const length = screen.pending_file_len;
             screen.pending_file_len = 0;

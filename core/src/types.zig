@@ -111,6 +111,21 @@ pub const Surface = extern struct {
     ez: [3]f64 = .{ 0, 0, 0 },
 };
 
+/// como a tabela do efeito solo (`GroundTable`) é montada: a malha do VLM, as alturas e os α. Vem do modificador
+/// "solo.vlm_imagem" do arquivo; o padrão é o de antes
+pub const GroundSettings = extern struct {
+    /// painéis na corda de cada faixa
+    chordwise: i32 = 2,
+    /// painéis na envergadura de cada faixa (as faixas já dividem a envergadura)
+    spanwise: i32 = 1,
+    /// as alturas acima da do avião parado no trem, em envergaduras, crescentes
+    heights: [GroundTable.heights]f64 = .{ 0, 0.03, 0.07, 0.12, 0.2, 0.35, 0.6, 1.2, 3.0 },
+    /// os α da tabela (graus), crescentes
+    alphas: [GroundTable.alphas]f64 = .{ -4, 0, 4, 8, 12, 16 },
+    /// o α (graus) em que o fator do induzido é medido (C_L longe de zero); vale a coluna mais perto
+    induced_alpha: f64 = 8,
+};
+
 /// a tabela do efeito solo pelo VLM com o chão espelhado (`modifiers/ground.zig`, método `vlm_image`): em cada
 /// altura da origem do corpo sobre o chão (m) e cada α (rad), o ΔC_L e o ΔC_m no CG seco em relação ao voo sem chão;
 /// o fator do induzido só pela altura (C_Di/C_L² com chão sobre o sem chão)
@@ -482,6 +497,7 @@ pub const Params = extern struct {
     pads: [limits.max_pads]Pad = [_]Pad{.{}} ** limits.max_pads,
     // modificadores (modifiers/): método do efeito solo e efeitos a mais (desligados por padrão)
     ground: modifier_types.Ground = .mccormick,
+    ground_settings: GroundSettings = .{}, // malha, alturas e α da tabela do chão
     ground_table: GroundTable = .{}, // montada por runner.configure quando `ground` = vlm_image (não vem do Python)
     n_mod: i32 = 0,
     mods: [limits.max_mods]Modifier = [_]Modifier{.{}} ** limits.max_mods,
