@@ -57,6 +57,11 @@ const tail_fields = [_]registry.Field{
     .{ .key = "boom_diameter", .label = "diâmetro do tubo", .unit = "m", .default = .{ .number = 0.025 }, .minimum = 0.005, .maximum = 0.1 },
     .{ .key = "cg_count", .label = "xCG para a Decolagem (valores)", .help = "quantos xCG, do limite da frente ao de trás da faixa de CG, a Decolagem (Desempenho) testa: o MTOW de cada um, com os coeficientes do VLM", .default = .{ .number = 5 }, .minimum = 2, .maximum = 15 },
     .{ .key = "vlm", .label = "VLM e convergência", .help = "roda o VLM do núcleo no conjunto inteiro (todas as superfícies, com as de a mais) em malhas cada vez mais finas: C_Lα, C_mα, ponto neutro, derivadas laterais e o quanto mudam com a malha. Desligado por padrão (leva alguns segundos)", .default = .{ .toggle = false } },
+    .{ .key = "vlm_chord", .label = "VLM: painéis na corda", .help = "a malha mais fina da convergência; a escada vai de 1 painel até este número (dobrando) e depois aumenta as divisões por faixa", .default = .{ .number = 4 }, .minimum = 1, .maximum = 12 },
+    .{ .key = "vlm_span", .label = "VLM: divisões por faixa", .help = "a malha mais fina da convergência divide cada faixa nisto; a escada passa por 1, 2, 3... até aqui. As duas últimas dão o valor da malha infinita (extrapolação de Richardson)", .default = .{ .number = 6 }, .minimum = 2, .maximum = 12 },
+    .{ .key = "vlm_cg_chord", .label = "VLM da lista de xCG: corda", .help = "painéis na corda do VLM que dá as derivadas de cada xCG da Decolagem", .default = .{ .number = 4 }, .minimum = 1, .maximum = 12 },
+    .{ .key = "vlm_cg_span", .label = "VLM da lista de xCG: faixa", .help = "divisões por faixa do VLM da lista de xCG", .default = .{ .number = 2 }, .minimum = 1, .maximum = 12 },
+    .{ .key = "vlm_max_panels", .label = "VLM: máximo de painéis", .help = "malhas maiores ficam de fora (a conta cresce com o quadrado dos painéis)", .default = .{ .number = 1200 }, .minimum = 50, .maximum = 5000 },
     .{ .key = "boom_pitch", .label = "inclinação do tubo", .unit = "°", .help = "+ ponta de trás para cima: a cauda sobe (sai da esteira da asa); o braço continua medido na horizontal", .default = .{ .number = 0 }, .minimum = -10, .maximum = 20 },
 };
 
@@ -73,11 +78,33 @@ const vlm_plots = [_]simulation.Plot{
 };
 /// as malhas da convergência (corda × envergadura em cada faixa), da mais grossa para a mais fina
 /// (primeiro na corda, depois na envergadura, onde o VLM converge devagar, com o erro ∝ 1/n)
-const vlm_grids = [_]core.vlm.Grid{ .{ .chordwise = 1, .spanwise = 1 }, .{ .chordwise = 2, .spanwise = 1 }, .{ .chordwise = 4, .spanwise = 1 }, .{ .chordwise = 4, .spanwise = 2 }, .{ .chordwise = 4, .spanwise = 3 }, .{ .chordwise = 4, .spanwise = 4 }, .{ .chordwise = 4, .spanwise = 6 } };
-const vlm_max_panels = 1200;
+/// a escada de malhas da convergência, todas à vista na tela: 1, 2, 4... painéis na corda até `chordwise` (com uma
+/// divisão por faixa) e depois 2, 3... divisões por faixa até `spanwise` (com `chordwise` na corda)
+const VlmSettings = struct {
+    chordwise: usize, // painéis na corda da malha mais fina
+    spanwise: usize, // divisões por faixa da malha mais fina
+    cg_grid: core.vlm.Grid, // a malha da lista de xCG
+    max_panels: usize, // malhas maiores que isto ficam de fora (a matriz é painéis²)
 
-/// a malha da lista de xCG: 4 painéis na corda e 2 na envergadura de cada faixa (a do meio de `vlm_grids`)
-const cg_grid: core.vlm.Grid = .{ .chordwise = 4, .spanwise = 2 };
+    fn of(params: *const ObjectMap) VlmSettings {
+        return .{
+            .chordwise = @intFromFloat(@max(field(params, "vlm_chord"), 1)),
+            .spanwise = @intFromFloat(@max(field(params, "vlm_span"), 1)),
+            .cg_grid = .{ .chordwise = @intFromFloat(@max(field(params, "vlm_cg_chord"), 1)), .spanwise = @intFromFloat(@max(field(params, "vlm_cg_span"), 1)) },
+            .max_panels = @intFromFloat(@max(field(params, "vlm_max_panels"), 10)),
+        };
+    }
+
+    /// a escada de malhas, da mais grossa para a mais fina
+    fn grids(settings: VlmSettings, memory: std.mem.Allocator) ![]const core.vlm.Grid {
+        var out: std.ArrayList(core.vlm.Grid) = .empty;
+        var chord: usize = 1;
+        while (chord < settings.chordwise) : (chord *= 2) try out.append(memory, .{ .chordwise = chord, .spanwise = 1 });
+        for (1..settings.spanwise + 1) |span| try out.append(memory, .{ .chordwise = settings.chordwise, .spanwise = span });
+        return out.items;
+    }
+};
+
 
 /// os parâmetros do núcleo do conjunto (as superfícies e o tubo), para o VLM
 fn vlmParams(memory: std.mem.Allocator, built: Built) !*core.types.Params {
@@ -105,11 +132,12 @@ fn bodyOf(result: *const tail.Result, percent: f64) f64 {
     return -(result.x_cg + (percent / 100 - result.h_cg) * chord);
 }
 
-/// o VLM do conjunto (malha `cg_grid`) com os momentos em cada xCG da lista
-fn vlmAtCenters(memory: std.mem.Allocator, built: Built, percents: []const f64) ![]const core.vlm.Derivatives {
+/// o VLM do conjunto (a malha da lista de xCG) com os momentos em cada xCG da lista
+fn vlmAtCenters(memory: std.mem.Allocator, built: Built, percents: []const f64, settings: VlmSettings) ![]const core.vlm.Derivatives {
+    const cg_grid = settings.cg_grid;
     const params = try vlmParams(memory, built);
     const count = core.vlm.panelCount(params, cg_grid);
-    if (count == 0 or count > vlm_max_panels) return &.{};
+    if (count == 0 or count > settings.max_panels) return &.{};
     const buffers: core.vlm.Buffers = .{ .panels = try memory.alloc(core.vlm.Panel, count), .matrix = try memory.alloc(f64, count * count), .pivots = try memory.alloc(usize, count), .gamma = try memory.alloc(f64, count) };
     const out = try memory.alloc(core.vlm.Derivatives, percents.len);
     for (percents, out) |percent, *item| item.* = try core.vlm.derivatives(params, cg_grid, 0, .{ bodyOf(built.result, percent), 0, 0 }, buffers);
@@ -123,22 +151,26 @@ pub fn projectCgList(context: *stages.Context, memory: std.mem.Allocator) ![]con
     return cgList(memory, built.result, @intFromFloat(@round(field(params, "cg_count"))));
 }
 
-/// o VLM do conjunto em cada malha de `vlm_grids` (as que cabem em `vlm_max_panels`), momentos no CG do alvo
-fn vlmStudy(memory: std.mem.Allocator, built: Built) ![]const core.vlm.Derivatives {
+/// o VLM do conjunto em cada malha da escada (as que cabem no máximo de painéis), momentos no CG do alvo, com a
+/// malha de cada resultado
+fn vlmStudy(memory: std.mem.Allocator, built: Built, settings: VlmSettings) !struct { found: []const core.vlm.Derivatives, grids: []const core.vlm.Grid } {
     const params = try vlmParams(memory, built);
+    const ladder = try settings.grids(memory);
     var largest: usize = 0;
-    for (vlm_grids) |grid| {
+    for (ladder) |grid| {
         const count = core.vlm.panelCount(params, grid);
-        if (count <= vlm_max_panels) largest = @max(largest, count);
+        if (count <= settings.max_panels) largest = @max(largest, count);
     }
-    if (largest == 0) return &.{};
+    if (largest == 0) return .{ .found = &.{}, .grids = &.{} };
     const buffers: core.vlm.Buffers = .{ .panels = try memory.alloc(core.vlm.Panel, largest), .matrix = try memory.alloc(f64, largest * largest), .pivots = try memory.alloc(usize, largest), .gamma = try memory.alloc(f64, largest) };
     var out: std.ArrayList(core.vlm.Derivatives) = .empty;
-    for (vlm_grids) |grid| {
-        if (core.vlm.panelCount(params, grid) > vlm_max_panels) continue;
+    var used: std.ArrayList(core.vlm.Grid) = .empty;
+    for (ladder) |grid| {
+        if (core.vlm.panelCount(params, grid) > settings.max_panels) continue;
         try out.append(memory, try core.vlm.derivatives(params, grid, 0, .{ -built.result.x_cg, 0, 0 }, buffers));
+        try used.append(memory, grid);
     }
-    return out.items;
+    return .{ .found = out.items, .grids = used.items };
 }
 
 /// a posição (% CMA) de um x do corpo, pela CMA da conta clássica (x_cg e x_np dela, atrás do bordo da raiz)
@@ -817,7 +849,7 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     const cg_heights = try memory.alloc(f64, cg_percents.len);
     @memset(cg_heights, 0.5);
     try figures.curve("cg", .{ .name = "xCG da Decolagem", .x = cg_percents, .y = cg_heights, .color = "#1f77b4", .marker = "o", .size = 8 });
-    const cg_vlm = vlmAtCenters(memory, built, cg_percents) catch &.{};
+    const cg_vlm = vlmAtCenters(memory, built, cg_percents, VlmSettings.of(params)) catch &.{};
     if (cg_vlm.len == cg_percents.len) {
         const moment_slopes = try memory.alloc(f64, cg_vlm.len);
         for (cg_vlm, moment_slopes) |item, *slope| slope.* = item.Cma;
@@ -882,10 +914,12 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     const rolls = result.roll_rate >= 0.07;
     try checks.append(memory, .{ .status = status(rolls, true), .item = "efetividade do aileron", .value = try text(memory, "p b/2V = {d:.3}", .{result.roll_rate}), .criterion = "≥ 0,07", .why = if (rolls) "" else "rola devagar", .fix = if (rolls) "" else "aileron mais longo ou de corda maior", .group = group });
     if (with_vlm) vlm: {
-        const found = vlmStudy(memory, built) catch |err| {
+        const study = vlmStudy(memory, built, VlmSettings.of(params)) catch |err| {
             try checks.append(memory, .{ .status = .atencao, .item = "VLM", .value = @errorName(err), .criterion = "—", .why = "o conjunto não montou no núcleo para o VLM", .group = "VLM" });
             break :vlm;
         };
+        const found = study.found;
+        const vlm_grids = study.grids;
         if (found.len == 0) break :vlm;
         const panels = try memory.alloc(f64, found.len);
         const lift_slope = try memory.alloc(f64, found.len);

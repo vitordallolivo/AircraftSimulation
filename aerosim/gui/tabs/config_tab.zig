@@ -376,6 +376,24 @@ pub fn components(memory: std.mem.Allocator, aircraft: *const Aircraft) ![]Compo
     return list.items;
 }
 
+/// os métodos do efeito do chão: o tipo no arquivo e o nome na tela
+const ground_kinds = [_][2][]const u8{
+    .{ "solo.mccormick", "McCormick (fórmula)" },
+    .{ "solo.vlm_imagem", "VLM com imagem" },
+};
+const ground_kind_titles = blk: {
+    var titles: [ground_kinds.len][]const u8 = undefined;
+    for (ground_kinds, 0..) |kind, i| titles[i] = kind[1];
+    const frozen = titles;
+    break :blk frozen;
+};
+
+/// o índice do método do chão de um modificador, ou null se ele não é do chão
+fn groundKindIndex(kind: []const u8) ?usize {
+    for (ground_kinds, 0..) |known, i| if (std.mem.eql(u8, known[0], kind)) return i;
+    return null;
+}
+
 /// os modificadores ligados; o arquivo sem a chave tem o padrão da GUI (só o efeito solo de McCormick, ligado)
 fn activeModifiers(aircraft: *const Aircraft) usize {
     const list = aircraft.modifiers orelse return 1;
@@ -501,6 +519,8 @@ pub fn specs(memory: std.mem.Allocator, aircraft: *const Aircraft, component: Co
             for (list_of, 0..) |modifier, i| {
                 const name = if (modifier.name.len > 0) modifier.name else modifier.kind;
                 try list.append(memory, .{ .name = "enabled", .label = name, .kind = .toggle, .checked = modifier.enabled, .target = i, .help = modifier.kind });
+                // o efeito do chão: o método que o voo usa
+                if (groundKindIndex(modifier.kind)) |current| try list.append(memory, .{ .name = "kind", .label = "método do chão", .kind = .choice, .text = ground_kinds[current][1], .choices = &ground_kind_titles, .target = i, .help = "McCormick (fórmula empírica): só reduz o arrasto induzido perto do chão. VLM com imagem (malha de vórtices espelhada no chão): muda a sustentação, o induzido e o momento, por uma tabela montada uma vez ao carregar o avião. Compare os dois em Aerodinâmica → Analisar → Efeito do chão" });
             }
         },
         inline else => |part| try fieldsOf(memory, &list, @field(aircraft, @tagName(part)), exclude),
@@ -896,6 +916,12 @@ fn applyModifiers(memory: std.mem.Allocator, document: *std.json.Value, fields: 
     for (fields) |spec| {
         const index = spec.target orelse continue;
         if (index >= items.len or items[index] != .object) continue;
+        if (std.mem.eql(u8, spec.name, "kind")) {
+            for (ground_kinds) |known| if (std.mem.eql(u8, known[1], spec.text)) {
+                try items[index].object.put(memory, "kind", .{ .string = known[0] });
+            };
+            continue;
+        }
         try items[index].object.put(memory, "enabled", .{ .bool = spec.checked });
     }
 }
