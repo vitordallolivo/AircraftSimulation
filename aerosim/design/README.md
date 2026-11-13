@@ -10,7 +10,11 @@ Cada etapa parte do candidato que a anterior guardou e leva uma cópia dele, ent
 altera o que já foi guardado. Na GUI as etapas ficam nas subabas de Aerodinâmica (Perfil, Asa), Estabilidade
 (Empenagem e comandos) e Desempenho (Motores e montagem, Estudo e ponto de projeto). Na interface em Zig cada etapa
 é um `stage_*.zig` ao lado do `.py` dela, com a mesma página e o mesmo arquivo de projeto, e as contas vêm do núcleo
-([`core/src/sizing`](../../core/src/sizing/README.md)); a polar do NeuralFoil e a de arquivo seguem pelo Python.
+([`core/src/sizing`](../../core/src/sizing/README.md)); a polar do NeuralFoil segue pelo Python. Em Perfis, as
+polares do XFLR5 ou do XFOIL entram uma por Reynolds ("+ polar (arquivo)…"), e o perfil selecionado aparece em cada
+Reynolds da lista "Reynolds dos gráficos", interpolado entre os arquivos (o núcleo lê e interpola:
+[`core/src/physics`](../../core/src/physics/README.md)). O refino das etapas (pontos da corrida, bisseções, voltas da
+massa) é regra do projeto, em "Condições e restrições".
 
 ```mermaid
 flowchart TB

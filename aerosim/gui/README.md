@@ -41,6 +41,12 @@ sustentadora numa asa de alongamento menor que 4, `aerosim/manager/alerts.zig`),
 (`ui/toast.zig`) e a conta roda igual. Em Projetar, a linha da tabela "Asas do avião" com o nome do rascunho mostra a
 asa que se está criando, ao vivo, e a vista aproxima do dispositivo de ponta que se cria ou edita.
 
+Nenhum ajuste de conta fica escondido. O botão "Refino dos Solvers", no topo de cada análise, abre uma janela com as
+iterações, tolerâncias, passos e grades da própria análise e dos solvers do núcleo que ela usa (a Missão mostra a
+trimagem e a hélice; o Analisar, a linha sustentadora). O mesmo campo em duas análises é um número só (`page.zig`,
+`shared`): mudar em uma muda na outra, vale em toda rodada e vai salvo no arquivo do avião. Uma análise entra nesse
+botão pondo os campos no grupo `simulation.refine_group` e dizendo os solvers que usa em `Extras.solvers`.
+
 Para o navegador, `python -m ziglang build -Dtarget=wasm32-emscripten --release=safe` e `python tools/web_build.py`
 montam o site, onde os arquivos ficam na memória da página e o que se salva é baixado. Uma análise nova é um `.zig`
 ao lado da análise em Python, posto no registro de `aerosim/manager/manager.zig`, e aparece na área dela.

@@ -95,7 +95,7 @@ O aerosim (`python -m ziglang build aerosim`) volta ao último projeto aberto, o
   atualizam enquanto roda; no fim vêm o **diagnóstico** (clique numa linha para ver o porquê e o que
   mudar) e a tabela de resultados; **Exportar** grava `.xlsx` ou `.csv`.
 - **Projeto do zero** (subabas de Aerodinâmica, Estabilidade e Desempenho), uma etapa depois da outra:
-  - **Perfis**: escolher e comparar os perfis.
+  - **Perfis**: escolher e comparar os perfis, com as polares do XFLR5 ou do XFOIL em vários Reynolds.
   - **Projetar**: desenhar a asa e ver como ela voa.
   - **Empenagem e comandos**: dimensionar a cauda e ver se o avião fica estável.
   - **Motores e montagem**: escolher motor, hélice e bateria, montar o avião e ver se ele decola.

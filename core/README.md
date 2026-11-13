@@ -6,6 +6,9 @@ cada velocidade, o modelo linear, o desempenho, as cargas e o dimensionamento in
 o `aerodrive` (onde se pilota) e o `aeroopt` (onde se otimiza) usam o mesmo núcleo, então o avião que se projeta é o
 mesmo que se pilota. Ele é escrito em Zig e não aloca memória durante a simulação: tudo tem tamanho fixo, definido em
 `src/limits.zig`, e uma corrida nunca falha por falta de memória no meio do voo.
+Os ajustes das contas (iterações, tolerâncias, passos, grades) também não ficam escondidos no meio do código: estão
+todos em `src/numerics.zig`, cada um com o padrão de sempre, o rótulo e o solver a que pertence, e quem chama o núcleo
+troca antes de rodar. Na tela eles aparecem no "Refino dos Solvers" de cada análise.
 
 O código vai da base para cima, e cada pasta tem o seu README:
 

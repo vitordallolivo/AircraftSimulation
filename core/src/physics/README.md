@@ -9,7 +9,9 @@ linear da Estabilidade e o AeroDrive chamam a cada passo.
 A aerodinâmica padrão é por faixas: o avião é uma lista de painéis (meias asas, EH, EV, dispositivos), cada um com
 centro, corda, área e eixos próprios. Não há derivadas de estabilidade prontas: o amortecimento e os efeitos de diedro
 e de cauda saem sozinhos, porque cada painel vê a velocidade do ponto onde está. O modelo do voo pode trocar as faixas
-pela linha sustentadora (`loads/`) ou por uma tabela de qualquer método.
+pela linha sustentadora (`loads/`) ou por uma tabela de qualquer método. A polar 2D de cada perfil vem do modelo
+(`section.zig`, inclinação, c_l máximo e estol suave) ou de arquivos do XFLR5 e do XFOIL, um por Reynolds:
+`parsePolar` lê o texto exportado e `atReynolds` interpola entre os dois Reynolds vizinhos, sem extrapolar.
 
 ```mermaid
 flowchart TB
