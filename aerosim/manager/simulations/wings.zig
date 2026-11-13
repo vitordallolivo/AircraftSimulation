@@ -304,7 +304,7 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "reynolds_critico", .label = "Reynolds crítico do alerta", .default = .{ .number = default_critical_reynolds }, .minimum = 1e3, .maximum = 1e7, .group = methods, .help = "abaixo dele a análise avisa que a bolha laminar pode não recolar (Lissaman, Low-Reynolds-number airfoils, 1983; valor a conferir no PDF)" },
         .{ .key = "n_chord", .label = "painéis na corda (VLM, AVL)", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .group = methods },
     });
-    try simulation.writeSpecs(out, params.items, &plots, Wings.description, .{ .view = preview });
+    try simulation.writeSpecs(out, params.items, &plots, Wings.description, .{ .view = preview, .solvers = &.{ .lifting_line, .stall_curve }, .aircraft = aircraft });
 }
 
 /// o aviso da linha sustentadora (o método, a comparação ou uma polar) numa asa curta (`alerts.shortWing`)

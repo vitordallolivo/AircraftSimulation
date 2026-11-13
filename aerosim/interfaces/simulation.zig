@@ -657,16 +657,85 @@ pub const View = struct {
     focus: ?Focus = null,
 };
 
-/// o que vem nos campos além do formulário: as tabelas e a vista 3D
+/// o que vem nos campos além do formulário: as tabelas, a vista 3D e o refino dos solvers do núcleo que a análise usa
 pub const Extras = struct {
     grids: []const Grid = &.{},
     view: ?View = null,
+    /// os solvers do núcleo de que a análise depende: os campos de refino deles entram no "Refino dos Solvers"
+    solvers: []const core.numerics.Solver = &.{},
+    /// o avião aberto: o refino gravado no arquivo dele é o valor que os campos mostram (sem avião: o padrão)
+    aircraft: ?*const Aircraft = null,
 };
+
+/// o grupo dos campos de refino: a tela tira do formulário todo grupo que começa assim e mostra numa janela à
+/// parte, aberta pelo botão "Refino dos Solvers"; o que vem depois de ": " é o título do bloco lá dentro
+pub const refine_group = "Refino dos Solvers";
+/// o começo da chave dos campos de refino do núcleo (`num.trim_iterations`): valem para todas as análises
+pub const refine_key = "num.";
+
+/// um campo por número de `core.numerics.Numerics`, com o padrão de sempre
+const numeric_params = blk: {
+    var params: [core.numerics.info.len]Param = undefined;
+    const defaults: core.numerics.Numerics = .{};
+    for (core.numerics.info, @typeInfo(core.numerics.Numerics).@"struct".fields, &params) |described, field, *param| {
+        const whole = field.type == i32;
+        param.* = .{
+            .key = refine_key ++ field.name,
+            .label = described.label,
+            .kind = if (whole) .int else .float,
+            .default = .{ .number = if (whole) @floatFromInt(@field(defaults, field.name)) else @field(defaults, field.name) },
+            .group = refine_group ++ ": " ++ core.numerics.solverTitle(described.solver),
+            .help = described.help,
+        };
+    }
+    break :blk params;
+};
+
+/// os campos de refino dos `solvers`, com os valores de `aircraft` (ou o padrão)
+fn writeNumericParams(out: *Writer, solvers: []const core.numerics.Solver, aircraft: ?*const Aircraft, after_others: bool) !void {
+    var first = !after_others;
+    inline for (core.numerics.info, numeric_params) |described, template| {
+        const wanted = for (solvers) |solver| {
+            if (solver == described.solver) break true;
+        } else false;
+        if (wanted) {
+            var param = template;
+            if (aircraft) |plane| {
+                const value = @field(plane.numerics, described.field);
+                param.default = .{ .number = if (@TypeOf(value) == i32) @floatFromInt(value) else value };
+            }
+            if (!first) try out.writeAll(", ");
+            first = false;
+            try writeParams(out, &.{param}, &.{});
+        }
+    }
+}
+
+/// põe em uso o refino que veio da tela: grava no avião da rodada (a trimagem e os outros solvers leem de lá ao
+/// montar o avião) e no refino em uso (as contas que não montam avião nenhum)
+pub fn useNumerics(values: Values, aircraft: *Aircraft) void {
+    applyNumerics(values, &aircraft.numerics);
+    core.numerics.active = aircraft.numerics;
+}
+
+/// o refino do núcleo que veio nos valores da tela (`num.<campo>`) por cima do que o avião tinha
+pub fn applyNumerics(values: Values, numerics: *core.numerics.Numerics) void {
+    inline for (@typeInfo(core.numerics.Numerics).@"struct".fields) |field| {
+        const current = @field(numerics, field.name);
+        if (field.type == i32) {
+            const given = values.number(refine_key ++ field.name, @floatFromInt(current));
+            @field(numerics, field.name) = @intFromFloat(std.math.clamp(@round(given), 1, 1e9));
+        } else {
+            @field(numerics, field.name) = values.number(refine_key ++ field.name, current);
+        }
+    }
+}
 
 /// `{"params": [...], "plots": [...], "description": ..., "grids": [...], "view": {...}}`
 pub fn writeSpecs(out: *Writer, params: []const Param, plots: []const Plot, description: []const u8, extras: Extras) !void {
     try out.writeAll("{\"params\": [");
     try writeParams(out, params, &.{});
+    try writeNumericParams(out, extras.solvers, extras.aircraft, params.len > 0);
     try out.writeAll("], \"plots\": [");
     for (plots, 0..) |plot, k| {
         if (k > 0) try out.writeAll(", ");

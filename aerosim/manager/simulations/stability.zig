@@ -354,7 +354,10 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "polos_instantes", .label = "instantes em que os polos são refeitos", .default = .{ .number = 24 }, .minimum = 2, .maximum = max_samples, .group = "Rajada", .help = "ao longo do voo o avião é linearizado de novo nestes instantes (igualmente espaçados) para mostrar o caminho dos polos" },
         .{ .key = "compare", .label = "comparar com o líquido travado", .kind = .bool, .default = .{ .toggle = has_tanks }, .group = "Líquido", .help = "voa de novo com o líquido parado nos tanques (mesma massa)" },
     };
-    try simulation.writeSpecs(out, &(params ++ simulation.method_params), &plots, DynamicStability.description, extras);
+    var with_refine = extras;
+    with_refine.solvers = &.{ .trim, .equilibrium, .gust };
+    with_refine.aircraft = aircraft;
+    try simulation.writeSpecs(out, &(params ++ simulation.method_params), &plots, DynamicStability.description, with_refine);
 }
 
 /// um voo: o caso, a instância do núcleo e o registro
@@ -1253,7 +1256,7 @@ fn writeStaticFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircr
     defer arena.deinit();
     const memory = arena.allocator();
     const params = try staticParams(memory, aircraft, values);
-    try simulation.writeSpecs(out, params, try staticPlots(memory, aircraft, values), Stability.description, .{});
+    try simulation.writeSpecs(out, params, try staticPlots(memory, aircraft, values), Stability.description, .{ .solvers = &.{ .trim, .equilibrium, .static, .stall_curve, .control_moment }, .aircraft = aircraft });
 }
 
 /// os campos pela configuração (`parameters_for`)
@@ -1321,7 +1324,7 @@ fn staticParams(memory: std.mem.Allocator, aircraft: ?*const Aircraft, values: s
     try list.append(memory, .{ .key = "whatif", .label = "procurar a correção", .kind = .bool, .default = .{ .toggle = true }, .group = analyses, .help = "refaz a análise com deriva maior / mais diedro / EH maior para dizer quanto mudar" });
     try list.append(memory, .{ .key = "resp", .label = "mostrar respostas no tempo", .kind = .bool, .default = .{ .toggle = false }, .group = analyses });
     if (!known and configuration.liquid) try list.append(memory, .{ .key = "slosh_lin", .label = "sloshing no modelo linear", .kind = .bool, .default = .{ .toggle = false }, .group = analyses, .help = "refaz os polos com o líquido dos tanques oscilando (pêndulo equivalente, Abramson SP-106): aparecem os modos do líquido e quanto os do avião se deslocam" });
-    const refine = "Refino";
+    const refine = simulation.refine_group ++ ": estabilidade";
     try list.appendSlice(memory, &.{
         .{ .key = "cm_a0", .label = "C_m(α): α inicial", .default = .{ .number = -6 }, .minimum = -30, .maximum = 30, .unit = "°", .group = refine },
         .{ .key = "cm_a1", .label = "C_m(α): α final", .default = .{ .number = 20 }, .minimum = -30, .maximum = 60, .unit = "°", .group = refine },

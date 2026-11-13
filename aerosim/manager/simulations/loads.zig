@@ -153,7 +153,7 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
             count += 1;
         }
     }
-    try simulation.writeSpecs(out, &params, buffer[0..count], Loads.description, .{});
+    try simulation.writeSpecs(out, &params, buffer[0..count], Loads.description, .{ .solvers = &.{ .trim, .lifting_line, .control_moment, .structures }, .aircraft = aircraft });
 }
 
 /// o aviso da linha sustentadora (o método, a comparação) numa asa curta (`alerts.shortWing`)

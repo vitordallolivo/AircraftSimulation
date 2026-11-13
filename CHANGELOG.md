@@ -8,11 +8,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 - Muitos ajustes de conta ficavam escondidos: quantas iterações cada método faz, que tolerância aceita, que passo e
   que grade usa. Agora todos ficam na tela, com o valor de antes como padrão, então nada muda até alguém mexer. Os
-  dos métodos de base (trimagem, linearização, linha sustentadora, hélice, envelope, corrida de decolagem, flambagem,
-  flutter) ficam num bloco só, em Montagem → "Refino numérico", e vão salvos no arquivo do avião. Os de cada análise
-  (Desempenho, Envelopes, Estabilidade, Missão, MTOW, Dimensionamento inicial, Analisar) ficam nos campos da própria
-  análise. Os das etapas de projeto ficam em "Condições e restrições". A tabela do efeito do chão (malha, alturas e
-  ângulos) fica no método do chão, em Montagem → Modificadores.
+  de cada análise ficam nela mesma, numa janela que o botão "Refino dos Solvers" abre: os da própria análise e os
+  dos métodos de base que ela usa (a Missão mostra a trimagem e a hélice; o Analisar, a linha sustentadora). O mesmo
+  ajuste em duas análises é um número só: mudar em uma muda na outra, e ele vai salvo no arquivo do avião. Os das
+  etapas de projeto ficam em "Condições e restrições". A tabela do efeito do chão (malha, alturas e ângulos) fica no
+  método do chão, em Montagem → Modificadores.
 - Os títulos dos gráficos eram longos e diziam as variáveis ("C_L × α do conjunto"), e cortavam na tela. Agora cada
   título diz em até três palavras o que o gráfico é ("Sustentação do conjunto", "Efeito solo: momento"), e os eixos
   saem com índices e letras gregas. A matemática dos gráficos (eixos e legendas) agora sai na Computer Modern, a

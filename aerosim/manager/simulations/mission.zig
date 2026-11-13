@@ -122,7 +122,7 @@ const group_runway = "Pista";
 const glyph_step = 10.0; // o avião desenhado no 3D a cada 10 m
 const default_auto_fractions = [_]f64{ 1.0, 0.85, 0.7, 0.55, 0.42, 0.32 }; // raio automático: frações do φ máx. do piloto
 const default_turn_banks = [_]f64{ 70, 65, 55, 45, 37, 30, 24, 18, 14 }; // as inclinações testadas nas curvas
-const group_refine = "Refino";
+const group_refine = simulation.refine_group ++ ": missão";
 
 /// o refino do voo e das buscas da missão, tudo campo da tela (os padrões são os de sempre)
 const Refinement = struct {
@@ -739,7 +739,7 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
             try grids.append(memory, try massGrid(memory, "o estudo usa o xCG do avião"));
         },
     }
-    try simulation.writeSpecs(out, params.items, try plotsFor(memory, mode, aircraft), Mission.description, .{ .grids = grids.items });
+    try simulation.writeSpecs(out, params.items, try plotsFor(memory, mode, aircraft), Mission.description, .{ .grids = grids.items, .solvers = &.{ .trim, .stall_guard, .propulsion }, .aircraft = aircraft });
 }
 
 fn gustVector(environment: model.Environment) [3]f64 {

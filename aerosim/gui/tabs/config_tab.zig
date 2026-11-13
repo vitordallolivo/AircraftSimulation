@@ -332,7 +332,6 @@ const nongeometric = [_]struct { Part, []const u8 }{
     .{ .takeoff, "Decolagem (acionamento do profundor)" },
     .{ .autopilot, "Piloto automático" },
     .{ .sim, "Integração" },
-    .{ .numerics, "Refino numérico (solvers)" },
     .{ .mission, "Percurso: partida e eventos" },
 };
 

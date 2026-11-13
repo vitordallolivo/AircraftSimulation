@@ -205,7 +205,7 @@ fn writeFields(out: *simulation.Writer, _: ?*const simulation.Aircraft, values: 
         .{ .key = "tail_area_frac", .label = "empenagem / asa (área)", .default = .{ .number = 0.25 }, .minimum = 0, .maximum = 1, .group = search, .help = "fração usada na massa e no arrasto" },
         .{ .key = "fuselage_CDS", .label = "C_D·S da fuselagem e trem", .default = .{ .number = 0.012 }, .minimum = 0, .maximum = 0.2, .unit = "m²", .group = search },
     });
-    try simulation.writeSpecs(out, params.items, &plots, Mdo.description, .{});
+    try simulation.writeSpecs(out, params.items, &plots, Mdo.description, .{ .solvers = &.{ .sizing, .propulsion } });
 }
 
 // ------------------------------------------------------------------ a configuração do núcleo

@@ -32,8 +32,96 @@ const aircraft_model = @import("aircraft_model");
 
 const Json = std.json.Value;
 const Arena = std.heap.ArenaAllocator;
+/// o arquivo de avião cujo refino já entrou no refino compartilhado
+var seeded_path: [1024]u8 = undefined;
+var seeded_len: usize = 0;
 
 pub const Kind = enum { simulation, stage, todo };
+
+/// O "Refino dos Solvers" vale para o programa inteiro: um campo de refino com a mesma chave em duas análises é o
+/// mesmo número. Cada página guarda aqui o que se digitou na janela de refino dela, e as outras leem daqui na
+/// próxima vez que aparecem. Os do núcleo (`num.*`) vão em toda rodada, mesmo na análise que não mostra o campo
+pub const shared = struct {
+    const Entry = struct {
+        key: [64]u8 = undefined,
+        key_len: usize = 0,
+        number: f64 = 0,
+        checked: bool = false,
+        choice: i32 = 0,
+        text: @FieldType(form_mod.Field, "text") = undefined,
+
+        fn name(entry: *const Entry) []const u8 {
+            return entry.key[0..entry.key_len];
+        }
+    };
+    var entries: [320]Entry = undefined;
+    var count: usize = 0;
+    /// sobe a cada mudança: a página que viu uma versão mais velha lê os campos de novo
+    pub var version: usize = 0;
+
+    fn find(key: []const u8) ?*Entry {
+        for (entries[0..count]) |*entry| if (std.mem.eql(u8, entry.name(), key)) return entry;
+        return null;
+    }
+
+    /// guarda o valor do campo; verdadeiro se mudou
+    fn put(key: []const u8, field: *const form_mod.Field) bool {
+        const entry = find(key) orelse blk: {
+            if (count == entries.len or key.len > 64) return false;
+            const fresh = &entries[count];
+            fresh.* = .{ .text = field.text, .number = std.math.nan(f64) };
+            @memcpy(fresh.key[0..key.len], key);
+            fresh.key_len = key.len;
+            count += 1;
+            break :blk fresh;
+        };
+        const same = entry.number == field.number and entry.checked == field.checked and entry.choice == field.choice and std.mem.eql(u8, &entry.text, &field.text);
+        entry.number = field.number;
+        entry.checked = field.checked;
+        entry.choice = field.choice;
+        entry.text = field.text;
+        return !same;
+    }
+
+    /// o valor guardado vai para o campo
+    fn into(entry: *const Entry, field: *form_mod.Field) void {
+        field.number = entry.number;
+        field.checked = entry.checked;
+        field.text = entry.text;
+        if (field.kind == .choice) field.choice = entry.choice;
+    }
+
+    /// um número do refino do núcleo vindo do arquivo do avião (ao abrir): passa a ser o valor de todas as telas
+    pub fn setNumber(key: []const u8, value: f64) void {
+        var field: form_mod.Field = .{ .label = "", .group = 0, .number = value };
+        if (put(key, &field)) version += 1;
+    }
+
+    /// grava o refino do núcleo guardado na chave "numerics" do avião (`node`), para o "Salvar"
+    pub fn numericsInto(memory: std.mem.Allocator, node: *std.json.ObjectMap) !void {
+        var object: std.json.ObjectMap = .empty;
+        for (entries[0..count]) |*entry| {
+            if (!std.mem.startsWith(u8, entry.name(), manager.refine_key)) continue;
+            const whole = entry.number == @round(entry.number) and @abs(entry.number) < 1e9;
+            try object.put(memory, try memory.dupe(u8, entry.name()[manager.refine_key.len..]), if (whole) .{ .integer = @intFromFloat(entry.number) } else .{ .float = entry.number });
+        }
+        if (object.count() > 0) try node.put(memory, "numerics", .{ .object = object });
+    }
+
+    /// escreve `"num.campo": valor` de todo refino do núcleo guardado, para o arquivo do avião e para as rodadas
+    pub fn writeNumerics(writer: *std.Io.Writer, skip: []const Param, first: *bool) !void {
+        for (entries[0..count]) |*entry| {
+            if (!std.mem.startsWith(u8, entry.name(), manager.refine_key)) continue;
+            const listed = for (skip) |param| {
+                if (std.mem.eql(u8, param.key, entry.name())) break true;
+            } else false;
+            if (listed) continue;
+            if (!first.*) try writer.writeAll(", ");
+            first.* = false;
+            try writer.print("{f}: {d}", .{ std.json.fmt(entry.name(), .{}), entry.number });
+        }
+    }
+};
 
 /// como o valor de um campo vai de volta para o Python
 const ValueKind = enum { real, integer, toggle, choice, text, file, list };
@@ -343,6 +431,12 @@ pub const Page = struct {
     fields: []form_mod.Field = &.{},
     params: []Param = &.{},
     form: form_mod.Form = .{ .groups = &.{}, .fields = &.{} },
+    /// os campos do "Refino dos Solvers" (os últimos de `fields`), numa janela à parte
+    refine_form: form_mod.Form = .{ .groups = &.{}, .fields = &.{} },
+    refine_start: usize = 0, // o primeiro campo de refino em `fields`
+    refine_open: bool = false,
+    refine_wanted: bool = false, // pediram a janela pela linha de comando: abre quando os campos chegarem
+    shared_seen: usize = 0, // a versão do refino compartilhado que os campos mostram
     skipped: usize = 0, // campos que a tela ainda não desenha
     description: [:0]const u8 = "",
     // a etapa
@@ -443,7 +537,7 @@ pub const Page = struct {
 
     /// uma janela da página (pergunta, arquivo) está aberta
     pub fn modalOpen(page: *const Page) bool {
-        return page.prompt.open or page.picker.open;
+        return page.prompt.open or page.picker.open or page.refine_open;
     }
 
     /// manda um botão da etapa pelo nome (abrir um .dat pela linha de comando ou arrastado)
@@ -538,6 +632,10 @@ pub const Page = struct {
     /// um comando pelo nome (`acao=` da linha de comando): "rodar" roda a análise assim que os campos chegarem
     pub fn command(page: *Page, name: []const u8) void {
         if (std.mem.eql(u8, name, "rodar")) page.run_when_ready = true;
+        if (std.mem.eql(u8, name, "campo:refino")) { // abre a janela "Refino dos Solvers" (prints)
+            page.refine_wanted = true;
+            return;
+        }
         if (std.mem.startsWith(u8, name, "campo:")) { // campo:<chave>=<valor> num formulário de análise (prints)
             page.pending_act_len = @min(name.len - 6, page.pending_act.len);
             @memcpy(page.pending_act[0..page.pending_act_len], name[6..][0..page.pending_act_len]);
@@ -599,6 +697,7 @@ pub const Page = struct {
             page.pending_act_len = 0;
             var pairs = std.mem.splitScalar(u8, text, ';'); // campo:a=1;b=2
             while (pairs.next()) |pair| if (std.mem.indexOfScalar(u8, pair, '=')) |equal| page.setFieldText(pair[0..equal], pair[equal + 1 ..]);
+            page.shareRefine();
             page.askSpecs();
         } else if (page.run_when_ready and page.kind == .simulation and !page.working() and page.fields.len > 0) {
             page.run_when_ready = false;
@@ -621,6 +720,7 @@ pub const Page = struct {
 
     /// as janelas da página por cima da tela inteira
     pub fn drawModal(page: *Page, ui: *widgets.Ui, whole: rl.Rectangle) void {
+        if (page.refine_open) page.drawRefine(ui, whole);
         if (page.prompt.draw(ui, whole)) |answer| page.act(page.actions[page.pending_action].key, answer);
         if (page.picker.draw(ui, whole)) |path| {
             const for_project = page.pending_project;
@@ -764,6 +864,8 @@ pub const Page = struct {
         if (simulation.edit) |edit| if (manager.GridEdit.fromRequest(memory, request)) |change| {
             edit(if (loaded) |*plane| &plane.ac else null, change) catch setText(&page.message, "a tabela não aceitou a edição", .{});
         };
+        // o arquivo do avião traz o refino gravado: ele entra como o valor de todas as telas na primeira vez
+        if (loaded) |*plane| page.seedNumerics(plane);
         simulation.specs(&text.writer, if (loaded) |*plane| &plane.ac else null, values) catch {
             dropArena(&owned);
             return setText(&page.message, "os campos da análise em Zig não saíram", .{});
@@ -773,6 +875,18 @@ pub const Page = struct {
             return setText(&page.message, "campos da análise em Zig fora do esperado", .{});
         };
         page.readSpecs(arena, reply) catch setText(&page.message, "resposta dos campos fora do esperado", .{});
+    }
+
+    /// o refino do núcleo gravado no arquivo do avião passa a valer em todas as telas, uma vez por arquivo aberto
+    fn seedNumerics(page: *Page, plane: *const aircraft_model.aircraft.Loaded) void {
+        const path = page.aircraft_path[0..page.aircraft_len];
+        if (std.mem.eql(u8, seeded_path[0..seeded_len], path)) return;
+        seeded_len = path.len;
+        @memcpy(seeded_path[0..path.len], path);
+        inline for (@typeInfo(@TypeOf(plane.ac.numerics)).@"struct".fields) |field| {
+            const value = @field(plane.ac.numerics, field.name);
+            shared.setNumber(manager.refine_key ++ field.name, if (field.type == i32) @floatFromInt(value) else value);
+        }
     }
 
     /// o avião aberto na Montagem, lido em Zig (nulo: nenhum aberto ou não abriu)
@@ -810,6 +924,7 @@ pub const Page = struct {
         page.waiter.progress.store(0, .release);
         page.waiter.progress_text[0] = 0;
         const values = manager.Values.fromRequest(job.run.memory(), request);
+        manager.useNumerics(values, &job.loaded.ac); // o "Refino dos Solvers" da tela vale nesta rodada
         // os avisos da rodada (a linha sustentadora numa asa curta) aparecem por cima da janela; a conta roda igual
         if (manager.alerts.forRun(job.run.memory(), simulation, &job.loaded.ac, values)) |said| {
             for (said) |text| ui_kit.toast.show(text);
@@ -970,9 +1085,15 @@ pub const Page = struct {
         try page.writeValues(writer);
     }
 
-    /// os valores do formulário em JSON: `{"chave": valor, ...}`
+    /// os valores do formulário em JSON: `{"chave": valor, ...}`, mais o refino do núcleo que as outras telas
+    /// guardaram (ele vale para toda rodada)
     fn writeValues(page: *Page, writer: *std.Io.Writer) !void {
         try writer.writeAll("{");
+        defer writer.writeAll("}") catch {};
+        defer if (page.kind == .simulation) {
+            var first = page.params.len == 0;
+            shared.writeNumerics(writer, page.params, &first) catch {};
+        };
         for (page.params, 0..) |param, k| {
             const field = &page.fields[k];
             if (k > 0) try writer.writeAll(", ");
@@ -997,7 +1118,44 @@ pub const Page = struct {
                 },
             }
         }
-        try writer.writeAll("}");
+    }
+
+    /// "Refino dos Solvers": os campos de refino da análise numa janela por cima; o que se muda aqui vale para todas
+    /// as análises que têm o mesmo campo
+    fn drawRefine(page: *Page, ui: *widgets.Ui, whole: rl.Rectangle) void {
+        rl.drawRectangleRec(whole, .{ .r = 20, .g = 30, .b = 50, .a = 90 });
+        const box_width = @min(whole.width - 80, 640);
+        const box: rl.Rectangle = .{ .x = whole.x + (whole.width - box_width) / 2, .y = whole.y + 50, .width = box_width, .height = whole.height - 100 };
+        _ = widgets.card(ui, box, "Refino dos Solvers");
+        const note = "Iterações, tolerâncias, passos e grades das contas desta análise. O padrão é o valor de sempre. O mesmo campo em outra análise é o mesmo número, e o refino vai salvo no arquivo do avião.";
+        const note_height = widgets.paragraphHeight(ui.fonts.regular, note, box.width - 32, 12);
+        _ = widgets.paragraph(ui.fonts.regular, note, box.x + 16, box.y + 42, box.width - 32, 12, theme.colors.label);
+        const top = 42 + note_height + 8;
+        if (page.refine_form.draw(ui, .{ .x = box.x + 4, .y = box.y + top, .width = box.width - 8, .height = box.height - top - 54 })) {
+            page.formEdited();
+            page.shareRefine();
+        }
+        const close: rl.Rectangle = .{ .x = box.x + box.width - 140, .y = box.y + box.height - 44, .width = 120, .height = 32 };
+        if (widgets.primaryButton(ui, close, "Fechar", true) or rl.isKeyPressed(.escape)) page.refine_open = false;
+        ui.click_taken = true;
+        ui.wheel = 0;
+    }
+
+    /// guarda os campos de refino desta página no refino compartilhado
+    fn shareRefine(page: *Page) void {
+        var changed = false;
+        for (page.params[page.refine_start..], page.fields[page.refine_start..]) |param, *field| changed = shared.put(param.key, field) or changed;
+        if (changed) shared.version += 1;
+        page.shared_seen = shared.version;
+    }
+
+    /// traz para os campos de refino o que as outras páginas guardaram
+    fn pullRefine(page: *Page) void {
+        if (page.shared_seen == shared.version) return;
+        page.shared_seen = shared.version;
+        for (page.params[page.refine_start..], page.fields[page.refine_start..]) |param, *field| {
+            if (shared.find(param.key)) |entry| shared.into(entry, field);
+        }
     }
 
     // ------------------------------------------------------------------ respostas
@@ -1083,15 +1241,26 @@ pub const Page = struct {
         var fields: std.ArrayList(form_mod.Field) = .empty;
         var params: std.ArrayList(Param) = .empty;
         var skipped: usize = 0;
+        // duas passadas: os campos da análise e, no fim, os do "Refino dos Solvers" (com os grupos deles à parte)
+        var first_group: usize = 0;
+        var refine_start: usize = 0;
+        for ([2]bool{ false, true }) |refine_pass| {
+        if (refine_pass) {
+            first_group = groups.items.len;
+            refine_start = fields.items.len;
+        }
         for (items) |item| {
             const kind = stringField(item, "kind");
             const value_kind = std.meta.stringToEnum(enum { float, int, bool, choice, str, file, floats }, kind) orelse {
-                if (!std.mem.eql(u8, kind, "table")) skipped += 1; // as tabelas vêm à parte, em "grids"
+                if (!refine_pass and !std.mem.eql(u8, kind, "table")) skipped += 1; // as tabelas vêm à parte, em "grids"
                 continue;
             };
-            const group_name = if (stringField(item, "group").len > 0) stringField(item, "group") else "Geral";
+            const whole_group = if (stringField(item, "group").len > 0) stringField(item, "group") else "Geral";
+            const refined = std.mem.startsWith(u8, whole_group, manager.refine_group);
+            if (refined != refine_pass) continue;
+            const group_name = if (!refined) whole_group else if (whole_group.len > manager.refine_group.len + 2) whole_group[manager.refine_group.len + 2 ..] else "desta análise";
             var group_index: usize = groups.items.len;
-            for (groups.items, 0..) |group, g| if (std.mem.eql(u8, group.title, group_name)) {
+            for (groups.items[first_group..], first_group..) |group, g| if (std.mem.eql(u8, group.title, group_name)) {
                 group_index = g;
             };
             if (group_index == groups.items.len) {
@@ -1102,7 +1271,7 @@ pub const Page = struct {
                 .label = try memory.dupeZ(u8, stringField(item, "label")),
                 .unit = try memory.dupeZ(u8, stringField(item, "unit")),
                 .help = try memory.dupeZ(u8, stringField(item, "help")),
-                .group = group_index,
+                .group = group_index - first_group,
                 .minimum = number(item.object.get("minimum")) orelse -std.math.inf(f64),
                 .maximum = number(item.object.get("maximum")) orelse std.math.inf(f64),
                 .enabled = if (item.object.get("enabled")) |on| on != .bool or on.bool else true,
@@ -1152,8 +1321,13 @@ pub const Page = struct {
                 },
             }
             if (keep) page.keepValue(param, &field);
+            if (refined) {
+                // o valor de todas as telas ganha; o campo que ninguém mexeu ainda entra com o que veio
+                if (shared.find(param.key)) |entry| shared.into(entry, &field) else _ = shared.put(param.key, &field);
+            }
             try fields.append(memory, field);
             try params.append(memory, param);
+        }
         }
         const same_shape = fields.items.len == page.fields.len;
         page.groups = groups.items;
@@ -1162,7 +1336,10 @@ pub const Page = struct {
         page.skipped = skipped;
         // o formulário guarda a rolagem e, se os campos são os mesmos, o que se está digitando
         const previous = page.form;
-        page.form = .{ .groups = page.groups, .fields = page.fields, .area = previous.area };
+        page.form = .{ .groups = page.groups[0..first_group], .fields = page.fields[0..refine_start], .area = previous.area };
+        page.refine_form = .{ .groups = page.groups[first_group..], .fields = page.fields[refine_start..], .area = page.refine_form.area };
+        page.refine_start = refine_start;
+        page.shared_seen = shared.version;
         if (same_shape) {
             page.form.editing = previous.editing;
             page.form.edit_text = previous.edit_text;
@@ -1333,6 +1510,15 @@ pub const Page = struct {
         var changed = false;
         var before: [128]i32 = undefined;
         for (page.params[0..@min(page.params.len, before.len)], 0..) |param, k| before[k] = if (param.rebuild) snapshot(&page.fields[k]) else 0;
+        if (page.kind == .simulation and page.refine_form.fields.len > 0) {
+            page.pullRefine();
+            if (page.refine_wanted) {
+                page.refine_wanted = false;
+                page.refine_open = true;
+            }
+            if (dialogs.button(ui, .{ .x = x, .y = y, .width = width, .height = 30 }, "Refino dos Solvers…")) page.refine_open = true;
+            y += 40;
+        }
         if (page.fields.len > 0) {
             changed = page.form.drawAt(ui, body.x, y, body.width - 10);
             y += page.form.contentHeight();

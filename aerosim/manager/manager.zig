@@ -34,6 +34,10 @@ pub const Simulation = simulation.Simulation;
 pub const Run = simulation.Run;
 pub const Values = simulation.Values;
 pub const GridEdit = simulation.GridEdit;
+/// o grupo e a chave dos campos do "Refino dos Solvers", e como o refino da tela entra na rodada
+pub const refine_group = simulation.refine_group;
+pub const refine_key = simulation.refine_key;
+pub const useNumerics = simulation.useNumerics;
 
 /// as análises em Zig, na ordem das subabas: um tipo por análise, com a interface de `simulation.check`
 pub const analyses = .{ mdo.Mdo, sizing.Sizing, wings.Wings, loads.Loads, stability.Stability, stability.DynamicStability, thrust.Thrust, Flight, mission.Mission };

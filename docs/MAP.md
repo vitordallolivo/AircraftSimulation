@@ -298,8 +298,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Methods:12`
   fn `label:34`, `choices:53`, `byName:64`
 - `core/src/numerics.zig` — O refino numérico dos solvers do núcleo num lugar só: quantas iterações, que tolerância, que passo.
-  tipos `Numerics:12`
-  fn `count:162`
+  tipos `Numerics:12`, `Solver:159`, `Info:180`
+  fn `solverTitle:162`, `count:257`
 - `core/src/opt.zig` — Otimizações em avaliação (`-Dopt`): cada uma é um bit, desligado por padrão (ver core/OTIMIZACOES.md).
   tipos `Opt:5`
 - `core/src/root.zig` — Interface C ABI do núcleo (o que o Python chama via ctypes).
@@ -450,8 +450,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Unit:22`, `Out:34`
   fn `init:48`, `polyRaw:106`, `tiltNow:123`, `axis:130`, `unit:138`, `powerLimitedCurrent:170`, `compute:187`, `equilibriumRps:225`, `point:255`
 - `core/src/physics/section.zig` — Polar 2D de um perfil e os números que saem dela, a etapa Perfis do dimensionamento.
-  tipos `Airfoil:22`, `Polar:31`, `Metrics:94`, `DragBranch:213`
-  fn `stallAngle:46`, `modelPolar:60`, `interpolate:75`, `metrics:116`, `reynolds:208`, `dragBranch:234`, `fitted:265`
+  tipos `Airfoil:22`, `Polar:31`, `Metrics:231`, `DragBranch:350`
+  fn `stallAngle:46`, `modelPolar:60`, `interpolate:75`, `atReynolds:96`, `parsePolar:212`, `metrics:253`, `reynolds:345`, `dragBranch:371`, `fitted:402`
 - `core/src/physics/terrain.zig` — Terreno: chão plano (h = 0) com mesas/plataformas retangulares elevadas.
   fn `height:9`
 
@@ -753,7 +753,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `buildMesh:149`, `balance:245`, `loadAircraft:257`, `load:270`, `fromBytes:281`, `fillAirfoilFiles:299`, `parseDat:334`, `findExample:366`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
-  tipos `Kind:36`, `Page:318`
+  tipos `Kind:39`, `shared:44`, `Page:406`
 - `aerosim/gui/python_bridge.zig` — A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
   tipos `Waiter:29`, `Bridge:45`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da antiga GUI PyQt.
@@ -763,8 +763,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/tabs/**
 
 - `aerosim/gui/tabs/config_tab.zig` — O painel da Montagem, o par de `info_html` (`config_tab.py`): tudo o que dá para saber da configuração sem
-  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:434`, `Spec:437`, `EditableList:717`, `Layout:720`, `NewPart:978`
-  fn `panel:49`, `components:346`, `specs:536`, `placeMounted:699`, `layout:737`, `addItem:829`, `removeItem:844`, `apply:883`, `add:1029`, `remove:1088`, `importPart:1141`, `componentOf:1159`, `moveBy:1170`, `setWind:1195`, `rename:1202`, `serialize:1208`
+  tipos `Row:20`, `Section:22`, `Panel:25`, `Part:321`, `Component:324`, `FieldKind:433`, `Spec:436`, `EditableList:716`, `Layout:719`, `NewPart:977`
+  fn `panel:49`, `components:345`, `specs:535`, `placeMounted:698`, `layout:736`, `addItem:828`, `removeItem:843`, `apply:882`, `add:1028`, `remove:1087`, `importPart:1140`, `componentOf:1158`, `moveBy:1169`, `setWind:1194`, `rename:1201`, `serialize:1207`
 
 **aerosim/gui/ui/**
 

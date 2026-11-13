@@ -127,7 +127,7 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
     const with_estimate = common ++ estimate ++ tail;
     const without_estimate = common ++ tail;
     const params: []const simulation.Param = if (estimated) &with_estimate else &without_estimate;
-    try simulation.writeSpecs(out, params, &plots, Sizing.description, .{});
+    try simulation.writeSpecs(out, params, &plots, Sizing.description, .{ .solvers = &.{ .sizing, .propulsion }, .aircraft = aircraft });
 }
 
 fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) simulation.Error!void {

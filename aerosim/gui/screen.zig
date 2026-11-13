@@ -463,6 +463,12 @@ pub const Screen = struct {
     /// grava o avião aberto em `path`; enquanto não há edição, é o texto do arquivo como foi lido
     fn save(screen: *Screen, path: []const u8) void {
         const opened = &(screen.assembly orelse return);
+        // o "Refino dos Solvers" das análises vai junto no arquivo do avião
+        if (opened.document == .object) {
+            const node = if (opened.document.object.getPtr("aeronave")) |inner| (if (inner.* == .object) &inner.object else &opened.document.object) else &opened.document.object;
+            page_mod.shared.numericsInto(opened.document_arena.allocator(), node) catch {};
+            screen.commitDocument(null);
+        }
         std.Io.Dir.cwd().writeFile(io(), .{ .sub_path = path, .data = opened.source }) catch |err| {
             _ = std.fmt.bufPrintZ(&screen.assembly_note, "não salvou '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) }) catch {};
             return;

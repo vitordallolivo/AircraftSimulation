@@ -127,7 +127,7 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         count += 1;
     }
     const plots: []const simulation.Plot = if (std.mem.eql(u8, method, "os dois")) &all_plots else &other_plots;
-    try simulation.writeSpecs(out, fields[0..count], plots, Envelope.description, .{});
+    try simulation.writeSpecs(out, fields[0..count], plots, Envelope.description, .{ .solvers = &.{ .envelope, .trim, .propulsion }, .aircraft = aircraft });
 }
 
 /// os dados da planilha a partir do avião (`sheet_config` do Python: a asa, a EH e `performance`)

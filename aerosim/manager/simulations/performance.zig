@@ -102,7 +102,7 @@ const Refinement = struct {
         return refinement;
     }
 };
-const group_refine = "Refino";
+const group_refine = simulation.refine_group ++ ": desempenho";
 
 /// as curvas numa altitude
 const Altitude = struct {

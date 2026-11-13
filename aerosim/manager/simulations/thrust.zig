@@ -47,14 +47,13 @@ const RunState = struct {
 };
 
 fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, values: simulation.Values) simulation.Error!void {
-    _ = aircraft;
     _ = values;
     const params = [_]simulation.Param{
         .{ .key = "V_max", .label = "V máxima", .default = .{ .number = 30 }, .minimum = 5, .maximum = 120, .unit = "m/s" },
         .{ .key = "dV", .label = "passo", .default = .{ .number = 0.5 }, .minimum = 0.1, .maximum = 5, .unit = "m/s" },
         .{ .key = "thr", .label = "Aceleradores", .kind = .floats, .default = .{ .text = "1.0, 0.75, 0.5" } },
     };
-    try simulation.writeSpecs(out, &params, &plots, Thrust.description, .{});
+    try simulation.writeSpecs(out, &params, &plots, Thrust.description, .{ .solvers = &.{.propulsion}, .aircraft = aircraft });
 }
 
 fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) simulation.Error!void {
