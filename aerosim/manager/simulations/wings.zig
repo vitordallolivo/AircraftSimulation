@@ -189,7 +189,7 @@ const solvers = [_]Solver{
 
 /// Reynolds crítico dos perfis de aeromodelo: abaixo dele a bolha laminar tende a não recolar (Lissaman,
 /// "Low-Reynolds-number airfoils", Annual Review of Fluid Mechanics 15, 1983; valor a conferir no PDF)
-const critical_reynolds = 7e4;
+const default_critical_reynolds = 7e4;
 const colors = [_][]const u8{ "#1f4e8c", "#d95f02", "#2ca02c", "#9467bd" };
 const surface_colors = [_][]const u8{ "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#17becf" };
 pub const max_per_side = 40; // `MAX_PER_SIDE` do Python
@@ -221,6 +221,7 @@ const MethodRun = struct {
 const RunState = struct {
     alphas: []f64 = &.{},
     alpha_load: f64 = 10,
+    critical_reynolds: f64 = default_critical_reynolds, // o Reynolds do alerta (campo "reynolds_critico")
     airspeed: f64 = 12,
     density: f64 = 1.225,
     owners: []const []const u8 = &.{},
@@ -298,6 +299,9 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
     try params.appendSlice(memory, &.{
         .{ .key = "section", .label = "polar 2D dos perfis no lltdrek", .kind = .choice, .default = .{ .text = "modelo" }, .choices = &.{ "modelo", "neuralfoil" }, .group = methods },
         .{ .key = "n_span", .label = "painéis por semiasa", .kind = .int, .default = .{ .number = 12 }, .minimum = 4, .maximum = 40, .group = methods },
+        .{ .key = "derivada_angulo", .label = "derivadas: passo em ângulo", .default = .{ .number = 0.5 }, .minimum = 0.0001, .maximum = 5, .unit = "°", .group = methods, .help = "as derivadas (C_Lα, C_mα, C_nβ, de comando...) saem de uma diferença central: o método roda com o ângulo um passo acima e um abaixo" },
+        .{ .key = "derivada_taxa", .label = "derivadas: passo em taxa", .default = .{ .number = 0.01 }, .minimum = 0.000001, .maximum = 0.5, .group = methods, .help = "o mesmo para as derivadas de taxa (p, q, r), em taxa adimensional (p b / 2V, q c / 2V)" },
+        .{ .key = "reynolds_critico", .label = "Reynolds crítico do alerta", .default = .{ .number = default_critical_reynolds }, .minimum = 1e3, .maximum = 1e7, .group = methods, .help = "abaixo dele a análise avisa que a bolha laminar pode não recolar (Lissaman, Low-Reynolds-number airfoils, 1983; valor a conferir no PDF)" },
         .{ .key = "n_chord", .label = "painéis na corda (VLM, AVL)", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .group = methods },
     });
     try simulation.writeSpecs(out, params.items, &plots, Wings.description, .{ .view = preview });
@@ -578,6 +582,7 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     state.density = plane.environment.rho;
     state.density_altitude = plane.environment.densityAltitude();
     state.alpha_load = values.number("alpha_load", 10);
+    state.critical_reynolds = values.number("reynolds_critico", default_critical_reynolds);
     const first = values.number("a0", -4);
     const last = values.number("a1", 22);
     const step = @max(values.number("da", 1), 0.05);
@@ -639,7 +644,7 @@ fn compareSolvers(run: *simulation.Run, state: *RunState, plane: simulation.Airc
     }
     const geometry = aerodynamics.reference(&plane);
     const reference_x = geometry.mac_le - values.number("xref", 25) / 100 * geometry.chord;
-    const case: aerodynamics.Case = .{ .airspeed = state.airspeed, .alphas = state.alphas, .alpha_derivatives = state.alpha_load, .reference = .{ reference_x, 0, 0 }, .per_side = @intFromFloat(@max(values.number("n_span", 12), 1)) };
+    const case: aerodynamics.Case = .{ .airspeed = state.airspeed, .alphas = state.alphas, .alpha_derivatives = state.alpha_load, .reference = .{ reference_x, 0, 0 }, .per_side = @intFromFloat(@max(values.number("n_span", 12), 1)), .angle_step = @max(values.number("derivada_angulo", 0.5), 1e-4), .rate_step = @max(values.number("derivada_taxa", 0.01), 1e-6) };
     var total_area: f64 = 0;
     for (state.owner_area) |area| total_area += area;
     const scale = if (total_area > 0) geometry.area / total_area else 1;
@@ -739,7 +744,7 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
             total_area += state.owner_area[k];
             const reynolds = sweep.reynolds(state.density, state.airspeed, state.owner_chord[k], state.density_altitude);
             try summary.append(memory, .{ try text(memory, "{s}: Reynolds (corda média) a {d} m/s", .{ owner, state.airspeed }), try text(memory, "{d:.0}", .{reynolds}) });
-            if (reynolds < critical_reynolds) try checks.append(memory, .{ .status = .atencao, .item = try text(memory, "Reynolds {s}", .{owner}), .value = try text(memory, "{d:.3}", .{reynolds}), .criterion = "≥ 7e+04", .why = "abaixo do Reynolds crítico dos perfis de aeromodelo a bolha laminar pode não recolar: o perfil perde sustentação, e a polar do perfil não mostra isso", .fix = "confira a polar do perfil nesse Reynolds", .group = group });
+            if (reynolds < state.critical_reynolds) try checks.append(memory, .{ .status = .atencao, .item = try text(memory, "Reynolds {s}", .{owner}), .value = try text(memory, "{d:.3}", .{reynolds}), .criterion = try text(memory, "≥ {e}", .{state.critical_reynolds}), .why = "abaixo do Reynolds crítico dos perfis de aeromodelo a bolha laminar pode não recolar: o perfil perde sustentação, e a polar do perfil não mostra isso", .fix = "confira a polar do perfil nesse Reynolds", .group = group });
         }
         try summary.append(memory, .{ "área de referência (soma das horizontais, m²)", try text(memory, "{d:.4}", .{total_area}) });
     }

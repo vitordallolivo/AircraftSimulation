@@ -47,8 +47,7 @@ const best_color = "#eda100";
 const design_color = "#0b0b0b";
 const aircraft_color = "#d62728";
 
-const grid_points = 400; // a grade de W/S dos gráficos
-const speed_points = 50; // a grade de V da tração
+const max_speed_points = 1000; // o máximo de pontos da grade de V da tração
 
 const RunState = struct {
     requirements: constraints.Requirements = .{},
@@ -57,8 +56,10 @@ const RunState = struct {
     mass: f64 = 0,
     wing_area: f64 = 0,
     engines: usize = 0,
-    speeds: [speed_points]f64 = undefined,
-    thrust: [speed_points]f64 = undefined, // a tração somada dos motores ligados, acelerador total (N)
+    grid_points: usize = 400, // a grade de W/S dos gráficos
+    speed_points: usize = 50, // a grade de V da tração
+    speeds: [max_speed_points]f64 = undefined,
+    thrust: [max_speed_points]f64 = undefined, // a tração somada dos motores ligados, acelerador total (N)
     point: constraints.DesignPoint = undefined,
     tolerance_percent: f64 = 5,
     propeller_efficiency: f64 = 0.6,
@@ -118,6 +119,8 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "mu_brake", .label = "atrito na frenagem", .default = .{ .number = if (aircraft) |plane| plane.gear.mu_brake else 0.3 }, .minimum = 0.05, .maximum = 1, .group = polar_group },
         .{ .key = "dCD_TO", .label = "C_D extra na corrida (trem, flape)", .default = .{ .number = 0.01 }, .minimum = 0, .maximum = 0.3, .group = polar_group },
         .{ .key = "tol", .label = "faixa ótima: T/W até o mínimo +", .default = .{ .number = 5 }, .minimum = 0.5, .maximum = 50, .unit = "%", .group = design_group },
+        .{ .key = "grade_ws", .label = "refino: pontos de W/S dos gráficos", .default = .{ .number = 400 }, .minimum = 2, .maximum = 20000, .group = design_group },
+        .{ .key = "grade_V", .label = "refino: pontos de V da tração", .default = .{ .number = 50 }, .minimum = 2, .maximum = 1000, .group = design_group, .help = "a tração dos motores é tabelada de 0 a 1,3 × a maior V dos requisitos com estes pontos; o que cada requisito tem de tração sai da interpolação nessa tabela" },
         .{ .key = "eta_p", .label = "eficiência da hélice (para P/m)", .default = .{ .number = 0.6 }, .minimum = 0.2, .maximum = 0.9, .group = design_group },
     };
     const estimated = std.mem.eql(u8, values.text("source", sources[0]), sources[0]);
@@ -146,6 +149,8 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
         .h_ceiling = values.number("h_ceiling", 0),
     };
     state.tolerance_percent = values.number("tol", 5);
+    state.grid_points = @intFromFloat(std.math.clamp(@round(values.number("grade_ws", 400)), 2, 20000));
+    state.speed_points = @intFromFloat(std.math.clamp(@round(values.number("grade_V", 50)), 2, max_speed_points));
     state.propeller_efficiency = values.number("eta_p", 0.6);
     const rolling = values.number("mu", aircraft.gear.mu_roll);
     const extra_drag = values.number("dCD_TO", 0.01);
@@ -166,9 +171,9 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
         state.polar_source = try std.fmt.allocPrint(memory, "estimativa: C_D0 = C_fe·S_molhada/S, AR {d}", .{aspect_ratio});
     } else {
         const context = core.trim.Ctx.init(params, &instance.r.f);
-        const fitted = performance.corePolar(params, context);
+        const fitted = performance.corePolar(params, context, .{});
         // o C_L a 0° é o da corrida (como `CL_a0` do ajuste do Python)
-        const ground_lift = core.aero.coeffs(params, performance.polar_speed, 0, 0, context.rcg, .{ 0, 0, 0 }).CL;
+        const ground_lift = core.aero.coeffs(params, (performance.PolarSweep{}).speed, 0, 0, context.rcg, .{ 0, 0, 0 }).CL;
         state.polar = .{ .CD0 = fitted.CD0, .k = fitted.K, .CLmax = fitted.CLmax, .CL_TO = ground_lift, .CD_TO = fitted.CD0 + fitted.K * ground_lift * ground_lift + extra_drag, .mu = rolling };
         state.polar_source = "o avião inteiro no núcleo (faixas, a 12 m/s)";
     }
@@ -177,8 +182,9 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     state.wing_area = params_mod.references(aircraft)[0];
     state.engines = @intCast(params.n_prop);
     const top_speed = 1.3 * @max(state.requirements.V_max, state.requirements.V_cruise, 20.0);
-    for (&state.speeds, &state.thrust, 0..) |*speed, *thrust, k| {
-        speed.* = top_speed * @as(f64, @floatFromInt(k)) / (speed_points - 1);
+    const last_speed: f64 = @floatFromInt(state.speed_points - 1);
+    for (state.speeds[0..state.speed_points], state.thrust[0..state.speed_points], 0..) |*speed, *thrust, k| {
+        speed.* = top_speed * @as(f64, @floatFromInt(k)) / last_speed;
         thrust.* = 0;
         for (params.prop[0..state.engines]) |*unit| thrust.* += core.propulsion.point(params, unit, speed.*, 1.0).T;
     }
@@ -200,7 +206,7 @@ fn pair(memory: std.mem.Allocator, a: f64, b: f64) ![]const f64 {
 
 /// a tração por peso disponível em `speed` (interpolada na grade de V)
 fn available(state: *const RunState, speed: f64, weight: f64) f64 {
-    return constraints.interp(speed, &state.speeds, &state.thrust) / weight;
+    return constraints.interp(speed, state.speeds[0..state.speed_points], state.thrust[0..state.speed_points]) / weight;
 }
 
 /// o que o avião tem na velocidade do requisito (o teto leva a tração à altitude)
@@ -226,8 +232,10 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
 
     // a grade de W/S dos gráficos, o envelope de todas as curvas e a altura do gráfico
     const top_loading = @max(1.3 * point.max_loading, 1.15 * aircraft_loading);
+    const grid_points = state.grid_points;
+    const last_loading: f64 = @floatFromInt(grid_points - 1);
     const loadings = try memory.alloc(f64, grid_points);
-    for (loadings, 0..) |*loading, i| loading.* = 0.05 * top_loading + (top_loading - 0.05 * top_loading) * @as(f64, @floatFromInt(i)) / (grid_points - 1);
+    for (loadings, 0..) |*loading, i| loading.* = 0.05 * top_loading + (top_loading - 0.05 * top_loading) * @as(f64, @floatFromInt(i)) / last_loading;
     const top_tw = @min(@max(2.5 * point.thrust_weight, if (has_engine) 1.5 * state.thrust[0] / weight else 0, 0.3), 3.0);
 
     const figures = try simulation.Figures.init(memory, &plots);
@@ -281,9 +289,9 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
 
     // a tração do motor e o que cada requisito pede na W/S do avião
     if (has_engine) {
-        const thrust_weight = try memory.alloc(f64, speed_points);
-        for (thrust_weight, state.thrust) |*tw, thrust| tw.* = thrust / weight;
-        try figures.curve("t", .{ .name = "disponível (acelerador total)", .x = &state.speeds, .y = thrust_weight, .color = "#1f77b4" });
+        const thrust_weight = try memory.alloc(f64, state.speed_points);
+        for (thrust_weight, state.thrust[0..state.speed_points]) |*tw, thrust| tw.* = thrust / weight;
+        try figures.curve("t", .{ .name = "disponível (acelerador total)", .x = try memory.dupe(f64, state.speeds[0..state.speed_points]), .y = thrust_weight, .color = "#1f77b4" });
     }
     const group = "requisitos";
     var inside = has_engine and aircraft_loading <= point.max_loading;

@@ -59,7 +59,6 @@ const other_plots = [_]simulation.Plot{
 };
 const all_plots = [_]simulation.Plot{plot_comparison} ++ other_plots;
 
-const curve_points = 300; // pontos das curvas de potência
 const max_rows = 4096;
 
 /// o que um método deu
@@ -93,6 +92,7 @@ const RunState = struct {
     alpha_cruise_deg: f64 = 0,
     ceiling_min: f64 = 500,
     load_limit: f64 = 2,
+    curve_points: usize = 300, // pontos das curvas de potência
 };
 
 fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, values: simulation.Values) simulation.Error!void {
@@ -111,6 +111,8 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "V_hi", .label = "V final", .default = .{ .number = 30 }, .minimum = 1, .maximum = 200, .unit = "m/s" },
         .{ .key = "dV", .label = "Grade de V (depois bisseção)", .default = .{ .number = 0.05 }, .minimum = 0.001, .maximum = 2, .unit = "m/s" },
         .{ .key = "tol", .label = "Tolerância de V", .default = .{ .number = 1e-5 }, .minimum = 1e-8, .maximum = 0.1, .unit = "m/s" },
+        .{ .key = "dV_modelo", .label = "Grade de V mínima do modelo completo", .default = .{ .number = 0.5 }, .minimum = 0.001, .maximum = 5, .unit = "m/s", .help = "o modelo completo trima o avião em cada V da grade (caro), então a grade dele nunca fica mais fina que isto; a bisseção acha o limite exato depois" },
+        .{ .key = "curva_pontos", .label = "Pontos das curvas de potência", .default = .{ .number = 300 }, .minimum = 2, .maximum = 5000 },
         .{ .key = "n_load", .label = "Fator de carga n (0 = da aeronave)", .default = .{ .number = 0 }, .minimum = 0, .maximum = 10 },
         .{ .key = "alpha_cruise", .label = "ângulo de cruzeiro", .kind = .floats, .default = .{ .text = cruise_text }, .unit = "°", .help = "começa com o do avião (Montagem → desempenho); mudar aqui vale só para esta análise. Planilha: V em que a sustentação nesse α iguala o peso. Modelo completo: V em que o α de equilíbrio é esse" },
         .{ .key = "table", .label = "Tabela de desempenho ao nível do mar", .kind = .bool, .default = .{ .toggle = true } },
@@ -187,7 +189,7 @@ fn methodConfig(sheet: envelope.EnvCfg, values: simulation.Values, method: Metho
     cfg.V_hi = @max(values.number("V_hi", 30), cfg.V_lo + 0.1);
     cfg.tol = values.number("tol", 1e-5);
     const grid = @max(values.number("dV", 0.05), 1e-3);
-    cfg.dV = if (method == .sheet) grid else @max(grid, 0.5);
+    cfg.dV = if (method == .sheet) grid else @max(grid, values.number("dV_modelo", 0.5));
     const load = values.number("n_load", 0);
     if (load > 0) cfg.n_load = load;
     var buffer: [1]f64 = undefined;
@@ -223,10 +225,11 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     state.ceiling_min = run.aircraft.performance.ceiling_min;
     const load = values.number("n_load", 0);
     state.load_limit = if (load > 0) load else run.aircraft.performance.load_factor;
+    state.curve_points = @intFromFloat(@max(@round(values.number("curva_pontos", 300)), 2));
 }
 
 /// as curvas de potência de um método numa altitude
-fn powerCurves(memory: std.mem.Allocator, params: *const core.types.Params, cfg: *const envelope.EnvCfg, height: f64) !Curves {
+fn powerCurves(memory: std.mem.Allocator, params: *const core.types.Params, cfg: *const envelope.EnvCfg, height: f64, curve_points: usize) !Curves {
     const speeds = try memory.alloc(f64, curve_points);
     const available = try memory.alloc(f64, curve_points);
     const required = try memory.alloc(f64, curve_points);
@@ -249,8 +252,8 @@ fn advanceRun(run: *simulation.Run, state: *RunState) simulation.Error!bool {
         const count = envelope.compute(params, &outcome.cfg, outcome.rows, &outcome.ceiling);
         outcome.rows = outcome.rows[0..count];
         outcome.near_ceiling = @max(outcome.ceiling - outcome.cfg.h_step, 0);
-        outcome.sea_level = try powerCurves(memory, params, &outcome.cfg, 0);
-        outcome.top = try powerCurves(memory, params, &outcome.cfg, outcome.near_ceiling);
+        outcome.sea_level = try powerCurves(memory, params, &outcome.cfg, 0, state.curve_points);
+        outcome.top = try powerCurves(memory, params, &outcome.cfg, outcome.near_ceiling, state.curve_points);
         outcome.done = true;
         run.progress = @floatCast(@as(f64, @floatFromInt(k + 1)) / 3.0);
         return false;

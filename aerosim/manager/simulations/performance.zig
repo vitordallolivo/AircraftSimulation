@@ -30,7 +30,7 @@ pub const Performance = struct {
 };
 
 const altitude_colors = [_][]const u8{ "#1f77b4", "#d62728", "#2ca02c", "#ff7f0e", "#9467bd", "#8c564b" };
-const banks_deg = [_]f64{ 5, 10, 15, 20, 25, 30, 35, 40 };
+const default_banks = [_]f64{ 5, 10, 15, 20, 25, 30, 35, 40 };
 const bank_colors = [_][]const u8{ "#4472c4", "#ed7d31", "#a5a5a5", "#ffc000", "#5b9bd5", "#70ad47", "#264478", "#9e480e" };
 const safe_color = "#2ca02c";
 const black = "#000000";
@@ -51,10 +51,58 @@ const plots = std.EnumArray(Chart, simulation.Plot).init(.{
 });
 
 const max_altitudes = 6;
-pub const polar_speed = 12.0; // a velocidade da polar do núcleo (m/s), como `core_polar`
-const top_speed = 35.0; // a maior V das curvas (m/s)
-const envelope_step = 50.0; // o passo do envelope de voo (m)
-const envelope_top = 9000.0;
+/// a varredura que ajusta a polar parabólica do avião (`corePolar`): C_L e C_D de `first` a `last` (graus) na
+/// velocidade `speed`, e a reta de C_D contra C_L² só entre `fit_first` e `fit_last`
+pub const PolarSweep = struct {
+    speed: f64 = 12.0, // m/s, como `core_polar`
+    first: f64 = -4,
+    last: f64 = 24,
+    step: f64 = 0.5,
+    fit_first: f64 = -2,
+    fit_last: f64 = 8,
+
+    fn of(values: simulation.Values) PolarSweep {
+        const standard: PolarSweep = .{};
+        return .{
+            .speed = values.number("polar_V", standard.speed),
+            .first = values.number("polar_a0", standard.first),
+            .last = values.number("polar_a1", standard.last),
+            .step = @max(values.number("polar_passo", standard.step), 0.01),
+            .fit_first = values.number("ajuste_a0", standard.fit_first),
+            .fit_last = values.number("ajuste_a1", standard.fit_last),
+        };
+    }
+};
+
+/// o refino das curvas: até que V, com que passo, e o envelope de voo de quanto em quanto até onde
+const Refinement = struct {
+    top_speed: f64 = 35.0, // a maior V das curvas (m/s)
+    speed_step: f64 = 0.1, // o passo de V das curvas (m/s)
+    thrust_step: f64 = 0.5, // o passo de V da tabela de tração (m/s)
+    envelope_step: f64 = 50.0, // o passo do envelope de voo (m)
+    envelope_top: f64 = 9000.0, // até onde o envelope sobe procurando o teto (m)
+    turn_points: usize = 120, // pontos de cada curva do envelope de curvas
+    banks: [simple_perf.max_bank]f64 = default_banks ++ [_]f64{0} ** (simple_perf.max_bank - default_banks.len),
+    bank_count: usize = default_banks.len,
+
+    fn of(values: simulation.Values) Refinement {
+        var refinement: Refinement = .{};
+        refinement.top_speed = values.number("V_topo", refinement.top_speed);
+        refinement.speed_step = @max(values.number("V_passo", refinement.speed_step), 0.01);
+        refinement.thrust_step = @max(values.number("tracao_passo", refinement.thrust_step), 0.05);
+        refinement.envelope_step = @max(values.number("envelope_passo", refinement.envelope_step), 1);
+        refinement.envelope_top = values.number("envelope_topo", refinement.envelope_top);
+        refinement.turn_points = @intFromFloat(@max(@round(values.number("curvas_pontos", 120)), 2));
+        var buffer: [simple_perf.max_bank]f64 = undefined;
+        const banks = values.numbers("inclinacoes", &buffer, &default_banks);
+        if (banks.len > 0) {
+            @memcpy(refinement.banks[0..banks.len], banks);
+            refinement.bank_count = banks.len;
+        }
+        return refinement;
+    }
+};
+const group_refine = "Refino";
 
 /// as curvas numa altitude
 const Altitude = struct {
@@ -83,6 +131,7 @@ const RunState = struct {
     area: f64 = 0,
     load_factor: f64 = 2,
     bank_limit_deg: f64 = 30, // o φ máximo do piloto
+    refinement: Refinement = .{},
     envelope: Envelope = .{},
     altitudes: []Altitude = &.{},
 };
@@ -100,24 +149,38 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "mass", .label = "Massa (0 = da aeronave)", .default = .{ .number = 0 }, .minimum = 0, .maximum = 1000, .unit = "kg" },
         .{ .key = "bat_n", .label = "Bateria: expoente de Peukert", .default = .{ .number = 1.05 }, .minimum = 1, .maximum = 1.6, .group = "Bateria" },
         .{ .key = "bat_eta", .label = "Bateria: rendimento total (motor, ESC, hélice)", .default = .{ .number = 0.6 }, .minimum = 0.05, .maximum = 1, .group = "Bateria" },
+        .{ .key = "polar_V", .label = "Polar: velocidade", .default = .{ .number = 12 }, .minimum = 1, .maximum = 100, .unit = "m/s", .group = group_refine, .help = "a polar parabólica do avião (C_D0, K e C_L máx.) sai de uma varredura de α nesta velocidade, sem trimar" },
+        .{ .key = "polar_a0", .label = "Polar: α inicial", .default = .{ .number = -4 }, .minimum = -30, .maximum = 30, .unit = "°", .group = group_refine },
+        .{ .key = "polar_a1", .label = "Polar: α final", .default = .{ .number = 24 }, .minimum = -30, .maximum = 60, .unit = "°", .group = group_refine, .help = "o C_L máx. é o maior C_L da varredura" },
+        .{ .key = "polar_passo", .label = "Polar: passo de α", .default = .{ .number = 0.5 }, .minimum = 0.01, .maximum = 5, .unit = "°", .group = group_refine },
+        .{ .key = "ajuste_a0", .label = "Polar: ajuste a partir de α", .default = .{ .number = -2 }, .minimum = -30, .maximum = 30, .unit = "°", .group = group_refine, .help = "a reta de C_D contra C_L² (que dá C_D0 e K) usa só os pontos entre estes dois α, longe do estol" },
+        .{ .key = "ajuste_a1", .label = "Polar: ajuste até α", .default = .{ .number = 8 }, .minimum = -30, .maximum = 30, .unit = "°", .group = group_refine },
+        .{ .key = "V_topo", .label = "Maior V das curvas", .default = .{ .number = 35 }, .minimum = 5, .maximum = 60, .unit = "m/s", .group = group_refine },
+        .{ .key = "V_passo", .label = "Passo de V das curvas", .default = .{ .number = 0.1 }, .minimum = 0.01, .maximum = 5, .unit = "m/s", .group = group_refine },
+        .{ .key = "tracao_passo", .label = "Passo de V da tabela de tração", .default = .{ .number = 0.5 }, .minimum = 0.05, .maximum = 5, .unit = "m/s", .group = group_refine, .help = "a tração disponível a todo acelerador é tabelada de 0 até a maior V + 1 m/s com este passo (no máximo 128 pontos)" },
+        .{ .key = "envelope_passo", .label = "Envelope de voo: passo de altitude", .default = .{ .number = 50 }, .minimum = 1, .maximum = 1000, .unit = "m", .group = group_refine, .help = "o envelope sobe de passo em passo até o teto; o teto sai com esta precisão" },
+        .{ .key = "envelope_topo", .label = "Envelope de voo: altitude máxima", .default = .{ .number = 9000 }, .minimum = 100, .maximum = 30000, .unit = "m", .group = group_refine },
+        .{ .key = "inclinacoes", .label = "Envelope de curvas: inclinações", .kind = .floats, .default = .{ .text = "5, 10, 15, 20, 25, 30, 35, 40" }, .unit = "°", .group = group_refine, .help = "até 8 inclinações φ; cada uma dá uma curva R = V²/(g tan φ)" },
+        .{ .key = "curvas_pontos", .label = "Envelope de curvas: pontos por curva", .default = .{ .number = 120 }, .minimum = 2, .maximum = 2000, .group = group_refine },
     };
     try simulation.writeSpecs(out, &params, plots.values[0..], Performance.description, .{});
 }
 
-/// C_D0, K e C_Lmax do avião inteiro pelo núcleo: C_L e C_D de −4° a 24° a 12 m/s e a reta de C_D contra C_L² de −2°
-/// a 8° (como `core_polar` do Python), sem trimar
-pub fn corePolar(params: *const core.types.Params, tc: core.trim.Ctx) Polar {
+/// C_D0, K e C_Lmax do avião inteiro pelo núcleo, sem trimar: a varredura `sweep` (padrão: C_L e C_D de −4° a 24° a
+/// 12 m/s e a reta de C_D contra C_L² de −2° a 8°, como `core_polar` do Python)
+pub fn corePolar(params: *const core.types.Params, tc: core.trim.Ctx, sweep: PolarSweep) Polar {
     var sx: f64 = 0;
     var sy: f64 = 0;
     var sxx: f64 = 0;
     var sxy: f64 = 0;
     var count: f64 = 0;
     var lift_max: f64 = -std.math.inf(f64);
-    for (0..57) |i| {
-        const alpha = (-4.0 + 0.5 * @as(f64, @floatFromInt(i))) * rad;
-        const coefficients = core.aero.coeffs(params, polar_speed, alpha, 0, tc.rcg, .{ 0, 0, 0 });
+    const points: usize = @intFromFloat(@floor((sweep.last - sweep.first) / sweep.step + 1e-9) + 1);
+    for (0..points) |i| {
+        const alpha = (sweep.first + sweep.step * @as(f64, @floatFromInt(i))) * rad;
+        const coefficients = core.aero.coeffs(params, sweep.speed, alpha, 0, tc.rcg, .{ 0, 0, 0 });
         lift_max = @max(lift_max, coefficients.CL);
-        if (alpha < -2 * rad - 1e-12 or alpha > 8 * rad + 1e-12) continue;
+        if (alpha < sweep.fit_first * rad - 1e-12 or alpha > sweep.fit_last * rad + 1e-12) continue;
         const lift_squared = coefficients.CL * coefficients.CL;
         sx += lift_squared;
         sy += coefficients.CD;
@@ -141,8 +204,8 @@ fn baseConfig(instance: *core.runner.Instance, aircraft: *const simulation.Aircr
         .rho0 = aircraft.performance.rho0,
         .T0 = 288.15,
         .V_lo = 0.5,
-        .V_hi = top_speed,
-        .dV = 0.1,
+        .V_hi = state.refinement.top_speed,
+        .dV = state.refinement.speed_step,
         .n_load = state.load_factor,
         .bat_Rt = 1,
         .bat_n = values.number("bat_n", 1.05),
@@ -150,18 +213,20 @@ fn baseConfig(instance: *core.runner.Instance, aircraft: *const simulation.Aircr
         .bat_C = 1,
         .bat_V = 1,
     };
-    // a tração disponível: a soma das unidades a todo acelerador, de 0 a 36 m/s a cada 0,5 m/s (`thrust_curves`)
+    // a tração disponível: a soma das unidades a todo acelerador, de 0 até 1 m/s acima da maior V (padrão: 0 a
+    // 36 m/s a cada 0,5 m/s, `thrust_curves`)
     const unit_count: usize = @intCast(params.n_prop);
-    const points = @min(@as(usize, 73), simple_perf.max_pts);
+    const thrust_step = state.refinement.thrust_step;
+    const points = @min(@as(usize, @intFromFloat(@floor((state.refinement.top_speed + 1) / thrust_step + 1e-9))) + 1, simple_perf.max_pts);
     for (0..points) |k| {
-        const speed = 0.5 * @as(f64, @floatFromInt(k));
+        const speed = thrust_step * @as(f64, @floatFromInt(k));
         cfg.thr_V[k] = speed;
         var thrust: f64 = 0;
         for (params.prop[0..unit_count]) |*unit| thrust += core.propulsion.point(params, unit, speed, 1).T;
         cfg.thr_T[k] = thrust;
     }
     if (unit_count == 0) {
-        cfg.thr_V[1] = top_speed;
+        cfg.thr_V[1] = state.refinement.top_speed;
         cfg.n_thr = 2;
     } else cfg.n_thr = @intCast(points);
     var tilt_sum: f64 = 0;
@@ -178,8 +243,8 @@ fn baseConfig(instance: *core.runner.Instance, aircraft: *const simulation.Aircr
         cfg.bat_C = pack.capacity_mAh / 1000 * (if (aircraft.shared_battery) 1 else enabled);
         cfg.bat_V = pack.voc();
     }
-    for (banks_deg, 0..) |bank, k| cfg.bank[k] = bank * rad;
-    cfg.n_bank = banks_deg.len;
+    for (state.refinement.banks[0..state.refinement.bank_count], 0..) |bank, k| cfg.bank[k] = bank * rad;
+    cfg.n_bank = @intCast(state.refinement.bank_count);
     return cfg;
 }
 
@@ -208,7 +273,8 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
         run.fail("o avião não montou no núcleo: {s} ({s})", .{ diagnosis.text(), @errorName(err) });
         return err;
     };
-    state.polar = corePolar(&instance.p, core.trim.Ctx.init(&instance.p, &instance.r.f));
+    state.refinement = .of(values);
+    state.polar = corePolar(&instance.p, core.trim.Ctx.init(&instance.p, &instance.r.f), .of(values));
     const mass = values.number("mass", 0);
     state.mass = if (mass > 0) mass else info.mass;
     state.area = params_mod.references(aircraft)[0];
@@ -220,7 +286,7 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     // o envelope de voo: sobe de 50 em 50 m até o teto (nenhuma V com P_d ≥ P_r, ou V_max ≤ V_min)
     const scratch = try memory.alloc(simple_perf.SimpleRow, rowCapacity(base));
     var height: f64 = 0;
-    while (height <= envelope_top + 1e-9) : (height += envelope_step) {
+    while (height <= state.refinement.envelope_top + 1e-9) : (height += state.refinement.envelope_step) {
         var cfg = base;
         cfg.h = height;
         var summary: simple_perf.SimpleSummary = .{};
@@ -322,7 +388,7 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
         try altitudeChecks(memory, altitude, &checks);
         try altitudeCurves(memory, figures, altitude, j);
         if (j == 0) {
-            try turnChart(memory, figure(figures, .turns), facts, state.bank_limit_deg);
+            try turnChart(memory, figure(figures, .turns), facts, state.bank_limit_deg, &state.refinement);
             try vnChart(memory, figure(figures, .vn), altitude, state.load_factor);
         }
     }
@@ -484,17 +550,19 @@ fn altitudeCurves(memory: std.mem.Allocator, figures: simulation.Figures, altitu
 
 /// o envelope de curvas (Figura 4.7): V contra o raio R = V²/(g tan φ) para cada inclinação, com a área segura
 /// entre V_e e V* e entre R(V*, φ máx. do piloto) e R(V*, 10°)
-fn turnChart(memory: std.mem.Allocator, lines: *Lines, facts: simple_perf.SimpleSummary, bank_limit_deg: f64) !void {
+fn turnChart(memory: std.mem.Allocator, lines: *Lines, facts: simple_perf.SimpleSummary, bank_limit_deg: f64, refinement: *const Refinement) !void {
     const stall = facts.Vs;
     const maneuver = facts.Vman;
-    const point_count = 120;
+    const point_count = refinement.turn_points;
+    const banks_deg = refinement.banks[0..refinement.bank_count];
+    const last_point: f64 = @floatFromInt(point_count - 1);
     const top = 1.15 * maneuver;
     const largest_radius = 1.1 * maneuver * maneuver / (g0 * @tan((banks_deg[0] + 5) * rad));
     for (banks_deg, 0..) |bank, k| {
         var radii: std.ArrayList(f64) = .empty;
         var speeds: std.ArrayList(f64) = .empty;
         for (0..point_count) |i| {
-            const speed = 0.5 + (top - 0.5) * @as(f64, @floatFromInt(i)) / (point_count - 1);
+            const speed = 0.5 + (top - 0.5) * @as(f64, @floatFromInt(i)) / last_point;
             const radius = speed * speed / (g0 * @tan(bank * rad));
             if (radius > largest_radius) continue;
             try radii.append(memory, radius);

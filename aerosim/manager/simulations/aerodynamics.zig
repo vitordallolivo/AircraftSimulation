@@ -63,6 +63,8 @@ pub const Case = struct {
     alpha_derivatives: f64, // graus
     reference: [3]f64,
     per_side: usize = 12,
+    angle_step: f64 = 0.5, // passo das derivadas em ângulo (α, β e comandos), em graus: `DA` de `aerosim/aero/base.py`
+    rate_step: f64 = 0.01, // passo das derivadas em taxa adimensional (p, q, r): `DH`
 };
 
 /// a polar de um método: C_L, C_D, C_m e a parte induzida em cada α, mais as derivadas no α das derivadas
@@ -119,20 +121,18 @@ fn evaluate(params: *const core.types.Params, solver: Solver, airspeed: f64, ref
 /// um ponto de voo (`FlightPoint`): α e β em rad, as taxas adimensionais (p̂ = p b/2V...) e os comandos em rad
 const Point = struct { alpha: f64, beta: f64 = 0, roll: f64 = 0, pitch: f64 = 0, yaw: f64 = 0, elevator: f64 = 0, aileron: f64 = 0, rudder: f64 = 0 };
 
-const angle_step = 0.5 * rad; // `DA` de `aerosim/aero/base.py`
-const rate_step = 0.01; // `DH`
 
 /// a variável de uma derivada por diferença central, o passo e as saídas (`_PLAN` de `aerosim/aero/base.py`)
-const Variation = struct { field: []const u8, step: f64, outputs: []const Derivative };
+const Variation = struct { field: []const u8, rate: bool = false, outputs: []const Derivative };
 const plan = [_]Variation{
-    .{ .field = "alpha", .step = angle_step, .outputs = &.{ .CLa, .Cma } },
-    .{ .field = "beta", .step = angle_step, .outputs = &.{ .CYb, .Clb, .Cnb } },
-    .{ .field = "roll", .step = rate_step, .outputs = &.{ .CYp, .Clp, .Cnp } },
-    .{ .field = "pitch", .step = rate_step, .outputs = &.{ .CLq, .Cmq } },
-    .{ .field = "yaw", .step = rate_step, .outputs = &.{ .CYr, .Clr, .Cnr } },
-    .{ .field = "elevator", .step = angle_step, .outputs = &.{ .CLde, .Cmde } },
-    .{ .field = "aileron", .step = angle_step, .outputs = &.{ .Clda, .Cnda } },
-    .{ .field = "rudder", .step = angle_step, .outputs = &.{ .CYdr, .Cldr, .Cndr } },
+    .{ .field = "alpha", .outputs = &.{ .CLa, .Cma } },
+    .{ .field = "beta", .outputs = &.{ .CYb, .Clb, .Cnb } },
+    .{ .field = "roll", .rate = true, .outputs = &.{ .CYp, .Clp, .Cnp } },
+    .{ .field = "pitch", .rate = true, .outputs = &.{ .CLq, .Cmq } },
+    .{ .field = "yaw", .rate = true, .outputs = &.{ .CYr, .Clr, .Cnr } },
+    .{ .field = "elevator", .outputs = &.{ .CLde, .Cmde } },
+    .{ .field = "aileron", .outputs = &.{ .Clda, .Cnda } },
+    .{ .field = "rudder", .outputs = &.{ .CYdr, .Cldr, .Cndr } },
 };
 
 /// o coeficiente que a derivada mede (C_L em C_Lα, C_n em C_nβ...)
@@ -176,11 +176,12 @@ pub fn solve(run: *simulation.Run, plane: simulation.Aircraft, solver: Solver, c
     inline for (plan) |variation| {
         var plus: Point = .{ .alpha = base };
         var minus: Point = .{ .alpha = base };
-        @field(plus, variation.field) += variation.step;
-        @field(minus, variation.field) -= variation.step;
+        const step = if (variation.rate) case.rate_step else case.angle_step * rad;
+        @field(plus, variation.field) += step;
+        @field(minus, variation.field) -= step;
         const high = evaluate(params, solver, case.airspeed, case.reference, plus);
         const low = evaluate(params, solver, case.airspeed, case.reference, minus);
-        for (variation.outputs) |output| polar.derivatives.set(output, (coefficientOf(output, high) - coefficientOf(output, low)) / (2 * variation.step));
+        for (variation.outputs) |output| polar.derivatives.set(output, (coefficientOf(output, high) - coefficientOf(output, low)) / (2 * step));
     }
     return polar;
 }
