@@ -17,6 +17,18 @@ pub const Numerics = extern struct {
     trim_step_halvings: i32 = 12,
     /// bisseções do fator de carga limite nas curvas
     trim_turn_bisections: i32 = 40,
+    /// menor α que a trimagem procura (rad)
+    trim_alpha_min: f64 = -0.2,
+    /// maior α que a trimagem procura (rad)
+    trim_alpha_max: f64 = 0.45,
+    /// maior deflexão do profundor que a trimagem procura, para os dois lados (rad)
+    trim_elevator_limit: f64 = 0.35,
+    /// maior passo de α numa iteração (rad)
+    trim_alpha_step: f64 = 0.08,
+    /// maior passo do profundor numa iteração (rad)
+    trim_elevator_step: f64 = 0.08,
+    /// maior passo do motor (ou da inclinação) numa iteração
+    trim_throttle_step: f64 = 0.25,
 
     // equilíbrio e linearização (sim/linear.zig)
     /// iterações do equilíbrio 6 × 6 antes de linearizar
@@ -87,6 +99,10 @@ pub const Numerics = extern struct {
     llt_jacobian_step: f64 = 1e-6,
     /// raio do núcleo do vórtice entre superfícies diferentes, em fração da corda
     vortex_core_fraction: f64 = 0.1,
+    /// comprimento das pernas do vórtice que fazem o papel de infinito (m)
+    vortex_leg_length: f64 = 1e3,
+    /// C_L máximo da faixa dividido pelo c_l máximo do perfil
+    section_lift_factor: f64 = 0.9,
 
     // curva de sustentação com estol (loads/llt.zig, physics/aero.zig, physics/section.zig)
     /// iterações da seção áurea do pico de c_l
@@ -127,6 +143,10 @@ pub const Numerics = extern struct {
     tail_span_strips: i32 = 60,
     /// bisseções da cadeia de dimensionamento
     chain_bisections: i32 = 40,
+    /// pontos da grade de carga alar em que o ponto de projeto é procurado (até 4096)
+    design_grid_points: i32 = 600,
+    /// velocidade de decolagem dividida pela de estol
+    liftoff_speed_factor: f64 = 1.1,
 
     // estruturas e cargas
     /// meias-ondas testadas em cada direção na flambagem

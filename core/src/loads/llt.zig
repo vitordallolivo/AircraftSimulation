@@ -56,7 +56,6 @@ const mods = @import("../modifiers/mod.zig");
 const V3 = vec.V3;
 
 const n_max = limits.max_surfaces;
-const far = 1e3; // comprimento das pernas (m): "infinito" para aviões deste tamanho
 /// núcleo dos vórtices entre superfícies diferentes, em fração da corda de quem solta (Scully; Vatistas, Kozel e Mih,
 /// "A simpler model for concentrated vortices", Experiments in Fluids 11, 1991, n = 1). Sem ele, a perna da raiz de
 /// uma EV que encosta na EH passa a milímetros dos pontos de controle da EH e induz dezenas de m/s (1/h). Entre
@@ -73,7 +72,7 @@ pub fn sectionSlope(CLa: f64, AR: f64) f64 {
 
 /// C_Lmax = 0,9 c_l,max: o fator com que o tradutor passa do perfil para a faixa (`aerosim/model/universal.py`,
 /// `_coeffs_from`; Raymer, eq. 12.15 — a conferir no PDF). A versão não linear volta ao c_l,max da seção com ele
-pub const clmax_factor = 0.9;
+pub const clmax_factor = 0.9; // o padrão de `numerics.Numerics.section_lift_factor`
 
 /// a curva c_l(α) de uma seção: inclinação 2D, ângulo de sustentação nula e ângulo de estol da mistura com a placa
 /// plana (`stall` ≤ 0: só a reta)
@@ -144,8 +143,8 @@ pub fn segment(point: V3, start: V3, end: V3, rc: f64) V3 {
 /// onde o ar vai).
 /// `bound` = false: só as pernas (painéis da mesma superfície; ver `apply`)
 pub fn horseshoe(point: V3, node_a: V3, node_b: V3, flow_dir: V3, bound: bool, rc: f64) V3 {
-    const far_a = node_a + flow_dir * vec.splat(far);
-    const far_b = node_b + flow_dir * vec.splat(far);
+    const far_a = node_a + flow_dir * vec.splat(numerics.active.vortex_leg_length);
+    const far_b = node_b + flow_dir * vec.splat(numerics.active.vortex_leg_length);
     const legs = segment(point, far_a, node_a, rc) + segment(point, node_b, far_b, rc);
     return if (bound) legs + segment(point, node_a, node_b, rc) else legs;
 }
@@ -274,8 +273,8 @@ fn jointDir(chord_aft: V3, tangent: V3) V3 {
 /// velocidade induzida em `point` (Γ = 1) pela ferradura com junta: longe → joint_a → node_a → node_b → joint_b → longe; sem o segmento ligado
 /// quando `bound` = false. Com jA = A e jB = B é a ferradura de Phillips e Snyder
 fn jointed(point: V3, node_a: V3, node_b: V3, joint_a: V3, joint_b: V3, flow_dir: V3, bound: bool, rc: f64) V3 {
-    const far_a = joint_a + flow_dir * vec.splat(far);
-    const far_b = joint_b + flow_dir * vec.splat(far);
+    const far_a = joint_a + flow_dir * vec.splat(numerics.active.vortex_leg_length);
+    const far_b = joint_b + flow_dir * vec.splat(numerics.active.vortex_leg_length);
     var velocity = segment(point, far_a, joint_a, rc) + segment(point, joint_a, node_a, rc) + segment(point, node_b, joint_b, rc) + segment(point, joint_b, far_b, rc);
     if (bound) velocity += segment(point, node_a, node_b, rc);
     return velocity;
@@ -408,7 +407,7 @@ fn sectionLine(surface: *const types.Surface, cosL: f64) struct { slope: f64, ze
 /// o ângulo de estol da seção do painel, com o c_l,max da seção (C_Lmax / `clmax_factor`)
 fn panelStall(params: *const types.Params, surface: *const types.Surface, cosL: f64) f64 {
     const line = sectionLine(surface, cosL);
-    return stallAngle(line.slope, line.zero_lift, surface.CLmax / clmax_factor, params.Mst);
+    return stallAngle(line.slope, line.zero_lift, surface.CLmax / numerics.active.section_lift_factor, params.Mst);
 }
 
 /// a influência de j em i (Γ = 1) com o cache: só as duas pernas livres, somadas na mesma ordem de `horseshoe`
@@ -417,8 +416,8 @@ fn cachedInfluence(cache: *const types.LltCache, point: V3, i: usize, j: usize, 
     const pair_index = i * n_max + j;
     const joint_a = vec.v3(cache.jA[pair_index]);
     const joint_b = vec.v3(cache.jB[pair_index]);
-    const far_a = joint_a + flow_dir * vec.splat(far);
-    const far_b = joint_b + flow_dir * vec.splat(far);
+    const far_a = joint_a + flow_dir * vec.splat(numerics.active.vortex_leg_length);
+    const far_b = joint_b + flow_dir * vec.splat(numerics.active.vortex_leg_length);
     const bound = withBound(i, j);
     if (cache.gh != 0) {
         var velocity = segment(point, far_a, joint_a, rc) + vec.v3(cache.s2[pair_index]) + vec.v3(cache.s3[pair_index]) + segment(point, joint_b, far_b, rc);
@@ -1147,7 +1146,7 @@ test "não linear: em α pequeno fica com a linear; perto do estol o C_L para ab
     try testing.expectApproxEqRel(linear_small, nonlinear_small, 0.01);
     // varredura em α: a linear cresce sempre; a não linear tem um máximo abaixo do c_l,max da seção (1,2 / 0,9)
     const default_surface = types.Surface{};
-    const section_clmax = default_surface.CLmax / clmax_factor;
+    const section_clmax = default_surface.CLmax / numerics.active.section_lift_factor;
     var largest: f64 = 0;
     var alpha: f64 = 0.04;
     while (alpha < 0.45) : (alpha += 0.02) largest = @max(largest, rectLift(&params, &panels, wing_span, chord, airspeed, alpha));

@@ -155,6 +155,16 @@ const labels = std.StaticStringMap([]const u8).initComptime([_]Pair{
     .{ "chain_bisections", "dimensionamento: bisseções da cadeia" },
     .{ "buckling_waves", "estruturas e cargas: meias-ondas da flambagem" },
     .{ "flutter_iterations", "estruturas e cargas: iterações do flutter" },
+    .{ "trim_alpha_min", "trimagem: menor α (rad)" },
+    .{ "trim_alpha_max", "trimagem: maior α (rad)" },
+    .{ "trim_elevator_limit", "trimagem: profundor máximo (rad)" },
+    .{ "trim_alpha_step", "trimagem: passo máximo de α (rad)" },
+    .{ "trim_elevator_step", "trimagem: passo máximo do profundor (rad)" },
+    .{ "trim_throttle_step", "trimagem: passo máximo do motor" },
+    .{ "vortex_leg_length", "linha sustentadora: comprimento das pernas do vórtice (m)" },
+    .{ "section_lift_factor", "linha sustentadora: C_L máx. da faixa / c_l máx. do perfil" },
+    .{ "design_grid_points", "dimensionamento: pontos da grade de W/S" },
+    .{ "liftoff_speed_factor", "dimensionamento: V de decolagem / V de estol" },
 });
 
 /// a unidade de `RANGES` (ou de `UNITS`, para os campos sem faixa)
@@ -365,6 +375,16 @@ const helps = std.StaticStringMap([]const u8).initComptime([_]Pair{
     .{ "chain_bisections", "bisseções da cadeia de dimensionamento; padrão 40; menos iterações ou passo maior roda mais rápido e erra mais (núcleo: sizing/)" },
     .{ "buckling_waves", "meias-ondas testadas em cada direção na flambagem; padrão 12; menos iterações ou passo maior roda mais rápido e erra mais" },
     .{ "flutter_iterations", "iterações do p-k do flutter em cada modo; padrão 60; menos iterações ou passo maior roda mais rápido e erra mais" },
+    .{ "trim_alpha_min", "menor α que a trimagem procura; padrão −0,2 rad" },
+    .{ "trim_alpha_max", "maior α que a trimagem procura; padrão 0,45 rad" },
+    .{ "trim_elevator_limit", "maior deflexão do profundor que a trimagem procura, para os dois lados; padrão 0,35 rad" },
+    .{ "trim_alpha_step", "o quanto α pode mudar numa iteração; padrão 0,08 rad" },
+    .{ "trim_elevator_step", "o quanto o profundor pode mudar numa iteração; padrão 0,08 rad" },
+    .{ "trim_throttle_step", "o quanto o motor (ou a inclinação, nas curvas) pode mudar numa iteração; padrão 0,25" },
+    .{ "vortex_leg_length", "as pernas que saem para trás fazem o papel de infinito; padrão 1000 m, bem maior que o avião" },
+    .{ "section_lift_factor", "fator com que o c_l máximo do perfil vira o da faixa da asa; padrão 0,9" },
+    .{ "design_grid_points", "pontos de carga alar em que o ponto de projeto é procurado; padrão 600, até 4096" },
+    .{ "liftoff_speed_factor", "a decolagem do diagrama de restrições acontece a este fator vezes a velocidade de estol; padrão 1,1" },
 });
 
 const choice_lists = std.StaticStringMap([]const []const u8).initComptime([_]Options{

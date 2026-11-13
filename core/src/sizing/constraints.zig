@@ -15,6 +15,7 @@
 //!   estol:                    W/S ≤ ½ ρ V_S² C_Lmax
 //!   corrida de pouso S_L:     W/S ≤ ρ C_Lmax g μ_f S_L / 1,15² (toque a 1,15 V_S, sem arrasto na frenagem)
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 
 pub const g0 = 9.80665;
 
@@ -119,7 +120,7 @@ pub fn isaRho(height: f64) f64 {
 /// a velocidade em que o requisito acontece (para a tração da hélice e para P/W)
 pub fn conditionSpeed(kind: Kind, wing_loading: f64, requirements: Requirements, polar: ParabolicPolar) f64 {
     return switch (kind) {
-        .decolagem => 1.1 * @sqrt(2 * wing_loading / (requirements.rho * polar.CLmax)) / @sqrt(2.0),
+        .decolagem => numerics.active.liftoff_speed_factor * @sqrt(2 * wing_loading / (requirements.rho * polar.CLmax)) / @sqrt(2.0),
         .subida, .gradiente => requirements.V_climb,
         .cruzeiro => requirements.V_cruise,
         .vmax => requirements.V_max,
@@ -147,7 +148,7 @@ pub fn requiredThrustWeight(kind: Kind, wing_loading: f64, requirements: Require
         },
         .decolagem => {
             const stall = @sqrt(2 * wing_loading / (r.rho * polar.CLmax));
-            const liftoff = 1.1 * stall;
+            const liftoff = numerics.active.liftoff_speed_factor * stall;
             const q = dynamicPressure(r.rho, liftoff / @sqrt(2.0));
             return liftoff * liftoff / (2 * g0 * r.S_G) + q * polar.CD_TO / wing_loading + polar.mu * (1 - q * polar.CL_TO / wing_loading);
         },
@@ -195,9 +196,14 @@ pub const DesignPoint = struct {
     at_limit: bool,
 };
 
-const grid_points = 600;
+const max_grid_points = 4096;
 
-/// o ponto de projeto numa grade de 600 W/S de 3 % do limite até o limite (como `design_point` do Python)
+/// quantos pontos a grade de `designPoint` tem agora
+fn gridPoints() usize {
+    return std.math.clamp(numerics.count(numerics.active.design_grid_points), 2, max_grid_points);
+}
+
+/// o ponto de projeto numa grade de W/S (600 pontos por padrão) de 3 % do limite até o limite (como `design_point` do Python)
 pub fn designPoint(requirements: Requirements, polar: ParabolicPolar, tolerance: f64) DesignPoint {
     const stall = limitLoading(.estol, requirements, polar);
     const landing = limitLoading(.pouso, requirements, polar);
@@ -205,9 +211,11 @@ pub fn designPoint(requirements: Requirements, polar: ParabolicPolar, tolerance:
     const limiter: Limit = if (landing < stall) .pouso else .estol;
     var lowest: f64 = std.math.inf(f64);
     var lowest_index: usize = 0;
-    var curve: [grid_points]f64 = undefined;
-    for (&curve, 0..) |*value, i| {
-        value.* = envelope(gridLoading(max_loading, i), requirements, polar).thrust_weight;
+    const grid_points = gridPoints();
+    var buffer: [max_grid_points]f64 = undefined;
+    const curve = buffer[0..grid_points];
+    for (curve, 0..) |*value, i| {
+        value.* = envelope(gridLoading(max_loading, i, grid_points), requirements, polar).thrust_weight;
         if (value.* < lowest) {
             lowest = value.*;
             lowest_index = i;
@@ -215,10 +223,10 @@ pub fn designPoint(requirements: Requirements, polar: ParabolicPolar, tolerance:
     }
     var band = [2]f64{ std.math.inf(f64), -std.math.inf(f64) };
     for (curve, 0..) |value, i| if (value <= (1 + tolerance) * lowest) {
-        band[0] = @min(band[0], gridLoading(max_loading, i));
-        band[1] = @max(band[1], gridLoading(max_loading, i));
+        band[0] = @min(band[0], gridLoading(max_loading, i, grid_points));
+        band[1] = @max(band[1], gridLoading(max_loading, i, grid_points));
     };
-    const best_loading = gridLoading(max_loading, lowest_index);
+    const best_loading = gridLoading(max_loading, lowest_index, grid_points);
     return .{
         .wing_loading = best_loading,
         .thrust_weight = lowest,
@@ -231,10 +239,10 @@ pub fn designPoint(requirements: Requirements, polar: ParabolicPolar, tolerance:
 }
 
 /// o ponto `i` da grade de `designPoint` (o `np.linspace(0,03 ws_max, ws_max, 600)`)
-fn gridLoading(max_loading: f64, i: usize) f64 {
+fn gridLoading(max_loading: f64, i: usize, grid_points: usize) f64 {
     const start = 0.03 * max_loading;
     if (i == grid_points - 1) return max_loading;
-    return start + (max_loading - start) * @as(f64, @floatFromInt(i)) / @as(f64, grid_points - 1);
+    return start + (max_loading - start) * @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(grid_points - 1));
 }
 
 const testing = std.testing;

@@ -89,9 +89,10 @@ fn nrm(res: [3]f64) f64 {
 /// Newton amortecido sobre as incógnitas; verdadeiro se convergiu
 fn newton(ctx: Ctx, case: Case, unknowns: *[3]f64, point_out: ?*types.TrimPoint) bool {
     const free = thrFree(case.kind);
-    const lo = [3]f64{ -0.2, -0.35, if (free) 0.02 else -0.7 };
-    const hi = [3]f64{ 0.45, 0.35, if (free) 3.0 else 0.7 };
-    const step = [3]f64{ 0.08, 0.08, 0.25 };
+    const refine = numerics.active;
+    const lo = [3]f64{ refine.trim_alpha_min, -refine.trim_elevator_limit, if (free) 0.02 else -0.7 };
+    const hi = [3]f64{ refine.trim_alpha_max, refine.trim_elevator_limit, if (free) 3.0 else 0.7 };
+    const step = [3]f64{ refine.trim_alpha_step, refine.trim_elevator_step, refine.trim_throttle_step };
     for (0..numerics.count(numerics.active.trim_iterations)) |_| {
         var res: [3]f64 = undefined;
         residual(ctx, case, unknowns.*, &res, null);

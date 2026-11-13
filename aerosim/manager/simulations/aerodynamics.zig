@@ -299,9 +299,12 @@ pub fn appendFields(memory: std.mem.Allocator, params: *std.ArrayList(simulation
         .{ .key = "xcg", .label = "CG dos momentos", .default = .{ .number = -1 }, .minimum = -1, .maximum = 100, .unit = "% CMA", .group = group, .help = "−1: o da aeronave; em % da CMA a partir do bordo de ataque" },
         .{ .key = "full", .label = "aeronave inteira (δe e β)", .kind = .bool, .default = .{ .toggle = true }, .group = group_full, .help = "curvas da aeronave inteira com profundor e derrapagem, como a simulação usa" },
         .{ .key = "de", .label = "δe para comparar", .default = .{ .number = 10 }, .minimum = 0, .maximum = 30, .unit = "°", .group = group_full },
+        .{ .key = "curvas_passo", .label = "passo das curvas em α e em β", .default = .{ .number = 0.5 }, .minimum = 0.05, .maximum = 5, .unit = "°", .group = group_full, .help = "passo menor dá curvas mais lisas e demora mais" },
+        .{ .key = "beta_max", .label = "maior β da varredura", .default = .{ .number = 20 }, .minimum = 1, .maximum = 45, .unit = "°", .group = group_full, .help = "a varredura vai de −β a +β" },
         .{ .key = "alpha_beta", .label = "α da varredura em β", .default = .{ .number = 4 }, .minimum = -5, .maximum = 15, .unit = "°", .group = group_full },
         .{ .key = "tips", .label = "explorar pontas de asa", .kind = .bool, .default = .{ .toggle = false }, .group = group_tips, .help = "winglet, placa, caixa e asa em C pelo plano de Trefftz, com o atrito descontado" },
         .{ .key = "hb_max", .label = "altura máxima estudada (h/b)", .default = .{ .number = 0.25 }, .minimum = 0.05, .maximum = 1, .group = group_tips },
+        .{ .key = "hb_pontos", .label = "alturas estudadas", .default = .{ .number = 11 }, .minimum = 2, .maximum = 200, .group = group_tips, .help = "quantas alturas entre zero e a máxima" },
         .{ .key = "Cf", .label = "coeficiente de atrito do dispositivo", .default = .{ .number = 0.006 }, .minimum = 0, .maximum = 0.05, .group = group_tips },
         .{ .key = "dev_gain", .label = "ganho mín. do dispositivo", .default = .{ .number = 0.5 }, .minimum = 0, .maximum = 20, .unit = "%", .group = group_criteria, .help = "o dispositivo de ponta compensa se reduzir o arrasto ao menos isto" },
         .{ .key = "tol_CLa", .label = "tolerância C_Lα e C_Lmax", .default = .{ .number = 12 }, .minimum = 1, .maximum = 100, .unit = "%", .group = group_criteria, .help = "diferença aceita entre os métodos" },
@@ -445,7 +448,7 @@ fn tipStudy(run: *simulation.Run, values: simulation.Values, geometry: Reference
     const gain = values.number("dev_gain", 0.5);
     const work = try memory.create(trefftz.Workspace);
     const study: trefftz.Study = .{ .span = geometry.span, .area = geometry.area, .lift = cruise_lift, .tip_chord = tipChord(run.aircraft, geometry.chord), .planform = planform, .friction = values.number("Cf", 0.006) };
-    const count = 11;
+    const count: usize = @intFromFloat(std.math.clamp(@round(values.number("hb_pontos", 11)), 2, 200));
     const heights = try memory.alloc(f64, count);
     const kinds = [_]trefftz.Kind{ .winglet, .placa, .caixa, .asa_c };
     var factor_columns: [kinds.len][]f64 = undefined;
@@ -628,12 +631,13 @@ fn fullCurves(run: *simulation.Run, values: simulation.Values, airspeed: f64, ou
     const deflection = values.number("de", 10);
     const first = values.number("a0", -4) - 4;
     const last = values.number("a1", 22) + 10;
-    const count: usize = @intFromFloat(@floor((last - first + 1e-9) / 0.5) + 1);
+    const curve_step = std.math.clamp(values.number("curvas_passo", 0.5), 0.05, 5);
+    const count: usize = @intFromFloat(@floor((last - first + 1e-9) / curve_step) + 1);
     const columns = [_][]const u8{ "alpha", "CL", "CD", "Cm", "CL_wing", "CL_ht", "CL_de_m", "CL_de_p", "Cm_de_m", "Cm_de_p" };
     var table: [columns.len][]f64 = undefined;
     for (&table) |*column| column.* = try memory.alloc(f64, count);
     for (0..count) |k| {
-        const alpha = first + 0.5 * @as(f64, @floatFromInt(k));
+        const alpha = first + curve_step * @as(f64, @floatFromInt(k));
         const plain = core.aero.coeffs(params, airspeed, alpha * rad, 0, center, .{ 0, 0, 0 });
         const up = core.aero.coeffs(params, airspeed, alpha * rad, 0, center, .{ -deflection * rad, 0, 0 });
         const down = core.aero.coeffs(params, airspeed, alpha * rad, 0, center, .{ deflection * rad, 0, 0 });
@@ -641,12 +645,13 @@ fn fullCurves(run: *simulation.Run, values: simulation.Values, airspeed: f64, ou
         for (&table, row) |column, value| column[k] = value;
     }
     const alpha = table[0];
-    const beta_count: usize = 81;
+    const beta_top = std.math.clamp(values.number("beta_max", 20), 1, 45);
+    const beta_count: usize = @intFromFloat(@floor((2 * beta_top + 1e-9) / curve_step) + 1);
     const betas = try memory.alloc(f64, beta_count);
     const side = [3][]f64{ try memory.alloc(f64, beta_count), try memory.alloc(f64, beta_count), try memory.alloc(f64, beta_count) };
     const alpha_beta = values.number("alpha_beta", 4) * rad;
     for (betas, 0..) |*beta, k| {
-        beta.* = -20 + 0.5 * @as(f64, @floatFromInt(k));
+        beta.* = -beta_top + curve_step * @as(f64, @floatFromInt(k));
         const coefficients = core.aero.coeffs(params, airspeed, alpha_beta, beta.* * rad, center, .{ 0, 0, 0 });
         side[0][k] = coefficients.CY;
         side[1][k] = coefficients.Cl;

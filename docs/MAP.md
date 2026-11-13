@@ -299,7 +299,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `label:34`, `choices:53`, `byName:64`
 - `core/src/numerics.zig` — O refino numérico dos solvers do núcleo num lugar só: quantas iterações, que tolerância, que passo.
   tipos `Numerics:12`
-  fn `count:142`
+  fn `count:162`
 - `core/src/opt.zig` — Otimizações em avaliação (`-Dopt`): cada uma é um bit, desligado por padrão (ver core/OTIMIZACOES.md).
   tipos `Opt:5`
 - `core/src/root.zig` — Interface C ABI do núcleo (o que o Python chama via ctypes).
@@ -346,8 +346,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/loads/internal.zig` — Esforços internos ao longo da envergadura de uma semiasa (ou de um tubo de cauda), da ponta para a raiz: cortante,
   fn `shareByArea:27`, `efforts:35`, `deflection:56`, `twist:70`
 - `core/src/loads/llt.zig` — Linha sustentadora numérica (vórtices em ferradura) para a distribuição de carga ao longo da envergadura.
-  tipos `Curve:80`, `Node:266`
-  fn `sectionSlope:68`, `sectionLift:84`, `stallAngle:117`, `segment:129`, `horseshoe:146`, `surfaceNodes:177`, `prepare:348`, `apply:465`, `compute:605`, `coeffs:637`
+  tipos `Curve:79`, `Node:265`
+  fn `sectionSlope:67`, `sectionLift:83`, `stallAngle:116`, `segment:128`, `horseshoe:145`, `surfaceNodes:176`, `prepare:347`, `apply:464`, `compute:604`, `coeffs:636`
 - `core/src/loads/stall.zig` — Estol por estação: o VLM (`vlm.zig`) acoplado à polar 2D de cada estação no seu Reynolds, pela correção de α
   tipos `Family:34`, `Settings:40`, `Sections:48`, `Station:55`, `Work:68`, `Point:79`, `Sweep:87`
   fn `stationCount:99`, `point:330`, `next:342`, `sweep:366`
@@ -488,7 +488,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `aircraft:18`
 - `core/src/sim/trim.zig` — Equilíbrio (trimagem) e desempenho por velocidade, sem integração no tempo.
   tipos `Ctx:26`
-  fn `solve:132`, `performance:146`
+  fn `solve:133`, `performance:147`
 
 **core/src/sizing/**
 
@@ -496,8 +496,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `CoreThrust:25`, `LinearThrust:48`
   fn `checkThrust:19`, `decode:59`, `motorsFor:81`, `Chain:97`
 - `core/src/sizing/constraints.zig` — O diagrama de restrições do dimensionamento inicial (o par de `aerosim/sizing/constraints.py`): a razão
-  tipos `ParabolicPolar:25`, `Requirements:44`, `Kind:63`, `Limit:97`, `DesignPoint:188`
-  fn `estimatePolar:36`, `isaRho:115`, `conditionSpeed:120`, `requiredThrustWeight:132`, `limitLoading:165`, `envelope:173`, `designPoint:201`
+  tipos `ParabolicPolar:26`, `Requirements:45`, `Kind:64`, `Limit:98`, `DesignPoint:189`
+  fn `estimatePolar:37`, `isaRho:116`, `conditionSpeed:121`, `requiredThrustWeight:133`, `limitLoading:166`, `envelope:174`, `designPoint:207`
 - `core/src/sizing/ground.zig` — Corrida de decolagem rápida da sprint (etapa Motores, `aerosim/design/power.py: performance`): a mesma
   tipos `GroundRun:24`
   fn `interp:51`, `rotSpeed:78`, `run:88`, `mtow:114`
