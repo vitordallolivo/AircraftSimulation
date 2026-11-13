@@ -11,6 +11,7 @@ const templates = @import("templates");
 const jobs = ui_kit.jobs;
 const page_mod = @import("page.zig");
 const python_bridge = @import("python_bridge.zig");
+const data_sources = @import("data_sources");
 const assembly_mod = @import("assembly.zig");
 const config_tab = @import("tabs/config_tab.zig");
 const aircraft_model = @import("aircraft_model");
@@ -98,13 +99,17 @@ pub const Screen = struct {
             var buffer: [256]u8 = undefined;
             var fixed = std.heap.FixedBufferAllocator.init(&buffer);
             const folder = if (screen.assembly) |*opened| std.fs.path.dirname(opened.path) orelse "." else exampleFolder(fixed.allocator());
-            screen.files.show("Abrir avião (.json)", folder, &.{".json"});
+            screen.files.show("Abrir avião (.json, .cfg ou .xlsx)", folder, &data_sources.aircraft_extensions);
         } else if (std.mem.eql(u8, name, "salvar")) {
             const opened = &(screen.assembly orelse {
                 _ = std.fmt.bufPrintZ(&screen.assembly_note, "nenhum avião aberto para salvar", .{}) catch {};
                 return;
             });
-            screen.files.showSave("Salvar avião (.json)", std.fs.path.dirname(opened.path) orelse ".", &.{".json"}, std.fs.path.basename(opened.path));
+            // o avião aberto de um .cfg ou .xlsx antigo é salvo em .json, com o mesmo nome
+            var name_buffer: [256]u8 = undefined;
+            const base = std.fs.path.basename(opened.path);
+            const json_name = if (data_sources.Format.fromPath(base) == .json) base else std.fmt.bufPrint(&name_buffer, "{s}.json", .{std.fs.path.stem(base)}) catch base;
+            screen.files.showSave("Salvar avião (.json)", std.fs.path.dirname(opened.path) orelse ".", &.{".json"}, json_name);
         } else if (std.mem.eql(u8, name, "rodar")) {
             screen.pending_run = true;
         } else if (std.mem.startsWith(u8, name, "etapa:") or std.mem.startsWith(u8, name, "campo:")) {
@@ -340,7 +345,7 @@ pub const Screen = struct {
             return screen.commitDocument(null);
         }
         screen.importing_file = true; // Trazer de outro .json
-        screen.files.show("Trazer uma peça de outro avião (.json)", std.fs.path.dirname(opened.path) orelse ".", &.{".json"});
+        screen.files.show("Trazer uma peça de outro avião", std.fs.path.dirname(opened.path) orelse ".", &data_sources.aircraft_extensions);
     }
 
     /// os comandos da Montagem pedidos na linha de comando, agora que o avião abriu
@@ -480,7 +485,9 @@ pub const Screen = struct {
     /// abre o arquivo `path`: um `.json` é o avião (Montagem) ou um projeto da sprint; um `.dat` ou uma polar vão
     /// para a etapa Perfis
     pub fn openFile(screen: *Screen, path: []const u8) void {
-        if (std.mem.endsWith(u8, path, ".json")) {
+        const format = data_sources.Format.fromPath(path);
+        if (format == .ini or format == .xlsx) return screen.openAircraft(path);
+        if (format == .json) {
             const bytes = std.Io.Dir.cwd().readFileAlloc(io(), path, std.heap.page_allocator, .limited(assembly_mod.max_file_bytes)) catch return screen.openAircraft(path);
             defer std.heap.page_allocator.free(bytes);
             if (design.stages.isProject(bytes)) return screen.openProject(path);
@@ -724,7 +731,7 @@ pub const Screen = struct {
             for (0..dropped.count) |k| {
                 const path = std.mem.sliceTo(dropped.paths[k], 0);
                 screen.openFile(path);
-                if (std.mem.endsWith(u8, path, ".json")) screen.showAssembly();
+                if (data_sources.Format.fromPath(path) != null) screen.showAssembly();
             }
         }
         if (ui_kit.undo.pressed()) screen.undo();
@@ -780,7 +787,7 @@ pub const Screen = struct {
             screen.pending_undo -= 1;
             screen.undo();
         }
-        if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião (.json)", "Salvar .json" }, "")) |button| {
+        if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião", "Salvar .json" }, "")) |button| {
             if (button == 0) screen.command("abrir") else screen.command("salvar");
         }
         _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, screen.area_labels, &screen.area, 14);
@@ -1204,8 +1211,8 @@ const ImportSource = struct {
         arena.* = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         errdefer arena.deinit();
         const memory = arena.allocator();
-        const bytes = try std.Io.Dir.cwd().readFileAlloc(io(), path, memory, .limited(assembly_mod.max_file_bytes));
         var diagnosis: assembly_mod.Diagnosis = .{};
+        const bytes = try assembly_mod.readAircraftText(memory, io(), path, &diagnosis);
         var loaded = try aircraft_model.aircraft.parse(std.heap.page_allocator, bytes, &diagnosis);
         defer loaded.deinit();
         const list = try config_tab.components(memory, &loaded.ac);

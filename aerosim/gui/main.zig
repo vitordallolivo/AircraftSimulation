@@ -1,6 +1,6 @@
 //! A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 //!
-//!   aerosim [avião.json] [LxA] [aba=N]
+//!   aerosim [avião.json, .cfg ou .xlsx] [LxA] [aba=N]
 //!   aerosim --shot <saída.png> [avião.json] [LxA] [aba=N] [rolar=PIXELS] [acao=rodar | etapa:<botão>]
 //!
 //! No modo --shot a tela é desenhada alguns quadros e salva numa imagem (para os prints sem interação).

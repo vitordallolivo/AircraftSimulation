@@ -10,6 +10,7 @@ const std = @import("std");
 const simulation = @import("simulation");
 const catalog = @import("catalog");
 const stages = @import("stages.zig");
+const data_sources = @import("data_sources");
 
 /// as subpastas da biblioteca
 pub const Kind = enum {
@@ -122,9 +123,49 @@ fn writeText(io: std.Io, memory: std.mem.Allocator, kind: Kind, name: []const u8
     return file;
 }
 
+/// grava um motor na pasta da biblioteca
+fn storeMotor(io: std.Io, memory: std.mem.Allocator, motor: catalog.Motor) !void {
+    var written: std.Io.Writer.Allocating = .init(memory);
+    try catalog.writeMotor(&written.writer, motor);
+    _ = try writeText(io, memory, .motors, motor.name, written.written());
+}
+
+/// grava uma hélice na pasta da biblioteca, no .dat padrão (o nome no cabeçalho, para a próxima leitura achar o mesmo)
+fn storePropeller(io: std.Io, memory: std.mem.Allocator, propeller: catalog.Propeller) !void {
+    var data: std.ArrayList(u8) = .empty;
+    try data.print(memory, "# nome: {s}\n# diametro: {d}\n# passo: {d}\n# massa: {d}\n# inercia: {d}\n# fonte: {s}\n", .{ propeller.name, propeller.D, propeller.pitch, propeller.mass, propeller.Ip, propeller.source });
+    try data.appendSlice(memory, "# J C_T C_P\n");
+    for (propeller.J, propeller.CT, propeller.CP) |j, ct, cp| try data.print(memory, "{d} {d} {d}\n", .{ j, ct, cp });
+    _ = try writeText(io, memory, .propellers, propeller.name, data.items);
+}
+
+/// traz um catálogo inteiro (.cfg, .xlsx ou .json; `data/sources.zig`) para a biblioteca: os motores e as hélices
+/// que não vêm com o programa (o "Importar catálogo" da GUI em Python)
+fn importCatalog(context: *stages.Context, memory: std.mem.Allocator, path: []const u8) ![]const u8 {
+    const bytes = std.Io.Dir.cwd().readFileAlloc(context.io, path, memory, .limited(1 << 24)) catch return "não deu para ler o catálogo";
+    const items = data_sources.catalogItems(memory, path, bytes) catch return "o arquivo não é um catálogo (.cfg, .xlsx ou .json)";
+    var motor_count: usize = 0;
+    var propeller_count: usize = 0;
+    for (items.motors) |motor| {
+        if (catalog.find(catalog.Motor, &catalog.motors, motor.name) != null) continue;
+        storeMotor(context.io, memory, motor) catch return "não deu para gravar na pasta da biblioteca";
+        motor_count += 1;
+    }
+    for (items.propellers) |propeller| {
+        if (catalog.find(catalog.Propeller, &catalog.propellers, propeller.name) != null or propeller.J.len < 2) continue;
+        storePropeller(context.io, memory, propeller) catch return "não deu para gravar na pasta da biblioteca";
+        propeller_count += 1;
+    }
+    reload(context.io);
+    return std.fmt.allocPrint(memory, "do catálogo entraram {d} motores e {d} hélices (os que já vêm com o programa ficam de fora)", .{ motor_count, propeller_count });
+}
+
 // ------------------------------------------------------------------ Motores
+const catalog_action: simulation.StageAction = .{ .key = "catalogo", .label = "+ catálogo…", .arg = "file", .help = "um catálogo de motores e hélices (.cfg, .xlsx ou .json, como os de data/catalog): todos os itens entram na biblioteca" };
+
 const motor_actions = [_]simulation.StageAction{
     .{ .key = "dat", .label = "+ .dat…", .arg = "file", .help = "um arquivo de motor (linhas \"chave: valor\": nome, Kv, Rm, Imax, massa; B, tauc e Jm opcionais)" },
+    catalog_action,
 };
 
 /// o motor do formulário (o selecionado, ou o que se está escrevendo)
@@ -203,13 +244,12 @@ pub fn applyMotors(context: *stages.Context, memory: std.mem.Allocator, request:
         selected_motor = 0;
         return std.fmt.allocPrint(memory, "saiu da biblioteca: {s}", .{motors[index].name});
     }
+    if (std.mem.eql(u8, request.do, "act") and std.mem.eql(u8, request.key, "catalogo")) return importCatalog(context, memory, request.arg);
     if (std.mem.eql(u8, request.do, "act") and std.mem.eql(u8, request.key, "dat")) {
         const text = std.Io.Dir.cwd().readFileAlloc(context.io, request.arg, memory, .limited(1 << 20)) catch return "não deu para ler o arquivo";
         const motor = catalog.parseMotor(memory, text, std.fs.path.stem(request.arg)) catch |err| return problemText(err);
         if (catalog.find(catalog.Motor, &catalog.motors, motor.name) != null) return "esse nome é de um motor que vem com o programa";
-        var written: std.Io.Writer.Allocating = .init(memory);
-        try catalog.writeMotor(&written.writer, motor);
-        _ = writeText(context.io, memory, .motors, motor.name, written.written()) catch return "não deu para gravar na pasta da biblioteca";
+        storeMotor(context.io, memory, motor) catch return "não deu para gravar na pasta da biblioteca";
         reload(context.io);
         return std.fmt.allocPrint(memory, "entrou na biblioteca: {s}", .{motor.name});
     }
@@ -262,6 +302,7 @@ pub fn motorPage(_: *stages.Context, memory: std.mem.Allocator) !simulation.Stag
 // ------------------------------------------------------------------ Hélices
 const propeller_actions = [_]simulation.StageAction{
     .{ .key = "dat", .label = "+ .dat…", .arg = "file", .help = "o .dat padrão: \"# nome:\", \"# diametro:\" (m) e as linhas J C_T C_P" },
+    catalog_action,
 };
 
 const propeller_plots = [_]simulation.Plot{
@@ -296,17 +337,12 @@ pub fn applyPropellers(context: *stages.Context, memory: std.mem.Allocator, requ
         selected_propeller = 0;
         return std.fmt.allocPrint(memory, "saiu da biblioteca: {s}", .{propellers[index].name});
     }
+    if (std.mem.eql(u8, request.do, "act") and std.mem.eql(u8, request.key, "catalogo")) return importCatalog(context, memory, request.arg);
     if (std.mem.eql(u8, request.do, "act") and std.mem.eql(u8, request.key, "dat")) {
         const text = std.Io.Dir.cwd().readFileAlloc(context.io, request.arg, memory, .limited(1 << 20)) catch return "não deu para ler o .dat";
         const propeller = catalog.parsePropeller(memory, text, std.fs.path.stem(request.arg)) catch |err| return problemText(err);
         if (catalog.find(catalog.Propeller, &catalog.propellers, propeller.name) != null) return "esse nome é de uma hélice que vem com o programa";
-        // o arquivo vai como veio, com o nome escrito no cabeçalho para a próxima leitura achar o mesmo
-        const header = try std.fmt.allocPrint(memory, "# nome: {s}\n# diametro: {d}\n# passo: {d}\n# massa: {d}\n# inercia: {d}\n# fonte: {s}\n", .{ propeller.name, propeller.D, propeller.pitch, propeller.mass, propeller.Ip, propeller.source });
-        var data: std.ArrayList(u8) = .empty;
-        try data.appendSlice(memory, header);
-        try data.appendSlice(memory, "# J C_T C_P\n");
-        for (propeller.J, propeller.CT, propeller.CP) |j, ct, cp| try data.print(memory, "{d} {d} {d}\n", .{ j, ct, cp });
-        _ = writeText(context.io, memory, .propellers, propeller.name, data.items) catch return "não deu para gravar na pasta da biblioteca";
+        storePropeller(context.io, memory, propeller) catch return "não deu para gravar na pasta da biblioteca";
         reload(context.io);
         selected_propeller = catalog.propellers.len;
         for (catalog.userItems().propellers, 0..) |item, k| if (std.mem.eql(u8, item.name, propeller.name)) {

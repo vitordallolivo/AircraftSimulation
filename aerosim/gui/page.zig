@@ -1659,9 +1659,10 @@ pub const Page = struct {
         if (std.mem.eql(u8, action.arg, "text")) {
             page.prompt.show(action.label, action.help, action.default);
         } else if (std.mem.eql(u8, action.arg, "file")) {
-            var buffer: [512]u8 = undefined;
-            const folder = std.fmt.bufPrint(&buffer, "data/airfoils", .{}) catch ".";
-            page.picker.show(action.label, folder, &.{ ".dat", ".txt", ".csv", ".pol" });
+            // um catálogo de motores e hélices (.cfg, .xlsx, .json) parte de data/catalog; o resto, dos perfis
+            if (std.mem.eql(u8, action.key, "catalogo")) {
+                page.picker.show(action.label, "data/catalog", &.{ ".cfg", ".xlsx", ".json" });
+            } else page.picker.show(action.label, "data/airfoils", &.{ ".dat", ".txt", ".csv", ".pol" });
         } else page.act(action.key, "");
     }
 

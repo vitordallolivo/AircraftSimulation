@@ -39,6 +39,8 @@ pub const vec = @import("math/vec.zig");
 pub const quadrature = @import("math/quadrature.zig");
 /// funções de forma: linear e Hermite cúbica
 pub const interpolation = @import("math/interpolation.zig");
+/// leitura de planilhas .xlsx (zip + XML), sem dependência de fora
+pub const xlsx = @import("util/xlsx.zig");
 pub const autotune = @import("control/autotune.zig");
 pub const linear = @import("sim/linear.zig");
 pub const static_stability = @import("sim/static.zig");

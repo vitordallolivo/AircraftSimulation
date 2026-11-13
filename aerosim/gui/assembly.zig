@@ -9,6 +9,7 @@ const aircraft_model = @import("aircraft_model");
 const view3d = @import("ui").view3d;
 const undo = @import("ui").undo;
 const design = @import("design");
+const data_sources = @import("data_sources");
 
 const model = aircraft_model.aircraft;
 const skeleton = aircraft_model.skeleton;
@@ -255,10 +256,7 @@ pub const Diagnosis = model.Diag;
 
 /// lê o avião em `path` com os perfis que o arquivo só aponta (as análises em Zig usam este, sem as malhas)
 pub fn loadAircraft(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) !model.Loaded {
-    const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(max_file_bytes)) catch |err| {
-        diagnosis.set("não consegui abrir '{s}' ({s})", .{ path, @errorName(err) });
-        return err;
-    };
+    const bytes = try readAircraftText(gpa, io, path, diagnosis);
     defer gpa.free(bytes);
     var loaded = try model.parse(gpa, bytes, diagnosis);
     errdefer loaded.deinit();
@@ -266,12 +264,27 @@ pub fn loadAircraft(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagno
     return loaded;
 }
 
-/// lê o avião em `path` e monta as peças
-pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) !Assembly {
+/// o texto `.json` do avião em `path` (memória de `gpa`): o `.json` como está; o `.cfg`, o `.ini` e a planilha
+/// `.xlsx` antigos convertidos para o `.json` (`data/sources.zig`)
+pub fn readAircraftText(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) ![]u8 {
     const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(max_file_bytes)) catch |err| {
         diagnosis.set("não consegui abrir '{s}' ({s})", .{ path, @errorName(err) });
         return err;
     };
+    if (data_sources.Format.fromPath(path) == .json) return bytes;
+    defer gpa.free(bytes);
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const text = data_sources.aircraftJson(arena.allocator(), path, bytes) catch |err| {
+        diagnosis.set("não consegui ler '{s}' como avião ({s})", .{ std.fs.path.basename(path), @errorName(err) });
+        return err;
+    };
+    return gpa.dupe(u8, text);
+}
+
+/// lê o avião em `path` e monta as peças
+pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) !Assembly {
+    const bytes = try readAircraftText(gpa, io, path, diagnosis);
     defer gpa.free(bytes);
     return fromBytes(gpa, io, path, bytes, diagnosis);
 }

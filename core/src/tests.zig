@@ -96,6 +96,7 @@ comptime {
     if (wanted("structures")) {
         _ = @import("structures/section.zig");
         _ = @import("util/plot.zig");
+        _ = @import("util/xlsx.zig");
         _ = @import("structures/buckling.zig");
         _ = @import("structures/gear.zig");
         _ = @import("loads/vn.zig");

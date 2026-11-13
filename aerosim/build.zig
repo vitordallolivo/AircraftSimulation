@@ -54,6 +54,19 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // os formatos antigos do avião e do catálogo (.cfg e .xlsx; data/sources.zig, o par de `sources.py`)
+    const data_sources = b.createModule(.{
+        .root_source_file = b.path("data/sources.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "aerosim", .module = core },
+            .{ .name = "catalog", .module = catalog },
+        },
+    });
+    const data_tests = b.addRunArtifact(b.addTest(.{ .root_module = data_sources }));
+    data_tests.setCwd(b.path("."));
+
     // os modelos padrão do avião (gerados de `model/templates.py`), para o "Restaurar" da Montagem
     const templates = b.createModule(.{ .root_source_file = b.path("model/templates.zig"), .target = target, .optimize = optimize });
     // ---- o que o design calcula para a tela (design/dims.zig: as dimensões a partir do CG)
@@ -68,6 +81,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "simulation", .module = simulation },
             .{ .name = "catalog", .module = catalog },
             .{ .name = "templates", .module = templates },
+            .{ .name = "data_sources", .module = data_sources },
         },
     });
 
@@ -103,6 +117,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&simulation_tests.step);
     // o catálogo e os arquivos da biblioteca do usuário
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = catalog })).step);
+    test_step.dependOn(&data_tests.step);
 
     // ---- o programa (gui/main.zig)
     const display = b.option(enum { X11, Wayland, Both }, "display", "Linux: X11 (padrão), Wayland ou Both") orelse .X11;
@@ -135,6 +150,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "aircraft_model", .module = aircraft_model },
             .{ .name = "manager", .module = manager },
             .{ .name = "design", .module = design },
+            .{ .name = "data_sources", .module = data_sources },
         },
     });
     if (target.result.os.tag == .emscripten) return buildWeb(b, raylib_zig, program);

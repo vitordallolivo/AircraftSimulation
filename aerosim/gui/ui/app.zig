@@ -72,7 +72,7 @@ pub fn parseArgs(argv: []const [:0]const u8) !Args {
 }
 
 fn isFile(value: []const u8) bool {
-    for ([_][]const u8{ ".json", ".dat", ".txt", ".csv", ".pol" }) |extension| if (std.ascii.endsWithIgnoreCase(value, extension)) return true;
+    for ([_][]const u8{ ".json", ".cfg", ".ini", ".xlsx", ".dat", ".txt", ".csv", ".pol" }) |extension| if (std.ascii.endsWithIgnoreCase(value, extension)) return true;
     return false;
 }
 
