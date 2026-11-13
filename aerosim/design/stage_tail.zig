@@ -61,15 +61,15 @@ const tail_fields = [_]registry.Field{
 };
 
 const plots = [_]simulation.Plot{
-    .{ .key = "cm", .title = "C_m,CG × α", .xlabel = "α_raiz (°)", .ylabel = "C_m" },
-    .{ .key = "de", .title = "δe × V", .xlabel = "V (m/s)", .ylabel = "δe (°, − cabra)" },
-    .{ .key = "cg", .title = "x_CG (% CMA)", .xlabel = "% CMA", .ylabel = "" },
+    .{ .key = "cm", .title = "Momento no CG", .xlabel = "$\\alpha_{raiz}$ (°)", .ylabel = "$C_m$" },
+    .{ .key = "de", .title = "Profundor de equilíbrio", .xlabel = "$V$ (m/s)", .ylabel = "$\\delta_e$ (°)" },
+    .{ .key = "cg", .title = "Posição do CG", .xlabel = "% CMA", .ylabel = "" },
 };
-const cg_plot: simulation.Plot = .{ .key = "cg_list", .title = "xCG da Decolagem: C_mα (VLM)", .xlabel = "xCG (% CMA)", .ylabel = "C_mα (1/rad)" };
+const cg_plot: simulation.Plot = .{ .key = "cg_list", .title = "Estabilidade por CG", .xlabel = "$x_{CG}$ (% CMA)", .ylabel = "$C_{m\\alpha}$ (1/rad)" };
 const vlm_plots = [_]simulation.Plot{
-    .{ .key = "vlm_slope", .title = "VLM: C_Lα e C_mα × painéis", .xlabel = "painéis", .ylabel = "1/rad" },
-    .{ .key = "vlm_np", .title = "VLM: ponto neutro × painéis", .xlabel = "painéis", .ylabel = "% CMA" },
-    .{ .key = "vlm_lateral", .title = "VLM: derivadas laterais × painéis", .xlabel = "painéis", .ylabel = "1/rad" },
+    .{ .key = "vlm_slope", .title = "Convergência: derivadas", .xlabel = "painéis", .ylabel = "1/rad" },
+    .{ .key = "vlm_np", .title = "Convergência: ponto neutro", .xlabel = "painéis", .ylabel = "% CMA" },
+    .{ .key = "vlm_lateral", .title = "Convergência: laterais", .xlabel = "painéis", .ylabel = "1/rad" },
 };
 /// as malhas da convergência (corda × envergadura em cada faixa), da mais grossa para a mais fina
 /// (primeiro na corda, depois na envergadura, onde o VLM converge devagar, com o erro ∝ 1/n)

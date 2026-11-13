@@ -34,9 +34,9 @@ pub const Sizing = struct {
 const sources = [_][]const u8{ "estimativa (sem geometria)", "o avião inteiro (núcleo)" };
 
 const plots = [_]simulation.Plot{
-    .{ .key = "c", .title = "T/W exigida × W/S (azul: viável; laranja: faixa ótima)", .xlabel = "carga alar W/S (N/m²)", .ylabel = "T/W" },
-    .{ .key = "p", .title = "Potência por massa × W/S (hélice)", .xlabel = "carga alar W/S (N/m²)", .ylabel = "P/m (W/kg)" },
-    .{ .key = "t", .title = "Tração do motor × V (pontos: o que cada requisito pede)", .xlabel = "V (m/s)", .ylabel = "T/W" },
+    .{ .key = "c", .title = "Diagrama de restrições", .xlabel = "$W/S$ (N/m²)", .ylabel = "$T/W$" },
+    .{ .key = "p", .title = "Potência específica", .xlabel = "$W/S$ (N/m²)", .ylabel = "$P/m$ (W/kg)" },
+    .{ .key = "t", .title = "Tração exigida", .xlabel = "$V$ (m/s)", .ylabel = "$T/W$" },
 };
 
 /// a cor de cada requisito (a mesma em todos os gráficos)

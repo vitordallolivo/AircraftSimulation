@@ -195,14 +195,14 @@ const surface_colors = [_][]const u8{ "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"
 pub const max_per_side = 40; // `MAX_PER_SIDE` do Python
 
 const plots = [_]simulation.Plot{
-    .{ .key = "CL", .title = "C_L × α do conjunto", .xlabel = "α (°)", .ylabel = "C_L (soma das áreas)" },
-    .{ .key = "CL_surf", .title = "C_L × α por superfície", .xlabel = "α (°)", .ylabel = "C_L (área dela)" },
-    .{ .key = "cl_span", .title = "c_l × y", .xlabel = "y (m)", .ylabel = "c_l" },
-    .{ .key = "L_span", .title = "L' × y", .xlabel = "y (m)", .ylabel = "L' (N/m)" },
-    .{ .key = "pol_CL", .title = "Métodos: C_L × α", .xlabel = "α (°)", .ylabel = "C_L (soma das áreas)" },
-    .{ .key = "pol_CD", .title = "Métodos: C_L × C_D", .xlabel = "C_D", .ylabel = "C_L (soma das áreas)" },
-    .{ .key = "pol_Cm", .title = "Métodos: C_m × α", .xlabel = "α (°)", .ylabel = "C_m (soma das áreas, CMA da principal)" },
-    .{ .key = "pol_LD", .title = "Métodos: L/D × C_L", .xlabel = "C_L", .ylabel = "L/D" },
+    .{ .key = "CL", .title = "Sustentação do conjunto", .xlabel = "$\\alpha$ (°)", .ylabel = "$C_L$" },
+    .{ .key = "CL_surf", .title = "Sustentação por superfície", .xlabel = "$\\alpha$ (°)", .ylabel = "$C_L$" },
+    .{ .key = "cl_span", .title = "Distribuição de sustentação", .xlabel = "$y$ (m)", .ylabel = "$c_l$" },
+    .{ .key = "L_span", .title = "Carga na envergadura", .xlabel = "$y$ (m)", .ylabel = "$L'$ (N/m)" },
+    .{ .key = "pol_CL", .title = "Métodos: sustentação", .xlabel = "$\\alpha$ (°)", .ylabel = "$C_L$" },
+    .{ .key = "pol_CD", .title = "Métodos: arrasto", .xlabel = "$C_D$", .ylabel = "$C_L$" },
+    .{ .key = "pol_Cm", .title = "Métodos: momento", .xlabel = "$\\alpha$ (°)", .ylabel = "$C_m$" },
+    .{ .key = "pol_LD", .title = "Métodos: eficiência", .xlabel = "$C_L$", .ylabel = "$L/D$" },
 } ++ aerodynamics.plots;
 
 /// um método varrido: o C_L do conjunto e de cada dono em cada α, o resumo e a carga no α da carga
@@ -908,9 +908,9 @@ fn groundMethod(values: simulation.Values) GroundMethod {
 }
 
 const ground_plots = [_]simulation.Plot{
-    .{ .key = "ground_CL", .title = "Chão: ΔC_L × h/b", .xlabel = "h/b (altura da origem / envergadura)", .ylabel = "ΔC_L" },
-    .{ .key = "ground_CDi", .title = "Chão: induzido × h/b", .xlabel = "h/b (altura da origem / envergadura)", .ylabel = "C_Di no chão / C_Di longe dele (mesmo C_L)" },
-    .{ .key = "ground_Cm", .title = "Chão: ΔC_m × h/b", .xlabel = "h/b (altura da origem / envergadura)", .ylabel = "ΔC_m" },
+    .{ .key = "ground_CL", .title = "Efeito solo: sustentação", .xlabel = "$h/b$", .ylabel = "$\\Delta C_L$" },
+    .{ .key = "ground_CDi", .title = "Efeito solo: induzido", .xlabel = "$h/b$", .ylabel = "$C_{Di}/C_{Di\\infty}$" },
+    .{ .key = "ground_Cm", .title = "Efeito solo: momento", .xlabel = "$h/b$", .ylabel = "$\\Delta C_m$" },
 };
 
 /// os campos do efeito do chão: o método e, escolhido, as alturas, os α e a malha
@@ -991,7 +991,7 @@ fn groundStudy(run: *simulation.Run, state: *RunState, plane: simulation.Aircraf
             // o induzido no mesmo C_L: C_Di/C_L² perto sobre longe
             factor.* = if (near.CL != 0 and free.CL != 0 and free.CDi != 0) (near.CDi / (near.CL * near.CL)) / (free.CDi / (free.CL * free.CL)) else std.math.nan(f64);
         }
-        const name = try text(memory, "α = {d}°", .{alpha});
+        const name = try text(memory, "$\\alpha$ = {d}°", .{alpha});
         const color = surface_colors[k % surface_colors.len];
         try figures.curve("ground_CL", .{ .name = name, .x = xs, .y = lift, .color = color, .width = 2 });
         try figures.curve("ground_CDi", .{ .name = name, .x = xs, .y = induced, .color = color, .width = 2 });

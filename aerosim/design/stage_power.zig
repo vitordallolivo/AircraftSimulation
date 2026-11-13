@@ -51,9 +51,9 @@ const power_fields = [_]registry.Field{
 };
 
 const plots = [_]simulation.Plot{
-    .{ .key = "T", .title = "T, D × V", .xlabel = "V (m/s)", .ylabel = "N" },
-    .{ .key = "RC", .title = "R/C × V", .xlabel = "V (m/s)", .ylabel = "m/s" },
-    .{ .key = "to", .title = "s_TO × m", .xlabel = "m (kg)", .ylabel = "m" },
+    .{ .key = "T", .title = "Tração e arrasto", .xlabel = "$V$ (m/s)", .ylabel = "força (N)" },
+    .{ .key = "RC", .title = "Razão de subida", .xlabel = "$V$ (m/s)", .ylabel = "$RC$ (m/s)" },
+    .{ .key = "to", .title = "Corrida de decolagem", .xlabel = "$m$ (kg)", .ylabel = "$s_{TO}$ (m)" },
 };
 
 fn draft(project: *store.Project) *ObjectMap {

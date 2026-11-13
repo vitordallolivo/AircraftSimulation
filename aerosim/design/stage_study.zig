@@ -48,10 +48,10 @@ const study_fields = [_]registry.Field{
 };
 
 const plots = [_]simulation.Plot{
-    .{ .key = "mtow", .title = "MTOW (o fecha, × não fecha)", .xlabel = "", .ylabel = "kg" },
-    .{ .key = "rot", .title = "Roda (—) × sai do chão (- -)", .xlabel = "", .ylabel = "m/s" },
-    .{ .key = "trim", .title = "Δi_h (—) e trim de decolagem (- -)", .xlabel = "", .ylabel = "°" },
-    .{ .key = "cdt", .title = "Arrasto de trim da EH (cruzeiro)", .xlabel = "", .ylabel = "C_D,trim" },
+    .{ .key = "mtow", .title = "MTOW", .xlabel = "", .ylabel = "kg" },
+    .{ .key = "rot", .title = "Rotação e saída", .xlabel = "", .ylabel = "m/s" },
+    .{ .key = "trim", .title = "Trimagem da EH", .xlabel = "", .ylabel = "°" },
+    .{ .key = "cdt", .title = "Arrasto de trimagem", .xlabel = "", .ylabel = "$C_{D,trim}$" },
 };
 const colors = [_][]const u8{ "#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e" };
 

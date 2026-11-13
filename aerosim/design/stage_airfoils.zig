@@ -17,11 +17,11 @@ const Airfoil = aircraft_model.aircraft.Airfoil;
 const air_viscosity = 1.81e-5; // μ do ar (`MU_AIR` de spec.py)
 
 const plots = [_]simulation.Plot{
-    .{ .key = "cl", .title = "c_l × α", .xlabel = "α (°)", .ylabel = "c_l" },
-    .{ .key = "polar", .title = "c_l × c_d", .xlabel = "c_d", .ylabel = "c_l" },
-    .{ .key = "ld", .title = "c_l/c_d × α", .xlabel = "α (°)", .ylabel = "c_l/c_d" },
-    .{ .key = "cm", .title = "c_m × α", .xlabel = "α (°)", .ylabel = "c_m" },
-    .{ .key = "shape", .title = "Contorno", .xlabel = "x/c", .ylabel = "y/c" },
+    .{ .key = "cl", .title = "Sustentação", .xlabel = "$\\alpha$ (°)", .ylabel = "$c_l$" },
+    .{ .key = "polar", .title = "Polar de arrasto", .xlabel = "$c_d$", .ylabel = "$c_l$" },
+    .{ .key = "ld", .title = "Eficiência", .xlabel = "$\\alpha$ (°)", .ylabel = "$c_l/c_d$" },
+    .{ .key = "cm", .title = "Momento", .xlabel = "$\\alpha$ (°)", .ylabel = "$c_m$" },
+    .{ .key = "shape", .title = "Contorno", .xlabel = "$x/c$", .ylabel = "$y/c$" },
 };
 const palette = [_][]const u8{ "#1f77b4", "#eb6834", "#1baf7a", "#d62728", "#4a3aa7", "#8c564b", "#e87ba4", "#17becf" };
 

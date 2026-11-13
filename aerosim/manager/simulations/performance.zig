@@ -38,16 +38,16 @@ const black = "#000000";
 /// os gráficos, na ordem da tela
 const Chart = enum { envelope, power, thrust, climb, climb_angle, glide, turns, vn, endurance, range };
 const plots = std.EnumArray(Chart, simulation.Plot).init(.{
-    .envelope = .{ .key = "env", .title = "Envelope de voo", .xlabel = "V (m/s)", .ylabel = "h (m)" },
-    .power = .{ .key = "spot", .title = "Potência", .xlabel = "V (m/s)", .ylabel = "P (W)" },
-    .thrust = .{ .key = "stra", .title = "Tração", .xlabel = "V (m/s)", .ylabel = "T (N)" },
-    .climb = .{ .key = "ssub", .title = "Razão de subida", .xlabel = "V (m/s)", .ylabel = "RC (m/s)" },
-    .climb_angle = .{ .key = "sgam", .title = "Ângulo de subida", .xlabel = "V (m/s)", .ylabel = "γ (°)" },
-    .glide = .{ .key = "sdes", .title = "Planeio", .xlabel = "V de planeio (m/s)", .ylabel = "R_s (m/s)" },
-    .turns = .{ .key = "scur", .title = "Envelope de curvas", .xlabel = "R (m)", .ylabel = "V (m/s)" },
-    .vn = .{ .key = "snv", .title = "Diagrama V-n", .xlabel = "V (m/s)", .ylabel = "n" },
-    .endurance = .{ .key = "sbat", .title = "Autonomia da bateria", .xlabel = "V (m/s)", .ylabel = "t (min)" },
-    .range = .{ .key = "sran", .title = "Alcance da bateria", .xlabel = "V (m/s)", .ylabel = "alcance (km)" },
+    .envelope = .{ .key = "env", .title = "Envelope de voo", .xlabel = "$V$ (m/s)", .ylabel = "$h$ (m)" },
+    .power = .{ .key = "spot", .title = "Potência", .xlabel = "$V$ (m/s)", .ylabel = "$P$ (W)" },
+    .thrust = .{ .key = "stra", .title = "Tração", .xlabel = "$V$ (m/s)", .ylabel = "$T$ (N)" },
+    .climb = .{ .key = "ssub", .title = "Razão de subida", .xlabel = "$V$ (m/s)", .ylabel = "$RC$ (m/s)" },
+    .climb_angle = .{ .key = "sgam", .title = "Ângulo de subida", .xlabel = "$V$ (m/s)", .ylabel = "$\\gamma$ (°)" },
+    .glide = .{ .key = "sdes", .title = "Planeio", .xlabel = "$V$ (m/s)", .ylabel = "$R_s$ (m/s)" },
+    .turns = .{ .key = "scur", .title = "Envelope de curvas", .xlabel = "$R$ (m)", .ylabel = "$V$ (m/s)" },
+    .vn = .{ .key = "snv", .title = "Diagrama V-n", .xlabel = "$V$ (m/s)", .ylabel = "$n$" },
+    .endurance = .{ .key = "sbat", .title = "Autonomia da bateria", .xlabel = "$V$ (m/s)", .ylabel = "$t$ (min)" },
+    .range = .{ .key = "sran", .title = "Alcance da bateria", .xlabel = "$V$ (m/s)", .ylabel = "alcance (km)" },
 });
 
 const max_altitudes = 6;

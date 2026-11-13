@@ -312,16 +312,16 @@ pub fn appendFields(memory: std.mem.Allocator, params: *std.ArrayList(simulation
 
 /// os gráficos do avião completo (os de `AerodynamicsSimulation.plots_for` com "ac_" na chave)
 pub const plots = [_]simulation.Plot{
-    .{ .key = "ac_CL", .title = "Avião completo: sustentação × ângulo de ataque", .xlabel = "α (°)", .ylabel = "C_L" },
-    .{ .key = "ac_CD", .title = "Avião completo: polar de arrasto", .xlabel = "C_D", .ylabel = "C_L" },
-    .{ .key = "ac_Cm", .title = "Avião completo: C_m no CG × α (tem de descer)", .xlabel = "α (°)", .ylabel = "C_m" },
-    .{ .key = "ac_LD", .title = "Avião completo: L/D × C_L", .xlabel = "C_L", .ylabel = "L/D" },
-    .{ .key = "ac_pa_CL", .title = "Aeronave completa: C_L × α com o profundor", .xlabel = "α (°)", .ylabel = "C_L" },
-    .{ .key = "ac_pa_Cm", .title = "Aeronave completa: C_m no CG × α com o profundor", .xlabel = "α (°)", .ylabel = "C_m" },
-    .{ .key = "ac_pa_CD", .title = "Aeronave completa: polar de arrasto", .xlabel = "C_D", .ylabel = "C_L" },
-    .{ .key = "ac_pa_b", .title = "Aeronave completa: látero-direcional × β", .xlabel = "β (°)", .ylabel = "coeficiente (—)" },
-    .{ .key = "ac_tip_e", .title = "Avião completo: ganho de eficiência de envergadura × altura do dispositivo", .xlabel = "altura do dispositivo / envergadura (h/b)", .ylabel = "e / e sem dispositivo" },
-    .{ .key = "ac_tip_d", .title = "Avião completo: variação do arrasto total no cruzeiro × altura (com atrito)", .xlabel = "altura do dispositivo / envergadura (h/b)", .ylabel = "ΔD (% do arrasto total)" },
+    .{ .key = "ac_CL", .title = "Avião: sustentação", .xlabel = "$\\alpha$ (°)", .ylabel = "$C_L$" },
+    .{ .key = "ac_CD", .title = "Avião: arrasto", .xlabel = "$C_D$", .ylabel = "$C_L$" },
+    .{ .key = "ac_Cm", .title = "Avião: momento", .xlabel = "$\\alpha$ (°)", .ylabel = "$C_m$" },
+    .{ .key = "ac_LD", .title = "Avião: eficiência", .xlabel = "$C_L$", .ylabel = "$L/D$" },
+    .{ .key = "ac_pa_CL", .title = "Profundor: sustentação", .xlabel = "$\\alpha$ (°)", .ylabel = "$C_L$" },
+    .{ .key = "ac_pa_Cm", .title = "Profundor: momento", .xlabel = "$\\alpha$ (°)", .ylabel = "$C_m$" },
+    .{ .key = "ac_pa_CD", .title = "Profundor: arrasto", .xlabel = "$C_D$", .ylabel = "$C_L$" },
+    .{ .key = "ac_pa_b", .title = "Látero-direcional", .xlabel = "$\\beta$ (°)", .ylabel = "coeficiente" },
+    .{ .key = "ac_tip_e", .title = "Pontas: eficiência", .xlabel = "$h/b$", .ylabel = "$e/e_0$" },
+    .{ .key = "ac_tip_d", .title = "Pontas: arrasto", .xlabel = "$h/b$", .ylabel = "$\\Delta D$ (%)" },
 };
 
 const solver_colors = [_][]const u8{ "#000000", "#1f77b4", "#d62728" };

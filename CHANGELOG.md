@@ -6,6 +6,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- Os títulos dos gráficos eram longos e diziam as variáveis ("C_L × α do conjunto"), e cortavam na tela. Agora cada
+  título diz em até três palavras o que o gráfico é ("Sustentação do conjunto", "Efeito solo: momento"), e os eixos
+  saem com índices e letras gregas.
 - Em Aerodinâmica → Analisar, o estol por estação e o efeito do chão, que antes só existiam no núcleo, agora têm
   tela. O estol por estação acopla o VLM à polar 2D de cada faixa e mostra o C_L máximo, o C_L × α e onde o estol
   começa ao longo da envergadura. Todos os ajustes ficam à vista: a malha, as iterações, a tolerância e os cortes do

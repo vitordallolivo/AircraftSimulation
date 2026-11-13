@@ -44,11 +44,11 @@ const max_cases = 2;
 const slice_seconds = 0.25; // de voo por fatia (poucos milissegundos de conta)
 
 const plots = [_]simulation.Plot{
-    .{ .key = "alpha", .title = "Ângulo de ataque", .xlabel = "t (s)", .ylabel = "α (°)" },
-    .{ .key = "lateral", .title = "Derrapagem e rolamento", .xlabel = "t (s)", .ylabel = "°" },
-    .{ .key = "load", .title = "Fator de carga", .xlabel = "t (s)", .ylabel = "n_z" },
-    .{ .key = "xcg", .title = "xCG", .xlabel = "t (s)", .ylabel = "x_CG (% CMA)" },
-    .{ .key = "liquid", .title = "Líquido", .xlabel = "t (s)", .ylabel = "ângulo (°)" },
+    .{ .key = "alpha", .title = "Ângulo de ataque", .xlabel = "$t$ (s)", .ylabel = "$\\alpha$ (°)" },
+    .{ .key = "lateral", .title = "Derrapagem e rolamento", .xlabel = "$t$ (s)", .ylabel = "°" },
+    .{ .key = "load", .title = "Fator de carga", .xlabel = "$t$ (s)", .ylabel = "$n_z$" },
+    .{ .key = "xcg", .title = "Posição do CG", .xlabel = "$t$ (s)", .ylabel = "$x_{CG}$ (% CMA)" },
+    .{ .key = "liquid", .title = "Líquido", .xlabel = "$t$ (s)", .ylabel = "ângulo (°)" },
     .{ .key = "poles_plain", .title = "Polos", .xlabel = "Re (1/s)", .ylabel = "Im (rad/s)" },
     .{ .key = "poles_sloshing", .title = "Polos com sloshing", .xlabel = "Re (1/s)", .ylabel = "Im (rad/s)" },
     .{ .key = "poles_lapes", .title = "Polos com a LAPES", .xlabel = "Re (1/s)", .ylabel = "Im (rad/s)" },

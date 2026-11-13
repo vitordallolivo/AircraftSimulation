@@ -26,10 +26,10 @@ const max_throttles = 8;
 const default_throttles = [_]f64{ 1.0, 0.75, 0.5 };
 
 const plots = [_]simulation.Plot{
-    .{ .key = "T", .title = "Tração", .xlabel = "V (m/s)", .ylabel = "N" },
-    .{ .key = "P", .title = "Potência elétrica", .xlabel = "V (m/s)", .ylabel = "W" },
-    .{ .key = "I", .title = "Corrente", .xlabel = "V (m/s)", .ylabel = "A" },
-    .{ .key = "eta", .title = "Eficiência da hélice", .xlabel = "V (m/s)", .ylabel = "—" },
+    .{ .key = "T", .title = "Tração", .xlabel = "$V$ (m/s)", .ylabel = "$T$ (N)" },
+    .{ .key = "P", .title = "Potência elétrica", .xlabel = "$V$ (m/s)", .ylabel = "$P$ (W)" },
+    .{ .key = "I", .title = "Corrente", .xlabel = "$V$ (m/s)", .ylabel = "$I$ (A)" },
+    .{ .key = "eta", .title = "Eficiência da hélice", .xlabel = "$V$ (m/s)", .ylabel = "$\\eta$" },
 };
 
 const palette = [_][]const u8{ "#1f77b4", "#d62728", "#2ca02c", "#ff7f0e", "#9467bd", "#8c564b", "#e377c2", "#17becf" };

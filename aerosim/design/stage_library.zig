@@ -265,9 +265,9 @@ const propeller_actions = [_]simulation.StageAction{
 };
 
 const propeller_plots = [_]simulation.Plot{
-    .{ .key = "ct", .title = "C_T × J", .xlabel = "J", .ylabel = "C_T" },
-    .{ .key = "cp", .title = "C_P × J", .xlabel = "J", .ylabel = "C_P" },
-    .{ .key = "eta", .title = "η × J", .xlabel = "J", .ylabel = "η" },
+    .{ .key = "ct", .title = "Coeficiente de tração", .xlabel = "$J$", .ylabel = "$C_T$" },
+    .{ .key = "cp", .title = "Coeficiente de potência", .xlabel = "$J$", .ylabel = "$C_P$" },
+    .{ .key = "eta", .title = "Eficiência", .xlabel = "$J$", .ylabel = "$\\eta$" },
 };
 const palette = [_][]const u8{ "#1f77b4", "#eb6834", "#1baf7a", "#d62728", "#4a3aa7", "#8c564b", "#e87ba4", "#17becf" };
 

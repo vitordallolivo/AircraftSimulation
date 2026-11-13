@@ -54,10 +54,10 @@ const layout_keys = [_][]const u8{ "wing", "dx", "dy", "dz", "di", "join" };
 const device_keys = [_][]const u8{ "wing", "kind", "eta", "dx", "height", "root_chord", "taper", "sweep", "cant", "toe", "profile" };
 
 const plots = [_]simulation.Plot{
-    .{ .key = "CL", .title = "C_L × α", .xlabel = "α_raiz (°)", .ylabel = "C_L" },
-    .{ .key = "pol", .title = "C_L × C_D", .xlabel = "C_D", .ylabel = "C_L" },
-    .{ .key = "LD", .title = "L/D × C_L", .xlabel = "C_L", .ylabel = "L/D" },
-    .{ .key = "span", .title = "c_l × 2y/b", .xlabel = "2y/b", .ylabel = "c_l" },
+    .{ .key = "CL", .title = "Sustentação", .xlabel = "$\\alpha_{raiz}$ (°)", .ylabel = "$C_L$" },
+    .{ .key = "pol", .title = "Polar de arrasto", .xlabel = "$C_D$", .ylabel = "$C_L$" },
+    .{ .key = "LD", .title = "Eficiência", .xlabel = "$C_L$", .ylabel = "$L/D$" },
+    .{ .key = "span", .title = "Distribuição de sustentação", .xlabel = "$2y/b$", .ylabel = "$c_l$" },
 };
 const palette = [_][]const u8{ "#1f77b4", "#eb6834", "#1baf7a", "#d62728", "#4a3aa7", "#8c564b" };
 

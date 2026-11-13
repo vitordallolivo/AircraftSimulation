@@ -46,16 +46,16 @@ const envelope_curves = [_]struct { field: []const u8, color: []const u8 }{
     .{ .field = "Vcru", .color = "#9467bd" },
 };
 
-const plot_comparison = simulation.Plot{ .key = "env_c", .title = "Envelopes: planilha (—) × modelo completo (- -)", .xlabel = "velocidade (m/s)", .ylabel = "altitude (m)" };
+const plot_comparison = simulation.Plot{ .key = "env_c", .title = "Envelopes comparados", .xlabel = "velocidade (m/s)", .ylabel = "altitude (m)" };
 const other_plots = [_]simulation.Plot{
-    .{ .key = "env_p", .title = "Envelope — planilha", .xlabel = "velocidade (m/s)", .ylabel = "altitude (m)" },
-    .{ .key = "env_m", .title = "Envelope — modelo completo", .xlabel = "velocidade (m/s)", .ylabel = "altitude (m)" },
-    .{ .key = "pot0", .title = "Potência disponível × requerida (h = 0)", .xlabel = "V (m/s)", .ylabel = "W" },
-    .{ .key = "potT", .title = "Potência perto do teto", .xlabel = "V (m/s)", .ylabel = "W" },
-    .{ .key = "thr", .title = "Acelerador e α nivelado (h = 0, modelo)", .xlabel = "V (m/s)", .ylabel = "— / graus" },
-    .{ .key = "roc", .title = "Razão de subida máx. e de planeio", .xlabel = "V (m/s)", .ylabel = "m/s" },
-    .{ .key = "acr", .title = "α de equilíbrio × V (h = 0) e o ângulo de cruzeiro", .xlabel = "V (m/s)", .ylabel = "α (°)" },
-    .{ .key = "raio", .title = "Raio mínimo: estol e sustentada", .xlabel = "V (m/s)", .ylabel = "m" },
+    .{ .key = "env_p", .title = "Envelope (planilha)", .xlabel = "velocidade (m/s)", .ylabel = "altitude (m)" },
+    .{ .key = "env_m", .title = "Envelope (modelo)", .xlabel = "velocidade (m/s)", .ylabel = "altitude (m)" },
+    .{ .key = "pot0", .title = "Potências", .xlabel = "$V$ (m/s)", .ylabel = "$P$ (W)" },
+    .{ .key = "potT", .title = "Potência no teto", .xlabel = "$V$ (m/s)", .ylabel = "$P$ (W)" },
+    .{ .key = "thr", .title = "Voo nivelado", .xlabel = "$V$ (m/s)", .ylabel = "— / graus" },
+    .{ .key = "roc", .title = "Subida e planeio", .xlabel = "$V$ (m/s)", .ylabel = "m/s" },
+    .{ .key = "acr", .title = "Ângulo de equilíbrio", .xlabel = "$V$ (m/s)", .ylabel = "$\\alpha$ (°)" },
+    .{ .key = "raio", .title = "Raio mínimo", .xlabel = "$V$ (m/s)", .ylabel = "$R$ (m)" },
 };
 const all_plots = [_]simulation.Plot{plot_comparison} ++ other_plots;
 

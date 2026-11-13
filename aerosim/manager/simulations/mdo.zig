@@ -150,10 +150,10 @@ fn airfoilNamed(memory: std.mem.Allocator, name: []const u8) !aircraft_model.air
 }
 
 const plots = [_]simulation.Plot{
-    .{ .key = "mdo_hist", .title = "Objetivo por iteração (linha: o melhor até ali)", .xlabel = "iteração", .ylabel = "objetivo" },
-    .{ .key = "mdo_cloud", .title = "Indivíduos: MTOW × área da asa", .xlabel = "área da asa (m²)", .ylabel = "MTOW (kg)" },
-    .{ .key = "mdo_plan", .title = "Asa do indivíduo (clique num ponto acima; sem escolha, a do melhor)", .xlabel = "y (m)", .ylabel = "x (m)" },
-    .{ .key = "mdo_TD", .title = "Tração e arrasto no MTOW", .xlabel = "V (m/s)", .ylabel = "força (N)" },
+    .{ .key = "mdo_hist", .title = "Convergência", .xlabel = "iteração", .ylabel = "objetivo" },
+    .{ .key = "mdo_cloud", .title = "Indivíduos", .xlabel = "área da asa (m²)", .ylabel = "MTOW (kg)" },
+    .{ .key = "mdo_plan", .title = "Asa escolhida", .xlabel = "$y$ (m)", .ylabel = "$x$ (m)" },
+    .{ .key = "mdo_TD", .title = "Tração e arrasto", .xlabel = "$V$ (m/s)", .ylabel = "força (N)" },
 };
 
 const color_feasible = "#1f77b4";
