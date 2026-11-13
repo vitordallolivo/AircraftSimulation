@@ -376,12 +376,8 @@ fn centersNote(memory: std.mem.Allocator, aircraft: ?*const Aircraft) ![]const u
     return text.written();
 }
 
-/// a malha do VLM em cada xCG: 4 painéis na corda e 2 na envergadura de cada faixa
-const vlm_grid: core.vlm.Grid = .{ .chordwise = 4, .spanwise = 2 };
-const vlm_max_panels = 1200;
-
-/// o VLM do avião com os momentos em cada x do CG (corpo); vazio se a malha não cabe
-fn vlmAtCenters(memory: std.mem.Allocator, aircraft: *const Aircraft, centers: []const f64) ![]const core.vlm.Derivatives {
+/// o VLM do avião com os momentos em cada x do CG (corpo), na malha `vlm_grid`; vazio se passa de `vlm_max_panels`
+fn vlmAtCenters(memory: std.mem.Allocator, aircraft: *const Aircraft, centers: []const f64, vlm_grid: core.vlm.Grid, vlm_max_panels: usize) ![]const core.vlm.Derivatives {
     const params = try memory.create(types.Params);
     params.* = .{};
     var diagnosis: model.Diag = .{};
@@ -545,6 +541,9 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "janela_tolerancia", .label = "Tolerância do acionamento (bisseção e seção áurea)", .default = .{ .number = 0.25 }, .minimum = 0.01, .maximum = 10, .unit = "m", .group = group_runway, .help = "quando nenhum ponto da grade passa, a faixa de acionamento em volta do melhor é dividida (bisseção: busca por metades; seção áurea: busca do mínimo que reaproveita pontos) até ficar menor que isto; abaixo disso, a massa conta como não decola" },
         .{ .key = "coordenadas_voltas", .label = "Voltas da busca por coordenadas (varia um comando por vez)", .default = .{ .number = 2 }, .minimum = 0, .maximum = 10, .group = group_runway, .help = "quando nem a grade nem a seção áurea acham uma decolagem que passa, varia o acionamento, a deflexão de cabrar (0 ao máximo) e o profundor na corrida (0 a metade do máximo, picando), um de cada vez, por seção áurea. 0 = só as deflexões fixas da lista" },
         .{ .key = "angulo_tolerancia", .label = "Tolerância dos ângulos (seção áurea)", .default = .{ .number = 0.25 }, .minimum = 0.01, .maximum = 5, .unit = "°", .group = group_runway, .help = "a seção áurea na deflexão e no profundor da corrida para quando a faixa fica menor que isto" },
+        .{ .key = "vlm_corda", .label = "VLM em cada xCG: painéis na corda", .default = .{ .number = 4 }, .minimum = 1, .maximum = 40, .group = group_runway, .help = "a malha do VLM que dá as derivadas do avião em cada xCG da lista (os momentos mudam com o CG): painéis ao longo da corda de cada faixa" },
+        .{ .key = "vlm_envergadura", .label = "VLM em cada xCG: painéis na envergadura", .default = .{ .number = 2 }, .minimum = 1, .maximum = 40, .group = group_runway, .help = "painéis na envergadura de cada faixa da asa, na mesma malha" },
+        .{ .key = "vlm_paineis", .label = "VLM em cada xCG: máximo de painéis", .default = .{ .number = 1200 }, .minimum = 10, .maximum = 20000, .group = group_runway, .help = "acima disto o VLM não roda (a matriz cresce com o quadrado dos painéis) e o MTOW usa as derivadas das faixas" },
         .{ .key = "massa_passos", .label = "Passos da bisseção da massa (busca do MTOW)", .default = .{ .number = 9 }, .minimum = 1, .maximum = 30, .group = group_runway, .help = "quantas vezes a faixa de massa da tabela é dividida ao meio; a precisão do MTOW é (máximo − mínimo) / 2^passos" },
     };
     var hand: std.ArrayList(simulation.Param) = .empty;
@@ -777,6 +776,8 @@ const RunState = struct {
     tolerance: f64 = 0,
     takeoff_settings: takeoff_opt.Settings = .{},
     mass_steps: usize = 9, // bisseções na massa, entre o mínimo e o máximo da tabela
+    vlm_grid: core.vlm.Grid = .{ .chordwise = 4, .spanwise = 2 }, // malha do VLM em cada xCG
+    vlm_max_panels: usize = 1200,
     hand_trigger: ?[2]f64 = null, // (s, δe) digitados
     phase: Phase = .search,
     notes: std.ArrayList([]const u8) = .empty,
@@ -846,6 +847,8 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
         .angle_tolerance = values.number("angulo_tolerancia", 0.25),
     };
     state.mass_steps = @intFromFloat(@round(values.number("massa_passos", 9)));
+    state.vlm_grid = .{ .chordwise = @intFromFloat(@round(values.number("vlm_corda", 4))), .spanwise = @intFromFloat(@round(values.number("vlm_envergadura", 2))) };
+    state.vlm_max_panels = @intFromFloat(@round(values.number("vlm_paineis", 1200)));
     if (std.mem.eql(u8, values.text("trigger", ""), trigger_labels[1]))
         state.hand_trigger = .{ values.number("s_hand", run.aircraft.takeoff.sR), values.number("de_hand", run.aircraft.takeoff.de1) };
     state.aircraft = run.aircraft.*;
@@ -892,7 +895,7 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
             const centers = try memory.alloc(f64, percents.len);
             for (percents, centers) |percent, *x| x.* = leading - percent / 100 * chord;
             state.centers = centers;
-            if (state.mode == .takeoff) state.center_vlm = vlmAtCenters(memory, &state.aircraft, centers) catch &.{};
+            if (state.mode == .takeoff) state.center_vlm = vlmAtCenters(memory, &state.aircraft, centers, state.vlm_grid, state.vlm_max_panels) catch &.{};
             if (state.mode == .study) try startStudy(run, state, values);
         },
     }
