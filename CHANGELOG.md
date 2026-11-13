@@ -6,6 +6,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- A busca do MTOW parava abaixo da maior massa que cumpre a pista. Ela testava só oito pontos de acionamento do
+  profundor, e o melhor acionamento das massas pesadas cai entre dois deles. Agora, quando nenhum ponto passa, a busca
+  procura o acionamento que decola mais cedo entre os pontos. No Convencional, o MTOW subiu de 13,03 kg para 13,10 kg.
+  A tela ganhou o erro aceito no x_warning e no z_warning, o número de pontos da varredura, a tolerância do acionamento
+  e quantas vezes a faixa de massa é dividida, que antes ficavam escondidos no código.
 - O projeto não tinha nenhuma conta de estrutura. Agora o núcleo calcula a seção de uma viga feita de várias partes,
   como a alma de balsa com tubos de carbono de uma longarina, cada uma do seu material. A conta dá a linha neutra, a
   rigidez à flexão e a massa por metro. Sob um momento fletor, ela dá também a tensão em cada parte e a margem contra

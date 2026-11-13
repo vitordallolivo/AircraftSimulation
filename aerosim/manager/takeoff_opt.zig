@@ -10,8 +10,11 @@
 //! O comando é o profundor (ou o elevon): no ponto s da pista ele vai para a deflexão de cabrar. A busca procura o s
 //! que deixa a maior folga x_warning − n_dec, começando pela deflexão máxima e só usando uma menor se nenhuma posição
 //! funcionar com a máxima; se nada funcionar, segura o profundor picando na corrida (25 % e 50 % do curso). A grade
-//! testa 8 pontos na pista e refina em volta do melhor pela seção áurea; a bisseção parte de onde o avião sai do chão
-//! sem acionar e divide a faixa até achar a janela.
+//! testa `Settings.grid_points` pontos na pista; se nenhum passa, divide ao meio o trecho entre um acionamento cedo
+//! demais e o seguinte, tarde demais (a janela que funciona pode ser mais estreita que a grade), e procura pela seção
+//! áurea o acionamento que decola mais cedo em volta do melhor ponto (o mínimo pode cair entre dois pontos da grade);
+//! depois refina em volta do melhor pela seção áurea. A bisseção parte de onde o avião sai do chão sem acionar e divide a faixa até achar a
+//! janela. Todos os ajustes (`Settings`) e o erro aceito nos dois requisitos vêm da tela.
 const std = @import("std");
 const builtin = @import("builtin");
 const core = @import("aerosim");
@@ -25,8 +28,18 @@ const Aircraft = aircraft_model.aircraft.Aircraft;
 const rad = std.math.pi / 180.0;
 
 const levels = [_]f64{ 1.0, 0.75, 0.5, 0.3, 0.15 }; // frações da deflexão máxima, da maior para a menor
-const position_tolerance = 0.25; // bisseção: para quando a faixa de s fica menor que isto (m)
 const stall_ratio = 1.0; // C_L/C_Lmax (a superfície mais carregada) que reprova a decolagem
+
+/// os ajustes da busca, todos campos da tela: quantos pontos a grade testa, até onde a janela do acionamento é
+/// dividida e quanto se aceita passar dos requisitos da pista
+pub const Settings = struct {
+    grid_points: usize = 8, // pontos de acionamento testados na pista, de 0 a 95 % do x_warning
+    position_tolerance: f64 = 0.25, // a janela do acionamento é dividida até ficar menor que isto (m)
+    x_error: f64 = 0, // quanto o ponto de decolagem pode passar do x_warning e ainda contar como passou (m)
+    z_error: f64 = 0, // quanto pode faltar de altura (z_warning) e ainda contar como passou (m)
+
+    pub const max_grid_points = 64;
+};
 
 /// a busca do ponto de acionamento
 pub const Search = enum {
@@ -95,9 +108,10 @@ pub const Result = struct {
     events: types.Events,
     margin: f64, // x_warning − n_dec quando passa; −inf quando não
 
-    /// acionou cedo demais: saiu do chão e afundou abaixo do permitido, estolou ou caiu depois de sair
-    fn early(result: Result) bool {
-        return result.z_short > 0 or result.status != .completed;
+    /// acionou cedo demais: saiu do chão e afundou abaixo do permitido (além do erro aceito `z_error`), estolou ou
+    /// caiu depois de sair
+    fn early(result: Result, z_error: f64) bool {
+        return result.z_short > z_error or result.status != .completed;
     }
 
     /// a ordem do "menos ruim" quando ninguém passa
@@ -165,6 +179,7 @@ pub const Takeoffs = struct {
     z_warning: f64,
     deflection_max: f64,
     control: ?[]const u8,
+    settings: Settings = .{},
     log: std.ArrayList(types.LogRow) = .empty,
     crew: []Takeoffs = &.{}, // as cópias que voam as decolagens de uma grade em paralelo, uma por núcleo a mais
 
@@ -228,7 +243,9 @@ pub const Takeoffs = struct {
         }
         const verdict = judge(takeoffs.log.items, run.events, takeoffs.x_warning, takeoffs.z_warning);
         if (status == .completed and run.events.ratio_to >= stall_ratio) status = .stalled;
-        const ok = verdict.ok and status == .completed;
+        // passa com o erro aceito nos dois requisitos (os dois zero: o critério exato)
+        const settings = takeoffs.settings;
+        const ok = std.math.isFinite(verdict.takeoff_point) and verdict.x_excess <= settings.x_error and verdict.z_short <= settings.z_error and status == .completed;
         return .{
             .position = position orelse std.math.nan(f64),
             .deflection = deflection,
@@ -344,25 +361,46 @@ fn leastBad(tried: []const Result) Result {
     return chosen;
 }
 
-const grid_points = 8;
 const refine_steps = 5;
 
 fn gridSearch(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), refine: bool) !?Result {
     const memory = takeoffs.memory;
     const deflection_max = takeoffs.deflection_max;
-    var grid: [grid_points]f64 = undefined;
+    const settings = takeoffs.settings;
+    const count = std.math.clamp(settings.grid_points, 3, Settings.max_grid_points);
+    var grid_buffer: [Settings.max_grid_points]f64 = undefined;
+    const grid = grid_buffer[0..count];
     const last = @max(takeoffs.x_warning, 5) * 0.95;
-    for (&grid, 0..) |*position, k| position.* = last * @as(f64, @floatFromInt(k)) / (grid_points - 1);
+    for (grid, 0..) |*position, k| position.* = last * @as(f64, @floatFromInt(k)) / @as(f64, @floatFromInt(count - 1));
     var found: ?Result = null;
     // profundor na corrida: o do avião; depois picando. Da deflexão máxima para baixo: para na primeira que passa
     holds: for ([_]?f64{ null, 0.25 * deflection_max, 0.5 * deflection_max }) |hold| {
         for (levels) |level| {
             var best_here: ?Result = null;
-            var flown: [grid_points]Result = undefined;
-            try evaluateMany(takeoffs, &grid, -level * deflection_max, hold, &flown);
+            var flown_buffer: [Settings.max_grid_points]Result = undefined;
+            const flown = flown_buffer[0..count];
+            try evaluateMany(takeoffs, grid, -level * deflection_max, hold, flown);
             for (flown) |result| {
                 try tried.append(memory, result);
                 if (result.ok and (best_here == null or result.margin > best_here.?.margin)) best_here = result;
+            }
+            // nenhum ponto passou: a janela que funciona pode ser mais estreita que o espaço da grade. Entre um ponto
+            // que acionou cedo demais e o seguinte, que acionou tarde demais, a janela é dividida ao meio até achar
+            // um acionamento que passa ou até ficar menor que a tolerância
+            if (best_here == null) {
+                for (flown[0 .. count - 1], flown[1..count]) |before, after| {
+                    if (!before.early(settings.z_error) or after.early(settings.z_error)) continue;
+                    if (try windowBetween(takeoffs, tried, before.position, after.position, -level * deflection_max, hold)) |good| {
+                        best_here = good;
+                        break;
+                    }
+                }
+            }
+            // ainda nada: o ponto de decolagem em função do acionamento tem um mínimo (cedo demais o avião corre
+            // cabrado, com mais arrasto; tarde demais roda tarde), e o mínimo pode cair entre dois pontos da grade.
+            // A seção áurea (busca do mínimo que reaproveita pontos) procura esse mínimo em volta do melhor ponto
+            if (best_here == null) {
+                if (closest(flown)) |center| best_here = try earliestNear(takeoffs, tried, center.position, grid[1] - grid[0], -level * deflection_max, hold);
             }
             if (best_here) |good| {
                 found = good;
@@ -400,6 +438,64 @@ fn gridSearch(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), refine: bool) 
     return best;
 }
 
+/// o acionamento que decolou mais cedo sem afundar, estolar nem cair (a dica da seção áurea); null se nenhum
+fn closest(flown: []const Result) ?Result {
+    var chosen: ?Result = null;
+    for (flown) |result| {
+        if (result.status != .completed or result.z_short > 0 or !std.math.isFinite(result.takeoff_point)) continue;
+        if (chosen == null or result.takeoff_point < chosen.?.takeoff_point) chosen = result;
+    }
+    return chosen;
+}
+
+/// a seção áurea em [center − spacing, center + spacing]: o acionamento com o ponto de decolagem mais cedo (os que
+/// afundam, estolam ou caem contam como os piores), até a faixa ficar menor que a tolerância de posição. Devolve o
+/// primeiro que passa, ou null
+fn earliestNear(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), center: f64, spacing: f64, deflection: f64, hold: ?f64) !?Result {
+    const settings = takeoffs.settings;
+    const score = struct {
+        fn of(result: Result, z_error: f64) f64 {
+            if (result.status != .completed or result.z_short > z_error or !std.math.isFinite(result.takeoff_point)) return -std.math.inf(f64);
+            return -result.takeoff_point;
+        }
+    }.of;
+    var search = scalar.GoldenSection.init(@max(0, center - spacing), center + spacing);
+    var left = try takeoffs.evaluate(search.left, deflection, hold);
+    var right = try takeoffs.evaluate(search.right, deflection, hold);
+    try tried.append(takeoffs.memory, left);
+    try tried.append(takeoffs.memory, right);
+    while (true) {
+        if (left.ok) return left;
+        if (right.ok) return right;
+        if (search.high - search.low <= settings.position_tolerance) return null;
+        const left_better = score(left, settings.z_error) >= score(right, settings.z_error);
+        const point = search.shrink(left_better);
+        if (left_better) {
+            right = left;
+            left = try takeoffs.evaluate(point, deflection, hold);
+            try tried.append(takeoffs.memory, left);
+        } else {
+            left = right;
+            right = try takeoffs.evaluate(point, deflection, hold);
+            try tried.append(takeoffs.memory, right);
+        }
+    }
+}
+
+/// a janela do acionamento entre `early_at` (cedo demais) e `late_at` (tarde demais), dividida ao meio até a
+/// tolerância de posição; o primeiro acionamento que passa, ou null se a janela não existe
+fn windowBetween(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), early_at: f64, late_at: f64, deflection: f64, hold: ?f64) !?Result {
+    const settings = takeoffs.settings;
+    var window: scalar.Bisection = .{ .low = early_at, .high = late_at };
+    while (window.width() > settings.position_tolerance) {
+        const result = try takeoffs.evaluate(window.middle(), deflection, hold);
+        try tried.append(takeoffs.memory, result);
+        if (result.ok) return result;
+        window.move(result.position, if (result.early(settings.z_error)) .raise else .lower);
+    }
+    return null;
+}
+
 fn bisect(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), tolerance: f64) !?Result {
     const memory = takeoffs.memory;
     const deflection_max = takeoffs.deflection_max;
@@ -415,13 +511,13 @@ fn bisect(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), tolerance: f64) !?
             var bisection: scalar.Bisection = .{ .low = 0, .high = top };
             var good: ?Result = null;
             early = false;
-            while (bisection.width() > @max(position_tolerance, tolerance * x_warning)) {
+            while (bisection.width() > @max(takeoffs.settings.position_tolerance, tolerance * x_warning)) {
                 const result = try takeoffs.evaluate(bisection.middle(), -level * deflection_max, hold);
                 try tried.append(memory, result);
                 if (result.ok) {
                     if (good == null or result.margin > good.?.margin) good = result;
                     bisection.move(result.position, .lower); // passa: tenta antes, para ganhar folga
-                } else if (result.early()) {
+                } else if (result.early(takeoffs.settings.z_error)) {
                     bisection.move(result.position, .raise);
                     early = true;
                 } else bisection.move(result.position, .lower);

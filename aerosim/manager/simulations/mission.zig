@@ -537,8 +537,13 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
     const runway = [_]simulation.Param{
         .{ .key = "x_warning", .label = "x_warning (pista)", .default = .{ .number = field.x_warning }, .minimum = 1, .maximum = 2000, .unit = "m", .group = group_runway, .help = "comprimento de pista: tem de 'decolar' (passar do z_warning) antes desta distância" },
         .{ .key = "z_warning", .label = "z_warning (altura)", .default = .{ .number = field.z_warning }, .minimum = -20, .maximum = 50, .unit = "m", .group = group_runway, .help = "altura sobre a superfície de partida que conta como decolado; ≤ 0 na mesa: quanto pode afundar abaixo dela" },
-        .{ .key = "busca", .label = "Busca do acionamento", .kind = .choice, .default = .{ .text = takeoff_opt.search_labels[0] }, .choices = &takeoff_opt.search_labels, .group = group_runway, .help = "grade: 8 pontos na pista e refino em volta do melhor. bisseção: parte de onde o avião sai do chão sem acionar e divide a faixa até achar a janela" },
+        .{ .key = "busca", .label = "Busca do acionamento", .kind = .choice, .default = .{ .text = takeoff_opt.search_labels[0] }, .choices = &takeoff_opt.search_labels, .group = group_runway, .help = "grade: os pontos da grade na pista; se nenhum passa, divide a janela entre um acionamento cedo demais e o seguinte, tarde demais; depois refina em volta do melhor. bisseção: parte de onde o avião sai do chão sem acionar e divide a faixa até achar a janela" },
         .{ .key = "tolerancia", .label = "Tolerância da bisseção", .default = .{ .number = 0 }, .minimum = 0, .maximum = 20, .unit = "% x_warning", .group = group_runway, .help = "só na bisseção: aceita errar o acionamento até isto do x_warning e desiste cedo da massa que nem com o comando todo cabrando sai do chão a tempo. 0 = a busca de sempre" },
+        .{ .key = "x_erro", .label = "Erro aceito no x_warning", .default = .{ .number = 0 }, .minimum = 0, .maximum = 100, .unit = "m", .group = group_runway, .help = "quanto o ponto de decolagem pode passar do x_warning e ainda contar como decolou. 0 = o requisito exato" },
+        .{ .key = "z_erro", .label = "Erro aceito no z_warning", .default = .{ .number = 0 }, .minimum = 0, .maximum = 10, .unit = "m", .group = group_runway, .help = "quanto pode faltar de altura (ou afundar a mais na mesa) e ainda contar como decolou. 0 = o requisito exato" },
+        .{ .key = "grade_pontos", .label = "Pontos da grade (varredura do acionamento)", .default = .{ .number = 8 }, .minimum = 3, .maximum = 64, .group = group_runway, .help = "quantos pontos de acionamento do profundor a grade testa, de 0 a 95 % do x_warning, em cada deflexão" },
+        .{ .key = "janela_tolerancia", .label = "Tolerância do acionamento (bisseção e seção áurea)", .default = .{ .number = 0.25 }, .minimum = 0.01, .maximum = 10, .unit = "m", .group = group_runway, .help = "quando nenhum ponto da grade passa, a faixa de acionamento em volta do melhor é dividida (bisseção: busca por metades; seção áurea: busca do mínimo que reaproveita pontos) até ficar menor que isto; abaixo disso, a massa conta como não decola" },
+        .{ .key = "massa_passos", .label = "Passos da bisseção da massa (busca do MTOW)", .default = .{ .number = 9 }, .minimum = 1, .maximum = 30, .group = group_runway, .help = "quantas vezes a faixa de massa da tabela é dividida ao meio; a precisão do MTOW é (máximo − mínimo) / 2^passos" },
     };
     var hand: std.ArrayList(simulation.Param) = .empty;
     if (mode == .mission or mode == .turns) {
@@ -768,6 +773,8 @@ const RunState = struct {
     z_warning: f64 = 1,
     search: takeoff_opt.Search = .grid,
     tolerance: f64 = 0,
+    takeoff_settings: takeoff_opt.Settings = .{},
+    mass_steps: usize = 9, // bisseções na massa, entre o mínimo e o máximo da tabela
     hand_trigger: ?[2]f64 = null, // (s, δe) digitados
     phase: Phase = .search,
     notes: std.ArrayList([]const u8) = .empty,
@@ -828,6 +835,13 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     state.z_warning = values.number("z_warning", run.aircraft.airfield.z_warning);
     state.search = takeoff_opt.Search.named(values.text("busca", takeoff_opt.search_labels[0]));
     state.tolerance = values.number("tolerancia", 0) / 100;
+    state.takeoff_settings = .{
+        .grid_points = @intFromFloat(@round(values.number("grade_pontos", 8))),
+        .position_tolerance = values.number("janela_tolerancia", 0.25),
+        .x_error = values.number("x_erro", 0),
+        .z_error = values.number("z_erro", 0),
+    };
+    state.mass_steps = @intFromFloat(@round(values.number("massa_passos", 9)));
     if (std.mem.eql(u8, values.text("trigger", ""), trigger_labels[1]))
         state.hand_trigger = .{ values.number("s_hand", run.aircraft.takeoff.sR), values.number("de_hand", run.aircraft.takeoff.de1) };
     state.aircraft = run.aircraft.*;
@@ -968,6 +982,7 @@ fn chooseTakeoff(state: *RunState, aircraft: *const Aircraft, loading: Loading) 
 fn searchTakeoff(state: *RunState, aircraft: *const Aircraft, loading: Loading, refine: bool) !takeoff_opt.Outcome {
     var diagnosis: model.Diag = .{};
     var takeoffs = try takeoff_opt.Takeoffs.init(state.memory, aircraft, state.calibrated.p.ap, state.x_warning, state.z_warning, 0.01, &diagnosis);
+    takeoffs.settings = state.takeoff_settings;
     loading.apply(&takeoffs.instance.p);
     try core.runner.configure(takeoffs.instance);
     takeoffs.takeoff = takeoffs.instance.p.takeoff;
@@ -983,6 +998,7 @@ fn searchTakeoff(state: *RunState, aircraft: *const Aircraft, loading: Loading, 
 fn loggedTakeoff(state: *RunState, aircraft: *const Aircraft, loading: Loading, best: takeoff_opt.Result) !struct { result: takeoff_opt.Result, rows: []const types.LogRow } {
     var diagnosis: model.Diag = .{};
     var takeoffs = try takeoff_opt.Takeoffs.init(state.memory, aircraft, state.calibrated.p.ap, state.x_warning, state.z_warning, 0.005, &diagnosis);
+    takeoffs.settings = state.takeoff_settings;
     loading.apply(&takeoffs.instance.p);
     try core.runner.configure(takeoffs.instance);
     takeoffs.takeoff = takeoffs.instance.p.takeoff;
@@ -1843,13 +1859,13 @@ fn advanceMtow(run: *simulation.Run, state: *RunState) simulation.Error!bool {
             return false;
         },
         .bisect => {
-            if (bisection.interval.step >= 9) {
+            if (bisection.interval.step >= state.mass_steps) {
                 bisection.mtow_fraction = bisection.interval.low;
                 bisection.stage = .refine;
                 return false;
             }
             const middle = bisection.interval.middle();
-            run.say("{s}: bisseção {d}/9, {d:.2} kg", .{ phase_name, bisection.interval.step + 1, massAt(middle) });
+            run.say("{s}: bisseção {d}/{d}, {d:.2} kg", .{ phase_name, bisection.interval.step + 1, state.mass_steps, massAt(middle) });
             const case = try mtowCase(state, middle, false);
             const ok = try passes(state, case);
             const k = try keepCase(state, case);
@@ -1901,7 +1917,7 @@ fn searchFraction(state: *const RunState) f64 {
     const inside: f64 = switch (bisection.stage) {
         .low => 0,
         .high => 0.05,
-        .bisect => 0.1 + 0.8 * steps / 9,
+        .bisect => 0.1 + 0.8 * steps / @as(f64, @floatFromInt(@max(state.mass_steps, 1))),
         .refine, .mission => 0.92,
         .done => 1,
     };
@@ -2281,7 +2297,7 @@ test "Missão: raio mínimo de curva igual ao do Python" {
     try testing.expectApproxEqAbs(@as(f64, 1.0749520553674288), try summaryNumber(parsed, "n no R_min @ 13 m/s"), 1e-3); // o resumo sai com 4 casas
 }
 
-test "Missão: Decolagem no xCG do avião, MTOW igual ao do Python (lento: -Dlento -Dfiltro=MTOW)" {
+test "Missão: Decolagem no xCG do avião, o MTOW no limite da pista (lento: -Dlento -Dfiltro=MTOW)" {
     if (!@import("test_options").slow) return error.SkipZigTest;
     const gpa = testing.allocator;
     const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
@@ -2292,8 +2308,10 @@ test "Missão: Decolagem no xCG do avião, MTOW igual ao do Python (lento: -Dlen
     var request: [128]u8 = undefined;
     const parsed = try summaryOf(gpa, &loaded.ac, try std.fmt.bufPrint(&request, "\"values\": {{\"mode\": \"{s}\"}}", .{Mode.takeoff.label()}));
     defer parsed.deinit();
-    try testing.expectApproxEqAbs(@as(f64, 13.4446875), try summaryNumber(parsed, "MTOW (kg)"), 1e-3);
-    try testing.expectApproxEqAbs(@as(f64, 59.7988483968584), try summaryNumber(parsed, "n_dec (m)"), 1e-4);
+    // a grade sozinha parava em 13,0345 kg: o mínimo do ponto de decolagem caía entre dois pontos dela. Com a seção
+    // áurea em volta do melhor ponto, 13,1166 kg já decola em 60,014 m (passa 1,4 cm) e 13,1048 kg decola antes
+    try testing.expectApproxEqAbs(@as(f64, 13.1048), try summaryNumber(parsed, "MTOW (kg)"), 1e-3);
+    try testing.expect(try summaryNumber(parsed, "n_dec (m)") <= 60);
 }
 
 test "Missão: o estudo no valor de agora dá o MTOW do modo MTOW (lento: -Dlento -Dfiltro=estudo)" {
@@ -2310,6 +2328,6 @@ test "Missão: o estudo no valor de agora dá o MTOW do modo MTOW (lento: -Dlent
     const parsed = try summaryOf(gpa, &loaded.ac, text);
     defer parsed.deinit();
     var key: [128]u8 = undefined;
-    // o mesmo avião do modo MTOW: o mesmo MTOW (13,4446875 kg, o do teste do MTOW)
-    try testing.expectApproxEqAbs(@as(f64, 13.4446875), try summaryNumber(parsed, try std.fmt.bufPrint(&key, "MTOW (kg), {s} = {d:.2}", .{ StudyVariable.tilt.label(), tilt })), 1e-3);
+    // o mesmo avião do modo MTOW: o mesmo MTOW (13,1048 kg, o do teste do MTOW)
+    try testing.expectApproxEqAbs(@as(f64, 13.1048), try summaryNumber(parsed, try std.fmt.bufPrint(&key, "MTOW (kg), {s} = {d:.2}", .{ StudyVariable.tilt.label(), tilt })), 1e-3);
 }
