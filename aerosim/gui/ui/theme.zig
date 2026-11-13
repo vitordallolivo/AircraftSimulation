@@ -109,10 +109,15 @@ const extra_symbols = [_]i32{
     0x03C7, 0x03C8, 0x03C9, 0x0393, 0x039B, 0x03A9, 0x2248, 0x2202, // χ ψ ω Γ Λ Ω ≈ ∂
 };
 
+/// as letras vão para a textura com 28 px e o texto sai quase todo com 12 a 16 px: perto de metade, o filtro
+/// bilinear cai em cima de 2 × 2 pixels da textura e faz a média certa. Com 48 px (antes), a redução de 3 a 4 vezes
+/// pulava pixels do desenho e os traços finos sumiam ou serrilhavam (o texto parecia comprimido)
+const atlas_size = 28;
+
 fn loadFirst(paths: []const [:0]const u8, cps: []const i32) ?rl.Font {
     for (paths) |path| {
         if (!rl.fileExists(path)) continue;
-        const font = rl.loadFontEx(path, 48, cps) catch continue;
+        const font = rl.loadFontEx(path, atlas_size, cps) catch continue;
         rl.setTextureFilter(font.texture, .bilinear);
         return font;
     }
@@ -126,8 +131,8 @@ const math_italic_file = @embedFile("fonts/cmunti.ttf");
 
 /// carrega as duas fontes da matemática e as entrega ao TeX dos gráficos; sem elas, a matemática fica na fonte do texto
 fn loadMathFonts(cps: []const i32) void {
-    const upright = rl.loadFontFromMemory(".ttf", math_upright_file, 48, cps) catch return;
-    const italic = rl.loadFontFromMemory(".ttf", math_italic_file, 48, cps) catch {
+    const upright = rl.loadFontFromMemory(".ttf", math_upright_file, atlas_size, cps) catch return;
+    const italic = rl.loadFontFromMemory(".ttf", math_italic_file, atlas_size, cps) catch {
         rl.unloadFont(upright);
         return;
     };
