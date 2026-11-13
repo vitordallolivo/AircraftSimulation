@@ -181,8 +181,22 @@ pub fn percentile(memory: std.mem.Allocator, values: []const f64, which: f64) !f
     return sorted[below] + fraction * (sorted[above] - sorted[below]);
 }
 
+/// o que conta como "a curva foi bem feita" (`Turn.ok`); os padrões são os de sempre
+pub const TurnCriteria = struct {
+    bank_limit_deg: f64 = 75, // a maior inclinação aceita
+    bank_slack_deg: f64 = 15, // quanto a inclinação pode passar desse limite num pico
+    radius_tolerance: f64 = 3.0, // erro de trajetória e de raio aceito (m)...
+    radius_fraction: f64 = 0.15, // ...ou esta fração do raio, o que for maior
+    stall_time: f64 = 0.3, // tempo acima do limite de C_L/C_Lmax que reprova (s)
+    height_loss: f64 = 3.0, // perda de altura aceita na curva (m)
+    sink: f64 = 0.5, // razão de descida média aceita no trecho estável (m/s)
+    lowest_height: f64 = 0.5, // a menor altura aceita (m)
+    speed_fraction: f64 = 0.9, // a menor V aceita, em fração da V de estol
+};
+
 /// as métricas da curva do segmento `k` de raio `radius` (`evaluate_turn`)
-pub fn evaluateTurn(memory: std.mem.Allocator, rows: []const types.LogRow, segment: types.Segment, k: usize, radius: f64, stall_speed: f64, lift_limit: f64, bank_limit_deg: f64) !Turn {
+pub fn evaluateTurn(memory: std.mem.Allocator, rows: []const types.LogRow, segment: types.Segment, k: usize, radius: f64, stall_speed: f64, lift_limit: f64, criteria: TurnCriteria) !Turn {
+    const bank_limit_deg = criteria.bank_limit_deg;
     var inside: std.ArrayList(usize) = .empty;
     for (rows, 0..) |row, i| if (row.seg == @as(f64, @floatFromInt(k))) try inside.append(memory, i);
     if (inside.items.len < 5) return .{ .radius = radius };
@@ -248,11 +262,11 @@ pub fn evaluateTurn(memory: std.mem.Allocator, rows: []const types.LogRow, segme
     turn.alpha_limit_time = alpha_limit_time;
     turn.stall_load_steady = if (stall_loads.items.len > 0) try median(memory, stall_loads.items) else std.math.nan(f64);
 
-    const tolerance = @max(3.0, 0.15 * radius);
-    const stalls = stall_time > 0.3;
+    const tolerance = @max(criteria.radius_tolerance, criteria.radius_fraction * radius);
+    const stalls = stall_time > criteria.stall_time;
     const follows = turn.track_error_p90 <= tolerance and @abs(turn.radius_flown - radius) <= tolerance;
-    const holds_height = turn.height_loss <= 3.0 and turn.climb_steady > -0.5;
-    const controlled = bank_max <= bank_limit_deg + 15 and lowest > 0.5 and speed_min > 0.9 * stall_speed;
+    const holds_height = turn.height_loss <= criteria.height_loss and turn.climb_steady > -criteria.sink;
+    const controlled = bank_max <= bank_limit_deg + criteria.bank_slack_deg and lowest > criteria.lowest_height and speed_min > criteria.speed_fraction * stall_speed;
     turn.ok = controlled and !stalls and follows and holds_height;
     turn.verdict = if (turn.ok) .ok else if (!controlled) .lost_control else if (stalls) .wing_stall else if (alpha_limit_time > 0.3) .alpha_limit else if (!follows) .off_radius else .loses_height;
     return turn;

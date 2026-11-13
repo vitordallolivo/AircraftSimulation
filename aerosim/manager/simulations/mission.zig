@@ -120,8 +120,127 @@ const group_mass = "Massa e acionamento";
 const group_gust = "Rajada";
 const group_runway = "Pista";
 const glyph_step = 10.0; // o avião desenhado no 3D a cada 10 m
-const auto_fractions = [_]f64{ 1.0, 0.85, 0.7, 0.55, 0.42, 0.32 }; // raio automático: frações do φ máx. do piloto
-const turn_banks = [_]f64{ 70, 65, 55, 45, 37, 30, 24, 18, 14 }; // as inclinações testadas nas curvas
+const default_auto_fractions = [_]f64{ 1.0, 0.85, 0.7, 0.55, 0.42, 0.32 }; // raio automático: frações do φ máx. do piloto
+const default_turn_banks = [_]f64{ 70, 65, 55, 45, 37, 30, 24, 18, 14 }; // as inclinações testadas nas curvas
+const group_refine = "Refino";
+
+/// o refino do voo e das buscas da missão, tudo campo da tela (os padrões são os de sempre)
+const Refinement = struct {
+    drop_bisections: usize = 8, // bisseções do ponto de soltura da carga
+    drop_low: f64 = 0.05, // a busca da soltura vai desta fração da perna...
+    drop_high: f64 = 0.95, // ...até esta
+    neutral_step: f64 = 0.5, // passo de α das derivadas do ponto neutro (graus)
+    neutral_alpha: f64 = 2, // α em que o ponto neutro é medido (graus)
+    simulation_limit: usize = 10_000, // máximo de simulações da busca do MTOW
+    turn_height: f64 = 30, // altura do estudo das curvas (m)
+    turn_angle: f64 = 240, // quanto a curva do estudo gira (graus)
+    turn_lead: f64 = 150, // reta antes da curva do estudo (m)
+    turn_exit: f64 = 300, // reta depois (m)
+    turn_banks: [16]f64 = default_turn_banks ++ [_]f64{0} ** (16 - default_turn_banks.len),
+    turn_bank_count: usize = default_turn_banks.len,
+    auto_fractions: [16]f64 = default_auto_fractions ++ [_]f64{0} ** (16 - default_auto_fractions.len),
+    auto_fraction_count: usize = default_auto_fractions.len,
+    criteria: analysis.TurnCriteria = .{},
+    peukert: f64 = 1.05,
+    rated_hours: f64 = 1.0,
+    margin_min: f64 = 5.0,
+    margin_max: f64 = 15.0,
+
+    fn of(values: simulation.Values) Refinement {
+        var refinement: Refinement = .{};
+        refinement.drop_bisections = @intFromFloat(@max(@round(values.number("soltura_bissecoes", 8)), 1));
+        refinement.drop_low = values.number("soltura_de", 5) / 100;
+        refinement.drop_high = values.number("soltura_ate", 95) / 100;
+        refinement.neutral_step = @max(values.number("pn_passo", 0.5), 1e-4);
+        refinement.neutral_alpha = values.number("pn_alpha", 2);
+        refinement.simulation_limit = @intFromFloat(@max(@round(values.number("mtow_simulacoes", 10_000)), 1));
+        refinement.turn_height = values.number("curva_altura", 30);
+        refinement.turn_angle = values.number("curva_angulo", 240);
+        refinement.turn_lead = values.number("curva_reta_antes", 150);
+        refinement.turn_exit = values.number("curva_reta_depois", 300);
+        var buffer: [16]f64 = undefined;
+        const banks = values.numbers("curva_inclinacoes", &buffer, &default_turn_banks);
+        if (banks.len > 0) {
+            @memcpy(refinement.turn_banks[0..banks.len], banks);
+            refinement.turn_bank_count = banks.len;
+        }
+        const fractions = values.numbers("raio_fracoes", &buffer, &default_auto_fractions);
+        if (fractions.len > 0) {
+            @memcpy(refinement.auto_fractions[0..fractions.len], fractions);
+            refinement.auto_fraction_count = fractions.len;
+        }
+        refinement.criteria = .{
+            .bank_limit_deg = values.number("curva_phi_max", 75),
+            .bank_slack_deg = values.number("curva_phi_folga", 15),
+            .radius_tolerance = values.number("curva_erro_m", 3),
+            .radius_fraction = values.number("curva_erro_raio", 15) / 100,
+            .stall_time = values.number("curva_estol_tempo", 0.3),
+            .height_loss = values.number("curva_perda_altura", 3),
+            .sink = values.number("curva_descida", 0.5),
+            .lowest_height = values.number("curva_altura_min", 0.5),
+            .speed_fraction = values.number("curva_V_min", 90) / 100,
+        };
+        refinement.peukert = values.number("bat_peukert", 1.05);
+        refinement.rated_hours = values.number("bat_horas", 1);
+        refinement.margin_min = values.number("me_min", 5);
+        refinement.margin_max = values.number("me_max", 15);
+        return refinement;
+    }
+};
+
+/// as listas da busca da decolagem que vêm da tela (em % da deflexão máxima): as deflexões de cabrar testadas e o
+/// profundor picando na corrida; mais o alcance da grade, os passos do refino e o C_L/C_Lmax que reprova
+fn applyTakeoffLists(settings: *takeoff_opt.Settings, values: simulation.Values) void {
+    var level_buffer: [takeoff_opt.Settings.max_levels]f64 = undefined;
+    const levels = values.numbers("deflexoes", &level_buffer, &.{ 100, 75, 50, 30, 15 });
+    if (levels.len > 0) {
+        for (levels, 0..) |percent, k| settings.levels[k] = percent / 100;
+        settings.level_count = levels.len;
+    }
+    var hold_buffer: [takeoff_opt.Settings.max_holds]f64 = undefined;
+    const holds = values.numbers("corrida_picar", &hold_buffer, &.{ 25, 50 });
+    for (holds, 0..) |percent, k| settings.holds[k] = percent / 100;
+    settings.hold_count = holds.len;
+    settings.grid_reach = values.number("grade_alcance", 95) / 100;
+    settings.refine_steps = @intFromFloat(@max(@round(values.number("refino_passos", 5)), 0));
+    settings.stall_ratio = values.number("estol_reprova", 1.0);
+}
+
+/// o refino do modo Missão: a soltura da carga, o raio automático das curvas, o ponto neutro e a bateria
+const mission_refine_fields = [_]simulation.Param{
+    .{ .key = "raio_fracoes", .label = "raio automático: frações do φ máx. testadas", .kind = .floats, .default = .{ .text = "1, 0.85, 0.7, 0.55, 0.42, 0.32" }, .group = group_refine, .help = "numa perna de curva com raio automático, o voo tenta o raio de cada inclinação (fração do φ máximo do piloto), da mais fechada para a mais aberta, e fica com o menor que passa" },
+    .{ .key = "soltura_bissecoes", .label = "soltura da carga: bisseções", .default = .{ .number = 8 }, .minimum = 1, .maximum = 40, .group = group_refine, .help = "o ponto de soltura que acerta o alvo sai de uma busca por metades ao longo da perna; cada passo é um voo" },
+    .{ .key = "soltura_de", .label = "soltura da carga: procurar de", .default = .{ .number = 5 }, .minimum = 0, .maximum = 100, .unit = "% da perna", .group = group_refine },
+    .{ .key = "soltura_ate", .label = "soltura da carga: até", .default = .{ .number = 95 }, .minimum = 0, .maximum = 100, .unit = "% da perna", .group = group_refine },
+    .{ .key = "pn_alpha", .label = "ponto neutro: α", .default = .{ .number = 2 }, .minimum = -10, .maximum = 15, .unit = "°", .group = group_refine, .help = "o ponto neutro do gráfico do CG sai das derivadas de C_L e C_m neste α" },
+    .{ .key = "pn_passo", .label = "ponto neutro: passo de α", .default = .{ .number = 0.5 }, .minimum = 0.0001, .maximum = 5, .unit = "°", .group = group_refine },
+    .{ .key = "me_min", .label = "margem estática recomendada: mínima", .default = .{ .number = 5 }, .minimum = -20, .maximum = 50, .unit = "% CMA", .group = group_refine },
+    .{ .key = "me_max", .label = "margem estática recomendada: máxima", .default = .{ .number = 15 }, .minimum = -20, .maximum = 80, .unit = "% CMA", .group = group_refine },
+    .{ .key = "bat_peukert", .label = "bateria: expoente de Peukert", .default = .{ .number = 1.05 }, .minimum = 1, .maximum = 1.6, .group = group_refine },
+    .{ .key = "bat_horas", .label = "bateria: horas da capacidade nominal", .default = .{ .number = 1 }, .minimum = 0.05, .maximum = 20, .unit = "h", .group = group_refine },
+};
+
+/// o estudo de curvas: que curva é voada e que raios são testados
+const turn_study_fields = [_]simulation.Param{
+    .{ .key = "curva_inclinacoes", .label = "inclinações que dão os raios testados", .kind = .floats, .default = .{ .text = "70, 65, 55, 45, 37, 30, 24, 18, 14" }, .unit = "°", .group = group_refine, .help = "cada inclinação φ vira um raio R = V²/(g tan φ) em cada velocidade (até 16)" },
+    .{ .key = "curva_altura", .label = "altura da curva", .default = .{ .number = 30 }, .minimum = 5, .maximum = 500, .unit = "m", .group = group_refine },
+    .{ .key = "curva_angulo", .label = "quanto a curva gira", .default = .{ .number = 240 }, .minimum = 30, .maximum = 720, .unit = "°", .group = group_refine },
+    .{ .key = "curva_reta_antes", .label = "reta antes da curva", .default = .{ .number = 150 }, .minimum = 10, .maximum = 2000, .unit = "m", .group = group_refine },
+    .{ .key = "curva_reta_depois", .label = "reta depois da curva", .default = .{ .number = 300 }, .minimum = 10, .maximum = 2000, .unit = "m", .group = group_refine },
+};
+
+/// os critérios de "curva bem feita", campos dos modos que voam curvas
+const turn_criteria_fields = [_]simulation.Param{
+    .{ .key = "curva_phi_max", .label = "curva aprovada: inclinação máxima", .default = .{ .number = 75 }, .minimum = 10, .maximum = 89, .unit = "°", .group = group_refine },
+    .{ .key = "curva_phi_folga", .label = "curva aprovada: folga da inclinação no pico", .default = .{ .number = 15 }, .minimum = 0, .maximum = 45, .unit = "°", .group = group_refine },
+    .{ .key = "curva_erro_m", .label = "curva aprovada: erro de raio aceito", .default = .{ .number = 3 }, .minimum = 0.1, .maximum = 50, .unit = "m", .group = group_refine, .help = "vale o maior entre este erro e a fração do raio abaixo" },
+    .{ .key = "curva_erro_raio", .label = "curva aprovada: erro aceito em % do raio", .default = .{ .number = 15 }, .minimum = 0, .maximum = 100, .unit = "%", .group = group_refine },
+    .{ .key = "curva_estol_tempo", .label = "curva aprovada: tempo em estol que reprova", .default = .{ .number = 0.3 }, .minimum = 0, .maximum = 10, .unit = "s", .group = group_refine },
+    .{ .key = "curva_perda_altura", .label = "curva aprovada: perda de altura aceita", .default = .{ .number = 3 }, .minimum = 0, .maximum = 50, .unit = "m", .group = group_refine },
+    .{ .key = "curva_descida", .label = "curva aprovada: descida média aceita", .default = .{ .number = 0.5 }, .minimum = 0, .maximum = 10, .unit = "m/s", .group = group_refine },
+    .{ .key = "curva_altura_min", .label = "curva aprovada: menor altura", .default = .{ .number = 0.5 }, .minimum = 0, .maximum = 50, .unit = "m", .group = group_refine },
+    .{ .key = "curva_V_min", .label = "curva aprovada: menor V", .default = .{ .number = 90 }, .minimum = 50, .maximum = 150, .unit = "% V_estol", .group = group_refine },
+};
 
 // ------------------------------------------------------------------ a tabela da trajetória (guardada na aba)
 
@@ -544,6 +663,12 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "vlm_corda", .label = "VLM em cada xCG: painéis na corda", .default = .{ .number = 4 }, .minimum = 1, .maximum = 40, .group = group_runway, .help = "a malha do VLM que dá as derivadas do avião em cada xCG da lista (os momentos mudam com o CG): painéis ao longo da corda de cada faixa" },
         .{ .key = "vlm_envergadura", .label = "VLM em cada xCG: painéis na envergadura", .default = .{ .number = 2 }, .minimum = 1, .maximum = 40, .group = group_runway, .help = "painéis na envergadura de cada faixa da asa, na mesma malha" },
         .{ .key = "vlm_paineis", .label = "VLM em cada xCG: máximo de painéis", .default = .{ .number = 1200 }, .minimum = 10, .maximum = 20000, .group = group_runway, .help = "acima disto o VLM não roda (a matriz cresce com o quadrado dos painéis) e o MTOW usa as derivadas das faixas" },
+        .{ .key = "deflexoes", .label = "Deflexões de cabrar testadas", .kind = .floats, .default = .{ .text = "100, 75, 50, 30, 15" }, .unit = "% do máximo", .group = group_runway, .help = "a busca testa cada deflexão do profundor, da maior para a menor, e para na primeira que passa (até 12)" },
+        .{ .key = "corrida_picar", .label = "Profundor picando na corrida", .kind = .floats, .default = .{ .text = "25, 50" }, .unit = "% do máximo", .group = group_runway, .help = "além do profundor do avião, a busca tenta correr com o profundor picado nestas frações (segura o nariz no chão até o acionamento); até 6" },
+        .{ .key = "grade_alcance", .label = "Grade de acionamento até", .default = .{ .number = 95 }, .minimum = 10, .maximum = 100, .unit = "% x_warning", .group = group_runway },
+        .{ .key = "refino_passos", .label = "Passos do refino do acionamento (seção áurea)", .default = .{ .number = 5 }, .minimum = 0, .maximum = 50, .group = group_runway, .help = "depois de achar um acionamento que passa, a busca procura em volta dele o de maior folga, com estes passos" },
+        .{ .key = "estol_reprova", .label = "C_L/C_Lmax que reprova a decolagem", .default = .{ .number = 1 }, .minimum = 0.5, .maximum = 1.5, .group = group_runway, .help = "a decolagem conta como estol quando a superfície mais carregada passa disto ao sair do chão" },
+        .{ .key = "mtow_simulacoes", .label = "Máximo de simulações da busca do MTOW", .default = .{ .number = 10000 }, .minimum = 10, .maximum = 1000000, .group = group_runway, .help = "ao bater neste número a busca para com o que achou e avisa" },
         .{ .key = "massa_passos", .label = "Passos da bisseção da massa (busca do MTOW)", .default = .{ .number = 9 }, .minimum = 1, .maximum = 30, .group = group_runway, .help = "quantas vezes a faixa de massa da tabela é dividida ao meio; a precisão do MTOW é (máximo − mínimo) / 2^passos" },
     };
     var hand: std.ArrayList(simulation.Param) = .empty;
@@ -579,6 +704,8 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
             try params.append(memory, .{ .key = "until", .label = "Parar em", .kind = .choice, .default = .{ .text = end_label }, .choices = stops.items, .help = "para no fim da etapa (salva o checkpoint para continuar dali)" });
             try params.appendSlice(memory, runway[0..2]);
             try params.appendSlice(memory, hand.items);
+            try params.appendSlice(memory, &mission_refine_fields);
+            try params.appendSlice(memory, &turn_criteria_fields);
             const environment = if (aircraft) |plane| plane.environment else model.Environment{};
             const gust = gustVector(environment);
             try params.appendSlice(memory, &.{
@@ -595,6 +722,8 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .turns => {
             try params.appendSlice(memory, runway[0..2]);
             try params.appendSlice(memory, hand.items);
+            try params.appendSlice(memory, &turn_study_fields);
+            try params.appendSlice(memory, &turn_criteria_fields);
             try params.append(memory, .{ .key = "V_list", .label = "Velocidades", .kind = .floats, .default = .{ .text = "13, 15, 17" }, .unit = "m/s", .help = "para cada V testa raios de inclinação 70° a 14° (R = V²/(g tan φ)) e acha o menor que a aeronave faz sem estolar, sem perder mais de 3 m e seguindo o raio" });
         },
         .study => {
@@ -778,6 +907,7 @@ const RunState = struct {
     mass_steps: usize = 9, // bisseções na massa, entre o mínimo e o máximo da tabela
     vlm_grid: core.vlm.Grid = .{ .chordwise = 4, .spanwise = 2 }, // malha do VLM em cada xCG
     vlm_max_panels: usize = 1200,
+    refinement: Refinement = .{},
     hand_trigger: ?[2]f64 = null, // (s, δe) digitados
     phase: Phase = .search,
     notes: std.ArrayList([]const u8) = .empty,
@@ -847,6 +977,8 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
         .angle_tolerance = values.number("angulo_tolerancia", 0.25),
     };
     state.mass_steps = @intFromFloat(@round(values.number("massa_passos", 9)));
+    state.refinement = .of(values);
+    applyTakeoffLists(&state.takeoff_settings, values);
     state.vlm_grid = .{ .chordwise = @intFromFloat(@round(values.number("vlm_corda", 4))), .spanwise = @intFromFloat(@round(values.number("vlm_envergadura", 2))) };
     state.vlm_max_panels = @intFromFloat(@round(values.number("vlm_paineis", 1200)));
     if (std.mem.eql(u8, values.text("trigger", ""), trigger_labels[1]))
@@ -1311,7 +1443,7 @@ fn autoTurn(state: *RunState, k: usize, snapshot: *const Snapshot) !struct { rad
     var last_verdict: analysis.TurnVerdict = .never_reached;
     const instance = try memory.create(core.runner.Instance);
     var rows: std.ArrayList(types.LogRow) = .empty;
-    for (auto_fractions) |fraction| {
+    for (state.refinement.auto_fractions[0..state.refinement.auto_fraction_count]) |fraction| {
         const radius = @round(autoRadius(speed, state.aircraft.autopilot.phimax * fraction) * 10) / 10;
         largest = @max(largest, radius);
         var plane = currentPlane(state);
@@ -1324,7 +1456,7 @@ fn autoTurn(state: *RunState, k: usize, snapshot: *const Snapshot) !struct { rad
         rows.clearRetainingCapacity();
         const length = instance.p.seg[k].L;
         _ = try runner.fly(instance, .{ .segment = @intCast(k + 1), .time = snapshot.t + 20 + 3 * length / @max(speed, 1) }, memory, &rows);
-        var turn = try analysis.evaluateTurn(memory, rows.items, instance.p.seg[k], k, radius, state.info.Vs, state.aircraft.autopilot.kCL, 75);
+        var turn = try analysis.evaluateTurn(memory, rows.items, instance.p.seg[k], k, radius, state.info.Vs, state.aircraft.autopilot.kCL, state.refinement.criteria);
         if (climbs and turn.verdict == .loses_height) { // curva que sobe ou desce: a altura não conta
             turn.ok = true;
             turn.verdict = .ok;
@@ -1365,14 +1497,14 @@ fn aimDrop(state: *RunState, k: usize, snapshot: *const Snapshot) !void {
             return outcome.events.pk_n - target_;
         }
     };
-    const low = 0.05 * length;
-    const high = 0.95 * length;
+    const low = state.refinement.drop_low * length;
+    const high = state.refinement.drop_high * length;
     const at_low = try Impact.at(state, k, snapshot, drop_index, instance, low, &history, target);
     const at_high = try Impact.at(state, k, snapshot, drop_index, instance, high, &history, target);
     var chosen: f64 = undefined;
     if (core.optim.scalar.SignBisection.init(low, high, at_low, at_high)) |found| {
         var search = found;
-        for (0..8) |_| {
+        for (0..state.refinement.drop_bisections) |_| {
             const middle = search.middle();
             search.update(middle, try Impact.at(state, k, snapshot, drop_index, instance, middle, &history, target));
         }
@@ -1426,8 +1558,8 @@ fn neutralPercent(state: *RunState) f64 {
     if (speed <= 0) speed = 15;
     const now = core.trim.Ctx.init(params, &instance.r.f);
     const reference = core.vec.v3(.{ 0, 0, now.rcg[2] });
-    const step = 0.5 * rad;
-    const alpha = 2 * rad;
+    const step = state.refinement.neutral_step * rad;
+    const alpha = state.refinement.neutral_alpha * rad;
     const up = core.aero.coeffsEx(params, speed, alpha + step, 0, core.vec.v3(.{ 0, 0, 0 }), reference, core.vec.v3(.{ 0, 0, 0 }));
     const down = core.aero.coeffsEx(params, speed, alpha - step, 0, core.vec.v3(.{ 0, 0, 0 }), reference, core.vec.v3(.{ 0, 0, 0 }));
     const references = params_mod.references(&state.aircraft);
@@ -1467,8 +1599,8 @@ fn finishMission(state: *RunState) !void {
             capacity += unit.battery.capacity_mAh;
         };
         if (aircraft.shared_battery and aircraft.propulsion.len > 0) capacity = aircraft.propulsion[0].battery.capacity_mAh;
-        battery = try flightplots.batteryByStage(figures, flight, capacity);
-        try flightplots.cgSeries(figures, flight, params_mod.macLeadingEdge(aircraft), params_mod.references(aircraft)[1], neutralPercent(state));
+        battery = try flightplots.batteryByStage(figures, flight, capacity, state.refinement.peukert, state.refinement.rated_hours);
+        try flightplots.cgSeries(figures, flight, params_mod.macLeadingEdge(aircraft), params_mod.references(aircraft)[1], neutralPercent(state), state.refinement.margin_min, state.refinement.margin_max);
         if (state.first == 0) {
             try flightplots.takeoffWindow(figures, flight, state.refs, tableEdge(aircraft));
             try flightplots.takeoffAngles(figures, flight, wingIncidence(aircraft), state.refs.alpha_stall_deg + wingIncidence(aircraft));
@@ -1588,10 +1720,9 @@ fn advanceTurns(run: *simulation.Run, state: *RunState) simulation.Error!bool {
     const speed = state.speeds[state.turn_index];
     run.say("V = {d} m/s: raios", .{speed});
     run.progress = @floatCast(@as(f64, @floatFromInt(state.turn_index)) / @as(f64, @floatFromInt(state.speeds.len)));
-    const height = 30.0;
-    const angle = 240.0;
+    const angle = state.refinement.turn_angle;
     var radii: std.ArrayList(f64) = .empty;
-    for (turn_banks) |bank| {
+    for (state.refinement.turn_banks[0..state.refinement.turn_bank_count]) |bank| {
         const radius = @round(autoRadius(speed, bank) * 10) / 10;
         for (radii.items) |known| {
             if (known == radius) break;
@@ -1600,36 +1731,37 @@ fn advanceTurns(run: *simulation.Run, state: *RunState) simulation.Error!bool {
     std.mem.sort(f64, radii.items, {}, std.sort.asc(f64));
     // a curva nivelada: uma reta para estabilizar, a curva e uma reta de saída (`level_turn`)
     const turnPlane = struct {
-        fn of(memory_: std.mem.Allocator, base: *const Aircraft, speed_: f64, radius: f64) !Aircraft {
+        fn of(memory_: std.mem.Allocator, base: *const Aircraft, speed_: f64, radius: f64, refinement: *const Refinement) !Aircraft {
+            const height = refinement.turn_height;
             var plane = base.*;
             plane.mission = .{ .name = "curva", .legs = try memory_.dupe(Leg, &.{
-                .{ .kind = "straight", .length = 150, .h = height, .V = speed_, .name = "estabiliza" },
-                .{ .kind = "turn", .radius = radius, .angle = angle, .side = 1, .h = height, .V = speed_, .name = "curva" },
-                .{ .kind = "straight", .length = 300, .h = height, .V = speed_, .name = "saída" },
+                .{ .kind = "straight", .length = refinement.turn_lead, .h = height, .V = speed_, .name = "estabiliza" },
+                .{ .kind = "turn", .radius = radius, .angle = refinement.turn_angle, .side = 1, .h = height, .V = speed_, .name = "curva" },
+                .{ .kind = "straight", .length = refinement.turn_exit, .h = height, .V = speed_, .name = "saída" },
             }), .h0 = height, .V0 = speed_ };
             plane.sim.tmax = 1e6;
             return plane;
         }
     }.of;
     var autopilot = state.calibrated.p.ap;
-    autopilot.phimax = 75 * rad;
+    autopilot.phimax = state.refinement.criteria.bank_limit_deg * rad;
     const instance = try memory.create(core.runner.Instance);
     instance.* = .{};
-    const first_plane = try turnPlane(memory, &state.aircraft, speed, radii.items[radii.items.len - 1]);
+    const first_plane = try turnPlane(memory, &state.aircraft, speed, radii.items[radii.items.len - 1], &state.refinement);
     try configureFlight(&first_plane, instance, autopilot, state.loading);
     try core.runner.resetAir(instance, 0);
     _ = try runner.fly(instance, .{ .segment = 1 }, memory, null);
     const snapshot = try memory.create(Snapshot);
     snapshot.* = instance.r;
     for (radii.items) |radius| {
-        const plane = try turnPlane(memory, &state.aircraft, speed, radius);
+        const plane = try turnPlane(memory, &state.aircraft, speed, radius, &state.refinement);
         instance.* = .{};
         try configureFlight(&plane, instance, autopilot, state.loading);
         instance.r = snapshot.*;
         var rows: std.ArrayList(types.LogRow) = .empty;
         _ = try runner.fly(instance, .{ .segment = 2, .time = snapshot.t + 30 + 3 * radius * angle * rad / speed }, memory, &rows);
-        var turn = try analysis.evaluateTurn(memory, rows.items, instance.p.seg[1], 1, radius, state.info.Vs, state.aircraft.autopilot.kCL, 75);
-        if (turn.height_loss > 3 and turn.ok) {
+        var turn = try analysis.evaluateTurn(memory, rows.items, instance.p.seg[1], 1, radius, state.info.Vs, state.aircraft.autopilot.kCL, state.refinement.criteria);
+        if (turn.height_loss > state.refinement.criteria.height_loss and turn.ok) {
             turn.ok = false;
             turn.verdict = .loses_height;
         }
@@ -1731,7 +1863,7 @@ fn finishTurns(state: *RunState) !void {
         try state.checks.append(memory, .{ .status = if (found) .info else .falha, .item = try printed(memory, "raio mínimo a {d} m/s", .{speed}), .value = if (found) try printed(memory, "{d:.1} m", .{smallest}) else "nenhum raio passa", .criterion = "menor R que passa", .why = if (reason.len > 0) try printed(memory, "o raio menor seguinte falha por: {s}", .{reason}) else "", .fix = if (reason.len > 0) "mais velocidade, mais área de asa ou mais tração" else "", .group = "Curvas" });
     }
     try figures.guide("cr", .{ .name = "limite C_L/C_Lmax", .value = state.aircraft.autopilot.kCL, .vertical = false, .color = "#d62728", .dashed = true });
-    try figures.guide("ch", .{ .name = "limite", .value = 3, .vertical = false, .color = "#d62728", .dashed = true });
+    try figures.guide("ch", .{ .name = "limite", .value = state.refinement.criteria.height_loss, .vertical = false, .color = "#d62728", .dashed = true });
     const design = try printed(memory, "n de projeto = {d}", .{load_limit});
     try figures.guide("cn", .{ .name = design, .value = load_limit, .vertical = false, .color = "#d62728", .dashed = true });
     try figures.guide("ct", .{ .name = design, .value = load_limit, .vertical = false, .color = "#d62728", .dashed = true });
@@ -1749,7 +1881,6 @@ fn finishTurns(state: *RunState) !void {
 // ------------------------------------------------------------------ MTOW
 
 /// o máximo de simulações (decolagens e missões) da busca do MTOW: ao bater nele a busca para com o que achou
-const simulation_limit = 10_000;
 
 /// a massa total da fração t entre o mínimo e o máximo da tabela
 fn massAt(fraction: f64) f64 {
@@ -1807,7 +1938,7 @@ fn missionCompletes(state: *RunState, case: MtowCase) !bool {
 /// a rodada bateu no limite de simulações: avisa e termina com o que achou
 fn stopAtLimit(state: *RunState) !void {
     const bisection = &state.bisection;
-    try state.checks.append(state.memory, .{ .status = .atencao, .item = "limite de simulações da busca do MTOW", .value = try printed(state.memory, "{d} simulações", .{state.simulations}), .criterion = try printed(state.memory, "≤ {d}", .{simulation_limit}), .why = "a busca não fechou dentro do limite: possivelmente não existe massa que decola e completa a missão com estes x_warning e z_warning", .fix = "confira a pista, a tração e a missão; o MTOW mostrado é o melhor achado até o limite", .group = "MTOW" });
+    try state.checks.append(state.memory, .{ .status = .atencao, .item = "limite de simulações da busca do MTOW", .value = try printed(state.memory, "{d} simulações", .{state.simulations}), .criterion = try printed(state.memory, "≤ {d}", .{state.refinement.simulation_limit}), .why = "a busca não fechou dentro do limite: possivelmente não existe massa que decola e completa a missão com estes x_warning e z_warning", .fix = "confira a pista, a tração e a missão; o MTOW mostrado é o melhor achado até o limite", .group = "MTOW" });
     bisection.mtow_fraction = null;
     if (bisection.best) |k| if (state.cases.items[k].best.ok) {
         bisection.mtow_fraction = state.cases.items[k].fraction;
@@ -1833,7 +1964,7 @@ fn passes(state: *RunState, case: MtowCase) !bool {
 fn advanceMtow(run: *simulation.Run, state: *RunState) simulation.Error!bool {
     const bisection = &state.bisection;
     const same = mass_table.total[0] == mass_table.total[2];
-    if (bisection.stage != .done and state.simulations >= simulation_limit) try stopAtLimit(state);
+    if (bisection.stage != .done and state.simulations >= state.refinement.simulation_limit) try stopAtLimit(state);
     const phase_name = if (state.with_mission) "decolagem e missão" else "só a decolagem";
     switch (bisection.stage) {
         .low => {

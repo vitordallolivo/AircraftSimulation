@@ -66,7 +66,7 @@ const plot_poles = 5; // os três dos efeitos (`Effect`) e o de todos, nesta ord
 const Effect = enum { plain, sloshing, lapes };
 const effect_color = std.EnumArray(Effect, []const u8).init(.{ .plain = "#7f7f7f", .sloshing = "#1f77b4", .lapes = "#ff7f0e" });
 const effect_name = std.EnumArray(Effect, []const u8).init(.{ .plain = "sem efeitos", .sloshing = "sloshing", .lapes = "LAPES" });
-const max_samples = 24; // instantes do voo em que se refazem os polos
+const max_samples = 200; // o máximo de instantes do voo em que se refazem os polos
 const Mode = core.gust.Mode;
 const mode_marker = std.EnumArray(Mode, []const u8).init(.{ .short_period = "o", .phugoid = "s", .dutch_roll = "d", .roll = "t", .spiral = "+", .liquid = "x" });
 const mode_name = std.EnumArray(Mode, []const u8).init(.{ .short_period = "curto período", .phugoid = "fugóide", .dutch_roll = "dutch roll", .roll = "rolamento", .spiral = "espiral", .liquid = "líquido" });
@@ -351,6 +351,7 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "Tg", .label = "duração", .default = .{ .number = 1 }, .minimum = 0.05, .maximum = 20, .unit = "s", .group = "Rajada", .help = "a rajada 1 − cos sobe e desce neste tempo" },
         .{ .key = "tg", .label = "chega em", .default = .{ .number = 1 }, .minimum = 0, .maximum = 60, .unit = "s", .group = "Rajada" },
         .{ .key = "span", .label = "tempo máximo", .default = .{ .number = 30 }, .minimum = 1, .maximum = 120, .unit = "s", .group = "Rajada", .help = "o voo para antes, quando a resposta estabiliza" },
+        .{ .key = "polos_instantes", .label = "instantes em que os polos são refeitos", .default = .{ .number = 24 }, .minimum = 2, .maximum = max_samples, .group = "Rajada", .help = "ao longo do voo o avião é linearizado de novo nestes instantes (igualmente espaçados) para mostrar o caminho dos polos" },
         .{ .key = "compare", .label = "comparar com o líquido travado", .kind = .bool, .default = .{ .toggle = has_tanks }, .group = "Líquido", .help = "voa de novo com o líquido parado nos tanques (mesma massa)" },
     };
     try simulation.writeSpecs(out, &(params ++ simulation.method_params), &plots, DynamicStability.description, extras);
@@ -381,6 +382,7 @@ const RunState = struct {
     // equilíbrio do começo
     loci: [std.meta.fields(Effect).len][max_samples]core.gust.Poles = undefined,
     samples: usize = 0,
+    wanted_samples: usize = 24, // instantes do voo em que se refazem os polos (campo "polos_instantes")
 };
 
 /// os efeitos que valem neste voo: sem efeitos sempre; o sloshing com tanques; a LAPES se ela sai no voo
@@ -391,6 +393,7 @@ fn effects(state: *const RunState, free: *const Flight) std.EnumArray(Effect, bo
 fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) simulation.Error!void {
     const memory = run.memory();
     const autopilot = std.mem.eql(u8, values.text("pilot", pilots[0]), pilots[1]);
+    state.wanted_samples = @intFromFloat(std.math.clamp(@round(values.number("polos_instantes", 24)), 2, max_samples));
     var base = core.gust.Case{
         .airspeed = values.number("V", cruise(run.aircraft)),
         .height = values.number("h", 50),
@@ -452,11 +455,11 @@ fn advanceRun(run: *simulation.Run, state: *RunState) simulation.Error!bool {
 /// um instante do voo livre por fatia: os polos de cada efeito na velocidade daquele instante e com o que está a
 /// bordo (a LAPES sai no instante em que saiu no voo); verdadeiro depois do último
 fn samplePoles(run: *simulation.Run, state: *RunState) bool {
-    if (state.samples >= max_samples) return true;
+    if (state.samples >= state.wanted_samples) return true;
     const free = &state.flights[0];
     const instance = free.instance;
     const last = free.log[free.rows - 1].t;
-    const moment = last * @as(f64, @floatFromInt(state.samples)) / @as(f64, max_samples - 1);
+    const moment = last * @as(f64, @floatFromInt(state.samples)) / @as(f64, @floatFromInt(state.wanted_samples - 1));
     var row = free.log[0];
     for (free.log[0..free.rows]) |line| {
         if (line.t > moment) break;
@@ -476,7 +479,7 @@ fn samplePoles(run: *simulation.Run, state: *RunState) bool {
     state.samples += 1;
     run.progress = 1;
     run.say("polos em t = {d:.1} s", .{moment});
-    return state.samples >= max_samples;
+    return state.samples >= state.wanted_samples;
 }
 
 /// uma coluna do registro de um voo, já na unidade do gráfico
@@ -1318,6 +1321,28 @@ fn staticParams(memory: std.mem.Allocator, aircraft: ?*const Aircraft, values: s
     try list.append(memory, .{ .key = "whatif", .label = "procurar a correção", .kind = .bool, .default = .{ .toggle = true }, .group = analyses, .help = "refaz a análise com deriva maior / mais diedro / EH maior para dizer quanto mudar" });
     try list.append(memory, .{ .key = "resp", .label = "mostrar respostas no tempo", .kind = .bool, .default = .{ .toggle = false }, .group = analyses });
     if (!known and configuration.liquid) try list.append(memory, .{ .key = "slosh_lin", .label = "sloshing no modelo linear", .kind = .bool, .default = .{ .toggle = false }, .group = analyses, .help = "refaz os polos com o líquido dos tanques oscilando (pêndulo equivalente, Abramson SP-106): aparecem os modos do líquido e quanto os do avião se deslocam" });
+    const refine = "Refino";
+    try list.appendSlice(memory, &.{
+        .{ .key = "cm_a0", .label = "C_m(α): α inicial", .default = .{ .number = -6 }, .minimum = -30, .maximum = 30, .unit = "°", .group = refine },
+        .{ .key = "cm_a1", .label = "C_m(α): α final", .default = .{ .number = 20 }, .minimum = -30, .maximum = 60, .unit = "°", .group = refine },
+        .{ .key = "cm_passo", .label = "C_m(α): passo", .default = .{ .number = 0.5 }, .minimum = 0.01, .maximum = 5, .unit = "°", .group = refine },
+        .{ .key = "eh_tamanhos", .label = "tesoura: tamanhos de EH testados", .default = .{ .number = 18 }, .minimum = 2, .maximum = 200, .group = refine, .help = "o diagrama tesoura (limites do CG × área da EH) refaz os limites com a EH multiplicada por k, em tantos valores de k" },
+        .{ .key = "eh_k0", .label = "tesoura: menor k da EH", .default = .{ .number = 0.3 }, .minimum = 0.05, .maximum = 1, .group = refine },
+        .{ .key = "eh_k1", .label = "tesoura: maior k da EH", .default = .{ .number = 2 }, .minimum = 1, .maximum = 10, .group = refine },
+        .{ .key = "resp_tempo", .label = "respostas no tempo: duração", .default = .{ .number = 12 }, .minimum = 0.5, .maximum = 300, .unit = "s", .group = refine },
+        .{ .key = "resp_passo", .label = "respostas no tempo: passo", .default = .{ .number = 0.01 }, .minimum = 0.0001, .maximum = 1, .unit = "s", .group = refine },
+    });
+    if (std.mem.eql(u8, roll_kind, "elevon")) try list.appendSlice(memory, &.{
+        .{ .key = "rolagem_bissecoes", .label = "elevon na rolagem: bisseções", .default = .{ .number = 40 }, .minimum = 1, .maximum = 200, .group = refine, .help = "a deflexão que dá a rolagem exigida sai de uma busca por metades entre 0 e a deflexão máxima testada" },
+        .{ .key = "rolagem_delta_max", .label = "elevon na rolagem: deflexão máxima testada", .default = .{ .number = 60 }, .minimum = 5, .maximum = 90, .unit = "°", .group = refine },
+    });
+    if (configuration.tailless()) try list.appendSlice(memory, &.{
+        .{ .key = "cl0_a0", .label = "C_L zero: α inicial da varredura", .default = .{ .number = -8 }, .minimum = -30, .maximum = 0, .unit = "°", .group = refine, .help = "asa voadora: o α de C_L = 0 (onde se mede o C_m0) é o primeiro da varredura com C_L ≥ 0" },
+        .{ .key = "cl0_a1", .label = "C_L zero: α final da varredura", .default = .{ .number = 10 }, .minimum = 0, .maximum = 30, .unit = "°", .group = refine },
+        .{ .key = "cl0_passo", .label = "C_L zero: passo", .default = .{ .number = 0.05 }, .minimum = 0.001, .maximum = 1, .unit = "°", .group = refine },
+        .{ .key = "elevon_cordas", .label = "dimensionar elevon: cordas testadas (c_e/c)", .kind = .floats, .default = .{ .text = "0.2, 0.25, 0.3, 0.35, 0.4" }, .group = refine },
+        .{ .key = "elevon_inicios", .label = "dimensionar elevon: começos testados (fração da semiasa)", .kind = .floats, .default = .{ .text = "0.2, 0.35, 0.5, 0.65" }, .group = refine },
+    });
     try list.appendSlice(memory, &simulation.method_params);
     return list.items;
 }
@@ -2029,7 +2054,7 @@ fn longitudinal(run: *simulation.Run, state: *StaticState) !void {
         if (saturated.items.len > 0) try addCheck(memory, state, .{ .status = .falha, .item = try std.fmt.allocPrint(memory, "{s} satura em voo nivelado", .{pitch_name}), .value = try std.fmt.allocPrint(memory, "{d} velocidades (ex.: {d:.1} m/s)", .{ saturated.items.len, saturated.items[0] }), .criterion = try std.fmt.allocPrint(memory, "|δ| ≤ {s}°", .{limit_text}), .why = "o equilíbrio pede mais deflexão do que existe", .fix = "mover o CG para trás ou aumentar a autoridade de arfagem", .group = group });
     }
     // C_m(α)
-    const alphas = try arange(memory, -6.0, 20.01, 0.5);
+    const alphas = try arange(memory, state.values.number("cm_a0", -6.0), state.values.number("cm_a1", 20.0) + 0.01, @max(state.values.number("cm_passo", 0.5), 0.01));
     for ([_]struct { label: []const u8, elevator: f64 }{ .{ .label = "neutro", .elevator = 0 }, .{ .label = "cabrar máximo", .elevator = -state.elevator_max }, .{ .label = "picar máximo", .elevator = state.elevator_max } }) |setting| {
         const moments = try memory.alloc(f64, alphas.len);
         for (alphas, moments) |angle, *moment| moment.* = probe.coeffs(airspeed, angle * rad, null, .{ .elevator = setting.elevator }).Cm;
@@ -2037,10 +2062,13 @@ fn longitudinal(run: *simulation.Run, state: *StaticState) !void {
     }
     if (configuration.tailless()) {
         var zero_lift: ?f64 = null;
+        const sweep_first = state.values.number("cl0_a0", -8.0);
+        const sweep_last = state.values.number("cl0_a1", 10.0);
+        const sweep_step = @max(state.values.number("cl0_passo", 0.05), 0.001);
         var k: usize = 0;
-        while (k < 360) : (k += 1) {
-            const alpha = -8.0 + 0.05 * @as(f64, @floatFromInt(k));
-            if (alpha >= 10) break;
+        while (k < 100_000) : (k += 1) {
+            const alpha = sweep_first + sweep_step * @as(f64, @floatFromInt(k));
+            if (alpha >= sweep_last) break;
             if (probe.coeffs(airspeed, alpha * rad, null, .{}).CL >= 0) {
                 zero_lift = alpha * rad;
                 break;
@@ -2166,8 +2194,8 @@ fn controls(memory: std.mem.Allocator, state: *StaticState, session: *const Sess
             trim_part[i] = if (point.ok != 0) @abs(point.de / rad) else std.math.nan(f64);
             const dynamic_pressure = 0.5 * probe.density * speed * speed;
             const time_constant = -2 * speed * probe.inertia[0][0] / (dynamic_pressure * probe.area * probe.span * probe.span * damping);
-            var bisection: core.optim.scalar.Bisection = .{ .low = 0, .high = 60 * rad };
-            for (0..40) |_| {
+            var bisection: core.optim.scalar.Bisection = .{ .low = 0, .high = state.values.number("rolagem_delta_max", 60) * rad };
+            for (0..@intFromFloat(@max(@round(state.values.number("rolagem_bissecoes", 40)), 1))) |_| {
                 const middle = bisection.middle();
                 const rate = -(control_slope / damping) * middle * 2 * speed / probe.span;
                 bisection.move(middle, if (sizing.timeToBank(rate, time_constant, requirement[0] * rad) > requirement[1]) .raise else .lower);
@@ -2315,8 +2343,10 @@ fn tailless(run: *simulation.Run, state: *StaticState) !void {
     const pitch = state.configuration.pitch;
     if (state.values.toggle("size_elevon", true) and std.mem.eql(u8, Configuration.kind(&state.plane, pitch), "elevon")) {
         const control = state.plane.surfaces[pitch.?.surface].controls[pitch.?.control];
-        const chord_fractions = [_]f64{ 0.20, 0.25, 0.30, 0.35, 0.40 };
-        const starts = [_]f64{ 0.2, 0.35, 0.5, 0.65 };
+        var chord_buffer: [16]f64 = undefined;
+        var start_buffer: [16]f64 = undefined;
+        const chord_fractions = state.values.numbers("elevon_cordas", &chord_buffer, &.{ 0.20, 0.25, 0.30, 0.35, 0.40 });
+        const starts = try memory.dupe(f64, state.values.numbers("elevon_inicios", &start_buffer, &.{ 0.2, 0.35, 0.5, 0.65 }));
         var best: ?[4]f64 = null; // área, corda, começo, C_L
         for (chord_fractions) |chord_fraction| {
             const lifts = try memory.alloc(f64, starts.len);
@@ -2330,7 +2360,7 @@ fn tailless(run: *simulation.Run, state: *StaticState) !void {
                 const size = chord_fraction * (control.span_end - start);
                 if (std.math.isFinite(lift.*) and lift.* >= state.landing_lift and (best == null or size < best.?[0])) best = .{ size, chord_fraction, start, lift.* };
             }
-            try addCurve(state, "es", try std.fmt.allocPrint(memory, "c_e/c = {d:.2}", .{chord_fraction}), &starts, lifts, .{});
+            try addCurve(state, "es", try std.fmt.allocPrint(memory, "c_e/c = {d:.2}", .{chord_fraction}), starts, lifts, .{});
         }
         try addCurve(state, "es", "C_L de pouso pedido", try segment(memory, starts[0], starts[starts.len - 1]), try segment(memory, state.landing_lift, state.landing_lift), .{ .dashed = true });
         const current = try std.fmt.allocPrint(memory, "c_e/c {d:.2}, de {d:.2} a {d:.2} da semiasa", .{ control.chord_frac, control.span_start, control.span_end });
@@ -2344,14 +2374,14 @@ fn tailless(run: *simulation.Run, state: *StaticState) !void {
 
 // ------------------------------------------------------------------ 2. a área do EH (tesoura)
 
-const tail_steps = 18;
 
 /// um tamanho de EH por fatia: os limites do CG com a EH × k (de 0,3 a 2); verdadeiro quando acabou
 fn tailAreaStep(run: *simulation.Run, state: *StaticState) !bool {
     const memory = run.memory();
+    const tail_steps: usize = @intFromFloat(@max(@round(state.values.number("eh_tamanhos", 18)), 2));
     if (state.step == 0) {
         run.say("área do EH × faixa de CG", .{});
-        state.tail_factors = try linspace(memory, 0.3, 2.0, tail_steps);
+        state.tail_factors = try linspace(memory, state.values.number("eh_k0", 0.3), state.values.number("eh_k1", 2.0), tail_steps);
         state.tail_limits = try memory.alloc(sizing.Limits, tail_steps);
     }
     if (state.step < tail_steps) {
@@ -2739,9 +2769,10 @@ const LinearState = enum(usize) {
 /// a resposta linear a um doublet ou a um pulso em 12 s, de 0,01 em 0,01 s (`response`); as velocidades em m/s e
 /// os ângulos e as taxas em graus
 fn responseSeries(memory: std.mem.Allocator, state: *StaticState, linear_model: *const core.linear.LinModel, input: qualities.Input, key: []const u8, shown: []const LinearState) !void {
-    const time_step = 0.01;
-    const buffer = try memory.alloc([core.linear.nl]f64, 1202);
-    const count = qualities.respond(linear_model, input, 12.0, time_step, buffer);
+    const time_step = @max(state.values.number("resp_passo", 0.01), 1e-4);
+    const duration = @max(state.values.number("resp_tempo", 12.0), time_step);
+    const buffer = try memory.alloc([core.linear.nl]f64, @as(usize, @intFromFloat(@ceil(duration / time_step))) + 2);
+    const count = qualities.respond(linear_model, input, duration, time_step, buffer);
     const times = try memory.alloc(f64, count);
     for (times, 0..) |*instant, k| instant.* = @as(f64, @floatFromInt(k)) * time_step;
     for (shown) |entry| {

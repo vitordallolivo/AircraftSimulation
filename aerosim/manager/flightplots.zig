@@ -393,11 +393,9 @@ fn momentFigure(figures: Figures, flight: Flight, times: []const f64, key: []con
 
 /// o passeio do CG no voo (% da CMA) e a margem estática ME = x_PN − x_CG (% da CMA), com o ponto neutro de manche
 /// fixo fixo no voo; a faixa recomendada vai de `margin_min` a `margin_max` (os padrões da Estabilidade)
-pub fn cgSeries(figures: Figures, flight: Flight, mac_leading_edge: f64, mac_chord: f64, neutral_percent: f64) !void {
+pub fn cgSeries(figures: Figures, flight: Flight, mac_leading_edge: f64, mac_chord: f64, neutral_percent: f64, margin_min: f64, margin_max: f64) !void {
     if (mac_chord <= 0) return;
     const memory = figures.memory;
-    const margin_min = 5.0;
-    const margin_max = 15.0;
     const rows = flight.rows;
     const times = try column(memory, rows, "t");
     const position = try memory.alloc(f64, rows.len);
@@ -762,12 +760,10 @@ pub const BatteryRow = struct {
 
 /// o tempo, a corrente média e a de pico, o consumo, a descarga e o SOC por etapa (Coulomb e Peukert, Traub 2011);
 /// o SOC começa em 100 % e cai. Devolve a tabela e põe os gráficos `bat` e `batp`
-pub fn batteryByStage(figures: Figures, flight: Flight, capacity_mAh: f64) ![]BatteryRow {
+pub fn batteryByStage(figures: Figures, flight: Flight, capacity_mAh: f64, peukert: f64, rated_hours: f64) ![]BatteryRow {
     const memory = figures.memory;
     const rows = flight.rows;
     if (rows.len == 0) return &.{};
-    const peukert = 1.05;
-    const rated_hours = 1.0;
     const count = rows.len;
     const current = try memory.alloc(f64, count);
     const steps = try memory.alloc(f64, count);

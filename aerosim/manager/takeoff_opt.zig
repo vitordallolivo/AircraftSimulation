@@ -28,8 +28,6 @@ const params_mod = aircraft_model.params;
 const Aircraft = aircraft_model.aircraft.Aircraft;
 const rad = std.math.pi / 180.0;
 
-const levels = [_]f64{ 1.0, 0.75, 0.5, 0.3, 0.15 }; // frações da deflexão máxima, da maior para a menor
-const stall_ratio = 1.0; // C_L/C_Lmax (a superfície mais carregada) que reprova a decolagem
 
 /// os ajustes da busca, todos campos da tela: quantos pontos a grade testa, até onde a janela do acionamento é
 /// dividida e quanto se aceita passar dos requisitos da pista
@@ -42,6 +40,25 @@ pub const Settings = struct {
     // na corrida, um de cada vez, pela seção áurea (0 = não varia)
     coordinate_rounds: usize = 2,
     angle_tolerance: f64 = 0.25, // a seção áurea nos ângulos para quando a faixa fica menor que isto (graus)
+    // as deflexões de cabrar testadas, em frações da deflexão máxima, da maior para a menor
+    levels: [max_levels]f64 = .{ 1.0, 0.75, 0.5, 0.3, 0.15 } ++ .{0} ** (max_levels - 5),
+    level_count: usize = 5,
+    // o profundor picando na corrida, em frações da deflexão máxima (além do profundor do avião)
+    holds: [max_holds]f64 = .{ 0.25, 0.5 } ++ .{0} ** (max_holds - 2),
+    hold_count: usize = 2,
+    grid_reach: f64 = 0.95, // a grade de acionamento vai de 0 até esta fração do x_warning
+    refine_steps: usize = 5, // passos da seção áurea que refina o acionamento em volta do melhor
+    stall_ratio: f64 = 1.0, // C_L/C_Lmax (a superfície mais carregada) que reprova a decolagem
+
+    pub const max_levels = 12;
+    pub const max_holds = 6;
+
+    /// o profundor na corrida de cada tentativa: o do avião (null) e depois cada fração picando
+    fn holdList(settings: *const Settings, deflection_max: f64, buffer: *[max_holds + 1]?f64) []const ?f64 {
+        buffer[0] = null;
+        for (settings.holds[0..settings.hold_count], 1..) |fraction, k| buffer[k] = fraction * deflection_max;
+        return buffer[0 .. settings.hold_count + 1];
+    }
 
     pub const max_grid_points = 64;
 };
@@ -247,7 +264,7 @@ pub const Takeoffs = struct {
             if (after.status == .crashed or (later and lowest - rest < @max(takeoffs.z_warning, 0))) status = .fell;
         }
         const verdict = judge(takeoffs.log.items, run.events, takeoffs.x_warning, takeoffs.z_warning);
-        if (status == .completed and run.events.ratio_to >= stall_ratio) status = .stalled;
+        if (status == .completed and run.events.ratio_to >= takeoffs.settings.stall_ratio) status = .stalled;
         // passa com o erro aceito nos dois requisitos (os dois zero: o critério exato)
         const settings = takeoffs.settings;
         const ok = std.math.isFinite(verdict.takeoff_point) and verdict.x_excess <= settings.x_error and verdict.z_short <= settings.z_error and status == .completed;
@@ -366,7 +383,6 @@ fn leastBad(tried: []const Result) Result {
     return chosen;
 }
 
-const refine_steps = 5;
 
 fn gridSearch(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), refine: bool) !?Result {
     const memory = takeoffs.memory;
@@ -375,12 +391,13 @@ fn gridSearch(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), refine: bool) 
     const count = std.math.clamp(settings.grid_points, 3, Settings.max_grid_points);
     var grid_buffer: [Settings.max_grid_points]f64 = undefined;
     const grid = grid_buffer[0..count];
-    const last = @max(takeoffs.x_warning, 5) * 0.95;
+    const last = @max(takeoffs.x_warning, 5) * takeoffs.settings.grid_reach;
     for (grid, 0..) |*position, k| position.* = last * @as(f64, @floatFromInt(k)) / @as(f64, @floatFromInt(count - 1));
     var found: ?Result = null;
     // profundor na corrida: o do avião; depois picando. Da deflexão máxima para baixo: para na primeira que passa
-    holds: for ([_]?f64{ null, 0.25 * deflection_max, 0.5 * deflection_max }) |hold| {
-        for (levels) |level| {
+    var hold_buffer: [Settings.max_holds + 1]?f64 = undefined;
+    holds: for (takeoffs.settings.holdList(deflection_max, &hold_buffer)) |hold| {
+        for (takeoffs.settings.levels[0..takeoffs.settings.level_count]) |level| {
             var best_here: ?Result = null;
             var flown_buffer: [Settings.max_grid_points]Result = undefined;
             const flown = flown_buffer[0..count];
@@ -428,7 +445,7 @@ fn gridSearch(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), refine: bool) 
     var right = try takeoffs.evaluate(search.right, start.deflection, hold);
     try tried.append(memory, left);
     try tried.append(memory, right);
-    for (0..refine_steps) |_| {
+    for (0..takeoffs.settings.refine_steps) |_| {
         const left_better = left.margin >= right.margin;
         const point = search.shrink(left_better);
         if (left_better) {
@@ -589,14 +606,15 @@ fn bisect(takeoffs: *Takeoffs, tried: *std.ArrayList(Result), tolerance: f64) !?
     const memory = takeoffs.memory;
     const deflection_max = takeoffs.deflection_max;
     const x_warning = takeoffs.x_warning;
-    for ([_]?f64{ null, 0.25 * deflection_max, 0.5 * deflection_max }) |hold| {
+    var hold_buffer: [Settings.max_holds + 1]?f64 = undefined;
+    for (takeoffs.settings.holdList(deflection_max, &hold_buffer)) |hold| {
         // a corrida sem acionar: acionar depois de onde o avião sai do chão sozinho não adianta
         const free = try takeoffs.evaluate(null, 0, hold);
         try tried.append(memory, free);
         const lift_off = if (free.events.tLO > 0) free.events.nLO else std.math.inf(f64);
         const top = if (std.math.isFinite(lift_off)) @min(lift_off, x_warning) else x_warning;
         var early = false;
-        for (levels) |level| {
+        for (takeoffs.settings.levels[0..takeoffs.settings.level_count]) |level| {
             var bisection: scalar.Bisection = .{ .low = 0, .high = top };
             var good: ?Result = null;
             early = false;
