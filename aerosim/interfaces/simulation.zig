@@ -340,6 +340,8 @@ pub const Run = struct {
     /// a análise tem um resultado parcial novo (a Decolagem acabou um xCG): a tela pede o `result` agora e mostra os
     /// gráficos enquanto a rodada continua; a tela desliga depois de ler
     partial: bool = false,
+    /// para ler arquivos que o formulário aponta (a polar do XFLR5); null fora da tela (nos testes, o do teste)
+    io: ?std.Io = null,
 
     pub fn memory(run: *Run) std.mem.Allocator {
         return run.arena.allocator();
@@ -370,7 +372,7 @@ pub const Run = struct {
 pub const Param = struct {
     key: []const u8,
     label: []const u8,
-    kind: enum { float, int, bool, choice, floats, str } = .float, // floats: uma lista de números num texto ("1, 0.75"); str: um texto livre
+    kind: enum { float, int, bool, choice, floats, str, file } = .float, // floats: uma lista de números num texto ("1, 0.75"); str: um texto livre; file: o caminho de um arquivo
     default: union(enum) { number: f64, toggle: bool, text: []const u8 } = .{ .number = 0 },
     minimum: ?f64 = null,
     maximum: ?f64 = null,

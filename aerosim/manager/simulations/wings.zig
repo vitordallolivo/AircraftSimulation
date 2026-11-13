@@ -303,6 +303,8 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "derivada_taxa", .label = "derivadas: passo em taxa", .default = .{ .number = 0.01 }, .minimum = 0.000001, .maximum = 0.5, .group = methods, .help = "o mesmo para as derivadas de taxa (p, q, r), em taxa adimensional (p b / 2V, q c / 2V)" },
         .{ .key = "reynolds_critico", .label = "Reynolds crítico do alerta", .default = .{ .number = default_critical_reynolds }, .minimum = 1e3, .maximum = 1e7, .group = methods, .help = "abaixo dele a análise avisa que a bolha laminar pode não recolar (Lissaman, Low-Reynolds-number airfoils, 1983; valor a conferir no PDF)" },
         .{ .key = "n_chord", .label = "painéis na corda (VLM, AVL)", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .group = methods },
+        .{ .key = "use_xflr5", .label = "comparar: polar do XFLR5 (arquivo)", .kind = .bool, .default = .{ .toggle = false }, .group = methods, .help = "a polar de avião exportada pelo XFLR5 (Polars → Export); C_m no CG de lá" },
+        .{ .key = "xflr5_file", .label = "arquivo da polar do XFLR5", .kind = .file, .default = .{ .text = "" }, .group = methods, .help = "texto ou CSV exportado pelo XFLR5" },
     });
     try simulation.writeSpecs(out, params.items, &plots, Wings.description, .{ .view = preview, .solvers = &.{ .lifting_line, .stall_curve }, .aircraft = aircraft });
 }
@@ -624,6 +626,7 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
         if (values.toggle(try std.fmt.allocPrint(memory, "use_{s}", .{solver.key}), solver.on)) try chosen.append(memory, core_solver);
     };
     try compareSolvers(run, state, plane, values, chosen.items);
+    if (values.toggle("use_xflr5", false)) try xflr5Polar(run, state, values);
     if (values.toggle("stall_on", false)) try stallByStation(run, state, plane, values);
     if (groundMethod(values) != .off) try groundStudy(run, state, plane, values);
     run.progress = 0.75;
@@ -671,6 +674,39 @@ fn compareSolvers(run: *simulation.Run, state: *RunState, plane: simulation.Airc
         try figures.curve("CL", .{ .name = label, .x = state.alphas, .y = polar.lift, .color = color, .dashed = true });
         if (state.owners.len == 1) try figures.curve("CL_surf", .{ .name = try text(memory, "{s} · {s}", .{ state.owners[0], label }), .x = state.alphas, .y = polar.lift, .color = color, .dashed = true });
     }
+}
+
+/// a polar do XFLR5 lida do arquivo, como mais um método na comparação (`Xflr5PolarFile` do Python): não roda nada
+fn xflr5Polar(run: *simulation.Run, state: *RunState, values: simulation.Values) !void {
+    const memory = run.memory();
+    const group = "métodos";
+    const path = values.text("xflr5_file", "");
+    if (path.len == 0) {
+        try state.checks.append(memory, .{ .status = .info, .item = "XFLR5", .value = "sem arquivo", .fix = "escolha o arquivo da polar exportada pelo XFLR5", .group = group });
+        return;
+    }
+    const io = run.io orelse return;
+    const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, memory, .limited(1 << 24)) catch {
+        try state.checks.append(memory, .{ .status = .atencao, .item = "XFLR5", .value = try text(memory, "arquivo não encontrado: {s}", .{path}), .group = group });
+        return;
+    };
+    const polar = core.xflr5.parse(memory, bytes) catch {
+        try state.checks.append(memory, .{ .status = .atencao, .item = "XFLR5", .value = try text(memory, "não achei a tabela 'alpha CL CD ...' em {s}", .{std.fs.path.basename(path)}), .group = group });
+        return;
+    };
+    const label = try text(memory, "XFLR5 {s}", .{polar.method.label()});
+    const note = if (std.math.isFinite(polar.airspeed)) try text(memory, "'{s}', V = {d} m/s; C_m no CG do XFLR5", .{ polar.name, polar.airspeed }) else try text(memory, "'{s}'; C_m no CG do XFLR5", .{polar.name});
+    try state.summary.append(memory, .{ try text(memory, "[{s}] arquivo", .{label}), note });
+    if (polar.slope(polar.lift, state.alpha_load)) |value| try state.summary.append(memory, .{ try text(memory, "[{s}] C_Lα (1/rad)", .{label}), try text(memory, "{d:.4}", .{value}) });
+    if (polar.slope(polar.moment, state.alpha_load)) |value| try state.summary.append(memory, .{ try text(memory, "[{s}] C_mα (1/rad)", .{label}), try text(memory, "{d:.4}", .{value}) });
+    const efficiency = try memory.alloc(f64, polar.alpha.len);
+    for (efficiency, polar.lift, polar.drag) |*value, lift, drag| value.* = if (drag > 0) lift / drag else std.math.nan(f64);
+    const figures = state.figures.?;
+    const color = "#8c564b";
+    try figures.curve("pol_CL", .{ .name = label, .x = polar.alpha, .y = polar.lift, .color = color, .marker = "o" });
+    try figures.curve("pol_CD", .{ .name = label, .x = polar.drag, .y = polar.lift, .color = color, .marker = "o" });
+    try figures.curve("pol_Cm", .{ .name = label, .x = polar.alpha, .y = polar.moment, .color = color, .marker = "o" });
+    try figures.curve("pol_LD", .{ .name = label, .x = polar.lift, .y = efficiency, .color = color, .marker = "o" });
 }
 
 fn advanceRun(_: *simulation.Run, _: *RunState) simulation.Error!bool {

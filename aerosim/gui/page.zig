@@ -918,7 +918,7 @@ pub const Page = struct {
         };
         const job = std.heap.page_allocator.create(AnalysisRun) catch return;
         job.* = .{ .loaded = loaded, .run = undefined };
-        job.run = .{ .arena = .init(std.heap.page_allocator), .aircraft = &job.loaded.ac, .stop = &job.stop };
+        job.run = .{ .arena = .init(std.heap.page_allocator), .aircraft = &job.loaded.ac, .stop = &job.stop, .io = clockIo() };
         page.analysis_run = job;
         page.operation = .run;
         page.started_at = std.Io.Clock.awake.now(clockIo()).nanoseconds;

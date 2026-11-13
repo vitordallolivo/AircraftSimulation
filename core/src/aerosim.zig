@@ -121,8 +121,9 @@ pub const geometry = struct {
     pub const geometry = @import("geometry/geometry.zig");
 };
 
-/// fuzzing dos testes e a leitura de planilhas (.xlsx)
+/// fuzzing dos testes e a leitura de arquivos de fora (planilhas .xlsx, polares do XFLR5)
 pub const util = struct {
     pub const fuzz = @import("util/fuzz.zig");
     pub const xlsx = @import("util/xlsx.zig");
+    pub const xflr5 = @import("util/xflr5.zig");
 };

@@ -97,6 +97,7 @@ comptime {
         _ = @import("structures/section.zig");
         _ = @import("util/plot.zig");
         _ = @import("util/xlsx.zig");
+        _ = @import("util/xflr5.zig");
         _ = @import("structures/buckling.zig");
         _ = @import("structures/gear.zig");
         _ = @import("loads/vn.zig");
