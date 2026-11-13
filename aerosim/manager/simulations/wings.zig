@@ -280,7 +280,7 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "a1", .label = "α final", .default = .{ .number = 22 }, .minimum = 2, .maximum = 40, .unit = "°", .group = case },
         .{ .key = "da", .label = "passo de α", .default = .{ .number = 1 }, .minimum = 0.25, .maximum = 5, .unit = "°", .group = case },
         .{ .key = "alpha_load", .label = "α da carga", .default = .{ .number = 10 }, .minimum = -10, .maximum = 40, .unit = "°", .group = case },
-        .{ .key = "endplate", .label = "chapas nas pontas (altura / corda da ponta)", .default = .{ .number = 0 }, .minimum = 0, .maximum = 5, .group = case, .help = "0: sem chapas; > 0 roda pelo Python" },
+        .{ .key = "endplate", .label = "chapas nas pontas (altura / corda da ponta)", .default = .{ .number = 0 }, .minimum = 0, .maximum = 5, .group = case, .help = "0: sem chapas; > 0: uma placa de ponta de altura = valor × corda da ponta em cada superfície horizontal marcada" },
         .{ .key = "xref", .label = "ponto dos momentos", .default = .{ .number = 25 }, .minimum = 0, .maximum = 100, .unit = "% CMA", .group = case },
         .{ .key = "method", .label = "método", .kind = .choice, .default = .{ .text = LoadMethod.llt_nl.title() }, .choices = &method_titles, .group = loads, .help = "o VLM do AeroSandbox roda pelo Python" },
         .{ .key = "compare", .label = "comparar com", .kind = .choice, .default = .{ .text = none }, .choices = &compare_titles, .group = loads },
@@ -331,7 +331,6 @@ fn runAlerts(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, va
 /// a rodada precisa do Python: uma fonte de asas, um método ou uma comparação de fora do núcleo
 fn needsPython(values: simulation.Values) bool {
 
-    if (values.number("endplate", 0) > 0) return true;
     for ([_][]const u8{ "method", "compare" }) |key| if (LoadMethod.fromTitle(values.text(key, none))) |method| {
         if (!method.inCore()) return true;
     };
@@ -360,6 +359,18 @@ fn wingsOnly(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, va
     for (surfaces, 0..) |*surface, i| {
         if (!surface.enabled) continue;
         surface.enabled = values.toggle(try surfaceKey(memory, i), std.mem.eql(u8, surface.role, "wing"));
+        // as chapas nas pontas: uma placa (`placa`, para cima e para baixo) de altura = endplate × corda da ponta
+        const endplate = values.number("endplate", 0);
+        if (surface.enabled and endplate > 0 and !surface.vertical and surface.sections.len > 0) {
+            var tip = surface.sections[0];
+            for (surface.sections) |section| if (section.y > tip.y) {
+                tip = section;
+            };
+            const devices = try memory.alloc(model.Device, surface.devices.len + 1);
+            @memcpy(devices[0..surface.devices.len], surface.devices);
+            devices[surface.devices.len] = .{ .kind = "placa", .eta = 1.0, .height = endplate * tip.chord, .root_chord = 0, .taper = 1.0, .sweep = 0, .cant = 0 };
+            surface.devices = devices;
+        }
     }
     plane.surfaces = surfaces;
     return plane;
