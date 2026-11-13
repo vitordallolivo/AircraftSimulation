@@ -20,6 +20,13 @@ const catalog = @import("catalog");
 
 const xlsx = core.xlsx;
 
+/// a planilha "por endereço de célula", lida por um arquivo de mapa (`cellmap.zig`)
+pub const cellmap = @import("cellmap.zig");
+
+test {
+    _ = cellmap;
+}
+
 pub const Error = error{ UnknownFormat, BadSection, MissingGeneralSheet };
 
 /// o formato pelo nome do arquivo
@@ -49,6 +56,13 @@ pub fn aircraftJson(memory: std.mem.Allocator, path: []const u8, bytes: []const 
         .ini => try write(memory, try fromSections(memory, try iniSections(memory, bytes))),
         .xlsx => try write(memory, try fromSections(memory, try sheetSections(memory, try xlsx.Workbook.parse(memory, bytes)))),
     };
+}
+
+/// a planilha está no formato do programa (tem a aba "geral")? Sem ela, é uma planilha por endereço de célula, que
+/// pede um mapa (`cellmap.zig`)
+pub fn isProgramWorkbook(memory: std.mem.Allocator, bytes: []const u8) bool {
+    const book = xlsx.Workbook.parse(memory, bytes) catch return false;
+    return book.sheet("geral") != null;
 }
 
 fn unwrapLibrary(memory: std.mem.Allocator, bytes: []const u8) []const u8 {

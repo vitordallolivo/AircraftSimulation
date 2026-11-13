@@ -54,7 +54,9 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    // os formatos antigos do avião e do catálogo (.cfg e .xlsx; data/sources.zig, o par de `sources.py`)
+    // os modelos padrão do avião (gerados de `model/templates.py`), para o "Restaurar" da Montagem
+    const templates = b.createModule(.{ .root_source_file = b.path("model/templates.zig"), .target = target, .optimize = optimize });
+    // os formatos antigos do avião e do catálogo (.cfg, .xlsx e o mapa de células; data/sources.zig)
     const data_sources = b.createModule(.{
         .root_source_file = b.path("data/sources.zig"),
         .target = target,
@@ -62,13 +64,12 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "aerosim", .module = core },
             .{ .name = "catalog", .module = catalog },
+            .{ .name = "templates", .module = templates },
         },
     });
     const data_tests = b.addRunArtifact(b.addTest(.{ .root_module = data_sources }));
     data_tests.setCwd(b.path("."));
 
-    // os modelos padrão do avião (gerados de `model/templates.py`), para o "Restaurar" da Montagem
-    const templates = b.createModule(.{ .root_source_file = b.path("model/templates.zig"), .target = target, .optimize = optimize });
     // ---- o que o design calcula para a tela (design/dims.zig: as dimensões a partir do CG)
     const design = b.createModule(.{
         .root_source_file = b.path("design/dims.zig"),
@@ -101,6 +102,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "aircraft_model", .module = aircraft_model },
             .{ .name = "manager", .module = manager },
             .{ .name = "design", .module = design },
+            .{ .name = "data_sources", .module = data_sources },
         },
     }) });
     const test_step = b.step("test", "Testes (sem janela)");

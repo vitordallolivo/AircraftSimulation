@@ -49,6 +49,8 @@ pub const Screen = struct {
     pending_stage_len: usize = 0,
     pending_file: [1024]u8 = undefined, // um perfil arrastado antes de as abas chegarem
     pending_file_len: usize = 0,
+    cellmap_workbook: [1024]u8 = undefined, // a planilha por endereço de célula que espera o arquivo de mapa
+    cellmap_workbook_len: usize = 0,
     files: ui_kit.dialogs.FilePicker = .{}, // abrir e salvar o avião (cabeçalho)
     assembly_view: view3d.View = .{}, // a vista 3D da Montagem
     assembly: ?assembly_mod.Assembly = null, // o avião aberto
@@ -486,10 +488,22 @@ pub const Screen = struct {
     /// para a etapa Perfis
     pub fn openFile(screen: *Screen, path: []const u8) void {
         const format = data_sources.Format.fromPath(path);
-        if (format == .ini or format == .xlsx) return screen.openAircraft(path);
+        if (format == .xlsx) {
+            var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            defer arena.deinit();
+            const bytes = std.Io.Dir.cwd().readFileAlloc(io(), path, arena.allocator(), .limited(assembly_mod.max_file_bytes)) catch return screen.openAircraft(path);
+            if (data_sources.isProgramWorkbook(arena.allocator(), bytes)) return screen.openAircraft(path);
+            // uma planilha das equipes (por endereço de célula): pede o mapa que diz de qual célula sai cada campo
+            screen.cellmap_workbook_len = @min(path.len, screen.cellmap_workbook.len);
+            @memcpy(screen.cellmap_workbook[0..screen.cellmap_workbook_len], path[0..screen.cellmap_workbook_len]);
+            screen.files.show("Mapa de células desta planilha (.json)", "data/mappings", &.{".json"});
+            return;
+        }
+        if (format == .ini) return screen.openAircraft(path);
         if (format == .json) {
             const bytes = std.Io.Dir.cwd().readFileAlloc(io(), path, std.heap.page_allocator, .limited(assembly_mod.max_file_bytes)) catch return screen.openAircraft(path);
             defer std.heap.page_allocator.free(bytes);
+            if (screen.cellmap_workbook_len > 0 and data_sources.cellmap.isMap(bytes)) return screen.importCellMap(bytes);
             if (design.stages.isProject(bytes)) return screen.openProject(path);
             return screen.openAircraft(path);
         }
@@ -528,6 +542,30 @@ pub const Screen = struct {
 
     /// abre o avião em `path` (.json) na Montagem: a leitura e as peças saem numa thread; a tela segue desenhando e
     /// troca o avião quando ela acaba (`collectAircraft`)
+    /// lê a planilha que esperava o mapa (`map_bytes`), partindo do avião aberto (ou do modelo do mapa, sem avião),
+    /// grava o avião em `<pasta dos projetos>/importados/<planilha>.json` e o abre
+    fn importCellMap(screen: *Screen, map_bytes: []const u8) void {
+        const workbook_path = screen.cellmap_workbook[0..screen.cellmap_workbook_len];
+        screen.cellmap_workbook_len = 0;
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const memory = arena.allocator();
+        const fail = struct {
+            fn note(target: *Screen, comptime format: []const u8, args: anytype) void {
+                _ = std.fmt.bufPrintZ(&target.assembly_note, format, args) catch {};
+            }
+        }.note;
+        const workbook = std.Io.Dir.cwd().readFileAlloc(io(), workbook_path, memory, .limited(assembly_mod.max_file_bytes)) catch return fail(screen, "não consegui ler a planilha", .{});
+        const base = if (screen.assembly) |*opened| opened.source else data_sources.cellmap.baseTemplate(map_bytes) orelse templates.all[0].json;
+        const result = data_sources.cellmap.read(memory, map_bytes, workbook, base) catch |err| return fail(screen, "o mapa não leu a planilha ({s})", .{@errorName(err)});
+        const folder = std.fs.path.join(memory, &.{ design.stages.projectsRoot(memory) catch return, "importados" }) catch return;
+        std.Io.Dir.cwd().createDirPath(io(), folder) catch return fail(screen, "não consegui criar {s}", .{folder});
+        const target = std.fmt.allocPrint(memory, "{s}/{s}.json", .{ folder, std.fs.path.stem(workbook_path) }) catch return;
+        std.Io.Dir.cwd().writeFile(io(), .{ .sub_path = target, .data = result.json }) catch return fail(screen, "não consegui gravar {s}", .{target});
+        screen.openAircraft(target);
+        if (result.warnings.len > 0) fail(screen, "planilha lida com {d} avisos; o primeiro: {s}", .{ result.warnings.len, result.warnings[0] });
+    }
+
     fn openAircraft(screen: *Screen, path: []const u8) void {
         if (screen.loader.running()) {
             _ = std.fmt.bufPrintZ(&screen.assembly_note, "ainda abrindo {s}...", .{std.fs.path.basename(screen.loading.pathText())}) catch {};
@@ -807,7 +845,7 @@ pub const Screen = struct {
                     screen.importing_file = false;
                     screen.startImport(path);
                 } else {
-                    screen.openAircraft(path);
+                    screen.openFile(path);
                     screen.showAssembly();
                 }
             }
