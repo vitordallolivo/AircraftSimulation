@@ -306,7 +306,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `main:433`
 - `core/src/tests.zig` — Todos os testes do núcleo, por grupo. `zig build test` roda tudo; `-Dgrupo=math` roda só um grupo e
 - `core/src/types.zig` — Estruturas trocadas com o Python (C ABI, `extern struct`).
-  tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `LiftingLineMethod:56`, `Refinement:68`, `Surface:78`, `GroundTable:117`, `PropUnit:130`, `GearKind:172`, `Gear:182`, `TankShape:191`, `Tank:204`, `Segment:220`, `EventKind:241`, `Event:250`, `Pad:254`, `Payload:263`, `Environment:274`, `Takeoff:286`, `Pilot:304`, `Autopilot:314`, `AeroTable:363`, `LltCache:396`, `Params:410`, `PanelState:506`, `SweepSummary:526`, `Events:534`, `LogRow:576`, `AeroCoeffs:690`, `PropPoint:705`, `MassProps:717`, `TrimKind:725`, `TrimPoint:736`, `PerfRow:753`
+  tipos `ThrustModel:20`, `PolyVariable:29`, `AeroModel:45`, `LiftingLineMethod:56`, `Refinement:68`, `Surface:78`, `GroundTable:117`, `PropUnit:134`, `GearKind:176`, `Gear:186`, `TankShape:195`, `Tank:208`, `Segment:224`, `EventKind:245`, `Event:254`, `Pad:258`, `Payload:267`, `Environment:278`, `Takeoff:290`, `Pilot:308`, `Autopilot:318`, `AeroTable:367`, `LltCache:400`, `Params:414`, `PanelState:510`, `SweepSummary:530`, `Events:538`, `LogRow:580`, `AeroCoeffs:694`, `PropPoint:709`, `MassProps:721`, `TrimKind:729`, `TrimPoint:740`, `PerfRow:757`
 
 **core/src/collision/**
 
@@ -356,7 +356,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `trace:91`, `optimal:127`, `efficiency:196`, `raymerOswald:206`, `studyPoint:232`
 - `core/src/loads/vlm.zig` — Método dos vórtices em malha (VLM) do avião: cada faixa sustentadora do núcleo (`Params.surf`) vira uma malha de
   tipos `Grid:40`, `Panel:43`, `Buffers:62`, `Loads:72`, `Coefficients:79`, `Derivatives:91`
-  fn `panelCount:111`, `lattice:159`, `factor:230`, `solve:268`, `substitute:280`, `loads:295`, `velocityAt:318`, `coefficients:325`, `derivatives:346`, `groundCoefficients:386`
+  fn `panelCount:111`, `lattice:159`, `factor:230`, `solve:268`, `substitute:280`, `loads:295`, `velocityAt:318`, `coefficients:325`, `derivatives:346`, `groundCoefficients:386`, `groundCoefficientsWith:391`
 - `core/src/loads/vn.zig` — Diagrama V-n: o envelope de manobra e o de rajada, e os casos de carga que saem dele.
   tipos `VnNorm:20`, `VnAircraft:31`, `LoadCase:41`, `CaseKind:50`, `VnResult:55`
   fn `gustAlleviation:76`, `gustIncrement:82`, `maneuverLimits:88`, `envelope:95`, `diagram:111`
@@ -379,8 +379,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/modifiers/flapmoment.zig` — Momento próprio do comando (flape, profundor, elevon) no quarto de corda da faixa.
   fn `thetaOf:16`, `cmDelta:29`
 - `core/src/modifiers/ground.zig` — Efeito solo: métodos para o fator do arrasto induzido perto do chão.
-  tipos `Effect:109`
-  fn `factor:25`, `mccormick:33`, `buildTable:68`, `lookup:112`
+  tipos `Effect:119`
+  fn `factor:25`, `mccormick:33`, `buildTable:71`, `lookup:128`
 - `core/src/modifiers/interference.zig` — Interferência entre as asas da configuração no modelo de faixas, para quantas asas houver.
   fn `active:29`, `induced:39`
 - `core/src/modifiers/mod.zig` — Modificadores: metodologias da literatura que mudam a aerodinâmica do avião inteiro sem mexer no resto
@@ -430,7 +430,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `core/src/physics/aero.zig` — Aerodinâmica por componentes.
   tipos `Out:18`
-  fn `sigmaStall:28`, `init:93`, `compute:126`, `computeEnv:131`, `computeTrace:136`, `fuselage:264`, `coeffs:279`, `coeffsEx:284`, `coeffsEnv:289`, `coeffsAt:294`
+  fn `sigmaStall:28`, `init:93`, `compute:126`, `computeEnv:131`, `computeTrace:136`, `fuselage:266`, `coeffs:281`, `coeffsEx:286`, `coeffsEnv:291`, `coeffsAt:296`
 - `core/src/physics/aeromodel.zig` — O modelo aerodinâmico do voo, escolhido por `Params.aero_model` (`types.AeroModel`): quem a dinâmica, a trimagem e
   fn `compute:18`
 - `core/src/physics/aerotable.zig` — Modelo aerodinâmico por tabela (Params.aero_model = 2): os coeficientes do avião inteiro vêm de `Params.aero_tab`,

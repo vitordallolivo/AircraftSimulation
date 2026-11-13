@@ -297,3 +297,30 @@ test "efeito solo pela imagem no VLM: a tabela sai na configuração e o Convenc
     for (0..60 * 20) |_| _ = dm.step(1.0 / 60.0);
     try testing.expect(dm.frame.phase == .flying);
 }
+
+/// a distância (m) do Convencional na pista até sair do chão, com a lista de modifiers `modifiers`
+fn liftoffDistance(modifiers: []const model.Modifier) !f64 {
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", testing.allocator, .limited(1 << 24));
+    defer testing.allocator.free(bytes);
+    var d: model.Diag = .{};
+    var l = try model.parse(testing.allocator, bytes, &d);
+    defer l.deinit();
+    l.ac.modifiers = modifiers;
+    var dm = try DriveManager.init(testing.allocator, &l.ac, &d, .autopilot);
+    defer dm.deinit();
+    for (0..60 * 30) |_| {
+        const frame = dm.step(1.0 / 60.0);
+        if (frame.phase == .flying) return @sqrt(frame.pos_ned[0] * frame.pos_ned[0] + frame.pos_ned[1] * frame.pos_ned[1]);
+    }
+    return error.NeverFlew;
+}
+
+test "efeito solo pela imagem no VLM: a cauda no chão atrasa a rotação, mas o profundor na tabela a recupera" {
+    // o McCormick só corta o induzido; o VLM vê também a cauda perder o downwash e ganhar sustentação perto do chão
+    // (ΔC_m de −0,04 a −0,2 no Convencional parado, da ordem de −V_h a_t Δε com Δε ~ ε/2). A rotação pede mais
+    // profundor e a corrida cresce (51,6 m → 92,7 m em 2026-11-12; sem o termo do profundor na tabela eram ~125 m)
+    const mccormick = try liftoffDistance(&.{});
+    const imaged = try liftoffDistance(&.{.{ .kind = "solo.vlm_imagem" }});
+    try testing.expect(imaged > mccormick);
+    try testing.expect(imaged < 2 * mccormick);
+}

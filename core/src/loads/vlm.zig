@@ -384,6 +384,11 @@ pub fn derivatives(params: *const types.Params, grid: Grid, alpha: f64, ref: V3,
 /// cabeçalho). Uma malha que encosta no chão (a menos de 5 % da corda do painel) é recusada (`BelowGround`). `height` infinita: sem chão, mas com a geometria girada e a esteira no vento. Os momentos são em
 /// torno de `ref`; C_L e C_Di nos eixos do vento
 pub fn groundCoefficients(params: *const types.Params, grid: Grid, alpha: f64, height: f64, ref: V3, buffers: Buffers) Error!Coefficients {
+    return groundCoefficientsWith(params, grid, alpha, height, ref, vec.zero, buffers);
+}
+
+/// `groundCoefficients` com os comandos `deflections` (δe, δa, δr em rad, como `solve`)
+pub fn groundCoefficientsWith(params: *const types.Params, grid: Grid, alpha: f64, height: f64, ref: V3, deflections: V3, buffers: Buffers) Error!Coefficients {
     const panels = try lattice(params, grid, buffers.panels);
     const count = panels.len;
     if (buffers.gamma.len < count) return error.TooSmall;
@@ -405,7 +410,7 @@ pub fn groundCoefficients(params: *const types.Params, grid: Grid, alpha: f64, h
     try factorWith(panels, ground_z, buffers.matrix, buffers.pivots);
     const gamma = buffers.gamma[0..count];
     const velocity = V3{ 1, 0, 0 };
-    solve(params, panels, buffers.matrix, buffers.pivots, velocity, vec.zero, gamma);
+    solve(params, panels, buffers.matrix, buffers.pivots, velocity, deflections, gamma);
     return coefficients(params, loadsWith(panels, gamma, velocity, ground_z), 0, 0, ref);
 }
 
@@ -540,4 +545,67 @@ test "VLM com chão: perto do chão a sustentação sobe e o induzido por C_L² 
         previous_lift = near.CL;
         previous_ratio = ratio;
     }
+}
+
+test "VLM com chão: o momento picador vem quase todo da cauda, que perde o downwash perto do chão" {
+    // asa 1,5 m × 0,25 m e cauda 0,5 m × 0,15 m a 0,8 m atrás, na mesma altura; CG em 1/4 da corda da asa
+    var params: types.Params = undefined;
+    rectangularWing(&params, 12, 1.5, 0.25);
+    const wing_only = params;
+    const tail_strips = 6;
+    for (0..tail_strips) |i| {
+        const y0 = -0.25 + 0.5 * @as(f64, @floatFromInt(i)) / tail_strips;
+        const y1 = -0.25 + 0.5 * @as(f64, @floatFromInt(i + 1)) / tail_strips;
+        const side: i32 = if (0.5 * (y0 + y1) > 0) 1 else -1;
+        const x = -0.8 - 0.25 * 0.15;
+        params.surf[12 + i] = .{
+            .r = .{ x, 0.5 * (y0 + y1), 0 },
+            .S = (y1 - y0) * 0.15,
+            .c = 0.15,
+            .CLa = 4.5,
+            .group = .htail,
+            .side = side,
+            .qa = .{ x, if (side > 0) y0 else y1, 0 },
+            .qb = .{ x, if (side > 0) y1 else y0, 0 },
+        };
+    }
+    params.n_surf = 12 + tail_strips;
+    @import("../physics/aero.zig").init(&params);
+    var panels: [18 * 4]Panel = undefined;
+    var matrix: [72 * 72]f64 = undefined;
+    var pivots: [72]usize = undefined;
+    var gamma: [72]f64 = undefined;
+    const buffers: Buffers = .{ .panels = &panels, .matrix = &matrix, .pivots = &pivots, .gamma = &gamma };
+    const grid: Grid = .{ .chordwise = 4, .spanwise = 1 };
+    const reference = V3{ -0.0625, 0, 0 };
+    const alpha = 8 * fmath.pi / 180.0;
+    var heights: [24]f64 = undefined;
+    var with_tail: [24]f64 = undefined;
+    var without_tail: [24]f64 = undefined;
+    var lift_change: [24]f64 = undefined;
+    const free = try groundCoefficients(&params, grid, alpha, std.math.inf(f64), reference, buffers);
+    const free_wing = try groundCoefficients(&wing_only, grid, alpha, std.math.inf(f64), reference, buffers);
+    for (&heights, &with_tail, &without_tail, &lift_change, 0..) |*ratio, *full, *bare, *lift, i| {
+        ratio.* = 0.1 + 0.04 * @as(f64, @floatFromInt(i)); // h/b
+        const near = try groundCoefficients(&params, grid, alpha, ratio.* * 1.5, reference, buffers);
+        const near_wing = try groundCoefficients(&wing_only, grid, alpha, ratio.* * 1.5, reference, buffers);
+        full.* = near.Cm - free.Cm;
+        bare.* = near_wing.Cm - free_wing.Cm;
+        lift.* = near.CL - free.CL;
+    }
+    // perto do chão o avião inteiro pica (ΔC_m < 0) bem mais que a asa sozinha: a cauda perde o downwash
+    try testing.expect(with_tail[0] < 0);
+    try testing.expect(with_tail[0] < 2 * without_tail[0]);
+    try @import("../util/plot.zig").fromTest("solo_delta_cm", .{ .title = "ΔC_m do chão em α = 8°", .x_label = "h/b", .y_label = "ΔC_m", .series = &.{
+        .{ .label = "asa e cauda", .x = &heights, .y = &with_tail },
+        .{ .label = "só a asa", .x = &heights, .y = &without_tail },
+        .{ .label = "ΔC_L / 10", .x = &heights, .y = &tenth(lift_change) },
+    } });
+}
+
+/// uma cópia dividida por 10 (para caber no mesmo gráfico)
+fn tenth(values: [24]f64) [24]f64 {
+    var out = values;
+    for (&out) |*value| value.* /= 10;
+    return out;
 }

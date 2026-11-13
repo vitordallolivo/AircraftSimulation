@@ -65,6 +65,9 @@ fn restingHeight(params: *const types.Params) f64 {
 /// monta `params.ground_table` pelo VLM com o chão espelhado, com os momentos no CG seco. Precisa de `aero.init` antes.
 /// As alturas vão da do avião parado no trem até 3 envergaduras acima; onde a malha girada encostaria no chão (cauda
 /// baixa em α grande), vale a linha de cima
+/// o profundor da diferença finita da tabela (rad)
+const elevator_step = vec.V3{ 0.1, 0, 0 };
+
 pub fn buildTable(params: *types.Params) vlm.Error!void {
     params.ground_table = .{};
     if (params.bref <= 0) return;
@@ -77,6 +80,7 @@ pub fn buildTable(params: *types.Params) vlm.Error!void {
     for (table_alphas, 0..) |alpha_degrees, j| table.alpha[j] = alpha_degrees * std.math.pi / 180.0;
     for (table.alpha, 0..) |alpha, j| {
         const free = try vlm.groundCoefficients(params, table_grid, alpha, std.math.inf(f64), cg, buffers);
+        const free_elevator = try vlm.groundCoefficientsWith(params, table_grid, alpha, std.math.inf(f64), cg, elevator_step, buffers);
         // a altura do CG sobre o chão com a origem na altura da tabela: a origem girada por α em torno do CG
         const turn = fmath.sincos(alpha);
         const origin_below_cg = turn.s * cg[0] - turn.c * cg[2]; // z girado da origem menos o do CG
@@ -90,6 +94,8 @@ pub fn buildTable(params: *types.Params) vlm.Error!void {
                     if (row + 1 < types.GroundTable.heights) {
                         table.lift[cell] = table.lift[cell + width];
                         table.moment[cell] = table.moment[cell + width];
+                        table.lift_elevator[cell] = table.lift_elevator[cell + width];
+                        table.moment_elevator[cell] = table.moment_elevator[cell + width];
                         if (table_alphas[j] == induced_alpha) table.induced[row] = table.induced[row + 1];
                     }
                     continue;
@@ -98,6 +104,10 @@ pub fn buildTable(params: *types.Params) vlm.Error!void {
             };
             table.lift[cell] = near.CL - free.CL;
             table.moment[cell] = near.Cm - free.Cm;
+            // o mesmo com o profundor: a diferença por radiano (o VLM é linear no comando para ângulos pequenos)
+            const near_elevator = try vlm.groundCoefficientsWith(params, table_grid, alpha, table.height[row] + origin_below_cg, cg, elevator_step, buffers);
+            table.lift_elevator[cell] = ((near_elevator.CL - free_elevator.CL) - table.lift[cell]) / elevator_step[0];
+            table.moment_elevator[cell] = ((near_elevator.Cm - free_elevator.Cm) - table.moment[cell]) / elevator_step[0];
             if (table_alphas[j] == induced_alpha) table.induced[row] = (near.CDi / (near.CL * near.CL)) / (free.CDi / (free.CL * free.CL));
         }
     }
@@ -106,7 +116,13 @@ pub fn buildTable(params: *types.Params) vlm.Error!void {
 }
 
 /// o que a tabela dá numa altura da origem (m) e num α (rad): ΔC_L, o fator do induzido e ΔC_m
-pub const Effect = struct { lift: f64 = 0, induced: f64 = 1, moment: f64 = 0 };
+pub const Effect = struct {
+    lift: f64 = 0,
+    induced: f64 = 1,
+    moment: f64 = 0,
+    lift_elevator: f64 = 0, // por rad de δe
+    moment_elevator: f64 = 0,
+};
 
 /// a interpolação linear da tabela em altura e em α, com os extremos segurados; tabela vazia: sem efeito
 pub fn lookup(table: *const types.GroundTable, height: f64, alpha: f64) Effect {
@@ -125,6 +141,8 @@ pub fn lookup(table: *const types.GroundTable, height: f64, alpha: f64) Effect {
         .lift = corner(&table.lift, row.index, column.index, row.fraction, column.fraction),
         .induced = table.induced[row.index] * (1 - row.fraction) + table.induced[row.index + 1] * row.fraction,
         .moment = corner(&table.moment, row.index, column.index, row.fraction, column.fraction),
+        .lift_elevator = corner(&table.lift_elevator, row.index, column.index, row.fraction, column.fraction),
+        .moment_elevator = corner(&table.moment_elevator, row.index, column.index, row.fraction, column.fraction),
     };
 }
 

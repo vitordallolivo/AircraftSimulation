@@ -24,7 +24,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   sustentação nem o momento de arfagem. Agora há um segundo método, o VLM com o chão espelhado. Ele roda uma vez ao
   carregar o avião e monta uma tabela por altura e ângulo de ataque com a sustentação a mais, o induzido a menos e o
   momento picador que o chão dá. No voo e no AeroDrive, a simulação só lê essa tabela. O McCormick continua sendo o
-  padrão, e o método novo por enquanto só se escolhe pelo arquivo do avião.
+  padrão, e o método novo por enquanto só se escolhe pelo arquivo do avião. A tabela também guarda o quanto o
+  profundor muda esse efeito, porque, sem isso, a rotação na decolagem saía tarde demais.
 - Algumas regras de competição limitam a potência que o motor tira da bateria, e outras não. Antes, a tração saía
   sempre com o acelerador cheio. Agora as regras do Projetar têm um limite de potência do motor, que fica vazio por
   padrão. Quando ele é preenchido, a rotação de cada motor cai até a potência tirada da bateria bater no limite, e

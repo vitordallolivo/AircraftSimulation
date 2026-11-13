@@ -124,6 +124,10 @@ pub const GroundTable = extern struct {
     induced: [heights]f64 = [_]f64{1} ** heights,
     lift: [heights * alphas]f64 = [_]f64{0} ** (heights * alphas),
     moment: [heights * alphas]f64 = [_]f64{0} ** (heights * alphas),
+    // o quanto o ΔC_L e o ΔC_m mudam por radiano de profundor (δe): com o profundor para cima a cauda puxa para baixo, e
+    // o chão aumenta essa carga também (sem isso, a tabela só via a cauda sem comando e picava demais na rotação)
+    lift_elevator: [heights * alphas]f64 = [_]f64{0} ** (heights * alphas),
+    moment_elevator: [heights * alphas]f64 = [_]f64{0} ** (heights * alphas),
 };
 
 /// Motor BLDC + hélice (tabela) + bateria. Cada unidade é independente.

@@ -233,10 +233,12 @@ fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_r
         const qS = 0.5 * params.env.rho * Va * Va * params.Sref;
         const plane_speed = @sqrt(Vr[0] * Vr[0] + Vr[2] * Vr[2]);
         if (plane_speed > 1e-9) {
-            const force = V3{ Vr[2], 0, -Vr[0] } * vec.splat(qS * image_effect.lift / plane_speed);
+            // o comando do profundor (δe = deflections[0]) muda a carga da cauda e o que o chão faz com ela
+            const lift = image_effect.lift + deflections[0] * image_effect.lift_elevator;
+            const force = V3{ Vr[2], 0, -Vr[0] } * vec.splat(qS * lift / plane_speed);
             result.Fg[limits.groupIndex(.wing)] += force;
             result.F += force;
-            const moment = V3{ 0, qS * params.cref * image_effect.moment, 0 };
+            const moment = V3{ 0, qS * params.cref * (image_effect.moment + deflections[0] * image_effect.moment_elevator), 0 };
             result.Mg[limits.groupIndex(.wing)] += moment;
             result.M += moment;
         }
