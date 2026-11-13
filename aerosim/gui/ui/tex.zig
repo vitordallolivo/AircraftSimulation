@@ -33,6 +33,23 @@ const symbols = [_]Symbol{
     .{ .name = "_", .text = "_" },       .{ .name = "$", .text = "$" },
 };
 
+/// as fontes da matemática (a Computer Modern, carregada em `theme.Fonts.load`): reta para números, operadores e
+/// letras gregas maiúsculas, itálica para as variáveis (letras latinas e gregas minúsculas), como no LaTeX. null: a
+/// matemática sai na fonte do texto
+pub var math_fonts: ?struct { upright: rl.Font, italic: rl.Font } = null;
+
+/// o quanto a matemática na Computer Modern sai maior que o texto em volta (para ficar com a mesma altura de letra)
+const math_scale: f32 = 1.22;
+
+/// a fonte de um símbolo da matemática: itálica para variáveis, reta para o resto (ou dentro de `\mathrm{}`)
+fn mathFont(fallback: rl.Font, shown: []const u8, roman: bool) rl.Font {
+    const fonts = math_fonts orelse return fallback;
+    if (roman or shown.len == 0) return fonts.upright;
+    if (std.ascii.isAlphabetic(shown[0])) return fonts.italic;
+    const point = std.unicode.utf8Decode(shown[0 .. std.unicode.utf8ByteSequenceLength(shown[0]) catch return fonts.upright]) catch return fonts.upright;
+    return if (point >= 0x03B1 and point <= 0x03C9) fonts.italic else fonts.upright; // α…ω
+}
+
 /// desenha `content` em (x, y), com o que estiver entre `$` como matemática; devolve a largura
 pub fn draw(font: rl.Font, content: [:0]const u8, x: f32, y: f32, size: f32, color: rl.Color) f32 {
     if (std.mem.indexOfScalar(u8, content, '$') == null) {
@@ -96,6 +113,7 @@ const Pen = struct {
     color: rl.Color,
     drawing: bool,
     rotated: bool = false, // girado 90°: o lápis sobe (x é a altura na tela) e "para baixo" é para a direita
+    roman: bool = false, // dentro de `\mathrm{}` ou `\text{}`: letras retas
 
     /// a linha toda: texto comum fora do `$`, matemática dentro
     fn line(pen: *Pen, content: []const u8, y: f32, size: f32) void {
@@ -137,7 +155,12 @@ const Pen = struct {
         if (ch == '\\') {
             const name = commandName(content, i + 1);
             i += 1 + name.len;
-            if (std.mem.eql(u8, name, "mathrm") or std.mem.eql(u8, name, "text")) return i; // o grupo vem depois
+            if (std.mem.eql(u8, name, "mathrm") or std.mem.eql(u8, name, "text")) { // o grupo que vem depois, reto
+                const before = pen.roman;
+                pen.roman = true;
+                defer pen.roman = before;
+                return if (i < content.len) pen.atom(content, i, y, size) else i;
+            }
             pen.operator(name, lookup(name) orelse name, y, size);
             return i;
         }
@@ -153,7 +176,12 @@ const Pen = struct {
         for (binary_operators) |op| binary = binary or std.mem.eql(u8, op, name);
         const gap = if (binary) size * 0.28 else 0;
         pen.advance(gap);
-        pen.run(shown, y, size);
+        if (math_fonts != null) {
+            // a Computer Modern tem o olho menor e o traço mais fino que a fonte do texto: um pouco maior, com a base
+            // no mesmo lugar
+            const grown = size * math_scale;
+            pen.runWith(mathFont(pen.font, shown, pen.roman), shown, y - (grown - size) * 0.75, grown);
+        } else pen.runWith(pen.font, shown, y, size);
         pen.advance(gap);
     }
 
@@ -163,16 +191,21 @@ const Pen = struct {
 
     /// um pedaço de texto simples no tamanho `size`, com a base no mesmo lugar do texto em volta
     fn run(pen: *Pen, piece: []const u8, y: f32, size: f32) void {
+        pen.runWith(pen.font, piece, y, size);
+    }
+
+    /// `run` com outra fonte (a da matemática)
+    fn runWith(pen: *Pen, font: rl.Font, piece: []const u8, y: f32, size: f32) void {
         if (piece.len == 0) return;
         var buffer: [256:0]u8 = undefined;
         const n = @min(piece.len, buffer.len);
         @memcpy(buffer[0..n], piece[0..n]);
         buffer[n] = 0;
         const text = buffer[0..n :0];
-        const step = theme.textWidth(pen.font, text, size) + theme.spacing(size);
+        const step = theme.textWidth(font, text, size) + theme.spacing(size);
         if (pen.drawing and pen.rotated) {
-            rl.drawTextPro(pen.font, text, .{ .x = y, .y = pen.x }, .{ .x = 0, .y = 0 }, -90, size, theme.spacing(size), pen.color);
-        } else if (pen.drawing) theme.text(pen.font, text, pen.x, y, size, pen.color);
+            rl.drawTextPro(font, text, .{ .x = y, .y = pen.x }, .{ .x = 0, .y = 0 }, -90, size, theme.spacing(size), pen.color);
+        } else if (pen.drawing) theme.text(font, text, pen.x, y, size, pen.color);
         pen.advance(step);
     }
 };

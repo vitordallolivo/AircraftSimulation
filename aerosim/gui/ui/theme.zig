@@ -119,6 +119,23 @@ fn loadFirst(paths: []const [:0]const u8, cps: []const i32) ?rl.Font {
     return null;
 }
 
+/// a Computer Modern (a fonte do LaTeX, na versão Unicode CMU; licença SIL OFL em `fonts/OFL.txt`), que vai dentro
+/// do programa: a matemática dos gráficos (o que está entre `$`) sai nela, com as variáveis em itálico
+const math_upright_file = @embedFile("fonts/cmunrm.ttf");
+const math_italic_file = @embedFile("fonts/cmunti.ttf");
+
+/// carrega as duas fontes da matemática e as entrega ao TeX dos gráficos; sem elas, a matemática fica na fonte do texto
+fn loadMathFonts(cps: []const i32) void {
+    const upright = rl.loadFontFromMemory(".ttf", math_upright_file, 48, cps) catch return;
+    const italic = rl.loadFontFromMemory(".ttf", math_italic_file, 48, cps) catch {
+        rl.unloadFont(upright);
+        return;
+    };
+    rl.setTextureFilter(upright.texture, .bilinear);
+    rl.setTextureFilter(italic.texture, .bilinear);
+    @import("tex.zig").math_fonts = .{ .upright = upright, .italic = italic };
+}
+
 pub const Fonts = struct {
     regular: rl.Font,
     bold: rl.Font,
@@ -129,6 +146,7 @@ pub const Fonts = struct {
     pub fn load() Fonts {
         const cps = codepoints();
         const fallback = rl.getFontDefault() catch unreachable;
+        loadMathFonts(&cps);
         const regular = loadFirst(&regular_candidates, &cps) orelse return .{ .regular = fallback, .bold = fallback, .mono = fallback, .owned = false };
         return .{
             .regular = regular,
