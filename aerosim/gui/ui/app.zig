@@ -28,7 +28,7 @@ pub const Args = struct {
 
 /// um clique do print: onde e se é o botão direito
 pub const Click = struct { at: rl.Vector2, right: bool = false };
-const max_clicks = 4;
+const max_clicks = 8;
 
 /// o clique do print (`clique=X,Y`) que o próximo quadro recebe
 var injected_click: ?Click = null;

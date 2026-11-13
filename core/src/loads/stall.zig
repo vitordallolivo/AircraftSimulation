@@ -36,10 +36,19 @@ pub const Family = struct {
     polars: []const section.Polar,
 };
 
-/// as polares de cada faixa: `of_strip[strip]` é o índice em `families` (null: todas usam a primeira)
+/// os ajustes do Newton, todos à vista de quem chama (a tela mostra cada um)
+pub const Settings = struct {
+    max_iterations: usize = 40, // iterações de Newton em cada α
+    tolerance: f64 = 1e-7, // para quando a maior |c_l2D − c_l VLM| fica abaixo disto
+    max_halvings: usize = 8, // a busca linear corta o passo pela metade até isto de vezes
+};
+
+/// as polares de cada faixa: `of_strip[strip]` é o índice em `families` (null: todas usam a primeira); `settings`
+/// são os ajustes do Newton
 pub const Sections = struct {
     families: []const Family,
     of_strip: ?[]const usize = null,
+    settings: Settings = .{},
 };
 
 /// o estado de uma estação (uma coluna de painéis na corda)
@@ -229,7 +238,8 @@ fn solvePoint(context: Context, alpha: f64, ref: V3, work: Work) Error!Point {
     var largest = evaluate(context, work.delta, work.residual, work.stations);
     var result: Point = .{};
     var iteration: usize = 0;
-    while (iteration < 40 and largest > 1e-7) : (iteration += 1) {
+    const settings = context.sections.settings;
+    while (iteration < settings.max_iterations and largest > settings.tolerance) : (iteration += 1) {
         // o jacobiano: dR_j/dδ_k = (s_j/(2π) − 1) dc_l,j/dδ_k + s_j [j = k]
         for (0..count) |k| {
             for (context.panels, 0..) |*panel, i| {
@@ -260,7 +270,7 @@ fn solvePoint(context: Context, alpha: f64, ref: V3, work: Work) Error!Point {
         while (true) : (halvings += 1) {
             for (0..count) |j| work.scratch[j] = work.delta[j] + step * work.trial[j];
             const tried = evaluate(context, work.scratch[0..count], work.residual, work.stations);
-            if (tried < start or halvings >= 8) {
+            if (tried < start or halvings >= settings.max_halvings) {
                 @memcpy(work.delta[0..count], work.scratch[0..count]);
                 largest = tried;
                 break;
@@ -270,7 +280,7 @@ fn solvePoint(context: Context, alpha: f64, ref: V3, work: Work) Error!Point {
     }
     result.iterations = iteration;
     result.residual = largest;
-    result.converged = largest <= 1e-7;
+    result.converged = largest <= settings.tolerance;
     // os coeficientes do avião com os δ finais (a `evaluate` deixou o Γ deles em buffers.gamma)
     _ = evaluate(context, work.delta, work.residual, work.stations);
     const found = vlm.loads(context.panels, context.buffers.gamma, context.velocity);
@@ -323,6 +333,17 @@ pub fn point(params: *const types.Params, grid: vlm.Grid, sections: Sections, al
     const count = panels.len / @max(grid.chordwise, 1);
     if (work.delta.len < count or work.stations.len < count or work.jacobian.len < count * count or work.scratch.len < panels.len) return error.TooSmall;
     @memset(work.delta[0..count], 0);
+    const context: Context = .{ .params = params, .panels = panels, .buffers = buffers, .sections = sections, .velocity = vlm.velocityAt(alpha, 0), .chordwise = @max(grid.chordwise, 1), .airspeed = airspeed, .density = density };
+    return solvePoint(context, alpha, ref, sliced(work, count));
+}
+
+/// o estol por estação num α seguinte de uma varredura feita por quem chama: igual a `point`, mas parte dos δ que já
+/// estão em `work.delta` (os do α anterior), como a `sweep` faz por dentro
+pub fn next(params: *const types.Params, grid: vlm.Grid, sections: Sections, alpha: f64, airspeed: f64, density: f64, ref: V3, buffers: vlm.Buffers, work: Work) Error!Point {
+    if (sections.families.len == 0) return error.NoPolars;
+    const panels = try prepare(params, grid, buffers);
+    const count = panels.len / @max(grid.chordwise, 1);
+    if (work.delta.len < count or work.stations.len < count or work.jacobian.len < count * count or work.scratch.len < panels.len) return error.TooSmall;
     const context: Context = .{ .params = params, .panels = panels, .buffers = buffers, .sections = sections, .velocity = vlm.velocityAt(alpha, 0), .chordwise = @max(grid.chordwise, 1), .airspeed = airspeed, .density = density };
     return solvePoint(context, alpha, ref, sliced(work, count));
 }

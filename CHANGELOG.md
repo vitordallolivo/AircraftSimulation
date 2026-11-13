@@ -6,6 +6,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- Em Aerodinâmica → Analisar, o estol por estação e o efeito do chão, que antes só existiam no núcleo, agora têm
+  tela. O estol por estação acopla o VLM à polar 2D de cada faixa e mostra o C_L máximo, o C_L × α e onde o estol
+  começa ao longo da envergadura. Todos os ajustes ficam à vista: a malha, as iterações, a tolerância e os cortes do
+  passo. O efeito do chão compara o McCormick com o VLM com o chão espelhado, nas alturas e nos ângulos de ataque que
+  o usuário escolhe. Ele mostra quanto o chão muda a sustentação, o arrasto induzido e o momento de arfagem.
 - A busca do MTOW parava abaixo da maior massa que cumpre a pista. Ela testava só oito pontos de acionamento do
   profundor, e o melhor acionamento das massas pesadas cai entre dois deles. Agora, quando nenhum ponto passa, a busca
   procura o acionamento que decola mais cedo entre os pontos. No Convencional, o MTOW subiu de 13,03 kg para 13,10 kg.

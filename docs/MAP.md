@@ -346,8 +346,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Curve:79`, `Node:265`
   fn `sectionSlope:67`, `sectionLift:83`, `stallAngle:116`, `segment:128`, `horseshoe:145`, `surfaceNodes:176`, `prepare:347`, `apply:464`, `compute:604`, `coeffs:636`
 - `core/src/loads/stall.zig` — Estol por estação: o VLM (`vlm.zig`) acoplado à polar 2D de cada estação no seu Reynolds, pela correção de α
-  tipos `Family:34`, `Sections:40`, `Station:46`, `Work:59`, `Point:70`, `Sweep:78`
-  fn `stationCount:90`, `point:320`, `sweep:345`
+  tipos `Family:34`, `Settings:40`, `Sections:48`, `Station:55`, `Work:68`, `Point:79`, `Sweep:87`
+  fn `stationCount:99`, `point:330`, `next:342`, `sweep:366`
 - `core/src/loads/sweep.zig` — Varredura das asas em α (subaba Asas da Aerodinâmica): só as superfícies escolhidas, sem trimar, sem fuselagem e
   tipos `Method:27`, `Output:33`, `Summary:84`
   fn `sweep:49`, `summarize:93`, `isaTemperature:135`, `airViscosity:141`, `reynolds:150`

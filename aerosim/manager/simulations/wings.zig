@@ -286,6 +286,8 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "vlm_span", .label = "VLM: faixas por lado", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 200, .group = loads, .help = "refino do VLM; 0: o padrão (40)" },
         .{ .key = "vlm_chord", .label = "VLM: painéis na corda", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .group = loads, .help = "refino do VLM; 0: o padrão (6)" },
     });
+    try appendStallFields(memory, &params, values);
+    try appendGroundFields(memory, &params, values);
     if (kind == .open) {
         const whole = values.toggle("whole", if (aircraft) |opened| aerodynamics.ready(opened) else false);
         try params.append(memory, .{ .key = "whole", .label = "analisar também o avião completo", .kind = .bool, .default = .{ .toggle = whole }, .group = aerodynamics.group, .rebuild = true, .help = "o avião aberto inteiro, como voa: polares no CG, profundor e derrapagem, estol × cruzeiro, L/D" });
@@ -611,12 +613,14 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     run.progress = 0.6;
 
     // a comparação dos métodos de polar do núcleo nas superfícies escolhidas e o avião completo
-    state.figures = try simulation.Figures.init(memory, &plots);
+    state.figures = try simulation.Figures.init(memory, if (groundMethod(values) == .off) &plots else &(plots ++ ground_plots));
     var chosen: std.ArrayList(aerodynamics.Solver) = .empty;
     for (solvers) |solver| if (solver.core) |core_solver| {
         if (values.toggle(try std.fmt.allocPrint(memory, "use_{s}", .{solver.key}), solver.on)) try chosen.append(memory, core_solver);
     };
     try compareSolvers(run, state, plane, values, chosen.items);
+    if (values.toggle("stall_on", false)) try stallByStation(run, state, plane, values);
+    if (groundMethod(values) != .off) try groundStudy(run, state, plane, values);
     run.progress = 0.75;
     if (!fromSprint(values) and values.toggle("whole", aerodynamics.ready(run.aircraft))) {
         try aerodynamics.analyze(run, values, chosen.items, .{ .summary = &state.summary, .checks = &state.checks, .figures = state.figures.? });
@@ -747,6 +751,259 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
     try simulation.endResult(out);
 }
 
+
+// ------------------------------------------------------------------ estol por estação (VLM + polar)
+
+/// o nome do método na tela, com o tipo dele em palavras simples
+const stall_title = "VLM + polar (estol por estação: corrige o ângulo de cada faixa até o c_l bater com a polar 2D no Re dela)";
+const stall_group = "VLM + polar (corrige o α de cada faixa pela polar 2D)";
+
+/// os campos do método: ligar e, ligado, a malha e os ajustes do Newton (nada fica escondido)
+fn appendStallFields(memory: std.mem.Allocator, params: *std.ArrayList(simulation.Param), values: simulation.Values) !void {
+    const on = values.toggle("stall_on", false);
+    try params.append(memory, .{ .key = "stall_on", .label = "ligar o estol por estação", .kind = .bool, .default = .{ .toggle = false }, .group = stall_group, .rebuild = true, .help = stall_title ++ ". O VLM (malha de vórtices) com a polar 2D de cada faixa: dá o C_L máximo das superfícies marcadas a partir das polares e onde o estol começa. Usa os α do Caso" });
+    if (!on) return;
+    try params.appendSlice(memory, &.{
+        .{ .key = "stall_chord", .label = "painéis na corda", .kind = .int, .default = .{ .number = 4 }, .minimum = 1, .maximum = 12, .group = stall_group, .help = "painéis do VLM ao longo da corda de cada faixa" },
+        .{ .key = "stall_span", .label = "divisões por faixa", .kind = .int, .default = .{ .number = 8 }, .minimum = 1, .maximum = 20, .group = stall_group, .help = "cada faixa do avião vira esta quantidade de estações" },
+        .{ .key = "stall_iterations", .label = "iterações (Newton)", .kind = .int, .default = .{ .number = 40 }, .minimum = 1, .maximum = 500, .group = stall_group, .help = "iterações máximas do Newton (método que zera a diferença entre o c_l da polar e o do VLM) em cada α" },
+        .{ .key = "stall_tolerance", .label = "tolerância no c_l", .default = .{ .number = 1e-7 }, .minimum = 1e-12, .maximum = 1e-2, .group = stall_group, .help = "o Newton para quando a maior |c_l da polar − c_l do VLM| fica abaixo disto" },
+        .{ .key = "stall_halvings", .label = "cortes do passo", .kind = .int, .default = .{ .number = 8 }, .minimum = 0, .maximum = 30, .group = stall_group, .help = "busca linear: o passo do Newton é cortado pela metade até o erro cair, no máximo isto de vezes" },
+        .{ .key = "stall_polar_from", .label = "polar: α inicial", .default = .{ .number = -20 }, .minimum = -40, .maximum = 0, .unit = "°", .group = stall_group, .help = "a polar 2D do modelo do perfil vai deste α ..." },
+        .{ .key = "stall_polar_to", .label = "polar: α final", .default = .{ .number = 30 }, .minimum = 5, .maximum = 60, .unit = "°", .group = stall_group, .help = "... até este; depois do último ponto, o c_l sai de Viterna e Corrigan (fórmula empírica do pós-estol)" },
+        .{ .key = "stall_polar_step", .label = "polar: passo", .default = .{ .number = 0.5 }, .minimum = 0.05, .maximum = 2, .unit = "°", .group = stall_group },
+    });
+}
+
+/// o estol por estação nas superfícies marcadas: uma família de polares por superfície (a polar do modelo do perfil
+/// dela), a varredura nos α do Caso com continuação e a carga no α da carga
+fn stallByStation(run: *simulation.Run, state: *RunState, plane: simulation.Aircraft, values: simulation.Values) !void {
+    const memory = run.memory();
+    const figures = state.figures.?;
+    const group = "estol por estação";
+    const params = try memory.create(core.types.Params);
+    params.* = .{};
+    var diagnosis: model.Diag = .{};
+    params_mod.fill(&plane, params, &diagnosis) catch {
+        try state.checks.append(memory, .{ .status = .falha, .item = "estol por estação", .value = "as asas não montaram", .why = diagnosis.text(), .group = group });
+        return;
+    };
+    core.aero.init(params);
+    const grid: core.vlm.Grid = .{ .chordwise = @intFromFloat(@max(values.number("stall_chord", 4), 1)), .spanwise = @intFromFloat(@max(values.number("stall_span", 8), 1)) };
+    const panel_count = core.vlm.panelCount(params, grid);
+    if (panel_count == 0) {
+        try state.checks.append(memory, .{ .status = .falha, .item = "estol por estação", .value = "sem painéis", .group = group });
+        return;
+    }
+    const station_count = core.stall.stationCount(params, grid);
+    // uma família por superfície do avião: a polar do modelo do perfil dela
+    const polar_from = values.number("stall_polar_from", -20);
+    const polar_to = values.number("stall_polar_to", 30);
+    const polar_step = @max(values.number("stall_polar_step", 0.5), 0.05);
+    const polar_points: usize = @min(@as(usize, @intFromFloat(@floor((polar_to - polar_from) / polar_step))) + 1, core.section.max_points);
+    const polar_alphas = try memory.alloc(f64, polar_points);
+    for (polar_alphas, 0..) |*alpha, k| alpha.* = polar_from + polar_step * @as(f64, @floatFromInt(k));
+    const strip_count: usize = @intCast(params.n_surf);
+    const families = try memory.alloc(core.stall.Family, @max(plane.surfaces.len, 1));
+    for (families, 0..) |*family, i| {
+        const airfoil = if (i < plane.surfaces.len) plane.surfaces[i].airfoil else model.Airfoil{};
+        // o α de sustentação nula é o mesmo que o VLM usa na faixa (−C_L0/C_Lα da superfície): o método só fecha
+        // se a polar e a malha concordam nele
+        var zero_lift: f64 = 0;
+        for (params.surf[0..strip_count]) |strip| if (strip.owner == @as(i32, @intCast(i)) and strip.CLa != 0) {
+            zero_lift = -strip.CL0 / strip.CLa / rad;
+            break;
+        };
+        const polar = try memory.create(core.section.Polar);
+        polar.* = .{};
+        core.section.modelPolar(.{ .cl_alpha = airfoil.cl_alpha, .alpha0 = zero_lift, .cl_max = airfoil.cl_max, .cd0 = airfoil.cd0, .cm_ac = airfoil.cm_ac orelse 0 }, polar_alphas, polar);
+        family.* = .{ .reynolds = try memory.dupe(f64, &.{0}), .polars = polar[0..1] };
+    }
+    const of_strip = try memory.alloc(usize, strip_count);
+    for (params.surf[0..strip_count], of_strip) |strip, *family| family.* = if (strip.owner >= 0 and @as(usize, @intCast(strip.owner)) < families.len) @intCast(strip.owner) else 0;
+    const sections: core.stall.Sections = .{ .families = families, .of_strip = of_strip, .settings = .{
+        .max_iterations = @intFromFloat(@max(values.number("stall_iterations", 40), 1)),
+        .tolerance = values.number("stall_tolerance", 1e-7),
+        .max_halvings = @intFromFloat(@max(values.number("stall_halvings", 8), 0)),
+    } };
+    const buffers: core.vlm.Buffers = .{ .panels = try memory.alloc(core.vlm.Panel, panel_count), .matrix = try memory.alloc(f64, panel_count * panel_count), .pivots = try memory.alloc(usize, panel_count), .gamma = try memory.alloc(f64, panel_count) };
+    const work: core.stall.Work = .{
+        .delta = try memory.alloc(f64, station_count),
+        .residual = try memory.alloc(f64, station_count),
+        .trial = try memory.alloc(f64, station_count),
+        .jacobian = try memory.alloc(f64, station_count * station_count),
+        .pivots = try memory.alloc(usize, station_count),
+        .scratch = try memory.alloc(f64, panel_count),
+        .stations = try memory.alloc(core.stall.Station, station_count),
+    };
+    @memset(work.delta, 0);
+    const lift = try memory.alloc(f64, state.alphas.len);
+    var lift_max = -std.math.inf(f64);
+    var alpha_max: f64 = 0;
+    var onset: ?struct { alpha: f64, position: f64 } = null;
+    var failed: usize = 0;
+    var beyond = false;
+    for (state.alphas, lift) |alpha, *out| {
+        const found = core.stall.next(params, grid, sections, alpha * rad, state.airspeed, state.density, .{ 0, 0, 0 }, buffers, work) catch |err| {
+            try state.checks.append(memory, .{ .status = .falha, .item = "estol por estação", .value = try text(memory, "parou em α = {d}° ({s})", .{ alpha, @errorName(err) }), .group = group });
+            out.* = std.math.nan(f64);
+            continue;
+        };
+        out.* = found.coefficients.CL;
+        if (!found.converged) failed += 1;
+        if (found.coefficients.CL > lift_max) {
+            lift_max = found.coefficients.CL;
+            alpha_max = alpha;
+        }
+        for (work.stations[0..station_count]) |station| {
+            if (station.beyond_polar) beyond = true;
+            if (onset == null and station.stalled) onset = .{ .alpha = alpha, .position = station.span_position };
+        }
+    }
+    try figures.curve("CL", .{ .name = "VLM + polar", .x = state.alphas, .y = lift, .color = "#6b46c1", .width = 2 });
+    try state.summary.append(memory, .{ "[VLM + polar] C_L máximo, α dele (°)", try text(memory, "{d:.4}, {d}", .{ lift_max, alpha_max }) });
+    try state.summary.append(memory, .{ "[VLM + polar] estações; painéis", try text(memory, "{d}; {d}", .{ station_count, panel_count }) });
+    if (onset) |first| {
+        const part: []const u8 = if (first.position < 1.0 / 3.0) "raiz" else if (first.position < 2.0 / 3.0) "meio" else "ponta";
+        try state.summary.append(memory, .{ "[VLM + polar] o estol começa em", try text(memory, "α = {d}°, {s} (y/b/2 = {d:.2})", .{ first.alpha, part, first.position }) });
+        try state.checks.append(memory, .{ .status = if (std.mem.eql(u8, part, "ponta")) .atencao else .ok, .item = "início do estol (VLM + polar)", .value = try text(memory, "{s} (y/b/2 = {d:.2})", .{ part, first.position }), .criterion = "da raiz para fora", .group = group });
+    } else try state.checks.append(memory, .{ .status = .info, .item = "início do estol (VLM + polar)", .value = "nenhuma estação estolou", .fix = "aumente o α final do Caso", .group = group });
+    if (failed > 0) try state.checks.append(memory, .{ .status = .atencao, .item = "Newton do estol por estação", .value = try text(memory, "{d} de {d} α sem convergir", .{ failed, state.alphas.len }), .criterion = "todos", .fix = "aumente as iterações ou a tolerância", .group = group });
+    if (beyond) try state.checks.append(memory, .{ .status = .atencao, .item = "polar curta (estol por estação)", .value = "alguma estação passou do último ponto de uma polar que ainda não estolou", .fix = "aumente o α final da polar", .group = group });
+    try state.checks.append(memory, .{ .status = .info, .item = "polar das faixas (estol por estação)", .value = "a polar do modelo do perfil (um Reynolds só)", .why = "o modelo do perfil não muda com o Reynolds", .group = group });
+    // o c_l ao longo da envergadura no α da carga, e as estações estoladas
+    @memset(work.delta, 0);
+    _ = core.stall.point(params, grid, sections, state.alpha_load * rad, state.airspeed, state.density, .{ 0, 0, 0 }, buffers, work) catch return;
+    const ys = try memory.alloc(f64, station_count);
+    const cls = try memory.alloc(f64, station_count);
+    var stalled_y: std.ArrayList(f64) = .empty;
+    var stalled_cl: std.ArrayList(f64) = .empty;
+    for (work.stations[0..station_count], ys, cls, 0..) |station, *y, *cl, j| {
+        y.* = buffers.panels[j * grid.chordwise].control[1];
+        cl.* = station.cl;
+        if (station.stalled) {
+            try stalled_y.append(memory, y.*);
+            try stalled_cl.append(memory, station.cl);
+        }
+    }
+    try figures.curve("cl_span", .{ .name = "VLM + polar", .x = ys, .y = cls, .color = "#6b46c1", .marker = "o", .size = 3 });
+    if (stalled_y.items.len > 0) try figures.curve("cl_span", .{ .name = "estação estolada", .x = stalled_y.items, .y = stalled_cl.items, .color = "#c53030", .marker = "x", .size = 6 });
+}
+
+// ------------------------------------------------------------------ efeito do chão (análise)
+
+const ground_group = "Efeito do chão";
+/// os métodos do chão, com o tipo de cada um em palavras simples
+const ground_methods = [_][]const u8{
+    none,
+    "McCormick (fórmula)",
+    "VLM com imagem",
+};
+const GroundMethod = enum { off, mccormick, vlm_image };
+
+fn groundMethod(values: simulation.Values) GroundMethod {
+    const chosen = values.text("ground_method", none);
+    for (ground_methods, 0..) |title, i| if (std.mem.eql(u8, title, chosen)) return @enumFromInt(i);
+    return .off;
+}
+
+const ground_plots = [_]simulation.Plot{
+    .{ .key = "ground_CL", .title = "Chão: ΔC_L × h/b", .xlabel = "h/b (altura da origem / envergadura)", .ylabel = "ΔC_L" },
+    .{ .key = "ground_CDi", .title = "Chão: induzido × h/b", .xlabel = "h/b (altura da origem / envergadura)", .ylabel = "C_Di no chão / C_Di longe dele (mesmo C_L)" },
+    .{ .key = "ground_Cm", .title = "Chão: ΔC_m × h/b", .xlabel = "h/b (altura da origem / envergadura)", .ylabel = "ΔC_m" },
+};
+
+/// os campos do efeito do chão: o método e, escolhido, as alturas, os α e a malha
+fn appendGroundFields(memory: std.mem.Allocator, params: *std.ArrayList(simulation.Param), values: simulation.Values) !void {
+    try params.append(memory, .{ .key = "ground_method", .label = "método", .kind = .choice, .default = .{ .text = none }, .choices = &ground_methods, .group = ground_group, .rebuild = true, .help = "o que o chão muda nas superfícies marcadas, de perto até longe dele. McCormick (fórmula empírica): só reduz o arrasto induzido. VLM com imagem (malha de vórtices espelhada no chão): muda a sustentação, o induzido e o momento" });
+    const method = groundMethod(values);
+    if (method == .off) return;
+    try params.append(memory, .{ .key = "ground_heights", .label = "alturas (h/b)", .kind = .floats, .default = .{ .text = "0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.8, 1.2, 2" }, .group = ground_group, .help = "a altura da origem do avião sobre o chão, em envergaduras" });
+    if (method != .vlm_image) return;
+    try params.appendSlice(memory, &.{
+        .{ .key = "ground_alphas", .label = "α", .kind = .floats, .default = .{ .text = "0, 4, 8, 12" }, .unit = "°", .group = ground_group, .help = "uma curva por α; o fator do induzido usa o mesmo α" },
+        .{ .key = "ground_chord", .label = "painéis na corda", .kind = .int, .default = .{ .number = 2 }, .minimum = 1, .maximum = 12, .group = ground_group },
+        .{ .key = "ground_span", .label = "divisões por faixa", .kind = .int, .default = .{ .number = 1 }, .minimum = 1, .maximum = 20, .group = ground_group },
+    });
+}
+
+/// o efeito do chão nas superfícies marcadas, pelo método escolhido, em cada altura e α
+fn groundStudy(run: *simulation.Run, state: *RunState, plane: simulation.Aircraft, values: simulation.Values) !void {
+    const memory = run.memory();
+    const figures = state.figures.?;
+    const group = "efeito do chão";
+    const method = groundMethod(values);
+    var height_buffer: [64]f64 = undefined;
+    const ratios = values.numbers("ground_heights", &height_buffer, &.{ 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.8, 1.2, 2 });
+    if (ratios.len == 0) return;
+    const params = try memory.create(core.types.Params);
+    params.* = .{};
+    var diagnosis: model.Diag = .{};
+    params_mod.fill(&plane, params, &diagnosis) catch {
+        try state.checks.append(memory, .{ .status = .falha, .item = "efeito do chão", .value = "as asas não montaram", .why = diagnosis.text(), .group = group });
+        return;
+    };
+    core.aero.init(params);
+    const span = params.bref;
+    const xs = try memory.dupe(f64, ratios);
+    try state.summary.append(memory, .{ "[chão] envergadura de referência (m)", try text(memory, "{d:.3}", .{span}) });
+    if (method == .mccormick) {
+        const factor = try memory.alloc(f64, ratios.len);
+        for (ratios, factor) |ratio, *value| value.* = core.modifiers.ground.mccormick(ratio * span, span);
+        try figures.curve("ground_CDi", .{ .name = "McCormick", .x = xs, .y = factor, .color = "#c05621", .width = 2 });
+        try state.checks.append(memory, .{ .status = .info, .item = "efeito do chão (McCormick)", .value = "só o induzido muda", .why = "a fórmula não mexe no C_L nem no C_m; perto do chão ela corta o induzido demais", .fix = "compare com o VLM com imagem", .group = group });
+        return;
+    }
+    // VLM com imagem: as forças com o chão menos as longe dele, no mesmo α
+    var alpha_buffer: [16]f64 = undefined;
+    const alphas = values.numbers("ground_alphas", &alpha_buffer, &.{ 0, 4, 8, 12 });
+    const grid: core.vlm.Grid = .{ .chordwise = @intFromFloat(@max(values.number("ground_chord", 2), 1)), .spanwise = @intFromFloat(@max(values.number("ground_span", 1), 1)) };
+    const panel_count = core.vlm.panelCount(params, grid);
+    if (panel_count == 0) return;
+    const buffers: core.vlm.Buffers = .{ .panels = try memory.alloc(core.vlm.Panel, panel_count), .matrix = try memory.alloc(f64, panel_count * panel_count), .pivots = try memory.alloc(usize, panel_count), .gamma = try memory.alloc(f64, panel_count) };
+    try state.summary.append(memory, .{ "[chão] painéis do VLM", try text(memory, "{d}", .{panel_count}) });
+    const origin: [3]f64 = .{ 0, 0, 0 };
+    var touched = false;
+    for (alphas, 0..) |alpha, k| {
+        const free = core.vlm.groundCoefficients(params, grid, alpha * rad, std.math.inf(f64), origin, buffers) catch |err| {
+            try state.checks.append(memory, .{ .status = .falha, .item = "efeito do chão", .value = try text(memory, "o VLM recusou a malha ({s})", .{@errorName(err)}), .group = group });
+            return;
+        };
+        const lift = try memory.alloc(f64, ratios.len);
+        const induced = try memory.alloc(f64, ratios.len);
+        const moment = try memory.alloc(f64, ratios.len);
+        for (ratios, lift, induced, moment) |ratio, *dl, *factor, *dm| {
+            const near = core.vlm.groundCoefficients(params, grid, alpha * rad, ratio * span, origin, buffers) catch |err| switch (err) {
+                error.BelowGround => {
+                    touched = true;
+                    dl.* = std.math.nan(f64);
+                    factor.* = std.math.nan(f64);
+                    dm.* = std.math.nan(f64);
+                    continue;
+                },
+                else => {
+                    try state.checks.append(memory, .{ .status = .falha, .item = "efeito do chão", .value = try text(memory, "o VLM recusou a malha ({s})", .{@errorName(err)}), .group = group });
+                    return;
+                },
+            };
+            dl.* = near.CL - free.CL;
+            dm.* = near.Cm - free.Cm;
+            // o induzido no mesmo C_L: C_Di/C_L² perto sobre longe
+            factor.* = if (near.CL != 0 and free.CL != 0 and free.CDi != 0) (near.CDi / (near.CL * near.CL)) / (free.CDi / (free.CL * free.CL)) else std.math.nan(f64);
+        }
+        const name = try text(memory, "α = {d}°", .{alpha});
+        const color = surface_colors[k % surface_colors.len];
+        try figures.curve("ground_CL", .{ .name = name, .x = xs, .y = lift, .color = color, .width = 2 });
+        try figures.curve("ground_CDi", .{ .name = name, .x = xs, .y = induced, .color = color, .width = 2 });
+        try figures.curve("ground_Cm", .{ .name = name, .x = xs, .y = moment, .color = color, .width = 2 });
+    }
+    // o McCormick junto, para comparar o induzido
+    const factor = try memory.alloc(f64, ratios.len);
+    for (ratios, factor) |ratio, *value| value.* = core.modifiers.ground.mccormick(ratio * span, span);
+    try figures.curve("ground_CDi", .{ .name = "McCormick", .x = xs, .y = factor, .color = "#4a5568", .dashed = true });
+    if (touched) try state.checks.append(memory, .{ .status = .info, .item = "efeito do chão", .value = "alguma superfície encosta no chão nas alturas mais baixas", .fix = "comece as alturas mais alto", .group = group });
+}
+
 const testing = std.testing;
 
 test "Analisar: o C_L máximo da asa do Convencional bate com o Python" {
@@ -777,3 +1034,29 @@ const expected = [_]struct { method: LoadMethod, lift_max: f64, peak: usize }{
     .{ .method = .faixas, .lift_max = 1.5989062801644256, .peak = 20 },
     .{ .method = .llt_nl, .lift_max = 1.6516222836382326, .peak = 20 },
 };
+
+test "Analisar: o estol por estação (VLM + polar) na asa do Convencional dá um C_L máximo abaixo do c_l,max do perfil" {
+    const gpa = testing.allocator;
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    defer gpa.free(bytes);
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(gpa, bytes, &diagnosis);
+    defer loaded.deinit();
+    const registered = simulation.register(Wings);
+    var run = simulation.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
+    defer run.arena.deinit();
+    try registered.start(&run, simulation.Values.fromRequest(run.memory(), "\"values\": {\"stall_on\": true}"));
+    const state: *RunState = @ptrCast(@alignCast(run.state.?));
+    var lift_max: ?f64 = null;
+    for (state.summary.items) |row| {
+        if (std.mem.eql(u8, row[0], "[VLM + polar] C_L máximo, α dele (°)")) {
+            const cut = std.mem.indexOfScalar(u8, row[1], ',').?;
+            lift_max = try std.fmt.parseFloat(f64, row[1][0..cut]);
+        }
+    }
+    var cl_max: f64 = 0;
+    for (loaded.ac.surfaces) |surface| if (std.mem.eql(u8, surface.role, "wing")) {
+        cl_max = surface.airfoil.cl_max;
+    };
+    try testing.expect(lift_max.? > 0.5 and lift_max.? < cl_max);
+}
