@@ -20,12 +20,19 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // o catálogo de motores, hélices e baterias (../aerosim/model/catalog.zig, só a std): as listas do problema
+    const catalog = b.createModule(.{
+        .root_source_file = b.path("../aerosim/model/catalog.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // ---- testes: só o que não abre janela (a rodada de exemplo, o problema, o catálogo e os resumos)
     const tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("tests.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "registry", .module = registry }},
+        .imports = &.{ .{ .name = "registry", .module = registry }, .{ .name = "catalog", .module = catalog } },
     }) });
     b.step("test", "Testes (sem janela)").dependOn(&b.addRunArtifact(tests).step);
 
@@ -56,6 +63,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "raylib", .module = raylib },
             .{ .name = "ui", .module = ui },
             .{ .name = "registry", .module = registry },
+            .{ .name = "catalog", .module = catalog },
         },
     });
     if (target.result.os.tag == .emscripten) return buildWeb(b, raylib_zig, program);

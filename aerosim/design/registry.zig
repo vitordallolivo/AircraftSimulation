@@ -3,6 +3,8 @@
 //! condições e das regras de projeto. As etapas e o Mini-MDO leem o projeto (`store.Project`) por aqui.
 const std = @import("std");
 const store = @import("store.zig");
+/// o projeto da sprint (para quem importa só o registro, como o aeroopt)
+pub const project_store = store;
 
 const ObjectMap = std.json.ObjectMap;
 const Value = std.json.Value;
@@ -215,6 +217,12 @@ pub fn variableList(project: *store.Project) !*std.json.Array {
 
 /// uma restrição → a entrada que ela limita ("Limites das restrições")
 const constraint_input = [_][2][]const u8{ .{ "b", "wing.span" }, .{ "S", "wing.area" }, .{ "n_motor", "power.motors" } };
+
+/// a entrada que uma restrição limita (`null` se ela não limita entrada nenhuma)
+pub fn constraintInput(key: []const u8) ?[]const u8 {
+    for (constraint_input) |pair| if (std.mem.eql(u8, pair[0], key)) return pair[1];
+    return null;
+}
 
 /// leva as restrições ativas para os limites das variáveis (≤ → máx., ≥ → mín., = → os dois)
 pub fn boundsFromConstraints(project: *store.Project) !void {

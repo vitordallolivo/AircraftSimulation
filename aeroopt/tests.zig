@@ -5,4 +5,5 @@ test {
     _ = @import("problem.zig");
     _ = @import("inputs.zig");
     _ = @import("summary.zig");
+    _ = @import("project_link.zig");
 }

@@ -29,15 +29,16 @@ pub const Screen = struct {
         _ = widgets.format(&screen.panel.message, "abra um problema (.opt.json); os gráficos são de uma rodada de exemplo", .{});
     }
 
-    /// abre um problema (`.opt.json`) pela linha de comando ou pela página
+    /// abre um problema (`.opt.json`) ou um projeto da sprint pela linha de comando ou pela página
     pub fn openFile(screen: *Screen, path: []const u8) void {
-        screen.panel.openFile(path);
+        screen.panel.openAny(path);
     }
 
     /// os prints: `acao=pontuacao`, `variaveis`, `restricoes`, `categorias` ou `configuracao` abre o submenu
     pub fn command(screen: *Screen, action: []const u8) void {
         const names = [_][]const u8{ "pontuacao", "variaveis", "restricoes", "categorias", "configuracao" };
         for (names, 0..) |name, i| if (std.mem.eql(u8, name, action)) screen.panel.openPart(@enumFromInt(i));
+        if (std.mem.startsWith(u8, action, "lista:")) screen.panel.openListByKey(action[6..]); // a lista marcável de uma variável
     }
 
     /// desenha a tela inteira e trata o mouse
@@ -71,7 +72,12 @@ pub const Screen = struct {
             theme.text(ui.fonts.regular, "esta aba ainda não foi feita; o desenho segue o mesmo tema", inner.x, inner.y + 10, 15, theme.colors.label);
         }
         var subtitle_buffer: [160]u8 = undefined;
-        const subtitle = if (screen.panel.path_len > 0) widgets.format(&subtitle_buffer, "{s} · gráficos de uma rodada de exemplo", .{screen.panel.fileName()}) else widgets.format(&subtitle_buffer, "nenhum problema aberto · gráficos de uma rodada de exemplo", .{});
+        const subtitle = if (screen.panel.path_len > 0)
+            widgets.format(&subtitle_buffer, "{s} · gráficos de uma rodada de exemplo", .{screen.panel.fileName()})
+        else if (screen.panel.problem != null)
+            widgets.format(&subtitle_buffer, "problema do projeto (não gravado) · gráficos de uma rodada de exemplo", .{})
+        else
+            widgets.format(&subtitle_buffer, "nenhum problema aberto · gráficos de uma rodada de exemplo", .{});
         _ = widgets.header(ui, width, "AeroOpt", &.{}, subtitle);
         _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, &tabs, &screen.tab, 14);
         if (modal) {

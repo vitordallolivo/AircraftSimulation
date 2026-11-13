@@ -13,6 +13,8 @@ const registry = @import("registry");
 const problem_mod = @import("problem.zig");
 const inputs = @import("inputs.zig");
 const summaries = @import("summary.zig");
+const link = @import("project_link.zig");
+const store = registry.project_store;
 
 const Problem = problem_mod.Problem;
 const Value = std.json.Value;
@@ -40,6 +42,9 @@ const writeSummary = summaries.writeSummary;
 /// o que o painel pede para a tela fazer
 pub const Request = enum { none, optimize, stop };
 
+/// o maior número de itens numa lista marcável
+const max_list = 256;
+
 pub const Panel = struct {
     arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator),
     problem: ?Problem = null,
@@ -60,6 +65,11 @@ pub const Panel = struct {
     menu_fields: [16]form_mod.Field = undefined,
     menu_form: form_mod.Form = undefined,
     menu_keys: [16][]const u8 = undefined, // a categoria de cada campo do submenu Categorias
+    project_data: ?store.Project = null, // o projeto da sprint aberto (os valores do avião e os perfis dele)
+    list_item: ?*const inputs.Input = null, // a lista marcável aberta (por cima do submenu Variáveis)
+    list_names: []const []const u8 = &.{},
+    list_marks: [max_list]bool = undefined,
+    list_scroll: ui_kit.scroll.ScrollArea = .{},
     running: bool = false,
     progress: f32 = 0,
     message: [200:0]u8 = [_:0]u8{0} ** 200,
@@ -92,6 +102,7 @@ pub const Panel = struct {
         panel.arena.deinit();
         panel.arena = fresh;
         panel.problem = opened;
+        _ = link.foldBounds(&panel.problem.?); // o que é variável não fica também como restrição
         panel.menu = null;
         const length = @min(path.len, panel.path.len);
         @memcpy(panel.path[0..length], path[0..length]);
@@ -116,17 +127,53 @@ pub const Panel = struct {
         panel.say("gravado em {s}", .{std.fs.path.basename(path)});
     }
 
-    /// guarda o caminho do projeto da sprint (o avião de partida e os valores de cada entrada)
+    /// abre o projeto da sprint (o avião de partida e os valores de cada entrada) e monta o problema a partir das
+    /// variáveis dele, como a tela antiga
     pub fn openProject(panel: *Panel, path: []const u8) void {
+        const io = ui_kit.system.io();
+        const opened = store.open(std.heap.page_allocator, io, path) catch {
+            panel.say("não deu para abrir o projeto {s}", .{std.fs.path.basename(path)});
+            return;
+        };
+        if (panel.project_data) |*old| old.deinit();
+        panel.project_data = opened;
         const length = @min(path.len, panel.project.len);
         @memcpy(panel.project[0..length], path[0..length]);
         panel.project_len = length;
-        panel.say("projeto: {s}", .{std.fs.path.basename(path)});
+        var fresh = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        const name = std.fs.path.stem(path);
+        const built = link.fromProject(fresh.allocator(), &panel.project_data.?, name) catch {
+            fresh.deinit();
+            panel.say("projeto {s} aberto, mas o problema não se montou", .{std.fs.path.basename(path)});
+            return;
+        };
+        panel.arena.deinit();
+        panel.arena = fresh;
+        panel.problem = built;
+        _ = link.foldBounds(&panel.problem.?);
+        panel.menu = null;
+        panel.path_len = 0;
+        panel.say("projeto {s}: {d} variáveis livres de {d}", .{ std.fs.path.basename(path), built.freeCount(), built.variables.len });
+    }
+
+    /// abre um arquivo da linha de comando ou da página: o projeto da sprint (tem os rascunhos) ou o problema
+    pub fn openAny(panel: *Panel, path: []const u8) void {
+        var scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer scratch.deinit();
+        const bytes = std.Io.Dir.cwd().readFileAlloc(ui_kit.system.io(), path, scratch.allocator(), .limited(1 << 24)) catch return panel.openFile(path);
+        const root = std.json.parseFromSliceLeaky(Value, scratch.allocator(), bytes, .{}) catch return panel.openFile(path);
+        const is_project = root == .object and root.object.get("formato") == null and (root.object.get("wing_draft") != null or root.object.get("requirements") != null);
+        if (is_project) panel.openProject(path) else panel.openFile(path);
+    }
+
+    /// o projeto aberto, se houver
+    fn projectPointer(panel: *Panel) ?*store.Project {
+        return if (panel.project_data) |*opened| opened else null;
     }
 
     /// verdadeiro com um submenu ou uma janela de arquivo aberta (a tela de baixo não recebe o clique)
     pub fn modal(panel: *const Panel) bool {
-        return panel.menu != null or panel.picker.open;
+        return panel.menu != null or panel.list_item != null or panel.picker.open;
     }
 
     /// a coluna da esquerda; devolve o que se pediu (otimizar, parar)
@@ -197,6 +244,7 @@ pub const Panel = struct {
     /// as janelas por cima da tela inteira: o submenu aberto e a de arquivo
     pub fn drawModal(panel: *Panel, ui: *widgets.Ui, whole: rl.Rectangle) void {
         if (panel.menu) |part| panel.drawMenu(ui, whole, part);
+        if (panel.list_item) |item| panel.drawList(ui, whole, item);
         if (panel.picker.draw(ui, whole)) |path| {
             const what = panel.pending;
             panel.pending = .none;
@@ -261,7 +309,18 @@ pub const Panel = struct {
     }
 
     fn drawMenu(panel: *Panel, ui: *widgets.Ui, whole: rl.Rectangle, part: Part) void {
-        if (rl.isKeyPressed(.escape)) return panel.closeMenu(false);
+        const covered = panel.list_item != null; // a lista marcável por cima fica com o clique
+        const clicked = ui.clicked;
+        const wheel = ui.wheel;
+        if (covered) {
+            ui.clicked = false;
+            ui.wheel = 0;
+        }
+        defer if (covered) {
+            ui.clicked = clicked;
+            ui.wheel = wheel;
+        };
+        if (!covered and rl.isKeyPressed(.escape)) return panel.closeMenu(false);
         rl.drawRectangleRec(whole, .{ .r = 20, .g = 30, .b = 50, .a = 90 });
         const wide = part == .variables or part == .constraints;
         const box_width = @min(whole.width - 80, if (wide) @as(f32, 1100) else 640);
@@ -281,6 +340,71 @@ pub const Panel = struct {
         if (widgets.primaryButton(ui, .{ .x = box.x + box.width - 130, .y = box.y + box.height - 46, .width = 110, .height = 32 }, "OK", true)) return panel.closeMenu(true);
         ui.click_taken = true;
         ui.wheel = 0;
+    }
+
+    // ---- a lista marcável de uma variável (perfis, motores, hélices, baterias, escolhas)
+
+    /// abre a lista marcável de uma variável pela chave (os prints)
+    pub fn openListByKey(panel: *Panel, key: []const u8) void {
+        const opened = &(panel.problem orelse return);
+        const item = inputs.find(key) orelse return;
+        panel.openList(opened, item);
+    }
+
+    fn openList(panel: *Panel, opened: *Problem, item: *const inputs.Input) void {
+        const names = link.available(panel.memory(), ui_kit.system.io(), panel.projectPointer(), item) catch &.{};
+        panel.list_names = names[0..@min(names.len, max_list)];
+        const variable = opened.variable(item.key);
+        for (panel.list_names, 0..) |name, i| {
+            panel.list_marks[i] = false;
+            if (variable) |found| for (found.options) |option| if (std.mem.eql(u8, option, name)) {
+                panel.list_marks[i] = true;
+            };
+        }
+        panel.list_item = item;
+        panel.list_scroll = .{};
+    }
+
+    fn drawList(panel: *Panel, ui: *widgets.Ui, whole: rl.Rectangle, item: *const inputs.Input) void {
+        if (rl.isKeyPressed(.escape)) {
+            panel.list_item = null;
+            return;
+        }
+        rl.drawRectangleRec(whole, .{ .r = 20, .g = 30, .b = 50, .a = 60 });
+        const box_height = @min(whole.height - 120, 560);
+        const box: rl.Rectangle = .{ .x = whole.x + (whole.width - 440) / 2, .y = whole.y + (whole.height - box_height) / 2, .width = 440, .height = box_height };
+        var title_buffer: [160]u8 = undefined;
+        const inner = widgets.card(ui, box, widgets.format(&title_buffer, "{s}: o que a busca pode escolher", .{item.label}));
+        theme.text(ui.fonts.regular, "nenhum marcado: fica o do avião", inner.x + 4, inner.y + 2, 13, theme.colors.muted);
+        const area: rl.Rectangle = .{ .x = inner.x, .y = inner.y + 24, .width = inner.width, .height = inner.height - 24 - 50 };
+        const top = panel.list_scroll.begin(ui, area);
+        var y = top;
+        var name_buffer: [128]u8 = undefined;
+        for (panel.list_names, 0..) |name, i| {
+            const row: rl.Rectangle = .{ .x = area.x, .y = y, .width = area.width - 12, .height = 28 };
+            if (ui.hovering(row)) rl.drawRectangleRec(row, theme.colors.hover);
+            widgets.checkBox(.{ .x = row.x + 6, .y = row.y + 6, .width = 16, .height = 16 }, panel.list_marks[i]);
+            theme.text(ui.fonts.regular, widgets.format(&name_buffer, "{s}", .{name}), row.x + 32, row.y + 6, 14, theme.colors.ink);
+            if (ui.clickedIn(row)) panel.list_marks[i] = !panel.list_marks[i];
+            y += 28;
+        }
+        if (panel.list_names.len == 0) theme.text(ui.fonts.regular, "nada para escolher (abra o projeto da sprint)", area.x + 6, y + 6, 14, theme.colors.muted);
+        panel.list_scroll.end(ui, area, y);
+        if (dialogs.button(ui, .{ .x = box.x + box.width - 250, .y = box.y + box.height - 46, .width = 110, .height = 32 }, "Cancelar")) panel.list_item = null;
+        if (widgets.primaryButton(ui, .{ .x = box.x + box.width - 130, .y = box.y + box.height - 46, .width = 110, .height = 32 }, "OK", true)) panel.applyList(item);
+        ui.click_taken = true;
+        ui.wheel = 0;
+    }
+
+    /// os marcados viram as opções da variável; com algum marcado ela fica livre
+    fn applyList(panel: *Panel, item: *const inputs.Input) void {
+        panel.list_item = null;
+        const opened = &(panel.problem orelse return);
+        const variable = opened.variable(item.key) orelse panel.addVariable(opened, item) orelse return;
+        var marked: std.ArrayList([]const u8) = .empty;
+        for (panel.list_names, 0..) |name, i| if (panel.list_marks[i]) marked.append(panel.memory(), panel.memory().dupe(u8, name) catch return) catch return;
+        variable.options = marked.items;
+        variable.free = marked.items.len > 0;
     }
 
     // ---- Variáveis
@@ -314,25 +438,27 @@ pub const Panel = struct {
             .{ .title = "variável", .kind = .label, .width = 0.30 },
             .{ .title = "limite inferior", .kind = .number, .width = 0.13 },
             .{ .title = "limite superior", .kind = .number, .width = 0.13 },
-            .{ .title = "lista (o que a busca pode escolher)", .kind = .label, .width = 0.26 },
+            .{ .title = "lista (o que a busca pode escolher)", .kind = .button, .width = 0.26 },
             .{ .title = "valor do avião", .kind = .label, .help = "o valor no projeto da sprint" },
         };
         var rows: [inputs.all.len][columns.len]table.Cell = undefined;
         var row_slices: [inputs.all.len][]const table.Cell = undefined;
         var row_inputs: [inputs.all.len]*const inputs.Input = undefined;
-        var texts: [inputs.all.len][2][160]u8 = undefined;
+        var texts: [inputs.all.len][3][160]u8 = undefined;
+        const project = panel.projectPointer();
         var count: usize = 0;
         for (&inputs.all) |*item| {
             if (item.group != group) continue;
             const found = opened.variable(item.key);
             const is_list = item.kind == .list;
+            var value_buffer: [64]u8 = undefined;
             rows[count] = .{
-                .{ .checked = if (found) |v| v.free else false },
+                .{ .checked = if (found) |v| v.free else false, .enabled = !is_list },
                 .{ .text = if (item.unit.len > 0) widgets.format(&texts[count][0], "{s} ({s})", .{ item.label, item.unit }) else widgets.format(&texts[count][0], "{s}", .{item.label}) },
                 .{ .number = if (found) |v| v.lower else item.lower, .enabled = !is_list, .blank = is_list },
                 .{ .number = if (found) |v| v.upper else item.upper, .enabled = !is_list, .blank = is_list },
-                .{ .text = if (is_list) listText(&texts[count][1], item, found) else "" },
-                .{ .text = "—", .color = theme.colors.muted },
+                .{ .text = if (is_list) listText(&texts[count][1], found) else "", .enabled = is_list },
+                if (project) |opened_project| .{ .text = widgets.format(&texts[count][2], "{s}", .{link.valueText(&value_buffer, opened_project, item)}) } else .{ .text = "—", .color = theme.colors.muted },
             };
             row_slices[count] = &rows[count];
             row_inputs[count] = item;
@@ -348,6 +474,7 @@ pub const Panel = struct {
     }
 
     fn applyVariableEdit(panel: *Panel, opened: *Problem, item: *const inputs.Input, edit: table.Edit) void {
+        if (edit.value == .pressed) return panel.openList(opened, item);
         const variable = opened.variable(item.key) orelse panel.addVariable(opened, item) orelse return;
         switch (edit.value) {
             .check => |checked| variable.free = checked,
@@ -536,13 +663,13 @@ fn applyConstraintEdit(constraint: *problem_mod.Constraint, edit: table.Edit) vo
     }
 }
 /// o texto da coluna "lista": as opções marcadas, ou "todos"
-fn listText(buffer: []u8, item: *const inputs.Input, found: ?*problem_mod.Variable) [:0]const u8 {
-    const variable = found orelse return widgets.format(buffer, "todos", .{});
-    if (variable.options.len == 0) return widgets.format(buffer, "todos", .{});
+fn listText(buffer: []u8, found: ?*problem_mod.Variable) [:0]const u8 {
+    const variable = found orelse return widgets.format(buffer, "escolher… (nenhum: o do avião)", .{});
+    if (variable.options.len == 0) return widgets.format(buffer, "escolher… (nenhum: o do avião)", .{});
     var out: std.Io.Writer = .fixed(buffer[0 .. buffer.len - 1]);
-    out.print("{d}: ", .{variable.options.len}) catch {};
+    out.print("escolher… ({d}: ", .{variable.options.len}) catch {};
     for (variable.options, 0..) |option, i| out.print("{s}{s}", .{ if (i > 0) ", " else "", option }) catch break;
-    _ = item;
+    out.writeAll(")") catch {};
     const length = out.buffered().len;
     buffer[length] = 0;
     return buffer[0..length :0];
