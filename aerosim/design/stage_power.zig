@@ -918,6 +918,7 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
         .{ .key = "TW", .value = assembled.thrust_weight },            .{ .key = "mtow", .value = assembled.runway_mtow },
         .{ .key = "n_surf", .value = @floatFromInt(assembled.plane.surfaces.len) },
     };
+    for (values) |pair| context.rememberValue(pair.key, pair.value);
     for ((try registry.constraintList(project)).items) |item| {
         const constraint = registry.readConstraint(item);
         if (!constraint.active) continue;

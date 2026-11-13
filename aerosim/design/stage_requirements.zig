@@ -134,7 +134,12 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     for (constraints.items, constraint_rows) |item, *row| {
         const constraint = registry.readConstraint(item);
         const info = registry.quantity(constraint.key);
-        row.* = try memory.dupe(simulation.Cell, &.{ .{ .flag = constraint.active }, .{ .text = info.label }, .{ .text = constraint.op }, .{ .number = constraint.value }, .{ .text = info.unit }, .{ .text = "—" }, .{ .text = if (constraint.active) "—" else "desligada" } });
+        // o valor da última etapa que calculou a grandeza (a asa ou o avião montado) e se ele cumpre
+        const last = context.lastComputed(constraint.key);
+        var buffer: [32]u8 = undefined;
+        const computed: []const u8 = if (last) |value| try memory.dupe(u8, registry.format(&buffer, value)) else "—";
+        const situation: []const u8 = if (!constraint.active) "desligada" else if (last) |value| (if (constraint.holds(value)) "✔ cumpre" else "✖ não cumpre") else "—";
+        row.* = try memory.dupe(simulation.Cell, &.{ .{ .flag = constraint.active }, .{ .text = info.label }, .{ .text = constraint.op }, .{ .number = constraint.value }, .{ .text = info.unit }, .{ .text = computed }, .{ .text = situation } });
     }
     // as variáveis
     const variables = try registry.variableList(project);

@@ -722,6 +722,7 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     var checks: std.ArrayList(simulation.Check) = .empty;
     const group = "asa";
     const values = [_]struct { key: []const u8, value: f64 }{ .{ .key = "S", .value = result.area }, .{ .key = "b", .value = result.span }, .{ .key = "AR", .value = result.aspect_ratio }, .{ .key = "V_S", .value = result.stall_speed }, .{ .key = "c_root", .value = result.root_chord } };
+    for (values) |pair| context.rememberValue(pair.key, pair.value);
     for ((try registry.constraintList(project)).items) |item| {
         const constraint = registry.readConstraint(item);
         if (!constraint.active) continue;

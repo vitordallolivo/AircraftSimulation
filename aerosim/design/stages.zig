@@ -32,6 +32,9 @@ pub const Context = struct {
     io: std.Io,
     /// o perfil selecionado na etapa Perfis
     selected_airfoil: usize = 0,
+    /// o valor de cada grandeza das restrições (`registry.quantities`) na última etapa que a calculou (a asa ou o
+    /// avião montado); NaN: nenhuma ainda. A coluna "calculado" das restrições mostra
+    computed: [registry.quantities.len]f64 = [_]f64{std.math.nan(f64)} ** registry.quantities.len,
     /// os estados anteriores do projeto (o JSON inteiro), para o Ctrl+Z ("undo"); o último é o mais recente
     history: std.ArrayList([]u8) = .empty,
     /// o dispositivo de ponta (a linha da tabela de Projetar) que se está editando: a vista 3D aproxima dele
@@ -68,6 +71,21 @@ pub const Context = struct {
     }
 
     /// a linha clicada na tabela `grid`, se foi nela; a escolha é usada uma vez
+    /// guarda o valor que uma etapa calculou para a grandeza `key` das restrições
+    pub fn rememberValue(context: *Context, key: []const u8, value: f64) void {
+        for (registry.quantities, 0..) |item, i| if (std.mem.eql(u8, item.key, key)) {
+            context.computed[i] = value;
+        };
+    }
+
+    /// o último valor calculado da grandeza `key`, ou null
+    pub fn lastComputed(context: *const Context, key: []const u8) ?f64 {
+        for (registry.quantities, 0..) |item, i| if (std.mem.eql(u8, item.key, key)) {
+            return if (std.math.isFinite(context.computed[i])) context.computed[i] else null;
+        };
+        return null;
+    }
+
     pub fn takeSelection(context: *Context, grid: []const u8) ?usize {
         const row = context.selected_row orelse return null;
         if (!std.mem.eql(u8, context.selected_grid[0..context.selected_grid_len], grid)) return null;
