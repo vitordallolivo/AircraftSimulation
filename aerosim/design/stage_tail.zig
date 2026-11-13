@@ -235,7 +235,7 @@ pub fn placedWings(project: *store.Project, memory: std.mem.Allocator) ![]const 
 
 // ------------------------------------------------------------------ o perfil da cauda
 fn tailAirfoil(context: *stages.Context, memory: std.mem.Allocator, name: []const u8, inverted: bool) !tail.TailAirfoil {
-    var airfoil: model.Airfoil = if (airfoils.lookup(context, name)) |entry| try airfoils.airfoilOf(memory, entry) else .{ .name = name };
+    var airfoil: model.Airfoil = if (airfoils.lookup(context, name)) |entry| try airfoils.stageAirfoil(context, memory, entry) else .{ .name = name };
     if (airfoils.lookup(context, name) == null) {
         var digits: usize = 0;
         for (name) |char| digits += @intFromBool(std.ascii.isDigit(char));

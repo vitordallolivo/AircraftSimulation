@@ -320,11 +320,46 @@ pub fn lookup(context: *stages.Context, name: []const u8) ?Value {
 }
 
 /// o perfil de uma seção da asa para a linha sustentadora: os números do perfil ajustados na polar do modelo
-pub fn sectionOf(memory: std.mem.Allocator, entry: ?Value) !core.wing_line.SectionAirfoil {
-    const airfoil = if (entry) |known| try airfoilOf(memory, known) else Airfoil{};
+pub fn sectionOf(context: *stages.Context, memory: std.mem.Allocator, entry: ?Value) !core.wing_line.SectionAirfoil {
+    const airfoil = if (entry) |known| try stageAirfoil(context, memory, known) else Airfoil{};
     const numbers = aircraft_model.params.props2d(airfoil) catch [5]f64{ airfoil.cl_alpha, 0, airfoil.cl_max, airfoil.cd0, 0 };
     const symmetric = @abs(numbers[1]) < 1e-9 and @abs(numbers[4]) < 1e-9;
     return core.wing_line.modelSection(.{ .cl_alpha = numbers[0], .alpha0 = numbers[1], .cl_max = numbers[2], .cd0 = numbers[3], .cm_ac = numbers[4] }, symmetric);
+}
+
+/// abaixo deste α de sustentação nula pela teoria do perfil fino (graus) o perfil conta como simétrico; equivale à
+/// curvatura máxima de 0,3 % da corda, o limiar de `symmetric` em `airfoils.py` (α_L0 ≈ −2 f/c em radianos no perfil
+/// fino com a curvatura no meio; Abbott e Von Doenhoff, Theory of Wing Sections, cap. 4, a conferir no PDF)
+const symmetric_alpha0 = 0.35;
+
+/// o perfil que as etapas usam: com a polar de arquivo escolhida ("polar por: arquivo"), os números ajustados na
+/// polar no Reynolds de cruzeiro do projeto (`fitted(af, polar(entry, Re))` de `airfoils.py`); senão, o do modelo
+pub fn stageAirfoil(context: *stages.Context, memory: std.mem.Allocator, entry: Value) !Airfoil {
+    var airfoil = try airfoilOf(memory, entry);
+    if (entry != .object or !std.mem.eql(u8, store.text(&entry.object, "source", "modelo"), "arquivo")) return airfoil;
+    const family = try familyOf(memory, entry);
+    if (family.polars.len == 0) return airfoil;
+    var alphas: [73]f64 = undefined;
+    for (&alphas, 0..) |*alpha, i| alpha.* = -16.0 + 0.5 * @as(f64, @floatFromInt(i));
+    const polar = try memory.create(core.section.Polar);
+    polar.* = .{};
+    _ = polarAt(family, .{ 0, 0, 0, 0, 0 }, reynolds(&context.project), &alphas, polar);
+    const thin = aircraft_model.params.props2d(.{ .name = airfoil.name, .coords = airfoil.coords, .inverted = airfoil.inverted }) catch null;
+    const symmetric = if (thin) |numbers| @abs(numbers[1]) < symmetric_alpha0 else false;
+    const numbers = core.section.fitted(.{ .cl_alpha = airfoil.cl_alpha, .alpha0 = airfoil.alpha0 orelse 0, .cl_max = airfoil.cl_max, .cd0 = airfoil.cd0, .cm_ac = airfoil.cm_ac orelse 0 }, core.section.metrics(polar), symmetric);
+    airfoil.cl_alpha = numbers.cl_alpha;
+    airfoil.alpha0 = numbers.alpha0;
+    airfoil.cl_max = numbers.cl_max;
+    airfoil.cd0 = numbers.cd0;
+    airfoil.cm_ac = numbers.cm_ac;
+    return airfoil;
+}
+
+/// de onde vem a polar do perfil com este nome ("modelo" ou "arquivo")
+pub fn sourceOf(context: *stages.Context, name: []const u8) []const u8 {
+    const entry = lookup(context, name) orelse return "modelo";
+    if (entry != .object) return "modelo";
+    return store.text(&entry.object, "source", "modelo");
 }
 
 /// o perfil de um candidato, como o modelo do avião lê

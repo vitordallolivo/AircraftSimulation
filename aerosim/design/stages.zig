@@ -299,7 +299,7 @@ fn sprintAirfoil(memory: std.mem.Allocator, name: []const u8) simulation.Error!?
     defer lock.unlock();
     const current = if (shared) |*existing| existing else return null;
     const entry = airfoil_stage.lookup(current, name) orelse return null;
-    return airfoil_stage.airfoilOf(memory, entry) catch |err| switch (err) {
+    return airfoil_stage.stageAirfoil(current, memory, entry) catch |err| switch (err) {
         error.OutOfMemory => error.OutOfMemory,
         else => error.Failed,
     };

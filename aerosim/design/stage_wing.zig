@@ -1,7 +1,8 @@
 //! A etapa Projetar em Zig (`WingStage` de `stages.py`): a asa a partir do perfil escolhido, pela linha
 //! sustentadora do núcleo (`core.wing_line`, a mesma conta de `wing.analyze`), com a planta em trapézio ou em
 //! tabela de partições. As tabelas "Asas do avião" (quantas asas e onde cada uma fica) e "Dispositivos das asas"
-//! montam a configuração que a Empenagem usa. Os perfis usam a polar do modelo.
+//! montam a configuração que a Empenagem usa. Os perfis usam a polar escolhida na etapa Perfis (do modelo ou dos
+//! arquivos, no Reynolds de cruzeiro).
 const std = @import("std");
 const core = @import("aerosim");
 const aircraft_model = @import("aircraft_model");
@@ -188,7 +189,7 @@ pub fn analyze(context: *stages.Context, memory: std.mem.Allocator, params: *con
     const sections = try memory.alloc(wing_line.SectionAirfoil, shape.names.len);
     const pointers = try memory.alloc(*const wing_line.SectionAirfoil, shape.names.len);
     for (shape.names, sections, pointers) |name, *section, *pointer| {
-        section.* = try airfoils.sectionOf(memory, airfoils.lookup(context, name));
+        section.* = try airfoils.sectionOf(context, memory, airfoils.lookup(context, name));
         pointer.* = section;
     }
     const requirements = project.section("requirements");
@@ -210,11 +211,11 @@ pub fn surfaceOf(context: *stages.Context, memory: std.mem.Allocator, params: *c
     for (planform.sections[0..planform.count], sections) |station, *section| {
         var own: ?model.Airfoil = null;
         if (station.airfoil != 0) if (airfoils.lookup(context, shape.names[station.airfoil])) |entry| {
-            own = try airfoils.airfoilOf(memory, entry);
+            own = try airfoils.stageAirfoil(context, memory, entry);
         };
         section.* = .{ .y = station.y, .chord = station.chord, .x_offset = station.offset, .twist = station.twist, .airfoil = own };
     }
-    const root = if (airfoils.lookup(context, shape.names[0])) |entry| try airfoils.airfoilOf(memory, entry) else model.Airfoil{ .name = shape.names[0] };
+    const root = if (airfoils.lookup(context, shape.names[0])) |entry| try airfoils.stageAirfoil(context, memory, entry) else model.Airfoil{ .name = shape.names[0] };
     return .{ .name = name, .role = "wing", .sections = sections, .dihedral = store.number(params, "dihedral", 2), .incidence = incidence, .airfoil = root };
 }
 
@@ -705,7 +706,7 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     var summary: std.ArrayList([2][]const u8) = .empty;
     try summary.append(memory, .{ "b, S, AR", try text(memory, "{d:.3}, {d:.4}, {d:.2}", .{ result.span, result.area, result.aspect_ratio }) });
     try summary.append(memory, .{ "corda da raiz, da ponta, CMA (m)", try text(memory, "{d:.4}, {d:.4}, {d:.4}", .{ result.root_chord, result.tip_chord, result.mean_chord }) });
-    try summary.append(memory, .{ "perfil (polar por)", try text(memory, "{s} (modelo, Re {d:.0})", .{ shape.names[0], result.reynolds }) });
+    try summary.append(memory, .{ "perfil (polar por)", try text(memory, "{s} ({s}, Re {d:.0})", .{ shape.names[0], airfoils.sourceOf(context, shape.names[0]), result.reynolds }) });
     try summary.append(memory, .{ "C_Lα (1/rad), C_L0, α_L0 (°)", try text(memory, "{d:.4}, {d:.4}, {d:.3}", .{ result.lift_slope, result.lift_zero, result.alpha_zero }) });
     try summary.append(memory, .{ "C_L,max, α de estol (°)", try text(memory, "{d:.4}, {d:.2}", .{ result.lift_max, result.alpha_stall }) });
     try summary.append(memory, .{ "estol começa em (2y/b)", try text(memory, "{d:.3}", .{result.stall_fraction}) });
