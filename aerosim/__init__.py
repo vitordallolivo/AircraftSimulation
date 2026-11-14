@@ -1,8 +1,4 @@
-"""aerosim — simulador 6GDL de aeronaves em camadas:
-
-    GUI em Zig (aerosim/gui) -> Simulation Manager (aerosim.manager) -> Sim (aerosim.backend / core/ em Zig)
-    Aircraft Data (aerosim.data) alimenta o modelo (aerosim.model)
-
-Cada camada fala com a outra só por interfaces (aerosim.interfaces).
+"""aerosim em Python: só o adaptador dos métodos de fora do núcleo (lltdrek, AeroSandbox e AVL, que são bibliotecas
+em Python). O programa é a tela em Zig (aerosim/gui), que chama o núcleo (core/) direto; ela abre este adaptador
+(`python -m aerosim.bridge`) só quando um desses métodos é marcado.
 """
-__version__ = "0.2.0"

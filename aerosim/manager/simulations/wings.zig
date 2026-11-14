@@ -7,9 +7,10 @@
 //! A comparação dos métodos de polar do núcleo (faixas e as duas linhas sustentadoras) roda aqui nas superfícies
 //! escolhidas, e o avião completo (`aerodynamics.zig`) no avião aberto inteiro.
 //!
-//! O que vem de fora do núcleo roda pelo Python, só quando é pedido (`python`): as asas da sprint ou da tabela de
-//! Projetar, as chapas de ponta, o VLM do AeroSandbox como método de carga, os métodos de polar de fora (lltdrek,
-//! AeroSandbox, AVL). No site, o pacote desses métodos só é baixado quando um deles é marcado.
+//! Os métodos de fora do núcleo (o VLM do AeroSandbox como método de carga; lltdrek, AeroSandbox e AVL na comparação
+//! das polares) rodam pelo adaptador em Python (`simulation.External`, `aerosim/bridge.py`), só quando são
+//! marcados: a tela manda as asas escolhidas em JSON e recebe os coeficientes. Com um deles marcado, a rodada inteira
+//! vai para o `advance` (fora da linha da tela), porque o adaptador demora.
 const std = @import("std");
 const core = @import("aerosim");
 const aircraft_model = @import("aircraft_model");
@@ -28,13 +29,12 @@ pub const Wings = struct {
     pub const name: []const u8 = "wings";
     pub const title: [:0]const u8 = "Analisar";
     pub const area: []const u8 = "Aerodinâmica";
-    pub const description: []const u8 = "Aerodinâmica só das superfícies escolhidas (uma asa, biplano, tandem, canard), sem trimar, sem fuselagem e sem hélice, como no túnel: C_L em α de cada superfície e do conjunto, C_L máximo, onde o estol começa e a carga ao longo da envergadura. O avião completo (polares no CG, profundor, derrapagem, L/D) roda no núcleo; os métodos de fora (AeroSandbox, lltdrek, AVL) rodam pelo Python quando marcados.";
+    pub const description: []const u8 = "Aerodinâmica só das superfícies escolhidas (uma asa, biplano, tandem, canard), sem trimar, sem fuselagem e sem hélice, como no túnel: C_L em α de cada superfície e do conjunto, C_L máximo, onde o estol começa e a carga ao longo da envergadura. O avião completo (polares no CG, profundor, derrapagem, L/D) roda no núcleo; os métodos de fora (AeroSandbox, lltdrek, AVL) rodam quando marcados, se as bibliotecas deles estiverem instaladas.";
     pub const State = RunState;
     pub const specs = writeFields;
     pub const start = startRun;
     pub const advance = advanceRun;
     pub const result = writeResult;
-    pub const python = needsPython;
     pub const alerts = runAlerts;
     pub const standalone = fromSprint;
 };
@@ -177,14 +177,14 @@ pub const compare_titles = [_][]const u8{none} ++ method_titles;
 /// Python; o modelo interno vem marcado
 const Solver = struct { key: []const u8, label: []const u8, core: ?aerodynamics.Solver = null, on: bool = false };
 const solvers = [_]Solver{
-    .{ .key = "lltdrek", .label = "lltdrek (linha sustentadora não linear; pelo Python)" },
+    .{ .key = "lltdrek", .label = "lltdrek (linha sustentadora não linear; método de fora)" },
     .{ .key = "zig", .label = "modelo interno (faixas da simulação)", .core = .zig, .on = true },
     .{ .key = "zig_llt_gh", .label = "linha sustentadora do núcleo (Goates e Hunsaker)", .core = .zig_llt_gh },
     .{ .key = "zig_llt", .label = "linha sustentadora do núcleo (Phillips e Snyder)", .core = .zig_llt },
-    .{ .key = "asb_vlm", .label = "AeroSandbox VLM (pelo Python)" },
-    .{ .key = "asb_buildup", .label = "AeroSandbox AeroBuildup (pelo Python)" },
-    .{ .key = "asb_ll", .label = "AeroSandbox LiftingLine (pelo Python)" },
-    .{ .key = "avl", .label = "AVL (pelo Python)" },
+    .{ .key = "asb_vlm", .label = "AeroSandbox VLM (método de fora)" },
+    .{ .key = "asb_buildup", .label = "AeroSandbox AeroBuildup (método de fora)" },
+    .{ .key = "asb_ll", .label = "AeroSandbox LiftingLine (método de fora)" },
+    .{ .key = "avl", .label = "AVL (método de fora)" },
 };
 
 /// Reynolds crítico dos perfis de aeromodelo: abaixo dele a bolha laminar tende a não recolar (Lissaman,
@@ -234,6 +234,8 @@ const RunState = struct {
     summary: std.ArrayList([2][]const u8) = .empty,
     checks: std.ArrayList(simulation.Check) = .empty,
     figures: ?simulation.Figures = null,
+    /// a rodada com um método de fora: os valores ficam aqui e a conta toda sai no `advance`
+    deferred: ?simulation.Values = null,
 };
 
 /// as superfícies ligadas do avião (as que dá para escolher)
@@ -282,7 +284,7 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "alpha_load", .label = "α da carga", .default = .{ .number = 10 }, .minimum = -10, .maximum = 40, .unit = "°", .group = case },
         .{ .key = "endplate", .label = "chapas nas pontas (altura / corda da ponta)", .default = .{ .number = 0 }, .minimum = 0, .maximum = 5, .group = case, .help = "0: sem chapas; > 0: uma placa de ponta de altura = valor × corda da ponta em cada superfície horizontal marcada" },
         .{ .key = "xref", .label = "ponto dos momentos", .default = .{ .number = 25 }, .minimum = 0, .maximum = 100, .unit = "% CMA", .group = case },
-        .{ .key = "method", .label = "método", .kind = .choice, .default = .{ .text = LoadMethod.llt_nl.title() }, .choices = &method_titles, .group = loads, .help = "o VLM do AeroSandbox roda pelo Python" },
+        .{ .key = "method", .label = "método", .kind = .choice, .default = .{ .text = LoadMethod.llt_nl.title() }, .choices = &method_titles, .group = loads, .help = "o VLM do AeroSandbox é um método de fora: roda se a biblioteca dele estiver instalada" },
         .{ .key = "compare", .label = "comparar com", .kind = .choice, .default = .{ .text = none }, .choices = &compare_titles, .group = loads },
         .{ .key = "vlm_span", .label = "VLM: faixas por lado", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 200, .group = loads, .help = "refino do VLM; 0: o padrão (40)" },
         .{ .key = "vlm_chord", .label = "VLM: painéis na corda", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .group = loads, .help = "refino do VLM; 0: o padrão (6)" },
@@ -328,9 +330,8 @@ fn runAlerts(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, va
     return memory.dupe([]const u8, &.{warning});
 }
 
-/// a rodada precisa do Python: uma fonte de asas, um método ou uma comparação de fora do núcleo
-fn needsPython(values: simulation.Values) bool {
-
+/// a rodada usa um método de fora do núcleo (um método de carga ou uma polar do adaptador)
+fn needsExternal(values: simulation.Values) bool {
     for ([_][]const u8{ "method", "compare" }) |key| if (LoadMethod.fromTitle(values.text(key, none))) |method| {
         if (!method.inCore()) return true;
     };
@@ -486,6 +487,7 @@ pub fn configure(run: *simulation.Run, instance: *core.runner.Instance, plane: *
 /// a varredura de um método: uma chamada por superfície refinada sozinha, mais uma do avião sem refino para o que
 /// sobrou (`CoreLoadMethod.sweep` do Python); devolve também o c_l de cada painel no α da carga
 fn sweepMethod(run: *simulation.Run, state: *RunState, plane: simulation.Aircraft, owner_of_surface: []const i32, method: LoadMethod) !MethodRun {
+    if (!method.inCore()) return externalSweep(run, state, plane, method);
     const memory = run.memory();
     const owner_count = state.owners.len;
     const alpha_count = state.alphas.len;
@@ -588,6 +590,16 @@ fn sweepMethod(run: *simulation.Run, state: *RunState, plane: simulation.Aircraf
 }
 
 fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) simulation.Error!void {
+    if (needsExternal(values)) {
+        state.deferred = values;
+        run.say("esperando o método de fora", .{});
+        return;
+    }
+    try compute(run, state, values);
+}
+
+/// a rodada inteira (no começo, ou no `advance` quando um método de fora entra)
+fn compute(run: *simulation.Run, state: *RunState, values: simulation.Values) simulation.Error!void {
     const memory = run.memory();
     const source_plane = try sourceAircraft(memory, run.aircraft, values.text("source", open_prefix), values);
     const plane = try wingsOnly(memory, &source_plane, values);
@@ -637,6 +649,7 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
         if (values.toggle(try std.fmt.allocPrint(memory, "use_{s}", .{solver.key}), solver.on)) try chosen.append(memory, core_solver);
     };
     try compareSolvers(run, state, plane, values, chosen.items);
+    try externalPolars(run, state, plane, values);
     if (values.toggle("use_xflr5", false)) try xflr5Polar(run, state, values);
     if (values.toggle("stall_on", false)) try stallByStation(run, state, plane, values);
     if (groundMethod(values) != .off) try groundStudy(run, state, plane, values);
@@ -720,8 +733,282 @@ fn xflr5Polar(run: *simulation.Run, state: *RunState, values: simulation.Values)
     try figures.curve("pol_LD", .{ .name = label, .x = polar.lift, .y = efficiency, .color = color, .marker = "o" });
 }
 
-fn advanceRun(_: *simulation.Run, _: *RunState) simulation.Error!bool {
-    return true; // a varredura sai inteira no começo (frações de segundo)
+// ------------------------------------------------------------------ os métodos de fora (adaptador em Python)
+
+/// a resposta do adaptador, ou o motivo de ela não ter vindo
+pub const ExternalReply = union(enum) { ok: std.json.Value, failed: []const u8 };
+
+/// pede ao adaptador dos métodos de fora (`fields`: o JSON do pedido, com as chaves de fora); fora da tela não há
+/// adaptador, e o motivo volta como `failed`
+pub fn askExternal(run: *simulation.Run, request: []const u8) ExternalReply {
+    const external = run.external orelse return .{ .failed = "os métodos de fora só rodam pela tela" };
+    const inner = std.mem.trim(u8, request, " \n");
+    const reply = external.ask(run.memory(), inner[1 .. inner.len - 1]) catch |err| return .{ .failed = @errorName(err) };
+    if (reply != .object) return .{ .failed = "resposta fora do esperado" };
+    if (reply.object.get("ok")) |ok| if (ok == .bool and ok.bool) return .{ .ok = reply };
+    const message = reply.object.get("error") orelse return .{ .failed = "erro sem texto" };
+    return .{ .failed = if (message == .string) message.string else "erro sem texto" };
+}
+
+/// o avião em JSON, no formato do arquivo (o adaptador lê como lê um arquivo)
+pub fn aircraftJson(memory: std.mem.Allocator, plane: *const simulation.Aircraft) ![]const u8 {
+    return std.json.Stringify.valueAlloc(memory, plane.*, .{});
+}
+
+/// os números de uma lista do JSON (null vira NaN); lista vazia sem a chave
+pub fn numbers(memory: std.mem.Allocator, value: std.json.Value, key: []const u8) ![]f64 {
+    const list = if (value == .object) value.object.get(key) orelse return &.{} else return &.{};
+    if (list != .array) return &.{};
+    const out = try memory.alloc(f64, list.array.items.len);
+    for (list.array.items, out) |item, *number| number.* = numberOf(item);
+    return out;
+}
+
+/// um número do JSON (null e o resto viram NaN)
+pub fn numberOf(item: std.json.Value) f64 {
+    return switch (item) {
+        .float => |value| value,
+        .integer => |value| @floatFromInt(value),
+        .number_string => |value| std.fmt.parseFloat(f64, value) catch std.math.nan(f64),
+        else => std.math.nan(f64),
+    };
+}
+
+/// a carga de uma superfície por um método de fora, faixa a faixa ao longo da envergadura
+pub const ExternalSurface = struct {
+    name: []const u8,
+    role: []const u8,
+    vertical: bool,
+    position: []f64, // y (a altura na deriva), m
+    width: []f64, // m
+    chord: []f64, // m
+    alpha: []f64, // α efetivo, °
+    cl: []f64,
+    lift_per_span: []f64, // N/m
+    lift: f64, // N
+    drag: f64, // N
+};
+
+/// o ponto de voo de um método de carga de fora
+pub const ExternalPoint = struct { airspeed: f64, alpha: f64, elevator: f64 = 0, density: f64, span_strips: f64 = 0, chord_panels: f64 = 0 };
+
+/// a carga ao longo de cada superfície pelo método de fora (o VLM do AeroSandbox), num ponto
+pub fn externalLoads(run: *simulation.Run, plane: *const simulation.Aircraft, method: LoadMethod, point: ExternalPoint) ![]ExternalSurface {
+    const memory = run.memory();
+    var request: std.Io.Writer.Allocating = .init(memory);
+    var json: std.json.Stringify = .{ .writer = &request.writer };
+    try json.write(.{ .op = "loads", .method = @tagName(method), .aircraft = plane.*, .V = point.airspeed, .alpha = point.alpha, .de = point.elevator, .rho = point.density, .n_span = point.span_strips, .n_chord = point.chord_panels });
+    const reply = switch (askExternal(run, request.written())) {
+        .ok => |value| value,
+        .failed => |why| {
+            run.fail("{s}: {s}", .{ method.title(), why });
+            return error.Failed;
+        },
+    };
+    const list = reply.object.get("surfaces") orelse return error.Failed;
+    if (list != .array) return error.Failed;
+    var out: std.ArrayList(ExternalSurface) = .empty;
+    for (list.array.items) |item| {
+        if (item != .object) continue;
+        const text_of = struct {
+            fn get(object: std.json.ObjectMap, key: []const u8) []const u8 {
+                const value = object.get(key) orelse return "";
+                return if (value == .string) value.string else "";
+            }
+        }.get;
+        const vertical = if (item.object.get("vertical")) |value| value == .bool and value.bool else false;
+        try out.append(memory, .{
+            .name = text_of(item.object, "name"),
+            .role = text_of(item.object, "role"),
+            .vertical = vertical,
+            .position = try numbers(memory, item, "s"),
+            .width = try numbers(memory, item, "width"),
+            .chord = try numbers(memory, item, "chord"),
+            .alpha = try numbers(memory, item, "alpha"),
+            .cl = try numbers(memory, item, "cl"),
+            .lift_per_span = try numbers(memory, item, "L"),
+            .lift = numberOf(item.object.get("lift") orelse .null),
+            .drag = numberOf(item.object.get("drag") orelse .null),
+        });
+    }
+    return out.items;
+}
+
+/// a varredura em α de um método de carga de fora (o VLM do AeroSandbox), no formato da do núcleo: uma chamada ao
+/// adaptador por α, mais uma no α da carga
+fn externalSweep(run: *simulation.Run, state: *RunState, plane: simulation.Aircraft, method: LoadMethod) !MethodRun {
+    const memory = run.memory();
+    const owner_count = state.owners.len;
+    const alpha_count = state.alphas.len;
+    const lift = try memory.alloc(f64, alpha_count * owner_count);
+    @memset(lift, 0);
+    var panel_owner: std.ArrayList(i32) = .empty;
+    var panel_span: std.ArrayList(f64) = .empty;
+    var all_cl: std.ArrayList(f64) = .empty;
+    const point: ExternalPoint = .{ .airspeed = state.airspeed, .alpha = 0, .density = state.density };
+    for (state.alphas, 0..) |alpha, a| {
+        if (run.cancelled()) {
+            run.fail("parado", .{});
+            return error.Failed;
+        }
+        run.say("{s}: α = {d}°", .{ method.title(), alpha });
+        var at = point;
+        at.alpha = alpha;
+        const surfaces = try externalLoads(run, &plane, method, at);
+        var column: usize = 0;
+        for (surfaces) |surface| {
+            const owner = ownerIndex(state, surface) orelse continue;
+            lift[a * owner_count + owner] += surface.lift;
+            for (surface.cl, 0..) |cl, j| {
+                if (a == 0) {
+                    try panel_owner.append(memory, @intCast(owner));
+                    try panel_span.append(memory, surface.position[j]);
+                }
+                column += 1;
+                try all_cl.append(memory, cl);
+            }
+            if (a == 0) {
+                var area: f64 = 0;
+                var width: f64 = 0;
+                for (surface.width, surface.chord) |strip_width, chord| {
+                    area += strip_width * chord;
+                    width += strip_width;
+                }
+                if (!(state.owner_area[owner] > 0)) {
+                    state.owner_area[owner] = area;
+                    state.owner_chord[owner] = if (width > 0) area / width else 0;
+                }
+            }
+        }
+        if (column != panel_owner.items.len) {
+            run.fail("{s}: o número de faixas mudou de um α para outro", .{method.title()});
+            return error.Failed;
+        }
+    }
+    // a carga no α da carga
+    var at_load = point;
+    at_load.alpha = state.alpha_load;
+    var load_owner: std.ArrayList(i32) = .empty;
+    var load_span: std.ArrayList(f64) = .empty;
+    var load_cl: std.ArrayList(f64) = .empty;
+    var load_chord: std.ArrayList(f64) = .empty;
+    for (try externalLoads(run, &plane, method, at_load)) |surface| {
+        const owner = ownerIndex(state, surface) orelse continue;
+        for (surface.position, surface.cl, surface.chord) |position, cl, chord| {
+            try load_owner.append(memory, @intCast(owner));
+            try load_span.append(memory, position);
+            try load_cl.append(memory, cl);
+            try load_chord.append(memory, chord);
+        }
+    }
+    const total_cl = try memory.alloc(f64, alpha_count);
+    const owner_cl = try memory.alloc(f64, alpha_count * owner_count);
+    const dynamic_pressure = 0.5 * state.density * state.airspeed * state.airspeed;
+    const summary = sweep.summarize(lift, state.owner_area, dynamic_pressure, all_cl.items, panel_owner.items, panel_span.items, total_cl, owner_cl) catch {
+        run.fail("o resumo da varredura não saiu", .{});
+        return error.Failed;
+    };
+    return .{ .method = method, .total_cl = total_cl, .owner_cl = owner_cl, .summary = summary, .panel_owner = panel_owner.items, .load_owner = load_owner.items, .load_span = load_span.items, .load_cl = load_cl.items, .load_chord = load_chord.items };
+}
+
+/// o dono (superfície horizontal escolhida) de uma superfície da resposta; nulo nas verticais e nos dispositivos
+fn ownerIndex(state: *const RunState, surface: ExternalSurface) ?usize {
+    if (surface.vertical or std.mem.eql(u8, surface.role, "device")) return null;
+    for (state.owners, 0..) |owner, k| if (std.mem.eql(u8, owner, surface.name)) return k;
+    return null;
+}
+
+/// as polares dos métodos de fora marcados (lltdrek, AeroSandbox, AVL), pelo adaptador, nas mesmas curvas e na mesma
+/// referência das do núcleo (`compare_solvers` do Python)
+fn externalPolars(run: *simulation.Run, state: *RunState, plane: simulation.Aircraft, values: simulation.Values) !void {
+    const memory = run.memory();
+    var marked: std.ArrayList(Solver) = .empty;
+    for (solvers) |solver| {
+        if (solver.core != null) continue;
+        if (values.toggle(try std.fmt.allocPrint(memory, "use_{s}", .{solver.key}), solver.on)) try marked.append(memory, solver);
+    }
+    if (marked.items.len == 0) return;
+    if (params_mod.firstSurface(&plane, "wing") == null) {
+        try state.checks.append(memory, .{ .status = .info, .item = "métodos de fora", .value = "sem asa principal", .why = "os métodos tomam a referência (S, c, b) da asa principal: marque uma superfície do tipo asa", .group = "métodos" });
+        return;
+    }
+    const geometry = aerodynamics.reference(&plane);
+    const reference_x = geometry.mac_le - values.number("xref", 25) / 100 * geometry.chord;
+    var total_area: f64 = 0;
+    for (state.owner_area) |area| total_area += area;
+    const scale = if (total_area > 0) geometry.area / total_area else 1;
+    const figures = state.figures.?;
+    for (marked.items, 0..) |solver, k| {
+        if (run.cancelled()) return;
+        const label = externalLabel(solver);
+        run.say("rodando {s}", .{label});
+        var request: std.Io.Writer.Allocating = .init(memory);
+        var json: std.json.Stringify = .{ .writer = &request.writer };
+        try json.write(.{ .op = "polar", .solver = solver.key, .aircraft = plane, .V = state.airspeed, .alphas = state.alphas, .alpha_d = state.alpha_load, .ref = [3]f64{ reference_x, 0, 0 }, .section = values.text("section", "modelo"), .n_span = values.number("n_span", 12), .n_chord = values.number("n_chord", 0) });
+        const reply = switch (askExternal(run, request.written())) {
+            .ok => |value| value,
+            .failed => |why| {
+                try state.checks.append(memory, .{ .status = .atencao, .item = try text(memory, "{s} falhou", .{label}), .value = why, .group = "métodos" });
+                continue;
+            },
+        };
+        const alphas = try numbers(memory, reply, "alpha");
+        var polar: aerodynamics.Polar = .{ .solver = .zig, .alphas = alphas, .lift = try numbers(memory, reply, "CL"), .drag = try numbers(memory, reply, "CD"), .moment = try numbers(memory, reply, "Cm"), .induced = try numbers(memory, reply, "CDi"), .derivatives = .initFill(std.math.nan(f64)) };
+        if (polar.lift.len != alphas.len or polar.drag.len != alphas.len or polar.moment.len != alphas.len or polar.induced.len != alphas.len) {
+            try state.checks.append(memory, .{ .status = .atencao, .item = try text(memory, "{s} falhou", .{label}), .value = "colunas de tamanhos diferentes", .group = "métodos" });
+            continue;
+        }
+        if (reply.object.get("derivs")) |derivatives| if (derivatives == .object) {
+            for (std.enums.values(aerodynamics.Derivative)) |derivative| {
+                if (derivatives.object.get(@tagName(derivative))) |value| polar.derivatives.set(derivative, numberOf(value));
+            }
+        };
+        const found = try aerodynamics.metrics(memory, polar, geometry, reference_x);
+        if (found.lift_max) |value| try state.summary.append(memory, .{ try text(memory, "[{s}] C_Lmax, α dele (°)", .{label}), try text(memory, "{d:.4}, {d}", .{ value, found.alpha_stall.? }) });
+        if (found.lift_slope) |value| try state.summary.append(memory, .{ try text(memory, "[{s}] C_Lα (1/rad)", .{label}), try text(memory, "{d:.4}", .{value}) });
+        if (reply.object.get("elapsed")) |value| try state.summary.append(memory, .{ try text(memory, "[{s}] tempo (s)", .{label}), try text(memory, "{d:.2}", .{numberOf(value)}) });
+        for ([_][]f64{ polar.lift, polar.drag, polar.induced, polar.moment }) |column| for (column) |*value| {
+            value.* *= scale;
+        };
+        const efficiency = try polar.efficiency(memory);
+        const color = surface_colors[(k + 4) % surface_colors.len];
+        try figures.curve("pol_CL", .{ .name = label, .x = alphas, .y = polar.lift, .color = color });
+        try figures.curve("pol_CD", .{ .name = label, .x = polar.drag, .y = polar.lift, .color = color });
+        try figures.curve("pol_Cm", .{ .name = label, .x = alphas, .y = polar.moment, .color = color });
+        try figures.curve("pol_LD", .{ .name = label, .x = polar.lift, .y = efficiency, .color = color });
+        try figures.curve("CL", .{ .name = label, .x = alphas, .y = polar.lift, .color = color, .dashed = true });
+        if (state.owners.len == 1) try figures.curve("CL_surf", .{ .name = try text(memory, "{s} · {s}", .{ state.owners[0], label }), .x = alphas, .y = polar.lift, .color = color, .dashed = true });
+        // o lltdrek dá também a carga da asa principal no α das derivadas
+        if (reply.object.get("span")) |span| if (span == .object) {
+            const ys = try numbers(memory, span, "y");
+            const cls = try numbers(memory, span, "cl");
+            const ccl = try numbers(memory, span, "ccl");
+            if (ys.len > 0 and ys.len == cls.len and ys.len == ccl.len) {
+                const wing_name = if (span.object.get("wing")) |value| (if (value == .string) value.string else "") else "";
+                const reference_chord = numberOf(span.object.get("chord") orelse .null);
+                const dynamic_pressure = 0.5 * state.density * state.airspeed * state.airspeed;
+                const lift_per_span = try memory.alloc(f64, ys.len);
+                for (lift_per_span, ccl) |*value, part| value.* = dynamic_pressure * part * reference_chord;
+                try figures.curve("cl_span", .{ .name = try text(memory, "{s} · {s}", .{ wing_name, label }), .x = ys, .y = cls, .color = color, .dashed = true });
+                try figures.curve("L_span", .{ .name = try text(memory, "{s} · {s}", .{ wing_name, label }), .x = ys, .y = lift_per_span, .color = color, .dashed = true });
+            }
+        };
+    }
+}
+
+/// o nome curto do método de fora nas curvas (o rótulo sem o "(...)")
+fn externalLabel(solver: Solver) []const u8 {
+    const cut = std.mem.indexOf(u8, solver.label, " (") orelse solver.label.len;
+    return solver.label[0..cut];
+}
+
+fn advanceRun(run: *simulation.Run, state: *RunState) simulation.Error!bool {
+    // a varredura do núcleo sai inteira no começo (frações de segundo); com um método de fora, toda ela sai aqui
+    if (state.deferred) |values| {
+        state.deferred = null;
+        try compute(run, state, values);
+    }
+    return true;
 }
 
 fn text(memory: std.mem.Allocator, comptime format: []const u8, args: anytype) ![]const u8 {
@@ -1066,7 +1353,7 @@ test "Analisar: o C_L máximo da asa do Convencional bate com o Python" {
     var loaded = try model.parse(gpa, bytes, &diagnosis);
     defer loaded.deinit();
     const registered = simulation.register(Wings);
-    try testing.expect(!needsPython(.{}));
+    try testing.expect(!needsExternal(.{}));
     for (expected) |case| {
         var run = simulation.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
         defer run.arena.deinit();

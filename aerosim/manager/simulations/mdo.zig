@@ -456,7 +456,7 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
     try summary.append(memory, .{ "V_S, V máx., V de L/D máx. (m/s)", try text(memory, "{d:.2}, {d:.2}, {d:.2}", .{ quantity(best, .stall_speed), quantity(best, .max_speed), quantity(best, .best_glide_speed) }) });
     try summary.append(memory, .{ "corrida (m), subida (m/s), T/W, L/D máx.", try text(memory, "{d:.1}, {d:.2}, {d:.3}, {d:.2}", .{ quantity(best, .takeoff_run), quantity(best, .climb_rate), quantity(best, .thrust_to_weight), quantity(best, .max_lift_to_drag) }) });
     try summary.append(memory, .{ "polar: C_D0, K, C_L,max, C_L na corrida", try text(memory, "{d:.4}, {d:.4}, {d:.3}, {d:.3}", .{ best.CD0, best.K, best.CLmax, best.CLg }) });
-    try summary.append(memory, .{ "perfis", "os números 2D do próprio perfil (modelo); o NeuralFoil no Re da asa fica no Python" });
+    try summary.append(memory, .{ "perfis", "os números 2D do próprio perfil (modelo); o NeuralFoil no Re da asa não entra aqui" });
     if (state.skipped.len > 0) try summary.append(memory, .{ "fora da busca", state.skipped });
 
     // as restrições no melhor

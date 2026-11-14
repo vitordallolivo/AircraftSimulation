@@ -1,5 +1,5 @@
-//! Os modelos padrão do avião (`TEMPLATES` de `templates.py`), como o texto .json que o Python grava. Gerado por
-//! `python tools/templates_zig.py`; não editar à mão. A Montagem em Zig volta a um deles no "Restaurar".
+//! Os modelos padrão do avião, como o texto .json do arquivo. A Montagem volta a um deles no "Restaurar"; um modelo
+//! novo é mais uma entrada aqui.
 
 /// um modelo padrão: o nome que o menu mostra e o texto do arquivo
 pub const Template = struct { name: []const u8, json: []const u8 };

@@ -3,20 +3,19 @@ WebAssembly (AeroDrive, aerosim e aeroopt), mais o livro com todos os .md e o tr
 
     python tools/web_build.py                 # compila os três para o navegador e monta o site
     python tools/web_build.py --sem-compilar  # só monta, com o que já está em <programa>/zig-out/web
-    python tools/web_build.py --sem-python    # sem o Python do aerosim (a página abre só a Montagem)
+    python tools/web_build.py --sem-python    # sem os métodos de fora do núcleo (lltdrek, AeroSandbox, AVL)
     python -m http.server -d zig-out/site 8000   # e abrir http://localhost:8000
 
-O aerosim pede as contas aos managers em Python, e no navegador quem roda o Python é o Pyodide. Por isso o site leva
-também, para o aerosim: o Pyodide com o numpy e o scipy (pasta pyodide/), o pacote aerosim mais a
-pasta data (aerosim-python.zip), o núcleo como side module do emscripten (aerosim-core.so, que o mesmo `ctypes` do PC
-carrega) e a página que carrega tudo isso num iframe (aerosim-python.html). O Pyodide sai do release dele no GitHub e o side module é
-ligado pelo emsdk da mesma versão do emscripten do Pyodide; os dois são baixados uma vez para zig-out/cache-web (ou
-`--pyodide <pasta>` e `--emsdk <pasta>` com o que já se tem).
+Tudo o que o aerosim calcula roda no próprio programa em WebAssembly. Só os métodos de fora do núcleo (lltdrek,
+AeroSandbox, AVL) são bibliotecas em Python: para eles o site leva o Pyodide com o numpy (pasta pyodide/), o adaptador
+mais a pasta data (aerosim-python.zip) e a página que carrega isso num iframe (aerosim-python.html), que a tela só
+abre quando um desses métodos é pedido. O Pyodide sai do release dele no GitHub e é baixado uma vez para
+zig-out/cache-web (ou `--pyodide <pasta>` com o que já se tem).
 
 Os caminhos dentro do site são relativos (index.html -> aerodrive.html -> aerodrive.js/.wasm/.data; o mesmo para o
-aerosim e o aeroopt), então a mesma
-pasta serve na raiz de um servidor ou numa subpasta, como https://<usuario>.github.io/AircraftSimulation/.
-O GitHub Actions (.github/workflows/site.yml) roda este script e publica a pasta no GitHub Pages.
+aerosim e o aeroopt), então a mesma pasta serve na raiz de um servidor ou numa subpasta, como
+https://<usuario>.github.io/AircraftSimulation/. O GitHub Actions (.github/workflows/site.yml) roda este script e
+publica a pasta no GitHub Pages.
 """
 from __future__ import annotations
 
@@ -41,8 +40,7 @@ EXTENSIONS = (".html", ".js", ".wasm", ".data")
 PYODIDE_VERSION = "314.0.7"
 PYODIDE_URL = f"https://github.com/pyodide/pyodide/releases/download/{PYODIDE_VERSION}/pyodide-{PYODIDE_VERSION}.tar.bz2"
 PYODIDE_FILES = ("pyodide.mjs", "pyodide.asm.mjs", "pyodide.asm.wasm", "python_stdlib.zip", "pyodide-lock.json")
-PYODIDE_PACKAGES = ("numpy", "scipy")      # os que o aerosim importa sem os opcionais (lltdrek, ASB, AVL)
-EMSCRIPTEN_VERSION = "5.0.3"               # a do Pyodide acima (pyodide-lock.json -> info.platform)
+PYODIDE_PACKAGES = ("numpy",)             # o que o adaptador dos métodos de fora importa sem os métodos
 CACHE = os.path.join(ROOT, "zig-out", "cache-web")
 
 
@@ -117,35 +115,8 @@ def pyodide_folder(given: str | None) -> str:
     return folder
 
 
-def emsdk_folder(given: str | None) -> str:
-    """o emsdk com o emscripten do Pyodide: o dado, ou clonado e instalado uma vez no cache"""
-    folder = given or os.path.join(CACHE, "emsdk")
-    if not os.path.isdir(folder):
-        subprocess.run(["git", "clone", "-q", "https://github.com/emscripten-core/emsdk", folder], check=True)
-    if not os.path.isfile(os.path.join(folder, "upstream", "emscripten", "emcc")):
-        for step in ("install", "activate"):
-            subprocess.run([os.path.join(folder, "emsdk"), step, EMSCRIPTEN_VERSION], cwd=folder, check=True)
-    return folder
-
-
-def build_core(emsdk: str) -> str:
-    """o núcleo para o Pyodide: a biblioteca estática do Zig (wasm32-emscripten, relocável) ligada pelo emcc como
-    side module. Devolve o caminho do .so"""
-    core = os.path.join(ROOT, "core")
-    prefix = os.path.join(core, "zig-out", "web")
-    subprocess.run([sys.executable, "-m", "ziglang", "build", "-Dtarget=wasm32-emscripten", "--release=fast",
-                    "--prefix", prefix], cwd=core, check=True)
-    output = os.path.join(prefix, "aerosim-core.so")
-    link = (f'source "{os.path.join(emsdk, "emsdk_env.sh")}" >/dev/null 2>&1 && emcc -O2 -sSIDE_MODULE=1 '
-            f'-sWASM_BIGINT -Wl,--whole-archive "{os.path.join(prefix, "lib", "libaerosim.a")}" '
-            f'-Wl,--no-whole-archive -o "{output}"')
-    print("ligando o núcleo como side module (emcc", EMSCRIPTEN_VERSION + ")")
-    subprocess.run(["bash", "-c", link], check=True)
-    return output
-
-
 def python_archive(target: str) -> None:
-    """o pacote aerosim e a pasta data, como estão no git, num zip para o Pyodide abrir"""
+    """o adaptador dos métodos de fora (os .py do aerosim) e a pasta data, como estão no git, num zip para o Pyodide"""
     tracked = subprocess.run(["git", "ls-files", "aerosim", "data"], cwd=ROOT, check=True, capture_output=True,
                              text=True).stdout.split()
     files = [name for name in tracked if name.startswith("data/")
@@ -155,12 +126,10 @@ def python_archive(target: str) -> None:
             archive.write(os.path.join(ROOT, name), name)
 
 
-def add_python(pyodide: str, core: str) -> None:
-    """põe no site o que o aerosim precisa para pedir as contas ao Python (ver o começo deste arquivo)"""
+def add_python(pyodide: str) -> None:
+    """põe no site o adaptador dos métodos de fora (ver o começo deste arquivo); a página só o baixa quando um
+    desses métodos é pedido"""
     lock = json.load(open(os.path.join(pyodide, "pyodide-lock.json"), encoding="utf-8"))
-    platform = lock["info"]["platform"]
-    if platform != "emscripten_" + EMSCRIPTEN_VERSION.replace(".", "_"):
-        sys.exit(f"o Pyodide é de {platform}, e o núcleo é ligado com o emscripten {EMSCRIPTEN_VERSION}")
     target = os.path.join(SITE, "pyodide")
     os.makedirs(target)
     names = list(PYODIDE_FILES)
@@ -172,7 +141,6 @@ def add_python(pyodide: str, core: str) -> None:
             pending.extend(package["depends"])
     for name in names:
         shutil.copy2(os.path.join(pyodide, name), os.path.join(target, name))
-    shutil.copy2(core, os.path.join(SITE, "aerosim-core.so"))
     python_archive(os.path.join(SITE, "aerosim-python.zip"))
     shutil.copy2(os.path.join(ROOT, "aerosim", "gui", "web", "python.html"), os.path.join(SITE, "aerosim-python.html"))
 
@@ -180,17 +148,15 @@ def add_python(pyodide: str, core: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sem-compilar", action="store_true", help="usa os programas já compilados")
-    parser.add_argument("--sem-python", action="store_true", help="sem o Python do aerosim (só a Montagem)")
+    parser.add_argument("--sem-python", action="store_true", help="sem os métodos de fora do núcleo")
     parser.add_argument("--pyodide", help="pasta do Pyodide já extraída (a pyodide/ do release)")
-    parser.add_argument("--emsdk", help=f"pasta de um emsdk com o emscripten {EMSCRIPTEN_VERSION} instalado")
     options = parser.parse_args()
     if not options.sem_compilar:
         for folder, _ in PROGRAMS:
             build(folder)
-    core = None if options.sem_python else build_core(emsdk_folder(options.emsdk))
     assemble()
-    if core:
-        add_python(pyodide_folder(options.pyodide), core)
+    if not options.sem_python:
+        add_python(pyodide_folder(options.pyodide))
     report()
 
 

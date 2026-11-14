@@ -480,7 +480,7 @@ fn tipStudy(run: *simulation.Run, values: simulation.Values, geometry: Reference
     try output.figures.curve("ac_tip_d", .{ .name = "extensão de ponta (mesmo momento na raiz)", .x = heights, .y = same_moment, .color = "#7f7f7f", .dashed = true });
     try output.figures.curve("ac_tip_d", .{ .name = "sem dispositivo", .x = try memory.dupe(f64, &.{ heights[0], heights[count - 1] }), .y = try memory.dupe(f64, &.{ 0, 0 }), .color = "#000000", .dashed = true });
     if (has_devices) {
-        try output.checks.append(memory, .{ .status = .info, .item = "os dispositivos da asa compensam?", .value = "não avaliado aqui", .why = "a avaliação dos dispositivos que o avião já tem (o traço deles no plano de Trefftz) ainda é a do Python; o estudo genérico vale", .group = devices_group });
+        try output.checks.append(memory, .{ .status = .info, .item = "os dispositivos da asa compensam?", .value = "não avaliado aqui", .why = "a avaliação dos dispositivos que o avião já tem (o traço deles no plano de Trefftz) ainda não é feita aqui; o estudo genérico vale", .group = devices_group });
         return;
     }
     var best: usize = 0;

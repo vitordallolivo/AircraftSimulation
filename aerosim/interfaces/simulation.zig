@@ -47,9 +47,6 @@ pub const Simulation = struct {
     advance: *const fn (run: *Run) Error!bool,
     /// escreve o resultado da rodada que acabou
     result: *const fn (run: *Run, out: *Writer) Error!void,
-    /// a rodada com estes valores precisa de um método de fora do núcleo (lltdrek, AeroSandbox, AVL): ela vai pela
-    /// ponte com o Python, que no site só baixa o pacote do método nessa hora; nulo: tudo no núcleo
-    python: ?*const fn (values: Values) bool = null,
     /// os avisos da rodada com estes valores (um método fora do que ele calcula bem, como a linha sustentadora numa
     /// asa curta): a tela mostra cada um por cima da janela e roda igual; nulo: nenhum aviso próprio
     alerts: ?*const fn (memory: std.mem.Allocator, aircraft: *const Aircraft, values: Values) Error![]const []const u8 = null,
@@ -172,7 +169,6 @@ pub fn register(comptime Analysis: type) Simulation {
         .description = Analysis.description,
         .specs = Analysis.specs,
         .edit = if (comptime core.interface.has(Analysis, "edit")) Analysis.edit else null,
-        .python = if (comptime core.interface.has(Analysis, "python")) Analysis.python else null,
         .alerts = if (comptime core.interface.has(Analysis, "alerts")) Analysis.alerts else null,
         .standalone = if (comptime core.interface.has(Analysis, "standalone")) Analysis.standalone else null,
         .start = wrapped.start,
@@ -328,6 +324,18 @@ pub const GridEdit = struct {
 };
 
 /// uma rodada: o avião lido, a memória dela, o progresso e o estado da análise
+/// o adaptador dos métodos de fora do núcleo (`aerosim/bridge.py`): manda um pedido em JSON (sem as chaves de fora,
+/// como `"op": "polar", ...`) e devolve a resposta lida na `memory`. Quem dá é a tela; o pedido espera a resposta
+pub const External = struct {
+    context: *anyopaque,
+    call: *const fn (context: *anyopaque, memory: std.mem.Allocator, request: []const u8) anyerror!std.json.Value,
+
+    /// faz o pedido; o erro do adaptador fica no texto de `failure`
+    pub fn ask(external: External, memory: std.mem.Allocator, request: []const u8) anyerror!std.json.Value {
+        return external.call(external.context, memory, request);
+    }
+};
+
 pub const Run = struct {
     arena: std.heap.ArenaAllocator,
     aircraft: *const Aircraft,
@@ -342,6 +350,9 @@ pub const Run = struct {
     partial: bool = false,
     /// para ler arquivos que o formulário aponta (a polar do XFLR5); null fora da tela (nos testes, o do teste)
     io: ?std.Io = null,
+    /// os métodos de fora do núcleo (lltdrek, AeroSandbox, AVL), pelo adaptador em Python; null: sem eles (a rodada
+    /// diz que o método não está disponível e segue com o resto)
+    external: ?External = null,
 
     pub fn memory(run: *Run) std.mem.Allocator {
         return run.arena.allocator();

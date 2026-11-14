@@ -4,8 +4,8 @@
 //! núcleo (as faixas da simulação ou a linha sustentadora, `core/src/loads/llt.zig`) calcula nesse mesmo ponto, com
 //! cada superfície refinada sozinha, como no Python (`aerosim/aero/span_loads.py`).
 //!
-//! O VLM do AeroSandbox roda pelo Python, só quando é escolhido (`python`); no site, o pacote só é baixado nessa hora.
-//! A vista 3D da carga ainda é só do Python.
+//! O VLM do AeroSandbox é um método de fora: roda pelo adaptador em Python (`wings.externalLoads`), só quando é
+//! escolhido, no `advance` (fora da linha da tela), no mesmo ponto de voo; sem esteira de hélice e sem a vista 3D.
 const std = @import("std");
 const core = @import("aerosim");
 const aircraft_model = @import("aircraft_model");
@@ -27,13 +27,12 @@ pub const Loads = struct {
     pub const name: []const u8 = "loads";
     pub const title: [:0]const u8 = "Cargas";
     pub const area: []const u8 = "Cargas";
-    pub const description: []const u8 = "Carga aerodinâmica ao longo de cada superfície num ponto de voo (V, n, α), com e sem a hélice do conjunto motopropulsor do avião: sustentação por metro, α e velocidade locais. O VLM do AeroSandbox roda pelo Python quando escolhido.";
+    pub const description: []const u8 = "Carga aerodinâmica ao longo de cada superfície num ponto de voo (V, n, α), com e sem a hélice do conjunto motopropulsor do avião: sustentação por metro, α e velocidade locais. O VLM do AeroSandbox roda quando escolhido, se a biblioteca dele estiver instalada.";
     pub const State = RunState;
     pub const specs = writeFields;
     pub const start = startRun;
     pub const advance = advanceRun;
     pub const result = writeResult;
-    pub const python = needsPython;
     pub const alerts = runAlerts;
 };
 
@@ -98,6 +97,7 @@ const SurfaceLoad = struct {
 const Case = struct {
     label: []const u8,
     propellers: bool,
+    method: LoadMethod = .llt,
     surfaces: []SurfaceLoad,
 };
 
@@ -116,6 +116,9 @@ const RunState = struct {
     cases: []Case = &.{},
     methods: []const LoadMethod = &.{},
     slipstream: bool = false,
+    /// as rodadas de um método de fora, feitas no `advance` (índices em `cases`)
+    pending: []const usize = &.{},
+    pending_done: usize = 0,
 };
 
 fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, values: simulation.Values) simulation.Error!void {
@@ -126,7 +129,7 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "alpha_mode", .label = "α", .kind = .choice, .default = .{ .text = alpha_choices[0] }, .choices = &alpha_choices },
         .{ .key = "alpha", .label = "α imposto", .default = .{ .number = 4 }, .minimum = -15, .maximum = 25, .unit = "°", .help = "só vale com α = imposto (profundor 0)" },
         .{ .key = "helice", .label = "Hélice", .kind = .choice, .default = .{ .text = propeller_choices[2] }, .choices = &propeller_choices, .help = "com: a esteira e a tração das hélices entram nas superfícies (modificador de esteira do avião); sem: as superfícies não veem a hélice" },
-        .{ .key = "method", .label = "Método", .kind = .choice, .default = .{ .text = wings.method_titles[0] }, .choices = &wings.method_titles, .help = "o VLM do AeroSandbox roda pelo Python" },
+        .{ .key = "method", .label = "Método", .kind = .choice, .default = .{ .text = wings.method_titles[0] }, .choices = &wings.method_titles, .help = "o VLM do AeroSandbox é um método de fora: roda se a biblioteca dele estiver instalada" },
         .{ .key = "compare", .label = "Comparar com", .kind = .choice, .default = .{ .text = wings.none }, .choices = &wings.compare_titles, .help = "outro método no mesmo ponto de voo (mesmo α e profundor), sobreposto nos gráficos" },
         .{ .key = "vlm_span", .label = "VLM: faixas por lado", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 200, .help = "refino do VLM nas cargas; 0: o padrão (40)" },
         .{ .key = "vlm_chord", .label = "VLM: painéis na corda", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .help = "refino do VLM nas cargas; 0: o padrão (6)" },
@@ -165,14 +168,6 @@ fn runAlerts(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, va
     if (methods.items.len == 0) return &.{};
     const warning = (try alert_rules.shortWing(memory, aircraft, methods.items[0], null)) orelse return &.{};
     return memory.dupe([]const u8, &.{warning});
-}
-
-/// a rodada precisa do Python: um método de fora do núcleo
-fn needsPython(values: simulation.Values) bool {
-    for ([_][]const u8{ "method", "compare" }) |key| if (LoadMethod.fromTitle(values.text(key, wings.none))) |method| {
-        if (!method.inCore()) return true;
-    };
-    return false;
 }
 
 /// a velocidade do ar no corpo a V, α (rad), sem derrapagem
@@ -321,17 +316,59 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     const both_list = [_]bool{ true, false };
     const options: []const bool = if (std.mem.eql(u8, choice, propeller_choices[0])) &with_list else if (std.mem.eql(u8, choice, propeller_choices[1])) &without_list else &both_list;
     var cases: std.ArrayList(Case) = .empty;
+    var pending: std.ArrayList(usize) = .empty;
     for (options) |propellers| for (methods.items) |method| {
         const label = try std.fmt.allocPrint(memory, "{s}{s}{s}", .{ if (propellers) "com hélice" else "sem hélice", if (methods.items.len > 1) " · " else "", if (methods.items.len > 1) method.title() else "" });
-        try cases.append(memory, .{ .label = label, .propellers = propellers, .surfaces = try strips(run, state, method, propellers and prop_count > 0) });
+        if (!method.inCore()) {
+            try pending.append(memory, cases.items.len);
+            try cases.append(memory, .{ .label = label, .propellers = propellers, .method = method, .surfaces = &.{} });
+            continue;
+        }
+        try cases.append(memory, .{ .label = label, .propellers = propellers, .method = method, .surfaces = try strips(run, state, method, propellers and prop_count > 0) });
         run.progress = 0.1 + 0.9 * @as(f32, @floatFromInt(cases.items.len)) / @as(f32, @floatFromInt(options.len * methods.items.len));
     };
     state.cases = cases.items;
-    run.progress = 1;
+    state.pending = pending.items;
+    run.progress = if (pending.items.len > 0) 0.5 else 1;
 }
 
-fn advanceRun(_: *simulation.Run, _: *RunState) simulation.Error!bool {
-    return true; // as cargas saem inteiras no começo
+/// as cargas do núcleo saem inteiras no começo; as de um método de fora, uma rodada por fatia
+fn advanceRun(run: *simulation.Run, state: *RunState) simulation.Error!bool {
+    if (state.pending_done >= state.pending.len) return true;
+    const case = &state.cases[state.pending[state.pending_done]];
+    run.say("{s}", .{case.method.title()});
+    case.surfaces = try externalStrips(run, state, case.method);
+    state.pending_done += 1;
+    run.progress = 0.5 + 0.5 * @as(f32, @floatFromInt(state.pending_done)) / @as(f32, @floatFromInt(state.pending.len));
+    return state.pending_done >= state.pending.len;
+}
+
+/// as cargas de um método de fora no ponto da rodada (sem a esteira das hélices e sem a vista 3D)
+fn externalStrips(run: *simulation.Run, state: *const RunState, method: LoadMethod) ![]SurfaceLoad {
+    const memory = run.memory();
+    const surfaces = try wings.externalLoads(run, run.aircraft, method, .{ .airspeed = state.airspeed, .alpha = state.alpha, .elevator = state.elevator, .density = run.aircraft.environment.rho });
+    var out: std.ArrayList(SurfaceLoad) = .empty;
+    for (surfaces) |surface| {
+        const role = Role.of(surface.role) orelse continue;
+        const order = try memory.alloc(usize, surface.position.len);
+        for (order, 0..) |*index, i| index.* = i;
+        std.mem.sort(usize, order, surface.position, struct {
+            fn less(position: []const f64, a: usize, b: usize) bool {
+                return position[a] < position[b];
+            }
+        }.less);
+        const position = try memory.alloc(f64, order.len);
+        var fields = std.EnumArray(Field, []f64).initUndefined();
+        for (std.enums.values(Field)) |field| fields.set(field, try memory.alloc(f64, order.len));
+        for (order, 0..) |i, j| {
+            position[j] = surface.position[i];
+            fields.getPtr(.L).*[j] = surface.lift_per_span[i];
+            fields.getPtr(.alpha_ef).*[j] = surface.alpha[i];
+            fields.getPtr(.V_rel).*[j] = 1; // o VLM não vê a esteira: a velocidade local é a do voo
+        }
+        try out.append(memory, .{ .name = surface.name, .role = role, .position = position, .fields = fields, .lift = surface.lift, .drag = surface.drag, .panels = &.{} });
+    }
+    return out.items;
 }
 
 fn text(memory: std.mem.Allocator, comptime format: []const u8, args: anytype) ![]const u8 {

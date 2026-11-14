@@ -19,7 +19,6 @@ from aerosim.interfaces.translator import IModelTranslator
 
 from .base import AeroSolverBase
 from .geometry import to_xz_up
-from .span_loads import StripLoadMethod, SurfaceLoad
 
 
 def _atmosphere(rho: float):
@@ -173,7 +172,7 @@ def _side_groups(s, side: int, d_deg, af) -> list[list]:
     return groups
 
 
-class AsbVLMLoads(StripLoadMethod):
+class AsbVLMLoads:
     """carga por faixa pelo VLM do AeroSandbox (malha de vórtices na corda e na envergadura; Sharpe, MIT). Cada lado
     de cada superfície vira um `asb.Wing` sem simetria (comandos assimétricos); os comandos entram como torção das
     faixas, porque o VLM do ASB não deflete superfícies. Sem esteira de hélice e sem efeito solo; arrasto só o
@@ -182,7 +181,6 @@ class AsbVLMLoads(StripLoadMethod):
     title = "VLM do AeroSandbox"
     source = "AeroSandbox: VLM (Sharpe, MIT; aerosim/aero/asb_solver.py)"
     supports = frozenset({"comandos", "corda"})
-    backend = None
     n_span, n_chord = 40, 6                     # refino padrão (faixas por lado, painéis na corda)
 
     def __init__(self, n_span: int = 0, n_chord: int = 0):
@@ -263,11 +261,9 @@ class AsbVLMLoads(StripLoadMethod):
             cl, cd = L / (q * c), D / (q * c)
             a2d = s.airfoil.cl_alpha or 2 * np.pi
             a0 = 0.0 if s.vertical else s.airfoil.zero_lift_angle()
-            n = len(sv)
-            out.append(SurfaceLoad(name=s.name, role=s.role, vertical=bool(s.vertical), s=sv, width=w, chord=c,
-                                   alpha=a0 + np.degrees(cl / a2d), V=np.full(n, point.V), q=np.full(n, q), cl=cl,
-                                   cd=cd, L=L, D=D, points=pts, force=Fs, velocity=np.tile(Vr, (n, 1)),
-                                   induced=np.zeros((n, 3)), span_dir=ey, chord_dir=ex, wash=np.zeros(n)))
+            out.append(dict(name=s.name, role=s.role, vertical=bool(s.vertical), s=sv, width=w, chord=c,
+                            alpha=a0 + np.degrees(cl / a2d), cl=cl, cd=cd, L=L, D=D,
+                            lift=float(np.sum(L * w)), drag=float(np.sum(D * w))))
         notes = ["carga pelo VLM do AeroSandbox: malha na corda e na envergadura; sem esteira de hélice e sem efeito "
                  "solo; comandos como torção das faixas; arrasto só o induzido; α efetivo = α0 + c_l/a do perfil"]
         return out, notes

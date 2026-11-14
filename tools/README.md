@@ -13,7 +13,6 @@ pasta que você passar), com exceção do `docs/MAP.md`, que entra no git.
 | `tracking.zig` | `zig build tracking`: gera a página do tracking (`tracking.html`) das tabelas do Quadro do `docs/TRACKING.md` (`-- --check` só confere as tabelas; `--feito`, `--estado` e `--issue` mudam o .md, o `--issue` é o que a Action `tracking.yml` usa) |
 | `web_build.py` | compila o AeroDrive, o aerosim e o aeroopt para o navegador e monta o site |
 | `package.py` | monta o programa instalável (AppImage do Linux, instalador do Windows) |
-| `templates_zig.py` | gera `aerosim/model/templates.zig`, os aviões de exemplo da Montagem |
 
 ```sh
 python tools/checks/run.py            # os checks rápidos

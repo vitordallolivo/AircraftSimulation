@@ -1,6 +1,7 @@
-//! A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
-//! filho e conversa por uma mensagem JSON por linha, na entrada e na saída padrão dele. Aqui só se manda o pedido e
-//! se lê a resposta; quem desenha é `page.zig`, e quem calcula é o Python (que chama o núcleo).
+//! A ponte com os métodos de fora do núcleo (lltdrek, AeroSandbox, AVL), que são bibliotecas em Python: a tela abre
+//! `python -m aerosim.bridge` (o adaptador) como processo filho e conversa por uma mensagem JSON por linha, na
+//! entrada e na saída padrão dele. Aqui só se manda o pedido e se lê a resposta; quem pede é a análise
+//! (`simulation.External`), e quem desenha é `page.zig`.
 //!
 //! Um processo serve todas as abas. Cada pedido leva um número (`id`), e uma thread lê as respostas e entrega cada
 //! uma a quem pediu (um `Waiter`), porque o Python responde fora de ordem: uma rodada longa não segura as outras abas.
@@ -10,7 +11,7 @@
 //! (`aerosim/gui/web/python.html`, num iframe), e cada pedido é uma chamada ao JavaScript que volta já com a resposta
 //! (`Module.pythonCall`). A tela fica parada enquanto a conta roda, como as outras contas longas no navegador.
 //! No pacote instalável (`tools/package.py`) o Python vem junto, na pasta `app/` ao lado do programa (`app/python`,
-//! com o pacote `aerosim` e o núcleo já compilado); a ponte usa esse antes do Python do sistema.
+//! com o adaptador e as bibliotecas); a ponte usa esse antes do Python do sistema.
 const std = @import("std");
 const builtin = @import("builtin");
 const ui_kit = @import("ui");
@@ -54,9 +55,6 @@ pub const Bridge = struct {
     waiting_lock: std.Io.Mutex = .init,
     waiting: [max_waiting]?*Waiter = [_]?*Waiter{null} ** max_waiting,
     closed: std.atomic.Value(bool) = .init(false),
-    opened_path: [1024]u8 = undefined, // o avião que o Python já tem aberto
-    opened_len: usize = 0,
-    open_lock: std.Io.Mutex = .init,
     browser_ready: bool = false, // no navegador: o Pyodide da página já respondeu que está pronto
 
     /// abre o Python na pasta do repositório (onde está `aerosim/bridge.py`), espera a linha de pronto e põe a
@@ -102,7 +100,6 @@ pub const Bridge = struct {
             };
             bridge.child = child;
             bridge.reader = child.stdout.?.readerStreaming(io, &bridge.read_buffer);
-            bridge.opened_len = 0;
             bridge.closed.store(false, .release);
             // a primeira linha é {"id": 0, "ok": true, "ready": true}
             var line: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
@@ -126,7 +123,6 @@ pub const Bridge = struct {
         bridge.write_lock.lockUncancelable(bridge.io);
         defer bridge.write_lock.unlock(bridge.io);
         child.kill(bridge.io);
-        bridge.opened_len = 0; // o avião aberto morreu junto
     }
 
     /// fecha a entrada do Python (ele sai sozinho) e espera o processo
@@ -186,19 +182,6 @@ pub const Bridge = struct {
         const text = if (reply.object.get("error")) |message| (if (message == .string) message.string else "erro sem texto") else "erro sem texto";
         _ = std.fmt.bufPrintZ(&waiter.failure, "{s}", .{text[0..@min(text.len, waiter.failure.len - 1)]}) catch {};
         return Error.BadReply;
-    }
-
-    /// faz o Python abrir o avião `path`, se ainda não é o que ele tem aberto (uma aba de cada vez)
-    pub fn openAircraft(bridge: *Bridge, waiter: *Waiter, path: []const u8) !void {
-        if (path.len == 0) return;
-        bridge.open_lock.lockUncancelable(bridge.io);
-        defer bridge.open_lock.unlock(bridge.io);
-        if (std.mem.eql(u8, bridge.opened_path[0..bridge.opened_len], path)) return;
-        const fields = try std.fmt.allocPrint(waiter.memory, "\"op\": \"open\", \"path\": {f}", .{std.json.fmt(path, .{})});
-        _ = try bridge.request(waiter, fields);
-        const length = @min(path.len, bridge.opened_path.len);
-        @memcpy(bridge.opened_path[0..length], path[0..length]);
-        bridge.opened_len = length;
     }
 
     /// pede para parar a rodada de `waiter` (a resposta dela chega como "cancelado")

@@ -752,30 +752,17 @@ pub const Page = struct {
         _ = page.job.start(work, .{page});
     }
 
-    /// roda na thread: abre o Python se preciso, abre o avião da Montagem se mudou, e faz o pedido
+    /// roda na thread: a etapa responde aqui (as análises rodam por `analysisStart`)
     fn work(page: *Page) void {
         const waiter = &page.waiter;
         waiter.memory = page.reply_arena.?.allocator();
         waiter.failure[0] = 0;
-        // a etapa que já está em Zig responde aqui, sem o Python
-        if (page.operation == .stage and design.stages.find(page.name) != null) {
-            page.reply = design.stages.handle(waiter.memory, clockIo(), page.request_text) catch |err| {
-                setText(&waiter.failure, "a etapa falhou: {s}", .{@errorName(err)});
-                return;
-            };
+        if (page.operation != .stage or design.stages.find(page.name) == null) {
+            setText(&waiter.failure, "esta página não tem conta", .{});
             return;
         }
-        const bridge = page.bridge;
-        bridge.start(page.process_io) catch |err| {
-            setText(&waiter.failure, "não abriu o Python ({s}): rode da pasta do repositório, com as dependências instaladas", .{@errorName(err)});
-            return;
-        };
-        bridge.openAircraft(waiter, page.aircraft_path[0..page.aircraft_len]) catch {
-            if (waiter.failure[0] == 0) setText(&waiter.failure, "o Python não abriu o avião", .{});
-            return;
-        };
-        page.reply = bridge.request(waiter, page.request_text) catch |err| {
-            if (waiter.failure[0] == 0) setText(&waiter.failure, "a ponte com o Python falhou: {s}", .{@errorName(err)});
+        page.reply = design.stages.handle(waiter.memory, clockIo(), page.request_text) catch |err| {
+            setText(&waiter.failure, "a etapa falhou: {s}", .{@errorName(err)});
             return;
         };
     }
@@ -822,19 +809,32 @@ pub const Page = struct {
         defer text.deinit();
         page.writeRequest(&text.writer, "run") catch return;
         setText(&page.message, "rodando...", .{});
-        if (page.analysis) |analysis| if (!page.viaPython(analysis, text.written())) return page.analysisStart(text.written());
+        if (page.analysis != null) return page.analysisStart(text.written());
         page.begin(.run, text.written());
     }
 
     // ------------------------------------------------------------------ análises em Zig (sem Python)
 
-    /// a análise em Zig manda esta rodada para o Python (um método de fora do núcleo marcado no formulário)
-    fn viaPython(page: *Page, analysis: *const manager.Simulation, request: []const u8) bool {
-        _ = page;
-        const asks = analysis.python orelse return false;
-        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-        defer arena.deinit();
-        return asks(manager.Values.fromRequest(arena.allocator(), request));
+    /// o adaptador dos métodos de fora do núcleo (lltdrek, AeroSandbox, AVL) para a rodada: abre o processo dele na
+    /// primeira vez e faz o pedido; um erro do adaptador volta como resposta `"ok": false` com o texto
+    fn externalCall(context: *anyopaque, memory: std.mem.Allocator, request: []const u8) anyerror!std.json.Value {
+        const page: *Page = @ptrCast(@alignCast(context));
+        page.bridge.start(page.process_io) catch |err| return switch (err) {
+            error.PythonLoading => failureReply(memory, "os métodos de fora ainda estão carregando: rode de novo em alguns segundos", .{}),
+            else => failureReply(memory, "os métodos de fora não abriram ({s}): as bibliotecas deles (lltdrek, AeroSandbox, AVL) estão instaladas?", .{@errorName(err)}),
+        };
+        var waiter: python_bridge.Waiter = .{ .memory = memory };
+        return page.bridge.request(&waiter, request) catch |err| switch (err) {
+            error.BadReply => failureReply(memory, "{s}", .{std.mem.sliceTo(&waiter.failure, 0)}),
+            else => err,
+        };
+    }
+
+    fn failureReply(memory: std.mem.Allocator, comptime format: []const u8, args: anytype) !std.json.Value {
+        var object: std.json.ObjectMap = .empty;
+        try object.put(memory, "ok", .{ .bool = false });
+        try object.put(memory, "error", .{ .string = try std.fmt.allocPrint(memory, format, args) });
+        return .{ .object = object };
     }
 
     /// guarda o pedido de campos em Zig para o começo do próximo quadro: responder agora soltaria a memória do
@@ -918,7 +918,7 @@ pub const Page = struct {
         };
         const job = std.heap.page_allocator.create(AnalysisRun) catch return;
         job.* = .{ .loaded = loaded, .run = undefined };
-        job.run = .{ .arena = .init(std.heap.page_allocator), .aircraft = &job.loaded.ac, .stop = &job.stop, .io = clockIo() };
+        job.run = .{ .arena = .init(std.heap.page_allocator), .aircraft = &job.loaded.ac, .stop = &job.stop, .io = clockIo(), .external = .{ .context = page, .call = externalCall } };
         page.analysis_run = job;
         page.operation = .run;
         page.started_at = std.Io.Clock.awake.now(clockIo()).nanoseconds;
