@@ -74,8 +74,8 @@ pub fn build(b: *std.Build) void {
     });
     mod.addOptions("build_options", opts);
 
-    // no navegador (`-Dtarget=wasm32-emscripten`) sai uma biblioteca estática com código relocável: o emcc a liga como
-    // side module, que o Pyodide carrega e o mesmo `ctypes` do PC chama (tools/web_build.py faz isso)
+    // no navegador (`-Dtarget=wasm32-emscripten`) sai uma biblioteca estática com código relocável, que o emcc pode
+    // ligar como side module
     const in_browser = target.result.os.tag == .emscripten;
     if (in_browser) mod.pic = true;
     const lib = b.addLibrary(.{ .linkage = if (in_browser) .static else .dynamic, .name = "aerosim", .root_module = mod });
@@ -106,6 +106,19 @@ pub fn build(b: *std.Build) void {
     const bench_step = b.step("tecnicas", "Mede uma técnica de otimização: zig build tecnicas -- <técnica> <variante> [rodadas]");
     bench_step.dependOn(&b.addInstallArtifact(bench_exe, .{}).step);
     bench_step.dependOn(&bench_run.step);
+
+    // o exemplo do README de uma pasta (src/<pasta>/exemplo.zig), um programa curto que usa o núcleo como módulo
+    if (b.option([]const u8, "exemplo", "a pasta do exemplo do README: math, physics, sim, loads...")) |folder| {
+        const example = b.addExecutable(.{ .name = "exemplo", .root_module = b.createModule(.{
+            .root_source_file = b.path(b.fmt("src/{s}/exemplo.zig", .{folder})),
+            .target = target,
+            .optimize = .ReleaseSafe,
+            .imports = &.{.{ .name = "aerosim", .module = zmod }},
+        }) });
+        const example_run = b.addRunArtifact(example);
+        example_run.setCwd(b.path("."));
+        b.step("exemplo", "Roda o exemplo do README de uma pasta (-Dexemplo=sim)").dependOn(&example_run.step);
+    } else b.step("exemplo", "Roda o exemplo do README de uma pasta (-Dexemplo=sim)").dependOn(&b.addFail("falta -Dexemplo=<pasta> (math, physics, sim, loads...)").step);
 
     // testes: um binário só (src/tests.zig); o grupo e o filtro vêm do CLI
     const test_group = b.option([]const u8, "grupo", "grupo de testes: " ++ test_group_list ++ " (padrão: tudo)") orelse "tudo";

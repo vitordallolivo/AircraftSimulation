@@ -34,23 +34,33 @@ induzido por todas as ferraduras (Phillips e Snyder, *Journal of Aircraft* 37(4)
 | `.goates_hunsaker` | asa enflechada ou com diedro, e voo com derrapagem: converge com a malha e fica perto do MachUpX (Goates e Hunsaker, 2021) |
 | `.nonlinear` | carga de $`C_{L,max}`$: cada seção segue a curva $`c_l(\alpha)`$ do perfil, com estol (Beard e McLain) |
 
-A mesma asa a 14 m/s e α = 4°, pelas faixas e pela linha sustentadora:
+O avião dos testes a 14 m/s e α = 4°, pelas faixas e pela linha sustentadora:
 
-```python
-import numpy as np
-from aerosim.backend.zig import ZigBackend
-from aerosim.model.templates import conventional
-from aerosim.model.universal import build_model
+```zig
+const std = @import("std");
+const core = @import("aerosim");
 
-with ZigBackend().session_for(build_model(conventional())) as s:
-    faixas = s.panel_states(14.0, np.radians(4.0))               # carga plana da simulação
-    linha = s.panel_states(14.0, np.radians(4.0), llt=True)      # linha sustentadora
-print("sustentação total: faixas", round(faixas["L"].sum(), 1), "N, linha sustentadora", round(linha["L"].sum(), 1), "N")
+var instance: core.runner.Instance = .{};
+
+pub fn main() !void {
+    core.test_aircraft(&instance.p); // o monomotor dos testes
+    try core.runner.configure(&instance); // monta também a geometria da linha sustentadora
+    const alpha = 4.0 * std.math.rad_per_deg;
+    const strips = core.aero.coeffs(&instance.p, 14.0, alpha, 0, .{ 0, 0, 0 }, .{ 0, 0, 0 });
+    const line = core.llt.coeffs(&instance.p, 14.0, alpha, 0, .{ 0, 0, 0 }, .{ 0, 0, 0 }, .{ 0, 0, 0 }, 100, null);
+    std.debug.print("C_L do avião: faixas {d:.3}, linha sustentadora {d:.3}\n", .{ strips.CL, line.CL });
+    std.debug.print("C_L da asa:   faixas {d:.3}, linha sustentadora {d:.3}\n", .{ strips.CL_wing, line.CL_wing });
+}
 ```
 
 ```
-sustentação total: faixas 87.7 N, linha sustentadora 95.7 N
+C_L do avião: faixas 0.729, linha sustentadora 0.794
+C_L da asa:   faixas 0.758, linha sustentadora 0.811
 ```
+
+As faixas tratam cada pedaço da asa com o $`C_{L\alpha}`$ da asa inteira; a linha sustentadora acha a circulação de
+cada seção com a influência das outras, e neste avião dá uns 9 % a mais de sustentação. O exemplo está em `exemplo.zig` e roda com
+`cd core && python -m ziglang build exemplo -Dexemplo=loads`.
 
 A pasta também tem as cargas que dimensionam a estrutura: o diagrama V-n com a rajada de Pratt e os casos de carga
 (`vn.zig`), o cortante, o fletor, o torsor, a flecha e o giro ao longo da envergadura (`internal.zig`), a divergência e

@@ -18,7 +18,7 @@ python -m ziglang build test -Dopt=minimax,estrin             # os testes com as
 python -m ziglang build --release=fast                        # volta ao núcleo de sempre (-Dopt=0)
 ```
 
-O backend Python carrega a biblioteca que estiver em `zig-out/lib`: depois de medir, compilar de novo com `-Dopt=0`. O AeroDrive usa o núcleo como dependência sem `-Dopt`: fica sempre no
+A biblioteca em `zig-out/lib` fica com as variantes ligadas: depois de medir, compilar de novo com `-Dopt=0`. O AeroDrive usa o núcleo como dependência sem `-Dopt`: fica sempre no
 de sempre.
 
 | bit | nome | o que muda | onde |

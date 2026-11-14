@@ -25,33 +25,39 @@ flowchart TB
 O CMA-ES existe porque, no avião, as variáveis boas andam juntas: aumentar a envergadura só ajuda se a área cresce
 junto, e a região boa vira um vale estreito e inclinado. O genético mexe numa variável de cada vez e cai fora do vale;
 o CMA-ES sorteia de uma elipse e a gira e estica na direção em que a nota sobe (Hansen, *The CMA Evolution Strategy: A
-Tutorial*, 2016). A nota de um candidato da Micro 2026 e o CMA-ES achando o ótimo de um problema de teste:
+Tutorial*, 2016). O CMA-ES achando o ótimo de um problema de teste em três variáveis (`exemplo.zig`):
 
-```python
-import numpy as np
-from aeroopt.scoring import evaluate, scoring_for
-from aerosim.backend.zig import ZigBackend
+```zig
+const std = @import("std");
+const cmaes = @import("aerosim").optim.cmaes;
 
-r = evaluate(scoring_for("sae_br_2026_micro"),
-             dict(c_lapes=1.0, c_liq=1.2, pv=0.5, m_bat=0.30, s_to=3.5, b=1.8))[0]
-print("nota", round(r["nota"], 2), {k: round(v, 3) for k, v in r["termos"].items()}, r["valido"])
-
-be = ZigBackend()
-st = be.cma_init([0.2, 0.2, 0.2], 0.3)
-for _ in range(60):
-    X = be.cma_ask(st)                                  # λ × n em [0, 1]
-    be.cma_tell(st, X, -((X - 0.7) ** 2).sum(axis=1))   # maior é melhor; o ótimo é 0,7
-print("média", np.round(st.mean[:3], 3), "passo", round(st.sigma, 5))
+pub fn main() !void {
+    const dims = 3;
+    var state: cmaes.CmaState = .{};
+    cmaes.init(&state, dims, &.{ 0.2, 0.2, 0.2 }, 0.3, 0, 1); // média inicial, passo, λ padrão, semente
+    const lambda: usize = @intCast(state.lambda);
+    var points: [cmaes.max_lambda * dims]f64 = undefined;
+    var scores: [cmaes.max_lambda]f64 = undefined;
+    for (0..60) |_| {
+        cmaes.ask(&state, points[0 .. lambda * dims]); // λ × n em [0, 1]
+        for (0..lambda) |k| { // maior é melhor; o ótimo é 0,7 em cada variável
+            scores[k] = 0;
+            for (points[k * dims ..][0..dims]) |x| scores[k] -= (x - 0.7) * (x - 0.7);
+        }
+        cmaes.tell(&state, points[0 .. lambda * dims], scores[0..lambda]);
+    }
+    std.debug.print("média {d:.3} {d:.3} {d:.3}, passo {d:.5}\n", .{ state.mean[0], state.mean[1], state.mean[2], state.sigma });
+}
 ```
 
 ```
-nota 224.67 {'cp_m': 2.0, 'ee': 4.0, 'f_bat': 0.99, 'p_m': 224.674, 'pd': 0.0} True
-média [0.7 0.7 0.7] passo 0.00052
+média 0.700 0.700 0.700, passo 0.00052
 ```
 
-A nota vem com cada termo do regulamento, e o CMA-ES chega ao ótimo com o passo já pequeno. Os outros métodos seguem
-o mesmo jeito (`be.ga_init` e `ga_next`, `be.de_init`, `de_trials` e `de_select`, `be.lhs`, `be.rbf_fit`,
-`be.local_fit`, `be.morris_design`), e os testes rodam com `cd core && python -m ziglang build test -Dgrupo=optim`.
+O CMA-ES chega ao ótimo com o passo já pequeno. Os outros métodos seguem o mesmo jeito de pedir e devolver
+(`ga.next`, `de.trials` e `de.select`, o hipercubo latino, o substituto RBF, o modelo local e Morris), e a nota de
+cada candidato vem do programa do arquivo de pontuação, que o aeroopt compila (`expr.zig`). O exemplo roda com
+`cd core && python -m ziglang build exemplo -Dexemplo=optim` e os testes com `python -m ziglang build test -Dgrupo=optim`.
 
 É isso que decide quais aviões o aeroopt avalia e qual ele entrega. O CMA-ES num vale inclinado como o de envergadura
 e área, com a elipse deitando no vale e encolhendo perto do ótimo:

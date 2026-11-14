@@ -24,32 +24,47 @@ flowchart TB
     PSO -->|"próximo x"| X
 ```
 
-Deixando a envergadura e a área livres, com uma pista de 50 m, e dez iterações do enxame:
+Deixando a envergadura e a área livres, com o motor e a hélice do avião dos testes, uma pista de 50 m e dez iterações
+do enxame:
 
-```python
-from aerosim.backend.zig import ZigBackend
-from aerosim.design import mdo
-from aerosim.design.project import DesignProject
+```zig
+const std = @import("std");
+const core = @import("aerosim");
+const sizing = core.sizing.types;
 
-proj = DesignProject()
-proj.requirements.takeoff_run = 50.0
-for v in proj.variables:
-    if v.key in ("wing.span", "wing.area"):
-        v.mode = "variável"                      # o otimizador escolhe envergadura e área
-proj.mdo.iterations = 10
-rows, best, names = mdo.run(proj, backend=ZigBackend())
-q = dict(zip(names["quantities"], best["q"]))
-print(len(rows), "avaliações; viável:", bool(best["feasible"]))
-print("melhor: b =", round(best["x"][0], 2), "m  S =", round(best["x"][1], 2), "m²  MTOW =", round(q["mtow"], 2),
-      "kg  corrida =", round(q["s_to"], 1), "m")
+var params: core.types.Params = .{};
+var evaluated_buffer: [2048]sizing.Individual = undefined;
+
+pub fn main() !void {
+    core.test_aircraft(&params); // o motor e a hélice do avião dos testes viram o conjunto de tração
+    var cfg: sizing.SizingCfg = .{};
+    cfg.vars[sizing.variable(.span)] = .{ .lo = 1.5, .hi = 2.5 }; // o otimizador escolhe envergadura e área
+    cfg.vars[sizing.variable(.area)] = .{ .lo = 0.6, .hi = 1.4 };
+    cfg.vars[sizing.variable(.taper)] = .{ .lo = 0.7, .hi = 0.7 }; // o resto fica fixo (lo = hi)
+    cfg.vars[sizing.variable(.motors)] = .{ .lo = 1, .hi = 1, .kind = .integer };
+    cfg.sets[0] = .{ .unit = params.prop[0], .mass = 0.8, .P_max = 600 };
+    cfg.n_cons = 1;
+    cfg.cons[0] = .{ .q = .takeoff_run, .op = .at_most, .value = 50 }; // pista de 50 m
+
+    const options: sizing.OptOpts = .{ .iterations = 10 };
+    var evaluated: usize = 0;
+    var best: sizing.SizingOut = .{};
+    core.sizing.optimize(&cfg, &options, &params, &evaluated_buffer, &evaluated, &best, null, null);
+    std.debug.print("{d} avaliações; viável: {}\n", .{ evaluated, best.feasible == 1 });
+    std.debug.print("melhor: b = {d:.2} m  S = {d:.2} m²  MTOW = {d:.2} kg  corrida = {d:.1} m\n", .{
+        best.x[sizing.variable(.span)],                best.x[sizing.variable(.area)],
+        best.q[sizing.quantity(.mtow)], best.q[sizing.quantity(.takeoff_run)],
+    });
+}
 ```
 
 ```
-240 avaliações; viável: True
-melhor: b = 2.5 m  S = 1.22 m²  MTOW = 10.51 kg  corrida = 47.4 m
+240 avaliações; viável: true
+melhor: b = 2.50 m  S = 1.40 m²  MTOW = 11.37 kg  corrida = 50.0 m
 ```
 
-O enxame foi para a maior envergadura permitida e para a área que leva o MTOW até a corrida encostar na pista. Um tipo
+O enxame foi para a maior envergadura e a maior área permitidas, e o MTOW subiu até a corrida encostar na pista. O
+exemplo está em `exemplo.zig` e roda com `cd core && python -m ziglang build exemplo -Dexemplo=sizing`. Um tipo
 de aeronave novo é um struct posto em `kinds.all` (a interface é conferida em comptime), um otimizador novo é um
 struct com `name` e `run` em `optimize.all`, e os testes rodam com `cd core && python -m ziglang build test
 -Dgrupo=sizing`, com fuzzing das interfaces (`-Dfuzz=N -Dseed=S`).

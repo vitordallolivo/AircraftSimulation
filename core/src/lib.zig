@@ -35,6 +35,8 @@ pub const flutter = @import("loads/flutter.zig");
 /// estol por estação: o VLM com a polar 2D de cada estação no seu Reynolds (correção de α)
 pub const stall = @import("loads/stall.zig");
 pub const vec = @import("math/vec.zig");
+/// álgebra linear de tamanho fixo (LU, Cholesky, autovalores)
+pub const linalg = @import("math/linalg.zig");
 /// integral numérica por Gauss-Legendre (pontos e pesos calculados pelo compilador)
 pub const quadrature = @import("math/quadrature.zig");
 /// funções de forma: linear e Hermite cúbica
@@ -49,6 +51,8 @@ pub const static_stability = @import("sim/static.zig");
 pub const flight_modes = @import("sim/modes.zig");
 pub const mass = @import("physics/mass.zig");
 pub const state = @import("sim/state.zig");
+/// o monomotor convencional dos testes (preenche um `types.Params`), para os exemplos dos READMEs
+pub const test_aircraft = @import("sim/tests.zig").aircraft;
 /// estruturas: seção composta (EI, tensões e margens)
 pub const structures = struct {
     pub const section = @import("structures/section.zig");

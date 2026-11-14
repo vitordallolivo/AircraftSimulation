@@ -8,8 +8,8 @@ passa mais rápido e girando sobre a asa e a cauda, pelo disco atuador), a inter
 tandem e o momento próprio dos comandos. Os efeitos a mais vêm desligados, e com eles desligados a simulação e o
 AeroDrive ficam bit a bit iguais.
 
-O avião descreve os modificadores numa lista (`Aircraft.modifiers`), que a GUI edita na Montagem. O tradutor leva a
-lista para `Params`, e o laço dos painéis consulta os modificadores em dois pontos: na velocidade de cada faixa e no
+O avião descreve os modificadores numa lista (`Aircraft.modifiers`), que a tela edita na Montagem e que vai para
+`Params`, e o laço dos painéis consulta os modificadores em dois pontos: na velocidade de cada faixa e no
 arrasto induzido.
 
 ```mermaid
@@ -30,27 +30,48 @@ O fator de efeito solo de McCormick multiplica o arrasto induzido de cada painel
 \varphi = \frac{(16\,h/b)^2}{1 + (16\,h/b)^2}
 ```
 
-Ligando a esteira e pedindo o fator do solo em três alturas, para uma envergadura de 2,2 m:
+O fator do solo em três alturas, para uma envergadura de 2,2 m, e a esteira ligada no avião dos testes, com a hélice
+puxando (`exemplo.zig`, `python -m ziglang build exemplo -Dexemplo=modifiers`):
 
-```python
-from aerosim.backend.zig import ZigBackend
-from aerosim.model.modifiers import Modifier, describe
-from aerosim.model.templates import conventional
+```zig
+const std = @import("std");
+const core = @import("aerosim");
 
-ac = conventional()
-print(describe(ac))
-ac.modifiers.append(Modifier(kind="esteira.disco"))           # liga a esteira da hélice
-phi = ZigBackend().probe_ground(1, [0.1, 0.5, 2.0], 2.2)      # McCormick a h = 0,1, 0,5 e 2 m
-print(describe(ac), [round(float(x), 3) for x in phi])
+var instance: core.runner.Instance = .{};
+
+/// o C_L do avião a 10 m/s e α = 4°, com a hélice dando 25 N e 0,4 N·m
+fn liftWithThrust() f64 {
+    const thrusts = [_]f64{25.0};
+    const torques = [_]f64{0.4};
+    const coefficients = core.aero.coeffsEnv(&instance.p, 10.0, 4.0 * std.math.rad_per_deg, 0, .{ 0, 0, 0 }, .{ 0, 0, 0 }, .{ 0, 0, 0 }, .{ &thrusts, &torques });
+    return coefficients.CL;
+}
+
+pub fn main() !void {
+    core.test_aircraft(&instance.p);
+    std.debug.print("efeito solo: {s}; φ a 0,1, 0,5 e 2 m (b = 2,2 m):", .{@tagName(instance.p.ground)});
+    for ([_]f64{ 0.1, 0.5, 2.0 }) |height| std.debug.print(" {d:.3}", .{core.modifiers.ground.mccormick(height, 2.2)});
+    std.debug.print("\n", .{});
+
+    try core.runner.configure(&instance);
+    const without = liftWithThrust();
+    instance.p.n_mod = 1;
+    instance.p.mods[0] = .{ .kind = .slipstream_disk }; // liga a esteira da hélice
+    instance.p.mods[0].params[0] = 1; // ganho da velocidade axial (1 = a teoria; `SlipstreamSettings`)
+    instance.p.mods[0].params[1] = 1; // ganho do giro
+    try core.runner.configure(&instance);
+    std.debug.print("C_L com a hélice puxando: sem a esteira {d:.3}, com a esteira {d:.3}\n", .{ without, liftWithThrust() });
+}
 ```
 
 ```
-['efeito solo: McCormick (padrão)']
-['efeito solo: McCormick (padrão)', 'esteira da hélice: disco atuador'] [0.346, 0.93, 0.995]
+efeito solo: mccormick; φ a 0,1, 0,5 e 2 m (b = 2,2 m): 0.346 0.930 0.995
+C_L com a hélice puxando: sem a esteira 0.729, com a esteira 0.773
 ```
 
-A 10 cm do chão o arrasto induzido cai para um terço, e a 2 m o efeito já some. Um modificador novo só entra com a fonte (obra, equação, página), um caso no `switch` de
-`mod.induced` ou de `ground.factor`, a entrada em `aerosim/model/modifiers.py` e um teste que reproduz um número
+A 10 cm do chão o arrasto induzido cai para um terço, e a 2 m o efeito já some. Com a esteira, as faixas dentro do tubo da
+hélice veem o ar mais rápido, e o $`C_L`$ sobe 6 %. Um modificador novo só entra com a fonte (obra, equação, página), um caso no `switch` de
+`mod.induced` ou de `ground.factor`, a entrada na lista de modificadores da Montagem e um teste que reproduz um número
 publicado.
 
 O efeito solo encurta a corrida de decolagem, e a esteira muda a sustentação e a eficácia da cauda atrás da hélice. O

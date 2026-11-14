@@ -29,28 +29,28 @@ z_{LN} = \frac{\sum E_k A_k z_k}{\sum E_k A_k},\qquad EI = \sum E_k\left(I_k + A
 Uma longarina com alma de 3 × 40 mm e dois tubos de 8/6 mm, sob 60 N·m. Os materiais deste exemplo são só para mostrar
 a conta:
 
-```python
-import ctypes, math
-from aerosim.backend.zig.backend import ZigBackend
+```zig
+const std = @import("std");
+const section = @import("aerosim").structures.section;
 
-lib = ZigBackend()._lib
-T = lib.schema.types
-materiais = (T["Material"] * 2)()
-materiais[0].modulus, materiais[0].density, materiais[0].tension, materiais[0].compression = 3e9, 160, 12e6, 10e6
-materiais[1].modulus, materiais[1].density, materiais[1].tension, materiais[1].compression = 110e9, 1550, 1200e6, 1000e6
-
-def tubo(material, D, d, z):
-    return T["SectionPart"](material=material, area=math.pi / 4 * (D * D - d * d), z=z,
-                            own_inertia=math.pi / 64 * (D**4 - d**4), half_depth=D / 2)
-
-partes = (T["SectionPart"] * 3)(
-    T["SectionPart"](material=0, area=0.003 * 0.04, z=0, own_inertia=0.003 * 0.04**3 / 12, half_depth=0.02),
-    tubo(1, 0.008, 0.006, 0.017), tubo(1, 0.008, 0.006, -0.017))
-secao, tensoes = T["SectionProperties"](), (T["PartStress"] * 3)()
-lib.dll.aerosim_section_check(materiais, 2, partes, 3, ctypes.c_double(60.0), ctypes.byref(secao), tensoes)
-print(f"EI = {secao.bending:.0f} N·m², {secao.mass_per_length * 1e3:.0f} g/m")
-for nome, t in zip(("alma", "tubo de cima", "tubo de baixo"), tensoes):
-    print(f"{nome}: {t.top / 1e6:.1f} / {t.bottom / 1e6:.1f} MPa, margem {t.margin:.2f}")
+pub fn main() !void {
+    const materials = [_]section.Material{
+        .{ .modulus = 3e9, .density = 160, .tension = 12e6, .compression = 10e6 }, // 0: alma (balsa)
+        .{ .modulus = 110e9, .density = 1550, .tension = 1200e6, .compression = 1000e6 }, // 1: tubos (carbono)
+    };
+    const parts = [_]section.SectionPart{
+        section.SectionPart.rectangle(0, 0.003, 0.04, 0), // alma de 3 × 40 mm
+        section.SectionPart.tube(1, 0.008, 0.006, 0.017), // tubo de 8/6 mm em cima
+        section.SectionPart.tube(1, 0.008, 0.006, -0.017), // e embaixo
+    };
+    const properties = try section.properties(&materials, &parts);
+    var stresses: [parts.len]section.PartStress = undefined;
+    try section.stresses(&materials, &parts, properties, 60.0, &stresses);
+    std.debug.print("EI = {d:.0} N·m², {d:.0} g/m\n", .{ properties.bending, properties.mass_per_length * 1e3 });
+    for ([_][]const u8{ "alma", "tubo de cima", "tubo de baixo" }, stresses) |name, stress| {
+        std.debug.print("{s}: {d:.1} / {d:.1} MPa, margem {d:.2}\n", .{ name, stress.top / 1e6, stress.bottom / 1e6, stress.margin });
+    }
+}
 ```
 
 ```
@@ -60,7 +60,8 @@ tubo de cima: -93.9 / -58.1 MPa, margem 9.65
 tubo de baixo: 58.1 / 93.9 MPa, margem 11.78
 ```
 
-Os tubos, 37 vezes mais rígidos que a balsa, levam quase todo o momento, e a alma fica com pouca tensão. Os testes
-rodam com `cd core && python -m ziglang build test -Dgrupo=structures`. O EI daqui vai para a flecha da asa, e as
+Os tubos, 37 vezes mais rígidos que a balsa, levam quase todo o momento, e a alma fica com pouca tensão. O exemplo
+está em `exemplo.zig` (`python -m ziglang build exemplo -Dexemplo=structures`), e os testes rodam com `cd core &&
+python -m ziglang build test -Dgrupo=structures`. O EI daqui vai para a flecha da asa, e as
 margens vão para a verificação da longarina e do tubo de cauda, a partir das cargas de
 [`loads`](../loads/README.md).

@@ -70,11 +70,13 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/bench.zig` — Benchmarks exportados (o Python cronometra): funções matemáticas isoladas com tabelas
   tipos `Kind:9`
   fn `math:80`, `dynamics:98`
+- `core/src/exemplo.zig` — O exemplo do README do núcleo: os limites de tamanho e os canais que cada corrida grava.
+  fn `main:6`
 - `core/src/interface.zig` — A interface conferida em comptime: o molde dos registros do projeto.
   tipos `Declaration:11`
   fn `require:18`, `has:33`
 - `core/src/lib.zig` — O núcleo como módulo Zig (para programas em Zig, como o aerodrive): os mesmos tipos e funções
-  tipos `structures:53`, `optim:59`
+  tipos `structures:57`, `optim:63`
 - `core/src/limits.zig` — Limites de compilação. Toda a memória do núcleo é estática e dimensionada aqui:
   tipos `Group:18`
   fn `groupIndex:30`
@@ -109,12 +111,16 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/control/autotune.zig` — Ajuste automático dos ganhos do piloto automático, igual para qualquer avião.
   tipos `Targets:21`, `Result:32`
   fn `fromLinear:56`, `tune:147`
+- `core/src/control/exemplo.zig` — O exemplo do README de `control/`: os ganhos ajustados para 14 m/s e a missão do avião dos testes com eles.
+  fn `main:9`
 - `core/src/control/guidance.zig` — Percurso (corrente de segmentos) e guiamento lateral.
   tipos `Guide:15`
   fn `guide:38`, `rejoinSegment:102`
 
 **core/src/geometry/**
 
+- `core/src/geometry/exemplo.zig` — O exemplo do README de `geometry/`: um avião de cinco peças conferido parado e girado 12° na decolagem.
+  fn `main:11`
 - `core/src/geometry/geometry.zig` — Geometria do avião montado: se as peças cabem juntas antes de qualquer conta de aerodinâmica.
   tipos `PartKind:29`, `Part:39`, `Scene:47`, `Report:60`
   fn `boxesTouch:98`, `pointInBox:116`, `pointNearBox:121`, `discHitsBox:130`, `discsTouch:204`, `lowest:236`, `check:265`, `checkMany:361`
@@ -124,6 +130,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/loads/aeroelastic.zig` — Aeroelasticidade estática de uma semiasa em faixas: divergência em torção e reversão do aileron.
   tipos `Station:25`, `Aeroelastic:37`
   fn `flapDerivatives:49`, `divergencePressure:74`, `rollEffectiveness:94`, `analyze:128`
+- `core/src/loads/exemplo.zig` — O exemplo do README de `loads/`: o mesmo avião a 14 m/s e α = 4° pelas faixas e pela linha sustentadora.
+  fn `main:8`
 - `core/src/loads/flutter.zig` — Flutter de uma semiasa: viga de elementos finitos (flexão e torção acopladas pela massa), reduzida aos primeiros
   tipos `Element:42`, `ModePoint:55`, `FlutterResult:61`, `Modes:74`
   fn `modes:154`, `theodorsen:203`, `pk:270`, `flutter:312`
@@ -167,6 +175,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 **core/src/modifiers/**
 
+- `core/src/modifiers/exemplo.zig` — O exemplo do README de `modifiers/`: o fator do efeito solo em três alturas e a esteira da hélice ligada.
+  fn `main:16`
 - `core/src/modifiers/flapmoment.zig` — Momento próprio do comando (flape, profundor, elevon) no quarto de corda da faixa.
   fn `thetaOf:17`, `cmDelta:30`
 - `core/src/modifiers/ground.zig` — Efeito solo: métodos para o fator do arrasto induzido perto do chão.
@@ -192,6 +202,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/optim/de.zig` — Evolução diferencial (DE/rand/1/bin), para as variáveis contínuas do aeroopt (envergadura, área, diedro...).
   tipos `Strategy:46`, `Bound:54`, `Options:62`
   fn `initPop:36`, `trials:70`, `trialsWith:84`, `select:126`
+- `core/src/optim/exemplo.zig` — O exemplo do README de `optim/`: o CMA-ES achando o ótimo de um problema de teste em três variáveis.
+  fn `main:6`
 - `core/src/optim/expr.zig` — Executa o programa de pilha da pontuação (`types.Program`): as entradas de um candidato entram nas
   tipos `Error:11`
   fn `check:22`, `run:71`, `runMany:115`
@@ -228,6 +240,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `coeffs:34`, `compute:50`
 - `core/src/physics/atmosphere.zig` — Vento 3D numa direção (perfil 1/7 com a altura) e rajada 1-cos.
   fn `wind:8`
+- `core/src/physics/exemplo.zig` — O exemplo do README de `physics/`: os coeficientes, o motor com o acelerador cheio e a massa do avião dos testes.
+  fn `main:8`
 - `core/src/physics/gear.zig` — Trem de pouso: N pontos de contato (triciclo, convencional, patins...).
   tipos `Out:16`
   fn `compute:23`, `touching:65`
@@ -251,6 +265,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sim/envelope.zig` — Envelope de voo por altitude (sem integrar no tempo).
   tipos `EnvelopeMethod:32`, `Atmosphere:41`, `EnvCfg:50`, `EnvRow:88`
   fn `density:101`, `compute:314`, `curve:347`
+- `core/src/sim/exemplo.zig` — O exemplo do README de `sim/`: vinte segundos de decolagem, o equilíbrio a 14 m/s e os modos de voo ali.
+  fn `main:9`
 - `core/src/sim/gust.zig` — Resposta no tempo a uma rajada, em voo nivelado reto: o avião sai equilibrado em `airspeed` e `height`, a rajada
   tipos `Case:24`, `Mode:180`, `Poles:185`
   fn `begin:41`, `advance:103`, `settled:129`, `respond:163`, `gustSpeed:172`, `poles:208`
@@ -286,6 +302,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sizing/constraints.zig` — O diagrama de restrições do dimensionamento inicial (o par de `aerosim/sizing/constraints.py`): a razão
   tipos `ParabolicPolar:26`, `Requirements:45`, `Kind:64`, `Limit:98`, `DesignPoint:189`
   fn `estimatePolar:37`, `isaRho:116`, `conditionSpeed:121`, `requiredThrustWeight:133`, `limitLoading:166`, `envelope:174`, `designPoint:207`
+- `core/src/sizing/exemplo.zig` — O exemplo do README de `sizing/`: a envergadura e a área livres, uma pista de 50 m e dez iterações do enxame.
+  fn `main:10`
 - `core/src/sizing/ground.zig` — Corrida de decolagem rápida da sprint (etapa Motores, `aerosim/design/power.py: performance`): a mesma
   tipos `GroundRun:24`
   fn `interp:51`, `rotSpeed:78`, `run:88`, `mtow:114`
@@ -318,6 +336,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/structures/buckling.zig` — Flambagem do chapeado e da alma, e quantas nervuras um vão precisa para o chapeado não flambar.
   tipos `Orthotropic:24`
   fn `flatPlate:44`, `curvedPanel:56`, `arcRadius:79`, `webShear:84`, `ribsNeeded:95`
+- `core/src/structures/exemplo.zig` — O exemplo do README de `structures/`: uma longarina com alma de balsa e dois tubos de carbono sob 60 N·m.
+  fn `main:6`
 - `core/src/structures/gear.zig` — Trem de pouso: a treliça de tubos como pórtico 3D de elementos finitos (6 graus por nó), as margens de cada tubo e o
   tipos `Node:28`, `Member:37`, `MemberResult:48`, `Drop:243`, `DropResult:257`
   fn `solveFrame:143`, `landing:275`
@@ -673,10 +693,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `tools/codemap.zig` — Mapa do código: gera docs/MAP.md a partir do próprio código (nunca editar o MAP.md à mão).
 - `tools/grafo.zig` — Grafo do código: lê o Zig do repositório e devolve quem é quem e quem chama quem, sem lista feita à mão.
 - `tools/livro.zig` — Site da documentação: todos os .md do repositório num livro só, o mapa do código e o tracking, lado a lado.
+- `tools/pacote.zig` — Monta o AircraftSimulation para distribuir: o programa instalável (a tela inicial, o aerosim, o aeroopt e o
 - `tools/retrato.zig` — O retrato numérico dos aviões de exemplo, para a regressão bit a bit (`zig build check`): cada avião de
 - `tools/tracking.zig` — Tracking em HTML: as tabelas do Quadro do docs/TRACKING.md viram uma página só (sem nada para baixar).
-- `tools/package.py` — Monta o programa instalável: a tela inicial (o menu do site), o aerosim, o aeroopt e o AeroDrive numa pasta só,
-- `tools/web_build.py` — Monta o site do AircraftSimulation em zig-out/site/: a tela inicial (web/index.html) e os três programas em
 
 ## README por pasta
 
@@ -704,5 +723,31 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sizing/README.md`
 - `core/src/structures/README.md`
 - `data/README.md`
+- `dist/AircraftSimulation-linux/app/data/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_2D/airfoil_optimizer/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_3D/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_3D/test_aero_3D/test_aero_buildup/test_low_ar_wings_validation/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/utilities/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/visualization/default_assets/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/library/datasets/turbine_engines/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/numpy/test_numpy/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/tools/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/tools/pretty_plots/README.md`
+- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/tools/pretty_plots/labellines/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/data/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_2D/airfoil_optimizer/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_3D/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_3D/test_aero_3D/test_aero_buildup/test_low_ar_wings_validation/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/utilities/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/visualization/default_assets/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/library/datasets/turbine_engines/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/numpy/test_numpy/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/tools/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/tools/pretty_plots/README.md`
+- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/tools/pretty_plots/labellines/README.md`
 - `launcher/README.md`
 - `tools/README.md`

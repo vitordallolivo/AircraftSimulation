@@ -138,6 +138,28 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| portrait_run.addArgs(args);
     b.step("retrato", "Retrata os aviões de exemplo (regressão bit a bit)").dependOn(&portrait_run.step);
 
+    // ---- o exemplo do README de uma pasta (<pasta>/exemplo.zig): um programa curto com o núcleo, o avião e as análises
+    const example_imports: []const std.Build.Module.Import = &.{
+        .{ .name = "aerosim", .module = core },
+        .{ .name = "aircraft_model", .module = aircraft_model },
+        .{ .name = "simulation", .module = simulation },
+        .{ .name = "manager", .module = manager },
+        .{ .name = "design", .module = design },
+        .{ .name = "data_sources", .module = data_sources },
+        .{ .name = "templates", .module = templates },
+    };
+    if (b.option([]const u8, "exemplo", "a pasta do exemplo do README: manager, interfaces, data, design")) |folder| {
+        const example = b.addExecutable(.{ .name = "exemplo", .root_module = b.createModule(.{
+            .root_source_file = b.path(b.fmt("{s}/exemplo.zig", .{folder})),
+            .target = target,
+            .optimize = .ReleaseSafe,
+            .imports = example_imports,
+        }) });
+        const example_run = b.addRunArtifact(example);
+        example_run.setCwd(b.path("."));
+        b.step("exemplo", "Roda o exemplo do README de uma pasta (-Dexemplo=manager)").dependOn(&example_run.step);
+    } else b.step("exemplo", "Roda o exemplo do README de uma pasta (-Dexemplo=manager)").dependOn(&b.addFail("falta -Dexemplo=<pasta> (manager, interfaces, data, design)").step);
+
     // ---- o programa (gui/main.zig)
     const display = b.option(enum { X11, Wayland, Both }, "display", "Linux: X11 (padrão), Wayland ou Both") orelse .X11;
     const rlz = if (target.result.os.tag == .emscripten)

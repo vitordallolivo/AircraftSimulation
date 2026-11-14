@@ -6,6 +6,12 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- O aerosim precisava do Python para abrir as análises, para montar o instalável e o site e para rodar os checks.
+  Agora tudo isso é feito pelo próprio programa: a janela, o instalável para Linux e Windows, o site e os checks
+  saem do mesmo comando de compilação. O Python só fica para os métodos de fora (lltdrek, AeroSandbox e AVL), que
+  continuam opcionais e vão junto no instalável.
+- Os textos de cada pasta explicavam o uso com exemplos que não rodavam mais. Agora cada um traz um exemplo curto
+  que roda, com o resultado que ele imprime logo abaixo.
 - Em Biblioteca → Perfis, a polar de cada perfil só existia no Reynolds do cruzeiro e vinha de um modelo que não
   muda com o Reynolds. Agora dá para trazer as polares do XFLR5 ou do XFOIL, uma por Reynolds, e ver o perfil
   selecionado em cada Reynolds de uma lista que o usuário edita: sustentação, polar de arrasto, eficiência e uma

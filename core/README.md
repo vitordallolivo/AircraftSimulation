@@ -26,8 +26,9 @@ O código vai da base para cima, e cada pasta tem o seu README:
 
 ```mermaid
 flowchart TB
-    PY["Python (aerosim, aeroopt)"] -->|"ctypes"| ABI["ABI C: funções aerosim_*<br/>esquema das structs gerado em comptime"]
-    AD["AeroDrive (Zig)"] -->|"import direto"| SIM
+    APPS["aerosim, aeroopt, AeroDrive (Zig)"] -->|"import direto"| SIM
+    APPS -->|"import direto"| SZ
+    EXT["fora do Zig"] -->|"ABI C"| ABI["funções aerosim_*<br/>esquema das structs gerado em comptime"]
     ABI --> SIM["sim: Instance<br/>configure · resetGround · run · trim · linearize"]
     ABI --> SZ["sizing e optim<br/>cadeia do mini-MDO, nota, GA, CMA-ES"]
     SIM --> CTL["control: guidance · autopilot"]
@@ -36,21 +37,29 @@ flowchart TB
     CTL & PHY & SZ --> MATH["math: fmath · vec · poly"]
 ```
 
-O Python chama o núcleo pela ABI C, e o layout de todas as structs sai de `aerosim_schema()`: um campo novo em
-`types.zig` aparece no Python sem mexer em nada, porque o Python lê pelo esquema e confere o hash ao carregar. Os
-limites que o núcleo tem e os canais que ele grava em cada corrida:
+Os programas em Zig importam o núcleo direto, como módulo (`@import("aerosim")`). A ABI C (`root.zig`, funções
+`aerosim_*` com o esquema das structs conferido por hash) fica para quem chama de fora do Zig. Os limites que o núcleo
+tem e os canais que ele grava em cada corrida (`src/exemplo.zig`, `python -m ziglang build exemplo -Dexemplo=.`):
 
-```python
-from aerosim.backend.zig import ZigBackend
+```zig
+const std = @import("std");
+const core = @import("aerosim");
 
-be = ZigBackend()                       # compila o núcleo sozinho se o código Zig mudou
-print(be.limits())
-print(len(be.log_channels()), "canais:", be.log_channels()[:8], "...")
+pub fn main() !void {
+    const limits = core.limits;
+    std.debug.print("superfícies {d}, motores {d}, trens {d}, tanques {d}, pernas {d}, instâncias {d}, estados {d}\n", .{
+        limits.max_surfaces, limits.max_props, limits.max_gear, limits.max_tanks, limits.max_segments, limits.max_instances, core.state.nx,
+    });
+    const channels = @typeInfo(core.types.LogRow).@"struct".fields;
+    std.debug.print("{d} canais:", .{channels.len});
+    inline for (channels[0..8]) |channel| std.debug.print(" {s}", .{channel.name});
+    std.debug.print(" ...\n", .{});
+}
 ```
 
 ```
-{'surfaces': 48, 'props': 8, 'prop_pts': 64, 'gear': 8, 'tanks': 8, 'segments': 32, 'events': 16, 'instances': 16, 'mods': 8, 'nx': 61, 'poly_coef': 21}
-110 canais: ['t', 'seg', 'n', 'e', 'h', 'phi', 'theta', 'psi'] ...
+superfícies 48, motores 8, trens 8, tanques 8, pernas 32, instâncias 16, estados 61
+110 canais: t seg n e h phi theta psi ...
 ```
 
 São até 48 superfícies, 8 motores e 16 instâncias ao mesmo tempo, com um vetor de 61 estados. Os testes ficam junto
@@ -65,8 +74,8 @@ Build Summary: 5/5 steps succeeded; 16/16 tests passed
 ```
 
 Os grupos são math, physics, control, sim, sizing, optim e geometry; `-Dfiltro=trim` roda só os testes com "trim" no
-nome, e `python -m ziglang build docs` gera a documentação dos `///` em `zig-out/docs`. Um programa em Zig importa o
-núcleo direto, sem a ABI, como o AeroDrive faz:
+nome, e `python -m ziglang build docs` gera a documentação dos `///` em `zig-out/docs`. Uma corrida, como o AeroDrive
+faz:
 
 ```zig
 const core = @import("aerosim");

@@ -205,8 +205,7 @@ Testes: `python -m ziglang build test -Dgrupo=math` (dentro de `core/`).
 
 Aqui se acham os autovalores de uma matriz real que não é simétrica, como a matriz $`A`$ de um modelo linear
 $`\dot x = A x`$. Os autovalores são os polos $`\lambda = \sigma \pm i\omega`$: a parte real diz se o modo amortece
-($`\sigma < 0`$) ou cresce, e a imaginária, se ele oscila. A Estabilidade dinâmica usa isso para mostrar os polos sem
-passar pelo Python.
+($`\sigma < 0`$) ou cresce, e a imaginária, se ele oscila. A Estabilidade dinâmica usa isso para mostrar os polos.
 
 O caminho é o clássico de Press et al., *Numerical Recipes*, 3ª ed., 2007, seção 11.6 (`balance`, `elmhes` e `hqr`; a
 conferir no PDF). Primeiro a matriz é balanceada, trocando $`A`$ por $`D^{-1} A D`$ com $`D`$ diagonal de potências de 2,
