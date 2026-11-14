@@ -93,8 +93,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Zig 0.16.0
+        run: pip install "ziglang==0.16.0"
       - name: Gerar a página
-        run: python tools/tracking.py --check && python tools/livro.py --saida livro
+        run: python -m ziglang build tracking -- --check && python -m ziglang build site -- --saida livro
       - uses: actions/upload-artifact@v4
         with:
           name: livro

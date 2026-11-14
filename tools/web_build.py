@@ -1,5 +1,5 @@
 """Monta o site do AircraftSimulation em zig-out/site/: a tela inicial (web/index.html) e os três programas em
-WebAssembly (AeroDrive, aerosim e aeroopt), mais o livro com todos os .md e o tracking (tools/livro.py).
+WebAssembly (AeroDrive, aerosim e aeroopt), mais o livro com todos os .md e o tracking (`zig build site`).
 
     python tools/web_build.py                 # compila os três para o navegador e monta o site
     python tools/web_build.py --sem-compilar  # só monta, com o que já está em <programa>/zig-out/web
@@ -77,7 +77,7 @@ def assemble() -> None:
         for extension in EXTENSIONS:
             shutil.copy2(os.path.join(web_folder(folder), name + extension), os.path.join(SITE, name + extension))
     # o livro do projeto (todos os .md) e o tracking (as tabelas do docs/TRACKING.md)
-    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "livro.py"), "--saida", SITE], check=True)
+    subprocess.run([sys.executable, "-m", "ziglang", "build", "site", "--", "--saida", SITE], cwd=ROOT, check=True)
     # o GitHub Pages não passa a pasta pelo Jekyll (que esconderia arquivos e atrasaria a publicação)
     open(os.path.join(SITE, ".nojekyll"), "w").close()
 

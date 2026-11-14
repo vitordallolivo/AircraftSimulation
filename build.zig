@@ -7,15 +7,16 @@
 //!   zig build aerodrive                      abre o AeroDrive
 //!   zig build launcher                       monta a documentação e abre a tela inicial do pacote (o menu do site,
 //!                                            que abre os três e a documentação)
-//!   zig build docs                           monta o site da documentação em zig-out/site (livro, mapa, tracking)
+//!   zig build docs                           monta o site da documentação em zig-out/site (livro, mapa, tracking);
+//!                                            `zig build site` é o mesmo
 //!   zig build                                compila os quatro (cada um em <pasta>/zig-out/bin) e monta a documentação
 //!   zig build test                           testes do núcleo, das duas interfaces e do AeroDrive
 //!
 //! Os programas saem em ReleaseSafe (as contas com as verificações do Zig, mas otimizadas; em Debug a análise da
 //! asa fica lenta demais para usar); `-Doptimize=Debug` volta ao modo de depuração.
 //!
-//! A documentação é o `tools/livro.py` (que chama o `grafo.py` e o `tracking.py`), então precisa de um Python no PATH:
-//! `-Dpython=<executável>` escolhe outro e `-Ddocs=false` deixa a documentação de fora.
+//! A documentação é o `tools/livro.zig` (que usa o `grafo.zig` e o `tracking.zig`); `-Ddocs=false` a deixa de fora.
+//! As outras ferramentas de `tools/` também são passos: `zig build mapa`, `zig build tracking`, `zig build site`.
 //!
 //! Com o Zig do pip: `python -m ziglang build aerosim`.
 const std = @import("std");
@@ -27,9 +28,8 @@ pub fn build(b: *std.Build) void {
     const compile_all = b.getInstallStep();
     const test_all = b.step("test", "Testes do núcleo, das interfaces, da tela inicial e do AeroDrive");
     const with_docs = b.option(bool, "docs", "Monta a documentação junto do build e do launcher (padrão: sim)") orelse true;
-    const python = b.option([]const u8, "python", "O Python que monta a documentação (padrão: python no Windows, python3 nos outros)") orelse
-        (if (b.graph.host.result.os.tag == .windows) "python" else "python3");
-    const docs = docsSite(b, python);
+    // o site sem argumentos, para ser montado junto do build e antes do launcher (os argumentos são do programa)
+    const docs = toolRun(b, tool(b, "site", "livro.zig", "Monta o site da documentação em zig-out/site (livro, mapa do código e tracking); -- --saida <pasta> grava em outra pasta"));
     b.step("docs", "Monta o site da documentação em zig-out/site (livro, mapa do código e tracking)").dependOn(&docs.step);
     if (with_docs) compile_all.dependOn(&docs.step);
     for (programs) |name| {
@@ -47,6 +47,11 @@ pub fn build(b: *std.Build) void {
         test_all.dependOn(&child(b, name, &.{ "build", "test" }, null).step);
     }
     test_all.dependOn(&child(b, "core", &.{ "build", "test" }, null).step);
+    // os testes das ferramentas, ao lado do código delas
+    for ([_][]const u8{ "codemap.zig", "tracking.zig", "grafo.zig", "livro.zig" }) |file| {
+        const tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path(b.fmt("tools/{s}", .{file})), .target = b.graph.host }) });
+        test_all.dependOn(&b.addRunArtifact(tests).step);
+    }
 
     // as ferramentas de tools/ (programas em Zig que rodam da raiz)
     _ = tool(b, "mapa", "codemap.zig", "Refaz docs/MAP.md (o mapa do código); -- --check só confere");
@@ -54,26 +59,22 @@ pub fn build(b: *std.Build) void {
 }
 
 /// uma ferramenta de `tools/` como passo `zig build <step_name>`: compila `tools/<file>` e roda da raiz, com os
-/// argumentos depois de `--`
-fn tool(b: *std.Build, step_name: []const u8, file: []const u8, description: []const u8) *std.Build.Step.Run {
+/// argumentos depois do `--`; devolve o executável
+fn tool(b: *std.Build, step_name: []const u8, file: []const u8, description: []const u8) *std.Build.Step.Compile {
     const exe = b.addExecutable(.{ .name = step_name, .root_module = b.createModule(.{
         .root_source_file = b.path(b.fmt("tools/{s}", .{file})),
         .target = b.graph.host,
         .optimize = .ReleaseSafe,
     }) });
-    const run = b.addRunArtifact(exe);
-    run.setCwd(b.path("."));
-    run.has_side_effects = true;
-    run.stdio = .inherit;
+    const run = toolRun(b, exe);
     if (b.args) |args| run.addArgs(args);
     b.step(step_name, description).dependOn(&run.step);
-    return run;
+    return exe;
 }
 
-/// `<python> tools/livro.py --saida zig-out/site`: o livro com todos os .md, o mapa do código (`grafo.py`) e a página
-/// do tracking (`tracking.py`), na pasta em que a tela inicial procura a documentação
-fn docsSite(b: *std.Build, python: []const u8) *std.Build.Step.Run {
-    const run = b.addSystemCommand(&.{ python, "tools/livro.py", "--saida", "zig-out/site" });
+/// roda a ferramenta da raiz do repositório, sem argumentos
+fn toolRun(b: *std.Build, exe: *std.Build.Step.Compile) *std.Build.Step.Run {
+    const run = b.addRunArtifact(exe);
     run.setCwd(b.path("."));
     run.has_side_effects = true;
     run.stdio = .inherit;

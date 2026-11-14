@@ -7,7 +7,7 @@
 <title>Mapa do código</title>
 <!--
   O mapa do código, no jeito do Obsidian: cada módulo é um ponto e cada linha é "um chama o outro". Tudo sai do
-  grafo.json, que o tools/grafo.py extrai do Zig e do Python sozinho; nada aqui é escrito à mão.
+  grafo.json, que o tools/grafo.zig extrai do código sozinho; nada aqui é escrito à mão.
 -->
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 <style>
@@ -123,7 +123,7 @@ let foco = null;            // { modulo, simbolo, chama:Set(mod), chamado:Set(mo
 let sobre = null;           // módulo sob o mouse
 const ligadas = new Set(Object.keys(AREAS));
 
-// o tools/livro.py embute o grafo aqui, para a página abrir também direto do disco (file://, a tela inicial do PC),
+// o tools/livro.zig embute o grafo aqui, para a página abrir também direto do disco (file://, a tela inicial do PC),
 // onde o navegador não deixa ler o grafo.json; sem ele, lê o grafo.json ao lado
 const EMBUTIDO = /*GRAFO*/null;
 (EMBUTIDO ? Promise.resolve(EMBUTIDO) : fetch('grafo.json').then(r => r.json())).then(iniciar).catch(e => {

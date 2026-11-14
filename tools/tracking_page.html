@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0000aa">
 <title>Tracking do projeto</title>
 <!--
-  Modelo da página do tracking. O tools/tracking.py troca o marcador DADOS pelas tabelas do Quadro do docs/TRACKING.md
+  Modelo da página do tracking. O tools/tracking.zig troca o marcador DADOS pelas tabelas do Quadro do docs/TRACKING.md
   (mais a ordem de prioridade, o progresso e o AREAS.md) e grava a página pronta; tudo o que aparece é desenhado pelo script abaixo.
 -->
 <style>
@@ -236,7 +236,7 @@ function abrir(id) {
 
 // ---------- mudanças pela página: uma issue "[tracking] ..." que a Action aplica no TRACKING.md ----------
 // O corpo é "chave: valor" por linha, depois "---" e o texto livre (o que foi feito, ou a tarefa nova). O mesmo
-// formato é lido pelo tools/tracking.py --issue.
+// formato é lido pelo `zig build tracking -- --issue`.
 const limpa = s => s.replace(/\s+/g, ' ').replace(/\|/g, '/').trim();
 function abreIssue(titulo, campos, texto) {
   const corpo = Object.entries(campos).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n---\n' + limpa(texto);

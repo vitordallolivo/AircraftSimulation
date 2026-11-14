@@ -8,7 +8,7 @@ com os aviões de exemplo e os perfis, e daí o AppImage (Linux) ou o instalador
 
 A pasta montada já roda sozinha: abrir `aircraftsimulation` (ou `aircraftsimulation.exe`). Os programas acham os
 dados (`data/aircraft`, `data/airfoils`) ao lado deles. A página do site (`web/index.html`) e a documentação
-(`tools/livro.py`: o livro, o mapa do código e o tracking) vão junto em `site/`.
+(`zig build site`: o livro, o mapa do código e o tracking) vão junto em `site/`.
 O appimagetool vem de https://github.com/AppImage/appimagetool (variável APPIMAGETOOL ou no PATH); o makensis, do
 pacote `nsis` (apt) ou de https://nsis.sourceforge.io. Sem eles, fica só a pasta (e um .zip dela no Windows).
 O GitHub Actions (.github/workflows/pacotes.yml) roda este script quando alguém pede, sem chave nenhuma.
@@ -77,7 +77,7 @@ def assemble(target: str) -> str:
         if os.path.isfile(os.path.join(web, name)):
             shutil.copy2(os.path.join(web, name), os.path.join(out, "site", name))
     # a documentação (livro, mapa do código e tracking), que a tela inicial abre no navegador
-    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "livro.py"), "--saida", os.path.join(out, "site")], check=True)
+    subprocess.run([sys.executable, "-m", "ziglang", "build", "site", "--", "--saida", os.path.join(out, "site")], cwd=ROOT, check=True)
     print(f"pasta montada: {os.path.relpath(out, ROOT)}")
     return out
 

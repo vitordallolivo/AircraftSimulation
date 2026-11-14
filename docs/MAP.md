@@ -886,11 +886,11 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 ## Ferramentas (`tools/`)
 
 - `tools/codemap.zig` — Mapa do código: gera docs/MAP.md a partir do próprio código (nunca editar o MAP.md à mão).
-- `tools/grafo.py` — Grafo do código: lê o Zig e o Python do repositório e devolve quem é quem e quem chama quem, sem lista feita à mão.
-- `tools/livro.py` — Livro do projeto: todos os .md do repositório num site só, como capítulos de um livro, ao lado do tracking.
+- `tools/grafo.zig` — Grafo do código: lê o Zig do repositório e devolve quem é quem e quem chama quem, sem lista feita à mão.
+- `tools/livro.zig` — Site da documentação: todos os .md do repositório num livro só, o mapa do código e o tracking, lado a lado.
+- `tools/tracking.zig` — Tracking em HTML: as tabelas do Quadro do docs/TRACKING.md viram uma página só (sem nada para baixar).
 - `tools/package.py` — Monta o programa instalável: a tela inicial (o menu do site), o aerosim, o aeroopt e o AeroDrive numa pasta só,
 - `tools/templates_zig.py` — Gera `aerosim/model/templates.zig`: os modelos padrão de `aerosim/model/templates.py` como o texto .json que o
-- `tools/tracking.py` — Tracking em HTML: as tabelas do Quadro do docs/TRACKING.md viram uma página só (sem nada para baixar).
 - `tools/web_build.py` — Monta o site do AircraftSimulation em zig-out/site/: a tela inicial (web/index.html) e os três programas em
 - `tools/checks/doc_checks.py` — Documentação: o mapa do código (docs/MAP.md) tem de estar em dia com o código, e as tabelas do Quadro do
 - `tools/checks/golden.py` — Regressão bit a bit: retrata os aviões de exemplo no código atual e numa referência (um commit, padrão a `main`)
