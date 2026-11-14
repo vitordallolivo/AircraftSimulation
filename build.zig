@@ -55,6 +55,17 @@ pub fn build(b: *std.Build) void {
 
     // as ferramentas de tools/ (programas em Zig que rodam da raiz)
     _ = tool(b, "mapa", "codemap.zig", "Refaz docs/MAP.md (o mapa do código); -- --check só confere");
+    // o instalável e o site (tools/pacote.zig): chamam o mesmo zig que roda este build
+    const package = b.addExecutable(.{ .name = "pacote", .root_module = b.createModule(.{
+        .root_source_file = b.path("tools/pacote.zig"),
+        .target = b.graph.host,
+        .optimize = .ReleaseSafe,
+    }) });
+    const package_run = toolRun(b, package);
+    package_run.setEnvironmentVariable("ZIG", b.graph.zig_exe);
+    if (b.args) |args| package_run.addArgs(args);
+    b.step("pacote", "Monta o instalável (AppImage, instalador do Windows) ou o site com os programas no navegador; -- --alvo linux|windows|web, --sem-compilar, --sem-python").dependOn(&package_run.step);
+
     // os checks de regressão (tools/check.zig): chamam o mesmo zig que roda este build
     const checks = b.addExecutable(.{ .name = "check", .root_module = b.createModule(.{
         .root_source_file = b.path("tools/check.zig"),

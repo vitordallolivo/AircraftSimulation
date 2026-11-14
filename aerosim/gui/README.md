@@ -1,13 +1,13 @@
 # A interface do aerosim em Zig
 
 Esta é a interface do aerosim escrita em Zig, com raylib e raygui, no visual do AeroDrive: fundo claro, cantos
-arredondados, azul nos títulos e a logo do albatroz. É a cópia da GUI em PyQt numa tela que também roda no navegador,
-com as mesmas áreas e subabas, os mesmos campos, gráficos e diagnósticos, e a Montagem feita aqui mesmo (o avião
+arredondados, azul nos títulos e a logo do albatroz. É a tela onde se projeta, a mesma no computador e no navegador,
+com as áreas e subabas, os campos, gráficos e diagnósticos, e a Montagem feita aqui mesmo (o avião
 aberto em 3D, com o CG). A tela não faz conta: as abas vêm do registro em Zig (`manager.layout`), cada análise
 chama o núcleo direto e as etapas da sprint (Perfis, Projetar, Empenagem e comandos, Motores e montagem, Estudo e
-ponto de projeto) e o Mini-MDO também rodam em Zig, então a janela abre e trabalha sem o Python. O Python só entra
-quando se marca um método de fora do núcleo (lltdrek, AeroSandbox, AVL, NeuralFoil): aí a página manda aquela
-rodada pela ponte, e no site o pacote dele só é baixado nessa hora. As peças comuns (`ui/`: cores, widgets,
+ponto de projeto) e o Mini-MDO também rodam em Zig. Só um método de fora do núcleo (lltdrek, AeroSandbox, AVL),
+quando marcado, vai pelo adaptador `python -m aerosim.bridge`, que traduz o avião e devolve os coeficientes; no site,
+o pacote dele só é baixado nessa hora. As peças comuns (`ui/`: cores, widgets,
 formulário, gráfico com títulos em TeX, vista 3D) são as mesmas do aeroopt.
 
 ```mermaid
@@ -47,9 +47,9 @@ trimagem e a hélice; o Analisar, a linha sustentadora). O mesmo campo em duas a
 `shared`): mudar em uma muda na outra, vale em toda rodada e vai salvo no arquivo do avião. Uma análise entra nesse
 botão pondo os campos no grupo `simulation.refine_group` e dizendo os solvers que usa em `Extras.solvers`.
 
-Para o navegador, `python -m ziglang build -Dtarget=wasm32-emscripten --release=safe` e `python tools/web_build.py`
+Para o navegador, `python -m ziglang build -Dtarget=wasm32-emscripten --release=safe` e `python -m ziglang build pacote -- --alvo web`
 montam o site, onde os arquivos ficam na memória da página e o que se salva é baixado. Uma análise nova é um `.zig`
-ao lado da análise em Python, posto no registro de `aerosim/manager/manager.zig`, e aparece na área dela.
+em `aerosim/manager/`, posto no registro de `aerosim/manager/manager.zig`, e aparece na área dela.
 
 Os gráficos da subaba Projetar, com os títulos em TeX desenhados pela própria tela:
 

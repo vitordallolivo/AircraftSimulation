@@ -10,7 +10,7 @@
 //! No navegador não há processo filho nem thread: o Pyodide roda o mesmo `aerosim/bridge.py` na página
 //! (`aerosim/gui/web/python.html`, num iframe), e cada pedido é uma chamada ao JavaScript que volta já com a resposta
 //! (`Module.pythonCall`). A tela fica parada enquanto a conta roda, como as outras contas longas no navegador.
-//! No pacote instalável (`tools/package.py`) o Python vem junto, na pasta `app/` ao lado do programa (`app/python`,
+//! No pacote instalável (`zig build pacote`) o Python vem junto, na pasta `app/` ao lado do programa (`app/python`,
 //! com o adaptador e as bibliotecas); a ponte usa esse antes do Python do sistema.
 const std = @import("std");
 const builtin = @import("builtin");

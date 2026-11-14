@@ -9,9 +9,9 @@
   cria na página dele, e a tela chama `pythonCall` direto, na hora, porque um iframe da mesma origem roda na mesma
   thread da página.
 
-  O que se carrega, tudo do próprio site (montado por tools/web_build.py):
+  O que se carrega, tudo do próprio site (montado por `zig build pacote -- --alvo web`):
     pyodide/                o Pyodide e o numpy
-    aerosim-python.zip      o adaptador (`aerosim/bridge.py` e o que ele usa) e a pasta data
+    aerosim-python.tar      o adaptador (`aerosim/bridge.py` e o que ele usa) e a pasta data
 
   O que a página do aerosim usa daqui:
     pythonState()           0 carregando, 1 pronto, -2 falhou (o motivo em pythonError)
@@ -39,7 +39,7 @@
     const pyodide = await loadPyodide({ indexURL: new URL('pyodide/', location).href, stdout: status, stderr: status });
     window.pyodide = pyodide;
     await pyodide.loadPackage(['numpy'], { messageCallback: status });
-    pyodide.unpackArchive(await fetchBytes('aerosim-python.zip'), 'zip', { extractDir: '/repo' });
+    pyodide.unpackArchive(await fetchBytes('aerosim-python.tar'), 'tar', { extractDir: '/repo' });
     pyodide.runPython(`
 import os, sys
 sys.path.insert(0, "/repo")

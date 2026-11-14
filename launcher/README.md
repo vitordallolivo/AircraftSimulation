@@ -31,19 +31,18 @@ fecha a tela inicial (os programas abertos continuam). As cores são as do site.
 python -m ziglang build launcher       # da raiz: monta a documentação, compila e abre
 python -m ziglang build docs           # só a documentação, em zig-out/site (-Ddocs=false a tira do build)
 cd launcher && python -m ziglang build test
-python tools/package.py                # o AppImage (Linux); --alvo windows faz o instalador .exe
+python -m ziglang build pacote         # o AppImage (Linux); -- --alvo windows faz o instalador .exe
 ```
 
-O pacote (`tools/package.py`) compila os quatro programas em ReleaseSafe, junta numa pasta com `data/aircraft`,
+O pacote (`zig build pacote`, `tools/pacote.zig`) compila os quatro programas em ReleaseSafe, junta numa pasta com `data/aircraft`,
 `data/airfoils`, a página do site e a documentação em `site/`, e daí faz o AppImage (com o `appimagetool`) ou o instalador do
 Windows (com o `makensis`, do NSIS), que instala em Arquivos de Programas, com atalhos no menu Iniciar e na área de trabalho e o desinstalador. O
 instalador não tem assinatura digital, então o Windows avisa na primeira vez.
 
-O aerosim desenha a tela em Zig, mas as abas vêm dos managers em Python (`aerosim/bridge.py`). Sem um Python com o
-numpy no PC, ele abriria só a Montagem. Por isso o pacote leva o Python junto, na pasta `app/`: um Python portátil
-(`app/python`, do python-build-standalone) com o numpy, o openpyxl e os métodos opcionais da Aerodinâmica
-(aerosandbox, lltdrek, optvl; o que o pip não achar para o alvo fica de fora e a aba usa só o núcleo), o pacote
-`aerosim` (só o Python dos métodos de fora do núcleo), o núcleo já compilado (`app/core/zig-out`) e uma cópia de `data/`. A tela do aerosim procura
-`app/` ao lado dela antes do Python do sistema (`aerosim/gui/python_bridge.zig`). Com tudo isso o pacote fica grande
-(os métodos opcionais pesam mais que o resto); `--sem-python` monta sem ele. Um programa novo
-entra na lista `PROGRAMS` do `tools/package.py`, num item de `screen.zig` e em `places.Program`.
+O aerosim faz todas as contas em Zig. Só os métodos de fora do núcleo (lltdrek, AeroSandbox, AVL) são bibliotecas em
+Python, chamadas pelo adaptador `aerosim/bridge.py`. Para eles o pacote leva o Python junto, na pasta `app/`: um
+Python portátil (`app/python`, do python-build-standalone) com o numpy e essas bibliotecas (o que o pip não achar para
+o alvo fica de fora, e a tela avisa que o método não está disponível), o adaptador e uma cópia de `data/`. A tela do
+aerosim procura `app/` ao lado dela antes do Python do sistema (`aerosim/gui/python_bridge.zig`). Com isso o pacote
+fica grande (as bibliotecas pesam mais que o resto); `--sem-python` monta sem ele. Um programa novo entra na lista
+`programs` do `tools/pacote.zig`, num item de `screen.zig` e em `places.Program`.

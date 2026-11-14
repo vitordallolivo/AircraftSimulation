@@ -7,7 +7,7 @@
 <title>AircraftSimulation</title>
 <!--
   Tela inicial do site (estilo BIOS): escolhe o programa. Só HTML, CSS e JS, sem nada para baixar.
-  tools/web_build.py copia esta página para a raiz do site, ao lado do aerodrive.html, do aerosim.html e do aeroopt.html.
+  `zig build pacote -- --alvo web` copia esta página para a raiz do site, ao lado do aerodrive.html, do aerosim.html e do aeroopt.html.
 
   "Carregar avião (.json)" guarda o arquivo no IndexedDB "aircraftsimulation", loja "pendente",
   chave "aviao" ({name, bytes}); o aerodrive.html lê, apaga e abre o avião (aerodrive/web/shell.html).

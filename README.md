@@ -59,8 +59,8 @@ python -m ziglang build                    # compila os quatro
 python -m ziglang build test               # testes do núcleo, das interfaces, da tela inicial e do AeroDrive
 ```
 
-Para instalar sem o repositório, `python tools/package.py` monta o AppImage do Linux e `python tools/package.py
---alvo windows` o instalador `.exe` do Windows (os dois abrem a tela inicial, o mesmo menu do site). O GitHub Actions
+Para instalar sem o repositório, `python -m ziglang build pacote` monta o AppImage do Linux e
+`python -m ziglang build pacote -- --alvo windows` o instalador `.exe` do Windows (os dois abrem a tela inicial, o mesmo menu do site). O GitHub Actions
 monta os dois quando alguém pede (workflow `pacotes`). O pacote leva um Python portátil para os métodos de fora do
 núcleo, então não precisa instalar o Python.
 
