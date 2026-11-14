@@ -21,9 +21,9 @@ def codemap_up_to_date() -> Result:
 
 @check("fundação", "tabelas do Quadro do TRACKING.md legíveis")
 def tracking_up_to_date() -> Result:
-    code, out, _ = sh([sys.executable, os.path.join(ROOT, "tools", "tracking.py"), "--check"], cwd=ROOT, timeout=60)
+    code, out, err = sh([sys.executable, "-m", "ziglang", "build", "tracking", "--", "--check"], cwd=ROOT, timeout=600)
     if code != 0:
-        return Result(False, "linha com colunas a mais ou a menos", out.strip().splitlines()[-2:])
+        return Result(False, "linha com colunas a mais ou a menos", (out + err).strip().splitlines()[-2:])
     return Result(True, "em dia")
 
 

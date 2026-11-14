@@ -50,6 +50,7 @@ pub fn build(b: *std.Build) void {
 
     // as ferramentas de tools/ (programas em Zig que rodam da raiz)
     _ = tool(b, "mapa", "codemap.zig", "Refaz docs/MAP.md (o mapa do código); -- --check só confere");
+    _ = tool(b, "tracking", "tracking.zig", "Página do tracking (zig-out/site/tracking.html); -- --check, --feito, --estado, --issue mudam ou conferem o TRACKING.md");
 }
 
 /// uma ferramenta de `tools/` como passo `zig build <step_name>`: compila `tools/<file>` e roda da raiz, com os

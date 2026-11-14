@@ -1,5 +1,5 @@
 # Aplica no docs/TRACKING.md da 0.2_dev as mudanças feitas pela página do tracking (botões "Confirmar feito" e
-# "+ Nova tarefa"): a página abre uma issue "[tracking] ..." já preenchida; aqui o tools/tracking.py --issue lê o corpo,
+# "+ Nova tarefa"): a página abre uma issue "[tracking] ..." já preenchida; aqui o `zig build tracking -- --issue` lê o corpo,
 # grava a mudança, faz o commit e fecha a issue. Só roda para issues do dono do repositório (o repositório é público).
 # Sem chave nenhuma: usa o token que o próprio GitHub dá a cada rodada. Um push deste token não dispara outras Actions.
 name: tracking
@@ -31,14 +31,17 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Zig 0.16.0
+        run: pip install "ziglang==0.16.0"
+
       - name: Aplicar a issue
         id: aplicar
         env:
           CORPO: ${{ github.event.issue.body }}
         run: |
           printf '%s' "$CORPO" > "$RUNNER_TEMP/issue.txt"
-          python tools/tracking.py --issue "$RUNNER_TEMP/issue.txt" --html "$RUNNER_TEMP/tracking.html" | tee "$RUNNER_TEMP/saida.txt"
-          python tools/tracking.py --check
+          python -m ziglang build tracking -- --issue "$RUNNER_TEMP/issue.txt" --html "$RUNNER_TEMP/tracking.html" 2>&1 | tee "$RUNNER_TEMP/saida.txt"
+          python -m ziglang build tracking -- --check
           echo "resumo=$(grep -m1 'docs/TRACKING.md:' "$RUNNER_TEMP/saida.txt" | cut -d: -f2- | xargs)" >> "$GITHUB_OUTPUT"
 
       - name: Commit na 0.2_dev
