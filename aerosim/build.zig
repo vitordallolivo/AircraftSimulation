@@ -121,6 +121,23 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = catalog })).step);
     test_step.dependOn(&data_tests.step);
 
+    // ---- o retrato dos aviões de exemplo para a regressão bit a bit (`tools/retrato.zig`, chamado pelo `zig build check`)
+    const portrait = b.addExecutable(.{ .name = "retrato", .root_module = b.createModule(.{
+        .root_source_file = b.path("../tools/retrato.zig"),
+        .target = target,
+        .optimize = .ReleaseSafe,
+        .imports = &.{
+            .{ .name = "aircraft_model", .module = aircraft_model },
+            .{ .name = "manager", .module = manager },
+            .{ .name = "simulation", .module = simulation },
+            .{ .name = "data_sources", .module = data_sources },
+        },
+    }) });
+    const portrait_run = b.addRunArtifact(portrait);
+    portrait_run.setCwd(b.path("."));
+    if (b.args) |args| portrait_run.addArgs(args);
+    b.step("retrato", "Retrata os aviões de exemplo (regressão bit a bit)").dependOn(&portrait_run.step);
+
     // ---- o programa (gui/main.zig)
     const display = b.option(enum { X11, Wayland, Both }, "display", "Linux: X11 (padrão), Wayland ou Both") orelse .X11;
     const rlz = if (target.result.os.tag == .emscripten)

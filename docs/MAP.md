@@ -669,18 +669,14 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 ## Ferramentas (`tools/`)
 
+- `tools/check.zig` — Os checks de regressão: confere que nada quebrou antes de mesclar na `main`.
 - `tools/codemap.zig` — Mapa do código: gera docs/MAP.md a partir do próprio código (nunca editar o MAP.md à mão).
 - `tools/grafo.zig` — Grafo do código: lê o Zig do repositório e devolve quem é quem e quem chama quem, sem lista feita à mão.
 - `tools/livro.zig` — Site da documentação: todos os .md do repositório num livro só, o mapa do código e o tracking, lado a lado.
+- `tools/retrato.zig` — O retrato numérico dos aviões de exemplo, para a regressão bit a bit (`zig build check`): cada avião de
 - `tools/tracking.zig` — Tracking em HTML: as tabelas do Quadro do docs/TRACKING.md viram uma página só (sem nada para baixar).
 - `tools/package.py` — Monta o programa instalável: a tela inicial (o menu do site), o aerosim, o aeroopt e o AeroDrive numa pasta só,
 - `tools/web_build.py` — Monta o site do AircraftSimulation em zig-out/site/: a tela inicial (web/index.html) e os três programas em
-- `tools/checks/doc_checks.py` — Documentação: o mapa do código (docs/MAP.md) tem de estar em dia com o código, e as tabelas do Quadro do
-- `tools/checks/golden.py` — Regressão bit a bit: retrata os aviões de exemplo no código atual e numa referência (um commit, padrão a `main`)
-- `tools/checks/registry.py` — Registro dos checks: cada check é uma função que devolve um `Result`, com nome e grupo.
-- `tools/checks/run.py` — Checks de regressão: confere que nada quebrou antes de um PR.
-- `tools/checks/snapshot.py` — Retrato numérico dos aviões de exemplo, para comparar duas versões do código bit a bit.
-- `tools/checks/zig_checks.py` — Fundação e AeroDrive: os testes do núcleo Zig e a compilação + testes do AeroDrive (que importa o núcleo).
 
 ## README por pasta
 
@@ -710,4 +706,3 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `data/README.md`
 - `launcher/README.md`
 - `tools/README.md`
-- `tools/checks/README.md`

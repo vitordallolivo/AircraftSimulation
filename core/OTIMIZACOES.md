@@ -1,7 +1,7 @@
 # core/ — otimizações em avaliação (`-Dopt`)
 
 Variantes do núcleo que **não** são o padrão: cada uma é um bit de `-Dopt`, desligado por padrão. Com `-Dopt=0` (ou
-sem a opção) o núcleo é o de sempre, bit a bit: a regressão em `tools/checks` confere. Aqui fica o que cada uma faz,
+sem a opção) o núcleo é o de sempre, bit a bit: a regressão do `zig build check` confere. Aqui fica o que cada uma faz,
 de onde veio, como medir e o que se mediu. Nenhuma vira padrão sem o dono aprovar (ela muda os números da
 regressão).
 

@@ -48,13 +48,23 @@ pub fn build(b: *std.Build) void {
     }
     test_all.dependOn(&child(b, "core", &.{ "build", "test" }, null).step);
     // os testes das ferramentas, ao lado do código delas
-    for ([_][]const u8{ "codemap.zig", "tracking.zig", "grafo.zig", "livro.zig" }) |file| {
+    for ([_][]const u8{ "codemap.zig", "tracking.zig", "grafo.zig", "livro.zig", "check.zig" }) |file| {
         const tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path(b.fmt("tools/{s}", .{file})), .target = b.graph.host }) });
         test_all.dependOn(&b.addRunArtifact(tests).step);
     }
 
     // as ferramentas de tools/ (programas em Zig que rodam da raiz)
     _ = tool(b, "mapa", "codemap.zig", "Refaz docs/MAP.md (o mapa do código); -- --check só confere");
+    // os checks de regressão (tools/check.zig): chamam o mesmo zig que roda este build
+    const checks = b.addExecutable(.{ .name = "check", .root_module = b.createModule(.{
+        .root_source_file = b.path("tools/check.zig"),
+        .target = b.graph.host,
+        .optimize = .ReleaseSafe,
+    }) });
+    const checks_run = toolRun(b, checks);
+    checks_run.setEnvironmentVariable("ZIG", b.graph.zig_exe);
+    if (b.args) |args| checks_run.addArgs(args);
+    b.step("check", "Checks de regressão: testes, mapa, tracking e os exemplos contra a main; -- --tudo, --grupos, --so, --ref, --relatorio, --lista").dependOn(&checks_run.step);
     _ = tool(b, "tracking", "tracking.zig", "Página do tracking (zig-out/site/tracking.html); -- --check, --feito, --estado, --issue mudam ou conferem o TRACKING.md");
 }
 

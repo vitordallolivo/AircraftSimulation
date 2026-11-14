@@ -59,7 +59,7 @@ as configurações.
 5. **Física nova não muda o que existe.**
    - Ela entra como modifier ou como método novo, **desligada por padrão**.
    - Os `.cfg`/`.json` antigos carregam iguais.
-   - A simulação e o AeroDrive ficam bit a bit iguais; a regressão em `tools/checks` confere.
+   - A simulação e o AeroDrive ficam bit a bit iguais; a regressão do `zig build check` confere.
 6. **Nenhuma dependência obrigatória de detalhe.** Um módulo não exige um componente opcional (ex.: dados de
    bateria). Sem o dado, a análise que precisa dele é pulada, e o resto roda igual.
 7. **Dado é dado.**
@@ -114,7 +114,7 @@ as configurações.
 - **Branch única de desenvolvimento: `0.2_dev`.** Não criar outras branches. Nunca mexer direto na `main`.
 - **Fluxo de uma tarefa:**
   1. Mesclar a `main` na `0.2_dev`.
-  2. `python tools/checks/run.py --tudo`.
+  2. `python -m ziglang build check -- --tudo`.
   3. `python -m ziglang build mapa`.
   4. Atualizar `docs/TRACKING.md` e `CHANGELOG.md`. O changelog diz o que mudou para quem usa, em frases ("antes,
      ...; agora ..."), sem nomes de código, sem decisões, etapas ou itens do tracking.
@@ -134,7 +134,7 @@ as configurações.
 |---|---|
 | Progresso da lista (itens com ✅ na GUI), quadro de tarefas com dependências | `docs/TRACKING.md` → "Progresso", "Quadro" |
 | Histórico por versão | `CHANGELOG.md` |
-| Regressão: núcleo, AeroDrive, exemplos bit a bit contra a `main`, testes por área | `python tools/checks/run.py` (`--tudo`, `--lista`, `--relatorio x.md`) |
+| Regressão: núcleo, AeroDrive, exemplos bit a bit contra a `main`, testes por área | `python -m ziglang build check` (`-- --tudo`, `--lista`, `--relatorio x.md`) |
 | Contagem de testes por área, ABI do núcleo, funções públicas | `docs/MAP.md` |
 | Tempo (benchmarks) | `core/src/bench.zig` (export `aerosim_bench_*`) |
 
@@ -142,14 +142,15 @@ as configurações.
 
 ```sh
 python -m ziglang build mapa                     # refaz docs/MAP.md (e -- --check para conferir)
-python tools/checks/run.py                       # checks rápidos; --tudo inclui GUI, design e manager
+python -m ziglang build check                    # checks; -- --tudo inclui a regressão inteira
 cd core && python -m ziglang build test          # testes do núcleo; -Dgrupo=math (ou physics, sim...) e -Dfiltro=<nome>
 cd core && python -m ziglang build docs          # documentação do Zig (dos `///`) em zig-out/docs; servir com `python -m http.server -d zig-out/docs`
 cd aerodrive && python -m ziglang build test     # testes do AeroDrive; build run abre o jogo
 python -m ziglang build aerosim                  # a GUI (da raiz; aerodrive, aeroopt e launcher do mesmo jeito)
 ```
 
-O backend Python compila o núcleo sozinho quando o código Zig muda (`aerosim/backend/zig/backend.py`, `build`).
+Os métodos de fora do núcleo (lltdrek, AeroSandbox, AVL) são bibliotecas em Python; a tela os chama pelo adaptador
+`aerosim/bridge.py` (`python -m aerosim.bridge`), que só traduz o avião e devolve os coeficientes.
 
 ## 8. Como achar as coisas
 
@@ -169,8 +170,8 @@ O container começa sem as dependências, e tudo o que se instala some quando el
 
 | Para rodar | Instalar |
 |---|---|
-| Núcleo (`core`, `zig build test`) e o backend Python | `pip install ziglang` (0.16.0 = `minimum_zig_version`) |
-| `tools/checks` e o Python do aeroopt | `pip install -r requirements.txt -r requirements-aero.txt` (o `requirements-aero.txt` traz o `optvl`: o AVL sem executável) |
+| Núcleo, aerosim, aeroopt, checks e site (`zig build ...`) | `pip install ziglang` (0.16.0 = `minimum_zig_version`) |
+| Os métodos de fora (adaptador em Python) | `pip install -r requirements.txt -r requirements-aero.txt` (o `requirements-aero.txt` traz o lltdrek, o AeroSandbox e o `optvl`: o AVL sem executável) |
 | AeroDrive (`zig build`: raylib) | `apt-get install -y libgl-dev libx11-dev libxrandr-dev libxinerama-dev libxi-dev libxcursor-dev libxext-dev`, mais as dependências do Zig (abaixo) |
 | Prints da tela sem monitor (`xvfb-run`) | as bibliotecas do AeroDrive e `apt-get install -y libgl1-mesa-dri` (o `xvfb-run` já vem no container) |
 
@@ -199,5 +200,5 @@ funciona: raylib-zig → raylib → raygui → emsdk → os dois zemscripten.
   tudo de novo.
 - **Sem tela:** print da tela em Zig com `xvfb-run -a -s "-screen 0 1920x1200x24" python -m ziglang build shot --
   x.png [avião.json]` de dentro de `aerosim/` (ou `aeroopt/`).
-- **`run.py --tudo` leva alguns minutos** (a regressão é a parte longa): rodar em segundo plano, nunca dois ao mesmo
+- **`zig build check -- --tudo` leva alguns minutos** (a regressão é a parte longa): rodar em segundo plano, nunca dois ao mesmo
   tempo, e não editar código no meio (o resultado deixa de valer).

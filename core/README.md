@@ -80,4 +80,4 @@ const status = core.runner.run(&inst, 10.0, &buf, &n);
 ```
 
 Tudo o que o projeto calcula passa por aqui, e por isso a simulação, o AeroDrive e os exemplos são conferidos bit a
-bit contra a `main` (`python tools/checks/run.py`): física nova entra desligada e não muda o que já existe.
+bit contra a `main` (`zig build check`): física nova entra desligada e não muda o que já existe.
