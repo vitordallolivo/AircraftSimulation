@@ -1,215 +1,38 @@
-# AeroOpt
+# aeroopt
 
-Este é o terceiro braço do AircraftSimulation. O `aerosim` é onde se projeta um avião e o `aerodrive` é onde se voa
-nele. O AeroOpt procura, entre muitos aviões possíveis, o que faz mais pontos dado uma regra. Você diz o que pode
-mudar no avião (envergadura, área, perfis, motor, hélice, tipo de avião...), entre que limites e com que restrições, e
-escolhe a pontuação do regulamento. 
+O aeroopt procura o avião de maior nota num regulamento (SAE AeroDesign Micro ou Regular, por exemplo). Ele parte do
+projeto da sprint do aerosim. O problema diz o que pode mudar: a envergadura, a área, os perfis, o motor e a hélice,
+cada um com limites ou com a lista do que a busca pode escolher. Também diz as restrições, a pontuação e o método de
+cada etapa. Cada candidato passa pelas mesmas etapas que o aerosim usa para dimensionar: asa, conjunto, motores e o
+ponto de projeto acoplado, que dá o MTOW na pista. O programa é todo em Zig, com a mesma interface do aerosim, e roda
+igual no PC e no navegador.
 
-Resumindo ele apenas gera um monte de aeronaves e otimiza elas!
-
-## A janela
-
-À esquerda fica o problema, com um botão para cada parte: pontuação, variáveis, restrições e configuração. Cada
-botão abre um submenu, e ao lado dele aparece um resumo do que está escolhido. Os tipos de avião que a busca monta
-(monoplano, biplano, tandem, asa voadora) e as caudas que a etapa "voa?" testa ficam na Configuração, junto do
-método de cada etapa. Cada
-opção dos submenus tem um "(?)" que explica o que ela é e no que muda a busca, e os campos de número levam só o
-número: a unidade fica no nome do campo. Asa alta, média, baixa e parasol são o mesmo monoplano com a asa em outra
-altura; para a busca escolher a altura, solta-se a variável "altura da asa". À direita fica a
-rodada: quantos aviões passaram em cada etapa, o MTOW de cada ponto avaliado, a nota de cada configuração, o mapa dos
-aviões, a tabela e o avião selecionado em 3D.
-
-![A janela do aeroopt](../docs/img/aeroopt/janela.png)
-
-Nas variáveis se marca o que é livre e entre que limites. Um campo de escolha, como o perfil ou o motor, abre a lista
-para marcar as opções que entram na busca.
-
-![As variáveis da asa](../docs/img/aeroopt/menu_variaveis.png)
-
-Nas restrições ficam as condições que o avião tem de cumprir, a geometria (hélice, peças e chão na rotação) e a
-estabilidade. Na configuração se escolhe o método de cada etapa.
-
-![As restrições](../docs/img/aeroopt/menu_restricoes.png)
-
-![A configuração das etapas](../docs/img/aeroopt/menu_configuracao.png)
-
-No mapa, cada ponto é um avião. Os eixos podem ser qualquer variável do problema ou um resultado, e a cor é a nota.
-
-![O mapa dos aviões](../docs/img/aeroopt/mapa.png)
-
-
-Embaixo da tabela aparecem os gráficos do melhor avião até aqui: a decolagem, a aerodinâmica, a estabilidade e o
-desempenho. Eles servem para conferir de relance se o avião que está ganhando faz sentido, e não ficam gravados.
-
-A última aba é a sensibilidade do melhor: o quanto a nota muda se uma contínua livre sai do lugar, para saber se o
-avião está no alto de um morro largo ou na beira de uma restrição. Ela olha só esse avião e só o que o problema deixa
-mexer, dentro dos limites. Em vez de refazer o avião em vários pontos, ela reaproveita os pontos que a busca das
-superfícies já avaliou em volta dele e passa por eles um modelo com a inclinação e a curvatura de cada variável (no
-núcleo, `core/src/optim/localfit.zig`). Só a direção que a busca não cobriu ganha pontos novos. Cada barra vai da
-nota prevista a 10 % da faixa para um lado à prevista para o outro, e o lado em que o avião deixa de fechar aparece
-em vermelho, com o motivo.
-
-No menu Configuração, a caixa da sensibilidade liga a análise e escolhe o método. O modelo local é o padrão e
-quase não custa nada. O "um por vez" refaz dois pontos por variável e serve para conferir o modelo. Morris anda em
-trajetórias pela região em volta do melhor e mostra se uma variável tem efeito que muda de um lugar para outro
-(curvatura ou interação com as outras), ao preço de alguns pontos por variável. A tolerância diz quanto a nota cai
-se o avião sair da oficina com aquela diferença em cada medida. Com os limites ligados, a pista e cada restrição
-ligada mudam um pouco para cada lado, e a aba mostra quanto a nota do melhor ganha ou perde com isso, no mesmo
-gráfico. Embaixo do tornado, um gráfico por variável mostra a nota pelo modelo em volta do melhor, os pontos
-avaliados e a faixa da tolerância; um por limite mostra a nota com o limite apertado, como está e folgado. O botão
-"Sensibilidade deste avião" roda só a sensibilidade do avião selecionado na tabela, sem rodar o resto.
-
-![A tabela e o avião selecionado](../docs/img/aeroopt/tabela.png)
-
-![A decolagem do melhor avião](../docs/img/aeroopt/melhor_decolagem.png)
-
-![A aerodinâmica do melhor avião](../docs/img/aeroopt/melhor_aerodinamica.png)
-
-## Como se divide
-
-O aeroopt fica em cima do resto do projeto. Ele organiza a busca, mas não faz conta: quem monta o avião, confere a
-estabilidade e voa a decolagem é o aerosim, o mesmo da GUI de projeto. As contas da busca em si (as gerações, o
-CMA-ES, a evolução diferencial, a busca guiada pela falha, o substituto, a nota) ficam no núcleo em Zig, em
-`core/src/optim`, e o Python chega nelas pela ABI. Os testes cobrem as três camadas.
-
-![Os módulos do aeroopt](../docs/img/aeroopt/modulos.png)
-
-| arquivo | o que tem |
-|---|---|
-| `problem.py`, `inputs.py`, `categories.py` | o problema (`.opt.json`): o que é livre, os limites, os tipos de avião |
-| `stages.py`, `pipeline.py` | os blocos e a fila que os roda em paralelo |
-| `generations.py` | as gerações de configurações |
-| `guided.py`, `diagnosis.py` | a busca do bloco "voa?" guiada pela falha |
-| `scoring.py`, `pontuacao/` | a pontuação de cada regulamento, com a fonte |
-| `gui.py`, `export.py`, `pcoords.py` | a janela, os CSV e o caminho da busca |
-| `sensitivity.py` | a sensibilidade do melhor |
-| `synthetic.py` | os dados de teste, com o resultado sabido de antemão |
-
-## Como funciona
-
-Cada configuração (o tipo de avião, a cauda, os perfis, o motor, a hélice) passa pelos blocos da esquerda para a
-direita. Quem falha num bloco sai ali, com o motivo. Quem chega ao fim ganha uma nota, e as gerações escolhem as
-próximas configurações pelas notas. Os blocos vão do mais barato ao mais caro, para que a conta cara só rode para
-quem já passou nas baratas. Cada busca que aparece aqui (gerações, CMA-ES, evolução diferencial, substituto, busca
-guiada) está desenhada e explicada em [`core/src/optim/README.md`](../core/src/optim/README.md), com o que cada uma
-muda na busca.
-
-![Os blocos do aeroopt](../docs/img/aeroopt/blocos.png)
-
-### Geometria
-
-O avião é montado a partir da configuração e girado em torno da roda principal, para ver a cauda não bate no chão.
-
-![A rotação na pista](../docs/img/fig/aeroopt_geometria.png)
-
-### Voa?
-
-Roda-se então a área de estabilidade e controle, inicialmente não tem como saber se existe uma cauda otima, então nesta região
-do projeto se faz uma otimização junto a decolagem a fim de avaliar qual a melhor cauda para esta aeronave, fora as otimizações
-já existentes em desempenho. 
-
-Porém uma falha não deve aqui imediatamente negar o individuo então cria-se um termo da violação $`V`$, onde basicamente
-podemos ter multiplas falhas. 
-
-```math
-V(x) = \sum_t v_t(x), \qquad V = 0 \iff \text{voa}
+```mermaid
+flowchart LR
+    projeto[projeto da sprint] --> problema[problema .opt.json]
+    problema --> candidato[candidato: valores das variáveis]
+    candidato --> rascunhos[rascunhos da asa, do conjunto e dos motores]
+    rascunhos --> ponto[ponto de projeto acoplado]
+    ponto --> resultado[MTOW, peso vazio, bateria, o que não fecha]
+    resultado --> nota[nota do regulamento]
 ```
 
-Usa-se as regras de Deb (Computer Methods in Applied Mechanics and Engineering 186, 2000, seção
-3, a conferir no PDF): quem voa ganha de quem não voa; entre dois que voam ganha o de maior MTOW; entre dois que não
-voam ganha o que viola menos. A busca então anda primeiro para onde o avião passa a voar, e só depois procura MTOW.
-
-```math
-\text{rank}(x) = \begin{cases} (1,\ \text{MTOW}) & V(x) = 0 \\ (0,\ -V(x)) & V(x) > 0 \end{cases}
-```
-
-E cada individuo sabe onde falha (deriva pequena, carga paga fora do lugar, profundor que não trima), e por isso sabe
-quais variáveis precisamos consertar. Ou seja torna-se uma busca guiada pela falha. No gráfico da direita, com doze variáveis em que só duas consertam as duas falhas, a
-guiada voa sempre e com poucos pontos; as gerações às cegas variam muito de uma semente para outra, e às vezes nem
-chegam a voar.
-
-![As regras de Deb e a violação até voar](../docs/img/fig/aeroopt_voa.png)
-
-Então observa-se que a tendência é que esses individuos consigam mais rapidamente se recuperar das falhas por conta que sabemos o que falha ( OBS: 
-certos tipos de aeronaves precisam de falhas especificas, então por exemplo tandem e canard tem suas próprias falhas)
-
-A busca do bloco parte de um avião como está e para no primeiro ponto que voa. Se esse ponto de partida cai numa região
-ruim, a rodada fica nela. Para isso há dois ajustes, desligados por padrão: o início por Hipercubo Latino, que basicamente
-espalha a população inicial pela faixa toda e as Partidas, que seguem até achar vários pontos que voam, longe uns
-dos outros, e ficam com o que decola com mais peso. 
-
-Para se informar melhor sobre todos os tipos de otimização possíveis olhe em [`core/src/optim/README.md`](../core/src/optim/README.md).
-
-### Superfícies
-
-Aqui se acham a envergadura, a área e as outras variáveis contínuas que dão o maior MTOW na pista, com as mesmas
-regras de Deb. Cada ponto é um avião inteiro (dimensionamento, pista, estabilidade), então o que importa é chegar
-perto do melhor com poucos pontos. Há cinco buscas: coordenadas (um eixo por vez), gerações, CMA-ES, evolução
-diferencial e gerações com substituto.
-
-O problema típico é o da figura: envergadura e área puxam juntas, e o MTOW bom fica num vale inclinado. Andar um eixo
-por vez ou sortear às cegas gasta pontos fora do vale. O GA com substituto sorteia muitos filhos, passa por todos os
-pontos já avaliados uma superfície barata, e só manda para a conta os filhos de melhor palpite: os pontos dele caem
-no vale. Na curva da direita, com seis contínuas, ele é o que chega mais perto do ótimo com o mesmo número de
-pontos.
-
-![Onde caem os pontos e a convergência](../docs/img/fig/aeroopt_superficies.png)
-
-### Decolagem 6GDL
-
-Aqui se acha o MTOW que vale: o maior peso que decola na simulação 6GDL dentro da pista sem estolar. A conta da pista
-do bloco anterior é aproximada; esta voa o avião com o piloto. A massa sai por bisseção: o primeiro voo é na menor
-massa e o segundo na maior, e cada voo seguinte é no meio da faixa que sobrou. Decolou, o MTOW está acima; não
-decolou, está abaixo. São nove cortes, e a faixa final é 1/512 da inicial.
-
-```math
-m_{k+1} = \tfrac12 (m_{lo} + m_{hi}), \qquad \text{decolou: } m_{lo} \leftarrow m_{k+1}, \quad \text{não: } m_{hi} \leftarrow m_{k+1}
-```
-
-Cada voo também acha o melhor momento de puxar o profundor na corrida. A decolagem é sempre com a proteção de α do
-piloto, que pica o nariz antes do estol, e a que estola é reprovada mesmo passando a pista. Sem isso, quase todos
-os tandens estolavam logo depois de sair do chão. Quase todo o tempo vai nas massas que não decolam, e a tolerância (na
-Configuração) aceita errar um pouco o momento de puxar e desiste logo da massa que nem com o comando todo cabrando sai
-do chão.
-
-![A bisseção na massa](../docs/img/fig/aeroopt_bissecao.png)
-
-### Nota
-
-Aqui a carga paga, o MTOW do 6GDL menos o peso vazio, entra na fórmula do regulamento. Na Regular 2026 a parte
-principal é a eficiência estrutural $`EE = CP/PV`$, corrigida pelo número de superfícies e pela envergadura, com
-penalidade depois de 4 m (Regulamento SAE BRASIL AeroDesign 2026, seção 7, eqs. 7.2 a 7.5):
-
-```math
-N = 1{,}10 \cdot 50\,EE \cdot F_N \cdot 1{,}15^{-b} - P_D
-```
-
-É isso que faz a busca não ir só atrás de MTOW: um avião mais pesado com envergadura maior pode valer menos.
-
-![A nota da Regular 2026](../docs/img/fig/aeroopt_nota.png)
-
-### Gerações
-
-Com poucas combinações, a rodada passa todas pela fila. Com muitas (cada perfil, motor, hélice e categoria
-multiplicam a conta, e um problema comum passa de um milhão), um algoritmo genético escolhe quais experimentar: cada
-configuração é um indivíduo, as melhores notas geram as próximas, e quem parou num bloco fica atrás de quem foi mais
-longe. Uma configuração que já apareceu vem da memória, por isso as gerações do fim trazem poucas novas.
-
-![As gerações de configurações](../docs/img/fig/aeroopt_geracoes.png)
-
-### Depois da rodada e para testar
-
-A sensibilidade diz o quanto a nota do melhor avião depende de cada variável: se ele está num morro largo ou na
-beira de um precipício (a aba Sensibilidade, acima). Para testar a máquina sem esperar as contas do avião, os dados
-de teste trocam as contas por funções simples em que já se sabe a resposta, em três formas: a tigela (fácil), a
-acoplada (as variáveis puxam juntas) e a multimodal (com vales falsos).
-
-## Como abrir
+A tela tem o problema à esquerda: o projeto, abrir e gravar o `.opt.json` e um botão por parte (pontuação, variáveis,
+restrições, categorias e configuração), com o resumo ao lado. Cada botão abre o submenu dele. À direita fica a rodada.
+Por enquanto essa rodada é de exemplo; a busca de verdade está sendo trazida para o Zig, etapa por etapa. Os testes
+avaliam um candidato do projeto de exemplo:
 
 ```sh
-python -m aeroopt --exemplo                            # a janela com um projeto de exemplo
-python -m aeroopt meu_projeto.json problema.opt.json   # partindo de um projeto da sprint
-python -m aeroopt --exemplo --sintetico                # a janela com os dados de teste: a rodada em segundos
+cd aeroopt
+python -m ziglang build test                                   # testes sem janela
+python -m ziglang build run                                    # abre o aeroopt
+xvfb-run -a python -m ziglang build shot -- tela.png projeto.json acao=variaveis
 ```
 
-Um regulamento novo é um `.toml` novo em `pontuacao/`, com a fonte e um teste com uma nota calculada à mão.
+```
+projeto_s1223 com b = 2 m e S = 0,6 m²: MTOW 7,4156 kg, vazio 3,4553 kg, baterias 0,8 kg
+não fecha: velocidade de estol 13,1 m/s acima dos 11 m/s pedidos
+```
+
+As pontuações dos regulamentos estão em `pontuacao/`. O avaliador usa as etapas de `aerosim/design`, e as buscas vêm
+do núcleo (`core/src/optim`).
