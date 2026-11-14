@@ -1,7 +1,7 @@
 # AircraftSimulation — como trabalhar neste repositório
 
 Leia isto inteiro no começo de cada sessão. Depois, para achar qualquer coisa, abra **`docs/MAP.md`**: é o mapa do
-código, gerado a partir dele (`python tools/codemap.py`). O que falta fazer e em que ordem fica em
+código, gerado a partir dele (`zig build mapa`). O que falta fazer e em que ordem fica em
 **`docs/TRACKING.md`**.
 
 ---
@@ -115,7 +115,7 @@ as configurações.
 - **Fluxo de uma tarefa:**
   1. Mesclar a `main` na `0.2_dev`.
   2. `python tools/checks/run.py --tudo`.
-  3. `python tools/codemap.py`.
+  3. `python -m ziglang build mapa`.
   4. Atualizar `docs/TRACKING.md` e `CHANGELOG.md`. O changelog diz o que mudou para quem usa, em frases ("antes,
      ...; agora ..."), sem nomes de código, sem decisões, etapas ou itens do tracking.
   5. Abrir o PR `0.2_dev` → `main` e parar.
@@ -141,7 +141,7 @@ as configurações.
 ## 7. Comandos
 
 ```sh
-python tools/codemap.py                          # refaz docs/MAP.md (e --check para conferir)
+python -m ziglang build mapa                     # refaz docs/MAP.md (e -- --check para conferir)
 python tools/checks/run.py                       # checks rápidos; --tudo inclui GUI, design e manager
 cd core && python -m ziglang build test          # testes do núcleo; -Dgrupo=math (ou physics, sim...) e -Dfiltro=<nome>
 cd core && python -m ziglang build docs          # documentação do Zig (dos `///`) em zig-out/docs; servir com `python -m http.server -d zig-out/docs`
@@ -158,7 +158,7 @@ O backend Python compila o núcleo sozinho quando o código Zig muda (`aerosim/b
 2. O `README.md` da pasta: como chamar e como funciona.
 3. `rg` (ripgrep) para o resto.
 
-Depois de criar, mover ou renomear arquivos ou funções públicas, rodar `python tools/codemap.py`. O check
+Depois de criar, mover ou renomear arquivos ou funções públicas, rodar `python -m ziglang build mapa`. O check
 `mapa do código em dia` acusa se ficou desatualizado.
 
 ## 9. Ambiente (sessão na nuvem): o que instalar e problemas conhecidos

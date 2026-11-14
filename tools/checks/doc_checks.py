@@ -13,9 +13,9 @@ from registry import ROOT, Result, check, sh
 
 @check("fundação", "mapa do código em dia (docs/MAP.md)")
 def codemap_up_to_date() -> Result:
-    code, out, _ = sh([sys.executable, os.path.join(ROOT, "tools", "codemap.py"), "--check"], cwd=ROOT, timeout=120)
+    code, out, err = sh([sys.executable, "-m", "ziglang", "build", "mapa", "--", "--check"], cwd=ROOT, timeout=600)
     if code != 0:
-        return Result(False, "desatualizado: rode python tools/codemap.py", out.strip().splitlines()[-3:])
+        return Result(False, "desatualizado: rode zig build mapa", (out + err).strip().splitlines()[-3:])
     return Result(True, "em dia")
 
 

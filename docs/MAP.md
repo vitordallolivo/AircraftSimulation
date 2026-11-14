@@ -1,6 +1,6 @@
 # Mapa do código
 
-Gerado por `python tools/codemap.py` — **não editar à mão** (`--check` acusa quando está desatualizado).
+Gerado por `zig build mapa` — **não editar à mão** (`zig build mapa -- --check` acusa quando está desatualizado).
 Formato: `arquivo` — primeira linha da documentação; depois os nomes públicos com a linha (`nome:linha`).
 Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs/TRACKING.md`.
 
@@ -290,7 +290,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Declaration:11`
   fn `require:18`, `has:33`
 - `core/src/lib.zig` — O núcleo como módulo Zig (para programas em Zig, como o aerodrive): os mesmos tipos e funções
-  tipos `structures:51`, `optim:57`
+  tipos `structures:53`, `optim:59`
 - `core/src/limits.zig` — Limites de compilação. Toda a memória do núcleo é estática e dimensionada aqui:
   tipos `Group:18`
   fn `groupIndex:30`
@@ -549,6 +549,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/util/plot.zig` — Gráficos de linha em SVG, sem nenhuma dependência: os testes do núcleo desenham o que calcularam, para o dono
   tipos `Series:11`, `Style:18`, `Figure:21`
   fn `writeSvg:63`, `save:156`, `fromTest:167`
+- `core/src/util/xflr5.zig` — A polar de avião exportada pelo XFLR5 (análise de avião por LLT, VLM1, VLM2 ou painéis; Polars → Export), lida
+  tipos `Method:14`, `Polar:30`
+  fn `parse:67`
 - `core/src/util/xlsx.zig` — Leitor de planilhas `.xlsx` sem dependência de fora: o arquivo é um `.zip` (APPNOTE da PKWARE) com uma folha de
   tipos `Value:18`, `Cell:34`, `Sheet:41`, `Workbook:71`
   fn `parseAddress:114`
@@ -882,7 +885,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 ## Ferramentas (`tools/`)
 
-- `tools/codemap.py` — Mapa do código: gera docs/MAP.md a partir do próprio código (nunca editar o MAP.md à mão).
+- `tools/codemap.zig` — Mapa do código: gera docs/MAP.md a partir do próprio código (nunca editar o MAP.md à mão).
 - `tools/grafo.py` — Grafo do código: lê o Zig e o Python do repositório e devolve quem é quem e quem chama quem, sem lista feita à mão.
 - `tools/livro.py` — Livro do projeto: todos os .md do repositório num site só, como capítulos de um livro, ao lado do tracking.
 - `tools/package.py` — Monta o programa instalável: a tela inicial (o menu do site), o aerosim, o aeroopt e o AeroDrive numa pasta só,

@@ -47,6 +47,26 @@ pub fn build(b: *std.Build) void {
         test_all.dependOn(&child(b, name, &.{ "build", "test" }, null).step);
     }
     test_all.dependOn(&child(b, "core", &.{ "build", "test" }, null).step);
+
+    // as ferramentas de tools/ (programas em Zig que rodam da raiz)
+    _ = tool(b, "mapa", "codemap.zig", "Refaz docs/MAP.md (o mapa do código); -- --check só confere");
+}
+
+/// uma ferramenta de `tools/` como passo `zig build <step_name>`: compila `tools/<file>` e roda da raiz, com os
+/// argumentos depois de `--`
+fn tool(b: *std.Build, step_name: []const u8, file: []const u8, description: []const u8) *std.Build.Step.Run {
+    const exe = b.addExecutable(.{ .name = step_name, .root_module = b.createModule(.{
+        .root_source_file = b.path(b.fmt("tools/{s}", .{file})),
+        .target = b.graph.host,
+        .optimize = .ReleaseSafe,
+    }) });
+    const run = b.addRunArtifact(exe);
+    run.setCwd(b.path("."));
+    run.has_side_effects = true;
+    run.stdio = .inherit;
+    if (b.args) |args| run.addArgs(args);
+    b.step(step_name, description).dependOn(&run.step);
+    return run;
 }
 
 /// `<python> tools/livro.py --saida zig-out/site`: o livro com todos os .md, o mapa do código (`grafo.py`) e a página

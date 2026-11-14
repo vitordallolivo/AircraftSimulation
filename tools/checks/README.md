@@ -17,7 +17,7 @@ Sai com código 1 se algum check falhar. Os pulados, por exemplo quando falta o 
 
 | grupo | o que roda |
 |---|---|
-| fundação | `zig build test` no `core/`; `docs/MAP.md` em dia com o código (`tools/codemap.py --check`) |
+| fundação | `zig build test` no `core/`; `docs/MAP.md` em dia com o código (`zig build mapa -- --check`) |
 | aerodrive | `zig build` e `zig build test` no `aerodrive/`; o AeroDrive importa o núcleo, então isso pega quebra de API |
 | regressão | os exemplos de `data/aircraft` retratados no código atual e numa referência, comparados número a número |
 
