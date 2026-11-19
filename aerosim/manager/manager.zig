@@ -65,6 +65,7 @@ pub const layout = [_]Area{
         .{ .title = "Perfis", .kind = .stage, .name = "perfis" },
         .{ .title = "Motores", .kind = .stage, .name = "biblioteca_motores" },
         .{ .title = "Hélices", .kind = .stage, .name = "biblioteca_helices" },
+        .{ .title = "Planilhas", .kind = .stage, .name = "biblioteca_planilhas" },
     } },
     .{ .title = "Dimensionamento inicial", .tabs = &.{
         .{ .title = "Mini-MDO (otimizador)", .kind = .simulation, .name = "mdo" },

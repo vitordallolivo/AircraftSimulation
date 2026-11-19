@@ -4,6 +4,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## v0.3.1 (na `0.3_dev`, em andamento)
 
+- Antes, trazer dados de uma planilha da equipe pedia um mapa de células escrito à mão. Agora a Biblioteca tem a aba
+  "Planilhas": abre qualquer `.xlsx`, mostra as células, acha sozinha o bloco com títulos e números, sugere qual coluna
+  é α, C_L, C_D e C_m (ou y e c_l, ou x e y, ou os dados de motor), mostra o gráfico do bloco e guarda com o nome que
+  você escolher. Uma lista de motores vai direto para Biblioteca → Motores.
 - Antes, o AeroDrive guardava as preferências (controles, câmera, som, último avião) e o que cada avião lembra em
   arquivos `.json`. Agora elas ficam em arquivos `.aerocfg`; as preferências que já existiam são lidas na primeira
   vez e regravadas no formato novo.

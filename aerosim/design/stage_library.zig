@@ -124,7 +124,7 @@ fn writeText(io: std.Io, memory: std.mem.Allocator, kind: Kind, name: []const u8
 }
 
 /// grava um motor na pasta da biblioteca
-fn storeMotor(io: std.Io, memory: std.mem.Allocator, motor: catalog.Motor) !void {
+pub fn storeMotor(io: std.Io, memory: std.mem.Allocator, motor: catalog.Motor) !void {
     var written: std.Io.Writer.Allocating = .init(memory);
     try catalog.writeMotor(&written.writer, motor);
     _ = try writeText(io, memory, .motors, motor.name, written.written());

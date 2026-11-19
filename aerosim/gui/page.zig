@@ -700,7 +700,7 @@ pub const Page = struct {
             page.pending_keep = false;
             page.stageRequest("keep", "");
         }
-        if (page.run_when_ready and page.kind == .stage and page.loaded and !page.working() and page.fields.len > 0 and page.pending_act_len > 0) {
+        if (page.run_when_ready and page.kind == .stage and page.loaded and !page.working() and (page.fields.len > 0 or page.actions.len > 0) and page.pending_act_len > 0) {
             page.run_when_ready = false;
             const key = page.pending_act[0..page.pending_act_len];
             page.pending_act_len = 0;
@@ -1734,6 +1734,8 @@ pub const Page = struct {
             // um catálogo de motores e hélices (.cfg, .xlsx, .json) parte de data/catalog; o resto, dos perfis
             if (std.mem.eql(u8, action.key, "catalogo")) {
                 page.picker.show(action.label, "data/catalog", &.{ ".cfg", ".xlsx", ".json" });
+            } else if (std.mem.eql(u8, action.key, "planilha")) {
+                page.picker.show(action.label, ".", &.{".xlsx"});
             } else page.picker.show(action.label, "data/airfoils", &.{ ".dat", ".txt", ".csv", ".pol" });
         } else page.act(action.key, "");
     }
