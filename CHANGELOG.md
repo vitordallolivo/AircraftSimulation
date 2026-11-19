@@ -6,6 +6,17 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ### v0.2.6 (em andamento na `0.2_dev`)
 
+- Em Aerodinâmica → Analisar, a tela tinha um método, um "comparar com" e uma caixa separada de comparação de
+  polares. Agora há uma lista só de métodos, e cada um que está marcado roda. O VLM do núcleo (malha de vórtices)
+  entrou na lista, com o C_L, a carga ao longo da envergadura e a polar. As malhas, os passos e as iterações de cada
+  método ficam no Refino dos Solvers.
+- Na linha sustentadora não linear, uma asa de perfil muito arqueado podia dar um C_L de −500 perto do estol. Agora
+  a conta só aceita passos que não fazem o erro crescer demais, e os ângulos em que ela não converge aparecem como
+  aviso no diagnóstico.
+- Os campos de refino do VLM do AeroSandbox mostravam 0 e não mudavam a conta. Agora mostram o valor usado e mudam a
+  conta, no Analisar e em Cargas.
+- Abrir o aerosim de uma compilação antiga dava o erro "pedido desconhecido: 'run'". Agora o lançador compila os
+  programas antes de abrir, e uma versão antiga aberta pede para compilar de novo.
 - O aerosim precisava do Python para abrir as análises, para montar o instalável e o site e para rodar os checks.
   Agora tudo isso é feito pelo próprio programa: a janela, o instalável para Linux e Windows, o site e os checks
   saem do mesmo comando de compilação. O Python só fica para os métodos de fora (lltdrek, AeroSandbox e AVL), que
