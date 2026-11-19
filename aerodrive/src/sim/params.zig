@@ -697,7 +697,7 @@ pub fn staticCharacteristics(inst: *core.runner.Instance, ac: *const Aircraft) I
 const testing = std.testing;
 
 fn loadExample(name: []const u8, d: *model.Diag) !model.Loaded {
-    const path = try std.fmt.allocPrint(testing.allocator, "../data/aircraft/{s}.json", .{name});
+    const path = try std.fmt.allocPrint(testing.allocator, "../data/aircraft/{s}.aero", .{name});
     defer testing.allocator.free(path);
     const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, testing.allocator, .limited(1 << 24));
     defer testing.allocator.free(bytes);

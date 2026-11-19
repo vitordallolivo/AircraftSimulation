@@ -1,9 +1,20 @@
-//! Biblioteca de aviões: os `.json` das pastas de exemplos e de "meus aviões" (os salvos pela
+//! Biblioteca de aviões: os `.aero` (e os `.json` antigos) das pastas de exemplos e de "meus aviões" (os salvos pela
 //! GUI), em ordem de nome. Pasta que não existe é pulada. Arquivos que são o MESMO avião e só
 //! mudam o campo (decola da mesa, pousa na plataforma — escolhas do menu Voar) aparecem uma vez.
 const std = @import("std");
 const storage = @import("storage.zig");
 const fz = @import("../util/fuzz.zig");
+const aero_file = @import("../model/aero_file.zig");
+const aircraft = @import("../model/aircraft.zig");
+
+/// as extensões de avião que a biblioteca mostra (o `.json` é o formato antigo)
+const extensions = [_][]const u8{ aero_file.extension, ".json" };
+
+/// a extensão de avião de `file` (`.aero` ou `.json`), ou null
+fn aircraftExtension(file: []const u8) ?[]const u8 {
+    for (extensions) |extension| if (std.ascii.endsWithIgnoreCase(file, extension)) return extension;
+    return null;
+}
 
 pub const Group = enum {
     examples,
@@ -18,7 +29,7 @@ pub const Group = enum {
 };
 
 pub const Entry = struct {
-    name: [:0]const u8, // nome do arquivo sem .json, com _ virando espaço
+    name: [:0]const u8, // nome do arquivo sem a extensão, com _ virando espaço
     path: []const u8,
     group: Group,
 };
@@ -77,12 +88,14 @@ pub fn scan(files: storage.Storage, gpa: std.mem.Allocator, examples: []const []
     return lib;
 }
 
-/// impressão digital do avião: o JSON sem o nome e sem o campo (airfield); null se não for JSON
+/// impressão digital do avião: o avião sem o nome e sem o campo (airfield); null se não for avião
 pub fn fingerprint(gpa: std.mem.Allocator, bytes: []const u8) ?u64 {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const aa = arena.allocator();
-    var v = std.json.parseFromSliceLeaky(std.json.Value, aa, bytes, .{}) catch return null;
+    var diagnosis: aircraft.Diag = .{};
+    const text = if (aero_file.looksLike(bytes)) (aero_file.readDocument(aa, bytes, &diagnosis) catch return null).json else bytes;
+    var v = std.json.parseFromSliceLeaky(std.json.Value, aa, text, .{}) catch return null;
     if (v != .object) return null;
     _ = v.object.orderedRemove("nome");
     if (v.object.getPtr("aeronave")) |ac| if (ac.* == .object) {
@@ -112,14 +125,16 @@ fn addDir(files: storage.Storage, a: std.mem.Allocator, list: *std.ArrayList(Ent
     }.lt);
 }
 
-/// nome de arquivo para guardar um .json que veio de fora: só o nome (sem pastas), letras,
-/// números, espaço, ponto, _ e -; sempre termina em ".json" ("../x/Meu avião!.JSON" → "Meu avi_o_.json")
+/// nome de arquivo para guardar um avião que veio de fora: só o nome (sem pastas), letras, números, espaço, ponto,
+/// _ e -; termina em ".json" se veio um `.json` e em ".aero" no resto ("../x/Meu avião!.JSON" → "Meu avi_o_.json")
 pub fn safeFileName(buf: *[96]u8, file_name: []const u8) []const u8 {
     const base = std.fs.path.basename(file_name);
-    const stem = if (std.ascii.endsWithIgnoreCase(base, ".json")) base[0 .. base.len - 5] else base;
+    const found = aircraftExtension(base);
+    const stem = if (found) |extension| base[0 .. base.len - extension.len] else base;
+    const extension = if (found) |known| (if (std.mem.eql(u8, known, ".json")) ".json" else aero_file.extension) else aero_file.extension;
     var len: usize = 0;
     for (stem) |char| {
-        if (len >= buf.len - 5) break;
+        if (len >= buf.len - extension.len) break;
         const keep = std.ascii.isAlphanumeric(char) or char == ' ' or char == '_' or char == '-' or (char == '.' and len > 0);
         buf[len] = if (keep) char else '_';
         len += 1;
@@ -128,14 +143,15 @@ pub fn safeFileName(buf: *[96]u8, file_name: []const u8) []const u8 {
         @memcpy(buf[0..5], "aviao");
         len = 5;
     }
-    @memcpy(buf[len .. len + 5], ".json");
-    return buf[0 .. len + 5];
+    @memcpy(buf[len .. len + extension.len], extension);
+    return buf[0 .. len + extension.len];
 }
 
-/// "Asa_voadora.json" → "Asa voadora"; outro tipo de arquivo → null
+/// "Asa_voadora.aero" → "Asa voadora"; outro tipo de arquivo → null
 pub fn entryName(a: std.mem.Allocator, file: []const u8) !?[:0]u8 {
-    if (file.len <= 5 or !std.ascii.endsWithIgnoreCase(file, ".json") or file[0] == '.') return null;
-    const stem = file[0 .. file.len - 5];
+    const extension = aircraftExtension(file) orelse return null;
+    if (file.len <= extension.len or file[0] == '.') return null;
+    const stem = file[0 .. file.len - extension.len];
     const out = try a.allocSentinel(u8, stem.len, 0);
     for (stem, 0..) |c, i| out[i] = if (c == '_' or c == 0) ' ' else c;
     return out;
@@ -150,10 +166,10 @@ test "acha os exemplos do repositório em ordem" {
     defer lib.deinit();
     try testing.expect(lib.entries.len >= 3);
     for (lib.entries[1..], lib.entries[0 .. lib.entries.len - 1]) |b, a| try testing.expect(!std.ascii.lessThanIgnoreCase(b.name, a.name));
-    try testing.expect(lib.find("../data/aircraft/Asa_voadora.json") != null);
+    try testing.expect(lib.find("../data/aircraft/Asa_voadora.aero") != null);
     // "decola da mesa, pousa na plataforma" é o Convencional: aparece uma vez só
-    try testing.expect(lib.find("../data/aircraft/Convencional_original.json") != null);
-    try testing.expect(lib.find("../data/aircraft/Convencional_decola_da_mesa_pousa_na_plataforma.json") == null);
+    try testing.expect(lib.find("../data/aircraft/Convencional_original.aero") != null);
+    try testing.expect(lib.find("../data/aircraft/Convencional_decola_da_mesa_pousa_na_plataforma.aero") == null);
 }
 
 test "impressão digital ignora nome e campo" {
@@ -165,19 +181,20 @@ test "impressão digital ignora nome e campo" {
     try testing.expect(fingerprint(testing.allocator, "não é json") == null);
 }
 
-test "nome seguro para o .json que veio de fora" {
+test "nome seguro para o avião que veio de fora" {
     var buf: [96]u8 = undefined;
     try testing.expectEqualStrings("Asa voadora.json", safeFileName(&buf, "Asa voadora.json"));
     try testing.expectEqualStrings("Meu avi__o_.json", safeFileName(&buf, "../x/Meu avião!.JSON"));
-    try testing.expectEqualStrings("aviao.json", safeFileName(&buf, ""));
-    try testing.expectEqualStrings("_x.json", safeFileName(&buf, ".x"));
+    try testing.expectEqualStrings("aviao.aero", safeFileName(&buf, ""));
+    try testing.expectEqualStrings("_x.aero", safeFileName(&buf, ".x"));
+    try testing.expectEqualStrings("Bimotor.aero", safeFileName(&buf, "/tmp/Bimotor.aero"));
 }
 
 fn fuzzSafeName(_: void, source: *fz.Src) anyerror!void {
     var input: [200]u8 = undefined;
     var buf: [96]u8 = undefined;
     const name = safeFileName(&buf, input[0..source.bytes(&input)]);
-    try testing.expect(std.mem.endsWith(u8, name, ".json") and name.len > 5 and name[0] != '.');
+    try testing.expect(aircraftExtension(name) != null and name.len > 5 and name[0] != '.');
     for (name) |char| try testing.expect(char != '/' and char != '\\' and char != 0);
 }
 

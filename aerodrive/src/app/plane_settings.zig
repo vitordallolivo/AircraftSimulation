@@ -50,8 +50,8 @@ test "cada avião lembra a sua sessão; avião novo começa do padrão" {
     a.session.wind_speed = 7;
     a.own_controls = true;
     a.profile.applyScheme(.radio2);
-    try testing.expect(a.save(st, testing.allocator, "../data/aircraft/Asa_voadora.json"));
-    const r = PlaneSettings.load(st, testing.allocator, "../data/aircraft/Asa_voadora.json", .{});
+    try testing.expect(a.save(st, testing.allocator, "../data/aircraft/Asa_voadora.aero"));
+    const r = PlaneSettings.load(st, testing.allocator, "../data/aircraft/Asa_voadora.aero", .{});
     try testing.expect(r.session.scenario == .table and r.session.wind_speed == 7);
     try testing.expect(r.own_controls and r.profile.scheme == .radio2 and r.profile.src_thr == .ly);
     var dflt: PlaneSettings = .{};

@@ -1,5 +1,5 @@
 //! O retrato numérico dos aviões de exemplo, para a regressão bit a bit (`zig build check`): cada avião de
-//! `data/aircraft` (.json, .cfg, .xlsx) passa pelas análises do aerosim com os valores padrão, e o resultado de cada
+//! `data/aircraft` (.aero, .json, .cfg, .xlsx) passa pelas análises do aerosim com os valores padrão, e o resultado de cada
 //! uma sai numa linha `avião<TAB>análise<TAB>json`. O `check` roda isto na árvore atual e numa cópia da referência
 //! (`git worktree`) e compara os números das duas. Compilado pelo `aerosim/build.zig` (`zig build retrato`), que
 //! liga o núcleo e o manager daquela árvore.
@@ -37,8 +37,7 @@ pub fn main(init: std.process.Init) !void {
     var walker = folder.iterate();
     while (try walker.next(io)) |entry| {
         if (entry.kind != .file) continue;
-        const extension = std.fs.path.extension(entry.name);
-        if (!std.mem.eql(u8, extension, ".json") and !std.mem.eql(u8, extension, ".cfg") and !std.mem.eql(u8, extension, ".xlsx")) continue;
+        if (data_sources.Format.fromPath(entry.name) == null) continue;
         try names.append(gpa, try gpa.dupe(u8, entry.name));
     }
     std.mem.sort([]const u8, names.items, {}, lessThan);

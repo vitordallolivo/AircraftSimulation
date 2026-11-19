@@ -6,6 +6,7 @@
 const std = @import("std");
 const core = @import("aerosim");
 const fz = @import("../util/fuzz.zig");
+const aero_file = @import("aero_file.zig");
 
 // ------------------------------------------------------------------ esquema (nomes iguais aos do JSON)
 /// seção da superfície; `airfoil` null: o perfil da superfície (entre seções as propriedades são interpoladas)
@@ -398,55 +399,13 @@ pub const Modifier = struct {
     kind: []const u8 = "solo.mccormick",
     enabled: bool = true,
     name: []const u8 = "",
-    params: Settings = .{},
+    params: std.json.ArrayHashMap(f64) = .{},
     targets: []const []const u8 = &.{},
     props: []const i64 = &.{},
 
     /// um ajuste pelo nome (o padrão se o arquivo não tem)
     pub fn value(modifier: *const Modifier, key: []const u8, fallback: f64) f64 {
-        return modifier.params.get(key) orelse fallback;
-    }
-};
-
-/// os ajustes de um modificador pelo nome: no `.json` um objeto (`{"giro": 0}`, como sempre foi), no `.aero` uma
-/// lista de pares (o ZON não tem mapa)
-pub const Settings = struct {
-    items: []const Setting = &.{},
-
-    pub const Setting = struct { key: []const u8, value: f64 };
-
-    /// o ajuste `key`, se houver
-    pub fn get(settings: Settings, key: []const u8) ?f64 {
-        for (settings.items) |item| if (std.mem.eql(u8, item.key, key)) return item.value;
-        return null;
-    }
-
-    /// lê o objeto do `.json`
-    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Settings {
-        const map = try std.json.ArrayHashMap(f64).jsonParse(allocator, source, options);
-        return fromMap(allocator, map);
-    }
-
-    /// lê o objeto já aberto em `std.json.Value`
-    pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) !Settings {
-        const map = try std.json.ArrayHashMap(f64).jsonParseFromValue(allocator, source, options);
-        return fromMap(allocator, map);
-    }
-
-    fn fromMap(allocator: std.mem.Allocator, map: std.json.ArrayHashMap(f64)) !Settings {
-        const items = try allocator.alloc(Setting, map.map.count());
-        for (map.map.keys(), map.map.values(), items) |key, value, *item| item.* = .{ .key = key, .value = value };
-        return .{ .items = items };
-    }
-
-    /// grava como objeto no `.json`
-    pub fn jsonStringify(settings: Settings, writer: anytype) !void {
-        try writer.beginObject();
-        for (settings.items) |item| {
-            try writer.objectField(item.key);
-            try writer.write(item.value);
-        }
-        try writer.endObject();
+        return modifier.params.map.get(key) orelse fallback;
     }
 };
 
@@ -511,6 +470,11 @@ pub const limits = struct {
 
 pub const Error = error{
     NotJson,
+    // o `.aero` (`aero_file.zig`)
+    NotAero,
+    NewerFormat,
+    BadManifest,
+    BadAircraft,
     NoAircraft,
     BadField,
     TooMany,
@@ -550,7 +514,9 @@ pub fn parse(gpa: std.mem.Allocator, bytes: []const u8, diag: *Diag) (Error || s
     var arena = std.heap.ArenaAllocator.init(gpa);
     errdefer arena.deinit();
     const a = arena.allocator();
-    const root = std.json.parseFromSliceLeaky(std.json.Value, a, bytes, .{}) catch |e| {
+    // o `.aero` (zip com o avião em ZON) chega aqui como o mesmo texto JSON
+    const text = if (aero_file.looksLike(bytes)) (try aero_file.readDocument(a, bytes, diag)).json else bytes;
+    const root = std.json.parseFromSliceLeaky(std.json.Value, a, text, .{}) catch |e| {
         if (e == error.OutOfMemory) return error.OutOfMemory;
         diag.set("o arquivo não é JSON válido ({s})", .{@errorName(e)});
         return error.NotJson;

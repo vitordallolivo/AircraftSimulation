@@ -140,7 +140,7 @@ const testing = std.testing;
 
 test "Tração: as curvas de cada motor e a tração estática no maior acelerador" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Bimotor_convencional_tubo_cauda_em_V.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Bimotor_convencional_tubo_cauda_em_V.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: aircraft_model.aircraft.Diag = .{};
     var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);

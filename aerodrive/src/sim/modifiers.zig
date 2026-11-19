@@ -175,7 +175,10 @@ test "lista vazia: solo desligado; interferência só com duas asas no grupo" {
 
 test "esteira: os ajustes e os flags pelo nome" {
     var params: types.Params = .{};
-    const settings: model.Settings = .{ .items = &.{ .{ .key = "giro", .value = 0 }, .{ .key = "ganho_axial", .value = 1.2 } } };
+    var settings: std.json.ArrayHashMap(f64) = .{};
+    defer settings.deinit(testing.allocator);
+    try settings.map.put(testing.allocator, "giro", 0);
+    try settings.map.put(testing.allocator, "ganho_axial", 1.2);
     const slipstream = [_]model.Modifier{.{ .kind = "esteira.disco", .params = settings }};
     fill(&.{ .modifiers = &slipstream }, &params);
     try testing.expectEqual(@as(i32, 1), params.n_mod);

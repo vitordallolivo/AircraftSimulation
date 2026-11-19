@@ -264,17 +264,22 @@ pub fn loadAircraft(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagno
     return loaded;
 }
 
-/// o texto `.json` do avião em `path` (memória de `gpa`): o `.json` como está; o `.cfg`, o `.ini` e a planilha
-/// `.xlsx` antigos convertidos para o `.json` (`data/sources.zig`)
+/// o texto `.json` do avião em `path` (memória de `gpa`): o `.json` como está; o `.aero` aberto (o avião de dentro,
+/// em JSON); o `.cfg`, o `.ini` e a planilha `.xlsx` antigos convertidos para o `.json` (`data/sources.zig`)
 pub fn readAircraftText(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) ![]u8 {
     const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(max_file_bytes)) catch |err| {
         diagnosis.set("não consegui abrir '{s}' ({s})", .{ path, @errorName(err) });
         return err;
     };
-    if (data_sources.Format.fromPath(path) == .json) return bytes;
+    const format = data_sources.Format.fromPath(path);
+    if (format == .json) return bytes;
     defer gpa.free(bytes);
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
+    if (format == .aero or aircraft_model.aero_file.looksLike(bytes) and format != .xlsx) {
+        const document = try aircraft_model.aero_file.readDocument(arena.allocator(), bytes, diagnosis);
+        return gpa.dupe(u8, document.json);
+    }
     const text = data_sources.aircraftJson(arena.allocator(), path, bytes) catch |err| {
         diagnosis.set("não consegui ler '{s}' como avião ({s})", .{ std.fs.path.basename(path), @errorName(err) });
         return err;
@@ -373,7 +378,7 @@ pub fn parseDat(allocator: std.mem.Allocator, text: []const u8) ![]const [2]f64 
 }
 
 /// o avião de exemplo que a Montagem abre sozinha, procurado a partir da pasta atual e das de cima
-pub const example_file = "data/aircraft/S1223_monomotor_EH_convencional_Joinville.json";
+pub const example_file = "data/aircraft/Convencional_original.aero";
 
 /// o caminho do avião de exemplo, se ele existir perto da pasta atual
 pub fn findExample(allocator: std.mem.Allocator, io: std.Io) ?[]const u8 {
@@ -402,7 +407,7 @@ test "perfil .dat: Selig e Lednicer" {
 
 test "a massa e o CG da Montagem são os do Python: seca, líquido e carga" {
     var diagnosis: Diagnosis = .{};
-    var loaded = try loadAircraft(std.testing.allocator, std.testing.io, "../data/aircraft/Convencional_original.json", &diagnosis);
+    var loaded = try loadAircraft(std.testing.allocator, std.testing.io, "../data/aircraft/Convencional_original.aero", &diagnosis);
     defer loaded.deinit();
     const weights = balance(&loaded.ac);
     // a Montagem em Python: massa total 12,390 kg (8,390 seca, 2,000 de líquido, 2,000 de LAPES), CG (0,008; 0; 0,021) m

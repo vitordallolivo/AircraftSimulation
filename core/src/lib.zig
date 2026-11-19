@@ -45,6 +45,8 @@ pub const interpolation = @import("math/interpolation.zig");
 pub const xlsx = @import("util/xlsx.zig");
 /// o zip (ler e gravar), a caixa do .xlsx e do .aero
 pub const zip = @import("util/zip.zig");
+/// a ponte entre a árvore JSON e o texto ZON (os textos dentro do .aero)
+pub const zon_json = @import("util/zon_json.zig");
 /// a polar de avião exportada pelo XFLR5
 pub const xflr5 = @import("util/xflr5.zig");
 pub const autotune = @import("control/autotune.zig");

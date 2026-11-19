@@ -76,7 +76,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Declaration:11`
   fn `require:18`, `has:33`
 - `core/src/lib.zig` — O núcleo como módulo Zig (para programas em Zig, como o aerodrive): os mesmos tipos e funções
-  tipos `structures:59`, `optim:65`
+  tipos `structures:61`, `optim:67`
 - `core/src/limits.zig` — Limites de compilação. Toda a memória do núcleo é estática e dimensionada aqui:
   tipos `Group:18`
   fn `groupIndex:30`
@@ -361,6 +361,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `parseAddress:115`
 - `core/src/util/zip.zig` — O zip (APPNOTE da PKWARE) sem dependência de fora: ler o índice e as partes (guardadas ou com deflate) e gravar um
   tipos `Archive:15`, `Writer:86`
+- `core/src/util/zon_json.zig` — A ponte entre os dados em JSON (a árvore `std.json.Value`, como a Montagem e as etapas guardam o avião) e o texto
+  fn `write:15`, `toZon:21`, `jsonToZon:28`, `read:120`, `zonToJson:130`
 
 
 ## Zig · AeroDrive (`aerodrive/src`)
@@ -375,9 +377,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerodrive/src/app/app.zig` — O jogo inteiro: o que as telas dividem (fontes, widgets, configurações, o avião carregado, som,
   tipos `Id:51`, `Next:53`, `Plane:62`, `Screens:81`, `App:96`
-- `aerodrive/src/app/library.zig` — Biblioteca de aviões: os `.json` das pastas de exemplos e de "meus aviões" (os salvos pela
-  tipos `Group:8`, `Entry:20`, `Library:28`
-  fn `scan:43`, `fingerprint:81`, `safeFileName:117`, `entryName:136`
+- `aerodrive/src/app/library.zig` — Biblioteca de aviões: os `.aero` (e os `.json` antigos) das pastas de exemplos e de "meus aviões" (os salvos pela
+  tipos `Group:19`, `Entry:31`, `Library:39`
+  fn `scan:54`, `fingerprint:92`, `safeFileName:130`, `entryName:151`
 - `aerodrive/src/app/paths.zig` — Onde ficam as coisas no disco, a partir das variáveis de ambiente:
   tipos `Paths:12`
   fn `resolve:31`
@@ -434,11 +436,11 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/model/**
 
 - `aerodrive/src/model/aero_file.zig` — O arquivo `.aero`: um avião inteiro num arquivo só, no lugar dos vários `.json`. Por dentro é um zip (como o
-  tipos `Manifest:28`, `Part:38`, `Stamp:41`, `Loaded:46`
-  fn `looksLike:65`, `write:70`, `read:85`
+  tipos `Manifest:29`, `Part:39`, `Stamp:42`, `Loaded:47`, `Document:117`
+  fn `looksLike:67`, `isoNow:72`, `createdOf:83`, `write:91`, `writeDocument:98`, `readDocument:120`, `canonicalJson:160`, `read:165`
 - `aerodrive/src/model/aircraft.zig` — Leitura do arquivo do avião salvo pela GUI (`data/aircraft/*.json`, "meus aviões").
-  tipos `Section:12`, `Control:20`, `Device:59`, `Airfoil:76`, `Surface:87`, `Fuselage:119`, `Boom:136`, `Propeller:165`, `Motor:166`, `Battery:167`, `ThrustPoly:178`, `Propulsion:191`, `GearLeg:208`, `Gear:209`, `Tank:232`, `Payload:252`, `PointMass:266`, `Mass:267`, `Environment:278`, `Takeoff:306`, `SimSettings:307`, `Autopilot:309`, `Leg:354`, `MissionEvent:367`, `Mission:368`, `Ballast:378`, `Airfield:379`, `Modifier:397`, `Settings:413`, `Performance:454`, `Aircraft:465`, `limits:501`, `Diag:525`, `Loaded:539`
-  fn `mixedAirfoils:15`, `kindGains:49`, `parse:549`, `validate:608`, `semispan:695`, `sortedSections:702`, `sectionAt:714`, `tailOnBoom:727`, `mountPoint:745`, `applyMounts:779`
+  tipos `Section:13`, `Control:21`, `Device:60`, `Airfoil:77`, `Surface:88`, `Fuselage:120`, `Boom:137`, `Propeller:166`, `Motor:167`, `Battery:168`, `ThrustPoly:179`, `Propulsion:192`, `GearLeg:209`, `Gear:210`, `Tank:233`, `Payload:253`, `PointMass:267`, `Mass:268`, `Environment:279`, `Takeoff:307`, `SimSettings:308`, `Autopilot:310`, `Leg:355`, `MissionEvent:368`, `Mission:369`, `Ballast:379`, `Airfield:380`, `Modifier:398`, `Performance:413`, `Aircraft:424`, `limits:460`, `Diag:489`, `Loaded:503`
+  fn `mixedAirfoils:16`, `kindGains:50`, `parse:513`, `validate:574`, `semispan:661`, `sortedSections:668`, `sectionAt:680`, `tailOnBoom:693`, `mountPoint:711`, `applyMounts:745`
 - `aerodrive/src/model/airfoil.zig` — Perfil 2D (x/c, y/c): NACA de 4 dígitos pelo nome ou as coordenadas do arquivo do avião.
   tipos `Profile:13`
   fn `nacaDigits:23`, `naca4:39`, `forDrawing:79`, `invert:95`, `full:102`, `thinAirfoil:126`, `flapEffectiveness:176`, `helmbold:183`, `split:190`
@@ -569,7 +571,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/gui/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
   tipos `Triangle:17`, `Mesh:26`, `Assembly:191`, `Balance:236`
-  fn `buildMesh:150`, `balance:246`, `loadAircraft:258`, `readAircraftText:269`, `load:286`, `fromBytes:294`, `fillAirfoilFiles:312`, `parseDat:347`, `findExample:379`
+  fn `buildMesh:150`, `balance:246`, `loadAircraft:258`, `readAircraftText:269`, `load:291`, `fromBytes:299`, `fillAirfoilFiles:317`, `parseDat:352`, `findExample:384`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
   tipos `Kind:40`, `shared:45`, `Page:407`

@@ -1,7 +1,7 @@
 //! AeroDrive: abre o menu inicial com o avião (o último escolhido, ou o do argumento).
 //!
-//!   aerodrive [avião.json] [fps=30|60]
-//!   aerodrive --shot <saída.png> [avião.json] [LxA] [tela=NOME] [voo=SEG] [modo=manual|auto]
+//!   aerodrive [avião.aero] [fps=30|60]
+//!   aerodrive --shot <saída.png> [avião.aero] [LxA] [tela=NOME] [voo=SEG] [modo=manual|auto]
 //!             [cam=seguir|chao|livre] [mesa] [dados=PASTA] [gravar] [f3] [controle]
 //!     tela: inicio, aeronave, voar, opcoes, controle, camera, som, voos, dados, video, voo, pausa
 //!
@@ -102,7 +102,7 @@ fn nativeMain(init: std.process.Init) !void {
     const arena = init.arena.allocator();
     const argv = try init.minimal.args.toSlice(arena);
     const args = parseArgs(argv) catch {
-        std.debug.print("uso: aerodrive [avião.json] [fps=30|60]\n     aerodrive --shot <saída.png> [avião.json] [LxA] [tela=inicio|aeronave|voar|opcoes|controle|camera|som|voos|dados|video|voo|pausa] [voo=SEG] [modo=manual|auto] [cam=seguir|chao|livre] [mesa] [dados=PASTA] [gravar] [f3] [controle]\n", .{});
+        std.debug.print("uso: aerodrive [avião.aero] [fps=30|60]\n     aerodrive --shot <saída.png> [avião.aero] [LxA] [tela=inicio|aeronave|voar|opcoes|controle|camera|som|voos|dados|video|voo|pausa] [voo=SEG] [modo=manual|auto] [cam=seguir|chao|livre] [mesa] [dados=PASTA] [gravar] [f3] [controle]\n", .{});
         std.process.exit(2);
     };
     var paths = try paths_mod.resolve(arena, init.environ_map);

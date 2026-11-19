@@ -11,9 +11,9 @@
   Página do AeroDrive no navegador (o emcc troca o marcador SCRIPT pelo aerodrive.js).
   O que ela faz, além de mostrar o canvas:
     - monta /aerodrive no IndexedDB (IDBFS) e carrega antes do main (configurações, aviões abertos)
-    - seletor de arquivo e arrastar .json para a página -> aerodrive_load_aircraft (sys/browser.zig)
+    - seletor de arquivo e arrastar o .aero para a página -> aerodrive_load_aircraft (sys/browser.zig)
     - avião deixado pela tela inicial (index.html) no IndexedDB "aircraftsimulation" -> idem
-    - download do .json (Exportar), detecção de toque e o botão de voltar à tela inicial
+    - download do avião (Exportar), detecção de toque e o botão de voltar à tela inicial
 -->
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; overscroll-behavior: none; }
@@ -49,10 +49,10 @@
 <a id="back" href="index.html" title="Voltar à tela inicial">◄ início</a>
 <div id="loading">AeroDrive
 carregando...</div>
-<div id="drop">solte o .json do avião</div>
+<div id="drop">solte o arquivo .aero do avião</div>
 <div id="rotate">gire o celular
 para pilotar deitado</div>
-<input id="picker" type="file" accept=".json,application/json" hidden>
+<input id="picker" type="file" accept=".aero,.json" hidden>
 <script>
   'use strict';
   const canvas = document.getElementById('canvas');
@@ -60,7 +60,7 @@ para pilotar deitado</div>
   const loading = document.getElementById('loading');
   const dropHint = document.getElementById('drop');
 
-  // bytes de um .json para o jogo: copia para a memória do wasm e chama aerodrive_load_aircraft
+  // bytes de um avião (.aero ou .json) para o jogo: copia para a memória do wasm e chama aerodrive_load_aircraft
   function sendAircraft(name, bytes) {
     const nameBytes = new TextEncoder().encode(name);
     const namePointer = Module._malloc(Math.max(1, nameBytes.length));
@@ -74,7 +74,7 @@ para pilotar deitado</div>
   }
 
   async function sendFile(file) {
-    if (!file || !/\.json$/i.test(file.name)) { alert('Escolha um arquivo .json de avião.'); return; }
+    if (!file || !/\.(aero|json)$/i.test(file.name)) { alert('Escolha um arquivo .aero de avião.'); return; }
     sendAircraft(file.name, new Uint8Array(await file.arrayBuffer()));
   }
 
@@ -135,8 +135,8 @@ para pilotar deitado</div>
       openFilePicker: () => picker.click(),
       download: (name, bytes) => {
         const link = document.createElement('a');
-        // bytes do jogo (o .json) ou um Blob pronto (o vídeo)
-        link.href = URL.createObjectURL(bytes instanceof Blob ? bytes : new Blob([bytes], { type: 'application/json' }));
+        // bytes do jogo (o avião) ou um Blob pronto (o vídeo)
+        link.href = URL.createObjectURL(bytes instanceof Blob ? bytes : new Blob([bytes], { type: 'application/octet-stream' }));
         link.download = name;
         document.body.appendChild(link);
         link.click();

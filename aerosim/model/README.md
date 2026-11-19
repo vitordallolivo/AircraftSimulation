@@ -31,7 +31,7 @@ from aerosim.model.aircraft import Aircraft
 from aerosim.model.serialize import from_dict
 from aerosim.model.universal import build_model
 
-data = json.load(open("data/aircraft/Convencional_original.json"))["aeronave"]
+data = json.load(open("data/aircraft/Convencional_original.aero"))["aeronave"]
 model = build_model(from_dict(Aircraft, data))
 print("S =", round(model.S, 3), "m²  c =", round(model.c, 3), "m  b =", round(model.b, 2), "m  massa =", round(model.mass["m"], 2), "kg")
 print([(s.name, len(s.stations)) for s in model.surfaces])

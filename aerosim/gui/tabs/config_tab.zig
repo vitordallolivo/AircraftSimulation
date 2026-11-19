@@ -243,7 +243,7 @@ test "o painel da Montagem dá os números do Python no Convencional_original" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const memory = arena.allocator();
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", memory, .limited(1 << 24));
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(testing.allocator, bytes, &diagnosis);
     defer loaded.deinit();
@@ -1208,11 +1208,18 @@ pub fn serialize(memory: std.mem.Allocator, document: std.json.Value) ![]u8 {
     return std.json.Stringify.valueAlloc(memory, document, .{ .whitespace = .indent_2 });
 }
 
+/// o avião de exemplo `name` (de `data/aircraft`) como o texto JSON que a Montagem guarda
+fn exampleText(memory: std.mem.Allocator, name: []const u8) ![]const u8 {
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, try std.fs.path.join(memory, &.{ "../data/aircraft", name }), memory, .limited(1 << 22));
+    var diagnosis: model.Diag = .{};
+    return (try aircraft_model.aero_file.readDocument(memory, bytes, &diagnosis)).json;
+}
+
 test "a lista de componentes e o editor da asa, como no Python" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const memory = arena.allocator();
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    const bytes = try exampleText(memory, "Convencional_original.aero");
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
     defer loaded.deinit();
@@ -1274,7 +1281,7 @@ test "acrescentar, remover e trazer peças de outro arquivo" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const memory = arena.allocator();
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    const bytes = try exampleText(memory, "Convencional_original.aero");
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
     defer loaded.deinit();
@@ -1296,7 +1303,7 @@ test "acrescentar, remover e trazer peças de outro arquivo" {
     try std.testing.expect(try remove(memory, &document, .{ .part = .surface, .index = 3, .label = "" }));
     try std.testing.expect(!try remove(memory, &document, .{ .part = .environment, .label = "" }));
     // trazer a EH de outro avião
-    const other_bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Asa_voadora.json", memory, .limited(1 << 22));
+    const other_bytes = try exampleText(memory, "Asa_voadora.aero");
     var other = try std.json.parseFromSliceLeaky(std.json.Value, memory, other_bytes, .{});
     var other_loaded = try model.parse(std.testing.allocator, other_bytes, &diagnosis);
     defer other_loaded.deinit();
@@ -1312,7 +1319,7 @@ test "o editor da asa tem o perfil, as seções e os comandos, com + e −" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const memory = arena.allocator();
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    const bytes = try exampleText(memory, "Convencional_original.aero");
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
     defer loaded.deinit();
@@ -1351,7 +1358,7 @@ test "presa em: a EH na ponta do tubo e a EV na ponta direita da EH, como no Pyt
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const memory = arena.allocator();
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    const bytes = try exampleText(memory, "Convencional_original.aero");
     var document = try std.json.parseFromSliceLeaky(std.json.Value, memory, bytes, .{});
     const node = try aircraftNode(&document);
     try node.put(memory, "booms", try literal(memory, "[{{\"name\":\"tubo 1\",\"enabled\":true,\"x_start\":-0.2,\"length\":0.8,\"y\":0.0,\"z\":-0.02,\"pitch\":3.0,\"yaw\":0.0,\"diameter\":0.03}}]", .{}));
@@ -1380,7 +1387,7 @@ test "asas ligadas: ligar duas asas e desligar, como link_wings e unlink_wing" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const memory = arena.allocator();
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    const bytes = try exampleText(memory, "Convencional_original.aero");
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
     defer loaded.deinit();
@@ -1414,7 +1421,7 @@ test "o motor mostra motor, hélice e bateria; a LAPES escreve a soltura no perc
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const memory = arena.allocator();
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    const bytes = try exampleText(memory, "Convencional_original.aero");
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
     defer loaded.deinit();
@@ -1452,7 +1459,7 @@ test "arrastar: a asa anda em x e z e fica no plano de simetria; a chave do 3D a
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const memory = arena.allocator();
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.json", memory, .limited(1 << 22));
+    const bytes = try exampleText(memory, "Convencional_original.aero");
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
     defer loaded.deinit();

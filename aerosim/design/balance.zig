@@ -105,28 +105,34 @@ pub fn rebalance(memory: std.mem.Allocator, aircraft: *const Aircraft) !Rebalanc
     return .{ .ok = true, .mover = mover, .x = x, .message = try std.fmt.allocPrint(memory, "{s}: x {d:.3} → {d:.3} m; o CG voltou ao de projeto", .{ what, old_x, x }) };
 }
 
-test "Acertar o CG move a bateria como o Python, e para no limite da fuselagem" {
+test "Acertar o CG move a bateria até o CG de projeto, e para no limite da fuselagem" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const memory = arena.allocator();
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/S1223_monomotor_EH_convencional_Joinville.json", memory, .limited(1 << 22));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../data/aircraft/Convencional_original.aero", memory, .limited(1 << 22));
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
     defer loaded.deinit();
-    // `full_cg` no Python: 9,324401259658629 kg, x = −0,10507661 m
-    const weights = fullCg(&loaded.ac, true);
-    try std.testing.expectApproxEqAbs(@as(f64, 9.324401259658629), weights.mass, 1e-9);
-    try std.testing.expectApproxEqAbs(@as(f64, -0.10507661), weights.cg[0], 1e-8);
-    // CG de projeto em x = −0,08: a bateria vai para onde o Python a põe e o CG chega no de projeto
-    loaded.ac.design_cg = .{ -0.08, 0, 0 };
+    // o exemplo não tem bateria: uma de 0,8 kg em x = 0 (só na memória do teste)
+    const battery = model.PointMass{ .name = "bateria", .mass = 0.8, .x = 0, .y = 0, .z = 0.02 };
+    const items = try std.mem.concat(memory, model.PointMass, &.{ loaded.ac.mass.items, &.{battery} });
+    loaded.ac.mass.items = items;
+    const index = items.len - 1;
+    const before = fullCg(&loaded.ac, true);
+    // um CG de projeto 2 cm à frente: a bateria anda Δx = 0,02·m/m_bateria para frente e o CG chega lá
+    const target = before.cg[0] + 0.02;
+    loaded.ac.design_cg = .{ target, 0, 0 };
     const reached = try rebalance(memory, &loaded.ac);
     try std.testing.expect(reached.ok);
-    try std.testing.expectEqual(Mover{ .item = 3 }, reached.mover.?);
-    try std.testing.expectApproxEqAbs(@as(f64, 0.15108040776015869), reached.x, 1e-9);
-    // em x = 0,05 não alcança: a bateria para em 0,25 m (5 cm do nariz) e faltam −31,8 % da CMA
-    loaded.ac.design_cg = .{ 0.05, 0, 0 };
+    try std.testing.expectEqual(Mover{ .item = index }, reached.mover.?);
+    try std.testing.expectApproxEqAbs(0.02 * before.mass / 0.8, reached.x, 1e-9);
+    items[index].x = reached.x;
+    try std.testing.expectApproxEqAbs(target, fullCg(&loaded.ac, true).cg[0], 1e-9);
+    // um CG de projeto 1 m à frente não se alcança: a bateria para 5 cm antes do nariz
+    items[index].x = 0;
+    loaded.ac.design_cg = .{ before.cg[0] + 1.0, 0, 0 };
     const short = try rebalance(memory, &loaded.ac);
     try std.testing.expect(!short.ok);
-    try std.testing.expectApproxEqAbs(@as(f64, 0.25), short.x, 1e-12);
-    try std.testing.expect(std.mem.indexOf(u8, short.message, "-31.8 % CMA") != null);
+    try std.testing.expectApproxEqAbs(loaded.ac.fuselage.x_nose - 0.05, short.x, 1e-12);
+    try std.testing.expect(std.mem.indexOf(u8, short.message, "% CMA") != null);
 }

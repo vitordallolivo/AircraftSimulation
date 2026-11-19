@@ -602,7 +602,7 @@ const testing = std.testing;
 
 test "Cargas: a trimagem e a sustentação de cada superfície batem com o Python" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(gpa, bytes, &diagnosis);

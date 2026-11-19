@@ -162,7 +162,7 @@ pub fn focus(skel: *const sk.Skeleton, c: Channel) ?Focus {
 const testing = std.testing;
 
 test "zoom: acha o profundor e o aileron direito do Convencional" {
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", testing.allocator, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", testing.allocator, .limited(1 << 24));
     defer testing.allocator.free(bytes);
     var d: model.Diag = .{};
     var l = try model.parse(testing.allocator, bytes, &d);

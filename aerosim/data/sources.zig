@@ -17,6 +17,8 @@
 const std = @import("std");
 const core = @import("aerosim");
 const catalog = @import("catalog");
+const aircraft_model = @import("aircraft_model");
+const aero_file = aircraft_model.aero_file;
 
 const xlsx = core.xlsx;
 
@@ -31,13 +33,15 @@ pub const Error = error{ UnknownFormat, BadSection, MissingGeneralSheet };
 
 /// o formato pelo nome do arquivo
 pub const Format = enum {
+    aero,
     json,
     ini,
     xlsx,
 
-    /// o formato pela extensão (`.json`, `.cfg` ou `.ini`, `.xlsx`), ou null
+    /// o formato pela extensão (`.aero`, `.json`, `.cfg` ou `.ini`, `.xlsx`), ou null
     pub fn fromPath(path: []const u8) ?Format {
         const extension = std.fs.path.extension(path);
+        if (std.ascii.eqlIgnoreCase(extension, aero_file.extension)) return .aero;
         if (std.ascii.eqlIgnoreCase(extension, ".json")) return .json;
         if (std.ascii.eqlIgnoreCase(extension, ".cfg") or std.ascii.eqlIgnoreCase(extension, ".ini")) return .ini;
         if (std.ascii.eqlIgnoreCase(extension, ".xlsx")) return .xlsx;
@@ -46,12 +50,16 @@ pub const Format = enum {
 };
 
 /// as extensões de avião que se abrem
-pub const aircraft_extensions = [_][]const u8{ ".json", ".cfg", ".ini", ".xlsx" };
+pub const aircraft_extensions = [_][]const u8{ ".aero", ".json", ".cfg", ".ini", ".xlsx" };
 
 /// o texto `.json` do avião guardado em `bytes`, qualquer que seja o formato de `path`. O `.json` da biblioteca
 /// "meus aviões" (`"formato": "aerosim-aeronave"`) devolve só o avião de dentro
 pub fn aircraftJson(memory: std.mem.Allocator, path: []const u8, bytes: []const u8) ![]const u8 {
     return switch (Format.fromPath(path) orelse return Error.UnknownFormat) {
+        .aero => blk: {
+            var diagnosis: aircraft_model.aircraft.Diag = .{};
+            break :blk (try aero_file.readDocument(memory, bytes, &diagnosis)).json;
+        },
         .json => unwrapLibrary(memory, bytes),
         .ini => try write(memory, try fromSections(memory, try iniSections(memory, bytes))),
         .xlsx => try write(memory, try fromSections(memory, try sheetSections(memory, try xlsx.Workbook.parse(memory, bytes)))),
@@ -292,6 +300,8 @@ pub fn catalogItems(memory: std.mem.Allocator, path: []const u8, bytes: []const 
     var propellers: std.ArrayList(catalog.Propeller) = .empty;
     const options: std.json.ParseOptions = .{ .ignore_unknown_fields = true };
     switch (Format.fromPath(path) orelse return Error.UnknownFormat) {
+        // o catálogo em arquivo próprio é a `.aerolib` (passo seguinte); um avião não é catálogo
+        .aero => return Error.UnknownFormat,
         .json => {
             const Lists = struct { motors: []const catalog.Motor = &.{}, propellers: []const catalog.Propeller = &.{} };
             const lists = try std.json.parseFromSliceLeaky(Lists, memory, bytes, options);

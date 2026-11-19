@@ -16,9 +16,10 @@ const wing_stage = @import("stage_wing.zig");
 const power_stage = @import("stage_power.zig");
 
 const model = aircraft_model.aircraft;
+const aero_file = aircraft_model.aero_file;
 
 /// o nome do arquivo do avião dentro da pasta do projeto
-pub const file_name = "aviao.json";
+pub const file_name = "aviao" ++ aero_file.extension;
 
 /// o avião montado com o que as etapas já têm; nulo: o projeto ainda não tem nem uma configuração guardada
 pub fn build(context: *stages.Context, memory: std.mem.Allocator) !?model.Aircraft {
@@ -76,11 +77,20 @@ pub fn path(context: *stages.Context, memory: std.mem.Allocator) ![]const u8 {
 pub fn sync(context: *stages.Context, memory: std.mem.Allocator) !?[]const u8 {
     const plane = (try build(context, memory)) orelse return null;
     const target = try path(context, memory);
-    const before: ?[]const u8 = std.Io.Dir.cwd().readFileAlloc(context.io, target, memory, .limited(1 << 24)) catch null;
     var out: std.Io.Writer.Allocating = .init(memory);
     try std.json.Stringify.value(plane, .{ .emit_null_optional_fields = false }, &out.writer);
-    if (before) |bytes| if (std.mem.eql(u8, bytes, out.written())) return null;
+    const json = out.written();
+    var created: []const u8 = "";
+    if (std.Io.Dir.cwd().readFileAlloc(context.io, target, memory, .limited(1 << 24))) |bytes| {
+        // o mesmo avião: nada a gravar (compara o avião, não as datas do manifesto)
+        var diagnosis: model.Diag = .{};
+        if (aero_file.readDocument(memory, bytes, &diagnosis)) |document| {
+            if (std.mem.eql(u8, document.json, try aero_file.canonicalJson(memory, json))) return null;
+            created = document.manifest.criado_em;
+        } else |_| {}
+    } else |_| {}
+    const bytes = try aero_file.writeDocument(memory, json, .{ .program = "aerosim", .now = try aero_file.isoNow(memory, context.io), .created = created }, &.{});
     std.Io.Dir.cwd().createDirPath(context.io, context.project.folder) catch {};
-    try std.Io.Dir.cwd().writeFile(context.io, .{ .sub_path = target, .data = out.written() });
+    try std.Io.Dir.cwd().writeFile(context.io, .{ .sub_path = target, .data = bytes });
     return target;
 }

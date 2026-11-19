@@ -123,23 +123,23 @@ const testing = std.testing;
 
 test "reabrir o último avião: o caminho vem do próprio buffer" {
     var s: Settings = .{};
-    s.setAircraft("../data/aircraft/Asa_voadora.json");
+    s.setAircraft("../data/aircraft/Asa_voadora.aero");
     s.setAircraft(s.aircraft());
-    try testing.expectEqualStrings("../data/aircraft/Asa_voadora.json", s.aircraft());
+    try testing.expectEqualStrings("../data/aircraft/Asa_voadora.aero", s.aircraft());
     s.setAircraft(s.aircraft()[3..]);
-    try testing.expectEqualStrings("data/aircraft/Asa_voadora.json", s.aircraft());
+    try testing.expectEqualStrings("data/aircraft/Asa_voadora.aero", s.aircraft());
 }
 
 test "ida e volta pelo JSON; campos faltando ficam no padrão" {
     var s: Settings = .{ .volume = 0.3, .fps = 30 };
-    s.setAircraft("../data/aircraft/Asa_voadora.json");
+    s.setAircraft("../data/aircraft/Asa_voadora.aero");
     s.session.scenario = .table;
     s.profile.elevator.expo = 0.6;
     s.camera.chase_distance = 5;
     const j = try s.toJson(testing.allocator);
     defer testing.allocator.free(j);
     const r = try Settings.parse(testing.allocator, j);
-    try testing.expectEqualStrings("../data/aircraft/Asa_voadora.json", r.aircraft());
+    try testing.expectEqualStrings("../data/aircraft/Asa_voadora.aero", r.aircraft());
     try testing.expectEqual(session.Scenario.table, r.session.scenario);
     try testing.expectEqual(@as(f64, 0.6), r.profile.elevator.expo);
     try testing.expectEqual(@as(f64, 5), r.camera.chase_distance);

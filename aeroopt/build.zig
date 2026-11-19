@@ -106,6 +106,7 @@ fn designModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     const data_sources = b.createModule(.{ .root_source_file = b.path("../aerosim/data/sources.zig"), .target = target, .optimize = optimize, .imports = &.{
         .{ .name = "aerosim", .module = core },
         .{ .name = "catalog", .module = catalog },
+        .{ .name = "aircraft_model", .module = aircraft_model },
     } });
     const templates = b.createModule(.{ .root_source_file = b.path("../aerosim/model/templates.zig"), .target = target, .optimize = optimize });
     return b.createModule(.{ .root_source_file = b.path("../aerosim/design/dims.zig"), .target = target, .optimize = optimize, .imports = &.{

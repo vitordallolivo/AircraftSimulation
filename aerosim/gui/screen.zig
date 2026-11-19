@@ -112,7 +112,7 @@ pub const Screen = struct {
             var buffer: [256]u8 = undefined;
             var fixed = std.heap.FixedBufferAllocator.init(&buffer);
             const folder = if (screen.assembly) |*opened| std.fs.path.dirname(opened.path) orelse "." else exampleFolder(fixed.allocator());
-            screen.files.show("Abrir avião (.json, .cfg ou .xlsx)", folder, &data_sources.aircraft_extensions);
+            screen.files.show("Abrir avião (.aero, .json, .cfg ou .xlsx)", folder, &data_sources.aircraft_extensions);
         } else if (std.mem.eql(u8, name, "salvar")) {
             const opened = &(screen.assembly orelse {
                 _ = std.fmt.bufPrintZ(&screen.assembly_note, "nenhum avião aberto para salvar", .{}) catch {};
@@ -121,8 +121,8 @@ pub const Screen = struct {
             // o avião aberto de um .cfg ou .xlsx antigo é salvo em .json, com o mesmo nome
             var name_buffer: [256]u8 = undefined;
             const base = std.fs.path.basename(opened.path);
-            const json_name = if (data_sources.Format.fromPath(base) == .json) base else std.fmt.bufPrint(&name_buffer, "{s}.json", .{std.fs.path.stem(base)}) catch base;
-            screen.files.showSave("Salvar avião (.json)", std.fs.path.dirname(opened.path) orelse ".", &.{".json"}, json_name);
+            const aero_name = if (data_sources.Format.fromPath(base) == .aero) base else std.fmt.bufPrint(&name_buffer, "{s}.aero", .{std.fs.path.stem(base)}) catch base;
+            screen.files.showSave("Salvar avião (.aero)", std.fs.path.dirname(opened.path) orelse ".", &.{".aero"}, aero_name);
         } else if (std.mem.eql(u8, name, "rodar")) {
             screen.pending_run = true;
         } else if (std.mem.startsWith(u8, name, "etapa:") or std.mem.startsWith(u8, name, "campo:")) {
@@ -360,7 +360,7 @@ pub const Screen = struct {
             if (editor.selected > 0 and editor.selected + 1 >= editor.list.len) editor.selected -= 1;
             return screen.commitDocument(null);
         }
-        screen.importing_file = true; // Trazer de outro .json
+        screen.importing_file = true; // Trazer de outro avião
         screen.files.show("Trazer uma peça de outro avião", std.fs.path.dirname(opened.path) orelse ".", &data_sources.aircraft_extensions);
     }
 
@@ -490,7 +490,14 @@ pub const Screen = struct {
             page_mod.shared.numericsInto(opened.document_arena.allocator(), node) catch {};
             screen.commitDocument(null);
         }
-        std.Io.Dir.cwd().writeFile(io(), .{ .sub_path = path, .data = opened.source }) catch |err| {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const memory = arena.allocator();
+        const data = aeroBytes(memory, path, opened.path, opened.source) catch |err| {
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "não salvou '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) }) catch {};
+            return;
+        };
+        std.Io.Dir.cwd().writeFile(io(), .{ .sub_path = path, .data = data }) catch |err| {
             _ = std.fmt.bufPrintZ(&screen.assembly_note, "não salvou '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) }) catch {};
             return;
         };
@@ -498,7 +505,21 @@ pub const Screen = struct {
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "salvo em {s}", .{path}) catch {};
     }
 
-    /// abre o arquivo `path`: um `.json` é o avião (Montagem) ou um projeto da sprint; um `.dat` ou uma polar vão
+    /// os bytes a gravar em `path`: o `.aero` com a data de agora e a de criação do arquivo que já estava lá (ou do
+    /// aberto, `source_path`); outra extensão grava o texto JSON como está
+    fn aeroBytes(memory: std.mem.Allocator, path: []const u8, source_path: []const u8, json: []const u8) ![]const u8 {
+        const aero_file = aircraft_model.aero_file;
+        if (data_sources.Format.fromPath(path) != .aero) return json;
+        var created: []const u8 = "";
+        for ([_][]const u8{ path, source_path }) |candidate| {
+            if (created.len > 0) break;
+            const bytes = std.Io.Dir.cwd().readFileAlloc(io(), candidate, memory, .limited(assembly_mod.max_file_bytes)) catch continue;
+            created = aero_file.createdOf(memory, bytes);
+        }
+        return aero_file.writeDocument(memory, json, .{ .program = "aerosim", .now = try aero_file.isoNow(memory, io()), .created = created }, &.{});
+    }
+
+    /// abre o arquivo `path`: um `.aero` é o avião (Montagem); um `.json` é o avião antigo ou um projeto da sprint; um `.dat` ou uma polar vão
     /// para a etapa Perfis
     pub fn openFile(screen: *Screen, path: []const u8) void {
         const format = data_sources.Format.fromPath(path);
@@ -513,7 +534,7 @@ pub const Screen = struct {
             screen.files.show("Mapa de células desta planilha (.json)", "data/mappings", &.{".json"});
             return;
         }
-        if (format == .ini) return screen.openAircraft(path);
+        if (format == .ini or format == .aero) return screen.openAircraft(path);
         if (format == .json) {
             const bytes = std.Io.Dir.cwd().readFileAlloc(io(), path, std.heap.page_allocator, .limited(assembly_mod.max_file_bytes)) catch return screen.openAircraft(path);
             defer std.heap.page_allocator.free(bytes);
@@ -574,8 +595,9 @@ pub const Screen = struct {
         const result = data_sources.cellmap.read(memory, map_bytes, workbook, base) catch |err| return fail(screen, "o mapa não leu a planilha ({s})", .{@errorName(err)});
         const folder = std.fs.path.join(memory, &.{ design.stages.projectsRoot(memory) catch return, "importados" }) catch return;
         std.Io.Dir.cwd().createDirPath(io(), folder) catch return fail(screen, "não consegui criar {s}", .{folder});
-        const target = std.fmt.allocPrint(memory, "{s}/{s}.json", .{ folder, std.fs.path.stem(workbook_path) }) catch return;
-        std.Io.Dir.cwd().writeFile(io(), .{ .sub_path = target, .data = result.json }) catch return fail(screen, "não consegui gravar {s}", .{target});
+        const target = std.fmt.allocPrint(memory, "{s}/{s}.aero", .{ folder, std.fs.path.stem(workbook_path) }) catch return;
+        const aero = aeroBytes(memory, target, workbook_path, result.json) catch return fail(screen, "não consegui montar {s}", .{target});
+        std.Io.Dir.cwd().writeFile(io(), .{ .sub_path = target, .data = aero }) catch return fail(screen, "não consegui gravar {s}", .{target});
         screen.openAircraft(target);
         if (result.warnings.len > 0) fail(screen, "planilha lida com {d} avisos; o primeiro: {s}", .{ result.warnings.len, result.warnings[0] });
     }
@@ -607,7 +629,7 @@ pub const Screen = struct {
         screen.assembly = loaded;
         if (screen.fleet_count == 0) screen.fleet_count = 1; // abrir troca o avião atual; os outros ficam
         screen.showSwitched();
-        _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · {d} peças · arraste outro .json para a janela para trocar · arraste para girar, roda para aproximar", .{ std.fs.path.basename(path), loaded.mesh.piece_count }) catch {};
+        _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · {d} peças · arraste outro avião para a janela para trocar · arraste para girar, roda para aproximar", .{ std.fs.path.basename(path), loaded.mesh.piece_count }) catch {};
     }
 
     /// depois de trocar o avião atual (abrir, variante, troca, fechar): o resumo, a lista e o editor são do novo, e as
@@ -1033,7 +1055,7 @@ pub const Screen = struct {
         if (screen.assembly_view.dragging) screen.assembly_angle = .free;
         screen.assembly_angle.aim(&screen.assembly_view);
         var title_buffer: [160]u8 = undefined;
-        var title: [:0]const u8 = "Montagem: nenhum avião aberto (arraste um .json para a janela)";
+        var title: [:0]const u8 = "Montagem: nenhum avião aberto (arraste um .aero para a janela)";
         if (screen.assembly) |*opened| {
             const plane = &opened.mesh;
             // o nome do avião está no resumo; o título curto deixa lugar para os botões
@@ -1370,7 +1392,7 @@ const fleet_buttons = [_][:0]const u8{ "Anterior", "Próximo", "+ Variante", "Fe
 /// quantos aviões ficam abertos ao mesmo tempo
 const max_fleet = 8;
 
-const part_buttons = [_][:0]const u8{ "+ Asa", "+ EH", "+ EV", "+ Motor", "+ Tubo", "+ Tanque", "Remover", "Trazer de .json" };
+const part_buttons = [_][:0]const u8{ "+ Asa", "+ EH", "+ EV", "+ Motor", "+ Tubo", "+ Tanque", "Remover", "Trazer de outro" };
 
 /// o outro avião aberto para trazer uma peça dele: a árvore do arquivo e a lista das peças
 const ImportSource = struct {

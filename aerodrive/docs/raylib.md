@@ -51,7 +51,7 @@ Windows e macOS: nada a instalar.
 ```sh
 cd aerodrive
 zig build test                                        # testes + fuzzing (sem janela)
-zig build run -- ../data/aircraft/Convencional_original.json
+zig build run -- ../data/aircraft/Convencional_original.aero
 ```
 
 A primeira compilação baixa e compila o raylib (1 a 2 min); as seguintes usam o cache.
@@ -62,8 +62,8 @@ a taxa de quadros; a física roda em tempo real.
 ## 4. Foto sem abrir janela (servidor, CI)
 
 ```sh
-xvfb-run -a zig build shot -- menu.png ../data/aircraft/Asa_voadora.json tela=inicio
-xvfb-run -a zig build shot -- voo.png ../data/aircraft/Convencional_original.json tela=voo voo=40 cam=seguir
+xvfb-run -a zig build shot -- menu.png ../data/aircraft/Asa_voadora.aero tela=inicio
+xvfb-run -a zig build shot -- voo.png ../data/aircraft/Convencional_original.aero tela=voo voo=40 cam=seguir
 # tela=inicio|aeronave|voar|controle|camera|som|voos|dados|voo|pausa · voo=SEG voa antes da foto
 # modo=manual|auto · cam=chao|seguir|livre · mesa · f3 · gravar · dados=PASTA · 1280x720
 ```

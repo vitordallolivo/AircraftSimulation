@@ -1,6 +1,6 @@
 //! AeroDrive — simulador pilotado com o núcleo do aerosim.
 //!
-//!   zig build run -- ../data/aircraft/Convencional_original.json      abre o menu inicial com o avião
+//!   zig build run -- ../data/aircraft/Convencional_original.aero      abre o menu inicial com o avião
 //!   zig build shot -- <saída.png> [avião.json] [WxH] [tela=...]        só tira uma foto (sem interação)
 //!   zig build test                                                     testes (sem janela)
 //!   zig build test -Dfuzz=200000 -Dseed=7                             fuzzing mais longo (padrão: 2000 por teste)
@@ -126,7 +126,7 @@ const web_font_candidates = [_][]const u8{
     "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
 };
 
-/// o que vai no .data: os .json de ../data/aircraft em /data/aircraft (só lidos; nada é gravado
+/// o que vai no .data: os aviões (.aero) de ../data/aircraft em /data/aircraft (só lidos; nada é gravado
 /// na pasta) e a fonte
 fn packageFiles(b: *std.Build, comptime FilePath: type) []const FilePath {
     const io = b.graph.io;
@@ -140,7 +140,7 @@ fn packageFiles(b: *std.Build, comptime FilePath: type) []const FilePath {
     defer folder.close(io);
     var entries = folder.iterate();
     while (entries.next(io) catch null) |entry| {
-        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".json")) continue;
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".aero")) continue;
         files.append(b.allocator, .{
             .src_path = b.pathFromRoot(b.fmt("../data/aircraft/{s}", .{entry.name})),
             .virtual_path = b.fmt("/data/aircraft/{s}", .{entry.name}),

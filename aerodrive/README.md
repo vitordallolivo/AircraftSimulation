@@ -73,7 +73,7 @@ compilação e como atualizar o raylib: [docs/raylib.md](docs/raylib.md).
 
 ```sh
 zig build run                                                   # abre o último avião escolhido
-zig build run -- ../data/aircraft/Asa_voadora.json              # ou um avião salvo pela GUI
+zig build run -- ../data/aircraft/Asa_voadora.aero              # ou um avião salvo pela GUI
 ```
 
 No **menu inicial**: Voar, Aeronave (arquivo, sloshing, LAPES, vento) e **Opções** (Controle, Câmera,
@@ -145,7 +145,7 @@ muda com a variável `AERODRIVE_VOOS`. "Meus aviões" vem de `~/aerosim_aeronave
 ### Foto sem abrir janela
 
 ```sh
-xvfb-run -a zig build shot -- voo.png ../data/aircraft/Convencional_original.json tela=voo voo=40
+xvfb-run -a zig build shot -- voo.png ../data/aircraft/Convencional_original.aero tela=voo voo=40
 xvfb-run -a zig build shot -- menu.png tela=controle
 ```
 

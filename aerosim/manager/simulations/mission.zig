@@ -2365,7 +2365,7 @@ const testing = std.testing;
 
 test "Missão: a decolagem otimizada e a missão inteira no Convencional_original" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(gpa, bytes, &diagnosis);
@@ -2421,7 +2421,7 @@ fn summaryNumber(parsed: std.json.Parsed(std.json.Value), key: []const u8) !f64 
 
 test "Missão: raio mínimo de curva igual ao do Python" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(gpa, bytes, &diagnosis);
@@ -2438,7 +2438,7 @@ test "Missão: raio mínimo de curva igual ao do Python" {
 test "Missão: Decolagem no xCG do avião, o MTOW no limite da pista (lento: -Dlento -Dfiltro=MTOW)" {
     if (!@import("test_options").slow) return error.SkipZigTest;
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(gpa, bytes, &diagnosis);
@@ -2455,7 +2455,7 @@ test "Missão: Decolagem no xCG do avião, o MTOW no limite da pista (lento: -Dl
 test "Missão: o estudo no valor de agora dá o MTOW do modo MTOW (lento: -Dlento -Dfiltro=estudo)" {
     if (!@import("test_options").slow) return error.SkipZigTest;
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(gpa, bytes, &diagnosis);

@@ -2,9 +2,9 @@
 //! ligar/desligar o sloshing (se tiver tanque) e o LAPES (se tiver carga), e o vento (velocidade e
 //! de onde vem, com a rosa dos ventos).
 //!
-//! "Abrir arquivo do computador...": no navegador abre o seletor de arquivo da página (o .json
+//! "Abrir arquivo do computador...": no navegador abre o seletor de arquivo da página (o .aero
 //! chega pelo `sys/browser.zig` e vai para a biblioteca guardada no navegador) e "Exportar"
-//! baixa o .json do avião aberto; no nativo o item explica que basta arrastar o .json para a
+//! baixa o arquivo do avião aberto; no nativo o item explica que basta arrastar o .aero para a
 //! janela (o arquivo arrastado abre direto, sem diálogo de sistema).
 const std = @import("std");
 const rl = @import("raylib");
@@ -86,16 +86,16 @@ pub const AircraftMenu = struct {
         const file_rows: f32 = if (platform.in_browser) 2 else 1;
         const area: rl.Rectangle = .{ .x = 28, .y = 110, .width = lw, .height = H - 160 - file_rows * 46 };
         if (m.n_rows == 0) {
-            app.fonts.draw("nenhum .json em data/aircraft nem em ~/aerosim_aeronaves", area.x + 10, area.y + 10, 16, theme.muted);
+            app.fonts.draw("nenhum avião (.aero) em data/aircraft nem em ~/aerosim_aeronaves", area.x + 10, area.y + 10, 16, theme.muted);
         } else if (m.list.draw(&app.ui, area, 38, m.n_rows, m, row)) |i| switch (m.rows[i]) {
             .entry => |k| if (app.loadPlane(app.lib.entries[k].path)) m.planeChanged(app),
             .header => {},
         };
         var files_column: widgets.Column = .{ .x = area.x, .y = area.y + area.height + 6, .w = lw, .gap = 6 };
         if (app.ui.menuItem(files_column.next(40), "Abrir arquivo do computador...", null)) {
-            if (platform.in_browser) browser.openFilePicker() else app.note("arraste o arquivo .json para esta janela", .{});
+            if (platform.in_browser) browser.openFilePicker() else app.note("arraste o arquivo .aero para esta janela", .{});
         }
-        if (platform.in_browser and app.ui.menuItem(files_column.next(40), "Exportar o avião (.json)", null)) exportPlane(app);
+        if (platform.in_browser and app.ui.menuItem(files_column.next(40), "Exportar o avião", null)) exportPlane(app);
         if (rl.isFileDropped()) openDropped(app, m);
         if (app.message()) |text| {
             var message_buf: [200]u8 = undefined;
@@ -135,20 +135,20 @@ pub const AircraftMenu = struct {
     }
 };
 
-/// o primeiro .json arrastado para a janela abre direto do lugar onde está (nativo)
+/// o primeiro avião (.aero, ou o .json antigo) arrastado para a janela abre direto do lugar onde está (nativo)
 fn openDropped(app: *App, m: *AircraftMenu) void {
     const dropped = rl.loadDroppedFiles();
     defer rl.unloadDroppedFiles(dropped);
     for (0..dropped.count) |i| {
         const path = std.mem.span(dropped.paths[i]);
-        if (!std.ascii.endsWithIgnoreCase(path, ".json")) continue;
+        if (!std.ascii.endsWithIgnoreCase(path, ".aero") and !std.ascii.endsWithIgnoreCase(path, ".json")) continue;
         if (app.loadPlane(path)) m.planeChanged(app);
         return;
     }
-    app.note("arraste um arquivo .json", .{});
+    app.note("arraste um arquivo .aero", .{});
 }
 
-/// baixa o .json do avião aberto (navegador)
+/// baixa o arquivo do avião aberto (navegador)
 fn exportPlane(app: *App) void {
     const plane = app.plane orelse return;
     const bytes = app.planeBytes() orelse return app.note("não consegui ler o avião aberto", .{});

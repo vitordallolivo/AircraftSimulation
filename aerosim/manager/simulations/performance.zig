@@ -616,7 +616,7 @@ const testing = std.testing;
 
 test "Desempenho: a polar, o teto e as curvas por altitude batem com o Python" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: aircraft_model.aircraft.Diag = .{};
     var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);

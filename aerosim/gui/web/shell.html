@@ -43,12 +43,12 @@
 <body>
 <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
 <div id="bar">
-  <button id="open" type="button" title="Abrir um avião (.json), um perfil (.dat) ou uma polar">abrir do computador</button>
+  <button id="open" type="button" title="Abrir um avião (.aero), um perfil (.dat) ou uma polar">abrir do computador</button>
   <a href="index.html" title="Voltar à tela inicial">◄ início</a>
 </div>
 <div id="loading">carregando...</div>
 <div id="drop">solte o arquivo</div>
-<input id="picker" type="file" accept=".json,.cfg,.ini,.xlsx,.dat,.txt,.csv,.pol" hidden>
+<input id="picker" type="file" accept=".aero,.json,.cfg,.ini,.xlsx,.dat,.txt,.csv,.pol" hidden>
 <script>
   'use strict';
   const program = (location.pathname.split('/').pop() || 'aerosim.html').replace(/\.html$/, '');

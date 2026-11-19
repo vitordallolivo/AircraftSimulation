@@ -35,7 +35,7 @@ flowchart LR
 ```zig
 const app = try App.init(io, gpa, paths);   // fontes, configurações, biblioteca, som, logo
 defer app.deinit();                          // grava as configurações
-_ = app.loadPlane("../data/aircraft/Asa_voadora.json");   // falhou? app.planeError()
+_ = app.loadPlane("../data/aircraft/Asa_voadora.aero");   // falhou? app.planeError()
 app.run();                                   // laço até fechar
 ```
 

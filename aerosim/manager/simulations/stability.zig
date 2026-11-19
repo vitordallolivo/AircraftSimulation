@@ -2803,7 +2803,7 @@ const registered = simulation.register(DynamicStability);
 
 test "campos e resultado no JSON da ponte; o líquido livre mexe o xCG e o travado não" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/S1223_monomotor_EH_convencional_Joinville.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: aircraft_model.aircraft.Diag = .{};
     var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);
@@ -2865,13 +2865,14 @@ test "campos e resultado no JSON da ponte; o líquido livre mexe o xCG e o trava
     for (locked_cg) |value| locked_moves = @max(locked_moves, @abs(jsonNumber(value) - jsonNumber(locked_cg[0])));
     try testing.expect(free_moves > 1e-4); // % CMA
     try testing.expect(locked_moves < 1e-9);
-    // o CG em % da CMA bate com o da Estabilidade em Python (27,5 % no S1223 com a carga e o líquido)
-    try testing.expectApproxEqAbs(@as(f64, 27.5), jsonNumber(free_cg[0]), 0.6);
+    // o CG em % da CMA com a carga e o líquido: 31,8 % no Convencional (o número desta análise, guardado para pegar
+    // mudança; a referência do Python era do S1223, que saiu dos exemplos)
+    try testing.expectApproxEqAbs(@as(f64, 31.8), jsonNumber(free_cg[0]), 0.05);
 }
 
 test "a tabela dos tanques: soma, edita, apaga e volta ao arquivo; a LAPES solta deixa o resto da massa" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/S1223_monomotor_EH_convencional_Joinville.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: aircraft_model.aircraft.Diag = .{};
     var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);
@@ -2914,7 +2915,7 @@ test "a tabela dos tanques: soma, edita, apaga e volta ao arquivo; a LAPES solta
 
 test "o método escolhido no formulário vale na rodada: a linha sustentadora voa" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: aircraft_model.aircraft.Diag = .{};
     var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);
@@ -2945,7 +2946,7 @@ fn jsonNumber(value: std.json.Value) f64 {
 
 test "a sonda da estabilidade estática dá os números do Python no Convencional_original" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: aircraft_model.aircraft.Diag = .{};
     var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);
@@ -2992,7 +2993,7 @@ test "a sonda da estabilidade estática dá os números do Python no Convenciona
 
 test "os modos e a MIL-F-8785C dão os números do Python no Convencional_original" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: aircraft_model.aircraft.Diag = .{};
     var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);
@@ -3022,7 +3023,7 @@ test "os modos e a MIL-F-8785C dão os números do Python no Convencional_origin
 
 test "a aba Estabilidade inteira dá o diagnóstico do Python no Convencional_original" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: aircraft_model.aircraft.Diag = .{};
     var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);

@@ -34,7 +34,7 @@ const simulation = @import("simulation");
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: aircraft_model.aircraft.Diag = .{};
     var loaded = try aircraft_model.aircraft.parse(gpa, bytes, &diagnosis);

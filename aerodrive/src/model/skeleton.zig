@@ -507,7 +507,7 @@ test "δ > 0 leva o bordo de fuga para baixo no profundor e para −y no leme" {
 }
 
 test "os aviões de exemplo da pasta data/aircraft montam" {
-    const files = [_][]const u8{ "Convencional_original.json", "Asa_voadora.json", "Bimotor_convencional_tubo_cauda_em_V.json", "Convencional_decola_da_mesa_pousa_na_plataforma.json" };
+    const files = [_][]const u8{ "Convencional_original.aero", "Asa_voadora.aero", "Bimotor_convencional_tubo_cauda_em_V.aero", "Convencional_decola_da_mesa_pousa_na_plataforma.aero" };
     for (files) |name| {
         const path = try std.fmt.allocPrint(testing.allocator, "../data/aircraft/{s}", .{name});
         defer testing.allocator.free(path);

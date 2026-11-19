@@ -28,7 +28,7 @@ roda os testes sem janela. O print sem tela abre o avião, vai à aba e, se pedi
 da etapa antes de gravar a imagem:
 
 ```sh
-xvfb-run -a ./aerosim/zig-out/bin/aerosim --shot estudo.png data/aircraft/Convencional_original.json 1400x850 aba=9 acao=etapa:run
+xvfb-run -a ./aerosim/zig-out/bin/aerosim --shot estudo.png data/aircraft/Convencional_original.aero 1400x850 aba=9 acao=etapa:run
 ```
 
 ![Estudo e ponto de projeto, rodado pelo print: os aviões guardados comparados nas duas altitudes](../../docs/img/zig_estudo.png)

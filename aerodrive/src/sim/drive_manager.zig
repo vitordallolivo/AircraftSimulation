@@ -205,7 +205,7 @@ pub const DriveManager = struct {
 const testing = std.testing;
 
 test "piloto automático: o Convencional decola do chão, sobe e segue o percurso" {
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", testing.allocator, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", testing.allocator, .limited(1 << 24));
     defer testing.allocator.free(bytes);
     var d: model.Diag = .{};
     var l = try model.parse(testing.allocator, bytes, &d);
@@ -228,7 +228,7 @@ test "piloto automático: o Convencional decola do chão, sobe e segue o percurs
 }
 
 test "manual: acelerador cheio e profundor cabrando decola; trocar para o automático segue voando" {
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", testing.allocator, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", testing.allocator, .limited(1 << 24));
     defer testing.allocator.free(bytes);
     var d: model.Diag = .{};
     var l = try model.parse(testing.allocator, bytes, &d);
@@ -254,7 +254,7 @@ var fuzz_ac: ?model.Loaded = null;
 fn fuzzSteps(_: void, src: *fz.Src) anyerror!void {
     // sequência qualquer de passos (NaN, negativos, enormes, reinícios): estado sempre finito
     if (fuzz_ac == null) {
-        const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Asa_voadora.json", testing.allocator, .limited(1 << 24));
+        const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Asa_voadora.aero", testing.allocator, .limited(1 << 24));
         defer testing.allocator.free(bytes);
         var d: model.Diag = .{};
         fuzz_ac = try model.parse(std.heap.page_allocator, bytes, &d);
@@ -278,7 +278,7 @@ test "fuzz: passos do drive_manager" {
 }
 
 test "efeito solo pela imagem no VLM: a tabela sai na configuração e o Convencional decola" {
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", testing.allocator, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", testing.allocator, .limited(1 << 24));
     defer testing.allocator.free(bytes);
     var d: model.Diag = .{};
     var l = try model.parse(testing.allocator, bytes, &d);
@@ -300,7 +300,7 @@ test "efeito solo pela imagem no VLM: a tabela sai na configuração e o Convenc
 
 /// a distância (m) do Convencional na pista até sair do chão, com a lista de modifiers `modifiers`
 fn liftoffDistance(modifiers: []const model.Modifier) !f64 {
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", testing.allocator, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", testing.allocator, .limited(1 << 24));
     defer testing.allocator.free(bytes);
     var d: model.Diag = .{};
     var l = try model.parse(testing.allocator, bytes, &d);

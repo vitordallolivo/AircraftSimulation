@@ -4,6 +4,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## v0.3.1 (na `0.3_dev`, em andamento)
 
+- Antes, o avião era um `.json`, sem data e fácil de confundir com qualquer outro arquivo. Agora o avião tem um
+  arquivo próprio, o `.aero`, com a data em que foi criado e a da última mudança dentro dele; o "Salvar" grava
+  `.aero`, o "Abrir…" e o AeroDrive abrem `.aero` (e ainda o `.json` antigo), e o avião do projeto fica em
+  `aviao.aero` na pasta do projeto. Os aviões de exemplo viraram `.aero`, iguais campo a campo, e os dois S1223 de
+  Joinville saíram dos exemplos.
 - Os botões do alto passam a se chamar "Abrir…" e "Salvar" (antes "Abrir avião" e "Salvar .json"). No navegador, o
   "Abrir…" abre o seletor de arquivos do computador, em vez de uma pasta interna da página.
 - Antes, o avião que o Dimensionamento projetava e o avião aberto na Montagem eram dois: o projetado só aparecia na

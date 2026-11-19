@@ -4,7 +4,7 @@
 //!   <programa> [LxA]
 //!   <programa> --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME] [clique=X,Y] [apos=SEGUNDOS] [tema=escuro]
 //!
-//! `arquivo` vai para o `openFile` da tela (.json, .dat ou uma polar); `acao=NOME` (ou `acao=A,B`) chama `command` da tela para cada nome,
+//! `arquivo` vai para o `openFile` da tela (.aero, .json, .dat ou uma polar); `acao=NOME` (ou `acao=A,B`) chama `command` da tela para cada nome,
 //! se ela tiver (abre um diálogo para o print, por exemplo). `clique=X,Y` clica no pixel (X, Y) quando a tela para de
 //! mudar e tira o print depois (a leitura de um gráfico, a escolha de um ponto).
 const std = @import("std");
@@ -75,7 +75,7 @@ pub fn parseArgs(argv: []const [:0]const u8) !Args {
 }
 
 fn isFile(value: []const u8) bool {
-    for ([_][]const u8{ ".json", ".cfg", ".ini", ".xlsx", ".dat", ".txt", ".csv", ".pol" }) |extension| if (std.ascii.endsWithIgnoreCase(value, extension)) return true;
+    for ([_][]const u8{ ".aero", ".json", ".cfg", ".ini", ".xlsx", ".dat", ".txt", ".csv", ".pol" }) |extension| if (std.ascii.endsWithIgnoreCase(value, extension)) return true;
     return false;
 }
 

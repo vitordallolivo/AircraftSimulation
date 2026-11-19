@@ -1436,7 +1436,7 @@ const testing = std.testing;
 
 test "Analisar: o C_L máximo da asa do Convencional bate com o Python" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(gpa, bytes, &diagnosis);
@@ -1466,7 +1466,7 @@ const expected = [_]struct { method: LoadMethod, lift_max: f64, peak: usize }{
 
 test "Analisar: o estol por estação (VLM + polar) na asa do Convencional dá um C_L máximo abaixo do c_l,max do perfil" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(gpa, bytes, &diagnosis);
@@ -1494,7 +1494,7 @@ test "Analisar: asa em caixa de perfil muito arqueado não explode perto do esto
     // duas asas de 3,4 m, uma 1 m acima e 0,5 m à frente da outra, pontas ligadas por placas, perfil de c_l alto
     // (α de sustentação nula −8°): antes, a continuação pós-estol aceitava qualquer passo e o C_L ia a −500
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(gpa, bytes, &diagnosis);
@@ -1528,7 +1528,7 @@ test "Analisar: asa em caixa de perfil muito arqueado não explode perto do esto
 
 test "Analisar: o VLM do núcleo roda como método e dá o C_L perto da linha sustentadora antes do estol" {
     const gpa = testing.allocator;
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.aero", gpa, .limited(1 << 24));
     defer gpa.free(bytes);
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(gpa, bytes, &diagnosis);

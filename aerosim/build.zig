@@ -64,6 +64,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "aerosim", .module = core },
             .{ .name = "catalog", .module = catalog },
+            .{ .name = "aircraft_model", .module = aircraft_model },
             .{ .name = "templates", .module = templates },
         },
     });

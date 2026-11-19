@@ -38,7 +38,7 @@ import json
 import numpy as np
 from aerosim.bridge import answer
 
-aircraft = json.load(open("data/aircraft/Convencional_original.json"))["aeronave"]
+aircraft = json.load(open("data/aircraft/Convencional_original.aero"))["aeronave"]
 for solver in ("lltdrek", "asb_vlm", "avl"):
     reply = answer({"id": 1, "op": "polar", "solver": solver, "aircraft": aircraft, "V": 15, "alphas": [-4, 0, 4, 8, 12]})
     print(f"{solver:8s} C_L:", " ".join("  —  " if cl is None else f"{cl:5.2f}" for cl in reply["CL"]))
