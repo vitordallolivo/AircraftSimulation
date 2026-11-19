@@ -1,4 +1,4 @@
-# Aplica no docs/TRACKING.md da 0.2_dev as mudanças feitas pela página do tracking (botões "Confirmar feito" e
+# Aplica no docs/TRACKING.md da 0.3_dev as mudanças feitas pela página do tracking (botões "Confirmar feito" e
 # "+ Nova tarefa"): a página abre uma issue "[tracking] ..." já preenchida; aqui o `zig build tracking -- --issue` lê o corpo,
 # grava a mudança, faz o commit e fecha a issue. Só roda para issues do dono do repositório (o repositório é público).
 # Sem chave nenhuma: usa o token que o próprio GitHub dá a cada rodada. Um push deste token não dispara outras Actions.
@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 0.2_dev
+          ref: 0.3_dev
 
       - uses: actions/setup-python@v5
         with:
@@ -44,7 +44,7 @@ jobs:
           python -m ziglang build tracking -- --check
           echo "resumo=$(grep -m1 'docs/TRACKING.md:' "$RUNNER_TEMP/saida.txt" | cut -d: -f2- | xargs)" >> "$GITHUB_OUTPUT"
 
-      - name: Commit na 0.2_dev
+      - name: Commit na 0.3_dev
         env:
           RESUMO: ${{ steps.aplicar.outputs.resumo }}
           NUMERO: ${{ github.event.issue.number }}
@@ -52,7 +52,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
           git commit -am "Tracking: $RESUMO (#$NUMERO)"
-          git push origin 0.2_dev
+          git push origin 0.3_dev
 
       - name: Fechar a issue
         env:
@@ -61,7 +61,7 @@ jobs:
           NUMERO: ${{ github.event.issue.number }}
         # bloco (|): numa linha só, o ": " dentro do texto vira um mapa do YAML e o arquivo inteiro deixa de valer
         run: |
-          gh issue close "$NUMERO" --repo "$GITHUB_REPOSITORY" --comment "Feito no docs/TRACKING.md da 0.2_dev: $RESUMO."
+          gh issue close "$NUMERO" --repo "$GITHUB_REPOSITORY" --comment "Feito no docs/TRACKING.md da 0.3_dev: $RESUMO."
 
       - if: failure()
         env:

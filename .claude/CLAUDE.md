@@ -111,14 +111,14 @@ as configurações.
 
 ## 5. Git e versões
 
-- **Branch única de desenvolvimento: `0.2_dev`.** Não criar outras branches. Nunca mexer direto na `main`.
+- **Branch única de desenvolvimento: `0.3_dev`** (vitor, 2026-11-19; antes era a `0.2_dev`). Não criar outras branches. Nunca mexer direto na `main`.
 - **Fluxo de uma tarefa:**
-  1. Mesclar a `main` na `0.2_dev`.
+  1. Mesclar a `main` na `0.3_dev`.
   2. `python -m ziglang build check -- --tudo`.
   3. `python -m ziglang build mapa`.
   4. Atualizar `docs/TRACKING.md` e `CHANGELOG.md`. O changelog diz o que mudou para quem usa, em frases ("antes,
      ...; agora ..."), sem nomes de código, sem decisões, etapas ou itens do tracking.
-  5. Abrir o PR `0.2_dev` → `main` e parar.
+  5. Abrir o PR `0.3_dev` → `main` e parar.
 - **Versão:**
   - A `main` está em `v0.3.0` (PR de 2026-11-19).
   - Cada tarefa mesclada sobe o último número (`0.3.1`, `0.3.2`…).

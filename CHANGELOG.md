@@ -2,7 +2,7 @@
 
 Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
-## Na `0.2_dev` (ainda sem versão)
+## Na `0.3_dev` (ainda sem versão)
 
 - No celular (ou numa janela estreita), a tela do aerosim ficava espremida, com as abas cortadas e os campos por
   cima dos gráficos. Agora ela muda de jeito: as áreas ficam numa barra embaixo, ao alcance do polegar, com as que não

@@ -1,5 +1,5 @@
 # Roda os checks (os mesmos do `zig build check -- --tudo`, tools/check.zig) a cada PR para a main (uma rodada
-# por push no PR; o push na 0.2_dev sozinho não dispara, para não rodar duas vezes o mesmo commit). Dois jobs em
+# por push no PR; o push na 0.3_dev sozinho não dispara, para não rodar duas vezes o mesmo commit). Dois jobs em
 # paralelo, um por parte; cada um sobe o relatório em Markdown como artefato (aba Actions -> a rodada -> Artifacts). No PC, o mesmo:
 #   python -m ziglang build check -- --tudo --relatorio relatorio.md
 name: testes
