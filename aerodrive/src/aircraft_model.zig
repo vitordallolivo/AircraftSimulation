@@ -3,6 +3,7 @@
 //! malhas de cada peça nas cores da GUI (`model/skeleton.zig`) e os parâmetros do núcleo tirados do avião
 //! (`sim/params.zig`, o caminho `build_model` → tradutor da GUI em Python). Nada aqui abre janela.
 pub const aircraft = @import("model/aircraft.zig");
+pub const aero_file = @import("model/aero_file.zig");
 pub const airfoil = @import("model/airfoil.zig");
 pub const skeleton = @import("model/skeleton.zig");
 pub const vec3 = @import("math/vec3.zig");

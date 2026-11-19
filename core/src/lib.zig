@@ -43,6 +43,8 @@ pub const quadrature = @import("math/quadrature.zig");
 pub const interpolation = @import("math/interpolation.zig");
 /// leitura de planilhas .xlsx (zip + XML), sem dependência de fora
 pub const xlsx = @import("util/xlsx.zig");
+/// o zip (ler e gravar), a caixa do .xlsx e do .aero
+pub const zip = @import("util/zip.zig");
 /// a polar de avião exportada pelo XFLR5
 pub const xflr5 = @import("util/xflr5.zig");
 pub const autotune = @import("control/autotune.zig");

@@ -76,7 +76,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Declaration:11`
   fn `require:18`, `has:33`
 - `core/src/lib.zig` — O núcleo como módulo Zig (para programas em Zig, como o aerodrive): os mesmos tipos e funções
-  tipos `structures:57`, `optim:63`
+  tipos `structures:59`, `optim:65`
 - `core/src/limits.zig` — Limites de compilação. Toda a memória do núcleo é estática e dimensionada aqui:
   tipos `Group:18`
   fn `groupIndex:30`
@@ -357,8 +357,10 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Method:14`, `Polar:30`
   fn `parse:67`
 - `core/src/util/xlsx.zig` — Leitor de planilhas `.xlsx` sem dependência de fora: o arquivo é um `.zip` (APPNOTE da PKWARE) com uma folha de
-  tipos `Value:18`, `Cell:34`, `Sheet:41`, `Workbook:71`
-  fn `parseAddress:114`
+  tipos `Value:19`, `Cell:35`, `Sheet:42`, `Workbook:72`
+  fn `parseAddress:115`
+- `core/src/util/zip.zig` — O zip (APPNOTE da PKWARE) sem dependência de fora: ler o índice e as partes (guardadas ou com deflate) e gravar um
+  tipos `Archive:15`, `Writer:86`
 
 
 ## Zig · AeroDrive (`aerodrive/src`)
@@ -431,9 +433,12 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 **aerodrive/src/model/**
 
+- `aerodrive/src/model/aero_file.zig` — O arquivo `.aero`: um avião inteiro num arquivo só, no lugar dos vários `.json`. Por dentro é um zip (como o
+  tipos `Manifest:28`, `Part:38`, `Stamp:41`, `Loaded:46`
+  fn `looksLike:65`, `write:70`, `read:85`
 - `aerodrive/src/model/aircraft.zig` — Leitura do arquivo do avião salvo pela GUI (`data/aircraft/*.json`, "meus aviões").
-  tipos `Section:12`, `Control:20`, `Device:59`, `Airfoil:76`, `Surface:87`, `Fuselage:119`, `Boom:136`, `Propeller:165`, `Motor:166`, `Battery:167`, `ThrustPoly:178`, `Propulsion:191`, `GearLeg:208`, `Gear:209`, `Tank:232`, `Payload:252`, `PointMass:266`, `Mass:267`, `Environment:278`, `Takeoff:306`, `SimSettings:307`, `Autopilot:309`, `Leg:354`, `MissionEvent:367`, `Mission:368`, `Ballast:378`, `Airfield:379`, `Modifier:397`, `Performance:412`, `Aircraft:423`, `limits:459`, `Diag:483`, `Loaded:497`
-  fn `mixedAirfoils:15`, `kindGains:49`, `parse:507`, `validate:566`, `semispan:653`, `sortedSections:660`, `sectionAt:672`, `tailOnBoom:685`, `mountPoint:703`, `applyMounts:737`
+  tipos `Section:12`, `Control:20`, `Device:59`, `Airfoil:76`, `Surface:87`, `Fuselage:119`, `Boom:136`, `Propeller:165`, `Motor:166`, `Battery:167`, `ThrustPoly:178`, `Propulsion:191`, `GearLeg:208`, `Gear:209`, `Tank:232`, `Payload:252`, `PointMass:266`, `Mass:267`, `Environment:278`, `Takeoff:306`, `SimSettings:307`, `Autopilot:309`, `Leg:354`, `MissionEvent:367`, `Mission:368`, `Ballast:378`, `Airfield:379`, `Modifier:397`, `Settings:413`, `Performance:454`, `Aircraft:465`, `limits:501`, `Diag:525`, `Loaded:539`
+  fn `mixedAirfoils:15`, `kindGains:49`, `parse:549`, `validate:608`, `semispan:695`, `sortedSections:702`, `sectionAt:714`, `tailOnBoom:727`, `mountPoint:745`, `applyMounts:779`
 - `aerodrive/src/model/airfoil.zig` — Perfil 2D (x/c, y/c): NACA de 4 dígitos pelo nome ou as coordenadas do arquivo do avião.
   tipos `Profile:13`
   fn `nacaDigits:23`, `naca4:39`, `forDrawing:79`, `invert:95`, `full:102`, `thinAirfoil:126`, `flapEffectiveness:176`, `helmbold:183`, `split:190`

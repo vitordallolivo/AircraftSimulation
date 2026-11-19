@@ -11,6 +11,7 @@
 //!
 //! Toda a memória vem do `allocator` de quem chama (uma arena); `parse` não guarda nada fora dela.
 const std = @import("std");
+const zip = @import("zip.zig");
 
 pub const Error = error{ NotZip, MissingPart, BadXml, UnsupportedCompression, BadCell };
 
@@ -73,7 +74,7 @@ pub const Workbook = struct {
 
     /// lê o `.xlsx` em `bytes`; as abas e os textos ficam no `allocator`
     pub fn parse(allocator: std.mem.Allocator, bytes: []const u8) !Workbook {
-        const archive = try Archive.open(allocator, bytes);
+        const archive = zip.Archive.open(allocator, bytes) catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else Error.NotZip;
         const shared = if (archive.find("xl/sharedStrings.xml")) |entry| try readSharedStrings(allocator, try archive.extract(allocator, entry)) else &[_][]const u8{};
         const workbook_xml = try archive.extract(allocator, archive.find("xl/workbook.xml") orelse return Error.MissingPart);
         const relations_xml = if (archive.find("xl/_rels/workbook.xml.rels")) |entry| try archive.extract(allocator, entry) else "";
@@ -129,76 +130,6 @@ pub fn parseAddress(address: []const u8) Error!struct { row: u32, column: u32 } 
     };
     if (column == 0 or row == 0) return Error.BadCell;
     return .{ .row = row, .column = column };
-}
-
-// ------------------------------------------------------------------ o zip
-
-/// o diretório central do zip, lido direto dos bytes (APPNOTE 4.3.12 e 4.3.16)
-const Archive = struct {
-    bytes: []const u8,
-    entries: []const Entry,
-
-    const Entry = struct { name: []const u8, method: u16, compressed: u32, size: u32, local_offset: u32 };
-
-    fn open(allocator: std.mem.Allocator, bytes: []const u8) !Archive {
-        if (bytes.len < 22) return Error.NotZip;
-        // o registro do fim fica nos últimos 22 + até 65535 bytes (o comentário do zip)
-        var position: usize = bytes.len - 22;
-        const lowest = if (bytes.len > 22 + 0xffff) bytes.len - 22 - 0xffff else 0;
-        while (!std.mem.eql(u8, bytes[position..][0..4], "PK\x05\x06")) {
-            if (position == lowest) return Error.NotZip;
-            position -= 1;
-        }
-        const count = readInt(u16, bytes, position + 10);
-        var cursor: usize = readInt(u32, bytes, position + 16);
-        const entries = try allocator.alloc(Entry, count);
-        for (entries) |*entry| {
-            if (cursor + 46 > bytes.len or !std.mem.eql(u8, bytes[cursor..][0..4], "PK\x01\x02")) return Error.NotZip;
-            const name_length = readInt(u16, bytes, cursor + 28);
-            const extra_length = readInt(u16, bytes, cursor + 30);
-            const comment_length = readInt(u16, bytes, cursor + 32);
-            if (cursor + 46 + name_length > bytes.len) return Error.NotZip;
-            entry.* = .{
-                .method = readInt(u16, bytes, cursor + 10),
-                .compressed = readInt(u32, bytes, cursor + 20),
-                .size = readInt(u32, bytes, cursor + 24),
-                .local_offset = readInt(u32, bytes, cursor + 42),
-                .name = bytes[cursor + 46 ..][0..name_length],
-            };
-            cursor += 46 + name_length + extra_length + comment_length;
-        }
-        return .{ .bytes = bytes, .entries = entries };
-    }
-
-    fn find(archive: Archive, name: []const u8) ?Entry {
-        for (archive.entries) |entry| if (std.ascii.eqlIgnoreCase(entry.name, name)) return entry;
-        return null;
-    }
-
-    /// o conteúdo de uma parte: guardada (0) ou comprimida com deflate (8)
-    fn extract(archive: Archive, allocator: std.mem.Allocator, entry: Entry) ![]const u8 {
-        const local = entry.local_offset;
-        if (local + 30 > archive.bytes.len or !std.mem.eql(u8, archive.bytes[local..][0..4], "PK\x03\x04")) return Error.NotZip;
-        const start = local + 30 + readInt(u16, archive.bytes, local + 26) + readInt(u16, archive.bytes, local + 28);
-        if (start + entry.compressed > archive.bytes.len) return Error.NotZip;
-        const data = archive.bytes[start..][0..entry.compressed];
-        switch (entry.method) {
-            0 => return data,
-            8 => {
-                const out = try allocator.alloc(u8, entry.size);
-                var input: std.Io.Reader = .fixed(data);
-                var window: [std.compress.flate.max_window_len]u8 = undefined;
-                var inflate: std.compress.flate.Decompress = .init(&input, .raw, &window);
-                inflate.reader.readSliceAll(out) catch return Error.NotZip;
-                return out;
-            },
-            else => return Error.UnsupportedCompression,
-        }
-    }
-};
-
-fn readInt(comptime Int: type, bytes: []const u8, at: usize) Int {
-    return std.mem.readInt(Int, bytes[at..][0..@sizeOf(Int)], .little);
 }
 
 // ------------------------------------------------------------------ o XML

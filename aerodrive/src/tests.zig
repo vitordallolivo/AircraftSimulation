@@ -4,6 +4,7 @@ test {
     _ = @import("math/vec3.zig");
     _ = @import("model/airfoil.zig");
     _ = @import("model/aircraft.zig");
+    _ = @import("model/aero_file.zig");
     _ = @import("model/skeleton.zig");
     _ = @import("camera/camera.zig");
     _ = @import("gfx/pose.zig");

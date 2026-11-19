@@ -125,5 +125,6 @@ pub const geometry = struct {
 pub const util = struct {
     pub const fuzz = @import("util/fuzz.zig");
     pub const xlsx = @import("util/xlsx.zig");
+    pub const zip = @import("util/zip.zig");
     pub const xflr5 = @import("util/xflr5.zig");
 };
