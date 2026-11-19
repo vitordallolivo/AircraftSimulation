@@ -4,6 +4,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## v0.3.1 (na `0.3_dev`, em andamento)
 
+- Os botões do alto passam a se chamar "Abrir…" e "Salvar" (antes "Abrir avião" e "Salvar .json"). No navegador, o
+  "Abrir…" abre o seletor de arquivos do computador, em vez de uma pasta interna da página.
 - Antes, o avião que o Dimensionamento projetava e o avião aberto na Montagem eram dois: o projetado só aparecia na
   Montagem com "Mandar para a Montagem", e cada análise perguntava de onde vinham as asas. Agora é um avião só: a cada
   mudança das etapas ele é montado de novo com o que já existe (só as asas logo depois do Projetar; asas, cauda,

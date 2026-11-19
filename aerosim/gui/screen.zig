@@ -871,8 +871,11 @@ pub const Screen = struct {
             }
             _ = ui_kit.phone.bottomBar(ui, .{ .x = 0, .y = height - bottom, .width = width, .height = bottom }, screen.area_labels, marked, &screen.area, &screen.more_open);
         } else {
-            if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião", "Salvar .json" }, "")) |button| {
-                if (button == 0) screen.command("abrir") else screen.command("salvar");
+            if (widgets.header(ui, width, "AeroSim", &.{ "Abrir…", "Salvar" }, "")) |button| {
+                // no navegador, "Abrir" pega o arquivo do computador (o seletor do sistema), não a pasta da página
+                if (button == 0) {
+                    if (!ui_kit.system.pickFromDevice()) screen.command("abrir");
+                } else screen.command("salvar");
             }
             _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, screen.area_labels, &screen.area, 14);
             if (!single) {
