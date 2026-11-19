@@ -4,6 +4,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## Na `0.3_dev` (ainda sem versão)
 
+- Antes, a tela só tinha o modo claro, com um azul escuro de pouco contraste. Agora há o modo escuro como opção (o
+  botão "Modo escuro" no alto, ou o interruptor no "Mais" do celular), lembrado na próxima vez que o programa abre:
+  fundo quase preto, texto branco e o destaque em laranja. O modo claro continua o padrão, todo num azul mais vivo.
+  Nos dois, o que está escolhido (aba, botão Rodar, caixa marcada, barra de progresso) ganha um brilho leve na cor
+  do destaque; os gráficos ficam sem brilho, e as curvas escuras clareiam no fundo preto.
 - No celular (ou numa janela estreita), a tela do aerosim ficava espremida, com as abas cortadas e os campos por
   cima dos gráficos. Agora ela muda de jeito: as áreas ficam numa barra embaixo, ao alcance do polegar, com as que não
   cabem no "Mais"; as subabas viram fichas no alto; o gráfico fica em cima, um por vez, trocado pelas setas ou

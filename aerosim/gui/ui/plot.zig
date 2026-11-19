@@ -49,7 +49,7 @@ pub const Series = struct {
 
     /// a cor desta curva, sendo a `index`-ésima do gráfico
     pub fn colorAt(s: Series, index: usize) rl.Color {
-        return s.color orelse theme.plotColor(s.color_index orelse index);
+        return theme.readable(s.color orelse theme.plotColor(s.color_index orelse index));
     }
 };
 
@@ -1093,7 +1093,7 @@ fn drawProbe(ui: *widgets.Ui, frame: Frame, series: []const Series, probe: Probe
     if (box_x + width > frame.area.x + frame.area.width) box_x = at.x - width - 12;
     if (box_y < frame.area.y) box_y = at.y + 10;
     const box: rl.Rectangle = .{ .x = box_x, .y = box_y, .width = width, .height = height };
-    widgets.rounded(box, 4, theme.hex(0xfffbe6));
+    widgets.rounded(box, 4, theme.colors.note);
     widgets.roundedLines(box, 4, theme.colors.line);
     var y = box_y + 5;
     if (name.len > 0) {

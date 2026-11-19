@@ -48,6 +48,21 @@ pub const Ui = struct {
         return ui;
     }
 
+    /// troca o modo das cores (claro ou escuro) e refaz o estilo do raygui; `remember` grava a escolha para a próxima
+    /// vez (`system.saveSetting`)
+    pub fn setMode(ui: *Ui, chosen: theme.Mode, remember: bool) void {
+        theme.setMode(chosen);
+        styleRaygui(ui.fonts.mono);
+        if (remember) system.saveSetting("tema", @tagName(chosen));
+    }
+
+    /// o modo gravado da última vez (o claro, se não houver)
+    pub fn restoreMode(ui: *Ui) void {
+        var buffer: [16]u8 = undefined;
+        const saved = system.loadSetting("tema", &buffer) orelse return;
+        ui.setMode(std.meta.stringToEnum(theme.Mode, saved) orelse return, false);
+    }
+
     /// libera fontes e logo
     pub fn deinit(ui: *Ui) void {
         ui.logo.deinit();
@@ -103,7 +118,7 @@ pub const Ui = struct {
         const x = @min(ui.mouse.x + 14, screen_width - width - 8);
         const y = if (ui.mouse.y + 22 + height > screen_height) ui.mouse.y - height - 8 else ui.mouse.y + 22;
         const box: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = height };
-        rounded(box, 5, theme.hex(0xfffbe6));
+        rounded(box, 5, theme.colors.note);
         roundedLines(box, 5, theme.colors.line);
         _ = paragraph(ui.fonts.regular, ui.tip, x + 8, y + 6, width - 16, 13, theme.colors.ink);
     }
@@ -347,6 +362,7 @@ pub fn helpMark(ui: *Ui, x: f32, y: f32, text: [:0]const u8) void {
 
 /// a caixa de marcar: azul com o visto desenhado (duas linhas, sem depender de a fonte ter o "✓") ou branca
 pub fn checkBox(box: rl.Rectangle, checked: bool) void {
+    if (checked) glow(box, 4);
     rounded(box, 4, if (checked) theme.colors.accent else theme.colors.field);
     if (!checked) {
         roundedLines(box, 4, theme.colors.line);
@@ -404,6 +420,16 @@ fn roundness(rect: rl.Rectangle, radius: f32) f32 {
     return std.math.clamp(2 * radius / @max(@min(rect.width, rect.height), 1), 0, 1);
 }
 
+/// o brilho em volta de `rect` (o que está escolhido): umas camadas da cor `glow` do tema, cada uma mais larga
+pub fn glow(rect: rl.Rectangle, radius: f32) void {
+    const color = theme.colors.glow;
+    const layers = [_]f32{ 7, 5, 3, 1.5 };
+    for (layers) |spread| {
+        const halo: rl.Rectangle = .{ .x = rect.x - spread, .y = rect.y - spread, .width = rect.width + 2 * spread, .height = rect.height + 2 * spread };
+        rounded(halo, radius + spread, .{ .r = color.r, .g = color.g, .b = color.b, .a = color.a / 3 });
+    }
+}
+
 /// retângulo de cantos arredondados
 pub fn rounded(rect: rl.Rectangle, radius: f32, color: rl.Color) void {
     rl.drawRectangleRounded(rect, roundness(rect, radius), 6, color);
@@ -430,8 +456,28 @@ pub fn header(ui: *Ui, width: f32, program_name: [:0]const u8, buttons: []const 
         x += w + 6;
     }
     theme.text(ui.fonts.regular, subtitle, x + 16, 18, 14, theme.colors.muted);
+    modeButton(ui, width - 14, 11, header_height - 22);
     rl.drawRectangleRec(.{ .x = 0, .y = header_height - 1, .width = width, .height = 1 }, theme.colors.line);
     return pressed;
+}
+
+/// o interruptor (ligado: o destaque com brilho e a bolinha à direita)
+pub fn switchMark(rect: rl.Rectangle, on: bool) void {
+    if (on) glow(rect, rect.height / 2);
+    rounded(rect, rect.height / 2, if (on) theme.colors.accent else theme.colors.line);
+    const knob = rect.height / 2 - 3;
+    rl.drawCircleV(.{ .x = if (on) rect.x + rect.width - knob - 3 else rect.x + knob + 3, .y = rect.y + rect.height / 2 }, knob, theme.hex(0xffffff));
+}
+
+/// o botão do modo das cores, encostado à direita de `right`: troca entre o claro e o escuro e grava a escolha
+pub fn modeButton(ui: *Ui, right: f32, y: f32, height: f32) void {
+    const caption: [:0]const u8 = if (theme.mode == .dark) "Modo claro" else "Modo escuro";
+    const width = theme.textWidth(ui.fonts.regular, caption, 14) + 24;
+    const rect: rl.Rectangle = .{ .x = right - width, .y = y, .width = width, .height = height };
+    rounded(rect, 7, if (ui.hovering(rect)) theme.colors.hover else theme.colors.field);
+    roundedLines(rect, 7, theme.colors.line);
+    theme.text(ui.fonts.regular, caption, rect.x + 12, rect.y + (height - 14) / 2, 14, theme.colors.ink);
+    if (ui.clickedIn(rect)) ui.setMode(if (theme.mode == .dark) .light else .dark, true);
 }
 
 /// barra de abas: a ativa fica no fundo azul claro, com o texto e um traço embaixo em azul; devolve verdadeiro se
@@ -446,7 +492,9 @@ pub fn tabBar(ui: *Ui, rect: rl.Rectangle, labels: []const [:0]const u8, active:
         const is_active = i == active.*;
         if (is_active) {
             rounded(tab, 7, theme.colors.selected);
-            rl.drawRectangleRec(.{ .x = tab.x + 10, .y = tab.y + tab.height - 3, .width = tab.width - 20, .height = 3 }, theme.colors.accent);
+            const underline: rl.Rectangle = .{ .x = tab.x + 10, .y = tab.y + tab.height - 3, .width = tab.width - 20, .height = 3 };
+            glow(underline, 1.5);
+            rl.drawRectangleRec(underline, theme.colors.accent);
         } else if (ui.hovering(tab)) rounded(tab, 7, theme.colors.hover);
         theme.text(ui.fonts.regular, caption, tab.x + 16, tab.y + (tab.height - size) / 2, size, if (is_active) theme.colors.accent else theme.colors.ink);
         if (ui.clickedIn(tab) and !is_active) {
@@ -462,6 +510,7 @@ pub fn tabBar(ui: *Ui, rect: rl.Rectangle, labels: []const [:0]const u8, active:
 /// botão principal (azul, texto branco); devolve verdadeiro no clique
 pub fn primaryButton(ui: *Ui, rect: rl.Rectangle, caption: [:0]const u8, enabled: bool) bool {
     const hover = enabled and ui.hovering(rect);
+    if (enabled) glow(rect, 8);
     rounded(rect, 8, if (!enabled) theme.colors.line else if (hover) theme.colors.accent_hover else theme.colors.accent);
     const size: f32 = 17;
     const w = theme.textWidth(ui.fonts.regular, caption, size);
@@ -473,7 +522,11 @@ pub fn primaryButton(ui: *Ui, rect: rl.Rectangle, caption: [:0]const u8, enabled
 pub fn progressBar(rect: rl.Rectangle, fill: f32) void {
     rounded(rect, rect.height / 2, theme.colors.line);
     const width = rect.width * std.math.clamp(fill, 0, 1);
-    if (width > 0) rounded(.{ .x = rect.x, .y = rect.y, .width = width, .height = rect.height }, rect.height / 2, theme.colors.accent);
+    if (width > 0) {
+        const filled: rl.Rectangle = .{ .x = rect.x, .y = rect.y, .width = width, .height = rect.height };
+        glow(filled, rect.height / 2);
+        rounded(filled, rect.height / 2, theme.colors.accent);
+    }
 }
 
 /// cartão: fundo branco de cantos arredondados, borda fina e o título em azul; devolve a área de dentro

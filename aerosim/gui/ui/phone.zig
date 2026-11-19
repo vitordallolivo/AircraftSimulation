@@ -86,11 +86,11 @@ pub const Symbol = enum {
 };
 
 /// o símbolo e a cor de uma área
-pub const Mark = struct { symbol: Symbol = .generic, color: rl.Color = theme.colors.accent };
+pub const Mark = struct { symbol: Symbol = .generic, color: rl.Color = theme.light.accent };
 
 /// `color` clareada para o fundo (a fração `amount` de branco)
 pub fn light(color: rl.Color, amount: f32) rl.Color {
-    return rl.colorLerp(color, rl.Color.white, amount);
+    return rl.colorLerp(color, theme.colors.background, amount);
 }
 
 /// um triângulo cheio, qualquer que seja a ordem dos vértices (o raylib só pinta um sentido)
@@ -183,17 +183,20 @@ pub fn bottomBar(ui: *widgets.Ui, rect: rl.Rectangle, labels: []const [:0]const 
         const mark: Mark = if (is_more)
             (if (active.* >= shown and active.* < marks.len and !more_open.*) marks[active.*] else .{ .symbol = .more, .color = theme.colors.accent })
         else if (k < marks.len) marks[k] else .{};
+        // a ativa fica na cor de destaque do tema, com o traço brilhando em cima; as outras, na cor da área
         if (is_active) {
-            widgets.rounded(.{ .x = slot.x + 4, .y = slot.y + 4, .width = slot.width - 8, .height = slot.height - 8 }, 10, light(mark.color, 0.8));
-            rl.drawRectangleRec(.{ .x = slot.x + slot.width / 2 - 14, .y = slot.y + slot.height - 4, .width = 28, .height = 3 }, mark.color);
+            widgets.rounded(.{ .x = slot.x + 4, .y = slot.y + 4, .width = slot.width - 8, .height = slot.height - 8 }, 10, theme.colors.selected);
+            const stripe: rl.Rectangle = .{ .x = slot.x + slot.width / 2 - 18, .y = slot.y, .width = 36, .height = 3 };
+            widgets.glow(stripe, 1.5);
+            rl.drawRectangleRec(stripe, theme.colors.accent);
         }
-        drawSymbol(if (is_more and mark.symbol != .more and more_open.*) .more else mark.symbol, .{ .x = slot.x + slot.width / 2, .y = slot.y + 18 }, 20, if (is_active) mark.color else light(mark.color, 0.25));
+        drawSymbol(if (is_more and mark.symbol != .more and more_open.*) .more else mark.symbol, .{ .x = slot.x + slot.width / 2, .y = slot.y + 18 }, 20, if (is_active) theme.colors.accent else light(mark.color, 0.25));
         var buffer: [64:0]u8 = undefined;
         const size: f32 = 11;
         const caption = if (is_more) "Mais" else shortLabel(ui.fonts.regular, labels[k], size, slot_width - 6, &buffer);
         const font = if (is_active) ui.fonts.bold else ui.fonts.regular;
         const caption_width = theme.textWidth(font, caption, size);
-        theme.text(font, caption, slot.x + (slot.width - caption_width) / 2, slot.y + 33, size, if (is_active) mark.color else theme.colors.ink);
+        theme.text(font, caption, slot.x + (slot.width - caption_width) / 2, slot.y + 33, size, if (is_active) theme.colors.accent else theme.colors.ink);
         if (ui.clickedIn(slot)) {
             if (is_more) more_open.* = !more_open.* else {
                 more_open.* = false;
@@ -217,7 +220,8 @@ pub fn moreMenu(ui: *widgets.Ui, area: rl.Rectangle, labels: []const [:0]const u
     rl.drawRectangleRec(area, .{ .r = 20, .g = 30, .b = 50, .a = 70 });
     const row_height: f32 = 52;
     const rest = labels[bar_slots..];
-    const height = @as(f32, @floatFromInt(rest.len)) * row_height + 12;
+    // as áreas e, embaixo, o interruptor do modo escuro
+    const height = @as(f32, @floatFromInt(rest.len + 1)) * row_height + 12;
     const box: rl.Rectangle = .{ .x = area.x + 8, .y = area.y + area.height - height - 8, .width = area.width - 16, .height = height };
     widgets.rounded(box, 12, theme.colors.background);
     widgets.roundedLines(box, 12, theme.colors.line);
@@ -227,13 +231,15 @@ pub fn moreMenu(ui: *widgets.Ui, area: rl.Rectangle, labels: []const [:0]const u
         const row: rl.Rectangle = .{ .x = box.x + 6, .y = box.y + 6 + @as(f32, @floatFromInt(k)) * row_height, .width = box.width - 12, .height = row_height };
         const mark: Mark = if (index < marks.len) marks[index] else .{};
         if (index == active.*) {
-            widgets.rounded(row, 8, light(mark.color, 0.8));
-            rl.drawRectangleRec(.{ .x = row.x, .y = row.y + 8, .width = 4, .height = row.height - 16 }, mark.color);
+            widgets.rounded(row, 8, theme.colors.selected);
+            const stripe: rl.Rectangle = .{ .x = row.x, .y = row.y + 8, .width = 4, .height = row.height - 16 };
+            widgets.glow(stripe, 2);
+            rl.drawRectangleRec(stripe, theme.colors.accent);
         }
         drawSymbol(mark.symbol, .{ .x = row.x + 28, .y = row.y + row_height / 2 }, 22, mark.color);
-        theme.text(ui.fonts.regular, label, row.x + 52, row.y + (row_height - 17) / 2, 17, if (index == active.*) mark.color else theme.colors.ink);
+        theme.text(if (index == active.*) ui.fonts.bold else ui.fonts.regular, label, row.x + 52, row.y + (row_height - 17) / 2, 17, if (index == active.*) theme.colors.accent else theme.colors.ink);
         theme.text(ui.fonts.regular, ">", row.x + row.width - 22, row.y + (row_height - 17) / 2, 17, theme.colors.muted);
-        if (k + 1 < rest.len) rl.drawRectangleRec(.{ .x = row.x + 12, .y = row.y + row_height - 1, .width = row.width - 24, .height = 1 }, theme.colors.grid);
+        rl.drawRectangleRec(.{ .x = row.x + 12, .y = row.y + row_height - 1, .width = row.width - 24, .height = 1 }, theme.colors.grid);
         if (ui.clickedIn(row)) {
             open.* = false;
             if (active.* != index) {
@@ -242,6 +248,11 @@ pub fn moreMenu(ui: *widgets.Ui, area: rl.Rectangle, labels: []const [:0]const u
             }
         }
     }
+    const mode_row: rl.Rectangle = .{ .x = box.x + 6, .y = box.y + 6 + @as(f32, @floatFromInt(rest.len)) * row_height, .width = box.width - 12, .height = row_height };
+    theme.text(ui.fonts.regular, "Modo escuro", mode_row.x + 16, mode_row.y + (row_height - 16) / 2, 16, theme.colors.ink);
+    const dark = theme.mode == .dark;
+    widgets.switchMark(.{ .x = mode_row.x + mode_row.width - 58, .y = mode_row.y + (row_height - 24) / 2, .width = 44, .height = 24 }, dark);
+    if (ui.clickedIn(mode_row)) ui.setMode(if (dark) .light else .dark, true);
     // o toque fora da lista fecha (a barra de baixo fica fora de `area` e trata o próprio toque)
     if (ui.clickedIn(area)) open.* = false;
     ui.click_taken = true;
@@ -290,8 +301,12 @@ pub const Chips = struct {
                     }
                 } else {
                     const is_active = k == active.*;
-                    widgets.rounded(chip, chip.height / 2, if (is_active) light(tint, 0.8) else theme.colors.panel);
-                    theme.text(if (is_active) ui.fonts.bold else ui.fonts.regular, caption, chip.x + 13, chip.y + (chip.height - size) / 2, size, if (is_active) tint else theme.colors.ink);
+                    if (is_active) {
+                        widgets.glow(chip, chip.height / 2);
+                        widgets.rounded(chip, chip.height / 2, theme.colors.selected);
+                        widgets.roundedLines(chip, chip.height / 2, theme.colors.accent);
+                    } else widgets.rounded(chip, chip.height / 2, theme.colors.panel);
+                    theme.text(if (is_active) ui.fonts.bold else ui.fonts.regular, caption, chip.x + 13, chip.y + (chip.height - size) / 2, size, if (is_active) theme.colors.accent else theme.colors.ink);
                     if (ui.clickedIn(chip) and !is_active) {
                         active.* = k;
                         chips.shown_active = k;

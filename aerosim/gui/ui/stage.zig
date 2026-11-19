@@ -26,8 +26,8 @@ pub fn reqBar(ui: *widgets.Ui, x: f32, y: f32, width: f32, summary: []const u8) 
     const button_width = theme.textWidth(ui.fonts.regular, requirements_caption, 14) + 24;
     const bar_height = reqBarHeight(ui, summary, width);
     const box: rl.Rectangle = .{ .x = x, .y = y, .width = width - button_width - 8, .height = bar_height };
-    widgets.rounded(box, 3, theme.hex(0xeef3fa));
-    _ = widgets.paragraph(ui.fonts.regular, summary, box.x + 4, box.y + 4, box.width - 8, 12, theme.hex(0x333344));
+    widgets.rounded(box, 3, theme.colors.note);
+    _ = widgets.paragraph(ui.fonts.regular, summary, box.x + 4, box.y + 4, box.width - 8, 12, theme.colors.ink);
     const button: rl.Rectangle = .{ .x = x + width - button_width, .y = y + (bar_height - 28) / 2, .width = button_width, .height = 28 };
     ui.tooltip(button, requirements_help);
     return dialogs.button(ui, button, requirements_caption);

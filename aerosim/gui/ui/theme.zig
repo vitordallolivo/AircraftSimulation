@@ -1,4 +1,6 @@
-//! O visual da interface, o mesmo do AeroDrive: fundo claro, cantos arredondados, azul nos títulos e pouco texto.
+//! O visual da interface, o mesmo do AeroDrive: cantos arredondados, uma cor de destaque e pouco texto. São dois
+//! modos (`Mode`): o claro (o padrão), com fundo claro e tudo em azul, e o escuro, quase preto com o destaque em
+//! laranja; nos dois o que está escolhido brilha de leve na cor do destaque (`glow`). Os gráficos não brilham.
 //! Aqui ficam as cores, as fontes e a logo do albatroz (nas cores dela).
 const std = @import("std");
 const rl = @import("raylib");
@@ -31,33 +33,88 @@ pub const Palette = struct {
     ok: rl.Color,
     warning: rl.Color,
     failure: rl.Color,
-    /// as cores das curvas, em ordem: 10 cores bem distintas no fundo claro
+    glow: rl.Color, // o brilho em volta do que está escolhido (o destaque, transparente)
+    note: rl.Color, // fundo das dicas e das legendas
+    /// as cores das curvas, em ordem: 10 cores bem distintas no fundo do modo
     plot: [10]rl.Color,
 };
 
-/// as cores do AeroDrive (`aerodrive/src/ui/theme.zig`), as mesmas da GUI em Python: fundo claro, azul nos títulos
-pub const colors: Palette = .{
+/// o modo das cores
+pub const Mode = enum { light, dark };
+
+/// o modo claro, o do AeroDrive (`aerodrive/src/ui/theme.zig`): fundo claro e tudo em azul, com um brilho azulado
+pub const light: Palette = .{
     .background = hex(0xf5f6fa),
-    .panel = hex(0xe8ecf3),
-    .selected = hex(0xc8d6ec),
-    .hover = hex(0xdae4f4),
+    .panel = hex(0xe9ebf0),
+    .selected = hex(0xdce9ff),
+    .hover = hex(0xe8f0fd),
     .field = hex(0xffffff),
-    .line = hex(0xc4cad6),
+    .line = hex(0xcfd3db),
     .grid = hex(0xe3e7ee),
-    .ink = hex(0x28282e),
-    .label = hex(0x28282e),
-    .muted = hex(0x787c86),
-    .accent = hex(0x1f4e8c),
-    .accent_hover = hex(0x2e6ec4),
+    .ink = hex(0x1d1f24),
+    .label = hex(0x1d1f24),
+    .muted = hex(0x6f747e),
+    .accent = hex(0x0d5fd9),
+    .accent_hover = hex(0x2b78ef),
     .on_accent = hex(0xffffff),
     .ok = hex(0x2ca02c),
     .warning = hex(0xd98200),
     .failure = hex(0xd62728),
+    .glow = .{ .r = 0x0d, .g = 0x5f, .b = 0xd9, .a = 46 },
+    .note = hex(0xf1f6ff),
     .plot = .{
-        hex(0xd9480f), hex(0x1864ab), hex(0x2b8a3e), hex(0xc92a2a), hex(0x6741d9),
-        hex(0x0b7285), hex(0xe67700), hex(0xa61e4d), hex(0x5c940d), hex(0x343a40),
+        hex(0x0d5fd9), hex(0x2b8a3e), hex(0xae3ec9), hex(0xc92a2a), hex(0x0b7285),
+        hex(0xe67700), hex(0x6741d9), hex(0xa61e4d), hex(0x5c940d), hex(0x343a40),
     },
 };
+
+/// o modo escuro: fundo quase preto, texto branco e o destaque em laranja, com brilho
+pub const dark: Palette = .{
+    .background = hex(0x0d0e11),
+    .panel = hex(0x16181d),
+    .selected = hex(0x2a1a0e),
+    .hover = hex(0x22252c),
+    .field = hex(0x1f2229),
+    .line = hex(0x2c3038),
+    .grid = hex(0x23262d),
+    .ink = hex(0xeef0f3),
+    .label = hex(0xd6d9df),
+    .muted = hex(0x8b919c),
+    .accent = hex(0xff7a1a),
+    .accent_hover = hex(0xff9a4a),
+    .on_accent = hex(0x111111),
+    .ok = hex(0x51cf66),
+    .warning = hex(0xfcc419),
+    .failure = hex(0xff6b6b),
+    .glow = .{ .r = 0xff, .g = 0x6e, .b = 0x14, .a = 70 },
+    .note = hex(0x1c1f26),
+    .plot = .{
+        hex(0x4dabf7), hex(0xff922b), hex(0x69db7c), hex(0xff6b6b), hex(0xb197fc),
+        hex(0x3bc9db), hex(0xffd43b), hex(0xf783ac), hex(0xa9e34b), hex(0xced4da),
+    },
+};
+
+/// as cores em uso (as do modo escolhido por `setMode`)
+pub var colors: Palette = light;
+/// o modo em uso
+pub var mode: Mode = .light;
+
+/// troca o modo das cores (quem estiliza outra biblioteca, como o raygui, refaz o estilo: `widgets.Ui.setMode`)
+pub fn setMode(chosen: Mode) void {
+    mode = chosen;
+    colors = switch (chosen) {
+        .light => light,
+        .dark => dark,
+    };
+}
+
+/// `color` legível no fundo do modo: no escuro, uma cor escura (as fixas das curvas, como o azul-marinho) clareia
+pub fn readable(color: rl.Color) rl.Color {
+    if (mode == .light) return color;
+    const luminance = (0.299 * @as(f32, @floatFromInt(color.r)) + 0.587 * @as(f32, @floatFromInt(color.g)) + 0.114 * @as(f32, @floatFromInt(color.b))) / 255;
+    if (luminance >= 0.5) return color;
+    return rl.colorLerp(color, hex(0xffffff), 0.5 - luminance + 0.15);
+}
 
 /// cor da curva `index` (dá a volta na paleta)
 pub fn plotColor(index: usize) rl.Color {
@@ -260,6 +317,8 @@ pub const Logo = struct {
         const source_width: f32 = @floatFromInt(logo.texture.width);
         const source_height: f32 = @floatFromInt(logo.texture.height);
         const width = height * source_width / source_height;
+        // a logo tem letras escuras: no modo escuro ela fica numa placa clara
+        if (mode == .dark) rl.drawRectangleRounded(.{ .x = x - 4, .y = y - 3, .width = width + 8, .height = height + 6 }, 0.3, 6, hex(0xe9ebf0));
         rl.drawTexturePro(logo.texture, .{ .x = 0, .y = 0, .width = source_width, .height = source_height }, .{ .x = x, .y = y, .width = width, .height = height }, .{ .x = 0, .y = 0 }, 0, .white);
         return width;
     }

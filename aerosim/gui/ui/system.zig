@@ -68,3 +68,41 @@ pub fn pickFromDevice() bool {
     std.os.emscripten.emscripten_run_script("Module.pickFile && Module.pickFile()");
     return true;
 }
+
+/// lê a preferência `name` gravada por `saveSetting` (no navegador, a memória da página; no PC, um arquivo na pasta
+/// pessoal); devolve o valor em `answer`, ou nulo se não houver
+pub fn loadSetting(name: []const u8, answer: []u8) ?[]const u8 {
+    if (in_browser) {
+        var script: [256]u8 = undefined;
+        const text = std.fmt.bufPrintZ(&script, "(function(){{try{{return localStorage.getItem('aerosim_{s}')||'';}}catch(e){{return '';}}}})()", .{name}) catch return null;
+        const reply = std.os.emscripten.emscripten_run_script_string(text.ptr) orelse return null;
+        const value = std.mem.sliceTo(reply, 0);
+        if (value.len == 0 or value.len > answer.len) return null;
+        @memcpy(answer[0..value.len], value);
+        return answer[0..value.len];
+    }
+    var path_buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const path = settingPath(name, &path_buffer) orelse return null;
+    const value = std.Io.Dir.cwd().readFile(io(), path, answer) catch return null;
+    return std.mem.trim(u8, value, " \r\n");
+}
+
+/// grava a preferência `name` (só letras e números) para a próxima vez que o programa abrir
+pub fn saveSetting(name: []const u8, value: []const u8) void {
+    for (value) |char| if (!std.ascii.isAlphanumeric(char)) return;
+    if (in_browser) {
+        var script: [256]u8 = undefined;
+        const text = std.fmt.bufPrintZ(&script, "try{{localStorage.setItem('aerosim_{s}','{s}')}}catch(e){{}}", .{ name, value }) catch return;
+        std.os.emscripten.emscripten_run_script(text.ptr);
+        return;
+    }
+    var path_buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const path = settingPath(name, &path_buffer) orelse return;
+    std.Io.Dir.cwd().writeFile(io(), .{ .sub_path = path, .data = value }) catch return;
+}
+
+/// o arquivo da preferência `name` na pasta pessoal (`~/.aerosim_<name>`)
+fn settingPath(name: []const u8, buffer: []u8) ?[]const u8 {
+    const home = std.c.getenv("HOME") orelse std.c.getenv("USERPROFILE") orelse return null;
+    return std.fmt.bufPrint(buffer, "{s}/.aerosim_{s}", .{ std.mem.sliceTo(home, 0), name }) catch null;
+}

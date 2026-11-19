@@ -2,7 +2,7 @@
 //! print sem interação do `--shot`.
 //!
 //!   <programa> [LxA]
-//!   <programa> --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME] [clique=X,Y] [apos=SEGUNDOS]
+//!   <programa> --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME] [clique=X,Y] [apos=SEGUNDOS] [tema=escuro]
 //!
 //! `arquivo` vai para o `openFile` da tela (.json, .dat ou uma polar); `acao=NOME` (ou `acao=A,B`) chama `command` da tela para cada nome,
 //! se ela tiver (abre um diálogo para o print, por exemplo). `clique=X,Y` clica no pixel (X, Y) quando a tela para de
@@ -24,6 +24,7 @@ pub const Args = struct {
     clicks: [max_clicks]Click = undefined, // clique=X,Y (ou dX,Y: o botão direito; vários com ";"): um por vez, cada um
     click_count: usize = 0, // depois que a tela para de mudar
     after: ?f64 = null, // apos=SEGUNDOS: o print sai nesse tempo mesmo com a rodada no meio (o progresso, os parciais)
+    dark: bool = false, // tema=escuro: o print no modo escuro (sem ele, o claro; o print não lê o modo gravado)
 };
 
 /// um clique do print: onde e se é o botão direito
@@ -59,6 +60,8 @@ pub fn parseArgs(argv: []const [:0]const u8) !Args {
                 args.clicks[args.click_count] = .{ .right = right, .at = .{ .x = std.fmt.parseFloat(f32, point[0..cut]) catch return error.BadArgs, .y = std.fmt.parseFloat(f32, point[cut + 1 ..]) catch return error.BadArgs } };
                 args.click_count += 1;
             }
+        } else if (std.mem.startsWith(u8, value, "tema=")) {
+            args.dark = std.mem.eql(u8, value[5..], "escuro");
         } else if (std.mem.startsWith(u8, value, "apos=")) {
             args.after = std.fmt.parseFloat(f64, value[5..]) catch return error.BadArgs;
         } else if (std.mem.startsWith(u8, value, "rolar=")) {
@@ -96,6 +99,9 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
 
     var ui = try widgets.Ui.init();
     defer ui.deinit();
+    if (shot) {
+        if (args.dark) ui.setMode(.dark, false);
+    } else ui.restoreMode();
     // uma tela que abre outros programas (a tela inicial do pacote) recebe o Io do processo
     if (@hasField(@TypeOf(screen.*), "io")) screen.io = init.io;
     if (!shot) @import("system.zig").process_io = init.io; // a janela de arquivo do sistema (o print fica com a de dentro)
@@ -203,6 +209,7 @@ pub fn runBrowser(title: [:0]const u8, screen: anytype) !void {
     rl.initWindow(1500, 950, title);
     rl.setExitKey(.null);
     Loop.ui = try widgets.Ui.init();
+    Loop.ui.restoreMode();
     Loop.current = screen;
     screen.start();
     std.os.emscripten.emscripten_set_main_loop(Loop.frame, 0, 1);
