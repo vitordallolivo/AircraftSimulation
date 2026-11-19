@@ -8,7 +8,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/__init__.py` — aerosim em Python: só o adaptador dos métodos de fora do núcleo (lltdrek, AeroSandbox e AVL, que são bibliotecas
 - `aerosim/bridge.py` — O adaptador dos métodos de fora do núcleo: lltdrek, AeroSandbox (VLM, AeroBuildup, LiftingLine) e AVL, que são
-  `solver:40`, `model_of:52`, `polar:60`, `loads:82`, `plain:99`, `answer:114`, `call_in_browser:130`, `main:138`
+  `solver:40`, `model_of:52`, `polar:60`, `loads:82`, `plain:99`, `answer:114`, `call_in_browser:133`, `main:141`
 
 ## Python · `aerosim/aero`
 
@@ -84,8 +84,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Methods:12`
   fn `label:34`, `choices:53`, `byName:64`
 - `core/src/numerics.zig` — O refino numérico dos solvers do núcleo num lugar só: quantas iterações, que tolerância, que passo.
-  tipos `Numerics:12`, `Solver:159`, `Info:180`
-  fn `solverTitle:162`, `count:257`
+  tipos `Numerics:12`, `Solver:163`, `Info:184`
+  fn `solverTitle:166`, `count:263`
 - `core/src/opt.zig` — Otimizações em avaliação (`-Dopt`): cada uma é um bit, desligado por padrão (ver core/OTIMIZACOES.md).
   tipos `Opt:5`
 - `core/src/root.zig` — Interface C ABI do núcleo (o que o Python chama via ctypes).
@@ -138,14 +138,14 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/loads/internal.zig` — Esforços internos ao longo da envergadura de uma semiasa (ou de um tubo de cauda), da ponta para a raiz: cortante,
   fn `shareByArea:27`, `efforts:35`, `deflection:56`, `twist:70`
 - `core/src/loads/llt.zig` — Linha sustentadora numérica (vórtices em ferradura) para a distribuição de carga ao longo da envergadura.
-  tipos `Curve:79`, `Node:265`
-  fn `sectionSlope:67`, `sectionLift:83`, `stallAngle:116`, `segment:128`, `horseshoe:145`, `surfaceNodes:176`, `prepare:347`, `apply:464`, `compute:604`, `coeffs:636`
+  tipos `Curve:79`, `Node:265`, `Warm:470`, `Applied:478`
+  fn `sectionSlope:67`, `sectionLift:83`, `stallAngle:116`, `segment:128`, `horseshoe:145`, `surfaceNodes:176`, `prepare:347`, `apply:464`, `applyFrom:482`, `compute:636`, `coeffs:668`
 - `core/src/loads/stall.zig` — Estol por estação: o VLM (`vlm.zig`) acoplado à polar 2D de cada estação no seu Reynolds, pela correção de α
   tipos `Family:34`, `Settings:40`, `Sections:48`, `Station:55`, `Work:68`, `Point:79`, `Sweep:87`
   fn `stationCount:99`, `point:330`, `next:342`, `sweep:366`
 - `core/src/loads/sweep.zig` — Varredura das asas em α (subaba Asas da Aerodinâmica): só as superfícies escolhidas, sem trimar, sem fuselagem e
-  tipos `Method:27`, `Output:33`, `Summary:84`
-  fn `sweep:49`, `summarize:93`, `isaTemperature:135`, `airViscosity:141`, `reynolds:150`
+  tipos `Method:27`, `Output:33`, `Summary:91`
+  fn `sweep:52`, `summarize:100`, `isaTemperature:142`, `airViscosity:148`, `reynolds:157`
 - `core/src/loads/trefftz.zig` — Dispositivos de ponta de asa pelo arrasto induzido mínimo no plano de Trefftz (o par de
   tipos `Segment:24`, `Kind:27`, `Workspace:47`, `Loading:56`, `Study:211`, `StudyPoint:223`
   fn `trace:91`, `optimal:127`, `efficiency:196`, `raymerOswald:206`, `studyPoint:232`
@@ -328,8 +328,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Variable:15`, `VarKind:49`, `VarSpec:57`, `Quantity:65`, `Comparison:136`, `Constraint:146`, `AirfoilData:164`, `LayoutData:175`, `PropSet:185`, `AircraftKind:193`, `Objective:206`, `SizingCfg:214`, `SizingOut:257`, `SearchMethod:274`, `OptOpts:283`, `Individual:295`
   fn `variable:44`, `quantity:116`, `massDependent:123`, `constrained:131`, `violation:154`
 - `core/src/sizing/wing_line.zig` — A etapa Asa do dimensionamento: do perfil escolhido à asa trapezoidal, pela linha sustentadora de Prandtl
-  tipos `Trapezoid:39`, `Partition:54`, `SectionAirfoil:64`, `Conditions:70`, `Station:91`, `Planform:97`, `Result:282`
-  fn `isaDensity:80`, `reynolds:86`, `planformOf:188`, `planformOfPartitions:209`, `totals:238`, `partitionsFromTrapezoid:251`, `analyze:437`, `analyzePlanform:445`, `modelSection:546`
+  tipos `Trapezoid:41`, `Partition:56`, `SectionAirfoil:66`, `Conditions:72`, `Station:93`, `Planform:99`, `Result:284`
+  fn `isaDensity:82`, `reynolds:88`, `planformOf:190`, `planformOfPartitions:211`, `totals:240`, `partitionsFromTrapezoid:253`, `analyze:439`, `analyzePlanform:447`, `modelSection:548`
 
 **core/src/structures/**
 
@@ -723,31 +723,5 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/sizing/README.md`
 - `core/src/structures/README.md`
 - `data/README.md`
-- `dist/AircraftSimulation-linux/app/data/README.md`
-- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/README.md`
-- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_2D/airfoil_optimizer/README.md`
-- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_3D/README.md`
-- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_3D/test_aero_3D/test_aero_buildup/test_low_ar_wings_validation/README.md`
-- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/README.md`
-- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/utilities/README.md`
-- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/visualization/default_assets/README.md`
-- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/library/datasets/turbine_engines/README.md`
-- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/numpy/test_numpy/README.md`
-- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/tools/README.md`
-- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/tools/pretty_plots/README.md`
-- `dist/AircraftSimulation-linux/app/python/lib/python3.12/site-packages/aerosandbox/tools/pretty_plots/labellines/README.md`
-- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/data/README.md`
-- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/README.md`
-- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_2D/airfoil_optimizer/README.md`
-- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_3D/README.md`
-- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/aerodynamics/aero_3D/test_aero_3D/test_aero_buildup/test_low_ar_wings_validation/README.md`
-- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/README.md`
-- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/utilities/README.md`
-- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/dynamics/visualization/default_assets/README.md`
-- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/library/datasets/turbine_engines/README.md`
-- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/numpy/test_numpy/README.md`
-- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/tools/README.md`
-- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/tools/pretty_plots/README.md`
-- `dist/AircraftSimulation.AppDir/usr/lib/aircraftsimulation/app/python/lib/python3.12/site-packages/aerosandbox/tools/pretty_plots/labellines/README.md`
 - `launcher/README.md`
 - `tools/README.md`

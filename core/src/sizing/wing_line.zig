@@ -32,7 +32,9 @@ const air_viscosity = 1.81e-5; // Pa s, o MU_AIR da GUI
 pub const max_partitions = 8;
 /// o máximo de seções da planta: duas por partição (o degrau de corda ganha uma) e a da raiz
 pub const max_sections = 2 * max_partitions + 1;
-/// na junção de partições com cordas diferentes, a troca acontece num trecho deste tamanho (m), o `JUNCTION` da GUI
+/// na junção de partições com cordas diferentes, a troca acontece num trecho deste tamanho (m), o `JUNCTION` da GUI.
+/// Uma diferença de corda menor que ele não é degrau: é o arredondamento da corda digitada (0,1345 contra
+/// 0,4483 × 0,3 = 0,13449), e o trecho de 0,1 mm virava uma faixa finíssima que a linha sustentadora não resolve
 const junction = 1e-4;
 
 /// a asa trapezoidal como se decide no dimensionamento (o `WingParams` da GUI, planta "trapézio")
@@ -216,7 +218,7 @@ pub fn planformOfPartitions(partitions: []const Partition) Planform {
         if (out.count == 0) {
             out.sections[0] = .{ .y = y, .chord = partition.chord, .offset = offset, .twist = twist, .airfoil = 0 };
             out.count = 1;
-        } else if (@abs(out.sections[out.count - 1].chord - partition.chord) > 1e-9) {
+        } else if (@abs(out.sections[out.count - 1].chord - partition.chord) > junction) {
             const previous = out.sections[out.count - 1];
             out.sections[out.count] = .{ .y = y + @min(junction, 0.25 * partition.span / 2), .chord = partition.chord, .offset = offset, .twist = twist, .airfoil = previous.airfoil };
             out.count += 1;
@@ -629,6 +631,18 @@ test "asa pela tabela de partições, com degrau de corda e perfil na ponta: igu
     try std.testing.expectEqual(@as(usize, 52), result.alpha_count);
     try std.testing.expectApproxEqAbs(@as(f64, 0.036004), result.profile[0], 2e-6);
     try std.testing.expectApproxEqAbs(@as(f64, 0.064001), result.drag[result.alpha_count - 1], 2e-6);
+}
+
+test "tabela de partições: corda que difere só no arredondamento não vira degrau" {
+    // 0,4483 × 0,3 = 0,13449 no fim da segunda partição; a terceira começa na corda digitada, 0,1345
+    const partitions = [_]Partition{
+        .{ .span = 0.96, .chord = 0.4483, .taper = 1, .airfoil = 0, .offset = 0, .twist = -0.4 },
+        .{ .span = 1.44, .chord = 0.4483, .taper = 0.3, .airfoil = 1, .offset = 0.0785, .twist = -1 },
+        .{ .span = 0.4, .chord = 0.1345, .taper = 1, .airfoil = 1, .offset = 0, .twist = -1 },
+    };
+    const planform = planformOfPartitions(&partitions);
+    try std.testing.expectEqual(@as(usize, 4), planform.count); // raiz, fim de cada partição: sem a seção do degrau
+    for (1..planform.count) |i| try std.testing.expect(planform.sections[i].y - planform.sections[i - 1].y > 0.1);
 }
 
 test "tabela a partir do trapézio e centro aerodinâmico do trapézio: iguais à GUI em Python" {

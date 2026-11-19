@@ -216,6 +216,7 @@ const MethodRun = struct {
     load_span: []f64,
     load_cl: []f64,
     load_chord: []f64,
+    residual: []f64, // o maior resíduo relativo da linha sustentadora em cada α (0 nas faixas)
 };
 
 const RunState = struct {
@@ -503,6 +504,9 @@ fn sweepMethod(run: *simulation.Run, state: *RunState, plane: simulation.Aircraf
     var panel_span: std.ArrayList(f64) = .empty;
     var load_cl: std.ArrayList(f64) = .empty;
     var load_chord: std.ArrayList(f64) = .empty;
+    const residual = try memory.alloc(f64, alpha_count);
+    @memset(residual, 0);
+    const job_residual = try memory.alloc(f64, alpha_count);
     const instance = try memory.create(core.runner.Instance);
     var jobs: std.ArrayList(?usize) = .empty;
     for (plane.surfaces, 0..) |surface, i| if (surface.enabled) try jobs.append(memory, i);
@@ -533,10 +537,11 @@ fn sweepMethod(run: *simulation.Run, state: *RunState, plane: simulation.Aircraf
         const cl = try memory.alloc(f64, alpha_count * panel_count);
         const span = try memory.alloc(f64, panel_count);
         const kind: sweep.Method = if (lifting_line) .lifting_line else .strips;
-        sweep.sweep(params, state.airspeed, radians, owners[0..panel_count], owner_count, kind, .{ .owner_lift = job_lift, .owner_area = area, .owner_chord = chord, .section_cl = cl, .panel_span = span }) catch {
+        sweep.sweep(params, state.airspeed, radians, owners[0..panel_count], owner_count, kind, .{ .owner_lift = job_lift, .owner_area = area, .owner_chord = chord, .section_cl = cl, .panel_span = span, .residual = job_residual }) catch {
             run.fail("a varredura do núcleo recusou as asas", .{});
             return error.Failed;
         };
+        for (residual, job_residual) |*largest, value| largest.* = @max(largest.*, value);
         // a carga no α da carga, painel a painel
         const at_load = [_]f64{state.alpha_load * rad};
         const load_lift = try memory.alloc(f64, owner_count);
@@ -586,7 +591,7 @@ fn sweepMethod(run: *simulation.Run, state: *RunState, plane: simulation.Aircraf
         run.fail("o resumo da varredura não saiu", .{});
         return error.Failed;
     };
-    return .{ .method = method, .total_cl = total_cl, .owner_cl = owner_cl, .summary = summary, .panel_owner = panel_owner.items, .load_owner = panel_owner.items, .load_span = panel_span.items, .load_cl = load_cl.items, .load_chord = load_chord.items };
+    return .{ .method = method, .total_cl = total_cl, .owner_cl = owner_cl, .summary = summary, .panel_owner = panel_owner.items, .load_owner = panel_owner.items, .load_span = panel_span.items, .load_cl = load_cl.items, .load_chord = load_chord.items, .residual = residual };
 }
 
 fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) simulation.Error!void {
@@ -640,6 +645,7 @@ fn compute(run: *simulation.Run, state: *RunState, values: simulation.Values) si
     run.progress = 0.5;
     if (other) |method| if (method != main) try runs.append(memory, try sweepMethod(run, state, plane, owner_of_surface, method));
     state.runs = runs.items;
+    for (runs.items) |method_run| try warnUnconverged(memory, state, method_run);
     run.progress = 0.6;
 
     // a comparação dos métodos de polar do núcleo nas superfícies escolhidas e o avião completo
@@ -658,6 +664,32 @@ fn compute(run: *simulation.Run, state: *RunState, values: simulation.Values) si
         try aerodynamics.analyze(run, values, chosen.items, .{ .summary = &state.summary, .checks = &state.checks, .figures = state.figures.? });
     }
     run.progress = 1;
+}
+
+/// avisa os α em que a linha sustentadora não linear não convergiu: ali o C_L é o de menor resíduo que o Newton
+/// achou, não uma solução (acontece perto do estol, quando as faixas têm mais de uma solução)
+fn warnUnconverged(memory: std.mem.Allocator, state: *RunState, method_run: MethodRun) !void {
+    const limit = core.numerics.active.llt_warn_residual;
+    var first: ?f64 = null;
+    var last: f64 = 0;
+    var largest: f64 = 0;
+    var count: usize = 0;
+    for (state.alphas, method_run.residual) |alpha, value| {
+        if (!(value > limit)) continue;
+        if (first == null) first = alpha;
+        last = alpha;
+        largest = @max(largest, value);
+        count += 1;
+    }
+    const start = first orelse return;
+    try state.checks.append(memory, .{
+        .status = .atencao,
+        .item = try text(memory, "{s}: não convergiu", .{method_run.method.title()}),
+        .value = try text(memory, "{d} α entre {d}° e {d}° (resíduo até {e:.1})", .{ count, start, last, largest }),
+        .why = "perto do estol as faixas têm mais de uma solução e o Newton parou na de menor resíduo; o C_L nesses α é aproximado",
+        .fix = "aumente as iterações pós-estol no Refino dos Solvers ou compare com outro método",
+        .group = "métodos",
+    });
 }
 
 /// as polares dos métodos do núcleo só nas superfícies escolhidas, na referência da soma das áreas (`compare_solvers`
@@ -903,12 +935,14 @@ fn externalSweep(run: *simulation.Run, state: *RunState, plane: simulation.Aircr
     }
     const total_cl = try memory.alloc(f64, alpha_count);
     const owner_cl = try memory.alloc(f64, alpha_count * owner_count);
+    const residual = try memory.alloc(f64, alpha_count); // o método de fora não diz
+    @memset(residual, 0);
     const dynamic_pressure = 0.5 * state.density * state.airspeed * state.airspeed;
     const summary = sweep.summarize(lift, state.owner_area, dynamic_pressure, all_cl.items, panel_owner.items, panel_span.items, total_cl, owner_cl) catch {
         run.fail("o resumo da varredura não saiu", .{});
         return error.Failed;
     };
-    return .{ .method = method, .total_cl = total_cl, .owner_cl = owner_cl, .summary = summary, .panel_owner = panel_owner.items, .load_owner = load_owner.items, .load_span = load_span.items, .load_cl = load_cl.items, .load_chord = load_chord.items };
+    return .{ .method = method, .total_cl = total_cl, .owner_cl = owner_cl, .summary = summary, .panel_owner = panel_owner.items, .load_owner = load_owner.items, .load_span = load_span.items, .load_cl = load_cl.items, .load_chord = load_chord.items, .residual = residual };
 }
 
 /// o dono (superfície horizontal escolhida) de uma superfície da resposta; nulo nas verticais e nos dispositivos
@@ -1398,4 +1432,55 @@ test "Analisar: o estol por estação (VLM + polar) na asa do Convencional dá u
         cl_max = surface.airfoil.cl_max;
     };
     try testing.expect(lift_max.? > 0.5 and lift_max.? < cl_max);
+}
+
+test "Analisar: asa em caixa de perfil muito arqueado não explode perto do estol (linha sustentadora não linear)" {
+    // duas asas de 3,4 m, uma 1 m acima e 0,5 m à frente da outra, pontas ligadas por placas, perfil de c_l alto
+    // (α de sustentação nula −8°): antes, a continuação pós-estol aceitava qualquer passo e o C_L ia a −500
+    const gpa = testing.allocator;
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    defer gpa.free(bytes);
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(gpa, bytes, &diagnosis);
+    defer loaded.deinit();
+    var run_memory = std.heap.ArenaAllocator.init(gpa);
+    defer run_memory.deinit();
+    const cambered: model.Airfoil = .{ .name = "S1223", .coords = try datCoords(run_memory.allocator(), "../data/airfoils/s1223.dat") };
+    const thin: model.Airfoil = .{ .name = "MH 113", .coords = try datCoords(run_memory.allocator(), "../data/airfoils/mh113.dat") };
+    const sections = [_]model.Section{
+        .{ .y = 0, .chord = 0.448 },
+        .{ .y = 0.48, .chord = 0.448, .twist = -0.4 },
+        .{ .y = 1.2, .chord = 0.13449, .x_offset = 0.0785, .twist = -1, .airfoil = thin },
+        .{ .y = 1.2001, .chord = 0.1345, .x_offset = 0.0785, .twist = -1, .airfoil = thin },
+        .{ .y = 1.6, .chord = 0.134, .x_offset = 0.0785, .twist = -1, .airfoil = thin },
+        .{ .y = 1.7, .chord = 0.134, .x_offset = 0.0785, .twist = -1, .airfoil = cambered },
+    };
+    const plate = [_]model.Device{.{ .kind = "winglet", .height = std.math.hypot(1.0, 0.5), .taper = 1, .sweep = std.math.radiansToDegrees(std.math.atan2(@as(f64, -0.5), 1.0)), .cant = 0, .profile = "NACA 0010" }};
+    var surfaces = [_]model.Surface{
+        .{ .name = "asa 1", .dihedral = 2, .airfoil = cambered, .sections = &sections, .devices = &plate },
+        .{ .name = "asa 2", .x = 0.5, .z = -1, .dihedral = 2, .incidence = 2, .airfoil = cambered, .sections = &sections },
+    };
+    loaded.ac.surfaces = &surfaces;
+    const registered = simulation.register(Wings);
+    var run = simulation.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
+    defer run.arena.deinit();
+    try registered.start(&run, simulation.Values.fromRequest(run.memory(), "\"values\": {}"));
+    const state: *RunState = @ptrCast(@alignCast(run.state.?));
+    for (state.runs[0].total_cl) |lift| try testing.expect(@abs(lift) < 3);
+    for (state.runs[0].owner_cl) |lift| try testing.expect(@abs(lift) < 3);
+}
+
+/// os pontos de um perfil .dat (a primeira linha é o nome)
+fn datCoords(memory: std.mem.Allocator, path: []const u8) ![]const [2]f64 {
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, memory, .limited(1 << 20));
+    var points: std.ArrayList([2]f64) = .empty;
+    var lines = std.mem.tokenizeAny(u8, bytes, "\r\n");
+    _ = lines.next();
+    while (lines.next()) |line| {
+        var numbers_in_line = std.mem.tokenizeAny(u8, line, " \t");
+        const x = std.fmt.parseFloat(f64, numbers_in_line.next() orelse continue) catch continue;
+        const y = std.fmt.parseFloat(f64, numbers_in_line.next() orelse continue) catch continue;
+        try points.append(memory, .{ x, y });
+    }
+    return points.items;
 }

@@ -462,9 +462,28 @@ fn sweptControl(surface: *const types.Surface, deflections: V3, cosL: f64) f64 {
 /// sustentadora: alpha (efetivo), CL (seção), CD, L, D, F e vind (+ a velocidade induzida pelas ferraduras).
 /// `Vr`: velocidade do avião em relação ao ar (corpo); `deflections`: comandos (de, da, dr). Devolve a soma de Γ (teste).
 pub fn apply(params: *const types.Params, Vr: V3, deflections: V3, panels: []types.PanelState) f64 {
+    return applyFrom(params, Vr, deflections, panels, null).circulation;
+}
+
+/// a solução não linear de um ponto, guardada para servir de partida ao próximo (`applyFrom`): as circulações, quantos
+/// painéis e o resíduo relativo que sobrou (abaixo de `numerics.llt_tolerance`: convergiu)
+pub const Warm = struct {
+    gamma: [n_max]f64 = undefined,
+    count: usize = 0,
+    valid: bool = false,
+    residual: f64 = 0,
+};
+
+/// o que `applyFrom` devolve: a soma das circulações (como `apply`) e o resíduo relativo do Newton (0 na linear)
+pub const Applied = struct { circulation: f64, residual: f64 };
+
+/// `apply` partindo, na versão não linear, da solução de `warm` quando ela é melhor que a linear; `warm` sai com a
+/// solução deste ponto
+pub fn applyFrom(params: *const types.Params, Vr: V3, deflections: V3, panels: []types.PanelState, warm: ?*Warm) Applied {
+    var residual_left: f64 = 0;
     const n_panels = @min(panels.len, n_max);
     const Va = vec.norm(Vr);
-    if (Va < 1e-6 or n_panels == 0) return 0;
+    if (Va < 1e-6 or n_panels == 0) return .{ .circulation = 0, .residual = 0 };
     const flow_dir = -Vr / vec.splat(Va); // para onde o ar vai
     var matrix: [n_max][n_max]f64 = undefined;
     var rhs: [n_max]f64 = undefined;
@@ -544,8 +563,21 @@ pub fn apply(params: *const types.Params, Vr: V3, deflections: V3, panels: []typ
         for (0..n_panels) |i| velocities[i] = vec.v3(panels[i].v);
         var spanwise = Spanwise{};
         if (params.llt_viscosity > 0) spanwise = Spanwise.build(params, panels, n_panels);
-        _ = newton(.{ .n_panels = n_panels, .used = &used, .infl = &infl, .sections = &sections, .controls = &controls, .curves = &curves,
-            .half_chords = &half_chords, .velocities = &velocities, .steepness = params.Mst, .viscosity = params.llt_viscosity, .spanwise = &spanwise }, &gamma);
+        const input: NewtonInput = .{ .n_panels = n_panels, .used = &used, .infl = &infl, .sections = &sections, .controls = &controls, .curves = &curves,
+            .half_chords = &half_chords, .velocities = &velocities, .steepness = params.Mst, .viscosity = params.llt_viscosity, .spanwise = &spanwise };
+        // continuação: a solução do ponto anterior (o α de antes numa varredura) entra como partida quando ela deixa
+        // um resíduo menor que a linear. Depois do estol o sistema tem várias soluções, e partir do linear em cada α
+        // pulava de um ramo para outro (a curva C_L × α saía em dente de serra)
+        if (warm) |previous| if (previous.valid and previous.count == n_panels) {
+            var linear_residual: [n_max]f64 = undefined;
+            var warm_residual: [n_max]f64 = undefined;
+            if (residuals(input, &previous.gamma, &warm_residual) < residuals(input, &gamma, &linear_residual)) gamma = previous.gamma;
+        };
+        const left = newton(input, &gamma);
+        if (warm) |previous| {
+            previous.* = .{ .gamma = gamma, .count = n_panels, .valid = true, .residual = left };
+        }
+        residual_left = left;
     }
     // carga de cada painel com as circulações
     var sum: f64 = 0;
@@ -595,7 +627,7 @@ pub fn apply(params: *const types.Params, Vr: V3, deflections: V3, panels: []typ
         panel.vind = vec.v3(panel.vind) - induced;
         sum += gamma[i];
     }
-    return sum;
+    return .{ .circulation = sum, .residual = residual_left };
 }
 
 /// as forças e momentos do avião (`aero.Out`, como `aero.computeEnv`) com a carga da linha sustentadora: a conta da
@@ -807,6 +839,11 @@ fn newton(input: NewtonInput, gamma: *[n_max]f64) f64 {
     // 2) parado num mínimo local do resíduo (depois do estol): continuação em pseudo-tempo, (I/τ + J) ΔΓ = −R, com τ
     // crescendo quando o resíduo cai (Kelley e Keyes 1998; regra SER de Mulder e van Leer 1985 — a conferir no PDF).
     // Com τ grande vira o Newton; com τ pequeno, um passo curto ao longo de −R, que atravessa os mínimos locais
+    // A continuação pode subir o resíduo por uns passos (é o que a tira do mínimo local), mas não pode fugir: um
+    // passo que multiplica o resíduo por mais de `llt_pseudo_growth` é recusado e τ cai. No fim fica a circulação de
+    // menor resíduo de todo o caminho (sem isso, numa asa em caixa perto do estol, o Γ saía 100 vezes o certo)
+    var best = gamma.*;
+    var best_largest = largest;
     var pseudo_step: f64 = numerics.active.llt_pseudo_step;
     for (0..numerics.count(numerics.active.llt_pseudo_iterations)) |_| {
         if (largest <= tolerance * scale) break;
@@ -817,7 +854,7 @@ fn newton(input: NewtonInput, gamma: *[n_max]f64) f64 {
         for (0..n_panels) |i| trial[i] = gamma[i] + step[i];
         var trial_residual: [n_max]f64 = undefined;
         const trial_largest = residuals(input, &trial, &trial_residual);
-        if (!std.math.isFinite(trial_largest)) {
+        if (!std.math.isFinite(trial_largest) or trial_largest > numerics.active.llt_pseudo_growth * largest) {
             pseudo_step *= 0.25;
             continue;
         }
@@ -825,8 +862,13 @@ fn newton(input: NewtonInput, gamma: *[n_max]f64) f64 {
         gamma.* = trial;
         residual = trial_residual;
         largest = trial_largest;
+        if (largest < best_largest) {
+            best = gamma.*;
+            best_largest = largest;
+        }
     }
-    return largest / scale;
+    gamma.* = best;
+    return best_largest / scale;
 }
 
 /// o jacobiano ∂R_i/∂Γ_j em `jacobian` e −R em `negative` (ver `newton`)

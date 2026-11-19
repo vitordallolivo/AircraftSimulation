@@ -93,8 +93,12 @@ pub const Numerics = extern struct {
     llt_pseudo_iterations: i32 = 300,
     /// passo inicial do pseudo-tempo
     llt_pseudo_step: f64 = 0.5,
+    /// quanto um passo do pseudo-tempo pode multiplicar o resíduo antes de ser recusado
+    llt_pseudo_growth: f64 = 2.0,
     /// resíduo relativo que conta como convergido
     llt_tolerance: f64 = 1e-12,
+    /// resíduo relativo acima do qual a análise avisa que o ponto não convergiu
+    llt_warn_residual: f64 = 1e-6,
     /// passo de α da diferença finita do jacobiano (rad)
     llt_jacobian_step: f64 = 1e-6,
     /// raio do núcleo do vórtice entre superfícies diferentes, em fração da corda
@@ -216,7 +220,9 @@ pub const info = [_]Info{
     .{ .field = "llt_step_halvings", .solver = .lifting_line, .label = "cortes do passo", .help = "cortes do passo ao meio em cada iteração; padrão 11" },
     .{ .field = "llt_pseudo_iterations", .solver = .lifting_line, .label = "iterações pós-estol", .help = "iterações da continuação em pseudo-tempo (depois do estol); padrão 300" },
     .{ .field = "llt_pseudo_step", .solver = .lifting_line, .label = "passo pós-estol", .help = "passo inicial do pseudo-tempo; padrão 0.5" },
+    .{ .field = "llt_pseudo_growth", .solver = .lifting_line, .label = "crescimento máximo pós-estol", .help = "quanto um passo do pseudo-tempo pode multiplicar o resíduo antes de ser recusado (o passo cai e tenta de novo); padrão 2" },
     .{ .field = "llt_tolerance", .solver = .lifting_line, .label = "tolerância", .help = "resíduo relativo que conta como convergido; padrão 1e-12" },
+    .{ .field = "llt_warn_residual", .solver = .lifting_line, .label = "resíduo do aviso", .help = "resíduo relativo acima do qual a análise avisa que aquele α não convergiu (o C_L ali não vale); padrão 1e-6" },
     .{ .field = "llt_jacobian_step", .solver = .lifting_line, .label = "passo das derivadas (rad)", .help = "passo de α da diferença finita do jacobiano (rad); padrão 1e-6" },
     .{ .field = "vortex_core_fraction", .solver = .lifting_line, .label = "núcleo do vórtice (corda)", .help = "raio do núcleo do vórtice entre superfícies diferentes, em fração da corda; padrão 0.1" },
     .{ .field = "vortex_leg_length", .solver = .lifting_line, .label = "comprimento das pernas do vórtice (m)", .help = "as pernas que saem para trás fazem o papel de infinito; padrão 1000 m, bem maior que o avião" },
