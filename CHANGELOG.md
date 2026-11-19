@@ -4,6 +4,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## v0.3.1 (na `0.3_dev`, em andamento)
 
+- Antes, o avião que o Dimensionamento projetava e o avião aberto na Montagem eram dois: o projetado só aparecia na
+  Montagem com "Mandar para a Montagem", e cada análise perguntava de onde vinham as asas. Agora é um avião só: a cada
+  mudança das etapas ele é montado de novo com o que já existe (só as asas logo depois do Projetar; asas, cauda,
+  fuselagem e motores depois da Empenagem e de Motores e montagem) e aberto na Montagem, e as análises rodam com ele.
+  O campo "asas de" saiu; quais superfícies entram continua nas marcas "incluir".
 - Antes, a tela só tinha o modo claro, com um azul escuro de pouco contraste. Agora há o modo escuro como opção (o
   botão "Modo escuro" no alto, ou o interruptor no "Mais" do celular), lembrado na próxima vez que o programa abre:
   fundo quase preto, texto branco e o destaque em laranja. O modo claro continua o padrão, todo num azul mais vivo.

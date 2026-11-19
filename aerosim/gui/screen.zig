@@ -99,6 +99,10 @@ pub const Screen = struct {
     pub fn start(screen: *Screen) void {
         screen.requirements.bridge = &screen.bridge;
         design.stages.connect(io());
+        // o avião do projeto (o último aberto), se ele já tiver um: a Montagem e as análises começam com ele
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        if (design.stages.projectAircraft(io(), arena.allocator())) |path| screen.openAircraft(path);
     }
 
     /// um comando pelo nome (`acao=` da linha de comando, para os prints): "abrir", "salvar", "rodar" (roda a análise
@@ -150,6 +154,9 @@ pub const Screen = struct {
         for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| if (page.kind == .stage) page.markStale();
         screen.requirements.markStale();
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "projeto aberto: {s}", .{path}) catch {};
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        if (design.stages.projectAircraft(io(), arena.allocator())) |aircraft_path| screen.openAircraft(aircraft_path);
     }
 
     /// Ctrl+Z: desfaz a última mudança do que está na tela (a janela das condições, a página aberta ou a Montagem)
@@ -827,6 +834,7 @@ pub const Screen = struct {
                 screen.requirements_open = true;
                 screen.requirements.stale = true;
             }
+            if (p.takeReloaded()) |path| screen.openAircraft(path);
             if (p.takeOpened()) |path| {
                 screen.openAircraft(path);
                 if (screen.findPage(p.goTo())) |target| screen.showPage(target) else screen.showAssembly();

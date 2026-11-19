@@ -455,7 +455,9 @@ pub const Page = struct {
     pending_keep: bool = false, // guardar assim que a pasta do projeto foi criada
     edit_due: ?i96 = null, // quando mandar o que se editou
     edited_while_busy: bool = false, // editou enquanto a conta corria: o formulário da resposta não vale
-    opened: [1024]u8 = undefined, // "Mandar para a Montagem": o arquivo que a tela abre
+    opened: [1024]u8 = undefined, // "Ver na Montagem": o arquivo que a tela abre (e troca de aba)
+    reloaded: [1024]u8 = undefined, // o avião do projeto que a etapa acabou de gravar: a tela abre sem sair daqui
+    reloaded_len: usize = 0,
     opened_len: usize = 0,
     go_to: [64]u8 = undefined, // "Usar em Desempenho": a análise que a tela mostra depois de abrir o arquivo
     go_to_len: usize = 0,
@@ -527,12 +529,20 @@ pub const Page = struct {
         page.stale = true;
     }
 
-    /// o arquivo que a etapa mandou abrir ("Mandar para a Montagem"), uma vez
+    /// o arquivo que a etapa mandou abrir ("Ver na Montagem"), uma vez
     pub fn takeOpened(page: *Page) ?[]const u8 {
         if (page.opened_len == 0) return null;
         const length = page.opened_len;
         page.opened_len = 0;
         return page.opened[0..length];
+    }
+
+    /// o avião do projeto que a etapa regravou (o avião único), uma vez: a tela abre sem trocar de aba
+    pub fn takeReloaded(page: *Page) ?[]const u8 {
+        if (page.reloaded_len == 0) return null;
+        const length = page.reloaded_len;
+        page.reloaded_len = 0;
+        return page.reloaded[0..length];
     }
 
     /// a análise para onde a tela vai depois de abrir o arquivo de `takeOpened` (vazio: a Montagem)
@@ -1227,6 +1237,11 @@ pub const Page = struct {
         page.grids = try readGrids(memory, reply);
         page.scene = try readScene(memory, reply);
         try page.readOutcome(memory, reply);
+        const reloaded = stringField(reply, "reload");
+        if (reloaded.len > 0) {
+            page.reloaded_len = @min(reloaded.len, page.reloaded.len);
+            @memcpy(page.reloaded[0..page.reloaded_len], reloaded[0..page.reloaded_len]);
+        }
         const opened = stringField(reply, "open");
         if (opened.len > 0) {
             const length = @min(opened.len, page.opened.len);

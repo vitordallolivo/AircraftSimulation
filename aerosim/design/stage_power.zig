@@ -1,7 +1,7 @@
 //! A etapa "Motores e montagem" em Zig (`PowerStage` de `stages.py`, contas de `aerosim/design/power.py`): onde
 //! ficam os motores, e com isso a bateria (posta onde o CG cai na margem), a carga paga (no CG), a fuselagem e o
 //! trem. Mostra o desempenho rápido do avião montado (tração do motor + hélice e corrida no chão, do núcleo) e a
-//! massa máxima que a pista permite. "Mandar para a Montagem" grava o avião em "meus aviões" e abre.
+//! massa máxima que a pista permite. O avião montado é o do projeto (`project_aircraft.zig`): "Ver na Montagem" só leva até ele.
 const std = @import("std");
 const core = @import("aerosim");
 const aircraft_model = @import("aircraft_model");
@@ -13,6 +13,7 @@ const registry = @import("registry.zig");
 const stages = @import("stages.zig");
 const airfoils = @import("stage_airfoils.zig");
 const tail_stage = @import("stage_tail.zig");
+const project_aircraft = @import("project_aircraft.zig");
 
 const Value = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
@@ -125,7 +126,7 @@ fn thrustMoment(units: []const model.Propulsion, each: f64, px: f64, pz: f64) f6
     return moment;
 }
 
-fn surfaceArea(surface: model.Surface) f64 {
+pub fn surfaceArea(surface: model.Surface) f64 {
     var half: f64 = 0;
     for (1..surface.sections.len) |k| half += 0.5 * (surface.sections[k - 1].chord + surface.sections[k].chord) * @abs(surface.sections[k].y - surface.sections[k - 1].y);
     return if (surface.symmetric and !surface.vertical) 2 * half else half;
@@ -759,24 +760,14 @@ var sent_go: []const u8 = "";
 
 /// grava o avião do rascunho em "meus aviões" (a pasta acima da sprint) e pede à tela para abri-lo
 fn send(context: *stages.Context, memory: std.mem.Allocator, performance_next: bool) ![]const u8 {
-    const assembled = try assemble(context, memory, draft(&context.project)) orelse return "Guarde um conjunto primeiro.";
-    const root = std.fs.path.dirname(context.project.folder) orelse ".";
-    var slug: std.ArrayList(u8) = .empty;
-    for (assembled.plane.name) |char| try slug.append(memory, if (std.ascii.isAlphanumeric(char) or char == '-' or char == '.') char else '_');
-    var path = try std.fmt.allocPrint(memory, "{s}/{s}.json", .{ root, slug.items });
-    var k: usize = 2;
-    while (std.Io.Dir.cwd().access(context.io, path, .{})) |_| : (k += 1) {
-        path = try std.fmt.allocPrint(memory, "{s}/{s}_{d}.json", .{ root, slug.items, k });
-    } else |_| {}
-    var out: std.Io.Writer.Allocating = .init(memory);
-    try std.json.Stringify.value(assembled.plane, .{ .emit_null_optional_fields = false }, &out.writer);
-    std.Io.Dir.cwd().createDirPath(context.io, root) catch {};
-    try std.Io.Dir.cwd().writeFile(context.io, .{ .sub_path = path, .data = out.written() });
+    // o avião do projeto já é o da Montagem (`project_aircraft`): o botão só leva até ele
+    if ((try project_aircraft.build(context, memory)) == null) return "Guarde um conjunto primeiro.";
+    const path = (try project_aircraft.sync(context, memory)) orelse try project_aircraft.path(context, memory);
     const length = @min(path.len, sent_path.len);
     @memcpy(sent_path[0..length], path[0..length]);
     sent_len = length;
     sent_go = if (performance_next) "envelope" else "";
-    return std.fmt.allocPrint(memory, "{s}: gravado em {s} (a decolagem ainda não foi ajustada: ajuste em Desempenho → Missão)", .{ assembled.plane.name, path });
+    return "";
 }
 
 // ------------------------------------------------------------------ a página
@@ -815,10 +806,10 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     }
     var kept: std.ArrayList([]const u8) = .empty;
     for (project.list("aircraft").items) |item| try kept.append(memory, store.nameOf(item));
-    const actions = try memory.dupe(simulation.StageAction, &.{ .{ .key = "send", .label = "Mandar para a Montagem →", .help = "grava o avião do rascunho em 'meus aviões' e abre na Montagem" }, .{ .key = "perf", .label = "Usar em Desempenho →", .help = "grava o avião do rascunho e vai para as análises de Desempenho" } });
+    const actions = try memory.dupe(simulation.StageAction, &.{ .{ .key = "send", .label = "Ver na Montagem →", .help = "o avião do projeto, montado pelas etapas, na Montagem" }, .{ .key = "perf", .label = "Usar em Desempenho →", .help = "vai para as análises de Desempenho com o avião do projeto" } });
     var out: simulation.StagePage = .{
         .title = "Motores e montagem",
-        .help = "Onde ficam os motores, e com isso a bateria (posta onde o CG cai na margem), a carga paga (no CG), a fuselagem e o trem. Mostra o desempenho rápido do avião montado e a massa máxima que a pista permite. 'Mandar para a Montagem' grava o avião e abre; 'Usar em Desempenho' faz o mesmo e vai para as análises de Desempenho.",
+        .help = "Onde ficam os motores, e com isso a bateria (posta onde o CG cai na margem), a carga paga (no CG), a fuselagem e o trem. Mostra o desempenho rápido do avião montado e a massa máxima que a pista permite. O avião do projeto acompanha cada mudança: a Montagem e as análises usam ele.",
         .keep_label = "Guardar avião",
         .params = form.items,
         .kept = kept.items,

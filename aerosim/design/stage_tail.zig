@@ -885,7 +885,7 @@ pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.Sta
     // o diagnóstico (`set_stage` de results.py)
     var checks: std.ArrayList(simulation.Check) = .empty;
     const group = "empenagem e comandos";
-    if (built.wings.len > 1) try checks.append(memory, .{ .status = .info, .item = "asas ligadas", .value = try text(memory, "{d} asas da configuração", .{built.wings.len}), .criterion = "—", .why = if (layout == .tailless) "tandem: o ponto neutro é a média dos CA ponderada pela sustentação de cada asa" else "a estática desta etapa é a da asa 1 com a cauda; com mais asas, a margem é a do avião inteiro no núcleo", .fix = "veja Aerodinâmica → Analisar depois de mandar para a Montagem", .group = group });
+    if (built.wings.len > 1) try checks.append(memory, .{ .status = .info, .item = "asas ligadas", .value = try text(memory, "{d} asas da configuração", .{built.wings.len}), .criterion = "—", .why = if (layout == .tailless) "tandem: o ponto neutro é a média dos CA ponderada pela sustentação de cada asa" else "a estática desta etapa é a da asa 1 com a cauda; com mais asas, a margem é a do avião inteiro no núcleo", .fix = "veja Aerodinâmica → Analisar (o avião do projeto)", .group = group });
     if (layout != .tailless) {
         const width = 100 * (result.h_aft - result.h_fwd);
         const wide = width >= 15;

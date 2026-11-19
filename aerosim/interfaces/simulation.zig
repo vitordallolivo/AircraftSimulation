@@ -817,6 +817,8 @@ pub const StagePage = struct {
     message: []const u8 = "",
     open: []const u8 = "",
     go: []const u8 = "",
+    /// o avião do projeto mudou e foi gravado aqui: a tela abre de novo sem sair da etapa
+    reload: []const u8 = "",
     grids: []const Grid = &.{},
     tables: []const Table = &.{},
     summary: []const [2][]const u8 = &.{},
@@ -829,7 +831,7 @@ pub const StagePage = struct {
 
 /// a página da etapa em JSON, no formato que a tela lê
 pub fn writeStagePage(out: *Writer, page: StagePage) !void {
-    try out.print("{{\"title\": {f}, \"help\": {f}, \"keep_label\": {f}, \"kept_title\": {f}, \"requirements\": {f}, \"project\": {f}, \"project_named\": {}, \"message\": {f}, \"open\": {f}, \"go\": {f}, \"params\": [", .{ str(page.title), str(page.help), str(page.keep_label), str(page.kept_title), str(page.requirements), str(page.project), page.project_named, str(page.message), str(page.open), str(page.go) });
+    try out.print("{{\"title\": {f}, \"help\": {f}, \"keep_label\": {f}, \"kept_title\": {f}, \"requirements\": {f}, \"project\": {f}, \"project_named\": {}, \"message\": {f}, \"open\": {f}, \"go\": {f}, \"reload\": {f}, \"params\": [", .{ str(page.title), str(page.help), str(page.keep_label), str(page.kept_title), str(page.requirements), str(page.project), page.project_named, str(page.message), str(page.open), str(page.go), str(page.reload) });
     try writeParams(out, page.params, page.disabled);
     try out.writeAll("], \"kept\": [");
     for (page.kept, 0..) |name, k| {

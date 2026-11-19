@@ -15,6 +15,7 @@ const builtin = @import("builtin");
 const simulation = @import("simulation");
 const store = @import("store.zig");
 const registry = @import("registry.zig");
+const project_aircraft = @import("project_aircraft.zig");
 const airfoil_stage = @import("stage_airfoils.zig");
 const wing_stage = @import("stage_wing.zig");
 const requirements_stage = @import("stage_requirements.zig");
@@ -350,6 +351,15 @@ pub fn connect(io: std.Io) void {
     _ = opened(io) catch {};
 }
 
+/// o avião do projeto aberto (montado e gravado se mudou); nulo: o projeto ainda não tem avião
+pub fn projectAircraft(io: std.Io, memory: std.mem.Allocator) ?[]const u8 {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = opened(io) catch return null;
+    if ((project_aircraft.build(current, memory) catch null) == null) return null;
+    return (project_aircraft.sync(current, memory) catch null) orelse (project_aircraft.path(current, memory) catch null);
+}
+
 fn sprintWingNames(memory: std.mem.Allocator) simulation.Error![]const []const u8 {
     while (!lock.tryLock()) std.atomic.spinLoopHint();
     defer lock.unlock();
@@ -452,6 +462,7 @@ pub fn handle(memory: std.mem.Allocator, io: std.Io, fields: []const u8) !Value 
     if (std.mem.eql(u8, request.do, "project")) {
         const said = if (std.mem.eql(u8, request.key, "new")) try nameProject(current, request.arg) else "";
         var page = try stage.page(current, memory);
+        page.reload = (project_aircraft.sync(current, memory) catch null) orelse "";
         page.requirements = try registry.requirementsSummary(memory, &current.project);
         page.project = current.project.folder;
         page.project_named = current.named;
@@ -460,8 +471,11 @@ pub fn handle(memory: std.mem.Allocator, io: std.Io, fields: []const u8) !Value 
         try simulation.writeStagePage(&out.writer, page);
         return std.json.parseFromSliceLeaky(Value, memory, out.written(), .{});
     }
-    const message = if (std.mem.eql(u8, request.do, "undo"))
-        (if (try current.undo()) "desfeito" else "nada para desfazer")
+    var changed = false;
+    const message = if (std.mem.eql(u8, request.do, "undo")) blk: {
+        changed = try current.undo();
+        break :blk if (changed) "desfeito" else "nada para desfazer";
+    }
     else if (std.mem.eql(u8, request.do, "show"))
         try stage.apply(current, memory, request)
     else blk: {
@@ -472,10 +486,15 @@ pub fn handle(memory: std.mem.Allocator, io: std.Io, fields: []const u8) !Value 
             return err;
         };
         const after = try std.json.Stringify.valueAlloc(memory, current.project.root, .{});
-        if (std.mem.eql(u8, before, after)) gpa.free(before) else current.remember(before);
+        if (std.mem.eql(u8, before, after)) gpa.free(before) else {
+            current.remember(before);
+            changed = true;
+        }
         break :blk said;
     };
     var page = try stage.page(current, memory);
+    // o avião do projeto acompanha as etapas: mudou o projeto, a Montagem e as análises recebem o avião de novo
+    if (changed and !stage.program) page.reload = (project_aircraft.sync(current, memory) catch null) orelse "";
     page.requirements = try registry.requirementsSummary(memory, &current.project);
     page.project = current.project.folder;
     page.project_named = current.named or stage.program;
