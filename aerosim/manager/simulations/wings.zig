@@ -222,6 +222,8 @@ const MethodRun = struct {
 const RunState = struct {
     alphas: []f64 = &.{},
     alpha_load: f64 = 10,
+    vlm_span: f64 = vlm_span_default, // o refino do VLM do AeroSandbox na carga (campos "vlm_span" e "vlm_chord")
+    vlm_chord: f64 = vlm_chord_default,
     critical_reynolds: f64 = default_critical_reynolds, // o Reynolds do alerta (campo "reynolds_critico")
     airspeed: f64 = 12,
     density: f64 = 1.225,
@@ -287,8 +289,8 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "xref", .label = "ponto dos momentos", .default = .{ .number = 25 }, .minimum = 0, .maximum = 100, .unit = "% CMA", .group = case },
         .{ .key = "method", .label = "método", .kind = .choice, .default = .{ .text = LoadMethod.llt_nl.title() }, .choices = &method_titles, .group = loads, .help = "o VLM do AeroSandbox é um método de fora: roda se a biblioteca dele estiver instalada" },
         .{ .key = "compare", .label = "comparar com", .kind = .choice, .default = .{ .text = none }, .choices = &compare_titles, .group = loads },
-        .{ .key = "vlm_span", .label = "VLM: faixas por lado", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 200, .group = loads, .help = "refino do VLM; 0: o padrão (40)" },
-        .{ .key = "vlm_chord", .label = "VLM: painéis na corda", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .group = loads, .help = "refino do VLM; 0: o padrão (6)" },
+        .{ .key = "vlm_span", .label = "VLM: faixas por lado", .kind = .int, .default = .{ .number = vlm_span_default }, .minimum = 1, .maximum = 200, .group = loads, .help = "refino do VLM do AeroSandbox na carga: faixas em cada lado da maior superfície" },
+        .{ .key = "vlm_chord", .label = "VLM: painéis na corda", .kind = .int, .default = .{ .number = vlm_chord_default }, .minimum = 1, .maximum = 40, .group = loads, .help = "refino do VLM do AeroSandbox na carga: painéis ao longo da corda" },
     });
     try appendStallFields(memory, &params, values);
     try appendGroundFields(memory, &params, values);
@@ -305,7 +307,8 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "derivada_angulo", .label = "derivadas: passo em ângulo", .default = .{ .number = 0.5 }, .minimum = 0.0001, .maximum = 5, .unit = "°", .group = methods, .help = "as derivadas (C_Lα, C_mα, C_nβ, de comando...) saem de uma diferença central: o método roda com o ângulo um passo acima e um abaixo" },
         .{ .key = "derivada_taxa", .label = "derivadas: passo em taxa", .default = .{ .number = 0.01 }, .minimum = 0.000001, .maximum = 0.5, .group = methods, .help = "o mesmo para as derivadas de taxa (p, q, r), em taxa adimensional (p b / 2V, q c / 2V)" },
         .{ .key = "reynolds_critico", .label = "Reynolds crítico do alerta", .default = .{ .number = default_critical_reynolds }, .minimum = 1e3, .maximum = 1e7, .group = methods, .help = "abaixo dele a análise avisa que a bolha laminar pode não recolar (Lissaman, Low-Reynolds-number airfoils, 1983; valor a conferir no PDF)" },
-        .{ .key = "n_chord", .label = "painéis na corda (VLM, AVL)", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .group = methods },
+        .{ .key = "n_chord", .label = "painéis na corda (VLM)", .kind = .int, .default = .{ .number = vlm_chord_default }, .minimum = 1, .maximum = 40, .group = methods, .help = "painéis ao longo da corda no VLM do AeroSandbox" },
+        .{ .key = "avl_chord", .label = "painéis na corda (AVL)", .kind = .int, .default = .{ .number = avl_chord_default }, .minimum = 1, .maximum = 40, .group = methods, .help = "painéis ao longo da corda no AVL" },
         .{ .key = "use_xflr5", .label = "comparar: polar do XFLR5 (arquivo)", .kind = .bool, .default = .{ .toggle = false }, .group = methods, .help = "a polar de avião exportada pelo XFLR5 (Polars → Export); C_m no CG de lá" },
         .{ .key = "xflr5_file", .label = "arquivo da polar do XFLR5", .kind = .file, .default = .{ .text = "" }, .group = methods, .help = "texto ou CSV exportado pelo XFLR5" },
     });
@@ -612,6 +615,8 @@ fn compute(run: *simulation.Run, state: *RunState, values: simulation.Values) si
     state.density = plane.environment.rho;
     state.density_altitude = plane.environment.densityAltitude();
     state.alpha_load = values.number("alpha_load", 10);
+    state.vlm_span = @max(values.number("vlm_span", vlm_span_default), 1);
+    state.vlm_chord = @max(values.number("vlm_chord", vlm_chord_default), 1);
     state.critical_reynolds = values.number("reynolds_critico", default_critical_reynolds);
     const first = values.number("a0", -4);
     const last = values.number("a1", 22);
@@ -822,7 +827,13 @@ pub const ExternalSurface = struct {
 };
 
 /// o ponto de voo de um método de carga de fora
-pub const ExternalPoint = struct { airspeed: f64, alpha: f64, elevator: f64 = 0, density: f64, span_strips: f64 = 0, chord_panels: f64 = 0 };
+pub const ExternalPoint = struct { airspeed: f64, alpha: f64, elevator: f64 = 0, density: f64, span_strips: f64 = vlm_span_default, chord_panels: f64 = vlm_chord_default };
+
+/// o refino padrão do VLM do AeroSandbox na carga (faixas por lado, painéis na corda) e do AVL (painéis na corda):
+/// os de `aerosim/aero/asb_solver.py` e `avl_solver.py`, que valem quando o pedido não diz
+pub const vlm_span_default = 40;
+pub const vlm_chord_default = 6;
+pub const avl_chord_default = 8;
 
 /// a carga ao longo de cada superfície pelo método de fora (o VLM do AeroSandbox), num ponto
 pub fn externalLoads(run: *simulation.Run, plane: *const simulation.Aircraft, method: LoadMethod, point: ExternalPoint) ![]ExternalSurface {
@@ -877,7 +888,7 @@ fn externalSweep(run: *simulation.Run, state: *RunState, plane: simulation.Aircr
     var panel_owner: std.ArrayList(i32) = .empty;
     var panel_span: std.ArrayList(f64) = .empty;
     var all_cl: std.ArrayList(f64) = .empty;
-    const point: ExternalPoint = .{ .airspeed = state.airspeed, .alpha = 0, .density = state.density };
+    const point: ExternalPoint = .{ .airspeed = state.airspeed, .alpha = 0, .density = state.density, .span_strips = state.vlm_span, .chord_panels = state.vlm_chord };
     for (state.alphas, 0..) |alpha, a| {
         if (run.cancelled()) {
             run.fail("parado", .{});
@@ -978,7 +989,7 @@ fn externalPolars(run: *simulation.Run, state: *RunState, plane: simulation.Airc
         run.say("rodando {s}", .{label});
         var request: std.Io.Writer.Allocating = .init(memory);
         var json: std.json.Stringify = .{ .writer = &request.writer };
-        try json.write(.{ .op = "polar", .solver = solver.key, .aircraft = plane, .V = state.airspeed, .alphas = state.alphas, .alpha_d = state.alpha_load, .ref = [3]f64{ reference_x, 0, 0 }, .section = values.text("section", "modelo"), .n_span = values.number("n_span", 12), .n_chord = values.number("n_chord", 0) });
+        try json.write(.{ .op = "polar", .solver = solver.key, .aircraft = plane, .V = state.airspeed, .alphas = state.alphas, .alpha_d = state.alpha_load, .ref = [3]f64{ reference_x, 0, 0 }, .section = values.text("section", "modelo"), .n_span = values.number("n_span", 12), .n_chord = if (std.mem.eql(u8, solver.key, "avl")) values.number("avl_chord", avl_chord_default) else values.number("n_chord", vlm_chord_default) });
         const reply = switch (askExternal(run, request.written())) {
             .ok => |value| value,
             .failed => |why| {

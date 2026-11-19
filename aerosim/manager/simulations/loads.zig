@@ -110,6 +110,8 @@ const RunState = struct {
     imposed: bool = false,
     alpha: f64 = 0, // °
     elevator: f64 = 0, // °
+    vlm_span: f64 = wings.vlm_span_default, // o refino do VLM do AeroSandbox (campos "vlm_span" e "vlm_chord")
+    vlm_chord: f64 = wings.vlm_chord_default,
     weight: f64 = 0,
     trim_ok: bool = true,
     propellers: []Propeller = &.{},
@@ -131,8 +133,8 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
         .{ .key = "helice", .label = "Hélice", .kind = .choice, .default = .{ .text = propeller_choices[2] }, .choices = &propeller_choices, .help = "com: a esteira e a tração das hélices entram nas superfícies (modificador de esteira do avião); sem: as superfícies não veem a hélice" },
         .{ .key = "method", .label = "Método", .kind = .choice, .default = .{ .text = wings.method_titles[0] }, .choices = &wings.method_titles, .help = "o VLM do AeroSandbox é um método de fora: roda se a biblioteca dele estiver instalada" },
         .{ .key = "compare", .label = "Comparar com", .kind = .choice, .default = .{ .text = wings.none }, .choices = &wings.compare_titles, .help = "outro método no mesmo ponto de voo (mesmo α e profundor), sobreposto nos gráficos" },
-        .{ .key = "vlm_span", .label = "VLM: faixas por lado", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 200, .help = "refino do VLM nas cargas; 0: o padrão (40)" },
-        .{ .key = "vlm_chord", .label = "VLM: painéis na corda", .kind = .int, .default = .{ .number = 0 }, .minimum = 0, .maximum = 40, .help = "refino do VLM nas cargas; 0: o padrão (6)" },
+        .{ .key = "vlm_span", .label = "VLM: faixas por lado", .kind = .int, .default = .{ .number = wings.vlm_span_default }, .minimum = 1, .maximum = 200, .help = "refino do VLM do AeroSandbox nas cargas: faixas em cada lado da maior superfície" },
+        .{ .key = "vlm_chord", .label = "VLM: painéis na corda", .kind = .int, .default = .{ .number = wings.vlm_chord_default }, .minimum = 1, .maximum = 40, .help = "refino do VLM do AeroSandbox nas cargas: painéis ao longo da corda" },
     };
     // um gráfico por papel que o avião tem e por campo
     var buffer: [std.enums.values(Role).len * std.enums.values(Field).len]simulation.Plot = undefined;
@@ -260,6 +262,8 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     state.airspeed = values.number("V", 12);
     state.load_factor = values.number("n", 1);
     state.imposed = std.mem.eql(u8, values.text("alpha_mode", alpha_choices[0]), alpha_choices[1]);
+    state.vlm_span = @max(values.number("vlm_span", wings.vlm_span_default), 1);
+    state.vlm_chord = @max(values.number("vlm_chord", wings.vlm_chord_default), 1);
 
     // o ponto de voo: a trimagem e as hélices (`prepare` do Python)
     const instance = try memory.create(core.runner.Instance);
@@ -346,7 +350,7 @@ fn advanceRun(run: *simulation.Run, state: *RunState) simulation.Error!bool {
 /// as cargas de um método de fora no ponto da rodada (sem a esteira das hélices e sem a vista 3D)
 fn externalStrips(run: *simulation.Run, state: *const RunState, method: LoadMethod) ![]SurfaceLoad {
     const memory = run.memory();
-    const surfaces = try wings.externalLoads(run, run.aircraft, method, .{ .airspeed = state.airspeed, .alpha = state.alpha, .elevator = state.elevator, .density = run.aircraft.environment.rho });
+    const surfaces = try wings.externalLoads(run, run.aircraft, method, .{ .airspeed = state.airspeed, .alpha = state.alpha, .elevator = state.elevator, .density = run.aircraft.environment.rho, .span_strips = state.vlm_span, .chord_panels = state.vlm_chord });
     var out: std.ArrayList(SurfaceLoad) = .empty;
     for (surfaces) |surface| {
         const role = Role.of(surface.role) orelse continue;
