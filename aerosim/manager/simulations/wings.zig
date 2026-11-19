@@ -173,24 +173,53 @@ pub const method_titles = blk: {
 /// "nenhum" e os métodos, para o campo de comparar
 pub const compare_titles = [_][]const u8{none} ++ method_titles;
 
-/// os solvers da comparação dos métodos (os mesmos do Python, `SOLVERS`): os do núcleo rodam aqui, os outros pelo
-/// Python; o modelo interno vem marcado
-const Solver = struct { key: []const u8, label: []const u8, core: ?aerodynamics.Solver = null, on: bool = false };
-const solvers = [_]Solver{
-    .{ .key = "lltdrek", .label = "lltdrek (linha sustentadora não linear; método de fora)" },
-    .{ .key = "zig", .label = "modelo interno (faixas da simulação)", .core = .zig, .on = true },
-    .{ .key = "zig_llt_gh", .label = "linha sustentadora do núcleo (Goates e Hunsaker)", .core = .zig_llt_gh },
-    .{ .key = "zig_llt", .label = "linha sustentadora do núcleo (Phillips e Snyder)", .core = .zig_llt },
-    .{ .key = "asb_vlm", .label = "AeroSandbox VLM (método de fora)" },
-    .{ .key = "asb_buildup", .label = "AeroSandbox AeroBuildup (método de fora)" },
-    .{ .key = "asb_ll", .label = "AeroSandbox LiftingLine (método de fora)" },
-    .{ .key = "avl", .label = "AVL (método de fora)" },
+/// os métodos da tela, numa lista só: cada caixa marcada roda. Um método de carga dá o C_L do conjunto, por superfície
+/// e o c_l na envergadura; uma polar dá também C_D, C_m e L/D (o núcleo roda aqui, os de fora pelo adaptador)
+const Method = struct {
+    key: []const u8, // o campo é "run_<key>"
+    label: []const u8, // na caixa: o nome e, entre parênteses, o tipo do método
+    help: []const u8, // o que o método faz, em palavras simples
+    short: []const u8, // nas curvas e no resumo
+    color: []const u8,
+    load: ?LoadMethod = null,
+    polar: ?aerodynamics.Solver = null,
+    external: bool = false, // a polar vem do adaptador (lltdrek, AeroSandbox, AVL)
+    on: bool = false,
+
+    /// a caixa deste método está marcada
+    fn chosen(method: Method, values: simulation.Values) bool {
+        var buffer: [48]u8 = undefined;
+        const key = std.fmt.bufPrint(&buffer, "run_{s}", .{method.key}) catch return false;
+        return values.toggle(key, method.on);
+    }
 };
+const methods = [_]Method{
+    .{ .key = "faixas", .label = "faixas (modelo interno)", .help = "o C_Lα de cada faixa, como a simulação voa; sem estol próprio", .short = LoadMethod.faixas.title(), .color = "#1f4e8c", .load = .faixas, .polar = .zig, .on = true },
+    .{ .key = "llt", .label = "Phillips e Snyder (linha sustentadora)", .help = "linha sustentadora linear: sem estol", .short = LoadMethod.llt.title(), .color = "#2ca02c", .load = .llt, .polar = .zig_llt },
+    .{ .key = "llt_gh", .label = "Goates e Hunsaker (linha sustentadora)", .help = "linha sustentadora linear com junções entre superfícies: sem estol", .short = LoadMethod.llt_gh.title(), .color = "#9467bd", .load = .llt_gh, .polar = .zig_llt_gh },
+    .{ .key = "llt_nl", .label = "não linear (linha sustentadora com estol)", .help = "linha sustentadora com a polar de cada perfil: o estol aparece faixa a faixa", .short = LoadMethod.llt_nl.title(), .color = "#d95f02", .load = .llt_nl, .on = true },
+    .{ .key = "vlm", .label = vlm_title ++ " (malha de vórtices)", .help = "ferraduras na corda e na envergadura, escoamento potencial: sem estol (Katz e Plotkin, seção 12.3)", .short = vlm_title, .color = "#17becf" },
+    .{ .key = "estol", .label = "VLM + polar (estol por estação)", .help = stall_title, .short = "VLM + polar", .color = "#6b46c1" },
+    .{ .key = "lltdrek", .label = "lltdrek (linha sustentadora, de fora)", .help = "linha sustentadora não linear; método de fora: roda se a biblioteca estiver instalada", .short = "lltdrek", .color = "#e377c2", .external = true },
+    .{ .key = "asb_vlm", .label = "AeroSandbox VLM (malha de vórtices, de fora)", .help = "carga e polar; método de fora: roda se a biblioteca estiver instalada", .short = "AeroSandbox VLM", .color = "#8c564b", .load = .vlm_asb, .external = true },
+    .{ .key = "asb_buildup", .label = "AeroBuildup (fórmulas por componente, de fora)", .help = "AeroSandbox AeroBuildup: soma de componentes por fórmulas; método de fora", .short = "AeroSandbox AeroBuildup", .color = "#7f7f7f", .external = true },
+    .{ .key = "asb_ll", .label = "LiftingLine (linha sustentadora, de fora)", .help = "AeroSandbox LiftingLine; método de fora", .short = "AeroSandbox LiftingLine", .color = "#bcbd22", .external = true },
+    .{ .key = "avl", .label = "AVL (malha de vórtices, de fora)", .help = "método de fora: roda se a biblioteca estiver instalada", .short = "AVL", .color = "#d62728", .external = true },
+    .{ .key = "xflr5", .label = "XFLR5 (polar lida de arquivo)", .help = "a polar de avião exportada pelo XFLR5: não roda nada, só desenha", .short = "XFLR5", .color = "#8c564b" },
+};
+/// o método pela chave
+fn methodOf(comptime key: []const u8) Method {
+    const found = comptime blk: {
+        for (methods) |method| if (std.mem.eql(u8, method.key, key)) break :blk method;
+        @compileError("método desconhecido: " ++ key);
+    };
+    return found;
+}
+const vlm_title = "VLM do núcleo";
 
 /// Reynolds crítico dos perfis de aeromodelo: abaixo dele a bolha laminar tende a não recolar (Lissaman,
 /// "Low-Reynolds-number airfoils", Annual Review of Fluid Mechanics 15, 1983; valor a conferir no PDF)
 const default_critical_reynolds = 7e4;
-const colors = [_][]const u8{ "#1f4e8c", "#d95f02", "#2ca02c", "#9467bd" };
 const surface_colors = [_][]const u8{ "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#17becf" };
 pub const max_per_side = 40; // `MAX_PER_SIDE` do Python
 
@@ -207,7 +236,8 @@ const plots = [_]simulation.Plot{
 
 /// um método varrido: o C_L do conjunto e de cada dono em cada α, o resumo e a carga no α da carga
 const MethodRun = struct {
-    method: LoadMethod,
+    title: []const u8 = "",
+    color: []const u8 = "#1f4e8c",
     total_cl: []f64,
     owner_cl: []f64, // α × dono
     summary: sweep.Summary,
@@ -278,73 +308,78 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
     const bare: simulation.Aircraft = .{ .name = "prévia", .surfaces = marked.items };
     const preview = previewOf(memory, &bare);
     const case = "Caso";
-    const loads = "Carga ao longo da envergadura";
     try params.appendSlice(memory, &.{
         .{ .key = "V", .label = "velocidade", .default = .{ .number = 12 }, .minimum = 2, .maximum = 80, .unit = "m/s", .group = case },
         .{ .key = "a0", .label = "α inicial", .default = .{ .number = -4 }, .minimum = -20, .maximum = 10, .unit = "°", .group = case },
         .{ .key = "a1", .label = "α final", .default = .{ .number = 22 }, .minimum = 2, .maximum = 40, .unit = "°", .group = case },
         .{ .key = "da", .label = "passo de α", .default = .{ .number = 1 }, .minimum = 0.25, .maximum = 5, .unit = "°", .group = case },
-        .{ .key = "alpha_load", .label = "α da carga", .default = .{ .number = 10 }, .minimum = -10, .maximum = 40, .unit = "°", .group = case },
+        .{ .key = "alpha_load", .label = "α da carga", .default = .{ .number = 10 }, .minimum = -10, .maximum = 40, .unit = "°", .group = case, .help = "o α da distribuição de sustentação e da carga na envergadura" },
         .{ .key = "endplate", .label = "chapas nas pontas (altura / corda da ponta)", .default = .{ .number = 0 }, .minimum = 0, .maximum = 5, .group = case, .help = "0: sem chapas; > 0: uma placa de ponta de altura = valor × corda da ponta em cada superfície horizontal marcada" },
         .{ .key = "xref", .label = "ponto dos momentos", .default = .{ .number = 25 }, .minimum = 0, .maximum = 100, .unit = "% CMA", .group = case },
-        .{ .key = "method", .label = "método", .kind = .choice, .default = .{ .text = LoadMethod.llt_nl.title() }, .choices = &method_titles, .group = loads, .help = "o VLM do AeroSandbox é um método de fora: roda se a biblioteca dele estiver instalada" },
-        .{ .key = "compare", .label = "comparar com", .kind = .choice, .default = .{ .text = none }, .choices = &compare_titles, .group = loads },
-        .{ .key = "vlm_span", .label = "VLM: faixas por lado", .kind = .int, .default = .{ .number = vlm_span_default }, .minimum = 1, .maximum = 200, .group = loads, .help = "refino do VLM do AeroSandbox na carga: faixas em cada lado da maior superfície" },
-        .{ .key = "vlm_chord", .label = "VLM: painéis na corda", .kind = .int, .default = .{ .number = vlm_chord_default }, .minimum = 1, .maximum = 40, .group = loads, .help = "refino do VLM do AeroSandbox na carga: painéis ao longo da corda" },
+        .{ .key = "reynolds_critico", .label = "Reynolds crítico do alerta", .default = .{ .number = default_critical_reynolds }, .minimum = 1e3, .maximum = 1e7, .group = case, .help = "abaixo dele a análise avisa que a bolha laminar pode não recolar (Lissaman, Low-Reynolds-number airfoils, 1983; valor a conferir no PDF)" },
     });
-    try appendStallFields(memory, &params, values);
+    // os métodos: cada caixa marcada roda; o refino de cada um vai para o Refino dos Solvers
+    const run_group = "Métodos";
+    for (methods) |method| {
+        try params.append(memory, .{ .key = try std.fmt.allocPrint(memory, "run_{s}", .{method.key}), .label = method.label, .kind = .bool, .default = .{ .toggle = method.on }, .group = run_group, .rebuild = true, .help = method.help });
+    }
+    if (methodOf("xflr5").chosen(values)) try params.append(memory, .{ .key = "xflr5_file", .label = "arquivo da polar do XFLR5", .kind = .file, .default = .{ .text = "" }, .group = run_group, .help = "texto ou CSV exportado pelo XFLR5 (Polars → Export); C_m no CG de lá" });
+    try appendRefineFields(memory, &params, values);
     try appendGroundFields(memory, &params, values);
     if (kind == .open) {
         const whole = values.toggle("whole", if (aircraft) |opened| aerodynamics.ready(opened) else false);
         try params.append(memory, .{ .key = "whole", .label = "analisar também o avião completo", .kind = .bool, .default = .{ .toggle = whole }, .group = aerodynamics.group, .rebuild = true, .help = "o avião aberto inteiro, como voa: polares no CG, profundor e derrapagem, estol × cruzeiro, L/D" });
         if (whole) try aerodynamics.appendFields(memory, &params, aircraft);
     }
-    const methods = "Comparação dos métodos (polares)";
-    for (solvers) |solver| try params.append(memory, .{ .key = try std.fmt.allocPrint(memory, "use_{s}", .{solver.key}), .label = solver.label, .kind = .bool, .default = .{ .toggle = solver.on }, .group = methods });
-    try params.appendSlice(memory, &.{
-        .{ .key = "section", .label = "polar 2D dos perfis no lltdrek", .kind = .choice, .default = .{ .text = "modelo" }, .choices = &.{ "modelo", "neuralfoil" }, .group = methods },
-        .{ .key = "n_span", .label = "painéis por semiasa", .kind = .int, .default = .{ .number = 12 }, .minimum = 4, .maximum = 40, .group = methods },
-        .{ .key = "derivada_angulo", .label = "derivadas: passo em ângulo", .default = .{ .number = 0.5 }, .minimum = 0.0001, .maximum = 5, .unit = "°", .group = methods, .help = "as derivadas (C_Lα, C_mα, C_nβ, de comando...) saem de uma diferença central: o método roda com o ângulo um passo acima e um abaixo" },
-        .{ .key = "derivada_taxa", .label = "derivadas: passo em taxa", .default = .{ .number = 0.01 }, .minimum = 0.000001, .maximum = 0.5, .group = methods, .help = "o mesmo para as derivadas de taxa (p, q, r), em taxa adimensional (p b / 2V, q c / 2V)" },
-        .{ .key = "reynolds_critico", .label = "Reynolds crítico do alerta", .default = .{ .number = default_critical_reynolds }, .minimum = 1e3, .maximum = 1e7, .group = methods, .help = "abaixo dele a análise avisa que a bolha laminar pode não recolar (Lissaman, Low-Reynolds-number airfoils, 1983; valor a conferir no PDF)" },
-        .{ .key = "n_chord", .label = "painéis na corda (VLM)", .kind = .int, .default = .{ .number = vlm_chord_default }, .minimum = 1, .maximum = 40, .group = methods, .help = "painéis ao longo da corda no VLM do AeroSandbox" },
-        .{ .key = "avl_chord", .label = "painéis na corda (AVL)", .kind = .int, .default = .{ .number = avl_chord_default }, .minimum = 1, .maximum = 40, .group = methods, .help = "painéis ao longo da corda no AVL" },
-        .{ .key = "use_xflr5", .label = "comparar: polar do XFLR5 (arquivo)", .kind = .bool, .default = .{ .toggle = false }, .group = methods, .help = "a polar de avião exportada pelo XFLR5 (Polars → Export); C_m no CG de lá" },
-        .{ .key = "xflr5_file", .label = "arquivo da polar do XFLR5", .kind = .file, .default = .{ .text = "" }, .group = methods, .help = "texto ou CSV exportado pelo XFLR5" },
-    });
     try simulation.writeSpecs(out, params.items, &plots, Wings.description, .{ .view = preview, .solvers = &.{ .lifting_line, .stall_curve }, .aircraft = aircraft });
 }
 
-/// o aviso da linha sustentadora (o método, a comparação ou uma polar) numa asa curta (`alerts.shortWing`)
-fn runAlerts(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, values: simulation.Values) simulation.Error![]const []const u8 {
-    var methods: std.ArrayList([]const u8) = .empty;
-    for ([_][]const u8{ "method", "compare" }) |key| if (LoadMethod.fromTitle(values.text(key, none))) |method| {
-        if (method == .llt or method == .llt_gh or method == .llt_nl) try methods.append(memory, method.title());
+/// o refino de cada método marcado, no Refino dos Solvers (nada fica escondido)
+fn appendRefineFields(memory: std.mem.Allocator, params: *std.ArrayList(simulation.Param), values: simulation.Values) !void {
+    const polar_group = simulation.refine_group ++ ": polares (faixas e linha sustentadora)";
+    var any_polar = false;
+    for (methods) |method| if (method.chosen(values) and (method.polar != null or method.external)) {
+        any_polar = true;
     };
-    // as caixas da comparação dos métodos (polares) que são linha sustentadora
-    var buffer: [32]u8 = undefined;
-    for (solvers) |solver| {
-        const lifting = std.mem.indexOf(u8, solver.label, "linha sustentadora") != null or std.mem.eql(u8, solver.key, "asb_ll");
-        if (!lifting) continue;
-        const key = std.fmt.bufPrint(&buffer, "use_{s}", .{solver.key}) catch continue;
-        if (values.toggle(key, solver.on)) try methods.append(memory, solver.label);
+    if (any_polar) try params.appendSlice(memory, &.{
+        .{ .key = "n_span", .label = "painéis por semiasa", .kind = .int, .default = .{ .number = 12 }, .minimum = 4, .maximum = 40, .group = polar_group, .help = "as faixas de cada semiasa nas polares (núcleo, lltdrek e AeroSandbox)" },
+        .{ .key = "derivada_angulo", .label = "derivadas: passo em ângulo", .default = .{ .number = 0.5 }, .minimum = 0.0001, .maximum = 5, .unit = "°", .group = polar_group, .help = "as derivadas (C_Lα, C_mα, C_nβ, de comando...) saem de uma diferença central: o método roda com o ângulo um passo acima e um abaixo" },
+        .{ .key = "derivada_taxa", .label = "derivadas: passo em taxa", .default = .{ .number = 0.01 }, .minimum = 0.000001, .maximum = 0.5, .group = polar_group, .help = "o mesmo para as derivadas de taxa (p, q, r), em taxa adimensional (p b / 2V, q c / 2V)" },
+    });
+    if (methodOf("vlm").chosen(values)) {
+        const group = simulation.refine_group ++ ": " ++ vlm_title;
+        try params.appendSlice(memory, &.{
+            .{ .key = "vlm_core_chord", .label = "painéis na corda", .kind = .int, .default = .{ .number = vlm_core_chord_default }, .minimum = 1, .maximum = 20, .group = group, .help = "ferraduras ao longo da corda de cada faixa" },
+            .{ .key = "vlm_core_span", .label = "divisões por faixa", .kind = .int, .default = .{ .number = vlm_core_span_default }, .minimum = 1, .maximum = 20, .group = group, .help = "cada faixa do avião vira esta quantidade de estações na envergadura" },
+        });
     }
-    if (methods.items.len == 0) return &.{};
-    const warning = (try alert_rules.shortWing(memory, aircraft, methods.items[0], values)) orelse return &.{};
-    return memory.dupe([]const u8, &.{warning});
+    if (methodOf("estol").chosen(values)) try appendStallFields(memory, params);
+    if (methodOf("lltdrek").chosen(values)) try params.append(memory, .{ .key = "section", .label = "polar 2D dos perfis", .kind = .choice, .default = .{ .text = "modelo" }, .choices = &.{ "modelo", "neuralfoil" }, .group = simulation.refine_group ++ ": lltdrek", .help = "modelo: a polar do modelo do perfil; neuralfoil: NeuralFoil (rede neural de perfis, do autor do AeroSandbox)" });
+    if (methodOf("asb_vlm").chosen(values)) {
+        const group = simulation.refine_group ++ ": AeroSandbox VLM";
+        try params.appendSlice(memory, &.{
+            .{ .key = "vlm_span", .label = "faixas por lado", .kind = .int, .default = .{ .number = vlm_span_default }, .minimum = 1, .maximum = 200, .group = group, .help = "faixas em cada lado da maior superfície, na carga" },
+            .{ .key = "vlm_chord", .label = "painéis na corda", .kind = .int, .default = .{ .number = vlm_chord_default }, .minimum = 1, .maximum = 40, .group = group, .help = "painéis ao longo da corda, na carga e na polar" },
+        });
+    }
+    if (methodOf("avl").chosen(values)) try params.append(memory, .{ .key = "avl_chord", .label = "painéis na corda", .kind = .int, .default = .{ .number = avl_chord_default }, .minimum = 1, .maximum = 40, .group = simulation.refine_group ++ ": AVL", .help = "painéis ao longo da corda no AVL" });
 }
 
-/// a rodada usa um método de fora do núcleo (um método de carga ou uma polar do adaptador)
-fn needsExternal(values: simulation.Values) bool {
-    for ([_][]const u8{ "method", "compare" }) |key| if (LoadMethod.fromTitle(values.text(key, none))) |method| {
-        if (!method.inCore()) return true;
-    };
-    var buffer: [32]u8 = undefined;
-    for (solvers) |solver| {
-        if (solver.core != null) continue;
-        const key = std.fmt.bufPrint(&buffer, "use_{s}", .{solver.key}) catch continue;
-        if (values.toggle(key, solver.on)) return true;
+/// o aviso da linha sustentadora (um método marcado que é linha sustentadora) numa asa curta (`alerts.shortWing`)
+fn runAlerts(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, values: simulation.Values) simulation.Error![]const []const u8 {
+    for (methods) |method| {
+        if (!method.chosen(values)) continue;
+        const lifting = std.mem.indexOf(u8, method.label, "linha sustentadora") != null;
+        if (!lifting) continue;
+        const warning = (try alert_rules.shortWing(memory, aircraft, method.short, values)) orelse return &.{};
+        return memory.dupe([]const u8, &.{warning});
     }
+    return &.{};
+}
+
+/// a rodada usa um método de fora do núcleo (uma carga ou uma polar do adaptador)
+fn needsExternal(values: simulation.Values) bool {
+    for (methods) |method| if (method.external and method.chosen(values)) return true;
     return false;
 }
 
@@ -594,7 +629,113 @@ fn sweepMethod(run: *simulation.Run, state: *RunState, plane: simulation.Aircraf
         run.fail("o resumo da varredura não saiu", .{});
         return error.Failed;
     };
-    return .{ .method = method, .total_cl = total_cl, .owner_cl = owner_cl, .summary = summary, .panel_owner = panel_owner.items, .load_owner = panel_owner.items, .load_span = panel_span.items, .load_cl = load_cl.items, .load_chord = load_chord.items, .residual = residual };
+    return .{ .total_cl = total_cl, .owner_cl = owner_cl, .summary = summary, .panel_owner = panel_owner.items, .load_owner = panel_owner.items, .load_span = panel_span.items, .load_cl = load_cl.items, .load_chord = load_chord.items, .residual = residual };
+}
+
+/// a varredura do VLM do núcleo (malha de vórtices, `core.vlm`): a malha é fatorada uma vez e cada α é só uma
+/// substituição; a sustentação de cada estação sai de Kutta–Joukowski (`vlm.stationLift`). Escoamento potencial:
+/// o C_L sobe reto, sem estol. Devolve null (com o motivo nos avisos) se as asas não montam
+fn vlmSweep(run: *simulation.Run, state: *RunState, plane: simulation.Aircraft, owner_of_surface: []const i32, values: simulation.Values) !?MethodRun {
+    const memory = run.memory();
+    const group = "métodos";
+    const params = try memory.create(core.types.Params);
+    params.* = .{};
+    var diagnosis: model.Diag = .{};
+    params_mod.fill(&plane, params, &diagnosis) catch {
+        try state.checks.append(memory, .{ .status = .falha, .item = vlm_title, .value = "as asas não montaram", .why = diagnosis.text(), .group = group });
+        return null;
+    };
+    core.aero.init(params);
+    const grid: core.vlm.Grid = .{ .chordwise = @intFromFloat(@max(values.number("vlm_core_chord", vlm_core_chord_default), 1)), .spanwise = @intFromFloat(@max(values.number("vlm_core_span", vlm_core_span_default), 1)) };
+    const panel_count = core.vlm.panelCount(params, grid);
+    const buffers: core.vlm.Buffers = .{ .panels = try memory.alloc(core.vlm.Panel, panel_count), .matrix = try memory.alloc(f64, panel_count * panel_count), .pivots = try memory.alloc(usize, panel_count), .gamma = try memory.alloc(f64, panel_count) };
+    const panels = core.vlm.lattice(params, grid, buffers.panels) catch |err| {
+        try state.checks.append(memory, .{ .status = .falha, .item = vlm_title, .value = @errorName(err), .group = group });
+        return null;
+    };
+    core.vlm.factor(panels, buffers.matrix, buffers.pivots) catch |err| {
+        try state.checks.append(memory, .{ .status = .falha, .item = vlm_title, .value = @errorName(err), .why = "a malha deu um sistema singular (duas superfícies no mesmo lugar?)", .group = group });
+        return null;
+    };
+    const station_count = panel_count / grid.chordwise;
+    // o dono de cada estação (a superfície horizontal marcada), a posição na envergadura, a corda e a largura
+    const station_owner = try memory.alloc(i32, station_count);
+    const station_span = try memory.alloc(f64, station_count);
+    const station_chord = try memory.alloc(f64, station_count);
+    const station_width = try memory.alloc(f64, station_count);
+    const owner_count = state.owners.len;
+    const area = try memory.alloc(f64, owner_count);
+    const width = try memory.alloc(f64, owner_count);
+    @memset(area, 0);
+    @memset(width, 0);
+    for (station_owner, station_span, station_chord, station_width, 0..) |*owner, *span, *chord, *wide, j| {
+        const panel = &panels[j * grid.chordwise];
+        const strip = params.surf[panel.strip];
+        owner.* = -1;
+        if (strip.owner >= 0 and strip.vertical == 0 and @as(usize, @intCast(strip.owner)) < owner_of_surface.len) owner.* = owner_of_surface[@intCast(strip.owner)];
+        span.* = panel.control[1];
+        chord.* = panel.chord;
+        wide.* = core.vlm.stationWidth(panel);
+        if (owner.* >= 0) {
+            const index: usize = @intCast(owner.*);
+            area[index] += chord.* * wide.*;
+            width[index] += wide.*;
+        }
+    }
+    for (0..owner_count) |o| if (!(state.owner_area[o] > 0)) {
+        state.owner_area[o] = area[o];
+        state.owner_chord[o] = if (width[o] > 0) area[o] / width[o] else 0;
+    };
+    // os painéis com dono, na ordem das estações
+    var columns: std.ArrayList(usize) = .empty;
+    for (station_owner, 0..) |owner, j| if (owner >= 0) try columns.append(memory, j);
+    const used = columns.items.len;
+    const alpha_count = state.alphas.len;
+    const dynamic_pressure = 0.5 * state.density * state.airspeed * state.airspeed;
+    const lift = try memory.alloc(f64, alpha_count * owner_count);
+    @memset(lift, 0);
+    const all_cl = try memory.alloc(f64, alpha_count * used);
+    const station_lift = try memory.alloc(f64, station_count);
+    // em ρ = 1 e |V| = 1 a pressão dinâmica é 1/2: c_l = 2 L' / c e a força de verdade é L × 2 q
+    const sectionCl = struct {
+        fn of(value: f64, chord: f64, wide: f64) f64 {
+            return if (chord > 0 and wide > 0) 2 * value / (chord * wide) else 0;
+        }
+    }.of;
+    for (state.alphas, 0..) |alpha, a| {
+        const velocity = core.vlm.velocityAt(alpha * rad, 0);
+        core.vlm.solve(params, panels, buffers.matrix, buffers.pivots, velocity, .{ 0, 0, 0 }, buffers.gamma[0..panel_count]);
+        core.vlm.stationLift(panels, buffers.gamma[0..panel_count], velocity, alpha * rad, grid.chordwise, station_lift);
+        for (columns.items, 0..) |j, c| {
+            const owner: usize = @intCast(station_owner[j]);
+            lift[a * owner_count + owner] += station_lift[j] * 2 * dynamic_pressure;
+            all_cl[a * used + c] = sectionCl(station_lift[j], station_chord[j], station_width[j]);
+        }
+    }
+    // a carga no α da carga
+    const velocity = core.vlm.velocityAt(state.alpha_load * rad, 0);
+    core.vlm.solve(params, panels, buffers.matrix, buffers.pivots, velocity, .{ 0, 0, 0 }, buffers.gamma[0..panel_count]);
+    core.vlm.stationLift(panels, buffers.gamma[0..panel_count], velocity, state.alpha_load * rad, grid.chordwise, station_lift);
+    const panel_owner = try memory.alloc(i32, used);
+    const load_span = try memory.alloc(f64, used);
+    const load_cl = try memory.alloc(f64, used);
+    const load_chord = try memory.alloc(f64, used);
+    for (columns.items, panel_owner, load_span, load_cl, load_chord) |j, *owner, *span, *cl, *chord| {
+        owner.* = station_owner[j];
+        span.* = station_span[j];
+        cl.* = sectionCl(station_lift[j], station_chord[j], station_width[j]);
+        chord.* = station_chord[j];
+    }
+    const total_cl = try memory.alloc(f64, alpha_count);
+    const owner_cl = try memory.alloc(f64, alpha_count * owner_count);
+    const residual = try memory.alloc(f64, alpha_count); // sistema linear resolvido direto: sem resíduo
+    @memset(residual, 0);
+    const summary = sweep.summarize(lift, state.owner_area, dynamic_pressure, all_cl, panel_owner, load_span, total_cl, owner_cl) catch {
+        run.fail("o resumo da varredura não saiu", .{});
+        return error.Failed;
+    };
+    try state.summary.append(memory, .{ "[" ++ vlm_title ++ "] estações; painéis", try text(memory, "{d}; {d}", .{ station_count, panel_count }) });
+    return .{ .title = vlm_title, .color = methodOf("vlm").color, .total_cl = total_cl, .owner_cl = owner_cl, .summary = summary, .panel_owner = panel_owner, .load_owner = panel_owner, .load_span = load_span, .load_cl = load_cl, .load_chord = load_chord, .residual = residual };
 }
 
 fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) simulation.Error!void {
@@ -643,26 +784,33 @@ fn compute(run: *simulation.Run, state: *RunState, values: simulation.Values) si
     state.owner_area = try memory.alloc(f64, owners.items.len);
     state.owner_chord = try memory.alloc(f64, owners.items.len);
 
-    const main = LoadMethod.fromTitle(values.text("method", LoadMethod.llt_nl.title())) orelse .llt_nl;
-    const other = LoadMethod.fromTitle(values.text("compare", none));
+    // cada método marcado roda: primeiro as cargas (C_L, por superfície e na envergadura), depois as polares
+    state.figures = try simulation.Figures.init(memory, if (groundMethod(values) == .off) &plots else &(plots ++ ground_plots));
     var runs: std.ArrayList(MethodRun) = .empty;
-    try runs.append(memory, try sweepMethod(run, state, plane, owner_of_surface, main));
-    run.progress = 0.5;
-    if (other) |method| if (method != main) try runs.append(memory, try sweepMethod(run, state, plane, owner_of_surface, method));
+    for (methods) |method| {
+        if (!method.chosen(values)) continue;
+        if (method.load) |load| {
+            var found = try sweepMethod(run, state, plane, owner_of_surface, load);
+            found.title = method.short;
+            found.color = method.color;
+            try runs.append(memory, found);
+        } else if (std.mem.eql(u8, method.key, "vlm")) {
+            if (try vlmSweep(run, state, plane, owner_of_surface, values)) |found| try runs.append(memory, found);
+        }
+    }
     state.runs = runs.items;
     for (runs.items) |method_run| try warnUnconverged(memory, state, method_run);
-    run.progress = 0.6;
-
-    // a comparação dos métodos de polar do núcleo nas superfícies escolhidas e o avião completo
-    state.figures = try simulation.Figures.init(memory, if (groundMethod(values) == .off) &plots else &(plots ++ ground_plots));
+    run.progress = 0.5;
     var chosen: std.ArrayList(aerodynamics.Solver) = .empty;
-    for (solvers) |solver| if (solver.core) |core_solver| {
-        if (values.toggle(try std.fmt.allocPrint(memory, "use_{s}", .{solver.key}), solver.on)) try chosen.append(memory, core_solver);
+    var core_polars: std.ArrayList(Method) = .empty;
+    for (methods) |method| if (method.chosen(values)) if (method.polar) |solver| {
+        try chosen.append(memory, solver);
+        try core_polars.append(memory, method);
     };
-    try compareSolvers(run, state, plane, values, chosen.items);
+    try corePolars(run, state, plane, values, core_polars.items);
     try externalPolars(run, state, plane, values);
-    if (values.toggle("use_xflr5", false)) try xflr5Polar(run, state, values);
-    if (values.toggle("stall_on", false)) try stallByStation(run, state, plane, values);
+    if (methodOf("xflr5").chosen(values)) try xflr5Polar(run, state, values);
+    if (methodOf("estol").chosen(values)) try stallByStation(run, state, plane, values);
     if (groundMethod(values) != .off) try groundStudy(run, state, plane, values);
     run.progress = 0.75;
     if (!fromSprint(values) and values.toggle("whole", aerodynamics.ready(run.aircraft))) {
@@ -689,21 +837,21 @@ fn warnUnconverged(memory: std.mem.Allocator, state: *RunState, method_run: Meth
     const start = first orelse return;
     try state.checks.append(memory, .{
         .status = .atencao,
-        .item = try text(memory, "{s}: não convergiu", .{method_run.method.title()}),
+        .item = try text(memory, "{s}: não convergiu", .{method_run.title}),
         .value = try text(memory, "{d} α entre {d}° e {d}° (resíduo até {e:.1})", .{ count, start, last, largest }),
         .why = "perto do estol as faixas têm mais de uma solução e o Newton parou na de menor resíduo; o C_L nesses α é aproximado",
-        .fix = "aumente as iterações pós-estol no Refino dos Solvers ou compare com outro método",
+        .fix = "aumente as iterações pós-estol no Refino dos Solvers ou rode também outro método",
         .group = "métodos",
     });
 }
 
-/// as polares dos métodos do núcleo só nas superfícies escolhidas, na referência da soma das áreas (`compare_solvers`
-/// na parte de `wings.py` que escala as polares pela área da asa principal sobre a soma)
-fn compareSolvers(run: *simulation.Run, state: *RunState, plane: simulation.Aircraft, values: simulation.Values, chosen: []const aerodynamics.Solver) !void {
+/// as polares dos métodos do núcleo marcados, só nas superfícies escolhidas, na referência da soma das áreas (a área da
+/// asa principal sobre a soma escala as polares); o C_L do conjunto já vem da carga do mesmo método
+fn corePolars(run: *simulation.Run, state: *RunState, plane: simulation.Aircraft, values: simulation.Values, chosen: []const Method) !void {
     if (chosen.len == 0) return;
     const memory = run.memory();
     if (params_mod.firstSurface(&plane, "wing") == null) {
-        try state.checks.append(memory, .{ .status = .info, .item = "comparação dos métodos", .value = "sem asa principal", .why = "os métodos tomam a referência (S, c, b) da asa principal: marque uma superfície do tipo asa", .group = "métodos" });
+        try state.checks.append(memory, .{ .status = .info, .item = "polares dos métodos", .value = "sem asa principal", .why = "os métodos tomam a referência (S, c, b) da asa principal: marque uma superfície do tipo asa", .group = "métodos" });
         return;
     }
     const geometry = aerodynamics.reference(&plane);
@@ -714,26 +862,24 @@ fn compareSolvers(run: *simulation.Run, state: *RunState, plane: simulation.Airc
     const scale = if (total_area > 0) geometry.area / total_area else 1;
     try state.summary.append(memory, .{ "métricas dos métodos ([...] C_L0, C_Lmax...): na área da asa principal (m²)", try text(memory, "{d:.4}", .{geometry.area}) });
     const figures = state.figures.?;
-    for (chosen, 0..) |solver, k| {
-        const polar = aerodynamics.solve(run, plane, solver, case) catch |err| {
-            try state.checks.append(memory, .{ .status = .atencao, .item = try text(memory, "{s} falhou", .{solver.label()}), .value = @errorName(err), .group = "métodos" });
+    for (chosen) |method| {
+        const polar = aerodynamics.solve(run, plane, method.polar.?, case) catch |err| {
+            try state.checks.append(memory, .{ .status = .atencao, .item = try text(memory, "{s} falhou", .{method.short}), .value = @errorName(err), .group = "métodos" });
             continue;
         };
         const found = try aerodynamics.metrics(memory, polar, geometry, reference_x);
-        const label = solver.label();
+        const label = try text(memory, "{s}, polar", .{method.short});
         if (found.lift_max) |value| try state.summary.append(memory, .{ try text(memory, "[{s}] C_Lmax, α dele (°)", .{label}), try text(memory, "{d:.4}, {d}", .{ value, found.alpha_stall.? }) });
         if (found.lift_slope) |value| try state.summary.append(memory, .{ try text(memory, "[{s}] C_Lα (1/rad)", .{label}), try text(memory, "{d:.4}", .{value}) });
         for ([_][]f64{ polar.lift, polar.drag, polar.induced, polar.moment }) |column| for (column) |*value| {
             value.* *= scale;
         };
         const efficiency = try polar.efficiency(memory);
-        const color = colors[(k + 1) % colors.len];
-        try figures.curve("pol_CL", .{ .name = label, .x = state.alphas, .y = polar.lift, .color = color });
-        try figures.curve("pol_CD", .{ .name = label, .x = polar.drag, .y = polar.lift, .color = color });
-        try figures.curve("pol_Cm", .{ .name = label, .x = state.alphas, .y = polar.moment, .color = color });
-        try figures.curve("pol_LD", .{ .name = label, .x = polar.lift, .y = efficiency, .color = color });
-        try figures.curve("CL", .{ .name = label, .x = state.alphas, .y = polar.lift, .color = color, .dashed = true });
-        if (state.owners.len == 1) try figures.curve("CL_surf", .{ .name = try text(memory, "{s} · {s}", .{ state.owners[0], label }), .x = state.alphas, .y = polar.lift, .color = color, .dashed = true });
+        const color = method.color;
+        try figures.curve("pol_CL", .{ .name = method.short, .x = state.alphas, .y = polar.lift, .color = color });
+        try figures.curve("pol_CD", .{ .name = method.short, .x = polar.drag, .y = polar.lift, .color = color });
+        try figures.curve("pol_Cm", .{ .name = method.short, .x = state.alphas, .y = polar.moment, .color = color });
+        try figures.curve("pol_LD", .{ .name = method.short, .x = polar.lift, .y = efficiency, .color = color });
     }
 }
 
@@ -834,6 +980,8 @@ pub const ExternalPoint = struct { airspeed: f64, alpha: f64, elevator: f64 = 0,
 pub const vlm_span_default = 40;
 pub const vlm_chord_default = 6;
 pub const avl_chord_default = 8;
+pub const vlm_core_chord_default = 4;
+pub const vlm_core_span_default = 2;
 
 /// a carga ao longo de cada superfície pelo método de fora (o VLM do AeroSandbox), num ponto
 pub fn externalLoads(run: *simulation.Run, plane: *const simulation.Aircraft, method: LoadMethod, point: ExternalPoint) ![]ExternalSurface {
@@ -953,7 +1101,7 @@ fn externalSweep(run: *simulation.Run, state: *RunState, plane: simulation.Aircr
         run.fail("o resumo da varredura não saiu", .{});
         return error.Failed;
     };
-    return .{ .method = method, .total_cl = total_cl, .owner_cl = owner_cl, .summary = summary, .panel_owner = panel_owner.items, .load_owner = load_owner.items, .load_span = load_span.items, .load_cl = load_cl.items, .load_chord = load_chord.items, .residual = residual };
+    return .{ .total_cl = total_cl, .owner_cl = owner_cl, .summary = summary, .panel_owner = panel_owner.items, .load_owner = load_owner.items, .load_span = load_span.items, .load_cl = load_cl.items, .load_chord = load_chord.items, .residual = residual };
 }
 
 /// o dono (superfície horizontal escolhida) de uma superfície da resposta; nulo nas verticais e nos dispositivos
@@ -967,11 +1115,8 @@ fn ownerIndex(state: *const RunState, surface: ExternalSurface) ?usize {
 /// referência das do núcleo (`compare_solvers` do Python)
 fn externalPolars(run: *simulation.Run, state: *RunState, plane: simulation.Aircraft, values: simulation.Values) !void {
     const memory = run.memory();
-    var marked: std.ArrayList(Solver) = .empty;
-    for (solvers) |solver| {
-        if (solver.core != null) continue;
-        if (values.toggle(try std.fmt.allocPrint(memory, "use_{s}", .{solver.key}), solver.on)) try marked.append(memory, solver);
-    }
+    var marked: std.ArrayList(Method) = .empty;
+    for (methods) |method| if (method.external and method.chosen(values)) try marked.append(memory, method);
     if (marked.items.len == 0) return;
     if (params_mod.firstSurface(&plane, "wing") == null) {
         try state.checks.append(memory, .{ .status = .info, .item = "métodos de fora", .value = "sem asa principal", .why = "os métodos tomam a referência (S, c, b) da asa principal: marque uma superfície do tipo asa", .group = "métodos" });
@@ -983,13 +1128,13 @@ fn externalPolars(run: *simulation.Run, state: *RunState, plane: simulation.Airc
     for (state.owner_area) |area| total_area += area;
     const scale = if (total_area > 0) geometry.area / total_area else 1;
     const figures = state.figures.?;
-    for (marked.items, 0..) |solver, k| {
+    for (marked.items) |solver| {
         if (run.cancelled()) return;
-        const label = externalLabel(solver);
+        const label = solver.short;
         run.say("rodando {s}", .{label});
         var request: std.Io.Writer.Allocating = .init(memory);
         var json: std.json.Stringify = .{ .writer = &request.writer };
-        try json.write(.{ .op = "polar", .solver = solver.key, .aircraft = plane, .V = state.airspeed, .alphas = state.alphas, .alpha_d = state.alpha_load, .ref = [3]f64{ reference_x, 0, 0 }, .section = values.text("section", "modelo"), .n_span = values.number("n_span", 12), .n_chord = if (std.mem.eql(u8, solver.key, "avl")) values.number("avl_chord", avl_chord_default) else values.number("n_chord", vlm_chord_default) });
+        try json.write(.{ .op = "polar", .solver = solver.key, .aircraft = plane, .V = state.airspeed, .alphas = state.alphas, .alpha_d = state.alpha_load, .ref = [3]f64{ reference_x, 0, 0 }, .section = values.text("section", "modelo"), .n_span = values.number("n_span", 12), .n_chord = if (std.mem.eql(u8, solver.key, "avl")) values.number("avl_chord", avl_chord_default) else values.number("vlm_chord", vlm_chord_default) });
         const reply = switch (askExternal(run, request.written())) {
             .ok => |value| value,
             .failed => |why| {
@@ -1016,13 +1161,14 @@ fn externalPolars(run: *simulation.Run, state: *RunState, plane: simulation.Airc
             value.* *= scale;
         };
         const efficiency = try polar.efficiency(memory);
-        const color = surface_colors[(k + 4) % surface_colors.len];
+        const color = solver.color;
         try figures.curve("pol_CL", .{ .name = label, .x = alphas, .y = polar.lift, .color = color });
         try figures.curve("pol_CD", .{ .name = label, .x = polar.drag, .y = polar.lift, .color = color });
         try figures.curve("pol_Cm", .{ .name = label, .x = alphas, .y = polar.moment, .color = color });
         try figures.curve("pol_LD", .{ .name = label, .x = polar.lift, .y = efficiency, .color = color });
-        try figures.curve("CL", .{ .name = label, .x = alphas, .y = polar.lift, .color = color, .dashed = true });
-        if (state.owners.len == 1) try figures.curve("CL_surf", .{ .name = try text(memory, "{s} · {s}", .{ state.owners[0], label }), .x = alphas, .y = polar.lift, .color = color, .dashed = true });
+        // o C_L do conjunto: o método com carga já o desenhou pela varredura
+        if (solver.load == null) try figures.curve("CL", .{ .name = label, .x = alphas, .y = polar.lift, .color = color, .dashed = true });
+        if (solver.load == null and state.owners.len == 1) try figures.curve("CL_surf", .{ .name = try text(memory, "{s} · {s}", .{ state.owners[0], label }), .x = alphas, .y = polar.lift, .color = color, .dashed = true });
         // o lltdrek dá também a carga da asa principal no α das derivadas
         if (reply.object.get("span")) |span| if (span == .object) {
             const ys = try numbers(memory, span, "y");
@@ -1039,12 +1185,6 @@ fn externalPolars(run: *simulation.Run, state: *RunState, plane: simulation.Airc
             }
         };
     }
-}
-
-/// o nome curto do método de fora nas curvas (o rótulo sem o "(...)")
-fn externalLabel(solver: Solver) []const u8 {
-    const cut = std.mem.indexOf(u8, solver.label, " (") orelse solver.label.len;
-    return solver.label[0..cut];
 }
 
 fn advanceRun(run: *simulation.Run, state: *RunState) simulation.Error!bool {
@@ -1072,8 +1212,8 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
     const dynamic_pressure = 0.5 * state.density * state.airspeed * state.airspeed;
     const owner_count = state.owners.len;
     for (state.runs, 0..) |method_run, m| {
-        const title = method_run.method.title();
-        const color = colors[m % colors.len];
+        const title = method_run.title;
+        const color = method_run.color;
         try figures.curve("CL", .{ .name = title, .x = state.alphas, .y = method_run.total_cl, .color = color, .width = 2 });
         for (state.owners, 0..) |owner, k| {
             if (!(state.owner_area[k] > 0)) continue;
@@ -1140,22 +1280,19 @@ fn writeResult(run: *simulation.Run, state: *RunState, out: *simulation.Writer) 
 
 /// o nome do método na tela, com o tipo dele em palavras simples
 const stall_title = "VLM + polar (estol por estação: corrige o ângulo de cada faixa até o c_l bater com a polar 2D no Re dela)";
-const stall_group = "VLM + polar (corrige o α de cada faixa pela polar 2D)";
 
-/// os campos do método: ligar e, ligado, a malha e os ajustes do Newton (nada fica escondido)
-fn appendStallFields(memory: std.mem.Allocator, params: *std.ArrayList(simulation.Param), values: simulation.Values) !void {
-    const on = values.toggle("stall_on", false);
-    try params.append(memory, .{ .key = "stall_on", .label = "ligar o estol por estação", .kind = .bool, .default = .{ .toggle = false }, .group = stall_group, .rebuild = true, .help = stall_title ++ ". O VLM (malha de vórtices) com a polar 2D de cada faixa: dá o C_L máximo das superfícies marcadas a partir das polares e onde o estol começa. Usa os α do Caso" });
-    if (!on) return;
+/// o refino do estol por estação: a malha, o Newton e a polar das faixas (nada fica escondido)
+fn appendStallFields(memory: std.mem.Allocator, params: *std.ArrayList(simulation.Param)) !void {
+    const group = simulation.refine_group ++ ": VLM + polar";
     try params.appendSlice(memory, &.{
-        .{ .key = "stall_chord", .label = "painéis na corda", .kind = .int, .default = .{ .number = 4 }, .minimum = 1, .maximum = 12, .group = stall_group, .help = "painéis do VLM ao longo da corda de cada faixa" },
-        .{ .key = "stall_span", .label = "divisões por faixa", .kind = .int, .default = .{ .number = 8 }, .minimum = 1, .maximum = 20, .group = stall_group, .help = "cada faixa do avião vira esta quantidade de estações" },
-        .{ .key = "stall_iterations", .label = "iterações (Newton)", .kind = .int, .default = .{ .number = 40 }, .minimum = 1, .maximum = 500, .group = stall_group, .help = "iterações máximas do Newton (método que zera a diferença entre o c_l da polar e o do VLM) em cada α" },
-        .{ .key = "stall_tolerance", .label = "tolerância no c_l", .default = .{ .number = 1e-7 }, .minimum = 1e-12, .maximum = 1e-2, .group = stall_group, .help = "o Newton para quando a maior |c_l da polar − c_l do VLM| fica abaixo disto" },
-        .{ .key = "stall_halvings", .label = "cortes do passo", .kind = .int, .default = .{ .number = 8 }, .minimum = 0, .maximum = 30, .group = stall_group, .help = "busca linear: o passo do Newton é cortado pela metade até o erro cair, no máximo isto de vezes" },
-        .{ .key = "stall_polar_from", .label = "polar: α inicial", .default = .{ .number = -20 }, .minimum = -40, .maximum = 0, .unit = "°", .group = stall_group, .help = "a polar 2D do modelo do perfil vai deste α ..." },
-        .{ .key = "stall_polar_to", .label = "polar: α final", .default = .{ .number = 30 }, .minimum = 5, .maximum = 60, .unit = "°", .group = stall_group, .help = "... até este; depois do último ponto, o c_l sai de Viterna e Corrigan (fórmula empírica do pós-estol)" },
-        .{ .key = "stall_polar_step", .label = "polar: passo", .default = .{ .number = 0.5 }, .minimum = 0.05, .maximum = 2, .unit = "°", .group = stall_group },
+        .{ .key = "stall_chord", .label = "painéis na corda", .kind = .int, .default = .{ .number = 4 }, .minimum = 1, .maximum = 12, .group = group, .help = "painéis do VLM ao longo da corda de cada faixa" },
+        .{ .key = "stall_span", .label = "divisões por faixa", .kind = .int, .default = .{ .number = 8 }, .minimum = 1, .maximum = 20, .group = group, .help = "cada faixa do avião vira esta quantidade de estações" },
+        .{ .key = "stall_iterations", .label = "iterações (Newton)", .kind = .int, .default = .{ .number = 40 }, .minimum = 1, .maximum = 500, .group = group, .help = "iterações máximas do Newton (método que zera a diferença entre o c_l da polar e o do VLM) em cada α" },
+        .{ .key = "stall_tolerance", .label = "tolerância no c_l", .default = .{ .number = 1e-7 }, .minimum = 1e-12, .maximum = 1e-2, .group = group, .help = "o Newton para quando a maior |c_l da polar − c_l do VLM| fica abaixo disto" },
+        .{ .key = "stall_halvings", .label = "cortes do passo", .kind = .int, .default = .{ .number = 8 }, .minimum = 0, .maximum = 30, .group = group, .help = "busca linear: o passo do Newton é cortado pela metade até o erro cair, no máximo isto de vezes" },
+        .{ .key = "stall_polar_from", .label = "polar: α inicial", .default = .{ .number = -20 }, .minimum = -40, .maximum = 0, .unit = "°", .group = group, .help = "a polar 2D do modelo do perfil vai deste α ..." },
+        .{ .key = "stall_polar_to", .label = "polar: α final", .default = .{ .number = 30 }, .minimum = 5, .maximum = 60, .unit = "°", .group = group, .help = "... até este; depois do último ponto, o c_l sai de Viterna e Corrigan (fórmula empírica do pós-estol)" },
+        .{ .key = "stall_polar_step", .label = "polar: passo", .default = .{ .number = 0.5 }, .minimum = 0.05, .maximum = 2, .unit = "°", .group = group },
     });
 }
 
@@ -1306,8 +1443,8 @@ fn appendGroundFields(memory: std.mem.Allocator, params: *std.ArrayList(simulati
     if (method != .vlm_image) return;
     try params.appendSlice(memory, &.{
         .{ .key = "ground_alphas", .label = "α", .kind = .floats, .default = .{ .text = "0, 4, 8, 12" }, .unit = "°", .group = ground_group, .help = "uma curva por α; o fator do induzido usa o mesmo α" },
-        .{ .key = "ground_chord", .label = "painéis na corda", .kind = .int, .default = .{ .number = 2 }, .minimum = 1, .maximum = 12, .group = ground_group },
-        .{ .key = "ground_span", .label = "divisões por faixa", .kind = .int, .default = .{ .number = 1 }, .minimum = 1, .maximum = 20, .group = ground_group },
+        .{ .key = "ground_chord", .label = "painéis na corda", .kind = .int, .default = .{ .number = 2 }, .minimum = 1, .maximum = 12, .group = simulation.refine_group ++ ": VLM com imagem (chão)" },
+        .{ .key = "ground_span", .label = "divisões por faixa", .kind = .int, .default = .{ .number = 1 }, .minimum = 1, .maximum = 20, .group = simulation.refine_group ++ ": VLM com imagem (chão)" },
     });
 }
 
@@ -1402,7 +1539,8 @@ test "Analisar: o C_L máximo da asa do Convencional bate com o Python" {
     for (expected) |case| {
         var run = simulation.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
         defer run.arena.deinit();
-        const request = try std.fmt.allocPrint(run.memory(), "\"values\": {{\"method\": \"{s}\"}}", .{case.method.title()});
+        // só o método do caso marcado
+        const request = try std.fmt.allocPrint(run.memory(), "\"values\": {{\"run_faixas\": {}, \"run_llt_nl\": {}}}", .{ case.method == .faixas, case.method == .llt_nl });
         try registered.start(&run, simulation.Values.fromRequest(run.memory(), request));
         const state: *RunState = @ptrCast(@alignCast(run.state.?));
         try testing.expectApproxEqAbs(case.lift_max, state.runs[0].summary.lift_max, 1e-6);
@@ -1429,7 +1567,7 @@ test "Analisar: o estol por estação (VLM + polar) na asa do Convencional dá u
     const registered = simulation.register(Wings);
     var run = simulation.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
     defer run.arena.deinit();
-    try registered.start(&run, simulation.Values.fromRequest(run.memory(), "\"values\": {\"stall_on\": true}"));
+    try registered.start(&run, simulation.Values.fromRequest(run.memory(), "\"values\": {\"run_estol\": true}"));
     const state: *RunState = @ptrCast(@alignCast(run.state.?));
     var lift_max: ?f64 = null;
     for (state.summary.items) |row| {
@@ -1475,10 +1613,34 @@ test "Analisar: asa em caixa de perfil muito arqueado não explode perto do esto
     const registered = simulation.register(Wings);
     var run = simulation.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
     defer run.arena.deinit();
-    try registered.start(&run, simulation.Values.fromRequest(run.memory(), "\"values\": {}"));
+    try registered.start(&run, simulation.Values.fromRequest(run.memory(), "\"values\": {\"run_faixas\": false}"));
     const state: *RunState = @ptrCast(@alignCast(run.state.?));
     for (state.runs[0].total_cl) |lift| try testing.expect(@abs(lift) < 3);
     for (state.runs[0].owner_cl) |lift| try testing.expect(@abs(lift) < 3);
+}
+
+test "Analisar: o VLM do núcleo roda como método e dá o C_L perto da linha sustentadora antes do estol" {
+    const gpa = testing.allocator;
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", gpa, .limited(1 << 24));
+    defer gpa.free(bytes);
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(gpa, bytes, &diagnosis);
+    defer loaded.deinit();
+    const registered = simulation.register(Wings);
+    var run = simulation.Run{ .arena = .init(gpa), .aircraft = &loaded.ac };
+    defer run.arena.deinit();
+    try registered.start(&run, simulation.Values.fromRequest(run.memory(), "\"values\": {\"run_faixas\": false, \"run_llt_nl\": false, \"run_llt\": true, \"run_vlm\": true}"));
+    const state: *RunState = @ptrCast(@alignCast(run.state.?));
+    try testing.expectEqual(@as(usize, 2), state.runs.len);
+    try testing.expectEqualStrings(vlm_title, state.runs[1].title);
+    // α = 4° (o índice 8 de −4° a 22°): o VLM e a linha sustentadora linear a menos de 10 %
+    try testing.expectApproxEqRel(state.runs[0].total_cl[8], state.runs[1].total_cl[8], 0.10);
+    // e uma distribuição de c_l na envergadura no α da carga
+    try testing.expect(state.runs[1].load_cl.len > 4);
+    for (state.runs[1].load_cl) |cl| try testing.expect(cl > 0 and cl < 3);
+    var written: std.Io.Writer.Allocating = .init(gpa);
+    defer written.deinit();
+    try registered.result(&run, &written.writer);
 }
 
 /// os pontos de um perfil .dat (a primeira linha é o nome)

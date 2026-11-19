@@ -315,6 +315,25 @@ fn loadsWith(panels: []const Panel, gamma: []const f64, velocity: V3, ground_z: 
     return out;
 }
 
+/// a sustentação de cada estação da malha (ρ = 1, |V| = 1, eixos do vento): Kutta–Joukowski, F = Γ (V_ar × l), só com
+/// a velocidade do voo nos segmentos ligados das `chordwise` ferraduras da estação (a induzida muda quase só o
+/// arrasto; Katz e Plotkin, seção 12.3). `out` recebe panels.len / chordwise valores, na ordem de `lattice`
+pub fn stationLift(panels: []const Panel, gamma: []const f64, velocity: V3, alpha: f64, chordwise: usize, out: []f64) void {
+    const per_station = @max(chordwise, 1);
+    const turn = fmath.sincos(alpha);
+    @memset(out, 0);
+    for (panels, 0..) |*panel, i| {
+        const force = vec.cross(-velocity, panel.b - panel.a) * vec.splat(gamma[i]);
+        out[i / per_station] += -force[2] * turn.c + force[0] * turn.s;
+    }
+}
+
+/// a largura de uma estação na envergadura (o comprimento do segmento ligado no plano y-z)
+pub fn stationWidth(panel: *const Panel) f64 {
+    const segment = panel.b - panel.a;
+    return @sqrt(segment[1] * segment[1] + segment[2] * segment[2]);
+}
+
 /// a velocidade do avião (|V| = 1) em α e β, como `llt.coeffs`
 pub fn velocityAt(alpha: f64, beta: f64) V3 {
     const sa = fmath.sincos(alpha);
@@ -446,6 +465,31 @@ fn rectangularWing(params: *types.Params, strips: usize, span: f64, chord: f64) 
         };
     }
     @import("../physics/aero.zig").init(params);
+}
+
+test "VLM: a soma da sustentação das estações dá o C_L da asa" {
+    var params: types.Params = undefined;
+    rectangularWing(&params, 20, 1.2, 0.2);
+    const grid: Grid = .{ .chordwise = 4, .spanwise = 1 };
+    var panels: [80]Panel = undefined;
+    var matrix: [80 * 80]f64 = undefined;
+    var pivots: [80]usize = undefined;
+    var gamma: [80]f64 = undefined;
+    const mesh = try lattice(&params, grid, &panels);
+    try factor(mesh, &matrix, &pivots);
+    const alpha = 6.0 * fmath.pi / 180.0;
+    const velocity = velocityAt(alpha, 0);
+    solve(&params, mesh, &matrix, &pivots, velocity, vec.zero, &gamma);
+    const whole = coefficients(&params, loads(mesh, &gamma, velocity), alpha, 0, vec.zero);
+    var lift: [20]f64 = undefined;
+    stationLift(mesh, &gamma, velocity, alpha, grid.chordwise, &lift);
+    var total: f64 = 0;
+    for (lift) |value| total += value;
+    try testing.expectApproxEqRel(whole.CL, total / (0.5 * params.Sref), 0.01);
+    // simétrica: a estação da ponta esquerda sustenta o mesmo que a da direita, e menos que a do meio
+    try testing.expectApproxEqRel(lift[0], lift[19], 1e-9);
+    try testing.expect(lift[0] < lift[10]);
+    try testing.expectApproxEqRel(@as(f64, 0.06), stationWidth(&mesh[0]), 1e-9);
 }
 
 test "VLM: asa retangular AR 6 com C_Lα perto de Helmbold e sem força lateral em β = 0" {

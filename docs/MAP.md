@@ -151,7 +151,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `trace:91`, `optimal:127`, `efficiency:196`, `raymerOswald:206`, `studyPoint:232`
 - `core/src/loads/vlm.zig` — Método dos vórtices em malha (VLM) do avião: cada faixa sustentadora do núcleo (`Params.surf`) vira uma malha de
   tipos `Grid:41`, `Panel:44`, `Buffers:63`, `Loads:73`, `Coefficients:80`, `Derivatives:92`
-  fn `panelCount:112`, `lattice:160`, `factor:231`, `solve:269`, `substitute:281`, `loads:296`, `velocityAt:319`, `coefficients:326`, `derivatives:347`, `groundCoefficients:387`, `groundCoefficientsWith:392`
+  fn `panelCount:112`, `lattice:160`, `factor:231`, `solve:269`, `substitute:281`, `loads:296`, `stationLift:321`, `stationWidth:332`, `velocityAt:338`, `coefficients:345`, `derivatives:366`, `groundCoefficients:406`, `groundCoefficientsWith:411`
 - `core/src/loads/vn.zig` — Diagrama V-n: o envelope de manobra e o de rajada, e os casos de carga que saem dele.
   tipos `VnNorm:20`, `VnAircraft:31`, `LoadCase:41`, `CaseKind:50`, `VnResult:55`
   fn `gustAlleviation:76`, `gustIncrement:82`, `maneuverLimits:88`, `envelope:95`, `diagram:111`
