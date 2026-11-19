@@ -84,9 +84,9 @@ O que pegar primeiro, lendo o quadro como ele está agora. Tudo o que estava "a 
 
 ## Versões
 
-- **A `main` está em `v0.2.4`** (fechada em 2026-10-30, PRs #33 a #35 e o PR de fechamento; antes, `v0.2.3` no #31). O milestone de fundação fechou na `v0.2.0` (PRs #21–#25).
-- **Cada tarefa concluída e mesclada sobe só o último número:** `0.2.1`, `0.2.2`, `0.2.3`…
-- **Quando toda a lista de tarefas abaixo estiver feita, vira `0.3.0`.** A `1.0` tem meta própria (seção "Meta da
+- **A `main` vai para a `v0.3.0`** com o PR da `0.2_dev` de 2026-11-19 (o dono fechou a série 0.2 pelo tamanho do que mudou; antes, `v0.2.4` em 2026-10-30). O milestone de fundação fechou na `v0.2.0` (PRs #21–#25).
+- **Cada tarefa concluída e mesclada sobe só o último número:** `0.3.1`, `0.3.2`, `0.3.3`…
+- **Quando toda a lista de tarefas abaixo estiver feita, vira `0.4.0`.** A `1.0` tem meta própria (seção "Meta da
   1.0", abaixo), sem data: nada vira release sem o dono testar pessoalmente cada componente.
 - O trabalho fica numa branch só, `0.2_dev`. Cada tarefa fechada vai por PR para a `main` e para no review.
 - As tags só são criadas com o ok do dono do repositório.
@@ -588,14 +588,12 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
   1. a `main` é mesclada na `0.2_dev`, para não levar a `main` para trás;
   2. rodam os checks (`python tools/checks/run.py --tudo`);
   3. abre-se o PR `0.2_dev` → `main`, e o trabalho para até o review;
-  4. o merge sobe o último número da versão (`0.2.1`, `0.2.2`…).
+  4. o merge sobe o último número da versão (`0.3.1`, `0.3.2`…).
 - Cada PR atualiza este arquivo e o `CHANGELOG.md`.
 - Tag `vX.Y.Z` só na `main`, depois do merge.
 - Relatórios e dados de terceiros nunca entram no git.
 
 **Situação atual das branches**
-- `main`: `v0.2.4` (2026-10-30). Tudo o que estava na `0.2_dev` até a interface em Zig com os managers em Python vai nela.
+- `main`: `v0.3.0` com o PR de 2026-11-19 (antes, `v0.2.4` em 2026-10-30).
 - `0.2_dev`: igual à `main` depois do merge; o que vier entra sob a próxima versão quando o dono disser.
-- `0.2.6` (aberta pelo dono em 2026-11-05, por cima da 0.2.5 que ainda não foi para a `main`): um objetivo só, limpar e
-  unificar os managers e os modifiers.
 - As branches antigas foram apagadas aqui; no GitHub, o dono apaga (a sessão não tem permissão).

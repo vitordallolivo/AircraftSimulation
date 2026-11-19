@@ -2,9 +2,12 @@
 
 Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
-## Não lançado
+## v0.3.0 (PR da `0.2_dev` de 2026-11-19)
 
-### v0.2.6 (em andamento na `0.2_dev`)
+A série 0.2 fecha aqui. O aerosim agora roda inteiro sem Python, com a tela nova, e o núcleo ganhou cargas,
+estruturas e o estol por estação.
+
+### O que entrou depois da v0.2.4
 
 - Em Aerodinâmica → Analisar, a tela tinha um método, um "comparar com" e uma caixa separada de comparação de
   polares. Agora há uma lista só de métodos, e cada um que está marcado roda. O VLM do núcleo (malha de vórtices)
@@ -266,7 +269,7 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   de 4,3 s para 2,7 s.
 - Sai o simulador antigo em C (`legacy/`).
 
-### v0.2.5 (em andamento na `0.2_dev`)
+### Antes, na mesma série (o que seria a 0.2.5)
 
 - O aerosim passa a abrir no navegador com os menus atuais. O Python do aerosim e o núcleo rodam dentro da página,
   sem instalar nada. Por enquanto, no navegador não há lltdrek, ASB nem AVL, e uma rodada não se cancela.
