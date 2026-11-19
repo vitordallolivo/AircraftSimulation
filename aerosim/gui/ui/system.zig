@@ -28,3 +28,43 @@ pub fn offerDownload(path: []const u8) void {
     const text = std.fmt.bufPrintZ(&script, "Module.downloadFile && Module.downloadFile('{s}')", .{path}) catch return;
     std.os.emscripten.emscripten_run_script(text.ptr);
 }
+
+/// pergunta um texto pela janela do navegador (`prompt`, que abre o teclado do celular), começando com `current`;
+/// devolve o que se digitou em `answer`, ou nulo se cancelou ou fora do navegador
+pub fn askText(question: []const u8, current: []const u8, answer: []u8) ?[]const u8 {
+    if (!in_browser) return null;
+    var script: [2048]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&script);
+    writer.writeAll("(function(){var v=prompt('") catch return null;
+    writeQuoted(&writer, question) catch return null;
+    writer.writeAll("','") catch return null;
+    writeQuoted(&writer, current) catch return null;
+    writer.writeAll("');return v===null?'\\u0001':v;})()") catch return null;
+    writer.writeByte(0) catch return null;
+    const reply = std.os.emscripten.emscripten_run_script_string(@ptrCast(writer.buffered().ptr)) orelse return null;
+    const typed = std.mem.sliceTo(reply, 0);
+    if (typed.len == 1 and typed[0] == 1) return null;
+    const length = @min(typed.len, answer.len);
+    @memcpy(answer[0..length], typed[0..length]);
+    return answer[0..length];
+}
+
+/// `text` dentro de aspas simples do JS: escapa a barra invertida e as aspas; quebras de linha viram espaço
+fn writeQuoted(writer: *std.Io.Writer, text: []const u8) !void {
+    for (text) |char| switch (char) {
+        '\\', '\'' => {
+            try writer.writeByte('\\');
+            try writer.writeByte(char);
+        },
+        '\n', '\r', '\t' => try writer.writeByte(' '),
+        else => if (char >= 0x20) try writer.writeByte(char),
+    };
+}
+
+/// no navegador, abre o seletor de arquivos do aparelho (`pickFile` da página, em `web/shell.html`); o arquivo
+/// escolhido chega pelo `app_open_file`. Devolve falso fora do navegador
+pub fn pickFromDevice() bool {
+    if (!in_browser) return false;
+    std.os.emscripten.emscripten_run_script("Module.pickFile && Module.pickFile()");
+    return true;
+}

@@ -10,12 +10,13 @@
     - "abrir do computador" e arrastar um arquivo para a página: o arquivo vai para /entrada na memória do programa
       e a tela abre pelo `app_open_file` (ui/app.zig), como o arquivo da linha de comando no PC
     - downloadFile(caminho): o programa grava na memória e chama isto para a página baixar o arquivo (ui/system.zig)
-    - o link de volta à tela inicial (index.html)
+    - o link de volta à tela inicial (index.html); no celular em pé a barra some e o "Abrir" da tela chama pickFile
     - no aerosim, os métodos de fora do núcleo (aerosim-python.html, num iframe), baixados só quando um deles é pedido
 -->
 <style>
   html, body { margin: 0; height: 100%; background: #e9ebef; overflow: hidden; }
-  canvas { display: block; position: fixed; inset: 0; outline: none; }
+  /* touch-action: o dedo vai para a tela (rolar, puxar a folha), não para o navegador (zoom, rolar a página) */
+  canvas { display: block; position: fixed; inset: 0; outline: none; touch-action: none; }
   #bar {
     position: fixed; top: 4px; right: 8px; z-index: 2; display: flex; gap: 6px;
     font: 12px/1.4 ui-monospace, "DejaVu Sans Mono", Consolas, monospace;
@@ -25,6 +26,8 @@
     border-radius: 3px; text-decoration: none; cursor: pointer; font: inherit;
   }
   #bar a:hover, #bar button:hover { background: #1f4fa8; color: #fff; }
+  /* celular em pé: a tela tem o próprio "Abrir" no cabeçalho (abre o mesmo seletor, Module.pickFile) */
+  @media (max-width: 719px) { #bar { display: none; } }
   #loading {
     position: fixed; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center;
     background: #1f2d4d; color: #fff; font: 16px/1.5 ui-monospace, "DejaVu Sans Mono", Consolas, monospace;
@@ -99,6 +102,8 @@
       link.click();
       setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 60000);
     },
+    // o "Abrir" da tela no celular: o seletor de arquivos do aparelho (logo depois do toque, que ainda vale como gesto)
+    pickFile: () => picker.click(),
     postRun: [() => { loading.remove(); canvas.focus(); }],
     setStatus: (text) => { if (text) loading.textContent = program + '\n' + text.replace('Downloading data...', 'baixando...'); },
   };

@@ -1,5 +1,5 @@
 //! A área rolável: tudo o que não cabe na altura (a barra lateral, a coluna dos gráficos) rola pela roda do mouse ou
-//! pela barra fina da direita, que dá para arrastar. Quem desenha pede o topo do conteúdo em `begin`, desenha a partir
+//! pela barra fina da direita, que dá para arrastar, ou pelo dedo arrastando (celular). Quem desenha pede o topo do conteúdo em `begin`, desenha a partir
 //! dele e diz em `end` até onde foi; a altura do conteúdo vale para o quadro seguinte. Uma área dentro de outra (a
 //! lista de candidatos dentro da barra lateral) rola primeiro, e a de fora só recebe a roda que sobrou.
 const std = @import("std");
@@ -58,6 +58,11 @@ pub const ScrollArea = struct {
         if (ui.wheel != 0 and ui.hovering(rect) and limit > 0) {
             area.offset = std.math.clamp(area.offset - ui.wheel * wheel_step, 0, limit);
             ui.wheel = 0;
+        }
+        // no celular, o dedo arrastando rola a área onde desceu (a de dentro primeiro, como a roda)
+        if (limit > 0 and ui.dragIn(rect)) {
+            area.offset = std.math.clamp(area.offset - ui.drag_delta.y, 0, limit);
+            ui.drag_used = true;
         }
         area.offset = std.math.clamp(area.offset, 0, limit);
         if (limit <= 0) return;

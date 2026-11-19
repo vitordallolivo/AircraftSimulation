@@ -19,9 +19,13 @@ pub const system = @import("system.zig");
 pub const tex = @import("tex.zig");
 pub const undo = @import("undo.zig");
 pub const toast = @import("toast.zig");
+pub const phone = @import("phone.zig");
+pub const pointer = @import("pointer.zig");
 
 test {
     _ = numbers;
     _ = tex;
     _ = undo;
+    _ = phone;
+    _ = pointer;
 }

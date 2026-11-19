@@ -567,12 +567,12 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   fn `buildMesh:150`, `balance:246`, `loadAircraft:258`, `readAircraftText:269`, `load:286`, `fromBytes:294`, `fillAirfoilFiles:312`, `parseDat:347`, `findExample:379`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
-  tipos `Kind:39`, `shared:44`, `Page:406`
+  tipos `Kind:40`, `shared:45`, `Page:407`
 - `aerosim/gui/python_bridge.zig` — A ponte com os métodos de fora do núcleo (lltdrek, AeroSandbox, AVL), que são bibliotecas em Python: a tela abre
   tipos `Waiter:30`, `Bridge:46`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da antiga GUI PyQt.
   tipos `Screen:35`
-- `aerosim/gui/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos, exportar e a leitura do avião da Montagem.
+- `aerosim/gui/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos, exportar, o toque (mouse e dedo) e a leitura
 
 **aerosim/gui/tabs/**
 
@@ -584,7 +584,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 
 - `aerosim/gui/ui/app.zig` — O que os dois programas têm igual em volta da tela: a linha de comando, a janela e o laço de desenho, com o
   tipos `Args:16`, `Click:30`
-  fn `parseArgs:37`, `run:81`, `runBrowser:185`, `openFromPage:214`
+  fn `parseArgs:37`, `run:81`, `runBrowser:187`, `openFromPage:216`
 - `aerosim/gui/ui/browser_io.zig` — O `std.Io` das telas no navegador. No Zig 0.16 o `std.Io.Threaded` não compila para emscripten (o mesmo motivo
 - `aerosim/gui/ui/checks.zig` — O diagnóstico de uma etapa, como o `ChecksPanel` da GUI em Python: uma linha por verificação (estado, o que se
   tipos `Check:10`, `ChecksPanel:44`
@@ -596,7 +596,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Column:8`
   fn `writeCsv:15`, `writeText:33`, `saveCsv:47`, `writePdf:56`, `savePdf:107`, `fileName:115`
 - `aerosim/gui/ui/form.zig` — O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador,
-  tipos `Kind:14`, `Field:25`, `Group:53`, `Form:64`
+  tipos `Kind:15`, `Field:26`, `Group:54`, `Form:65`
 - `aerosim/gui/ui/jobs.zig` — As contas longas fora do laço da tela: uma `Job` roda uma função numa thread própria, e a tela continua
   tipos `Job:14`
   fn `Mailbox:73`
@@ -608,16 +608,21 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/ui/numbers.zig` — Números na tela sem janela (testáveis): o texto curto de um campo e as marcas "redondas" dos eixos.
   tipos `Range:45`
   fn `fieldText:7`, `numberText:12`, `niceStep:28`, `decimalsFor:38`, `significant:95`
+- `aerosim/gui/ui/phone.zig` — O jeito celular das telas: quando a janela é estreita (um celular em pé), a tela troca as abas de cima pela
+  tipos `Chips:152`, `Level:208`, `Sheet:224`
+  fn `isPhone:24`, `header:29`, `shortLabel:52`, `bottomBar:76`, `moreMenu:112`
 - `aerosim/gui/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
   tipos `Series:24`, `Marker:57`, `Cloud:79`, `Axes:87`, `Frame:97`, `Cell:214`, `ExportKind:291`
   fn `lines:118`, `table:222`, `tableHeight:257`, `pickGroup:338`, `clearPick:344`, `overlayActive:485`, `overlay:490`, `drawMarker:826`, `cloud:880`, `ramp:899`, `colorBar:915`, `drawFrame:935`
+- `aerosim/gui/ui/pointer.zig` — O ponteiro das telas, igual no PC e no celular: o mouse ou o dedo viram as mesmas coisas (desceu, segura,
+  tipos `Point:16`, `Input:24`, `Frame:32`, `Pointer:45`
 - `aerosim/gui/ui/scroll.zig` — A área rolável: tudo o que não cabe na altura (a barra lateral, a coluna dos gráficos) rola pela roda do mouse ou
   tipos `ScrollArea:13`
 - `aerosim/gui/ui/stage.zig` — As peças que toda etapa do dimensionamento repete, como o `StagePage` da GUI em Python: a barra de requisitos
   tipos `KeptAction:44`, `KeptBox:47`, `TabbedDialog:75`, `ListPicker:113`
   fn `reqBarHeight:18`, `reqBar:25`, `title:37`
 - `aerosim/gui/ui/system.zig` — O que muda entre o programa do PC e o do navegador, num lugar só: a `Io` dos arquivos (a do sistema ou a
-  fn `io:17`, `offerDownload:23`
+  fn `io:17`, `offerDownload:23`, `askText:34`, `pickFromDevice:66`
 - `aerosim/gui/ui/table.zig` — A tabela que se edita no lugar, como o `QTableWidget` da GUI em Python: uma linha por item, colunas de número,
   tipos `Kind:12`, `Column:17`, `Cell:25`, `Edit:38`, `EditTable:60`
   fn `height:55`
@@ -636,8 +641,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Kind:17`, `View:100`
   fn `kindColor:20`, `colorByName:35`, `fieldColor:57`, `fraction:75`, `liftColor:80`, `toWorld:85`, `toBody:238`, `shaded:262`, `triangle:270`, `gradientTriangle:280`, `litTriangle:292`, `quad:298`, `segment:315`, `arrow:320`, `floor:332`, `bodyAxes:344`
 - `aerosim/gui/ui/widgets.zig` — Os pedaços comuns das telas, no desenho do AeroDrive: o contexto de desenho (fontes, logo, mouse), o cabeçalho
-  tipos `Ui:11`, `Splitter:206`, `HeightGrip:239`, `Status:475`
-  fn `paragraph:143`, `paragraphHeight:148`, `caretToEnd:194`, `replaceOnType:286`, `helpMark:311`, `checkBox:320`, `disclosure:335`, `rounded:379`, `roundedLines:384`, `header:389`, `tabBar:410`, `primaryButton:434`, `progressBar:444`, `card:451`, `labeledCard:459`, `statusColor:465`, `tableRow:478`, `format:485`
+  tipos `Ui:13`, `Splitter:235`, `HeightGrip:268`, `Status:504`
+  fn `paragraph:172`, `paragraphHeight:177`, `caretToEnd:223`, `replaceOnType:315`, `helpMark:340`, `checkBox:349`, `disclosure:364`, `rounded:408`, `roundedLines:413`, `header:418`, `tabBar:439`, `primaryButton:463`, `progressBar:473`, `card:480`, `labeledCard:488`, `statusColor:494`, `tableRow:507`, `format:514`
 
 
 ## Zig · interface do aeroopt (`aeroopt`)

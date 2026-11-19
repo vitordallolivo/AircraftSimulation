@@ -2,6 +2,16 @@
 
 Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
+## Na `0.2_dev` (ainda sem versão)
+
+- No celular (ou numa janela estreita), a tela do aerosim ficava espremida, com as abas cortadas e os campos por
+  cima dos gráficos. Agora ela muda de jeito: as áreas ficam numa barra embaixo, ao alcance do polegar, com as que não
+  cabem no "Mais"; as subabas viram fichas no alto; o gráfico fica em cima, um por vez, trocado pelas setas ou
+  passando o dedo de lado; e as entradas ficam numa folha que se puxa de baixo, com o Rodar sempre à mostra. A
+  Montagem mostra o avião em 3D em cima e as peças, a peça escolhida e o resumo na folha.
+- No navegador do celular, tocar num campo abre o teclado do aparelho, arrastar o dedo rola as listas e o "Abrir"
+  escolhe um arquivo do próprio celular. No PC nada muda.
+
 ## v0.3.0 (PR da `0.2_dev` de 2026-11-19)
 
 A série 0.2 fecha aqui. O aerosim agora roda inteiro sem Python, com a tela nova, e o núcleo ganhou cargas,

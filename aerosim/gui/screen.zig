@@ -43,6 +43,9 @@ pub const Screen = struct {
     shown: ?*Page = null, // a página do último quadro (trocar de página pede ela de novo)
     requirements: Page = .{ .kind = .stage, .name = "requisitos", .title = "Condições e restrições", .grids_beside = true },
     requirements_open: bool = false,
+    // o jeito celular (janela estreita, `ui/phone.zig`): as fichas das subabas e a lista do "Mais" da barra de baixo
+    area_chips: ui_kit.phone.Chips = .{},
+    more_open: bool = false,
     pending_tab: ?usize = null, // aba=N da linha de comando, até as abas chegarem
     pending_run: bool = false, // acao=rodar, idem
     pending_stage: [512]u8 = undefined, // acao=etapa:<botão>: aperta o botão da etapa quando ela abrir
@@ -61,6 +64,10 @@ pub const Screen = struct {
     assembly_note: [240:0]u8 = [_:0]u8{0} ** 240,
     assembly_panel: ?AssemblyPanel = null, // o resumo ao lado do 3D (`config_tab.panel`), refeito ao abrir
     assembly_scroll: ui_kit.scroll.ScrollArea = .{},
+    // a Montagem no celular: a folha embaixo do 3D e as fichas dela (Peças, Peça escolhida, Resumo)
+    assembly_sheet: ui_kit.phone.Sheet = .{},
+    assembly_tabs: ui_kit.phone.Chips = .{},
+    assembly_tab: usize = 0,
     assembly_drag: ?PieceDrag = null, // a peça sendo arrastada no 3D
     drag_lock: DragLock = .screen, // por onde a peça arrastada anda: no plano da tela ou só num eixo
     restore_open: bool = false, // o menu do "Restaurar" aberto: como foi aberto ou um modelo padrão
@@ -776,7 +783,11 @@ pub const Screen = struct {
         // a página aberta
         const page: ?*Page = if (screen.areas.len > 0) screen.areas[screen.area].pages[screen.areas[screen.area].active] else null;
         const single = screen.areas.len == 0 or screen.areas[screen.area].single;
-        const top = widgets.header_height + 38 + (if (single) @as(f32, 0) else 32);
+        // a janela estreita (um celular em pé): cabeçalho curto, as subabas em fichas e as áreas na barra de baixo
+        const phone = ui_kit.phone.isPhone(width);
+        if (!phone) screen.more_open = false;
+        const top = if (phone) ui_kit.phone.header_height + (if (single) @as(f32, 0) else ui_kit.phone.chips_height) else widgets.header_height + 38 + (if (single) @as(f32, 0) else 32);
+        const bottom: f32 = if (phone) ui_kit.phone.bar_height else 0;
         // com uma janela aberta (seletor de arquivo, pergunta, condições), a tela de baixo não recebe o clique nem a roda
         const page_modal = if (page) |p| p.modalOpen() else false;
         const modal = screen.files.open or screen.requirements_open or page_modal;
@@ -785,9 +796,15 @@ pub const Screen = struct {
             ui.click_taken = true;
             ui.wheel = 0;
         }
-        const content: rl.Rectangle = .{ .x = 0, .y = top, .width = width, .height = height - top };
+        const content: rl.Rectangle = .{ .x = 0, .y = top, .width = width, .height = height - top - bottom };
+        // a lista do "Mais" aberta fica por cima da página: a página não recebe o toque
+        if (screen.more_open and !modal) {
+            ui.click_taken = true;
+            ui.wheel = 0;
+        }
         if (page) |p| {
             p.process_io = screen.io;
+            p.phone = phone;
             if (screen.shown != p) {
                 if (screen.shown != null) p.markStale(); // outra página pode ter mudado o projeto
                 screen.shown = p;
@@ -825,13 +842,32 @@ pub const Screen = struct {
             screen.pending_undo -= 1;
             screen.undo();
         }
-        if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião", "Salvar .json" }, "")) |button| {
-            if (button == 0) screen.command("abrir") else screen.command("salvar");
+        if (screen.more_open and !modal) {
+            ui.click_taken = false;
+            ui.wheel = wheel;
         }
-        _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, screen.area_labels, &screen.area, 14);
-        if (!single) {
-            const area = &screen.areas[screen.area];
-            _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, area.labels, &area.active, 13);
+        if (phone) {
+            if (screen.more_open and !modal) _ = ui_kit.phone.moreMenu(ui, content, screen.area_labels, &screen.area, &screen.more_open);
+            if (ui_kit.phone.header(ui, width, "AeroSim", &.{ "Abrir", "Salvar" })) |button| {
+                // no navegador do celular, "Abrir" pega o arquivo do aparelho (a página esconde a barra dela)
+                if (button == 0) {
+                    if (!ui_kit.system.pickFromDevice()) screen.command("abrir");
+                } else screen.command("salvar");
+            }
+            if (!single) {
+                const area = &screen.areas[screen.area];
+                _ = screen.area_chips.draw(ui, .{ .x = 0, .y = ui_kit.phone.header_height, .width = width, .height = ui_kit.phone.chips_height }, area.labels, &area.active);
+            }
+            _ = ui_kit.phone.bottomBar(ui, .{ .x = 0, .y = height - bottom, .width = width, .height = bottom }, screen.area_labels, &screen.area, &screen.more_open);
+        } else {
+            if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião", "Salvar .json" }, "")) |button| {
+                if (button == 0) screen.command("abrir") else screen.command("salvar");
+            }
+            _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, screen.area_labels, &screen.area, 14);
+            if (!single) {
+                const area = &screen.areas[screen.area];
+                _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, area.labels, &area.active, 13);
+            }
         }
         if (modal) {
             ui.click_taken = false;
@@ -855,7 +891,8 @@ pub const Screen = struct {
     /// "Condições e restrições…": a etapa "requisitos" numa janela por cima; ao fechar, as etapas refazem a conta
     fn drawRequirements(screen: *Screen, ui: *widgets.Ui, whole: rl.Rectangle) void {
         rl.drawRectangleRec(whole, .{ .r = 20, .g = 30, .b = 50, .a = 90 });
-        const box: rl.Rectangle = .{ .x = whole.x + 60, .y = whole.y + 50, .width = whole.width - 120, .height = whole.height - 100 };
+        const margin: f32 = if (ui_kit.phone.isPhone(whole.width)) 6 else 60;
+        const box: rl.Rectangle = .{ .x = whole.x + margin, .y = whole.y + margin * 5 / 6, .width = whole.width - 2 * margin, .height = whole.height - margin * 5 / 3 };
         _ = widgets.card(ui, box, "Condições, restrições e variáveis de projeto");
         screen.requirements.process_io = screen.io;
         screen.requirements.draw(ui, .{ .x = box.x + 4, .y = box.y + 40, .width = box.width - 8, .height = box.height - 90 });
@@ -881,12 +918,24 @@ pub const Screen = struct {
         // à esquerda a lista de componentes e o resumo embaixo; à direita o editor da peça; no meio o 3D
         const side_width: f32 = if (screen.assembly_panel != null) @min(460, rect.width * 0.3) else 0;
         const editor_width: f32 = if (screen.assembly_editor != null and screen.assembly != null) @min(400, rect.width * 0.26) else 0;
-        var list_height: f32 = 0;
+        const phone = ui_kit.phone.isPhone(rect.width);
         if (screen.pending_assembly_len > 0 and screen.assembly != null and screen.assembly_editor != null) screen.runPendingAssembly();
         if (screen.assembly_editor) |*editor| if (screen.assembly) |*opened| if (editor.want_rebuild) {
             editor.want_rebuild = false;
             editor.rebuild(&opened.loaded.ac) catch {};
         };
+        if (phone) return screen.drawAssemblyPhone(ui, rect);
+        const list_height = screen.drawAssemblySide(ui, rect, side_width) orelse return;
+        if (screen.assembly_panel) |*shown| shown.draw(ui, &screen.assembly_scroll, .{ .x = rect.x + 12, .y = rect.y + 12 + list_height, .width = side_width - 6, .height = rect.height - 24 - list_height });
+        if (editor_width > 0) screen.drawAssemblyEditor(ui, .{ .x = rect.x + rect.width - 12 - editor_width + 6, .y = rect.y + 12, .width = editor_width - 6, .height = rect.height - 24 });
+        const card_rect: rl.Rectangle = .{ .x = rect.x + 12 + side_width, .y = rect.y + 12, .width = rect.width - 24 - side_width - editor_width, .height = rect.height - 24 };
+        screen.drawAssemblyView(ui, card_rect, false);
+    }
+
+    /// a coluna da esquerda da Montagem: os aviões abertos, o vento, a lista das peças e os botões; devolve a altura
+    /// usada (nulo: trocou de avião, o resto do quadro não vale)
+    fn drawAssemblySide(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle, side_width: f32) ?f32 {
+        var list_height: f32 = 0;
         if (screen.assembly_editor) |*editor| if (screen.assembly) |*opened| {
             // os aviões abertos (a barra das variantes do Python): qual é este, trocar, uma variante nova e fechar
             var fleet_buffer: [200]u8 = undefined;
@@ -894,7 +943,7 @@ pub const Screen = struct {
             var fleet_height: f32 = 0;
             if (ui_kit.menus.buttonGrid(ui, rect.x + 12, rect.y + 34, side_width - 6, &fleet_buttons, 4, &fleet_height)) |pressed| {
                 screen.fleetButton(pressed);
-                return;
+                return null;
             }
             const wind_top = 34 + fleet_height + 10;
             // o vento (a caixa "Vento" do Python): a velocidade a 10 m e de onde vem, de 1 m/s e de 15° por clique
@@ -931,15 +980,39 @@ pub const Screen = struct {
             }
             list_height += top - 12 + 8 + buttons_height + 6;
         };
-        if (screen.assembly_panel) |*shown| shown.draw(ui, &screen.assembly_scroll, .{ .x = rect.x + 12, .y = rect.y + 12 + list_height, .width = side_width - 6, .height = rect.height - 24 - list_height });
-        if (editor_width > 0) {
-            const editor = &screen.assembly_editor.?;
-            const editor_rect: rl.Rectangle = .{ .x = rect.x + rect.width - 12 - editor_width + 6, .y = rect.y + 12, .width = editor_width - 6, .height = rect.height - 24 };
-            var list_button: ?usize = null;
-            if (editor.drawForm(ui, editor_rect, &list_button)) screen.applyEdit();
-            if (list_button) |pressed| screen.listButton(pressed);
+        return list_height;
+    }
+
+    /// o formulário da peça escolhida na Montagem
+    fn drawAssemblyEditor(screen: *Screen, ui: *widgets.Ui, editor_rect: rl.Rectangle) void {
+        const editor = &screen.assembly_editor.?;
+        var list_button: ?usize = null;
+        if (editor.drawForm(ui, editor_rect, &list_button)) screen.applyEdit();
+        if (list_button) |pressed| screen.listButton(pressed);
+    }
+
+    /// a Montagem no celular: o 3D em cima e a folha embaixo, com as fichas Peças, Peça escolhida e Resumo
+    fn drawAssemblyPhone(screen: *Screen, ui: *widgets.Ui, rect: rl.Rectangle) void {
+        const tabs_height: f32 = 44;
+        const sheet = screen.assembly_sheet.place(ui, rect, tabs_height);
+        screen.drawAssemblyView(ui, .{ .x = rect.x + 8, .y = rect.y + 8, .width = rect.width - 16, .height = @max(80, sheet.y - rect.y - 16) }, true);
+        const inner = ui_kit.phone.Sheet.drawBack(sheet);
+        const tabs = [_][:0]const u8{ "Peças", "Peça escolhida", "Resumo" };
+        _ = screen.assembly_tabs.draw(ui, .{ .x = inner.x, .y = inner.y, .width = inner.width, .height = tabs_height }, &tabs, &screen.assembly_tab);
+        const body: rl.Rectangle = .{ .x = inner.x, .y = inner.y + tabs_height, .width = inner.width, .height = @max(0, inner.height - tabs_height) };
+        if (body.height < 40) return;
+        ui.pushClip(body);
+        defer ui.popClip();
+        switch (screen.assembly_tab) {
+            0 => _ = screen.drawAssemblySide(ui, .{ .x = body.x - 4, .y = body.y - 4, .width = body.width, .height = body.height }, body.width - 12),
+            1 => if (screen.assembly_editor != null and screen.assembly != null) screen.drawAssemblyEditor(ui, .{ .x = body.x + 8, .y = body.y + 4, .width = body.width - 16, .height = body.height - 8 }),
+            else => if (screen.assembly_panel) |*shown| shown.draw(ui, &screen.assembly_scroll, .{ .x = body.x + 8, .y = body.y + 4, .width = body.width - 16, .height = body.height - 8 }),
         }
-        const card_rect: rl.Rectangle = .{ .x = rect.x + 12 + side_width, .y = rect.y + 12, .width = rect.width - 24 - side_width - editor_width, .height = rect.height - 24 };
+    }
+
+    /// o cartão do 3D da Montagem em `card_rect`, com os botões das vistas, o Restaurar, o Acertar o CG e a trava do
+    /// arraste (no celular, em grades dentro do cartão)
+    fn drawAssemblyView(screen: *Screen, ui: *widgets.Ui, card_rect: rl.Rectangle, phone: bool) void {
         const area = cardInside(card_rect);
         screen.dragPiece(ui, area);
         screen.assembly_view.handleInput(ui, area);
@@ -999,13 +1072,42 @@ pub const Screen = struct {
                 const cg = assembly_mod.balance(&opened.loaded.ac).cg;
                 const names = [3][]const u8{ "x", "y", "z" };
                 var buffer: [160]u8 = undefined;
-                const text = widgets.format(&buffer, "{s}_CG = {d:.3} m     {s}_CG = {d:.3} m     (a partir da referência, a cruz cinza)", .{ names[shown[0]], cg[shown[0]], names[shown[1]], cg[shown[1]] });
-                theme.text(ui.fonts.bold, text, area.x + 10, area.y + 8, 16, theme.hex(0xd62728));
+                const text = if (phone)
+                    widgets.format(&buffer, "{s}_CG = {d:.3} m   {s}_CG = {d:.3} m", .{ names[shown[0]], cg[shown[0]], names[shown[1]], cg[shown[1]] })
+                else
+                    widgets.format(&buffer, "{s}_CG = {d:.3} m     {s}_CG = {d:.3} m     (a partir da referência, a cruz cinza)", .{ names[shown[0]], cg[shown[0]], names[shown[1]], cg[shown[1]] });
+                theme.text(ui.fonts.bold, text, area.x + 10, if (phone) area.y + area.height - 64 else area.y + 8, if (phone) 14 else 16, theme.hex(0xd62728));
             }
         }
         // "Restaurar" e "Acertar o CG", antes dos botões das vistas
         var restore_at: ?rl.Vector2 = null;
-        if (screen.assembly != null) {
+        // no celular: as vistas e as duas ações numa grade de três no alto do 3D, a trava do arraste numa de quatro
+        // embaixo
+        if (phone) {
+            var captions: [6][:0]const u8 = undefined;
+            for (std.enums.values(ViewAngle), 0..) |angle, k| captions[k] = angle.caption();
+            captions[4] = "Restaurar";
+            captions[5] = "Acertar o CG";
+            var used: f32 = 0;
+            const grid_x = area.x + 6;
+            const grid_y = area.y + 6;
+            const grid_width = area.width - 12;
+            const pressed = if (screen.assembly != null) ui_kit.menus.buttonGrid(ui, grid_x, grid_y, grid_width, &captions, 3, &used) else ui_kit.menus.buttonGrid(ui, grid_x, grid_y, grid_width, captions[0..4], 4, &used);
+            const cell_width = (grid_width - 2 * 6) / 3;
+            for (std.enums.values(ViewAngle), 0..) |angle, k| if (screen.assembly_angle == angle and screen.assembly != null) {
+                rl.drawRectangleLinesEx(.{ .x = grid_x + @as(f32, @floatFromInt(k % 3)) * (cell_width + 6), .y = grid_y + @as(f32, @floatFromInt(k / 3)) * (used / 2), .width = cell_width, .height = used / 2 - 6 }, 2, theme.colors.accent);
+            };
+            if (pressed) |index| {
+                if (index < 4) screen.assembly_angle = std.enums.values(ViewAngle)[index] else if (index == 4) screen.restore_open = !screen.restore_open else screen.fitCg();
+            }
+            if (screen.restore_open) restore_at = .{ .x = area.x + 6, .y = grid_y + used };
+            if (screen.assembly != null) {
+                var lock_captions: [std.enums.values(DragLock).len][:0]const u8 = undefined;
+                for (std.enums.values(DragLock), 0..) |lock, k| lock_captions[k] = lock.caption();
+                var lock_used: f32 = 0;
+                if (ui_kit.menus.buttonGrid(ui, grid_x, area.y + area.height - 40, grid_width, &lock_captions, lock_captions.len, &lock_used)) |index| screen.drag_lock = std.enums.values(DragLock)[index];
+            }
+        } else if (screen.assembly != null) {
             const actions = [_][:0]const u8{ "Restaurar", "Acertar o CG" };
             for (actions, 0..) |caption, k| {
                 const button_width: f32 = 110;
@@ -1017,15 +1119,15 @@ pub const Screen = struct {
             }
         }
         // os botões das vistas, à direita do título (por cima do cartão); arrastar volta ao 3D livre
-        for (std.enums.values(ViewAngle), 0..) |angle, k| {
+        for (if (phone) &[_]ViewAngle{} else std.enums.values(ViewAngle), 0..) |angle, k| {
             const button_width: f32 = 86;
             const button: rl.Rectangle = .{ .x = card_rect.x + card_rect.width - 8 - (4 - @as(f32, @floatFromInt(k))) * (button_width + 6), .y = card_rect.y + 5, .width = button_width, .height = 26 };
             if (ui_kit.dialogs.button(ui, button, angle.caption())) screen.assembly_angle = angle;
             if (screen.assembly_angle == angle) rl.drawRectangleLinesEx(button, 2, theme.colors.accent);
         }
-        theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.assembly_note, 0), area.x + 6, area.y + area.height - 18, 12, theme.colors.muted);
+        if (!phone) theme.text(ui.fonts.regular, std.mem.sliceTo(&screen.assembly_note, 0), area.x + 6, area.y + area.height - 18, 12, theme.colors.muted);
         // a trava do arraste, no canto de baixo à direita do 3D
-        if (screen.assembly != null) {
+        if (screen.assembly != null and !phone) {
             const lock_width: f32 = 96;
             const locks = std.enums.values(DragLock);
             const row_x = area.x + area.width - @as(f32, @floatFromInt(locks.len)) * (lock_width + 4) - 4;
@@ -1043,7 +1145,7 @@ pub const Screen = struct {
             var caption_buffers: [templates.all.len][96]u8 = undefined;
             captions[0] = "como estava ao abrir";
             for (templates.all, 0..) |template, k| captions[k + 1] = widgets.format(&caption_buffers[k], "modelo padrão: {s}", .{template.name});
-            const menu_width: f32 = 400;
+            const menu_width: f32 = @min(400, card_rect.x + card_rect.width - corner.x - 4);
             const box: rl.Rectangle = .{ .x = corner.x, .y = corner.y, .width = menu_width, .height = @as(f32, @floatFromInt(captions.len)) * 34 + 8 };
             rl.drawRectangleRec(box, theme.colors.panel);
             rl.drawRectangleLinesEx(box, 1, theme.colors.muted);

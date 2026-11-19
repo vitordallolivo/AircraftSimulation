@@ -9,6 +9,7 @@ const theme = @import("theme.zig");
 const widgets = @import("widgets.zig");
 const scroll = @import("scroll.zig");
 const numbers = @import("numbers.zig");
+const system = @import("system.zig");
 const numberText = numbers.numberText;
 
 pub const Kind = enum { number, toggle, choice, text, file };
@@ -245,6 +246,8 @@ pub const Form = struct {
             theme.text(ui.fonts.mono, field.text[0..field.textValue().len :0], control.x + 6, control.y + 5, 14, if (field.enabled) theme.colors.ink else theme.colors.muted);
             ui.popClip();
             if (field.enabled and ui.clickedIn(control)) {
+                // no celular, o teclado do sistema (o raylib não abre o teclado na página)
+                if (ui.touch) return askText(field);
                 form.editing = index;
                 widgets.caretToEnd(ui, &field.text);
             }
@@ -286,6 +289,7 @@ pub const Form = struct {
         if (field.enabled) fieldBox(control) else widgets.rounded(control, 5, theme.colors.panel);
         theme.text(ui.fonts.mono, numbers.fieldText(&buffer, field.number), control.x + 6, control.y + 5, 14, if (field.enabled) theme.colors.ink else theme.colors.muted);
         if (field.enabled and ui.clickedIn(control)) {
+            if (ui.touch) return askNumber(field);
             form.editing = index;
             form.edit_text = [_:0]u8{0} ** 32;
             const typed = numbers.fieldText(&buffer, field.number);
@@ -295,6 +299,28 @@ pub const Form = struct {
             form.edit_start = typed.len;
         }
         return false;
+    }
+
+    /// no celular: o número pela janela do navegador (aceita a vírgula decimal); devolve verdadeiro se mudou
+    fn askNumber(field: *Field) bool {
+        var current: [96]u8 = undefined;
+        var answer: [64]u8 = undefined;
+        const reply = system.askText(field.label, numbers.fieldText(&current, field.number), &answer) orelse return false;
+        for (answer[0..reply.len]) |*char| if (char.* == ',') {
+            char.* = '.';
+        };
+        const value = std.fmt.parseFloat(f64, std.mem.trim(u8, answer[0..reply.len], " ")) catch return false;
+        field.number = std.math.clamp(value, field.minimum, field.maximum);
+        return true;
+    }
+
+    /// no celular: o texto pela janela do navegador; devolve verdadeiro se mudou
+    fn askText(field: *Field) bool {
+        var answer: [text_capacity]u8 = undefined;
+        const reply = system.askText(field.label, field.textValue(), &answer) orelse return false;
+        field.text = [_:0]u8{0} ** text_capacity;
+        @memcpy(field.text[0..reply.len], reply);
+        return true;
     }
 
     fn drawOpenChoice(form: *Form, ui: *widgets.Ui, index: usize) bool {

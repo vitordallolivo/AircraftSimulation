@@ -153,6 +153,8 @@ fn drawFrame(ui: *widgets.Ui, screen: anytype, shot: bool) void {
         if (click.right) ui.right_clicked = true else {
             ui.clicked = true;
             ui.held = true;
+            ui.pressed = true;
+            ui.press_point = click.at;
         }
         injected_click = null;
     }

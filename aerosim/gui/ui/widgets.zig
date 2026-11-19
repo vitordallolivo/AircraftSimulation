@@ -6,6 +6,8 @@ const rl = @import("raylib");
 const rg = @import("raygui");
 const theme = @import("theme.zig");
 const tex = @import("tex.zig");
+const system = @import("system.zig");
+const pointer_mod = @import("pointer.zig");
 
 /// o que todo widget precisa: fontes, logo e o estado do mouse neste quadro
 pub const Ui = struct {
@@ -29,6 +31,15 @@ pub const Ui = struct {
     tip: [:0]const u8 = "",
     tip_key: usize = 0, // o retângulo da dica, para saber há quanto tempo o mouse está nele
     tip_since: f64 = 0,
+    // o mouse ou o dedo, do mesmo jeito (`pointer.zig`): no celular o toque vale ao soltar e o arraste rola
+    pointer: pointer_mod.Pointer = .{},
+    touch: bool = false, // o último gesto veio do dedo: os campos pedem o texto ao teclado do celular
+    pressed: bool = false, // o botão (ou o dedo) desceu neste quadro
+    press_point: rl.Vector2 = .{ .x = 0, .y = 0 }, // onde desceu
+    drag_delta: rl.Vector2 = .{ .x = 0, .y = 0 }, // quanto o dedo andou neste quadro
+    dragging: bool = false, // desde que desceu, o dedo andou mais que a folga do toque
+    drag_used: bool = false, // uma área já usou o arraste deste quadro (a de dentro primeiro)
+    swipe: f32 = 0, // ao soltar um arraste mais de lado que de pé: quanto andou na horizontal
 
     /// abre fontes e logo e ajusta o estilo do raygui às cores do tema; precisa da janela aberta
     pub fn init() !Ui {
@@ -43,15 +54,33 @@ pub const Ui = struct {
         ui.fonts.deinit();
     }
 
-    /// lê o mouse no começo do quadro
+    /// lê o mouse (ou o dedo) no começo do quadro
     pub fn beginFrame(ui: *Ui) void {
-        ui.mouse = rl.getMousePosition();
-        ui.clicked = rl.isMouseButtonPressed(.left);
-        ui.held = rl.isMouseButtonDown(.left);
+        const mouse = rl.getMousePosition();
+        const finger: ?pointer_mod.Point = if (system.in_browser and rl.getTouchPointCount() > 0) point: {
+            const touched = rl.getTouchPosition(0);
+            break :point .{ .x = touched.x, .y = touched.y };
+        } else null;
+        const now = ui.pointer.update(.{ .mouse = .{ .x = mouse.x, .y = mouse.y }, .mouse_pressed = rl.isMouseButtonPressed(.left), .mouse_down = rl.isMouseButtonDown(.left), .finger = finger });
+        ui.mouse = .{ .x = now.at.x, .y = now.at.y };
+        ui.clicked = now.clicked;
+        ui.held = now.held;
+        ui.pressed = now.pressed;
+        ui.press_point = .{ .x = now.press_point.x, .y = now.press_point.y };
+        ui.drag_delta = .{ .x = now.delta.x, .y = now.delta.y };
+        ui.dragging = now.dragging;
+        ui.swipe = now.swipe;
+        ui.touch = now.touch;
+        ui.drag_used = false;
         ui.right_clicked = rl.isMouseButtonPressed(.right);
         ui.wheel = rl.getMouseWheelMove();
         ui.click_taken = false;
         ui.tip = "";
+    }
+
+    /// verdadeiro enquanto o dedo arrasta e desceu dentro de `rect` (e nenhuma área de dentro usou o arraste)
+    pub fn dragIn(ui: *const Ui, rect: rl.Rectangle) bool {
+        return ui.touch and ui.held and ui.dragging and !ui.drag_used and rl.checkCollisionPointRec(ui.press_point, rect);
     }
 
     /// a dica `text` aparece se o mouse fica um instante em `rect` (desenhada por `drawTip`, no fim do quadro)

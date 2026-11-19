@@ -24,6 +24,7 @@ const dialogs = ui_kit.dialogs;
 const view3d = ui_kit.view3d;
 const table_mod = ui_kit.table;
 const numbers_mod = ui_kit.numbers;
+const phone_kit = ui_kit.phone;
 const python_bridge = @import("python_bridge.zig");
 const assembly = @import("assembly.zig");
 const manager = @import("manager");
@@ -496,6 +497,10 @@ pub const Page = struct {
     last_form_edit: i96 = 0, // quando foi a última edição (a digitação seguida é um passo só)
     scroll_to: f32 = 0, // rolagem pedida na linha de comando (prints)
     scroll_frames: u8 = 0,
+    // o jeito celular (a tela diz a cada quadro): o resultado em cima, um gráfico por vez, e as entradas na folha
+    phone: bool = false,
+    sheet: phone_kit.Sheet = .{},
+    chart_shown: usize = 0, // o gráfico à mostra no celular
 
     /// o avião aberto na Montagem (o Python abre o mesmo arquivo antes do próximo pedido); a análise pede os
     /// campos de novo, porque eles dependem do avião
@@ -712,11 +717,24 @@ pub const Page = struct {
                 page.scroll_to = 0;
             }
         }
+        if (page.phone) return page.drawPhone(ui, rect);
         sidebar.update(ui, rect.x, rect.y, rect.height, 280, rect.width - 360);
         const sidebar_width = sidebar.width;
         page.drawSidebar(ui, .{ .x = rect.x, .y = rect.y, .width = sidebar_width, .height = rect.height });
         page.drawResult(ui, .{ .x = rect.x + sidebar_width, .y = rect.y, .width = rect.width - sidebar_width, .height = rect.height });
         sidebar.draw(rect.x, rect.y, rect.height);
+    }
+
+    /// o jeito celular: o resultado em cima e a folha das entradas por cima dele, puxada de baixo
+    fn drawPhone(page: *Page, ui: *widgets.Ui, rect: rl.Rectangle) void {
+        const sheet = page.sheet.place(ui, rect, page.sheetHead());
+        page.drawResult(ui, .{ .x = rect.x, .y = rect.y, .width = rect.width, .height = @max(0, sheet.y - rect.y) });
+        page.drawSidebar(ui, phone_kit.Sheet.drawBack(sheet));
+    }
+
+    /// a altura da linha de cima da folha: "Entradas", o Rodar e a situação (fica à mostra com a folha recolhida)
+    fn sheetHead(page: *const Page) f32 {
+        return if (page.kind == .simulation) 66 else 44;
     }
 
     /// as janelas da página por cima da tela inteira
@@ -1492,10 +1510,17 @@ pub const Page = struct {
 
     fn drawSidebar(page: *Page, ui: *widgets.Ui, rect: rl.Rectangle) void {
         rl.drawRectangleRec(rect, theme.colors.panel);
-        rl.drawRectangleRec(.{ .x = rect.x + rect.width - 1, .y = rect.y, .width = 1, .height = rect.height }, theme.colors.line);
-        const footer_height: f32 = if (page.kind == .simulation) 112 else 64;
-        const body: rl.Rectangle = .{ .x = rect.x, .y = rect.y + 4, .width = rect.width - 1, .height = rect.height - footer_height - 4 };
-        const footer: rl.Rectangle = .{ .x = rect.x, .y = rect.y + rect.height - footer_height, .width = rect.width - 1, .height = footer_height };
+        if (!page.phone) rl.drawRectangleRec(.{ .x = rect.x + rect.width - 1, .y = rect.y, .width = 1, .height = rect.height }, theme.colors.line);
+        // no celular, o rodapé (Rodar e a situação) vai em cima, na linha que fica à mostra com a folha recolhida
+        const footer_height: f32 = if (page.phone) page.sheetHead() else if (page.kind == .simulation) 112 else 64;
+        const body: rl.Rectangle = if (page.phone)
+            .{ .x = rect.x, .y = rect.y + footer_height, .width = rect.width, .height = @max(0, rect.height - footer_height) }
+        else
+            .{ .x = rect.x, .y = rect.y + 4, .width = rect.width - 1, .height = rect.height - footer_height - 4 };
+        const footer: rl.Rectangle = if (page.phone)
+            .{ .x = rect.x, .y = rect.y, .width = rect.width, .height = footer_height }
+        else
+            .{ .x = rect.x, .y = rect.y + rect.height - footer_height, .width = rect.width - 1, .height = footer_height };
         const busy = page.working();
         // a parte que rola: (etapa) requisitos, título e botões; o formulário; (etapa) guardar e os guardados
         const top = page.side.begin(ui, body);
@@ -1560,6 +1585,7 @@ pub const Page = struct {
             }
         }
         // o rodapé: Rodar e o progresso (análise) ou a mensagem (etapa)
+        if (page.phone) return page.drawSheetHead(ui, footer, busy);
         rl.drawRectangleRec(.{ .x = footer.x, .y = footer.y, .width = footer.width, .height = 1 }, theme.colors.line);
         if (page.kind == .simulation) {
             const button: rl.Rectangle = .{ .x = footer.x + 12, .y = footer.y + 14, .width = footer.width - 24, .height = 34 };
@@ -1586,6 +1612,37 @@ pub const Page = struct {
             const status: []const u8 = if (busy) "calculando..." else std.mem.sliceTo(&page.message, 0);
             _ = widgets.paragraph(ui.fonts.regular, status, footer.x + 12, footer.y + 10, footer.width - 24, 13, theme.colors.muted);
         }
+    }
+
+    /// a linha de cima da folha no celular: "Entradas", o Rodar (ou Parar) à direita, a barra e a situação numa linha
+    fn drawSheetHead(page: *Page, ui: *widgets.Ui, head: rl.Rectangle, busy: bool) void {
+        const x = head.x + 14;
+        theme.text(ui.fonts.bold, "Entradas", x, head.y + 6, 18, theme.colors.accent);
+        const running = busy and page.operation == .run;
+        var status_buffer: [260]u8 = undefined;
+        var status: []const u8 = if (busy) "calculando..." else std.mem.sliceTo(&page.message, 0);
+        if (page.kind == .simulation) {
+            const button: rl.Rectangle = .{ .x = head.x + head.width - 124, .y = head.y, .width = 110, .height = 34 };
+            if (running) {
+                if (widgets.primaryButton(ui, button, "Parar", true)) {
+                    if (page.analysis_run != null) page.stopAnalysis("parado") else {
+                        page.user_stopped = true;
+                        page.bridge.kill();
+                    }
+                }
+                const elapsed: f64 = @as(f64, @floatFromInt(std.Io.Clock.awake.now(clockIo()).nanoseconds - page.started_at)) / 1e9;
+                const said = std.mem.sliceTo(&page.waiter.progress_text, 0);
+                status = std.fmt.bufPrint(&status_buffer, "{d:.0} % · {d:.0} s{s}{s}", .{ 100 * page.waiter.fraction(), elapsed, if (said.len > 0) " · " else "", said }) catch said;
+            } else if (widgets.primaryButton(ui, button, "Rodar", page.fields.len > 0 and !busy)) page.run();
+            widgets.progressBar(.{ .x = x, .y = head.y + 40, .width = head.width - 28, .height = 4 }, if (running) page.waiter.fraction() else 0);
+        }
+        // a situação numa linha só (a folha recolhida tem pouco lugar); a mensagem inteira fica na dica
+        const line: rl.Rectangle = .{ .x = x, .y = head.y + head.height - 20, .width = head.width - 28, .height = 18 };
+        var line_buffer: [260]u8 = undefined;
+        ui.pushClip(line);
+        theme.text(ui.fonts.regular, widgets.format(&line_buffer, "{s}", .{status}), line.x, line.y + 1, 13, theme.colors.muted);
+        ui.popClip();
+        rl.drawRectangleRec(.{ .x = head.x, .y = head.y + head.height - 1, .width = head.width, .height = 1 }, theme.colors.line);
     }
 
     /// o topo da etapa: a linha dos requisitos com o botão, o título com a ajuda e os botões da etapa
@@ -1774,15 +1831,18 @@ pub const Page = struct {
     fn drawResult(page: *Page, ui: *widgets.Ui, rect: rl.Rectangle) void {
         // a peça em 3D primeiro, como na `StagePage`; a imagem sai numa textura, feita antes do recorte da coluna
         const width = rect.width - 2 * gap - 10;
-        const view_card: rl.Rectangle = .{ .x = rect.x + gap, .y = rect.y + gap - page.page.offset, .width = width, .height = view_size.height };
+        // no celular o gráfico vem primeiro (é o que se olha ao mexer nas entradas) e o 3D logo abaixo dele
+        const phone_charts: f32 = if (page.phone and page.charts.len > 0) page.phoneChartHeight(rect) + gap else 0;
+        const view_card: rl.Rectangle = .{ .x = rect.x + gap, .y = rect.y + gap - page.page.offset + phone_charts, .width = width, .height = view_size.height };
         const view_area: rl.Rectangle = .{ .x = view_card.x + 1, .y = view_card.y + 28, .width = view_card.width - 2, .height = view_card.height - 29 };
         if (page.scene) |*scene| page.renderScene(ui, scene, view_area);
         for (page.loads[0..@min(page.loads.len, max_loads)], 0..) |*scene, k| renderLoads(ui, scene, &page.loads_states[k]);
         for (page.tracks[0..@min(page.tracks.len, max_tracks)], 0..) |*scene, k| renderTrack(ui, scene, &page.track_states[k]);
         const top = page.page.begin(ui, rect);
         var y = top + gap;
+        if (phone_charts > 0) y = page.drawPhoneChart(ui, rect, y, width) + gap;
         if (page.scene != null) {
-            _ = widgets.card(ui, view_card, if (page.kind == .simulation) "O avião em 3D (arraste para girar, roda para aproximar)" else "A peça em 3D (arraste para girar, roda para aproximar)");
+            _ = widgets.card(ui, view_card, if (page.phone) (if (page.kind == .simulation) "O avião em 3D" else "A peça em 3D") else if (page.kind == .simulation) "O avião em 3D (arraste para girar, roda para aproximar)" else "A peça em 3D (arraste para girar, roda para aproximar)");
             page.view.blit(ui, view_area);
             // com uma peça em foco (o dispositivo que se está criando): trocar entre ela e o avião inteiro
             if (page.scene.?.focus != null) {
@@ -1835,33 +1895,19 @@ pub const Page = struct {
         var row_height: f32 = 0;
         for (page.loads[0..@min(page.loads.len, max_loads)], 0..) |*scene, k| {
             // uma vista só ocupa a largura toda, como a `LoadView` da GUI PyQt
-            const alone = page.loads.len == 1;
-            const x = rect.x + gap + @as(f32, @floatFromInt(k % 2)) * (column_width + gap);
+            // (no celular, uma por linha)
+            const alone = page.loads.len == 1 or page.phone;
+            const x = if (page.phone) rect.x + gap else rect.x + gap + @as(f32, @floatFromInt(k % 2)) * (column_width + gap);
             row_height = @max(row_height, drawLoads(ui, scene, &page.loads_states[k], x, y, if (alone) width else column_width));
-            if (k % 2 == 1 or k + 1 == page.loads.len) {
+            if (page.phone or k % 2 == 1 or k + 1 == page.loads.len) {
                 y += row_height + gap;
                 row_height = 0;
                 const active = loads_size.update(ui, rect.x + gap, width, y - gap / 2, 0, 200, 1400);
                 widgets.HeightGrip.draw(rect.x + gap, width, y - gap / 2, active);
             }
         }
-        // a borda de baixo de cada fileira de gráficos muda a altura de todos
-        const chart_rows = (page.charts.len + 1) / 2;
-        var chart_grip: ?usize = null;
-        for (0..chart_rows) |row| {
-            const edge = y + @as(f32, @floatFromInt(row + 1)) * (chart_size.height + gap) - gap / 2;
-            if (chart_size.update(ui, rect.x + gap, width, edge, row, 200, 1400)) chart_grip = row;
-        }
-        for (page.charts, 0..) |chart, k| {
-            const x = rect.x + gap + @as(f32, @floatFromInt(k % 2)) * (column_width + gap);
-            const chart_y = y + @as(f32, @floatFromInt(k / 2)) * (chart_size.height + gap);
-            plot.lines(ui, .{ .x = x, .y = chart_y, .width = column_width, .height = chart_size.height }, .{ .title = chart.title, .x_label = chart.x_label, .y_label = chart.y_label, .x_limits = chart.x_limits, .y_limits = chart.y_limits }, chart.series);
-        }
-        for (0..chart_rows) |row| {
-            const edge = y + @as(f32, @floatFromInt(row + 1)) * (chart_size.height + gap) - gap / 2;
-            widgets.HeightGrip.draw(rect.x + gap, width, edge, chart_grip == row);
-        }
-        y += @as(f32, @floatFromInt(chart_rows)) * (chart_size.height + gap);
+        // no PC, os gráficos em duas colunas (no celular eles já foram, no alto)
+        if (!page.phone) y = page.drawChartGrid(ui, rect, y, width);
         if (page.skipped_charts > 0) {
             var note: [96]u8 = undefined;
             theme.text(ui.fonts.regular, widgets.format(&note, "{d} vistas 3D sem desenho nesta tela", .{page.skipped_charts}), rect.x + gap + 4, y, 13, theme.colors.muted);
@@ -1881,6 +1927,67 @@ pub const Page = struct {
             y += height + gap;
         }
         page.page.end(ui, rect, y);
+    }
+
+    /// os gráficos em duas colunas a partir de `top`; a borda de baixo de cada fileira muda a altura de todos.
+    /// Devolve o y de baixo
+    fn drawChartGrid(page: *Page, ui: *widgets.Ui, rect: rl.Rectangle, top: f32, width: f32) f32 {
+        const y = top;
+        const column_width = (width - gap) / 2;
+        const chart_rows = (page.charts.len + 1) / 2;
+        var chart_grip: ?usize = null;
+        for (0..chart_rows) |row| {
+            const edge = y + @as(f32, @floatFromInt(row + 1)) * (chart_size.height + gap) - gap / 2;
+            if (chart_size.update(ui, rect.x + gap, width, edge, row, 200, 1400)) chart_grip = row;
+        }
+        for (page.charts, 0..) |chart, k| {
+            const x = rect.x + gap + @as(f32, @floatFromInt(k % 2)) * (column_width + gap);
+            const chart_y = y + @as(f32, @floatFromInt(k / 2)) * (chart_size.height + gap);
+            plot.lines(ui, .{ .x = x, .y = chart_y, .width = column_width, .height = chart_size.height }, .{ .title = chart.title, .x_label = chart.x_label, .y_label = chart.y_label, .x_limits = chart.x_limits, .y_limits = chart.y_limits }, chart.series);
+        }
+        for (0..chart_rows) |row| {
+            const edge = y + @as(f32, @floatFromInt(row + 1)) * (chart_size.height + gap) - gap / 2;
+            widgets.HeightGrip.draw(rect.x + gap, width, edge, chart_grip == row);
+        }
+        return y + @as(f32, @floatFromInt(chart_rows)) * (chart_size.height + gap);
+    }
+
+    /// a altura do gráfico no celular: a que cabe acima da folha, sem ficar menor que um gráfico legível
+    fn phoneChartBox(rect: rl.Rectangle) f32 {
+        return std.math.clamp(rect.height - 2 * gap - 40, 220, 460);
+    }
+
+    /// a altura do bloco do gráfico no celular (as setas e o gráfico)
+    fn phoneChartHeight(page: *const Page, rect: rl.Rectangle) f32 {
+        return phoneChartBox(rect) + if (page.charts.len > 1) @as(f32, 40) else 0;
+    }
+
+    /// no celular: um gráfico na largura toda, com "‹ k / n ›" em cima; a passada de lado no gráfico também troca.
+    /// Devolve o y de baixo
+    fn drawPhoneChart(page: *Page, ui: *widgets.Ui, rect: rl.Rectangle, top: f32, width: f32) f32 {
+        const count = page.charts.len;
+        if (page.chart_shown >= count) page.chart_shown = 0;
+        const x = rect.x + gap;
+        const shown_height = phoneChartBox(rect);
+        const chart: rl.Rectangle = .{ .x = x, .y = top + 40, .width = width, .height = shown_height };
+        if (count > 1) {
+            const back: rl.Rectangle = .{ .x = x, .y = top, .width = 52, .height = 32 };
+            const forward: rl.Rectangle = .{ .x = x + width - 52, .y = top, .width = 52, .height = 32 };
+            if (dialogs.button(ui, back, "<")) page.chart_shown = (page.chart_shown + count - 1) % count;
+            if (dialogs.button(ui, forward, ">")) page.chart_shown = (page.chart_shown + 1) % count;
+            if (ui.swipe != 0 and rl.checkCollisionPointRec(ui.press_point, chart)) {
+                page.chart_shown = if (ui.swipe < 0) (page.chart_shown + 1) % count else (page.chart_shown + count - 1) % count;
+                ui.swipe = 0;
+            }
+            var label: [48]u8 = undefined;
+            const caption = widgets.format(&label, "gráfico {d} de {d}", .{ page.chart_shown + 1, count });
+            const caption_width = theme.textWidth(ui.fonts.regular, caption, 14);
+            theme.text(ui.fonts.regular, caption, x + (width - caption_width) / 2, top + 9, 14, theme.colors.muted);
+        }
+        const shown = page.charts[page.chart_shown];
+        const chart_box: rl.Rectangle = if (count > 1) chart else .{ .x = x, .y = top, .width = width, .height = shown_height };
+        plot.lines(ui, chart_box, .{ .title = shown.title, .x_label = shown.x_label, .y_label = shown.y_label, .x_limits = shown.x_limits, .y_limits = shown.y_limits }, shown.series);
+        return chart_box.y + chart_box.height;
     }
 
     /// desenha as malhas na textura da vista, com o chão, os eixos e os marcadores (PN em verde, como a GUI PyQt;
