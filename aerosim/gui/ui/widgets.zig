@@ -5,6 +5,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const rg = @import("raygui");
 const theme = @import("theme.zig");
+const tex = @import("tex.zig");
 
 /// o que todo widget precisa: fontes, logo e o estado do mouse neste quadro
 pub const Ui = struct {
@@ -12,6 +13,7 @@ pub const Ui = struct {
     logo: theme.Logo,
     mouse: rl.Vector2 = .{ .x = 0, .y = 0 },
     clicked: bool = false,
+    held: bool = false, // o botão esquerdo apertado (arrastar)
     right_clicked: bool = false, // o botão direito (o menu dos gráficos)
     wheel: f32 = 0,
     // um clique já usado por um widget de cima (ex.: a lista aberta de uma escolha) não vale para os de baixo
@@ -45,6 +47,7 @@ pub const Ui = struct {
     pub fn beginFrame(ui: *Ui) void {
         ui.mouse = rl.getMousePosition();
         ui.clicked = rl.isMouseButtonPressed(.left);
+        ui.held = rl.isMouseButtonDown(.left);
         ui.right_clicked = rl.isMouseButtonPressed(.right);
         ui.wheel = rl.getMouseWheelMove();
         ui.click_taken = false;
@@ -198,6 +201,112 @@ pub fn caretToEnd(ui: *Ui, buffer: [:0]u8) void {
     ui.popClip();
 }
 
+/// a divisa entre duas áreas lado a lado (o formulário e os resultados): arrastar muda a largura da da esquerda.
+/// Chamar `update` antes de desenhar as áreas (o clique na divisa não chega nelas) e `draw` depois
+pub const Splitter = struct {
+    width: f32,
+    dragging: bool = false,
+    hovered: bool = false,
+
+    const grip_half: f32 = 4;
+
+    /// lê o mouse: arrastando a divisa em `left + width`, a largura segue o mouse entre `minimum` e `maximum`
+    pub fn update(splitter: *Splitter, ui: *Ui, left: f32, top: f32, height: f32, minimum: f32, maximum: f32) void {
+        const grip: rl.Rectangle = .{ .x = left + splitter.width - grip_half, .y = top, .width = 2 * grip_half, .height = height };
+        splitter.hovered = !ui.click_taken and ui.hovering(grip);
+        if (splitter.hovered and ui.clicked) {
+            splitter.dragging = true;
+            ui.click_taken = true;
+        }
+        if (splitter.dragging) {
+            if (rl.isMouseButtonDown(.left)) {
+                splitter.width = std.math.clamp(ui.mouse.x - left, minimum, @max(minimum, maximum));
+            } else splitter.dragging = false;
+        }
+        rl.setMouseCursor(if (splitter.hovered or splitter.dragging) .resize_ew else .default);
+    }
+
+    /// a linha da divisa, marcada com o mouse em cima ou arrastando
+    pub fn draw(splitter: *const Splitter, left: f32, top: f32, height: f32) void {
+        const active = splitter.hovered or splitter.dragging;
+        const thickness: f32 = if (active) 3 else 1;
+        rl.drawRectangleRec(.{ .x = left + splitter.width - thickness / 2, .y = top, .width = thickness, .height = height }, if (active) theme.colors.accent else theme.colors.line);
+    }
+};
+
+/// a borda de baixo de um cartão (a vista 3D, uma fileira de gráficos): arrastar muda a altura dele, como a divisa
+/// da barra lateral muda a largura. `row` é quantas alturas iguais há acima da borda (a borda segue o mouse)
+pub const HeightGrip = struct {
+    height: f32,
+    dragging: bool = false,
+    start_mouse: f32 = 0,
+    start_height: f32 = 0,
+    rows: f32 = 1,
+
+    const grip_half: f32 = 5;
+
+    /// lê o mouse na borda (de `left` a `left + width`, em `edge`); verdadeiro com o mouse em cima ou arrastando
+    pub fn update(grip: *HeightGrip, ui: *Ui, left: f32, width: f32, edge: f32, row: usize, minimum: f32, maximum: f32) bool {
+        const area: rl.Rectangle = .{ .x = left, .y = edge - grip_half, .width = width, .height = 2 * grip_half };
+        const hovered = !ui.click_taken and ui.hovering(area);
+        if (hovered and ui.clicked and !grip.dragging) {
+            grip.dragging = true;
+            grip.start_mouse = ui.mouse.y;
+            grip.start_height = grip.height;
+            grip.rows = @floatFromInt(row + 1);
+            ui.click_taken = true;
+        }
+        if (grip.dragging) {
+            if (rl.isMouseButtonDown(.left)) {
+                grip.height = std.math.clamp(grip.start_height + (ui.mouse.y - grip.start_mouse) / grip.rows, minimum, maximum);
+            } else grip.dragging = false;
+        }
+        const active = hovered or grip.dragging;
+        if (active) rl.setMouseCursor(.resize_ns);
+        return active;
+    }
+
+    /// a marca da borda: três traços no meio, e a borda inteira em destaque com o mouse em cima
+    pub fn draw(left: f32, width: f32, edge: f32, active: bool) void {
+        if (active) {
+            rl.drawRectangleRec(.{ .x = left + 6, .y = edge - 1.5, .width = width - 12, .height = 3 }, theme.colors.accent);
+            return;
+        }
+        const middle = left + width / 2;
+        for (0..3) |k| {
+            const offset: f32 = @as(f32, @floatFromInt(k)) * 3 - 3;
+            rl.drawLineEx(.{ .x = middle - 10, .y = edge - 4 + offset }, .{ .x = middle + 10, .y = edge - 4 + offset }, 1, theme.colors.line);
+        }
+    }
+};
+
+/// um campo que acabou de entrar em edição mostra o valor antigo todo marcado: a primeira tecla de texto troca o
+/// valor inteiro pelo que se digita (como selecionar tudo), e apagar ou mover o cursor volta à edição normal.
+/// Chamar logo depois do `rg.textBox` do campo, com o comprimento do texto quando a edição começou
+pub fn replaceOnType(ui: *Ui, box: rl.Rectangle, buffer: [:0]u8, fresh: *bool, start_length: usize) void {
+    if (!fresh.*) return;
+    const length = std.mem.indexOfScalar(u8, buffer, 0) orelse buffer.len;
+    if (length > start_length) {                 // digitou: fica só o que entrou depois do valor antigo
+        const typed = length - start_length;
+        std.mem.copyForwards(u8, buffer[0..typed], buffer[start_length..length]);
+        @memset(buffer[typed..], 0);
+        fresh.* = false;
+        caretToEnd(ui, buffer);
+        return;
+    }
+    if (length < start_length or rl.isKeyPressed(.left) or rl.isKeyPressed(.right) or rl.isKeyPressed(.home) or
+        rl.isKeyPressed(.end))
+    {
+        fresh.* = false;
+        return;
+    }
+    const padding: f32 = @floatFromInt(rg.getStyle(.default, .text_padding));
+    const width: f32 = @floatFromInt(rg.getTextWidth(buffer[0..length :0]));
+    var marked = theme.colors.accent;
+    marked.a = 70;
+    rl.drawRectangleRec(.{ .x = box.x + padding, .y = box.y + 3, .width = @min(width + 2, box.width - 2 * padding), .height = box.height - 6 }, marked);
+}
+
 /// o "?" de ajuda ao lado de um título: a dica `text` com o mouse em cima
 pub fn helpMark(ui: *Ui, x: f32, y: f32, text: [:0]const u8) void {
     const center: rl.Vector2 = .{ .x = x + 8, .y = y + 8 };
@@ -342,7 +451,7 @@ pub fn progressBar(rect: rl.Rectangle, fill: f32) void {
 pub fn card(ui: *Ui, rect: rl.Rectangle, title: [:0]const u8) rl.Rectangle {
     rounded(rect, 10, theme.colors.field);
     roundedLines(rect, 10, theme.colors.line);
-    theme.text(ui.fonts.regular, title, rect.x + 16, rect.y + 11, 16, theme.colors.accent);
+    _ = tex.draw(ui.fonts.regular, title, rect.x + 16, rect.y + 11, 16, theme.colors.accent);
     return .{ .x = rect.x + 10, .y = rect.y + 34, .width = rect.width - 20, .height = rect.height - 44 };
 }
 

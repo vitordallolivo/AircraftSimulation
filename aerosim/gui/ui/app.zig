@@ -2,14 +2,16 @@
 //! print sem interação do `--shot`.
 //!
 //!   <programa> [LxA]
-//!   <programa> --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME]
+//!   <programa> --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME] [clique=X,Y] [apos=SEGUNDOS]
 //!
 //! `arquivo` vai para o `openFile` da tela (.json, .dat ou uma polar); `acao=NOME` (ou `acao=A,B`) chama `command` da tela para cada nome,
-//! se ela tiver (abre um diálogo para o print, por exemplo).
+//! se ela tiver (abre um diálogo para o print, por exemplo). `clique=X,Y` clica no pixel (X, Y) quando a tela para de
+//! mudar e tira o print depois (a leitura de um gráfico, a escolha de um ponto).
 const std = @import("std");
 const rl = @import("raylib");
 const widgets = @import("widgets.zig");
 const plot = @import("plot.zig");
+const toast = @import("toast.zig");
 
 pub const Args = struct {
     shot: ?[:0]const u8 = null,
@@ -19,7 +21,17 @@ pub const Args = struct {
     tab: ?usize = null, // aba aberta no começo (aba=N), se a tela tiver `selectTab`
     file: ?[:0]const u8 = null, // um arquivo para abrir, se a tela tiver `openFile`
     action: ?[:0]const u8 = null, // acao=NOME, se a tela tiver `command`
+    clicks: [max_clicks]Click = undefined, // clique=X,Y (ou dX,Y: o botão direito; vários com ";"): um por vez, cada um
+    click_count: usize = 0, // depois que a tela para de mudar
+    after: ?f64 = null, // apos=SEGUNDOS: o print sai nesse tempo mesmo com a rodada no meio (o progresso, os parciais)
 };
+
+/// um clique do print: onde e se é o botão direito
+pub const Click = struct { at: rl.Vector2, right: bool = false };
+const max_clicks = 8;
+
+/// o clique do print (`clique=X,Y`) que o próximo quadro recebe
+var injected_click: ?Click = null;
 
 /// lê a linha de comando (o primeiro item é o nome do programa)
 pub fn parseArgs(argv: []const [:0]const u8) !Args {
@@ -37,6 +49,18 @@ pub fn parseArgs(argv: []const [:0]const u8) !Args {
             args.file = value;
         } else if (std.mem.startsWith(u8, value, "aba=")) {
             args.tab = std.fmt.parseInt(usize, value[4..], 10) catch return error.BadArgs;
+        } else if (std.mem.startsWith(u8, value, "clique=")) {
+            var list = std.mem.splitScalar(u8, value[7..], ';');
+            while (list.next()) |item| {
+                if (args.click_count >= max_clicks) return error.BadArgs;
+                const right = std.mem.startsWith(u8, item, "d");
+                const point = if (right) item[1..] else item;
+                const cut = std.mem.indexOfScalar(u8, point, ',') orelse return error.BadArgs;
+                args.clicks[args.click_count] = .{ .right = right, .at = .{ .x = std.fmt.parseFloat(f32, point[0..cut]) catch return error.BadArgs, .y = std.fmt.parseFloat(f32, point[cut + 1 ..]) catch return error.BadArgs } };
+                args.click_count += 1;
+            }
+        } else if (std.mem.startsWith(u8, value, "apos=")) {
+            args.after = std.fmt.parseFloat(f64, value[5..]) catch return error.BadArgs;
         } else if (std.mem.startsWith(u8, value, "rolar=")) {
             args.scroll = std.fmt.parseFloat(f32, value[6..]) catch return error.BadArgs;
         } else if (std.mem.indexOfScalar(u8, value, 'x')) |cut| {
@@ -48,7 +72,7 @@ pub fn parseArgs(argv: []const [:0]const u8) !Args {
 }
 
 fn isFile(value: []const u8) bool {
-    for ([_][]const u8{ ".json", ".dat", ".txt", ".csv", ".pol" }) |extension| if (std.ascii.endsWithIgnoreCase(value, extension)) return true;
+    for ([_][]const u8{ ".json", ".cfg", ".ini", ".xlsx", ".dat", ".txt", ".csv", ".pol" }) |extension| if (std.ascii.endsWithIgnoreCase(value, extension)) return true;
     return false;
 }
 
@@ -74,6 +98,7 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     defer ui.deinit();
     // uma tela que abre outros programas (a tela inicial do pacote) recebe o Io do processo
     if (@hasField(@TypeOf(screen.*), "io")) screen.io = init.io;
+    if (!shot) @import("system.zig").process_io = init.io; // a janela de arquivo do sistema (o print fica com a de dentro)
     screen.start();
     screen.scroll = args.scroll;
     if (args.file) |path| {
@@ -90,9 +115,22 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     }
 
     var frames: usize = 0;
+    var next_click: usize = 0;
+    var quiet: usize = 0; // quadros seguidos sem rodada: as vistas 3D desenham na textura o tamanho do quadro anterior
     while (!rl.windowShouldClose()) : (frames += 1) {
         drawFrame(&ui, screen, shot);
-        if (shot and frames == 3) {
+        // o print sai no 3º quadro, ou depois, quando a tela para de mudar sozinha (`busy`: uma rodada pedida com
+        // acao=rodar), até uns minutos de quadros, e mais três quadros para as vistas 3D do resultado
+        const late = if (args.after) |seconds| rl.getTime() >= seconds else false;
+        const settling = @hasDecl(@TypeOf(screen.*), "busy") and screen.busy() and frames < 200_000 and !late;
+        quiet = if (settling) 0 else quiet + 1;
+        if (shot and frames >= 3 and quiet >= 3 and next_click < args.click_count) {
+            injected_click = args.clicks[next_click];
+            next_click += 1;
+            quiet = 0;
+            continue;
+        }
+        if (shot and frames >= 3 and quiet >= 3) {
             const image = try rl.loadImageFromScreen();
             defer rl.unloadImage(image);
             if (!rl.exportImage(image, args.shot.?)) {
@@ -110,6 +148,14 @@ fn drawFrame(ui: *widgets.Ui, screen: anytype, shot: bool) void {
     const height: f32 = @floatFromInt(rl.getScreenHeight());
     ui.beginFrame();
     if (shot) ui.wheel = 0; // o print não rola sozinho
+    if (injected_click) |click| { // o clique=X,Y do print
+        ui.mouse = click.at;
+        if (click.right) ui.right_clicked = true else {
+            ui.clicked = true;
+            ui.held = true;
+        }
+        injected_click = null;
+    }
     rl.beginDrawing();
     // com o menu de um gráfico ou o seletor de exportar aberto, a tela não recebe o clique nem a roda
     const busy = plot.overlayActive();
@@ -120,6 +166,7 @@ fn drawFrame(ui: *widgets.Ui, screen: anytype, shot: bool) void {
         ui.right_clicked = false;
         ui.wheel = 0;
     }
+    toast.takeClick(ui);
     screen.draw(ui, width, height);
     if (busy) {
         ui.click_taken = false;
@@ -127,6 +174,7 @@ fn drawFrame(ui: *widgets.Ui, screen: anytype, shot: bool) void {
         ui.right_clicked = right_clicked;
     }
     plot.overlay(ui, width, height);
+    toast.draw(ui, width, height);
     ui.drawTip(width, height);
     rl.endDrawing();
 }

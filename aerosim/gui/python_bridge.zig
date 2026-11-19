@@ -1,18 +1,30 @@
-//! A ponte com os managers em Python (`aerosim/bridge.py`): a tela abre `python -m aerosim.bridge` como processo
-//! filho e conversa por uma mensagem JSON por linha, na entrada e na saída padrão dele. Aqui só se manda o pedido e
-//! se lê a resposta; quem desenha é `page.zig`, e quem calcula é o Python (que chama o núcleo).
+//! A ponte com os métodos de fora do núcleo (lltdrek, AeroSandbox, AVL), que são bibliotecas em Python: a tela abre
+//! `python -m aerosim.bridge` (o adaptador) como processo filho e conversa por uma mensagem JSON por linha, na
+//! entrada e na saída padrão dele. Aqui só se manda o pedido e se lê a resposta; quem pede é a análise
+//! (`simulation.External`), e quem desenha é `page.zig`.
 //!
 //! Um processo serve todas as abas. Cada pedido leva um número (`id`), e uma thread lê as respostas e entrega cada
 //! uma a quem pediu (um `Waiter`), porque o Python responde fora de ordem: uma rodada longa não segura as outras abas.
 //! Quem chama `request` está numa `Job` (`ui/jobs.zig`), fora do laço da tela, e espera ali a resposta dele. As
 //! linhas de progresso que chegam antes atualizam o `Waiter`, que a tela lê a cada quadro.
-//! No navegador não há processo filho: lá a ponte vai ser o Pyodide num web worker (a etapa seguinte do plano).
+//! No navegador não há processo filho nem thread: o Pyodide roda o mesmo `aerosim/bridge.py` na página
+//! (`aerosim/gui/web/python.html`, num iframe), e cada pedido é uma chamada ao JavaScript que volta já com a resposta
+//! (`Module.pythonCall`). A tela fica parada enquanto a conta roda, como as outras contas longas no navegador.
+//! No pacote instalável (`zig build pacote`) o Python vem junto, na pasta `app/` ao lado do programa (`app/python`,
+//! com o adaptador e as bibliotecas); a ponte usa esse antes do Python do sistema.
 const std = @import("std");
+const builtin = @import("builtin");
 const ui_kit = @import("ui");
 
-pub const Error = error{ NotStarted, PythonNotFound, BridgeClosed, BadReply, NotInBrowser };
+pub const Error = error{ NotStarted, PythonNotFound, BridgeClosed, BadReply, PythonLoading };
+
+const in_browser = ui_kit.system.in_browser;
+const emscripten = std.os.emscripten;
 
 const max_waiting = 32;
+
+/// o Python que o pacote instalável leva, relativo à pasta `app/`
+const bundled_python = if (builtin.os.tag == .windows) "python/python.exe" else "python/bin/python3";
 
 /// um pedido em andamento: a resposta chega aqui, na memória de quem pediu
 pub const Waiter = struct {
@@ -43,14 +55,24 @@ pub const Bridge = struct {
     waiting_lock: std.Io.Mutex = .init,
     waiting: [max_waiting]?*Waiter = [_]?*Waiter{null} ** max_waiting,
     closed: std.atomic.Value(bool) = .init(false),
-    opened_path: [1024]u8 = undefined, // o avião que o Python já tem aberto
-    opened_len: usize = 0,
-    open_lock: std.Io.Mutex = .init,
+    browser_ready: bool = false, // no navegador: o Pyodide da página já respondeu que está pronto
 
     /// abre o Python na pasta do repositório (onde está `aerosim/bridge.py`), espera a linha de pronto e põe a
-    /// thread de leitura para rodar; `io` é a do processo (o Python herda o ambiente dela)
-    pub fn start(bridge: *Bridge, io: std.Io) !void {
-        if (ui_kit.system.in_browser) return Error.NotInBrowser;
+    /// thread de leitura para rodar; `process` é a `Io` do processo (o Python herda o ambiente dela). No navegador
+    /// só confere se a página já carregou o Python (`error.PythonLoading` enquanto não)
+    pub fn start(bridge: *Bridge, process: ?std.Io) !void {
+        if (in_browser) {
+            if (bridge.browser_ready) return;
+            bridge.io = ui_kit.system.io();
+            // 1 pronto, 0 carregando, -2 falhou (`aerosim/gui/web/python.html`)
+            switch (emscripten.emscripten_run_script_int("Module.pythonState ? Module.pythonState() : 0")) {
+                1 => bridge.browser_ready = true,
+                0 => return Error.PythonLoading,
+                else => return Error.PythonNotFound,
+            }
+            return;
+        }
+        const io = process orelse return Error.NotStarted;
         bridge.start_lock.lockUncancelable(io);
         defer bridge.start_lock.unlock(io);
         if (bridge.child != null and !bridge.closed.load(.acquire)) return;
@@ -60,11 +82,15 @@ pub const Bridge = struct {
             std.debug.print("ponte: não achei aerosim/bridge.py subindo da pasta atual\n", .{});
             return Error.PythonNotFound;
         };
-        const candidates = [_][]const u8{ "python3", "python" };
+        var bundled_buffer: [std.fs.max_path_bytes]u8 = undefined;
+        const bundled = std.fmt.bufPrint(&bundled_buffer, "{s}/{s}", .{ root, bundled_python }) catch "";
+        const has_bundled = bundled.len > 0 and if (std.Io.Dir.cwd().access(io, bundled, .{})) |_| true else |_| false;
+        const candidates = [_][]const u8{ if (has_bundled) bundled else "python3", "python3", "python" };
         for (candidates) |program| {
             const child = std.process.spawn(io, .{
                 .argv = &.{ program, "-m", "aerosim.bridge" },
                 .cwd = .{ .path = root },
+                .create_no_window = true, // no Windows, o Python não abre uma janela de console
                 .stdin = .pipe,
                 .stdout = .pipe,
                 .stderr = .inherit,
@@ -74,7 +100,6 @@ pub const Bridge = struct {
             };
             bridge.child = child;
             bridge.reader = child.stdout.?.readerStreaming(io, &bridge.read_buffer);
-            bridge.opened_len = 0;
             bridge.closed.store(false, .release);
             // a primeira linha é {"id": 0, "ok": true, "ready": true}
             var line: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
@@ -87,6 +112,17 @@ pub const Bridge = struct {
             return;
         }
         return Error.PythonNotFound;
+    }
+
+    /// o "Parar" de emergência: mata o Python no meio da conta (o pedido que esperava volta sem resposta); o
+    /// próximo pedido abre outro
+    pub fn kill(bridge: *Bridge) void {
+        if (in_browser) return;
+        var child = bridge.child orelse return;
+        bridge.child = null;
+        bridge.write_lock.lockUncancelable(bridge.io);
+        defer bridge.write_lock.unlock(bridge.io);
+        child.kill(bridge.io);
     }
 
     /// fecha a entrada do Python (ele sai sozinho) e espera o processo
@@ -102,6 +138,7 @@ pub const Bridge = struct {
     /// em `waiter.reply`, na `waiter.memory`. Resposta com `"ok": false` vira `error.BadReply`, com o texto em
     /// `waiter.failure`
     pub fn request(bridge: *Bridge, waiter: *Waiter, fields: []const u8) !std.json.Value {
+        if (in_browser) return bridge.requestInPage(waiter, fields);
         const child = bridge.child orelse return Error.NotStarted;
         waiter.id = bridge.next_id.fetchAdd(1, .monotonic);
         waiter.reply = null;
@@ -120,6 +157,26 @@ pub const Bridge = struct {
             };
         }
         while (!waiter.done.load(.acquire)) std.Io.sleep(bridge.io, .fromMilliseconds(2), .awake) catch {};
+        return checkReply(waiter);
+    }
+
+    /// o pedido no navegador: o JSON vai como objeto para `Module.pythonCall` (JSON é JavaScript válido) e a resposta
+    /// volta como texto, na hora
+    fn requestInPage(bridge: *Bridge, waiter: *Waiter, fields: []const u8) !std.json.Value {
+        if (!bridge.browser_ready) return Error.NotStarted;
+        waiter.id = bridge.next_id.fetchAdd(1, .monotonic);
+        waiter.reply = null;
+        waiter.failure[0] = 0;
+        const script = try std.fmt.allocPrintSentinel(waiter.memory, "Module.pythonCall({{\"id\": {d}, {s}}})", .{ waiter.id, fields }, 0);
+        const answer = emscripten.emscripten_run_script_string(script.ptr) orelse return Error.BridgeClosed;
+        const value = std.json.parseFromSliceLeaky(std.json.Value, waiter.memory, std.mem.sliceTo(answer, 0), .{ .allocate = .alloc_always }) catch return Error.BadReply;
+        waiter.reply = if (value == .object) value else return Error.BadReply;
+        waiter.done.store(true, .release);
+        return checkReply(waiter);
+    }
+
+    /// a resposta guardada em `waiter`, ou `error.BadReply` com o texto do erro em `waiter.failure`
+    fn checkReply(waiter: *Waiter) !std.json.Value {
         const reply = waiter.reply orelse return Error.BridgeClosed;
         if (reply.object.get("ok")) |ok| if (ok == .bool and ok.bool) return reply;
         const text = if (reply.object.get("error")) |message| (if (message == .string) message.string else "erro sem texto") else "erro sem texto";
@@ -127,21 +184,9 @@ pub const Bridge = struct {
         return Error.BadReply;
     }
 
-    /// faz o Python abrir o avião `path`, se ainda não é o que ele tem aberto (uma aba de cada vez)
-    pub fn openAircraft(bridge: *Bridge, waiter: *Waiter, path: []const u8) !void {
-        if (path.len == 0) return;
-        bridge.open_lock.lockUncancelable(bridge.io);
-        defer bridge.open_lock.unlock(bridge.io);
-        if (std.mem.eql(u8, bridge.opened_path[0..bridge.opened_len], path)) return;
-        const fields = try std.fmt.allocPrint(waiter.memory, "\"op\": \"open\", \"path\": {f}", .{std.json.fmt(path, .{})});
-        _ = try bridge.request(waiter, fields);
-        const length = @min(path.len, bridge.opened_path.len);
-        @memcpy(bridge.opened_path[0..length], path[0..length]);
-        bridge.opened_len = length;
-    }
-
     /// pede para parar a rodada de `waiter` (a resposta dela chega como "cancelado")
     pub fn cancel(bridge: *Bridge, waiter: *const Waiter) void {
+        if (in_browser) return; // no navegador nada roda junto com a conta: não há como pedir
         const child = bridge.child orelse return;
         var text: [64]u8 = undefined;
         const line = std.fmt.bufPrint(&text, "{{\"op\": \"cancel\", \"target\": {d}}}\n", .{waiter.id}) catch return;
@@ -239,8 +284,18 @@ fn isProgress(line: []const u8) bool {
     return std.mem.indexOf(u8, line[0..@min(line.len, 40)], "\"progress\":") != null;
 }
 
-/// a pasta do repositório: a primeira, subindo a partir da atual, que tem `aerosim/bridge.py`
+/// a pasta onde está `aerosim/bridge.py`: a `app/` ao lado do programa (o pacote instalável) ou a primeira, subindo
+/// a partir da atual (o repositório)
 fn findRepository(io: std.Io, buffer: []u8) ?[]const u8 {
+    if (std.process.executableDirPath(io, buffer)) |length| {
+        if (std.fmt.bufPrint(buffer[length..], "/app", .{})) |added| {
+            const app = buffer[0 .. length + added.len];
+            var probe: [std.fs.max_path_bytes]u8 = undefined;
+            if (std.fmt.bufPrint(&probe, "{s}/aerosim/bridge.py", .{app})) |path| {
+                if (std.Io.Dir.cwd().access(io, path, .{})) |_| return app else |_| {}
+            } else |_| {}
+        } else |_| {}
+    } else |_| {}
     const length = std.process.currentPath(io, buffer) catch return null;
     var folder: []const u8 = buffer[0..length];
     while (true) {

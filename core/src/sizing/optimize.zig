@@ -36,7 +36,7 @@ pub const Problem = struct {
         const spec = self.specs[i];
         const lo = @min(spec.lo, spec.hi);
         const hi = @max(spec.lo, spec.hi);
-        if (spec.kind == sizing_types.var_continuous or lo == hi) return .{ lo, hi };
+        if (spec.kind == .continuous or lo == hi) return .{ lo, hi };
         const il = @ceil(lo);
         const ih = @max(@floor(hi), il);
         return .{ il - 0.499, ih + 0.499 };
@@ -197,7 +197,7 @@ comptime {
 /// roda o método `opts.method`
 pub fn run(problem: Problem, opts: *const sizing_types.OptOpts, rec: *Recorder) Result {
     inline for (all, 0..) |Optimizer, i| {
-        if (opts.method == i) return Optimizer.run(problem, opts, rec);
+        if (@intFromEnum(opts.method) == i) return Optimizer.run(problem, opts, rec);
     }
     return all[0].run(problem, opts, rec);
 }
@@ -208,7 +208,7 @@ const fuzz = @import("../util/fuzz.zig");
 
 /// esfera deslocada com uma variável inteira e uma de lista: máximo em (1.3, −0.7, 3, 2)
 const Sphere = struct {
-    specs: [4]sizing_types.VarSpec = .{ .{ .lo = -5, .hi = 5 }, .{ .lo = -5, .hi = 5 }, .{ .lo = 0, .hi = 6, .kind = sizing_types.var_integer }, .{ .lo = 0, .hi = 4, .kind = sizing_types.var_list } },
+    specs: [4]sizing_types.VarSpec = .{ .{ .lo = -5, .hi = 5 }, .{ .lo = -5, .hi = 5 }, .{ .lo = 0, .hi = 6, .kind = .integer }, .{ .lo = 0, .hi = 4, .kind = .list } },
     calls: usize = 0,
 
     fn evaluate(ctx: *anyopaque, design_vars: []const f64) Eval {
@@ -218,7 +218,7 @@ const Sphere = struct {
         var sum_sq: f64 = 0;
         var ind: sizing_types.Individual = .{};
         for (design_vars, 0..) |value, i| {
-            const rounded = if (self.specs[i].kind == sizing_types.var_continuous) value else @round(value);
+            const rounded = if (self.specs[i].kind == .continuous) value else @round(value);
             ind.x[i] = rounded;
             sum_sq += (rounded - target[i]) * (rounded - target[i]);
         }
@@ -247,12 +247,12 @@ test "a interface troca o método; a mesma semente dá o mesmo resultado" {
     var sphere: Sphere = .{};
     var buf: [600]sizing_types.Individual = undefined;
     var rec: Recorder = .{ .buf = &buf };
-    var opts: sizing_types.OptOpts = .{ .particles = 10, .iterations = 30, .seed = 5, .method = sizing_types.method_random };
+    var opts: sizing_types.OptOpts = .{ .particles = 10, .iterations = 30, .seed = 5, .method = .random };
     const first = run(sphere.problem(), &opts, &rec);
     rec.n = 0;
     const second = run(sphere.problem(), &opts, &rec);
     try testing.expectEqual(first.fitness, second.fitness);
-    opts.method = sizing_types.method_pso;
+    opts.method = .particle_swarm;
     rec.n = 0;
     const swarm = run(sphere.problem(), &opts, &rec);
     try testing.expect(swarm.fitness >= first.fitness); // o enxame não perde da busca aleatória com o mesmo orçamento
@@ -266,15 +266,15 @@ fn fuzzOpt(_: void, src: *fuzz.Src) !void {
     }
     var buf: [64]sizing_types.Individual = undefined;
     var rec: Recorder = .{ .buf = &buf };
-    const opts: sizing_types.OptOpts = .{ .particles = @intCast(src.int(u32, 0, 12)), .iterations = @intCast(src.int(u32, 0, 8)), .seed = src.range(0, 1e6), .method = @intCast(src.int(u32, 0, 1)), .w = src.range(0, 1.2), .c1 = src.range(0, 3), .c2 = src.range(0, 3) };
+    const opts: sizing_types.OptOpts = .{ .particles = @intCast(src.int(u32, 0, 12)), .iterations = @intCast(src.int(u32, 0, 8)), .seed = src.range(0, 1e6), .method = @enumFromInt(src.int(i32, 0, 1)), .w = src.range(0, 1.2), .c1 = src.range(0, 3), .c2 = src.range(0, 3) };
     _ = run(sphere.problem(), &opts, &rec);
     // nenhum ponto avaliado sai dos limites (inteiros e listas arredondados dentro deles)
     for (buf[0..rec.n]) |ind| {
         for (0..4) |i| {
             const spec = sphere.specs[i];
             errdefer std.debug.print("i={d} x={d} lo={d} hi={d} kind={d}\n", .{ i, ind.x[i], spec.lo, spec.hi, spec.kind });
-            const lo = if (spec.kind == sizing_types.var_continuous or spec.lo == spec.hi) spec.lo else @ceil(spec.lo);
-            const hi = if (spec.kind == sizing_types.var_continuous or spec.lo == spec.hi) spec.hi else @max(@floor(spec.hi), @ceil(spec.lo));
+            const lo = if (spec.kind == .continuous or spec.lo == spec.hi) spec.lo else @ceil(spec.lo);
+            const hi = if (spec.kind == .continuous or spec.lo == spec.hi) spec.hi else @max(@floor(spec.hi), @ceil(spec.lo));
             try testing.expect(ind.x[i] >= lo - 1e-9 and ind.x[i] <= hi + 1e-9);
         }
     }

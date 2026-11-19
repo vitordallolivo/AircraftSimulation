@@ -63,3 +63,45 @@ pub const Job = struct {
         job.active = false;
     }
 };
+
+/// verdadeiro onde há threads (o programa instalado); na web as contas andam em fatias no quadro
+pub const threads_available = !no_threads;
+
+/// a caixa de mensagens entre a thread da conta e a tela: uma fila de um produtor e um consumidor, sem trava. A conta
+/// só escreve (`push`) e a tela só lê (`pop`), a cada quadro, como numa conexão de rede; nenhuma das duas espera a
+/// outra. Cheia, `push` devolve falso e quem manda decide se descarta (o progresso) ou tenta de novo (o fim)
+pub fn Mailbox(comptime Item: type, comptime size: usize) type {
+    return struct {
+        items: [size]Item = undefined,
+        head: std.atomic.Value(usize) = .init(0), // o próximo a ler: só a tela escreve
+        tail: std.atomic.Value(usize) = .init(0), // o próximo a escrever: só a conta escreve
+
+        const Queue = @This();
+
+        /// põe uma mensagem na fila (da thread da conta); falso se está cheia
+        pub fn push(queue: *Queue, item: Item) bool {
+            const tail = queue.tail.load(.monotonic);
+            if (tail - queue.head.load(.acquire) == size) return false;
+            queue.items[tail % size] = item;
+            queue.tail.store(tail + 1, .release);
+            return true;
+        }
+
+        /// tira a mensagem mais antiga (da tela); nulo se não há nenhuma
+        pub fn pop(queue: *Queue) ?Item {
+            const head = queue.head.load(.monotonic);
+            if (head == queue.tail.load(.acquire)) return null;
+            const item = queue.items[head % size];
+            queue.head.store(head + 1, .release);
+            return item;
+        }
+    };
+}
+
+test "a caixa de mensagens entrega na ordem e recusa cheia" {
+    var box: Mailbox(u32, 4) = .{};
+    for (0..4) |i| try std.testing.expect(box.push(@intCast(i)));
+    try std.testing.expect(!box.push(9));
+    for (0..4) |i| try std.testing.expectEqual(@as(u32, @intCast(i)), box.pop().?);
+    try std.testing.expect(box.pop() == null);
+}

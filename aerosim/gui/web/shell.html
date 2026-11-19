@@ -11,6 +11,7 @@
       e a tela abre pelo `app_open_file` (ui/app.zig), como o arquivo da linha de comando no PC
     - downloadFile(caminho): o programa grava na memória e chama isto para a página baixar o arquivo (ui/system.zig)
     - o link de volta à tela inicial (index.html)
+    - no aerosim, os métodos de fora do núcleo (aerosim-python.html, num iframe), baixados só quando um deles é pedido
 -->
 <style>
   html, body { margin: 0; height: 100%; background: #e9ebef; overflow: hidden; }
@@ -44,7 +45,7 @@
 </div>
 <div id="loading">carregando...</div>
 <div id="drop">solte o arquivo</div>
-<input id="picker" type="file" accept=".json,.dat,.txt,.csv,.pol" hidden>
+<input id="picker" type="file" accept=".json,.cfg,.ini,.xlsx,.dat,.txt,.csv,.pol" hidden>
 <script>
   'use strict';
   const program = (location.pathname.split('/').pop() || 'aerosim.html').replace(/\.html$/, '');
@@ -102,6 +103,24 @@
     setStatus: (text) => { if (text) loading.textContent = program + '\n' + text.replace('Downloading data...', 'baixando...'); },
   };
   window.addEventListener('error', (event) => { loading.textContent = program + '\nerro: ' + event.message; });
+  // Os métodos de fora do núcleo (lltdrek, AeroSandbox, AVL) rodam no adaptador em Python (aerosim/bridge.py), num
+  // iframe escondido (aerosim-python.html, de aerosim/gui/web/python.html). O iframe só é criado quando a tela pede um
+  // desses métodos pela primeira vez (Module.pythonState); antes disso nada do Pyodide é baixado. O pedido leva o
+  // avião inteiro em JSON, então nenhum arquivo precisa passar de um lado para o outro.
+  if (program === 'aerosim') {
+    let frame = null;
+    const python = () => {
+      if (!frame) {
+        frame = document.createElement('iframe');
+        frame.src = 'aerosim-python.html';
+        frame.hidden = true;
+        document.body.appendChild(frame);
+      }
+      return frame.contentWindow;
+    };
+    Module.pythonState = () => (python() && python().pythonState ? python().pythonState() : 0);
+    Module.pythonCall = (request) => python().pythonCall(JSON.stringify(request));
+  }
 </script>
 {{{ SCRIPT }}}
 </body>

@@ -30,6 +30,47 @@ pub fn kindColor(kind: Kind) rl.Color {
     };
 }
 
+/// a cor de uma peça pelo nome do tipo, a tabela `COLORS` inteira de `aerosim/gui/widgets/view3d.py` (com a
+/// transparência do disco da hélice e do tanque); um tipo desconhecido sai cinza
+pub fn colorByName(kind: []const u8) rl.Color {
+    if (std.meta.stringToEnum(Kind, kind)) |known| return kindColor(known);
+    const table = [_]struct { name: []const u8, rgba: [4]f32 }{
+        .{ .name = "propdisk", .rgba = .{ 0.9, 0.3, 0.3, 0.25 } },
+        .{ .name = "tank", .rgba = .{ 0.6, 0.85, 0.95, 0.25 } },
+        .{ .name = "liquid", .rgba = .{ 0.15, 0.45, 0.95, 0.75 } },
+        .{ .name = "payload", .rgba = .{ 0.55, 0.35, 0.15, 1 } },
+        .{ .name = "ballast", .rgba = .{ 0.25, 0.25, 0.28, 1 } },
+        .{ .name = "wheel", .rgba = .{ 0.1, 0.1, 0.1, 1 } },
+        .{ .name = "strut", .rgba = .{ 0.3, 0.3, 0.3, 1 } },
+    };
+    for (table) |entry| if (std.mem.eql(u8, entry.name, kind)) {
+        var color = fraction(entry.rgba[0], entry.rgba[1], entry.rgba[2]);
+        color.a = @intFromFloat(entry.rgba[3] * 255);
+        return color;
+    };
+    return fraction(0.7, 0.7, 0.7);
+}
+
+/// a cor de um valor `t` (0 a 1) num mapa de campo, como os da vista de cargas em Python (`load_view.py`): o "turbo"
+/// do Google (Mikhailov, 2019) por um polinômio de quinto grau que circula com ele (a conferir contra a tabela do
+/// turbo) ou, com sinal, um mapa divergente azul–cinza–vermelho no lugar do CET-D1 (a conferir contra a tabela do CET)
+pub fn fieldColor(value: f64, signed: bool) rl.Color {
+    const t = std.math.clamp(value, 0, 1);
+    if (signed) {
+        const blue = [3]f64{ 0.13, 0.40, 0.93 };
+        const middle = [3]f64{ 0.86, 0.86, 0.86 };
+        const red = [3]f64{ 0.90, 0.18, 0.15 };
+        const from = if (t < 0.5) blue else middle;
+        const to = if (t < 0.5) middle else red;
+        const s = if (t < 0.5) t * 2 else (t - 0.5) * 2;
+        return fraction(@floatCast(from[0] + (to[0] - from[0]) * s), @floatCast(from[1] + (to[1] - from[1]) * s), @floatCast(from[2] + (to[2] - from[2]) * s));
+    }
+    const red = 0.13572138 + t * (4.61539260 + t * (-42.66032258 + t * (132.13108234 + t * (-152.94239396 + t * 59.28637943))));
+    const green = 0.09140261 + t * (2.19418839 + t * (4.84296658 + t * (-14.18503333 + t * (4.27729857 + t * 2.82956604))));
+    const blue = 0.10667330 + t * (12.64194608 + t * (-60.58204836 + t * (110.36276771 + t * (-89.90310912 + t * 27.34824973))));
+    return fraction(@floatCast(std.math.clamp(red, 0, 1)), @floatCast(std.math.clamp(green, 0, 1)), @floatCast(std.math.clamp(blue, 0, 1)));
+}
+
 /// cor a partir de frações de 0 a 1 (como no pyqtgraph)
 pub fn fraction(red: f32, green: f32, blue: f32) rl.Color {
     return .{ .r = @intFromFloat(red * 255), .g = @intFromFloat(green * 255), .b = @intFromFloat(blue * 255), .a = 255 };
@@ -133,17 +174,76 @@ pub const View = struct {
         view.label_count += 1;
     }
 
+    /// onde o ponto `point` aparece na imagem colada em `rect` (pixels da tela); nulo se ele fica atrás da câmera
+    pub fn project(view: *const View, point: Body, rect: rl.Rectangle) ?rl.Vector2 {
+        const target = view.texture orelse return null;
+        const world = toWorld(point);
+        const eye = view.camera.position;
+        const look = view.camera.target;
+        const ahead = (world.x - eye.x) * (look.x - eye.x) + (world.y - eye.y) * (look.y - eye.y) + (world.z - eye.z) * (look.z - eye.z);
+        if (!view.orthographic and ahead <= 0) return null;
+        const at = rl.getWorldToScreenEx(world, view.camera, target.texture.width, target.texture.height);
+        return .{ .x = rect.x + at.x, .y = rect.y + at.y };
+    }
+
+    /// o raio do olho pelo ponto `point` da tela (a imagem colada em `rect`), nos eixos do corpo: a origem e a direção
+    /// (unitária). Serve para saber qual peça está embaixo do mouse
+    pub fn ray(view: *const View, point: rl.Vector2, rect: rl.Rectangle) ?[2]Body {
+        const target = view.texture orelse return null;
+        const world = rl.getScreenToWorldRayEx(.{ .x = point.x - rect.x, .y = point.y - rect.y }, view.camera, target.texture.width, target.texture.height);
+        return .{ toBody(world.position), toBody(world.direction) };
+    }
+
+    /// as direções da tela no corpo: para a direita e para cima (unitárias), para arrastar uma peça no plano da tela
+    pub fn screenAxes(view: *const View) [2]Body {
+        const eye = toBody(view.camera.position);
+        const look = toBody(view.camera.target);
+        const ahead = normalized(subtract(look, eye));
+        const up_world: Body = .{ 0, 0, -1 }; // o "para cima" da câmera (y do raylib) é −z do corpo
+        const right = normalized(cross(ahead, up_world));
+        const up = cross(right, ahead);
+        return .{ right, up };
+    }
+
+    /// quantos metros vale um pixel da tela a `depth` metros do olho (na vista em escala, o mesmo em toda parte)
+    pub fn metersPerPixel(view: *const View, rect: rl.Rectangle, depth: f64) f64 {
+        const height: f64 = @max(rect.height, 1);
+        if (view.orthographic) return view.camera.fovy / height;
+        return 2 * depth * @tan(std.math.degreesToRadians(@as(f64, view.camera.fovy)) / 2) / height;
+    }
+
+    /// a distância do olho até o ponto `point` do corpo
+    pub fn depthOf(view: *const View, point: Body) f64 {
+        const eye = toBody(view.camera.position);
+        const offset = subtract(point, eye);
+        return @sqrt(offset[0] * offset[0] + offset[1] * offset[1] + offset[2] * offset[2]);
+    }
+
     /// cola a imagem em `rect` e escreve os textos
     pub fn blit(view: *const View, ui: *widgets.Ui, rect: rl.Rectangle) void {
         const target = view.texture orelse return;
         const texture = target.texture;
         rl.drawTextureRec(texture, .{ .x = 0, .y = 0, .width = @floatFromInt(texture.width), .height = @floatFromInt(-texture.height) }, .{ .x = rect.x, .y = rect.y }, .white);
+        // os textos ficam dentro da vista: um ponto fora dela não escreve por cima do que está ao lado
+        ui.pushClip(rect);
+        defer ui.popClip();
         for (view.labels[0..view.label_count]) |item| {
             const at = rl.getWorldToScreenEx(item.position, view.camera, texture.width, texture.height);
             theme.text(ui.fonts.regular, item.text, rect.x + at.x, rect.y + at.y - 7, 13, item.color);
         }
     }
 };
+
+/// do raylib (y para cima) para o corpo: a volta de `toWorld`
+pub fn toBody(point: rl.Vector3) Body {
+    return .{ -@as(f64, point.z), @as(f64, point.x), -@as(f64, point.y) };
+}
+
+fn normalized(vector: Body) Body {
+    const length = @sqrt(vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]);
+    if (!(length > 0)) return vector;
+    return .{ vector[0] / length, vector[1] / length, vector[2] / length };
+}
 
 fn subtract(a: Body, b: Body) Body {
     return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2] };
@@ -173,6 +273,24 @@ pub fn triangle(a: Body, b: Body, c: Body, color: rl.Color) void {
     const wc = toWorld(c);
     rl.drawTriangle3D(wa, wb, wc, color);
     rl.drawTriangle3D(wa, wc, wb, color);
+}
+
+/// triângulo com uma cor por vértice (o raylib interpola entre elas), dos dois lados: o `smooth=True` com
+/// `vertexColors` da vista de cargas em Python
+pub fn gradientTriangle(a: Body, b: Body, c: Body, color_a: rl.Color, color_b: rl.Color, color_c: rl.Color) void {
+    const corners = [3]rl.Vector3{ toWorld(a), toWorld(b), toWorld(c) };
+    const colors = [3]rl.Color{ color_a, color_b, color_c };
+    rl.gl.rlBegin(rl.gl.rl_triangles);
+    for ([2][3]usize{ .{ 0, 1, 2 }, .{ 0, 2, 1 } }) |order| for (order) |k| {
+        rl.gl.rlColor4ub(colors[k].r, colors[k].g, colors[k].b, colors[k].a);
+        rl.gl.rlVertex3f(corners[k].x, corners[k].y, corners[k].z);
+    };
+    rl.gl.rlEnd();
+}
+
+/// `gradientTriangle` com a sombra de `shaded`: o volume das superfícies com espessura
+pub fn litTriangle(a: Body, b: Body, c: Body, color_a: rl.Color, color_b: rl.Color, color_c: rl.Color) void {
+    gradientTriangle(a, b, c, shaded(a, b, c, color_a), shaded(a, b, c, color_b), shaded(a, b, c, color_c));
 }
 
 /// quadrilátero plano `a b c d` sombreado dos dois lados como no shader `aero_twosided` da vista em Python:

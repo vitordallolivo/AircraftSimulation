@@ -43,7 +43,8 @@ class AeroCase:
     ref: tuple[float, float, float] = (0.0, 0.0, 0.0)   # ponto dos momentos (corpo, m) — em geral o CG
     rho: float = 1.225
     section: str = "modelo"               # polar 2D dos perfis: "modelo" (linear + estol) | "neuralfoil"
-    n_span: int = 20                      # painéis por semiasa (LLT/VLM)
+    n_span: int = 20                      # refino: painéis por semiasa (LLT/VLM)
+    n_chord: int = 0                      # refino: painéis na corda (VLM, AVL); 0: o padrão do método (VLM 6, AVL 8)
 
 
 FIDELITY = {"modelo": 0, "llt": 1, "vlm": 2, "painel": 3, "cfd": 4, "ensaio": 5}

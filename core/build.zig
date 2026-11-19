@@ -2,8 +2,10 @@
 //!
 //!   zig build --release=fast       -> zig-out/lib/libaerosim.so (C ABI, usada pelo Python)
 //!   zig build test                 -> todos os testes (src/tests.zig)
-//!   zig build test -Dgrupo=math    -> só um grupo: math, physics, control, sim, sizing, optim, geometry
+//!   zig build test -Dgrupo=math    -> só um grupo: math, physics, control, sim, sizing, optim, geometry, structures
 //!   zig build test -Dfiltro=trim   -> só os testes cujo nome contém o texto (junta com -Dgrupo)
+//!   zig build test -Darquivo=loads/vn.zig      -> só os testes desse arquivo (compila só ele e o que ele importa)
+//!   zig build test -Dgraficos=graficos         -> os testes que desenham gravam os SVG nessa pasta
 //!   zig build test -Dfuzz=N -Dseed=S -> fuzzing mais longo das interfaces (padrão 2000 entradas por teste)
 //!   zig build -Dfast_math=false    -> troca LUT/polinômios por std.math (referência)
 //!   zig build -Dopt=peak,cse       -> otimizações em avaliação (ver core/OTIMIZACOES.md)
@@ -33,8 +35,8 @@ fn optBits(text: []const u8) u8 {
 }
 
 /// os grupos de `-Dgrupo` (cada um é um bloco `test` em src/tests.zig)
-const test_groups = .{ "tudo", "math", "physics", "control", "sim", "sizing", "optim", "geometry" };
-const test_group_list = "tudo, math, physics, control, sim, sizing, optim, geometry";
+const test_groups = .{ "tudo", "math", "physics", "control", "sim", "sizing", "optim", "geometry", "structures" };
+const test_group_list = "tudo, math, physics, control, sim, sizing, optim, geometry, structures";
 
 /// verdadeiro se `name` é um dos `test_groups`
 fn isTestGroup(name: []const u8) bool {
@@ -72,7 +74,11 @@ pub fn build(b: *std.Build) void {
     });
     mod.addOptions("build_options", opts);
 
-    const lib = b.addLibrary(.{ .linkage = .dynamic, .name = "aerosim", .root_module = mod });
+    // no navegador (`-Dtarget=wasm32-emscripten`) sai uma biblioteca estática com código relocável, que o emcc pode
+    // ligar como side module
+    const in_browser = target.result.os.tag == .emscripten;
+    if (in_browser) mod.pic = true;
+    const lib = b.addLibrary(.{ .linkage = if (in_browser) .static else .dynamic, .name = "aerosim", .root_module = mod });
 
     // o mesmo núcleo como módulo Zig (`@import("aerosim")`): usado pelo aerodrive
     const zmod = b.addModule("aerosim", .{ .root_source_file = b.path("src/lib.zig"), .target = target, .optimize = optimize });
@@ -86,14 +92,52 @@ pub fn build(b: *std.Build) void {
     const install_docs = b.addInstallDirectory(.{ .source_dir = docs_obj.getEmittedDocs(), .install_dir = .prefix, .install_subdir = "docs" });
     b.step("docs", "Gera a documentação HTML em zig-out/docs (servir com `python -m http.server`)").dependOn(&install_docs.step);
 
+    // bancada das técnicas de otimização: em release e com símbolos, para o objdump achar as funções
+    const bench_module = b.createModule(.{
+        .root_source_file = b.path("src/tecnicas.zig"),
+        .target = target,
+        .optimize = if (optimize == .Debug) .ReleaseFast else optimize, // medir em Debug não diz nada
+        .strip = false,
+    });
+    bench_module.addOptions("build_options", opts);
+    const bench_exe = b.addExecutable(.{ .name = "tecnicas", .root_module = bench_module });
+    const bench_run = b.addRunArtifact(bench_exe);
+    if (b.args) |args| bench_run.addArgs(args);
+    const bench_step = b.step("tecnicas", "Mede uma técnica de otimização: zig build tecnicas -- <técnica> <variante> [rodadas]");
+    bench_step.dependOn(&b.addInstallArtifact(bench_exe, .{}).step);
+    bench_step.dependOn(&bench_run.step);
+
+    // o exemplo do README de uma pasta (src/<pasta>/exemplo.zig), um programa curto que usa o núcleo como módulo
+    if (b.option([]const u8, "exemplo", "a pasta do exemplo do README: math, physics, sim, loads...")) |folder| {
+        const example = b.addExecutable(.{ .name = "exemplo", .root_module = b.createModule(.{
+            .root_source_file = b.path(b.fmt("src/{s}/exemplo.zig", .{folder})),
+            .target = target,
+            .optimize = .ReleaseSafe,
+            .imports = &.{.{ .name = "aerosim", .module = zmod }},
+        }) });
+        const example_run = b.addRunArtifact(example);
+        example_run.setCwd(b.path("."));
+        b.step("exemplo", "Roda o exemplo do README de uma pasta (-Dexemplo=sim)").dependOn(&example_run.step);
+    } else b.step("exemplo", "Roda o exemplo do README de uma pasta (-Dexemplo=sim)").dependOn(&b.addFail("falta -Dexemplo=<pasta> (math, physics, sim, loads...)").step);
+
     // testes: um binário só (src/tests.zig); o grupo e o filtro vêm do CLI
     const test_group = b.option([]const u8, "grupo", "grupo de testes: " ++ test_group_list ++ " (padrão: tudo)") orelse "tudo";
     if (!isTestGroup(test_group)) std.debug.panic("-Dgrupo: '{s}' não existe; use {s}", .{ test_group, test_group_list });
     const test_filter = b.option([]const u8, "filtro", "só os testes cujo nome contém este texto");
     const test_opts = b.addOptions();
     test_opts.addOption([]const u8, "test_group", test_group);
+    // -Dgraficos=<pasta>: os testes que desenham (`util/plot.zig`, `fromTest`) gravam os SVG ali
+    test_opts.addOption([]const u8, "plot_dir", b.option([]const u8, "graficos", "pasta onde os testes gravam os gráficos em SVG (padrão: nenhum gráfico)") orelse "");
+    // -Darquivo=loads/vn.zig: compila e roda só os testes desse arquivo. O Zig não deixa um módulo importar acima da
+    // pasta dele, então a raiz é uma cópia de src/ com um arquivo que importa o pedido
+    const test_file = b.option([]const u8, "arquivo", "só os testes deste arquivo, relativo a src/ (ex.: loads/vn.zig)");
+    const test_root = if (test_file) |file| blk: {
+        const files = b.addWriteFiles();
+        _ = files.addCopyDirectory(b.path("src"), "src", .{});
+        break :blk files.add("teste_arquivo.zig", b.fmt("test {{\n    _ = @import(\"src/{s}\");\n}}\n", .{file}));
+    } else b.path("src/tests.zig");
     const test_module = b.createModule(.{
-        .root_source_file = b.path("src/tests.zig"),
+        .root_source_file = test_root,
         .target = target,
         .optimize = .Debug,
     });

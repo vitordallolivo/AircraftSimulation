@@ -8,6 +8,17 @@
 //! busca refina, sem um passo para ajustar. Storn e Price, "Differential Evolution: a simple and efficient heuristic
 //! for global optimization over continuous spaces", J. Global Optimization 11, 341–359, 1997 (a conferir no PDF).
 //!
+//! Duas escolhas, cada uma um enum, com o padrão igual ao de antes:
+//!
+//! - a estratégia (`Strategy`): rand/1, a de cima, ou current-to-best/1, v = xᵢ + F (x_melhor − xᵢ) + F (x_r1 − x_r2),
+//!   que puxa cada indivíduo para o melhor da população e converge mais depressa quando a nota é suave (Das e
+//!   Suganthan, "Differential Evolution: A Survey of the State-of-the-Art", IEEE Trans. Evol. Comput. 15(1), 4–31,
+//!   2011; a conferir no PDF);
+//! - a borda (`Bound`): levar o gene para a borda (clip, a de antes) ou refletir, sorteando entre o pai e a borda que
+//!   ele passou (Price, Storn e Lampinen, "Differential Evolution: A Practical Approach to Global Optimization",
+//!   Springer, 2005, "bounce-back"; a conferir no PDF). O clip junta muitos testes em cima da borda; o reflexo deixa
+//!   o teste dentro, perto de onde o pai estava.
+//!
 //! As variáveis entram normalizadas em [0, 1] (o Python divide pela faixa), e um gene do teste que sai da caixa é
 //! levado para a borda. O Python guarda a população e as notas, pede os testes de uma geração (`trials`), avalia
 //! cada um e devolve as notas (`select`); maior é melhor, NaN é o pior. Os sorteios saem da semente e da geração:
@@ -31,22 +42,74 @@ pub fn initPop(dims: usize, pop_size: usize, x0: []const f64, seed: u64, out: []
     return true;
 }
 
+/// como o mutante é feito (ver o cabeçalho)
+pub const Strategy = enum(i32) {
+    /// v = x_r1 + F (x_r2 − x_r3) (o padrão)
+    rand_1 = 0,
+    /// v = xᵢ + F (x_melhor − xᵢ) + F (x_r1 − x_r2)
+    current_to_best_1 = 1,
+};
+
+/// o que fazer com um gene do mutante fora de [0, 1]
+pub const Bound = enum(i32) {
+    /// levar para a borda (o padrão)
+    clip = 0,
+    /// sortear entre o pai e a borda que ele passou
+    reflect = 1,
+};
+
+/// as escolhas de uma geração: F, CR, a estratégia e a borda
+pub const Options = struct {
+    weight: f64 = 0.5,
+    cr: f64 = 0.9,
+    strategy: Strategy = .rand_1,
+    bound: Bound = .clip,
+};
+
 /// os testes da geração `generation`: um por indivíduo, DE/rand/1/bin com F = `weight` e CR (`out`: pop_size × dims)
 pub fn trials(dims: usize, pop_size: usize, pop: []const f64, weight: f64, cr: f64, seed: u64, generation: u64, out: []f64) bool {
+    return trialsWith(dims, pop_size, pop, &.{}, .{ .weight = weight, .cr = cr }, seed, generation, out);
+}
+
+/// o índice da melhor nota (NaN é a pior; no empate, o primeiro)
+fn bestIndex(fit: []const f64) usize {
+    var best: usize = 0;
+    for (fit, 0..) |_, i| if (worse(fit[best], fit[i]) and !std.math.isNan(fit[i])) {
+        best = i;
+    };
+    return best;
+}
+
+/// os testes da geração com as escolhas `options`; `fit` (as notas da população) só é lido na current-to-best
+pub fn trialsWith(dims: usize, pop_size: usize, pop: []const f64, fit: []const f64, options: Options, seed: u64, generation: u64, out: []f64) bool {
     if (dims == 0 or dims > max_n or pop_size < 4 or pop_size > max_np) return false;
+    if (options.strategy == .current_to_best_1 and fit.len < pop_size) return false;
     var prng = rng(seed, generation + 1);
     const random = prng.random();
+    const best = if (options.strategy == .current_to_best_1) bestIndex(fit[0..pop_size]) else 0;
+    const weight = options.weight;
     for (0..pop_size) |i| {
-        var base = random.uintLessThan(usize, pop_size);
-        while (base == i) base = random.uintLessThan(usize, pop_size);
+        // rand/1: a base sorteada e duas diferenças; current-to-best/1: a base é o próprio indivíduo
+        var base = i;
+        if (options.strategy == .rand_1) {
+            base = random.uintLessThan(usize, pop_size);
+            while (base == i) base = random.uintLessThan(usize, pop_size);
+        }
         var diff_a = random.uintLessThan(usize, pop_size);
         while (diff_a == i or diff_a == base) diff_a = random.uintLessThan(usize, pop_size);
         var diff_b = random.uintLessThan(usize, pop_size);
         while (diff_b == i or diff_b == base or diff_b == diff_a) diff_b = random.uintLessThan(usize, pop_size);
         const forced_gene = random.uintLessThan(usize, dims); // este gene vem sempre do mutante
         for (0..dims) |j| {
-            const mutant = pop[base * dims + j] + weight * (pop[diff_a * dims + j] - pop[diff_b * dims + j]);
-            out[i * dims + j] = if (j == forced_gene or random.float(f64) < cr) std.math.clamp(mutant, 0, 1) else pop[i * dims + j];
+            const parent = pop[i * dims + j];
+            const mutant = switch (options.strategy) {
+                .rand_1 => pop[base * dims + j] + weight * (pop[diff_a * dims + j] - pop[diff_b * dims + j]),
+                .current_to_best_1 => parent + weight * (pop[best * dims + j] - parent) + weight * (pop[diff_a * dims + j] - pop[diff_b * dims + j]),
+            };
+            out[i * dims + j] = if (j == forced_gene or random.float(f64) < options.cr) switch (options.bound) {
+                .clip => std.math.clamp(mutant, 0, 1),
+                .reflect => if (mutant < 0) random.float(f64) * parent else if (mutant > 1) parent + random.float(f64) * (1 - parent) else mutant,
+            } else parent;
         }
     }
     return true;
@@ -89,6 +152,10 @@ fn rosen(point: []const f64) f64 { // Rosenbrock em [0, 1]ⁿ, com o mínimo em 
 }
 
 fn runOn(comptime objective: fn ([]const f64) f64, dims: usize, pop_size: usize, gens: usize, seed: u64) f64 {
+    return runWith(objective, dims, pop_size, gens, seed, .{});
+}
+
+fn runWith(comptime objective: fn ([]const f64) f64, dims: usize, pop_size: usize, gens: usize, seed: u64, options: Options) f64 {
     var pop: [max_np * max_n]f64 = undefined;
     var trial_pop: [max_np * max_n]f64 = undefined;
     var fit: [max_np]f64 = undefined;
@@ -97,7 +164,7 @@ fn runOn(comptime objective: fn ([]const f64) f64, dims: usize, pop_size: usize,
     _ = initPop(dims, pop_size, x0[0..dims], seed, &pop);
     for (0..pop_size) |i| fit[i] = objective(pop[i * dims ..][0..dims]);
     for (0..gens) |gen| {
-        _ = trials(dims, pop_size, &pop, 0.5, 0.9, seed, gen, &trial_pop);
+        _ = trialsWith(dims, pop_size, &pop, fit[0..pop_size], options, seed, gen, &trial_pop);
         for (0..pop_size) |i| trial_fit[i] = objective(trial_pop[i * dims ..][0..dims]);
         _ = select(dims, pop_size, &pop, &fit, &trial_pop, &trial_fit);
     }
@@ -130,4 +197,29 @@ test "o teste fica na caixa, não repete o indivíduo e a seleção não piora n
     const accepted = select(dims, pop_size, &pop, &fit, &trial_pop, &trial_fit);
     try std.testing.expectEqual(@as(usize, 5), accepted); // 2 = 2, 3 > NaN, 9 > 5, 6 = 6, 8 = 8
     for (0..pop_size) |i| try std.testing.expect(!worse(fit[i], before[i]) or std.math.isNan(before[i]));
+}
+
+test "current-to-best e borda refletida: chegam ao máximo; o padrão de trialsWith é o trials de antes" {
+    try std.testing.expect(runWith(sphere, 5, 20, 100, 3, .{ .strategy = .current_to_best_1 }) > -1e-6);
+    try std.testing.expect(runWith(sphere, 5, 20, 100, 3, .{ .bound = .reflect }) > -1e-6);
+    // Rosenbrock tem um platô em que a busca às vezes para (depende da semente, nos três jeitos); com a semente 1
+    // as duas opções novas chegam ao ótimo
+    try std.testing.expect(runWith(rosen, 3, 30, 600, 1, .{ .bound = .reflect }) > -1e-6);
+    try std.testing.expect(runWith(rosen, 3, 30, 600, 1, .{ .strategy = .current_to_best_1 }) > -1e-6);
+    try std.testing.expect(runWith(sphere, 5, 20, 100, 3, .{ .strategy = .current_to_best_1, .bound = .reflect }) > -1e-6);
+    // a mesma semente: os mesmos testes com o trials de antes
+    const dims = 3;
+    const pop_size = 6;
+    var pop: [pop_size * dims]f64 = undefined;
+    _ = initPop(dims, pop_size, &.{ 0.1, 0.5, 0.9 }, 4, &pop);
+    var old: [pop_size * dims]f64 = undefined;
+    var new: [pop_size * dims]f64 = undefined;
+    _ = trials(dims, pop_size, &pop, 0.8, 0.9, 4, 2, &old);
+    _ = trialsWith(dims, pop_size, &pop, &.{}, .{ .weight = 0.8, .cr = 0.9 }, 4, 2, &new);
+    try std.testing.expectEqualSlices(f64, &old, &new);
+    // o reflexo fica dentro e não cola na borda (F grande joga o mutante para fora)
+    _ = trialsWith(dims, pop_size, &pop, &.{}, .{ .weight = 3, .cr = 1, .bound = .reflect }, 4, 2, &new);
+    for (new) |value| try std.testing.expect(value >= 0 and value <= 1 and value != 0 and value != 1);
+    // current-to-best sem as notas: recusa
+    try std.testing.expect(!trialsWith(dims, pop_size, &pop, &.{}, .{ .strategy = .current_to_best_1 }, 4, 2, &new));
 }

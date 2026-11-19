@@ -28,14 +28,6 @@ class Features:
     wing_group: list[LiftingSurface] = field(default_factory=list)   # asas ligadas à principal (ela inclusa)
 
     @property
-    def arrangement(self) -> str:
-        """'tandem' ou 'biplano' pela geometria das asas ligadas (desnível maior que o recuo: biplano); '' sem grupo"""
-        if len(self.wing_group) < 2:
-            return ""
-        a, b = self.wing_group[0], self.wing_group[1]
-        return "biplano" if abs(a.z - b.z) > abs(a.x - b.x) else "tandem"
-
-    @property
     def tailless(self) -> bool:
         return self.htail is None
 
@@ -68,8 +60,8 @@ class Features:
         return sum(hs) / len(hs) / self.wing.span if hs else 0.0
 
     def summary(self) -> str:
-        if self.arrangement:
-            parts = [f"{self.arrangement}: " + " + ".join(w.name for w in self.wing_group)]
+        if len(self.wing_group) > 1:
+            parts = [f"{len(self.wing_group)} asas: " + " + ".join(w.name for w in self.wing_group)]
             if self.htail is not None:
                 parts.append(f"EH: {self.htail.name}")
         else:

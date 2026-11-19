@@ -1,4 +1,5 @@
-//! O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador e escolha. A tela descreve os campos numa lista (o equivalente do `ParamSpec` do
+//! O formulário lateral: campos agrupados (cada grupo com o título em azul, abre e fecha no clique), número, marcador,
+//! escolha, texto e arquivo (o caminho; o clique pede o arquivo a quem desenha, que abre a janela de escolher). A tela descreve os campos numa lista (o equivalente do `ParamSpec` do
 //! aerosim em Python) e o mesmo código desenha o formulário de qualquer aba. A edição de número e a lista de
 //! escolhas são do raygui.
 const std = @import("std");
@@ -10,7 +11,9 @@ const scroll = @import("scroll.zig");
 const numbers = @import("numbers.zig");
 const numberText = numbers.numberText;
 
-pub const Kind = enum { number, toggle, choice, text };
+pub const Kind = enum { number, toggle, choice, text, file };
+
+const text_capacity = 256;
 
 /// a caixa de um valor: branca, de cantos arredondados, borda fina
 fn fieldBox(control: rl.Rectangle) void {
@@ -30,7 +33,7 @@ pub const Field = struct {
     checked: bool = false,
     choices: [:0]const u8 = "", // opções separadas por ";" (o formato do raygui)
     choice: i32 = 0,
-    text: [48:0]u8 = [_:0]u8{0} ** 48, // o valor de um campo de texto (um nome)
+    text: [text_capacity:0]u8 = [_:0]u8{0} ** text_capacity, // o valor de um campo de texto (um nome, um caminho)
     enabled: bool = true, // desligado: aparece em cinza e não edita (o campo que outro modo calcula)
     help: [:0]const u8 = "", // a dica com o mouse em cima do rótulo
 
@@ -41,8 +44,8 @@ pub const Field = struct {
 
     /// troca o texto de um campo de texto
     pub fn setText(field: *Field, value: []const u8) void {
-        field.text = [_:0]u8{0} ** 48;
-        const length = @min(value.len, 47);
+        field.text = [_:0]u8{0} ** text_capacity;
+        const length = @min(value.len, text_capacity - 1);
         @memcpy(field.text[0..length], value[0..length]);
     }
 };
@@ -54,7 +57,8 @@ pub const Group = struct {
 
 const row_height: f32 = 30;
 const band_height: f32 = 30;
-const control_width: f32 = 112;
+/// a caixa do valor: no mínimo isto, e larga o bastante para a maior opção das escolhas (até metade da linha)
+const control_minimum: f32 = 112;
 
 /// estado do formulário entre quadros: rolagem e o campo em edição
 pub const Form = struct {
@@ -65,8 +69,26 @@ pub const Form = struct {
     open_choice: ?usize = null, // escolha com a lista aberta
     opening: bool = false, // a lista abriu neste quadro (o raygui veria o mesmo clique e fecharia)
     edit_text: [32:0]u8 = [_:0]u8{0} ** 32,
+    edit_fresh: bool = false, // o valor antigo está todo marcado: digitar troca ele inteiro
+    edit_start: usize = 0,
+    file_request: ?usize = null, // clicou num campo de arquivo: quem desenha abre a janela de escolher e põe o caminho
     origin: rl.Vector2 = .{ .x = 0, .y = 0 }, // onde o formulário foi desenhado no último quadro
     width: f32 = 0,
+    control_width: f32 = control_minimum, // a largura das caixas de valor neste quadro
+
+    /// a largura das caixas: a maior opção de escolha inteira, sem passar da metade da linha nem de 260 px
+    fn measureControls(form: *Form, ui: *widgets.Ui, width: f32) void {
+        var widest: f32 = control_minimum;
+        for (form.fields) |field| {
+            if (field.kind != .choice) continue;
+            var options = std.mem.splitScalar(u8, field.choices, ';');
+            while (options.next()) |option| {
+                var buffer: [128]u8 = undefined;
+                widest = @max(widest, theme.textWidth(ui.fonts.mono, widgets.format(&buffer, "{s}", .{option}), 14) + 34);
+            }
+        }
+        form.control_width = @max(control_minimum, @min(widest, @min(260, (width - 20) * 0.5)));
+    }
 
     /// altura total do conteúdo
     pub fn contentHeight(form: *const Form) f32 {
@@ -98,6 +120,7 @@ pub const Form = struct {
     pub fn drawAt(form: *Form, ui: *widgets.Ui, x: f32, top: f32, width: f32) bool {
         form.origin = .{ .x = x, .y = top };
         form.width = width;
+        form.measureControls(ui, width);
         var changed = false;
         // a lista aberta fica por cima de tudo e pega o clique antes dos campos (mesmo fora do recorte)
         if (form.open_choice) |index| {
@@ -148,7 +171,7 @@ pub const Form = struct {
                 y += 3;
                 for (form.fields, 0..) |field, i| {
                     if (field.group != g) continue;
-                    if (i == index) return .{ .x = x + 10 + width - 20 - control_width, .y = y + 3, .width = control_width, .height = row_height - 6 };
+                    if (i == index) return .{ .x = x + 10 + width - 20 - form.control_width, .y = y + 3, .width = form.control_width, .height = row_height - 6 };
                     y += row_height;
                 }
                 y += 3;
@@ -158,8 +181,23 @@ pub const Form = struct {
         return null;
     }
 
+    /// o rótulo de um campo em `room` de largura: se não cabe, a letra diminui um pouco (até 11); se nem assim
+    /// cabe, ele é cortado na borda do campo e a dica mostra o texto inteiro
+    fn fittedLabel(ui: *widgets.Ui, caption: [:0]const u8, x: f32, y: f32, room: f32, color: rl.Color) void {
+        var size: f32 = 14;
+        while (size > 11 and theme.textWidth(ui.fonts.regular, caption, size) > room) size -= 0.5;
+        const fits = theme.textWidth(ui.fonts.regular, caption, size) <= room;
+        if (!fits) ui.pushClip(.{ .x = x, .y = y, .width = room, .height = row_height });
+        theme.text(ui.fonts.regular, caption, x, y + 7 + (14 - size) / 2, size, color);
+        if (!fits) {
+            ui.popClip();
+            ui.tooltip(.{ .x = x, .y = y, .width = room, .height = row_height }, caption);
+        }
+    }
+
     fn drawField(form: *Form, ui: *widgets.Ui, index: usize, field: *Field, x: f32, y: f32, width: f32) bool {
         var buffer: [96]u8 = undefined;
+        const control_width = form.control_width;
         const control: rl.Rectangle = .{ .x = x + width - control_width, .y = y + 3, .width = control_width, .height = row_height - 6 };
         const label_color = if (field.enabled) theme.colors.label else theme.colors.muted;
         ui.tooltip(.{ .x = x, .y = y, .width = width - control_width - 4, .height = row_height }, field.help);
@@ -170,7 +208,7 @@ pub const Form = struct {
         switch (field.kind) {
             .toggle => {
                 widgets.checkBox(.{ .x = x, .y = y + 7, .width = 16, .height = 16 }, field.checked);
-                theme.text(ui.fonts.regular, field.label, x + 26, y + 7, 14, label_color);
+                fittedLabel(ui, field.label, x + 26, y, width - 26, label_color);
                 const row: rl.Rectangle = .{ .x = x, .y = y, .width = width, .height = row_height };
                 if (field.enabled and ui.clickedIn(row)) {
                     field.checked = !field.checked;
@@ -178,10 +216,21 @@ pub const Form = struct {
                 }
                 return false;
             },
-            .number, .choice, .text => {
+            .number, .choice, .text, .file => {
                 const caption = if (field.unit.len > 0) widgets.format(&buffer, "{s} ({s})", .{ field.label, field.unit }) else field.label;
-                theme.text(ui.fonts.regular, caption, x, y + 7, 14, label_color);
+                fittedLabel(ui, caption, x, y, width - control_width - 6, label_color);
             },
+        }
+        if (field.kind == .file) {
+            fieldBox(control);
+            const shown = std.fs.path.basename(field.textValue());
+            var name_buffer: [96]u8 = undefined;
+            ui.pushClip(control);
+            theme.text(ui.fonts.mono, widgets.format(&name_buffer, "{s}", .{if (shown.len > 0) shown else "escolher…"}), control.x + 6, control.y + 5, 14, if (shown.len > 0) theme.colors.ink else theme.colors.muted);
+            ui.popClip();
+            if (field.textValue().len > 0) ui.tooltip(control, field.text[0..field.textValue().len :0]);
+            if (field.enabled and ui.clickedIn(control)) form.file_request = index;
+            return false;
         }
         if (field.kind == .text) {
             if (form.editing == index) {
@@ -224,6 +273,7 @@ pub const Form = struct {
         // número: o raygui edita o texto; fora da edição, o valor em fonte monoespaçada
         if (form.editing == index) {
             const done = rg.textBox(control, &form.edit_text, true);
+            widgets.replaceOnType(ui, control, &form.edit_text, &form.edit_fresh, form.edit_start);
             if (done) {
                 form.editing = null;
                 const typed = std.mem.sliceTo(&form.edit_text, 0);
@@ -234,13 +284,15 @@ pub const Form = struct {
             return false;
         }
         if (field.enabled) fieldBox(control) else widgets.rounded(control, 5, theme.colors.panel);
-        theme.text(ui.fonts.mono, numberText(&buffer, field.number), control.x + 6, control.y + 5, 14, if (field.enabled) theme.colors.ink else theme.colors.muted);
+        theme.text(ui.fonts.mono, numbers.fieldText(&buffer, field.number), control.x + 6, control.y + 5, 14, if (field.enabled) theme.colors.ink else theme.colors.muted);
         if (field.enabled and ui.clickedIn(control)) {
             form.editing = index;
             form.edit_text = [_:0]u8{0} ** 32;
-            const typed = numberText(&buffer, field.number);
+            const typed = numbers.fieldText(&buffer, field.number);
             @memcpy(form.edit_text[0..typed.len], typed);
             widgets.caretToEnd(ui, &form.edit_text);
+            form.edit_fresh = true;
+            form.edit_start = typed.len;
         }
         return false;
     }

@@ -3,6 +3,10 @@
 
 pub const types = @import("types.zig");
 pub const limits = @import("limits.zig");
+/// os métodos de cálculo do voo juntos (modelo, linha sustentadora, refino)
+pub const methods = @import("methods.zig");
+/// a interface conferida em comptime (o molde dos registros)
+pub const interface = @import("interface.zig");
 pub const abi = @import("abi.zig");
 pub const opt = @import("opt.zig");
 
@@ -34,7 +38,7 @@ pub const modifiers = struct {
     pub const mod = @import("modifiers/mod.zig");
     pub const slipstream = @import("modifiers/slipstream.zig");
     pub const types = @import("modifiers/types.zig");
-    pub const wingpair = @import("modifiers/wingpair.zig");
+    pub const interference = @import("modifiers/interference.zig");
 };
 
 /// tubo da esteira contra os painéis
@@ -53,10 +57,13 @@ pub const control = struct {
 pub const sim = struct {
     pub const dynamics = @import("sim/dynamics.zig");
     pub const envelope = @import("sim/envelope.zig");
+    pub const gust = @import("sim/gust.zig");
     pub const linear = @import("sim/linear.zig");
     pub const runner = @import("sim/runner.zig");
     pub const simple_perf = @import("sim/simple_perf.zig");
     pub const state = @import("sim/state.zig");
+    pub const static = @import("sim/static.zig");
+    pub const modes = @import("sim/modes.zig");
     pub const trim = @import("sim/trim.zig");
 };
 
@@ -64,10 +71,24 @@ pub const sim = struct {
 pub const loads = struct {
     pub const llt = @import("loads/llt.zig");
     pub const sweep = @import("loads/sweep.zig");
+    pub const vlm = @import("loads/vlm.zig");
+    pub const vn = @import("loads/vn.zig");
+    pub const internal = @import("loads/internal.zig");
+    pub const aeroelastic = @import("loads/aeroelastic.zig");
+    pub const flutter = @import("loads/flutter.zig");
+    pub const stall = @import("loads/stall.zig");
+};
+
+/// estruturas: seção composta (EI, tensões e margens)
+pub const structures = struct {
+    pub const section = @import("structures/section.zig");
+    pub const buckling = @import("structures/buckling.zig");
+    pub const gear = @import("structures/gear.zig");
 };
 
 /// dimensionamento inicial (mini-MDO)
 pub const sizing = struct {
+    pub const constraints = @import("sizing/constraints.zig");
     pub const chain = @import("sizing/chain.zig");
     pub const ground = @import("sizing/ground.zig");
     pub const kinds = @import("sizing/kinds.zig");
@@ -89,6 +110,8 @@ pub const optim = struct {
     pub const localfit = @import("optim/localfit.zig");
     pub const rbf = @import("optim/rbf.zig");
     pub const sampling = @import("optim/sampling.zig");
+    pub const scalar = @import("optim/scalar.zig");
+    pub const topology = @import("optim/topology.zig");
     pub const sensmethods = @import("optim/sensmethods.zig");
     pub const types = @import("optim/types.zig");
 };
@@ -98,7 +121,9 @@ pub const geometry = struct {
     pub const geometry = @import("geometry/geometry.zig");
 };
 
-/// fuzzing dos testes
+/// fuzzing dos testes e a leitura de arquivos de fora (planilhas .xlsx, polares do XFLR5)
 pub const util = struct {
     pub const fuzz = @import("util/fuzz.zig");
+    pub const xlsx = @import("util/xlsx.zig");
+    pub const xflr5 = @import("util/xflr5.zig");
 };

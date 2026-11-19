@@ -2,6 +2,13 @@
 const std = @import("std");
 
 /// um número curto para o campo: até 4 algarismos depois do ponto, sem zeros sobrando
+/// o número de um campo do formulário: como `numberText`, mas um número pequeno (abaixo de 0,001) sai em notação
+/// científica, que com 4 casas ele sairia 0 (o atrito do motor, o momento de inércia da hélice)
+pub fn fieldText(buffer: []u8, value: f64) [:0]const u8 {
+    if (value != 0 and @abs(value) < 1e-3 and std.math.isFinite(value)) return std.fmt.bufPrintZ(buffer, "{e}", .{value}) catch "…";
+    return numberText(buffer, value);
+}
+
 pub fn numberText(buffer: []u8, value: f64) [:0]const u8 {
     const text = std.fmt.bufPrint(buffer[0 .. buffer.len - 1], "{d:.4}", .{value}) catch return "…";
     var end = text.len;
@@ -119,4 +126,11 @@ test "algarismos significativos como o .4g do Python" {
     try std.testing.expectEqualStrings("-1.677", significant(&buffer, -1.676747, 4));
     try std.testing.expectEqualStrings("1.2e-05", significant(&buffer, 0.000012, 4));
     try std.testing.expectEqualStrings("2400", significant(&buffer, 2400, 4));
+}
+
+test "no campo, o número pequeno sai em notação científica, sem virar 0" {
+    var buffer: [32]u8 = undefined;
+    try std.testing.expectEqualStrings("3e-5", fieldText(&buffer, 3e-5));
+    try std.testing.expectEqualStrings("5.4e-4", fieldText(&buffer, 5.4e-4));
+    try std.testing.expectEqualStrings("0.0204", fieldText(&buffer, 0.0204));
 }

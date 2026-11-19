@@ -13,10 +13,14 @@ const airfoil = @import("../model/airfoil.zig");
 const sk = @import("../model/skeleton.zig");
 const v3 = @import("../math/vec3.zig");
 const mission = @import("mission.zig");
+const methods = @import("methods.zig");
+const modifiers = @import("modifiers.zig");
+/// a malha, as alturas e os α da tabela do chão lidos de um modificador (para a GUI mostrar os valores em uso)
+pub const groundSettings = modifiers.groundSettings;
 const fz = @import("../util/fuzz.zig");
 
-const T = core.types;
-const L = core.limits;
+const types = core.types;
+const limits = core.limits;
 const V3 = v3.V3;
 const Aircraft = model.Aircraft;
 const D2R = std.math.pi / 180.0;
@@ -33,6 +37,8 @@ pub const Info = struct {
     alpha_stall_deg: f64 = 0,
     Vs: f64 = 0,
     Dtrim: f64 = 0,
+    /// margem estática, −dC_m/dC_L na mesma faixa do ajuste (−2° a 8°)
+    static_margin: f64 = 0,
 };
 
 // ------------------------------------------------------------------ geometria das superfícies
@@ -67,8 +73,30 @@ pub fn mac(s: *const model.Surface) f64 {
     return if (den > 0) num / den else 0;
 }
 
+/// x (corpo) do bordo de ataque da CMA da asa, onde o CG fica em 0 % da CMA: a CMA está na posição da envergadura
+/// ∫c·y dy / ∫c dy (como `SurfaceModel.mac()["x_le"]` do Python, `aerosim/model/universal.py`)
+pub fn macLeadingEdge(ac: *const Aircraft) f64 {
+    const w = wing(ac) orelse return 0;
+    var buf: [model.limits.sections]model.Section = undefined;
+    const ss = model.sortedSections(w, &buf);
+    var den: f64 = 0;
+    var moment: f64 = 0;
+    if (ss.len > 1) for (ss[0 .. ss.len - 1], ss[1..]) |p, q| {
+        const dy = q.y - p.y;
+        den += dy * (p.chord + q.chord) / 2;
+        moment += dy * (p.chord * (2 * p.y + q.y) + q.chord * (p.y + 2 * q.y)) / 6;
+    };
+    const y_mac = if (den > 0) moment / den else 0;
+    return model.tailOnBoom(ac, w).x - model.sectionAt(ss, y_mac, "x_offset");
+}
+
 fn wing(ac: *const Aircraft) ?*const model.Surface {
-    for (ac.surfaces) |*s| if (s.enabled and std.mem.eql(u8, s.role, "wing")) return s;
+    return firstSurface(ac, "wing");
+}
+
+/// a primeira superfície ligada com o papel `role` ("wing", "htail", "vtail"), como `AircraftModel.wing`/`htail`
+pub fn firstSurface(ac: *const Aircraft, role: []const u8) ?*const model.Surface {
+    for (ac.surfaces) |*s| if (s.enabled and std.mem.eql(u8, s.role, role)) return s;
     return null;
 }
 
@@ -87,12 +115,15 @@ pub fn references(ac: *const Aircraft) [3]f64 {
     };
 }
 
-const Coeffs = struct { AR: f64, CLa: f64, CL0: f64, CLmax: f64, CD0: f64, Cmac: f64 };
+/// os coeficientes da superfície inteira (os do `SurfaceModel` da GUI): alongamento, C_Lα (1/rad), C_L0, C_Lmáx,
+/// C_D0 e C_m,ac, com a média por área quando as seções têm perfis diferentes
+pub const Coeffs = struct { AR: f64, CLa: f64, CL0: f64, CLmax: f64, CD0: f64, Cmac: f64 };
 
 /// (c_lα 1/rad, α_L0 graus, c_l máx, c_d0, c_m,ac) do perfil — `_props2d` da GUI
-const P2 = [5]f64;
+pub const P2 = [5]f64;
 
-fn props2d(af: model.Airfoil) Error!P2 {
+/// os números 2D do perfil (α_L0 e c_m,ac pela teoria do perfil fino quando o perfil não os traz)
+pub fn props2d(af: model.Airfoil) Error!P2 {
     var thin: ?[2]f64 = null;
     if (af.alpha0 == null or af.cm_ac == null) {
         var p: airfoil.Profile = .{};
@@ -147,7 +178,8 @@ fn propsAt(sp: []const SecProps, y: f64) P2 {
     return sp[sp.len - 1].p;
 }
 
-fn coeffs(s: *const model.Surface) Error!Coeffs {
+/// os coeficientes da superfície `s` (ver `Coeffs`)
+pub fn coeffs(s: *const model.Surface) Error!Coeffs {
     const AR = aspect(s);
     if (!model.mixedAirfoils(s) or s.sections.len < 2) return coeffsFrom(s, AR, try props2d(s.airfoil));
     // perfil por seção: média pela área de cada trecho entre seções (no meio do trecho), como `_coeffs`
@@ -169,35 +201,35 @@ fn coeffs(s: *const model.Surface) Error!Coeffs {
 }
 
 /// ε0, dε/dα da asa principal (rad)
-fn wingDownwash(ac: *const Aircraft) Error![2]f64 {
+pub fn wingDownwash(ac: *const Aircraft) Error![2]f64 {
     const w = wing(ac) orelse return .{ 0, 0 };
     const co = try coeffs(w);
     const CLw0 = co.CL0 + co.CLa * w.incidence * D2R;
     return .{ 2 * CLw0 / (std.math.pi * co.AR), 2 * co.CLa / (std.math.pi * co.AR) };
 }
 
-fn group(role: []const u8) i32 {
-    if (std.mem.eql(u8, role, "wing")) return 0;
-    if (std.mem.eql(u8, role, "htail")) return 1;
-    return 2;
+fn group(role: []const u8) limits.Group {
+    if (std.mem.eql(u8, role, "wing")) return .wing;
+    if (std.mem.eql(u8, role, "htail")) return .htail;
+    return .vtail;
 }
 
 const Panels = struct {
-    p: *T.Params,
+    params: *types.Params,
     diag: *model.Diag,
 
-    fn add(self: Panels, sp: T.Surface) Error!void {
-        const n: usize = @intCast(self.p.n_surf);
-        if (n >= L.max_surfaces) {
-            self.diag.set("painéis demais para o núcleo (máximo {d}): menos seções/comandos", .{L.max_surfaces});
+    fn add(self: Panels, sp: types.Surface) Error!void {
+        const n: usize = @intCast(self.params.n_surf);
+        if (n >= limits.max_surfaces) {
+            self.diag.set("painéis demais para o núcleo (máximo {d}): menos seções/comandos", .{limits.max_surfaces});
             return error.TooManyPanels;
         }
-        self.p.surf[n] = sp;
-        self.p.n_surf += 1;
+        self.params.surf[n] = sp;
+        self.params.n_surf += 1;
     }
 };
 
-fn surfacePanels(out: Panels, ac: *const Aircraft, s: *const model.Surface, dw: [2]f64) Error!void {
+fn surfacePanels(out: Panels, ac: *const Aircraft, s: *const model.Surface, owner: usize, dw: [2]f64) Error!void {
     const co = try coeffs(s);
     var sbuf: [model.limits.sections * 3]sk.Station = undefined;
     const st = sk.stations(ac, s, &sbuf);
@@ -247,6 +279,7 @@ fn surfacePanels(out: Panels, ac: *const Aircraft, s: *const model.Surface, dw: 
                 .eps0 = if (s.downwash) (if (s.eps0) |x| x * D2R else dw[0]) else 0,
                 .depsda = if (s.downwash) (s.depsda orelse dw[1]) else 0,
                 .group = group(s.role),
+                .owner = @intCast(owner), // a superfície do painel (interferência entre asas)
                 .vertical = @intFromBool(s.vertical),
                 .side = @intFromFloat(side),
                 .downwash = @intFromBool(s.downwash),
@@ -308,7 +341,7 @@ fn devicePanels(out: Panels, ac: *const Aircraft, s: *const model.Surface) Error
                         .CLmax = 1,
                         .CD0 = d.cd0,
                         .Cmac = 0,
-                        .group = 2,
+                        .group = .vtail,
                         .side = @intFromFloat(side),
                     });
                 }
@@ -411,166 +444,185 @@ pub fn dryMass(ac: *const Aircraft) DryMass {
 // ------------------------------------------------------------------ montagem
 const poly_vars = [_][]const u8{ "none", "V", "throttle", "h", "rho", "const" };
 
-fn polyVar(name: []const u8) i32 {
-    for (poly_vars, 0..) |v, i| if (std.mem.eql(u8, v, name)) return @intCast(i);
-    return T.pvar_none;
+fn polyVar(name: []const u8) types.PolyVariable {
+    for (poly_vars, 0..) |v, i| if (std.mem.eql(u8, v, name)) return @enumFromInt(i);
+    return .none;
 }
 
 /// escreve os parâmetros do núcleo (sem calibrar)
-pub fn fill(ac: *const Aircraft, p: *T.Params, diag: *model.Diag) Error!void {
+pub fn fill(ac: *const Aircraft, params: *types.Params, diag: *model.Diag) Error!void {
     try model.validate(ac, diag);
-    p.* = .{};
-    const ref = references(ac);
-    const dm = dryMass(ac);
-    if (!(dm.m > 0) or !v3.finite(dm.cg)) {
+    params.* = .{};
+    const reference = references(ac);
+    const dry = dryMass(ac);
+    if (!(dry.m > 0) or !v3.finite(dry.cg)) {
         diag.set("massa seca inválida", .{});
         return error.NotPositive;
     }
-    p.m_dry = dm.m;
-    p.Ixx = dm.I[0][0];
-    p.Iyy = dm.I[1][1];
-    p.Izz = dm.I[2][2];
-    p.Ixz = -dm.I[0][2];
-    p.r_dry = dm.cg;
-    p.Sref = ref[0];
-    p.cref = ref[1];
-    p.bref = ref[2];
-    p.Mst = ac.sim.Mst;
-    const f = ac.fuselage;
-    p.fus_CDS = if (f.enabled) f.CDS else 0;
-    for (ac.allBooms()) |b| if (b.enabled) {
-        p.fus_CDS += 0.006 * std.math.pi * b.diameter * b.length; // atrito dos tubos
+    params.m_dry = dry.m;
+    params.Ixx = dry.I[0][0];
+    params.Iyy = dry.I[1][1];
+    params.Izz = dry.I[2][2];
+    params.Ixz = -dry.I[0][2];
+    params.r_dry = dry.cg;
+    params.Sref = reference[0];
+    params.cref = reference[1];
+    params.bref = reference[2];
+    params.Mst = ac.sim.Mst;
+    const fuselage = ac.fuselage;
+    params.fus_CDS = if (fuselage.enabled) fuselage.CDS else 0;
+    for (ac.allBooms()) |boom| if (boom.enabled) {
+        params.fus_CDS += 0.006 * std.math.pi * boom.diameter * boom.length; // atrito dos tubos
     };
-    p.fus_Cma = if (f.enabled) f.Cma else 0;
-    p.fus_Cnb = if (f.enabled) f.Cnb else 0;
-    p.fus_CYb = if (f.enabled) f.CYb else 0;
-    p.fus_r = f.aero_point orelse .{ f.x_nose - 0.4 * f.length, 0, f.z };
+    params.fus_Cma = if (fuselage.enabled) fuselage.Cma else 0;
+    params.fus_Cnb = if (fuselage.enabled) fuselage.Cnb else 0;
+    params.fus_CYb = if (fuselage.enabled) fuselage.CYb else 0;
+    params.fus_r = fuselage.aero_point orelse .{ fuselage.x_nose - 0.4 * fuselage.length, 0, fuselage.z };
 
-    const dw = try wingDownwash(ac);
-    const out: Panels = .{ .p = p, .diag = diag };
-    for (ac.surfaces) |*s| {
+    const downwash = try wingDownwash(ac);
+    const out: Panels = .{ .params = params, .diag = diag };
+    for (ac.surfaces, 0..) |*s, owner| {
         if (!s.enabled or s.sections.len < 2) continue;
-        surfacePanels(out, ac, s, dw) catch |e| {
-            if (e == error.InvalidAirfoil or e == error.TooManyPoints) diag.set("{s}: perfil inválido", .{s.name});
-            return e;
+        surfacePanels(out, ac, s, owner, downwash) catch |err| {
+            if (err == error.InvalidAirfoil or err == error.TooManyPoints) diag.set("{s}: perfil inválido", .{s.name});
+            return err;
         };
         try devicePanels(out, ac, s);
     }
 
     var units: usize = 0;
-    for (ac.propulsion) |u| units += @intFromBool(u.enabled);
-    const K: f64 = @floatFromInt(@max(units, 1));
-    if (units > L.max_props) {
-        diag.set("motores demais (máximo {d})", .{L.max_props});
+    for (ac.propulsion) |unit| units += @intFromBool(unit.enabled);
+    const unit_count: f64 = @floatFromInt(@max(units, 1));
+    if (units > limits.max_props) {
+        diag.set("motores demais (máximo {d})", .{limits.max_props});
         return error.TooManyProps;
     }
-    for (ac.propulsion) |u| {
-        if (!u.enabled) continue;
-        const pr = u.propeller;
-        const tp = u.thrust_poly;
-        var pu: T.PropUnit = .{
-            .model = if (std.mem.eql(u8, u.thrust_model, "poly")) T.prop_poly else T.prop_motor,
-            .poly_x = polyVar(tp.x_var),
-            .poly_y = polyVar(tp.y_var),
-            .poly_gain = tp.gain,
-            .poly_rho_exp = tp.rho_exp,
-            .poly_rho0 = tp.rho0,
-            .poly_xmax = tp.xmax,
-            .poly_ymax = tp.ymax,
-            .poly_xc = tp.x_const,
-            .poly_yc = tp.y_const,
-            .r = .{ u.x, u.y, u.z },
-            .tilt = u.tilt * D2R,
-            .tilt_range = u.tilt_range * D2R,
-            .toe = u.toe * D2R,
-            .sense = u.sense,
-            .D = pr.D,
-            .Ip = pr.Ip,
-            .Jm = u.motor.Jm,
-            .Kv = u.motor.Kv,
-            .Rm = u.motor.Rm,
-            .B = u.motor.B,
-            .tauc = u.motor.tauc,
-            .Imax = u.motor.Imax,
-            .Voc = u.battery.voc(),
-            .Rint = u.battery.Rint * (if (ac.shared_battery) K else 1),
-            .yaw_mix = u.yaw_mix,
+    for (ac.propulsion) |unit| {
+        if (!unit.enabled) continue;
+        const propeller = unit.propeller;
+        const thrust_poly = unit.thrust_poly;
+        var prop_unit: types.PropUnit = .{
+            .model = if (std.mem.eql(u8, unit.thrust_model, "poly")) types.ThrustModel.polynomial else types.ThrustModel.motor,
+            .poly_x = polyVar(thrust_poly.x_var),
+            .poly_y = polyVar(thrust_poly.y_var),
+            .poly_gain = thrust_poly.gain,
+            .poly_rho_exp = thrust_poly.rho_exp,
+            .poly_rho0 = thrust_poly.rho0,
+            .poly_xmax = thrust_poly.xmax,
+            .poly_ymax = thrust_poly.ymax,
+            .poly_xc = thrust_poly.x_const,
+            .poly_yc = thrust_poly.y_const,
+            .r = .{ unit.x, unit.y, unit.z },
+            .tilt = unit.tilt * D2R,
+            .tilt_range = unit.tilt_range * D2R,
+            .toe = unit.toe * D2R,
+            .sense = unit.sense,
+            .D = propeller.D,
+            .Ip = propeller.Ip,
+            .Jm = unit.motor.Jm,
+            .Kv = unit.motor.Kv,
+            .Rm = unit.motor.Rm,
+            .B = unit.motor.B,
+            .tauc = unit.motor.tauc,
+            .Imax = unit.motor.Imax,
+            .Voc = unit.battery.voc(),
+            .Rint = unit.battery.Rint * (if (ac.shared_battery) unit_count else 1),
+            .P_lim = if (ac.power_limit > 0) ac.power_limit / unit_count else 0,
+            .yaw_mix = unit.yaw_mix,
         };
-        for (tp.coefs[0..@min(tp.coefs.len, pu.poly.len)], 0..) |cf, i| pu.poly[i] = cf;
-        const np_ = @min(pr.J.len, pr.CT.len, pr.CP.len, L.max_prop_pts);
-        for (0..np_) |i| {
-            pu.J[i] = pr.J[i];
-            pu.CT[i] = pr.CT[i];
-            pu.CP[i] = pr.CP[i];
+        for (thrust_poly.coefs[0..@min(thrust_poly.coefs.len, prop_unit.poly.len)], 0..) |coefficient, i| prop_unit.poly[i] = coefficient;
+        const point_count = @min(propeller.J.len, propeller.CT.len, propeller.CP.len, limits.max_prop_pts);
+        for (0..point_count) |i| {
+            prop_unit.J[i] = propeller.J[i];
+            prop_unit.CT[i] = propeller.CT[i];
+            prop_unit.CP[i] = propeller.CP[i];
         }
-        pu.n_pts = @intCast(np_);
-        p.prop[@intCast(p.n_prop)] = pu;
-        p.n_prop += 1;
+        prop_unit.n_pts = @intCast(point_count);
+        params.prop[@intCast(params.n_prop)] = prop_unit;
+        params.n_prop += 1;
     }
 
-    const g = ac.gear;
+    const gear = ac.gear;
     var legs: [model.limits.gear_legs]sk.Leg = undefined;
-    const nl = sk.gearLegs(g, &legs);
-    if (nl > L.max_gear) {
-        diag.set("trem: {d} pernas (máximo {d})", .{ nl, L.max_gear });
+    const leg_count = sk.gearLegs(gear, &legs);
+    if (leg_count > limits.max_gear) {
+        diag.set("trem: {d} pernas (máximo {d})", .{ leg_count, limits.max_gear });
         return error.TooMany;
     }
-    const custom = std.mem.eql(u8, g.layout, "custom");
-    for (legs[0..nl], 0..) |q, i| {
+    const custom = std.mem.eql(u8, gear.layout, "custom");
+    for (legs[0..leg_count], 0..) |leg, i| {
         // pernas padrão: 0 bequilha, 1-2 principais, 3 patim (igual a LandingGear.legs)
-        const kind: i32, const k: f64, const cc: f64 = if (custom) .{
-            if (std.mem.eql(u8, g.custom[i].kind, "steer")) T.gear_steer else if (std.mem.eql(u8, g.custom[i].kind, "skid")) T.gear_skid else T.gear_main,
-            g.custom[i].k,
-            g.custom[i].c,
+        const kind: types.GearKind, const stiffness: f64, const damping: f64 = if (custom) .{
+            if (std.mem.eql(u8, gear.custom[i].kind, "steer")) types.GearKind.steer else if (std.mem.eql(u8, gear.custom[i].kind, "skid")) types.GearKind.skid else types.GearKind.main,
+            gear.custom[i].k,
+            gear.custom[i].c,
         } else switch (i) {
-            0 => .{ T.gear_steer, g.steer_k, g.steer_c },
-            1, 2 => .{ T.gear_main, g.main_k, g.main_c },
-            else => .{ T.gear_skid, g.skid_k, g.skid_c },
+            0 => .{ types.GearKind.steer, gear.steer_k, gear.steer_c },
+            1, 2 => .{ types.GearKind.main, gear.main_k, gear.main_c },
+            else => .{ types.GearKind.skid, gear.skid_k, gear.skid_c },
         };
-        p.gear[i] = .{ .r = .{ q.x, q.y, q.z }, .k = k, .c = cc, .kind = kind };
+        params.gear[i] = .{ .r = .{ leg.x, leg.y, leg.z }, .k = stiffness, .c = damping, .kind = kind };
     }
-    p.n_gear = @intCast(nl);
+    params.n_gear = @intCast(leg_count);
 
-    for (ac.tanks, 0..) |t, i| {
-        p.tank[i] = .{ .r = .{ t.x, t.y, t.z }, .side = t.side, .fill = t.fill(), .rho = t.rho, .zeta = t.zeta, .shape = if (std.mem.eql(u8, t.shape, "square")) T.tank_square else T.tank_cylinder };
+    for (ac.tanks, 0..) |tank, i| {
+        params.tank[i] = .{ .r = .{ tank.x, tank.y, tank.z }, .side = tank.side, .fill = tank.fill(), .rho = tank.rho, .zeta = tank.zeta, .shape = if (std.mem.eql(u8, tank.shape, "square")) types.TankShape.square else types.TankShape.cylinder };
     }
-    p.n_tank = @intCast(ac.tanks.len);
-    p.slosh_on = @intFromBool(ac.sim.slosh);
-    p.mu_roll = g.mu_roll;
-    p.mu_lat = g.mu_lat;
-    p.mu_brake = g.mu_brake;
-    p.mu_skid = g.mu_skid;
-    p.mu_landing = g.mu_landing;
-    const P = ac.payload;
-    p.payload = .{ .enabled = @intFromBool(P.enabled), .m = P.mass, .r = .{ P.x, P.y, P.z }, .bay = P.bay, .Fext_g = P.Fext_g, .mu_b = P.mu_b, .CdS_chute = P.CdS_chute };
-    const e = ac.environment;
-    p.env = .{ .rho = e.rho, .Vw10 = e.wind_speed, .wind_from = e.wind_from * D2R, .wind_elev = e.wind_elev * D2R, .h_ref = e.h_ref, .gust_T = e.gust_T, .gust_on = @intFromBool(e.gust) };
-    for (e.gust_U[0..@min(e.gust_U.len, 3)], 0..) |x, i| p.env.gust_U[i] = x;
-    const to = ac.takeoff;
-    p.takeoff = .{ .VR = to.VR, .sR = to.sR, .de0 = to.de0 * D2R, .de1 = to.de1 * D2R, .rate_de = to.rate_de * D2R, .ht = to.ht, .rate_thr = to.rate_thr, .h_end = to.h_end, .alpha_guard = 1 }; // proteção de α sempre ligada
-    inline for (@typeInfo(T.Autopilot).@"struct".fields) |fld| {
-        const val = @field(ac.autopilot, fld.name);
-        const angle = comptime for ([_][]const u8{ "alpha_max", "chi_inf", "phimax", "pmax_cmd", "de_max", "da_max", "dr_max" }) |k| {
-            if (std.mem.eql(u8, k, fld.name)) break true;
+    params.n_tank = @intCast(ac.tanks.len);
+    params.slosh_on = @intFromBool(ac.sim.slosh);
+    params.mu_roll = gear.mu_roll;
+    params.mu_lat = gear.mu_lat;
+    params.mu_brake = gear.mu_brake;
+    params.mu_skid = gear.mu_skid;
+    params.mu_landing = gear.mu_landing;
+    const payload = ac.payload;
+    params.payload = .{ .enabled = @intFromBool(payload.enabled), .m = payload.mass, .r = .{ payload.x, payload.y, payload.z }, .bay = payload.bay, .Fext_g = payload.Fext_g, .mu_b = payload.mu_b, .CdS_chute = payload.CdS_chute };
+    const environment = ac.environment;
+    params.env = .{ .rho = environment.rho, .Vw10 = environment.wind_speed, .wind_from = environment.wind_from * D2R, .wind_elev = environment.wind_elev * D2R, .h_ref = environment.h_ref, .gust_T = environment.gust_T, .gust_on = @intFromBool(environment.gust) };
+    for (environment.gust_U[0..@min(environment.gust_U.len, 3)], 0..) |x, i| params.env.gust_U[i] = x;
+    const takeoff = ac.takeoff;
+    params.takeoff = .{ .VR = takeoff.VR, .sR = takeoff.sR, .de0 = takeoff.de0 * D2R, .de1 = takeoff.de1 * D2R, .rate_de = takeoff.rate_de * D2R, .ht = takeoff.ht, .rate_thr = takeoff.rate_thr, .h_end = takeoff.h_end, .alpha_guard = 1 }; // proteção de α sempre ligada
+    inline for (@typeInfo(types.Autopilot).@"struct".fields) |field| {
+        const value = @field(ac.autopilot, field.name);
+        const angle = comptime for ([_][]const u8{ "alpha_max", "chi_inf", "phimax", "pmax_cmd", "de_max", "da_max", "dr_max" }) |stiffness| {
+            if (std.mem.eql(u8, stiffness, field.name)) break true;
         } else false;
-        @field(p.ap, fld.name) = if (angle) val * D2R else val;
+        @field(params.ap, field.name) = if (angle) value * D2R else value;
     }
-    p.dt = ac.sim.dt;
-    p.tmax = ac.sim.tmax;
-    p.dtlog = ac.sim.dtlog;
-    const ns = try mission.segments(&ac.mission, &p.seg, diag);
-    p.n_seg = @intCast(ns);
-    p.n_event = @intCast(try mission.events(&ac.mission, &p.event, diag));
-    p.n_pad = @intCast(mission.pads(&ac.airfield, p.seg[0..ns], &p.pads));
+    core.numerics.active = ac.numerics; // o refino dos solvers: do arquivo do avião (padrão: o de sempre)
+    params.dt = ac.sim.dt;
+    params.tmax = ac.sim.tmax;
+    params.dtlog = ac.sim.dtlog;
+    const segment_count = try mission.segments(&ac.mission, &params.seg, diag);
+    params.n_seg = @intCast(segment_count);
+    params.n_event = @intCast(try mission.events(&ac.mission, &params.event, diag));
+    params.n_pad = @intCast(mission.pads(&ac.airfield, params.seg[0..segment_count], &params.pads));
+    methods.fixed.apply(params); // o modelo do voo e o refino: fixos no AeroDrive (methods.zig)
+    modifiers.fill(ac, params); // efeito solo e efeitos a mais: do arquivo, como na GUI
 }
 
-/// parâmetros + configuração do núcleo + calibração do piloto (como `prepare` da GUI)
+/// parâmetros + configuração do núcleo + calibração do piloto (como `prepare` da GUI), com os métodos fixos do
+/// AeroDrive (`methods.zig`)
 pub fn setup(ac: *const Aircraft, inst: *core.runner.Instance, diag: *model.Diag) Error!Info {
+    return setupWith(ac, inst, diag, methods.fixed);
+}
+
+/// como `setup`, com os métodos de cálculo escolhidos (`core.methods`; as análises da interface deixam o usuário
+/// escolher)
+pub fn setupWith(ac: *const Aircraft, inst: *core.runner.Instance, diag: *model.Diag, chosen: core.methods.Methods) Error!Info {
     try fill(ac, &inst.p, diag);
+    chosen.apply(&inst.p);
     core.runner.configure(inst) catch |e| {
         diag.set("o núcleo recusou a configuração ({s})", .{@errorName(e)});
         return error.CoreConfig;
     };
+    return calibrate(ac, inst, diag);
+}
+
+/// as características estáticas e a calibração do piloto (C_L0, C_Lα, o acelerador de equilíbrio e os ganhos) de um
+/// avião já configurado em `inst`; quem muda os parâmetros antes (uma massa a mais, o CG) chama `fill`, muda,
+/// configura e chama esta
+pub fn calibrate(ac: *const Aircraft, inst: *core.runner.Instance, diag: *model.Diag) Error!Info {
     var info = staticCharacteristics(inst, ac);
     if (ac.autopilot.auto_calibrate) {
         if (!std.math.isFinite(info.CL0) or !std.math.isFinite(info.CLa) or !(info.CLa > 0)) {
@@ -584,7 +636,7 @@ pub fn setup(ac: *const Aircraft, inst: *core.runner.Instance, diag: *model.Diag
             Vc = 0;
             for (inst.p.seg[0..@intCast(inst.p.n_seg)]) |sg| Vc = @max(Vc, sg.V1);
         }
-        const tp = core.trim.solve(core.trim.Ctx.init(&inst.p, &inst.r.f), T.trim_level, Vc, 1.0, null);
+        const tp = core.trim.solve(core.trim.Ctx.init(&inst.p, &inst.r.f), types.TrimKind.level, Vc, 1.0, null);
         if (tp.ok != 0 and tp.thr > 0.05 and tp.thr < 1.0) inst.p.ap.Dtrim = tp.thr;
         // ganhos das malhas internas pelo modelo linear do próprio avião (iguais para qualquer um)
         _ = core.autotune.tune(&inst.p, &inst.r.f, Vc);
@@ -602,6 +654,9 @@ pub fn staticCharacteristics(inst: *core.runner.Instance, ac: *const Aircraft) I
     var sxx: f64 = 0;
     var sxy: f64 = 0;
     var n: f64 = 0;
+    var cm_sum: f64 = 0; // o ajuste de C_m contra C_L (margem estática)
+    var cm_cl_sum: f64 = 0;
+    var cl_squares: f64 = 0;
     var best: f64 = -1e9;
     var a_best: f64 = 0;
     var i: usize = 0;
@@ -613,6 +668,9 @@ pub fn staticCharacteristics(inst: *core.runner.Instance, ac: *const Aircraft) I
             sy += co.CL;
             sxx += a * a;
             sxy += a * co.CL;
+            cm_sum += co.Cm;
+            cm_cl_sum += co.CL * co.Cm;
+            cl_squares += co.CL * co.CL;
             n += 1;
         }
         if (co.CL > best) {
@@ -622,6 +680,7 @@ pub fn staticCharacteristics(inst: *core.runner.Instance, ac: *const Aircraft) I
     }
     const CLa = (n * sxy - sx * sy) / (n * sxx - sx * sx);
     const CL0 = (sy - CLa * sx) / n;
+    const dCm_dCL = (n * cm_cl_sum - sy * cm_sum) / (n * cl_squares - sy * sy);
     const S = references(ac)[0];
     return .{
         .mass = tc.m,
@@ -629,6 +688,7 @@ pub fn staticCharacteristics(inst: *core.runner.Instance, ac: *const Aircraft) I
         .CLa = CLa,
         .CLmax = best,
         .alpha_stall_deg = a_best / D2R,
+        .static_margin = -dCm_dCL,
         .Vs = if (best > 0) @sqrt(2 * tc.m * G0 / (ac.environment.rho * S * best)) else std.math.nan(f64),
     };
 }
@@ -720,10 +780,10 @@ test "perfil por seção: faixas iguais às do tradutor da GUI" {
         \\ "controls": [{"kind": "aileron", "span_start": 0.6, "span_end": 1.0}]}]}}
     , &d);
     defer l.deinit();
-    const p = try testing.allocator.create(T.Params);
+    const p = try testing.allocator.create(types.Params);
     defer testing.allocator.destroy(p);
     p.* = .{};
-    try surfacePanels(.{ .p = p, .diag = &d }, &l.ac, &l.ac.surfaces[0], .{ 0, 0 });
+    try surfacePanels(.{ .params = p, .diag = &d }, &l.ac, &l.ac.surfaces[0], 0, .{ 0, 0 });
     // números do aerosim (universal + translator.surface_panels), um por faixa (direita e esquerda iguais)
     const ref = [_][5]f64{
         .{ 4.736215888000, 0.349680860090, 1.440, 0.0120, -0.105505584582 },
@@ -756,7 +816,7 @@ test "Convencional: painéis iguais aos do tradutor da GUI" {
     var d: model.Diag = .{};
     var l = try loadExample("Convencional_original", &d);
     defer l.deinit();
-    var p: T.Params = undefined;
+    var p: types.Params = undefined;
     try fill(&l.ac, &p, &d);
     for (want, p.surf[0..want.len]) |w, s| {
         try testing.expectApproxEqAbs(w.x, s.r[0], 1e-6);
@@ -781,7 +841,7 @@ fn fuzzParams(_: void, src: *fz.Src) anyerror!void {
     ac.environment.wind_speed = src.mostly(0, 15);
     ac.sim.dt = src.mostly(1e-4, 5e-3);
     ac.Sref = if (src.boolean()) src.mostly(0.1, 3) else null;
-    var p: T.Params = undefined;
+    var p: types.Params = undefined;
     fill(&ac, &p, &d) catch {
         try testing.expect(d.len > 0);
         return;

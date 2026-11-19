@@ -4,6 +4,7 @@
 //! aerodrive usa são lidos; o resto é ignorado. Depois de ler, `validate` confere tudo o que pode
 //! quebrar o desenho e devolve um erro com o nome do componente em `Diag` (nunca trava).
 const std = @import("std");
+const core = @import("aerosim");
 const fz = @import("../util/fuzz.zig");
 
 // ------------------------------------------------------------------ esquema (nomes iguais aos do JSON)
@@ -86,6 +87,7 @@ pub const Airfoil = struct {
 pub const Surface = struct {
     name: []const u8 = "asa",
     role: []const u8 = "wing",
+    group: []const u8 = "", // asas com o mesmo grupo voam juntas (a interferência entre asas pega o grupo da asa principal)
     x: f64 = 0,
     y: f64 = 0,
     z: f64 = 0,
@@ -110,6 +112,8 @@ pub const Surface = struct {
     eps0: ?f64 = null, // graus
     depsda: ?f64 = null,
     mass: f64 = 0,
+    /// onde a raiz fica presa (`mount` da GUI): "" ou "solta", "tubo:i", "ponta:j", "ponta_dir:j", "ponta_esq:j"
+    mount: []const u8 = "",
 };
 
 pub const Fuselage = struct {
@@ -172,6 +176,7 @@ pub const Battery = struct {
     }
 };
 pub const ThrustPoly = struct {
+    name: []const u8 = "",
     coefs: []const f64 = &.{},
     x_var: []const u8 = "V",
     y_var: []const u8 = "none",
@@ -254,8 +259,11 @@ pub const Payload = struct {
     Fext_g: f64 = 2,
     mu_b: f64 = 0.3,
     CdS_chute: f64 = 0.45,
+    target_n: f64 = 0, // o alvo da carga no chão (m, norte)
+    target_e: f64 = 0,
+    aim: bool = true, // a Missão procura onde soltar para a carga cair no alvo
 };
-pub const PointMass = struct { mass: f64 = 0.1, x: f64 = 0, y: f64 = 0, z: f64 = 0 };
+pub const PointMass = struct { name: []const u8 = "", mass: f64 = 0.1, x: f64 = 0, y: f64 = 0, z: f64 = 0 };
 pub const Mass = struct {
     base_mass: f64 = 8.39,
     base_cg: [3]f64 = .{ 0, 0, 0 },
@@ -269,6 +277,8 @@ pub const Mass = struct {
 };
 pub const Environment = struct {
     rho: f64 = 1.225,
+    /// a altitude-densidade (m) que o arquivo grava; sem ela (arquivo antigo), `densityAltitude` sai do ρ
+    density_altitude: ?f64 = null,
     wind_speed: f64 = 4,
     wind_from: f64 = 30,
     wind_elev: f64 = 3,
@@ -276,6 +286,22 @@ pub const Environment = struct {
     gust: bool = false,
     gust_T: f64 = 1,
     gust_U: []const f64 = &.{ -1, -2, -1 },
+
+    /// a altitude-densidade (m): a da atmosfera padrão com o ρ do dia, ρ = ρ0 (1 − 2,25577·10⁻⁵ h)^4,25588
+    /// (troposfera ISA, `aerosim/model/atmosphere.py`)
+    pub fn densityAltitude(environment: Environment) f64 {
+        if (environment.density_altitude) |height| if (std.math.isFinite(height)) return height;
+        const rho = environment.rho;
+        if (!(rho > 0) or !std.math.isFinite(rho)) return 0;
+        return (1 - std.math.pow(f64, rho / 1.225, 1.0 / 4.25588)) / 2.25577e-5;
+    }
+
+    /// a densidade (kg/m³) da atmosfera padrão na altitude-densidade `height` (m): a conta inversa de
+    /// `densityAltitude`, ρ = ρ0 (1 − 2,25577·10⁻⁵ h)^4,25588 (troposfera ISA, `aerosim/model/atmosphere.py`)
+    pub fn densityAt(height: f64) f64 {
+        const clamped = std.math.clamp(height, -2000.0, 11000.0); // a troposfera, como `isa_density`
+        return 1.225 * std.math.pow(f64, 1 - 2.25577e-5 * clamped, 4.25588);
+    }
 };
 pub const Takeoff = struct { VR: f64 = 12.5, sR: f64 = 37.5, de0: f64 = 0, de1: f64 = -6, rate_de: f64 = 60, ht: f64 = 2, rate_thr: f64 = 2, h_end: f64 = 6 };
 pub const SimSettings = struct { dt: f64 = 1e-3, tmax: f64 = 400, dtlog: f64 = 0.02, Mst: f64 = 50, slosh: bool = true };
@@ -363,6 +389,35 @@ pub const Airfield = struct {
     platform_start: f64 = 50.0,
     x_warning: f64 = 60.0,
     z_warning: f64 = 1.0,
+    landing_max: f64 = 0, // a distância máxima de pouso (m); 0: não verifica
+};
+
+/// um modificador da GUI (`aerosim/model/modifiers.py: Modifier`): o tipo pelo nome da GUI ("solo.mccormick",
+/// "esteira.disco"...), os ajustes pelo nome e as superfícies e motores que ele pega (vazio = todos)
+pub const Modifier = struct {
+    kind: []const u8 = "solo.mccormick",
+    enabled: bool = true,
+    name: []const u8 = "",
+    params: std.json.ArrayHashMap(f64) = .{},
+    targets: []const []const u8 = &.{},
+    props: []const i64 = &.{},
+
+    /// um ajuste pelo nome (o padrão se o arquivo não tem)
+    pub fn value(modifier: *const Modifier, key: []const u8, fallback: f64) f64 {
+        return modifier.params.map.get(key) orelse fallback;
+    }
+};
+
+/// os dados do envelope "como na planilha" (`PerformanceData` da GUI; Envelope_main original)
+pub const Performance = struct {
+    alpha_cruise: f64 = 2.0, // graus
+    load_factor: f64 = 2.0, // n de projeto: V* = V_e √n
+    rho0: f64 = 1.225,
+    cdp_x: f64 = 12.0, // C_Dp = c1 · cdp_x + c2
+    cdp_wing: [2]f64 = .{ 0.0, 0.012 },
+    cdp_htail: [2]f64 = .{ 0.0, 0.012 },
+    K: ?f64 = null, // C_Di = K C_L²; null: 1/(π e AR) da asa
+    ceiling_min: f64 = 500.0,
 };
 
 pub const Aircraft = struct {
@@ -382,11 +437,16 @@ pub const Aircraft = struct {
     takeoff: Takeoff = .{},
     autopilot: Autopilot = .{},
     sim: SimSettings = .{},
+    numerics: core.numerics.Numerics = .{}, // o refino dos solvers do núcleo (iterações, tolerâncias, passos); sem a chave: o de sempre
     mission: Mission = .{},
+    performance: Performance = .{},
+    modifiers: ?[]const Modifier = null, // null (arquivo sem a chave): o padrão da GUI, só o efeito solo de McCormick
     shared_battery: bool = false,
+    power_limit: f64 = 0, // limite da potência tirada da bateria pelo avião todo (W), dividido igual entre os motores; 0 = sem limite
     Sref: ?f64 = null, // null ou 0: da asa
     cref: ?f64 = null,
     bref: ?f64 = null,
+    design_cg: ?[3]f64 = null, // o CG de projeto (x, y, z) que a sprint grava: as dimensões da Montagem se medem dele
 
     /// os tubos, dos dois formatos: `booms` (novo) ou o `boom` único (antigo)
     pub fn allBooms(ac: *const Aircraft) []const Boom {
@@ -633,6 +693,56 @@ pub fn tailOnBoom(ac: *const Aircraft, s: *const Surface) struct { x: f64, z: f6
         return .{ .x = b.xEnd() + root.chord, .z = if (std.mem.eql(u8, s.role, "htail")) b.z else b.z - b.diameter / 2 };
     }
     return .{ .x = s.x, .z = s.z };
+}
+
+/// onde a raiz da superfície `index` fica presa (`Aircraft.mount_point` da GUI): "tubo:i" põe o bordo de fuga da
+/// raiz na ponta do tubo i; "ponta:j" põe o bordo de ataque da raiz no da ponta da superfície j (cauda em T,
+/// winglet), no plano de simetria se j é espelhada; "ponta_dir:j" e "ponta_esq:j" numa das duas pontas. `surfaces`
+/// são as posições atuais (a GUI move em ordem, então uma EH presa numa EV presa num tubo segue as duas). Nulo:
+/// solta
+pub fn mountPoint(ac: *const Aircraft, surfaces: []const Surface, index: usize) ?[3]f64 {
+    const surface = surfaces[index];
+    const colon = std.mem.indexOfScalar(u8, surface.mount, ':') orelse return null;
+    const kind = surface.mount[0..colon];
+    const target = std.fmt.parseInt(usize, surface.mount[colon + 1 ..], 10) catch return null;
+    if (surface.sections.len == 0) return null;
+    var root = surface.sections[0];
+    for (surface.sections) |section| if (section.y < root.y) {
+        root = section;
+    };
+    if (std.mem.eql(u8, kind, "tubo")) {
+        if (target >= ac.booms.len or !ac.booms[target].enabled) return null;
+        const boom = ac.booms[target];
+        const tip = boom.end();
+        return .{ tip[0] + root.chord, tip[1], if (surface.vertical) tip[2] - boom.diameter / 2 else tip[2] };
+    }
+    const on_tip = std.mem.eql(u8, kind, "ponta") or std.mem.eql(u8, kind, "ponta_dir") or std.mem.eql(u8, kind, "ponta_esq");
+    if (!on_tip or target >= surfaces.len or target == index) return null;
+    const other = surfaces[target];
+    if (other.sections.len == 0) return null;
+    const tip_station = semispan(&other);
+    var buffer: [limits.sections]Section = undefined;
+    const sections = sortedSections(&other, &buffer);
+    const tip_offset = sectionAt(sections, tip_station, "x_offset");
+    if (other.vertical) return .{ other.x - tip_offset, other.y, other.z - tip_station };
+    const dihedral = std.math.degreesToRadians(other.dihedral);
+    var side = other.y + tip_station * @cos(dihedral);
+    if (std.mem.eql(u8, kind, "ponta_esq") and other.symmetric) side = other.y - tip_station * @cos(dihedral);
+    if (std.mem.eql(u8, kind, "ponta") and other.symmetric) side = other.y;
+    return .{ other.x - tip_offset, side, other.z - tip_station * @sin(dihedral) };
+}
+
+/// as amarrações da GUI (`Aircraft.apply_constraints`): cada superfície presa vai para o ponto dela (x e z; y também
+/// se ela é vertical ou não espelhada), em duas passadas pela lista. Escreve em `surfaces` (uma cópia das do avião)
+pub fn applyMounts(ac: *const Aircraft, surfaces: []Surface) void {
+    for (0..2) |_| {
+        for (surfaces, 0..) |*surface, i| {
+            const point = mountPoint(ac, surfaces, i) orelse continue;
+            surface.x = point[0];
+            surface.z = point[2];
+            if (surface.vertical or !surface.symmetric) surface.y = point[1];
+        }
+    }
 }
 
 // ------------------------------------------------------------------ testes

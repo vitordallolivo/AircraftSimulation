@@ -4,7 +4,7 @@
 //! `sweep` impõe cada α ao avião inteiro (β = 0, comandos em 0, longe do chão) e devolve a sustentação de cada "dono"
 //! (uma superfície do avião, que o chamador indica painel a painel; −1 fica de fora), a área e a corda média
 //! aerodinâmica de cada dono, e o c_l de cada painel. A carga sai das faixas da simulação (`aero.computeTrace`) ou da
-//! linha sustentadora (`llt.apply`, linear ou não linear conforme `Params.llt_nonlinear`).
+//! linha sustentadora (`llt.apply`, linear ou não linear conforme `Params.llt_method`).
 //!
 //! `summarize` tira daí o C_L de cada dono e do conjunto (na soma das áreas), o C_L máximo e onde o estol começa: o
 //! painel cujo c_l mais cai do α do pico para o α seguinte, e a posição dele na semienvergadura do seu dono.
@@ -36,6 +36,9 @@ pub const Output = struct {
     owner_chord: []f64, // corda média aerodinâmica de cada dono (m): Σ S c / Σ S
     section_cl: []f64, // c_l de cada painel
     panel_span: []f64, // posição de cada painel ao longo da envergadura (y no corpo, m)
+    /// resíduo relativo da linha sustentadora não linear em cada α (vazio: não guarda); acima de
+    /// `numerics.llt_tolerance` o ponto não convergiu
+    residual: []f64 = &.{},
 };
 
 /// velocidade do ar no corpo para o ângulo de ataque `alpha` (rad), sem derrapagem
@@ -66,11 +69,15 @@ pub fn sweep(params: *const types.Params, airspeed: f64, alphas: []const f64, ow
     }
     var panels: [limits.max_surfaces]types.PanelState = undefined;
     var env = mods.Env.none;
-    env.no_pair = method == .lifting_line; // a linha sustentadora já faz a interferência entre as asas
+    env.no_interference = method == .lifting_line; // a linha sustentadora já faz a interferência entre as asas
+    if (out.residual.len > 0 and out.residual.len < alphas.len) return error.BadIndex;
+    // na não linear, cada α parte da solução do α anterior (continuação), quando ela é melhor que a linear
+    var warm: llt.Warm = .{};
     for (alphas, 0..) |alpha, a| {
         const wind = relativeWind(airspeed, alpha);
         _ = aero.computeTrace(params, wind, vec.zero, vec.zero, 50.0, vec.zero, &env, panels[0..panel_count]);
-        if (method == .lifting_line) _ = llt.apply(params, wind, vec.zero, panels[0..panel_count]);
+        const residual = if (method == .lifting_line) llt.applyFrom(params, wind, vec.zero, panels[0..panel_count], &warm).residual else 0;
+        if (out.residual.len > 0) out.residual[a] = residual;
         const lift_row = out.owner_lift[a * owner_count ..][0..owner_count];
         @memset(lift_row, 0);
         for (panels[0..panel_count], owners[0..panel_count], 0..) |panel, owner, i| {
@@ -185,7 +192,7 @@ test "varredura: a sustentação do dono é a soma das faixas e a área e a cord
     // a mesma conta painel a painel, pelas funções que a varredura chama
     var panels: [20]types.PanelState = undefined;
     var env = mods.Env.none;
-    env.no_pair = true;
+    env.no_interference = true;
     const wind = relativeWind(12, alphas[1]);
     _ = aero.computeTrace(&params, wind, vec.zero, vec.zero, 50.0, vec.zero, &env, &panels);
     _ = llt.apply(&params, wind, vec.zero, &panels);
@@ -215,7 +222,7 @@ test "resumo: C_L máximo e estol que começa na raiz da asa retangular (linha s
     // Aerodynamics, seção 5.3 — a conferir no PDF)
     var params: types.Params = undefined;
     rectangularWing(&params, 24, 2.0, 0.25, 1.3);
-    params.llt_nonlinear = 1;
+    params.llt_method = .nonlinear;
     params.llt_viscosity = 2;
     const owners = [_]i32{0} ** 24;
     var alphas: [16]f64 = undefined;

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Métodos de fora do aerosim</title>
+<!--
+  O adaptador dos métodos de fora do núcleo (lltdrek, AeroSandbox, AVL) no navegador. A página do aerosim (shell.html)
+  abre esta num iframe escondido: o Pyodide fica aqui, longe das variáveis globais que o programa em Zig (emscripten)
+  cria na página dele, e a tela chama `pythonCall` direto, na hora, porque um iframe da mesma origem roda na mesma
+  thread da página.
+
+  O que se carrega, tudo do próprio site (montado por `zig build pacote -- --alvo web`):
+    pyodide/                o Pyodide e o numpy
+    aerosim-python.tar      o adaptador (`aerosim/bridge.py` e o que ele usa) e a pasta data
+
+  O que a página do aerosim usa daqui:
+    pythonState()           0 carregando, 1 pronto, -2 falhou (o motivo em pythonError)
+    pythonCall(texto)       um pedido em JSON para `aerosim.bridge.call_in_browser`; volta o texto da resposta
+    pyodide.FS              os arquivos do Python (a página copia para cá os arquivos dos pedidos)
+-->
+</head>
+<body>
+<script type="module">
+  let state = 0;
+  let call = null;
+  window.pythonState = () => state;
+  window.pythonCall = (line) => call(line);
+  const status = (text) => console.log('[python] ' + text);
+
+  async function fetchBytes(name) {
+    const response = await fetch(name);
+    if (!response.ok) throw new Error(name + ': ' + response.status);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  try {
+    const started = performance.now();
+    const { loadPyodide } = await import(new URL('pyodide/pyodide.mjs', location).href);
+    const pyodide = await loadPyodide({ indexURL: new URL('pyodide/', location).href, stdout: status, stderr: status });
+    window.pyodide = pyodide;
+    await pyodide.loadPackage(['numpy'], { messageCallback: status });
+    pyodide.unpackArchive(await fetchBytes('aerosim-python.tar'), 'tar', { extractDir: '/repo' });
+    pyodide.runPython(`
+import os, sys
+sys.path.insert(0, "/repo")
+sys.dont_write_bytecode = True
+os.chdir("/repo")
+from aerosim import bridge
+`);
+    call = pyodide.globals.get('bridge').call_in_browser;
+    state = 1;
+    status('pronto em ' + ((performance.now() - started) / 1000).toFixed(1) + ' s');
+  } catch (error) {
+    state = -2;
+    window.pythonError = String(error);
+    console.error('[python] não carregou:', error);
+  }
+</script>
+</body>
+</html>

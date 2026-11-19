@@ -31,6 +31,22 @@ os motores precisam mudar suas inclinações? O que acontece com os polos por co
 os arrastos parasitas.
 - Calculos estruturais, da para pegar o TCC do gunther para esse tipo de otimização
 
+## Computação distribuída P2P (WebRTC)
+A ideia é poder, no futuro, gerar um link e mandar para outra pessoa. Quem abre o link entra pelo navegador numa sessão
+web segura, sem instalar nada, e o computador dela passa a trabalhar junto com o de quem criou a sessão. Juntos, os
+computadores rodam várias otimizações ou simulações ao mesmo tempo. A conexão entre eles é direta, de navegador para
+navegador (P2P, via WebRTC), então não depende de um servidor fazendo as contas.
+
+Isso é pensado para o aeroopt e para os módulos que ainda vão ser implementados, não para a física em tempo real do
+6GDL do AeroDrive, que continua rodando numa máquina só. Cada nó avalia um caso inteiro, por exemplo um avião completo
+por nó, e devolve o resultado. O mesmo caso pode ser mandado para dois nós diferentes: se os dois resultados batem, o
+resultado vale, e assim um nó com problema não estraga a otimização.
+
+## AeroFOAM
+Módulo futuro: o OpenFOAM aplicado ao nosso projeto, para ter CFD do avião projetado dentro da ferramenta. Como cada
+caso de CFD é pesado e independente dos outros, ele é um candidato natural a rodar nessa rede P2P, com cada nó
+resolvendo um caso.
+
 # Coisas que o claudio achou importante:
 
 ## Análises que faltam

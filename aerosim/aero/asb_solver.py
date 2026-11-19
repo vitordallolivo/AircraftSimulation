@@ -19,7 +19,6 @@ from aerosim.interfaces.translator import IModelTranslator
 
 from .base import AeroSolverBase
 from .geometry import to_xz_up
-from .span_loads import StripLoadMethod, SurfaceLoad
 
 
 def _atmosphere(rho: float):
@@ -79,6 +78,7 @@ class _AsbBase(AeroSolverBase):
     method = "vlm"
     induced_only = True
     translator = AsbTranslator()
+    n_chord = 6                  # refino padrão do VLM: painéis na corda (`AeroCase.n_chord` troca)
 
     def available(self):
         try:
@@ -91,7 +91,7 @@ class _AsbBase(AeroSolverBase):
         import aerosandbox as asb
         if self.method == "vlm":
             return asb.VortexLatticeMethod(airplane=ap, op_point=op, spanwise_resolution=max(4, case.n_span // 2),
-                                           chordwise_resolution=6)
+                                           chordwise_resolution=int(case.n_chord) or self.n_chord)
         if self.method == "buildup":
             return asb.AeroBuildup(airplane=ap, op_point=op)
         return asb.LiftingLine(airplane=ap, op_point=op, spanwise_resolution=max(4, case.n_span // 2))
@@ -172,7 +172,7 @@ def _side_groups(s, side: int, d_deg, af) -> list[list]:
     return groups
 
 
-class AsbVLMLoads(StripLoadMethod):
+class AsbVLMLoads:
     """carga por faixa pelo VLM do AeroSandbox (malha de vórtices na corda e na envergadura; Sharpe, MIT). Cada lado
     de cada superfície vira um `asb.Wing` sem simetria (comandos assimétricos); os comandos entram como torção das
     faixas, porque o VLM do ASB não deflete superfícies. Sem esteira de hélice e sem efeito solo; arrasto só o
@@ -181,8 +181,11 @@ class AsbVLMLoads(StripLoadMethod):
     title = "VLM do AeroSandbox"
     source = "AeroSandbox: VLM (Sharpe, MIT; aerosim/aero/asb_solver.py)"
     supports = frozenset({"comandos", "corda"})
-    backend = None
-    n_span, n_chord = 40, 6
+    n_span, n_chord = 40, 6                     # refino padrão (faixas por lado, painéis na corda)
+
+    def __init__(self, n_span: int = 0, n_chord: int = 0):
+        """o refino: faixas por lado da maior superfície e painéis na corda (0: o padrão)"""
+        self.n_span, self.n_chord = int(n_span) or self.n_span, int(n_chord) or self.n_chord
 
     def available(self):
         try:
@@ -258,11 +261,9 @@ class AsbVLMLoads(StripLoadMethod):
             cl, cd = L / (q * c), D / (q * c)
             a2d = s.airfoil.cl_alpha or 2 * np.pi
             a0 = 0.0 if s.vertical else s.airfoil.zero_lift_angle()
-            n = len(sv)
-            out.append(SurfaceLoad(name=s.name, role=s.role, vertical=bool(s.vertical), s=sv, width=w, chord=c,
-                                   alpha=a0 + np.degrees(cl / a2d), V=np.full(n, point.V), q=np.full(n, q), cl=cl,
-                                   cd=cd, L=L, D=D, points=pts, force=Fs, velocity=np.tile(Vr, (n, 1)),
-                                   induced=np.zeros((n, 3)), span_dir=ey, chord_dir=ex, wash=np.zeros(n)))
+            out.append(dict(name=s.name, role=s.role, vertical=bool(s.vertical), s=sv, width=w, chord=c,
+                            alpha=a0 + np.degrees(cl / a2d), cl=cl, cd=cd, L=L, D=D,
+                            lift=float(np.sum(L * w)), drag=float(np.sum(D * w))))
         notes = ["carga pelo VLM do AeroSandbox: malha na corda e na envergadura; sem esteira de hélice e sem efeito "
                  "solo; comandos como torção das faixas; arrasto só o induzido; α efetivo = α0 + c_l/a do perfil"]
         return out, notes

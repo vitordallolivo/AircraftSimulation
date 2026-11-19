@@ -87,6 +87,18 @@ pub fn epsWorse(fa: f64, va: f64, fb: f64, vb: f64, eps: f64) bool {
     return va > vb;
 }
 
+/// a violação que pesa a etapa em que o candidato falhou, para a busca ter direção antes de achar um viável: falhar
+/// numa etapa do começo (a geometria) é pior que falhar numa do fim (a pontuação), seja qual for o tamanho da violação.
+/// É a ordem lexicográfica (a etapa primeiro, a violação depois) posta num número só: (etapas − etapa que passou) +
+/// v/(1 + v), com v/(1 + v) em [0, 1). A regra de viabilidade de Deb (Deb, "An efficient constraint handling method
+/// for genetic algorithms", CMAME 186, 311–338, 2000; a conferir no PDF) compara só v; pôr a etapa na frente é nosso.
+/// `passed` = quantas etapas o candidato passou (`stages` = passou todas: devolve só o termo de v, 0 se viável)
+pub fn stagedViolation(stages: usize, passed: usize, violation: f64) f64 {
+    const missing: f64 = @floatFromInt(stages - @min(passed, stages));
+    const amount = if (std.math.isNan(violation) or violation == std.math.inf(f64)) 1.0 else @max(violation, 0) / (1 + @max(violation, 0));
+    return missing + amount;
+}
+
 // ------------------------------------------------------------------ bandido (D-MAB)
 
 /// o estado do bandido num vetor de f64 (o Python guarda): [k, total, n[max_arms], média[max_arms], média PH,
@@ -270,6 +282,15 @@ test "reparo: uma restrição linear fecha num passo, na menor norma; duas tamb�
     // duas linhas iguais: singular sem λ, resolve com λ
     try testing.expect(!repairStep(2, 2, &.{ 1, 1, 1, 1 }, &.{ 1, 1 }, 0, &step));
     try testing.expect(repairStep(2, 2, &.{ 1, 1, 1, 1 }, &.{ 1, 1 }, 1e-6, &step));
+}
+
+test "violação por etapa: falhar antes é pior, qualquer que seja a violação; viável é 0" {
+    try testing.expect(stagedViolation(4, 1, 0.01) > stagedViolation(4, 2, 1e6));
+    try testing.expect(stagedViolation(4, 2, 0.5) > stagedViolation(4, 2, 0.1));
+    try testing.expectEqual(@as(f64, 0), stagedViolation(4, 4, 0));
+    try testing.expectEqual(@as(f64, 3), stagedViolation(4, 1, std.math.nan(f64)) - 1);
+    // com a ordem ε, quem passou mais etapas ganha mesmo com nota pior
+    try testing.expect(epsWorse(10, stagedViolation(3, 0, 0.1), 1, stagedViolation(3, 2, 0.1), 0));
 }
 
 test "ε: o nível cai até 0 em Tc; dentro de ε vale a nota, fora vale a violação" {

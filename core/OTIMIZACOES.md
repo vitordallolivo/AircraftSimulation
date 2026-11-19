@@ -1,7 +1,7 @@
 # core/ — otimizações em avaliação (`-Dopt`)
 
 Variantes do núcleo que **não** são o padrão: cada uma é um bit de `-Dopt`, desligado por padrão. Com `-Dopt=0` (ou
-sem a opção) o núcleo é o de sempre, bit a bit: a regressão em `tools/checks` confere. Aqui fica o que cada uma faz,
+sem a opção) o núcleo é o de sempre, bit a bit: a regressão do `zig build check` confere. Aqui fica o que cada uma faz,
 de onde veio, como medir e o que se mediu. Nenhuma vira padrão sem o dono aprovar (ela muda os números da
 regressão).
 
@@ -18,8 +18,7 @@ python -m ziglang build test -Dopt=minimax,estrin             # os testes com as
 python -m ziglang build --release=fast                        # volta ao núcleo de sempre (-Dopt=0)
 ```
 
-O backend Python carrega a biblioteca que estiver em `zig-out/lib`: depois de medir, compilar de novo com `-Dopt=0`
-(o `tools/opt_matrix.py` já faz isso no fim). O AeroDrive usa o núcleo como dependência sem `-Dopt`: fica sempre no
+A biblioteca em `zig-out/lib` fica com as variantes ligadas: depois de medir, compilar de novo com `-Dopt=0`. O AeroDrive usa o núcleo como dependência sem `-Dopt`: fica sempre no
 de sempre.
 
 | bit | nome | o que muda | onde |
@@ -56,13 +55,6 @@ menor para o mesmo erro (minimax). FFT e Karatsuba só começam a pagar com cent
 nunca multiplica polinômios em tempo de execução: a tração polinomial é montada em comptime.
 
 ## Como medir
-
-```sh
-python tools/opt_matrix.py --instrucoes                  # tabela binária inteira, contagem de instruções
-python tools/opt_matrix.py --bits peak,cse,minimax,estrin --rodadas 5   # tempo de parede das análises
-python tools/opt_matrix.py --std                         # acrescenta a linha com a std (-Dfast_math=false)
-python -m pytest -m bench -s tests/core/test_lut.py      # cada função isolada, em ns
-```
 
 - **Tempo de parede**: as análises do manager (envelope, missão, cargas, desempenho), a menor de N rodadas. Neste
   container o ruído é de uns ±10 %: diferenças menores que isso não querem dizer nada.
@@ -104,7 +96,7 @@ envelope, missão, cargas e desempenho, a menor de 5 rodadas. O ruído do tempo 
   entre elas a diferença é ruído. Sem `peak`, nenhuma passa de +16 %.
 - Os bits se somam quase sem interferência: 8 + 16 dá +19,4 % em instruções (7,8 + 11,6).
 
-### Cada função isolada (`pytest -m bench -s tests/core/test_lut.py`, ns por chamada, entradas aleatórias)
+### Cada função isolada (ns por chamada, entradas aleatórias)
 
 | função | tabela / Horner | minimax / Estrin | std |
 |---|---|---|---|
@@ -136,7 +128,7 @@ aleatórias) e a avaliação de f(t, x). Nesta máquina (Xeon 2,1 GHz, L1d 48 KB
   instruções que a std, mas o tempo das duas fica parecido: o gargalo é a cadeia de dependências do
   laço dos painéis em `aero.zig`, não as funções matemáticas.
 
-Para reproduzir: `python -m pytest -m bench -s`.
+
 
 Rotação de equilíbrio do motor (trimagem, curva de tração, envelope): `dn/dt` cai com n, então a
 raiz é única em [1, 600] rps; *regula falsi* com a modificação de Illinois em vez de bisseção (≈10
@@ -251,3 +243,29 @@ segue bit a bit igual (regressão 9/9); no navegador os números diferem do PC n
 
 O resto do decolar no navegador é o `peakCL` (4500 avaliações de `clPanel` por superfície); o `-Dopt=peak` já reduz
 isso, mas muda os números e fica para o dono decidir.
+
+## Testes de técnicas (G27, 2026-11-06)
+
+A bancada `core/src/tecnicas.zig` mede cada técnica candidata contra o código de hoje, no mesmo caso e em release, e
+confere se a conta continua a mesma. Quem chama, alterna as duas e escreve a tabela é o `tools/tecnicas.py`
+(`--instrucoes` conta também as instruções no Callgrind, que não oscilam). Medido nesta máquina da sessão, melhor de 7
+rodadas, 3 vezes alternando:
+
+| Técnica | Hoje | Candidata | Ganho | Mesma conta | Instruções hoje | Instruções candidata |
+|---|---|---|---|---|---|---|
+| log em colunas (SoA) no `gust.settled` | 16,4 µs | 33,8 µs | 0,49x | bit a bit | 163.743 | 291.406 |
+| faixas em colunas, 4 por vez (`@Vector`) | 75,6 µs | 46,3 µs | 1,63x | até 1e-9 | 603.971 | 354.057 |
+| `@branchHint(.unlikely)` nos caminhos raros do `runner.run` | 87,0 ms | 110,7 ms | 0,79x | bit a bit | 831.373.460 | 831.380.402 |
+| `FixedBufferAllocator` no lugar do `page_allocator` no `sizing.eval` | 77,3 µs | 19,0 µs | 4,07x | bit a bit | 111.488 | 111.460 |
+
+**Entrou:** a memória de trabalho do dimensionamento. As instruções são as mesmas, e o tempo cai a um quarto: o que se
+perdia era a chamada ao sistema que o `page_allocator` faz a cada avaliação. No `root.zig` o `Params` de trabalho
+agora é um por thread, fora da pilha, e a regressão segue bit a bit igual (9/9).
+
+**Não entrou:**
+- **Log em colunas:** o `settled` lê só 7 campos da linha, mas copiar para colunas e varrer cada coluna custa o dobro
+  das instruções. A linha inteira já fica no cache.
+- **Dica dos ramos:** as instruções são as mesmas, e o tempo piora 20 % (o compilador muda a ordem dos blocos e o
+  laço quente sai pior). O bit `-Dopt=hint` fica só para a bancada.
+- **Faixas em colunas com `@Vector`:** ganha 1,6x, mas muda o último dígito das contas (a soma em outra ordem), então
+  quebraria a regressão bit a bit. Fica como proposta, para entrar como bit de `-Dopt` desligado se o dono quiser.

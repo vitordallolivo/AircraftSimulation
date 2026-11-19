@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0000aa">
+<title>Tracking do projeto</title>
+<!--
+  Modelo da página do tracking. O tools/tracking.zig troca o marcador DADOS pelas tabelas do Quadro do docs/TRACKING.md
+  (mais a ordem de prioridade, o progresso e o AREAS.md) e grava a página pronta; tudo o que aparece é desenhado pelo script abaixo.
+-->
+<style>
+  :root {
+    --azul: #0000aa; --ciano: #00aaaa; --fundo: #f4f4f7; --cartao: #ffffff; --texto: #1d1d26; --apagado: #6a6a7a;
+    --linha: #d9d9e3; --mono: ui-monospace, "DejaVu Sans Mono", "Cascadia Mono", Consolas, monospace;
+    --feito: #2e7d32; --pronto: #1565c0; --andamento: #ef6c00; --revisar: #6a1b9a; --bloqueado: #9e9e9e; --naoiniciado: #1565c0;
+    --alta: #c62828; --media: #ef6c00; --baixa: #757575;
+    --afazer: #00838f; --decidir: #ad1457; --fora: #bdbdbd; --suspeita: #c62828;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--fundo); color: var(--texto); }
+  body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--azul); color: #fff; padding: 12px 16px 0; position: sticky; top: 0; z-index: 5; }
+  header h1 { font: 18px var(--mono); margin: 0 0 4px; }
+  header .sub { color: #b8b8ee; font-size: 13px; margin-bottom: 8px; }
+  header a { color: #fff; }
+  nav { display: flex; gap: 2px; overflow-x: auto; }
+  nav button { all: unset; cursor: pointer; padding: 6px 12px; font: 14px var(--mono); color: #c0c0c0; white-space: nowrap; }
+  nav button.ativo { background: var(--fundo); color: var(--azul); }
+  main { padding: 16px; max-width: 1500px; margin: 0 auto; }
+  .barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .barra input { flex: 1 1 220px; padding: 6px 10px; border: 1px solid var(--linha); border-radius: 6px; font: inherit; }
+  .chip { all: unset; cursor: pointer; padding: 3px 10px; border: 1px solid var(--linha); border-radius: 999px; font-size: 13px; background: var(--cartao); }
+  .chip.ativo { background: var(--azul); color: #fff; border-color: var(--azul); }
+  .resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 16px; }
+  .resumo div { background: var(--cartao); border: 1px solid var(--linha); border-radius: 8px; padding: 8px 10px; }
+  .resumo b { display: block; font: 22px var(--mono); }
+  .resumo span { font-size: 12px; color: var(--apagado); }
+  .barra-total { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 16px; background: var(--linha); }
+  .colunas { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-items: start; }
+  .coluna { background: #e9e9f0; border-radius: 8px; padding: 8px; }
+  .coluna h2 { font: 14px var(--mono); margin: 2px 4px 8px; display: flex; justify-content: space-between; }
+  .coluna, .cartao { min-width: 0; overflow-wrap: anywhere; }
+  .cartao { background: var(--cartao); border: 1px solid var(--linha); border-left: 4px solid var(--cor, var(--linha)); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; cursor: pointer; }
+  .cartao:hover { border-color: var(--azul); border-left-color: var(--cor); }
+  .cartao .topo { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 12px; color: var(--apagado); }
+  .cartao .id { font: 13px var(--mono); color: var(--texto); font-weight: 600; }
+  .cartao .titulo { margin-top: 4px; font-size: 14px; }
+  .cartao .deps { margin-top: 6px; font-size: 12px; }
+  .cartao.feito .titulo { text-decoration: line-through; color: var(--apagado); }
+  .commit { font: 11px var(--mono); padding: 0 5px; border-radius: 4px; background: #e8f5e9; color: var(--feito); text-decoration: none; }
+  .commit:hover { text-decoration: underline; }
+  .sequencia { list-style: none; padding: 0; margin: 0; max-width: 980px; }
+  .sequencia li { display: flex; gap: 12px; align-items: flex-start; }
+  .sequencia .passo { font: 13px var(--mono); color: var(--apagado); min-width: 2.5em; text-align: right; padding-top: 10px; }
+  .sequencia .cartao { flex: 1; }
+  .form label { display: block; font-size: 13px; color: var(--apagado); margin: 8px 0 2px; }
+  .form input, .form textarea, .form select { width: 100%; padding: 6px 8px; border: 1px solid var(--linha); border-radius: 6px; font: inherit; }
+  .form textarea { min-height: 70px; resize: vertical; }
+  .form .linha-md { font: 12px var(--mono); background: #f0f0f6; border: 1px solid var(--linha); border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; margin: 8px 0; }
+  .form .botoes { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .form .botao { all: unset; cursor: pointer; padding: 6px 14px; border-radius: 6px; background: var(--azul); color: #fff; font-size: 14px; }
+  .form .botao.leve { background: #e9e9f0; color: var(--texto); }
+  .form .ajuda { font-size: 13px; color: var(--apagado); }
+  .bloco { cursor: help; white-space: nowrap; }
+  .interroga { color: var(--azul); cursor: pointer; font-size: 11px; }
+  .onda { font: 13px var(--mono); color: var(--azul); margin: 16px 0 6px; }
+  .tag { font: 11px var(--mono); padding: 0 6px; border-radius: 4px; background: #eef; color: var(--azul); }
+  .tag.suspeita { background: #fde8e8; color: var(--suspeita); }
+  .estado { font: 11px var(--mono); padding: 1px 6px; border-radius: 4px; color: #fff; background: var(--cor); white-space: nowrap; }
+  .dep { font: 12px var(--mono); padding: 0 5px; border-radius: 4px; border: 1px solid var(--cor); color: var(--cor); cursor: pointer; margin-right: 3px; white-space: nowrap; }
+  .vazio { color: var(--apagado); font-style: italic; padding: 4px; }
+  code { font: 0.9em var(--mono); background: #ececf3; padding: 0 4px; border-radius: 3px; }
+  .texto { background: var(--cartao); border: 1px solid var(--linha); border-radius: 8px; padding: 12px 20px; max-width: 980px; }
+  .texto table, .tabela { border-collapse: collapse; width: 100%; margin: 8px 0 16px; font-size: 14px; }
+  .texto th, .texto td { border-bottom: 1px solid var(--linha); padding: 4px 8px; text-align: left; vertical-align: top; }
+  .texto th { font-weight: 600; background: #f0f0f6; }
+  .texto h2 { font: 16px var(--mono); color: var(--azul); margin: 20px 0 6px; }
+  .texto h3 { font-size: 15px; margin: 14px 0 4px; }
+  .rolar { overflow-x: auto; }
+  /* janela do item */
+  #detalhe { position: fixed; inset: 0; background: rgba(0,0,40,.35); display: none; align-items: flex-start; justify-content: center; padding: 6vh 16px; z-index: 10; overflow-y: auto; }
+  #detalhe.aberto { display: flex; }
+  #detalhe .caixa { background: var(--cartao); border-radius: 10px; max-width: 760px; width: 100%; padding: 16px 20px; border-top: 6px solid var(--cor); }
+  #detalhe h2 { margin: 0 0 6px; font: 18px var(--mono); }
+  #detalhe .fechar { float: right; all: unset; cursor: pointer; font: 20px var(--mono); color: var(--apagado); float: right; }
+  #detalhe .grupo { margin-top: 12px; }
+  #detalhe .grupo h3 { font-size: 13px; color: var(--apagado); margin: 0 0 4px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  /* dependências */
+  #grafo svg { display: block; background: var(--cartao); border: 1px solid var(--linha); border-radius: 8px; }
+  #grafo .no rect { stroke: var(--cor); stroke-width: 1.5; fill: #fff; rx: 4; }
+  #grafo .no text { font: 11px var(--mono); fill: var(--texto); }
+  #grafo .no { cursor: pointer; }
+  #grafo .no:hover rect { fill: #eef; }
+  #grafo path { fill: none; stroke: #9a9ab0; stroke-width: 1.2; }
+  #grafo .realce path.on { stroke: var(--azul); stroke-width: 2.2; }
+  #grafo .realce .no.off { opacity: .25; }
+  #grafo .realce path:not(.on) { opacity: .15; }
+  .legenda { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0; font-size: 12px; }
+  .legenda span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--cor); margin-right: 4px; vertical-align: -1px; }
+  @media (max-width: 600px) { main { padding: 10px; } .colunas { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>AircraftSimulation — tracking</h1>
+  <div class="sub">O quadro de tarefas do <code style="background:none;color:#fff">docs/TRACKING.md</code>. <a href="livro.html">Livro</a> · <a href="mapa.html">Mapa</a> · <a href="index.html">Programas</a>
+    <button class="chip" id="nova" style="margin-left:8px;color:var(--azul);font-weight:600">+ Nova tarefa</button></div>
+  <nav id="abas"></nav>
+</header>
+<div id="aviso" class="sub" style="padding:0 16px;color:var(--andamento)"></div>
+<main id="conteudo"></main>
+<div id="detalhe"><div class="caixa" id="caixa"></div></div>
+
+<script>
+const DADOS = /*DADOS*/null;
+
+// estados na ordem do fluxo, com a cor de cada um
+const ESTADOS = [['Não iniciado', 'naoiniciado'], ['Em andamento', 'andamento'], ['Terminado', 'feito']];
+const COR = Object.fromEntries(ESTADOS.map(([nome, cor]) => [nome, `var(--${cor})`]));
+const COLUNAS = ['Não iniciado', 'Em andamento', 'Terminado'];
+const coluna = estado => COLUNAS.includes(estado) ? estado : 'Não iniciado';
+// prioridade: alta, média, baixa (— sem prioridade); ordena a coluna e a sequência dos próximos
+const PRIORIDADES = ['alta', 'média', 'baixa'];
+const peso = it => { const i = PRIORIDADES.indexOf((it.prioridade || '').toLowerCase()); return i < 0 ? 3 : i; };
+const prioridadeHtml = it => peso(it) < 3 ? `<span class="tag" style="background:none;border:1px solid var(--${['alta', 'media', 'baixa'][peso(it)]});color:var(--${['alta', 'media', 'baixa'][peso(it)]})">${esc(it.prioridade)}</span>` : '';
+// os níveis (tabela "Níveis" do TRACKING.md): em que camada a mudança mexe; o (?) ao lado explica
+const NIVEIS = DADOS.niveis || {};
+const nivelHtml = n => `<span class="tag bloco" ${NIVEIS[n] ? `title="${esc(n + ': ' + NIVEIS[n])}" data-bloco="${esc(n)}"` : ''}>${esc(n)}${NIVEIS[n] ? ' <span class="interroga">(?)</span>' : ''}</span>`;
+
+// todos os itens, com o segmento, quem depende dele, os commits e se é suspeita de erro (refeito quando chega uma
+// mudança das issues, ver `aplicaIssues`)
+const ITENS = [];
+const POR_ID = {};
+const SUSPEITA = /suspeit|\bbug\b|quebrad|errad|não bate|corrigir/i;
+const aberto = it => it.estado !== 'Terminado';
+// commits citados na observação do estado ("Terminado (commit abc1234)") ou no texto: viram links para o GitHub
+const GITHUB = 'https://github.com/vitordallolivo/AircraftSimulation';
+const REPO = GITHUB + '/commit/';
+const HASH = /\b[0-9a-f]{7,40}\b/g;
+function monta() {
+  ITENS.length = 0;
+  for (const k in POR_ID) delete POR_ID[k];
+  for (const seg of DADOS.segmentos) for (const it of seg.itens) ITENS.push({ ...it, segmento: seg.nome, bloqueia: [] });
+  for (const it of ITENS) POR_ID[it.id] = it;
+  for (const it of ITENS) for (const dep of it.depende) if (POR_ID[dep]) POR_ID[dep].bloqueia.push(it.id);
+  for (const it of ITENS) {
+    it.suspeita = SUSPEITA.test(it.tarefa);
+    it.commits = [...new Set(((it.obs || '') + ' ' + it.tarefa).match(HASH) || [])].filter(h => /\d/.test(h) && /[a-f]/.test(h));
+  }
+}
+monta();
+const commitsHtml = it => it.commits.map(h => `<a class="commit" href="${REPO}${h}" target="_blank" rel="noopener">${h.slice(0, 7)}</a>`).join(' ');
+
+// ---------- Markdown curto (o que o TRACKING.md e o AREAS.md usam) ----------
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function inline(s) {
+  const codigos = [];
+  s = esc(s).replace(/`([^`]+)`/g, (_, c) => (codigos.push(c), `\u0000${codigos.length - 1}\u0000`));
+  s = s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+       .replace(/(https?:\/\/[^\s)]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')
+       .replace(/\b([TGO]\d{2,3})\b/g, (m) => POR_ID[m] ? `<a href="#" data-item="${m}">${m}</a>` : m);
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codigos[i]}</code>`);
+}
+function markdown(texto) {
+  const linhas = texto.split('\n'); let out = ''; let i = 0;
+  while (i < linhas.length) {
+    const l = linhas[i];
+    if (!l.trim() || l.trim() === '---') { i++; continue; }
+    let m;
+    if ((m = l.match(/^(#{2,4}) (.*)/))) { out += `<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`; i++; continue; }
+    if (l.startsWith('|')) {
+      const linhasTab = []; while (i < linhas.length && linhas[i].startsWith('|')) linhasTab.push(linhas[i++]);
+      const cel = r => r.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      out += '<div class="rolar"><table><tr>' + cel(linhasTab[0]).map(c => `<th>${inline(c)}</th>`).join('') + '</tr>';
+      for (const r of linhasTab.slice(2)) out += '<tr>' + cel(r).map(c => `<td>${inline(c)}</td>`).join('') + '</tr>';
+      out += '</table></div>'; continue;
+    }
+    if ((m = l.match(/^(\s*)([-*]|\d+\.) /))) {
+      const ordenada = /\d/.test(m[2]); const itens = [];
+      while (i < linhas.length && linhas[i].trim() && !linhas[i].startsWith('|') && !linhas[i].startsWith('#')) {
+        const li = linhas[i].match(/^\s*(?:[-*]|\d+\.) (.*)/);
+        if (li) itens.push(li[1]); else itens[itens.length - 1] += ' ' + linhas[i].trim();
+        i++;
+      }
+      const tag = ordenada ? 'ol' : 'ul';
+      out += `<${tag}>` + itens.map(t => `<li>${inline(t)}</li>`).join('') + `</${tag}>`; continue;
+    }
+    const par = []; while (i < linhas.length && linhas[i].trim() && !/^(\||#|\s*([-*]|\d+\.) )/.test(linhas[i])) par.push(linhas[i++]);
+    out += `<p>${inline(par.join(' '))}</p>`;
+  }
+  return out;
+}
+
+// ---------- pedaços ----------
+const estadoHtml = it => `<span class="estado" style="--cor:${COR[it.estado]}">${esc(it.estado)}</span>`;
+const depHtml = id => { const d = POR_ID[id]; return `<span class="dep" data-item="${id}" style="--cor:${d ? COR[d.estado] : '#999'}" title="${d ? esc(d.estado) : 'fora do quadro'}">${id}</span>`; };
+function titulo(it) {
+  // a primeira frase da tarefa (até o primeiro ponto, dois-pontos ou parêntese), para o cartão
+  const t = it.tarefa.replace(/\*\*/g, ''); const m = t.match(/^(.{20,160}?)(?:[.:(]\s|$)/);
+  return m ? m[1] : t.slice(0, 160) + (t.length > 160 ? '…' : '');
+}
+function cartao(it) {
+  const deps = it.depende.length ? `<div class="deps">depende de ${it.depende.map(depHtml).join('')}</div>` : '';
+  const feito = it.estado === 'Terminado';
+  const commits = it.commits.length ? `<div class="deps">${feito ? 'resolvido em ' : 'commits '}${commitsHtml(it)}</div>` : '';
+  return `<div class="cartao ${feito ? 'feito' : ''}" data-item="${it.id}" style="--cor:${COR[it.estado]}">
+    <div class="topo"><span class="id">${it.id}</span>${nivelHtml(it.nivel)}${prioridadeHtml(it)}<span>${esc(it.segmento)}</span>${it.suspeita && aberto(it) ? '<span class="tag suspeita">suspeita</span>' : ''}</div>
+    <div class="titulo">${inline(titulo(it))}</div>${deps}${commits}</div>`;
+}
+function abrir(id) {
+  const it = POR_ID[id]; if (!it) return;
+  const caixa = document.getElementById('caixa'); caixa.style.setProperty('--cor', COR[it.estado]);
+  // a cadeia inteira do que falta antes deste item
+  const antes = new Set(); const visita = x => (POR_ID[x]?.depende || []).forEach(d => { if (!antes.has(d)) { antes.add(d); visita(d); } }); visita(id);
+  caixa.innerHTML = `<button class="fechar" aria-label="fechar">×</button>
+    <h2>${it.id} ${estadoHtml(it)}</h2>
+    <div class="topo" style="font-size:13px;color:var(--apagado)">${esc(it.segmento)} · ${nivelHtml(it.nivel)} ${prioridadeHtml(it)}${it.obs ? ' · ' + inline(it.obs) : ''}</div>
+    <div class="grupo"><p>${inline(it.tarefa)}</p></div>
+    ${it.commits.length ? `<div class="grupo"><h3>Commits</h3>${commitsHtml(it)}</div>` : ''}
+    <div class="grupo"><h3>Depende de</h3>${it.depende.length ? it.depende.map(depHtml).join('') : '<span class="vazio">nada</span>'}</div>
+    ${antes.size > it.depende.length ? `<div class="grupo"><h3>Cadeia inteira antes dele</h3>${[...antes].map(depHtml).join('')}</div>` : ''}
+    <div class="grupo"><h3>Libera</h3>${it.bloqueia.length ? it.bloqueia.map(depHtml).join('') : '<span class="vazio">nada depende dele</span>'}</div>
+    ${it.estado !== 'Terminado' ? `<div class="grupo form"><h3>Confirmar terminado</h3>
+      <label for="f-desc">O que foi feito (entra no fim do texto da tarefa)</label><textarea id="f-desc"></textarea>
+      <label for="f-commit">Commit</label><input id="f-commit" placeholder="abc1234">
+      <div class="botoes"><button class="botao" id="f-enviar">Confirmar</button></div>
+      <p class="ajuda">Abre no GitHub uma issue já preenchida: aperte "Create" e o TRACKING.md da 0.2_dev é atualizado sozinho
+      (.github/workflows/tracking.yml). Esta página já mostra a mudança na próxima vez que abrir.</p></div>` : ''}`;
+  document.getElementById('detalhe').classList.add('aberto');
+  const enviar = document.getElementById('f-enviar');
+  if (enviar) enviar.addEventListener('click', () => abreIssue(`${it.id} feito`, {
+    acao: 'feito', id: it.id, commit: limpa(document.getElementById('f-commit').value),
+  }, document.getElementById('f-desc').value));
+}
+
+// ---------- mudanças pela página: uma issue "[tracking] ..." que a Action aplica no TRACKING.md ----------
+// O corpo é "chave: valor" por linha, depois "---" e o texto livre (o que foi feito, ou a tarefa nova). O mesmo
+// formato é lido pelo `zig build tracking -- --issue`.
+const limpa = s => s.replace(/\s+/g, ' ').replace(/\|/g, '/').trim();
+function abreIssue(titulo, campos, texto) {
+  const corpo = Object.entries(campos).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n---\n' + limpa(texto);
+  window.open(`${GITHUB}/issues/new?title=${encodeURIComponent('[tracking] ' + titulo)}&body=${encodeURIComponent(corpo)}`, '_blank', 'noopener');
+}
+function leCorpo(corpo) {
+  const [cabeca, ...resto] = (corpo || '').replace(/\r/g, '').split('\n---\n');
+  const campos = {};
+  for (const linha of cabeca.split('\n')) { const m = linha.match(/^(\w+):\s*(.*)$/); if (m) campos[m[1]] = m[2].trim(); }
+  campos.texto = limpa(resto.join('\n---\n'));
+  return campos;
+}
+// aplica nos dados da página as issues abertas depois que ela foi gerada (a Action já gravou ou está gravando no
+// .md, mas o site só é refeito no próximo merge na main)
+function aplicaIssues(issues) {
+  let mudou = 0;
+  for (const issue of issues.slice().reverse()) {
+    if (!issue.title.startsWith('[tracking]') || issue.pull_request || new Date(issue.created_at) < new Date(DADOS.gerado)) continue;
+    const c = leCorpo(issue.body);
+    if (c.acao === 'feito') {
+      for (const seg of DADOS.segmentos) for (const it of seg.itens) if (it.id === c.id) {
+        if (c.texto) it.tarefa += ` Feito: ${c.texto}`;
+        it.estado = 'Terminado'; it.obs = c.commit ? `commit ${c.commit}` : '';
+        mudou++;
+      }
+    } else if (c.acao === 'nova') {
+      const seg = DADOS.segmentos.find(s => s.nome === c.segmento); if (!seg) continue;
+      const id = proximoId(c.segmento);
+      seg.itens.push({ id, tarefa: c.texto || '(sem texto)', nivel: c.nivel || 'Análise', prioridade: c.prioridade || '—', estado: c.estado || 'Não iniciado', obs: '',
+        depende: (c.depende || '').split(/[,;\s]+/).filter(d => /^[A-Z]+\d+$/.test(d)) });
+      monta(); mudou++;
+    }
+  }
+  if (!mudou) return;
+  monta();
+  document.getElementById('aviso').textContent = `${mudou} mudança(s) feitas pela página, já no TRACKING.md da 0.2_dev; o site é refeito no próximo merge.`;
+  desenha();
+}
+// o próximo número livre: O no aeroopt, G na GUI, T no resto (os T são um contador só para os outros segmentos)
+function proximoId(segmento) {
+  const prefixo = segmento === 'aeroopt' ? 'O' : segmento === 'GUI' ? 'G' : 'T';
+  const maior = Math.max(0, ...ITENS.filter(it => it.id.startsWith(prefixo)).map(it => +it.id.slice(1)));
+  return prefixo + String(maior + 1).padStart(2, '0');
+}
+// os níveis em texto
+function listaNiveis() {
+  return Object.entries(NIVEIS).map(([n, texto]) => `<p><b>${esc(n)}</b>: ${inline(texto)}</p>`).join('');
+}
+function novaTarefa() {
+  const caixa = document.getElementById('caixa'); caixa.style.setProperty('--cor', 'var(--azul)');
+  const opcoes = lista => lista.map(x => `<option>${esc(x)}</option>`).join('');
+  caixa.innerHTML = `<button class="fechar" aria-label="fechar">×</button><h2>Nova tarefa</h2>
+    <div class="form">
+      <label for="n-seg">Segmento</label><select id="n-seg">${opcoes(DADOS.segmentos.map(s => s.nome))}</select>
+      <label for="n-tarefa">Tarefa</label><textarea id="n-tarefa"></textarea>
+      <label for="n-dep">Depende de (ids separados por vírgula)</label><input id="n-dep" placeholder="G26, T13">
+      <label for="n-prio">Prioridade</label><select id="n-prio">${opcoes(PRIORIDADES)}</select>
+      <label for="n-nivel">Nível <span class="interroga" id="n-nivel-ajuda">(?)</span></label>
+      <select id="n-nivel">${Object.keys(NIVEIS).map(n => `<option value="${esc(n)}" ${n === 'Análise' ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
+      <div id="n-niveis" class="ajuda" hidden>${listaNiveis()}</div>
+      <label for="n-estado">Estado</label><select id="n-estado">${opcoes(['Não iniciado', 'Em andamento'])}</select>
+      <div class="botoes"><button class="botao" id="n-enviar">Criar</button></div>
+      <p class="ajuda">Abre no GitHub uma issue já preenchida: aperte "Create" e a tarefa entra no fim da tabela do segmento, com o
+      próximo número livre, no TRACKING.md da 0.2_dev.</p></div>`;
+  document.getElementById('detalhe').classList.add('aberto');
+  document.getElementById('n-nivel-ajuda').addEventListener('click', () => { const l = document.getElementById('n-niveis'); l.hidden = !l.hidden; });
+  document.getElementById('n-enviar').addEventListener('click', () => {
+    const segmento = document.getElementById('n-seg').value;
+    const depende = document.getElementById('n-dep').value.split(/[,;\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+    const texto = document.getElementById('n-tarefa').value;
+    abreIssue(`nova em ${segmento}: ${limpa(texto).slice(0, 60)}`, {
+      acao: 'nova', segmento, nivel: document.getElementById('n-nivel').value, depende: depende.join(', '),
+      prioridade: document.getElementById('n-prio').value, estado: document.getElementById('n-estado').value,
+    }, texto);
+  });
+}
+document.getElementById('nova').addEventListener('click', novaTarefa);
+document.getElementById('detalhe').addEventListener('click', e => {
+  if (e.target.id === 'detalhe' || e.target.classList.contains('fechar')) e.currentTarget.classList.remove('aberto');
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('detalhe').classList.remove('aberto'); });
+document.addEventListener('click', e => {
+  if (e.target.closest('a.commit')) return;
+  const bloco = e.target.closest('[data-bloco]');
+  if (bloco && e.target.classList.contains('interroga')) { e.preventDefault(); e.stopPropagation(); alert(bloco.title); return; }
+  const alvo = e.target.closest('[data-item]'); if (!alvo) return;
+  e.preventDefault(); abrir(alvo.dataset.item);
+});
+
+// ---------- abas ----------
+const filtro = { segmento: 'todos', busca: '', feitos: false };
+function filtrar(lista) {
+  const q = filtro.busca.toLowerCase();
+  return lista.filter(it => (filtro.segmento === 'todos' || it.segmento === filtro.segmento)
+    && (!q || (it.id + ' ' + it.tarefa).toLowerCase().includes(q)));
+}
+function barraFiltro() {
+  const segs = ['todos', ...DADOS.segmentos.map(s => s.nome)];
+  return `<div class="barra"><input id="busca" placeholder="buscar (id ou texto)" value="${esc(filtro.busca)}">
+    ${segs.map(s => `<button class="chip ${filtro.segmento === s ? 'ativo' : ''}" data-seg="${s}">${s}</button>`).join('')}</div>`;
+}
+function ligarFiltro(redesenha) {
+  const busca = document.getElementById('busca');
+  busca.addEventListener('input', () => { filtro.busca = busca.value; redesenha(); const b = document.getElementById('busca'); b.focus(); b.setSelectionRange(b.value.length, b.value.length); });
+  document.querySelectorAll('[data-seg]').forEach(b => b.addEventListener('click', () => { filtro.segmento = b.dataset.seg; redesenha(); }));
+}
+
+function abaQuadro() {
+  const lista = filtrar(ITENS);
+  const conta = n => lista.filter(it => coluna(it.estado) === n).length;
+  const resumo = COLUNAS.map(n => `<div style="border-top:3px solid ${COR[n]}"><b>${conta(n)}</b><span>${n}</span></div>`).join('');
+  const barra = COLUNAS.map(n => `<div title="${n}: ${conta(n)}" style="background:${COR[n]};flex:${conta(n)}"></div>`).join('');
+  const colunas = COLUNAS.filter(n => n !== 'Terminado' || filtro.feitos).map(n => {
+    const its = lista.filter(it => coluna(it.estado) === n).sort((a, b) => peso(a) - peso(b));
+    return `<section class="coluna"><h2><span style="color:${COR[n]}">■</span> ${n}<span>${its.length}</span></h2>
+      ${its.map(cartao).join('') || '<div class="vazio">nenhum</div>'}</section>`;
+  }).join('');
+  return barraFiltro() + `<div class="resumo">${resumo}</div><div class="barra-total">${barra}</div>
+    <div class="barra"><button class="chip ${filtro.feitos ? 'ativo' : ''}" id="feitos">mostrar Terminado</button></div>
+    <div class="colunas">${colunas}</div>`;
+}
+function abaSuspeitas() {
+  const lista = filtrar(ITENS.filter(it => it.suspeita && aberto(it)));
+  return barraFiltro() + `<p>Tarefas abertas que falam de suspeita de erro, de algo quebrado ou de conta que não bate. A regra do projeto é que uma suspeita vira o próximo item a resolver.</p>
+    <div class="colunas">${lista.map(cartao).join('') || '<div class="vazio">nenhuma</div>'}</div>`;
+}
+function abaDependencias() {
+  // camadas: cada item fica uma coluna à direita da mais funda das suas dependências
+  const ligados = ITENS.filter(it => it.depende.some(d => POR_ID[d]) || it.bloqueia.length);
+  const nivel = {};
+  const profundidade = id => {
+    if (nivel[id] !== undefined) return nivel[id];
+    nivel[id] = 0; const deps = POR_ID[id].depende.filter(d => POR_ID[d]);
+    return nivel[id] = deps.length ? 1 + Math.max(...deps.map(profundidade)) : 0;
+  };
+  ligados.forEach(it => profundidade(it.id));
+  const camadas = []; for (const it of ligados) (camadas[nivel[it.id]] ||= []).push(it);
+  for (const c of camadas) c.sort((a, b) => a.id.localeCompare(b.id, 'pt', { numeric: true }));
+  const L = 52, A = 22, DX = 96, DY = 28, M = 12;
+  const pos = {};
+  camadas.forEach((c, x) => c.forEach((it, y) => pos[it.id] = [M + x * DX, M + y * DY]));
+  const largura = M * 2 + (camadas.length - 1) * DX + L, altura = M * 2 + Math.max(...camadas.map(c => c.length)) * DY;
+  let arestas = '';
+  for (const it of ligados) for (const d of it.depende) if (pos[d]) {
+    const [x1, y1] = pos[d], [x2, y2] = pos[it.id];
+    arestas += `<path data-de="${d}" data-para="${it.id}" d="M${x1 + L},${y1 + A / 2} C${x1 + L + 30},${y1 + A / 2} ${x2 - 30},${y2 + A / 2} ${x2},${y2 + A / 2}"/>`;
+  }
+  const nos = ligados.map(it => { const [x, y] = pos[it.id];
+    return `<g class="no" data-no="${it.id}" style="--cor:${COR[it.estado]}" transform="translate(${x},${y})"><rect width="${L}" height="${A}" rx="4"/><rect width="5" height="${A}" style="fill:var(--cor);stroke:none"/><text x="11" y="15">${it.id}</text><title>${it.id} (${esc(it.estado)}): ${esc(titulo(it))}</title></g>`; }).join('');
+  const legenda = COLUNAS.map(n => `<span style="--cor:${COR[n]}">${n}</span>`).join('');
+  return `<p>Cada coluna espera a da esquerda. Passe o mouse num item para ver a cadeia dele; clique para abrir.</p>
+    <div class="legenda">${legenda}</div>
+    <div id="grafo" class="rolar"><svg width="${largura}" height="${altura}">${arestas}${nos}</svg></div>
+    ${DADOS.notas.length ? `<div class="texto" style="margin-top:12px">${markdown(DADOS.notas.join('\n\n'))}</div>` : ''}`;
+}
+function ligarGrafo() {
+  const svg = document.querySelector('#grafo svg'); if (!svg) return;
+  const cadeia = (id, chave, campo, set) => { (POR_ID[id]?.[campo] || []).forEach(x => { if (!set.has(x)) { set.add(x); cadeia(x, chave, campo, set); } }); return set; };
+  svg.querySelectorAll('.no').forEach(no => {
+    no.addEventListener('mouseenter', () => {
+      const id = no.dataset.no; const set = new Set([id]);
+      cadeia(id, 0, 'depende', set); cadeia(id, 0, 'bloqueia', set);
+      svg.classList.add('realce');
+      svg.querySelectorAll('.no').forEach(n => n.classList.toggle('off', !set.has(n.dataset.no)));
+      svg.querySelectorAll('path').forEach(p => p.classList.toggle('on', set.has(p.dataset.de) && set.has(p.dataset.para)));
+    });
+    no.addEventListener('mouseleave', () => svg.classList.remove('realce'));
+    no.addEventListener('click', () => abrir(no.dataset.no));
+  });
+}
+function abaSegmentos() {
+  return `<div class="texto" style="margin-bottom:12px"><h2>Níveis</h2>${listaNiveis()}</div>` + DADOS.segmentos.map(s => {
+    const abertos = s.itens.filter(aberto).length;
+    return `<div class="texto" style="margin-bottom:12px"><h2>${esc(s.nome)} <span style="color:var(--apagado);font-size:13px">${abertos} abertas de ${s.itens.length}</span></h2>
+      <p>${inline(s.descricao)}</p></div>`;
+  }).join('');
+}
+// a sequência dos próximos: as tarefas abertas em ondas; cada onda só tem tarefas cujas dependências estão feitas ou
+// numa onda anterior. Dentro da onda, o que já está em andamento vem primeiro, depois por prioridade.
+const ORDEM = ['Em andamento', 'Não iniciado'];
+function abaProximos() {
+  const abertos = filtrar(ITENS.filter(aberto));
+  const resto = new Set(abertos.map(it => it.id));
+  const ondas = [];
+  while (resto.size) {
+    const onda = [...resto].map(id => POR_ID[id]).filter(it => it.depende.every(d => !resto.has(d)));
+    if (!onda.length) { ondas.push([...resto].map(id => POR_ID[id])); break; } // ciclo: o resto junto
+    onda.sort((a, b) => ORDEM.indexOf(a.estado) - ORDEM.indexOf(b.estado) || peso(a) - peso(b) || a.id.localeCompare(b.id, 'pt', { numeric: true }));
+    onda.forEach(it => resto.delete(it.id));
+    ondas.push(onda);
+  }
+  let passo = 0;
+  const html = ondas.map((onda, i) => `<div class="onda">${i === 0 ? 'Agora (nada a esperar)' : `Depois da onda ${i}`}</div>
+    <ol class="sequencia">${onda.map(it => `<li><span class="passo">${++passo}</span>${cartao(it)}</li>`).join('')}</ol>`).join('');
+  const feitos = ITENS.filter(it => it.estado === 'Terminado' && it.commits.length);
+  return barraFiltro() + `<p>As tarefas abertas na ordem em que dá para fazê-las: a primeira onda não espera nada; cada onda seguinte espera alguma da anterior.</p>${html}
+    ${feitos.length ? `<div class="onda">Resolvidas com commit</div><div class="colunas">${filtrar(feitos).map(cartao).join('')}</div>` : ''}`;
+}
+const ABAS = [
+  ['Quadro', abaQuadro],
+  ['Próximos', abaProximos],
+  ['Prioridade', () => `<div class="texto">${markdown(DADOS.prioridade)}</div>`],
+  ['Suspeitas', abaSuspeitas],
+  ['Dependências', abaDependencias],
+  ['Áreas', () => `<div class="texto">${markdown(DADOS.areas)}</div>`],
+  ['Segmentos e níveis', abaSegmentos],
+  ['Progresso', () => `<div class="texto">${markdown(DADOS.progresso)}</div>`],
+];
+let atual = 0;
+const abaDoEndereco = () => { try { atual = Math.max(0, ABAS.findIndex(([n]) => n === decodeURIComponent(location.hash.slice(1)))); } catch (e) {} };
+abaDoEndereco();
+window.addEventListener('hashchange', () => { abaDoEndereco(); document.getElementById('detalhe').classList.remove('aberto'); desenha(); });
+function desenha() {
+  document.getElementById('abas').innerHTML = ABAS.map(([n], i) => `<button class="${i === atual ? 'ativo' : ''}" data-aba="${i}">${n}</button>`).join('');
+  document.querySelectorAll('[data-aba]').forEach(b => b.addEventListener('click', () => { atual = +b.dataset.aba; history.replaceState(null, '', '#' + ABAS[atual][0]); desenha(); }));
+  document.getElementById('conteudo').innerHTML = ABAS[atual][1]();
+  if (document.getElementById('busca')) ligarFiltro(desenha);
+  const feitos = document.getElementById('feitos');
+  if (feitos) feitos.addEventListener('click', () => { filtro.feitos = !filtro.feitos; desenha(); });
+  ligarGrafo();
+}
+desenha();
+// as mudanças feitas pela página depois que ela foi gerada (API pública do GitHub, sem chave; sem rede, nada muda)
+fetch(`https://api.github.com/repos/vitordallolivo/AircraftSimulation/issues?state=all&per_page=50&since=${encodeURIComponent(DADOS.gerado)}`)
+  .then(r => r.ok ? r.json() : []).then(aplicaIssues).catch(() => {});
+</script>
+</body>
+</html>

@@ -20,7 +20,7 @@ pub const types = sizing_types;
 pub fn eval(cfg: *const sizing_types.SizingCfg, params: *core_types.Params, design_vars: []const f64) sizing_types.SizingOut {
     var thrust: chain.CoreThrust = .{ .p = params, .rho = cfg.rho };
     inline for (kinds.all, 0..) |Kind, i| {
-        if (cfg.kind == i) return chain.Chain(Kind, chain.CoreThrust).eval(cfg, &thrust, design_vars);
+        if (@intFromEnum(cfg.kind) == i) return chain.Chain(Kind, chain.CoreThrust).eval(cfg, &thrust, design_vars);
     }
     return chain.Chain(kinds.all[0], chain.CoreThrust).eval(cfg, &thrust, design_vars);
 }
@@ -39,7 +39,7 @@ const Ctx = struct {
     fn evaluate(ctx: *anyopaque, design_vars: []const f64) optimizer.Eval {
         const self: *Ctx = @ptrCast(@alignCast(ctx));
         const result = eval(self.cfg, self.p, design_vars);
-        var ind: sizing_types.Individual = .{ .x = result.x, .feasible = result.feasible, .score = result.score, .violation = result.violation, .mtow = result.q[sizing_types.q_mtow], .ee = result.q[sizing_types.q_ee], .pv = result.q[sizing_types.q_pv] };
+        var ind: sizing_types.Individual = .{ .x = result.x, .feasible = result.feasible, .score = result.score, .violation = result.violation, .mtow = result.q[sizing_types.quantity(.mtow)], .ee = result.q[sizing_types.quantity(.structural_efficiency)], .pv = result.q[sizing_types.quantity(.empty_mass)] };
         ind.fitness = fitness(&result, self.penalty);
         return .{ .fitness = ind.fitness, .ind = ind };
     }
@@ -81,10 +81,12 @@ test {
     _ = @import("optimize.zig");
     _ = @import("ground.zig");
     _ = @import("motorprop.zig");
+    _ = @import("wing_line.zig");
+    _ = @import("tail.zig");
 }
 
 test "nomes para o Python" {
-    try std.testing.expectEqualStrings("mtow", std.mem.span(name(0, sizing_types.q_mtow).?));
-    try std.testing.expectEqualStrings("biplano", std.mem.span(name(2, sizing_types.kind_biplane).?));
+    try std.testing.expectEqualStrings("mtow", std.mem.span(name(0, sizing_types.quantity(.mtow)).?));
+    try std.testing.expectEqualStrings("asa voadora", std.mem.span(name(2, @intFromEnum(sizing_types.AircraftKind.flying_wing)).?));
     try std.testing.expect(name(2, 99) == null and name(3, 0) != null);
 }

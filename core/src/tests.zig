@@ -14,6 +14,8 @@ comptime {
         _ = @import("math/fmath_test.zig");
         _ = @import("math/vec.zig");
         _ = @import("math/poly.zig");
+        _ = @import("math/quadrature.zig");
+        _ = @import("math/interpolation.zig");
     }
 }
 
@@ -28,9 +30,14 @@ comptime {
         _ = @import("physics/mass.zig");
         _ = @import("physics/terrain.zig");
         _ = @import("modifiers/mod.zig");
+        _ = @import("methods.zig");
+        _ = @import("numerics.zig");
+        _ = @import("interface.zig");
         _ = @import("collision/collision.zig");
         _ = @import("loads/llt.zig");
         _ = @import("loads/sweep.zig");
+        _ = @import("loads/trefftz.zig");
+        _ = @import("loads/vlm.zig");
     }
 }
 
@@ -48,6 +55,8 @@ comptime {
         _ = @import("sim/tests.zig");
         _ = @import("sim/envelope.zig");
         _ = @import("sim/simple_perf.zig");
+        _ = @import("sim/static.zig");
+        _ = @import("sim/modes.zig");
         _ = @import("abi.zig");
         _ = @import("bench.zig");
     }
@@ -57,6 +66,7 @@ comptime {
 comptime {
     if (wanted("sizing")) {
         _ = @import("sizing/sizing.zig");
+        _ = @import("sizing/constraints.zig");
         _ = @import("sizing/wing_line.zig");
     }
 }
@@ -73,8 +83,28 @@ comptime {
         _ = @import("optim/rbf.zig");
         _ = @import("optim/sensmethods.zig");
         _ = @import("optim/sampling.zig");
+        _ = @import("optim/scalar.zig");
+        _ = @import("optim/topology.zig");
         _ = @import("optim/guided.zig");
         _ = @import("math/linalg.zig");
+    }
+}
+
+// structures: seção composta, flambagem e trem, e as cargas que dimensionam a estrutura (V-n, esforços,
+// aeroelasticidade, flutter e estol por estação)
+comptime {
+    if (wanted("structures")) {
+        _ = @import("structures/section.zig");
+        _ = @import("util/plot.zig");
+        _ = @import("util/xlsx.zig");
+        _ = @import("util/xflr5.zig");
+        _ = @import("structures/buckling.zig");
+        _ = @import("structures/gear.zig");
+        _ = @import("loads/vn.zig");
+        _ = @import("loads/internal.zig");
+        _ = @import("loads/aeroelastic.zig");
+        _ = @import("loads/flutter.zig");
+        _ = @import("loads/stall.zig");
     }
 }
 

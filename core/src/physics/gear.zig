@@ -33,7 +33,7 @@ pub fn compute(ctx: state.Ctx, state_vector: []const f64, body_to_ned: vec.M3, r
         if (pen <= 0.0) continue;
         const vn = vec.mul(body_to_ned, VB + vec.cross(body_rates, position));
         const Nn = @max(0.0, gear_point.k * pen + gear_point.c * vn[2]);
-        const dir = if (gear_point.kind == types.gear_steer) steer else 0.0;
+        const dir = if (gear_point.kind == types.GearKind.steer) steer else 0.0;
         const sc = fmath.sincos(dir);
         const fn_ = vec.mul(body_to_ned, V3{ sc.c, sc.s, 0 });
         const fh = fmath.hypot(fn_[0], fn_[1]);
@@ -45,9 +45,9 @@ pub fn compute(ctx: state.Ctx, state_vector: []const f64, body_to_ned: vec.M3, r
         const vt = vn[0] * lx + vn[1] * ly;
         var mu = params.mu_roll;
         var mul = params.mu_lat;
-        if (gear_point.kind == types.gear_main and ctx.f.brakes != 0) mu = params.mu_brake;
-        if (gear_point.kind == types.gear_main and ctx.f.landed != 0) mu = params.mu_landing;
-        if (gear_point.kind == types.gear_skid) {
+        if (gear_point.kind == types.GearKind.main and ctx.f.brakes != 0) mu = params.mu_brake;
+        if (gear_point.kind == types.GearKind.main and ctx.f.landed != 0) mu = params.mu_landing;
+        if (gear_point.kind == types.GearKind.skid) {
             mu = params.mu_skid;
             mul = params.mu_skid;
         }

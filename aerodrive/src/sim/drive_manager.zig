@@ -16,8 +16,8 @@ const v3 = @import("../math/vec3.zig");
 const fz = @import("../util/fuzz.zig");
 const session = @import("session.zig");
 
-const T = core.types;
-const L = core.limits;
+const types = core.types;
+const limits = core.limits;
 
 pub const Mode = session.Mode;
 
@@ -55,10 +55,10 @@ pub const DriveManager = struct {
     mode: Mode = .manual,
     reset_error: []const u8 = "", // por que o núcleo não pôs o avião na pista (vazio: pôs)
     t: f64 = 0,
-    last: ?T.LogRow = null,
+    last: ?types.LogRow = null,
     frame: Frame = .{},
     status: core.runner.Status = .chunk,
-    buf: [256]T.LogRow = undefined,
+    buf: [256]types.LogRow = undefined,
     prop_angle: [pose.max_units]f64 = @splat(0),
     n_seg: usize = 0,
 
@@ -158,7 +158,7 @@ pub const DriveManager = struct {
             }
             dm.t = t_target;
             if (dm.last) |row| {
-                for (0..@min(pose.max_units, L.max_props)) |i| { // rpm -> ângulo da pá (rad)
+                for (0..@min(pose.max_units, limits.max_props)) |i| { // rpm -> ângulo da pá (rad)
                     dm.prop_angle[i] += row.rpm[i] * 2 * std.math.pi / 60.0 * dt;
                     dm.prop_angle[i] = @mod(dm.prop_angle[i], 2 * std.math.pi);
                 }
@@ -182,7 +182,7 @@ pub const DriveManager = struct {
             .seg = @intFromFloat(std.math.clamp(row.seg, 0, 1e6)),
         };
         f.drive = .{ .de = row.de, .da = row.da, .dr = row.dr, .prop_angle = dm.prop_angle, .payload_released = ev.trel > 0 };
-        for (0..@min(pose.max_tanks, L.max_tanks)) |i| f.drive.slosh_tilt[i] = .{ row.slosh_y[i], -row.slosh_x[i] };
+        for (0..@min(pose.max_tanks, limits.max_tanks)) |i| f.drive.slosh_tilt[i] = .{ row.slosh_y[i], -row.slosh_x[i] };
         if (ev.trel > 0) f.payload_ned = .{ row.pk_n, row.pk_e, -row.pk_h };
         f.mode = dm.mode;
         f.rpm = row.rpm[0];
@@ -275,4 +275,52 @@ fn fuzzSteps(_: void, src: *fz.Src) anyerror!void {
 
 test "fuzz: passos do drive_manager" {
     try fz.checkScaled({}, fuzzSteps, .{}, 40); // cada caso calibra um avião
+}
+
+test "efeito solo pela imagem no VLM: a tabela sai na configuração e o Convencional decola" {
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", testing.allocator, .limited(1 << 24));
+    defer testing.allocator.free(bytes);
+    var d: model.Diag = .{};
+    var l = try model.parse(testing.allocator, bytes, &d);
+    defer l.deinit();
+    const list = [_]model.Modifier{.{ .kind = "solo.vlm_imagem" }};
+    l.ac.modifiers = &list;
+    var dm = try DriveManager.init(testing.allocator, &l.ac, &d, .autopilot);
+    defer dm.deinit();
+    const table = &dm.inst.p.ground_table;
+    try testing.expect(dm.inst.p.ground == .vlm_image and table.n_height > 0);
+    // perto do chão: mais C_L, menos induzido e o nariz para baixo (a cauda sai do downwash); longe, quase nada
+    const near = core.modifiers.ground.lookup(table, table.height[0], 4 * std.math.pi / 180.0);
+    try testing.expect(near.lift > 0.05 and near.induced < 0.8 and near.moment < -0.03);
+    const far = core.modifiers.ground.lookup(table, table.height[table.height.len - 1], 4 * std.math.pi / 180.0);
+    try testing.expect(@abs(far.lift) < 1e-3 and @abs(far.induced - 1) < 1e-2);
+    for (0..60 * 20) |_| _ = dm.step(1.0 / 60.0);
+    try testing.expect(dm.frame.phase == .flying);
+}
+
+/// a distância (m) do Convencional na pista até sair do chão, com a lista de modifiers `modifiers`
+fn liftoffDistance(modifiers: []const model.Modifier) !f64 {
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "../data/aircraft/Convencional_original.json", testing.allocator, .limited(1 << 24));
+    defer testing.allocator.free(bytes);
+    var d: model.Diag = .{};
+    var l = try model.parse(testing.allocator, bytes, &d);
+    defer l.deinit();
+    l.ac.modifiers = modifiers;
+    var dm = try DriveManager.init(testing.allocator, &l.ac, &d, .autopilot);
+    defer dm.deinit();
+    for (0..60 * 30) |_| {
+        const frame = dm.step(1.0 / 60.0);
+        if (frame.phase == .flying) return @sqrt(frame.pos_ned[0] * frame.pos_ned[0] + frame.pos_ned[1] * frame.pos_ned[1]);
+    }
+    return error.NeverFlew;
+}
+
+test "efeito solo pela imagem no VLM: a cauda no chão atrasa a rotação, mas o profundor na tabela a recupera" {
+    // o McCormick só corta o induzido; o VLM vê também a cauda perder o downwash e ganhar sustentação perto do chão
+    // (ΔC_m de −0,04 a −0,2 no Convencional parado, da ordem de −V_h a_t Δε com Δε ~ ε/2). A rotação pede mais
+    // profundor e a corrida cresce (51,6 m → 92,7 m em 2026-11-12; sem o termo do profundor na tabela eram ~125 m)
+    const mccormick = try liftoffDistance(&.{});
+    const imaged = try liftoffDistance(&.{.{ .kind = "solo.vlm_imagem" }});
+    try testing.expect(imaged > mccormick);
+    try testing.expect(imaged < 2 * mccormick);
 }

@@ -1,7 +1,7 @@
 # Monta o programa instalável (tela inicial, aerosim, aeroopt e AeroDrive): o AppImage do Linux e o instalador .exe
 # do Windows, os dois compilados no Ubuntu (o Zig compila para o Windows daqui). Roda só quando alguém pede (botão
 # "Run workflow" na aba Actions) ou numa tag de versão (v*); os arquivos ficam nos "Artifacts" da execução.
-# Sem chave nem segredo: só compila e empacota. No PC: python tools/package.py [--alvo windows].
+# Sem chave nem segredo: só compila e empacota. No PC: python -m ziglang build pacote [-- --alvo windows].
 name: pacotes
 
 on:
@@ -62,7 +62,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y nsis
 
       - name: Empacotar
-        run: python tools/package.py --alvo ${{ matrix.alvo }}
+        run: python -m ziglang build pacote -- --alvo ${{ matrix.alvo }}
 
       - uses: actions/upload-artifact@v4
         with:

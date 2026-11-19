@@ -1,7 +1,7 @@
 # data — arquivos de exemplo
 
 ```sh
-python -m aerosim.gui data/aircraft/Asa_voadora.json                       # GUI
+python -m ziglang build aerosim                                            # GUI (abre os aviões de data/aircraft)
 cd aerodrive && zig build run -- ../data/aircraft/Asa_voadora.json        # aerodrive
 ```
 

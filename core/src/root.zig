@@ -29,7 +29,9 @@ var used: [limits.max_instances]std.atomic.Value(bool) = [_]std.atomic.Value(boo
 
 /// tudo o que uma função da ABI pode devolver como erro: os da configuração e do estado (sim/runner.zig) e os da
 /// própria fronteira
-pub const AbiError = runner.ConfigError || runner.StateError || error{
+pub const AbiError = runner.ConfigError || runner.StateError || structure_section.Error || error{
+    /// tamanho de vetor que não bate, estações fora de ordem, dados que faltam ou demais elementos nas estruturas e cargas
+    BadStructureInput,
     /// slot fora da faixa ou não reservado
     InvalidSlot,
     /// todas as `max_instances` simulações estão em uso
@@ -65,6 +67,11 @@ pub fn abiCode(err: AbiError) i32 {
         error.BadTimeStep => -16,
         error.BadMass => -17,
         error.TooManyPropPoints => -18,
+        error.GroundTable => -19,
+        error.NoParts => -20,
+        error.BadMaterial => -21,
+        error.NoStiffness => -22,
+        error.BadStructureInput => -23,
         // os otimizadores sempre devolveram −1 para "não cabe"; o Python só olha o sinal
         error.OutOfRange, error.OutOfMemory, error.SingularSystem => -1,
     };
@@ -96,7 +103,7 @@ export fn aerosim_schema() [*:0]const u8 {
 
 /// sonda dos modificadores (sem simulação): fator do efeito solo do método `method` a `height` (m), envergadura `span` (m)
 export fn aerosim_probe_ground(method: i32, height: f64, span: f64) f64 {
-    return modifiers.ground.factor(method, height, span);
+    return modifiers.ground.factor(@enumFromInt(method), height, span);
 }
 
 /// sonda da esteira (sem simulação): um motor de diâmetro D com tração T, torque Q e sentido `sense`, eixo +x,
@@ -189,8 +196,8 @@ export fn aerosim_panel_states(slot: i32, airspeed: f64, alpha: f64, beta: f64, 
     return panelStates(slot, airspeed, alpha, beta, de, da, dr, thrusts, torques, prop_count, out, cap, false);
 }
 
-/// `aerosim_panel_states`; `no_pair`: sem a interferência entre asas ligadas (a linha sustentadora vem depois)
-fn panelStates(slot: i32, airspeed: f64, alpha: f64, beta: f64, de: f64, da: f64, dr: f64, thrusts: [*]const f64, torques: [*]const f64, prop_count: i32, out: [*]types.PanelState, cap: usize, no_pair: bool) i32 {
+/// `aerosim_panel_states`; `no_interference`: sem a interferência entre asas (a linha sustentadora vem depois)
+fn panelStates(slot: i32, airspeed: f64, alpha: f64, beta: f64, de: f64, da: f64, dr: f64, thrusts: [*]const f64, torques: [*]const f64, prop_count: i32, out: [*]types.PanelState, cap: usize, no_interference: bool) i32 {
     const inst = getConfigured(slot) catch |err| return abiCode(err);
     if (prop_count != 0 and prop_count != inst.p.n_prop) return abiCode(error.BadIndex);
     const alpha_sc = fmath.sincos(alpha);
@@ -198,7 +205,7 @@ fn panelStates(slot: i32, airspeed: f64, alpha: f64, beta: f64, de: f64, da: f64
     const Vr = vec.V3{ airspeed * alpha_sc.c * beta_sc.c, airspeed * beta_sc.s, airspeed * alpha_sc.s * beta_sc.c };
     const prop_len: usize = @intCast(prop_count);
     var env = if (prop_count > 0) modifiers.envFrom(&inst.p, Vr, vec.zero, thrusts[0..prop_len], torques[0..prop_len]) else modifiers.Env.none;
-    env.no_pair = no_pair;
+    env.no_interference = no_interference;
     const surf_count: usize = @intCast(inst.p.n_surf);
     const written = @min(cap, surf_count);
     const rcg = trim.Ctx.init(&inst.p, &inst.r.f).rcg;
@@ -255,7 +262,7 @@ export fn aerosim_reynolds(density: f64, airspeed: f64, chord: f64, altitude: f6
 }
 
 /// `aerosim_aero_coeffs_at` com a carga da linha sustentadora (loads/llt.zig, `coeffs`): as forças dos painéis
-/// trocadas pelas da linha sustentadora (Phillips e Snyder; Goates e Hunsaker com `llt_joint`, `llt_blend`); a
+/// trocadas pelas da linha sustentadora (Phillips e Snyder; Goates e Hunsaker ou a não linear, por `llt_method`); a
 /// fuselagem, o c_m das seções e os modificadores ficam os da simulação. Só para análise
 export fn aerosim_aero_coeffs_llt(slot: i32, airspeed: f64, alpha: f64, beta: f64, pr: f64, qr: f64, rr: f64, de: f64, da: f64, dr: f64, height: f64, thrusts: [*]const f64, torques: [*]const f64, prop_count: i32, ref: ?*const [3]f64, out: *types.AeroCoeffs) i32 {
     const inst = getConfigured(slot) catch |err| return abiCode(err);
@@ -399,6 +406,17 @@ export fn aerosim_linearize(slot: i32, airspeed: f64, out: *linear.LinModel) i32
     return if (out.ok != 0) 0 else abiCode(error.TrimFailed);
 }
 
+/// trima nivelado em V e devolve o modelo linear com o líquido dos tanques oscilando (ver sim/linear.zig,
+/// `linearizeSlosh`), com o sloshing ligado só nesta conta; -4 se a trimagem falhar
+export fn aerosim_linearize_slosh(slot: i32, airspeed: f64, out: *linear.LinSloshModel) i32 {
+    const inst = getConfigured(slot) catch |err| return abiCode(err);
+    const was_on = inst.p.slosh_on;
+    inst.p.slosh_on = 1;
+    defer inst.p.slosh_on = was_on;
+    out.* = linear.linearizeSlosh(&inst.p, &inst.r.f, airspeed);
+    return if (out.ok != 0) 0 else abiCode(error.TrimFailed);
+}
+
 /// ajusta os ganhos do piloto automático pelo modelo linear em V (control/autotune.zig); -4 se a trimagem falhar
 export fn aerosim_autotune(slot: i32, airspeed: f64, out: *autotune.Result) i32 {
     const inst = getConfigured(slot) catch |err| return abiCode(err);
@@ -417,7 +435,8 @@ export fn aerosim_prop_point(slot: i32, prop_index: i32, airspeed: f64, thr: f64
 /// trima no tipo `kind` (nivelado, curva, ...) a `airspeed` com o fator de carga `load_factor`; -4 se falhar
 export fn aerosim_trim(slot: i32, kind: i32, airspeed: f64, load_factor: f64, out: *types.TrimPoint) i32 {
     const inst = getConfigured(slot) catch |err| return abiCode(err);
-    out.* = trim.solve(trim.Ctx.init(&inst.p, &inst.r.f), kind, airspeed, load_factor, null);
+    const trim_kind = std.enums.fromInt(types.TrimKind, kind) orelse return abiCode(error.BadIndex);
+    out.* = trim.solve(trim.Ctx.init(&inst.p, &inst.r.f), trim_kind, airspeed, load_factor, null);
     return if (out.ok != 0) 0 else abiCode(error.TrimFailed);
 }
 
@@ -516,30 +535,140 @@ export fn aerosim_motor_prop_thrust(motor_prop: *const motorprop.MotorProp, airs
     return 0;
 }
 
+/// o ponto inteiro em cada `V[0..n]`: tração (N), potência tirada da bateria (W) e o que limitou (0 acelerador,
+/// 1 corrente máxima, 2 limite de potência `P_lim`)
+export fn aerosim_motor_prop_points(motor_prop: *const motorprop.MotorProp, airspeeds: [*]const f64, count: usize, rho: f64, thrust_out: [*]f64, power_out: [*]f64, limit_out: [*]motorprop.Limit) i32 {
+    motorprop.curvePoints(motor_prop, airspeeds[0..count], rho, thrust_out[0..count], power_out[0..count], limit_out[0..count]);
+    return 0;
+}
+
+// ------------------------------------------------------------------ estruturas
+const structure_section = @import("structures/section.zig");
+
+/// a seção composta `parts[0..part_count]` (materiais em `materials[0..material_count]`): linha neutra, EA, EI e massa
+/// por comprimento em `out`, e, sob o momento fletor `moment` (N·m), a tensão nas fibras extremas e a margem de cada
+/// parte em `stress_out` (pode ser nulo); −20 sem parte, −21 material inválido, −22 sem rigidez
+export fn aerosim_section_check(materials: [*]const structure_section.Material, material_count: usize, parts: [*]const structure_section.SectionPart, part_count: usize, moment: f64, out: *structure_section.SectionProperties, stress_out: ?[*]structure_section.PartStress) i32 {
+    const material_list = materials[0..material_count];
+    const part_list = parts[0..part_count];
+    out.* = structure_section.properties(material_list, part_list) catch |err| return abiCode(err);
+    if (stress_out) |stress| structure_section.stresses(material_list, part_list, out.*, moment, stress[0..part_count]) catch |err| return abiCode(err);
+    return 0;
+}
+
+const structure_buckling = @import("structures/buckling.zig");
+const structure_gear = @import("structures/gear.zig");
+const load_vn = @import("loads/vn.zig");
+const load_internal = @import("loads/internal.zig");
+const load_aeroelastic = @import("loads/aeroelastic.zig");
+const load_flutter = @import("loads/flutter.zig");
+
+/// GJ (N·m²) da célula fechada (Bredt–Batho) de área interna `enclosed` com as paredes `walls`, ou, com `enclosed` = 0,
+/// das paredes abertas (Σ G b t³/3)
+export fn aerosim_section_torsion(materials: [*]const structure_section.Material, material_count: usize, walls: [*]const structure_section.Wall, wall_count: usize, enclosed: f64, out: *f64) i32 {
+    const material_list = materials[0..material_count];
+    const wall_list = walls[0..wall_count];
+    out.* = (if (enclosed > 0) structure_section.closedCellTorsion(material_list, wall_list, enclosed) else structure_section.openTorsion(material_list, wall_list)) catch |err| return abiCode(err);
+    return 0;
+}
+
+/// σ_cr da placa plana e do painel curvo (raio `radius`, 0 = só a plana) e τ_cr da alma (altura `web_height`, 0 = sem
+/// alma), em `out` = {plana, curva, alma} (Pa); e as nervuras a mais que o vão `length` precisa para a placa aguentar
+/// `stress` (−1 se nem `max_ribs` resolve)
+export fn aerosim_buckling(material: *const structure_buckling.Orthotropic, length: f64, width: f64, thickness: f64, radius: f64, knockdown: f64, web_height: f64, stress: f64, max_ribs: usize, out: *[3]f64, ribs: *i32) i32 {
+    out[0] = structure_buckling.flatPlate(material.*, length, width, thickness);
+    out[1] = if (radius > 0) structure_buckling.curvedPanel(material.*, length, width, thickness, radius, knockdown) else 0;
+    out[2] = if (web_height > 0) structure_buckling.webShear(material.*, web_height, length, thickness) else 0;
+    ribs.* = if (structure_buckling.ribsNeeded(material.*, length, width, thickness, stress, max_ribs)) |count| @intCast(count) else -1;
+    return 0;
+}
+
+/// os tubos do trem no caso de carga dos nós: esforços e margens de cada tubo em `out`
+export fn aerosim_gear_frame(materials: [*]const structure_section.Material, material_count: usize, nodes: [*]const structure_gear.Node, node_count: usize, members: [*]const structure_gear.Member, member_count: usize, out: [*]structure_gear.MemberResult) i32 {
+    structure_gear.solveFrame(materials[0..material_count], nodes[0..node_count], members[0..member_count], out[0..member_count]) catch return abiCode(error.BadStructureInput);
+    return 0;
+}
+
+/// o pouso num grau de liberdade: fator de carga de pico, curso máximo e se quicou
+export fn aerosim_gear_landing(drop: *const structure_gear.Drop, out: *structure_gear.DropResult) i32 {
+    out.* = structure_gear.landing(drop.*);
+    return 0;
+}
+
+/// o diagrama V-n da norma do usuário: velocidades de referência, alívio da rajada e os casos de carga
+export fn aerosim_vn_diagram(norm: *const load_vn.VnNorm, aircraft: *const load_vn.VnAircraft, out: *load_vn.VnResult) i32 {
+    out.* = load_vn.diagram(norm.*, aircraft.*) catch return abiCode(error.BadStructureInput);
+    return 0;
+}
+
+/// o envelope V-n (o maior e o menor n entre manobra e rajada) em cada `speeds[0..count]`
+export fn aerosim_vn_envelope(norm: *const load_vn.VnNorm, aircraft: *const load_vn.VnAircraft, speeds: [*]const f64, count: usize, upper: [*]f64, lower: [*]f64) i32 {
+    load_vn.envelope(norm.*, aircraft.*, speeds[0..count], upper[0..count], lower[0..count]);
+    return 0;
+}
+
+/// cortante, fletor e torsor ao longo da envergadura (estações da raiz para a ponta) e, com EI e GJ (podem ser nulos),
+/// a flecha e o giro de torção
+export fn aerosim_span_internal(positions: [*]const f64, count: usize, lifts: [*]const f64, masses: [*]const f64, torques: ?[*]const f64, load_factor: f64, shear: [*]f64, bending: [*]f64, torsion: [*]f64, bending_stiffness: ?[*]const f64, slope: [*]f64, displacement: [*]f64, torsional_stiffness: ?[*]const f64, twist: [*]f64) i32 {
+    const position_list = positions[0..count];
+    const torque_list: []const f64 = if (torques) |list| list[0..count] else &.{};
+    load_internal.efforts(position_list, lifts[0..count], masses[0..count], torque_list, load_factor, shear[0..count], bending[0..count], torsion[0..count]) catch return abiCode(error.BadStructureInput);
+    if (bending_stiffness) |stiffness| load_internal.deflection(position_list, bending[0..count], stiffness[0..count], slope[0..count], displacement[0..count]) catch return abiCode(error.BadStructureInput);
+    if (torsional_stiffness) |stiffness| load_internal.twist(position_list, torsion[0..count], stiffness[0..count], twist[0..count]) catch return abiCode(error.BadStructureInput);
+    return 0;
+}
+
+/// divergência e reversão do aileron da semiasa em faixas, até a pressão dinâmica `pressure_limit`
+export fn aerosim_aeroelastic(stations: [*]const load_aeroelastic.Station, count: usize, density: f64, pressure_limit: f64, out: *load_aeroelastic.Aeroelastic) i32 {
+    out.* = load_aeroelastic.analyze(stations[0..count], density, pressure_limit) catch return abiCode(error.BadStructureInput);
+    return 0;
+}
+
+/// as frequências (rad/s) dos `mode_count` primeiros modos da viga em `frequencies`
+export fn aerosim_beam_modes(elements: [*]const load_flutter.Element, count: usize, mode_count: usize, frequencies: [*]f64) i32 {
+    const found = load_flutter.modes(elements[0..count], mode_count) catch return abiCode(error.BadStructureInput);
+    @memcpy(frequencies[0..found.count], found.frequency[0..found.count]);
+    return @intCast(found.count);
+}
+
+/// o p-k em cada `speeds[0..speed_count]`: frequência e amortecimento de cada modo em `points` (velocidade × modo) e a
+/// velocidade de flutter em `out`
+export fn aerosim_flutter(elements: [*]const load_flutter.Element, count: usize, mode_count: usize, density: f64, speeds: [*]const f64, speed_count: usize, points: [*]load_flutter.ModePoint, out: *load_flutter.FlutterResult) i32 {
+    const element_list = elements[0..count];
+    const found = load_flutter.modes(element_list, mode_count) catch return abiCode(error.BadStructureInput);
+    for (speeds[0..speed_count], 0..) |speed, index| {
+        const row = points[index * found.count .. (index + 1) * found.count];
+        // continuação: o chute de cada modo é a frequência dele na velocidade anterior
+        if (index == 0) @memset(row, .{}) else @memcpy(row, points[(index - 1) * found.count .. index * found.count]);
+        load_flutter.pk(element_list, &found, density, speed, row) catch return abiCode(error.BadStructureInput);
+    }
+    out.* = load_flutter.flutter(element_list, mode_count, density, speeds[0..speed_count]) catch return abiCode(error.BadStructureInput);
+    return 0;
+}
+
 // ------------------------------------------------------------------ dimensionamento inicial (mini-MDO)
 const sizing = @import("sizing/sizing.zig");
 const sizing_types = sizing.types;
 
-/// parâmetros de trabalho do dimensionamento, no heap (a struct é grande para a pilha)
-fn workParams() ?*types.Params {
-    const params = std.heap.page_allocator.create(types.Params) catch return null;
-    params.* = .{};
-    return params;
+/// parâmetros de trabalho do dimensionamento: um por thread, fora da pilha (a struct é grande para ela). Pedir ao
+/// sistema a cada chamada (`page_allocator`) custava 3/4 do `aerosim_sizing_eval` (G27,
+/// alocacao, em core/OTIMIZACOES.md)
+threadlocal var work_params: types.Params = .{};
+
+fn workParams() *types.Params {
+    work_params = .{};
+    return &work_params;
 }
 
 /// avalia o dimensionamento nas variáveis de projeto `design_vars`
 export fn aerosim_sizing_eval(cfg: *const sizing_types.SizingCfg, design_vars: [*]const f64, out: *sizing_types.SizingOut) i32 {
-    const params = workParams() orelse return abiCode(error.OutOfMemory);
-    defer std.heap.page_allocator.destroy(params);
-    out.* = sizing.eval(cfg, params, design_vars[0..sizing_types.n_vars]);
+    out.* = sizing.eval(cfg, workParams(), design_vars[0..sizing_types.n_vars]);
     return 0;
 }
 
 /// `progress(ctx, iteração, avaliações no buffer)` ao fim de cada iteração (≠ 0 para parar); pode ser nulo
 export fn aerosim_sizing_optimize(cfg: *const sizing_types.SizingCfg, opts: *const sizing_types.OptOpts, buf: [*]sizing_types.Individual, cap: usize, evaluated: *usize, best: *sizing_types.SizingOut, progress: ?*const fn (?*anyopaque, i32, usize) callconv(.c) i32, pctx: ?*anyopaque) i32 {
-    const params = workParams() orelse return abiCode(error.OutOfMemory);
-    defer std.heap.page_allocator.destroy(params);
-    sizing.optimize(cfg, opts, params, buf[0..cap], evaluated, best, progress, pctx);
+    sizing.optimize(cfg, opts, workParams(), buf[0..cap], evaluated, best, progress, pctx);
     return 0;
 }
 
@@ -620,6 +749,14 @@ export fn aerosim_de_init(dims: usize, pop_size: usize, x0: [*]const f64, seed: 
 export fn aerosim_de_trials(dims: usize, pop_size: usize, pop: [*]const f64, weight: f64, cr: f64, seed: u64, generation: u64, out: [*]f64) i32 {
     if (dims == 0 or dims > diff_evolution.max_n or pop_size > diff_evolution.max_np) return abiCode(error.OutOfRange);
     return if (diff_evolution.trials(dims, pop_size, pop[0 .. pop_size * dims], weight, cr, seed, generation, out[0 .. pop_size * dims])) 0 else abiCode(error.OutOfRange);
+}
+
+/// os testes da geração com a estratégia (0 rand/1, 1 current-to-best/1) e a borda (0 cortar, 1 refletir); `fit` são
+/// as notas da população (a current-to-best lê)
+export fn aerosim_de_trials_with(dims: usize, pop_size: usize, pop: [*]const f64, fit: [*]const f64, weight: f64, cr: f64, strategy: diff_evolution.Strategy, bound: diff_evolution.Bound, seed: u64, generation: u64, out: [*]f64) i32 {
+    if (dims == 0 or dims > diff_evolution.max_n or pop_size > diff_evolution.max_np) return abiCode(error.OutOfRange);
+    const options: diff_evolution.Options = .{ .weight = weight, .cr = cr, .strategy = strategy, .bound = bound };
+    return if (diff_evolution.trialsWith(dims, pop_size, pop[0 .. pop_size * dims], fit[0..pop_size], options, seed, generation, out[0 .. pop_size * dims])) 0 else abiCode(error.OutOfRange);
 }
 
 /// a seleção: o teste que não é pior entra no lugar (muda `pop` e `fit`); devolve quantos entraram

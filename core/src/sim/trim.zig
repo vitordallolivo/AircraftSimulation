@@ -9,6 +9,7 @@
 //! Fator de carga máximo em curva: estol da asa (C_L/C_Lmax = kCL) e, sustentada,
 //! motor (acelerador = 1). Raio R = V² / (g √(n² − 1)).
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
 const state = @import("state.zig");
@@ -36,11 +37,11 @@ pub const Ctx = struct {
 };
 
 /// o caso de equilíbrio: tipo, V, e o que fica fixo (acelerador, γ ou fator de carga)
-const Case = struct { kind: i32, V: f64, thr: f64 = 1, gam: f64 = 0, n: f64 = 1 };
+const Case = struct { kind: types.TrimKind, V: f64, thr: f64 = 1, gam: f64 = 0, n: f64 = 1 };
 
 /// verdadeiro se o acelerador é incógnita no caso (nivelado e curva); senão a incógnita é γ
-fn thrFree(kind: i32) bool {
-    return kind == types.trim_level or kind == types.trim_turn;
+fn thrFree(kind: types.TrimKind) bool {
+    return kind == types.TrimKind.level or kind == types.TrimKind.turn;
 }
 
 /// os três resíduos do equilíbrio (forças nos eixos do vento e momento) para as incógnitas; com `point_out`, o
@@ -88,10 +89,11 @@ fn nrm(res: [3]f64) f64 {
 /// Newton amortecido sobre as incógnitas; verdadeiro se convergiu
 fn newton(ctx: Ctx, case: Case, unknowns: *[3]f64, point_out: ?*types.TrimPoint) bool {
     const free = thrFree(case.kind);
-    const lo = [3]f64{ -0.2, -0.35, if (free) 0.02 else -0.7 };
-    const hi = [3]f64{ 0.45, 0.35, if (free) 3.0 else 0.7 };
-    const step = [3]f64{ 0.08, 0.08, 0.25 };
-    for (0..120) |_| {
+    const refine = numerics.active;
+    const lo = [3]f64{ refine.trim_alpha_min, -refine.trim_elevator_limit, if (free) 0.02 else -0.7 };
+    const hi = [3]f64{ refine.trim_alpha_max, refine.trim_elevator_limit, if (free) 3.0 else 0.7 };
+    const step = [3]f64{ refine.trim_alpha_step, refine.trim_elevator_step, refine.trim_throttle_step };
+    for (0..numerics.count(numerics.active.trim_iterations)) |_| {
         var res: [3]f64 = undefined;
         residual(ctx, case, unknowns.*, &res, null);
         const nr = nrm(res);
@@ -110,7 +112,7 @@ fn newton(ctx: Ctx, case: Case, unknowns: *[3]f64, point_out: ?*types.TrimPoint)
             du[i] = fmath.sat(du[i], step[i]);
         }
         var fraction: f64 = 1.0;
-        for (0..12) |k| { // passo amortecido
+        for (0..numerics.count(numerics.active.trim_step_halvings)) |k| { // passo amortecido
             var ut: [3]f64 = undefined;
             for (0..3) |i| ut[i] = fmath.lim(unknowns[i] + fraction * du[i], lo[i], hi[i]);
             var rt: [3]f64 = undefined;
@@ -128,14 +130,14 @@ fn newton(ctx: Ctx, case: Case, unknowns: *[3]f64, point_out: ?*types.TrimPoint)
 }
 
 /// um ponto de equilíbrio. guess: chute (α, δe, z) que é atualizado (continuação)
-pub fn solve(ctx: Ctx, kind: i32, airspeed: f64, load_factor: f64, guess: ?*[3]f64) types.TrimPoint {
+pub fn solve(ctx: Ctx, kind: types.TrimKind, airspeed: f64, load_factor: f64, guess: ?*[3]f64) types.TrimPoint {
     var u_init: [3]f64 = switch (kind) {
-        types.trim_climb => .{ 0.1, -0.05, 0.1 },
-        types.trim_glide => .{ 0.1, -0.05, -0.1 },
+        types.TrimKind.climb => .{ 0.1, -0.05, 0.1 },
+        types.TrimKind.glide => .{ 0.1, -0.05, -0.1 },
         else => .{ 0.1, -0.05, 0.5 },
     };
     const unknowns = guess orelse &u_init;
-    const case = Case{ .kind = kind, .V = airspeed, .n = load_factor, .thr = if (kind == types.trim_glide) 0.0 else 1.0 };
+    const case = Case{ .kind = kind, .V = airspeed, .n = load_factor, .thr = if (kind == types.TrimKind.glide) 0.0 else 1.0 };
     var point = types.TrimPoint{};
     point.ok = if (newton(ctx, case, unknowns, &point)) 1 else 0;
     return point;
@@ -150,9 +152,9 @@ pub fn performance(ctx: Ctx, V_hi: f64, V_lo: f64, dV: f64, rows: []types.PerfRo
     var row: usize = 0;
     var airspeed = V_hi;
     while (airspeed >= V_lo - 1e-9 and row < rows.len) : (airspeed -= dV) {
-        const en = solve(ctx, types.trim_level, airspeed, 1, &un);
-        const ec = solve(ctx, types.trim_climb, airspeed, 1, &uc);
-        const eg = solve(ctx, types.trim_glide, airspeed, 1, &ug);
+        const en = solve(ctx, types.TrimKind.level, airspeed, 1, &un);
+        const ec = solve(ctx, types.TrimKind.climb, airspeed, 1, &uc);
+        const eg = solve(ctx, types.TrimKind.glide, airspeed, 1, &ug);
         // ponto que não convergiu não serve de chute para o próximo
         const un_used = un;
         const uc_used = uc;
@@ -168,10 +170,10 @@ pub fn performance(ctx: Ctx, V_hi: f64, V_lo: f64, dV: f64, rows: []types.PerfRo
             var lo: f64 = 1.0;
             var hi: f64 = 6.0;
             var unknowns = un_used;
-            for (0..40) |_| {
+            for (0..numerics.count(numerics.active.trim_turn_bisections)) |_| {
                 const nm = 0.5 * (lo + hi);
                 var ut = unknowns;
-                const et = solve(ctx, types.trim_turn, airspeed, nm, &ut);
+                const et = solve(ctx, types.TrimKind.turn, airspeed, nm, &ut);
                 const inside = et.ok != 0 and et.ratioCL <= kCL and (tipo == 0 or ut[2] <= 1.0);
                 if (inside) {
                     lo = nm;

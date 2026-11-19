@@ -11,6 +11,8 @@ test {
     _ = @import("input/touch.zig");
     _ = @import("sim/mission.zig");
     _ = @import("sim/params.zig");
+    _ = @import("sim/methods.zig");
+    _ = @import("sim/modifiers.zig");
     _ = @import("sim/drive_manager.zig");
     _ = @import("world/field.zig");
     _ = @import("model/features.zig");

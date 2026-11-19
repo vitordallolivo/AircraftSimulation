@@ -6,6 +6,10 @@
 //! desliga aquela curva (as desligadas ficam apagadas na legenda e saem dos eixos), e o botão direito abre um menu
 //! para marcar as curvas e exportar o gráfico em PNG, em PDF ou só os dados das curvas marcadas em CSV. O estado
 //! de cada gráfico (as curvas desligadas) fica guardado pelo título, entre um quadro e outro.
+//!
+//! Para gravar vários de uma vez, o mesmo menu marca o gráfico para a seleção (ele ganha uma marca no canto) ou marca
+//! todos os da tela, e "Salvar os selecionados" grava cada um num arquivo, no formato da extensão escolhida (PNG, PDF
+//! ou CSV), com o título do gráfico no nome.
 const std = @import("std");
 const system = @import("system.zig");
 const rl = @import("raylib");
@@ -14,6 +18,7 @@ const widgets = @import("widgets.zig");
 const numbers = @import("numbers.zig");
 const dialogs = @import("dialogs.zig");
 const export_file = @import("export.zig");
+const tex = @import("tex.zig");
 
 /// uma curva: x e y do mesmo tamanho
 pub const Series = struct {
@@ -23,6 +28,51 @@ pub const Series = struct {
     dashed: bool = false,
     points: bool = false, // só os pontos, sem ligar
     color_index: ?usize = null, // cor fixa da paleta (senão, a ordem da curva)
+    color: ?rl.Color = null, // a cor que o resultado pediu (vence a da paleta)
+    width: f32 = 2.2,
+    in_legend: bool = true, // falso: a reta repetida (o outro lado do fim do curso) não aparece de novo na legenda
+    // região sombreada até a outra borda: `fill_ys` no mesmo x (sobra de potência, subida) ou `fill_xs` no mesmo y
+    // (o envelope de voo, de V_min a V_max em cada altitude)
+    fill_ys: []const f64 = &.{},
+    fill_xs: []const f64 = &.{},
+    strong: bool = false, // a sombra mais forte
+    marker: Marker = .none, // um símbolo em cada ponto (a estrela do máximo)
+    marker_size: f32 = 0, // 0: o padrão do símbolo
+    marker_line: bool = false, // com marcador, liga os pontos também
+    span: bool = false, // faixa vertical sombreada de xs[0] a xs[1] (o trecho do voo nivelado)
+    // a escolha ligada entre gráficos: os pontos são itens do grupo `pick` (o hash do nome; 0: nenhum), o k-ésimo é o
+    // item `ids[k]`; clicar num deles escolhe o item em todos os gráficos do grupo
+    pick: u64 = 0,
+    ids: []const f64 = &.{},
+    // a curva só aparece com o item `shows` do grupo escolhido (-1: quando nenhum está; a asa do melhor)
+    shows: ?f64 = null,
+
+    /// a cor desta curva, sendo a `index`-ésima do gráfico
+    pub fn colorAt(s: Series, index: usize) rl.Color {
+        return s.color orelse theme.plotColor(s.color_index orelse index);
+    }
+};
+
+/// os símbolos de ponto, os mesmos nomes da GUI PyQt (`_symbol`): "o", "star", "s", "t", "d", "+", "x"
+pub const Marker = enum {
+    none,
+    circle,
+    star,
+    square,
+    triangle,
+    diamond,
+    plus,
+    cross,
+
+    /// o símbolo pelo nome que vem do Python
+    pub fn named(name: []const u8) Marker {
+        const names = [_]struct { []const u8, Marker }{
+            .{ "o", .circle },  .{ "star", .star },   .{ "s", .square }, .{ "t", .triangle }, .{ "^", .triangle },
+            .{ "v", .triangle }, .{ "d", .diamond }, .{ "+", .plus },   .{ "x", .cross },
+        };
+        for (names) |entry| if (std.mem.eql(u8, entry[0], name)) return entry[1];
+        return if (name.len > 0) .circle else .none;
+    }
 };
 
 /// pontos coloridos por um valor (azul → laranja), sem legenda de curvas
@@ -39,12 +89,22 @@ pub const Axes = struct {
     x_label: [:0]const u8,
     y_label: [:0]const u8,
     equal_axes: bool = false, // a mesma escala em x e em y (um contorno de perfil)
+    // a escala pedida pelo resultado (`_xlim`, `_ylim`): as curvas seguem inteiras, cortadas na borda
+    x_limits: ?numbers.Range = null,
+    y_limits: ?numbers.Range = null,
 };
 
 pub const Frame = struct {
     area: rl.Rectangle,
     x_range: numbers.Range,
     y_range: numbers.Range,
+
+    /// pixel → ponto dos dados
+    pub fn toData(frame: Frame, at: rl.Vector2) [2]f64 {
+        const fx: f64 = (at.x - frame.area.x) / frame.area.width;
+        const fy: f64 = (frame.area.y + frame.area.height - at.y) / frame.area.height;
+        return .{ frame.x_range.low + fx * (frame.x_range.high - frame.x_range.low), frame.y_range.low + fy * (frame.y_range.high - frame.y_range.low) };
+    }
 
     /// ponto dos dados → pixel
     pub fn toScreen(frame: Frame, x: f64, y: f64) rl.Vector2 {
@@ -57,11 +117,20 @@ pub const Frame = struct {
 /// cartão com o gráfico das curvas (com a legenda que liga e desliga e o menu do botão direito)
 pub fn lines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Series) void {
     const state = stateFor(axes.title);
+    state.is_plot = true;
+    state.seen = frame_count;
     if (state.pending) |kind| {
         state.pending = null;
         exportPlot(ui, rect, axes, series, state, kind);
     }
     drawLines(ui, rect, axes, series, state, true);
+    // a caixa da seleção no canto do cartão, sempre à vista: clicar marca ou desmarca o gráfico (para salvar os
+    // marcados juntos pelo botão direito); antes ela só aparecia depois de marcar pelo menu
+    const box: rl.Rectangle = .{ .x = rect.x + rect.width - 30, .y = rect.y + 12, .width = 16, .height = 16 };
+    const area: rl.Rectangle = .{ .x = box.x - 4, .y = box.y - 4, .width = box.width + 8, .height = box.height + 8 };
+    if (ui.clickedIn(area)) state.selected = !state.selected;
+    widgets.checkBox(box, state.selected);
+    if (ui.hovering(area) and !state.selected) widgets.roundedLines(box, 4, theme.colors.accent);
     // o botão direito no cartão abre o menu deste gráfico
     if (ui.right_clicked and ui.hovering(rect)) {
         menu.open = true;
@@ -77,36 +146,64 @@ fn drawLines(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Se
     const inner = widgets.card(ui, rect, axes.title);
     var x_range: ?numbers.Range = null;
     var y_range: ?numbers.Range = null;
+    const matched = hasShownCurve(series);
+    legend_matched = matched;
     // as faixas juntam os dados das curvas ligadas; uma reta vertical (x igual) ou horizontal só entra com o
     // valor dela, sem a meia unidade de folga que `Range.of` dá a um valor único
     for (series) |s| {
-        if (state.isHidden(s.name)) continue;
-        const rx = extent(s.xs) orelse continue;
-        const ry = extent(s.ys) orelse continue;
+        if (state.isHidden(s.name) or !present(s, matched)) continue;
+        if (s.span) {
+            if (extent(s.xs)) |rx| x_range = if (x_range) |r| r.merge(rx) else rx;
+            continue;
+        }
+        var rx = extent(s.xs) orelse continue;
+        var ry = extent(s.ys) orelse continue;
+        if (extent(s.fill_xs)) |other| rx = rx.merge(other);
+        if (extent(s.fill_ys)) |other| ry = ry.merge(other);
         x_range = if (x_range) |r| r.merge(rx) else rx;
         y_range = if (y_range) |r| r.merge(ry) else ry;
     }
     if (x_range) |r| x_range = numbers.Range.of(&.{ r.low, r.high }, 0);
     if (y_range) |r| y_range = numbers.Range.of(&.{ r.low, r.high }, 0.06);
+    if (axes.x_limits) |limits| x_range = limits;
+    if (axes.y_limits) |limits| y_range = limits;
     const legend_height = legendHeight(ui, inner.width, series);
     const frame = drawFrame(ui, inner, axes, x_range orelse .{ .low = 0, .high = 1 }, y_range orelse .{ .low = 0, .high = 1 }, legend_height, axes.equal_axes);
     ui.pushClip(.{ .x = frame.area.x, .y = frame.area.y - 1, .width = frame.area.width + 1, .height = frame.area.height + 2 });
+    // as sombras primeiro, embaixo das linhas
     for (series, 0..) |s, i| {
-        if (state.isHidden(s.name)) continue;
-        const color = theme.plotColor(s.color_index orelse i);
+        if (state.isHidden(s.name) or !present(s, matched)) continue;
+        if (s.span and s.xs.len >= 2) {
+            const a = frame.toScreen(s.xs[0], frame.y_range.high);
+            const b = frame.toScreen(s.xs[1], frame.y_range.low);
+            rl.drawRectangleRec(.{ .x = @min(a.x, b.x), .y = a.y, .width = @abs(b.x - a.x), .height = b.y - a.y }, shade(s.colorAt(i), false));
+        }
+        if (s.fill_ys.len > 0 or s.fill_xs.len > 0) fillBetween(frame, s, shade(s.colorAt(i), s.strong));
+    }
+    for (series, 0..) |s, i| {
+        if (state.isHidden(s.name) or s.span or !present(s, matched)) continue;
+        const color = s.colorAt(i);
         const n = @min(s.xs.len, s.ys.len);
+        if (s.marker != .none) {
+            if (s.marker_line) connect(frame, s, color);
+            for (0..n) |k| if (std.math.isFinite(s.xs[k]) and std.math.isFinite(s.ys[k])) drawMarker(s.marker, frame.toScreen(s.xs[k], s.ys[k]), if (s.marker_size > 0) s.marker_size else defaultMarkerSize(s.marker), color);
+            continue;
+        }
+        if (s.fill_ys.len > 0 or s.fill_xs.len > 0) { // a borda da sombra, fina
+            var thin = s;
+            thin.width = 1;
+            connect(frame, thin, color);
+            continue;
+        }
         if (s.points) {
             for (0..n) |k| if (std.math.isFinite(s.ys[k])) rl.drawCircleV(frame.toScreen(s.xs[k], s.ys[k]), 3, color);
             continue;
         }
-        var k: usize = 1;
-        while (k < n) : (k += 1) {
-            if (!std.math.isFinite(s.ys[k - 1]) or !std.math.isFinite(s.ys[k])) continue;
-            const a = frame.toScreen(s.xs[k - 1], s.ys[k - 1]);
-            const b = frame.toScreen(s.xs[k], s.ys[k]);
-            if (s.dashed) dashedLine(a, b, color) else rl.drawLineEx(a, b, 2.2, color);
-        }
+        connect(frame, s, color);
     }
+    drawPicked(frame, series, state);
+    if (interactive) updateProbe(ui, frame, series, state, matched);
+    if (state.probe) |probe| if (interactive) drawProbe(ui, frame, series, probe);
     ui.popClip();
     drawLegend(ui, .{ .x = inner.x + 10, .y = inner.y + inner.height - legend_height + 4, .width = inner.width - 20, .height = legend_height }, series, state, interactive);
 }
@@ -202,6 +299,13 @@ const State = struct {
     pending: ?ExportKind = null, // exportar no próximo quadro, com os dados de então
     path: [600]u8 = undefined,
     path_len: usize = 0,
+    selected: bool = false, // na seleção para salvar junto
+    is_plot: bool = false, // um gráfico de linhas (as tabelas não entram na seleção)
+    seen: u64 = 0, // o quadro em que foi desenhado por último (só os da tela entram em "todos")
+    title: [128]u8 = undefined,
+    title_len: usize = 0,
+    probe: ?Probe = null, // o ponto clicado: o valor de x e y aparece ao lado (como no AeroDrive)
+    dragging: bool = false, // o clique começou no gráfico: arrastar leva a leitura junto
 
     fn isHidden(state: *const State, name: []const u8) bool {
         const id = std.hash.Wyhash.hash(0, name);
@@ -223,6 +327,43 @@ const State = struct {
     }
 };
 
+/// a leitura de um gráfico: o ponto dos dados e, se caiu numa curva, qual e o índice do ponto nela
+const Probe = struct { x: f64, y: f64, series: ?usize = null, index: usize = 0 };
+
+/// o item escolhido de um grupo de escolha (um indivíduo do Mini-MDO): vale para todos os gráficos do grupo
+const Pick = struct { group: u64, id: f64 };
+var pick: ?Pick = null;
+
+/// o hash do nome de um grupo de escolha (0: sem grupo)
+pub fn pickGroup(name: []const u8) u64 {
+    if (name.len == 0) return 0;
+    return std.hash.Wyhash.hash(7, name) | 1;
+}
+
+/// esquece o item escolhido (um resultado novo)
+pub fn clearPick() void {
+    pick = null;
+}
+
+/// o item escolhido de um grupo
+fn pickedIn(group: u64) ?f64 {
+    const chosen = pick orelse return null;
+    return if (chosen.group == group) chosen.id else null;
+}
+
+/// se o gráfico tem a curva do item escolhido (senão, as de "nenhum escolhido" seguem à vista)
+fn hasShownCurve(series: []const Series) bool {
+    for (series) |s| if (s.shows) |id| if (pickedIn(s.pick)) |chosen| if (id == chosen) return true;
+    return false;
+}
+
+/// a curva aparece agora (as que dependem do item escolhido só com ele)
+fn present(s: Series, matched: bool) bool {
+    const id = s.shows orelse return true;
+    if (matched) return if (pickedIn(s.pick)) |chosen| id == chosen else false;
+    return id < 0;
+}
+
 var states: [128]State = undefined;
 var state_count: usize = 0;
 var spare_state: State = .{};
@@ -235,6 +376,9 @@ fn stateFor(title: []const u8) *State {
         return &spare_state;
     }
     states[state_count] = .{ .key = key };
+    const length = @min(title.len, states[state_count].title.len);
+    @memcpy(states[state_count].title[0..length], title[0..length]);
+    states[state_count].title_len = length;
     state_count += 1;
     return &states[state_count - 1];
 }
@@ -259,6 +403,7 @@ const Menu = struct {
     checked: [max_menu_series]bool = undefined,
     count: usize = 0,
     is_table: bool = false, // uma tabela: só exportar em CSV
+    export_open: bool = false, // o submenu de "Exportar" (PNG, PDF ou CSV) aberto
 
     fn capture(m: *Menu, axes: Axes, series: []const Series, state: *const State) void {
         m.title_len = @min(axes.title.len, m.title.len);
@@ -278,14 +423,47 @@ var saver_key: u64 = 0;
 var note: [200:0]u8 = [_:0]u8{0} ** 200; // o resultado da última gravação
 var note_frames: u32 = 0;
 
-const actions = [_][:0]const u8{ "Exportar imagem PNG...", "Exportar PDF...", "Exportar CSV (curvas marcadas)...", "Marcar todas as curvas" };
+const Action = enum { export_menu, all_curves, select, select_all, save_selected, clear_selection };
+/// os tipos do submenu "Exportar"
+const export_kinds = [_]ExportKind{ .png, .pdf, .csv };
+const export_captions = [_][:0]const u8{ "Imagem PNG...", "PDF...", "Dados em CSV (curvas marcadas)..." };
+const submenu_width: f32 = 250;
+const action_count = std.meta.fields(Action).len;
+var action_text: [action_count][80:0]u8 = undefined;
+var action_list: [action_count][:0]const u8 = undefined;
+var frame_count: u64 = 1; // conta os quadros (`overlay` avança)
+var batch_total: usize = 0; // os gráficos da última gravação em grupo
+var batch_done: usize = 0;
+var batch_folder: [600]u8 = undefined;
+var batch_folder_len: usize = 0;
+var saving_batch = false;
 const menu_row: f32 = 28;
-const menu_width: f32 = 300;
+const menu_width: f32 = 340;
 
 const table_actions = [_][:0]const u8{"Exportar a tabela em CSV..."};
 
 fn menuActions() []const [:0]const u8 {
-    return if (menu.is_table) &table_actions else &actions;
+    if (menu.is_table) return &table_actions;
+    const selected = selectedCount();
+    const this = findState(menu.key);
+    for (std.enums.values(Action)) |action| {
+        const k = @intFromEnum(action);
+        action_list[k] = switch (action) {
+            .export_menu => "Exportar  ▸",
+            .all_curves => "Marcar todas as curvas",
+            .select => if (this != null and this.?.selected) "Tirar este gráfico da seleção" else "Selecionar este gráfico",
+            .select_all => "Selecionar todos os gráficos da tela",
+            .save_selected => std.fmt.bufPrintZ(&action_text[k], "Salvar os {d} selecionados (PNG, PDF ou CSV)...", .{selected}) catch "Salvar os selecionados...",
+            .clear_selection => "Limpar a seleção",
+        };
+    }
+    return &action_list;
+}
+
+fn selectedCount() usize {
+    var count: usize = 0;
+    for (states[0..state_count]) |*state| count += @intFromBool(state.selected);
+    return count;
 }
 
 fn menuRect(screen: rl.Rectangle) rl.Rectangle {
@@ -296,6 +474,14 @@ fn menuRect(screen: rl.Rectangle) rl.Rectangle {
 }
 
 /// verdadeiro enquanto o menu ou o seletor de arquivo está aberto (a tela de baixo não recebe o clique)
+/// o submenu "Exportar", ao lado da linha dele (à direita, ou à esquerda se não cabe)
+fn submenuRect(screen: rl.Rectangle, area: rl.Rectangle) rl.Rectangle {
+    const height = 12 + menu_row * @as(f32, @floatFromInt(export_kinds.len));
+    const right = area.x + area.width - 4;
+    const x = if (right + submenu_width <= screen.width - 4) right else area.x - submenu_width + 4;
+    return .{ .x = x, .y = @min(area.y + 6, screen.height - height - 4), .width = submenu_width, .height = height };
+}
+
 pub fn overlayActive() bool {
     return menu.open or saver.open;
 }
@@ -311,8 +497,13 @@ pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
         widgets.rounded(box, 8, theme.colors.ink);
         theme.text(ui.fonts.regular, text, box.x + 12, box.y + 8, 14, theme.colors.on_accent);
     }
+    frame_count += 1;
     if (saver.open) {
         if (saver.draw(ui, screen)) |path| {
+            if (saving_batch) {
+                saving_batch = false;
+                return saveSelected(path);
+            }
             if (findState(saver_key)) |state| {
                 state.path_len = @min(path.len, state.path.len);
                 @memcpy(state.path[0..state.path_len], path[0..state.path_len]);
@@ -323,8 +514,11 @@ pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
     }
     if (!menu.open) return;
     const area = menuRect(screen);
-    if ((ui.clicked or ui.right_clicked) and !rl.checkCollisionPointRec(ui.mouse, area)) {
+    const submenu = submenuRect(screen, area);
+    const in_submenu = menu.export_open and rl.checkCollisionPointRec(ui.mouse, submenu);
+    if ((ui.clicked or ui.right_clicked) and !rl.checkCollisionPointRec(ui.mouse, area) and !in_submenu) {
         menu.open = false;
+        menu.export_open = false;
         return;
     }
     if (rl.isKeyPressed(.escape)) {
@@ -337,9 +531,15 @@ pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
     var y = area.y + 6;
     for (menuActions(), 0..) |caption, k| {
         const row: rl.Rectangle = .{ .x = area.x + 4, .y = y, .width = area.width - 8, .height = menu_row };
-        if (rl.checkCollisionPointRec(ui.mouse, row)) widgets.rounded(row, 4, theme.colors.hover);
+        const over = rl.checkCollisionPointRec(ui.mouse, row);
+        const is_export = !menu.is_table and @as(Action, @enumFromInt(k)) == .export_menu;
+        // passar o mouse em "Exportar" abre o submenu; passar em outra linha do menu fecha
+        if (over and !menu.is_table) menu.export_open = is_export;
+        if (over or (is_export and menu.export_open)) widgets.rounded(row, 4, theme.colors.hover);
         theme.text(ui.fonts.regular, caption, row.x + 10, row.y + 6, 14, theme.colors.accent);
-        if (ui.clicked and rl.checkCollisionPointRec(ui.mouse, row)) chooseAction(if (menu.is_table) 2 else k);
+        if (ui.clicked and over) {
+            if (menu.is_table) chooseExport(.csv) else if (is_export) menu.export_open = true else chooseAction(@enumFromInt(k));
+        }
         y += menu_row;
     }
     if (menu.is_table) {
@@ -359,16 +559,69 @@ pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
         }
         y += menu_row;
     }
+    if (menu.export_open) {
+        rl.drawRectangleRounded(.{ .x = submenu.x + 2, .y = submenu.y + 3, .width = submenu.width, .height = submenu.height }, 0.05, 6, .{ .r = 0, .g = 0, .b = 0, .a = 28 });
+        widgets.rounded(submenu, 6, theme.colors.field);
+        widgets.roundedLines(submenu, 6, theme.colors.line);
+        var row_y = submenu.y + 6;
+        for (export_kinds, export_captions) |kind, caption| {
+            const row: rl.Rectangle = .{ .x = submenu.x + 4, .y = row_y, .width = submenu.width - 8, .height = menu_row };
+            const over = rl.checkCollisionPointRec(ui.mouse, row);
+            if (over) widgets.rounded(row, 4, theme.colors.hover);
+            theme.text(ui.fonts.regular, caption, row.x + 10, row.y + 6, 14, theme.colors.accent);
+            if (ui.clicked and over) chooseExport(kind);
+            row_y += menu_row;
+        }
+    }
     ui.click_taken = true;
 }
 
-fn chooseAction(index: usize) void {
-    if (index == 3) {
-        if (findState(menu.key)) |state| state.hidden_count = 0;
-        menu.open = false;
-        return;
+fn chooseAction(action: Action) void {
+    menu.open = false;
+    menu.export_open = false;
+    switch (action) {
+        .export_menu => return,
+        .all_curves => {
+            if (findState(menu.key)) |state| state.hidden_count = 0;
+            return;
+        },
+        .select => {
+            if (findState(menu.key)) |state| state.selected = !state.selected;
+            return;
+        },
+        .select_all => {
+            for (states[0..state_count]) |*state| {
+                if (state.is_plot and state.seen + 2 >= frame_count) state.selected = true;
+            }
+            return;
+        },
+        .clear_selection => {
+            for (states[0..state_count]) |*state| state.selected = false;
+            return;
+        },
+        .save_selected => {
+            if (selectedCount() == 0) return setNote("nenhum gráfico selecionado (botão direito: Selecionar este gráfico)", .{});
+            var title_buffer: [96]u8 = undefined;
+            const title = std.fmt.bufPrint(&title_buffer, "Salvar os {d} gráficos (a extensão escolhe o formato)", .{selectedCount()}) catch "Salvar os gráficos";
+            var home_buffer: [512]u8 = undefined;
+            saver.showSave(title, dialogs.home(&home_buffer), &.{ ".png", ".pdf", ".csv" }, "graficos.png");
+            saving_batch = true;
+            return;
+        },
     }
-    const kinds = [_]ExportKind{ .png, .pdf, .csv };
+}
+
+/// um tipo do submenu "Exportar" (ou o CSV da tabela): pergunta onde gravar
+fn chooseExport(kind: ExportKind) void {
+    menu.open = false;
+    menu.export_open = false;
+    saving_batch = false;
+    const index: usize = switch (kind) {
+        .png => 0,
+        .pdf => 1,
+        .csv => 2,
+    };
+    const kinds = export_kinds;
     const extensions = [_][]const []const u8{ &.{".png"}, &.{".pdf"}, &.{".csv"} };
     saver_kind = kinds[index];
     saver_key = menu.key;
@@ -378,7 +631,38 @@ fn chooseAction(index: usize) void {
     // na pasta pessoal: a pasta do programa instalado pode não aceitar escrita
     var home_buffer: [512]u8 = undefined;
     saver.showSave(titles[index], dialogs.home(&home_buffer), extensions[index], name);
-    menu.open = false;
+}
+
+/// grava os gráficos selecionados: `path` dá a pasta, o começo do nome e o formato (pela extensão); cada gráfico vira
+/// `<começo>_<título>.<ext>`, gravado no quadro seguinte, quando ele for desenhado de novo
+fn saveSelected(path: []const u8) void {
+    const extension = std.fs.path.extension(path);
+    const kind: ExportKind = if (std.ascii.eqlIgnoreCase(extension, ".pdf")) .pdf else if (std.ascii.eqlIgnoreCase(extension, ".csv")) .csv else .png;
+    const folder = std.fs.path.dirname(path) orelse ".";
+    const stem = std.fs.path.stem(path);
+    batch_folder_len = @min(folder.len, batch_folder.len);
+    @memcpy(batch_folder[0..batch_folder_len], folder[0..batch_folder_len]);
+    batch_total = 0;
+    batch_done = 0;
+    for (states[0..state_count]) |*state| {
+        if (!state.selected) continue;
+        var name_buffer: [160]u8 = undefined;
+        const name = export_file.fileName(&name_buffer, state.title[0..state.title_len], @tagName(kind));
+        const full = std.fmt.bufPrint(&state.path, "{s}/{s}_{s}", .{ folder, stem, name }) catch continue;
+        state.path_len = full.len;
+        state.pending = kind;
+        batch_total += 1;
+    }
+    setNote("gravando {d} gráficos em {s}", .{ batch_total, folder });
+}
+
+/// o aviso de um arquivo gravado: sozinho, o caminho; na gravação em grupo, quantos já foram
+fn noteSaved(path: []const u8) void {
+    if (batch_total > 0 and batch_done < batch_total) {
+        batch_done += 1;
+        return setNote("gravados {d} de {d} em {s}", .{ batch_done, batch_total, batch_folder[0..batch_folder_len] });
+    }
+    setNote("gravado: {s}", .{path});
 }
 
 fn setNote(comptime format: []const u8, args: anytype) void {
@@ -408,7 +692,7 @@ fn exportPlot(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const S
         }
         export_file.saveCsv(gpa, fileIo(), path, columns[0..count]) catch |err| return setNote("não gravou {s}: {s}", .{ std.fs.path.basename(path), @errorName(err) });
         system.offerDownload(path);
-        return setNote("gravado: {s} ({d} curvas)", .{ path, count / 2 });
+        return noteSaved(path);
     }
     const scale: f32 = 2;
     const width: i32 = @intFromFloat(@ceil(rect.width * scale));
@@ -442,7 +726,7 @@ fn exportPlot(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const S
         const text = std.fmt.bufPrintZ(&zero_path, "{s}", .{path}) catch return;
         if (!rl.exportImage(image, text)) return setNote("não gravou {s}", .{std.fs.path.basename(path)});
         system.offerDownload(path);
-        return setNote("gravado: {s}", .{path});
+        return noteSaved(path);
     }
     rl.imageFormat(&image, .uncompressed_r8g8b8);
     const pixels: [*]const u8 = @ptrCast(image.data);
@@ -450,10 +734,138 @@ fn exportPlot(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const S
     // a página no tamanho do cartão na tela (1 pixel da tela = 0,75 pt, os 96 dpi de costume)
     export_file.savePdf(gpa, fileIo(), path, bytes, @intCast(width), @intCast(height), rect.width * 0.75, rect.height * 0.75) catch |err| return setNote("não gravou {s}: {s}", .{ std.fs.path.basename(path), @errorName(err) });
     system.offerDownload(path);
-    setNote("gravado: {s}", .{path});
+    noteSaved(path);
 }
 
 /// o menor e o maior valor finito (null se não houver)
+/// a linha que liga os pontos de `s` (um ponto que não é número corta a linha, como o `connect="finite"` da PyQt)
+/// tracejada, o traço segue de um trecho para o outro (`Dashes`): numa curva de muitos pontos cada trecho tem menos
+/// de um pixel, e recomeçar o traço em cada um fazia a curva sair cheia (ou sumir, com trechos de menos de meio pixel)
+fn connect(frame: Frame, s: Series, color: rl.Color) void {
+    const n = @min(s.xs.len, s.ys.len);
+    var dashes: Dashes = .{ .width = s.width };
+    var k: usize = 1;
+    while (k < n) : (k += 1) {
+        if (!finite2(s.xs[k - 1], s.ys[k - 1]) or !finite2(s.xs[k], s.ys[k])) {
+            dashes.travelled = 0;
+            continue;
+        }
+        const a = frame.toScreen(s.xs[k - 1], s.ys[k - 1]);
+        const b = frame.toScreen(s.xs[k], s.ys[k]);
+        if (s.dashed) dashes.segment(a, b, color) else rl.drawLineEx(a, b, s.width, color);
+    }
+}
+
+/// o traço de uma linha tracejada ao longo de vários trechos: `travelled` é quanto já se andou no padrão
+/// (traço de `dash` pixels, vão do mesmo tamanho)
+const Dashes = struct {
+    width: f32,
+    travelled: f32 = 0,
+    const dash: f32 = 7;
+
+    fn segment(dashes: *Dashes, a: rl.Vector2, b: rl.Vector2, color: rl.Color) void {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const length = @sqrt(dx * dx + dy * dy);
+        if (length <= 0) return;
+        var at: f32 = 0;
+        while (at < length) {
+            const phase = @mod(dashes.travelled, 2 * dash);
+            const drawing = phase < dash;
+            const step = @min((if (drawing) dash else 2 * dash) - phase, length - at);
+            if (drawing) rl.drawLineEx(
+                .{ .x = a.x + dx * at / length, .y = a.y + dy * at / length },
+                .{ .x = a.x + dx * (at + step) / length, .y = a.y + dy * (at + step) / length },
+                @max(dashes.width, 1.2),
+                color,
+            );
+            at += step;
+            dashes.travelled += step;
+        }
+    }
+};
+
+fn finite2(x: f64, y: f64) bool {
+    return std.math.isFinite(x) and std.math.isFinite(y);
+}
+
+/// a cor da sombra: a da curva, transparente (mais forte com `_strong`, como na GUI PyQt)
+fn shade(color: rl.Color, strong: bool) rl.Color {
+    return .{ .r = color.r, .g = color.g, .b = color.b, .a = if (strong) 110 else 45 };
+}
+
+/// a região entre a curva e a outra borda (`fill_ys` no mesmo x ou `fill_xs` no mesmo y), um quadrilátero por trecho
+fn fillBetween(frame: Frame, s: Series, color: rl.Color) void {
+    const along_x = s.fill_ys.len > 0;
+    const other = if (along_x) s.fill_ys else s.fill_xs;
+    const n = @min(@min(s.xs.len, s.ys.len), other.len);
+    var k: usize = 1;
+    while (k < n) : (k += 1) {
+        if (!finite2(s.xs[k - 1], s.ys[k - 1]) or !finite2(s.xs[k], s.ys[k])) continue;
+        if (!std.math.isFinite(other[k - 1]) or !std.math.isFinite(other[k])) continue;
+        const a = frame.toScreen(s.xs[k - 1], s.ys[k - 1]);
+        const b = frame.toScreen(s.xs[k], s.ys[k]);
+        const c = if (along_x) frame.toScreen(s.xs[k], other[k]) else frame.toScreen(other[k], s.ys[k]);
+        const d = if (along_x) frame.toScreen(s.xs[k - 1], other[k - 1]) else frame.toScreen(other[k - 1], s.ys[k - 1]);
+        triangle(a, b, c, color);
+        triangle(a, c, d, color);
+    }
+}
+
+/// um triângulo cheio em qualquer ordem dos vértices (o raylib só desenha os de um sentido)
+fn triangle(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, color: rl.Color) void {
+    const turn = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    if (turn < 0) rl.drawTriangle(a, b, c, color) else rl.drawTriangle(a, c, b, color);
+}
+
+fn defaultMarkerSize(marker: Marker) f32 {
+    return if (marker == .star) 18 else 11;
+}
+
+/// um símbolo de `size` pixels centrado em `at`, cheio na cor e com a borda escura (como na GUI PyQt)
+pub fn drawMarker(marker: Marker, at: rl.Vector2, size: f32, color: rl.Color) void {
+    const r = size / 2;
+    const edge = theme.colors.ink;
+    switch (marker) {
+        .none => {},
+        .circle => {
+            rl.drawCircleV(at, r, color);
+            rl.drawCircleLinesV(at, r, edge);
+        },
+        .square => {
+            const box: rl.Rectangle = .{ .x = at.x - r, .y = at.y - r, .width = 2 * r, .height = 2 * r };
+            rl.drawRectangleRec(box, color);
+            rl.drawRectangleLinesEx(box, 1, edge);
+        },
+        .triangle, .diamond, .star => {
+            // o contorno: 3 pontas (triângulo), 4 (losango) ou 5 com as reentrâncias (estrela)
+            var corners: [10]rl.Vector2 = undefined;
+            const count: usize = switch (marker) {
+                .triangle => 3,
+                .diamond => 4,
+                else => 10,
+            };
+            for (0..count) |k| {
+                const angle = -std.math.pi / 2.0 + 2.0 * std.math.pi * @as(f32, @floatFromInt(k)) / @as(f32, @floatFromInt(count));
+                const radius = if (marker == .star and k % 2 == 1) r * 0.42 else r;
+                corners[k] = .{ .x = at.x + radius * @cos(angle), .y = at.y + radius * @sin(angle) };
+            }
+            for (0..count) |k| triangle(at, corners[k], corners[(k + 1) % count], color);
+            for (0..count) |k| rl.drawLineEx(corners[k], corners[(k + 1) % count], 1, edge);
+        },
+        .plus, .cross => {
+            const d: f32 = if (marker == .cross) r * 0.7 else r;
+            if (marker == .plus) {
+                rl.drawLineEx(.{ .x = at.x - d, .y = at.y }, .{ .x = at.x + d, .y = at.y }, 2, color);
+                rl.drawLineEx(.{ .x = at.x, .y = at.y - d }, .{ .x = at.x, .y = at.y + d }, 2, color);
+            } else {
+                rl.drawLineEx(.{ .x = at.x - d, .y = at.y - d }, .{ .x = at.x + d, .y = at.y + d }, 2, color);
+                rl.drawLineEx(.{ .x = at.x - d, .y = at.y + d }, .{ .x = at.x + d, .y = at.y - d }, 2, color);
+            }
+        },
+    }
+}
+
 fn extent(values: []const f64) ?numbers.Range {
     var low = std.math.inf(f64);
     var high = -std.math.inf(f64);
@@ -556,10 +968,10 @@ pub fn drawFrame(ui: *widgets.Ui, inner: rl.Rectangle, axes: Axes, x_data: numbe
         theme.text(ui.fonts.mono, tick, area.x - w - 8, p.y - 7, 12, theme.colors.muted);
     }
     // rótulos dos eixos
-    const xw = theme.textWidth(ui.fonts.regular, axes.x_label, 13);
-    theme.text(ui.fonts.regular, axes.x_label, area.x + (area.width - xw) / 2, area.y + area.height + 24, 13, theme.colors.label);
-    const yw = theme.textWidth(ui.fonts.regular, axes.y_label, 13);
-    rl.drawTextPro(ui.fonts.regular, axes.y_label, .{ .x = inner.x + 2, .y = area.y + (area.height + yw) / 2 }, .{ .x = 0, .y = 0 }, -90, 13, theme.spacing(13), theme.colors.label);
+    const xw = tex.width(ui.fonts.regular, axes.x_label, 13);
+    _ = tex.draw(ui.fonts.regular, axes.x_label, area.x + (area.width - xw) / 2, area.y + area.height + 24, 13, theme.colors.label);
+    const yw = tex.width(ui.fonts.regular, axes.y_label, 13);
+    tex.drawRotated(ui.fonts.regular, axes.y_label, inner.x + 2, area.y + (area.height + yw) / 2, 13, theme.colors.label);
     return frame;
 }
 
@@ -575,23 +987,124 @@ fn tickText(buffer: []u8, value: f64, step: f64) [:0]const u8 {
     } catch "…";
 }
 
+/// uma reta tracejada sozinha (a amostra da legenda, as guias)
 fn dashedLine(a: rl.Vector2, b: rl.Vector2, color: rl.Color) void {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const length = @sqrt(dx * dx + dy * dy);
-    if (length < 0.5) return;
-    const dash: f32 = 7;
-    var s: f32 = 0;
-    while (s < length) : (s += dash * 2) {
-        const e = @min(s + dash, length);
-        rl.drawLineEx(.{ .x = a.x + dx * s / length, .y = a.y + dy * s / length }, .{ .x = a.x + dx * e / length, .y = a.y + dy * e / length }, 2.2, color);
-    }
+    var dashes: Dashes = .{ .width = 2.2 };
+    dashes.segment(a, b, color);
 }
 
 const legend_row: f32 = 18;
+/// se o gráfico que se desenha agora tem a curva do item escolhido (a legenda segue as curvas à vista)
+var legend_matched = false;
+
+// ------------------------------------------------------------------ a leitura do ponto e a escolha ligada
+/// o raio (pixels) em que um clique pega o ponto de uma curva
+const probe_reach: f32 = 22;
+
+/// clicar (ou arrastar) no gráfico lê o ponto da curva mais perto do mouse, ou o lugar do mouse se não há curva
+/// perto; clicar de novo em cima da leitura a apaga. Um ponto de um grupo de escolha escolhe o item dele
+fn updateProbe(ui: *widgets.Ui, frame: Frame, series: []const Series, state: *State, matched: bool) void {
+    const inside = ui.hovering(frame.area) and !ui.click_taken and !menu.open;
+    if (ui.clicked and inside) {
+        if (state.probe) |probe| {
+            const at = frame.toScreen(probe.x, probe.y);
+            if (@abs(at.x - ui.mouse.x) < 6 and @abs(at.y - ui.mouse.y) < 6) {
+                state.probe = null;
+                state.dragging = false;
+                return;
+            }
+        }
+        state.dragging = true;
+    }
+    if (!ui.held) state.dragging = false;
+    if (!state.dragging or !inside) return;
+    var best: ?Probe = null;
+    var best_distance: f32 = probe_reach * probe_reach;
+    for (series, 0..) |s, i| {
+        if (state.isHidden(s.name) or s.span or !present(s, matched)) continue;
+        const count = @min(s.xs.len, s.ys.len);
+        for (0..count) |k| {
+            if (!finite2(s.xs[k], s.ys[k])) continue;
+            const at = frame.toScreen(s.xs[k], s.ys[k]);
+            const distance = (at.x - ui.mouse.x) * (at.x - ui.mouse.x) + (at.y - ui.mouse.y) * (at.y - ui.mouse.y);
+            if (distance < best_distance) {
+                best_distance = distance;
+                best = .{ .x = s.xs[k], .y = s.ys[k], .series = i, .index = k };
+            }
+        }
+    }
+    if (best) |found| {
+        state.probe = found;
+        const s = series[found.series.?];
+        if (s.pick != 0 and found.index < s.ids.len) pick = .{ .group = s.pick, .id = s.ids[found.index] };
+    } else {
+        const at = frame.toData(ui.mouse);
+        state.probe = .{ .x = at[0], .y = at[1] };
+    }
+}
+
+/// o item escolhido do grupo, maior e com um anel, em todo gráfico que tem os pontos dele
+fn drawPicked(frame: Frame, series: []const Series, state: *State) void {
+    for (series, 0..) |s, i| {
+        if (s.pick == 0 or state.isHidden(s.name) or s.shows != null) continue;
+        const chosen = pickedIn(s.pick) orelse continue;
+        for (s.ids, 0..) |id, k| {
+            if (id != chosen or k >= @min(s.xs.len, s.ys.len) or !finite2(s.xs[k], s.ys[k])) continue;
+            const at = frame.toScreen(s.xs[k], s.ys[k]);
+            rl.drawCircleV(at, 7, s.colorAt(i));
+            rl.drawCircleLinesV(at, 10, theme.colors.ink);
+        }
+    }
+}
+
+/// um número para a leitura: 4 a 1 casas conforme o tamanho; em notação científica se for muito grande ou pequeno
+fn probeNumber(buffer: []u8, value: f64) []const u8 {
+    const magnitude = @abs(value);
+    if (magnitude != 0 and (magnitude < 1e-3 or magnitude >= 1e5)) return std.fmt.bufPrint(buffer, "{e:.3}", .{value}) catch "";
+    return (if (magnitude >= 1000)
+        std.fmt.bufPrint(buffer, "{d:.1}", .{value})
+    else if (magnitude >= 100)
+        std.fmt.bufPrint(buffer, "{d:.2}", .{value})
+    else if (magnitude >= 10)
+        std.fmt.bufPrint(buffer, "{d:.3}", .{value})
+    else
+        std.fmt.bufPrint(buffer, "{d:.4}", .{value})) catch "";
+}
+
+/// a leitura: as linhas até os eixos, o anel no ponto e a caixa com o nome da curva e os valores
+fn drawProbe(ui: *widgets.Ui, frame: Frame, series: []const Series, probe: Probe) void {
+    const at = frame.toScreen(probe.x, probe.y);
+    if (!rl.checkCollisionPointRec(at, .{ .x = frame.area.x - 1, .y = frame.area.y - 1, .width = frame.area.width + 2, .height = frame.area.height + 2 })) return;
+    const guide = theme.colors.muted;
+    rl.drawLineEx(at, .{ .x = at.x, .y = frame.area.y + frame.area.height }, 1, guide);
+    rl.drawLineEx(.{ .x = frame.area.x, .y = at.y }, at, 1, guide);
+    const color = if (probe.series) |i| series[i].colorAt(i) else theme.colors.ink;
+    rl.drawCircleLinesV(at, 6, theme.colors.ink);
+    rl.drawCircleV(at, 2.5, color);
+    var x_text: [32]u8 = undefined;
+    var y_text: [32]u8 = undefined;
+    var line: [200]u8 = undefined;
+    const values = std.fmt.bufPrintZ(&line, "x = {s}   y = {s}", .{ probeNumber(&x_text, probe.x), probeNumber(&y_text, probe.y) }) catch return;
+    const name: [:0]const u8 = if (probe.series) |i| series[i].name else "";
+    const width = @max(theme.textWidth(ui.fonts.mono, values, 12), tex.width(ui.fonts.regular, name, 12)) + 16;
+    const height: f32 = if (name.len > 0) 40 else 24;
+    var box_x = at.x + 12;
+    var box_y = at.y - height - 8;
+    if (box_x + width > frame.area.x + frame.area.width) box_x = at.x - width - 12;
+    if (box_y < frame.area.y) box_y = at.y + 10;
+    const box: rl.Rectangle = .{ .x = box_x, .y = box_y, .width = width, .height = height };
+    widgets.rounded(box, 4, theme.hex(0xfffbe6));
+    widgets.roundedLines(box, 4, theme.colors.line);
+    var y = box_y + 5;
+    if (name.len > 0) {
+        _ = tex.draw(ui.fonts.regular, name, box_x + 8, y, 12, theme.colors.label);
+        y += 16;
+    }
+    theme.text(ui.fonts.mono, values, box_x + 8, y, 12, theme.colors.ink);
+}
 
 fn legendItemWidth(ui: *widgets.Ui, name: [:0]const u8) f32 {
-    return 28 + theme.textWidth(ui.fonts.regular, name, 12) + 18;
+    return 28 + tex.width(ui.fonts.regular, name, 12) + 18;
 }
 
 fn legendHeight(ui: *widgets.Ui, width: f32, series: []const Series) f32 {
@@ -599,6 +1112,7 @@ fn legendHeight(ui: *widgets.Ui, width: f32, series: []const Series) f32 {
     var rows: f32 = 1;
     var x: f32 = 0;
     for (series) |s| {
+        if (!s.in_legend or !present(s, legend_matched)) continue;
         const w = legendItemWidth(ui, s.name);
         if (x > 0 and x + w > width - 20) {
             rows += 1;
@@ -613,6 +1127,7 @@ fn drawLegend(ui: *widgets.Ui, rect: rl.Rectangle, series: []const Series, state
     var x = rect.x;
     var y = rect.y;
     for (series, 0..) |s, i| {
+        if (!s.in_legend or !present(s, legend_matched)) continue;
         const w = legendItemWidth(ui, s.name);
         if (x > rect.x and x + w > rect.x + rect.width) {
             x = rect.x;
@@ -622,9 +1137,11 @@ fn drawLegend(ui: *widgets.Ui, rect: rl.Rectangle, series: []const Series, state
         const item: rl.Rectangle = .{ .x = x - 3, .y = y - 2, .width = w - 12, .height = legend_row };
         if (interactive and ui.hovering(item)) widgets.rounded(item, 4, theme.colors.hover);
         if (interactive and ui.clickedIn(item)) state.toggle(s.name);
-        const color = if (hidden) theme.colors.line else theme.plotColor(s.color_index orelse i);
-        if (s.points) rl.drawCircleV(.{ .x = x + 11, .y = y + 7 }, 3.5, color) else if (s.dashed) dashedLine(.{ .x = x, .y = y + 7 }, .{ .x = x + 22, .y = y + 7 }, color) else rl.drawLineEx(.{ .x = x, .y = y + 7 }, .{ .x = x + 22, .y = y + 7 }, 2.2, color);
-        theme.text(ui.fonts.regular, s.name, x + 28, y, 12, if (hidden) theme.colors.muted else theme.colors.label);
+        const color = if (hidden) theme.colors.line else s.colorAt(i);
+        if (s.span or s.fill_ys.len > 0 or s.fill_xs.len > 0) {
+            rl.drawRectangleRec(.{ .x = x + 2, .y = y + 2, .width = 18, .height = 10 }, shade(color, true));
+        } else if (s.marker != .none) drawMarker(s.marker, .{ .x = x + 11, .y = y + 7 }, 11, color) else if (s.points) rl.drawCircleV(.{ .x = x + 11, .y = y + 7 }, 3.5, color) else if (s.dashed) dashedLine(.{ .x = x, .y = y + 7 }, .{ .x = x + 22, .y = y + 7 }, color) else rl.drawLineEx(.{ .x = x, .y = y + 7 }, .{ .x = x + 22, .y = y + 7 }, 2.2, color);
+        _ = tex.draw(ui.fonts.regular, s.name, x + 28, y, 12, if (hidden) theme.colors.muted else theme.colors.label);
         if (hidden) rl.drawLineEx(.{ .x = x + 26, .y = y + 7 }, .{ .x = x + w - 16, .y = y + 7 }, 1, theme.colors.muted);
         x += w;
     }

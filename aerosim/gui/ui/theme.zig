@@ -104,16 +104,83 @@ const extra_symbols = [_]i32{
     0x0394, 0x2014, 0x2013, 0x2192, 0x25B6, 0x25BC, 0x25B8, 0x2022, // Δ — – → ▶ ▼ ▸ •
     0x2082, 0x2264, 0x2265, 0x221E, 0x00B7, 0x2713, 0x2212, // ₂ ≤ ≥ ∞ · ✓ −
     0x2026, 0x2714, 0x2716, 0x24D8, 0x03B8, 0x03BC, // … ✔ ✖ ⓘ θ μ
+    0x2605, 0x2191, 0x2193, 0x2708, // ★ (o máximo de uma curva, na legenda) ↑ ↓ (mover a linha de uma tabela) ✈
+    0x03B3, 0x03B6, 0x03BA, 0x03BD, 0x03BE, 0x03C0, 0x03C4, 0x03C6, // γ ζ κ ν ξ π τ φ (o TeX dos gráficos)
+    0x03C7, 0x03C8, 0x03C9, 0x0393, 0x039B, 0x03A9, 0x2248, 0x2202, // χ ψ ω Γ Λ Ω ≈ ∂
 };
+
+/// tamanho da primeira carga de cada fonte; o texto sai de uma cópia no tamanho exato dele (`exact`)
+const atlas_size = 28;
+
+/// de onde uma fonte veio, para carregar de novo em outro tamanho
+const Source = union(enum) { path: [:0]const u8, memory: []const u8 };
+
+/// as fontes carregadas e de onde vieram (pela textura da primeira carga)
+var sources: [8]struct { texture: u32, source: Source } = undefined;
+var source_count: usize = 0;
+
+/// as cópias em cada tamanho já pedido
+var sized: [96]struct { texture: u32, pixels: i32, font: rl.Font } = undefined;
+var sized_count: usize = 0;
+
+fn remember(font: rl.Font, source: Source) void {
+    if (source_count == sources.len) return;
+    sources[source_count] = .{ .texture = font.texture.id, .source = source };
+    source_count += 1;
+}
+
+/// a fonte desenhada no tamanho exato `pixels`, um pixel da textura para um da tela. Reduzir uma textura grande (48
+/// ou 28 px para 12 a 16) apaga os traços finos e deixa as letras borradas ou comprimidas; o desenho no tamanho certo
+/// sai como o sistema desenha. A cópia é feita na primeira vez e guardada; sem a origem (fonte padrão, navegador)
+/// ou com a lista cheia, fica a fonte original
+fn exact(font: rl.Font, pixels: i32) rl.Font {
+    if (pixels < 6 or pixels > 96) return font;
+    for (sized[0..sized_count]) |entry| {
+        if (entry.texture == font.texture.id and entry.pixels == pixels) return entry.font;
+    }
+    if (sized_count == sized.len) return font;
+    const source = for (sources[0..source_count]) |entry| {
+        if (entry.texture == font.texture.id) break entry.source;
+    } else return font;
+    const cps = codepoints();
+    const copy = switch (source) {
+        .path => |path| rl.loadFontEx(path, pixels, &cps),
+        .memory => |bytes| rl.loadFontFromMemory(".ttf", bytes, pixels, &cps),
+    } catch return font;
+    rl.setTextureFilter(copy.texture, .point);
+    sized[sized_count] = .{ .texture = font.texture.id, .pixels = pixels, .font = copy };
+    sized_count += 1;
+    return copy;
+}
 
 fn loadFirst(paths: []const [:0]const u8, cps: []const i32) ?rl.Font {
     for (paths) |path| {
         if (!rl.fileExists(path)) continue;
-        const font = rl.loadFontEx(path, 48, cps) catch continue;
+        const font = rl.loadFontEx(path, atlas_size, cps) catch continue;
         rl.setTextureFilter(font.texture, .bilinear);
+        remember(font, .{ .path = path });
         return font;
     }
     return null;
+}
+
+/// a Computer Modern (a fonte do LaTeX, na versão Unicode CMU; licença SIL OFL em `fonts/OFL.txt`), que vai dentro
+/// do programa: a matemática dos gráficos (o que está entre `$`) sai nela, com as variáveis em itálico
+const math_upright_file = @embedFile("fonts/cmunrm.ttf");
+const math_italic_file = @embedFile("fonts/cmunti.ttf");
+
+/// carrega as duas fontes da matemática e as entrega ao TeX dos gráficos; sem elas, a matemática fica na fonte do texto
+fn loadMathFonts(cps: []const i32) void {
+    const upright = rl.loadFontFromMemory(".ttf", math_upright_file, atlas_size, cps) catch return;
+    const italic = rl.loadFontFromMemory(".ttf", math_italic_file, atlas_size, cps) catch {
+        rl.unloadFont(upright);
+        return;
+    };
+    rl.setTextureFilter(upright.texture, .bilinear);
+    rl.setTextureFilter(italic.texture, .bilinear);
+    remember(upright, .{ .memory = math_upright_file });
+    remember(italic, .{ .memory = math_italic_file });
+    @import("tex.zig").math_fonts = .{ .upright = upright, .italic = italic };
 }
 
 pub const Fonts = struct {
@@ -126,6 +193,7 @@ pub const Fonts = struct {
     pub fn load() Fonts {
         const cps = codepoints();
         const fallback = rl.getFontDefault() catch unreachable;
+        loadMathFonts(&cps);
         const regular = loadFirst(&regular_candidates, &cps) orelse return .{ .regular = fallback, .bold = fallback, .mono = fallback, .owned = false };
         return .{
             .regular = regular,
@@ -138,6 +206,9 @@ pub const Fonts = struct {
     /// libera as fontes carregadas
     pub fn deinit(fonts: *Fonts) void {
         if (!fonts.owned) return;
+        for (sized[0..sized_count]) |entry| rl.unloadFont(entry.font);
+        sized_count = 0;
+        source_count = 0;
         rl.unloadFont(fonts.mono);
         rl.unloadFont(fonts.bold);
         rl.unloadFont(fonts.regular);
@@ -151,12 +222,14 @@ pub fn spacing(size: f32) f32 {
 
 /// escreve `text` com o canto de cima à esquerda em (x, y)
 pub fn text(font: rl.Font, content: [:0]const u8, x: f32, y: f32, size: f32, color: rl.Color) void {
-    rl.drawTextEx(font, content, .{ .x = @round(x), .y = @round(y) }, size, spacing(size), color);
+    const pixels = @round(size);
+    rl.drawTextEx(exact(font, @intFromFloat(pixels)), content, .{ .x = @round(x), .y = @round(y) }, pixels, spacing(pixels), color);
 }
 
 /// largura de `text` em pixels
 pub fn textWidth(font: rl.Font, content: [:0]const u8, size: f32) f32 {
-    return rl.measureTextEx(font, content, size, spacing(size)).x;
+    const pixels = @round(size);
+    return rl.measureTextEx(exact(font, @intFromFloat(pixels)), content, pixels, spacing(pixels)).x;
 }
 
 /// a logo do albatroz, nas cores dela

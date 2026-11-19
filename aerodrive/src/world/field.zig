@@ -6,7 +6,7 @@ const core = @import("aerosim");
 const v3 = @import("../math/vec3.zig");
 const fz = @import("../util/fuzz.zig");
 
-const T = core.types;
+const types = core.types;
 const V3 = v3.V3;
 
 pub const Rgba = [4]u8;
@@ -63,7 +63,7 @@ fn sane(x: f64, lo: f64, hi: f64, d: f64) f64 {
 }
 
 /// monta o campo: x_warning (m), segmentos e pads do núcleo
-pub fn build(x_warning: f64, segs: []const T.Segment, pads: []const T.Pad) Field {
+pub fn build(x_warning: f64, segs: []const types.Segment, pads: []const types.Pad) Field {
     var f: Field = .{};
     const xw = sane(x_warning, 1, 2000, 60);
     // grade do chão: 10 m (fraca) e 50 m (forte), mais fina perto da pista
@@ -170,7 +170,7 @@ test "fuzz: setas do vento" {
 }
 
 test "pista até depois do x_warning, com a linha vermelha nele; mesa vira caixa" {
-    const pads = [_]T.Pad{.{ .n0 = -1, .e0 = 0, .chi = 0, .L = 16, .W = 2, .h = 1 }};
+    const pads = [_]types.Pad{.{ .n0 = -1, .e0 = 0, .chi = 0, .L = 16, .W = 2, .h = 1 }};
     const f = build(60, &.{}, &pads);
     try testing.expect(f.runway.n + f.runway.L / 2 > 60);
     var red = false;
@@ -183,10 +183,10 @@ test "pista até depois do x_warning, com a linha vermelha nele; mesa vira caixa
 }
 
 fn fuzzField(_: void, src: *fz.Src) anyerror!void {
-    var segs: [8]T.Segment = undefined;
+    var segs: [8]types.Segment = undefined;
     const ns = src.int(u8, 0, 8);
     for (segs[0..ns]) |*s| s.* = .{ .arc = @intFromBool(src.boolean()), .n0 = src.mostly(-300, 300), .e0 = src.mostly(-300, 300), .chi0 = src.mostly(-4, 4), .L = src.mostly(0, 600), .cn = src.mostly(-300, 300), .ce = src.mostly(-300, 300), .R = src.mostly(0, 200), .lam = if (src.boolean()) 1 else -1, .h0 = src.mostly(0, 50), .h1 = src.mostly(0, 50) };
-    var pads: [4]T.Pad = undefined;
+    var pads: [4]types.Pad = undefined;
     const np_ = src.int(u8, 0, 4);
     for (pads[0..np_]) |*p| p.* = .{ .n0 = src.mostly(-10, 300), .e0 = src.mostly(-50, 50), .chi = src.mostly(-4, 4), .L = src.mostly(0, 100), .W = src.mostly(0, 10), .h = src.mostly(0, 3) };
     const f = build(src.mostly(1, 300), segs[0..ns], pads[0..np_]);

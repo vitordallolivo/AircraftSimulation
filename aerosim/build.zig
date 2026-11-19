@@ -5,7 +5,7 @@
 //!   zig build run                                abre o aerosim
 //!   zig build run -- <avião.json>                abre um avião na Montagem
 //!   zig build shot -- <saída.png> [LxA]          desenha a tela e salva uma imagem (sem interação)
-//!   zig build test                               testes (sem janela)
+//!   zig build test                               testes (sem janela); -Dlento inclui os lentos, -Dfiltro=<nome> escolhe
 //!   zig build -Dtarget=wasm32-emscripten         versão para o navegador em zig-out/web/ (aerosim.html, .js, .wasm, .data)
 //!
 //! O raylib vem pelo raylib-zig (build.zig.zon), compilado junto, como no AeroDrive.
@@ -30,6 +30,68 @@ pub fn build(b: *std.Build) void {
     aircraft_model.addOptions("build_options", fuzz_options);
     aircraft_model.addImport("aerosim", core);
 
+    // ---- o contrato das análises em Zig (interfaces/simulation.zig) e o manager com as análises (manager/manager.zig)
+    const simulation = b.createModule(.{
+        .root_source_file = b.path("interfaces/simulation.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "aerosim", .module = core },
+            .{ .name = "aircraft_model", .module = aircraft_model },
+        },
+    });
+    // o catálogo de motores, hélices e baterias (model/catalog.zig, o par de `catalog.py`)
+    const catalog = b.createModule(.{ .root_source_file = b.path("model/catalog.zig"), .target = target, .optimize = optimize });
+    const manager = b.createModule(.{
+        .root_source_file = b.path("manager/manager.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "aerosim", .module = core },
+            .{ .name = "aircraft_model", .module = aircraft_model },
+            .{ .name = "simulation", .module = simulation },
+            .{ .name = "catalog", .module = catalog },
+        },
+    });
+
+    // os modelos padrão do avião (gerados de `model/templates.py`), para o "Restaurar" da Montagem
+    const templates = b.createModule(.{ .root_source_file = b.path("model/templates.zig"), .target = target, .optimize = optimize });
+    // os formatos antigos do avião e do catálogo (.cfg, .xlsx e o mapa de células; data/sources.zig)
+    const data_sources = b.createModule(.{
+        .root_source_file = b.path("data/sources.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "aerosim", .module = core },
+            .{ .name = "catalog", .module = catalog },
+            .{ .name = "templates", .module = templates },
+        },
+    });
+    const data_tests = b.addRunArtifact(b.addTest(.{ .root_module = data_sources }));
+    data_tests.setCwd(b.path("."));
+
+    // ---- o que o design calcula para a tela (design/dims.zig: as dimensões a partir do CG)
+    const design = b.createModule(.{
+        .root_source_file = b.path("design/dims.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "aerosim", .module = core },
+            .{ .name = "aircraft_model", .module = aircraft_model },
+            .{ .name = "manager", .module = manager },
+            .{ .name = "simulation", .module = simulation },
+            .{ .name = "catalog", .module = catalog },
+            .{ .name = "templates", .module = templates },
+            .{ .name = "data_sources", .module = data_sources },
+        },
+    });
+
+    // os testes lentos dos managers (o MTOW da Missão, minutos) só rodam com -Dlento; -Dfiltro=<nome> escolhe os testes
+    const test_options = b.addOptions();
+    test_options.addOption(bool, "slow", b.option(bool, "lento", "roda também os testes lentos dos managers") orelse false);
+    manager.addOptions("test_options", test_options);
+    const filter = b.option([]const u8, "filtro", "só os testes dos managers com este texto no nome");
+
     // ---- testes: só o que não abre janela (escalas dos gráficos, a asa de exemplo)
     const tests = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("gui/tests.zig"),
@@ -38,9 +100,65 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "aerosim", .module = core },
             .{ .name = "aircraft_model", .module = aircraft_model },
+            .{ .name = "manager", .module = manager },
+            .{ .name = "design", .module = design },
+            .{ .name = "data_sources", .module = data_sources },
         },
     }) });
-    b.step("test", "Testes (sem janela)").dependOn(&b.addRunArtifact(tests).step);
+    const test_step = b.step("test", "Testes (sem janela)");
+    test_step.dependOn(&b.addRunArtifact(tests).step);
+    // os managers em Zig são outro módulo: os testes deles rodam à parte, da pasta do aerosim (os aviões em ../data)
+    const manager_tests = b.addRunArtifact(b.addTest(.{ .root_module = manager, .filters = if (filter) |text| &.{text} else &.{} }));
+    manager_tests.setCwd(b.path("."));
+    test_step.dependOn(&manager_tests.step);
+    // o design (dimensões, Acertar o CG), da pasta do aerosim (os aviões em ../data)
+    const design_tests = b.addRunArtifact(b.addTest(.{ .root_module = design }));
+    design_tests.setCwd(b.path("."));
+    test_step.dependOn(&design_tests.step);
+    const simulation_tests = b.addRunArtifact(b.addTest(.{ .root_module = simulation }));
+    test_step.dependOn(&simulation_tests.step);
+    // o catálogo e os arquivos da biblioteca do usuário
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = catalog })).step);
+    test_step.dependOn(&data_tests.step);
+
+    // ---- o retrato dos aviões de exemplo para a regressão bit a bit (`tools/retrato.zig`, chamado pelo `zig build check`)
+    const portrait = b.addExecutable(.{ .name = "retrato", .root_module = b.createModule(.{
+        .root_source_file = b.path("../tools/retrato.zig"),
+        .target = target,
+        .optimize = .ReleaseSafe,
+        .imports = &.{
+            .{ .name = "aircraft_model", .module = aircraft_model },
+            .{ .name = "manager", .module = manager },
+            .{ .name = "simulation", .module = simulation },
+            .{ .name = "data_sources", .module = data_sources },
+        },
+    }) });
+    const portrait_run = b.addRunArtifact(portrait);
+    portrait_run.setCwd(b.path("."));
+    if (b.args) |args| portrait_run.addArgs(args);
+    b.step("retrato", "Retrata os aviões de exemplo (regressão bit a bit)").dependOn(&portrait_run.step);
+
+    // ---- o exemplo do README de uma pasta (<pasta>/exemplo.zig): um programa curto com o núcleo, o avião e as análises
+    const example_imports: []const std.Build.Module.Import = &.{
+        .{ .name = "aerosim", .module = core },
+        .{ .name = "aircraft_model", .module = aircraft_model },
+        .{ .name = "simulation", .module = simulation },
+        .{ .name = "manager", .module = manager },
+        .{ .name = "design", .module = design },
+        .{ .name = "data_sources", .module = data_sources },
+        .{ .name = "templates", .module = templates },
+    };
+    if (b.option([]const u8, "exemplo", "a pasta do exemplo do README: manager, interfaces, data, design")) |folder| {
+        const example = b.addExecutable(.{ .name = "exemplo", .root_module = b.createModule(.{
+            .root_source_file = b.path(b.fmt("{s}/exemplo.zig", .{folder})),
+            .target = target,
+            .optimize = .ReleaseSafe,
+            .imports = example_imports,
+        }) });
+        const example_run = b.addRunArtifact(example);
+        example_run.setCwd(b.path("."));
+        b.step("exemplo", "Roda o exemplo do README de uma pasta (-Dexemplo=manager)").dependOn(&example_run.step);
+    } else b.step("exemplo", "Roda o exemplo do README de uma pasta (-Dexemplo=manager)").dependOn(&b.addFail("falta -Dexemplo=<pasta> (manager, interfaces, data, design)").step);
 
     // ---- o programa (gui/main.zig)
     const display = b.option(enum { X11, Wayland, Both }, "display", "Linux: X11 (padrão), Wayland ou Both") orelse .X11;
@@ -66,15 +184,25 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
+            .{ .name = "templates", .module = templates },
             .{ .name = "raylib", .module = raylib },
             .{ .name = "ui", .module = ui },
             .{ .name = "aerosim", .module = core },
             .{ .name = "aircraft_model", .module = aircraft_model },
+            .{ .name = "manager", .module = manager },
+            .{ .name = "design", .module = design },
+            .{ .name = "data_sources", .module = data_sources },
         },
     });
     if (target.result.os.tag == .emscripten) return buildWeb(b, raylib_zig, program);
 
-    const exe = b.addExecutable(.{ .name = "aerosim", .root_module = program });
+    const exe = b.addExecutable(.{
+        .name = "aerosim",
+        .root_module = program,
+        // o LLD acusa como erro as .so que o Zig 0.16 põe dentro do libraylib.a; o ligador do próprio Zig não
+        // (é o que os exemplos do raylib fazem fora do Windows)
+        .use_lld = target.result.os.tag == .windows,
+    });
     exe.root_module.linkLibrary(raylib_zig.artifact("raylib"));
     b.installArtifact(exe);
 

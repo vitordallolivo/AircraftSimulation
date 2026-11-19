@@ -7,6 +7,7 @@
 //!   L = q S CL(α) ⟂ v;  D = q S (CD0 + CL²/(π e AR) φ(h))
 //! A fuselagem entra com área de arrasto e C_mα, C_nβ, C_Yβ próprios.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
 const fmath = @import("../math/fmath.zig");
@@ -71,7 +72,7 @@ fn peakGolden(surface: *const types.Surface, steepness: f64) f64 {
     var x2 = low + gr * (high - low);
     var f1 = clPanel(surface, x1, steepness);
     var f2 = clPanel(surface, x2, steepness);
-    for (0..40) |_| {
+    for (0..numerics.count(numerics.active.peak_golden_iterations)) |_| {
         if (f1 < f2) {
             low = x1;
             x1 = x2;
@@ -114,7 +115,7 @@ pub fn init(params: *types.Params) void {
         surface.ey = vec.cross(ez, ex);
         var lo: f64 = 0.02;
         var hi: f64 = 0.8;
-        for (0..50) |_| {
+        for (0..numerics.count(numerics.active.stall_angle_bisections)) |_| {
             surface.a0 = 0.5 * (lo + hi);
             if (peakCL(surface, params.Mst) > surface.CLmax) hi = surface.a0 else lo = surface.a0;
         }
@@ -147,7 +148,7 @@ fn pairGamma(params: *const types.Params, Vr: V3, body_rates: V3, deflections: V
     const n_surf: usize = @intCast(params.n_surf);
     for (params.surf[0..n_surf], 0..) |*surface, i| {
         env.gamma[i] = 0;
-        const local = Vr + vec.cross(body_rates, vec.v3(surface.r)) + mods.inducedNoPair(params, env, i, surface);
+        const local = Vr + vec.cross(body_rates, vec.v3(surface.r)) + mods.inducedAlone(params, env, i, surface);
         const u_local = vec.dot(local, vec.v3(surface.ex));
         const ww = vec.dot(local, vec.v3(surface.ez));
         const V2 = u_local * u_local + ww * ww;
@@ -167,14 +168,18 @@ fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_r
     const alfa = fmath.atan2(Vr[2], Vr[0]);
     const n_surf: usize = @intCast(params.n_surf);
     const with_mods = params.n_mod > 0;
-    // par de asas ligadas (modifiers/wingpair.zig): as circulações de antes da interferência, numa cópia do Env
+    // interferência entre asas (modifiers/interference.zig): as circulações de antes da interferência, numa cópia do Env
     var env_pair: mods.Env = undefined;
     var envp = env;
-    if (with_mods and !env.no_pair and mods.wingpair.active(params)) {
+    if (with_mods and !env.no_interference and mods.interference.active(params)) {
         env_pair = env.*;
         pairGamma(params, Vr, body_rates, deflections, &env_pair);
         envp = &env_pair;
     }
+    // efeito solo pela tabela do VLM com o chão espelhado (modifiers/ground.zig): o fator do induzido em cada painel,
+    // e ΔC_L e ΔC_m do avião inteiro somados depois dos painéis
+    const imaged = params.ground == .vlm_image;
+    const image_effect: mods.ground.Effect = if (imaged) mods.ground.lookup(&params.ground_table, height, alfa) else .{};
     for (params.surf[0..n_surf], 0..) |*surface, i| {
         const position = vec.v3(surface.r);
         const ex = vec.v3(surface.ex);
@@ -198,7 +203,7 @@ fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_r
         const scl = if (fmath.optOn(.cse)) fmath.sincos(al) else undefined;
         const CL = if (fmath.optOn(.cse)) clPanelWith(surface, al, sg, scl) else clPanel(surface, al, params.Mst);
         var fge: f64 = 1.0;
-        if (surface.vertical == 0) fge = mods.ground.factor(params.ground, height - surface.r[2], params.bref); // efeito solo (modifiers/ground.zig)
+        if (surface.vertical == 0) fge = if (imaged) image_effect.induced else mods.ground.factor(params.ground, height - surface.r[2], params.bref); // efeito solo (modifiers/ground.zig)
         const CDi = (1.0 - sg) * CL * CL / (fmath.pi * surface.e * surface.AR) * fge;
         const sa = if (fmath.optOn(.cse)) scl.s else fmath.sin(al);
         const CD = surface.CD0 + CDi + sg * 1.2 * sa * sa;
@@ -216,13 +221,28 @@ fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_r
             if (i < out.len) out[i] = .{ .r = surface.r, .S = surface.S, .c = surface.c, .group = surface.group, .side = surface.side, .alpha = al,
                 .V = Vp, .CL = CL, .CD = CD, .L = qS * CL, .D = qS * CD, .F = force, .v = local, .vind = vind, .ey = surface.ey, .ex = surface.ex };
         }
-        const group: usize = @intCast(surface.group);
+        const group = limits.groupIndex(surface.group);
         result.Fg[group] += force;
         result.Mg[group] += moment;
         result.F += force;
         result.M += moment;
         result.Fi += Fi;
-        if (surface.group == limits.group_wing and surface.CLmax > 0) result.ratioCL = @max(result.ratioCL, CL / surface.CLmax);
+        if (surface.group == limits.Group.wing and surface.CLmax > 0) result.ratioCL = @max(result.ratioCL, CL / surface.CLmax);
+    }
+    if (imaged and Va > 0.1) {
+        // ΔC_L na direção da sustentação (perpendicular ao vento, no plano de simetria) e ΔC_m em torno do CG
+        const qS = 0.5 * params.env.rho * Va * Va * params.Sref;
+        const plane_speed = @sqrt(Vr[0] * Vr[0] + Vr[2] * Vr[2]);
+        if (plane_speed > 1e-9) {
+            // o comando do profundor (δe = deflections[0]) muda a carga da cauda e o que o chão faz com ela
+            const lift = image_effect.lift + deflections[0] * image_effect.lift_elevator;
+            const force = V3{ Vr[2], 0, -Vr[0] } * vec.splat(qS * lift / plane_speed);
+            result.Fg[limits.groupIndex(.wing)] += force;
+            result.F += force;
+            const moment = V3{ 0, qS * params.cref * (image_effect.moment + deflections[0] * image_effect.moment_elevator), 0 };
+            result.Mg[limits.groupIndex(.wing)] += moment;
+            result.M += moment;
+        }
     }
     // fuselagem (a mesma conta de `fuselage`, escrita aqui para as faixas ficarem bit a bit iguais: fora da função
     // o compilador reordena as somas no modo de ponto flutuante otimizado)
@@ -234,8 +254,8 @@ fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_r
         var moment = vec.cross(vec.v3(params.fus_r) - rcg, force);
         moment[1] += qS * params.cref * params.fus_Cma * alfa;
         moment[2] += qS * params.bref * params.fus_Cnb * be;
-        result.Fg[limits.group_fuselage] += force;
-        result.Mg[limits.group_fuselage] += moment;
+        result.Fg[limits.groupIndex(.fuselage)] += force;
+        result.Mg[limits.groupIndex(.fuselage)] += moment;
         result.F += force;
         result.M += moment;
     }
@@ -288,8 +308,8 @@ pub fn coeffsAt(params: *const types.Params, airspeed: f64, alpha: f64, beta: f6
         .Cl = out.M[0] / (qS * params.bref),
         .Cm = out.M[1] / (qS * params.cref),
         .Cn = out.M[2] / (qS * params.bref),
-        .CL_wing = (-out.Fg[limits.group_wing][2] * sc_alpha.c + out.Fg[limits.group_wing][0] * sc_alpha.s) / qS,
-        .CL_ht = (-out.Fg[limits.group_htail][2] * sc_alpha.c + out.Fg[limits.group_htail][0] * sc_alpha.s) / qS,
+        .CL_wing = (-out.Fg[limits.groupIndex(.wing)][2] * sc_alpha.c + out.Fg[limits.groupIndex(.wing)][0] * sc_alpha.s) / qS,
+        .CL_ht = (-out.Fg[limits.groupIndex(.htail)][2] * sc_alpha.c + out.Fg[limits.groupIndex(.htail)][0] * sc_alpha.s) / qS,
         .ratioCL = out.ratioCL,
         .CDi = -(out.Fi[0] * sc_alpha.c * sc_beta.c + out.Fi[1] * sc_beta.s + out.Fi[2] * sc_alpha.s * sc_beta.c) / qS,
         .CN = -out.F[2] / qS,

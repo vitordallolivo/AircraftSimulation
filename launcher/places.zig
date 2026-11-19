@@ -1,6 +1,7 @@
 //! Onde estão os programas e os dados, vistos da tela inicial. No pacote instalado (o .exe do Windows, o
-//! AppImage do Linux) tudo fica numa pasta só: a tela inicial, `aerosim`, `aeroopt`, `aerodrive` e `data/`. No
-//! repositório, cada programa está em `<pasta>/zig-out/bin` e os dados na raiz. Esta parte só procura caminhos;
+//! AppImage do Linux) tudo fica numa pasta só: a tela inicial, `aerosim`, `aeroopt`, `aerodrive`, `data/` e `site/`
+//! (com a documentação). No repositório, cada programa está em `<pasta>/zig-out/bin`, os dados na raiz e a
+//! documentação em `zig-out/site`. Esta parte só procura caminhos;
 //! não abre janela, então tem teste.
 const std = @import("std");
 const builtin = @import("builtin");
@@ -34,7 +35,24 @@ pub fn candidates(gpa: std.mem.Allocator, exe_dir: []const u8, root: ?[]const u8
 
 /// o primeiro lugar em que o programa existe
 pub fn find(gpa: std.mem.Allocator, io: std.Io, exe_dir: []const u8, root: ?[]const u8, program: Program) ?[]const u8 {
-    const places = candidates(gpa, exe_dir, root, program) catch return null;
+    return firstExisting(gpa, io, candidates(gpa, exe_dir, root, program) catch return null);
+}
+
+/// os lugares onde a página da documentação (`livro.html`) pode estar, na ordem de procura: em `site/` ao lado da
+/// tela inicial (o pacote) e em `zig-out/site` na raiz do repositório (o que o `zig build docs` monta)
+pub fn docsCandidates(gpa: std.mem.Allocator, exe_dir: []const u8, root: ?[]const u8) ![2]?[]const u8 {
+    const beside = try std.fs.path.join(gpa, &.{ exe_dir, "site", "livro.html" });
+    const in_repo = if (root) |folder| try std.fs.path.join(gpa, &.{ folder, "zig-out", "site", "livro.html" }) else null;
+    return .{ beside, in_repo };
+}
+
+/// a primeira página da documentação que existe
+pub fn findDocs(gpa: std.mem.Allocator, io: std.Io, exe_dir: []const u8, root: ?[]const u8) ?[]const u8 {
+    return firstExisting(gpa, io, docsCandidates(gpa, exe_dir, root) catch return null);
+}
+
+/// o primeiro caminho de `places` que existe; os outros são liberados
+fn firstExisting(gpa: std.mem.Allocator, io: std.Io, places: [2]?[]const u8) ?[]const u8 {
     var found: ?[]const u8 = null;
     for (places) |place| {
         const path = place orelse continue;
@@ -47,6 +65,29 @@ pub fn find(gpa: std.mem.Allocator, io: std.Io, exe_dir: []const u8, root: ?[]co
         gpa.free(path);
     }
     return found;
+}
+
+/// o comando que abre um arquivo no programa padrão do sistema (a página no navegador); só os `opener_len`
+/// primeiros itens valem
+pub fn opener(path: []const u8) [5][]const u8 {
+    return switch (builtin.os.tag) {
+        // o `start` toma o primeiro argumento entre aspas como o título da janela, daí o "" antes do caminho
+        .windows => .{ "cmd", "/c", "start", "", path },
+        .macos => .{ "open", path, "", "", "" },
+        else => .{ "xdg-open", path, "", "", "" },
+    };
+}
+
+/// quantos itens de `opener` valem no sistema para o qual se compila
+pub const opener_len: usize = if (builtin.os.tag == .windows) 5 else 2;
+
+test "a documentação: primeiro em site/ ao lado da tela inicial, depois em zig-out/site no repositório" {
+    const gpa = std.testing.allocator;
+    const places = try docsCandidates(gpa, "/opt/as", "/home/x/repo");
+    defer for (places) |place| if (place) |path| gpa.free(path);
+    const sep = std.fs.path.sep_str;
+    try std.testing.expectEqualStrings("/opt/as" ++ sep ++ "site" ++ sep ++ "livro.html", places[0].?);
+    try std.testing.expectEqualStrings("/home/x/repo" ++ sep ++ "zig-out" ++ sep ++ "site" ++ sep ++ "livro.html", places[1].?);
 }
 
 test "procura ao lado da tela inicial e depois na pasta do programa no repositório" {

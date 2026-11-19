@@ -1,7 +1,7 @@
 # Publica o site (tela inicial + AeroDrive, aerosim e aeroopt em WebAssembly) no GitHub Pages a cada push na main.
 # Endereço: https://<usuario>.github.io/AircraftSimulation/
 # No repositório: Settings -> Pages -> Source: GitHub Actions. Para montar o mesmo site no PC:
-#   python tools/web_build.py && python -m http.server -d zig-out/site 8000
+#   python -m ziglang build pacote -- --alvo web && python -m http.server -d zig-out/site 8000
 name: site
 
 on:
@@ -52,7 +52,7 @@ jobs:
         run: python -m ziglang build test
 
       - name: Montar o site
-        run: python tools/web_build.py
+        run: python -m ziglang build pacote -- --alvo web
 
       - uses: actions/upload-pages-artifact@v3
         with:

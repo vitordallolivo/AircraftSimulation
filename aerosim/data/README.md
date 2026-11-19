@@ -1,13 +1,13 @@
 # aerosim/data — de onde vêm as aeronaves
 
 Esta é a parte do projeto que lê e grava aviões e catálogos. Um avião pode estar num `.json` (o formato completo do
-projeto), num `.cfg` (o formato de texto do AeroDrive) ou na planilha antiga de desempenho, e o catálogo de motores,
-hélices, baterias e conjuntos de tração vem de arquivos próprios. Aqui tudo isso vira a mesma configuração
-(`Aircraft`) e o mesmo `Catalog`, e volta para o arquivo.
+projeto), num `.cfg` (o formato de texto do AeroDrive), numa planilha `.xlsx` no formato do programa ou na planilha
+antiga de desempenho das equipes, e o catálogo de motores, hélices, baterias e conjuntos de tração vem de arquivos
+próprios. Aqui tudo isso vira o mesmo `.json` do avião, que a Montagem e as análises leem.
 
-A GUI e os scripts chamam `load_aircraft(path)` e `save_aircraft(ac, path)`, e o formato sai da extensão. A planilha
-usa `CellMapAircraftSource`, que lê as células por um mapa. Por trás estão as interfaces `IAircraftSource` e
-`ICatalogSource`, então um formato novo entra como mais uma implementação.
+A tela chama `sources.aircraftJson(memória, caminho, bytes)`, e o formato sai da extensão; o catálogo do usuário vem de
+`sources.catalogItems`. A planilha das equipes passa por `cellmap.read`, que lê as células por um mapa. Um formato novo
+entra como mais um caso em `sources.zig`, e quem lê o avião não muda.
 
 O README mostra primeiro como os formatos se ligam e, em detalhe, como a planilha é lida pelo mapa de células, com as
 equações do polinômio de tração e do arrasto. No fim, como chamar.
@@ -16,22 +16,14 @@ equações do polinômio de tração e do arrasto. No fim, como chamar.
 
 ```mermaid
 flowchart LR
-    subgraph API["interface (aerosim/interfaces)"]
-        direction TB
-        IA["IAircraftSource"]
-        IC["ICatalogSource"]
-    end
-    SRC["sources.py<br/>JSON · CFG · XLSX<br/>load_aircraft / save_aircraft"]
-    CM["cellmap.py<br/>CellMapAircraftSource<br/>planilha por endereço de célula"]
-    FLAT["flat.py<br/>aeronave ⇄ seções planas"]
+    SRC["sources.zig<br/>JSON · CFG · XLSX<br/>aircraftJson · catalogItems"]
+    CM["cellmap.zig<br/>planilha por endereço de célula"]
     MAP["data/mappings/*.json<br/>mapa campo → Aba!Célula"]
-    IA --> SRC & CM
-    IC --> SRC
-    SRC --> FLAT
+    J[/".json do avião"/]
+    SRC --> J
     CM --> MAP
-    classDef iface fill:#cfe3ff,stroke:#1f4e8c,stroke-width:2px,color:#0b2545
-    class IA,IC iface
-    style API fill:#eaf2ff,stroke:#1f4e8c,stroke-width:3px
+    CM --> J
+    J --> AM["aircraft_model.parse<br/>(Montagem, análises)"]
 ```
 
 | formato | aeronave | catálogo |
@@ -42,24 +34,22 @@ flowchart LR
 
 ### Abrir um arquivo, passo a passo
 
-O que acontece em `load_aircraft(caminho)`:
+O que acontece quando a tela abre um arquivo:
 
 ```mermaid
 flowchart TD
     P[/"caminho do arquivo"/] --> EXT{"extensão"}
-    EXT -->|".json"| J["JSON: from_dict guiado pelas<br/>anotações das dataclasses"]
-    EXT -->|".cfg"| C["CFG do AeroDrive: chave = valor"]
-    EXT -->|".xlsx"| X["planilha: CellMapAircraftSource<br/>com o mapa de células (data/mappings)"]
-    J --> MIG["Aircraft.migrate: formatos antigos<br/>(boom único, sem modifiers...)"]
-    C --> MIG
-    X --> MIG
-    CAT[/"catálogo: motores, hélices,<br/>baterias, conjuntos de tração"/] --> MIG
-    MIG --> AC[/"Aircraft"/]
+    EXT -->|".json"| J["o texto como está"]
+    EXT -->|".cfg"| C["CFG: as seções voltam a ser a árvore do .json"]
+    EXT -->|".xlsx"| X{"planilha do programa?"}
+    X -->|"sim"| XP["aba geral + uma aba por lista"]
+    X -->|"não"| XM["cellmap.read com o mapa de células<br/>(data/mappings)"]
+    J & C & XP & XM --> PARSE["aircraft_model.parse: o avião<br/>(formatos antigos migrados)"]
 ```
 
 ### Planilha Dados_Desempenho.xlsx (mapa de células)
 
-`CellMapAircraftSource(mapa)` lê e grava as mesmas células. O mapa
+`cellmap.read(mapa, planilha, avião de partida)` lê as células do mapa. O mapa
 `data/mappings/dados_desempenho.json` foi tirado do `AircraftData()` original:
 
 ```json
@@ -82,8 +72,7 @@ flowchart TD
 - `fields`: caminho no modelo → célula. Caminhos: `a.b`, `surfaces[wing]` (por papel ou nome),
   `propulsion[0]`, `mass.base_cg[0]`; `scale`/`offset` convertem unidades e eixos.
 - `@papel.area|span|chord|xac|K`: refaz a geometria da superfície (mantém afilamento e enflechamento).
-- `thrust_sets`: cada linha da aba `Tracao` (colunas B..V = p00..p05) vira um conjunto no catálogo
-  (`src.catalog.thrust_sets`); a linha `nhelice + 2` (célula `Geral!C28`) vai para todos os motores
+- `thrust_sets`: cada linha da aba `Tracao` (colunas B..V = p00..p05) vira um conjunto no catálogo; a linha `nhelice + 2` (célula `Geral!C28`) vai para todos os motores
   da aeronave com `thrust_model = "poly"`. A tração fica igual à do `Envelope_main`, com $`x = n`$ (coluna W, constante
   do conjunto), $`y = V`$, $`T_0`$ (coluna Y) no lugar de $`p_{00}`$, ganho $`g`$ (polinômio em kgf) e $`\rho_0`$ de `Geral!C18`:
 
@@ -103,31 +92,36 @@ T = g\,\frac{\rho}{\rho_0}\left(T_0 + p_{10}\,n + p_{01}\,V + p_{20}\,n^2 + p_{1
 
 ## Como chamar
 
-```python
-import os, tempfile
-from aerosim.data import load_aircraft, save_aircraft, JsonProjectStore              # sources.py, projects.py
-from aerosim.data.flat import flatten, unflatten, encode, decode                     # flat.py
-from aerosim.data.projects import summary, slug
+Abrir um avião em `.cfg` e outro na planilha do programa, pelo mesmo caminho da tela (`exemplo.zig`,
+`python -m ziglang build exemplo -Dexemplo=data` de dentro de `aerosim/`):
 
-ac = load_aircraft("data/aircraft/Asa_voadora.json")      # .json, .cfg ou .xlsx (pela extensão)
-pasta = tempfile.mkdtemp()
-save_aircraft(ac, os.path.join(pasta, "meu.cfg"))        # o mesmo avião em INI
-print(load_aircraft(os.path.join(pasta, "meu.cfg")).name, summary(ac), slug("Asa nova!"))
+```zig
+const std = @import("std");
+const aircraft_model = @import("aircraft_model");
+const data_sources = @import("data_sources");
 
-store = JsonProjectStore(pasta)                # "meus aviões" (padrão: ~/aerosim_aeronaves ou AEROSIM_PROJETOS)
-store.save(ac, "asa nova")
-print([i.name for i in store.list()], store.load("asa nova").name)
-
-secoes = flatten(ac)                           # aeronave → seções planas (o que o .cfg e o .xlsx guardam)
-print(list(secoes)[:3], decode(encode([1.0, 2.0])))
+pub fn main(init: std.process.Init) !void {
+    var arena: std.heap.ArenaAllocator = .init(init.gpa);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    for ([_][]const u8{ "../data/aircraft/flying_wing.cfg", "../data/aircraft/conventional.xlsx" }) |path| {
+        const bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, path, memory, .limited(1 << 24));
+        const json = try data_sources.aircraftJson(memory, path, bytes); // o formato sai da extensão
+        var diagnosis: aircraft_model.aircraft.Diag = .{};
+        var loaded = try aircraft_model.aircraft.parse(init.gpa, json, &diagnosis); // o mesmo .json de sempre
+        defer loaded.deinit();
+        const plane = &loaded.ac;
+        std.debug.print("{s}: \"{s}\", {d} superfícies, {d} motor(es), massa base {d:.2} kg\n", .{
+            std.fs.path.basename(path), plane.name, plane.surfaces.len, plane.propulsion.len, plane.mass.base_mass,
+        });
+    }
+}
 ```
 
-A planilha por endereço de célula (`cellmap.py`):
-
-```python
-# não roda sozinho: precisa da planilha do usuário (fica fora do repositório)
-from aerosim.data.cellmap import CellMapAircraftSource
-src = CellMapAircraftSource("data/mappings/dados_desempenho.json")
-ac = src.load("Dados_Desempenho.xlsx")         # planilha por endereço de célula
-src.catalog.thrust_sets                        # conjuntos de tração da aba Tracao
 ```
+flying_wing.cfg: "Asa voadora", 3 superfícies, 1 motor(es), massa base 3.00 kg
+conventional.xlsx: "Convencional (original)", 3 superfícies, 1 motor(es), massa base 8.39 kg
+```
+
+A planilha das equipes precisa do arquivo do usuário, que fica fora do repositório: a tela pede a planilha e o mapa, e
+`cellmap.read` devolve o `.json` do avião e os avisos (célula vazia, aba que falta).

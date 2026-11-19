@@ -7,6 +7,9 @@ const std = @import("std");
 const rl = @import("raylib");
 const aircraft_model = @import("aircraft_model");
 const view3d = @import("ui").view3d;
+const undo = @import("ui").undo;
+const design = @import("design");
+const data_sources = @import("data_sources");
 
 const model = aircraft_model.aircraft;
 const skeleton = aircraft_model.skeleton;
@@ -16,6 +19,7 @@ pub const Triangle = struct {
     b: view3d.Body,
     c: view3d.Body,
     color: rl.Color,
+    component: u16 = 0, // a peça da GUI a que o triângulo pertence (`Mesh.components`)
 };
 
 /// as peças de um avião prontas para a vista 3D: cada triângulo com a cor e a sombra
@@ -27,6 +31,7 @@ pub const Mesh = struct {
     low: view3d.Body, // caixa que envolve o avião (corpo)
     high: view3d.Body,
     piece_count: usize,
+    components: []const []const u8 = &.{}, // as chaves da GUI das peças ("surface:0", "prop:1", "gear"...)
 
     /// libera tudo
     pub fn deinit(mesh: *Mesh) void {
@@ -46,10 +51,100 @@ pub const Mesh = struct {
 
     /// desenha os triângulos (dentro de `View.begin`/`end`)
     pub fn draw(mesh: *const Mesh) void {
-        for (mesh.solid) |t| view3d.triangle(t.a, t.b, t.c, t.color);
-        for (mesh.translucent) |t| view3d.triangle(t.a, t.b, t.c, t.color);
+        mesh.drawMoving(null, .{ 0, 0, 0 });
+    }
+
+    /// desenha com a peça `moving` deslocada de `offset` (o arraste, antes de soltar o mouse)
+    pub fn drawMoving(mesh: *const Mesh, moving: ?u16, offset: view3d.Body) void {
+        for ([2][]Triangle{ mesh.solid, mesh.translucent }) |list| for (list) |t| {
+            if (moving != null and moving.? == t.component) {
+                view3d.triangle(add(t.a, offset), add(t.b, offset), add(t.c, offset), t.color);
+            } else view3d.triangle(t.a, t.b, t.c, t.color);
+        };
+    }
+
+    /// a peça que um raio pegou e a distância do olho até ela
+    pub const Hit = struct { component: u16, distance: f64 };
+
+    /// a peça mais perto do olho que o raio (`View.ray`) cruza, e a distância até ela; nulo se não pega nenhuma
+    pub fn pick(mesh: *const Mesh, ray: [2]view3d.Body) ?Hit {
+        var best: ?Hit = null;
+        for ([2][]Triangle{ mesh.solid, mesh.translucent }) |list| for (list) |t| {
+            const distance = rayHits(ray, .{ t.a, t.b, t.c }) orelse continue;
+            if (best == null or distance < best.?.distance) best = .{ .component = t.component, .distance = distance };
+        };
+        return best;
+    }
+
+    /// desenha só o que fica do lado `point[axis] >= at` do plano (o corte: a vista lateral cortada no plano de
+    /// simetria, sem a metade da frente). O triângulo que o plano atravessa é recortado nele
+    pub fn drawCut(mesh: *const Mesh, axis: usize, at: f64) void {
+        for (mesh.solid) |t| cutTriangle(t, axis, at);
+        for (mesh.translucent) |t| cutTriangle(t, axis, at);
     }
 };
+
+fn add(a: view3d.Body, b: view3d.Body) view3d.Body {
+    return .{ a[0] + b[0], a[1] + b[1], a[2] + b[2] };
+}
+
+/// a distância ao longo do raio (origem, direção) até o triângulo `corners`, ou nulo se não cruza (Möller e Trumbore,
+/// "Fast, minimum storage ray-triangle intersection", J. Graphics Tools 2(1), 1997). A distância sai nas unidades da
+/// direção (metros, se ela é unitária)
+fn rayHits(ray: [2][3]f64, corners: [3][3]f64) ?f64 {
+    const origin, const direction = ray;
+    const edge1 = difference(corners[1], corners[0]);
+    const edge2 = difference(corners[2], corners[0]);
+    const across = crossOf(direction, edge2);
+    const determinant = dotOf(edge1, across);
+    if (@abs(determinant) < 1e-12) return null; // o raio corre paralelo ao triângulo
+    const inverse = 1 / determinant;
+    const from_corner = difference(origin, corners[0]);
+    const weight1 = inverse * dotOf(from_corner, across); // as coordenadas baricêntricas do ponto em que o raio cruza
+    if (weight1 < 0 or weight1 > 1) return null;
+    const turned = crossOf(from_corner, edge1);
+    const weight2 = inverse * dotOf(direction, turned);
+    if (weight2 < 0 or weight1 + weight2 > 1) return null;
+    const distance = inverse * dotOf(edge2, turned);
+    return if (distance > 0) distance else null;
+}
+
+fn difference(a: [3]f64, b: [3]f64) [3]f64 {
+    return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2] };
+}
+
+fn dotOf(a: [3]f64, b: [3]f64) f64 {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+fn crossOf(a: [3]f64, b: [3]f64) [3]f64 {
+    return .{ a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] };
+}
+
+/// o pedaço do triângulo do lado de cá do plano (Sutherland–Hodgman com um plano só): sobra nada, um triângulo ou
+/// um quadrilátero (dois triângulos)
+fn cutTriangle(t: Triangle, axis: usize, at: f64) void {
+    const corners = [3]view3d.Body{ t.a, t.b, t.c };
+    var kept: [4]view3d.Body = undefined;
+    var count: usize = 0;
+    for (0..3) |i| {
+        const here = corners[i];
+        const next = corners[(i + 1) % 3];
+        const here_in = here[axis] >= at;
+        const next_in = next[axis] >= at;
+        if (here_in) {
+            kept[count] = here;
+            count += 1;
+        }
+        if (here_in != next_in) {
+            const fraction = (at - here[axis]) / (next[axis] - here[axis]);
+            kept[count] = .{ here[0] + fraction * (next[0] - here[0]), here[1] + fraction * (next[1] - here[1]), here[2] + fraction * (next[2] - here[2]) };
+            count += 1;
+        }
+    }
+    if (count >= 3) view3d.triangle(kept[0], kept[1], kept[2], t.color);
+    if (count == 4) view3d.triangle(kept[0], kept[2], kept[3], t.color);
+}
 
 /// as peças do avião `ac` pelo esqueleto do AeroDrive
 pub fn buildMesh(gpa: std.mem.Allocator, ac: *const model.Aircraft, diagnosis: *Diagnosis) !Mesh {
@@ -62,7 +157,13 @@ pub fn buildMesh(gpa: std.mem.Allocator, ac: *const model.Aircraft, diagnosis: *
     var translucent: std.ArrayList(Triangle) = .empty;
     var low: view3d.Body = .{ std.math.inf(f64), std.math.inf(f64), std.math.inf(f64) };
     var high: view3d.Body = .{ -std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64) };
+    var keys: std.ArrayList([]const u8) = .empty;
     for (built.pieces) |piece| {
+        const component: u16 = blk: {
+            for (keys.items, 0..) |key, k| if (std.mem.eql(u8, key, piece.component)) break :blk @intCast(k);
+            try keys.append(allocator, try allocator.dupe(u8, piece.component));
+            break :blk @intCast(keys.items.len - 1);
+        };
         const rgba = skeleton.rgba(piece.color);
         const color: rl.Color = .{ .r = @intFromFloat(rgba[0] * 255), .g = @intFromFloat(rgba[1] * 255), .b = @intFromFloat(rgba[2] * 255), .a = @intFromFloat(rgba[3] * 255) };
         const list = if (rgba[3] < 1) &translucent else &solid;
@@ -70,7 +171,7 @@ pub fn buildMesh(gpa: std.mem.Allocator, ac: *const model.Aircraft, diagnosis: *
             const a = piece.mesh.v[face[0]];
             const b = piece.mesh.v[face[1]];
             const c = piece.mesh.v[face[2]];
-            try list.append(allocator, .{ .a = a, .b = b, .c = c, .color = view3d.shaded(a, b, c, color) });
+            try list.append(allocator, .{ .a = a, .b = b, .c = c, .color = view3d.shaded(a, b, c, color), .component = component });
         }
         for (piece.mesh.v) |point| {
             for (0..3) |k| {
@@ -83,7 +184,7 @@ pub fn buildMesh(gpa: std.mem.Allocator, ac: *const model.Aircraft, diagnosis: *
         low = .{ -0.5, -0.5, -0.1 };
         high = .{ 0.5, 0.5, 0.1 };
     }
-    return .{ .skeleton = built, .arena = arena, .solid = solid.items, .translucent = translucent.items, .low = low, .high = high, .piece_count = built.pieces.len };
+    return .{ .skeleton = built, .arena = arena, .solid = solid.items, .translucent = translucent.items, .low = low, .high = high, .piece_count = built.pieces.len, .components = keys.items };
 }
 
 /// o avião aberto: o que o arquivo diz e as peças dele
@@ -91,35 +192,61 @@ pub const Assembly = struct {
     loaded: model.Loaded,
     mesh: Mesh,
     name: [:0]const u8,
-    source: []const u8, // o texto do arquivo, como foi lido (o que "Salvar" grava enquanto não há edição)
+    source: []const u8, // o texto do arquivo: como foi lido ou, depois de uma edição, o que "Salvar" grava
     path: []const u8,
+    document_arena: *std.heap.ArenaAllocator, // a árvore do arquivo, que a edição muda (guarda o que o modelo não lê); fora
+    // da struct, porque as listas da árvore guardam o ponteiro do alocador e a `Assembly` muda de lugar
+    document: std.json.Value,
+    original: []const u8, // o texto do arquivo como foi aberto ("Restaurar" volta a ele)
+    history: undo.History = .{}, // os textos de antes de cada mudança (o Ctrl+Z da Montagem)
 
     /// libera tudo
     pub fn deinit(assembly: *Assembly) void {
+        assembly.history.clear();
         assembly.mesh.deinit();
         assembly.loaded.deinit();
+        const gpa = assembly.document_arena.child_allocator;
+        assembly.document_arena.deinit();
+        gpa.destroy(assembly.document_arena);
+    }
+
+    /// lê de novo o avião do texto `bytes` (a árvore editada) e refaz as peças; se o texto não vale, fica o avião
+    /// anterior e o motivo vai em `diagnosis`
+    pub fn reload(assembly: *Assembly, gpa: std.mem.Allocator, io: std.Io, bytes: []const u8, diagnosis: *Diagnosis) !void {
+        var loaded = try model.parse(gpa, bytes, diagnosis);
+        errdefer loaded.deinit();
+        const allocator = loaded.arena.allocator();
+        try fillAirfoilFiles(allocator, io, assembly.path, bytes, &loaded.ac);
+        var mesh = try buildMesh(gpa, &loaded.ac, diagnosis);
+        errdefer mesh.deinit();
+        const name = try allocator.dupeZ(u8, loaded.ac.name);
+        const source = try allocator.dupe(u8, bytes);
+        const path = try allocator.dupe(u8, assembly.path);
+        assembly.mesh.deinit();
+        assembly.loaded.deinit();
+        assembly.loaded = loaded;
+        assembly.mesh = mesh;
+        assembly.name = name;
+        assembly.source = source;
+        assembly.path = path;
     }
 };
 
-/// o centro de massa do avião montado, com e sem a carga
+/// o centro de massa do avião montado, sem e com o que vai a bordo
 pub const Balance = struct {
     empty_mass: f64,
-    empty_cg: [3]f64, // sem a carga (a massa seca do AeroDrive: base, itens, lastro e, se o arquivo pede, motores e estrutura)
+    empty_cg: [3]f64, // a massa seca do AeroDrive: base, itens, lastro e, se o arquivo pede, motores e estrutura
     mass: f64,
-    cg: [3]f64, // com a carga, quando o avião leva carga (sem ela, igual ao vazio)
+    cg: [3]f64, // com o líquido dos tanques e a carga (sem eles, igual ao vazio)
 };
 
-/// o CG pela soma das massas de `params.dryMass` (a mesma do AeroDrive e do núcleo), mais a carga como massa pontual
+/// o CG pela soma das massas de `params.dryMass` (a mesma do AeroDrive e do núcleo), mais o líquido de cada tanque
+/// (densidade × volume, parado no ponto do tanque, como o núcleo o põe em `mass.initTanks`) e a carga, como massas
+/// pontuais. É a "massa total" e o "CG" da Montagem em Python (`info_html`)
 pub fn balance(ac: *const model.Aircraft) Balance {
     const dry = aircraft_model.params.dryMass(ac);
-    var result: Balance = .{ .empty_mass = dry.m, .empty_cg = dry.cg, .mass = dry.m, .cg = dry.cg };
-    const payload = ac.payload;
-    if (payload.enabled and payload.mass > 0) {
-        result.mass = dry.m + payload.mass;
-        const where = [3]f64{ payload.x, payload.y, payload.z };
-        for (0..3) |i| result.cg[i] = (dry.m * dry.cg[i] + payload.mass * where[i]) / result.mass;
-    }
-    return result;
+    const loaded = design.balance.fullCg(ac, true);
+    return .{ .empty_mass = dry.m, .empty_cg = dry.cg, .mass = loaded.mass, .cg = loaded.cg };
 }
 
 pub const max_file_bytes = 1 << 24;
@@ -127,20 +254,57 @@ pub const max_file_bytes = 1 << 24;
 /// a mensagem do último erro (o nome do componente com problema, como o AeroDrive dá)
 pub const Diagnosis = model.Diag;
 
-/// lê o avião em `path` e monta as peças
-pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) !Assembly {
+/// lê o avião em `path` com os perfis que o arquivo só aponta (as análises em Zig usam este, sem as malhas)
+pub fn loadAircraft(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) !model.Loaded {
+    const bytes = try readAircraftText(gpa, io, path, diagnosis);
+    defer gpa.free(bytes);
+    var loaded = try model.parse(gpa, bytes, diagnosis);
+    errdefer loaded.deinit();
+    try fillAirfoilFiles(loaded.arena.allocator(), io, path, bytes, &loaded.ac);
+    return loaded;
+}
+
+/// o texto `.json` do avião em `path` (memória de `gpa`): o `.json` como está; o `.cfg`, o `.ini` e a planilha
+/// `.xlsx` antigos convertidos para o `.json` (`data/sources.zig`)
+pub fn readAircraftText(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) ![]u8 {
     const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(max_file_bytes)) catch |err| {
         diagnosis.set("não consegui abrir '{s}' ({s})", .{ path, @errorName(err) });
         return err;
     };
+    if (data_sources.Format.fromPath(path) == .json) return bytes;
     defer gpa.free(bytes);
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const text = data_sources.aircraftJson(arena.allocator(), path, bytes) catch |err| {
+        diagnosis.set("não consegui ler '{s}' como avião ({s})", .{ std.fs.path.basename(path), @errorName(err) });
+        return err;
+    };
+    return gpa.dupe(u8, text);
+}
+
+/// lê o avião em `path` e monta as peças
+pub fn load(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) !Assembly {
+    const bytes = try readAircraftText(gpa, io, path, diagnosis);
+    defer gpa.free(bytes);
+    return fromBytes(gpa, io, path, bytes, diagnosis);
+}
+
+/// monta o avião do texto `bytes` (de um arquivo em `path`, de onde se acham os perfis): a variante nova sai assim,
+/// do texto do avião atual
+pub fn fromBytes(gpa: std.mem.Allocator, io: std.Io, path: []const u8, bytes: []const u8, diagnosis: *Diagnosis) !Assembly {
     var loaded = try model.parse(gpa, bytes, diagnosis);
     errdefer loaded.deinit();
     const allocator = loaded.arena.allocator();
     try fillAirfoilFiles(allocator, io, path, bytes, &loaded.ac);
     var mesh = try buildMesh(gpa, &loaded.ac, diagnosis);
     errdefer mesh.deinit();
-    return .{ .loaded = loaded, .mesh = mesh, .name = try allocator.dupeZ(u8, loaded.ac.name), .source = try allocator.dupe(u8, bytes), .path = try allocator.dupe(u8, path) };
+    const document_arena = try gpa.create(std.heap.ArenaAllocator);
+    errdefer gpa.destroy(document_arena);
+    document_arena.* = std.heap.ArenaAllocator.init(gpa);
+    errdefer document_arena.deinit();
+    const document = try std.json.parseFromSliceLeaky(std.json.Value, document_arena.allocator(), bytes, .{});
+    const original = try document_arena.allocator().dupe(u8, bytes);
+    return .{ .loaded = loaded, .mesh = mesh, .name = try allocator.dupeZ(u8, loaded.ac.name), .source = try allocator.dupe(u8, bytes), .path = try allocator.dupe(u8, path), .document_arena = document_arena, .document = document, .original = original };
 }
 
 /// os perfis das superfícies que o arquivo só aponta (`airfoil.path`, sem `coords`): lê o `.dat`. O caminho é
@@ -234,4 +398,26 @@ test "perfil .dat: Selig e Lednicer" {
     try std.testing.expectEqual(@as(f64, 1.0), lednicer[0][0]);
     try std.testing.expectEqual(@as(f64, 0.0), lednicer[2][0]);
     try std.testing.expectEqual(@as(f64, -0.05), lednicer[3][1]);
+}
+
+test "a massa e o CG da Montagem são os do Python: seca, líquido e carga" {
+    var diagnosis: Diagnosis = .{};
+    var loaded = try loadAircraft(std.testing.allocator, std.testing.io, "../data/aircraft/Convencional_original.json", &diagnosis);
+    defer loaded.deinit();
+    const weights = balance(&loaded.ac);
+    // a Montagem em Python: massa total 12,390 kg (8,390 seca, 2,000 de líquido, 2,000 de LAPES), CG (0,008; 0; 0,021) m
+    try std.testing.expectApproxEqAbs(@as(f64, 8.390), weights.empty_mass, 5e-4);
+    try std.testing.expectApproxEqAbs(@as(f64, 12.390), weights.mass, 5e-4);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.008), weights.cg[0], 5e-4);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.0), weights.cg[1], 5e-4);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.021), weights.cg[2], 5e-4);
+}
+
+test "o raio cruza o triângulo na distância certa e passa ao lado dele" {
+    const floor = [3][3]f64{ .{ 0, 0, 0 }, .{ 1, 0, 0 }, .{ 0, 1, 0 } }; // no plano z = 0
+    // de 2 m acima (z para baixo no corpo: z = −2), descendo: cruza a 2 m
+    try std.testing.expectApproxEqAbs(@as(f64, 2), rayHits(.{ .{ 0.2, 0.2, -2 }, .{ 0, 0, 1 } }, floor).?, 1e-12);
+    try std.testing.expect(rayHits(.{ .{ 0.8, 0.8, -2 }, .{ 0, 0, 1 } }, floor) == null); // fora (u + v > 1)
+    try std.testing.expect(rayHits(.{ .{ 0.2, 0.2, -2 }, .{ 0, 0, -1 } }, floor) == null); // o triângulo fica atrás
+    try std.testing.expect(rayHits(.{ .{ 0.2, 0.2, -2 }, .{ 1, 0, 0 } }, floor) == null); // paralelo
 }

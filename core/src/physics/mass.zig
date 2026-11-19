@@ -25,7 +25,7 @@ pub fn initTanks(params: *types.Params) void {
             tank.w1 = 1;
             continue;
         }
-        if (tank.shape == types.tank_cylinder) {
+        if (tank.shape == types.TankShape.cylinder) {
             const xi = 1.841;
             const radius = 0.5 * tank.side;
             const depth_factor = fmath.tanh(xi * tank.fill / radius);

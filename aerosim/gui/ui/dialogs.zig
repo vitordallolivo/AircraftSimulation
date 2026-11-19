@@ -1,12 +1,15 @@
 //! As janelas por cima da tela: o seletor de arquivo (navega pelas pastas e mostra só as extensões pedidas; para
 //! abrir, o equivalente do `QFileDialog.getOpenFileName`, e para salvar, do `getSaveFileName`, com o nome digitado) e a pergunta de um texto curto (o `QInputDialog.getText`). Cada
 //! uma é uma struct com `show` para abrir e `draw` a cada quadro, que devolve a resposta uma vez, quando ela chega.
-//! Enquanto uma janela está aberta, ela fica com o clique e a roda: a tela de baixo não reage.
+//! Enquanto uma janela está aberta, ela fica com o clique e a roda: a tela de baixo não reage. No PC, abrir e salvar
+//! usam a janela do próprio sistema (`native_dialog.zig`); o seletor desenhado aqui fica para quando ela não existe
+//! (o navegador, o print, um Linux sem `zenity` nem `kdialog`).
 const std = @import("std");
 const rl = @import("raylib");
 const rg = @import("raygui");
 const theme = @import("theme.zig");
 const widgets = @import("widgets.zig");
+const native_dialog = @import("native_dialog.zig");
 
 const max_entries = 512;
 const row_height: f32 = 26;
@@ -31,6 +34,8 @@ pub const FilePicker = struct {
     saving: bool = false, // salvar: o nome se digita (um arquivo da lista preenche o nome)
     file_name: [128:0]u8 = [_:0]u8{0} ** 128,
     editing_name: bool = false,
+    native: native_dialog.Dialog = .{}, // a janela do sistema, enquanto ela está aberta
+    waiting_native: bool = false,
 
     /// abre o seletor na pasta `start` (ou na atual, se ela não existir), mostrando as pastas e os arquivos com uma
     /// das `extensions` (".dat", ...)
@@ -42,12 +47,17 @@ pub const FilePicker = struct {
         picker.examples_len = picker.folder_len;
         picker.saving = false;
         picker.open = true;
+        picker.waiting_native = picker.native.begin(title, picker.folder[0..picker.folder_len], extensions, "", false);
     }
 
     /// abre o seletor para salvar, na pasta `start`, com o nome sugerido `name`; a extensão `extensions[0]` entra
     /// no nome se faltar
     pub fn showSave(picker: *FilePicker, title: []const u8, start: []const u8, extensions: []const []const u8, name: []const u8) void {
-        picker.show(title, start, extensions);
+        _ = widgets.format(&picker.title, "{s}", .{title});
+        picker.extensions = extensions;
+        if (!picker.enter(start)) _ = picker.enter(".");
+        picker.open = true;
+        picker.waiting_native = picker.native.begin(title, picker.folder[0..picker.folder_len], extensions, name, true);
         picker.saving = true;
         picker.editing_name = true;
         picker.file_name = [_:0]u8{0} ** 128;
@@ -108,6 +118,7 @@ pub const FilePicker = struct {
     /// desenha o seletor por cima de `screen`; devolve o caminho escolhido (vale até a próxima escolha)
     pub fn draw(picker: *FilePicker, ui: *widgets.Ui, screen: rl.Rectangle) ?[]const u8 {
         if (!picker.open) return null;
+        if (picker.waiting_native) return picker.drawWaiting(ui, screen);
         if (rl.isKeyPressed(.escape)) { // Esc cancela
             picker.open = false;
             return null;
@@ -212,6 +223,35 @@ pub const FilePicker = struct {
         ui.click_taken = true;
         ui.wheel = 0;
         return picked;
+    }
+
+    /// a janela do sistema está aberta: a tela fica escurecida e sem reagir até ela fechar; se o sistema não tem
+    /// janela de arquivo, o seletor de dentro aparece no lugar
+    fn drawWaiting(picker: *FilePicker, ui: *widgets.Ui, screen: rl.Rectangle) ?[]const u8 {
+        ui.click_taken = true;
+        ui.wheel = 0;
+        if (picker.native.finished()) |state| {
+            picker.waiting_native = false;
+            switch (state) {
+                .chosen => {
+                    picker.open = false;
+                    const path = picker.native.path();
+                    @memcpy(picker.chosen[0..path.len], path);
+                    return picker.chosen[0..path.len];
+                },
+                .failed => {}, // o seletor de dentro, no próximo quadro
+                else => picker.open = false,
+            }
+            return null;
+        }
+        rl.drawRectangleRec(screen, .{ .r = 20, .g = 30, .b = 50, .a = 60 });
+        const note: [:0]const u8 = "escolha o arquivo na janela do sistema…";
+        const note_width = theme.textWidth(ui.fonts.regular, note, 15) + 32;
+        const box: rl.Rectangle = .{ .x = screen.x + (screen.width - note_width) / 2, .y = screen.y + screen.height / 2 - 22, .width = note_width, .height = 44 };
+        widgets.rounded(box, 6, theme.colors.panel);
+        widgets.roundedLines(box, 6, theme.colors.line);
+        theme.text(ui.fonts.regular, note, box.x + 16, box.y + 13, 15, theme.colors.ink);
+        return null;
     }
 };
 

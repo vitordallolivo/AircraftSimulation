@@ -5,6 +5,7 @@
 //! continuar de onde parou. O estado inteiro está em `Run` (POD): copiar seus bytes é
 //! o checkpoint.
 const std = @import("std");
+const numerics = @import("../numerics.zig");
 const guidance = @import("../control/guidance.zig");
 const limits = @import("../limits.zig");
 const types = @import("../types.zig");
@@ -56,6 +57,8 @@ pub const ConfigError = error{
     BadTimeStep,
     BadMass,
     TooManyPropPoints,
+    /// a tabela do efeito solo (VLM com o chão espelhado) não fechou: malha singular
+    GroundTable,
 };
 
 /// o que `resetGround` e `resetAir` recusam
@@ -109,10 +112,10 @@ pub fn configure(inst: *Instance) ConfigError!void {
     var xs: f64 = 0;
     var ns: f64 = 0;
     for (params.gear[0..@intCast(params.n_gear)]) |*gear_point| {
-        if (gear_point.kind == types.gear_main) {
+        if (gear_point.kind == types.GearKind.main) {
             xm += gear_point.r[0];
             nm += 1;
-        } else if (gear_point.kind == types.gear_steer) {
+        } else if (gear_point.kind == types.GearKind.steer) {
             xs += gear_point.r[0];
             ns += 1;
         }
@@ -120,6 +123,7 @@ pub fn configure(inst: *Instance) ConfigError!void {
     params.steer_sign = if (nm > 0 and ns > 0 and xs / ns < xm / nm) -1.0 else 1.0;
     aero.init(params);
     llt.prepare(params); // a geometria fixa da linha sustentadora (cargas e aero_model = 1)
+    if (params.ground == .vlm_image) mods.ground.buildTable(params) catch return error.GroundTable; // efeito solo: a tabela do VLM com o chão
     prop.init(params);
     mass.initTanks(params);
     params.alpha_guard_lim = guardAlpha(params);
@@ -131,7 +135,7 @@ pub fn configure(inst: *Instance) ConfigError!void {
 /// 0,25 em 0,25°. É o estol de cada avião, não um número fixo: o alpha_max do piloto (11°) segura um monoplano que
 /// sai do chão a 14° e deixa passar uma asa que estola antes. Sem chegar a kCL até 30°: ap.alpha_max
 fn guardAlpha(params: *const types.Params) f64 {
-    const step = 0.25 * std.math.rad_per_deg;
+    const step = @max(numerics.active.guard_alpha_step, 0.01) * std.math.rad_per_deg;
     var al: f64 = 0;
     while (al <= 30.0 * std.math.rad_per_deg) : (al += step) {
         const sa = fmath.sincos(al);
@@ -193,10 +197,10 @@ pub fn resetGround(inst: *Instance) StateError!void {
     var xr: f64 = 0.0;
     var nose: ?[3]f64 = null;
     for (params.gear[0..@intCast(params.n_gear)]) |*gear_point| {
-        if (gear_point.kind == types.gear_main) {
+        if (gear_point.kind == types.GearKind.main) {
             zr = gear_point.r[2];
             xr = gear_point.r[0];
-        } else if (gear_point.kind == types.gear_steer) nose = gear_point.r;
+        } else if (gear_point.kind == types.GearKind.steer) nose = gear_point.r;
     }
     const h0 = terrain.height(params, 0, 0); // mesa: começa em cima dela
     run_state.x[state.index(.down)] = -zr - h0;
@@ -244,13 +248,13 @@ pub fn resetAir(inst: *Instance, seg: i32) StateError!void {
     const run_state = &inst.r;
     const segment = &params.seg[@intCast(seg)];
     const airspeed = segment.V0;
-    const tp = trim.solve(trim.Ctx.init(params, &run_state.f), types.trim_level, airspeed, 1.0, null);
+    const tp = trim.solve(trim.Ctx.init(params, &run_state.f), types.TrimKind.level, airspeed, 1.0, null);
     if (tp.ok == 0) return error.TrimFailed;
     run_state.f.seg = seg;
     run_state.f.airborne = 1;
     run_state.f.autop = 1;
     run_state.h_ground = 0;
-    for (params.gear[0..@intCast(params.n_gear)]) |*gear_point| if (gear_point.kind == types.gear_main) {
+    for (params.gear[0..@intCast(params.n_gear)]) |*gear_point| if (gear_point.kind == types.GearKind.main) {
         run_state.h_rest = gear_point.r[2];
     };
     run_state.x[state.index(.north)] = segment.n0;
@@ -334,8 +338,8 @@ fn writeRow(inst: *const Instance, row: *types.LogRow, out: *const dynamics.Out)
     for (params.gear[0..@intCast(params.n_gear)], 0..) |*gear_point, i| {
         row.Ngear[i] = out.N[i];
         switch (gear_point.kind) {
-            types.gear_steer => row.N_steer += out.N[i],
-            types.gear_main => row.N_main += out.N[i],
+            types.GearKind.steer => row.N_steer += out.N[i],
+            types.GearKind.main => row.N_main += out.N[i],
             else => row.N_skid += out.N[i],
         }
     }
@@ -387,6 +391,9 @@ fn writeRow(inst: *const Instance, row: *types.LogRow, out: *const dynamics.Out)
     }
 }
 
+/// a dica dos caminhos raros do laço (decolou, trocou de etapa, soltou a carga...): `.unlikely` só com `-Dopt=hint`
+const rare: std.builtin.BranchHint = if (fmath.optOn(.hint)) .unlikely else .none;
+
 /// avança a corrida até uma parada, até `t_limit` ou até encher `log`; `nrows` = linhas escritas
 pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) Status {
     nrows.* = 0;
@@ -403,7 +410,10 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
     while (true) {
         const log_due = run_state.t >= run_state.next_log - 1e-9;
         if (run_state.t >= t_limit) return .chunk;
-        if (log_due and nrows.* >= log.len and log.len > 0) return .buffer_full;
+        if (log_due and nrows.* >= log.len and log.len > 0) {
+            @branchHint(rare);
+            return .buffer_full;
+        }
 
         dynamics.derivatives(inst.ctx(), run_state.t, state_vector, &state_rates, &out);
         const time = run_state.t;
@@ -414,8 +424,8 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         for (params.gear[0..@intCast(params.n_gear)], 0..) |*gear_point, i| {
             if (out.N[i] > 0.0) {
                 contact = true;
-                if (gear_point.kind == types.gear_steer) steer = true;
-                if (gear_point.kind == types.gear_main) main = true;
+                if (gear_point.kind == types.GearKind.steer) steer = true;
+                if (gear_point.kind == types.GearKind.main) main = true;
             }
         }
         const segment = &params.seg[@intCast(run_state.f.seg)];
@@ -433,6 +443,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
             events.nRot = state_vector[state.index(.north)];
         }
         if (run_state.f.airborne == 0 and !contact and hw > 0.005) {
+            @branchHint(rare);
             run_state.f.airborne = 1;
             events.tLO = time;
             events.nLO = state_vector[state.index(.north)];
@@ -445,6 +456,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         }
         var switched_on = false;
         if (run_state.f.airborne != 0 and run_state.f.autop == 0 and hw >= params.takeoff.ht) {
+            @branchHint(rare);
             run_state.f.autop = 1;
             state_vector[state.index(.ref_height)] = altitude;
             switched_on = true;
@@ -468,11 +480,13 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         // ---- percurso e eventos ----
         var switched = false;
         if (segment.landing == 0 and run_state.f.seg < params.n_seg - 1 and out.guide.s >= segment.L) {
+            @branchHint(rare);
             if (segment.takeoff != 0) events.E_to = state_vector[state.index(.energy)] / 3600.0;
             run_state.f.seg += 1;
             switched = true;
         }
         if (params.pilot.drop != 0 and run_state.f.released == 0 and run_state.f.extracting == 0) { // soltura pedida de fora
+            @branchHint(rare);
             run_state.f.extracting = 1;
             events.tdrop = time;
             events.ndrop = state_vector[state.index(.north)];
@@ -481,9 +495,9 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         if (!switched) {
             for (params.event[0..@intCast(params.n_event)], 0..) |*event, k| {
                 if (run_state.f.ev_done[k] != 0 or run_state.f.seg != event.seg or out.guide.s < event.s) continue;
-                if (params.pilot.manual != 0 and event.kind != types.event_gust) continue; // no manual, quem solta é o piloto
+                if (params.pilot.manual != 0 and event.kind != types.EventKind.gust) continue; // no manual, quem solta é o piloto
                 run_state.f.ev_done[k] = 1;
-                if (event.kind == types.event_gust) {
+                if (event.kind == types.EventKind.gust) {
                     run_state.tg = time;
                     events.tg = time;
                 } else if (run_state.f.released == 0) {
@@ -495,6 +509,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
             }
         }
         if (run_state.f.extracting != 0 and run_state.f.released == 0 and state_vector[state.index(.cargo_slide)] >= params.payload.bay) {
+            @branchHint(rare);
             run_state.f.released = 1;
             events.trel = time;
             const body_to_ned = vec.rotation(state_vector[state.index(.roll)], state_vector[state.index(.pitch)], state_vector[state.index(.yaw)]);
@@ -517,6 +532,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
                 run_state.pk[i] += run_state.pk[3 + i] * params.dt;
             }
             if (run_state.pk[2] >= 0.0) {
+                @branchHint(rare);
                 run_state.f.pk_flying = 0;
                 events.pk_n = run_state.pk[0];
                 events.pk_e = run_state.pk[1];
@@ -525,6 +541,7 @@ pub fn run(inst: *Instance, t_limit: f64, log: []types.LogRow, nrows: *usize) St
         }
         if (segment.landing != 0 and hw < params.ap.hflare) run_state.f.flare = 1;
         if (segment.landing != 0 and run_state.f.landed == 0 and main) {
+            @branchHint(rare);
             run_state.f.landed = 1;
             events.tTD = time;
             events.nTD = state_vector[state.index(.north)];
