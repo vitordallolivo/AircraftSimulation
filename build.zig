@@ -5,8 +5,8 @@
 //!   zig build aerosim [-- <avião.json>]     abre o aerosim
 //!   zig build aeroopt                        abre o aeroopt
 //!   zig build aerodrive                      abre o AeroDrive
-//!   zig build launcher                       monta a documentação e abre a tela inicial do pacote (o menu do site,
-//!                                            que abre os três e a documentação)
+//!   zig build launcher                       compila os três, monta a documentação e abre a tela inicial do pacote
+//!                                            (o menu do site, que abre os três e a documentação)
 //!   zig build docs                           monta o site da documentação em zig-out/site (livro, mapa, tracking);
 //!                                            `zig build site` é o mesmo
 //!   zig build                                compila os quatro (cada um em <pasta>/zig-out/bin) e monta a documentação
@@ -32,6 +32,13 @@ pub fn build(b: *std.Build) void {
     const docs = toolRun(b, tool(b, "site", "livro.zig", "Monta o site da documentação em zig-out/site (livro, mapa do código e tracking); -- --saida <pasta> grava em outra pasta"));
     b.step("docs", "Monta o site da documentação em zig-out/site (livro, mapa do código e tracking)").dependOn(&docs.step);
     if (with_docs) compile_all.dependOn(&docs.step);
+    // compilar cada programa (a tela inicial abre os outros pelo executável que está em <pasta>/zig-out/bin)
+    var builds: [programs.len]*std.Build.Step = undefined;
+    for (programs, &builds) |name, *compiled| {
+        compiled.* = &child(b, name, &.{"build"}, optimize).step;
+        compile_all.dependOn(compiled.*);
+        test_all.dependOn(&child(b, name, &.{ "build", "test" }, null).step);
+    }
     for (programs) |name| {
         // abrir
         const run = child(b, name, &.{ "build", "run" }, optimize);
@@ -39,12 +46,14 @@ pub fn build(b: *std.Build) void {
             run.addArg("--");
             run.addArgs(args);
         }
-        // a tela inicial abre a documentação, então ela é montada antes
-        if (with_docs and std.mem.eql(u8, name, "launcher")) run.step.dependOn(&docs.step);
+        if (std.mem.eql(u8, name, "launcher")) {
+            // a tela inicial abre a documentação, então ela é montada antes
+            if (with_docs) run.step.dependOn(&docs.step);
+            // e abre os outros programas já compilados: sem compilar de novo, ela abria um aerosim de antes do
+            // último pull (que pedia ao adaptador dos métodos de fora uma conta que ele não faz mais)
+            for (builds[0 .. builds.len - 1]) |compiled| run.step.dependOn(compiled);
+        }
         b.step(name, b.fmt("Compila e abre o {s}", .{name})).dependOn(&run.step);
-        // compilar e testar
-        compile_all.dependOn(&child(b, name, &.{"build"}, optimize).step);
-        test_all.dependOn(&child(b, name, &.{ "build", "test" }, null).step);
     }
     test_all.dependOn(&child(b, "core", &.{ "build", "test" }, null).step);
     // os testes das ferramentas, ao lado do código delas

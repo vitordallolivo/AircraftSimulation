@@ -119,6 +119,9 @@ def answer(request: dict) -> dict:
             body = polar(request)
         elif op == "loads":
             body = loads(request)
+        elif op in ("run", "specs", "stage", "layout"):
+            # a tela de antes mandava a análise inteira para cá; a de agora faz a conta e só pede os métodos de fora
+            raise RuntimeError("o aerosim aberto é de uma versão antiga: compile de novo (zig build aerosim) e abra outra vez")
         else:
             raise ValueError(f"pedido desconhecido: {op!r} (polar ou loads)")
         return {"id": request.get("id"), "ok": True, **plain(body)}
