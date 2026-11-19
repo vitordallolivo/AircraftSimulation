@@ -1,10 +1,10 @@
 //! Gravação de um voo, ligada e desligada no meio do voo: cada gravação é uma pasta
-//! `voo_AAAA-MM-DD_HH-MM-SS/` dentro de `paths.recordings`, com
+//! `voo_AAAA-MM-DD_HH-MM-SS_<avião>/` dentro de `paths.recordings`, com
 //!   dados.csv   as grandezas do núcleo a 20 Hz (record/datalog.zig)
 //!   video.mp4   a tela, se houver ffmpeg (record/video.zig)
-//!   info.json   avião, data, duração
+//! Nada mais: a data e o avião estão no nome da pasta, a duração sai do `t` do CSV e o vídeo é o arquivo existir.
 //! `list` lê as pastas de volta (para o menu "Voos gravados"), as mais novas primeiro.
-//! Dados e info passam pelo `storage.Storage` (disco, ou o IndexedDB no navegador); o vídeo é do
+//! Os dados passam pelo `storage.Storage` (disco, ou o IndexedDB no navegador); o vídeo é do
 //! ffmpeg e só existe no disco.
 const std = @import("std");
 const core = @import("aerosim");
@@ -13,12 +13,10 @@ const video_mod = @import("video.zig");
 const storage = @import("../app/storage.zig");
 const fz = @import("../util/fuzz.zig");
 
+/// o que a lista mostra de uma gravação (o avião e a duração)
 pub const Info = struct {
     aircraft: []const u8 = "",
-    started: []const u8 = "", // "AAAA-MM-DD HH:MM:SS" (UTC)
     duration_s: f64 = 0,
-    rows: usize = 0,
-    video: bool = false,
 };
 
 pub const Recorder = struct {
@@ -36,13 +34,13 @@ pub const Recorder = struct {
         return r.dir_buf[0..r.dir_len];
     }
 
-    /// guarda o nome da pasta e (se `w`·`h` > 0) cria a pasta no disco e liga o vídeo; a pasta
-    /// dos dados nasce no `finish`
-    pub fn start(io: std.Io, gpa: std.mem.Allocator, root: []const u8, epoch_s: i64, w: u32, h: u32, fps: u32) !Recorder {
+    /// guarda o nome da pasta (a data e o avião `aircraft`) e (se `w`·`h` > 0) cria a pasta no disco e liga o
+    /// vídeo; a pasta dos dados nasce no `finish`
+    pub fn start(io: std.Io, gpa: std.mem.Allocator, root: []const u8, epoch_s: i64, aircraft: []const u8, w: u32, h: u32, fps: u32) !Recorder {
         var r: Recorder = .{ .gpa = gpa };
         r.stamp = stampOf(epoch_s);
-        var name: [32]u8 = undefined;
-        const folder = try folderName(&name, r.stamp);
+        var name: [128]u8 = undefined;
+        const folder = try folderName(&name, r.stamp, aircraft);
         const p = try std.fmt.bufPrint(&r.dir_buf, "{s}/{s}", .{ root, folder });
         r.dir_len = p.len;
         if (w > 0 and h > 0) {
@@ -71,8 +69,8 @@ pub const Recorder = struct {
         };
     }
 
-    /// fecha o vídeo e grava dados.csv e info.json em `files`
-    pub fn finish(r: *Recorder, io: std.Io, files: storage.Storage, aircraft: []const u8) !void {
+    /// fecha o vídeo e grava o dados.csv em `files`
+    pub fn finish(r: *Recorder, io: std.Io, files: storage.Storage) !void {
         defer r.data.deinit(r.gpa);
         var ok_video = false;
         var pb: [1100]u8 = undefined;
@@ -85,14 +83,6 @@ pub const Recorder = struct {
         defer out.deinit();
         try r.data.writeCsv(&out.writer);
         try files.write(try std.fmt.bufPrint(&pb, "{s}/dados.csv", .{r.dir()}), out.written());
-        var started: [19]u8 = r.stamp;
-        started[10] = ' ';
-        started[13] = ':';
-        started[16] = ':';
-        const info: Info = .{ .aircraft = aircraft, .started = &started, .duration_s = r.t_last - (r.t0 orelse r.t_last), .rows = r.data.count(), .video = ok_video };
-        const j = try std.json.Stringify.valueAlloc(r.gpa, info, .{ .whitespace = .indent_2 });
-        defer r.gpa.free(j);
-        try files.write(try std.fmt.bufPrint(&pb, "{s}/info.json", .{r.dir()}), j);
     }
 };
 
@@ -108,8 +98,58 @@ pub fn stampOf(epoch_s: i64) [19]u8 {
     return out;
 }
 
-fn folderName(buf: []u8, stamp: [19]u8) ![]const u8 {
-    return std.fmt.bufPrint(buf, "voo_{s}", .{&stamp});
+/// `voo_<data>_<avião>`: o nome do avião só com o que vale em nome de pasta (letras, inclusive acentuadas, números
+/// e -; cada trecho do resto, espaço inclusive, vira um _), até 60 bytes; sem avião, só `voo_<data>`
+fn folderName(buf: []u8, stamp: [19]u8, aircraft: []const u8) ![]const u8 {
+    const head = try std.fmt.bufPrint(buf, "voo_{s}", .{&stamp});
+    if (aircraft.len == 0) return head;
+    var len = head.len;
+    buf[len] = '_';
+    len += 1;
+    for (aircraft[0..@min(aircraft.len, 60)]) |char| {
+        if (len >= buf.len) break;
+        const keep = std.ascii.isAlphanumeric(char) or char == '-' or char >= 0x80;
+        if (!keep and buf[len - 1] == '_') continue; // "Convencional (original)" → "Convencional_original"
+        buf[len] = if (keep) char else '_';
+        len += 1;
+    }
+    while (buf[len - 1] == '_') len -= 1;
+    return buf[0..len];
+}
+
+/// o avião no nome da pasta (`voo_<data>_<avião>`, com _ virando espaço), ou "" numa pasta sem ele
+fn aircraftOf(memory: std.mem.Allocator, folder: []const u8) ![]const u8 {
+    const prefix = "voo_AAAA-MM-DD_HH-MM-SS_".len;
+    if (folder.len <= prefix) return "";
+    const name = try memory.dupe(u8, folder[prefix..]);
+    for (name) |*char| if (char.* == '_') {
+        char.* = ' ';
+    };
+    return name;
+}
+
+/// a duração do voo pelo `dados.csv`: o `t` da última linha menos o da primeira (0 se não der para ler)
+fn durationOf(csv: []const u8) f64 {
+    var lines = std.mem.tokenizeScalar(u8, csv, '\n');
+    const header = lines.next() orelse return 0;
+    var columns = std.mem.splitScalar(u8, header, ',');
+    var time_column: usize = 0;
+    while (columns.next()) |name| : (time_column += 1) {
+        if (std.mem.eql(u8, std.mem.trim(u8, name, " \r"), "t")) break;
+    } else return 0;
+    var first: ?f64 = null;
+    var last: f64 = 0;
+    while (lines.next()) |line| {
+        var cells = std.mem.splitScalar(u8, line, ',');
+        var k: usize = 0;
+        while (cells.next()) |cell| : (k += 1) if (k == time_column) {
+            const value = std.fmt.parseFloat(f64, std.mem.trim(u8, cell, " \r")) catch break;
+            if (first == null) first = value;
+            last = value;
+            break;
+        };
+    }
+    return if (first) |start| last - start else 0;
 }
 
 // ------------------------------------------------------------------ catálogo
@@ -145,13 +185,11 @@ pub fn list(files: storage.Storage, gpa: std.mem.Allocator, root: []const u8) !C
         const has_data = contents.find("dados.csv") != null;
         const has_video = contents.find("video.mp4") != null;
         if (!has_data and !has_video) continue;
-        var info: Info = .{};
+        var info: Info = .{ .aircraft = try aircraftOf(a, e.name) };
         var pb: [1100]u8 = undefined;
-        if (std.fmt.bufPrint(&pb, "{s}/info.json", .{full})) |ip| {
-            if (files.read(a, ip, 1 << 16)) |bytes| {
-                info = std.json.parseFromSliceLeaky(Info, a, bytes, .{ .ignore_unknown_fields = true }) catch .{};
-            } else |_| {}
-        } else |_| {}
+        if (has_data) if (std.fmt.bufPrint(&pb, "{s}/dados.csv", .{full})) |data_path| {
+            if (files.read(a, data_path, 256 << 20)) |bytes| info.duration_s = durationOf(bytes) else |_| {}
+        } else |_| {};
         try out.append(a, .{ .dir = full, .name = try label(a, e.name, info), .has_video = has_video, .has_data = has_data });
     }
     std.mem.sort(Entry, out.items, {}, struct {
@@ -182,7 +220,7 @@ pub fn deleteRecording(files: storage.Storage, dir: []const u8) bool {
 pub fn label(a: std.mem.Allocator, folder: []const u8, info: Info) ![:0]u8 {
     var when: []const u8 = folder;
     var buf: [19]u8 = undefined;
-    if (folder.len == 23 and std.mem.startsWith(u8, folder, "voo_")) {
+    if (folder.len >= 23 and std.mem.startsWith(u8, folder, "voo_")) {
         @memcpy(&buf, folder[4..23]);
         buf[10] = ' ';
         buf[13] = ':';
@@ -207,19 +245,21 @@ test "grava só dados e acha de volta no catálogo" {
     defer tmp.cleanup();
     var buf: [512]u8 = undefined;
     const root = buf[0..try tmp.dir.realPath(testing.io, &buf)];
-    var r = try Recorder.start(testing.io, testing.allocator, root, 1791037325, 0, 0, 30);
+    var r = try Recorder.start(testing.io, testing.allocator, root, 1791037325, "Convencional (original)", 0, 0, 30);
     var row: core.types.LogRow = std.mem.zeroes(core.types.LogRow);
     for (0..40) |i| {
         row.t = 2 + @as(f64, @floatFromInt(i)) * 0.1;
         r.addRow(&row);
     }
     var disk: storage.DiskStorage = .{ .io = testing.io };
-    try r.finish(testing.io, disk.storage(), "Convencional");
+    try r.finish(testing.io, disk.storage());
     var cat = try list(disk.storage(), testing.allocator, root);
     defer cat.deinit();
     try testing.expectEqual(@as(usize, 1), cat.entries.len);
     try testing.expect(cat.entries[0].has_data and !cat.entries[0].has_video);
-    try testing.expectEqualStrings("2026-10-03 14:22:05 · Convencional · 4 s", cat.entries[0].name);
+    // a pasta tem só o dados.csv: a data e o avião vêm do nome dela, a duração do t do CSV
+    try testing.expectEqualStrings("voo_2026-10-03_14-22-05_Convencional_original", std.fs.path.basename(r.dir()));
+    try testing.expectEqualStrings("2026-10-03 14:22:05 · Convencional original · 4 s", cat.entries[0].name);
 }
 
 test "apagar o vídeo deixa os dados; apagar a gravação some com ela; pasta estranha não apaga" {
@@ -227,12 +267,12 @@ test "apagar o vídeo deixa os dados; apagar a gravação some com ela; pasta es
     defer tmp.cleanup();
     var buf: [512]u8 = undefined;
     const root = buf[0..try tmp.dir.realPath(testing.io, &buf)];
-    var r = try Recorder.start(testing.io, testing.allocator, root, 1791037325, 0, 0, 30);
+    var r = try Recorder.start(testing.io, testing.allocator, root, 1791037325, "X", 0, 0, 30);
     var row: core.types.LogRow = std.mem.zeroes(core.types.LogRow);
     r.addRow(&row);
     var disk: storage.DiskStorage = .{ .io = testing.io };
     const files = disk.storage();
-    try r.finish(testing.io, files, "X");
+    try r.finish(testing.io, files);
     var vb: [1100]u8 = undefined;
     try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = try std.fmt.bufPrint(&vb, "{s}/video.mp4", .{r.dir()}), .data = "x" });
     try testing.expect(deleteVideo(files, r.dir()));

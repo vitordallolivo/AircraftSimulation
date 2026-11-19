@@ -138,7 +138,7 @@ tocador do sistema, ver os dados, apagar só o vídeo ou a gravação inteira (a
 Som: a hélice fica mais aguda e mais alta com o motor, e o vento cresce com a velocidade (menu Som
 tem os dois testes).
 
-As gravações vão para `~/aerodrive_voos/voo_<data>/` (`video.mp4`, `dados.csv`, `info.json`); a pasta
+As gravações vão para `~/aerodrive_voos/voo_<data>_<avião>/` (`video.mp4` e `dados.csv`); a pasta
 muda com a variável `AERODRIVE_VOOS`. "Meus aviões" vem de `~/aerosim_aeronaves` (ou
 `AEROSIM_PROJETOS`), a mesma pasta da GUI.
 

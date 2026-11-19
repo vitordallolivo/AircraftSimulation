@@ -4,6 +4,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## v0.3.1 (na `0.3_dev`, em andamento)
 
+- Antes, cada voo gravado no AeroDrive levava um arquivo de informações junto com os dados e o vídeo. Agora a pasta
+  do voo tem só o `dados.csv` e o `video.mp4`, e o nome dela já diz a data e o avião
+  (`voo_2026-11-19_22-52-10_Convencional_original`); a lista de "Voos gravados" tira a duração do próprio CSV.
 - Antes, o avião era um `.json`, sem data e fácil de confundir com qualquer outro arquivo. Agora o avião tem um
   arquivo próprio, o `.aero`, com a data em que foi criado e a da última mudança dentro dele; o "Salvar" grava
   `.aero`, o "Abrir…" e o AeroDrive abrem `.aero` (e ainda o `.json` antigo), e o avião do projeto fica em

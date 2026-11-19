@@ -212,9 +212,9 @@ const mapa = bounds.map(cx, cy, lado);  mapa.toScreen(n, e);  // minimapa, norte
 ## record/ — gravação e gráficos
 
 ```zig
-var r = try Recorder.start(io, gpa, pasta, agora_s, w, h, 30);   // cria voo_<data>/ e liga o ffmpeg
+var r = try Recorder.start(io, gpa, pasta, agora_s, "Asa voadora", w, h, 30);   // cria voo_<data>_Asa_voadora/ e liga o ffmpeg
 r.addRow(&linha);  r.addFrame(io, rgba, w, h);
-try r.finish(io, nome_do_aviao);                                   // dados.csv + info.json (+ video.mp4)
+try r.finish(io, files);                                          // dados.csv (+ video.mp4)
 var cat = try recorder.list(io, gpa, pasta);                       // gravações, mais novas primeiro
 var t = try datalog.Table.parse(gpa, csv);  t.col("h");            // colunas para os gráficos
 pages.list(&t, &buf);                                              // páginas disponíveis (as da Missão)

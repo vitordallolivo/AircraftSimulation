@@ -459,8 +459,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Series:10`, `Page:12`, `Range:69`, `Ticks:89`
   fn `available:53`, `list:60`, `range:72`, `ticks:92`
 - `aerodrive/src/record/recorder.zig` — Gravação de um voo, ligada e desligada no meio do voo: cada gravação é uma pasta
-  tipos `Info:16`, `Recorder:24`, `Entry:116`, `Catalog:123`
-  fn `stampOf:100`, `list:133`, `deleteVideo:167`, `deleteRecording:175`, `label:182`
+  tipos `Info:17`, `Recorder:22`, `Entry:156`, `Catalog:163`
+  fn `stampOf:90`, `list:173`, `deleteVideo:205`, `deleteRecording:213`, `label:220`
 - `aerodrive/src/record/video.zig` — Vídeo do voo em .mp4: os quadros da tela (RGBA) vão por um cano para o `ffmpeg` (H.264).
   tipos `Video:6`
   fn `accepts:56`

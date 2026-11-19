@@ -383,7 +383,8 @@ pub const App = struct {
         const w: u32 = if (platform.in_browser) 0 else @intCast(@max(rl.getRenderWidth(), 0));
         const h: u32 = if (platform.in_browser) 0 else @intCast(@max(rl.getRenderHeight(), 0));
         app.video_acc = 0;
-        app.rec = recorder.Recorder.start(app.io, app.gpa, app.paths.recordings, secs, w, h, video_fps) catch |e| {
+        const plane_name = if (app.plane) |p| p.loaded.ac.name else "";
+        app.rec = recorder.Recorder.start(app.io, app.gpa, app.paths.recordings, secs, plane_name, w, h, video_fps) catch |e| {
             app.note("não consegui gravar: {s}", .{@errorName(e)});
             return;
         };
@@ -405,8 +406,7 @@ pub const App = struct {
         const had_video = app.browser_video;
         if (platform.in_browser and had_video) browser.videoStop();
         app.browser_video = false;
-        const name = if (app.plane) |p| p.loaded.ac.name else "";
-        r.finish(app.io, app.files, name) catch |e| {
+        r.finish(app.io, app.files) catch |e| {
             app.note("erro ao salvar: {s}", .{@errorName(e)});
             return;
         };
