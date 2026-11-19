@@ -1,10 +1,12 @@
 //! Configurações do jogador, guardadas entre uma vez e outra: avião escolhido, sessão (cenário,
 //! modo, vento, sloshing, LAPES), curvas do controle, câmera, som e quadros por segundo.
-//! Arquivo JSON (`paths.config`); arquivo ausente, quebrado ou com valores absurdos = padrões.
+//! Arquivo `.aerocfg` em ZON (`paths.config`; o `config.json` antigo ainda é lido); arquivo ausente, quebrado ou
+//! com valores absurdos = padrões.
 const std = @import("std");
 const session = @import("../sim/session.zig");
 const ch = @import("../input/channels.zig");
 const storage = @import("storage.zig");
+const store_mod = @import("store.zig");
 const fz = @import("../util/fuzz.zig");
 
 pub const CameraKind = enum { chase, ground, orbit };
@@ -54,35 +56,37 @@ pub const Settings = struct {
         sanitizeProfile(&s.profile);
     }
 
-    /// JSON → configurações (o que faltar fica no padrão; texto quebrado = erro)
+    /// o texto do arquivo (ZON, ou o JSON antigo) → configurações (o que faltar fica no padrão; texto quebrado = erro)
     pub fn parse(gpa: std.mem.Allocator, bytes: []const u8) !Settings {
         var arena = std.heap.ArenaAllocator.init(gpa);
         defer arena.deinit();
-        const d = std.json.parseFromSliceLeaky(Disk, arena.allocator(), bytes, .{ .ignore_unknown_fields = true }) catch return error.BadSettings;
+        const d = store_mod.decode(Disk, arena.allocator(), bytes) catch return error.BadSettings;
         var s: Settings = .{ .session = d.session, .profile = d.profile, .camera = d.camera, .volume = d.volume, .fps = d.fps, .dev_overlay = d.dev_overlay, .fullscreen = d.fullscreen };
         s.setAircraft(d.aircraft);
         s.sanitize();
         return s;
     }
 
-    /// configurações → JSON (o chamador libera)
-    pub fn toJson(s: *const Settings, gpa: std.mem.Allocator) ![]u8 {
+    /// configurações → o texto do arquivo, em ZON (o chamador libera)
+    pub fn toText(s: *const Settings, gpa: std.mem.Allocator) ![]u8 {
         const d: Disk = .{ .aircraft = s.aircraft(), .session = s.session, .profile = s.profile, .camera = s.camera, .volume = s.volume, .fps = s.fps, .dev_overlay = s.dev_overlay, .fullscreen = s.fullscreen };
-        return std.json.Stringify.valueAlloc(gpa, d, .{ .whitespace = .indent_2 });
+        return store_mod.encode(gpa, d);
     }
 
-    /// lê de `files` (ausente ou quebrado = padrões)
+    /// lê de `files` (ausente ou quebrado = padrões); sem o `.aerocfg`, lê o `config.json` antigo da mesma pasta
     pub fn load(files: storage.Storage, gpa: std.mem.Allocator, path: []const u8) Settings {
-        const bytes = files.read(gpa, path, 1 << 20) catch return .{};
+        var legacy_buf: [1200]u8 = undefined;
+        const legacy = std.fmt.bufPrint(&legacy_buf, "{s}/config.json", .{std.fs.path.dirname(path) orelse "."}) catch path;
+        const bytes = files.read(gpa, path, 1 << 20) catch files.read(gpa, legacy, 1 << 20) catch return .{};
         defer gpa.free(bytes);
         return parse(gpa, bytes) catch .{};
     }
 
     /// grava (cria a pasta); falha calada — perder a configuração não pode parar o jogo
     pub fn save(s: *const Settings, files: storage.Storage, gpa: std.mem.Allocator, path: []const u8) void {
-        const json = s.toJson(gpa) catch return;
-        defer gpa.free(json);
-        files.write(path, json) catch {};
+        const text = s.toText(gpa) catch return;
+        defer gpa.free(text);
+        files.write(path, text) catch {};
     }
 };
 
@@ -130,13 +134,13 @@ test "reabrir o último avião: o caminho vem do próprio buffer" {
     try testing.expectEqualStrings("data/aircraft/Asa_voadora.aero", s.aircraft());
 }
 
-test "ida e volta pelo JSON; campos faltando ficam no padrão" {
+test "ida e volta pelo .aerocfg; o JSON antigo ainda lê; campos faltando ficam no padrão" {
     var s: Settings = .{ .volume = 0.3, .fps = 30 };
     s.setAircraft("../data/aircraft/Asa_voadora.aero");
     s.session.scenario = .table;
     s.profile.elevator.expo = 0.6;
     s.camera.chase_distance = 5;
-    const j = try s.toJson(testing.allocator);
+    const j = try s.toText(testing.allocator);
     defer testing.allocator.free(j);
     const r = try Settings.parse(testing.allocator, j);
     try testing.expectEqualStrings("../data/aircraft/Asa_voadora.aero", r.aircraft());
@@ -148,6 +152,26 @@ test "ida e volta pelo JSON; campos faltando ficam no padrão" {
     try testing.expectEqual(@as(f64, 1), p.volume);
     try testing.expectEqual(@as(u32, 60), p.fps);
     try testing.expectError(error.BadSettings, Settings.parse(testing.allocator, "{volume"));
+    const zon = try Settings.parse(testing.allocator, ".{ .volume = 7, .fps = 30, .outra = 1 }");
+    try testing.expectEqual(@as(f64, 1), zon.volume);
+    try testing.expectEqual(@as(u32, 30), zon.fps);
+}
+
+test "sem o .aerocfg, lê o config.json antigo da mesma pasta; gravar cria o .aerocfg" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var buf: [512]u8 = undefined;
+    const root = buf[0..try tmp.dir.realPath(testing.io, &buf)];
+    var disk: storage.DiskStorage = .{ .io = testing.io };
+    const files = disk.storage();
+    var path_buf: [600]u8 = undefined;
+    try files.write(try std.fmt.bufPrint(&path_buf, "{s}/config.json", .{root}), "{\"volume\": 0.2, \"fps\": 30}");
+    const path = try std.fmt.bufPrint(&path_buf, "{s}/aerodrive.aerocfg", .{root});
+    const old = Settings.load(files, testing.allocator, path);
+    try testing.expectEqual(@as(f64, 0.2), old.volume);
+    old.save(files, testing.allocator, path);
+    const again = Settings.load(files, testing.allocator, path);
+    try testing.expectEqual(@as(u32, 30), again.fps);
 }
 
 fn fuzzParse(_: void, src: *fz.Src) anyerror!void {

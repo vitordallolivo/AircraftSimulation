@@ -4,6 +4,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## v0.3.1 (na `0.3_dev`, em andamento)
 
+- Antes, o AeroDrive guardava as preferências (controles, câmera, som, último avião) e o que cada avião lembra em
+  arquivos `.json`. Agora elas ficam em arquivos `.aerocfg`; as preferências que já existiam são lidas na primeira
+  vez e regravadas no formato novo.
 - Antes, cada voo gravado no AeroDrive levava um arquivo de informações junto com os dados e o vídeo. Agora a pasta
   do voo tem só o `dados.csv` e o `video.mp4`, e o nome dela já diz a data e o avião
   (`voo_2026-11-19_22-52-10_Convencional_original`); a lista de "Voos gravados" tira a duração do próprio CSV.

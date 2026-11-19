@@ -27,14 +27,14 @@ pub const PlaneSettings = struct {
     /// o que está guardado para o avião em `path`; sem nada guardado, `fallback` (o último usado)
     pub fn load(st: store_mod.Store, gpa: std.mem.Allocator, path: []const u8, fallback: PlaneSettings) PlaneSettings {
         var kb: [64]u8 = undefined;
-        var p = st.loadJson(PlaneSettings, gpa, store_mod.keyFor(&kb, path)) orelse fallback;
+        var p = st.loadValue(PlaneSettings, gpa, store_mod.keyFor(&kb, path)) orelse fallback;
         p.sanitize();
         return p;
     }
 
     pub fn save(p: *const PlaneSettings, st: store_mod.Store, gpa: std.mem.Allocator, path: []const u8) bool {
         var kb: [64]u8 = undefined;
-        return st.saveJson(gpa, store_mod.keyFor(&kb, path), p.*);
+        return st.saveValue(gpa, store_mod.keyFor(&kb, path), p.*);
     }
 };
 

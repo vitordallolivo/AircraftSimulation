@@ -386,14 +386,14 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerodrive/src/app/plane_settings.zig` — Configurações de cada avião, lembradas por arquivo: a sessão (chão/mesa, pouso, quem pilota,
   tipos `PlaneSettings:14`
 - `aerodrive/src/app/settings.zig` — Configurações do jogador, guardadas entre uma vez e outra: avião escolhido, sessão (cenário,
-  tipos `CameraKind:10`, `CameraSettings:12`, `Settings:27`
-  fn `sanitizeProfile:112`
+  tipos `CameraKind:12`, `CameraSettings:14`, `Settings:29`
+  fn `sanitizeProfile:116`
 - `aerodrive/src/app/storage.zig` — Interface de armazenamento por caminho: ler, gravar, listar e apagar. Configurações, biblioteca
   tipos `Kind:28`, `Entry:30`, `Listing:36`, `Storage:52`, `DiskStorage:85`, `BrowserStorage:140`
   fn `parseListing:174`
-- `aerodrive/src/app/store.zig` — Interface de armazenamento chave → bytes (e JSON por cima). Quem guarda configurações não sabe
-  tipos `Store:14`, `FileStore:51`, `MemStore:80`
-  fn `keyFor:126`
+- `aerodrive/src/app/store.zig` — Interface de armazenamento chave → bytes (e o valor em ZON por cima, no arquivo `.aerocfg`). Quem guarda
+  tipos `Store:15`, `FileStore:73`, `MemStore:105`
+  fn `decode:56`, `encode:64`, `keyFor:151`
 
 **aerodrive/src/audio/**
 

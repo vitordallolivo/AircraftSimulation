@@ -1,6 +1,6 @@
 //! Onde ficam as coisas no disco, a partir das variáveis de ambiente:
-//!   config      $XDG_CONFIG_HOME/aerodrive/config.json (ou ~/.config/…, ou %APPDATA%\aerodrive\…)
-//!   aviões      …/aerodrive/avioes/<avião>-<hash>.json (o que cada avião lembra)
+//!   config      $XDG_CONFIG_HOME/aerodrive/aerodrive.aerocfg (ou ~/.config/…, ou %APPDATA%\aerodrive\…)
+//!   aviões      …/aerodrive/avioes/<avião>-<hash>.aerocfg (o que cada avião lembra)
 //!   voos        $AERODRIVE_VOOS, ou ~/aerodrive_voos (gravações: vídeo + dados)
 //!   meus aviões $AEROSIM_PROJETOS, ou ~/aerosim_aeronaves (os da GUI)
 //!   exemplos    ../data/aircraft e data/aircraft (rodando de aerodrive/ ou da raiz)
@@ -20,7 +20,7 @@ pub const Paths = struct {
 /// no navegador: /aerodrive persiste (IndexedDB); os aviões abertos do computador vão para
 /// /aerodrive/meus_avioes
 pub const browser: Paths = .{
-    .config = "/aerodrive/config.json",
+    .config = "/aerodrive/aerodrive.aerocfg",
     .planes = "/aerodrive/avioes",
     .recordings = "/aerodrive/voos",
     .mine = "/aerodrive/meus_avioes",
@@ -31,11 +31,11 @@ pub const browser: Paths = .{
 pub fn resolve(a: std.mem.Allocator, env: anytype) !Paths {
     const home = nonEmpty(env.get("HOME")) orelse nonEmpty(env.get("USERPROFILE")) orelse ".";
     const config = if (nonEmpty(env.get("XDG_CONFIG_HOME"))) |x|
-        try std.fs.path.join(a, &.{ x, "aerodrive", "config.json" })
+        try std.fs.path.join(a, &.{ x, "aerodrive", "aerodrive.aerocfg" })
     else if (nonEmpty(env.get("APPDATA"))) |x|
-        try std.fs.path.join(a, &.{ x, "aerodrive", "config.json" })
+        try std.fs.path.join(a, &.{ x, "aerodrive", "aerodrive.aerocfg" })
     else
-        try std.fs.path.join(a, &.{ home, ".config", "aerodrive", "config.json" });
+        try std.fs.path.join(a, &.{ home, ".config", "aerodrive", "aerodrive.aerocfg" });
     const rec = if (nonEmpty(env.get("AERODRIVE_VOOS"))) |x| try a.dupe(u8, x) else try std.fs.path.join(a, &.{ home, "aerodrive_voos" });
     const mine = if (nonEmpty(env.get("AEROSIM_PROJETOS"))) |x| try a.dupe(u8, x) else try std.fs.path.join(a, &.{ home, "aerosim_aeronaves" });
     const planes = try std.fs.path.join(a, &.{ std.fs.path.dirname(config) orelse ".", "avioes" });
@@ -62,12 +62,12 @@ test "HOME, XDG e variáveis do projeto" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const p = try resolve(arena.allocator(), FakeEnv{ .kv = &.{ .{ "HOME", "/h" }, .{ "AEROSIM_PROJETOS", "/proj" } } });
-    try testing.expectEqualStrings("/h/.config/aerodrive/config.json", p.config);
+    try testing.expectEqualStrings("/h/.config/aerodrive/aerodrive.aerocfg", p.config);
     try testing.expectEqualStrings("/h/.config/aerodrive/avioes", p.planes);
     try testing.expectEqualStrings("/h/aerodrive_voos", p.recordings);
     try testing.expectEqualStrings("/proj", p.mine);
     const q = try resolve(arena.allocator(), FakeEnv{ .kv = &.{.{ "XDG_CONFIG_HOME", "/x" }} });
-    try testing.expectEqualStrings("/x/aerodrive/config.json", q.config);
+    try testing.expectEqualStrings("/x/aerodrive/aerodrive.aerocfg", q.config);
     try testing.expectEqualStrings("./aerodrive_voos", q.recordings);
 }
 
