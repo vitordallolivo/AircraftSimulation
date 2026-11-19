@@ -609,8 +609,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Range:45`
   fn `fieldText:7`, `numberText:12`, `niceStep:28`, `decimalsFor:38`, `significant:95`
 - `aerosim/gui/ui/phone.zig` — O jeito celular das telas: quando a janela é estreita (um celular em pé), a tela troca as abas de cima pela
-  tipos `Chips:152`, `Level:208`, `Sheet:224`
-  fn `isPhone:24`, `header:29`, `shortLabel:52`, `bottomBar:76`, `moreMenu:112`
+  tipos `Symbol:76`, `Mark:89`, `Chips:254`, `Level:311`, `Sheet:327`
+  fn `isPhone:25`, `header:30`, `shortLabel:53`, `light:92`, `drawSymbol:103`, `bottomBar:169`, `moreMenu:212`
 - `aerosim/gui/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
   tipos `Series:24`, `Marker:57`, `Cloud:79`, `Axes:87`, `Frame:97`, `Cell:214`, `ExportKind:291`
   fn `lines:118`, `table:222`, `tableHeight:257`, `pickGroup:338`, `clearPick:344`, `overlayActive:485`, `overlay:490`, `drawMarker:826`, `cloud:880`, `ramp:899`, `colorBar:915`, `drawFrame:935`

@@ -8,7 +8,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   cima dos gráficos. Agora ela muda de jeito: as áreas ficam numa barra embaixo, ao alcance do polegar, com as que não
   cabem no "Mais"; as subabas viram fichas no alto; o gráfico fica em cima, um por vez, trocado pelas setas ou
   passando o dedo de lado; e as entradas ficam numa folha que se puxa de baixo, com o Rodar sempre à mostra. A
-  Montagem mostra o avião em 3D em cima e as peças, a peça escolhida e o resumo na folha.
+  Montagem mostra o avião em 3D em cima e as peças, a peça escolhida e o resumo na folha. Cada área tem um símbolo e
+  uma cor próprios na barra, e as fichas das subabas pegam a cor da área.
 - No navegador do celular, tocar num campo abre o teclado do aparelho, arrastar o dedo rola as listas e o "Abrir"
   escolhe um arquivo do próprio celular. No PC nada muda.
 

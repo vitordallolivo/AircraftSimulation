@@ -847,7 +847,9 @@ pub const Screen = struct {
             ui.wheel = wheel;
         }
         if (phone) {
-            if (screen.more_open and !modal) _ = ui_kit.phone.moreMenu(ui, content, screen.area_labels, &screen.area, &screen.more_open);
+            var marks: [16]ui_kit.phone.Mark = undefined;
+            const marked = areaMarks(screen.area_labels, &marks);
+            if (screen.more_open and !modal) _ = ui_kit.phone.moreMenu(ui, content, screen.area_labels, marked, &screen.area, &screen.more_open);
             if (ui_kit.phone.header(ui, width, "AeroSim", &.{ "Abrir", "Salvar" })) |button| {
                 // no navegador do celular, "Abrir" pega o arquivo do aparelho (a página esconde a barra dela)
                 if (button == 0) {
@@ -856,9 +858,10 @@ pub const Screen = struct {
             }
             if (!single) {
                 const area = &screen.areas[screen.area];
-                _ = screen.area_chips.draw(ui, .{ .x = 0, .y = ui_kit.phone.header_height, .width = width, .height = ui_kit.phone.chips_height }, area.labels, &area.active);
+                const tint = if (screen.area < marked.len) marked[screen.area].color else theme.colors.accent;
+                _ = screen.area_chips.draw(ui, .{ .x = 0, .y = ui_kit.phone.header_height, .width = width, .height = ui_kit.phone.chips_height }, area.labels, &area.active, tint);
             }
-            _ = ui_kit.phone.bottomBar(ui, .{ .x = 0, .y = height - bottom, .width = width, .height = bottom }, screen.area_labels, &screen.area, &screen.more_open);
+            _ = ui_kit.phone.bottomBar(ui, .{ .x = 0, .y = height - bottom, .width = width, .height = bottom }, screen.area_labels, marked, &screen.area, &screen.more_open);
         } else {
             if (widgets.header(ui, width, "AeroSim", &.{ "Abrir avião", "Salvar .json" }, "")) |button| {
                 if (button == 0) screen.command("abrir") else screen.command("salvar");
@@ -998,7 +1001,7 @@ pub const Screen = struct {
         screen.drawAssemblyView(ui, .{ .x = rect.x + 8, .y = rect.y + 8, .width = rect.width - 16, .height = @max(80, sheet.y - rect.y - 16) }, true);
         const inner = ui_kit.phone.Sheet.drawBack(sheet);
         const tabs = [_][:0]const u8{ "Peças", "Peça escolhida", "Resumo" };
-        _ = screen.assembly_tabs.draw(ui, .{ .x = inner.x, .y = inner.y, .width = inner.width, .height = tabs_height }, &tabs, &screen.assembly_tab);
+        _ = screen.assembly_tabs.draw(ui, .{ .x = inner.x, .y = inner.y, .width = inner.width, .height = tabs_height }, &tabs, &screen.assembly_tab, theme.hex(0xa61e4d));
         const body: rl.Rectangle = .{ .x = inner.x, .y = inner.y + tabs_height, .width = inner.width, .height = @max(0, inner.height - tabs_height) };
         if (body.height < 40) return;
         ui.pushClip(body);
@@ -1157,6 +1160,28 @@ pub const Screen = struct {
         }
     }
 };
+
+/// o símbolo e a cor de cada área no celular, pelo título que vem de `manager.layout` (uma área nova sem símbolo
+/// ganha o círculo e uma cor da paleta)
+fn areaMarks(labels: []const [:0]const u8, marks: *[16]ui_kit.phone.Mark) []const ui_kit.phone.Mark {
+    const known = [_]struct { title: []const u8, mark: ui_kit.phone.Mark }{
+        .{ .title = "Biblioteca", .mark = .{ .symbol = .library, .color = theme.hex(0x6741d9) } },
+        .{ .title = "Dimensionamento", .mark = .{ .symbol = .sizing, .color = theme.hex(0x0b7285) } },
+        .{ .title = "Aerodinâmica", .mark = .{ .symbol = .aerodynamics, .color = theme.hex(0x1864ab) } },
+        .{ .title = "Estabilidade", .mark = .{ .symbol = .stability, .color = theme.hex(0x2b8a3e) } },
+        .{ .title = "Desempenho", .mark = .{ .symbol = .performance, .color = theme.hex(0xe67700) } },
+        .{ .title = "Cargas", .mark = .{ .symbol = .loads, .color = theme.hex(0xc92a2a) } },
+        .{ .title = "Montagem", .mark = .{ .symbol = .assembly, .color = theme.hex(0xa61e4d) } },
+    };
+    const count = @min(labels.len, marks.len);
+    for (labels[0..count], 0..) |label, k| {
+        marks[k] = .{ .color = theme.plotColor(k) };
+        for (known) |entry| if (std.mem.startsWith(u8, label, entry.title)) {
+            marks[k] = entry.mark;
+        };
+    }
+    return marks[0..count];
+}
 
 /// a lista de componentes da Montagem e o formulário da peça escolhida (`_fill_list` e `_edit` do Python): os campos
 /// saem de `config_tab.specs`, a edição vai para a árvore do arquivo (`config_tab.apply`) e o avião é lido de novo

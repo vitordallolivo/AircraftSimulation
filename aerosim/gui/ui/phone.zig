@@ -1,6 +1,7 @@
 //! O jeito celular das telas: quando a janela é estreita (um celular em pé), a tela troca as abas de cima pela
 //! barra de baixo com as áreas (as que não cabem ficam no "Mais"), as subabas viram fichas que rolam de lado e as
-//! entradas sobem numa folha por cima do resultado, em três alturas (recolhida, meia e cheia). Aqui ficam só as
+//! entradas sobem numa folha por cima do resultado, em três alturas (recolhida, meia e cheia). Cada área tem um
+//! símbolo e uma cor (`Mark`), na barra, no "Mais" e nas fichas. Aqui ficam só as
 //! peças; quem decide o que vai em cada uma é a tela (`aerosim/gui/screen.zig`) e a página (`page.zig`).
 const std = @import("std");
 const rl = @import("raylib");
@@ -71,9 +72,101 @@ pub fn shortLabel(font: rl.Font, label: []const u8, size: f32, room: f32, buffer
     return widgets.format(buffer, "{s}", .{word[0..@min(word.len, 1)]});
 }
 
+/// o desenho simples de cada área na barra de baixo (a tela escolhe qual vai em cada área)
+pub const Symbol = enum {
+    library, // livros
+    sizing, // esquadro
+    aerodynamics, // perfil de asa
+    stability, // balança
+    performance, // mostrador
+    loads, // seta de força para baixo
+    assembly, // avião visto de cima
+    generic, // um círculo
+    more, // três pontos ("Mais")
+};
+
+/// o símbolo e a cor de uma área
+pub const Mark = struct { symbol: Symbol = .generic, color: rl.Color = theme.colors.accent };
+
+/// `color` clareada para o fundo (a fração `amount` de branco)
+pub fn light(color: rl.Color, amount: f32) rl.Color {
+    return rl.colorLerp(color, rl.Color.white, amount);
+}
+
+/// um triângulo cheio, qualquer que seja a ordem dos vértices (o raylib só pinta um sentido)
+fn triangle(a: rl.Vector2, b: rl.Vector2, c: rl.Vector2, color: rl.Color) void {
+    rl.drawTriangle(a, b, c, color);
+    rl.drawTriangle(a, c, b, color);
+}
+
+/// desenha `symbol` centrado em `center`, num quadrado de lado `size`
+pub fn drawSymbol(symbol: Symbol, center: rl.Vector2, size: f32, color: rl.Color) void {
+    const half = size / 2;
+    const x = center.x;
+    const y = center.y;
+    const stroke = @max(2, size / 10);
+    switch (symbol) {
+        .library => {
+            const widths = [_]f32{ 0.22, 0.2, 0.24 };
+            const heights = [_]f32{ 0.9, 0.7, 0.82 };
+            var left = x - half * 0.75;
+            for (widths, heights) |width, height| {
+                const book: rl.Rectangle = .{ .x = left, .y = y + half * 0.9 - size * height, .width = size * width, .height = size * height };
+                widgets.rounded(book, 2, color);
+                left += size * width + 2;
+            }
+        },
+        .sizing => {
+            const corner: rl.Vector2 = .{ .x = x - half * 0.8, .y = y + half * 0.8 };
+            const top: rl.Vector2 = .{ .x = x - half * 0.8, .y = y - half * 0.8 };
+            const right: rl.Vector2 = .{ .x = x + half * 0.8, .y = y + half * 0.8 };
+            rl.drawLineEx(corner, top, stroke, color);
+            rl.drawLineEx(corner, right, stroke, color);
+            rl.drawLineEx(top, right, stroke, color);
+            for (1..4) |k| {
+                const along = corner.y - @as(f32, @floatFromInt(k)) * size * 0.2;
+                rl.drawLineEx(.{ .x = corner.x, .y = along }, .{ .x = corner.x + size * 0.15, .y = along }, stroke / 1.5, color);
+            }
+        },
+        .aerodynamics => {
+            // o perfil: o nariz redondo e o corpo afinando até o bordo de fuga
+            rl.drawEllipse(@intFromFloat(x - half * 0.35), @intFromFloat(y), half * 0.5, half * 0.32, color);
+            triangle(.{ .x = x - half * 0.35, .y = y - half * 0.32 }, .{ .x = x - half * 0.35, .y = y + half * 0.32 }, .{ .x = x + half, .y = y + half * 0.12 }, color);
+        },
+        .stability => {
+            rl.drawLineEx(.{ .x = x - half * 0.9, .y = y - half * 0.35 }, .{ .x = x + half * 0.9, .y = y - half * 0.35 }, stroke, color);
+            triangle(.{ .x = x, .y = y - half * 0.35 }, .{ .x = x - half * 0.35, .y = y + half * 0.8 }, .{ .x = x + half * 0.35, .y = y + half * 0.8 }, color);
+            for ([_]f32{ -1, 1 }) |side| {
+                const pan_x = x + side * half * 0.75;
+                rl.drawLineEx(.{ .x = pan_x, .y = y - half * 0.35 }, .{ .x = pan_x, .y = y + half * 0.1 }, stroke / 1.5, color);
+                rl.drawLineEx(.{ .x = pan_x - half * 0.25, .y = y + half * 0.15 }, .{ .x = pan_x + half * 0.25, .y = y + half * 0.15 }, stroke, color);
+            }
+        },
+        .performance => {
+            const hub: rl.Vector2 = .{ .x = x, .y = y + half * 0.45 };
+            rl.drawRing(hub, half * 0.75, half * 0.75 + stroke, 180, 360, 24, color);
+            rl.drawLineEx(hub, .{ .x = x + half * 0.5, .y = y - half * 0.2 }, stroke, color);
+            rl.drawCircleV(hub, stroke, color);
+        },
+        .loads => {
+            rl.drawLineEx(.{ .x = x, .y = y - half * 0.9 }, .{ .x = x, .y = y + half * 0.2 }, stroke * 1.2, color);
+            triangle(.{ .x = x, .y = y + half * 0.65 }, .{ .x = x - half * 0.4, .y = y + half * 0.1 }, .{ .x = x + half * 0.4, .y = y + half * 0.1 }, color);
+            rl.drawLineEx(.{ .x = x - half * 0.8, .y = y + half * 0.85 }, .{ .x = x + half * 0.8, .y = y + half * 0.85 }, stroke, color);
+        },
+        .assembly => {
+            rl.drawLineEx(.{ .x = x, .y = y - half * 0.9 }, .{ .x = x, .y = y + half * 0.9 }, stroke * 1.3, color);
+            rl.drawLineEx(.{ .x = x - half * 0.95, .y = y - half * 0.15 }, .{ .x = x + half * 0.95, .y = y - half * 0.15 }, stroke * 1.3, color);
+            rl.drawLineEx(.{ .x = x - half * 0.4, .y = y + half * 0.75 }, .{ .x = x + half * 0.4, .y = y + half * 0.75 }, stroke, color);
+        },
+        .generic => rl.drawRing(center, half * 0.5, half * 0.5 + stroke, 0, 360, 24, color),
+        .more => for ([_]f32{ -1, 0, 1 }) |k| rl.drawCircleV(.{ .x = x + k * half * 0.6, .y = y }, stroke * 1.1, color),
+    }
+}
+
 /// a barra de baixo: as primeiras áreas e, se sobrar alguma, o "Mais" (abre a lista das outras em `more_open`);
 /// devolve verdadeiro se trocou de área
-pub fn bottomBar(ui: *widgets.Ui, rect: rl.Rectangle, labels: []const [:0]const u8, active: *usize, more_open: *bool) bool {
+/// `marks` (opcional, um por área) dá o símbolo e a cor de cada uma
+pub fn bottomBar(ui: *widgets.Ui, rect: rl.Rectangle, labels: []const [:0]const u8, marks: []const Mark, active: *usize, more_open: *bool) bool {
     rl.drawRectangleRec(rect, theme.colors.panel);
     rl.drawRectangleRec(.{ .x = rect.x, .y = rect.y, .width = rect.width, .height = 1 }, theme.colors.line);
     const has_more = labels.len > bar_slots + 1;
@@ -86,14 +179,21 @@ pub fn bottomBar(ui: *widgets.Ui, rect: rl.Rectangle, labels: []const [:0]const 
         const is_more = has_more and k == shown;
         const slot: rl.Rectangle = .{ .x = rect.x + @as(f32, @floatFromInt(k)) * slot_width, .y = rect.y + 1, .width = slot_width, .height = rect.height - 1 };
         const is_active = if (is_more) (active.* >= shown or more_open.*) else (active.* == k and !more_open.*);
+        // a área no "Mais" ativa empresta a cor e o símbolo ao "Mais"
+        const mark: Mark = if (is_more)
+            (if (active.* >= shown and active.* < marks.len and !more_open.*) marks[active.*] else .{ .symbol = .more, .color = theme.colors.accent })
+        else if (k < marks.len) marks[k] else .{};
         if (is_active) {
-            widgets.rounded(.{ .x = slot.x + 6, .y = slot.y + 6, .width = slot.width - 12, .height = slot.height - 12 }, 10, theme.colors.selected);
-            rl.drawRectangleRec(.{ .x = slot.x + slot.width / 2 - 14, .y = slot.y + slot.height - 5, .width = 28, .height = 3 }, theme.colors.accent);
+            widgets.rounded(.{ .x = slot.x + 4, .y = slot.y + 4, .width = slot.width - 8, .height = slot.height - 8 }, 10, light(mark.color, 0.8));
+            rl.drawRectangleRec(.{ .x = slot.x + slot.width / 2 - 14, .y = slot.y + slot.height - 4, .width = 28, .height = 3 }, mark.color);
         }
+        drawSymbol(if (is_more and mark.symbol != .more and more_open.*) .more else mark.symbol, .{ .x = slot.x + slot.width / 2, .y = slot.y + 18 }, 20, if (is_active) mark.color else light(mark.color, 0.25));
         var buffer: [64:0]u8 = undefined;
-        const caption = if (is_more) "Mais" else shortLabel(ui.fonts.regular, labels[k], 13, slot_width - 8, &buffer);
-        const caption_width = theme.textWidth(if (is_active) ui.fonts.bold else ui.fonts.regular, caption, 13);
-        theme.text(if (is_active) ui.fonts.bold else ui.fonts.regular, caption, slot.x + (slot.width - caption_width) / 2, slot.y + (slot.height - 13) / 2 - 1, 13, if (is_active) theme.colors.accent else theme.colors.ink);
+        const size: f32 = 11;
+        const caption = if (is_more) "Mais" else shortLabel(ui.fonts.regular, labels[k], size, slot_width - 6, &buffer);
+        const font = if (is_active) ui.fonts.bold else ui.fonts.regular;
+        const caption_width = theme.textWidth(font, caption, size);
+        theme.text(font, caption, slot.x + (slot.width - caption_width) / 2, slot.y + 33, size, if (is_active) mark.color else theme.colors.ink);
         if (ui.clickedIn(slot)) {
             if (is_more) more_open.* = !more_open.* else {
                 more_open.* = false;
@@ -109,7 +209,7 @@ pub fn bottomBar(ui: *widgets.Ui, rect: rl.Rectangle, labels: []const [:0]const 
 
 /// a lista do "Mais", por cima do resultado e encostada na barra: as áreas que não couberam; tocar fora fecha.
 /// Chamada com o clique ainda livre (antes da página); devolve verdadeiro se trocou de área
-pub fn moreMenu(ui: *widgets.Ui, area: rl.Rectangle, labels: []const [:0]const u8, active: *usize, open: *bool) bool {
+pub fn moreMenu(ui: *widgets.Ui, area: rl.Rectangle, labels: []const [:0]const u8, marks: []const Mark, active: *usize, open: *bool) bool {
     if (labels.len <= bar_slots + 1) {
         open.* = false;
         return false;
@@ -125,11 +225,13 @@ pub fn moreMenu(ui: *widgets.Ui, area: rl.Rectangle, labels: []const [:0]const u
     for (rest, 0..) |label, k| {
         const index = bar_slots + k;
         const row: rl.Rectangle = .{ .x = box.x + 6, .y = box.y + 6 + @as(f32, @floatFromInt(k)) * row_height, .width = box.width - 12, .height = row_height };
+        const mark: Mark = if (index < marks.len) marks[index] else .{};
         if (index == active.*) {
-            widgets.rounded(row, 8, theme.colors.selected);
-            rl.drawRectangleRec(.{ .x = row.x, .y = row.y + 8, .width = 4, .height = row.height - 16 }, theme.colors.accent);
+            widgets.rounded(row, 8, light(mark.color, 0.8));
+            rl.drawRectangleRec(.{ .x = row.x, .y = row.y + 8, .width = 4, .height = row.height - 16 }, mark.color);
         }
-        theme.text(ui.fonts.regular, label, row.x + 16, row.y + (row_height - 17) / 2, 17, if (index == active.*) theme.colors.accent else theme.colors.ink);
+        drawSymbol(mark.symbol, .{ .x = row.x + 28, .y = row.y + row_height / 2 }, 22, mark.color);
+        theme.text(ui.fonts.regular, label, row.x + 52, row.y + (row_height - 17) / 2, 17, if (index == active.*) mark.color else theme.colors.ink);
         theme.text(ui.fonts.regular, ">", row.x + row.width - 22, row.y + (row_height - 17) / 2, 17, theme.colors.muted);
         if (k + 1 < rest.len) rl.drawRectangleRec(.{ .x = row.x + 12, .y = row.y + row_height - 1, .width = row.width - 24, .height = 1 }, theme.colors.grid);
         if (ui.clickedIn(row)) {
@@ -155,9 +257,10 @@ pub const Chips = struct {
     shown_active: ?usize = null, // a ficha ativa do quadro anterior: trocada de fora, a linha rola até ela
 
     /// desenha as fichas de `labels` em `rect`; devolve verdadeiro se trocou a ativa
-    pub fn draw(chips: *Chips, ui: *widgets.Ui, rect: rl.Rectangle, labels: []const [:0]const u8, active: *usize) bool {
+    /// (`tint`: a cor da área, na ficha ativa e no filete de baixo)
+    pub fn draw(chips: *Chips, ui: *widgets.Ui, rect: rl.Rectangle, labels: []const [:0]const u8, active: *usize, tint: rl.Color) bool {
         rl.drawRectangleRec(rect, theme.colors.background);
-        rl.drawRectangleRec(.{ .x = rect.x, .y = rect.y + rect.height - 1, .width = rect.width, .height = 1 }, theme.colors.grid);
+        rl.drawRectangleRec(.{ .x = rect.x, .y = rect.y + rect.height - 2, .width = rect.width, .height = 2 }, light(tint, 0.55));
         const size: f32 = 14;
         const limit = @max(0, chips.content_width - rect.width);
         if (ui.hovering(rect) and ui.wheel != 0) {
@@ -187,8 +290,8 @@ pub const Chips = struct {
                     }
                 } else {
                     const is_active = k == active.*;
-                    widgets.rounded(chip, chip.height / 2, if (is_active) theme.colors.selected else theme.colors.panel);
-                    theme.text(if (is_active) ui.fonts.bold else ui.fonts.regular, caption, chip.x + 13, chip.y + (chip.height - size) / 2, size, if (is_active) theme.colors.accent else theme.colors.ink);
+                    widgets.rounded(chip, chip.height / 2, if (is_active) light(tint, 0.8) else theme.colors.panel);
+                    theme.text(if (is_active) ui.fonts.bold else ui.fonts.regular, caption, chip.x + 13, chip.y + (chip.height - size) / 2, size, if (is_active) tint else theme.colors.ink);
                     if (ui.clickedIn(chip) and !is_active) {
                         active.* = k;
                         chips.shown_active = k;
