@@ -59,10 +59,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RESUMO: ${{ steps.aplicar.outputs.resumo }}
           NUMERO: ${{ github.event.issue.number }}
-        run: gh issue close "$NUMERO" --repo "$GITHUB_REPOSITORY" --comment "Feito no docs/TRACKING.md da 0.2_dev: $RESUMO."
+        # bloco (|): numa linha só, o ": " dentro do texto vira um mapa do YAML e o arquivo inteiro deixa de valer
+        run: |
+          gh issue close "$NUMERO" --repo "$GITHUB_REPOSITORY" --comment "Feito no docs/TRACKING.md da 0.2_dev: $RESUMO."
 
       - if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
           NUMERO: ${{ github.event.issue.number }}
-        run: gh issue comment "$NUMERO" --repo "$GITHUB_REPOSITORY" --body "Não deu para aplicar no TRACKING.md; veja o log da Action ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}."
+        run: |
+          gh issue comment "$NUMERO" --repo "$GITHUB_REPOSITORY" --body "Não deu para aplicar no TRACKING.md; veja o log da Action ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}."
