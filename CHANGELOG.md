@@ -2,7 +2,7 @@
 
 Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
-## Na `0.3_dev` (ainda sem versão)
+## v0.3.1 (na `0.3_dev`, em andamento)
 
 - Antes, a tela só tinha o modo claro, com um azul escuro de pouco contraste. Agora há o modo escuro como opção (o
   botão "Modo escuro" no alto, ou o interruptor no "Mais" do celular), lembrado na próxima vez que o programa abre:
