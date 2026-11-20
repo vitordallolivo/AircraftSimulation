@@ -2,7 +2,11 @@
 
 Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
-## v0.3.1 (na `0.3_dev`, em andamento)
+## v0.3.2 (na `0.3_dev`, em andamento)
+
+- Ainda sem mudanças.
+
+## v0.3.1 (na `0.3_dev`, fechada em 2026-11-20)
 
 - Antes, trazer dados de uma planilha da equipe pedia um mapa de células escrito à mão. Agora cada área tem o botão
   "Planilha…", que abre uma janela com a planilha `.xlsx` como ela é no Excel: a mesma organização a partir do A1,

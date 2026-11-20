@@ -88,7 +88,9 @@ O que pegar primeiro, lendo o quadro como ele está agora. Tudo o que estava "a 
 - **Cada tarefa concluída e mesclada sobe só o último número:** `0.3.1`, `0.3.2`, `0.3.3`…
 - **Quando toda a lista de tarefas abaixo estiver feita, vira `0.4.0`.** A `1.0` tem meta própria (seção "Meta da
   1.0", abaixo), sem data: nada vira release sem o dono testar pessoalmente cada componente.
-- O trabalho fica numa branch só, `0.2_dev`. Cada tarefa fechada vai por PR para a `main` e para no review.
+- O trabalho fica numa branch só, `0.3_dev` (antes, `0.2_dev`). Cada tarefa fechada vai por PR para a `main` e para no review.
+- **`0.3.1` fechada em 2026-11-20** na `0.3_dev` (G36 a G43: um avião só, arquivo `.aero`, modo escuro, Planilha… e
+  exportar em `.xlsx` com prévia). O que vier agora entra na **`0.3.2`**.
 - As tags só são criadas com o ok do dono do repositório.
 
 ## Meta da 1.0: tudo no navegador, sem instalar nada
@@ -165,7 +167,7 @@ O quadro tem uma tabela por segmento; o segmento é onde fica o grosso do trabal
 com uma aba que a mostra fica no **core**, e a aba vira outra tarefa no **aerosim**). As dependências cruzam os
 segmentos. As tarefas do aeroopt usam o prefixo **O**, e as da GUI, o **G**.
 
-A página `tracking.html` do site sai destas tabelas (`zig build tracking`; o build do site roda sozinho): para acrescentar uma tarefa, basta uma linha nova na tabela do segmento. Uma tarefa resolvida fica `Terminado (commit abc1234)` (à mão ou com `zig build tracking -- --feito G26 abc1234`): a página risca o título, liga o commit no GitHub e a tira da aba Próximos, que mostra as abertas em ondas, na ordem em que dá para fazê-las. Na página, "Confirmar terminado" (em cada tarefa) e "+ Nova tarefa" abrem uma issue já preenchida, e a Action `tracking.yml` grava a mudança aqui na `0.2_dev` sozinha.
+A página `tracking.html` do site sai destas tabelas (`zig build tracking`; o build do site roda sozinho): para acrescentar uma tarefa, basta uma linha nova na tabela do segmento. Uma tarefa resolvida fica `Terminado (commit abc1234)` (à mão ou com `zig build tracking -- --feito G26 abc1234`): a página risca o título, liga o commit no GitHub e a tira da aba Próximos, que mostra as abertas em ondas, na ordem em que dá para fazê-las. Na página, "Confirmar terminado" (em cada tarefa) e "+ Nova tarefa" abrem uma issue já preenchida, e a Action `tracking.yml` grava a mudança aqui na `0.3_dev` sozinha.
 
 O **Nível** diz em que camada a mudança mexe, qualquer que seja a área (a tabela "Níveis", acima).
 
@@ -248,6 +250,17 @@ A interface do aerosim (a tela em Zig com os managers em Python, e a GUI PyQt en
 | G34 | Suspeita (2026-11-14): o modificador de esteira da hélice (`core/src/modifiers`) não muda nada quando ligado sem ajustar os ganhos, porque os `params` do `Modifier` começam em 0; no exemplo do README só deu efeito (C_L 0,729 → 0,773) com os dois primeiros ganhos em 1. Conferir na fonte qual é o ganho padrão do método e se o valor 0 deve valer "desligado" ou o padrão da literatura; criar o teste que pega isso | Análise | — | alta | Não iniciado |
 | G35 | Suspeita (2026-11-19): no Analisar da asa em caixa (S1223 e MH 113, configuração de duas asas com pontas ligadas) o Resumo dá "[modelo interno] C_Lmax 2,23 em α = 1°" e "C_Lα = −3,27/rad", enquanto a curva do mesmo modelo na Sustentação do conjunto chega a 1,1. Conferir a escala por área em `compareSolvers` (área da asa principal sobre a soma) e o α das derivadas, que cai depois do estol; criar o teste que pega isso | Aerodinâmica | — | alta | Não iniciado |
 | G36 | Jeito celular da tela (vitor, 2026-11-19, misto das maquetes A e E): com a janela estreita, as áreas vão para a barra de baixo (quatro e o "Mais"), as subabas viram fichas que rolam de lado, o gráfico fica em cima, um por vez (setas ou passada de lado), e as entradas sobem numa folha de três alturas com o Rodar no topo; a Montagem fica com o 3D em cima e a folha com Peças, Peça escolhida e Resumo. O mouse e o dedo viram a mesma coisa (`ui/pointer.zig`, com testes): o toque vale ao soltar, o arraste rola, e no navegador os campos abrem o teclado do aparelho e o "Abrir" o seletor de arquivos. Peças em `ui/phone.zig`, para o aeroopt usar também. Feito na `0.2_dev`. Falta: o aeroopt no jeito celular, a tela nítida em telas de alta densidade (hoje desenha em pixels CSS) e as janelas por cima (refino, condições) pensadas para o celular | Interface | — | — | Em andamento |
+| G37 | Um avião só (vitor, 2026-11-19): o projeto monta o avião da Montagem e das análises, sempre o mesmo do projeto à Montagem | Fundação | — | alta | Terminado (commit 4ec67f4) |
+| G38 | Arquivo `.aero` (um zip com o manifesto e o avião em ZON, com as datas): Abrir e Salvar, o AeroDrive lendo, os exemplos convertidos; os dois exemplos S1223 de Joinville saíram. No navegador, o Abrir pega o arquivo do computador | Fundação | G37 | alta | Terminado (commit f22f543) |
+| G39 | AeroDrive: preferências em `.aerocfg` (ZON, lendo o `.json` antigo uma vez) e voo gravado numa pasta com `dados.csv` e `video.mp4` | Ferramenta | G38 | média | Terminado (commit 6c03dda) |
+| G40 | Modo escuro como opção (o claro é o padrão) e destaque azul vivo no claro | Interface | — | média | Terminado (commit f9944d3) |
+| G41 | Planilha… em cada área: a `.xlsx` como no Excel (cores, larguras, mesclas, bordas, rolagem para todos os lados com setas, roda e barras), o bloco marcado ou achado sozinho, o tipo em abas (os da área), colunas sugeridas e guardar com nome; o polinômio de tração vai para o motor do avião, com a hélice escolhida pela linha | Interface | — | alta | Terminado (commit e25835f) |
+| G42 | Exportar… do Desempenho: simula e gera a planilha no formato da equipe (tração e potência, subida, descida, manobra, curva, envelope de voo e dimensionamento inicial, com as cores e os gráficos) e mostra a prévia antes de gravar | Interface | G41 | alta | Terminado (commit 8149305) |
+| G43 | Exportar dos gráficos e tabelas (botão direito): PNG, PDF e os dados em `.xlsx` (pares x, y por curva e o gráfico dentro), com a mesma prévia do Exportar… | Interface | G42 | alta | Terminado (commit 06bee7f) |
+| G44 | Exportar a Aerodinâmica no formato da planilha da equipe (distribuição na envergadura, polares do avião por configuração, com o arrasto de asa, EH e fuselagem) e a E&C no formato da planilha de saídas (EH, EV, aileron e derivadas por conjunto), com a mesma prévia | Interface | G42 | alta | Não iniciado |
+| G45 | Planilha… de hélices: ler os coeficientes Q, T e P (falta saber se a variável é J ou a rotação) e converter C_T/C_P × J para o polinômio do MATLAB (ajuste por mínimos quadrados); avisar quando a hélice do motor não tem dados, em vez de tração zero | Cálculo | G41 | alta | Não iniciado |
+| G46 | Exportar… do Desempenho: as altitudes viram campo na tela (hoje 0, 600 e 1000 m fixas) e gravar vários gráficos selecionados de uma vez também em `.xlsx` | Interface | G42 | média | Não iniciado |
+| G47 | Planilha…: o que falta ler das planilhas da equipe: E&C da planilha de saídas, polares separadas por parte, as três altitudes de uma vez, a planilha de missão (células soltas), extras do motor (Kt, I0, indutância, inércia, amortecimento) e as combinações guardadas como curvas nos gráficos das análises | Interface | G41 | média | Não iniciado |
 
 ### core
 
@@ -277,26 +290,26 @@ O núcleo físico em Zig (`core/`): dinâmica, aerodinâmica, cargas, estruturas
 | T56 | Hélice no chão: folga da ponta da pá a cada passo; folga < 0 encerra o voo ("hélice tocou o chão") com `ac.sim.prop_strike = True` (desligado por padrão: o exemplo `flying_wing` começa com a pá dentro do chão); folga mínima por norma só como preset do usuário | Cálculo | — | — | Não iniciado |
 | T05 | E&C: estabilidade dinâmica não linear (funções de Lyapunov e de energia, região de atração vista em mapa de calor; inclui sloshing e vento). Primeiro o plano com as fontes, depois o código | Cálculo | — | — | Não iniciado (plano) |
 | T38 | Arquitetura de cargas e aeroelasticidade: interfaces (conjunto de casos de carga, viga estrutural EI/GJ, laço aeroelástico), conta no núcleo. Primeiro o plano | Fundação | — | — | Não iniciado (plano) |
-| T13 | Casos de carga do V-n (manobra; norma e n escolhidos pelo usuário), no núcleo; o V-n sai de Desempenho (`performance.py`, `envelope.py`) | Cálculo | T38 | — | Não iniciado |
-| T14 | Rajada (fórmula e norma escolhidas pelo usuário) | Cálculo | T38 | — | Não iniciado |
-| T15 | Cortante, fletor e torsor | Cálculo | T13, T14 | — | Não iniciado |
+| T13 | Casos de carga do V-n (manobra; norma e n escolhidos pelo usuário), no núcleo; o V-n sai de Desempenho (`performance.py`, `envelope.py`) (núcleo: `loads/vn.zig`, envelope de manobra e os casos de carga; a aba é outra tarefa) | Cálculo | T38 | — | Terminado (commit 54012f4) |
+| T14 | Rajada (fórmula e norma escolhidas pelo usuário) (núcleo: `loads/vn.zig`, envelope de rajada com a fórmula escolhida) | Cálculo | T38 | — | Terminado (commit 54012f4) |
+| T15 | Cortante, fletor e torsor (núcleo: `loads/internal.zig`, da ponta para a raiz, com flecha e giro de torção) | Cálculo | T13, T14 | — | Terminado (commit 54012f4) |
 | T16 | Manobras dinâmicas (o 6GDL monta os casos) | Cálculo | T13 | — | Não iniciado |
 | T17 | Momento de dobradiça (distribuição na corda, método da literatura) | Cálculo | T38 | — | Não iniciado |
-| T18 | Cargas no solo | Cálculo | T38 | — | Não iniciado |
+| T18 | Cargas no solo (feito: o impacto do pouso em `structures/gear.zig`; faltam os outros casos de solo) | Cálculo | T38 | — | Em andamento |
 | T20 | Arquitetura de estruturas + banco de materiais (os dados vêm do usuário ou da literatura) | Fundação | — | — | Em andamento |
-| T21 | Longarina | Fundação | T15, T20 | — | Não iniciado |
+| T21 | Longarina (feito: a seção e a flambagem do chapeado e da alma em `structures/section.zig` e `buckling.zig`) | Fundação | T15, T20 | — | Em andamento |
 | T22 | Tubo de cauda | Fundação | T15, T20 | — | Não iniciado |
-| T23 | Trem (eixo, garfo) | Fundação | T18, T20 | — | Não iniciado |
+| T23 | Trem (eixo, garfo) (núcleo: `structures/gear.zig`, treliça de tubos como pórtico 3D e o impacto do pouso) | Fundação | T18, T20 | — | Terminado (commit 54012f4) |
 | T39 | Redistribuição das cargas para a malha da estrutura | Cálculo | T15, T20 | — | Não iniciado |
 | T24 | Rigidez e centro elástico | Cálculo | T21 | — | Não iniciado |
-| T25 | Divergência | Cálculo | T24 | — | Não iniciado |
-| T26 | Reversão de comando | Cálculo | T24 | — | Não iniciado |
+| T25 | Divergência (núcleo: `loads/aeroelastic.zig`, semiasa em faixas) | Cálculo | T24 | — | Terminado (commit 54012f4) |
+| T26 | Reversão de comando (núcleo: `loads/aeroelastic.zig`, reversão do aileron) | Cálculo | T24 | — | Terminado (commit 54012f4) |
 | T27 | Diedro elástico em E&C | Cálculo | T21 | — | Não iniciado |
 | T28 | Paralelismo no núcleo | Cálculo | — | — | Não iniciado |
 | T29 | Monte Carlo e sensibilidade | Cálculo | T28 | — | Não iniciado |
 | T30 | Turbulência Dryden | Cálculo | — | — | Não iniciado |
 | T31 | Vento cruzado na decolagem | Cálculo | — | — | Não iniciado |
-| T32 | Modos de vibração e flutter | Cálculo | T21 | — | Não iniciado |
+| T32 | Modos de vibração e flutter (núcleo: `loads/flutter.zig`, viga em elementos finitos, Theodorsen e p-k; Goland a 137 m/s no teste) | Cálculo | T21 | — | Terminado (commit 54012f4) |
 | T76 | Modificador `interferencia.asas` (tandem, biplano): as faixas de uma asa sentem as ferraduras da outra asa do par (Biot–Savart); desligado por padrão | Cálculo | T78 | — | Terminado (na `main`) |
 | T77 | Erros claros em vez de pane: `StateError` com texto (sem trem, inércia inválida, divergência; códigos −6 a −8 na ABI) e guardas de NaN e infinito no `fmath` (sincos, atan, exp, wrap) | Cálculo | — | — | Terminado (na `main`) |
 | T87 | Legibilidade do núcleo (revisão do vitor): erros da ABI como `error{...}` com o código só na fronteira (`abiCode`); testes por `zig build test -Dgrupo=... -Dfiltro=...` no lugar dos arquivos `tests_*.zig`; nomes descritivos no lugar dos de uma letra em todo `core/src` (imports, parâmetros, locais); índices do vetor de estados num `enum` (`state.Entry`); `///` em toda `pub fn` e `export fn`. Biblioteca igual bit a bit, AeroDrive compila e passa. Falta: campos de uma letra das structs (`Instance.p/r`, `Ctx.p/f`, campos da ABI) e os nomes do AeroDrive | Cálculo | — | — | Terminado (na `main`) |
@@ -472,12 +485,12 @@ pista) é ajuste de interface e está em "Fora da conta".
 |---|---|---|---|---|---|
 | CA-01 | Distribuição por superfície (V, n, rpm, com/sem hélice) | ✅ | ✅ | — | aba Cargas; `aero/span_loads.py` |
 | CA-02 | Vista 3D e gráficos | ✅ | ✅ | — | aba Cargas (`LoadView`, gráfico `loads3d`) |
-| CA-03 | Casos do V-n | 🟡 | 🟡 | T13 | |
-| CA-04 | Rajada (fórmula e norma escolhidas pelo usuário) | ❌ | ❌ | T14 | |
+| CA-03 | Casos do V-n | ✅ | 🟡 | T13 | `core/src/loads/vn.zig` |
+| CA-04 | Rajada (fórmula e norma escolhidas pelo usuário) | ✅ | ❌ | T14 | `core/src/loads/vn.zig` |
 | CA-05 | Manobras dinâmicas | ❌ | ❌ | T16 | |
-| CA-06 | Cortante, fletor, torsor | ❌ | ❌ | T15 | |
+| CA-06 | Cortante, fletor, torsor | ✅ | ❌ | T15 | `core/src/loads/internal.zig` |
 | CA-07 | Momentos de dobradiça | ❌ | ❌ | T17 | |
-| CA-08 | Cargas no solo | ❌ | ❌ | T18 | |
+| CA-08 | Cargas no solo | 🟡 | ❌ | T18 | impacto do pouso em `core/src/structures/gear.zig` |
 | CA-09 | Redistribuição das cargas para a estrutura | ❌ | ❌ | T39 | |
 | CA-10 | V-n com dados de voo | ❌ | ❌ | T40 | |
 | CA-11 | Método das cargas pelo VLM do AeroSandbox (comparação com a linha sustentadora) | ✅ | ✅ | T58 | aba Cargas → Método / Comparar com; `aero/asb_solver.py` (`AsbVLMLoads`) |
@@ -487,19 +500,19 @@ pista) é ajuste de interface e está em "Fora da conta".
 | ID | Tópico | Código | GUI | Tarefa |
 |---|---|---|---|---|
 | AL-01 | Rigidez e centro elástico | ❌ | ❌ | T24 |
-| AL-02 | Divergência | ❌ | ❌ | T25 |
-| AL-03 | Reversão de comando | ❌ | ❌ | T26 |
-| AL-04 | Modos e flutter | ❌ | ❌ | T32 |
+| AL-02 | Divergência | ✅ | ❌ | T25 |
+| AL-03 | Reversão de comando | ✅ | ❌ | T26 |
+| AL-04 | Modos e flutter | ✅ | ❌ | T32 |
 
 ### 6. Estruturas
 
 | ID | Tópico | Código | GUI | Tarefa | Observação |
 |---|---|---|---|---|---|
 | ES-01 | Massas e inércias | ✅ | ✅ | — | Montagem |
-| ES-02 | Longarina | ❌ | ❌ | T21 | |
+| ES-02 | Longarina | 🟡 | ❌ | T21 | seção e flambagem em `core/src/structures` |
 | ES-03 | Tubo de cauda | ❌ | ❌ | T22 | |
 | ES-04 | Materiais | 🟡 | ❌ | T20 | material dado pelo usuário no núcleo; nunca dos relatórios de referência |
-| ES-05 | Trem | ❌ | ❌ | T23 | |
+| ES-05 | Trem | ✅ | ❌ | T23 | `core/src/structures/gear.zig` |
 
 ### 7. Elétrica — fora do escopo
 
@@ -584,11 +597,11 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
 **Regras**
 - Nada direto na `main`; a `main` só recebe por PR.
-- **Uma branch de desenvolvimento só: `0.2_dev`.** Não se abre branch por tarefa.
+- **Uma branch de desenvolvimento só: `0.3_dev`** (desde 2026-11-19; antes, `0.2_dev`). Não se abre branch por tarefa.
 - Ao fechar uma tarefa:
-  1. a `main` é mesclada na `0.2_dev`, para não levar a `main` para trás;
-  2. rodam os checks (`python tools/checks/run.py --tudo`);
-  3. abre-se o PR `0.2_dev` → `main`, e o trabalho para até o review;
+  1. a `main` é mesclada na `0.3_dev`, para não levar a `main` para trás;
+  2. rodam os checks (`python -m ziglang build check -- --tudo`);
+  3. abre-se o PR `0.3_dev` → `main`, e o trabalho para até o review;
   4. o merge sobe o último número da versão (`0.3.1`, `0.3.2`…).
 - Cada PR atualiza este arquivo e o `CHANGELOG.md`.
 - Tag `vX.Y.Z` só na `main`, depois do merge.
@@ -596,5 +609,6 @@ São os itens das seções 1 a 9 com ✅ na GUI. Os ❓ contam como não feitos.
 
 **Situação atual das branches**
 - `main`: `v0.3.0` com o PR de 2026-11-19 (antes, `v0.2.4` em 2026-10-30).
-- `0.2_dev`: igual à `main` depois do merge; o que vier entra sob a próxima versão quando o dono disser.
+- `0.3_dev`: `0.3.1` fechada em 2026-11-20 (ainda sem PR para a `main`); o que vier agora entra na `0.3.2`.
+- `0.2_dev`: parada desde a `v0.3.0`.
 - As branches antigas foram apagadas aqui; no GitHub, o dono apaga (a sessão não tem permissão).
