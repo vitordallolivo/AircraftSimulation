@@ -65,7 +65,9 @@ pub const MainMenu = struct {
             rl.drawTexturePro(t, .{ .x = 0, .y = 0, .width = @floatFromInt(t.width), .height = @floatFromInt(t.height) }, .{ .x = x, .y = y, .width = lw, .height = lh }, .{ .x = 0, .y = 0 }, 0, .white);
             y += lh + 10;
         }
-        app.fonts.draw("AeroDrive", x, y, 46, theme.title);
+        // o nome como na logo: "Aero" no azul dos títulos, "Drive" na cor do texto
+        app.fonts.draw("Aero", x, y, 46, theme.title);
+        app.fonts.draw("Drive", x + app.fonts.width("Aero", 46), y, 46, theme.text);
         y += 54;
         if (app.plane) |p| {
             var size: f32 = 20;

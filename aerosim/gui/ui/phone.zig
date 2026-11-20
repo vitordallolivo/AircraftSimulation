@@ -30,7 +30,7 @@ pub fn isPhone(width: f32) bool {
 pub fn header(ui: *widgets.Ui, width: f32, program_name: [:0]const u8, buttons: []const [:0]const u8) ?usize {
     rl.drawRectangleRec(.{ .x = 0, .y = 0, .width = width, .height = header_height }, theme.colors.panel);
     const logo_width = ui.logo.draw(8, 8, header_height - 16, widgets.clock());
-    theme.text(ui.fonts.regular, program_name, 16 + logo_width, 12, 21, theme.colors.accent);
+    _ = widgets.programName(ui.fonts.bold, program_name, 16 + logo_width, 12, 21);
     var pressed: ?usize = null;
     var x = width - 6;
     var k = buttons.len;

@@ -445,8 +445,7 @@ pub fn roundedLines(rect: rl.Rectangle, radius: f32, color: rl.Color) void {
 pub fn header(ui: *Ui, width: f32, program_name: [:0]const u8, buttons: []const [:0]const u8, highlight: [:0]const u8, subtitle: [:0]const u8) ?usize {
     rl.drawRectangleRec(.{ .x = 0, .y = 0, .width = width, .height = header_height }, theme.colors.panel);
     const logo_width = ui.logo.draw(14, 8, header_height - 16, clock());
-    theme.text(ui.fonts.regular, program_name, 24 + logo_width, 13, 24, theme.colors.accent);
-    var x: f32 = 24 + logo_width + theme.textWidth(ui.fonts.regular, program_name, 24) + 28;
+    var x: f32 = programName(ui.fonts.bold, program_name, 24 + logo_width, 13, 24) + 28;
     var pressed: ?usize = null;
     for (buttons, 0..) |caption, i| {
         const w = theme.textWidth(ui.fonts.regular, caption, 15) + 28;
@@ -462,6 +461,21 @@ pub fn header(ui: *Ui, width: f32, program_name: [:0]const u8, buttons: []const 
     modeButton(ui, width - 14, 11, header_height - 22);
     rl.drawRectangleRec(.{ .x = 0, .y = header_height - 1, .width = width, .height = 1 }, theme.colors.line);
     return pressed;
+}
+
+/// o nome do programa como na logo: "Aero" na cor de destaque e o resto ("Sim", "Opt") na cor do texto; devolve
+/// onde o nome acaba
+pub fn programName(font: rl.Font, name: [:0]const u8, x: f32, y: f32, size: f32) f32 {
+    const prefix = "Aero";
+    if (!std.mem.startsWith(u8, name, prefix)) {
+        theme.text(font, name, x, y, size, theme.colors.accent);
+        return x + theme.textWidth(font, name, size);
+    }
+    theme.text(font, prefix, x, y, size, theme.colors.accent);
+    const rest_x = x + theme.textWidth(font, prefix, size);
+    const rest: [:0]const u8 = name[prefix.len..];
+    theme.text(font, rest, rest_x, y, size, theme.colors.ink);
+    return rest_x + theme.textWidth(font, rest, size);
 }
 
 /// o relógio das animações (o brilho do nome e da logo); o print pode prendê-lo num instante (`tempo=SEGUNDOS`)
