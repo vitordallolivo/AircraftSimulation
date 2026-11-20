@@ -149,6 +149,8 @@ const Draft = struct {
     kgf: bool = true,
     x_is_rpm: bool = true,
     v_max: f64 = 30,
+    /// a linha do polinômio quando a tabela tem uma hélice por linha (0 = a primeira)
+    poly_row: u32 = 0,
     /// a área que abriu a janela
     area_buffer: [48]u8 = undefined,
     area_len: usize = 0,
@@ -364,9 +366,12 @@ pub fn detectPolynomial(memory: std.mem.Allocator, sheet: xlsx.Sheet) !?[]const 
         if (cell.column > 1 and isPolyTitle(sheet, cell.row, cell.column - 1)) continue;
         var width: u32 = 0;
         while (isPolyTitle(sheet, cell.row, cell.column + width)) width += 1;
+        // uma hélice por linha (a aba de polinômios das hélices): o bloco desce enquanto houver número embaixo
+        var rows: u32 = 1;
+        while (sheet.at(cell.row + rows + 1, cell.column)) |below| : (rows += 1) if (below.asNumber() == null) break;
         var first: [4]u8 = undefined;
         var last: [4]u8 = undefined;
-        return try std.fmt.allocPrint(memory, "{s}{d}:{s}{d}", .{ columnName(&first, cell.column), cell.row, columnName(&last, cell.column + width - 1), cell.row + 1 });
+        return try std.fmt.allocPrint(memory, "{s}{d}:{s}{d}", .{ columnName(&first, cell.column), cell.row, columnName(&last, cell.column + width - 1), cell.row + rows });
     }
     return null;
 }
@@ -418,7 +423,7 @@ pub fn readPolynomial(sheet: xlsx.Sheet, range_text: []const u8, static_cell: []
         const title = sheet.at(range.first_row, column) orelse continue;
         if (title != .text) continue;
         const term = polyTerm(title.text) orelse continue;
-        const value = (sheet.at(range.first_row + 1, column) orelse continue).asNumber() orelse continue;
+        const value = (sheet.at(range.first_row + 1 + options.row, column) orelse continue).asNumber() orelse continue;
         const index = for (ThrustPoly.exps, 0..) |exponent, k| {
             if (exponent[0] == term[0] and exponent[1] == term[1]) break k;
         } else return error.DegreeTooHigh;
@@ -426,9 +431,43 @@ pub fn readPolynomial(sheet: xlsx.Sheet, range_text: []const u8, static_cell: []
         found += 1;
     }
     if (found == 0) return error.NoCoefficients;
-    if (static_cell.len > 0) polynomial.static_thrust = (sheet.byAddress(static_cell) orelse return error.BadCell).asNumber() orelse return error.BadCell;
-    if (rpm_cell.len > 0) polynomial.rpm = (sheet.byAddress(rpm_cell) orelse return error.BadCell).asNumber() orelse return error.BadCell;
+    if (static_cell.len > 0) polynomial.static_thrust = (try rowCell(sheet, range, static_cell, options.row)).asNumber() orelse return error.BadCell;
+    if (rpm_cell.len > 0) polynomial.rpm = (try rowCell(sheet, range, rpm_cell, options.row)).asNumber() orelse return error.BadCell;
     return polynomial;
+}
+
+/// a célula `address`; quando ela está na primeira linha de números do bloco (o título dela fica na fila dos p_ij,
+/// uma hélice por linha), desce junto com a linha escolhida
+fn rowCell(sheet: xlsx.Sheet, range: xlsx.Range, address: []const u8, row: u32) PolynomialError!xlsx.Value {
+    const cell = xlsx.parseRange(std.mem.trim(u8, address, " ")) catch return error.BadCell;
+    const shifted = if (cell.first_row == range.first_row + 1) cell.first_row + row else cell.first_row;
+    return sheet.at(shifted, cell.first_column) orelse error.BadCell;
+}
+
+/// o nome de cada linha do bloco do polinômio (o primeiro texto à esquerda dos coeficientes, "12x7"), ou "linha N"
+pub fn polynomialRows(memory: std.mem.Allocator) ![]const []const u8 {
+    const book = draft.book orelse return &.{};
+    if (draft.sheet >= book.sheets.len) return &.{};
+    return rowNames(memory, book.sheets[draft.sheet], draft.range);
+}
+
+/// o nome de cada linha de números do bloco `range_text`: o primeiro texto à esquerda dele na linha, ou "linha N"
+pub fn rowNames(memory: std.mem.Allocator, sheet: xlsx.Sheet, range_text: []const u8) ![]const []const u8 {
+    const range = xlsx.parseRange(std.mem.trim(u8, range_text, " ")) catch return &.{};
+    var names: std.ArrayList([]const u8) = .empty;
+    var row = range.first_row + 1;
+    while (row <= range.last_row) : (row += 1) {
+        var name: []const u8 = "";
+        var column = range.first_column;
+        while (column > 1 and name.len == 0) {
+            column -= 1;
+            if (sheet.at(row, column)) |value| if (value == .text) {
+                name = std.mem.trim(u8, value.text, " ");
+            };
+        }
+        try names.append(memory, if (name.len > 0) name else try std.fmt.allocPrint(memory, "linha {d}", .{row}));
+    }
+    return names.items;
 }
 
 /// o polinômio marcado na planilha aberta, ou o problema dele (para a tela)
@@ -744,11 +783,11 @@ pub fn setPolynomialCells(static_thrust: []const u8, rpm: []const u8) void {
 }
 
 /// polinômio de tração: a unidade (kgf ou N), qual variável é o x do ajuste e até que velocidade desenhar
-pub const PolynomialOptions = struct { kgf: bool, x_is_rpm: bool, v_max: f64 };
+pub const PolynomialOptions = struct { kgf: bool, x_is_rpm: bool, v_max: f64, row: u32 = 0 };
 
 /// as opções do polinômio de tração
 pub fn polynomialOptions() PolynomialOptions {
-    return .{ .kgf = draft.kgf, .x_is_rpm = draft.x_is_rpm, .v_max = draft.v_max };
+    return .{ .kgf = draft.kgf, .x_is_rpm = draft.x_is_rpm, .v_max = draft.v_max, .row = draft.poly_row };
 }
 
 /// muda as opções do polinômio de tração
@@ -756,6 +795,7 @@ pub fn setPolynomialOptions(options: PolynomialOptions) void {
     draft.kgf = options.kgf;
     draft.x_is_rpm = options.x_is_rpm;
     if (options.v_max > 0) draft.v_max = options.v_max;
+    draft.poly_row = options.row;
 }
 
 /// a coluna do bloco (índice em `Block.headers`) escolhida para o papel, ou null
@@ -821,6 +861,7 @@ fn detectRange() void {
     const keep_memory = text_arena.allocator();
     if (draft.kind == .thrust_polynomial) {
         draft.range = (detectPolynomial(keep_memory, sheet) catch null) orelse "";
+        draft.poly_row = 0;
         draft.static_cell = (findLabeled(keep_memory, sheet, &.{ "to", "t0", "tração est", "tracao est", "t est" }) catch null) orelse "";
         draft.rpm_cell = (findLabeled(keep_memory, sheet, &.{ "rotação", "rotacao", "rpm", "n [" }) catch null) orelse "";
     } else draft.range = (detectBlock(keep_memory, sheet) catch null) orelse "";
@@ -1086,6 +1127,35 @@ test "o polinômio de tração da planilha: T0 e os termos em V na rotação dad
     try writePolynomialCsv(&text.writer, "teste", "Desempenho", polynomial);
     const back = polynomialOf(try readCsv(memory, "Fulcrum", text.written()));
     try testing.expectApproxEqAbs(polynomial.thrust(12), back.thrust(12), 1e-9);
+}
+
+test "uma hélice por linha: o bloco desce pelas linhas e T0 e a rotação vêm da linha escolhida" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    var cells: std.ArrayList(xlsx.Cell) = .empty;
+    // como a aba de polinômios das hélices: nome em A, p00..p01 em B:D, a rotação em E e a T0 em F, uma hélice por linha
+    const titles = [_][]const u8{ "Hélice", "p00", "p10", "p01", "Rotação", "To Corrigida" };
+    for (titles, 1..) |title, column| try cells.append(memory, .{ .row = 2, .column = @intCast(column), .value = .{ .text = title } });
+    const rows = [_]struct { []const u8, [5]f64 }{ .{ "12x7", .{ 0, 0, -0.1, 11160, 3.1 } }, .{ "12x8", .{ 0, 0, -0.2, 10440, 3.2 } } };
+    for (rows, 3..) |item, row| {
+        try cells.append(memory, .{ .row = @intCast(row), .column = 1, .value = .{ .text = item[0] } });
+        for (item[1], 2..) |value, column| try cells.append(memory, .{ .row = @intCast(row), .column = @intCast(column), .value = .{ .number = value } });
+    }
+    const sheet: xlsx.Sheet = .{ .name = "Thrust_polynomial_method", .cells = cells.items };
+    const range = (try detectPolynomial(memory, sheet)).?;
+    try testing.expectEqualStrings("B2:D4", range);
+    const names = try rowNames(memory, sheet, range);
+    try testing.expectEqual(@as(usize, 2), names.len);
+    try testing.expectEqualStrings("12x8", names[1]);
+    const static_cell = (try findLabeled(memory, sheet, &.{ "to", "t0" })).?;
+    const rpm_cell = (try findLabeled(memory, sheet, &.{"rotação"})).?;
+    // a segunda hélice: T0 = 3,2 kgf, rotação 10440 e p01 = −0,2 (em V)
+    const second = try readPolynomial(sheet, range, static_cell, rpm_cell, .{ .kgf = true, .x_is_rpm = true, .v_max = 30, .row = 1 });
+    try testing.expectApproxEqAbs(@as(f64, 10440), second.rpm, 1e-12);
+    try testing.expectApproxEqAbs((3.2 - 0.2 * 10) * standard_gravity, second.thrust(10), 1e-9);
+    const first = try readPolynomial(sheet, range, static_cell, rpm_cell, .{ .kgf = true, .x_is_rpm = true, .v_max = 30 });
+    try testing.expectApproxEqAbs(@as(f64, 3.1) * standard_gravity, first.thrust(0), 1e-9);
 }
 
 test "o polinômio vai para os motores do avião e dá a mesma tração pelo polinômio do núcleo" {

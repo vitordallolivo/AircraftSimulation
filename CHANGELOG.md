@@ -10,6 +10,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   marca o bloco (ou ele é achado sozinho); a janela sugere qual coluna é α, C_L, C_D e C_m (ou y e c_l, ou x e y, ou
   os dados de motor), com os tipos que fazem sentido naquela área, mostra o gráfico do bloco e guarda com o nome que
   você escolher. Uma lista de motores vai direto para Biblioteca → Motores.
+- Antes, a janela Planilha… só rolava para cima e para baixo, e a aba de polinômios de tração com uma hélice por linha
+  usava sempre a primeira. Agora há barras de rolagem embaixo e à direita, as setas do teclado andam pela aba (Ctrl
+  vai até a ponta, PgUp/PgDn de tela em tela, Home volta ao A1), marcar arrastando além da borda leva a grade junto, e
+  dá para escolher a hélice da linha: T0 e a rotação vêm da mesma linha.
 - Antes, o avião montado pelas etapas saía com a hélice vazia quando a etapa Motores e montagem ainda não tinha sido
   aberta, e a tração dava zero em todas as velocidades (o motor girava solto). Agora o motor, a hélice e a bateria
   que a etapa mostra como padrão entram no avião desde o começo.

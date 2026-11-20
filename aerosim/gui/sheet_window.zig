@@ -27,7 +27,11 @@ const gridline = rl.Color{ .r = 218, .g = 220, .b = 224, .a = 255 };
 const max_visible = 256;
 
 /// uma célula da aba (linha e coluna de 1)
-const Place = struct { row: u32 = 1, column: u32 = 1 };
+pub const Place = struct { row: u32 = 1, column: u32 = 1 };
+
+/// as barras de rolagem da grade
+const Bar = enum { none, horizontal, vertical };
+const bar_thickness = 12;
 
 pub const SheetWindow = struct {
     open: bool = false,
@@ -38,6 +42,10 @@ pub const SheetWindow = struct {
     first_column: u32 = 1,
     zoom: f32 = 1,
     dragging: bool = false,
+    /// a barra de rolagem que o mouse está arrastando
+    bar_drag: Bar = .none,
+    /// rolagem pedida de fora (prints): vale depois que a grade anda até o bloco
+    pending_scroll: ?Place = null,
     /// "Usar no motor do avião": a tela liga o polinômio marcado ao avião aberto
     wants_aircraft: bool = false,
     /// o bloco que a grade já mostrou (outro bloco: a grade anda até ele)
@@ -55,6 +63,8 @@ pub const SheetWindow = struct {
     form: form_mod.Form = .{ .groups = &.{}, .fields = &.{} },
     labels: [12][64:0]u8 = undefined,
     header_choices: [4096:0]u8 = [_:0]u8{0} ** 4096,
+    row_choices: [2048:0]u8 = [_:0]u8{0} ** 2048, // as hélices do polinômio, uma por linha do bloco
+    row_count: usize = 0,
     /// o tipo, a aba e o bloco para os quais o formulário foi montado
     built_kind: ?sheets.Kind = null,
     built_sheet: usize = 0,
@@ -237,6 +247,9 @@ pub const SheetWindow = struct {
     fn drawGrid(window: *SheetWindow, ui: *widgets.Ui, memory: std.mem.Allocator, rect: rl.Rectangle, sheet: xlsx.Sheet) void {
         const last_row = @max(sheet.lastStyledRow(), 1);
         const last_column = @max(sheet.lastColumn(), 1);
+        // até onde se pode rolar: o conteúdo da aba e uma folga, para ver tudo o que ela tem
+        const row_limit = last_row + 20;
+        const column_limit = last_column + 10;
         // rolagem: a roda desce as linhas; com Shift, anda pelas colunas; com Ctrl, aproxima
         if (ui.hovering(rect) and !ui.click_taken) {
             const sideways = rl.getMouseWheelMoveV().x;
@@ -244,12 +257,43 @@ pub const SheetWindow = struct {
                 if (ui.wheel != 0) window.zoom = std.math.clamp(window.zoom * (if (ui.wheel > 0) @as(f32, 1.1) else @as(f32, 1.0 / 1.1)), 0.4, 2.5);
             } else if (rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift) or sideways != 0) {
                 const step = if (sideways != 0) -sideways else ui.wheel;
-                window.first_column = scrolled(window.first_column, -step * 2, last_column);
-            } else if (ui.wheel != 0) window.first_row = scrolled(window.first_row, -ui.wheel * 3, last_row);
+                window.first_column = scrolled(window.first_column, -step * 2, column_limit);
+            } else if (ui.wheel != 0) window.first_row = scrolled(window.first_row, -ui.wheel * 3, row_limit);
+        }
+        // as setas do teclado andam pela aba (com Ctrl, vão até a ponta); PgUp e PgDn, de tela em tela
+        if (window.form.editing == null and !window.picker.open) {
+            const jump = rl.isKeyDown(.left_control) or rl.isKeyDown(.right_control);
+            if (pressedOrHeld(.right)) window.first_column = if (jump) column_limit else scrolled(window.first_column, 1, column_limit);
+            if (pressedOrHeld(.left)) window.first_column = if (jump) 1 else scrolled(window.first_column, -1, column_limit);
+            if (pressedOrHeld(.down)) window.first_row = if (jump) row_limit else scrolled(window.first_row, 1, row_limit);
+            if (pressedOrHeld(.up)) window.first_row = if (jump) 1 else scrolled(window.first_row, -1, row_limit);
+            if (pressedOrHeld(.page_down)) window.first_row = scrolled(window.first_row, 25, row_limit);
+            if (pressedOrHeld(.page_up)) window.first_row = scrolled(window.first_row, -25, row_limit);
+            if (rl.isKeyPressed(.home)) {
+                window.first_row = 1;
+                window.first_column = 1;
+            }
+        }
+        // as barras de rolagem, embaixo e à direita: arrastar leva a grade para aquele ponto da aba
+        const vertical_bar: rl.Rectangle = .{ .x = rect.x + rect.width - bar_thickness, .y = rect.y + column_header_height, .width = bar_thickness, .height = rect.height - column_header_height - bar_thickness };
+        const horizontal_bar: rl.Rectangle = .{ .x = rect.x + row_header_width, .y = rect.y + rect.height - bar_thickness, .width = rect.width - row_header_width - bar_thickness, .height = bar_thickness };
+        if (!ui.click_taken and ui.pressed) {
+            if (ui.hovering(vertical_bar)) window.bar_drag = .vertical;
+            if (ui.hovering(horizontal_bar)) window.bar_drag = .horizontal;
+            if (window.bar_drag != .none) ui.click_taken = true;
+        }
+        if (window.bar_drag != .none) {
+            if (!rl.isMouseButtonDown(.left)) window.bar_drag = .none;
+            ui.click_taken = true;
+        }
+        switch (window.bar_drag) {
+            .vertical => window.first_row = barPlace(ui.mouse.y, vertical_bar.y, vertical_bar.height, row_limit),
+            .horizontal => window.first_column = barPlace(ui.mouse.x, horizontal_bar.x, horizontal_bar.width, column_limit),
+            .none => {},
         }
 
         rl.drawRectangleRec(rect, theme.colors.panel);
-        const cells: rl.Rectangle = .{ .x = rect.x + row_header_width, .y = rect.y + column_header_height, .width = rect.width - row_header_width, .height = rect.height - column_header_height };
+        const cells: rl.Rectangle = .{ .x = rect.x + row_header_width, .y = rect.y + column_header_height, .width = rect.width - row_header_width - bar_thickness, .height = rect.height - column_header_height - bar_thickness };
         rl.drawRectangleRec(cells, paper);
 
         // as colunas e linhas à vista
@@ -282,6 +326,11 @@ pub const SheetWindow = struct {
                 if (range.first_row < window.first_row or range.first_row > last_visible_row) window.first_row = @max(range.first_row, 3) - 2;
             }
         }
+        if (window.pending_scroll) |place| if (marked != null or window.seen_range_len > 0) {
+            window.first_row = place.row;
+            window.first_column = place.column;
+            window.pending_scroll = null;
+        };
         ui.pushClip(cells);
         // a grade fina, por baixo das cores
         for (column_x[0 .. column_count + 1]) |line_x| rl.drawLineV(.{ .x = line_x, .y = cells.y }, .{ .x = line_x, .y = @min(y, cells.y + cells.height) }, gridline);
@@ -353,6 +402,11 @@ pub const SheetWindow = struct {
             window.current = place;
         };
         if (window.dragging) {
+            // marcando além da borda: a grade anda junto
+            if (ui.mouse.x > cells.x + cells.width) window.first_column = scrolled(window.first_column, 1, column_limit);
+            if (ui.mouse.x < cells.x and window.first_column > 1) window.first_column -= 1;
+            if (ui.mouse.y > cells.y + cells.height) window.first_row = scrolled(window.first_row, 1, row_limit);
+            if (ui.mouse.y < cells.y and window.first_row > 1) window.first_row -= 1;
             if (placeAt(ui.mouse, window.first_row, window.first_column, column_x[0 .. column_count + 1], row_y[0 .. row_count + 1])) |place| window.current = place;
             if (!rl.isMouseButtonDown(.left)) {
                 window.dragging = false;
@@ -367,6 +421,8 @@ pub const SheetWindow = struct {
                 if (text) |range| sheets.setRange(range) else |_| {}
             }
         }
+        drawBar(vertical_bar, window.first_row, row_limit, false, window.bar_drag == .vertical);
+        drawBar(horizontal_bar, window.first_column, column_limit, true, window.bar_drag == .horizontal);
         rl.drawRectangleLinesEx(rect, 1, theme.colors.line);
     }
 
@@ -481,6 +537,18 @@ pub const SheetWindow = struct {
         if (sheets.markedKind() == .thrust_polynomial) {
             const cells = sheets.polynomialCells();
             const options = sheets.polynomialOptions();
+            // a hélice: uma por linha do bloco (a aba de polinômios das hélices); com uma linha só, nada a escolher
+            var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            defer arena.deinit();
+            const rows = sheets.polynomialRows(arena.allocator()) catch &.{};
+            window.row_count = rows.len;
+            if (rows.len > 1) {
+                var rows_writer = std.Io.Writer.fixed(window.row_choices[0 .. window.row_choices.len - 1]);
+                for (rows, 0..) |name, k| rows_writer.print("{s}{s}", .{ if (k > 0) ";" else "", name }) catch break;
+                window.row_choices[rows_writer.end] = 0;
+                window.fields[count] = .{ .label = "hélice (linha)", .group = 1, .kind = .choice, .choices = window.row_choices[0..rows_writer.end :0], .choice = @intCast(@min(options.row, rows.len - 1)), .help = "uma hélice por linha: T0 e a rotação vêm da mesma linha" };
+                count += 1;
+            }
             window.fields[count] = .{ .label = "tração estática T0 (célula)", .group = 1, .kind = .text, .help = "a célula com a tração estática corrigida (V = 0), que entra como termo constante; Enter confirma" };
             window.fields[count].setText(cells.static_thrust);
             window.fields[count + 1] = .{ .label = "rotação (célula)", .group = 1, .kind = .text, .help = "a célula com a rotação do motor (rpm) em que o polinômio é avaliado; Enter confirma" };
@@ -518,9 +586,26 @@ pub const SheetWindow = struct {
             sheets.setColumn(r, if (choice > 0) @as(usize, @intCast(choice - 1)) else null);
             index += 1;
         }
+        var row = sheets.polynomialOptions().row;
+        if (sheets.markedKind() == .thrust_polynomial and window.row_count > 1 and index < fields.len) {
+            const chosen: u32 = @intCast(@max(fields[index].choice, 0));
+            if (chosen != row) {
+                row = chosen;
+                // o nome da combinação segue a hélice escolhida
+                var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+                defer arena.deinit();
+                const rows = sheets.polynomialRows(arena.allocator()) catch &.{};
+                if (row < rows.len) sheets.setName(rows[row]);
+                var options = sheets.polynomialOptions();
+                options.row = row;
+                sheets.setPolynomialOptions(options);
+                return;
+            }
+            index += 1;
+        }
         if (sheets.markedKind() == .thrust_polynomial and index + 4 < fields.len) {
             sheets.setPolynomialCells(std.mem.trim(u8, fields[index].textValue(), " "), std.mem.trim(u8, fields[index + 1].textValue(), " "));
-            sheets.setPolynomialOptions(.{ .kgf = fields[index + 2].choice == 0, .x_is_rpm = fields[index + 3].choice == 0, .v_max = fields[index + 4].number });
+            sheets.setPolynomialOptions(.{ .kgf = fields[index + 2].choice == 0, .x_is_rpm = fields[index + 3].choice == 0, .v_max = fields[index + 4].number, .row = row });
             index += 5;
         }
         if (sheets.markedKind() == .motors) {
@@ -653,6 +738,32 @@ fn placeAt(mouse: rl.Vector2, first_row: u32, first_column: u32, column_x: []con
         row = first_row + @as(u32, @intCast(j));
     };
     return .{ .row = row orelse return null, .column = column orelse return null };
+}
+
+/// a tecla acabou de descer ou segue apertada (repete como num editor)
+fn pressedOrHeld(key: rl.KeyboardKey) bool {
+    return rl.isKeyPressed(key) or rl.isKeyPressedRepeat(key);
+}
+
+/// a linha (ou coluna) que fica no topo quando o mouse está em `mouse` sobre a barra
+fn barPlace(mouse: f32, start: f32, length: f32, limit: u32) u32 {
+    const fraction = std.math.clamp((mouse - start) / @max(length, 1), 0, 1);
+    return 1 + @as(u32, @intFromFloat(fraction * @as(f32, @floatFromInt(limit -| 1))));
+}
+
+/// a barra de rolagem: o trilho e o marcador na posição da primeira linha (ou coluna) à vista
+fn drawBar(bar: rl.Rectangle, first: u32, limit: u32, horizontal: bool, active: bool) void {
+    rl.drawRectangleRec(bar, theme.colors.panel);
+    const span: f32 = @floatFromInt(@max(limit, 2) - 1);
+    const fraction = @as(f32, @floatFromInt(first - 1)) / span;
+    const length = if (horizontal) bar.width else bar.height;
+    const thumb = @max(length * 0.08, 24);
+    const offset = fraction * (length - thumb);
+    const box: rl.Rectangle = if (horizontal)
+        .{ .x = bar.x + offset, .y = bar.y + 2, .width = thumb, .height = bar.height - 4 }
+    else
+        .{ .x = bar.x + 2, .y = bar.y + offset, .width = bar.width - 4, .height = thumb };
+    rl.drawRectangleRounded(box, 0.5, 4, if (active) theme.colors.accent else theme.colors.muted);
 }
 
 /// a primeira linha (ou coluna) depois de rolar `delta`, entre 1 e o fim da aba (com uma folga)

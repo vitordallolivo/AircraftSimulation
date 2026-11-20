@@ -166,6 +166,10 @@ pub const Screen = struct {
             screen.usePolynomial();
         } else if (std.mem.startsWith(u8, name, "tipo:")) { // a aba do tipo do bloco, pelo nome interno (prints)
             if (std.meta.stringToEnum(design.sheets.Kind, name["tipo:".len..])) |kind| design.sheets.setKind(kind);
+        } else if (std.mem.startsWith(u8, name, "rolar:")) { // a primeira linha e coluna à vista na planilha: rolar:linha.coluna (prints)
+            var parts = std.mem.splitScalar(u8, name["rolar:".len..], '.');
+            const row = std.fmt.parseInt(u32, parts.next() orelse "1", 10) catch 1;
+            screen.sheet_window.pending_scroll = .{ .row = row, .column = std.fmt.parseInt(u32, parts.next() orelse "1", 10) catch 1 };
         } else if (std.mem.startsWith(u8, name, "folha:")) { // a aba da planilha, de 0 (prints)
             design.sheets.selectSheet(std.fmt.parseInt(usize, name["folha:".len..], 10) catch 0);
         } else if (std.mem.eql(u8, name, "condicoes")) {
