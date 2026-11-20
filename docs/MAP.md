@@ -360,8 +360,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Value:24`, `Cell:40`, `Alignment:47`, `Borders:50`, `Style:58`, `Styled:73`, `Range:80`, `ColumnWidth:93`, `RowHeight:100`, `Sheet:106`, `Workbook:190`
   fn `parseAddress:237`, `parseRange:488`, `pixels:502`, `applyTint:575`
 - `core/src/util/xlsx_writer.zig` — Gravador de planilhas `.xlsx` sem dependência de fora, o par do `xlsx.zig`: monta as partes do Office Open XML
-  tipos `Style:18`, `ChartSeries:51`, `Chart:60`, `Sheet:72`
-  fn `address:115`, `sheetName:131`, `write:146`
+  tipos `Style:18`, `ChartSeries:63`, `Chart:72`, `Sheet:84`
+  fn `address:127`, `sheetName:143`, `write:158`
 - `core/src/util/zip.zig` — O zip (APPNOTE da PKWARE) sem dependência de fora: ler o índice e as partes (guardadas ou com deflate) e gravar um
   tipos `Archive:15`, `Writer:86`
 - `core/src/util/zon_json.zig` — A ponte entre os dados em JSON (a árvore `std.json.Value`, como a Montagem e as etapas guardam o avião) e o texto

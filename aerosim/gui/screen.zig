@@ -193,9 +193,11 @@ pub const Screen = struct {
         window.say("o polinômio vai para {d} motor{s} de {s} (modelo de tração: polinômio). Salve o avião para guardar", .{ count, if (count == 1) "" else "es", opened.loaded.ac.name });
     }
 
-    /// "Exportar…" do Desempenho: simula, monta a planilha no formato da equipe e mostra a prévia (a mesma do
-    /// "Exportar" dos gráficos); é nela que se escolhe onde gravar
+    /// "Exportar…" da área aberta: simula, monta a planilha no formato da equipe (Desempenho, Aerodinâmica) e mostra
+    /// a prévia (a mesma do "Exportar" dos gráficos); é nela que se escolhe onde gravar
     fn previewSheets(screen: *Screen) void {
+        const area = if (screen.areas.len > 0) screen.areas[screen.area].title else "Desempenho";
+        if (std.mem.eql(u8, area, "Aerodinâmica")) return screen.previewAerodynamics();
         var note: [512]u8 = undefined;
         const opened = &(screen.assembly orelse return ui_kit.toast.show("abra um avião antes de exportar"));
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -207,6 +209,20 @@ pub const Screen = struct {
         var name_buffer: [256]u8 = undefined;
         const file_name = std.fmt.bufPrint(&name_buffer, "{s}_desempenho.xlsx", .{std.fs.path.stem(opened.path)}) catch "desempenho.xlsx";
         sheet_window.previewWorkbook("Desempenho", file_name, bytes);
+    }
+
+    /// a planilha de aerodinâmica (um bloco por asa) na prévia
+    fn previewAerodynamics(screen: *Screen) void {
+        var note: [512]u8 = undefined;
+        const opened = &(screen.assembly orelse return ui_kit.toast.show("abra um avião antes de exportar"));
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const bytes = manager.aero_sheet.workbook(arena.allocator(), &opened.loaded.ac) catch |err| {
+            return ui_kit.toast.show(std.fmt.bufPrint(&note, "não exportou: {s}", .{@errorName(err)}) catch "não exportou");
+        };
+        var name_buffer: [256]u8 = undefined;
+        const file_name = std.fmt.bufPrint(&name_buffer, "{s}_aerodinamica.xlsx", .{std.fs.path.stem(opened.path)}) catch "aerodinamica.xlsx";
+        sheet_window.previewWorkbook("Aerodinâmica", file_name, bytes);
     }
 
     /// a janela "Planilha…" para a área aberta
@@ -987,8 +1003,8 @@ pub const Screen = struct {
                 const row_y = widgets.header_height + (if (single) @as(f32, 0) else 38);
                 const row_height: f32 = if (single) 38 else 32;
                 if (ui_kit.dialogs.button(ui, .{ .x = width - 128, .y = row_y + 4, .width = 116, .height = row_height - 8 }, "Planilha…")) screen.openSheetWindow();
-                // "Exportar…" (no Desempenho): simula e gera a planilha de desempenho
-                if (std.mem.eql(u8, screen.areas[screen.area].title, "Desempenho") and ui_kit.dialogs.button(ui, .{ .x = width - 252, .y = row_y + 4, .width = 116, .height = row_height - 8 }, "Exportar…")) screen.command("exportar");
+                // "Exportar…" (nas áreas que têm planilha da equipe): simula e gera a planilha daquela área
+                if (exportable(screen.areas[screen.area].title) and ui_kit.dialogs.button(ui, .{ .x = width - 252, .y = row_y + 4, .width = 116, .height = row_height - 8 }, "Exportar…")) screen.command("exportar");
             }
         }
         if (modal) {
@@ -1783,3 +1799,9 @@ const AssemblyPanel = struct {
         area.end(ui, rect, y + 10);
     }
 };
+
+/// a área tem planilha da equipe para exportar (o botão "Exportar…" aparece nela)
+fn exportable(area: []const u8) bool {
+    for ([_][]const u8{ "Desempenho", "Aerodinâmica" }) |name| if (std.mem.eql(u8, area, name)) return true;
+    return false;
+}

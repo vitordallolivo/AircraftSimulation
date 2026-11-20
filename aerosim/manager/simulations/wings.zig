@@ -167,6 +167,7 @@ const MethodRun = struct {
     load_cl: []f64,
     load_chord: []f64,
     residual: []f64, // o maior resíduo relativo da linha sustentadora em cada α (0 nas faixas)
+    section_cl: []f64 = &.{}, // o c_l de cada painel em cada α (α × painel, na ordem de `load_span`)
 };
 
 const RunState = struct {
@@ -537,7 +538,79 @@ fn sweepMethod(run: *simulation.Run, state: *RunState, plane: simulation.Aircraf
         run.fail("o resumo da varredura não saiu", .{});
         return error.Failed;
     };
-    return .{ .total_cl = total_cl, .owner_cl = owner_cl, .summary = summary, .panel_owner = panel_owner.items, .load_owner = panel_owner.items, .load_span = panel_span.items, .load_cl = load_cl.items, .load_chord = load_chord.items, .residual = residual };
+    return .{ .total_cl = total_cl, .owner_cl = owner_cl, .summary = summary, .panel_owner = panel_owner.items, .load_owner = panel_owner.items, .load_span = panel_span.items, .load_cl = load_cl.items, .load_chord = load_chord.items, .residual = residual, .section_cl = all_cl };
+}
+
+/// uma asa sozinha, varrida para a planilha da Aerodinâmica: a carga pela linha sustentadora não linear (C_L com o
+/// estol e o c_l de cada faixa do lado direito, da raiz para a ponta) e a polar das faixas (C_Di, C_m e C_D)
+pub const SurfaceSheet = struct {
+    alphas: []const f64,
+    lift: []const f64,
+    section_cl: []const f64, // α × estação
+    stations: []const f64, // y de cada estação (m)
+    induced: []const f64,
+    moment: []const f64,
+    drag: []const f64,
+    metrics: aerodynamics.Metrics,
+    geometry: aerodynamics.Reference,
+    airspeed: f64,
+    density: f64,
+    density_altitude: f64,
+};
+
+/// a superfície `index` do avião de `run` sozinha (sem fuselagem, hélice nem as outras superfícies), em `alphas` (°)
+pub fn surfaceSheet(run: *simulation.Run, index: usize, airspeed: f64, alphas: []const f64) !SurfaceSheet {
+    const memory = run.memory();
+    var plane = try wingsOnly(memory, run.aircraft, .{});
+    var alone = plane.surfaces[index];
+    alone.enabled = true;
+    plane.surfaces = try memory.dupe(model.Surface, &.{alone});
+    var state: RunState = .{
+        .alphas = try memory.dupe(f64, alphas),
+        .airspeed = airspeed,
+        .density = plane.environment.rho,
+        .density_altitude = plane.environment.densityAltitude(),
+        .alpha_load = alphas[0],
+        .owners = try memory.dupe([]const u8, &.{alone.name}),
+        .owner_area = try memory.alloc(f64, 1),
+        .owner_chord = try memory.alloc(f64, 1),
+    };
+    const owner_of_surface = try memory.dupe(i32, &.{0});
+    const load = try sweepMethod(run, &state, plane, owner_of_surface, .llt_nl);
+    // as estações do lado direito, da raiz para a ponta
+    var order: std.ArrayList(usize) = .empty;
+    for (load.load_span, 0..) |y, k| if (y >= 0) try order.append(memory, k);
+    std.mem.sort(usize, order.items, load.load_span, struct {
+        fn less(span: []const f64, a: usize, b: usize) bool {
+            return span[a] < span[b];
+        }
+    }.less);
+    const panel_total = load.load_span.len;
+    const stations = try memory.alloc(f64, order.items.len);
+    for (stations, order.items) |*y, k| y.* = load.load_span[k];
+    const section_cl = try memory.alloc(f64, alphas.len * order.items.len);
+    for (0..alphas.len) |a| for (order.items, 0..) |k, j| {
+        section_cl[a * order.items.len + j] = load.section_cl[a * panel_total + k];
+    };
+    // a polar das faixas, com os momentos em 1/4 da CMA
+    const geometry = aerodynamics.reference(&plane);
+    const reference_x = geometry.mac_le - 0.25 * geometry.chord;
+    var polar = try aerodynamics.solve(run, plane, .zig, .{ .airspeed = airspeed, .alphas = state.alphas, .alpha_derivatives = 0, .reference = .{ reference_x, 0, 0 } });
+    polar.lift = load.total_cl; // o C_L com o estol, da linha sustentadora não linear
+    return .{
+        .alphas = state.alphas,
+        .lift = load.total_cl,
+        .section_cl = section_cl,
+        .stations = stations,
+        .induced = polar.induced,
+        .moment = polar.moment,
+        .drag = polar.drag,
+        .metrics = try aerodynamics.metrics(memory, polar, geometry, reference_x),
+        .geometry = geometry,
+        .airspeed = airspeed,
+        .density = state.density,
+        .density_altitude = state.density_altitude,
+    };
 }
 
 /// a varredura do VLM do núcleo (malha de vórtices, `core.vlm`): a malha é fatorada uma vez e cada α é só uma

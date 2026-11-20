@@ -4,7 +4,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## v0.3.2 (na `0.3_dev`, em andamento)
 
-- Ainda sem mudanças.
+- Antes, só o Desempenho tinha "Exportar…". Agora a Aerodinâmica também tem: ela simula cada asa sozinha e gera a
+  planilha no formato da planilha de aerodinâmica da equipe, com a mesma prévia antes de gravar. Cada asa vira um
+  bloco com os parâmetros (ambiente, partições, cordas, perfis, área, alongamento, CMA, C_Lmax, C_Lα, C_L0, α de
+  estol, C_mac e Oswald), a sustentação em α = 0 e no estol, os coeficientes em cada α com o estol marcado, a
+  distribuição de sustentação da raiz para a ponta e os gráficos de sustentação e da polar.
 
 ## v0.3.1 (na `0.3_dev`, fechada em 2026-11-20)
 
