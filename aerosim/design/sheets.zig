@@ -1,5 +1,6 @@
-//! Biblioteca → Planilhas: trazer dados de uma planilha `.xlsx` qualquer (as das equipes) sem mapa de células. O
-//! usuário abre a planilha, vê as abas e as células, marca um bloco (o canto de cima, ou o intervalo inteiro: a
+//! Planilha…: trazer dados de uma planilha `.xlsx` qualquer (as das equipes) sem mapa de células. Cada área tem o
+//! botão que abre a janela da planilha (`gui/sheet_window.zig`), que mostra a aba como o Excel e chama as funções
+//! daqui. O usuário abre a planilha, vê as abas e as células, marca um bloco (o canto de cima, ou o intervalo inteiro: a
 //! primeira linha do bloco são os títulos das colunas), diz o que o bloco é e qual coluna é qual (o programa sugere
 //! pelos títulos) e guarda com o nome que quiser. Cada combinação guardada vira um `.csv` na pasta da biblioteca
 //! (`<pasta dos projetos>/biblioteca/planilhas`), que vale para todos os projetos; os motores vão direto para a
@@ -11,12 +12,11 @@
 //!     motores          nome, Kv, R, I máx., massa    uma linha por motor
 const std = @import("std");
 const core = @import("aerosim");
-const simulation = @import("simulation");
 const catalog = @import("catalog");
 const stages = @import("stages.zig");
 const library = @import("stage_library.zig");
 
-const xlsx = core.xlsx;
+pub const xlsx = core.xlsx;
 
 /// o que um bloco pode ser
 pub const Kind = enum {
@@ -90,11 +90,13 @@ const Draft = struct {
     /// motores: o que vale quando a planilha não tem a coluna
     default_imax: f64 = 40,
     default_mass: f64 = 0.2,
+    /// a área que abriu a janela
+    area_buffer: [48]u8 = undefined,
+    area_len: usize = 0,
 };
 var draft: Draft = .{};
 /// a memória dos textos do rascunho (nome, intervalo), trocada a cada pedido
 var text_arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
-var selected_kept: usize = 0;
 
 /// a pasta das combinações guardadas
 pub fn folder(memory: std.mem.Allocator) ![]const u8 {
@@ -257,13 +259,16 @@ pub const Saved = struct {
     name: []const u8,
     kind: Kind,
     source: []const u8,
+    /// a área em que foi guardada ("" nas antigas)
+    area: []const u8 = "",
     headers: []const []const u8,
     columns: []const []const f64,
 };
 
 /// a combinação em .csv: `# tipo:`, `# fonte:`, os títulos (as chaves dos papéis) e uma linha por ponto
-pub fn writeCsv(out: *std.Io.Writer, kind: Kind, source: []const u8, block: Block, columns: [8]?usize) !void {
+pub fn writeCsv(out: *std.Io.Writer, kind: Kind, source: []const u8, area: []const u8, block: Block, columns: [8]?usize) !void {
     try out.print("# tipo: {s}\n# fonte: {s}\n", .{ @tagName(kind), source });
+    if (area.len > 0) try out.print("# área: {s}\n", .{area});
     var first = true;
     for (kind.roles(), 0..) |role, r| if (columns[r] != null) {
         if (!first) try out.writeByte(',');
@@ -293,6 +298,7 @@ pub fn writeCsv(out: *std.Io.Writer, kind: Kind, source: []const u8, block: Bloc
 pub fn readCsv(memory: std.mem.Allocator, name: []const u8, text: []const u8) !Saved {
     var kind: Kind = .curve;
     var source: []const u8 = "";
+    var area: []const u8 = "";
     var headers: []const []const u8 = &.{};
     var columns: std.ArrayList(std.ArrayList(f64)) = .empty;
     var lines = std.mem.tokenizeScalar(u8, text, '\n');
@@ -303,6 +309,7 @@ pub fn readCsv(memory: std.mem.Allocator, name: []const u8, text: []const u8) !S
             const body = std.mem.trim(u8, line[1..], " ");
             if (std.mem.startsWith(u8, body, "tipo:")) kind = std.meta.stringToEnum(Kind, std.mem.trim(u8, body[5..], " ")) orelse .curve;
             if (std.mem.startsWith(u8, body, "fonte:")) source = try memory.dupe(u8, std.mem.trim(u8, body[6..], " "));
+            if (std.mem.startsWith(u8, body, "área:")) area = try memory.dupe(u8, std.mem.trim(u8, body["área:".len..], " "));
             continue;
         }
         var cells = std.mem.splitScalar(u8, line, ',');
@@ -323,7 +330,7 @@ pub fn readCsv(memory: std.mem.Allocator, name: []const u8, text: []const u8) !S
     }
     const out = try memory.alloc([]const f64, columns.items.len);
     for (columns.items, out) |list, *column| column.* = list.items;
-    return .{ .name = name, .kind = kind, .source = source, .headers = headers, .columns = out };
+    return .{ .name = name, .kind = kind, .source = source, .area = area, .headers = headers, .columns = out };
 }
 
 /// as combinações guardadas, em ordem de nome
@@ -345,16 +352,42 @@ fn savedFiles(memory: std.mem.Allocator, io: std.Io) ![]const []const u8 {
     return out.items;
 }
 
-// ------------------------------------------------------------------ os pedidos
+// ------------------------------------------------------------------ a planilha aberta
 
-fn open(io: std.Io, path: []const u8) ![]const u8 {
+/// os tipos de bloco que cada área usa (o primeiro é o padrão); as outras áreas usam todos
+pub fn kindsFor(area: []const u8) []const Kind {
+    const table = [_]struct { []const u8, []const Kind }{
+        .{ "Aerodinâmica", &.{ .polar, .distribution, .curve } },
+        .{ "Estabilidade", &.{ .polar, .curve } },
+        .{ "Desempenho", &.{ .curve, .motors } },
+        .{ "Dimensionamento inicial", &.{.curve} },
+        .{ "Cargas", &.{ .distribution, .curve } },
+    };
+    for (table) |entry| if (std.mem.eql(u8, entry[0], area)) return entry[1];
+    return &kinds;
+}
+
+/// a área que abriu a janela: o tipo passa a ser um dos dela (e vai no `# área:` do .csv)
+pub fn setArea(area: []const u8) void {
+    const length = @min(area.len, draft.area_buffer.len);
+    @memcpy(draft.area_buffer[0..length], area[0..length]);
+    draft.area_len = length;
+    const allowed = kindsFor(area);
+    if (std.mem.indexOfScalar(Kind, allowed, draft.kind) == null) setKind(allowed[0]);
+}
+
+/// abre a planilha do arquivo; devolve "" ou o problema, para a tela
+pub fn open(io: std.Io, path: []const u8) ![]const u8 {
+    const area = draft.area_buffer;
+    const area_len = draft.area_len;
+    const kind_before = draft.kind;
     if (draft.arena) |old| {
         old.deinit();
         std.heap.page_allocator.destroy(old);
     }
     const arena = try std.heap.page_allocator.create(std.heap.ArenaAllocator);
     arena.* = .init(std.heap.page_allocator);
-    draft = .{ .arena = arena };
+    draft = .{ .arena = arena, .area_buffer = area, .area_len = area_len, .kind = kind_before };
     const memory = arena.allocator();
     const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, memory, .limited(64 << 20)) catch return "não deu para ler a planilha";
     draft.book = xlsx.Workbook.parse(memory, bytes) catch return "o arquivo não abriu como planilha .xlsx";
@@ -363,140 +396,157 @@ fn open(io: std.Io, path: []const u8) ![]const u8 {
     return "";
 }
 
-/// marca o primeiro bloco da aba escolhida (o usuário muda se não for esse) e sugere as colunas
-fn detectRange() void {
+/// a planilha aberta, ou null
+pub fn workbook() ?xlsx.Workbook {
+    return draft.book;
+}
+
+/// o caminho da planilha aberta ("" sem planilha)
+pub fn openedPath() []const u8 {
+    return draft.path;
+}
+
+/// a aba mostrada (o índice em `workbook().sheets`)
+pub fn sheetIndex() usize {
+    return draft.sheet;
+}
+
+/// troca a aba e marca o primeiro bloco dela
+pub fn selectSheet(index: usize) void {
     const book = draft.book orelse return;
-    if (draft.sheet >= book.sheets.len) return;
-    const keep = text_arena.allocator();
-    draft.range = (detectBlock(keep, book.sheets[draft.sheet]) catch null) orelse "";
-    var scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer scratch.deinit();
-    if (currentBlock(scratch.allocator())) |block| draft.columns = suggest(draft.kind, block.headers);
+    if (index >= book.sheets.len or index == draft.sheet) return;
+    draft.sheet = index;
+    detectRange();
 }
 
-fn choiceIndex(choices: []const []const u8, text: []const u8) ?usize {
-    for (choices, 0..) |choice, k| if (std.mem.eql(u8, choice, text)) return k;
-    return null;
+/// o bloco marcado ("B6" ou "B6:R40"; "" sem bloco)
+pub fn markedRange() []const u8 {
+    return draft.range;
 }
 
-fn textOf(values: *const std.json.ObjectMap, key: []const u8) ?[]const u8 {
-    const value = values.get(key) orelse return null;
-    return if (value == .string) value.string else null;
+/// marca o bloco e sugere as colunas pelos títulos dele
+pub fn setRange(text: []const u8) void {
+    if (std.mem.eql(u8, text, draft.range)) return;
+    draft.range = text_arena.allocator().dupe(u8, text) catch return;
+    suggestColumns();
 }
 
-fn numberOf(values: *const std.json.ObjectMap, key: []const u8, current: f64) f64 {
-    const value = values.get(key) orelse return current;
-    return switch (value) {
-        .float => |x| x,
-        .integer => |x| @floatFromInt(x),
-        else => current,
-    };
+/// o tipo do bloco
+pub fn markedKind() Kind {
+    return draft.kind;
 }
 
-fn currentBlock(memory: std.mem.Allocator) ?Block {
+/// muda o tipo do bloco e sugere as colunas de novo
+pub fn setKind(chosen: Kind) void {
+    if (chosen == draft.kind) return;
+    draft.kind = chosen;
+    suggestColumns();
+}
+
+/// a coluna do bloco (índice em `Block.headers`) escolhida para o papel, ou null
+pub fn roleColumn(role: usize) ?usize {
+    return if (role < draft.columns.len) draft.columns[role] else null;
+}
+
+/// escolhe a coluna do bloco para o papel (null: nenhuma)
+pub fn setColumn(role: usize, chosen: ?usize) void {
+    if (role < draft.columns.len) draft.columns[role] = chosen;
+}
+
+/// o nome que a combinação vai ter
+pub fn comboName() []const u8 {
+    return draft.name;
+}
+
+/// muda o nome da combinação
+pub fn setName(text: []const u8) void {
+    if (std.mem.eql(u8, text, draft.name)) return;
+    draft.name = text_arena.allocator().dupe(u8, text) catch return;
+}
+
+/// motores: a corrente máxima e a massa que valem quando a planilha não tem a coluna
+pub fn motorDefaults() struct { imax: f64, mass: f64 } {
+    return .{ .imax = draft.default_imax, .mass = draft.default_mass };
+}
+
+/// muda a corrente máxima e a massa dos motores sem coluna
+pub fn setMotorDefaults(imax: f64, mass: f64) void {
+    if (imax > 0) draft.default_imax = imax;
+    if (mass > 0) draft.default_mass = mass;
+}
+
+/// o bloco marcado lido da aba, ou null (sem planilha, sem bloco ou endereço inválido)
+pub fn markedBlock(memory: std.mem.Allocator) ?Block {
     const book = draft.book orelse return null;
     if (draft.sheet >= book.sheets.len or draft.range.len == 0) return null;
     return readBlock(memory, book.sheets[draft.sheet], draft.range) catch null;
 }
 
-/// muda o rascunho ou a lista conforme o pedido
-pub fn apply(context: *stages.Context, memory: std.mem.Allocator, request: stages.Request) ![]const u8 {
-    if (std.mem.eql(u8, request.do, "act") and std.mem.eql(u8, request.key, "planilha")) {
-        const problem = try open(context.io, request.arg);
-        if (problem.len > 0) return problem;
-        return std.fmt.allocPrint(memory, "aberta: {s} ({d} abas). Escolha a aba e marque o bloco pelo canto de cima (a linha dos títulos)", .{ std.fs.path.basename(request.arg), draft.book.?.sheets.len });
+/// o texto da célula como o Excel mostra: o número com as casas do formato dela (ou até 4, sem zeros à direita)
+pub fn displayText(memory: std.mem.Allocator, value: ?xlsx.Value, style: xlsx.Style) ![]const u8 {
+    const cell = value orelse return "";
+    switch (cell) {
+        .number => |raw| {
+            const number = if (style.percent) raw * 100 else raw;
+            const suffix: []const u8 = if (style.percent) "%" else "";
+            if (style.decimals) |decimals| return std.fmt.allocPrint(memory, "{[value]d:.[precision]}{[suffix]s}", .{ .value = number, .precision = @min(decimals, 10), .suffix = suffix });
+            if (number == @round(number) and @abs(number) < 1e15) return std.fmt.allocPrint(memory, "{d:.0}{s}", .{ number, suffix });
+            const text = try std.fmt.allocPrint(memory, "{d:.4}", .{number});
+            return std.fmt.allocPrint(memory, "{s}{s}", .{ std.mem.trimEnd(u8, std.mem.trimEnd(u8, text, "0"), "."), suffix });
+        },
+        else => return cellText(memory, cell),
     }
-    if (std.mem.eql(u8, request.do, "set")) {
-        const values = request.values orelse return "";
-        const keep = text_arena.allocator();
-        const book = draft.book;
-        var block_changed = false;
-        if (book) |opened| if (textOf(values, "sheet")) |name| {
-            for (opened.sheets, 0..) |sheet, k| if (std.mem.eql(u8, sheet.name, name) and k != draft.sheet) {
-                draft.sheet = k;
-                detectRange();
-                return "";
-            };
-        };
-        if (textOf(values, "range")) |range| if (!std.mem.eql(u8, range, draft.range)) {
-            draft.range = try keep.dupe(u8, range);
-            block_changed = true;
-        };
-        if (textOf(values, "kind")) |label| for (kinds) |kind| if (std.mem.eql(u8, kind.label(), label) and kind != draft.kind) {
-            draft.kind = kind;
-            block_changed = true;
-        };
-        if (textOf(values, "name")) |name| draft.name = try keep.dupe(u8, name);
-        draft.default_imax = numberOf(values, "default_imax", draft.default_imax);
-        draft.default_mass = numberOf(values, "default_mass", draft.default_mass);
-        if (currentBlock(memory)) |block| {
-            if (block_changed) {
-                draft.columns = suggest(draft.kind, block.headers);
-            } else for (draft.kind.roles(), 0..) |role, r| if (textOf(values, role.key)) |header| {
-                draft.columns[r] = choiceIndex(block.headers, header);
-            };
-        }
-        return "";
-    }
-    if (std.mem.eql(u8, request.do, "keep")) return keepDraft(context, memory);
-    const files = try savedFiles(memory, context.io);
-    if (std.mem.eql(u8, request.do, "load")) {
-        if (stages.within(request.index, files.len)) |index| selected_kept = index;
-        return "";
-    }
-    if (std.mem.eql(u8, request.do, "delete")) {
-        const index = stages.within(request.index, files.len) orelse return "";
-        std.Io.Dir.cwd().deleteFile(context.io, files[index]) catch return "não deu para apagar o arquivo";
-        selected_kept = 0;
-        return std.fmt.allocPrint(memory, "saiu da biblioteca: {s}", .{std.fs.path.stem(files[index])});
-    }
-    return "";
+}
+
+/// marca o primeiro bloco da aba escolhida (o usuário muda se não for esse) e sugere as colunas
+fn detectRange() void {
+    const book = draft.book orelse return;
+    if (draft.sheet >= book.sheets.len) return;
+    draft.range = (detectBlock(text_arena.allocator(), book.sheets[draft.sheet]) catch null) orelse "";
+    suggestColumns();
+}
+
+fn suggestColumns() void {
+    var scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer scratch.deinit();
+    draft.columns = if (markedBlock(scratch.allocator())) |marked| suggest(draft.kind, marked.headers) else @splat(null);
 }
 
 /// guarda o bloco marcado com o nome dado: um .csv na pasta, ou os motores na biblioteca de motores
-fn keepDraft(context: *stages.Context, memory: std.mem.Allocator) ![]const u8 {
-    const block = currentBlock(memory) orelse return "abra uma planilha e marque o bloco (o canto de cima, como B6, ou o intervalo, como B6:R40)";
+pub fn keep(io: std.Io, memory: std.mem.Allocator) ![]const u8 {
+    const marked = markedBlock(memory) orelse return "abra uma planilha e marque o bloco (arraste sobre as células, ou escreva B6 ou B6:R40)";
     for (draft.kind.roles(), 0..) |role, r| if (role.required and draft.columns[r] == null) return std.fmt.allocPrint(memory, "falta dizer qual coluna é {s}", .{role.label});
     const book = draft.book.?;
     const source = try std.fmt.allocPrint(memory, "{s}, aba {s}, {s}", .{ std.fs.path.basename(draft.path), book.sheets[draft.sheet].name, draft.range });
-    if (draft.kind == .motors) return keepMotors(context, memory, block, source);
-    const name = std.mem.trim(u8, draft.name, " ");
-    if (name.len == 0) return "dê um nome à combinação";
+    if (draft.kind == .motors) return keepMotors(io, memory, marked, source);
+    const chosen_name = std.mem.trim(u8, draft.name, " ");
+    if (chosen_name.len == 0) return "dê um nome à combinação";
     var text: std.Io.Writer.Allocating = .init(memory);
-    try writeCsv(&text.writer, draft.kind, source, block, draft.columns);
-    const path = try folder(memory);
-    std.Io.Dir.cwd().createDirPath(context.io, path) catch return "não deu para criar a pasta da biblioteca";
-    const file_name = try library.fileName(memory, name);
-    const file = try std.fs.path.join(memory, &.{ path, try std.fmt.allocPrint(memory, "{s}.csv", .{std.fs.path.stem(file_name)}) });
-    std.Io.Dir.cwd().writeFile(context.io, .{ .sub_path = file, .data = text.written() }) catch return "não deu para gravar na pasta da biblioteca";
-    const files = try savedFiles(memory, context.io);
-    for (files, 0..) |item, k| if (std.mem.eql(u8, item, file)) {
-        selected_kept = k;
-    };
-    return std.fmt.allocPrint(memory, "guardado na biblioteca: {s} ({s})", .{ name, draft.kind.label() });
+    try writeCsv(&text.writer, draft.kind, source, draft.area_buffer[0..draft.area_len], marked, draft.columns);
+    const directory = try folder(memory);
+    std.Io.Dir.cwd().createDirPath(io, directory) catch return "não deu para criar a pasta da biblioteca";
+    const file_name = try library.fileName(memory, chosen_name);
+    const file = try std.fs.path.join(memory, &.{ directory, try std.fmt.allocPrint(memory, "{s}.csv", .{std.fs.path.stem(file_name)}) });
+    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = file, .data = text.written() }) catch return "não deu para gravar na pasta da biblioteca";
+    return std.fmt.allocPrint(memory, "guardado na biblioteca: {s} ({s})", .{ chosen_name, draft.kind.label() });
 }
 
 /// uma linha por motor: os que já existem com o mesmo nome ficam de fora
-fn keepMotors(context: *stages.Context, memory: std.mem.Allocator, block: Block, source: []const u8) ![]const u8 {
-    const column = struct {
-        fn of(role: usize) ?usize {
-            return draft.columns[role];
-        }
-    }.of;
+fn keepMotors(io: std.Io, memory: std.mem.Allocator, marked: Block, source: []const u8) ![]const u8 {
     var count: usize = 0;
     var skipped: usize = 0;
-    for (0..block.rowCount()) |j| {
-        const name = std.mem.trim(u8, block.texts[column(0).?][j], " ");
-        const kv = block.numbers[column(1).?][j];
-        const resistance = block.numbers[column(2).?][j];
-        if (name.len == 0 or !(kv > 0) or !(resistance > 0)) {
+    for (0..marked.rowCount()) |j| {
+        const motor_name = std.mem.trim(u8, marked.texts[draft.columns[0].?][j], " ");
+        const kv = marked.numbers[draft.columns[1].?][j];
+        const resistance = marked.numbers[draft.columns[2].?][j];
+        if (motor_name.len == 0 or !(kv > 0) or !(resistance > 0)) {
             skipped += 1;
             continue;
         }
-        const imax = if (column(3)) |k| block.numbers[k][j] else draft.default_imax;
-        const mass = if (column(4)) |k| block.numbers[k][j] else draft.default_mass;
+        const imax = if (draft.columns[3]) |k| marked.numbers[k][j] else draft.default_imax;
+        const mass = if (draft.columns[4]) |k| marked.numbers[k][j] else draft.default_mass;
         // dois motores da planilha com o mesmo nome (o mesmo modelo em Kv diferentes): o Kv entra no nome
-        const full_name = try std.fmt.allocPrint(memory, "{s} {d:.0}kv", .{ name, kv });
+        const full_name = try std.fmt.allocPrint(memory, "{s} {d:.0}kv", .{ motor_name, kv });
         if (catalog.find(catalog.Motor, &catalog.motors, full_name) != null) {
             skipped += 1;
             continue;
@@ -512,131 +562,32 @@ fn keepMotors(context: *stages.Context, memory: std.mem.Allocator, block: Block,
             .mass = if (mass > 0) mass else draft.default_mass,
             .source = source,
         };
-        library.storeMotor(context.io, memory, motor) catch return "não deu para gravar na pasta da biblioteca";
+        library.storeMotor(io, memory, motor) catch return "não deu para gravar na pasta da biblioteca";
         count += 1;
     }
-    library.reload(context.io);
+    library.reload(io);
     return std.fmt.allocPrint(memory, "entraram {d} motores na biblioteca (Biblioteca → Motores); {d} linhas sem nome, Kv ou resistência ficaram de fora", .{ count, skipped });
 }
 
-// ------------------------------------------------------------------ a página
+/// uma combinação guardada e o arquivo dela
+pub const Kept = struct { file: []const u8, saved: Saved };
 
-/// os dois gráficos: o bloco marcado e a combinação escolhida na lista, com o eixo x do primeiro papel de cada tipo
-fn plotsFor(memory: std.mem.Allocator, block_kind: Kind, saved_kind: Kind) ![]const simulation.Plot {
-    return memory.dupe(simulation.Plot, &.{
-        .{ .key = "block", .title = "Bloco marcado", .xlabel = block_kind.roles()[0].label, .ylabel = "" },
-        .{ .key = "saved", .title = "Combinação guardada", .xlabel = saved_kind.roles()[0].label, .ylabel = "" },
-    });
-}
-const palette = [_][]const u8{ "#0d5fd9", "#eb6834", "#1baf7a", "#d62728" };
-
-/// os gráficos de um tipo: o eixo x é o primeiro papel; as outras colunas são as curvas
-fn drawColumns(figures: simulation.Figures, key: []const u8, kind: Kind, headers: []const []const u8, x: []const f64, ys: []const []const f64, names: []const []const u8) !void {
-    _ = headers;
-    if (kind == .motors) return;
-    for (ys, names, 0..) |y, name, k| try figures.curve(key, .{ .name = name, .x = x, .y = y, .color = palette[k % palette.len] });
-}
-
-/// a página: os campos do bloco, a prévia das células, o gráfico do bloco e as combinações guardadas
-pub fn page(context: *stages.Context, memory: std.mem.Allocator) !simulation.StagePage {
-    var params: std.ArrayList(simulation.Param) = .empty;
-    var tables: std.ArrayList(simulation.Table) = .empty;
-    // o tipo da combinação escolhida na lista (para o eixo x do gráfico dela)
-    const files = try savedFiles(memory, context.io);
-    var saved_kind: Kind = .curve;
-    if (selected_kept < files.len) if (std.Io.Dir.cwd().readFileAlloc(context.io, files[selected_kept], memory, .limited(16 << 20))) |text| {
-        if (readCsv(memory, "", text)) |saved| saved_kind = saved.kind else |_| {}
-    } else |_| {};
-    const figures = try simulation.Figures.init(memory, try plotsFor(memory, draft.kind, saved_kind));
-    var message: []const u8 = "abra uma planilha (.xlsx) com \"Abrir planilha…\"";
-    if (draft.book) |book| {
-        const sheet_names = try memory.alloc([]const u8, book.sheets.len);
-        for (book.sheets, sheet_names) |sheet, *name| name.* = sheet.name;
-        const sheet = book.sheets[@min(draft.sheet, book.sheets.len - 1)];
-        const kind_names = try memory.alloc([]const u8, kinds.len);
-        for (kinds, kind_names) |kind, *name| name.* = kind.label();
-        try params.appendSlice(memory, &.{
-            .{ .key = "sheet", .label = "aba", .kind = .choice, .default = .{ .text = sheet.name }, .choices = sheet_names, .group = "Bloco", .rebuild = true },
-            .{ .key = "range", .label = "bloco", .kind = .str, .default = .{ .text = draft.range }, .group = "Bloco", .help = "o canto de cima do bloco (B6: a linha 6 tem os títulos; o bloco desce enquanto houver números) ou o intervalo inteiro (B6:R40)" },
-            .{ .key = "kind", .label = "o bloco é", .kind = .choice, .default = .{ .text = draft.kind.label() }, .choices = kind_names, .group = "Bloco", .rebuild = true },
-        });
-        const block = currentBlock(memory);
-        if (block) |marked| {
-            const header_choices = try memory.alloc([]const u8, marked.headers.len + 1);
-            header_choices[0] = none;
-            @memcpy(header_choices[1..], marked.headers);
-            for (draft.kind.roles(), 0..) |role, r| {
-                const current = if (draft.columns[r]) |k| marked.headers[k] else none;
-                try params.append(memory, .{ .key = role.key, .label = role.label, .kind = .choice, .default = .{ .text = current }, .choices = header_choices, .group = "Colunas", .help = if (role.required) "obrigatória" else "opcional" });
-            }
-            if (draft.kind == .motors) {
-                try params.append(memory, .{ .key = "default_imax", .label = "corrente máx. sem coluna", .unit = "A", .default = .{ .number = draft.default_imax }, .minimum = 0.1, .maximum = 500, .group = "Colunas", .help = "vale para os motores sem a coluna (ou com ela vazia)" });
-                try params.append(memory, .{ .key = "default_mass", .label = "massa sem coluna", .unit = "kg", .default = .{ .number = draft.default_mass }, .minimum = 0.001, .maximum = 20, .group = "Colunas", .help = "vale para os motores sem a coluna (ou com ela vazia)" });
-            } else try params.append(memory, .{ .key = "name", .label = "nome da combinação", .kind = .str, .default = .{ .text = draft.name }, .group = "Guardar", .help = "o nome que você quiser: é assim que ela aparece nas outras abas" });
-            // o gráfico do bloco, com as colunas escolhidas
-            if (draft.kind != .motors) if (draft.columns[0]) |x_column| {
-                var ys: std.ArrayList([]const f64) = .empty;
-                var names: std.ArrayList([]const u8) = .empty;
-                for (draft.kind.roles()[1..], 1..) |role, r| if (draft.columns[r]) |k| {
-                    try ys.append(memory, marked.numbers[k]);
-                    try names.append(memory, role.label);
-                };
-                try drawColumns(figures, "block", draft.kind, marked.headers, marked.numbers[x_column], ys.items, names.items);
-            };
-            message = try std.fmt.allocPrint(memory, "bloco {s}: {d} colunas, {d} linhas", .{ draft.range, marked.headers.len, marked.rowCount() });
-        } else if (draft.range.len > 0) message = "o bloco não vale: escreva o canto de cima (B6) ou o intervalo (B6:R40)";
-        // a prévia das células: um pouco antes do canto do bloco (ou do A1), 16 colunas e 25 linhas
-        const first_row: u32 = if (block) |marked| marked.first_row -| 2 + 1 else 1;
-        const first_column: u32 = if (block) |marked| marked.first_column -| 2 + 1 else 1;
-        const width: u32 = 16;
-        const headers = try memory.alloc([]const u8, width + 1);
-        headers[0] = "";
-        for (0..width) |k| {
-            var letters: [4]u8 = undefined;
-            headers[k + 1] = try memory.dupe(u8, columnName(&letters, first_column + @as(u32, @intCast(k))));
-        }
-        var rows: std.ArrayList([]const []const u8) = .empty;
-        var row = first_row;
-        while (row < first_row + 25 and row <= @max(sheet.lastRow(), first_row)) : (row += 1) {
-            const cells = try memory.alloc([]const u8, width + 1);
-            cells[0] = try std.fmt.allocPrint(memory, "{d}", .{row});
-            for (0..width) |k| cells[k + 1] = try cellText(memory, sheet.at(row, first_column + @as(u32, @intCast(k))));
-            try rows.append(memory, cells);
-        }
-        try tables.append(memory, .{ .title = try std.fmt.allocPrint(memory, "{s}: {s}", .{ std.fs.path.basename(draft.path), sheet.name }), .headers = headers, .rows = rows.items });
-    }
-    // as combinações guardadas
-    var kept: std.ArrayList([]const u8) = .empty;
-    var summary: std.ArrayList([2][]const u8) = .empty;
-    for (files, 0..) |file, k| {
-        const text = std.Io.Dir.cwd().readFileAlloc(context.io, file, memory, .limited(16 << 20)) catch continue;
+/// as combinações guardadas na biblioteca, em ordem de nome
+pub fn keptList(memory: std.mem.Allocator, io: std.Io) ![]const Kept {
+    var out: std.ArrayList(Kept) = .empty;
+    for (try savedFiles(memory, io)) |file| {
+        const text = std.Io.Dir.cwd().readFileAlloc(io, file, memory, .limited(16 << 20)) catch continue;
         const saved = readCsv(memory, std.fs.path.stem(file), text) catch continue;
-        try kept.append(memory, try std.fmt.allocPrint(memory, "{s}   ({s})", .{ saved.name, saved.kind.label() }));
-        if (k != selected_kept or saved.columns.len < 2) continue;
-        try summary.append(memory, .{ "combinação", saved.name });
-        try summary.append(memory, .{ "tipo", saved.kind.label() });
-        try summary.append(memory, .{ "pontos", try std.fmt.allocPrint(memory, "{d}", .{saved.columns[0].len}) });
-        try summary.append(memory, .{ "fonte", saved.source });
-        try drawColumns(figures, "saved", saved.kind, saved.headers, saved.columns[0], saved.columns[1..], saved.headers[1..]);
+        try out.append(memory, .{ .file = file, .saved = saved });
     }
-    return .{
-        .title = "Planilha",
-        .help = "Traga dados de qualquer planilha .xlsx. Abra a planilha, escolha a aba e marque o bloco pelo canto de cima (a linha com os títulos das colunas); diga o que ele é (uma polar, a distribuição de sustentação, uma curva qualquer ou uma lista de motores) e qual coluna é qual, e guarde com o nome que quiser. As combinações valem para todos os projetos; os motores vão para Biblioteca → Motores.",
-        .keep_label = if (draft.kind == .motors) "Guardar os motores" else "Guardar a combinação",
-        .kept_title = "Combinações",
-        .params = params.items,
-        .kept = kept.items,
-        .actions = &actions,
-        .tables = tables.items,
-        .summary = summary.items,
-        .figures = figures,
-        .message = message,
-    };
+    return out.items;
 }
 
-const actions = [_]simulation.StageAction{
-    .{ .key = "planilha", .label = "Abrir planilha…", .arg = "file", .help = "uma planilha .xlsx" },
-};
+/// tira uma combinação da biblioteca
+pub fn deleteKept(io: std.Io, file: []const u8) bool {
+    std.Io.Dir.cwd().deleteFile(io, file) catch return false;
+    return true;
+}
 
 // ------------------------------------------------------------------ testes
 const testing = std.testing;
@@ -698,12 +649,29 @@ test "as colunas sugeridas pelos títulos; a polar vira .csv e volta igual" {
     try testing.expectEqual(@as(?usize, 2), columns[2]); // "CDiw", o primeiro C_D
     try testing.expectEqual(@as(?usize, null), columns[3]); // sem C_m
     var text: std.Io.Writer.Allocating = .init(memory);
-    try writeCsv(&text.writer, .polar, "teste.xlsx, aba Polares, B2", block, columns);
-    try testing.expect(std.mem.startsWith(u8, text.written(), "# tipo: polar\n# fonte: teste.xlsx, aba Polares, B2\nalpha,CL,CD\n-2,0.1,0.2\n"));
+    try writeCsv(&text.writer, .polar, "teste.xlsx, aba Polares, B2", "Aerodinâmica", block, columns);
+    try testing.expect(std.mem.startsWith(u8, text.written(), "# tipo: polar\n# fonte: teste.xlsx, aba Polares, B2\n# área: Aerodinâmica\nalpha,CL,CD\n-2,0.1,0.2\n"));
     const saved = try readCsv(memory, "Aura", text.written());
     try testing.expectEqual(Kind.polar, saved.kind);
+    try testing.expectEqualStrings("Aerodinâmica", saved.area);
     try testing.expectEqual(@as(usize, 3), saved.columns.len);
     try testing.expectEqual(@as(f64, 2), saved.columns[0][2]);
     try testing.expectEqual(@as(f64, 0.4), saved.columns[2][2]);
 }
 
+
+test "o número aparece com as casas do formato da célula" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    try testing.expectEqualStrings("0.123", try displayText(memory, .{ .number = 0.12345 }, .{ .decimals = 3 }));
+    try testing.expectEqualStrings("12.5%", try displayText(memory, .{ .number = 0.125 }, .{ .decimals = 1, .percent = true }));
+    try testing.expectEqualStrings("4", try displayText(memory, .{ .number = 4 }, .{}));
+    try testing.expectEqualStrings("0.1235", try displayText(memory, .{ .number = 0.123456 }, .{}));
+    try testing.expectEqualStrings("Alpha", try displayText(memory, .{ .text = "Alpha" }, .{}));
+}
+
+test "cada área oferece os tipos dela" {
+    try testing.expectEqual(Kind.polar, kindsFor("Aerodinâmica")[0]);
+    try testing.expectEqual(@as(usize, 4), kindsFor("Biblioteca").len);
+}

@@ -23,7 +23,6 @@ const tail_stage = @import("stage_tail.zig");
 const power_stage = @import("stage_power.zig");
 const study_stage = @import("stage_study.zig");
 const library_stage = @import("stage_library.zig");
-const sheets_stage = @import("stage_sheets.zig");
 
 const Value = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
@@ -136,7 +135,6 @@ pub const all = [_]Stage{
     .{ .name = "estudo", .apply = study_stage.apply, .page = study_stage.page },
     .{ .name = "biblioteca_motores", .apply = library_stage.applyMotors, .page = library_stage.motorPage, .program = true },
     .{ .name = "biblioteca_helices", .apply = library_stage.applyPropellers, .page = library_stage.propellerPage, .program = true },
-    .{ .name = "biblioteca_planilhas", .apply = sheets_stage.apply, .page = sheets_stage.page, .program = true },
 };
 
 /// a etapa em Zig com este nome (nulo: ela segue pelo Python)
@@ -606,7 +604,6 @@ pub fn within(index: i64, count: usize) ?usize {
 
 test {
     _ = registry;
-    _ = sheets_stage;
 }
 
 test "etapas em Zig: cada uma monta a página do projeto de exemplo, com a conta" {

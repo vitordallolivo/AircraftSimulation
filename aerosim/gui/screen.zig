@@ -17,6 +17,7 @@ const config_tab = @import("tabs/config_tab.zig");
 const aircraft_model = @import("aircraft_model");
 const manager = @import("manager");
 const design = @import("design");
+const sheet_window = @import("sheet_window.zig");
 
 const Page = page_mod.Page;
 const Json = std.json.Value;
@@ -43,6 +44,7 @@ pub const Screen = struct {
     shown: ?*Page = null, // a página do último quadro (trocar de página pede ela de novo)
     requirements: Page = .{ .kind = .stage, .name = "requisitos", .title = "Condições e restrições", .grids_beside = true },
     requirements_open: bool = false,
+    sheet_window: sheet_window.SheetWindow = .{}, // a janela "Planilha…" da área aberta
     // o jeito celular (janela estreita, `ui/phone.zig`): as fichas das subabas e a lista do "Mais" da barra de baixo
     area_chips: ui_kit.phone.Chips = .{},
     more_open: bool = false,
@@ -136,6 +138,11 @@ pub const Screen = struct {
                 screen.pending_assembly[screen.pending_assembly_len] = ';';
                 screen.pending_assembly_len += 1;
             }
+        } else if (std.mem.startsWith(u8, name, "planilha:")) { // a janela da planilha da área aberta (prints)
+            screen.openSheetWindow();
+            screen.sheet_window.openPath(name["planilha:".len..]);
+        } else if (std.mem.startsWith(u8, name, "bloco:")) { // marca o bloco da planilha aberta (prints)
+            design.sheets.setRange(name["bloco:".len..]);
         } else if (std.mem.eql(u8, name, "condicoes")) {
             screen.requirements_open = true;
         } else if (std.mem.startsWith(u8, name, "projeto:")) { // abre um projeto da sprint (prints)
@@ -143,6 +150,12 @@ pub const Screen = struct {
         } else if (std.mem.eql(u8, name, "desfazer")) {
             screen.pending_undo += 1;
         }
+    }
+
+    /// a janela "Planilha…" para a área aberta
+    fn openSheetWindow(screen: *Screen) void {
+        const title = if (screen.areas.len > 0) screen.areas[screen.area].title else "";
+        screen.sheet_window.show(title);
     }
 
     /// abre o projeto da sprint em `path` no lugar do aberto; as etapas pedem a página de novo
@@ -523,6 +536,8 @@ pub const Screen = struct {
     /// para a etapa Perfis
     pub fn openFile(screen: *Screen, path: []const u8) void {
         const format = data_sources.Format.fromPath(path);
+        // a janela "Planilha…" aberta: a planilha escolhida (no aparelho ou arrastada) vai para ela
+        if (format == .xlsx and screen.sheet_window.open) return screen.sheet_window.openPath(path);
         if (format == .xlsx) {
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
             defer arena.deinit();
@@ -819,7 +834,7 @@ pub const Screen = struct {
         const bottom: f32 = if (phone) ui_kit.phone.bar_height else 0;
         // com uma janela aberta (seletor de arquivo, pergunta, condições), a tela de baixo não recebe o clique nem a roda
         const page_modal = if (page) |p| p.modalOpen() else false;
-        const modal = screen.files.open or screen.requirements_open or page_modal;
+        const modal = screen.files.open or screen.requirements_open or screen.sheet_window.open or page_modal;
         const wheel = ui.wheel;
         if (modal) {
             ui.click_taken = true;
@@ -904,6 +919,12 @@ pub const Screen = struct {
                 const area = &screen.areas[screen.area];
                 _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height + 38, .width = width, .height = 32 }, area.labels, &area.active, 13);
             }
+            // "Planilha…": trazer dados de uma planilha para esta área (na Montagem não tem)
+            if (screen.areas.len > 0 and !std.mem.eql(u8, screen.areas[screen.area].title, "Montagem")) {
+                const row_y = widgets.header_height + (if (single) @as(f32, 0) else 38);
+                const row_height: f32 = if (single) 38 else 32;
+                if (ui_kit.dialogs.button(ui, .{ .x = width - 128, .y = row_y + 4, .width = 116, .height = row_height - 8 }, "Planilha…")) screen.openSheetWindow();
+            }
         }
         if (modal) {
             ui.click_taken = false;
@@ -911,6 +932,8 @@ pub const Screen = struct {
             const whole: rl.Rectangle = .{ .x = 0, .y = 0, .width = width, .height = height };
             if (page) |p| p.drawModal(ui, whole);
             if (screen.requirements_open) screen.drawRequirements(ui, whole);
+            if (screen.areas.len > 0) screen.sheet_window.follow(screen.areas[screen.area].title);
+            screen.sheet_window.draw(ui, whole);
             const saving = screen.files.saving;
             if (screen.files.draw(ui, whole)) |path| {
                 if (saving) screen.save(path) else if (screen.importing_file) {

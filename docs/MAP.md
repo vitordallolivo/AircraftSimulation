@@ -357,8 +357,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Method:14`, `Polar:30`
   fn `parse:67`
 - `core/src/util/xlsx.zig` — Leitor de planilhas `.xlsx` sem dependência de fora: o arquivo é um `.zip` (APPNOTE da PKWARE) com uma folha de
-  tipos `Value:19`, `Cell:35`, `Sheet:42`, `Workbook:72`
-  fn `parseAddress:115`
+  tipos `Value:24`, `Cell:40`, `Alignment:47`, `Borders:50`, `Style:58`, `Styled:73`, `Range:80`, `ColumnWidth:93`, `RowHeight:100`, `Sheet:106`, `Workbook:190`
+  fn `parseAddress:237`, `parseRange:488`, `pixels:502`, `applyTint:575`
 - `core/src/util/zip.zig` — O zip (APPNOTE da PKWARE) sem dependência de fora: ler o índice e as partes (guardadas ou com deflate) e gravar um
   tipos `Archive:15`, `Writer:86`
 - `core/src/util/zon_json.zig` — A ponte entre os dados em JSON (a árvore `std.json.Value`, como a Montagem e as etapas guardam o avião) e o texto
@@ -578,7 +578,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/python_bridge.zig` — A ponte com os métodos de fora do núcleo (lltdrek, AeroSandbox, AVL), que são bibliotecas em Python: a tela abre
   tipos `Waiter:30`, `Bridge:46`
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da antiga GUI PyQt.
-  tipos `Screen:35`
+  tipos `Screen:36`
+- `aerosim/gui/sheet_window.zig` — A janela "Planilha…" de cada área: a planilha `.xlsx` aparece como no Excel, a partir do A1, com a largura das
+  tipos `SheetWindow:32`
 - `aerosim/gui/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos, exportar, o toque (mouse e dedo) e a leitura
 
 **aerosim/gui/tabs/**

@@ -1734,8 +1734,6 @@ pub const Page = struct {
             // um catálogo de motores e hélices (.cfg, .xlsx, .json) parte de data/catalog; o resto, dos perfis
             if (std.mem.eql(u8, action.key, "catalogo")) {
                 page.picker.show(action.label, "data/catalog", &.{ ".cfg", ".xlsx", ".json" });
-            } else if (std.mem.eql(u8, action.key, "planilha")) {
-                page.picker.show(action.label, ".", &.{".xlsx"});
             } else page.picker.show(action.label, "data/airfoils", &.{ ".dat", ".txt", ".csv", ".pol" });
         } else page.act(action.key, "");
     }

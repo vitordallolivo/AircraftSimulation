@@ -16,6 +16,8 @@ pub const stages = @import("stages.zig");
 pub const study = @import("stage_study.zig");
 /// a montagem do avião a partir do conjunto e dos motores
 pub const power = @import("stage_power.zig");
+/// a planilha aberta pela janela "Planilha…" de cada área
+pub const sheets = @import("sheets.zig");
 const aircraft_model = @import("aircraft_model");
 const manager = @import("manager");
 
@@ -210,4 +212,5 @@ test {
     _ = balance;
     _ = store;
     _ = stages;
+    _ = sheets;
 }
