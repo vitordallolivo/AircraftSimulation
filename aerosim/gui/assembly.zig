@@ -199,6 +199,7 @@ pub const Assembly = struct {
     document: std.json.Value,
     original: []const u8, // o texto do arquivo como foi aberto ("Restaurar" volta a ele)
     history: undo.History = .{}, // os textos de antes de cada mudança (o Ctrl+Z da Montagem)
+    variant: bool = false, // uma variante (as mudanças ficam nela); falso: o avião montado, que a primeira mudança não toca
 
     /// libera tudo
     pub fn deinit(assembly: *Assembly) void {

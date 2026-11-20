@@ -88,7 +88,12 @@ pub const Screen = struct {
     // resultados de antes; a remontagem do projeto pelas etapas não
     fresh_open: bool = false,
     // o que está aberto, na linha de cima: o avião (e a variante) e o projeto
-    in_use: [256:0]u8 = [_:0]u8{0} ** 256,
+    in_use: [256:0]u8 = [_:0]u8{0} ** 256, // o projeto, ao lado do nome
+    in_use_name: [160:0]u8 = [_:0]u8{0} ** 160, // o nome do avião (e da variante), em destaque
+    // a primeira edição de um avião montado vira uma variante: a janela pede o nome dela
+    variant_prompt: ui_kit.dialogs.TextPrompt = .{},
+    variant_base: usize = 0, // o avião de onde a variante saiu (Cancelar volta para ele)
+    keep_base: bool = false, // edições que não fazem variante (Salvar grava o refino no arquivo)
 
     /// abre a subaba de número `index`, contando todas em ordem (a Montagem é a última), para os prints
     pub fn selectTab(screen: *Screen, index: usize) void {
@@ -117,7 +122,12 @@ pub const Screen = struct {
     /// um comando pelo nome (`acao=` da linha de comando, para os prints): "abrir", "salvar", "rodar" (roda a análise
     /// aberta assim que os campos chegam)
     pub fn command(screen: *Screen, name: []const u8) void {
-        if (std.mem.eql(u8, name, "abrir")) {
+        if (std.mem.eql(u8, name, "novo")) {
+            screen.newAircraft();
+        } else if (std.mem.startsWith(u8, name, "variante:")) { // responde a janela do nome da variante (prints)
+            screen.variant_prompt.open = false;
+            screen.nameVariant(name["variante:".len..]);
+        } else if (std.mem.eql(u8, name, "abrir")) {
             var buffer: [256]u8 = undefined;
             var fixed = std.heap.FixedBufferAllocator.init(&buffer);
             const folder = if (screen.assembly) |*opened| std.fs.path.dirname(opened.path) orelse "." else exampleFolder(fixed.allocator());
@@ -345,6 +355,62 @@ pub const Screen = struct {
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · editado (Salvar grava) · {d} peças", .{ std.fs.path.basename(opened.path), opened.mesh.piece_count }) catch {};
         // as análises rodam o avião editado, mesmo antes de salvar
         screen.shareAircraft();
+        // a primeira mudança no avião montado não mexe nele: vira uma variante, e a janela pede o nome dela
+        if (remembered and !opened.variant and !screen.keep_base and opened.history.count > 0) screen.branchVariant();
+    }
+
+    /// a mudança que acabou de entrar no avião montado vai para uma variante nova: o avião volta a ser como era, a
+    /// cópia com a mudança passa a ser o avião atual, e a janela pede o nome dela (Cancelar desfaz a variante)
+    fn branchVariant(screen: *Screen) void {
+        const opened = &(screen.assembly orelse return);
+        if (screen.fleet_count >= max_fleet) return; // sem lugar: a mudança fica no próprio avião, como antes
+        var diagnosis: assembly_mod.Diagnosis = .{};
+        var copy = assembly_mod.fromBytes(std.heap.page_allocator, io(), opened.path, opened.source, &diagnosis) catch return;
+        copy.variant = true;
+        // o avião de onde saiu volta ao texto de antes da mudança (o passo sai do Ctrl+Z dele)
+        const before = opened.history.pop() orelse {
+            copy.deinit();
+            return;
+        };
+        defer opened.history.release(before);
+        opened.reload(std.heap.page_allocator, io(), before, &diagnosis) catch {};
+        if (std.json.parseFromSliceLeaky(std.json.Value, opened.document_arena.allocator(), opened.source, .{})) |previous| {
+            opened.document = previous;
+        } else |_| {}
+        screen.variant_base = screen.fleet_current;
+        screen.fleet[screen.fleet_current] = screen.assembly;
+        screen.assembly = copy;
+        screen.fleet_current = screen.fleet_count;
+        screen.fleet_count += 1;
+        screen.showSwitched();
+        var name_buffer: [64]u8 = undefined;
+        const suggestion = std.fmt.bufPrint(&name_buffer, "variante {d}", .{screen.fleet_count - 1}) catch "variante";
+        screen.variant_prompt.show("Nova variante", "o avião montado fica como está; nome desta variante:", suggestion);
+    }
+
+    /// o nome que a janela deu à variante nova: o avião passa a se chamar "<avião> — <nome>"
+    fn nameVariant(screen: *Screen, typed: []const u8) void {
+        const opened = &(screen.assembly orelse return);
+        if (!opened.variant) return;
+        const base_name = if (screen.fleet[screen.variant_base]) |*base| base.loaded.ac.name else opened.loaded.ac.name;
+        const trimmed = std.mem.trim(u8, typed, " ");
+        var name_buffer: [160]u8 = undefined;
+        const name = std.fmt.bufPrint(&name_buffer, "{s} — {s}", .{ base_name, if (trimmed.len > 0) trimmed else "variante" }) catch base_name;
+        config_tab.rename(opened.document_arena.allocator(), &opened.document, name) catch {};
+        screen.commitDocument(null);
+        // o nome não é um passo do Ctrl+Z da variante
+        if (opened.history.pop()) |step| opened.history.release(step);
+        screen.fleetNote("variante nova");
+    }
+
+    /// Cancelar na janela da variante: a variante fecha e volta o avião de onde ela saiu, sem a mudança
+    fn dropVariant(screen: *Screen) void {
+        const opened = &(screen.assembly orelse return);
+        if (!opened.variant or screen.fleet_count <= 1) return;
+        const base = screen.variant_base;
+        screen.closeAircraft();
+        screen.selectAircraft(@min(base, screen.fleet_count - 1));
+        screen.fleetNote("variante desfeita");
     }
 
     /// clicar numa peça no 3D escolhe ela na lista; arrastar move ela no plano da tela, e soltar grava a posição.
@@ -591,6 +657,8 @@ pub const Screen = struct {
         if (opened.document == .object) {
             const node = if (opened.document.object.getPtr("aeronave")) |inner| (if (inner.* == .object) &inner.object else &opened.document.object) else &opened.document.object;
             page_mod.shared.numericsInto(opened.document_arena.allocator(), node) catch {};
+            screen.keep_base = true;
+            defer screen.keep_base = false;
             screen.commitDocument(null);
         }
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -738,6 +806,13 @@ pub const Screen = struct {
             return;
         };
         screen.loading.result = null;
+        screen.adoptAircraft(loaded);
+        _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · {d} peças · arraste outro avião para a janela para trocar · arraste para girar, roda para aproximar", .{ std.fs.path.basename(path), loaded.mesh.piece_count }) catch {};
+    }
+
+    /// troca o avião atual por `loaded`; aberto pelo usuário (`fresh_open`), fecha os outros e apaga os resultados
+    fn adoptAircraft(screen: *Screen, loaded: assembly_mod.Assembly) void {
+        screen.variant_prompt.open = false;
         if (screen.assembly) |*old| old.deinit();
         screen.assembly = loaded;
         if (screen.fresh_open) {
@@ -753,7 +828,19 @@ pub const Screen = struct {
         }
         if (screen.fleet_count == 0) screen.fleet_count = 1; // a remontagem do projeto troca o avião atual; os outros ficam
         screen.showSwitched();
-        _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · {d} peças · arraste outro avião para a janela para trocar · arraste para girar, roda para aproximar", .{ std.fs.path.basename(path), loaded.mesh.piece_count }) catch {};
+    }
+
+    /// "Novo": um avião novo, do modelo padrão, no lugar de tudo o que estava aberto ("Salvar" pede onde gravar)
+    fn newAircraft(screen: *Screen) void {
+        var diagnosis: assembly_mod.Diagnosis = .{};
+        const loaded = assembly_mod.fromBytes(std.heap.page_allocator, io(), "novo.aero", templates.all[0].json, &diagnosis) catch |err| {
+            _ = std.fmt.bufPrintZ(&screen.assembly_note, "o avião novo não abriu: {s}", .{if (diagnosis.len > 0) diagnosis.text() else @errorName(err)}) catch {};
+            return;
+        };
+        screen.fresh_open = true;
+        screen.adoptAircraft(loaded);
+        screen.showAssembly();
+        _ = std.fmt.bufPrintZ(&screen.assembly_note, "avião novo ({s}) · Salvar escolhe onde gravar", .{templates.all[0].name}) catch {};
     }
 
     /// depois de trocar o avião atual (abrir, variante, troca, fechar): o resumo, a lista e o editor são do novo, e as
@@ -790,13 +877,11 @@ pub const Screen = struct {
         defer arena.deinit();
         const project = design.stages.projectName(arena.allocator());
         const opened = &(screen.assembly orelse return);
-        const plane = opened.loaded.ac.name;
-        const file = std.fs.path.basename(opened.path);
-        const fleet = if (screen.fleet_count > 1) std.fmt.allocPrint(arena.allocator(), " ({d} de {d})", .{ screen.fleet_current + 1, screen.fleet_count }) catch "" else "";
+        _ = std.fmt.bufPrintZ(&screen.in_use_name, "{s}", .{opened.loaded.ac.name}) catch {};
         _ = (if (project.len > 0)
-            std.fmt.bufPrintZ(&screen.in_use, "avião: {s}{s} · {s} · projeto: {s}", .{ plane, fleet, file, project })
+            std.fmt.bufPrintZ(&screen.in_use, "projeto: {s}", .{project})
         else
-            std.fmt.bufPrintZ(&screen.in_use, "avião: {s}{s} · {s}", .{ plane, fleet, file })) catch {};
+            std.fmt.bufPrintZ(&screen.in_use, "sem projeto", .{})) catch {};
     }
 
     /// passa para o avião aberto `index` (a barra "Anterior", "Próximo"); o atual fica guardado como está
@@ -829,6 +914,7 @@ pub const Screen = struct {
         screen.fleet_current = screen.fleet_count;
         screen.fleet_count += 1;
         const fresh = &screen.assembly.?;
+        fresh.variant = true;
         config_tab.rename(fresh.document_arena.allocator(), &fresh.document, name) catch {};
         screen.showSwitched();
         screen.commitDocument(null);
@@ -976,7 +1062,7 @@ pub const Screen = struct {
         const page_modal = if (page) |p| p.modalOpen() else false;
         // "Exportar → Dados em Excel" dos gráficos e tabelas: a prévia monta a planilha antes de gravar
         ui_kit.plot.data_export = sheet_window.previewData;
-        const modal = screen.files.open or screen.requirements_open or screen.sheet_window.open or sheet_window.preview.open or page_modal;
+        const modal = screen.files.open or screen.requirements_open or screen.sheet_window.open or sheet_window.preview.open or screen.variant_prompt.open or page_modal;
         const wheel = ui.wheel;
         if (modal) {
             ui.click_taken = true;
@@ -1037,11 +1123,13 @@ pub const Screen = struct {
             var marks: [16]ui_kit.phone.Mark = undefined;
             const marked = areaMarks(screen.area_labels, &marks);
             if (screen.more_open and !modal) _ = ui_kit.phone.moreMenu(ui, content, screen.area_labels, marked, &screen.area, &screen.more_open);
-            if (ui_kit.phone.header(ui, width, "AeroSim", &.{ "Abrir", "Salvar" })) |button| {
+            if (ui_kit.phone.header(ui, width, "AeroSim", &.{ "Novo", "Abrir", "Salvar" })) |button| {
                 // no navegador do celular, "Abrir" pega o arquivo do aparelho (a página esconde a barra dela)
-                if (button == 0) {
-                    if (!ui_kit.system.pickFromDevice()) screen.command("abrir");
-                } else screen.command("salvar");
+                switch (button) {
+                    0 => screen.command("novo"),
+                    1 => if (!ui_kit.system.pickFromDevice()) screen.command("abrir"),
+                    else => screen.command("salvar"),
+                }
             }
             if (!single) {
                 const area = &screen.areas[screen.area];
@@ -1050,11 +1138,13 @@ pub const Screen = struct {
             }
             _ = ui_kit.phone.bottomBar(ui, .{ .x = 0, .y = height - bottom, .width = width, .height = bottom }, screen.area_labels, marked, &screen.area, &screen.more_open);
         } else {
-            if (widgets.header(ui, width, "AeroSim", &.{ "Abrir…", "Salvar" }, &screen.in_use)) |button| {
+            if (widgets.header(ui, width, "AeroSim", &.{ "Novo", "Abrir…", "Salvar" }, &screen.in_use_name, &screen.in_use)) |button| {
                 // no navegador, "Abrir" pega o arquivo do computador (o seletor do sistema), não a pasta da página
-                if (button == 0) {
-                    if (!ui_kit.system.pickFromDevice()) screen.command("abrir");
-                } else screen.command("salvar");
+                switch (button) {
+                    0 => screen.command("novo"),
+                    1 => if (!ui_kit.system.pickFromDevice()) screen.command("abrir"),
+                    else => screen.command("salvar"),
+                }
             }
             _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, screen.area_labels, &screen.area, 14);
             if (!single) {
@@ -1082,6 +1172,9 @@ pub const Screen = struct {
             if (screen.sheet_window.wants_aircraft) {
                 screen.sheet_window.wants_aircraft = false;
                 screen.usePolynomial();
+            }
+            if (screen.variant_prompt.open) {
+                if (screen.variant_prompt.draw(ui, whole)) |typed| screen.nameVariant(typed) else if (!screen.variant_prompt.open) screen.dropVariant();
             }
             const saving = screen.files.saving;
             if (screen.files.draw(ui, whole)) |path| {

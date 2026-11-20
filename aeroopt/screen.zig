@@ -78,7 +78,7 @@ pub const Screen = struct {
             widgets.format(&subtitle_buffer, "problema do projeto (não gravado) · gráficos de uma rodada de exemplo", .{})
         else
             widgets.format(&subtitle_buffer, "nenhum problema aberto · gráficos de uma rodada de exemplo", .{});
-        _ = widgets.header(ui, width, "AeroOpt", &.{}, subtitle);
+        _ = widgets.header(ui, width, "AeroOpt", &.{}, "", subtitle);
         _ = widgets.tabBar(ui, .{ .x = 0, .y = widgets.header_height, .width = width, .height = 38 }, &tabs, &screen.tab, 14);
         if (modal) {
             ui.clicked = clicked;

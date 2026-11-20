@@ -440,8 +440,9 @@ pub fn roundedLines(rect: rl.Rectangle, radius: f32, color: rl.Color) void {
     rl.drawRectangleRoundedLinesEx(rect, roundness(rect, radius), 6, 1, color);
 }
 
-/// cabeçalho: a logo, o nome do programa em azul, os botões e o nome do avião; devolve o índice do botão clicado
-pub fn header(ui: *Ui, width: f32, program_name: [:0]const u8, buttons: []const [:0]const u8, subtitle: [:0]const u8) ?usize {
+/// cabeçalho: a logo, o nome do programa em azul, os botões, o nome em destaque (o avião aberto, com um brilho que
+/// passa por ele) e o texto ao lado; devolve o índice do botão clicado
+pub fn header(ui: *Ui, width: f32, program_name: [:0]const u8, buttons: []const [:0]const u8, highlight: [:0]const u8, subtitle: [:0]const u8) ?usize {
     rl.drawRectangleRec(.{ .x = 0, .y = 0, .width = width, .height = header_height }, theme.colors.panel);
     const logo_width = ui.logo.draw(14, 8, header_height - 16);
     theme.text(ui.fonts.regular, program_name, 24 + logo_width, 13, 24, theme.colors.accent);
@@ -455,10 +456,47 @@ pub fn header(ui: *Ui, width: f32, program_name: [:0]const u8, buttons: []const 
         if (ui.clickedIn(rect)) pressed = i;
         x += w + 6;
     }
-    theme.text(ui.fonts.regular, subtitle, x + 16, 18, 14, theme.colors.muted);
+    var after = x + 16;
+    if (highlight.len > 0) after = shimmer(ui.fonts.bold, highlight, after, 16, 17) + 14;
+    theme.text(ui.fonts.regular, subtitle, after, 18, 14, theme.colors.muted);
     modeButton(ui, width - 14, 11, header_height - 22);
     rl.drawRectangleRec(.{ .x = 0, .y = header_height - 1, .width = width, .height = 1 }, theme.colors.line);
     return pressed;
+}
+
+/// escreve `content` na cor do destaque com um brilho claro que passa por ele, da esquerda para a direita, a cada
+/// poucos segundos (o nome do avião aberto, que está "vivo"); devolve onde o texto acaba
+pub fn shimmer(font: rl.Font, content: [:0]const u8, x: f32, y: f32, size: f32) f32 {
+    const total = theme.textWidth(font, content, size);
+    const period: f64 = 3.2; // segundos entre uma passada e a outra
+    const phase: f32 = @floatCast(@mod(rl.getTime(), period) / period);
+    const band = 26.0; // largura do brilho (px)
+    const center = x - 2 * band + phase * (total + 4 * band);
+    glow(.{ .x = x - 6, .y = y - 3, .width = total + 12, .height = size + 6 }, 6);
+    var cursor = x;
+    var buffer: [8:0]u8 = undefined;
+    var letters = (std.unicode.Utf8View.init(content) catch return x + total).iterator();
+    while (letters.nextCodepointSlice()) |letter| {
+        @memcpy(buffer[0..letter.len], letter);
+        buffer[letter.len] = 0;
+        const glyph: [:0]const u8 = buffer[0..letter.len :0];
+        const advance = theme.textWidth(font, glyph, size) + theme.spacing(size);
+        const distance = (cursor + advance / 2 - center) / band;
+        const light: f32 = @exp(-distance * distance);
+        theme.text(font, glyph, cursor, y, size, mixColor(theme.colors.accent, theme.hex(0xffffff), light * (if (theme.mode == .dark) @as(f32, 0.85) else 0.6)));
+        cursor += advance;
+    }
+    return x + total;
+}
+
+fn mixColor(from: rl.Color, to: rl.Color, amount: f32) rl.Color {
+    const part = std.math.clamp(amount, 0, 1);
+    const channel = struct {
+        fn of(a: u8, b: u8, t: f32) u8 {
+            return @intFromFloat(@round(@as(f32, @floatFromInt(a)) * (1 - t) + @as(f32, @floatFromInt(b)) * t));
+        }
+    }.of;
+    return .{ .r = channel(from.r, to.r, part), .g = channel(from.g, to.g, part), .b = channel(from.b, to.b, part), .a = from.a };
 }
 
 /// o interruptor (ligado: o destaque com brilho e a bolinha à direita)

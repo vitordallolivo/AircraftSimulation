@@ -8,6 +8,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - Na prévia, dá para escolher quais superfícies vão para a planilha.
 - As análises rodam o avião como está na Montagem, mesmo sem salvar, e com a variante escolhida.
 - Abrir outro avião ou projeto fecha o que estava aberto, e a linha de cima mostra o avião e o projeto em uso.
+- Botão "Novo"; o nome do avião aberto brilha no topo, ao lado do projeto.
+- A primeira mudança num avião montado vira uma variante, e uma janela pede o nome dela.
 
 ## v0.3.1 (na `0.3_dev`, fechada em 2026-11-20)
 
