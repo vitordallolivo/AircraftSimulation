@@ -232,8 +232,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/physics/**
 
 - `core/src/physics/aero.zig` — Aerodinâmica por componentes.
-  tipos `Out:19`, `GroupCoeffs:325`
-  fn `sigmaStall:30`, `init:95`, `compute:128`, `computeEnv:133`, `computeTrace:138`, `fuselage:269`, `coeffs:284`, `coeffsEx:289`, `coeffsEnv:294`, `coeffsAt:299`, `groupCoeffs:335`
+  tipos `Out:19`, `GroupCoeffs:333`
+  fn `sigmaStall:30`, `init:95`, `compute:128`, `computeEnv:133`, `computeTrace:138`, `fuselage:277`, `coeffs:292`, `coeffsEx:297`, `coeffsEnv:302`, `coeffsAt:307`, `groupCoeffs:343`, `surfaceCoeffs:372`
 - `core/src/physics/aeromodel.zig` — O modelo aerodinâmico do voo, escolhido por `Params.aero_model` (`types.AeroModel`): quem a dinâmica, a trimagem e
   fn `compute:18`
 - `core/src/physics/aerotable.zig` — Modelo aerodinâmico por tabela (Params.aero_model = 2): os coeficientes do avião inteiro vêm de `Params.aero_tab`,
@@ -583,8 +583,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da antiga GUI PyQt.
   tipos `Screen:36`
 - `aerosim/gui/sheet_window.zig` — A janela "Planilha…" de cada área: a planilha `.xlsx` aparece como no Excel, a partir do A1, com a largura das
-  tipos `Place:31`, `SheetWindow:40`
-  fn `saveWhenReady:905`, `previewData:935`, `previewWorkbook:941`
+  tipos `Place:31`, `SheetWindow:40`, `Choice:925`
+  fn `saveWhenReady:959`, `previewData:989`, `previewWorkbook:995`, `previewWorkbookWithChoices:1009`
 - `aerosim/gui/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos, exportar, o toque (mouse e dedo) e a leitura
 
 **aerosim/gui/tabs/**

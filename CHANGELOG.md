@@ -18,6 +18,12 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   curso do profundor), o estabilizador vertical, o aileron e as derivadas de estabilidade do avião montado. Cada
   superfície ganha o seu bloco: com dois estabilizadores horizontais saem dois blocos, cada um com o seu braço e o
   seu volume de cauda, mais o volume dos dois juntos; o mesmo vale para os verticais e para os ailerons de cada asa.
+- A aba de polares da Aerodinâmica separava o avião por papel (todas as asas numa coluna, todos os EH em outra).
+  Agora cada superfície tem as suas colunas e as suas curvas nos gráficos; com uma de cada, as colunas ficam como na
+  planilha da equipe.
+- Na prévia do "Exportar…" da Aerodinâmica e da Estabilidade aparece a lista das superfícies do avião, com caixas de
+  marcar: a planilha se refaz na hora só com as marcadas, e é ela que se grava. A conta continua sendo a do avião
+  inteiro; só o que vai para a planilha muda.
 
 ## v0.3.1 (na `0.3_dev`, fechada em 2026-11-20)
 

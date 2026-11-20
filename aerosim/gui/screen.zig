@@ -162,6 +162,9 @@ pub const Screen = struct {
             ui_kit.plot.requestExport(name["dados_excel:".len..], .xlsx);
         } else if (std.mem.startsWith(u8, name, "salvar_dados:")) { // grava a prévia dos dados no caminho (prints)
             sheet_window.saveWhenReady(name["salvar_dados:".len..]);
+        } else if (std.mem.startsWith(u8, name, "desmarcar:")) { // tira o conjunto N (de 0) da prévia da exportação (prints)
+            const index = std.fmt.parseInt(usize, name["desmarcar:".len..], 10) catch 0;
+            if (index < sheet_window.max_choices) sheet_window.pending_unchecked[index] = true;
         } else if (std.mem.startsWith(u8, name, "aba_previa:")) { // a aba mostrada na prévia da exportação, de 0 (prints)
             sheet_window.preview.export_data.sheet = std.fmt.parseInt(usize, name["aba_previa:".len..], 10) catch 0;
         } else if (std.mem.startsWith(u8, name, "rolar:")) { // a primeira linha e coluna à vista na planilha: rolar:linha.coluna (prints)
@@ -212,32 +215,22 @@ pub const Screen = struct {
         sheet_window.previewWorkbook("Desempenho", file_name, bytes);
     }
 
-    /// a planilha de aerodinâmica (um bloco por asa) na prévia
+    /// a planilha de aerodinâmica (um bloco por asa) na prévia, com a lista das superfícies para escolher
     fn previewAerodynamics(screen: *Screen) void {
-        var note: [512]u8 = undefined;
         const opened = &(screen.assembly orelse return ui_kit.toast.show("abra um avião antes de exportar"));
-        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-        defer arena.deinit();
-        const bytes = manager.aero_sheet.workbook(arena.allocator(), &opened.loaded.ac) catch |err| {
-            return ui_kit.toast.show(std.fmt.bufPrint(&note, "não exportou: {s}", .{@errorName(err)}) catch "não exportou");
-        };
         var name_buffer: [256]u8 = undefined;
         const file_name = std.fmt.bufPrint(&name_buffer, "{s}_aerodinamica.xlsx", .{std.fs.path.stem(opened.path)}) catch "aerodinamica.xlsx";
-        sheet_window.previewWorkbook("Aerodinâmica", file_name, bytes);
+        sheet_export.start(&opened.loaded.ac, .aerodynamics);
+        sheet_window.previewWorkbookWithChoices("Aerodinâmica", file_name, sheet_export.labels(), sheet_export.rebuild);
     }
 
-    /// a prévia da planilha de estabilidade e controle (no formato da Outputs)
+    /// a prévia da planilha de estabilidade e controle (no formato da Outputs), com a lista das superfícies
     fn previewStability(screen: *Screen) void {
-        var note: [512]u8 = undefined;
         const opened = &(screen.assembly orelse return ui_kit.toast.show("abra um avião antes de exportar"));
-        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-        defer arena.deinit();
-        const bytes = manager.stability_sheet.workbook(arena.allocator(), &opened.loaded.ac) catch |err| {
-            return ui_kit.toast.show(std.fmt.bufPrint(&note, "não exportou: {s}", .{@errorName(err)}) catch "não exportou");
-        };
         var name_buffer: [256]u8 = undefined;
         const file_name = std.fmt.bufPrint(&name_buffer, "{s}_estabilidade.xlsx", .{std.fs.path.stem(opened.path)}) catch "estabilidade.xlsx";
-        sheet_window.previewWorkbook("Estabilidade", file_name, bytes);
+        sheet_export.start(&opened.loaded.ac, .stability);
+        sheet_window.previewWorkbookWithChoices("Estabilidade", file_name, sheet_export.labels(), sheet_export.rebuild);
     }
 
     /// a janela "Planilha…" para a área aberta
@@ -1820,3 +1813,55 @@ fn exportable(area: []const u8) bool {
     for ([_][]const u8{ "Desempenho", "Aerodinâmica", "Estabilidade" }) |name| if (std.mem.eql(u8, area, name)) return true;
     return false;
 }
+
+/// o que a prévia do "Exportar…" precisa para refazer a planilha quando o usuário marca ou desmarca uma superfície:
+/// o avião, que planilha é e, para cada caixa da lista, a superfície dela
+const sheet_export = struct {
+    const Kind = enum { aerodynamics, stability };
+    var aircraft: ?*const aircraft_model.aircraft.Aircraft = null;
+    var kind: Kind = .aerodynamics;
+    var surface_of: [sheet_window.max_choices]usize = undefined;
+    var names: [sheet_window.max_choices][]const u8 = undefined;
+    var name_storage: [sheet_window.max_choices][64]u8 = undefined;
+    var count: usize = 0;
+    var arena: ?std.heap.ArenaAllocator = null;
+
+    /// guarda o avião e monta a lista: uma caixa por superfície ligada, com o papel dela
+    fn start(plane: *const aircraft_model.aircraft.Aircraft, which: Kind) void {
+        aircraft = plane;
+        kind = which;
+        count = 0;
+        for (plane.surfaces, 0..) |surface, index| {
+            if (!surface.enabled or count == sheet_window.max_choices) continue;
+            const role = if (std.mem.eql(u8, surface.role, "wing")) "asa" else if (std.mem.eql(u8, surface.role, "htail")) "EH" else if (std.mem.eql(u8, surface.role, "vtail")) "EV" else surface.role;
+            // o papel entre parênteses, a não ser que o nome já seja ele ("EH", "asa")
+            names[count] = if (std.ascii.eqlIgnoreCase(surface.name, role)) surface.name else std.fmt.bufPrint(&name_storage[count], "{s} ({s})", .{ surface.name, role }) catch surface.name;
+            surface_of[count] = index;
+            count += 1;
+        }
+    }
+
+    fn labels() []const []const u8 {
+        return names[0..count];
+    }
+
+    /// monta a planilha com as superfícies marcadas; os bytes valem até a próxima chamada
+    fn rebuild(chosen: []const bool) ?[]const u8 {
+        const plane = aircraft orelse return null;
+        if (arena) |*old| old.deinit();
+        arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        const memory = arena.?.allocator();
+        const include = memory.alloc(bool, plane.surfaces.len) catch return null;
+        @memset(include, false);
+        for (chosen, surface_of[0..chosen.len]) |on, index| include[index] = on;
+        var note: [512]u8 = undefined;
+        const built = switch (kind) {
+            .aerodynamics => manager.aero_sheet.workbook(memory, plane, include),
+            .stability => manager.stability_sheet.workbook(memory, plane, include),
+        };
+        return built catch |err| {
+            ui_kit.toast.show(std.fmt.bufPrint(&note, "não exportou: {s}", .{@errorName(err)}) catch "não exportou");
+            return null;
+        };
+    }
+};

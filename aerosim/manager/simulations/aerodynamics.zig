@@ -186,9 +186,21 @@ pub fn solve(run: *simulation.Run, plane: simulation.Aircraft, solver: Solver, c
     return polar;
 }
 
-/// a polar do avião inteiro separada por componente (asa, EH, EV, fuselagem) em cada α (°), pelas faixas do núcleo
-/// (`core.aero.groupCoeffs`), longe do chão, com os momentos em 1/4 da CMA
-pub fn componentPolar(run: *simulation.Run, plane: simulation.Aircraft, airspeed: f64, alphas: []const f64) ![]core.aero.GroupCoeffs {
+/// a polar de cada superfície do avião num α: C_L, C_D e a parte induzida na área de referência, o α médio (rad) e a
+/// área (m²) de cada uma, na ordem da lista do avião (a desligada fica com área zero), mais a polar por grupo (para
+/// a fuselagem e o avião inteiro)
+pub const SurfacePolar = struct {
+    group: core.aero.GroupCoeffs,
+    lift: []f64,
+    drag: []f64,
+    induced: []f64,
+    alpha: []f64,
+    area: []f64,
+};
+
+/// a polar separada por superfície em cada α (°) de `alphas`, pelas faixas do núcleo, com os momentos no quarto da
+/// CMA (`core.aero.surfaceCoeffs`)
+pub fn surfacePolar(run: *simulation.Run, plane: simulation.Aircraft, airspeed: f64, alphas: []const f64) ![]SurfacePolar {
     const memory = run.memory();
     const instance = try memory.create(core.runner.Instance);
     instance.* = .{};
@@ -196,8 +208,19 @@ pub fn componentPolar(run: *simulation.Run, plane: simulation.Aircraft, airspeed
     const geometry = reference(&plane);
     const point: core.vec.V3 = .{ geometry.mac_le - 0.25 * geometry.chord, 0, 0 };
     const far_from_ground = 50.0;
-    const out = try memory.alloc(core.aero.GroupCoeffs, alphas.len);
-    for (out, alphas) |*found, alpha| found.* = core.aero.groupCoeffs(&instance.p, airspeed, alpha * rad, point, far_from_ground);
+    const count = plane.surfaces.len;
+    const out = try memory.alloc(SurfacePolar, alphas.len);
+    for (out, alphas) |*found, alpha| {
+        found.* = .{
+            .group = core.aero.groupCoeffs(&instance.p, airspeed, alpha * rad, point, far_from_ground),
+            .lift = try memory.alloc(f64, count),
+            .drag = try memory.alloc(f64, count),
+            .induced = try memory.alloc(f64, count),
+            .alpha = try memory.alloc(f64, count),
+            .area = try memory.alloc(f64, count),
+        };
+        core.aero.surfaceCoeffs(&instance.p, airspeed, alpha * rad, point, far_from_ground, found.lift, found.drag, found.induced, found.alpha, found.area);
+    }
     return out;
 }
 

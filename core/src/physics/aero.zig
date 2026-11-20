@@ -137,8 +137,15 @@ pub fn computeEnv(params: *const types.Params, Vr: V3, body_rates: V3, rcg: V3, 
 /// `computeEnv` que também devolve o estado de cada painel em `out` (α e velocidade locais, C_L, sustentação)
 pub fn computeTrace(params: *const types.Params, Vr: V3, body_rates: V3, rcg: V3, height: f64, deflections: V3, env: *const mods.Env, out: []types.PanelState) Out {
     for (out) |*panel| panel.* = .{};
-    return computeImpl(true, params, Vr, body_rates, rcg, height, deflections, env, out);
+    return computeImpl(true, params, Vr, body_rates, rcg, height, deflections, env, .{ .panels = out });
 }
+
+/// o que `computeImpl` anota de cada painel quando pedido: o estado (`types.PanelState`, o mesmo da ABI) e, se
+/// `induced` tem lugar, a força do arrasto induzido do painel (N, eixos do corpo), que o estado não guarda
+const TraceOut = struct {
+    panels: []types.PanelState,
+    induced: []V3 = &.{},
+};
 
 /// Γ = ½ V c η C_L de cada painel (Kutta–Joukowski com a carga da faixa, como o k_i de loads/llt.zig), com o α
 /// que o laço dos painéis daria sem o par de asas; e a direção para onde o ar vai
@@ -162,7 +169,7 @@ fn pairGamma(params: *const types.Params, Vr: V3, body_rates: V3, deflections: V
 }
 
 /// o laço dos painéis e a fuselagem; com `trace`, escreve o estado de cada painel em `out`
-fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_rates: V3, rcg: V3, height: f64, deflections: V3, env: *const mods.Env, out: if (trace) []types.PanelState else void) Out {
+fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_rates: V3, rcg: V3, height: f64, deflections: V3, env: *const mods.Env, out: if (trace) TraceOut else void) Out {
     @setFloatMode(fmath.float_mode);
     var result = Out{};
     const Va = vec.norm(Vr);
@@ -219,7 +226,8 @@ fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_r
             if (dcm != 0) moment += vec.v3(surface.ey) * vec.splat(qS * surface.c * dcm);
         }
         if (trace) {
-            if (i < out.len) out[i] = .{ .r = surface.r, .S = surface.S, .c = surface.c, .group = surface.group, .side = surface.side, .alpha = al,
+            if (i < out.induced.len) out.induced[i] = Fi;
+            if (i < out.panels.len) out.panels[i] = .{ .r = surface.r, .S = surface.S, .c = surface.c, .group = surface.group, .side = surface.side, .alpha = al,
                 .V = Vp, .CL = CL, .CD = CD, .L = qS * CL, .D = qS * CD, .F = force, .v = local, .vind = vind, .ey = surface.ey, .ex = surface.ex };
         }
         const group = limits.groupIndex(surface.group);
@@ -356,6 +364,34 @@ pub fn groupCoeffs(params: *const types.Params, airspeed: f64, alpha: f64, ref: 
     return result;
 }
 
+/// a polar separada por superfície do avião (cada asa, cada EH, cada EV) num α (β = 0, sem taxas nem comandos):
+/// C_L, C_D e a parte induzida de cada uma na área de referência do avião, a área e o α médio dos painéis dela. A
+/// superfície é o `owner` de cada painel (o índice na lista do avião); `lift`, `drag`, `induced`, `alpha` e `area`
+/// têm uma entrada por superfície (os painéis de dono fora da faixa ficam de fora). É a mesma soma de
+/// `groupCoeffs`, por dono em vez de por grupo
+pub fn surfaceCoeffs(params: *const types.Params, airspeed: f64, alpha: f64, ref: V3, height: f64, lift: []f64, drag: []f64, induced: []f64, mean_alpha: []f64, area: []f64) void {
+    var panels: [limits.max_surfaces]types.PanelState = undefined;
+    var induced_force: [limits.max_surfaces]V3 = undefined;
+    for (&panels) |*panel| panel.* = .{};
+    for (&induced_force) |*force| force.* = vec.zero;
+    const sc = fmath.sincos(alpha);
+    const Vr = V3{ airspeed * sc.c, 0, airspeed * sc.s };
+    _ = computeImpl(true, params, Vr, vec.zero, ref, height, vec.zero, &mods.Env.none, .{ .panels = &panels, .induced = &induced_force });
+    const qS = 0.5 * params.env.rho * airspeed * airspeed * params.Sref;
+    for ([_][]f64{ lift, drag, induced, mean_alpha, area }) |column| @memset(column, 0);
+    const count: usize = @intCast(params.n_surf);
+    for (panels[0..@min(count, panels.len)], induced_force[0..@min(count, panels.len)], params.surf[0..@min(count, panels.len)]) |panel, panel_induced, surface| {
+        if (surface.owner < 0 or surface.owner >= lift.len) continue;
+        const owner: usize = @intCast(surface.owner);
+        lift[owner] += (-panel.F[2] * sc.c + panel.F[0] * sc.s) / qS;
+        drag[owner] -= (panel.F[0] * sc.c + panel.F[2] * sc.s) / qS;
+        induced[owner] -= (panel_induced[0] * sc.c + panel_induced[2] * sc.s) / qS;
+        mean_alpha[owner] += panel.S * panel.alpha;
+        area[owner] += panel.S;
+    }
+    for (mean_alpha, area) |*weighted, surface_area| weighted.* = if (surface_area > 0) weighted.* / surface_area else std.math.nan(f64);
+}
+
 const testing = std.testing;
 
 test "a polar por grupo soma a do avião inteiro" {
@@ -377,6 +413,28 @@ test "a polar por grupo soma a do avião inteiro" {
     try testing.expectApproxEqAbs(found.total.CD, drag, 1e-12);
     try testing.expectApproxEqAbs(found.total.CDi, induced, 1e-12);
     try testing.expectApproxEqAbs(@as(f64, 1), found.area[0], 1e-12);
+}
+
+test "a polar por superfície: dois EH somam o grupo do EH" {
+    var params = types.Params{};
+    params.n_surf = 3;
+    params.surf[0] = .{ .S = 1, .c = 0.4, .AR = 6, .CLa = 4.5, .CL0 = 0.3, .CLmax = 1.4, .CD0 = 0.01, .group = .wing, .owner = 0 };
+    params.surf[1] = .{ .S = 0.2, .c = 0.2, .AR = 4, .CLa = 3.5, .CL0 = 0, .CLmax = 1.0, .CD0 = 0.01, .group = .htail, .r = .{ -0.8, 0, 0 }, .owner = 1 };
+    params.surf[2] = .{ .S = 0.1, .c = 0.15, .AR = 4, .CLa = 3.5, .CL0 = 0, .CLmax = 1.0, .CD0 = 0.01, .group = .htail, .r = .{ -0.9, 0, 0.2 }, .owner = 2 };
+    init(&params);
+    const grouped = groupCoeffs(&params, 15, 0.05, vec.zero, 50);
+    var lift: [3]f64 = undefined;
+    var drag: [3]f64 = undefined;
+    var induced: [3]f64 = undefined;
+    var mean_alpha: [3]f64 = undefined;
+    var area: [3]f64 = undefined;
+    surfaceCoeffs(&params, 15, 0.05, vec.zero, 50, &lift, &drag, &induced, &mean_alpha, &area);
+    const htail = limits.groupIndex(.htail);
+    try testing.expectApproxEqAbs(grouped.lift[htail], lift[1] + lift[2], 1e-12);
+    try testing.expectApproxEqAbs(grouped.drag[htail], drag[1] + drag[2], 1e-12);
+    try testing.expectApproxEqAbs(grouped.induced[htail], induced[1] + induced[2], 1e-12);
+    try testing.expectApproxEqAbs(grouped.lift[limits.groupIndex(.wing)], lift[0], 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, 0.1), area[2], 1e-12);
 }
 
 test "painel isolado: CL linear e CLmax" {

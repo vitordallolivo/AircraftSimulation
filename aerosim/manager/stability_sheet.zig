@@ -20,6 +20,7 @@ const simulation = @import("simulation");
 const aircraft_model = @import("aircraft_model");
 const aerodynamics = @import("simulations/aerodynamics.zig");
 const stability = @import("simulations/stability.zig");
+const aero_sheet = @import("aero_sheet.zig");
 
 const writer = core.xlsx_writer;
 const params_mod = aircraft_model.params;
@@ -49,7 +50,9 @@ const header_row = 4;
 const first_row = 6;
 
 /// a pasta de trabalho de E&C do avião; devolve os bytes do `.xlsx`
-pub fn workbook(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft) ![]const u8 {
+/// `include` diz que superfícies entram (uma entrada por superfície do avião; null: todas); a conta é sempre a do
+/// avião inteiro, só os blocos mostrados mudam
+pub fn workbook(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, include: ?[]const bool) ![]const u8 {
     var run: simulation.Run = .{ .arena = .init(memory), .aircraft = aircraft };
     const count: usize = @intFromFloat(alpha_last - alpha_first + 1);
     const alphas = try memory.alloc(f64, count);
@@ -57,7 +60,7 @@ pub fn workbook(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft)
     const airspeed = aerodynamics.cruise(aircraft);
     const found = try aerodynamics.stabilitySheet(&run, airspeed, alphas, 2);
     var sheet = writer.Sheet{ .name = try writer.sheetName(memory, aircraft.name) };
-    try fill(memory, &sheet, aircraft, found);
+    try fill(memory, &sheet, aircraft, found, include);
     var sheets = [_]writer.Sheet{sheet};
     return writer.write(memory, &sheets);
 }
@@ -148,7 +151,7 @@ fn blockTitle(memory: std.mem.Allocator, heading: []const u8, surface: *const mo
 
 /// a aba inteira: um bloco por estabilizador horizontal, um por vertical e um por asa com aileron, lado a lado, e
 /// as derivadas do avião montado no fim
-fn fill(memory: std.mem.Allocator, sheet: *writer.Sheet, aircraft: *const simulation.Aircraft, found: aerodynamics.StabilitySheet) !void {
+fn fill(memory: std.mem.Allocator, sheet: *writer.Sheet, aircraft: *const simulation.Aircraft, found: aerodynamics.StabilitySheet, include: ?[]const bool) !void {
     const wing = firstOf(aircraft, "wing");
     const geometry = found.geometry;
     const references = params_mod.references(aircraft);
@@ -161,8 +164,10 @@ fn fill(memory: std.mem.Allocator, sheet: *writer.Sheet, aircraft: *const simula
     var next_block: u32 = 0;
 
     // os estabilizadores horizontais
-    for (aircraft.surfaces) |*surface| {
-        if (!surface.enabled or !std.mem.eql(u8, surface.role, "htail")) continue;
+    var horizontal_written: usize = 0;
+    for (aircraft.surfaces, 0..) |*surface, index| {
+        if (!surface.enabled or !std.mem.eql(u8, surface.role, "htail") or !aero_sheet.included(include, index)) continue;
+        horizontal_written += 1;
         var horizontal: Writer = .{ .memory = memory, .sheet = sheet, .block = .at(next_block) };
         next_block += 1;
         try horizontal.title(try blockTitle(memory, "ESTABILIZADOR HORIZONTAL", surface, horizontal_count > 1), horizontal.block.value);
@@ -196,7 +201,7 @@ fn fill(memory: std.mem.Allocator, sheet: *writer.Sheet, aircraft: *const simula
         try horizontal.number("Deflexão máxima positiva", "δe,max", "deg", autopilot.de_max);
         try horizontal.number("Deflexão máxima negativa", "δe,min", "deg", -autopilot.de_max);
     }
-    if (horizontal_count == 0) {
+    if (horizontal_written == 0 and horizontal_count == 0) {
         var horizontal: Writer = .{ .memory = memory, .sheet = sheet, .block = .at(next_block) };
         next_block += 1;
         try horizontal.title("ESTABILIZADOR HORIZONTAL", horizontal.block.value);
@@ -204,8 +209,10 @@ fn fill(memory: std.mem.Allocator, sheet: *writer.Sheet, aircraft: *const simula
     }
 
     // os estabilizadores verticais
-    for (aircraft.surfaces) |*surface| {
-        if (!surface.enabled or !std.mem.eql(u8, surface.role, "vtail")) continue;
+    var vertical_written: usize = 0;
+    for (aircraft.surfaces, 0..) |*surface, index| {
+        if (!surface.enabled or !std.mem.eql(u8, surface.role, "vtail") or !aero_sheet.included(include, index)) continue;
+        vertical_written += 1;
         var vertical: Writer = .{ .memory = memory, .sheet = sheet, .block = .at(next_block) };
         next_block += 1;
         try vertical.title(try blockTitle(memory, "ESTABILIZADOR VERTICAL", surface, vertical_count > 1), vertical.block.value);
@@ -230,7 +237,7 @@ fn fill(memory: std.mem.Allocator, sheet: *writer.Sheet, aircraft: *const simula
         try vertical.number("CLalpha EV", "CLalphav", "1/deg", if (coefficients) |c| c.CLa / deg else nan);
         try vertical.number("Deflexão máxima negativa", "δr,min", "deg", -autopilot.dr_max);
     }
-    if (vertical_count == 0) {
+    if (vertical_written == 0 and vertical_count == 0) {
         var vertical: Writer = .{ .memory = memory, .sheet = sheet, .block = .at(next_block) };
         next_block += 1;
         try vertical.title("ESTABILIZADOR VERTICAL", vertical.block.value);
@@ -240,8 +247,8 @@ fn fill(memory: std.mem.Allocator, sheet: *writer.Sheet, aircraft: *const simula
     // os ailerons: um bloco por aileron de cada asa
     const wing_count = countOf(aircraft, "wing");
     var aileron_count: usize = 0;
-    for (aircraft.surfaces) |*surface| {
-        if (!surface.enabled or !std.mem.eql(u8, surface.role, "wing")) continue;
+    for (aircraft.surfaces, 0..) |*surface, index| {
+        if (!surface.enabled or !std.mem.eql(u8, surface.role, "wing") or !aero_sheet.included(include, index)) continue;
         for (surface.controls) |aileron| {
             if (!std.mem.eql(u8, aileron.kind, "aileron")) continue;
             aileron_count += 1;
@@ -261,7 +268,12 @@ fn fill(memory: std.mem.Allocator, sheet: *writer.Sheet, aircraft: *const simula
             try aileron_writer.number("Deflexão negativa", "δA", "deg", -autopilot.da_max);
         }
     }
-    if (aileron_count == 0) {
+    var ailerons_on_plane: usize = 0;
+    for (aircraft.surfaces) |surface| {
+        if (!surface.enabled or !std.mem.eql(u8, surface.role, "wing")) continue;
+        for (surface.controls) |control| ailerons_on_plane += @intFromBool(std.mem.eql(u8, control.kind, "aileron"));
+    }
+    if (aileron_count == 0 and ailerons_on_plane == 0) {
         var aileron_writer: Writer = .{ .memory = memory, .sheet = sheet, .block = .at(next_block) };
         next_block += 1;
         try aileron_writer.title("AILERON", aileron_writer.block.value);
@@ -288,7 +300,7 @@ fn fill(memory: std.mem.Allocator, sheet: *writer.Sheet, aircraft: *const simula
     }
 
     // o título, a velocidade e a massa, de ponta a ponta dos blocos
-    const last_value = Block.at(next_block - 1).value;
+    const last_value = if (next_block > 0) Block.at(next_block - 1).value else derivative_value;
     try sheet.text(memory, 2, 2, try std.fmt.allocPrint(memory, "{s} iw={d:.1}°", .{ aircraft.name, incidence }), .wing_title);
     try sheet.merge(memory, 2, 2, 2, last_value, .wing_title);
     try sheet.text(memory, 3, 2, "VELOCIDADE DE REFERÊNCIA", .header);
@@ -317,7 +329,7 @@ test "a planilha de E&C do avião de exemplo: EH, EV, aileron e derivadas" {
     var diagnosis: model.Diag = .{};
     var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
     defer loaded.deinit();
-    const book = try core.xlsx.Workbook.parse(memory, try workbook(memory, &loaded.ac));
+    const book = try core.xlsx.Workbook.parse(memory, try workbook(memory, &loaded.ac, null));
     try std.testing.expectEqual(@as(usize, 1), book.sheets.len);
     const corner = book.sheets[0].byAddress("B4") orelse return error.TestUnexpectedResult;
     try std.testing.expectEqualStrings("ESTABILIZADOR HORIZONTAL", corner.text);
@@ -338,7 +350,7 @@ test "dois EH viram dois blocos, cada um com o seu volume, e o total soma os doi
     upper.name = "EH superior";
     upper.z -= 0.25;
     aircraft.surfaces = try std.mem.concat(memory, model.Surface, &.{ aircraft.surfaces, &.{upper} });
-    const book = try core.xlsx.Workbook.parse(memory, try workbook(memory, &aircraft));
+    const book = try core.xlsx.Workbook.parse(memory, try workbook(memory, &aircraft, null));
     const sheet = book.sheets[0];
     const second = sheet.byAddress("O4") orelse return error.TestUnexpectedResult;
     try std.testing.expectEqualStrings("ESTABILIZADOR HORIZONTAL · EH superior", second.text);

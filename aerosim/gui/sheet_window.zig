@@ -265,6 +265,7 @@ pub const SheetWindow = struct {
             const axes: plot.Axes = .{ .title = "Gráfico na planilha", .x_label = data.x_label, .y_label = data.y_label };
             plot.lines(ui, .{ .x = side.x, .y = side.y, .width = side.width, .height = @min(side.width * 0.9, buttons_y - side.y - 70) }, axes, data.curves);
         }
+        if (data.choice_count > 0 and !picker_open) window.drawChoices(ui, memory, .{ .x = side.x, .y = side.y, .width = side.width, .height = buttons_y - side.y - 70 });
         const message = std.mem.sliceTo(&window.message, 0);
         _ = widgets.paragraph(ui.fonts.regular, message, side.x + 4, buttons_y - 58, side.width - 8, 13, theme.colors.label);
         if (ui_kit.dialogs.button(ui, .{ .x = side.x, .y = buttons_y, .width = 110, .height = 34 }, "Cancelar")) window.open = false;
@@ -283,6 +284,40 @@ pub const SheetWindow = struct {
             ui.click_taken = true;
             ui.wheel = 0;
         }
+    }
+
+    /// a lista dos conjuntos com caixas de marcar; marcar ou desmarcar refaz a planilha só com os marcados
+    fn drawChoices(window: *SheetWindow, ui: *widgets.Ui, memory: std.mem.Allocator, area: rl.Rectangle) void {
+        const data = &window.export_data;
+        theme.text(ui.fonts.bold, "O que vai na planilha", area.x + 4, area.y + 2, 15, theme.colors.ink);
+        theme.text(ui.fonts.regular, "marque os conjuntos que quer salvar", area.x + 4, area.y + 22, 13, theme.colors.muted);
+        const row_height: f32 = 28;
+        var changed = false;
+        for (data.choices[0..data.choice_count], 0..) |*choice, k| {
+            const row: rl.Rectangle = .{ .x = area.x, .y = area.y + 46 + row_height * @as(f32, @floatFromInt(k)), .width = area.width, .height = row_height - 2 };
+            if (row.y + row.height > area.y + area.height) break;
+            if (ui.clickedIn(row)) {
+                choice.chosen = !choice.chosen;
+                changed = true;
+            }
+            widgets.checkBox(.{ .x = row.x + 4, .y = row.y + 5, .width = 16, .height = 16 }, choice.chosen);
+            const label = memory.dupeZ(u8, choice.text()) catch "";
+            theme.text(ui.fonts.regular, label, row.x + 28, row.y + 5, 14, theme.colors.ink);
+        }
+        if (changed) window.applyChoices();
+    }
+
+    /// refaz a planilha com os conjuntos marcados e troca a prévia (o arquivo, a aba e a rolagem ficam)
+    pub fn applyChoices(window: *SheetWindow) void {
+        const data = &window.export_data;
+        const rebuild_sheet = data.rebuild orelse return;
+        const memory = (data.arena orelse return).allocator();
+        var chosen: [max_choices]bool = undefined;
+        for (data.choices[0..data.choice_count], 0..) |choice, k| chosen[k] = choice.chosen;
+        const bytes = rebuild_sheet(chosen[0..data.choice_count]) orelse return window.say("{s}", .{"não deu para refazer a planilha"});
+        data.bytes = memory.dupe(u8, bytes) catch return;
+        data.book = xlsx.Workbook.parse(memory, data.bytes) catch |err| return window.say("não deu para ler a planilha: {s}", .{@errorName(err)});
+        if (data.book) |book| data.sheet = @min(data.sheet, if (book.sheets.len > 0) book.sheets.len - 1 else 0);
     }
 
     /// grava a planilha da prévia em `path` (no navegador, oferece o download)
@@ -883,6 +918,20 @@ fn color(rgb: u32) rl.Color {
 // ------------------------------------------------------------------ "Exportar → Dados em Excel"
 
 /// a planilha montada para a prévia: os bytes do arquivo, a planilha lida de volta (a grade) e as curvas (o gráfico)
+/// quantos conjuntos a prévia lista para escolher
+pub const max_choices = 24;
+
+/// um conjunto que pode entrar ou sair da planilha
+pub const Choice = struct {
+    label: [64]u8 = undefined,
+    label_len: usize = 0,
+    chosen: bool = true,
+
+    fn text(choice: *const Choice) []const u8 {
+        return choice.label[0..choice.label_len];
+    }
+};
+
 const ExportData = struct {
     arena: ?*std.heap.ArenaAllocator = null,
     title: []const u8 = "",
@@ -895,6 +944,11 @@ const ExportData = struct {
     name_len: usize = 0,
     /// a aba mostrada na prévia
     sheet: usize = 0,
+    /// os conjuntos que o usuário escolhe pôr na planilha (as superfícies do avião), com caixas de marcar ao lado da
+    /// prévia; `rebuild` refaz a planilha com os marcados
+    choices: [max_choices]Choice = undefined,
+    choice_count: usize = 0,
+    rebuild: ?*const fn (chosen: []const bool) ?[]const u8 = null,
 
     fn fileName(data: *const ExportData) []const u8 {
         return data.name_buffer[0..data.name_len];
@@ -949,6 +1003,33 @@ pub fn previewWorkbook(title: []const u8, file_name: []const u8, bytes: []const 
         out.book = xlsx.Workbook.parse(memory, out.bytes) catch |err| break :blk err;
     });
 }
+
+/// como `previewWorkbook`, com a lista de conjuntos (`labels`) para o usuário escolher o que entra; `rebuild` monta a
+/// planilha de novo com os marcados (devolve os bytes, ou null se não deu)
+pub fn previewWorkbookWithChoices(title: []const u8, file_name: []const u8, labels: []const []const u8, rebuild: *const fn (chosen: []const bool) ?[]const u8) void {
+    var all: [max_choices]bool = @splat(true);
+    const count = @min(labels.len, max_choices);
+    const bytes = rebuild(all[0..count]) orelse return;
+    previewWorkbook(title, file_name, bytes);
+    const out = &preview.export_data;
+    out.rebuild = rebuild;
+    out.choice_count = count;
+    for (labels[0..count], out.choices[0..count]) |label, *choice| {
+        choice.* = .{};
+        choice.label_len = @min(label.len, choice.label.len);
+        @memcpy(choice.label[0..choice.label_len], label[0..choice.label_len]);
+    }
+    var any_unchecked = false;
+    for (out.choices[0..count], pending_unchecked[0..count]) |*choice, unchecked| if (unchecked) {
+        choice.chosen = false;
+        any_unchecked = true;
+    };
+    pending_unchecked = @splat(false);
+    if (any_unchecked) preview.applyChoices();
+}
+
+/// os conjuntos que a próxima prévia já abre desmarcados (prints: `desmarcar:N`)
+pub var pending_unchecked: [max_choices]bool = @splat(false);
 
 /// a planilha dos dados: o título no alto; num gráfico, um par de colunas (x, y) por curva e o gráfico ao lado;
 /// numa tabela, o cabeçalho e as linhas (número onde a célula tem valor)
