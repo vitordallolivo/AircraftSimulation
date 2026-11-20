@@ -232,8 +232,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **core/src/physics/**
 
 - `core/src/physics/aero.zig` — Aerodinâmica por componentes.
-  tipos `Out:19`
-  fn `sigmaStall:29`, `init:94`, `compute:127`, `computeEnv:132`, `computeTrace:137`, `fuselage:267`, `coeffs:282`, `coeffsEx:287`, `coeffsEnv:292`, `coeffsAt:297`
+  tipos `Out:19`, `GroupCoeffs:325`
+  fn `sigmaStall:30`, `init:95`, `compute:128`, `computeEnv:133`, `computeTrace:138`, `fuselage:269`, `coeffs:284`, `coeffsEx:289`, `coeffsEnv:294`, `coeffsAt:299`, `groupCoeffs:335`
 - `core/src/physics/aeromodel.zig` — O modelo aerodinâmico do voo, escolhido por `Params.aero_model` (`types.AeroModel`): quem a dinâmica, a trimagem e
   fn `compute:18`
 - `core/src/physics/aerotable.zig` — Modelo aerodinâmico por tabela (Params.aero_model = 2): os coeficientes do avião inteiro vêm de `Params.aero_tab`,

@@ -22,6 +22,7 @@ pub const Out = struct {
     Fg: [limits.n_groups]V3 = [_]V3{vec.zero} ** limits.n_groups,
     Mg: [limits.n_groups]V3 = [_]V3{vec.zero} ** limits.n_groups,
     Fi: V3 = vec.zero, // parte induzida do arrasto
+    Fig: [limits.n_groups]V3 = [_]V3{vec.zero} ** limits.n_groups, // parte induzida do arrasto de cada grupo
     ratioCL: f64 = 0, // max CL/CLmax nos painéis da asa
 };
 
@@ -227,6 +228,7 @@ fn computeImpl(comptime trace: bool, params: *const types.Params, Vr: V3, body_r
         result.F += force;
         result.M += moment;
         result.Fi += Fi;
+        result.Fig[group] += Fi;
         if (surface.group == limits.Group.wing and surface.CLmax > 0) result.ratioCL = @max(result.ratioCL, CL / surface.CLmax);
     }
     if (imaged and Va > 0.1) {
@@ -316,7 +318,66 @@ pub fn coeffsAt(params: *const types.Params, airspeed: f64, alpha: f64, beta: f6
     };
 }
 
+/// a polar separada por componente num α (β = 0, sem taxas nem comandos): C_L, C_D e a parte induzida de cada grupo
+/// (asa, EH, EV, fuselagem) na área de referência do avião, a área e o α médio (ponderado pela área, já com o
+/// downwash) dos painéis de cada grupo, e os coeficientes do avião inteiro. É a soma das forças por grupo de
+/// `computeTrace`, nos eixos do vento como em `coeffsAt`
+pub const GroupCoeffs = struct {
+    lift: [limits.n_groups]f64 = [_]f64{0} ** limits.n_groups,
+    drag: [limits.n_groups]f64 = [_]f64{0} ** limits.n_groups,
+    induced: [limits.n_groups]f64 = [_]f64{0} ** limits.n_groups,
+    alpha: [limits.n_groups]f64 = [_]f64{0} ** limits.n_groups, // rad
+    area: [limits.n_groups]f64 = [_]f64{0} ** limits.n_groups, // m² (as duas metades)
+    total: types.AeroCoeffs = .{},
+};
+
+/// os coeficientes por grupo no α `alpha` (rad), com os momentos em `ref` e o avião a `height` m do chão
+pub fn groupCoeffs(params: *const types.Params, airspeed: f64, alpha: f64, ref: V3, height: f64) GroupCoeffs {
+    var panels: [limits.max_surfaces]types.PanelState = undefined;
+    const sc = fmath.sincos(alpha);
+    const Vr = V3{ airspeed * sc.c, 0, airspeed * sc.s };
+    const out = computeTrace(params, Vr, vec.zero, ref, height, vec.zero, &mods.Env.none, &panels);
+    const qS = 0.5 * params.env.rho * airspeed * airspeed * params.Sref;
+    var result: GroupCoeffs = .{ .total = coeffsAt(params, airspeed, alpha, 0, vec.zero, ref, vec.zero, height, null) };
+    for (0..limits.n_groups) |group| {
+        result.lift[group] = (-out.Fg[group][2] * sc.c + out.Fg[group][0] * sc.s) / qS;
+        result.drag[group] = -(out.Fg[group][0] * sc.c + out.Fg[group][2] * sc.s) / qS;
+        result.induced[group] = -(out.Fig[group][0] * sc.c + out.Fig[group][2] * sc.s) / qS;
+    }
+    var weighted = [_]f64{0} ** limits.n_groups;
+    const count: usize = @intCast(params.n_surf);
+    for (panels[0..@min(count, panels.len)]) |panel| {
+        if (panel.group == .none) continue;
+        const group = limits.groupIndex(panel.group);
+        weighted[group] += panel.S * panel.alpha;
+        result.area[group] += panel.S;
+    }
+    for (0..limits.n_groups) |group| result.alpha[group] = if (result.area[group] > 0) weighted[group] / result.area[group] else std.math.nan(f64);
+    return result;
+}
+
 const testing = std.testing;
+
+test "a polar por grupo soma a do avião inteiro" {
+    var params = types.Params{};
+    params.n_surf = 2;
+    params.surf[0] = .{ .S = 1, .c = 0.4, .AR = 6, .CLa = 4.5, .CL0 = 0.3, .CLmax = 1.4, .CD0 = 0.01, .group = .wing };
+    params.surf[1] = .{ .S = 0.2, .c = 0.2, .AR = 4, .CLa = 3.5, .CL0 = 0, .CLmax = 1.0, .CD0 = 0.01, .group = .htail, .r = .{ -0.8, 0, 0 } };
+    init(&params);
+    const found = groupCoeffs(&params, 15, 0.05, vec.zero, 50);
+    var lift: f64 = 0;
+    var drag: f64 = 0;
+    var induced: f64 = 0;
+    for (0..limits.n_groups) |group| {
+        lift += found.lift[group];
+        drag += found.drag[group];
+        induced += found.induced[group];
+    }
+    try testing.expectApproxEqAbs(found.total.CL, lift, 1e-12);
+    try testing.expectApproxEqAbs(found.total.CD, drag, 1e-12);
+    try testing.expectApproxEqAbs(found.total.CDi, induced, 1e-12);
+    try testing.expectApproxEqAbs(@as(f64, 1), found.area[0], 1e-12);
+}
 
 test "painel isolado: CL linear e CLmax" {
     var params = types.Params{};

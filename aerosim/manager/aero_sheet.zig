@@ -49,8 +49,107 @@ pub fn workbook(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft)
         const result = wings.surfaceSheet(&run, index, airspeed, alphas) catch continue;
         left = try wingBlock(memory, &sheet, left, surface, result) + block_gap;
     }
-    var sheets = [_]writer.Sheet{sheet};
+    const polars = try polarSheet(memory, &run, aircraft, airspeed, alphas);
+    var sheets = [_]writer.Sheet{ sheet, polars };
     return writer.write(memory, &sheets);
+}
+
+/// as colunas da aba de polares, na ordem da planilha da equipe ("nPond": na área do próprio EH, não na da asa)
+const polar_headers = [_][]const u8{ "α avião", "α asa", "CLw", "CDiw", "CDpw", "CDw", "α EH", "CLh", "CLh(nPond)", "CDih", "CDih(nPond)", "CDph", "CDh", "CDf", "CDv", "α avião", "CL global", "CD global", "α (rad)", "CN global", "CL/CD" };
+const polar_header_row = 6;
+const polar_first_row = 7;
+
+/// "Polares <avião>": o avião inteiro (fuselagem, EH e EV) separado por componente em cada α, com as áreas e as
+/// incidências no alto e os gráficos de sustentação, arrasto e da polar ao lado
+fn polarSheet(memory: std.mem.Allocator, run: *simulation.Run, aircraft: *const simulation.Aircraft, airspeed: f64, alphas: []const f64) !writer.Sheet {
+    var sheet = writer.Sheet{ .name = try writer.sheetName(memory, try std.fmt.allocPrint(memory, "Polares {s}", .{aircraft.name})) };
+    const found = try aerodynamics.componentPolar(run, aircraft.*, airspeed, alphas);
+    const wing = core.limits.groupIndex(.wing);
+    const tail = core.limits.groupIndex(.htail);
+    const fin = core.limits.groupIndex(.vtail);
+    const body = core.limits.groupIndex(.fuselage);
+    const nan = std.math.nan(f64);
+    const first = if (found.len > 0) found[0] else core.aero.GroupCoeffs{};
+    const wing_area = first.area[wing];
+    const tail_area = first.area[tail];
+    // as áreas e as incidências da asa e do EH (a primeira superfície de cada papel)
+    var wing_incidence: f64 = nan;
+    var tail_incidence: f64 = nan;
+    for (aircraft.surfaces) |surface| {
+        if (!surface.enabled or surface.vertical) continue;
+        if (std.mem.eql(u8, surface.role, "wing") and std.math.isNan(wing_incidence)) wing_incidence = surface.incidence;
+        if (!std.mem.eql(u8, surface.role, "wing") and std.math.isNan(tail_incidence)) tail_incidence = surface.incidence;
+    }
+    try sheet.text(memory, 1, 1, "Sw (m²)", .header);
+    try sheet.number(memory, 1, 2, wing_area, .blue_value);
+    try sheet.text(memory, 1, 3, "Incidência asa (°)", .header);
+    try sheet.number(memory, 1, 4, wing_incidence, .blue_value);
+    try sheet.text(memory, 3, 1, "Sh (m²)", .header);
+    try sheet.number(memory, 3, 2, tail_area, .blue_value);
+    try sheet.text(memory, 3, 3, "Incidência EH (°)", .header);
+    try sheet.number(memory, 3, 4, tail_incidence, .blue_value);
+    try sheet.text(memory, 1, 6, try std.fmt.allocPrint(memory, "V = {d:.1} m/s; coeficientes na área da asa, pelas faixas do núcleo", .{airspeed}), .normal);
+
+    const right: u32 = polar_headers.len;
+    try sheet.text(memory, 5, 1, try std.fmt.allocPrint(memory, "Polares {s}", .{aircraft.name}), .light_green_value);
+    try sheet.merge(memory, 5, 1, 5, right, .light_green_value);
+    for (polar_headers, 1..) |name, column| {
+        try sheet.text(memory, polar_header_row, @intCast(column), name, .pink_label);
+        try sheet.width(memory, @intCast(column), 11);
+    }
+    const ratio_tail = if (tail_area > 0) wing_area / tail_area else nan;
+    for (alphas, found, 0..) |alpha, item, k| {
+        const row = polar_first_row + @as(u32, @intCast(k));
+        const lift = item.total.CL;
+        const drag = item.total.CD;
+        const values = [_]f64{
+            alpha,                                        item.alpha[wing] * deg,      item.lift[wing],         item.induced[wing],
+            item.drag[wing] - item.induced[wing],          item.drag[wing],             item.alpha[tail] * deg,  item.lift[tail],
+            item.lift[tail] * ratio_tail,                  item.induced[tail],          item.induced[tail] * ratio_tail, item.drag[tail] - item.induced[tail],
+            item.drag[tail],                               item.drag[body],             item.drag[fin],          alpha,
+            lift,                                          drag,                        alpha / deg,             item.total.CN,
+            if (drag > 0) lift / drag else nan,
+        };
+        for (values, 1..) |value, column| try sheet.number(memory, row, @intCast(column), value, if (column == 1 or column == 16) .cyan_label else .number);
+    }
+    const last_row = polar_first_row + @as(u32, @intCast(alphas.len)) - 1;
+    const chart_left = right + 2;
+    const series = struct {
+        fn of(name: []const u8, x: u32, y: u32, last: u32) writer.ChartSeries {
+            return .{ .name = name, .x_column = x, .y_column = y, .first_row = polar_first_row, .last_row = last };
+        }
+    }.of;
+    try sheet.chart(memory, .{
+        .title = "Sustentação",
+        .x_label = "α (°)",
+        .y_label = "C_L",
+        .series = try memory.dupe(writer.ChartSeries, &.{ series("asa", 1, 3, last_row), series("EH", 1, 8, last_row), series("avião", 1, 17, last_row) }),
+        .from_column = chart_left,
+        .from_row = 2,
+        .to_column = chart_left + 8,
+        .to_row = 20,
+    });
+    try sheet.chart(memory, .{
+        .title = "Arrasto",
+        .x_label = "α (°)",
+        .y_label = "C_D",
+        .series = try memory.dupe(writer.ChartSeries, &.{ series("asa", 1, 6, last_row), series("EH", 1, 13, last_row), series("fuselagem", 1, 14, last_row), series("avião", 1, 18, last_row) }),
+        .from_column = chart_left + 9,
+        .from_row = 2,
+        .to_column = chart_left + 17,
+        .to_row = 20,
+    });
+    try sheet.chart(memory, .{
+        .title = "Polar",
+        .x_label = "C_D",
+        .y_label = "C_L",
+        .series = try memory.dupe(writer.ChartSeries, &.{series("avião", 18, 17, last_row)}),
+        .from_column = chart_left,
+        .from_row = 22,
+        .to_column = chart_left + 8,
+        .to_row = 40,
+    });
+    return sheet;
 }
 
 /// a velocidade das tabelas: a de cruzeiro do avião (a mesma do "avião completo" do Analisar)
@@ -225,7 +324,7 @@ test "a planilha de aerodinâmica do avião de exemplo: um bloco por asa, coefic
     var loaded = try aircraft_model.aircraft.parse(std.testing.allocator, bytes, &diagnosis);
     defer loaded.deinit();
     const book = try core.xlsx.Workbook.parse(memory, try workbook(memory, &loaded.ac));
-    try std.testing.expectEqual(@as(usize, 1), book.sheets.len);
+    try std.testing.expectEqual(@as(usize, 2), book.sheets.len);
     try std.testing.expectEqualStrings("Aerodin", book.sheets[0].name);
     // o bloco da asa começa em B: o título em B2 e "Parâmetro" em B7
     const corner = book.cell("Aerodin", "B7") orelse return error.TestUnexpectedResult;

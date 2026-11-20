@@ -186,6 +186,21 @@ pub fn solve(run: *simulation.Run, plane: simulation.Aircraft, solver: Solver, c
     return polar;
 }
 
+/// a polar do avião inteiro separada por componente (asa, EH, EV, fuselagem) em cada α (°), pelas faixas do núcleo
+/// (`core.aero.groupCoeffs`), longe do chão, com os momentos em 1/4 da CMA
+pub fn componentPolar(run: *simulation.Run, plane: simulation.Aircraft, airspeed: f64, alphas: []const f64) ![]core.aero.GroupCoeffs {
+    const memory = run.memory();
+    const instance = try memory.create(core.runner.Instance);
+    instance.* = .{};
+    try wings.configure(run, instance, &plane, .faixas);
+    const geometry = reference(&plane);
+    const point: core.vec.V3 = .{ geometry.mac_le - 0.25 * geometry.chord, 0, 0 };
+    const far_from_ground = 50.0;
+    const out = try memory.alloc(core.aero.GroupCoeffs, alphas.len);
+    for (out, alphas) |*found, alpha| found.* = core.aero.groupCoeffs(&instance.p, airspeed, alpha * rad, point, far_from_ground);
+    return out;
+}
+
 /// a reta dos mínimos quadrados y = a x + b (`np.polyfit(x, y, 1)`); null com menos de dois pontos
 fn line(xs: []const f64, ys: []const f64) ?[2]f64 {
     var sx: f64 = 0;
