@@ -26,6 +26,8 @@ pub const Kind = enum {
     motors,
     envelope,
     sizing,
+    takeoff,
+    thrust_polynomial,
 
     /// o nome na tela (e no `# tipo:` do .csv)
     pub fn label(kind: Kind) []const u8 {
@@ -36,6 +38,8 @@ pub const Kind = enum {
             .motors => "motores",
             .envelope => "envelope de voo (tração por velocidade)",
             .sizing => "dimensionamento inicial (diagrama de restrições)",
+            .takeoff => "missão e decolagem (por tempo)",
+            .thrust_polynomial => "polinômio de tração T(V, rpm)",
         };
     }
 
@@ -48,6 +52,8 @@ pub const Kind = enum {
             .motors => "Motores",
             .envelope => "Envelope de voo",
             .sizing => "Dimensionamento inicial",
+            .takeoff => "Missão e decolagem",
+            .thrust_polynomial => "Polinômio de tração",
         };
     }
 
@@ -60,6 +66,8 @@ pub const Kind = enum {
             .motors => &motor_roles,
             .envelope => &envelope_roles,
             .sizing => &sizing_roles,
+            .takeoff => &takeoff_roles,
+            .thrust_polynomial => &.{},
         };
     }
 };
@@ -107,8 +115,17 @@ const sizing_roles = [_]Role{
     .{ .key = "TW_teto", .label = "T/W teto", .hints = &.{ "teto", "ceiling" }, .required = false },
 };
 
+/// a decolagem ou a missão no tempo: posição, velocidade e altura (a tração é opcional)
+const takeoff_roles = [_]Role{
+    .{ .key = "t", .label = "tempo (s)", .hints = &.{ "t ", "t[", "t(", "tempo", "time" } },
+    .{ .key = "x", .label = "distância (m)", .hints = &.{ "x", "s ", "s[", "dist", "pista" } },
+    .{ .key = "V", .label = "V (m/s)", .hints = &.{ "v ", "v[", "v(", "velocidade" }, .required = false },
+    .{ .key = "h", .label = "altura (m)", .hints = &.{ "h ", "h[", "h(", "altura", "altitude" }, .required = false },
+    .{ .key = "T", .label = "tração (N)", .hints = &.{ "tração", "tracao", "thrust", "t_" }, .required = false },
+};
+
 const none = "—";
-const kinds = [_]Kind{ .polar, .distribution, .curve, .motors, .envelope, .sizing };
+const kinds = [_]Kind{ .polar, .distribution, .curve, .motors, .envelope, .sizing, .takeoff, .thrust_polynomial };
 
 /// a planilha aberta e o que está marcado nela (fica entre um pedido e outro)
 const Draft = struct {
@@ -126,6 +143,12 @@ const Draft = struct {
     /// motores: o que vale quando a planilha não tem a coluna
     default_imax: f64 = 40,
     default_mass: f64 = 0.2,
+    /// polinômio de tração: as células da tração estática e da rotação, a unidade e qual variável é o x
+    static_cell: []const u8 = "",
+    rpm_cell: []const u8 = "",
+    kgf: bool = true,
+    x_is_rpm: bool = true,
+    v_max: f64 = 30,
     /// a área que abriu a janela
     area_buffer: [48]u8 = undefined,
     area_len: usize = 0,
@@ -266,12 +289,17 @@ pub fn detectBlock(memory: std.mem.Allocator, sheet: xlsx.Sheet) !?[]const u8 {
     return try std.fmt.allocPrint(memory, "{s}{d}", .{ columnName(&letters, corner.column), corner.row });
 }
 
-/// a célula é um título de coluna: um texto com um número logo embaixo
+/// a célula é um título de coluna: um texto com um número logo embaixo (ou uma linha abaixo: a primeira linha da
+/// tabela às vezes fica vazia nessa coluna, como a razão de subida em V = 0)
 fn isTitle(sheet: xlsx.Sheet, row: u32, column: u32) bool {
     const value = sheet.at(row, column) orelse return false;
     if (value != .text) return false;
-    const below = sheet.at(row + 1, column) orelse return false;
-    return below.asNumber() != null;
+    for ([_]u32{ 1, 2 }) |offset| {
+        const below = sheet.at(row + offset, column) orelse continue;
+        if (below.asNumber() != null) return true;
+        if (below == .text) return false;
+    }
+    return false;
 }
 
 /// a coluna sugerida para cada papel: a primeira cujo título começa por uma das pistas (sem repetir coluna); a curva
@@ -292,7 +320,13 @@ pub fn suggest(kind: Kind, headers: []const []const u8) [8]?usize {
                 break;
             }
         }
-        if (chosen[r] == null and role.required) for (0..@min(headers.len, used.len)) |k| if (!used[k]) {
+        // sem pista que bata, a coluna obrigatória pega a próxima livre só nos tipos genéricos; no envelope, no
+        // diagrama de restrições e na decolagem uma coluna qualquer daria um gráfico sem sentido
+        const blind = switch (kind) {
+            .polar, .distribution, .curve, .motors => true,
+            else => false,
+        };
+        if (chosen[r] == null and role.required and blind) for (0..@min(headers.len, used.len)) |k| if (!used[k]) {
             chosen[r] = k;
             used[k] = true;
             break;
@@ -301,7 +335,155 @@ pub fn suggest(kind: Kind, headers: []const []const u8) [8]?usize {
     return chosen;
 }
 
+// ------------------------------------------------------------------ o polinômio de tração
+
+const ThrustPoly = core.types.ThrustPoly;
+
+/// gravidade padrão, para passar de kgf a N
+const standard_gravity = 9.80665;
+
+/// o termo de um título "p01" (i = 0, j = 1), ou null
+pub fn polyTerm(header: []const u8) ?[2]u32 {
+    const text = std.mem.trim(u8, header, " ");
+    if (text.len != 3 or (text[0] != 'p' and text[0] != 'P')) return null;
+    if (!std.ascii.isDigit(text[1]) or !std.ascii.isDigit(text[2])) return null;
+    return .{ text[1] - '0', text[2] - '0' };
+}
+
+fn isPolyTitle(sheet: xlsx.Sheet, row: u32, column: u32) bool {
+    const value = sheet.at(row, column) orelse return false;
+    if (value != .text or polyTerm(value.text) == null) return false;
+    const below = sheet.at(row + 1, column) orelse return false;
+    return below.asNumber() != null;
+}
+
+/// a fila dos coeficientes "p00 p10 p01 ..." com os números embaixo, como intervalo ("H8:Z9"), ou null
+pub fn detectPolynomial(memory: std.mem.Allocator, sheet: xlsx.Sheet) !?[]const u8 {
+    for (sheet.cells) |cell| {
+        if (!isPolyTitle(sheet, cell.row, cell.column)) continue;
+        if (cell.column > 1 and isPolyTitle(sheet, cell.row, cell.column - 1)) continue;
+        var width: u32 = 0;
+        while (isPolyTitle(sheet, cell.row, cell.column + width)) width += 1;
+        var first: [4]u8 = undefined;
+        var last: [4]u8 = undefined;
+        return try std.fmt.allocPrint(memory, "{s}{d}:{s}{d}", .{ columnName(&first, cell.column), cell.row, columnName(&last, cell.column + width - 1), cell.row + 1 });
+    }
+    return null;
+}
+
+/// o endereço do número logo abaixo do primeiro título que começa por uma das pistas ("To Corrigida" → "H6")
+pub fn findLabeled(memory: std.mem.Allocator, sheet: xlsx.Sheet, hints: []const []const u8) !?[]const u8 {
+    for (hints) |hint| for (sheet.cells) |cell| {
+        if (cell.value != .text) continue;
+        const text = std.mem.trimStart(u8, cell.value.text, " ");
+        if (text.len < hint.len or !std.ascii.eqlIgnoreCase(text[0..hint.len], hint)) continue;
+        // "To": o título é só isso (ou seguido de espaço), para não pegar "Total"
+        if (text.len > hint.len and std.ascii.isAlphabetic(text[hint.len]) and hint.len <= 2) continue;
+        const below = sheet.at(cell.row + 1, cell.column) orelse continue;
+        if (below.asNumber() == null) continue;
+        var letters: [4]u8 = undefined;
+        return try std.fmt.allocPrint(memory, "{s}{d}", .{ columnName(&letters, cell.column), cell.row + 1 });
+    };
+    return null;
+}
+
+/// o polinômio de tração da planilha, como as equipes ajustam no MATLAB (Curve Fitting Toolbox, modelos `poly22` a
+/// `poly55`: f(x, y) = Σ p_ij x^i y^j; a conferir na documentação do MATLAB). A tração estática corrigida T0 entra
+/// como termo constante, como na planilha: T = (T0 + p01·V + p02·V² + p03·V³)·9,81 com x = rotação e y = V
+pub const Polynomial = struct {
+    coefficients: [ThrustPoly.n_coef]f64 = @splat(0),
+    static_thrust: f64 = 0,
+    rpm: f64 = 0,
+    /// 1 com o polinômio em N; a gravidade com ele em kgf
+    gain: f64 = 1,
+    x_is_rpm: bool = true,
+
+    /// a tração (N) na velocidade `speed` (m/s), na rotação da planilha, ao nível do mar
+    pub fn thrust(polynomial: Polynomial, speed: f64) f64 {
+        const x_value = if (polynomial.x_is_rpm) polynomial.rpm else speed;
+        const y_value = if (polynomial.x_is_rpm) speed else polynomial.rpm;
+        return polynomial.gain * (polynomial.static_thrust + ThrustPoly.eval(&polynomial.coefficients, x_value, y_value));
+    }
+};
+
+pub const PolynomialError = error{ NoCoefficients, DegreeTooHigh, BadCell };
+
+/// lê os coeficientes do bloco (títulos pij e os números embaixo), a tração estática e a rotação
+pub fn readPolynomial(sheet: xlsx.Sheet, range_text: []const u8, static_cell: []const u8, rpm_cell: []const u8, options: PolynomialOptions) PolynomialError!Polynomial {
+    const range = xlsx.parseRange(std.mem.trim(u8, range_text, " ")) catch return error.BadCell;
+    var polynomial = Polynomial{ .gain = if (options.kgf) standard_gravity else 1, .x_is_rpm = options.x_is_rpm };
+    var found: usize = 0;
+    var column = range.first_column;
+    while (column <= range.last_column) : (column += 1) {
+        const title = sheet.at(range.first_row, column) orelse continue;
+        if (title != .text) continue;
+        const term = polyTerm(title.text) orelse continue;
+        const value = (sheet.at(range.first_row + 1, column) orelse continue).asNumber() orelse continue;
+        const index = for (ThrustPoly.exps, 0..) |exponent, k| {
+            if (exponent[0] == term[0] and exponent[1] == term[1]) break k;
+        } else return error.DegreeTooHigh;
+        polynomial.coefficients[index] = value;
+        found += 1;
+    }
+    if (found == 0) return error.NoCoefficients;
+    if (static_cell.len > 0) polynomial.static_thrust = (sheet.byAddress(static_cell) orelse return error.BadCell).asNumber() orelse return error.BadCell;
+    if (rpm_cell.len > 0) polynomial.rpm = (sheet.byAddress(rpm_cell) orelse return error.BadCell).asNumber() orelse return error.BadCell;
+    return polynomial;
+}
+
+/// o polinômio marcado na planilha aberta, ou o problema dele (para a tela)
+pub fn markedPolynomial() PolynomialError!Polynomial {
+    const book = draft.book orelse return error.NoCoefficients;
+    if (draft.sheet >= book.sheets.len) return error.NoCoefficients;
+    return readPolynomial(book.sheets[draft.sheet], draft.range, draft.static_cell, draft.rpm_cell, polynomialOptions());
+}
+
+/// a curva T(V) de 0 a `v_max` em `count` pontos
+pub fn polynomialCurve(memory: std.mem.Allocator, polynomial: Polynomial, v_max: f64, count: usize) !struct { speeds: []f64, thrusts: []f64 } {
+    const speeds = try memory.alloc(f64, count);
+    const thrusts = try memory.alloc(f64, count);
+    for (speeds, thrusts, 0..) |*speed, *thrust_value, k| {
+        speed.* = v_max * @as(f64, @floatFromInt(k)) / @as(f64, @floatFromInt(count - 1));
+        thrust_value.* = polynomial.thrust(speed.*);
+    }
+    return .{ .speeds = speeds, .thrusts = thrusts };
+}
+
+/// o polinômio em .csv: as constantes em `# valor:` e uma linha por coeficiente (i, j, p)
+pub fn writePolynomialCsv(out: *std.Io.Writer, source: []const u8, area: []const u8, polynomial: Polynomial) !void {
+    try out.print("# tipo: thrust_polynomial\n# fonte: {s}\n", .{source});
+    if (area.len > 0) try out.print("# área: {s}\n", .{area});
+    try out.print("# valor: T0 = {d}\n# valor: rpm = {d}\n# valor: ganho_N = {d}\n# valor: x_rotacao = {d}\n", .{ polynomial.static_thrust, polynomial.rpm, polynomial.gain, @intFromBool(polynomial.x_is_rpm) });
+    try out.writeAll("i,j,p\n");
+    for (ThrustPoly.exps, polynomial.coefficients) |exponent, coefficient| if (coefficient != 0) {
+        try out.print("{d},{d},{d}\n", .{ exponent[0], exponent[1], coefficient });
+    };
+}
+
+/// o polinômio de volta de uma combinação guardada
+pub fn polynomialOf(saved: Saved) Polynomial {
+    var polynomial = Polynomial{};
+    for (saved.values) |item| {
+        if (std.mem.eql(u8, item.name, "T0")) polynomial.static_thrust = item.value;
+        if (std.mem.eql(u8, item.name, "rpm")) polynomial.rpm = item.value;
+        if (std.mem.eql(u8, item.name, "ganho_N")) polynomial.gain = item.value;
+        if (std.mem.eql(u8, item.name, "x_rotacao")) polynomial.x_is_rpm = item.value != 0;
+    }
+    if (saved.columns.len < 3) return polynomial;
+    for (0..saved.columns[0].len) |row| {
+        const i: u32 = @intFromFloat(saved.columns[0][row]);
+        const j: u32 = @intFromFloat(saved.columns[1][row]);
+        for (ThrustPoly.exps, 0..) |exponent, k| if (exponent[0] == i and exponent[1] == j) {
+            polynomial.coefficients[k] = saved.columns[2][row];
+        };
+    }
+    return polynomial;
+}
+
 // ------------------------------------------------------------------ o .csv de uma combinação
+
+/// uma constante guardada junto com a combinação
+pub const NamedValue = struct { name: []const u8, value: f64 };
 
 /// uma combinação guardada: o tipo, de onde veio e as colunas (os papéis do tipo)
 pub const Saved = struct {
@@ -310,6 +492,8 @@ pub const Saved = struct {
     source: []const u8,
     /// a área em que foi guardada ("" nas antigas)
     area: []const u8 = "",
+    /// as constantes (`# valor: nome = número`), como a tração estática do polinômio
+    values: []const NamedValue = &.{},
     headers: []const []const u8,
     columns: []const []const f64,
 };
@@ -348,6 +532,7 @@ pub fn readCsv(memory: std.mem.Allocator, name: []const u8, text: []const u8) !S
     var kind: Kind = .curve;
     var source: []const u8 = "";
     var area: []const u8 = "";
+    var values: std.ArrayList(NamedValue) = .empty;
     var headers: []const []const u8 = &.{};
     var columns: std.ArrayList(std.ArrayList(f64)) = .empty;
     var lines = std.mem.tokenizeScalar(u8, text, '\n');
@@ -358,6 +543,11 @@ pub fn readCsv(memory: std.mem.Allocator, name: []const u8, text: []const u8) !S
             const body = std.mem.trim(u8, line[1..], " ");
             if (std.mem.startsWith(u8, body, "tipo:")) kind = std.meta.stringToEnum(Kind, std.mem.trim(u8, body[5..], " ")) orelse .curve;
             if (std.mem.startsWith(u8, body, "fonte:")) source = try memory.dupe(u8, std.mem.trim(u8, body[6..], " "));
+            if (std.mem.startsWith(u8, body, "valor:")) if (std.mem.indexOfScalar(u8, body, '=')) |equal| {
+                const value_name = try memory.dupe(u8, std.mem.trim(u8, body[6..equal], " "));
+                const number = std.fmt.parseFloat(f64, std.mem.trim(u8, body[equal + 1 ..], " ")) catch continue;
+                try values.append(memory, .{ .name = value_name, .value = number });
+            };
             if (std.mem.startsWith(u8, body, "área:")) area = try memory.dupe(u8, std.mem.trim(u8, body["área:".len..], " "));
             continue;
         }
@@ -379,7 +569,7 @@ pub fn readCsv(memory: std.mem.Allocator, name: []const u8, text: []const u8) !S
     }
     const out = try memory.alloc([]const f64, columns.items.len);
     for (columns.items, out) |list, *column| column.* = list.items;
-    return .{ .name = name, .kind = kind, .source = source, .area = area, .headers = headers, .columns = out };
+    return .{ .name = name, .kind = kind, .source = source, .area = area, .values = values.items, .headers = headers, .columns = out };
 }
 
 /// as combinações guardadas, em ordem de nome
@@ -408,9 +598,9 @@ pub fn kindsFor(area: []const u8) []const Kind {
     const table = [_]struct { []const u8, []const Kind }{
         .{ "Aerodinâmica", &.{ .polar, .distribution, .curve } },
         .{ "Estabilidade", &.{ .polar, .curve } },
-        .{ "Desempenho", &.{ .envelope, .curve, .motors } },
+        .{ "Desempenho", &.{ .envelope, .sizing, .takeoff, .thrust_polynomial, .curve, .motors } },
         .{ "Dimensionamento inicial", &.{ .sizing, .curve } },
-        .{ "Biblioteca", &.{ .polar, .distribution, .curve, .motors } },
+        .{ "Biblioteca", &.{ .polar, .distribution, .curve, .motors, .thrust_polynomial } },
         .{ "Cargas", &.{ .distribution, .curve } },
     };
     for (table) |entry| if (std.mem.eql(u8, entry[0], area)) return entry[1];
@@ -489,8 +679,38 @@ pub fn markedKind() Kind {
 /// muda o tipo do bloco e sugere as colunas de novo
 pub fn setKind(chosen: Kind) void {
     if (chosen == draft.kind) return;
+    const was_polynomial = draft.kind == .thrust_polynomial;
     draft.kind = chosen;
+    // o polinômio é outro tipo de bloco (uma fila de coeficientes): procura de novo ao entrar e ao sair dele
+    if (was_polynomial or chosen == .thrust_polynomial) return detectRange();
     suggestColumns();
+}
+
+/// polinômio de tração: as células da tração estática e da rotação ("H6", "I6")
+pub fn polynomialCells() struct { static_thrust: []const u8, rpm: []const u8 } {
+    return .{ .static_thrust = draft.static_cell, .rpm = draft.rpm_cell };
+}
+
+/// muda as células da tração estática e da rotação
+pub fn setPolynomialCells(static_thrust: []const u8, rpm: []const u8) void {
+    const keep_memory = text_arena.allocator();
+    if (!std.mem.eql(u8, static_thrust, draft.static_cell)) draft.static_cell = keep_memory.dupe(u8, static_thrust) catch draft.static_cell;
+    if (!std.mem.eql(u8, rpm, draft.rpm_cell)) draft.rpm_cell = keep_memory.dupe(u8, rpm) catch draft.rpm_cell;
+}
+
+/// polinômio de tração: a unidade (kgf ou N), qual variável é o x do ajuste e até que velocidade desenhar
+pub const PolynomialOptions = struct { kgf: bool, x_is_rpm: bool, v_max: f64 };
+
+/// as opções do polinômio de tração
+pub fn polynomialOptions() PolynomialOptions {
+    return .{ .kgf = draft.kgf, .x_is_rpm = draft.x_is_rpm, .v_max = draft.v_max };
+}
+
+/// muda as opções do polinômio de tração
+pub fn setPolynomialOptions(options: PolynomialOptions) void {
+    draft.kgf = options.kgf;
+    draft.x_is_rpm = options.x_is_rpm;
+    if (options.v_max > 0) draft.v_max = options.v_max;
 }
 
 /// a coluna do bloco (índice em `Block.headers`) escolhida para o papel, ou null
@@ -552,7 +772,13 @@ pub fn displayText(memory: std.mem.Allocator, value: ?xlsx.Value, style: xlsx.St
 fn detectRange() void {
     const book = draft.book orelse return;
     if (draft.sheet >= book.sheets.len) return;
-    draft.range = (detectBlock(text_arena.allocator(), book.sheets[draft.sheet]) catch null) orelse "";
+    const sheet = book.sheets[draft.sheet];
+    const keep_memory = text_arena.allocator();
+    if (draft.kind == .thrust_polynomial) {
+        draft.range = (detectPolynomial(keep_memory, sheet) catch null) orelse "";
+        draft.static_cell = (findLabeled(keep_memory, sheet, &.{ "to", "t0", "tração est", "tracao est", "t est" }) catch null) orelse "";
+        draft.rpm_cell = (findLabeled(keep_memory, sheet, &.{ "rotação", "rotacao", "rpm", "n [" }) catch null) orelse "";
+    } else draft.range = (detectBlock(keep_memory, sheet) catch null) orelse "";
     suggestColumns();
 }
 
@@ -564,6 +790,7 @@ fn suggestColumns() void {
 
 /// guarda o bloco marcado com o nome dado: um .csv na pasta, ou os motores na biblioteca de motores
 pub fn keep(io: std.Io, memory: std.mem.Allocator) ![]const u8 {
+    if (draft.kind == .thrust_polynomial) return keepPolynomial(io, memory);
     const marked = markedBlock(memory) orelse return "abra uma planilha e marque o bloco (arraste sobre as células, ou escreva B6 ou B6:R40)";
     for (draft.kind.roles(), 0..) |role, r| if (role.required and draft.columns[r] == null) return std.fmt.allocPrint(memory, "falta dizer qual coluna é {s}", .{role.label});
     const book = draft.book.?;
@@ -573,11 +800,32 @@ pub fn keep(io: std.Io, memory: std.mem.Allocator) ![]const u8 {
     if (chosen_name.len == 0) return "dê um nome à combinação";
     var text: std.Io.Writer.Allocating = .init(memory);
     try writeCsv(&text.writer, draft.kind, source, draft.area_buffer[0..draft.area_len], marked, draft.columns);
+    return writeKept(io, memory, chosen_name, text.written());
+}
+
+/// guarda o polinômio de tração marcado com o nome dado
+fn keepPolynomial(io: std.Io, memory: std.mem.Allocator) ![]const u8 {
+    const polynomial = markedPolynomial() catch |err| return switch (err) {
+        error.NoCoefficients => "marque a fila dos coeficientes (os títulos p00, p10, p01... e os números embaixo)",
+        error.DegreeTooHigh => "o polinômio passa do grau 5 (poly55): os termos a mais não cabem",
+        error.BadCell => "a célula da tração estática ou da rotação não tem número",
+    };
+    const chosen_name = std.mem.trim(u8, draft.name, " ");
+    if (chosen_name.len == 0) return "dê um nome ao polinômio";
+    const book = draft.book.?;
+    const source = try std.fmt.allocPrint(memory, "{s}, aba {s}, {s}", .{ std.fs.path.basename(draft.path), book.sheets[draft.sheet].name, draft.range });
+    var text: std.Io.Writer.Allocating = .init(memory);
+    try writePolynomialCsv(&text.writer, source, draft.area_buffer[0..draft.area_len], polynomial);
+    return writeKept(io, memory, chosen_name, text.written());
+}
+
+/// grava o texto de uma combinação na pasta da biblioteca
+fn writeKept(io: std.Io, memory: std.mem.Allocator, chosen_name: []const u8, text: []const u8) ![]const u8 {
     const directory = try folder(memory);
     std.Io.Dir.cwd().createDirPath(io, directory) catch return "não deu para criar a pasta da biblioteca";
     const file_name = try library.fileName(memory, chosen_name);
     const file = try std.fs.path.join(memory, &.{ directory, try std.fmt.allocPrint(memory, "{s}.csv", .{std.fs.path.stem(file_name)}) });
-    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = file, .data = text.written() }) catch return "não deu para gravar na pasta da biblioteca";
+    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = file, .data = text }) catch return "não deu para gravar na pasta da biblioteca";
     return std.fmt.allocPrint(memory, "guardado na biblioteca: {s} ({s})", .{ chosen_name, draft.kind.label() });
 }
 
@@ -723,7 +971,7 @@ test "o número aparece com as casas do formato da célula" {
 
 test "cada área oferece os tipos dela" {
     try testing.expectEqual(Kind.polar, kindsFor("Aerodinâmica")[0]);
-    try testing.expectEqual(@as(usize, 4), kindsFor("Biblioteca").len);
+    try testing.expectEqual(@as(usize, 5), kindsFor("Biblioteca").len);
     try testing.expectEqual(Kind.envelope, kindsFor("Desempenho")[0]);
     try testing.expectEqual(Kind.sizing, kindsFor("Dimensionamento inicial")[0]);
 }
@@ -741,6 +989,11 @@ test "a tabela comprida vence a fila larga de uma linha só" {
     const titles = [_][]const u8{ "V [m/s]", "Td[N]", "Tr[N]" };
     for (titles, 0..) |title, k| try cells.append(memory, .{ .row = 5, .column = 1 + @as(u32, @intCast(k)), .value = .{ .text = title } });
     for (0..4) |j| for (0..3) |k| try cells.append(memory, .{ .row = 6 + @as(u32, @intCast(j)), .column = 1 + @as(u32, @intCast(k)), .value = .{ .number = @floatFromInt(j + k) } });
+    std.mem.sort(xlsx.Cell, cells.items, {}, struct {
+        fn before(_: void, left: xlsx.Cell, right: xlsx.Cell) bool {
+            return left.row < right.row or (left.row == right.row and left.column < right.column);
+        }
+    }.before);
     const sheet: xlsx.Sheet = .{ .name = "Tração", .cells = cells.items };
     try testing.expectEqualStrings("A5", (try detectBlock(memory, sheet)).?);
     // e as colunas do envelope saem pelos títulos
@@ -749,4 +1002,43 @@ test "a tabela comprida vence a fila larga de uma linha só" {
     try testing.expectEqual(@as(?usize, 0), columns[0]);
     try testing.expectEqual(@as(?usize, 1), columns[1]);
     try testing.expectEqual(@as(?usize, 2), columns[2]);
+}
+
+test "o polinômio de tração da planilha: T0 e os termos em V na rotação dada" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    var cells: std.ArrayList(xlsx.Cell) = .empty;
+    // como na planilha de desempenho: "To Corrigida" e "Rotação" em H5:I6, os coeficientes em H8:K9
+    try cells.append(memory, .{ .row = 5, .column = 8, .value = .{ .text = "To Corrigida " } });
+    try cells.append(memory, .{ .row = 5, .column = 9, .value = .{ .text = "Rotação" } });
+    try cells.append(memory, .{ .row = 6, .column = 8, .value = .{ .number = 6.75 } });
+    try cells.append(memory, .{ .row = 6, .column = 9, .value = .{ .number = 8500 } });
+    const terms = [_][]const u8{ "p00", "p10", "p01", "p20", "p11", "p02", "p30", "p21", "p12", "p03" };
+    const values = [_]f64{ 0, 0, -0.0763, 0, 0, 0.00141, 0, 0, 0, -0.00085 };
+    for (terms, values, 0..) |term, value, k| {
+        try cells.append(memory, .{ .row = 8, .column = 8 + @as(u32, @intCast(k)), .value = .{ .text = term } });
+        try cells.append(memory, .{ .row = 9, .column = 8 + @as(u32, @intCast(k)), .value = .{ .number = value } });
+    }
+    // a aba guarda as células em ordem de linha e coluna (a busca é binária)
+    std.mem.sort(xlsx.Cell, cells.items, {}, struct {
+        fn before(_: void, left: xlsx.Cell, right: xlsx.Cell) bool {
+            return left.row < right.row or (left.row == right.row and left.column < right.column);
+        }
+    }.before);
+    const sheet: xlsx.Sheet = .{ .name = "Tração", .cells = cells.items };
+    const range = (try detectPolynomial(memory, sheet)).?;
+    try testing.expectEqualStrings("H8:Q9", range);
+    try testing.expectEqualStrings("H6", (try findLabeled(memory, sheet, &.{ "to", "t0" })).?);
+    try testing.expectEqualStrings("I6", (try findLabeled(memory, sheet, &.{"rotação"})).?);
+    const polynomial = try readPolynomial(sheet, range, "H6", "I6", .{ .kgf = true, .x_is_rpm = true, .v_max = 30 });
+    // V = 0: a tração estática, 6,75 kgf
+    try testing.expectApproxEqAbs(6.75 * standard_gravity, polynomial.thrust(0), 1e-9);
+    // V = 10 m/s: 6,75 − 0,763 + 0,141 − 0,85 = 5,278 kgf (a conta da planilha, sem a correção de densidade)
+    try testing.expectApproxEqAbs(5.278 * standard_gravity, polynomial.thrust(10), 1e-9);
+    // e volta igual do .csv
+    var text: std.Io.Writer.Allocating = .init(memory);
+    try writePolynomialCsv(&text.writer, "teste", "Desempenho", polynomial);
+    const back = polynomialOf(try readCsv(memory, "Fulcrum", text.written()));
+    try testing.expectApproxEqAbs(polynomial.thrust(12), back.thrust(12), 1e-9);
 }

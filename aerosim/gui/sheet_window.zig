@@ -38,6 +38,9 @@ pub const SheetWindow = struct {
     first_column: u32 = 1,
     zoom: f32 = 1,
     dragging: bool = false,
+    /// o bloco que a grade já mostrou (outro bloco: a grade anda até ele)
+    seen_range: [32]u8 = undefined,
+    seen_range_len: usize = 0,
     anchor: Place = .{},
     current: Place = .{},
     picker: ui_kit.dialogs.FilePicker = .{},
@@ -265,6 +268,17 @@ pub const SheetWindow = struct {
         row_y[row_count] = y;
 
         const marked = window.selection(memory);
+        // o bloco achado sozinho (ou escrito) fora da vista: a grade anda até ele
+        if (!window.dragging and !std.mem.eql(u8, sheets.markedRange(), window.seen_range[0..window.seen_range_len])) {
+            window.seen_range_len = @min(sheets.markedRange().len, window.seen_range.len);
+            @memcpy(window.seen_range[0..window.seen_range_len], sheets.markedRange()[0..window.seen_range_len]);
+            if (marked) |range| {
+                const last_visible_column = window.first_column + @as(u32, @intCast(column_count)) -| 2;
+                const last_visible_row = window.first_row + @as(u32, @intCast(row_count)) -| 2;
+                if (range.first_column < window.first_column or range.first_column > last_visible_column) window.first_column = @max(range.first_column, 2) - 1;
+                if (range.first_row < window.first_row or range.first_row > last_visible_row) window.first_row = @max(range.first_row, 3) - 2;
+            }
+        }
         ui.pushClip(cells);
         // a grade fina, por baixo das cores
         for (column_x[0 .. column_count + 1]) |line_x| rl.drawLineV(.{ .x = line_x, .y = cells.y }, .{ .x = line_x, .y = @min(y, cells.y + cells.height) }, gridline);
@@ -439,6 +453,7 @@ pub const SheetWindow = struct {
         window.built_range_len = @min(range.len, window.built_range.len);
         @memcpy(window.built_range[0..window.built_range_len], range[0..window.built_range_len]);
 
+        window.groups[1].title = if (sheets.markedKind() == .thrust_polynomial) "Polinômio" else "Qual coluna é qual";
         var count: usize = 0;
         window.fields[count] = .{ .label = "bloco", .group = 0, .kind = .text, .help = "o canto de cima (B6: a linha 6 tem os títulos; o bloco desce enquanto houver números) ou o intervalo inteiro (B6:R40); Enter confirma" };
         window.fields[count].setText(range);
@@ -459,6 +474,18 @@ pub const SheetWindow = struct {
             const current: i32 = if (sheets.roleColumn(r)) |k| @intCast(k + 1) else 0;
             window.fields[count] = .{ .label = label, .group = 1, .kind = .choice, .choices = header_choices, .choice = current };
             count += 1;
+        }
+        if (sheets.markedKind() == .thrust_polynomial) {
+            const cells = sheets.polynomialCells();
+            const options = sheets.polynomialOptions();
+            window.fields[count] = .{ .label = "tração estática T0 (célula)", .group = 1, .kind = .text, .help = "a célula com a tração estática corrigida (V = 0), que entra como termo constante; Enter confirma" };
+            window.fields[count].setText(cells.static_thrust);
+            window.fields[count + 1] = .{ .label = "rotação (célula)", .group = 1, .kind = .text, .help = "a célula com a rotação do motor (rpm) em que o polinômio é avaliado; Enter confirma" };
+            window.fields[count + 1].setText(cells.rpm);
+            window.fields[count + 2] = .{ .label = "unidade da tração", .group = 1, .kind = .choice, .choices = "kgf;N", .choice = if (options.kgf) 0 else 1 };
+            window.fields[count + 3] = .{ .label = "x do ajuste", .group = 1, .kind = .choice, .choices = "rotação (y = V);velocidade (y = rotação)", .choice = if (options.x_is_rpm) 0 else 1, .help = "no MATLAB, p_ij multiplica x^i·y^j: na planilha de desempenho p01 multiplica V, então x é a rotação" };
+            window.fields[count + 4] = .{ .label = "V máxima do gráfico", .unit = "m/s", .group = 1, .number = options.v_max, .minimum = 1, .maximum = 200 };
+            count += 5;
         }
         if (sheets.markedKind() == .motors) {
             const defaults = sheets.motorDefaults();
@@ -488,6 +515,11 @@ pub const SheetWindow = struct {
             sheets.setColumn(r, if (choice > 0) @as(usize, @intCast(choice - 1)) else null);
             index += 1;
         }
+        if (sheets.markedKind() == .thrust_polynomial and index + 4 < fields.len) {
+            sheets.setPolynomialCells(std.mem.trim(u8, fields[index].textValue(), " "), std.mem.trim(u8, fields[index + 1].textValue(), " "));
+            sheets.setPolynomialOptions(.{ .kgf = fields[index + 2].choice == 0, .x_is_rpm = fields[index + 3].choice == 0, .v_max = fields[index + 4].number });
+            index += 5;
+        }
         if (sheets.markedKind() == .motors) {
             if (index + 1 < fields.len) sheets.setMotorDefaults(fields[index].number, fields[index + 1].number);
         } else if (index < fields.len) sheets.setName(fields[index].textValue());
@@ -506,13 +538,13 @@ pub const SheetWindow = struct {
             if (k < tab_labels.len) tab_labels[k] = memory.dupeZ(u8, kind.short()) catch "";
             if (kind == sheets.markedKind()) active = k;
         }
-        ui.pushClip(.{ .x = side.x, .y = top, .width = side.width, .height = 34 });
-        if (widgets.tabBar(ui, .{ .x = side.x - 12, .y = top, .width = side.width + 12, .height = 34 }, tab_labels, &active, 13)) {
+        if (kindTabs(ui, side.x, top, side.width, tab_labels, &active)) |height| {
+            top += height + 6;
+        } else {
             window.readForm();
             sheets.setKind(allowed[active]);
+            top += 40;
         }
-        ui.popClip();
-        top += 40;
         if (has_book) {
             window.rebuild(memory);
             const form_height = @min(window.form.contentHeight(), side.height * 0.5);
@@ -539,17 +571,30 @@ pub const SheetWindow = struct {
     fn drawBlockPlot(window: *SheetWindow, ui: *widgets.Ui, memory: std.mem.Allocator, rect: rl.Rectangle) void {
         _ = window;
         const kind = sheets.markedKind();
+        if (kind == .thrust_polynomial) {
+            var series: std.ArrayList(plot.Series) = .empty;
+            if (sheets.markedPolynomial()) |polynomial| {
+                if (sheets.polynomialCurve(memory, polynomial, sheets.polynomialOptions().v_max, 61)) |curve| {
+                    const name = std.fmt.allocPrintSentinel(memory, "{d:.0} rpm", .{polynomial.rpm}, 0) catch "T(V)";
+                    series.append(memory, .{ .name = name, .xs = curve.speeds, .ys = curve.thrusts }) catch {};
+                } else |_| {}
+            } else |_| {}
+            plot.lines(ui, rect, .{ .title = "Polinômio de tração", .x_label = "V (m/s)", .y_label = "T (N)" }, series.items);
+            return;
+        }
         const roles = kind.roles();
         var series: std.ArrayList(plot.Series) = .empty;
         if (kind != .motors) if (sheets.markedBlock(memory)) |block| if (sheets.roleColumn(0)) |x_column| {
             for (roles[1..], 1..) |role, r| if (sheets.roleColumn(r)) |k| {
                 // a potência tem outra unidade: o gráfico do envelope fica só com as trações
                 if (std.mem.startsWith(u8, role.key, "P_")) continue;
-                const name = memory.dupeZ(u8, role.label) catch continue;
+                // a curva genérica leva o título da coluna da planilha; os outros tipos, o nome do papel
+                const name = memory.dupeZ(u8, if (kind == .curve) block.headers[k] else role.label) catch continue;
                 series.append(memory, .{ .name = name, .xs = block.numbers[x_column], .ys = block.numbers[k], .color_index = r - 1 }) catch {};
             };
         };
-        const x_label = memory.dupeZ(u8, roles[0].label) catch "";
+        const x_header: []const u8 = if (kind == .curve) (if (sheets.markedBlock(memory)) |block| (if (sheets.roleColumn(0)) |k| block.headers[k] else roles[0].label) else roles[0].label) else roles[0].label;
+        const x_label = memory.dupeZ(u8, x_header) catch "";
         const title = memory.dupeZ(u8, kind.short()) catch "";
         const y_label: [:0]const u8 = switch (kind) {
             .envelope => "T (N)",
@@ -559,6 +604,34 @@ pub const SheetWindow = struct {
         plot.lines(ui, rect, .{ .title = title, .x_label = x_label, .y_label = y_label }, series.items);
     }
 };
+
+/// as abas do tipo do bloco, quebrando em linhas quando não cabem numa só; devolve a altura usada, ou null se o
+/// clique trocou a aba (`active` já é a nova)
+fn kindTabs(ui: *widgets.Ui, left: f32, top: f32, width: f32, labels: []const [:0]const u8, active: *usize) ?f32 {
+    const size: f32 = 13;
+    const height: f32 = 28;
+    var x = left;
+    var y = top;
+    var changed = false;
+    for (labels, 0..) |caption, i| {
+        const tab_width = theme.textWidth(ui.fonts.regular, caption, size) + 26;
+        if (x + tab_width > left + width and x > left) {
+            x = left;
+            y += height + 4;
+        }
+        const tab: rl.Rectangle = .{ .x = x, .y = y, .width = tab_width, .height = height };
+        const is_active = i == active.*;
+        widgets.rounded(tab, 7, if (is_active) theme.colors.selected else if (ui.hovering(tab)) theme.colors.hover else theme.colors.panel);
+        if (is_active) rl.drawRectangleRec(.{ .x = tab.x + 8, .y = tab.y + tab.height - 3, .width = tab.width - 16, .height = 3 }, theme.colors.accent);
+        theme.text(ui.fonts.regular, caption, tab.x + 13, tab.y + (height - size) / 2, size, if (is_active) theme.colors.accent else theme.colors.ink);
+        if (!is_active and ui.clickedIn(tab)) {
+            active.* = i;
+            changed = true;
+        }
+        x += tab_width + 4;
+    }
+    return if (changed) null else y + height - top;
+}
 
 /// a célula sob o mouse, pelas bordas das colunas e linhas à vista
 fn placeAt(mouse: rl.Vector2, first_row: u32, first_column: u32, column_x: []const f32, row_y: []const f32) ?Place {
