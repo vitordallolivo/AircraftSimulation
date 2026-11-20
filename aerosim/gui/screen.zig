@@ -18,6 +18,7 @@ const aircraft_model = @import("aircraft_model");
 const manager = @import("manager");
 const design = @import("design");
 const sheet_window = @import("sheet_window.zig");
+const zon_json = @import("aerosim").zon_json;
 
 const Page = page_mod.Page;
 const Json = std.json.Value;
@@ -93,6 +94,7 @@ pub const Screen = struct {
     // a primeira edição de um avião montado vira uma variante: a janela pede o nome dela
     variant_prompt: ui_kit.dialogs.TextPrompt = .{},
     variant_base: usize = 0, // o avião de onde a variante saiu (Cancelar volta para ele)
+    variant_list: ui_kit.menus.ItemList = .{}, // a lista "Variantes" da Montagem
     keep_base: bool = false, // edições que não fazem variante (Salvar grava o refino no arquivo)
 
     /// abre a subaba de número `index`, contando todas em ordem (a Montagem é a última), para os prints
@@ -124,9 +126,6 @@ pub const Screen = struct {
     pub fn command(screen: *Screen, name: []const u8) void {
         if (std.mem.eql(u8, name, "novo")) {
             screen.newAircraft();
-        } else if (std.mem.startsWith(u8, name, "variante:")) { // responde a janela do nome da variante (prints)
-            screen.variant_prompt.open = false;
-            screen.nameVariant(name["variante:".len..]);
         } else if (std.mem.eql(u8, name, "abrir")) {
             var buffer: [256]u8 = undefined;
             var fixed = std.heap.FixedBufferAllocator.init(&buffer);
@@ -545,7 +544,14 @@ pub const Screen = struct {
         screen.pending_assembly_len = 0;
         var steps = std.mem.tokenizeScalar(u8, pending[0..length], ';');
         while (steps.next()) |step| {
-            if (std.mem.startsWith(u8, step, "vista=")) {
+            if (std.mem.startsWith(u8, step, "variante=")) { // responde a janela do nome da variante
+                screen.variant_prompt.open = false;
+                screen.nameVariant(step["variante=".len..]);
+            } else if (std.mem.startsWith(u8, step, "salvar=")) { // salva o avião aberto (com as variantes) no caminho
+                screen.save(step["salvar=".len..]);
+            } else if (std.mem.startsWith(u8, step, "ver=")) { // mostra o avião `N` da lista das variantes (de 0)
+                screen.selectAircraft(std.fmt.parseInt(usize, step["ver=".len..], 10) catch continue);
+            } else if (std.mem.startsWith(u8, step, "vista=")) {
                 for (std.enums.values(ViewAngle)) |angle| if (std.ascii.eqlIgnoreCase(angle.caption(), step[6..])) {
                     screen.assembly_angle = angle;
                 };
@@ -668,7 +674,8 @@ pub const Screen = struct {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
         const memory = arena.allocator();
-        const data = aeroBytes(memory, path, opened.path, opened.source, design.stages.projectPart(memory)) catch |err| {
+        const variants = screen.variantParts(memory) catch &.{};
+        const data = aeroBytes(memory, path, opened.path, screen.baseSource() orelse opened.source, design.stages.projectPart(memory), variants) catch |err| {
             _ = std.fmt.bufPrintZ(&screen.assembly_note, "não salvou '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) }) catch {};
             return;
         };
@@ -681,6 +688,9 @@ pub const Screen = struct {
         if (data_sources.Format.fromPath(path) == .aero) {
             design.stages.adoptDocument(io(), path);
             opened.path = opened.document_arena.allocator().dupe(u8, path) catch opened.path;
+            for (screen.fleet[0..screen.fleet_count]) |*slot| if (slot.*) |*other| {
+                other.path = other.document_arena.allocator().dupe(u8, path) catch other.path;
+            };
             screen.shareAircraft();
         }
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "salvo em {s}", .{path}) catch {};
@@ -688,7 +698,7 @@ pub const Screen = struct {
 
     /// os bytes a gravar em `path`: o `.aero` com a data de agora e a de criação do arquivo que já estava lá (ou do
     /// aberto, `source_path`); outra extensão grava o texto JSON como está
-    fn aeroBytes(memory: std.mem.Allocator, path: []const u8, source_path: []const u8, json: []const u8, project: ?aircraft_model.aero_file.Part) ![]const u8 {
+    fn aeroBytes(memory: std.mem.Allocator, path: []const u8, source_path: []const u8, json: []const u8, project: ?aircraft_model.aero_file.Part, variants: []const aircraft_model.aero_file.Part) ![]const u8 {
         const aero_file = aircraft_model.aero_file;
         if (data_sources.Format.fromPath(path) != .aero) return json;
         var created: []const u8 = "";
@@ -700,11 +710,12 @@ pub const Screen = struct {
             if (k == 1 and aero_file.looksLike(bytes)) {
                 var diagnosis: aircraft_model.aircraft.Diag = .{};
                 if (aero_file.readDocument(memory, bytes, &diagnosis)) |document| {
-                    for (document.parts) |item| if (!std.mem.eql(u8, item.name, aero_file.project_part)) try parts.append(memory, item);
+                    for (document.parts) |item| if (!std.mem.eql(u8, item.name, aero_file.project_part) and !std.mem.startsWith(u8, item.name, variant_prefix)) try parts.append(memory, item);
                 } else |_| {}
             }
         }
         if (project) |part| try parts.append(memory, part);
+        try parts.appendSlice(memory, variants);
         return aero_file.writeDocument(memory, json, .{ .program = "aerosim", .now = try aero_file.isoNow(memory, io()), .created = created }, parts.items);
     }
 
@@ -787,7 +798,7 @@ pub const Screen = struct {
         const folder = std.fs.path.join(memory, &.{ design.stages.projectsRoot(memory) catch return, "importados" }) catch return;
         std.Io.Dir.cwd().createDirPath(io(), folder) catch return fail(screen, "não consegui criar {s}", .{folder});
         const target = std.fmt.allocPrint(memory, "{s}/{s}.aero", .{ folder, std.fs.path.stem(workbook_path) }) catch return;
-        const aero = aeroBytes(memory, target, workbook_path, result.json, null) catch return fail(screen, "não consegui montar {s}", .{target});
+        const aero = aeroBytes(memory, target, workbook_path, result.json, null, &.{}) catch return fail(screen, "não consegui montar {s}", .{target});
         std.Io.Dir.cwd().writeFile(io(), .{ .sub_path = target, .data = aero }) catch return fail(screen, "não consegui gravar {s}", .{target});
         screen.openAircraftFresh(target);
         if (result.warnings.len > 0) fail(screen, "planilha lida com {d} avisos; o primeiro: {s}", .{ result.warnings.len, result.warnings[0] });
@@ -838,6 +849,15 @@ pub const Screen = struct {
     /// troca o avião atual por `loaded`; aberto pelo usuário (`fresh_open`), fecha os outros e apaga os resultados
     fn adoptAircraft(screen: *Screen, loaded: assembly_mod.Assembly) void {
         screen.variant_prompt.open = false;
+        // o projeto remontou o avião enquanto se olha uma variante: troca só o avião montado, e a variante fica
+        if (!screen.fresh_open) if (screen.assembly) |*current| if (current.variant) {
+            for (screen.fleet[0..screen.fleet_count]) |*slot| if (slot.*) |*base| if (!base.variant) {
+                base.deinit();
+                slot.* = loaded;
+                screen.noteInUse();
+                return;
+            };
+        };
         if (screen.assembly) |*old| old.deinit();
         screen.assembly = loaded;
         if (screen.fresh_open) {
@@ -850,9 +870,49 @@ pub const Screen = struct {
             screen.fleet_count = 1;
             screen.fleet_current = 0;
             screen.clearResults();
+            screen.loadVariants();
         }
         if (screen.fleet_count == 0) screen.fleet_count = 1; // a remontagem do projeto troca o avião atual; os outros ficam
         screen.showSwitched();
+    }
+
+    /// as variantes guardadas no `.aero` aberto (as partes `variantes/`) entram na lista, depois do avião montado
+    fn loadVariants(screen: *Screen) void {
+        const opened = &(screen.assembly orelse return);
+        if (data_sources.Format.fromPath(opened.path) != .aero) return;
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const memory = arena.allocator();
+        const bytes = std.Io.Dir.cwd().readFileAlloc(io(), opened.path, memory, .limited(assembly_mod.max_file_bytes)) catch return;
+        var diagnosis: aircraft_model.aircraft.Diag = .{};
+        const document = aircraft_model.aero_file.readDocument(memory, bytes, &diagnosis) catch return;
+        for (document.parts) |item| {
+            if (!std.mem.startsWith(u8, item.name, variant_prefix) or screen.fleet_count >= max_fleet) continue;
+            const json = zon_json.zonToJson(memory, item.data) catch continue;
+            var variant = assembly_mod.fromBytes(std.heap.page_allocator, io(), opened.path, json, &diagnosis) catch continue;
+            variant.variant = true;
+            screen.fleet[screen.fleet_count] = variant;
+            screen.fleet_count += 1;
+        }
+    }
+
+    /// as variantes abertas como partes do `.aero` ("Salvar" leva o avião montado e todas as variantes juntos)
+    fn variantParts(screen: *Screen, memory: std.mem.Allocator) ![]const aircraft_model.aero_file.Part {
+        var parts: std.ArrayList(aircraft_model.aero_file.Part) = .empty;
+        for (0..screen.fleet_count) |k| {
+            const entry: ?*const assembly_mod.Assembly = if (k == screen.fleet_current) (if (screen.assembly) |*current| current else null) else if (screen.fleet[k]) |*other| other else null;
+            const plane = entry orelse continue;
+            if (!plane.variant) continue;
+            try parts.append(memory, .{ .name = try std.fmt.allocPrint(memory, "{s}{d:0>2}.zon", .{ variant_prefix, parts.items.len + 1 }), .data = try zon_json.jsonToZon(memory, plane.source) });
+        }
+        return parts.items;
+    }
+
+    /// o texto do avião montado (o que não é variante) da lista; nulo: só há variantes abertas
+    fn baseSource(screen: *Screen) ?[]const u8 {
+        if (screen.assembly) |*current| if (!current.variant) return current.source;
+        for (screen.fleet[0..screen.fleet_count]) |*slot| if (slot.*) |*base| if (!base.variant) return base.source;
+        return null;
     }
 
     /// "Novo": um avião novo, do modelo padrão, no lugar de tudo o que estava aberto ("Salvar" pede onde gravar)
@@ -1273,13 +1333,29 @@ pub const Screen = struct {
         if (screen.assembly_editor) |*editor| if (screen.assembly) |*opened| {
             // os aviões abertos (a barra das variantes do Python): qual é este, trocar, uma variante nova e fechar
             var fleet_buffer: [200]u8 = undefined;
-            theme.text(ui.fonts.bold, widgets.format(&fleet_buffer, "Avião {d} de {d}: {s}", .{ screen.fleet_current + 1, screen.fleet_count, opened.loaded.ac.name }), rect.x + 16, rect.y + 12, 15, theme.colors.ink);
+            theme.text(ui.fonts.bold, if (screen.fleet_count > 1) "Variantes (clique para ver)" else widgets.format(&fleet_buffer, "Avião: {s}", .{opened.loaded.ac.name}), rect.x + 16, rect.y + 12, 15, theme.colors.ink);
+            // a lista do avião montado e das variantes dele: clicar mostra a escolhida (e as análises passam a usá-la)
+            var variants_height: f32 = 0;
+            if (screen.fleet_count > 1) {
+                var labels: [max_fleet][:0]const u8 = undefined;
+                var label_buffers: [max_fleet][168]u8 = undefined;
+                for (0..screen.fleet_count) |k| {
+                    const entry: ?*const assembly_mod.Assembly = if (k == screen.fleet_current) opened else if (screen.fleet[k]) |*other| other else null;
+                    labels[k] = if (entry) |plane| widgets.format(&label_buffers[k], "{s}{s}", .{ plane.loaded.ac.name, if (plane.variant) "" else "  (montado)" }) else "";
+                }
+                variants_height = @min(@as(f32, @floatFromInt(screen.fleet_count)), 4) * ui_kit.menus.ItemList.line_height + 6;
+                if (screen.variant_list.draw(ui, .{ .x = rect.x + 12, .y = rect.y + 34, .width = side_width - 6, .height = variants_height }, labels[0..screen.fleet_count], screen.fleet_current)) |picked| {
+                    screen.selectAircraft(picked);
+                    return null;
+                }
+                variants_height += 8;
+            }
             var fleet_height: f32 = 0;
-            if (ui_kit.menus.buttonGrid(ui, rect.x + 12, rect.y + 34, side_width - 6, &fleet_buttons, 4, &fleet_height)) |pressed| {
+            if (ui_kit.menus.buttonGrid(ui, rect.x + 12, rect.y + 34 + variants_height, side_width - 6, &fleet_buttons, 4, &fleet_height)) |pressed| {
                 screen.fleetButton(pressed);
                 return null;
             }
-            const wind_top = 34 + fleet_height + 10;
+            const wind_top = 34 + variants_height + fleet_height + 10;
             // o vento (a caixa "Vento" do Python): a velocidade a 10 m e de onde vem, de 1 m/s e de 15° por clique
             const environment = opened.loaded.ac.environment;
             var wind_buffer: [96]u8 = undefined;
@@ -1689,6 +1765,8 @@ const DragLock = enum {
 const fleet_buttons = [_][:0]const u8{ "Anterior", "Próximo", "+ Variante", "Fechar" };
 /// quantos aviões ficam abertos ao mesmo tempo
 const max_fleet = 8;
+/// as variantes dentro do `.aero`: uma parte por variante, `variantes/01.zon`, `variantes/02.zon`...
+const variant_prefix = "variantes/";
 
 const part_buttons = [_][:0]const u8{ "+ Asa", "+ EH", "+ EV", "+ Motor", "+ Tubo", "+ Tanque", "Remover", "Trazer de outro" };
 
