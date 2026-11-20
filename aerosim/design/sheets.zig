@@ -24,6 +24,8 @@ pub const Kind = enum {
     distribution,
     curve,
     motors,
+    envelope,
+    sizing,
 
     /// o nome na tela (e no `# tipo:` do .csv)
     pub fn label(kind: Kind) []const u8 {
@@ -32,6 +34,20 @@ pub const Kind = enum {
             .distribution => "distribuição de sustentação",
             .curve => "curva (x, y)",
             .motors => "motores",
+            .envelope => "envelope de voo (tração por velocidade)",
+            .sizing => "dimensionamento inicial (diagrama de restrições)",
+        };
+    }
+
+    /// o nome curto, da aba da janela
+    pub fn short(kind: Kind) []const u8 {
+        return switch (kind) {
+            .polar => "Polar",
+            .distribution => "Distribuição",
+            .curve => "Curva",
+            .motors => "Motores",
+            .envelope => "Envelope de voo",
+            .sizing => "Dimensionamento inicial",
         };
     }
 
@@ -42,6 +58,8 @@ pub const Kind = enum {
             .distribution => &distribution_roles,
             .curve => &curve_roles,
             .motors => &motor_roles,
+            .envelope => &envelope_roles,
+            .sizing => &sizing_roles,
         };
     }
 };
@@ -71,8 +89,26 @@ const motor_roles = [_]Role{
     .{ .key = "mass", .label = "massa (kg)", .hints = &.{ "massa", "mass", "peso" }, .required = false },
 };
 
+/// tração disponível e requerida por velocidade, como nas planilhas de desempenho das equipes; a potência é opcional
+const envelope_roles = [_]Role{
+    .{ .key = "V", .label = "V (m/s)", .hints = &.{ "v ", "v[", "v(", "velocidade", "speed" } },
+    .{ .key = "T_disp", .label = "tração disponível (N)", .hints = &.{ "td", "t disp", "t_disp", "tdisp", "tração disp", "tracao disp", "ta" } },
+    .{ .key = "T_req", .label = "tração requerida (N)", .hints = &.{ "tr", "t req", "t_req", "treq", "tração req", "tracao req" } },
+    .{ .key = "P_disp", .label = "potência disponível (W)", .hints = &.{ "pd", "p disp", "p_disp", "pdisp", "pa" }, .required = false },
+    .{ .key = "P_req", .label = "potência requerida (W)", .hints = &.{ "pr", "p req", "p_req", "preq" }, .required = false },
+};
+/// o diagrama de restrições: T/W exigido por requisito em função da carga alar
+const sizing_roles = [_]Role{
+    .{ .key = "WS", .label = "carga alar W/S (N/m²)", .hints = &.{ "w/s", "ws", "w_s", "carga alar", "wing loading" } },
+    .{ .key = "TW_decolagem", .label = "T/W decolagem", .hints = &.{ "decol", "t/w dec", "takeoff", "take-off" } },
+    .{ .key = "TW_subida", .label = "T/W subida", .hints = &.{ "subida", "climb" }, .required = false },
+    .{ .key = "TW_curva", .label = "T/W curva", .hints = &.{ "curva", "turn" }, .required = false },
+    .{ .key = "TW_cruzeiro", .label = "T/W cruzeiro", .hints = &.{ "cruzeiro", "cruise" }, .required = false },
+    .{ .key = "TW_teto", .label = "T/W teto", .hints = &.{ "teto", "ceiling" }, .required = false },
+};
+
 const none = "—";
-const kinds = [_]Kind{ .polar, .distribution, .curve, .motors };
+const kinds = [_]Kind{ .polar, .distribution, .curve, .motors, .envelope, .sizing };
 
 /// a planilha aberta e o que está marcado nela (fica entre um pedido e outro)
 const Draft = struct {
@@ -198,17 +234,30 @@ pub fn readBlock(memory: std.mem.Allocator, sheet: xlsx.Sheet, range: []const u8
 }
 
 /// o canto de cima do maior bloco da aba ("AN8"), ou null: um bloco é uma fila de títulos (textos) lado a lado com
-/// números logo embaixo de cada um; ganha o de mais colunas (no empate, o primeiro)
+/// números logo embaixo de cada um; ganha o de mais células (colunas × linhas com número; no empate, o primeiro), para
+/// que uma tabela comprida vença uma fila larga de uma linha só (os coeficientes de um polinômio)
 pub fn detectBlock(memory: std.mem.Allocator, sheet: xlsx.Sheet) !?[]const u8 {
-    var best_width: u32 = 1;
+    var best_size: u64 = 0;
     var best: ?xlsx.Cell = null;
     for (sheet.cells) |cell| {
         if (!isTitle(sheet, cell.row, cell.column)) continue;
         if (cell.column > 1 and isTitle(sheet, cell.row, cell.column - 1)) continue; // não é o começo da fila
         var width: u32 = 0;
         while (isTitle(sheet, cell.row, cell.column + width)) width += 1;
-        if (width > best_width) {
-            best_width = width;
+        if (width < 2) continue;
+        // as linhas com algum número embaixo dos títulos
+        var height: u32 = 0;
+        while (height < 10000) : (height += 1) {
+            const row = cell.row + 1 + height;
+            var any = false;
+            for (0..width) |k| if (sheet.at(row, cell.column + @as(u32, @intCast(k)))) |value| {
+                if (value.asNumber() != null) any = true;
+            };
+            if (!any) break;
+        }
+        const size = @as(u64, width) * height;
+        if (size > best_size) {
+            best_size = size;
             best = cell;
         }
     }
@@ -359,8 +408,9 @@ pub fn kindsFor(area: []const u8) []const Kind {
     const table = [_]struct { []const u8, []const Kind }{
         .{ "Aerodinâmica", &.{ .polar, .distribution, .curve } },
         .{ "Estabilidade", &.{ .polar, .curve } },
-        .{ "Desempenho", &.{ .curve, .motors } },
-        .{ "Dimensionamento inicial", &.{.curve} },
+        .{ "Desempenho", &.{ .envelope, .curve, .motors } },
+        .{ "Dimensionamento inicial", &.{ .sizing, .curve } },
+        .{ "Biblioteca", &.{ .polar, .distribution, .curve, .motors } },
         .{ "Cargas", &.{ .distribution, .curve } },
     };
     for (table) |entry| if (std.mem.eql(u8, entry[0], area)) return entry[1];
@@ -674,4 +724,29 @@ test "o número aparece com as casas do formato da célula" {
 test "cada área oferece os tipos dela" {
     try testing.expectEqual(Kind.polar, kindsFor("Aerodinâmica")[0]);
     try testing.expectEqual(@as(usize, 4), kindsFor("Biblioteca").len);
+    try testing.expectEqual(Kind.envelope, kindsFor("Desempenho")[0]);
+    try testing.expectEqual(Kind.sizing, kindsFor("Dimensionamento inicial")[0]);
+}
+
+test "a tabela comprida vence a fila larga de uma linha só" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    var cells: std.ArrayList(xlsx.Cell) = .empty;
+    // linha 2: seis coeficientes com uma linha de números; linha 5: V, Td e Tr com quatro linhas
+    for (0..6) |k| {
+        try cells.append(memory, .{ .row = 2, .column = 1 + @as(u32, @intCast(k)), .value = .{ .text = "p" } });
+        try cells.append(memory, .{ .row = 3, .column = 1 + @as(u32, @intCast(k)), .value = .{ .number = 0 } });
+    }
+    const titles = [_][]const u8{ "V [m/s]", "Td[N]", "Tr[N]" };
+    for (titles, 0..) |title, k| try cells.append(memory, .{ .row = 5, .column = 1 + @as(u32, @intCast(k)), .value = .{ .text = title } });
+    for (0..4) |j| for (0..3) |k| try cells.append(memory, .{ .row = 6 + @as(u32, @intCast(j)), .column = 1 + @as(u32, @intCast(k)), .value = .{ .number = @floatFromInt(j + k) } });
+    const sheet: xlsx.Sheet = .{ .name = "Tração", .cells = cells.items };
+    try testing.expectEqualStrings("A5", (try detectBlock(memory, sheet)).?);
+    // e as colunas do envelope saem pelos títulos
+    const block = try readBlock(memory, sheet, "A5");
+    const columns = suggest(.envelope, block.headers);
+    try testing.expectEqual(@as(?usize, 0), columns[0]);
+    try testing.expectEqual(@as(?usize, 1), columns[1]);
+    try testing.expectEqual(@as(?usize, 2), columns[2]);
 }

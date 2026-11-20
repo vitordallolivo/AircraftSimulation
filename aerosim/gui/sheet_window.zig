@@ -45,11 +45,10 @@ pub const SheetWindow = struct {
     waiting_device: bool = false,
     message: [240:0]u8 = [_:0]u8{0} ** 240,
     // o formulário do lado: tipo, colunas e nome
-    groups: [3]form_mod.Group = .{ .{ .title = "O bloco é" }, .{ .title = "Qual coluna é qual" }, .{ .title = "Guardar" } },
+    groups: [3]form_mod.Group = .{ .{ .title = "Bloco" }, .{ .title = "Qual coluna é qual" }, .{ .title = "Guardar" } },
     fields: [12]form_mod.Field = undefined,
     form: form_mod.Form = .{ .groups = &.{}, .fields = &.{} },
     labels: [12][64:0]u8 = undefined,
-    kind_choices: [256:0]u8 = [_:0]u8{0} ** 256,
     header_choices: [4096:0]u8 = [_:0]u8{0} ** 4096,
     /// o tipo, a aba e o bloco para os quais o formulário foi montado
     built_kind: ?sheets.Kind = null,
@@ -441,20 +440,9 @@ pub const SheetWindow = struct {
         @memcpy(window.built_range[0..window.built_range_len], range[0..window.built_range_len]);
 
         var count: usize = 0;
-        // o tipo: os da área
-        var kinds_writer = std.Io.Writer.fixed(window.kind_choices[0 .. window.kind_choices.len - 1]);
-        const allowed = sheets.kindsFor(window.areaName());
-        var chosen_kind: i32 = 0;
-        for (allowed, 0..) |kind, k| {
-            if (k > 0) kinds_writer.writeByte(';') catch {};
-            kinds_writer.writeAll(kind.label()) catch {};
-            if (kind == sheets.markedKind()) chosen_kind = @intCast(k);
-        }
-        window.kind_choices[kinds_writer.end] = 0;
-        window.fields[count] = .{ .label = "tipo", .group = 0, .kind = .choice, .choices = window.kind_choices[0..kinds_writer.end :0], .choice = chosen_kind };
-        window.fields[count + 1] = .{ .label = "bloco", .group = 0, .kind = .text, .help = "o canto de cima (B6: a linha 6 tem os títulos; o bloco desce enquanto houver números) ou o intervalo inteiro (B6:R40); Enter confirma" };
-        window.fields[count + 1].setText(range);
-        count += 2;
+        window.fields[count] = .{ .label = "bloco", .group = 0, .kind = .text, .help = "o canto de cima (B6: a linha 6 tem os títulos; o bloco desce enquanto houver números) ou o intervalo inteiro (B6:R40); Enter confirma" };
+        window.fields[count].setText(range);
+        count += 1;
         // as colunas: "—" e os títulos do bloco
         var headers_writer = std.Io.Writer.fixed(window.header_choices[0 .. window.header_choices.len - 1]);
         headers_writer.writeAll("—") catch {};
@@ -488,18 +476,12 @@ pub const SheetWindow = struct {
     /// passa o que mudou no formulário para a planilha aberta
     fn readForm(window: *SheetWindow) void {
         const fields = window.form.fields;
-        const allowed = sheets.kindsFor(window.areaName());
-        const kind_index: usize = @intCast(@max(fields[0].choice, 0));
-        if (kind_index < allowed.len and allowed[kind_index] != sheets.markedKind()) {
-            sheets.setKind(allowed[kind_index]);
-            return; // as colunas sugeridas de novo: o formulário se monta outra vez
-        }
-        const typed = std.mem.trim(u8, fields[1].textValue(), " ");
+        const typed = std.mem.trim(u8, fields[0].textValue(), " ");
         if (!std.mem.eql(u8, typed, sheets.markedRange())) {
             sheets.setRange(typed);
             return;
         }
-        var index: usize = 2;
+        var index: usize = 1;
         for (sheets.markedKind().roles(), 0..) |_, r| {
             if (index >= fields.len or fields[index].group != 1) break;
             const choice = fields[index].choice;
@@ -516,6 +498,21 @@ pub const SheetWindow = struct {
         const message_height: f32 = 54;
         const has_book = sheets.workbook() != null;
         var top = side.y;
+        // o tipo do bloco em abas: só os que a área usa
+        const allowed = sheets.kindsFor(window.areaName());
+        const tab_labels: [][:0]const u8 = memory.alloc([:0]const u8, allowed.len) catch &.{};
+        var active: usize = 0;
+        for (allowed, 0..) |kind, k| {
+            if (k < tab_labels.len) tab_labels[k] = memory.dupeZ(u8, kind.short()) catch "";
+            if (kind == sheets.markedKind()) active = k;
+        }
+        ui.pushClip(.{ .x = side.x, .y = top, .width = side.width, .height = 34 });
+        if (widgets.tabBar(ui, .{ .x = side.x - 12, .y = top, .width = side.width + 12, .height = 34 }, tab_labels, &active, 13)) {
+            window.readForm();
+            sheets.setKind(allowed[active]);
+        }
+        ui.popClip();
+        top += 40;
         if (has_book) {
             window.rebuild(memory);
             const form_height = @min(window.form.contentHeight(), side.height * 0.5);
@@ -546,12 +543,20 @@ pub const SheetWindow = struct {
         var series: std.ArrayList(plot.Series) = .empty;
         if (kind != .motors) if (sheets.markedBlock(memory)) |block| if (sheets.roleColumn(0)) |x_column| {
             for (roles[1..], 1..) |role, r| if (sheets.roleColumn(r)) |k| {
+                // a potência tem outra unidade: o gráfico do envelope fica só com as trações
+                if (std.mem.startsWith(u8, role.key, "P_")) continue;
                 const name = memory.dupeZ(u8, role.label) catch continue;
                 series.append(memory, .{ .name = name, .xs = block.numbers[x_column], .ys = block.numbers[k], .color_index = r - 1 }) catch {};
             };
         };
         const x_label = memory.dupeZ(u8, roles[0].label) catch "";
-        plot.lines(ui, rect, .{ .title = "Bloco marcado", .x_label = x_label, .y_label = "" }, series.items);
+        const title = memory.dupeZ(u8, kind.short()) catch "";
+        const y_label: [:0]const u8 = switch (kind) {
+            .envelope => "T (N)",
+            .sizing => "T/W",
+            else => "",
+        };
+        plot.lines(ui, rect, .{ .title = title, .x_label = x_label, .y_label = y_label }, series.items);
     }
 };
 
