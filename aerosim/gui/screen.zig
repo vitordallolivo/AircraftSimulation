@@ -1420,6 +1420,21 @@ pub const Screen = struct {
         }
     }
 
+    /// onde ficam os botões no alto do cartão do 3D (fora do celular): as quatro vistas à direita do título, e
+    /// "Restaurar" e "Acertar o CG" antes delas quando cabem, ou numa segunda linha dentro do 3D
+    const TopBar = struct { views_x: f32, view_width: f32, one_row: bool };
+
+    /// mede o título e reparte a largura do cartão entre ele e os botões, sem passar da borda esquerda
+    fn topBar(ui: *widgets.Ui, card_rect: rl.Rectangle, title: [:0]const u8) TopBar {
+        const title_end = card_rect.x + 16 + ui_kit.tex.width(ui.fonts.regular, title, 16) + 12;
+        const right = card_rect.x + card_rect.width - 8;
+        // as vistas encolhem até 64 px quando o cartão é estreito
+        const view_width: f32 = std.math.clamp((right - title_end) / 4 - 6, 64, 86);
+        const views_x = right - 4 * (view_width + 6) + 6;
+        const actions_width: f32 = 2 * (110 + 6) + 12;
+        return .{ .views_x = views_x, .view_width = view_width, .one_row = views_x - actions_width >= title_end };
+    }
+
     /// o cartão do 3D da Montagem em `card_rect`, com os botões das vistas, o Restaurar, o Acertar o CG e a trava do
     /// arraste (no celular, em grades dentro do cartão)
     fn drawAssemblyView(screen: *Screen, ui: *widgets.Ui, card_rect: rl.Rectangle, phone: bool) void {
@@ -1491,6 +1506,7 @@ pub const Screen = struct {
         }
         // "Restaurar" e "Acertar o CG", antes dos botões das vistas
         var restore_at: ?rl.Vector2 = null;
+        const bar = topBar(ui, card_rect, title);
         // no celular: as vistas e as duas ações numa grade de três no alto do 3D, a trava do arraste numa de quatro
         // embaixo
         if (phone) {
@@ -1521,7 +1537,9 @@ pub const Screen = struct {
             const actions = [_][:0]const u8{ "Restaurar", "Acertar o CG" };
             for (actions, 0..) |caption, k| {
                 const button_width: f32 = 110;
-                const button: rl.Rectangle = .{ .x = card_rect.x + card_rect.width - 8 - 4 * (86 + 6) - 12 - (2 - @as(f32, @floatFromInt(k))) * (button_width + 6), .y = card_rect.y + 5, .width = button_width, .height = 26 };
+                // na mesma linha das vistas quando cabe; senão, numa segunda linha à direita, dentro do 3D
+                const right = if (bar.one_row) bar.views_x - 12 else card_rect.x + card_rect.width - 8;
+                const button: rl.Rectangle = .{ .x = right - (2 - @as(f32, @floatFromInt(k))) * (button_width + 6) + 6, .y = if (bar.one_row) card_rect.y + 5 else card_rect.y + 5 + 32, .width = button_width, .height = 26 };
                 if (ui_kit.dialogs.button(ui, button, caption)) {
                     if (k == 0) screen.restore_open = !screen.restore_open else screen.fitCg();
                 }
@@ -1530,8 +1548,7 @@ pub const Screen = struct {
         }
         // os botões das vistas, à direita do título (por cima do cartão); arrastar volta ao 3D livre
         for (if (phone) &[_]ViewAngle{} else std.enums.values(ViewAngle), 0..) |angle, k| {
-            const button_width: f32 = 86;
-            const button: rl.Rectangle = .{ .x = card_rect.x + card_rect.width - 8 - (4 - @as(f32, @floatFromInt(k))) * (button_width + 6), .y = card_rect.y + 5, .width = button_width, .height = 26 };
+            const button: rl.Rectangle = .{ .x = bar.views_x + @as(f32, @floatFromInt(k)) * (bar.view_width + 6), .y = card_rect.y + 5, .width = bar.view_width, .height = 26 };
             if (ui_kit.dialogs.button(ui, button, angle.caption())) screen.assembly_angle = angle;
             if (screen.assembly_angle == angle) rl.drawRectangleLinesEx(button, 2, theme.colors.accent);
         }
