@@ -230,7 +230,26 @@ pub const SheetWindow = struct {
         const body_top = bar_y + 40;
         const body: rl.Rectangle = .{ .x = inner.x, .y = body_top, .width = inner.width - side_width - 12, .height = inner.y + inner.height - body_top };
         const side: rl.Rectangle = .{ .x = body.x + body.width + 12, .y = body_top, .width = side_width, .height = body.height };
-        if (data.book) |book| if (book.sheets.len > 0) window.drawGrid(ui, memory, body, book.sheets[0]);
+        if (data.book) |book| if (book.sheets.len > 0) {
+            // as abas do arquivo embaixo, como no Excel (uma aba só: a grade fica com a altura toda)
+            const tabs_height: f32 = if (book.sheets.len > 1) 32 else 0;
+            const grid: rl.Rectangle = .{ .x = body.x, .y = body.y, .width = body.width, .height = body.height - tabs_height };
+            data.sheet = @min(data.sheet, book.sheets.len - 1);
+            window.drawGrid(ui, memory, grid, book.sheets[data.sheet]);
+            if (book.sheets.len > 1) {
+                const labels: [][:0]const u8 = memory.alloc([:0]const u8, book.sheets.len) catch &.{};
+                for (labels, book.sheets) |*label, sheet| label.* = memory.dupeZ(u8, sheet.name) catch "";
+                var active = data.sheet;
+                const tabs: rl.Rectangle = .{ .x = body.x, .y = grid.y + grid.height, .width = body.width, .height = tabs_height };
+                ui.pushClip(tabs);
+                if (widgets.tabBar(ui, tabs, labels, &active, 13)) {
+                    data.sheet = active;
+                    window.first_row = 1;
+                    window.first_column = 1;
+                }
+                ui.popClip();
+            }
+        };
         if (window.pending_save_len > 0 and data.bytes.len > 0) {
             var path_buffer: [600]u8 = undefined;
             const length = window.pending_save_len;
@@ -874,6 +893,8 @@ const ExportData = struct {
     y_label: [:0]const u8 = "",
     name_buffer: [160]u8 = undefined,
     name_len: usize = 0,
+    /// a aba mostrada na prévia
+    sheet: usize = 0,
 
     fn fileName(data: *const ExportData) []const u8 {
         return data.name_buffer[0..data.name_len];
@@ -886,24 +907,47 @@ pub fn saveWhenReady(path: []const u8) void {
     @memcpy(preview.pending_save[0..preview.pending_save_len], path[0..preview.pending_save_len]);
 }
 
-/// recebe os dados de um gráfico ou de uma tabela (o "Exportar" do botão direito), monta a planilha e abre a prévia
-pub fn previewData(data: plot.DataExport) void {
+/// a memória da prévia, limpa para uma exportação nova (a anterior sai)
+fn freshExport() ?std.mem.Allocator {
     const window = &preview;
     if (window.export_data.arena) |old| {
         old.deinit();
         std.heap.page_allocator.destroy(old);
     }
     window.export_data = .{};
-    const arena = std.heap.page_allocator.create(std.heap.ArenaAllocator) catch return;
+    const arena = std.heap.page_allocator.create(std.heap.ArenaAllocator) catch return null;
     arena.* = .init(std.heap.page_allocator);
     window.export_data.arena = arena;
-    buildExport(arena.allocator(), &window.export_data, data) catch |err| {
-        window.say("não deu para montar a planilha: {s}", .{@errorName(err)});
-    };
+    return arena.allocator();
+}
+
+/// abre a prévia já montada (ou o problema, se não montou)
+fn showPreview(built: anyerror!void) void {
+    const window = &preview;
+    built catch |err| window.say("não deu para montar a planilha: {s}", .{@errorName(err)});
     window.first_row = 1;
     window.first_column = 1;
     window.open = true;
-    if (window.export_data.bytes.len > 0) window.say("{s}", .{"confira a planilha e aperte \"Salvar .xlsx…\" para escolher onde gravar"});
+    if (window.export_data.bytes.len > 0) window.say("{s}", .{"confira as abas e aperte \"Salvar .xlsx…\" para escolher onde gravar"});
+}
+
+/// recebe os dados de um gráfico ou de uma tabela (o "Exportar" do botão direito), monta a planilha e abre a prévia
+pub fn previewData(data: plot.DataExport) void {
+    const memory = freshExport() orelse return;
+    showPreview(buildExport(memory, &preview.export_data, data));
+}
+
+/// abre a prévia de uma planilha já gravada em memória (o "Exportar…" de uma área): `bytes` é o arquivo inteiro
+pub fn previewWorkbook(title: []const u8, file_name: []const u8, bytes: []const u8) void {
+    const memory = freshExport() orelse return;
+    const out = &preview.export_data;
+    showPreview(blk: {
+        out.title = memory.dupe(u8, title) catch |err| break :blk err;
+        out.name_len = @min(file_name.len, out.name_buffer.len);
+        @memcpy(out.name_buffer[0..out.name_len], file_name[0..out.name_len]);
+        out.bytes = memory.dupe(u8, bytes) catch |err| break :blk err;
+        out.book = xlsx.Workbook.parse(memory, out.bytes) catch |err| break :blk err;
+    });
 }
 
 /// a planilha dos dados: o título no alto; num gráfico, um par de colunas (x, y) por curva e o gráfico ao lado;

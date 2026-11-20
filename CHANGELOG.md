@@ -18,6 +18,8 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   e PDF, os dados saem em Excel (`.xlsx`): abre uma prévia como a da janela Planilha…, com o arquivo do jeito que
   vai abrir (título, uma coluna de x e uma de y para cada curva, e o gráfico dentro da planilha), e só depois de
   conferir se escolhe onde gravar.
+- Antes, o "Exportar…" do Desempenho gravava a planilha direto. Agora ele abre a mesma prévia do exportar dos
+  gráficos, com as abas do arquivo embaixo, e só depois se escolhe onde gravar.
 - Antes, o avião montado pelas etapas saía com a hélice vazia quando a etapa Motores e montagem ainda não tinha sido
   aberta, e a tração dava zero em todas as velocidades (o motor girava solto). Agora o motor, a hélice e a bateria
   que a etapa mostra como padrão entram no avião desde o começo.

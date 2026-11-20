@@ -584,7 +584,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Screen:36`
 - `aerosim/gui/sheet_window.zig` — A janela "Planilha…" de cada área: a planilha `.xlsx` aparece como no Excel, a partir do A1, com a largura das
   tipos `Place:31`, `SheetWindow:40`
-  fn `saveWhenReady:884`, `previewData:890`
+  fn `saveWhenReady:905`, `previewData:935`, `previewWorkbook:941`
 - `aerosim/gui/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos, exportar, o toque (mouse e dedo) e a leitura
 
 **aerosim/gui/tabs/**

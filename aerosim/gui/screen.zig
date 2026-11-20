@@ -80,9 +80,7 @@ pub const Screen = struct {
     pending_undo: usize = 0, // acao=desfazer: Ctrl+Z pelos prints, quando a tela estiver pronta
     undoing: bool = false, // o Ctrl+Z está refazendo o avião (essa mudança não vai para o histórico)
     importing_file: bool = false, // a janela de arquivos aberta é a de trazer uma peça de outro avião
-    exporting_sheets: bool = false, // a janela de salvar aberta é a do "Exportar…" (a planilha de desempenho)
-    pending_export: [512]u8 = undefined, // acao=exportar_em:<caminho> (prints), até o avião abrir
-    pending_export_len: usize = 0,
+    pending_export: bool = false, // "Exportar…" pedido: a prévia abre quando o avião estiver aberto
     loader: ui_kit.jobs.Job = .{}, // lê o .json fora do laço da tela
     loading: Loading = .{},
     message: [240:0]u8 = [_:0]u8{0} ** 240,
@@ -94,7 +92,7 @@ pub const Screen = struct {
 
     /// a tela ainda vai mudar sozinha (aba ou "rodar" pendente, uma conta andando): o print espera
     pub fn busy(screen: *const Screen) bool {
-        if (screen.pending_export_len > 0) return true;
+        if (screen.pending_export) return true;
         if (screen.pending_tab != null or screen.pending_run or screen.pending_stage_len > 0 or screen.pending_assembly_len > 0 or screen.pending_undo > 0) return true;
         const page = screen.shown orelse return false;
         return page.settling();
@@ -149,17 +147,11 @@ pub const Screen = struct {
             design.sheets.setRange(name["bloco:".len..]);
         } else if (std.mem.startsWith(u8, name, "salvar_em:")) { // salva o avião aberto no caminho (prints)
             screen.save(name["salvar_em:".len..]);
-        } else if (std.mem.eql(u8, name, "exportar")) { // "Exportar…": onde salvar a planilha dos resultados
-            var name_buffer: [256]u8 = undefined;
-            const base = if (screen.assembly) |*opened| std.fs.path.stem(opened.path) else "aviao";
-            const file_name = std.fmt.bufPrint(&name_buffer, "{s}_desempenho.xlsx", .{base}) catch "desempenho.xlsx";
-            const folder = if (screen.assembly) |*opened| std.fs.path.dirname(opened.path) orelse "." else ".";
-            screen.exporting_sheets = true;
-            screen.files.showSave("Exportar a planilha de desempenho (.xlsx)", folder, &.{".xlsx"}, file_name);
-        } else if (std.mem.startsWith(u8, name, "exportar_em:")) { // grava a planilha de desempenho no caminho (prints)
-            const target = name["exportar_em:".len..];
-            screen.pending_export_len = @min(target.len, screen.pending_export.len);
-            @memcpy(screen.pending_export[0..screen.pending_export_len], target[0..screen.pending_export_len]);
+        } else if (std.mem.eql(u8, name, "exportar")) { // "Exportar…": a prévia da planilha de desempenho, e dela se grava
+            screen.pending_export = true;
+        } else if (std.mem.startsWith(u8, name, "exportar_em:")) { // a prévia, gravada no caminho assim que montar (prints)
+            screen.pending_export = true;
+            sheet_window.saveWhenReady(name["exportar_em:".len..]);
         } else if (std.mem.eql(u8, name, "fechar_planilha")) {
             screen.sheet_window.open = false;
         } else if (std.mem.eql(u8, name, "usar_polinomio")) { // "Usar no motor do avião" (prints)
@@ -170,6 +162,8 @@ pub const Screen = struct {
             ui_kit.plot.requestExport(name["dados_excel:".len..], .xlsx);
         } else if (std.mem.startsWith(u8, name, "salvar_dados:")) { // grava a prévia dos dados no caminho (prints)
             sheet_window.saveWhenReady(name["salvar_dados:".len..]);
+        } else if (std.mem.startsWith(u8, name, "aba_previa:")) { // a aba mostrada na prévia da exportação, de 0 (prints)
+            sheet_window.preview.export_data.sheet = std.fmt.parseInt(usize, name["aba_previa:".len..], 10) catch 0;
         } else if (std.mem.startsWith(u8, name, "rolar:")) { // a primeira linha e coluna à vista na planilha: rolar:linha.coluna (prints)
             var parts = std.mem.splitScalar(u8, name["rolar:".len..], '.');
             const row = std.fmt.parseInt(u32, parts.next() orelse "1", 10) catch 1;
@@ -199,9 +193,9 @@ pub const Screen = struct {
         window.say("o polinômio vai para {d} motor{s} de {s} (modelo de tração: polinômio). Salve o avião para guardar", .{ count, if (count == 1) "" else "es", opened.loaded.ac.name });
     }
 
-    /// "Exportar…" do Desempenho: simula o avião aberto e grava em `path` a planilha de desempenho no formato das
-    /// planilhas das equipes (tração e potência por altitude, com os gráficos)
-    fn exportSheets(screen: *Screen, path: []const u8) void {
+    /// "Exportar…" do Desempenho: simula, monta a planilha no formato da equipe e mostra a prévia (a mesma do
+    /// "Exportar" dos gráficos); é nela que se escolhe onde gravar
+    fn previewSheets(screen: *Screen) void {
         var note: [512]u8 = undefined;
         const opened = &(screen.assembly orelse return ui_kit.toast.show("abra um avião antes de exportar"));
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -210,11 +204,9 @@ pub const Screen = struct {
         const bytes = sheet.workbook(arena.allocator(), &opened.loaded.ac, &sheet.default_altitudes) catch |err| {
             return ui_kit.toast.show(std.fmt.bufPrint(&note, "não exportou: {s}", .{@errorName(err)}) catch "não exportou");
         };
-        std.Io.Dir.cwd().writeFile(io(), .{ .sub_path = path, .data = bytes }) catch |err| {
-            return ui_kit.toast.show(std.fmt.bufPrint(&note, "não exportou '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) }) catch "não exportou");
-        };
-        ui_kit.system.offerDownload(path);
-        ui_kit.toast.show(std.fmt.bufPrint(&note, "desempenho exportado em {s}", .{std.fs.path.basename(path)}) catch "desempenho exportado");
+        var name_buffer: [256]u8 = undefined;
+        const file_name = std.fmt.bufPrint(&name_buffer, "{s}_desempenho.xlsx", .{std.fs.path.stem(opened.path)}) catch "desempenho.xlsx";
+        sheet_window.previewWorkbook("Desempenho", file_name, bytes);
     }
 
     /// a janela "Planilha…" para a área aberta
@@ -879,10 +871,9 @@ pub const Screen = struct {
         rl.clearBackground(theme.colors.background);
         screen.collectAircraft();
         screen.collectLayout();
-        if (screen.pending_export_len > 0 and screen.assembly != null) {
-            const length = screen.pending_export_len;
-            screen.pending_export_len = 0;
-            screen.exportSheets(screen.pending_export[0..length]);
+        if (screen.pending_export and screen.assembly != null) {
+            screen.pending_export = false;
+            screen.previewSheets();
         }
         if (rl.isFileDropped()) {
             const dropped = rl.loadDroppedFiles();
@@ -1015,10 +1006,7 @@ pub const Screen = struct {
             }
             const saving = screen.files.saving;
             if (screen.files.draw(ui, whole)) |path| {
-                if (saving and screen.exporting_sheets) {
-                    screen.exporting_sheets = false;
-                    screen.exportSheets(path);
-                } else if (saving) screen.save(path) else if (screen.importing_file) {
+                if (saving) screen.save(path) else if (screen.importing_file) {
                     screen.importing_file = false;
                     screen.startImport(path);
                 } else {
