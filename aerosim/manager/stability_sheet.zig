@@ -1,13 +1,14 @@
 //! A planilha de estabilidade e controle que o programa gera depois de simular, no formato da planilha de saídas de
 //! E&C das equipes: uma aba com o nome do avião e, no alto, a velocidade de referência e a massa; embaixo, lado a
-//! lado,
+//! lado, um bloco por superfície (com dois EH, por exemplo, saem dois blocos de EH, cada um com o seu braço e o seu
+//! volume de cauda, mais o volume de todos juntos):
 //!
 //! - o estabilizador horizontal: perfil, margem estática, incidência, envergadura, CMA, área, braço de cauda,
 //!   eficiência, alongamento, volume de cauda, C_Lmax, C_Lα, C_L0, C_mα e C_m0 da fuselagem, C_mac, α de
 //!   equilíbrio, ε0, dε/dα, a distância do CA da asa ao CG, a eficácia do profundor e as deflexões máximas;
 //! - o estabilizador vertical: envergadura, cordas da raiz, da ponta e média, área, braço, C_nβ, afilamento,
 //!   alongamento, perfil, volume de cauda, eficácia do leme, deflexões e C_Lα;
-//! - o aileron: razão de cordas, envergadura, cordas no começo e no fim, onde começa e termina, deflexões;
+//! - cada aileron das asas: razão de cordas, envergadura, cordas no começo e no fim, onde começa e termina, deflexões;
 //! - as derivadas no CG (as de ângulo por grau, as de taxa por radiano).
 //!
 //! Os números saem do modelo do avião (geometria, comandos, limites do piloto automático) e do avião inteiro no CG
@@ -30,13 +31,20 @@ const nan = std.math.nan(f64);
 const alpha_first = -6.0;
 const alpha_last = 16.0;
 
-/// as colunas de cada bloco: nome, símbolo, unidade e valor
-const Block = struct { name: u32, symbol: u32, unit: u32, value: u32 };
-const horizontal_block: Block = .{ .name = 2, .symbol = 8, .unit = 9, .value = 12 }; // B, H, I, L
-const vertical_block: Block = .{ .name = 15, .symbol = 21, .unit = 22, .value = 25 }; // O, U, V, Y
-const aileron_block: Block = .{ .name = 28, .symbol = 34, .unit = 35, .value = 38 }; // AB, AH, AI, AL
-const derivative_name = 41; // AO
-const derivative_value = 42; // AP
+/// as colunas de um bloco: nome, símbolo, unidade e valor. Os blocos ficam lado a lado, um a cada `block_width`
+/// colunas a partir da B (o primeiro em B, H, I, L, como na planilha da equipe)
+const Block = struct {
+    name: u32,
+    symbol: u32,
+    unit: u32,
+    value: u32,
+
+    fn at(index: u32) Block {
+        const start = 2 + block_width * index;
+        return .{ .name = start, .symbol = start + 6, .unit = start + 7, .value = start + 10 };
+    }
+};
+const block_width = 13;
 const header_row = 4;
 const first_row = 6;
 
@@ -117,45 +125,63 @@ const Writer = struct {
     }
 };
 
-/// a aba inteira
+/// o braço (CG ao CA da superfície, m) e o volume de cauda de uma superfície só; `span_or_chord` é a corda de
+/// referência para o EH e a envergadura para o EV (volume de cauda, Raymer, Aircraft Design, cap. 6; equação a
+/// conferir no PDF), a mesma conta de `stability.tailVolumes`, que soma todas
+fn tailOf(aircraft: *const simulation.Aircraft, surface: *const model.Surface, x_cg: f64, reference_area: f64, span_or_chord: f64) struct { arm: f64, volume: f64 } {
+    const arm = x_cg - stability.meanChord(aircraft, surface).x_center;
+    return .{ .arm = arm, .volume = params_mod.area(surface) * arm / (reference_area * span_or_chord) };
+}
+
+/// quantas superfícies ligadas têm o papel `role`
+fn countOf(aircraft: *const simulation.Aircraft, role: []const u8) usize {
+    var count: usize = 0;
+    for (aircraft.surfaces) |*surface| count += @intFromBool(surface.enabled and std.mem.eql(u8, surface.role, role));
+    return count;
+}
+
+/// o título do bloco: o nome do papel e, com mais de uma superfície nesse papel, o nome dela
+fn blockTitle(memory: std.mem.Allocator, heading: []const u8, surface: *const model.Surface, several: bool) ![]const u8 {
+    if (!several) return heading;
+    return std.fmt.allocPrint(memory, "{s} · {s}", .{ heading, surface.name });
+}
+
+/// a aba inteira: um bloco por estabilizador horizontal, um por vertical e um por asa com aileron, lado a lado, e
+/// as derivadas do avião montado no fim
 fn fill(memory: std.mem.Allocator, sheet: *writer.Sheet, aircraft: *const simulation.Aircraft, found: aerodynamics.StabilitySheet) !void {
     const wing = firstOf(aircraft, "wing");
-    const tail = firstOf(aircraft, "htail");
-    const fin = firstOf(aircraft, "vtail");
     const geometry = found.geometry;
     const references = params_mod.references(aircraft);
     const volumes = stability.tailVolumes(aircraft, found.cg[0], references);
     const downwash = params_mod.wingDownwash(aircraft) catch [2]f64{ nan, nan };
     const autopilot = aircraft.autopilot;
-
-    // o título, a velocidade e a massa
-    const incidence = if (wing) |surface| surface.incidence else nan;
-    try sheet.text(memory, 2, 2, try std.fmt.allocPrint(memory, "{s} iw={d:.1}°", .{ aircraft.name, incidence }), .wing_title);
-    try sheet.merge(memory, 2, 2, 2, 12, .wing_title);
-    try sheet.text(memory, 3, 2, "VELOCIDADE DE REFERÊNCIA", .header);
-    try sheet.text(memory, 3, 12, try std.fmt.allocPrint(memory, "{d:.1} m/s", .{found.airspeed}), .header);
-    try sheet.text(memory, 3, 15, "MTOW", .header);
-    try sheet.text(memory, 3, 25, try std.fmt.allocPrint(memory, "{d:.2} kg", .{found.mass}), .header);
-
-    // o estabilizador horizontal
-    var horizontal: Writer = .{ .memory = memory, .sheet = sheet, .block = horizontal_block };
-    try horizontal.title("ESTABILIZADOR HORIZONTAL", horizontal_block.value);
     const derivatives = found.polar.derivatives;
-    if (tail) |surface| {
+    const horizontal_count = countOf(aircraft, "htail");
+    const vertical_count = countOf(aircraft, "vtail");
+    var next_block: u32 = 0;
+
+    // os estabilizadores horizontais
+    for (aircraft.surfaces) |*surface| {
+        if (!surface.enabled or !std.mem.eql(u8, surface.role, "htail")) continue;
+        var horizontal: Writer = .{ .memory = memory, .sheet = sheet, .block = .at(next_block) };
+        next_block += 1;
+        try horizontal.title(try blockTitle(memory, "ESTABILIZADOR HORIZONTAL", surface, horizontal_count > 1), horizontal.block.value);
         const coefficients = params_mod.coeffs(surface) catch null;
         const extent = spanOf(surface);
         const mean = stability.meanChord(aircraft, surface);
-        const elevator = controlOf(tail, "elevator");
+        const elevator = controlOf(surface, "elevator");
+        const own = tailOf(aircraft, surface, found.cg[0], references[0], references[1]);
         try horizontal.text("Perfil", "", "-", surface.airfoil.name);
         try horizontal.number("Margem estática", "ME", "-", if (found.metrics.static_margin) |margin| margin / 100 else nan);
         try horizontal.number("Ângulo de incidência EH", "it", "deg", surface.incidence);
         try horizontal.number("Envergadura da EH", "bh", "m", extent.span);
         try horizontal.number("Corda da EH", "MACh", "m", mean.chord);
         try horizontal.number("Área da EH", "Sh", "m²", params_mod.area(surface));
-        try horizontal.number("Braço de cauda EH (CG ao CA da EH)", "lh", "m", volumes.horizontal_arm);
+        try horizontal.number("Braço de cauda EH (CG ao CA da EH)", "lh", "m", own.arm);
         try horizontal.number("Eficiência da EH", "eta_h", "-", surface.eta);
         try horizontal.number("Razão de aspecto", "ARh", "-", if (coefficients) |c| c.AR else nan);
-        try horizontal.number("Volume de cauda horizontal", "Vh", "-", volumes.horizontal);
+        try horizontal.number("Volume de cauda horizontal", "Vh", "-", own.volume);
+        if (horizontal_count > 1) try horizontal.number("Volume de cauda de todos os EH", "Vh,total", "-", volumes.horizontal);
         try horizontal.number("CLmax EH", "CLmaxh", "-", if (coefficients) |c| c.CLmax else nan);
         try horizontal.number("CLalpha EH", "CLalphah", "1/deg", if (coefficients) |c| c.CLa / deg else nan);
         try horizontal.number("CL0", "CL0h", "-", if (coefficients) |c| c.CL0 else nan);
@@ -169,51 +195,83 @@ fn fill(memory: std.mem.Allocator, sheet: *writer.Sheet, aircraft: *const simula
         try horizontal.number("Parâmetro de eficácia da EH", "tauE_profundor", "-", if (elevator) |control| control.tau orelse nan else nan);
         try horizontal.number("Deflexão máxima positiva", "δe,max", "deg", autopilot.de_max);
         try horizontal.number("Deflexão máxima negativa", "δe,min", "deg", -autopilot.de_max);
-    } else try horizontal.text("Sem estabilizador horizontal", "", "", "—");
+    }
+    if (horizontal_count == 0) {
+        var horizontal: Writer = .{ .memory = memory, .sheet = sheet, .block = .at(next_block) };
+        next_block += 1;
+        try horizontal.title("ESTABILIZADOR HORIZONTAL", horizontal.block.value);
+        try horizontal.text("Sem estabilizador horizontal", "", "", "—");
+    }
 
-    // o estabilizador vertical
-    var vertical: Writer = .{ .memory = memory, .sheet = sheet, .block = vertical_block };
-    try vertical.title("ESTABILIZADOR VERTICAL", vertical_block.value);
-    if (fin) |surface| {
+    // os estabilizadores verticais
+    for (aircraft.surfaces) |*surface| {
+        if (!surface.enabled or !std.mem.eql(u8, surface.role, "vtail")) continue;
+        var vertical: Writer = .{ .memory = memory, .sheet = sheet, .block = .at(next_block) };
+        next_block += 1;
+        try vertical.title(try blockTitle(memory, "ESTABILIZADOR VERTICAL", surface, vertical_count > 1), vertical.block.value);
         const coefficients = params_mod.coeffs(surface) catch null;
         const extent = spanOf(surface);
-        const rudder = controlOf(fin, "rudder");
+        const rudder = controlOf(surface, "rudder");
+        const own = tailOf(aircraft, surface, found.cg[0], references[0], references[2]);
         try vertical.number("Envergadura da EV", "bv", "m", extent.span);
         try vertical.number("Corda na raiz da EV", "crv", "m", extent.root);
         try vertical.number("Corda na ponta da EV", "ctv", "m", extent.tip);
         try vertical.number("Corda média da EV", "MACv", "m", stability.meanChord(aircraft, surface).chord);
         try vertical.number("Área da EV", "Sv", "m²", params_mod.area(surface));
-        try vertical.number("Braço de cauda EV (CG ao CA da EV)", "lv", "m", volumes.vertical_arm);
+        try vertical.number("Braço de cauda EV (CG ao CA da EV)", "lv", "m", own.arm);
         try vertical.number("Taxa de variação do momento em Z", "Cnβ", "1/deg", derivatives.get(.Cnb) / deg);
         try vertical.number("Afilamento da EV", "lambdav", "-", extent.tip / extent.root);
         try vertical.number("Razão de aspecto", "ARv", "-", if (coefficients) |c| c.AR else nan);
         try vertical.text("Perfil", "nperfilv", "-", surface.airfoil.name);
-        try vertical.number("Volume de cauda vertical", "Vv", "-", volumes.vertical);
+        try vertical.number("Volume de cauda vertical", "Vv", "-", own.volume);
+        if (vertical_count > 1) try vertical.number("Volume de cauda de todas as EV", "Vv,total", "-", volumes.vertical);
         try vertical.number("Parâmetro de eficácia da EV", "tauE_leme", "-", if (rudder) |control| control.tau orelse nan else nan);
         try vertical.number("Deflexão máxima positiva", "δr,max", "deg", autopilot.dr_max);
         try vertical.number("CLalpha EV", "CLalphav", "1/deg", if (coefficients) |c| c.CLa / deg else nan);
         try vertical.number("Deflexão máxima negativa", "δr,min", "deg", -autopilot.dr_max);
-    } else try vertical.text("Sem estabilizador vertical", "", "", "—");
+    }
+    if (vertical_count == 0) {
+        var vertical: Writer = .{ .memory = memory, .sheet = sheet, .block = .at(next_block) };
+        next_block += 1;
+        try vertical.title("ESTABILIZADOR VERTICAL", vertical.block.value);
+        try vertical.text("Sem estabilizador vertical", "", "", "—");
+    }
 
-    // o aileron (o primeiro da asa principal)
-    var aileron_writer: Writer = .{ .memory = memory, .sheet = sheet, .block = aileron_block };
-    try aileron_writer.title("AILERON", aileron_block.value);
-    if (controlOf(wing, "aileron")) |aileron| {
-        const surface = wing.?;
-        const half = spanOf(surface).span / (if (surface.symmetric) @as(f64, 2) else 1);
-        const start = aileron.span_start * half;
-        const finish = aileron.span_end * half;
-        try aileron_writer.number("Razão entre cordas", "ca/cw", "-", aileron.chord_frac);
-        try aileron_writer.number("Envergadura do aileron", "ba", "m", finish - start);
-        try aileron_writer.number("Corda no começo", "ci", "m", aileron.chord_frac * chordAt(surface, start));
-        try aileron_writer.number("Corda no fim", "cf", "m", aileron.chord_frac * chordAt(surface, finish));
-        try aileron_writer.number("Início do aileron", "yi", "m", start);
-        try aileron_writer.number("Final do aileron", "yf", "m", finish);
-        try aileron_writer.number("Deflexão positiva", "δA", "deg", autopilot.da_max);
-        try aileron_writer.number("Deflexão negativa", "δA", "deg", -autopilot.da_max);
-    } else try aileron_writer.text("Sem aileron na asa", "", "", "—");
+    // os ailerons: um bloco por aileron de cada asa
+    const wing_count = countOf(aircraft, "wing");
+    var aileron_count: usize = 0;
+    for (aircraft.surfaces) |*surface| {
+        if (!surface.enabled or !std.mem.eql(u8, surface.role, "wing")) continue;
+        for (surface.controls) |aileron| {
+            if (!std.mem.eql(u8, aileron.kind, "aileron")) continue;
+            aileron_count += 1;
+            var aileron_writer: Writer = .{ .memory = memory, .sheet = sheet, .block = .at(next_block) };
+            next_block += 1;
+            try aileron_writer.title(try blockTitle(memory, "AILERON", surface, wing_count > 1), aileron_writer.block.value);
+            const half = spanOf(surface).span / (if (surface.symmetric) @as(f64, 2) else 1);
+            const start = aileron.span_start * half;
+            const finish = aileron.span_end * half;
+            try aileron_writer.number("Razão entre cordas", "ca/cw", "-", aileron.chord_frac);
+            try aileron_writer.number("Envergadura do aileron", "ba", "m", finish - start);
+            try aileron_writer.number("Corda no começo", "ci", "m", aileron.chord_frac * chordAt(surface, start));
+            try aileron_writer.number("Corda no fim", "cf", "m", aileron.chord_frac * chordAt(surface, finish));
+            try aileron_writer.number("Início do aileron", "yi", "m", start);
+            try aileron_writer.number("Final do aileron", "yf", "m", finish);
+            try aileron_writer.number("Deflexão positiva", "δA", "deg", autopilot.da_max);
+            try aileron_writer.number("Deflexão negativa", "δA", "deg", -autopilot.da_max);
+        }
+    }
+    if (aileron_count == 0) {
+        var aileron_writer: Writer = .{ .memory = memory, .sheet = sheet, .block = .at(next_block) };
+        next_block += 1;
+        try aileron_writer.title("AILERON", aileron_writer.block.value);
+        try aileron_writer.text("Sem aileron nas asas", "", "", "—");
+    }
 
-    // as derivadas no CG
+    // as derivadas do avião montado, no CG
+    const derivative_name = Block.at(next_block).name;
+    const derivative_value = derivative_name + 1;
+    const incidence = if (wing) |surface| surface.incidence else nan;
     try sheet.text(memory, header_row, derivative_name, "DERIVADAS", .header);
     try sheet.text(memory, header_row, derivative_value, try std.fmt.allocPrint(memory, "iw = {d:.1}°", .{incidence}), .header);
     try sheet.text(memory, header_row + 1, derivative_name, "xCG %MACw", .yellow_label);
@@ -228,7 +286,26 @@ fn fill(memory: std.mem.Allocator, sheet: *writer.Sheet, aircraft: *const simula
         try sheet.number(memory, row, derivative_value, if (rate) value else value / deg, .light_green_value);
         row += 1;
     }
-    for ([_]struct { u32, f32 }{ .{ 2, 27 }, .{ 8, 15 }, .{ 9, 9 }, .{ 12, 13 }, .{ 15, 30 }, .{ 21, 12 }, .{ 22, 9 }, .{ 25, 12 }, .{ 28, 18 }, .{ 34, 11 }, .{ 35, 8 }, .{ 38, 11 }, .{ 41, 16 }, .{ 42, 13 } }) |column| try sheet.width(memory, column[0], column[1]);
+
+    // o título, a velocidade e a massa, de ponta a ponta dos blocos
+    const last_value = Block.at(next_block - 1).value;
+    try sheet.text(memory, 2, 2, try std.fmt.allocPrint(memory, "{s} iw={d:.1}°", .{ aircraft.name, incidence }), .wing_title);
+    try sheet.merge(memory, 2, 2, 2, last_value, .wing_title);
+    try sheet.text(memory, 3, 2, "VELOCIDADE DE REFERÊNCIA", .header);
+    try sheet.text(memory, 3, 12, try std.fmt.allocPrint(memory, "{d:.1} m/s", .{found.airspeed}), .header);
+    try sheet.text(memory, 3, 15, "MTOW", .header);
+    try sheet.text(memory, 3, 25, try std.fmt.allocPrint(memory, "{d:.2} kg", .{found.mass}), .header);
+
+    // as larguras: as mesmas em todo bloco
+    for (0..next_block) |index| {
+        const block = Block.at(@intCast(index));
+        try sheet.width(memory, block.name, 27);
+        try sheet.width(memory, block.symbol, 15);
+        try sheet.width(memory, block.unit, 9);
+        try sheet.width(memory, block.value, 13);
+    }
+    try sheet.width(memory, derivative_name, 16);
+    try sheet.width(memory, derivative_value, 13);
 }
 
 test "a planilha de E&C do avião de exemplo: EH, EV, aileron e derivadas" {
@@ -244,4 +321,29 @@ test "a planilha de E&C do avião de exemplo: EH, EV, aileron e derivadas" {
     try std.testing.expectEqual(@as(usize, 1), book.sheets.len);
     const corner = book.sheets[0].byAddress("B4") orelse return error.TestUnexpectedResult;
     try std.testing.expectEqualStrings("ESTABILIZADOR HORIZONTAL", corner.text);
+}
+
+test "dois EH viram dois blocos, cada um com o seu volume, e o total soma os dois" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    const io = std.testing.io;
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(io, "../data/aircraft/Convencional_original.aero", memory, .limited(1 << 24));
+    var diagnosis: model.Diag = .{};
+    var loaded = try model.parse(std.testing.allocator, bytes, &diagnosis);
+    defer loaded.deinit();
+    var aircraft = loaded.ac;
+    const tail = firstOf(&aircraft, "htail") orelse return error.TestUnexpectedResult;
+    var upper = tail.*;
+    upper.name = "EH superior";
+    upper.z -= 0.25;
+    aircraft.surfaces = try std.mem.concat(memory, model.Surface, &.{ aircraft.surfaces, &.{upper} });
+    const book = try core.xlsx.Workbook.parse(memory, try workbook(memory, &aircraft));
+    const sheet = book.sheets[0];
+    const second = sheet.byAddress("O4") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("ESTABILIZADOR HORIZONTAL · EH superior", second.text);
+    // a linha 15 é o volume de cada EH e a 16, o de todos: com dois EH iguais, o total é o dobro
+    const own = sheet.byAddress("L15") orelse return error.TestUnexpectedResult;
+    const total = sheet.byAddress("L16") orelse return error.TestUnexpectedResult;
+    try std.testing.expectApproxEqRel(2 * own.number, total.number, 1e-9);
 }
