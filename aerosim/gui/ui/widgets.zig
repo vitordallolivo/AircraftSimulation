@@ -42,8 +42,8 @@ pub const Ui = struct {
     swipe: f32 = 0, // ao soltar um arraste mais de lado que de pé: quanto andou na horizontal
 
     /// abre fontes e logo e ajusta o estilo do raygui às cores do tema; precisa da janela aberta
-    pub fn init() !Ui {
-        const ui: Ui = .{ .fonts = theme.Fonts.load(), .logo = try theme.Logo.load() };
+    pub fn init(program: theme.Program) !Ui {
+        const ui: Ui = .{ .fonts = theme.Fonts.load(), .logo = try theme.Logo.load(program) };
         styleRaygui(ui.fonts.mono);
         return ui;
     }
@@ -444,7 +444,7 @@ pub fn roundedLines(rect: rl.Rectangle, radius: f32, color: rl.Color) void {
 /// passa por ele) e o texto ao lado; devolve o índice do botão clicado
 pub fn header(ui: *Ui, width: f32, program_name: [:0]const u8, buttons: []const [:0]const u8, highlight: [:0]const u8, subtitle: [:0]const u8) ?usize {
     rl.drawRectangleRec(.{ .x = 0, .y = 0, .width = width, .height = header_height }, theme.colors.panel);
-    const logo_width = ui.logo.draw(14, 8, header_height - 16);
+    const logo_width = ui.logo.draw(14, 8, header_height - 16, clock());
     theme.text(ui.fonts.regular, program_name, 24 + logo_width, 13, 24, theme.colors.accent);
     var x: f32 = 24 + logo_width + theme.textWidth(ui.fonts.regular, program_name, 24) + 28;
     var pressed: ?usize = null;
@@ -464,12 +464,20 @@ pub fn header(ui: *Ui, width: f32, program_name: [:0]const u8, buttons: []const 
     return pressed;
 }
 
+/// o relógio das animações (o brilho do nome e da logo); o print pode prendê-lo num instante (`tempo=SEGUNDOS`)
+pub var frozen_time: ?f64 = null;
+
+/// os segundos desde que a janela abriu, ou o instante preso do print
+pub fn clock() f64 {
+    return frozen_time orelse rl.getTime();
+}
+
 /// escreve `content` na cor do destaque com um brilho claro que passa por ele, da esquerda para a direita, a cada
 /// poucos segundos (o nome do avião aberto, que está "vivo"); devolve onde o texto acaba
 pub fn shimmer(font: rl.Font, content: [:0]const u8, x: f32, y: f32, size: f32) f32 {
     const total = theme.textWidth(font, content, size);
     const period: f64 = 3.2; // segundos entre uma passada e a outra
-    const phase: f32 = @floatCast(@mod(rl.getTime(), period) / period);
+    const phase: f32 = @floatCast(@mod(clock(), period) / period);
     const band = 26.0; // largura do brilho (px)
     const center = x - 2 * band + phase * (total + 4 * band);
     glow(.{ .x = x - 6, .y = y - 3, .width = total + 12, .height = size + 6 }, 6);

@@ -1,7 +1,7 @@
 # A interface do aerosim em Zig
 
 Esta é a interface do aerosim escrita em Zig, com raylib e raygui, no visual do AeroDrive: fundo claro, cantos
-arredondados, azul nos títulos e a logo do albatroz. É a tela onde se projeta, a mesma no computador e no navegador,
+arredondados, azul nos títulos e a logo do programa. É a tela onde se projeta, a mesma no computador e no navegador,
 com as áreas e subabas, os campos, gráficos e diagnósticos, e a Montagem feita aqui mesmo (o avião
 aberto em 3D, com o CG). A tela não faz conta: as abas vêm do registro em Zig (`manager.layout`), cada análise
 chama o núcleo direto e as etapas da sprint (Perfis, Projetar, Empenagem e comandos, Motores e montagem, Estudo e

@@ -365,7 +365,7 @@ fn appImage(context: *Context, folder: []const u8) !void {
     try std.Io.Dir.cwd().setFilePermissions(context.io, app_dir ++ "/AppRun", .executable_file, .{});
     try std.Io.Dir.cwd().writeFile(context.io, .{ .sub_path = app_dir ++ "/aircraftsimulation.desktop", .data = "[Desktop Entry]\nType=Application\nName=AircraftSimulation\n" ++
         "Comment=Dimensionar uma aeronave e voar o resultado\nExec=aircraftsimulation\nIcon=aircraftsimulation\nCategories=Science;Education;\nTerminal=false\n" });
-    try copy(context, "aerosim/gui/ui/albatroz.png", app_dir ++ "/aircraftsimulation.png");
+    try copy(context, "aerosim/gui/ui/logos/aerosim_escuro.png", app_dir ++ "/aircraftsimulation.png");
     // os executáveis copiados (os programas e o Python portátil) mantêm o modo de origem pelo copyFile
     const tool = context.environ.get("APPIMAGETOOL") orelse which(context, "appimagetool") orelse {
         std.debug.print("sem o appimagetool: ficou só a pasta {s}\n", .{app_dir});

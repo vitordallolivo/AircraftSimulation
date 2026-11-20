@@ -115,6 +115,7 @@ fn nativeMain(init: std.process.Init) !void {
     rl.setTraceLogLevel(.warning);
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .window_resizable = true, .vsync_hint = !shot });
     rl.initWindow(args.w, args.h, "AeroDrive");
+    setIcon();
     defer rl.closeWindow();
     rl.setExitKey(.null); // Esc é "voltar"/pausa; fechar a janela sai
 
@@ -194,6 +195,7 @@ fn browserMain() !void {
     rl.setConfigFlags(.{ .msaa_4x_hint = true });
     const size = browser.viewportSize();
     rl.initWindow(size.width, size.height, "AeroDrive");
+    setIcon();
     rl.setExitKey(.null); // Esc é "voltar"/pausa
     const app = try app_mod.App.init(browser_io.io, gpa, paths_mod.browser, browser_storage.storage());
     browser_app = app;
@@ -224,4 +226,11 @@ fn browserFrame() callconv(.c) void {
         app.saveSettings();
         browser.leave();
     }
+}
+
+/// o ícone da janela (na barra de tarefas e no alt-tab): a logo do AeroDrive
+fn setIcon() void {
+    const image = rl.loadImageFromMemory(".png", app_mod.icon_png) catch return;
+    defer rl.unloadImage(image);
+    rl.setWindowIcon(image);
 }

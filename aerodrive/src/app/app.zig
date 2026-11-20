@@ -43,7 +43,9 @@ const dev_overlay = @import("../ui/dev_overlay.zig");
 const platform = @import("../sys/platform.zig");
 const browser = @import("../sys/browser.zig");
 
-const logo_png = @embedFile("../assets/albatroz.png");
+const logo_png = @embedFile("../assets/aerodrive_claro.png");
+/// o ícone da janela (barra de tarefas): a logo na versão escura, que se destaca em qualquer fundo
+pub const icon_png = @embedFile("../assets/aerodrive_escuro.png");
 /// o maior .json de avião que se lê (disco, navegador ou arquivo arrastado)
 pub const max_plane_bytes = 64 << 20;
 const video_fps = 30;
@@ -157,7 +159,12 @@ pub const App = struct {
         if (rl.loadImageFromMemory(".png", logo_png)) |img| {
             defer rl.unloadImage(img);
             app.logo = rl.loadTextureFromImage(img) catch null;
-            if (app.logo) |t| rl.setTextureFilter(t, .bilinear);
+            if (app.logo) |t| {
+                var texture = t;
+                rl.genTextureMipmaps(&texture);
+                rl.setTextureFilter(texture, .trilinear);
+                app.logo = texture;
+            }
         } else |_| {}
         return app;
     }

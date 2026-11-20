@@ -60,7 +60,7 @@ pub const MainMenu = struct {
         var y: f32 = 26;
         const x: f32 = 32;
         if (app.logo) |t| {
-            const lw = @min(left - 2 * x, 320);
+            const lw = @min(left - 2 * x, 96);
             const lh = lw * @as(f32, @floatFromInt(t.height)) / @as(f32, @floatFromInt(t.width));
             rl.drawTexturePro(t, .{ .x = 0, .y = 0, .width = @floatFromInt(t.width), .height = @floatFromInt(t.height) }, .{ .x = x, .y = y, .width = lw, .height = lh }, .{ .x = 0, .y = 0 }, 0, .white);
             y += lh + 10;
