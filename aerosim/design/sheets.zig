@@ -480,6 +480,51 @@ pub fn polynomialOf(saved: Saved) Polynomial {
     return polynomial;
 }
 
+/// liga o polinômio a todos os motores do avião (a árvore do arquivo, com ou sem o invólucro "aeronave"): o modelo de
+/// tração vira "poly" e o `thrust_poly` leva os coeficientes com T0 somado ao p00, a rotação como constante, o ganho
+/// da unidade e a correção de densidade ρ/ρ0 da planilha. Devolve quantos motores receberam
+pub fn putPolynomial(memory: std.mem.Allocator, document: *std.json.Value, polynomial: Polynomial, label: []const u8, source: []const u8) !usize {
+    if (document.* != .object) return 0;
+    var root = &document.object;
+    if (root.getPtr("aeronave")) |inner| if (inner.* == .object) {
+        root = &inner.object;
+    };
+    const units = root.getPtr("propulsion") orelse return 0;
+    if (units.* != .array) return 0;
+    var poly: std.json.ObjectMap = .empty;
+    try poly.put(memory, "name", .{ .string = try memory.dupe(u8, label) });
+    var list = std.json.Array.init(memory);
+    for (polynomial.coefficients, 0..) |coefficient, k| try list.append(.{ .float = if (k == 0) coefficient + polynomial.static_thrust else coefficient });
+    try poly.put(memory, "coefs", .{ .array = list });
+    try poly.put(memory, "x_var", .{ .string = if (polynomial.x_is_rpm) "const" else "V" });
+    try poly.put(memory, "y_var", .{ .string = if (polynomial.x_is_rpm) "V" else "const" });
+    try poly.put(memory, "x_const", .{ .float = if (polynomial.x_is_rpm) polynomial.rpm else 0 });
+    try poly.put(memory, "y_const", .{ .float = if (polynomial.x_is_rpm) 0 else polynomial.rpm });
+    try poly.put(memory, "gain", .{ .float = polynomial.gain });
+    // a planilha corrige a tração por ρ/ρ0 (o expoente 1), com ρ0 do nível do mar
+    try poly.put(memory, "rho_exp", .{ .float = 1 });
+    try poly.put(memory, "rho0", .{ .float = 1.225 });
+    try poly.put(memory, "xmax", .{ .float = 0 });
+    try poly.put(memory, "ymax", .{ .float = 0 });
+    try poly.put(memory, "T0", .{ .float = polynomial.static_thrust });
+    try poly.put(memory, "n", .{ .float = polynomial.rpm });
+    try poly.put(memory, "source", .{ .string = try memory.dupe(u8, source) });
+    var count: usize = 0;
+    for (units.array.items) |*unit| if (unit.* == .object) {
+        try unit.object.put(memory, "thrust_model", .{ .string = "poly" });
+        try unit.object.put(memory, "thrust_poly", .{ .object = try poly.clone(memory) });
+        count += 1;
+    };
+    return count;
+}
+
+/// o polinômio marcado e de onde ele veio ("planilha.xlsx, aba Tração, H8:AB9"), para ligar ao avião
+pub fn markedSource(memory: std.mem.Allocator) ![]const u8 {
+    const book = draft.book orelse return "";
+    if (draft.sheet >= book.sheets.len) return "";
+    return std.fmt.allocPrint(memory, "{s}, aba {s}, {s}", .{ std.fs.path.basename(draft.path), book.sheets[draft.sheet].name, draft.range });
+}
+
 // ------------------------------------------------------------------ o .csv de uma combinação
 
 /// uma constante guardada junto com a combinação
@@ -1041,4 +1086,23 @@ test "o polinômio de tração da planilha: T0 e os termos em V na rotação dad
     try writePolynomialCsv(&text.writer, "teste", "Desempenho", polynomial);
     const back = polynomialOf(try readCsv(memory, "Fulcrum", text.written()));
     try testing.expectApproxEqAbs(polynomial.thrust(12), back.thrust(12), 1e-9);
+}
+
+test "o polinômio vai para os motores do avião e dá a mesma tração pelo polinômio do núcleo" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    var document = try std.json.parseFromSliceLeaky(std.json.Value, memory, "{\"aeronave\":{\"propulsion\":[{\"name\":\"m1\"},{\"name\":\"m2\"}]}}", .{});
+    var polynomial = Polynomial{ .static_thrust = 6.75, .rpm = 8500, .gain = standard_gravity };
+    polynomial.coefficients[2] = -0.0763; // p01
+    polynomial.coefficients[5] = 0.00141; // p02
+    try testing.expectEqual(@as(usize, 2), try putPolynomial(memory, &document, polynomial, "Fulcrum", "teste"));
+    const unit = document.object.get("aeronave").?.object.get("propulsion").?.array.items[1].object;
+    try testing.expectEqualStrings("poly", unit.get("thrust_model").?.string);
+    const poly = unit.get("thrust_poly").?.object;
+    var coefficients: [ThrustPoly.n_coef]f64 = @splat(0);
+    for (poly.get("coefs").?.array.items, 0..) |item, k| coefficients[k] = item.float;
+    // o que o núcleo calcula (x = a rotação constante, y = V) é a tração da planilha
+    const core_thrust = poly.get("gain").?.float * ThrustPoly.eval(&coefficients, poly.get("x_const").?.float, 12);
+    try testing.expectApproxEqAbs(polynomial.thrust(12), core_thrust, 1e-9);
 }

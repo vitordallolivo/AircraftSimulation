@@ -143,6 +143,12 @@ pub const Screen = struct {
             screen.sheet_window.openPath(name["planilha:".len..]);
         } else if (std.mem.startsWith(u8, name, "bloco:")) { // marca o bloco da planilha aberta (prints)
             design.sheets.setRange(name["bloco:".len..]);
+        } else if (std.mem.startsWith(u8, name, "salvar_em:")) { // salva o avião aberto no caminho (prints)
+            screen.save(name["salvar_em:".len..]);
+        } else if (std.mem.eql(u8, name, "fechar_planilha")) {
+            screen.sheet_window.open = false;
+        } else if (std.mem.eql(u8, name, "usar_polinomio")) { // "Usar no motor do avião" (prints)
+            screen.usePolynomial();
         } else if (std.mem.startsWith(u8, name, "tipo:")) { // a aba do tipo do bloco, pelo nome interno (prints)
             if (std.meta.stringToEnum(design.sheets.Kind, name["tipo:".len..])) |kind| design.sheets.setKind(kind);
         } else if (std.mem.startsWith(u8, name, "folha:")) { // a aba da planilha, de 0 (prints)
@@ -154,6 +160,20 @@ pub const Screen = struct {
         } else if (std.mem.eql(u8, name, "desfazer")) {
             screen.pending_undo += 1;
         }
+    }
+
+    /// "Usar no motor do avião": o polinômio marcado na planilha vai para todos os motores do avião aberto
+    fn usePolynomial(screen: *Screen) void {
+        const window = &screen.sheet_window;
+        const opened = &(screen.assembly orelse return window.say("abra um avião antes (ou rode Motores e montagem): o polinômio vai para os motores dele", .{}));
+        const polynomial = design.sheets.markedPolynomial() catch return window.say("o polinômio marcado não vale: marque os coeficientes e as células de T0 e da rotação", .{});
+        const memory = opened.document_arena.allocator();
+        const name = design.sheets.comboName();
+        const source = design.sheets.markedSource(memory) catch "";
+        const count = design.sheets.putPolynomial(memory, &opened.document, polynomial, if (name.len > 0) name else "da planilha", source) catch 0;
+        if (count == 0) return window.say("o avião aberto não tem motor para receber o polinômio", .{});
+        screen.commitDocument(null);
+        window.say("o polinômio vai para {d} motor{s} de {s} (modelo de tração: polinômio). Salve o avião para guardar", .{ count, if (count == 1) "" else "es", opened.loaded.ac.name });
     }
 
     /// a janela "Planilha…" para a área aberta
@@ -938,6 +958,10 @@ pub const Screen = struct {
             if (screen.requirements_open) screen.drawRequirements(ui, whole);
             if (screen.areas.len > 0) screen.sheet_window.follow(screen.areas[screen.area].title);
             screen.sheet_window.draw(ui, whole);
+            if (screen.sheet_window.wants_aircraft) {
+                screen.sheet_window.wants_aircraft = false;
+                screen.usePolynomial();
+            }
             const saving = screen.files.saving;
             if (screen.files.draw(ui, whole)) |path| {
                 if (saving) screen.save(path) else if (screen.importing_file) {

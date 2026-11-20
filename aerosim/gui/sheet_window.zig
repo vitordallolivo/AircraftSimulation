@@ -38,6 +38,8 @@ pub const SheetWindow = struct {
     first_column: u32 = 1,
     zoom: f32 = 1,
     dragging: bool = false,
+    /// "Usar no motor do avião": a tela liga o polinômio marcado ao avião aberto
+    wants_aircraft: bool = false,
     /// o bloco que a grade já mostrou (outro bloco: a grade anda até ele)
     seen_range: [32]u8 = undefined,
     seen_range_len: usize = 0,
@@ -85,7 +87,8 @@ pub const SheetWindow = struct {
         return window.area_buffer[0..window.area_len];
     }
 
-    fn say(window: *SheetWindow, comptime fmt: []const u8, args: anytype) void {
+    /// a mensagem embaixo da janela
+    pub fn say(window: *SheetWindow, comptime fmt: []const u8, args: anytype) void {
         _ = std.fmt.bufPrintZ(&window.message, fmt, args) catch {};
     }
 
@@ -526,7 +529,7 @@ pub const SheetWindow = struct {
     }
 
     fn drawSide(window: *SheetWindow, ui: *widgets.Ui, memory: std.mem.Allocator, side: rl.Rectangle) void {
-        const buttons_height: f32 = 44;
+        const buttons_height: f32 = if (sheets.markedKind() == .thrust_polynomial) 86 else 44;
         const message_height: f32 = 54;
         const has_book = sheets.workbook() != null;
         var top = side.y;
@@ -558,8 +561,14 @@ pub const SheetWindow = struct {
         }
         const message = std.mem.sliceTo(&window.message, 0);
         _ = widgets.paragraph(ui.fonts.regular, message, side.x + 4, side.y + side.height - buttons_height - message_height + 4, side.width - 8, 13, theme.colors.label);
-        const buttons_y = side.y + side.height - buttons_height + 8;
+        const buttons_y = side.y + side.height - 36;
         if (ui_kit.dialogs.button(ui, .{ .x = side.x, .y = buttons_y, .width = 110, .height = 34 }, "Fechar")) window.open = false;
+        if (has_book and sheets.markedKind() == .thrust_polynomial) {
+            if (ui_kit.dialogs.button(ui, .{ .x = side.x, .y = buttons_y - 42, .width = side.width, .height = 34 }, "Usar no motor do avião")) {
+                window.readForm();
+                window.wants_aircraft = true;
+            }
+        }
         const keep_label: [:0]const u8 = if (sheets.markedKind() == .motors) "Guardar os motores" else "Guardar a combinação";
         if (widgets.primaryButton(ui, .{ .x = side.x + 122, .y = buttons_y, .width = side.width - 122, .height = 34 }, keep_label, has_book)) {
             window.readForm();
