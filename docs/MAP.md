@@ -76,7 +76,7 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Declaration:11`
   fn `require:18`, `has:33`
 - `core/src/lib.zig` — O núcleo como módulo Zig (para programas em Zig, como o aerodrive): os mesmos tipos e funções
-  tipos `structures:61`, `optim:67`
+  tipos `structures:63`, `optim:69`
 - `core/src/limits.zig` — Limites de compilação. Toda a memória do núcleo é estática e dimensionada aqui:
   tipos `Group:18`
   fn `groupIndex:30`
@@ -359,6 +359,9 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `core/src/util/xlsx.zig` — Leitor de planilhas `.xlsx` sem dependência de fora: o arquivo é um `.zip` (APPNOTE da PKWARE) com uma folha de
   tipos `Value:24`, `Cell:40`, `Alignment:47`, `Borders:50`, `Style:58`, `Styled:73`, `Range:80`, `ColumnWidth:93`, `RowHeight:100`, `Sheet:106`, `Workbook:190`
   fn `parseAddress:237`, `parseRange:488`, `pixels:502`, `applyTint:575`
+- `core/src/util/xlsx_writer.zig` — Gravador de planilhas `.xlsx` sem dependência de fora, o par do `xlsx.zig`: monta as partes do Office Open XML
+  tipos `Style:18`, `ChartSeries:51`, `Chart:60`, `Sheet:72`
+  fn `address:115`, `sheetName:131`, `write:146`
 - `core/src/util/zip.zig` — O zip (APPNOTE da PKWARE) sem dependência de fora: ler o índice e as partes (guardadas ou com deflate) e gravar um
   tipos `Archive:15`, `Writer:86`
 - `core/src/util/zon_json.zig` — A ponte entre os dados em JSON (a árvore `std.json.Value`, como a Montagem e as etapas guardam o avião) e o texto

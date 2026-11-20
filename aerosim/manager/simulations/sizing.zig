@@ -49,7 +49,8 @@ const aircraft_color = "#d62728";
 
 const max_speed_points = 1000; // o máximo de pontos da grade de V da tração
 
-const RunState = struct {
+/// o que a análise guarda entre o começo e o resultado (a planilha de desempenho usa o mesmo, por `sheetState`)
+pub const RunState = struct {
     requirements: constraints.Requirements = .{},
     polar: constraints.ParabolicPolar = .{},
     polar_source: []const u8 = "",
@@ -131,8 +132,25 @@ fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, v
 }
 
 fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) simulation.Error!void {
-    const memory = run.memory();
-    const aircraft = run.aircraft;
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    prepare(run.memory(), run.aircraft, state, values, &diagnosis) catch |err| {
+        if (err == error.OutOfMemory) return err;
+        run.fail("o avião não montou no núcleo: {s} ({s})", .{ diagnosis.text(), @errorName(err) });
+        return err;
+    };
+    run.progress = 1;
+}
+
+/// o diagrama com os padrões da tela (sem rodar a análise): a planilha de desempenho escreve isso
+pub fn sheetState(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft) !RunState {
+    var state: RunState = .{};
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    try prepare(memory, aircraft, &state, .{}, &diagnosis);
+    return state;
+}
+
+/// os requisitos, a polar, a tração do avião e o ponto de projeto
+fn prepare(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, state: *RunState, values: simulation.Values, diagnosis: *aircraft_model.aircraft.Diag) !void {
     state.requirements = .{
         .rho = values.number("rho", aircraft.environment.rho),
         .V_stall = values.number("V_stall", rounded(0.7 * cruise(aircraft), 10)),
@@ -157,13 +175,8 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
 
     const instance = try memory.create(core.runner.Instance);
     instance.* = .{};
-    var diagnosis: aircraft_model.aircraft.Diag = .{};
-    const info = params_mod.setup(aircraft, instance, &diagnosis) catch |err| {
-        run.fail("o avião não montou no núcleo: {s} ({s})", .{ diagnosis.text(), @errorName(err) });
-        return err;
-    };
+    const info = try params_mod.setup(aircraft, instance, diagnosis);
     const params = &instance.p;
-    run.progress = 0.1;
 
     if (std.mem.eql(u8, values.text("source", sources[0]), sources[0])) {
         const aspect_ratio = values.number("AR", wingAspect(aircraft));
@@ -189,7 +202,6 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
         for (params.prop[0..state.engines]) |*unit| thrust.* += core.propulsion.point(params, unit, speed.*, 1.0).T;
     }
     state.point = constraints.designPoint(state.requirements, state.polar, state.tolerance_percent / 100);
-    run.progress = 1;
 }
 
 fn advanceRun(_: *simulation.Run, _: *RunState) simulation.Error!bool {

@@ -10,6 +10,11 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   marca o bloco (ou ele é achado sozinho); a janela sugere qual coluna é α, C_L, C_D e C_m (ou y e c_l, ou x e y, ou
   os dados de motor), com os tipos que fazem sentido naquela área, mostra o gráfico do bloco e guarda com o nome que
   você escolher. Uma lista de motores vai direto para Biblioteca → Motores.
+- Antes, os resultados de desempenho só ficavam na tela. Agora o botão "Exportar…" do Desempenho simula o avião
+  aberto e gera uma planilha `.xlsx` no formato das planilhas de desempenho da equipe, com as mesmas cores: tração e
+  potência (a rotação, a tração estática e os coeficientes do polinômio do motor no alto, uma tabela por altitude
+  lado a lado), subida, descida, manobra, curva x velocidade, envelope de voo e dimensionamento inicial (o diagrama
+  de restrições e o ponto de projeto), cada aba com os gráficos do próprio Excel ligados às células.
 - Antes, o AeroDrive guardava as preferências (controles, câmera, som, último avião) e o que cada avião lembra em
   arquivos `.json`. Agora elas ficam em arquivos `.aerocfg`; as preferências que já existiam são lidas na primeira
   vez e regravadas no formato novo.

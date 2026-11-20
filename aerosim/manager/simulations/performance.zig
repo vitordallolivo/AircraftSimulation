@@ -105,14 +105,14 @@ const Refinement = struct {
 const group_refine = simulation.refine_group ++ ": desempenho";
 
 /// as curvas numa altitude
-const Altitude = struct {
+pub const Altitude = struct {
     height: f64,
     rows: []simple_perf.SimpleRow,
     summary: simple_perf.SimpleSummary,
 };
 
 /// o envelope de voo, uma linha por altitude até o teto
-const Envelope = struct {
+pub const Envelope = struct {
     heights: std.ArrayList(f64) = .empty,
     min_speed: std.ArrayList(f64) = .empty, // V_min (P_d = P_r)
     max_speed: std.ArrayList(f64) = .empty,
@@ -123,9 +123,10 @@ const Envelope = struct {
 };
 
 /// a polar parabólica do avião inteiro
-const Polar = struct { CD0: f64, K: f64, CLmax: f64 };
+pub const Polar = struct { CD0: f64, K: f64, CLmax: f64 };
 
-const RunState = struct {
+/// o que a análise guarda entre o começo e o resultado (a planilha gerada usa o mesmo, por `sheetState`)
+pub const RunState = struct {
     polar: Polar = .{ .CD0 = 0, .K = 0, .CLmax = 0 },
     mass: f64 = 0,
     area: f64 = 0,
@@ -134,6 +135,7 @@ const RunState = struct {
     refinement: Refinement = .{},
     envelope: Envelope = .{},
     altitudes: []Altitude = &.{},
+    base: simple_perf.SimpleCfg = .{}, // a configuração do núcleo sem a altitude
 };
 
 fn writeFields(out: *simulation.Writer, aircraft: ?*const simulation.Aircraft, values: simulation.Values) simulation.Error!void {
@@ -264,15 +266,21 @@ fn compute(memory: std.mem.Allocator, base: simple_perf.SimpleCfg, height: f64) 
 }
 
 fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) simulation.Error!void {
-    const memory = run.memory();
-    const aircraft = run.aircraft;
-    const instance = try memory.create(core.runner.Instance);
-    instance.* = .{};
     var diagnosis: aircraft_model.aircraft.Diag = .{};
-    const info = params_mod.setup(aircraft, instance, &diagnosis) catch |err| {
+    prepare(run.memory(), run.aircraft, state, values, &diagnosis) catch |err| {
+        if (err == error.OutOfMemory) return err;
         run.fail("o avião não montou no núcleo: {s} ({s})", .{ diagnosis.text(), @errorName(err) });
         return err;
     };
+    run.progress = 1;
+}
+
+/// a análise inteira sem a tela: a polar do avião, o envelope de voo até o teto e as curvas nas altitudes
+/// (`h_list`, ou a altitude-densidade do campo e 900 m acima)
+fn prepare(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, state: *RunState, values: simulation.Values, diagnosis: *aircraft_model.aircraft.Diag) !void {
+    const instance = try memory.create(core.runner.Instance);
+    instance.* = .{};
+    const info = try params_mod.setup(aircraft, instance, diagnosis);
     state.refinement = .of(values);
     state.polar = corePolar(&instance.p, core.trim.Ctx.init(&instance.p, &instance.r.f), .of(values));
     const mass = values.number("mass", 0);
@@ -280,8 +288,8 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
     state.area = params_mod.references(aircraft)[0];
     state.load_factor = aircraft.performance.load_factor;
     state.bank_limit_deg = aircraft.autopilot.phimax;
-    const base = baseConfig(instance, aircraft, state, values);
-    run.progress = 0.2;
+    state.base = baseConfig(instance, aircraft, state, values);
+    const base = state.base;
 
     // o envelope de voo: sobe de 50 em 50 m até o teto (nenhuma V com P_d ≥ P_r, ou V_max ≤ V_min)
     const scratch = try memory.alloc(simple_perf.SimpleRow, rowCapacity(base));
@@ -303,14 +311,25 @@ fn startRun(run: *simulation.Run, state: *RunState, values: simulation.Values) s
         try line.maneuver.append(memory, summary.Vman);
         try line.cruise.append(memory, summary.V_LDmax);
     }
-    run.progress = 0.6;
 
     var buffer: [max_altitudes]f64 = undefined;
     const density_altitude = @round(aircraft.environment.densityAltitude());
     const heights = values.numbers("h_list", &buffer, &.{ density_altitude, density_altitude + 900 });
     state.altitudes = try memory.alloc(Altitude, heights.len);
     for (heights, state.altitudes) |chosen, *altitude| altitude.* = try compute(memory, base, chosen);
-    run.progress = 1;
+}
+
+/// a análise com os padrões da tela, nas altitudes `heights` e com V de `speed_step` em `speed_step` a partir de
+/// 0,5 m/s: o que a planilha de desempenho gerada escreve
+pub fn sheetState(memory: std.mem.Allocator, aircraft: *const simulation.Aircraft, heights: []const f64, speed_step: f64) !RunState {
+    var state: RunState = .{};
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    try prepare(memory, aircraft, &state, .{}, &diagnosis);
+    state.base.dV = speed_step;
+    state.base.V_lo = speed_step;
+    state.altitudes = try memory.alloc(Altitude, heights.len);
+    for (heights, state.altitudes) |chosen, *altitude| altitude.* = try compute(memory, state.base, chosen);
+    return state;
 }
 
 fn advanceRun(_: *simulation.Run, _: *RunState) simulation.Error!bool {

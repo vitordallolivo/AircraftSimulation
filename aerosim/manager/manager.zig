@@ -18,6 +18,8 @@ const mdo = @import("simulations/mdo.zig");
 const wings = @import("simulations/wings.zig");
 const loads = @import("simulations/loads.zig");
 const combined = @import("combined.zig");
+/// a planilha de desempenho gerada depois de simular ("Exportar…" do Desempenho), no formato das planilhas das equipes
+pub const performance_sheet = @import("performance_sheet.zig");
 
 /// "Voo nivelado e envelopes" com o desempenho da planilha (subida, planeio, curvas, V-n, bateria), que antes era a
 /// subaba "Avião montado" e repetia o envelope, a potência e a subida
@@ -123,6 +125,7 @@ comptime {
         _ = loads;
         _ = form_meta;
         _ = @import("takeoff_opt.zig");
+        _ = performance_sheet;
         _ = @import("analysis.zig");
         _ = @import("flightplots.zig");
         _ = @import("simulations/aerodynamics.zig");

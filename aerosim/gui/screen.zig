@@ -80,6 +80,9 @@ pub const Screen = struct {
     pending_undo: usize = 0, // acao=desfazer: Ctrl+Z pelos prints, quando a tela estiver pronta
     undoing: bool = false, // o Ctrl+Z está refazendo o avião (essa mudança não vai para o histórico)
     importing_file: bool = false, // a janela de arquivos aberta é a de trazer uma peça de outro avião
+    exporting_sheets: bool = false, // a janela de salvar aberta é a do "Exportar…" (a planilha de desempenho)
+    pending_export: [512]u8 = undefined, // acao=exportar_em:<caminho> (prints), até o avião abrir
+    pending_export_len: usize = 0,
     loader: ui_kit.jobs.Job = .{}, // lê o .json fora do laço da tela
     loading: Loading = .{},
     message: [240:0]u8 = [_:0]u8{0} ** 240,
@@ -91,6 +94,7 @@ pub const Screen = struct {
 
     /// a tela ainda vai mudar sozinha (aba ou "rodar" pendente, uma conta andando): o print espera
     pub fn busy(screen: *const Screen) bool {
+        if (screen.pending_export_len > 0) return true;
         if (screen.pending_tab != null or screen.pending_run or screen.pending_stage_len > 0 or screen.pending_assembly_len > 0 or screen.pending_undo > 0) return true;
         const page = screen.shown orelse return false;
         return page.settling();
@@ -145,6 +149,17 @@ pub const Screen = struct {
             design.sheets.setRange(name["bloco:".len..]);
         } else if (std.mem.startsWith(u8, name, "salvar_em:")) { // salva o avião aberto no caminho (prints)
             screen.save(name["salvar_em:".len..]);
+        } else if (std.mem.eql(u8, name, "exportar")) { // "Exportar…": onde salvar a planilha dos resultados
+            var name_buffer: [256]u8 = undefined;
+            const base = if (screen.assembly) |*opened| std.fs.path.stem(opened.path) else "aviao";
+            const file_name = std.fmt.bufPrint(&name_buffer, "{s}_desempenho.xlsx", .{base}) catch "desempenho.xlsx";
+            const folder = if (screen.assembly) |*opened| std.fs.path.dirname(opened.path) orelse "." else ".";
+            screen.exporting_sheets = true;
+            screen.files.showSave("Exportar a planilha de desempenho (.xlsx)", folder, &.{".xlsx"}, file_name);
+        } else if (std.mem.startsWith(u8, name, "exportar_em:")) { // grava a planilha de desempenho no caminho (prints)
+            const target = name["exportar_em:".len..];
+            screen.pending_export_len = @min(target.len, screen.pending_export.len);
+            @memcpy(screen.pending_export[0..screen.pending_export_len], target[0..screen.pending_export_len]);
         } else if (std.mem.eql(u8, name, "fechar_planilha")) {
             screen.sheet_window.open = false;
         } else if (std.mem.eql(u8, name, "usar_polinomio")) { // "Usar no motor do avião" (prints)
@@ -174,6 +189,24 @@ pub const Screen = struct {
         if (count == 0) return window.say("o avião aberto não tem motor para receber o polinômio", .{});
         screen.commitDocument(null);
         window.say("o polinômio vai para {d} motor{s} de {s} (modelo de tração: polinômio). Salve o avião para guardar", .{ count, if (count == 1) "" else "es", opened.loaded.ac.name });
+    }
+
+    /// "Exportar…" do Desempenho: simula o avião aberto e grava em `path` a planilha de desempenho no formato das
+    /// planilhas das equipes (tração e potência por altitude, com os gráficos)
+    fn exportSheets(screen: *Screen, path: []const u8) void {
+        var note: [512]u8 = undefined;
+        const opened = &(screen.assembly orelse return ui_kit.toast.show("abra um avião antes de exportar"));
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const sheet = manager.performance_sheet;
+        const bytes = sheet.workbook(arena.allocator(), &opened.loaded.ac, &sheet.default_altitudes) catch |err| {
+            return ui_kit.toast.show(std.fmt.bufPrint(&note, "não exportou: {s}", .{@errorName(err)}) catch "não exportou");
+        };
+        std.Io.Dir.cwd().writeFile(io(), .{ .sub_path = path, .data = bytes }) catch |err| {
+            return ui_kit.toast.show(std.fmt.bufPrint(&note, "não exportou '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) }) catch "não exportou");
+        };
+        ui_kit.system.offerDownload(path);
+        ui_kit.toast.show(std.fmt.bufPrint(&note, "desempenho exportado em {s}", .{std.fs.path.basename(path)}) catch "desempenho exportado");
     }
 
     /// a janela "Planilha…" para a área aberta
@@ -838,6 +871,11 @@ pub const Screen = struct {
         rl.clearBackground(theme.colors.background);
         screen.collectAircraft();
         screen.collectLayout();
+        if (screen.pending_export_len > 0 and screen.assembly != null) {
+            const length = screen.pending_export_len;
+            screen.pending_export_len = 0;
+            screen.exportSheets(screen.pending_export[0..length]);
+        }
         if (rl.isFileDropped()) {
             const dropped = rl.loadDroppedFiles();
             defer rl.unloadDroppedFiles(dropped);
@@ -948,6 +986,8 @@ pub const Screen = struct {
                 const row_y = widgets.header_height + (if (single) @as(f32, 0) else 38);
                 const row_height: f32 = if (single) 38 else 32;
                 if (ui_kit.dialogs.button(ui, .{ .x = width - 128, .y = row_y + 4, .width = 116, .height = row_height - 8 }, "Planilha…")) screen.openSheetWindow();
+                // "Exportar…" (no Desempenho): simula e gera a planilha de desempenho
+                if (std.mem.eql(u8, screen.areas[screen.area].title, "Desempenho") and ui_kit.dialogs.button(ui, .{ .x = width - 252, .y = row_y + 4, .width = 116, .height = row_height - 8 }, "Exportar…")) screen.command("exportar");
             }
         }
         if (modal) {
@@ -964,7 +1004,10 @@ pub const Screen = struct {
             }
             const saving = screen.files.saving;
             if (screen.files.draw(ui, whole)) |path| {
-                if (saving) screen.save(path) else if (screen.importing_file) {
+                if (saving and screen.exporting_sheets) {
+                    screen.exporting_sheets = false;
+                    screen.exportSheets(path);
+                } else if (saving) screen.save(path) else if (screen.importing_file) {
                     screen.importing_file = false;
                     screen.startImport(path);
                 } else {

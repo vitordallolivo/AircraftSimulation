@@ -43,6 +43,8 @@ pub const quadrature = @import("math/quadrature.zig");
 pub const interpolation = @import("math/interpolation.zig");
 /// leitura de planilhas .xlsx (zip + XML), sem dependência de fora
 pub const xlsx = @import("util/xlsx.zig");
+/// gravação de planilhas .xlsx com cores, mesclas e gráficos
+pub const xlsx_writer = @import("util/xlsx_writer.zig");
 /// o zip (ler e gravar), a caixa do .xlsx e do .aero
 pub const zip = @import("util/zip.zig");
 /// a ponte entre a árvore JSON e o texto ZON (os textos dentro do .aero)
