@@ -13,6 +13,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   equipe: em cada α do avião, o α e os coeficientes da asa (C_L, induzido, parasita e total), do EH (também na área
   dele), o arrasto da fuselagem e da EV, e o C_L, C_D, C_N e C_L/C_D do avião, com as áreas e as incidências no alto
   e os gráficos de sustentação, arrasto e da polar.
+- A Estabilidade também ganhou "Exportar…", com a mesma prévia: a planilha sai no formato da planilha de E&C da
+  equipe, com o estabilizador horizontal (geometria, volume de cauda, margem estática, downwash, α de equilíbrio e
+  curso do profundor), o estabilizador vertical, o aileron e as derivadas de estabilidade do avião montado.
 
 ## v0.3.1 (na `0.3_dev`, fechada em 2026-11-20)
 

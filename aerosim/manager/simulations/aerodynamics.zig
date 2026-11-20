@@ -201,6 +201,41 @@ pub fn componentPolar(run: *simulation.Run, plane: simulation.Aircraft, airspeed
     return out;
 }
 
+/// o avião inteiro no CG, para a planilha de estabilidade: a massa, o CG, a polar das faixas com as derivadas (no α
+/// `alpha_derivatives`), as métricas (ponto neutro e margem) e o α de equilíbrio (C_m = 0 com o profundor em zero)
+pub const StabilitySheet = struct {
+    mass: f64,
+    cg: [3]f64,
+    airspeed: f64,
+    geometry: Reference,
+    polar: Polar,
+    metrics: Metrics,
+    alpha_trim: ?f64,
+};
+
+pub fn stabilitySheet(run: *simulation.Run, airspeed: f64, alphas: []const f64, alpha_derivatives: f64) !StabilitySheet {
+    const memory = run.memory();
+    const aircraft = run.aircraft;
+    const probe = try memory.create(core.runner.Instance);
+    probe.* = .{};
+    try wings.configure(run, probe, aircraft, .faixas);
+    const balance = core.trim.Ctx.init(&probe.p, &probe.r.f);
+    const geometry = reference(aircraft);
+    const cg: [3]f64 = .{ balance.rcg[0], 0, balance.rcg[2] };
+    const polar = try solve(run, aircraft.*, .zig, .{ .airspeed = airspeed, .alphas = alphas, .alpha_derivatives = alpha_derivatives, .reference = cg });
+    // o α de equilíbrio: onde o C_m troca de sinal, por interpolação linear
+    var alpha_trim: ?f64 = null;
+    for (1..alphas.len) |k| {
+        const before = polar.moment[k - 1];
+        const after = polar.moment[k];
+        if (before * after <= 0 and before != after) {
+            alpha_trim = alphas[k - 1] + (alphas[k] - alphas[k - 1]) * before / (before - after);
+            break;
+        }
+    }
+    return .{ .mass = balance.m, .cg = cg, .airspeed = airspeed, .geometry = geometry, .polar = polar, .metrics = try metrics(memory, polar, geometry, cg[0]), .alpha_trim = alpha_trim };
+}
+
 /// a reta dos mínimos quadrados y = a x + b (`np.polyfit(x, y, 1)`); null com menos de dois pontos
 fn line(xs: []const f64, ys: []const f64) ?[2]f64 {
     var sx: f64 = 0;

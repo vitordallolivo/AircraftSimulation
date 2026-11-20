@@ -198,6 +198,7 @@ pub const Screen = struct {
     fn previewSheets(screen: *Screen) void {
         const area = if (screen.areas.len > 0) screen.areas[screen.area].title else "Desempenho";
         if (std.mem.eql(u8, area, "Aerodinâmica")) return screen.previewAerodynamics();
+        if (std.mem.eql(u8, area, "Estabilidade")) return screen.previewStability();
         var note: [512]u8 = undefined;
         const opened = &(screen.assembly orelse return ui_kit.toast.show("abra um avião antes de exportar"));
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -223,6 +224,20 @@ pub const Screen = struct {
         var name_buffer: [256]u8 = undefined;
         const file_name = std.fmt.bufPrint(&name_buffer, "{s}_aerodinamica.xlsx", .{std.fs.path.stem(opened.path)}) catch "aerodinamica.xlsx";
         sheet_window.previewWorkbook("Aerodinâmica", file_name, bytes);
+    }
+
+    /// a prévia da planilha de estabilidade e controle (no formato da Outputs)
+    fn previewStability(screen: *Screen) void {
+        var note: [512]u8 = undefined;
+        const opened = &(screen.assembly orelse return ui_kit.toast.show("abra um avião antes de exportar"));
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const bytes = manager.stability_sheet.workbook(arena.allocator(), &opened.loaded.ac) catch |err| {
+            return ui_kit.toast.show(std.fmt.bufPrint(&note, "não exportou: {s}", .{@errorName(err)}) catch "não exportou");
+        };
+        var name_buffer: [256]u8 = undefined;
+        const file_name = std.fmt.bufPrint(&name_buffer, "{s}_estabilidade.xlsx", .{std.fs.path.stem(opened.path)}) catch "estabilidade.xlsx";
+        sheet_window.previewWorkbook("Estabilidade", file_name, bytes);
     }
 
     /// a janela "Planilha…" para a área aberta
@@ -1802,6 +1817,6 @@ const AssemblyPanel = struct {
 
 /// a área tem planilha da equipe para exportar (o botão "Exportar…" aparece nela)
 fn exportable(area: []const u8) bool {
-    for ([_][]const u8{ "Desempenho", "Aerodinâmica" }) |name| if (std.mem.eql(u8, area, name)) return true;
+    for ([_][]const u8{ "Desempenho", "Aerodinâmica", "Estabilidade" }) |name| if (std.mem.eql(u8, area, name)) return true;
     return false;
 }
