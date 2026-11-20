@@ -30,6 +30,8 @@ pub const Project = struct {
     // `Project` muda de lugar (volta de `open`, vai para o contexto das etapas)
     root: Value,
     folder: []const u8,
+    /// o `.aero` que leva o projeto dentro (a parte `projeto.zon`); vazio: o projeto mora na pasta (`folder`)
+    document: []const u8 = "",
 
     pub fn deinit(project: *Project) void {
         const gpa = project.arena.child_allocator;

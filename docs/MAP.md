@@ -439,8 +439,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerodrive/src/model/**
 
 - `aerodrive/src/model/aero_file.zig` — O arquivo `.aero`: um avião inteiro num arquivo só, no lugar dos vários `.json`. Por dentro é um zip (como o
-  tipos `Manifest:29`, `Part:39`, `Stamp:42`, `Loaded:47`, `Document:117`
-  fn `looksLike:67`, `isoNow:72`, `createdOf:83`, `write:91`, `writeDocument:98`, `readDocument:120`, `canonicalJson:160`, `read:165`
+  tipos `Manifest:31`, `Part:41`, `Stamp:44`, `Loaded:49`, `Document:133`
+  fn `looksLike:69`, `isoNow:74`, `createdOf:85`, `write:93`, `writeDocument:100`, `rewrite:120`, `readDocument:136`, `canonicalJson:176`, `read:181`
 - `aerodrive/src/model/aircraft.zig` — Leitura do arquivo do avião salvo pela GUI (`data/aircraft/*.json`, "meus aviões").
   tipos `Section:13`, `Control:21`, `Device:60`, `Airfoil:77`, `Surface:88`, `Fuselage:120`, `Boom:137`, `Propeller:166`, `Motor:167`, `Battery:168`, `ThrustPoly:179`, `Propulsion:192`, `GearLeg:209`, `Gear:210`, `Tank:233`, `Payload:253`, `PointMass:267`, `Mass:268`, `Environment:279`, `Takeoff:307`, `SimSettings:308`, `Autopilot:310`, `Leg:355`, `MissionEvent:368`, `Mission:369`, `Ballast:379`, `Airfield:380`, `Modifier:398`, `Performance:413`, `Aircraft:424`, `limits:460`, `Diag:489`, `Loaded:503`
   fn `mixedAirfoils:16`, `kindGains:50`, `parse:513`, `validate:574`, `semispan:661`, `sortedSections:668`, `sectionAt:680`, `tailOnBoom:693`, `mountPoint:711`, `applyMounts:745`
@@ -573,8 +573,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 **aerosim/gui/**
 
 - `aerosim/gui/assembly.zig` — O avião da Montagem: lê o `.json` pelo modelo do AeroDrive (`aerodrive/src/model`, o mesmo que o simulador
-  tipos `Triangle:17`, `Mesh:26`, `Assembly:191`, `Balance:236`
-  fn `buildMesh:150`, `balance:246`, `loadAircraft:258`, `loadAircraftText:266`, `readAircraftText:275`, `load:297`, `fromBytes:305`, `fillAirfoilFiles:323`, `parseDat:358`, `findExample:390`
+  tipos `Triangle:17`, `Mesh:26`, `Assembly:191`, `Balance:237`
+  fn `buildMesh:150`, `balance:247`, `loadAircraft:259`, `loadAircraftText:267`, `readAircraftText:276`, `load:298`, `fromBytes:306`, `fillAirfoilFiles:324`, `parseDat:359`, `findExample:391`
 - `aerosim/gui/main.zig` — A interface do aerosim em Zig (raylib e raygui), com as contas no núcleo.
 - `aerosim/gui/page.zig` — Uma subaba da janela, desenhada a partir do que o Python descreve (`python_bridge.zig`): a tela não conhece
   tipos `Kind:40`, `shared:45`, `Page:407`
@@ -654,8 +654,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Kind:17`, `View:100`
   fn `kindColor:20`, `colorByName:35`, `fieldColor:57`, `fraction:75`, `liftColor:80`, `toWorld:85`, `toBody:238`, `shaded:262`, `triangle:270`, `gradientTriangle:280`, `litTriangle:292`, `quad:298`, `segment:315`, `arrow:320`, `floor:332`, `bodyAxes:344`
 - `aerosim/gui/ui/widgets.zig` — Os pedaços comuns das telas, no desenho do AeroDrive: o contexto de desenho (fontes, logo, mouse), o cabeçalho
-  tipos `Ui:13`, `Splitter:250`, `HeightGrip:283`, `Status:557`
-  fn `paragraph:187`, `paragraphHeight:192`, `caretToEnd:238`, `replaceOnType:330`, `helpMark:355`, `checkBox:364`, `disclosure:380`, `glow:424`, `rounded:434`, `roundedLines:439`, `header:444`, `switchMark:465`, `modeButton:473`, `tabBar:485`, `primaryButton:511`, `progressBar:522`, `card:533`, `labeledCard:541`, `statusColor:547`, `tableRow:560`, `format:567`
+  tipos `Ui:13`, `Splitter:250`, `HeightGrip:283`, `Status:595`
+  fn `paragraph:187`, `paragraphHeight:192`, `caretToEnd:238`, `replaceOnType:330`, `helpMark:355`, `checkBox:364`, `disclosure:380`, `glow:424`, `rounded:434`, `roundedLines:439`, `header:445`, `shimmer:469`, `switchMark:503`, `modeButton:511`, `tabBar:523`, `primaryButton:549`, `progressBar:560`, `card:571`, `labeledCard:579`, `statusColor:585`, `tableRow:598`, `format:605`
 
 
 ## Zig · interface do aeroopt (`aeroopt`)

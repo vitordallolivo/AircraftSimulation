@@ -24,6 +24,8 @@ pub const format_version: u32 = 1;
 
 const manifest_name = "manifesto.zon";
 const aircraft_name = "aviao.zon";
+/// a parte com o projeto (as etapas de projeto do aerosim): o `.aero` leva o avião e, se tiver, o projeto que o gerou
+pub const project_part = "projeto.zon";
 
 /// o que o arquivo diz de si
 pub const Manifest = struct {
@@ -113,6 +115,20 @@ pub fn writeDocument(memory: std.mem.Allocator, json: []const u8, stamp: Stamp, 
     return zip_out.finish(memory);
 }
 
+/// grava de novo o `.aero` em `bytes`: o avião vira `json` (nulo: fica o do arquivo), cada parte de `set` entra no
+/// lugar da de mesmo nome (ou a mais) e as outras ficam; a data de criação é a do arquivo
+pub fn rewrite(memory: std.mem.Allocator, bytes: []const u8, json: ?[]const u8, set: []const Part, program: []const u8, now: []const u8, diag: *aircraft.Diag) ![]const u8 {
+    const document = try readDocument(memory, bytes, diag);
+    var parts: std.ArrayList(Part) = .empty;
+    for (document.parts) |item| {
+        var replaced = false;
+        for (set) |new| replaced = replaced or std.mem.eql(u8, new.name, item.name);
+        if (!replaced) try parts.append(memory, item);
+    }
+    try parts.appendSlice(memory, set);
+    return writeDocument(memory, json orelse document.json, .{ .program = program, .now = now, .created = document.manifest.criado_em }, parts.items);
+}
+
 /// o arquivo aberto sem conferir o avião: o manifesto, o avião em texto JSON e as outras partes (memória de `memory`)
 pub const Document = struct { manifest: Manifest, json: []const u8, parts: []const Part };
 
@@ -190,6 +206,21 @@ fn parseZon(comptime T: type, memory: std.mem.Allocator, text: []const u8) !T {
     @setEvalBranchQuota(100_000);
     const source = try memory.dupeZ(u8, text);
     return std.zon.parse.fromSliceAlloc(T, memory, source, null, .{ .ignore_unknown_fields = true });
+}
+
+test "regravar o .aero troca a parte do projeto e guarda o avião e a data de criação" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    var diag: aircraft.Diag = .{};
+    const first = try writeDocument(memory, "{\"name\": \"teste\"}", .{ .program = "teste", .now = "2026-11-20T10:00:00Z" }, &.{.{ .name = project_part, .data = ".{ .versao = 1 }" }});
+    const again = try rewrite(memory, first, null, &.{.{ .name = project_part, .data = ".{ .versao = 2 }" }}, "teste", "2026-11-20T11:00:00Z", &diag);
+    const document = try readDocument(memory, again, &diag);
+    try std.testing.expectEqualStrings("2026-11-20T10:00:00Z", document.manifest.criado_em);
+    try std.testing.expectEqualStrings("2026-11-20T11:00:00Z", document.manifest.modificado_em);
+    try std.testing.expectEqual(@as(usize, 1), document.parts.len);
+    try std.testing.expectEqualStrings(".{ .versao = 2 }", document.parts[0].data);
+    try std.testing.expect(std.mem.indexOf(u8, document.json, "teste") != null);
 }
 
 test "um avião de exemplo vai para .aero e volta igual, com as datas no manifesto" {

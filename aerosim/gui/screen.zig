@@ -266,7 +266,11 @@ pub const Screen = struct {
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "projeto aberto: {s}", .{path}) catch {};
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
-        if (design.stages.projectAircraft(io(), arena.allocator())) |aircraft_path| screen.openAircraftFresh(aircraft_path);
+        if (design.stages.projectAircraft(io(), arena.allocator())) |aircraft_path| {
+            // o avião que o projeto montou: abre sem trocar o projeto
+            screen.fresh_open = true;
+            screen.openAircraft(aircraft_path);
+        }
         screen.noteInUse();
     }
 
@@ -664,7 +668,7 @@ pub const Screen = struct {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
         const memory = arena.allocator();
-        const data = aeroBytes(memory, path, opened.path, opened.source) catch |err| {
+        const data = aeroBytes(memory, path, opened.path, opened.source, design.stages.projectPart(memory)) catch |err| {
             _ = std.fmt.bufPrintZ(&screen.assembly_note, "não salvou '{s}': {s}", .{ std.fs.path.basename(path), @errorName(err) }) catch {};
             return;
         };
@@ -673,21 +677,35 @@ pub const Screen = struct {
             return;
         };
         ui_kit.system.offerDownload(path);
+        // o arquivo salvo é o aberto daqui em diante: o projeto passa a gravar nele, e ele volta na próxima vez
+        if (data_sources.Format.fromPath(path) == .aero) {
+            design.stages.adoptDocument(io(), path);
+            opened.path = opened.document_arena.allocator().dupe(u8, path) catch opened.path;
+            screen.shareAircraft();
+        }
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "salvo em {s}", .{path}) catch {};
     }
 
     /// os bytes a gravar em `path`: o `.aero` com a data de agora e a de criação do arquivo que já estava lá (ou do
     /// aberto, `source_path`); outra extensão grava o texto JSON como está
-    fn aeroBytes(memory: std.mem.Allocator, path: []const u8, source_path: []const u8, json: []const u8) ![]const u8 {
+    fn aeroBytes(memory: std.mem.Allocator, path: []const u8, source_path: []const u8, json: []const u8, project: ?aircraft_model.aero_file.Part) ![]const u8 {
         const aero_file = aircraft_model.aero_file;
         if (data_sources.Format.fromPath(path) != .aero) return json;
         var created: []const u8 = "";
-        for ([_][]const u8{ path, source_path }) |candidate| {
-            if (created.len > 0) break;
+        // as outras partes do arquivo de origem vão junto; o projeto é o de agora (ou nenhum)
+        var parts: std.ArrayList(aero_file.Part) = .empty;
+        for ([_][]const u8{ path, source_path }, 0..) |candidate, k| {
             const bytes = std.Io.Dir.cwd().readFileAlloc(io(), candidate, memory, .limited(assembly_mod.max_file_bytes)) catch continue;
-            created = aero_file.createdOf(memory, bytes);
+            if (created.len == 0) created = aero_file.createdOf(memory, bytes);
+            if (k == 1 and aero_file.looksLike(bytes)) {
+                var diagnosis: aircraft_model.aircraft.Diag = .{};
+                if (aero_file.readDocument(memory, bytes, &diagnosis)) |document| {
+                    for (document.parts) |item| if (!std.mem.eql(u8, item.name, aero_file.project_part)) try parts.append(memory, item);
+                } else |_| {}
+            }
         }
-        return aero_file.writeDocument(memory, json, .{ .program = "aerosim", .now = try aero_file.isoNow(memory, io()), .created = created }, &.{});
+        if (project) |part| try parts.append(memory, part);
+        return aero_file.writeDocument(memory, json, .{ .program = "aerosim", .now = try aero_file.isoNow(memory, io()), .created = created }, parts.items);
     }
 
     /// abre o arquivo `path`: um `.aero` é o avião (Montagem); um `.json` é o avião antigo ou um projeto da sprint; um `.dat` ou uma polar vão
@@ -769,7 +787,7 @@ pub const Screen = struct {
         const folder = std.fs.path.join(memory, &.{ design.stages.projectsRoot(memory) catch return, "importados" }) catch return;
         std.Io.Dir.cwd().createDirPath(io(), folder) catch return fail(screen, "não consegui criar {s}", .{folder});
         const target = std.fmt.allocPrint(memory, "{s}/{s}.aero", .{ folder, std.fs.path.stem(workbook_path) }) catch return;
-        const aero = aeroBytes(memory, target, workbook_path, result.json) catch return fail(screen, "não consegui montar {s}", .{target});
+        const aero = aeroBytes(memory, target, workbook_path, result.json, null) catch return fail(screen, "não consegui montar {s}", .{target});
         std.Io.Dir.cwd().writeFile(io(), .{ .sub_path = target, .data = aero }) catch return fail(screen, "não consegui gravar {s}", .{target});
         screen.openAircraftFresh(target);
         if (result.warnings.len > 0) fail(screen, "planilha lida com {d} avisos; o primeiro: {s}", .{ result.warnings.len, result.warnings[0] });
@@ -778,6 +796,13 @@ pub const Screen = struct {
     /// abre o avião em `path` pedido pelo usuário (Abrir…, arrastar, outro projeto): ele fecha os outros aviões
     /// abertos e apaga os resultados de antes
     fn openAircraftFresh(screen: *Screen, path: []const u8) void {
+        // uma coisa aberta por vez: o `.aero` traz o projeto dele (ou nenhum), e o projeto de antes fecha
+        if (data_sources.Format.fromPath(path) == .aero) {
+            design.stages.openDocument(io(), path) catch {};
+        } else {
+            design.stages.closeProject(io()) catch {};
+        }
+        screen.markStagesStale();
         screen.fresh_open = true;
         screen.openAircraft(path);
     }
@@ -837,6 +862,8 @@ pub const Screen = struct {
             _ = std.fmt.bufPrintZ(&screen.assembly_note, "o avião novo não abriu: {s}", .{if (diagnosis.len > 0) diagnosis.text() else @errorName(err)}) catch {};
             return;
         };
+        design.stages.closeProject(io()) catch {};
+        screen.markStagesStale();
         screen.fresh_open = true;
         screen.adoptAircraft(loaded);
         screen.showAssembly();
@@ -864,6 +891,12 @@ pub const Screen = struct {
         const opened = &(screen.assembly orelse return);
         for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| page.setAircraft(opened.path, opened.source);
         screen.noteInUse();
+    }
+
+    /// o arquivo aberto mudou: as etapas e a janela das condições pedem a página de novo (o projeto é outro)
+    fn markStagesStale(screen: *Screen) void {
+        for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| if (page.kind == .stage) page.markStale();
+        screen.requirements.markStale();
     }
 
     /// apaga os resultados das análises (abriu outro avião ou projeto)

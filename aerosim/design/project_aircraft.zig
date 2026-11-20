@@ -17,6 +17,7 @@ const power_stage = @import("stage_power.zig");
 
 const model = aircraft_model.aircraft;
 const aero_file = aircraft_model.aero_file;
+const zon_json = @import("aerosim").zon_json;
 
 /// o nome do arquivo do avião dentro da pasta do projeto
 pub const file_name = "aviao" ++ aero_file.extension;
@@ -69,12 +70,15 @@ pub fn build(context: *stages.Context, memory: std.mem.Allocator) !?model.Aircra
 
 /// o caminho do avião do projeto (na pasta dele)
 pub fn path(context: *stages.Context, memory: std.mem.Allocator) ![]const u8 {
+    if (context.project.document.len > 0) return memory.dupe(u8, context.project.document);
     return std.fs.path.join(memory, &.{ context.project.folder, file_name });
 }
 
 /// monta o avião de novo e grava se mudou; devolve o caminho quando gravou (a tela abre de novo), nulo se nada mudou
 /// ou se ainda não há avião
 pub fn sync(context: *stages.Context, memory: std.mem.Allocator) !?[]const u8 {
+    // sem projeto (um avião aberto direto), as etapas não tocam no avião
+    if (!context.has_project) return null;
     const plane = (try build(context, memory)) orelse return null;
     const target = try path(context, memory);
     var out: std.Io.Writer.Allocating = .init(memory);
@@ -89,6 +93,11 @@ pub fn sync(context: *stages.Context, memory: std.mem.Allocator) !?[]const u8 {
             created = document.manifest.criado_em;
         } else |_| {}
     } else |_| {}
+    // o `.aero` que leva o projeto: o avião remontado entra no lugar do de lá, com o projeto junto
+    if (context.project.document.len > 0) {
+        const part: aero_file.Part = .{ .name = aero_file.project_part, .data = try zon_json.toZon(memory, context.project.root) };
+        return if (stages.writeIntoDocument(context, memory, json, part)) target else null;
+    }
     const bytes = try aero_file.writeDocument(memory, json, .{ .program = "aerosim", .now = try aero_file.isoNow(memory, context.io), .created = created }, &.{});
     std.Io.Dir.cwd().createDirPath(context.io, context.project.folder) catch {};
     try std.Io.Dir.cwd().writeFile(context.io, .{ .sub_path = target, .data = bytes });

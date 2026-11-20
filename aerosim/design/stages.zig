@@ -24,6 +24,10 @@ const power_stage = @import("stage_power.zig");
 const study_stage = @import("stage_study.zig");
 const library_stage = @import("stage_library.zig");
 
+const aircraft_model = @import("aircraft_model");
+const zon_json = @import("aerosim").zon_json;
+const aero_file = aircraft_model.aero_file;
+
 const Value = std.json.Value;
 const ObjectMap = std.json.ObjectMap;
 
@@ -51,6 +55,9 @@ pub const Context = struct {
     /// o projeto tem pasta escolhida (aberto ou criado por "Novo projeto…"); sem ela, nada é gravado e a tela pede a
     /// pasta antes de guardar
     named: bool = true,
+    /// o arquivo aberto tem projeto: as etapas gravam nele e remontam o avião; falso (um avião aberto sem projeto,
+    /// ou o começo sem nada): o que se mexe nas etapas fica na memória e o avião aberto não é tocado
+    has_project: bool = true,
 
     /// guarda `before` (o projeto antes de um pedido que o mudou) para o Ctrl+Z
     fn remember(context: *Context, before: []u8) void {
@@ -96,11 +103,98 @@ pub const Context = struct {
 
     /// grava o projeto (uma falha de gravação não derruba a etapa: a mensagem avisa)
     pub fn save(context: *Context) bool {
-        if (!context.named) return true; // ainda sem pasta: fica na memória até a tela pedir uma
+        if (!context.named or !context.has_project) return true; // ainda sem pasta ou sem projeto: fica na memória
+        if (context.project.document.len > 0) return saveDocument(context);
         context.project.save(context.io) catch return false;
         return true;
     }
+
+    /// o projeto vai para a parte `projeto.zon` do `.aero` aberto; o avião e as outras partes ficam
+    fn saveDocument(context: *Context) bool {
+        var scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer scratch.deinit();
+        const memory = scratch.allocator();
+        const part: aero_file.Part = .{ .name = aero_file.project_part, .data = zon_json.toZon(memory, context.project.root) catch return false };
+        return writeIntoDocument(context, memory, null, part);
+    }
 };
+
+/// regrava o `.aero` do projeto com o avião `json` (nulo: o do arquivo) e a parte do projeto
+pub fn writeIntoDocument(context: *Context, memory: std.mem.Allocator, json: ?[]const u8, part: aero_file.Part) bool {
+    const path = context.project.document;
+    const now = aero_file.isoNow(memory, context.io) catch return false;
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    const bytes = std.Io.Dir.cwd().readFileAlloc(context.io, path, memory, .limited(1 << 26)) catch return false;
+    const written = aero_file.rewrite(memory, bytes, json, &.{part}, "aerosim", now, &diagnosis) catch return false;
+    const temporary = std.fmt.allocPrint(memory, "{s}.tmp", .{path}) catch return false;
+    std.Io.Dir.cwd().writeFile(context.io, .{ .sub_path = temporary, .data = written }) catch return false;
+    std.Io.Dir.rename(std.Io.Dir.cwd(), temporary, std.Io.Dir.cwd(), path, context.io) catch return false;
+    return true;
+}
+
+/// a parte do projeto em ZON, para gravar junto com o avião ("Salvar"); nula: o arquivo aberto não tem projeto
+pub fn projectPart(memory: std.mem.Allocator) ?aero_file.Part {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = if (shared) |*existing| existing else return null;
+    if (!current.has_project or !current.named) return null;
+    return .{ .name = aero_file.project_part, .data = zon_json.toZon(memory, current.project.root) catch return null };
+}
+
+/// o projeto montado a partir do `.aero` em `path`: a parte `projeto.zon` dele, ou vazio (e `has_project` falso)
+fn documentContext(io: std.Io, path: []const u8) !Context {
+    const gpa = std.heap.page_allocator;
+    var scratch = std.heap.ArenaAllocator.init(gpa);
+    defer scratch.deinit();
+    const stem = path[0 .. path.len - std.fs.path.extension(path).len];
+    var project = try store.empty(gpa, stem);
+    errdefer project.deinit();
+    project.document = try project.memory().dupe(u8, path);
+    var found = false;
+    if (std.Io.Dir.cwd().readFileAlloc(io, path, scratch.allocator(), .limited(1 << 26))) |bytes| {
+        var diagnosis: aircraft_model.aircraft.Diag = .{};
+        if (aero_file.readDocument(scratch.allocator(), bytes, &diagnosis)) |document| {
+            for (document.parts) |item| if (std.mem.eql(u8, item.name, aero_file.project_part)) {
+                const root = try zon_json.read(project.memory(), try project.memory().dupe(u8, item.data));
+                if (root == .object) {
+                    project.root = root;
+                    try project.reserve();
+                    found = true;
+                }
+            };
+        } else |_| {}
+    } else |_| {}
+    return .{ .project = project, .io = io, .has_project = found };
+}
+
+/// abre o `.aero` em `path` no lugar de tudo: o projeto dele (se tiver) passa a ser o das etapas, e ele é o arquivo
+/// que o programa abre da próxima vez
+pub fn openDocument(io: std.Io, path: []const u8) !void {
+    const context = try documentContext(io, path);
+    rememberProject(io, path);
+    useContext(context);
+}
+
+/// um avião aberto sem projeto (um `.json`, `.cfg` ou planilha antigos, ou "Novo"): as etapas ficam vazias e não
+/// tocam no avião
+pub fn closeProject(io: std.Io) !void {
+    var scratch = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer scratch.deinit();
+    const project = try store.empty(std.heap.page_allocator, try newFolder(scratch.allocator(), io));
+    useContext(.{ .project = project, .io = io, .named = false, .has_project = false });
+}
+
+/// "Salvar" gravou o avião em `path` (com o projeto, se havia): o projeto passa a morar nesse arquivo
+pub fn adoptDocument(io: std.Io, path: []const u8) void {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    const current = if (shared) |*existing| existing else return;
+    const memory = current.project.memory();
+    current.project.document = memory.dupe(u8, path) catch return;
+    current.project.folder = memory.dupe(u8, path[0 .. path.len - std.fs.path.extension(path).len]) catch return;
+    if (current.has_project) current.named = true;
+    rememberProject(io, path);
+}
 
 /// um pedido da tela a uma etapa (`do`: show, set, keep, load, delete, act, grid)
 pub const Request = struct {
@@ -179,12 +273,17 @@ fn opened(io: std.Io) !*Context {
     defer scratch.deinit();
     // volta ao último projeto, de onde parou; senão, um vazio sem pasta
     if (try lastProject(scratch.allocator(), io)) |path| {
-        if (store.open(gpa, io, path)) |project| {
+        if (std.mem.endsWith(u8, path, aero_file.extension)) {
+            if (documentContext(io, path)) |context| {
+                shared = context;
+                return &shared.?;
+            } else |_| {}
+        } else if (store.open(gpa, io, path)) |project| {
             shared = .{ .project = project, .io = io };
             return &shared.?;
         } else |_| {}
     }
-    shared = .{ .project = try store.empty(gpa, try newFolder(scratch.allocator(), io)), .io = io, .named = false };
+    shared = .{ .project = try store.empty(gpa, try newFolder(scratch.allocator(), io)), .io = io, .named = false, .has_project = false };
     return &shared.?;
 }
 
@@ -198,6 +297,9 @@ fn lastProject(memory: std.mem.Allocator, io: std.Io) !?[]const u8 {
     const bytes = std.Io.Dir.cwd().readFileAlloc(io, try lastProjectFile(memory), memory, .limited(4096)) catch return null;
     const path = std.mem.trim(u8, bytes, " \r\n");
     if (path.len == 0) return null;
+    if (std.mem.endsWith(u8, path, aero_file.extension)) {
+        if (std.Io.Dir.cwd().access(io, path, .{})) |_| return path else |_| return null;
+    }
     for ([_][]const u8{ store.main_name, store.legacy_name }) |name| {
         const file = try std.fs.path.join(memory, &.{ path, name });
         if (std.Io.Dir.cwd().access(io, file, .{})) |_| return path else |_| {}
@@ -221,7 +323,9 @@ fn nameProject(context: *Context, folder: []const u8) ![]const u8 {
     const trimmed = std.mem.trim(u8, folder, " ");
     if (trimmed.len == 0) return "nenhuma pasta escolhida";
     context.project.folder = try context.project.memory().dupe(u8, trimmed);
+    context.project.document = "";
     context.named = true;
+    context.has_project = true;
     context.project.save(context.io) catch return "não deu para gravar nessa pasta";
     rememberProject(context.io, context.project.folder);
     return "projeto gravado nesta pasta; ao abrir de novo, ele volta daqui";
@@ -336,7 +440,7 @@ fn sprintProjectName(memory: std.mem.Allocator) simulation.Error![]const u8 {
     while (!lock.tryLock()) std.atomic.spinLoopHint();
     defer lock.unlock();
     const current = if (shared) |*existing| existing else return "";
-    if (!current.named) return "";
+    if (!current.named or !current.has_project) return "";
     return memory.dupe(u8, std.fs.path.basename(current.project.folder));
 }
 
@@ -361,6 +465,11 @@ pub fn projectAircraft(io: std.Io, memory: std.mem.Allocator) ?[]const u8 {
     while (!lock.tryLock()) std.atomic.spinLoopHint();
     defer lock.unlock();
     const current = opened(io) catch return null;
+    // o `.aero` aberto da última vez: o avião é ele (com o projeto dentro, remontado se mudou)
+    if (current.project.document.len > 0) {
+        return (project_aircraft.sync(current, memory) catch null) orelse (memory.dupe(u8, current.project.document) catch null);
+    }
+    if (!current.has_project) return null;
     if ((project_aircraft.build(current, memory) catch null) == null) return null;
     return (project_aircraft.sync(current, memory) catch null) orelse (project_aircraft.path(current, memory) catch null);
 }
@@ -437,6 +546,18 @@ pub fn use(project: store.Project, io: std.Io) void {
         existing.history.deinit(std.heap.page_allocator);
     }
     shared = .{ .project = project, .io = io };
+}
+
+/// troca o contexto inteiro (o projeto e o que se sabe dele); o Ctrl+Z começa do zero
+fn useContext(context: Context) void {
+    while (!lock.tryLock()) std.atomic.spinLoopHint();
+    defer lock.unlock();
+    if (shared) |*existing| {
+        existing.project.deinit();
+        for (existing.history.items) |state| std.heap.page_allocator.free(state);
+        existing.history.deinit(std.heap.page_allocator);
+    }
+    shared = context;
 }
 
 /// atende o pedido (`fields`: o JSON do pedido sem as chaves, como a tela manda à ponte) e devolve a página em JSON,
@@ -697,4 +818,57 @@ test "pedidos em sequência, cada um com a memória dele liberada depois (como a
         try std.testing.expect(std.unicode.utf8ValidateSlice(written));
     }
     for (shared.?.project.list("wings").items) |wing| try std.testing.expect(store.nameOf(wing).len > 0);
+}
+
+test "o .aero leva o projeto: aberto sem projeto não muda nada, gravado e aberto de novo volta com o projeto e o mesmo avião" {
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    const path = ".zig-cache/teste_documento.aero"; // uma cópia, nunca em data/
+    const original = try std.Io.Dir.cwd().readFileAlloc(io, "../data/aircraft/Asa_voadora.aero", memory, .limited(1 << 26));
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = original });
+    // o avião de exemplo não tem projeto: as etapas não gravam nada nele
+    var first = try documentContext(io, path);
+    defer first.project.deinit();
+    try std.testing.expect(!first.has_project);
+    try std.testing.expect(first.save());
+    try std.testing.expectEqualSlices(u8, original, try std.Io.Dir.cwd().readFileAlloc(io, path, memory, .limited(1 << 26)));
+    // com projeto: ele vai para a parte projeto.zon, e o avião continua o mesmo
+    first.has_project = true;
+    try store.setNumber(&first.project, first.project.section("requirements"), "V_cruise", 17);
+    try std.testing.expect(first.save());
+    var second = try documentContext(io, path);
+    defer second.project.deinit();
+    try std.testing.expect(second.has_project);
+    try std.testing.expectEqual(@as(f64, 17), store.number(second.project.section("requirements"), "V_cruise", 0));
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    const before = try aero_file.readDocument(memory, original, &diagnosis);
+    const after = try aero_file.readDocument(memory, try std.Io.Dir.cwd().readFileAlloc(io, path, memory, .limited(1 << 26)), &diagnosis);
+    try std.testing.expectEqualStrings(before.json, after.json);
+}
+
+test "com o projeto dentro do .aero, a remontagem pelas etapas regrava o avião do mesmo arquivo" {
+    const io = std.testing.io;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const memory = arena.allocator();
+    const path = ".zig-cache/teste_documento_projeto.aero";
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = try std.Io.Dir.cwd().readFileAlloc(io, "../data/aircraft/Asa_voadora.aero", memory, .limited(1 << 26)) });
+    var context = try documentContext(io, path);
+    defer context.project.deinit();
+    // o projeto de exemplo (com configurações guardadas) passa a morar no arquivo
+    var sample = try store.open(std.heap.page_allocator, io, "../data/sprint/projeto_s1223.json");
+    defer sample.deinit();
+    context.project.root = try clone(context.project.memory(), sample.root);
+    try context.project.reserve();
+    context.has_project = true;
+    const written = (try project_aircraft.sync(&context, memory)) orelse return error.NadaGravado;
+    try std.testing.expectEqualStrings(path, written);
+    var diagnosis: aircraft_model.aircraft.Diag = .{};
+    const document = try aero_file.readDocument(memory, try std.Io.Dir.cwd().readFileAlloc(io, path, memory, .limited(1 << 26)), &diagnosis);
+    try std.testing.expect(std.mem.indexOf(u8, document.json, "Asa voadora") == null); // o avião agora é o do projeto
+    var has_part = false;
+    for (document.parts) |item| has_part = has_part or std.mem.eql(u8, item.name, aero_file.project_part);
+    try std.testing.expect(has_part);
 }
