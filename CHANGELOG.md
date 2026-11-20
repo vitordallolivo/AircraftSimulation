@@ -10,6 +10,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
   marca o bloco (ou ele é achado sozinho); a janela sugere qual coluna é α, C_L, C_D e C_m (ou y e c_l, ou x e y, ou
   os dados de motor), com os tipos que fazem sentido naquela área, mostra o gráfico do bloco e guarda com o nome que
   você escolher. Uma lista de motores vai direto para Biblioteca → Motores.
+- Antes, o avião montado pelas etapas saía com a hélice vazia quando a etapa Motores e montagem ainda não tinha sido
+  aberta, e a tração dava zero em todas as velocidades (o motor girava solto). Agora o motor, a hélice e a bateria
+  que a etapa mostra como padrão entram no avião desde o começo.
 - Antes, os resultados de desempenho só ficavam na tela. Agora o botão "Exportar…" do Desempenho simula o avião
   aberto e gera uma planilha `.xlsx` no formato das planilhas de desempenho da equipe, com as mesmas cores: tração e
   potência (a rotação, a tração estática e os coeficientes do polinômio do motor no alto, uma tabela por altitude

@@ -298,6 +298,12 @@ pub const rule_fields = [_]Field{
     .{ .key = "da_down", .label = "aileron: curso para baixo", .unit = "°", .help = "aileron diferencial: desce menos do que sobe (menos guinada adversa)", .default = .{ .number = 12.0 }, .minimum = 2, .maximum = 40 },
 };
 
+/// o texto de um campo da seção, ou o padrão do campo quando a seção ainda não tem (a etapa nunca foi aberta)
+pub fn fieldText(section: *const ObjectMap, comptime fields: []const Field, key: []const u8) []const u8 {
+    inline for (fields) |field| if (field.default == .text and std.mem.eql(u8, field.key, key)) return store.text(section, key, field.default.text);
+    return store.text(section, key, "");
+}
+
 /// o valor do campo na seção (ou o padrão do campo)
 pub fn fieldNumber(section: *const ObjectMap, comptime fields: []const Field, key: []const u8) f64 {
     inline for (fields) |field| if (field.default == .number and std.mem.eql(u8, field.key, key)) return store.number(section, key, field.default.number);

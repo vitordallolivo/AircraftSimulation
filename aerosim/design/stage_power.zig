@@ -84,9 +84,9 @@ fn motorCounts(params: *const ObjectMap) [3]usize {
 
 fn unitOf(params: *const ObjectMap, name: []const u8, x: f64, y: f64, z: f64, sense: f64) model.Propulsion {
     var unit: model.Propulsion = .{ .name = name, .x = x, .y = y, .z = z, .tilt = field(params, "tilt"), .sense = sense };
-    if (catalog.findMotor(store.text(params, "motor", ""))) |motor| unit.motor = .{ .Kv = motor.Kv, .Rm = motor.Rm, .B = motor.B, .tauc = motor.tauc, .Imax = motor.Imax, .Jm = motor.Jm, .mass = motor.mass };
-    if (catalog.findPropeller(store.text(params, "propeller", ""))) |propeller| unit.propeller = .{ .D = propeller.D, .Ip = propeller.Ip, .mass = propeller.mass, .J = propeller.J, .CT = propeller.CT, .CP = propeller.CP };
-    if (catalog.find(catalog.Battery, &catalog.batteries, store.text(params, "battery", ""))) |battery| unit.battery = .{ .cells = battery.cells, .V_cell = battery.V_cell, .Rint = battery.Rint, .capacity_mAh = battery.capacity_mAh, .mass = battery.mass };
+    if (catalog.findMotor(registry.fieldText(params, &power_fields, "motor"))) |motor| unit.motor = .{ .Kv = motor.Kv, .Rm = motor.Rm, .B = motor.B, .tauc = motor.tauc, .Imax = motor.Imax, .Jm = motor.Jm, .mass = motor.mass };
+    if (catalog.findPropeller(registry.fieldText(params, &power_fields, "propeller"))) |propeller| unit.propeller = .{ .D = propeller.D, .Ip = propeller.Ip, .mass = propeller.mass, .J = propeller.J, .CT = propeller.CT, .CP = propeller.CP };
+    if (catalog.find(catalog.Battery, &catalog.batteries, registry.fieldText(params, &power_fields, "battery"))) |battery| unit.battery = .{ .cells = battery.cells, .V_cell = battery.V_cell, .Rint = battery.Rint, .capacity_mAh = battery.capacity_mAh, .mass = battery.mass };
     return unit;
 }
 
@@ -950,4 +950,13 @@ fn viewOf(memory: std.mem.Allocator, plane: model.Aircraft) !?simulation.View {
     var meshes: std.ArrayList(simulation.Mesh) = .empty;
     for (pieces.pieces) |piece| try meshes.append(memory, .{ .kind = @tagName(piece.color), .vertices = piece.mesh.v, .faces = piece.mesh.f });
     return .{ .meshes = meshes.items, .cg = plane.design_cg };
+}
+
+test "motor sem a etapa aberta: o motor, a hélice e a bateria são os padrões da etapa, com a tabela da hélice" {
+    // antes, sem a etapa Motores e montagem aberta, a hélice saía vazia (sem C_T e C_P) e a tração dava zero
+    const empty: ObjectMap = .empty;
+    const unit = unitOf(&empty, "motor 1", 0, 0, 0, 1);
+    try std.testing.expect(unit.propeller.J.len > 2);
+    try std.testing.expectEqual(unit.propeller.J.len, unit.propeller.CT.len);
+    try std.testing.expect(unitThrust(unit, 0, 1.225, 0) > 1);
 }
