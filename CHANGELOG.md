@@ -4,557 +4,60 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 
 ## v0.3.2 (na `0.3_dev`, em andamento)
 
-- Antes, só o Desempenho tinha "Exportar…". Agora a Aerodinâmica também tem: ela simula cada asa sozinha e gera a
-  planilha no formato da planilha de aerodinâmica da equipe, com a mesma prévia antes de gravar. Cada asa vira um
-  bloco com os parâmetros (ambiente, partições, cordas, perfis, área, alongamento, CMA, C_Lmax, C_Lα, C_L0, α de
-  estol, C_mac e Oswald), a sustentação em α = 0 e no estol, os coeficientes em cada α com o estol marcado, a
-  distribuição de sustentação da raiz para a ponta e os gráficos de sustentação e da polar.
-- A planilha da Aerodinâmica ganhou a aba de polares do avião inteiro, separada por componente como na planilha da
-  equipe: em cada α do avião, o α e os coeficientes da asa (C_L, induzido, parasita e total), do EH (também na área
-  dele), o arrasto da fuselagem e da EV, e o C_L, C_D, C_N e C_L/C_D do avião, com as áreas e as incidências no alto
-  e os gráficos de sustentação, arrasto e da polar.
-- A Estabilidade também ganhou "Exportar…", com a mesma prévia: a planilha sai no formato da planilha de E&C da
-  equipe, com o estabilizador horizontal (geometria, volume de cauda, margem estática, downwash, α de equilíbrio e
-  curso do profundor), o estabilizador vertical, o aileron e as derivadas de estabilidade do avião montado. Cada
-  superfície ganha o seu bloco: com dois estabilizadores horizontais saem dois blocos, cada um com o seu braço e o
-  seu volume de cauda, mais o volume dos dois juntos; o mesmo vale para os verticais e para os ailerons de cada asa.
-- A aba de polares da Aerodinâmica separava o avião por papel (todas as asas numa coluna, todos os EH em outra).
-  Agora cada superfície tem as suas colunas e as suas curvas nos gráficos; com uma de cada, as colunas ficam como na
-  planilha da equipe.
-- Na prévia do "Exportar…" da Aerodinâmica e da Estabilidade aparece a lista das superfícies do avião, com caixas de
-  marcar: a planilha se refaz na hora só com as marcadas, e é ela que se grava. A conta continua sendo a do avião
-  inteiro; só o que vai para a planilha muda.
-- Antes, as análises liam o avião do arquivo salvo: uma peça mexida na Montagem só entrava na conta depois de
-  salvar, e uma variante rodava como o avião original. Agora as análises rodam o avião como ele está na Montagem, com
-  as edições ainda não salvas e a variante escolhida.
-- Antes, ao abrir outro avião ou outro projeto, os aviões e variantes abertos antes continuavam ali e os gráficos da
-  rodada anterior ficavam na tela, sem dizer de qual avião eram. Agora abrir fecha o que estava aberto e apaga os
-  resultados de antes, e a linha de cima mostra sempre com que avião (e qual variante) as análises rodam e qual
-  projeto as etapas mostram.
+- "Exportar…" na Aerodinâmica e na Estabilidade gera as planilhas no formato das planilhas da equipe, com prévia.
+- Na prévia, dá para escolher quais superfícies vão para a planilha.
+- As análises rodam o avião como está na Montagem, mesmo sem salvar, e com a variante escolhida.
+- Abrir outro avião ou projeto fecha o que estava aberto, e a linha de cima mostra o avião e o projeto em uso.
 
 ## v0.3.1 (na `0.3_dev`, fechada em 2026-11-20)
 
-- Antes, trazer dados de uma planilha da equipe pedia um mapa de células escrito à mão. Agora cada área tem o botão
-  "Planilha…", que abre uma janela com a planilha `.xlsx` como ela é no Excel: a mesma organização a partir do A1,
-  com a largura das colunas, as células mescladas, as bordas e as cores do arquivo. Arrastando sobre as células se
-  marca o bloco (ou ele é achado sozinho); a janela sugere qual coluna é α, C_L, C_D e C_m (ou y e c_l, ou x e y, ou
-  os dados de motor), com os tipos que fazem sentido naquela área, mostra o gráfico do bloco e guarda com o nome que
-  você escolher. Uma lista de motores vai direto para Biblioteca → Motores.
-- Antes, a janela Planilha… só rolava para cima e para baixo, e a aba de polinômios de tração com uma hélice por linha
-  usava sempre a primeira. Agora há barras de rolagem embaixo e à direita, as setas do teclado andam pela aba (Ctrl
-  vai até a ponta, PgUp/PgDn de tela em tela, Home volta ao A1), marcar arrastando além da borda leva a grade junto, e
-  dá para escolher a hélice da linha: T0 e a rotação vêm da mesma linha.
-- Antes, o "Exportar" do botão direito nos gráficos e tabelas gravava os dados em CSV direto. Agora, ao lado de PNG
-  e PDF, os dados saem em Excel (`.xlsx`): abre uma prévia como a da janela Planilha…, com o arquivo do jeito que
-  vai abrir (título, uma coluna de x e uma de y para cada curva, e o gráfico dentro da planilha), e só depois de
-  conferir se escolhe onde gravar.
-- Antes, o "Exportar…" do Desempenho gravava a planilha direto. Agora ele abre a mesma prévia do exportar dos
-  gráficos, com as abas do arquivo embaixo, e só depois se escolhe onde gravar.
-- Antes, o avião montado pelas etapas saía com a hélice vazia quando a etapa Motores e montagem ainda não tinha sido
-  aberta, e a tração dava zero em todas as velocidades (o motor girava solto). Agora o motor, a hélice e a bateria
-  que a etapa mostra como padrão entram no avião desde o começo.
-- Antes, os resultados de desempenho só ficavam na tela. Agora o botão "Exportar…" do Desempenho simula o avião
-  aberto e gera uma planilha `.xlsx` no formato das planilhas de desempenho da equipe, com as mesmas cores: tração e
-  potência (a rotação, a tração estática e os coeficientes do polinômio do motor no alto, uma tabela por altitude
-  lado a lado), subida, descida, manobra, curva x velocidade, envelope de voo e dimensionamento inicial (o diagrama
-  de restrições e o ponto de projeto), cada aba com os gráficos do próprio Excel ligados às células.
-- Antes, o AeroDrive guardava as preferências (controles, câmera, som, último avião) e o que cada avião lembra em
-  arquivos `.json`. Agora elas ficam em arquivos `.aerocfg`; as preferências que já existiam são lidas na primeira
-  vez e regravadas no formato novo.
-- Antes, cada voo gravado no AeroDrive levava um arquivo de informações junto com os dados e o vídeo. Agora a pasta
-  do voo tem só o `dados.csv` e o `video.mp4`, e o nome dela já diz a data e o avião
-  (`voo_2026-11-19_22-52-10_Convencional_original`); a lista de "Voos gravados" tira a duração do próprio CSV.
-- Antes, o avião era um `.json`, sem data e fácil de confundir com qualquer outro arquivo. Agora o avião tem um
-  arquivo próprio, o `.aero`, com a data em que foi criado e a da última mudança dentro dele; o "Salvar" grava
-  `.aero`, o "Abrir…" e o AeroDrive abrem `.aero` (e ainda o `.json` antigo), e o avião do projeto fica em
-  `aviao.aero` na pasta do projeto. Os aviões de exemplo viraram `.aero`, iguais campo a campo, e os dois S1223 de
-  Joinville saíram dos exemplos.
-- Os botões do alto passam a se chamar "Abrir…" e "Salvar" (antes "Abrir avião" e "Salvar .json"). No navegador, o
-  "Abrir…" abre o seletor de arquivos do computador, em vez de uma pasta interna da página.
-- Antes, o avião que o Dimensionamento projetava e o avião aberto na Montagem eram dois: o projetado só aparecia na
-  Montagem com "Mandar para a Montagem", e cada análise perguntava de onde vinham as asas. Agora é um avião só: a cada
-  mudança das etapas ele é montado de novo com o que já existe (só as asas logo depois do Projetar; asas, cauda,
-  fuselagem e motores depois da Empenagem e de Motores e montagem) e aberto na Montagem, e as análises rodam com ele.
-  O campo "asas de" saiu; quais superfícies entram continua nas marcas "incluir".
-- Antes, a tela só tinha o modo claro, com um azul escuro de pouco contraste. Agora há o modo escuro como opção (o
-  botão "Modo escuro" no alto, ou o interruptor no "Mais" do celular), lembrado na próxima vez que o programa abre:
-  fundo quase preto, texto branco e o destaque em laranja. O modo claro continua o padrão, todo num azul mais vivo.
-  Nos dois, o que está escolhido (aba, botão Rodar, caixa marcada, barra de progresso) ganha um brilho leve na cor
-  do destaque; os gráficos ficam sem brilho, e as curvas escuras clareiam no fundo preto.
-- No celular (ou numa janela estreita), a tela do aerosim ficava espremida, com as abas cortadas e os campos por
-  cima dos gráficos. Agora ela muda de jeito: as áreas ficam numa barra embaixo, ao alcance do polegar, com as que não
-  cabem no "Mais"; as subabas viram fichas no alto; o gráfico fica em cima, um por vez, trocado pelas setas ou
-  passando o dedo de lado; e as entradas ficam numa folha que se puxa de baixo, com o Rodar sempre à mostra. A
-  Montagem mostra o avião em 3D em cima e as peças, a peça escolhida e o resumo na folha. Cada área tem um símbolo e
-  uma cor próprios na barra, e as fichas das subabas pegam a cor da área.
-- No navegador do celular, tocar num campo abre o teclado do aparelho, arrastar o dedo rola as listas e o "Abrir"
-  escolhe um arquivo do próprio celular. No PC nada muda.
+- O avião passa a ser um arquivo `.aero`, com as datas dentro; os botões viram "Abrir…" e "Salvar".
+- Um avião só, do projeto à Montagem e às análises.
+- "Planilha…" em cada área traz dados de planilhas `.xlsx` da equipe, vistas como no Excel.
+- Os dados dos gráficos e o Desempenho exportam para `.xlsx`, com prévia.
+- Modo escuro opcional.
+- Jeito celular da tela: barra de áreas embaixo, um gráfico por vez e entradas numa folha que sobe.
+- No AeroDrive, as preferências ficam em `.aerocfg` e cada voo gravado é só `dados.csv` e `video.mp4`.
 
 ## v0.3.0 (PR da `0.2_dev` de 2026-11-19)
 
-A série 0.2 fecha aqui. O aerosim agora roda inteiro sem Python, com a tela nova, e o núcleo ganhou cargas,
-estruturas e o estol por estação.
+A série 0.2 fecha aqui: o aerosim roda inteiro sem Python, com a tela nova.
 
-### O que entrou depois da v0.2.4
-
-- Em Aerodinâmica → Analisar, a tela tinha um método, um "comparar com" e uma caixa separada de comparação de
-  polares. Agora há uma lista só de métodos, e cada um que está marcado roda. O VLM do núcleo (malha de vórtices)
-  entrou na lista, com o C_L, a carga ao longo da envergadura e a polar. As malhas, os passos e as iterações de cada
-  método ficam no Refino dos Solvers.
-- Na linha sustentadora não linear, uma asa de perfil muito arqueado podia dar um C_L de −500 perto do estol. Agora
-  a conta só aceita passos que não fazem o erro crescer demais, e os ângulos em que ela não converge aparecem como
-  aviso no diagnóstico.
-- Os campos de refino do VLM do AeroSandbox mostravam 0 e não mudavam a conta. Agora mostram o valor usado e mudam a
-  conta, no Analisar e em Cargas.
-- Abrir o aerosim de uma compilação antiga dava o erro "pedido desconhecido: 'run'". Agora o lançador compila os
-  programas antes de abrir, e uma versão antiga aberta pede para compilar de novo.
-- O aerosim precisava do Python para abrir as análises, para montar o instalável e o site e para rodar os checks.
-  Agora tudo isso é feito pelo próprio programa: a janela, o instalável para Linux e Windows, o site e os checks
-  saem do mesmo comando de compilação. O Python só fica para os métodos de fora (lltdrek, AeroSandbox e AVL), que
-  continuam opcionais e vão junto no instalável.
-- Os textos de cada pasta explicavam o uso com exemplos que não rodavam mais. Agora cada um traz um exemplo curto
-  que roda, com o resultado que ele imprime logo abaixo.
-- Em Biblioteca → Perfis, a polar de cada perfil só existia no Reynolds do cruzeiro e vinha de um modelo que não
-  muda com o Reynolds. Agora dá para trazer as polares do XFLR5 ou do XFOIL, uma por Reynolds, e ver o perfil
-  selecionado em cada Reynolds de uma lista que o usuário edita: sustentação, polar de arrasto, eficiência e uma
-  tabela com o c_l máximo, o ângulo de estol e o c_d mínimo. Entre duas polares trazidas a curva é interpolada; fora
-  da faixa delas vale a mais próxima, tracejada e com aviso, porque nada é extrapolado.
-- Muitos ajustes de conta ficavam escondidos: quantas iterações cada método faz, que tolerância aceita, que passo e
-  que grade usa. Agora todos ficam na tela, com o valor de antes como padrão, então nada muda até alguém mexer. Os
-  de cada análise ficam nela mesma, numa janela que o botão "Refino dos Solvers" abre: os da própria análise e os
-  dos métodos de base que ela usa (a Missão mostra a trimagem e a hélice; o Analisar, a linha sustentadora). O mesmo
-  ajuste em duas análises é um número só: mudar em uma muda na outra, e ele vai salvo no arquivo do avião. Os das
-  etapas de projeto ficam em "Condições e restrições". A tabela do efeito do chão (malha, alturas e ângulos) fica no
-  método do chão, em Montagem → Modificadores.
-- Os títulos dos gráficos eram longos e diziam as variáveis ("C_L × α do conjunto"), e cortavam na tela. Agora cada
-  título diz em até três palavras o que o gráfico é ("Sustentação do conjunto", "Efeito solo: momento"), e os eixos
-  saem com índices e letras gregas. A matemática dos gráficos (eixos e legendas) agora sai na Computer Modern, a
-  fonte do LaTeX, com as variáveis em itálico; a fonte vai dentro do programa.
-- Em Aerodinâmica → Analisar, o estol por estação e o efeito do chão, que antes só existiam no núcleo, agora têm
-  tela. O estol por estação acopla o VLM à polar 2D de cada faixa e mostra o C_L máximo, o C_L × α e onde o estol
-  começa ao longo da envergadura. Todos os ajustes ficam à vista: a malha, as iterações, a tolerância e os cortes do
-  passo. O efeito do chão compara o McCormick com o VLM com o chão espelhado, nas alturas e nos ângulos de ataque que
-  o usuário escolhe. Ele mostra quanto o chão muda a sustentação, o arrasto induzido e o momento de arfagem.
-- A busca do MTOW parava abaixo da maior massa que cumpre a pista. Ela testava só oito pontos de acionamento do
-  profundor, e o melhor acionamento das massas pesadas cai entre dois deles. Agora, quando nenhum ponto passa, a busca
-  procura o acionamento que decola mais cedo entre os pontos. No Convencional, o MTOW subiu de 13,03 kg para 13,10 kg.
-  A tela ganhou o erro aceito no x_warning e no z_warning, o número de pontos da varredura, a tolerância do acionamento
-  e quantas vezes a faixa de massa é dividida, que antes ficavam escondidos no código.
-- O projeto não tinha nenhuma conta de estrutura. Agora o núcleo calcula a seção de uma viga feita de várias partes,
-  como a alma de balsa com tubos de carbono de uma longarina, cada uma do seu material. A conta dá a linha neutra, a
-  rigidez à flexão e a massa por metro. Sob um momento fletor, ela dá também a tensão em cada parte e a margem contra
-  a resistência. O material é sempre o que o usuário informa. O núcleo também ganhou as outras contas de estrutura e de carga, ainda sem tela:
-  - o diagrama V-n com a rajada e os casos de carga, com a norma do usuário;
-  - o cortante, o fletor e o torsor ao longo da asa, com a flecha e o giro;
-  - a rigidez à torção da caixa D e dos tubos;
-  - a flambagem do chapeado e da alma, com as nervuras que cada vão precisa;
-  - a velocidade de divergência e a de reversão do aileron;
-  - o flutter;
-  - o trem de pouso, com o esforço em cada tubo e o impacto do pouso.
-- Antes, o VLM era linear e não estolava. Agora o núcleo tem um método novo que acopla o VLM à polar do perfil em
-  cada ponto da asa, no Reynolds daquele ponto. Ele dá o C_L máximo da asa a partir das polares reais e diz onde, ao
-  longo da envergadura, o estol começa. Fica desligado e ainda não tem tela.
-- O efeito solo só reduzia o arrasto induzido (o fator de McCormick), que perto do chão corta demais e não muda a
-  sustentação nem o momento de arfagem. Agora há um segundo método, o VLM com o chão espelhado. Ele roda uma vez ao
-  carregar o avião e monta uma tabela por altura e ângulo de ataque com a sustentação a mais, o induzido a menos e o
-  momento picador que o chão dá. No voo e no AeroDrive, a simulação só lê essa tabela. O McCormick continua sendo o
-  padrão, e o método novo por enquanto só se escolhe pelo arquivo do avião. A tabela também guarda o quanto o
-  profundor muda esse efeito, porque, sem isso, a rotação na decolagem saía tarde demais.
-- Algumas regras de competição limitam a potência que o motor tira da bateria, e outras não. Antes, a tração saía
-  sempre com o acelerador cheio. Agora as regras do Projetar têm um limite de potência do motor, que fica vazio por
-  padrão. Quando ele é preenchido, a rotação de cada motor cai até a potência tirada da bateria bater no limite, e
-  daí sai a tração. Isso vale na curva de tração, na corrida e no voo, inclusive no AeroDrive. O gráfico T × V
-  mostra a tração sem o limite, tracejada, e marca as velocidades em que o limite cortou a tração.
-- Em Desempenho, a Missão tinha um modo "só decolagem" que voava uma massa só e um modo MTOW que testava três
-  posições de CG tiradas do nada (a do avião e 5 % para cada lado). Agora os dois viram um modo só, Decolagem. Ele
-  pega a lista de xCG que Empenagem e comandos cria, do limite da frente ao de trás da faixa de CG (o campo novo
-  diz quantos valores), e acha o MTOW de cada um. Em cada xCG o VLM dá o C_mα, e os gráficos mostram o MTOW, a
-  corrida, o acionamento e o C_mα contra o xCG. O maior MTOW fica guardado para a missão e as curvas, e a decolagem
-  dele aparece de perto. Os gráficos se atualizam na tela a cada xCG terminado, e a barra embaixo do Parar mostra o
-  quanto já foi, o tempo e o que está sendo testado (o xCG, a massa e as simulações).
-- As curvas tracejadas dos gráficos saíam cheias quando tinham muitos pontos, e sumiam de vez quando o gráfico
-  tinha uma escala grande (nas curvas da Missão, a trajetória de raio grande escondia as de raio pequeno). O traço
-  recomeçava em cada trecho entre dois pontos; agora ele continua de um trecho para o outro.
-- O menu do botão direito dos gráficos tinha três linhas de exportar. Agora tem uma, Exportar, que abre ao lado os
-  tipos: imagem PNG, PDF ou os dados em CSV.
-- O repositório guardava muito Python que o programa não usava mais: as ferramentas de linha de comando de estudo e
-  medida, o Mini-MDO antigo do aeroopt, a colisão da hélice, a tabela de voo e os gráficos de carga em Python, e a
-  entrada da GUI antiga em PyQt do aerosim. Agora isso saiu, junto com os testes e os tutoriais dos READMEs que
-  ensinavam a usar esses arquivos. Fica o Python que a janela do aeroopt usa e a ponte que a tela do aerosim chama
-  quando se marca um método de fora do núcleo (lltdrek, AeroSandbox, AVL). O aerosim abre só pela tela nova.
-- Os testes em Python comparavam as contas de Python que foram para o núcleo e as telas antigas. Agora eles saíram:
-  os testes ficam em Zig, ao lado do código, e os checks rodam o núcleo, o AeroDrive, o mapa do código e a regressão
-  bit a bit dos exemplos.
-- Empenagem e comandos só tinha a estática clássica, por volume de cauda. Agora uma opção, desligada por padrão,
-  roda um VLM no conjunto inteiro, com todas as asas, a cauda e as superfícies a mais. Ele mostra C_L, C_m, C_Lα,
-  C_mα, o ponto neutro, a margem estática e as derivadas laterais C_Yβ, C_lβ e C_nβ. Também mostra a convergência
-  de malha: os coeficientes contra o número de painéis, o valor estimado para a malha infinita e um aviso quando a
-  malha mais fina ainda muda o resultado.
-- A busca do MTOW da Missão otimizava o profundor em cada massa e em cada posição do CG, e nunca voava a missão.
-  Agora ela acha a massa só com a decolagem, parando no primeiro acionamento que passa, e otimiza o profundor só na
-  massa achada. Depois voa a missão inteira nela. Se a missão não completa, a busca volta e procura a massa que decola
-  e completa a missão. No avião de exemplo o MTOW é o mesmo e a busca caiu de uns 4 min para pouco mais de 1 min (o
-  estudo de duas variáveis, de 7 para 2 min). Com 10 000 simulações a busca para e avisa que possivelmente não existe
-  uma massa que cumpra tudo.
-- Em Empenagem e comandos, o comando novo pedia a superfície antes do tipo, e clicar num comando não mostrava onde
-  ele estava. Agora escolhe-se primeiro o tipo e depois a superfície (ou "sem superfície"), e clicar ou criar um
-  comando aproxima a vista 3D dele. Uma tabela nova, "Superfícies a mais", põe uma EV ou uma EH em qualquer ponto de
-  qualquer superfície: na ponta da asa no lugar do winglet, no meio dela, de um lado só ou nos dois.
-- A altura dos gráficos e da vista 3D era fixa. Agora cada uma tem uma alça embaixo para arrastar, como a da barra
-  lateral.
-- Em Desempenho, "Avião montado" repetia o envelope, a potência e a subida de "Voo nivelado e envelopes". Agora os
-  dois são uma página só, com os campos da planilha num grupo à parte e sem os gráficos repetidos. O estudo do ponto
-  de projeto no voo simulado é agora um modo da Missão: o MTOW enquanto uma variável (ângulo do motor ou incidência)
-  vai de um valor a outro. O estudo rápido da sprint continua, no fim da lista do Desempenho.
-- Nos gráficos da tela em Zig não dava para ler um valor. Agora clicar num gráfico mostra o x e o y do ponto da
-  curva mais perto (ou do lugar do clique), com linhas até os eixos, e arrastar leva a leitura junto; clicar de novo
-  em cima apaga. No Mini-MDO, clicar ou arrastar sobre os indivíduos (no histórico ou na nuvem) marca o mesmo
-  indivíduo nos dois gráficos e mostra a asa dele, com envergadura, área, MTOW, perfil e motor.
-- Não dava para acrescentar motores e hélices ao programa pela tela em Zig, e um perfil .dat trazido ficava só no
-  projeto. Agora há uma aba Biblioteca no topo, com Perfis, Motores e Hélices: um motor novo sai do formulário ou de
-  um arquivo, uma hélice vem de um .dat padrão (cabeçalho com nome e diâmetro e as linhas J, C_T, C_P, que também lê
-  a base da UIUC), e um perfil .dat trazido em Perfis fica guardado para todos os projetos. Os itens da biblioteca
-  aparecem em Motores e montagem, nas variáveis do projeto e no Mini-MDO. Um arquivo que não dá para ler aparece
-  num aviso com o motivo. O cabeçalho da janela não fala mais da linguagem em que o programa é feito.
-- O Mini-MDO tinha as próprias faixas de mínimo e máximo, uma massa máxima e listas de perfis, motores, hélices e
-  arranjos, repetindo o que o projeto já guarda. Agora ele lê tudo de "Condições e restrições → Variáveis": uma
-  variável marcada como variável entra com a faixa ou a lista dela, uma fixa entra com o valor do rascunho, e a massa
-  máxima da busca é o máximo da massa do projeto. O que o otimizador não conhece aparece em "fora da busca".
-- No Analisar, a fonte do avião era uma lista escrita. Agora ela é escolhida pelo nome da configuração guardada ou da
-  asa, e a página mostra uma vista da aeronave escolhida.
-- Criar uma asa num projeto sem nome não guardava nada, e ao reabrir o programa o trabalho não estava lá. Agora o
-  programa pede a pasta do projeto ao criar e, ao abrir de novo, volta no último projeto.
-- O botão Parar esperava o cálculo terminar. Agora ele corta na hora, como uma parada de emergência, e uma falha
-  aparece num aviso na tela, como o do alongamento baixo.
-- A tela em Zig caía ao editar uma célula de tabela numa coluna que a linha ainda não tinha (em Empenagem e comandos,
-  num biplano), porque o nome da coluna ficava apontando para uma memória que já tinha sido liberada. Agora não cai.
-  A asa guardada num projeto novo, antes de dar nome ao rascunho, também aparecia sem nome na lista Guardados.
-- O Mini-MDO só rodava com um avião aberto, mas é ele que procura o avião. Agora roda sem avião. As condições, as
-  regras de massa e as restrições passam a ser as de "Condições e restrições…", com o botão na própria página, e
-  uma restrição que o melhor avião não cumpre fica com a linha inteira em vermelho no diagnóstico.
-- No Analisar, as asas guardadas na sprint iam pelo Python, que nem via o projeto aberto na tela e, no Windows,
-  recebia os acentos trocados ("método de carga desconhecido"). Agora elas rodam em Zig, sem avião aberto: cada asa
-  guardada aparece para marcar, com o x e a altura dela. A ponte com o Python lê a entrada em UTF-8.
-- "Pontas ligadas" na tabela de asas de Projetar não fazia nada na versão em Zig. Agora a placa liga a ponta da
-  asa à da referência, na vista e no avião da Empenagem, como na versão em Python.
-- Marcar um gráfico para salvar junto só dava pelo menu do botão direito, e a caixa do canto só aparecia depois.
-  Agora a caixa fica sempre no canto, e clicar nela marca ou desmarca o gráfico.
-- Na tela em Zig, ao montar um biplano em Projetar, a vista mostrava a asa guardada e não a que se estava criando.
-  Agora a asa em edição entra na tabela "Asas do avião" e aparece ao vivo junto das outras; "Guardar configuração"
-  guarda ela junto. Ao criar ou editar um dispositivo de ponta, a vista aproxima dele, com um botão para ver o avião
-  inteiro.
-- Não havia como desfazer. Agora o Ctrl+Z desfaz a última mudança na Montagem (mover uma peça, editar, acrescentar,
-  remover, vento), nas etapas da sprint e nos formulários das análises.
-- A janela abria com um avião de exemplo e com o projeto da sprint da última vez, então a Empenagem já aparecia com
-  um conjunto que ninguém tinha feito. Agora ela abre vazia, com um projeto novo numa pasta própria, e "Abrir" traz
-  um avião ou um projeto da sprint.
-- Rodar a linha sustentadora numa asa de alongamento menor que 4 não avisava nada, e os números podem divergir. Agora
-  aparece um aviso por cima da janela na hora de rodar, no Analisar, nas Cargas, no modelo do voo e em Projetar.
-
-- Antes, na interface em Zig, o Mini-MDO e o Estudo e ponto de projeto só mostravam o lugar, e as etapas da sprint
-  (Perfis, Projetar, Empenagem e comandos, Motores e montagem) dependiam do Python. Agora tudo isso roda em Zig, com
-  as mesmas páginas, botões e o mesmo arquivo de projeto: o Mini-MDO otimiza com o catálogo de motores, hélices e
-  baterias; a Empenagem dimensiona a cauda pelo volume de cauda, com a estática, a faixa de CG, a rotação e a tabela
-  de comandos; Motores e montagem monta o avião, calcula a tração, a corrida e o MTOW pela pista e manda o avião para
-  a Montagem; o Estudo varre uma variável ou compara os aviões guardados nas altitudes pedidas. A janela abre e
-  trabalha sem o Python, que só entra quando se escolhe um método de fora do núcleo. A polar do NeuralFoil nas etapas
-  ainda não chega à versão em Zig, que usa a polar do modelo.
-- A tela em Zig abria vazia sem o Python, porque a lista de abas vinha dele. Agora as abas são do Zig, e o Diagrama
-  de restrições, o Analisar e as Cargas também rodam em Zig, com os mesmos números do Python. Os métodos de fora do
-  núcleo (lltdrek, AeroSandbox, AVL) continuam na lista; quando um deles é marcado, a rodada vai para o Python, e no
-  site o pacote dele só é baixado nessa hora.
-- Uma bancada mede cada técnica de otimização contra o código de hoje, no mesmo caso, e diz se a conta continua a
-  mesma. Das quatro medidas, entrou a que ganhou sem mudar os números: o dimensionamento deixa de pedir memória ao
-  sistema a cada avaliação e fica quatro vezes mais rápido.
-- A documentação estava espalhada em dezenas de README, cada um numa pasta. Agora o site junta todos os `.md` num
-  livro, com sumário por parte do projeto, busca, as equações e os diagramas desenhados e as imagens, e o tracking
-  numa aba ao lado. Um `.md` novo entra no livro sozinho.
-- A documentação só existia no site, e a tela inicial do PC não tinha como chegar nela. Agora o build da raiz monta o
-  site da documentação junto (o livro, o mapa do código e o tracking), há um passo só para ela
-  (`python -m ziglang build docs`), e a tela inicial tem a opção Documentação, que abre o livro no navegador. O
-  pacote instalável leva a documentação junto, e o mapa do código abre direto do disco, sem servidor.
-- O quadro de tarefas ficou difícil de ler como tabelas longas em Markdown. Agora as mesmas tabelas viram também
-  uma página no site, sem mudar o jeito de escrever (uma tarefa nova continua sendo uma linha na tabela): as tarefas em colunas por estado, com
-  busca e filtro por segmento, as suspeitas de erro à parte, o grafo das dependências, a ordem de prioridade e o que
-  cada área já tem. As tarefas passam a ter só três estados (não iniciado, em andamento e terminado), com uma prioridade (alta, média ou baixa). No lugar dos blocos e dos tipos, que misturavam área e ordem, cada tarefa diz o nível em que mexe (fundação, cálculo, análise, interface ou ferramenta), com um (?) que explica cada um. Uma tarefa resolvida leva o commit no estado e aparece riscada, com o link; as abertas aparecem também em sequência, na ordem em que as dependências deixam fazer. Na própria página dá para confirmar uma tarefa como feita (com o que foi feito e o commit) ou criar uma nova: a página abre uma issue já preenchida, e uma Action grava a mudança no `TRACKING.md` sozinha, sem colar nada. A página aparece também como artefato de cada PR, para ver antes do merge.
-- Antes, a escolha do método de cálculo e os efeitos extras se misturavam, e um número mágico decidia que linha
-  sustentadora usar. Agora o método se escolhe pelo nome (faixas, Phillips e Snyder, Goates e Hunsaker ou a não
-  linear), e os efeitos (efeito solo, esteira da hélice, interferência entre asas, momento do comando) ligam e
-  desligam um a um, cada um com os seus ajustes.
-- A interferência entre asas deixou de valer só para um par e passa a valer para todas as asas ligadas, quantas
-  houver.
-- Antes, o dimensionamento tinha um tipo para monoplano e outro para biplano. Agora há um tipo só, o convencional, com
-  o número de asas como entrada. O arrasto induzido de N asas sai da soma de Prandtl (NACA TN 182) sobre os pares, e
-  com uma ou duas asas o resultado é o de antes. Os projetos salvos como monoplano ou biplano abrem como convencional
-  com 1 ou 2 asas.
-- O refino da malha passou a ser uma escolha do usuário: as amostras da esteira, as estações da linha sustentadora
-  e os painéis na corda e na envergadura do VLM e do AVL. Deixado em 0, cada método usa o padrão de sempre.
-- O Python e o núcleo passaram a falar pelos nomes das opções, e não mais por números copiados à mão dos dois lados.
-  Uma opção nova no núcleo aparece no Python sem que ninguém precise copiá-la.
-- O AeroDrive passou a voar com a física do arquivo do avião (os efeitos ligados nele e as asas de cada grupo). O
-  modelo do voo fica fixo nas faixas, por causa do tempo real. Um arquivo sem efeitos voa com o efeito solo de sempre.
-- As análises de Desempenho rodam na interface em Zig sem passar pelo Python: Tração, Voo nivelado e envelopes,
-  Avião montado e Missão. Os números são os mesmos do Python, e um teste confere cada uma. A Missão tem os quatro
-  modos: só a decolagem, a missão etapa por etapa (com checkpoints, raio automático das curvas e a busca do ponto de
-  soltura da carga LAPES), o raio mínimo de curva e o MTOW.
-- A Estabilidade do avião montado também roda na interface em Zig sem passar pelo Python: a margem estática e os
-  limites de CG, a área da empenagem horizontal, a estabilidade direcional e lateral, o tamanho dos comandos, a asa
-  voadora e os modos dinâmicos contra a MIL-F-8785C, com a correção sugerida quando um modo não passa. O diagnóstico,
-  o resumo e as curvas são os mesmos do Python.
-- Antes, o CG da Montagem na interface em Zig deixava de fora a água dos tanques e saía com 2 kg a menos. Agora a
-  massa e o CG são os mesmos da Montagem em Python.
-- A Montagem na interface em Zig ganha, ao lado do 3D, o resumo do avião que a Montagem em Python mostra: massa e
-  CG (com o líquido, a carga e depois da soltura), dimensões a partir do CG, aerodinâmica, cargas, propulsão, trem,
-  pista, LAPES, percurso e os avisos.
-- Antes, a Montagem na interface em Zig só mostrava o avião. Agora ela tem a lista de componentes do Python (asas,
-  motores, tanques, fuselagem, tubos, LAPES, lastro, trem, modificadores e os dados de pista, massa, ambiente,
-  envelope, decolagem, piloto automático, integração e percurso). Clicar numa peça abre o formulário dela, com os
-  rótulos e as unidades do Python. Cada edição refaz o 3D e o resumo, e "Salvar" grava o avião editado sem perder
-  o que o arquivo tinha. No ambiente se edita a altitude-densidade, e a densidade do ar sai dela.
-- A Montagem em Zig ganha os botões do Python para acrescentar asa, EH, EV, motor, tubo e tanque e para remover a peça
-  escolhida. Ganha também "Trazer de .json": abre outro avião, mostra as peças dele, e a escolhida entra no avião
-  aberto.
-- No editor da Montagem em Zig, a superfície mostra também o perfil, cada seção e cada comando. O trem "custom"
-  mostra as pernas, a massa mostra as massas pontuais e o percurso mostra os eventos, todos com "+" e "−". Uma
-  edição que deixa o avião inválido é desfeita, com o motivo embaixo do 3D.
-- A Montagem em Zig ganha as vistas lateral, superior e frontal, em escala e sem perspectiva, além do 3D livre. Cada
-  uma mostra as duas coordenadas do CG que se veem nela, a partir da referência (0, 0, 0). A lateral é um corte no
-  plano de simetria: a metade da frente sai, o que está dentro da fuselagem aparece, e o zoom vai no comprimento e na
-  altura. O CG aparece por cima de tudo, com o símbolo de centro de gravidade.
-- O editor da Montagem em Zig ganha o "presa em" do Python. Uma superfície pode ficar solta, na ponta de um tubo ou na
-  ponta de outra superfície (cauda em T, winglet), e vai para lá sozinha a cada edição, como na Montagem em Python.
-- Uma asa pode ser ligada a outra no editor da Montagem em Zig (tandem, biplano), como no Python. Ao desligar, a
-  que sobra sozinha também sai do conjunto.
-- No editor da Montagem em Zig, a superfície ganha os dispositivos de ponta (winglet, winglet para baixo, placa,
-  cerca). O motor mostra o modelo de tração e, conforme ele, motor, hélice e bateria ou o polinômio de tração. A
-  LAPES ganha a soltura: ligar, a perna e a distância nela, que viram o evento de soltura do percurso.
-- Os campos com número pequeno (abaixo de 0,001) aparecem em notação científica, em vez de 0.
-- A Montagem em Zig ganha "Restaurar", que volta o avião ao arquivo como foi aberto, e "Acertar o CG", que move a
-  bateria (ou o lastro ligado) até o CG com a carga voltar ao de projeto, sem sair da fuselagem, como no Python.
-- A Montagem em Zig ganha a caixa do vento (velocidade a 10 m e de onde vem, de 1 m/s e de 15° por clique) e a seta
-  azul do vento no 3D.
-- Na Montagem em Zig, clicar numa peça no 3D escolhe ela na lista, e arrastar move a peça no plano da tela. Ao soltar,
-  a posição nova vai para o arquivo.
-- A Montagem em Zig abre vários aviões ao mesmo tempo. "+ Variante" faz uma cópia do avião atual, com as edições, para
-  variar a partir dela; "Anterior" e "Próximo" trocam entre os abertos, e "Fechar" fecha o atual.
-- Na Montagem em Zig, o motor com tração por polinômio mostra a tabela dos coeficientes (p00 a p05), e cada um se
-  edita ali.
-- O "Restaurar" da Montagem em Zig abre um menu: volta ao avião como estava ao abrir ou a um dos modelos padrão
-  (convencional, asa voadora, bimotor com tubo e cauda em V), como no Python.
-- O arraste das peças na Montagem em Zig pode andar só em x, só em y ou só em z, além do plano da tela. O resumo
-  ao lado do 3D deixou de cortar as linhas longas (o CG depois da soltura).
-- O 3D da Montagem em Zig mostra o ponto neutro, um traço verde vertical, como no Python.
-- Os gráficos da interface em Zig ganham área sombreada, faixas, espessura de linha, janela dos eixos, retas de
-  referência e a trajetória 3D do voo.
-- A Estabilidade dinâmica em Zig ganha o grupo "Métodos" para escolher o modelo do voo (faixas por padrão).
-- A carga LAPES ganha o alvo no chão, e a pista ganha a distância máxima de pouso.
-- Os prints da interface em Zig (`--shot`) esperam a rodada acabar e as vistas 3D desenharem.
-- Antes, as análises em Zig andavam em fatias dentro do quadro da tela, e um passo longo (a busca da decolagem)
-  travava a janela por uns 3 s. Agora a conta roda numa thread própria e só manda mensagens para a tela, que as lê a
-  cada quadro, sem trava entre as duas; a janela não trava mais. No navegador, por enquanto, continuam as fatias.
-- A busca da decolagem voa os pontos da grade em todos os núcleos, cada um com a sua cópia do avião, com o mesmo
-  resultado da busca em série. Com 4 núcleos, a grade sai umas quatro vezes mais rápida, e a Missão "só decolagem",
-  de 4,3 s para 2,7 s.
-- Sai o simulador antigo em C (`legacy/`).
-
-### Antes, na mesma série (o que seria a 0.2.5)
-
-- O aerosim passa a abrir no navegador com os menus atuais. O Python do aerosim e o núcleo rodam dentro da página,
-  sem instalar nada. Por enquanto, no navegador não há lltdrek, ASB nem AVL, e uma rodada não se cancela.
-- O instalador (AppImage e .exe) passa a levar um Python próprio com o aerosim e os métodos opcionais. Antes, sem o
-  repositório, só a Montagem abria; agora todas as abas abrem.
-- As páginas da interface em Zig ganham o que a GUI PyQt tinha na Aerodinâmica. Em Projetar aparecem a peça em 3D
-  com o ponto neutro (e o CG na Empenagem e em Motores) e a tabela de partições editável. Em Analisar aparecem as
-  vistas 3D da carga, com o mapa de cores, as setas e a escala. Os campos de arquivo e de lista de números também
-  passam a funcionar.
-- Antes, a segunda asa se definia na Empenagem, com campos próprios de tandem e biplano. Agora quem decide as asas é
-  Projetar: a tabela "Asas do avião" lista as asas e a posição de cada uma em relação à primeira (Δx, Δy, Δz e
-  decalagem), em qualquer quantidade. A Empenagem e Analisar usam essa tabela, e a coluna "pontas ligadas" faz a asa
-  em caixa. O tubo entre as asas saiu da Empenagem, porque a ligação física é coisa da Montagem.
-- A Aerodinâmica passa a entregar uma configuração com nome ("Guardar configuração"), e a Empenagem escolhe uma das
-  guardadas. Uma sprint antiga com segunda asa abre já com a configuração de duas asas.
-- Em Projetar entra a tabela "Dispositivos das asas" (winglet, winglet para baixo, placa e cerca), cada dispositivo
-  preso a uma asa e com a sua geometria, que vai junto até o avião montado.
-- Antes, a Empenagem tinha campos específicos de uma configuração (arfagem do tandem, onde fica a deriva). Agora os
-  comandos são uma tabela genérica (superfície, trecho, corda e os ganhos de cada eixo). Com a tabela vazia, vale a
-  regra de antes e o avião sai igual.
-- A divisa entre o formulário e os resultados pode ser arrastada, com a mesma largura em todas as abas. Ao começar a
-  editar um campo, o que se digita substitui o valor inteiro (−1 e digitar 0.2 dá 0.2, e não −10.2).
-- Os gráficos ficam com menos texto: o título diz só o que se plota, em TeX, e a legenda explica o resto. A interface
-  em Zig desenha o TeX (índices, expoentes, letras gregas) e as retas de referência com nome na legenda.
-- As tabelas da interface em Zig deixam de cortar os títulos das colunas e, quando não cabem, rolam para o lado.
-- Abrir e salvar usam a janela de arquivo do sistema (Linux, Windows e macOS). Sem ela, como no navegador, fica o
-  seletor desenhado na tela.
-- O rótulo de um campo que não cabe diminui a letra e, se ainda não couber, aparece inteiro na dica.
-- Os READMEs passam a mostrar as telas da interface em Zig.
-- "Condições e restrições…" na interface em Zig ganha as tabelas de Restrições e de Variáveis, como na GUI PyQt.
-- O `zig build` no Linux deixa de falhar na ligação do raylib.
-- O Desempenho na interface em Zig fica igual ao da GUI PyQt: área segura sombreada, uma cor por altitude, a estrela
-  no máximo e a janela dos eixos. Motores ganha "Usar em Desempenho →", que leva o avião direto para o Avião montado.
-- A Missão na interface em Zig ganha a trajetória 3D, com cada etapa na sua cor, os eventos, a sombra no chão e as
-  silhuetas do avião. Arrastar gira a vista e a roda aproxima.
-- A Missão ganha a tabela das etapas (decolagem, retas, curvas e pouso) editável na tela. No modo missão aparece a
-  pista (x_warning e z_warning), e o diagnóstico acusa quando a decolagem não cabe nela.
-- O modo MTOW da Missão guarda o MTOW achado para a pista, e a missão, a decolagem e as curvas podem voar com a massa
-  do avião, com esse MTOW ou com uma massa digitada. O acionamento do profundor pode ser o otimizado ou um digitado.
-- A Estabilidade ganha o mapa dos polos de cada modo no plano complexo, um ponto por velocidade, com a faixa instável
-  sombreada e os limites de amortecimento do nível 1.
-- Num avião com carga lançável, a Estabilidade mostra como os polos mudam quando a carga sai e quanto o amortecimento
-  e a frequência de cada modo mudam.
-- A Estabilidade pode incluir o líquido dos tanques no modelo linear (Abramson, NASA SP-106), desligado por padrão.
-  Aparecem os modos do próprio líquido e quanto os modos do avião se deslocam com ele.
-- A Estabilidade escolhe a massa do voo: a do avião, um MTOW achado pela Missão ou uma digitada.
-- A Estabilidade dinâmica é a primeira aba feita toda em Zig, sem Python no caminho. O avião equilibrado recebe uma
-  rajada vertical ou lateral, com manche fixo ou piloto automático, e a aba mostra a resposta no tempo (α, β, φ, n_z,
-  o CG e o líquido de cada tanque). Com tanques, voa também com o líquido travado, para comparar. A conta anda em
-  fatias, então a tela não trava, nem no navegador.
-- A Estabilidade dinâmica mostra o avião em 3D com os tanques, o líquido e a carga, e a carga LAPES pode ser solta no
-  voo. Os polos aparecem por modo em quatro gráficos: sem efeitos, com o líquido, com a carga e com tudo junto.
-- Na interface em Zig, o botão direito seleciona gráficos, e "Salvar os selecionados" grava cada um em PNG, PDF ou
-  CSV.
-- A Missão ganha a rajada por etapa: a tabela diz onde a rajada chega em cada etapa, e o grupo "Rajada" dá o tamanho
-  e a duração. Sem mexer, a missão fica igual.
+- Toda a tela, as análises, as etapas de projeto, o instalável, o site e os checks funcionam sem Python. O Python fica
+  só para os métodos de fora (lltdrek, AeroSandbox, AVL), opcionais.
+- Montagem completa: editar peças, acrescentar e remover, vistas lateral, superior e frontal, arrastar no 3D, variantes,
+  Restaurar, Acertar o CG e Ctrl+Z.
+- Aerodinâmica: uma lista de métodos para rodar (com o VLM do núcleo), polares de perfil por Reynolds, estol por
+  estação e efeito solo pelo VLM.
+- Missão: o modo Decolagem acha o MTOW em cada xCG da faixa de CG, mais rápido e com a missão voada no fim.
+- Todos os ajustes numéricos (iterações, tolerâncias, malhas) ficam na tela, no "Refino dos Solvers".
+- Biblioteca de perfis, motores e hélices compartilhada entre os projetos.
+- Gráficos com títulos curtos, matemática em fonte LaTeX, leitura de valor ao clicar e altura ajustável.
+- Novas contas no núcleo, ainda sem tela: V-n, esforços na asa, flambagem, divergência, flutter e trem de pouso.
+- Contas longas rodam numa thread à parte, sem travar a janela; o Parar corta na hora.
+- O aerosim abre no navegador, e a documentação vira um livro no site, com o tracking.
 
 ### v0.2.4 (`main`, fechada em 2026-10-30)
 
-- A interface do aerosim em Zig fica igual à GUI PyQt, com os managers em Python: as mesmas áreas e subabas, as
-  análises e as etapas da sprint, Guardar, os guardados e as tabelas de massa e dimensões. As abas feitas à mão em
-  Zig dão lugar a páginas genéricas, que servem a qualquer análise.
-- O aerosim e o aeroopt passam a abrir no navegador, para teste, com os aviões e perfis de exemplo. Dá para abrir um
-  arquivo do computador ou arrastá-lo para a página, e salvar baixa o arquivo.
-- A Montagem em Zig mostra o CG no 3D, com o vazio em cinza quando a carga o desloca.
-- As contas longas da interface em Zig deixam de travar a tela. A barra lateral rola inteira, todo gráfico liga e
-  desliga curvas pela legenda e exporta PNG, PDF ou CSV.
-- Projetar fica igual à etapa Asa da GUI em Python: planta trapézio ou tabela de partições com perfil próprio,
-  diedro, ponto neutro no 3D e diagnóstico com as restrições ativas. A conta da asa com partições vai para o núcleo.
-- Entram os pacotes para instalar (AppImage e .exe) e a tela inicial que abre o aerosim, o aeroopt e o AeroDrive.
-- Tudo compila e roda da raiz do repositório (`zig build aerosim`, `aeroopt`, `aerodrive`, `test`), e o código Zig
-  das interfaces fica na pasta do módulo, junto do Python.
-- Começa a interface em Zig (raylib e raygui, no visual do AeroDrive). A Montagem mostra o avião em 3D, Perfis
-  compara polares de vários métodos, Projetar faz a asa pela linha sustentadora de Glauert, e Analisar roda a
-  varredura do núcleo no avião aberto, com os mesmos números da GUI em Python.
-- O AeroDrive passa a rodar no navegador e no celular, com manches virtuais, tela cheia deitada e menus que aceitam o
-  toque. No navegador ele grava vídeo (G ou "Gravar" na pausa).
-- O AeroDrive no navegador deixa de travar: entrar em Aeronave e decolar passam a levar uma fração do tempo de antes,
-  e o quadro de voo fica umas três vezes mais leve. O programa instalado sai igual.
-- O site passa a ter uma tela inicial que abre o AeroDrive e é publicado a cada mudança na `main`.
-- Os checks de regressão passam a rodar sozinhos em cada PR para a `main`.
-- Cargas ganham a linha sustentadora não linear, em que cada faixa segue a curva do seu perfil até depois do estol.
-  Ela mostra onde o estol começa e para quanto a carga satura. Fica desligada por padrão, então o voo e o AeroDrive
-  não mudam.
-- A Aerodinâmica ganha a análise de um conjunto de asas como no túnel (uma asa, biplano, tandem, canard), sem
-  trimar, sem fuselagem e sem hélice, mesmo sem massa. Mostra o C_L do conjunto e de cada superfície, o C_L máximo,
-  onde o estol começa, a carga na envergadura e as polares de todos os métodos. Com o avião pronto, ela faz também a
-  análise do avião completo, que antes era uma subaba à parte. As subabas passam a se chamar Perfis, Projetar e
-  Analisar.
+- Começa a tela nova em Zig (raylib), igual à antiga em PyQt.
+- O aerosim, o aeroopt e o AeroDrive abrem no navegador; o AeroDrive também no celular, com manches na tela.
+- Instaladores AppImage e .exe com tela inicial para os três programas.
+- Análise de conjunto de asas como no túnel (uma asa, biplano, tandem, canard).
+- Cargas ganham a linha sustentadora não linear, que mostra onde o estol começa.
 
 ### v0.2.3 (`main`, PR #31)
 
-- O código do núcleo fica legível: os erros têm nome, os nomes de uma letra viram nomes que dizem o que são, os
-  índices do estado viram um enum e toda função pública ganha um comentário. A biblioteca sai igual bit a bit.
-- Os READMEs do aeroopt e do core/optim ganham uma figura por bloco e por busca, com dados reais.
-- O aeroopt ganha a busca com substituto: a cada geração ele sorteia muitos filhos, um modelo rápido dá o palpite de
-  cada um e só os melhores palpites são avaliados de verdade. Nas formas de problema difíceis, foi a melhor busca.
-- Entra o banco dos otimizadores, que compara as buscas em três formas de problema com o mesmo ótimo.
-- Antes, a proteção de α na decolagem era opcional e usava um limite fixo de 11°, e a busca da decolagem aceitava
-  aviões que estolavam logo depois de sair do chão. Agora a proteção é obrigatória, o limite é o estol de cada avião,
-  e a busca reprova a decolagem que estola. Isso muda o resultado das decolagens: antes, 5 de 6 tandens da grade
-  caíam depois de sair do chão; agora os 6 chegam ao fim da primeira manobra.
-- Antes, as duas asas do tandem eram iguais. Agora a asa de trás pode ter área e perfil próprios, e a verificação
-  confere a divisão da sustentação entre as asas, o recuo e o desnível.
-- A bisseção do acionamento do profundor ganha uma tolerância, que deixa o MTOW no 6GDL umas quatro vezes mais
-  rápido com diferença pequena no resultado.
-- A janela do aeroopt deixa de mostrar o MTOW na pista (que não pontua), cabe numa tela de 1366 × 768 e passa a
-  mostrar as opções de início e de partidas que antes só se mudavam no arquivo.
-- A estabilidade e controle do aeroopt ganha a busca guiada pela falha: cada violação aponta as variáveis que a
-  consertam, e há métodos novos para escolher o próximo avião.
-- Com os comandos ligados, o aeroopt confere também a estabilidade dinâmica. Antes, o tandem da Regular 2026 era
-  instável em guinada e caía depois de decolar sem que a sprint visse.
-- A busca do acionamento na decolagem pode ser por bisseção a partir da corrida sem acionar.
-- A posição da carga paga vira variável, e a estabilidade e controle a escolhe junto com os comandos.
-- Antes, no tandem com deriva na ponta, a sprint confundia a deriva com a segunda asa e o avião nunca voava. Agora a
-  segunda asa se acha pelo papel dela.
-- A população inicial pode sair por hipercubo latino, e a busca pode ter várias partidas. As duas ficam desligadas por
-  padrão.
-- Antes, a sprint calculava o ponto neutro do tandem só pela asa da frente, o CG ia parar perto dela e o avião não
-  trimava. Agora a asa de trás é tratada como a cauda (com o downwash da da frente), o profundor fica nela e o tandem
-  ganha os seus comandos.
-- Antes, o avião sem cauda parecia sair do chão sozinho, porque a sprint usava o C_L da asa sem trimagem. Agora só
-  conta o C_L que o comando ainda trima.
-- A verificação dos comandos confere o peso mínimo na bequilha parado (Raymer §11.2) e a estabilidade direcional.
-- A asa sem cauda e o tandem podem ter uma deriva com leme em cada ponta da asa, que dá a estabilidade direcional.
-- O comando de arfagem do tandem pode ficar na asa de trás, na da frente ou nas duas, e a busca escolhe.
-- A decolagem ganha a proteção de α: até o piloto automático assumir, o profundor não deixa α passar do limite.
-- Quando o ponto de projeto da sprint não converge pela média de sempre, ele segue por secante.
-- A altura do obstáculo da decolagem vira entrada (1 m por padrão).
-- O aeroopt ganha a pontuação da Regular 2026, com o fator de superfícies, de envergadura e as penalidades.
-- A asa voadora ganha uma partida própria na busca dos comandos (enflechada, com torção e elevon na ponta), e a
-  verificação confere o C_L trimado contra o estol, o elevon segurando o nariz e a asa longe do estol.
-- A atitude no chão vira entrada: com a bequilha mais comprida, a asa corre num ângulo e pode sair do chão sem rodar.
-  Antes, a decolagem começava nivelada, a bequilha entrava no chão e o avião capotava.
-- Antes, a sprint dava ao elevon da asa voadora uns quatro vezes o momento que o núcleo dava. Agora a conta põe a
-  sustentação no lugar certo e soma o momento próprio do flape, e as duas contas batem.
-- A busca do aeroopt passa a mexer também nos comandos e exige que o comando rode o avião antes de sair do chão.
-- O aeroopt escolhe a cauda (convencional, em H, em V ou sem cauda) pela que voa e decola com mais carga paga.
-- A sprint ganha a cauda em H.
-- Os menus do aeroopt ganham ajuda em cada opção, e as asas alta, média, baixa e parasol viram um monoplano só.
-- O aeroopt ganha a evolução diferencial, cujo passo encolhe sozinho perto do ótimo.
-- O aeroopt mostra o caminho da busca em coordenadas paralelas, também exportável como página.
-- O aeroopt ganha a sensibilidade do melhor avião: quanto a nota muda com cada variável, a perda pela tolerância de
-  fabricação e o efeito de cada restrição, quase sem rodar pontos novos.
-- O Parar do aeroopt para sem matar os processos, e eles passam a nascer uma vez por sessão.
-- O aeroopt ganha os dados de teste, com o resultado sabido de antemão, para conferir as buscas e o paralelismo.
-- O paralelismo vira um módulo com série, threads e processos, e os processos nascem uma vez por rodada.
-- O equilíbrio motor × hélice da sprint vai para o núcleo e deixa o aeroopt bem mais rápido.
-- O aeroopt passa a mostrar os gráficos do melhor avião até ali (decolagem, polar, estabilidade, desempenho).
-- O mapa dos aviões passa a ter as variáveis do problema como eixos.
-- O aeroopt ganha o CMA-ES, que aprende a forma da região boa e anda ao longo das variáveis acopladas.
-- Antes de buscar desempenho, o aeroopt confere se o avião voa (trima, equilibra sem lastro, tem margem) e procura o
-  ponto que viola menos quando não voa.
-- O aeroopt ganha a restrição de estabilidade, e um voo inválido passa a ter nota 0.
-- Antes, quase toda configuração reprovava por bater no chão na rotação. Agora o núcleo diz quanto descer as rodas, e
-  a geometria se conserta sozinha.
-- Todo campo das etapas do aerosim pode virar variável do aeroopt.
-- O lado esquerdo do aeroopt vira botões com resumo, cada um com o seu submenu, e cada etapa ganha a escolha do método.
-- As configurações do aeroopt passam a sair de um algoritmo genético, no lugar de varrer todas as combinações.
-- A geometria do avião montado é conferida no núcleo: hélice que acerta peça, massa fora da geometria, pedaços soltos
-  e folga ao chão.
-- O aeroopt ganha os submenus do problema: variáveis, restrições, perfis por região e peças do catálogo.
-- Cada rodada do aeroopt grava os pontos avaliados e as notas em CSV, e o avião escolhido abre no aerosim.
-- O aeroopt ganha a janela, com a rodada ao vivo, o mapa dos aviões e o avião clicado em 3D.
-- O aeroopt ganha as categorias de configuração (asa alta, biplano, tandem, asa voadora...).
-- A corrida de decolagem da sprint vai para o núcleo, e o ponto de projeto fica umas cinco vezes mais rápido.
-- O aeroopt passa a otimizar em etapas (configurações, superfícies, MTOW no 6GDL e nota), com cada etapa em paralelo.
-- O aeroopt ganha a ferramenta de linha de comando.
-- A nota do regulamento passa a ser calculada no núcleo.
-- A pontuação passa a vir de um arquivo por regulamento, a começar pela Micro 2026.
-- O aeroopt ganha o problema de otimização em arquivo e a ponte com o projeto da sprint.
-- O avião pode ter asas ligadas (tandem e biplano) na Montagem e na sprint, e a interferência entre elas é um efeito
-  que se liga.
-- Os motores ficam livres: nariz, pares na asa e propulsora.
-- Antes, um avião sem trem ou com inércia inválida derrubava o programa. Agora o núcleo devolve uma mensagem clara, e
-  o AeroDrive a mostra na tela.
-- A massa das superfícies simétricas passa a contar em cada lado.
-- O ajuste da decolagem deixa de travar a tela.
-- Os READMEs ganham as equações, cada uma com a fonte e um exemplo que roda.
-- A Aerodinâmica ganha a linha sustentadora do núcleo como método de comparação.
-- A linha sustentadora fica bem mais rápida, com o mesmo resultado bit a bit.
-- Antes, a linha sustentadora de Phillips e Snyder não convergia com a malha em derrapagem nem com enflechamento.
-  Agora há a de Goates e Hunsaker, que bate com a implementação dos autores.
-- O voo pode usar outro modelo aerodinâmico: as faixas (o padrão), a linha sustentadora ou uma tabela de qualquer
-  método. Uma ferramenta compara a decolagem e a missão com cada modelo.
-- Antes, só a asa era refinada nas comparações, e a EV sozinha saía com o dobro do C_Yβ. Agora todas as superfícies
-  são refinadas.
-- Entra a ferramenta que compara os coeficientes de todos os métodos no mesmo estado do avião.
-- A falha "hélice tocou o chão" fica desligada por padrão, porque o exemplo de asa voadora não voava com ela.
-- O envelope de voo ganha subaba própria, com o método da planilha e o modelo completo sobrepostos.
-- A aba Cargas mostra a carga ao longo de cada superfície num ponto de voo, com e sem a hélice, e a vista 3D.
-- A Missão mostra o fator de carga nas curvas: o que a inclinação pede, o de estol e o estrutural (Anderson,
-  Introduction to Flight, §6.17).
+- O aeroopt ganha a janela, várias buscas (genético, evolução diferencial, CMA-ES, com substituto) e a pontuação da
+  Regular 2026.
+- O aeroopt confere se o avião voa: estabilidade estática e dinâmica, comandos, decolagem sem estolar e folga ao chão.
+- Asas ligadas (tandem, biplano), asa voadora com elevon e caudas em H e em V.
+- A decolagem ganha proteção de α no limite de estol de cada avião.
+- O voo pode usar outro modelo aerodinâmico (faixas, linha sustentadora ou tabela).
+- O código do núcleo fica legível, com nomes claros e erros com nome, sem mudar o resultado.
 
 ## v0.2.2 — PR #27
 
-- Entra o mapa do código, gerado a partir dele.
+- Entra o mapa do código.
 
 ## v0.2.1 — PR #26
 
@@ -562,38 +65,17 @@ estruturas e o estol por estação.
 
 ## v0.2.0 — fundação fechada (PRs #24–#25)
 
-- Entram os checks de regressão: núcleo, AeroDrive, exemplos bit a bit contra uma referência e testes por área.
+- Entram os checks de regressão.
 
 ## v0.1.x — pilha de branches mesclada (PRs #21–#23)
 
-**Projeto**
-- Sprint por asa, em pasta.
-- Montagem sem exigir decolagem.
-- Tração e Missão dentro de Desempenho.
-- xCG em % CMA.
-- Biblioteca de perfis disponível de saída.
-
-**Aerodinâmica**
-- Camada 2D de polares com cache.
-- Cache 3D.
-- AVL e importação do XFLR5.
-
-**Modifiers**
-- Efeito solo (McCormick) e esteira da hélice por disco atuador, ligáveis por avião e desligados por padrão.
-
-**Colisão**
-- Tubo da hélice contra superfícies e objetos.
-
-**Cargas**
-- Distribuição ao longo da envergadura pela linha sustentadora (Phillips e Snyder 2000), com e sem hélice.
-- Vista 3D no modelo da GUI.
-
-**Núcleo**
-- Hash da ABI conferido ao carregar.
+- Projeto do zero (sprint) por asa, em pasta, e Montagem sem exigir decolagem.
+- AVL, importação do XFLR5 e polares com cache.
+- Efeito solo e esteira da hélice, ligáveis por avião.
+- Carga ao longo da envergadura, com vista 3D.
 
 ## v0.1.0 — ponto de partida (`main` em `033bdc1`)
 
-Primeira versão rastreada. É a `main` depois dos PRs 11, 12 e 13.
 - Simulação 6GDL e GUI com Aerodinâmica, Desempenho, Estabilidade e Montagem.
 - AeroDrive.
 - Projeto do zero (sprint).
