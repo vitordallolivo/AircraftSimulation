@@ -2,7 +2,7 @@
 //! print sem interação do `--shot`.
 //!
 //!   <programa> [LxA]
-//!   <programa> --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME] [clique=X,Y] [apos=SEGUNDOS] [tema=escuro] [tempo=SEGUNDOS] [brilho=nao]
+//!   <programa> --shot <saída.png> [arquivo] [LxA] [aba=N] [rolar=PIXELS] [acao=NOME] [clique=X,Y] [apos=SEGUNDOS] [tema=escuro] [tempo=SEGUNDOS]
 //!
 //! `arquivo` vai para o `openFile` da tela (.aero, .json, .dat ou uma polar); `acao=NOME` (ou `acao=A,B`) chama `command` da tela para cada nome,
 //! se ela tiver (abre um diálogo para o print, por exemplo). `clique=X,Y` clica no pixel (X, Y) quando a tela para de
@@ -25,8 +25,7 @@ pub const Args = struct {
     clicks: [max_clicks]Click = undefined, // clique=X,Y (ou dX,Y: o botão direito; vários com ";"): um por vez, cada um
     click_count: usize = 0, // depois que a tela para de mudar
     after: ?f64 = null, // apos=SEGUNDOS: o print sai nesse tempo mesmo com a rodada no meio (o progresso, os parciais)
-    time: ?f64 = null, // tempo=SEGUNDOS: o relógio das animações preso nesse instante (o brilho da logo e do nome)
-    shine: bool = true, // brilho=nao: a logo sem o brilho que passa
+    time: ?f64 = null, // tempo=SEGUNDOS: o relógio das animações preso nesse instante (o brilho do nome do avião)
     dark: bool = false, // tema=escuro: o print no modo escuro (sem ele, o claro; o print não lê o modo gravado)
 };
 
@@ -67,8 +66,6 @@ pub fn parseArgs(argv: []const [:0]const u8) !Args {
             args.dark = std.mem.eql(u8, value[5..], "escuro");
         } else if (std.mem.startsWith(u8, value, "tempo=")) {
             args.time = std.fmt.parseFloat(f64, value[6..]) catch return error.BadArgs;
-        } else if (std.mem.eql(u8, value, "brilho=nao")) {
-            args.shine = false;
         } else if (std.mem.startsWith(u8, value, "apos=")) {
             args.after = std.fmt.parseFloat(f64, value[5..]) catch return error.BadArgs;
         } else if (std.mem.startsWith(u8, value, "rolar=")) {
@@ -120,7 +117,6 @@ pub fn run(init: std.process.Init, title: [:0]const u8, screen: anytype) !void {
     var ui = try widgets.Ui.init(program(title));
     defer ui.deinit();
     widgets.frozen_time = args.time;
-    theme.Logo.shine = args.shine;
     if (shot) {
         if (args.dark) ui.setMode(.dark, false);
     } else ui.restoreMode();

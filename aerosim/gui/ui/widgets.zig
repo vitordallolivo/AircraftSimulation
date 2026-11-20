@@ -444,7 +444,7 @@ pub fn roundedLines(rect: rl.Rectangle, radius: f32, color: rl.Color) void {
 /// passa por ele) e o texto ao lado; devolve o índice do botão clicado
 pub fn header(ui: *Ui, width: f32, program_name: [:0]const u8, buttons: []const [:0]const u8, highlight: [:0]const u8, subtitle: [:0]const u8) ?usize {
     rl.drawRectangleRec(.{ .x = 0, .y = 0, .width = width, .height = header_height }, theme.colors.panel);
-    const logo_width = ui.logo.draw(14, 8, header_height - 16, clock());
+    const logo_width = ui.logo.draw(14, 8, header_height - 16);
     var x: f32 = programName(ui.fonts.bold, program_name, 24 + logo_width, 13, 24) + 28;
     var pressed: ?usize = null;
     for (buttons, 0..) |caption, i| {
@@ -478,7 +478,7 @@ pub fn programName(font: rl.Font, name: [:0]const u8, x: f32, y: f32, size: f32)
     return rest_x + theme.textWidth(font, rest, size);
 }
 
-/// o relógio das animações (o brilho do nome e da logo); o print pode prendê-lo num instante (`tempo=SEGUNDOS`)
+/// o relógio das animações (o brilho do nome do avião); o print pode prendê-lo num instante (`tempo=SEGUNDOS`)
 pub var frozen_time: ?f64 = null;
 
 /// os segundos desde que a janela abriu, ou o instante preso do print

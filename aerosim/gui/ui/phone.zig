@@ -29,7 +29,7 @@ pub fn isPhone(width: f32) bool {
 /// o cabeçalho curto: a logo, o nome e os botões encostados à direita; devolve o índice do botão tocado
 pub fn header(ui: *widgets.Ui, width: f32, program_name: [:0]const u8, buttons: []const [:0]const u8) ?usize {
     rl.drawRectangleRec(.{ .x = 0, .y = 0, .width = width, .height = header_height }, theme.colors.panel);
-    const logo_width = ui.logo.draw(8, 8, header_height - 16, widgets.clock());
+    const logo_width = ui.logo.draw(8, 8, header_height - 16);
     _ = widgets.programName(ui.fonts.bold, program_name, 16 + logo_width, 12, 21);
     var pressed: ?usize = null;
     var x = width - 6;

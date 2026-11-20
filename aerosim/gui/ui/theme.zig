@@ -297,9 +297,6 @@ pub const Logo = struct {
     light: rl.Texture2D,
     dark: rl.Texture2D,
 
-    /// o brilho que passa pela logo a cada poucos segundos (o mesmo do nome do avião aberto); `brilho=nao` no print
-    pub var shine: bool = true;
-
     /// o PNG da logo de `program`, no modo `chosen` (o ícone da janela usa o do escuro)
     pub fn png(program: Program, chosen: Mode) []const u8 {
         return switch (program) {
@@ -330,28 +327,13 @@ pub const Logo = struct {
         rl.unloadTexture(logo.dark);
     }
 
-    /// desenha a logo do modo atual com altura `height`, o canto de cima à esquerda em (x, y), com o brilho que
-    /// passa em diagonal (`now`: o relógio da tela, em segundos); devolve a largura
-    pub fn draw(logo: *const Logo, x: f32, y: f32, height: f32, now: f64) f32 {
+    /// desenha a logo do modo atual com altura `height`, o canto de cima à esquerda em (x, y); devolve a largura
+    pub fn draw(logo: *const Logo, x: f32, y: f32, height: f32) f32 {
         const shown = if (mode == .dark) logo.dark else logo.light;
         const source_width: f32 = @floatFromInt(shown.width);
         const source_height: f32 = @floatFromInt(shown.height);
         const width = height * source_width / source_height;
         rl.drawTexturePro(shown, .{ .x = 0, .y = 0, .width = source_width, .height = source_height }, .{ .x = x, .y = y, .width = width, .height = height }, .{ .x = 0, .y = 0 }, 0, .white);
-        if (shine) {
-            // uma faixa clara inclinada que atravessa o ícone no começo de cada período e some no resto
-            const period: f64 = 3.2;
-            const phase: f32 = @floatCast(@mod(now, period) / period);
-            const band = height * 0.28;
-            const center = x - band + phase * (width + 2 * band) * 1.6;
-            rl.beginScissorMode(@intFromFloat(x + 3), @intFromFloat(y + 3), @intFromFloat(width - 6), @intFromFloat(height - 6));
-            defer rl.endScissorMode();
-            const layers = [_]struct { width: f32, alpha: f32 }{ .{ .width = 1.0, .alpha = 0.16 }, .{ .width = 0.55, .alpha = 0.26 }, .{ .width = 0.25, .alpha = 0.38 } };
-            for (layers) |layer| {
-                const strip: rl.Rectangle = .{ .x = center, .y = y + height / 2, .width = band * layer.width, .height = height * 1.8 };
-                rl.drawRectanglePro(strip, .{ .x = strip.width / 2, .y = strip.height / 2 }, 22, rl.fade(.white, layer.alpha));
-            }
-        }
         return width;
     }
 };
