@@ -1707,7 +1707,7 @@ pub const Page = struct {
         // a janela "Condições e restrições…" é ela mesma: sem a linha dos requisitos nem o botão
         if (std.mem.eql(u8, page.name, "requisitos")) return y + 4;
         // as etapas da biblioteca são do programa, não do projeto: sem a linha do projeto e dos requisitos
-        if (page.project.len > 0) {
+        if (page.project.len > 0 or page.requirements.len > 0) {
             y = page.drawProject(ui, x, y, width);
             const bar_height = widgets.paragraphHeight(ui.fonts.regular, page.requirements, width - 12, 12) + 10;
             widgets.rounded(.{ .x = x, .y = y, .width = width, .height = bar_height }, 4, theme.colors.hover);
@@ -1731,7 +1731,7 @@ pub const Page = struct {
     fn drawProject(page: *Page, ui: *widgets.Ui, x: f32, top: f32, width: f32) f32 {
         var y = top;
         var line: [600]u8 = undefined;
-        const caption = if (page.project_named) widgets.format(&line, "Projeto: {s}", .{std.fs.path.basename(page.project)}) else "Projeto novo, ainda sem pasta: nada é gravado até escolher uma (o primeiro Guardar pede)";
+        const caption = if (page.project_named and page.project.len == 0) "Sem projeto" else if (page.project_named) widgets.format(&line, "Projeto: {s}", .{std.fs.path.basename(page.project)}) else "Projeto novo, ainda sem pasta: nada é gravado até escolher uma (o primeiro Guardar pede)";
         y += widgets.paragraph(ui.fonts.regular, caption, x, y, width, 12, if (page.project_named) theme.colors.label else theme.colors.failure) + 4;
         const half = (width - 8) / 2;
         if (dialogs.button(ui, .{ .x = x, .y = y, .width = half, .height = 28 }, "Novo projeto…")) page.askProject(.create);

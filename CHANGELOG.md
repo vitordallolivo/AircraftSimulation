@@ -11,6 +11,7 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - Botão "Novo"; o nome do avião aberto brilha no topo, ao lado do projeto.
 - A primeira mudança num avião montado vira uma variante, e uma janela pede o nome dela.
 - O `.aero` guarda também o projeto: abrir um avião traz o projeto dele (ou nenhum), e o programa reabre o último `.aero`.
+- Num avião sem projeto, as etapas avisam que não mexem nele e oferecem começar ou abrir um projeto.
 
 ## v0.3.1 (na `0.3_dev`, fechada em 2026-11-20)
 

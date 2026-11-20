@@ -560,6 +560,16 @@ fn useContext(context: Context) void {
     shared = context;
 }
 
+/// o aviso das etapas quando o arquivo aberto não tem projeto: o que se mexe aqui não muda o avião aberto
+pub const no_project_note = "Este avião foi aberto sem projeto: o que se mexe nas etapas não muda ele. " ++
+    "\"Novo projeto…\" começa um projeto (e o avião dele); \"Abrir projeto…\" ou Abrir… num .aero com projeto traz um pronto.";
+
+fn noProject(page: *simulation.StagePage) void {
+    page.project = "";
+    page.project_named = true;
+    page.requirements = no_project_note;
+}
+
 /// atende o pedido (`fields`: o JSON do pedido sem as chaves, como a tela manda à ponte) e devolve a página em JSON,
 /// já lida, na memória `memory`
 pub fn handle(memory: std.mem.Allocator, io: std.Io, fields: []const u8) !Value {
@@ -592,6 +602,7 @@ pub fn handle(memory: std.mem.Allocator, io: std.Io, fields: []const u8) !Value 
         page.requirements = try registry.requirementsSummary(memory, &current.project);
         page.project = current.project.folder;
         page.project_named = current.named;
+        if (!current.has_project) noProject(&page);
         if (said.len > 0) page.message = said;
         var out: std.Io.Writer.Allocating = .init(memory);
         try simulation.writeStagePage(&out.writer, page);
@@ -627,7 +638,7 @@ pub fn handle(memory: std.mem.Allocator, io: std.Io, fields: []const u8) !Value 
     if (stage.program) {
         page.project = "";
         page.requirements = "";
-    }
+    } else if (!current.has_project) noProject(&page);
     if (message.len > 0) page.message = message;
     var out: std.Io.Writer.Allocating = .init(memory);
     try simulation.writeStagePage(&out.writer, page);
