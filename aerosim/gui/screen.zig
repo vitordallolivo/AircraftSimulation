@@ -336,6 +336,8 @@ pub const Screen = struct {
         }
         editor.rebuild(&opened.loaded.ac) catch {};
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · editado (Salvar grava) · {d} peças", .{ std.fs.path.basename(opened.path), opened.mesh.piece_count }) catch {};
+        // as análises rodam o avião editado, mesmo antes de salvar
+        screen.shareAircraft();
     }
 
     /// clicar numa peça no 3D escolhe ela na lista; arrastar move ela no plano da tela, e soltar grava a posição.
@@ -741,7 +743,13 @@ pub const Screen = struct {
         editor.form.area = .{};
         editor.rebuild(&opened.loaded.ac) catch {};
         screen.assembly_drag = null;
-        for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| page.setAircraftPath(opened.path);
+        screen.shareAircraft();
+    }
+
+    /// as páginas passam a usar o avião atual da Montagem como ele está na tela (edições não salvas e variante)
+    fn shareAircraft(screen: *Screen) void {
+        const opened = &(screen.assembly orelse return);
+        for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| page.setAircraft(opened.path, opened.source);
     }
 
     /// passa para o avião aberto `index` (a barra "Anterior", "Próximo"); o atual fica guardado como está

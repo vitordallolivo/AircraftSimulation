@@ -24,6 +24,9 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - Na prévia do "Exportar…" da Aerodinâmica e da Estabilidade aparece a lista das superfícies do avião, com caixas de
   marcar: a planilha se refaz na hora só com as marcadas, e é ela que se grava. A conta continua sendo a do avião
   inteiro; só o que vai para a planilha muda.
+- Antes, as análises liam o avião do arquivo salvo: uma peça mexida na Montagem só entrava na conta depois de
+  salvar, e uma variante rodava como o avião original. Agora as análises rodam o avião como ele está na Montagem, com
+  as edições ainda não salvas e a variante escolhida.
 
 ## v0.3.1 (na `0.3_dev`, fechada em 2026-11-20)
 

@@ -258,6 +258,12 @@ pub const Diagnosis = model.Diag;
 pub fn loadAircraft(gpa: std.mem.Allocator, io: std.Io, path: []const u8, diagnosis: *Diagnosis) !model.Loaded {
     const bytes = try readAircraftText(gpa, io, path, diagnosis);
     defer gpa.free(bytes);
+    return loadAircraftText(gpa, io, path, bytes, diagnosis);
+}
+
+/// lê o avião do texto `bytes` (o da Montagem, com as edições), com os perfis que ele só aponta achados a partir de
+/// `path`, o arquivo de onde ele veio
+pub fn loadAircraftText(gpa: std.mem.Allocator, io: std.Io, path: []const u8, bytes: []const u8, diagnosis: *Diagnosis) !model.Loaded {
     var loaded = try model.parse(gpa, bytes, diagnosis);
     errdefer loaded.deinit();
     try fillAirfoilFiles(loaded.arena.allocator(), io, path, bytes, &loaded.ac);
@@ -416,6 +422,26 @@ test "a massa e o CG da Montagem são os do Python: seca, líquido e carga" {
     try std.testing.expectApproxEqAbs(@as(f64, 0.008), weights.cg[0], 5e-4);
     try std.testing.expectApproxEqAbs(@as(f64, 0.0), weights.cg[1], 5e-4);
     try std.testing.expectApproxEqAbs(@as(f64, 0.021), weights.cg[2], 5e-4);
+}
+
+test "a análise lê o avião editado na Montagem, sem salvar: o texto da tela vale, não o arquivo" {
+    const gpa = std.testing.allocator;
+    const path = "../data/aircraft/Convencional_original.aero";
+    var diagnosis: Diagnosis = .{};
+    var saved = try loadAircraft(gpa, std.testing.io, path, &diagnosis);
+    defer saved.deinit();
+    // a edição da Montagem: 1 kg a mais na massa base, só no texto da tela
+    var edited = saved.ac;
+    edited.mass.base_mass += 1;
+    const text = try std.json.Stringify.valueAlloc(gpa, edited, .{ .emit_null_optional_fields = false });
+    defer gpa.free(text);
+    var on_screen = try loadAircraftText(gpa, std.testing.io, path, text, &diagnosis);
+    defer on_screen.deinit();
+    try std.testing.expectApproxEqAbs(balance(&saved.ac).empty_mass + 1, balance(&on_screen.ac).empty_mass, 1e-9);
+    // o arquivo continua o de antes
+    var again = try loadAircraft(gpa, std.testing.io, path, &diagnosis);
+    defer again.deinit();
+    try std.testing.expectApproxEqAbs(balance(&saved.ac).empty_mass, balance(&again.ac).empty_mass, 1e-12);
 }
 
 test "o raio cruza o triângulo na distância certa e passa ao lado dele" {

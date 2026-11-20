@@ -426,6 +426,9 @@ pub const Page = struct {
     reply: ?Json = null,
     aircraft_path: [1024]u8 = undefined,
     aircraft_len: usize = 0,
+    // o texto do avião como está na Montagem (com as edições ainda não salvas e a variante escolhida); nulo: o
+    // arquivo em `aircraft_path` como está no disco
+    aircraft_source: ?[]u8 = null,
     // o formulário
     spec_arena: ?*Arena = null,
     groups: []form_mod.Group = &.{},
@@ -511,7 +514,23 @@ pub const Page = struct {
         const length = @min(text.len, page.aircraft_path.len);
         @memcpy(page.aircraft_path[0..length], text[0..length]);
         page.aircraft_len = length;
+        page.dropSource();
         if (page.kind == .simulation) page.stale = true;
+    }
+
+    /// o avião atual da Montagem: o caminho (de onde se acham os perfis) e o texto dele como está na tela, com as
+    /// edições não salvas e a variante escolhida. A análise roda este texto, não o arquivo do disco
+    pub fn setAircraft(page: *Page, path: []const u8, source: []const u8) void {
+        const same_path = std.mem.eql(u8, page.aircraft_path[0..page.aircraft_len], path);
+        const same_source = if (page.aircraft_source) |kept| std.mem.eql(u8, kept, source) else false;
+        if (same_path and same_source) return;
+        page.setAircraftPath(path);
+        page.aircraft_source = std.heap.page_allocator.dupe(u8, source) catch null;
+    }
+
+    fn dropSource(page: *Page) void {
+        if (page.aircraft_source) |kept| std.heap.page_allocator.free(kept);
+        page.aircraft_source = null;
     }
 
     /// uma conta está andando (na thread do Python ou em fatias, em Zig)
@@ -918,11 +937,17 @@ pub const Page = struct {
         }
     }
 
-    /// o avião aberto na Montagem, lido em Zig (nulo: nenhum aberto ou não abriu)
+    /// o avião aberto na Montagem, lido em Zig: o texto da tela (com as edições e a variante) ou, sem ele, o
+    /// arquivo; nulo: nenhum aberto ou não abriu
     fn loadNativeAircraft(page: *Page) ?aircraft_model.aircraft.Loaded {
         if (page.aircraft_len == 0) return null;
         var diagnosis: assembly.Diagnosis = .{};
-        return assembly.loadAircraft(std.heap.page_allocator, clockIo(), page.aircraft_path[0..page.aircraft_len], &diagnosis) catch {
+        const path = page.aircraft_path[0..page.aircraft_len];
+        const loaded = if (page.aircraft_source) |source|
+            assembly.loadAircraftText(std.heap.page_allocator, clockIo(), path, source, &diagnosis)
+        else
+            assembly.loadAircraft(std.heap.page_allocator, clockIo(), path, &diagnosis);
+        return loaded catch {
             setText(&page.message, "{s}", .{diagnosis.text()});
             return null;
         };
