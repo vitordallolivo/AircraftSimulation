@@ -340,6 +340,11 @@ fn sprintProjectName(memory: std.mem.Allocator) simulation.Error![]const u8 {
     return memory.dupe(u8, std.fs.path.basename(current.project.folder));
 }
 
+/// o nome do projeto aberto (a pasta); vazio se ele ainda não tem nome
+pub fn projectName(memory: std.mem.Allocator) []const u8 {
+    return sprintProjectName(memory) catch "";
+}
+
 /// liga o projeto aberto às análises (o Analisar lista as asas guardadas; o Mini-MDO usa as restrições)
 pub fn connect(io: std.Io) void {
     simulation.sprint = sprint_source;

@@ -84,6 +84,11 @@ pub const Screen = struct {
     loader: ui_kit.jobs.Job = .{}, // lê o .json fora do laço da tela
     loading: Loading = .{},
     message: [240:0]u8 = [_:0]u8{0} ** 240,
+    // abrir pelo usuário (Abrir…, arrastar, outro projeto): o avião que chega fecha os outros abertos e apaga os
+    // resultados de antes; a remontagem do projeto pelas etapas não
+    fresh_open: bool = false,
+    // o que está aberto, na linha de cima: o avião (e a variante) e o projeto
+    in_use: [256:0]u8 = [_:0]u8{0} ** 256,
 
     /// abre a subaba de número `index`, contando todas em ordem (a Montagem é a última), para os prints
     pub fn selectTab(screen: *Screen, index: usize) void {
@@ -247,10 +252,12 @@ pub const Screen = struct {
         };
         for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| if (page.kind == .stage) page.markStale();
         screen.requirements.markStale();
+        screen.clearResults();
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "projeto aberto: {s}", .{path}) catch {};
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
-        if (design.stages.projectAircraft(io(), arena.allocator())) |aircraft_path| screen.openAircraft(aircraft_path);
+        if (design.stages.projectAircraft(io(), arena.allocator())) |aircraft_path| screen.openAircraftFresh(aircraft_path);
+        screen.noteInUse();
     }
 
     /// Ctrl+Z: desfaz a última mudança do que está na tela (a janela das condições, a página aberta ou a Montagem)
@@ -624,21 +631,21 @@ pub const Screen = struct {
         if (format == .xlsx) {
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
             defer arena.deinit();
-            const bytes = std.Io.Dir.cwd().readFileAlloc(io(), path, arena.allocator(), .limited(assembly_mod.max_file_bytes)) catch return screen.openAircraft(path);
-            if (data_sources.isProgramWorkbook(arena.allocator(), bytes)) return screen.openAircraft(path);
+            const bytes = std.Io.Dir.cwd().readFileAlloc(io(), path, arena.allocator(), .limited(assembly_mod.max_file_bytes)) catch return screen.openAircraftFresh(path);
+            if (data_sources.isProgramWorkbook(arena.allocator(), bytes)) return screen.openAircraftFresh(path);
             // uma planilha das equipes (por endereço de célula): pede o mapa que diz de qual célula sai cada campo
             screen.cellmap_workbook_len = @min(path.len, screen.cellmap_workbook.len);
             @memcpy(screen.cellmap_workbook[0..screen.cellmap_workbook_len], path[0..screen.cellmap_workbook_len]);
             screen.files.show("Mapa de células desta planilha (.json)", "data/mappings", &.{".json"});
             return;
         }
-        if (format == .ini or format == .aero) return screen.openAircraft(path);
+        if (format == .ini or format == .aero) return screen.openAircraftFresh(path);
         if (format == .json) {
-            const bytes = std.Io.Dir.cwd().readFileAlloc(io(), path, std.heap.page_allocator, .limited(assembly_mod.max_file_bytes)) catch return screen.openAircraft(path);
+            const bytes = std.Io.Dir.cwd().readFileAlloc(io(), path, std.heap.page_allocator, .limited(assembly_mod.max_file_bytes)) catch return screen.openAircraftFresh(path);
             defer std.heap.page_allocator.free(bytes);
             if (screen.cellmap_workbook_len > 0 and data_sources.cellmap.isMap(bytes)) return screen.importCellMap(bytes);
             if (design.stages.isProject(bytes)) return screen.openProject(path);
-            return screen.openAircraft(path);
+            return screen.openAircraftFresh(path);
         }
         const perfis = screen.findPage("perfis") orelse {
             const length = @min(path.len, screen.pending_file.len);
@@ -696,8 +703,15 @@ pub const Screen = struct {
         const target = std.fmt.allocPrint(memory, "{s}/{s}.aero", .{ folder, std.fs.path.stem(workbook_path) }) catch return;
         const aero = aeroBytes(memory, target, workbook_path, result.json) catch return fail(screen, "não consegui montar {s}", .{target});
         std.Io.Dir.cwd().writeFile(io(), .{ .sub_path = target, .data = aero }) catch return fail(screen, "não consegui gravar {s}", .{target});
-        screen.openAircraft(target);
+        screen.openAircraftFresh(target);
         if (result.warnings.len > 0) fail(screen, "planilha lida com {d} avisos; o primeiro: {s}", .{ result.warnings.len, result.warnings[0] });
+    }
+
+    /// abre o avião em `path` pedido pelo usuário (Abrir…, arrastar, outro projeto): ele fecha os outros aviões
+    /// abertos e apaga os resultados de antes
+    fn openAircraftFresh(screen: *Screen, path: []const u8) void {
+        screen.fresh_open = true;
+        screen.openAircraft(path);
     }
 
     fn openAircraft(screen: *Screen, path: []const u8) void {
@@ -719,13 +733,25 @@ pub const Screen = struct {
         if (!screen.loader.finished()) return;
         const path = screen.loading.pathText();
         const loaded = screen.loading.result orelse {
+            screen.fresh_open = false;
             _ = std.fmt.bufPrintZ(&screen.assembly_note, "não abriu '{s}': {s}", .{ std.fs.path.basename(path), screen.loading.reasonText() }) catch {};
             return;
         };
         screen.loading.result = null;
         if (screen.assembly) |*old| old.deinit();
         screen.assembly = loaded;
-        if (screen.fleet_count == 0) screen.fleet_count = 1; // abrir troca o avião atual; os outros ficam
+        if (screen.fresh_open) {
+            // abriu outro arquivo: os outros aviões e variantes abertos fecham, e os resultados de antes somem
+            screen.fresh_open = false;
+            for (screen.fleet[0..screen.fleet_count]) |*slot| if (slot.*) |*other| {
+                other.deinit();
+                slot.* = null;
+            };
+            screen.fleet_count = 1;
+            screen.fleet_current = 0;
+            screen.clearResults();
+        }
+        if (screen.fleet_count == 0) screen.fleet_count = 1; // a remontagem do projeto troca o avião atual; os outros ficam
         screen.showSwitched();
         _ = std.fmt.bufPrintZ(&screen.assembly_note, "{s} · {d} peças · arraste outro avião para a janela para trocar · arraste para girar, roda para aproximar", .{ std.fs.path.basename(path), loaded.mesh.piece_count }) catch {};
     }
@@ -750,6 +776,27 @@ pub const Screen = struct {
     fn shareAircraft(screen: *Screen) void {
         const opened = &(screen.assembly orelse return);
         for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| page.setAircraft(opened.path, opened.source);
+        screen.noteInUse();
+    }
+
+    /// apaga os resultados das análises (abriu outro avião ou projeto)
+    fn clearResults(screen: *Screen) void {
+        for (screen.areas) |area| for (area.pages) |maybe| if (maybe) |page| page.clearResult();
+    }
+
+    /// a linha de cima diz com que avião as análises rodam (e qual variante) e qual projeto as etapas mostram
+    fn noteInUse(screen: *Screen) void {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const project = design.stages.projectName(arena.allocator());
+        const opened = &(screen.assembly orelse return);
+        const plane = opened.loaded.ac.name;
+        const file = std.fs.path.basename(opened.path);
+        const fleet = if (screen.fleet_count > 1) std.fmt.allocPrint(arena.allocator(), " ({d} de {d})", .{ screen.fleet_current + 1, screen.fleet_count }) catch "" else "";
+        _ = (if (project.len > 0)
+            std.fmt.bufPrintZ(&screen.in_use, "avião: {s}{s} · {s} · projeto: {s}", .{ plane, fleet, file, project })
+        else
+            std.fmt.bufPrintZ(&screen.in_use, "avião: {s}{s} · {s}", .{ plane, fleet, file })) catch {};
     }
 
     /// passa para o avião aberto `index` (a barra "Anterior", "Próximo"); o atual fica guardado como está
@@ -1003,7 +1050,7 @@ pub const Screen = struct {
             }
             _ = ui_kit.phone.bottomBar(ui, .{ .x = 0, .y = height - bottom, .width = width, .height = bottom }, screen.area_labels, marked, &screen.area, &screen.more_open);
         } else {
-            if (widgets.header(ui, width, "AeroSim", &.{ "Abrir…", "Salvar" }, "")) |button| {
+            if (widgets.header(ui, width, "AeroSim", &.{ "Abrir…", "Salvar" }, &screen.in_use)) |button| {
                 // no navegador, "Abrir" pega o arquivo do computador (o seletor do sistema), não a pasta da página
                 if (button == 0) {
                     if (!ui_kit.system.pickFromDevice()) screen.command("abrir");

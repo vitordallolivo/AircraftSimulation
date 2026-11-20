@@ -548,6 +548,22 @@ pub const Page = struct {
         page.stale = true;
     }
 
+    /// apaga o resultado da última rodada (abriu outro avião ou projeto: o de antes não vale mais); uma conta
+    /// andando fica como está
+    pub fn clearResult(page: *Page) void {
+        if (page.kind != .simulation or page.working()) return;
+        page.summary = &.{};
+        page.checks = &.{};
+        page.tables = &.{};
+        page.charts = &.{};
+        page.loads = &.{};
+        page.tracks = &.{};
+        page.skipped_charts = 0;
+        dropArena(&page.result_arena);
+        setText(&page.message, "", .{});
+        page.stale = true;
+    }
+
     /// o arquivo que a etapa mandou abrir ("Ver na Montagem"), uma vez
     pub fn takeOpened(page: *Page) ?[]const u8 {
         if (page.opened_len == 0) return null;

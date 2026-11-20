@@ -27,6 +27,10 @@ Versões da `main`. A regra de versão está em `docs/TRACKING.md` → Versões.
 - Antes, as análises liam o avião do arquivo salvo: uma peça mexida na Montagem só entrava na conta depois de
   salvar, e uma variante rodava como o avião original. Agora as análises rodam o avião como ele está na Montagem, com
   as edições ainda não salvas e a variante escolhida.
+- Antes, ao abrir outro avião ou outro projeto, os aviões e variantes abertos antes continuavam ali e os gráficos da
+  rodada anterior ficavam na tela, sem dizer de qual avião eram. Agora abrir fecha o que estava aberto e apaga os
+  resultados de antes, e a linha de cima mostra sempre com que avião (e qual variante) as análises rodam e qual
+  projeto as etapas mostram.
 
 ## v0.3.1 (na `0.3_dev`, fechada em 2026-11-20)
 
