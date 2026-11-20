@@ -17,6 +17,7 @@ const form_mod = ui_kit.form;
 const plot = ui_kit.plot;
 const sheets = design.sheets;
 const xlsx = sheets.xlsx;
+const xlsx_writer = @import("aerosim").xlsx_writer;
 
 /// largura da coluna dos números das linhas e altura da linha das letras das colunas
 const row_header_width: f32 = 46;
@@ -33,8 +34,17 @@ pub const Place = struct { row: u32 = 1, column: u32 = 1 };
 const Bar = enum { none, horizontal, vertical };
 const bar_thickness = 12;
 
+/// a prévia de "Exportar → Dados em Excel" (gráficos e tabelas): a mesma grade, mostrando o arquivo antes de gravar
+pub var preview: SheetWindow = .{ .is_preview = true };
+
 pub const SheetWindow = struct {
     open: bool = false,
+    /// a janela é a prévia de uma exportação: só mostra e grava, não marca blocos
+    is_preview: bool = false,
+    export_data: ExportData = .{},
+    /// gravar a prévia neste caminho assim que ela estiver montada (prints)
+    pending_save: [600]u8 = undefined,
+    pending_save_len: usize = 0,
     area_buffer: [48]u8 = undefined,
     area_len: usize = 0,
     /// a primeira linha e coluna à vista (a rolagem anda de célula em célula)
@@ -127,6 +137,7 @@ pub const SheetWindow = struct {
     /// desenha a janela por cima de `whole`
     pub fn draw(window: *SheetWindow, ui: *widgets.Ui, whole: rl.Rectangle) void {
         if (!window.open) return;
+        if (window.is_preview) return window.drawPreview(ui, whole);
         _ = window.frame.reset(.retain_capacity);
         const memory = window.frame.allocator();
         const picker_open = window.picker.open;
@@ -190,6 +201,79 @@ pub const SheetWindow = struct {
             ui.click_taken = true;
             ui.wheel = 0;
         }
+    }
+
+    // ------------------------------------------------------------------ a prévia da exportação
+
+    /// a prévia: o arquivo como vai abrir no Excel, o gráfico que vai junto e "Salvar .xlsx…"
+    fn drawPreview(window: *SheetWindow, ui: *widgets.Ui, whole: rl.Rectangle) void {
+        _ = window.frame.reset(.retain_capacity);
+        const memory = window.frame.allocator();
+        const data = &window.export_data;
+        const picker_open = window.picker.open;
+        const wheel = ui.wheel;
+        if (picker_open) {
+            ui.click_taken = true;
+            ui.wheel = 0;
+        }
+        rl.drawRectangleRec(whole, .{ .r = 20, .g = 30, .b = 50, .a = 90 });
+        const margin: f32 = if (ui_kit.phone.isPhone(whole.width)) 6 else 28;
+        const box: rl.Rectangle = .{ .x = whole.x + margin, .y = whole.y + margin, .width = whole.width - 2 * margin, .height = whole.height - 2 * margin };
+        const title = std.fmt.allocPrintSentinel(memory, "Exportar dados · {s}", .{data.title}, 0) catch "Exportar dados";
+        const inner = widgets.card(ui, box, title);
+        const bar_y = inner.y + 2;
+        const file_text = std.fmt.allocPrintSentinel(memory, "{s}", .{data.fileName()}, 0) catch "";
+        theme.text(ui.fonts.bold, file_text, inner.x + 6, bar_y + 7, 15, theme.colors.ink);
+        theme.text(ui.fonts.regular, "prévia: é assim que o arquivo abre no Excel · setas, roda e barras andam pela aba", inner.x + 26 + theme.textWidth(ui.fonts.bold, file_text, 15), bar_y + 8, 13, theme.colors.muted);
+
+        const side_width = @min(400, inner.width * 0.32);
+        const body_top = bar_y + 40;
+        const body: rl.Rectangle = .{ .x = inner.x, .y = body_top, .width = inner.width - side_width - 12, .height = inner.y + inner.height - body_top };
+        const side: rl.Rectangle = .{ .x = body.x + body.width + 12, .y = body_top, .width = side_width, .height = body.height };
+        if (data.book) |book| if (book.sheets.len > 0) window.drawGrid(ui, memory, body, book.sheets[0]);
+        if (window.pending_save_len > 0 and data.bytes.len > 0) {
+            var path_buffer: [600]u8 = undefined;
+            const length = window.pending_save_len;
+            @memcpy(path_buffer[0..length], window.pending_save[0..length]);
+            window.pending_save_len = 0;
+            window.saveExport(path_buffer[0..length]);
+            return;
+        }
+
+        // ao lado: o gráfico que vai dentro da planilha (num gráfico) e os botões
+        const buttons_y = side.y + side.height - 36;
+        if (data.curves.len > 0) {
+            const axes: plot.Axes = .{ .title = "Gráfico na planilha", .x_label = data.x_label, .y_label = data.y_label };
+            plot.lines(ui, .{ .x = side.x, .y = side.y, .width = side.width, .height = @min(side.width * 0.9, buttons_y - side.y - 70) }, axes, data.curves);
+        }
+        const message = std.mem.sliceTo(&window.message, 0);
+        _ = widgets.paragraph(ui.fonts.regular, message, side.x + 4, buttons_y - 58, side.width - 8, 13, theme.colors.label);
+        if (ui_kit.dialogs.button(ui, .{ .x = side.x, .y = buttons_y, .width = 110, .height = 34 }, "Cancelar")) window.open = false;
+        if (widgets.primaryButton(ui, .{ .x = side.x + 122, .y = buttons_y, .width = side.width - 122, .height = 34 }, "Salvar .xlsx…", data.bytes.len > 0)) {
+            var home_buffer: [512]u8 = undefined;
+            window.picker.showSave("Salvar os dados (.xlsx)", ui_kit.dialogs.home(&home_buffer), &.{".xlsx"}, data.fileName());
+        }
+
+        if (!picker_open and rl.isKeyPressed(.escape)) window.open = false;
+        ui.click_taken = true;
+        ui.wheel = 0;
+        if (picker_open) {
+            ui.click_taken = false;
+            ui.wheel = wheel;
+            if (window.picker.draw(ui, whole)) |path| window.saveExport(path);
+            ui.click_taken = true;
+            ui.wheel = 0;
+        }
+    }
+
+    /// grava a planilha da prévia em `path` (no navegador, oferece o download)
+    pub fn saveExport(window: *SheetWindow, path: []const u8) void {
+        if (window.export_data.bytes.len == 0) return window.say("{s}", .{"a planilha ainda não foi montada"});
+        const io = ui_kit.system.io();
+        std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = window.export_data.bytes }) catch |err| return window.say("não gravou {s}: {s}", .{ std.fs.path.basename(path), @errorName(err) });
+        ui_kit.system.offerDownload(path);
+        window.open = false;
+        ui_kit.toast.show("dados gravados em .xlsx");
     }
 
     // ------------------------------------------------------------------ a grade
@@ -314,9 +398,9 @@ pub const SheetWindow = struct {
         }
         row_y[row_count] = y;
 
-        const marked = window.selection(memory);
+        const marked = if (window.is_preview) null else window.selection(memory);
         // o bloco achado sozinho (ou escrito) fora da vista: a grade anda até ele
-        if (!window.dragging and !std.mem.eql(u8, sheets.markedRange(), window.seen_range[0..window.seen_range_len])) {
+        if (!window.is_preview and !window.dragging and !std.mem.eql(u8, sheets.markedRange(), window.seen_range[0..window.seen_range_len])) {
             window.seen_range_len = @min(sheets.markedRange().len, window.seen_range.len);
             @memcpy(window.seen_range[0..window.seen_range_len], sheets.markedRange()[0..window.seen_range_len]);
             if (marked) |range| {
@@ -326,7 +410,7 @@ pub const SheetWindow = struct {
                 if (range.first_row < window.first_row or range.first_row > last_visible_row) window.first_row = @max(range.first_row, 3) - 2;
             }
         }
-        if (window.pending_scroll) |place| if (marked != null or window.seen_range_len > 0) {
+        if (window.pending_scroll) |place| if (window.is_preview or marked != null or window.seen_range_len > 0) {
             window.first_row = place.row;
             window.first_column = place.column;
             window.pending_scroll = null;
@@ -396,7 +480,7 @@ pub const SheetWindow = struct {
         ui.popClip();
 
         // marcar: apertar numa célula começa, arrastar estende, soltar marca o bloco
-        if (!ui.click_taken and ui.pressed and ui.hovering(cells)) if (placeAt(ui.mouse, window.first_row, window.first_column, column_x[0 .. column_count + 1], row_y[0 .. row_count + 1])) |place| {
+        if (!window.is_preview and !ui.click_taken and ui.pressed and ui.hovering(cells)) if (placeAt(ui.mouse, window.first_row, window.first_column, column_x[0 .. column_count + 1], row_y[0 .. row_count + 1])) |place| {
             window.dragging = true;
             window.anchor = place;
             window.current = place;
@@ -775,4 +859,119 @@ fn scrolled(first: u32, delta: f32, last: u32) u32 {
 /// 0xRRGGBB → cor do raylib
 fn color(rgb: u32) rl.Color {
     return .{ .r = @intCast((rgb >> 16) & 0xFF), .g = @intCast((rgb >> 8) & 0xFF), .b = @intCast(rgb & 0xFF), .a = 255 };
+}
+
+// ------------------------------------------------------------------ "Exportar → Dados em Excel"
+
+/// a planilha montada para a prévia: os bytes do arquivo, a planilha lida de volta (a grade) e as curvas (o gráfico)
+const ExportData = struct {
+    arena: ?*std.heap.ArenaAllocator = null,
+    title: []const u8 = "",
+    bytes: []const u8 = "",
+    book: ?xlsx.Workbook = null,
+    curves: []const plot.Series = &.{},
+    x_label: [:0]const u8 = "",
+    y_label: [:0]const u8 = "",
+    name_buffer: [160]u8 = undefined,
+    name_len: usize = 0,
+
+    fn fileName(data: *const ExportData) []const u8 {
+        return data.name_buffer[0..data.name_len];
+    }
+};
+
+/// grava a prévia em `path` assim que ela estiver montada (prints)
+pub fn saveWhenReady(path: []const u8) void {
+    preview.pending_save_len = @min(path.len, preview.pending_save.len);
+    @memcpy(preview.pending_save[0..preview.pending_save_len], path[0..preview.pending_save_len]);
+}
+
+/// recebe os dados de um gráfico ou de uma tabela (o "Exportar" do botão direito), monta a planilha e abre a prévia
+pub fn previewData(data: plot.DataExport) void {
+    const window = &preview;
+    if (window.export_data.arena) |old| {
+        old.deinit();
+        std.heap.page_allocator.destroy(old);
+    }
+    window.export_data = .{};
+    const arena = std.heap.page_allocator.create(std.heap.ArenaAllocator) catch return;
+    arena.* = .init(std.heap.page_allocator);
+    window.export_data.arena = arena;
+    buildExport(arena.allocator(), &window.export_data, data) catch |err| {
+        window.say("não deu para montar a planilha: {s}", .{@errorName(err)});
+    };
+    window.first_row = 1;
+    window.first_column = 1;
+    window.open = true;
+    if (window.export_data.bytes.len > 0) window.say("{s}", .{"confira a planilha e aperte \"Salvar .xlsx…\" para escolher onde gravar"});
+}
+
+/// a planilha dos dados: o título no alto; num gráfico, um par de colunas (x, y) por curva e o gráfico ao lado;
+/// numa tabela, o cabeçalho e as linhas (número onde a célula tem valor)
+fn buildExport(memory: std.mem.Allocator, out: *ExportData, data: plot.DataExport) !void {
+    out.title = try memory.dupe(u8, data.title);
+    out.name_len = ui_kit.export_file.fileName(&out.name_buffer, data.title, "xlsx").len;
+    var sheet = xlsx_writer.Sheet{ .name = try xlsx_writer.sheetName(memory, data.title) };
+    if (data.axes) |axes| {
+        out.x_label = try memory.dupeZ(u8, axes.x_label);
+        out.y_label = try memory.dupeZ(u8, axes.y_label);
+        // no Excel o rótulo vai em texto (V (m/s), η), sem a marcação de fórmula da tela
+        var x_buffer: [160]u8 = undefined;
+        var y_buffer: [160]u8 = undefined;
+        const x_text = try memory.dupe(u8, ui_kit.tex.plain(axes.x_label, &x_buffer));
+        const y_text = try memory.dupe(u8, ui_kit.tex.plain(axes.y_label, &y_buffer));
+        const curves = try memory.alloc(plot.Series, data.curves.len);
+        var chart_series: std.ArrayList(xlsx_writer.ChartSeries) = .empty;
+        for (data.curves, curves, 0..) |curve, *copy, k| {
+            const count = @min(curve.xs.len, curve.ys.len);
+            copy.* = curve;
+            copy.name = try memory.dupeZ(u8, curve.name);
+            copy.xs = try memory.dupe(f64, curve.xs[0..count]);
+            copy.ys = try memory.dupe(f64, curve.ys[0..count]);
+            const x_column: u32 = @intCast(2 * k + 1);
+            try sheet.merge(memory, 2, x_column, 2, x_column + 1, .header);
+            try sheet.text(memory, 2, x_column, curve.name, .header);
+            try sheet.text(memory, 3, x_column, x_text, .header);
+            try sheet.text(memory, 3, x_column + 1, y_text, .header);
+            try sheet.width(memory, x_column, 14);
+            try sheet.width(memory, x_column + 1, 14);
+            for (0..count) |i| {
+                const row: u32 = @intCast(4 + i);
+                try sheet.number(memory, row, x_column, curve.xs[i], .number);
+                try sheet.number(memory, row, x_column + 1, curve.ys[i], .number);
+            }
+            if (count > 0) try chart_series.append(memory, .{ .name = copy.name, .x_column = x_column, .y_column = x_column + 1, .first_row = 4, .last_row = @intCast(3 + count) });
+        }
+        out.curves = curves;
+        const last_column: u32 = @intCast(@max(2 * data.curves.len, 2));
+        try sheet.merge(memory, 1, 1, 1, last_column, .title);
+        try sheet.text(memory, 1, 1, data.title, .title);
+        if (chart_series.items.len > 0) try sheet.chart(memory, .{
+            .title = data.title,
+            .x_label = x_text,
+            .y_label = y_text,
+            .series = chart_series.items,
+            .from_column = last_column + 2,
+            .from_row = 2,
+            .to_column = last_column + 10,
+            .to_row = 22,
+        });
+    } else {
+        const columns: u32 = @intCast(@max(data.headers.len, 1));
+        try sheet.merge(memory, 1, 1, 1, columns, .title);
+        try sheet.text(memory, 1, 1, data.title, .title);
+        for (data.headers, 0..) |header, k| {
+            const column: u32 = @intCast(k + 1);
+            try sheet.text(memory, 2, column, header, .header);
+            try sheet.width(memory, column, if (k == 0) 26 else 16);
+        }
+        for (data.rows, 0..) |row, i| for (row, 0..) |cell, k| {
+            const at_row: u32 = @intCast(3 + i);
+            const column: u32 = @intCast(k + 1);
+            if (cell.value) |value| try sheet.number(memory, at_row, column, value, .number) else try sheet.text(memory, at_row, column, cell.text, if (k == 0) .label else .value);
+        };
+    }
+    var book = [_]xlsx_writer.Sheet{sheet};
+    out.bytes = try xlsx_writer.write(memory, &book);
+    out.book = try xlsx.Workbook.parse(memory, out.bytes);
 }

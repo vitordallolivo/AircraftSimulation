@@ -166,6 +166,10 @@ pub const Screen = struct {
             screen.usePolynomial();
         } else if (std.mem.startsWith(u8, name, "tipo:")) { // a aba do tipo do bloco, pelo nome interno (prints)
             if (std.meta.stringToEnum(design.sheets.Kind, name["tipo:".len..])) |kind| design.sheets.setKind(kind);
+        } else if (std.mem.startsWith(u8, name, "dados_excel:")) { // "Exportar → Dados em Excel" do gráfico com esse título (prints)
+            ui_kit.plot.requestExport(name["dados_excel:".len..], .xlsx);
+        } else if (std.mem.startsWith(u8, name, "salvar_dados:")) { // grava a prévia dos dados no caminho (prints)
+            sheet_window.saveWhenReady(name["salvar_dados:".len..]);
         } else if (std.mem.startsWith(u8, name, "rolar:")) { // a primeira linha e coluna à vista na planilha: rolar:linha.coluna (prints)
             var parts = std.mem.splitScalar(u8, name["rolar:".len..], '.');
             const row = std.fmt.parseInt(u32, parts.next() orelse "1", 10) catch 1;
@@ -900,7 +904,9 @@ pub const Screen = struct {
         const bottom: f32 = if (phone) ui_kit.phone.bar_height else 0;
         // com uma janela aberta (seletor de arquivo, pergunta, condições), a tela de baixo não recebe o clique nem a roda
         const page_modal = if (page) |p| p.modalOpen() else false;
-        const modal = screen.files.open or screen.requirements_open or screen.sheet_window.open or page_modal;
+        // "Exportar → Dados em Excel" dos gráficos e tabelas: a prévia monta a planilha antes de gravar
+        ui_kit.plot.data_export = sheet_window.previewData;
+        const modal = screen.files.open or screen.requirements_open or screen.sheet_window.open or sheet_window.preview.open or page_modal;
         const wheel = ui.wheel;
         if (modal) {
             ui.click_taken = true;
@@ -1002,6 +1008,7 @@ pub const Screen = struct {
             if (screen.requirements_open) screen.drawRequirements(ui, whole);
             if (screen.areas.len > 0) screen.sheet_window.follow(screen.areas[screen.area].title);
             screen.sheet_window.draw(ui, whole);
+            sheet_window.preview.draw(ui, whole);
             if (screen.sheet_window.wants_aircraft) {
                 screen.sheet_window.wants_aircraft = false;
                 screen.usePolynomial();

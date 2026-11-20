@@ -221,9 +221,11 @@ pub const Cell = struct {
 /// última fica com o resto). O botão direito exporta a tabela em CSV, com os números inteiros
 pub fn table(ui: *widgets.Ui, rect: rl.Rectangle, title: [:0]const u8, headers: []const [:0]const u8, rows: []const []const Cell, widths: []const f32) void {
     const state = stateFor(title);
-    if (state.pending) |_| {
+    if (state.pending) |kind| {
         state.pending = null;
-        exportTable(state, headers, rows);
+        if (kind == .xlsx) {
+            if (data_export) |hand_over| hand_over(.{ .title = title, .headers = headers, .rows = rows });
+        } else exportTable(state, headers, rows);
     }
     const inner = widgets.labeledCard(ui, rect, title);
     var columns: [24]f32 = undefined;
@@ -288,7 +290,27 @@ fn writeTable(writer: *std.Io.Writer, headers: []const [:0]const u8, rows: []con
 
 // ------------------------------------------------------------------ o estado de cada gráfico
 
-pub const ExportKind = enum { png, pdf, csv };
+pub const ExportKind = enum { png, pdf, csv, xlsx };
+
+/// pede a exportação do gráfico (ou tabela) de título `title`: sai no próximo quadro em que ele for desenhado (prints)
+pub fn requestExport(title: []const u8, kind: ExportKind) void {
+    stateFor(title).pending = kind;
+}
+
+/// os dados de um gráfico (as curvas à vista) ou de uma tabela, para "Exportar → Dados em Excel"
+pub const DataExport = struct {
+    title: []const u8,
+    /// tabela: o cabeçalho e as linhas
+    headers: []const [:0]const u8 = &.{},
+    rows: []const []const Cell = &.{},
+    /// gráfico: as curvas e os eixos (as colunas vão em pares x, y)
+    curves: []const Series = &.{},
+    axes: ?Axes = null,
+};
+
+/// quem monta a planilha dos dados e mostra a prévia antes de gravar (o programa liga; sem ninguém, sai em CSV).
+/// Os dados valem só durante a chamada: quem recebe copia o que precisa.
+pub var data_export: ?*const fn (data: DataExport) void = null;
 
 const max_hidden = 16;
 
@@ -427,6 +449,7 @@ const Action = enum { export_menu, all_curves, select, select_all, save_selected
 /// os tipos do submenu "Exportar"
 const export_kinds = [_]ExportKind{ .png, .pdf, .csv };
 const export_captions = [_][:0]const u8{ "Imagem PNG...", "PDF...", "Dados em CSV (curvas marcadas)..." };
+const excel_caption: [:0]const u8 = "Dados em Excel (curvas marcadas)...";
 const submenu_width: f32 = 250;
 const action_count = std.meta.fields(Action).len;
 var action_text: [action_count][80:0]u8 = undefined;
@@ -441,9 +464,15 @@ const menu_row: f32 = 28;
 const menu_width: f32 = 340;
 
 const table_actions = [_][:0]const u8{"Exportar a tabela em CSV..."};
+const table_excel_actions = [_][:0]const u8{"Exportar a tabela em Excel (.xlsx)..."};
+
+/// os dados saem em Excel (com prévia) quando o programa sabe montar a planilha; senão, em CSV
+fn dataKind() ExportKind {
+    return if (data_export != null) .xlsx else .csv;
+}
 
 fn menuActions() []const [:0]const u8 {
-    if (menu.is_table) return &table_actions;
+    if (menu.is_table) return if (data_export != null) &table_excel_actions else &table_actions;
     const selected = selectedCount();
     const this = findState(menu.key);
     for (std.enums.values(Action)) |action| {
@@ -538,7 +567,7 @@ pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
         if (over or (is_export and menu.export_open)) widgets.rounded(row, 4, theme.colors.hover);
         theme.text(ui.fonts.regular, caption, row.x + 10, row.y + 6, 14, theme.colors.accent);
         if (ui.clicked and over) {
-            if (menu.is_table) chooseExport(.csv) else if (is_export) menu.export_open = true else chooseAction(@enumFromInt(k));
+            if (menu.is_table) chooseExport(dataKind()) else if (is_export) menu.export_open = true else chooseAction(@enumFromInt(k));
         }
         y += menu_row;
     }
@@ -546,7 +575,7 @@ pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
         ui.click_taken = true;
         return;
     }
-    theme.text(ui.fonts.regular, "curvas (marcadas = no gráfico e no CSV):", area.x + 12, y + 6, 12, theme.colors.muted);
+    theme.text(ui.fonts.regular, "curvas (marcadas = no gráfico e nos dados):", area.x + 12, y + 6, 12, theme.colors.muted);
     y += 26;
     for (0..menu.count) |k| {
         const row: rl.Rectangle = .{ .x = area.x + 4, .y = y, .width = area.width - 8, .height = menu_row };
@@ -564,7 +593,9 @@ pub fn overlay(ui: *widgets.Ui, width: f32, height: f32) void {
         widgets.rounded(submenu, 6, theme.colors.field);
         widgets.roundedLines(submenu, 6, theme.colors.line);
         var row_y = submenu.y + 6;
-        for (export_kinds, export_captions) |kind, caption| {
+        for (export_kinds, export_captions) |listed, listed_caption| {
+            const kind = if (listed == .csv) dataKind() else listed;
+            const caption = if (kind == .xlsx) excel_caption else listed_caption;
             const row: rl.Rectangle = .{ .x = submenu.x + 4, .y = row_y, .width = submenu.width - 8, .height = menu_row };
             const over = rl.checkCollisionPointRec(ui.mouse, row);
             if (over) widgets.rounded(row, 4, theme.colors.hover);
@@ -616,10 +647,15 @@ fn chooseExport(kind: ExportKind) void {
     menu.open = false;
     menu.export_open = false;
     saving_batch = false;
+    // Excel: a prévia vem antes, e é nela que se escolhe onde gravar
+    if (kind == .xlsx) {
+        if (findState(menu.key)) |state| state.pending = .xlsx;
+        return;
+    }
     const index: usize = switch (kind) {
         .png => 0,
         .pdf => 1,
-        .csv => 2,
+        .csv, .xlsx => 2,
     };
     const kinds = export_kinds;
     const extensions = [_][]const []const u8{ &.{".png"}, &.{".pdf"}, &.{".csv"} };
@@ -679,6 +715,17 @@ fn fileIo() std.Io {
 fn exportPlot(ui: *widgets.Ui, rect: rl.Rectangle, axes: Axes, series: []const Series, state: *State, kind: ExportKind) void {
     const path = state.path[0..state.path_len];
     const gpa = std.heap.page_allocator;
+    if (kind == .xlsx) {
+        var visible: [32]Series = undefined;
+        var count: usize = 0;
+        for (series) |s| {
+            if (state.isHidden(s.name) or count == visible.len) continue;
+            visible[count] = s;
+            count += 1;
+        }
+        if (data_export) |hand_over| hand_over(.{ .title = axes.title, .curves = visible[0..count], .axes = axes });
+        return;
+    }
     if (kind == .csv) {
         var columns: [2 * 32]export_file.Column = undefined;
         var headers: [2 * 32][160]u8 = undefined;

@@ -583,7 +583,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
 - `aerosim/gui/screen.zig` — A tela do aerosim: o cabeçalho, as abas das áreas e as subabas de cada uma, na mesma arrumação da antiga GUI PyQt.
   tipos `Screen:36`
 - `aerosim/gui/sheet_window.zig` — A janela "Planilha…" de cada área: a planilha `.xlsx` aparece como no Excel, a partir do A1, com a largura das
-  tipos `Place:30`, `SheetWindow:36`
+  tipos `Place:31`, `SheetWindow:40`
+  fn `saveWhenReady:884`, `previewData:890`
 - `aerosim/gui/tests.zig` — Os testes sem janela da interface do aerosim: escalas dos gráficos, exportar, o toque (mouse e dedo) e a leitura
 
 **aerosim/gui/tabs/**
@@ -624,8 +625,8 @@ Regras e decisões do projeto: `.claude/CLAUDE.md`. O que falta e a ordem: `docs
   tipos `Symbol:76`, `Mark:89`, `Chips:265`, `Level:326`, `Sheet:342`
   fn `isPhone:25`, `header:30`, `shortLabel:53`, `light:92`, `drawSymbol:103`, `bottomBar:169`, `moreMenu:215`
 - `aerosim/gui/ui/plot.zig` — Gráfico de linhas dentro de um cartão: eixos com marcas redondas, grade fraca, as curvas na paleta do tema
-  tipos `Series:24`, `Marker:57`, `Cloud:79`, `Axes:87`, `Frame:97`, `Cell:214`, `ExportKind:291`
-  fn `lines:118`, `table:222`, `tableHeight:257`, `pickGroup:338`, `clearPick:344`, `overlayActive:485`, `overlay:490`, `drawMarker:826`, `cloud:880`, `ramp:899`, `colorBar:915`, `drawFrame:935`
+  tipos `Series:24`, `Marker:57`, `Cloud:79`, `Axes:87`, `Frame:97`, `Cell:214`, `ExportKind:293`, `DataExport:301`
+  fn `lines:118`, `table:222`, `tableHeight:259`, `requestExport:296`, `pickGroup:360`, `clearPick:366`, `overlayActive:514`, `overlay:519`, `drawMarker:873`, `cloud:927`, `ramp:946`, `colorBar:962`, `drawFrame:982`
 - `aerosim/gui/ui/pointer.zig` — O ponteiro das telas, igual no PC e no celular: o mouse ou o dedo viram as mesmas coisas (desceu, segura,
   tipos `Point:16`, `Input:24`, `Frame:32`, `Pointer:45`
 - `aerosim/gui/ui/scroll.zig` — A área rolável: tudo o que não cabe na altura (a barra lateral, a coluna dos gráficos) rola pela roda do mouse ou
