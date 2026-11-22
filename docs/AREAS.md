@@ -1,87 +1,81 @@
 # Áreas e submódulos
 
-O que cada área tem hoje (subaba na GUI, módulo no código) e o que ainda vai ter. A ordem e o estado das tarefas ficam
-em `docs/TRACKING.md`; aqui fica **onde cada coisa mora**, para não fazer a mesma análise em dois lugares.
+O que cada área tem hoje (subaba na tela, módulo no código) e o que ainda vai ter. A ordem e o estado das tarefas ficam
+em `docs/TRACKING.md`; aqui fica **onde cada coisa mora**, para não fazer a mesma análise em dois lugares. Os caminhos
+sem pasta na frente são de `aerosim/`.
 
-Estado: ✅ existe e aparece na GUI · 🟡 existe só no código ou em parte · ⬜ previsto (vai para o módulo "não
-desenvolvido" até ser feito) · ⚠ cálculo em Python que, pela regra 2 do `.claude/CLAUDE.md`, deveria estar no núcleo ·
-**Zig** a análise já roda em Zig na tela nova, sem Python (o `.zig` fica ao lado do `.py`, em `aerosim/manager/simulations/`).
+Estado: ✅ existe e aparece na tela · 🟡 existe só no código ou em parte · ⬜ previsto.
 
 ## 1. Dimensionamento inicial
 
 | Submódulo | Estado | Onde | Tarefa |
 |---|---|---|---|
-| Mini-MDO (otimizador) | ✅ | `core/src/sizing`, `design/mdo.py` | — |
-| Diagrama de restrições T/W × W/S | ✅ ⚠ | `aerosim/sizing/constraints.py` (Python) | — |
+| Mini-MDO (otimizador) | ✅ | `core/src/sizing`, `manager/simulations/mdo.zig` | — |
+| Diagrama de restrições T/W × W/S | ✅ | `manager/simulations/sizing.zig` | — |
+| Estudo e ponto de projeto | ✅ | `design/stage_study.zig` | — |
 
 ## 2. Aerodinâmica
 
 | Submódulo | Estado | Onde | Tarefa |
 |---|---|---|---|
-| Perfis (polares 2D por Re, cache) | ✅ | `design/airfoils.py`, `aero/sections.py` | — |
-| Projetar a asa (forma em planta, partições) | ✅ ⚠ | `design/wing.py` (Helmbold em Python) | — |
-| Avião completo (polar e derivadas; núcleo, lltdrek, ASB, AVL, XFLR5), dentro da subaba Analisar | ✅ | `manager/simulations/aerodynamics.py` (sem aba), `wings.py`, `aero/*_solver.py` | T89 |
-| Dispositivos de ponta | ✅ ⚠ | `aero/tipdevices.py` (Trefftz em Python) | — |
-| Flape (ΔC_l, ΔC_l máx, ΔC_d, ΔC_m, comando) — prioridade | 🟡 | só deflexão fixa na incidência (`translator.py`) | T54 |
+| Perfis (polares 2D por Re) | ✅ | `design/stage_airfoils.zig`, `core/src/physics/section.zig` | — |
+| Projetar a asa (forma em planta, partições, dispositivos de ponta) | ✅ | `design/stage_wing.zig` | G03 |
+| Avião completo (núcleo, lltdrek, ASB, AVL) em Analisar | ✅ | `manager/simulations/aerodynamics.zig`; os de fora em `aero/*_solver.py`, pela ponte | G28 |
+| Só as asas (uma, biplano, tandem, canard), como no túnel | ✅ | `manager/simulations/wings.zig`, `core/src/loads/sweep.zig` | — |
 | Linha sustentadora das cargas (enflechamento, não linear) | ✅ | `core/src/loads/llt.zig` | T55 |
-| Só as asas (uma, biplano, tandem, canard; da Montagem ou da sprint): varredura no núcleo, C_L máximo, início do estol, vista 3D, comparação dos métodos, chapas de ponta, Reynolds | ✅ | `manager/simulations/wings.py`, `core/src/loads/sweep.zig` | T89 |
-| Arrasto por componente | ⬜ | — | T11 |
-| Reynolds no núcleo | ⬜ | — | T10 |
+| Efeito solo (McCormick e imagem no VLM) | ✅ | Analisar → "Efeito do chão"; `core/src/modifiers/ground.zig`, `core/src/loads/vlm.zig` | T65 |
+| Flape (ΔC_l, ΔC_l máx, ΔC_d, ΔC_m, comando) | 🟡 | só deflexão fixa na incidência | T54 |
+| Arrasto por componente | 🟡 | o núcleo separa por grupo para o Exportar (`manager/aero_sheet.zig`) | T11 |
+| Reynolds no voo | 🟡 | `core/src/physics/section.zig` (Perfis e estol por estação) | T10 |
+| Modelo aerodinâmico do voo e tabela de voo | 🟡 | `core/src/physics/aeromodel.zig`, `aerotable.zig` | T66, T68 |
 | Trimagem com esteira e tubo desviado | ⬜ | modifier `esteira.disco` | T08 |
-| Efeito solo por imagem | ⬜ | modifier novo | AE-09 |
-| Distribuição ao longo da envergadura a um α | → Cargas | ver duplicação D6 | T09 |
+| Distribuição ao longo da envergadura a um α | ✅ | Analisar ("Carga na envergadura") e Cargas; ver D2 | — |
 
 ## 3. Estabilidade
 
 | Submódulo | Estado | Onde | Tarefa |
 |---|---|---|---|
-| Empenagem e comandos | ✅ ⚠ | `design/tail.py`, `stability/controls.py` | — |
-| Avião montado: estática, tesoura, comandos, dinâmica, qualidades de voo | ✅ Zig | `manager/simulations/stability.zig`, `core/src/sim/static.zig`, `core/src/sim/modes.zig` | G23 |
-| Estabilidade dinâmica: rajada, líquido, LAPES e polos no tempo | ✅ Zig | `manager/simulations/stability.zig`, `core/src/sim/gust.zig` | G20 |
-| Normas e critérios como preset do usuário | ⬜ | `stability/criteria.py` | T37 |
-| Estabilidade não linear (Lyapunov, região de atração, sloshing, vento) | ⬜ | — | T05 |
+| Empenagem e comandos | ✅ | `design/stage_tail.zig`, `core/src/sizing/tail.zig` | G31 |
+| Avião montado: estática, tesoura, comandos, dinâmica, qualidades de voo | ✅ | `manager/simulations/stability.zig`, `core/src/sim/static.zig`, `core/src/sim/modes.zig` | — |
+| Estabilidade dinâmica: rajada, líquido, LAPES e polos no tempo | ✅ | `manager/simulations/stability.zig`, `core/src/sim/gust.zig` | G20 |
+| Duas subabas (estática e dinâmica) da configuração inteira | 🟡 | hoje "Avião montado" junta a estática e os modos | G06 |
+| Normas e critérios como preset do usuário | ⬜ | — | T37 |
+| Estabilidade não linear (Lyapunov, região de atração) | ⬜ | — | T05 |
 | Diedro elástico | ⬜ | depende de Aeroelasticidade | T27 |
 
 ## 4. Desempenho
 
-Organizado **por etapa de voo**: cada etapa mostra a forma analítica (`simple_perf` do núcleo) e a numérica (6GDL do
-núcleo) juntas. A missão completa continua, encadeando as etapas. O V-n **não** é de Desempenho: é de Cargas.
+Organizado **por etapa de voo**: cada etapa mostra a forma analítica e a simulada (6GDL do núcleo) juntas. A missão
+completa encadeia as etapas. O V-n **não** é de Desempenho: é de Cargas.
 
-| Subaba | Analítica | Numérica | Estado | Substitui |
+| Subaba | Analítica | Simulada | Estado | Tarefa |
 |---|---|---|---|---|
-| Motores e montagem | — | — | ✅ | — |
-| Estudo e ponto de projeto | — | — | ✅ | — |
-| Tração | equilíbrio de rotação | — | ✅ Zig (`thrust.zig`) | — |
-| Decolagem | corrida analítica | 6GDL + otimizador do profundor (`takeoff_opt`) | 🟡 (Missão → Decolagem, o MTOW em cada xCG de E&C, em Zig) | `takeoff.py`, Missão → Decolagem |
-| Subida | RC e γ × V | subida simulada | 🟡 (a simulada está errada: γ obtido não segue o pedido) | `climb.py` |
-| Voo nivelado e envelopes | potências e trações; envelopes × altitude | modelo completo | ✅ Zig (`envelope.zig`) | `envelope.py` e o envelope de `performance.py` |
-| Avião montado | polar, potências, subida, planeio, curvas, V-n e bateria por altitude (`simple_perf`) | — | ✅ Zig (`performance.zig`) | — |
-| Curva | R × φ, limites de estol e tração | raio mínimo simulado, fator de carga no tempo | ✅ (Missão "curvas" em Zig) | `turn.py`, Missão "curvas" |
-| Descida e planeio | planeio | ⬜ | 🟡 | — |
-| Pouso | `landingRun` | etapa de pouso da Missão | 🟡 | — |
-| Missão completa | — | a missão de hoje | ✅ Zig (`mission.zig`) | — |
+| Motores e montagem | — | — | ✅ (`design/stage_power.zig`) | G11 |
+| Tração | equilíbrio de rotação | — | ✅ (`manager/simulations/thrust.zig`) | G45 |
+| Decolagem | corrida analítica | 6GDL + otimizador do profundor (`manager/takeoff_opt.zig`) | 🟡 (Missão → Decolagem acha o MTOW em cada xCG) | T43 |
+| Subida | RC e γ × V | subida simulada | 🟡 (a simulada está errada) | T44 |
+| Voo nivelado e envelopes | potências e trações; envelopes × altitude | modelo completo | ✅ (`manager/simulations/envelope.zig`) | — |
+| Avião montado | polar, potências, subida, planeio, curvas e bateria por altitude | — | ✅ (`manager/simulations/performance.zig`) | — |
+| Curva | R × φ, limites de estol e tração | raio mínimo e fator de carga no tempo | 🟡 (na Missão "curvas") | T45 |
+| Descida, planeio e pouso | planeio, corrida de pouso | etapa de pouso da Missão | 🟡 | T46 |
+| Missão completa | — | a missão de hoje | ✅ (`manager/simulations/mission.zig`) | — |
 | Vento cruzado, Dryden, Monte Carlo | | | ⬜ | T31, T30, T29 |
 
-**MTOW (dentro da Decolagem, não é modo avulso):** uma caixa "achar o MTOW para o comprimento de pista". A massa
-varre de dois jeitos, à escolha:
-- **massa total:** mínimo, máximo, valor inicial e passo;
-- **fragmentada por componente:** peso vazio, carga paga, líquido (sloshing), LAPES… Cada componente **pode** existir:
-  tem chave para ligar e desligar e o seu próprio mínimo, máximo, valor inicial e passo.
-
-Regras de passo (ex.: o líquido só em múltiplos de um volume) são do usuário: o programa não traz nenhuma por padrão.
+**MTOW (dentro da Decolagem):** uma caixa "achar o MTOW para o comprimento de pista", varrendo a massa total (mínimo,
+máximo, inicial e passo) ou a massa por componente (peso vazio, carga paga, líquido, LAPES; cada um ligável, com os
+seus limites e passo). Regras de passo são do usuário; o programa não traz nenhuma por padrão.
 
 ## 5. Cargas e aeroelasticidade
 
 | Subaba | Estado | Saídas | Tarefa |
 |---|---|---|---|
-| Distribuição | ✅ | L', α efetivo, V/V∞ por superfície; vista 3D | T12 |
-| Diagrama V-n | ⬜ | velocidades estruturais, envelope de manobra, n por caso | T13 |
-| Rajada | ⬜ | Δn em V_C e V_D, envelope de rajada, forças por rajada | T14 |
-| Casos de carga | ⬜ | tabela de casos (sustentação de asa, EH e EV por caso) | T13, T16 |
-| Esforços (cortante, fletor, torsor) | ⬜ | V(s), M(s), T(s) por superfície e o caso crítico | T15 |
+| Distribuição | ✅ | L', α efetivo, V/V∞ por superfície; vista 3D (`manager/simulations/loads.zig`) | — |
+| Diagrama V-n e rajada | 🟡 | núcleo pronto (`core/src/loads/vn.zig`); falta a subaba | — |
+| Casos de carga | 🟡 | tabela de casos (sustentação de asa, EH e EV por caso) | T16 |
+| Esforços (cortante, fletor, torsor) | 🟡 | núcleo pronto (`core/src/loads/internal.zig`); falta a subaba | — |
 | Momentos de dobradiça | ⬜ | momento por comando e caso, força no servo | T17 |
-| Cargas no solo | ⬜ | forças no TDP e no TDN (com a lateral), fator de impacto | T18 |
-| Aeroelasticidade | ⬜ | centro elástico, rigidez, divergência, reversão, flutter (V-g, V-f) | T24–T27, T32 |
+| Cargas no solo | 🟡 | impacto do pouso (`core/src/structures/gear.zig`); faltam os outros casos | T18 |
+| Aeroelasticidade | 🟡 | divergência, reversão e flutter no núcleo (`core/src/loads/aeroelastic.zig`, `flutter.zig`); falta rigidez e diedro elástico | T24, T27 |
 | Comparação com ensaio e voo | ⬜ | V-n com dados de voo, simulado × ensaio | T35, T40 |
 
 **Para Estruturas:** esforços por superfície e caso, momentos de dobradiça, cargas no trem, forças de EH e EV no tubo
@@ -89,37 +83,28 @@ de cauda e na fuselagem, e a tabela de casos (de onde veio cada carga).
 
 ## 6. Estruturas (aba ainda não existe)
 
-| Submódulo | Estado | Tarefa |
-|---|---|---|
-| Arquitetura e materiais (dados do usuário) | ⬜ | T20 |
-| Longarina | ⬜ | T21 |
-| Tubo de cauda | ⬜ | T22 |
-| Trem (eixo, garfo) | ⬜ | T23 |
-| Fuselagem | ⬜ | sem tarefa (proposta) |
-| Redistribuição das cargas para a malha | ⬜ | T39 |
+| Submódulo | Estado | Onde | Tarefa |
+|---|---|---|---|
+| Arquitetura e materiais (dados do usuário) | 🟡 | `core/src/structures` | T20 |
+| Longarina | 🟡 | `core/src/structures/section.zig`, `buckling.zig` | T21 |
+| Tubo de cauda | ⬜ | — | T22 |
+| Trem (eixo, garfo) | 🟡 | `core/src/structures/gear.zig` (sem aba) | — |
+| Fuselagem | ⬜ | — | sem tarefa (proposta) |
+| Redistribuição das cargas para a malha | ⬜ | — | T39 |
 
 ## 7. Controle e integração
 
 | Submódulo | Estado | Onde | Tarefa |
 |---|---|---|---|
-| Montagem, checklist, xCG em % CMA | ✅ | `ConfigTab`, `design/checklist.py` | — |
+| Montagem, resumo, xCG em % CMA | ✅ | `gui/assembly.zig`, `gui/tabs/config_tab.zig`, `design/balance.zig` | — |
 | Piloto automático (autotune) | ✅ | núcleo | — |
 | Aba de controle | ⬜ | — | T33 |
-| Caixa, montagem e desmontagem | ⬜ | — | T34 |
+| Caixa, montagem e desmontagem | ⬜ | — | O08 |
 | Etapas desatualizadas | ⬜ | — | T41 |
 
 ## Duplicações encontradas
 
 | # | O quê | Onde aparece | Proposta |
 |---|---|---|---|
-| D1 | Diagrama V-n | `performance.py` (`_vn`), `envelope.py` (sem aba), e a subaba de Cargas (T13) | um V-n só, no núcleo, dono Cargas; Desempenho lê |
-| D2 | Curvas: raio mínimo | `turn.py` (sem aba) e a Missão "curvas: raio mínimo" (mesmo `evaluate_turn`, laço repetido) | subaba Curva única (analítica + numérica) |
-| D3 | Decolagem | `takeoff.py` (sem aba), Missão → Decolagem, e `design/flight.py` (todos usam `takeoff_opt`) | subaba Decolagem única, com o MTOW como caixa de marcar |
-| D4 | Envelope de voo | `envelope.py`/`envelope.zig` ("Envelope_main original") e `performance.py`/`performance.zig` (`simple_perf`) | subaba Voo nivelado e envelopes, com todos os envelopes plotados |
-| D5 | Polar estática | `polar.py` (sem aba) e Aerodinâmica → Analisar (avião completo) | conferir quem usa `polar.py` |
-| D6 | Distribuição ao longo da envergadura | T09 (Aerodinâmica) e Cargas → Distribuição (T12) | T09 fecha com a subaba de Cargas (ou a Aerodinâmica mostra o mesmo `LoadResult`) |
-| D7 | Requisitos do projeto | `design/spec.py` e `sizing/constraints.py`: duas classes `Requirements`, campos repetidos com padrões diferentes (V de cruzeiro 15 × 16 m/s) | uma classe só; os limites viram preset do usuário (T37) |
-| D8 | Helmbold (C_Lα 3D) | `model/airfoil.py` (Python) e o tradutor/núcleo | uma fórmula só, no núcleo |
-
-As "sem aba" (`turn`, `climb`, `takeoff`, `polar`) ainda são chamadas por scripts e testes: antes de tirar
-qualquer uma, conferir quem chama.
+| D1 | Diagrama V-n e envelope de voo | `manager/simulations/performance.zig` e `envelope.zig` fazem a sua conta; o núcleo tem `core/src/loads/vn.zig` | um V-n só, no núcleo, dono Cargas; Desempenho lê |
+| D2 | Distribuição ao longo da envergadura | Aerodinâmica → Analisar e Cargas → Distribuição | conferir se as duas usam a mesma conta do núcleo |
