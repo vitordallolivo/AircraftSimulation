@@ -23,7 +23,7 @@ que ela mexe e o progresso.
 
 1. **Suspeitas de erro primeiro:** o "Profundor de equilíbrio" de Empenagem e comandos numa asa sem cauda sai com δe na
    casa de −10¹⁰ ° (print do vitor, 2026-11-20: achar a divisão por quase zero; sem EH a curva não devia sair, ou usa o
-   elevon); depois G31, G34, G35, T90 e T96.
+   elevon); depois **T98 (VLM em alongamento baixo, prioridade do vitor em 2026-11-25)**, G31, G34, G35, T90 e T96.
 2. **Planilhas da equipe:** G45, G46 e G47.
 3. **Terminar o que está em andamento:** G28, G20, G30, G36, G06, G08, T55, T66 e O41.
 4. **Desempenho:** T43 a T46 (a subida simulada está errada), depois T37.
@@ -220,6 +220,7 @@ O núcleo físico em Zig (`core/`): dinâmica, aerodinâmica, cargas, estruturas
 | T73 | A malha da simulação põe a força da asa trapezoidal no meio da semienvergadura (na asa enflechada de 25°, o ponto neutro fica 10 % da CMA atrás). Propor a correção; muda os números, então só com o ok do dono | Cálculo | T63 | — | Não iniciado |
 | T89 | Aerodinâmica → Analisar: só as asas (uma, biplano, tandem, canard), como no túnel, com a varredura do núcleo, o estol, a carga na envergadura e a lista de métodos para rodar | Cálculo | T55 | — | Terminado |
 | T90 | Suspeita: no biplano, a linha sustentadora dá ao par 0,89 da asa sozinha e o VLM 0,77 (folga 0,3 m, corda 0,4 m, α 6°). Conferir contra Munk (NACA Report 151) e, se for limite do método, avisar quando a folga for pequena | Cálculo | T89 | — | Não iniciado |
+| T98 | Suspeita: o VLM do núcleo dá C_Lα ≈ 2,19 /rad numa asa retangular de alongamento 1 (convergido na malha), contra ≈ 1,47 de Helmbold (Anderson, Fundamentals of Aerodynamics) e ≈ 1,5 de um VLM independente; em alongamento 6 fica ~2,5 % acima. Achar a causa (esteira, ponto de controle, normal ou área de referência) e validar contra Helmbold com o número no teste | Cálculo | — | alta | Não iniciado |
 | T91 | Teste de desfazer da GUI antiga quebrado quando já existe o projeto de quem roda (o teste saiu junto com a GUI em Python) | Cálculo | — | — | Não iniciado |
 | T93 | O tubo que liga as asas do tandem é da Montagem, não da Empenagem | Interface | — | — | Terminado |
 | T94 | Sentido do x do bordo de ataque das asas dito na ajuda | Interface | — | — | Terminado |
